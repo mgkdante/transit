@@ -1,0 +1,71 @@
+name: Fetch STM GTFS to R2 (and log to D1)
+
+on:
+  schedule:
+    - cron: "10 7 * * *"   # 07:10 UTC (~03:10 Montreal) – adjust if you want
+  workflow_dispatch:
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Prepare tools
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y jq
+          python3 -m pip install --upgrade pip awscli
+
+      - name: Configure AWS CLI for R2 (S3-compatible)
+        env:
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+        run: |
+          aws configure set aws_access_key_id "$R2_ACCESS_KEY_ID"
+          aws configure set aws_secret_access_key "$R2_SECRET_ACCESS_KEY"
+          aws configure set default.region "auto"
+
+      - name: Download GTFS ZIP from STM (robust)
+        env:
+          GTFS_URL: ${{ secrets.GTFS_URL }}
+        run: |
+          curl -fL --retry 6 --retry-connrefused --retry-delay 10 --max-time 600 \
+               -A "TransitStaticFetcher/1.0" "$GTFS_URL" -o gtfs_stm.zip
+
+      - name: Compute Montreal date
+        id: ts
+        run: |
+          TZ=America/Toronto date +'%Y-%m-%d' > date.txt
+          echo "DATE=$(cat date.txt)" >> $GITHUB_OUTPUT
+
+      - name: Upload to R2
+        env:
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+        run: |
+          DEST="s3://${R2_BUCKET}/gtfs-static/stm/dt=${{ steps.ts.outputs.DATE }}/gtfs_stm_${{ steps.ts.outputs.DATE }}.zip"
+          aws --endpoint-url "https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com" s3 cp gtfs_stm.zip "$DEST" --only-show-errors
+
+      - name: Get file size
+        id: size
+        run: |
+          if command -v stat >/dev/null && stat --version >/dev/null 2>&1; then
+            echo "BYTES=$(stat -c%s gtfs_stm.zip)" >> $GITHUB_OUTPUT
+          else
+            echo "BYTES=$(stat -f%z gtfs_stm.zip)" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Log success to Cloudflare Worker (D1)
+        env:
+          WORKER_LOG_URL: ${{ secrets.WORKER_LOG_URL }}
+          WORKER_LOG_SECRET: ${{ secrets.WORKER_LOG_SECRET }}
+        run: |
+          R2_KEY="gtfs-static/stm/dt=${{ steps.ts.outputs.DATE }}/gtfs_stm_${{ steps.ts.outputs.DATE }}.zip"
+          DATA=$(jq -n \
+            --arg r2_key "$R2_KEY" \
+            --argjson bytes "${{ steps.size.outputs.BYTES }}" \
+            '{level:"INFO", message:"Uploaded STM GTFS ZIP to R2 from GitHub Action", provider_key:"stm", feed_id:"stm_gtfs_static", detail:{r2_key:$r2_key, bytes:$bytes, source:"github-action"}}')
+          curl -s -X POST "$WORKER_LOG_URL" \
+               -H "Content-Type: application/json" \
+               -H "X-Log-Secret: $WORKER_LOG_SECRET" \
+               -d "$DATA" || true
