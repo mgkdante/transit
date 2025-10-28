@@ -1,0 +1,39 @@
+name: Build Silver GTFS (Parquet) and Log
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "20 7 * * *"  
+
+jobs:
+  silver:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install pandas pyarrow boto3 requests
+
+      - name: Run Silver ETL
+        env:
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+          PROVIDER_KEY: "stm"
+          FEED_ID: "stm_gtfs_static"
+          # Optional: force a date (YYYY-MM-DD); otherwise script picks latest bronze
+          # GTFS_DATE: "2025-10-28"
+          WORKER_LOG_URL: ${{ secrets.WORKER_LOG_URL }}
+          WORKER_LOG_SECRET: ${{ secrets.WORKER_LOG_SECRET }}
+        run: |
+          python gtfs_to_silver.py
