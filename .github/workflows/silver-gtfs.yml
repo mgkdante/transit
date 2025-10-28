@@ -27,7 +27,7 @@ jobs:
           R2_ACCOUNT_ID:        ${{ secrets.R2_ACCOUNT_ID }}
           R2_ACCESS_KEY_ID:     ${{ secrets.R2_ACCESS_KEY_ID }}
           R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
-          R2_BRONZE_BUCKET:     ${{ secrets.R2_BRONZE_BUCKET }}
+          R2_BRONZE_BUCKET:     ${{ secrets.R2_BUCKET }}
           R2_SILVER_BUCKET:     ${{ secrets.R2_SILVER_BUCKET }}
           PROVIDER_KEY: "stm"
           FEED_ID: "stm_gtfs_static"

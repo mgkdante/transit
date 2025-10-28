@@ -8,7 +8,7 @@ import requests
 ACCOUNT_ID  = os.environ["R2_ACCOUNT_ID"]
 ACCESS_KEY  = os.environ["R2_ACCESS_KEY_ID"]
 SECRET_KEY  = os.environ["R2_SECRET_ACCESS_KEY"]
-BRONZE_BUCKET = os.environ["R2_BRONZE_BUCKET"]        # e.g. transit-bronze
+BRONZE_BUCKET = os.environ["R2_BUCKET"]        # e.g. transit-bronze
 SILVER_BUCKET = os.environ["R2_SILVER_BUCKET"]        # e.g. transit-silver
 PROVIDER   = os.getenv("PROVIDER_KEY", "stm")
 FEED_ID    = os.getenv("FEED_ID", "stm_gtfs_static")
