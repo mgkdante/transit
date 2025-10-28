@@ -36,4 +36,4 @@ jobs:
           WORKER_LOG_URL: ${{ secrets.WORKER_LOG_URL }}
           WORKER_LOG_SECRET: ${{ secrets.WORKER_LOG_SECRET }}
         run: |
-          python gtfs_to_silver.py
+          python gtfs-to-silver.py
