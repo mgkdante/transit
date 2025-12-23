@@ -1,0 +1,16 @@
+{
+  "name": "transit-cloudflare",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev:static": "cd workers/transit-gtfs-static-worker && wrangler dev",
+    "dev:rt": "cd workers/transit-gtfsrt-worker && wrangler dev",
+    "deploy:static": "cd workers/transit-gtfs-static-worker && wrangler deploy",
+    "deploy:rt": "cd workers/transit-gtfsrt-worker && wrangler deploy",
+    "deploy:all": "npm run deploy:static && npm run deploy:rt"
+  },
+  "devDependencies": {
+    "wrangler": "^4.56.0"
+  }
+}
+

@@ -1,0 +1,19 @@
+name = "transit-gtfsrt-worker"
+main = "src/index.js"
+compatibility_date = "2024-01-01"
+account_id = "eccfb9bedd87d413eaf4cac6ae2285d3"
+
+# D1 Database binding
+[[d1_databases]]
+binding = "DB"
+database_name = "transit-bronze"
+database_id = "7fc37116-50c7-4c5f-bf6b-6c9a958b0140"
+
+# R2 Bucket binding (update bucket_name if different)
+[[r2_buckets]]
+binding = "R2"
+bucket_name = "transit-silver"
+
+# Note: STM_API_KEY should be set via:
+# wrangler secret put STM_API_KEY
+
