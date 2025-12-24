@@ -138,26 +138,25 @@ def insert_df_to_d1(df, table_name, provider, feed_date):
         if extra_columns:
             print(f"[d1] INFO: Filtering out extra columns from {table_name}: {extra_columns}", flush=True)
             # #region agent log
-            import json
-            log_data = {
-                "location": "gtfs-to-silver.py:insert_df_to_d1",
-                "message": "filtering_extra_columns",
-                "data": {
-                    "table_name": table_name,
-                    "extra_columns": extra_columns,
-                    "available_columns": available_columns,
-                    "original_column_count": len(df.columns),
-                    "filtered_column_count": len(available_columns)
-                },
-                "timestamp": int(pd.Timestamp.now().timestamp() * 1000),
-                "sessionId": "debug-session",
-                "runId": "run1",
-                "hypothesisId": "D"
-            }
             try:
-                import requests
+                import json
+                log_data = {
+                    "location": "gtfs-to-silver.py:insert_df_to_d1",
+                    "message": "filtering_extra_columns",
+                    "data": {
+                        "table_name": table_name,
+                        "extra_columns": extra_columns,
+                        "available_columns": available_columns,
+                        "original_column_count": len(df.columns),
+                        "filtered_column_count": len(available_columns)
+                    },
+                    "timestamp": int(pd.Timestamp.now().timestamp() * 1000),
+                    "sessionId": "debug-session",
+                    "runId": "run1",
+                    "hypothesisId": "D"
+                }
                 requests.post('http://127.0.0.1:7243/ingest/838a51f8-1edd-459f-9008-64cd16e5f4aa', 
-                           json=log_data, timeout=0.1).catch(lambda: None)
+                           json=log_data, timeout=0.1)
             except:
                 pass
             # #endregion
