@@ -1,12 +1,12 @@
-name: Build Silver GTFS (Parquet) and Log
+name: Build Silver RT (Historical Aggregation)
 
 on:
   workflow_dispatch:
   schedule:
-    - cron: "30 7 * * *"   # ~03:30 Montreal
+    - cron: "0 8 * * *"   # 08:00 UTC (~04:00 Montreal)
 
 jobs:
-  silver:
+  silver-rt:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -20,10 +20,10 @@ jobs:
       - name: Install deps
         run: |
           python -m pip install --upgrade pip
-          pip install pandas pyarrow boto3 requests
+          pip install pandas pyarrow boto3 requests gtfs-realtime-bindings
           npm install -g wrangler
 
-      - name: Run Silver ETL
+      - name: Run Silver RT ETL
         env:
           R2_ACCOUNT_ID:        ${{ secrets.R2_ACCOUNT_ID }}
           R2_ACCESS_KEY_ID:     ${{ secrets.R2_ACCESS_KEY_ID }}
@@ -31,12 +31,14 @@ jobs:
           R2_BUCKET:     ${{ secrets.R2_BUCKET }}
           R2_SILVER_BUCKET:     ${{ secrets.R2_SILVER_BUCKET }}
           PROVIDER_KEY: "stm"
-          FEED_ID: "stm_gtfs_static"
-          # GTFS_DATE: "2025-10-28"   # optional override
+          # FEED_KIND: "gtfsrt_trip_updates"  # optional, processes both if not set
+          # RT_DATE: "2025-12-23"   # optional override
           WORKER_LOG_URL:    ${{ secrets.WORKER_LOG_URL }}
           WORKER_LOG_SECRET: ${{ secrets.WORKER_LOG_SECRET }}
           D1_DATABASE_NAME: "transit-bronze"
           D1_DATABASE_ID: "7fc37116-50c7-4c5f-bf6b-6c9a958b0140"
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         run: |
-          python silver/etl/gtfs-to-silver.py
+          python silver/etl/rt-historical-to-silver.py
+        working-directory: .
+

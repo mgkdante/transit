@@ -1,0 +1,19 @@
+[
+  {
+    "trip_id": "12345",
+    "route_id": "747",
+    "stop_id": "747-1",
+    "arrival_delay": 120,
+    "departure_delay": 90,
+    "timestamp": 1705320000
+  },
+  {
+    "trip_id": "12346",
+    "route_id": "747",
+    "stop_id": "747-2",
+    "arrival_delay": -30,
+    "departure_delay": -15,
+    "timestamp": 1705320600
+  }
+]
+

@@ -1,0 +1,5 @@
+# Example environment variables for local development
+# Copy this to .dev.vars and fill in your values
+
+# No secrets needed for static API worker (read-only D1 access)
+

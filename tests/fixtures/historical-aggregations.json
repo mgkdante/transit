@@ -1,0 +1,34 @@
+[
+  {
+    "date": "2025-01-15",
+    "hour": 14,
+    "route_id": "747",
+    "stop_id": "747-1",
+    "trip_id": "12345",
+    "avg_arrival_delay": 120.5,
+    "max_arrival_delay": 300,
+    "min_arrival_delay": -30,
+    "avg_departure_delay": 90.2,
+    "max_departure_delay": 250,
+    "min_departure_delay": -20,
+    "trip_count": 45,
+    "route_count": 1,
+    "stop_count": 1
+  },
+  {
+    "date": "2025-01-15",
+    "route_id": "747",
+    "stop_id": "747-1",
+    "trip_id": "12345",
+    "avg_arrival_delay": 115.8,
+    "max_arrival_delay": 350,
+    "min_arrival_delay": -45,
+    "avg_departure_delay": 85.3,
+    "max_departure_delay": 280,
+    "min_departure_delay": -30,
+    "trip_count": 320,
+    "route_count": 1,
+    "stop_count": 1
+  }
+]
+

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import os, io, sys, json, zipfile, tempfile
+import os, io, sys, json, zipfile, tempfile, subprocess
 import pandas as pd
 import boto3
 import requests
@@ -15,6 +15,8 @@ FEED_ID    = os.getenv("FEED_ID", "stm_gtfs_static")
 DATE       = os.getenv("GTFS_DATE")                   # optional YYYY-MM-DD
 WORKER_LOG_URL    = os.getenv("WORKER_LOG_URL", "")
 WORKER_LOG_SECRET = os.getenv("WORKER_LOG_SECRET", "")
+D1_DATABASE_NAME = os.getenv("D1_DATABASE_NAME", "transit-bronze")
+D1_DATABASE_ID = os.getenv("D1_DATABASE_ID", "7fc37116-50c7-4c5f-bf6b-6c9a958b0140")
 
 ENDPOINT = f"https://{ACCOUNT_ID}.r2.cloudflarestorage.com"
 
@@ -74,6 +76,77 @@ def read_gtfs_csv(buf, fname):
 def upload_bytes(bucket, key, data: bytes, content_type="application/octet-stream"):
     s3.put_object(Bucket=bucket, Key=key, Body=data, ContentType=content_type)
 
+def execute_d1_sql(sql, params=None):
+    """Execute SQL on D1 database using wrangler CLI."""
+    try:
+        # Use wrangler d1 execute to run SQL
+        cmd = ["npx", "wrangler", "d1", "execute", D1_DATABASE_NAME, "--command", sql, "--remote"]
+        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+        return result.stdout
+    except subprocess.CalledProcessError as e:
+        print(f"[d1] Error executing SQL: {e.stderr}", file=sys.stderr, flush=True)
+        raise
+
+def clear_old_d1_data(provider, feed_date, table_name):
+    """Clear old data for same provider/date before inserting new data."""
+    sql = f"DELETE FROM {table_name} WHERE provider_key = ? AND feed_date = ?"
+    # Use parameterized query via wrangler
+    execute_d1_sql(f"DELETE FROM {table_name} WHERE provider_key = '{provider}' AND feed_date = '{feed_date}'")
+
+def insert_df_to_d1(df, table_name, provider, feed_date):
+    """Insert DataFrame into D1 table using batch inserts."""
+    if df.empty:
+        return
+    
+    # Clear old data first
+    clear_old_d1_data(provider, feed_date, table_name)
+    
+    # Add provider_key and feed_date to DataFrame
+    df = df.copy()
+    df['provider_key'] = provider
+    df['feed_date'] = feed_date
+    
+    # Prepare batch insert
+    # D1 has a limit on batch size, so we'll do chunks of 100 rows
+    chunk_size = 100
+    total_rows = len(df)
+    columns = list(df.columns)
+    
+    for chunk_start in range(0, total_rows, chunk_size):
+        chunk = df.iloc[chunk_start:chunk_start + chunk_size]
+        
+        # Build VALUES clause
+        values_list = []
+        for _, row in chunk.iterrows():
+            values = []
+            for col in columns:
+                val = row[col]
+                if val is None or (isinstance(val, float) and pd.isna(val)):
+                    values.append("NULL")
+                elif isinstance(val, str):
+                    # Escape single quotes
+                    val_escaped = val.replace("'", "''")
+                    values.append(f"'{val_escaped}'")
+                elif isinstance(val, (int, float)):
+                    values.append(str(val))
+                else:
+                    val_escaped = str(val).replace("'", "''")
+                    values.append(f"'{val_escaped}'")
+            values_list.append(f"({', '.join(values)})")
+        
+        if values_list:
+            cols_str = ', '.join(columns)
+            values_str = ', '.join(values_list)
+            sql = f"INSERT INTO {table_name} ({cols_str}) VALUES {values_str}"
+            
+            try:
+                execute_d1_sql(sql)
+            except Exception as e:
+                print(f"[d1] Error inserting into {table_name}: {e}", file=sys.stderr, flush=True)
+                # Continue with next chunk
+    
+    print(f"[d1] Inserted {total_rows} rows into {table_name}", flush=True)
+
 def main():
     dt, bronze_key = get_latest_bronze_key(PROVIDER)
     print(f"[silver] Using bronze ZIP: s3://{BRONZE_BUCKET}/{bronze_key}", flush=True)
@@ -100,6 +173,7 @@ def main():
                     data = fsrc.read()
                 df = read_gtfs_csv(io.BytesIO(data), fname)
 
+                # Create Parquet file (for archive)
                 pbuf = io.BytesIO()
                 df.to_parquet(pbuf, index=False)
                 pbuf.seek(0)
@@ -107,6 +181,15 @@ def main():
                 out_key = silver_prefix + fname.replace(".txt", ".parquet")
                 upload_bytes(SILVER_BUCKET, out_key, pbuf.read(), content_type="application/octet-stream")
                 manifest["tables"].append({"name": fname, "rows": int(df.shape[0]), "r2_key": out_key})
+                
+                # Load into D1 database
+                table_name = fname.replace(".txt", "")
+                try:
+                    print(f"[d1] Loading {table_name} into D1...", flush=True)
+                    insert_df_to_d1(df, table_name, PROVIDER, dt)
+                except Exception as e:
+                    print(f"[d1] Failed to load {table_name} into D1: {e}", file=sys.stderr, flush=True)
+                    # Continue processing other tables
 
             mkey = silver_prefix + "manifest.json"
             upload_bytes(SILVER_BUCKET, mkey, json.dumps(manifest, ensure_ascii=False).encode("utf-8"), content_type="application/json")

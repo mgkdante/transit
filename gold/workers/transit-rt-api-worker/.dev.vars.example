@@ -1,0 +1,6 @@
+# Example environment variables for local development
+# Copy this file to .dev.vars and fill in actual values
+
+# No secrets required for RT API worker
+# R2 buckets are accessed via bindings in wrangler.toml
+

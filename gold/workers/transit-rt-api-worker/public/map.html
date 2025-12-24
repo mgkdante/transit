@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Transit Data Map</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: Arial, sans-serif;
+        }
+        #map {
+            height: 100vh;
+            width: 100%;
+        }
+        #controls {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            z-index: 1000;
+            background: white;
+            padding: 15px;
+            border-radius: 5px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+            max-width: 300px;
+        }
+        #controls h3 {
+            margin-top: 0;
+        }
+        #controls label {
+            display: block;
+            margin-top: 10px;
+        }
+        #controls input, #controls select, #controls button {
+            width: 100%;
+            padding: 5px;
+            margin-top: 5px;
+            box-sizing: border-box;
+        }
+        #controls button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 10px;
+            cursor: pointer;
+            margin-top: 10px;
+        }
+        #controls button:hover {
+            background: #0056b3;
+        }
+        .layer-control {
+            margin-top: 10px;
+        }
+        .layer-control label {
+            display: inline;
+            margin-right: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div id="controls">
+        <h3>Transit Data Map</h3>
+        
+        <div class="layer-control">
+            <label><input type="checkbox" id="showStops" checked> Show Stops</label>
+        </div>
+        <div class="layer-control">
+            <label><input type="checkbox" id="showRoutes" checked> Show Routes</label>
+        </div>
+        <div class="layer-control">
+            <label><input type="checkbox" id="showRT" checked> Show Real-Time Positions</label>
+        </div>
+        <div class="layer-control">
+            <label><input type="checkbox" id="showHistorical"> Show Historical Positions</label>
+        </div>
+        
+        <label for="routeFilter">Filter by Route ID:</label>
+        <input type="text" id="routeFilter" placeholder="e.g., 747">
+        
+        <label for="historicalDate">Historical Date:</label>
+        <input type="date" id="historicalDate">
+        
+        <label for="historicalHour">Historical Hour:</label>
+        <select id="historicalHour">
+            <option value="">All Hours</option>
+            <option value="0">00:00</option>
+            <option value="1">01:00</option>
+            <option value="2">02:00</option>
+            <option value="3">03:00</option>
+            <option value="4">04:00</option>
+            <option value="5">05:00</option>
+            <option value="6">06:00</option>
+            <option value="7">07:00</option>
+            <option value="8">08:00</option>
+            <option value="9">09:00</option>
+            <option value="10">10:00</option>
+            <option value="11">11:00</option>
+            <option value="12">12:00</option>
+            <option value="13">13:00</option>
+            <option value="14">14:00</option>
+            <option value="15">15:00</option>
+            <option value="16">16:00</option>
+            <option value="17">17:00</option>
+            <option value="18">18:00</option>
+            <option value="19">19:00</option>
+            <option value="20">20:00</option>
+            <option value="21">21:00</option>
+            <option value="22">22:00</option>
+            <option value="23">23:00</option>
+        </select>
+        
+        <button onclick="loadData()">Refresh Data</button>
+        <button onclick="clearMap()">Clear Map</button>
+    </div>
+    
+    <div id="map"></div>
+    
+    <script>
+        // Initialize map centered on Montreal
+        const map = L.map('map').setView([45.5017, -73.5673], 12);
+        
+        // Add OpenStreetMap tiles
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{s}/{z}/{x}/{y}.png', {
+            attribution: '© OpenStreetMap contributors'
+        }).addTo(map);
+        
+        // Layer groups
+        const stopsLayer = L.layerGroup().addTo(map);
+        const routesLayer = L.layerGroup().addTo(map);
+        const rtLayer = L.layerGroup().addTo(map);
+        const historicalLayer = L.layerGroup().addTo(map);
+        
+        // API base URLs (update these to match your deployed workers)
+        const STATIC_API = 'https://transit-static-api-worker.long-block-0279.workers.dev';
+        const RT_API = 'https://transit-rt-api-worker.long-block-0279.workers.dev';
+        
+        async function loadStops(routeId = null) {
+            stopsLayer.clearLayers();
+            if (!document.getElementById('showStops').checked) return;
+            
+            try {
+                let url = `${STATIC_API}/api/v1/geojson/stops?provider=stm`;
+                if (routeId) url += `&route_id=${routeId}`;
+                
+                const response = await fetch(url);
+                const data = await response.json();
+                
+                data.features.forEach(feature => {
+                    L.marker([feature.geometry.coordinates[1], feature.geometry.coordinates[0]])
+                        .bindPopup(`<b>${feature.properties.stop_name}</b><br>Stop ID: ${feature.properties.stop_id}`)
+                        .addTo(stopsLayer);
+                });
+            } catch (e) {
+                console.error('Error loading stops:', e);
+            }
+        }
+        
+        async function loadRoutes(routeId = null) {
+            routesLayer.clearLayers();
+            if (!document.getElementById('showRoutes').checked) return;
+            
+            try {
+                let url = `${STATIC_API}/api/v1/geojson/routes?provider=stm`;
+                if (routeId) url += `&route_id=${routeId}`;
+                
+                const response = await fetch(url);
+                const data = await response.json();
+                
+                data.features.forEach(feature => {
+                    L.polyline(feature.geometry.coordinates, {
+                        color: '#007bff',
+                        weight: 3,
+                        opacity: 0.7
+                    })
+                    .bindPopup(`<b>Route ${feature.properties.route_short_name}</b><br>${feature.properties.route_long_name}`)
+                    .addTo(routesLayer);
+                });
+            } catch (e) {
+                console.error('Error loading routes:', e);
+            }
+        }
+        
+        async function loadRTPositions(routeId = null) {
+            rtLayer.clearLayers();
+            if (!document.getElementById('showRT').checked) return;
+            
+            try {
+                let url = `${RT_API}/api/v1/rt/geojson/positions?provider=stm`;
+                if (routeId) url += `&route_id=${routeId}`;
+                
+                const response = await fetch(url);
+                const data = await response.json();
+                
+                data.features.forEach(feature => {
+                    const icon = L.divIcon({
+                        className: 'vehicle-marker',
+                        html: '<div style="background: red; width: 10px; height: 10px; border-radius: 50%; border: 2px solid white;"></div>',
+                        iconSize: [14, 14]
+                    });
+                    
+                    L.marker([feature.geometry.coordinates[1], feature.geometry.coordinates[0]], { icon })
+                        .bindPopup(`<b>Vehicle ${feature.properties.vehicle_id}</b><br>Route: ${feature.properties.route_id}<br>Trip: ${feature.properties.trip_id}`)
+                        .addTo(rtLayer);
+                });
+            } catch (e) {
+                console.error('Error loading RT positions:', e);
+            }
+        }
+        
+        async function loadHistoricalPositions(routeId = null) {
+            historicalLayer.clearLayers();
+            if (!document.getElementById('showHistorical').checked) return;
+            
+            const date = document.getElementById('historicalDate').value;
+            if (!date) return;
+            
+            const hour = document.getElementById('historicalHour').value;
+            
+            try {
+                let url = `${RT_API}/api/v1/rt/geojson/historical-positions?provider=stm&date=${date}`;
+                if (hour !== '') url += `&hour=${hour}`;
+                if (routeId) url += `&route_id=${routeId}`;
+                
+                const response = await fetch(url);
+                const data = await response.json();
+                
+                data.features.forEach(feature => {
+                    const icon = L.divIcon({
+                        className: 'historical-marker',
+                        html: '<div style="background: orange; width: 8px; height: 8px; border-radius: 50%; border: 2px solid white;"></div>',
+                        iconSize: [12, 12]
+                    });
+                    
+                    L.marker([feature.geometry.coordinates[1], feature.geometry.coordinates[0]], { icon })
+                        .bindPopup(`<b>Historical Position</b><br>Route: ${feature.properties.route_id}<br>Vehicle: ${feature.properties.vehicle_id}`)
+                        .addTo(historicalLayer);
+                });
+            } catch (e) {
+                console.error('Error loading historical positions:', e);
+            }
+        }
+        
+        function loadData() {
+            const routeId = document.getElementById('routeFilter').value || null;
+            loadStops(routeId);
+            loadRoutes(routeId);
+            loadRTPositions(routeId);
+            loadHistoricalPositions(routeId);
+        }
+        
+        function clearMap() {
+            stopsLayer.clearLayers();
+            routesLayer.clearLayers();
+            rtLayer.clearLayers();
+            historicalLayer.clearLayers();
+        }
+        
+        // Auto-refresh RT positions every 30 seconds
+        setInterval(() => {
+            if (document.getElementById('showRT').checked) {
+                const routeId = document.getElementById('routeFilter').value || null;
+                loadRTPositions(routeId);
+            }
+        }, 30000);
+        
+        // Initial load
+        loadData();
+    </script>
+</body>
+</html>
+

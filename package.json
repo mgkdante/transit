@@ -3,14 +3,25 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "dev:static": "cd workers/transit-gtfs-static-worker && wrangler dev",
-    "dev:rt": "cd workers/transit-gtfsrt-worker && wrangler dev",
-    "deploy:static": "cd workers/transit-gtfs-static-worker && wrangler deploy",
-    "deploy:rt": "cd workers/transit-gtfsrt-worker && wrangler deploy",
-    "deploy:all": "npm run deploy:static && npm run deploy:rt"
+    "dev:static": "cd bronze/workers/transit-gtfs-static-worker && wrangler dev",
+    "dev:rt": "cd bronze/workers/transit-gtfsrt-worker && wrangler dev",
+    "dev:rt-api": "cd gold/workers/transit-rt-api-worker && wrangler dev",
+    "dev:static-api": "cd gold/workers/transit-static-api-worker && wrangler dev",
+    "deploy:static": "cd bronze/workers/transit-gtfs-static-worker && wrangler deploy",
+    "deploy:rt": "cd bronze/workers/transit-gtfsrt-worker && wrangler deploy",
+    "deploy:rt-api": "cd gold/workers/transit-rt-api-worker && wrangler deploy",
+    "deploy:static-api": "cd gold/workers/transit-static-api-worker && wrangler deploy",
+    "deploy:all": "npm run deploy:static && npm run deploy:rt && npm run deploy:rt-api && npm run deploy:static-api",
+    "trigger:gtfs-etl": "gh workflow run silver-gtfs.yml --ref main",
+    "trigger:rt-etl": "gh workflow run silver-rt.yml --ref main",
+    "trigger:all-etl": "npm run trigger:gtfs-etl && npm run trigger:rt-etl",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage"
   },
   "devDependencies": {
+    "jest": "^29.7.0",
+    "node-fetch": "^3.3.2",
     "wrangler": "^4.56.0"
   }
 }
-

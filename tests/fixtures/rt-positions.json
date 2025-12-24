@@ -1,0 +1,23 @@
+[
+  {
+    "vehicle_id": "STM-001",
+    "trip_id": "12345",
+    "route_id": "747",
+    "latitude": 45.4576,
+    "longitude": -73.7497,
+    "bearing": 90,
+    "speed": 45.5,
+    "timestamp": 1705320000
+  },
+  {
+    "vehicle_id": "STM-002",
+    "trip_id": "12346",
+    "route_id": "1",
+    "latitude": 45.4888,
+    "longitude": -73.5844,
+    "bearing": 180,
+    "speed": 30.2,
+    "timestamp": 1705320600
+  }
+]
+

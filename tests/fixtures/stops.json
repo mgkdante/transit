@@ -1,0 +1,21 @@
+[
+  {
+    "stop_id": "747-1",
+    "stop_code": "74701",
+    "stop_name": "YUL Aéroport Montréal-Trudeau",
+    "stop_lat": 45.4576,
+    "stop_lon": -73.7497,
+    "location_type": 0,
+    "wheelchair_boarding": 1
+  },
+  {
+    "stop_id": "1-1",
+    "stop_code": "1001",
+    "stop_name": "Station Atwater",
+    "stop_lat": 45.4888,
+    "stop_lon": -73.5844,
+    "location_type": 0,
+    "wheelchair_boarding": 1
+  }
+]
+
