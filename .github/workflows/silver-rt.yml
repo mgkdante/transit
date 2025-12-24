@@ -37,6 +37,7 @@ jobs:
           WORKER_LOG_SECRET: ${{ secrets.WORKER_LOG_SECRET }}
           D1_DATABASE_NAME: "transit-bronze"
           D1_DATABASE_ID: "7fc37116-50c7-4c5f-bf6b-6c9a958b0140"
+          D1_RETENTION_DAYS: ${{ secrets.D1_RETENTION_DAYS != '' && secrets.D1_RETENTION_DAYS || '30' }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         run: |
           python silver/etl/rt-historical-to-silver.py

@@ -17,6 +17,7 @@ WORKER_LOG_URL    = os.getenv("WORKER_LOG_URL", "")
 WORKER_LOG_SECRET = os.getenv("WORKER_LOG_SECRET", "")
 D1_DATABASE_NAME = os.getenv("D1_DATABASE_NAME", "transit-bronze")
 D1_DATABASE_ID = os.getenv("D1_DATABASE_ID", "7fc37116-50c7-4c5f-bf6b-6c9a958b0140")
+D1_RETENTION_DAYS = int(os.getenv("D1_RETENTION_DAYS", "30"))
 
 ENDPOINT = f"https://{ACCOUNT_ID}.r2.cloudflarestorage.com"
 
@@ -106,6 +107,25 @@ def execute_d1_sql(sql, params=None):
         print(f"[d1] Error executing SQL: {error_msg}", file=sys.stderr, flush=True)
         print(f"[d1] SQL that failed (first 200 chars): {sql[:200]}", file=sys.stderr, flush=True)
         raise
+
+def cleanup_old_feed_dates(provider, current_feed_date, retention_days=30):
+    """Delete old feed_dates, keeping only the last N days."""
+    from datetime import datetime, timedelta
+    
+    # Calculate cutoff date
+    cutoff_date = (datetime.strptime(current_feed_date, "%Y-%m-%d") - timedelta(days=retention_days)).strftime("%Y-%m-%d")
+    
+    # List of static tables that use feed_date
+    static_tables = ["agency", "routes", "stops", "trips", "stop_times", 
+                     "calendar", "calendar_dates", "shapes", "feed_info"]
+    
+    for table_name in static_tables:
+        sql = f"DELETE FROM {table_name} WHERE provider_key = '{provider}' AND feed_date < '{cutoff_date}'"
+        try:
+            execute_d1_sql(sql)
+            print(f"[d1] Cleaned up old feed_dates from {table_name} (older than {cutoff_date})", flush=True)
+        except Exception as e:
+            print(f"[d1] Warning: Could not cleanup {table_name}: {e}", file=sys.stderr, flush=True)
 
 def clear_old_d1_data(provider, feed_date, table_name):
     """Clear old data for same provider/date before inserting new data."""
@@ -259,6 +279,10 @@ def insert_df_to_d1(df, table_name, provider, feed_date):
 def main():
     dt, bronze_key = get_latest_bronze_key(PROVIDER)
     print(f"[silver] Using bronze ZIP: s3://{BRONZE_BUCKET}/{bronze_key}", flush=True)
+    
+    # Clean up old feed_dates before processing
+    print(f"[d1] Cleaning up old feed_dates (keeping last {D1_RETENTION_DAYS} days)...", flush=True)
+    cleanup_old_feed_dates(PROVIDER, dt, D1_RETENTION_DAYS)
 
     obj = s3.get_object(Bucket=BRONZE_BUCKET, Key=bronze_key)
     body = obj["Body"].read()

@@ -31,6 +31,7 @@ WORKER_LOG_URL = os.getenv("WORKER_LOG_URL", "")
 WORKER_LOG_SECRET = os.getenv("WORKER_LOG_SECRET", "")
 D1_DATABASE_NAME = os.getenv("D1_DATABASE_NAME", "transit-bronze")
 D1_DATABASE_ID = os.getenv("D1_DATABASE_ID", "7fc37116-50c7-4c5f-bf6b-6c9a958b0140")
+D1_RETENTION_DAYS = int(os.getenv("D1_RETENTION_DAYS", "30"))
 
 # 24 hour threshold for historical processing
 HOT_DATA_THRESHOLD_HOURS = 24
@@ -297,6 +298,23 @@ def execute_d1_sql(sql):
         print(f"[d1] Error executing SQL: {error_msg}", file=sys.stderr, flush=True)
         print(f"[d1] SQL that failed (first 200 chars): {sql[:200]}", file=sys.stderr, flush=True)
         raise
+
+def cleanup_old_rt_dates(provider, current_date, retention_days=30):
+    """Delete old RT data dates, keeping only the last N days."""
+    from datetime import datetime, timedelta
+    
+    cutoff_date = (datetime.strptime(current_date, "%Y-%m-%d") - timedelta(days=retention_days)).strftime("%Y-%m-%d")
+    
+    rt_tables = ["rt_delays_hourly", "rt_delays_daily", 
+                 "rt_positions_hourly", "rt_positions_daily"]
+    
+    for table_name in rt_tables:
+        sql = f"DELETE FROM {table_name} WHERE provider_key = '{provider}' AND date < '{cutoff_date}'"
+        try:
+            execute_d1_sql(sql)
+            print(f"[d1] Cleaned up old dates from {table_name} (older than {cutoff_date})", flush=True)
+        except Exception as e:
+            print(f"[d1] Warning: Could not cleanup {table_name}: {e}", file=sys.stderr, flush=True)
 
 def clear_old_d1_rt_data(provider, date, table_name, hour=None):
     """Clear old RT aggregation data."""
@@ -571,6 +589,12 @@ def main():
     if not dates:
         print("[silver-rt] No historical dates to process", flush=True)
         return
+    
+    # Clean up old RT dates before processing (use the latest date if available)
+    if dates:
+        latest_date = max(dates)
+        print(f"[d1] Cleaning up old RT dates (keeping last {D1_RETENTION_DAYS} days)...", flush=True)
+        cleanup_old_rt_dates(PROVIDER, latest_date, D1_RETENTION_DAYS)
     
     # Determine feed kinds to process
     feed_kinds = []
