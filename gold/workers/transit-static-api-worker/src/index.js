@@ -37,13 +37,25 @@ function errorResponse(message, status = 400) {
 
 // ---------- D1 Query helpers ----------
 async function queryD1(env, sql, params = []) {
+  // #region agent log
+  fetch('http://127.0.0.1:7243/ingest/838a51f8-1edd-459f-9008-64cd16e5f4aa',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'static-api-worker.js:39',message:'queryD1 entry',data:{sql,sqlLength:sql.length,paramCount:params.length,params:params.map(p=>typeof p)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+  // #endregion
   try {
     const stmt = env.DB.prepare(sql);
+    let result;
     if (params.length > 0) {
-      return await stmt.bind(...params).all();
+      result = await stmt.bind(...params).all();
+    } else {
+      result = await stmt.all();
     }
-    return await stmt.all();
+    // #region agent log
+    fetch('http://127.0.0.1:7243/ingest/838a51f8-1edd-459f-9008-64cd16e5f4aa',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'static-api-worker.js:46',message:'queryD1 success',data:{resultCount:result.results?.length||0,hasResults:!!result.results},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+    // #endregion
+    return result;
   } catch (e) {
+    // #region agent log
+    fetch('http://127.0.0.1:7243/ingest/838a51f8-1edd-459f-9008-64cd16e5f4aa',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'static-api-worker.js:50',message:'queryD1 error',data:{error:e.message,errorType:e.name,sql},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+    // #endregion
     console.error('D1 query error:', e);
     throw e;
   }
@@ -51,12 +63,34 @@ async function queryD1(env, sql, params = []) {
 
 // Get latest feed_date for a provider
 async function getLatestFeedDate(env, provider) {
-  const result = await queryD1(
+  // #region agent log
+  fetch('http://127.0.0.1:7243/ingest/838a51f8-1edd-459f-9008-64cd16e5f4aa',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'static-api-worker.js:53',message:'getLatestFeedDate entry',data:{provider},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+  // #endregion
+  // Try feed_info first
+  let result = await queryD1(
     env,
     `SELECT feed_date FROM feed_info WHERE provider_key = ? ORDER BY feed_date DESC LIMIT 1`,
     [provider]
   );
-  return result.results[0]?.feed_date || null;
+  let feedDate = result.results[0]?.feed_date || null;
+  
+  // If feed_info is empty, fallback to querying routes table
+  if (!feedDate) {
+    // #region agent log
+    fetch('http://127.0.0.1:7243/ingest/838a51f8-1edd-459f-9008-64cd16e5f4aa',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'static-api-worker.js:60',message:'getLatestFeedDate fallback to routes',data:{provider},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+    // #endregion
+    result = await queryD1(
+      env,
+      `SELECT DISTINCT feed_date FROM routes WHERE provider_key = ? ORDER BY feed_date DESC LIMIT 1`,
+      [provider]
+    );
+    feedDate = result.results[0]?.feed_date || null;
+  }
+  
+  // #region agent log
+  fetch('http://127.0.0.1:7243/ingest/838a51f8-1edd-459f-9008-64cd16e5f4aa',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'static-api-worker.js:72',message:'getLatestFeedDate result',data:{provider,feedDate,resultCount:result.results?.length||0,hasResults:result.results?.length>0,usedFallback:!feedDate?false:true},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+  // #endregion
+  return feedDate;
 }
 
 // ---------- API handlers ----------
@@ -89,6 +123,9 @@ async function handleRoutes(req, env, url) {
   params.push(limit, offset);
   
   const result = await queryD1(env, sql, params);
+  // #region agent log
+  fetch('http://127.0.0.1:7243/ingest/838a51f8-1edd-459f-9008-64cd16e5f4aa',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'static-api-worker.js:92',message:'handleRoutes response',data:{routeCount:result.results?.length||0,feedDate,provider,hasRouteId:!!routeId},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+  // #endregion
   return jsonResponse({ routes: result.results, count: result.results.length });
 }
 
@@ -412,6 +449,9 @@ export default {
     
     // API routes
     if (req.method === 'GET' && url.pathname.startsWith('/api/v1/static')) {
+      // #region agent log
+      fetch('http://127.0.0.1:7243/ingest/838a51f8-1edd-459f-9008-64cd16e5f4aa',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'static-api-worker.js:414',message:'static API endpoint called',data:{pathname:url.pathname,searchParams:Object.fromEntries(url.searchParams)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+      // #endregion
       try {
         if (url.pathname === '/api/v1/static/routes') {
           return await handleRoutes(req, env, url);
