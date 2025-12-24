@@ -353,6 +353,9 @@ async function readHotRTFile(env, key) {
 }
 
 async function queryD1Historical(env, provider, feedKind, date, aggregation = 'hourly', hour = null, routeId = null, stopId = null) {
+  // #region agent log
+  fetch('http://127.0.0.1:7243/ingest/838a51f8-1edd-459f-9008-64cd16e5f4aa',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'rt-api-worker.js:355',message:'queryD1Historical entry',data:{provider,feedKind,date,aggregation,hour,routeId,stopId},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+  // #endregion
   try {
     let tableName;
     let sql;
@@ -403,10 +406,20 @@ async function queryD1Historical(env, provider, feedKind, date, aggregation = 'h
       sql += `, hour`;
     }
     
+    // #region agent log
+    fetch('http://127.0.0.1:7243/ingest/838a51f8-1edd-459f-9008-64cd16e5f4aa',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'rt-api-worker.js:405',message:'queryD1Historical before execute',data:{tableName,sql,sqlLength:sql.length,paramCount:params.length,params:params.map(p=>typeof p)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
+    // #endregion
+    
     const stmt = env.DB.prepare(sql);
     const result = await stmt.bind(...params).all();
+    // #region agent log
+    fetch('http://127.0.0.1:7243/ingest/838a51f8-1edd-459f-9008-64cd16e5f4aa',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'rt-api-worker.js:408',message:'queryD1Historical success',data:{resultCount:result.results?.length||0,hasResults:!!result.results&&result.results.length>0,tableName},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+    // #endregion
     return result.results;
   } catch (e) {
+    // #region agent log
+    fetch('http://127.0.0.1:7243/ingest/838a51f8-1edd-459f-9008-64cd16e5f4aa',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'rt-api-worker.js:411',message:'queryD1Historical error',data:{error:e.message,errorType:e.name,tableName,sql},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+    // #endregion
     console.error('D1 query error:', e);
     return null;
   }
@@ -644,6 +657,10 @@ async function handleHistorical(req, env, url) {
   const stopId = url.searchParams.get('stop_id');
   const aggregation = hour ? 'hourly' : 'daily';
   
+  // #region agent log
+  fetch('http://127.0.0.1:7243/ingest/838a51f8-1edd-459f-9008-64cd16e5f4aa',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'rt-api-worker.js:651',message:'handleHistorical entry',data:{provider,feedKind,date,hour,routeId,stopId,aggregation},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+  // #endregion
+  
   if (!date) {
     return errorResponse('date parameter required', 400);
   }
@@ -659,6 +676,10 @@ async function handleHistorical(req, env, url) {
     routeId,
     stopId
   );
+  
+  // #region agent log
+  fetch('http://127.0.0.1:7243/ingest/838a51f8-1edd-459f-9008-64cd16e5f4aa',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'rt-api-worker.js:676',message:'handleHistorical after query',data:{dataIsNull:data===null,dataLength:data?.length||0,hasData:!!data&&data.length>0},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+  // #endregion
   
   if (!data || data.length === 0) {
     return errorResponse('Historical data not found', 404);
@@ -968,6 +989,9 @@ export default {
     
     // API routes
     if (req.method === 'GET' && url.pathname.startsWith('/api/v1/rt')) {
+      // #region agent log
+      fetch('http://127.0.0.1:7243/ingest/838a51f8-1edd-459f-9008-64cd16e5f4aa',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'rt-api-worker.js:970',message:'RT API endpoint called',data:{pathname:url.pathname,searchParams:Object.fromEntries(url.searchParams)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+      // #endregion
       try {
         if (url.pathname === '/api/v1/rt/current') {
           return await handleCurrentTripUpdates(req, env, url);

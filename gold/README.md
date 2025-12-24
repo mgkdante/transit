@@ -11,6 +11,27 @@ The Gold layer provides business-level aggregated datasets, curated views, and A
 
 ## Components
 
+### ETL Scripts
+
+- **`silver-to-gold-static.py`**: Loads GTFS static Parquet files from Silver bucket into D1
+  - Location: `gold/etl/silver-to-gold-static.py`
+  - Process: Reads Parquet from Silver → Generates SQL file → Imports to D1 via file import
+  - Schedule: Runs after Silver GTFS ETL completes (08:00 UTC)
+  - Tables: `agency`, `routes`, `stops`, `trips`, `stop_times`, `calendar`, `calendar_dates`, `shapes`, `feed_info`
+  - Retention: Deletes data older than 30 days (configurable via `D1_RETENTION_DAYS`)
+
+- **`silver-to-gold-rt.py`**: Loads RT aggregation Parquet files from Silver bucket into D1
+  - Location: `gold/etl/silver-to-gold-rt.py`
+  - Process: Reads RT Parquet aggregations from Silver → Generates SQL file → Imports to D1
+  - Schedule: Runs after Silver RT ETL completes (08:30 UTC)
+  - Tables: `rt_delays_hourly`, `rt_delays_daily`, `rt_positions_hourly`, `rt_positions_daily`
+  - Retention: Deletes data older than 30 days (configurable via `D1_RETENTION_DAYS`)
+
+- **`cleanup-d1-db.py`**: Standalone utility to clean up D1 database
+  - Location: `gold/etl/cleanup-d1-db.py`
+  - Purpose: Empty all tables or provider-specific data
+  - Usage: `python gold/etl/cleanup-d1-db.py [--provider stm] [--all]`
+
 ### Workers
 
 - **`transit-rt-api-worker`**: Serves real-time GTFS-RT data via REST API
@@ -101,17 +122,18 @@ All endpoints support `provider` parameter (default: `stm`) and pagination via `
   - RT worker stores raw `.pb` files in Bronze bucket
   - Gold API worker reads and serves RT data on-demand with minimal latency
   
-- **Historical RT** (24h+): Bronze → Silver → D1 → Gold (with aggregation)
-  - Silver ETL processes older RT data (hourly/daily aggregations)
-  - Aggregations stored in D1 database (`rt_delays_hourly`, `rt_delays_daily`, `rt_positions_hourly`, `rt_positions_daily`)
+- **Historical RT** (24h+): Bronze → Silver (Parquet) → Gold ETL → D1 → Gold API
+  - Silver ETL processes older RT data (hourly/daily aggregations) → Creates Parquet files
+  - Gold ETL reads Parquet from Silver → Loads aggregations into D1 database
   - Gold API worker queries D1 for fast SQL-based access
-  - Parquet files also created in Silver bucket for archive/backup
+  - Parquet files remain in Silver bucket for historical archive
 
-**Static Data**: Bronze → Silver → D1 → Gold (with processing)
-- Static data is processed through Silver (Parquet conversion + D1 loading)
-- All GTFS static tables loaded into D1 (`routes`, `stops`, `trips`, `stop_times`, `shapes`, etc.)
-- Gold Static API worker queries D1 for fast SQL-based access
-- Parquet files also created in Silver bucket for archive/backup
+**Static Data**: Bronze → Silver (Parquet) → Gold ETL → D1 → Gold API
+- Bronze: Raw GTFS ZIP files
+- Silver: Parquet files (data lake, no D1 operations)
+- Gold ETL: Reads Parquet from Silver → Loads into D1 database
+- Gold API: Queries D1 for fast SQL-based access
+- Parquet files remain in Silver bucket for historical archive
 
 ## Naming Conventions
 
@@ -140,8 +162,10 @@ All endpoints return JSON with proper data types and can be consumed directly by
 
 ✅ **RT API Worker**: Implemented and operational
 ✅ **Static Data API Worker**: Implemented and operational
+✅ **Gold ETL Scripts**: Implemented (static + RT)
 ✅ **D1 Database Integration**: Complete (static + RT aggregations)
 ✅ **Analytics Endpoints**: Implemented
 ✅ **GeoJSON Endpoints**: Complete for RT and static data
 ✅ **GIS Web Interface**: Available at `/map.html`
+✅ **Data Retention**: Automatic cleanup of old data (30 days default)
 

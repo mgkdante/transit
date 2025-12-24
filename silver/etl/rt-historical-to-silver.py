@@ -2,14 +2,12 @@
 """
 RT Historical ETL Script
 Processes GTFS-RT protobuf files older than 24 hours from Bronze bucket.
-Aggregates data hourly and daily, outputs Parquet files to Silver bucket and loads into D1.
+Aggregates data hourly and daily, outputs Parquet files to Silver bucket.
 """
 import os
 import io
 import sys
 import json
-import tempfile
-import subprocess
 from datetime import datetime, timedelta, timezone
 from collections import defaultdict
 
@@ -29,9 +27,6 @@ FEED_KIND = os.getenv("FEED_KIND", "")  # optional: gtfsrt_trip_updates or gtfsr
 PROCESS_DATE = os.getenv("RT_DATE")  # optional YYYY-MM-DD, defaults to yesterday
 WORKER_LOG_URL = os.getenv("WORKER_LOG_URL", "")
 WORKER_LOG_SECRET = os.getenv("WORKER_LOG_SECRET", "")
-D1_DATABASE_NAME = os.getenv("D1_DATABASE_NAME", "transit-bronze")
-D1_DATABASE_ID = os.getenv("D1_DATABASE_ID", "7fc37116-50c7-4c5f-bf6b-6c9a958b0140")
-D1_RETENTION_DAYS = int(os.getenv("D1_RETENTION_DAYS", "30"))
 
 # 24 hour threshold for historical processing
 HOT_DATA_THRESHOLD_HOURS = 24
@@ -282,131 +277,6 @@ def upload_parquet(bucket, key, df):
     )
     return True
 
-def execute_d1_sql(sql):
-    """Execute SQL on D1 database using wrangler CLI."""
-    try:
-        # Ensure CLOUDFLARE_API_TOKEN is available from environment
-        env = os.environ.copy()
-        cmd = ["npx", "wrangler", "d1", "execute", D1_DATABASE_NAME, "--command", sql, "--remote"]
-        result = subprocess.run(cmd, capture_output=True, text=True, check=True, env=env)
-        # Log success for debugging
-        if result.stdout:
-            print(f"[d1] SQL executed successfully: {len(result.stdout)} chars output", flush=True)
-        return result.stdout
-    except subprocess.CalledProcessError as e:
-        error_msg = e.stderr or e.stdout or str(e)
-        print(f"[d1] Error executing SQL: {error_msg}", file=sys.stderr, flush=True)
-        print(f"[d1] SQL that failed (first 200 chars): {sql[:200]}", file=sys.stderr, flush=True)
-        raise
-
-def cleanup_old_rt_dates(provider, current_date, retention_days=30):
-    """Delete old RT data dates, keeping only the last N days."""
-    from datetime import datetime, timedelta
-    
-    cutoff_date = (datetime.strptime(current_date, "%Y-%m-%d") - timedelta(days=retention_days)).strftime("%Y-%m-%d")
-    
-    rt_tables = ["rt_delays_hourly", "rt_delays_daily", 
-                 "rt_positions_hourly", "rt_positions_daily"]
-    
-    for table_name in rt_tables:
-        sql = f"DELETE FROM {table_name} WHERE provider_key = '{provider}' AND date < '{cutoff_date}'"
-        try:
-            execute_d1_sql(sql)
-            print(f"[d1] Cleaned up old dates from {table_name} (older than {cutoff_date})", flush=True)
-        except Exception as e:
-            print(f"[d1] Warning: Could not cleanup {table_name}: {e}", file=sys.stderr, flush=True)
-
-def clear_old_d1_rt_data(provider, date, table_name, hour=None):
-    """Clear old RT aggregation data."""
-    if hour is not None:
-        sql = f"DELETE FROM {table_name} WHERE provider_key = '{provider}' AND date = '{date}' AND hour = {hour}"
-    else:
-        sql = f"DELETE FROM {table_name} WHERE provider_key = '{provider}' AND date = '{date}'"
-    execute_d1_sql(sql)
-
-def insert_rt_aggregation_to_d1(df, table_name, provider, date):
-    """Insert RT aggregation DataFrame into D1 table."""
-    if df.empty:
-        return
-    
-    # Add provider_key and date if not present
-    df = df.copy()
-    if 'provider_key' not in df.columns:
-        df['provider_key'] = provider
-    if 'date' not in df.columns:
-        df['date'] = date
-    
-    # Handle hour column for hourly tables
-    if 'hour' in df.columns and 'hour_str' in df.columns:
-        # Extract hour from hour_str (format: YYYY-MM-DD-HH)
-        df['hour'] = df['hour_str'].apply(lambda x: int(x.split('-')[-1]) if isinstance(x, str) else None)
-    
-    # Clear old data for each unique hour (if hourly) or for the date (if daily)
-    if 'hour' in df.columns:
-        for hour in df['hour'].unique():
-            if pd.notna(hour):
-                clear_old_d1_rt_data(provider, date, table_name, hour=int(hour))
-    else:
-        clear_old_d1_rt_data(provider, date, table_name)
-    
-    # Prepare batch insert
-    chunk_size = 100
-    total_rows = len(df)
-    columns = list(df.columns)
-    
-    for chunk_start in range(0, total_rows, chunk_size):
-        chunk = df.iloc[chunk_start:chunk_start + chunk_size]
-        
-        values_list = []
-        for _, row in chunk.iterrows():
-            values = []
-            for col in columns:
-                val = row[col]
-                if val is None or (isinstance(val, float) and pd.isna(val)):
-                    values.append("NULL")
-                elif isinstance(val, str):
-                    val_escaped = val.replace("'", "''")
-                    values.append(f"'{val_escaped}'")
-                elif isinstance(val, (int, float)):
-                    values.append(str(val))
-                else:
-                    val_escaped = str(val).replace("'", "''")
-                    values.append(f"'{val_escaped}'")
-            values_list.append(f"({', '.join(values)})")
-        
-        if values_list:
-            cols_str = ', '.join(columns)
-            values_str = ', '.join(values_list)
-            sql = f"INSERT INTO {table_name} ({cols_str}) VALUES {values_str}"
-            
-            try:
-                execute_d1_sql(sql)
-                print(f"[d1] Successfully inserted chunk {chunk_start//chunk_size + 1} into {table_name}", flush=True)
-            except Exception as e:
-                print(f"[d1] Error inserting chunk into {table_name}: {e}", file=sys.stderr, flush=True)
-                # Try single-row inserts as fallback for this chunk
-                print(f"[d1] Attempting single-row inserts for failed chunk...", flush=True)
-                for idx, row in chunk.iterrows():
-                    try:
-                        single_values = []
-                        for col in columns:
-                            val = row[col]
-                            if val is None or (isinstance(val, float) and pd.isna(val)):
-                                single_values.append("NULL")
-                            elif isinstance(val, str):
-                                val_escaped = val.replace("'", "''")
-                                single_values.append(f"'{val_escaped}'")
-                            elif isinstance(val, (int, float)):
-                                single_values.append(str(val))
-                            else:
-                                val_escaped = str(val).replace("'", "''")
-                                single_values.append(f"'{val_escaped}'")
-                        single_sql = f"INSERT INTO {table_name} ({cols_str}) VALUES ({', '.join(single_values)})"
-                        execute_d1_sql(single_sql)
-                    except Exception as single_e:
-                        print(f"[d1] Failed to insert single row into {table_name}: {single_e}", file=sys.stderr, flush=True)
-    
-    print(f"[d1] Completed insertion attempt for {total_rows} rows into {table_name}", flush=True)
 
 
 def process_feed_kind(provider, feed_kind, date):
@@ -466,26 +336,6 @@ def process_feed_kind(provider, feed_kind, date):
                 if upload_parquet(SILVER_BUCKET, key, df_hourly[df_hourly["hour_str"] == hour_str]):
                     hourly_count += 1
             
-            # D1 aggregation: group by route_id, stop_id, trip_id, hour
-            df_tu['hour'] = df_tu['file_timestamp'].dt.hour
-            # Fill NaN values with empty string for grouping
-            df_tu_clean = df_tu.fillna({'route_id': '', 'stop_id': '', 'trip_id': ''})
-            df_d1_hourly = df_tu_clean.groupby(['route_id', 'stop_id', 'trip_id', 'hour'], dropna=False).agg({
-                'arrival_delay': ['mean', 'max', 'min'],
-                'departure_delay': ['mean', 'max', 'min'],
-                'trip_id': 'count',
-                'route_id': 'nunique',
-                'stop_id': 'nunique'
-            }).reset_index()
-            df_d1_hourly.columns = ['route_id', 'stop_id', 'trip_id', 'hour', 'avg_arrival_delay', 'max_arrival_delay', 'min_arrival_delay', 'avg_departure_delay', 'max_departure_delay', 'min_departure_delay', 'trip_count', 'route_count', 'stop_count']
-            # Replace empty strings back to None for D1
-            df_d1_hourly = df_d1_hourly.replace('', None)
-            
-            # Load into D1
-            try:
-                insert_rt_aggregation_to_d1(df_d1_hourly, 'rt_delays_hourly', provider, date)
-            except Exception as e:
-                print(f"[d1] Failed to load hourly delays into D1: {e}", file=sys.stderr, flush=True)
         
         # Daily aggregation for Parquet (existing logic)
         df_daily = aggregate_daily(df_tu)
@@ -494,24 +344,6 @@ def process_feed_kind(provider, feed_kind, date):
             if upload_parquet(SILVER_BUCKET, key, df_daily):
                 daily_count += 1
             
-            # D1 aggregation: group by route_id, stop_id, trip_id
-            df_tu_clean = df_tu.fillna({'route_id': '', 'stop_id': '', 'trip_id': ''})
-            df_d1_daily = df_tu_clean.groupby(['route_id', 'stop_id', 'trip_id'], dropna=False).agg({
-                'arrival_delay': ['mean', 'max', 'min'],
-                'departure_delay': ['mean', 'max', 'min'],
-                'trip_id': 'count',
-                'route_id': 'nunique',
-                'stop_id': 'nunique'
-            }).reset_index()
-            df_d1_daily.columns = ['route_id', 'stop_id', 'trip_id', 'avg_arrival_delay', 'max_arrival_delay', 'min_arrival_delay', 'avg_departure_delay', 'max_departure_delay', 'min_departure_delay', 'trip_count', 'route_count', 'stop_count']
-            # Replace empty strings back to None for D1
-            df_d1_daily = df_d1_daily.replace('', None)
-            
-            # Load into D1
-            try:
-                insert_rt_aggregation_to_d1(df_d1_daily, 'rt_delays_daily', provider, date)
-            except Exception as e:
-                print(f"[d1] Failed to load daily delays into D1: {e}", file=sys.stderr, flush=True)
     
     # Process vehicle positions
     if all_vehicle_positions:
@@ -527,26 +359,6 @@ def process_feed_kind(provider, feed_kind, date):
                 if upload_parquet(SILVER_BUCKET, key, df_hourly[df_hourly["hour_str"] == hour_str]):
                     hourly_count += 1
             
-            # D1 aggregation: group by route_id, vehicle_id, trip_id, hour
-            df_vp['hour'] = df_vp['file_timestamp'].dt.hour
-            df_vp_clean = df_vp.fillna({'route_id': '', 'vehicle_id': '', 'trip_id': ''})
-            df_d1_hourly = df_vp_clean.groupby(['route_id', 'vehicle_id', 'trip_id', 'hour'], dropna=False).agg({
-                'latitude': 'mean',
-                'longitude': 'mean',
-                'bearing': 'mean',
-                'speed': ['mean', 'max'],
-                'vehicle_id': 'count',
-                'route_id': 'nunique'
-            }).reset_index()
-            df_d1_hourly.columns = ['route_id', 'vehicle_id', 'trip_id', 'hour', 'avg_latitude', 'avg_longitude', 'avg_bearing', 'avg_speed', 'max_speed', 'vehicle_count', 'route_count']
-            # Replace empty strings back to None for D1
-            df_d1_hourly = df_d1_hourly.replace('', None)
-            
-            # Load into D1
-            try:
-                insert_rt_aggregation_to_d1(df_d1_hourly, 'rt_positions_hourly', provider, date)
-            except Exception as e:
-                print(f"[d1] Failed to load hourly positions into D1: {e}", file=sys.stderr, flush=True)
         
         # Daily aggregation for Parquet (existing logic)
         df_daily = aggregate_daily(df_vp)
@@ -555,25 +367,6 @@ def process_feed_kind(provider, feed_kind, date):
             if upload_parquet(SILVER_BUCKET, key, df_daily):
                 daily_count += 1
             
-            # D1 aggregation: group by route_id, vehicle_id, trip_id
-            df_vp_clean = df_vp.fillna({'route_id': '', 'vehicle_id': '', 'trip_id': ''})
-            df_d1_daily = df_vp_clean.groupby(['route_id', 'vehicle_id', 'trip_id'], dropna=False).agg({
-                'latitude': 'mean',
-                'longitude': 'mean',
-                'bearing': 'mean',
-                'speed': ['mean', 'max'],
-                'vehicle_id': 'count',
-                'route_id': 'nunique'
-            }).reset_index()
-            df_d1_daily.columns = ['route_id', 'vehicle_id', 'trip_id', 'avg_latitude', 'avg_longitude', 'avg_bearing', 'avg_speed', 'max_speed', 'vehicle_count', 'route_count']
-            # Replace empty strings back to None for D1
-            df_d1_daily = df_d1_daily.replace('', None)
-            
-            # Load into D1
-            try:
-                insert_rt_aggregation_to_d1(df_d1_daily, 'rt_positions_daily', provider, date)
-            except Exception as e:
-                print(f"[d1] Failed to load daily positions into D1: {e}", file=sys.stderr, flush=True)
     
     return {
         "hourly": hourly_count,
@@ -589,12 +382,6 @@ def main():
     if not dates:
         print("[silver-rt] No historical dates to process", flush=True)
         return
-    
-    # Clean up old RT dates before processing (use the latest date if available)
-    if dates:
-        latest_date = max(dates)
-        print(f"[d1] Cleaning up old RT dates (keeping last {D1_RETENTION_DAYS} days)...", flush=True)
-        cleanup_old_rt_dates(PROVIDER, latest_date, D1_RETENTION_DAYS)
     
     # Determine feed kinds to process
     feed_kinds = []

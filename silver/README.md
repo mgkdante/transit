@@ -1,6 +1,6 @@
 # Silver Layer
 
-The Silver layer stores cleaned, validated, and transformed data ready for analysis.
+The Silver layer stores cleaned, validated, and transformed data ready for analysis. **This layer only produces Parquet files** - no database operations are performed here.
 
 ## Purpose
 
@@ -8,6 +8,7 @@ The Silver layer stores cleaned, validated, and transformed data ready for analy
 - **Optimized Format**: Parquet files for efficient querying
 - **Type Safety**: Proper data types and schema enforcement
 - **Analytics Ready**: Structured for downstream analysis
+- **Data Lake**: Parquet files serve as the source of truth for historical data
 
 ## Components
 
@@ -16,7 +17,7 @@ The Silver layer stores cleaned, validated, and transformed data ready for analy
 - **`gtfs-to-silver.py`**: Transforms bronze GTFS ZIP to silver Parquet
   - Location: `silver/etl/gtfs-to-silver.py`
   - Process: Reads bronze ZIP → Extracts CSV → Validates → Converts to Parquet
-  - Output: Parquet files + manifest.json
+  - Output: Parquet files + manifest.json (no D1 database operations)
 
 - **`silver-gtfs.yml`**: Scheduled ETL workflow
   - Location: `.github/workflows/silver-gtfs.yml`
