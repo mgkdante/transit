@@ -80,11 +80,18 @@ def execute_d1_sql(sql, params=None):
     """Execute SQL on D1 database using wrangler CLI."""
     try:
         # Use wrangler d1 execute to run SQL
+        # Ensure CLOUDFLARE_API_TOKEN is available from environment
+        env = os.environ.copy()
         cmd = ["npx", "wrangler", "d1", "execute", D1_DATABASE_NAME, "--command", sql, "--remote"]
-        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+        result = subprocess.run(cmd, capture_output=True, text=True, check=True, env=env)
+        # Log success for debugging
+        if result.stdout:
+            print(f"[d1] SQL executed successfully: {len(result.stdout)} chars output", flush=True)
         return result.stdout
     except subprocess.CalledProcessError as e:
-        print(f"[d1] Error executing SQL: {e.stderr}", file=sys.stderr, flush=True)
+        error_msg = e.stderr or e.stdout or str(e)
+        print(f"[d1] Error executing SQL: {error_msg}", file=sys.stderr, flush=True)
+        print(f"[d1] SQL that failed (first 200 chars): {sql[:200]}", file=sys.stderr, flush=True)
         raise
 
 def clear_old_d1_data(provider, feed_date, table_name):
@@ -141,11 +148,58 @@ def insert_df_to_d1(df, table_name, provider, feed_date):
             
             try:
                 execute_d1_sql(sql)
+                print(f"[d1] Successfully inserted chunk {chunk_start//chunk_size + 1} into {table_name}", flush=True)
             except Exception as e:
-                print(f"[d1] Error inserting into {table_name}: {e}", file=sys.stderr, flush=True)
+                print(f"[d1] Error inserting chunk into {table_name}: {e}", file=sys.stderr, flush=True)
+                # Try single-row inserts as fallback for this chunk
+                print(f"[d1] Attempting single-row inserts for failed chunk...", flush=True)
+                for idx, row in chunk.iterrows():
+                    try:
+                        single_values = []
+                        for col in columns:
+                            val = row[col]
+                            if val is None or (isinstance(val, float) and pd.isna(val)):
+                                single_values.append("NULL")
+                            elif isinstance(val, str):
+                                val_escaped = val.replace("'", "''")
+                                single_values.append(f"'{val_escaped}'")
+                            elif isinstance(val, (int, float)):
+                                single_values.append(str(val))
+                            else:
+                                val_escaped = str(val).replace("'", "''")
+                                single_values.append(f"'{val_escaped}'")
+                        single_sql = f"INSERT INTO {table_name} ({cols_str}) VALUES ({', '.join(single_values)})"
+                        execute_d1_sql(single_sql)
+                    except Exception as single_e:
+                        print(f"[d1] Failed to insert single row into {table_name}: {single_e}", file=sys.stderr, flush=True)
                 # Continue with next chunk
     
-    print(f"[d1] Inserted {total_rows} rows into {table_name}", flush=True)
+    # Verify insertion by counting rows
+    try:
+        verify_sql = f"SELECT COUNT(*) as count FROM {table_name} WHERE provider_key = '{provider}' AND feed_date = '{feed_date}'"
+        verify_result = execute_d1_sql(verify_sql)
+        # Parse the count from wrangler output (JSON format)
+        import json
+        if verify_result:
+            # wrangler outputs JSON, try to parse it
+            try:
+                # Extract JSON from output
+                lines = verify_result.strip().split('\n')
+                for line in lines:
+                    if line.strip().startswith('[') or line.strip().startswith('{'):
+                        data = json.loads(line)
+                        if isinstance(data, list) and len(data) > 0:
+                            count = data[0].get('results', [{}])[0].get('count', 0)
+                            print(f"[d1] Verified: {count} rows in {table_name} for {provider}/{feed_date}", flush=True)
+                            if count == 0:
+                                print(f"[d1] WARNING: No rows found after insertion attempt!", file=sys.stderr, flush=True)
+                            break
+            except:
+                pass
+    except Exception as e:
+        print(f"[d1] Could not verify insertion: {e}", file=sys.stderr, flush=True)
+    
+    print(f"[d1] Completed insertion attempt for {total_rows} rows into {table_name}", flush=True)
 
 def main():
     dt, bronze_key = get_latest_bronze_key(PROVIDER)

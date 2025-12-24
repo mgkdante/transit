@@ -284,11 +284,18 @@ def upload_parquet(bucket, key, df):
 def execute_d1_sql(sql):
     """Execute SQL on D1 database using wrangler CLI."""
     try:
+        # Ensure CLOUDFLARE_API_TOKEN is available from environment
+        env = os.environ.copy()
         cmd = ["npx", "wrangler", "d1", "execute", D1_DATABASE_NAME, "--command", sql, "--remote"]
-        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+        result = subprocess.run(cmd, capture_output=True, text=True, check=True, env=env)
+        # Log success for debugging
+        if result.stdout:
+            print(f"[d1] SQL executed successfully: {len(result.stdout)} chars output", flush=True)
         return result.stdout
     except subprocess.CalledProcessError as e:
-        print(f"[d1] Error executing SQL: {e.stderr}", file=sys.stderr, flush=True)
+        error_msg = e.stderr or e.stdout or str(e)
+        print(f"[d1] Error executing SQL: {error_msg}", file=sys.stderr, flush=True)
+        print(f"[d1] SQL that failed (first 200 chars): {sql[:200]}", file=sys.stderr, flush=True)
         raise
 
 def clear_old_d1_rt_data(provider, date, table_name, hour=None):
@@ -356,10 +363,32 @@ def insert_rt_aggregation_to_d1(df, table_name, provider, date):
             
             try:
                 execute_d1_sql(sql)
+                print(f"[d1] Successfully inserted chunk {chunk_start//chunk_size + 1} into {table_name}", flush=True)
             except Exception as e:
-                print(f"[d1] Error inserting into {table_name}: {e}", file=sys.stderr, flush=True)
+                print(f"[d1] Error inserting chunk into {table_name}: {e}", file=sys.stderr, flush=True)
+                # Try single-row inserts as fallback for this chunk
+                print(f"[d1] Attempting single-row inserts for failed chunk...", flush=True)
+                for idx, row in chunk.iterrows():
+                    try:
+                        single_values = []
+                        for col in columns:
+                            val = row[col]
+                            if val is None or (isinstance(val, float) and pd.isna(val)):
+                                single_values.append("NULL")
+                            elif isinstance(val, str):
+                                val_escaped = val.replace("'", "''")
+                                single_values.append(f"'{val_escaped}'")
+                            elif isinstance(val, (int, float)):
+                                single_values.append(str(val))
+                            else:
+                                val_escaped = str(val).replace("'", "''")
+                                single_values.append(f"'{val_escaped}'")
+                        single_sql = f"INSERT INTO {table_name} ({cols_str}) VALUES ({', '.join(single_values)})"
+                        execute_d1_sql(single_sql)
+                    except Exception as single_e:
+                        print(f"[d1] Failed to insert single row into {table_name}: {single_e}", file=sys.stderr, flush=True)
     
-    print(f"[d1] Inserted {total_rows} rows into {table_name}", flush=True)
+    print(f"[d1] Completed insertion attempt for {total_rows} rows into {table_name}", flush=True)
 
 
 def process_feed_kind(provider, feed_kind, date):
