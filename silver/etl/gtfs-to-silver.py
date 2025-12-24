@@ -64,6 +64,19 @@ DTYPES = {
 }
 PARQUET_ORDER = ["agency.txt","routes.txt","trips.txt","stops.txt","stop_times.txt","calendar.txt","calendar_dates.txt","shapes.txt","feed_info.txt"]
 
+# D1 table schemas (columns that exist in D1, excluding provider_key and feed_date which are added)
+D1_TABLE_SCHEMAS = {
+    "agency": ["agency_id", "agency_name", "agency_url", "agency_timezone", "agency_lang", "agency_phone", "agency_fare_url", "agency_email"],
+    "routes": ["route_id", "agency_id", "route_short_name", "route_long_name", "route_desc", "route_type", "route_url", "route_color", "route_text_color"],
+    "trips": ["route_id", "service_id", "trip_id", "trip_headsign", "trip_short_name", "direction_id", "block_id", "shape_id", "wheelchair_accessible", "bikes_allowed"],
+    "stops": ["stop_id", "stop_code", "stop_name", "stop_desc", "stop_lat", "stop_lon", "zone_id", "stop_url", "location_type", "parent_station", "stop_timezone", "wheelchair_boarding", "level_id", "platform_code"],
+    "stop_times": ["trip_id", "arrival_time", "departure_time", "stop_id", "stop_sequence", "stop_headsign", "pickup_type", "drop_off_type", "shape_dist_traveled", "timepoint"],
+    "calendar": ["service_id", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday", "start_date", "end_date"],
+    "calendar_dates": ["service_id", "date", "exception_type"],
+    "shapes": ["shape_id", "shape_pt_lat", "shape_pt_lon", "shape_pt_sequence", "shape_dist_traveled"],
+    "feed_info": ["feed_publisher_name", "feed_publisher_url", "feed_lang", "default_lang", "feed_start_date", "feed_end_date", "feed_version"],
+}
+
 def read_gtfs_csv(buf, fname):
     dtypes = DTYPES.get(fname, None)
     try:
@@ -108,10 +121,53 @@ def insert_df_to_d1(df, table_name, provider, feed_date):
     # Clear old data first
     clear_old_d1_data(provider, feed_date, table_name)
     
-    # Add provider_key and feed_date to DataFrame
-    df = df.copy()
-    df['provider_key'] = provider
-    df['feed_date'] = feed_date
+    # Filter DataFrame to only include columns that exist in D1 schema
+    expected_columns = D1_TABLE_SCHEMAS.get(table_name, [])
+    if not expected_columns:
+        print(f"[d1] WARNING: No schema defined for table {table_name}, using all columns", flush=True)
+        expected_columns = [col for col in df.columns if col not in ['provider_key', 'feed_date']]
+    else:
+        # Add provider_key and feed_date to expected columns for filtering
+        expected_columns_with_meta = expected_columns + ['provider_key', 'feed_date']
+        # Filter to only columns that exist in both DataFrame and D1 schema
+        available_columns = [col for col in expected_columns_with_meta if col in df.columns]
+        missing_columns = [col for col in expected_columns if col not in df.columns]
+        if missing_columns:
+            print(f"[d1] WARNING: Missing columns in data for {table_name}: {missing_columns}", flush=True)
+        extra_columns = [col for col in df.columns if col not in expected_columns_with_meta]
+        if extra_columns:
+            print(f"[d1] INFO: Filtering out extra columns from {table_name}: {extra_columns}", flush=True)
+            # #region agent log
+            import json
+            log_data = {
+                "location": "gtfs-to-silver.py:insert_df_to_d1",
+                "message": "filtering_extra_columns",
+                "data": {
+                    "table_name": table_name,
+                    "extra_columns": extra_columns,
+                    "available_columns": available_columns,
+                    "original_column_count": len(df.columns),
+                    "filtered_column_count": len(available_columns)
+                },
+                "timestamp": int(pd.Timestamp.now().timestamp() * 1000),
+                "sessionId": "debug-session",
+                "runId": "run1",
+                "hypothesisId": "D"
+            }
+            try:
+                import requests
+                requests.post('http://127.0.0.1:7243/ingest/838a51f8-1edd-459f-9008-64cd16e5f4aa', 
+                           json=log_data, timeout=0.1).catch(lambda: None)
+            except:
+                pass
+            # #endregion
+        df = df[available_columns].copy()
+    
+    # Add provider_key and feed_date if not already present
+    if 'provider_key' not in df.columns:
+        df['provider_key'] = provider
+    if 'feed_date' not in df.columns:
+        df['feed_date'] = feed_date
     
     # Prepare batch insert
     # D1 has a limit on batch size, so we'll do chunks of 100 rows
