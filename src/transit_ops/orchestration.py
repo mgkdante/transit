@@ -12,13 +12,19 @@ from sqlalchemy.engine import Engine
 
 from transit_ops.core.models import ProviderManifest
 from transit_ops.db.connection import make_engine, require_database_url
-from transit_ops.gold import GoldBuildResult, build_gold_marts
+from transit_ops.gold import (
+    GoldBuildResult,
+    GoldRealtimeRefreshResult,
+    build_gold_marts,
+    refresh_gold_realtime,
+)
 from transit_ops.ingestion import (
     build_realtime_ingestion_config,
     capture_realtime_feed,
     ingest_static_feed,
 )
 from transit_ops.ingestion.common import utc_now
+from transit_ops.maintenance import SilverStoragePruneResult, prune_silver_storage
 from transit_ops.providers import ProviderRegistry
 from transit_ops.settings import Settings, get_settings
 from transit_ops.silver import (
@@ -81,6 +87,9 @@ class RealtimeCycleResult:
     gold_build: dict[str, object] | None
     gold_build_duration_seconds: float | None
     gold_error_message: str | None
+    silver_maintenance: dict[str, object] | None
+    silver_maintenance_duration_seconds: float | None
+    silver_maintenance_error_message: str | None
 
     @property
     def has_failures(self) -> bool:
@@ -103,6 +112,9 @@ class RealtimeCycleResult:
             "gold_build": self.gold_build,
             "gold_build_duration_seconds": self.gold_build_duration_seconds,
             "gold_error_message": self.gold_error_message,
+            "silver_maintenance": self.silver_maintenance,
+            "silver_maintenance_duration_seconds": self.silver_maintenance_duration_seconds,
+            "silver_maintenance_error_message": self.silver_maintenance_error_message,
         }
 
 
@@ -417,15 +429,18 @@ def run_realtime_cycle(
     )
     successful_endpoint_count = len(endpoint_results) - failed_endpoint_count
 
-    gold_build_result: GoldBuildResult | None = None
+    gold_build_result: GoldBuildResult | GoldRealtimeRefreshResult | None = None
     gold_build_duration_seconds: float | None = None
     gold_error_message: str | None = None
+    silver_maintenance_result: SilverStoragePruneResult | None = None
+    silver_maintenance_duration_seconds: float | None = None
+    silver_maintenance_error_message: str | None = None
     if successful_endpoint_count:
-        logger.info("Running build-gold-marts after realtime cycle for '%s'.", provider_id)
+        logger.info("Running refresh-gold-realtime after realtime cycle for '%s'.", provider_id)
         try:
             gold_build_result, gold_build_duration_seconds = _run_timed_realtime_step(
-                "build-gold-marts",
-                lambda: build_gold_marts(
+                "refresh-gold-realtime",
+                lambda: refresh_gold_realtime(
                     provider_id,
                     settings=settings,
                     registry=registry,
@@ -434,16 +449,37 @@ def run_realtime_cycle(
             )
         except Exception as exc:
             logger.error(
-                "Realtime cycle Gold build failed for provider '%s': %s",
+                "Realtime cycle Gold refresh failed for provider '%s': %s",
                 provider_id,
                 exc,
             )
             gold_error_message = str(exc)
-    step_timings_seconds["build_gold_marts"] = gold_build_duration_seconds
+        else:
+            logger.info("Running prune-silver-storage after realtime cycle for '%s'.", provider_id)
+            try:
+                silver_maintenance_result, silver_maintenance_duration_seconds = (
+                    _run_timed_realtime_step(
+                        "prune-silver-storage",
+                        lambda: prune_silver_storage(
+                            provider_id,
+                            settings=settings,
+                            engine=engine,
+                        ),
+                    )
+                )
+            except Exception as exc:
+                logger.error(
+                    "Realtime cycle Silver maintenance failed for provider '%s': %s",
+                    provider_id,
+                    exc,
+                )
+                silver_maintenance_error_message = str(exc)
+    step_timings_seconds["refresh_gold_realtime"] = gold_build_duration_seconds
+    step_timings_seconds["prune_silver_storage"] = silver_maintenance_duration_seconds
 
     completed_at_utc = utc_now()
     total_duration_seconds = round(time.perf_counter() - started_at, 3)
-    if gold_error_message:
+    if gold_error_message or silver_maintenance_error_message:
         status = "failed"
     elif failed_endpoint_count == 0:
         status = "succeeded"
@@ -465,6 +501,11 @@ def run_realtime_cycle(
         gold_build=gold_build_result.display_dict() if gold_build_result else None,
         gold_build_duration_seconds=gold_build_duration_seconds,
         gold_error_message=gold_error_message,
+        silver_maintenance=(
+            silver_maintenance_result.display_dict() if silver_maintenance_result else None
+        ),
+        silver_maintenance_duration_seconds=silver_maintenance_duration_seconds,
+        silver_maintenance_error_message=silver_maintenance_error_message,
     )
 
 

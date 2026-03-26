@@ -15,8 +15,10 @@ def test_settings_defaults() -> None:
     )
     assert settings.BRONZE_S3_BUCKET == "transit-raw"
     assert settings.BRONZE_S3_REGION == "auto"
-    assert settings.REALTIME_POLL_SECONDS == 30
+    assert settings.REALTIME_POLL_SECONDS == 300
     assert settings.REALTIME_STARTUP_DELAY_SECONDS == 0
+    assert settings.STATIC_DATASET_RETENTION_COUNT == 1
+    assert settings.SILVER_REALTIME_RETENTION_DAYS == 2
     assert settings.NEON_DATABASE_URL is None
 
 

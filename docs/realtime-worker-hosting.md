@@ -48,8 +48,10 @@ Required non-secret runtime configuration:
 - `BRONZE_S3_ENDPOINT=https://eccfb9bedd87d413eaf4cac6ae2285d3.r2.cloudflarestorage.com`
 - `BRONZE_S3_BUCKET=transit-raw`
 - `BRONZE_S3_REGION=auto`
-- `REALTIME_POLL_SECONDS=30`
+- `REALTIME_POLL_SECONDS=300`
 - `REALTIME_STARTUP_DELAY_SECONDS=0`
+- `STATIC_DATASET_RETENTION_COUNT=1`
+- `SILVER_REALTIME_RETENTION_DAYS=2`
 - `PROVIDER_TIMEZONE=America/Toronto`
 - `STM_PROVIDER_ID=stm`
 
@@ -62,17 +64,18 @@ Hosted Railway logs showed:
 - successful realtime Silver load of `trip_updates`
 - successful realtime capture of `vehicle_positions`
 - successful realtime Silver load of `vehicle_positions`
-- successful `build-gold-marts`
+- successful `refresh-gold-realtime`
+- successful `prune-silver-storage`
 - successful end-to-end worker cycles
 
 Observed hosted timing samples:
 
 - cycle 1:
   - `cycle_duration_seconds = 7.802`
-  - `computed_sleep_seconds = 22.198`
+  - `computed_sleep_seconds = 292.198`
 - cycle 3:
   - `cycle_duration_seconds = 6.119`
-  - `effective_start_to_start_seconds = 30.0`
+  - `effective_start_to_start_seconds = 300.0`
 
 Observed hosted Bronze/R2 facts from logs and post-deploy verification:
 
@@ -91,3 +94,5 @@ Observed hosted Bronze/R2 facts from logs and post-deploy verification:
 - do not change the DB schema
 - do not replace the current Dockerfile/CLI worker path unless Railway truly
   requires it later
+- keep the worker on the lightweight realtime Gold refresh path rather than
+  putting the heavy full `build-gold-marts` back into the hot loop

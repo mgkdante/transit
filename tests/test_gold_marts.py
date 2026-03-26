@@ -8,6 +8,7 @@ from transit_ops.gold.marts import (
     INSERT_FACT_TRIP_DELAY_SNAPSHOT,
     LOCK_GOLD_TABLES,
     build_gold_marts,
+    refresh_gold_realtime,
 )
 from transit_ops.settings import Settings
 
@@ -59,6 +60,14 @@ class RecordingConnection:
             return FakeScalarResult(953)
         if "SELECT count(*)" in sql_text and "gold.fact_trip_delay_snapshot" in sql_text:
             return FakeScalarResult(1780)
+        if "SELECT count(*)" in sql_text and "gold.latest_vehicle_snapshot" in sql_text:
+            return FakeScalarResult(883)
+        if "SELECT count(*)" in sql_text and "gold.latest_trip_delay_snapshot" in sql_text:
+            return FakeScalarResult(1998)
+        if "INSERT INTO gold.fact_vehicle_snapshot" in sql_text:
+            return FakeScalarResult(0)
+        if "INSERT INTO gold.fact_trip_delay_snapshot" in sql_text:
+            return FakeScalarResult(0)
         return FakeScalarResult(0)
 
 
@@ -160,6 +169,8 @@ def test_build_gold_marts_rebuilds_dimensions_and_facts() -> None:
         "dim_date": 99,
         "fact_vehicle_snapshot": 953,
         "fact_trip_delay_snapshot": 1780,
+        "latest_vehicle_snapshot": 883,
+        "latest_trip_delay_snapshot": 1998,
     }
     sql_calls = [call[0] for call in connection.calls]
     assert any("DELETE FROM gold.fact_trip_delay_snapshot" in sql for sql in sql_calls)
@@ -197,7 +208,33 @@ def test_gold_build_locks_tables_before_rebuild() -> None:
     assert "LOCK TABLE" in sql
     assert "gold.dim_route" in sql
     assert "gold.fact_trip_delay_snapshot" in sql
+    assert "gold.latest_trip_delay_snapshot" in sql
     assert "ACCESS EXCLUSIVE MODE" in sql
+
+
+def test_refresh_gold_realtime_upserts_latest_snapshots_only() -> None:
+    connection = RecordingConnection(dataset_row={"dataset_version_id": 2})
+    engine = FakeEngine(connection)
+    settings = Settings(NEON_DATABASE_URL="postgresql://user:pass@example.com/neondb")
+
+    result = refresh_gold_realtime(
+        "stm",
+        settings=settings,
+        registry=FakeRegistry(_build_manifest()),
+        engine=engine,
+    )
+
+    assert result.latest_trip_updates_snapshot_id == 2
+    assert result.latest_vehicle_snapshot_id == 1
+    assert result.row_counts == {
+        "fact_vehicle_snapshot_upserted": 0,
+        "fact_trip_delay_snapshot_upserted": 0,
+        "latest_vehicle_snapshot": 883,
+        "latest_trip_delay_snapshot": 1998,
+    }
+    sql_calls = [call[0] for call in connection.calls]
+    assert any("DELETE FROM gold.latest_vehicle_snapshot" in sql for sql in sql_calls)
+    assert any("INSERT INTO gold.latest_vehicle_snapshot" in sql for sql in sql_calls)
 
 
 def test_build_gold_marts_requires_current_static_dataset() -> None:

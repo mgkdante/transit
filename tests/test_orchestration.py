@@ -7,7 +7,7 @@ from types import SimpleNamespace
 import pytest
 
 import transit_ops.orchestration as orchestration
-from transit_ops.gold import GoldBuildResult
+from transit_ops.gold import GoldBuildResult, GoldRealtimeRefreshResult
 from transit_ops.ingestion import RealtimeIngestionResult, StaticIngestionResult
 from transit_ops.orchestration import (
     run_realtime_cycle,
@@ -61,6 +61,23 @@ def _gold_result() -> GoldBuildResult:
         latest_vehicle_snapshot_id=21,
         built_at_utc=datetime(2026, 3, 25, 0, 2, 0, tzinfo=UTC),
         row_counts={"fact_trip_delay_snapshot": 1, "fact_vehicle_snapshot": 1},
+    )
+
+
+def _gold_refresh_result() -> GoldRealtimeRefreshResult:
+    return GoldRealtimeRefreshResult(
+        provider_id="stm",
+        provider_timezone="America/Toronto",
+        dataset_version_id=7,
+        latest_trip_updates_snapshot_id=20,
+        latest_vehicle_snapshot_id=21,
+        refreshed_at_utc=datetime(2026, 3, 25, 0, 2, 0, tzinfo=UTC),
+        row_counts={
+            "fact_trip_delay_snapshot_upserted": 10,
+            "fact_vehicle_snapshot_upserted": 5,
+            "latest_trip_delay_snapshot": 10,
+            "latest_vehicle_snapshot": 5,
+        },
     )
 
 
@@ -170,10 +187,20 @@ def test_run_realtime_cycle_reports_partial_failure_and_continues(monkeypatch) -
     monkeypatch.setattr(orchestration, "load_latest_realtime_to_silver", fake_load)
     monkeypatch.setattr(
         orchestration,
-        "build_gold_marts",
+        "refresh_gold_realtime",
         lambda provider_id, settings, registry, engine: (
-            call_order.append("build-gold-marts"),
-            _gold_result(),
+            call_order.append("refresh-gold-realtime"),
+            _gold_refresh_result(),
+        )[1],
+    )
+    monkeypatch.setattr(
+        orchestration,
+        "prune_silver_storage",
+        lambda provider_id, settings, engine: (
+            call_order.append("prune-silver-storage"),
+            SimpleNamespace(
+                display_dict=lambda: {"deleted_row_counts": {"silver.trip_updates": 3}}
+            ),
         )[1],
     )
 
@@ -188,7 +215,8 @@ def test_run_realtime_cycle_reports_partial_failure_and_continues(monkeypatch) -
         "capture:trip_updates",
         "load:trip_updates",
         "capture:vehicle_positions",
-        "build-gold-marts",
+        "refresh-gold-realtime",
+        "prune-silver-storage",
     ]
     assert result.status == "partial_failure"
     assert result.successful_endpoint_count == 1
@@ -196,11 +224,14 @@ def test_run_realtime_cycle_reports_partial_failure_and_continues(monkeypatch) -
     assert result.total_duration_seconds >= 0
     assert result.gold_build is not None
     assert result.gold_build_duration_seconds is not None
+    assert result.silver_maintenance is not None
+    assert result.silver_maintenance_duration_seconds is not None
     assert result.step_timings_seconds["capture_trip_updates"] is not None
     assert result.step_timings_seconds["load_trip_updates_to_silver"] is not None
     assert result.step_timings_seconds["capture_vehicle_positions"] is not None
     assert result.step_timings_seconds["load_vehicle_positions_to_silver"] is None
-    assert result.step_timings_seconds["build_gold_marts"] is not None
+    assert result.step_timings_seconds["refresh_gold_realtime"] is not None
+    assert result.step_timings_seconds["prune_silver_storage"] is not None
     assert result.endpoint_results[0].capture_duration_seconds is not None
     assert result.endpoint_results[0].silver_load_duration_seconds is not None
     assert result.endpoint_results[0].total_endpoint_duration_seconds >= 0
@@ -223,8 +254,8 @@ def test_run_realtime_worker_loop_targets_start_to_start_cadence(
         [
             datetime(2026, 3, 25, 0, 0, 0, tzinfo=UTC),
             datetime(2026, 3, 25, 0, 0, 13, 250000, tzinfo=UTC),
-            datetime(2026, 3, 25, 0, 0, 30, tzinfo=UTC),
-            datetime(2026, 3, 25, 0, 0, 43, 500000, tzinfo=UTC),
+            datetime(2026, 3, 25, 0, 5, 0, tzinfo=UTC),
+            datetime(2026, 3, 25, 0, 5, 13, 500000, tzinfo=UTC),
         ]
     )
     perf_counter_values = iter([100.0, 113.25, 130.0, 143.5])
@@ -258,11 +289,15 @@ def test_run_realtime_worker_loop_targets_start_to_start_cadence(
                     "load_trip_updates_to_silver": 0.5,
                     "capture_vehicle_positions": 0.25,
                     "load_vehicle_positions_to_silver": 0.5,
-                    "build_gold_marts": 0.25,
+                    "refresh_gold_realtime": 0.25,
+                    "prune_silver_storage": 0.1,
                 },
                 gold_build=None,
                 gold_build_duration_seconds=0.25,
                 gold_error_message=None,
+                silver_maintenance=None,
+                silver_maintenance_duration_seconds=0.1,
+                silver_maintenance_error_message=None,
             ),
         )[1],
     )
@@ -271,7 +306,7 @@ def test_run_realtime_worker_loop_targets_start_to_start_cadence(
     settings = Settings(
         _env_file=None,
         NEON_DATABASE_URL="postgresql://user:pass@example.com/neondb",
-        REALTIME_POLL_SECONDS=30,
+        REALTIME_POLL_SECONDS=300,
         REALTIME_STARTUP_DELAY_SECONDS=3,
     )
 
@@ -287,9 +322,9 @@ def test_run_realtime_worker_loop_targets_start_to_start_cadence(
     )
 
     assert cycle_calls == ["stm", "stm"]
-    assert sleep_calls == [3, 16.75]
-    assert '"computed_sleep_seconds": 16.75' in caplog.text
-    assert '"effective_start_to_start_seconds": 30.0' in caplog.text
+    assert sleep_calls == [3, 286.75]
+    assert '"computed_sleep_seconds": 286.75' in caplog.text
+    assert '"effective_start_to_start_seconds": 300.0' in caplog.text
 
 
 def test_run_realtime_worker_loop_warns_on_cycle_overrun(
@@ -332,11 +367,15 @@ def test_run_realtime_worker_loop_warns_on_cycle_overrun(
                 "load_trip_updates_to_silver": 0.5,
                 "capture_vehicle_positions": 0.25,
                 "load_vehicle_positions_to_silver": 0.5,
-                "build_gold_marts": 0.25,
+                "refresh_gold_realtime": 0.25,
+                "prune_silver_storage": 0.1,
             },
             gold_build=None,
             gold_build_duration_seconds=0.25,
             gold_error_message=None,
+            silver_maintenance=None,
+            silver_maintenance_duration_seconds=0.1,
+            silver_maintenance_error_message=None,
         ),
     )
     caplog.set_level(logging.WARNING, logger="transit_ops.orchestration")

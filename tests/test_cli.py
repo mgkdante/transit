@@ -24,6 +24,9 @@ def test_cli_help() -> None:
     assert "load-static-silver" in result.stdout
     assert "load-realtime-silver" in result.stdout
     assert "build-gold-marts" in result.stdout
+    assert "refresh-gold-realtime" in result.stdout
+    assert "prune-silver-storage" in result.stdout
+    assert "vacuum-storage" in result.stdout
     assert "run-static-pipeline" in result.stdout
     assert "run-realtime-cycle" in result.stdout
     assert "run-realtime-worker" in result.stdout
@@ -61,7 +64,29 @@ def test_build_gold_marts_help() -> None:
     result = runner.invoke(app, ["build-gold-marts", "--help"])
 
     assert result.exit_code == 0
-    assert "Rebuild the current Gold marts and KPI-ready tables for one provider." in result.stdout
+    assert "Run the heavy full-history Gold rebuild" in result.stdout
+
+
+def test_refresh_gold_realtime_help() -> None:
+    result = runner.invoke(app, ["refresh-gold-realtime", "--help"])
+
+    assert result.exit_code == 0
+    assert "Upsert the latest realtime snapshots into Gold history" in result.stdout
+
+
+def test_prune_silver_storage_help() -> None:
+    result = runner.invoke(app, ["prune-silver-storage", "--help"])
+
+    assert result.exit_code == 0
+    assert "Prune old static and realtime Silver rows" in result.stdout
+
+
+def test_vacuum_storage_help() -> None:
+    result = runner.invoke(app, ["vacuum-storage", "--help"])
+
+    assert result.exit_code == 0
+    assert "Run one-shot storage maintenance" in result.stdout
+    assert "--full" in result.stdout
 
 
 def test_run_static_pipeline_help() -> None:
@@ -75,7 +100,7 @@ def test_run_realtime_cycle_help() -> None:
     result = runner.invoke(app, ["run-realtime-cycle", "--help"])
 
     assert result.exit_code == 0
-    assert "Run both realtime captures, both Silver loads" in result.stdout
+    assert "Run both realtime captures, both Silver loads, refresh Gold" in result.stdout
 
 
 def test_run_realtime_worker_help() -> None:
@@ -121,11 +146,15 @@ def test_run_realtime_cycle_returns_non_zero_on_partial_failure(monkeypatch) -> 
                 "load_trip_updates_to_silver": 0.5,
                 "capture_vehicle_positions": 0.25,
                 "load_vehicle_positions_to_silver": None,
-                "build_gold_marts": 0.25,
+                "refresh_gold_realtime": 0.25,
+                "prune_silver_storage": None,
             },
             gold_build=None,
             gold_build_duration_seconds=0.25,
             gold_error_message=None,
+            silver_maintenance=None,
+            silver_maintenance_duration_seconds=None,
+            silver_maintenance_error_message=None,
         ),
     )
 

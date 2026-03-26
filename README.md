@@ -244,13 +244,21 @@ Slice 6 adds the first BI-ready Gold layer for STM:
 - `gold.dim_date`
 - `gold.fact_vehicle_snapshot`
 - `gold.fact_trip_delay_snapshot`
+- `gold.latest_vehicle_snapshot`
+- `gold.latest_trip_delay_snapshot`
 
 The Gold layer is intentionally explicit and narrow:
 
 - route and stop dimensions are rebuilt from the current static Silver dataset
 - the date dimension is rebuilt from the current static service calendar range and exceptions
-- vehicle and trip delay facts are rebuilt from all currently loaded Silver realtime snapshots
-- KPI views query the Gold fact tables directly instead of making BI rebuild the logic ad hoc
+- vehicle and trip delay facts keep full history, but realtime refresh now upserts
+  only the newest loaded snapshots instead of deleting and rebuilding all
+  provider history every cycle
+- `gold.latest_vehicle_snapshot` and `gold.latest_trip_delay_snapshot` keep only
+  the newest snapshot per provider for dashboards, KPI views, and browser
+  inspection
+- KPI views now query the lightweight latest Gold tables directly instead of
+  re-deriving "latest snapshot" from the large history facts
 
 The current KPI views are:
 
@@ -260,16 +268,41 @@ The current KPI views are:
 - `gold.kpi_max_trip_delay_latest`
 - `gold.kpi_delayed_trip_count_latest`
 
-The current trip-delay KPIs intentionally use the trip-level GTFS-RT
-`delay_seconds` field from `silver.trip_updates`. If STM omits that top-level
-delay in a snapshot, the average and maximum delay KPIs will return `NULL`
-while the delayed trip count KPI will return `0`.
+`gold.fact_trip_delay_snapshot` keeps the trip-level GTFS-RT fields when STM
+provides them, but it now backfills the most important gaps for BI:
 
-Gold refresh is still explicit and CLI-driven:
+- `vehicle_id` falls back to the nearest `silver.vehicle_positions` row for the
+  same `trip_id` within a short snapshot-time window
+- `delay_seconds` falls back to a derived stop-time delay computed from
+  `silver.trip_update_stop_time_updates` absolute timestamps versus the current
+  static `silver.stop_times` schedule for the same trip and stop sequence
+
+That means route-level delay KPIs can still populate even when STM omits the
+top-level trip `delay_seconds` field. `route_id` remains useful for grouping and
+filtering, but it is not used by itself to infer a single `vehicle_id` because
+one route can have many concurrent active vehicles.
+
+Gold refresh is now split between one heavy backfill path and one lightweight
+realtime path:
 
 - `build-gold-marts stm`
+- `refresh-gold-realtime stm`
 
-Power BI dashboard work is still deferred.
+`build-gold-marts stm` is still the explicit full-history backfill command.
+`refresh-gold-realtime stm` is the fast path used by the realtime worker and
+realtime cycle. It upserts only the current trip and vehicle snapshots into the
+historical Gold facts and then refreshes the small `gold.latest_*` tables.
+
+Power BI report authoring is not checked into this repo as a `.pbix`, but the
+V1 dashboard handoff assets now exist under `powerbi/`:
+
+- `powerbi/dashboard-spec.md`
+- `powerbi/build-playbook.md`
+- `powerbi/field-mapping.md`
+- `powerbi/dax-measures.md`
+- `powerbi/sql-validation.sql`
+- `powerbi/sql-validation.md`
+- `powerbi/portfolio-notes.md`
 
 ## Pipeline orchestration and automation
 
@@ -285,7 +318,8 @@ proven Bronze, Silver, and Gold services instead of duplicating business logic:
   - runs `capture-realtime stm vehicle_positions`
   - runs `load-realtime-silver stm trip_updates`
   - runs `load-realtime-silver stm vehicle_positions`
-  - runs `build-gold-marts stm`
+  - runs `refresh-gold-realtime stm`
+  - prunes Silver storage according to the configured retention settings
 
 Operational rules:
 
@@ -293,7 +327,11 @@ Operational rules:
 - the orchestration commands keep the existing DB lineage and R2 object key behavior intact
 - `run-realtime-cycle stm` attempts both realtime endpoints every cycle
 - if one endpoint fails and the other succeeds, the command reports a partial failure explicitly and exits non-zero
-- Gold is rebuilt after any successful realtime endpoint load so downstream BI stays current with the latest successful data
+- Gold latest tables are refreshed after any successful realtime endpoint load
+  so downstream BI stays current without rewriting the full provider history
+- old Silver rows are pruned automatically:
+  - static Silver keeps only the current dataset version by default
+  - realtime Silver keeps the newest two days of snapshots by default
 
 ## Continuous realtime worker
 
@@ -312,11 +350,17 @@ It is intended for container or cloud deployment and:
 Worker environment variables:
 
 - `REALTIME_POLL_SECONDS`
-  - default: `30`
+  - default: `300`
   - controls how often one full realtime cycle starts
 - `REALTIME_STARTUP_DELAY_SECONDS`
   - default: `0`
   - optional startup delay before the first cycle
+- `STATIC_DATASET_RETENTION_COUNT`
+  - default: `1`
+  - keeps only the newest static Silver dataset version by default
+- `SILVER_REALTIME_RETENTION_DAYS`
+  - default: `2`
+  - keeps only the newest two days of realtime Silver snapshots by default
 
 ## Deployment artifacts
 
@@ -410,8 +454,10 @@ Current runtime path:
   - `BRONZE_S3_ENDPOINT=https://eccfb9bedd87d413eaf4cac6ae2285d3.r2.cloudflarestorage.com`
   - `BRONZE_S3_BUCKET=transit-raw`
   - `BRONZE_S3_REGION=auto`
-  - `REALTIME_POLL_SECONDS=30`
+  - `REALTIME_POLL_SECONDS=300`
   - `REALTIME_STARTUP_DELAY_SECONDS=0`
+  - `STATIC_DATASET_RETENTION_COUNT=1`
+  - `SILVER_REALTIME_RETENTION_DAYS=2`
   - `PROVIDER_TIMEZONE=America/Toronto`
   - `STM_PROVIDER_ID=stm`
   - `APP_ENV=production`
@@ -422,13 +468,13 @@ What is now proven from the hosted service logs:
 - the worker starts successfully on Railway
 - at least one hosted realtime cycle succeeds end to end
 - Bronze writes remain R2-backed with `storage_backend = "s3"`
-- Gold rebuilds successfully after hosted realtime cycles
+- latest Gold refreshes successfully after hosted realtime cycles
 - the hosted worker still honors true start-to-start cadence:
   - observed hosted cycle 1:
     - `cycle_duration_seconds = 7.802`
-    - `computed_sleep_seconds = 22.198`
+    - `computed_sleep_seconds = 292.198`
   - observed hosted cycle 3:
-    - `effective_start_to_start_seconds = 30.0`
+    - `effective_start_to_start_seconds = 300.0`
 
 The detailed Railway deployment notes live in:
 
@@ -444,7 +490,7 @@ The static and realtime automation paths have different delay expectations:
 - because GitHub Actions cron is UTC-based, the schedule may need a seasonal
   UTC adjustment during EST if the desired local run time remains `2:00 AM Eastern`
 - realtime is intended to run continuously through the worker container
-- the default worker cadence is one full realtime cycle every `30` seconds
+- the default worker cadence is one full realtime cycle every `300` seconds
 
 For live data, the practical delay is:
 
@@ -462,10 +508,13 @@ pretending both feeds are fresh.
 
 The following work is intentionally out of scope for this slice:
 
-- dashboard assets and frontend UI
-- Power BI dashboard implementation
+- dashboard frontend UI
 - Neon Data API exposure
 - public packaging work under `transit.yesid.dev`
+
+Power BI report authoring itself is still outside the repo, but the report
+specification, DAX plan, SQL validation queries, and portfolio notes are now
+documented in the `powerbi/` folder.
 
 ## Why provider manifests exist
 
@@ -580,20 +629,33 @@ uv run python -m transit_ops.cli load-realtime-silver stm vehicle_positions
 uv run python -m transit_ops.cli build-gold-marts stm
 ```
 
-13. Run the one-shot orchestration commands:
+13. Refresh only the latest Gold realtime state without doing a full backfill:
+
+```bash
+uv run python -m transit_ops.cli refresh-gold-realtime stm
+```
+
+14. Prune old Silver storage and optionally compact the large tables:
+
+```bash
+uv run python -m transit_ops.cli prune-silver-storage stm
+uv run python -m transit_ops.cli vacuum-storage stm
+```
+
+15. Run the one-shot orchestration commands:
 
 ```bash
 uv run python -m transit_ops.cli run-static-pipeline stm
 uv run python -m transit_ops.cli run-realtime-cycle stm
 ```
 
-14. Run the continuous realtime worker:
+16. Run the continuous realtime worker:
 
 ```bash
 uv run python -m transit_ops.cli run-realtime-worker stm
 ```
 
-15. The module entrypoint also works:
+17. The module entrypoint also works:
 
 ```bash
 uv run python -m transit_ops.cli --help

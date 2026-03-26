@@ -10,9 +10,10 @@ from sqlalchemy import text
 
 from transit_ops.core.models import FeedKind, ProviderManifest
 from transit_ops.db.connection import make_engine, test_connection
-from transit_ops.gold import build_gold_marts
+from transit_ops.gold import build_gold_marts, refresh_gold_realtime
 from transit_ops.ingestion import capture_realtime_feed, ingest_static_feed
 from transit_ops.logging import configure_logging
+from transit_ops.maintenance import prune_silver_storage, vacuum_storage
 from transit_ops.orchestration import (
     run_realtime_cycle,
     run_realtime_worker_loop,
@@ -294,7 +295,7 @@ def load_realtime_silver(provider_id: str, endpoint_key: str) -> None:
 
 @app.command("build-gold-marts")
 def build_gold(provider_id: str) -> None:
-    """Rebuild the current Gold marts and KPI-ready tables for one provider."""
+    """Run the heavy full-history Gold rebuild and refresh latest snapshot tables."""
 
     settings = get_settings()
     try:
@@ -305,6 +306,55 @@ def build_gold(provider_id: str) -> None:
         )
     except KeyError as exc:
         raise typer.BadParameter(str(exc)) from exc
+    except (ValueError, FileNotFoundError) as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    typer.echo(json.dumps(result.display_dict(), indent=2))
+
+
+@app.command("refresh-gold-realtime")
+def refresh_gold_realtime_command(provider_id: str) -> None:
+    """Upsert the latest realtime snapshots into Gold history and latest tables."""
+
+    settings = get_settings()
+    try:
+        result = refresh_gold_realtime(
+            provider_id,
+            settings=settings,
+            registry=_provider_registry(settings),
+        )
+    except KeyError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    except (ValueError, FileNotFoundError) as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    typer.echo(json.dumps(result.display_dict(), indent=2))
+
+
+@app.command("prune-silver-storage")
+def prune_silver_storage_command(provider_id: str) -> None:
+    """Prune old static and realtime Silver rows according to retention settings."""
+
+    settings = get_settings()
+    try:
+        result = prune_silver_storage(provider_id, settings=settings)
+    except (ValueError, FileNotFoundError) as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    typer.echo(json.dumps(result.display_dict(), indent=2))
+
+
+@app.command("vacuum-storage")
+def vacuum_storage_command(
+    provider_id: str,
+    full: bool = typer.Option(
+        False,
+        "--full",
+        help="Run VACUUM FULL ANALYZE instead of VACUUM ANALYZE.",
+    ),
+) -> None:
+    """Run one-shot storage maintenance on the large Silver and Gold tables."""
+
+    settings = get_settings()
+    try:
+        result = vacuum_storage(provider_id, full=full, settings=settings)
     except (ValueError, FileNotFoundError) as exc:
         raise typer.BadParameter(str(exc)) from exc
     typer.echo(json.dumps(result.display_dict(), indent=2))
@@ -330,7 +380,7 @@ def run_static_pipeline_command(provider_id: str) -> None:
 
 @app.command("run-realtime-cycle")
 def run_realtime_cycle_command(provider_id: str) -> None:
-    """Run both realtime captures, both Silver loads, and rebuild Gold marts."""
+    """Run both realtime captures, both Silver loads, refresh Gold, and prune Silver."""
 
     settings = get_settings()
     try:

@@ -21,13 +21,21 @@ from transit_ops.silver.static_gtfs import (
 
 
 class FakeResult:
-    def __init__(self, scalar_value: int | None = None) -> None:
+    def __init__(
+        self,
+        scalar_value: int | None = None,
+        rows: list[tuple[int]] | None = None,
+    ) -> None:
         self.scalar_value = scalar_value
+        self.rows = rows or []
 
     def scalar_one(self) -> int:
         if self.scalar_value is None:
             raise AssertionError("Expected a scalar value.")
         return self.scalar_value
+
+    def __iter__(self):
+        return iter(self.rows)
 
 
 class RecordingConnection:
@@ -39,6 +47,8 @@ class RecordingConnection:
         self.calls.append((sql_text, params))
         if "RETURNING dataset_version_id" in sql_text:
             return FakeResult(700)
+        if "SELECT dataset_version_id" in sql_text:
+            return FakeResult(rows=[(700,)])
         return FakeResult()
 
 

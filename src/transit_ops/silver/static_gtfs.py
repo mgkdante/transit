@@ -16,6 +16,7 @@ from transit_ops.db.connection import make_engine
 from transit_ops.ingestion.common import project_root, utc_now
 from transit_ops.ingestion.static_gtfs import build_static_ingestion_config
 from transit_ops.ingestion.storage import get_bronze_storage
+from transit_ops.maintenance import prune_static_silver_datasets
 from transit_ops.providers import ProviderRegistry
 from transit_ops.settings import Settings, get_settings
 
@@ -887,8 +888,14 @@ def load_latest_static_to_silver(
     )
 
     with engine.begin() as connection:
-        return load_static_zip_to_silver(
+        result = load_static_zip_to_silver(
             connection,
             archive=archive,
             bronze_storage=bronze_storage,
         )
+        prune_static_silver_datasets(
+            connection,
+            provider_id=manifest.provider.provider_id,
+            retention_count=settings.STATIC_DATASET_RETENTION_COUNT,
+        )
+        return result

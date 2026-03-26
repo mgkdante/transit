@@ -211,12 +211,21 @@ The Gold design stays intentionally small:
 - `gold.dim_route` uses the current static `core.dataset_versions` row and the current `silver.routes`
 - `gold.dim_stop` uses the current static dataset and the current `silver.stops`
 - `gold.dim_date` expands the current static service date range and exception dates into a reusable date dimension
-- `gold.fact_vehicle_snapshot` materializes all loaded `silver.vehicle_positions` rows with provider-local snapshot dates
-- `gold.fact_trip_delay_snapshot` materializes all loaded `silver.trip_updates` rows plus stop-time update counts
+- `gold.fact_vehicle_snapshot` keeps vehicle snapshot history without being fully rewritten every realtime cycle
+- `gold.fact_trip_delay_snapshot` keeps trip delay snapshot history, plus stop-time update counts and backfilled vehicle/delay values from related realtime/static tables
+- `gold.latest_vehicle_snapshot` keeps only the newest vehicle snapshot per provider for dashboards and browser inspection
+- `gold.latest_trip_delay_snapshot` keeps only the newest trip-delay snapshot per provider for dashboards and browser inspection
 
-Gold refresh remains explicit and CLI-driven. The new orchestration commands and
-realtime worker reuse the same `build-gold-marts` service rather than creating a
-second Gold path.
+Gold refresh now has two explicit paths:
+
+- `build-gold-marts`
+  - heavy full-history backfill and recovery path
+- `refresh-gold-realtime`
+  - lightweight realtime path that upserts only the latest snapshots into
+    history and refreshes the small `gold.latest_*` tables
+
+The realtime worker and `run-realtime-cycle` now use the lightweight refresh
+path instead of the old full rebuild path.
 
 The KPI views stay close to the marts:
 
@@ -226,10 +235,28 @@ The KPI views stay close to the marts:
 - maximum trip delay in the latest trip-delay snapshot
 - delayed trip count in the latest trip-delay snapshot
 
-The current trip-delay KPI views use the trip-level `delay_seconds` value from
-`silver.trip_updates`. In real STM data that field can be absent even when
-stop-time updates are present, so the average and maximum trip-delay KPI views
-may legitimately return `NULL` while the delayed-trip-count view returns `0`.
+The KPI views now read the lightweight `gold.latest_*` tables directly instead
+of scanning the full history facts to discover the latest snapshot first.
+
+The current trip-delay KPI views still use `delay_seconds` derived from the
+Gold trip-delay snapshot rows. That Gold field keeps the trip-level GTFS-RT
+`delay_seconds` value when STM provides it, and otherwise falls back to a
+derived delay based on stop-time update timestamps versus the current static
+`silver.stop_times` schedule for the same trip and stop sequence.
+
+`gold.fact_trip_delay_snapshot.vehicle_id` follows the same idea: it keeps the
+trip-update `vehicle_id` when present and otherwise backfills from the nearest
+`silver.vehicle_positions` row for the same `trip_id`. `route_id` is not used
+alone for vehicle inference because multiple active vehicles can share a route.
+
+Storage pressure is now reduced in two other places too:
+
+- static Silver keeps only the current dataset version by default
+- realtime Silver keeps only the newest two days of snapshots by default
+
+That keeps the reporting path honest: heavy history still exists where it is
+useful, but the hot path for dashboards no longer depends on repeatedly
+rewriting or scanning all of it.
 
 ## Why provider abstraction exists
 
@@ -272,9 +299,21 @@ unnecessary framework complexity.
 
 ## Power BI status
 
-Power BI is downstream of this repository and is not implemented in the current
-slices. The implemented work so far prepares the database, provider registry,
-and repository foundation that later dashboard work will consume.
+Power BI report authoring is still downstream of this repository and no `.pbix`
+file is checked into the repo.
+
+This slice now adds the minimum Power BI handoff artifacts under `powerbi/`:
+
+- dashboard V1 specification
+- report build playbook
+- visual-to-field mapping
+- DAX measure plan
+- SQL validation queries
+- portfolio-facing notes
+
+That keeps the repo honest: the BI semantic design is documented and grounded
+in the proven Gold layer, but the actual Power BI file is still a downstream
+authoring step.
 
 Neon Data API exposure is also still deferred. The current automation slice
 stops at the CLI, database, and object-storage layers.

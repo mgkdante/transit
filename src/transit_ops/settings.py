@@ -36,8 +36,10 @@ class Settings(BaseSettings):
     BRONZE_S3_ACCESS_KEY: str | None = None
     BRONZE_S3_SECRET_KEY: str | None = None
     BRONZE_S3_REGION: str = "auto"
-    REALTIME_POLL_SECONDS: int = 30
+    REALTIME_POLL_SECONDS: int = 300
     REALTIME_STARTUP_DELAY_SECONDS: int = 0
+    STATIC_DATASET_RETENTION_COUNT: int = 1
+    SILVER_REALTIME_RETENTION_DAYS: int = 2
 
     @property
     def sqlalchemy_database_url(self) -> str | None:
@@ -88,6 +90,8 @@ class Settings(BaseSettings):
             "BRONZE_S3_REGION": self.BRONZE_S3_REGION,
             "REALTIME_POLL_SECONDS": self.REALTIME_POLL_SECONDS,
             "REALTIME_STARTUP_DELAY_SECONDS": self.REALTIME_STARTUP_DELAY_SECONDS,
+            "STATIC_DATASET_RETENTION_COUNT": self.STATIC_DATASET_RETENTION_COUNT,
+            "SILVER_REALTIME_RETENTION_DAYS": self.SILVER_REALTIME_RETENTION_DAYS,
         }
 
 

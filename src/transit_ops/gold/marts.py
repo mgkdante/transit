@@ -25,6 +25,20 @@ DELETE_FACT_VEHICLE_SNAPSHOT = text(
     """
 )
 
+DELETE_LATEST_TRIP_DELAY_SNAPSHOT = text(
+    """
+    DELETE FROM gold.latest_trip_delay_snapshot
+    WHERE provider_id = :provider_id
+    """
+)
+
+DELETE_LATEST_VEHICLE_SNAPSHOT = text(
+    """
+    DELETE FROM gold.latest_vehicle_snapshot
+    WHERE provider_id = :provider_id
+    """
+)
+
 DELETE_DIM_DATE = text(
     """
     DELETE FROM gold.dim_date
@@ -62,7 +76,9 @@ LOCK_GOLD_TABLES = text(
         gold.dim_stop,
         gold.dim_date,
         gold.fact_vehicle_snapshot,
-        gold.fact_trip_delay_snapshot
+        gold.fact_trip_delay_snapshot,
+        gold.latest_vehicle_snapshot,
+        gold.latest_trip_delay_snapshot
     IN ACCESS EXCLUSIVE MODE
     """
 )
@@ -223,203 +239,321 @@ INSERT_DIM_DATE = text(
     """
 )
 
-INSERT_FACT_VEHICLE_SNAPSHOT = text(
-    """
-    INSERT INTO gold.fact_vehicle_snapshot (
-        provider_id,
-        realtime_snapshot_id,
-        entity_index,
-        snapshot_date_key,
-        snapshot_local_date,
-        feed_timestamp_utc,
-        captured_at_utc,
-        position_timestamp_utc,
-        entity_id,
-        vehicle_id,
-        trip_id,
-        route_id,
-        stop_id,
-        current_stop_sequence,
-        current_status,
-        occupancy_status,
-        latitude,
-        longitude,
-        bearing,
-        speed
+
+def _vehicle_snapshot_statement(
+    *,
+    target_table: str,
+    latest_only: bool,
+    upsert: bool,
+):
+    if target_table not in {"fact_vehicle_snapshot", "latest_vehicle_snapshot"}:
+        raise ValueError(f"Unsupported gold vehicle snapshot table '{target_table}'.")
+    latest_snapshot_filter = (
+        "AND realtime_snapshot_id = :realtime_snapshot_id" if latest_only else ""
     )
-    SELECT
-        provider_id,
-        realtime_snapshot_id,
-        entity_index,
-        to_char(timezone(:provider_timezone, feed_timestamp_utc), 'YYYYMMDD')::integer,
-        timezone(:provider_timezone, feed_timestamp_utc)::date,
-        feed_timestamp_utc,
-        captured_at_utc,
-        position_timestamp_utc,
-        entity_id,
-        vehicle_id,
-        trip_id,
-        route_id,
-        stop_id,
-        current_stop_sequence,
-        current_status,
-        occupancy_status,
-        latitude,
-        longitude,
-        bearing,
-        speed
-    FROM silver.vehicle_positions
+    on_conflict_clause = (
+        """
+        ON CONFLICT (provider_id, realtime_snapshot_id, entity_index) DO UPDATE SET
+            snapshot_date_key = EXCLUDED.snapshot_date_key,
+            snapshot_local_date = EXCLUDED.snapshot_local_date,
+            feed_timestamp_utc = EXCLUDED.feed_timestamp_utc,
+            captured_at_utc = EXCLUDED.captured_at_utc,
+            position_timestamp_utc = EXCLUDED.position_timestamp_utc,
+            entity_id = EXCLUDED.entity_id,
+            vehicle_id = EXCLUDED.vehicle_id,
+            trip_id = EXCLUDED.trip_id,
+            route_id = EXCLUDED.route_id,
+            stop_id = EXCLUDED.stop_id,
+            current_stop_sequence = EXCLUDED.current_stop_sequence,
+            current_status = EXCLUDED.current_status,
+            occupancy_status = EXCLUDED.occupancy_status,
+            latitude = EXCLUDED.latitude,
+            longitude = EXCLUDED.longitude,
+            bearing = EXCLUDED.bearing,
+            speed = EXCLUDED.speed
+        """
+        if upsert
+        else ""
+    )
+    return text(
+        f"""
+        INSERT INTO gold.{target_table} (
+            provider_id,
+            realtime_snapshot_id,
+            entity_index,
+            snapshot_date_key,
+            snapshot_local_date,
+            feed_timestamp_utc,
+            captured_at_utc,
+            position_timestamp_utc,
+            entity_id,
+            vehicle_id,
+            trip_id,
+            route_id,
+            stop_id,
+            current_stop_sequence,
+            current_status,
+            occupancy_status,
+            latitude,
+            longitude,
+            bearing,
+            speed
+        )
+        SELECT
+            provider_id,
+            realtime_snapshot_id,
+            entity_index,
+            to_char(timezone(:provider_timezone, feed_timestamp_utc), 'YYYYMMDD')::integer,
+            timezone(:provider_timezone, feed_timestamp_utc)::date,
+            feed_timestamp_utc,
+            captured_at_utc,
+            position_timestamp_utc,
+            entity_id,
+            vehicle_id,
+            trip_id,
+            route_id,
+            stop_id,
+            current_stop_sequence,
+            current_status,
+            occupancy_status,
+            latitude,
+            longitude,
+            bearing,
+            speed
+        FROM silver.vehicle_positions
+        WHERE provider_id = :provider_id
+          {latest_snapshot_filter}
+        {on_conflict_clause}
+        """
+    )
+
+
+def _trip_delay_snapshot_statement(
+    *,
+    target_table: str,
+    latest_only: bool,
+    upsert: bool,
+):
+    if target_table not in {"fact_trip_delay_snapshot", "latest_trip_delay_snapshot"}:
+        raise ValueError(f"Unsupported gold trip delay snapshot table '{target_table}'.")
+    latest_snapshot_filter = (
+        "AND tu.realtime_snapshot_id = :realtime_snapshot_id" if latest_only else ""
+    )
+    on_conflict_clause = (
+        """
+        ON CONFLICT (provider_id, realtime_snapshot_id, entity_index) DO UPDATE SET
+            snapshot_date_key = EXCLUDED.snapshot_date_key,
+            snapshot_local_date = EXCLUDED.snapshot_local_date,
+            feed_timestamp_utc = EXCLUDED.feed_timestamp_utc,
+            captured_at_utc = EXCLUDED.captured_at_utc,
+            entity_id = EXCLUDED.entity_id,
+            trip_id = EXCLUDED.trip_id,
+            route_id = EXCLUDED.route_id,
+            direction_id = EXCLUDED.direction_id,
+            start_date = EXCLUDED.start_date,
+            vehicle_id = EXCLUDED.vehicle_id,
+            trip_schedule_relationship = EXCLUDED.trip_schedule_relationship,
+            delay_seconds = EXCLUDED.delay_seconds,
+            stop_time_update_count = EXCLUDED.stop_time_update_count
+        """
+        if upsert
+        else ""
+    )
+    return text(
+        f"""
+        WITH stop_time_counts AS (
+            SELECT
+                realtime_snapshot_id,
+                trip_update_entity_index AS entity_index,
+                count(*)::integer AS stop_time_update_count
+            FROM silver.trip_update_stop_time_updates
+            WHERE provider_id = :provider_id
+            GROUP BY realtime_snapshot_id, trip_update_entity_index
+        ),
+        stop_time_candidates AS (
+            SELECT
+                tu.realtime_snapshot_id,
+                tu.entity_index,
+                stu.stop_id,
+                stu.stop_sequence,
+                EXTRACT(
+                    EPOCH FROM (
+                        COALESCE(stu.arrival_time_utc, stu.departure_time_utc)
+                        - (
+                            tu.start_date::timestamp
+                            + make_interval(
+                                hours => split_part(
+                                    COALESCE(st.arrival_time, st.departure_time),
+                                    ':',
+                                    1
+                                )::integer,
+                                mins => split_part(
+                                    COALESCE(st.arrival_time, st.departure_time),
+                                    ':',
+                                    2
+                                )::integer,
+                                secs => split_part(
+                                    COALESCE(st.arrival_time, st.departure_time),
+                                    ':',
+                                    3
+                                )::integer
+                            )
+                        ) AT TIME ZONE :provider_timezone
+                    )
+                )::integer AS derived_delay_seconds,
+                row_number() OVER (
+                    PARTITION BY tu.realtime_snapshot_id, tu.entity_index
+                    ORDER BY
+                        CASE
+                            WHEN COALESCE(stu.arrival_time_utc, stu.departure_time_utc)
+                                >= tu.feed_timestamp_utc
+                            THEN 0
+                            ELSE 1
+                        END,
+                        abs(
+                            EXTRACT(
+                                EPOCH FROM (
+                                    COALESCE(stu.arrival_time_utc, stu.departure_time_utc)
+                                    - tu.feed_timestamp_utc
+                                )
+                            )
+                        ),
+                        stu.stop_sequence NULLS LAST,
+                        stu.stop_time_update_index
+                ) AS delay_rank
+            FROM silver.trip_updates AS tu
+            INNER JOIN silver.trip_update_stop_time_updates AS stu
+                ON stu.provider_id = tu.provider_id
+               AND stu.realtime_snapshot_id = tu.realtime_snapshot_id
+               AND stu.trip_update_entity_index = tu.entity_index
+            INNER JOIN silver.stop_times AS st
+                ON st.provider_id = tu.provider_id
+               AND st.dataset_version_id = :dataset_version_id
+               AND st.trip_id = tu.trip_id
+               AND st.stop_sequence = stu.stop_sequence
+            WHERE tu.provider_id = :provider_id
+              AND tu.start_date IS NOT NULL
+              AND COALESCE(stu.arrival_time_utc, stu.departure_time_utc) IS NOT NULL
+              AND COALESCE(st.arrival_time, st.departure_time) IS NOT NULL
+              {latest_snapshot_filter}
+        ),
+        trip_delay_fallback AS (
+            SELECT
+                realtime_snapshot_id,
+                entity_index,
+                derived_delay_seconds
+            FROM stop_time_candidates
+            WHERE delay_rank = 1
+        )
+        INSERT INTO gold.{target_table} (
+            provider_id,
+            realtime_snapshot_id,
+            entity_index,
+            snapshot_date_key,
+            snapshot_local_date,
+            feed_timestamp_utc,
+            captured_at_utc,
+            entity_id,
+            trip_id,
+            route_id,
+            direction_id,
+            start_date,
+            vehicle_id,
+            trip_schedule_relationship,
+            delay_seconds,
+            stop_time_update_count
+        )
+        SELECT
+            tu.provider_id,
+            tu.realtime_snapshot_id,
+            tu.entity_index,
+            to_char(timezone(:provider_timezone, tu.feed_timestamp_utc), 'YYYYMMDD')::integer,
+            timezone(:provider_timezone, tu.feed_timestamp_utc)::date,
+            tu.feed_timestamp_utc,
+            tu.captured_at_utc,
+            tu.entity_id,
+            tu.trip_id,
+            tu.route_id,
+            tu.direction_id,
+            tu.start_date,
+            COALESCE(tu.vehicle_id, vpm.vehicle_id),
+            tu.trip_schedule_relationship,
+            COALESCE(tu.delay_seconds, tdf.derived_delay_seconds),
+            COALESCE(stc.stop_time_update_count, 0)
+        FROM silver.trip_updates AS tu
+        LEFT JOIN stop_time_counts AS stc
+          ON stc.realtime_snapshot_id = tu.realtime_snapshot_id
+         AND stc.entity_index = tu.entity_index
+        LEFT JOIN trip_delay_fallback AS tdf
+          ON tdf.realtime_snapshot_id = tu.realtime_snapshot_id
+         AND tdf.entity_index = tu.entity_index
+        LEFT JOIN LATERAL (
+            SELECT
+                vp.vehicle_id
+            FROM silver.vehicle_positions AS vp
+            WHERE vp.provider_id = tu.provider_id
+              AND vp.trip_id = tu.trip_id
+              AND vp.vehicle_id IS NOT NULL
+              AND (tu.route_id IS NULL OR vp.route_id = tu.route_id)
+              AND vp.feed_timestamp_utc BETWEEN
+                    tu.feed_timestamp_utc - interval '10 minutes'
+                AND tu.feed_timestamp_utc + interval '10 minutes'
+            ORDER BY
+                abs(EXTRACT(EPOCH FROM (vp.feed_timestamp_utc - tu.feed_timestamp_utc))),
+                vp.realtime_snapshot_id DESC,
+                vp.entity_index
+            LIMIT 1
+        ) AS vpm
+          ON tu.vehicle_id IS NULL
+         AND tu.trip_id IS NOT NULL
+        WHERE tu.provider_id = :provider_id
+          {latest_snapshot_filter}
+        {on_conflict_clause}
+        """
+    )
+
+
+INSERT_FACT_VEHICLE_SNAPSHOT = _vehicle_snapshot_statement(
+    target_table="fact_vehicle_snapshot",
+    latest_only=False,
+    upsert=False,
+)
+
+UPSERT_FACT_VEHICLE_SNAPSHOT_LATEST = _vehicle_snapshot_statement(
+    target_table="fact_vehicle_snapshot",
+    latest_only=True,
+    upsert=True,
+)
+
+INSERT_FACT_TRIP_DELAY_SNAPSHOT = _trip_delay_snapshot_statement(
+    target_table="fact_trip_delay_snapshot",
+    latest_only=False,
+    upsert=False,
+)
+
+UPSERT_FACT_TRIP_DELAY_SNAPSHOT_LATEST = _trip_delay_snapshot_statement(
+    target_table="fact_trip_delay_snapshot",
+    latest_only=True,
+    upsert=True,
+)
+
+INSERT_LATEST_VEHICLE_SNAPSHOT_FROM_FACT = text(
+    """
+    INSERT INTO gold.latest_vehicle_snapshot
+    SELECT *
+    FROM gold.fact_vehicle_snapshot
     WHERE provider_id = :provider_id
+      AND realtime_snapshot_id = :realtime_snapshot_id
     """
 )
 
-INSERT_FACT_TRIP_DELAY_SNAPSHOT = text(
+INSERT_LATEST_TRIP_DELAY_SNAPSHOT_FROM_FACT = text(
     """
-    WITH stop_time_counts AS (
-        SELECT
-            realtime_snapshot_id,
-            trip_update_entity_index AS entity_index,
-            count(*)::integer AS stop_time_update_count
-        FROM silver.trip_update_stop_time_updates
-        WHERE provider_id = :provider_id
-        GROUP BY realtime_snapshot_id, trip_update_entity_index
-    ),
-    stop_time_candidates AS (
-        SELECT
-            tu.realtime_snapshot_id,
-            tu.entity_index,
-            stu.stop_id,
-            stu.stop_sequence,
-            EXTRACT(
-                EPOCH FROM (
-                    COALESCE(stu.arrival_time_utc, stu.departure_time_utc)
-                    - (
-                        tu.start_date::timestamp
-                        + make_interval(
-                            hours => split_part(
-                                COALESCE(st.arrival_time, st.departure_time),
-                                ':',
-                                1
-                            )::integer,
-                            mins => split_part(
-                                COALESCE(st.arrival_time, st.departure_time),
-                                ':',
-                                2
-                            )::integer,
-                            secs => split_part(
-                                COALESCE(st.arrival_time, st.departure_time),
-                                ':',
-                                3
-                            )::integer
-                        )
-                    ) AT TIME ZONE :provider_timezone
-                )
-            )::integer AS derived_delay_seconds,
-            row_number() OVER (
-                PARTITION BY tu.realtime_snapshot_id, tu.entity_index
-                ORDER BY
-                    CASE
-                        WHEN COALESCE(stu.arrival_time_utc, stu.departure_time_utc)
-                            >= tu.feed_timestamp_utc
-                        THEN 0
-                        ELSE 1
-                    END,
-                    abs(
-                        EXTRACT(
-                            EPOCH FROM (
-                                COALESCE(stu.arrival_time_utc, stu.departure_time_utc)
-                                - tu.feed_timestamp_utc
-                            )
-                        )
-                    ),
-                    stu.stop_sequence NULLS LAST,
-                    stu.stop_time_update_index
-            ) AS delay_rank
-        FROM silver.trip_updates AS tu
-        INNER JOIN silver.trip_update_stop_time_updates AS stu
-            ON stu.provider_id = tu.provider_id
-           AND stu.realtime_snapshot_id = tu.realtime_snapshot_id
-           AND stu.trip_update_entity_index = tu.entity_index
-        INNER JOIN silver.stop_times AS st
-            ON st.provider_id = tu.provider_id
-           AND st.dataset_version_id = :dataset_version_id
-           AND st.trip_id = tu.trip_id
-           AND st.stop_sequence = stu.stop_sequence
-        WHERE tu.provider_id = :provider_id
-          AND tu.start_date IS NOT NULL
-          AND COALESCE(stu.arrival_time_utc, stu.departure_time_utc) IS NOT NULL
-          AND COALESCE(st.arrival_time, st.departure_time) IS NOT NULL
-    ),
-    trip_delay_fallback AS (
-        SELECT
-            realtime_snapshot_id,
-            entity_index,
-            derived_delay_seconds
-        FROM stop_time_candidates
-        WHERE delay_rank = 1
-    )
-    INSERT INTO gold.fact_trip_delay_snapshot (
-        provider_id,
-        realtime_snapshot_id,
-        entity_index,
-        snapshot_date_key,
-        snapshot_local_date,
-        feed_timestamp_utc,
-        captured_at_utc,
-        entity_id,
-        trip_id,
-        route_id,
-        direction_id,
-        start_date,
-        vehicle_id,
-        trip_schedule_relationship,
-        delay_seconds,
-        stop_time_update_count
-    )
-    SELECT
-        tu.provider_id,
-        tu.realtime_snapshot_id,
-        tu.entity_index,
-        to_char(timezone(:provider_timezone, tu.feed_timestamp_utc), 'YYYYMMDD')::integer,
-        timezone(:provider_timezone, tu.feed_timestamp_utc)::date,
-        tu.feed_timestamp_utc,
-        tu.captured_at_utc,
-        tu.entity_id,
-        tu.trip_id,
-        tu.route_id,
-        tu.direction_id,
-        tu.start_date,
-        COALESCE(tu.vehicle_id, vpm.vehicle_id),
-        tu.trip_schedule_relationship,
-        COALESCE(tu.delay_seconds, tdf.derived_delay_seconds),
-        COALESCE(stc.stop_time_update_count, 0)
-    FROM silver.trip_updates AS tu
-    LEFT JOIN stop_time_counts AS stc
-      ON stc.realtime_snapshot_id = tu.realtime_snapshot_id
-     AND stc.entity_index = tu.entity_index
-    LEFT JOIN trip_delay_fallback AS tdf
-      ON tdf.realtime_snapshot_id = tu.realtime_snapshot_id
-     AND tdf.entity_index = tu.entity_index
-    LEFT JOIN LATERAL (
-        SELECT
-            vp.vehicle_id
-        FROM silver.vehicle_positions AS vp
-        WHERE vp.provider_id = tu.provider_id
-          AND vp.trip_id = tu.trip_id
-          AND vp.vehicle_id IS NOT NULL
-          AND (tu.route_id IS NULL OR vp.route_id = tu.route_id)
-          AND vp.feed_timestamp_utc BETWEEN
-                tu.feed_timestamp_utc - interval '10 minutes'
-            AND tu.feed_timestamp_utc + interval '10 minutes'
-        ORDER BY
-            abs(EXTRACT(EPOCH FROM (vp.feed_timestamp_utc - tu.feed_timestamp_utc))),
-            vp.realtime_snapshot_id DESC,
-            vp.entity_index
-        LIMIT 1
-    ) AS vpm
-      ON tu.vehicle_id IS NULL
-     AND tu.trip_id IS NOT NULL
-    WHERE tu.provider_id = :provider_id
+    INSERT INTO gold.latest_trip_delay_snapshot
+    SELECT *
+    FROM gold.fact_trip_delay_snapshot
+    WHERE provider_id = :provider_id
+      AND realtime_snapshot_id = :realtime_snapshot_id
     """
 )
 
@@ -449,6 +583,22 @@ class GoldBuildResult:
         return payload
 
 
+@dataclass(frozen=True)
+class GoldRealtimeRefreshResult:
+    provider_id: str
+    provider_timezone: str
+    dataset_version_id: int
+    latest_trip_updates_snapshot_id: int | None
+    latest_vehicle_snapshot_id: int | None
+    refreshed_at_utc: datetime
+    row_counts: dict[str, int]
+
+    def display_dict(self) -> dict[str, object]:
+        payload = asdict(self)
+        payload["refreshed_at_utc"] = self.refreshed_at_utc.isoformat()
+        return payload
+
+
 def _table_name(table_name: str) -> str:
     allowed_names = {
         "dim_route",
@@ -456,6 +606,8 @@ def _table_name(table_name: str) -> str:
         "dim_date",
         "fact_vehicle_snapshot",
         "fact_trip_delay_snapshot",
+        "latest_vehicle_snapshot",
+        "latest_trip_delay_snapshot",
     }
     if table_name not in allowed_names:
         raise ValueError(f"Unsupported gold table '{table_name}'.")
@@ -520,9 +672,7 @@ def _resolve_gold_build_context(
             else None
         ),
         latest_vehicle_snapshot_id=(
-            int(latest_vehicle_snapshot_id)
-            if latest_vehicle_snapshot_id is not None
-            else None
+            int(latest_vehicle_snapshot_id) if latest_vehicle_snapshot_id is not None else None
         ),
     )
 
@@ -531,6 +681,8 @@ def _delete_existing_provider_rows(connection: Connection, *, provider_id: str) 
     params = {"provider_id": provider_id}
     connection.execute(DELETE_FACT_TRIP_DELAY_SNAPSHOT, params)
     connection.execute(DELETE_FACT_VEHICLE_SNAPSHOT, params)
+    connection.execute(DELETE_LATEST_TRIP_DELAY_SNAPSHOT, params)
+    connection.execute(DELETE_LATEST_VEHICLE_SNAPSHOT, params)
     connection.execute(DELETE_DIM_DATE, params)
     connection.execute(DELETE_DIM_STOP, params)
     connection.execute(DELETE_DIM_ROUTE, params)
@@ -551,6 +703,65 @@ def _count_gold_rows(connection: Connection, *, provider_id: str, table_name: st
     return int(result.scalar_one())
 
 
+def _safe_rowcount(result) -> int:  # noqa: ANN001
+    rowcount = getattr(result, "rowcount", 0)
+    return max(int(rowcount or 0), 0)
+
+
+def _refresh_gold_dimensions(connection: Connection, *, context: GoldBuildContext) -> None:
+    params = {
+        "provider_id": context.provider_id,
+        "provider_timezone": context.provider_timezone,
+        "dataset_version_id": context.dataset_version_id,
+    }
+    connection.execute(DELETE_DIM_DATE, {"provider_id": context.provider_id})
+    connection.execute(DELETE_DIM_STOP, {"provider_id": context.provider_id})
+    connection.execute(DELETE_DIM_ROUTE, {"provider_id": context.provider_id})
+    connection.execute(INSERT_DIM_ROUTE, params)
+    connection.execute(INSERT_DIM_STOP, params)
+    connection.execute(INSERT_DIM_DATE, params)
+
+
+def _refresh_latest_gold_tables(
+    connection: Connection,
+    *,
+    context: GoldBuildContext,
+) -> dict[str, int]:
+    params = {"provider_id": context.provider_id}
+    connection.execute(DELETE_LATEST_VEHICLE_SNAPSHOT, params)
+    connection.execute(DELETE_LATEST_TRIP_DELAY_SNAPSHOT, params)
+
+    if context.latest_vehicle_snapshot_id is not None:
+        connection.execute(
+            INSERT_LATEST_VEHICLE_SNAPSHOT_FROM_FACT,
+            {
+                **params,
+                "realtime_snapshot_id": context.latest_vehicle_snapshot_id,
+            },
+        )
+    if context.latest_trip_updates_snapshot_id is not None:
+        connection.execute(
+            INSERT_LATEST_TRIP_DELAY_SNAPSHOT_FROM_FACT,
+            {
+                **params,
+                "realtime_snapshot_id": context.latest_trip_updates_snapshot_id,
+            },
+        )
+
+    return {
+        "latest_vehicle_snapshot": _count_gold_rows(
+            connection,
+            provider_id=context.provider_id,
+            table_name="latest_vehicle_snapshot",
+        ),
+        "latest_trip_delay_snapshot": _count_gold_rows(
+            connection,
+            provider_id=context.provider_id,
+            table_name="latest_trip_delay_snapshot",
+        ),
+    }
+
+
 def _refresh_gold_tables(
     connection: Connection,
     *,
@@ -569,6 +780,7 @@ def _refresh_gold_tables(
     connection.execute(INSERT_DIM_DATE, params)
     connection.execute(INSERT_FACT_VEHICLE_SNAPSHOT, params)
     connection.execute(INSERT_FACT_TRIP_DELAY_SNAPSHOT, params)
+    latest_row_counts = _refresh_latest_gold_tables(connection, context=context)
 
     return {
         "dim_route": _count_gold_rows(
@@ -596,7 +808,7 @@ def _refresh_gold_tables(
             provider_id=context.provider_id,
             table_name="fact_trip_delay_snapshot",
         ),
-    }
+    } | latest_row_counts
 
 
 def build_gold_marts(
@@ -629,4 +841,68 @@ def build_gold_marts(
         latest_vehicle_snapshot_id=context.latest_vehicle_snapshot_id,
         built_at_utc=built_at_utc,
         row_counts=row_counts,
+    )
+
+
+def refresh_gold_realtime(
+    provider_id: str,
+    *,
+    settings: Settings | None = None,
+    registry: ProviderRegistry | None = None,
+    engine: Engine | None = None,
+) -> GoldRealtimeRefreshResult:
+    settings = settings or get_settings()
+    registry = registry or ProviderRegistry.from_project_root(settings=settings)
+    manifest = registry.get_provider(provider_id)
+    provider_timezone = manifest.provider.timezone
+    engine = engine or make_engine(settings)
+
+    with engine.begin() as connection:
+        context = _resolve_gold_build_context(
+            connection,
+            provider_id=manifest.provider.provider_id,
+            provider_timezone=provider_timezone,
+        )
+        connection.execute(ACQUIRE_GOLD_BUILD_LOCK, {"provider_id": context.provider_id})
+
+        params = {
+            "provider_id": context.provider_id,
+            "provider_timezone": context.provider_timezone,
+            "dataset_version_id": context.dataset_version_id,
+        }
+        fact_row_counts = {
+            "fact_vehicle_snapshot_upserted": 0,
+            "fact_trip_delay_snapshot_upserted": 0,
+        }
+        if context.latest_vehicle_snapshot_id is not None:
+            fact_row_counts["fact_vehicle_snapshot_upserted"] = _safe_rowcount(
+                connection.execute(
+                    UPSERT_FACT_VEHICLE_SNAPSHOT_LATEST,
+                    {
+                        **params,
+                        "realtime_snapshot_id": context.latest_vehicle_snapshot_id,
+                    },
+                )
+            )
+        if context.latest_trip_updates_snapshot_id is not None:
+            fact_row_counts["fact_trip_delay_snapshot_upserted"] = _safe_rowcount(
+                connection.execute(
+                    UPSERT_FACT_TRIP_DELAY_SNAPSHOT_LATEST,
+                    {
+                        **params,
+                        "realtime_snapshot_id": context.latest_trip_updates_snapshot_id,
+                    },
+                )
+            )
+        latest_row_counts = _refresh_latest_gold_tables(connection, context=context)
+        refreshed_at_utc = utc_now()
+
+    return GoldRealtimeRefreshResult(
+        provider_id=context.provider_id,
+        provider_timezone=context.provider_timezone,
+        dataset_version_id=context.dataset_version_id,
+        latest_trip_updates_snapshot_id=context.latest_trip_updates_snapshot_id,
+        latest_vehicle_snapshot_id=context.latest_vehicle_snapshot_id,
+        refreshed_at_utc=refreshed_at_utc,
+        row_counts=fact_row_counts | latest_row_counts,
     )
