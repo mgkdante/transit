@@ -1,0 +1,44 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "transit-ops"
+version = "0.1.0"
+description = "STM-first, provider-ready GTFS and GTFS-RT analytics foundation."
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+  "alembic>=1.16,<2.0",
+  "boto3>=1.37,<2.0",
+  "gtfs-realtime-bindings>=1.0,<2.0",
+  "pydantic>=2.11,<3.0",
+  "pydantic-settings>=2.8,<3.0",
+  "psycopg[binary]>=3.2,<4.0",
+  "pyyaml>=6.0,<7.0",
+  "python-dotenv>=1.0,<2.0",
+  "sqlalchemy>=2.0,<3.0",
+  "typer>=0.16,<1.0",
+]
+
+[project.scripts]
+transit-ops = "transit_ops.cli:app"
+
+[dependency-groups]
+dev = [
+  "pytest>=8.3,<9.0",
+  "ruff>=0.11,<0.12",
+]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["B", "E", "F", "I", "UP"]

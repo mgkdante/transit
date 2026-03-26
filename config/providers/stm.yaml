@@ -1,0 +1,51 @@
+provider:
+  provider_id: stm
+  display_name: Societe de transport de Montreal
+  timezone: America/Toronto
+  attribution_text: Contains STM data made available under CC BY 4.0.
+  website_url: https://www.stm.info/
+  is_active: true
+
+feeds:
+  static_schedule:
+    endpoint_key: static_schedule
+    feed_kind: static_schedule
+    source_format: gtfs_schedule_zip
+    source_url: https://www.stm.info/sites/default/files/gtfs/gtfs_stm.zip
+    source_url_env_var: STM_STATIC_GTFS_URL
+    documentation_url: https://www.stm.info/fr/node/529
+    auth:
+      auth_type: none
+      notes: Static GTFS is a public download.
+    refresh_interval_seconds: 86400
+    is_enabled: true
+
+  trip_updates:
+    endpoint_key: trip_updates
+    feed_kind: trip_updates
+    source_format: gtfs_rt_trip_updates
+    source_url: https://api.stm.info/pub/od/gtfs-rt/ic/v2/tripUpdates
+    source_url_env_var: STM_RT_TRIP_UPDATES_URL
+    documentation_url: https://www.stm.info/fr/node/529
+    auth:
+      auth_type: api_key
+      credential_env_var: STM_API_KEY
+      auth_header_name: apiKey
+      notes: STM realtime currently works with the apiKey header on api.stm.info over HTTPS. The shared secret is not used for these GTFS-RT feeds.
+    refresh_interval_seconds: 30
+    is_enabled: true
+
+  vehicle_positions:
+    endpoint_key: vehicle_positions
+    feed_kind: vehicle_positions
+    source_format: gtfs_rt_vehicle_positions
+    source_url: https://api.stm.info/pub/od/gtfs-rt/ic/v2/vehiclePositions
+    source_url_env_var: STM_RT_VEHICLE_POSITIONS_URL
+    documentation_url: https://www.stm.info/fr/node/529
+    auth:
+      auth_type: api_key
+      credential_env_var: STM_API_KEY
+      auth_header_name: apiKey
+      notes: STM realtime currently works with the apiKey header on api.stm.info over HTTPS. The shared secret is not used for these GTFS-RT feeds.
+    refresh_interval_seconds: 30
+    is_enabled: true
