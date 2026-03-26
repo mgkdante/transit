@@ -23,9 +23,15 @@ What was checked:
 - `gh` is available and authenticated, but GitHub Actions is only being used for
   the daily static batch workflow
 - `docker` is available locally, which proves the image and local runtime path
+- `docker context ls` only exposes local contexts:
+  - `default`
+  - `desktop-linux`
+- `docker offload` is installed, but it is a remote build capability rather
+  than an always-on container runtime for this worker
 - no authenticated or installed long-running container-host CLI was available
   from the inspected environment for platforms such as Fly.io, Railway, Render,
-  or a similar always-on container host
+  Vercel, Cloudflare, Azure, Google Cloud, AWS, Heroku, or a similar always-on
+  container host
 - no pre-existing deployment manifest for a hosted container runtime is checked
   into this repo
 
@@ -33,6 +39,13 @@ What was checked:
 
 Choose and authenticate one simple long-running container host, then deploy the
 existing Dockerized worker there without changing the worker entrypoint.
+
+The minimum unblock is one of:
+
+- install and authenticate one hosted container CLI such as `flyctl` or
+  `railway`
+- or create a real remote Docker context that points at an always-on server
+  instead of the current local Desktop contexts
 
 The current container path is already ready to reuse:
 
