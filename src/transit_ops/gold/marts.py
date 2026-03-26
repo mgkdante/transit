@@ -46,6 +46,27 @@ DELETE_DIM_ROUTE = text(
     """
 )
 
+ACQUIRE_GOLD_BUILD_LOCK = text(
+    """
+    SELECT pg_advisory_xact_lock(
+        hashtext('gold_marts'),
+        hashtext(:provider_id)
+    )
+    """
+)
+
+LOCK_GOLD_TABLES = text(
+    """
+    LOCK TABLE
+        gold.dim_route,
+        gold.dim_stop,
+        gold.dim_date,
+        gold.fact_vehicle_snapshot,
+        gold.fact_trip_delay_snapshot
+    IN ACCESS EXCLUSIVE MODE
+    """
+)
+
 INSERT_DIM_ROUTE = text(
     """
     INSERT INTO gold.dim_route (
@@ -262,6 +283,80 @@ INSERT_FACT_TRIP_DELAY_SNAPSHOT = text(
         FROM silver.trip_update_stop_time_updates
         WHERE provider_id = :provider_id
         GROUP BY realtime_snapshot_id, trip_update_entity_index
+    ),
+    stop_time_candidates AS (
+        SELECT
+            tu.realtime_snapshot_id,
+            tu.entity_index,
+            stu.stop_id,
+            stu.stop_sequence,
+            EXTRACT(
+                EPOCH FROM (
+                    COALESCE(stu.arrival_time_utc, stu.departure_time_utc)
+                    - (
+                        tu.start_date::timestamp
+                        + make_interval(
+                            hours => split_part(
+                                COALESCE(st.arrival_time, st.departure_time),
+                                ':',
+                                1
+                            )::integer,
+                            mins => split_part(
+                                COALESCE(st.arrival_time, st.departure_time),
+                                ':',
+                                2
+                            )::integer,
+                            secs => split_part(
+                                COALESCE(st.arrival_time, st.departure_time),
+                                ':',
+                                3
+                            )::integer
+                        )
+                    ) AT TIME ZONE :provider_timezone
+                )
+            )::integer AS derived_delay_seconds,
+            row_number() OVER (
+                PARTITION BY tu.realtime_snapshot_id, tu.entity_index
+                ORDER BY
+                    CASE
+                        WHEN COALESCE(stu.arrival_time_utc, stu.departure_time_utc)
+                            >= tu.feed_timestamp_utc
+                        THEN 0
+                        ELSE 1
+                    END,
+                    abs(
+                        EXTRACT(
+                            EPOCH FROM (
+                                COALESCE(stu.arrival_time_utc, stu.departure_time_utc)
+                                - tu.feed_timestamp_utc
+                            )
+                        )
+                    ),
+                    stu.stop_sequence NULLS LAST,
+                    stu.stop_time_update_index
+            ) AS delay_rank
+        FROM silver.trip_updates AS tu
+        INNER JOIN silver.trip_update_stop_time_updates AS stu
+            ON stu.provider_id = tu.provider_id
+           AND stu.realtime_snapshot_id = tu.realtime_snapshot_id
+           AND stu.trip_update_entity_index = tu.entity_index
+        INNER JOIN silver.stop_times AS st
+            ON st.provider_id = tu.provider_id
+           AND st.dataset_version_id = :dataset_version_id
+           AND st.trip_id = tu.trip_id
+           AND st.stop_sequence = stu.stop_sequence
+        WHERE tu.provider_id = :provider_id
+          AND tu.start_date IS NOT NULL
+          AND COALESCE(stu.arrival_time_utc, stu.departure_time_utc) IS NOT NULL
+          AND COALESCE(st.arrival_time, st.departure_time) IS NOT NULL
+    ),
+    trip_delay_fallback AS (
+        SELECT
+            realtime_snapshot_id,
+            entity_index,
+            derived_delay_seconds
+        FROM stop_time_candidates
+        WHERE delay_rank = 1
     )
     INSERT INTO gold.fact_trip_delay_snapshot (
         provider_id,
@@ -294,14 +389,36 @@ INSERT_FACT_TRIP_DELAY_SNAPSHOT = text(
         tu.route_id,
         tu.direction_id,
         tu.start_date,
-        tu.vehicle_id,
+        COALESCE(tu.vehicle_id, vpm.vehicle_id),
         tu.trip_schedule_relationship,
-        tu.delay_seconds,
+        COALESCE(tu.delay_seconds, tdf.derived_delay_seconds),
         COALESCE(stc.stop_time_update_count, 0)
     FROM silver.trip_updates AS tu
     LEFT JOIN stop_time_counts AS stc
       ON stc.realtime_snapshot_id = tu.realtime_snapshot_id
      AND stc.entity_index = tu.entity_index
+    LEFT JOIN trip_delay_fallback AS tdf
+      ON tdf.realtime_snapshot_id = tu.realtime_snapshot_id
+     AND tdf.entity_index = tu.entity_index
+    LEFT JOIN LATERAL (
+        SELECT
+            vp.vehicle_id
+        FROM silver.vehicle_positions AS vp
+        WHERE vp.provider_id = tu.provider_id
+          AND vp.trip_id = tu.trip_id
+          AND vp.vehicle_id IS NOT NULL
+          AND (tu.route_id IS NULL OR vp.route_id = tu.route_id)
+          AND vp.feed_timestamp_utc BETWEEN
+                tu.feed_timestamp_utc - interval '10 minutes'
+            AND tu.feed_timestamp_utc + interval '10 minutes'
+        ORDER BY
+            abs(EXTRACT(EPOCH FROM (vp.feed_timestamp_utc - tu.feed_timestamp_utc))),
+            vp.realtime_snapshot_id DESC,
+            vp.entity_index
+        LIMIT 1
+    ) AS vpm
+      ON tu.vehicle_id IS NULL
+     AND tu.trip_id IS NOT NULL
     WHERE tu.provider_id = :provider_id
     """
 )
@@ -444,6 +561,8 @@ def _refresh_gold_tables(
         "provider_timezone": context.provider_timezone,
         "dataset_version_id": context.dataset_version_id,
     }
+    connection.execute(ACQUIRE_GOLD_BUILD_LOCK, {"provider_id": context.provider_id})
+    connection.execute(LOCK_GOLD_TABLES)
     _delete_existing_provider_rows(connection, provider_id=context.provider_id)
     connection.execute(INSERT_DIM_ROUTE, params)
     connection.execute(INSERT_DIM_STOP, params)

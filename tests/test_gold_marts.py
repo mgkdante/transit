@@ -3,7 +3,12 @@ from __future__ import annotations
 import pytest
 
 from transit_ops.core.models import ProviderManifest
-from transit_ops.gold.marts import build_gold_marts
+from transit_ops.gold.marts import (
+    ACQUIRE_GOLD_BUILD_LOCK,
+    INSERT_FACT_TRIP_DELAY_SNAPSHOT,
+    LOCK_GOLD_TABLES,
+    build_gold_marts,
+)
 from transit_ops.settings import Settings
 
 
@@ -156,9 +161,43 @@ def test_build_gold_marts_rebuilds_dimensions_and_facts() -> None:
         "fact_vehicle_snapshot": 953,
         "fact_trip_delay_snapshot": 1780,
     }
-    assert "DELETE FROM gold.fact_trip_delay_snapshot" in connection.calls[3][0]
-    assert "INSERT INTO gold.dim_route" in connection.calls[8][0]
-    assert "INSERT INTO gold.fact_trip_delay_snapshot" in connection.calls[12][0]
+    sql_calls = [call[0] for call in connection.calls]
+    assert any("DELETE FROM gold.fact_trip_delay_snapshot" in sql for sql in sql_calls)
+    assert any("INSERT INTO gold.dim_route" in sql for sql in sql_calls)
+    fact_trip_insert = next(
+        params
+        for sql, params in connection.calls
+        if "INSERT INTO gold.fact_trip_delay_snapshot" in sql
+    )
+    assert fact_trip_insert["dataset_version_id"] == 2
+
+
+def test_trip_delay_fact_backfills_vehicle_and_delay_from_related_tables() -> None:
+    sql = str(INSERT_FACT_TRIP_DELAY_SNAPSHOT)
+
+    assert "COALESCE(tu.vehicle_id, vpm.vehicle_id)" in sql
+    assert "COALESCE(tu.delay_seconds, tdf.derived_delay_seconds)" in sql
+    assert "LEFT JOIN LATERAL" in sql
+    assert "silver.vehicle_positions AS vp" in sql
+    assert "silver.stop_times AS st" in sql
+    assert "st.dataset_version_id = :dataset_version_id" in sql
+
+
+def test_gold_build_uses_provider_scoped_advisory_lock() -> None:
+    sql = str(ACQUIRE_GOLD_BUILD_LOCK)
+
+    assert "pg_advisory_xact_lock" in sql
+    assert "hashtext('gold_marts')" in sql
+    assert "hashtext(:provider_id)" in sql
+
+
+def test_gold_build_locks_tables_before_rebuild() -> None:
+    sql = str(LOCK_GOLD_TABLES)
+
+    assert "LOCK TABLE" in sql
+    assert "gold.dim_route" in sql
+    assert "gold.fact_trip_delay_snapshot" in sql
+    assert "ACCESS EXCLUSIVE MODE" in sql
 
 
 def test_build_gold_marts_requires_current_static_dataset() -> None:
