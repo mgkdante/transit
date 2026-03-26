@@ -3,7 +3,11 @@ name: Daily Static Pipeline
 on:
   workflow_dispatch:
   schedule:
-    - cron: "15 9 * * *"
+    # GitHub Actions cron is UTC-based.
+    # 06:00 UTC corresponds to 2:00 AM Eastern while EDT is in effect.
+    # If this workflow remains on GitHub cron during EST, this UTC value may
+    # need a seasonal adjustment to keep the local run time at 2:00 AM Eastern.
+    - cron: "0 6 * * *"
 
 permissions:
   contents: read

@@ -309,7 +309,10 @@ The repo now includes the minimum cloud-ready automation artifacts:
 
 - `.github/workflows/daily-static-pipeline.yml`
   - runs the static Bronze -> Silver -> Gold pipeline once per day
-  - currently scheduled for `09:15 UTC`
+  - currently scheduled for `06:00 UTC`
+  - this corresponds to `2:00 AM Eastern` while EDT is in effect
+  - GitHub Actions cron is UTC-based, so the UTC schedule may need a seasonal
+    adjustment during EST if the desired local run time remains `2:00 AM Eastern`
   - also supports `workflow_dispatch`
   - uses `timeout-minutes: 30`
   - uses workflow `concurrency` to avoid overlapping static runs
@@ -320,6 +323,11 @@ The repo now includes the minimum cloud-ready automation artifacts:
   - now uses an explicit CLI entrypoint and a non-root runtime user
 - `.dockerignore`
   - keeps `.env`, Git metadata, docs, local data, tests, and dev caches out of the container build context
+
+Hosted realtime deployment is still blocked from the current environment. The
+repo already has the proven Docker worker path, but there is not yet one
+authenticated long-running container host CLI or one checked-in platform
+manifest available here to actually place that worker on a hosted runtime.
 
 Exact GitHub Actions secrets required for the included static workflow are:
 

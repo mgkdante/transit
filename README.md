@@ -331,7 +331,10 @@ The included workflow file is:
 
 Current behavior:
 
-- triggers once per day at `09:15 UTC`
+- triggers once per day at `06:00 UTC`
+- `06:00 UTC` corresponds to `2:00 AM Eastern` while EDT is in effect
+- GitHub Actions cron is UTC-based, so this may need a seasonal UTC adjustment
+  during EST if the desired local run time remains `2:00 AM Eastern`
 - supports manual runs through `workflow_dispatch`
 - uses `timeout-minutes: 30`
 - uses `concurrency` to avoid overlapping static runs
@@ -383,12 +386,46 @@ docker run --rm --env-file .env transit-ops-worker run-realtime-worker stm --max
 The realtime worker still uses true start-to-start cadence timing in container
 mode because it reuses the same CLI and orchestration path as local execution.
 
+### Hosted realtime worker status
+
+Hosted realtime deployment is not yet achieved from the current repository
+environment.
+
+What is already proven:
+
+- the Docker image builds locally
+- bounded worker container runs succeed locally
+- the worker keeps its true start-to-start cadence in containerized execution
+
+What is still missing:
+
+- one authenticated long-running container host or platform CLI that is already
+  available from this environment
+- or one checked-in deployment manifest for an existing container platform
+
+The next manual step to get the worker hosted is to choose and authenticate one
+simple long-running container host, then deploy the existing Dockerized worker
+there with these runtime secrets:
+
+- `NEON_DATABASE_URL`
+- `STM_API_KEY`
+- `BRONZE_S3_ACCESS_KEY`
+- `BRONZE_S3_SECRET_KEY`
+
+The current hosted worker runtime should also set:
+
+- `REALTIME_POLL_SECONDS=30`
+- `REALTIME_STARTUP_DELAY_SECONDS=0`
+
 ## Freshness and delay expectations
 
 The static and realtime automation paths have different delay expectations:
 
 - static GTFS is intended to run once per day through GitHub Actions
-- the included GitHub Actions workflow currently schedules the static pipeline daily at `09:15 UTC`
+- the included GitHub Actions workflow currently schedules the static pipeline daily at `06:00 UTC`
+- that currently lines up with `2:00 AM Eastern` while EDT is in effect
+- because GitHub Actions cron is UTC-based, the schedule may need a seasonal
+  UTC adjustment during EST if the desired local run time remains `2:00 AM Eastern`
 - realtime is intended to run continuously through the worker container
 - the default worker cadence is one full realtime cycle every `30` seconds
 
