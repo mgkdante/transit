@@ -388,34 +388,51 @@ mode because it reuses the same CLI and orchestration path as local execution.
 
 ### Hosted realtime worker status
 
-Hosted realtime deployment is not yet achieved from the current repository
-environment.
+Hosted realtime deployment is now achieved on Railway.
 
-What is already proven:
+Current hosted target:
 
-- the Docker image builds locally
-- bounded worker container runs succeed locally
-- the worker keeps its true start-to-start cadence in containerized execution
+- project: `transit-ops`
+- environment: `production`
+- service: `realtime-worker`
 
-What is still missing:
+Current runtime path:
 
-- one authenticated long-running container host or platform CLI that is already
-  available from this environment
-- or one checked-in deployment manifest for an existing container platform
+- Railway detects and builds the existing repo `Dockerfile`
+- the container starts with:
+  - `python -m transit_ops.cli run-realtime-worker stm`
+- the service variables include:
+  - `NEON_DATABASE_URL`
+  - `STM_API_KEY`
+  - `BRONZE_S3_ACCESS_KEY`
+  - `BRONZE_S3_SECRET_KEY`
+  - `BRONZE_STORAGE_BACKEND=s3`
+  - `BRONZE_S3_ENDPOINT=https://eccfb9bedd87d413eaf4cac6ae2285d3.r2.cloudflarestorage.com`
+  - `BRONZE_S3_BUCKET=transit-raw`
+  - `BRONZE_S3_REGION=auto`
+  - `REALTIME_POLL_SECONDS=30`
+  - `REALTIME_STARTUP_DELAY_SECONDS=0`
+  - `PROVIDER_TIMEZONE=America/Toronto`
+  - `STM_PROVIDER_ID=stm`
+  - `APP_ENV=production`
+  - `LOG_LEVEL=INFO`
 
-The next manual step to get the worker hosted is to choose and authenticate one
-simple long-running container host, then deploy the existing Dockerized worker
-there with these runtime secrets:
+What is now proven from the hosted service logs:
 
-- `NEON_DATABASE_URL`
-- `STM_API_KEY`
-- `BRONZE_S3_ACCESS_KEY`
-- `BRONZE_S3_SECRET_KEY`
+- the worker starts successfully on Railway
+- at least one hosted realtime cycle succeeds end to end
+- Bronze writes remain R2-backed with `storage_backend = "s3"`
+- Gold rebuilds successfully after hosted realtime cycles
+- the hosted worker still honors true start-to-start cadence:
+  - observed hosted cycle 1:
+    - `cycle_duration_seconds = 7.802`
+    - `computed_sleep_seconds = 22.198`
+  - observed hosted cycle 3:
+    - `effective_start_to_start_seconds = 30.0`
 
-The current hosted worker runtime should also set:
+The detailed Railway deployment notes live in:
 
-- `REALTIME_POLL_SECONDS=30`
-- `REALTIME_STARTUP_DELAY_SECONDS=0`
+- `docs/realtime-worker-hosting.md`
 
 ## Freshness and delay expectations
 

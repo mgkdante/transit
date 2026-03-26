@@ -324,10 +324,30 @@ The repo now includes the minimum cloud-ready automation artifacts:
 - `.dockerignore`
   - keeps `.env`, Git metadata, docs, local data, tests, and dev caches out of the container build context
 
-Hosted realtime deployment is still blocked from the current environment. The
-repo already has the proven Docker worker path, but there is not yet one
-authenticated long-running container host CLI or one checked-in platform
-manifest available here to actually place that worker on a hosted runtime.
+Hosted realtime deployment is now achieved on Railway.
+
+The current hosted worker target is:
+
+- project: `transit-ops`
+- environment: `production`
+- service: `realtime-worker`
+
+Railway is using the existing repo `Dockerfile` directly, and the runtime
+command remains:
+
+- `python -m transit_ops.cli run-realtime-worker stm`
+
+Hosted verification from Railway logs showed:
+
+- the worker starts successfully
+- hosted realtime cycles succeed end to end
+- Bronze writes remain R2-backed with `storage_backend = "s3"`
+- Gold rebuilds successfully after hosted realtime cycles
+- the worker still honors the `REALTIME_POLL_SECONDS=30` start-to-start target
+
+Detailed hosted deployment notes live in:
+
+- `docs/realtime-worker-hosting.md`
 
 Exact GitHub Actions secrets required for the included static workflow are:
 
