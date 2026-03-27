@@ -10,10 +10,21 @@ from sqlalchemy import text
 
 from transit_ops.core.models import FeedKind, ProviderManifest
 from transit_ops.db.connection import make_engine, test_connection
-from transit_ops.gold import build_gold_marts, refresh_gold_realtime, refresh_gold_static
+from transit_ops.gold import (
+    build_gold_marts,
+    build_warm_rollups,
+    refresh_gold_realtime,
+    refresh_gold_static,
+)
 from transit_ops.ingestion import capture_realtime_feed, ingest_static_feed
 from transit_ops.logging import configure_logging
-from transit_ops.maintenance import prune_gold_storage, prune_silver_storage, vacuum_storage
+from transit_ops.maintenance import (
+    prune_bronze_storage,
+    prune_gold_storage,
+    prune_silver_storage,
+    prune_warm_rollup_storage,
+    vacuum_storage,
+)
 from transit_ops.orchestration import (
     run_realtime_cycle,
     run_realtime_worker_loop,
@@ -348,24 +359,38 @@ def refresh_gold_static_command(provider_id: str) -> None:
 
 
 @app.command("prune-silver-storage")
-def prune_silver_storage_command(provider_id: str) -> None:
+def prune_silver_storage_command(
+    provider_id: str,
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        help="Print what would be deleted without executing any deletions.",
+    ),
+) -> None:
     """Prune old static and realtime Silver rows according to retention settings."""
 
     settings = get_settings()
     try:
-        result = prune_silver_storage(provider_id, settings=settings)
+        result = prune_silver_storage(provider_id, settings=settings, dry_run=dry_run)
     except (ValueError, FileNotFoundError) as exc:
         raise typer.BadParameter(str(exc)) from exc
     typer.echo(json.dumps(result.display_dict(), indent=2))
 
 
 @app.command("prune-gold-storage")
-def prune_gold_storage_command(provider_id: str) -> None:
+def prune_gold_storage_command(
+    provider_id: str,
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        help="Print what would be deleted without executing any deletions.",
+    ),
+) -> None:
     """Prune old Gold fact rows according to GOLD_FACT_RETENTION_DAYS."""
 
     settings = get_settings()
     try:
-        result = prune_gold_storage(provider_id, settings=settings)
+        result = prune_gold_storage(provider_id, settings=settings, dry_run=dry_run)
     except (ValueError, FileNotFoundError) as exc:
         raise typer.BadParameter(str(exc)) from exc
     typer.echo(json.dumps(result.display_dict(), indent=2))
@@ -379,12 +404,38 @@ def vacuum_storage_command(
         "--full",
         help="Run VACUUM FULL ANALYZE instead of VACUUM ANALYZE.",
     ),
+    table: list[str] = typer.Option(  # noqa: B008
+        [],
+        "--table",
+        help="Vacuum only specific tables (repeatable). Defaults to all maintenance tables.",
+    ),
 ) -> None:
     """Run one-shot storage maintenance on the large Silver and Gold tables."""
 
     settings = get_settings()
     try:
-        result = vacuum_storage(provider_id, full=full, settings=settings)
+        result = vacuum_storage(
+            provider_id, full=full, tables=table or None, settings=settings
+        )
+    except (ValueError, FileNotFoundError) as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    typer.echo(json.dumps(result.display_dict(), indent=2))
+
+
+@app.command("prune-bronze-storage")
+def prune_bronze_storage_command(
+    provider_id: str,
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        help="Print what would be deleted without executing any deletions or R2 object removals.",
+    ),
+) -> None:
+    """Prune old Bronze R2 objects and raw metadata after downstream Silver data is gone."""
+
+    settings = get_settings()
+    try:
+        result = prune_bronze_storage(provider_id, settings=settings, dry_run=dry_run)
     except (ValueError, FileNotFoundError) as exc:
         raise typer.BadParameter(str(exc)) from exc
     typer.echo(json.dumps(result.display_dict(), indent=2))
@@ -453,6 +504,43 @@ def run_realtime_worker_command(
         raise typer.BadParameter(str(exc)) from exc
     except (ValueError, FileNotFoundError) as exc:
         raise typer.BadParameter(str(exc)) from exc
+
+
+@app.command("build-warm-rollups")
+def build_warm_rollups_command(
+    provider_id: str,
+    since: str | None = typer.Option(
+        None,
+        "--since",
+        help=(
+            "Only build periods with captured_at_utc >= this date (YYYY-MM-DD). "
+            "Defaults to all missing periods."
+        ),
+    ),
+) -> None:
+    """Build 5-minute warm rollups for any Gold fact periods not yet summarized."""
+
+    settings = get_settings()
+    since_utc = None
+    if since:
+        from datetime import UTC, datetime
+
+        try:
+            since_utc = datetime.strptime(since, "%Y-%m-%d").replace(tzinfo=UTC)
+        except ValueError as exc:
+            raise typer.BadParameter(f"--since must be YYYY-MM-DD, got: {since!r}") from exc
+
+    result = build_warm_rollups(provider_id, settings=settings, since_utc=since_utc)
+    typer.echo(json.dumps(result.display_dict(), indent=2))
+
+
+@app.command("prune-warm-rollup-storage")
+def prune_warm_rollup_storage_command(provider_id: str) -> None:
+    """Prune warm rollup rows older than GOLD_WARM_ROLLUP_RETENTION_DAYS (default 90 days)."""
+
+    settings = get_settings()
+    result = prune_warm_rollup_storage(provider_id, settings=settings)
+    typer.echo(json.dumps(result.display_dict(), indent=2))
 
 
 if __name__ == "__main__":

@@ -1,0 +1,54 @@
+name: Daily Warm Rollups
+
+on:
+  workflow_dispatch:
+  schedule:
+    # GitHub Actions cron is UTC-based.
+    # 07:00 UTC runs after the static pipeline at 06:00 UTC.
+    # Must run at least every 2 days to capture all data before
+    # GOLD_FACT_RETENTION_DAYS=2 prunes the source fact rows.
+    - cron: "0 7 * * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: daily-warm-rollups
+  cancel-in-progress: false
+
+jobs:
+  build-warm-rollups:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      APP_ENV: production
+      LOG_LEVEL: INFO
+      PROVIDER_TIMEZONE: America/Toronto
+      STM_PROVIDER_ID: stm
+      BRONZE_STORAGE_BACKEND: s3
+      BRONZE_S3_ENDPOINT: https://eccfb9bedd87d413eaf4cac6ae2285d3.r2.cloudflarestorage.com
+      BRONZE_S3_BUCKET: transit-raw
+      BRONZE_S3_REGION: auto
+      NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+      BRONZE_S3_ACCESS_KEY: ${{ secrets.BRONZE_S3_ACCESS_KEY }}
+      BRONZE_S3_SECRET_KEY: ${{ secrets.BRONZE_S3_SECRET_KEY }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+
+      - name: Install project dependencies
+        run: uv sync --locked
+
+      - name: Build 5-minute warm rollups
+        run: uv run python -m transit_ops.cli build-warm-rollups stm
+
+      - name: Prune expired warm rollup rows
+        run: uv run python -m transit_ops.cli prune-warm-rollup-storage stm

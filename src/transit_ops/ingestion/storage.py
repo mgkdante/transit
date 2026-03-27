@@ -32,6 +32,9 @@ class BronzeStorage:
     def describe_location(self, storage_path: str) -> str:
         raise NotImplementedError
 
+    def delete_object(self, storage_path: str) -> None:
+        raise NotImplementedError
+
 
 @dataclass(frozen=True)
 class LocalBronzeStorage(BronzeStorage):
@@ -53,6 +56,9 @@ class LocalBronzeStorage(BronzeStorage):
 
     def describe_location(self, storage_path: str) -> str:
         return str(self.root / Path(storage_path))
+
+    def delete_object(self, storage_path: str) -> None:
+        (self.root / Path(storage_path)).unlink(missing_ok=True)
 
 
 @dataclass(frozen=True)
@@ -111,6 +117,15 @@ class S3BronzeStorage(BronzeStorage):
 
     def describe_location(self, storage_path: str) -> str:
         return f"s3://{self.bucket}/{storage_path}"
+
+    def delete_object(self, storage_path: str) -> None:
+        try:
+            self.client.delete_object(Bucket=self.bucket, Key=storage_path)
+        except (BotoCoreError, ClientError) as exc:
+            raise BronzeStorageError(
+                "Failed to delete Bronze artifact at "
+                f"{self.describe_location(storage_path)} via endpoint {self.endpoint_url}: {exc}"
+            ) from exc
 
 
 def resolve_local_bronze_root(settings: Settings, *, project_root: Path) -> Path:
