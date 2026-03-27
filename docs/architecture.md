@@ -249,10 +249,16 @@ trip-update `vehicle_id` when present and otherwise backfills from the nearest
 `silver.vehicle_positions` row for the same `trip_id`. `route_id` is not used
 alone for vehicle inference because multiple active vehicles can share a route.
 
-Storage pressure is now reduced in two other places too:
+Storage pressure is now reduced in three places:
 
 - static Silver keeps only the current dataset version by default
 - realtime Silver keeps only the newest two days of snapshots by default
+- Gold fact tables (`fact_vehicle_snapshot`, `fact_trip_delay_snapshot`) keep
+  only the newest two days of rows by default (`GOLD_FACT_RETENTION_DAYS=2`)
+
+Gold fact retention is enforced every realtime cycle via a time-based DELETE
+on `captured_at_utc`. Two B-tree indexes on `(provider_id, captured_at_utc)`
+support these DELETEs efficiently (migration `0007_gold_fact_retention_indexes`).
 
 That keeps the reporting path honest: heavy history still exists where it is
 useful, but the hot path for dashboards no longer depends on repeatedly
@@ -382,7 +388,7 @@ Hosted verification from Railway logs showed:
 - hosted realtime cycles succeed end to end
 - Bronze writes remain R2-backed with `storage_backend = "s3"`
 - Gold rebuilds successfully after hosted realtime cycles
-- the worker still honors the `REALTIME_POLL_SECONDS=30` start-to-start target
+- the worker honors the `REALTIME_POLL_SECONDS=60` start-to-start target
 
 Detailed hosted deployment notes live in:
 
@@ -408,7 +414,7 @@ The current operating freshness model is intentionally simple:
 
 - static GTFS is a daily refresh job
 - realtime runs as repeated one-shot cycles inside the worker
-- the default realtime cadence is `REALTIME_POLL_SECONDS=30`
+- the production realtime cadence is `REALTIME_POLL_SECONDS=60`
 
 That means live dashboard freshness is expected to be:
 

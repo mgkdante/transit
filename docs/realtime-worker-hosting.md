@@ -48,7 +48,7 @@ Required non-secret runtime configuration:
 - `BRONZE_S3_ENDPOINT=https://eccfb9bedd87d413eaf4cac6ae2285d3.r2.cloudflarestorage.com`
 - `BRONZE_S3_BUCKET=transit-raw`
 - `BRONZE_S3_REGION=auto`
-- `REALTIME_POLL_SECONDS=300`
+- `REALTIME_POLL_SECONDS=60`
 - `REALTIME_STARTUP_DELAY_SECONDS=0`
 - `STATIC_DATASET_RETENTION_COUNT=1`
 - `SILVER_REALTIME_RETENTION_DAYS=2`
@@ -66,16 +66,32 @@ Hosted Railway logs showed:
 - successful realtime Silver load of `vehicle_positions`
 - successful `refresh-gold-realtime`
 - successful `prune-silver-storage`
+- successful `prune-gold-storage`
 - successful end-to-end worker cycles
 
-Observed hosted timing samples:
+Observed hosted timing samples at 60s cadence (deployment `bdd6e737`, 2026-03-27):
 
 - cycle 1:
-  - `cycle_duration_seconds = 7.802`
-  - `computed_sleep_seconds = 292.198`
+  - `cycle_duration_seconds = 4.637`
+  - `computed_sleep_seconds = 55.363`
+  - `effective_start_to_start_seconds = null` (first cycle)
+- cycle 2:
+  - `cycle_duration_seconds = 4.153`
+  - `effective_start_to_start_seconds = 60.001`
 - cycle 3:
-  - `cycle_duration_seconds = 6.119`
-  - `effective_start_to_start_seconds = 300.0`
+  - `cycle_duration_seconds = 4.628`
+  - `effective_start_to_start_seconds = 60.001`
+
+Typical step breakdown per cycle at 60s:
+
+- `capture_trip_updates`: ~0.8–1.4s
+- `load_trip_updates_to_silver`: ~1.8–2.2s
+- `capture_vehicle_positions`: ~0.4–0.6s
+- `load_vehicle_positions_to_silver`: ~0.3–0.6s
+- `refresh_gold_realtime`: ~0.24s
+- `prune_silver_storage`: ~0.03s
+- `prune_gold_storage`: ~0.02s
+- total: ~4–5s — well within the 60s window
 
 Observed hosted Bronze/R2 facts from logs and post-deploy verification:
 
@@ -96,3 +112,5 @@ Observed hosted Bronze/R2 facts from logs and post-deploy verification:
   requires it later
 - keep the worker on the lightweight realtime Gold refresh path rather than
   putting the heavy full `build-gold-marts` back into the hot loop
+- do not remove `prune-gold-storage` from the realtime cycle — it bounds
+  `gold.fact_*` table growth at 2 days (`GOLD_FACT_RETENTION_DAYS`)
