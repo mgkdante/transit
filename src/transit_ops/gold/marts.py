@@ -599,6 +599,20 @@ class GoldRealtimeRefreshResult:
         return payload
 
 
+@dataclass(frozen=True)
+class GoldStaticRefreshResult:
+    provider_id: str
+    provider_timezone: str
+    dataset_version_id: int
+    refreshed_at_utc: datetime
+    row_counts: dict[str, int]
+
+    def display_dict(self) -> dict[str, object]:
+        payload = asdict(self)
+        payload["refreshed_at_utc"] = self.refreshed_at_utc.isoformat()
+        return payload
+
+
 def _table_name(table_name: str) -> str:
     allowed_names = {
         "dim_route",
@@ -905,4 +919,53 @@ def refresh_gold_realtime(
         latest_vehicle_snapshot_id=context.latest_vehicle_snapshot_id,
         refreshed_at_utc=refreshed_at_utc,
         row_counts=fact_row_counts | latest_row_counts,
+    )
+
+
+def refresh_gold_static(
+    provider_id: str,
+    *,
+    settings: Settings | None = None,
+    registry: ProviderRegistry | None = None,
+    engine: Engine | None = None,
+) -> GoldStaticRefreshResult:
+    settings = settings or get_settings()
+    registry = registry or ProviderRegistry.from_project_root(settings=settings)
+    manifest = registry.get_provider(provider_id)
+    provider_timezone = manifest.provider.timezone
+    engine = engine or make_engine(settings)
+
+    with engine.begin() as connection:
+        context = _resolve_gold_build_context(
+            connection,
+            provider_id=manifest.provider.provider_id,
+            provider_timezone=provider_timezone,
+        )
+        connection.execute(ACQUIRE_GOLD_BUILD_LOCK, {"provider_id": context.provider_id})
+        _refresh_gold_dimensions(connection, context=context)
+        row_counts = {
+            "dim_route": _count_gold_rows(
+                connection,
+                provider_id=context.provider_id,
+                table_name="dim_route",
+            ),
+            "dim_stop": _count_gold_rows(
+                connection,
+                provider_id=context.provider_id,
+                table_name="dim_stop",
+            ),
+            "dim_date": _count_gold_rows(
+                connection,
+                provider_id=context.provider_id,
+                table_name="dim_date",
+            ),
+        }
+        refreshed_at_utc = utc_now()
+
+    return GoldStaticRefreshResult(
+        provider_id=context.provider_id,
+        provider_timezone=context.provider_timezone,
+        dataset_version_id=context.dataset_version_id,
+        refreshed_at_utc=refreshed_at_utc,
+        row_counts=row_counts,
     )

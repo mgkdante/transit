@@ -10,7 +10,7 @@ from sqlalchemy import text
 
 from transit_ops.core.models import FeedKind, ProviderManifest
 from transit_ops.db.connection import make_engine, test_connection
-from transit_ops.gold import build_gold_marts, refresh_gold_realtime
+from transit_ops.gold import build_gold_marts, refresh_gold_realtime, refresh_gold_static
 from transit_ops.ingestion import capture_realtime_feed, ingest_static_feed
 from transit_ops.logging import configure_logging
 from transit_ops.maintenance import prune_gold_storage, prune_silver_storage, vacuum_storage
@@ -329,6 +329,24 @@ def refresh_gold_realtime_command(provider_id: str) -> None:
     typer.echo(json.dumps(result.display_dict(), indent=2))
 
 
+@app.command("refresh-gold-static")
+def refresh_gold_static_command(provider_id: str) -> None:
+    """Refresh only Gold dimension tables from the current static Silver dataset."""
+
+    settings = get_settings()
+    try:
+        result = refresh_gold_static(
+            provider_id,
+            settings=settings,
+            registry=_provider_registry(settings),
+        )
+    except KeyError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    except (ValueError, FileNotFoundError) as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    typer.echo(json.dumps(result.display_dict(), indent=2))
+
+
 @app.command("prune-silver-storage")
 def prune_silver_storage_command(provider_id: str) -> None:
     """Prune old static and realtime Silver rows according to retention settings."""
@@ -374,7 +392,7 @@ def vacuum_storage_command(
 
 @app.command("run-static-pipeline")
 def run_static_pipeline_command(provider_id: str) -> None:
-    """Run ingest-static, load-static-silver, and build-gold-marts for one provider."""
+    """Run ingest-static, load-static-silver, and refresh-gold-static for one provider."""
 
     settings = get_settings()
     try:

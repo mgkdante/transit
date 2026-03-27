@@ -9,6 +9,7 @@ from transit_ops.gold.marts import (
     LOCK_GOLD_TABLES,
     build_gold_marts,
     refresh_gold_realtime,
+    refresh_gold_static,
 )
 from transit_ops.settings import Settings
 
@@ -249,3 +250,40 @@ def test_build_gold_marts_requires_current_static_dataset() -> None:
             registry=FakeRegistry(_build_manifest()),
             engine=engine,
         )
+
+
+def test_refresh_gold_static_refreshes_only_dimensions() -> None:
+    connection = RecordingConnection(dataset_row={"dataset_version_id": 2})
+    engine = FakeEngine(connection)
+    settings = Settings(NEON_DATABASE_URL="postgresql://user:pass@example.com/neondb")
+
+    result = refresh_gold_static(
+        "stm",
+        settings=settings,
+        registry=FakeRegistry(_build_manifest()),
+        engine=engine,
+    )
+
+    assert result.provider_id == "stm"
+    assert result.provider_timezone == "America/Toronto"
+    assert result.dataset_version_id == 2
+    assert result.row_counts == {
+        "dim_route": 216,
+        "dim_stop": 8897,
+        "dim_date": 99,
+    }
+    sql_calls = [call[0] for call in connection.calls]
+    # Advisory lock acquired — serializes with realtime refresh
+    assert any("pg_advisory_xact_lock" in sql for sql in sql_calls)
+    # Dimension tables are refreshed
+    assert any("DELETE FROM gold.dim_route" in sql for sql in sql_calls)
+    assert any("INSERT INTO gold.dim_route" in sql for sql in sql_calls)
+    assert any("DELETE FROM gold.dim_stop" in sql for sql in sql_calls)
+    assert any("DELETE FROM gold.dim_date" in sql for sql in sql_calls)
+    # ACCESS EXCLUSIVE table lock is NOT acquired
+    assert not any("LOCK TABLE" in sql for sql in sql_calls)
+    # Fact and latest tables are NOT touched
+    assert not any("fact_vehicle_snapshot" in sql for sql in sql_calls)
+    assert not any("fact_trip_delay_snapshot" in sql for sql in sql_calls)
+    assert not any("latest_vehicle_snapshot" in sql for sql in sql_calls)
+    assert not any("latest_trip_delay_snapshot" in sql for sql in sql_calls)

@@ -25,6 +25,7 @@ def test_cli_help() -> None:
     assert "load-realtime-silver" in result.stdout
     assert "build-gold-marts" in result.stdout
     assert "refresh-gold-realtime" in result.stdout
+    assert "refresh-gold-static" in result.stdout
     assert "prune-silver-storage" in result.stdout
     assert "vacuum-storage" in result.stdout
     assert "run-static-pipeline" in result.stdout
@@ -74,6 +75,40 @@ def test_refresh_gold_realtime_help() -> None:
     assert "Upsert the latest realtime snapshots into Gold history" in result.stdout
 
 
+def test_refresh_gold_static_help() -> None:
+    result = runner.invoke(app, ["refresh-gold-static", "--help"])
+
+    assert result.exit_code == 0
+    assert "Refresh only Gold dimension tables" in result.stdout
+
+
+def test_refresh_gold_static_calls_refresh_gold_static(monkeypatch) -> None:
+    from datetime import UTC, datetime
+
+    from transit_ops.gold import GoldStaticRefreshResult
+
+    recorded: dict[str, object] = {}
+
+    def fake_refresh_gold_static(provider_id, *, settings, registry):  # noqa: ANN001
+        recorded["provider_id"] = provider_id
+        return GoldStaticRefreshResult(
+            provider_id=provider_id,
+            provider_timezone="America/Toronto",
+            dataset_version_id=7,
+            refreshed_at_utc=datetime(2026, 3, 25, 0, 2, 0, tzinfo=UTC),
+            row_counts={"dim_route": 100, "dim_stop": 200, "dim_date": 365},
+        )
+
+    monkeypatch.setattr(cli_module, "refresh_gold_static", fake_refresh_gold_static)
+
+    result = runner.invoke(app, ["refresh-gold-static", "stm"])
+
+    assert result.exit_code == 0
+    assert recorded == {"provider_id": "stm"}
+    assert '"dim_route": 100' in result.stdout
+    assert '"dataset_version_id": 7' in result.stdout
+
+
 def test_prune_silver_storage_help() -> None:
     result = runner.invoke(app, ["prune-silver-storage", "--help"])
 
@@ -93,7 +128,7 @@ def test_run_static_pipeline_help() -> None:
     result = runner.invoke(app, ["run-static-pipeline", "--help"])
 
     assert result.exit_code == 0
-    assert "Run ingest-static, load-static-silver, and build-gold-marts" in result.stdout
+    assert "Run ingest-static, load-static-silver, and refresh-gold-static" in result.stdout
 
 
 def test_run_realtime_cycle_help() -> None:

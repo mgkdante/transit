@@ -15,8 +15,8 @@ from transit_ops.db.connection import make_engine, require_database_url
 from transit_ops.gold import (
     GoldBuildResult,
     GoldRealtimeRefreshResult,
-    build_gold_marts,
     refresh_gold_realtime,
+    refresh_gold_static,
 )
 from transit_ops.ingestion import (
     build_realtime_ingestion_config,
@@ -262,8 +262,8 @@ def run_static_pipeline(
     )
 
     gold_build, gold_build_duration_seconds = _run_timed_static_step(
-        "build-gold-marts",
-        lambda: build_gold_marts(
+        "refresh-gold-static",
+        lambda: refresh_gold_static(
             provider_id,
             settings=settings,
             registry=registry,

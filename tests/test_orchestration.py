@@ -7,7 +7,7 @@ from types import SimpleNamespace
 import pytest
 
 import transit_ops.orchestration as orchestration
-from transit_ops.gold import GoldBuildResult, GoldRealtimeRefreshResult
+from transit_ops.gold import GoldBuildResult, GoldRealtimeRefreshResult, GoldStaticRefreshResult
 from transit_ops.ingestion import RealtimeIngestionResult, StaticIngestionResult
 from transit_ops.orchestration import (
     run_realtime_cycle,
@@ -61,6 +61,16 @@ def _gold_result() -> GoldBuildResult:
         latest_vehicle_snapshot_id=21,
         built_at_utc=datetime(2026, 3, 25, 0, 2, 0, tzinfo=UTC),
         row_counts={"fact_trip_delay_snapshot": 1, "fact_vehicle_snapshot": 1},
+    )
+
+
+def _gold_static_refresh_result() -> GoldStaticRefreshResult:
+    return GoldStaticRefreshResult(
+        provider_id="stm",
+        provider_timezone="America/Toronto",
+        dataset_version_id=7,
+        refreshed_at_utc=datetime(2026, 3, 25, 0, 2, 0, tzinfo=UTC),
+        row_counts={"dim_route": 100, "dim_stop": 200, "dim_date": 365},
     )
 
 
@@ -146,10 +156,10 @@ def test_run_static_pipeline_orders_existing_steps(monkeypatch) -> None:
     )
     monkeypatch.setattr(
         orchestration,
-        "build_gold_marts",
+        "refresh_gold_static",
         lambda provider_id, settings, registry, engine: (
-            call_order.append("build-gold-marts"),
-            _gold_result(),
+            call_order.append("refresh-gold-static"),
+            _gold_static_refresh_result(),
         )[1],
     )
 
@@ -160,7 +170,7 @@ def test_run_static_pipeline_orders_existing_steps(monkeypatch) -> None:
         engine=object(),
     )
 
-    assert call_order == ["ingest-static", "load-static-silver", "build-gold-marts"]
+    assert call_order == ["ingest-static", "load-static-silver", "refresh-gold-static"]
     assert result.status == "succeeded"
     assert result.static_ingestion["storage_backend"] == "s3"
     assert result.gold_build["dataset_version_id"] == 7

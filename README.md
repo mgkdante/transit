@@ -282,16 +282,23 @@ top-level trip `delay_seconds` field. `route_id` remains useful for grouping and
 filtering, but it is not used by itself to infer a single `vehicle_id` because
 one route can have many concurrent active vehicles.
 
-Gold refresh is now split between one heavy backfill path and one lightweight
-realtime path:
+Gold refresh is now split across three explicit paths:
 
-- `build-gold-marts stm`
-- `refresh-gold-realtime stm`
+- `build-gold-marts stm` — heavy full-history backfill, manual recovery only
+- `refresh-gold-static stm` — daily static batch path, replaces only Gold dimensions
+- `refresh-gold-realtime stm` — 60s realtime path, upserts latest snapshots only
 
-`build-gold-marts stm` is still the explicit full-history backfill command.
+`refresh-gold-static stm` is called by `run-static-pipeline` after each daily
+Silver static load. It replaces `dim_route`, `dim_stop`, and `dim_date` from
+the current dataset version without touching fact tables or acquiring a table
+lock. This eliminates lock contention with the concurrent realtime worker.
+
 `refresh-gold-realtime stm` is the fast path used by the realtime worker and
 realtime cycle. It upserts only the current trip and vehicle snapshots into the
 historical Gold facts and then refreshes the small `gold.latest_*` tables.
+
+`build-gold-marts stm` is the explicit full-history backfill command for manual
+recovery only. It is no longer called by any automated pipeline.
 
 Power BI report authoring is not checked into this repo as a `.pbix`, but the
 V1 dashboard handoff assets now exist under `powerbi/`:
@@ -312,7 +319,7 @@ proven Bronze, Silver, and Gold services instead of duplicating business logic:
 - `run-static-pipeline stm`
   - runs `ingest-static stm`
   - runs `load-static-silver stm`
-  - runs `build-gold-marts stm`
+  - runs `refresh-gold-static stm`
 - `run-realtime-cycle stm`
   - runs `capture-realtime stm trip_updates`
   - runs `capture-realtime stm vehicle_positions`

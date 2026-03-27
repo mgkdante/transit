@@ -69,6 +69,8 @@ The current automation slice adds:
 - one long-running realtime worker entrypoint
 - one GitHub Actions workflow for the daily static pipeline
 - one Docker image entrypoint for the continuous realtime worker
+- a dedicated static Gold dimension refresh path (`refresh-gold-static`) that
+  decouples the daily static batch from the heavy full Gold rebuild
 
 ## Bronze static ingestion
 
@@ -216,16 +218,26 @@ The Gold design stays intentionally small:
 - `gold.latest_vehicle_snapshot` keeps only the newest vehicle snapshot per provider for dashboards and browser inspection
 - `gold.latest_trip_delay_snapshot` keeps only the newest trip-delay snapshot per provider for dashboards and browser inspection
 
-Gold refresh now has two explicit paths:
+Gold refresh now has three explicit paths:
 
 - `build-gold-marts`
   - heavy full-history backfill and recovery path
+  - acquires `LOCK TABLE ... IN ACCESS EXCLUSIVE MODE` on all Gold tables
+  - intended for manual recovery only, not called from any automated pipeline
+- `refresh-gold-static`
+  - lightweight static batch path that replaces only `dim_route`, `dim_stop`,
+    and `dim_date` from the current static Silver dataset version
+  - acquires only the advisory lock, no table lock, does not touch fact tables
+  - called by `run-static-pipeline` after each daily Bronze → Silver static load
 - `refresh-gold-realtime`
   - lightweight realtime path that upserts only the latest snapshots into
     history and refreshes the small `gold.latest_*` tables
+  - acquires only the advisory lock, no table lock
 
-The realtime worker and `run-realtime-cycle` now use the lightweight refresh
-path instead of the old full rebuild path.
+The realtime worker and `run-realtime-cycle` use the `refresh-gold-realtime`
+path. The daily static pipeline uses the `refresh-gold-static` path. Neither
+automated path acquires the ACCESS EXCLUSIVE table lock, eliminating lock
+contention between the daily static job and the 60s realtime worker.
 
 The KPI views stay close to the marts:
 
