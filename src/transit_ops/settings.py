@@ -40,6 +40,7 @@ class Settings(BaseSettings):
     REALTIME_STARTUP_DELAY_SECONDS: int = 0
     STATIC_DATASET_RETENTION_COUNT: int = 1
     SILVER_REALTIME_RETENTION_DAYS: int = 2
+    GOLD_FACT_RETENTION_DAYS: int = 2
 
     @property
     def sqlalchemy_database_url(self) -> str | None:
@@ -92,6 +93,7 @@ class Settings(BaseSettings):
             "REALTIME_STARTUP_DELAY_SECONDS": self.REALTIME_STARTUP_DELAY_SECONDS,
             "STATIC_DATASET_RETENTION_COUNT": self.STATIC_DATASET_RETENTION_COUNT,
             "SILVER_REALTIME_RETENTION_DAYS": self.SILVER_REALTIME_RETENTION_DAYS,
+            "GOLD_FACT_RETENTION_DAYS": self.GOLD_FACT_RETENTION_DAYS,
         }
 
 

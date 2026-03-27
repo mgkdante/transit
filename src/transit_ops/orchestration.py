@@ -24,7 +24,12 @@ from transit_ops.ingestion import (
     ingest_static_feed,
 )
 from transit_ops.ingestion.common import utc_now
-from transit_ops.maintenance import SilverStoragePruneResult, prune_silver_storage
+from transit_ops.maintenance import (
+    GoldStoragePruneResult,
+    SilverStoragePruneResult,
+    prune_gold_storage,
+    prune_silver_storage,
+)
 from transit_ops.providers import ProviderRegistry
 from transit_ops.settings import Settings, get_settings
 from transit_ops.silver import (
@@ -90,6 +95,9 @@ class RealtimeCycleResult:
     silver_maintenance: dict[str, object] | None
     silver_maintenance_duration_seconds: float | None
     silver_maintenance_error_message: str | None
+    gold_maintenance: dict[str, object] | None
+    gold_maintenance_duration_seconds: float | None
+    gold_maintenance_error_message: str | None
 
     @property
     def has_failures(self) -> bool:
@@ -115,6 +123,9 @@ class RealtimeCycleResult:
             "silver_maintenance": self.silver_maintenance,
             "silver_maintenance_duration_seconds": self.silver_maintenance_duration_seconds,
             "silver_maintenance_error_message": self.silver_maintenance_error_message,
+            "gold_maintenance": self.gold_maintenance,
+            "gold_maintenance_duration_seconds": self.gold_maintenance_duration_seconds,
+            "gold_maintenance_error_message": self.gold_maintenance_error_message,
         }
 
 
@@ -435,6 +446,9 @@ def run_realtime_cycle(
     silver_maintenance_result: SilverStoragePruneResult | None = None
     silver_maintenance_duration_seconds: float | None = None
     silver_maintenance_error_message: str | None = None
+    gold_maintenance_result: GoldStoragePruneResult | None = None
+    gold_maintenance_duration_seconds: float | None = None
+    gold_maintenance_error_message: str | None = None
     if successful_endpoint_count:
         logger.info("Running refresh-gold-realtime after realtime cycle for '%s'.", provider_id)
         try:
@@ -474,12 +488,37 @@ def run_realtime_cycle(
                     exc,
                 )
                 silver_maintenance_error_message = str(exc)
+
+            logger.info("Running prune-gold-storage after realtime cycle for '%s'.", provider_id)
+            try:
+                gold_maintenance_result, gold_maintenance_duration_seconds = (
+                    _run_timed_realtime_step(
+                        "prune-gold-storage",
+                        lambda: prune_gold_storage(
+                            provider_id,
+                            settings=settings,
+                            engine=engine,
+                        ),
+                    )
+                )
+            except Exception as exc:
+                logger.error(
+                    "Realtime cycle Gold maintenance failed for provider '%s': %s",
+                    provider_id,
+                    exc,
+                )
+                gold_maintenance_error_message = str(exc)
     step_timings_seconds["refresh_gold_realtime"] = gold_build_duration_seconds
     step_timings_seconds["prune_silver_storage"] = silver_maintenance_duration_seconds
+    step_timings_seconds["prune_gold_storage"] = gold_maintenance_duration_seconds
 
     completed_at_utc = utc_now()
     total_duration_seconds = round(time.perf_counter() - started_at, 3)
-    if gold_error_message or silver_maintenance_error_message:
+    if (
+        gold_error_message
+        or silver_maintenance_error_message
+        or gold_maintenance_error_message
+    ):
         status = "failed"
     elif failed_endpoint_count == 0:
         status = "succeeded"
@@ -506,6 +545,11 @@ def run_realtime_cycle(
         ),
         silver_maintenance_duration_seconds=silver_maintenance_duration_seconds,
         silver_maintenance_error_message=silver_maintenance_error_message,
+        gold_maintenance=(
+            gold_maintenance_result.display_dict() if gold_maintenance_result else None
+        ),
+        gold_maintenance_duration_seconds=gold_maintenance_duration_seconds,
+        gold_maintenance_error_message=gold_maintenance_error_message,
     )
 
 

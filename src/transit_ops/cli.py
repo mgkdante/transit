@@ -13,7 +13,7 @@ from transit_ops.db.connection import make_engine, test_connection
 from transit_ops.gold import build_gold_marts, refresh_gold_realtime
 from transit_ops.ingestion import capture_realtime_feed, ingest_static_feed
 from transit_ops.logging import configure_logging
-from transit_ops.maintenance import prune_silver_storage, vacuum_storage
+from transit_ops.maintenance import prune_gold_storage, prune_silver_storage, vacuum_storage
 from transit_ops.orchestration import (
     run_realtime_cycle,
     run_realtime_worker_loop,
@@ -336,6 +336,18 @@ def prune_silver_storage_command(provider_id: str) -> None:
     settings = get_settings()
     try:
         result = prune_silver_storage(provider_id, settings=settings)
+    except (ValueError, FileNotFoundError) as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    typer.echo(json.dumps(result.display_dict(), indent=2))
+
+
+@app.command("prune-gold-storage")
+def prune_gold_storage_command(provider_id: str) -> None:
+    """Prune old Gold fact rows according to GOLD_FACT_RETENTION_DAYS."""
+
+    settings = get_settings()
+    try:
+        result = prune_gold_storage(provider_id, settings=settings)
     except (ValueError, FileNotFoundError) as exc:
         raise typer.BadParameter(str(exc)) from exc
     typer.echo(json.dumps(result.display_dict(), indent=2))

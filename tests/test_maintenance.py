@@ -3,7 +3,9 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 from transit_ops.maintenance import (
+    GoldStoragePruneResult,
     SilverStoragePruneResult,
+    prune_gold_fact_history,
     prune_realtime_silver_history,
     prune_static_silver_datasets,
 )
@@ -52,6 +54,10 @@ class RecordingConnection:
             return RowcountResult(20)
         if "DELETE FROM silver.vehicle_positions" in sql_text:
             return RowcountResult(10)
+        if "DELETE FROM gold.fact_trip_delay_snapshot" in sql_text:
+            return RowcountResult(500)
+        if "DELETE FROM gold.fact_vehicle_snapshot" in sql_text:
+            return RowcountResult(300)
         return RowcountResult(0)
 
 
@@ -111,4 +117,57 @@ def test_prune_result_display_dict_formats_timestamps() -> None:
     )
 
     assert result.display_dict()["realtime_cutoff_utc"] == "2026-03-24T20:00:00+00:00"
+    assert result.display_dict()["completed_at_utc"] == "2026-03-26T20:10:00+00:00"
+
+
+# ---------------------------------------------------------------------------
+# prune_gold_fact_history
+# ---------------------------------------------------------------------------
+
+
+def test_prune_gold_fact_history_deletes_rows_older_than_cutoff() -> None:
+    connection = RecordingConnection()
+    now_utc = datetime(2026, 3, 26, 20, 0, 0, tzinfo=UTC)
+
+    cutoff_utc, deleted_row_counts = prune_gold_fact_history(
+        connection,
+        provider_id="stm",
+        retention_days=2,
+        now_utc=now_utc,
+    )
+
+    assert cutoff_utc == datetime(2026, 3, 24, 20, 0, 0, tzinfo=UTC)
+    assert deleted_row_counts == {
+        "gold.fact_trip_delay_snapshot": 500,
+        "gold.fact_vehicle_snapshot": 300,
+    }
+
+
+def test_prune_gold_fact_history_zero_retention_is_noop() -> None:
+    connection = RecordingConnection()
+
+    cutoff_utc, deleted_row_counts = prune_gold_fact_history(
+        connection,
+        provider_id="stm",
+        retention_days=0,
+    )
+
+    assert cutoff_utc is None
+    assert deleted_row_counts == {
+        "gold.fact_trip_delay_snapshot": 0,
+        "gold.fact_vehicle_snapshot": 0,
+    }
+    assert len(connection.calls) == 0
+
+
+def test_gold_prune_result_display_dict_formats_timestamps() -> None:
+    result = GoldStoragePruneResult(
+        provider_id="stm",
+        retention_days=2,
+        cutoff_utc=datetime(2026, 3, 24, 20, 0, 0, tzinfo=UTC),
+        deleted_row_counts={"gold.fact_trip_delay_snapshot": 500},
+        completed_at_utc=datetime(2026, 3, 26, 20, 10, 0, tzinfo=UTC),
+    )
+
+    assert result.display_dict()["cutoff_utc"] == "2026-03-24T20:00:00+00:00"
     assert result.display_dict()["completed_at_utc"] == "2026-03-26T20:10:00+00:00"

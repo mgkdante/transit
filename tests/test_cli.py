@@ -148,6 +148,7 @@ def test_run_realtime_cycle_returns_non_zero_on_partial_failure(monkeypatch) -> 
                 "load_vehicle_positions_to_silver": None,
                 "refresh_gold_realtime": 0.25,
                 "prune_silver_storage": None,
+                "prune_gold_storage": None,
             },
             gold_build=None,
             gold_build_duration_seconds=0.25,
@@ -155,6 +156,9 @@ def test_run_realtime_cycle_returns_non_zero_on_partial_failure(monkeypatch) -> 
             silver_maintenance=None,
             silver_maintenance_duration_seconds=None,
             silver_maintenance_error_message=None,
+            gold_maintenance=None,
+            gold_maintenance_duration_seconds=None,
+            gold_maintenance_error_message=None,
         ),
     )
 

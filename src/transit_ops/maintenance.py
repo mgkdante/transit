@@ -25,11 +25,15 @@ REALTIME_SILVER_TABLES = (
     "silver.vehicle_positions",
 )
 
+GOLD_FACT_TABLES = (
+    "gold.fact_trip_delay_snapshot",
+    "gold.fact_vehicle_snapshot",
+)
+
 VACUUM_TABLES = (
     *STATIC_SILVER_TABLES,
     *REALTIME_SILVER_TABLES,
-    "gold.fact_trip_delay_snapshot",
-    "gold.fact_vehicle_snapshot",
+    *GOLD_FACT_TABLES,
     "gold.latest_trip_delay_snapshot",
     "gold.latest_vehicle_snapshot",
 )
@@ -159,6 +163,38 @@ DELETE_OLD_VEHICLE_POSITIONS = text(
         ), -1)
     """
 )
+
+
+DELETE_OLD_FACT_TRIP_DELAY_SNAPSHOTS = text(
+    """
+    DELETE FROM gold.fact_trip_delay_snapshot
+    WHERE provider_id = :provider_id
+      AND captured_at_utc < :cutoff_utc
+    """
+)
+
+DELETE_OLD_FACT_VEHICLE_SNAPSHOTS = text(
+    """
+    DELETE FROM gold.fact_vehicle_snapshot
+    WHERE provider_id = :provider_id
+      AND captured_at_utc < :cutoff_utc
+    """
+)
+
+
+@dataclass(frozen=True)
+class GoldStoragePruneResult:
+    provider_id: str
+    retention_days: int
+    cutoff_utc: datetime | None
+    deleted_row_counts: dict[str, int]
+    completed_at_utc: datetime
+
+    def display_dict(self) -> dict[str, object]:
+        payload = asdict(self)
+        payload["cutoff_utc"] = self.cutoff_utc.isoformat() if self.cutoff_utc else None
+        payload["completed_at_utc"] = self.completed_at_utc.isoformat()
+        return payload
 
 
 @dataclass(frozen=True)
@@ -315,6 +351,61 @@ def prune_silver_storage(
         pruned_dataset_version_ids=pruned_dataset_version_ids,
         realtime_cutoff_utc=realtime_cutoff_utc,
         deleted_row_counts=static_deleted_row_counts | realtime_deleted_row_counts,
+        completed_at_utc=completed_at_utc,
+    )
+
+
+def prune_gold_fact_history(
+    connection: Connection,
+    *,
+    provider_id: str,
+    retention_days: int,
+    now_utc: datetime | None = None,
+) -> tuple[datetime | None, dict[str, int]]:
+    if retention_days <= 0:
+        return None, {
+            "gold.fact_trip_delay_snapshot": 0,
+            "gold.fact_vehicle_snapshot": 0,
+        }
+
+    cutoff_utc = (now_utc or utc_now()) - timedelta(days=retention_days)
+    params = {
+        "provider_id": provider_id,
+        "cutoff_utc": cutoff_utc,
+    }
+    deleted_row_counts = {
+        "gold.fact_trip_delay_snapshot": _safe_rowcount(
+            connection.execute(DELETE_OLD_FACT_TRIP_DELAY_SNAPSHOTS, params)
+        ),
+        "gold.fact_vehicle_snapshot": _safe_rowcount(
+            connection.execute(DELETE_OLD_FACT_VEHICLE_SNAPSHOTS, params)
+        ),
+    }
+    return cutoff_utc, deleted_row_counts
+
+
+def prune_gold_storage(
+    provider_id: str,
+    *,
+    settings: Settings | None = None,
+    engine: Engine | None = None,
+) -> GoldStoragePruneResult:
+    settings = settings or get_settings()
+    engine = engine or make_engine(settings)
+
+    with engine.begin() as connection:
+        cutoff_utc, deleted_row_counts = prune_gold_fact_history(
+            connection,
+            provider_id=provider_id,
+            retention_days=settings.GOLD_FACT_RETENTION_DAYS,
+        )
+        completed_at_utc = utc_now()
+
+    return GoldStoragePruneResult(
+        provider_id=provider_id,
+        retention_days=settings.GOLD_FACT_RETENTION_DAYS,
+        cutoff_utc=cutoff_utc,
+        deleted_row_counts=deleted_row_counts,
         completed_at_utc=completed_at_utc,
     )
 
