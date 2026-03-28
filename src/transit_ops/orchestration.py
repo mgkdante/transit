@@ -33,6 +33,7 @@ from transit_ops.maintenance import (
 from transit_ops.providers import ProviderRegistry
 from transit_ops.settings import Settings, get_settings
 from transit_ops.silver import (
+    get_current_static_content_hash,
     load_latest_realtime_to_silver,
     load_latest_static_to_silver,
 )
@@ -50,11 +51,13 @@ class StaticPipelineResult:
     completed_at_utc: datetime
     total_duration_seconds: float
     static_ingestion_duration_seconds: float
-    silver_load_duration_seconds: float
-    gold_build_duration_seconds: float
+    silver_load_duration_seconds: float | None
+    gold_build_duration_seconds: float | None
     static_ingestion: dict[str, object]
-    silver_load: dict[str, object]
-    gold_build: dict[str, object]
+    silver_load: dict[str, object] | None
+    gold_build: dict[str, object] | None
+    static_changed: bool
+    skipped_reason: str | None
 
     def display_dict(self) -> dict[str, object]:
         payload = asdict(self)
@@ -241,6 +244,8 @@ def run_static_pipeline(
     started_at = time.perf_counter()
 
     logger.info("Starting static pipeline for provider '%s'.", provider_id)
+
+    # Step 1: Always run — Bronze lineage is always recorded.
     static_ingestion, static_ingestion_duration_seconds = _run_timed_static_step(
         "ingest-static",
         lambda: ingest_static_feed(
@@ -251,6 +256,49 @@ def run_static_pipeline(
         ),
     )
 
+    # Hash comparison gate: compare new Bronze hash to currently active Silver version.
+    with engine.connect() as connection:
+        current_hash = get_current_static_content_hash(
+            connection,
+            provider_id=provider_id,
+        )
+
+    new_hash = static_ingestion.checksum_sha256
+    static_changed = current_hash != new_hash
+
+    if not static_changed:
+        logger.info(
+            "Static content unchanged for provider '%s' (hash=%s). "
+            "Skipping Silver load and Gold refresh.",
+            provider_id,
+            new_hash,
+        )
+        completed_at_utc = utc_now()
+        total_duration_seconds = round(time.perf_counter() - started_at, 3)
+        return StaticPipelineResult(
+            provider_id=provider_id,
+            status="succeeded",
+            started_at_utc=started_at_utc,
+            completed_at_utc=completed_at_utc,
+            total_duration_seconds=total_duration_seconds,
+            static_ingestion_duration_seconds=static_ingestion_duration_seconds,
+            silver_load_duration_seconds=None,
+            gold_build_duration_seconds=None,
+            static_ingestion=static_ingestion.display_dict(),
+            silver_load=None,
+            gold_build=None,
+            static_changed=False,
+            skipped_reason="static_content_unchanged",
+        )
+
+    # Content changed (or no existing version): run steps 2 and 3.
+    logger.info(
+        "Static content changed for provider '%s' (new=%s, previous=%s). "
+        "Running Silver load and Gold refresh.",
+        provider_id,
+        new_hash,
+        current_hash,
+    )
     silver_load, silver_load_duration_seconds = _run_timed_static_step(
         "load-static-silver",
         lambda: load_latest_static_to_silver(
@@ -285,6 +333,8 @@ def run_static_pipeline(
         static_ingestion=static_ingestion.display_dict(),
         silver_load=silver_load.display_dict(),
         gold_build=gold_build.display_dict(),
+        static_changed=True,
+        skipped_reason=None,
     )
 
 

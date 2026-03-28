@@ -664,6 +664,29 @@ def find_latest_static_bronze_archive(
     )
 
 
+def get_current_static_content_hash(
+    connection: Connection,
+    *,
+    provider_id: str,
+) -> str | None:
+    """Return the content_hash of the current active static dataset version, or None."""
+    row = connection.execute(
+        text(
+            """
+            SELECT content_hash
+            FROM core.dataset_versions
+            WHERE provider_id = :provider_id
+              AND dataset_kind = 'static_schedule'
+              AND is_current = true
+            ORDER BY loaded_at_utc DESC
+            LIMIT 1
+            """
+        ),
+        {"provider_id": provider_id},
+    ).scalar_one_or_none()
+    return str(row) if row is not None else None
+
+
 def _mark_previous_dataset_versions_not_current(
     connection: Connection,
     *,

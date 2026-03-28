@@ -18,6 +18,19 @@ from transit_ops.settings import Settings
 from transit_ops.silver import RealtimeSilverLoadResult, StaticSilverLoadResult
 
 
+class _FakeEngine:
+    """Minimal engine stub supporting 'with engine.connect() as conn'."""
+
+    def connect(self):
+        return self
+
+    def __enter__(self):
+        return self  # used as connection object
+
+    def __exit__(self, *args):
+        pass
+
+
 def _static_ingestion_result() -> StaticIngestionResult:
     return StaticIngestionResult(
         provider_id="stm",
@@ -146,6 +159,12 @@ def test_run_static_pipeline_orders_existing_steps(monkeypatch) -> None:
             _static_ingestion_result(),
         )[1],
     )
+    # Return a different hash so the gate treats this as a changed feed.
+    monkeypatch.setattr(
+        orchestration,
+        "get_current_static_content_hash",
+        lambda connection, provider_id: "b" * 64,
+    )
     monkeypatch.setattr(
         orchestration,
         "load_latest_static_to_silver",
@@ -167,7 +186,7 @@ def test_run_static_pipeline_orders_existing_steps(monkeypatch) -> None:
         "stm",
         settings=Settings(_env_file=None, NEON_DATABASE_URL="postgresql://user:pass@example.com/neondb"),
         registry=object(),
-        engine=object(),
+        engine=_FakeEngine(),
     )
 
     assert call_order == ["ingest-static", "load-static-silver", "refresh-gold-static"]
@@ -178,6 +197,8 @@ def test_run_static_pipeline_orders_existing_steps(monkeypatch) -> None:
     assert result.static_ingestion_duration_seconds >= 0
     assert result.silver_load_duration_seconds >= 0
     assert result.gold_build_duration_seconds >= 0
+    assert result.static_changed is True
+    assert result.skipped_reason is None
 
 
 def test_run_realtime_cycle_reports_partial_failure_and_continues(monkeypatch) -> None:
@@ -459,3 +480,153 @@ def test_run_realtime_worker_loop_rejects_invalid_max_cycles() -> None:
             engine=object(),
             max_cycles=0,
         )
+
+
+def test_run_static_pipeline_skips_silver_and_gold_when_hash_unchanged(monkeypatch) -> None:
+    """Unchanged Bronze hash: Silver load and Gold refresh are skipped entirely."""
+    silver_called = False
+    gold_called = False
+
+    monkeypatch.setattr(
+        orchestration,
+        "ingest_static_feed",
+        lambda provider_id, settings, registry, engine: _static_ingestion_result(),
+    )
+    # Return the same hash as StaticIngestionResult.checksum_sha256 ("a" * 64).
+    monkeypatch.setattr(
+        orchestration,
+        "get_current_static_content_hash",
+        lambda connection, provider_id: "a" * 64,
+    )
+
+    def _should_not_be_called_silver(*args, **kwargs):  # noqa: ANN002, ANN003
+        nonlocal silver_called
+        silver_called = True
+        return _static_silver_result()
+
+    def _should_not_be_called_gold(*args, **kwargs):  # noqa: ANN002, ANN003
+        nonlocal gold_called
+        gold_called = True
+        return _gold_static_refresh_result()
+
+    monkeypatch.setattr(orchestration, "load_latest_static_to_silver", _should_not_be_called_silver)
+    monkeypatch.setattr(orchestration, "refresh_gold_static", _should_not_be_called_gold)
+
+    result = run_static_pipeline(
+        "stm",
+        settings=Settings(_env_file=None, NEON_DATABASE_URL="postgresql://user:pass@example.com/neondb"),
+        registry=object(),
+        engine=_FakeEngine(),
+    )
+
+    # Silver load was never called → no Silver INSERT ran → no core.dataset_versions row created.
+    assert not silver_called
+    # Gold refresh was never called.
+    assert not gold_called
+    assert result.status == "succeeded"
+    assert result.static_changed is False
+    assert result.skipped_reason == "static_content_unchanged"
+    assert result.silver_load is None
+    assert result.gold_build is None
+    assert result.silver_load_duration_seconds is None
+    assert result.gold_build_duration_seconds is None
+    assert result.static_ingestion is not None
+    assert result.static_ingestion_duration_seconds >= 0
+
+
+def test_run_static_pipeline_runs_silver_and_gold_when_hash_changed(monkeypatch) -> None:
+    """Different Bronze hash: Silver load and Gold refresh both run."""
+    call_order: list[str] = []
+
+    monkeypatch.setattr(
+        orchestration,
+        "ingest_static_feed",
+        lambda provider_id, settings, registry, engine: (
+            call_order.append("ingest"),
+            _static_ingestion_result(),
+        )[1],
+    )
+    monkeypatch.setattr(
+        orchestration,
+        "get_current_static_content_hash",
+        lambda connection, provider_id: "z" * 64,  # different from "a" * 64
+    )
+    monkeypatch.setattr(
+        orchestration,
+        "load_latest_static_to_silver",
+        lambda provider_id, settings, registry, engine: (
+            call_order.append("silver"),
+            _static_silver_result(),
+        )[1],
+    )
+    monkeypatch.setattr(
+        orchestration,
+        "refresh_gold_static",
+        lambda provider_id, settings, registry, engine: (
+            call_order.append("gold"),
+            _gold_static_refresh_result(),
+        )[1],
+    )
+
+    result = run_static_pipeline(
+        "stm",
+        settings=Settings(_env_file=None, NEON_DATABASE_URL="postgresql://user:pass@example.com/neondb"),
+        registry=object(),
+        engine=_FakeEngine(),
+    )
+
+    assert call_order == ["ingest", "silver", "gold"]
+    assert result.static_changed is True
+    assert result.skipped_reason is None
+    assert result.silver_load is not None
+    assert result.gold_build is not None
+    assert result.silver_load_duration_seconds >= 0
+    assert result.gold_build_duration_seconds >= 0
+
+
+def test_run_static_pipeline_runs_silver_and_gold_when_no_existing_version(monkeypatch) -> None:
+    """No existing Silver version (None): treated as changed, steps 2 and 3 run."""
+    call_order: list[str] = []
+
+    monkeypatch.setattr(
+        orchestration,
+        "ingest_static_feed",
+        lambda provider_id, settings, registry, engine: (
+            call_order.append("ingest"),
+            _static_ingestion_result(),
+        )[1],
+    )
+    monkeypatch.setattr(
+        orchestration,
+        "get_current_static_content_hash",
+        lambda connection, provider_id: None,
+    )
+    monkeypatch.setattr(
+        orchestration,
+        "load_latest_static_to_silver",
+        lambda provider_id, settings, registry, engine: (
+            call_order.append("silver"),
+            _static_silver_result(),
+        )[1],
+    )
+    monkeypatch.setattr(
+        orchestration,
+        "refresh_gold_static",
+        lambda provider_id, settings, registry, engine: (
+            call_order.append("gold"),
+            _gold_static_refresh_result(),
+        )[1],
+    )
+
+    result = run_static_pipeline(
+        "stm",
+        settings=Settings(_env_file=None, NEON_DATABASE_URL="postgresql://user:pass@example.com/neondb"),
+        registry=object(),
+        engine=_FakeEngine(),
+    )
+
+    assert call_order == ["ingest", "silver", "gold"]
+    assert result.static_changed is True
+    assert result.skipped_reason is None
+    assert result.silver_load is not None
+    assert result.gold_build is not None
