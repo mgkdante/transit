@@ -36,6 +36,7 @@ class Settings(BaseSettings):
     BRONZE_S3_ACCESS_KEY: str | None = None
     BRONZE_S3_SECRET_KEY: str | None = None
     BRONZE_S3_REGION: str = "auto"
+    PIPELINE_PAUSED: bool = False
     REALTIME_POLL_SECONDS: int = 300
     REALTIME_STARTUP_DELAY_SECONDS: int = 0
     STATIC_DATASET_RETENTION_COUNT: int = 1
@@ -92,6 +93,7 @@ class Settings(BaseSettings):
             "BRONZE_S3_ACCESS_KEY": "***configured***" if self.BRONZE_S3_ACCESS_KEY else None,
             "BRONZE_S3_SECRET_KEY": "***configured***" if self.BRONZE_S3_SECRET_KEY else None,
             "BRONZE_S3_REGION": self.BRONZE_S3_REGION,
+            "PIPELINE_PAUSED": self.PIPELINE_PAUSED,
             "REALTIME_POLL_SECONDS": self.REALTIME_POLL_SECONDS,
             "REALTIME_STARTUP_DELAY_SECONDS": self.REALTIME_STARTUP_DELAY_SECONDS,
             "STATIC_DATASET_RETENTION_COUNT": self.STATIC_DATASET_RETENTION_COUNT,

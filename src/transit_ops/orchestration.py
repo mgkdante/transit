@@ -666,6 +666,15 @@ def run_realtime_worker_loop(
     cycle_number = 0
     previous_cycle_start_utc: datetime | None = None
     while max_cycles is None or cycle_number < max_cycles:
+        if settings.PIPELINE_PAUSED:
+            logger.warning(
+                "PIPELINE_PAUSED=true — realtime worker is paused for provider '%s'. "
+                "Sleeping %s seconds. Set PIPELINE_PAUSED=false to resume.",
+                provider_id,
+                poll_seconds,
+            )
+            sleep_fn(poll_seconds)
+            continue
         cycle_number += 1
         cycle_start_utc = utc_now_fn()
         cycle_started_at = perf_counter_fn()
