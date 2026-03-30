@@ -1,456 +1,358 @@
 # Architecture
 
-## Logical architecture
+## Overview
 
-The target system is a GTFS / GTFS-RT analytics pipeline with Neon Postgres as
-the reporting core:
+A provider-ready GTFS / GTFS-RT analytics pipeline using STM (Société de transport de Montréal)
+as the V1 data source. Raw feeds are captured to Cloudflare R2, normalized into Neon Postgres,
+and surfaced through a Power BI operations dashboard.
+
+**Stack:** Python 3.12 · Neon Postgres · Cloudflare R2 · Railway · GitHub Actions · Power BI
+
+---
+
+## Data flow
 
 ```text
-STM GTFS static feed ----> Bronze storage (Cloudflare R2 via S3-compatible API) ----> Silver canonical tables ----> Gold marts ----> Power BI
-STM GTFS-RT snapshots ---> Bronze storage (Cloudflare R2 via S3-compatible API) ----> Silver realtime tables ----> Gold marts ----> Power BI
-                                                  |
-                                                  +--> Ops visibility and ingestion metadata
+STM GTFS static ZIP     ──► Bronze (Cloudflare R2)  ──► Silver (Neon)  ──► Gold dims   ──► Power BI
+STM GTFS-RT protobuf    ──► Bronze (Cloudflare R2)  ──► Silver (Neon)  ──► Gold facts  ──► Power BI
+                                                                         ──► Warm rollups ──► Power BI
 ```
 
-Prompt 1 established the repository scaffold, application settings, CLI, and
-foundational Neon schemas and metadata tables. Prompt 2 added a file-backed
-provider manifest seam for STM. Slice 2 adds Bronze static GTFS ingestion for
-the STM schedule feed only. Slice 3 adds one-shot Bronze GTFS-RT snapshot
-capture for STM `trip_updates` and `vehicle_positions`. Slice 4 adds Silver
-static GTFS normalization for the latest Bronze static archive. Slice 5 adds
-Silver GTFS-RT normalization for the latest Bronze realtime snapshots. Slice 6
-adds the first BI-ready Gold marts and KPI views.
+**Bronze** = raw files in R2 + ingestion lineage in Neon
+**Silver** = canonical normalized GTFS / GTFS-RT tables in Neon
+**Gold** = BI-ready dimensions, facts, latest-serving tables, KPI views, warm rollups
 
-## Schema purpose
+---
 
-- `core`: provider metadata, feed registry, and dataset version tracking
-- `raw`: ingestion execution records and raw snapshot indexing
-- `silver`: reserved for canonical GTFS / GTFS-RT relational tables
-- `gold`: reserved for BI-ready marts, facts, dimensions, and KPI views
-- `ops`: reserved for operational monitoring and audit views
+## Database schemas
 
-This step creates the schemas above and only the initial `core` and `raw`
-tables needed to support future ingestion and normalization slices.
+| Schema | Role |
+|--------|------|
+| `core` | Provider registry, feed endpoint catalog, dataset version tracking |
+| `raw` | Ingestion run records, Bronze object metadata, realtime snapshot index |
+| `silver` | Normalized GTFS static and GTFS-RT tables (canonical grain) |
+| `gold` | BI-ready dimensions, fact snapshots, latest-serving tables, KPI views, warm rollups |
+| `ops` | Reserved for operational monitoring (empty in V1) |
 
-Slice 4 expands the `silver` schema with these static GTFS tables:
+---
 
-- `silver.routes`
-- `silver.trips`
-- `silver.stops`
-- `silver.stop_times`
-- `silver.calendar`
-- `silver.calendar_dates`
+## Bronze layer
 
-Slice 5 expands the `silver` schema with these realtime GTFS-RT tables:
+### Purpose
 
-- `silver.trip_updates`
-- `silver.trip_update_stop_time_updates`
-- `silver.vehicle_positions`
+Durable raw archive of every feed capture. Bronze is the lineage anchor — if Silver
+or Gold data ever needs to be rebuilt, the source is here.
 
-Slice 6 expands the `gold` schema with these marts:
+### Storage
 
-- `gold.dim_route`
-- `gold.dim_stop`
-- `gold.dim_date`
-- `gold.fact_vehicle_snapshot`
-- `gold.fact_trip_delay_snapshot`
+- **Production backend:** Cloudflare R2 via S3-compatible API (`BRONZE_STORAGE_BACKEND=s3`)
+- **Local backend:** File system under `BRONZE_LOCAL_ROOT` (development / testing only)
+- **Auth:** SigV4 signing, `auto` region for R2, path-style addressing
 
-Slice 6 also adds KPI views:
+### Object key pattern
 
-- `gold.kpi_active_vehicles_latest`
-- `gold.kpi_routes_with_live_vehicles_latest`
-- `gold.kpi_avg_trip_delay_latest`
-- `gold.kpi_max_trip_delay_latest`
-- `gold.kpi_delayed_trip_count_latest`
+```
+Static:   provider_id/endpoint_key/ingested_at_utc=YYYY-MM-DD/YYYYMMDDTHHMMSSffffffZ__<checksum12>__<filename>
+Realtime: provider_id/endpoint_key/captured_at_utc=YYYY-MM-DD/YYYYMMDDTHHMMSSffffffZ__<checksum12>__<endpoint_key>.pb
+```
 
-The current automation slice adds:
+Keys are human-readable, deterministic, provider-scoped, and safe to inspect in the R2 console.
 
-- one-shot orchestration commands for the static and realtime pipelines
-- one long-running realtime worker entrypoint
-- one GitHub Actions workflow for the daily static pipeline
-- one Docker image entrypoint for the continuous realtime worker
-- a dedicated static Gold dimension refresh path (`refresh-gold-static`) that
-  decouples the daily static batch from the heavy full Gold rebuild
+### Metadata tables
 
-## Bronze static ingestion
+- `raw.ingestion_runs` — one row per capture attempt (status: pending/running/succeeded/failed)
+- `raw.ingestion_objects` — one row per persisted R2 object (path, checksum, byte size)
+- `raw.realtime_snapshot_index` — one row per realtime capture (snapshot_id, entity_count, feed_timestamp)
 
-The first implemented ingestion flow is intentionally narrow:
+### Retention
 
-- it only handles the STM static schedule ZIP
-- it downloads the source URL from the validated provider manifest
-- it archives the ZIP through the configured Bronze storage backend
-- it records one `raw.ingestion_runs` row and one `raw.ingestion_objects` row
+| Feed type | Setting | Default | Enforcement |
+|-----------|---------|---------|-------------|
+| Realtime | `BRONZE_REALTIME_RETENTION_DAYS` | 7 | `prune-bronze-storage` (manual / GH Actions) |
+| Static | `BRONZE_STATIC_RETENTION_DAYS` | 30 | `prune-bronze-storage` (manual / GH Actions) |
 
-The current Bronze logical object key pattern is:
+**Safety rules for deletion:**
+- Realtime: object must be older than cutoff AND no Silver rows reference the snapshot AND it is not the latest snapshot for its endpoint
+- Static: object must be older than cutoff AND no `core.dataset_versions` row references the ingestion run
+- R2 object is deleted first; Neon metadata is only cleaned up if R2 deletion succeeded
 
-`provider_id/endpoint_key/ingested_at_utc=YYYY-MM-DD/YYYYMMDDTHHMMSSffffffZ__<checksum12>__<filename>`
+---
 
-This keeps Bronze object keys:
+## Silver layer
 
-- human-readable
-- deterministic from run metadata and downloaded content
-- provider-aware
-- simple to inspect from the filesystem or object storage
+### Purpose
 
-The current backend behavior is:
+Canonical relational representation of GTFS and GTFS-RT data. Silver is the processing
+layer — not a consumption layer. Power BI does not read Silver directly.
 
-- the intended durable mode is `BRONZE_STORAGE_BACKEND=s3` with Cloudflare R2
-- in S3-compatible mode, the logical key is written directly as the object key
-- in local mode, the logical key is stored under `BRONZE_LOCAL_ROOT`
-- `raw.ingestion_objects.storage_path` remains a logical key only
-- for R2, the endpoint must be the account-level endpoint and the bucket must be passed separately
+### Static GTFS tables (from `silver/static_gtfs.py`)
 
-## Bronze realtime capture
+| Table | Key | Source |
+|-------|-----|--------|
+| `silver.routes` | `(dataset_version_id, route_id)` | `routes.txt` |
+| `silver.stops` | `(dataset_version_id, stop_id)` | `stops.txt` |
+| `silver.trips` | `(dataset_version_id, trip_id)` | `trips.txt` |
+| `silver.stop_times` | `(dataset_version_id, trip_id, stop_sequence)` | `stop_times.txt` |
+| `silver.calendar` | `(dataset_version_id, service_id)` | `calendar.txt` |
+| `silver.calendar_dates` | `(dataset_version_id, service_id, service_date)` | `calendar_dates.txt` |
 
-Slice 3 adds one-shot GTFS-RT snapshot capture for the STM realtime feeds:
+Dataset versioning: each static load creates a `core.dataset_versions` row. All Silver
+static rows carry `dataset_version_id`. The current version is marked `is_current = true`.
 
-- it resolves the endpoint URL and auth shape from the validated provider manifest
-- it currently uses the `apiKey` request header backed by `STM_API_KEY`
-- it pins TLS 1.2 in the Python transport for compatibility with `api.stm.info`
-- it performs one request per CLI invocation
-- it archives the raw protobuf response through the configured Bronze storage backend
-- it records one `raw.ingestion_runs` row
-- it records one `raw.ingestion_objects` row
-- it records one `raw.realtime_snapshot_index` row
+**Retention:** `STATIC_DATASET_RETENTION_COUNT = 1` (keep only the current version).
 
-The current realtime logical object key pattern is:
+### Realtime GTFS-RT tables (from `silver/realtime_gtfs.py`)
 
-`provider_id/endpoint_key/captured_at_utc=YYYY-MM-DD/YYYYMMDDTHHMMSSffffffZ__<checksum12>__<endpoint_key>.pb`
+| Table | Key | Source |
+|-------|-----|--------|
+| `silver.trip_updates` | `(realtime_snapshot_id, entity_index)` | TripUpdate entities |
+| `silver.trip_update_stop_time_updates` | `(realtime_snapshot_id, trip_update_entity_index, stop_time_update_index)` | StopTimeUpdate sub-entities |
+| `silver.vehicle_positions` | `(realtime_snapshot_id, entity_index)` | VehiclePosition entities |
 
-The current captured realtime metadata is:
+Every Silver realtime row carries `realtime_snapshot_id` → `raw.realtime_snapshot_index`
+→ `raw.ingestion_runs` → `raw.ingestion_objects`. Full lineage to the original protobuf blob.
 
-- feed header timestamp from the GTFS-RT protobuf
-- entity count from the GTFS-RT protobuf
-- endpoint kind via the manifest-selected feed and command input
-- byte size, checksum, source URL, and UTC run timing metadata
+**Retention:** `SILVER_REALTIME_RETENTION_DAYS = 2`. Pruned inline at the end of every realtime cycle.
 
-The STM shared secret is still not part of the current GTFS-RT request path.
+---
 
-The Bronze storage abstraction is intentionally small:
+## Gold layer
 
-- one local backend
-- one S3-compatible backend
-- no plugin framework
+### Purpose
 
-The S3-compatible path is hardened for Cloudflare R2 while remaining generic
-enough for other S3-compatible object stores:
+BI-ready serving layer. Dimensions for lookups, fact snapshots for history, latest-serving
+tables for live operational reads, KPI views for convenience, and warm rollups for 90-day trends.
 
-- SigV4 signing
-- `auto` signing region for R2
-- path-style addressing
-- account-level endpoint validation
+### Dimensions (refreshed daily)
 
-The current implementation still uses a local temp file before final
-persistence, even in S3-compatible mode.
+| Table | Grain | Source | Rows |
+|-------|-------|--------|------|
+| `gold.dim_route` | `(provider_id, route_id)` | `silver.routes` | ~200 |
+| `gold.dim_stop` | `(provider_id, stop_id)` | `silver.stops` | ~9,000 |
+| `gold.dim_date` | `(provider_id, service_date)` | `silver.calendar` + `silver.calendar_dates` | ~365 |
+| `gold.dim_direction` | `(provider_id, route_id, direction_id)` | `silver.trips` | ~2× route count |
 
-## Silver static normalization
+`dim_date` is generated via `generate_series` across the full service date range. Includes
+YYYYMMDD `date_key`, day-of-week, weekend flag, and calendar exception flags.
 
-Slice 4 adds the first canonical relational load for static GTFS:
+`dim_direction` holds one row per unique `(route_id, direction_id)` combination, with
+`direction_label` set to the most common `trip_headsign` for that route+direction
+(e.g. `"Terminus Radisson"`, `"Est"`). Used as a Power BI slicer with real destination
+strings instead of raw 0/1 integers.
 
-- it finds the latest successful Bronze static archive for the provider
-- it opens the archived ZIP through the recorded Bronze storage backend
-- it validates the required GTFS members before loading
-- it creates a new `core.dataset_versions` row for the load
-- it loads the required static GTFS entities into the `silver` schema
+### Fact snapshots (hot, 2-day retention)
 
-The current Silver static tables are:
+| Table | Grain | Retention |
+|-------|-------|-----------|
+| `gold.fact_vehicle_snapshot` | `(provider_id, realtime_snapshot_id, entity_index)` | `GOLD_FACT_RETENTION_DAYS = 2` |
+| `gold.fact_trip_delay_snapshot` | `(provider_id, realtime_snapshot_id, entity_index)` | `GOLD_FACT_RETENTION_DAYS = 2` |
 
-- `silver.routes`
-- `silver.trips`
-- `silver.stops`
-- `silver.stop_times`
-- `silver.calendar`
-- `silver.calendar_dates`
+`fact_trip_delay_snapshot.delay_seconds` uses a two-source fallback:
+1. **Primary:** `silver.trip_updates.delay_seconds` (top-level GTFS-RT delay, ~87.6% present)
+2. **Fallback:** Derived from `silver.trip_update_stop_time_updates` vs `silver.stop_times` schedule
 
-Dataset versioning now works like this:
+`fact_trip_delay_snapshot.vehicle_id` uses a LATERAL JOIN fallback when the TripUpdate lacks it:
+searches `silver.vehicle_positions` on matching `trip_id` within ±10 minutes of `feed_timestamp_utc`.
 
-- each Silver static load creates a fresh `core.dataset_versions` row
-- the version points back to the Bronze static ingestion run and object
-- every Silver static row carries both `provider_id` and `dataset_version_id`
-- previous dataset-versioned rows remain intact
-- prior dataset version records are marked non-current and the latest load is marked current
+### Latest-serving tables (hot, operational)
 
-This keeps Silver loads replace-free at the row level while preserving a clean
-current-version pointer for downstream work.
+| Table | Contents | Role |
+|-------|----------|------|
+| `gold.latest_vehicle_snapshot` | One snapshot's worth of vehicle positions | Primary source for live dashboard KPIs |
+| `gold.latest_trip_delay_snapshot` | One snapshot's worth of trip delay state | Primary source for live dashboard KPIs |
 
-## Silver realtime normalization
+Replaced (DELETE + INSERT) on every realtime cycle. Always contains exactly the latest snapshot.
 
-Slice 5 adds the first canonical relational load for Bronze GTFS-RT snapshots:
+### KPI views
 
-- it finds the latest successful Bronze realtime snapshot for the provider and endpoint
-- it opens the archived protobuf through the recorded Bronze storage backend
-- it parses the payload with `gtfs-realtime-bindings`
-- it writes a minimal V1 set of analytics-friendly realtime fields into the `silver` schema
+All five views read from `gold.latest_*` tables, not from fact tables.
 
-The current Silver realtime tables are:
+| View | Output |
+|------|--------|
+| `gold.kpi_active_vehicles_latest` | `active_vehicle_count` |
+| `gold.kpi_routes_with_live_vehicles_latest` | `routes_with_live_vehicles` |
+| `gold.kpi_avg_trip_delay_latest` | `avg_delay_seconds` |
+| `gold.kpi_max_trip_delay_latest` | `max_delay_seconds` |
+| `gold.kpi_delayed_trip_count_latest` | `delayed_trip_count` |
 
-- `silver.trip_updates`
-- `silver.trip_update_stop_time_updates`
-- `silver.vehicle_positions`
+### Warm rollups (warm, 90-day retention)
 
-The Bronze-to-Silver linkage is explicit:
+| Table | Grain | Retention |
+|-------|-------|-----------|
+| `gold.vehicle_summary_5m` | `(provider_id, period_start_utc, route_id)` | `GOLD_WARM_ROLLUP_RETENTION_DAYS = 90` |
+| `gold.trip_delay_summary_5m` | `(provider_id, period_start_utc, route_id)` | 90 days |
+| `gold.warm_rollup_periods` | `(provider_id, rollup_kind, period_start_utc)` | 90 days |
 
-- every Silver realtime row carries `realtime_snapshot_id`
-- `realtime_snapshot_id` points to `raw.realtime_snapshot_index`
-- that snapshot row links back to the original Bronze run and Bronze object metadata
+Period boundary: `DATE_BIN('5 minutes', captured_at_utc, TIMESTAMPTZ '2000-01-01')` — clean
+5-minute buckets aligned to UTC midnight.
 
-The current V1 payload coverage is intentionally narrow:
+`trip_delay_summary_5m` carries two delay averages:
+- `avg_delay_seconds` — raw average including all non-null values
+- `avg_delay_seconds_capped` — average excluding |delay| > 3600s (Power BI KPI column)
+- `outlier_count` — rows excluded from the capped average
 
-- trip updates capture trip-level identifiers and delay metadata
-- stop time updates capture only the minimum practical arrival/departure fields
-- vehicle positions capture only the minimum practical trip, vehicle, stop, and location fields
+`build-warm-rollups` is idempotent: `warm_rollup_periods` tracks which periods are built;
+already-built periods are skipped. Must run at least every 2 days to capture data before
+Gold facts are pruned.
 
-This keeps the Silver realtime layer useful for downstream marts without trying
-to model every optional GTFS-RT field in the first pass.
+### Hot / Warm / Cold summary
 
-## Gold marts
+| Layer | Tables | Retention | Power BI use |
+|-------|--------|-----------|-------------|
+| **Hot** | `latest_*`, `fact_*`, Silver realtime | 2 days | Live KPI cards, current snapshot |
+| **Warm** | `*_summary_5m` | 90 days | Trend charts, historical analysis |
+| **Cold** | Bronze R2 objects | 7d RT / 30d static | Raw lineage, not imported into Power BI |
 
-Slice 6 creates the first BI-ready layer so Power BI does not have to reconstruct
-the current static dimensions and latest realtime metrics from raw Silver tables.
+---
 
-The Gold design stays intentionally small:
+## Gold refresh paths
 
-- `gold.dim_route` uses the current static `core.dataset_versions` row and the current `silver.routes`
-- `gold.dim_stop` uses the current static dataset and the current `silver.stops`
-- `gold.dim_date` expands the current static service date range and exception dates into a reusable date dimension
-- `gold.fact_vehicle_snapshot` keeps vehicle snapshot history without being fully rewritten every realtime cycle
-- `gold.fact_trip_delay_snapshot` keeps trip delay snapshot history, plus stop-time update counts and backfilled vehicle/delay values from related realtime/static tables
-- `gold.latest_vehicle_snapshot` keeps only the newest vehicle snapshot per provider for dashboards and browser inspection
-- `gold.latest_trip_delay_snapshot` keeps only the newest trip-delay snapshot per provider for dashboards and browser inspection
+Three explicitly separated refresh paths prevent lock contention between daily static work
+and continuous realtime work:
 
-Gold refresh now has three explicit paths:
+| Path | Command | Lock | Scope | When |
+|------|---------|------|-------|------|
+| Full rebuild | `build-gold-marts` | `LOCK TABLE ACCESS EXCLUSIVE` | All Gold tables, full history | Manual recovery only |
+| Static dims | `refresh-gold-static` | Advisory lock | `dim_route`, `dim_stop`, `dim_date`, `dim_direction` | Daily, after static Silver load |
+| Realtime upsert | `refresh-gold-realtime` | Advisory lock | Latest snapshot → facts + latest tables | Every 30s, inline in realtime cycle |
 
-- `build-gold-marts`
-  - heavy full-history backfill and recovery path
-  - acquires `LOCK TABLE ... IN ACCESS EXCLUSIVE MODE` on all Gold tables
-  - intended for manual recovery only, not called from any automated pipeline
-- `refresh-gold-static`
-  - lightweight static batch path that replaces only `dim_route`, `dim_stop`,
-    and `dim_date` from the current static Silver dataset version
-  - acquires only the advisory lock, no table lock, does not touch fact tables
-  - called by `run-static-pipeline` after each daily Bronze → Silver static load
-- `refresh-gold-realtime`
-  - lightweight realtime path that upserts only the latest snapshots into
-    history and refreshes the small `gold.latest_*` tables
-  - acquires only the advisory lock, no table lock
+`refresh-gold-realtime` and `refresh-gold-static` use different advisory lock keys and
+neither acquires a table lock. The 30s realtime worker and the daily static GH Actions job
+cannot block each other.
 
-The realtime worker and `run-realtime-cycle` use the `refresh-gold-realtime`
-path. The daily static pipeline uses the `refresh-gold-static` path. Neither
-automated path acquires the ACCESS EXCLUSIVE table lock, eliminating lock
-contention between the daily static job and the 60s realtime worker.
+---
 
-The KPI views stay close to the marts:
+## Orchestration
 
-- active vehicles in the latest vehicle snapshot
-- routes with live vehicles in the latest vehicle snapshot
-- average trip delay in the latest trip-delay snapshot
-- maximum trip delay in the latest trip-delay snapshot
-- delayed trip count in the latest trip-delay snapshot
+### Realtime cycle (`run-realtime-cycle`)
 
-The KPI views now read the lightweight `gold.latest_*` tables directly instead
-of scanning the full history facts to discover the latest snapshot first.
+Every 30 seconds:
+1. `capture_realtime_feed` for `trip_updates` → Bronze R2 + raw metadata
+2. `capture_realtime_feed` for `vehicle_positions` → Bronze R2 + raw metadata
+3. `load_latest_realtime_to_silver` for each endpoint → Silver tables
+4. `refresh_gold_realtime` → fact upsert + latest replace
+5. `prune_silver_storage` → DELETE Silver rows older than 2 days
+6. `prune_gold_storage` → DELETE Gold fact rows older than 2 days
 
-The current trip-delay KPI views still use `delay_seconds` derived from the
-Gold trip-delay snapshot rows. That Gold field keeps the trip-level GTFS-RT
-`delay_seconds` value when STM provides it, and otherwise falls back to a
-derived delay based on stop-time update timestamps versus the current static
-`silver.stop_times` schedule for the same trip and stop sequence.
+Endpoint failure isolation: if `trip_updates` fails but `vehicle_positions` succeeds,
+Gold refresh still runs. Cycle status = `partial_failure`.
 
-`gold.fact_trip_delay_snapshot.vehicle_id` follows the same idea: it keeps the
-trip-update `vehicle_id` when present and otherwise backfills from the nearest
-`silver.vehicle_positions` row for the same `trip_id`. `route_id` is not used
-alone for vehicle inference because multiple active vehicles can share a route.
+### Static pipeline (`run-static-pipeline`)
 
-Storage pressure is now reduced in three places:
+Daily at 06:00 UTC via GitHub Actions:
+1. `ingest_static_feed` → Bronze R2 + raw metadata (always runs)
+2. Hash gate: compare `checksum_sha256` from step 1 to `core.dataset_versions.content_hash` for the current active version
+   - **Unchanged:** skip steps 3–4; return `static_changed=false`, `skipped_reason="static_content_unchanged"`
+   - **Changed (or no existing version):** proceed to steps 3–4
+3. `load_latest_static_to_silver` → Silver static tables + dataset version
+4. `refresh_gold_static` → replace dim_route, dim_stop, dim_date, dim_direction
 
-- static Silver keeps only the current dataset version by default
-- realtime Silver keeps only the newest two days of snapshots by default
-- Gold fact tables (`fact_vehicle_snapshot`, `fact_trip_delay_snapshot`) keep
-  only the newest two days of rows by default (`GOLD_FACT_RETENTION_DAYS=2`)
+### Warm rollups (`build-warm-rollups`)
 
-Gold fact retention is enforced every realtime cycle via a time-based DELETE
-on `captured_at_utc`. Two B-tree indexes on `(provider_id, captured_at_utc)`
-support these DELETEs efficiently (migration `0007_gold_fact_retention_indexes`).
+Daily at 07:00 UTC via GitHub Actions (after static pipeline):
+- Builds 5-minute rollup rows for all periods not yet in `warm_rollup_periods`
+- Must run within 2 days of capture before facts are pruned
 
-That keeps the reporting path honest: heavy history still exists where it is
-useful, but the hot path for dashboards no longer depends on repeatedly
-rewriting or scanning all of it.
+### Worker loop (`run-realtime-worker`)
 
-## Why provider abstraction exists
+Runs continuously on Railway. Calls `run_realtime_cycle` in an infinite loop with
+start-to-start cadence: `sleep = max(0, REALTIME_POLL_SECONDS - cycle_duration)`.
 
-The project is STM-first because the portfolio story is stronger when V1 is
-small, real, and disciplined. It is still provider-ready from day one:
+If `PIPELINE_PAUSED=true`, the loop skips all cycle work and sleeps each interval instead —
+no STM, Neon, or R2 calls. Use `scripts/pause-pipeline.sh` / `scripts/resume-pipeline.sh`
+to flip this together with GH Actions and Railway compute suspension.
 
-- settings are expressed in provider-oriented terms
-- provider manifests live under `config/providers/`
-- feed endpoints are registered in `core.feed_endpoints`
-- all foundational tables carry `provider_id`
-- GTFS source identifiers are preserved for later normalization work
+---
 
-The abstraction boundary stays inside GTFS and GTFS-Realtime. The system is not
-trying to become a generic transit API framework.
+## Production cadence
 
-## Why provider manifests exist
+| Setting | Value | Notes |
+|---------|-------|-------|
+| `REALTIME_POLL_SECONDS` | 30 | Start-to-start interval. Cycle duration is ~6.5–8.5s, leaving ~21–23s sleep headroom. |
+| STM quota utilization | ~57.6%/day per endpoint | Well within the 10,000 req/day limit |
+| Dashboard freshness | ~15–18s end-to-end | Polling interval + capture + Silver load + Gold refresh |
 
-Provider manifests exist so provider metadata and GTFS feed definitions can be
-declared once and reused by the CLI, seed logic, and future ingestion code.
-This keeps Prompt 2 boring and explicit:
+30 seconds aligns with the GTFS-RT specification recommendation and was validated with
+sufficient headroom before being set as the production cadence.
 
-- YAML manifests hold provider/feed metadata
-- pydantic models validate the manifest structure
-- a small registry lists manifests and loads one provider by id
+---
 
-STM is the only active manifest in V1. Future GTFS providers can be added by
-adding another validated manifest file without introducing a plugin system.
+## Provider abstraction
 
-The static Bronze ingestion code now depends on the manifest and registry
-instead of hardcoded STM feed settings, which keeps the extension seam inside
-GTFS / GTFS-RT rather than inside custom downloader code.
+The pipeline is STM-first but provider-ready within GTFS / GTFS-RT:
 
-The realtime Bronze capture code follows the same pattern: manifest-driven feed
-resolution, a small service module, Bronze archiving through the configured
-backend, and explicit writes to the existing raw metadata tables.
+- Provider metadata lives in `config/providers/*.yaml` (one file per provider)
+- `core.providers` and `core.feed_endpoints` are the database registry
+- All tables carry `provider_id` as a first-class column
+- The abstraction boundary is strictly inside GTFS / GTFS-RT — not a generic transit API
 
-The Silver static loader follows the same pattern again: provider manifest
-resolution, explicit load steps, and Neon-first canonical tables without adding
-unnecessary framework complexity.
+V1 has one active provider: `stm`. A second GTFS provider could be added by adding
+a validated YAML manifest without changing any Python code.
 
-## Power BI status
+---
 
-Power BI report authoring is still downstream of this repository and no `.pbix`
-file is checked into the repo.
+## Freshness model
 
-This slice now adds the minimum Power BI handoff artifacts under `powerbi/`:
+The system is near-real-time operational reporting, not streaming:
 
-- dashboard V1 specification
-- report build playbook
-- visual-to-field mapping
-- DAX measure plan
-- SQL validation queries
-- portfolio-facing notes
+- Static GTFS is a predictable daily batch (06:00 UTC)
+- Realtime GTFS-RT is repeated snapshot capture (every 30s)
+- Dashboard freshness = polling interval + capture + Silver load + Gold refresh
+- No websocket, no event streaming, no dispatch-grade telemetry
 
-That keeps the repo honest: the BI semantic design is documented and grounded
-in the proven Gold layer, but the actual Power BI file is still a downstream
-authoring step.
+---
 
-Neon Data API exposure is also still deferred. The current automation slice
-stops at the CLI, database, and object-storage layers.
+## Deployment
 
-## Orchestration and automation
+| Component | Platform | Trigger |
+|-----------|----------|---------|
+| Realtime worker | Railway (`transit-ops` / `production` / `realtime-worker`) | Always-on Docker container |
+| Static pipeline | GitHub Actions (`.github/workflows/daily-static-pipeline.yml`) | Cron 06:00 UTC daily |
+| Warm rollups | GitHub Actions (`.github/workflows/daily-warm-rollups.yml`) | Cron 07:00 UTC daily |
 
-The current repo now has three operating modes on top of the existing one-shot
-services:
-
-- one-shot static orchestration through `run-static-pipeline stm`
-- one-shot realtime orchestration through `run-realtime-cycle stm`
-- continuous realtime execution through `run-realtime-worker stm`
-
-The orchestration layer stays intentionally thin:
-
-- it reuses the existing Bronze ingestion services
-- it reuses the existing Silver loaders
-- it reuses the existing Gold mart rebuild
-- it does not change DB lineage rules
-- it does not change R2 object key behavior
-
-The realtime orchestration behavior is explicit:
-
-- both realtime endpoints are attempted every cycle
-- each endpoint is reported separately
-- a single endpoint failure does not get reported as all-green
-- Gold is rebuilt after any successful realtime load so downstream views stay current
-
-## Automation artifacts
-
-The repo now includes the minimum cloud-ready automation artifacts:
-
-- `.github/workflows/daily-static-pipeline.yml`
-  - runs the static Bronze -> Silver -> Gold pipeline once per day
-  - currently scheduled for `06:00 UTC`
-  - this corresponds to `2:00 AM Eastern` while EDT is in effect
-  - GitHub Actions cron is UTC-based, so the UTC schedule may need a seasonal
-    adjustment during EST if the desired local run time remains `2:00 AM Eastern`
-  - also supports `workflow_dispatch`
-  - uses `timeout-minutes: 30`
-  - uses workflow `concurrency` to avoid overlapping static runs
-  - narrows GitHub permissions to `contents: read`
-- `Dockerfile`
-  - packages the repo for a generic container platform
-  - defaults to `python -m transit_ops.cli run-realtime-worker stm`
-  - now uses an explicit CLI entrypoint and a non-root runtime user
-- `.dockerignore`
-  - keeps `.env`, Git metadata, docs, local data, tests, and dev caches out of the container build context
-
-Hosted realtime deployment is now achieved on Railway.
-
-The current hosted worker target is:
-
-- project: `transit-ops`
-- environment: `production`
-- service: `realtime-worker`
-
-Railway is using the existing repo `Dockerfile` directly, and the runtime
-command remains:
-
-- `python -m transit_ops.cli run-realtime-worker stm`
-
-Hosted verification from Railway logs showed:
-
-- the worker starts successfully
-- hosted realtime cycles succeed end to end
-- Bronze writes remain R2-backed with `storage_backend = "s3"`
-- Gold rebuilds successfully after hosted realtime cycles
-- the worker honors the `REALTIME_POLL_SECONDS=60` start-to-start target
-
-Detailed hosted deployment notes live in:
-
-- `docs/realtime-worker-hosting.md`
-
-Exact GitHub Actions secrets required for the included static workflow are:
-
+Required secrets (Railway + GitHub Actions):
 - `NEON_DATABASE_URL`
+- `STM_API_KEY` (realtime only)
 - `BRONZE_S3_ACCESS_KEY`
 - `BRONZE_S3_SECRET_KEY`
 
-The realtime worker container still expects runtime secret injection outside the
-image itself. In practice that means:
+Detailed hosting notes: `docs/realtime-worker-hosting.md`
 
-- `NEON_DATABASE_URL`
-- `STM_API_KEY`
-- `BRONZE_S3_ACCESS_KEY`
-- `BRONZE_S3_SECRET_KEY`
+---
 
-## Freshness and live data delay
+## Power BI
 
-The current operating freshness model is intentionally simple:
+Power BI connects to Neon in DirectQuery mode and reads only from `gold.*` tables.
+No Silver, raw, or core tables are imported.
 
-- static GTFS is a daily refresh job
-- realtime runs as repeated one-shot cycles inside the worker
-- the production realtime cadence is `REALTIME_POLL_SECONDS=60`
+| Use case | Gold source |
+|----------|------------|
+| Live operational KPIs | `gold.kpi_*_latest` views + `gold.latest_*` tables |
+| Route / stop / direction dimensions | `gold.dim_*` tables |
+| Historical trends | `gold.*_summary_5m` warm rollups |
+| Freshness timestamp | `captured_at_utc` on any latest table |
 
-That means live dashboard freshness is expected to be:
+The V1 dashboard is built and published to Power BI Service. It imports 15 tables
+(5 KPI views, 2 latest-serving tables, 8 Gold dimensions, facts, and rollup tables)
+and exposes four pages: Network Overview, Route Performance, Stop Activity, and
+Live Ops / Freshness. A `.pbix` file is not checked into the repository. The
+semantic design is documented under `powerbi/` (field mapping, DAX measures,
+dashboard spec, SQL validation queries).
 
-- one polling interval
-- plus the actual request and processing time for both GTFS-RT endpoints
-- plus the Silver loads
-- plus the Gold rebuild
+**Connection mode:** DirectQuery. Every page load queries Neon live. No scheduled
+Import refresh required.
 
-This is near-real-time operational reporting, not true streaming. The trade-off
-is deliberate: it stays well inside STM quota limits, keeps the code boring,
-and preserves full raw lineage in R2 and Neon.
+**Timestamps:** KPI views expose `feed_timestamp_utc` and `captured_at_utc` as UTC.
+Power BI applies a DAX `-4/24` offset for ET display. A proper `AT TIME ZONE`
+database-level fix is deferred to a future slice.
 
-## Still deferred
+---
 
-The following remain intentionally deferred after the current automation slice:
+## Deferred
 
-- Power BI dashboard implementation
+- `.pbix` file checked into the repository
+- Database-level ET timezone columns in KPI views (`AT TIME ZONE 'America/Toronto'`)
+- Power BI "Publish to web" public embed (pending portfolio site update)
 - Neon Data API exposure
-- richer operational alerting and notifications
-- public packaging under `transit.yesid.dev`
-
-## Future packaging
-
-The eventual public packaging is expected to live under
-`transit.yesid.dev`, including project notes, architecture visuals, and a case
-study for the STM operations dashboard. That public packaging is intentionally
-deferred until the pipeline and analytics layers exist.
+- Public case study write-up under `transit.yesid.dev`
+- Operational alerting and notifications

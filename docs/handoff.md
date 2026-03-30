@@ -1,3 +1,5 @@
+#Slice Handoff
+
 At the end of your work, output a COMPLETE markdown handoff report so I can paste it into ChatGPT for the next development step.
 
 Use exactly this structure and headings:
@@ -108,21 +110,8 @@ Be specific.
 Write the exact next Codex prompt that should be run after this one.
 It must match the current state of the repo and build on what was actually implemented.
 
-## 17) Copy-paste context for ChatGPT
-Provide a concise but detailed context block I can paste into ChatGPT.
-This section must include:
-- current project state
-- what exists already
-- what works
-- what does not exist yet
-- important file paths
-- important commands
-- assumptions/gaps
-- what the next step should be
 
-Keep this section highly informative and optimized for handoff.
-
-## 18) Final status
+## 17) Final status
 Give one of:
 - COMPLETE
 - COMPLETE WITH GAPS
@@ -142,3 +131,96 @@ Rules for this report:
 
 
 Important: optimize the handoff report so another engineer can continue the project without reopening all files manually.
+
+
+
+-----------------
+# Pipeline adjustment handoff:
+
+At the end of your work, output a COMPLETE markdown handoff report.
+
+Use exactly this structure and headings:
+
+# DEVELOPMENT HANDOFF REPORT
+
+## 1) Objective completed
+- State exactly what prompt scope was implemented.
+- State what was intentionally not implemented.
+
+## 2) High-level summary
+- Short, concrete summary of what changed.
+- Focus on retention, hot/warm/cold split, indexing, cadence, orchestration, and validation.
+
+## 3) Files created
+- List every new file created with full relative path.
+
+## 4) Files modified
+- List every existing file modified with full relative path.
+
+## 5) Database and migrations
+Describe exactly:
+- migrations added or modified
+- tables/views/materialized tables added or changed
+- indexes added or changed
+- retention logic added
+- pruning / cleanup logic added
+- any schema decisions relevant to hot/warm/cold storage
+
+If new migration files were created in this step, include their full contents.
+If no migration files were created, say so.
+
+## 6) Commands executed
+List every command run during implementation, in order, in code blocks.
+Do not omit failed commands.
+
+## 7) Validation results
+For each command run, state:
+- pass/fail
+- important output
+- what it means
+
+If something was not run, explicitly say it was not run.
+
+## 8) Errors encountered
+List every error or failed command.
+For each one, state:
+- exact error
+- cause
+- fix applied
+- whether fully resolved
+
+If there were no errors, explicitly say so.
+
+## 9) Assumptions made
+List assumptions about:
+- retention windows
+- cadence
+- Neon/R2 usage
+- Power BI access patterns
+- table size expectations
+- local/dev environment
+
+## 10) Known gaps / deferred work
+List everything intentionally left for the next slice.
+Be specific.
+
+## 11) Next recommended Claude Code prompt
+Write the exact next prompt that should be run after this one.
+It must build on what was actually implemented.
+
+## 12) Final status
+Give one of:
+- COMPLETE
+- COMPLETE WITH GAPS
+- PARTIAL
+- BLOCKED
+
+Then explain why.
+
+Rules:
+- Be precise and honest.
+- Do not claim something works unless you actually ran it.
+- Do not hide failed commands.
+- Do not summarize code/migration changes vaguely.
+- Do not omit files you changed.
+- Use markdown.

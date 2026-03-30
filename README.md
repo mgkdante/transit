@@ -268,6 +268,19 @@ The current KPI views are:
 - `gold.kpi_max_trip_delay_latest`
 - `gold.kpi_delayed_trip_count_latest`
 
+Slice 5 adds 5-minute warm rollup tables for Power BI historical trend pages:
+
+- `gold.vehicle_summary_5m` — vehicle count and observations per 5-minute period
+  and route (warm — 90-day retention)
+- `gold.trip_delay_summary_5m` — delay statistics per 5-minute period and route,
+  including `avg_delay_seconds_capped` (abs ≤ 3600s) and `outlier_count`
+  (warm — 90-day retention)
+- `gold.warm_rollup_periods` — idempotency tracking table for the rollup build
+
+Raw `delay_seconds` in `gold.fact_trip_delay_snapshot` is never clamped or
+modified. The capped variant lives only in the warm rollup table, making Import
+mode KPI cards outlier-safe without touching the source facts.
+
 `gold.fact_trip_delay_snapshot` keeps the trip-level GTFS-RT fields when STM
 provides them, but it now backfills the most important gaps for BI:
 
@@ -286,7 +299,7 @@ Gold refresh is now split across three explicit paths:
 
 - `build-gold-marts stm` — heavy full-history backfill, manual recovery only
 - `refresh-gold-static stm` — daily static batch path, replaces only Gold dimensions
-- `refresh-gold-realtime stm` — 60s realtime path, upserts latest snapshots only
+- `refresh-gold-realtime stm` — 30s realtime path, upserts latest snapshots only
 
 `refresh-gold-static stm` is called by `run-static-pipeline` after each daily
 Silver static load. It replaces `dim_route`, `dim_stop`, and `dim_date` from
@@ -300,8 +313,11 @@ historical Gold facts and then refreshes the small `gold.latest_*` tables.
 `build-gold-marts stm` is the explicit full-history backfill command for manual
 recovery only. It is no longer called by any automated pipeline.
 
-Power BI report authoring is not checked into this repo as a `.pbix`, but the
-V1 dashboard handoff assets now exist under `powerbi/`:
+The V1 Power BI operations dashboard is built and published to Power BI Service
+in DirectQuery mode. Every page load queries Neon live through 15 imported tables
+(5 KPI views, 2 latest-serving tables, 8 Gold dimensions, facts, and rollup
+tables). The `.pbix` file is not checked into this repo. The BI assets under
+`powerbi/` document the semantic design:
 
 - `powerbi/dashboard-spec.md`
 - `powerbi/build-playbook.md`
@@ -311,15 +327,19 @@ V1 dashboard handoff assets now exist under `powerbi/`:
 - `powerbi/sql-validation.md`
 - `powerbi/portfolio-notes.md`
 
+The published dashboard exposes four pages: Network Overview, Route Performance,
+Stop Activity, and Live Ops / Freshness.
+
 ## Pipeline orchestration and automation
 
 The repo now includes explicit orchestration commands that reuse the already
 proven Bronze, Silver, and Gold services instead of duplicating business logic:
 
 - `run-static-pipeline stm`
-  - runs `ingest-static stm`
-  - runs `load-static-silver stm`
-  - runs `refresh-gold-static stm`
+  - always runs `ingest-static stm` (Bronze lineage is always recorded)
+  - compares the new Bronze checksum to the current `core.dataset_versions.content_hash`
+  - if unchanged: skips Silver and Gold steps; result reports `static_changed=false`
+  - if changed (or no existing version): runs `load-static-silver stm` then `refresh-gold-static stm`
 - `run-realtime-cycle stm`
   - runs `capture-realtime stm trip_updates`
   - runs `capture-realtime stm vehicle_positions`
@@ -327,6 +347,31 @@ proven Bronze, Silver, and Gold services instead of duplicating business logic:
   - runs `load-realtime-silver stm vehicle_positions`
   - runs `refresh-gold-realtime stm`
   - prunes Silver storage according to the configured retention settings
+
+## Pausing and resuming the pipeline
+
+Two scripts wrap all three automation surfaces (GH Actions + Railway env var + Railway compute) into a single command:
+
+```bash
+# Stop everything (GH Actions disabled, Railway worker idles, Railway compute suspended)
+bash scripts/pause-pipeline.sh
+
+# Restart everything
+bash scripts/resume-pipeline.sh
+```
+
+Railway compute suspension requires a personal API token:
+
+```bash
+export RAILWAY_TOKEN=<token from https://railway.app/account/tokens>
+bash scripts/pause-pipeline.sh
+```
+
+Without `RAILWAY_TOKEN`, the scripts handle GH Actions and the `PIPELINE_PAUSED` env var, and print a link to pause Railway compute manually.
+
+The `PIPELINE_PAUSED=true` env var alone (without compute suspension) makes the Railway worker idle — it sleeps each poll interval without calling STM, Neon, or R2.
+
+---
 
 Operational rules:
 
@@ -356,8 +401,12 @@ It is intended for container or cloud deployment and:
 
 Worker environment variables:
 
+- `PIPELINE_PAUSED`
+  - default: `false`
+  - set to `true` to make the worker idle (sleeps each interval, no cycles run, no DB/R2/API calls)
+  - use `scripts/pause-pipeline.sh` / `scripts/resume-pipeline.sh` to flip this together with GH Actions and Railway compute
 - `REALTIME_POLL_SECONDS`
-  - default: `300`
+  - default: `300` (production override: `30`)
   - controls how often one full realtime cycle starts
 - `REALTIME_STARTUP_DELAY_SECONDS`
   - default: `0`
@@ -368,17 +417,39 @@ Worker environment variables:
 - `SILVER_REALTIME_RETENTION_DAYS`
   - default: `2`
   - keeps only the newest two days of realtime Silver snapshots by default
+- `GOLD_FACT_RETENTION_DAYS`
+  - default: `2`
+  - Gold fact rows (`fact_trip_delay_snapshot`, `fact_vehicle_snapshot`) older
+    than this are deleted each realtime cycle
+- `GOLD_WARM_ROLLUP_RETENTION_DAYS`
+  - default: `90`
+  - `gold.vehicle_summary_5m`, `gold.trip_delay_summary_5m`, and
+    `gold.warm_rollup_periods` rows older than this are deleted by
+    `prune-warm-rollup-storage`
+- `BRONZE_REALTIME_RETENTION_DAYS`
+  - default: `7`
+  - Bronze realtime R2 objects and Neon metadata eligible for deletion after
+    this many days (requires downstream Silver rows to be gone first)
+  - set to `0` to disable Bronze realtime pruning
+- `BRONZE_STATIC_RETENTION_DAYS`
+  - default: `30`
+  - Bronze static R2 objects and Neon metadata eligible for deletion after
+    this many days (requires `core.dataset_versions` reference to be gone first)
+  - set to `0` to disable Bronze static pruning
 
 ## Deployment artifacts
 
 The repo ships one static batch workflow and one container path for the
 realtime worker.
 
-### GitHub Actions static workflow
+### GitHub Actions workflows
 
-The included workflow file is:
+The included workflow files are:
 
 - `.github/workflows/daily-static-pipeline.yml`
+- `.github/workflows/daily-warm-rollups.yml`
+
+#### Static pipeline workflow
 
 Current behavior:
 
@@ -404,6 +475,29 @@ Exact GitHub Actions secrets required after you push the repo:
 
 `STM_API_KEY` is not required for the daily static workflow because it does not
 capture GTFS-RT feeds.
+
+#### Warm rollups workflow
+
+Current behavior:
+
+- triggers once per day at `07:00 UTC` (one hour after the static pipeline)
+- supports manual runs through `workflow_dispatch`
+- uses `timeout-minutes: 15`
+- runs:
+  - `uv sync --locked`
+  - `python -m transit_ops.cli build-warm-rollups stm`
+  - `python -m transit_ops.cli prune-warm-rollup-storage stm`
+
+The `07:00 UTC` schedule is intentional: `GOLD_FACT_RETENTION_DAYS = 2` means warm
+rollups must be built at least every 2 days to avoid gaps. Running daily at
+`07:00 UTC` ensures the rollups are built before the nightly Gold fact pruning
+cycle has a chance to remove the source rows.
+
+Exact GitHub Actions secrets required (same as static workflow):
+
+- `NEON_DATABASE_URL`
+- `BRONZE_S3_ACCESS_KEY`
+- `BRONZE_S3_SECRET_KEY`
 
 ### Realtime worker container
 
@@ -461,7 +555,7 @@ Current runtime path:
   - `BRONZE_S3_ENDPOINT=https://eccfb9bedd87d413eaf4cac6ae2285d3.r2.cloudflarestorage.com`
   - `BRONZE_S3_BUCKET=transit-raw`
   - `BRONZE_S3_REGION=auto`
-  - `REALTIME_POLL_SECONDS=300`
+  - `REALTIME_POLL_SECONDS=30`
   - `REALTIME_STARTUP_DELAY_SECONDS=0`
   - `STATIC_DATASET_RETENTION_COUNT=1`
   - `SILVER_REALTIME_RETENTION_DAYS=2`
@@ -473,15 +567,13 @@ Current runtime path:
 What is now proven from the hosted service logs:
 
 - the worker starts successfully on Railway
-- at least one hosted realtime cycle succeeds end to end
+- hosted realtime cycles succeed end to end at 30s cadence
 - Bronze writes remain R2-backed with `storage_backend = "s3"`
-- latest Gold refreshes successfully after hosted realtime cycles
-- the hosted worker still honors true start-to-start cadence:
-  - observed hosted cycle 1:
-    - `cycle_duration_seconds = 7.802`
-    - `computed_sleep_seconds = 292.198`
-  - observed hosted cycle 3:
-    - `effective_start_to_start_seconds = 300.0`
+- Gold refreshes successfully after hosted realtime cycles
+- the hosted worker honors true start-to-start cadence:
+  - observed cycle duration: 6.5–8.5 seconds (stable-state with 2-day retention window populated)
+  - observed `effective_start_to_start_seconds ≈ 30.001`
+  - computed sleep: ~21–24 seconds per cycle (21.9s minimum headroom observed)
 
 The detailed Railway deployment notes live in:
 
@@ -497,7 +589,7 @@ The static and realtime automation paths have different delay expectations:
 - because GitHub Actions cron is UTC-based, the schedule may need a seasonal
   UTC adjustment during EST if the desired local run time remains `2:00 AM Eastern`
 - realtime is intended to run continuously through the worker container
-- the default worker cadence is one full realtime cycle every `300` seconds
+- the production worker cadence is one full realtime cycle every `30` seconds
 
 For live data, the practical delay is:
 
@@ -513,15 +605,12 @@ pretending both feeds are fresh.
 
 ## Intentionally deferred
 
-The following work is intentionally out of scope for this slice:
+The following work is intentionally out of scope for V1:
 
-- dashboard frontend UI
 - Neon Data API exposure
-- public packaging work under `transit.yesid.dev`
-
-Power BI report authoring itself is still outside the repo, but the report
-specification, DAX plan, SQL validation queries, and portfolio notes are now
-documented in the `powerbi/` folder.
+- public packaging and case study write-up under `transit.yesid.dev`
+- Power BI "Publish to web" public embed (pending portfolio site update)
+- database-level ET timezone columns in KPI views (DAX `-4/24` workaround in place)
 
 ## Why provider manifests exist
 
@@ -645,24 +734,48 @@ uv run python -m transit_ops.cli refresh-gold-realtime stm
 14. Prune old Silver storage and optionally compact the large tables:
 
 ```bash
+# preview what would be deleted without executing
+uv run python -m transit_ops.cli prune-silver-storage stm --dry-run
 uv run python -m transit_ops.cli prune-silver-storage stm
+
+# vacuum all maintenance tables, or target specific tables
 uv run python -m transit_ops.cli vacuum-storage stm
+uv run python -m transit_ops.cli vacuum-storage stm --table silver.trip_updates --table silver.vehicle_positions
+
+# prune Gold fact rows and Bronze R2 objects (standalone operator commands)
+uv run python -m transit_ops.cli prune-gold-storage stm --dry-run
+uv run python -m transit_ops.cli prune-gold-storage stm
+uv run python -m transit_ops.cli prune-bronze-storage stm --dry-run
+uv run python -m transit_ops.cli prune-bronze-storage stm
 ```
 
-15. Run the one-shot orchestration commands:
+15. Build warm rollup tables and prune old rollup history:
+
+```bash
+# build all 5-minute warm rollup periods not yet computed
+uv run python -m transit_ops.cli build-warm-rollups stm
+
+# build from a specific date (useful for backfill or recompute)
+uv run python -m transit_ops.cli build-warm-rollups stm --since 2026-03-01
+
+# prune warm rollup rows older than GOLD_WARM_ROLLUP_RETENTION_DAYS
+uv run python -m transit_ops.cli prune-warm-rollup-storage stm
+```
+
+16. Run the one-shot orchestration commands:
 
 ```bash
 uv run python -m transit_ops.cli run-static-pipeline stm
 uv run python -m transit_ops.cli run-realtime-cycle stm
 ```
 
-16. Run the continuous realtime worker:
+17. Run the continuous realtime worker:
 
 ```bash
 uv run python -m transit_ops.cli run-realtime-worker stm
 ```
 
-17. The module entrypoint also works:
+18. The module entrypoint also works:
 
 ```bash
 uv run python -m transit_ops.cli --help
