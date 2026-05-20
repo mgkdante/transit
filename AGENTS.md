@@ -34,6 +34,8 @@ notion:
 
 workflow-overlord 3.x orchestrates Claude Code + Codex sessions via Notion shared state. Anti-hallucination through chunked slices. **Notion is the canonical workflow state.** Git branches and worktrees are optional operator workflow, not plugin metadata.
 
+Notion is also the canonical home for long-form business context, architecture context, runtime notes, and Power BI semantic-model knowledge. Repo prose should stay short and practical, not compete with that source of truth.
+
 ## Core principles — the 6 mechanical guarantees
 
 1. **Sessions row exists at session start** — SessionStart hook
@@ -109,11 +111,11 @@ Never recommend, never personalize, never auto-invoke. User decides.
 
 ## Zero-drift invariant
 
-Every piece of workflow state has exactly one canonical location. Repo docs can support or seed the Notion structure, but they do not replace it once the migration exists.
+Every piece of workflow state has exactly one canonical location. For Transit, that migration is already done enough that repo prose is no longer a fallback knowledge base. If rich context matters, go to Notion first.
 
 ## Stack-specific notes
 
 - **Runtime:** Python 3.12
 - **Core infra:** Neon Postgres, Cloudflare R2, Railway, GitHub Actions, Power BI
 - **Realtime cadence:** current runtime behavior lives in Notion → `Architecture` → `Runtime / Operations`
-- **Repo docs:** treat `docs/logs/` and `docs/superpowers/` as migration inputs, not ongoing canonical workflow state
+- **Power BI artifacts:** keep local `.pbix` working files in repo; preserve semantic-model explanations, validation notes, and portfolio framing in Notion
