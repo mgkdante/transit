@@ -35,6 +35,7 @@ notion:
 workflow-overlord 3.x orchestrates Claude Code + Codex sessions via Notion shared state. Anti-hallucination through chunked slices. **Notion is the canonical workflow state.** Git branches and worktrees are optional operator workflow, not plugin metadata.
 
 Notion is also the canonical home for long-form business context, architecture context, runtime notes, and Power BI semantic-model knowledge. Repo prose should stay short and practical, not compete with that source of truth.
+Humans can discover that Notion home from the tracked link in `README.md` under `Notion Home`. `AGENTS.local.md` is for local machine-readable UUID pointers and override resolution, not the only route to find project context.
 
 ## Core principles — the 6 mechanical guarantees
 

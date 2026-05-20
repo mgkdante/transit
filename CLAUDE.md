@@ -10,7 +10,7 @@
 
 ## Where context lives
 
-Business / Architecture / Runtime / Vocabulary / Roadmap / Slices / Sessions / Transcript Chunks live in the Transit Notion subtree referenced by `AGENTS.local.md`. Interactive work uses the hosted Notion MCP first; hooks and automation use direct REST. Repo stays lean: Notion is canonical for workflow context, system context, and Power BI semantic knowledge, while local `.pbix` working files remain in `powerbi/`.
+Business / Architecture / Runtime / Vocabulary / Roadmap / Slices / Sessions / Transcript Chunks live in the Transit Notion subtree. Fresh readers can find the human-facing entry point from `README.md` under `Notion Home`; `AGENTS.local.md` only carries local machine-readable UUID pointers for tools and override resolution. Interactive work uses the hosted Notion MCP first; hooks and automation use direct REST. Repo stays lean: Notion is canonical for workflow context, system context, and Power BI semantic knowledge, while local `.pbix` working files remain in `powerbi/`.
 
 ## Build commands
 

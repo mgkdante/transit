@@ -4,6 +4,12 @@ A provider-ready GTFS / GTFS-RT analytics pipeline using STM feeds, normalized i
 
 This repo is the codebase and local artifact store for the project. Long-form business context, architecture notes, runtime decisions, workflow state, and Power BI semantic-model knowledge now live in the Transit Notion workspace. The repo should stay useful to an engineer opening it cold, but it is no longer the canonical place for that prose.
 
+## Notion Home
+
+[Transit Notion Home](https://www.notion.so/themlabs/Transit-3663e8630690809891abd71e03b57254?source=copy_link)
+
+This is the human-facing home for the project's canonical context and workflow state. If you are reading the repo fresh, start there for business context, architecture, runtime notes, slices, sessions, and Power BI semantic knowledge.
+
 ## Live Dashboard
 
 [View the live Power BI operations dashboard](https://app.powerbi.com/view?r=eyJrIjoiZGYwNTM0NWQtZWQ5Zi00MjdiLTg3NGUtNjQ5ZjBlYzdkMTYxIiwidCI6IjdkM2IyOGRjLWY4MTYtNDk4OC1iOGZkLTczNjJkNDEzMzg5YiJ9)
@@ -113,8 +119,7 @@ src/transit_ops/
   orchestration/                    Static pipeline, realtime cycle, worker
 scripts/                            Pipeline control helpers
 powerbi/                            Local `.pbix` working files
-CASE_STUDY.md                       Delivery narrative and design tradeoffs
 Dockerfile                          Realtime worker container
 ```
 
-For workflow and canonical context, start with [AGENTS.md](AGENTS.md) and the Transit Notion workspace it points to.
+For workflow and canonical context, start with this README's Notion Home link and then [AGENTS.md](AGENTS.md) for the tool contract.
