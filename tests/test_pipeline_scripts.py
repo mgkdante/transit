@@ -71,6 +71,16 @@ def _run_script(script_name: str, tmp_path: Path, **env_overrides: str) -> subpr
     )
 
 
+def _adapter_exports_snippet() -> str:
+    return (
+        'ADAPTER="$(database_compute_adapter_name | tr \'[:lower:]\' \'[:upper:]\')"; '
+        'printf -v "${ADAPTER}_API_KEY" %s "test-key"; '
+        'printf -v "${ADAPTER}_PROJECT_ID" %s "project-123"; '
+        'printf -v "${ADAPTER}_ENDPOINT_ID" %s "endpoint-456"; '
+        'export "${ADAPTER}_API_KEY" "${ADAPTER}_PROJECT_ID" "${ADAPTER}_ENDPOINT_ID"; '
+    )
+
+
 def test_database_compute_adapter_defaults_to_neon_and_exposes_contract(tmp_path: Path) -> None:
     result = _run_shell(
         "source scripts/lib/database-compute.sh && "
@@ -115,11 +125,10 @@ def test_resume_pipeline_delegates_to_adapter_without_provider_details_in_entryp
 
 def test_neon_pause_reports_registered_endpoint_when_status_check_succeeds(tmp_path: Path) -> None:
     result = _run_shell(
-        "source scripts/lib/database-compute.sh && pause_database_compute",
+        "source scripts/lib/database-compute.sh && "
+        f"{_adapter_exports_snippet()}"
+        "pause_database_compute",
         tmp_path,
-        NEON_API_KEY="test-key",
-        NEON_PROJECT_ID="project-123",
-        NEON_ENDPOINT_ID="endpoint-456",
         FAKE_CURL_STDOUT='{"endpoints":[{"id":"endpoint-456"}]}',
     )
 
@@ -129,11 +138,10 @@ def test_neon_pause_reports_registered_endpoint_when_status_check_succeeds(tmp_p
 
 def test_neon_pause_warns_when_endpoint_lookup_misses(tmp_path: Path) -> None:
     result = _run_shell(
-        "source scripts/lib/database-compute.sh && pause_database_compute",
+        "source scripts/lib/database-compute.sh && "
+        f"{_adapter_exports_snippet()}"
+        "pause_database_compute",
         tmp_path,
-        NEON_API_KEY="test-key",
-        NEON_PROJECT_ID="project-123",
-        NEON_ENDPOINT_ID="endpoint-456",
         FAKE_CURL_STDOUT='{"endpoints":[{"id":"different-endpoint"}]}',
     )
 
@@ -143,11 +151,10 @@ def test_neon_pause_warns_when_endpoint_lookup_misses(tmp_path: Path) -> None:
 
 def test_neon_resume_reports_restart_submission_when_api_call_succeeds(tmp_path: Path) -> None:
     result = _run_shell(
-        "source scripts/lib/database-compute.sh && resume_database_compute",
+        "source scripts/lib/database-compute.sh && "
+        f"{_adapter_exports_snippet()}"
+        "resume_database_compute",
         tmp_path,
-        NEON_API_KEY="test-key",
-        NEON_PROJECT_ID="project-123",
-        NEON_ENDPOINT_ID="endpoint-456",
     )
 
     assert result.returncode == 0, result.stderr
@@ -156,11 +163,10 @@ def test_neon_resume_reports_restart_submission_when_api_call_succeeds(tmp_path:
 
 def test_neon_resume_warns_when_restart_api_call_fails(tmp_path: Path) -> None:
     result = _run_shell(
-        "source scripts/lib/database-compute.sh && resume_database_compute",
+        "source scripts/lib/database-compute.sh && "
+        f"{_adapter_exports_snippet()}"
+        "resume_database_compute",
         tmp_path,
-        NEON_API_KEY="test-key",
-        NEON_PROJECT_ID="project-123",
-        NEON_ENDPOINT_ID="endpoint-456",
         FAKE_CURL_EXIT_CODE="22",
         FAKE_CURL_STDERR="boom",
     )
