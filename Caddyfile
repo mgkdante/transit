@@ -1,0 +1,6 @@
+{$CADDY_SITE_ADDRESS::80} {
+    reverse_proxy health:8080 {
+        health_uri /health/live
+        health_status 200
+    }
+}
