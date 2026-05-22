@@ -319,7 +319,7 @@ def test_capture_realtime_feed_uses_storage_abstraction_for_s3(
     connection = RecordingConnection()
     settings = Settings(
         _env_file=None,
-        NEON_DATABASE_URL="postgresql://user:pass@example.com/neondb",
+        DATABASE_URL="postgresql://user:pass@example.com/neondb",
         STM_API_KEY="demo-key",
         BRONZE_STORAGE_BACKEND="s3",
         BRONZE_S3_ENDPOINT="https://example.r2.cloudflarestorage.com",

@@ -79,7 +79,7 @@ class FakeEngine:
 
 def _fake_settings(**kwargs) -> Settings:
     defaults = {
-        "NEON_DATABASE_URL": None,
+        "DATABASE_URL": None,
         "GOLD_WARM_ROLLUP_RETENTION_DAYS": 90,
     }
     defaults.update(kwargs)
