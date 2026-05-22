@@ -469,7 +469,7 @@ Current behavior:
 
 Exact GitHub Actions secrets required after you push the repo:
 
-- `NEON_DATABASE_URL`
+- `DATABASE_URL`
 - `BRONZE_S3_ACCESS_KEY`
 - `BRONZE_S3_SECRET_KEY`
 
@@ -495,7 +495,7 @@ cycle has a chance to remove the source rows.
 
 Exact GitHub Actions secrets required (same as static workflow):
 
-- `NEON_DATABASE_URL`
+- `DATABASE_URL`
 - `BRONZE_S3_ACCESS_KEY`
 - `BRONZE_S3_SECRET_KEY`
 
@@ -547,7 +547,7 @@ Current runtime path:
 - the container starts with:
   - `python -m transit_ops.cli run-realtime-worker stm`
 - the service variables include:
-  - `NEON_DATABASE_URL`
+  - `DATABASE_URL`
   - `STM_API_KEY`
   - `BRONZE_S3_ACCESS_KEY`
   - `BRONZE_S3_SECRET_KEY`
@@ -652,7 +652,7 @@ No database schema changes are required just to register another GTFS provider.
 
 1. Copy `.env.example` to `.env` and fill in:
 
-- `NEON_DATABASE_URL`
+- `DATABASE_URL`
 - `BRONZE_S3_ACCESS_KEY`
 - `BRONZE_S3_SECRET_KEY`
 - `STM_API_KEY` if you plan to run live GTFS-RT capture
