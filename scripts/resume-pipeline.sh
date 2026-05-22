@@ -2,7 +2,7 @@
 # resume-pipeline.sh
 # Restores all automated pipeline activity:
 #   - Re-enables daily GH Actions workflows
-#   - Sets PIPELINE_PAUSED=false on Railway (worker resumes cycling)
+#   - Resumes the Compose worker through infra/pipeline-control.sh
 #   - Hands database compute off to the configured database adapter
 #
 # Usage:
@@ -22,7 +22,7 @@ source "$SCRIPT_DIR/lib/database-compute.sh"
 echo "==> Resuming pipeline..."
 
 scheduler_ok=true
-worker_flag_ok=true
+worker_control_ok=true
 database_compute_ok=true
 
 # --- 1. GitHub Actions ---
@@ -42,19 +42,13 @@ else
   scheduler_ok=false
 fi
 
-# --- 2. Railway env var (remove soft stop) ---
+# --- 2. Worker service ---
 echo ""
-echo "[2/3] Setting PIPELINE_PAUSED=false on Railway..."
-if command -v railway &>/dev/null; then
-  if railway variables set PIPELINE_PAUSED=false 2>&1; then
-    echo "      PIPELINE_PAUSED=false set on Railway"
-  else
-    echo "      WARNING: railway variables set failed (trial expired or not linked — set manually in Railway dashboard)"
-    worker_flag_ok=false
-  fi
+if bash "$SCRIPT_DIR/../infra/pipeline-control.sh" resume worker; then
+  echo "      Worker service resumed via Compose helper"
 else
-  echo "      WARNING: railway CLI not found — set PIPELINE_PAUSED=false manually in Railway dashboard"
-  worker_flag_ok=false
+  echo "      ERROR: worker service resume failed"
+  worker_control_ok=false
 fi
 
 # --- 3. Database compute adapter ---
@@ -64,10 +58,10 @@ if ! resume_database_compute; then
 fi
 
 echo ""
-if $scheduler_ok && $worker_flag_ok && $database_compute_ok; then
+if $scheduler_ok && $worker_control_ok && $database_compute_ok; then
   echo "Done. Pipeline is resumed."
   echo "  - GH Actions: enabled (daily static at 06:00 UTC, warm rollups at 07:00 UTC)"
-  echo "  - Railway worker: PIPELINE_PAUSED=false (uses configured poll interval; default 300s)"
+  echo "  - Worker service: resumed via Compose helper"
   echo "  - Database compute: delegated to adapter '$(database_compute_adapter_name)'"
   exit_code=0
 else
@@ -77,10 +71,10 @@ else
   else
     echo "  - GH Actions: one or more workflow enables failed"
   fi
-  if $worker_flag_ok; then
-    echo "  - Railway worker: PIPELINE_PAUSED=false"
+  if $worker_control_ok; then
+    echo "  - Worker service: resumed via Compose helper"
   else
-    echo "  - Railway worker: PIPELINE_PAUSED=false not confirmed"
+    echo "  - Worker service: resume failed"
   fi
   if $database_compute_ok; then
     echo "  - Database compute: adapter '$(database_compute_adapter_name)' completed"

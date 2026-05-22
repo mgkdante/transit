@@ -37,7 +37,7 @@ STM GTFS-RT protobuf  -> Bronze (R2/S3) -> Silver (Postgres) -> Gold facts     -
                                                                  -> Warm rollups -> Power BI
 ```
 
-Stack: Python 3.12, Postgres, Cloudflare R2/S3-compatible Bronze storage, Railway, GitHub Actions, Power BI.
+Stack: Python 3.12, Postgres, Cloudflare R2/S3-compatible Bronze storage, Docker Compose, Caddy, GitHub Actions, Power BI.
 
 Operationally:
 
@@ -119,12 +119,24 @@ Core endpoints:
 - `GET /health/checks/pipeline`
 - `GET /health/checks/bronze-storage`
 
+## Local Runtime Stack
+
+The Oracle-ready local stack runs Postgres, the realtime worker, the health API, and Caddy.
+
+Run:
+
+```bash
+docker compose up -d postgres health caddy
+docker compose up -d worker
+```
+
+Caddy proxies health traffic to the health service. Local defaults bind HTTP to `CADDY_HTTP_PORT=8080` and HTTPS to `CADDY_HTTPS_PORT=8443`.
+
 ## Pipeline Control
 
 To pause the pipeline:
 
 ```bash
-export RAILWAY_TOKEN=<token>
 bash scripts/pause-pipeline.sh
 ```
 
@@ -139,6 +151,8 @@ The app database contract is `DATABASE_URL`. The current database-compute adapte
 - `NEON_API_KEY`
 - `NEON_PROJECT_ID`
 - `NEON_ENDPOINT_ID`
+
+For local Compose and Oracle-ready runs, use `DATABASE_COMPUTE_ADAPTER=none` so pipeline pause/resume controls the worker without trying to suspend database compute. Use `DATABASE_COMPUTE_ADAPTER=neon` while production still runs on Neon and needs API-backed compute control.
 
 Those values are adapter details, not the generic app database contract.
 

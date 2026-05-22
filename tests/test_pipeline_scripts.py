@@ -196,14 +196,16 @@ def test_pause_pipeline_delegates_to_adapter_without_provider_details_in_entrypo
     _assert_adapter_handoff_message(result.stdout, adapter_name)
     assert "Database adapter credentials not set" in result.stdout
     assert "serviceInstanceSuspend" not in result.stdout
+    assert "Railway" not in result.stdout
     assert "Done. Pipeline is paused." in result.stdout
 
     log_lines = _read_log(log_path)
     assert log_lines == [
         "gh|workflow disable Daily Static Pipeline --repo mgkdante/transit",
         "gh|workflow disable Daily Warm Rollups --repo mgkdante/transit",
-        "railway|variables set PIPELINE_PAUSED=true",
+        "docker|compose --env-file .env -f docker-compose.yml stop worker",
     ]
+    assert not any(line.startswith("railway|") for line in log_lines)
 
 
 def test_resume_pipeline_delegates_to_adapter_without_provider_details_in_entrypoint(
@@ -217,14 +219,44 @@ def test_resume_pipeline_delegates_to_adapter_without_provider_details_in_entryp
     _assert_adapter_handoff_message(result.stdout, adapter_name)
     assert "Database adapter credentials not set" in result.stdout
     assert "serviceInstanceRedeploy" not in result.stdout
+    assert "Railway" not in result.stdout
     assert "Done. Pipeline is resumed." in result.stdout
 
     log_lines = _read_log(log_path)
     assert log_lines == [
         "gh|workflow enable Daily Static Pipeline --repo mgkdante/transit",
         "gh|workflow enable Daily Warm Rollups --repo mgkdante/transit",
-        "railway|variables set PIPELINE_PAUSED=false",
+        "docker|compose --env-file .env -f docker-compose.yml up -d worker",
     ]
+    assert not any(line.startswith("railway|") for line in log_lines)
+
+
+def test_pause_pipeline_fails_honestly_when_worker_pause_fails(tmp_path: Path) -> None:
+    result = _run_script(
+        "pause-pipeline.sh",
+        tmp_path,
+        COMMAND_LOG=str(_make_log_path(tmp_path)),
+        DOCKER_FAIL_PATTERN="stop worker",
+    )
+
+    assert result.returncode != 0
+    assert "ERROR: worker service pause failed" in result.stdout
+    assert "Worker service: pause failed" in result.stdout
+    assert "Done. Pipeline is paused." not in result.stdout
+
+
+def test_resume_pipeline_fails_honestly_when_worker_resume_fails(tmp_path: Path) -> None:
+    result = _run_script(
+        "resume-pipeline.sh",
+        tmp_path,
+        COMMAND_LOG=str(_make_log_path(tmp_path)),
+        DOCKER_FAIL_PATTERN="up -d worker",
+    )
+
+    assert result.returncode != 0
+    assert "ERROR: worker service resume failed" in result.stdout
+    assert "Worker service: resume failed" in result.stdout
+    assert "Done. Pipeline is resumed." not in result.stdout
 
 
 def test_pause_pipeline_fails_honestly_when_scheduler_disable_fails(tmp_path: Path) -> None:
