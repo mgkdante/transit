@@ -1,3 +1,5 @@
+import pytest
+
 from transit_ops.settings import Settings
 
 
@@ -40,3 +42,23 @@ def test_redacted_database_url_hides_credentials() -> None:
     )
 
     assert settings.redacted_database_url == "postgresql://example.com:5432/dbname?sslmode=require"
+
+
+def test_legacy_neon_database_url_constructor_input_fails_explicitly() -> None:
+    with pytest.raises(ValueError, match="NEON_DATABASE_URL is no longer supported; use DATABASE_URL instead"):
+        Settings(
+            _env_file=None,
+            NEON_DATABASE_URL="postgresql://user:pass@example.com/dbname?sslmode=require",
+        )
+
+
+def test_legacy_neon_database_url_environment_input_fails_explicitly(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv(
+        "NEON_DATABASE_URL",
+        "postgresql://user:pass@example.com/dbname?sslmode=require",
+    )
+
+    with pytest.raises(ValueError, match="NEON_DATABASE_URL is no longer supported; use DATABASE_URL instead"):
+        Settings(_env_file=None)

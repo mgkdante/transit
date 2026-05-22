@@ -1,9 +1,44 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from functools import lru_cache
+from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic.fields import FieldInfo
+from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict
+
+LEGACY_DATABASE_URL_KEY = "NEON_DATABASE_URL"
+LEGACY_DATABASE_URL_MESSAGE = (
+    "NEON_DATABASE_URL is no longer supported; use DATABASE_URL instead."
+)
+
+
+class LegacyDatabaseUrlGuardSource(PydanticBaseSettingsSource):
+    def __init__(self, wrapped: PydanticBaseSettingsSource) -> None:
+        super().__init__(wrapped.settings_cls)
+        self.wrapped = wrapped
+
+    def get_field_value(self, field: FieldInfo, field_name: str) -> tuple[Any, str, bool]:
+        return self.wrapped.get_field_value(field, field_name)
+
+    def __call__(self) -> dict[str, Any]:
+        self._raise_if_legacy_key_present(self._legacy_keys_from_env_vars())
+
+        data = self.wrapped()
+        self._raise_if_legacy_key_present(data)
+        return data
+
+    def _legacy_keys_from_env_vars(self) -> Mapping[str, str | None]:
+        env_vars = getattr(self.wrapped, "env_vars", None)
+        if isinstance(env_vars, Mapping):
+            return env_vars
+        return {}
+
+    @staticmethod
+    def _raise_if_legacy_key_present(data: Mapping[str, Any]) -> None:
+        if LEGACY_DATABASE_URL_KEY in data:
+            raise ValueError(LEGACY_DATABASE_URL_MESSAGE)
 
 
 class Settings(BaseSettings):
@@ -15,6 +50,22 @@ class Settings(BaseSettings):
         case_sensitive=True,
         extra="ignore",
     )
+
+    @classmethod
+    def settings_customise_sources(
+        cls,
+        settings_cls: type[BaseSettings],
+        init_settings: PydanticBaseSettingsSource,
+        env_settings: PydanticBaseSettingsSource,
+        dotenv_settings: PydanticBaseSettingsSource,
+        file_secret_settings: PydanticBaseSettingsSource,
+    ) -> tuple[PydanticBaseSettingsSource, ...]:
+        return (
+            LegacyDatabaseUrlGuardSource(init_settings),
+            LegacyDatabaseUrlGuardSource(env_settings),
+            LegacyDatabaseUrlGuardSource(dotenv_settings),
+            file_secret_settings,
+        )
 
     APP_ENV: str = "local"
     LOG_LEVEL: str = "INFO"
