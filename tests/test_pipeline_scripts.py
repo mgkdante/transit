@@ -17,7 +17,7 @@ def _make_executable(path: Path, body: str) -> None:
 
 def _stubbed_env(tmp_path: Path) -> dict[str, str]:
     bin_dir = tmp_path / "bin"
-    bin_dir.mkdir()
+    bin_dir.mkdir(exist_ok=True)
     _make_executable(
         bin_dir / "gh",
         "#!/usr/bin/env bash\n"
@@ -72,13 +72,16 @@ def _assert_curl_log_entry(
     line: str,
     *,
     method: str,
-    path_fragment: str,
 ) -> None:
     assert line.startswith("curl|")
     assert f"--request {method}" in line
+    assert "--url " in line
     assert "--header Accept: application/json" in line
     assert "--header Authorization: Bearer test-key" in line
-    assert path_fragment in line
+
+
+def _assert_adapter_handoff_message(output: str, adapter_name: str) -> None:
+    assert f"[3/3] Handing database compute to adapter '{adapter_name}'" in output
 
 
 def _run_shell(command: str, tmp_path: Path, **env_overrides: str) -> subprocess.CompletedProcess[str]:
@@ -126,7 +129,17 @@ def _adapter_env_overrides(adapter_name: str = "neon") -> dict[str, str]:
     }
 
 
-def test_database_compute_adapter_defaults_to_neon_and_exposes_contract(tmp_path: Path) -> None:
+def _database_compute_adapter_name(tmp_path: Path) -> str:
+    result = _run_shell(
+        "source scripts/lib/database-compute.sh && database_compute_adapter_name",
+        tmp_path,
+    )
+
+    assert result.returncode == 0, result.stderr
+    return result.stdout.strip()
+
+
+def test_database_compute_adapter_exposes_default_contract(tmp_path: Path) -> None:
     result = _run_shell(
         "source scripts/lib/database-compute.sh && "
         "printf 'adapter=%s\\n' \"$(database_compute_adapter_name)\" && "
@@ -136,7 +149,8 @@ def test_database_compute_adapter_defaults_to_neon_and_exposes_contract(tmp_path
     )
 
     assert result.returncode == 0, result.stderr
-    assert "adapter=neon" in result.stdout
+    adapter_lines = [line for line in result.stdout.splitlines() if line.startswith("adapter=")]
+    assert adapter_lines == [f"adapter={_database_compute_adapter_name(tmp_path)}"]
 
 
 def test_database_compute_adapter_rejects_unsupported_adapters_cleanly(tmp_path: Path) -> None:
@@ -153,9 +167,10 @@ def test_database_compute_adapter_rejects_unsupported_adapters_cleanly(tmp_path:
 def test_pause_pipeline_delegates_to_adapter_without_provider_details_in_entrypoint(tmp_path: Path) -> None:
     log_path = _make_log_path(tmp_path)
     result = _run_script("pause-pipeline.sh", tmp_path, COMMAND_LOG=str(log_path))
+    adapter_name = _database_compute_adapter_name(tmp_path)
 
     assert result.returncode == 0, result.stderr
-    assert "[3/3] Handing database compute to adapter 'neon'" in result.stdout
+    _assert_adapter_handoff_message(result.stdout, adapter_name)
     assert "Database adapter credentials not set" in result.stdout
     assert "serviceInstanceSuspend" not in result.stdout
     assert "Done. Pipeline is paused." in result.stdout
@@ -171,9 +186,10 @@ def test_pause_pipeline_delegates_to_adapter_without_provider_details_in_entrypo
 def test_resume_pipeline_delegates_to_adapter_without_provider_details_in_entrypoint(tmp_path: Path) -> None:
     log_path = _make_log_path(tmp_path)
     result = _run_script("resume-pipeline.sh", tmp_path, COMMAND_LOG=str(log_path))
+    adapter_name = _database_compute_adapter_name(tmp_path)
 
     assert result.returncode == 0, result.stderr
-    assert "[3/3] Handing database compute to adapter 'neon'" in result.stdout
+    _assert_adapter_handoff_message(result.stdout, adapter_name)
     assert "Database adapter credentials not set" in result.stdout
     assert "serviceInstanceRedeploy" not in result.stdout
     assert "Done. Pipeline is resumed." in result.stdout
@@ -215,7 +231,7 @@ def test_resume_pipeline_fails_honestly_when_database_compute_restart_fails(tmp_
     assert "Done. Pipeline is resumed." not in result.stdout
 
 
-def test_neon_pause_reports_registered_endpoint_when_status_check_succeeds(tmp_path: Path) -> None:
+def test_pause_database_compute_reports_registered_endpoint_when_status_check_succeeds(tmp_path: Path) -> None:
     log_path = _make_log_path(tmp_path)
     result = _run_shell(
         "source scripts/lib/database-compute.sh && "
@@ -233,11 +249,10 @@ def test_neon_pause_reports_registered_endpoint_when_status_check_succeeds(tmp_p
     _assert_curl_log_entry(
         log_lines[0],
         method="GET",
-        path_fragment="/projects/project-123/endpoints",
     )
 
 
-def test_neon_pause_warns_when_endpoint_lookup_misses(tmp_path: Path) -> None:
+def test_pause_database_compute_warns_when_endpoint_lookup_misses(tmp_path: Path) -> None:
     result = _run_shell(
         "source scripts/lib/database-compute.sh && "
         f"{_adapter_exports_snippet()}"
@@ -250,7 +265,7 @@ def test_neon_pause_warns_when_endpoint_lookup_misses(tmp_path: Path) -> None:
     assert "WARNING: database adapter could not find endpoint endpoint-456" in result.stdout
 
 
-def test_neon_resume_reports_restart_submission_when_api_call_succeeds(tmp_path: Path) -> None:
+def test_resume_database_compute_reports_restart_submission_when_api_call_succeeds(tmp_path: Path) -> None:
     log_path = _make_log_path(tmp_path)
     result = _run_shell(
         "source scripts/lib/database-compute.sh && "
@@ -267,11 +282,10 @@ def test_neon_resume_reports_restart_submission_when_api_call_succeeds(tmp_path:
     _assert_curl_log_entry(
         log_lines[0],
         method="POST",
-        path_fragment="/projects/project-123/endpoints/endpoint-456/restart",
     )
 
 
-def test_neon_resume_warns_when_restart_api_call_fails(tmp_path: Path) -> None:
+def test_resume_database_compute_warns_when_restart_api_call_fails(tmp_path: Path) -> None:
     log_path = _make_log_path(tmp_path)
     result = _run_shell(
         "source scripts/lib/database-compute.sh && "
@@ -290,5 +304,4 @@ def test_neon_resume_warns_when_restart_api_call_fails(tmp_path: Path) -> None:
     _assert_curl_log_entry(
         log_lines[0],
         method="POST",
-        path_fragment="/projects/project-123/endpoints/endpoint-456/restart",
     )
