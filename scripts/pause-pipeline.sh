@@ -85,7 +85,7 @@ else
   if $database_compute_ok; then
     echo "  - Database compute: adapter '$(database_compute_adapter_name)' completed"
   else
-    echo "  - Database compute: adapter '$(database_compute_adapter_name)' reported failure"
+    echo "  - Database compute: adapter '$(database_compute_adapter_name)' handoff failed"
   fi
   exit_code=1
 fi

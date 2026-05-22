@@ -36,10 +36,12 @@ pause_database_compute() {
     else
       echo "      WARNING: database adapter could not find endpoint $NEON_ENDPOINT_ID in project $NEON_PROJECT_ID."
       echo "      Confirm the adapter identifiers in the Neon console."
+      return 1
     fi
   else
     echo "      WARNING: database adapter status check failed: $RESPONSE"
     echo "      Confirm the adapter credentials and identifiers in the Neon console."
+    return 1
   fi
 }
 

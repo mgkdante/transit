@@ -216,6 +216,25 @@ def test_pause_pipeline_fails_honestly_when_scheduler_disable_fails(tmp_path: Pa
     assert "failed" in result.stdout.lower()
 
 
+def test_pause_pipeline_fails_honestly_when_database_compute_handoff_fails(tmp_path: Path) -> None:
+    adapter_name = _database_compute_adapter_name(tmp_path)
+    result = _run_script(
+        "pause-pipeline.sh",
+        tmp_path,
+        COMMAND_LOG=str(_make_log_path(tmp_path)),
+        FAKE_CURL_EXIT_CODE="22",
+        FAKE_CURL_STDERR="boom",
+        **_adapter_env_overrides(adapter_name),
+    )
+
+    assert result.returncode != 0
+    assert "WARNING: database adapter status check failed: boom" in result.stdout
+    assert "Pipeline pause completed with issues." in result.stdout
+    assert "Database compute: adapter" in result.stdout
+    assert "handoff failed" in result.stdout
+    assert "Done. Pipeline is paused." not in result.stdout
+
+
 def test_resume_pipeline_fails_honestly_when_database_compute_restart_fails(tmp_path: Path) -> None:
     adapter_name = _database_compute_adapter_name(tmp_path)
     result = _run_script(
@@ -264,8 +283,30 @@ def test_pause_database_compute_warns_when_endpoint_lookup_misses(tmp_path: Path
         FAKE_CURL_STDOUT='{"endpoints":[{"id":"different-endpoint"}]}',
     )
 
-    assert result.returncode == 0, result.stderr
+    assert result.returncode != 0
     assert "WARNING: database adapter could not find endpoint endpoint-456" in result.stdout
+
+
+def test_pause_database_compute_fails_when_status_check_api_call_fails(tmp_path: Path) -> None:
+    log_path = _make_log_path(tmp_path)
+    result = _run_shell(
+        "source scripts/lib/database-compute.sh && "
+        f"{_adapter_exports_snippet()}"
+        "pause_database_compute",
+        tmp_path,
+        COMMAND_LOG=str(log_path),
+        FAKE_CURL_EXIT_CODE="22",
+        FAKE_CURL_STDERR="boom",
+    )
+
+    assert result.returncode != 0
+    assert "WARNING: database adapter status check failed: boom" in result.stdout
+    log_lines = _read_log(log_path)
+    assert len(log_lines) == 1
+    _assert_curl_log_entry(
+        log_lines[0],
+        method="GET",
+    )
 
 
 def test_resume_database_compute_reports_restart_submission_when_api_call_succeeds(tmp_path: Path) -> None:
