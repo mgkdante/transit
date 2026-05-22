@@ -88,7 +88,7 @@ def _run_shell(command: str, tmp_path: Path, **env_overrides: str) -> subprocess
     env = _stubbed_env(tmp_path)
     env.update(env_overrides)
     return subprocess.run(
-        ["bash", "-lc", command],
+        ["bash", "-c", command],
         cwd=REPO_ROOT,
         env=env,
         capture_output=True,
@@ -176,7 +176,7 @@ def test_pause_pipeline_delegates_to_adapter_without_provider_details_in_entrypo
     assert "Done. Pipeline is paused." in result.stdout
 
     log_lines = _read_log(log_path)
-    assert log_lines[:3] == [
+    assert log_lines == [
         "gh|workflow disable Daily Static Pipeline --repo mgkdante/transit",
         "gh|workflow disable Daily Warm Rollups --repo mgkdante/transit",
         "railway|variables set PIPELINE_PAUSED=true",
@@ -195,7 +195,7 @@ def test_resume_pipeline_delegates_to_adapter_without_provider_details_in_entryp
     assert "Done. Pipeline is resumed." in result.stdout
 
     log_lines = _read_log(log_path)
-    assert log_lines[:3] == [
+    assert log_lines == [
         "gh|workflow enable Daily Static Pipeline --repo mgkdante/transit",
         "gh|workflow enable Daily Warm Rollups --repo mgkdante/transit",
         "railway|variables set PIPELINE_PAUSED=false",
