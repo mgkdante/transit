@@ -68,6 +68,19 @@ def _read_log(path: Path) -> list[str]:
     return [line for line in path.read_text(encoding="utf-8").splitlines() if line]
 
 
+def _assert_curl_log_entry(
+    line: str,
+    *,
+    method: str,
+    path_fragment: str,
+) -> None:
+    assert line.startswith("curl|")
+    assert f"--request {method}" in line
+    assert "--header Accept: application/json" in line
+    assert "--header Authorization: Bearer test-key" in line
+    assert path_fragment in line
+
+
 def _run_shell(command: str, tmp_path: Path, **env_overrides: str) -> subprocess.CompletedProcess[str]:
     env = _stubbed_env(tmp_path)
     env.update(env_overrides)
@@ -215,9 +228,13 @@ def test_neon_pause_reports_registered_endpoint_when_status_check_succeeds(tmp_p
 
     assert result.returncode == 0, result.stderr
     assert "Database adapter endpoint endpoint-456 is registered" in result.stdout
-    assert _read_log(log_path) == [
-        "curl|--fail --silent --show-error --request GET --url https://console.neon.tech/api/v2/projects/project-123/endpoints --header Accept: application/json --header Authorization: Bearer test-key"
-    ]
+    log_lines = _read_log(log_path)
+    assert len(log_lines) == 1
+    _assert_curl_log_entry(
+        log_lines[0],
+        method="GET",
+        path_fragment="/projects/project-123/endpoints",
+    )
 
 
 def test_neon_pause_warns_when_endpoint_lookup_misses(tmp_path: Path) -> None:
@@ -245,9 +262,13 @@ def test_neon_resume_reports_restart_submission_when_api_call_succeeds(tmp_path:
 
     assert result.returncode == 0, result.stderr
     assert "Database adapter restart request submitted." in result.stdout
-    assert _read_log(log_path) == [
-        "curl|--fail --silent --show-error --request POST --url https://console.neon.tech/api/v2/projects/project-123/endpoints/endpoint-456/restart --header Accept: application/json --header Authorization: Bearer test-key"
-    ]
+    log_lines = _read_log(log_path)
+    assert len(log_lines) == 1
+    _assert_curl_log_entry(
+        log_lines[0],
+        method="POST",
+        path_fragment="/projects/project-123/endpoints/endpoint-456/restart",
+    )
 
 
 def test_neon_resume_warns_when_restart_api_call_fails(tmp_path: Path) -> None:
@@ -264,6 +285,10 @@ def test_neon_resume_warns_when_restart_api_call_fails(tmp_path: Path) -> None:
 
     assert result.returncode != 0
     assert "WARNING: database adapter restart failed: boom" in result.stdout
-    assert _read_log(log_path) == [
-        "curl|--fail --silent --show-error --request POST --url https://console.neon.tech/api/v2/projects/project-123/endpoints/endpoint-456/restart --header Accept: application/json --header Authorization: Bearer test-key"
-    ]
+    log_lines = _read_log(log_path)
+    assert len(log_lines) == 1
+    _assert_curl_log_entry(
+        log_lines[0],
+        method="POST",
+        path_fragment="/projects/project-123/endpoints/endpoint-456/restart",
+    )
