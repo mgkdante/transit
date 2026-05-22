@@ -78,7 +78,7 @@ def test_pause_pipeline_uses_generic_database_compute_contract(tmp_path: Path) -
     assert "database compute" in script.lower()
     assert "railway compute" not in script.lower()
     assert "neon compute" not in script.lower()
-    assert "NEON_API_KEY" not in script
+    assert "_API_KEY" not in script
     assert "serviceInstanceSuspend" not in script
 
     result = _run_script("pause-pipeline.sh", tmp_path)
@@ -97,7 +97,7 @@ def test_resume_pipeline_uses_generic_database_compute_contract(tmp_path: Path) 
     assert "database compute" in script.lower()
     assert "railway compute" not in script.lower()
     assert "neon compute" not in script.lower()
-    assert "NEON_API_KEY" not in script
+    assert "_API_KEY" not in script
     assert "serviceInstanceRedeploy" not in script
 
     result = _run_script("resume-pipeline.sh", tmp_path)
