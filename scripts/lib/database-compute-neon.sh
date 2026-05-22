@@ -63,5 +63,6 @@ resume_database_compute() {
   else
     echo "      WARNING: database adapter restart failed: $RESPONSE"
     echo "      The next database connection may still wake compute automatically."
+    return 1
   fi
 }
