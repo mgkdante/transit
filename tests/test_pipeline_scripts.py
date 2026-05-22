@@ -34,8 +34,6 @@ def _stubbed_env(tmp_path: Path) -> dict[str, str]:
 
     env = os.environ.copy()
     env["PATH"] = f"{bin_dir}:{env['PATH']}"
-    env.pop("NEON_API_KEY", None)
-    env["DATABASE_COMPUTE_ADAPTER"] = "neon"
     return env
 
 
@@ -50,20 +48,26 @@ def _run_script(script_name: str, tmp_path: Path) -> subprocess.CompletedProcess
     )
 
 
-def test_database_compute_adapter_contract_is_generic_and_neon_isolated() -> None:
+def test_database_compute_adapter_contract_keeps_provider_details_outside_generic_layer() -> None:
     adapter = _read("scripts/lib/database-compute.sh")
-    neon_adapter = _read("scripts/lib/database-compute-neon.sh")
+    implementation_files = sorted(
+        path
+        for path in (REPO_ROOT / "scripts" / "lib").glob("database-compute-*.sh")
+        if path.name != "database-compute.sh"
+    )
 
     assert "DATABASE_COMPUTE_ADAPTER" in adapter
     assert "database_compute_adapter_name" in adapter
     assert "pause_database_compute" in adapter
     assert "resume_database_compute" in adapter
-    assert "database-compute-neon.sh" in adapter
-    assert "NEON_API_KEY" not in adapter
+    assert "database-compute-" in adapter
+    assert "_API_KEY" not in adapter
+    assert "curl" not in adapter
 
-    assert "NEON_API_KEY" in neon_adapter
-    assert "pause_database_compute" in neon_adapter
-    assert "resume_database_compute" in neon_adapter
+    assert implementation_files
+    assert any("_API_KEY" in path.read_text(encoding="utf-8") for path in implementation_files)
+    assert all("pause_database_compute" in path.read_text(encoding="utf-8") for path in implementation_files)
+    assert all("resume_database_compute" in path.read_text(encoding="utf-8") for path in implementation_files)
 
 
 def test_pause_pipeline_uses_generic_database_compute_contract(tmp_path: Path) -> None:
