@@ -15,6 +15,7 @@ case "$DATABASE_COMPUTE_ADAPTER" in
     ;;
   *)
     _database_compute_fail "Unsupported DATABASE_COMPUTE_ADAPTER: $DATABASE_COMPUTE_ADAPTER"
+    return 1
     ;;
 esac
 

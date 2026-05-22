@@ -161,7 +161,9 @@ def test_database_compute_adapter_rejects_unsupported_adapters_cleanly(tmp_path:
     )
 
     assert result.returncode != 0
-    assert "Unsupported DATABASE_COMPUTE_ADAPTER: unsupported" in result.stderr
+    assert result.stderr == "Unsupported DATABASE_COMPUTE_ADAPTER: unsupported\n"
+    assert "must define pause_database_compute" not in result.stderr
+    assert "must define resume_database_compute" not in result.stderr
 
 
 def test_pause_pipeline_delegates_to_adapter_without_provider_details_in_entrypoint(tmp_path: Path) -> None:
