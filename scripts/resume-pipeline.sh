@@ -67,7 +67,7 @@ echo ""
 if $scheduler_ok && $worker_flag_ok && $database_compute_ok; then
   echo "Done. Pipeline is resumed."
   echo "  - GH Actions: enabled (daily static at 06:00 UTC, warm rollups at 07:00 UTC)"
-  echo "  - Railway worker: PIPELINE_PAUSED=false (cycles every 30s)"
+  echo "  - Railway worker: PIPELINE_PAUSED=false (uses configured poll interval; default 300s)"
   echo "  - Database compute: delegated to adapter '$(database_compute_adapter_name)'"
   exit_code=0
 else

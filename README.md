@@ -367,6 +367,15 @@ export RAILWAY_TOKEN=<token from https://railway.app/account/tokens>
 bash scripts/pause-pipeline.sh
 ```
 
+The generic app contract stays `DATABASE_URL`. The current database-compute
+adapter is Neon-specific, so API-backed status checks and restart requests also
+need these adapter-only env vars exported before `pause-pipeline.sh` /
+`resume-pipeline.sh` can verify or restart compute:
+
+- `NEON_API_KEY`
+- `NEON_PROJECT_ID`
+- `NEON_ENDPOINT_ID`
+
 Without `RAILWAY_TOKEN`, the scripts handle GH Actions and the `PIPELINE_PAUSED` env var, and print a link to pause Railway compute manually.
 
 The `PIPELINE_PAUSED=true` env var alone (without compute suspension) makes the Railway worker idle — it sleeps each poll interval without calling STM, Neon, or R2.
@@ -656,6 +665,9 @@ No database schema changes are required just to register another GTFS provider.
 - `BRONZE_S3_ACCESS_KEY`
 - `BRONZE_S3_SECRET_KEY`
 - `STM_API_KEY` if you plan to run live GTFS-RT capture
+- `NEON_API_KEY`, `NEON_PROJECT_ID`, and `NEON_ENDPOINT_ID` only if you want
+  the current Neon adapter to perform API-backed pause/resume checks or
+  restart requests
 2. Install dependencies:
 
 ```bash
