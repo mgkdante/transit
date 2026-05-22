@@ -1,0 +1,9 @@
+# transit — workflow-overlord Codex CLI config.
+#
+# Hook dispatchers live in the GLOBAL ~/.codex/config.toml. Keep only the local
+# feature flags here so hooks are not double-registered.
+
+[features]
+hooks = true
+remote_connections = true
+suppress_unstable_features_warning = true
