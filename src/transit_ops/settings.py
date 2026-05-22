@@ -105,6 +105,9 @@ class Settings(BaseSettings):
     PIPELINE_PAUSED: bool = False
     REALTIME_POLL_SECONDS: int = 300
     REALTIME_STARTUP_DELAY_SECONDS: int = 0
+    HEALTH_DATABASE_TIMEOUT_SECONDS: float = 5.0
+    HEALTH_FEED_TIMEOUT_SECONDS: float = 10.0
+    HEALTH_MAX_PIPELINE_AGE_SECONDS: int = 900
     STATIC_DATASET_RETENTION_COUNT: int = 1
     SILVER_REALTIME_RETENTION_DAYS: int = 2
     GOLD_FACT_RETENTION_DAYS: int = 2
@@ -139,7 +142,7 @@ class Settings(BaseSettings):
         masked_netloc = host + port
         return urlunsplit((parts.scheme, masked_netloc, parts.path, parts.query, parts.fragment))
 
-    def display_dict(self) -> dict[str, str | None]:
+    def display_dict(self) -> dict[str, object]:
         """Return a safe summary of the active settings."""
 
         return {
@@ -162,6 +165,9 @@ class Settings(BaseSettings):
             "PIPELINE_PAUSED": self.PIPELINE_PAUSED,
             "REALTIME_POLL_SECONDS": self.REALTIME_POLL_SECONDS,
             "REALTIME_STARTUP_DELAY_SECONDS": self.REALTIME_STARTUP_DELAY_SECONDS,
+            "HEALTH_DATABASE_TIMEOUT_SECONDS": self.HEALTH_DATABASE_TIMEOUT_SECONDS,
+            "HEALTH_FEED_TIMEOUT_SECONDS": self.HEALTH_FEED_TIMEOUT_SECONDS,
+            "HEALTH_MAX_PIPELINE_AGE_SECONDS": self.HEALTH_MAX_PIPELINE_AGE_SECONDS,
             "STATIC_DATASET_RETENTION_COUNT": self.STATIC_DATASET_RETENTION_COUNT,
             "SILVER_REALTIME_RETENTION_DAYS": self.SILVER_REALTIME_RETENTION_DAYS,
             "GOLD_FACT_RETENTION_DAYS": self.GOLD_FACT_RETENTION_DAYS,
