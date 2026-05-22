@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import pytest
 
 from transit_ops.settings import Settings
@@ -62,3 +64,30 @@ def test_legacy_neon_database_url_environment_input_fails_explicitly(
 
     with pytest.raises(ValueError, match="NEON_DATABASE_URL is no longer supported; use DATABASE_URL instead"):
         Settings(_env_file=None)
+
+
+def test_legacy_neon_database_url_dotenv_input_fails_explicitly(
+    tmp_path: Path,
+) -> None:
+    env_file = tmp_path / ".env.legacy"
+    env_file.write_text(
+        "NEON_DATABASE_URL=postgresql://user:pass@example.com/dbname?sslmode=require\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="NEON_DATABASE_URL is no longer supported; use DATABASE_URL instead"):
+        Settings(_env_file=env_file)
+
+
+def test_legacy_neon_database_url_file_secret_input_fails_explicitly(
+    tmp_path: Path,
+) -> None:
+    secrets_dir = tmp_path / "secrets"
+    secrets_dir.mkdir()
+    (secrets_dir / "NEON_DATABASE_URL").write_text(
+        "postgresql://user:pass@example.com/dbname?sslmode=require\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="NEON_DATABASE_URL is no longer supported; use DATABASE_URL instead"):
+        Settings(_env_file=None, _secrets_dir=secrets_dir)

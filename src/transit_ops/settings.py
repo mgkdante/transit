@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from functools import lru_cache
+from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
@@ -24,6 +25,7 @@ class LegacyDatabaseUrlGuardSource(PydanticBaseSettingsSource):
 
     def __call__(self) -> dict[str, Any]:
         self._raise_if_legacy_key_present(self._legacy_keys_from_env_vars())
+        self._raise_if_legacy_key_present(self._legacy_keys_from_file_secrets())
 
         data = self.wrapped()
         self._raise_if_legacy_key_present(data)
@@ -33,6 +35,19 @@ class LegacyDatabaseUrlGuardSource(PydanticBaseSettingsSource):
         env_vars = getattr(self.wrapped, "env_vars", None)
         if isinstance(env_vars, Mapping):
             return env_vars
+        return {}
+
+    def _legacy_keys_from_file_secrets(self) -> Mapping[str, str | None]:
+        secrets_dir = getattr(self.wrapped, "secrets_dir", None)
+        if secrets_dir is None:
+            return {}
+
+        secrets_dirs = [secrets_dir] if isinstance(secrets_dir, (str, Path)) else secrets_dir
+        for entry in secrets_dirs:
+            candidate = Path(entry).expanduser() / LEGACY_DATABASE_URL_KEY
+            if candidate.is_file():
+                return {LEGACY_DATABASE_URL_KEY: candidate.read_text().strip()}
+
         return {}
 
     @staticmethod
@@ -64,7 +79,7 @@ class Settings(BaseSettings):
             LegacyDatabaseUrlGuardSource(init_settings),
             LegacyDatabaseUrlGuardSource(env_settings),
             LegacyDatabaseUrlGuardSource(dotenv_settings),
-            file_secret_settings,
+            LegacyDatabaseUrlGuardSource(file_secret_settings),
         )
 
     APP_ENV: str = "local"
