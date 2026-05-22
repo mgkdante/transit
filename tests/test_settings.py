@@ -28,7 +28,20 @@ def test_settings_defaults() -> None:
     assert settings.REALTIME_STARTUP_DELAY_SECONDS == 0
     assert settings.STATIC_DATASET_RETENTION_COUNT == 1
     assert settings.SILVER_REALTIME_RETENTION_DAYS == 2
+    assert settings.HEALTH_DATABASE_TIMEOUT_SECONDS == 5.0
+    assert settings.HEALTH_FEED_TIMEOUT_SECONDS == 10.0
+    assert settings.HEALTH_MAX_PIPELINE_AGE_SECONDS == 900
     assert settings.DATABASE_URL is None
+
+
+def test_health_settings_are_exposed_in_display_dict() -> None:
+    settings = Settings(_env_file=None)
+
+    display = settings.display_dict()
+
+    assert display["HEALTH_DATABASE_TIMEOUT_SECONDS"] == 5.0
+    assert display["HEALTH_FEED_TIMEOUT_SECONDS"] == 10.0
+    assert display["HEALTH_MAX_PIPELINE_AGE_SECONDS"] == 900
 
 
 def test_sqlalchemy_database_url_conversion() -> None:
