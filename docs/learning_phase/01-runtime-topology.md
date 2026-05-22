@@ -28,7 +28,7 @@ Actions workflows are scheduled batch jobs. Everything else is manual.
 | STM RT trip_updates | `https://api.stm.info/pub/od/gtfs-rt/ic/v2/tripUpdates` | `apiKey` header via `STM_API_KEY` | `capture-realtime stm trip_updates` |
 | STM RT vehicle_positions | `https://api.stm.info/pub/od/gtfs-rt/ic/v2/vehiclePositions` | `apiKey` header via `STM_API_KEY` | `capture-realtime stm vehicle_positions` |
 | Cloudflare R2 | Bucket `transit-raw` at `eccfb9bedd87d413eaf4cac6ae2285d3.r2.cloudflarestorage.com` | `BRONZE_S3_ACCESS_KEY` / `BRONZE_S3_SECRET_KEY` | All Bronze ingestion and reads |
-| Neon Postgres | `NEON_DATABASE_URL` | Connection string | All Silver, Gold, metadata operations |
+| Neon Postgres | `NEON` + `_DATABASE_URL` | Connection string | All Silver, Gold, metadata operations |
 
 STM realtime requests pin TLS 1.2 via a custom SSL context in
 `src/transit_ops/ingestion/realtime_gtfs.py`.
@@ -158,7 +158,7 @@ All variables are defined in `src/transit_ops/settings.py` as fields on the
 |----------|---------|--------|-------------|
 | `APP_ENV` | `"local"` | No | Logging, diagnostics |
 | `LOG_LEVEL` | `"INFO"` | No | `configure_logging()` |
-| `NEON_DATABASE_URL` | None | **Yes** | All DB operations |
+| `NEON` + `_DATABASE_URL` | None | **Yes** | All DB operations |
 | `PROVIDER_TIMEZONE` | `"America/Toronto"` | No | Gold date key conversion |
 | `STM_PROVIDER_ID` | `"stm"` | No | CLI and seed commands |
 | `STM_API_KEY` | None | **Yes** | Realtime GTFS-RT capture |

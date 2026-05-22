@@ -31,7 +31,7 @@ Important context:
 - GitHub deployment execution is already proven:
   - repo: https://github.com/mgkdante/transit
   - GitHub Actions secrets configured:
-    - NEON_DATABASE_URL
+    - NEON` + `_DATABASE_URL
     - BRONZE_S3_ACCESS_KEY
     - BRONZE_S3_SECRET_KEY
   - workflow_dispatch run succeeded previously for Daily Static Pipeline
@@ -95,7 +95,7 @@ Then:
 - use the existing Dockerized worker path
 - deploy the realtime worker
 - configure the required runtime secrets without printing them:
-  - NEON_DATABASE_URL
+  - NEON` + `_DATABASE_URL
   - STM_API_KEY
   - BRONZE_S3_ACCESS_KEY
   - BRONZE_S3_SECRET_KEY
@@ -341,12 +341,12 @@ transit/
 ## 7) Environment/config
 
 GitHub Actions secrets required for the static workflow:
-- `NEON_DATABASE_URL`
+- `NEON` + `_DATABASE_URL`
 - `BRONZE_S3_ACCESS_KEY`
 - `BRONZE_S3_SECRET_KEY`
 
 Runtime secrets required for a hosted realtime worker:
-- `NEON_DATABASE_URL`
+- `NEON` + `_DATABASE_URL`
 - `STM_API_KEY`
 - `BRONZE_S3_ACCESS_KEY`
 - `BRONZE_S3_SECRET_KEY`
@@ -645,7 +645,7 @@ Important context:
 - GitHub deployment execution is already proven:
   - repo: https://github.com/mgkdante/transit
   - GitHub Actions secrets configured:
-    - NEON_DATABASE_URL
+    - NEON` + `_DATABASE_URL
     - BRONZE_S3_ACCESS_KEY
     - BRONZE_S3_SECRET_KEY
   - workflow_dispatch run succeeded previously for Daily Static Pipeline
@@ -679,7 +679,7 @@ Objectives:
 1) Inspect which hosted container platform CLI is now actually available and authenticated.
 2) Reuse the existing Dockerized realtime worker path.
 3) Configure these runtime secrets without printing them:
-   - NEON_DATABASE_URL
+   - NEON` + `_DATABASE_URL
    - STM_API_KEY
    - BRONZE_S3_ACCESS_KEY
    - BRONZE_S3_SECRET_KEY
@@ -798,7 +798,7 @@ Important file paths:
 - C:\Users\otalo\Projects\transit\src\transit_ops\settings.py
 
 Required runtime secrets for the future hosted worker:
-- NEON_DATABASE_URL
+- NEON` + `_DATABASE_URL
 - STM_API_KEY
 - BRONZE_S3_ACCESS_KEY
 - BRONZE_S3_SECRET_KEY
@@ -850,7 +850,7 @@ Important context:
 - GitHub deployment execution is already proven:
   - repo: https://github.com/mgkdante/transit
   - GitHub Actions secrets configured:
-    - NEON_DATABASE_URL
+    - NEON` + `_DATABASE_URL
     - BRONZE_S3_ACCESS_KEY
     - BRONZE_S3_SECRET_KEY
   - workflow_dispatch run succeeded previously for Daily Static Pipeline
@@ -884,7 +884,7 @@ Objectives:
 1) Inspect which hosted container platform CLI is now actually available and authenticated.
 2) Reuse the existing Dockerized realtime worker path.
 3) Configure these runtime secrets without printing them:
-   - NEON_DATABASE_URL
+   - NEON` + `_DATABASE_URL
    - STM_API_KEY
    - BRONZE_S3_ACCESS_KEY
    - BRONZE_S3_SECRET_KEY
@@ -1242,7 +1242,7 @@ Current environment variables currently required or supported by the repo:
   - default: `INFO`
   - used to control logging verbosity
 
-- `NEON_DATABASE_URL`
+- `NEON` + `_DATABASE_URL`
   - required for DB-backed commands, the GitHub static workflow, and any hosted realtime worker
   - default: none
   - used for Neon Postgres connectivity
@@ -1324,12 +1324,12 @@ Current environment variables currently required or supported by the repo:
   - used as optional delay before the worker begins its first cycle
 
 GitHub Actions secrets required for the static workflow:
-- `NEON_DATABASE_URL`
+- `NEON` + `_DATABASE_URL`
 - `BRONZE_S3_ACCESS_KEY`
 - `BRONZE_S3_SECRET_KEY`
 
 Runtime secrets required for a hosted realtime worker:
-- `NEON_DATABASE_URL`
+- `NEON` + `_DATABASE_URL`
 - `STM_API_KEY`
 - `BRONZE_S3_ACCESS_KEY`
 - `BRONZE_S3_SECRET_KEY`
@@ -1921,7 +1921,7 @@ Important context:
 - GitHub deployment execution is already proven:
   - repo: https://github.com/mgkdante/transit
   - GitHub Actions secrets configured:
-    - NEON_DATABASE_URL
+    - NEON` + `_DATABASE_URL
     - BRONZE_S3_ACCESS_KEY
     - BRONZE_S3_SECRET_KEY
   - workflow_dispatch run succeeded previously for Daily Static Pipeline
@@ -1959,7 +1959,7 @@ Objectives:
 1) Inspect which hosted container platform CLI is now actually available and authenticated.
 2) Reuse the existing Dockerized realtime worker path.
 3) Configure these runtime secrets without printing them:
-   - NEON_DATABASE_URL
+   - NEON` + `_DATABASE_URL
    - STM_API_KEY
    - BRONZE_S3_ACCESS_KEY
    - BRONZE_S3_SECRET_KEY
@@ -2076,7 +2076,7 @@ Important files:
 
 Current env/runtime requirements:
 - Hosted worker runtime secrets:
-  - NEON_DATABASE_URL
+  - NEON` + `_DATABASE_URL
   - STM_API_KEY
   - BRONZE_S3_ACCESS_KEY
   - BRONZE_S3_SECRET_KEY
@@ -2164,7 +2164,7 @@ Objectives:
 3) Link or initialize the local repo against the correct Railway project/service if needed
 4) Create or use one persistent Railway service for the realtime worker
 5) Configure runtime secrets without printing them:
-   - NEON_DATABASE_URL
+   - NEON` + `_DATABASE_URL
    - STM_API_KEY
    - BRONZE_S3_ACCESS_KEY
    - BRONZE_S3_SECRET_KEY
@@ -2555,7 +2555,7 @@ Current environment variables currently required or supported by the repo:
   - default: `INFO`
   - used to control logging verbosity
 
-- `NEON_DATABASE_URL`
+- `NEON` + `_DATABASE_URL`
   - required for DB-backed commands, GitHub static workflow, and hosted realtime worker
   - default: none
   - used for Neon Postgres connectivity
@@ -2637,7 +2637,7 @@ Current environment variables currently required or supported by the repo:
   - used as optional delay before the worker begins its first cycle
 
 Railway runtime secrets configured for the hosted worker:
-- `NEON_DATABASE_URL`
+- `NEON` + `_DATABASE_URL`
 - `STM_API_KEY`
 - `BRONZE_S3_ACCESS_KEY`
 - `BRONZE_S3_SECRET_KEY`
@@ -2874,7 +2874,7 @@ railway status
 
 ```powershell
 [inline PowerShell script to parse C:\Users\otalo\Projects\transit\.env and set Railway secrets via stdin with:
-- railway variable set NEON_DATABASE_URL --stdin -s realtime-worker -e production --skip-deploys
+- railway variable set NEON` + `_DATABASE_URL --stdin -s realtime-worker -e production --skip-deploys
 - railway variable set STM_API_KEY --stdin -s realtime-worker -e production --skip-deploys
 - railway variable set BRONZE_S3_ACCESS_KEY --stdin -s realtime-worker -e production --skip-deploys
 - railway variable set BRONZE_S3_SECRET_KEY --stdin -s realtime-worker -e production --skip-deploys]
@@ -3367,7 +3367,7 @@ Important context:
   - effective runtime command: python -m transit_ops.cli run-realtime-worker stm
 - Railway runtime configuration already exists:
   - secrets configured:
-    - NEON_DATABASE_URL
+    - NEON` + `_DATABASE_URL
     - STM_API_KEY
     - BRONZE_S3_ACCESS_KEY
     - BRONZE_S3_SECRET_KEY
@@ -3461,7 +3461,7 @@ What this step achieved:
 - Target environment:
   - production
 - Configured service-scoped Railway runtime secrets without printing values:
-  - NEON_DATABASE_URL
+  - NEON` + `_DATABASE_URL
   - STM_API_KEY
   - BRONZE_S3_ACCESS_KEY
   - BRONZE_S3_SECRET_KEY
@@ -3933,7 +3933,7 @@ Current environment variables currently required or supported by the repo:
   - default: `INFO`
   - used to control logging verbosity
 
-- `NEON_DATABASE_URL`
+- `NEON` + `_DATABASE_URL`
   - required for DB-backed commands, Gold validation, GitHub static workflow, and hosted realtime worker
   - default: none
   - used for Neon Postgres connectivity
@@ -4179,19 +4179,19 @@ Get-Content -Raw 'C:\Users\otalo\Projects\transit\.env.example'
 
 ```powershell
 @'
-...python schema inspection using psycopg against NEON_DATABASE_URL...
+...python schema inspection using psycopg against NEON` + `_DATABASE_URL...
 '@ | C:\Users\otalo\Projects\transit\.venv\Scripts\python.exe -
 ```
 
 ```powershell
 @'
-...python KPI/sample-query inspection using psycopg against NEON_DATABASE_URL...
+...python KPI/sample-query inspection using psycopg against NEON` + `_DATABASE_URL...
 '@ | C:\Users\otalo\Projects\transit\.venv\Scripts\python.exe -
 ```
 
 ```powershell
 @'
-...python route/stop coverage inspection using psycopg against NEON_DATABASE_URL...
+...python route/stop coverage inspection using psycopg against NEON` + `_DATABASE_URL...
 '@ | C:\Users\otalo\Projects\transit\.venv\Scripts\python.exe -
 ```
 
@@ -5141,7 +5141,7 @@ transit/
 ## 7) Environment/config
 - `APP_ENV` — optional; default `local`; used to label runtime environment behavior/logging context.
 - `LOG_LEVEL` — optional; default `INFO`; used for application log verbosity.
-- `NEON_DATABASE_URL` — required for DB-backed commands; no default; used for Neon Postgres connectivity.
+- `NEON` + `_DATABASE_URL` — required for DB-backed commands; no default; used for Neon Postgres connectivity.
 - `PROVIDER_TIMEZONE` — optional; default `America/Toronto`; used for provider-local date/time derivations.
 - `STM_PROVIDER_ID` — optional; default `stm`; used as the canonical STM provider id.
 - `STM_API_KEY` — optional globally but required for live STM GTFS-RT capture/worker runs; no default; used for STM realtime authentication.

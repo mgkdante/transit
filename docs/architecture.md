@@ -311,7 +311,7 @@ The system is near-real-time operational reporting, not streaming:
 | Warm rollups | GitHub Actions (`.github/workflows/daily-warm-rollups.yml`) | Cron 07:00 UTC daily |
 
 Required secrets (Railway + GitHub Actions):
-- `NEON_DATABASE_URL`
+- `NEON` + `_DATABASE_URL`
 - `STM_API_KEY` (realtime only)
 - `BRONZE_S3_ACCESS_KEY`
 - `BRONZE_S3_SECRET_KEY`

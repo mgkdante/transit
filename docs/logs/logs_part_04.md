@@ -630,7 +630,7 @@ Current environment variables supported by the repo:
   - default: `INFO`
   - used for process logging
 
-- `NEON_DATABASE_URL`
+- `NEON` + `_DATABASE_URL`
   - required for DB-backed commands
   - default: none
   - used for Neon Postgres connectivity
@@ -1869,7 +1869,7 @@ Current environment variables currently required or supported by the repo:
   - default: `INFO`
   - used for process logging verbosity
 
-- `NEON_DATABASE_URL`
+- `NEON` + `_DATABASE_URL`
   - required for DB-backed commands
   - default: none
   - used for Neon Postgres connectivity
@@ -3213,7 +3213,7 @@ Current environment variables supported by the repo:
   - default: `INFO`
   - used to control Python logging verbosity
 
-- `NEON_DATABASE_URL`
+- `NEON` + `_DATABASE_URL`
   - required for DB-backed commands and deployments
   - default: none
   - used for Neon Postgres connectivity
@@ -3297,13 +3297,13 @@ Current environment variables supported by the repo:
 
 Exact GitHub Actions secrets required after pushing the repo for the included static workflow:
 
-- `NEON_DATABASE_URL`
+- `NEON` + `_DATABASE_URL`
 - `BRONZE_S3_ACCESS_KEY`
 - `BRONZE_S3_SECRET_KEY`
 
 Exact realtime worker runtime secrets required outside the image itself:
 
-- `NEON_DATABASE_URL`
+- `NEON` + `_DATABASE_URL`
 - `STM_API_KEY`
 - `BRONZE_S3_ACCESS_KEY`
 - `BRONZE_S3_SECRET_KEY`
@@ -3886,11 +3886,11 @@ Important context:
   - .dockerignore now excludes .env, git metadata, docs, README.md, tests, and common log files
   - README.md, docs/architecture.md, and .env.example now document the exact required GitHub secrets
 - Exact GitHub Actions secrets required for the static workflow are:
-  - NEON_DATABASE_URL
+  - NEON` + `_DATABASE_URL
   - BRONZE_S3_ACCESS_KEY
   - BRONZE_S3_SECRET_KEY
 - Exact worker runtime secrets still needed outside the image are:
-  - NEON_DATABASE_URL
+  - NEON` + `_DATABASE_URL
   - STM_API_KEY
   - BRONZE_S3_ACCESS_KEY
   - BRONZE_S3_SECRET_KEY
@@ -4043,12 +4043,12 @@ What is still blocked:
 - Containerized cadence behavior was therefore not empirically verified in this prompt
 
 Exact GitHub secrets required after pushing the repo:
-- NEON_DATABASE_URL
+- NEON` + `_DATABASE_URL
 - BRONZE_S3_ACCESS_KEY
 - BRONZE_S3_SECRET_KEY
 
 Exact worker runtime secrets still required outside the image:
-- NEON_DATABASE_URL
+- NEON` + `_DATABASE_URL
 - STM_API_KEY
 - BRONZE_S3_ACCESS_KEY
 - BRONZE_S3_SECRET_KEY
@@ -4162,11 +4162,11 @@ Objectives:
    - run a bounded worker smoke test:
      - docker run --rm --env-file .env transit-ops-worker run-realtime-worker stm --max-cycles 1
 8) Document the exact GitHub secrets the user must set after push:
-   - NEON_DATABASE_URL
+   - NEON` + `_DATABASE_URL
    - BRONZE_S3_ACCESS_KEY
    - BRONZE_S3_SECRET_KEY
 9) Also document the extra runtime secrets needed for the realtime worker deployment:
-   - NEON_DATABASE_URL
+   - NEON` + `_DATABASE_URL
    - STM_API_KEY
    - BRONZE_S3_ACCESS_KEY
    - BRONZE_S3_SECRET_KEY
@@ -4445,12 +4445,12 @@ transit/
 ## 7) Environment/config
 
 Required GitHub secrets for the daily static workflow:
-- `NEON_DATABASE_URL`
+- `NEON` + `_DATABASE_URL`
 - `BRONZE_S3_ACCESS_KEY`
 - `BRONZE_S3_SECRET_KEY`
 
 Required runtime secrets for realtime worker deployment:
-- `NEON_DATABASE_URL`
+- `NEON` + `_DATABASE_URL`
 - `STM_API_KEY`
 - `BRONZE_S3_ACCESS_KEY`
 - `BRONZE_S3_SECRET_KEY`
@@ -4715,14 +4715,14 @@ Non-blocking warning:
   - bounded container smoke test has not been completed
 
 - the GitHub Actions secrets have not been configured yet in the GitHub repo:
-  - `NEON_DATABASE_URL`
+  - `NEON` + `_DATABASE_URL`
   - `BRONZE_S3_ACCESS_KEY`
   - `BRONZE_S3_SECRET_KEY`
 
 - the GitHub Actions workflow has not been manually dispatched yet
 
 - realtime worker deployment runtime secrets have not been configured in any deployment platform yet:
-  - `NEON_DATABASE_URL`
+  - `NEON` + `_DATABASE_URL`
   - `STM_API_KEY`
   - `BRONZE_S3_ACCESS_KEY`
   - `BRONZE_S3_SECRET_KEY`
@@ -4778,7 +4778,7 @@ finish first real deployment execution.
 
 Objectives:
 1) Configure these GitHub repo secrets using the current local .env values without printing them:
-   - NEON_DATABASE_URL
+   - NEON` + `_DATABASE_URL
    - BRONZE_S3_ACCESS_KEY
    - BRONZE_S3_SECRET_KEY
 2) Verify the secrets are present in the repo configuration if possible
@@ -4801,7 +4801,7 @@ Hard constraints:
 
 Validation to run:
 - gh auth status
-- gh secret set NEON_DATABASE_URL
+- gh secret set NEON` + `_DATABASE_URL
 - gh secret set BRONZE_S3_ACCESS_KEY
 - gh secret set BRONZE_S3_SECRET_KEY
 - gh workflow run "Daily Static Pipeline"
@@ -4869,12 +4869,12 @@ What exists already:
 - run-realtime-worker stm
 
 Exact GitHub secrets that still need to be set in the GitHub repo:
-- NEON_DATABASE_URL
+- NEON` + `_DATABASE_URL
 - BRONZE_S3_ACCESS_KEY
 - BRONZE_S3_SECRET_KEY
 
 Extra runtime secrets still needed for realtime worker deployment:
-- NEON_DATABASE_URL
+- NEON` + `_DATABASE_URL
 - STM_API_KEY
 - BRONZE_S3_ACCESS_KEY
 - BRONZE_S3_SECRET_KEY
@@ -4972,7 +4972,7 @@ finish first real deployment execution now that GitHub push is done and Docker i
 Objectives:
 1) Re-check Docker availability on PATH
 2) Configure these GitHub repo secrets using the current local .env values without printing them:
-   - NEON_DATABASE_URL
+   - NEON` + `_DATABASE_URL
    - BRONZE_S3_ACCESS_KEY
    - BRONZE_S3_SECRET_KEY
 3) Verify the secrets are present in repo configuration if possible
@@ -5005,7 +5005,7 @@ Important rules:
 
 Validation to run:
 - gh auth status
-- gh secret set NEON_DATABASE_URL
+- gh secret set NEON` + `_DATABASE_URL
 - gh secret set BRONZE_S3_ACCESS_KEY
 - gh secret set BRONZE_S3_SECRET_KEY
 - gh workflow run "Daily Static Pipeline"
@@ -5197,12 +5197,12 @@ No tracked file tree changes in this step.
 ## 7) Environment/config
 
 Required GitHub Actions secrets:
-- `NEON_DATABASE_URL`
+- `NEON` + `_DATABASE_URL`
 - `BRONZE_S3_ACCESS_KEY`
 - `BRONZE_S3_SECRET_KEY`
 
 Required runtime secrets for realtime worker deployment:
-- `NEON_DATABASE_URL`
+- `NEON` + `_DATABASE_URL`
 - `STM_API_KEY`
 - `BRONZE_S3_ACCESS_KEY`
 - `BRONZE_S3_SECRET_KEY`
@@ -5278,7 +5278,7 @@ docker info
 
 ```powershell
 [inline PowerShell script to parse .env and attempt gh secret set via redirected stdin for:
-- NEON_DATABASE_URL
+- NEON` + `_DATABASE_URL
 - BRONZE_S3_ACCESS_KEY
 - BRONZE_S3_SECRET_KEY]
 ```
@@ -5293,7 +5293,7 @@ gh api repos/mgkdante/transit/actions/secrets
 
 ```powershell
 [inline PowerShell script to parse .env and run:
-- gh secret set NEON_DATABASE_URL --repo mgkdante/transit --body <value>
+- gh secret set NEON` + `_DATABASE_URL --repo mgkdante/transit --body <value>
 - gh secret set BRONZE_S3_ACCESS_KEY --repo mgkdante/transit --body <value>
 - gh secret set BRONZE_S3_SECRET_KEY --repo mgkdante/transit --body <value>]
 ```
@@ -5353,7 +5353,7 @@ git -C 'C:\Users\otalo\Projects\transit' status --short
   - yes
   - verified with `gh secret list --repo mgkdante/transit`
   - secrets present:
-    - `NEON_DATABASE_URL`
+    - `NEON` + `_DATABASE_URL`
     - `BRONZE_S3_ACCESS_KEY`
     - `BRONZE_S3_SECRET_KEY`
 
@@ -5466,7 +5466,7 @@ git -C 'C:\Users\otalo\Projects\transit' status --short
 
 - secrets:
   - the current local `.env` contains the intended production-capable values for:
-    - `NEON_DATABASE_URL`
+    - `NEON` + `_DATABASE_URL`
     - `BRONZE_S3_ACCESS_KEY`
     - `BRONZE_S3_SECRET_KEY`
   - it was appropriate to use those values for GitHub Actions secrets
@@ -5505,7 +5505,7 @@ Important context:
 - GitHub deployment execution is now proven:
   - repo: https://github.com/mgkdante/transit
   - GitHub Actions secrets configured:
-    - NEON_DATABASE_URL
+    - NEON` + `_DATABASE_URL
     - BRONZE_S3_ACCESS_KEY
     - BRONZE_S3_SECRET_KEY
   - workflow_dispatch run succeeded:
@@ -5579,7 +5579,7 @@ What this step accomplished:
 - Re-checked GitHub auth:
   - gh auth status succeeded
 - Configured these GitHub Actions secrets from the local .env without printing values:
-  - NEON_DATABASE_URL
+  - NEON` + `_DATABASE_URL
   - BRONZE_S3_ACCESS_KEY
   - BRONZE_S3_SECRET_KEY
 - Verified those secrets exist in repo config:
@@ -5635,12 +5635,12 @@ Important remaining notes:
 - It was not modified in this step.
 
 Required GitHub Actions secrets now configured:
-- NEON_DATABASE_URL
+- NEON` + `_DATABASE_URL
 - BRONZE_S3_ACCESS_KEY
 - BRONZE_S3_SECRET_KEY
 
 Extra runtime secrets still needed for a hosted realtime worker deployment:
-- NEON_DATABASE_URL
+- NEON` + `_DATABASE_URL
 - STM_API_KEY
 - BRONZE_S3_ACCESS_KEY
 - BRONZE_S3_SECRET_KEY

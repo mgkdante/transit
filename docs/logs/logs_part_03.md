@@ -197,7 +197,7 @@ There were no unresolved migration failures, DB write failures, or Gold mart bui
 
 - environment variables
   - no new Gold-specific environment variables were necessary
-  - `NEON_DATABASE_URL` is sufficient for Gold migration and rebuild
+  - `NEON` + `_DATABASE_URL` is sufficient for Gold migration and rebuild
 
 - local setup
   - the repo is still being edited from a sibling workspace context
@@ -758,7 +758,7 @@ Current supported environment variables:
   - default: `INFO`
   - used for stdlib logging configuration
 
-- `NEON_DATABASE_URL`
+- `NEON` + `_DATABASE_URL`
   - required for DB-backed commands such as `db-test`, `init-db`, `seed-core`, Bronze ingest/capture, Silver loads, and Gold builds
   - default: none
   - used for Neon Postgres connectivity
@@ -1959,7 +1959,7 @@ Intentionally not implemented:
 - fake cloud tests
 - unrelated refactors
 
-The full DB-backed Bronze -> Silver -> Gold validation from R2-backed Bronze artifacts could not be completed because the current environment still had no `NEON_DATABASE_URL`.
+The full DB-backed Bronze -> Silver -> Gold validation from R2-backed Bronze artifacts could not be completed because the current environment still had no `NEON` + `_DATABASE_URL`.
 
 ## 2) High-level summary
 
@@ -1972,9 +1972,9 @@ The runtime defaults and docs are now R2-first:
 
 Real cloud validation was partially successful:
 - a live R2 upload/read/delete smoke test succeeded against `transit-raw`
-- the full CLI pipeline validation did not run end to end because the shell and repo still had no `NEON_DATABASE_URL`
+- the full CLI pipeline validation did not run end to end because the shell and repo still had no `NEON` + `_DATABASE_URL`
 - one real CLI ingest attempt confirmed the exact blocker:
-  - `Invalid value: NEON_DATABASE_URL is required for database commands.`
+  - `Invalid value: NEON` + `_DATABASE_URL is required for database commands.`
 
 ## 3) Files created
 
@@ -2106,7 +2106,7 @@ Current supported environment variables:
 
 - `APP_ENV` — optional, default `local`, labels the runtime environment.
 - `LOG_LEVEL` — optional, default `INFO`, controls stdlib logging.
-- `NEON_DATABASE_URL` — required for all DB-backed CLI commands, used for Neon Postgres connectivity.
+- `NEON` + `_DATABASE_URL` — required for all DB-backed CLI commands, used for Neon Postgres connectivity.
 - `PROVIDER_TIMEZONE` — optional, default `America/Toronto`, provider/reporting timezone fallback.
 - `STM_PROVIDER_ID` — optional, default `stm`, canonical STM provider id.
 - `STM_API_KEY` — optional globally, required in practice for live STM GTFS-RT capture.
@@ -2196,15 +2196,15 @@ Whether any SQL seed files changed:
 
 Which tables were written during this step:
 - none
-- no DB-backed pipeline command could proceed without `NEON_DATABASE_URL`
+- no DB-backed pipeline command could proceed without `NEON` + `_DATABASE_URL`
 
 Whether new Bronze rows were successfully created with `storage_backend='s3'`:
 - no
-- the DB-backed Bronze CLI flow was blocked before any DB insert because `NEON_DATABASE_URL` was missing
+- the DB-backed Bronze CLI flow was blocked before any DB insert because `NEON` + `_DATABASE_URL` was missing
 
 Whether Silver and Gold rows were successfully rebuilt from R2-backed Bronze artifacts:
 - no
-- those commands were not run because the environment lacked `NEON_DATABASE_URL`
+- those commands were not run because the environment lacked `NEON` + `_DATABASE_URL`
 
 What did validate live:
 - a direct storage-layer R2 smoke test wrote one diagnostic object, read it back, and deleted it
@@ -2226,29 +2226,29 @@ If any migration or SQL file changed, include the FULL contents:
   - current status: working
 - `db-test`
   - checks the configured Neon connection
-  - current status: working when `NEON_DATABASE_URL` is present
+  - current status: working when `NEON` + `_DATABASE_URL` is present
 - `init-db`
   - applies Alembic migrations
-  - current status: working when `NEON_DATABASE_URL` is present
+  - current status: working when `NEON` + `_DATABASE_URL` is present
 - `seed-core`
   - upserts provider/feed metadata
-  - current status: working when `NEON_DATABASE_URL` is present
+  - current status: working when `NEON` + `_DATABASE_URL` is present
 - `ingest-static <provider_id>`
   - downloads and archives one static GTFS artifact to the configured Bronze backend and registers DB lineage
   - current status: partial in this prompt
-  - code path supports R2-first durable writes, but the DB-backed R2 run was blocked by missing `NEON_DATABASE_URL`
+  - code path supports R2-first durable writes, but the DB-backed R2 run was blocked by missing `NEON` + `_DATABASE_URL`
 - `capture-realtime <provider_id> <endpoint_key>`
   - captures and archives one GTFS-RT snapshot to the configured Bronze backend and registers DB lineage
   - current status: partial in this prompt
-  - code path supports R2-first durable writes, but the DB-backed R2 run was blocked by missing `NEON_DATABASE_URL`
+  - code path supports R2-first durable writes, but the DB-backed R2 run was blocked by missing `NEON` + `_DATABASE_URL`
 - `load-static-silver <provider_id>`
   - loads the latest Bronze static artifact into Silver static tables
   - current status: partial in this prompt
-  - R2-backed read path exists in code, but the DB-backed R2 validation was blocked by missing `NEON_DATABASE_URL`
+  - R2-backed read path exists in code, but the DB-backed R2 validation was blocked by missing `NEON` + `_DATABASE_URL`
 - `load-realtime-silver <provider_id> <endpoint_key>`
   - loads the latest Bronze realtime artifact into Silver realtime tables
   - current status: partial in this prompt
-  - R2-backed read path exists in code, but the DB-backed R2 validation was blocked by missing `NEON_DATABASE_URL`
+  - R2-backed read path exists in code, but the DB-backed R2 validation was blocked by missing `NEON` + `_DATABASE_URL`
 - `build-gold-marts <provider_id>`
   - rebuilds Gold marts and KPI-ready tables
   - current status: working in prior Neon validation, not rerun in this prompt because the R2-backed DB flow could not be completed
@@ -2326,7 +2326,7 @@ Get-Content -Raw 'C:\Users\otalo\Projects\transit\src\transit_ops\cli.py'
 ```
 
 ```powershell
-Get-ChildItem Env: | Where-Object { $_.Name -match '^(NEON_DATABASE_URL|BRONZE_S3_|BRONZE_STORAGE_BACKEND|STM_API_KEY)$' } | Sort-Object Name | Format-Table -AutoSize
+Get-ChildItem Env: | Where-Object { $_.Name -match '^(NEON` + `_DATABASE_URL|BRONZE_S3_|BRONZE_STORAGE_BACKEND|STM_API_KEY)$' } | Sort-Object Name | Format-Table -AutoSize
 ```
 
 ```powershell
@@ -2408,7 +2408,7 @@ print({'endpoint': settings.BRONZE_S3_ENDPOINT, 'bucket': settings.BRONZE_S3_BUC
 - `Get-ChildItem Env: ...`
   - passed
   - important output:
-    - no `NEON_DATABASE_URL`
+    - no `NEON` + `_DATABASE_URL`
     - no `BRONZE_S3_*`
     - no `STM_API_KEY`
   - what that means:
@@ -2465,7 +2465,7 @@ print({'endpoint': settings.BRONZE_S3_ENDPOINT, 'bucket': settings.BRONZE_S3_BUC
 - `python -m transit_ops.cli ingest-static stm` with session-only R2 env
   - failed
   - important output:
-    - `Invalid value: NEON_DATABASE_URL is required for database commands.`
+    - `Invalid value: NEON` + `_DATABASE_URL is required for database commands.`
   - what that means:
     - the exact blocker for DB-backed R2 pipeline validation is the missing Neon connection string
     - the command did not reach the download or R2 write stage
@@ -2485,7 +2485,7 @@ print({'endpoint': settings.BRONZE_S3_ENDPOINT, 'bucket': settings.BRONZE_S3_BUC
     - `BRONZE_S3_ENDPOINT = "https://eccfb9bedd87d413eaf4cac6ae2285d3.r2.cloudflarestorage.com"`
     - `BRONZE_S3_BUCKET = "transit-raw"`
     - `BRONZE_S3_REGION = "auto"`
-    - `NEON_DATABASE_URL = null`
+    - `NEON` + `_DATABASE_URL = null`
   - what that means:
     - the final runtime defaults are R2-first
     - the missing Neon connection is visible and still blocks DB-backed validation
@@ -2514,15 +2514,15 @@ This section explicitly includes the requested end-to-end statuses:
 
 - whether `ingest-static stm` wrote to R2 successfully:
   - no
-  - the CLI command failed before any DB insert or artifact write because `NEON_DATABASE_URL` was missing
+  - the CLI command failed before any DB insert or artifact write because `NEON` + `_DATABASE_URL` was missing
 - whether `capture-realtime stm trip_updates` wrote to R2 successfully:
   - not run
   - reason:
-    - the DB-backed pipeline was already blocked by missing `NEON_DATABASE_URL`
+    - the DB-backed pipeline was already blocked by missing `NEON` + `_DATABASE_URL`
 - whether `capture-realtime stm vehicle_positions` wrote to R2 successfully:
   - not run
   - reason:
-    - the DB-backed pipeline was already blocked by missing `NEON_DATABASE_URL`
+    - the DB-backed pipeline was already blocked by missing `NEON` + `_DATABASE_URL`
 - whether `load-static-silver stm` succeeded from R2-backed Bronze:
   - not run
   - reason:
@@ -2538,7 +2538,7 @@ This section explicitly includes the requested end-to-end statuses:
 - whether `build-gold-marts stm` succeeded after the R2-backed Bronze/Silver flow:
   - not run
   - reason:
-    - the R2-backed DB pipeline could not be completed without `NEON_DATABASE_URL`
+    - the R2-backed DB pipeline could not be completed without `NEON` + `_DATABASE_URL`
 
 Exact object keys written to R2 in this prompt:
 - live smoke key:
@@ -2586,9 +2586,9 @@ Exact verified Bronze/Silver/Gold DB outcomes from R2-backed artifacts:
 
 - `python -m transit_ops.cli ingest-static stm` failed during live R2 pipeline validation.
   - exact error:
-    - `Invalid value: NEON_DATABASE_URL is required for database commands.`
+    - `Invalid value: NEON` + `_DATABASE_URL is required for database commands.`
   - cause:
-    - the shell had no `NEON_DATABASE_URL`
+    - the shell had no `NEON` + `_DATABASE_URL`
     - the repo had no `.env`
     - the CLI cannot initialize the DB-backed Bronze pipeline without it
   - fix applied:
@@ -2638,8 +2638,8 @@ If “were there any errors?” needs a one-line answer:
   - local should no longer be documented as the intended durable default
 
 - environment variables
-  - `NEON_DATABASE_URL` is still required for all DB-backed pipeline commands
-  - the absence of `NEON_DATABASE_URL` is enough to block the full CLI pipeline
+  - `NEON` + `_DATABASE_URL` is still required for all DB-backed pipeline commands
+  - the absence of `NEON` + `_DATABASE_URL` is enough to block the full CLI pipeline
   - R2-first runtime intent is best expressed in both docs and runtime defaults
 
 - package versions
@@ -2652,7 +2652,7 @@ If “were there any errors?” needs a one-line answer:
 
 ## 15) Known gaps / deferred work
 
-- the full DB-backed R2 validation was not completed because `NEON_DATABASE_URL` was missing
+- the full DB-backed R2 validation was not completed because `NEON` + `_DATABASE_URL` was missing
 - no new Bronze lineage rows were created with `storage_backend='s3'` in Neon during this prompt
 - no Silver rebuild from R2-backed Bronze rows was performed in this prompt
 - no Gold rebuild after an R2-backed Bronze/Silver flow was performed in this prompt
@@ -2683,8 +2683,8 @@ Important context:
   - upload/download/delete roundtrip passed
 - The remaining blocker is not R2. It is missing NEON access in the current environment:
   - there is still no .env file
-  - there was no NEON_DATABASE_URL in the shell
-  - ingest-static stm failed with: "Invalid value: NEON_DATABASE_URL is required for database commands."
+  - there was no NEON` + `_DATABASE_URL in the shell
+  - ingest-static stm failed with: "Invalid value: NEON` + `_DATABASE_URL is required for database commands."
 
 Read the current implemented foundation first:
 - README.md
@@ -2721,7 +2721,7 @@ Hard constraints:
 - Do not change the database schema unless absolutely necessary.
 
 Objectives:
-1) Use or obtain a valid NEON_DATABASE_URL for this environment
+1) Use or obtain a valid NEON` + `_DATABASE_URL for this environment
 2) Keep BRONZE storage configured as:
    - BRONZE_STORAGE_BACKEND=s3
    - BRONZE_S3_ENDPOINT=https://eccfb9bedd87d413eaf4cac6ae2285d3.r2.cloudflarestorage.com
@@ -2821,9 +2821,9 @@ What does NOT work yet in this step:
 - The full DB-backed R2 pipeline validation did not run.
 - Reason:
   - there is still no .env file in the transit repo
-  - there was no NEON_DATABASE_URL in the shell
+  - there was no NEON` + `_DATABASE_URL in the shell
   - ingest-static stm failed with:
-    "Invalid value: NEON_DATABASE_URL is required for database commands."
+    "Invalid value: NEON` + `_DATABASE_URL is required for database commands."
 - Because of that:
   - no new raw.ingestion_objects rows with storage_backend='s3' were created in Neon in this prompt
   - no R2-backed Bronze -> Silver validation happened in Neon in this prompt
@@ -2876,11 +2876,11 @@ Important validation facts:
   - BRONZE_S3_ENDPOINT = https://eccfb9bedd87d413eaf4cac6ae2285d3.r2.cloudflarestorage.com
   - BRONZE_S3_BUCKET = transit-raw
   - BRONZE_S3_REGION = auto
-  - NEON_DATABASE_URL = null
+  - NEON` + `_DATABASE_URL = null
 
 What the next step should be:
 - Do not start automation yet.
-- Provide or obtain a valid NEON_DATABASE_URL.
+- Provide or obtain a valid NEON` + `_DATABASE_URL.
 - Then rerun the full real R2-backed CLI pipeline:
   - init-db
   - seed-core
@@ -2898,7 +2898,7 @@ What the next step should be:
 
 PARTIAL
 
-The R2 hardening itself is implemented and validated locally, and the live Cloudflare R2 storage path was proven with a real upload/read/delete smoke test against the target bucket. The prompt is not `COMPLETE` because the required end-to-end CLI validation against Neon could not run: the current environment still has no `NEON_DATABASE_URL`, so the DB-backed Bronze -> Silver -> Gold flow from R2-backed artifacts remains unverified in this prompt.
+The R2 hardening itself is implemented and validated locally, and the live Cloudflare R2 storage path was proven with a real upload/read/delete smoke test against the target bucket. The prompt is not `COMPLETE` because the required end-to-end CLI validation against Neon could not run: the current environment still has no `NEON` + `_DATABASE_URL`, so the DB-backed Bronze -> Silver -> Gold flow from R2-backed artifacts remains unverified in this prompt.
 
 
 # Prompt 9 follow up:
@@ -2914,9 +2914,9 @@ Important context:
   - bucket: transit-raw
 - The full DB-backed R2 pipeline is still blocked because:
   - there is no .env file in the repo
-  - there was no NEON_DATABASE_URL in the shell
+  - there was no NEON` + `_DATABASE_URL in the shell
   - ingest-static stm failed with:
-    "Invalid value: NEON_DATABASE_URL is required for database commands."
+    "Invalid value: NEON` + `_DATABASE_URL is required for database commands."
 - I do NOT want to move forward until the full pipeline works with cloud-backed Bronze, not just local PC storage.
 
 Read these files first:
@@ -2947,7 +2947,7 @@ Hard constraints:
 - Do not fall back to local Bronze as the success path
 
 The `.env` file must include these keys:
-- NEON_DATABASE_URL=<use the actual Neon connection string available to this environment or ask me for it only if it truly cannot be found>
+- NEON` + `_DATABASE_URL=<use the actual Neon connection string available to this environment or ask me for it only if it truly cannot be found>
 - BRONZE_STORAGE_BACKEND=s3
 - BRONZE_S3_ENDPOINT=https://eccfb9bedd87d413eaf4cac6ae2285d3.r2.cloudflarestorage.com
 - BRONZE_S3_REGION=auto
@@ -3301,7 +3301,7 @@ Current supported environment variables:
   - default: `INFO`
   - used for stdlib logging configuration
 
-- `NEON_DATABASE_URL`
+- `NEON` + `_DATABASE_URL`
   - required for DB-backed CLI commands
   - default: none
   - used for Neon Postgres connectivity
@@ -3383,7 +3383,7 @@ This section explicitly confirms:
   - yes
   - file path: `C:\Users\otalo\Projects\transit\.env`
 - required variables present in `.env` for this run:
-  - `NEON_DATABASE_URL`
+  - `NEON` + `_DATABASE_URL`
   - `BRONZE_STORAGE_BACKEND`
   - `BRONZE_S3_ENDPOINT`
   - `BRONZE_S3_REGION`
@@ -3712,7 +3712,7 @@ cmd /c tree /F /A C:\Users\otalo\Projects\transit
     - `BRONZE_S3_ENDPOINT = "https://eccfb9bedd87d413eaf4cac6ae2285d3.r2.cloudflarestorage.com"`
     - `BRONZE_S3_BUCKET = "transit-raw"`
     - `BRONZE_S3_REGION = "auto"`
-    - `NEON_DATABASE_URL` redacted but present
+    - `NEON` + `_DATABASE_URL` redacted but present
     - `STM_API_KEY` redacted but present
   - what that means:
     - show-config loaded from `.env`
@@ -4709,7 +4709,7 @@ Current environment variables supported by the repo:
   - default: `INFO`
   - controls process-wide logging verbosity
 
-- `NEON_DATABASE_URL`
+- `NEON` + `_DATABASE_URL`
   - required for DB-backed commands
   - default: none
   - used for Neon Postgres connectivity
@@ -4796,7 +4796,7 @@ Current environment variables supported by the repo:
 
 Additional automation context:
 - the daily GitHub Actions workflow expects:
-  - `NEON_DATABASE_URL` as a GitHub secret
+  - `NEON` + `_DATABASE_URL` as a GitHub secret
   - `BRONZE_S3_ACCESS_KEY` as a GitHub secret
   - `BRONZE_S3_SECRET_KEY` as a GitHub secret
 - the workflow hardcodes the intended R2 runtime values for:

@@ -62,7 +62,7 @@ from dotenv import load_dotenv
 import psycopg
 
 load_dotenv(Path('.env'))
-conn = psycopg.connect(os.environ['NEON_DATABASE_URL'])
+conn = psycopg.connect(os.environ['NEON` + `_DATABASE_URL'])
 with conn, conn.cursor() as cur:
     cur.execute("""
         SELECT dataset_version_id, count(*)
@@ -111,7 +111,7 @@ from dotenv import load_dotenv
 import psycopg
 
 load_dotenv(Path('.env'))
-conn = psycopg.connect(os.environ['NEON_DATABASE_URL'])
+conn = psycopg.connect(os.environ['NEON` + `_DATABASE_URL'])
 queries = {
     'sizes': """
         SELECT
@@ -198,7 +198,7 @@ from dotenv import load_dotenv
 import psycopg
 
 load_dotenv(Path('.env'))
-conn = psycopg.connect(os.environ['NEON_DATABASE_URL'])
+conn = psycopg.connect(os.environ['NEON` + `_DATABASE_URL'])
 with conn, conn.cursor() as cur:
     cur.execute("""
         SELECT

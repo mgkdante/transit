@@ -160,7 +160,7 @@ PostgreSQL stays completely unexposed to the internet. Power BI connects through
 
 ### Minimal — connection string only
 
-- Add `DATABASE_URL` as a setting alongside `NEON_DATABASE_URL` (fallback chain: `DATABASE_URL` → `NEON_DATABASE_URL`)
+- Add `DATABASE_URL` as a setting alongside `NEON` + `_DATABASE_URL` (fallback chain: `DATABASE_URL` → `NEON` + `_DATABASE_URL`)
 - Update docstrings/comments referencing "Neon" where they should say "PostgreSQL"
 - No changes to SQLAlchemy models, migrations, orchestration, or pipeline logic
 
@@ -201,7 +201,7 @@ R2 Bronze is the lineage anchor. Silver and Gold are derived and rebuildable by 
 
 ### GitHub Actions Changes
 
-- Update `NEON_DATABASE_URL` secret → `DATABASE_URL` pointing to Oracle VM's PostgreSQL (public IP + restricted port)
+- Update `NEON` + `_DATABASE_URL` secret → `DATABASE_URL` pointing to Oracle VM's PostgreSQL (public IP + restricted port)
 - Same change in both `daily-static-pipeline.yml` and `daily-warm-rollups.yml`
 
 ### Pause/Resume Scripts

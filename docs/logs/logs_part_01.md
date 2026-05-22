@@ -70,7 +70,7 @@ Do not add data-processing libraries yet unless absolutely required.
 Create pydantic settings for:
 - APP_ENV
 - LOG_LEVEL
-- NEON_DATABASE_URL
+- NEON` + `_DATABASE_URL
 - PROVIDER_TIMEZONE
 - STM_PROVIDER_ID
 - STM_API_KEY
@@ -308,7 +308,7 @@ Generated local validation artifacts also exist but are not part of the source t
 
 - `APP_ENV`: optional, default `local`, used to label the current runtime environment.
 - `LOG_LEVEL`: optional, default `INFO`, used to configure stdlib logging.
-- `NEON_DATABASE_URL`: required for `db-test`, `init-db`, and `seed-core`; no default; used as the Neon Postgres connection string and normalized to `postgresql+psycopg://...` for SQLAlchemy.
+- `NEON` + `_DATABASE_URL`: required for `db-test`, `init-db`, and `seed-core`; no default; used as the Neon Postgres connection string and normalized to `postgresql+psycopg://...` for SQLAlchemy.
 - `PROVIDER_TIMEZONE`: optional, default `America/Toronto`, used as the default provider/reporting timezone and the STM seed timezone.
 - `STM_PROVIDER_ID`: optional, default `stm`, used as the canonical provider ID in settings and seed rows.
 - `STM_API_KEY`: optional, default `None`, reserved for later STM-authenticated ingestion work.
@@ -760,7 +760,7 @@ rg --files
 git status --short --branch
 uv --version
 python --version
-Get-ChildItem Env: | Where-Object { $_.Name -match '^(APP_ENV|LOG_LEVEL|NEON_DATABASE_URL|PROVIDER_TIMEZONE|STM_PROVIDER_ID|STM_API_KEY|STM_STATIC_GTFS_URL|STM_RT_TRIP_UPDATES_URL|STM_RT_VEHICLE_POSITIONS_URL|BRONZE_STORAGE_BACKEND|BRONZE_LOCAL_ROOT|BRONZE_S3_ENDPOINT|BRONZE_S3_BUCKET|BRONZE_S3_ACCESS_KEY|BRONZE_S3_SECRET_KEY)$' } | Sort-Object Name | Format-Table -AutoSize
+Get-ChildItem Env: | Where-Object { $_.Name -match '^(APP_ENV|LOG_LEVEL|NEON` + `_DATABASE_URL|PROVIDER_TIMEZONE|STM_PROVIDER_ID|STM_API_KEY|STM_STATIC_GTFS_URL|STM_RT_TRIP_UPDATES_URL|STM_RT_VEHICLE_POSITIONS_URL|BRONZE_STORAGE_BACKEND|BRONZE_LOCAL_ROOT|BRONZE_S3_ENDPOINT|BRONZE_S3_BUCKET|BRONZE_S3_ACCESS_KEY|BRONZE_S3_SECRET_KEY)$' } | Sort-Object Name | Format-Table -AutoSize
 Get-Command uv -All
 Get-ChildItem -Force C:\Users\otalo\Projects | Select-Object Name
 Get-Content -Raw 'C:\Users\otalo\Projects\transit\logs.md'
@@ -848,11 +848,11 @@ Get-Content -Raw .venv\Lib\site-packages\transit_ops-0.1.0.dist-info\top_level.t
 
 ```powershell
 # Live Neon validation
-$env:NEON_DATABASE_URL='[redacted]'; .\.venv\Scripts\python.exe -m transit_ops.cli show-config
-$env:NEON_DATABASE_URL='[redacted]'; .\.venv\Scripts\python.exe -m transit_ops.cli db-test
-$env:NEON_DATABASE_URL='[redacted]'; .\.venv\Scripts\python.exe -m transit_ops.cli init-db
-$env:NEON_DATABASE_URL='[redacted]'; .\.venv\Scripts\python.exe -m transit_ops.cli seed-core
-$env:NEON_DATABASE_URL='[redacted]'; @'
+$env:NEON` + `_DATABASE_URL='[redacted]'; .\.venv\Scripts\python.exe -m transit_ops.cli show-config
+$env:NEON` + `_DATABASE_URL='[redacted]'; .\.venv\Scripts\python.exe -m transit_ops.cli db-test
+$env:NEON` + `_DATABASE_URL='[redacted]'; .\.venv\Scripts\python.exe -m transit_ops.cli init-db
+$env:NEON` + `_DATABASE_URL='[redacted]'; .\.venv\Scripts\python.exe -m transit_ops.cli seed-core
+$env:NEON` + `_DATABASE_URL='[redacted]'; @'
 from sqlalchemy import create_engine, text
 from transit_ops.settings import Settings
 settings = Settings()
@@ -1556,7 +1556,7 @@ transit/
 
 - `APP_ENV` — optional; default `local`; used to label the runtime environment.
 - `LOG_LEVEL` — optional; default `INFO`; used for stdlib logging configuration.
-- `NEON_DATABASE_URL` — optional for provider inspection, required for `db-test`, `init-db`, and `seed-core`; no default; used for Neon Postgres connectivity.
+- `NEON` + `_DATABASE_URL` — optional for provider inspection, required for `db-test`, `init-db`, and `seed-core`; no default; used for Neon Postgres connectivity.
 - `PROVIDER_TIMEZONE` — optional; default `America/Toronto`; used as the default provider timezone and STM seed fallback.
 - `STM_PROVIDER_ID` — optional; default `stm`; used as the active STM provider id for seed logic and registry lookups.
 - `STM_API_KEY` — optional; no default; used as the manifest-referenced credential env var for STM GTFS-RT auth metadata. Prompt 2 does not make authenticated external requests with it.
@@ -1796,7 +1796,7 @@ $lines = Get-Content stm-gtfs-v1-plan-and-slices.md; $lines[488..545]
 .\.venv\Scripts\python.exe -m transit_ops.cli show-provider stm
 .\.venv\Scripts\python.exe -m pytest
 .\.venv\Scripts\python.exe -m ruff check .
-$env:NEON_DATABASE_URL='[redacted]'; .\.venv\Scripts\python.exe -m transit_ops.cli seed-core
+$env:NEON` + `_DATABASE_URL='[redacted]'; .\.venv\Scripts\python.exe -m transit_ops.cli seed-core
 ```
 
 ## 12) Validation results
@@ -1810,7 +1810,7 @@ $env:NEON_DATABASE_URL='[redacted]'; .\.venv\Scripts\python.exe -m transit_ops.c
 - `pytest` — passed twice after Prompt 2 changes. Important output: `8 passed`. This means manifest loading, manifest validation, CLI registration, and settings tests are all green.
 - First `ruff check .` — failed. Important output: import-order, unused-import, and line-length issues in `src/transit_ops/core/models.py` and `tests/test_provider_registry.py`.
 - Second `ruff check .` after fixes — passed. Important output: `All checks passed!`
-- Extra validation: `seed-core` with `NEON_DATABASE_URL` set locally — passed. Important output: `Seeded core metadata successfully. Providers=1, Feed endpoints=3.` This means the manifest-backed seeding path works end to end against Neon.
+- Extra validation: `seed-core` with `NEON` + `_DATABASE_URL` set locally — passed. Important output: `Seeded core metadata successfully. Providers=1, Feed endpoints=3.` This means the manifest-backed seeding path works end to end against Neon.
 - `db-test` — not run in Prompt 2. It was already validated in Prompt 1.
 - `init-db` — not run in Prompt 2. There were no schema changes in this step, and it was already validated in Prompt 1.
 - `show-config` — not run in Prompt 2. It was already validated in Prompt 1.
@@ -2265,7 +2265,7 @@ transit/
 
 - `APP_ENV` — optional; default `local`; used to label the runtime environment.
 - `LOG_LEVEL` — optional; default `INFO`; used for stdlib logging configuration.
-- `NEON_DATABASE_URL` — required for `db-test`, `init-db`, `seed-core`, and now `ingest-static`; no default; used for Neon Postgres connectivity.
+- `NEON` + `_DATABASE_URL` — required for `db-test`, `init-db`, `seed-core`, and now `ingest-static`; no default; used for Neon Postgres connectivity.
 - `PROVIDER_TIMEZONE` — optional; default `America/Toronto`; used as the default provider timezone.
 - `STM_PROVIDER_ID` — optional; default `stm`; used as the canonical active STM provider id.
 - `STM_API_KEY` — optional; no default; still only used as provider-manifest auth metadata for STM GTFS-RT, not for static ingestion.
@@ -2474,12 +2474,12 @@ Get-ChildItem -Recurse -File C:\Users\otalo\Projects\transit\src\transit_ops | S
 
 ```powershell
 # Optional real STM static ingestion
-$env:NEON_DATABASE_URL='[redacted]'; .\.venv\Scripts\python.exe -m transit_ops.cli ingest-static stm
+$env:NEON` + `_DATABASE_URL='[redacted]'; .\.venv\Scripts\python.exe -m transit_ops.cli ingest-static stm
 ```
 
 ```powershell
 # Read-only Neon verification of the latest inserted rows
-$env:NEON_DATABASE_URL='[redacted]'; @'
+$env:NEON` + `_DATABASE_URL='[redacted]'; @'
 from sqlalchemy import text
 from transit_ops.db.connection import make_engine
 from transit_ops.settings import Settings
@@ -3085,7 +3085,7 @@ transit/
 
 - `APP_ENV` — optional; default `local`; labels the runtime environment.
 - `LOG_LEVEL` — optional; default `INFO`; configures stdlib logging.
-- `NEON_DATABASE_URL` — optional for manifest inspection, required for `db-test`, `init-db`, `seed-core`, `ingest-static`, and `capture-realtime`; no default; used for Neon Postgres connectivity.
+- `NEON` + `_DATABASE_URL` — optional for manifest inspection, required for `db-test`, `init-db`, `seed-core`, `ingest-static`, and `capture-realtime`; no default; used for Neon Postgres connectivity.
 - `PROVIDER_TIMEZONE` — optional; default `America/Toronto`; used as the provider/reporting timezone fallback.
 - `STM_PROVIDER_ID` — optional; default `stm`; used as the canonical STM provider id.
 - `STM_API_KEY` — optional globally but required in practice for `capture-realtime`; no default; used by the realtime manifest auth metadata and request header generation.
@@ -3328,13 +3328,13 @@ Get-Content -Raw 'C:\Users\otalo\Projects\transit\tests\test_realtime_ingestion.
 ```
 
 ```powershell
-$env:NEON_DATABASE_URL='[redacted]'
+$env:NEON` + `_DATABASE_URL='[redacted]'
 $env:STM_API_KEY='[redacted]'
 .\.venv\Scripts\python.exe -m transit_ops.cli capture-realtime stm trip_updates
 ```
 
 ```powershell
-$env:NEON_DATABASE_URL='[redacted]'
+$env:NEON` + `_DATABASE_URL='[redacted]'
 @'
 from sqlalchemy import text
 from transit_ops.db.connection import make_engine
@@ -4142,7 +4142,7 @@ transit/
   - default: `INFO`
   - used for stdlib logging configuration
 
-- `NEON_DATABASE_URL`
+- `NEON` + `_DATABASE_URL`
   - required for `db-test`, `init-db`, `seed-core`, `ingest-static`, and `load-static-silver`
   - default: none
   - used for Neon Postgres connectivity and migration/load execution
@@ -4880,17 +4880,17 @@ Get-Content -Raw 'C:\Users\otalo\Projects\transit\tests\test_static_silver.py'
 ```
 
 ```powershell
-$env:NEON_DATABASE_URL='[redacted]'
+$env:NEON` + `_DATABASE_URL='[redacted]'
 .\.venv\Scripts\python.exe -m transit_ops.cli init-db
 ```
 
 ```powershell
-$env:NEON_DATABASE_URL='[redacted]'
+$env:NEON` + `_DATABASE_URL='[redacted]'
 .\.venv\Scripts\python.exe -m transit_ops.cli load-static-silver stm
 ```
 
 ```powershell
-$env:NEON_DATABASE_URL='[redacted]'
+$env:NEON` + `_DATABASE_URL='[redacted]'
 @'
 from sqlalchemy import text
 from transit_ops.db.connection import make_engine

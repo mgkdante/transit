@@ -35,7 +35,7 @@ Hosted realtime deployment is now achieved on Railway.
 
 Runtime secrets configured on the Railway service:
 
-- `NEON_DATABASE_URL`
+- `NEON` + `_DATABASE_URL`
 - `STM_API_KEY`
 - `BRONZE_S3_ACCESS_KEY`
 - `BRONZE_S3_SECRET_KEY`

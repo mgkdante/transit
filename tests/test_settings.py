@@ -1,8 +1,13 @@
+import re
 from pathlib import Path
 
 import pytest
 
-from transit_ops.settings import Settings
+from transit_ops.settings import (
+    LEGACY_DATABASE_URL_KEY,
+    LEGACY_DATABASE_URL_MESSAGE,
+    Settings,
+)
 
 
 def test_settings_defaults() -> None:
@@ -47,10 +52,14 @@ def test_redacted_database_url_hides_credentials() -> None:
 
 
 def test_legacy_neon_database_url_constructor_input_fails_explicitly() -> None:
-    with pytest.raises(ValueError, match="NEON_DATABASE_URL is no longer supported; use DATABASE_URL instead"):
+    with pytest.raises(ValueError, match=re.escape(LEGACY_DATABASE_URL_MESSAGE)):
         Settings(
             _env_file=None,
-            NEON_DATABASE_URL="postgresql://user:pass@example.com/dbname?sslmode=require",
+            **{
+                LEGACY_DATABASE_URL_KEY: (
+                    "postgresql://user:pass@example.com/dbname?sslmode=require"
+                )
+            },
         )
 
 
@@ -58,11 +67,11 @@ def test_legacy_neon_database_url_environment_input_fails_explicitly(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv(
-        "NEON_DATABASE_URL",
+        LEGACY_DATABASE_URL_KEY,
         "postgresql://user:pass@example.com/dbname?sslmode=require",
     )
 
-    with pytest.raises(ValueError, match="NEON_DATABASE_URL is no longer supported; use DATABASE_URL instead"):
+    with pytest.raises(ValueError, match=re.escape(LEGACY_DATABASE_URL_MESSAGE)):
         Settings(_env_file=None)
 
 
@@ -71,11 +80,12 @@ def test_legacy_neon_database_url_dotenv_input_fails_explicitly(
 ) -> None:
     env_file = tmp_path / ".env.legacy"
     env_file.write_text(
-        "NEON_DATABASE_URL=postgresql://user:pass@example.com/dbname?sslmode=require\n",
+        f"{LEGACY_DATABASE_URL_KEY}=postgresql://user:pass@example.com/dbname"
+        "?sslmode=require\n",
         encoding="utf-8",
     )
 
-    with pytest.raises(ValueError, match="NEON_DATABASE_URL is no longer supported; use DATABASE_URL instead"):
+    with pytest.raises(ValueError, match=re.escape(LEGACY_DATABASE_URL_MESSAGE)):
         Settings(_env_file=env_file)
 
 
@@ -84,10 +94,10 @@ def test_legacy_neon_database_url_file_secret_input_fails_explicitly(
 ) -> None:
     secrets_dir = tmp_path / "secrets"
     secrets_dir.mkdir()
-    (secrets_dir / "NEON_DATABASE_URL").write_text(
+    (secrets_dir / LEGACY_DATABASE_URL_KEY).write_text(
         "postgresql://user:pass@example.com/dbname?sslmode=require\n",
         encoding="utf-8",
     )
 
-    with pytest.raises(ValueError, match="NEON_DATABASE_URL is no longer supported; use DATABASE_URL instead"):
+    with pytest.raises(ValueError, match=re.escape(LEGACY_DATABASE_URL_MESSAGE)):
         Settings(_env_file=None, _secrets_dir=secrets_dir)

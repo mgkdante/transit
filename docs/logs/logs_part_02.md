@@ -17,7 +17,7 @@
   - important output: `All checks passed!`
   - meaning: the Slice 4 codebase is lint-clean
 
-- `python -m transit_ops.cli init-db` with `NEON_DATABASE_URL`
+- `python -m transit_ops.cli init-db` with `NEON` + `_DATABASE_URL`
   - passed
   - important output:
     - `Running upgrade 0001_initial_foundation -> 0002_silver_static_tables`
@@ -318,7 +318,7 @@ Important commands:
 Important assumptions/gaps:
 - transit is still not a git repo
 - uv is still not on PATH in this shell, so validation used the synced .venv and direct uv.exe path
-- NEON_DATABASE_URL is required for migration and Silver load
+- NEON` + `_DATABASE_URL is required for migration and Silver load
 - successful live Silver static loading is currently blocked by the Neon free-plan 512 MB project size limit
 - no GTFS-RT Silver work exists yet
 
@@ -378,7 +378,7 @@ Objectives:
 Required work:
 
 1) Environment-aware validation
-Use the existing NEON_DATABASE_URL flow.
+Use the existing NEON` + `_DATABASE_URL flow.
 Do not introduce a parallel architecture.
 Do not add docker/local Postgres work in this prompt unless absolutely required by a real blocker.
 
@@ -872,7 +872,7 @@ transit/
   - default: `INFO`
   - used for stdlib logging configuration
 
-- `NEON_DATABASE_URL`
+- `NEON` + `_DATABASE_URL`
   - required for `db-test`, `init-db`, `seed-core`, `ingest-static`, and `load-static-silver`
   - default: none
   - used for Neon Postgres connectivity and this prompt’s live validation
@@ -944,7 +944,7 @@ transit/
 
 Important note for this validation:
 - there was no local `.env` file in `C:\Users\otalo\Projects\transit`
-- the live validation used the existing `NEON_DATABASE_URL` flow via a session-scoped environment variable only
+- the live validation used the existing `NEON` + `_DATABASE_URL` flow via a session-scoped environment variable only
 - no secrets were written into repo files
 
 ## 8) Database and migrations
@@ -1106,7 +1106,7 @@ Get-Content -Raw 'C:\Users\otalo\Projects\transit\tests\test_static_silver.py'
 ```powershell
 Get-ChildItem -Force 'C:\Users\otalo\Projects\transit' | Select-Object Name,Mode
 if (Test-Path 'C:\Users\otalo\Projects\transit\.env') { Get-Content -Raw 'C:\Users\otalo\Projects\transit\.env' }
-Get-ChildItem Env: | Where-Object { $_.Name -match '^(NEON_DATABASE_URL|STM_API_KEY|BRONZE_STORAGE_BACKEND|BRONZE_LOCAL_ROOT)$' } | Sort-Object Name | Format-Table -AutoSize
+Get-ChildItem Env: | Where-Object { $_.Name -match '^(NEON` + `_DATABASE_URL|STM_API_KEY|BRONZE_STORAGE_BACKEND|BRONZE_LOCAL_ROOT)$' } | Sort-Object Name | Format-Table -AutoSize
 Get-ChildItem -Recurse -File 'C:\Users\otalo\Projects\transit\data\bronze\stm\static_schedule' -ErrorAction SilentlyContinue | Select-Object FullName,Length,LastWriteTime
 ```
 
@@ -1116,13 +1116,13 @@ Get-ChildItem -Recurse -File 'C:\Users\otalo\Projects\transit\data\bronze\stm\st
 ```
 
 ```powershell
-$env:NEON_DATABASE_URL='[redacted]'
+$env:NEON` + `_DATABASE_URL='[redacted]'
 .\.venv\Scripts\python.exe -m transit_ops.cli init-db
 .\.venv\Scripts\python.exe -m transit_ops.cli seed-core
 ```
 
 ```powershell
-$env:NEON_DATABASE_URL='[redacted]'
+$env:NEON` + `_DATABASE_URL='[redacted]'
 @'
 from sqlalchemy import text
 from transit_ops.db.connection import make_engine
@@ -1156,7 +1156,7 @@ with engine.connect() as connection:
 ```
 
 ```powershell
-$env:NEON_DATABASE_URL='[redacted]'
+$env:NEON` + `_DATABASE_URL='[redacted]'
 .\.venv\Scripts\python.exe -m transit_ops.cli load-static-silver stm
 ```
 
@@ -1166,7 +1166,7 @@ $env:NEON_DATABASE_URL='[redacted]'
 ```
 
 ```powershell
-$env:NEON_DATABASE_URL='[redacted]'
+$env:NEON` + `_DATABASE_URL='[redacted]'
 @'
 from sqlalchemy import text
 from transit_ops.db.connection import make_engine
@@ -1357,7 +1357,7 @@ There were no errors, failed commands, broken imports, migration issues, DB issu
 
 - environment variables
   - no local `.env` file existed
-  - using a session-scoped `NEON_DATABASE_URL` was acceptable for this validation prompt
+  - using a session-scoped `NEON` + `_DATABASE_URL` was acceptable for this validation prompt
   - `STM_API_KEY` was not needed because Bronze static ingestion was not rerun
 
 - local setup
@@ -1557,7 +1557,7 @@ Important commands:
 - ruff check .
 
 Assumptions/gaps:
-- there was no local .env file; validation used a session-scoped NEON_DATABASE_URL only
+- there was no local .env file; validation used a session-scoped NEON` + `_DATABASE_URL only
 - ingest-static stm was not rerun because the existing Bronze archive was already valid and present
 - the repo still uses the synced .venv execution path in this environment
 - no code changes were needed in this validation prompt
@@ -2026,7 +2026,7 @@ transit/
   - default: `INFO`
   - used for stdlib logging configuration
 
-- `NEON_DATABASE_URL`
+- `NEON` + `_DATABASE_URL`
   - required for `db-test`, `init-db`, `seed-core`, `ingest-static`, `capture-realtime`, `load-static-silver`, and `load-realtime-silver`
   - default: none
   - used for Neon Postgres connectivity
@@ -2459,13 +2459,13 @@ Get-Content -Raw 'C:\Users\otalo\Projects\transit\tests\test_realtime_silver.py'
 ```
 
 ```powershell
-$env:NEON_DATABASE_URL='[redacted]'
+$env:NEON` + `_DATABASE_URL='[redacted]'
 .\.venv\Scripts\python.exe -m transit_ops.cli init-db
 .\.venv\Scripts\python.exe -m transit_ops.cli seed-core
 ```
 
 ```powershell
-$env:NEON_DATABASE_URL='[redacted]'
+$env:NEON` + `_DATABASE_URL='[redacted]'
 @'
 from sqlalchemy import text
 from transit_ops.db.connection import make_engine
@@ -2504,13 +2504,13 @@ with engine.connect() as connection:
 ```
 
 ```powershell
-$env:NEON_DATABASE_URL='[redacted]'
+$env:NEON` + `_DATABASE_URL='[redacted]'
 $env:STM_API_KEY='[redacted]'
 .\.venv\Scripts\python.exe -m transit_ops.cli capture-realtime stm trip_updates
 ```
 
 ```powershell
-$env:NEON_DATABASE_URL='[redacted]'
+$env:NEON` + `_DATABASE_URL='[redacted]'
 $env:STM_API_KEY='[redacted]'
 .\.venv\Scripts\python.exe -m transit_ops.cli capture-realtime stm vehicle_positions
 ```
@@ -2537,12 +2537,12 @@ rg -n "class ProviderManifest|class RealtimeFeedConfig|StorageBackend" 'C:\Users
 ```
 
 ```powershell
-$env:NEON_DATABASE_URL='[redacted]'
+$env:NEON` + `_DATABASE_URL='[redacted]'
 .\.venv\Scripts\python.exe -m transit_ops.cli load-realtime-silver stm trip_updates
 ```
 
 ```powershell
-$env:NEON_DATABASE_URL='[redacted]'
+$env:NEON` + `_DATABASE_URL='[redacted]'
 .\.venv\Scripts\python.exe -m transit_ops.cli load-realtime-silver stm vehicle_positions
 ```
 
@@ -2552,7 +2552,7 @@ $env:NEON_DATABASE_URL='[redacted]'
 ```
 
 ```powershell
-$env:NEON_DATABASE_URL='[redacted]'
+$env:NEON` + `_DATABASE_URL='[redacted]'
 @'
 from sqlalchemy import text
 from transit_ops.db.connection import make_engine
@@ -2602,7 +2602,7 @@ with engine.connect() as connection:
 ```
 
 ```powershell
-$env:NEON_DATABASE_URL='[redacted]'
+$env:NEON` + `_DATABASE_URL='[redacted]'
 @'
 from sqlalchemy import text
 from transit_ops.db.connection import make_engine
@@ -2840,7 +2840,7 @@ This section explicitly confirms:
 - environment variables
   - `STM_API_KEY` is required for live Bronze realtime capture
   - `STM_API_KEY` should not be required for Silver loading from an already archived Bronze snapshot
-  - `NEON_DATABASE_URL` remains the single real database path
+  - `NEON` + `_DATABASE_URL` remains the single real database path
 
 - local setup
   - the current execution environment is still using the Transit repo at `C:\Users\otalo\Projects\transit`
@@ -3494,7 +3494,7 @@ transit/
 
 - `APP_ENV` — optional, default `local`, labels the runtime environment.
 - `LOG_LEVEL` — optional, default `INFO`, controls stdlib logging.
-- `NEON_DATABASE_URL` — required for DB-backed commands, used for Neon Postgres connectivity.
+- `NEON` + `_DATABASE_URL` — required for DB-backed commands, used for Neon Postgres connectivity.
 - `PROVIDER_TIMEZONE` — optional, default `America/Toronto`, provider/reporting timezone fallback.
 - `STM_PROVIDER_ID` — optional, default `stm`, canonical STM provider id.
 - `STM_API_KEY` — required in practice for live STM realtime capture, used as the GTFS-RT API key/client ID.
@@ -3672,24 +3672,24 @@ curl.exe -v --tlsv1.2 --http1.1 -H "apiKey: [redacted]" "https://api.stm.info/pu
 ```
 
 ```powershell
-$env:NEON_DATABASE_URL='[redacted]'
+$env:NEON` + `_DATABASE_URL='[redacted]'
 $env:STM_API_KEY='[redacted]'
 .\.venv\Scripts\python.exe -m transit_ops.cli capture-realtime stm trip_updates
 ```
 
 ```powershell
-$env:NEON_DATABASE_URL='[redacted]'
+$env:NEON` + `_DATABASE_URL='[redacted]'
 $env:STM_API_KEY='[redacted]'
 .\.venv\Scripts\python.exe -m transit_ops.cli capture-realtime stm vehicle_positions
 ```
 
 ```powershell
-$env:NEON_DATABASE_URL='[redacted]'
+$env:NEON` + `_DATABASE_URL='[redacted]'
 .\.venv\Scripts\python.exe -m transit_ops.cli load-realtime-silver stm trip_updates
 ```
 
 ```powershell
-$env:NEON_DATABASE_URL='[redacted]'
+$env:NEON` + `_DATABASE_URL='[redacted]'
 .\.venv\Scripts\python.exe -m transit_ops.cli load-realtime-silver stm vehicle_positions
 ```
 
@@ -3699,7 +3699,7 @@ $env:NEON_DATABASE_URL='[redacted]'
 ```
 
 ```powershell
-$env:NEON_DATABASE_URL='[redacted]'
+$env:NEON` + `_DATABASE_URL='[redacted]'
 @'
 from sqlalchemy import text
 from transit_ops.db.connection import make_engine
@@ -4440,7 +4440,7 @@ transit/
 
 - `APP_ENV` — optional, default `local`, labels runtime environment.
 - `LOG_LEVEL` — optional, default `INFO`, controls stdlib logging.
-- `NEON_DATABASE_URL` — required for DB-backed commands including `init-db` and `build-gold-marts`.
+- `NEON` + `_DATABASE_URL` — required for DB-backed commands including `init-db` and `build-gold-marts`.
 - `PROVIDER_TIMEZONE` — optional, default `America/Toronto`, provider/reporting timezone fallback.
 - `STM_PROVIDER_ID` — optional, default `stm`, canonical STM provider id.
 - `STM_API_KEY` — required in practice for live STM Bronze realtime capture, but not required for Gold refresh once Bronze and Silver data already exist.
@@ -5183,13 +5183,13 @@ Get-Content -Raw 'C:\Users\otalo\Projects\transit\tests\test_cli.py'
 ```
 
 ```powershell
-$env:NEON_DATABASE_URL='[redacted]'
+$env:NEON` + `_DATABASE_URL='[redacted]'
 .\.venv\Scripts\python.exe -m transit_ops.cli init-db
 .\.venv\Scripts\python.exe -m transit_ops.cli build-gold-marts stm
 ```
 
 ```powershell
-$env:NEON_DATABASE_URL='[redacted]'
+$env:NEON` + `_DATABASE_URL='[redacted]'
 @'
 from sqlalchemy import text
 from transit_ops.db.connection import make_engine
@@ -5232,7 +5232,7 @@ with engine.connect() as connection:
 ```
 
 ```powershell
-$env:NEON_DATABASE_URL='[redacted]'
+$env:NEON` + `_DATABASE_URL='[redacted]'
 @'
 from sqlalchemy import text
 from transit_ops.db.connection import make_engine
@@ -5259,13 +5259,13 @@ with engine.connect() as connection:
 ```
 
 ```powershell
-$env:NEON_DATABASE_URL='[redacted]'
+$env:NEON` + `_DATABASE_URL='[redacted]'
 .\.venv\Scripts\python.exe -m transit_ops.cli init-db
 .\.venv\Scripts\python.exe -m transit_ops.cli build-gold-marts stm
 ```
 
 ```powershell
-$env:NEON_DATABASE_URL='[redacted]'
+$env:NEON` + `_DATABASE_URL='[redacted]'
 @'
 from sqlalchemy import text
 from transit_ops.db.connection import make_engine

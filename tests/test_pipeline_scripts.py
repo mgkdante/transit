@@ -5,7 +5,6 @@ import stat
 import subprocess
 from pathlib import Path
 
-
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SCRIPTS_DIR = REPO_ROOT / "scripts"
 
@@ -84,7 +83,11 @@ def _assert_adapter_handoff_message(output: str, adapter_name: str) -> None:
     assert f"[3/3] Handing database compute to adapter '{adapter_name}'" in output
 
 
-def _run_shell(command: str, tmp_path: Path, **env_overrides: str) -> subprocess.CompletedProcess[str]:
+def _run_shell(
+    command: str,
+    tmp_path: Path,
+    **env_overrides: str,
+) -> subprocess.CompletedProcess[str]:
     env = _stubbed_env(tmp_path)
     env.update(env_overrides)
     return subprocess.run(
@@ -97,7 +100,11 @@ def _run_shell(command: str, tmp_path: Path, **env_overrides: str) -> subprocess
     )
 
 
-def _run_script(script_name: str, tmp_path: Path, **env_overrides: str) -> subprocess.CompletedProcess[str]:
+def _run_script(
+    script_name: str,
+    tmp_path: Path,
+    **env_overrides: str,
+) -> subprocess.CompletedProcess[str]:
     env = _stubbed_env(tmp_path)
     env.update(env_overrides)
     return subprocess.run(
@@ -166,7 +173,9 @@ def test_database_compute_adapter_rejects_unsupported_adapters_cleanly(tmp_path:
     assert "must define resume_database_compute" not in result.stderr
 
 
-def test_pause_pipeline_delegates_to_adapter_without_provider_details_in_entrypoint(tmp_path: Path) -> None:
+def test_pause_pipeline_delegates_to_adapter_without_provider_details_in_entrypoint(
+    tmp_path: Path,
+) -> None:
     log_path = _make_log_path(tmp_path)
     result = _run_script("pause-pipeline.sh", tmp_path, COMMAND_LOG=str(log_path))
     adapter_name = _database_compute_adapter_name(tmp_path)
@@ -185,7 +194,9 @@ def test_pause_pipeline_delegates_to_adapter_without_provider_details_in_entrypo
     ]
 
 
-def test_resume_pipeline_delegates_to_adapter_without_provider_details_in_entrypoint(tmp_path: Path) -> None:
+def test_resume_pipeline_delegates_to_adapter_without_provider_details_in_entrypoint(
+    tmp_path: Path,
+) -> None:
     log_path = _make_log_path(tmp_path)
     result = _run_script("resume-pipeline.sh", tmp_path, COMMAND_LOG=str(log_path))
     adapter_name = _database_compute_adapter_name(tmp_path)
@@ -253,7 +264,9 @@ def test_resume_pipeline_fails_honestly_when_database_compute_restart_fails(tmp_
     assert "Done. Pipeline is resumed." not in result.stdout
 
 
-def test_pause_database_compute_reports_registered_endpoint_when_status_check_succeeds(tmp_path: Path) -> None:
+def test_pause_database_compute_reports_registered_endpoint_when_status_check_succeeds(
+    tmp_path: Path,
+) -> None:
     log_path = _make_log_path(tmp_path)
     result = _run_shell(
         "source scripts/lib/database-compute.sh && "
@@ -309,7 +322,9 @@ def test_pause_database_compute_fails_when_status_check_api_call_fails(tmp_path:
     )
 
 
-def test_resume_database_compute_reports_restart_submission_when_api_call_succeeds(tmp_path: Path) -> None:
+def test_resume_database_compute_reports_restart_submission_when_api_call_succeeds(
+    tmp_path: Path,
+) -> None:
     log_path = _make_log_path(tmp_path)
     result = _run_shell(
         "source scripts/lib/database-compute.sh && "

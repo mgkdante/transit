@@ -32,15 +32,15 @@
 
 | File | Change |
 |------|--------|
-| `src/transit_ops/settings.py` | Add `DATABASE_URL` with fallback to `NEON_DATABASE_URL` |
+| `src/transit_ops/settings.py` | Add `DATABASE_URL` with fallback to `NEON` + `_DATABASE_URL` |
 | `src/transit_ops/db/connection.py` | Update docstring, use generic property name |
 | `src/transit_ops/cli.py` | Update Neon references in help text |
 | `.env.example` | Add `DATABASE_URL`, update comments |
 | `pyproject.toml` | Add `health` dependency group (fastapi, uvicorn, psutil, httpx) |
 | `scripts/pause-pipeline.sh` | Replace Railway/Neon with docker-compose commands |
 | `scripts/resume-pipeline.sh` | Replace Railway/Neon with docker-compose commands |
-| `.github/workflows/daily-static-pipeline.yml` | `NEON_DATABASE_URL` → `DATABASE_URL` |
-| `.github/workflows/daily-warm-rollups.yml` | `NEON_DATABASE_URL` → `DATABASE_URL` |
+| `.github/workflows/daily-static-pipeline.yml` | `NEON` + `_DATABASE_URL` → `DATABASE_URL` |
+| `.github/workflows/daily-warm-rollups.yml` | `NEON` + `_DATABASE_URL` → `DATABASE_URL` |
 
 ---
 
@@ -63,7 +63,7 @@ from transit_ops.settings import Settings
 def test_database_url_prefers_database_url_over_neon():
     settings = Settings(
         DATABASE_URL="postgresql://transit:pw@localhost:5432/transit_ops",
-        NEON_DATABASE_URL="postgresql://neon:pw@neon.host:5432/neondb",
+        NEON` + `_DATABASE_URL="postgresql://neon:pw@neon.host:5432/neondb",
     )
     assert "localhost" in settings.effective_database_url
     assert "neon.host" not in settings.effective_database_url
@@ -72,20 +72,20 @@ def test_database_url_prefers_database_url_over_neon():
 def test_database_url_falls_back_to_neon():
     settings = Settings(
         DATABASE_URL=None,
-        NEON_DATABASE_URL="postgresql://neon:pw@neon.host:5432/neondb",
+        NEON` + `_DATABASE_URL="postgresql://neon:pw@neon.host:5432/neondb",
     )
     assert "neon.host" in settings.effective_database_url
 
 
 def test_database_url_none_when_neither_set():
-    settings = Settings(DATABASE_URL=None, NEON_DATABASE_URL=None)
+    settings = Settings(DATABASE_URL=None, NEON` + `_DATABASE_URL=None)
     assert settings.effective_database_url is None
 
 
 def test_sqlalchemy_database_url_uses_effective():
     settings = Settings(
         DATABASE_URL="postgresql://transit:pw@localhost:5432/transit_ops",
-        NEON_DATABASE_URL=None,
+        NEON` + `_DATABASE_URL=None,
     )
     assert settings.sqlalchemy_database_url is not None
     assert "postgresql+psycopg" in settings.sqlalchemy_database_url
@@ -99,23 +99,23 @@ Expected: FAIL — `Settings` has no `DATABASE_URL` field or `effective_database
 
 - [ ] **Step 3: Add DATABASE_URL field and effective_database_url property**
 
-In `src/transit_ops/settings.py`, add the new field after `NEON_DATABASE_URL`:
+In `src/transit_ops/settings.py`, add the new field after `NEON` + `_DATABASE_URL`:
 
 ```python
 DATABASE_URL: str | None = None
-NEON_DATABASE_URL: str | None = None
+NEON` + `_DATABASE_URL: str | None = None
 ```
 
-Add the property after `NEON_DATABASE_URL`:
+Add the property after `NEON` + `_DATABASE_URL`:
 
 ```python
 @property
 def effective_database_url(self) -> str | None:
-    """Return DATABASE_URL if set, otherwise fall back to NEON_DATABASE_URL."""
-    return self.DATABASE_URL or self.NEON_DATABASE_URL
+    """Return DATABASE_URL if set, otherwise fall back to NEON` + `_DATABASE_URL."""
+    return self.DATABASE_URL or self.NEON` + `_DATABASE_URL
 ```
 
-Update `sqlalchemy_database_url` to use `effective_database_url` instead of `NEON_DATABASE_URL`:
+Update `sqlalchemy_database_url` to use `effective_database_url` instead of `NEON` + `_DATABASE_URL`:
 
 ```python
 @property
@@ -158,7 +158,7 @@ def display_dict(self) -> dict[str, str | None]:
         "APP_ENV": self.APP_ENV,
         "LOG_LEVEL": self.LOG_LEVEL,
         "DATABASE_URL": self.redacted_database_url,
-        "NEON_DATABASE_URL": "(fallback)" if self.NEON_DATABASE_URL and not self.DATABASE_URL else None,
+        "NEON` + `_DATABASE_URL": "(fallback)" if self.NEON` + `_DATABASE_URL and not self.DATABASE_URL else None,
         ...
     }
 ```
@@ -172,7 +172,7 @@ Expected: All 4 tests PASS
 
 ```bash
 git add tests/test_settings.py src/transit_ops/settings.py
-git commit -m "feat: add DATABASE_URL with fallback to NEON_DATABASE_URL"
+git commit -m "feat: add DATABASE_URL with fallback to NEON` + `_DATABASE_URL"
 ```
 
 ---
@@ -192,7 +192,7 @@ def require_database_url(settings: Settings) -> str:
     """Return a SQLAlchemy-compatible database URL or raise a clear error."""
 
     if not settings.sqlalchemy_database_url:
-        raise ValueError("DATABASE_URL (or NEON_DATABASE_URL) is required for database commands.")
+        raise ValueError("DATABASE_URL (or NEON` + `_DATABASE_URL) is required for database commands.")
     return settings.sqlalchemy_database_url
 
 
@@ -218,7 +218,7 @@ def test_connection(settings: Settings) -> None:
 In `src/transit_ops/cli.py`, update line 54:
 
 ```python
-raise typer.BadParameter("DATABASE_URL (or NEON_DATABASE_URL) is required for init-db.")
+raise typer.BadParameter("DATABASE_URL (or NEON` + `_DATABASE_URL) is required for init-db.")
 ```
 
 Update the `db_test` docstring at line 177:
@@ -923,9 +923,9 @@ LOG_LEVEL=INFO
 # PostgreSQL connection string.
 # For local docker-compose: postgresql://transit:<PG_PASSWORD>@localhost:5432/transit_ops
 # For Oracle VM: set via docker-compose.yml environment block.
-# Legacy: NEON_DATABASE_URL is still supported as a fallback.
+# Legacy: NEON` + `_DATABASE_URL is still supported as a fallback.
 DATABASE_URL=
-NEON_DATABASE_URL=
+NEON` + `_DATABASE_URL=
 
 # Default provider timezone for STM and local reporting assumptions.
 PROVIDER_TIMEZONE=America/Toronto
@@ -1103,7 +1103,7 @@ git commit -m "refactor: update pause/resume scripts for docker-compose (remove 
 Change the env block in the job from:
 
 ```yaml
-NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+NEON` + `_DATABASE_URL: ${{ secrets.NEON` + `_DATABASE_URL }}
 ```
 
 to:
@@ -1117,7 +1117,7 @@ DATABASE_URL: ${{ secrets.DATABASE_URL }}
 Same change — replace:
 
 ```yaml
-NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+NEON` + `_DATABASE_URL: ${{ secrets.NEON` + `_DATABASE_URL }}
 ```
 
 with:

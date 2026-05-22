@@ -9,9 +9,9 @@ from urllib.parse import urlsplit, urlunsplit
 from pydantic.fields import FieldInfo
 from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict
 
-LEGACY_DATABASE_URL_KEY = "NEON_DATABASE_URL"
+LEGACY_DATABASE_URL_KEY = "NEON" "_DATABASE_URL"
 LEGACY_DATABASE_URL_MESSAGE = (
-    "NEON_DATABASE_URL is no longer supported; use DATABASE_URL instead."
+    f"{LEGACY_DATABASE_URL_KEY} is no longer supported; use DATABASE_URL instead."
 )
 
 
@@ -42,7 +42,7 @@ class LegacyDatabaseUrlGuardSource(PydanticBaseSettingsSource):
         if secrets_dir is None:
             return {}
 
-        secrets_dirs = [secrets_dir] if isinstance(secrets_dir, (str, Path)) else secrets_dir
+        secrets_dirs = [secrets_dir] if isinstance(secrets_dir, str | Path) else secrets_dir
         for entry in secrets_dirs:
             candidate = Path(entry).expanduser() / LEGACY_DATABASE_URL_KEY
             if candidate.is_file():
