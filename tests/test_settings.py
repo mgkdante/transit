@@ -19,13 +19,13 @@ def test_settings_defaults() -> None:
     assert settings.REALTIME_STARTUP_DELAY_SECONDS == 0
     assert settings.STATIC_DATASET_RETENTION_COUNT == 1
     assert settings.SILVER_REALTIME_RETENTION_DAYS == 2
-    assert settings.NEON_DATABASE_URL is None
+    assert settings.DATABASE_URL is None
 
 
 def test_sqlalchemy_database_url_conversion() -> None:
     settings = Settings(
         _env_file=None,
-        NEON_DATABASE_URL="postgresql://user:pass@example.com/dbname?sslmode=require",
+        DATABASE_URL="postgresql://user:pass@example.com/dbname?sslmode=require",
     )
 
     assert settings.sqlalchemy_database_url == (
@@ -36,7 +36,7 @@ def test_sqlalchemy_database_url_conversion() -> None:
 def test_redacted_database_url_hides_credentials() -> None:
     settings = Settings(
         _env_file=None,
-        NEON_DATABASE_URL="postgresql://user:pass@example.com:5432/dbname?sslmode=require",
+        DATABASE_URL="postgresql://user:pass@example.com:5432/dbname?sslmode=require",
     )
 
     assert settings.redacted_database_url == "postgresql://example.com:5432/dbname?sslmode=require"

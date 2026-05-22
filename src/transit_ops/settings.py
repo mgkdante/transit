@@ -18,7 +18,7 @@ class Settings(BaseSettings):
 
     APP_ENV: str = "local"
     LOG_LEVEL: str = "INFO"
-    NEON_DATABASE_URL: str | None = None
+    DATABASE_URL: str | None = None
 
     PROVIDER_TIMEZONE: str = "America/Toronto"
     STM_PROVIDER_ID: str = "stm"
@@ -50,24 +50,24 @@ class Settings(BaseSettings):
     def sqlalchemy_database_url(self) -> str | None:
         """Return a SQLAlchemy-compatible URL for psycopg."""
 
-        if not self.NEON_DATABASE_URL:
+        if not self.DATABASE_URL:
             return None
 
-        parts = urlsplit(self.NEON_DATABASE_URL)
+        parts = urlsplit(self.DATABASE_URL)
         if parts.scheme in {"postgresql", "postgres"}:
             return urlunsplit(
                 ("postgresql+psycopg", parts.netloc, parts.path, parts.query, parts.fragment)
             )
-        return self.NEON_DATABASE_URL
+        return self.DATABASE_URL
 
     @property
     def redacted_database_url(self) -> str | None:
         """Mask the credential portion of the configured database URL."""
 
-        if not self.NEON_DATABASE_URL:
+        if not self.DATABASE_URL:
             return None
 
-        parts = urlsplit(self.NEON_DATABASE_URL)
+        parts = urlsplit(self.DATABASE_URL)
         host = parts.hostname or ""
         port = f":{parts.port}" if parts.port else ""
         masked_netloc = host + port
@@ -79,7 +79,7 @@ class Settings(BaseSettings):
         return {
             "APP_ENV": self.APP_ENV,
             "LOG_LEVEL": self.LOG_LEVEL,
-            "NEON_DATABASE_URL": self.redacted_database_url,
+            "DATABASE_URL": self.redacted_database_url,
             "PROVIDER_TIMEZONE": self.PROVIDER_TIMEZONE,
             "STM_PROVIDER_ID": self.STM_PROVIDER_ID,
             "STM_API_KEY": "***configured***" if self.STM_API_KEY else None,
