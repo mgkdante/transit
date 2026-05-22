@@ -20,7 +20,10 @@ SELECT_MISSING_VEHICLE_PERIODS = text(
         DATE_BIN('5 minutes', captured_at_utc, TIMESTAMPTZ '2000-01-01') AS period_start_utc
     FROM gold.fact_vehicle_snapshot
     WHERE provider_id = :provider_id
-      AND (CAST(:since_utc AS timestamptz) IS NULL OR captured_at_utc >= CAST(:since_utc AS timestamptz))
+      AND (
+          CAST(:since_utc AS timestamptz) IS NULL
+          OR captured_at_utc >= CAST(:since_utc AS timestamptz)
+      )
       AND DATE_BIN('5 minutes', captured_at_utc, TIMESTAMPTZ '2000-01-01') NOT IN (
           SELECT period_start_utc
           FROM gold.warm_rollup_periods
@@ -37,7 +40,10 @@ SELECT_MISSING_TRIP_DELAY_PERIODS = text(
         DATE_BIN('5 minutes', captured_at_utc, TIMESTAMPTZ '2000-01-01') AS period_start_utc
     FROM gold.fact_trip_delay_snapshot
     WHERE provider_id = :provider_id
-      AND (CAST(:since_utc AS timestamptz) IS NULL OR captured_at_utc >= CAST(:since_utc AS timestamptz))
+      AND (
+          CAST(:since_utc AS timestamptz) IS NULL
+          OR captured_at_utc >= CAST(:since_utc AS timestamptz)
+      )
       AND DATE_BIN('5 minutes', captured_at_utc, TIMESTAMPTZ '2000-01-01') NOT IN (
           SELECT period_start_utc
           FROM gold.warm_rollup_periods

@@ -3,70 +3,92 @@
 # Stops all automated pipeline activity:
 #   - Disables daily GH Actions workflows
 #   - Sets PIPELINE_PAUSED=true on Railway (worker idles instead of cycling)
-#   - Suspends the Railway realtime-worker compute (requires RAILWAY_TOKEN)
+#   - Hands database compute off to the configured database adapter
 #
 # Usage:
 #   bash scripts/pause-pipeline.sh
 #
-# For Railway compute suspension, export your personal API token first:
-#   export RAILWAY_TOKEN=<token from https://railway.app/account/tokens>
+# For database adapter actions, export the adapter-specific credentials first.
 
 set -euo pipefail
 
 REPO="mgkdante/transit"
-RAILWAY_SERVICE_ID="94361a64-992d-4647-b48f-94cba03f17c3"
-RAILWAY_ENV_ID="2c724b2d-7525-4f28-8b08-356247612120"
-RAILWAY_API="https://backboard.railway.app/graphql/v2"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Adapter contract lives at scripts/lib/database-compute.sh.
+# shellcheck source=/dev/null
+source "$SCRIPT_DIR/lib/database-compute.sh"
 
 echo "==> Pausing pipeline..."
+
+scheduler_ok=true
+worker_flag_ok=true
+database_compute_ok=true
 
 # --- 1. GitHub Actions ---
 echo ""
 echo "[1/3] Disabling GitHub Actions workflows..."
-gh workflow disable "Daily Static Pipeline" --repo "$REPO" 2>&1 && \
-  echo "      Daily Static Pipeline: disabled" || \
-  echo "      Daily Static Pipeline: already disabled or error (skipping)"
+if gh workflow disable "Daily Static Pipeline" --repo "$REPO" 2>&1; then
+  echo "      Daily Static Pipeline: disabled"
+else
+  echo "      ERROR: failed to disable Daily Static Pipeline"
+  scheduler_ok=false
+fi
 
-gh workflow disable "Daily Warm Rollups" --repo "$REPO" 2>&1 && \
-  echo "      Daily Warm Rollups: disabled" || \
-  echo "      Daily Warm Rollups: already disabled or error (skipping)"
+if gh workflow disable "Daily Warm Rollups" --repo "$REPO" 2>&1; then
+  echo "      Daily Warm Rollups: disabled"
+else
+  echo "      ERROR: failed to disable Daily Warm Rollups"
+  scheduler_ok=false
+fi
 
 # --- 2. Railway env var (soft stop) ---
 echo ""
 echo "[2/3] Setting PIPELINE_PAUSED=true on Railway (soft stop)..."
 if command -v railway &>/dev/null; then
-  railway variables set PIPELINE_PAUSED=true 2>&1 && \
-    echo "      PIPELINE_PAUSED=true set on Railway" || \
+  if railway variables set PIPELINE_PAUSED=true 2>&1; then
+    echo "      PIPELINE_PAUSED=true set on Railway"
+  else
     echo "      WARNING: railway variables set failed (trial expired or not linked — set manually in Railway dashboard)"
+    worker_flag_ok=false
+  fi
 else
   echo "      WARNING: railway CLI not found — set PIPELINE_PAUSED=true manually in Railway dashboard"
+  worker_flag_ok=false
 fi
 
-# --- 3. Railway service suspension (hard stop, stops compute billing) ---
+# --- 3. Database compute adapter ---
 echo ""
-echo "[3/3] Suspending Railway realtime-worker service (hard stop)..."
-if [[ -z "${RAILWAY_TOKEN:-}" ]]; then
-  echo "      RAILWAY_TOKEN not set — skipping compute suspension."
-  echo "      To stop Railway compute billing: export RAILWAY_TOKEN=<your token> and re-run,"
-  echo "      or pause the service manually at https://railway.app"
+if ! pause_database_compute; then
+  database_compute_ok=false
+fi
+
+echo ""
+if $scheduler_ok && $worker_flag_ok && $database_compute_ok; then
+  echo "Done. Pipeline is paused."
+  echo "  - GH Actions: disabled (no daily static or warm rollup runs)"
+  echo "  - Railway worker: PIPELINE_PAUSED=true (idles on next start)"
+  echo "  - Database compute: delegated to adapter '$(database_compute_adapter_name)'"
+  exit_code=0
 else
-  RESPONSE=$(curl -s -X POST "$RAILWAY_API" \
-    -H "Authorization: Bearer $RAILWAY_TOKEN" \
-    -H "Content-Type: application/json" \
-    -d "{\"query\": \"mutation { serviceInstanceSuspend(environmentId: \\\"$RAILWAY_ENV_ID\\\", serviceId: \\\"$RAILWAY_SERVICE_ID\\\") }\"}" \
-  )
-  if echo "$RESPONSE" | grep -q '"serviceInstanceSuspend":true'; then
-    echo "      Railway realtime-worker: suspended"
+  echo "Pipeline pause completed with issues."
+  if $scheduler_ok; then
+    echo "  - GH Actions: disabled"
   else
-    echo "      WARNING: suspension response: $RESPONSE"
-    echo "      Pause the service manually at https://railway.app if needed."
+    echo "  - GH Actions: one or more workflow disables failed"
   fi
+  if $worker_flag_ok; then
+    echo "  - Railway worker: PIPELINE_PAUSED=true"
+  else
+    echo "  - Railway worker: PIPELINE_PAUSED=true not confirmed"
+  fi
+  if $database_compute_ok; then
+    echo "  - Database compute: adapter '$(database_compute_adapter_name)' completed"
+  else
+    echo "  - Database compute: adapter '$(database_compute_adapter_name)' handoff failed"
+  fi
+  exit_code=1
 fi
-
-echo ""
-echo "Done. Pipeline is paused."
-echo "  - GH Actions: disabled (no daily static or warm rollup runs)"
-echo "  - Railway worker: PIPELINE_PAUSED=true (idles on next start)"
-echo "  - Railway compute: suspended if RAILWAY_TOKEN was set, otherwise pause manually"
 echo ""
 echo "To resume: bash scripts/resume-pipeline.sh"
+exit "$exit_code"
