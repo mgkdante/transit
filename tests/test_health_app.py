@@ -11,6 +11,18 @@ NOW = datetime(2026, 5, 22, 15, 0, tzinfo=UTC)
 FAKE_SECRET = "fake-secret-should-not-leak"
 
 
+def test_health_live_returns_ok_without_running_component_checks() -> None:
+    def broken_check_runner() -> list[ComponentHealthResult]:
+        raise AssertionError("liveness must not run component checks")
+
+    client = TestClient(create_app(check_runner=broken_check_runner, clock=lambda: NOW))
+
+    response = client.get("/health/live")
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok"}
+
+
 def test_health_returns_200_and_overall_ok_with_component_payload() -> None:
     components = _components()
     expected = OverallHealthResult.from_components(
