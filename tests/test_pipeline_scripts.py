@@ -120,7 +120,7 @@ def _adapter_exports_snippet() -> str:
     )
 
 
-def _adapter_env_overrides(adapter_name: str = "neon") -> dict[str, str]:
+def _adapter_env_overrides(adapter_name: str) -> dict[str, str]:
     adapter = adapter_name.upper()
     return {
         f"{adapter}_API_KEY": "test-key",
@@ -217,13 +217,14 @@ def test_pause_pipeline_fails_honestly_when_scheduler_disable_fails(tmp_path: Pa
 
 
 def test_resume_pipeline_fails_honestly_when_database_compute_restart_fails(tmp_path: Path) -> None:
+    adapter_name = _database_compute_adapter_name(tmp_path)
     result = _run_script(
         "resume-pipeline.sh",
         tmp_path,
         COMMAND_LOG=str(_make_log_path(tmp_path)),
         FAKE_CURL_EXIT_CODE="22",
         FAKE_CURL_STDERR="boom",
-        **_adapter_env_overrides(),
+        **_adapter_env_overrides(adapter_name),
     )
 
     # Adapter env vars are set at runtime inside the shell snippet in the lower-level tests.
