@@ -184,7 +184,7 @@ def test_run_static_pipeline_orders_existing_steps(monkeypatch) -> None:
 
     result = run_static_pipeline(
         "stm",
-        settings=Settings(_env_file=None, NEON_DATABASE_URL="postgresql://user:pass@example.com/neondb"),
+        settings=Settings(_env_file=None, DATABASE_URL="postgresql://user:pass@example.com/neondb"),
         registry=object(),
         engine=_FakeEngine(),
     )
@@ -247,7 +247,7 @@ def test_run_realtime_cycle_reports_partial_failure_and_continues(monkeypatch) -
 
     result = run_realtime_cycle(
         "stm",
-        settings=Settings(_env_file=None, NEON_DATABASE_URL="postgresql://user:pass@example.com/neondb"),
+        settings=Settings(_env_file=None, DATABASE_URL="postgresql://user:pass@example.com/neondb"),
         registry=object(),
         engine=object(),
     )
@@ -354,7 +354,7 @@ def test_run_realtime_worker_loop_targets_start_to_start_cadence(
 
     settings = Settings(
         _env_file=None,
-        NEON_DATABASE_URL="postgresql://user:pass@example.com/neondb",
+        DATABASE_URL="postgresql://user:pass@example.com/neondb",
         REALTIME_POLL_SECONDS=300,
         REALTIME_STARTUP_DELAY_SECONDS=3,
     )
@@ -437,7 +437,7 @@ def test_run_realtime_worker_loop_warns_on_cycle_overrun(
         "stm",
         settings=Settings(
             _env_file=None,
-            NEON_DATABASE_URL="postgresql://user:pass@example.com/neondb",
+            DATABASE_URL="postgresql://user:pass@example.com/neondb",
             REALTIME_POLL_SECONDS=10,
         ),
         registry=object(),
@@ -459,7 +459,7 @@ def test_run_realtime_worker_loop_rejects_invalid_poll_seconds() -> None:
             "stm",
             settings=Settings(
                 _env_file=None,
-                NEON_DATABASE_URL="postgresql://user:pass@example.com/neondb",
+                DATABASE_URL="postgresql://user:pass@example.com/neondb",
                 REALTIME_POLL_SECONDS=0,
             ),
             registry=object(),
@@ -474,7 +474,7 @@ def test_run_realtime_worker_loop_rejects_invalid_max_cycles() -> None:
             "stm",
             settings=Settings(
                 _env_file=None,
-                NEON_DATABASE_URL="postgresql://user:pass@example.com/neondb",
+                DATABASE_URL="postgresql://user:pass@example.com/neondb",
             ),
             registry=object(),
             engine=object(),
@@ -514,7 +514,7 @@ def test_run_static_pipeline_skips_silver_and_gold_when_hash_unchanged(monkeypat
 
     result = run_static_pipeline(
         "stm",
-        settings=Settings(_env_file=None, NEON_DATABASE_URL="postgresql://user:pass@example.com/neondb"),
+        settings=Settings(_env_file=None, DATABASE_URL="postgresql://user:pass@example.com/neondb"),
         registry=object(),
         engine=_FakeEngine(),
     )
@@ -570,7 +570,7 @@ def test_run_static_pipeline_runs_silver_and_gold_when_hash_changed(monkeypatch)
 
     result = run_static_pipeline(
         "stm",
-        settings=Settings(_env_file=None, NEON_DATABASE_URL="postgresql://user:pass@example.com/neondb"),
+        settings=Settings(_env_file=None, DATABASE_URL="postgresql://user:pass@example.com/neondb"),
         registry=object(),
         engine=_FakeEngine(),
     )
@@ -620,7 +620,7 @@ def test_run_static_pipeline_runs_silver_and_gold_when_no_existing_version(monke
 
     result = run_static_pipeline(
         "stm",
-        settings=Settings(_env_file=None, NEON_DATABASE_URL="postgresql://user:pass@example.com/neondb"),
+        settings=Settings(_env_file=None, DATABASE_URL="postgresql://user:pass@example.com/neondb"),
         registry=object(),
         engine=_FakeEngine(),
     )

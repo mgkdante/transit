@@ -10,12 +10,12 @@ def require_database_url(settings: Settings) -> str:
     """Return a SQLAlchemy-compatible database URL or raise a clear error."""
 
     if not settings.sqlalchemy_database_url:
-        raise ValueError("NEON_DATABASE_URL is required for database commands.")
+        raise ValueError("DATABASE_URL is required for database commands.")
     return settings.sqlalchemy_database_url
 
 
 def make_engine(settings: Settings) -> Engine:
-    """Create a SQLAlchemy engine for Neon Postgres."""
+    """Create a SQLAlchemy engine for the configured Postgres database."""
 
     return create_engine(
         require_database_url(settings),

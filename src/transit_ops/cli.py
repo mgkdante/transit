@@ -51,7 +51,7 @@ def _project_root() -> Path:
 
 def _alembic_config(settings: Settings) -> Config:
     if not settings.sqlalchemy_database_url:
-        raise typer.BadParameter("NEON_DATABASE_URL is required for init-db.")
+        raise typer.BadParameter("DATABASE_URL is required for init-db.")
 
     config = Config(str(_project_root() / "alembic.ini"))
     script_location = _project_root() / "src/transit_ops/db/migrations"
@@ -173,7 +173,7 @@ def show_provider(provider_id: str) -> None:
 
 @app.command("db-test")
 def db_test() -> None:
-    """Run a simple connectivity test against Neon Postgres."""
+    """Run a simple connectivity test against the configured database."""
 
     settings = get_settings()
     try:

@@ -267,6 +267,15 @@ def test_prune_bronze_storage_dry_run_flag(monkeypatch) -> None:
     assert recorded["dry_run"] is True
 
 
+def test_init_db_requires_database_url(monkeypatch) -> None:
+    monkeypatch.setattr(cli_module, "get_settings", lambda: cli_module.Settings(_env_file=None))
+
+    result = runner.invoke(app, ["init-db"])
+
+    assert result.exit_code == 2
+    assert "Invalid value: DATABASE_URL is required for init-db." in result.output
+
+
 def test_build_warm_rollups_help() -> None:
     result = runner.invoke(app, ["build-warm-rollups", "--help"])
 

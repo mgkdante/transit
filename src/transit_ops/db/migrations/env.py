@@ -24,7 +24,7 @@ def _get_url() -> str:
         return settings.sqlalchemy_database_url
     raise RuntimeError(
         "No database URL configured. "
-        "Set NEON_DATABASE_URL in .env or sqlalchemy.url in alembic.ini."
+        "Set DATABASE_URL in .env or sqlalchemy.url in alembic.ini."
     )
 
 

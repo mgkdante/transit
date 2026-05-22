@@ -374,7 +374,7 @@ def test_load_latest_realtime_to_silver_uses_bronze_snapshot_without_api_key(
         RecordingConnection(),
     )
     settings = Settings(
-        NEON_DATABASE_URL="postgresql://user:pass@example.com/neondb",
+        DATABASE_URL="postgresql://user:pass@example.com/neondb",
         BRONZE_LOCAL_ROOT=str(bronze_root),
         STM_API_KEY=None,
     )
@@ -421,7 +421,7 @@ def test_load_latest_realtime_to_silver_reads_s3_backed_snapshot(
     )
     settings = Settings(
         _env_file=None,
-        NEON_DATABASE_URL="postgresql://user:pass@example.com/neondb",
+        DATABASE_URL="postgresql://user:pass@example.com/neondb",
         BRONZE_S3_ENDPOINT="https://example.r2.cloudflarestorage.com",
         BRONZE_S3_BUCKET="bronze-bucket",
         BRONZE_S3_ACCESS_KEY="access",
