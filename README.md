@@ -130,7 +130,7 @@ docker compose up -d postgres health caddy
 docker compose up -d worker
 ```
 
-Caddy proxies health traffic to the health service. Local defaults bind HTTP to `CADDY_HTTP_PORT=8080` and HTTPS to `CADDY_HTTPS_PORT=8443`.
+Caddy proxies health traffic to the health service. Local defaults serve the proxy over HTTP through `CADDY_SITE_ADDRESS=:80` and host port `CADDY_HTTP_PORT=8080`. The Compose file also publishes container port 443 to `CADDY_HTTPS_PORT=8443` for later VM/TLS configuration.
 
 ## Pipeline Control
 
