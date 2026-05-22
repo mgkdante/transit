@@ -3,20 +3,21 @@
 # Stops all automated pipeline activity:
 #   - Disables daily GH Actions workflows
 #   - Sets PIPELINE_PAUSED=true on Railway (worker idles instead of cycling)
-#   - Suspends the Railway realtime-worker compute (requires RAILWAY_TOKEN)
+#   - Hands database compute off to the configured database adapter
 #
 # Usage:
 #   bash scripts/pause-pipeline.sh
 #
-# For Railway compute suspension, export your personal API token first:
-#   export RAILWAY_TOKEN=<token from https://railway.app/account/tokens>
+# For database adapter actions, export the adapter-specific credentials first.
 
 set -euo pipefail
 
 REPO="mgkdante/transit"
-RAILWAY_SERVICE_ID="94361a64-992d-4647-b48f-94cba03f17c3"
-RAILWAY_ENV_ID="2c724b2d-7525-4f28-8b08-356247612120"
-RAILWAY_API="https://backboard.railway.app/graphql/v2"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Adapter contract lives at scripts/lib/database-compute.sh.
+# shellcheck source=/dev/null
+source "$SCRIPT_DIR/lib/database-compute.sh"
 
 echo "==> Pausing pipeline..."
 
@@ -42,31 +43,14 @@ else
   echo "      WARNING: railway CLI not found — set PIPELINE_PAUSED=true manually in Railway dashboard"
 fi
 
-# --- 3. Railway service suspension (hard stop, stops compute billing) ---
+# --- 3. Database compute adapter ---
 echo ""
-echo "[3/3] Suspending Railway realtime-worker service (hard stop)..."
-if [[ -z "${RAILWAY_TOKEN:-}" ]]; then
-  echo "      RAILWAY_TOKEN not set — skipping compute suspension."
-  echo "      To stop Railway compute billing: export RAILWAY_TOKEN=<your token> and re-run,"
-  echo "      or pause the service manually at https://railway.app"
-else
-  RESPONSE=$(curl -s -X POST "$RAILWAY_API" \
-    -H "Authorization: Bearer $RAILWAY_TOKEN" \
-    -H "Content-Type: application/json" \
-    -d "{\"query\": \"mutation { serviceInstanceSuspend(environmentId: \\\"$RAILWAY_ENV_ID\\\", serviceId: \\\"$RAILWAY_SERVICE_ID\\\") }\"}" \
-  )
-  if echo "$RESPONSE" | grep -q '"serviceInstanceSuspend":true'; then
-    echo "      Railway realtime-worker: suspended"
-  else
-    echo "      WARNING: suspension response: $RESPONSE"
-    echo "      Pause the service manually at https://railway.app if needed."
-  fi
-fi
+pause_database_compute
 
 echo ""
 echo "Done. Pipeline is paused."
 echo "  - GH Actions: disabled (no daily static or warm rollup runs)"
 echo "  - Railway worker: PIPELINE_PAUSED=true (idles on next start)"
-echo "  - Railway compute: suspended if RAILWAY_TOKEN was set, otherwise pause manually"
+echo "  - Database compute: delegated to adapter '$(database_compute_adapter_name)'"
 echo ""
 echo "To resume: bash scripts/resume-pipeline.sh"

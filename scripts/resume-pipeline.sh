@@ -3,20 +3,21 @@
 # Restores all automated pipeline activity:
 #   - Re-enables daily GH Actions workflows
 #   - Sets PIPELINE_PAUSED=false on Railway (worker resumes cycling)
-#   - Redeploys the Railway realtime-worker (requires RAILWAY_TOKEN)
+#   - Hands database compute off to the configured database adapter
 #
 # Usage:
 #   bash scripts/resume-pipeline.sh
 #
-# For Railway compute restart, export your personal API token first:
-#   export RAILWAY_TOKEN=<token from https://railway.app/account/tokens>
+# For database adapter actions, export the adapter-specific credentials first.
 
 set -euo pipefail
 
 REPO="mgkdante/transit"
-RAILWAY_SERVICE_ID="94361a64-992d-4647-b48f-94cba03f17c3"
-RAILWAY_ENV_ID="2c724b2d-7525-4f28-8b08-356247612120"
-RAILWAY_API="https://backboard.railway.app/graphql/v2"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Adapter contract lives at scripts/lib/database-compute.sh.
+# shellcheck source=/dev/null
+source "$SCRIPT_DIR/lib/database-compute.sh"
 
 echo "==> Resuming pipeline..."
 
@@ -42,31 +43,14 @@ else
   echo "      WARNING: railway CLI not found — set PIPELINE_PAUSED=false manually in Railway dashboard"
 fi
 
-# --- 3. Railway service redeploy (restart compute) ---
+# --- 3. Database compute adapter ---
 echo ""
-echo "[3/3] Redeploying Railway realtime-worker service..."
-if [[ -z "${RAILWAY_TOKEN:-}" ]]; then
-  echo "      RAILWAY_TOKEN not set — skipping redeploy."
-  echo "      To start Railway compute: export RAILWAY_TOKEN=<your token> and re-run,"
-  echo "      or trigger a redeploy manually at https://railway.app"
-else
-  RESPONSE=$(curl -s -X POST "$RAILWAY_API" \
-    -H "Authorization: Bearer $RAILWAY_TOKEN" \
-    -H "Content-Type: application/json" \
-    -d "{\"query\": \"mutation { serviceInstanceRedeploy(environmentId: \\\"$RAILWAY_ENV_ID\\\", serviceId: \\\"$RAILWAY_SERVICE_ID\\\") }\"}" \
-  )
-  if echo "$RESPONSE" | grep -q '"serviceInstanceRedeploy":true'; then
-    echo "      Railway realtime-worker: redeployed"
-  else
-    echo "      WARNING: redeploy response: $RESPONSE"
-    echo "      Trigger a redeploy manually at https://railway.app if needed."
-  fi
-fi
+resume_database_compute
 
 echo ""
 echo "Done. Pipeline is resumed."
 echo "  - GH Actions: enabled (daily static at 06:00 UTC, warm rollups at 07:00 UTC)"
 echo "  - Railway worker: PIPELINE_PAUSED=false (cycles every 30s)"
-echo "  - Railway compute: redeployed if RAILWAY_TOKEN was set, otherwise redeploy manually"
+echo "  - Database compute: delegated to adapter '$(database_compute_adapter_name)'"
 echo ""
 echo "To pause again: bash scripts/pause-pipeline.sh"
