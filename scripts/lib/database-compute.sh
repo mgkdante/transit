@@ -13,6 +13,10 @@ case "$DATABASE_COMPUTE_ADAPTER" in
     # shellcheck source=/dev/null
     source "$DATABASE_COMPUTE_LIB_DIR/database-compute-neon.sh"
     ;;
+  none)
+    # shellcheck source=/dev/null
+    source "$DATABASE_COMPUTE_LIB_DIR/database-compute-none.sh"
+    ;;
   *)
     _database_compute_fail "Unsupported DATABASE_COMPUTE_ADAPTER: $DATABASE_COMPUTE_ADAPTER"
     return 1

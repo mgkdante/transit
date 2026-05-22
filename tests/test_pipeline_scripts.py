@@ -51,6 +51,18 @@ def _stubbed_env(tmp_path: Path) -> dict[str, str]:
         "fi\n"
         "exit \"${FAKE_CURL_EXIT_CODE:-0}\"\n",
     )
+    _make_executable(
+        bin_dir / "docker",
+        "#!/usr/bin/env bash\n"
+        "if [[ -n \"${COMMAND_LOG:-}\" ]]; then\n"
+        "  printf 'docker|%s\\n' \"$*\" >> \"$COMMAND_LOG\"\n"
+        "fi\n"
+        "if [[ -n \"${DOCKER_FAIL_PATTERN:-}\" && \"$*\" == *\"${DOCKER_FAIL_PATTERN}\"* ]]; then\n"
+        "  printf 'docker forced failure for %s\\n' \"$*\" >&2\n"
+        "  exit 1\n"
+        "fi\n"
+        "printf 'docker %s\\n' \"$*\"\n",
+    )
 
     env = os.environ.copy()
     env["PATH"] = f"{bin_dir}:{env['PATH']}"
@@ -364,3 +376,58 @@ def test_resume_database_compute_warns_when_restart_api_call_fails(tmp_path: Pat
         log_lines[0],
         method="POST",
     )
+
+
+def test_pipeline_control_pauses_worker_with_compose_stop(tmp_path: Path) -> None:
+    log_path = _make_log_path(tmp_path)
+    result = _run_shell(
+        "bash infra/pipeline-control.sh pause worker",
+        tmp_path,
+        COMMAND_LOG=str(log_path),
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "Pausing Compose worker service" in result.stdout
+    assert _read_log(log_path) == [
+        "docker|compose --env-file .env -f docker-compose.yml stop worker"
+    ]
+
+
+def test_pipeline_control_resumes_worker_with_compose_up_detached(tmp_path: Path) -> None:
+    log_path = _make_log_path(tmp_path)
+    result = _run_shell(
+        "bash infra/pipeline-control.sh resume worker",
+        tmp_path,
+        COMMAND_LOG=str(log_path),
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "Resuming Compose worker service" in result.stdout
+    assert _read_log(log_path) == [
+        "docker|compose --env-file .env -f docker-compose.yml up -d worker"
+    ]
+
+
+def test_pipeline_control_rejects_unknown_target(tmp_path: Path) -> None:
+    result = _run_shell(
+        "bash infra/pipeline-control.sh pause database",
+        tmp_path,
+    )
+
+    assert result.returncode == 2
+    assert "Usage: bash infra/pipeline-control.sh pause|resume worker" in result.stderr
+
+
+def test_none_database_compute_adapter_is_explicit_noop(tmp_path: Path) -> None:
+    result = _run_shell(
+        "source scripts/lib/database-compute.sh && "
+        "database_compute_adapter_name && "
+        "pause_database_compute && "
+        "resume_database_compute",
+        tmp_path,
+        DATABASE_COMPUTE_ADAPTER="none",
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.splitlines()[0] == "none"
+    assert "no external compute API call needed" in result.stdout
