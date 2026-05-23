@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
@@ -14,6 +15,13 @@ _PARTITION_BY_ENDPOINT = {
     "trip_updates": "captured_at_utc",
     "vehicle_positions": "captured_at_utc",
 }
+
+_REALTIME_FILENAME_BY_ENDPOINT = {
+    "trip_updates": "trip_updates.pb",
+    "vehicle_positions": "vehicle_positions.pb",
+}
+
+_CHECKSUM_PREFIX_PATTERN = re.compile(r"^[0-9a-fA-F]{12}$")
 
 
 class BronzeCleanupStorage(Protocol):
@@ -100,6 +108,13 @@ def parse_bronze_key(storage_path: str) -> ParsedBronzeKey | None:
         return None
 
     timestamp_fragment, checksum_prefix, filename = object_parts
+    if _CHECKSUM_PREFIX_PATTERN.fullmatch(checksum_prefix) is None:
+        return None
+
+    expected_filename = _REALTIME_FILENAME_BY_ENDPOINT.get(endpoint_key)
+    if expected_filename is not None and filename != expected_filename:
+        return None
+
     try:
         key_date = date.fromisoformat(partition_date)
         observed_at_utc = datetime.strptime(
