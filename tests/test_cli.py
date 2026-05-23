@@ -1,4 +1,5 @@
-from datetime import UTC, datetime
+import json
+from datetime import UTC, date, datetime
 
 from typer.testing import CliRunner
 
@@ -35,6 +36,7 @@ def test_cli_help() -> None:
     assert "run-realtime-worker" in result.stdout
     assert "build-warm-rollups" in result.stdout
     assert "prune-warm-rollup-storage" in result.stdout
+    assert "rebuild-oracle-data" in result.stdout
 
 
 def test_ingest_static_help() -> None:
@@ -282,6 +284,187 @@ def test_build_warm_rollups_help() -> None:
     assert result.exit_code == 0
     assert "Build 5-minute warm rollups" in result.stdout
     assert "--since" in result.stdout
+
+
+def test_rebuild_oracle_data_help() -> None:
+    result = runner.invoke(app, ["rebuild-oracle-data", "--help"])
+
+    assert result.exit_code == 0
+    assert "Guarded Oracle data rebuild" in result.stdout
+    assert "--month" in result.stdout
+    assert "--execute" in result.stdout
+    assert "--delete-r2" in result.stdout
+    assert "--confirm-reset" in result.stdout
+    assert "--confirm-worker-stopped" in result.stdout
+    assert "--confirm-r2-delete-before" in result.stdout
+    assert "--report-path" in result.stdout
+
+
+class FakeOracleCliResult:
+    def __init__(self, provider_id: str, dry_run: bool) -> None:
+        self.provider_id = provider_id
+        self.dry_run = dry_run
+
+    def display_dict(self) -> dict[str, object]:
+        return {
+            "provider_id": self.provider_id,
+            "dry_run": self.dry_run,
+            "completed_at_utc": "2026-05-01T00:00:00+00:00",
+        }
+
+
+def test_rebuild_oracle_data_passes_flags_options(monkeypatch) -> None:
+    recorded: dict[str, object] = {}
+
+    def fake_rebuild_oracle_data(
+        provider_id,
+        *,
+        month,
+        execute,
+        delete_r2,
+        confirm_reset,
+        confirm_worker_stopped,
+        confirm_r2_delete_before,
+        settings,
+    ):  # noqa: ANN001
+        recorded.update(
+            {
+                "provider_id": provider_id,
+                "month": month,
+                "execute": execute,
+                "delete_r2": delete_r2,
+                "confirm_reset": confirm_reset,
+                "confirm_worker_stopped": confirm_worker_stopped,
+                "confirm_r2_delete_before": confirm_r2_delete_before,
+                "settings": settings,
+            }
+        )
+        return FakeOracleCliResult(provider_id, dry_run=not execute)
+
+    monkeypatch.setattr(cli_module, "rebuild_oracle_data", fake_rebuild_oracle_data)
+
+    result = runner.invoke(
+        app,
+        [
+            "rebuild-oracle-data",
+            "stm",
+            "--month",
+            "2026-05",
+            "--execute",
+            "--delete-r2",
+            "--confirm-reset",
+            "--confirm-worker-stopped",
+            "--confirm-r2-delete-before",
+            "2026-05-01",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert recorded["provider_id"] == "stm"
+    assert recorded["month"] == "2026-05"
+    assert recorded["execute"] is True
+    assert recorded["delete_r2"] is True
+    assert recorded["confirm_reset"] is True
+    assert recorded["confirm_worker_stopped"] is True
+    assert recorded["confirm_r2_delete_before"] == date(2026, 5, 1)
+    assert '"dry_run": false' in result.stdout
+
+
+def test_rebuild_oracle_data_rejects_non_may_month(monkeypatch) -> None:
+    def fake_rebuild_oracle_data(provider_id, *, month, **kwargs):  # noqa: ANN001
+        raise ValueError(f"Oracle rebuild only supports month 2026-05, got {month}.")
+
+    monkeypatch.setattr(cli_module, "rebuild_oracle_data", fake_rebuild_oracle_data)
+
+    result = runner.invoke(app, ["rebuild-oracle-data", "stm", "--month", "2026-04"])
+
+    assert result.exit_code == 2
+    assert "Invalid value: Oracle rebuild only supports month 2026-05" in result.output
+
+
+def test_rebuild_oracle_data_writes_report_path(monkeypatch, tmp_path) -> None:
+    report_path = tmp_path / "oracle-report.json"
+
+    monkeypatch.setattr(
+        cli_module,
+        "rebuild_oracle_data",
+        lambda provider_id, **kwargs: FakeOracleCliResult(provider_id, dry_run=True),
+    )
+
+    result = runner.invoke(
+        app,
+        ["rebuild-oracle-data", "stm", "--report-path", str(report_path)],
+    )
+
+    assert result.exit_code == 0
+    assert json.loads(report_path.read_text()) == {
+        "provider_id": "stm",
+        "dry_run": True,
+        "completed_at_utc": "2026-05-01T00:00:00+00:00",
+    }
+    assert '"provider_id": "stm"' in result.stdout
+
+
+def test_rebuild_oracle_data_bad_report_path_prevents_rebuild(monkeypatch, tmp_path) -> None:
+    called = False
+
+    def fake_rebuild_oracle_data(provider_id, **kwargs):  # noqa: ANN001
+        nonlocal called
+        called = True
+        return FakeOracleCliResult(provider_id, dry_run=True)
+
+    monkeypatch.setattr(cli_module, "rebuild_oracle_data", fake_rebuild_oracle_data)
+
+    result = runner.invoke(
+        app,
+        [
+            "rebuild-oracle-data",
+            "stm",
+            "--report-path",
+            str(tmp_path / "missing" / "oracle-report.json"),
+        ],
+    )
+
+    assert result.exit_code == 2
+    assert "Invalid value" in result.output
+    assert called is False
+
+
+def test_rebuild_oracle_data_directory_report_path_prevents_rebuild(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    called = False
+
+    def fake_rebuild_oracle_data(provider_id, **kwargs):  # noqa: ANN001
+        nonlocal called
+        called = True
+        return FakeOracleCliResult(provider_id, dry_run=True)
+
+    monkeypatch.setattr(cli_module, "rebuild_oracle_data", fake_rebuild_oracle_data)
+
+    result = runner.invoke(
+        app,
+        ["rebuild-oracle-data", "stm", "--report-path", str(tmp_path)],
+    )
+
+    assert result.exit_code == 2
+    assert "Invalid value" in result.output
+    assert called is False
+
+
+def test_rebuild_oracle_data_surfaces_guardrail_failure_as_invalid_parameter(
+    monkeypatch,
+) -> None:
+    def fake_rebuild_oracle_data(provider_id, **kwargs):  # noqa: ANN001
+        raise ValueError("guardrail failed")
+
+    monkeypatch.setattr(cli_module, "rebuild_oracle_data", fake_rebuild_oracle_data)
+
+    result = runner.invoke(app, ["rebuild-oracle-data", "stm", "--execute"])
+
+    assert result.exit_code == 2
+    assert "Invalid value: guardrail failed" in result.output
 
 
 def test_prune_warm_rollup_storage_help() -> None:

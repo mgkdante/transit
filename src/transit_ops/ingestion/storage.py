@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from urllib.parse import urlsplit, urlunsplit
 
@@ -14,6 +16,22 @@ from transit_ops.settings import Settings
 
 class BronzeStorageError(ValueError):
     """Raised when Bronze storage configuration or I/O is invalid."""
+
+
+def _normalize_bronze_object_prefix(prefix: str) -> Path:
+    prefix_path = Path(prefix)
+    if prefix_path.is_absolute() or ".." in prefix_path.parts:
+        raise BronzeStorageError(
+            "Bronze object prefix must be a relative object-key prefix without parent traversal."
+        )
+    return prefix_path
+
+
+@dataclass(frozen=True)
+class BronzeObjectInfo:
+    storage_path: str
+    byte_size: int | None
+    last_modified: datetime | None
 
 
 @dataclass(frozen=True)
@@ -33,6 +51,9 @@ class BronzeStorage:
         raise NotImplementedError
 
     def delete_object(self, storage_path: str) -> None:
+        raise NotImplementedError
+
+    def list_objects(self, prefix: str) -> Iterable[BronzeObjectInfo]:
         raise NotImplementedError
 
 
@@ -59,6 +80,19 @@ class LocalBronzeStorage(BronzeStorage):
 
     def delete_object(self, storage_path: str) -> None:
         (self.root / Path(storage_path)).unlink(missing_ok=True)
+
+    def list_objects(self, prefix: str) -> Iterable[BronzeObjectInfo]:
+        prefix_root = self.root / _normalize_bronze_object_prefix(prefix)
+        if not prefix_root.exists():
+            return
+
+        for object_path in sorted(path for path in prefix_root.rglob("*") if path.is_file()):
+            stat = object_path.stat()
+            yield BronzeObjectInfo(
+                storage_path=object_path.relative_to(self.root).as_posix(),
+                byte_size=stat.st_size,
+                last_modified=datetime.fromtimestamp(stat.st_mtime, tz=UTC),
+            )
 
 
 @dataclass(frozen=True)
@@ -125,6 +159,23 @@ class S3BronzeStorage(BronzeStorage):
             raise BronzeStorageError(
                 "Failed to delete Bronze artifact at "
                 f"{self.describe_location(storage_path)} via endpoint {self.endpoint_url}: {exc}"
+            ) from exc
+
+    def list_objects(self, prefix: str) -> Iterable[BronzeObjectInfo]:
+        try:
+            paginator = self.client.get_paginator("list_objects_v2")
+            pages = paginator.paginate(Bucket=self.bucket, Prefix=prefix)
+            for page in pages:
+                for item in page.get("Contents", []):
+                    yield BronzeObjectInfo(
+                        storage_path=item["Key"],
+                        byte_size=item.get("Size"),
+                        last_modified=item.get("LastModified"),
+                    )
+        except (BotoCoreError, ClientError) as exc:
+            raise BronzeStorageError(
+                "Failed to list Bronze artifacts under "
+                f"{self.describe_location(prefix)} via endpoint {self.endpoint_url}: {exc}"
             ) from exc
 
 

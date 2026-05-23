@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from datetime import date
 from pathlib import Path
 
 import typer
@@ -31,6 +32,7 @@ from transit_ops.orchestration import (
     run_static_pipeline,
 )
 from transit_ops.providers import ProviderRegistry
+from transit_ops.rebuild.oracle import rebuild_oracle_data
 from transit_ops.settings import Settings, get_settings
 from transit_ops.silver import (
     load_latest_realtime_to_silver,
@@ -62,6 +64,24 @@ def _alembic_config(settings: Settings) -> Config:
 
 def _provider_registry(settings: Settings) -> ProviderRegistry:
     return ProviderRegistry.from_project_root(project_root=_project_root(), settings=settings)
+
+
+def _preflight_report_path(report_path: Path | None) -> None:
+    if report_path is None:
+        return
+
+    if report_path.exists() and report_path.is_dir():
+        raise typer.BadParameter(f"--report-path must be a file path, got directory: {report_path}")
+    if not report_path.parent.exists():
+        raise typer.BadParameter(
+            f"--report-path parent directory does not exist: {report_path.parent}"
+        )
+
+    try:
+        with report_path.open("a", encoding="utf-8"):
+            pass
+    except OSError as exc:
+        raise typer.BadParameter(f"--report-path is not writable: {report_path}") from exc
 
 
 def _seed_provider(connection, manifest: ProviderManifest) -> None:
@@ -532,6 +552,78 @@ def build_warm_rollups_command(
 
     result = build_warm_rollups(provider_id, settings=settings, since_utc=since_utc)
     typer.echo(json.dumps(result.display_dict(), indent=2))
+
+
+@app.command("rebuild-oracle-data")
+def rebuild_oracle_data_command(
+    provider_id: str,
+    month: str = typer.Option(
+        "2026-05",
+        "--month",
+        help="Rebuild month in YYYY-MM format.",
+    ),
+    execute: bool = typer.Option(
+        False,
+        "--execute",
+        help="Actually reset and rebuild Oracle data. Defaults to dry-run.",
+    ),
+    delete_r2: bool = typer.Option(
+        False,
+        "--delete-r2",
+        help="Delete pre-May Bronze R2 objects before the database reset.",
+    ),
+    confirm_reset: bool = typer.Option(
+        False,
+        "--confirm-reset",
+        help="Confirm raw, Silver, and Gold rebuild tables may be reset.",
+    ),
+    confirm_worker_stopped: bool = typer.Option(
+        False,
+        "--confirm-worker-stopped",
+        help="Confirm the realtime worker is stopped before executing the rebuild.",
+    ),
+    confirm_r2_delete_before: str | None = typer.Option(
+        None,
+        "--confirm-r2-delete-before",
+        help="Required as 2026-05-01 when --delete-r2 is set.",
+    ),
+    report_path: Path | None = typer.Option(  # noqa: B008
+        None,
+        "--report-path",
+        help="Write the JSON rebuild report to this path as well as stdout.",
+    ),
+) -> None:
+    """Guarded Oracle data rebuild for the May 2026 recovery."""
+
+    parsed_r2_delete_before = None
+    if confirm_r2_delete_before is not None:
+        try:
+            parsed_r2_delete_before = date.fromisoformat(confirm_r2_delete_before)
+        except ValueError as exc:
+            raise typer.BadParameter(
+                "--confirm-r2-delete-before must use YYYY-MM-DD format."
+            ) from exc
+
+    settings = get_settings()
+    try:
+        _preflight_report_path(report_path)
+        result = rebuild_oracle_data(
+            provider_id,
+            month=month,
+            execute=execute,
+            delete_r2=delete_r2,
+            confirm_reset=confirm_reset,
+            confirm_worker_stopped=confirm_worker_stopped,
+            confirm_r2_delete_before=parsed_r2_delete_before,
+            settings=settings,
+        )
+        report = json.dumps(result.display_dict(), indent=2, sort_keys=True)
+        if report_path is not None:
+            report_path.write_text(report + "\n", encoding="utf-8")
+    except (ValueError, FileNotFoundError) as exc:
+        raise typer.BadParameter(str(exc)) from exc
+
+    typer.echo(report)
 
 
 @app.command("prune-warm-rollup-storage")
