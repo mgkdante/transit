@@ -20,6 +20,7 @@ class FakeS3Client:
     def __init__(self) -> None:
         self.objects: dict[tuple[str, str], bytes] = {}
         self.upload_calls: list[tuple[str, str]] = []
+        self.paginator_calls: list[str] = []
 
     def upload_fileobj(self, fileobj, bucket: str, key: str) -> None:  # noqa: ANN001
         self.upload_calls.append((bucket, key))
@@ -34,6 +35,23 @@ class FakeS3Client:
 
     def get_object(self, Bucket: str, Key: str) -> dict[str, BytesIO]:  # noqa: N803
         return {"Body": BytesIO(self.objects[(Bucket, Key)])}
+
+    def get_paginator(self, operation_name: str):  # noqa: ANN201
+        self.paginator_calls.append(operation_name)
+        return FakeS3Paginator(self)
+
+
+class FakeS3Paginator:
+    def __init__(self, client: FakeS3Client) -> None:
+        self.client = client
+
+    def paginate(self, *, Bucket: str, Prefix: str):  # noqa: N803, ANN201
+        contents = [
+            {"Key": key, "Size": len(payload)}
+            for (bucket, key), payload in sorted(self.client.objects.items())
+            if bucket == Bucket and key.startswith(Prefix)
+        ]
+        return [{"Contents": contents}]
 
 
 def test_get_bronze_storage_selects_local_backend(tmp_path: Path) -> None:
@@ -108,6 +126,47 @@ def test_s3_bronze_storage_persists_and_reads_bytes(tmp_path: Path) -> None:
     assert fake_client.upload_calls == [("bronze-bucket", storage_path)]
     assert storage.exists(storage_path) is True
     assert storage.read_bytes(storage_path) == b"static-zip-bytes"
+
+
+def test_local_bronze_storage_list_objects_by_prefix(tmp_path: Path) -> None:
+    storage = LocalBronzeStorage(storage_backend="local", root=tmp_path / "bronze")
+    matching_dir = storage.root / "stm/trip_updates/captured_at_utc=2026-05-01"
+    matching_dir.mkdir(parents=True)
+    (matching_dir / "b.pb").write_bytes(b"bb")
+    (matching_dir / "a.pb").write_bytes(b"a")
+    other_dir = storage.root / "stm/vehicle_positions/captured_at_utc=2026-05-01"
+    other_dir.mkdir(parents=True)
+    (other_dir / "c.pb").write_bytes(b"ccc")
+
+    objects = list(storage.list_objects("stm/trip_updates/"))
+
+    assert [obj.storage_path for obj in objects] == [
+        "stm/trip_updates/captured_at_utc=2026-05-01/a.pb",
+        "stm/trip_updates/captured_at_utc=2026-05-01/b.pb",
+    ]
+    assert [obj.byte_size for obj in objects] == [1, 2]
+
+
+def test_s3_bronze_storage_list_objects_with_paginator() -> None:
+    fake_client = FakeS3Client()
+    static_schedule_key = "stm/static_schedule/ingested_at_utc=2026-05-01/a.zip"
+    trip_updates_key = "stm/trip_updates/captured_at_utc=2026-05-01/a.pb"
+    fake_client.objects[("bronze-bucket", static_schedule_key)] = b"zip"
+    fake_client.objects[("bronze-bucket", trip_updates_key)] = b"pb"
+    storage = S3BronzeStorage(
+        storage_backend="s3",
+        bucket="bronze-bucket",
+        endpoint_url="https://example.r2.cloudflarestorage.com",
+        client=fake_client,
+    )
+
+    objects = list(storage.list_objects("stm/static_schedule/"))
+
+    assert fake_client.paginator_calls == ["list_objects_v2"]
+    assert [obj.storage_path for obj in objects] == [
+        "stm/static_schedule/ingested_at_utc=2026-05-01/a.zip"
+    ]
+    assert objects[0].byte_size == 3
 
 
 def test_get_bronze_storage_requires_s3_configuration(tmp_path: Path) -> None:
