@@ -225,6 +225,7 @@ def test_select_rebuild_bronze_objects_ignores_malformed_keys() -> None:
     storage = FakeListStorage(
         [
             "stm/static_schedule/malformed.zip",
+            "stm/static_schedule/ingested_at_utc=2026-05-02/20260502T110000000000Z__123456abcdef__not_gtfs.txt",
             "stm/trip_updates/captured_at_utc=2026-05-02/not-a-timestamp__abcdef123458__trip_updates.pb",
             "stm/static_schedule/ingested_at_utc=2026-05-02/20260502T120000000000Z__abcdef123457__gtfs.zip",
         ]
@@ -234,7 +235,7 @@ def test_select_rebuild_bronze_objects_ignores_malformed_keys() -> None:
 
     assert selection.static_archive.storage_path.endswith("abcdef123457__gtfs.zip")
     assert selection.realtime_snapshots == []
-    assert sorted(selection.skipped_unknown_keys) == sorted(storage.keys[:2])
+    assert sorted(selection.skipped_unknown_keys) == sorted(storage.keys[:3])
 
 
 def test_month_bounds_rejects_malformed_month() -> None:

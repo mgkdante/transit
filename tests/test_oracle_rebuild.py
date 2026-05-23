@@ -251,6 +251,45 @@ def test_neon_railway_hosts_rejected_before_destructive_work(
     assert events == []
 
 
+def test_non_stm_provider_rejected_before_r2_or_database_work(monkeypatch) -> None:
+    events: list[str] = []
+    patch_execute_dependencies(monkeypatch, events)
+
+    with pytest.raises(ValueError, match="only supports provider 'stm'"):
+        rebuild_oracle_data(
+            "exo",
+            execute=True,
+            delete_r2=True,
+            confirm_reset=True,
+            confirm_worker_stopped=True,
+            confirm_r2_delete_before=date(2026, 5, 1),
+            settings=oracle_settings(),
+            engine=FakeEngine(events),
+            bronze_storage=FakeStorage(),
+        )
+
+    assert events == []
+
+
+def test_database_target_report_strips_query_and_fragment_secrets(monkeypatch) -> None:
+    events: list[str] = []
+    patch_execute_dependencies(monkeypatch, events)
+
+    result = rebuild_oracle_data(
+        "stm",
+        settings=oracle_settings(
+            "postgresql://oracle:secret@oracle-vm.local/transit"
+            "?sslmode=require&sslpassword=secret-query#secret-fragment"
+        ),
+        engine=FakeEngine(events),
+        bronze_storage=FakeStorage(),
+    )
+
+    target = result.display_dict()["database_target"]
+    assert target["url"] == "postgresql://oracle-vm.local/transit"
+    assert "secret" not in json.dumps(target)
+
+
 def test_dry_run_builds_plan_selection_and_before_parity_without_destructive_steps(
     monkeypatch,
 ) -> None:

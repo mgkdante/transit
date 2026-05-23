@@ -118,6 +118,7 @@ def rebuild_oracle_data(
     settings = settings or get_settings()
     database_target = _validate_database_target(settings)
     _validate_rebuild_month(month)
+    _validate_rebuild_provider(provider_id, settings=settings)
     confirmation_date = _parse_confirmation_date(confirm_r2_delete_before)
     _validate_execution_guards(
         execute=execute,
@@ -133,6 +134,7 @@ def rebuild_oracle_data(
         project_root=root,
         settings=settings,
     )
+    registry.get_provider(provider_id)
     engine = engine or make_engine(settings)
     bronze_storage = bronze_storage or get_bronze_storage(settings, project_root=root)
     dry_run = not execute
@@ -254,6 +256,14 @@ def _validate_rebuild_month(month: str) -> None:
         )
 
 
+def _validate_rebuild_provider(provider_id: str, *, settings: Settings) -> None:
+    if provider_id != settings.STM_PROVIDER_ID:
+        raise ValueError(
+            f"Oracle rebuild only supports provider '{settings.STM_PROVIDER_ID}', "
+            f"got '{provider_id}'."
+        )
+
+
 def _validate_database_target(settings: Settings) -> dict[str, object]:
     database_url = getattr(settings, "DATABASE_URL", None)
     if not database_url:
@@ -275,8 +285,7 @@ def _validate_database_target(settings: Settings) -> dict[str, object]:
 
     return {
         "hostname": hostname,
-        "url": getattr(settings, "redacted_database_url", None)
-        or _redact_database_url(database_url),
+        "url": _redact_database_url(database_url),
     }
 
 
@@ -461,7 +470,7 @@ def _redact_database_url(database_url: str) -> str:
     parsed = urlsplit(database_url)
     hostname = parsed.hostname or ""
     port = f":{parsed.port}" if parsed.port else ""
-    return urlunsplit((parsed.scheme, hostname + port, parsed.path, parsed.query, parsed.fragment))
+    return urlunsplit((parsed.scheme, hostname + port, parsed.path, "", ""))
 
 
 def _display_value(value: object) -> object:

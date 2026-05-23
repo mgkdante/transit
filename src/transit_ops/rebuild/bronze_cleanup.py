@@ -23,6 +23,7 @@ _REALTIME_FILENAME_BY_ENDPOINT = {
 
 _CHECKSUM_PREFIX_PATTERN = re.compile(r"^[0-9a-fA-F]{12}$")
 _OBSERVED_TIMESTAMP_PATTERN = re.compile(r"^\d{8}T\d{6}\d{6}Z$")
+_STATIC_FILENAME_PATTERN = re.compile(r"^.+\.zip$")
 
 
 class BronzeCleanupStorage(Protocol):
@@ -153,6 +154,8 @@ def parse_bronze_key(storage_path: str) -> ParsedBronzeKey | None:
 
     expected_filename = _REALTIME_FILENAME_BY_ENDPOINT.get(endpoint_key)
     if expected_filename is not None and filename != expected_filename:
+        return None
+    if endpoint_key == "static_schedule" and _STATIC_FILENAME_PATTERN.fullmatch(filename) is None:
         return None
 
     if _OBSERVED_TIMESTAMP_PATTERN.fullmatch(timestamp_fragment) is None:

@@ -113,6 +113,16 @@ def test_parse_realtime_key_with_invalid_filename_returns_none() -> None:
     )
 
 
+def test_parse_static_key_with_invalid_filename_returns_none() -> None:
+    assert (
+        parse_bronze_key(
+            "stm/static_schedule/ingested_at_utc=2026-04-30/"
+            "20260430T120000000000Z__deadbeef1234__not_gtfs.txt"
+        )
+        is None
+    )
+
+
 def test_parse_key_with_short_fraction_timestamp_returns_none() -> None:
     assert (
         parse_bronze_key(
@@ -186,6 +196,7 @@ def test_cleanup_plan_reports_malformed_known_keys_as_unknown() -> None:
 def test_cleanup_plan_skips_invalid_checksum_and_realtime_filename() -> None:
     storage = FakeListDeleteStorage(
         [
+            "stm/static_schedule/ingested_at_utc=2026-04-30/20260430T120000000000Z__123456abcdef__not_gtfs.txt",
             "stm/trip_updates/captured_at_utc=2026-04-30/20260430T120000000000Z__old__trip_updates.pb",
             "stm/trip_updates/captured_at_utc=2026-04-30/20260430T120000000000Z__deadbeef1234__vehicle_positions.pb",
             "stm/vehicle_positions/captured_at_utc=2026-04-30/20260430T120000000000Z__abcdef123456__vehicle_positions.pb",
@@ -194,8 +205,8 @@ def test_cleanup_plan_skips_invalid_checksum_and_realtime_filename() -> None:
 
     plan = build_bronze_cleanup_plan(storage, provider_id="stm", keep_from_date=date(2026, 5, 1))
 
-    assert [item.storage_path for item in plan.eligible_objects] == [storage.keys[2]]
-    assert plan.skipped_unknown_keys == sorted(storage.keys[:2])
+    assert [item.storage_path for item in plan.eligible_objects] == [storage.keys[3]]
+    assert plan.skipped_unknown_keys == sorted(storage.keys[:3])
 
 
 def test_cleanup_plan_sorts_outputs_by_storage_path() -> None:
