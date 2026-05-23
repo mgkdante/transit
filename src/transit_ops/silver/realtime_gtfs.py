@@ -395,6 +395,26 @@ def _snapshot_loaded(
     return bool(int(existing_rows))
 
 
+def _silver_row_count(
+    connection: Connection,
+    *,
+    table_name: str,
+    realtime_snapshot_id: int,
+) -> int:
+    return int(
+        connection.execute(
+            text(
+                f"""
+                SELECT count(*)
+                FROM silver.{table_name}
+                WHERE realtime_snapshot_id = :realtime_snapshot_id
+                """
+            ),
+            {"realtime_snapshot_id": realtime_snapshot_id},
+        ).scalar_one()
+    )
+
+
 def _ensure_snapshot_not_loaded(
     connection: Connection,
     *,
@@ -539,29 +559,98 @@ def normalize_vehicle_positions(
     return vehicle_rows
 
 
-def load_realtime_snapshot_to_silver(
-    connection: Connection,
+def _read_bronze_realtime_message(
     *,
     snapshot: BronzeRealtimeSnapshot,
     bronze_storage,
-) -> RealtimeSilverLoadResult:
+) -> gtfs_realtime_pb2.FeedMessage:
     if not bronze_storage.exists(snapshot.storage_path):
         raise FileNotFoundError(
             "Bronze realtime archive file not found: "
             f"{bronze_storage.describe_location(snapshot.storage_path)}"
         )
-    _ensure_snapshot_not_loaded(
-        connection,
-        endpoint_key=snapshot.endpoint_key,
-        realtime_snapshot_id=snapshot.realtime_snapshot_id,
-    )
 
     message = gtfs_realtime_pb2.FeedMessage()
     try:
         message.ParseFromString(bronze_storage.read_bytes(snapshot.storage_path))
     except Exception as exc:
         raise ValueError(f"Failed to parse GTFS-RT Bronze snapshot: {exc}") from exc
+    return message
 
+
+def _expected_realtime_row_counts(
+    message: gtfs_realtime_pb2.FeedMessage,
+    *,
+    snapshot: BronzeRealtimeSnapshot,
+) -> dict[str, int]:
+    if snapshot.endpoint_key == "trip_updates":
+        trip_update_rows, stop_time_rows = normalize_trip_updates(message, snapshot=snapshot)
+        return {
+            "trip_updates": len(trip_update_rows),
+            "trip_update_stop_time_updates": len(stop_time_rows),
+        }
+    if snapshot.endpoint_key == "vehicle_positions":
+        vehicle_rows = normalize_vehicle_positions(message, snapshot=snapshot)
+        return {"vehicle_positions": len(vehicle_rows)}
+    raise ValueError(f"Unsupported realtime endpoint '{snapshot.endpoint_key}'.")
+
+
+def _actual_realtime_row_counts(
+    connection: Connection,
+    *,
+    snapshot: BronzeRealtimeSnapshot,
+) -> dict[str, int]:
+    if snapshot.endpoint_key == "trip_updates":
+        return {
+            "trip_updates": _silver_row_count(
+                connection,
+                table_name="trip_updates",
+                realtime_snapshot_id=snapshot.realtime_snapshot_id,
+            ),
+            "trip_update_stop_time_updates": _silver_row_count(
+                connection,
+                table_name="trip_update_stop_time_updates",
+                realtime_snapshot_id=snapshot.realtime_snapshot_id,
+            ),
+        }
+    if snapshot.endpoint_key == "vehicle_positions":
+        return {
+            "vehicle_positions": _silver_row_count(
+                connection,
+                table_name="vehicle_positions",
+                realtime_snapshot_id=snapshot.realtime_snapshot_id,
+            )
+        }
+    raise ValueError(f"Unsupported realtime endpoint '{snapshot.endpoint_key}'.")
+
+
+def _is_complete_existing_load(
+    connection: Connection,
+    *,
+    snapshot: BronzeRealtimeSnapshot,
+    message: gtfs_realtime_pb2.FeedMessage,
+) -> bool:
+    expected_counts = _expected_realtime_row_counts(message, snapshot=snapshot)
+    if not any(expected_counts.values()):
+        return False
+
+    actual_counts = _actual_realtime_row_counts(connection, snapshot=snapshot)
+    if actual_counts == expected_counts:
+        return True
+    if any(actual_counts.values()):
+        raise ValueError(
+            f"Incomplete Silver load for Bronze realtime snapshot {snapshot.realtime_snapshot_id}: "
+            f"expected {expected_counts}, found {actual_counts}."
+        )
+    return False
+
+
+def _load_realtime_message_to_silver(
+    connection: Connection,
+    *,
+    snapshot: BronzeRealtimeSnapshot,
+    message: gtfs_realtime_pb2.FeedMessage,
+) -> RealtimeSilverLoadResult:
     if snapshot.endpoint_key == "trip_updates":
         trip_update_rows, stop_time_rows = normalize_trip_updates(message, snapshot=snapshot)
         row_counts = {
@@ -603,6 +692,30 @@ def load_realtime_snapshot_to_silver(
     )
 
 
+def load_realtime_snapshot_to_silver(
+    connection: Connection,
+    *,
+    snapshot: BronzeRealtimeSnapshot,
+    bronze_storage,
+) -> RealtimeSilverLoadResult:
+    if not bronze_storage.exists(snapshot.storage_path):
+        raise FileNotFoundError(
+            "Bronze realtime archive file not found: "
+            f"{bronze_storage.describe_location(snapshot.storage_path)}"
+        )
+    _ensure_snapshot_not_loaded(
+        connection,
+        endpoint_key=snapshot.endpoint_key,
+        realtime_snapshot_id=snapshot.realtime_snapshot_id,
+    )
+    message = _read_bronze_realtime_message(snapshot=snapshot, bronze_storage=bronze_storage)
+    return _load_realtime_message_to_silver(
+        connection,
+        snapshot=snapshot,
+        message=message,
+    )
+
+
 def load_realtime_snapshots_to_silver(
     connection: Connection,
     *,
@@ -616,19 +729,37 @@ def load_realtime_snapshots_to_silver(
     row_counts: dict[str, int] = {}
 
     for snapshot in snapshots:
-        if skip_existing and _snapshot_loaded(
-            connection,
-            endpoint_key=snapshot.endpoint_key,
-            realtime_snapshot_id=snapshot.realtime_snapshot_id,
-        ):
-            skipped_existing_snapshot_ids.append(snapshot.realtime_snapshot_id)
-            continue
+        message = None
+        if skip_existing:
+            message = _read_bronze_realtime_message(
+                snapshot=snapshot,
+                bronze_storage=bronze_storage,
+            )
+            if _is_complete_existing_load(
+                connection,
+                snapshot=snapshot,
+                message=message,
+            ):
+                skipped_existing_snapshot_ids.append(snapshot.realtime_snapshot_id)
+                continue
 
-        result = load_realtime_snapshot_to_silver(
-            connection,
-            snapshot=snapshot,
-            bronze_storage=bronze_storage,
-        )
+        if message is None:
+            result = load_realtime_snapshot_to_silver(
+                connection,
+                snapshot=snapshot,
+                bronze_storage=bronze_storage,
+            )
+        else:
+            _ensure_snapshot_not_loaded(
+                connection,
+                endpoint_key=snapshot.endpoint_key,
+                realtime_snapshot_id=snapshot.realtime_snapshot_id,
+            )
+            result = _load_realtime_message_to_silver(
+                connection,
+                snapshot=snapshot,
+                message=message,
+            )
         results.append(result)
         for table_name, count in result.row_counts.items():
             row_counts[table_name] = row_counts.get(table_name, 0) + count
