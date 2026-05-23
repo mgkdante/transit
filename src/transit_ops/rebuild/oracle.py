@@ -8,7 +8,19 @@ from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
 from transit_ops.db.connection import make_engine
-from transit_ops.gold import build_gold_marts, build_warm_rollups
+from transit_ops.gold.marts import (
+    GoldBuildResult,
+    _refresh_gold_tables,
+    _resolve_gold_build_context,
+)
+from transit_ops.gold.rollups import (
+    SELECT_MISSING_TRIP_DELAY_PERIODS,
+    SELECT_MISSING_VEHICLE_PERIODS,
+    UPSERT_TRIP_DELAY_SUMMARY_5M,
+    UPSERT_VEHICLE_SUMMARY_5M,
+    UPSERT_WARM_ROLLUP_PERIOD,
+    WarmRollupBuildResult,
+)
 from transit_ops.ingestion.common import project_root, utc_now
 from transit_ops.ingestion.storage import get_bronze_storage
 from transit_ops.providers import ProviderRegistry
@@ -105,6 +117,7 @@ def rebuild_oracle_data(
 ) -> OracleRebuildResult:
     settings = settings or get_settings()
     database_target = _validate_database_target(settings)
+    _validate_rebuild_month(month)
     confirmation_date = _parse_confirmation_date(confirm_r2_delete_before)
     _validate_execution_guards(
         execute=execute,
@@ -199,20 +212,17 @@ def rebuild_oracle_data(
                 bronze_storage=bronze_storage,
                 skip_existing=True,
             )
-
-        gold_build = build_gold_marts(
-            provider_id,
-            settings=settings,
-            registry=registry,
-            engine=engine,
-        )
-        warm_rollups = build_warm_rollups(
-            provider_id,
-            settings=settings,
-            engine=engine,
-            since_utc=month_start,
-        )
-        with engine.connect() as connection:
+            gold_build = _build_gold_marts_in_transaction(
+                connection,
+                provider_id=provider_id,
+                settings=settings,
+                registry=registry,
+            )
+            warm_rollups = _build_warm_rollups_in_transaction(
+                connection,
+                provider_id=provider_id,
+                since_utc=month_start,
+            )
             after_parity = collect_parity_evidence(connection, provider_id=provider_id)
 
     return OracleRebuildResult(
@@ -235,6 +245,13 @@ def rebuild_oracle_data(
         execute_confirmations=execute_confirmations,
         completed_at_utc=utc_now(),
     )
+
+
+def _validate_rebuild_month(month: str) -> None:
+    if month != ORACLE_REBUILD_MONTH:
+        raise ValueError(
+            f"Oracle rebuild only supports month {ORACLE_REBUILD_MONTH}, got {month}."
+        )
 
 
 def _validate_database_target(settings: Settings) -> dict[str, object]:
@@ -342,6 +359,102 @@ def _selection_summary(selection: BronzeRebuildSelection) -> dict[str, object]:
         ],
         "skipped_unknown_keys": list(selection.skipped_unknown_keys),
     }
+
+
+def _build_gold_marts_in_transaction(
+    connection,
+    *,
+    provider_id: str,
+    settings: Settings,
+    registry: ProviderRegistry,
+) -> GoldBuildResult:
+    manifest = registry.get_provider(provider_id)
+    context = _resolve_gold_build_context(
+        connection,
+        provider_id=manifest.provider.provider_id,
+        provider_timezone=manifest.provider.timezone,
+    )
+    row_counts = _refresh_gold_tables(connection, context=context)
+    built_at_utc = utc_now()
+
+    return GoldBuildResult(
+        provider_id=context.provider_id,
+        provider_timezone=context.provider_timezone,
+        dataset_version_id=context.dataset_version_id,
+        latest_trip_updates_snapshot_id=context.latest_trip_updates_snapshot_id,
+        latest_vehicle_snapshot_id=context.latest_vehicle_snapshot_id,
+        built_at_utc=built_at_utc,
+        row_counts=row_counts,
+    )
+
+
+def _build_warm_rollups_in_transaction(
+    connection,
+    *,
+    provider_id: str,
+    since_utc: datetime,
+) -> WarmRollupBuildResult:
+    built_vehicle = 0
+    built_trip_delay = 0
+    now = utc_now()
+
+    rows = connection.execute(
+        SELECT_MISSING_VEHICLE_PERIODS,
+        {"provider_id": provider_id, "since_utc": since_utc},
+    ).fetchall()
+    for row in rows:
+        period = row.period_start_utc
+        connection.execute(
+            UPSERT_VEHICLE_SUMMARY_5M,
+            {
+                "provider_id": provider_id,
+                "period_start_utc": period,
+                "built_at_utc": now,
+            },
+        )
+        connection.execute(
+            UPSERT_WARM_ROLLUP_PERIOD,
+            {
+                "provider_id": provider_id,
+                "rollup_kind": "vehicle_summary_5m",
+                "period_start_utc": period,
+                "built_at_utc": now,
+            },
+        )
+        built_vehicle += 1
+
+    rows = connection.execute(
+        SELECT_MISSING_TRIP_DELAY_PERIODS,
+        {"provider_id": provider_id, "since_utc": since_utc},
+    ).fetchall()
+    for row in rows:
+        period = row.period_start_utc
+        connection.execute(
+            UPSERT_TRIP_DELAY_SUMMARY_5M,
+            {
+                "provider_id": provider_id,
+                "period_start_utc": period,
+                "built_at_utc": now,
+            },
+        )
+        connection.execute(
+            UPSERT_WARM_ROLLUP_PERIOD,
+            {
+                "provider_id": provider_id,
+                "rollup_kind": "trip_delay_summary_5m",
+                "period_start_utc": period,
+                "built_at_utc": now,
+            },
+        )
+        built_trip_delay += 1
+
+    return WarmRollupBuildResult(
+        provider_id=provider_id,
+        since_utc=since_utc,
+        built_vehicle_periods=built_vehicle,
+        built_trip_delay_periods=built_trip_delay,
+        completed_at_utc=now,
+    )
 
 
 def _redact_database_url(database_url: str) -> str:

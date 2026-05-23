@@ -75,7 +75,12 @@ class FakeConnectionContext(AbstractContextManager[FakeConnection]):
         return self.connection
 
     def __exit__(self, exc_type, exc, traceback) -> None:  # noqa: ANN001
-        self.events.append(self.exit_event)
+        if exc_type is None:
+            self.events.append(self.exit_event)
+        elif self.exit_event == "commit":
+            self.events.append("rollback")
+        else:
+            self.events.append(self.exit_event)
 
 
 class FakeEngine:
@@ -162,6 +167,25 @@ def patch_execute_dependencies(monkeypatch, events: list[str]) -> None:  # noqa:
         events.append(f"warm-{since_utc.isoformat()}")
         return FakeDisplayResult("warm")
 
+    def fake_build_gold_in_transaction(
+        connection,
+        *,
+        provider_id,
+        settings,
+        registry,
+    ):  # noqa: ANN001
+        events.append("gold")
+        return FakeDisplayResult("gold")
+
+    def fake_build_warm_in_transaction(
+        connection,
+        *,
+        provider_id,
+        since_utc,
+    ):  # noqa: ANN001
+        events.append(f"warm-{since_utc.isoformat()}")
+        return FakeDisplayResult("warm")
+
     monkeypatch.setattr(oracle_module, "collect_parity_evidence", fake_collect_parity_evidence)
     monkeypatch.setattr(oracle_module, "execute_bronze_cleanup_plan", fake_execute_cleanup)
     monkeypatch.setattr(oracle_module, "reset_rebuild_tables", fake_reset)
@@ -170,8 +194,20 @@ def patch_execute_dependencies(monkeypatch, events: list[str]) -> None:  # noqa:
     monkeypatch.setattr(oracle_module, "load_static_zip_to_silver", fake_load_static)
     monkeypatch.setattr(oracle_module, "find_realtime_bronze_snapshots", fake_find_realtime)
     monkeypatch.setattr(oracle_module, "load_realtime_snapshots_to_silver", fake_load_realtime)
-    monkeypatch.setattr(oracle_module, "build_gold_marts", fake_build_gold)
-    monkeypatch.setattr(oracle_module, "build_warm_rollups", fake_build_warm)
+    monkeypatch.setattr(oracle_module, "build_gold_marts", fake_build_gold, raising=False)
+    monkeypatch.setattr(oracle_module, "build_warm_rollups", fake_build_warm, raising=False)
+    monkeypatch.setattr(
+        oracle_module,
+        "_build_gold_marts_in_transaction",
+        fake_build_gold_in_transaction,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        oracle_module,
+        "_build_warm_rollups_in_transaction",
+        fake_build_warm_in_transaction,
+        raising=False,
+    )
 
 
 def test_missing_database_url_rejected() -> None:
@@ -296,6 +332,27 @@ def test_delete_r2_requires_execute_and_exact_confirmation() -> None:
         )
 
 
+def test_rejects_non_may_month_before_cleanup_selection_and_destructive_work(
+    monkeypatch,
+) -> None:
+    events: list[str] = []
+    patch_execute_dependencies(monkeypatch, events)
+
+    with pytest.raises(ValueError, match="only supports month 2026-05"):
+        rebuild_oracle_data(
+            "stm",
+            month="2026-04",
+            execute=True,
+            confirm_reset=True,
+            confirm_worker_stopped=True,
+            settings=oracle_settings(),
+            engine=FakeEngine(events),
+            bronze_storage=FakeStorage(),
+        )
+
+    assert events == []
+
+
 def test_execute_order_deletes_cleanup_before_reset_then_rebuilds_all_layers(
     monkeypatch,
 ) -> None:
@@ -326,12 +383,10 @@ def test_execute_order_deletes_cleanup_before_reset_then_rebuilds_all_layers(
         "static-load",
         "realtime-find",
         "realtime-load-skip-True",
-        "commit",
         "gold",
         "warm-2026-05-01T00:00:00+00:00",
-        "connect",
         "after-parity",
-        "connect-exit",
+        "commit",
     ]
     report = result.display_dict()
     assert report["dry_run"] is False
@@ -342,6 +397,105 @@ def test_execute_order_deletes_cleanup_before_reset_then_rebuilds_all_layers(
         "name": "after-parity",
         "happened_at_utc": "2026-05-01T00:00:00+00:00",
     }
+
+
+def test_gold_failure_rolls_back_execute_transaction(monkeypatch) -> None:
+    events: list[str] = []
+    patch_execute_dependencies(monkeypatch, events)
+
+    def fail_gold_public(provider_id, *, settings, registry, engine):  # noqa: ANN001
+        events.append("gold")
+        raise RuntimeError("gold failed")
+
+    def fail_gold_transaction(connection, *, provider_id, settings, registry):  # noqa: ANN001
+        events.append("gold")
+        raise RuntimeError("gold failed")
+
+    monkeypatch.setattr(oracle_module, "build_gold_marts", fail_gold_public, raising=False)
+    monkeypatch.setattr(
+        oracle_module,
+        "_build_gold_marts_in_transaction",
+        fail_gold_transaction,
+        raising=False,
+    )
+
+    with pytest.raises(RuntimeError, match="gold failed"):
+        rebuild_oracle_data(
+            "stm",
+            execute=True,
+            confirm_reset=True,
+            confirm_worker_stopped=True,
+            settings=oracle_settings(),
+            engine=FakeEngine(events),
+            bronze_storage=FakeStorage(),
+        )
+
+    assert events == [
+        "connect",
+        "before-parity",
+        "connect-exit",
+        "cleanup-delete-False",
+        "begin",
+        "reset",
+        "raw-catalog",
+        "static-find",
+        "static-load",
+        "realtime-find",
+        "realtime-load-skip-True",
+        "gold",
+        "rollback",
+    ]
+    assert "commit" not in events
+
+
+def test_warm_rollup_failure_rolls_back_execute_transaction(monkeypatch) -> None:
+    events: list[str] = []
+    patch_execute_dependencies(monkeypatch, events)
+
+    def fail_warm_public(provider_id, *, settings, engine, since_utc):  # noqa: ANN001
+        events.append(f"warm-{since_utc.isoformat()}")
+        raise RuntimeError("warm failed")
+
+    def fail_warm_transaction(connection, *, provider_id, since_utc):  # noqa: ANN001
+        events.append(f"warm-{since_utc.isoformat()}")
+        raise RuntimeError("warm failed")
+
+    monkeypatch.setattr(oracle_module, "build_warm_rollups", fail_warm_public, raising=False)
+    monkeypatch.setattr(
+        oracle_module,
+        "_build_warm_rollups_in_transaction",
+        fail_warm_transaction,
+        raising=False,
+    )
+
+    with pytest.raises(RuntimeError, match="warm failed"):
+        rebuild_oracle_data(
+            "stm",
+            execute=True,
+            confirm_reset=True,
+            confirm_worker_stopped=True,
+            settings=oracle_settings(),
+            engine=FakeEngine(events),
+            bronze_storage=FakeStorage(),
+        )
+
+    assert events == [
+        "connect",
+        "before-parity",
+        "connect-exit",
+        "cleanup-delete-False",
+        "begin",
+        "reset",
+        "raw-catalog",
+        "static-find",
+        "static-load",
+        "realtime-find",
+        "realtime-load-skip-True",
+        "gold",
+        "warm-2026-05-01T00:00:00+00:00",
+        "rollback",
+    ]
+    assert "commit" not in events
 
 
 def test_display_dict_is_json_safe_for_dry_run_and_execute(monkeypatch) -> None:

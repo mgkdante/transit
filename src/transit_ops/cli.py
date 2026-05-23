@@ -66,6 +66,24 @@ def _provider_registry(settings: Settings) -> ProviderRegistry:
     return ProviderRegistry.from_project_root(project_root=_project_root(), settings=settings)
 
 
+def _preflight_report_path(report_path: Path | None) -> None:
+    if report_path is None:
+        return
+
+    if report_path.exists() and report_path.is_dir():
+        raise typer.BadParameter(f"--report-path must be a file path, got directory: {report_path}")
+    if not report_path.parent.exists():
+        raise typer.BadParameter(
+            f"--report-path parent directory does not exist: {report_path.parent}"
+        )
+
+    try:
+        with report_path.open("a", encoding="utf-8"):
+            pass
+    except OSError as exc:
+        raise typer.BadParameter(f"--report-path is not writable: {report_path}") from exc
+
+
 def _seed_provider(connection, manifest: ProviderManifest) -> None:
     provider = manifest.to_provider_seed()
     connection.execute(
@@ -588,6 +606,7 @@ def rebuild_oracle_data_command(
 
     settings = get_settings()
     try:
+        _preflight_report_path(report_path)
         result = rebuild_oracle_data(
             provider_id,
             month=month,
