@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import re
 from collections.abc import Iterable
 from dataclasses import dataclass
@@ -197,7 +198,10 @@ def select_rebuild_bronze_objects(
     return BronzeRebuildSelection(
         provider_id=provider_id,
         month=month,
-        static_archive=max(static_candidates, key=lambda item: item.observed_at_utc),
+        static_archive=max(
+            static_candidates,
+            key=lambda item: (item.observed_at_utc, item.storage_path),
+        ),
         realtime_snapshots=sorted(
             realtime_snapshots,
             key=lambda item: (item.observed_at_utc, item.endpoint_key, item.storage_path),
@@ -226,7 +230,7 @@ def rebuild_raw_catalog(
         selected=selection.static_archive,
         settings=settings,
         manifest=manifest,
-        storage_backend=storage.storage_backend,
+        storage=storage,
     )
 
     realtime_run_ids: list[int] = []
@@ -264,9 +268,10 @@ def _insert_static_catalog_rows(
     selected: SelectedBronzeObject,
     settings: Settings,
     manifest,
-    storage_backend: str,
+    storage: BronzeCatalogStorage,
 ) -> tuple[int, int]:
     feed = manifest.static_feed()
+    payload = storage.read_bytes(selected.storage_path)
     feed_endpoint_id = get_feed_endpoint_id(
         connection,
         provider_id=provider_id,
@@ -286,10 +291,10 @@ def _insert_static_catalog_rows(
         ingestion_run_id=ingestion_run_id,
         provider_id=provider_id,
         object_kind=str(feed.source_format),
-        storage_backend=storage_backend,
+        storage_backend=storage.storage_backend,
         storage_path=selected.storage_path,
         source_url=feed.resolved_source_url(settings) or "",
-        checksum_sha256=selected.checksum_prefix,
+        checksum_sha256=_sha256_hex(payload),
         byte_size=selected.byte_size or 0,
     )
     mark_ingestion_run_succeeded(
@@ -325,8 +330,9 @@ def _insert_realtime_catalog_rows(
         requested_at_utc=selected.observed_at_utc,
         started_at_utc=selected.observed_at_utc,
     )
+    payload = storage.read_bytes(selected.storage_path)
     metadata = extract_realtime_metadata(
-        storage.read_bytes(selected.storage_path),
+        payload,
         provider_id=provider_id,
         endpoint_key=selected.endpoint_key,
     )
@@ -338,7 +344,7 @@ def _insert_realtime_catalog_rows(
         storage_backend=storage.storage_backend,
         storage_path=selected.storage_path,
         source_url=feed.resolved_source_url(settings) or "",
-        checksum_sha256=selected.checksum_prefix,
+        checksum_sha256=_sha256_hex(payload),
         byte_size=selected.byte_size or 0,
     )
     realtime_snapshot_id = _insert_realtime_snapshot_index(
@@ -360,6 +366,10 @@ def _insert_realtime_catalog_rows(
         feed_timestamp_utc=metadata.feed_timestamp_utc,
     )
     return ingestion_run_id, ingestion_object_id, realtime_snapshot_id
+
+
+def _sha256_hex(payload: bytes) -> str:
+    return hashlib.sha256(payload).hexdigest()
 
 
 def _insert_realtime_snapshot_index(

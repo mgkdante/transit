@@ -1,19 +1,23 @@
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 
 import pytest
 from google.transit import gtfs_realtime_pb2
 
 from transit_ops.ingestion.storage import BronzeObjectInfo
+from transit_ops.providers import ProviderRegistry
 from transit_ops.rebuild.catalog import (
     month_bounds,
     rebuild_raw_catalog,
     reset_rebuild_tables,
     select_rebuild_bronze_objects,
 )
+from transit_ops.settings import Settings
 
 
 class FakeListStorage:
@@ -169,6 +173,22 @@ def test_select_rebuild_bronze_objects_uses_newest_may_static_archive() -> None:
     assert selection.static_archive.storage_path.endswith("bbbbbbbbbbbb__gtfs.zip")
 
 
+def test_select_rebuild_bronze_objects_tie_breaks_static_archive_by_storage_path() -> None:
+    lower_key = (
+        "stm/static_schedule/ingested_at_utc=2026-05-31/"
+        "20260531T230000000000Z__aaaaaaaaaaaa__gtfs.zip"
+    )
+    higher_key = (
+        "stm/static_schedule/ingested_at_utc=2026-05-31/"
+        "20260531T230000000000Z__bbbbbbbbbbbb__gtfs.zip"
+    )
+    storage = FakeListStorage([lower_key, higher_key])
+
+    selection = select_rebuild_bronze_objects(storage, provider_id="stm", month="2026-05")
+
+    assert selection.static_archive.storage_path == higher_key
+
+
 def test_select_rebuild_bronze_objects_orders_all_may_realtime_snapshots_by_timestamp() -> None:
     storage = FakeListStorage(
         [
@@ -240,7 +260,12 @@ def test_rebuild_raw_catalog_inserts_static_run_and_object_rows() -> None:
         "stm/static_schedule/ingested_at_utc=2026-05-02/"
         "20260502T120000000000Z__abcdef123457__gtfs.zip"
     )
-    storage = FakeListStorage([static_key], byte_size_by_key={static_key: 1234})
+    static_payload = b"fake static zip bytes"
+    storage = FakeListStorage(
+        [static_key],
+        byte_size_by_key={static_key: 1234},
+        payloads_by_key={static_key: static_payload},
+    )
     selection = select_rebuild_bronze_objects(storage, provider_id="stm", month="2026-05")
     conn = RecordingConnection()
 
@@ -273,7 +298,7 @@ def test_rebuild_raw_catalog_inserts_static_run_and_object_rows() -> None:
     assert object_params[0]["object_kind"] == "gtfs_schedule_zip"
     assert object_params[0]["storage_path"] == static_key
     assert object_params[0]["source_url"] == "https://example.test/gtfs.zip"
-    assert object_params[0]["checksum_sha256"] == "abcdef123457"
+    assert object_params[0]["checksum_sha256"] == hashlib.sha256(static_payload).hexdigest()
     assert object_params[0]["byte_size"] == 1234
     assert result.static_ingestion_run_id == 100
     assert result.static_ingestion_object_id == 200
@@ -289,10 +314,11 @@ def test_rebuild_raw_catalog_inserts_realtime_rows_with_extracted_metadata() -> 
         "20260502T121500000000Z__abcdef123458__trip_updates.pb"
     )
     payload = make_gtfs_rt_payload(timestamp=1777724010, entity_count=3)
+    static_payload = b"fake static zip bytes"
     storage = FakeListStorage(
         [static_key, realtime_key],
         byte_size_by_key={static_key: 1234, realtime_key: len(payload)},
-        payloads_by_key={realtime_key: payload},
+        payloads_by_key={static_key: static_payload, realtime_key: payload},
     )
     selection = select_rebuild_bronze_objects(storage, provider_id="stm", month="2026-05")
     conn = RecordingConnection()
@@ -314,7 +340,7 @@ def test_rebuild_raw_catalog_inserts_realtime_rows_with_extracted_metadata() -> 
         params for sql, params in zip(conn.statements, conn.params, strict=True)
         if "UPDATE raw.ingestion_runs" in sql and params["ingestion_run_id"] == 101
     ]
-    assert storage.read_paths == [realtime_key]
+    assert storage.read_paths == [static_key, realtime_key]
     assert realtime_index_params == [
         {
             "ingestion_run_id": 101,
@@ -334,6 +360,90 @@ def test_rebuild_raw_catalog_inserts_realtime_rows_with_extracted_metadata() -> 
     assert result.realtime_snapshot_ids == [300]
 
 
+def test_rebuild_raw_catalog_stores_full_sha256_for_static_and_realtime_objects() -> None:
+    static_key = (
+        "stm/static_schedule/ingested_at_utc=2026-05-02/"
+        "20260502T120000000000Z__abcdef123457__gtfs.zip"
+    )
+    realtime_key = (
+        "stm/trip_updates/captured_at_utc=2026-05-02/"
+        "20260502T121500000000Z__abcdef123458__trip_updates.pb"
+    )
+    static_payload = b"fake static zip bytes"
+    realtime_payload = make_gtfs_rt_payload(timestamp=1777724010, entity_count=3)
+    storage = FakeListStorage(
+        [static_key, realtime_key],
+        byte_size_by_key={static_key: len(static_payload), realtime_key: len(realtime_payload)},
+        payloads_by_key={static_key: static_payload, realtime_key: realtime_payload},
+    )
+    selection = select_rebuild_bronze_objects(storage, provider_id="stm", month="2026-05")
+    conn = RecordingConnection()
+
+    rebuild_raw_catalog(
+        conn,
+        provider_id="stm",
+        selection=selection,
+        settings=object(),
+        registry=FakeRegistry(),
+        storage=storage,
+    )
+
+    object_params = [
+        params for sql, params in zip(conn.statements, conn.params, strict=True)
+        if "INSERT INTO raw.ingestion_objects" in sql
+    ]
+    assert [params["checksum_sha256"] for params in object_params] == [
+        hashlib.sha256(static_payload).hexdigest(),
+        hashlib.sha256(realtime_payload).hexdigest(),
+    ]
+    assert all(len(params["checksum_sha256"]) == 64 for params in object_params)
+    assert storage.read_paths == [static_key, realtime_key]
+
+
+def test_rebuild_raw_catalog_uses_real_stm_manifest_strings() -> None:
+    static_key = (
+        "stm/static_schedule/ingested_at_utc=2026-05-02/"
+        "20260502T120000000000Z__abcdef123457__gtfs.zip"
+    )
+    realtime_key = (
+        "stm/vehicle_positions/captured_at_utc=2026-05-02/"
+        "20260502T121500000000Z__abcdef123458__vehicle_positions.pb"
+    )
+    static_payload = b"fake static zip bytes"
+    realtime_payload = make_gtfs_rt_payload(timestamp=1777724010, entity_count=1)
+    storage = FakeListStorage(
+        [static_key, realtime_key],
+        byte_size_by_key={static_key: len(static_payload), realtime_key: len(realtime_payload)},
+        payloads_by_key={static_key: static_payload, realtime_key: realtime_payload},
+    )
+    selection = select_rebuild_bronze_objects(storage, provider_id="stm", month="2026-05")
+    registry = ProviderRegistry.from_project_root(
+        Path(__file__).resolve().parents[1],
+        settings=Settings(_env_file=None),
+    )
+    conn = RecordingConnection()
+
+    rebuild_raw_catalog(
+        conn,
+        provider_id="stm",
+        selection=selection,
+        settings=object(),
+        registry=registry,
+        storage=storage,
+    )
+
+    object_params = [
+        params for sql, params in zip(conn.statements, conn.params, strict=True)
+        if "INSERT INTO raw.ingestion_objects" in sql
+    ]
+    assert object_params[0]["object_kind"] == "gtfs_schedule_zip"
+    assert object_params[0]["source_url"] == "https://www.stm.info/sites/default/files/gtfs/gtfs_stm.zip"
+    assert object_params[1]["object_kind"] == "gtfs_rt_vehicle_positions"
+    assert object_params[1]["source_url"] == (
+        "https://api.stm.info/pub/od/gtfs-rt/ic/v2/vehiclePositions"
+    )
+
+
 def test_raw_catalog_result_display_dict_is_json_friendly() -> None:
     static_key = (
         "stm/static_schedule/ingested_at_utc=2026-05-02/"
@@ -344,10 +454,11 @@ def test_raw_catalog_result_display_dict_is_json_friendly() -> None:
         "20260502T121500000000Z__abcdef123458__vehicle_positions.pb"
     )
     payload = make_gtfs_rt_payload(timestamp=1777724010, entity_count=1)
+    static_payload = b"fake static zip bytes"
     storage = FakeListStorage(
         [static_key, realtime_key],
         byte_size_by_key={static_key: 1234, realtime_key: len(payload)},
-        payloads_by_key={realtime_key: payload},
+        payloads_by_key={static_key: static_payload, realtime_key: payload},
     )
     selection = select_rebuild_bronze_objects(storage, provider_id="stm", month="2026-05")
 
