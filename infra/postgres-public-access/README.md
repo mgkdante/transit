@@ -1,10 +1,10 @@
 # Public PostgreSQL Access
 
-Slice `slice-6.2` added the hardened public PostgreSQL path used for Power BI testing against the Oracle staging host. This is not the consumer cutover: Power BI, GitHub Actions, DNS, and Neon/Railway cleanup stay separate.
+Slice `slice-6.2` added the hardened public PostgreSQL path used for Power BI testing against the Oracle host. Slice `slice-6.4` added the TLS/SCRAM app-owner path required by GitHub-hosted Actions and cut over the `DATABASE_URL` secret.
 
 ## Files
 
-- `render-pg-hba.sh` renders the `pg_hba.conf` policy. Public access is `hostssl` only for `powerbi_reader`; broad non-TLS and other-role paths reject.
+- `render-pg-hba.sh` renders the `pg_hba.conf` policy. Public access is `hostssl` only for the app owner and `powerbi_reader`; broad non-TLS and other-role paths reject.
 - `harden-powerbi-reader.sql` creates or updates `powerbi_reader`, enforces SCRAM password storage, revokes `PUBLIC` and non-Gold paths, grants Gold `USAGE`/`SELECT`, and grants future Gold table `SELECT`.
 - `verify_powerbi_reader.py` verifies the external contract: TLS, current user, Gold read access, non-Gold denial, write denial, temp-table denial, and expected HBA rejection paths.
 

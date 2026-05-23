@@ -194,7 +194,7 @@ def test_pause_pipeline_delegates_to_adapter_without_provider_details_in_entrypo
 
     assert result.returncode == 0, result.stderr
     _assert_adapter_handoff_message(result.stdout, adapter_name)
-    assert "Database adapter credentials not set" in result.stdout
+    assert "Database compute is managed by the local/VM host" in result.stdout
     assert "serviceInstanceSuspend" not in result.stdout
     assert "Railway" not in result.stdout
     assert "Done. Pipeline is paused." in result.stdout
@@ -217,7 +217,7 @@ def test_resume_pipeline_delegates_to_adapter_without_provider_details_in_entryp
 
     assert result.returncode == 0, result.stderr
     _assert_adapter_handoff_message(result.stdout, adapter_name)
-    assert "Database adapter credentials not set" in result.stdout
+    assert "Database compute is managed by the local/VM host" in result.stdout
     assert "serviceInstanceRedeploy" not in result.stdout
     assert "Railway" not in result.stdout
     assert "Done. Pipeline is resumed." in result.stdout
@@ -272,14 +272,14 @@ def test_pause_pipeline_fails_honestly_when_scheduler_disable_fails(tmp_path: Pa
 
 
 def test_pause_pipeline_fails_honestly_when_database_compute_handoff_fails(tmp_path: Path) -> None:
-    adapter_name = _database_compute_adapter_name(tmp_path)
     result = _run_script(
         "pause-pipeline.sh",
         tmp_path,
         COMMAND_LOG=str(_make_log_path(tmp_path)),
+        DATABASE_COMPUTE_ADAPTER="neon",
         FAKE_CURL_EXIT_CODE="22",
         FAKE_CURL_STDERR="boom",
-        **_adapter_env_overrides(adapter_name),
+        **_adapter_env_overrides("neon"),
     )
 
     assert result.returncode != 0
@@ -291,14 +291,14 @@ def test_pause_pipeline_fails_honestly_when_database_compute_handoff_fails(tmp_p
 
 
 def test_resume_pipeline_fails_honestly_when_database_compute_restart_fails(tmp_path: Path) -> None:
-    adapter_name = _database_compute_adapter_name(tmp_path)
     result = _run_script(
         "resume-pipeline.sh",
         tmp_path,
         COMMAND_LOG=str(_make_log_path(tmp_path)),
+        DATABASE_COMPUTE_ADAPTER="neon",
         FAKE_CURL_EXIT_CODE="22",
         FAKE_CURL_STDERR="boom",
-        **_adapter_env_overrides(adapter_name),
+        **_adapter_env_overrides("neon"),
     )
 
     # Adapter env vars are set at runtime inside the shell snippet in the lower-level tests.
@@ -318,6 +318,7 @@ def test_pause_database_compute_reports_registered_endpoint_when_status_check_su
         "pause_database_compute",
         tmp_path,
         COMMAND_LOG=str(log_path),
+        DATABASE_COMPUTE_ADAPTER="neon",
         FAKE_CURL_STDOUT='{"endpoints":[{"id":"endpoint-456"}]}',
     )
 
@@ -337,6 +338,7 @@ def test_pause_database_compute_warns_when_endpoint_lookup_misses(tmp_path: Path
         f"{_adapter_exports_snippet()}"
         "pause_database_compute",
         tmp_path,
+        DATABASE_COMPUTE_ADAPTER="neon",
         FAKE_CURL_STDOUT='{"endpoints":[{"id":"different-endpoint"}]}',
     )
 
@@ -352,6 +354,7 @@ def test_pause_database_compute_fails_when_status_check_api_call_fails(tmp_path:
         "pause_database_compute",
         tmp_path,
         COMMAND_LOG=str(log_path),
+        DATABASE_COMPUTE_ADAPTER="neon",
         FAKE_CURL_EXIT_CODE="22",
         FAKE_CURL_STDERR="boom",
     )
@@ -376,6 +379,7 @@ def test_resume_database_compute_reports_restart_submission_when_api_call_succee
         "resume_database_compute",
         tmp_path,
         COMMAND_LOG=str(log_path),
+        DATABASE_COMPUTE_ADAPTER="neon",
     )
 
     assert result.returncode == 0, result.stderr
@@ -396,6 +400,7 @@ def test_resume_database_compute_warns_when_restart_api_call_fails(tmp_path: Pat
         "resume_database_compute",
         tmp_path,
         COMMAND_LOG=str(log_path),
+        DATABASE_COMPUTE_ADAPTER="neon",
         FAKE_CURL_EXIT_CODE="22",
         FAKE_CURL_STDERR="boom",
     )

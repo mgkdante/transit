@@ -72,6 +72,15 @@ class RecordingConnection:
         return FakeScalarResult(0)
 
 
+class NoRealtimeSnapshotConnection(RecordingConnection):
+    def execute(self, statement, params=None):  # noqa: ANN001
+        sql_text = str(statement)
+        if "SELECT max(realtime_snapshot_id)" in sql_text:
+            self.calls.append((sql_text, params))
+            return FakeScalarResult(None)
+        return super().execute(statement, params)
+
+
 class _ContextManager:
     def __init__(self, connection) -> None:  # noqa: ANN001
         self.connection = connection
@@ -237,6 +246,57 @@ def test_refresh_gold_realtime_upserts_latest_snapshots_only() -> None:
     sql_calls = [call[0] for call in connection.calls]
     assert any("DELETE FROM gold.latest_vehicle_snapshot" in sql for sql in sql_calls)
     assert any("INSERT INTO gold.latest_vehicle_snapshot" in sql for sql in sql_calls)
+
+
+def test_refresh_gold_realtime_analyzes_realtime_silver_before_gold_upserts() -> None:
+    connection = RecordingConnection(dataset_row={"dataset_version_id": 2})
+    engine = FakeEngine(connection)
+    settings = Settings(DATABASE_URL="postgresql://user:pass@example.com/neondb")
+
+    refresh_gold_realtime(
+        "stm",
+        settings=settings,
+        registry=FakeRegistry(_build_manifest()),
+        engine=engine,
+    )
+
+    sql_calls = [call[0] for call in connection.calls]
+    analyze_index = next(
+        index
+        for index, sql in enumerate(sql_calls)
+        if "ANALYZE silver.trip_updates" in sql
+    )
+    first_gold_upsert_index = next(
+        index
+        for index, sql in enumerate(sql_calls)
+        if "INSERT INTO gold.fact_vehicle_snapshot" in sql
+        or "INSERT INTO gold.fact_trip_delay_snapshot" in sql
+    )
+
+    assert analyze_index < first_gold_upsert_index
+    assert "silver.trip_update_stop_time_updates" in sql_calls[analyze_index]
+    assert "silver.vehicle_positions" in sql_calls[analyze_index]
+
+
+def test_refresh_gold_realtime_analyzes_even_when_no_realtime_snapshots() -> None:
+    connection = NoRealtimeSnapshotConnection(dataset_row={"dataset_version_id": 2})
+    engine = FakeEngine(connection)
+    settings = Settings(DATABASE_URL="postgresql://user:pass@example.com/neondb")
+
+    result = refresh_gold_realtime(
+        "stm",
+        settings=settings,
+        registry=FakeRegistry(_build_manifest()),
+        engine=engine,
+    )
+
+    sql_calls = [call[0] for call in connection.calls]
+
+    assert result.latest_trip_updates_snapshot_id is None
+    assert result.latest_vehicle_snapshot_id is None
+    assert any("ANALYZE silver.trip_updates" in sql for sql in sql_calls)
+    assert not any("INSERT INTO gold.fact_vehicle_snapshot" in sql for sql in sql_calls)
+    assert not any("INSERT INTO gold.fact_trip_delay_snapshot" in sql for sql in sql_calls)
 
 
 def test_build_gold_marts_requires_current_static_dataset() -> None:

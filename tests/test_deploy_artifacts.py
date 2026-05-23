@@ -75,6 +75,8 @@ def test_env_example_documents_compose_runtime_contract() -> None:
         "CADDY_SITE_ADDRESS=:80",
         "CADDY_HTTP_PORT=8080",
         "CADDY_HTTPS_PORT=8443",
-        "DATABASE_COMPUTE_ADAPTER=neon",
+        "DATABASE_COMPUTE_ADAPTER=none",
     }.issubset(assignments)
-    assert "Set DATABASE_COMPUTE_ADAPTER=none" in env_example
+    assert "Oracle VM Postgres" in env_example
+    assert "external" in env_example
+    assert "compute API" in env_example

@@ -29,7 +29,7 @@ def _active_lines(text: str) -> list[str]:
     ]
 
 
-def test_hba_renderer_limits_public_access_to_tls_powerbi_reader() -> None:
+def test_hba_renderer_limits_public_access_to_tls_powerbi_reader_and_app_owner() -> None:
     result = subprocess.run(
         ["bash", str(HBA_RENDERER)],
         check=True,
@@ -38,12 +38,15 @@ def test_hba_renderer_limits_public_access_to_tls_powerbi_reader() -> None:
     )
     lines = _active_lines(result.stdout)
 
+    public_app_owner = "hostssl transit transit 0.0.0.0/0 scram-sha-256"
     public_reader = "hostssl transit powerbi_reader 0.0.0.0/0 scram-sha-256"
     public_reject = "hostssl all all 0.0.0.0/0 reject"
 
+    assert public_app_owner in lines
     assert public_reader in lines
     assert "hostnossl all all 0.0.0.0/0 reject" in lines
     assert public_reject in lines
+    assert lines.index(public_app_owner) < lines.index(public_reject)
     assert lines.index(public_reader) < lines.index(public_reject)
     assert "host all all 0.0.0.0/0 scram-sha-256" not in lines
     assert "host all transit 0.0.0.0/0 scram-sha-256" not in lines
@@ -65,6 +68,7 @@ def test_hba_renderer_accepts_explicit_database_app_role_and_reader_role() -> No
     lines = _active_lines(result.stdout)
 
     assert "host all app_owner 172.16.0.0/12 scram-sha-256" in lines
+    assert "hostssl analytics app_owner 0.0.0.0/0 scram-sha-256" in lines
     assert "hostssl analytics bi_reader 0.0.0.0/0 scram-sha-256" in lines
     assert "hostssl all all 0.0.0.0/0 reject" in lines
 

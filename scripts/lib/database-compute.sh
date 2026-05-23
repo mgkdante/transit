@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-DATABASE_COMPUTE_ADAPTER="${DATABASE_COMPUTE_ADAPTER:-neon}"
+DATABASE_COMPUTE_ADAPTER="${DATABASE_COMPUTE_ADAPTER:-none}"
 DATABASE_COMPUTE_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 _database_compute_fail() {
