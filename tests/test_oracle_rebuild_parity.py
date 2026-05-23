@@ -96,6 +96,8 @@ class RecordingParityConnection:
             view: [
                 {
                     "provider_id": "stm",
+                    "realtime_snapshot_id": 9,
+                    "feed_timestamp_utc": datetime(2026, 5, 20, 12, 0, tzinfo=UTC),
                     "metric_date": date(2026, 5, 20),
                     "metric_value": Decimal("12.50"),
                     "captured_at_utc": datetime(2026, 5, 20, 12, 5, tzinfo=UTC),
@@ -103,6 +105,22 @@ class RecordingParityConnection:
             ]
             for view in EXPECTED_KPI_VIEWS
         }
+        self.kpi_rows["gold.kpi_active_vehicles_latest"] = [
+            {
+                "provider_id": "stm",
+                "realtime_snapshot_id": 3,
+                "feed_timestamp_utc": datetime(2026, 5, 20, 12, 1, tzinfo=UTC),
+                "captured_at_utc": datetime(2026, 5, 20, 12, 6, tzinfo=UTC),
+                "active_vehicle_count": 30,
+            },
+            {
+                "provider_id": "stm",
+                "realtime_snapshot_id": 2,
+                "feed_timestamp_utc": datetime(2026, 5, 20, 12, 0, tzinfo=UTC),
+                "captured_at_utc": datetime(2026, 5, 20, 12, 5, tzinfo=UTC),
+                "active_vehicle_count": 20,
+            },
+        ]
         self.gold_relations = [
             {"relation_name": "kpi_active_vehicles_latest", "relation_type": "VIEW"},
             {"relation_name": "dim_route", "relation_type": "BASE TABLE"},
@@ -122,6 +140,19 @@ class RecordingParityConnection:
 
         for view, rows in self.kpi_rows.items():
             if f"FROM {view}" in sql:
+                if (
+                    "ORDER BY provider_id, realtime_snapshot_id, "
+                    "captured_at_utc, feed_timestamp_utc"
+                ) in sql:
+                    rows = sorted(
+                        rows,
+                        key=lambda row: (
+                            row["provider_id"],
+                            row["realtime_snapshot_id"],
+                            row["captured_at_utc"],
+                            row["feed_timestamp_utc"],
+                        ),
+                    )
                 return FakeResult(mapping_rows=rows)
 
         if "information_schema.tables" in sql:
@@ -168,6 +199,7 @@ def test_ingestion_objects_count_joins_ingestion_runs_for_provider_scope() -> No
     )
     assert "JOIN raw.ingestion_runs AS ir" in sql
     assert "io.ingestion_run_id = ir.ingestion_run_id" in sql
+    assert "io.provider_id = :provider_id" in sql
     assert "ir.provider_id = :provider_id" in sql
     assert params == {"provider_id": "stm"}
 
@@ -199,14 +231,19 @@ def test_kpi_views_are_whitelisted_provider_scoped_and_json_safe() -> None:
         sql, params = next(call for call in connection.calls if f"FROM {view}" in call[0])
         assert f"SELECT * FROM {view}" in sql
         assert "WHERE provider_id = :provider_id" in sql
+        assert (
+            "ORDER BY provider_id, realtime_snapshot_id, captured_at_utc, feed_timestamp_utc"
+            in sql
+        )
         assert params == {"provider_id": "stm"}
 
     first_row = display["kpi_rows"]["gold.kpi_active_vehicles_latest"][0]
     assert first_row == {
+        "active_vehicle_count": 20,
         "captured_at_utc": "2026-05-20T12:05:00+00:00",
-        "metric_date": "2026-05-20",
-        "metric_value": "12.50",
+        "feed_timestamp_utc": "2026-05-20T12:00:00+00:00",
         "provider_id": "stm",
+        "realtime_snapshot_id": 2,
     }
 
 

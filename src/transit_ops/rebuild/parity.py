@@ -145,7 +145,8 @@ SELECT count(*)
 FROM raw.ingestion_objects AS io
 JOIN raw.ingestion_runs AS ir
     ON io.ingestion_run_id = ir.ingestion_run_id
-WHERE ir.provider_id = :provider_id
+WHERE io.provider_id = :provider_id
+  AND ir.provider_id = :provider_id
 """
         )
 
@@ -183,7 +184,7 @@ def _kpi_query(view_name: str) -> TextClause:
         f"""
 SELECT * FROM {view_name}
 WHERE provider_id = :provider_id
-ORDER BY provider_id
+ORDER BY provider_id, realtime_snapshot_id, captured_at_utc, feed_timestamp_utc
 """
     )
 
