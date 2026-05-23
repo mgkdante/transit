@@ -21,6 +21,7 @@ class FakeS3Client:
         self.objects: dict[tuple[str, str], bytes] = {}
         self.upload_calls: list[tuple[str, str]] = []
         self.paginator_calls: list[str] = []
+        self.paginator_pages: list[dict[str, object]] | None = None
 
     def upload_fileobj(self, fileobj, bucket: str, key: str) -> None:  # noqa: ANN001
         self.upload_calls.append((bucket, key))
@@ -46,6 +47,9 @@ class FakeS3Paginator:
         self.client = client
 
     def paginate(self, *, Bucket: str, Prefix: str):  # noqa: N803, ANN201
+        if self.client.paginator_pages is not None:
+            return self.client.paginator_pages
+
         contents = [
             {"Key": key, "Size": len(payload)}
             for (bucket, key), payload in sorted(self.client.objects.items())
@@ -147,6 +151,48 @@ def test_local_bronze_storage_list_objects_by_prefix(tmp_path: Path) -> None:
     assert [obj.byte_size for obj in objects] == [1, 2]
 
 
+def test_local_bronze_storage_list_objects_missing_prefix_returns_empty(tmp_path: Path) -> None:
+    storage = LocalBronzeStorage(storage_backend="local", root=tmp_path / "bronze")
+    matching_dir = storage.root / "stm/trip_updates"
+    matching_dir.mkdir(parents=True)
+    (matching_dir / "a.pb").write_bytes(b"a")
+
+    objects = list(storage.list_objects("stm/static_schedule/"))
+
+    assert objects == []
+
+
+def test_local_bronze_storage_list_objects_empty_prefix_lists_all_files(tmp_path: Path) -> None:
+    storage = LocalBronzeStorage(storage_backend="local", root=tmp_path / "bronze")
+    trip_updates_dir = storage.root / "stm/trip_updates"
+    trip_updates_dir.mkdir(parents=True)
+    (trip_updates_dir / "b.pb").write_bytes(b"bb")
+    static_schedule_dir = storage.root / "stm/static_schedule"
+    static_schedule_dir.mkdir(parents=True)
+    (static_schedule_dir / "a.zip").write_bytes(b"zip")
+
+    objects = list(storage.list_objects(""))
+
+    assert [obj.storage_path for obj in objects] == [
+        "stm/static_schedule/a.zip",
+        "stm/trip_updates/b.pb",
+    ]
+
+
+def test_local_bronze_storage_list_objects_rejects_absolute_prefix(tmp_path: Path) -> None:
+    storage = LocalBronzeStorage(storage_backend="local", root=tmp_path / "bronze")
+
+    with pytest.raises(BronzeStorageError, match="Bronze object prefix"):
+        list(storage.list_objects("/definitely-not-a-bronze-prefix"))
+
+
+def test_local_bronze_storage_list_objects_rejects_parent_traversal(tmp_path: Path) -> None:
+    storage = LocalBronzeStorage(storage_backend="local", root=tmp_path / "bronze")
+
+    with pytest.raises(BronzeStorageError, match="Bronze object prefix"):
+        list(storage.list_objects("../definitely-not-a-bronze-prefix"))
+
+
 def test_s3_bronze_storage_list_objects_with_paginator() -> None:
     fake_client = FakeS3Client()
     static_schedule_key = "stm/static_schedule/ingested_at_utc=2026-05-01/a.zip"
@@ -167,6 +213,43 @@ def test_s3_bronze_storage_list_objects_with_paginator() -> None:
         "stm/static_schedule/ingested_at_utc=2026-05-01/a.zip"
     ]
     assert objects[0].byte_size == 3
+
+
+def test_s3_bronze_storage_list_objects_missing_contents_returns_empty() -> None:
+    fake_client = FakeS3Client()
+    fake_client.paginator_pages = [{}]
+    storage = S3BronzeStorage(
+        storage_backend="s3",
+        bucket="bronze-bucket",
+        endpoint_url="https://example.r2.cloudflarestorage.com",
+        client=fake_client,
+    )
+
+    objects = list(storage.list_objects("stm/static_schedule/"))
+
+    assert objects == []
+
+
+def test_s3_bronze_storage_list_objects_consumes_multiple_pages() -> None:
+    fake_client = FakeS3Client()
+    fake_client.paginator_pages = [
+        {"Contents": [{"Key": "stm/static_schedule/a.zip", "Size": 3}]},
+        {"Contents": [{"Key": "stm/static_schedule/b.zip", "Size": 4}]},
+    ]
+    storage = S3BronzeStorage(
+        storage_backend="s3",
+        bucket="bronze-bucket",
+        endpoint_url="https://example.r2.cloudflarestorage.com",
+        client=fake_client,
+    )
+
+    objects = list(storage.list_objects("stm/static_schedule/"))
+
+    assert [obj.storage_path for obj in objects] == [
+        "stm/static_schedule/a.zip",
+        "stm/static_schedule/b.zip",
+    ]
+    assert [obj.byte_size for obj in objects] == [3, 4]
 
 
 def test_get_bronze_storage_requires_s3_configuration(tmp_path: Path) -> None:

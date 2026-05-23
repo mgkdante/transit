@@ -18,6 +18,15 @@ class BronzeStorageError(ValueError):
     """Raised when Bronze storage configuration or I/O is invalid."""
 
 
+def _normalize_bronze_object_prefix(prefix: str) -> Path:
+    prefix_path = Path(prefix)
+    if prefix_path.is_absolute() or ".." in prefix_path.parts:
+        raise BronzeStorageError(
+            "Bronze object prefix must be a relative object-key prefix without parent traversal."
+        )
+    return prefix_path
+
+
 @dataclass(frozen=True)
 class BronzeObjectInfo:
     storage_path: str
@@ -73,7 +82,7 @@ class LocalBronzeStorage(BronzeStorage):
         (self.root / Path(storage_path)).unlink(missing_ok=True)
 
     def list_objects(self, prefix: str) -> Iterable[BronzeObjectInfo]:
-        prefix_root = self.root / Path(prefix)
+        prefix_root = self.root / _normalize_bronze_object_prefix(prefix)
         if not prefix_root.exists():
             return
 
