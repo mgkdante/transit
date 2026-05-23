@@ -606,6 +606,7 @@ def load_realtime_snapshot_to_silver(
 def load_realtime_snapshots_to_silver(
     connection: Connection,
     *,
+    provider_id: str,
     snapshots: list[BronzeRealtimeSnapshot],
     bronze_storage,
     skip_existing: bool = False,
@@ -633,7 +634,7 @@ def load_realtime_snapshots_to_silver(
             row_counts[table_name] = row_counts.get(table_name, 0) + count
 
     return RealtimeSilverBatchLoadResult(
-        provider_id=snapshots[0].provider_id if snapshots else "",
+        provider_id=provider_id,
         loaded_count=len(results),
         skipped_existing_snapshot_ids=skipped_existing_snapshot_ids,
         row_counts=row_counts,

@@ -532,6 +532,7 @@ def test_load_realtime_snapshots_to_silver_aggregates_row_counts(
 
     result = realtime_silver_module.load_realtime_snapshots_to_silver(
         connection,
+        provider_id="stm",
         snapshots=[trip_snapshot, vehicle_snapshot],
         bronze_storage=bronze_storage,
         skip_existing=False,
@@ -559,6 +560,7 @@ def test_load_realtime_snapshots_to_silver_skips_existing_when_requested(
 
     result = realtime_silver_module.load_realtime_snapshots_to_silver(
         connection,
+        provider_id="stm",
         snapshots=[already_loaded],
         bronze_storage=bronze_storage,
         skip_existing=True,
@@ -583,10 +585,36 @@ def test_load_realtime_snapshots_to_silver_fails_existing_without_skip(
     with pytest.raises(ValueError, match="already loaded"):
         realtime_silver_module.load_realtime_snapshots_to_silver(
             connection,
+            provider_id="stm",
             snapshots=[already_loaded],
             bronze_storage=bronze_storage,
             skip_existing=False,
         )
+
+
+def test_load_realtime_snapshots_to_silver_preserves_provider_for_empty_batch() -> None:
+    result = realtime_silver_module.load_realtime_snapshots_to_silver(
+        ExistingAwareConnection(),
+        provider_id="stm",
+        snapshots=[],
+        bronze_storage=FakeBronzeStorage(b""),
+        skip_existing=True,
+    )
+
+    payload = result.display_dict()
+
+    assert result.provider_id == "stm"
+    assert result.loaded_count == 0
+    assert result.skipped_existing_snapshot_ids == []
+    assert result.row_counts == {}
+    assert result.results == []
+    assert payload == {
+        "provider_id": "stm",
+        "loaded_count": 0,
+        "skipped_existing_snapshot_ids": [],
+        "row_counts": {},
+        "results": [],
+    }
 
 
 def test_realtime_silver_batch_load_result_display_dict_serializes_nested_datetimes(
