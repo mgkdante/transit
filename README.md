@@ -39,6 +39,8 @@ STM GTFS-RT protobuf  -> Bronze (R2/S3) -> Silver (Postgres) -> Gold facts     -
 
 Stack: Python 3.12, Postgres, Cloudflare R2/S3-compatible Bronze storage, Docker Compose, Caddy, GitHub Actions, Power BI.
 
+Production still runs on the existing Neon / Railway path until the Oracle cutover slice is complete. The Oracle Always Free A1 host is now prepared as an empty staging target only; it is not serving Transit traffic yet.
+
 Operationally:
 
 - Bronze stores raw artifacts plus lineage
@@ -131,6 +133,19 @@ docker compose up -d worker
 ```
 
 Caddy proxies health traffic to the health service. Local defaults serve the proxy over HTTP through `CADDY_SITE_ADDRESS=:80` and host port `CADDY_HTTP_PORT=8080`. The Compose file also publishes container port 443 to `CADDY_HTTPS_PORT=8443` for later VM/TLS configuration.
+
+## Oracle Migration Status
+
+The Oracle migration is staged but not cut over. The current Oracle VM baseline is:
+
+- OCI Canada Southeast / Montréal on Pay As You Go with the budget guardrail enabled
+- `VM.Standard.A1.Flex`, 4 OCPU, 24 GB RAM, Ubuntu 24.04 ARM, 200 GB boot volume
+- SSH-only access, restricted at both OCI NSG and UFW to the operator public `/32`
+- SSH password login and root login disabled; fail2ban and unattended upgrades active
+- Docker Engine and Compose installed from Docker's official Ubuntu repository
+- ports 80, 443, and 5432 closed externally
+
+No Transit services, database migration, DNS change, Power BI repoint, or Neon / Railway cleanup has happened yet. Exact instance identifiers, public IP, firewall evidence, and handoff notes live in Notion under roadmap `upgrading`, slice `slice-5`.
 
 ## Pipeline Control
 
