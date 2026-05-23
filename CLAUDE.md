@@ -5,12 +5,12 @@
 ## Project context
 
 - **Project:** Transit — STM transit operations analytics pipeline
-- **Stack:** Python 3.12 · Neon · Cloudflare R2 · Railway · GitHub Actions · Power BI
+- **Stack:** Python 3.12 · Postgres · Cloudflare R2 · Docker Compose · GitHub Actions · Power BI
 - **Workflow:** workflow-overlord 3.x plugin (Notion-backed shared state)
 
 ## Where context lives
 
-Business / Architecture / Runtime / Vocabulary / Roadmap / Slices / Sessions / Transcript Chunks live in the Transit Notion subtree. Fresh readers can find the human-facing entry point from `README.md` under `Notion Home`; `AGENTS.local.md` only carries local machine-readable UUID pointers for tools and override resolution. Interactive work uses the hosted Notion MCP first; hooks and automation use direct REST. Repo stays lean: Notion is canonical for workflow context, system context, and Power BI semantic knowledge, while local `.pbix` working files remain in `powerbi/`.
+Business / Architecture / Runtime / Vocabulary / Roadmap / Slices / Sessions / Transcript Chunks live in the Transit Notion subtree. Fresh readers can find the human-facing entry point from `README.md` under `Notion Home`; `AGENTS.local.md` only carries local machine-readable UUID pointers for tools and override resolution. Interactive work uses the hosted Notion MCP first; hooks and automation use direct REST. Repo stays lean: Notion is canonical for workflow context, system context, Oracle migration status, and Power BI semantic knowledge, while local `.pbix` working files remain in `powerbi/`.
 
 ## Build commands
 
