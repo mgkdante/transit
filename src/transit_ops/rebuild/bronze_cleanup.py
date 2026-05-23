@@ -22,6 +22,7 @@ _REALTIME_FILENAME_BY_ENDPOINT = {
 }
 
 _CHECKSUM_PREFIX_PATTERN = re.compile(r"^[0-9a-fA-F]{12}$")
+_OBSERVED_TIMESTAMP_PATTERN = re.compile(r"^\d{8}T\d{6}\d{6}Z$")
 
 
 class BronzeCleanupStorage(Protocol):
@@ -39,6 +40,16 @@ class ParsedBronzeKey:
     checksum_prefix: str
     filename: str
 
+    def display_dict(self) -> dict[str, object]:
+        return {
+            "provider_id": self.provider_id,
+            "endpoint_key": self.endpoint_key,
+            "key_date": self.key_date.isoformat(),
+            "observed_at_utc": self.observed_at_utc.isoformat(),
+            "checksum_prefix": self.checksum_prefix,
+            "filename": self.filename,
+        }
+
 
 @dataclass(frozen=True)
 class BronzeCleanupItem:
@@ -46,6 +57,14 @@ class BronzeCleanupItem:
     parsed_key: ParsedBronzeKey
     byte_size: int | None
     last_modified: datetime | None
+
+    def display_dict(self) -> dict[str, object]:
+        return {
+            "storage_path": self.storage_path,
+            "parsed_key": self.parsed_key.display_dict(),
+            "byte_size": self.byte_size,
+            "last_modified": self.last_modified.isoformat() if self.last_modified else None,
+        }
 
 
 @dataclass(frozen=True)
@@ -55,6 +74,15 @@ class BronzeCleanupPlan:
     eligible_objects: list[BronzeCleanupItem]
     retained_objects: list[BronzeCleanupItem]
     skipped_unknown_keys: list[str]
+
+    def display_dict(self) -> dict[str, object]:
+        return {
+            "provider_id": self.provider_id,
+            "keep_from_date": self.keep_from_date.isoformat(),
+            "eligible_objects": [item.display_dict() for item in self.eligible_objects],
+            "retained_objects": [item.display_dict() for item in self.retained_objects],
+            "skipped_unknown_keys": list(self.skipped_unknown_keys),
+        }
 
 
 @dataclass(frozen=True)
@@ -88,6 +116,18 @@ class BronzeCleanupResult:
             failed_keys=failed_keys,
         )
 
+    def display_dict(self) -> dict[str, object]:
+        return {
+            "provider_id": self.provider_id,
+            "keep_from_date": self.keep_from_date.isoformat(),
+            "delete_requested": self.delete_requested,
+            "eligible_count": self.eligible_count,
+            "retained_count": self.retained_count,
+            "skipped_unknown_keys": list(self.skipped_unknown_keys),
+            "deleted_keys": list(self.deleted_keys),
+            "failed_keys": list(self.failed_keys),
+        }
+
 
 def parse_bronze_key(storage_path: str) -> ParsedBronzeKey | None:
     parts = storage_path.split("/")
@@ -115,6 +155,9 @@ def parse_bronze_key(storage_path: str) -> ParsedBronzeKey | None:
     if expected_filename is not None and filename != expected_filename:
         return None
 
+    if _OBSERVED_TIMESTAMP_PATTERN.fullmatch(timestamp_fragment) is None:
+        return None
+
     try:
         key_date = date.fromisoformat(partition_date)
         observed_at_utc = datetime.strptime(
@@ -122,6 +165,9 @@ def parse_bronze_key(storage_path: str) -> ParsedBronzeKey | None:
             "%Y%m%dT%H%M%S%fZ",
         ).replace(tzinfo=UTC)
     except ValueError:
+        return None
+
+    if observed_at_utc.date() != key_date:
         return None
 
     return ParsedBronzeKey(
@@ -141,7 +187,10 @@ def build_bronze_cleanup_plan(
     keep_from_date: date,
 ) -> BronzeCleanupPlan:
     prefixes = [f"{provider_id}/{endpoint}/" for endpoint in REBUILD_ENDPOINTS]
-    scanned = [obj for prefix in prefixes for obj in storage.list_objects(prefix)]
+    scanned = sorted(
+        (obj for prefix in prefixes for obj in storage.list_objects(prefix)),
+        key=lambda obj: obj.storage_path,
+    )
 
     eligible_objects: list[BronzeCleanupItem] = []
     retained_objects: list[BronzeCleanupItem] = []
@@ -167,9 +216,9 @@ def build_bronze_cleanup_plan(
     return BronzeCleanupPlan(
         provider_id=provider_id,
         keep_from_date=keep_from_date,
-        eligible_objects=eligible_objects,
-        retained_objects=retained_objects,
-        skipped_unknown_keys=skipped_unknown_keys,
+        eligible_objects=sorted(eligible_objects, key=lambda item: item.storage_path),
+        retained_objects=sorted(retained_objects, key=lambda item: item.storage_path),
+        skipped_unknown_keys=sorted(skipped_unknown_keys),
     )
 
 

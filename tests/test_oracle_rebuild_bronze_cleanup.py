@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from datetime import UTC, date, datetime
 
 from transit_ops.ingestion.storage import BronzeObjectInfo
@@ -112,6 +113,26 @@ def test_parse_realtime_key_with_invalid_filename_returns_none() -> None:
     )
 
 
+def test_parse_key_with_short_fraction_timestamp_returns_none() -> None:
+    assert (
+        parse_bronze_key(
+            "stm/trip_updates/captured_at_utc=2026-04-30/"
+            "20260430T1200001Z__deadbeef1234__trip_updates.pb"
+        )
+        is None
+    )
+
+
+def test_parse_key_with_partition_timestamp_date_mismatch_returns_none() -> None:
+    assert (
+        parse_bronze_key(
+            "stm/trip_updates/captured_at_utc=2026-04-30/"
+            "20260501T000000000000Z__deadbeef1234__trip_updates.pb"
+        )
+        is None
+    )
+
+
 def test_cleanup_plan_deletes_only_pre_may_known_keys() -> None:
     storage = FakeListDeleteStorage(
         [
@@ -174,7 +195,73 @@ def test_cleanup_plan_skips_invalid_checksum_and_realtime_filename() -> None:
     plan = build_bronze_cleanup_plan(storage, provider_id="stm", keep_from_date=date(2026, 5, 1))
 
     assert [item.storage_path for item in plan.eligible_objects] == [storage.keys[2]]
-    assert plan.skipped_unknown_keys == storage.keys[:2]
+    assert plan.skipped_unknown_keys == sorted(storage.keys[:2])
+
+
+def test_cleanup_plan_sorts_outputs_by_storage_path() -> None:
+    retained_b_key = (
+        "stm/trip_updates/captured_at_utc=2026-05-01/"
+        "20260501T120000000000Z__bbbbbbbbbbbb__trip_updates.pb"
+    )
+    retained_a_key = (
+        "stm/trip_updates/captured_at_utc=2026-05-01/"
+        "20260501T000000000000Z__aaaaaaaaaaaa__trip_updates.pb"
+    )
+    eligible_b_key = (
+        "stm/trip_updates/captured_at_utc=2026-04-30/"
+        "20260430T120000000000Z__bbbbbbbbbbbb__trip_updates.pb"
+    )
+    eligible_a_key = (
+        "stm/trip_updates/captured_at_utc=2026-04-30/"
+        "20260430T000000000000Z__aaaaaaaaaaaa__trip_updates.pb"
+    )
+    unknown_b_key = "stm/trip_updates/zzz.pb"
+    unknown_a_key = "stm/trip_updates/aaa.pb"
+    storage = FakeListDeleteStorage(
+        [
+            retained_b_key,
+            retained_a_key,
+            eligible_b_key,
+            unknown_b_key,
+            eligible_a_key,
+            unknown_a_key,
+        ]
+    )
+
+    plan = build_bronze_cleanup_plan(storage, provider_id="stm", keep_from_date=date(2026, 5, 1))
+
+    assert [item.storage_path for item in plan.eligible_objects] == [
+        eligible_a_key,
+        eligible_b_key,
+    ]
+    assert [item.storage_path for item in plan.retained_objects] == [
+        retained_a_key,
+        retained_b_key,
+    ]
+    assert plan.skipped_unknown_keys == [unknown_a_key, unknown_b_key]
+
+
+def test_cleanup_display_dicts_are_json_safe() -> None:
+    storage = FakeListDeleteStorage(
+        [
+            "stm/trip_updates/captured_at_utc=2026-04-30/20260430T120000000000Z__deadbeef1234__trip_updates.pb",
+            "stm/trip_updates/mystery.pb",
+        ]
+    )
+    plan = build_bronze_cleanup_plan(storage, provider_id="stm", keep_from_date=date(2026, 5, 1))
+    result = execute_bronze_cleanup_plan(storage, plan, delete=False)
+
+    plan_payload = plan.display_dict()
+    result_payload = result.display_dict()
+
+    json.dumps(plan_payload)
+    json.dumps(result_payload)
+    assert plan_payload["keep_from_date"] == "2026-05-01"
+    assert plan_payload["eligible_objects"][0]["parsed_key"]["observed_at_utc"] == (
+        "2026-04-30T12:00:00+00:00"
+    )
+    assert result_payload["delete_requested"] is False
+    assert result_payload["skipped_unknown_keys"] == ["stm/trip_updates/mystery.pb"]
 
 
 def test_execute_cleanup_plan_dry_run_reports_without_deleting() -> None:
