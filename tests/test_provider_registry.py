@@ -19,11 +19,18 @@ def test_manifest_loading() -> None:
 
     provider = registry.get_provider("stm")
     static_url = provider.feeds["static_schedule"].resolved_source_url(Settings(_env_file=None))
+    beta_static_url = provider.feeds["static_schedule_beta"].resolved_source_url(
+        Settings(_env_file=None)
+    )
 
     assert registry.list_provider_ids() == ["stm"]
     assert provider.provider.provider_id == "stm"
     assert static_url is not None
     assert static_url.startswith("https://www.stm.info/")
+    assert "static_schedule_beta" in provider.feeds
+    assert provider.feeds["static_schedule_beta"].is_enabled is False
+    assert beta_static_url is not None
+    assert "gtfs_stm_26m-beta.zip" in beta_static_url
 
 
 def test_manifest_validation_rejects_missing_required_fields(tmp_path: Path) -> None:

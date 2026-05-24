@@ -90,6 +90,9 @@ class Settings(BaseSettings):
     STM_PROVIDER_ID: str = "stm"
     STM_API_KEY: str | None = None
     STM_STATIC_GTFS_URL: str | None = None
+    STM_STATIC_GTFS_BETA_URL: str | None = (
+        "https://www.stm.info/sites/default/files/gtfs/gtfs_stm_26m-beta.zip"
+    )
     STM_RT_TRIP_UPDATES_URL: str | None = None
     STM_RT_VEHICLE_POSITIONS_URL: str | None = None
 
@@ -109,11 +112,11 @@ class Settings(BaseSettings):
     HEALTH_FEED_TIMEOUT_SECONDS: float = 10.0
     HEALTH_MAX_PIPELINE_AGE_SECONDS: int = 900
     STATIC_DATASET_RETENTION_COUNT: int = 1
-    SILVER_REALTIME_RETENTION_DAYS: int = 2
-    GOLD_FACT_RETENTION_DAYS: int = 2
-    BRONZE_REALTIME_RETENTION_DAYS: int = 7
+    SILVER_REALTIME_RETENTION_DAYS: int = 30
+    GOLD_FACT_RETENTION_DAYS: int = 30
+    BRONZE_REALTIME_RETENTION_DAYS: int = 90
     BRONZE_STATIC_RETENTION_DAYS: int = 30
-    GOLD_WARM_ROLLUP_RETENTION_DAYS: int = 90
+    GOLD_WARM_ROLLUP_RETENTION_DAYS: int = 365
 
     @property
     def sqlalchemy_database_url(self) -> str | None:
@@ -153,6 +156,7 @@ class Settings(BaseSettings):
             "STM_PROVIDER_ID": self.STM_PROVIDER_ID,
             "STM_API_KEY": "***configured***" if self.STM_API_KEY else None,
             "STM_STATIC_GTFS_URL": self.STM_STATIC_GTFS_URL,
+            "STM_STATIC_GTFS_BETA_URL": self.STM_STATIC_GTFS_BETA_URL,
             "STM_RT_TRIP_UPDATES_URL": self.STM_RT_TRIP_UPDATES_URL,
             "STM_RT_VEHICLE_POSITIONS_URL": self.STM_RT_VEHICLE_POSITIONS_URL,
             "BRONZE_STORAGE_BACKEND": self.BRONZE_STORAGE_BACKEND,
