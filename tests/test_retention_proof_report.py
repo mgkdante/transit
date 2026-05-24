@@ -1,0 +1,195 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+from transit_ops.settings import Settings
+from transit_ops.validation.proof import build_retention_proof_report
+
+
+@dataclass(frozen=True)
+class FakeDisplayResult:
+    label: str
+    dry_run: bool | None = None
+
+    def display_dict(self) -> dict[str, object]:
+        payload: dict[str, object] = {"label": self.label}
+        if self.dry_run is not None:
+            payload["dry_run"] = self.dry_run
+        return payload
+
+
+def test_retention_proof_report_combines_contract_storage_dry_runs_static_validation() -> None:
+    settings = Settings(
+        _env_file=None,
+        DATABASE_URL="postgresql://user:secret@localhost:5432/transit",
+        STATIC_DATASET_RETENTION_COUNT=2,
+        SILVER_REALTIME_RETENTION_DAYS=31,
+        GOLD_FACT_RETENTION_DAYS=366,
+        BRONZE_REALTIME_RETENTION_DAYS=32,
+        BRONZE_STATIC_RETENTION_DAYS=33,
+        GOLD_WARM_ROLLUP_RETENTION_DAYS=91,
+        BRONZE_STORAGE_BACKEND="s3",
+        BRONZE_LOCAL_ROOT="/tmp/bronze",
+        BRONZE_S3_ENDPOINT="https://example.r2.cloudflarestorage.com",
+        BRONZE_S3_BUCKET="transit-proof",
+        BRONZE_S3_REGION="auto",
+        BRONZE_S3_ACCESS_KEY="access-key",
+        BRONZE_S3_SECRET_KEY="secret-key",
+    )
+    calls: list[tuple[str, str, bool, object]] = []
+
+    def prune(label: str):
+        def _call(provider_id, *, settings, engine, dry_run):  # noqa: ANN001
+            calls.append((label, provider_id, dry_run, engine))
+            return FakeDisplayResult(label=label, dry_run=dry_run)
+
+        return _call
+
+    def validate(provider_id, *, settings, registry):  # noqa: ANN001
+        return FakeDisplayResult(label=f"static-{provider_id}")
+
+    engine = object()
+    report = build_retention_proof_report(
+        "stm",
+        settings=settings,
+        engine=engine,
+        registry=object(),
+        static_feed_validator=validate,
+        prune_silver=prune("silver"),
+        prune_gold=prune("gold"),
+        prune_bronze=prune("bronze"),
+        prune_warm_rollup=prune("warm_rollup"),
+    ).display_dict()
+
+    assert report["provider_id"] == "stm"
+    assert set(report) == {
+        "provider_id",
+        "generated_at_utc",
+        "retention_contract",
+        "storage",
+        "dry_runs",
+        "static_feed_validation",
+    }
+    assert report["retention_contract"] == {
+        "STATIC_DATASET_RETENTION_COUNT": 2,
+        "SILVER_REALTIME_RETENTION_DAYS": 31,
+        "GOLD_FACT_RETENTION_DAYS": 366,
+        "BRONZE_REALTIME_RETENTION_DAYS": 32,
+        "BRONZE_STATIC_RETENTION_DAYS": 33,
+        "GOLD_WARM_ROLLUP_RETENTION_DAYS": 91,
+    }
+    assert report["storage"] == {
+        "BRONZE_STORAGE_BACKEND": "s3",
+        "BRONZE_LOCAL_ROOT": "/tmp/bronze",
+        "BRONZE_S3_ENDPOINT": "https://example.r2.cloudflarestorage.com",
+        "BRONZE_S3_BUCKET": "transit-proof",
+        "BRONZE_S3_REGION": "auto",
+        "BRONZE_S3_ACCESS_KEY_CONFIGURED": True,
+        "BRONZE_S3_SECRET_KEY_CONFIGURED": True,
+    }
+    assert "access-key" not in str(report)
+    assert "secret-key" not in str(report)
+    assert calls == [
+        ("silver", "stm", True, engine),
+        ("gold", "stm", True, engine),
+        ("bronze", "stm", True, engine),
+        ("warm_rollup", "stm", True, engine),
+    ]
+    assert report["dry_runs"] == {
+        "silver": {
+            "status": "ok",
+            "dry_run": True,
+            "result": {"label": "silver", "dry_run": True},
+            "message": "Dry-run completed successfully.",
+            "error_type": None,
+        },
+        "gold": {
+            "status": "ok",
+            "dry_run": True,
+            "result": {"label": "gold", "dry_run": True},
+            "message": "Dry-run completed successfully.",
+            "error_type": None,
+        },
+        "bronze": {
+            "status": "ok",
+            "dry_run": True,
+            "result": {"label": "bronze", "dry_run": True},
+            "message": "Dry-run completed successfully.",
+            "error_type": None,
+        },
+        "warm_rollup": {
+            "status": "ok",
+            "dry_run": True,
+            "result": {"label": "warm_rollup", "dry_run": True},
+            "message": "Dry-run completed successfully.",
+            "error_type": None,
+        },
+    }
+    assert report["static_feed_validation"] == {"label": "static-stm"}
+
+
+def test_retention_proof_report_marks_db_backed_dry_runs_unavailable_without_db_url() -> None:
+    settings = Settings(_env_file=None, DATABASE_URL=None)
+    called = False
+
+    def should_not_prune(*args, **kwargs):  # noqa: ANN002, ANN003
+        nonlocal called
+        called = True
+        raise AssertionError("DB-backed prune should not run without DATABASE_URL")
+
+    report = build_retention_proof_report(
+        "stm",
+        settings=settings,
+        static_feed_validator=lambda provider_id, **kwargs: FakeDisplayResult("static"),
+        prune_silver=should_not_prune,
+        prune_gold=should_not_prune,
+        prune_bronze=should_not_prune,
+        prune_warm_rollup=should_not_prune,
+    ).display_dict()
+
+    assert called is False
+    for section in report["dry_runs"].values():
+        assert section == {
+            "status": "unavailable",
+            "dry_run": True,
+            "result": None,
+            "message": "DATABASE_URL is required for this dry-run proof surface.",
+            "error_type": "missing_database_url",
+        }
+
+
+def test_build_retention_proof_report_captures_prune_and_static_setup_failures() -> None:
+    settings = Settings(
+        _env_file=None,
+        DATABASE_URL="postgresql://user:secret@localhost:5432/transit",
+    )
+
+    def failing_prune(provider_id, *, settings, engine, dry_run):  # noqa: ANN001
+        raise RuntimeError("connection refused")
+
+    def failing_validate(provider_id, *, settings, registry):  # noqa: ANN001
+        raise KeyError("unknown provider")
+
+    report = build_retention_proof_report(
+        "bad-provider",
+        settings=settings,
+        engine=object(),
+        static_feed_validator=failing_validate,
+        prune_silver=failing_prune,
+        prune_gold=failing_prune,
+        prune_bronze=failing_prune,
+        prune_warm_rollup=failing_prune,
+    ).display_dict()
+
+    assert report["dry_runs"]["silver"] == {
+        "status": "unavailable",
+        "dry_run": True,
+        "result": None,
+        "message": "connection refused",
+        "error_type": "RuntimeError",
+    }
+    assert report["static_feed_validation"] == {
+        "status": "unavailable",
+        "message": "'unknown provider'",
+        "error_type": "KeyError",
+    }

@@ -38,6 +38,7 @@ def test_cli_help() -> None:
     assert "prune-warm-rollup-storage" in result.stdout
     assert "rebuild-oracle-data" in result.stdout
     assert "validate-static-feeds" in result.stdout
+    assert "retention-proof-report" in result.stdout
 
 
 def test_ingest_static_help() -> None:
@@ -111,6 +112,87 @@ def test_validate_static_feeds_bad_report_path_exits_before_validation(
     result = runner.invoke(
         app,
         ["validate-static-feeds", "stm", "--report-path", str(tmp_path)],
+    )
+
+    assert result.exit_code != 0
+    assert called is False
+    assert "--report-path must be a file path" in result.stderr
+
+
+def test_retention_proof_report_help() -> None:
+    result = runner.invoke(app, ["retention-proof-report", "--help"])
+
+    assert result.exit_code == 0
+    assert "Build a non-destructive retention and storage proof report." in result.stdout
+    assert "--report-path" in result.stdout
+
+
+def test_retention_proof_report_passes_provider_and_writes_report(
+    monkeypatch, tmp_path
+) -> None:
+    from dataclasses import dataclass
+
+    recorded: dict[str, object] = {}
+    report_path = tmp_path / "retention-proof.json"
+
+    @dataclass(frozen=True)
+    class FakeRetentionProofResult:
+        provider_id: str
+
+        def display_dict(self) -> dict[str, object]:
+            return {
+                "provider_id": self.provider_id,
+                "generated_at_utc": "2026-05-24T12:00:00+00:00",
+                "retention_contract": {},
+                "storage": {},
+                "dry_runs": {},
+                "static_feed_validation": {"status": "ok"},
+            }
+
+    def fake_build_retention_proof_report(provider_id, *, settings, registry):  # noqa: ANN001
+        recorded["provider_id"] = provider_id
+        recorded["settings_type"] = type(settings).__name__
+        recorded["registry_type"] = type(registry).__name__
+        return FakeRetentionProofResult(provider_id=provider_id)
+
+    monkeypatch.setattr(
+        cli_module,
+        "build_retention_proof_report",
+        fake_build_retention_proof_report,
+    )
+
+    result = runner.invoke(
+        app,
+        ["retention-proof-report", "stm", "--report-path", str(report_path)],
+    )
+
+    assert result.exit_code == 0
+    assert recorded["provider_id"] == "stm"
+    stdout_payload = json.loads(result.stdout)
+    report_payload = json.loads(report_path.read_text(encoding="utf-8"))
+    assert stdout_payload == report_payload
+    assert report_payload["provider_id"] == "stm"
+
+
+def test_retention_proof_report_bad_report_path_exits_before_build(
+    monkeypatch, tmp_path
+) -> None:
+    called = False
+
+    def fake_build_retention_proof_report(provider_id, *, settings, registry):  # noqa: ANN001
+        nonlocal called
+        called = True
+        raise AssertionError("proof report should not be built")
+
+    monkeypatch.setattr(
+        cli_module,
+        "build_retention_proof_report",
+        fake_build_retention_proof_report,
+    )
+
+    result = runner.invoke(
+        app,
+        ["retention-proof-report", "stm", "--report-path", str(tmp_path)],
     )
 
     assert result.exit_code != 0

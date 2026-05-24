@@ -38,6 +38,7 @@ from transit_ops.silver import (
     load_latest_realtime_to_silver,
     load_latest_static_to_silver,
 )
+from transit_ops.validation.proof import build_retention_proof_report
 from transit_ops.validation.static_feeds import validate_static_feeds
 
 app = typer.Typer(
@@ -275,6 +276,30 @@ def validate_static_feeds_command(
     except KeyError as exc:
         raise typer.BadParameter(str(exc)) from exc
 
+    report = json.dumps(result.display_dict(), indent=2, sort_keys=True)
+    if report_path is not None:
+        report_path.write_text(report + "\n", encoding="utf-8")
+    typer.echo(report)
+
+
+@app.command("retention-proof-report")
+def retention_proof_report_command(
+    provider_id: str,
+    report_path: Path | None = typer.Option(  # noqa: B008
+        None,
+        "--report-path",
+        help="Write the JSON proof report to this path as well as stdout.",
+    ),
+) -> None:
+    """Build a non-destructive retention and storage proof report."""
+
+    settings = get_settings()
+    _preflight_report_path(report_path)
+    result = build_retention_proof_report(
+        provider_id,
+        settings=settings,
+        registry=_provider_registry(settings),
+    )
     report = json.dumps(result.display_dict(), indent=2, sort_keys=True)
     if report_path is not None:
         report_path.write_text(report + "\n", encoding="utf-8")
