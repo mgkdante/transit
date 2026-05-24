@@ -2,6 +2,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+import pytest
+
+import transit_ops.validation.proof as proof_module
 from transit_ops.settings import Settings
 from transit_ops.validation.proof import build_retention_proof_report
 
@@ -158,38 +161,106 @@ def test_retention_proof_report_marks_db_backed_dry_runs_unavailable_without_db_
         }
 
 
-def test_build_retention_proof_report_captures_prune_and_static_setup_failures() -> None:
+def test_retention_proof_report_missing_db_url_skips_engine_creation(monkeypatch) -> None:
+    settings = Settings(_env_file=None, DATABASE_URL=None)
+
+    def fail_make_engine(settings):  # noqa: ANN001
+        raise AssertionError("make_engine should not be called without DATABASE_URL")
+
+    monkeypatch.setattr(proof_module, "make_engine", fail_make_engine)
+
+    report = build_retention_proof_report(
+        "stm",
+        settings=settings,
+        static_feed_validator=lambda provider_id, **kwargs: FakeDisplayResult("static"),
+    ).display_dict()
+
+    assert report["dry_runs"]["silver"]["error_type"] == "missing_database_url"
+
+
+def test_retention_proof_report_propagates_prune_programming_errors() -> None:
+    settings = Settings(
+        _env_file=None,
+        DATABASE_URL="postgresql://user:secret@localhost:5432/transit",
+    )
+
+    def broken_prune(provider_id, *, settings, engine, dry_run):  # noqa: ANN001
+        raise TypeError("wrong callable signature")
+
+    with pytest.raises(TypeError, match="wrong callable signature"):
+        build_retention_proof_report(
+            "stm",
+            settings=settings,
+            engine=object(),
+            static_feed_validator=lambda provider_id, **kwargs: FakeDisplayResult("static"),
+            prune_silver=broken_prune,
+        )
+
+
+def test_retention_proof_report_propagates_static_validation_programming_errors() -> None:
+    settings = Settings(
+        _env_file=None,
+        DATABASE_URL="postgresql://user:secret@localhost:5432/transit",
+    )
+
+    def broken_validator(provider_id, *, settings, registry):  # noqa: ANN001
+        raise AttributeError("unexpected result shape")
+
+    with pytest.raises(AttributeError, match="unexpected result shape"):
+        build_retention_proof_report(
+            "stm",
+            settings=settings,
+            engine=object(),
+            static_feed_validator=broken_validator,
+            prune_silver=lambda provider_id, **kwargs: FakeDisplayResult("silver"),
+            prune_gold=lambda provider_id, **kwargs: FakeDisplayResult("gold"),
+            prune_bronze=lambda provider_id, **kwargs: FakeDisplayResult("bronze"),
+            prune_warm_rollup=lambda provider_id, **kwargs: FakeDisplayResult("warm"),
+        )
+
+
+def test_build_retention_proof_report_captures_expected_operational_failures() -> None:
     settings = Settings(
         _env_file=None,
         DATABASE_URL="postgresql://user:secret@localhost:5432/transit",
     )
 
     def failing_prune(provider_id, *, settings, engine, dry_run):  # noqa: ANN001
-        raise RuntimeError("connection refused")
+        raise ValueError("connection unavailable")
 
     def failing_validate(provider_id, *, settings, registry):  # noqa: ANN001
-        raise KeyError("unknown provider")
+        raise ValueError("validation unavailable")
 
-    report = build_retention_proof_report(
+    prune_report = build_retention_proof_report(
         "bad-provider",
         settings=settings,
         engine=object(),
-        static_feed_validator=failing_validate,
+        static_feed_validator=lambda provider_id, **kwargs: FakeDisplayResult("static"),
         prune_silver=failing_prune,
         prune_gold=failing_prune,
         prune_bronze=failing_prune,
         prune_warm_rollup=failing_prune,
     ).display_dict()
+    static_report = build_retention_proof_report(
+        "bad-provider",
+        settings=settings,
+        engine=object(),
+        static_feed_validator=failing_validate,
+        prune_silver=lambda provider_id, **kwargs: FakeDisplayResult("silver"),
+        prune_gold=lambda provider_id, **kwargs: FakeDisplayResult("gold"),
+        prune_bronze=lambda provider_id, **kwargs: FakeDisplayResult("bronze"),
+        prune_warm_rollup=lambda provider_id, **kwargs: FakeDisplayResult("warm"),
+    ).display_dict()
 
-    assert report["dry_runs"]["silver"] == {
+    assert prune_report["dry_runs"]["silver"] == {
         "status": "unavailable",
         "dry_run": True,
         "result": None,
-        "message": "connection refused",
-        "error_type": "RuntimeError",
+        "message": "connection unavailable",
+        "error_type": "ValueError",
     }
-    assert report["static_feed_validation"] == {
+    assert static_report["static_feed_validation"] == {
         "status": "unavailable",
-        "message": "'unknown provider'",
-        "error_type": "KeyError",
+        "message": "validation unavailable",
+        "error_type": "ValueError",
     }

@@ -5,9 +5,12 @@ from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from typing import Any
 
+from botocore.exceptions import BotoCoreError, ClientError
 from sqlalchemy.engine import Engine
+from sqlalchemy.exc import SQLAlchemyError
 
 from transit_ops.db.connection import make_engine
+from transit_ops.ingestion.storage import BronzeStorageError
 from transit_ops.maintenance import (
     prune_bronze_storage,
     prune_gold_storage,
@@ -29,6 +32,15 @@ RETENTION_CONTRACT_KEYS = (
 
 DryRunCallable = Callable[..., Any]
 StaticFeedValidator = Callable[..., Any]
+OperationalErrorTypes = (
+    OSError,
+    ValueError,
+    SQLAlchemyError,
+    BronzeStorageError,
+    BotoCoreError,
+    ClientError,
+)
+StaticValidationOperationalErrorTypes = (*OperationalErrorTypes, KeyError)
 
 
 @dataclass(frozen=True)
@@ -114,7 +126,7 @@ def _run_prune_surface(
 ) -> ProofDryRunSection:
     try:
         result = prune(provider_id, settings=settings, engine=engine, dry_run=True)
-    except Exception as exc:
+    except OperationalErrorTypes as exc:
         return _exception_section(exc)
     return _ok_section(result)
 
@@ -136,7 +148,7 @@ def _build_static_validation(
 ) -> dict[str, object]:
     try:
         result = static_feed_validator(provider_id, settings=settings, registry=registry)
-    except Exception as exc:
+    except StaticValidationOperationalErrorTypes as exc:
         return _unavailable_static_validation(exc)
     return result.display_dict()
 
@@ -173,7 +185,7 @@ def build_retention_proof_report(
     else:
         try:
             resolved_engine = engine or make_engine(resolved_settings)
-        except Exception as exc:
+        except OperationalErrorTypes as exc:
             dry_runs = {name: _exception_section(exc) for name in dry_run_callables}
         else:
             dry_runs = {
