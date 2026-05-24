@@ -40,7 +40,7 @@ OperationalErrorTypes = (
     BotoCoreError,
     ClientError,
 )
-StaticValidationOperationalErrorTypes = (*OperationalErrorTypes, KeyError)
+StaticValidationOperationalErrorTypes = OperationalErrorTypes
 
 
 @dataclass(frozen=True)

@@ -200,6 +200,22 @@ def test_retention_proof_report_bad_report_path_exits_before_build(
     assert "--report-path must be a file path" in result.stderr
 
 
+def test_retention_proof_report_rejects_unknown_provider_before_writing(
+    tmp_path,
+) -> None:
+    report_path = tmp_path / "retention-proof.json"
+
+    result = runner.invoke(
+        app,
+        ["retention-proof-report", "not-a-provider", "--report-path", str(report_path)],
+    )
+
+    assert result.exit_code != 0
+    assert "No provider manifest found" in result.stderr
+    assert "provider_id='not-a-provider'" in result.stderr
+    assert not report_path.exists()
+
+
 def test_capture_realtime_help() -> None:
     result = runner.invoke(app, ["capture-realtime", "--help"])
 

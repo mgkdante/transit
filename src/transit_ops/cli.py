@@ -294,12 +294,21 @@ def retention_proof_report_command(
     """Build a non-destructive retention and storage proof report."""
 
     settings = get_settings()
+    registry = _provider_registry(settings)
+    try:
+        registry.get_provider(provider_id)
+    except KeyError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+
     _preflight_report_path(report_path)
-    result = build_retention_proof_report(
-        provider_id,
-        settings=settings,
-        registry=_provider_registry(settings),
-    )
+    try:
+        result = build_retention_proof_report(
+            provider_id,
+            settings=settings,
+            registry=registry,
+        )
+    except KeyError as exc:
+        raise typer.BadParameter(str(exc)) from exc
     report = json.dumps(result.display_dict(), indent=2, sort_keys=True)
     if report_path is not None:
         report_path.write_text(report + "\n", encoding="utf-8")
