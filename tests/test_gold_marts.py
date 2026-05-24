@@ -159,7 +159,7 @@ def _build_manifest() -> ProviderManifest:
 def test_build_gold_marts_rebuilds_dimensions_and_facts() -> None:
     connection = RecordingConnection(dataset_row={"dataset_version_id": 2})
     engine = FakeEngine(connection)
-    settings = Settings(DATABASE_URL="postgresql://user:pass@example.com/neondb")
+    settings = Settings(DATABASE_URL="postgresql://user:pass@example.com/transit")
 
     result = build_gold_marts(
         "stm",
@@ -226,7 +226,7 @@ def test_gold_build_locks_tables_before_rebuild() -> None:
 def test_refresh_gold_realtime_upserts_latest_snapshots_only() -> None:
     connection = RecordingConnection(dataset_row={"dataset_version_id": 2})
     engine = FakeEngine(connection)
-    settings = Settings(DATABASE_URL="postgresql://user:pass@example.com/neondb")
+    settings = Settings(DATABASE_URL="postgresql://user:pass@example.com/transit")
 
     result = refresh_gold_realtime(
         "stm",
@@ -251,7 +251,7 @@ def test_refresh_gold_realtime_upserts_latest_snapshots_only() -> None:
 def test_refresh_gold_realtime_analyzes_realtime_silver_before_gold_upserts() -> None:
     connection = RecordingConnection(dataset_row={"dataset_version_id": 2})
     engine = FakeEngine(connection)
-    settings = Settings(DATABASE_URL="postgresql://user:pass@example.com/neondb")
+    settings = Settings(DATABASE_URL="postgresql://user:pass@example.com/transit")
 
     refresh_gold_realtime(
         "stm",
@@ -281,7 +281,7 @@ def test_refresh_gold_realtime_analyzes_realtime_silver_before_gold_upserts() ->
 def test_refresh_gold_realtime_analyzes_even_when_no_realtime_snapshots() -> None:
     connection = NoRealtimeSnapshotConnection(dataset_row={"dataset_version_id": 2})
     engine = FakeEngine(connection)
-    settings = Settings(DATABASE_URL="postgresql://user:pass@example.com/neondb")
+    settings = Settings(DATABASE_URL="postgresql://user:pass@example.com/transit")
 
     result = refresh_gold_realtime(
         "stm",
@@ -302,7 +302,7 @@ def test_refresh_gold_realtime_analyzes_even_when_no_realtime_snapshots() -> Non
 def test_build_gold_marts_requires_current_static_dataset() -> None:
     connection = RecordingConnection(dataset_row=None)
     engine = FakeEngine(connection)
-    settings = Settings(DATABASE_URL="postgresql://user:pass@example.com/neondb")
+    settings = Settings(DATABASE_URL="postgresql://user:pass@example.com/transit")
 
     with pytest.raises(ValueError, match="Run load-static-silver before build-gold-marts"):
         build_gold_marts(
@@ -316,7 +316,7 @@ def test_build_gold_marts_requires_current_static_dataset() -> None:
 def test_refresh_gold_static_refreshes_only_dimensions() -> None:
     connection = RecordingConnection(dataset_row={"dataset_version_id": 2})
     engine = FakeEngine(connection)
-    settings = Settings(DATABASE_URL="postgresql://user:pass@example.com/neondb")
+    settings = Settings(DATABASE_URL="postgresql://user:pass@example.com/transit")
 
     result = refresh_gold_static(
         "stm",

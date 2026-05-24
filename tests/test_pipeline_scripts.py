@@ -30,28 +30,6 @@ def _stubbed_env(tmp_path: Path) -> dict[str, str]:
         "printf 'gh %s\\n' \"$*\"\n",
     )
     _make_executable(
-        bin_dir / "railway",
-        "#!/usr/bin/env bash\n"
-        "if [[ -n \"${COMMAND_LOG:-}\" ]]; then\n"
-        "  printf 'railway|%s\\n' \"$*\" >> \"$COMMAND_LOG\"\n"
-        "fi\n"
-        "printf 'railway %s\\n' \"$*\"\n",
-    )
-    _make_executable(
-        bin_dir / "curl",
-        "#!/usr/bin/env bash\n"
-        "if [[ -n \"${COMMAND_LOG:-}\" ]]; then\n"
-        "  printf 'curl|%s\\n' \"$*\" >> \"$COMMAND_LOG\"\n"
-        "fi\n"
-        "if [[ -n \"${FAKE_CURL_STDOUT:-}\" ]]; then\n"
-        "  printf '%s' \"$FAKE_CURL_STDOUT\"\n"
-        "fi\n"
-        "if [[ -n \"${FAKE_CURL_STDERR:-}\" ]]; then\n"
-        "  printf '%s' \"$FAKE_CURL_STDERR\" >&2\n"
-        "fi\n"
-        "exit \"${FAKE_CURL_EXIT_CODE:-0}\"\n",
-    )
-    _make_executable(
         bin_dir / "docker",
         "#!/usr/bin/env bash\n"
         "if [[ -n \"${COMMAND_LOG:-}\" ]]; then\n"
@@ -62,6 +40,14 @@ def _stubbed_env(tmp_path: Path) -> dict[str, str]:
         "  exit 1\n"
         "fi\n"
         "printf 'docker %s\\n' \"$*\"\n",
+    )
+    _make_executable(
+        bin_dir / "curl",
+        "#!/usr/bin/env bash\n"
+        "if [[ -n \"${COMMAND_LOG:-}\" ]]; then\n"
+        "  printf 'curl|%s\\n' \"$*\" >> \"$COMMAND_LOG\"\n"
+        "fi\n"
+        "printf 'curl %s\\n' \"$*\"\n",
     )
 
     env = os.environ.copy()
@@ -77,22 +63,6 @@ def _make_log_path(tmp_path: Path, name: str = "commands.log") -> Path:
 
 def _read_log(path: Path) -> list[str]:
     return [line for line in path.read_text(encoding="utf-8").splitlines() if line]
-
-
-def _assert_curl_log_entry(
-    line: str,
-    *,
-    method: str,
-) -> None:
-    assert line.startswith("curl|")
-    assert f"--request {method}" in line
-    assert "--url " in line
-    assert "--header Accept: application/json" in line
-    assert "--header Authorization: Bearer test-key" in line
-
-
-def _assert_adapter_handoff_message(output: str, adapter_name: str) -> None:
-    assert f"[3/3] Handing database compute to adapter '{adapter_name}'" in output
 
 
 def _run_shell(
@@ -129,74 +99,24 @@ def _run_script(
     )
 
 
-def _adapter_exports_snippet() -> str:
-    return (
-        'ADAPTER="$(database_compute_adapter_name | tr \'[:lower:]\' \'[:upper:]\')"; '
-        'printf -v "${ADAPTER}_API_KEY" %s "test-key"; '
-        'printf -v "${ADAPTER}_PROJECT_ID" %s "project-123"; '
-        'printf -v "${ADAPTER}_ENDPOINT_ID" %s "endpoint-456"; '
-        'export "${ADAPTER}_API_KEY" "${ADAPTER}_PROJECT_ID" "${ADAPTER}_ENDPOINT_ID"; '
-    )
+def test_legacy_database_compute_adapter_files_are_removed() -> None:
+    assert not (SCRIPTS_DIR / "lib" / "database-compute.sh").exists()
+    assert not (SCRIPTS_DIR / "lib" / "database-compute-none.sh").exists()
+    assert not (SCRIPTS_DIR / "lib" / ("database-compute-" + "ne" + "on.sh")).exists()
 
 
-def _adapter_env_overrides(adapter_name: str) -> dict[str, str]:
-    adapter = adapter_name.upper()
-    return {
-        f"{adapter}_API_KEY": "test-key",
-        f"{adapter}_PROJECT_ID": "project-123",
-        f"{adapter}_ENDPOINT_ID": "endpoint-456",
-    }
-
-
-def _database_compute_adapter_name(tmp_path: Path) -> str:
-    result = _run_shell(
-        "source scripts/lib/database-compute.sh && database_compute_adapter_name",
-        tmp_path,
-    )
-
-    assert result.returncode == 0, result.stderr
-    return result.stdout.strip()
-
-
-def test_database_compute_adapter_exposes_default_contract(tmp_path: Path) -> None:
-    result = _run_shell(
-        "source scripts/lib/database-compute.sh && "
-        "printf 'adapter=%s\\n' \"$(database_compute_adapter_name)\" && "
-        "declare -F pause_database_compute >/dev/null && "
-        "declare -F resume_database_compute >/dev/null",
-        tmp_path,
-    )
-
-    assert result.returncode == 0, result.stderr
-    adapter_lines = [line for line in result.stdout.splitlines() if line.startswith("adapter=")]
-    assert adapter_lines == [f"adapter={_database_compute_adapter_name(tmp_path)}"]
-
-
-def test_database_compute_adapter_rejects_unsupported_adapters_cleanly(tmp_path: Path) -> None:
-    result = _run_shell(
-        "source scripts/lib/database-compute.sh",
-        tmp_path,
-        DATABASE_COMPUTE_ADAPTER="unsupported",
-    )
-
-    assert result.returncode != 0
-    assert result.stderr == "Unsupported DATABASE_COMPUTE_ADAPTER: unsupported\n"
-    assert "must define pause_database_compute" not in result.stderr
-    assert "must define resume_database_compute" not in result.stderr
-
-
-def test_pause_pipeline_delegates_to_adapter_without_provider_details_in_entrypoint(
+def test_pause_pipeline_leaves_oracle_postgres_running_without_external_compute_api(
     tmp_path: Path,
 ) -> None:
     log_path = _make_log_path(tmp_path)
     result = _run_script("pause-pipeline.sh", tmp_path, COMMAND_LOG=str(log_path))
-    adapter_name = _database_compute_adapter_name(tmp_path)
 
     assert result.returncode == 0, result.stderr
-    _assert_adapter_handoff_message(result.stdout, adapter_name)
-    assert "Database compute is managed by the local/VM host" in result.stdout
+    assert "[1/2] Disabling GitHub Actions schedules" in result.stdout
+    assert "[2/2] Stopping local Compose worker" in result.stdout
+    assert "Database: left running; no external compute API is used" in result.stdout
+    assert "Database compute" not in result.stdout
     assert "serviceInstanceSuspend" not in result.stdout
-    assert "Railway" not in result.stdout
     assert "Done. Pipeline is paused." in result.stdout
 
     log_lines = _read_log(log_path)
@@ -205,21 +125,21 @@ def test_pause_pipeline_delegates_to_adapter_without_provider_details_in_entrypo
         "gh|workflow disable Daily Warm Rollups --repo mgkdante/transit",
         "docker|compose --env-file .env -f docker-compose.yml stop worker",
     ]
-    assert not any(line.startswith("railway|") for line in log_lines)
+    assert not any(line.startswith("curl|") for line in log_lines)
 
 
-def test_resume_pipeline_delegates_to_adapter_without_provider_details_in_entrypoint(
+def test_resume_pipeline_leaves_oracle_postgres_running_without_external_compute_api(
     tmp_path: Path,
 ) -> None:
     log_path = _make_log_path(tmp_path)
     result = _run_script("resume-pipeline.sh", tmp_path, COMMAND_LOG=str(log_path))
-    adapter_name = _database_compute_adapter_name(tmp_path)
 
     assert result.returncode == 0, result.stderr
-    _assert_adapter_handoff_message(result.stdout, adapter_name)
-    assert "Database compute is managed by the local/VM host" in result.stdout
+    assert "[1/2] Enabling GitHub Actions schedules" in result.stdout
+    assert "[2/2] Starting local Compose worker" in result.stdout
+    assert "Database: already running; no external compute API is used" in result.stdout
+    assert "Database compute" not in result.stdout
     assert "serviceInstanceRedeploy" not in result.stdout
-    assert "Railway" not in result.stdout
     assert "Done. Pipeline is resumed." in result.stdout
 
     log_lines = _read_log(log_path)
@@ -228,7 +148,7 @@ def test_resume_pipeline_delegates_to_adapter_without_provider_details_in_entryp
         "gh|workflow enable Daily Warm Rollups --repo mgkdante/transit",
         "docker|compose --env-file .env -f docker-compose.yml up -d worker",
     ]
-    assert not any(line.startswith("railway|") for line in log_lines)
+    assert not any(line.startswith("curl|") for line in log_lines)
 
 
 def test_pause_pipeline_fails_honestly_when_worker_pause_fails(tmp_path: Path) -> None:
@@ -271,150 +191,6 @@ def test_pause_pipeline_fails_honestly_when_scheduler_disable_fails(tmp_path: Pa
     assert "failed" in result.stdout.lower()
 
 
-def test_pause_pipeline_fails_honestly_when_database_compute_handoff_fails(tmp_path: Path) -> None:
-    result = _run_script(
-        "pause-pipeline.sh",
-        tmp_path,
-        COMMAND_LOG=str(_make_log_path(tmp_path)),
-        DATABASE_COMPUTE_ADAPTER="neon",
-        FAKE_CURL_EXIT_CODE="22",
-        FAKE_CURL_STDERR="boom",
-        **_adapter_env_overrides("neon"),
-    )
-
-    assert result.returncode != 0
-    assert "WARNING: database adapter status check failed: boom" in result.stdout
-    assert "Pipeline pause completed with issues." in result.stdout
-    assert "Database compute: adapter" in result.stdout
-    assert "handoff failed" in result.stdout
-    assert "Done. Pipeline is paused." not in result.stdout
-
-
-def test_resume_pipeline_fails_honestly_when_database_compute_restart_fails(tmp_path: Path) -> None:
-    result = _run_script(
-        "resume-pipeline.sh",
-        tmp_path,
-        COMMAND_LOG=str(_make_log_path(tmp_path)),
-        DATABASE_COMPUTE_ADAPTER="neon",
-        FAKE_CURL_EXIT_CODE="22",
-        FAKE_CURL_STDERR="boom",
-        **_adapter_env_overrides("neon"),
-    )
-
-    # Adapter env vars are set at runtime inside the shell snippet in the lower-level tests.
-    # Top-level entrypoint still exercises the failure branch with explicit environment.
-    assert result.returncode != 0
-    assert "WARNING: database adapter restart failed: boom" in result.stdout
-    assert "Done. Pipeline is resumed." not in result.stdout
-
-
-def test_pause_database_compute_reports_registered_endpoint_when_status_check_succeeds(
-    tmp_path: Path,
-) -> None:
-    log_path = _make_log_path(tmp_path)
-    result = _run_shell(
-        "source scripts/lib/database-compute.sh && "
-        f"{_adapter_exports_snippet()}"
-        "pause_database_compute",
-        tmp_path,
-        COMMAND_LOG=str(log_path),
-        DATABASE_COMPUTE_ADAPTER="neon",
-        FAKE_CURL_STDOUT='{"endpoints":[{"id":"endpoint-456"}]}',
-    )
-
-    assert result.returncode == 0, result.stderr
-    assert "Database adapter endpoint endpoint-456 is registered" in result.stdout
-    log_lines = _read_log(log_path)
-    assert len(log_lines) == 1
-    _assert_curl_log_entry(
-        log_lines[0],
-        method="GET",
-    )
-
-
-def test_pause_database_compute_warns_when_endpoint_lookup_misses(tmp_path: Path) -> None:
-    result = _run_shell(
-        "source scripts/lib/database-compute.sh && "
-        f"{_adapter_exports_snippet()}"
-        "pause_database_compute",
-        tmp_path,
-        DATABASE_COMPUTE_ADAPTER="neon",
-        FAKE_CURL_STDOUT='{"endpoints":[{"id":"different-endpoint"}]}',
-    )
-
-    assert result.returncode != 0
-    assert "WARNING: database adapter could not find endpoint endpoint-456" in result.stdout
-
-
-def test_pause_database_compute_fails_when_status_check_api_call_fails(tmp_path: Path) -> None:
-    log_path = _make_log_path(tmp_path)
-    result = _run_shell(
-        "source scripts/lib/database-compute.sh && "
-        f"{_adapter_exports_snippet()}"
-        "pause_database_compute",
-        tmp_path,
-        COMMAND_LOG=str(log_path),
-        DATABASE_COMPUTE_ADAPTER="neon",
-        FAKE_CURL_EXIT_CODE="22",
-        FAKE_CURL_STDERR="boom",
-    )
-
-    assert result.returncode != 0
-    assert "WARNING: database adapter status check failed: boom" in result.stdout
-    log_lines = _read_log(log_path)
-    assert len(log_lines) == 1
-    _assert_curl_log_entry(
-        log_lines[0],
-        method="GET",
-    )
-
-
-def test_resume_database_compute_reports_restart_submission_when_api_call_succeeds(
-    tmp_path: Path,
-) -> None:
-    log_path = _make_log_path(tmp_path)
-    result = _run_shell(
-        "source scripts/lib/database-compute.sh && "
-        f"{_adapter_exports_snippet()}"
-        "resume_database_compute",
-        tmp_path,
-        COMMAND_LOG=str(log_path),
-        DATABASE_COMPUTE_ADAPTER="neon",
-    )
-
-    assert result.returncode == 0, result.stderr
-    assert "Database adapter restart request submitted." in result.stdout
-    log_lines = _read_log(log_path)
-    assert len(log_lines) == 1
-    _assert_curl_log_entry(
-        log_lines[0],
-        method="POST",
-    )
-
-
-def test_resume_database_compute_warns_when_restart_api_call_fails(tmp_path: Path) -> None:
-    log_path = _make_log_path(tmp_path)
-    result = _run_shell(
-        "source scripts/lib/database-compute.sh && "
-        f"{_adapter_exports_snippet()}"
-        "resume_database_compute",
-        tmp_path,
-        COMMAND_LOG=str(log_path),
-        DATABASE_COMPUTE_ADAPTER="neon",
-        FAKE_CURL_EXIT_CODE="22",
-        FAKE_CURL_STDERR="boom",
-    )
-
-    assert result.returncode != 0
-    assert "WARNING: database adapter restart failed: boom" in result.stdout
-    log_lines = _read_log(log_path)
-    assert len(log_lines) == 1
-    _assert_curl_log_entry(
-        log_lines[0],
-        method="POST",
-    )
-
-
 def test_pipeline_control_pauses_worker_with_compose_stop(tmp_path: Path) -> None:
     log_path = _make_log_path(tmp_path)
     result = _run_shell(
@@ -453,18 +229,3 @@ def test_pipeline_control_rejects_unknown_target(tmp_path: Path) -> None:
 
     assert result.returncode == 2
     assert "Usage: bash infra/pipeline-control.sh pause|resume worker" in result.stderr
-
-
-def test_none_database_compute_adapter_is_explicit_noop(tmp_path: Path) -> None:
-    result = _run_shell(
-        "source scripts/lib/database-compute.sh && "
-        "database_compute_adapter_name && "
-        "pause_database_compute && "
-        "resume_database_compute",
-        tmp_path,
-        DATABASE_COMPUTE_ADAPTER="none",
-    )
-
-    assert result.returncode == 0, result.stderr
-    assert result.stdout.splitlines()[0] == "none"
-    assert "no external compute API call needed" in result.stdout

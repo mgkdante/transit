@@ -1,0 +1,63 @@
+name: Weekly pg_repack Guardrail
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Run pg_repack in dry-run mode.
+        required: true
+        type: boolean
+        default: true
+      tables:
+        description: Optional whitespace-separated table list.
+        required: false
+        type: string
+        default: ""
+  schedule:
+    # GitHub Actions cron is UTC-based. Runs after the daily pipeline windows.
+    - cron: "0 8 * * 0"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: weekly-pg-repack
+  cancel-in-progress: false
+
+jobs:
+  pg-repack-guardrail:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      PG_REPACK_DRY_RUN: "true"
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Select manual mode
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          DRY_RUN_INPUT: ${{ inputs.dry_run }}
+          TABLES_INPUT: ${{ inputs.tables }}
+        run: |
+          echo "PG_REPACK_DRY_RUN=$DRY_RUN_INPUT" >> "$GITHUB_ENV"
+          if [[ -n "$TABLES_INPUT" ]]; then
+            echo "PG_REPACK_TABLES=$TABLES_INPUT" >> "$GITHUB_ENV"
+          fi
+
+      - name: Install pg_repack client
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ca-certificates lsb-release wget
+          sudo install -d /usr/share/postgresql-common/pgdg
+          wget -qO- https://www.postgresql.org/media/keys/ACCC4CF8.asc \
+            | sudo tee /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc >/dev/null
+          . /etc/os-release
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt ${VERSION_CODENAME}-pgdg main" \
+            | sudo tee /etc/apt/sources.list.d/pgdg.list >/dev/null
+          sudo apt-get update
+          sudo apt-get install -y postgresql-16-repack
+
+      - name: Run pg_repack guardrail
+        run: bash scripts/run-pg-repack.sh

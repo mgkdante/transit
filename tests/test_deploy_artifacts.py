@@ -75,8 +75,20 @@ def test_env_example_documents_compose_runtime_contract() -> None:
         "CADDY_SITE_ADDRESS=:80",
         "CADDY_HTTP_PORT=8080",
         "CADDY_HTTPS_PORT=8443",
-        "DATABASE_COMPUTE_ADAPTER=none",
     }.issubset(assignments)
+    assert not any(line.startswith("DATABASE_COMPUTE_") for line in assignments)
+    assert not any(line.startswith("NE" "ON_") for line in assignments)
+    assert not any(line.startswith("RAIL" "WAY_") for line in assignments)
     assert "Oracle VM Postgres" in env_example
-    assert "external" in env_example
-    assert "compute API" in env_example
+
+
+def test_weekly_pg_repack_workflow_runs_guardrail_script() -> None:
+    workflow = (REPO_ROOT / ".github/workflows/weekly-pg-repack.yml").read_text(
+        encoding="utf-8"
+    )
+
+    assert "name: Weekly pg_repack Guardrail" in workflow
+    assert 'cron: "0 8 * * 0"' in workflow
+    assert 'PG_REPACK_DRY_RUN: "true"' in workflow
+    assert "postgresql-16-repack" in workflow
+    assert "bash scripts/run-pg-repack.sh" in workflow
