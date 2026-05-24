@@ -62,13 +62,19 @@ def _stubbed_env(
         "  *) printf 'unexpected git command: %s\\n' \"$*\" >&2; exit 2 ;;\n"
         "esac\n",
     )
+    _make_executable(
+        bin_dir / "ssh",
+        "#!/usr/bin/env bash\n"
+        "printf 'ssh|%s\\n' \"$*\" >> \"$COMMAND_LOG\"\n"
+        "exit \"${FAKE_SSH_EXIT_CODE:-0}\"\n",
+    )
     if include_psql:
         _make_executable(
             bin_dir / "psql",
             "#!/usr/bin/env bash\n"
             "printf 'psql|%s\\n' \"$*\" >> \"$COMMAND_LOG\"\n"
             "printf 'BEGIN\\n'\n"
-            "printf '%s\\n' \"${FAKE_PSQL_OUTPUT:-120|90|1|1|12|8}\"\n"
+            "printf '%s\\n' \"${FAKE_PSQL_OUTPUT:-120|90|12|8}\"\n"
             "printf 'ROLLBACK\\n'\n"
             "exit \"${FAKE_PSQL_EXIT_CODE:-0}\"\n",
         )
@@ -78,7 +84,7 @@ def _stubbed_env(
             "#!/usr/bin/env bash\n"
             "printf 'uv|%s\\n' \"$*\" >> \"$COMMAND_LOG\"\n"
             "cat >/dev/null\n"
-            "printf '%s\\n' \"${FAKE_UV_PYTHON_OUTPUT:-120|90|1|1|12|8}\"\n"
+            "printf '%s\\n' \"${FAKE_UV_PYTHON_OUTPUT:-120|90|12|8}\"\n"
             "exit \"${FAKE_UV_EXIT_CODE:-0}\"\n",
         )
     if include_gh:
@@ -157,10 +163,10 @@ def test_validate_oracle_cutover_reports_success_without_mutating_systems(
     assert "PASS Git readiness:" in result.stdout
     assert "PASS Health endpoint /health/live: reachable" in result.stdout
     assert "PASS Health endpoint /health: reachable" in result.stdout
-    assert "PASS Realtime freshness: trip_updates_age=120s, vehicle_positions_age=90s" in (
+    assert "PASS Realtime freshness: vehicle_age=120s, trip_age=90s" in (
         result.stdout
     )
-    assert "trip_updates=1, vehicle_positions=1" in result.stdout
+    assert "vehicles=12, trips=8" in result.stdout
     assert "PASS GitHub workflow Daily Static Pipeline: active" in result.stdout
     assert "PASS GitHub workflow Daily Warm Rollups: active" in result.stdout
     assert "created_at=2026-05-23T21:44:41Z" in result.stdout
@@ -186,9 +192,10 @@ def test_validate_oracle_cutover_reports_success_without_mutating_systems(
     ) in log_lines
     assert any(line.startswith("psql|") for line in log_lines)
     assert any("BEGIN READ ONLY" in line for line in log_lines)
-    assert any("raw.realtime_snapshot_index" in line for line in log_lines)
-    assert any("core.feed_endpoints" in line for line in log_lines)
     assert any("gold.latest_vehicle_snapshot" in line for line in log_lines)
+    assert any("gold.latest_trip_delay_snapshot" in line for line in log_lines)
+    assert not any("raw.realtime_snapshot_index" in line for line in log_lines)
+    assert not any("core.feed_endpoints" in line for line in log_lines)
     assert any("gh|workflow list --repo mgkdante/transit" in line for line in log_lines)
     assert any("gh|run list --workflow Daily Warm Rollups" in line for line in log_lines)
     assert any("--branch main" in line for line in log_lines)
@@ -241,6 +248,29 @@ def test_validate_oracle_cutover_fails_when_required_inputs_are_missing(
     assert not any(line.startswith("gh|") for line in log_lines)
 
 
+def test_validate_oracle_cutover_can_check_health_through_ssh(
+    tmp_path: Path,
+) -> None:
+    result = _run_script(
+        tmp_path,
+        HEALTH_BASE_URL="http://127.0.0.1:8080",
+        HEALTH_SSH_TARGET="ubuntu@db.transit.yesid.dev",
+        HEALTH_SSH_IDENTITY_FILE="/tmp/transit-key",
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "PASS Health endpoint /health/live: reachable" in result.stdout
+    assert "PASS Health endpoint /health: reachable" in result.stdout
+
+    log_lines = _read_log(tmp_path / "commands.log")
+    assert any(
+        line.startswith("ssh|-i /tmp/transit-key -o BatchMode=yes -o ConnectTimeout=8 ")
+        and "ubuntu@db.transit.yesid.dev" in line
+        and "http://127.0.0.1:8080/health/live" in line
+        for line in log_lines
+    )
+
+
 def test_validate_oracle_cutover_warns_but_exits_zero_for_dirty_worktree(
     tmp_path: Path,
 ) -> None:
@@ -256,14 +286,14 @@ def test_validate_oracle_cutover_fails_on_stale_realtime_and_failed_workflow(
 ) -> None:
     result = _run_script(
         tmp_path,
-        FAKE_PSQL_OUTPUT="240|90|1|1|12|8",
+        FAKE_PSQL_OUTPUT="240|90|12|8",
         FAKE_GH_WARM_RUN="failure|456|https://example.test/warm|2026-05-23T21:44:41Z",
     )
 
     assert result.returncode != 0
     assert (
-        "FAIL Realtime freshness: endpoint age exceeds threshold 180s "
-        "(trip_updates=240s, vehicle_positions=90s)"
+        "FAIL Realtime freshness: Gold latest age exceeds threshold 180s "
+        "(vehicle=240s, trip=90s)"
     ) in result.stdout
     assert "FAIL GitHub workflow Daily Warm Rollups: latest completed run failure" in result.stdout
     assert "PASS Health endpoint /health/live: reachable" in result.stdout
@@ -297,27 +327,26 @@ def test_validate_oracle_cutover_fails_cleanly_for_invalid_freshness_threshold(
     assert "unbound variable" not in result.stderr
 
 
-def test_validate_oracle_cutover_fails_when_a_realtime_endpoint_is_missing(
+def test_validate_oracle_cutover_fails_when_gold_latest_table_is_empty(
     tmp_path: Path,
 ) -> None:
-    result = _run_script(tmp_path, FAKE_PSQL_OUTPUT="120|90|1|0|12|8")
+    result = _run_script(tmp_path, FAKE_PSQL_OUTPUT="120|90|0|8")
 
     assert result.returncode != 0
-    assert (
-        "FAIL Realtime freshness: expected both realtime endpoints, got "
-        "trip_updates=1 vehicle_positions=0"
-    ) in result.stdout
+    assert "FAIL Realtime freshness: expected positive Gold row counts, got vehicles=0 trips=8" in (
+        result.stdout
+    )
 
 
 def test_validate_oracle_cutover_fails_when_only_one_endpoint_is_stale(
     tmp_path: Path,
 ) -> None:
-    result = _run_script(tmp_path, FAKE_PSQL_OUTPUT="120|240|1|1|12|8")
+    result = _run_script(tmp_path, FAKE_PSQL_OUTPUT="120|240|12|8")
 
     assert result.returncode != 0
     assert (
-        "FAIL Realtime freshness: endpoint age exceeds threshold 180s "
-        "(trip_updates=120s, vehicle_positions=240s)"
+        "FAIL Realtime freshness: Gold latest age exceeds threshold 180s "
+        "(vehicle=120s, trip=240s)"
     ) in result.stdout
 
 
@@ -327,7 +356,7 @@ def test_validate_oracle_cutover_uses_uv_python_fallback_when_psql_is_missing(
     result = _run_script_without_psql(tmp_path)
 
     assert result.returncode == 0, result.stderr
-    assert "PASS Realtime freshness: trip_updates_age=120s" in result.stdout
+    assert "PASS Realtime freshness: vehicle_age=120s" in result.stdout
     log_lines = _read_log(tmp_path / "commands.log")
     assert not any(line.startswith("psql|") for line in log_lines)
     assert any(line == "uv|run python -" for line in log_lines)

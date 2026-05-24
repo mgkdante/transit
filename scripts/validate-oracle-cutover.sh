@@ -7,6 +7,7 @@ warn_count=0
 MAX_REALTIME_AGE_SECONDS="${MAX_REALTIME_AGE_SECONDS:-180}"
 MIN_WORKFLOW_RUN_CREATED_AT="${MIN_WORKFLOW_RUN_CREATED_AT:-}"
 CURL_MAX_TIME_SECONDS="${CURL_MAX_TIME_SECONDS:-15}"
+HEALTH_SSH_CONNECT_TIMEOUT_SECONDS="${HEALTH_SSH_CONNECT_TIMEOUT_SECONDS:-8}"
 REPO="${GITHUB_REPOSITORY:-mgkdante/transit}"
 
 pass() {
@@ -77,17 +78,44 @@ check_health_endpoints() {
     return
   fi
 
-  if curl --fail --silent --show-error --location --max-time "$CURL_MAX_TIME_SECONDS" "${base_url}/health/live" >/dev/null; then
+  if check_health_url "${base_url}/health/live"; then
     pass "Health endpoint /health/live: reachable"
   else
     fail "Health endpoint /health/live: unreachable"
   fi
 
-  if curl --fail --silent --show-error --location --max-time "$CURL_MAX_TIME_SECONDS" "${base_url}/health" >/dev/null; then
+  if check_health_url "${base_url}/health"; then
     pass "Health endpoint /health: reachable"
   else
     fail "Health endpoint /health: unreachable"
   fi
+}
+
+check_health_url() {
+  local url="$1"
+  local ssh_target="${HEALTH_SSH_TARGET:-}"
+  local quoted_url quoted_timeout
+  local ssh_args=()
+
+  if [[ -z "$ssh_target" ]]; then
+    curl --fail --silent --show-error --location --max-time "$CURL_MAX_TIME_SECONDS" "$url" \
+      >/dev/null
+    return
+  fi
+
+  if [[ -n "${HEALTH_SSH_IDENTITY_FILE:-}" ]]; then
+    ssh_args+=("-i" "$HEALTH_SSH_IDENTITY_FILE")
+  fi
+  ssh_args+=(
+    "-o" "BatchMode=yes"
+    "-o" "ConnectTimeout=$HEALTH_SSH_CONNECT_TIMEOUT_SECONDS"
+  )
+
+  printf -v quoted_url "%q" "$url"
+  printf -v quoted_timeout "%q" "$CURL_MAX_TIME_SECONDS"
+  ssh "${ssh_args[@]}" "$ssh_target" \
+    "curl --fail --silent --show-error --location --max-time $quoted_timeout $quoted_url" \
+    >/dev/null
 }
 
 run_realtime_freshness_query() {
@@ -119,34 +147,24 @@ import os
 import psycopg
 
 query = """
-WITH endpoint_freshness AS (
-  SELECT
-    fe.endpoint_key,
-    max(rsi.captured_at_utc) AS latest_captured_at_utc
-  FROM core.feed_endpoints AS fe
-  LEFT JOIN raw.realtime_snapshot_index AS rsi
-    ON rsi.provider_id = fe.provider_id
-    AND rsi.feed_endpoint_id = fe.feed_endpoint_id
-  WHERE fe.provider_id = %(provider_id)s
-    AND fe.endpoint_key IN ('trip_updates', 'vehicle_positions')
-  GROUP BY fe.endpoint_key
-)
 SELECT
   COALESCE(
-    max(EXTRACT(EPOCH FROM (now() - latest_captured_at_utc))::integer)
-      FILTER (WHERE endpoint_key = 'trip_updates'),
+    EXTRACT(EPOCH FROM (now() - max(captured_at_utc)))::integer,
     999999999
-  ),
+  ) AS vehicle_age,
   COALESCE(
-    max(EXTRACT(EPOCH FROM (now() - latest_captured_at_utc))::integer)
-      FILTER (WHERE endpoint_key = 'vehicle_positions'),
+    (
+      SELECT EXTRACT(EPOCH FROM (now() - max(captured_at_utc)))::integer
+      FROM gold.latest_trip_delay_snapshot
+      WHERE provider_id = %(provider_id)s
+    ),
     999999999
-  ),
-  count(*) FILTER (WHERE endpoint_key = 'trip_updates' AND latest_captured_at_utc IS NOT NULL),
-  count(*) FILTER (WHERE endpoint_key = 'vehicle_positions' AND latest_captured_at_utc IS NOT NULL),
-  (SELECT count(*) FROM gold.latest_vehicle_snapshot WHERE provider_id = %(provider_id)s),
+  ) AS trip_age,
+  count(*) AS vehicle_count,
   (SELECT count(*) FROM gold.latest_trip_delay_snapshot WHERE provider_id = %(provider_id)s)
-FROM endpoint_freshness;
+    AS trip_count
+FROM gold.latest_vehicle_snapshot
+WHERE provider_id = %(provider_id)s;
 """
 
 with psycopg.connect(os.environ["DATABASE_URL"]) as connection:
@@ -164,8 +182,7 @@ PY
 check_realtime_freshness() {
   local database_url="${DATABASE_URL:-}"
   local provider_id="${STM_PROVIDER_ID:-stm}"
-  local output trip_updates_age vehicle_positions_age trip_updates_seen vehicle_positions_seen
-  local vehicle_count trip_count
+  local output vehicle_age trip_age vehicle_count trip_count
   local query
 
   if [[ -z "$database_url" ]]; then
@@ -179,34 +196,24 @@ check_realtime_freshness() {
 
   query="
 BEGIN READ ONLY;
-WITH endpoint_freshness AS (
-  SELECT
-    fe.endpoint_key,
-    max(rsi.captured_at_utc) AS latest_captured_at_utc
-  FROM core.feed_endpoints AS fe
-  LEFT JOIN raw.realtime_snapshot_index AS rsi
-    ON rsi.provider_id = fe.provider_id
-    AND rsi.feed_endpoint_id = fe.feed_endpoint_id
-  WHERE fe.provider_id = :'provider_id'
-    AND fe.endpoint_key IN ('trip_updates', 'vehicle_positions')
-  GROUP BY fe.endpoint_key
-)
 SELECT
   COALESCE(
-    max(EXTRACT(EPOCH FROM (now() - latest_captured_at_utc))::integer)
-      FILTER (WHERE endpoint_key = 'trip_updates'),
+    EXTRACT(EPOCH FROM (now() - max(captured_at_utc)))::integer,
     999999999
-  ),
+  ) AS vehicle_age,
   COALESCE(
-    max(EXTRACT(EPOCH FROM (now() - latest_captured_at_utc))::integer)
-      FILTER (WHERE endpoint_key = 'vehicle_positions'),
+    (
+      SELECT EXTRACT(EPOCH FROM (now() - max(captured_at_utc)))::integer
+      FROM gold.latest_trip_delay_snapshot
+      WHERE provider_id = :'provider_id'
+    ),
     999999999
-  ),
-  count(*) FILTER (WHERE endpoint_key = 'trip_updates' AND latest_captured_at_utc IS NOT NULL),
-  count(*) FILTER (WHERE endpoint_key = 'vehicle_positions' AND latest_captured_at_utc IS NOT NULL),
-  (SELECT count(*) FROM gold.latest_vehicle_snapshot WHERE provider_id = :'provider_id'),
+  ) AS trip_age,
+  count(*) AS vehicle_count,
   (SELECT count(*) FROM gold.latest_trip_delay_snapshot WHERE provider_id = :'provider_id')
-FROM endpoint_freshness;
+    AS trip_count
+FROM gold.latest_vehicle_snapshot
+WHERE provider_id = :'provider_id';
 ROLLBACK;
 "
 
@@ -217,31 +224,26 @@ ROLLBACK;
 
   output="$(
     printf '%s\n' "$output" \
-      | awk -F'|' 'NF == 6 && $1 ~ /^[0-9]+$/ && $2 ~ /^[0-9]+$/ {line=$0} END {print line}'
+      | awk -F'|' 'NF == 4 && $1 ~ /^[0-9]+$/ && $2 ~ /^[0-9]+$/ {line=$0} END {print line}'
   )"
-  IFS='|' read -r trip_updates_age vehicle_positions_age trip_updates_seen vehicle_positions_seen vehicle_count trip_count <<< "$output"
+  IFS='|' read -r vehicle_age trip_age vehicle_count trip_count <<< "$output"
 
-  if [[ -z "${trip_updates_age:-}" || -z "${vehicle_positions_age:-}" || -z "${trip_updates_seen:-}" || -z "${vehicle_positions_seen:-}" || -z "${vehicle_count:-}" || -z "${trip_count:-}" ]]; then
+  if [[ -z "${vehicle_age:-}" || -z "${trip_age:-}" || -z "${vehicle_count:-}" || -z "${trip_count:-}" ]]; then
     fail "Realtime freshness: could not parse psql output: $output"
     return
   fi
 
-  if (( trip_updates_seen <= 0 || vehicle_positions_seen <= 0 )); then
-    fail "Realtime freshness: expected both realtime endpoints, got trip_updates=$trip_updates_seen vehicle_positions=$vehicle_positions_seen"
-    return
-  fi
-
-  if (( trip_updates_age > MAX_REALTIME_AGE_SECONDS || vehicle_positions_age > MAX_REALTIME_AGE_SECONDS )); then
-    fail "Realtime freshness: endpoint age exceeds threshold ${MAX_REALTIME_AGE_SECONDS}s (trip_updates=${trip_updates_age}s, vehicle_positions=${vehicle_positions_age}s)"
+  if (( vehicle_age > MAX_REALTIME_AGE_SECONDS || trip_age > MAX_REALTIME_AGE_SECONDS )); then
+    fail "Realtime freshness: Gold latest age exceeds threshold ${MAX_REALTIME_AGE_SECONDS}s (vehicle=${vehicle_age}s, trip=${trip_age}s)"
     return
   fi
 
   if (( vehicle_count <= 0 || trip_count <= 0 )); then
-    fail "Realtime freshness: expected positive row counts, got vehicles=$vehicle_count trips=$trip_count"
+    fail "Realtime freshness: expected positive Gold row counts, got vehicles=$vehicle_count trips=$trip_count"
     return
   fi
 
-  pass "Realtime freshness: trip_updates_age=${trip_updates_age}s, vehicle_positions_age=${vehicle_positions_age}s, trip_updates=$trip_updates_seen, vehicle_positions=$vehicle_positions_seen, vehicles=$vehicle_count, trips=$trip_count"
+  pass "Realtime freshness: vehicle_age=${vehicle_age}s, trip_age=${trip_age}s, vehicles=$vehicle_count, trips=$trip_count"
 }
 
 check_one_workflow() {

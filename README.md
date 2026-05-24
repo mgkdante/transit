@@ -170,6 +170,16 @@ DATABASE_URL="$DATABASE_URL" \
 bash scripts/validate-oracle-cutover.sh
 ```
 
+If health is intentionally internal-only, run the same validator through SSH:
+
+```bash
+HEALTH_BASE_URL=http://127.0.0.1:8080 \
+HEALTH_SSH_TARGET=ubuntu@db.transit.yesid.dev \
+POWERBI_REPORT_URL="https://app.powerbi.com/view?r=report-id-example" \
+DATABASE_URL="$DATABASE_URL" \
+bash scripts/validate-oracle-cutover.sh
+```
+
 The app database contract is `DATABASE_URL`. Oracle VM Postgres does not use an external database compute API, so the default database-compute adapter is `none`.
 
 The legacy Neon compute adapter remains in `scripts/lib/` only as a decommission target and should not be used for current production operations.
