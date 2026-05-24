@@ -5,7 +5,7 @@
       "error_type": null,
       "message": "Dry-run completed successfully.",
       "result": {
-        "completed_at_utc": "2026-05-24T07:30:31.419349+00:00",
+        "completed_at_utc": "2026-05-24T07:53:56.086371+00:00",
         "deleted_metadata_counts": {
           "raw.ingestion_objects": 0,
           "raw.ingestion_runs": 0,
@@ -17,9 +17,9 @@
         },
         "dry_run": true,
         "provider_id": "stm",
-        "realtime_cutoff_utc": "2026-04-24T07:30:31.391668+00:00",
+        "realtime_cutoff_utc": "2026-04-24T07:53:56.061979+00:00",
         "realtime_retention_days": 30,
-        "static_cutoff_utc": "2026-04-24T07:30:31.409497+00:00",
+        "static_cutoff_utc": "2026-04-24T07:53:56.078365+00:00",
         "static_retention_days": 30
       },
       "status": "ok"
@@ -29,8 +29,8 @@
       "error_type": null,
       "message": "Dry-run completed successfully.",
       "result": {
-        "completed_at_utc": "2026-05-24T07:30:31.221315+00:00",
-        "cutoff_utc": "2025-05-24T07:30:31.193058+00:00",
+        "completed_at_utc": "2026-05-24T07:53:55.956045+00:00",
+        "cutoff_utc": "2025-05-24T07:53:55.932823+00:00",
         "deleted_row_counts": {
           "gold.fact_trip_delay_snapshot": 0,
           "gold.fact_vehicle_snapshot": 0
@@ -46,7 +46,7 @@
       "error_type": null,
       "message": "Dry-run completed successfully.",
       "result": {
-        "completed_at_utc": "2026-05-24T07:30:31.163334+00:00",
+        "completed_at_utc": "2026-05-24T07:53:55.917937+00:00",
         "deleted_row_counts": {
           "core.dataset_versions": 0,
           "silver.calendar": 0,
@@ -62,7 +62,7 @@
         "dry_run": true,
         "provider_id": "stm",
         "pruned_dataset_version_ids": [],
-        "realtime_cutoff_utc": "2026-04-24T07:30:31.131376+00:00",
+        "realtime_cutoff_utc": "2026-04-24T07:53:55.890281+00:00",
         "realtime_retention_days": 30,
         "retained_dataset_version_ids": [
           1
@@ -76,8 +76,8 @@
       "error_type": null,
       "message": "Dry-run completed successfully.",
       "result": {
-        "completed_at_utc": "2026-05-24T07:30:31.474363+00:00",
-        "cutoff_utc": "2026-02-23T07:30:31.426875+00:00",
+        "completed_at_utc": "2026-05-24T07:53:56.134246+00:00",
+        "cutoff_utc": "2026-02-23T07:53:56.093250+00:00",
         "deleted_row_counts": {
           "gold.trip_delay_summary_5m": 0,
           "gold.vehicle_summary_5m": 0,
@@ -90,7 +90,7 @@
       "status": "ok"
     }
   },
-  "generated_at_utc": "2026-05-24T07:30:31.482954+00:00",
+  "generated_at_utc": "2026-05-24T07:53:56.141107+00:00",
   "provider_id": "stm",
   "retention_contract": {
     "BRONZE_REALTIME_RETENTION_DAYS": 30,
@@ -167,7 +167,7 @@
       "status": "ok"
     },
     "provider_id": "stm",
-    "validated_at_utc": "2026-05-24T07:30:59.017104+00:00"
+    "validated_at_utc": "2026-05-24T07:54:22.696246+00:00"
   },
   "storage": {
     "BRONZE_LOCAL_ROOT": "./data/bronze",
