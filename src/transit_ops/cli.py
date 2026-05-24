@@ -627,11 +627,18 @@ def rebuild_oracle_data_command(
 
 
 @app.command("prune-warm-rollup-storage")
-def prune_warm_rollup_storage_command(provider_id: str) -> None:
+def prune_warm_rollup_storage_command(
+    provider_id: str,
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        help="Print what would be deleted without executing any deletions.",
+    ),
+) -> None:
     """Prune warm rollup rows older than GOLD_WARM_ROLLUP_RETENTION_DAYS (default 90 days)."""
 
     settings = get_settings()
-    result = prune_warm_rollup_storage(provider_id, settings=settings)
+    result = prune_warm_rollup_storage(provider_id, settings=settings, dry_run=dry_run)
     typer.echo(json.dumps(result.display_dict(), indent=2))
 
 

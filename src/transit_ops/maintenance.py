@@ -418,6 +418,30 @@ DELETE_ORPHANED_INGESTION_RUNS = text(
     """
 )
 
+COUNT_OLD_VEHICLE_SUMMARY_5M = text(
+    """
+    SELECT COUNT(*) FROM gold.vehicle_summary_5m
+    WHERE provider_id = :provider_id
+      AND period_start_utc < :cutoff_utc
+    """
+)
+
+COUNT_OLD_TRIP_DELAY_SUMMARY_5M = text(
+    """
+    SELECT COUNT(*) FROM gold.trip_delay_summary_5m
+    WHERE provider_id = :provider_id
+      AND period_start_utc < :cutoff_utc
+    """
+)
+
+COUNT_OLD_WARM_ROLLUP_PERIODS = text(
+    """
+    SELECT COUNT(*) FROM gold.warm_rollup_periods
+    WHERE provider_id = :provider_id
+      AND period_start_utc < :cutoff_utc
+    """
+)
+
 
 @dataclass(frozen=True)
 class BronzeStoragePruneResult:
@@ -987,6 +1011,7 @@ def prune_bronze_storage(
 @dataclass(frozen=True)
 class WarmRollupStoragePruneResult:
     provider_id: str
+    dry_run: bool
     retention_days: int
     cutoff_utc: datetime | None
     deleted_row_counts: dict[str, int]
@@ -1004,6 +1029,7 @@ def prune_warm_rollup_storage(
     *,
     settings: Settings | None = None,
     engine: Engine | None = None,
+    dry_run: bool = False,
 ) -> WarmRollupStoragePruneResult:
     """Delete warm rollup rows older than GOLD_WARM_ROLLUP_RETENTION_DAYS."""
     settings = settings or get_settings()
@@ -1013,6 +1039,7 @@ def prune_warm_rollup_storage(
     if retention_days <= 0:
         return WarmRollupStoragePruneResult(
             provider_id=provider_id,
+            dry_run=dry_run,
             retention_days=retention_days,
             cutoff_utc=None,
             deleted_row_counts={
@@ -1027,19 +1054,31 @@ def prune_warm_rollup_storage(
     params = {"provider_id": provider_id, "cutoff_utc": cutoff_utc}
 
     with engine.begin() as connection:
-        vehicle_deleted = _safe_rowcount(
-            connection.execute(DELETE_OLD_VEHICLE_SUMMARY_5M, params)
-        )
-        trip_delay_deleted = _safe_rowcount(
-            connection.execute(DELETE_OLD_TRIP_DELAY_SUMMARY_5M, params)
-        )
-        periods_deleted = _safe_rowcount(
-            connection.execute(DELETE_OLD_WARM_ROLLUP_PERIODS, params)
-        )
+        if dry_run:
+            vehicle_deleted = _safe_scalar_count(
+                connection.execute(COUNT_OLD_VEHICLE_SUMMARY_5M, params)
+            )
+            trip_delay_deleted = _safe_scalar_count(
+                connection.execute(COUNT_OLD_TRIP_DELAY_SUMMARY_5M, params)
+            )
+            periods_deleted = _safe_scalar_count(
+                connection.execute(COUNT_OLD_WARM_ROLLUP_PERIODS, params)
+            )
+        else:
+            vehicle_deleted = _safe_rowcount(
+                connection.execute(DELETE_OLD_VEHICLE_SUMMARY_5M, params)
+            )
+            trip_delay_deleted = _safe_rowcount(
+                connection.execute(DELETE_OLD_TRIP_DELAY_SUMMARY_5M, params)
+            )
+            periods_deleted = _safe_rowcount(
+                connection.execute(DELETE_OLD_WARM_ROLLUP_PERIODS, params)
+            )
         completed_at_utc = utc_now()
 
     return WarmRollupStoragePruneResult(
         provider_id=provider_id,
+        dry_run=dry_run,
         retention_days=retention_days,
         cutoff_utc=cutoff_utc,
         deleted_row_counts={

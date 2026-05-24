@@ -472,6 +472,36 @@ def test_prune_warm_rollup_storage_help() -> None:
 
     assert result.exit_code == 0
     assert "GOLD_WARM_ROLLUP_RETENTION_DAYS" in result.stdout
+    assert "--dry-run" in result.stdout
+
+
+def test_prune_warm_rollup_storage_dry_run_flag(monkeypatch) -> None:
+    from transit_ops.maintenance import WarmRollupStoragePruneResult
+
+    recorded: dict[str, object] = {}
+
+    def fake_prune_warm_rollup_storage(provider_id, *, settings, dry_run):  # noqa: ANN001
+        recorded["provider_id"] = provider_id
+        recorded["dry_run"] = dry_run
+        return WarmRollupStoragePruneResult(
+            provider_id=provider_id,
+            dry_run=dry_run,
+            retention_days=90,
+            cutoff_utc=None,
+            deleted_row_counts={
+                "gold.vehicle_summary_5m": 0,
+                "gold.trip_delay_summary_5m": 0,
+                "gold.warm_rollup_periods": 0,
+            },
+            completed_at_utc=datetime(2026, 3, 27, 0, 0, 0, tzinfo=UTC),
+        )
+
+    monkeypatch.setattr(cli_module, "prune_warm_rollup_storage", fake_prune_warm_rollup_storage)
+
+    result = runner.invoke(app, ["prune-warm-rollup-storage", "stm", "--dry-run"])
+
+    assert result.exit_code == 0
+    assert recorded["dry_run"] is True
 
 
 def test_build_warm_rollups_calls_build_warm_rollups(monkeypatch) -> None:
