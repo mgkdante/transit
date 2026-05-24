@@ -161,6 +161,15 @@ To resume it:
 bash scripts/resume-pipeline.sh
 ```
 
+To validate the Oracle cutover without changing runtime state:
+
+```bash
+HEALTH_BASE_URL=https://transit.example.com \
+POWERBI_REPORT_URL="https://app.powerbi.com/view?r=report-id-example" \
+DATABASE_URL="$DATABASE_URL" \
+bash scripts/validate-oracle-cutover.sh
+```
+
 The app database contract is `DATABASE_URL`. Oracle VM Postgres does not use an external database compute API, so the default database-compute adapter is `none`.
 
 The legacy Neon compute adapter remains in `scripts/lib/` only as a decommission target and should not be used for current production operations.
