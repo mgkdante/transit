@@ -1,0 +1,120 @@
+{
+  "dry_runs": {
+    "bronze": {
+      "dry_run": true,
+      "error_type": "missing_database_url",
+      "message": "DATABASE_URL is required for this dry-run proof surface.",
+      "result": null,
+      "status": "unavailable"
+    },
+    "gold": {
+      "dry_run": true,
+      "error_type": "missing_database_url",
+      "message": "DATABASE_URL is required for this dry-run proof surface.",
+      "result": null,
+      "status": "unavailable"
+    },
+    "silver": {
+      "dry_run": true,
+      "error_type": "missing_database_url",
+      "message": "DATABASE_URL is required for this dry-run proof surface.",
+      "result": null,
+      "status": "unavailable"
+    },
+    "warm_rollup": {
+      "dry_run": true,
+      "error_type": "missing_database_url",
+      "message": "DATABASE_URL is required for this dry-run proof surface.",
+      "result": null,
+      "status": "unavailable"
+    }
+  },
+  "generated_at_utc": "2026-05-24T07:04:28.917188+00:00",
+  "provider_id": "stm",
+  "retention_contract": {
+    "BRONZE_REALTIME_RETENTION_DAYS": 30,
+    "BRONZE_STATIC_RETENTION_DAYS": 30,
+    "GOLD_FACT_RETENTION_DAYS": 365,
+    "GOLD_WARM_ROLLUP_RETENTION_DAYS": 90,
+    "SILVER_REALTIME_RETENTION_DAYS": 30,
+    "STATIC_DATASET_RETENTION_COUNT": 1
+  },
+  "static_feed_validation": {
+    "beta": {
+      "byte_size": 52839265,
+      "checksum_sha256": "d0e61c88066593538b4035a8e56df23c59774d6a642e9e8dd74bd9626fa230ab",
+      "endpoint_key": "static_schedule_beta",
+      "error_type": null,
+      "http_status_code": 200,
+      "label": "beta",
+      "member_count": 12,
+      "message": "Static GTFS feed passed non-destructive validation.",
+      "optional_service_members_present": [
+        "calendar.txt",
+        "calendar_dates.txt"
+      ],
+      "required_members_present": [
+        "routes.txt",
+        "stop_times.txt",
+        "stops.txt",
+        "trips.txt"
+      ],
+      "row_counts": {
+        "calendar.txt": 117,
+        "calendar_dates.txt": 87,
+        "routes.txt": 216,
+        "stop_times.txt": 6315817,
+        "stops.txt": 8897,
+        "trips.txt": 176161
+      },
+      "source_url": "https://www.stm.info/sites/default/files/gtfs/gtfs_stm_26m-beta.zip",
+      "status": "ok"
+    },
+    "comparison": {
+      "both_available": true,
+      "byte_sizes_match": false,
+      "checksums_match": false
+    },
+    "current": {
+      "byte_size": 66541286,
+      "checksum_sha256": "63ff8a790a86dde00158bcd2480411c626892d691c57a0cf96bdea11b8b37724",
+      "endpoint_key": "static_schedule",
+      "error_type": null,
+      "http_status_code": 200,
+      "label": "current",
+      "member_count": 10,
+      "message": "Static GTFS feed passed non-destructive validation.",
+      "optional_service_members_present": [
+        "calendar.txt",
+        "calendar_dates.txt"
+      ],
+      "required_members_present": [
+        "routes.txt",
+        "stop_times.txt",
+        "stops.txt",
+        "trips.txt"
+      ],
+      "row_counts": {
+        "calendar.txt": 144,
+        "calendar_dates.txt": 82,
+        "routes.txt": 229,
+        "stop_times.txt": 7946974,
+        "stops.txt": 9164,
+        "trips.txt": 219869
+      },
+      "source_url": "https://www.stm.info/sites/default/files/gtfs/gtfs_stm.zip",
+      "status": "ok"
+    },
+    "provider_id": "stm",
+    "validated_at_utc": "2026-05-24T07:05:00.404496+00:00"
+  },
+  "storage": {
+    "BRONZE_LOCAL_ROOT": "./data/bronze",
+    "BRONZE_S3_ACCESS_KEY_CONFIGURED": false,
+    "BRONZE_S3_BUCKET": "transit-raw",
+    "BRONZE_S3_ENDPOINT": "https://eccfb9bedd87d413eaf4cac6ae2285d3.r2.cloudflarestorage.com",
+    "BRONZE_S3_REGION": "auto",
+    "BRONZE_S3_SECRET_KEY_CONFIGURED": false,
+    "BRONZE_STORAGE_BACKEND": "s3"
+  }
+}

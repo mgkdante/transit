@@ -184,6 +184,24 @@ The app database contract is `DATABASE_URL`. Oracle VM Postgres stays running du
 
 Weekly `pg_repack` maintenance runs in dry-run mode by default through `.github/workflows/weekly-pg-repack.yml`. Use manual dispatch with `dry_run=false` only after confirming the database has the `pg_repack` extension installed and enough free disk for a table rewrite.
 
+## Retention Proof Reports
+
+The expected retention defaults are: static dataset count 1, Silver realtime 30 days, Gold facts 365 days, warm rollups 90 days, and Bronze realtime/static 30 days.
+
+To generate a local non-destructive proof report:
+
+```bash
+uv run python -m transit_ops.cli retention-proof-report stm --report-path artifacts/slice-8.2-retention-proof.json
+```
+
+To validate static feeds separately:
+
+```bash
+uv run python -m transit_ops.cli validate-static-feeds stm --report-path artifacts/slice-8.2-static-feeds.json
+```
+
+The retention proof report also embeds the static validation result. These commands are proof/reporting only: they must not ingest feeds, seed provider rows, delete storage, or mutate DB/R2 state. If local `DATABASE_URL` or R2 credentials are missing, sections may report `unavailable` dry-run status. That is an honest local proof state, not hidden success.
+
 ## Repo Navigation
 
 ```text
