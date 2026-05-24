@@ -37,6 +37,7 @@ def test_cli_help() -> None:
     assert "build-warm-rollups" in result.stdout
     assert "prune-warm-rollup-storage" in result.stdout
     assert "rebuild-oracle-data" in result.stdout
+    assert "validate-static-feeds" in result.stdout
 
 
 def test_ingest_static_help() -> None:
@@ -44,6 +45,55 @@ def test_ingest_static_help() -> None:
 
     assert result.exit_code == 0
     assert "Download, archive, and register one static GTFS feed." in result.stdout
+
+
+def test_validate_static_feeds_help() -> None:
+    result = runner.invoke(app, ["validate-static-feeds", "--help"])
+
+    assert result.exit_code == 0
+    assert "Validate current and beta static GTFS feeds without ingesting them." in result.stdout
+
+
+def test_validate_static_feeds_passes_provider_and_writes_report(
+    monkeypatch, tmp_path
+) -> None:
+    from dataclasses import dataclass
+
+    recorded: dict[str, object] = {}
+    report_path = tmp_path / "static-validation.json"
+
+    @dataclass(frozen=True)
+    class FakeValidationResult:
+        provider_id: str
+
+        def display_dict(self) -> dict[str, object]:
+            return {
+                "provider_id": self.provider_id,
+                "validated_at_utc": "2026-05-24T12:00:00+00:00",
+                "current": {"status": "ok"},
+                "beta": {"status": "ok"},
+                "comparison": {"both_available": True},
+            }
+
+    def fake_validate_static_feeds(provider_id, *, settings, registry):  # noqa: ANN001
+        recorded["provider_id"] = provider_id
+        recorded["settings_type"] = type(settings).__name__
+        recorded["registry_type"] = type(registry).__name__
+        return FakeValidationResult(provider_id=provider_id)
+
+    monkeypatch.setattr(cli_module, "validate_static_feeds", fake_validate_static_feeds)
+
+    result = runner.invoke(
+        app,
+        ["validate-static-feeds", "stm", "--report-path", str(report_path)],
+    )
+
+    assert result.exit_code == 0
+    assert recorded["provider_id"] == "stm"
+    stdout_payload = json.loads(result.stdout)
+    report_payload = json.loads(report_path.read_text(encoding="utf-8"))
+    assert stdout_payload == report_payload
+    assert report_payload["provider_id"] == "stm"
 
 
 def test_capture_realtime_help() -> None:
