@@ -1,0 +1,60 @@
+table KpiDelayedTrips
+	lineageTag: 2c96aa12-83cc-481d-8d4f-99ee2c183e61
+
+	column provider_id
+		dataType: string
+		lineageTag: 85ee7acd-1435-4656-9cc8-3aa6e828ae08
+		summarizeBy: none
+		sourceColumn: provider_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column realtime_snapshot_id
+		dataType: int64
+		formatString: 0
+		lineageTag: a89e53e9-7401-4c32-9a66-d8d0a3168819
+		summarizeBy: sum
+		sourceColumn: realtime_snapshot_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column feed_timestamp_utc
+		dataType: dateTime
+		formatString: General Date
+		lineageTag: 902486d8-c591-4bfa-9591-8ad58fa2bcfe
+		summarizeBy: none
+		sourceColumn: feed_timestamp_utc
+
+		annotation SummarizationSetBy = Automatic
+
+	column captured_at_utc
+		dataType: dateTime
+		formatString: General Date
+		lineageTag: e9523e6c-1fe1-4ccf-841e-33c42391666a
+		summarizeBy: none
+		sourceColumn: captured_at_utc
+
+		annotation SummarizationSetBy = Automatic
+
+	column delayed_trip_count
+		dataType: int64
+		formatString: 0
+		lineageTag: c3219cc1-ee31-48e9-bb0d-a1d6f30b5467
+		summarizeBy: sum
+		sourceColumn: delayed_trip_count
+
+		annotation SummarizationSetBy = Automatic
+
+	partition KpiDelayedTrips = m
+		mode: directQuery
+		source =
+				let
+				    Source = PostgreSQL.Database("db.transit.yesid.dev", "transit"),
+				    gold_kpi_delayed_trip_count_latest = Source{[Schema="gold",Item="kpi_delayed_trip_count_latest"]}[Data]
+				in
+				    gold_kpi_delayed_trip_count_latest
+
+	annotation PBI_NavigationStepName = Navigation
+
+	annotation PBI_ResultType = Table
+

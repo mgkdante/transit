@@ -1,0 +1,60 @@
+table KpiMaxDelay
+	lineageTag: 59f5268e-6364-40e5-9a16-1226fba77c5e
+
+	column provider_id
+		dataType: string
+		lineageTag: 15299712-7d53-435f-9ee5-b2126bd769f7
+		summarizeBy: none
+		sourceColumn: provider_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column realtime_snapshot_id
+		dataType: int64
+		formatString: 0
+		lineageTag: 6d9d7f71-6c89-49ea-b5d9-8294d666c65d
+		summarizeBy: sum
+		sourceColumn: realtime_snapshot_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column feed_timestamp_utc
+		dataType: dateTime
+		formatString: General Date
+		lineageTag: f6692f98-8657-4daa-8b98-331c04b0c0f1
+		summarizeBy: none
+		sourceColumn: feed_timestamp_utc
+
+		annotation SummarizationSetBy = Automatic
+
+	column captured_at_utc
+		dataType: dateTime
+		formatString: General Date
+		lineageTag: 26af09dc-c951-4ea6-92d0-cf1d19e7935a
+		summarizeBy: none
+		sourceColumn: captured_at_utc
+
+		annotation SummarizationSetBy = Automatic
+
+	column max_delay_seconds
+		dataType: int64
+		formatString: 0
+		lineageTag: a00364ab-2432-4c1f-b11b-4abb3a361a61
+		summarizeBy: sum
+		sourceColumn: max_delay_seconds
+
+		annotation SummarizationSetBy = Automatic
+
+	partition KpiMaxDelay = m
+		mode: directQuery
+		source =
+				let
+				    Source = PostgreSQL.Database("db.transit.yesid.dev", "transit"),
+				    gold_kpi_max_trip_delay_latest = Source{[Schema="gold",Item="kpi_max_trip_delay_latest"]}[Data]
+				in
+				    gold_kpi_max_trip_delay_latest
+
+	annotation PBI_NavigationStepName = Navigation
+
+	annotation PBI_ResultType = Table
+

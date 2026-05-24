@@ -1,0 +1,196 @@
+table LatestVehicle
+	lineageTag: 8491ca75-023a-471f-92bd-184a89bd0412
+
+	column provider_id
+		dataType: string
+		lineageTag: 01075efd-fd73-4035-b0cd-a58133c634a4
+		summarizeBy: none
+		sourceColumn: provider_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column realtime_snapshot_id
+		dataType: int64
+		formatString: 0
+		lineageTag: 130212a6-5d90-4421-9509-bea0b70c5512
+		summarizeBy: sum
+		sourceColumn: realtime_snapshot_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column entity_index
+		dataType: int64
+		formatString: 0
+		lineageTag: 75a2e204-3714-4025-ae5d-49b3a28f16d5
+		summarizeBy: sum
+		sourceColumn: entity_index
+
+		annotation SummarizationSetBy = Automatic
+
+	column snapshot_date_key
+		dataType: int64
+		formatString: 0
+		lineageTag: 5991f030-780c-4d2f-8e18-465ceedbfa0a
+		summarizeBy: sum
+		sourceColumn: snapshot_date_key
+
+		annotation SummarizationSetBy = Automatic
+
+	column snapshot_local_date
+		dataType: dateTime
+		formatString: Long Date
+		lineageTag: ba66fe64-26f6-45b8-b4b3-c8e0369ad467
+		summarizeBy: none
+		sourceColumn: snapshot_local_date
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation UnderlyingDateTimeDataType = Date
+
+	column feed_timestamp_utc
+		dataType: dateTime
+		formatString: General Date
+		lineageTag: fe7a621e-8ab7-430e-8746-ddf0e87bff1e
+		summarizeBy: none
+		sourceColumn: feed_timestamp_utc
+
+		annotation SummarizationSetBy = Automatic
+
+	column captured_at_utc
+		dataType: dateTime
+		formatString: General Date
+		lineageTag: 70a6ede0-a510-4e0c-a25e-c913fb5824e2
+		summarizeBy: none
+		sourceColumn: captured_at_utc
+
+		annotation SummarizationSetBy = Automatic
+
+	column position_timestamp_utc
+		dataType: dateTime
+		formatString: General Date
+		lineageTag: 2f955b17-d768-4efc-952d-98c0e50b454f
+		summarizeBy: none
+		sourceColumn: position_timestamp_utc
+
+		annotation SummarizationSetBy = Automatic
+
+	column entity_id
+		dataType: string
+		lineageTag: 63b2c9b1-018b-4208-9056-9852b30de17e
+		summarizeBy: none
+		sourceColumn: entity_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column vehicle_id
+		dataType: string
+		lineageTag: f585ef1e-49f2-4a1d-812e-c3f627d0648c
+		summarizeBy: none
+		sourceColumn: vehicle_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column trip_id
+		dataType: string
+		lineageTag: 27943f91-be1c-424c-bccf-4924d738c0d9
+		summarizeBy: none
+		sourceColumn: trip_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column route_id
+		dataType: string
+		lineageTag: a2b2f741-9129-497c-9b3d-1493d237361e
+		summarizeBy: none
+		sourceColumn: route_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column stop_id
+		dataType: string
+		lineageTag: 1d124f7e-a952-4b48-ae99-8f9cf1b0cd80
+		summarizeBy: none
+		sourceColumn: stop_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column current_stop_sequence
+		dataType: int64
+		formatString: 0
+		lineageTag: 849598c3-a2d1-4ed1-a1cc-226cd670e036
+		summarizeBy: sum
+		sourceColumn: current_stop_sequence
+
+		annotation SummarizationSetBy = Automatic
+
+	column current_status
+		dataType: int64
+		formatString: 0
+		lineageTag: 988bd47f-80f6-4e89-8b8f-2f11e31fc530
+		summarizeBy: sum
+		sourceColumn: current_status
+
+		annotation SummarizationSetBy = Automatic
+
+	column occupancy_status
+		dataType: int64
+		formatString: 0
+		lineageTag: 8e386958-4394-4ed5-bf81-bf7059998420
+		summarizeBy: sum
+		sourceColumn: occupancy_status
+
+		annotation SummarizationSetBy = Automatic
+
+	column latitude
+		dataType: double
+		lineageTag: 00a9ebb4-cace-471d-8b0b-f6d07fb5d521
+		summarizeBy: sum
+		sourceColumn: latitude
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	column longitude
+		dataType: double
+		lineageTag: e7a6b04e-1eeb-4c8b-9f0f-7ed84ac3b28e
+		summarizeBy: sum
+		sourceColumn: longitude
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	column bearing
+		dataType: double
+		lineageTag: 1ebbf0b5-260b-4b5a-a897-1fa72253cec8
+		summarizeBy: sum
+		sourceColumn: bearing
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	column speed
+		dataType: double
+		lineageTag: bdefdbc6-0c8a-463e-ab32-a923ba228612
+		summarizeBy: sum
+		sourceColumn: speed
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	partition LatestVehicle = m
+		mode: directQuery
+		source =
+				let
+				    Source = PostgreSQL.Database("db.transit.yesid.dev", "transit"),
+				    gold_latest_vehicle_snapshot = Source{[Schema="gold",Item="latest_vehicle_snapshot"]}[Data]
+				in
+				    gold_latest_vehicle_snapshot
+
+	annotation PBI_NavigationStepName = Navigation
+
+	annotation PBI_ResultType = Table
+

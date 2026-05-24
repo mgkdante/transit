@@ -1,0 +1,47 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.8.0/schema.json",
+  "name": "fad33077073899b563a3",
+  "position": {
+    "x": 30.121881319822204,
+    "y": 654.4406112450929,
+    "z": 5000,
+    "height": 65.559388754907147,
+    "width": 520.0454216098716,
+    "tabOrder": 5000
+  },
+  "visual": {
+    "visualType": "textbox",
+    "objects": {
+      "general": [
+        {
+          "properties": {
+            "paragraphs": [
+              {
+                "textRuns": [
+                  {
+                    "value": "Feed refreshes every ~60s from STM GTFS-RT (TripUpdates + VehiclePositions)."
+                  }
+                ]
+              },
+              {
+                "textRuns": [
+                  {
+                    "value": "Delay = actual vs. scheduled arrival. Negative = ahead of schedule."
+                  }
+                ]
+              },
+              {
+                "textRuns": [
+                  {
+                    "value": "Freshness Age reflects seconds since last captured feed timestamp."
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "drillFilterOtherVisuals": true
+  }
+}

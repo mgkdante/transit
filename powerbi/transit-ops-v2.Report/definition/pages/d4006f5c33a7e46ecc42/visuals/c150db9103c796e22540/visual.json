@@ -1,0 +1,106 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.8.0/schema.json",
+  "name": "c150db9103c796e22540",
+  "position": {
+    "x": 21.1082338087324,
+    "y": 435.88502815032405,
+    "z": 1000,
+    "height": 283.90574472745078,
+    "width": 618.47125059585926,
+    "tabOrder": 1000
+  },
+  "visual": {
+    "visualType": "tableEx",
+    "query": {
+      "queryState": {
+        "Values": {
+          "projections": [
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "DimRoute"
+                    }
+                  },
+                  "Property": "route_short_name"
+                }
+              },
+              "queryRef": "DimRoute.route_short_name",
+              "nativeQueryRef": "Bus Number",
+              "displayName": "Bus Number"
+            },
+            {
+              "field": {
+                "Measure": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "_Measures"
+                    }
+                  },
+                  "Property": "Route Active Vehicles"
+                }
+              },
+              "queryRef": "_Measures.Route Active Vehicles",
+              "nativeQueryRef": "Route Active Vehicles"
+            },
+            {
+              "field": {
+                "Measure": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "_Measures"
+                    }
+                  },
+                  "Property": "Route Avg Delay Seconds"
+                }
+              },
+              "queryRef": "_Measures.Route Avg Delay Seconds",
+              "nativeQueryRef": "Route Avg Delay Seconds"
+            }
+          ]
+        }
+      },
+      "sortDefinition": {
+        "sort": [
+          {
+            "field": {
+              "Measure": {
+                "Expression": {
+                  "SourceRef": {
+                    "Entity": "_Measures"
+                  }
+                },
+                "Property": "Route Avg Delay Seconds"
+              }
+            },
+            "direction": "Descending"
+          }
+        ]
+      }
+    },
+    "visualContainerObjects": {
+      "title": [
+        {
+          "properties": {
+            "show": {
+              "expr": {
+                "Literal": {
+                  "Value": "true"
+                }
+              }
+            },
+            "text": {
+              "expr": {
+                "Literal": {
+                  "Value": "'Route Delay Rankings'"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "drillFilterOtherVisuals": true
+  }
+}

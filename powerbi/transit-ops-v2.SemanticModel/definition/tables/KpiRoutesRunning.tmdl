@@ -1,0 +1,60 @@
+table KpiRoutesRunning
+	lineageTag: 1942ddf3-0870-4f27-8f00-2ae696eef4e7
+
+	column provider_id
+		dataType: string
+		lineageTag: 0ba3645b-b154-4bb3-9571-d34ffefa154c
+		summarizeBy: none
+		sourceColumn: provider_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column realtime_snapshot_id
+		dataType: int64
+		formatString: 0
+		lineageTag: 0a3b8b45-5ae9-468d-97bf-a87455d00393
+		summarizeBy: sum
+		sourceColumn: realtime_snapshot_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column feed_timestamp_utc
+		dataType: dateTime
+		formatString: General Date
+		lineageTag: 6b9c8082-241f-489c-b329-60b877088525
+		summarizeBy: none
+		sourceColumn: feed_timestamp_utc
+
+		annotation SummarizationSetBy = Automatic
+
+	column captured_at_utc
+		dataType: dateTime
+		formatString: General Date
+		lineageTag: d2fb3f3b-4748-42d9-ad2c-5154b5be1ffa
+		summarizeBy: none
+		sourceColumn: captured_at_utc
+
+		annotation SummarizationSetBy = Automatic
+
+	column routes_with_live_vehicles
+		dataType: int64
+		formatString: 0
+		lineageTag: 44d0b00f-87d2-4ebb-865b-cc4d726fc5e0
+		summarizeBy: sum
+		sourceColumn: routes_with_live_vehicles
+
+		annotation SummarizationSetBy = Automatic
+
+	partition KpiRoutesRunning = m
+		mode: directQuery
+		source =
+				let
+				    Source = PostgreSQL.Database("db.transit.yesid.dev", "transit"),
+				    gold_kpi_routes_with_live_vehicles_latest = Source{[Schema="gold",Item="kpi_routes_with_live_vehicles_latest"]}[Data]
+				in
+				    gold_kpi_routes_with_live_vehicles_latest
+
+	annotation PBI_NavigationStepName = Navigation
+
+	annotation PBI_ResultType = Table
+

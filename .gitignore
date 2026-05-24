@@ -13,3 +13,8 @@ data/
 Thumbs.db
 AGENTS.local.md
 .claude/settings.local.json
+
+# Power BI Project (PBIP) — user-local + cache cruft
+**/.pbi/
+**/cache.abf
+**/localSettings.json

@@ -1,0 +1,124 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.8.0/schema.json",
+  "name": "7d72ae0d4cd9e7bcf589",
+  "position": {
+    "x": 30.60693902266198,
+    "y": 359.89538643888739,
+    "z": 7000,
+    "height": 268.07456937090149,
+    "width": 586.80889988276067,
+    "tabOrder": 7000
+  },
+  "visual": {
+    "visualType": "tableEx",
+    "query": {
+      "queryState": {
+        "Values": {
+          "projections": [
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "DimRoute"
+                    }
+                  },
+                  "Property": "route_short_name"
+                }
+              },
+              "queryRef": "DimRoute.route_short_name",
+              "nativeQueryRef": "Bus Number",
+              "displayName": "Bus Number"
+            },
+            {
+              "field": {
+                "Measure": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "_Measures"
+                    }
+                  },
+                  "Property": "Route Active Vehicles"
+                }
+              },
+              "queryRef": "_Measures.Route Active Vehicles",
+              "nativeQueryRef": "Route Active Vehicles"
+            }
+          ]
+        }
+      },
+      "sortDefinition": {
+        "sort": [
+          {
+            "field": {
+              "Measure": {
+                "Expression": {
+                  "SourceRef": {
+                    "Entity": "_Measures"
+                  }
+                },
+                "Property": "Route Active Vehicles"
+              }
+            },
+            "direction": "Descending"
+          }
+        ]
+      }
+    },
+    "objects": {
+      "columnWidth": [
+        {
+          "properties": {
+            "value": {
+              "expr": {
+                "Literal": {
+                  "Value": "311.39187349391466D"
+                }
+              }
+            }
+          },
+          "selector": {
+            "metadata": "DimRoute.route_short_name"
+          }
+        },
+        {
+          "properties": {
+            "value": {
+              "expr": {
+                "Literal": {
+                  "Value": "236.31899529136717D"
+                }
+              }
+            }
+          },
+          "selector": {
+            "metadata": "_Measures.Route Active Vehicles"
+          }
+        }
+      ]
+    },
+    "visualContainerObjects": {
+      "title": [
+        {
+          "properties": {
+            "show": {
+              "expr": {
+                "Literal": {
+                  "Value": "true"
+                }
+              }
+            },
+            "text": {
+              "expr": {
+                "Literal": {
+                  "Value": "'Active Vehicles by Route'"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "drillFilterOtherVisuals": true
+  }
+}

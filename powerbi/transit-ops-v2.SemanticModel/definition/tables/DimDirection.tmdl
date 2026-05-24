@@ -1,0 +1,49 @@
+table DimDirection
+	lineageTag: e12153fa-73d4-4aa3-a0c6-6c99af8d0a00
+
+	column provider_id
+		dataType: string
+		lineageTag: cccea29b-7dbb-442c-b5ed-e349d05c18d8
+		summarizeBy: none
+		sourceColumn: provider_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column route_id
+		dataType: string
+		lineageTag: 74e30ad6-81a0-48bb-8805-e4247c89be64
+		summarizeBy: none
+		sourceColumn: route_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column direction_id
+		dataType: int64
+		formatString: 0
+		lineageTag: 3b5835ad-c646-4a48-98a8-b0b1173d31ee
+		summarizeBy: sum
+		sourceColumn: direction_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column direction_label
+		dataType: string
+		lineageTag: 23ca9aae-139c-42e8-9bb6-6eb59485a9f2
+		summarizeBy: none
+		sourceColumn: direction_label
+
+		annotation SummarizationSetBy = Automatic
+
+	partition DimDirection = m
+		mode: directQuery
+		source =
+				let
+				    Source = PostgreSQL.Database("db.transit.yesid.dev", "transit"),
+				    gold_dim_direction = Source{[Schema="gold",Item="dim_direction"]}[Data]
+				in
+				    gold_dim_direction
+
+	annotation PBI_NavigationStepName = Navigation
+
+	annotation PBI_ResultType = Table
+

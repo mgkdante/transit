@@ -1,0 +1,99 @@
+table DimRoute
+	lineageTag: 3789a039-7890-46f5-ab15-9198eac84893
+
+	column provider_id
+		dataType: string
+		lineageTag: c486bbfc-e769-4674-8a6f-87cf3c6408cf
+		summarizeBy: none
+		sourceColumn: provider_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column dataset_version_id
+		dataType: int64
+		formatString: 0
+		lineageTag: 50395838-c4db-47b6-bb9d-91fbba9192a5
+		summarizeBy: sum
+		sourceColumn: dataset_version_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column route_id
+		dataType: string
+		lineageTag: ea00a431-f55b-4c0d-b89f-7d0a5d82d3d6
+		summarizeBy: none
+		sourceColumn: route_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column route_short_name
+		dataType: string
+		lineageTag: d959bec3-909b-4738-905f-b6ffdf9d5ce4
+		summarizeBy: none
+		sourceColumn: route_short_name
+
+		annotation SummarizationSetBy = Automatic
+
+	column route_long_name
+		dataType: string
+		lineageTag: 1b7fc62f-7c10-4464-b93c-be8e71c751e9
+		summarizeBy: none
+		sourceColumn: route_long_name
+
+		annotation SummarizationSetBy = Automatic
+
+	column route_desc
+		dataType: string
+		lineageTag: c03d5054-da36-418a-a9d4-d2dec38b1e27
+		summarizeBy: none
+		sourceColumn: route_desc
+
+		annotation SummarizationSetBy = Automatic
+
+	column route_type
+		dataType: int64
+		formatString: 0
+		lineageTag: 437604ed-1144-4066-b704-ff9a57ada327
+		summarizeBy: sum
+		sourceColumn: route_type
+
+		annotation SummarizationSetBy = Automatic
+
+	column route_color
+		dataType: string
+		lineageTag: 33027c41-57db-4eb9-a42f-fafa1a03f3fc
+		summarizeBy: none
+		sourceColumn: route_color
+
+		annotation SummarizationSetBy = Automatic
+
+	column route_text_color
+		dataType: string
+		lineageTag: e2ae349f-c0c0-46f6-bd90-23a6a3a7e04d
+		summarizeBy: none
+		sourceColumn: route_text_color
+
+		annotation SummarizationSetBy = Automatic
+
+	column route_sort_order
+		dataType: int64
+		formatString: 0
+		lineageTag: 82e244ba-6a37-49cc-bd64-3426bfd4e33c
+		summarizeBy: sum
+		sourceColumn: route_sort_order
+
+		annotation SummarizationSetBy = Automatic
+
+	partition DimRoute = m
+		mode: directQuery
+		source =
+				let
+				    Source = PostgreSQL.Database("db.transit.yesid.dev", "transit"),
+				    gold_dim_route = Source{[Schema="gold",Item="dim_route"]}[Data]
+				in
+				    gold_dim_route
+
+	annotation PBI_NavigationStepName = Navigation
+
+	annotation PBI_ResultType = Table
+

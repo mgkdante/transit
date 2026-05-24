@@ -1,0 +1,11 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/gitIntegration/platformProperties/2.0.0/schema.json",
+  "metadata": {
+    "type": "SemanticModel",
+    "displayName": "transit-ops-v2"
+  },
+  "config": {
+    "version": "2.0",
+    "logicalId": "06bb73a4-e054-47f5-9a3b-9a859c665f7a"
+  }
+}

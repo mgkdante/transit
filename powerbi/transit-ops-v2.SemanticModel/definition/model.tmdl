@@ -1,0 +1,33 @@
+model Model
+	culture: en-US
+	defaultPowerBIDataSourceVersion: powerBI_V3
+	sourceQueryCulture: en-US
+	dataAccessOptions
+		legacyRedirects
+		returnErrorValuesAsNull
+
+annotation __PBI_TimeIntelligenceEnabled = 1
+
+annotation PBI_QueryOrder = ["KpiActiveVehicles","KpiAvgDelay","KpiDelayedTrips","KpiMaxDelay","KpiRoutesRunning","DimDate","DimDirection","DimRoute","FactTripDelaySnapshot","DimStop","FactVehicleSnapshot","LatestTripDelay","LatestVehicle","VehicleSummary5m","TripDelaySummary5m","_Measures"]
+
+annotation PBI_ProTooling = ["DevMode"]
+
+ref table KpiActiveVehicles
+ref table KpiAvgDelay
+ref table KpiDelayedTrips
+ref table KpiMaxDelay
+ref table KpiRoutesRunning
+ref table DimDate
+ref table DimDirection
+ref table DimRoute
+ref table FactTripDelaySnapshot
+ref table DimStop
+ref table FactVehicleSnapshot
+ref table LatestTripDelay
+ref table LatestVehicle
+ref table VehicleSummary5m
+ref table TripDelaySummary5m
+ref table _Measures
+
+ref cultureInfo en-US
+

@@ -1,0 +1,150 @@
+table DimDate
+	lineageTag: 7c1d5c17-fa9e-4783-9b89-39e74b94ee5a
+
+	column provider_id
+		dataType: string
+		lineageTag: 659ae766-ce12-4d45-8e0d-e77915508fb5
+		summarizeBy: none
+		sourceColumn: provider_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column dataset_version_id
+		dataType: int64
+		formatString: 0
+		lineageTag: 2ef29480-ba94-4f77-b398-41a11aa736b0
+		summarizeBy: sum
+		sourceColumn: dataset_version_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column service_date
+		dataType: dateTime
+		formatString: Long Date
+		lineageTag: 15045376-710e-4bec-baeb-9a7c1f3b6ab3
+		summarizeBy: none
+		sourceColumn: service_date
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation UnderlyingDateTimeDataType = Date
+
+	column date_key
+		dataType: int64
+		formatString: 0
+		lineageTag: 9f36225f-a5c9-49b5-91c3-45af81724a1c
+		summarizeBy: none
+		sourceColumn: date_key
+
+		annotation SummarizationSetBy = Automatic
+
+	column day_of_week_iso
+		dataType: int64
+		formatString: 0
+		lineageTag: 1d66b181-377c-46bc-9a95-88a0aff66717
+		summarizeBy: sum
+		sourceColumn: day_of_week_iso
+
+		annotation SummarizationSetBy = Automatic
+
+	column day_name
+		dataType: string
+		lineageTag: db51c9f4-5a46-4856-b83a-75231cb6741d
+		summarizeBy: none
+		sourceColumn: day_name
+
+		annotation SummarizationSetBy = Automatic
+
+	column week_of_year
+		dataType: int64
+		formatString: 0
+		lineageTag: 5baf8c58-f532-40d1-ab6a-118e31a1a9c7
+		summarizeBy: sum
+		sourceColumn: week_of_year
+
+		annotation SummarizationSetBy = Automatic
+
+	column month_number
+		dataType: int64
+		formatString: 0
+		lineageTag: 7386f753-7521-462a-a2e2-aae95d6d4689
+		summarizeBy: sum
+		sourceColumn: month_number
+
+		annotation SummarizationSetBy = Automatic
+
+	column month_name
+		dataType: string
+		lineageTag: 83c52a0c-0670-40b2-9058-02e455369cc7
+		summarizeBy: none
+		sourceColumn: month_name
+
+		annotation SummarizationSetBy = Automatic
+
+	column quarter_number
+		dataType: int64
+		formatString: 0
+		lineageTag: dcece8c8-7cf1-45be-8eee-4127fa63c151
+		summarizeBy: sum
+		sourceColumn: quarter_number
+
+		annotation SummarizationSetBy = Automatic
+
+	column year_number
+		dataType: int64
+		formatString: 0
+		lineageTag: 737a12d5-db13-4541-a42b-efea90a131c3
+		summarizeBy: sum
+		sourceColumn: year_number
+
+		annotation SummarizationSetBy = Automatic
+
+	column is_weekend
+		dataType: boolean
+		formatString: """TRUE"";""TRUE"";""FALSE"""
+		lineageTag: 84ffb1fc-60a2-4e9e-b9cc-8710be5fadfd
+		summarizeBy: none
+		sourceColumn: is_weekend
+
+		annotation SummarizationSetBy = Automatic
+
+	column has_calendar_exception
+		dataType: boolean
+		formatString: """TRUE"";""TRUE"";""FALSE"""
+		lineageTag: 739a306b-8f92-41a9-a945-a1b015a61ad8
+		summarizeBy: none
+		sourceColumn: has_calendar_exception
+
+		annotation SummarizationSetBy = Automatic
+
+	column is_service_added
+		dataType: boolean
+		formatString: """TRUE"";""TRUE"";""FALSE"""
+		lineageTag: 7e16017a-013d-4c49-b898-a3b857fd8077
+		summarizeBy: none
+		sourceColumn: is_service_added
+
+		annotation SummarizationSetBy = Automatic
+
+	column is_service_removed
+		dataType: boolean
+		formatString: """TRUE"";""TRUE"";""FALSE"""
+		lineageTag: 81906bd5-91ba-4c1f-9e04-0b86e5a088ed
+		summarizeBy: none
+		sourceColumn: is_service_removed
+
+		annotation SummarizationSetBy = Automatic
+
+	partition DimDate = m
+		mode: directQuery
+		source =
+				let
+				    Source = PostgreSQL.Database("db.transit.yesid.dev", "transit"),
+				    gold_dim_date = Source{[Schema="gold",Item="dim_date"]}[Data]
+				in
+				    gold_dim_date
+
+	annotation PBI_NavigationStepName = Navigation
+
+	annotation PBI_ResultType = Table
+

@@ -1,0 +1,119 @@
+table DimStop
+	lineageTag: 4b94a9ac-d252-4ba2-aefb-d00737c77b31
+
+	column provider_id
+		dataType: string
+		lineageTag: 224a6bb2-7644-40b7-aeed-35aceb2fdb40
+		summarizeBy: none
+		sourceColumn: provider_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column dataset_version_id
+		dataType: int64
+		formatString: 0
+		lineageTag: dd7e710e-e2a6-4610-9e34-e25e9cd3a3af
+		summarizeBy: none
+		sourceColumn: dataset_version_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column stop_id
+		dataType: string
+		lineageTag: 199a63fd-f63b-4827-809a-f29053f77ed1
+		summarizeBy: none
+		sourceColumn: stop_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column stop_code
+		dataType: string
+		lineageTag: 177a1eb8-4d7d-45c5-bf8b-0eeae071988f
+		summarizeBy: none
+		sourceColumn: stop_code
+
+		annotation SummarizationSetBy = Automatic
+
+	column stop_name
+		dataType: string
+		lineageTag: dee6a1cd-1b62-46f1-9695-ecf6b48fcec9
+		summarizeBy: none
+		sourceColumn: stop_name
+
+		annotation SummarizationSetBy = Automatic
+
+	column parent_station
+		dataType: string
+		lineageTag: ca7eb35f-5dad-4ce4-8cda-cdfdaff542eb
+		summarizeBy: none
+		sourceColumn: parent_station
+
+		annotation SummarizationSetBy = Automatic
+
+	column location_type
+		dataType: int64
+		formatString: 0
+		lineageTag: 61e335ec-7782-41bf-a952-807be1e2ef3a
+		summarizeBy: none
+		sourceColumn: location_type
+
+		annotation SummarizationSetBy = Automatic
+
+	column stop_lat
+		dataType: double
+		lineageTag: c857f5a9-3e8f-48f3-bead-ca1a57c1c481
+		summarizeBy: none
+		sourceColumn: stop_lat
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	column stop_lon
+		dataType: double
+		lineageTag: 08d2838c-5706-4ece-838b-6abb875f9388
+		summarizeBy: none
+		sourceColumn: stop_lon
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	column zone_id
+		dataType: string
+		lineageTag: d89827c7-41dd-426b-8be7-29dad3aeba7b
+		summarizeBy: none
+		sourceColumn: zone_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column wheelchair_boarding
+		dataType: int64
+		formatString: 0
+		lineageTag: b2f27f30-d899-4495-a422-2696a1eeabc4
+		summarizeBy: none
+		sourceColumn: wheelchair_boarding
+
+		annotation SummarizationSetBy = Automatic
+
+	column platform_code
+		dataType: string
+		lineageTag: bc1c95be-1f10-4c9e-868c-40323bc34e69
+		summarizeBy: none
+		sourceColumn: platform_code
+
+		annotation SummarizationSetBy = Automatic
+
+	partition DimStop = m
+		mode: directQuery
+		source =
+				let
+				    Source = PostgreSQL.Database("db.transit.yesid.dev", "transit"),
+				    gold_dim_stop = Source{[Schema="gold",Item="dim_stop"]}[Data]
+				in
+				    gold_dim_stop
+
+	annotation PBI_NavigationStepName = Navigation
+
+	annotation PBI_ResultType = Table
+
