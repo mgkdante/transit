@@ -33,6 +33,22 @@ def test_manifest_loading() -> None:
     assert "gtfs_stm_26m-beta.zip" in beta_static_url
 
 
+def test_beta_static_feed_is_not_seeded_until_promoted() -> None:
+    settings = Settings(_env_file=None)
+    registry = ProviderRegistry.from_project_root(
+        project_root=Path(__file__).resolve().parents[1],
+        settings=settings,
+    )
+
+    provider = registry.get_provider("stm")
+    endpoint_keys = {seed.endpoint_key for seed in provider.to_feed_endpoint_seeds(settings)}
+
+    assert "static_schedule_beta" not in endpoint_keys, (
+        "Beta static GTFS is candidate-only and must not be seeded until promotion "
+        "and source-capture work make it active."
+    )
+
+
 def test_manifest_validation_rejects_missing_required_fields(tmp_path: Path) -> None:
     invalid_manifest_path = tmp_path / "invalid.yaml"
     invalid_manifest_path.write_text(
@@ -70,5 +86,7 @@ def test_show_provider_command() -> None:
     assert result.exit_code == 0
     assert '"provider_id": "stm"' in result.stdout
     assert '"static_schedule"' in result.stdout
+    assert '"static_schedule_beta"' in result.stdout
+    assert '"is_enabled": false' in result.stdout
     assert '"trip_updates"' in result.stdout
     assert '"vehicle_positions"' in result.stdout
