@@ -125,6 +125,34 @@ def test_validate_static_feeds_reports_missing_beta_url_as_unavailable(
     assert display["comparison"]["both_available"] is False
 
 
+def test_validate_static_feeds_reports_download_failure_as_unavailable(
+    tmp_path: Path,
+) -> None:
+    current_zip = tmp_path / "current.zip"
+    _write_gtfs_zip(current_zip)
+    registry = FakeRegistry(
+        FakeProvider(
+            {
+                "static_schedule": FakeFeed("https://example.test/current.zip"),
+                "static_schedule_beta": FakeFeed("https://example.test/beta.zip"),
+            }
+        )
+    )
+
+    def fake_downloader(*, source_url: str, temp_dir: Path) -> DownloadedArtifact:
+        if source_url.endswith("current.zip"):
+            return _artifact(current_zip, source_url)
+        raise OSError("network unavailable")
+
+    result = validate_static_feeds("stm", registry=registry, downloader=fake_downloader)
+    display = result.display_dict()
+
+    assert display["current"]["status"] == "ok"
+    assert display["beta"]["status"] == "unavailable"
+    assert display["beta"]["error_type"] == "download_error"
+    assert "network unavailable" in display["beta"]["message"]
+
+
 def test_validate_static_feeds_preserves_injected_artifact_paths_outside_temp_dir(
     tmp_path: Path,
 ) -> None:

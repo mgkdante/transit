@@ -245,11 +245,10 @@ def _validate_feed(
         try:
             artifact = downloader(source_url=source_url, temp_dir=temp_dir)
         except (OSError, ValueError) as exc:
-            return _invalid_detail(
+            return _unavailable_detail(
                 label=label,
                 endpoint_key=endpoint_key,
                 source_url=source_url,
-                artifact=artifact,
                 message=f"Static feed download failed: {exc}",
                 error_type="download_error",
             )
