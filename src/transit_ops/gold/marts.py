@@ -39,6 +39,14 @@ DELETE_LATEST_VEHICLE_SNAPSHOT = text(
     """
 )
 
+ANALYZE_REALTIME_SILVER_TABLES = text(
+    """
+    ANALYZE silver.trip_updates,
+            silver.trip_update_stop_time_updates,
+            silver.vehicle_positions
+    """
+)
+
 DELETE_DIM_DATE = text(
     """
     DELETE FROM gold.dim_date
@@ -923,6 +931,7 @@ def refresh_gold_realtime(
             "fact_vehicle_snapshot_upserted": 0,
             "fact_trip_delay_snapshot_upserted": 0,
         }
+        connection.execute(ANALYZE_REALTIME_SILVER_TABLES)
         if context.latest_vehicle_snapshot_id is not None:
             fact_row_counts["fact_vehicle_snapshot_upserted"] = _safe_rowcount(
                 connection.execute(

@@ -39,7 +39,7 @@ STM GTFS-RT protobuf  -> Bronze (R2/S3) -> Silver (Postgres) -> Gold facts     -
 
 Stack: Python 3.12, Postgres, Cloudflare R2/S3-compatible Bronze storage, Docker Compose, Caddy, GitHub Actions, Power BI.
 
-Production still runs on the existing Neon / Railway path until the Oracle cutover slice is complete. The Oracle Always Free A1 host now runs a staging Compose stack and exposes a hardened PostgreSQL endpoint for Power BI testing, but the published dashboard has not been repointed yet.
+The Oracle Always Free A1 host is now the production runtime for the database, realtime worker, health service, and GitHub Actions `DATABASE_URL` jobs. The host exposes hardened PostgreSQL paths: TLS/SCRAM app-owner access for automation and TLS/SCRAM `powerbi_reader` access scoped to Gold for Power BI.
 
 Operationally:
 
@@ -115,11 +115,7 @@ docker run --rm --env-file .env -p 8000:8000 transit-ops-health
 Core endpoints:
 
 - `GET /health/live`
-- `GET /health/ready`
 - `GET /health`
-- `GET /health/checks/database`
-- `GET /health/checks/pipeline`
-- `GET /health/checks/bronze-storage`
 
 ## Local Runtime Stack
 
@@ -134,9 +130,9 @@ docker compose up -d worker
 
 Caddy proxies health traffic to the health service. Local defaults serve the proxy over HTTP through `CADDY_SITE_ADDRESS=:80` and host port `CADDY_HTTP_PORT=8080`. The Compose file also publishes container port 443 to `CADDY_HTTPS_PORT=8443` for later VM/TLS configuration.
 
-## Oracle Migration Status
+## Oracle Production Status
 
-The Oracle migration is staged but not cut over. The current Oracle VM baseline is:
+The current Oracle VM baseline is:
 
 - OCI Canada Southeast / Montréal on Pay As You Go with the budget guardrail enabled
 - `VM.Standard.A1.Flex`, 4 OCPU, 24 GB RAM, Ubuntu 24.04 ARM, 200 GB boot volume
@@ -145,11 +141,11 @@ The Oracle migration is staged but not cut over. The current Oracle VM baseline 
 - Docker Engine and Compose installed from Docker's official Ubuntu repository
 - Docker Compose runs Postgres, the realtime worker, the health API, and Caddy on the Oracle host
 - ports 80 and 443 remain loopback-only for the current staging shape
-- public TCP 5432 is open through OCI NSG and UFW only for the hardened PostgreSQL reader path
+- public TCP 5432 is open through OCI NSG and UFW only for hardened PostgreSQL paths
 
-Power BI has not been repointed, GitHub Actions secrets have not been changed, DNS has not moved, and Neon / Railway cleanup has not happened yet. Exact instance identifiers, public IP, firewall evidence, and handoff notes live in Notion under roadmap `upgrading`, slices `slice-5` and `slice-6.2`.
+GitHub Actions uses the Oracle app-owner `DATABASE_URL`; the daily static pipeline and warm-rollup workflows are active after manual Oracle-backed proof runs. Power BI uses the dedicated `powerbi_reader` role when repointed to the Oracle host. Exact instance identifiers, public IP, firewall evidence, rebuild reports, workflow run links, and handoff notes live in Notion under roadmap `upgrading` and its child slices.
 
-The public PostgreSQL access helpers live in `infra/postgres-public-access/`. They render the TLS-only `pg_hba.conf` shape, apply the dedicated `powerbi_reader` grants, and verify that public access is TLS-backed, read-only, and scoped to Gold.
+The public PostgreSQL access helpers live in `infra/postgres-public-access/`. They render the TLS-only `pg_hba.conf` shape, apply the dedicated `powerbi_reader` grants, and verify that Power BI access is TLS-backed, read-only, and scoped to Gold.
 
 ## Pipeline Control
 
@@ -165,15 +161,9 @@ To resume it:
 bash scripts/resume-pipeline.sh
 ```
 
-The app database contract is `DATABASE_URL`. The current database-compute adapter is Neon-specific, so API-backed pause/resume checks and restart requests also need these adapter-only variables when you want compute control:
+The app database contract is `DATABASE_URL`. Oracle VM Postgres does not use an external database compute API, so the default database-compute adapter is `none`.
 
-- `NEON_API_KEY`
-- `NEON_PROJECT_ID`
-- `NEON_ENDPOINT_ID`
-
-For local Compose and Oracle-ready runs, use `DATABASE_COMPUTE_ADAPTER=none` so pipeline pause/resume controls the worker without trying to suspend database compute. Use `DATABASE_COMPUTE_ADAPTER=neon` while production still runs on Neon and needs API-backed compute control.
-
-Those values are adapter details, not the generic app database contract.
+The legacy Neon compute adapter remains in `scripts/lib/` only as a decommission target and should not be used for current production operations.
 
 ## Repo Navigation
 

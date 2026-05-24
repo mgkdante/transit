@@ -20,7 +20,7 @@ validate_hba_identifier "POSTGRES_USER" "$app_role"
 validate_hba_identifier "POWERBI_READER_ROLE" "$reader_role"
 
 cat <<HBA
-# Managed by Transit slice-6.2. Public TCP is limited to TLS + powerbi_reader.
+# Managed by Transit slice-6.4. Public TCP is limited to TLS + app owner or powerbi_reader.
 # TYPE      DATABASE      USER           ADDRESS         METHOD
 local       all           all                            scram-sha-256
 host        all           all            127.0.0.1/32    scram-sha-256
@@ -28,6 +28,8 @@ host        all           all            ::1/128         scram-sha-256
 host        all           ${app_role}    172.16.0.0/12   scram-sha-256
 host        all           ${app_role}    10.0.0.0/8      scram-sha-256
 host        all           ${app_role}    192.168.0.0/16  scram-sha-256
+hostssl     ${database}   ${app_role}    0.0.0.0/0       scram-sha-256
+hostssl     ${database}   ${app_role}    ::/0            scram-sha-256
 hostssl     ${database}   ${reader_role} 0.0.0.0/0       scram-sha-256
 hostssl     ${database}   ${reader_role} ::/0            scram-sha-256
 hostnossl   all           all            0.0.0.0/0       reject

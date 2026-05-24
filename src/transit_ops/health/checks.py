@@ -262,9 +262,14 @@ def check_stm_feed(
             raise RuntimeError(f"No URL configured for STM feed '{endpoint_key}'.")
 
         headers, params = _feed_auth_parts(feed.auth, resolved_settings)
+        method = "HEAD"
+        if endpoint_key in REQUIRED_REALTIME_ENDPOINTS:
+            method = "GET"
+            headers.setdefault("Accept", "application/x-protobuf")
+            headers.setdefault("User-Agent", "transit-ops/0.1.0")
         details = {"url": url, "status_code": None}
         response = (requester or httpx.request)(
-            "HEAD",
+            method,
             url,
             headers=headers,
             params=params,

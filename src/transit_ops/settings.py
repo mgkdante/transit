@@ -103,7 +103,7 @@ class Settings(BaseSettings):
     BRONZE_S3_SECRET_KEY: str | None = None
     BRONZE_S3_REGION: str = "auto"
     PIPELINE_PAUSED: bool = False
-    REALTIME_POLL_SECONDS: int = 300
+    REALTIME_POLL_SECONDS: int = 30
     REALTIME_STARTUP_DELAY_SECONDS: int = 0
     HEALTH_DATABASE_TIMEOUT_SECONDS: float = 5.0
     HEALTH_FEED_TIMEOUT_SECONDS: float = 10.0
