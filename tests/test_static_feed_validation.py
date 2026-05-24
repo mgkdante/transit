@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+import csv
 import hashlib
 from pathlib import Path
 from zipfile import ZipFile
 
+import pytest
+
+import transit_ops.validation.static_feeds as static_feed_validation
 from transit_ops.ingestion.common import DownloadedArtifact
 from transit_ops.validation.static_feeds import validate_static_feeds
 
@@ -121,6 +125,25 @@ def test_validate_static_feeds_reports_missing_beta_url_as_unavailable(
     assert display["comparison"]["both_available"] is False
 
 
+def test_validate_static_feeds_preserves_injected_artifact_paths_outside_temp_dir(
+    tmp_path: Path,
+) -> None:
+    current_zip = tmp_path / "cached-current.zip"
+    _write_gtfs_zip(current_zip)
+    registry = FakeRegistry(
+        FakeProvider({"static_schedule": FakeFeed("https://example.test/current.zip")})
+    )
+
+    def fake_downloader(*, source_url: str, temp_dir: Path) -> DownloadedArtifact:
+        assert not current_zip.is_relative_to(temp_dir)
+        return _artifact(current_zip, source_url)
+
+    result = validate_static_feeds("stm", registry=registry, downloader=fake_downloader)
+
+    assert result.current.status == "ok"
+    assert current_zip.exists()
+
+
 def test_validate_static_feeds_reports_invalid_zip_without_raising(tmp_path: Path) -> None:
     current_zip = tmp_path / "current.zip"
     invalid_zip = tmp_path / "not-a-zip.zip"
@@ -147,6 +170,47 @@ def test_validate_static_feeds_reports_invalid_zip_without_raising(tmp_path: Pat
     assert display["beta"]["status"] == "invalid"
     assert display["beta"]["error_type"] == "invalid_zip"
     assert "ZIP" in display["beta"]["message"]
+
+
+def test_validate_static_feeds_reports_archive_parse_failure_not_download_error(
+    monkeypatch, tmp_path: Path
+) -> None:
+    current_zip = tmp_path / "current.zip"
+    beta_zip = tmp_path / "bad-encoding.zip"
+    _write_gtfs_zip(current_zip)
+    _write_gtfs_zip(beta_zip)
+    registry = FakeRegistry(
+        FakeProvider(
+            {
+                "static_schedule": FakeFeed("https://example.test/current.zip"),
+                "static_schedule_beta": FakeFeed("https://example.test/beta.zip"),
+            }
+        )
+    )
+    original_count_member_rows = static_feed_validation._count_member_rows
+
+    def fake_count_member_rows(zip_file, member_name, member_key):  # noqa: ANN001
+        if Path(zip_file.filename) == beta_zip and member_key == "routes.txt":
+            raise csv.Error("broken csv")
+        return original_count_member_rows(zip_file, member_name, member_key)
+
+    monkeypatch.setattr(
+        static_feed_validation,
+        "_count_member_rows",
+        fake_count_member_rows,
+    )
+
+    def fake_downloader(*, source_url: str, temp_dir: Path) -> DownloadedArtifact:
+        if source_url.endswith("current.zip"):
+            return _artifact(current_zip, source_url)
+        return _artifact(beta_zip, source_url)
+
+    result = validate_static_feeds("stm", registry=registry, downloader=fake_downloader)
+    display = result.display_dict()
+
+    assert display["beta"]["status"] == "invalid"
+    assert display["beta"]["error_type"] == "archive_validation"
+    assert display["beta"]["error_type"] != "download_error"
 
 
 def test_validate_static_feeds_reports_missing_required_member_as_invalid(
@@ -176,3 +240,24 @@ def test_validate_static_feeds_reports_missing_required_member_as_invalid(
     assert display["beta"]["status"] == "invalid"
     assert display["beta"]["error_type"] == "schema_validation"
     assert "stop_times.txt" in display["beta"]["message"]
+
+
+def test_validate_static_feeds_does_not_swallow_unexpected_archive_bug(
+    monkeypatch, tmp_path: Path
+) -> None:
+    current_zip = tmp_path / "current.zip"
+    _write_gtfs_zip(current_zip)
+    registry = FakeRegistry(
+        FakeProvider({"static_schedule": FakeFeed("https://example.test/current.zip")})
+    )
+
+    def fake_downloader(*, source_url: str, temp_dir: Path) -> DownloadedArtifact:
+        return _artifact(current_zip, source_url)
+
+    def broken_validate_archive(**kwargs):  # noqa: ANN003
+        raise RuntimeError("programmer mistake")
+
+    monkeypatch.setattr(static_feed_validation, "_validate_archive", broken_validate_archive)
+
+    with pytest.raises(RuntimeError, match="programmer mistake"):
+        validate_static_feeds("stm", registry=registry, downloader=fake_downloader)

@@ -96,6 +96,28 @@ def test_validate_static_feeds_passes_provider_and_writes_report(
     assert report_payload["provider_id"] == "stm"
 
 
+def test_validate_static_feeds_bad_report_path_exits_before_validation(
+    monkeypatch, tmp_path
+) -> None:
+    called = False
+
+    def fake_validate_static_feeds(provider_id, *, settings, registry):  # noqa: ANN001
+        nonlocal called
+        called = True
+        raise AssertionError("validator should not be called")
+
+    monkeypatch.setattr(cli_module, "validate_static_feeds", fake_validate_static_feeds)
+
+    result = runner.invoke(
+        app,
+        ["validate-static-feeds", "stm", "--report-path", str(tmp_path)],
+    )
+
+    assert result.exit_code != 0
+    assert called is False
+    assert "--report-path must be a file path" in result.stderr
+
+
 def test_capture_realtime_help() -> None:
     result = runner.invoke(app, ["capture-realtime", "--help"])
 

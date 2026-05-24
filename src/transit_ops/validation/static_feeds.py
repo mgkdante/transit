@@ -176,6 +176,15 @@ def _validate_archive(
             message=str(exc),
             error_type="schema_validation",
         )
+    except (UnicodeDecodeError, csv.Error) as exc:
+        return _invalid_detail(
+            label=label,
+            endpoint_key=endpoint_key,
+            source_url=source_url,
+            artifact=artifact,
+            message=f"Archive CSV validation failed: {exc}",
+            error_type="archive_validation",
+        )
 
     return StaticFeedValidationDetail(
         label=label,
@@ -192,6 +201,14 @@ def _validate_archive(
         message="Static GTFS feed passed non-destructive validation.",
         error_type=None,
     )
+
+
+def _owns_artifact_path(artifact_path: Path, temp_dir: Path) -> bool:
+    try:
+        artifact_path.resolve().relative_to(temp_dir.resolve())
+    except ValueError:
+        return False
+    return True
 
 
 def _validate_feed(
@@ -224,25 +241,27 @@ def _validate_feed(
 
     artifact: DownloadedArtifact | None = None
     with tempfile.TemporaryDirectory(prefix="static_feed_validation_") as temp_dir_name:
+        temp_dir = Path(temp_dir_name)
         try:
-            artifact = downloader(source_url=source_url, temp_dir=Path(temp_dir_name))
+            artifact = downloader(source_url=source_url, temp_dir=temp_dir)
+        except (OSError, ValueError) as exc:
+            return _invalid_detail(
+                label=label,
+                endpoint_key=endpoint_key,
+                source_url=source_url,
+                artifact=artifact,
+                message=f"Static feed download failed: {exc}",
+                error_type="download_error",
+            )
+        try:
             return _validate_archive(
                 label=label,
                 endpoint_key=endpoint_key,
                 source_url=source_url,
                 artifact=artifact,
             )
-        except Exception as exc:
-            return _invalid_detail(
-                label=label,
-                endpoint_key=endpoint_key,
-                source_url=source_url,
-                artifact=artifact,
-                message=f"Static feed download or validation failed: {exc}",
-                error_type="download_error",
-            )
         finally:
-            if artifact is not None:
+            if artifact is not None and _owns_artifact_path(artifact.temp_path, temp_dir):
                 artifact.temp_path.unlink(missing_ok=True)
 
 
