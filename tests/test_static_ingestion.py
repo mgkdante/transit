@@ -222,7 +222,7 @@ def test_ingest_static_feed_uses_storage_abstraction_for_s3(
     connection = RecordingConnection()
     settings = Settings(
         _env_file=None,
-        DATABASE_URL="postgresql://user:pass@example.com/neondb",
+        DATABASE_URL="postgresql://user:pass@example.com/transit",
         STM_STATIC_GTFS_URL="https://override.example.com/stm.zip",
         BRONZE_STORAGE_BACKEND="s3",
         BRONZE_S3_ENDPOINT="https://example.r2.cloudflarestorage.com",

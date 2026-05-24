@@ -117,6 +117,6 @@ Every piece of workflow state has exactly one canonical location. For Transit, t
 ## Stack-specific notes
 
 - **Runtime:** Python 3.12
-- **Core infra:** Neon Postgres, Cloudflare R2, Railway, GitHub Actions, Power BI
+- **Core infra:** Oracle VM Postgres + Docker Compose, Cloudflare R2, Caddy, GitHub Actions, Power BI
 - **Realtime cadence:** current runtime behavior lives in Notion → `Architecture` → `Runtime / Operations`
 - **Power BI artifacts:** keep local `.pbix` working files in repo; preserve semantic-model explanations, validation notes, and portfolio framing in Notion

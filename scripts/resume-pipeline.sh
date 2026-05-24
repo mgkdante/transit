@@ -3,31 +3,24 @@
 # Restores all automated pipeline activity:
 #   - Re-enables daily GH Actions workflows
 #   - Resumes the Compose worker through infra/pipeline-control.sh
-#   - Hands database compute off to the configured database adapter
+#   - Leaves Postgres running; there is no external database compute API
 #
 # Usage:
 #   bash scripts/resume-pipeline.sh
-#
-# For database adapter actions, export the adapter-specific credentials first.
 
 set -euo pipefail
 
 REPO="mgkdante/transit"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# Adapter contract lives at scripts/lib/database-compute.sh.
-# shellcheck source=/dev/null
-source "$SCRIPT_DIR/lib/database-compute.sh"
-
 echo "==> Resuming pipeline..."
 
 scheduler_ok=true
 worker_control_ok=true
-database_compute_ok=true
 
 # --- 1. GitHub Actions ---
 echo ""
-echo "[1/3] Enabling GitHub Actions workflows..."
+echo "[1/2] Enabling GitHub Actions schedules..."
 if gh workflow enable "Daily Static Pipeline" --repo "$REPO" 2>&1; then
   echo "      Daily Static Pipeline: enabled"
 else
@@ -44,6 +37,7 @@ fi
 
 # --- 2. Worker service ---
 echo ""
+echo "[2/2] Starting local Compose worker..."
 if bash "$SCRIPT_DIR/../infra/pipeline-control.sh" resume worker; then
   echo "      Worker service resumed via Compose helper"
 else
@@ -51,18 +45,12 @@ else
   worker_control_ok=false
 fi
 
-# --- 3. Database compute adapter ---
 echo ""
-if ! resume_database_compute; then
-  database_compute_ok=false
-fi
-
-echo ""
-if $scheduler_ok && $worker_control_ok && $database_compute_ok; then
+if $scheduler_ok && $worker_control_ok; then
   echo "Done. Pipeline is resumed."
   echo "  - GH Actions: enabled (daily static at 06:00 UTC, warm rollups at 07:00 UTC)"
   echo "  - Worker service: resumed via Compose helper"
-  echo "  - Database compute: delegated to adapter '$(database_compute_adapter_name)'"
+  echo "  - Database: already running; no external compute API is used for Oracle/Compose Postgres"
   exit_code=0
 else
   echo "Pipeline resume completed with issues."
@@ -76,11 +64,7 @@ else
   else
     echo "  - Worker service: resume failed"
   fi
-  if $database_compute_ok; then
-    echo "  - Database compute: adapter '$(database_compute_adapter_name)' completed"
-  else
-    echo "  - Database compute: adapter '$(database_compute_adapter_name)' reported failure"
-  fi
+  echo "  - Database: already running; no external compute API is used for Oracle/Compose Postgres"
   exit_code=1
 fi
 echo ""

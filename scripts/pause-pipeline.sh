@@ -3,31 +3,24 @@
 # Stops all automated pipeline activity:
 #   - Disables daily GH Actions workflows
 #   - Pauses the Compose worker through infra/pipeline-control.sh
-#   - Hands database compute off to the configured database adapter
+#   - Leaves Postgres running; there is no external database compute API
 #
 # Usage:
 #   bash scripts/pause-pipeline.sh
-#
-# For database adapter actions, export the adapter-specific credentials first.
 
 set -euo pipefail
 
 REPO="mgkdante/transit"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# Adapter contract lives at scripts/lib/database-compute.sh.
-# shellcheck source=/dev/null
-source "$SCRIPT_DIR/lib/database-compute.sh"
-
 echo "==> Pausing pipeline..."
 
 scheduler_ok=true
 worker_control_ok=true
-database_compute_ok=true
 
 # --- 1. GitHub Actions ---
 echo ""
-echo "[1/3] Disabling GitHub Actions workflows..."
+echo "[1/2] Disabling GitHub Actions schedules..."
 if gh workflow disable "Daily Static Pipeline" --repo "$REPO" 2>&1; then
   echo "      Daily Static Pipeline: disabled"
 else
@@ -44,6 +37,7 @@ fi
 
 # --- 2. Worker service ---
 echo ""
+echo "[2/2] Stopping local Compose worker..."
 if bash "$SCRIPT_DIR/../infra/pipeline-control.sh" pause worker; then
   echo "      Worker service paused via Compose helper"
 else
@@ -51,18 +45,12 @@ else
   worker_control_ok=false
 fi
 
-# --- 3. Database compute adapter ---
 echo ""
-if ! pause_database_compute; then
-  database_compute_ok=false
-fi
-
-echo ""
-if $scheduler_ok && $worker_control_ok && $database_compute_ok; then
+if $scheduler_ok && $worker_control_ok; then
   echo "Done. Pipeline is paused."
   echo "  - GH Actions: disabled (no daily static or warm rollup runs)"
   echo "  - Worker service: paused via Compose helper"
-  echo "  - Database compute: delegated to adapter '$(database_compute_adapter_name)'"
+  echo "  - Database: left running; no external compute API is used for Oracle/Compose Postgres"
   exit_code=0
 else
   echo "Pipeline pause completed with issues."
@@ -76,11 +64,7 @@ else
   else
     echo "  - Worker service: pause failed"
   fi
-  if $database_compute_ok; then
-    echo "  - Database compute: adapter '$(database_compute_adapter_name)' completed"
-  else
-    echo "  - Database compute: adapter '$(database_compute_adapter_name)' handoff failed"
-  fi
+  echo "  - Database: left running; no external compute API is used for Oracle/Compose Postgres"
   exit_code=1
 fi
 echo ""

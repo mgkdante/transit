@@ -180,9 +180,9 @@ DATABASE_URL="$DATABASE_URL" \
 bash scripts/validate-oracle-cutover.sh
 ```
 
-The app database contract is `DATABASE_URL`. Oracle VM Postgres does not use an external database compute API, so the default database-compute adapter is `none`.
+The app database contract is `DATABASE_URL`. Oracle VM Postgres stays running during pause/resume; the scripts only disable GitHub Actions schedules and stop or start the Compose worker.
 
-The legacy Neon compute adapter remains in `scripts/lib/` only as a decommission target and should not be used for current production operations.
+Weekly `pg_repack` maintenance runs in dry-run mode by default through `.github/workflows/weekly-pg-repack.yml`. Use manual dispatch with `dry_run=false` only after confirming the database has the `pg_repack` extension installed and enough free disk for a table rewrite.
 
 ## Repo Navigation
 

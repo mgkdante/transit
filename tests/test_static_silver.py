@@ -320,7 +320,7 @@ def test_load_latest_static_to_silver_reads_s3_backed_archive(
     }
     settings = Settings(
         _env_file=None,
-        DATABASE_URL="postgresql://user:pass@example.com/neondb",
+        DATABASE_URL="postgresql://user:pass@example.com/transit",
         BRONZE_S3_ENDPOINT="https://example.r2.cloudflarestorage.com",
         BRONZE_S3_BUCKET="bronze-bucket",
         BRONZE_S3_ACCESS_KEY="access",
