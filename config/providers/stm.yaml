@@ -20,6 +20,19 @@ feeds:
     refresh_interval_seconds: 86400
     is_enabled: true
 
+  static_schedule_beta:
+    endpoint_key: static_schedule_beta
+    feed_kind: static_schedule
+    source_format: gtfs_schedule_zip
+    source_url: https://www.stm.info/sites/default/files/gtfs/gtfs_stm_26m-beta.zip
+    source_url_env_var: STM_STATIC_GTFS_BETA_URL
+    documentation_url: https://www.stm.info/en/about/developers/release-note-new-gtfs
+    auth:
+      auth_type: none
+      notes: GTFS beta is a validation candidate, not the active production static feed.
+    refresh_interval_seconds: 86400
+    is_enabled: false
+
   trip_updates:
     endpoint_key: trip_updates
     feed_kind: trip_updates

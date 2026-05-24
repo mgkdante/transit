@@ -37,6 +37,8 @@ def test_cli_help() -> None:
     assert "build-warm-rollups" in result.stdout
     assert "prune-warm-rollup-storage" in result.stdout
     assert "rebuild-oracle-data" in result.stdout
+    assert "validate-static-feeds" in result.stdout
+    assert "retention-proof-report" in result.stdout
 
 
 def test_ingest_static_help() -> None:
@@ -44,6 +46,174 @@ def test_ingest_static_help() -> None:
 
     assert result.exit_code == 0
     assert "Download, archive, and register one static GTFS feed." in result.stdout
+
+
+def test_validate_static_feeds_help() -> None:
+    result = runner.invoke(app, ["validate-static-feeds", "--help"])
+
+    assert result.exit_code == 0
+    assert "Validate current and beta static GTFS feeds without ingesting them." in result.stdout
+
+
+def test_validate_static_feeds_passes_provider_and_writes_report(
+    monkeypatch, tmp_path
+) -> None:
+    from dataclasses import dataclass
+
+    recorded: dict[str, object] = {}
+    report_path = tmp_path / "static-validation.json"
+
+    @dataclass(frozen=True)
+    class FakeValidationResult:
+        provider_id: str
+
+        def display_dict(self) -> dict[str, object]:
+            return {
+                "provider_id": self.provider_id,
+                "validated_at_utc": "2026-05-24T12:00:00+00:00",
+                "current": {"status": "ok"},
+                "beta": {"status": "ok"},
+                "comparison": {"both_available": True},
+            }
+
+    def fake_validate_static_feeds(provider_id, *, settings, registry):  # noqa: ANN001
+        recorded["provider_id"] = provider_id
+        recorded["settings_type"] = type(settings).__name__
+        recorded["registry_type"] = type(registry).__name__
+        return FakeValidationResult(provider_id=provider_id)
+
+    monkeypatch.setattr(cli_module, "validate_static_feeds", fake_validate_static_feeds)
+
+    result = runner.invoke(
+        app,
+        ["validate-static-feeds", "stm", "--report-path", str(report_path)],
+    )
+
+    assert result.exit_code == 0
+    assert recorded["provider_id"] == "stm"
+    stdout_payload = json.loads(result.stdout)
+    report_payload = json.loads(report_path.read_text(encoding="utf-8"))
+    assert stdout_payload == report_payload
+    assert report_payload["provider_id"] == "stm"
+
+
+def test_validate_static_feeds_bad_report_path_exits_before_validation(
+    monkeypatch, tmp_path
+) -> None:
+    called = False
+
+    def fake_validate_static_feeds(provider_id, *, settings, registry):  # noqa: ANN001
+        nonlocal called
+        called = True
+        raise AssertionError("validator should not be called")
+
+    monkeypatch.setattr(cli_module, "validate_static_feeds", fake_validate_static_feeds)
+
+    result = runner.invoke(
+        app,
+        ["validate-static-feeds", "stm", "--report-path", str(tmp_path)],
+    )
+
+    assert result.exit_code != 0
+    assert called is False
+    assert "--report-path must be a file path" in result.stderr
+
+
+def test_retention_proof_report_help() -> None:
+    result = runner.invoke(app, ["retention-proof-report", "--help"])
+
+    assert result.exit_code == 0
+    assert "Build a non-destructive retention and storage proof report." in result.stdout
+    assert "--report-path" in result.stdout
+
+
+def test_retention_proof_report_passes_provider_and_writes_report(
+    monkeypatch, tmp_path
+) -> None:
+    from dataclasses import dataclass
+
+    recorded: dict[str, object] = {}
+    report_path = tmp_path / "retention-proof.json"
+
+    @dataclass(frozen=True)
+    class FakeRetentionProofResult:
+        provider_id: str
+
+        def display_dict(self) -> dict[str, object]:
+            return {
+                "provider_id": self.provider_id,
+                "generated_at_utc": "2026-05-24T12:00:00+00:00",
+                "retention_contract": {},
+                "storage": {},
+                "dry_runs": {},
+                "static_feed_validation": {"status": "ok"},
+            }
+
+    def fake_build_retention_proof_report(provider_id, *, settings, registry):  # noqa: ANN001
+        recorded["provider_id"] = provider_id
+        recorded["settings_type"] = type(settings).__name__
+        recorded["registry_type"] = type(registry).__name__
+        return FakeRetentionProofResult(provider_id=provider_id)
+
+    monkeypatch.setattr(
+        cli_module,
+        "build_retention_proof_report",
+        fake_build_retention_proof_report,
+    )
+
+    result = runner.invoke(
+        app,
+        ["retention-proof-report", "stm", "--report-path", str(report_path)],
+    )
+
+    assert result.exit_code == 0
+    assert recorded["provider_id"] == "stm"
+    stdout_payload = json.loads(result.stdout)
+    report_payload = json.loads(report_path.read_text(encoding="utf-8"))
+    assert stdout_payload == report_payload
+    assert report_payload["provider_id"] == "stm"
+
+
+def test_retention_proof_report_bad_report_path_exits_before_build(
+    monkeypatch, tmp_path
+) -> None:
+    called = False
+
+    def fake_build_retention_proof_report(provider_id, *, settings, registry):  # noqa: ANN001
+        nonlocal called
+        called = True
+        raise AssertionError("proof report should not be built")
+
+    monkeypatch.setattr(
+        cli_module,
+        "build_retention_proof_report",
+        fake_build_retention_proof_report,
+    )
+
+    result = runner.invoke(
+        app,
+        ["retention-proof-report", "stm", "--report-path", str(tmp_path)],
+    )
+
+    assert result.exit_code != 0
+    assert called is False
+    assert "--report-path must be a file path" in result.stderr
+
+
+def test_retention_proof_report_rejects_unknown_provider_before_writing(
+    tmp_path,
+) -> None:
+    report_path = tmp_path / "retention-proof.json"
+
+    result = runner.invoke(
+        app,
+        ["retention-proof-report", "not-a-provider", "--report-path", str(report_path)],
+    )
+
+    assert result.exit_code != 0
+    assert "No provider manifest found" in result.stderr
+    assert "provider_id='not-a-provider'" in result.stderr
+    assert not report_path.exists()
 
 
 def test_capture_realtime_help() -> None:
@@ -472,6 +642,36 @@ def test_prune_warm_rollup_storage_help() -> None:
 
     assert result.exit_code == 0
     assert "GOLD_WARM_ROLLUP_RETENTION_DAYS" in result.stdout
+    assert "--dry-run" in result.stdout
+
+
+def test_prune_warm_rollup_storage_dry_run_flag(monkeypatch) -> None:
+    from transit_ops.maintenance import WarmRollupStoragePruneResult
+
+    recorded: dict[str, object] = {}
+
+    def fake_prune_warm_rollup_storage(provider_id, *, settings, dry_run):  # noqa: ANN001
+        recorded["provider_id"] = provider_id
+        recorded["dry_run"] = dry_run
+        return WarmRollupStoragePruneResult(
+            provider_id=provider_id,
+            dry_run=dry_run,
+            retention_days=90,
+            cutoff_utc=None,
+            deleted_row_counts={
+                "gold.vehicle_summary_5m": 0,
+                "gold.trip_delay_summary_5m": 0,
+                "gold.warm_rollup_periods": 0,
+            },
+            completed_at_utc=datetime(2026, 3, 27, 0, 0, 0, tzinfo=UTC),
+        )
+
+    monkeypatch.setattr(cli_module, "prune_warm_rollup_storage", fake_prune_warm_rollup_storage)
+
+    result = runner.invoke(app, ["prune-warm-rollup-storage", "stm", "--dry-run"])
+
+    assert result.exit_code == 0
+    assert recorded["dry_run"] is True
 
 
 def test_build_warm_rollups_calls_build_warm_rollups(monkeypatch) -> None:

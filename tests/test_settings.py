@@ -26,8 +26,15 @@ def test_settings_defaults() -> None:
     assert settings.BRONZE_S3_REGION == "auto"
     assert settings.REALTIME_POLL_SECONDS == 30
     assert settings.REALTIME_STARTUP_DELAY_SECONDS == 0
+    assert settings.STM_STATIC_GTFS_BETA_URL == (
+        "https://www.stm.info/sites/default/files/gtfs/gtfs_stm_26m-beta.zip"
+    )
     assert settings.STATIC_DATASET_RETENTION_COUNT == 1
-    assert settings.SILVER_REALTIME_RETENTION_DAYS == 2
+    assert settings.SILVER_REALTIME_RETENTION_DAYS == 30
+    assert settings.GOLD_FACT_RETENTION_DAYS == 365
+    assert settings.BRONZE_REALTIME_RETENTION_DAYS == 30
+    assert settings.BRONZE_STATIC_RETENTION_DAYS == 30
+    assert settings.GOLD_WARM_ROLLUP_RETENTION_DAYS == 90
     assert settings.HEALTH_DATABASE_TIMEOUT_SECONDS == 5.0
     assert settings.HEALTH_FEED_TIMEOUT_SECONDS == 10.0
     assert settings.HEALTH_MAX_PIPELINE_AGE_SECONDS == 900
@@ -42,6 +49,22 @@ def test_health_settings_are_exposed_in_display_dict() -> None:
     assert display["HEALTH_DATABASE_TIMEOUT_SECONDS"] == 5.0
     assert display["HEALTH_FEED_TIMEOUT_SECONDS"] == 10.0
     assert display["HEALTH_MAX_PIPELINE_AGE_SECONDS"] == 900
+
+
+def test_retention_and_beta_settings_are_exposed_in_display_dict() -> None:
+    settings = Settings(_env_file=None)
+
+    display = settings.display_dict()
+
+    assert display["STM_STATIC_GTFS_BETA_URL"] == (
+        "https://www.stm.info/sites/default/files/gtfs/gtfs_stm_26m-beta.zip"
+    )
+    assert display["STATIC_DATASET_RETENTION_COUNT"] == 1
+    assert display["SILVER_REALTIME_RETENTION_DAYS"] == 30
+    assert display["GOLD_FACT_RETENTION_DAYS"] == 365
+    assert display["BRONZE_REALTIME_RETENTION_DAYS"] == 30
+    assert display["BRONZE_STATIC_RETENTION_DAYS"] == 30
+    assert display["GOLD_WARM_ROLLUP_RETENTION_DAYS"] == 90
 
 
 def test_sqlalchemy_database_url_conversion() -> None:

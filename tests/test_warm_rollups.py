@@ -13,6 +13,14 @@ class RowcountResult:
         self.rowcount = rowcount
 
 
+class ScalarResult:
+    def __init__(self, value: int) -> None:
+        self.value = value
+
+    def scalar_one(self) -> int:
+        return self.value
+
+
 class IterableResult:
     def __init__(self, rows: list) -> None:
         self.rows = rows
@@ -64,6 +72,15 @@ class FakeConnection:
 
         if "DELETE FROM gold.warm_rollup_periods" in sql:
             return RowcountResult(8)
+
+        if "SELECT COUNT(*)" in sql and "FROM gold.vehicle_summary_5m" in sql:
+            return ScalarResult(5)
+
+        if "SELECT COUNT(*)" in sql and "FROM gold.trip_delay_summary_5m" in sql:
+            return ScalarResult(3)
+
+        if "SELECT COUNT(*)" in sql and "FROM gold.warm_rollup_periods" in sql:
+            return ScalarResult(8)
 
         return RowcountResult(0)
 
@@ -191,3 +208,39 @@ def test_prune_warm_rollup_storage_deletes_old_periods() -> None:
     assert result.deleted_row_counts["gold.vehicle_summary_5m"] == 5
     assert result.deleted_row_counts["gold.trip_delay_summary_5m"] == 3
     assert result.deleted_row_counts["gold.warm_rollup_periods"] == 8
+
+
+def test_prune_warm_rollup_storage_dry_run_counts_without_deletes() -> None:
+    conn = FakeConnection()
+    engine = FakeEngine(conn)
+    settings = _fake_settings()
+
+    result = prune_warm_rollup_storage("stm", settings=settings, engine=engine, dry_run=True)
+
+    assert result.dry_run is True
+    assert result.deleted_row_counts["gold.vehicle_summary_5m"] == 5
+    assert result.deleted_row_counts["gold.trip_delay_summary_5m"] == 3
+    assert result.deleted_row_counts["gold.warm_rollup_periods"] == 8
+
+    deletes = [s for s in conn.executed if "DELETE FROM gold." in s]
+    assert deletes == []
+
+    count_queries = [s for s in conn.executed if "SELECT COUNT(*)" in s]
+    assert len(count_queries) == 3
+
+
+def test_prune_warm_rollup_storage_display_dict_includes_dry_run() -> None:
+    result = WarmRollupStoragePruneResult(
+        provider_id="stm",
+        dry_run=True,
+        retention_days=90,
+        cutoff_utc=datetime(2026, 3, 1, tzinfo=UTC),
+        deleted_row_counts={
+            "gold.vehicle_summary_5m": 5,
+            "gold.trip_delay_summary_5m": 3,
+            "gold.warm_rollup_periods": 8,
+        },
+        completed_at_utc=datetime(2026, 3, 27, tzinfo=UTC),
+    )
+
+    assert result.display_dict()["dry_run"] is True

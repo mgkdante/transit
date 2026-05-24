@@ -38,6 +38,8 @@ from transit_ops.silver import (
     load_latest_realtime_to_silver,
     load_latest_static_to_silver,
 )
+from transit_ops.validation.proof import build_retention_proof_report
+from transit_ops.validation.static_feeds import validate_static_feeds
 
 app = typer.Typer(
     help=(
@@ -250,6 +252,67 @@ def ingest_static(provider_id: str) -> None:
     except ValueError as exc:
         raise typer.BadParameter(str(exc)) from exc
     typer.echo(json.dumps(result.display_dict(), indent=2))
+
+
+@app.command("validate-static-feeds")
+def validate_static_feeds_command(
+    provider_id: str,
+    report_path: Path | None = typer.Option(  # noqa: B008
+        None,
+        "--report-path",
+        help="Write the JSON validation report to this path as well as stdout.",
+    ),
+) -> None:
+    """Validate current and beta static GTFS feeds without ingesting them."""
+
+    settings = get_settings()
+    try:
+        _preflight_report_path(report_path)
+        result = validate_static_feeds(
+            provider_id,
+            settings=settings,
+            registry=_provider_registry(settings),
+        )
+    except KeyError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+
+    report = json.dumps(result.display_dict(), indent=2, sort_keys=True)
+    if report_path is not None:
+        report_path.write_text(report + "\n", encoding="utf-8")
+    typer.echo(report)
+
+
+@app.command("retention-proof-report")
+def retention_proof_report_command(
+    provider_id: str,
+    report_path: Path | None = typer.Option(  # noqa: B008
+        None,
+        "--report-path",
+        help="Write the JSON proof report to this path as well as stdout.",
+    ),
+) -> None:
+    """Build a non-destructive retention and storage proof report."""
+
+    settings = get_settings()
+    registry = _provider_registry(settings)
+    try:
+        registry.get_provider(provider_id)
+    except KeyError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+
+    _preflight_report_path(report_path)
+    try:
+        result = build_retention_proof_report(
+            provider_id,
+            settings=settings,
+            registry=registry,
+        )
+    except KeyError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    report = json.dumps(result.display_dict(), indent=2, sort_keys=True)
+    if report_path is not None:
+        report_path.write_text(report + "\n", encoding="utf-8")
+    typer.echo(report)
 
 
 @app.command("capture-realtime")
@@ -627,11 +690,18 @@ def rebuild_oracle_data_command(
 
 
 @app.command("prune-warm-rollup-storage")
-def prune_warm_rollup_storage_command(provider_id: str) -> None:
+def prune_warm_rollup_storage_command(
+    provider_id: str,
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        help="Print what would be deleted without executing any deletions.",
+    ),
+) -> None:
     """Prune warm rollup rows older than GOLD_WARM_ROLLUP_RETENTION_DAYS (default 90 days)."""
 
     settings = get_settings()
-    result = prune_warm_rollup_storage(provider_id, settings=settings)
+    result = prune_warm_rollup_storage(provider_id, settings=settings, dry_run=dry_run)
     typer.echo(json.dumps(result.display_dict(), indent=2))
 
 
