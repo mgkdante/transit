@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from datetime import date
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
 import typer
@@ -37,8 +37,6 @@ from transit_ops.orchestration import (
     run_static_pipeline,
 )
 from transit_ops.providers import ProviderRegistry
-from transit_ops.rebuild.oracle import rebuild_oracle_data
-from transit_ops.rebuild.static_beta import rebuild_beta_static_contract
 from transit_ops.recovery import RECOVERY_ACTION_IDS, run_recovery_action
 from transit_ops.settings import Settings, get_settings
 from transit_ops.silver import (
@@ -47,6 +45,7 @@ from transit_ops.silver import (
     load_latest_realtime_to_silver,
     load_latest_static_to_silver,
 )
+from transit_ops.source_factory.runner import run_source_factory_rebuild
 from transit_ops.validation.proof import build_retention_proof_report
 from transit_ops.validation.static_feeds import validate_static_feeds
 
@@ -93,6 +92,28 @@ def _preflight_report_path(report_path: Path | None) -> None:
             pass
     except OSError as exc:
         raise typer.BadParameter(f"--report-path is not writable: {report_path}") from exc
+
+
+def _preflight_report_dir(report_dir: Path) -> None:
+    if report_dir.exists() and not report_dir.is_dir():
+        raise typer.BadParameter(f"--report-dir must be a directory, got file: {report_dir}")
+    if not report_dir.parent.exists():
+        raise typer.BadParameter(
+            f"--report-dir parent directory does not exist: {report_dir.parent}"
+        )
+
+    try:
+        report_dir.mkdir(exist_ok=True)
+    except OSError as exc:
+        raise typer.BadParameter(f"--report-dir is not writable: {report_dir}") from exc
+
+
+def _default_source_factory_keep_from_date(settings: Settings) -> date:
+    retention_days = max(
+        settings.BRONZE_REALTIME_RETENTION_DAYS,
+        settings.BRONZE_STATIC_RETENTION_DAYS,
+    )
+    return datetime.now(UTC).date() - timedelta(days=retention_days)
 
 
 def _seed_provider(connection, manifest: ProviderManifest) -> None:
@@ -756,130 +777,72 @@ def build_warm_rollups_command(
     typer.echo(json.dumps(result.display_dict(), indent=2))
 
 
-@app.command("rebuild-oracle-data")
-def rebuild_oracle_data_command(
+@app.command("rebuild-source-factory")
+def rebuild_source_factory_command(
     provider_id: str,
-    month: str = typer.Option(
-        "2026-05",
-        "--month",
-        help="Rebuild month in YYYY-MM format.",
-    ),
     execute: bool = typer.Option(
         False,
         "--execute",
-        help="Actually reset and rebuild Oracle data. Defaults to dry-run.",
+        help="Actually reset and rebuild Oracle data. Defaults to dry-run proof only.",
     ),
-    delete_r2: bool = typer.Option(
+    destructive_r2_cleanup: bool = typer.Option(
         False,
-        "--delete-r2",
-        help="Legacy: delete pre-May Bronze R2 objects before the database reset.",
+        "--destructive-r2-cleanup",
+        help="Allow approved known Bronze cleanup as part of an execute rebuild.",
     ),
-    confirm_reset: bool = typer.Option(
+    active_prefix_wipe: bool = typer.Option(
         False,
-        "--confirm-reset",
-        help="Confirm raw, Silver, and Gold rebuild tables may be reset.",
+        "--active-prefix-wipe",
+        help="Plan or execute a separately confirmed active-prefix wipe.",
     ),
     confirm_worker_stopped: bool = typer.Option(
         False,
         "--confirm-worker-stopped",
         help="Confirm the realtime worker is stopped before executing the rebuild.",
     ),
-    confirm_r2_delete_before: str | None = typer.Option(
-        None,
-        "--confirm-r2-delete-before",
-        help="Required as 2026-05-01 when --delete-r2 is set.",
+    confirm_oracle_target: bool = typer.Option(
+        False,
+        "--confirm-oracle-target",
+        help="Confirm DATABASE_URL points at the Oracle runtime database.",
     ),
-    report_path: Path | None = typer.Option(  # noqa: B008
-        None,
-        "--report-path",
-        help="Write the JSON rebuild report to this path as well as stdout.",
+    confirm_r2_cleanup: bool = typer.Option(
+        False,
+        "--confirm-r2-cleanup",
+        help="Confirm approved known Bronze objects may be deleted.",
+    ),
+    confirm_active_prefix_wipe: bool = typer.Option(
+        False,
+        "--confirm-active-prefix-wipe",
+        help="Confirm active Bronze prefixes may be wiped.",
+    ),
+    report_dir: Path = typer.Option(  # noqa: B008
+        Path("artifacts/slice-8.6"),
+        "--report-dir",
+        help="Directory for source-factory proof artifacts.",
     ),
 ) -> None:
-    """Legacy guarded Oracle data rebuild for the May 2026 recovery."""
+    """Rebuild STM Oracle from source truth and write source-factory proof artifacts."""
 
-    parsed_r2_delete_before = None
-    if confirm_r2_delete_before is not None:
-        try:
-            parsed_r2_delete_before = date.fromisoformat(confirm_r2_delete_before)
-        except ValueError as exc:
+    settings = get_settings()
+    try:
+        _preflight_report_dir(report_dir)
+        if execute and not destructive_r2_cleanup:
             raise typer.BadParameter(
-                "--confirm-r2-delete-before must use YYYY-MM-DD format."
-            ) from exc
-
-    settings = get_settings()
-    try:
-        _preflight_report_path(report_path)
-        result = rebuild_oracle_data(
+                "--destructive-r2-cleanup is required with --execute."
+            )
+        result = run_source_factory_rebuild(
             provider_id,
-            month=month,
+            artifact_dir=report_dir,
+            keep_from_date=_default_source_factory_keep_from_date(settings),
             execute=execute,
-            delete_r2=delete_r2,
-            confirm_reset=confirm_reset,
+            active_prefix_wipe=active_prefix_wipe,
             confirm_worker_stopped=confirm_worker_stopped,
-            confirm_r2_delete_before=parsed_r2_delete_before,
+            confirm_oracle_target=confirm_oracle_target,
+            confirm_r2_cleanup=confirm_r2_cleanup,
+            confirm_active_prefix_wipe=confirm_active_prefix_wipe,
             settings=settings,
         )
         report = json.dumps(result.display_dict(), indent=2, sort_keys=True)
-        if report_path is not None:
-            report_path.write_text(report + "\n", encoding="utf-8")
-    except (ValueError, FileNotFoundError) as exc:
-        raise typer.BadParameter(str(exc)) from exc
-
-    typer.echo(report)
-
-
-@app.command("rebuild-beta-static")
-def rebuild_beta_static_command(
-    provider_id: str,
-    execute: bool = typer.Option(
-        False,
-        "--execute",
-        help="Actually wipe rebuild tables and rebuild beta static Silver and Gold.",
-    ),
-    delete_r2: bool = typer.Option(
-        False,
-        "--delete-r2",
-        help="Delete active Bronze R2 runtime prefixes before fresh beta static capture.",
-    ),
-    confirm_reset: bool = typer.Option(
-        False,
-        "--confirm-reset",
-        help="Confirm static Silver and Gold tables may be reset.",
-    ),
-    confirm_worker_stopped: bool = typer.Option(
-        False,
-        "--confirm-worker-stopped",
-        help="Confirm the realtime worker is stopped before executing the rebuild.",
-    ),
-    confirm_r2_active_prefix_wipe: bool = typer.Option(
-        False,
-        "--confirm-r2-active-prefix-wipe",
-        help="Confirm active Bronze R2 runtime prefixes may be wiped.",
-    ),
-    report_path: Path | None = typer.Option(  # noqa: B008
-        None,
-        "--report-path",
-        help="Write the JSON beta static rebuild report to this path as well as stdout.",
-    ),
-) -> None:
-    """Hard-rebuild beta static Silver and Gold from the active STM beta source."""
-
-    settings = get_settings()
-    try:
-        _preflight_report_path(report_path)
-        result = rebuild_beta_static_contract(
-            provider_id,
-            execute=execute,
-            delete_r2=delete_r2,
-            confirm_reset=confirm_reset,
-            confirm_worker_stopped=confirm_worker_stopped,
-            confirm_r2_active_prefix_wipe=confirm_r2_active_prefix_wipe,
-            settings=settings,
-            pre_cleanup_report_path=report_path,
-        )
-        report = json.dumps(result.display_dict(), indent=2, sort_keys=True)
-        if report_path is not None:
-            report_path.write_text(report + "\n", encoding="utf-8")
     except (ValueError, FileNotFoundError) as exc:
         raise typer.BadParameter(str(exc)) from exc
 

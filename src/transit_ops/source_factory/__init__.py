@@ -21,6 +21,7 @@ from transit_ops.source_factory.models import (
     SourceFactoryResult,
 )
 from transit_ops.source_factory.r2 import (
+    SOURCE_FACTORY_ENDPOINTS,
     R2CleanupPlan,
     R2CleanupResult,
     R2Inventory,
@@ -29,6 +30,7 @@ from transit_ops.source_factory.r2 import (
     build_r2_cleanup_plan_from_inventory,
     build_r2_inventory,
     execute_r2_cleanup_plan,
+    parse_bronze_key,
     run_r2_prune_cycle,
 )
 from transit_ops.source_factory.runner import (
@@ -55,6 +57,7 @@ __all__ = [
     "PhaseStatus",
     "OptionalSourceUnavailable",
     "SOURCE_FACTORY_RESET_TABLES",
+    "SOURCE_FACTORY_ENDPOINTS",
     "SOURCE_FACTORY_VALIDATION_CHECKS",
     "SourceFactoryCatalog",
     "SourceFactoryOperationImpls",
@@ -72,6 +75,7 @@ __all__ = [
     "build_r2_namespace_proof",
     "build_worker_stopped_proof",
     "execute_r2_cleanup_plan",
+    "parse_bronze_key",
     "reset_source_factory_tables",
     "run_source_factory_rebuild",
     "run_r2_prune_cycle",

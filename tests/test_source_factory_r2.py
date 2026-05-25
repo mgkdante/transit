@@ -87,13 +87,17 @@ def test_inventory_scans_active_prefixes_and_classifies_known_vs_unknown_keys() 
 
     assert storage.listed_prefixes == [
         "stm/static_schedule/",
+        "stm/gis_static/",
         "stm/trip_updates/",
         "stm/vehicle_positions/",
+        "stm/i3_alerts/",
     ]
     assert inventory.prefixes == (
         "stm/static_schedule/",
+        "stm/gis_static/",
         "stm/trip_updates/",
         "stm/vehicle_positions/",
+        "stm/i3_alerts/",
     )
     assert [item.storage_path for item in inventory.objects] == [
         STATIC_OLD,
@@ -268,11 +272,15 @@ def test_prune_cycle_writes_artifacts_and_reinventories_after_delete(tmp_path) -
 
     assert storage.listed_prefixes == [
         "stm/static_schedule/",
+        "stm/gis_static/",
         "stm/trip_updates/",
         "stm/vehicle_positions/",
+        "stm/i3_alerts/",
         "stm/static_schedule/",
+        "stm/gis_static/",
         "stm/trip_updates/",
         "stm/vehicle_positions/",
+        "stm/i3_alerts/",
     ]
     assert result.cleanup_result.deleted_keys == [TRIP_OLD]
     assert [item.storage_path for item in result.pre_inventory.objects] == [
@@ -339,8 +347,18 @@ def test_prune_cycle_can_inventory_source_factory_endpoint_keys(tmp_path) -> Non
         "stm/gis_static/",
         "stm/i3_alerts/",
     )
-    assert result.pre_inventory.unknown_keys == [GIS_SOURCE_KEY, I3_SOURCE_KEY]
-    assert result.cleanup_plan.skipped_unknown_keys == [GIS_SOURCE_KEY, I3_SOURCE_KEY]
+    assert result.pre_inventory.unknown_keys == []
+    assert [item.storage_path for item in result.pre_inventory.known_objects] == [
+        GIS_SOURCE_KEY,
+        I3_SOURCE_KEY,
+        STATIC_OLD,
+    ]
+    assert [item.storage_path for item in result.cleanup_plan.eligible_objects] == [
+        GIS_SOURCE_KEY,
+        I3_SOURCE_KEY,
+        STATIC_OLD,
+    ]
+    assert result.cleanup_plan.skipped_unknown_keys == []
 
 
 def test_display_dict_payloads_are_json_safe_and_include_skipped_unknown_keys() -> None:

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
@@ -7,15 +8,60 @@ from pathlib import Path
 from typing import Protocol
 
 from transit_ops.ingestion.storage import BronzeObjectInfo
-from transit_ops.rebuild.bronze_cleanup import REBUILD_ENDPOINTS, ParsedBronzeKey, parse_bronze_key
 from transit_ops.source_factory.artifacts import write_json_artifact
 from transit_ops.source_factory.models import ArtifactRef
+
+SOURCE_FACTORY_ENDPOINTS = (
+    "static_schedule",
+    "gis_static",
+    "trip_updates",
+    "vehicle_positions",
+    "i3_alerts",
+)
+
+_PARTITION_BY_ENDPOINT = {
+    "static_schedule": "ingested_at_utc",
+    "gis_static": "ingested_at_utc",
+    "trip_updates": "captured_at_utc",
+    "vehicle_positions": "captured_at_utc",
+    "i3_alerts": "captured_at_utc",
+}
+
+_EXACT_FILENAME_BY_ENDPOINT = {
+    "trip_updates": "trip_updates.pb",
+    "vehicle_positions": "vehicle_positions.pb",
+}
+
+_CHECKSUM_PREFIX_PATTERN = re.compile(r"^[0-9a-fA-F]{12}$")
+_OBSERVED_TIMESTAMP_PATTERN = re.compile(r"^\d{8}T\d{6}\d{6}Z$")
+_ZIP_FILENAME_PATTERN = re.compile(r"^.+\.zip$")
+_JSON_FILENAME_PATTERN = re.compile(r"^.+\.json$")
 
 
 class R2CleanupStorage(Protocol):
     def list_objects(self, prefix: str) -> Iterable[BronzeObjectInfo]: ...
 
     def delete_object(self, storage_path: str) -> None: ...
+
+
+@dataclass(frozen=True)
+class ParsedBronzeKey:
+    provider_id: str
+    endpoint_key: str
+    key_date: date
+    observed_at_utc: datetime
+    checksum_prefix: str
+    filename: str
+
+    def display_dict(self) -> dict[str, object]:
+        return {
+            "provider_id": self.provider_id,
+            "endpoint_key": self.endpoint_key,
+            "key_date": self.key_date.isoformat(),
+            "observed_at_utc": self.observed_at_utc.isoformat(),
+            "checksum_prefix": self.checksum_prefix,
+            "filename": self.filename,
+        }
 
 
 @dataclass(frozen=True)
@@ -128,11 +174,65 @@ class R2PruneCycleResult:
         }
 
 
+def parse_bronze_key(storage_path: str) -> ParsedBronzeKey | None:
+    parts = storage_path.split("/")
+    if len(parts) != 4:
+        return None
+
+    provider_id, endpoint_key, partition, object_name = parts
+    expected_partition_label = _PARTITION_BY_ENDPOINT.get(endpoint_key)
+    if expected_partition_label is None:
+        return None
+
+    partition_label, separator, partition_date = partition.partition("=")
+    if separator != "=" or partition_label != expected_partition_label:
+        return None
+
+    object_parts = object_name.split("__", maxsplit=2)
+    if len(object_parts) != 3:
+        return None
+
+    timestamp_fragment, checksum_prefix, filename = object_parts
+    if _CHECKSUM_PREFIX_PATTERN.fullmatch(checksum_prefix) is None:
+        return None
+
+    expected_filename = _EXACT_FILENAME_BY_ENDPOINT.get(endpoint_key)
+    if expected_filename is not None and filename != expected_filename:
+        return None
+    if endpoint_key in {"static_schedule", "gis_static"} and (
+        _ZIP_FILENAME_PATTERN.fullmatch(filename) is None
+    ):
+        return None
+    if endpoint_key == "i3_alerts" and _JSON_FILENAME_PATTERN.fullmatch(filename) is None:
+        return None
+
+    try:
+        key_date = date.fromisoformat(partition_date)
+        observed_at_utc = datetime.strptime(
+            timestamp_fragment,
+            "%Y%m%dT%H%M%S%fZ",
+        ).replace(tzinfo=UTC)
+    except ValueError:
+        return None
+
+    if observed_at_utc.date() != key_date:
+        return None
+
+    return ParsedBronzeKey(
+        provider_id=provider_id,
+        endpoint_key=endpoint_key,
+        key_date=key_date,
+        observed_at_utc=observed_at_utc,
+        checksum_prefix=checksum_prefix,
+        filename=filename,
+    )
+
+
 def build_r2_inventory(
     storage: R2CleanupStorage,
     *,
     provider_id: str,
-    endpoint_keys: Iterable[str] = REBUILD_ENDPOINTS,
+    endpoint_keys: Iterable[str] = SOURCE_FACTORY_ENDPOINTS,
     generated_at_utc: datetime | None = None,
 ) -> R2Inventory:
     prefixes = tuple(f"{provider_id}/{endpoint_key}/" for endpoint_key in endpoint_keys)
@@ -282,7 +382,7 @@ def run_r2_prune_cycle(
     provider_id: str,
     keep_from_date: date,
     artifact_dir: Path,
-    endpoint_keys: Iterable[str] = REBUILD_ENDPOINTS,
+    endpoint_keys: Iterable[str] = SOURCE_FACTORY_ENDPOINTS,
     execute: bool = False,
     confirm_r2_cleanup: bool = False,
     active_prefix_wipe: bool = False,
