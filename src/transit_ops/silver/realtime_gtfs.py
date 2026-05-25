@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Iterator
 from dataclasses import asdict, dataclass
-from datetime import UTC, date, datetime
+from datetime import date, datetime
 from itertools import islice
 from pathlib import Path
 
@@ -12,6 +12,12 @@ from sqlalchemy.dialects import postgresql
 from sqlalchemy.engine import Connection, Engine
 
 from transit_ops.db.connection import make_engine
+from transit_ops.gtfs.types import (
+    ProviderBounds,
+    parse_gtfs_date,
+    parse_gtfs_realtime_timestamp,
+    validate_wgs84_position,
+)
 from transit_ops.ingestion.common import project_root
 from transit_ops.ingestion.storage import get_bronze_storage
 from transit_ops.providers import ProviderRegistry
@@ -410,19 +416,13 @@ def _parse_optional_gtfs_date(value: str) -> date | None:
     normalized = _blank_to_none(value)
     if normalized is None:
         return None
-    try:
-        return datetime.strptime(normalized, "%Y%m%d").date()
-    except ValueError as exc:
-        raise ValueError(f"GTFS-RT date '{normalized}' must be in YYYYMMDD format.") from exc
+    return parse_gtfs_date(normalized, field_name="GTFS-RT start_date")
 
 
 def _parse_optional_timestamp(timestamp: int | None) -> datetime | None:
     if not timestamp:
         return None
-    try:
-        return datetime.fromtimestamp(int(timestamp), tz=UTC)
-    except (OverflowError, OSError, ValueError) as exc:
-        raise ValueError(f"GTFS-RT timestamp '{timestamp}' is malformed.") from exc
+    return parse_gtfs_realtime_timestamp(timestamp, field_name="GTFS-RT timestamp")
 
 
 def _has_field(message, field_name: str) -> bool:  # noqa: ANN001
@@ -436,14 +436,21 @@ def classify_montreal_position_quality(
     latitude: float | None,
     longitude: float | None,
 ) -> str:
-    if latitude is None or longitude is None:
-        return "missing_position"
-    if (
-        MONTREAL_MIN_LATITUDE <= latitude <= MONTREAL_MAX_LATITUDE
-        and MONTREAL_MIN_LONGITUDE <= longitude <= MONTREAL_MAX_LONGITUDE
-    ):
+    quality = validate_wgs84_position(
+        latitude,
+        longitude,
+        bounds=ProviderBounds(
+            min_latitude=MONTREAL_MIN_LATITUDE,
+            max_latitude=MONTREAL_MAX_LATITUDE,
+            min_longitude=MONTREAL_MIN_LONGITUDE,
+            max_longitude=MONTREAL_MAX_LONGITUDE,
+        ),
+    )
+    if quality == "valid_provider_bbox":
         return "valid_montreal_bbox"
-    return "outside_montreal_bbox"
+    if quality == "outside_provider_bbox":
+        return "outside_montreal_bbox"
+    return quality
 
 
 def _enum_name(enum_type, value: int | None) -> str | None:  # noqa: ANN001

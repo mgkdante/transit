@@ -14,7 +14,9 @@ QUOTED_HOST_WITH_AT_RE = re.compile(
     r"((?:host|hostname) ['\"])[^'\"]+@([^'\"]+['\"])",
     re.IGNORECASE,
 )
-RESTRICTED_SCHEMAS = ("raw", "silver", "core", "public")
+REPORTING_RESTRICTED_SCHEMAS = ("raw", "silver", "core", "public")
+DB_ALLOWED_SCHEMAS = ("raw", "core", "silver", "gold")
+DB_RESTRICTED_SCHEMAS = ("public",)
 CONNECT_TIMEOUT_SECONDS = 10
 NETWORK_FAILURE_MARKERS = (
     "connection timeout",
@@ -94,15 +96,18 @@ def verify_tls(cur: psycopg.Cursor[object]) -> None:
     print_pass("current connection uses TLS")
 
 
-def verify_gold_usage(cur: psycopg.Cursor[object]) -> None:
-    if not schema_exists(cur, "gold"):
-        raise VerificationError("gold schema does not exist")
-    if not schema_usage(cur, "gold"):
-        raise VerificationError("current user lacks USAGE on gold")
-    print_pass("current user has USAGE on gold")
+def verify_schema_usage(cur: psycopg.Cursor[object], schema_name: str) -> None:
+    if not schema_exists(cur, schema_name):
+        raise VerificationError(f"{schema_name} schema does not exist")
+    if not schema_usage(cur, schema_name):
+        raise VerificationError(f"current user lacks USAGE on {schema_name}")
+    print_pass(f"current user has USAGE on {schema_name}")
 
 
-def gold_select_relations(cur: psycopg.Cursor[object]) -> list[tuple[str, str, bool]]:
+def schema_select_relations(
+    cur: psycopg.Cursor[object],
+    schema_name: str,
+) -> list[tuple[str, str, bool]]:
     cur.execute(
         """
         SELECT
@@ -111,10 +116,11 @@ def gold_select_relations(cur: psycopg.Cursor[object]) -> list[tuple[str, str, b
           has_table_privilege(current_user, c.oid, 'SELECT')
         FROM pg_catalog.pg_class c
         JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
-        WHERE n.nspname = 'gold'
+        WHERE n.nspname = %s
           AND c.relkind IN ('r', 'p', 'v', 'm', 'f')
         ORDER BY c.relname
         """,
+        (schema_name,),
     )
     return [
         (str(name), str(relkind), bool(has_select))
@@ -122,30 +128,48 @@ def gold_select_relations(cur: psycopg.Cursor[object]) -> list[tuple[str, str, b
     ]
 
 
-def verify_gold_select(cur: psycopg.Cursor[object]) -> None:
-    relations = gold_select_relations(cur)
+def verify_schema_select(cur: psycopg.Cursor[object], schema_name: str) -> None:
+    relations = schema_select_relations(cur, schema_name)
     if not relations:
-        print_pass("no Gold table-like relations; gold schema privilege exists")
+        print_pass(f"no {schema_name} table-like relations; schema privilege exists")
         return
 
     for relation_name, _relkind, has_select in relations:
         if not has_select:
-            raise VerificationError(f"current user lacks SELECT on gold.{relation_name}")
+            raise VerificationError(f"current user lacks SELECT on {schema_name}.{relation_name}")
 
-    print_pass(f"current user has SELECT on {len(relations)} Gold relations")
+    print_pass(f"current user has SELECT on {len(relations)} {schema_name} relations")
 
     table_name, relkind = relations[0][0], relations[0][1]
     cur.execute(
         sql.SQL("SELECT * FROM {}.{} LIMIT 1").format(
-            sql.Identifier("gold"),
+            sql.Identifier(schema_name),
             sql.Identifier(table_name),
         ),
     )
-    print_pass(f"SELECT from gold.{table_name} ({RELKIND_LABELS.get(relkind, relkind)}) succeeds")
+    print_pass(
+        f"SELECT from {schema_name}.{table_name} "
+        f"({RELKIND_LABELS.get(relkind, relkind)}) succeeds"
+    )
 
 
-def verify_restricted_schema_usage(cur: psycopg.Cursor[object]) -> None:
-    for schema_name in RESTRICTED_SCHEMAS:
+def verify_gold_usage(cur: psycopg.Cursor[object]) -> None:
+    verify_schema_usage(cur, "gold")
+
+
+def gold_select_relations(cur: psycopg.Cursor[object]) -> list[tuple[str, str, bool]]:
+    return schema_select_relations(cur, "gold")
+
+
+def verify_gold_select(cur: psycopg.Cursor[object]) -> None:
+    verify_schema_select(cur, "gold")
+
+
+def verify_restricted_schema_usage(
+    cur: psycopg.Cursor[object],
+    schemas: tuple[str, ...] = REPORTING_RESTRICTED_SCHEMAS,
+) -> None:
+    for schema_name in schemas:
         if not schema_exists(cur, schema_name):
             print_pass(f"{schema_name} schema does not exist")
             continue
@@ -182,28 +206,55 @@ def verify_statement_fails(
     raise VerificationError(f"unexpectedly succeeded: {statement}")
 
 
+def verify_temp_table_allowed(conn: psycopg.Connection[object]) -> None:
+    with conn.cursor() as cur:
+        cur.execute("CREATE TEMP TABLE transit_db_temp_probe(id integer)")
+        cur.execute("DROP TABLE transit_db_temp_probe")
+    print_pass("CREATE TEMP TABLE succeeds")
+
+
 def verify_read_only(conn: psycopg.Connection[object]) -> None:
     verify_statement_fails(
         conn,
         sql.SQL("CREATE TABLE {}.{}(id integer)").format(
             sql.Identifier("gold"),
-            sql.Identifier("powerbi_reader_write_probe"),
+            sql.Identifier("transit_reporting_write_probe"),
         ),
         "CREATE TABLE in gold fails",
         sql.SQL("DROP TABLE IF EXISTS {}.{}").format(
             sql.Identifier("gold"),
-            sql.Identifier("powerbi_reader_write_probe"),
+            sql.Identifier("transit_reporting_write_probe"),
         ),
     )
     verify_statement_fails(
         conn,
-        "CREATE TEMP TABLE powerbi_reader_temp_probe(id integer)",
+        "CREATE TEMP TABLE transit_reporting_temp_probe(id integer)",
         "CREATE TEMP TABLE fails",
-        "DROP TABLE IF EXISTS powerbi_reader_temp_probe",
+        "DROP TABLE IF EXISTS transit_reporting_temp_probe",
     )
 
 
-def run_positive_verification(database_url: str, expected_user: str) -> int:
+def verify_db_read_only(conn: psycopg.Connection[object]) -> None:
+    verify_statement_fails(
+        conn,
+        sql.SQL("CREATE TABLE {}.{}(id integer)").format(
+            sql.Identifier("silver"),
+            sql.Identifier("transit_db_write_probe"),
+        ),
+        "CREATE TABLE in silver fails",
+        sql.SQL("DROP TABLE IF EXISTS {}.{}").format(
+            sql.Identifier("silver"),
+            sql.Identifier("transit_db_write_probe"),
+        ),
+    )
+    verify_temp_table_allowed(conn)
+
+
+def run_positive_verification(
+    database_url: str,
+    expected_user: str,
+    role_contract: str = "reporting",
+) -> int:
     try:
         with psycopg.connect(
             database_url,
@@ -213,15 +264,26 @@ def run_positive_verification(database_url: str, expected_user: str) -> int:
             with conn.cursor() as cur:
                 verify_current_user(cur, expected_user)
                 verify_tls(cur)
-                verify_gold_usage(cur)
-                verify_gold_select(cur)
-                verify_restricted_schema_usage(cur)
-            verify_read_only(conn)
+                if role_contract == "reporting":
+                    verify_gold_usage(cur)
+                    verify_gold_select(cur)
+                    verify_restricted_schema_usage(cur)
+                elif role_contract == "db":
+                    for schema_name in DB_ALLOWED_SCHEMAS:
+                        verify_schema_usage(cur, schema_name)
+                        verify_schema_select(cur, schema_name)
+                    verify_restricted_schema_usage(cur, DB_RESTRICTED_SCHEMAS)
+                else:
+                    raise VerificationError(f"unknown role contract: {role_contract}")
+            if role_contract == "reporting":
+                verify_read_only(conn)
+            else:
+                verify_db_read_only(conn)
     except Exception as exc:
         print(redact_dsn(f"FAIL: {exc}"), file=sys.stderr)
         return 1
 
-    print_pass(f"{expected_user} is TLS-backed, read-only, and scoped to Gold")
+    print_pass(f"{expected_user} is TLS-backed, read-only, and matches {role_contract}")
     return 0
 
 
@@ -232,7 +294,7 @@ def run_expected_connect_failure(database_url: str) -> int:
     except Exception as exc:
         message = redact_dsn(str(exc))
         if is_expected_hba_rejection_message(message):
-            print_pass(f"connection failed at the public HBA/TLS gate: {message}")
+            print_pass(f"connection failed at the HBA/TLS gate: {message}")
             return 0
         if is_network_failure_message(message):
             print(
@@ -241,7 +303,7 @@ def run_expected_connect_failure(database_url: str) -> int:
             )
             return 1
         print(
-            f"FAIL: connection did not prove public HBA/TLS rejection: {message}",
+            f"FAIL: connection did not prove HBA/TLS rejection: {message}",
             file=sys.stderr,
         )
         return 1
@@ -252,10 +314,11 @@ def run_expected_connect_failure(database_url: str) -> int:
 
 def parse_args(argv: Sequence[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Verify the public Postgres Power BI reader contract.",
+        description="Verify the Transit external SQL reader contracts.",
     )
-    parser.add_argument("--database-url-env", default="POWERBI_DATABASE_URL")
-    parser.add_argument("--expected-user", default="powerbi_reader")
+    parser.add_argument("--database-url-env", default="TRANSIT_REPORTING_DATABASE_URL")
+    parser.add_argument("--expected-user", default="transit-reporting")
+    parser.add_argument("--role-contract", choices=("reporting", "db"), default="reporting")
     parser.add_argument("--expect-connect-failure", action="store_true")
     return parser.parse_args(argv)
 
@@ -269,7 +332,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     if args.expect_connect_failure:
         return run_expected_connect_failure(database_url)
-    return run_positive_verification(database_url, args.expected_user)
+    return run_positive_verification(database_url, args.expected_user, args.role_contract)
 
 
 if __name__ == "__main__":

@@ -20,7 +20,8 @@ def _active_lines(text: str) -> list[str]:
 def test_compose_defines_oracle_ready_runtime_services() -> None:
     services = _compose()["services"]
     assert set(services) == {"postgres", "worker", "health", "caddy"}
-    assert services["postgres"]["image"] == "postgres:16"
+    assert services["postgres"]["build"]["dockerfile"] == "Dockerfile.postgis"
+    assert services["postgres"]["image"] == "transit-postgres-postgis:16"
     assert services["worker"]["build"]["dockerfile"] == "Dockerfile"
     assert services["health"]["build"]["dockerfile"] == "Dockerfile.health"
     assert services["caddy"]["image"].startswith("caddy:2")

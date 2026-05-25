@@ -36,6 +36,9 @@ def _load_migration() -> object:
 
 def test_slice_8_4_migration_defines_source_tables_without_postgis() -> None:
     migration = _migration_text()
+    assert '"alembic_version"' in migration
+    assert '"version_num"' in migration
+    assert "sa.String(length=128)" in migration
     for expected in [
         "gis_static",
         "stm_gis_zip",

@@ -1,6 +1,9 @@
 services:
   postgres:
-    image: postgres:16
+    build:
+      context: .
+      dockerfile: Dockerfile.postgis
+    image: transit-postgres-postgis:16
     restart: unless-stopped
     env_file:
       - .env

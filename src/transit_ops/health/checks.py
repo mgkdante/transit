@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import os
+import platform
+import shutil
 import time
 from collections.abc import Callable, Mapping
 from datetime import UTC, datetime
@@ -30,6 +33,8 @@ FEED_RESULT_NAMES = {
 EngineFactory = Callable[[Settings], Any]
 Requester = Callable[..., Any]
 StorageFactory = Callable[..., Any]
+RuntimeStatsProvider = Callable[[], Mapping[str, object]]
+_RUNTIME_HEALTH_CACHE: tuple[datetime, ComponentHealthResult] | None = None
 
 
 def check_database_connectivity(
@@ -307,6 +312,54 @@ def check_stm_feed(
     )
 
 
+def check_runtime_vm_health(
+    settings: Settings | None = None,
+    *,
+    now: datetime | None = None,
+    stats_provider: RuntimeStatsProvider | None = None,
+    use_cache: bool = True,
+) -> ComponentHealthResult:
+    global _RUNTIME_HEALTH_CACHE
+
+    resolved_settings = settings or get_settings()
+    checked_at = _checked_at(now)
+    started = time.perf_counter()
+    cache_seconds = max(0, int(resolved_settings.HEALTH_RUNTIME_CACHE_SECONDS))
+    if use_cache and stats_provider is None and _RUNTIME_HEALTH_CACHE is not None:
+        cached_at, cached_result = _RUNTIME_HEALTH_CACHE
+        if (checked_at - cached_at).total_seconds() <= cache_seconds:
+            return cached_result
+
+    try:
+        raw_stats = dict((stats_provider or collect_runtime_vm_stats)())
+        details = _runtime_details(raw_stats, resolved_settings)
+    except Exception as exc:  # noqa: BLE001
+        return ComponentHealthResult(
+            name="runtime_vm",
+            status="down",
+            message=f"Runtime VM health check failed: {_safe_error(exc)}",
+            latency_ms=_latency_ms(started),
+            checked_at_utc=checked_at,
+        )
+
+    status = _runtime_status(details)
+    result = ComponentHealthResult(
+        name="runtime_vm",
+        status=status,
+        message=(
+            "Runtime VM metrics are within thresholds."
+            if status == "ok"
+            else "Runtime VM resource pressure is elevated."
+        ),
+        latency_ms=_latency_ms(started),
+        checked_at_utc=checked_at,
+        details=details,
+    )
+    if use_cache and stats_provider is None:
+        _RUNTIME_HEALTH_CACHE = (checked_at, result)
+    return result
+
+
 def run_health_checks(
     settings: Settings | None = None,
     *,
@@ -340,6 +393,10 @@ def run_health_checks(
             resolved_settings,
             project_root=resolved_root,
             storage_factory=storage_factory,
+            now=checked_at,
+        ),
+        check_runtime_vm_health(
+            resolved_settings,
             now=checked_at,
         ),
         check_stm_feed(
@@ -459,6 +516,118 @@ def _configured_bronze_location(settings: Settings, project_root: Path) -> str:
     if settings.BRONZE_S3_BUCKET:
         return f"s3://{settings.BRONZE_S3_BUCKET}/"
     return ""
+
+
+def collect_runtime_vm_stats() -> Mapping[str, object]:
+    disk_usage = shutil.disk_usage("/")
+    memory = _memory_stats()
+    load_average = _load_average()
+    return {
+        "disk_used_percent": round((disk_usage.used / disk_usage.total) * 100, 2),
+        "disk_total_gb": round(disk_usage.total / (1024**3), 2),
+        "disk_free_gb": round(disk_usage.free / (1024**3), 2),
+        "memory_used_percent": memory["memory_used_percent"],
+        "memory_total_mb": memory["memory_total_mb"],
+        "memory_available_mb": memory["memory_available_mb"],
+        "load_1m": load_average[0],
+        "load_5m": load_average[1],
+        "load_15m": load_average[2],
+        "cpu_count": os.cpu_count() or 1,
+        "uptime_seconds": _uptime_seconds(),
+        "python_version": platform.python_version(),
+        "platform_system": platform.system(),
+        "platform_machine": platform.machine(),
+        "kernel_release": platform.release(),
+    }
+
+
+def _memory_stats() -> dict[str, float]:
+    meminfo: dict[str, int] = {}
+    meminfo_path = Path("/proc/meminfo")
+    if meminfo_path.exists():
+        for line in meminfo_path.read_text(encoding="utf-8").splitlines():
+            key, _, value = line.partition(":")
+            parts = value.strip().split()
+            if parts:
+                meminfo[key] = int(parts[0])
+    total_kb = meminfo.get("MemTotal", 0)
+    available_kb = meminfo.get("MemAvailable", 0)
+    if total_kb <= 0:
+        return {
+            "memory_used_percent": 0.0,
+            "memory_total_mb": 0.0,
+            "memory_available_mb": 0.0,
+        }
+    used_percent = ((total_kb - available_kb) / total_kb) * 100
+    return {
+        "memory_used_percent": round(used_percent, 2),
+        "memory_total_mb": round(total_kb / 1024, 2),
+        "memory_available_mb": round(available_kb / 1024, 2),
+    }
+
+
+def _load_average() -> tuple[float, float, float]:
+    try:
+        return tuple(round(value, 2) for value in os.getloadavg())
+    except OSError:
+        return (0.0, 0.0, 0.0)
+
+
+def _uptime_seconds() -> int | None:
+    uptime_path = Path("/proc/uptime")
+    if not uptime_path.exists():
+        return None
+    try:
+        return int(float(uptime_path.read_text(encoding="utf-8").split()[0]))
+    except (IndexError, ValueError):
+        return None
+
+
+def _runtime_details(
+    raw_stats: Mapping[str, object],
+    settings: Settings,
+) -> dict[str, object]:
+    allowed_keys = (
+        "disk_used_percent",
+        "disk_total_gb",
+        "disk_free_gb",
+        "memory_used_percent",
+        "memory_total_mb",
+        "memory_available_mb",
+        "load_1m",
+        "load_5m",
+        "load_15m",
+        "cpu_count",
+        "uptime_seconds",
+        "python_version",
+        "platform_system",
+        "platform_machine",
+        "kernel_release",
+    )
+    details = {key: raw_stats.get(key) for key in allowed_keys if key in raw_stats}
+    details["retention_days"] = {
+        "bronze_realtime": settings.BRONZE_REALTIME_RETENTION_DAYS,
+        "bronze_static": settings.BRONZE_STATIC_RETENTION_DAYS,
+        "silver_realtime": settings.SILVER_REALTIME_RETENTION_DAYS,
+        "gold_fact": settings.GOLD_FACT_RETENTION_DAYS,
+        "gold_warm_rollup": settings.GOLD_WARM_ROLLUP_RETENTION_DAYS,
+    }
+    return details
+
+
+def _runtime_status(details: Mapping[str, object]) -> str:
+    disk_used = _float_detail(details, "disk_used_percent")
+    memory_used = _float_detail(details, "memory_used_percent")
+    load_1m = _float_detail(details, "load_1m")
+    cpu_count = max(1.0, _float_detail(details, "cpu_count"))
+    if disk_used >= 90 or memory_used >= 95 or (load_1m / cpu_count) >= 2:
+        return "degraded"
+    return "ok"
+
+
+def _float_detail(details: Mapping[str, object], key: str) -> float:
+    value = details.get(key)
+    return float(value) if isinstance(value, int | float) else 0.0
 
 
 def _feed_auth_parts(auth: Any, settings: Settings) -> tuple[dict[str, str], dict[str, str]]:

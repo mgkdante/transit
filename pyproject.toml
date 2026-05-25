@@ -20,6 +20,8 @@ dependencies = [
   "sqlalchemy>=2.0,<3.0",
   "typer>=0.16,<1.0",
   "pyshp>=2.3,<3.0",
+  "httpx>=0.28.1",
+  "fastapi>=0.136.1",
 ]
 
 [project.scripts]
@@ -31,8 +33,6 @@ dev = [
   "ruff>=0.11,<0.12",
 ]
 health = [
-    "fastapi>=0.136.1",
-    "httpx>=0.28.1",
     "uvicorn[standard]>=0.47.0",
 ]
 

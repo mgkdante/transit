@@ -14,6 +14,7 @@ class FeedKind(StrEnum):
     GIS_STATIC = "gis_static"
     TRIP_UPDATES = "trip_updates"
     VEHICLE_POSITIONS = "vehicle_positions"
+    I3_ALERTS = "i3_alerts"
 
 
 class SourceFormat(StrEnum):
@@ -21,6 +22,7 @@ class SourceFormat(StrEnum):
     STM_GIS_ZIP = "stm_gis_zip"
     GTFS_RT_TRIP_UPDATES = "gtfs_rt_trip_updates"
     GTFS_RT_VEHICLE_POSITIONS = "gtfs_rt_vehicle_positions"
+    API_I3_JSON = "api_i3_json"
 
 
 class StorageBackend(StrEnum):
@@ -52,10 +54,28 @@ class AuthConfig(BaseModel):
         return self
 
 
+class ProviderBoundsConfig(BaseModel):
+    min_latitude: float
+    max_latitude: float
+    min_longitude: float
+    max_longitude: float
+
+    @model_validator(mode="after")
+    def validate_bounds_shape(self) -> ProviderBoundsConfig:
+        if not (-90 <= self.min_latitude <= self.max_latitude <= 90):
+            raise ValueError("Provider latitude bounds must be valid WGS84 values.")
+        if not (-180 <= self.min_longitude <= self.max_longitude <= 180):
+            raise ValueError("Provider longitude bounds must be valid WGS84 values.")
+        return self
+
+
 class ProviderConfig(BaseModel):
     provider_id: str
     display_name: str
     timezone: str
+    default_language: str | None = None
+    default_currency: str | None = None
+    bounds: ProviderBoundsConfig | None = None
     attribution_text: str | None = None
     website_url: AnyHttpUrl | None = None
     is_active: bool = True
@@ -106,6 +126,11 @@ class VehiclePositionsFeedConfig(FeedConfigBase):
     source_format: Literal[SourceFormat.GTFS_RT_VEHICLE_POSITIONS]
 
 
+class I3AlertsFeedConfig(FeedConfigBase):
+    feed_kind: Literal[FeedKind.I3_ALERTS]
+    source_format: Literal[SourceFormat.API_I3_JSON]
+
+
 RealtimeFeedConfig = TripUpdatesFeedConfig | VehiclePositionsFeedConfig
 
 
@@ -113,7 +138,8 @@ FeedConfig = Annotated[
     StaticFeedConfig
     | GisStaticFeedConfig
     | TripUpdatesFeedConfig
-    | VehiclePositionsFeedConfig,
+    | VehiclePositionsFeedConfig
+    | I3AlertsFeedConfig,
     Field(discriminator="feed_kind"),
 ]
 
@@ -121,8 +147,15 @@ FeedConfig = Annotated[
 @dataclass(frozen=True)
 class ProviderSeed:
     provider_id: str
+    provider_key: str
     display_name: str
     timezone: str
+    default_language: str | None
+    default_currency: str | None
+    min_latitude: float | None
+    max_latitude: float | None
+    min_longitude: float | None
+    max_longitude: float | None
     attribution_text: str
     website_url: str
     is_active: bool = True
@@ -182,6 +215,12 @@ class ProviderManifest(BaseModel):
             raise TypeError("GIS static feed did not validate as GisStaticFeedConfig.")
         return feed
 
+    def i3_alerts_feed(self) -> I3AlertsFeedConfig:
+        feed = self.feeds[FeedKind.I3_ALERTS.value]
+        if not isinstance(feed, I3AlertsFeedConfig):
+            raise TypeError("i3 alerts feed did not validate as I3AlertsFeedConfig.")
+        return feed
+
     def realtime_feed(self, endpoint_key: str) -> RealtimeFeedConfig:
         if endpoint_key not in {
             FeedKind.TRIP_UPDATES.value,
@@ -194,10 +233,18 @@ class ProviderManifest(BaseModel):
         return feed
 
     def to_provider_seed(self) -> ProviderSeed:
+        bounds = self.provider.bounds
         return ProviderSeed(
             provider_id=self.provider.provider_id,
+            provider_key=self.provider.provider_id,
             display_name=self.provider.display_name,
             timezone=self.provider.timezone,
+            default_language=self.provider.default_language,
+            default_currency=self.provider.default_currency,
+            min_latitude=bounds.min_latitude if bounds else None,
+            max_latitude=bounds.max_latitude if bounds else None,
+            min_longitude=bounds.min_longitude if bounds else None,
+            max_longitude=bounds.max_longitude if bounds else None,
             attribution_text=self.provider.attribution_text or "",
             website_url=str(self.provider.website_url) if self.provider.website_url else "",
             is_active=self.provider.is_active,
@@ -210,6 +257,9 @@ class ProviderManifest(BaseModel):
             FeedKind.TRIP_UPDATES.value,
             FeedKind.VEHICLE_POSITIONS.value,
         ]
+        if FeedKind.I3_ALERTS.value in self.feeds:
+            ordered_feed_keys.append(FeedKind.I3_ALERTS.value)
+
         feed_seeds: list[FeedEndpointSeed] = []
         for feed_key in ordered_feed_keys:
             feed = self.feeds[feed_key]

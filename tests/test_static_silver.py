@@ -14,6 +14,7 @@ from transit_ops.silver.static_gtfs import (
     GTFS_EXTRA_ROW_INSERT,
     GTFS_SOURCE_MEMBER_INSERT,
     BronzeStaticArchive,
+    _build_stop_time_record,
     _iter_gtfs_rows,
     discover_gtfs_members,
     load_latest_static_to_silver,
@@ -322,6 +323,36 @@ def test_iter_gtfs_rows_parses_csv_rows_from_zip(tmp_path: Path) -> None:
             "route_long_name": "Green Line",
         }
     ]
+
+
+def test_stop_time_record_validates_gtfs_service_time_without_losing_source_text() -> None:
+    record = _build_stop_time_record(
+        {
+            "trip_id": "trip-1",
+            "arrival_time": "25:35:00",
+            "departure_time": "25:40:00",
+            "stop_id": "stop-1",
+            "stop_sequence": "12",
+        },
+        provider_id="stm",
+        dataset_version_id=700,
+    )
+
+    assert record["arrival_time"] == "25:35:00"
+    assert record["departure_time"] == "25:40:00"
+
+    with pytest.raises(ValueError, match="stop_times.arrival_time"):
+        _build_stop_time_record(
+            {
+                "trip_id": "trip-1",
+                "arrival_time": "24:99:00",
+                "departure_time": "25:40:00",
+                "stop_id": "stop-1",
+                "stop_sequence": "12",
+            },
+            provider_id="stm",
+            dataset_version_id=700,
+        )
 
 
 def test_register_dataset_version_updates_current_then_inserts_new_row(tmp_path: Path) -> None:
