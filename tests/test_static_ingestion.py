@@ -20,8 +20,13 @@ from transit_ops.settings import Settings
 
 
 class FakeResult:
-    def __init__(self, scalar_value: int | None) -> None:
+    def __init__(
+        self,
+        scalar_value: int | None = None,
+        mapping_value: dict[str, object] | None = None,
+    ) -> None:
         self.scalar_value = scalar_value
+        self.mapping_value = mapping_value
 
     def scalar_one(self) -> int:
         if self.scalar_value is None:
@@ -31,18 +36,51 @@ class FakeResult:
     def scalar_one_or_none(self) -> int | None:
         return self.scalar_value
 
+    def mappings(self) -> FakeResult:
+        return self
+
+    def one_or_none(self) -> dict[str, object] | None:
+        return self.mapping_value
+
 
 class RecordingConnection:
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        *,
+        current_dataset_checksum: str | None = None,
+        current_dataset_version_id: int | None = None,
+        inserted_dataset_version_id: int = 303,
+        dataset_window: dict[str, datetime] | None = None,
+    ) -> None:
         self.calls: list[tuple[str, dict[str, object]]] = []
+        self.current_dataset_checksum = current_dataset_checksum
+        self.current_dataset_version_id = current_dataset_version_id
+        self.inserted_dataset_version_id = inserted_dataset_version_id
+        self.dataset_window = dataset_window
 
     def execute(self, statement, params: dict[str, object]) -> FakeResult:  # noqa: ANN001
         sql_text = str(statement)
         self.calls.append((sql_text, params))
         if "SELECT feed_endpoint_id" in sql_text:
             return FakeResult(11)
+        if "SELECT" in sql_text and "first_seen_at_utc" in sql_text:
+            return FakeResult(mapping_value=self.dataset_window)
+        if "SELECT" in sql_text and "core.dataset_versions" in sql_text:
+            if (
+                self.current_dataset_checksum is None
+                or self.current_dataset_version_id is None
+            ):
+                return FakeResult(mapping_value=None)
+            return FakeResult(
+                mapping_value={
+                    "dataset_version_id": self.current_dataset_version_id,
+                    "checksum_sha256": self.current_dataset_checksum,
+                }
+            )
         if "RETURNING ingestion_run_id" in sql_text:
             return FakeResult(101)
+        if "RETURNING dataset_version_id" in sql_text:
+            return FakeResult(self.inserted_dataset_version_id)
         if "RETURNING ingestion_object_id" in sql_text:
             return FakeResult(202)
         return FakeResult(None)
@@ -254,5 +292,159 @@ def test_ingest_static_feed_uses_storage_abstraction_for_s3(
     assert result.archive_full_path == f"s3://bronze-bucket/{result.storage_path}"
     assert result.storage_path.startswith("stm/static_schedule/ingested_at_utc=")
     assert fake_storage.persisted[0][1] == result.storage_path
-    assert connection.calls[2][1]["storage_backend"] == "s3"
-    assert connection.calls[2][1]["storage_path"] == result.storage_path
+    object_params = next(
+        params for sql, params in connection.calls
+        if "INSERT INTO raw.ingestion_objects" in sql
+    )
+    assert object_params["storage_backend"] == "s3"
+    assert object_params["storage_path"] == result.storage_path
+
+
+def test_ingest_static_feed_skips_unchanged_zip_without_bronze_or_raw_object(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    temp_path = tmp_path / "download.zip"
+    payload = b"same-static-zip"
+    temp_path.write_bytes(payload)
+    checksum = compute_sha256_hex(temp_path)
+    artifact = DownloadedArtifact(
+        temp_path=temp_path,
+        byte_size=len(payload),
+        checksum_sha256=checksum,
+        http_status_code=200,
+        source_url="https://override.example.com/stm.zip",
+    )
+    fake_storage = FakeBronzeStorage("s3://bronze-bucket")
+    dataset_window = {
+        "first_seen_at_utc": datetime(2026, 5, 24, 10, 0, 0, tzinfo=UTC),
+        "last_seen_at_utc": datetime(2026, 5, 25, 10, 0, 0, tzinfo=UTC),
+        "observed_from_utc": datetime(2026, 5, 24, 10, 0, 0, tzinfo=UTC),
+        "observed_until_utc": datetime(2026, 5, 25, 10, 0, 0, tzinfo=UTC),
+    }
+    connection = RecordingConnection(
+        current_dataset_checksum=checksum,
+        current_dataset_version_id=77,
+        dataset_window=dataset_window,
+    )
+    settings = Settings(
+        _env_file=None,
+        DATABASE_URL="postgresql://user:pass@example.com/transit",
+        STM_STATIC_GTFS_URL="https://override.example.com/stm.zip",
+        BRONZE_STORAGE_BACKEND="s3",
+        BRONZE_S3_ENDPOINT="https://example.r2.cloudflarestorage.com",
+        BRONZE_S3_BUCKET="bronze-bucket",
+        BRONZE_S3_ACCESS_KEY="access",
+        BRONZE_S3_SECRET_KEY="secret",
+        BRONZE_S3_REGION="auto",
+    )
+    registry = ProviderRegistry.from_project_root(
+        project_root=Path(__file__).resolve().parents[1],
+        settings=settings,
+    )
+
+    monkeypatch.setattr(static_gtfs, "_download_to_tempfile", lambda source_url, temp_dir: artifact)
+    monkeypatch.setattr(
+        static_gtfs,
+        "get_bronze_storage",
+        lambda settings, project_root, storage_backend: fake_storage,
+    )
+
+    result = ingest_static_feed(
+        "stm",
+        settings=settings,
+        registry=registry,
+        engine=FakeEngine(connection),
+    )
+
+    assert result.status == "skipped_unchanged"
+    assert result.content_changed is False
+    assert result.dataset_version_id == 77
+    assert result.ingestion_run_id == 101
+    assert result.ingestion_object_id is None
+    assert result.storage_path is None
+    assert result.archive_full_path is None
+    assert result.skipped_reason == "static_content_unchanged"
+    assert result.first_seen_at_utc == dataset_window["first_seen_at_utc"]
+    assert result.last_seen_at_utc == dataset_window["last_seen_at_utc"]
+    assert result.observed_from_utc == dataset_window["observed_from_utc"]
+    assert result.observed_until_utc == dataset_window["observed_until_utc"]
+    assert fake_storage.persisted == []
+    assert not any("INSERT INTO raw.ingestion_objects" in sql for sql, _ in connection.calls)
+    assert any("UPDATE core.dataset_versions" in sql for sql, _ in connection.calls)
+    assert any("UPDATE raw.ingestion_runs" in sql for sql, _ in connection.calls)
+    assert not temp_path.exists()
+
+
+def test_ingest_static_feed_persists_changed_zip_and_registers_dataset_version(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    temp_path = tmp_path / "download.zip"
+    payload = b"changed-static-zip"
+    temp_path.write_bytes(payload)
+    checksum = compute_sha256_hex(temp_path)
+    artifact = DownloadedArtifact(
+        temp_path=temp_path,
+        byte_size=len(payload),
+        checksum_sha256=checksum,
+        http_status_code=200,
+        source_url="https://override.example.com/stm.zip",
+    )
+    fake_storage = FakeBronzeStorage("s3://bronze-bucket")
+    connection = RecordingConnection(
+        current_dataset_checksum="0" * 64,
+        current_dataset_version_id=76,
+        inserted_dataset_version_id=88,
+    )
+    settings = Settings(
+        _env_file=None,
+        DATABASE_URL="postgresql://user:pass@example.com/transit",
+        STM_STATIC_GTFS_URL="https://override.example.com/stm.zip",
+        BRONZE_STORAGE_BACKEND="s3",
+        BRONZE_S3_ENDPOINT="https://example.r2.cloudflarestorage.com",
+        BRONZE_S3_BUCKET="bronze-bucket",
+        BRONZE_S3_ACCESS_KEY="access",
+        BRONZE_S3_SECRET_KEY="secret",
+        BRONZE_S3_REGION="auto",
+    )
+    registry = ProviderRegistry.from_project_root(
+        project_root=Path(__file__).resolve().parents[1],
+        settings=settings,
+    )
+
+    monkeypatch.setattr(static_gtfs, "_download_to_tempfile", lambda source_url, temp_dir: artifact)
+    monkeypatch.setattr(
+        static_gtfs,
+        "get_bronze_storage",
+        lambda settings, project_root, storage_backend: fake_storage,
+    )
+
+    result = ingest_static_feed(
+        "stm",
+        settings=settings,
+        registry=registry,
+        engine=FakeEngine(connection),
+    )
+
+    assert result.status == "succeeded"
+    assert result.content_changed is True
+    assert result.dataset_version_id == 88
+    assert result.ingestion_object_id == 202
+    assert result.storage_path is not None
+    assert result.archive_full_path == f"s3://bronze-bucket/{result.storage_path}"
+    assert fake_storage.persisted[0][1] == result.storage_path
+    assert any("INSERT INTO raw.ingestion_objects" in sql for sql, _ in connection.calls)
+    insert_params = next(
+        params for sql, params in connection.calls
+        if "INSERT INTO core.dataset_versions" in sql
+    )
+    assert insert_params["source_ingestion_run_id"] == 101
+    assert insert_params["source_ingestion_object_id"] is None
+    assert insert_params["storage_path"] == result.storage_path
+    assert insert_params["parser_version"] == "slice-8.4"
+    assert any(
+        "UPDATE core.dataset_versions" in sql
+        and "source_ingestion_object_id" in sql
+        for sql, _ in connection.calls
+    )

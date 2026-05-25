@@ -130,6 +130,83 @@ class BronzeCleanupResult:
         }
 
 
+@dataclass(frozen=True)
+class BronzeActivePrefixCleanupItem:
+    storage_path: str
+    byte_size: int | None
+    last_modified: datetime | None
+
+    def display_dict(self) -> dict[str, object]:
+        return {
+            "storage_path": self.storage_path,
+            "byte_size": self.byte_size,
+            "last_modified": self.last_modified.isoformat() if self.last_modified else None,
+        }
+
+
+@dataclass(frozen=True)
+class BronzeActivePrefixCleanupPlan:
+    provider_id: str
+    endpoint_keys: tuple[str, ...]
+    prefixes: tuple[str, ...]
+    objects_to_delete: list[BronzeActivePrefixCleanupItem]
+    proof_note: str = (
+        "Active-prefix clean-start plan: preserve proof artifacts outside these prefixes "
+        "before executing deletion."
+    )
+
+    def display_dict(self) -> dict[str, object]:
+        return {
+            "provider_id": self.provider_id,
+            "endpoint_keys": list(self.endpoint_keys),
+            "prefixes": list(self.prefixes),
+            "planned_count": len(self.objects_to_delete),
+            "objects_to_delete": [item.display_dict() for item in self.objects_to_delete],
+            "proof_note": self.proof_note,
+        }
+
+
+@dataclass(frozen=True)
+class BronzeActivePrefixCleanupResult:
+    provider_id: str
+    endpoint_keys: tuple[str, ...]
+    prefixes: tuple[str, ...]
+    delete_requested: bool
+    planned_count: int
+    deleted_keys: list[str]
+    failed_keys: list[str]
+
+    @classmethod
+    def from_plan(
+        cls,
+        plan: BronzeActivePrefixCleanupPlan,
+        *,
+        delete_requested: bool,
+        deleted_keys: list[str],
+        failed_keys: list[str],
+    ) -> BronzeActivePrefixCleanupResult:
+        return cls(
+            provider_id=plan.provider_id,
+            endpoint_keys=plan.endpoint_keys,
+            prefixes=plan.prefixes,
+            delete_requested=delete_requested,
+            planned_count=len(plan.objects_to_delete),
+            deleted_keys=deleted_keys,
+            failed_keys=failed_keys,
+        )
+
+    def display_dict(self) -> dict[str, object]:
+        return {
+            "provider_id": self.provider_id,
+            "endpoint_keys": list(self.endpoint_keys),
+            "prefixes": list(self.prefixes),
+            "delete_requested": self.delete_requested,
+            "planned_count": self.planned_count,
+            "deleted_keys": list(self.deleted_keys),
+            "failed_keys": list(self.failed_keys),
+        }
+
+
 def parse_bronze_key(storage_path: str) -> ParsedBronzeKey | None:
     parts = storage_path.split("/")
     if len(parts) != 4:
@@ -225,6 +302,36 @@ def build_bronze_cleanup_plan(
     )
 
 
+def build_bronze_active_prefix_cleanup_plan(
+    storage: BronzeCleanupStorage,
+    *,
+    provider_id: str,
+    endpoint_keys: Iterable[str] = REBUILD_ENDPOINTS,
+) -> BronzeActivePrefixCleanupPlan:
+    endpoint_key_tuple = tuple(endpoint_keys)
+    prefixes = tuple(f"{provider_id}/{endpoint_key}/" for endpoint_key in endpoint_key_tuple)
+    scanned = sorted(
+        (obj for prefix in prefixes for obj in storage.list_objects(prefix)),
+        key=lambda obj: obj.storage_path,
+    )
+
+    objects_to_delete = [
+        BronzeActivePrefixCleanupItem(
+            storage_path=obj.storage_path,
+            byte_size=obj.byte_size,
+            last_modified=obj.last_modified,
+        )
+        for obj in scanned
+    ]
+
+    return BronzeActivePrefixCleanupPlan(
+        provider_id=provider_id,
+        endpoint_keys=endpoint_key_tuple,
+        prefixes=prefixes,
+        objects_to_delete=objects_to_delete,
+    )
+
+
 def execute_bronze_cleanup_plan(
     storage: BronzeCleanupStorage,
     plan: BronzeCleanupPlan,
@@ -250,6 +357,38 @@ def execute_bronze_cleanup_plan(
         deleted_keys.append(item.storage_path)
 
     return BronzeCleanupResult.from_plan(
+        plan,
+        delete_requested=True,
+        deleted_keys=deleted_keys,
+        failed_keys=failed_keys,
+    )
+
+
+def execute_bronze_active_prefix_cleanup_plan(
+    storage: BronzeCleanupStorage,
+    plan: BronzeActivePrefixCleanupPlan,
+    *,
+    delete: bool,
+) -> BronzeActivePrefixCleanupResult:
+    if not delete:
+        return BronzeActivePrefixCleanupResult.from_plan(
+            plan,
+            delete_requested=False,
+            deleted_keys=[],
+            failed_keys=[],
+        )
+
+    deleted_keys: list[str] = []
+    failed_keys: list[str] = []
+    for item in plan.objects_to_delete:
+        try:
+            storage.delete_object(item.storage_path)
+        except Exception:
+            failed_keys.append(item.storage_path)
+            continue
+        deleted_keys.append(item.storage_path)
+
+    return BronzeActivePrefixCleanupResult.from_plan(
         plan,
         delete_requested=True,
         deleted_keys=deleted_keys,

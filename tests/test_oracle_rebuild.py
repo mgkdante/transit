@@ -140,8 +140,15 @@ def patch_execute_dependencies(monkeypatch, events: list[str]) -> None:  # noqa:
         events.append("static-find")
         return FakeDisplayResult("static-archive")
 
-    def fake_load_static(connection, *, archive, bronze_storage):  # noqa: ANN001
+    def fake_load_static(  # noqa: ANN001
+        connection,
+        *,
+        archive,
+        bronze_storage,
+        require_beta_static_contract,
+    ):
         events.append("static-load")
+        assert require_beta_static_contract is True
         return FakeDisplayResult("static-load")
 
     def fake_find_realtime(connection, *, provider_id, start_utc, end_utc, settings, project_root):  # noqa: ANN001

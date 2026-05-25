@@ -252,6 +252,13 @@ def test_reset_rebuild_tables_truncates_raw_silver_gold_but_not_core_provider_ta
     assert "TRUNCATE TABLE" in sql
     assert "raw.ingestion_runs" in sql
     assert "core.dataset_versions" in sql
+    assert "silver.agency" in sql
+    assert "silver.feed_info" in sql
+    assert "silver.directions" in sql
+    assert "silver.route_patterns" in sql
+    assert "silver.shapes" in sql
+    assert "silver.translations" in sql
+    assert "gold.dim_route_pattern" in sql
     assert "core.providers" not in sql
     assert "core.feed_endpoints" not in sql
 
@@ -438,7 +445,10 @@ def test_rebuild_raw_catalog_uses_real_stm_manifest_strings() -> None:
         if "INSERT INTO raw.ingestion_objects" in sql
     ]
     assert object_params[0]["object_kind"] == "gtfs_schedule_zip"
-    assert object_params[0]["source_url"] == "https://www.stm.info/sites/default/files/gtfs/gtfs_stm.zip"
+    assert (
+        object_params[0]["source_url"]
+        == "https://www.stm.info/sites/default/files/gtfs/gtfs_stm_26m-beta.zip"
+    )
     assert object_params[1]["object_kind"] == "gtfs_rt_vehicle_positions"
     assert object_params[1]["source_url"] == (
         "https://api.stm.info/pub/od/gtfs-rt/ic/v2/vehiclePositions"

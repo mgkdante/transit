@@ -1,5 +1,12 @@
 """Bronze ingestion services."""
 
+from transit_ops.ingestion.gis import (
+    GisIngestionConfig,
+    GisIngestionResult,
+    build_gis_ingestion_config,
+    build_gis_object_storage_path,
+    ingest_gis_feed,
+)
 from transit_ops.ingestion.realtime_gtfs import (
     RealtimeIngestionConfig,
     RealtimeIngestionResult,
@@ -17,15 +24,20 @@ from transit_ops.ingestion.static_gtfs import (
 )
 
 __all__ = [
+    "GisIngestionConfig",
+    "GisIngestionResult",
     "StaticIngestionConfig",
     "StaticIngestionResult",
     "RealtimeIngestionConfig",
     "RealtimeIngestionResult",
+    "build_gis_ingestion_config",
+    "build_gis_object_storage_path",
     "build_realtime_ingestion_config",
     "build_realtime_object_storage_path",
     "build_static_ingestion_config",
     "build_static_object_storage_path",
     "capture_realtime_feed",
     "extract_realtime_metadata",
+    "ingest_gis_feed",
     "ingest_static_feed",
 ]

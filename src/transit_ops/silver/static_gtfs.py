@@ -1,15 +1,17 @@
 from __future__ import annotations
 
 import csv
+import hashlib
 from collections.abc import Callable, Iterable, Iterator, Mapping
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from datetime import date, datetime
 from io import BytesIO, TextIOWrapper
 from itertools import islice
 from pathlib import Path
 from zipfile import ZipFile
 
-from sqlalchemy import text
+from sqlalchemy import bindparam, text
+from sqlalchemy.dialects import postgresql
 from sqlalchemy.engine import Connection, Engine
 
 from transit_ops.db.connection import make_engine
@@ -31,7 +33,35 @@ OPTIONAL_SERVICE_MEMBERS = {
     "calendar.txt",
     "calendar_dates.txt",
 }
+BETA_STATIC_CONTRACT_MEMBERS = {
+    "directions.txt",
+    "route_patterns.txt",
+}
+BETA_STATIC_CONTRACT_COLUMNS_BY_MEMBER = {
+    "directions.txt": {
+        "route_direction_id",
+        "route_id",
+        "direction_id",
+        "direction",
+        "direction_legacy",
+    },
+    "route_patterns.txt": {
+        "route_pattern_id",
+        "route_id",
+        "direction_id",
+        "route_pattern_typicality",
+    },
+    "routes.txt": {"route_desc", "route_desc_detail"},
+    "shapes.txt": {"route_pattern_id"},
+    "trips.txt": {"route_pattern_id"},
+}
 REQUIRED_COLUMNS_BY_MEMBER: dict[str, set[str]] = {
+    "agency.txt": {
+        "agency_id",
+        "agency_name",
+        "agency_url",
+        "agency_timezone",
+    },
     "routes.txt": {"route_id", "route_type"},
     "trips.txt": {"route_id", "service_id", "trip_id"},
     "stops.txt": {"stop_id", "stop_name"},
@@ -49,7 +79,142 @@ REQUIRED_COLUMNS_BY_MEMBER: dict[str, set[str]] = {
         "end_date",
     },
     "calendar_dates.txt": {"service_id", "date", "exception_type"},
+    "directions.txt": {
+        "route_direction_id",
+        "route_id",
+        "direction_id",
+        "direction",
+        "direction_legacy",
+    },
+    "feed_info.txt": {
+        "feed_publisher_name",
+        "feed_publisher_url",
+        "feed_lang",
+        "feed_start_date",
+        "feed_end_date",
+        "feed_version",
+    },
+    "route_patterns.txt": {
+        "route_pattern_id",
+        "route_id",
+        "direction_id",
+        "route_pattern_typicality",
+    },
+    "shapes.txt": {
+        "shape_id",
+        "shape_pt_lat",
+        "shape_pt_lon",
+        "shape_pt_sequence",
+    },
+    "translations.txt": {
+        "table_name",
+        "field_name",
+        "language",
+        "record_id",
+        "translation",
+    },
 }
+SUPPORTED_STATIC_MEMBER_KEYS = set(REQUIRED_COLUMNS_BY_MEMBER)
+
+GTFS_SOURCE_MEMBER_INSERT = text(
+    """
+    INSERT INTO silver.gtfs_source_members (
+        dataset_version_id,
+        provider_id,
+        source_file_name,
+        member_path,
+        row_count,
+        checksum_sha256,
+        byte_size,
+        first_seen_at_utc,
+        last_seen_at_utc,
+        manifest_json
+    )
+    VALUES (
+        :dataset_version_id,
+        :provider_id,
+        :source_file_name,
+        :member_path,
+        :row_count,
+        :checksum_sha256,
+        :byte_size,
+        :first_seen_at_utc,
+        :last_seen_at_utc,
+        :manifest_json
+    )
+    """
+).bindparams(bindparam("manifest_json", type_=postgresql.JSONB))
+
+GTFS_EXTRA_ROW_INSERT = text(
+    """
+    INSERT INTO silver.gtfs_extra_rows (
+        dataset_version_id,
+        provider_id,
+        source_file_name,
+        source_row_number,
+        row_json
+    )
+    VALUES (
+        :dataset_version_id,
+        :provider_id,
+        :source_file_name,
+        :source_row_number,
+        :row_json
+    )
+    """
+).bindparams(bindparam("row_json", type_=postgresql.JSONB))
+
+AGENCY_INSERT = text(
+    """
+    INSERT INTO silver.agency (
+        dataset_version_id,
+        provider_id,
+        agency_id,
+        agency_name,
+        agency_url,
+        agency_timezone,
+        agency_lang,
+        agency_phone,
+        agency_fare_url
+    )
+    VALUES (
+        :dataset_version_id,
+        :provider_id,
+        :agency_id,
+        :agency_name,
+        :agency_url,
+        :agency_timezone,
+        :agency_lang,
+        :agency_phone,
+        :agency_fare_url
+    )
+    """
+)
+
+FEED_INFO_INSERT = text(
+    """
+    INSERT INTO silver.feed_info (
+        dataset_version_id,
+        provider_id,
+        feed_publisher_name,
+        feed_publisher_url,
+        feed_lang,
+        feed_start_date,
+        feed_end_date,
+        feed_version
+    )
+    VALUES (
+        :dataset_version_id,
+        :provider_id,
+        :feed_publisher_name,
+        :feed_publisher_url,
+        :feed_lang,
+        :feed_start_date,
+        :feed_end_date,
+        :feed_version
+    )
+    """
+)
 
 ROUTES_INSERT = text(
     """
@@ -65,6 +230,7 @@ ROUTES_INSERT = text(
         route_url,
         route_color,
         route_text_color,
+        route_desc_detail,
         route_sort_order,
         continuous_pickup,
         continuous_drop_off,
@@ -82,6 +248,7 @@ ROUTES_INSERT = text(
         :route_url,
         :route_color,
         :route_text_color,
+        :route_desc_detail,
         :route_sort_order,
         :continuous_pickup,
         :continuous_drop_off,
@@ -103,6 +270,9 @@ TRIPS_INSERT = text(
         direction_id,
         block_id,
         shape_id,
+        route_pattern_id,
+        note_fr,
+        note_en,
         wheelchair_accessible,
         bikes_allowed
     )
@@ -117,8 +287,103 @@ TRIPS_INSERT = text(
         :direction_id,
         :block_id,
         :shape_id,
+        :route_pattern_id,
+        :note_fr,
+        :note_en,
         :wheelchair_accessible,
         :bikes_allowed
+    )
+    """
+)
+
+DIRECTIONS_INSERT = text(
+    """
+    INSERT INTO silver.directions (
+        dataset_version_id,
+        provider_id,
+        route_direction_id,
+        route_id,
+        direction_id,
+        direction,
+        direction_legacy
+    )
+    VALUES (
+        :dataset_version_id,
+        :provider_id,
+        :route_direction_id,
+        :route_id,
+        :direction_id,
+        :direction,
+        :direction_legacy
+    )
+    """
+)
+
+ROUTE_PATTERNS_INSERT = text(
+    """
+    INSERT INTO silver.route_patterns (
+        dataset_version_id,
+        provider_id,
+        route_pattern_id,
+        route_id,
+        direction_id,
+        route_pattern_typicality
+    )
+    VALUES (
+        :dataset_version_id,
+        :provider_id,
+        :route_pattern_id,
+        :route_id,
+        :direction_id,
+        :route_pattern_typicality
+    )
+    """
+)
+
+SHAPES_INSERT = text(
+    """
+    INSERT INTO silver.shapes (
+        dataset_version_id,
+        provider_id,
+        shape_id,
+        shape_pt_sequence,
+        shape_pt_lat,
+        shape_pt_lon,
+        route_pattern_id
+    )
+    VALUES (
+        :dataset_version_id,
+        :provider_id,
+        :shape_id,
+        :shape_pt_sequence,
+        :shape_pt_lat,
+        :shape_pt_lon,
+        :route_pattern_id
+    )
+    """
+)
+
+TRANSLATIONS_INSERT = text(
+    """
+    INSERT INTO silver.translations (
+        dataset_version_id,
+        provider_id,
+        translation_row_number,
+        table_name,
+        field_name,
+        language,
+        record_id,
+        translation
+    )
+    VALUES (
+        :dataset_version_id,
+        :provider_id,
+        :translation_row_number,
+        :table_name,
+        :field_name,
+        :language,
+        :record_id,
+        :translation
     )
     """
 )
@@ -279,6 +544,10 @@ class StaticSilverLoadResult:
     source_version: str
     loaded_at_utc: datetime
     row_counts: dict[str, int]
+    member_count: int = 0
+    unsupported_members: list[str] = field(default_factory=list)
+    typed_row_counts: dict[str, int] = field(default_factory=dict)
+    extra_row_counts: dict[str, int] = field(default_factory=dict)
 
     def display_dict(self) -> dict[str, object]:
         payload = asdict(self)
@@ -343,6 +612,59 @@ def _parse_gtfs_bool(row: Mapping[str, str], column_name: str, member_name: str)
     return value == "1"
 
 
+def _build_agency_record(
+    row: Mapping[str, str],
+    *,
+    provider_id: str,
+    dataset_version_id: int,
+) -> dict[str, object]:
+    return {
+        "dataset_version_id": dataset_version_id,
+        "provider_id": provider_id,
+        "agency_id": _require_value(row, "agency_id", "agency.txt"),
+        "agency_name": _require_value(row, "agency_name", "agency.txt"),
+        "agency_url": _require_value(row, "agency_url", "agency.txt"),
+        "agency_timezone": _require_value(row, "agency_timezone", "agency.txt"),
+        "agency_lang": _blank_to_none(row.get("agency_lang")),
+        "agency_phone": _blank_to_none(row.get("agency_phone")),
+        "agency_fare_url": _blank_to_none(row.get("agency_fare_url")),
+    }
+
+
+def _build_feed_info_record(
+    row: Mapping[str, str],
+    *,
+    provider_id: str,
+    dataset_version_id: int,
+) -> dict[str, object]:
+    return {
+        "dataset_version_id": dataset_version_id,
+        "provider_id": provider_id,
+        "feed_publisher_name": _require_value(
+            row,
+            "feed_publisher_name",
+            "feed_info.txt",
+        ),
+        "feed_publisher_url": _require_value(
+            row,
+            "feed_publisher_url",
+            "feed_info.txt",
+        ),
+        "feed_lang": _require_value(row, "feed_lang", "feed_info.txt"),
+        "feed_start_date": _parse_gtfs_date(
+            _require_value(row, "feed_start_date", "feed_info.txt"),
+            "feed_info.txt",
+            "feed_start_date",
+        ),
+        "feed_end_date": _parse_gtfs_date(
+            _require_value(row, "feed_end_date", "feed_info.txt"),
+            "feed_info.txt",
+            "feed_end_date",
+        ),
+        "feed_version": _require_value(row, "feed_version", "feed_info.txt"),
+    }
+
+
 def _chunked(
     rows: Iterable[dict[str, object]],
     chunk_size: int,
@@ -382,6 +704,65 @@ def validate_required_static_members(member_map: Mapping[str, str]) -> None:
         raise ValueError(
             "At least one of calendar.txt or calendar_dates.txt must be present."
         )
+
+
+def _read_member_header(zip_file: ZipFile, member_name: str) -> set[str]:
+    with zip_file.open(member_name, "r") as raw_handle, TextIOWrapper(
+        raw_handle,
+        encoding="utf-8-sig",
+        newline="",
+    ) as text_handle:
+        reader = csv.DictReader(text_handle)
+        return set(reader.fieldnames or [])
+
+
+def _read_member_columns_and_row_count(
+    zip_file: ZipFile,
+    member_name: str,
+) -> tuple[list[str], int]:
+    with zip_file.open(member_name, "r") as raw_handle, TextIOWrapper(
+        raw_handle,
+        encoding="utf-8-sig",
+        newline="",
+    ) as text_handle:
+        reader = csv.DictReader(text_handle)
+        columns = list(reader.fieldnames or [])
+        row_count = sum(1 for _ in reader)
+        return columns, row_count
+
+
+def _hash_zip_member(zip_file: ZipFile, member_name: str) -> str:
+    digest = hashlib.sha256()
+    with zip_file.open(member_name, "r") as raw_handle:
+        for chunk in iter(lambda: raw_handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def validate_beta_static_contract(member_map: Mapping[str, str], zip_file: ZipFile) -> None:
+    missing_members = sorted(BETA_STATIC_CONTRACT_MEMBERS - set(member_map))
+    if missing_members:
+        raise ValueError(
+            "Missing beta GTFS contract members: " + ", ".join(missing_members)
+        )
+
+    missing_columns: dict[str, list[str]] = {}
+    for member_key, required_columns in BETA_STATIC_CONTRACT_COLUMNS_BY_MEMBER.items():
+        member_name = member_map.get(member_key)
+        if member_name is None:
+            missing_columns[member_key] = sorted(required_columns)
+            continue
+        header = _read_member_header(zip_file, member_name)
+        missing = sorted(required_columns - header)
+        if missing:
+            missing_columns[member_key] = missing
+
+    if missing_columns:
+        details = "; ".join(
+            f"{member_key}: {', '.join(columns)}"
+            for member_key, columns in sorted(missing_columns.items())
+        )
+        raise ValueError("Missing beta GTFS contract columns: " + details)
 
 
 def _iter_gtfs_rows(
@@ -427,6 +808,7 @@ def _build_route_record(
         "route_url": _blank_to_none(row.get("route_url")),
         "route_color": _blank_to_none(row.get("route_color")),
         "route_text_color": _blank_to_none(row.get("route_text_color")),
+        "route_desc_detail": _blank_to_none(row.get("route_desc_detail")),
         "route_sort_order": _parse_optional_int(row.get("route_sort_order")),
         "continuous_pickup": _parse_optional_int(row.get("continuous_pickup")),
         "continuous_drop_off": _parse_optional_int(row.get("continuous_drop_off")),
@@ -451,6 +833,9 @@ def _build_trip_record(
         "direction_id": _parse_optional_int(row.get("direction_id")),
         "block_id": _blank_to_none(row.get("block_id")),
         "shape_id": _blank_to_none(row.get("shape_id")),
+        "route_pattern_id": _blank_to_none(row.get("route_pattern_id")),
+        "note_fr": _blank_to_none(row.get("note_fr")),
+        "note_en": _blank_to_none(row.get("note_en")),
         "wheelchair_accessible": _parse_optional_int(row.get("wheelchair_accessible")),
         "bikes_allowed": _parse_optional_int(row.get("bikes_allowed")),
     }
@@ -554,6 +939,87 @@ def _build_calendar_date_record(
     }
 
 
+def _build_direction_record(
+    row: Mapping[str, str],
+    *,
+    provider_id: str,
+    dataset_version_id: int,
+) -> dict[str, object]:
+    return {
+        "dataset_version_id": dataset_version_id,
+        "provider_id": provider_id,
+        "route_direction_id": _require_value(row, "route_direction_id", "directions.txt"),
+        "route_id": _require_value(row, "route_id", "directions.txt"),
+        "direction_id": _parse_required_int(row, "direction_id", "directions.txt"),
+        "direction": _require_value(row, "direction", "directions.txt"),
+        "direction_legacy": _require_value(row, "direction_legacy", "directions.txt"),
+    }
+
+
+def _build_route_pattern_record(
+    row: Mapping[str, str],
+    *,
+    provider_id: str,
+    dataset_version_id: int,
+) -> dict[str, object]:
+    return {
+        "dataset_version_id": dataset_version_id,
+        "provider_id": provider_id,
+        "route_pattern_id": _require_value(
+            row,
+            "route_pattern_id",
+            "route_patterns.txt",
+        ),
+        "route_id": _require_value(row, "route_id", "route_patterns.txt"),
+        "direction_id": _parse_required_int(row, "direction_id", "route_patterns.txt"),
+        "route_pattern_typicality": _parse_required_int(
+            row,
+            "route_pattern_typicality",
+            "route_patterns.txt",
+        ),
+    }
+
+
+def _build_shape_record(
+    row: Mapping[str, str],
+    *,
+    provider_id: str,
+    dataset_version_id: int,
+) -> dict[str, object]:
+    return {
+        "dataset_version_id": dataset_version_id,
+        "provider_id": provider_id,
+        "shape_id": _require_value(row, "shape_id", "shapes.txt"),
+        "shape_pt_sequence": _parse_required_int(
+            row,
+            "shape_pt_sequence",
+            "shapes.txt",
+        ),
+        "shape_pt_lat": _parse_optional_float(row.get("shape_pt_lat")),
+        "shape_pt_lon": _parse_optional_float(row.get("shape_pt_lon")),
+        "route_pattern_id": _blank_to_none(row.get("route_pattern_id")),
+    }
+
+
+def _build_translation_record(
+    row: Mapping[str, str],
+    *,
+    provider_id: str,
+    dataset_version_id: int,
+    translation_row_number: int,
+) -> dict[str, object]:
+    return {
+        "dataset_version_id": dataset_version_id,
+        "provider_id": provider_id,
+        "translation_row_number": translation_row_number,
+        "table_name": _require_value(row, "table_name", "translations.txt"),
+        "field_name": _require_value(row, "field_name", "translations.txt"),
+        "language": _require_value(row, "language", "translations.txt"),
+        "record_id": _require_value(row, "record_id", "translations.txt"),
+        "translation": _require_value(row, "translation", "translations.txt"),
+    }
+
+
 def _execute_batched_insert(
     connection: Connection,
     *,
@@ -595,6 +1061,122 @@ def _load_member_rows(
         )
     )
     return _execute_batched_insert(connection, statement=statement, rows=rows)
+
+
+def _load_translation_rows(
+    connection: Connection,
+    *,
+    zip_file: ZipFile,
+    member_map: Mapping[str, str],
+    provider_id: str,
+    dataset_version_id: int,
+) -> int:
+    member_key = "translations.txt"
+    if member_key not in member_map:
+        return 0
+    member_name = member_map[member_key]
+    required_columns = REQUIRED_COLUMNS_BY_MEMBER[member_key]
+    rows = (
+        _build_translation_record(
+            row,
+            provider_id=provider_id,
+            dataset_version_id=dataset_version_id,
+            translation_row_number=translation_row_number,
+        )
+        for translation_row_number, row in enumerate(
+            _iter_gtfs_rows(
+                zip_file,
+                member_name=member_name,
+                required_columns=required_columns,
+            ),
+            start=1,
+        )
+    )
+    return _execute_batched_insert(connection, statement=TRANSLATIONS_INSERT, rows=rows)
+
+
+def _txt_member_items(member_map: Mapping[str, str]) -> list[tuple[str, str]]:
+    return sorted(
+        (
+            (source_file_name, member_path)
+            for source_file_name, member_path in member_map.items()
+            if source_file_name.endswith(".txt")
+        ),
+        key=lambda item: item[0],
+    )
+
+
+def _record_gtfs_source_members(
+    connection: Connection,
+    *,
+    zip_file: ZipFile,
+    member_map: Mapping[str, str],
+    provider_id: str,
+    dataset_version_id: int,
+    loaded_at_utc: datetime,
+) -> int:
+    rows: list[dict[str, object]] = []
+    for source_file_name, member_path in _txt_member_items(member_map):
+        columns, row_count = _read_member_columns_and_row_count(zip_file, member_path)
+        rows.append(
+            {
+                "dataset_version_id": dataset_version_id,
+                "provider_id": provider_id,
+                "source_file_name": source_file_name,
+                "member_path": member_path,
+                "row_count": row_count,
+                "checksum_sha256": _hash_zip_member(zip_file, member_path),
+                "byte_size": zip_file.getinfo(member_path).file_size,
+                "first_seen_at_utc": loaded_at_utc,
+                "last_seen_at_utc": loaded_at_utc,
+                "manifest_json": {
+                    "columns": columns,
+                    "column_count": len(columns),
+                },
+            }
+        )
+    return _execute_batched_insert(
+        connection,
+        statement=GTFS_SOURCE_MEMBER_INSERT,
+        rows=rows,
+    )
+
+
+def _load_extra_member_rows(
+    connection: Connection,
+    *,
+    zip_file: ZipFile,
+    member_map: Mapping[str, str],
+    provider_id: str,
+    dataset_version_id: int,
+) -> dict[str, int]:
+    extra_row_counts: dict[str, int] = {}
+    for source_file_name, member_path in _txt_member_items(member_map):
+        if source_file_name in SUPPORTED_STATIC_MEMBER_KEYS:
+            continue
+        rows = (
+            {
+                "dataset_version_id": dataset_version_id,
+                "provider_id": provider_id,
+                "source_file_name": source_file_name,
+                "source_row_number": source_row_number,
+                "row_json": row,
+            }
+            for source_row_number, row in enumerate(
+                _iter_gtfs_rows(
+                    zip_file,
+                    member_name=member_path,
+                    required_columns=set(),
+                ),
+                start=1,
+            )
+        )
+        extra_row_counts[source_file_name] = _execute_batched_insert(
+            connection,
+            statement=GTFS_EXTRA_ROW_INSERT,
+            rows=rows,
+        )
+    return extra_row_counts
 
 
 def find_latest_static_bronze_archive(
@@ -786,6 +1368,7 @@ def load_static_zip_to_silver(
     *,
     archive: BronzeStaticArchive,
     bronze_storage,
+    require_beta_static_contract: bool = False,
 ) -> StaticSilverLoadResult:
     if not bronze_storage.exists(archive.storage_path):
         archive_location = bronze_storage.describe_location(archive.storage_path)
@@ -803,6 +1386,8 @@ def load_static_zip_to_silver(
     with ZipFile(BytesIO(archive_bytes)) as zip_file:
         member_map = _discover_gtfs_members_from_zip(zip_file)
         validate_required_static_members(member_map)
+        if require_beta_static_contract:
+            validate_beta_static_contract(member_map, zip_file)
         row_counts = {
             "routes": _load_member_rows(
                 connection,
@@ -865,6 +1450,88 @@ def load_static_zip_to_silver(
                 statement=CALENDAR_DATES_INSERT,
             ),
         }
+        optional_row_counts = {
+            "agency": _load_member_rows(
+                connection,
+                zip_file=zip_file,
+                member_map=member_map,
+                member_key="agency.txt",
+                provider_id=archive.provider_id,
+                dataset_version_id=dataset_version_id,
+                builder=_build_agency_record,
+                statement=AGENCY_INSERT,
+            ),
+            "feed_info": _load_member_rows(
+                connection,
+                zip_file=zip_file,
+                member_map=member_map,
+                member_key="feed_info.txt",
+                provider_id=archive.provider_id,
+                dataset_version_id=dataset_version_id,
+                builder=_build_feed_info_record,
+                statement=FEED_INFO_INSERT,
+            ),
+            "directions": _load_member_rows(
+                connection,
+                zip_file=zip_file,
+                member_map=member_map,
+                member_key="directions.txt",
+                provider_id=archive.provider_id,
+                dataset_version_id=dataset_version_id,
+                builder=_build_direction_record,
+                statement=DIRECTIONS_INSERT,
+            ),
+            "route_patterns": _load_member_rows(
+                connection,
+                zip_file=zip_file,
+                member_map=member_map,
+                member_key="route_patterns.txt",
+                provider_id=archive.provider_id,
+                dataset_version_id=dataset_version_id,
+                builder=_build_route_pattern_record,
+                statement=ROUTE_PATTERNS_INSERT,
+            ),
+            "shapes": _load_member_rows(
+                connection,
+                zip_file=zip_file,
+                member_map=member_map,
+                member_key="shapes.txt",
+                provider_id=archive.provider_id,
+                dataset_version_id=dataset_version_id,
+                builder=_build_shape_record,
+                statement=SHAPES_INSERT,
+            ),
+            "translations": _load_translation_rows(
+                connection,
+                zip_file=zip_file,
+                member_map=member_map,
+                provider_id=archive.provider_id,
+                dataset_version_id=dataset_version_id,
+            ),
+        }
+        row_counts.update(
+            {
+                member_name: row_count
+                for member_name, row_count in optional_row_counts.items()
+                if row_count
+            }
+        )
+        member_count = _record_gtfs_source_members(
+            connection,
+            zip_file=zip_file,
+            member_map=member_map,
+            provider_id=archive.provider_id,
+            dataset_version_id=dataset_version_id,
+            loaded_at_utc=loaded_at_utc,
+        )
+        extra_row_counts = _load_extra_member_rows(
+            connection,
+            zip_file=zip_file,
+            member_map=member_map,
+            provider_id=archive.provider_id,
+            dataset_version_id=dataset_version_id,
+        )
+        unsupported_members = sorted(extra_row_counts)
 
     return StaticSilverLoadResult(
         provider_id=archive.provider_id,
@@ -877,6 +1544,10 @@ def load_static_zip_to_silver(
         source_version=archive.storage_path,
         loaded_at_utc=loaded_at_utc,
         row_counts=row_counts,
+        member_count=member_count,
+        unsupported_members=unsupported_members,
+        typed_row_counts=dict(row_counts),
+        extra_row_counts=extra_row_counts,
     )
 
 
@@ -915,6 +1586,7 @@ def load_latest_static_to_silver(
             connection,
             archive=archive,
             bronze_storage=bronze_storage,
+            require_beta_static_contract=True,
         )
         prune_static_silver_datasets(
             connection,

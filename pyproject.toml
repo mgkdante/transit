@@ -19,6 +19,7 @@ dependencies = [
   "python-dotenv>=1.0,<2.0",
   "sqlalchemy>=2.0,<3.0",
   "typer>=0.16,<1.0",
+  "pyshp>=2.3,<3.0",
 ]
 
 [project.scripts]

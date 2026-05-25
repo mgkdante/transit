@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 from transit_ops.maintenance import (
+    SELECT_ELIGIBLE_BRONZE_REALTIME_OBJECTS,
     BronzeStoragePruneResult,
     GoldStoragePruneResult,
     SilverStoragePruneResult,
@@ -49,6 +50,14 @@ class RecordingConnection:
         # DELETE statements return rowcount
         if "DELETE FROM silver.stop_times" in sql_text:
             return RowcountResult(12)
+        if "DELETE FROM silver.translations" in sql_text:
+            return RowcountResult(9)
+        if "DELETE FROM silver.shapes" in sql_text:
+            return RowcountResult(7)
+        if "DELETE FROM silver.route_patterns" in sql_text:
+            return RowcountResult(6)
+        if "DELETE FROM silver.directions" in sql_text:
+            return RowcountResult(5)
         if "DELETE FROM silver.calendar_dates" in sql_text:
             return RowcountResult(4)
         if "DELETE FROM silver.calendar" in sql_text:
@@ -59,8 +68,28 @@ class RecordingConnection:
             return RowcountResult(3)
         if "DELETE FROM silver.routes" in sql_text:
             return RowcountResult(1)
+        if "DELETE FROM silver.feed_info" in sql_text:
+            return RowcountResult(1)
+        if "DELETE FROM silver.agency" in sql_text:
+            return RowcountResult(1)
+        if "DELETE FROM silver.gtfs_extra_rows" in sql_text:
+            return RowcountResult(11)
+        if "DELETE FROM silver.gtfs_source_members" in sql_text:
+            return RowcountResult(10)
+        if "DELETE FROM silver.gis_gtfs_matches" in sql_text:
+            return RowcountResult(13)
         if "DELETE FROM core.dataset_versions" in sql_text:
             return RowcountResult(2)
+        if "DELETE FROM silver.rt_trip_update_stop_times" in sql_text:
+            return RowcountResult(400)
+        if "DELETE FROM silver.rt_trip_updates" in sql_text:
+            return RowcountResult(40)
+        if "DELETE FROM silver.rt_vehicle_positions" in sql_text:
+            return RowcountResult(30)
+        if "DELETE FROM silver.rt_entities" in sql_text:
+            return RowcountResult(60)
+        if "DELETE FROM silver.rt_feed_snapshots" in sql_text:
+            return RowcountResult(50)
         if "DELETE FROM silver.trip_update_stop_time_updates" in sql_text:
             return RowcountResult(200)
         if "DELETE FROM silver.trip_updates" in sql_text:
@@ -80,6 +109,14 @@ class RecordingConnection:
         # COUNT statements return ScalarResult
         if "SELECT COUNT(*) FROM silver.stop_times" in sql_text:
             return ScalarResult(12)
+        if "SELECT COUNT(*) FROM silver.translations" in sql_text:
+            return ScalarResult(9)
+        if "SELECT COUNT(*) FROM silver.shapes" in sql_text:
+            return ScalarResult(7)
+        if "SELECT COUNT(*) FROM silver.route_patterns" in sql_text:
+            return ScalarResult(6)
+        if "SELECT COUNT(*) FROM silver.directions" in sql_text:
+            return ScalarResult(5)
         if "SELECT COUNT(*) FROM silver.calendar_dates" in sql_text:
             return ScalarResult(4)
         if "SELECT COUNT(*) FROM silver.calendar" in sql_text:
@@ -90,8 +127,28 @@ class RecordingConnection:
             return ScalarResult(3)
         if "SELECT COUNT(*) FROM silver.routes" in sql_text:
             return ScalarResult(1)
+        if "SELECT COUNT(*) FROM silver.feed_info" in sql_text:
+            return ScalarResult(1)
+        if "SELECT COUNT(*) FROM silver.agency" in sql_text:
+            return ScalarResult(1)
+        if "SELECT COUNT(*) FROM silver.gtfs_extra_rows" in sql_text:
+            return ScalarResult(11)
+        if "SELECT COUNT(*) FROM silver.gtfs_source_members" in sql_text:
+            return ScalarResult(10)
+        if "SELECT COUNT(*) FROM silver.gis_gtfs_matches" in sql_text:
+            return ScalarResult(13)
         if "SELECT COUNT(*) FROM core.dataset_versions" in sql_text:
             return ScalarResult(2)
+        if "SELECT COUNT(*) FROM silver.rt_trip_update_stop_times" in sql_text:
+            return ScalarResult(400)
+        if "SELECT COUNT(*) FROM silver.rt_trip_updates" in sql_text:
+            return ScalarResult(40)
+        if "SELECT COUNT(*) FROM silver.rt_vehicle_positions" in sql_text:
+            return ScalarResult(30)
+        if "SELECT COUNT(*) FROM silver.rt_entities" in sql_text:
+            return ScalarResult(60)
+        if "SELECT COUNT(*) FROM silver.rt_feed_snapshots" in sql_text:
+            return ScalarResult(50)
         if "SELECT COUNT(*) FROM silver.trip_update_stop_time_updates" in sql_text:
             return ScalarResult(200)
         if "SELECT COUNT(*) FROM silver.trip_updates" in sql_text:
@@ -161,13 +218,32 @@ def test_prune_static_silver_datasets_keeps_only_retained_versions() -> None:
     assert pruned_dataset_version_ids == [6, 5]
     assert deleted_row_counts == {
         "silver.stop_times": 12,
+        "silver.translations": 9,
+        "silver.shapes": 7,
+        "silver.route_patterns": 6,
+        "silver.directions": 5,
         "silver.calendar_dates": 4,
         "silver.calendar": 2,
         "silver.trips": 8,
         "silver.stops": 3,
         "silver.routes": 1,
+        "silver.feed_info": 1,
+        "silver.agency": 1,
+        "silver.gtfs_extra_rows": 11,
+        "silver.gtfs_source_members": 10,
+        "silver.gis_gtfs_matches": 13,
         "core.dataset_versions": 2,
     }
+    gis_match_delete_index = next(
+        index
+        for index, sql in enumerate(connection.calls)
+        if "DELETE FROM silver.gis_gtfs_matches" in sql
+    )
+    dataset_delete_index = next(
+        index for index, sql in enumerate(connection.calls)
+        if "DELETE FROM core.dataset_versions" in sql
+    )
+    assert gis_match_delete_index < dataset_delete_index
 
 
 def test_prune_static_silver_datasets_dry_run_returns_counts_without_deleting() -> None:
@@ -184,11 +260,20 @@ def test_prune_static_silver_datasets_dry_run_returns_counts_without_deleting() 
     assert pruned_ids == [6, 5]
     assert counts == {
         "silver.stop_times": 12,
+        "silver.translations": 9,
+        "silver.shapes": 7,
+        "silver.route_patterns": 6,
+        "silver.directions": 5,
         "silver.calendar_dates": 4,
         "silver.calendar": 2,
         "silver.trips": 8,
         "silver.stops": 3,
         "silver.routes": 1,
+        "silver.feed_info": 1,
+        "silver.agency": 1,
+        "silver.gtfs_extra_rows": 11,
+        "silver.gtfs_source_members": 10,
+        "silver.gis_gtfs_matches": 13,
         "core.dataset_versions": 2,
     }
     # No DELETE statements should appear in calls
@@ -209,6 +294,11 @@ def test_prune_realtime_silver_history_deletes_rows_older_than_cutoff() -> None:
 
     assert cutoff_utc == datetime(2026, 3, 24, 20, 0, 0, tzinfo=UTC)
     assert deleted_row_counts == {
+        "silver.rt_trip_update_stop_times": 400,
+        "silver.rt_trip_updates": 40,
+        "silver.rt_vehicle_positions": 30,
+        "silver.rt_entities": 60,
+        "silver.rt_feed_snapshots": 50,
         "silver.trip_update_stop_time_updates": 200,
         "silver.trip_updates": 20,
         "silver.vehicle_positions": 10,
@@ -229,12 +319,44 @@ def test_prune_realtime_silver_history_dry_run_returns_counts_without_deleting()
 
     assert cutoff_utc == datetime(2026, 3, 24, 20, 0, 0, tzinfo=UTC)
     assert counts == {
+        "silver.rt_trip_update_stop_times": 400,
+        "silver.rt_trip_updates": 40,
+        "silver.rt_vehicle_positions": 30,
+        "silver.rt_entities": 60,
+        "silver.rt_feed_snapshots": 50,
         "silver.trip_update_stop_time_updates": 200,
         "silver.trip_updates": 20,
         "silver.vehicle_positions": 10,
     }
     delete_calls = [c for c in connection.calls if "DELETE" in c]
     assert delete_calls == [], f"Expected no DELETE calls in dry_run but got: {delete_calls}"
+
+
+def test_prune_realtime_silver_history_zero_retention_is_noop() -> None:
+    connection = RecordingConnection()
+
+    cutoff_utc, deleted_row_counts = prune_realtime_silver_history(
+        connection,
+        provider_id="stm",
+        retention_days=0,
+    )
+
+    assert cutoff_utc is None
+    assert deleted_row_counts == {
+        "silver.rt_trip_update_stop_times": 0,
+        "silver.rt_trip_updates": 0,
+        "silver.rt_vehicle_positions": 0,
+        "silver.rt_entities": 0,
+        "silver.rt_feed_snapshots": 0,
+        "silver.trip_update_stop_time_updates": 0,
+        "silver.trip_updates": 0,
+        "silver.vehicle_positions": 0,
+    }
+    assert connection.calls == []
+
+
+def test_bronze_realtime_prune_waits_for_source_snapshot_rows_to_be_gone() -> None:
+    assert "silver.rt_feed_snapshots" in str(SELECT_ELIGIBLE_BRONZE_REALTIME_OBJECTS)
 
 
 def test_prune_result_display_dict_formats_timestamps() -> None:

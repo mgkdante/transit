@@ -11,12 +11,14 @@ from transit_ops.settings import Settings
 
 class FeedKind(StrEnum):
     STATIC_SCHEDULE = "static_schedule"
+    GIS_STATIC = "gis_static"
     TRIP_UPDATES = "trip_updates"
     VEHICLE_POSITIONS = "vehicle_positions"
 
 
 class SourceFormat(StrEnum):
     GTFS_SCHEDULE_ZIP = "gtfs_schedule_zip"
+    STM_GIS_ZIP = "stm_gis_zip"
     GTFS_RT_TRIP_UPDATES = "gtfs_rt_trip_updates"
     GTFS_RT_VEHICLE_POSITIONS = "gtfs_rt_vehicle_positions"
 
@@ -86,13 +88,34 @@ class FeedConfigBase(BaseModel):
 
 class StaticFeedConfig(FeedConfigBase):
     feed_kind: Literal[FeedKind.STATIC_SCHEDULE]
+    source_format: Literal[SourceFormat.GTFS_SCHEDULE_ZIP]
 
 
-class RealtimeFeedConfig(FeedConfigBase):
-    feed_kind: Literal[FeedKind.TRIP_UPDATES, FeedKind.VEHICLE_POSITIONS]
+class GisStaticFeedConfig(FeedConfigBase):
+    feed_kind: Literal[FeedKind.GIS_STATIC]
+    source_format: Literal[SourceFormat.STM_GIS_ZIP]
 
 
-FeedConfig = Annotated[StaticFeedConfig | RealtimeFeedConfig, Field(discriminator="feed_kind")]
+class TripUpdatesFeedConfig(FeedConfigBase):
+    feed_kind: Literal[FeedKind.TRIP_UPDATES]
+    source_format: Literal[SourceFormat.GTFS_RT_TRIP_UPDATES]
+
+
+class VehiclePositionsFeedConfig(FeedConfigBase):
+    feed_kind: Literal[FeedKind.VEHICLE_POSITIONS]
+    source_format: Literal[SourceFormat.GTFS_RT_VEHICLE_POSITIONS]
+
+
+RealtimeFeedConfig = TripUpdatesFeedConfig | VehiclePositionsFeedConfig
+
+
+FeedConfig = Annotated[
+    StaticFeedConfig
+    | GisStaticFeedConfig
+    | TripUpdatesFeedConfig
+    | VehiclePositionsFeedConfig,
+    Field(discriminator="feed_kind"),
+]
 
 
 @dataclass(frozen=True)
@@ -131,6 +154,7 @@ class ProviderManifest(BaseModel):
     def validate_manifest_shape(self) -> ProviderManifest:
         required_feeds = {
             FeedKind.STATIC_SCHEDULE.value,
+            FeedKind.GIS_STATIC.value,
             FeedKind.TRIP_UPDATES.value,
             FeedKind.VEHICLE_POSITIONS.value,
         }
@@ -150,6 +174,12 @@ class ProviderManifest(BaseModel):
         feed = self.feeds[FeedKind.STATIC_SCHEDULE.value]
         if not isinstance(feed, StaticFeedConfig):
             raise TypeError("Static schedule feed did not validate as StaticFeedConfig.")
+        return feed
+
+    def gis_feed(self) -> GisStaticFeedConfig:
+        feed = self.feeds[FeedKind.GIS_STATIC.value]
+        if not isinstance(feed, GisStaticFeedConfig):
+            raise TypeError("GIS static feed did not validate as GisStaticFeedConfig.")
         return feed
 
     def realtime_feed(self, endpoint_key: str) -> RealtimeFeedConfig:
@@ -176,6 +206,7 @@ class ProviderManifest(BaseModel):
     def to_feed_endpoint_seeds(self, settings: Settings) -> list[FeedEndpointSeed]:
         ordered_feed_keys = [
             FeedKind.STATIC_SCHEDULE.value,
+            FeedKind.GIS_STATIC.value,
             FeedKind.TRIP_UPDATES.value,
             FeedKind.VEHICLE_POSITIONS.value,
         ]

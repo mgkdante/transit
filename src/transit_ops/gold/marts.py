@@ -71,17 +71,21 @@ DELETE_DIM_DIRECTION = text(
 INSERT_DIM_DIRECTION = text(
     """
     INSERT INTO gold.dim_direction (provider_id, route_id, direction_id, direction_label)
-    SELECT DISTINCT ON (provider_id, route_id, direction_id)
+    SELECT
         provider_id,
         route_id,
         direction_id,
-        trip_headsign AS direction_label
-    FROM silver.trips
+        direction AS direction_label
+    FROM silver.directions
     WHERE provider_id = :provider_id
       AND dataset_version_id = :dataset_version_id
-      AND trip_headsign IS NOT NULL
-      AND direction_id IS NOT NULL
-    ORDER BY provider_id, route_id, direction_id, trip_headsign
+    """
+)
+
+DELETE_DIM_ROUTE_PATTERN = text(
+    """
+    DELETE FROM gold.dim_route_pattern
+    WHERE provider_id = :provider_id
     """
 )
 
@@ -105,6 +109,7 @@ LOCK_GOLD_TABLES = text(
     """
     LOCK TABLE
         gold.dim_direction,
+        gold.dim_route_pattern,
         gold.dim_route,
         gold.dim_stop,
         gold.dim_date,
@@ -125,6 +130,7 @@ INSERT_DIM_ROUTE = text(
         route_short_name,
         route_long_name,
         route_desc,
+        route_desc_detail,
         route_type,
         route_color,
         route_text_color,
@@ -137,11 +143,35 @@ INSERT_DIM_ROUTE = text(
         route_short_name,
         route_long_name,
         route_desc,
+        route_desc_detail,
         route_type,
         route_color,
         route_text_color,
         route_sort_order
     FROM silver.routes
+    WHERE provider_id = :provider_id
+      AND dataset_version_id = :dataset_version_id
+    """
+)
+
+INSERT_DIM_ROUTE_PATTERN = text(
+    """
+    INSERT INTO gold.dim_route_pattern (
+        provider_id,
+        dataset_version_id,
+        route_pattern_id,
+        route_id,
+        direction_id,
+        route_pattern_typicality
+    )
+    SELECT
+        provider_id,
+        dataset_version_id,
+        route_pattern_id,
+        route_id,
+        direction_id,
+        route_pattern_typicality
+    FROM silver.route_patterns
     WHERE provider_id = :provider_id
       AND dataset_version_id = :dataset_version_id
     """
@@ -650,6 +680,7 @@ def _table_name(table_name: str) -> str:
     allowed_names = {
         "dim_direction",
         "dim_route",
+        "dim_route_pattern",
         "dim_stop",
         "dim_date",
         "fact_vehicle_snapshot",
@@ -734,6 +765,7 @@ def _delete_existing_provider_rows(connection: Connection, *, provider_id: str) 
     connection.execute(DELETE_DIM_DATE, params)
     connection.execute(DELETE_DIM_STOP, params)
     connection.execute(DELETE_DIM_DIRECTION, params)
+    connection.execute(DELETE_DIM_ROUTE_PATTERN, params)
     connection.execute(DELETE_DIM_ROUTE, params)
 
 
@@ -766,9 +798,11 @@ def _refresh_gold_dimensions(connection: Connection, *, context: GoldBuildContex
     connection.execute(DELETE_DIM_DATE, {"provider_id": context.provider_id})
     connection.execute(DELETE_DIM_STOP, {"provider_id": context.provider_id})
     connection.execute(DELETE_DIM_DIRECTION, {"provider_id": context.provider_id})
+    connection.execute(DELETE_DIM_ROUTE_PATTERN, {"provider_id": context.provider_id})
     connection.execute(DELETE_DIM_ROUTE, {"provider_id": context.provider_id})
     connection.execute(INSERT_DIM_ROUTE, params)
     connection.execute(INSERT_DIM_DIRECTION, params)
+    connection.execute(INSERT_DIM_ROUTE_PATTERN, params)
     connection.execute(INSERT_DIM_STOP, params)
     connection.execute(INSERT_DIM_DATE, params)
 
@@ -828,6 +862,7 @@ def _refresh_gold_tables(
     _delete_existing_provider_rows(connection, provider_id=context.provider_id)
     connection.execute(INSERT_DIM_ROUTE, params)
     connection.execute(INSERT_DIM_DIRECTION, params)
+    connection.execute(INSERT_DIM_ROUTE_PATTERN, params)
     connection.execute(INSERT_DIM_STOP, params)
     connection.execute(INSERT_DIM_DATE, params)
     connection.execute(INSERT_FACT_VEHICLE_SNAPSHOT, params)
@@ -844,6 +879,11 @@ def _refresh_gold_tables(
             connection,
             provider_id=context.provider_id,
             table_name="dim_route",
+        ),
+        "dim_route_pattern": _count_gold_rows(
+            connection,
+            provider_id=context.provider_id,
+            table_name="dim_route_pattern",
         ),
         "dim_stop": _count_gold_rows(
             connection,
@@ -988,10 +1028,20 @@ def refresh_gold_static(
         connection.execute(ACQUIRE_GOLD_BUILD_LOCK, {"provider_id": context.provider_id})
         _refresh_gold_dimensions(connection, context=context)
         row_counts = {
+            "dim_direction": _count_gold_rows(
+                connection,
+                provider_id=context.provider_id,
+                table_name="dim_direction",
+            ),
             "dim_route": _count_gold_rows(
                 connection,
                 provider_id=context.provider_id,
                 table_name="dim_route",
+            ),
+            "dim_route_pattern": _count_gold_rows(
+                connection,
+                provider_id=context.provider_id,
+                table_name="dim_route_pattern",
             ),
             "dim_stop": _count_gold_rows(
                 connection,

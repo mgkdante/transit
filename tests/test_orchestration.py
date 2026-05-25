@@ -31,22 +31,37 @@ class _FakeEngine:
         pass
 
 
-def _static_ingestion_result() -> StaticIngestionResult:
+def _static_ingestion_result(
+    *,
+    content_changed: bool = True,
+    status: str = "succeeded",
+    storage_path: str | None = "stm/static_schedule/example.zip",
+    archive_full_path: str | None = "s3://transit-raw/stm/static_schedule/example.zip",
+    ingestion_object_id: int | None = 11,
+    skipped_reason: str | None = None,
+) -> StaticIngestionResult:
     return StaticIngestionResult(
         provider_id="stm",
         endpoint_key="static_schedule",
         source_url="https://example.com/static.zip",
         storage_backend="s3",
-        storage_path="stm/static_schedule/example.zip",
-        archive_full_path="s3://transit-raw/stm/static_schedule/example.zip",
+        storage_path=storage_path,
+        archive_full_path=archive_full_path,
         byte_size=100,
         checksum_sha256="a" * 64,
         http_status_code=200,
         ingestion_run_id=1,
-        ingestion_object_id=11,
-        status="succeeded",
+        ingestion_object_id=ingestion_object_id,
+        status=status,
         started_at_utc=datetime(2026, 3, 25, 0, 0, 0, tzinfo=UTC),
         completed_at_utc=datetime(2026, 3, 25, 0, 0, 1, tzinfo=UTC),
+        content_changed=content_changed,
+        dataset_version_id=7,
+        first_seen_at_utc=datetime(2026, 3, 25, 0, 0, 0, tzinfo=UTC),
+        last_seen_at_utc=datetime(2026, 3, 25, 0, 0, 1, tzinfo=UTC),
+        observed_from_utc=datetime(2026, 3, 25, 0, 0, 0, tzinfo=UTC),
+        observed_until_utc=datetime(2026, 3, 25, 0, 0, 1, tzinfo=UTC),
+        skipped_reason=skipped_reason,
     )
 
 
@@ -158,12 +173,6 @@ def test_run_static_pipeline_orders_existing_steps(monkeypatch) -> None:
             call_order.append("ingest-static"),
             _static_ingestion_result(),
         )[1],
-    )
-    # Return a different hash so the gate treats this as a changed feed.
-    monkeypatch.setattr(
-        orchestration,
-        "get_current_static_content_hash",
-        lambda connection, provider_id: "b" * 64,
     )
     monkeypatch.setattr(
         orchestration,
@@ -482,21 +491,24 @@ def test_run_realtime_worker_loop_rejects_invalid_max_cycles() -> None:
         )
 
 
-def test_run_static_pipeline_skips_silver_and_gold_when_hash_unchanged(monkeypatch) -> None:
-    """Unchanged Bronze hash: Silver load and Gold refresh are skipped entirely."""
+def test_run_static_pipeline_skips_silver_and_gold_when_ingestion_skips_unchanged(
+    monkeypatch,
+) -> None:
+    """Unchanged static ingestion: Silver load and Gold refresh are skipped entirely."""
     silver_called = False
     gold_called = False
 
     monkeypatch.setattr(
         orchestration,
         "ingest_static_feed",
-        lambda provider_id, settings, registry, engine: _static_ingestion_result(),
-    )
-    # Return the same hash as StaticIngestionResult.checksum_sha256 ("a" * 64).
-    monkeypatch.setattr(
-        orchestration,
-        "get_current_static_content_hash",
-        lambda connection, provider_id: "a" * 64,
+        lambda provider_id, settings, registry, engine: _static_ingestion_result(
+            content_changed=False,
+            status="skipped_unchanged",
+            storage_path=None,
+            archive_full_path=None,
+            ingestion_object_id=None,
+            skipped_reason="static_content_unchanged",
+        ),
     )
 
     def _should_not_be_called_silver(*args, **kwargs):  # noqa: ANN002, ANN003
@@ -519,9 +531,7 @@ def test_run_static_pipeline_skips_silver_and_gold_when_hash_unchanged(monkeypat
         engine=_FakeEngine(),
     )
 
-    # Silver load was never called → no Silver INSERT ran → no core.dataset_versions row created.
     assert not silver_called
-    # Gold refresh was never called.
     assert not gold_called
     assert result.status == "succeeded"
     assert result.static_changed is False
@@ -534,8 +544,67 @@ def test_run_static_pipeline_skips_silver_and_gold_when_hash_unchanged(monkeypat
     assert result.static_ingestion_duration_seconds >= 0
 
 
-def test_run_static_pipeline_runs_silver_and_gold_when_hash_changed(monkeypatch) -> None:
-    """Different Bronze hash: Silver load and Gold refresh both run."""
+def test_run_static_pipeline_uses_ingestion_content_changed_without_hash_lookup(
+    monkeypatch,
+) -> None:
+    silver_called = False
+    gold_called = False
+    skipped_ingestion = SimpleNamespace(
+        provider_id="stm",
+        content_changed=False,
+        status="skipped_unchanged",
+        checksum_sha256="new-static-checksum",
+        display_dict=lambda: {
+            "provider_id": "stm",
+            "status": "skipped_unchanged",
+            "content_changed": False,
+            "dataset_version_id": 77,
+        },
+    )
+
+    monkeypatch.setattr(
+        orchestration,
+        "ingest_static_feed",
+        lambda provider_id, settings, registry, engine: skipped_ingestion,
+    )
+    monkeypatch.setattr(
+        orchestration,
+        "get_current_static_content_hash",
+        lambda connection, provider_id: (_ for _ in ()).throw(
+            AssertionError("legacy hash lookup should not be called")
+        ),
+        raising=False,
+    )
+
+    def _should_not_be_called_silver(*args, **kwargs):  # noqa: ANN002, ANN003
+        nonlocal silver_called
+        silver_called = True
+        return _static_silver_result()
+
+    def _should_not_be_called_gold(*args, **kwargs):  # noqa: ANN002, ANN003
+        nonlocal gold_called
+        gold_called = True
+        return _gold_static_refresh_result()
+
+    monkeypatch.setattr(orchestration, "load_latest_static_to_silver", _should_not_be_called_silver)
+    monkeypatch.setattr(orchestration, "refresh_gold_static", _should_not_be_called_gold)
+
+    result = run_static_pipeline(
+        "stm",
+        settings=Settings(_env_file=None, DATABASE_URL="postgresql://user:pass@example.com/transit"),
+        registry=object(),
+        engine=_FakeEngine(),
+    )
+
+    assert result.status == "succeeded"
+    assert result.static_changed is False
+    assert result.skipped_reason == "static_content_unchanged"
+    assert not silver_called
+    assert not gold_called
+
+
+def test_run_static_pipeline_runs_silver_and_gold_when_ingestion_changed(monkeypatch) -> None:
+    """Changed static ingestion: Silver load and Gold refresh both run."""
     call_order: list[str] = []
 
     monkeypatch.setattr(
@@ -545,11 +614,6 @@ def test_run_static_pipeline_runs_silver_and_gold_when_hash_changed(monkeypatch)
             call_order.append("ingest"),
             _static_ingestion_result(),
         )[1],
-    )
-    monkeypatch.setattr(
-        orchestration,
-        "get_current_static_content_hash",
-        lambda connection, provider_id: "z" * 64,  # different from "a" * 64
     )
     monkeypatch.setattr(
         orchestration,
@@ -584,8 +648,10 @@ def test_run_static_pipeline_runs_silver_and_gold_when_hash_changed(monkeypatch)
     assert result.gold_build_duration_seconds >= 0
 
 
-def test_run_static_pipeline_runs_silver_and_gold_when_no_existing_version(monkeypatch) -> None:
-    """No existing Silver version (None): treated as changed, steps 2 and 3 run."""
+def test_run_static_pipeline_runs_silver_and_gold_when_ingestion_reports_new_version(
+    monkeypatch,
+) -> None:
+    """A new static dataset version runs steps 2 and 3."""
     call_order: list[str] = []
 
     monkeypatch.setattr(
@@ -595,11 +661,6 @@ def test_run_static_pipeline_runs_silver_and_gold_when_no_existing_version(monke
             call_order.append("ingest"),
             _static_ingestion_result(),
         )[1],
-    )
-    monkeypatch.setattr(
-        orchestration,
-        "get_current_static_content_hash",
-        lambda connection, provider_id: None,
     )
     monkeypatch.setattr(
         orchestration,

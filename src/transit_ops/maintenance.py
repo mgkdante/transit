@@ -22,14 +22,38 @@ logger = logging.getLogger(__name__)
 
 STATIC_SILVER_TABLES = (
     "silver.stop_times",
+    "silver.translations",
+    "silver.shapes",
+    "silver.route_patterns",
+    "silver.directions",
     "silver.calendar_dates",
     "silver.calendar",
     "silver.trips",
     "silver.stops",
     "silver.routes",
+    "silver.feed_info",
+    "silver.agency",
+    "silver.gtfs_extra_rows",
+    "silver.gtfs_source_members",
+)
+
+STATIC_DATASET_REFERENCE_TABLES = (
+    "silver.gis_gtfs_matches",
+)
+
+GIS_SILVER_TABLES = (
+    "silver.gis_gtfs_matches",
+    "silver.gis_line_features",
+    "silver.gis_stop_features",
+    "silver.gis_datasets",
 )
 
 REALTIME_SILVER_TABLES = (
+    "silver.rt_trip_update_stop_times",
+    "silver.rt_trip_updates",
+    "silver.rt_vehicle_positions",
+    "silver.rt_entities",
+    "silver.rt_feed_snapshots",
     "silver.trip_update_stop_time_updates",
     "silver.trip_updates",
     "silver.vehicle_positions",
@@ -48,6 +72,7 @@ GOLD_WARM_ROLLUP_TABLES = (
 
 VACUUM_TABLES = (
     *STATIC_SILVER_TABLES,
+    *GIS_SILVER_TABLES,
     *REALTIME_SILVER_TABLES,
     *GOLD_FACT_TABLES,
     "gold.latest_trip_delay_snapshot",
@@ -174,6 +199,191 @@ COUNT_DATASET_VERSIONS = text(
     SELECT COUNT(*) FROM core.dataset_versions
     WHERE provider_id = :provider_id
       AND dataset_version_id = ANY(CAST(:dataset_version_ids AS bigint[]))
+    """
+)
+
+
+def _dataset_table_statement(table_name: str, *, dry_run: bool) -> object:
+    operation = "SELECT COUNT(*) FROM" if dry_run else "DELETE FROM"
+    return text(
+        f"""
+        {operation} {table_name}
+        WHERE provider_id = :provider_id
+          AND dataset_version_id = ANY(CAST(:dataset_version_ids AS bigint[]))
+        """
+    )
+
+
+def _static_dataset_reference_statement(table_name: str, *, dry_run: bool) -> object:
+    operation = "SELECT COUNT(*) FROM" if dry_run else "DELETE FROM"
+    return text(
+        f"""
+        {operation} {table_name}
+        WHERE provider_id = :provider_id
+          AND static_dataset_version_id = ANY(CAST(:dataset_version_ids AS bigint[]))
+        """
+    )
+
+
+DELETE_OLD_RT_TRIP_UPDATE_STOP_TIMES = text(
+    """
+    DELETE FROM silver.rt_trip_update_stop_times AS rstu
+    USING silver.rt_feed_snapshots AS rfs
+    WHERE rstu.rt_feed_snapshot_id = rfs.rt_feed_snapshot_id
+      AND rfs.provider_id = :provider_id
+      AND rfs.endpoint_key = 'trip_updates'
+      AND rfs.captured_at_utc < :cutoff_utc
+      AND rfs.rt_feed_snapshot_id <> COALESCE((
+            SELECT max(rfs_latest.rt_feed_snapshot_id)
+            FROM silver.rt_feed_snapshots AS rfs_latest
+            WHERE rfs_latest.provider_id = :provider_id
+              AND rfs_latest.endpoint_key = 'trip_updates'
+        ), -1)
+    """
+)
+
+COUNT_OLD_RT_TRIP_UPDATE_STOP_TIMES = text(
+    """
+    SELECT COUNT(*) FROM silver.rt_trip_update_stop_times AS rstu
+    JOIN silver.rt_feed_snapshots AS rfs
+        ON rstu.rt_feed_snapshot_id = rfs.rt_feed_snapshot_id
+    WHERE rfs.provider_id = :provider_id
+      AND rfs.endpoint_key = 'trip_updates'
+      AND rfs.captured_at_utc < :cutoff_utc
+      AND rfs.rt_feed_snapshot_id <> COALESCE((
+            SELECT max(rfs_latest.rt_feed_snapshot_id)
+            FROM silver.rt_feed_snapshots AS rfs_latest
+            WHERE rfs_latest.provider_id = :provider_id
+              AND rfs_latest.endpoint_key = 'trip_updates'
+        ), -1)
+    """
+)
+
+DELETE_OLD_RT_TRIP_UPDATES = text(
+    """
+    DELETE FROM silver.rt_trip_updates AS rtu
+    USING silver.rt_feed_snapshots AS rfs
+    WHERE rtu.rt_feed_snapshot_id = rfs.rt_feed_snapshot_id
+      AND rfs.provider_id = :provider_id
+      AND rfs.endpoint_key = 'trip_updates'
+      AND rfs.captured_at_utc < :cutoff_utc
+      AND rfs.rt_feed_snapshot_id <> COALESCE((
+            SELECT max(rfs_latest.rt_feed_snapshot_id)
+            FROM silver.rt_feed_snapshots AS rfs_latest
+            WHERE rfs_latest.provider_id = :provider_id
+              AND rfs_latest.endpoint_key = 'trip_updates'
+        ), -1)
+    """
+)
+
+COUNT_OLD_RT_TRIP_UPDATES = text(
+    """
+    SELECT COUNT(*) FROM silver.rt_trip_updates AS rtu
+    JOIN silver.rt_feed_snapshots AS rfs
+        ON rtu.rt_feed_snapshot_id = rfs.rt_feed_snapshot_id
+    WHERE rfs.provider_id = :provider_id
+      AND rfs.endpoint_key = 'trip_updates'
+      AND rfs.captured_at_utc < :cutoff_utc
+      AND rfs.rt_feed_snapshot_id <> COALESCE((
+            SELECT max(rfs_latest.rt_feed_snapshot_id)
+            FROM silver.rt_feed_snapshots AS rfs_latest
+            WHERE rfs_latest.provider_id = :provider_id
+              AND rfs_latest.endpoint_key = 'trip_updates'
+        ), -1)
+    """
+)
+
+DELETE_OLD_RT_VEHICLE_POSITIONS = text(
+    """
+    DELETE FROM silver.rt_vehicle_positions AS rvp
+    USING silver.rt_feed_snapshots AS rfs
+    WHERE rvp.rt_feed_snapshot_id = rfs.rt_feed_snapshot_id
+      AND rfs.provider_id = :provider_id
+      AND rfs.endpoint_key = 'vehicle_positions'
+      AND rfs.captured_at_utc < :cutoff_utc
+      AND rfs.rt_feed_snapshot_id <> COALESCE((
+            SELECT max(rfs_latest.rt_feed_snapshot_id)
+            FROM silver.rt_feed_snapshots AS rfs_latest
+            WHERE rfs_latest.provider_id = :provider_id
+              AND rfs_latest.endpoint_key = 'vehicle_positions'
+        ), -1)
+    """
+)
+
+COUNT_OLD_RT_VEHICLE_POSITIONS = text(
+    """
+    SELECT COUNT(*) FROM silver.rt_vehicle_positions AS rvp
+    JOIN silver.rt_feed_snapshots AS rfs
+        ON rvp.rt_feed_snapshot_id = rfs.rt_feed_snapshot_id
+    WHERE rfs.provider_id = :provider_id
+      AND rfs.endpoint_key = 'vehicle_positions'
+      AND rfs.captured_at_utc < :cutoff_utc
+      AND rfs.rt_feed_snapshot_id <> COALESCE((
+            SELECT max(rfs_latest.rt_feed_snapshot_id)
+            FROM silver.rt_feed_snapshots AS rfs_latest
+            WHERE rfs_latest.provider_id = :provider_id
+              AND rfs_latest.endpoint_key = 'vehicle_positions'
+        ), -1)
+    """
+)
+
+DELETE_OLD_RT_ENTITIES = text(
+    """
+    DELETE FROM silver.rt_entities AS rte
+    USING silver.rt_feed_snapshots AS rfs
+    WHERE rte.rt_feed_snapshot_id = rfs.rt_feed_snapshot_id
+      AND rfs.provider_id = :provider_id
+      AND rfs.captured_at_utc < :cutoff_utc
+      AND rfs.rt_feed_snapshot_id <> COALESCE((
+            SELECT max(rfs_latest.rt_feed_snapshot_id)
+            FROM silver.rt_feed_snapshots AS rfs_latest
+            WHERE rfs_latest.provider_id = :provider_id
+              AND rfs_latest.endpoint_key = rfs.endpoint_key
+        ), -1)
+    """
+)
+
+COUNT_OLD_RT_ENTITIES = text(
+    """
+    SELECT COUNT(*) FROM silver.rt_entities AS rte
+    JOIN silver.rt_feed_snapshots AS rfs
+        ON rte.rt_feed_snapshot_id = rfs.rt_feed_snapshot_id
+    WHERE rfs.provider_id = :provider_id
+      AND rfs.captured_at_utc < :cutoff_utc
+      AND rfs.rt_feed_snapshot_id <> COALESCE((
+            SELECT max(rfs_latest.rt_feed_snapshot_id)
+            FROM silver.rt_feed_snapshots AS rfs_latest
+            WHERE rfs_latest.provider_id = :provider_id
+              AND rfs_latest.endpoint_key = rfs.endpoint_key
+        ), -1)
+    """
+)
+
+DELETE_OLD_RT_FEED_SNAPSHOTS = text(
+    """
+    DELETE FROM silver.rt_feed_snapshots AS rfs
+    WHERE rfs.provider_id = :provider_id
+      AND rfs.captured_at_utc < :cutoff_utc
+      AND rfs.rt_feed_snapshot_id <> COALESCE((
+            SELECT max(rfs_latest.rt_feed_snapshot_id)
+            FROM silver.rt_feed_snapshots AS rfs_latest
+            WHERE rfs_latest.provider_id = :provider_id
+              AND rfs_latest.endpoint_key = rfs.endpoint_key
+        ), -1)
+    """
+)
+
+COUNT_OLD_RT_FEED_SNAPSHOTS = text(
+    """
+    SELECT COUNT(*) FROM silver.rt_feed_snapshots AS rfs
+    WHERE rfs.provider_id = :provider_id
+      AND rfs.captured_at_utc < :cutoff_utc
+      AND rfs.rt_feed_snapshot_id <> COALESCE((
+            SELECT max(rfs_latest.rt_feed_snapshot_id)
+            FROM silver.rt_feed_snapshots AS rfs_latest
+            WHERE rfs_latest.provider_id = :provider_id
+              AND rfs_latest.endpoint_key = rfs.endpoint_key
+        ), -1)
     """
 )
 
@@ -362,6 +572,10 @@ SELECT_ELIGIBLE_BRONZE_REALTIME_OBJECTS = text(
           SELECT 1 FROM silver.trip_update_stop_time_updates stu
           WHERE stu.realtime_snapshot_id = rsi.realtime_snapshot_id
       )
+      AND NOT EXISTS (
+          SELECT 1 FROM silver.rt_feed_snapshots rfs
+          WHERE rfs.ingestion_object_id = io.ingestion_object_id
+      )
       AND rsi.realtime_snapshot_id <> COALESCE((
           SELECT MAX(rsi_latest.realtime_snapshot_id)
           FROM raw.realtime_snapshot_index rsi_latest
@@ -546,12 +760,8 @@ def prune_static_silver_datasets(
     pruned_dataset_version_ids = dataset_version_ids[retention_count:]
     if not pruned_dataset_version_ids:
         return retained_dataset_version_ids, [], {
-            "silver.stop_times": 0,
-            "silver.calendar_dates": 0,
-            "silver.calendar": 0,
-            "silver.trips": 0,
-            "silver.stops": 0,
-            "silver.routes": 0,
+            **{table_name: 0 for table_name in STATIC_SILVER_TABLES},
+            **{table_name: 0 for table_name in STATIC_DATASET_REFERENCE_TABLES},
             "core.dataset_versions": 0,
         }
 
@@ -560,54 +770,30 @@ def prune_static_silver_datasets(
         "dataset_version_ids": pruned_dataset_version_ids,
     }
 
-    if dry_run:
-        deleted_row_counts = {
-            "silver.stop_times": _safe_scalar_count(
-                connection.execute(COUNT_SILVER_STOP_TIMES_BY_DATASET, params)
-            ),
-            "silver.calendar_dates": _safe_scalar_count(
-                connection.execute(COUNT_SILVER_CALENDAR_DATES_BY_DATASET, params)
-            ),
-            "silver.calendar": _safe_scalar_count(
-                connection.execute(COUNT_SILVER_CALENDAR_BY_DATASET, params)
-            ),
-            "silver.trips": _safe_scalar_count(
-                connection.execute(COUNT_SILVER_TRIPS_BY_DATASET, params)
-            ),
-            "silver.stops": _safe_scalar_count(
-                connection.execute(COUNT_SILVER_STOPS_BY_DATASET, params)
-            ),
-            "silver.routes": _safe_scalar_count(
-                connection.execute(COUNT_SILVER_ROUTES_BY_DATASET, params)
-            ),
-            "core.dataset_versions": _safe_scalar_count(
-                connection.execute(COUNT_DATASET_VERSIONS, params)
-            ),
+    counter = _safe_scalar_count if dry_run else _safe_rowcount
+    deleted_row_counts = {
+        table_name: counter(
+            connection.execute(_dataset_table_statement(table_name, dry_run=dry_run), params)
+        )
+        for table_name in STATIC_SILVER_TABLES
+    }
+    deleted_row_counts.update(
+        {
+            table_name: counter(
+                connection.execute(
+                    _static_dataset_reference_statement(table_name, dry_run=dry_run),
+                    params,
+                )
+            )
+            for table_name in STATIC_DATASET_REFERENCE_TABLES
         }
-    else:
-        deleted_row_counts = {
-            "silver.stop_times": _safe_rowcount(
-                connection.execute(DELETE_SILVER_STOP_TIMES_BY_DATASET, params)
-            ),
-            "silver.calendar_dates": _safe_rowcount(
-                connection.execute(DELETE_SILVER_CALENDAR_DATES_BY_DATASET, params)
-            ),
-            "silver.calendar": _safe_rowcount(
-                connection.execute(DELETE_SILVER_CALENDAR_BY_DATASET, params)
-            ),
-            "silver.trips": _safe_rowcount(
-                connection.execute(DELETE_SILVER_TRIPS_BY_DATASET, params)
-            ),
-            "silver.stops": _safe_rowcount(
-                connection.execute(DELETE_SILVER_STOPS_BY_DATASET, params)
-            ),
-            "silver.routes": _safe_rowcount(
-                connection.execute(DELETE_SILVER_ROUTES_BY_DATASET, params)
-            ),
-            "core.dataset_versions": _safe_rowcount(
-                connection.execute(DELETE_DATASET_VERSIONS, params)
-            ),
-        }
+    )
+    deleted_row_counts["core.dataset_versions"] = counter(
+        connection.execute(
+            COUNT_DATASET_VERSIONS if dry_run else DELETE_DATASET_VERSIONS,
+            params,
+        )
+    )
     return retained_dataset_version_ids, pruned_dataset_version_ids, deleted_row_counts
 
 
@@ -620,11 +806,7 @@ def prune_realtime_silver_history(
     now_utc: datetime | None = None,
 ) -> tuple[datetime | None, dict[str, int]]:
     if retention_days <= 0:
-        return None, {
-            "silver.trip_update_stop_time_updates": 0,
-            "silver.trip_updates": 0,
-            "silver.vehicle_positions": 0,
-        }
+        return None, {table_name: 0 for table_name in REALTIME_SILVER_TABLES}
 
     cutoff_utc = (now_utc or utc_now()) - timedelta(days=retention_days)
     params = {
@@ -634,6 +816,21 @@ def prune_realtime_silver_history(
 
     if dry_run:
         deleted_row_counts = {
+            "silver.rt_trip_update_stop_times": _safe_scalar_count(
+                connection.execute(COUNT_OLD_RT_TRIP_UPDATE_STOP_TIMES, params)
+            ),
+            "silver.rt_trip_updates": _safe_scalar_count(
+                connection.execute(COUNT_OLD_RT_TRIP_UPDATES, params)
+            ),
+            "silver.rt_vehicle_positions": _safe_scalar_count(
+                connection.execute(COUNT_OLD_RT_VEHICLE_POSITIONS, params)
+            ),
+            "silver.rt_entities": _safe_scalar_count(
+                connection.execute(COUNT_OLD_RT_ENTITIES, params)
+            ),
+            "silver.rt_feed_snapshots": _safe_scalar_count(
+                connection.execute(COUNT_OLD_RT_FEED_SNAPSHOTS, params)
+            ),
             "silver.trip_update_stop_time_updates": _safe_scalar_count(
                 connection.execute(COUNT_OLD_TRIP_UPDATE_STOP_TIME_UPDATES, params)
             ),
@@ -646,6 +843,21 @@ def prune_realtime_silver_history(
         }
     else:
         deleted_row_counts = {
+            "silver.rt_trip_update_stop_times": _safe_rowcount(
+                connection.execute(DELETE_OLD_RT_TRIP_UPDATE_STOP_TIMES, params)
+            ),
+            "silver.rt_trip_updates": _safe_rowcount(
+                connection.execute(DELETE_OLD_RT_TRIP_UPDATES, params)
+            ),
+            "silver.rt_vehicle_positions": _safe_rowcount(
+                connection.execute(DELETE_OLD_RT_VEHICLE_POSITIONS, params)
+            ),
+            "silver.rt_entities": _safe_rowcount(
+                connection.execute(DELETE_OLD_RT_ENTITIES, params)
+            ),
+            "silver.rt_feed_snapshots": _safe_rowcount(
+                connection.execute(DELETE_OLD_RT_FEED_SNAPSHOTS, params)
+            ),
             "silver.trip_update_stop_time_updates": _safe_rowcount(
                 connection.execute(DELETE_OLD_TRIP_UPDATE_STOP_TIME_UPDATES, params)
             ),
