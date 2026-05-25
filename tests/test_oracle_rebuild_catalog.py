@@ -258,6 +258,20 @@ def test_reset_rebuild_tables_truncates_raw_silver_gold_but_not_core_provider_ta
     assert "silver.route_patterns" in sql
     assert "silver.shapes" in sql
     assert "silver.translations" in sql
+    assert "silver.gtfs_source_members" in sql
+    assert "silver.gtfs_extra_rows" in sql
+    assert "silver.rt_feed_snapshots" in sql
+    assert "silver.rt_entities" in sql
+    assert "silver.rt_trip_updates" in sql
+    assert "silver.rt_trip_update_stop_times" in sql
+    assert "silver.rt_vehicle_positions" in sql
+    assert "silver.gis_datasets" in sql
+    assert "silver.gis_stop_features" in sql
+    assert "silver.gis_line_features" in sql
+    assert "silver.gis_gtfs_matches" in sql
+    assert "silver.i3_alerts" in sql
+    assert "silver.i3_alert_informed_entities" in sql
+    assert "raw.i3_alert_snapshots" in sql
     assert "gold.dim_route_pattern" in sql
     assert "core.providers" not in sql
     assert "core.feed_endpoints" not in sql

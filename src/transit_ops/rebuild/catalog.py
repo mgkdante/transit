@@ -24,6 +24,10 @@ from transit_ops.rebuild.bronze_cleanup import (
     parse_bronze_key,
 )
 from transit_ops.settings import Settings
+from transit_ops.source_factory.catalog import (
+    build_source_factory_reset_statement,
+    reset_source_factory_tables,
+)
 
 _MONTH_PATTERN = re.compile(r"^\d{4}-\d{2}$")
 
@@ -106,43 +110,7 @@ class RawCatalogRebuildResult:
         }
 
 
-RESET_REBUILD_TABLES = text(
-    """
-TRUNCATE TABLE
-  gold.vehicle_summary_5m,
-  gold.trip_delay_summary_5m,
-  gold.warm_rollup_periods,
-  gold.latest_trip_delay_snapshot,
-  gold.latest_vehicle_snapshot,
-  gold.fact_trip_delay_snapshot,
-  gold.fact_vehicle_snapshot,
-  gold.dim_date,
-  gold.dim_direction,
-  gold.dim_route_pattern,
-  gold.dim_stop,
-  gold.dim_route,
-  silver.trip_update_stop_time_updates,
-  silver.trip_updates,
-  silver.vehicle_positions,
-  silver.translations,
-  silver.shapes,
-  silver.stop_times,
-  silver.calendar_dates,
-  silver.calendar,
-  silver.trips,
-  silver.route_patterns,
-  silver.directions,
-  silver.stops,
-  silver.routes,
-  silver.feed_info,
-  silver.agency,
-  core.dataset_versions,
-  raw.realtime_snapshot_index,
-  raw.ingestion_objects,
-  raw.ingestion_runs
-RESTART IDENTITY CASCADE
-"""
-)
+RESET_REBUILD_TABLES = build_source_factory_reset_statement()
 
 
 def month_bounds(month: str) -> tuple[datetime, datetime]:
@@ -218,7 +186,7 @@ def select_rebuild_bronze_objects(
 
 
 def reset_rebuild_tables(connection) -> None:  # noqa: ANN001
-    connection.execute(RESET_REBUILD_TABLES)
+    reset_source_factory_tables(connection)
 
 
 def rebuild_raw_catalog(
