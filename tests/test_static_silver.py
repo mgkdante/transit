@@ -681,3 +681,58 @@ def test_load_latest_static_to_silver_reads_s3_backed_archive(
         "translations": 1,
     }
     assert fake_storage.read_calls == [lookup_row["storage_path"]]
+
+
+def test_load_latest_static_to_silver_accepts_live_current_static_without_beta_members(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    zip_path = tmp_path / "current-gtfs.zip"
+    _write_gtfs_zip(zip_path, include_calendar=False, include_calendar_dates=True)
+    fake_storage = FakeBronzeStorage(zip_path.read_bytes())
+    lookup_row = {
+        "provider_id": "stm",
+        "storage_backend": "s3",
+        "feed_endpoint_id": 1,
+        "source_ingestion_run_id": 10,
+        "source_ingestion_object_id": 20,
+        "storage_path": "stm/static_schedule/ingested_at_utc=2026-05-25/current.zip",
+        "source_url": "https://www.stm.info/sites/default/files/gtfs/gtfs_stm.zip",
+        "checksum_sha256": "f" * 64,
+        "byte_size": zip_path.stat().st_size,
+        "source_completed_at_utc": datetime(2026, 5, 25, 0, 0, 0, tzinfo=UTC),
+    }
+    settings = Settings(
+        _env_file=None,
+        DATABASE_URL="postgresql://user:pass@example.com/transit",
+        BRONZE_S3_ENDPOINT="https://example.r2.cloudflarestorage.com",
+        BRONZE_S3_BUCKET="bronze-bucket",
+        BRONZE_S3_ACCESS_KEY="access",
+        BRONZE_S3_SECRET_KEY="secret",
+        BRONZE_S3_REGION="auto",
+    )
+    registry = ProviderRegistry.from_project_root(
+        project_root=Path(__file__).resolve().parents[1],
+        settings=settings,
+    )
+    engine = FakeEngine(LookupConnection(lookup_row), RecordingConnection())
+
+    monkeypatch.setattr(
+        static_silver_module,
+        "get_bronze_storage",
+        lambda settings, project_root, storage_backend: fake_storage,
+    )
+
+    result = load_latest_static_to_silver(
+        "stm",
+        settings=settings,
+        registry=registry,
+        engine=engine,
+    )
+
+    assert result.row_counts["routes"] == 1
+    assert result.row_counts["trips"] == 1
+    assert result.row_counts["stop_times"] == 2
+    assert "directions" not in result.row_counts
+    assert "route_patterns" not in result.row_counts
+    assert fake_storage.read_calls == [lookup_row["storage_path"]]

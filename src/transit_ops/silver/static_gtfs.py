@@ -1562,6 +1562,11 @@ def load_static_zip_to_silver(
     )
 
 
+def _archive_requires_beta_static_contract(archive: BronzeStaticArchive) -> bool:
+    source_tokens = (archive.source_url or "", archive.storage_path or "")
+    return any("beta" in token.lower() for token in source_tokens)
+
+
 def load_latest_static_to_silver(
     provider_id: str,
     *,
@@ -1597,7 +1602,7 @@ def load_latest_static_to_silver(
             connection,
             archive=archive,
             bronze_storage=bronze_storage,
-            require_beta_static_contract=True,
+            require_beta_static_contract=_archive_requires_beta_static_contract(archive),
         )
         prune_static_silver_datasets(
             connection,
