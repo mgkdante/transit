@@ -17,7 +17,7 @@ from transit_ops.gold import (
     refresh_gold_realtime,
     refresh_gold_static,
 )
-from transit_ops.ingestion import capture_realtime_feed, ingest_static_feed
+from transit_ops.ingestion import capture_realtime_feed, ingest_gis_feed, ingest_static_feed
 from transit_ops.logging import configure_logging
 from transit_ops.maintenance import (
     prune_bronze_storage,
@@ -36,6 +36,7 @@ from transit_ops.rebuild.oracle import rebuild_oracle_data
 from transit_ops.rebuild.static_beta import rebuild_beta_static_contract
 from transit_ops.settings import Settings, get_settings
 from transit_ops.silver import (
+    load_latest_gis_to_silver,
     load_latest_realtime_to_silver,
     load_latest_static_to_silver,
 )
@@ -255,6 +256,24 @@ def ingest_static(provider_id: str) -> None:
     typer.echo(json.dumps(result.display_dict(), indent=2))
 
 
+@app.command("ingest-gis")
+def ingest_gis(provider_id: str) -> None:
+    """Download, archive, and register one STM GIS ZIP."""
+
+    settings = get_settings()
+    try:
+        result = ingest_gis_feed(
+            provider_id,
+            settings=settings,
+            registry=_provider_registry(settings),
+        )
+    except KeyError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    typer.echo(json.dumps(result.display_dict(), indent=2))
+
+
 @app.command("validate-static-feeds")
 def validate_static_feeds_command(
     provider_id: str,
@@ -264,7 +283,7 @@ def validate_static_feeds_command(
         help="Write the JSON validation report to this path as well as stdout.",
     ),
 ) -> None:
-    """Validate active beta and current fallback static GTFS feeds without ingesting them."""
+    """Validate active beta static GTFS feed(s) without ingesting them."""
 
     settings = get_settings()
     try:
@@ -350,6 +369,24 @@ def load_static_silver(provider_id: str) -> None:
     settings = get_settings()
     try:
         result = load_latest_static_to_silver(
+            provider_id,
+            settings=settings,
+            registry=_provider_registry(settings),
+        )
+    except KeyError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    except (ValueError, FileNotFoundError) as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    typer.echo(json.dumps(result.display_dict(), indent=2))
+
+
+@app.command("load-gis-silver")
+def load_gis_silver(provider_id: str) -> None:
+    """Parse the latest Bronze GIS ZIP into Silver source tables."""
+
+    settings = get_settings()
+    try:
+        result = load_latest_gis_to_silver(
             provider_id,
             settings=settings,
             registry=_provider_registry(settings),

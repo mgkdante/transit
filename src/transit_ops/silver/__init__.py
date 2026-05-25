@@ -1,5 +1,11 @@
 """Silver-layer GTFS loaders."""
 
+from transit_ops.silver.gis import (
+    BronzeGisArchive,
+    GisSilverLoadResult,
+    find_latest_gis_bronze_archive,
+    load_latest_gis_to_silver,
+)
 from transit_ops.silver.realtime_gtfs import (
     BronzeRealtimeSnapshot,
     RealtimeSilverLoadResult,
@@ -16,13 +22,17 @@ from transit_ops.silver.static_gtfs import (
 )
 
 __all__ = [
+    "BronzeGisArchive",
     "BronzeStaticArchive",
     "BronzeRealtimeSnapshot",
+    "GisSilverLoadResult",
     "RealtimeSilverLoadResult",
     "StaticSilverLoadResult",
     "discover_gtfs_members",
+    "find_latest_gis_bronze_archive",
     "find_latest_realtime_bronze_snapshot",
     "get_current_static_content_hash",
+    "load_latest_gis_to_silver",
     "load_latest_realtime_to_silver",
     "load_latest_static_to_silver",
     "validate_required_static_members",

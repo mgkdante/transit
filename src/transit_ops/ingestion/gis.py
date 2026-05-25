@@ -4,6 +4,7 @@ from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
 from urllib.error import HTTPError
+from urllib.parse import urlparse
 
 from sqlalchemy import text
 from sqlalchemy.engine import Engine
@@ -37,14 +38,14 @@ def _project_root() -> Path:
 
 
 def _safe_filename(source_url: str) -> str:
-    return safe_filename(source_url, default_filename="download.zip")
+    return safe_filename(Path(urlparse(source_url).path).name, default_filename="stm_sig.zip")
 
 
 def compute_sha256_hex(file_path: Path) -> str:
     return _compute_sha256_hex(file_path)
 
 
-def build_static_object_storage_path(
+def build_gis_object_storage_path(
     provider_id: str,
     endpoint_key: str,
     started_at_utc: datetime,
@@ -62,7 +63,7 @@ def build_static_object_storage_path(
 
 
 @dataclass(frozen=True)
-class StaticIngestionConfig:
+class GisIngestionConfig:
     provider_id: str
     endpoint_key: str
     feed_kind: str
@@ -79,7 +80,7 @@ class StaticIngestionConfig:
 
 
 @dataclass(frozen=True)
-class StaticIngestionResult:
+class GisIngestionResult:
     provider_id: str
     endpoint_key: str
     source_url: str
@@ -126,26 +127,26 @@ class _DatasetVersionObservation:
     observed_until_utc: datetime
 
 
-def build_static_ingestion_config(
+def build_gis_ingestion_config(
     manifest: ProviderManifest,
     settings: Settings,
-) -> StaticIngestionConfig:
-    static_feed = manifest.static_feed()
-    source_url = static_feed.resolved_source_url(settings)
+) -> GisIngestionConfig:
+    gis_feed = manifest.gis_feed()
+    source_url = gis_feed.resolved_source_url(settings)
     if not source_url:
         raise ValueError(
-            "Static feed for provider "
+            "GIS feed for provider "
             f"'{manifest.provider.provider_id}' does not have a resolved URL."
         )
-    return StaticIngestionConfig(
+    return GisIngestionConfig(
         provider_id=manifest.provider.provider_id,
-        endpoint_key=static_feed.endpoint_key,
-        feed_kind=static_feed.feed_kind.value,
-        source_format=static_feed.source_format.value,
+        endpoint_key=gis_feed.endpoint_key,
+        feed_kind=gis_feed.feed_kind.value,
+        source_format=gis_feed.source_format.value,
         source_url=source_url,
         storage_backend=settings.BRONZE_STORAGE_BACKEND,
         bronze_root=Path(settings.BRONZE_LOCAL_ROOT),
-        refresh_interval_seconds=static_feed.refresh_interval_seconds,
+        refresh_interval_seconds=gis_feed.refresh_interval_seconds,
     )
 
 
@@ -154,7 +155,7 @@ def _download_to_tempfile(source_url: str, temp_dir: Path) -> DownloadedArtifact
         source_url=source_url,
         temp_dir=temp_dir,
         headers=None,
-        default_filename="download.zip",
+        default_filename="stm_sig.zip",
     )
 
 
@@ -164,8 +165,8 @@ def _get_feed_endpoint_id(connection, provider_id: str, endpoint_key: str) -> in
         provider_id=provider_id,
         endpoint_key=endpoint_key,
         missing_message=(
-            "Static feed endpoint was not found in core.feed_endpoints. "
-            "Run seed-core before ingest-static."
+            "GIS feed endpoint was not found in core.feed_endpoints. "
+            "Run seed-core before ingest-gis."
         ),
     )
 
@@ -246,20 +247,20 @@ def _set_dataset_version_source_object(
     )
 
 
-def ingest_static_feed(
+def ingest_gis_feed(
     provider_id: str,
     *,
     settings: Settings | None = None,
     registry: ProviderRegistry | None = None,
     engine: Engine | None = None,
-) -> StaticIngestionResult:
+) -> GisIngestionResult:
     settings = settings or get_settings()
     registry = registry or ProviderRegistry.from_project_root(
         project_root=_project_root(),
         settings=settings,
     )
     manifest = registry.get_provider(provider_id)
-    config = build_static_ingestion_config(manifest, settings)
+    config = build_gis_ingestion_config(manifest, settings)
     bronze_root = resolve_local_bronze_root(settings, project_root=_project_root())
     bronze_storage = get_bronze_storage(
         settings,
@@ -287,7 +288,7 @@ def ingest_static_feed(
     artifact: DownloadedArtifact | None = None
     try:
         artifact = _download_to_tempfile(config.source_url, bronze_root / ".tmp")
-        storage_path = build_static_object_storage_path(
+        storage_path = build_gis_object_storage_path(
             provider_id=config.provider_id,
             endpoint_key=config.endpoint_key,
             started_at_utc=started_at_utc,
@@ -301,7 +302,7 @@ def ingest_static_feed(
                 connection,
                 provider_id=config.provider_id,
                 feed_endpoint_id=feed_endpoint_id,
-                dataset_kind="static_schedule",
+                dataset_kind="gis_static",
                 checksum_sha256=artifact.checksum_sha256,
                 source_url=config.source_url,
                 storage_backend=config.storage_backend,
@@ -326,7 +327,7 @@ def ingest_static_feed(
                     http_status_code=artifact.http_status_code,
                 )
                 artifact.temp_path.unlink(missing_ok=True)
-                return StaticIngestionResult(
+                return GisIngestionResult(
                     provider_id=config.provider_id,
                     endpoint_key=config.endpoint_key,
                     source_url=config.source_url,
@@ -347,7 +348,7 @@ def ingest_static_feed(
                     last_seen_at_utc=observation.last_seen_at_utc,
                     observed_from_utc=observation.observed_from_utc,
                     observed_until_utc=observation.observed_until_utc,
-                    skipped_reason="static_content_unchanged",
+                    skipped_reason="gis_content_unchanged",
                 )
 
             archive_reference = bronze_storage.persist_temp_file(artifact.temp_path, storage_path)
@@ -375,7 +376,7 @@ def ingest_static_feed(
                 http_status_code=artifact.http_status_code,
             )
 
-        return StaticIngestionResult(
+        return GisIngestionResult(
             provider_id=config.provider_id,
             endpoint_key=config.endpoint_key,
             source_url=config.source_url,

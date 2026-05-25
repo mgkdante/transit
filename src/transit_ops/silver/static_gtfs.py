@@ -1,15 +1,17 @@
 from __future__ import annotations
 
 import csv
+import hashlib
 from collections.abc import Callable, Iterable, Iterator, Mapping
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from datetime import date, datetime
 from io import BytesIO, TextIOWrapper
 from itertools import islice
 from pathlib import Path
 from zipfile import ZipFile
 
-from sqlalchemy import text
+from sqlalchemy import bindparam, text
+from sqlalchemy.dialects import postgresql
 from sqlalchemy.engine import Connection, Engine
 
 from transit_ops.db.connection import make_engine
@@ -112,6 +114,55 @@ REQUIRED_COLUMNS_BY_MEMBER: dict[str, set[str]] = {
         "translation",
     },
 }
+SUPPORTED_STATIC_MEMBER_KEYS = set(REQUIRED_COLUMNS_BY_MEMBER)
+
+GTFS_SOURCE_MEMBER_INSERT = text(
+    """
+    INSERT INTO silver.gtfs_source_members (
+        dataset_version_id,
+        provider_id,
+        source_file_name,
+        member_path,
+        row_count,
+        checksum_sha256,
+        byte_size,
+        first_seen_at_utc,
+        last_seen_at_utc,
+        manifest_json
+    )
+    VALUES (
+        :dataset_version_id,
+        :provider_id,
+        :source_file_name,
+        :member_path,
+        :row_count,
+        :checksum_sha256,
+        :byte_size,
+        :first_seen_at_utc,
+        :last_seen_at_utc,
+        :manifest_json
+    )
+    """
+).bindparams(bindparam("manifest_json", type_=postgresql.JSONB))
+
+GTFS_EXTRA_ROW_INSERT = text(
+    """
+    INSERT INTO silver.gtfs_extra_rows (
+        dataset_version_id,
+        provider_id,
+        source_file_name,
+        source_row_number,
+        row_json
+    )
+    VALUES (
+        :dataset_version_id,
+        :provider_id,
+        :source_file_name,
+        :source_row_number,
+        :row_json
+    )
+    """
+).bindparams(bindparam("row_json", type_=postgresql.JSONB))
 
 AGENCY_INSERT = text(
     """
@@ -220,6 +271,8 @@ TRIPS_INSERT = text(
         block_id,
         shape_id,
         route_pattern_id,
+        note_fr,
+        note_en,
         wheelchair_accessible,
         bikes_allowed
     )
@@ -235,6 +288,8 @@ TRIPS_INSERT = text(
         :block_id,
         :shape_id,
         :route_pattern_id,
+        :note_fr,
+        :note_en,
         :wheelchair_accessible,
         :bikes_allowed
     )
@@ -489,6 +544,10 @@ class StaticSilverLoadResult:
     source_version: str
     loaded_at_utc: datetime
     row_counts: dict[str, int]
+    member_count: int = 0
+    unsupported_members: list[str] = field(default_factory=list)
+    typed_row_counts: dict[str, int] = field(default_factory=dict)
+    extra_row_counts: dict[str, int] = field(default_factory=dict)
 
     def display_dict(self) -> dict[str, object]:
         payload = asdict(self)
@@ -657,6 +716,29 @@ def _read_member_header(zip_file: ZipFile, member_name: str) -> set[str]:
         return set(reader.fieldnames or [])
 
 
+def _read_member_columns_and_row_count(
+    zip_file: ZipFile,
+    member_name: str,
+) -> tuple[list[str], int]:
+    with zip_file.open(member_name, "r") as raw_handle, TextIOWrapper(
+        raw_handle,
+        encoding="utf-8-sig",
+        newline="",
+    ) as text_handle:
+        reader = csv.DictReader(text_handle)
+        columns = list(reader.fieldnames or [])
+        row_count = sum(1 for _ in reader)
+        return columns, row_count
+
+
+def _hash_zip_member(zip_file: ZipFile, member_name: str) -> str:
+    digest = hashlib.sha256()
+    with zip_file.open(member_name, "r") as raw_handle:
+        for chunk in iter(lambda: raw_handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
 def validate_beta_static_contract(member_map: Mapping[str, str], zip_file: ZipFile) -> None:
     missing_members = sorted(BETA_STATIC_CONTRACT_MEMBERS - set(member_map))
     if missing_members:
@@ -752,6 +834,8 @@ def _build_trip_record(
         "block_id": _blank_to_none(row.get("block_id")),
         "shape_id": _blank_to_none(row.get("shape_id")),
         "route_pattern_id": _blank_to_none(row.get("route_pattern_id")),
+        "note_fr": _blank_to_none(row.get("note_fr")),
+        "note_en": _blank_to_none(row.get("note_en")),
         "wheelchair_accessible": _parse_optional_int(row.get("wheelchair_accessible")),
         "bikes_allowed": _parse_optional_int(row.get("bikes_allowed")),
     }
@@ -1009,6 +1093,90 @@ def _load_translation_rows(
         )
     )
     return _execute_batched_insert(connection, statement=TRANSLATIONS_INSERT, rows=rows)
+
+
+def _txt_member_items(member_map: Mapping[str, str]) -> list[tuple[str, str]]:
+    return sorted(
+        (
+            (source_file_name, member_path)
+            for source_file_name, member_path in member_map.items()
+            if source_file_name.endswith(".txt")
+        ),
+        key=lambda item: item[0],
+    )
+
+
+def _record_gtfs_source_members(
+    connection: Connection,
+    *,
+    zip_file: ZipFile,
+    member_map: Mapping[str, str],
+    provider_id: str,
+    dataset_version_id: int,
+    loaded_at_utc: datetime,
+) -> int:
+    rows: list[dict[str, object]] = []
+    for source_file_name, member_path in _txt_member_items(member_map):
+        columns, row_count = _read_member_columns_and_row_count(zip_file, member_path)
+        rows.append(
+            {
+                "dataset_version_id": dataset_version_id,
+                "provider_id": provider_id,
+                "source_file_name": source_file_name,
+                "member_path": member_path,
+                "row_count": row_count,
+                "checksum_sha256": _hash_zip_member(zip_file, member_path),
+                "byte_size": zip_file.getinfo(member_path).file_size,
+                "first_seen_at_utc": loaded_at_utc,
+                "last_seen_at_utc": loaded_at_utc,
+                "manifest_json": {
+                    "columns": columns,
+                    "column_count": len(columns),
+                },
+            }
+        )
+    return _execute_batched_insert(
+        connection,
+        statement=GTFS_SOURCE_MEMBER_INSERT,
+        rows=rows,
+    )
+
+
+def _load_extra_member_rows(
+    connection: Connection,
+    *,
+    zip_file: ZipFile,
+    member_map: Mapping[str, str],
+    provider_id: str,
+    dataset_version_id: int,
+) -> dict[str, int]:
+    extra_row_counts: dict[str, int] = {}
+    for source_file_name, member_path in _txt_member_items(member_map):
+        if source_file_name in SUPPORTED_STATIC_MEMBER_KEYS:
+            continue
+        rows = (
+            {
+                "dataset_version_id": dataset_version_id,
+                "provider_id": provider_id,
+                "source_file_name": source_file_name,
+                "source_row_number": source_row_number,
+                "row_json": row,
+            }
+            for source_row_number, row in enumerate(
+                _iter_gtfs_rows(
+                    zip_file,
+                    member_name=member_path,
+                    required_columns=set(),
+                ),
+                start=1,
+            )
+        )
+        extra_row_counts[source_file_name] = _execute_batched_insert(
+            connection,
+            statement=GTFS_EXTRA_ROW_INSERT,
+            rows=rows,
+        )
+    return extra_row_counts
 
 
 def find_latest_static_bronze_archive(
@@ -1348,6 +1516,22 @@ def load_static_zip_to_silver(
                 if row_count
             }
         )
+        member_count = _record_gtfs_source_members(
+            connection,
+            zip_file=zip_file,
+            member_map=member_map,
+            provider_id=archive.provider_id,
+            dataset_version_id=dataset_version_id,
+            loaded_at_utc=loaded_at_utc,
+        )
+        extra_row_counts = _load_extra_member_rows(
+            connection,
+            zip_file=zip_file,
+            member_map=member_map,
+            provider_id=archive.provider_id,
+            dataset_version_id=dataset_version_id,
+        )
+        unsupported_members = sorted(extra_row_counts)
 
     return StaticSilverLoadResult(
         provider_id=archive.provider_id,
@@ -1360,6 +1544,10 @@ def load_static_zip_to_silver(
         source_version=archive.storage_path,
         loaded_at_utc=loaded_at_utc,
         row_counts=row_counts,
+        member_count=member_count,
+        unsupported_members=unsupported_members,
+        typed_row_counts=dict(row_counts),
+        extra_row_counts=extra_row_counts,
     )
 
 

@@ -7,7 +7,8 @@ from itertools import islice
 from pathlib import Path
 
 from google.transit import gtfs_realtime_pb2
-from sqlalchemy import text
+from sqlalchemy import bindparam, text
+from sqlalchemy.dialects import postgresql
 from sqlalchemy.engine import Connection, Engine
 
 from transit_ops.db.connection import make_engine
@@ -17,6 +18,187 @@ from transit_ops.providers import ProviderRegistry
 from transit_ops.settings import Settings, get_settings
 
 CHUNK_SIZE = 10_000
+PARSER_VERSION = "transit_ops.silver.realtime_gtfs.v1"
+MONTREAL_MIN_LONGITUDE = -74.1
+MONTREAL_MAX_LONGITUDE = -73.2
+MONTREAL_MIN_LATITUDE = 45.25
+MONTREAL_MAX_LATITUDE = 45.75
+
+RT_FEED_SNAPSHOTS_INSERT = text(
+    """
+    INSERT INTO silver.rt_feed_snapshots (
+        provider_id,
+        feed_endpoint_id,
+        ingestion_run_id,
+        ingestion_object_id,
+        endpoint_key,
+        gtfs_realtime_version,
+        incrementality,
+        feed_timestamp_utc,
+        captured_at_utc,
+        source_url,
+        storage_backend,
+        storage_path,
+        checksum_sha256,
+        byte_size,
+        parser_version,
+        manifest_json
+    )
+    VALUES (
+        :provider_id,
+        :feed_endpoint_id,
+        :ingestion_run_id,
+        :ingestion_object_id,
+        :endpoint_key,
+        :gtfs_realtime_version,
+        :incrementality,
+        :feed_timestamp_utc,
+        :captured_at_utc,
+        :source_url,
+        :storage_backend,
+        :storage_path,
+        :checksum_sha256,
+        :byte_size,
+        :parser_version,
+        :manifest_json
+    )
+    RETURNING rt_feed_snapshot_id
+    """
+).bindparams(bindparam("manifest_json", type_=postgresql.JSONB))
+
+RT_ENTITIES_INSERT = text(
+    """
+    INSERT INTO silver.rt_entities (
+        rt_feed_snapshot_id,
+        entity_index,
+        provider_id,
+        entity_id,
+        entity_kind,
+        is_deleted,
+        raw_entity_json
+    )
+    VALUES (
+        :rt_feed_snapshot_id,
+        :entity_index,
+        :provider_id,
+        :entity_id,
+        :entity_kind,
+        :is_deleted,
+        :raw_entity_json
+    )
+    """
+).bindparams(bindparam("raw_entity_json", type_=postgresql.JSONB))
+
+RT_TRIP_UPDATES_INSERT = text(
+    """
+    INSERT INTO silver.rt_trip_updates (
+        rt_feed_snapshot_id,
+        entity_index,
+        provider_id,
+        trip_id,
+        route_id,
+        direction_id,
+        start_date,
+        schedule_relationship,
+        trip_update_timestamp_utc,
+        feed_timestamp_utc,
+        captured_at_utc
+    )
+    VALUES (
+        :rt_feed_snapshot_id,
+        :entity_index,
+        :provider_id,
+        :trip_id,
+        :route_id,
+        :direction_id,
+        :start_date,
+        :schedule_relationship,
+        :trip_update_timestamp_utc,
+        :feed_timestamp_utc,
+        :captured_at_utc
+    )
+    """
+)
+
+RT_TRIP_UPDATE_STOP_TIMES_INSERT = text(
+    """
+    INSERT INTO silver.rt_trip_update_stop_times (
+        rt_feed_snapshot_id,
+        entity_index,
+        stop_time_update_index,
+        provider_id,
+        stop_sequence,
+        stop_id,
+        arrival_time_utc,
+        departure_time_utc,
+        schedule_relationship
+    )
+    VALUES (
+        :rt_feed_snapshot_id,
+        :entity_index,
+        :stop_time_update_index,
+        :provider_id,
+        :stop_sequence,
+        :stop_id,
+        :arrival_time_utc,
+        :departure_time_utc,
+        :schedule_relationship
+    )
+    """
+)
+
+RT_VEHICLE_POSITIONS_INSERT = text(
+    """
+    INSERT INTO silver.rt_vehicle_positions (
+        rt_feed_snapshot_id,
+        entity_index,
+        provider_id,
+        vehicle_id,
+        trip_id,
+        route_id,
+        direction_id,
+        start_time,
+        start_date,
+        latitude,
+        longitude,
+        bearing,
+        speed,
+        stop_id,
+        current_stop_sequence,
+        current_status,
+        occupancy_status,
+        congestion_level,
+        vehicle_timestamp_utc,
+        position_quality,
+        feed_timestamp_utc,
+        captured_at_utc
+    )
+    VALUES (
+        :rt_feed_snapshot_id,
+        :entity_index,
+        :provider_id,
+        :vehicle_id,
+        :trip_id,
+        :route_id,
+        :direction_id,
+        :start_time,
+        :start_date,
+        :latitude,
+        :longitude,
+        :bearing,
+        :speed,
+        :stop_id,
+        :current_stop_sequence,
+        :current_status,
+        :occupancy_status,
+        :congestion_level,
+        :vehicle_timestamp_utc,
+        :position_quality,
+        :feed_timestamp_utc,
+        :captured_at_utc
+    )
+    """
+)
 
 TRIP_UPDATES_INSERT = text(
     """
@@ -250,6 +432,50 @@ def _has_field(message, field_name: str) -> bool:  # noqa: ANN001
         return False
 
 
+def classify_montreal_position_quality(
+    latitude: float | None,
+    longitude: float | None,
+) -> str:
+    if latitude is None or longitude is None:
+        return "missing_position"
+    if (
+        MONTREAL_MIN_LATITUDE <= latitude <= MONTREAL_MAX_LATITUDE
+        and MONTREAL_MIN_LONGITUDE <= longitude <= MONTREAL_MAX_LONGITUDE
+    ):
+        return "valid_montreal_bbox"
+    return "outside_montreal_bbox"
+
+
+def _enum_name(enum_type, value: int | None) -> str | None:  # noqa: ANN001
+    if value is None:
+        return None
+    try:
+        return enum_type.Name(value)
+    except ValueError:
+        return str(value)
+
+
+def _feed_incrementality_name(header: gtfs_realtime_pb2.FeedHeader) -> str | None:
+    if not _has_field(header, "incrementality"):
+        return None
+    return _enum_name(gtfs_realtime_pb2.FeedHeader.Incrementality, header.incrementality)
+
+
+def _entity_kind(entity: gtfs_realtime_pb2.FeedEntity) -> str:
+    if _has_field(entity, "trip_update"):
+        return "trip_update"
+    if _has_field(entity, "vehicle"):
+        return "vehicle_position"
+    return "unknown"
+
+
+def _raw_entity_manifest(entity: gtfs_realtime_pb2.FeedEntity) -> dict[str, object]:
+    return {
+        "entity_id": _blank_to_none(entity.id),
+        "entity_kind": _entity_kind(entity),
+    }
+
+
 def _chunked(
     rows: Iterable[dict[str, object]],
     chunk_size: int,
@@ -415,12 +641,61 @@ def _silver_row_count(
     )
 
 
+def _rt_feed_snapshot_id(
+    connection: Connection,
+    *,
+    ingestion_run_id: int,
+) -> int | None:
+    result = connection.execute(
+        text(
+            """
+            SELECT rt_feed_snapshot_id
+            FROM silver.rt_feed_snapshots
+            WHERE ingestion_run_id = :ingestion_run_id
+            """
+        ),
+        {"ingestion_run_id": ingestion_run_id},
+    ).scalar_one_or_none()
+    return int(result) if result is not None else None
+
+
+def _rt_child_row_count(
+    connection: Connection,
+    *,
+    table_name: str,
+    rt_feed_snapshot_id: int,
+) -> int:
+    return int(
+        connection.execute(
+            text(
+                f"""
+                SELECT count(*)
+                FROM silver.{table_name}
+                WHERE rt_feed_snapshot_id = :rt_feed_snapshot_id
+                """
+            ),
+            {"rt_feed_snapshot_id": rt_feed_snapshot_id},
+        ).scalar_one()
+    )
+
+
 def _ensure_snapshot_not_loaded(
     connection: Connection,
     *,
-    endpoint_key: str,
-    realtime_snapshot_id: int,
+    snapshot: BronzeRealtimeSnapshot,
 ) -> None:
+    source_snapshot_id = _rt_feed_snapshot_id(
+        connection,
+        ingestion_run_id=snapshot.ingestion_run_id,
+    )
+    if source_snapshot_id is not None:
+        raise ValueError(
+            f"Bronze realtime snapshot {snapshot.realtime_snapshot_id} was already loaded into "
+            f"silver.rt_feed_snapshots as rt_feed_snapshot_id {source_snapshot_id}."
+        )
+
+    endpoint_key = snapshot.endpoint_key
+    realtime_snapshot_id = snapshot.realtime_snapshot_id
     table_name = "trip_updates" if endpoint_key == "trip_updates" else "vehicle_positions"
     if _snapshot_loaded(
         connection,
@@ -559,6 +834,189 @@ def normalize_vehicle_positions(
     return vehicle_rows
 
 
+def _insert_rt_feed_snapshot(
+    connection: Connection,
+    *,
+    snapshot: BronzeRealtimeSnapshot,
+    message: gtfs_realtime_pb2.FeedMessage,
+) -> int:
+    header = message.header
+    return int(
+        connection.execute(
+            RT_FEED_SNAPSHOTS_INSERT,
+            {
+                "provider_id": snapshot.provider_id,
+                "feed_endpoint_id": snapshot.feed_endpoint_id,
+                "ingestion_run_id": snapshot.ingestion_run_id,
+                "ingestion_object_id": snapshot.ingestion_object_id,
+                "endpoint_key": snapshot.endpoint_key,
+                "gtfs_realtime_version": _blank_to_none(header.gtfs_realtime_version),
+                "incrementality": _feed_incrementality_name(header),
+                "feed_timestamp_utc": snapshot.feed_timestamp_utc,
+                "captured_at_utc": snapshot.captured_at_utc,
+                "source_url": snapshot.source_url,
+                "storage_backend": snapshot.storage_backend,
+                "storage_path": snapshot.storage_path,
+                "checksum_sha256": snapshot.checksum_sha256,
+                "byte_size": snapshot.byte_size,
+                "parser_version": PARSER_VERSION,
+                "manifest_json": {
+                    "source_realtime_snapshot_id": snapshot.realtime_snapshot_id,
+                    "archive_full_path": snapshot.archive_full_path,
+                    "entity_count": len(message.entity),
+                },
+            },
+        ).scalar_one()
+    )
+
+
+def _normalize_rt_entities(
+    message: gtfs_realtime_pb2.FeedMessage,
+    *,
+    snapshot: BronzeRealtimeSnapshot,
+    rt_feed_snapshot_id: int,
+) -> list[dict[str, object]]:
+    return [
+        {
+            "rt_feed_snapshot_id": rt_feed_snapshot_id,
+            "entity_index": entity_index,
+            "provider_id": snapshot.provider_id,
+            "entity_id": _blank_to_none(entity.id),
+            "entity_kind": _entity_kind(entity),
+            "is_deleted": bool(entity.is_deleted) if _has_field(entity, "is_deleted") else False,
+            "raw_entity_json": _raw_entity_manifest(entity),
+        }
+        for entity_index, entity in enumerate(message.entity)
+    ]
+
+
+def _normalize_rt_trip_updates(
+    message: gtfs_realtime_pb2.FeedMessage,
+    *,
+    snapshot: BronzeRealtimeSnapshot,
+    rt_feed_snapshot_id: int,
+) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
+    trip_update_rows: list[dict[str, object]] = []
+    stop_time_rows: list[dict[str, object]] = []
+
+    for entity_index, entity in enumerate(message.entity):
+        if not _has_field(entity, "trip_update"):
+            continue
+
+        trip_update = entity.trip_update
+        trip_descriptor = trip_update.trip
+        trip_update_rows.append(
+            {
+                "rt_feed_snapshot_id": rt_feed_snapshot_id,
+                "entity_index": entity_index,
+                "provider_id": snapshot.provider_id,
+                "trip_id": _blank_to_none(trip_descriptor.trip_id),
+                "route_id": _blank_to_none(trip_descriptor.route_id),
+                "direction_id": trip_descriptor.direction_id
+                if _has_field(trip_descriptor, "direction_id")
+                else None,
+                "start_date": _parse_optional_gtfs_date(trip_descriptor.start_date),
+                "schedule_relationship": trip_descriptor.schedule_relationship
+                if _has_field(trip_descriptor, "schedule_relationship")
+                else None,
+                "trip_update_timestamp_utc": _parse_optional_timestamp(trip_update.timestamp)
+                if _has_field(trip_update, "timestamp")
+                else None,
+                "feed_timestamp_utc": snapshot.feed_timestamp_utc,
+                "captured_at_utc": snapshot.captured_at_utc,
+            }
+        )
+
+        for stop_time_update_index, stop_time_update in enumerate(trip_update.stop_time_update):
+            arrival = stop_time_update.arrival
+            departure = stop_time_update.departure
+            stop_time_rows.append(
+                {
+                    "rt_feed_snapshot_id": rt_feed_snapshot_id,
+                    "entity_index": entity_index,
+                    "stop_time_update_index": stop_time_update_index,
+                    "provider_id": snapshot.provider_id,
+                    "stop_sequence": stop_time_update.stop_sequence
+                    if _has_field(stop_time_update, "stop_sequence")
+                    else None,
+                    "stop_id": _blank_to_none(stop_time_update.stop_id),
+                    "arrival_time_utc": _parse_optional_timestamp(arrival.time)
+                    if _has_field(arrival, "time")
+                    else None,
+                    "departure_time_utc": _parse_optional_timestamp(departure.time)
+                    if _has_field(departure, "time")
+                    else None,
+                    "schedule_relationship": stop_time_update.schedule_relationship
+                    if _has_field(stop_time_update, "schedule_relationship")
+                    else None,
+                }
+            )
+
+    return trip_update_rows, stop_time_rows
+
+
+def _normalize_rt_vehicle_positions(
+    message: gtfs_realtime_pb2.FeedMessage,
+    *,
+    snapshot: BronzeRealtimeSnapshot,
+    rt_feed_snapshot_id: int,
+) -> list[dict[str, object]]:
+    vehicle_rows: list[dict[str, object]] = []
+
+    for entity_index, entity in enumerate(message.entity):
+        if not _has_field(entity, "vehicle"):
+            continue
+
+        vehicle = entity.vehicle
+        trip = vehicle.trip
+        descriptor = vehicle.vehicle
+        position = vehicle.position
+        latitude = position.latitude if _has_field(vehicle, "position") else None
+        longitude = position.longitude if _has_field(vehicle, "position") else None
+        vehicle_rows.append(
+            {
+                "rt_feed_snapshot_id": rt_feed_snapshot_id,
+                "entity_index": entity_index,
+                "provider_id": snapshot.provider_id,
+                "vehicle_id": _blank_to_none(descriptor.id),
+                "trip_id": _blank_to_none(trip.trip_id),
+                "route_id": _blank_to_none(trip.route_id),
+                "direction_id": trip.direction_id if _has_field(trip, "direction_id") else None,
+                "start_time": _blank_to_none(trip.start_time),
+                "start_date": _parse_optional_gtfs_date(trip.start_date),
+                "latitude": latitude,
+                "longitude": longitude,
+                "bearing": position.bearing
+                if _has_field(vehicle, "position") and _has_field(position, "bearing")
+                else None,
+                "speed": position.speed
+                if _has_field(vehicle, "position") and _has_field(position, "speed")
+                else None,
+                "stop_id": _blank_to_none(vehicle.stop_id),
+                "current_stop_sequence": vehicle.current_stop_sequence
+                if _has_field(vehicle, "current_stop_sequence")
+                else None,
+                "current_status": vehicle.current_status
+                if _has_field(vehicle, "current_status")
+                else None,
+                "occupancy_status": vehicle.occupancy_status
+                if _has_field(vehicle, "occupancy_status")
+                else None,
+                "congestion_level": vehicle.congestion_level
+                if _has_field(vehicle, "congestion_level")
+                else None,
+                "vehicle_timestamp_utc": _parse_optional_timestamp(vehicle.timestamp)
+                if _has_field(vehicle, "timestamp")
+                else None,
+                "position_quality": classify_montreal_position_quality(latitude, longitude),
+                "feed_timestamp_utc": snapshot.feed_timestamp_utc,
+                "captured_at_utc": snapshot.captured_at_utc,
+            }
+        )
+
+    return vehicle_rows
+
+
 def _read_bronze_realtime_message(
     *,
     snapshot: BronzeRealtimeSnapshot,
@@ -583,15 +1041,25 @@ def _expected_realtime_row_counts(
     *,
     snapshot: BronzeRealtimeSnapshot,
 ) -> dict[str, int]:
+    rt_entity_count = len(message.entity)
     if snapshot.endpoint_key == "trip_updates":
         trip_update_rows, stop_time_rows = normalize_trip_updates(message, snapshot=snapshot)
         return {
+            "rt_feed_snapshots": 1,
+            "rt_entities": rt_entity_count,
+            "rt_trip_updates": len(trip_update_rows),
+            "rt_trip_update_stop_times": len(stop_time_rows),
             "trip_updates": len(trip_update_rows),
             "trip_update_stop_time_updates": len(stop_time_rows),
         }
     if snapshot.endpoint_key == "vehicle_positions":
         vehicle_rows = normalize_vehicle_positions(message, snapshot=snapshot)
-        return {"vehicle_positions": len(vehicle_rows)}
+        return {
+            "rt_feed_snapshots": 1,
+            "rt_entities": rt_entity_count,
+            "rt_vehicle_positions": len(vehicle_rows),
+            "vehicle_positions": len(vehicle_rows),
+        }
     raise ValueError(f"Unsupported realtime endpoint '{snapshot.endpoint_key}'.")
 
 
@@ -600,27 +1068,81 @@ def _actual_realtime_row_counts(
     *,
     snapshot: BronzeRealtimeSnapshot,
 ) -> dict[str, int]:
+    rt_snapshot_id = _rt_feed_snapshot_id(
+        connection,
+        ingestion_run_id=snapshot.ingestion_run_id,
+    )
+    source_counts = {"rt_feed_snapshots": 1 if rt_snapshot_id is not None else 0}
     if snapshot.endpoint_key == "trip_updates":
-        return {
-            "trip_updates": _silver_row_count(
-                connection,
-                table_name="trip_updates",
-                realtime_snapshot_id=snapshot.realtime_snapshot_id,
-            ),
-            "trip_update_stop_time_updates": _silver_row_count(
-                connection,
-                table_name="trip_update_stop_time_updates",
-                realtime_snapshot_id=snapshot.realtime_snapshot_id,
-            ),
-        }
+        source_counts.update(
+            {
+                "rt_entities": _rt_child_row_count(
+                    connection,
+                    table_name="rt_entities",
+                    rt_feed_snapshot_id=rt_snapshot_id,
+                )
+                if rt_snapshot_id is not None
+                else 0,
+                "rt_trip_updates": _rt_child_row_count(
+                    connection,
+                    table_name="rt_trip_updates",
+                    rt_feed_snapshot_id=rt_snapshot_id,
+                )
+                if rt_snapshot_id is not None
+                else 0,
+                "rt_trip_update_stop_times": _rt_child_row_count(
+                    connection,
+                    table_name="rt_trip_update_stop_times",
+                    rt_feed_snapshot_id=rt_snapshot_id,
+                )
+                if rt_snapshot_id is not None
+                else 0,
+            }
+        )
+        source_counts.update(
+            {
+                "trip_updates": _silver_row_count(
+                    connection,
+                    table_name="trip_updates",
+                    realtime_snapshot_id=snapshot.realtime_snapshot_id,
+                ),
+                "trip_update_stop_time_updates": _silver_row_count(
+                    connection,
+                    table_name="trip_update_stop_time_updates",
+                    realtime_snapshot_id=snapshot.realtime_snapshot_id,
+                ),
+            }
+        )
+        return source_counts
     if snapshot.endpoint_key == "vehicle_positions":
-        return {
-            "vehicle_positions": _silver_row_count(
-                connection,
-                table_name="vehicle_positions",
-                realtime_snapshot_id=snapshot.realtime_snapshot_id,
-            )
-        }
+        source_counts.update(
+            {
+                "rt_entities": _rt_child_row_count(
+                    connection,
+                    table_name="rt_entities",
+                    rt_feed_snapshot_id=rt_snapshot_id,
+                )
+                if rt_snapshot_id is not None
+                else 0,
+                "rt_vehicle_positions": _rt_child_row_count(
+                    connection,
+                    table_name="rt_vehicle_positions",
+                    rt_feed_snapshot_id=rt_snapshot_id,
+                )
+                if rt_snapshot_id is not None
+                else 0,
+            }
+        )
+        source_counts.update(
+            {
+                "vehicle_positions": _silver_row_count(
+                    connection,
+                    table_name="vehicle_positions",
+                    realtime_snapshot_id=snapshot.realtime_snapshot_id,
+                )
+            }
+        )
+        return source_counts
     raise ValueError(f"Unsupported realtime endpoint '{snapshot.endpoint_key}'.")
 
 
@@ -631,9 +1153,6 @@ def _is_complete_existing_load(
     message: gtfs_realtime_pb2.FeedMessage,
 ) -> bool:
     expected_counts = _expected_realtime_row_counts(message, snapshot=snapshot)
-    if not any(expected_counts.values()):
-        return False
-
     actual_counts = _actual_realtime_row_counts(connection, snapshot=snapshot)
     if actual_counts == expected_counts:
         return True
@@ -651,31 +1170,80 @@ def _load_realtime_message_to_silver(
     snapshot: BronzeRealtimeSnapshot,
     message: gtfs_realtime_pb2.FeedMessage,
 ) -> RealtimeSilverLoadResult:
-    if snapshot.endpoint_key == "trip_updates":
-        trip_update_rows, stop_time_rows = normalize_trip_updates(message, snapshot=snapshot)
-        row_counts = {
-            "trip_updates": _execute_batched_insert(
-                connection,
-                statement=TRIP_UPDATES_INSERT,
-                rows=trip_update_rows,
-            ),
-            "trip_update_stop_time_updates": _execute_batched_insert(
-                connection,
-                statement=TRIP_UPDATE_STOP_TIMES_INSERT,
-                rows=stop_time_rows,
-            ),
-        }
-    elif snapshot.endpoint_key == "vehicle_positions":
-        vehicle_rows = normalize_vehicle_positions(message, snapshot=snapshot)
-        row_counts = {
-            "vehicle_positions": _execute_batched_insert(
-                connection,
-                statement=VEHICLE_POSITIONS_INSERT,
-                rows=vehicle_rows,
-            )
-        }
-    else:
+    if snapshot.endpoint_key not in {"trip_updates", "vehicle_positions"}:
         raise ValueError(f"Unsupported realtime endpoint '{snapshot.endpoint_key}'.")
+
+    rt_feed_snapshot_id = _insert_rt_feed_snapshot(
+        connection,
+        snapshot=snapshot,
+        message=message,
+    )
+    rt_entity_rows = _normalize_rt_entities(
+        message,
+        snapshot=snapshot,
+        rt_feed_snapshot_id=rt_feed_snapshot_id,
+    )
+    row_counts = {
+        "rt_feed_snapshots": 1,
+        "rt_entities": _execute_batched_insert(
+            connection,
+            statement=RT_ENTITIES_INSERT,
+            rows=rt_entity_rows,
+        ),
+    }
+
+    if snapshot.endpoint_key == "trip_updates":
+        rt_trip_update_rows, rt_stop_time_rows = _normalize_rt_trip_updates(
+            message,
+            snapshot=snapshot,
+            rt_feed_snapshot_id=rt_feed_snapshot_id,
+        )
+        trip_update_rows, stop_time_rows = normalize_trip_updates(message, snapshot=snapshot)
+        row_counts.update(
+            {
+                "rt_trip_updates": _execute_batched_insert(
+                    connection,
+                    statement=RT_TRIP_UPDATES_INSERT,
+                    rows=rt_trip_update_rows,
+                ),
+                "rt_trip_update_stop_times": _execute_batched_insert(
+                    connection,
+                    statement=RT_TRIP_UPDATE_STOP_TIMES_INSERT,
+                    rows=rt_stop_time_rows,
+                ),
+                "trip_updates": _execute_batched_insert(
+                    connection,
+                    statement=TRIP_UPDATES_INSERT,
+                    rows=trip_update_rows,
+                ),
+                "trip_update_stop_time_updates": _execute_batched_insert(
+                    connection,
+                    statement=TRIP_UPDATE_STOP_TIMES_INSERT,
+                    rows=stop_time_rows,
+                ),
+            }
+        )
+    elif snapshot.endpoint_key == "vehicle_positions":
+        rt_vehicle_rows = _normalize_rt_vehicle_positions(
+            message,
+            snapshot=snapshot,
+            rt_feed_snapshot_id=rt_feed_snapshot_id,
+        )
+        vehicle_rows = normalize_vehicle_positions(message, snapshot=snapshot)
+        row_counts.update(
+            {
+                "rt_vehicle_positions": _execute_batched_insert(
+                    connection,
+                    statement=RT_VEHICLE_POSITIONS_INSERT,
+                    rows=rt_vehicle_rows,
+                ),
+                "vehicle_positions": _execute_batched_insert(
+                    connection,
+                    statement=VEHICLE_POSITIONS_INSERT,
+                    rows=vehicle_rows,
+                ),
+            }
+        )
 
     return RealtimeSilverLoadResult(
         provider_id=snapshot.provider_id,
@@ -705,8 +1273,7 @@ def load_realtime_snapshot_to_silver(
         )
     _ensure_snapshot_not_loaded(
         connection,
-        endpoint_key=snapshot.endpoint_key,
-        realtime_snapshot_id=snapshot.realtime_snapshot_id,
+        snapshot=snapshot,
     )
     message = _read_bronze_realtime_message(snapshot=snapshot, bronze_storage=bronze_storage)
     return _load_realtime_message_to_silver(
@@ -752,8 +1319,7 @@ def load_realtime_snapshots_to_silver(
         else:
             _ensure_snapshot_not_loaded(
                 connection,
-                endpoint_key=snapshot.endpoint_key,
-                realtime_snapshot_id=snapshot.realtime_snapshot_id,
+                snapshot=snapshot,
             )
             result = _load_realtime_message_to_silver(
                 connection,

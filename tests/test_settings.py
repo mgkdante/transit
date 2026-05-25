@@ -26,9 +26,7 @@ def test_settings_defaults() -> None:
     assert settings.BRONZE_S3_REGION == "auto"
     assert settings.REALTIME_POLL_SECONDS == 30
     assert settings.REALTIME_STARTUP_DELAY_SECONDS == 0
-    assert settings.STM_STATIC_GTFS_CURRENT_FALLBACK_URL == (
-        "https://www.stm.info/sites/default/files/gtfs/gtfs_stm.zip"
-    )
+    assert settings.STM_GIS_URL is None
     assert settings.STATIC_DATASET_RETENTION_COUNT == 1
     assert settings.SILVER_REALTIME_RETENTION_DAYS == 30
     assert settings.GOLD_FACT_RETENTION_DAYS == 365
@@ -51,14 +49,16 @@ def test_health_settings_are_exposed_in_display_dict() -> None:
     assert display["HEALTH_MAX_PIPELINE_AGE_SECONDS"] == 900
 
 
-def test_retention_and_beta_settings_are_exposed_in_display_dict() -> None:
-    settings = Settings(_env_file=None)
+def test_retention_static_gis_settings_are_exposed_in_display_dict() -> None:
+    settings = Settings(
+        _env_file=None,
+        STM_GIS_URL="https://example.com/stm_sig.zip",
+    )
 
     display = settings.display_dict()
 
-    assert display["STM_STATIC_GTFS_CURRENT_FALLBACK_URL"] == (
-        "https://www.stm.info/sites/default/files/gtfs/gtfs_stm.zip"
-    )
+    assert display["STM_GIS_URL"] == "https://example.com/stm_sig.zip"
+    assert "STM_STATIC_GTFS_CURRENT_FALLBACK_URL" not in display
     assert display["STATIC_DATASET_RETENTION_COUNT"] == 1
     assert display["SILVER_REALTIME_RETENTION_DAYS"] == 30
     assert display["GOLD_FACT_RETENTION_DAYS"] == 365

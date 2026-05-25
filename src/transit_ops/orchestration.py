@@ -33,7 +33,6 @@ from transit_ops.maintenance import (
 from transit_ops.providers import ProviderRegistry
 from transit_ops.settings import Settings, get_settings
 from transit_ops.silver import (
-    get_current_static_content_hash,
     load_latest_realtime_to_silver,
     load_latest_static_to_silver,
 )
@@ -245,7 +244,7 @@ def run_static_pipeline(
 
     logger.info("Starting static pipeline for provider '%s'.", provider_id)
 
-    # Step 1: Always run — Bronze lineage is always recorded.
+    # Step 1: static ingestion owns duplicate detection and Bronze/raw lineage.
     static_ingestion, static_ingestion_duration_seconds = _run_timed_static_step(
         "ingest-static",
         lambda: ingest_static_feed(
@@ -256,22 +255,14 @@ def run_static_pipeline(
         ),
     )
 
-    # Hash comparison gate: compare new Bronze hash to currently active Silver version.
-    with engine.connect() as connection:
-        current_hash = get_current_static_content_hash(
-            connection,
-            provider_id=provider_id,
-        )
-
-    new_hash = static_ingestion.checksum_sha256
-    static_changed = current_hash != new_hash
+    static_changed = static_ingestion.content_changed
 
     if not static_changed:
         logger.info(
             "Static content unchanged for provider '%s' (hash=%s). "
             "Skipping Silver load and Gold refresh.",
             provider_id,
-            new_hash,
+            static_ingestion.checksum_sha256,
         )
         completed_at_utc = utc_now()
         total_duration_seconds = round(time.perf_counter() - started_at, 3)
@@ -288,16 +279,18 @@ def run_static_pipeline(
             silver_load=None,
             gold_build=None,
             static_changed=False,
-            skipped_reason="static_content_unchanged",
+            skipped_reason=(
+                getattr(static_ingestion, "skipped_reason", None)
+                or "static_content_unchanged"
+            ),
         )
 
     # Content changed (or no existing version): run steps 2 and 3.
     logger.info(
-        "Static content changed for provider '%s' (new=%s, previous=%s). "
+        "Static content changed for provider '%s' (hash=%s). "
         "Running Silver load and Gold refresh.",
         provider_id,
-        new_hash,
-        current_hash,
+        static_ingestion.checksum_sha256,
     )
     silver_load, silver_load_duration_seconds = _run_timed_static_step(
         "load-static-silver",

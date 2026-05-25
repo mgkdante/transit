@@ -21,7 +21,9 @@ def test_cli_help() -> None:
     assert "init-db" in result.stdout
     assert "seed-core" in result.stdout
     assert "ingest-static" in result.stdout
+    assert "ingest-gis" in result.stdout
     assert "capture-realtime" in result.stdout
+    assert "load-gis-silver" in result.stdout
     assert "load-static-silver" in result.stdout
     assert "load-realtime-silver" in result.stdout
     assert "build-gold-marts" in result.stdout
@@ -49,11 +51,19 @@ def test_ingest_static_help() -> None:
     assert "Download, archive, and register one static GTFS feed." in result.stdout
 
 
+def test_ingest_gis_help() -> None:
+    result = runner.invoke(app, ["ingest-gis", "--help"])
+
+    assert result.exit_code == 0
+    assert "Download, archive, and register one STM GIS ZIP." in result.stdout
+
+
 def test_validate_static_feeds_help() -> None:
     result = runner.invoke(app, ["validate-static-feeds", "--help"])
 
     assert result.exit_code == 0
-    assert "Validate active beta and current fallback static GTFS feeds" in result.stdout
+    assert "Validate active beta static GTFS feed(s) without ingesting them" in result.stdout
+    assert "current fallback" not in result.stdout
 
 
 def test_validate_static_feeds_passes_provider_and_writes_report(
@@ -72,9 +82,8 @@ def test_validate_static_feeds_passes_provider_and_writes_report(
             return {
                 "provider_id": self.provider_id,
                 "validated_at_utc": "2026-05-24T12:00:00+00:00",
-                "current": {"status": "ok"},
                 "beta": {"status": "ok"},
-                "comparison": {"both_available": True},
+                "schema_comparison": {"decision_signal": "schema_and_source_semantics"},
             }
 
     def fake_validate_static_feeds(provider_id, *, settings, registry):  # noqa: ANN001
@@ -229,6 +238,46 @@ def test_load_static_silver_help() -> None:
 
     assert result.exit_code == 0
     assert "Parse the latest Bronze static GTFS archive into Silver tables." in result.stdout
+
+
+def test_load_gis_silver_help() -> None:
+    result = runner.invoke(app, ["load-gis-silver", "--help"])
+
+    assert result.exit_code == 0
+    assert "Parse the latest Bronze GIS ZIP into Silver source tables." in result.stdout
+
+
+def test_load_gis_silver_calls_loader(monkeypatch) -> None:
+    from dataclasses import dataclass
+
+    recorded: dict[str, object] = {}
+
+    @dataclass(frozen=True)
+    class FakeGisSilverResult:
+        provider_id: str
+
+        def display_dict(self) -> dict[str, object]:
+            return {
+                "provider_id": self.provider_id,
+                "dataset_version_id": 88,
+                "row_counts": {"gis_datasets": 1},
+            }
+
+    def fake_load_latest_gis_to_silver(provider_id, *, settings, registry):  # noqa: ANN001
+        recorded["provider_id"] = provider_id
+        recorded["settings_type"] = type(settings).__name__
+        recorded["registry_type"] = type(registry).__name__
+        return FakeGisSilverResult(provider_id=provider_id)
+
+    monkeypatch.setattr(cli_module, "load_latest_gis_to_silver", fake_load_latest_gis_to_silver)
+
+    result = runner.invoke(app, ["load-gis-silver", "stm"])
+
+    assert result.exit_code == 0
+    assert recorded["provider_id"] == "stm"
+    payload = json.loads(result.stdout)
+    assert payload["provider_id"] == "stm"
+    assert payload["row_counts"] == {"gis_datasets": 1}
 
 
 def test_load_realtime_silver_help() -> None:

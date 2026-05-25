@@ -132,6 +132,14 @@ def _build_manifest() -> ProviderManifest:
                     "auth": {"auth_type": "none"},
                     "refresh_interval_seconds": 86400,
                 },
+                "gis_static": {
+                    "endpoint_key": "gis_static",
+                    "feed_kind": "gis_static",
+                    "source_format": "stm_gis_zip",
+                    "source_url": "https://example.com/gis.zip",
+                    "auth": {"auth_type": "none"},
+                    "refresh_interval_seconds": 86400,
+                },
                 "trip_updates": {
                     "endpoint_key": "trip_updates",
                     "feed_kind": "trip_updates",

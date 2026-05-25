@@ -20,10 +20,7 @@ from transit_ops.silver.static_gtfs import (
     validate_required_static_members,
 )
 
-STATIC_FEED_LABELS = {
-    "current": "static_schedule_current_fallback",
-    "beta": "static_schedule",
-}
+ACTIVE_STATIC_FEED_ENDPOINT_KEY = "static_schedule"
 IMPORTANT_STATIC_MEMBERS = REQUIRED_STATIC_MEMBERS | OPTIONAL_SERVICE_MEMBERS
 BETA_FIRST_CONTRACT_MEMBERS = {
     "directions.txt",
@@ -62,18 +59,14 @@ class StaticFeedValidationDetail:
 class StaticFeedsValidationResult:
     provider_id: str
     validated_at_utc: datetime
-    current: StaticFeedValidationDetail
     beta: StaticFeedValidationDetail
-    comparison: dict[str, bool | None]
     schema_comparison: dict[str, object]
 
     def display_dict(self) -> dict[str, object]:
         return {
             "provider_id": self.provider_id,
             "validated_at_utc": self.validated_at_utc.isoformat(),
-            "current": self.current.display_dict(),
             "beta": self.beta.display_dict(),
-            "comparison": self.comparison,
             "schema_comparison": self.schema_comparison,
         }
 
@@ -320,49 +313,17 @@ def _validate_feed(
                 artifact.temp_path.unlink(missing_ok=True)
 
 
-def _comparison(
-    current: StaticFeedValidationDetail,
-    beta: StaticFeedValidationDetail,
-) -> dict[str, bool | None]:
-    both_available = current.status == "ok" and beta.status == "ok"
-    return {
-        "both_available": both_available,
-        "checksums_match": (
-            current.checksum_sha256 == beta.checksum_sha256 if both_available else None
-        ),
-        "byte_sizes_match": current.byte_size == beta.byte_size if both_available else None,
-    }
-
-
-def _schema_comparison(
-    current: StaticFeedValidationDetail,
-    beta: StaticFeedValidationDetail,
-) -> dict[str, object]:
-    current_members = set(current.member_headers)
+def _schema_comparison(beta: StaticFeedValidationDetail) -> dict[str, object]:
     beta_members = set(beta.member_headers)
-    common_members = current_members & beta_members
-    headers_added_in_beta = {
-        member_name: sorted(
-            set(beta.member_headers[member_name]) - set(current.member_headers[member_name])
-        )
-        for member_name in sorted(common_members)
-        if set(beta.member_headers[member_name]) - set(current.member_headers[member_name])
-    }
-    headers_removed_in_beta = {
-        member_name: sorted(
-            set(current.member_headers[member_name]) - set(beta.member_headers[member_name])
-        )
-        for member_name in sorted(common_members)
-        if set(current.member_headers[member_name]) - set(beta.member_headers[member_name])
-    }
 
     return {
         "decision_signal": "schema_and_source_semantics",
         "row_count_signal": "diagnostic_only",
-        "members_added_in_beta": sorted(beta_members - current_members),
-        "members_removed_in_beta": sorted(current_members - beta_members),
-        "headers_added_in_beta": headers_added_in_beta,
-        "headers_removed_in_beta": headers_removed_in_beta,
+        "members_available": sorted(beta_members),
+        "headers_by_member": {
+            member_name: beta.member_headers[member_name]
+            for member_name in sorted(beta.member_headers)
+        },
         "beta_first_contract_members": sorted(BETA_FIRST_CONTRACT_MEMBERS & beta_members),
     }
 
@@ -382,16 +343,9 @@ def validate_static_feeds(
     provider = resolved_registry.get_provider(provider_id)
     resolved_downloader = downloader or _default_downloader
 
-    current = _validate_feed(
-        label="current",
-        endpoint_key=STATIC_FEED_LABELS["current"],
-        provider=provider,
-        settings=resolved_settings,
-        downloader=resolved_downloader,
-    )
     beta = _validate_feed(
         label="beta",
-        endpoint_key=STATIC_FEED_LABELS["beta"],
+        endpoint_key=ACTIVE_STATIC_FEED_ENDPOINT_KEY,
         provider=provider,
         settings=resolved_settings,
         downloader=resolved_downloader,
@@ -399,8 +353,6 @@ def validate_static_feeds(
     return StaticFeedsValidationResult(
         provider_id=provider_id,
         validated_at_utc=datetime.now(UTC),
-        current=current,
         beta=beta,
-        comparison=_comparison(current, beta),
-        schema_comparison=_schema_comparison(current, beta),
+        schema_comparison=_schema_comparison(beta),
     )
