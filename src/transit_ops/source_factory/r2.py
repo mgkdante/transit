@@ -398,7 +398,7 @@ def run_r2_prune_cycle(
         generated_at_utc=inventory_clock(),
     )
     pre_inventory_artifact = write_json_artifact(
-        artifact_dir / f"{provider_id}-r2-pre-inventory.json",
+        artifact_dir / "r2-pre-inventory.json",
         pre_inventory.display_dict(),
     )
 
@@ -408,7 +408,7 @@ def run_r2_prune_cycle(
         active_prefix_wipe=active_prefix_wipe,
     )
     cleanup_plan_artifact = write_json_artifact(
-        artifact_dir / f"{provider_id}-r2-cleanup-plan.json",
+        artifact_dir / "r2-cleanup-plan.json",
         cleanup_plan.display_dict(),
     )
 
@@ -427,7 +427,7 @@ def run_r2_prune_cycle(
         generated_at_utc=inventory_clock(),
     )
     post_inventory_artifact = write_json_artifact(
-        artifact_dir / f"{provider_id}-r2-post-inventory.json",
+        artifact_dir / "r2-post-inventory.json",
         post_inventory.display_dict(),
     )
 

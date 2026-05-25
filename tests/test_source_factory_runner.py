@@ -177,8 +177,10 @@ def test_dry_run_returns_proof_without_calling_mutating_operations(tmp_path) -> 
     ]
     assert planned_order[1]["sibling_group"] == "gtfs_rt"
     assert planned_order[2]["sibling_group"] == "gtfs_rt"
-    assert "source_factory_result" in result.artifacts
-    assert (tmp_path / "stm-source-factory-result.json").exists()
+    assert "preflight" in result.artifacts
+    assert "final_report" in result.artifacts
+    assert (tmp_path / "preflight.json").exists()
+    assert (tmp_path / "final-report.json").exists()
 
 
 def test_r2_prune_cycle_uses_source_factory_catalog_endpoint_keys(tmp_path) -> None:
@@ -512,22 +514,23 @@ def test_final_artifact_json_is_stable_and_includes_artifacts_and_summaries(tmp_
         operation_impls=make_impls([]),
     )
 
-    report_path = tmp_path / "stm-source-factory-result.json"
+    report_path = tmp_path / "final-report.json"
     report_bytes = report_path.read_bytes()
     payload = json.loads(report_bytes)
 
-    assert "source_factory_result" in result.display_dict()["artifacts"]
-    assert "source_factory_result" not in payload["artifacts"]
+    assert "final_report" in result.display_dict()["artifacts"]
+    assert "final_report" not in payload["artifacts"]
+    assert payload["artifacts"]["preflight"]["path"].endswith("preflight.json")
     assert payload["artifacts"]["r2_pre_inventory"]["path"].endswith("pre.json")
     assert payload["artifacts"]["r2_cleanup_plan"]["path"].endswith("plan.json")
     assert payload["artifacts"]["r2_post_inventory"]["path"].endswith("post.json")
-    assert result.display_dict()["artifacts"]["source_factory_result"]["path"].endswith(
-        "stm-source-factory-result.json"
+    assert result.display_dict()["artifacts"]["final_report"]["path"].endswith(
+        "final-report.json"
     )
-    assert result.display_dict()["artifacts"]["source_factory_result"]["byte_size"] == len(
+    assert result.display_dict()["artifacts"]["final_report"]["byte_size"] == len(
         report_bytes
     )
-    assert result.display_dict()["artifacts"]["source_factory_result"]["sha256"] == (
+    assert result.display_dict()["artifacts"]["final_report"]["sha256"] == (
         hashlib.sha256(report_bytes).hexdigest()
     )
     assert payload["summaries"]["catalog"]["provider_id"] == "stm"

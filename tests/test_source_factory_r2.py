@@ -300,9 +300,9 @@ def test_prune_cycle_writes_artifacts_and_reinventories_after_delete(tmp_path) -
         "post_inventory",
     }
 
-    pre_path = tmp_path / "stm-r2-pre-inventory.json"
-    plan_path = tmp_path / "stm-r2-cleanup-plan.json"
-    post_path = tmp_path / "stm-r2-post-inventory.json"
+    pre_path = tmp_path / "r2-pre-inventory.json"
+    plan_path = tmp_path / "r2-cleanup-plan.json"
+    post_path = tmp_path / "r2-post-inventory.json"
     assert pre_path.exists()
     assert plan_path.exists()
     assert post_path.exists()

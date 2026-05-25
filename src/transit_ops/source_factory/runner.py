@@ -124,6 +124,17 @@ def run_source_factory_rebuild(
             _planned_source_step(source) for source in catalog.sources
         ],
     }
+    artifacts["preflight"] = write_json_artifact(
+        artifact_dir / "preflight.json",
+        {
+            "provider_id": provider_id,
+            "execute": execute,
+            "started_at_utc": started_at_utc.isoformat(),
+            "guard_proofs": _display_value(guard_proofs),
+            "catalog": catalog.display_dict(),
+            "planned_backfill_order": summaries["planned_backfill_order"],
+        },
+    )
 
     r2_result = operation_impls.r2_prune_cycle(
         bronze_storage,
@@ -223,7 +234,7 @@ def run_source_factory_rebuild(
         summaries=summaries,
     )
     report_artifact = write_json_artifact(
-        artifact_dir / f"{provider_id}-source-factory-result.json",
+        artifact_dir / "final-report.json",
         result.display_dict(),
     )
 
@@ -233,7 +244,7 @@ def run_source_factory_rebuild(
         started_at_utc=result.started_at_utc,
         completed_at_utc=result.completed_at_utc,
         phase_status=result.phase_status,
-        artifacts={**result.artifacts, "source_factory_result": report_artifact},
+        artifacts={**result.artifacts, "final_report": report_artifact},
         summaries=result.summaries,
     )
 
