@@ -20,6 +20,19 @@ WGS84_PRJ = (
     'PRIMEM["Greenwich",0],UNIT["degree",0.0174532925199433],'
     'AUTHORITY["EPSG","4326"]]'
 )
+STM_MTM_8_PRJ = (
+    'PROJCS["NAD_1983_MTM_8",'
+    'GEOGCS["GCS_North_American_1983",'
+    'DATUM["D_North_American_1983",SPHEROID["GRS_1980",6378137.0,298.257222101]],'
+    'PRIMEM["Greenwich",0.0],UNIT["Degree",0.0174532925199433]],'
+    'PROJECTION["Transverse_Mercator"],'
+    'PARAMETER["False_Easting",304800.0],'
+    'PARAMETER["False_Northing",0.0],'
+    'PARAMETER["Central_Meridian",-73.5],'
+    'PARAMETER["Scale_Factor",0.9999],'
+    'PARAMETER["Latitude_Of_Origin",0.0],'
+    'UNIT["Meter",1.0]]'
+)
 
 
 class FakeResult:
@@ -127,7 +140,7 @@ def _write_stop_shapefile(base_path: Path) -> None:
     base_path.with_suffix(".prj").write_text(WGS84_PRJ, encoding="utf-8")
 
 
-def _write_line_shapefile(base_path: Path) -> None:
+def _write_line_shapefile(base_path: Path, *, prj_text: str = WGS84_PRJ) -> None:
     writer = shapefile.Writer(str(base_path), shapeType=shapefile.POLYLINE)
     writer.field("route_id", "C")
     writer.field("route_name", "C")
@@ -135,7 +148,7 @@ def _write_line_shapefile(base_path: Path) -> None:
     writer.line([[[-73.56, 45.50], [-73.57, 45.51]]])
     writer.record("10", "Line 10", "shape-10")
     writer.close()
-    base_path.with_suffix(".prj").write_text(WGS84_PRJ, encoding="utf-8")
+    base_path.with_suffix(".prj").write_text(prj_text, encoding="utf-8")
 
 
 def _write_duplicate_route_line_shapefile(base_path: Path) -> None:
@@ -241,6 +254,32 @@ def test_load_gis_zip_to_silver_stages_stops_lines_wkb_crs_and_matches(
         ("line", "shape-10", "shape-10", "shape_id"),
     }
     json.dumps(result.display_dict())
+
+
+def test_load_gis_zip_to_silver_infers_stm_mtm8_epsg_from_prj_without_authority(
+    tmp_path: Path,
+) -> None:
+    line_base = tmp_path / "stm_lignes_sig"
+    _write_line_shapefile(line_base, prj_text=STM_MTM_8_PRJ)
+    payload = _zip_shapefile(line_base, tmp_path / "stm_sig.zip")
+    archive = _archive(len(payload))
+    connection = RecordingConnection(static_dataset_version_id=700)
+
+    result = load_gis_zip_to_silver(
+        connection,
+        archive=archive,
+        bronze_storage=FakeStorage(payload),
+    )
+
+    assert result.row_counts["gis_line_features"] == 1
+    dataset_params = _insert_params(connection, "INSERT INTO silver.gis_datasets")
+    assert dataset_params["source_crs_name"] == "NAD_1983_MTM_8"
+    assert dataset_params["source_crs_epsg"] == 32188
+
+    line_rows = _insert_params(connection, "INSERT INTO silver.gis_line_features")
+    assert line_rows[0]["source_crs_name"] == "NAD_1983_MTM_8"
+    assert line_rows[0]["source_crs_epsg"] == 32188
+    assert line_rows[0]["source_crs_wkt"] == STM_MTM_8_PRJ
 
 
 def test_load_gis_zip_to_silver_makes_duplicate_business_keys_unique(

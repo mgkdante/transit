@@ -81,5 +81,5 @@ feeds:
       credential_env_var: STM_API_KEY
       auth_header_name: apiKey
       notes: Optional API i3 service-state alert feed. Keep endpoint configurable because STM portal access may expose provider-specific paths.
-    refresh_interval_seconds: 60
+    refresh_interval_seconds: 30
     is_enabled: true
