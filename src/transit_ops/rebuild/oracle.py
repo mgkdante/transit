@@ -198,6 +198,7 @@ def rebuild_oracle_data(
                 connection,
                 archive=static_archive,
                 bronze_storage=bronze_storage,
+                require_beta_static_contract=True,
             )
             realtime_snapshots = find_realtime_bronze_snapshots(
                 connection,

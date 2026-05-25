@@ -37,6 +37,7 @@ def test_cli_help() -> None:
     assert "build-warm-rollups" in result.stdout
     assert "prune-warm-rollup-storage" in result.stdout
     assert "rebuild-oracle-data" in result.stdout
+    assert "rebuild-beta-static" in result.stdout
     assert "validate-static-feeds" in result.stdout
     assert "retention-proof-report" in result.stdout
 
@@ -52,7 +53,7 @@ def test_validate_static_feeds_help() -> None:
     result = runner.invoke(app, ["validate-static-feeds", "--help"])
 
     assert result.exit_code == 0
-    assert "Validate current and beta static GTFS feeds without ingesting them." in result.stdout
+    assert "Validate active beta and current fallback static GTFS feeds" in result.stdout
 
 
 def test_validate_static_feeds_passes_provider_and_writes_report(
@@ -460,7 +461,7 @@ def test_rebuild_oracle_data_help() -> None:
     result = runner.invoke(app, ["rebuild-oracle-data", "--help"])
 
     assert result.exit_code == 0
-    assert "Guarded Oracle data rebuild" in result.stdout
+    assert "Legacy guarded Oracle data rebuild" in result.stdout
     assert "--month" in result.stdout
     assert "--execute" in result.stdout
     assert "--delete-r2" in result.stdout
@@ -635,6 +636,109 @@ def test_rebuild_oracle_data_surfaces_guardrail_failure_as_invalid_parameter(
 
     assert result.exit_code == 2
     assert "Invalid value: guardrail failed" in result.output
+
+
+def test_rebuild_beta_static_help() -> None:
+    result = runner.invoke(app, ["rebuild-beta-static", "--help"])
+
+    assert result.exit_code == 0
+    assert "Hard-rebuild beta static Silver and Gold" in result.stdout
+    assert "--execute" in result.stdout
+    assert "--delete-r2" in result.stdout
+    assert "--confirm-r2-active-prefix-wipe" in result.stdout
+
+
+class FakeBetaStaticCliResult:
+    def __init__(self, provider_id: str, dry_run: bool) -> None:
+        self.provider_id = provider_id
+        self.dry_run = dry_run
+
+    def display_dict(self) -> dict[str, object]:
+        return {
+            "provider_id": self.provider_id,
+            "dry_run": self.dry_run,
+            "completed_at_utc": "2026-05-24T12:00:00+00:00",
+        }
+
+
+def test_rebuild_beta_static_passes_flags_options(monkeypatch) -> None:
+    recorded: dict[str, object] = {}
+
+    def fake_rebuild_beta_static_contract(
+        provider_id,
+        *,
+        execute,
+        delete_r2,
+        confirm_reset,
+        confirm_worker_stopped,
+        confirm_r2_active_prefix_wipe,
+        settings,
+        pre_cleanup_report_path,
+    ):  # noqa: ANN001
+        recorded.update(
+            {
+                "provider_id": provider_id,
+                "execute": execute,
+                "delete_r2": delete_r2,
+                "confirm_reset": confirm_reset,
+                "confirm_worker_stopped": confirm_worker_stopped,
+                "confirm_r2_active_prefix_wipe": confirm_r2_active_prefix_wipe,
+                "settings": settings,
+                "pre_cleanup_report_path": pre_cleanup_report_path,
+            }
+        )
+        return FakeBetaStaticCliResult(provider_id, dry_run=not execute)
+
+    monkeypatch.setattr(
+        cli_module,
+        "rebuild_beta_static_contract",
+        fake_rebuild_beta_static_contract,
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "rebuild-beta-static",
+            "stm",
+            "--execute",
+            "--delete-r2",
+            "--confirm-reset",
+            "--confirm-worker-stopped",
+            "--confirm-r2-active-prefix-wipe",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert recorded["provider_id"] == "stm"
+    assert recorded["execute"] is True
+    assert recorded["delete_r2"] is True
+    assert recorded["confirm_reset"] is True
+    assert recorded["confirm_worker_stopped"] is True
+    assert recorded["confirm_r2_active_prefix_wipe"] is True
+    assert '"dry_run": false' in result.stdout
+
+
+def test_rebuild_beta_static_writes_report_path(monkeypatch, tmp_path) -> None:
+    report_path = tmp_path / "beta-static-report.json"
+
+    monkeypatch.setattr(
+        cli_module,
+        "rebuild_beta_static_contract",
+        lambda provider_id, **kwargs: FakeBetaStaticCliResult(provider_id, dry_run=True),
+    )
+
+    result = runner.invoke(
+        app,
+        ["rebuild-beta-static", "stm", "--report-path", str(report_path)],
+    )
+
+    assert result.exit_code == 0
+    assert json.loads(report_path.read_text()) == {
+        "provider_id": "stm",
+        "dry_run": True,
+        "completed_at_utc": "2026-05-24T12:00:00+00:00",
+    }
+    assert '"provider_id": "stm"' in result.stdout
 
 
 def test_prune_warm_rollup_storage_help() -> None:

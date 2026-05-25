@@ -21,10 +21,18 @@ from transit_ops.silver.static_gtfs import (
 )
 
 STATIC_FEED_LABELS = {
-    "current": "static_schedule",
-    "beta": "static_schedule_beta",
+    "current": "static_schedule_current_fallback",
+    "beta": "static_schedule",
 }
 IMPORTANT_STATIC_MEMBERS = REQUIRED_STATIC_MEMBERS | OPTIONAL_SERVICE_MEMBERS
+BETA_FIRST_CONTRACT_MEMBERS = {
+    "directions.txt",
+    "feed_info.txt",
+    "route_patterns.txt",
+    "routes.txt",
+    "shapes.txt",
+    "trips.txt",
+}
 Downloader = Callable[..., DownloadedArtifact]
 
 
@@ -41,6 +49,8 @@ class StaticFeedValidationDetail:
     required_members_present: list[str]
     optional_service_members_present: list[str]
     row_counts: dict[str, int]
+    member_headers: dict[str, list[str]]
+    feed_info_rows: list[dict[str, str]]
     message: str
     error_type: str | None
 
@@ -55,6 +65,7 @@ class StaticFeedsValidationResult:
     current: StaticFeedValidationDetail
     beta: StaticFeedValidationDetail
     comparison: dict[str, bool | None]
+    schema_comparison: dict[str, object]
 
     def display_dict(self) -> dict[str, object]:
         return {
@@ -63,6 +74,7 @@ class StaticFeedsValidationResult:
             "current": self.current.display_dict(),
             "beta": self.beta.display_dict(),
             "comparison": self.comparison,
+            "schema_comparison": self.schema_comparison,
         }
 
 
@@ -89,6 +101,8 @@ def _unavailable_detail(
         required_members_present=[],
         optional_service_members_present=[],
         row_counts={},
+        member_headers={},
+        feed_info_rows=[],
         message=message,
         error_type=error_type,
     )
@@ -115,6 +129,8 @@ def _invalid_detail(
         required_members_present=[],
         optional_service_members_present=[],
         row_counts={},
+        member_headers={},
+        feed_info_rows=[],
         message=message,
         error_type=error_type,
     )
@@ -140,6 +156,31 @@ def _count_member_rows(zip_file: ZipFile, member_name: str, member_key: str) -> 
         return sum(1 for _ in reader)
 
 
+def _read_member_headers(zip_file: ZipFile, member_name: str) -> list[str]:
+    with zip_file.open(member_name, "r") as raw_handle, TextIOWrapper(
+        raw_handle,
+        encoding="utf-8-sig",
+        newline="",
+    ) as text_handle:
+        reader = csv.DictReader(text_handle)
+        fieldnames = reader.fieldnames or []
+        if not fieldnames:
+            raise ValueError(f"{member_name} is missing a header row.")
+        return list(fieldnames)
+
+
+def _read_feed_info_rows(zip_file: ZipFile, member_name: str) -> list[dict[str, str]]:
+    with zip_file.open(member_name, "r") as raw_handle, TextIOWrapper(
+        raw_handle,
+        encoding="utf-8-sig",
+        newline="",
+    ) as text_handle:
+        return [
+            {key: value or "" for key, value in row.items() if key is not None}
+            for row in csv.DictReader(text_handle)
+        ]
+
+
 def _validate_archive(
     *,
     label: str,
@@ -151,7 +192,20 @@ def _validate_archive(
         member_map = discover_gtfs_members(artifact.temp_path)
         validate_required_static_members(member_map)
         row_counts: dict[str, int] = {}
+        member_headers: dict[str, list[str]] = {}
+        feed_info_rows: list[dict[str, str]] = []
         with ZipFile(artifact.temp_path) as zip_file:
+            for member_key in sorted(member_map):
+                if member_key.endswith(".txt"):
+                    member_headers[member_key] = _read_member_headers(
+                        zip_file,
+                        member_map[member_key],
+                    )
+            if "feed_info.txt" in member_map:
+                feed_info_rows = _read_feed_info_rows(
+                    zip_file,
+                    member_map["feed_info.txt"],
+                )
             for member_key in sorted(IMPORTANT_STATIC_MEMBERS & set(member_map)):
                 row_counts[member_key] = _count_member_rows(
                     zip_file,
@@ -198,6 +252,8 @@ def _validate_archive(
         required_members_present=sorted(REQUIRED_STATIC_MEMBERS & set(member_map)),
         optional_service_members_present=sorted(OPTIONAL_SERVICE_MEMBERS & set(member_map)),
         row_counts=row_counts,
+        member_headers=member_headers,
+        feed_info_rows=feed_info_rows,
         message="Static GTFS feed passed non-destructive validation.",
         error_type=None,
     )
@@ -278,6 +334,39 @@ def _comparison(
     }
 
 
+def _schema_comparison(
+    current: StaticFeedValidationDetail,
+    beta: StaticFeedValidationDetail,
+) -> dict[str, object]:
+    current_members = set(current.member_headers)
+    beta_members = set(beta.member_headers)
+    common_members = current_members & beta_members
+    headers_added_in_beta = {
+        member_name: sorted(
+            set(beta.member_headers[member_name]) - set(current.member_headers[member_name])
+        )
+        for member_name in sorted(common_members)
+        if set(beta.member_headers[member_name]) - set(current.member_headers[member_name])
+    }
+    headers_removed_in_beta = {
+        member_name: sorted(
+            set(current.member_headers[member_name]) - set(beta.member_headers[member_name])
+        )
+        for member_name in sorted(common_members)
+        if set(current.member_headers[member_name]) - set(beta.member_headers[member_name])
+    }
+
+    return {
+        "decision_signal": "schema_and_source_semantics",
+        "row_count_signal": "diagnostic_only",
+        "members_added_in_beta": sorted(beta_members - current_members),
+        "members_removed_in_beta": sorted(current_members - beta_members),
+        "headers_added_in_beta": headers_added_in_beta,
+        "headers_removed_in_beta": headers_removed_in_beta,
+        "beta_first_contract_members": sorted(BETA_FIRST_CONTRACT_MEMBERS & beta_members),
+    }
+
+
 def validate_static_feeds(
     provider_id: str,
     *,
@@ -313,4 +402,5 @@ def validate_static_feeds(
         current=current,
         beta=beta,
         comparison=_comparison(current, beta),
+        schema_comparison=_schema_comparison(current, beta),
     )

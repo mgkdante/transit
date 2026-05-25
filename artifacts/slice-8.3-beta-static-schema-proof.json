@@ -1,0 +1,317 @@
+{
+  "beta": {
+    "byte_size": 52839265,
+    "checksum_sha256": "d0e61c88066593538b4035a8e56df23c59774d6a642e9e8dd74bd9626fa230ab",
+    "endpoint_key": "static_schedule",
+    "error_type": null,
+    "feed_info_rows": [
+      {
+        "feed_end_date": "20260614",
+        "feed_lang": "fr",
+        "feed_publisher_name": "Soci\u00e9t\u00e9 de transport de Montr\u00e9al",
+        "feed_publisher_url": "https://www.stm.info",
+        "feed_start_date": "20260105",
+        "feed_version": "20260505090000_26M"
+      }
+    ],
+    "http_status_code": 200,
+    "label": "beta",
+    "member_count": 12,
+    "member_headers": {
+      "agency.txt": [
+        "agency_id",
+        "agency_name",
+        "agency_url",
+        "agency_timezone",
+        "agency_lang",
+        "agency_phone",
+        "agency_fare_url"
+      ],
+      "calendar.txt": [
+        "service_id",
+        "monday",
+        "tuesday",
+        "wednesday",
+        "thursday",
+        "friday",
+        "saturday",
+        "sunday",
+        "start_date",
+        "end_date"
+      ],
+      "calendar_dates.txt": [
+        "service_id",
+        "date",
+        "exception_type"
+      ],
+      "directions.txt": [
+        "route_direction_id",
+        "route_id",
+        "direction_id",
+        "direction",
+        "direction_legacy"
+      ],
+      "feed_info.txt": [
+        "feed_publisher_name",
+        "feed_publisher_url",
+        "feed_lang",
+        "feed_start_date",
+        "feed_end_date",
+        "feed_version"
+      ],
+      "route_patterns.txt": [
+        "route_pattern_id",
+        "route_id",
+        "direction_id",
+        "route_pattern_typicality"
+      ],
+      "routes.txt": [
+        "route_id",
+        "agency_id",
+        "route_short_name",
+        "route_long_name",
+        "route_type",
+        "route_url",
+        "route_color",
+        "route_text_color",
+        "route_desc",
+        "route_desc_detail"
+      ],
+      "shapes.txt": [
+        "shape_id",
+        "shape_pt_lat",
+        "shape_pt_lon",
+        "shape_pt_sequence",
+        "route_pattern_id"
+      ],
+      "stop_times.txt": [
+        "trip_id",
+        "arrival_time",
+        "departure_time",
+        "stop_id",
+        "stop_sequence",
+        "pickup_type"
+      ],
+      "stops.txt": [
+        "stop_id",
+        "stop_code",
+        "stop_name",
+        "stop_lat",
+        "stop_lon",
+        "stop_url",
+        "location_type",
+        "parent_station",
+        "wheelchair_boarding"
+      ],
+      "translations.txt": [
+        "table_name",
+        "field_name",
+        "language",
+        "record_id",
+        "translation"
+      ],
+      "trips.txt": [
+        "route_id",
+        "service_id",
+        "trip_id",
+        "trip_headsign",
+        "direction_id",
+        "shape_id",
+        "wheelchair_accessible",
+        "route_pattern_id"
+      ]
+    },
+    "message": "Static GTFS feed passed non-destructive validation.",
+    "optional_service_members_present": [
+      "calendar.txt",
+      "calendar_dates.txt"
+    ],
+    "required_members_present": [
+      "routes.txt",
+      "stop_times.txt",
+      "stops.txt",
+      "trips.txt"
+    ],
+    "row_counts": {
+      "calendar.txt": 117,
+      "calendar_dates.txt": 87,
+      "routes.txt": 216,
+      "stop_times.txt": 6315817,
+      "stops.txt": 8897,
+      "trips.txt": 176161
+    },
+    "source_url": "https://www.stm.info/sites/default/files/gtfs/gtfs_stm_26m-beta.zip",
+    "status": "ok"
+  },
+  "comparison": {
+    "both_available": true,
+    "byte_sizes_match": false,
+    "checksums_match": false
+  },
+  "current": {
+    "byte_size": 66541286,
+    "checksum_sha256": "63ff8a790a86dde00158bcd2480411c626892d691c57a0cf96bdea11b8b37724",
+    "endpoint_key": "static_schedule_current_fallback",
+    "error_type": null,
+    "feed_info_rows": [
+      {
+        "feed_end_date": "20260614",
+        "feed_lang": "fr",
+        "feed_publisher_name": "Soci\u00e9t\u00e9 de transport de Montr\u00e9al",
+        "feed_publisher_url": "https://www.stm.info",
+        "feed_start_date": "20260105",
+        "feed_version": "202605041130_26M"
+      }
+    ],
+    "http_status_code": 200,
+    "label": "current",
+    "member_count": 10,
+    "member_headers": {
+      "agency.txt": [
+        "agency_id",
+        "agency_name",
+        "agency_url",
+        "agency_timezone",
+        "agency_lang",
+        "agency_phone",
+        "agency_fare_url"
+      ],
+      "calendar.txt": [
+        "service_id",
+        "monday",
+        "tuesday",
+        "wednesday",
+        "thursday",
+        "friday",
+        "saturday",
+        "sunday",
+        "start_date",
+        "end_date"
+      ],
+      "calendar_dates.txt": [
+        "service_id",
+        "date",
+        "exception_type"
+      ],
+      "feed_info.txt": [
+        "feed_publisher_name",
+        "feed_publisher_url",
+        "feed_lang",
+        "feed_start_date",
+        "feed_end_date",
+        "feed_version"
+      ],
+      "routes.txt": [
+        "route_id",
+        "agency_id",
+        "route_short_name",
+        "route_long_name",
+        "route_type",
+        "route_url",
+        "route_color",
+        "route_text_color"
+      ],
+      "shapes.txt": [
+        "shape_id",
+        "shape_pt_lat",
+        "shape_pt_lon",
+        "shape_pt_sequence"
+      ],
+      "stop_times.txt": [
+        "trip_id",
+        "arrival_time",
+        "departure_time",
+        "stop_id",
+        "stop_sequence",
+        "pickup_type"
+      ],
+      "stops.txt": [
+        "stop_id",
+        "stop_code",
+        "stop_name",
+        "stop_lat",
+        "stop_lon",
+        "stop_url",
+        "location_type",
+        "parent_station",
+        "wheelchair_boarding"
+      ],
+      "translations.txt": [
+        "table_name",
+        "field_name",
+        "language",
+        "record_id",
+        "translation"
+      ],
+      "trips.txt": [
+        "route_id",
+        "service_id",
+        "trip_id",
+        "trip_headsign",
+        "direction_id",
+        "shape_id",
+        "wheelchair_accessible",
+        "note_fr",
+        "note_en"
+      ]
+    },
+    "message": "Static GTFS feed passed non-destructive validation.",
+    "optional_service_members_present": [
+      "calendar.txt",
+      "calendar_dates.txt"
+    ],
+    "required_members_present": [
+      "routes.txt",
+      "stop_times.txt",
+      "stops.txt",
+      "trips.txt"
+    ],
+    "row_counts": {
+      "calendar.txt": 144,
+      "calendar_dates.txt": 82,
+      "routes.txt": 229,
+      "stop_times.txt": 7946974,
+      "stops.txt": 9164,
+      "trips.txt": 219869
+    },
+    "source_url": "https://www.stm.info/sites/default/files/gtfs/gtfs_stm.zip",
+    "status": "ok"
+  },
+  "provider_id": "stm",
+  "schema_comparison": {
+    "beta_first_contract_members": [
+      "directions.txt",
+      "feed_info.txt",
+      "route_patterns.txt",
+      "routes.txt",
+      "shapes.txt",
+      "trips.txt"
+    ],
+    "decision_signal": "schema_and_source_semantics",
+    "headers_added_in_beta": {
+      "routes.txt": [
+        "route_desc",
+        "route_desc_detail"
+      ],
+      "shapes.txt": [
+        "route_pattern_id"
+      ],
+      "trips.txt": [
+        "route_pattern_id"
+      ]
+    },
+    "headers_removed_in_beta": {
+      "trips.txt": [
+        "note_en",
+        "note_fr"
+      ]
+    },
+    "members_added_in_beta": [
+      "directions.txt",
+      "route_patterns.txt"
+    ],
+    "members_removed_in_beta": [],
+    "row_count_signal": "diagnostic_only"
+  },
+  "validated_at_utc": "2026-05-24T22:51:16.177503+00:00"
+}

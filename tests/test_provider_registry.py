@@ -19,21 +19,21 @@ def test_manifest_loading() -> None:
 
     provider = registry.get_provider("stm")
     static_url = provider.feeds["static_schedule"].resolved_source_url(Settings(_env_file=None))
-    beta_static_url = provider.feeds["static_schedule_beta"].resolved_source_url(
+    current_fallback_url = provider.feeds["static_schedule_current_fallback"].resolved_source_url(
         Settings(_env_file=None)
     )
 
     assert registry.list_provider_ids() == ["stm"]
     assert provider.provider.provider_id == "stm"
     assert static_url is not None
-    assert static_url.startswith("https://www.stm.info/")
-    assert "static_schedule_beta" in provider.feeds
-    assert provider.feeds["static_schedule_beta"].is_enabled is False
-    assert beta_static_url is not None
-    assert "gtfs_stm_26m-beta.zip" in beta_static_url
+    assert "gtfs_stm_26m-beta.zip" in static_url
+    assert "static_schedule_current_fallback" in provider.feeds
+    assert provider.feeds["static_schedule_current_fallback"].is_enabled is False
+    assert current_fallback_url is not None
+    assert current_fallback_url.endswith("/gtfs_stm.zip")
 
 
-def test_beta_static_feed_is_not_seeded_until_promoted() -> None:
+def test_beta_first_static_feed_is_seeded_as_canonical_static_schedule() -> None:
     settings = Settings(_env_file=None)
     registry = ProviderRegistry.from_project_root(
         project_root=Path(__file__).resolve().parents[1],
@@ -41,11 +41,14 @@ def test_beta_static_feed_is_not_seeded_until_promoted() -> None:
     )
 
     provider = registry.get_provider("stm")
-    endpoint_keys = {seed.endpoint_key for seed in provider.to_feed_endpoint_seeds(settings)}
+    seeds = provider.to_feed_endpoint_seeds(settings)
+    seeded_by_endpoint = {seed.endpoint_key: seed for seed in seeds}
 
-    assert "static_schedule_beta" not in endpoint_keys, (
-        "Beta static GTFS is candidate-only and must not be seeded until promotion "
-        "and source-capture work make it active."
+    assert "static_schedule" in seeded_by_endpoint
+    assert "gtfs_stm_26m-beta.zip" in (seeded_by_endpoint["static_schedule"].source_url or "")
+    assert "static_schedule_current_fallback" not in seeded_by_endpoint, (
+        "Current GTFS is fallback/comparison evidence and must not be seeded as an "
+        "active production endpoint."
     )
 
 
@@ -86,7 +89,7 @@ def test_show_provider_command() -> None:
     assert result.exit_code == 0
     assert '"provider_id": "stm"' in result.stdout
     assert '"static_schedule"' in result.stdout
-    assert '"static_schedule_beta"' in result.stdout
+    assert '"static_schedule_current_fallback"' in result.stdout
     assert '"is_enabled": false' in result.stdout
     assert '"trip_updates"' in result.stdout
     assert '"vehicle_positions"' in result.stdout

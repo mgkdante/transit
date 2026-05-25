@@ -33,6 +33,7 @@ from transit_ops.orchestration import (
 )
 from transit_ops.providers import ProviderRegistry
 from transit_ops.rebuild.oracle import rebuild_oracle_data
+from transit_ops.rebuild.static_beta import rebuild_beta_static_contract
 from transit_ops.settings import Settings, get_settings
 from transit_ops.silver import (
     load_latest_realtime_to_silver,
@@ -263,7 +264,7 @@ def validate_static_feeds_command(
         help="Write the JSON validation report to this path as well as stdout.",
     ),
 ) -> None:
-    """Validate current and beta static GTFS feeds without ingesting them."""
+    """Validate active beta and current fallback static GTFS feeds without ingesting them."""
 
     settings = get_settings()
     try:
@@ -633,7 +634,7 @@ def rebuild_oracle_data_command(
     delete_r2: bool = typer.Option(
         False,
         "--delete-r2",
-        help="Delete pre-May Bronze R2 objects before the database reset.",
+        help="Legacy: delete pre-May Bronze R2 objects before the database reset.",
     ),
     confirm_reset: bool = typer.Option(
         False,
@@ -656,7 +657,7 @@ def rebuild_oracle_data_command(
         help="Write the JSON rebuild report to this path as well as stdout.",
     ),
 ) -> None:
-    """Guarded Oracle data rebuild for the May 2026 recovery."""
+    """Legacy guarded Oracle data rebuild for the May 2026 recovery."""
 
     parsed_r2_delete_before = None
     if confirm_r2_delete_before is not None:
@@ -679,6 +680,64 @@ def rebuild_oracle_data_command(
             confirm_worker_stopped=confirm_worker_stopped,
             confirm_r2_delete_before=parsed_r2_delete_before,
             settings=settings,
+        )
+        report = json.dumps(result.display_dict(), indent=2, sort_keys=True)
+        if report_path is not None:
+            report_path.write_text(report + "\n", encoding="utf-8")
+    except (ValueError, FileNotFoundError) as exc:
+        raise typer.BadParameter(str(exc)) from exc
+
+    typer.echo(report)
+
+
+@app.command("rebuild-beta-static")
+def rebuild_beta_static_command(
+    provider_id: str,
+    execute: bool = typer.Option(
+        False,
+        "--execute",
+        help="Actually wipe rebuild tables and rebuild beta static Silver and Gold.",
+    ),
+    delete_r2: bool = typer.Option(
+        False,
+        "--delete-r2",
+        help="Delete active Bronze R2 runtime prefixes before fresh beta static capture.",
+    ),
+    confirm_reset: bool = typer.Option(
+        False,
+        "--confirm-reset",
+        help="Confirm static Silver and Gold tables may be reset.",
+    ),
+    confirm_worker_stopped: bool = typer.Option(
+        False,
+        "--confirm-worker-stopped",
+        help="Confirm the realtime worker is stopped before executing the rebuild.",
+    ),
+    confirm_r2_active_prefix_wipe: bool = typer.Option(
+        False,
+        "--confirm-r2-active-prefix-wipe",
+        help="Confirm active Bronze R2 runtime prefixes may be wiped.",
+    ),
+    report_path: Path | None = typer.Option(  # noqa: B008
+        None,
+        "--report-path",
+        help="Write the JSON beta static rebuild report to this path as well as stdout.",
+    ),
+) -> None:
+    """Hard-rebuild beta static Silver and Gold from the active STM beta source."""
+
+    settings = get_settings()
+    try:
+        _preflight_report_path(report_path)
+        result = rebuild_beta_static_contract(
+            provider_id,
+            execute=execute,
+            delete_r2=delete_r2,
+            confirm_reset=confirm_reset,
+            confirm_worker_stopped=confirm_worker_stopped,
+            confirm_r2_active_prefix_wipe=confirm_r2_active_prefix_wipe,
+            settings=settings,
+            pre_cleanup_report_path=report_path,
         )
         report = json.dumps(result.display_dict(), indent=2, sort_keys=True)
         if report_path is not None:

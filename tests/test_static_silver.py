@@ -158,6 +158,65 @@ def _write_gtfs_zip(
             zip_file.writestr(member_name, content)
 
 
+def _write_beta_gtfs_zip(zip_path: Path) -> None:
+    members: dict[str, str] = {
+        "agency.txt": (
+            "agency_id,agency_name,agency_url,agency_timezone,agency_lang,"
+            "agency_phone,agency_fare_url\n"
+            "STM,Societe de transport de Montreal,https://www.stm.info,"
+            "America/Montreal,fr,,https://www.stm.info/fr/tarifs\n"
+        ),
+        "feed_info.txt": (
+            "feed_publisher_name,feed_publisher_url,feed_lang,"
+            "feed_start_date,feed_end_date,feed_version\n"
+            "STM,https://www.stm.info,fr,20260105,20260614,20260505090000_26M\n"
+        ),
+        "routes.txt": (
+            "route_id,agency_id,route_short_name,route_long_name,route_type,"
+            "route_url,route_color,route_text_color,route_desc,route_desc_detail\n"
+            "1,STM,1,Ligne 1 - Verte,1,https://www.stm.info,00B300,FFFFFF,"
+            "Metro,Lignes de jour seulement\n"
+        ),
+        "directions.txt": (
+            "route_direction_id,route_id,direction_id,direction,direction_legacy\n"
+            "1_0,1,0,Est,EAST\n"
+        ),
+        "route_patterns.txt": (
+            "route_pattern_id,route_id,direction_id,route_pattern_typicality\n"
+            "1_1071,1,0,0\n"
+        ),
+        "trips.txt": (
+            "route_id,service_id,trip_id,trip_headsign,direction_id,shape_id,"
+            "wheelchair_accessible,route_pattern_id\n"
+            "1,weekday,trip-1,Station Honore-Beaugrand,0,1_1071,1,1_1071\n"
+        ),
+        "shapes.txt": (
+            "shape_id,shape_pt_lat,shape_pt_lon,shape_pt_sequence,route_pattern_id\n"
+            "1_1071,45.446466,-73.603118,10001,1_1071\n"
+            "1_1071,45.451158,-73.593242,10002,1_1071\n"
+        ),
+        "stops.txt": (
+            "stop_id,stop_code,stop_name,stop_lat,stop_lon,stop_url,"
+            "location_type,parent_station,wheelchair_boarding\n"
+            "43,10118,Station Angrignon,45.446466,-73.603118,"
+            "https://www.stm.info/fr/infos/reseaux/metro/angrignon,0,STATION_M118,1\n"
+        ),
+        "stop_times.txt": (
+            "trip_id,arrival_time,departure_time,stop_id,stop_sequence,pickup_type\n"
+            "trip-1,08:00:00,08:00:00,43,1,0\n"
+        ),
+        "calendar_dates.txt": "service_id,date,exception_type\nweekday,20260524,1\n",
+        "translations.txt": (
+            "table_name,field_name,language,record_id,translation\n"
+            "routes,route_desc,en,1,Day lines only\n"
+        ),
+    }
+
+    with ZipFile(zip_path, "w", compression=ZIP_DEFLATED) as zip_file:
+        for member_name, content in members.items():
+            zip_file.writestr(member_name, content)
+
+
 def _build_archive(zip_path: Path) -> BronzeStaticArchive:
     return BronzeStaticArchive(
         provider_id="stm",
@@ -204,6 +263,22 @@ def test_validate_required_static_members_requires_core_and_service_files() -> N
                 "stops.txt": "stops.txt",
                 "stop_times.txt": "stop_times.txt",
             }
+        )
+
+
+def test_load_static_zip_to_silver_can_require_beta_schema_contract(tmp_path: Path) -> None:
+    zip_path = tmp_path / "current-gtfs.zip"
+    _write_gtfs_zip(zip_path)
+    archive = _build_archive(zip_path)
+    connection = RecordingConnection()
+    bronze_storage = LocalBronzeStorageForTests(zip_path.read_bytes())
+
+    with pytest.raises(ValueError, match="Missing beta GTFS contract members"):
+        load_static_zip_to_silver(
+            connection,
+            archive=archive,
+            bronze_storage=bronze_storage,
+            require_beta_static_contract=True,
         )
 
 
@@ -282,6 +357,50 @@ def test_load_static_zip_to_silver_records_row_counts(tmp_path: Path) -> None:
     assert "INSERT INTO silver.calendar_dates" in connection.calls[7][0]
 
 
+def test_load_static_zip_to_silver_loads_beta_first_static_members(tmp_path: Path) -> None:
+    zip_path = tmp_path / "beta-gtfs.zip"
+    _write_beta_gtfs_zip(zip_path)
+    archive = _build_archive(zip_path)
+    connection = RecordingConnection()
+    bronze_storage = LocalBronzeStorageForTests(zip_path.read_bytes())
+
+    result = load_static_zip_to_silver(
+        connection,
+        archive=archive,
+        bronze_storage=bronze_storage,
+        require_beta_static_contract=True,
+    )
+
+    assert result.row_counts["agency"] == 1
+    assert result.row_counts["feed_info"] == 1
+    assert result.row_counts["directions"] == 1
+    assert result.row_counts["route_patterns"] == 1
+    assert result.row_counts["shapes"] == 2
+    assert result.row_counts["translations"] == 1
+
+    sql_calls = [call[0] for call in connection.calls]
+    assert any("INSERT INTO silver.agency" in sql for sql in sql_calls)
+    assert any("INSERT INTO silver.feed_info" in sql for sql in sql_calls)
+    assert any("INSERT INTO silver.directions" in sql for sql in sql_calls)
+    assert any("INSERT INTO silver.route_patterns" in sql for sql in sql_calls)
+    assert any("INSERT INTO silver.shapes" in sql for sql in sql_calls)
+    assert any("INSERT INTO silver.translations" in sql for sql in sql_calls)
+
+    route_params = next(
+        params
+        for sql, params in connection.calls
+        if "INSERT INTO silver.routes" in sql
+    )
+    assert route_params[0]["route_desc_detail"] == "Lignes de jour seulement"
+
+    trip_params = next(
+        params
+        for sql, params in connection.calls
+        if "INSERT INTO silver.trips" in sql
+    )
+    assert trip_params[0]["route_pattern_id"] == "1_1071"
+
+
 def test_load_static_zip_to_silver_allows_missing_calendar_txt(tmp_path: Path) -> None:
     zip_path = tmp_path / "gtfs.zip"
     _write_gtfs_zip(zip_path, include_calendar=False, include_calendar_dates=True)
@@ -304,7 +423,7 @@ def test_load_latest_static_to_silver_reads_s3_backed_archive(
     monkeypatch,
 ) -> None:
     zip_path = tmp_path / "gtfs.zip"
-    _write_gtfs_zip(zip_path)
+    _write_beta_gtfs_zip(zip_path)
     fake_storage = FakeBronzeStorage(zip_path.read_bytes())
     lookup_row = {
         "provider_id": "stm",
@@ -351,11 +470,17 @@ def test_load_latest_static_to_silver_reads_s3_backed_archive(
         "s3://bronze-bucket/stm/static_schedule/ingested_at_utc=2026-03-25/sample.zip"
     )
     assert result.row_counts == {
+        "agency": 1,
         "routes": 1,
+        "directions": 1,
+        "route_patterns": 1,
         "stops": 1,
         "trips": 1,
-        "stop_times": 2,
-        "calendar": 1,
+        "stop_times": 1,
+        "feed_info": 1,
+        "shapes": 2,
+        "calendar": 0,
         "calendar_dates": 1,
+        "translations": 1,
     }
     assert fake_storage.read_calls == [lookup_row["storage_path"]]

@@ -5,7 +5,9 @@ from datetime import UTC, date, datetime
 
 from transit_ops.ingestion.storage import BronzeObjectInfo
 from transit_ops.rebuild.bronze_cleanup import (
+    build_bronze_active_prefix_cleanup_plan,
     build_bronze_cleanup_plan,
+    execute_bronze_active_prefix_cleanup_plan,
     execute_bronze_cleanup_plan,
     parse_bronze_key,
 )
@@ -161,6 +163,54 @@ def test_cleanup_plan_deletes_only_pre_may_known_keys() -> None:
     ]
     assert [item.storage_path for item in plan.eligible_objects] == [storage.keys[0]]
     assert plan.skipped_unknown_keys == ["stm/trip_updates/mystery.pb"]
+
+
+def test_active_prefix_cleanup_plan_targets_every_object_under_runtime_prefixes() -> None:
+    storage = FakeListDeleteStorage(
+        [
+            "stm/static_schedule/ingested_at_utc=2026-05-24/20260524T120000000000Z__abcdef123456__gtfs.zip",
+            "stm/static_schedule/malformed-but-active.zip",
+            "stm/trip_updates/captured_at_utc=2026-05-24/20260524T120000000000Z__abcdef123457__trip_updates.pb",
+            "stm/proof/slice-8.3/keep.json",
+        ]
+    )
+
+    plan = build_bronze_active_prefix_cleanup_plan(
+        storage,
+        provider_id="stm",
+        endpoint_keys=("static_schedule", "trip_updates"),
+    )
+
+    assert storage.listed_prefixes == [
+        "stm/static_schedule/",
+        "stm/trip_updates/",
+    ]
+    assert [item.storage_path for item in plan.objects_to_delete] == storage.keys[:3]
+    assert plan.proof_note == (
+        "Active-prefix clean-start plan: preserve proof artifacts outside these prefixes "
+        "before executing deletion."
+    )
+
+
+def test_active_prefix_cleanup_execute_deletes_only_planned_objects() -> None:
+    storage = FakeListDeleteStorage(
+        [
+            "stm/static_schedule/ingested_at_utc=2026-05-24/20260524T120000000000Z__abcdef123456__gtfs.zip",
+            "stm/proof/slice-8.3/keep.json",
+        ]
+    )
+    plan = build_bronze_active_prefix_cleanup_plan(
+        storage,
+        provider_id="stm",
+        endpoint_keys=("static_schedule",),
+    )
+
+    result = execute_bronze_active_prefix_cleanup_plan(storage, plan, delete=True)
+
+    assert storage.deleted_keys == [storage.keys[0]]
+    assert result.deleted_keys == [storage.keys[0]]
+    assert result.delete_requested is True
+    assert result.planned_count == 1
 
 
 def test_cleanup_plan_keeps_may_and_later_known_keys() -> None:

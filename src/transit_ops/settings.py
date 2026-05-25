@@ -90,8 +90,8 @@ class Settings(BaseSettings):
     STM_PROVIDER_ID: str = "stm"
     STM_API_KEY: str | None = None
     STM_STATIC_GTFS_URL: str | None = None
-    STM_STATIC_GTFS_BETA_URL: str | None = (
-        "https://www.stm.info/sites/default/files/gtfs/gtfs_stm_26m-beta.zip"
+    STM_STATIC_GTFS_CURRENT_FALLBACK_URL: str | None = (
+        "https://www.stm.info/sites/default/files/gtfs/gtfs_stm.zip"
     )
     STM_RT_TRIP_UPDATES_URL: str | None = None
     STM_RT_VEHICLE_POSITIONS_URL: str | None = None
@@ -156,7 +156,9 @@ class Settings(BaseSettings):
             "STM_PROVIDER_ID": self.STM_PROVIDER_ID,
             "STM_API_KEY": "***configured***" if self.STM_API_KEY else None,
             "STM_STATIC_GTFS_URL": self.STM_STATIC_GTFS_URL,
-            "STM_STATIC_GTFS_BETA_URL": self.STM_STATIC_GTFS_BETA_URL,
+            "STM_STATIC_GTFS_CURRENT_FALLBACK_URL": (
+                self.STM_STATIC_GTFS_CURRENT_FALLBACK_URL
+            ),
             "STM_RT_TRIP_UPDATES_URL": self.STM_RT_TRIP_UPDATES_URL,
             "STM_RT_VEHICLE_POSITIONS_URL": self.STM_RT_VEHICLE_POSITIONS_URL,
             "BRONZE_STORAGE_BACKEND": self.BRONZE_STORAGE_BACKEND,
