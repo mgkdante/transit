@@ -370,7 +370,7 @@ def validate_static_feeds_command(
         help="Write the JSON validation report to this path as well as stdout.",
     ),
 ) -> None:
-    """Validate active beta static GTFS feed(s) without ingesting them."""
+    """Validate the active static GTFS feed without ingesting it."""
 
     settings = get_settings()
     try:

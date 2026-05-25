@@ -155,7 +155,7 @@ def test_validate_static_feeds_help() -> None:
     result = runner.invoke(app, ["validate-static-feeds", "--help"])
 
     assert result.exit_code == 0
-    assert "Validate active beta static GTFS feed(s) without ingesting them" in result.stdout
+    assert "Validate the active static GTFS feed without ingesting it" in result.stdout
     assert "current fallback" not in result.stdout
 
 
