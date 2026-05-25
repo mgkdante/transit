@@ -139,6 +139,18 @@ def _text(payload: object) -> str | None:
     if isinstance(payload, str):
         stripped = payload.strip()
         return stripped or None
+    if isinstance(payload, list):
+        preferred = [
+            item
+            for item in payload
+            if isinstance(item, dict)
+            and str(item.get("language", "")).lower() in {"fr", "fra"}
+        ]
+        for item in [*preferred, *payload]:
+            value = _text(item)
+            if value:
+                return value
+        return None
     if isinstance(payload, dict):
         for key in ("text", "value", "fr", "en"):
             value = _text(payload.get(key))
@@ -215,8 +227,12 @@ def normalize_i3_alert_payload(
                 "alert_index": alert_index,
                 "provider_id": snapshot.provider_id,
                 "alert_id": _text(_value(raw_alert, "id", "alertId", "messageId")),
-                "alert_header_text": _text(_value(raw_alert, "header", "title", "summary")),
-                "description_text": _text(_value(raw_alert, "description", "body", "message")),
+                "alert_header_text": _text(
+                    _value(raw_alert, "header", "title", "summary", "header_texts")
+                ),
+                "description_text": _text(
+                    _value(raw_alert, "description", "body", "message", "description_texts")
+                ),
                 "severity": _text(_value(raw_alert, "severity", "priority")),
                 "cause": _text(_value(raw_alert, "cause")),
                 "effect": _text(_value(raw_alert, "effect")),
@@ -235,8 +251,20 @@ def normalize_i3_alert_payload(
                     "alert_index": alert_index,
                     "entity_index": entity_index,
                     "provider_id": snapshot.provider_id,
-                    "route_id": _entity_value(raw_entity, "routeId", "route_id", "route"),
-                    "stop_id": _entity_value(raw_entity, "stopId", "stop_id", "stop"),
+                    "route_id": _entity_value(
+                        raw_entity,
+                        "routeId",
+                        "route_id",
+                        "route",
+                        "route_short_name",
+                    ),
+                    "stop_id": _entity_value(
+                        raw_entity,
+                        "stopId",
+                        "stop_id",
+                        "stop",
+                        "stop_code",
+                    ),
                     "trip_id": _entity_value(raw_entity, "tripId", "trip_id", "trip"),
                     "area_id": _entity_value(raw_entity, "areaId", "area_id", "area"),
                     "raw_entity_json": raw_entity,

@@ -101,3 +101,37 @@ def test_load_i3_snapshot_to_silver_inserts_alerts_and_entities() -> None:
     assert "DELETE FROM silver.i3_alerts" in connection.calls[1][0]
     assert "INSERT INTO silver.i3_alerts" in connection.calls[2][0]
     assert "INSERT INTO silver.i3_alert_informed_entities" in connection.calls[3][0]
+
+
+def test_normalize_i3_alert_payload_accepts_stm_etatservice_shape() -> None:
+    snapshot = _snapshot(
+        {
+            "messages": [
+                {
+                    "id": "etat-1",
+                    "header_texts": [
+                        {"language": "fr", "text": "Votre ligne"},
+                        {"language": "en", "text": "Your line"},
+                    ],
+                    "description_texts": [
+                        {"language": "fr", "text": "Arrets annules"},
+                        {"language": "en", "text": "Cancelled stops"},
+                    ],
+                    "informed_entities": [
+                        {"route_short_name": "14"},
+                        {"direction_id": "S"},
+                        {"stop_code": "53010"},
+                    ],
+                }
+            ]
+        }
+    )
+
+    alerts, entities = normalize_i3_alert_payload(snapshot)
+
+    assert alerts[0]["alert_id"] == "etat-1"
+    assert alerts[0]["alert_header_text"] == "Votre ligne"
+    assert alerts[0]["description_text"] == "Arrets annules"
+    assert entities[0]["route_id"] == "14"
+    assert entities[1]["raw_entity_json"] == {"direction_id": "S"}
+    assert entities[2]["stop_id"] == "53010"
