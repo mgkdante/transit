@@ -31,6 +31,11 @@ from transit_ops.source_factory.r2 import (
     execute_r2_cleanup_plan,
     run_r2_prune_cycle,
 )
+from transit_ops.source_factory.runner import (
+    OptionalSourceUnavailable,
+    SourceFactoryOperationImpls,
+    run_source_factory_rebuild,
+)
 
 __all__ = [
     "ArtifactRef",
@@ -41,8 +46,10 @@ __all__ = [
     "R2InventoryItem",
     "R2PruneCycleResult",
     "PhaseStatus",
+    "OptionalSourceUnavailable",
     "SOURCE_FACTORY_RESET_TABLES",
     "SourceFactoryCatalog",
+    "SourceFactoryOperationImpls",
     "SourceFactoryResult",
     "SourceFactorySource",
     "assert_oracle_database_target",
@@ -54,6 +61,7 @@ __all__ = [
     "build_worker_stopped_proof",
     "execute_r2_cleanup_plan",
     "reset_source_factory_tables",
+    "run_source_factory_rebuild",
     "run_r2_prune_cycle",
     "validate_destructive_confirmations",
     "validate_migration_revision",

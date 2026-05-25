@@ -32,6 +32,14 @@ VEHICLE_NEW = (
     "20260502T120000000000Z__dddddddddddd__vehicle_positions.pb"
 )
 UNKNOWN_KEY = "stm/trip_updates/mystery.pb"
+GIS_SOURCE_KEY = (
+    "stm/gis_static/ingested_at_utc=2026-04-30/"
+    "20260430T120000000000Z__eeeeeeeeeeee__gis.zip"
+)
+I3_SOURCE_KEY = (
+    "stm/i3_alerts/captured_at_utc=2026-04-30/"
+    "20260430T120000000000Z__ffffffffffff__alerts.json"
+)
 MALFORMED_KEY = (
     "stm/static_schedule/ingested_at_utc=not-a-date/"
     "20260430T120000000000Z__eeeeeeeeeeee__gtfs.zip"
@@ -302,6 +310,37 @@ def test_prune_cycle_writes_artifacts_and_reinventories_after_delete(tmp_path) -
         TRIP_NEW,
         UNKNOWN_KEY,
     ]
+
+
+def test_prune_cycle_can_inventory_source_factory_endpoint_keys(tmp_path) -> None:
+    storage = FakeR2Storage([STATIC_OLD, GIS_SOURCE_KEY, I3_SOURCE_KEY])
+    timestamps = iter([PRE_GENERATED_AT, POST_GENERATED_AT])
+
+    result = run_r2_prune_cycle(
+        storage,
+        provider_id="stm",
+        keep_from_date=date(2026, 5, 1),
+        artifact_dir=tmp_path,
+        endpoint_keys=("static_schedule", "gis_static", "i3_alerts"),
+        execute=False,
+        clock=lambda: next(timestamps),
+    )
+
+    assert storage.listed_prefixes == [
+        "stm/static_schedule/",
+        "stm/gis_static/",
+        "stm/i3_alerts/",
+        "stm/static_schedule/",
+        "stm/gis_static/",
+        "stm/i3_alerts/",
+    ]
+    assert result.pre_inventory.prefixes == (
+        "stm/static_schedule/",
+        "stm/gis_static/",
+        "stm/i3_alerts/",
+    )
+    assert result.pre_inventory.unknown_keys == [GIS_SOURCE_KEY, I3_SOURCE_KEY]
+    assert result.cleanup_plan.skipped_unknown_keys == [GIS_SOURCE_KEY, I3_SOURCE_KEY]
 
 
 def test_display_dict_payloads_are_json_safe_and_include_skipped_unknown_keys() -> None:

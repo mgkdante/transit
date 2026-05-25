@@ -282,6 +282,7 @@ def run_r2_prune_cycle(
     provider_id: str,
     keep_from_date: date,
     artifact_dir: Path,
+    endpoint_keys: Iterable[str] = REBUILD_ENDPOINTS,
     execute: bool = False,
     confirm_r2_cleanup: bool = False,
     active_prefix_wipe: bool = False,
@@ -289,9 +290,11 @@ def run_r2_prune_cycle(
     clock: Callable[[], datetime] | None = None,
 ) -> R2PruneCycleResult:
     inventory_clock = clock or (lambda: datetime.now(UTC))
+    endpoint_key_tuple = tuple(endpoint_keys)
     pre_inventory = build_r2_inventory(
         storage,
         provider_id=provider_id,
+        endpoint_keys=endpoint_key_tuple,
         generated_at_utc=inventory_clock(),
     )
     pre_inventory_artifact = write_json_artifact(
@@ -320,6 +323,7 @@ def run_r2_prune_cycle(
     post_inventory = build_r2_inventory(
         storage,
         provider_id=provider_id,
+        endpoint_keys=endpoint_key_tuple,
         generated_at_utc=inventory_clock(),
     )
     post_inventory_artifact = write_json_artifact(
