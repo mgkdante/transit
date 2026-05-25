@@ -649,6 +649,7 @@ def test_rebuild_source_factory_passes_destructive_gate_options(
         artifact_dir,
         keep_from_date,
         execute,
+        destructive_r2_cleanup,
         active_prefix_wipe,
         confirm_worker_stopped,
         confirm_oracle_target,
@@ -662,6 +663,7 @@ def test_rebuild_source_factory_passes_destructive_gate_options(
                 "artifact_dir": artifact_dir,
                 "keep_from_date": keep_from_date,
                 "execute": execute,
+                "destructive_r2_cleanup": destructive_r2_cleanup,
                 "active_prefix_wipe": active_prefix_wipe,
                 "confirm_worker_stopped": confirm_worker_stopped,
                 "confirm_oracle_target": confirm_oracle_target,
@@ -706,6 +708,7 @@ def test_rebuild_source_factory_passes_destructive_gate_options(
     assert recorded["artifact_dir"] == tmp_path
     assert recorded["keep_from_date"] == date(2026, 4, 25)
     assert recorded["execute"] is True
+    assert recorded["destructive_r2_cleanup"] is True
     assert recorded["active_prefix_wipe"] is True
     assert recorded["confirm_worker_stopped"] is True
     assert recorded["confirm_oracle_target"] is True

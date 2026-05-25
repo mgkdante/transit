@@ -67,6 +67,7 @@ def run_source_factory_rebuild(
     artifact_dir: Path,
     keep_from_date: date,
     execute: bool = False,
+    destructive_r2_cleanup: bool = False,
     active_prefix_wipe: bool = False,
     confirm_worker_stopped: bool = False,
     confirm_oracle_target: bool = False,
@@ -83,11 +84,13 @@ def run_source_factory_rebuild(
     started_at_utc = now()
     settings = settings or get_settings()
     operation_impls = operation_impls or SourceFactoryOperationImpls()
+    if execute and not destructive_r2_cleanup:
+        raise ValueError("destructive_r2_cleanup is required for execute rebuilds.")
 
     guard_proofs: dict[str, object] = {
         "destructive_confirmations": validate_destructive_confirmations(
             execute=execute,
-            destructive_r2_cleanup=execute,
+            destructive_r2_cleanup=destructive_r2_cleanup,
             active_prefix_wipe=active_prefix_wipe,
             confirm_worker_stopped=confirm_worker_stopped,
             confirm_oracle_target=confirm_oracle_target,
@@ -142,7 +145,7 @@ def run_source_factory_rebuild(
         keep_from_date=keep_from_date,
         artifact_dir=artifact_dir,
         endpoint_keys=tuple(source.endpoint_key for source in catalog.sources),
-        execute=execute,
+        execute=execute and destructive_r2_cleanup,
         confirm_r2_cleanup=confirm_r2_cleanup,
         active_prefix_wipe=active_prefix_wipe,
         confirm_active_prefix_wipe=confirm_active_prefix_wipe,

@@ -183,6 +183,31 @@ def test_dry_run_returns_proof_without_calling_mutating_operations(tmp_path) -> 
     assert (tmp_path / "final-report.json").exists()
 
 
+def test_dry_run_records_destructive_r2_cleanup_plan_without_executing_it(
+    tmp_path,
+) -> None:
+    calls: list[str] = []
+
+    result = run_source_factory_rebuild(
+        "stm",
+        artifact_dir=tmp_path,
+        keep_from_date=date(2026, 5, 1),
+        destructive_r2_cleanup=True,
+        settings=ORACLE_SETTINGS,
+        registry=FakeRegistry(),
+        engine=FakeEngine(),
+        bronze_storage=object(),
+        clock=ticking_clock(),
+        operation_impls=make_impls(calls),
+    )
+
+    assert result.summaries["guard_proofs"]["destructive_confirmations"][
+        "destructive_r2_cleanup"
+    ] is True
+    assert result.summaries["r2_prune_cycle"]["execute"] is False
+    assert result.phase_status[FactoryPhase.DB_RESET] == PhaseStatus.SKIPPED
+
+
 def test_r2_prune_cycle_uses_source_factory_catalog_endpoint_keys(tmp_path) -> None:
     calls: list[str] = []
     captured_endpoint_keys: list[tuple[str, ...]] = []
@@ -250,6 +275,30 @@ def test_execute_without_confirmations_raises_before_mutating_operations(tmp_pat
             artifact_dir=tmp_path,
             keep_from_date=date(2026, 5, 1),
             execute=True,
+            destructive_r2_cleanup=True,
+            settings=ORACLE_SETTINGS,
+            registry=FakeRegistry(),
+            engine=FakeEngine(),
+            bronze_storage=object(),
+            clock=ticking_clock(),
+            operation_impls=make_impls(calls),
+        )
+
+    assert calls == []
+
+
+def test_execute_requires_destructive_r2_cleanup_gate(tmp_path) -> None:
+    calls: list[str] = []
+
+    with pytest.raises(ValueError, match="destructive_r2_cleanup"):
+        run_source_factory_rebuild(
+            "stm",
+            artifact_dir=tmp_path,
+            keep_from_date=date(2026, 5, 1),
+            execute=True,
+            confirm_worker_stopped=True,
+            confirm_oracle_target=True,
+            confirm_r2_cleanup=True,
             settings=ORACLE_SETTINGS,
             registry=FakeRegistry(),
             engine=FakeEngine(),
@@ -285,6 +334,7 @@ def test_execute_aborts_before_database_reset_when_r2_cleanup_fails(tmp_path) ->
             artifact_dir=tmp_path,
             keep_from_date=date(2026, 5, 1),
             execute=True,
+            destructive_r2_cleanup=True,
             confirm_worker_stopped=True,
             confirm_oracle_target=True,
             confirm_r2_cleanup=True,
@@ -307,6 +357,7 @@ def test_execute_calls_operations_in_required_order(tmp_path) -> None:
         artifact_dir=tmp_path,
         keep_from_date=date(2026, 5, 1),
         execute=True,
+        destructive_r2_cleanup=True,
         confirm_worker_stopped=True,
         confirm_oracle_target=True,
         confirm_r2_cleanup=True,
@@ -347,6 +398,7 @@ def test_execute_records_optional_gis_and_i3_missing_source_as_skipped(tmp_path)
         artifact_dir=tmp_path,
         keep_from_date=date(2026, 5, 1),
         execute=True,
+        destructive_r2_cleanup=True,
         confirm_worker_stopped=True,
         confirm_oracle_target=True,
         confirm_r2_cleanup=True,
@@ -388,6 +440,7 @@ def test_execute_records_optional_value_error_missing_source_as_skipped(tmp_path
         artifact_dir=tmp_path,
         keep_from_date=date(2026, 5, 1),
         execute=True,
+        destructive_r2_cleanup=True,
         confirm_worker_stopped=True,
         confirm_oracle_target=True,
         confirm_r2_cleanup=True,
@@ -425,6 +478,7 @@ def test_execute_optional_file_not_found_bug_still_raises(tmp_path) -> None:
             artifact_dir=tmp_path,
             keep_from_date=date(2026, 5, 1),
             execute=True,
+            destructive_r2_cleanup=True,
             confirm_worker_stopped=True,
             confirm_oracle_target=True,
             confirm_r2_cleanup=True,
@@ -455,6 +509,7 @@ def test_execute_optional_i3_silver_missing_snapshot_still_raises(tmp_path) -> N
             artifact_dir=tmp_path,
             keep_from_date=date(2026, 5, 1),
             execute=True,
+            destructive_r2_cleanup=True,
             confirm_worker_stopped=True,
             confirm_oracle_target=True,
             confirm_r2_cleanup=True,
@@ -487,6 +542,7 @@ def test_execute_required_source_failure_raises(tmp_path) -> None:
             artifact_dir=tmp_path,
             keep_from_date=date(2026, 5, 1),
             execute=True,
+            destructive_r2_cleanup=True,
             confirm_worker_stopped=True,
             confirm_oracle_target=True,
             confirm_r2_cleanup=True,

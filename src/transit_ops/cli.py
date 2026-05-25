@@ -835,6 +835,7 @@ def rebuild_source_factory_command(
             artifact_dir=report_dir,
             keep_from_date=_default_source_factory_keep_from_date(settings),
             execute=execute,
+            destructive_r2_cleanup=destructive_r2_cleanup,
             active_prefix_wipe=active_prefix_wipe,
             confirm_worker_stopped=confirm_worker_stopped,
             confirm_oracle_target=confirm_oracle_target,
