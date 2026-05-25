@@ -14,9 +14,10 @@ QUOTED_HOST_WITH_AT_RE = re.compile(
     r"((?:host|hostname) ['\"])[^'\"]+@([^'\"]+['\"])",
     re.IGNORECASE,
 )
-REPORTING_RESTRICTED_SCHEMAS = ("raw", "silver", "core", "public")
+REPORTING_RESTRICTED_SCHEMAS = ("raw", "silver", "core")
 DB_ALLOWED_SCHEMAS = ("raw", "core", "silver", "gold")
-DB_RESTRICTED_SCHEMAS = ("public",)
+DB_RESTRICTED_SCHEMAS: tuple[str, ...] = ()
+PUBLIC_ALLOWED_SELECT_RELATIONS = ("spatial_ref_sys",)
 CONNECT_TIMEOUT_SECONDS = 10
 NETWORK_FAILURE_MARKERS = (
     "connection timeout",
@@ -104,6 +105,13 @@ def verify_schema_usage(cur: psycopg.Cursor[object], schema_name: str) -> None:
     print_pass(f"current user has USAGE on {schema_name}")
 
 
+def verify_schema_create_denied(cur: psycopg.Cursor[object], schema_name: str) -> None:
+    cur.execute("SELECT has_schema_privilege(current_user, %s, 'CREATE')", (schema_name,))
+    if bool(cur.fetchone()[0]):
+        raise VerificationError(f"current user unexpectedly has CREATE on {schema_name}")
+    print_pass(f"current user lacks CREATE on {schema_name}")
+
+
 def schema_select_relations(
     cur: psycopg.Cursor[object],
     schema_name: str,
@@ -140,17 +148,15 @@ def verify_schema_select(cur: psycopg.Cursor[object], schema_name: str) -> None:
 
     print_pass(f"current user has SELECT on {len(relations)} {schema_name} relations")
 
-    table_name, relkind = relations[0][0], relations[0][1]
-    cur.execute(
-        sql.SQL("SELECT * FROM {}.{} LIMIT 1").format(
-            sql.Identifier(schema_name),
-            sql.Identifier(table_name),
-        ),
-    )
-    print_pass(
-        f"SELECT from {schema_name}.{table_name} "
-        f"({RELKIND_LABELS.get(relkind, relkind)}) succeeds"
-    )
+    for relation_name, _relkind, _has_select in relations:
+        cur.execute(
+            sql.SQL("SELECT * FROM {}.{} LIMIT 1").format(
+                sql.Identifier(schema_name),
+                sql.Identifier(relation_name),
+            ),
+        )
+
+    print_pass(f"SELECT probe succeeds for all {len(relations)} {schema_name} relations")
 
 
 def verify_gold_usage(cur: psycopg.Cursor[object]) -> None:
@@ -163,6 +169,35 @@ def gold_select_relations(cur: psycopg.Cursor[object]) -> list[tuple[str, str, b
 
 def verify_gold_select(cur: psycopg.Cursor[object]) -> None:
     verify_schema_select(cur, "gold")
+
+
+def verify_public_postgis_boundary(cur: psycopg.Cursor[object]) -> None:
+    if not schema_exists(cur, "public"):
+        print_pass("public schema does not exist")
+        return
+
+    verify_schema_usage(cur, "public")
+    verify_schema_create_denied(cur, "public")
+    relations = schema_select_relations(cur, "public")
+    selected_relations = [
+        relation_name
+        for relation_name, _relkind, has_select in relations
+        if has_select
+    ]
+    unexpected_relations = sorted(
+        set(selected_relations).difference(PUBLIC_ALLOWED_SELECT_RELATIONS)
+    )
+    if unexpected_relations:
+        raise VerificationError(
+            "current user has unexpected SELECT on public relations: "
+            + ", ".join(unexpected_relations)
+        )
+    if "spatial_ref_sys" in [relation_name for relation_name, *_rest in relations]:
+        if "spatial_ref_sys" not in selected_relations:
+            raise VerificationError("current user lacks SELECT on public.spatial_ref_sys")
+        cur.execute("SELECT * FROM public.spatial_ref_sys LIMIT 1")
+        print_pass("SELECT from public.spatial_ref_sys succeeds")
+    print_pass("public schema is limited to PostGIS metadata/function support")
 
 
 def verify_restricted_schema_usage(
@@ -268,11 +303,13 @@ def run_positive_verification(
                     verify_gold_usage(cur)
                     verify_gold_select(cur)
                     verify_restricted_schema_usage(cur)
+                    verify_public_postgis_boundary(cur)
                 elif role_contract == "db":
                     for schema_name in DB_ALLOWED_SCHEMAS:
                         verify_schema_usage(cur, schema_name)
                         verify_schema_select(cur, schema_name)
                     verify_restricted_schema_usage(cur, DB_RESTRICTED_SCHEMAS)
+                    verify_public_postgis_boundary(cur)
                 else:
                     raise VerificationError(f"unknown role contract: {role_contract}")
             if role_contract == "reporting":
