@@ -36,6 +36,13 @@ from transit_ops.source_factory.runner import (
     SourceFactoryOperationImpls,
     run_source_factory_rebuild,
 )
+from transit_ops.source_factory.validation import (
+    SOURCE_FACTORY_VALIDATION_CHECKS,
+    SourceFactoryValidationCheck,
+    SourceFactoryValidationCheckResult,
+    SourceFactoryValidationReport,
+    collect_source_factory_validation_evidence,
+)
 
 __all__ = [
     "ArtifactRef",
@@ -48,11 +55,16 @@ __all__ = [
     "PhaseStatus",
     "OptionalSourceUnavailable",
     "SOURCE_FACTORY_RESET_TABLES",
+    "SOURCE_FACTORY_VALIDATION_CHECKS",
     "SourceFactoryCatalog",
     "SourceFactoryOperationImpls",
     "SourceFactoryResult",
     "SourceFactorySource",
+    "SourceFactoryValidationCheck",
+    "SourceFactoryValidationCheckResult",
+    "SourceFactoryValidationReport",
     "assert_oracle_database_target",
+    "collect_source_factory_validation_evidence",
     "build_source_factory_catalog",
     "build_source_factory_reset_statement",
     "build_r2_cleanup_plan_from_inventory",
