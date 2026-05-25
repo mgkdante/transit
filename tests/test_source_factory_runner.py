@@ -459,6 +459,51 @@ def test_execute_records_optional_value_error_missing_source_as_skipped(tmp_path
     assert backfill["i3_alerts"]["status"] == "skipped"
 
 
+def test_execute_records_optional_missing_endpoint_as_skipped(tmp_path) -> None:
+    calls: list[str] = []
+    impls = make_impls(calls)
+    impls = SourceFactoryOperationImpls(
+        **{
+            **impls.__dict__,
+            "ingest_gis_feed": lambda *args, **kwargs: (_ for _ in ()).throw(
+                ValueError(
+                    "GIS feed endpoint was not found in core.feed_endpoints. "
+                    "Run seed-core before ingest-gis."
+                )
+            ),
+            "capture_i3_alerts": lambda *args, **kwargs: (_ for _ in ()).throw(
+                ValueError(
+                    "i3 alert feed endpoint was not found in core.feed_endpoints. "
+                    "Run seed-core before capture-i3."
+                )
+            ),
+        }
+    )
+
+    result = run_source_factory_rebuild(
+        "stm",
+        artifact_dir=tmp_path,
+        keep_from_date=date(2026, 5, 1),
+        execute=True,
+        destructive_r2_cleanup=True,
+        confirm_worker_stopped=True,
+        confirm_oracle_target=True,
+        confirm_r2_cleanup=True,
+        settings=ORACLE_SETTINGS,
+        registry=FakeRegistry(),
+        engine=FakeEngine(),
+        bronze_storage=object(),
+        clock=ticking_clock(),
+        operation_impls=impls,
+    )
+
+    assert "gis_silver" not in calls
+    assert "i3_silver" not in calls
+    backfill = {item["family"]: item for item in result.summaries["source_backfill"]}
+    assert backfill["gis_static"]["status"] == "skipped"
+    assert backfill["i3_alerts"]["status"] == "skipped"
+
+
 def test_execute_optional_file_not_found_bug_still_raises(tmp_path) -> None:
     calls: list[str] = []
     impls = make_impls(calls)

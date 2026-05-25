@@ -418,12 +418,18 @@ def _is_optional_capture_source_unavailable(
     message = str(exc).lower()
     if source.family == "gis_static":
         return (
-            "gis feed for provider" in message
-            and "does not have a resolved url" in message
+            (
+                "gis feed for provider" in message
+                and "does not have a resolved url" in message
+            )
+            or "gis feed endpoint was not found in core.feed_endpoints" in message
         )
     if source.family == "i3_alerts":
         return (
-            "i3 alert feed for provider" in message
-            and "does not have a resolved url" in message
+            (
+                "i3 alert feed for provider" in message
+                and "does not have a resolved url" in message
+            )
+            or "i3 alert feed endpoint was not found in core.feed_endpoints" in message
         )
     return False
