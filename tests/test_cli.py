@@ -8,6 +8,8 @@ from transit_ops.cli import app
 from transit_ops.orchestration import RealtimeCycleResult
 
 runner = CliRunner()
+LEGACY_ORACLE_REBUILD_COMMAND = "rebuild-" + "oracle-data"
+LEGACY_BETA_REBUILD_COMMAND = "rebuild-" + "beta-static"
 
 
 def test_cli_help() -> None:
@@ -40,10 +42,99 @@ def test_cli_help() -> None:
     assert "run-realtime-worker" in result.stdout
     assert "build-warm-rollups" in result.stdout
     assert "prune-warm-rollup-storage" in result.stdout
-    assert "rebuild-oracle-data" in result.stdout
-    assert "rebuild-beta-static" in result.stdout
+    assert "rebuild-source-factory" in result.stdout
+    assert LEGACY_ORACLE_REBUILD_COMMAND not in result.stdout
+    assert LEGACY_BETA_REBUILD_COMMAND not in result.stdout
     assert "validate-static-feeds" in result.stdout
     assert "retention-proof-report" in result.stdout
+    assert "recover" in result.stdout
+
+
+def test_recover_help_mentions_health_report_and_guardrails() -> None:
+    result = runner.invoke(app, ["recover", "--help"])
+
+    assert result.exit_code == 0
+    assert "/health" in result.stdout
+    assert "report/webhook target" in result.stdout
+    assert "restart-worker" in result.stdout
+    assert "restart-health" in result.stdout
+    assert "restart-pipeline" in result.stdout
+    assert "reboot-vm" in result.stdout
+    assert "--execute" in result.stdout
+    assert "--confirm" in result.stdout
+
+
+def test_recover_outputs_json_payload(monkeypatch) -> None:
+    class FakeRecoveryResult:
+        def display_dict(self) -> dict[str, object]:
+            return {
+                "action_id": "restart-worker",
+                "execute": False,
+                "commands": [
+                    "docker compose --env-file .env -f docker-compose.yml restart worker"
+                ],
+                "status": "planned",
+                "return_code": None,
+                "stdout": None,
+                "stderr": None,
+                "completed_at_utc": "2026-05-25T12:00:00+00:00",
+            }
+
+    recorded: dict[str, object] = {}
+
+    def fake_run_recovery_action(action_id, *, execute, confirmation):  # noqa: ANN001
+        recorded["action_id"] = action_id
+        recorded["execute"] = execute
+        recorded["confirmation"] = confirmation
+        return FakeRecoveryResult()
+
+    monkeypatch.setattr(cli_module, "run_recovery_action", fake_run_recovery_action)
+
+    result = runner.invoke(app, ["recover", "restart-worker"])
+
+    assert result.exit_code == 0
+    assert recorded == {
+        "action_id": "restart-worker",
+        "execute": False,
+        "confirmation": None,
+    }
+    assert json.loads(result.stdout)["status"] == "planned"
+
+
+def test_recover_exits_nonzero_on_failed_command(monkeypatch) -> None:
+    class FakeRecoveryResult:
+        def display_dict(self) -> dict[str, object]:
+            return {
+                "action_id": "restart-pipeline",
+                "execute": True,
+                "commands": ["bash scripts/resume-pipeline.sh"],
+                "status": "failed",
+                "return_code": 1,
+                "stdout": "",
+                "stderr": "unit missing\n",
+                "completed_at_utc": "2026-05-25T12:00:00+00:00",
+            }
+
+    monkeypatch.setattr(
+        cli_module,
+        "run_recovery_action",
+        lambda action_id, *, execute, confirmation: FakeRecoveryResult(),
+    )
+
+    result = runner.invoke(
+        app,
+        ["recover", "restart-pipeline", "--execute", "--confirm", "restart-pipeline"],
+    )
+
+    assert result.exit_code == 1
+    assert json.loads(result.stdout)["status"] == "failed"
+
+
+def test_recover_execute_requires_matching_confirmation() -> None:
+    result = runner.invoke(app, ["recover", "restart-worker", "--execute"])
+
+    assert result.exit_code == 2
+    assert "requires --confirm restart-worker" in result.stderr
 
 
 def test_ingest_static_help() -> None:
@@ -64,7 +155,7 @@ def test_validate_static_feeds_help() -> None:
     result = runner.invoke(app, ["validate-static-feeds", "--help"])
 
     assert result.exit_code == 0
-    assert "Validate active beta static GTFS feed(s) without ingesting them" in result.stdout
+    assert "Validate the active static GTFS feed without ingesting it" in result.stdout
     assert "current fallback" not in result.stdout
 
 
@@ -508,288 +599,182 @@ def test_build_warm_rollups_help() -> None:
     assert "--since" in result.stdout
 
 
-def test_rebuild_oracle_data_help() -> None:
-    result = runner.invoke(app, ["rebuild-oracle-data", "--help"])
+def test_source_factory_help_is_available() -> None:
+    result = runner.invoke(app, ["rebuild-source-factory", "--help"])
 
     assert result.exit_code == 0
-    assert "Legacy guarded Oracle data rebuild" in result.stdout
-    assert "--month" in result.stdout
+    assert "Rebuild STM Oracle from source truth" in result.stdout
     assert "--execute" in result.stdout
-    assert "--delete-r2" in result.stdout
-    assert "--confirm-reset" in result.stdout
+    assert "--destructive-r2-cleanup" in result.stdout
+    assert "--active-prefix-wipe" in result.stdout
+    assert "--confirm-oracle-target" in result.stdout
     assert "--confirm-worker-stopped" in result.stdout
-    assert "--confirm-r2-delete-before" in result.stdout
-    assert "--report-path" in result.stdout
+    assert "--confirm-r2-cleanup" in result.stdout
+    assert "--confirm-active-prefix-wipe" in result.stdout
+    assert "--report-dir" in result.stdout
 
 
-class FakeOracleCliResult:
-    def __init__(self, provider_id: str, dry_run: bool) -> None:
+def test_legacy_rebuild_commands_are_removed() -> None:
+    help_result = runner.invoke(app, ["--help"])
+
+    assert help_result.exit_code == 0
+    assert "rebuild-source-factory" in help_result.stdout
+    assert LEGACY_ORACLE_REBUILD_COMMAND not in help_result.stdout
+    assert LEGACY_BETA_REBUILD_COMMAND not in help_result.stdout
+
+
+class FakeSourceFactoryCliResult:
+    def __init__(self, provider_id: str, execute: bool) -> None:
         self.provider_id = provider_id
-        self.dry_run = dry_run
+        self.execute = execute
 
     def display_dict(self) -> dict[str, object]:
         return {
             "provider_id": self.provider_id,
-            "dry_run": self.dry_run,
-            "completed_at_utc": "2026-05-01T00:00:00+00:00",
+            "execute": self.execute,
+            "phase_status": {"preflight": "ok"},
+            "artifacts": {"source_factory_result": "artifacts/slice-8.6/result.json"},
         }
 
 
-def test_rebuild_oracle_data_passes_flags_options(monkeypatch) -> None:
+def test_rebuild_source_factory_passes_destructive_gate_options(
+    monkeypatch,
+    tmp_path,
+) -> None:
     recorded: dict[str, object] = {}
 
-    def fake_rebuild_oracle_data(
+    def fake_run_source_factory_rebuild(
         provider_id,
         *,
-        month,
+        artifact_dir,
+        keep_from_date,
         execute,
-        delete_r2,
-        confirm_reset,
+        destructive_r2_cleanup,
+        active_prefix_wipe,
         confirm_worker_stopped,
-        confirm_r2_delete_before,
+        confirm_oracle_target,
+        confirm_r2_cleanup,
+        confirm_active_prefix_wipe,
         settings,
     ):  # noqa: ANN001
         recorded.update(
             {
                 "provider_id": provider_id,
-                "month": month,
+                "artifact_dir": artifact_dir,
+                "keep_from_date": keep_from_date,
                 "execute": execute,
-                "delete_r2": delete_r2,
-                "confirm_reset": confirm_reset,
+                "destructive_r2_cleanup": destructive_r2_cleanup,
+                "active_prefix_wipe": active_prefix_wipe,
                 "confirm_worker_stopped": confirm_worker_stopped,
-                "confirm_r2_delete_before": confirm_r2_delete_before,
+                "confirm_oracle_target": confirm_oracle_target,
+                "confirm_r2_cleanup": confirm_r2_cleanup,
+                "confirm_active_prefix_wipe": confirm_active_prefix_wipe,
                 "settings": settings,
             }
         )
-        return FakeOracleCliResult(provider_id, dry_run=not execute)
+        return FakeSourceFactoryCliResult(provider_id, execute=execute)
 
-    monkeypatch.setattr(cli_module, "rebuild_oracle_data", fake_rebuild_oracle_data)
+    monkeypatch.setattr(
+        cli_module,
+        "run_source_factory_rebuild",
+        fake_run_source_factory_rebuild,
+    )
+    monkeypatch.setattr(
+        cli_module,
+        "_default_source_factory_keep_from_date",
+        lambda settings: date(2026, 4, 25),
+        raising=False,
+    )
 
     result = runner.invoke(
         app,
         [
-            "rebuild-oracle-data",
+            "rebuild-source-factory",
             "stm",
-            "--month",
-            "2026-05",
             "--execute",
-            "--delete-r2",
-            "--confirm-reset",
+            "--destructive-r2-cleanup",
+            "--active-prefix-wipe",
             "--confirm-worker-stopped",
-            "--confirm-r2-delete-before",
-            "2026-05-01",
+            "--confirm-oracle-target",
+            "--confirm-r2-cleanup",
+            "--confirm-active-prefix-wipe",
+            "--report-dir",
+            str(tmp_path),
         ],
     )
 
     assert result.exit_code == 0
     assert recorded["provider_id"] == "stm"
-    assert recorded["month"] == "2026-05"
+    assert recorded["artifact_dir"] == tmp_path
+    assert recorded["keep_from_date"] == date(2026, 4, 25)
     assert recorded["execute"] is True
-    assert recorded["delete_r2"] is True
-    assert recorded["confirm_reset"] is True
+    assert recorded["destructive_r2_cleanup"] is True
+    assert recorded["active_prefix_wipe"] is True
     assert recorded["confirm_worker_stopped"] is True
-    assert recorded["confirm_r2_delete_before"] == date(2026, 5, 1)
-    assert '"dry_run": false' in result.stdout
+    assert recorded["confirm_oracle_target"] is True
+    assert recorded["confirm_r2_cleanup"] is True
+    assert recorded["confirm_active_prefix_wipe"] is True
+    assert '"execute": true' in result.stdout
 
 
-def test_rebuild_oracle_data_rejects_non_may_month(monkeypatch) -> None:
-    def fake_rebuild_oracle_data(provider_id, *, month, **kwargs):  # noqa: ANN001
-        raise ValueError(f"Oracle rebuild only supports month 2026-05, got {month}.")
-
-    monkeypatch.setattr(cli_module, "rebuild_oracle_data", fake_rebuild_oracle_data)
-
-    result = runner.invoke(app, ["rebuild-oracle-data", "stm", "--month", "2026-04"])
-
-    assert result.exit_code == 2
-    assert "Invalid value: Oracle rebuild only supports month 2026-05" in result.output
-
-
-def test_rebuild_oracle_data_writes_report_path(monkeypatch, tmp_path) -> None:
-    report_path = tmp_path / "oracle-report.json"
-
-    monkeypatch.setattr(
-        cli_module,
-        "rebuild_oracle_data",
-        lambda provider_id, **kwargs: FakeOracleCliResult(provider_id, dry_run=True),
-    )
-
-    result = runner.invoke(
-        app,
-        ["rebuild-oracle-data", "stm", "--report-path", str(report_path)],
-    )
-
-    assert result.exit_code == 0
-    assert json.loads(report_path.read_text()) == {
-        "provider_id": "stm",
-        "dry_run": True,
-        "completed_at_utc": "2026-05-01T00:00:00+00:00",
-    }
-    assert '"provider_id": "stm"' in result.stdout
-
-
-def test_rebuild_oracle_data_bad_report_path_prevents_rebuild(monkeypatch, tmp_path) -> None:
-    called = False
-
-    def fake_rebuild_oracle_data(provider_id, **kwargs):  # noqa: ANN001
-        nonlocal called
-        called = True
-        return FakeOracleCliResult(provider_id, dry_run=True)
-
-    monkeypatch.setattr(cli_module, "rebuild_oracle_data", fake_rebuild_oracle_data)
-
-    result = runner.invoke(
-        app,
-        [
-            "rebuild-oracle-data",
-            "stm",
-            "--report-path",
-            str(tmp_path / "missing" / "oracle-report.json"),
-        ],
-    )
-
-    assert result.exit_code == 2
-    assert "Invalid value" in result.output
-    assert called is False
-
-
-def test_rebuild_oracle_data_directory_report_path_prevents_rebuild(
+def test_rebuild_source_factory_bad_report_dir_prevents_run(
     monkeypatch,
     tmp_path,
 ) -> None:
     called = False
 
-    def fake_rebuild_oracle_data(provider_id, **kwargs):  # noqa: ANN001
+    def fake_run_source_factory_rebuild(provider_id, **kwargs):  # noqa: ANN001
         nonlocal called
         called = True
-        return FakeOracleCliResult(provider_id, dry_run=True)
-
-    monkeypatch.setattr(cli_module, "rebuild_oracle_data", fake_rebuild_oracle_data)
-
-    result = runner.invoke(
-        app,
-        ["rebuild-oracle-data", "stm", "--report-path", str(tmp_path)],
-    )
-
-    assert result.exit_code == 2
-    assert "Invalid value" in result.output
-    assert called is False
-
-
-def test_rebuild_oracle_data_surfaces_guardrail_failure_as_invalid_parameter(
-    monkeypatch,
-) -> None:
-    def fake_rebuild_oracle_data(provider_id, **kwargs):  # noqa: ANN001
-        raise ValueError("guardrail failed")
-
-    monkeypatch.setattr(cli_module, "rebuild_oracle_data", fake_rebuild_oracle_data)
-
-    result = runner.invoke(app, ["rebuild-oracle-data", "stm", "--execute"])
-
-    assert result.exit_code == 2
-    assert "Invalid value: guardrail failed" in result.output
-
-
-def test_rebuild_beta_static_help() -> None:
-    result = runner.invoke(app, ["rebuild-beta-static", "--help"])
-
-    assert result.exit_code == 0
-    assert "Hard-rebuild beta static Silver and Gold" in result.stdout
-    assert "--execute" in result.stdout
-    assert "--delete-r2" in result.stdout
-    assert "--confirm-r2-active-prefix-wipe" in result.stdout
-
-
-class FakeBetaStaticCliResult:
-    def __init__(self, provider_id: str, dry_run: bool) -> None:
-        self.provider_id = provider_id
-        self.dry_run = dry_run
-
-    def display_dict(self) -> dict[str, object]:
-        return {
-            "provider_id": self.provider_id,
-            "dry_run": self.dry_run,
-            "completed_at_utc": "2026-05-24T12:00:00+00:00",
-        }
-
-
-def test_rebuild_beta_static_passes_flags_options(monkeypatch) -> None:
-    recorded: dict[str, object] = {}
-
-    def fake_rebuild_beta_static_contract(
-        provider_id,
-        *,
-        execute,
-        delete_r2,
-        confirm_reset,
-        confirm_worker_stopped,
-        confirm_r2_active_prefix_wipe,
-        settings,
-        pre_cleanup_report_path,
-    ):  # noqa: ANN001
-        recorded.update(
-            {
-                "provider_id": provider_id,
-                "execute": execute,
-                "delete_r2": delete_r2,
-                "confirm_reset": confirm_reset,
-                "confirm_worker_stopped": confirm_worker_stopped,
-                "confirm_r2_active_prefix_wipe": confirm_r2_active_prefix_wipe,
-                "settings": settings,
-                "pre_cleanup_report_path": pre_cleanup_report_path,
-            }
-        )
-        return FakeBetaStaticCliResult(provider_id, dry_run=not execute)
+        return FakeSourceFactoryCliResult(provider_id, execute=False)
 
     monkeypatch.setattr(
         cli_module,
-        "rebuild_beta_static_contract",
-        fake_rebuild_beta_static_contract,
+        "run_source_factory_rebuild",
+        fake_run_source_factory_rebuild,
     )
 
     result = runner.invoke(
         app,
         [
-            "rebuild-beta-static",
+            "rebuild-source-factory",
             "stm",
-            "--execute",
-            "--delete-r2",
-            "--confirm-reset",
-            "--confirm-worker-stopped",
-            "--confirm-r2-active-prefix-wipe",
+            "--report-dir",
+            str(tmp_path / "missing" / "slice-8.6"),
         ],
     )
 
-    assert result.exit_code == 0
-    assert recorded["provider_id"] == "stm"
-    assert recorded["execute"] is True
-    assert recorded["delete_r2"] is True
-    assert recorded["confirm_reset"] is True
-    assert recorded["confirm_worker_stopped"] is True
-    assert recorded["confirm_r2_active_prefix_wipe"] is True
-    assert '"dry_run": false' in result.stdout
+    assert result.exit_code == 2
+    assert "--report-dir parent directory does not exist" in result.output
+    assert called is False
 
 
-def test_rebuild_beta_static_writes_report_path(monkeypatch, tmp_path) -> None:
-    report_path = tmp_path / "beta-static-report.json"
+def test_rebuild_source_factory_execute_requires_destructive_cleanup_gate() -> None:
+    result = runner.invoke(app, ["rebuild-source-factory", "stm", "--execute"])
+
+    assert result.exit_code == 2
+    assert "--destructive-r2-cleanup is required with --execute" in result.output
+
+
+def test_rebuild_source_factory_surfaces_guardrail_failure_as_invalid_parameter(
+    monkeypatch,
+) -> None:
+    def fake_run_source_factory_rebuild(provider_id, **kwargs):  # noqa: ANN001
+        raise ValueError("guardrail failed")
 
     monkeypatch.setattr(
         cli_module,
-        "rebuild_beta_static_contract",
-        lambda provider_id, **kwargs: FakeBetaStaticCliResult(provider_id, dry_run=True),
+        "run_source_factory_rebuild",
+        fake_run_source_factory_rebuild,
     )
 
     result = runner.invoke(
         app,
-        ["rebuild-beta-static", "stm", "--report-path", str(report_path)],
+        ["rebuild-source-factory", "stm", "--execute", "--destructive-r2-cleanup"],
     )
 
-    assert result.exit_code == 0
-    assert json.loads(report_path.read_text()) == {
-        "provider_id": "stm",
-        "dry_run": True,
-        "completed_at_utc": "2026-05-24T12:00:00+00:00",
-    }
-    assert '"provider_id": "stm"' in result.stdout
+    assert result.exit_code == 2
+    assert "Invalid value: guardrail failed" in result.output
 
 
 def test_prune_warm_rollup_storage_help() -> None:

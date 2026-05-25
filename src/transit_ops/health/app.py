@@ -43,7 +43,7 @@ def create_app(
             components=components,
         )
         return JSONResponse(
-            status_code=503 if overall.status == "down" else 200,
+            status_code=200 if overall.status == "ok" else 503,
             content=overall.display_dict(),
         )
 

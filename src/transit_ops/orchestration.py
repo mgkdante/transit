@@ -19,7 +19,9 @@ from transit_ops.gold import (
     refresh_gold_static,
 )
 from transit_ops.ingestion import (
+    build_i3_ingestion_config,
     build_realtime_ingestion_config,
+    capture_i3_alerts,
     capture_realtime_feed,
     ingest_static_feed,
 )
@@ -33,11 +35,14 @@ from transit_ops.maintenance import (
 from transit_ops.providers import ProviderRegistry
 from transit_ops.settings import Settings, get_settings
 from transit_ops.silver import (
+    load_latest_i3_to_silver,
     load_latest_realtime_to_silver,
     load_latest_static_to_silver,
 )
 
-REALTIME_ENDPOINTS = ("trip_updates", "vehicle_positions")
+GTFS_REALTIME_ENDPOINTS = ("trip_updates", "vehicle_positions")
+I3_ALERT_ENDPOINT = "i3_alerts"
+REALTIME_ENDPOINTS = (*GTFS_REALTIME_ENDPOINTS, I3_ALERT_ENDPOINT)
 
 logger = logging.getLogger(__name__)
 
@@ -444,6 +449,129 @@ def _capture_and_load_endpoint(
     )
 
 
+def _capture_and_load_i3_alerts(
+    provider_id: str,
+    *,
+    settings: Settings,
+    registry: ProviderRegistry,
+    engine: Engine,
+) -> RealtimeEndpointCycleResult:
+    endpoint_started_at = time.perf_counter()
+    capture_duration_seconds: float | None = None
+    silver_load_duration_seconds: float | None = None
+
+    logger.info("Running i3 alert capture step for provider '%s'.", provider_id)
+    capture_started_at = time.perf_counter()
+    try:
+        capture_result, capture_duration_seconds = _run_timed_realtime_step(
+            f"capture-i3[{I3_ALERT_ENDPOINT}]",
+            lambda: capture_i3_alerts(
+                provider_id,
+                settings=settings,
+                registry=registry,
+                engine=engine,
+            ),
+        )
+    except Exception as exc:
+        if capture_duration_seconds is None:
+            capture_duration_seconds = round(
+                time.perf_counter() - capture_started_at,
+                3,
+            )
+        logger.error(
+            "Realtime cycle i3 capture failed for provider '%s': %s",
+            provider_id,
+            exc,
+        )
+        return RealtimeEndpointCycleResult(
+            endpoint_key=I3_ALERT_ENDPOINT,
+            status="failed",
+            capture_duration_seconds=capture_duration_seconds,
+            silver_load_duration_seconds=silver_load_duration_seconds,
+            total_endpoint_duration_seconds=round(
+                time.perf_counter() - endpoint_started_at,
+                3,
+            ),
+            capture_result=None,
+            silver_load_result=None,
+            error_message=f"capture-i3 failed: {exc}",
+        )
+
+    logger.info("Running i3 alert Silver load step for provider '%s'.", provider_id)
+    silver_load_started_at = time.perf_counter()
+    try:
+        silver_load_result, silver_load_duration_seconds = _run_timed_realtime_step(
+            f"load-i3-silver[{I3_ALERT_ENDPOINT}]",
+            lambda: load_latest_i3_to_silver(
+                provider_id,
+                settings=settings,
+                engine=engine,
+            ),
+        )
+    except Exception as exc:
+        if silver_load_duration_seconds is None:
+            silver_load_duration_seconds = round(
+                time.perf_counter() - silver_load_started_at,
+                3,
+            )
+        logger.error(
+            "Realtime cycle i3 Silver load failed for provider '%s': %s",
+            provider_id,
+            exc,
+        )
+        return RealtimeEndpointCycleResult(
+            endpoint_key=I3_ALERT_ENDPOINT,
+            status="failed",
+            capture_duration_seconds=capture_duration_seconds,
+            silver_load_duration_seconds=silver_load_duration_seconds,
+            total_endpoint_duration_seconds=round(
+                time.perf_counter() - endpoint_started_at,
+                3,
+            ),
+            capture_result=capture_result.display_dict(),
+            silver_load_result=None,
+            error_message=f"load-i3-silver failed: {exc}",
+        )
+
+    return RealtimeEndpointCycleResult(
+        endpoint_key=I3_ALERT_ENDPOINT,
+        status="succeeded",
+        capture_duration_seconds=capture_duration_seconds,
+        silver_load_duration_seconds=silver_load_duration_seconds,
+        total_endpoint_duration_seconds=round(
+            time.perf_counter() - endpoint_started_at,
+            3,
+        ),
+        capture_result=capture_result.display_dict(),
+        silver_load_result=silver_load_result.display_dict(),
+        error_message=None,
+    )
+
+
+def _capture_and_load_realtime_source(
+    provider_id: str,
+    endpoint_key: str,
+    *,
+    settings: Settings,
+    registry: ProviderRegistry,
+    engine: Engine,
+) -> RealtimeEndpointCycleResult:
+    if endpoint_key == I3_ALERT_ENDPOINT:
+        return _capture_and_load_i3_alerts(
+            provider_id,
+            settings=settings,
+            registry=registry,
+            engine=engine,
+        )
+    return _capture_and_load_endpoint(
+        provider_id,
+        endpoint_key,
+        settings=settings,
+        registry=registry,
+        engine=engine,
+    )
+
+
 def run_realtime_cycle(
     provider_id: str,
     *,
@@ -459,7 +587,7 @@ def run_realtime_cycle(
 
     logger.info("Starting realtime cycle for provider '%s'.", provider_id)
     endpoint_results = [
-        _capture_and_load_endpoint(
+        _capture_and_load_realtime_source(
             provider_id,
             endpoint_key,
             settings=settings,
@@ -609,8 +737,9 @@ def _validate_realtime_worker_startup(
         raise ValueError("REALTIME_STARTUP_DELAY_SECONDS must be 0 or greater.")
 
     manifest = registry.get_provider(provider_id)
-    for endpoint_key in REALTIME_ENDPOINTS:
+    for endpoint_key in GTFS_REALTIME_ENDPOINTS:
         build_realtime_ingestion_config(manifest, settings, endpoint_key)
+    build_i3_ingestion_config(manifest, settings)
     return manifest
 
 

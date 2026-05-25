@@ -76,10 +76,18 @@ class OverallHealthResult:
         return {
             "status": self.status,
             "checked_at_utc": self.checked_at_utc.isoformat(),
+            "needs_attention": self.status != "ok",
+            "component_counts": self.component_counts(),
             "components": [
                 component.display_dict() for component in self.components
             ],
         }
+
+    def component_counts(self) -> dict[HealthStatus, int]:
+        counts: dict[HealthStatus, int] = {status: 0 for status in HEALTH_STATUSES}
+        for component in self.components:
+            counts[_validate_health_status(component.status)] += 1
+        return counts
 
 
 def aggregate_health_status(

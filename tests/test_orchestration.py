@@ -8,14 +8,14 @@ import pytest
 
 import transit_ops.orchestration as orchestration
 from transit_ops.gold import GoldBuildResult, GoldRealtimeRefreshResult, GoldStaticRefreshResult
-from transit_ops.ingestion import RealtimeIngestionResult, StaticIngestionResult
+from transit_ops.ingestion import I3IngestionResult, RealtimeIngestionResult, StaticIngestionResult
 from transit_ops.orchestration import (
     run_realtime_cycle,
     run_realtime_worker_loop,
     run_static_pipeline,
 )
 from transit_ops.settings import Settings
-from transit_ops.silver import RealtimeSilverLoadResult, StaticSilverLoadResult
+from transit_ops.silver import I3SilverLoadResult, RealtimeSilverLoadResult, StaticSilverLoadResult
 
 
 class _FakeEngine:
@@ -163,6 +163,39 @@ def _realtime_silver_result(endpoint_key: str, snapshot_id: int) -> RealtimeSilv
     )
 
 
+def _i3_ingestion_result(snapshot_id: int = 30) -> I3IngestionResult:
+    return I3IngestionResult(
+        provider_id="stm",
+        endpoint_key="i3_alerts",
+        feed_kind="i3_alerts",
+        source_url="https://example.com/i3.json",
+        storage_backend="s3",
+        storage_path="stm/i3_alerts/sample.json",
+        archive_full_path="s3://transit-raw/stm/i3_alerts/sample.json",
+        byte_size=100,
+        checksum_sha256="e" * 64,
+        http_status_code=200,
+        ingestion_run_id=snapshot_id,
+        ingestion_object_id=snapshot_id + 100,
+        i3_alert_snapshot_id=snapshot_id + 200,
+        api_version="2",
+        alert_count=4,
+        status="succeeded",
+        started_at_utc=datetime(2026, 3, 25, 0, 0, 0, tzinfo=UTC),
+        completed_at_utc=datetime(2026, 3, 25, 0, 0, 1, tzinfo=UTC),
+    )
+
+
+def _i3_silver_result(snapshot_id: int = 230) -> I3SilverLoadResult:
+    return I3SilverLoadResult(
+        provider_id="stm",
+        i3_alert_snapshot_id=snapshot_id,
+        alert_rows_inserted=4,
+        informed_entity_rows_inserted=9,
+        loaded_at_utc=datetime(2026, 3, 25, 0, 0, 2, tzinfo=UTC),
+    )
+
+
 def test_run_static_pipeline_orders_existing_steps(monkeypatch) -> None:
     call_order: list[str] = []
 
@@ -227,6 +260,24 @@ def test_run_realtime_cycle_reports_partial_failure_and_continues(monkeypatch) -
     monkeypatch.setattr(orchestration, "load_latest_realtime_to_silver", fake_load)
     monkeypatch.setattr(
         orchestration,
+        "capture_i3_alerts",
+        lambda provider_id, settings, registry, engine: (
+            call_order.append("capture:i3_alerts"),
+            _i3_ingestion_result(),
+        )[1],
+        raising=False,
+    )
+    monkeypatch.setattr(
+        orchestration,
+        "load_latest_i3_to_silver",
+        lambda provider_id, settings, engine: (
+            call_order.append("load:i3_alerts"),
+            _i3_silver_result(),
+        )[1],
+        raising=False,
+    )
+    monkeypatch.setattr(
+        orchestration,
         "refresh_gold_realtime",
         lambda provider_id, settings, registry, engine: (
             call_order.append("refresh-gold-realtime"),
@@ -265,12 +316,14 @@ def test_run_realtime_cycle_reports_partial_failure_and_continues(monkeypatch) -
         "capture:trip_updates",
         "load:trip_updates",
         "capture:vehicle_positions",
+        "capture:i3_alerts",
+        "load:i3_alerts",
         "refresh-gold-realtime",
         "prune-silver-storage",
         "prune-gold-storage",
     ]
     assert result.status == "partial_failure"
-    assert result.successful_endpoint_count == 1
+    assert result.successful_endpoint_count == 2
     assert result.failed_endpoint_count == 1
     assert result.total_duration_seconds >= 0
     assert result.gold_build is not None
@@ -281,6 +334,8 @@ def test_run_realtime_cycle_reports_partial_failure_and_continues(monkeypatch) -
     assert result.step_timings_seconds["load_trip_updates_to_silver"] is not None
     assert result.step_timings_seconds["capture_vehicle_positions"] is not None
     assert result.step_timings_seconds["load_vehicle_positions_to_silver"] is None
+    assert result.step_timings_seconds["capture_i3_alerts"] is not None
+    assert result.step_timings_seconds["load_i3_alerts_to_silver"] is not None
     assert result.step_timings_seconds["refresh_gold_realtime"] is not None
     assert result.step_timings_seconds["prune_silver_storage"] is not None
     assert result.step_timings_seconds["prune_gold_storage"] is not None
@@ -296,6 +351,8 @@ def test_run_realtime_cycle_reports_partial_failure_and_continues(monkeypatch) -
         result.endpoint_results[1].error_message
         == "capture-realtime failed: vehicle endpoint down"
     )
+    assert result.endpoint_results[2].endpoint_key == "i3_alerts"
+    assert result.endpoint_results[2].status == "succeeded"
 
 
 def test_run_realtime_worker_loop_targets_start_to_start_cadence(

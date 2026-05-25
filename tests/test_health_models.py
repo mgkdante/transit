@@ -104,6 +104,8 @@ def test_overall_health_result_down_wins_over_degraded_and_ok() -> None:
     assert result.display_dict() == {
         "status": "down",
         "checked_at_utc": "2026-05-22T12:45:00+00:00",
+        "needs_attention": True,
+        "component_counts": {"ok": 1, "degraded": 1, "down": 1},
         "components": [
             {
                 "name": "worker",
@@ -151,6 +153,37 @@ def test_overall_health_result_degraded_wins_over_ok() -> None:
     )
 
     assert result.status == "degraded"
+    assert result.display_dict()["needs_attention"] is True
+    assert result.display_dict()["component_counts"] == {
+        "ok": 1,
+        "degraded": 1,
+        "down": 0,
+    }
+
+
+def test_overall_health_result_ok_has_no_attention_flag_and_counts() -> None:
+    result = OverallHealthResult.from_components(
+        checked_at_utc=datetime(2026, 5, 22, 12, 45, tzinfo=UTC),
+        components=[
+            ComponentHealthResult(
+                name="database",
+                status="ok",
+                message="connected",
+            ),
+            ComponentHealthResult(
+                name="worker",
+                status="ok",
+                message="running",
+            ),
+        ],
+    )
+
+    assert result.display_dict()["needs_attention"] is False
+    assert result.display_dict()["component_counts"] == {
+        "ok": 2,
+        "degraded": 0,
+        "down": 0,
+    }
 
 
 def test_aggregate_health_status_rejects_unknown_component_status() -> None:

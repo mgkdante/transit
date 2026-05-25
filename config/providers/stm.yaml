@@ -18,12 +18,12 @@ feeds:
     endpoint_key: static_schedule
     feed_kind: static_schedule
     source_format: gtfs_schedule_zip
-    source_url: https://www.stm.info/sites/default/files/gtfs/gtfs_stm_26m-beta.zip
+    source_url: https://www.stm.info/sites/default/files/gtfs/gtfs_stm.zip
     source_url_env_var: STM_STATIC_GTFS_URL
     documentation_url: https://www.stm.info/fr/node/529
     auth:
       auth_type: none
-      notes: Beta-first production static contract during the June 2026 rebuild campaign. Point this back to the canonical gtfs_stm.zip URL once STM promotes the beta schema.
+      notes: Live current static schedule used to join STM GTFS-RT trip updates to stop_times for computed delay facts.
     refresh_interval_seconds: 86400
     is_enabled: true
 
@@ -73,13 +73,13 @@ feeds:
     endpoint_key: i3_alerts
     feed_kind: i3_alerts
     source_format: api_i3_json
-    source_url: https://api.stm.info/pub/od/i3/v2/messages
+    source_url: https://api.stm.info/pub/od/i3/v2/messages/etatservice
     source_url_env_var: STM_I3_ALERTS_URL
     documentation_url: https://www.stm.info/fr/node/529
     auth:
       auth_type: api_key
       credential_env_var: STM_API_KEY
       auth_header_name: apiKey
-      notes: Optional API i3 alert feed. Keep endpoint configurable because STM portal access may expose provider-specific paths.
-    refresh_interval_seconds: 60
+      notes: Optional API i3 service-state alert feed. Keep endpoint configurable because STM portal access may expose provider-specific paths.
+    refresh_interval_seconds: 30
     is_enabled: true

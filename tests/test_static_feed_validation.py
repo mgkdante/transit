@@ -106,19 +106,19 @@ def _artifact(path: Path, source_url: str) -> DownloadedArtifact:
     )
 
 
-def test_validate_static_feeds_reports_active_beta_static_schedule_ok(
+def test_validate_static_feeds_reports_active_static_schedule_ok(
     tmp_path: Path,
 ) -> None:
-    beta_zip = tmp_path / "beta.zip"
-    _write_gtfs_zip(beta_zip, route_id="2")
+    active_static_zip = tmp_path / "static.zip"
+    _write_gtfs_zip(active_static_zip, route_id="2")
     registry = FakeRegistry(
-        FakeProvider({"static_schedule": FakeFeed("https://example.test/beta.zip")})
+        FakeProvider({"static_schedule": FakeFeed("https://example.test/static.zip")})
     )
 
     def fake_downloader(*, source_url: str, temp_dir: Path) -> DownloadedArtifact:
         assert temp_dir.exists()
-        assert source_url == "https://example.test/beta.zip"
-        return _artifact(beta_zip, source_url)
+        assert source_url == "https://example.test/static.zip"
+        return _artifact(active_static_zip, source_url)
 
     result = validate_static_feeds("stm", registry=registry, downloader=fake_downloader)
     display = result.display_dict()
@@ -127,31 +127,35 @@ def test_validate_static_feeds_reports_active_beta_static_schedule_ok(
     assert "current" not in display
     assert "comparison" not in display
     assert "static_schedule_current_fallback" not in str(display)
-    assert display["beta"]["status"] == "ok"
-    assert display["beta"]["endpoint_key"] == "static_schedule"
-    assert display["beta"]["row_counts"]["routes.txt"] == 1
-    assert display["beta"]["row_counts"]["stop_times.txt"] == 1
-    assert display["beta"]["required_members_present"] == [
+    assert "beta" not in display
+    assert display["active_static"]["label"] == "active_static"
+    assert display["active_static"]["status"] == "ok"
+    assert display["active_static"]["endpoint_key"] == "static_schedule"
+    assert display["active_static"]["row_counts"]["routes.txt"] == 1
+    assert display["active_static"]["row_counts"]["stop_times.txt"] == 1
+    assert display["active_static"]["required_members_present"] == [
         "routes.txt",
         "stop_times.txt",
         "stops.txt",
         "trips.txt",
     ]
-    assert display["beta"]["optional_service_members_present"] == ["calendar_dates.txt"]
+    assert display["active_static"]["optional_service_members_present"] == [
+        "calendar_dates.txt"
+    ]
 
 
 def test_validate_static_feeds_reports_beta_schema_contract_inventory(
     tmp_path: Path,
 ) -> None:
-    beta_zip = tmp_path / "beta.zip"
-    _write_beta_contract_gtfs_zip(beta_zip)
+    future_contract_zip = tmp_path / "future-contract.zip"
+    _write_beta_contract_gtfs_zip(future_contract_zip)
     registry = FakeRegistry(
-        FakeProvider({"static_schedule": FakeFeed("https://example.test/beta.zip")})
+        FakeProvider({"static_schedule": FakeFeed("https://example.test/static.zip")})
     )
 
     def fake_downloader(*, source_url: str, temp_dir: Path) -> DownloadedArtifact:
-        assert source_url == "https://example.test/beta.zip"
-        return _artifact(beta_zip, source_url)
+        assert source_url == "https://example.test/static.zip"
+        return _artifact(future_contract_zip, source_url)
 
     result = validate_static_feeds("stm", registry=registry, downloader=fake_downloader)
     display = result.display_dict()
@@ -187,7 +191,7 @@ def test_validate_static_feeds_reports_beta_schema_contract_inventory(
         "wheelchair_accessible",
         "route_pattern_id",
     ]
-    assert display["schema_comparison"]["beta_first_contract_members"] == [
+    assert display["schema_comparison"]["future_contract_members_present"] == [
         "directions.txt",
         "feed_info.txt",
         "route_patterns.txt",
@@ -195,7 +199,7 @@ def test_validate_static_feeds_reports_beta_schema_contract_inventory(
         "shapes.txt",
         "trips.txt",
     ]
-    assert display["beta"]["feed_info_rows"] == [
+    assert display["active_static"]["feed_info_rows"] == [
         {
             "feed_publisher_name": "STM",
             "feed_publisher_url": "https://www.stm.info",
@@ -205,7 +209,7 @@ def test_validate_static_feeds_reports_beta_schema_contract_inventory(
             "feed_version": "20260505090000_26M",
         }
     ]
-    assert display["beta"]["member_headers"]["route_patterns.txt"] == [
+    assert display["active_static"]["member_headers"]["route_patterns.txt"] == [
         "route_pattern_id",
         "route_id",
         "direction_id",
@@ -213,7 +217,7 @@ def test_validate_static_feeds_reports_beta_schema_contract_inventory(
     ]
 
 
-def test_validate_static_feeds_reports_missing_beta_url_as_unavailable() -> None:
+def test_validate_static_feeds_reports_missing_active_static_as_unavailable() -> None:
     registry = FakeRegistry(FakeProvider({}))
 
     def fake_downloader(*, source_url: str, temp_dir: Path) -> DownloadedArtifact:
@@ -224,53 +228,55 @@ def test_validate_static_feeds_reports_missing_beta_url_as_unavailable() -> None
 
     assert "current" not in display
     assert "comparison" not in display
-    assert display["beta"]["status"] == "unavailable"
-    assert display["beta"]["endpoint_key"] == "static_schedule"
-    assert display["beta"]["error_type"] == "missing_feed"
+    assert "beta" not in display
+    assert display["active_static"]["status"] == "unavailable"
+    assert display["active_static"]["endpoint_key"] == "static_schedule"
+    assert display["active_static"]["error_type"] == "missing_feed"
 
 
 def test_validate_static_feeds_reports_download_failure_as_unavailable() -> None:
     registry = FakeRegistry(
-        FakeProvider({"static_schedule": FakeFeed("https://example.test/beta.zip")})
+        FakeProvider({"static_schedule": FakeFeed("https://example.test/static.zip")})
     )
 
     def fake_downloader(*, source_url: str, temp_dir: Path) -> DownloadedArtifact:
-        assert source_url == "https://example.test/beta.zip"
+        assert source_url == "https://example.test/static.zip"
         raise OSError("network unavailable")
 
     result = validate_static_feeds("stm", registry=registry, downloader=fake_downloader)
     display = result.display_dict()
 
     assert "current" not in display
-    assert display["beta"]["status"] == "unavailable"
-    assert display["beta"]["error_type"] == "download_error"
-    assert "network unavailable" in display["beta"]["message"]
+    assert "beta" not in display
+    assert display["active_static"]["status"] == "unavailable"
+    assert display["active_static"]["error_type"] == "download_error"
+    assert "network unavailable" in display["active_static"]["message"]
 
 
 def test_validate_static_feeds_preserves_injected_artifact_paths_outside_temp_dir(
     tmp_path: Path,
 ) -> None:
-    beta_zip = tmp_path / "cached-beta.zip"
-    _write_gtfs_zip(beta_zip)
+    static_zip = tmp_path / "cached-static.zip"
+    _write_gtfs_zip(static_zip)
     registry = FakeRegistry(
-        FakeProvider({"static_schedule": FakeFeed("https://example.test/beta.zip")})
+        FakeProvider({"static_schedule": FakeFeed("https://example.test/static.zip")})
     )
 
     def fake_downloader(*, source_url: str, temp_dir: Path) -> DownloadedArtifact:
-        assert not beta_zip.is_relative_to(temp_dir)
-        return _artifact(beta_zip, source_url)
+        assert not static_zip.is_relative_to(temp_dir)
+        return _artifact(static_zip, source_url)
 
     result = validate_static_feeds("stm", registry=registry, downloader=fake_downloader)
 
-    assert result.beta.status == "ok"
-    assert beta_zip.exists()
+    assert result.active_static.status == "ok"
+    assert static_zip.exists()
 
 
 def test_validate_static_feeds_reports_invalid_zip_without_raising(tmp_path: Path) -> None:
     invalid_zip = tmp_path / "not-a-zip.zip"
     invalid_zip.write_text("not a zip", encoding="utf-8")
     registry = FakeRegistry(
-        FakeProvider({"static_schedule": FakeFeed("https://example.test/beta.zip")})
+        FakeProvider({"static_schedule": FakeFeed("https://example.test/static.zip")})
     )
 
     def fake_downloader(*, source_url: str, temp_dir: Path) -> DownloadedArtifact:
@@ -280,23 +286,24 @@ def test_validate_static_feeds_reports_invalid_zip_without_raising(tmp_path: Pat
     display = result.display_dict()
 
     assert "current" not in display
-    assert display["beta"]["status"] == "invalid"
-    assert display["beta"]["error_type"] == "invalid_zip"
-    assert "ZIP" in display["beta"]["message"]
+    assert "beta" not in display
+    assert display["active_static"]["status"] == "invalid"
+    assert display["active_static"]["error_type"] == "invalid_zip"
+    assert "ZIP" in display["active_static"]["message"]
 
 
 def test_validate_static_feeds_reports_archive_parse_failure_not_download_error(
     monkeypatch, tmp_path: Path
 ) -> None:
-    beta_zip = tmp_path / "bad-encoding.zip"
-    _write_gtfs_zip(beta_zip)
+    static_zip = tmp_path / "bad-encoding.zip"
+    _write_gtfs_zip(static_zip)
     registry = FakeRegistry(
-        FakeProvider({"static_schedule": FakeFeed("https://example.test/beta.zip")})
+        FakeProvider({"static_schedule": FakeFeed("https://example.test/static.zip")})
     )
     original_count_member_rows = static_feed_validation._count_member_rows
 
     def fake_count_member_rows(zip_file, member_name, member_key):  # noqa: ANN001
-        if Path(zip_file.filename) == beta_zip and member_key == "routes.txt":
+        if Path(zip_file.filename) == static_zip and member_key == "routes.txt":
             raise csv.Error("broken csv")
         return original_count_member_rows(zip_file, member_name, member_key)
 
@@ -307,34 +314,34 @@ def test_validate_static_feeds_reports_archive_parse_failure_not_download_error(
     )
 
     def fake_downloader(*, source_url: str, temp_dir: Path) -> DownloadedArtifact:
-        return _artifact(beta_zip, source_url)
+        return _artifact(static_zip, source_url)
 
     result = validate_static_feeds("stm", registry=registry, downloader=fake_downloader)
     display = result.display_dict()
 
-    assert display["beta"]["status"] == "invalid"
-    assert display["beta"]["error_type"] == "archive_validation"
-    assert display["beta"]["error_type"] != "download_error"
+    assert display["active_static"]["status"] == "invalid"
+    assert display["active_static"]["error_type"] == "archive_validation"
+    assert display["active_static"]["error_type"] != "download_error"
 
 
 def test_validate_static_feeds_reports_missing_required_member_as_invalid(
     tmp_path: Path,
 ) -> None:
-    beta_zip = tmp_path / "beta.zip"
-    _write_gtfs_zip(beta_zip, include_stop_times=False)
+    static_zip = tmp_path / "static.zip"
+    _write_gtfs_zip(static_zip, include_stop_times=False)
     registry = FakeRegistry(
-        FakeProvider({"static_schedule": FakeFeed("https://example.test/beta.zip")})
+        FakeProvider({"static_schedule": FakeFeed("https://example.test/static.zip")})
     )
 
     def fake_downloader(*, source_url: str, temp_dir: Path) -> DownloadedArtifact:
-        return _artifact(beta_zip, source_url)
+        return _artifact(static_zip, source_url)
 
     result = validate_static_feeds("stm", registry=registry, downloader=fake_downloader)
     display = result.display_dict()
 
-    assert display["beta"]["status"] == "invalid"
-    assert display["beta"]["error_type"] == "schema_validation"
-    assert "stop_times.txt" in display["beta"]["message"]
+    assert display["active_static"]["status"] == "invalid"
+    assert display["active_static"]["error_type"] == "schema_validation"
+    assert "stop_times.txt" in display["active_static"]["message"]
 
 
 def test_validate_static_feeds_does_not_swallow_unexpected_archive_bug(

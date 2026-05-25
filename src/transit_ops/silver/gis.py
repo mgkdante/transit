@@ -354,11 +354,42 @@ def _parse_crs(prj_text: str | None) -> _CrsInfo:
     if epsg_match is None:
         epsg_match = re.search(r"EPSG[:\", ]+(\d+)", prj_text, re.IGNORECASE)
     name_match = re.search(r'(?:PROJCS|GEOGCS)\["([^"]+)"', prj_text, re.IGNORECASE)
+    name = name_match.group(1) if name_match else None
+    epsg = int(epsg_match.group(1)) if epsg_match else _infer_epsg_from_prj(prj_text, name)
     return _CrsInfo(
-        name=name_match.group(1) if name_match else None,
-        epsg=int(epsg_match.group(1)) if epsg_match else None,
+        name=name,
+        epsg=epsg,
         wkt=prj_text,
     )
+
+
+def _infer_epsg_from_prj(prj_text: str, name: str | None) -> int | None:
+    normalized_name = re.sub(r"[^a-z0-9]+", "", (name or "").lower())
+    if normalized_name != "nad1983mtm8":
+        return None
+    if "D_North_American_1983" not in prj_text and "North_American_Datum_1983" not in prj_text:
+        return None
+    parameter_expectations = {
+        "False_Easting": 304800.0,
+        "False_Northing": 0.0,
+        "Central_Meridian": -73.5,
+        "Scale_Factor": 0.9999,
+        "Latitude_Of_Origin": 0.0,
+    }
+    for parameter_name, expected_value in parameter_expectations.items():
+        actual_value = _prj_parameter_float(prj_text, parameter_name)
+        if actual_value is None or abs(actual_value - expected_value) > 0.000001:
+            return None
+    return 32188
+
+
+def _prj_parameter_float(prj_text: str, parameter_name: str) -> float | None:
+    match = re.search(
+        rf'PARAMETER\["{re.escape(parameter_name)}"\s*,\s*(-?\d+(?:\.\d+)?)\]',
+        prj_text,
+        re.IGNORECASE,
+    )
+    return float(match.group(1)) if match else None
 
 
 def _shapefile_member_groups(zip_file: ZipFile) -> dict[str, dict[str, str]]:

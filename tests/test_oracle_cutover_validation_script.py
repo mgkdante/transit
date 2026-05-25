@@ -41,6 +41,18 @@ def _stubbed_env(
         "&& \"$*\" == *\"${FAKE_CURL_FAIL_PATTERN}\"* ]]; then\n"
         "  exit 22\n"
         "fi\n"
+        "status=\"${FAKE_CURL_HTTP_CODE:-200}\"\n"
+        "if [[ \"$*\" == *'/health/live'* ]]; then\n"
+        "  status=\"${FAKE_HEALTH_LIVE_HTTP_CODE:-200}\"\n"
+        "elif [[ \"$*\" == *'/health'* ]]; then\n"
+        "  status=\"${FAKE_HEALTH_HTTP_CODE:-200}\"\n"
+        "fi\n"
+        "if [[ \"$*\" == *'--fail'* && \"$status\" =~ ^[45] ]]; then\n"
+        "  exit 22\n"
+        "fi\n"
+        "if [[ \"$*\" == *'--write-out'* ]]; then\n"
+        "  printf '\\n%s' \"$status\"\n"
+        "fi\n"
         "exit 0\n",
     )
     _make_executable(
@@ -66,7 +78,18 @@ def _stubbed_env(
         bin_dir / "ssh",
         "#!/usr/bin/env bash\n"
         "printf 'ssh|%s\\n' \"$*\" >> \"$COMMAND_LOG\"\n"
-        "exit \"${FAKE_SSH_EXIT_CODE:-0}\"\n",
+        "exit_code=\"${FAKE_SSH_EXIT_CODE:-0}\"\n"
+        "if [[ \"$exit_code\" != 0 ]]; then\n"
+        "  exit \"$exit_code\"\n"
+        "fi\n"
+        "if [[ \"$*\" == *'--write-out'* ]]; then\n"
+        "  if [[ \"$*\" == *'/health/live'* ]]; then\n"
+        "    printf '\\n%s' \"${FAKE_HEALTH_LIVE_HTTP_CODE:-200}\"\n"
+        "  else\n"
+        "    printf '\\n%s' \"${FAKE_HEALTH_HTTP_CODE:-200}\"\n"
+        "  fi\n"
+        "fi\n"
+        "exit 0\n",
     )
     if include_psql:
         _make_executable(
@@ -162,7 +185,7 @@ def test_validate_oracle_cutover_reports_success_without_mutating_systems(
     assert result.returncode == 0, result.stderr
     assert "PASS Git readiness:" in result.stdout
     assert "PASS Health endpoint /health/live: reachable" in result.stdout
-    assert "PASS Health endpoint /health: reachable" in result.stdout
+    assert "PASS Health endpoint /health: status ok" in result.stdout
     assert "PASS Realtime freshness: vehicle_age=120s, trip_age=90s" in (
         result.stdout
     )
@@ -183,7 +206,8 @@ def test_validate_oracle_cutover_reports_success_without_mutating_systems(
         "https://transit.example.com/health/live"
     ) in log_lines
     assert (
-        "curl|--fail --silent --show-error --location --max-time 15 "
+        "curl|--silent --show-error --location --max-time 15 "
+        "--write-out \\n%{http_code} "
         "https://transit.example.com/health"
     ) in log_lines
     assert (
@@ -260,7 +284,7 @@ def test_validate_oracle_cutover_can_check_health_through_ssh(
 
     assert result.returncode == 0, result.stderr
     assert "PASS Health endpoint /health/live: reachable" in result.stdout
-    assert "PASS Health endpoint /health: reachable" in result.stdout
+    assert "PASS Health endpoint /health: status ok" in result.stdout
 
     log_lines = _read_log(tmp_path / "commands.log")
     assert any(
@@ -269,6 +293,23 @@ def test_validate_oracle_cutover_can_check_health_through_ssh(
         and "http://127.0.0.1:8080/health/live" in line
         for line in log_lines
     )
+    assert any(
+        line.startswith("ssh|-i /tmp/transit-key -o BatchMode=yes -o ConnectTimeout=8 ")
+        and "ubuntu@db.transit.yesid.dev" in line
+        and "http://127.0.0.1:8080/health" in line
+        and "--write-out" in line
+        for line in log_lines
+    )
+
+
+def test_validate_oracle_cutover_fails_when_health_report_needs_attention(
+    tmp_path: Path,
+) -> None:
+    result = _run_script(tmp_path, FAKE_HEALTH_HTTP_CODE="503")
+
+    assert result.returncode != 0
+    assert "PASS Health endpoint /health/live: reachable" in result.stdout
+    assert "FAIL Health endpoint /health: needs attention (HTTP 503)" in result.stdout
 
 
 def test_validate_oracle_cutover_warns_but_exits_zero_for_dirty_worktree(

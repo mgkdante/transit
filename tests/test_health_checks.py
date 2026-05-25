@@ -155,6 +155,10 @@ def test_pipeline_freshness_ok_when_realtime_endpoints_are_recent() -> None:
             "endpoint_key": "vehicle_positions",
             "latest_captured_at_utc": NOW - timedelta(seconds=120),
         },
+        {
+            "endpoint_key": "i3_alerts",
+            "latest_captured_at_utc": NOW - timedelta(seconds=90),
+        },
     ]
 
     result = check_pipeline_freshness(
@@ -169,6 +173,7 @@ def test_pipeline_freshness_ok_when_realtime_endpoints_are_recent() -> None:
     assert result.details["threshold_seconds"] == 300
     assert result.details["endpoints"]["trip_updates"]["age_seconds"] == 60
     assert result.details["endpoints"]["vehicle_positions"]["age_seconds"] == 120
+    assert result.details["endpoints"]["i3_alerts"]["age_seconds"] == 90
 
 
 def test_pipeline_freshness_degraded_when_endpoint_is_stale() -> None:
@@ -179,6 +184,10 @@ def test_pipeline_freshness_degraded_when_endpoint_is_stale() -> None:
         },
         {
             "endpoint_key": "vehicle_positions",
+            "latest_captured_at_utc": NOW - timedelta(seconds=30),
+        },
+        {
+            "endpoint_key": "i3_alerts",
             "latest_captured_at_utc": NOW - timedelta(seconds=30),
         },
     ]
@@ -462,7 +471,7 @@ def test_runtime_vm_health_degrades_on_high_storage_or_memory() -> None:
     assert "resource pressure" in result.message
 
 
-def test_run_health_checks_returns_seven_components_in_order(tmp_path: Path) -> None:
+def test_run_health_checks_returns_quota_free_components_in_order(tmp_path: Path) -> None:
     rows = [
         {
             "endpoint_key": "trip_updates",
@@ -471,6 +480,10 @@ def test_run_health_checks_returns_seven_components_in_order(tmp_path: Path) -> 
         {
             "endpoint_key": "vehicle_positions",
             "latest_captured_at_utc": NOW - timedelta(seconds=120),
+        },
+        {
+            "endpoint_key": "i3_alerts",
+            "latest_captured_at_utc": NOW - timedelta(seconds=90),
         },
     ]
 
@@ -484,13 +497,16 @@ def test_run_health_checks_returns_seven_components_in_order(tmp_path: Path) -> 
         settings=health_settings,
     )
 
+    def forbidden_requester(*_args: object, **_kwargs: object) -> FakeResponse:
+        raise AssertionError("normal /health must not call STM feeds")
+
     results = run_health_checks(
         health_settings,
         registry=registry,
         now=NOW,
         project_root=tmp_path,
         engine_factory=lambda _: FakeEngine(FakeConnection(rows)),
-        requester=lambda *_args, **_kwargs: FakeResponse(204),
+        requester=forbidden_requester,
     )
 
     assert [result.name for result in results] == [
@@ -498,7 +514,4 @@ def test_run_health_checks_returns_seven_components_in_order(tmp_path: Path) -> 
         "pipeline_freshness",
         "bronze_storage",
         "runtime_vm",
-        "stm_static_feed",
-        "stm_trip_updates_feed",
-        "stm_vehicle_positions_feed",
     ]

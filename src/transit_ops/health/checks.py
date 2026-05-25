@@ -23,7 +23,7 @@ from transit_ops.ingestion.storage import (
 from transit_ops.providers.registry import ProviderRegistry
 from transit_ops.settings import Settings, get_settings
 
-REQUIRED_REALTIME_ENDPOINTS = ("trip_updates", "vehicle_positions")
+REQUIRED_REALTIME_ENDPOINTS = ("trip_updates", "vehicle_positions", "i3_alerts")
 FEED_RESULT_NAMES = {
     "static_schedule": "stm_static_feed",
     "trip_updates": "stm_trip_updates_feed",
@@ -105,16 +105,35 @@ def check_pipeline_freshness(
             rows = connection.execute(
                 text(
                     """
-                    SELECT
-                        fe.endpoint_key,
-                        max(rsi.captured_at_utc) AS latest_captured_at_utc
-                    FROM core.feed_endpoints AS fe
-                    LEFT JOIN raw.realtime_snapshot_index AS rsi
-                        ON rsi.provider_id = fe.provider_id
-                        AND rsi.feed_endpoint_id = fe.feed_endpoint_id
-                    WHERE fe.provider_id = :provider_id
-                        AND fe.endpoint_key IN ('trip_updates', 'vehicle_positions')
-                    GROUP BY fe.endpoint_key
+                    WITH gtfs_rt AS (
+                        SELECT
+                            fe.endpoint_key,
+                            max(rsi.captured_at_utc) AS latest_captured_at_utc
+                        FROM core.feed_endpoints AS fe
+                        LEFT JOIN raw.realtime_snapshot_index AS rsi
+                            ON rsi.provider_id = fe.provider_id
+                            AND rsi.feed_endpoint_id = fe.feed_endpoint_id
+                        WHERE fe.provider_id = :provider_id
+                            AND fe.endpoint_key IN ('trip_updates', 'vehicle_positions')
+                        GROUP BY fe.endpoint_key
+                    ),
+                    i3 AS (
+                        SELECT
+                            fe.endpoint_key,
+                            max(snapshots.captured_at_utc) AS latest_captured_at_utc
+                        FROM core.feed_endpoints AS fe
+                        LEFT JOIN raw.i3_alert_snapshots AS snapshots
+                            ON snapshots.provider_id = fe.provider_id
+                            AND snapshots.feed_endpoint_id = fe.feed_endpoint_id
+                        WHERE fe.provider_id = :provider_id
+                            AND fe.endpoint_key = 'i3_alerts'
+                        GROUP BY fe.endpoint_key
+                    )
+                    SELECT endpoint_key, latest_captured_at_utc
+                    FROM gtfs_rt
+                    UNION ALL
+                    SELECT endpoint_key, latest_captured_at_utc
+                    FROM i3
                     """
                 ),
                 {"provider_id": resolved_settings.STM_PROVIDER_ID},
@@ -373,10 +392,6 @@ def run_health_checks(
     resolved_settings = settings or get_settings()
     checked_at = _checked_at(now)
     resolved_root = project_root or Path(__file__).resolve().parents[3]
-    resolved_registry = registry or ProviderRegistry.from_project_root(
-        project_root=resolved_root,
-        settings=resolved_settings,
-    )
 
     return [
         check_database_connectivity(
@@ -397,27 +412,6 @@ def run_health_checks(
         ),
         check_runtime_vm_health(
             resolved_settings,
-            now=checked_at,
-        ),
-        check_stm_feed(
-            "static_schedule",
-            resolved_settings,
-            registry=resolved_registry,
-            requester=requester,
-            now=checked_at,
-        ),
-        check_stm_feed(
-            "trip_updates",
-            resolved_settings,
-            registry=resolved_registry,
-            requester=requester,
-            now=checked_at,
-        ),
-        check_stm_feed(
-            "vehicle_positions",
-            resolved_settings,
-            registry=resolved_registry,
-            requester=requester,
             now=checked_at,
         ),
     ]

@@ -84,10 +84,11 @@ check_health_endpoints() {
     fail "Health endpoint /health/live: unreachable"
   fi
 
-  if check_health_url "${base_url}/health"; then
-    pass "Health endpoint /health: reachable"
+  local health_report_error
+  if health_report_error="$(check_health_report_url "${base_url}/health")"; then
+    pass "Health endpoint /health: status ok"
   else
-    fail "Health endpoint /health: unreachable"
+    fail "Health endpoint /health: ${health_report_error:-request failed}"
   fi
 }
 
@@ -116,6 +117,60 @@ check_health_url() {
   ssh "${ssh_args[@]}" "$ssh_target" \
     "curl --fail --silent --show-error --location --max-time $quoted_timeout $quoted_url" \
     >/dev/null
+}
+
+check_health_report_url() {
+  local url="$1"
+  local ssh_target="${HEALTH_SSH_TARGET:-}"
+  local quoted_url quoted_timeout quoted_write_out
+  local ssh_args=()
+  local output status
+
+  if [[ -z "$ssh_target" ]]; then
+    if ! output="$(curl --silent --show-error --location --max-time "$CURL_MAX_TIME_SECONDS" --write-out '\n%{http_code}' "$url" 2>&1)"; then
+      printf 'request failed: %s\n' "$output"
+      return 1
+    fi
+  else
+    if [[ -n "${HEALTH_SSH_IDENTITY_FILE:-}" ]]; then
+      ssh_args+=("-i" "$HEALTH_SSH_IDENTITY_FILE")
+    fi
+    ssh_args+=(
+      "-o" "BatchMode=yes"
+      "-o" "ConnectTimeout=$HEALTH_SSH_CONNECT_TIMEOUT_SECONDS"
+    )
+
+    printf -v quoted_url "%q" "$url"
+    printf -v quoted_timeout "%q" "$CURL_MAX_TIME_SECONDS"
+    printf -v quoted_write_out "%q" '\n%{http_code}'
+    if ! output="$(
+      ssh "${ssh_args[@]}" "$ssh_target" \
+        "curl --silent --show-error --location --max-time $quoted_timeout --write-out $quoted_write_out $quoted_url" \
+        2>&1
+    )"; then
+      printf 'request failed: %s\n' "$output"
+      return 1
+    fi
+  fi
+
+  status="${output##*$'\n'}"
+  case "$status" in
+    200)
+      return 0
+      ;;
+    503)
+      printf 'needs attention (HTTP 503)\n'
+      return 1
+      ;;
+    "")
+      printf 'missing HTTP status\n'
+      return 1
+      ;;
+    *)
+      printf 'unexpected HTTP %s\n' "$status"
+      return 1
+      ;;
+  esac
 }
 
 run_realtime_freshness_query() {

@@ -22,7 +22,7 @@ from transit_ops.silver.static_gtfs import (
 
 ACTIVE_STATIC_FEED_ENDPOINT_KEY = "static_schedule"
 IMPORTANT_STATIC_MEMBERS = REQUIRED_STATIC_MEMBERS | OPTIONAL_SERVICE_MEMBERS
-BETA_FIRST_CONTRACT_MEMBERS = {
+FUTURE_STATIC_CONTRACT_MEMBERS = {
     "directions.txt",
     "feed_info.txt",
     "route_patterns.txt",
@@ -59,14 +59,14 @@ class StaticFeedValidationDetail:
 class StaticFeedsValidationResult:
     provider_id: str
     validated_at_utc: datetime
-    beta: StaticFeedValidationDetail
+    active_static: StaticFeedValidationDetail
     schema_comparison: dict[str, object]
 
     def display_dict(self) -> dict[str, object]:
         return {
             "provider_id": self.provider_id,
             "validated_at_utc": self.validated_at_utc.isoformat(),
-            "beta": self.beta.display_dict(),
+            "active_static": self.active_static.display_dict(),
             "schema_comparison": self.schema_comparison,
         }
 
@@ -313,18 +313,20 @@ def _validate_feed(
                 artifact.temp_path.unlink(missing_ok=True)
 
 
-def _schema_comparison(beta: StaticFeedValidationDetail) -> dict[str, object]:
-    beta_members = set(beta.member_headers)
+def _schema_comparison(active_static: StaticFeedValidationDetail) -> dict[str, object]:
+    active_static_members = set(active_static.member_headers)
 
     return {
         "decision_signal": "schema_and_source_semantics",
         "row_count_signal": "diagnostic_only",
-        "members_available": sorted(beta_members),
+        "members_available": sorted(active_static_members),
         "headers_by_member": {
-            member_name: beta.member_headers[member_name]
-            for member_name in sorted(beta.member_headers)
+            member_name: active_static.member_headers[member_name]
+            for member_name in sorted(active_static.member_headers)
         },
-        "beta_first_contract_members": sorted(BETA_FIRST_CONTRACT_MEMBERS & beta_members),
+        "future_contract_members_present": sorted(
+            FUTURE_STATIC_CONTRACT_MEMBERS & active_static_members
+        ),
     }
 
 
@@ -343,8 +345,8 @@ def validate_static_feeds(
     provider = resolved_registry.get_provider(provider_id)
     resolved_downloader = downloader or _default_downloader
 
-    beta = _validate_feed(
-        label="beta",
+    active_static = _validate_feed(
+        label="active_static",
         endpoint_key=ACTIVE_STATIC_FEED_ENDPOINT_KEY,
         provider=provider,
         settings=resolved_settings,
@@ -353,6 +355,6 @@ def validate_static_feeds(
     return StaticFeedsValidationResult(
         provider_id=provider_id,
         validated_at_utc=datetime.now(UTC),
-        beta=beta,
-        schema_comparison=_schema_comparison(beta),
+        active_static=active_static,
+        schema_comparison=_schema_comparison(active_static),
     )
