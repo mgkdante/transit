@@ -39,6 +39,7 @@ from transit_ops.orchestration import (
 from transit_ops.providers import ProviderRegistry
 from transit_ops.rebuild.oracle import rebuild_oracle_data
 from transit_ops.rebuild.static_beta import rebuild_beta_static_contract
+from transit_ops.recovery import RECOVERY_ACTION_IDS, run_recovery_action
 from transit_ops.settings import Settings, get_settings
 from transit_ops.silver import (
     load_latest_gis_to_silver,
@@ -191,6 +192,44 @@ def _seed_feed_endpoints(connection, manifest: ProviderManifest, settings: Setti
 def main() -> None:
     settings = get_settings()
     configure_logging(settings.LOG_LEVEL)
+
+
+@app.command("recover")
+def recover_command(
+    action_id: str = typer.Argument(
+        ...,
+        help=(
+            "Recovery action id. Choices: "
+            f"{', '.join(RECOVERY_ACTION_IDS)}. "
+            "/health is the report/webhook target; this command only performs recovery actions."
+        ),
+    ),
+    execute: bool = typer.Option(
+        False,
+        "--execute",
+        help="Execute the recovery command. Defaults to dry-run planning only.",
+    ),
+    confirmation: str | None = typer.Option(
+        None,
+        "--confirm",
+        help="Required with --execute; must exactly match the action id.",
+    ),
+) -> None:
+    """/health is the report/webhook target; perform guarded recovery actions only."""
+
+    try:
+        result = run_recovery_action(
+            action_id,
+            execute=execute,
+            confirmation=confirmation,
+        )
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+
+    payload = result.display_dict()
+    typer.echo(json.dumps(payload, indent=2, sort_keys=True))
+    if payload["status"] == "failed":
+        raise typer.Exit(code=1)
 
 
 @app.command("show-config")

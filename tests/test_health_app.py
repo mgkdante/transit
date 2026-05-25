@@ -48,14 +48,16 @@ def test_health_returns_200_and_overall_ok_with_component_payload() -> None:
     }
 
 
-def test_health_returns_200_for_degraded_overall() -> None:
+def test_health_returns_503_for_degraded_overall() -> None:
     components = _components(pipeline_freshness="degraded")
     client = TestClient(create_app(check_runner=lambda: components, clock=lambda: NOW))
 
     response = client.get("/health")
 
-    assert response.status_code == 200
+    assert response.status_code == 503
     assert response.json()["status"] == "degraded"
+    assert response.json()["needs_attention"] is True
+    assert response.json()["component_counts"] == {"ok": 5, "degraded": 1, "down": 0}
 
 
 def test_health_returns_503_for_down_overall() -> None:
@@ -66,6 +68,8 @@ def test_health_returns_503_for_down_overall() -> None:
 
     assert response.status_code == 503
     assert response.json()["status"] == "down"
+    assert response.json()["needs_attention"] is True
+    assert response.json()["component_counts"] == {"ok": 5, "degraded": 0, "down": 1}
 
 
 def test_health_returns_structured_down_payload_when_runner_fails() -> None:
@@ -80,6 +84,8 @@ def test_health_returns_structured_down_payload_when_runner_fails() -> None:
     assert response.json() == {
         "status": "down",
         "checked_at_utc": "2026-05-22T15:00:00+00:00",
+        "needs_attention": True,
+        "component_counts": {"ok": 0, "degraded": 0, "down": 1},
         "components": [
             {
                 "name": "health_runner",

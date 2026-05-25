@@ -44,6 +44,94 @@ def test_cli_help() -> None:
     assert "rebuild-beta-static" in result.stdout
     assert "validate-static-feeds" in result.stdout
     assert "retention-proof-report" in result.stdout
+    assert "recover" in result.stdout
+
+
+def test_recover_help_mentions_health_report_and_guardrails() -> None:
+    result = runner.invoke(app, ["recover", "--help"])
+
+    assert result.exit_code == 0
+    assert "/health" in result.stdout
+    assert "report/webhook target" in result.stdout
+    assert "restart-worker" in result.stdout
+    assert "restart-health" in result.stdout
+    assert "restart-pipeline" in result.stdout
+    assert "reboot-vm" in result.stdout
+    assert "--execute" in result.stdout
+    assert "--confirm" in result.stdout
+
+
+def test_recover_outputs_json_payload(monkeypatch) -> None:
+    class FakeRecoveryResult:
+        def display_dict(self) -> dict[str, object]:
+            return {
+                "action_id": "restart-worker",
+                "execute": False,
+                "commands": [
+                    "docker compose --env-file .env -f docker-compose.yml restart worker"
+                ],
+                "status": "planned",
+                "return_code": None,
+                "stdout": None,
+                "stderr": None,
+                "completed_at_utc": "2026-05-25T12:00:00+00:00",
+            }
+
+    recorded: dict[str, object] = {}
+
+    def fake_run_recovery_action(action_id, *, execute, confirmation):  # noqa: ANN001
+        recorded["action_id"] = action_id
+        recorded["execute"] = execute
+        recorded["confirmation"] = confirmation
+        return FakeRecoveryResult()
+
+    monkeypatch.setattr(cli_module, "run_recovery_action", fake_run_recovery_action)
+
+    result = runner.invoke(app, ["recover", "restart-worker"])
+
+    assert result.exit_code == 0
+    assert recorded == {
+        "action_id": "restart-worker",
+        "execute": False,
+        "confirmation": None,
+    }
+    assert json.loads(result.stdout)["status"] == "planned"
+
+
+def test_recover_exits_nonzero_on_failed_command(monkeypatch) -> None:
+    class FakeRecoveryResult:
+        def display_dict(self) -> dict[str, object]:
+            return {
+                "action_id": "restart-pipeline",
+                "execute": True,
+                "commands": ["bash scripts/resume-pipeline.sh"],
+                "status": "failed",
+                "return_code": 1,
+                "stdout": "",
+                "stderr": "unit missing\n",
+                "completed_at_utc": "2026-05-25T12:00:00+00:00",
+            }
+
+    monkeypatch.setattr(
+        cli_module,
+        "run_recovery_action",
+        lambda action_id, *, execute, confirmation: FakeRecoveryResult(),
+    )
+
+    result = runner.invoke(
+        app,
+        ["recover", "restart-pipeline", "--execute", "--confirm", "restart-pipeline"],
+    )
+
+    assert result.exit_code == 1
+    assert json.loads(result.stdout)["status"] == "failed"
+
+
+def test_recover_execute_requires_matching_confirmation() -> None:
+    result = runner.invoke(app, ["recover", "restart-worker", "--execute"])
+
+    assert result.exit_code == 2
+    assert "requires --confirm restart-worker" in result.stderr
 
 
 def test_ingest_static_help() -> None:
