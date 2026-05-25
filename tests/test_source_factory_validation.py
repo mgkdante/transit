@@ -238,6 +238,9 @@ def test_validation_sql_covers_map_marts_timezone_buckets_health_retention_and_r
     assert "contract_ok" in role_sql
     assert "can_use_gold_schema" in role_sql
     assert "public_select_relation_count" in role_sql
+    assert "public_spatial_ref_sys_select" in role_sql
+    assert "public_unapproved_select_relation_count" in role_sql
+    assert "spatial_ref_sys" in role_sql
     assert "gold" in role_sql
     assert "raw" in role_sql
     assert "silver" in role_sql

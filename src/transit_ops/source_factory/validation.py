@@ -722,8 +722,8 @@ ORDER BY relation_name
             """
 WITH expected_roles(role_name, expected_contract) AS (
     VALUES
-        ('transit-reporting', 'gold-only read-only no temp'),
-        ('transit-db', 'raw/core/silver/gold read temp allowed no permanent writes')
+        ('transit-reporting', 'gold-only read-only no temp plus PostGIS metadata'),
+        ('transit-db', 'raw/core/silver/gold read temp allowed plus PostGIS metadata')
 ),
 role_flags AS (
     SELECT
@@ -823,6 +823,16 @@ effective_relation_summary AS (
         count(*) FILTER (WHERE table_schema = 'public')::integer AS public_relation_count,
         count(*) FILTER (WHERE table_schema = 'public' AND has_select)::integer
             AS public_select_relation_count,
+        count(*) FILTER (
+            WHERE table_schema = 'public'
+              AND has_select
+              AND relation_name <> 'spatial_ref_sys'
+        )::integer AS public_unapproved_select_relation_count,
+        bool_or(
+            table_schema = 'public'
+            AND relation_name = 'spatial_ref_sys'
+            AND has_select
+        ) AS public_spatial_ref_sys_select,
         count(*) FILTER (WHERE has_permanent_write)::integer AS permanent_write_relation_count
     FROM relation_flags
     GROUP BY role_name
@@ -839,7 +849,7 @@ grant_summary AS (
         ) AS has_permanent_write
     FROM information_schema.role_table_grants
     WHERE grantee IN ('transit-reporting', 'transit-db')
-      AND table_schema IN ('raw', 'core', 'silver', 'gold')
+      AND table_schema IN ('raw', 'core', 'silver', 'gold', 'public')
     GROUP BY grantee, table_schema
 ),
 grant_write_summary AS (
@@ -874,6 +884,9 @@ SELECT
     COALESCE(ers.silver_select_relation_count, 0) AS silver_select_relation_count,
     COALESCE(ers.public_relation_count, 0) AS public_relation_count,
     COALESCE(ers.public_select_relation_count, 0) AS public_select_relation_count,
+    COALESCE(ers.public_unapproved_select_relation_count, 0)
+        AS public_unapproved_select_relation_count,
+    COALESCE(ers.public_spatial_ref_sys_select, false) AS public_spatial_ref_sys_select,
     COALESCE(ers.permanent_write_relation_count, 0) AS permanent_write_relation_count,
     COALESCE(gws.permanent_write_grant_count, 0) AS permanent_write_grant_count,
     CASE
@@ -893,14 +906,15 @@ SELECT
             AND NOT COALESCE(ss.can_use_raw_schema, false)
             AND NOT COALESCE(ss.can_use_core_schema, false)
             AND NOT COALESCE(ss.can_use_silver_schema, false)
-            AND NOT COALESCE(ss.can_use_public_schema, false)
+            AND COALESCE(ss.can_use_public_schema, false)
             AND COALESCE(ss.schema_create_grant_count, 0) = 0
             AND COALESCE(ers.gold_select_relation_count, 0)
                 = COALESCE(ers.gold_relation_count, 0)
             AND COALESCE(ers.raw_select_relation_count, 0) = 0
             AND COALESCE(ers.core_select_relation_count, 0) = 0
             AND COALESCE(ers.silver_select_relation_count, 0) = 0
-            AND COALESCE(ers.public_select_relation_count, 0) = 0
+            AND COALESCE(ers.public_spatial_ref_sys_select, false)
+            AND COALESCE(ers.public_unapproved_select_relation_count, 0) = 0
             AND COALESCE(ers.permanent_write_relation_count, 0) = 0
             AND COALESCE(gws.permanent_write_grant_count, 0) = 0
         )
@@ -915,7 +929,7 @@ SELECT
             AND COALESCE(ss.can_use_raw_schema, false)
             AND COALESCE(ss.can_use_core_schema, false)
             AND COALESCE(ss.can_use_silver_schema, false)
-            AND NOT COALESCE(ss.can_use_public_schema, false)
+            AND COALESCE(ss.can_use_public_schema, false)
             AND COALESCE(ss.schema_create_grant_count, 0) = 0
             AND COALESCE(ers.gold_select_relation_count, 0)
                 = COALESCE(ers.gold_relation_count, 0)
@@ -925,7 +939,8 @@ SELECT
                 = COALESCE(ers.core_relation_count, 0)
             AND COALESCE(ers.silver_select_relation_count, 0)
                 = COALESCE(ers.silver_relation_count, 0)
-            AND COALESCE(ers.public_select_relation_count, 0) = 0
+            AND COALESCE(ers.public_spatial_ref_sys_select, false)
+            AND COALESCE(ers.public_unapproved_select_relation_count, 0) = 0
             AND COALESCE(ers.permanent_write_relation_count, 0) = 0
             AND COALESCE(gws.permanent_write_grant_count, 0) = 0
         )

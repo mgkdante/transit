@@ -85,6 +85,19 @@ commands AS (
 SELECT command FROM commands
 \gexec
 
+-- Gold map views expose PostGIS outputs while reader roles remain blocked from
+-- general public schema/table access. These grants are the narrow execution
+-- surface required by those views and by ST_Transform SRID lookup.
+GRANT USAGE ON SCHEMA public TO :"reporting_role", :"db_role";
+GRANT EXECUTE ON FUNCTION public.ST_MakePoint(double precision, double precision) TO :"reporting_role", :"db_role";
+GRANT EXECUTE ON FUNCTION public.ST_SetSRID(geometry, integer) TO :"reporting_role", :"db_role";
+GRANT EXECUTE ON FUNCTION public.ST_MakeLine(geometry) TO :"reporting_role", :"db_role";
+GRANT EXECUTE ON FUNCTION public.ST_AsGeoJSON(geometry, integer, integer) TO :"reporting_role", :"db_role";
+GRANT EXECUTE ON FUNCTION public.ST_GeomFromWKB(bytea) TO :"reporting_role", :"db_role";
+GRANT EXECUTE ON FUNCTION public.ST_GeomFromWKB(bytea, integer) TO :"reporting_role", :"db_role";
+GRANT EXECUTE ON FUNCTION public.ST_Transform(geometry, integer) TO :"reporting_role", :"db_role";
+GRANT SELECT ON TABLE public.spatial_ref_sys TO :"reporting_role", :"db_role";
+
 GRANT USAGE ON SCHEMA gold TO :"reporting_role";
 GRANT SELECT ON ALL TABLES IN SCHEMA gold TO :"reporting_role";
 

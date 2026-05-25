@@ -135,6 +135,32 @@ def test_hardening_sql_uses_variable_passwords_and_two_reader_contracts() -> Non
     assert "REVOKE ALL ON ALL TABLES IN SCHEMA %I FROM %s" in sql
     assert "REVOKE ALL ON ALL SEQUENCES IN SCHEMA %I FROM %s" in sql
     assert "REVOKE ALL ON ALL FUNCTIONS IN SCHEMA %I FROM %s" in sql
+    assert 'GRANT USAGE ON SCHEMA public TO :"reporting_role", :"db_role";' in sql
+    assert (
+        'GRANT EXECUTE ON FUNCTION public.ST_Transform(geometry, integer) '
+        'TO :"reporting_role", :"db_role";'
+        in sql
+    )
+    assert (
+        'GRANT EXECUTE ON FUNCTION public.ST_GeomFromWKB(bytea, integer) '
+        'TO :"reporting_role", :"db_role";'
+        in sql
+    )
+    assert (
+        'GRANT EXECUTE ON FUNCTION public.ST_GeomFromWKB(bytea) '
+        'TO :"reporting_role", :"db_role";'
+        in sql
+    )
+    assert (
+        'GRANT EXECUTE ON FUNCTION public.ST_AsGeoJSON(geometry, integer, integer) '
+        'TO :"reporting_role", :"db_role";'
+        in sql
+    )
+    assert (
+        'GRANT SELECT ON TABLE public.spatial_ref_sys '
+        'TO :"reporting_role", :"db_role";'
+        in sql
+    )
     assert "GRANT USAGE ON SCHEMA gold TO :\"reporting_role\";" in sql
     assert "GRANT SELECT ON ALL TABLES IN SCHEMA gold TO :\"reporting_role\";" in sql
     assert "GRANT USAGE ON SCHEMA raw, core, silver, gold TO :\"db_role\";" in sql
@@ -226,6 +252,7 @@ def test_verify_helper_bounds_connect_timeout_in_both_modes(monkeypatch) -> None
     monkeypatch.setattr(module, "verify_gold_usage", lambda cur: None)
     monkeypatch.setattr(module, "verify_gold_select", lambda cur: None)
     monkeypatch.setattr(module, "verify_restricted_schema_usage", lambda cur: None)
+    monkeypatch.setattr(module, "verify_public_postgis_boundary", lambda cur: None)
     monkeypatch.setattr(module, "verify_read_only", lambda conn: None)
 
     assert (
@@ -407,3 +434,78 @@ def test_verify_gold_select_checks_all_gold_catalog_relations() -> None:
         assert "current user lacks SELECT on gold.late_trips" in str(exc)
     else:
         raise AssertionError("verify_gold_select should fail when any Gold relation lacks SELECT")
+
+
+def test_verify_gold_select_executes_every_gold_relation_probe() -> None:
+    module = _load_verify_module()
+
+    class FakeCursor:
+        def __init__(self):
+            self._result = []
+            self.probed_relations = []
+
+        def execute(self, statement, params=None):
+            rendered = str(statement)
+            if "pg_catalog.pg_class" in rendered:
+                self._result = [
+                    ("current_vehicle_map", "v", True),
+                    ("map_gis_line_features", "v", True),
+                ]
+                return
+            if "SELECT * FROM" in rendered:
+                self.probed_relations.append(rendered)
+                self._result = []
+                return
+            raise AssertionError(f"unexpected query: {rendered}")
+
+        def fetchall(self):
+            return self._result
+
+    cur = FakeCursor()
+
+    module.verify_gold_select(cur)
+
+    assert len(cur.probed_relations) == 2
+    assert any("current_vehicle_map" in query for query in cur.probed_relations)
+    assert any("map_gis_line_features" in query for query in cur.probed_relations)
+
+
+def test_verify_public_postgis_boundary_allows_only_spatial_ref_sys() -> None:
+    module = _load_verify_module()
+
+    class FakeCursor:
+        def __init__(self):
+            self._result = []
+            self._one = (False,)
+            self.probed_spatial_ref_sys = False
+
+        def execute(self, statement, params=None):
+            rendered = str(statement)
+            if "pg_catalog.pg_class" in rendered:
+                self._result = [
+                    ("geography_columns", "v", False),
+                    ("spatial_ref_sys", "r", True),
+                ]
+                return
+            if "pg_catalog.pg_namespace" in rendered:
+                self._one = (True,)
+                return
+            if "has_schema_privilege" in rendered and params == ("public",):
+                self._one = ("CREATE" not in rendered,)
+                return
+            if rendered == "SELECT * FROM public.spatial_ref_sys LIMIT 1":
+                self.probed_spatial_ref_sys = True
+                return
+            raise AssertionError(f"unexpected query: {rendered}")
+
+        def fetchone(self):
+            return self._one
+
+        def fetchall(self):
+            return self._result
+
+    cur = FakeCursor()
+
+    module.verify_public_postgis_boundary(cur)
+
+    assert cur.probed_spatial_ref_sys is True
