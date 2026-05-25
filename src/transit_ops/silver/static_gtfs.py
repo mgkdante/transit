@@ -15,6 +15,11 @@ from sqlalchemy.dialects import postgresql
 from sqlalchemy.engine import Connection, Engine
 
 from transit_ops.db.connection import make_engine
+from transit_ops.gtfs.types import (
+    parse_gtfs_binary,
+    parse_gtfs_date,
+    parse_gtfs_service_time,
+)
 from transit_ops.ingestion.common import project_root, utc_now
 from transit_ops.ingestion.static_gtfs import build_static_ingestion_config
 from transit_ops.ingestion.storage import get_bronze_storage
@@ -597,19 +602,22 @@ def _parse_optional_float(value: str | None) -> float | None:
 
 
 def _parse_gtfs_date(value: str, member_name: str, column_name: str) -> date:
-    try:
-        return datetime.strptime(value, "%Y%m%d").date()
-    except ValueError as exc:
-        raise ValueError(
-            f"{member_name} column '{column_name}' must be in YYYYMMDD format."
-        ) from exc
+    return parse_gtfs_date(value, field_name=f"{member_name}.{column_name}")
 
 
 def _parse_gtfs_bool(row: Mapping[str, str], column_name: str, member_name: str) -> bool:
-    value = _require_value(row, column_name, member_name)
-    if value not in {"0", "1"}:
-        raise ValueError(f"{member_name} column '{column_name}' must be 0 or 1.")
-    return value == "1"
+    return parse_gtfs_binary(
+        _require_value(row, column_name, member_name),
+        field_name=f"{member_name}.{column_name}",
+    )
+
+
+def _validate_gtfs_service_time(value: str | None, column_name: str) -> str | None:
+    normalized = _blank_to_none(value)
+    if normalized is None:
+        return None
+    parse_gtfs_service_time(normalized, field_name=f"stop_times.{column_name}")
+    return normalized
 
 
 def _build_agency_record(
@@ -878,8 +886,11 @@ def _build_stop_time_record(
         "trip_id": _require_value(row, "trip_id", "stop_times.txt"),
         "stop_sequence": _parse_required_int(row, "stop_sequence", "stop_times.txt"),
         "stop_id": _require_value(row, "stop_id", "stop_times.txt"),
-        "arrival_time": _blank_to_none(row.get("arrival_time")),
-        "departure_time": _blank_to_none(row.get("departure_time")),
+        "arrival_time": _validate_gtfs_service_time(row.get("arrival_time"), "arrival_time"),
+        "departure_time": _validate_gtfs_service_time(
+            row.get("departure_time"),
+            "departure_time",
+        ),
         "stop_headsign": _blank_to_none(row.get("stop_headsign")),
         "pickup_type": _parse_optional_int(row.get("pickup_type")),
         "drop_off_type": _parse_optional_int(row.get("drop_off_type")),

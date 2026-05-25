@@ -32,36 +32,37 @@ This is not a SaaS app, not a multi-tenant platform, and not a consumer-facing r
 ## Architecture At A Glance
 
 ```text
-STM GTFS static ZIP   -> Bronze (R2/S3) -> Silver (Postgres) -> Gold dims      -> Power BI
-STM GTFS-RT protobuf  -> Bronze (R2/S3) -> Silver (Postgres) -> Gold facts     -> Power BI
-                                                                 -> Warm rollups -> Power BI
+STM GTFS static ZIP   -> Bronze (R2/S3) -> Silver (Postgres) -> Gold dims/maps       -> Power BI/site
+STM GTFS-RT protobuf  -> Bronze (R2/S3) -> Silver (Postgres) -> Gold facts/current   -> Power BI/site
+STM i3 alerts JSON    -> Bronze (R2/S3) -> Silver (Postgres) -> Gold alerts/history  -> Power BI/site
+                                                                  -> Warm rollups     -> Power BI
 ```
 
-Stack: Python 3.12, Postgres, Cloudflare R2/S3-compatible Bronze storage, Docker Compose, Caddy, GitHub Actions, Power BI.
+Stack: Python 3.12, Postgres/PostGIS, Cloudflare R2/S3-compatible Bronze storage, Docker Compose, Caddy, GitHub Actions, Power BI.
 
-The Oracle Always Free A1 host is now the production runtime for the database, realtime worker, health service, and GitHub Actions `DATABASE_URL` jobs. The host exposes hardened PostgreSQL paths: TLS/SCRAM app-owner access for automation and TLS/SCRAM `powerbi_reader` access scoped to Gold for Power BI.
+The Oracle Always Free A1 host is now the production runtime for the database, realtime worker, health service, and GitHub Actions `DATABASE_URL` jobs. The host exposes hardened PostgreSQL paths: TLS/SCRAM app-owner access for automation, TLS/SCRAM `transit-reporting` access scoped to Gold for Power BI and `transit.yesid.dev`, and SSH-first TLS/SCRAM `transit-db` access for operator SQL analysis.
 
 Operationally:
 
 - Bronze stores raw artifacts plus lineage
 - Silver stores normalized GTFS and GTFS-RT tables
-- Gold serves dimensions, snapshots, KPI views, and warm rollups for BI
+- Gold serves dimensions, operational facts, map marts, KPI views, alert history, and warm rollups for BI/site consumers
 - the health API reports runtime readiness and freshness signals
-- Power BI reads from Gold only
+- Power BI and the public site read from Gold/reporting surfaces only
 
 Notion is the source of truth for the deeper architecture breakdown, runtime behavior, and workflow history.
 
 ## Current Scope
 
-- STM bus network only in V1
+- STM/Montréal is the only active provider in V1
 - Daily GTFS static ingestion
 - 30-second GTFS-RT cycle
 - Durable Bronze archive through Cloudflare R2 today, with an S3-compatible code path
 - Silver normalization in Postgres
 - Gold serving tables and warm rollups
-- Live Power BI dashboard
+- Live Power BI dashboard and `transit.yesid.dev` reporting/chrome surfaces
 
-Provider-ready means the schema and manifests are structured so additional GTFS providers can be added later, but STM is the only active provider today.
+Provider-ready means the schema and manifests are structured so additional GTFS/GTFS-RT/GIS/i3-style providers can be added later, but STM/Montréal is the only active provider today.
 
 ## Power BI Artifacts
 
@@ -143,9 +144,9 @@ The current Oracle VM baseline is:
 - ports 80 and 443 remain loopback-only for the current staging shape
 - public TCP 5432 is open through OCI NSG and UFW only for hardened PostgreSQL paths
 
-GitHub Actions uses the Oracle app-owner `DATABASE_URL`; the daily static pipeline and warm-rollup workflows are active after manual Oracle-backed proof runs. Power BI uses the dedicated `powerbi_reader` role when repointed to the Oracle host. Exact instance identifiers, public IP, firewall evidence, rebuild reports, workflow run links, and handoff notes live in Notion under roadmap `upgrading` and its child slices.
+GitHub Actions uses the Oracle app-owner `DATABASE_URL`; the daily static pipeline and warm-rollup workflows are active after manual Oracle-backed proof runs. Power BI and `transit.yesid.dev` use the dedicated `transit-reporting` role against Gold/reporting surfaces. Operator SQL exploration uses `transit-db`, preferably through an SSH tunnel with Postgres TLS still required. Exact instance identifiers, public IP, firewall evidence, rebuild reports, workflow run links, and handoff notes live in Notion under roadmap `upgrading` and its child slices.
 
-The public PostgreSQL access helpers live in `infra/postgres-public-access/`. They render the TLS-only `pg_hba.conf` shape, apply the dedicated `powerbi_reader` grants, and verify that Power BI access is TLS-backed, read-only, and scoped to Gold.
+The PostgreSQL serving-access helpers live in `infra/postgres-serving-access/`. They render the TLS-only `pg_hba.conf` shape, apply the dedicated `transit-reporting` and `transit-db` grants, and verify current user, TLS, allowed schema reads, denied forbidden schemas, denied writes, and the expected temp-table policy.
 
 ## Pipeline Control
 

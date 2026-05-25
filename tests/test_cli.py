@@ -23,9 +23,11 @@ def test_cli_help() -> None:
     assert "ingest-static" in result.stdout
     assert "ingest-gis" in result.stdout
     assert "capture-realtime" in result.stdout
+    assert "capture-i3" in result.stdout
     assert "load-gis-silver" in result.stdout
     assert "load-static-silver" in result.stdout
     assert "load-realtime-silver" in result.stdout
+    assert "load-i3-silver" in result.stdout
     assert "build-gold-marts" in result.stdout
     assert "refresh-gold-realtime" in result.stdout
     assert "refresh-gold-static" in result.stdout

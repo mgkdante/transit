@@ -102,15 +102,22 @@ def test_stm_manifest_has_beta_static_gis_and_no_current_fallback() -> None:
         "gis_static",
         "trip_updates",
         "vehicle_positions",
+        "i3_alerts",
     }
     assert "static_schedule_current_fallback" not in provider.feeds
     assert provider.feeds["gis_static"].feed_kind.value == "gis_static"
     assert provider.feeds["gis_static"].source_format.value == "stm_gis_zip"
+    assert provider.provider.default_language == "fr"
+    assert provider.provider.default_currency == "CAD"
+    assert provider.provider.bounds is not None
+    assert provider.provider.bounds.min_longitude == -74.1
+    assert provider.i3_alerts_feed().source_format.value == "api_i3_json"
     assert [seed.endpoint_key for seed in provider.to_feed_endpoint_seeds(settings)] == [
         "static_schedule",
         "gis_static",
         "trip_updates",
         "vehicle_positions",
+        "i3_alerts",
     ]
 
 

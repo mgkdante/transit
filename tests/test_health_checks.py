@@ -11,6 +11,7 @@ from transit_ops.health.checks import (
     check_bronze_storage,
     check_database_connectivity,
     check_pipeline_freshness,
+    check_runtime_vm_health,
     check_stm_feed,
     run_health_checks,
 )
@@ -407,7 +408,61 @@ def test_stm_feed_http_failure_returns_down() -> None:
     assert "HTTP 500" in result.message
 
 
-def test_run_health_checks_returns_six_components_in_order(tmp_path: Path) -> None:
+def test_runtime_vm_health_exposes_sanitized_cost_free_metrics() -> None:
+    result = check_runtime_vm_health(
+        settings(),
+        now=NOW,
+        stats_provider=lambda: {
+            "disk_used_percent": 72.5,
+            "memory_used_percent": 61.2,
+            "load_1m": 0.42,
+            "cpu_count": 4,
+            "uptime_seconds": 123456,
+            "python_version": "3.12.9",
+            "platform_system": "Linux",
+            "platform_machine": "aarch64",
+            "hostname": "must-not-leak",
+            "ip_address": "203.0.113.10",
+            "home_path": "/home/mgkdante",
+        },
+        use_cache=False,
+    )
+
+    assert result.name == "runtime_vm"
+    assert result.status == "ok"
+    assert result.details is not None
+    assert result.details["disk_used_percent"] == 72.5
+    assert result.details["memory_used_percent"] == 61.2
+    assert result.details["python_version"] == "3.12.9"
+    assert result.details["retention_days"] == {
+        "bronze_realtime": 30,
+        "bronze_static": 30,
+        "silver_realtime": 30,
+        "gold_fact": 365,
+        "gold_warm_rollup": 90,
+    }
+    serialized = str(result.display_dict())
+    assert "must-not-leak" not in serialized
+    assert "203.0.113.10" not in serialized
+    assert "/home/mgkdante" not in serialized
+
+
+def test_runtime_vm_health_degrades_on_high_storage_or_memory() -> None:
+    result = check_runtime_vm_health(
+        settings(),
+        now=NOW,
+        stats_provider=lambda: {
+            "disk_used_percent": 96.0,
+            "memory_used_percent": 80.0,
+        },
+        use_cache=False,
+    )
+
+    assert result.status == "degraded"
+    assert "resource pressure" in result.message
+
+
+def test_run_health_checks_returns_seven_components_in_order(tmp_path: Path) -> None:
     rows = [
         {
             "endpoint_key": "trip_updates",
@@ -442,6 +497,7 @@ def test_run_health_checks_returns_six_components_in_order(tmp_path: Path) -> No
         "database",
         "pipeline_freshness",
         "bronze_storage",
+        "runtime_vm",
         "stm_static_feed",
         "stm_trip_updates_feed",
         "stm_vehicle_positions_feed",

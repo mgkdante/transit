@@ -6,14 +6,14 @@ import subprocess
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-ACCESS_DIR = REPO_ROOT / "infra" / "postgres-public-access"
+ACCESS_DIR = REPO_ROOT / "infra" / "postgres-serving-access"
 HBA_RENDERER = ACCESS_DIR / "render-pg-hba.sh"
-HARDEN_SQL = ACCESS_DIR / "harden-powerbi-reader.sql"
-VERIFY_HELPER = ACCESS_DIR / "verify_powerbi_reader.py"
+HARDEN_SQL = ACCESS_DIR / "harden-sql-readers.sql"
+VERIFY_HELPER = ACCESS_DIR / "verify_sql_readers.py"
 
 
 def _load_verify_module():
-    spec = importlib.util.spec_from_file_location("verify_powerbi_reader", VERIFY_HELPER)
+    spec = importlib.util.spec_from_file_location("verify_sql_readers", VERIFY_HELPER)
     assert spec is not None
     assert spec.loader is not None
     module = importlib.util.module_from_spec(spec)
@@ -29,7 +29,7 @@ def _active_lines(text: str) -> list[str]:
     ]
 
 
-def test_hba_renderer_limits_public_access_to_tls_powerbi_reader_and_app_owner() -> None:
+def test_hba_renderer_limits_public_access_to_tls_reporting_and_app_owner() -> None:
     result = subprocess.run(
         ["bash", str(HBA_RENDERER)],
         check=True,
@@ -39,7 +39,7 @@ def test_hba_renderer_limits_public_access_to_tls_powerbi_reader_and_app_owner()
     lines = _active_lines(result.stdout)
 
     public_app_owner = "hostssl transit transit 0.0.0.0/0 scram-sha-256"
-    public_reader = "hostssl transit powerbi_reader 0.0.0.0/0 scram-sha-256"
+    public_reader = "hostssl transit transit-reporting 0.0.0.0/0 scram-sha-256"
     public_reject = "hostssl all all 0.0.0.0/0 reject"
 
     assert public_app_owner in lines
@@ -56,7 +56,9 @@ def test_hba_renderer_accepts_explicit_database_app_role_and_reader_role() -> No
     env = os.environ | {
         "POSTGRES_DB": "analytics",
         "POSTGRES_USER": "app_owner",
-        "POWERBI_READER_ROLE": "bi_reader",
+        "TRANSIT_REPORTING_ROLE": "bi_reader",
+        "TRANSIT_DB_ROLE": "sql_dev",
+        "TRANSIT_DB_PUBLIC_MODE": "allow",
     }
     result = subprocess.run(
         ["bash", str(HBA_RENDERER)],
@@ -70,15 +72,30 @@ def test_hba_renderer_accepts_explicit_database_app_role_and_reader_role() -> No
     assert "host all app_owner 172.16.0.0/12 scram-sha-256" in lines
     assert "hostssl analytics app_owner 0.0.0.0/0 scram-sha-256" in lines
     assert "hostssl analytics bi_reader 0.0.0.0/0 scram-sha-256" in lines
+    assert "hostssl analytics sql_dev 0.0.0.0/0 scram-sha-256" in lines
     assert "hostssl all all 0.0.0.0/0 reject" in lines
+
+
+def test_hba_renderer_keeps_transit_db_ssh_first_by_default() -> None:
+    result = subprocess.run(
+        ["bash", str(HBA_RENDERER)],
+        check=True,
+        text=True,
+        capture_output=True,
+    )
+    lines = _active_lines(result.stdout)
+
+    assert "hostssl transit transit-db 0.0.0.0/0 scram-sha-256" not in lines
+    assert "hostssl transit transit-db 127.0.0.1/32 scram-sha-256" in lines
+    assert "hostssl transit transit-db 172.16.0.0/12 scram-sha-256" in lines
 
 
 def test_hba_renderer_rejects_invalid_policy_identifiers() -> None:
     for variable_name, value in (
         ("POSTGRES_DB", "all"),
         ("POSTGRES_USER", "app owner"),
-        ("POWERBI_READER_ROLE", "all"),
-        ("POWERBI_READER_ROLE", "reader\nhost all all 0.0.0.0/0 trust"),
+        ("TRANSIT_REPORTING_ROLE", "all"),
+        ("TRANSIT_DB_ROLE", "reader\nhost all all 0.0.0.0/0 trust"),
     ):
         result = subprocess.run(
             ["bash", str(HBA_RENDERER)],
@@ -93,22 +110,24 @@ def test_hba_renderer_rejects_invalid_policy_identifiers() -> None:
         assert "0.0.0.0/0 trust" not in result.stdout
 
 
-def test_hardening_sql_uses_variable_password_and_gold_only_grants() -> None:
+def test_hardening_sql_uses_variable_passwords_and_two_reader_contracts() -> None:
     sql = HARDEN_SQL.read_text(encoding="utf-8")
 
     assert "SET password_encryption = 'scram-sha-256';" in sql
     assert "CREATE ROLE %I LOGIN" in sql
-    assert ":'reader_role'" in sql
-    assert ':"reader_role"' in sql
-    assert "PASSWORD :'powerbi_reader_password'" in sql
+    assert ":'reporting_role'" in sql
+    assert ":'db_role'" in sql
+    assert "PASSWORD :'transit_reporting_password'" in sql
+    assert "PASSWORD :'transit_db_password'" in sql
     assert "REVOKE CONNECT ON DATABASE :\"database_name\" FROM PUBLIC;" in sql
     assert (
         "GRANT CONNECT, TEMPORARY ON DATABASE :\"database_name\" TO :\"app_owner\";"
         in sql
     )
-    assert "GRANT CONNECT ON DATABASE :\"database_name\" TO :\"reader_role\";" in sql
+    assert "GRANT CONNECT ON DATABASE :\"database_name\" TO :\"reporting_role\";" in sql
+    assert "GRANT CONNECT, TEMPORARY ON DATABASE :\"database_name\" TO :\"db_role\";" in sql
     assert (
-        "REVOKE TEMPORARY ON DATABASE :\"database_name\" FROM :\"reader_role\";"
+        "REVOKE TEMPORARY ON DATABASE :\"database_name\" FROM :\"reporting_role\";"
         in sql
     )
     assert "REVOKE TEMPORARY ON DATABASE :\"database_name\" FROM PUBLIC;" in sql
@@ -116,26 +135,29 @@ def test_hardening_sql_uses_variable_password_and_gold_only_grants() -> None:
     assert "REVOKE ALL ON ALL TABLES IN SCHEMA %I FROM %s" in sql
     assert "REVOKE ALL ON ALL SEQUENCES IN SCHEMA %I FROM %s" in sql
     assert "REVOKE ALL ON ALL FUNCTIONS IN SCHEMA %I FROM %s" in sql
-    assert "GRANT USAGE ON SCHEMA gold TO :\"reader_role\";" in sql
-    assert "GRANT SELECT ON ALL TABLES IN SCHEMA gold TO :\"reader_role\";" in sql
-    assert (
-        "ALTER DEFAULT PRIVILEGES FOR ROLE :\"app_owner\" IN SCHEMA gold "
-        "GRANT SELECT ON TABLES TO :\"reader_role\";"
-    ) in sql
+    assert "GRANT USAGE ON SCHEMA gold TO :\"reporting_role\";" in sql
+    assert "GRANT SELECT ON ALL TABLES IN SCHEMA gold TO :\"reporting_role\";" in sql
+    assert "GRANT USAGE ON SCHEMA raw, core, silver, gold TO :\"db_role\";" in sql
+    assert "GRANT SELECT ON ALL TABLES IN SCHEMA raw TO :\"db_role\";" in sql
+    assert "GRANT SELECT ON ALL TABLES IN SCHEMA core TO :\"db_role\";" in sql
+    assert "GRANT SELECT ON ALL TABLES IN SCHEMA silver TO :\"db_role\";" in sql
+    assert "GRANT SELECT ON ALL TABLES IN SCHEMA gold TO :\"db_role\";" in sql
+    assert "ALTER DEFAULT PRIVILEGES FOR ROLE :\"app_owner\" IN SCHEMA gold" in sql
+    assert "GRANT SELECT ON TABLES TO :\"reporting_role\";" in sql
+    assert "ALTER DEFAULT PRIVILEGES FOR ROLE :\"app_owner\" IN SCHEMA silver" in sql
     assert "All future Gold DDL is expected to run as app_owner" in sql
-    assert "powerbi_reader_password =" not in sql
 
 
 def test_verify_helper_redacts_passwords_from_connection_strings() -> None:
     module = _load_verify_module()
 
     redacted = module.redact_dsn(
-        "could not connect to postgresql://powerbi_reader:secret@example.com:5432/transit"
+        "could not connect to postgresql://transit-reporting:secret@example.com:5432/transit"
     )
 
     assert "secret" not in redacted
     assert (
-        "postgresql://powerbi_reader:<redacted>@example.com:5432/transit"
+        "postgresql://transit-reporting:<redacted>@example.com:5432/transit"
         in redacted
     )
 
@@ -159,7 +181,7 @@ def test_verify_helper_fails_without_printing_a_database_url_when_env_is_missing
             "python",
             str(VERIFY_HELPER),
             "--database-url-env",
-            "MISSING_TRANSIT_POWERBI_URL",
+            "MISSING_TRANSIT_REPORTING_URL",
         ],
         text=True,
         capture_output=True,
@@ -168,7 +190,7 @@ def test_verify_helper_fails_without_printing_a_database_url_when_env_is_missing
 
     combined_output = result.stdout + result.stderr
     assert result.returncode == 2
-    assert "MISSING_TRANSIT_POWERBI_URL is not set" in combined_output
+    assert "MISSING_TRANSIT_REPORTING_URL is not set" in combined_output
     assert "postgresql://" not in combined_output
 
 
@@ -206,7 +228,10 @@ def test_verify_helper_bounds_connect_timeout_in_both_modes(monkeypatch) -> None
     monkeypatch.setattr(module, "verify_restricted_schema_usage", lambda cur: None)
     monkeypatch.setattr(module, "verify_read_only", lambda conn: None)
 
-    assert module.run_positive_verification("postgresql://example/transit", "powerbi_reader") == 0
+    assert (
+        module.run_positive_verification("postgresql://example/transit", "transit-reporting")
+        == 0
+    )
 
     def fake_failure_connect(*args, **kwargs):
         connect_kwargs.append(kwargs)
@@ -311,7 +336,7 @@ def test_expected_connect_failure_fails_for_password_auth_failure(monkeypatch) -
     module = _load_verify_module()
 
     def fake_connect(*args, **kwargs):
-        raise RuntimeError("password authentication failed for user \"powerbi_reader\"")
+        raise RuntimeError("password authentication failed for user \"transit-reporting\"")
 
     monkeypatch.setattr(module.psycopg, "connect", fake_connect)
 

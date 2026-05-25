@@ -17,7 +17,12 @@ from transit_ops.gold import (
     refresh_gold_realtime,
     refresh_gold_static,
 )
-from transit_ops.ingestion import capture_realtime_feed, ingest_gis_feed, ingest_static_feed
+from transit_ops.ingestion import (
+    capture_i3_alerts,
+    capture_realtime_feed,
+    ingest_gis_feed,
+    ingest_static_feed,
+)
 from transit_ops.logging import configure_logging
 from transit_ops.maintenance import (
     prune_bronze_storage,
@@ -37,6 +42,7 @@ from transit_ops.rebuild.static_beta import rebuild_beta_static_contract
 from transit_ops.settings import Settings, get_settings
 from transit_ops.silver import (
     load_latest_gis_to_silver,
+    load_latest_i3_to_silver,
     load_latest_realtime_to_silver,
     load_latest_static_to_silver,
 )
@@ -95,23 +101,44 @@ def _seed_provider(connection, manifest: ProviderManifest) -> None:
             """
             INSERT INTO core.providers (
                 provider_id,
+                provider_key,
                 display_name,
                 timezone,
+                default_language,
+                default_currency,
+                min_latitude,
+                max_latitude,
+                min_longitude,
+                max_longitude,
                 attribution_text,
                 website_url,
                 is_active
             )
             VALUES (
                 :provider_id,
+                :provider_key,
                 :display_name,
                 :timezone,
+                :default_language,
+                :default_currency,
+                :min_latitude,
+                :max_latitude,
+                :min_longitude,
+                :max_longitude,
                 :attribution_text,
                 :website_url,
                 :is_active
             )
             ON CONFLICT (provider_id) DO UPDATE SET
+                provider_key = EXCLUDED.provider_key,
                 display_name = EXCLUDED.display_name,
                 timezone = EXCLUDED.timezone,
+                default_language = EXCLUDED.default_language,
+                default_currency = EXCLUDED.default_currency,
+                min_latitude = EXCLUDED.min_latitude,
+                max_latitude = EXCLUDED.max_latitude,
+                min_longitude = EXCLUDED.min_longitude,
+                max_longitude = EXCLUDED.max_longitude,
                 attribution_text = EXCLUDED.attribution_text,
                 website_url = EXCLUDED.website_url,
                 is_active = EXCLUDED.is_active,
@@ -362,6 +389,24 @@ def capture_realtime(provider_id: str, endpoint_key: str) -> None:
     typer.echo(json.dumps(result.display_dict(), indent=2))
 
 
+@app.command("capture-i3")
+def capture_i3(provider_id: str) -> None:
+    """Capture, archive, and register one API i3 alert snapshot."""
+
+    settings = get_settings()
+    try:
+        result = capture_i3_alerts(
+            provider_id,
+            settings=settings,
+            registry=_provider_registry(settings),
+        )
+    except KeyError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    typer.echo(json.dumps(result.display_dict(), indent=2))
+
+
 @app.command("load-static-silver")
 def load_static_silver(provider_id: str) -> None:
     """Parse the latest Bronze static GTFS archive into Silver tables."""
@@ -417,6 +462,23 @@ def load_realtime_silver(provider_id: str, endpoint_key: str) -> None:
             endpoint_key,
             settings=settings,
             registry=_provider_registry(settings),
+        )
+    except KeyError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    except (ValueError, FileNotFoundError) as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    typer.echo(json.dumps(result.display_dict(), indent=2))
+
+
+@app.command("load-i3-silver")
+def load_i3_silver(provider_id: str) -> None:
+    """Normalize the latest raw i3 alert snapshot into Silver tables."""
+
+    settings = get_settings()
+    try:
+        result = load_latest_i3_to_silver(
+            provider_id,
+            settings=settings,
         )
     except KeyError as exc:
         raise typer.BadParameter(str(exc)) from exc

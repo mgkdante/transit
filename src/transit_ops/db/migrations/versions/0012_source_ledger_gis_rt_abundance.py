@@ -721,6 +721,12 @@ def _guard_downgrade_has_no_8_4_contract_rows() -> None:
 
 
 def upgrade() -> None:
+    op.alter_column(
+        "alembic_version",
+        "version_num",
+        existing_type=sa.String(length=32),
+        type_=sa.String(length=128),
+    )
     _drop_contract_constraints()
     _create_new_contract_constraints()
     _add_dataset_version_ledger_columns()
