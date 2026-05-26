@@ -256,6 +256,32 @@ def test_measures_are_bilingual_fr_first_and_legacy_terms_are_absent() -> None:
         assert legacy_term not in all_text
 
 
+def test_network_health_freshness_measure_uses_gtfs_rt_only() -> None:
+    measure_text = _read(TABLE_ROOT / "_Measures.tmdl")
+    match = re.search(
+        r"measure 'Âge fraîcheur sec / Freshness Age Sec' = ```(?P<dax>.*?)```",
+        measure_text,
+        flags=re.DOTALL,
+    )
+    assert match is not None
+    dax = match.group("dax")
+
+    assert "CALCULATE(" in dax
+    assert "MIN(FeedFreshnessCurrent[completed_age_seconds])" in dax
+    assert 'FeedFreshnessCurrent[endpoint_key] IN {"trip_updates", "vehicle_positions"}' in dax
+    assert "gis_static" not in dax
+    assert "static_schedule" not in dax
+
+
+def test_measures_dummy_partition_has_valid_single_row_source() -> None:
+    measure_text = _read(TABLE_ROOT / "_Measures.tmdl")
+
+    assert "\n\tpartition _Measures = m\n" in measure_text
+    assert "\n\t\tpartition _Measures = m\n" not in measure_text
+    assert 'Table.FromRows({{"_Measures"}}, type table [Column1 = text])' in measure_text
+    assert "Table.FromRows({{}}, type table [Column1 = text])" not in measure_text
+
+
 def test_vehicle_summary_5m_uses_actual_gold_rollup_columns() -> None:
     assert _source_columns("VehicleSummary5m") == EXPECTED_VEHICLE_SUMMARY_5M_COLUMNS
 

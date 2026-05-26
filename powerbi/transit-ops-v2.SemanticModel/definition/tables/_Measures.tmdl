@@ -43,7 +43,10 @@ table _Measures
 		formatString: 0
 
 	measure 'Âge fraîcheur sec / Freshness Age Sec' = ```
-			MAX(FeedFreshnessCurrent[completed_age_seconds])
+			CALCULATE(
+			    MIN(FeedFreshnessCurrent[completed_age_seconds]),
+			    FeedFreshnessCurrent[endpoint_key] IN {"trip_updates", "vehicle_positions"}
+			)
 			
 			```
 		formatString: 0
@@ -74,7 +77,7 @@ table _Measures
 		mode: import
 		source =
 				let
-				    Source = Table.FromRows({{}}, type table [Column1 = text])
+				    Source = Table.FromRows({{"_Measures"}}, type table [Column1 = text])
 				in
 				    Source
 
