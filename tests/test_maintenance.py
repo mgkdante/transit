@@ -1,18 +1,56 @@
 from __future__ import annotations
 
+import inspect
 from datetime import UTC, datetime
 
+import pytest
+
+from transit_ops import maintenance as maintenance_module
 from transit_ops.maintenance import (
+    REALTIME_SILVER_TABLES,
     SELECT_ELIGIBLE_BRONZE_REALTIME_OBJECTS,
+    VACUUM_TABLES,
     BronzeStoragePruneResult,
     GoldStoragePruneResult,
     SilverStoragePruneResult,
+    WarmRollupStoragePruneResult,
     prune_bronze_realtime_objects,
     prune_bronze_static_objects,
     prune_gold_fact_history,
     prune_realtime_silver_history,
     prune_static_silver_datasets,
+    prune_warm_rollup_storage,
 )
+
+DROPPED_LEGACY_SILVER_REALTIME_TABLES = (
+    "silver." + "trip_update_stop_time_updates",
+    "silver." + "trip_updates",
+    "silver." + "vehicle_positions",
+)
+
+EXPECTED_NORMALIZED_REALTIME_SILVER_TABLES = (
+    "silver.rt_trip_update_stop_times",
+    "silver.rt_trip_updates",
+    "silver.rt_vehicle_positions",
+    "silver.rt_entities",
+    "silver.rt_feed_snapshots",
+)
+
+EXPECTED_GOLD_AGGREGATE_TABLE_COUNTS = {
+    "gold.vehicle_summary_5m": 5,
+    "gold.trip_delay_summary_5m": 3,
+    "gold.warm_rollup_periods": 8,
+    "gold.route_delay_hourly": 11,
+    "gold.route_delay_day_of_week": 12,
+    "gold.stop_delay_hourly": 13,
+    "gold.route_reliability_weekly": 14,
+    "gold.route_reliability_monthly": 15,
+    "gold.stop_delay_weekly": 16,
+    "gold.stop_delay_monthly": 17,
+    "gold.route_habit_score": 18,
+    "gold.repeated_problem_route_stop": 19,
+    "gold.citizen_accountability_daily": 20,
+}
 
 
 class ScalarResult:
@@ -38,13 +76,35 @@ class RowcountResult:
         self.rowcount = rowcount
 
 
+class RecordingEngine:
+    def __init__(self, connection: RecordingConnection) -> None:
+        self.connection = connection
+
+    def begin(self) -> RecordingConnection:
+        return self.connection
+
+
 class RecordingConnection:
     def __init__(self) -> None:
         self.calls: list[str] = []
 
+    def __enter__(self) -> RecordingConnection:
+        return self
+
+    def __exit__(self, exc_type, exc, traceback) -> None:  # noqa: ANN001
+        return None
+
     def execute(self, statement, params=None):  # noqa: ANN001
         sql_text = str(statement)
         self.calls.append(sql_text)
+        for table_name, rowcount in EXPECTED_GOLD_AGGREGATE_TABLE_COUNTS.items():
+            if f"DELETE FROM {table_name}" in sql_text:
+                return RowcountResult(rowcount)
+            if (
+                ("SELECT COUNT(*)" in sql_text or "SELECT count(*)" in sql_text)
+                and f"FROM {table_name}" in sql_text
+            ):
+                return ScalarResult(rowcount)
         if "SELECT dataset_version_id" in sql_text:
             return IterableResult([(7,), (6,), (5,)])
         # DELETE statements return rowcount
@@ -90,12 +150,6 @@ class RecordingConnection:
             return RowcountResult(60)
         if "DELETE FROM silver.rt_feed_snapshots" in sql_text:
             return RowcountResult(50)
-        if "DELETE FROM silver.trip_update_stop_time_updates" in sql_text:
-            return RowcountResult(200)
-        if "DELETE FROM silver.trip_updates" in sql_text:
-            return RowcountResult(20)
-        if "DELETE FROM silver.vehicle_positions" in sql_text:
-            return RowcountResult(10)
         if "DELETE FROM gold.fact_trip_delay_snapshot" in sql_text:
             return RowcountResult(500)
         if "DELETE FROM gold.fact_vehicle_snapshot" in sql_text:
@@ -149,12 +203,6 @@ class RecordingConnection:
             return ScalarResult(60)
         if "SELECT COUNT(*) FROM silver.rt_feed_snapshots" in sql_text:
             return ScalarResult(50)
-        if "SELECT COUNT(*) FROM silver.trip_update_stop_time_updates" in sql_text:
-            return ScalarResult(200)
-        if "SELECT COUNT(*) FROM silver.trip_updates" in sql_text:
-            return ScalarResult(20)
-        if "SELECT COUNT(*) FROM silver.vehicle_positions" in sql_text:
-            return ScalarResult(10)
         if "SELECT COUNT(*) FROM gold.fact_trip_delay_snapshot" in sql_text:
             return ScalarResult(500)
         if "SELECT COUNT(*) FROM gold.fact_vehicle_snapshot" in sql_text:
@@ -299,10 +347,11 @@ def test_prune_realtime_silver_history_deletes_rows_older_than_cutoff() -> None:
         "silver.rt_vehicle_positions": 30,
         "silver.rt_entities": 60,
         "silver.rt_feed_snapshots": 50,
-        "silver.trip_update_stop_time_updates": 200,
-        "silver.trip_updates": 20,
-        "silver.vehicle_positions": 10,
     }
+    assert all(
+        dropped_table not in deleted_row_counts
+        for dropped_table in DROPPED_LEGACY_SILVER_REALTIME_TABLES
+    )
 
 
 def test_prune_realtime_silver_history_dry_run_returns_counts_without_deleting() -> None:
@@ -324,9 +373,6 @@ def test_prune_realtime_silver_history_dry_run_returns_counts_without_deleting()
         "silver.rt_vehicle_positions": 30,
         "silver.rt_entities": 60,
         "silver.rt_feed_snapshots": 50,
-        "silver.trip_update_stop_time_updates": 200,
-        "silver.trip_updates": 20,
-        "silver.vehicle_positions": 10,
     }
     delete_calls = [c for c in connection.calls if "DELETE" in c]
     assert delete_calls == [], f"Expected no DELETE calls in dry_run but got: {delete_calls}"
@@ -348,15 +394,35 @@ def test_prune_realtime_silver_history_zero_retention_is_noop() -> None:
         "silver.rt_vehicle_positions": 0,
         "silver.rt_entities": 0,
         "silver.rt_feed_snapshots": 0,
-        "silver.trip_update_stop_time_updates": 0,
-        "silver.trip_updates": 0,
-        "silver.vehicle_positions": 0,
     }
     assert connection.calls == []
 
 
 def test_bronze_realtime_prune_waits_for_source_snapshot_rows_to_be_gone() -> None:
-    assert "silver.rt_feed_snapshots" in str(SELECT_ELIGIBLE_BRONZE_REALTIME_OBJECTS)
+    sql = str(SELECT_ELIGIBLE_BRONZE_REALTIME_OBJECTS)
+
+    assert "silver.rt_feed_snapshots" in sql
+    assert "source_realtime_snapshot_id" in sql
+    for dropped_table in DROPPED_LEGACY_SILVER_REALTIME_TABLES:
+        assert dropped_table not in sql
+
+
+def test_maintenance_has_no_dropped_legacy_silver_realtime_sql() -> None:
+    source = inspect.getsource(maintenance_module)
+
+    assert REALTIME_SILVER_TABLES == EXPECTED_NORMALIZED_REALTIME_SILVER_TABLES
+    for dropped_table in DROPPED_LEGACY_SILVER_REALTIME_TABLES:
+        assert dropped_table not in source
+        assert dropped_table not in VACUUM_TABLES
+
+
+def test_vacuum_tables_include_normalized_silver_and_gold_aggregates_only() -> None:
+    for table_name in EXPECTED_NORMALIZED_REALTIME_SILVER_TABLES:
+        assert table_name in VACUUM_TABLES
+    for table_name in EXPECTED_GOLD_AGGREGATE_TABLE_COUNTS:
+        assert table_name in VACUUM_TABLES
+    for dropped_table in DROPPED_LEGACY_SILVER_REALTIME_TABLES:
+        assert dropped_table not in VACUUM_TABLES
 
 
 def test_prune_result_display_dict_formats_timestamps() -> None:
@@ -451,6 +517,52 @@ def test_gold_prune_result_display_dict_formats_timestamps() -> None:
     assert result.display_dict()["cutoff_utc"] == "2026-03-24T20:00:00+00:00"
     assert result.display_dict()["completed_at_utc"] == "2026-03-26T20:10:00+00:00"
     assert result.display_dict()["dry_run"] is False
+
+
+class WarmRollupSettings:
+    GOLD_WARM_ROLLUP_RETENTION_DAYS = 365
+
+
+def test_prune_warm_rollup_storage_applies_aggregate_retention_to_reporting_marts() -> None:
+    connection = RecordingConnection()
+    engine = RecordingEngine(connection)
+
+    result = prune_warm_rollup_storage(
+        "stm",
+        settings=WarmRollupSettings(),  # type: ignore[arg-type]
+        engine=engine,  # type: ignore[arg-type]
+        dry_run=True,
+    )
+
+    assert isinstance(result, WarmRollupStoragePruneResult)
+    assert result.retention_days == 365
+    assert result.deleted_row_counts == EXPECTED_GOLD_AGGREGATE_TABLE_COUNTS
+    for table_name in EXPECTED_GOLD_AGGREGATE_TABLE_COUNTS:
+        assert any(f"FROM {table_name}" in sql for sql in connection.calls)
+    assert all("DELETE" not in sql for sql in connection.calls)
+
+
+def test_gold_aggregate_retention_statement_rejects_unlisted_table_or_column() -> None:
+    with pytest.raises(ValueError, match="Unknown Gold aggregate retention target"):
+        maintenance_module._gold_aggregate_retention_statement(
+            "gold.not_a_real_aggregate",
+            "period_start_utc",
+            date_only=False,
+            dry_run=True,
+        )
+
+    with pytest.raises(ValueError, match="Unknown Gold aggregate retention target"):
+        maintenance_module._gold_aggregate_retention_statement(
+            "gold.route_delay_hourly",
+            "unsafe_column",
+            date_only=False,
+            dry_run=True,
+        )
+
+
+def test_safe_scalar_count_requires_scalar_result() -> None:
+    with pytest.raises(TypeError, match="scalar_one"):
+        maintenance_module._safe_scalar_count(RowcountResult(12))
 
 
 # ---------------------------------------------------------------------------

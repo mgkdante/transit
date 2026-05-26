@@ -1,0 +1,115 @@
+table CurrentI3Alerts
+
+	column provider_id
+		dataType: string
+		summarizeBy: none
+		sourceColumn: provider_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column alert_id
+		dataType: string
+		summarizeBy: none
+		sourceColumn: alert_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column alert_header_text
+		dataType: string
+		summarizeBy: none
+		sourceColumn: alert_header_text
+
+		annotation SummarizationSetBy = Automatic
+
+	column description_text
+		dataType: string
+		summarizeBy: none
+		sourceColumn: description_text
+
+		annotation SummarizationSetBy = Automatic
+
+	column severity
+		dataType: string
+		summarizeBy: none
+		sourceColumn: severity
+
+		annotation SummarizationSetBy = Automatic
+
+	column cause
+		dataType: string
+		summarizeBy: none
+		sourceColumn: cause
+
+		annotation SummarizationSetBy = Automatic
+
+	column effect
+		dataType: string
+		summarizeBy: none
+		sourceColumn: effect
+
+		annotation SummarizationSetBy = Automatic
+
+	column route_id
+		dataType: string
+		summarizeBy: none
+		sourceColumn: route_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column stop_id
+		dataType: string
+		summarizeBy: none
+		sourceColumn: stop_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column trip_id
+		dataType: string
+		summarizeBy: none
+		sourceColumn: trip_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column area_id
+		dataType: string
+		summarizeBy: none
+		sourceColumn: area_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column active_period_start_utc
+		dataType: dateTime
+		formatString: General Date
+		summarizeBy: none
+		sourceColumn: active_period_start_utc
+
+		annotation SummarizationSetBy = Automatic
+
+	column active_period_end_utc
+		dataType: dateTime
+		formatString: General Date
+		summarizeBy: none
+		sourceColumn: active_period_end_utc
+
+		annotation SummarizationSetBy = Automatic
+
+	column captured_at_utc
+		dataType: dateTime
+		formatString: General Date
+		summarizeBy: none
+		sourceColumn: captured_at_utc
+
+		annotation SummarizationSetBy = Automatic
+
+	partition CurrentI3Alerts = m
+		mode: directQuery
+		source =
+				let
+				    Source = PostgreSQL.Database("db.transit.yesid.dev", "transit"),
+				    gold_current_i3_alerts = Source{[Schema="gold",Item="current_i3_alerts"]}[Data]
+				in
+				    gold_current_i3_alerts
+
+	annotation PBI_NavigationStepName = Navigation
+
+	annotation PBI_ResultType = Table

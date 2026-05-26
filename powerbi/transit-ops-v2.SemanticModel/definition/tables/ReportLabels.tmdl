@@ -1,0 +1,50 @@
+table ReportLabels
+
+	column label_key
+		dataType: string
+		summarizeBy: none
+		sourceColumn: label_key
+
+		annotation SummarizationSetBy = Automatic
+
+	column label_fr
+		dataType: string
+		summarizeBy: none
+		sourceColumn: label_fr
+
+		annotation SummarizationSetBy = Automatic
+
+	column label_en
+		dataType: string
+		summarizeBy: none
+		sourceColumn: label_en
+
+		annotation SummarizationSetBy = Automatic
+
+	column label_combined
+		dataType: string
+		summarizeBy: none
+		sourceColumn: label_combined
+
+		annotation SummarizationSetBy = Automatic
+
+	column sort_order
+		dataType: int64
+		formatString: 0
+		summarizeBy: sum
+		sourceColumn: sort_order
+
+		annotation SummarizationSetBy = Automatic
+
+	partition ReportLabels = m
+		mode: directQuery
+		source =
+				let
+				    Source = PostgreSQL.Database("db.transit.yesid.dev", "transit"),
+				    gold_report_labels = Source{[Schema="gold",Item="report_labels"]}[Data]
+				in
+				    gold_report_labels
+
+	annotation PBI_NavigationStepName = Navigation
+
+	annotation PBI_ResultType = Table

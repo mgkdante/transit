@@ -8,6 +8,16 @@ import transit_ops.validation.proof as proof_module
 from transit_ops.settings import Settings
 from transit_ops.validation.proof import build_retention_proof_report
 
+EXPECTED_RETENTION_CONTRACT = {
+    "STATIC_DATASET_RETENTION_COUNT": 1,
+    "SILVER_REALTIME_RETENTION_DAYS": 14,
+    "GOLD_FACT_RETENTION_DAYS": 7,
+    "BRONZE_REALTIME_RETENTION_DAYS": 30,
+    "BRONZE_STATIC_RETENTION_DAYS": 365,
+    "GOLD_WARM_ROLLUP_RETENTION_DAYS": 365,
+}
+DEFAULT_CONTRACT_ENV_KEYS = (*EXPECTED_RETENTION_CONTRACT, "DATABASE_URL")
+
 
 @dataclass(frozen=True)
 class FakeDisplayResult:
@@ -19,6 +29,12 @@ class FakeDisplayResult:
         if self.dry_run is not None:
             payload["dry_run"] = self.dry_run
         return payload
+
+
+@pytest.fixture
+def clean_default_contract_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    for key in DEFAULT_CONTRACT_ENV_KEYS:
+        monkeypatch.delenv(key, raising=False)
 
 
 def test_retention_proof_report_combines_contract_storage_dry_runs_static_validation() -> None:
@@ -129,6 +145,20 @@ def test_retention_proof_report_combines_contract_storage_dry_runs_static_valida
         },
     }
     assert report["static_feed_validation"] == {"label": "static-stm"}
+
+
+def test_retention_proof_report_uses_default_clean_reporting_contract(
+    clean_default_contract_env: None,
+) -> None:
+    settings = Settings(_env_file=None)
+
+    report = build_retention_proof_report(
+        "stm",
+        settings=settings,
+        static_feed_validator=lambda provider_id, **kwargs: FakeDisplayResult("static"),
+    ).display_dict()
+
+    assert report["retention_contract"] == EXPECTED_RETENTION_CONTRACT
 
 
 def test_retention_proof_report_marks_db_backed_dry_runs_unavailable_without_db_url() -> None:

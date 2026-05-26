@@ -2,7 +2,7 @@
   "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/report/3.2.0/schema.json",
   "themeCollection": {
     "baseTheme": {
-      "name": "CY26SU02",
+      "name": "TransitOpsYesidDark",
       "reportVersionAtImport": {
         "visual": "2.6.0",
         "report": "3.1.0",
@@ -32,8 +32,8 @@
       "type": "SharedResources",
       "items": [
         {
-          "name": "CY26SU02",
-          "path": "BaseThemes/CY26SU02.json",
+          "name": "TransitOpsYesidDark",
+          "path": "BaseThemes/TransitOpsYesidDark.json",
           "type": "BaseTheme"
         }
       ]

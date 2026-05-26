@@ -41,9 +41,11 @@ DELETE_LATEST_VEHICLE_SNAPSHOT = text(
 
 ANALYZE_REALTIME_SILVER_TABLES = text(
     """
-    ANALYZE silver.trip_updates,
-            silver.trip_update_stop_time_updates,
-            silver.vehicle_positions
+    ANALYZE silver.rt_feed_snapshots,
+            silver.rt_entities,
+            silver.rt_trip_updates,
+            silver.rt_trip_update_stop_times,
+            silver.rt_vehicle_positions
     """
 )
 
@@ -312,7 +314,7 @@ def _vehicle_snapshot_statement(
     if target_table not in {"fact_vehicle_snapshot", "latest_vehicle_snapshot"}:
         raise ValueError(f"Unsupported gold vehicle snapshot table '{target_table}'.")
     latest_snapshot_filter = (
-        "AND realtime_snapshot_id = :realtime_snapshot_id" if latest_only else ""
+        "AND rfs.source_realtime_snapshot_id = :realtime_snapshot_id" if latest_only else ""
     )
     on_conflict_clause = (
         """
@@ -363,28 +365,36 @@ def _vehicle_snapshot_statement(
             speed
         )
         SELECT
-            provider_id,
-            realtime_snapshot_id,
-            entity_index,
-            to_char(timezone(:provider_timezone, feed_timestamp_utc), 'YYYYMMDD')::integer,
-            timezone(:provider_timezone, feed_timestamp_utc)::date,
-            feed_timestamp_utc,
-            captured_at_utc,
-            position_timestamp_utc,
-            entity_id,
-            vehicle_id,
-            trip_id,
-            route_id,
-            stop_id,
-            current_stop_sequence,
-            current_status,
-            occupancy_status,
-            latitude,
-            longitude,
-            bearing,
-            speed
-        FROM silver.vehicle_positions
-        WHERE provider_id = :provider_id
+            vp.provider_id,
+            rfs.source_realtime_snapshot_id AS realtime_snapshot_id,
+            vp.entity_index,
+            to_char(timezone(:provider_timezone, vp.feed_timestamp_utc), 'YYYYMMDD')::integer,
+            timezone(:provider_timezone, vp.feed_timestamp_utc)::date,
+            vp.feed_timestamp_utc,
+            vp.captured_at_utc,
+            vp.vehicle_timestamp_utc,
+            rte.entity_id,
+            vp.vehicle_id,
+            vp.trip_id,
+            vp.route_id,
+            vp.stop_id,
+            vp.current_stop_sequence,
+            vp.current_status,
+            vp.occupancy_status,
+            vp.latitude,
+            vp.longitude,
+            vp.bearing,
+            vp.speed
+        FROM silver.rt_vehicle_positions AS vp
+        INNER JOIN silver.rt_feed_snapshots AS rfs
+            ON rfs.rt_feed_snapshot_id = vp.rt_feed_snapshot_id
+           AND rfs.provider_id = vp.provider_id
+           AND rfs.endpoint_key = 'vehicle_positions'
+        LEFT JOIN silver.rt_entities AS rte
+            ON rte.rt_feed_snapshot_id = vp.rt_feed_snapshot_id
+           AND rte.entity_index = vp.entity_index
+        WHERE vp.provider_id = :provider_id
+          AND rfs.source_realtime_snapshot_id IS NOT NULL
           {latest_snapshot_filter}
         {on_conflict_clause}
         """
@@ -400,7 +410,7 @@ def _trip_delay_snapshot_statement(
     if target_table not in {"fact_trip_delay_snapshot", "latest_trip_delay_snapshot"}:
         raise ValueError(f"Unsupported gold trip delay snapshot table '{target_table}'.")
     latest_snapshot_filter = (
-        "AND tu.realtime_snapshot_id = :realtime_snapshot_id" if latest_only else ""
+        "AND rfs.source_realtime_snapshot_id = :realtime_snapshot_id" if latest_only else ""
     )
     on_conflict_clause = (
         """
@@ -426,24 +436,25 @@ def _trip_delay_snapshot_statement(
         f"""
         WITH stop_time_counts AS (
             SELECT
-                realtime_snapshot_id,
-                trip_update_entity_index AS entity_index,
+                rt_feed_snapshot_id,
+                entity_index,
                 count(*)::integer AS stop_time_update_count
-            FROM silver.trip_update_stop_time_updates
+            FROM silver.rt_trip_update_stop_times
             WHERE provider_id = :provider_id
-            GROUP BY realtime_snapshot_id, trip_update_entity_index
+            GROUP BY rt_feed_snapshot_id, entity_index
         ),
         stop_time_candidates AS (
             SELECT
-                tu.realtime_snapshot_id,
-                tu.entity_index,
+                rfs.source_realtime_snapshot_id AS realtime_snapshot_id,
+                rtu.rt_feed_snapshot_id,
+                rtu.entity_index,
                 stu.stop_id,
                 stu.stop_sequence,
                 EXTRACT(
                     EPOCH FROM (
                         COALESCE(stu.arrival_time_utc, stu.departure_time_utc)
                         - (
-                            tu.start_date::timestamp
+                            rtu.start_date::timestamp
                             + make_interval(
                                 hours => split_part(
                                     COALESCE(st.arrival_time, st.departure_time),
@@ -465,11 +476,11 @@ def _trip_delay_snapshot_statement(
                     )
                 )::integer AS derived_delay_seconds,
                 row_number() OVER (
-                    PARTITION BY tu.realtime_snapshot_id, tu.entity_index
+                    PARTITION BY rtu.rt_feed_snapshot_id, rtu.entity_index
                     ORDER BY
                         CASE
                             WHEN COALESCE(stu.arrival_time_utc, stu.departure_time_utc)
-                                >= tu.feed_timestamp_utc
+                                >= rtu.feed_timestamp_utc
                             THEN 0
                             ELSE 1
                         END,
@@ -477,32 +488,37 @@ def _trip_delay_snapshot_statement(
                             EXTRACT(
                                 EPOCH FROM (
                                     COALESCE(stu.arrival_time_utc, stu.departure_time_utc)
-                                    - tu.feed_timestamp_utc
+                                    - rtu.feed_timestamp_utc
                                 )
                             )
                         ),
                         stu.stop_sequence NULLS LAST,
                         stu.stop_time_update_index
                 ) AS delay_rank
-            FROM silver.trip_updates AS tu
-            INNER JOIN silver.trip_update_stop_time_updates AS stu
-                ON stu.provider_id = tu.provider_id
-               AND stu.realtime_snapshot_id = tu.realtime_snapshot_id
-               AND stu.trip_update_entity_index = tu.entity_index
+            FROM silver.rt_trip_updates AS rtu
+            INNER JOIN silver.rt_feed_snapshots AS rfs
+                ON rfs.rt_feed_snapshot_id = rtu.rt_feed_snapshot_id
+               AND rfs.provider_id = rtu.provider_id
+               AND rfs.endpoint_key = 'trip_updates'
+            INNER JOIN silver.rt_trip_update_stop_times AS stu
+                ON stu.provider_id = rtu.provider_id
+               AND stu.rt_feed_snapshot_id = rtu.rt_feed_snapshot_id
+               AND stu.entity_index = rtu.entity_index
             INNER JOIN silver.stop_times AS st
-                ON st.provider_id = tu.provider_id
+                ON st.provider_id = rtu.provider_id
                AND st.dataset_version_id = :dataset_version_id
-               AND st.trip_id = tu.trip_id
+               AND st.trip_id = rtu.trip_id
                AND st.stop_sequence = stu.stop_sequence
-            WHERE tu.provider_id = :provider_id
-              AND tu.start_date IS NOT NULL
+            WHERE rtu.provider_id = :provider_id
+              AND rfs.source_realtime_snapshot_id IS NOT NULL
+              AND rtu.start_date IS NOT NULL
               AND COALESCE(stu.arrival_time_utc, stu.departure_time_utc) IS NOT NULL
               AND COALESCE(st.arrival_time, st.departure_time) IS NOT NULL
               {latest_snapshot_filter}
         ),
         trip_delay_fallback AS (
             SELECT
-                realtime_snapshot_id,
+                rt_feed_snapshot_id,
                 entity_index,
                 derived_delay_seconds
             FROM stop_time_candidates
@@ -527,49 +543,60 @@ def _trip_delay_snapshot_statement(
             stop_time_update_count
         )
         SELECT
-            tu.provider_id,
-            tu.realtime_snapshot_id,
-            tu.entity_index,
-            to_char(timezone(:provider_timezone, tu.feed_timestamp_utc), 'YYYYMMDD')::integer,
-            timezone(:provider_timezone, tu.feed_timestamp_utc)::date,
-            tu.feed_timestamp_utc,
-            tu.captured_at_utc,
-            tu.entity_id,
-            tu.trip_id,
-            tu.route_id,
-            tu.direction_id,
-            tu.start_date,
-            COALESCE(tu.vehicle_id, vpm.vehicle_id),
-            tu.trip_schedule_relationship,
-            COALESCE(tu.delay_seconds, tdf.derived_delay_seconds),
+            rtu.provider_id,
+            rfs.source_realtime_snapshot_id AS realtime_snapshot_id,
+            rtu.entity_index,
+            to_char(timezone(:provider_timezone, rtu.feed_timestamp_utc), 'YYYYMMDD')::integer,
+            timezone(:provider_timezone, rtu.feed_timestamp_utc)::date,
+            rtu.feed_timestamp_utc,
+            rtu.captured_at_utc,
+            rte.entity_id,
+            rtu.trip_id,
+            rtu.route_id,
+            rtu.direction_id,
+            rtu.start_date,
+            vpm.vehicle_id,
+            rtu.schedule_relationship AS trip_schedule_relationship,
+            tdf.derived_delay_seconds,
             COALESCE(stc.stop_time_update_count, 0)
-        FROM silver.trip_updates AS tu
+        FROM silver.rt_trip_updates AS rtu
+        INNER JOIN silver.rt_feed_snapshots AS rfs
+            ON rfs.rt_feed_snapshot_id = rtu.rt_feed_snapshot_id
+           AND rfs.provider_id = rtu.provider_id
+           AND rfs.endpoint_key = 'trip_updates'
+        LEFT JOIN silver.rt_entities AS rte
+            ON rte.rt_feed_snapshot_id = rtu.rt_feed_snapshot_id
+           AND rte.entity_index = rtu.entity_index
         LEFT JOIN stop_time_counts AS stc
-          ON stc.realtime_snapshot_id = tu.realtime_snapshot_id
-         AND stc.entity_index = tu.entity_index
+          ON stc.rt_feed_snapshot_id = rtu.rt_feed_snapshot_id
+         AND stc.entity_index = rtu.entity_index
         LEFT JOIN trip_delay_fallback AS tdf
-          ON tdf.realtime_snapshot_id = tu.realtime_snapshot_id
-         AND tdf.entity_index = tu.entity_index
+          ON tdf.rt_feed_snapshot_id = rtu.rt_feed_snapshot_id
+         AND tdf.entity_index = rtu.entity_index
         LEFT JOIN LATERAL (
             SELECT
                 vp.vehicle_id
-            FROM silver.vehicle_positions AS vp
-            WHERE vp.provider_id = tu.provider_id
-              AND vp.trip_id = tu.trip_id
+            FROM silver.rt_vehicle_positions AS vp
+            INNER JOIN silver.rt_feed_snapshots AS vp_rfs
+                ON vp_rfs.rt_feed_snapshot_id = vp.rt_feed_snapshot_id
+               AND vp_rfs.provider_id = vp.provider_id
+               AND vp_rfs.endpoint_key = 'vehicle_positions'
+            WHERE vp.provider_id = rtu.provider_id
+              AND vp.trip_id = rtu.trip_id
               AND vp.vehicle_id IS NOT NULL
-              AND (tu.route_id IS NULL OR vp.route_id = tu.route_id)
+              AND (rtu.route_id IS NULL OR vp.route_id = rtu.route_id)
               AND vp.feed_timestamp_utc BETWEEN
-                    tu.feed_timestamp_utc - interval '10 minutes'
-                AND tu.feed_timestamp_utc + interval '10 minutes'
+                    rtu.feed_timestamp_utc - interval '10 minutes'
+                AND rtu.feed_timestamp_utc + interval '10 minutes'
             ORDER BY
-                abs(EXTRACT(EPOCH FROM (vp.feed_timestamp_utc - tu.feed_timestamp_utc))),
-                vp.realtime_snapshot_id DESC,
+                abs(EXTRACT(EPOCH FROM (vp.feed_timestamp_utc - rtu.feed_timestamp_utc))),
+                vp_rfs.source_realtime_snapshot_id DESC NULLS LAST,
                 vp.entity_index
             LIMIT 1
         ) AS vpm
-          ON tu.vehicle_id IS NULL
-         AND tu.trip_id IS NOT NULL
-        WHERE tu.provider_id = :provider_id
+          ON rtu.trip_id IS NOT NULL
+        WHERE rtu.provider_id = :provider_id
+          AND rfs.source_realtime_snapshot_id IS NOT NULL
           {latest_snapshot_filter}
         {on_conflict_clause}
         """
@@ -723,9 +750,11 @@ def _resolve_gold_build_context(
     latest_trip_updates_snapshot_id = connection.execute(
         text(
             """
-            SELECT max(realtime_snapshot_id)
-            FROM silver.trip_updates
+            SELECT max(source_realtime_snapshot_id)
+            FROM silver.rt_feed_snapshots
             WHERE provider_id = :provider_id
+              AND endpoint_key = 'trip_updates'
+              AND source_realtime_snapshot_id IS NOT NULL
             """
         ),
         {"provider_id": provider_id},
@@ -733,9 +762,11 @@ def _resolve_gold_build_context(
     latest_vehicle_snapshot_id = connection.execute(
         text(
             """
-            SELECT max(realtime_snapshot_id)
-            FROM silver.vehicle_positions
+            SELECT max(source_realtime_snapshot_id)
+            FROM silver.rt_feed_snapshots
             WHERE provider_id = :provider_id
+              AND endpoint_key = 'vehicle_positions'
+              AND source_realtime_snapshot_id IS NOT NULL
             """
         ),
         {"provider_id": provider_id},

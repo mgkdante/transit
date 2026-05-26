@@ -445,10 +445,10 @@ def test_runtime_vm_health_exposes_sanitized_cost_free_metrics() -> None:
     assert result.details["python_version"] == "3.12.9"
     assert result.details["retention_days"] == {
         "bronze_realtime": 30,
-        "bronze_static": 30,
-        "silver_realtime": 30,
-        "gold_fact": 365,
-        "gold_warm_rollup": 90,
+        "bronze_static": 365,
+        "silver_realtime": 14,
+        "gold_fact": 7,
+        "gold_warm_rollup": 365,
     }
     serialized = str(result.display_dict())
     assert "must-not-leak" not in serialized

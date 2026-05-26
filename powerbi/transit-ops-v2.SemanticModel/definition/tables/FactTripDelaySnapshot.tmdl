@@ -1,9 +1,7 @@
 table FactTripDelaySnapshot
-	lineageTag: b30c6952-a1f5-4a53-be03-72c03519e2c8
 
 	column provider_id
 		dataType: string
-		lineageTag: d26a08e5-b0ab-4e5d-9021-17ff007d6c6c
 		summarizeBy: none
 		sourceColumn: provider_id
 
@@ -12,7 +10,6 @@ table FactTripDelaySnapshot
 	column realtime_snapshot_id
 		dataType: int64
 		formatString: 0
-		lineageTag: fd349137-e518-4dd6-bbf5-9eabf8f639cc
 		summarizeBy: sum
 		sourceColumn: realtime_snapshot_id
 
@@ -21,7 +18,6 @@ table FactTripDelaySnapshot
 	column entity_index
 		dataType: int64
 		formatString: 0
-		lineageTag: 5b5a7f9f-b4e9-4881-a14b-58f77c3dfd2b
 		summarizeBy: sum
 		sourceColumn: entity_index
 
@@ -30,27 +26,22 @@ table FactTripDelaySnapshot
 	column snapshot_date_key
 		dataType: int64
 		formatString: 0
-		lineageTag: 23da82ce-d1be-4639-9278-8fe9a04b4100
-		summarizeBy: none
+		summarizeBy: sum
 		sourceColumn: snapshot_date_key
 
 		annotation SummarizationSetBy = Automatic
 
 	column snapshot_local_date
 		dataType: dateTime
-		formatString: Long Date
-		lineageTag: 86348920-ba05-4302-90b9-f5c45850f2bc
+		formatString: General Date
 		summarizeBy: none
 		sourceColumn: snapshot_local_date
 
 		annotation SummarizationSetBy = Automatic
 
-		annotation UnderlyingDateTimeDataType = Date
-
 	column feed_timestamp_utc
 		dataType: dateTime
 		formatString: General Date
-		lineageTag: a267fe0e-bbea-41b7-87de-7b7ea0609379
 		summarizeBy: none
 		sourceColumn: feed_timestamp_utc
 
@@ -59,23 +50,13 @@ table FactTripDelaySnapshot
 	column captured_at_utc
 		dataType: dateTime
 		formatString: General Date
-		lineageTag: 5efe7a8a-9de2-459d-ab12-ae5f084c9146
 		summarizeBy: none
 		sourceColumn: captured_at_utc
 
 		annotation SummarizationSetBy = Automatic
 
-	column entity_id
-		dataType: string
-		lineageTag: 3dd24ae2-3da3-4e48-8e5d-2ad9d95d0040
-		summarizeBy: none
-		sourceColumn: entity_id
-
-		annotation SummarizationSetBy = Automatic
-
 	column trip_id
 		dataType: string
-		lineageTag: 97192df5-0d44-4245-9614-83ab5cbd8254
 		summarizeBy: none
 		sourceColumn: trip_id
 
@@ -83,7 +64,6 @@ table FactTripDelaySnapshot
 
 	column route_id
 		dataType: string
-		lineageTag: 8b377ff1-c0bf-4eef-90bf-8b74ded85428
 		summarizeBy: none
 		sourceColumn: route_id
 
@@ -92,44 +72,21 @@ table FactTripDelaySnapshot
 	column direction_id
 		dataType: int64
 		formatString: 0
-		lineageTag: 58d0e5d8-79b3-4521-8a85-631eacfdc0a9
 		summarizeBy: sum
 		sourceColumn: direction_id
 
 		annotation SummarizationSetBy = Automatic
 
-	column start_date
-		dataType: dateTime
-		formatString: Long Date
-		lineageTag: 9bc47dd3-5d92-4959-89db-aa9a98ae7bea
-		summarizeBy: none
-		sourceColumn: start_date
-
-		annotation SummarizationSetBy = Automatic
-
-		annotation UnderlyingDateTimeDataType = Date
-
 	column vehicle_id
 		dataType: string
-		lineageTag: 1c95022d-c513-4e8f-93dc-4e96ee8fc148
 		summarizeBy: none
 		sourceColumn: vehicle_id
-
-		annotation SummarizationSetBy = Automatic
-
-	column trip_schedule_relationship
-		dataType: int64
-		formatString: 0
-		lineageTag: f1cea39a-ea37-4a0e-9bd6-8489083e3f6a
-		summarizeBy: sum
-		sourceColumn: trip_schedule_relationship
 
 		annotation SummarizationSetBy = Automatic
 
 	column delay_seconds
 		dataType: int64
 		formatString: 0
-		lineageTag: 28647dea-ca02-42e9-897d-2ec1f5aaeb14
 		summarizeBy: sum
 		sourceColumn: delay_seconds
 
@@ -138,7 +95,6 @@ table FactTripDelaySnapshot
 	column stop_time_update_count
 		dataType: int64
 		formatString: 0
-		lineageTag: 9ce4848c-7358-47fc-bb8e-026d2202dd37
 		summarizeBy: sum
 		sourceColumn: stop_time_update_count
 
@@ -156,4 +112,3 @@ table FactTripDelaySnapshot
 	annotation PBI_NavigationStepName = Navigation
 
 	annotation PBI_ResultType = Table
-
