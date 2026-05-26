@@ -1,10 +1,3 @@
-/// All relationships ship inactive by default. Activate selectively in
-/// Power BI Desktop after refreshing once and confirming uniqueness on the
-/// dim side (DimRoute/DimStop have provider_id + dataset_version_id +
-/// natural-key composite uniqueness; with a single active dataset version
-/// the natural-key relationship holds in practice). Toggle via
-/// Model view → Relationship → Active checkbox.
-
 relationship currentTripDelayComputed_route
 	isActive: false
 	fromColumn: CurrentTripDelayComputed.route_id
