@@ -3,8 +3,8 @@
   "name": "p04history",
   "displayName": "Historique / History",
   "displayOption": "FitToPage",
-  "height": 844,
-  "width": 390,
+  "height": 720,
+  "width": 1280,
   "objects": {
     "background": [
       {

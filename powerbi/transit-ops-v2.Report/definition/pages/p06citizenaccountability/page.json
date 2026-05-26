@@ -3,8 +3,8 @@
   "name": "p06citizenaccountability",
   "displayName": "Responsabilité citoyenne / Citizen Accountability",
   "displayOption": "FitToPage",
-  "height": 844,
-  "width": 390,
+  "height": 720,
+  "width": 1280,
   "objects": {
     "background": [
       {

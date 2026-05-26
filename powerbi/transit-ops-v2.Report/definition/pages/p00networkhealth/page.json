@@ -3,8 +3,8 @@
   "name": "p00networkhealth",
   "displayName": "Santé du réseau / Network Health",
   "displayOption": "FitToPage",
-  "height": 844,
-  "width": 390,
+  "height": 720,
+  "width": 1280,
   "objects": {
     "background": [
       {

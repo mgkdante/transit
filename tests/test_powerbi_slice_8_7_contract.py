@@ -61,6 +61,8 @@ EXPECTED_PAGES = [
     "Confiance des données / Data Trust",
     "Responsabilité citoyenne / Citizen Accountability",
 ]
+DESKTOP_REPORT_WIDTH = 1280
+DESKTOP_REPORT_HEIGHT = 720
 EXPECTED_MEASURES = {
     "Véhicules actifs / Active Vehicles",
     "Trajets en retard / Delayed Trips",
@@ -193,16 +195,21 @@ def test_gold_partitions_use_only_reporting_database_gold_navigation() -> None:
     assert "mode: import" in measures_text
 
 
-def test_report_pages_are_exact_bilingual_fr_first_skeleton() -> None:
+def test_report_pages_are_exact_bilingual_fr_first_desktop_web_layout() -> None:
     pages = json.loads(_read(REPORT_ROOT / "pages" / "pages.json"))
     page_names = pages["pageOrder"]
-    display_names = [
-        json.loads(_read(REPORT_ROOT / "pages" / page_name / "page.json"))["displayName"]
+    page_defs = [
+        json.loads(_read(REPORT_ROOT / "pages" / page_name / "page.json"))
         for page_name in page_names
     ]
+    display_names = [page["displayName"] for page in page_defs]
 
     assert display_names == EXPECTED_PAGES
     assert pages["activePageName"] == page_names[0]
+    for page in page_defs:
+        assert page["width"] == DESKTOP_REPORT_WIDTH
+        assert page["height"] == DESKTOP_REPORT_HEIGHT
+        assert page["displayOption"] == "FitToPage"
 
 
 def test_report_theme_uses_yesid_tokens_not_default_cy_theme() -> None:
