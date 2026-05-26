@@ -54,9 +54,11 @@ class FakeR2Storage:
         keys: list[str],
         *,
         fail_delete_keys: set[str] | None = None,
+        byte_size_by_key: dict[str, int | None] | None = None,
     ) -> None:
         self.keys = list(keys)
         self.fail_delete_keys = fail_delete_keys or set()
+        self.byte_size_by_key = byte_size_by_key or {}
         self.listed_prefixes: list[str] = []
         self.deleted_keys: list[str] = []
 
@@ -65,7 +67,7 @@ class FakeR2Storage:
         return [
             BronzeObjectInfo(
                 storage_path=key,
-                byte_size=len(key),
+                byte_size=self.byte_size_by_key.get(key, len(key)),
                 last_modified=datetime(2026, 5, 25, 12, 0, tzinfo=UTC),
             )
             for key in self.keys
@@ -114,6 +116,40 @@ def test_inventory_scans_active_prefixes_and_classifies_known_vs_unknown_keys() 
     assert inventory.unknown_keys == [MALFORMED_KEY, UNKNOWN_KEY]
 
 
+def test_inventory_display_dict_includes_compact_count_and_byte_summaries() -> None:
+    storage = FakeR2Storage(
+        [STATIC_OLD, TRIP_NEW, VEHICLE_NEW, UNKNOWN_KEY, MALFORMED_KEY],
+        byte_size_by_key={
+            STATIC_OLD: 100,
+            TRIP_NEW: 25,
+            VEHICLE_NEW: None,
+            UNKNOWN_KEY: 8,
+            MALFORMED_KEY: 12,
+        },
+    )
+
+    inventory = build_r2_inventory(
+        storage,
+        provider_id="stm",
+        generated_at_utc=datetime(2026, 5, 25, 12, 0, tzinfo=UTC),
+    )
+
+    display = inventory.display_dict()
+
+    assert display["object_count"] == 5
+    assert display["known_object_count"] == 3
+    assert display["unknown_key_count"] == 2
+    assert display["total_byte_size"] == 145
+    assert display["known_total_byte_size"] == 125
+    assert display["unknown_total_byte_size"] == 20
+    assert display["byte_size_by_endpoint"] == {
+        "static_schedule": 100,
+        "trip_updates": 25,
+        "vehicle_positions": 0,
+    }
+    assert display["objects"][4]["byte_size"] is None
+
+
 def test_normal_cleanup_plan_deletes_only_old_known_keys_and_skips_unknown_keys() -> None:
     inventory = build_r2_inventory(
         FakeR2Storage([STATIC_OLD, TRIP_OLD, TRIP_NEW, UNKNOWN_KEY]),
@@ -130,6 +166,69 @@ def test_normal_cleanup_plan_deletes_only_old_known_keys_and_skips_unknown_keys(
     assert [item.storage_path for item in plan.retained_objects] == [TRIP_NEW]
     assert plan.skipped_unknown_keys == [UNKNOWN_KEY]
     assert plan.active_prefix_wipe is False
+
+
+def test_cleanup_plan_display_dict_includes_compact_count_and_byte_summaries() -> None:
+    inventory = build_r2_inventory(
+        FakeR2Storage(
+            [STATIC_OLD, TRIP_OLD, TRIP_NEW, UNKNOWN_KEY],
+            byte_size_by_key={
+                STATIC_OLD: 100,
+                TRIP_OLD: 30,
+                TRIP_NEW: 20,
+                UNKNOWN_KEY: 5,
+            },
+        ),
+        provider_id="stm",
+        generated_at_utc=datetime(2026, 5, 25, 12, 0, tzinfo=UTC),
+    )
+
+    plan = build_r2_cleanup_plan_from_inventory(
+        inventory,
+        keep_from_date=date(2026, 5, 1),
+    )
+
+    display = plan.display_dict()
+
+    assert display["eligible_object_count"] == 2
+    assert display["retained_object_count"] == 1
+    assert display["skipped_unknown_key_count"] == 1
+    assert display["unknown_keys_included_in_wipe_count"] == 0
+    assert display["eligible_total_byte_size"] == 130
+    assert display["retained_total_byte_size"] == 20
+    assert display["skipped_unknown_total_byte_size"] == 5
+    assert display["unknown_keys_included_in_wipe_total_byte_size"] == 0
+
+
+def test_active_prefix_wipe_plan_display_dict_includes_unknown_wipe_byte_summary() -> None:
+    inventory = build_r2_inventory(
+        FakeR2Storage(
+            [TRIP_OLD, TRIP_NEW, UNKNOWN_KEY],
+            byte_size_by_key={
+                TRIP_OLD: 30,
+                TRIP_NEW: 20,
+                UNKNOWN_KEY: None,
+            },
+        ),
+        provider_id="stm",
+        generated_at_utc=datetime(2026, 5, 25, 12, 0, tzinfo=UTC),
+    )
+
+    plan = build_r2_cleanup_plan_from_inventory(
+        inventory,
+        keep_from_date=date(2026, 5, 1),
+        active_prefix_wipe=True,
+    )
+
+    display = plan.display_dict()
+
+    assert display["eligible_object_count"] == 3
+    assert display["eligible_total_byte_size"] == 50
+    assert display["skipped_unknown_key_count"] == 0
+    assert display["skipped_unknown_total_byte_size"] == 0
+    assert display["unknown_keys_included_in_wipe_count"] == 1
+    assert display["unknown_keys_included_in_wipe_total_byte_size"] == 0
+    assert display["eligible_objects"][2]["byte_size"] is None
 
 
 def test_dry_run_execution_does_not_delete_and_needs_no_confirmations() -> None:
@@ -254,6 +353,96 @@ def test_delete_failures_are_reported_and_execution_continues() -> None:
     assert result.deleted_keys == [TRIP_OLD]
     assert result.failed_keys == [STATIC_OLD]
     assert storage.deleted_keys == [TRIP_OLD]
+
+
+def test_cleanup_result_display_dict_includes_compact_counts_and_byte_summaries() -> None:
+    storage = FakeR2Storage(
+        [STATIC_OLD, TRIP_OLD],
+        fail_delete_keys={STATIC_OLD},
+        byte_size_by_key={
+            STATIC_OLD: 100,
+            TRIP_OLD: 30,
+        },
+    )
+    plan = build_r2_cleanup_plan_from_inventory(
+        build_r2_inventory(storage, provider_id="stm"),
+        keep_from_date=date(2026, 5, 1),
+    )
+
+    result = execute_r2_cleanup_plan(
+        storage,
+        plan,
+        execute=True,
+        confirm_r2_cleanup=True,
+    )
+
+    display = result.display_dict()
+
+    assert display["planned_count"] == 2
+    assert display["deleted_key_count"] == 1
+    assert display["failed_key_count"] == 1
+    assert display["skipped_unknown_key_count"] == 0
+    assert display["unknown_keys_included_in_wipe_count"] == 0
+    assert display["planned_total_byte_size"] == 130
+    assert display["deleted_total_byte_size"] == 30
+    assert display["failed_total_byte_size"] == 100
+    assert display["skipped_unknown_total_byte_size"] == 0
+    assert display["unknown_keys_included_in_wipe_total_byte_size"] == 0
+
+
+def test_dry_run_cleanup_result_display_dict_carries_skipped_unknown_byte_summary() -> None:
+    storage = FakeR2Storage(
+        [TRIP_OLD, UNKNOWN_KEY],
+        byte_size_by_key={
+            TRIP_OLD: 30,
+            UNKNOWN_KEY: 5,
+        },
+    )
+    plan = build_r2_cleanup_plan_from_inventory(
+        build_r2_inventory(storage, provider_id="stm"),
+        keep_from_date=date(2026, 5, 1),
+    )
+
+    result = execute_r2_cleanup_plan(storage, plan, execute=False)
+
+    display = result.display_dict()
+
+    assert display["planned_total_byte_size"] == 30
+    assert display["deleted_total_byte_size"] == 0
+    assert display["failed_total_byte_size"] == 0
+    assert display["skipped_unknown_total_byte_size"] == 5
+    assert display["unknown_keys_included_in_wipe_total_byte_size"] == 0
+
+
+def test_active_wipe_cleanup_result_display_dict_carries_unknown_wipe_byte_summary() -> None:
+    storage = FakeR2Storage(
+        [TRIP_OLD, UNKNOWN_KEY],
+        byte_size_by_key={
+            TRIP_OLD: 30,
+            UNKNOWN_KEY: 5,
+        },
+    )
+    plan = build_r2_cleanup_plan_from_inventory(
+        build_r2_inventory(storage, provider_id="stm"),
+        keep_from_date=date(2026, 5, 1),
+        active_prefix_wipe=True,
+    )
+
+    result = execute_r2_cleanup_plan(
+        storage,
+        plan,
+        execute=True,
+        confirm_r2_cleanup=True,
+        confirm_active_prefix_wipe=True,
+    )
+
+    display = result.display_dict()
+
+    assert display["planned_total_byte_size"] == 35
+    assert display["deleted_total_byte_size"] == 35
+    assert display["failed_total_byte_size"] == 0
+    assert display["skipped_unknown_total_byte_size"] == 0
+    assert display["unknown_keys_included_in_wipe_total_byte_size"] == 5
 
 
 def test_prune_cycle_writes_artifacts_and_reinventories_after_delete(tmp_path) -> None:

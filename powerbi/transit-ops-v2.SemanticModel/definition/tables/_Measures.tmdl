@@ -1,116 +1,68 @@
 table _Measures
-	lineageTag: 3718154f-36d6-4cb9-b53b-3cdd8cee00cb
 
-	measure 'Active Vehicles (Latest)' = SUM(KpiActiveVehicles[active_vehicle_count])
-		formatString: 0
-		lineageTag: 0f273603-ae30-4802-82db-aea148e02c32
-
-	measure 'Routes Currently Running (Latest)' = ```
-			SUM(KpiRoutesRunning[routes_with_live_vehicles])
+	measure 'Véhicules actifs / Active Vehicles' = ```
+			DISTINCTCOUNT(LatestVehicleSnapshot[vehicle_id])
 			
 			```
 		formatString: 0
-		lineageTag: f59de9ed-09f7-4c67-ac0e-0b11428366f0
 
-	measure 'Average Delay Seconds (Latest)' = ```
-			SUM(KpiAvgDelay[avg_delay_seconds])
-			
-			```
-		lineageTag: 94dc814c-a079-4440-ba13-f19186038788
-
-		annotation PBI_FormatHint = {"isGeneralNumber":true}
-
-	measure 'Delayed Trips Count (Latest)' = ```
-			SUM(KpiDelayedTrips[delayed_trip_count])
+	measure 'Trajets en retard / Delayed Trips' = ```
+			COUNTROWS(FILTER(CurrentTripDelayComputed, CurrentTripDelayComputed[avg_delay_seconds] > 0))
 			
 			```
 		formatString: 0
-		lineageTag: f8c77400-e2a8-4440-ba31-8ab90ab6e172
 
-	measure 'Max Delay Seconds (Latest)' = ```
-			SUM(KpiMaxDelay[max_delay_seconds])
+	measure 'Retard moyen sec / Avg Delay Sec' = ```
+			AVERAGE(CurrentTripDelayComputed[avg_delay_seconds])
+			
+			```
+		formatString: 0.0
+
+	measure 'Retard sévère / Severe Delay' = ```
+			COUNTROWS(FILTER(CurrentTripDelayComputed, CurrentTripDelayComputed[max_delay_seconds] > 300))
 			
 			```
 		formatString: 0
-		lineageTag: e1806a1a-6bd7-46e2-b37a-a85027d1c9d3
 
-	measure 'Latest Vehicle Feed Timestamp ET' = ```
-			MAX(LatestVehicle[feed_timestamp_utc])
-			
-			```
-		formatString: General Date
-		lineageTag: 9a073052-99b1-4ea6-a0b5-81490d7bd379
-
-	measure 'Latest Trip Feed Timestamp ET' = ```
-			MAX(LatestTripDelay[feed_timestamp_utc])
-			
-			```
-		formatString: General Date
-		lineageTag: 39238fc9-6db6-44e6-8e52-e1a9cae82ba6
-
-	measure 'Vehicle Freshness Age Seconds' = ```
-			DATEDIFF(MAX(LatestVehicle[feed_timestamp_utc]), NOW(), SECOND)
+	measure 'Routes touchées / Affected Routes' = ```
+			DISTINCTCOUNT(CurrentTripDelayComputed[route_id])
 			
 			```
 		formatString: 0
-		lineageTag: abc849eb-b80a-439c-8555-3d1f4c64de6e
 
-	measure 'Trip Freshness Age Seconds' = ```
-			DATEDIFF(MAX(LatestTripDelay[feed_timestamp_utc]), NOW(), SECOND)
+	measure 'Arrêts touchés / Affected Stops' = ```
+			DISTINCTCOUNT(FactStopTimeDelayObservation[stop_id])
 			
 			```
 		formatString: 0
-		lineageTag: 27857663-ced0-4094-bdd1-4dd67f67b422
 
-	measure 'Route Active Vehicles' = ```
-			COUNTROWS(LatestVehicle)
+	measure 'Alertes actives / Active Alerts' = ```
+			DISTINCTCOUNT(CurrentI3Alerts[alert_id])
 			
 			```
 		formatString: 0
-		lineageTag: 15cb2039-8069-46ac-830b-539b42168d90
 
-	measure 'Route Delayed Trips' = ```
-			COUNTROWS(FILTER(LatestTripDelay, LatestTripDelay[delay_seconds] > 0))
+	measure 'Âge fraîcheur sec / Freshness Age Sec' = ```
+			MAX(FeedFreshnessCurrent[completed_age_seconds])
 			
 			```
 		formatString: 0
-		lineageTag: a0518229-4a20-420e-90c5-9db12dd3da93
 
-	measure 'Route Avg Delay Seconds' = ```
-			CALCULATE(AVERAGE(LatestTripDelay[delay_seconds]), LatestTripDelay[delay_seconds] <> BLANK())
+	measure 'Score impact citoyens / Citizen Impact Score' = ```
+			SUM(CitizenAccountabilityDaily[rider_impact_score])
 			
 			```
-		lineageTag: b01017d3-926f-449d-8aed-3772951b8cd1
+		formatString: 0.0
 
-		annotation PBI_FormatHint = {"isGeneralNumber":true}
-
-	measure 'Avg Delay Seconds (5m Rollup)' = ```
-			AVERAGE(TripDelaySummary5m[avg_delay_seconds])
+	measure 'Score habitudes / Habit Score' = ```
+			AVERAGE(RouteHabitScore[repeat_problem_score])
 			
 			```
-		lineageTag: 8184b445-1f8e-41b0-bf8a-91b5d8502a5e
-
-		annotation PBI_FormatHint = {"isGeneralNumber":true}
-
-	measure 'Vehicle Observations' = ```
-			COUNTROWS(FactVehicleSnapshot)
-			
-			```
-		formatString: 0
-		lineageTag: 2ed4a888-e39e-4e12-97a1-d6457c61029c
-
-	measure 'On-Time Percentage (Latest)' = ```
-			VAR total = COUNTROWS(LatestTripDelay) VAR delayed = COUNTROWS(FILTER(LatestTripDelay, LatestTripDelay[delay_seconds] > 300)) RETURN IF(total = 0, BLANK(), DIVIDE(total - delayed, total) * 100)
-			
-			```
-		lineageTag: 08b95080-b490-42ba-8339-833fe107545f
-
-		annotation PBI_FormatHint = {"isGeneralNumber":true}
+		formatString: 0.0
 
 	column Column1
 		dataType: string
 		isHidden
-		lineageTag: b72bbc8a-ef13-49c7-9897-f4dc5707d2a4
 		summarizeBy: none
 		sourceColumn: Column1
 
@@ -122,10 +74,8 @@ table _Measures
 		mode: import
 		source =
 				let
-				    Source = Table.FromRows(Json.Document(Binary.Decompress(Binary.FromText("i44FAA==", BinaryEncoding.Base64), Compression.Deflate)), let _t = ((type nullable text) meta [Serialized.Text = true]) in type table [Column1 = _t]),
-				    #"Changed Type" = Table.TransformColumnTypes(Source,{{"Column1", type text}})
+				    Source = Table.FromRows({{}}, type table [Column1 = text])
 				in
-				    #"Changed Type"
+				    Source
 
 	annotation PBI_ResultType = Table
-

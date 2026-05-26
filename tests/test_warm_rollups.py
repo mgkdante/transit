@@ -7,6 +7,24 @@ from transit_ops.gold.rollups import WarmRollupBuildResult, build_warm_rollups
 from transit_ops.maintenance import WarmRollupStoragePruneResult, prune_warm_rollup_storage
 from transit_ops.settings import Settings
 
+REPORTING_AGGREGATE_TABLES = (
+    "route_delay_hourly",
+    "route_delay_day_of_week",
+    "stop_delay_hourly",
+    "route_reliability_weekly",
+    "route_reliability_monthly",
+    "stop_delay_weekly",
+    "stop_delay_monthly",
+    "route_habit_score",
+    "repeated_problem_route_stop",
+    "citizen_accountability_daily",
+)
+
+REPORTING_AGGREGATE_ROWCOUNTS = {
+    table_name: index
+    for index, table_name in enumerate(REPORTING_AGGREGATE_TABLES, start=10)
+}
+
 
 class RowcountResult:
     def __init__(self, rowcount: int) -> None:
@@ -63,6 +81,17 @@ class FakeConnection:
 
         if "INSERT INTO gold.warm_rollup_periods" in sql:
             return RowcountResult(1)
+
+        for table_name, rowcount in REPORTING_AGGREGATE_ROWCOUNTS.items():
+            if f"INSERT INTO gold.{table_name}" in sql:
+                return RowcountResult(rowcount)
+            if (
+                ("SELECT COUNT(*)" in sql or "SELECT count(*)" in sql)
+                and f"FROM gold.{table_name}" in sql
+            ):
+                return ScalarResult(rowcount)
+            if f"DELETE FROM gold.{table_name}" in sql:
+                return RowcountResult(rowcount)
 
         if "DELETE FROM gold.vehicle_summary_5m" in sql:
             return RowcountResult(5)
@@ -171,6 +200,67 @@ def test_build_warm_rollups_empty_facts_is_noop() -> None:
     assert isinstance(result.completed_at_utc, datetime)
 
 
+def test_build_warm_rollups_rebuilds_reporting_aggregate_marts() -> None:
+    conn = FakeConnection()
+    engine = FakeEngine(conn)
+
+    result = build_warm_rollups("stm", engine=engine)
+
+    assert result.reporting_aggregate_row_counts == {
+        table_name: rowcount
+        for table_name, rowcount in REPORTING_AGGREGATE_ROWCOUNTS.items()
+    }
+    for table_name in REPORTING_AGGREGATE_TABLES:
+        delete_index = next(
+            index
+            for index, statement in enumerate(conn.executed)
+            if f"DELETE FROM gold.{table_name}" in statement
+        )
+        insert_index = next(
+            index
+            for index, statement in enumerate(conn.executed)
+            if f"INSERT INTO gold.{table_name}" in statement
+        )
+        assert delete_index < insert_index
+
+
+def test_reporting_aggregate_builders_read_gold_reporting_surfaces_only() -> None:
+    conn = FakeConnection()
+    engine = FakeEngine(conn)
+
+    build_warm_rollups("stm", engine=engine)
+
+    aggregate_inserts = [
+        statement
+        for statement in conn.executed
+        if any(
+            f"INSERT INTO gold.{table_name}" in statement
+            for table_name in REPORTING_AGGREGATE_TABLES
+        )
+    ]
+    assert len(aggregate_inserts) == len(REPORTING_AGGREGATE_TABLES)
+    assert all(" silver." not in statement.lower() for statement in aggregate_inserts)
+    assert any("FROM gold.trip_delay_summary_5m" in statement for statement in aggregate_inserts)
+    assert any("FROM gold.fact_trip_delay_snapshot" in statement for statement in aggregate_inserts)
+    assert any(
+        "FROM gold.fact_stop_time_delay_observation" in statement
+        for statement in aggregate_inserts
+    )
+    assert any(
+        "FROM gold.public_route_reliability_daily" in statement
+        for statement in aggregate_inserts
+    )
+    assert any("FROM gold.public_stop_delay_daily" in statement for statement in aggregate_inserts)
+    assert any(
+        "FROM gold.public_alert_impact_daily" in statement for statement in aggregate_inserts
+    )
+    assert any(
+        "FROM gold.i3_alert_history_reporting" in statement
+        for statement in aggregate_inserts
+    )
+    assert any("gold.dim_provider" in statement for statement in aggregate_inserts)
+
+
 def test_build_warm_rollups_result_display_dict() -> None:
     conn = FakeConnection(vehicle_periods=[datetime(2026, 3, 25, 12, 0, tzinfo=UTC)])
     engine = FakeEngine(conn)
@@ -181,6 +271,10 @@ def test_build_warm_rollups_result_display_dict() -> None:
     assert d["provider_id"] == "stm"
     assert d["built_vehicle_periods"] == 1
     assert d["since_utc"] is None
+    assert d["reporting_aggregate_row_counts"] == {
+        table_name: rowcount
+        for table_name, rowcount in REPORTING_AGGREGATE_ROWCOUNTS.items()
+    }
     assert "completed_at_utc" in d
 
 
@@ -221,12 +315,14 @@ def test_prune_warm_rollup_storage_dry_run_counts_without_deletes() -> None:
     assert result.deleted_row_counts["gold.vehicle_summary_5m"] == 5
     assert result.deleted_row_counts["gold.trip_delay_summary_5m"] == 3
     assert result.deleted_row_counts["gold.warm_rollup_periods"] == 8
+    for table_name, expected_count in REPORTING_AGGREGATE_ROWCOUNTS.items():
+        assert result.deleted_row_counts[f"gold.{table_name}"] == expected_count
 
     deletes = [s for s in conn.executed if "DELETE FROM gold." in s]
     assert deletes == []
 
-    count_queries = [s for s in conn.executed if "SELECT COUNT(*)" in s]
-    assert len(count_queries) == 3
+    count_queries = [s for s in conn.executed if "SELECT COUNT(*)" in s or "SELECT count(*)" in s]
+    assert len(count_queries) == 13
 
 
 def test_prune_warm_rollup_storage_display_dict_includes_dry_run() -> None:

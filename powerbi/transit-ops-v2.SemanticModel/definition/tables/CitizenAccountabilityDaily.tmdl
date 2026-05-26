@@ -1,0 +1,86 @@
+table CitizenAccountabilityDaily
+
+	column provider_id
+		dataType: string
+		summarizeBy: none
+		sourceColumn: provider_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column provider_local_date
+		dataType: dateTime
+		formatString: General Date
+		summarizeBy: none
+		sourceColumn: provider_local_date
+
+		annotation SummarizationSetBy = Automatic
+
+	column affected_route_count
+		dataType: int64
+		formatString: 0
+		summarizeBy: sum
+		sourceColumn: affected_route_count
+
+		annotation SummarizationSetBy = Automatic
+
+	column affected_stop_count
+		dataType: int64
+		formatString: 0
+		summarizeBy: sum
+		sourceColumn: affected_stop_count
+
+		annotation SummarizationSetBy = Automatic
+
+	column delayed_trip_count
+		dataType: int64
+		formatString: 0
+		summarizeBy: sum
+		sourceColumn: delayed_trip_count
+
+		annotation SummarizationSetBy = Automatic
+
+	column severe_delay_count
+		dataType: int64
+		formatString: 0
+		summarizeBy: sum
+		sourceColumn: severe_delay_count
+
+		annotation SummarizationSetBy = Automatic
+
+	column alert_count
+		dataType: int64
+		formatString: 0
+		summarizeBy: sum
+		sourceColumn: alert_count
+
+		annotation SummarizationSetBy = Automatic
+
+	column rider_impact_score
+		dataType: double
+		summarizeBy: sum
+		sourceColumn: rider_impact_score
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	column built_at_utc
+		dataType: dateTime
+		formatString: General Date
+		summarizeBy: none
+		sourceColumn: built_at_utc
+
+		annotation SummarizationSetBy = Automatic
+
+	partition CitizenAccountabilityDaily = m
+		mode: directQuery
+		source =
+				let
+				    Source = PostgreSQL.Database("db.transit.yesid.dev", "transit"),
+				    gold_citizen_accountability_daily = Source{[Schema="gold",Item="citizen_accountability_daily"]}[Data]
+				in
+				    gold_citizen_accountability_daily
+
+	annotation PBI_NavigationStepName = Navigation
+
+	annotation PBI_ResultType = Table

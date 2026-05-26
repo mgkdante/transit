@@ -12,6 +12,31 @@ from transit_ops.source_factory.catalog import (
 )
 
 
+def _silver_table(table_name: str) -> str:
+    return f"silver.{table_name}"
+
+
+LEGACY_SILVER_REALTIME_TABLES = {
+    _silver_table("trip_" + "updates"),
+    _silver_table("trip_update_stop_time_" + "updates"),
+    _silver_table("vehicle_" + "positions"),
+}
+
+REPORTING_AGGREGATE_TABLES = (
+    "gold.route_delay_hourly",
+    "gold.route_delay_day_of_week",
+    "gold.stop_delay_hourly",
+    "gold.route_reliability_weekly",
+    "gold.route_reliability_monthly",
+    "gold.stop_delay_weekly",
+    "gold.stop_delay_monthly",
+    "gold.route_habit_score",
+    "gold.repeated_problem_route_stop",
+    "gold.citizen_accountability_daily",
+    "gold.report_labels",
+)
+
+
 class RecordingConnection:
     def __init__(self) -> None:
         self.statements: list[object] = []
@@ -81,11 +106,16 @@ def test_catalog_declares_source_table_contract_by_family() -> None:
         "silver.rt_entities",
         "silver.rt_trip_updates",
         "silver.rt_trip_update_stop_times",
-        "silver.trip_updates",
-        "silver.trip_update_stop_time_updates",
     }.issubset(set(by_family["trip_updates"].silver_tables))
+    assert LEGACY_SILVER_REALTIME_TABLES.isdisjoint(
+        by_family["trip_updates"].silver_tables
+    )
     assert "gold.fact_trip_delay_snapshot" in by_family["trip_updates"].gold_outputs
     assert "gold.trip_delay_summary_5m" in by_family["trip_updates"].gold_outputs
+    assert "gold.route_delay_hourly" in by_family["trip_updates"].gold_outputs
+    assert "gold.stop_delay_hourly" in by_family["trip_updates"].gold_outputs
+    assert "gold.route_reliability_weekly" in by_family["trip_updates"].gold_outputs
+    assert "gold.stop_delay_monthly" in by_family["trip_updates"].gold_outputs
 
     assert by_family["vehicle_positions"].endpoint_key == "vehicle_positions"
     assert by_family["vehicle_positions"].raw_tables == ("raw.realtime_snapshot_index",)
@@ -93,8 +123,10 @@ def test_catalog_declares_source_table_contract_by_family() -> None:
         "silver.rt_feed_snapshots",
         "silver.rt_entities",
         "silver.rt_vehicle_positions",
-        "silver.vehicle_positions",
     }.issubset(set(by_family["vehicle_positions"].silver_tables))
+    assert LEGACY_SILVER_REALTIME_TABLES.isdisjoint(
+        by_family["vehicle_positions"].silver_tables
+    )
     assert "gold.fact_vehicle_snapshot" in by_family["vehicle_positions"].gold_outputs
     assert "gold.current_vehicle_map" in by_family["vehicle_positions"].gold_outputs
 
@@ -122,7 +154,23 @@ def test_catalog_declares_source_table_contract_by_family() -> None:
         "gold.current_i3_alerts",
         "gold.i3_alert_history_reporting",
         "gold.public_alert_impact_daily",
+        "gold.citizen_accountability_daily",
     )
+
+
+def test_catalog_declares_clean_reporting_outputs_without_legacy_silver() -> None:
+    catalog = build_source_factory_catalog("stm")
+
+    all_silver_tables = {
+        table for source in catalog.sources for table in source.silver_tables
+    }
+    all_gold_outputs = {
+        output for source in catalog.sources for output in source.gold_outputs
+    }
+
+    assert LEGACY_SILVER_REALTIME_TABLES.isdisjoint(all_silver_tables)
+    assert set(REPORTING_AGGREGATE_TABLES).issubset(all_gold_outputs)
+    assert "gold.report_labels" in all_gold_outputs
 
 
 def test_catalog_display_dict_json_dumps_cleanly() -> None:
@@ -155,6 +203,20 @@ def test_reset_table_list_includes_source_abundance_gis_and_i3_tables() -> None:
     assert "core.feed_endpoints" not in SOURCE_FACTORY_RESET_TABLES
 
 
+def test_reset_table_list_matches_clean_reporting_foundation() -> None:
+    assert LEGACY_SILVER_REALTIME_TABLES.isdisjoint(SOURCE_FACTORY_RESET_TABLES)
+    assert set(REPORTING_AGGREGATE_TABLES).issubset(SOURCE_FACTORY_RESET_TABLES)
+    assert SOURCE_FACTORY_RESET_TABLES.index("gold.route_delay_hourly") < (
+        SOURCE_FACTORY_RESET_TABLES.index("gold.fact_trip_delay_snapshot")
+    )
+    assert SOURCE_FACTORY_RESET_TABLES.index("gold.stop_delay_hourly") < (
+        SOURCE_FACTORY_RESET_TABLES.index("gold.dim_stop")
+    )
+    assert SOURCE_FACTORY_RESET_TABLES.index("gold.report_labels") < (
+        SOURCE_FACTORY_RESET_TABLES.index("gold.dim_date")
+    )
+
+
 def test_reset_statement_truncates_all_source_factory_tables() -> None:
     statement = build_source_factory_reset_statement()
     sql = str(statement)
@@ -164,6 +226,8 @@ def test_reset_statement_truncates_all_source_factory_tables() -> None:
     assert "RESTART IDENTITY CASCADE" in sql
     for table_name in SOURCE_FACTORY_RESET_TABLES:
         assert table_name in sql
+    for table_name in LEGACY_SILVER_REALTIME_TABLES:
+        assert table_name not in sql
 
 
 def test_reset_source_factory_tables_executes_the_reset_statement() -> None:

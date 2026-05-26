@@ -8,26 +8,42 @@ model Model
 
 annotation __PBI_TimeIntelligenceEnabled = 1
 
-annotation PBI_QueryOrder = ["KpiActiveVehicles","KpiAvgDelay","KpiDelayedTrips","KpiMaxDelay","KpiRoutesRunning","DimDate","DimDirection","DimRoute","FactTripDelaySnapshot","DimStop","FactVehicleSnapshot","LatestTripDelay","LatestVehicle","VehicleSummary5m","TripDelaySummary5m","_Measures"]
+annotation PBI_QueryOrder = ["DimProvider", "DimDate", "DimRoute", "DimStop", "DimDirection", "LatestVehicleSnapshot", "LatestTripDelaySnapshot", "CurrentVehicleMap", "CurrentTripDelayComputed", "CurrentI3Alerts", "FeedFreshnessCurrent", "SourceLineageReporting", "FactVehicleSnapshot", "FactTripDelaySnapshot", "FactStopTimeDelayObservation", "VehicleSummary5m", "TripDelaySummary5m", "PublicRouteReliabilityDaily", "PublicStopDelayDaily", "PublicAlertImpactDaily", "I3AlertHistoryReporting", "RouteDelayHourly", "RouteDelayDayOfWeek", "StopDelayHourly", "RouteReliabilityWeekly", "RouteReliabilityMonthly", "StopDelayWeekly", "StopDelayMonthly", "RouteHabitScore", "RepeatedProblemRouteStop", "CitizenAccountabilityDaily", "ReportLabels", "_Measures"]
 
 annotation PBI_ProTooling = ["DevMode"]
 
-ref table KpiActiveVehicles
-ref table KpiAvgDelay
-ref table KpiDelayedTrips
-ref table KpiMaxDelay
-ref table KpiRoutesRunning
+ref table DimProvider
 ref table DimDate
-ref table DimDirection
 ref table DimRoute
-ref table FactTripDelaySnapshot
 ref table DimStop
+ref table DimDirection
+ref table LatestVehicleSnapshot
+ref table LatestTripDelaySnapshot
+ref table CurrentVehicleMap
+ref table CurrentTripDelayComputed
+ref table CurrentI3Alerts
+ref table FeedFreshnessCurrent
+ref table SourceLineageReporting
 ref table FactVehicleSnapshot
-ref table LatestTripDelay
-ref table LatestVehicle
+ref table FactTripDelaySnapshot
+ref table FactStopTimeDelayObservation
 ref table VehicleSummary5m
 ref table TripDelaySummary5m
+ref table PublicRouteReliabilityDaily
+ref table PublicStopDelayDaily
+ref table PublicAlertImpactDaily
+ref table I3AlertHistoryReporting
+ref table RouteDelayHourly
+ref table RouteDelayDayOfWeek
+ref table StopDelayHourly
+ref table RouteReliabilityWeekly
+ref table RouteReliabilityMonthly
+ref table StopDelayWeekly
+ref table StopDelayMonthly
+ref table RouteHabitScore
+ref table RepeatedProblemRouteStop
+ref table CitizenAccountabilityDaily
+ref table ReportLabels
 ref table _Measures
 
 ref cultureInfo en-US
-

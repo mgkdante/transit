@@ -14,9 +14,13 @@ from transit_ops.silver.realtime_gtfs import (
     find_latest_realtime_bronze_snapshot,
     load_latest_realtime_to_silver,
     load_realtime_snapshot_to_silver,
-    normalize_trip_updates,
-    normalize_vehicle_positions,
 )
+
+LEGACY_REALTIME_TABLES = {
+    "silver.trip_updates",
+    "silver.trip_update_stop_time_updates",
+    "silver.vehicle_positions",
+}
 
 
 class FakeResult:
@@ -99,12 +103,17 @@ class RealtimeSourceAwareConnection:
         sql_text = str(statement)
         self.calls.append((sql_text, params))
         if "SELECT rt_feed_snapshot_id" in sql_text:
+            assert "source_realtime_snapshot_id = :source_realtime_snapshot_id" in sql_text
+            assert params is not None
+            assert set(params) == {"source_realtime_snapshot_id"}
             return FakeResult(scalar_value=self.rt_feed_snapshot_id)
         if "SELECT count(*)" in sql_text:
             table_name = sql_text.split("FROM silver.", maxsplit=1)[1].split()[0]
             return FakeResult(scalar_value=self.counts.get(table_name, 0))
         if "RETURNING rt_feed_snapshot_id" in sql_text:
-            raise AssertionError("existing source snapshot should be skipped before insert")
+            if self.rt_feed_snapshot_id is not None:
+                raise AssertionError("existing source snapshot should be skipped before insert")
+            return FakeResult(scalar_value=901)
         return FakeResult()
 
 
@@ -269,6 +278,11 @@ def _first_call_params(connection: RecordingConnection, sql_fragment: str) -> ob
 
 def _insert_call_sql(connection: RecordingConnection) -> list[str]:
     return [sql_text for sql_text, _ in connection.calls if "INSERT INTO silver." in sql_text]
+
+
+def _assert_no_legacy_realtime_sql(connection: RecordingConnection) -> None:
+    for sql_text, _ in connection.calls:
+        assert not any(table_name in sql_text for table_name in LEGACY_REALTIME_TABLES)
 
 
 def _write_bytes(path: Path, payload: bytes) -> None:
@@ -509,37 +523,51 @@ def test_find_realtime_bronze_snapshots_returns_window_in_capture_order(
     ) in connection.calls[0][0]
 
 
-def test_normalize_trip_updates_maps_minimum_fields(tmp_path: Path) -> None:
+def test_normalize_rt_trip_updates_maps_minimum_fields(tmp_path: Path) -> None:
     archive_path = tmp_path / "trip_updates.pb"
     _write_bytes(archive_path, _build_trip_updates_bytes())
     snapshot = _build_snapshot(archive_path, "trip_updates")
     message = gtfs_realtime_pb2.FeedMessage()
     message.ParseFromString(archive_path.read_bytes())
 
-    trip_updates, stop_time_updates = normalize_trip_updates(message, snapshot=snapshot)
+    trip_updates, stop_time_updates = realtime_silver_module._normalize_rt_trip_updates(
+        message,
+        snapshot=snapshot,
+        rt_feed_snapshot_id=901,
+    )
 
     assert len(trip_updates) == 1
     assert len(stop_time_updates) == 1
+    assert trip_updates[0]["rt_feed_snapshot_id"] == 901
     assert trip_updates[0]["trip_id"] == "trip-1"
     assert trip_updates[0]["route_id"] == "route-1"
-    assert trip_updates[0]["vehicle_id"] == "veh-1"
-    assert trip_updates[0]["delay_seconds"] == 120
+    assert trip_updates[0]["schedule_relationship"] == gtfs_realtime_pb2.TripDescriptor.SCHEDULED
+    assert stop_time_updates[0]["rt_feed_snapshot_id"] == 901
     assert stop_time_updates[0]["stop_sequence"] == 10
     assert stop_time_updates[0]["stop_id"] == "stop-1"
-    assert stop_time_updates[0]["arrival_delay_seconds"] == 60
-    assert stop_time_updates[0]["departure_delay_seconds"] == 90
+    assert stop_time_updates[0]["arrival_time_utc"] == datetime.fromtimestamp(
+        1_774_837_260,
+        tz=UTC,
+    )
+    assert "arrival_delay_seconds" not in stop_time_updates[0]
+    assert "departure_delay_seconds" not in stop_time_updates[0]
 
 
-def test_normalize_vehicle_positions_maps_minimum_fields(tmp_path: Path) -> None:
+def test_normalize_rt_vehicle_positions_maps_minimum_fields(tmp_path: Path) -> None:
     archive_path = tmp_path / "vehicle_positions.pb"
     _write_bytes(archive_path, _build_vehicle_positions_bytes())
     snapshot = _build_snapshot(archive_path, "vehicle_positions")
     message = gtfs_realtime_pb2.FeedMessage()
     message.ParseFromString(archive_path.read_bytes())
 
-    vehicle_positions = normalize_vehicle_positions(message, snapshot=snapshot)
+    vehicle_positions = realtime_silver_module._normalize_rt_vehicle_positions(
+        message,
+        snapshot=snapshot,
+        rt_feed_snapshot_id=901,
+    )
 
     assert len(vehicle_positions) == 1
+    assert vehicle_positions[0]["rt_feed_snapshot_id"] == 901
     assert vehicle_positions[0]["vehicle_id"] == "veh-9"
     assert vehicle_positions[0]["trip_id"] == "trip-9"
     assert vehicle_positions[0]["route_id"] == "route-9"
@@ -569,18 +597,16 @@ def test_load_realtime_snapshot_to_silver_trip_updates_inserts_parent_and_child_
         "rt_entities": 1,
         "rt_trip_updates": 1,
         "rt_trip_update_stop_times": 1,
-        "trip_updates": 1,
-        "trip_update_stop_time_updates": 1,
     }
+    assert not (LEGACY_REALTIME_TABLES & set(result.row_counts))
     insert_sql = _insert_call_sql(connection)
     assert any("SELECT rt_feed_snapshot_id" in sql_text for sql_text, _ in connection.calls)
-    assert any("SELECT count(*)" in sql_text for sql_text, _ in connection.calls)
     assert "INSERT INTO silver.rt_feed_snapshots" in insert_sql[0]
     assert "INSERT INTO silver.rt_entities" in insert_sql[1]
     assert "INSERT INTO silver.rt_trip_updates" in insert_sql[2]
     assert "INSERT INTO silver.rt_trip_update_stop_times" in insert_sql[3]
-    assert "INSERT INTO silver.trip_updates" in insert_sql[4]
-    assert "INSERT INTO silver.trip_update_stop_time_updates" in insert_sql[5]
+    assert len(insert_sql) == 4
+    _assert_no_legacy_realtime_sql(connection)
 
 
 def test_load_realtime_snapshot_to_silver_trip_updates_inserts_audited_source_rows(
@@ -603,6 +629,7 @@ def test_load_realtime_snapshot_to_silver_trip_updates_inserts_audited_source_ro
     assert feed_snapshot["feed_endpoint_id"] == 2
     assert feed_snapshot["ingestion_run_id"] == 101
     assert feed_snapshot["ingestion_object_id"] == 201
+    assert feed_snapshot["source_realtime_snapshot_id"] == 301
     assert feed_snapshot["endpoint_key"] == "trip_updates"
     assert feed_snapshot["gtfs_realtime_version"] == "2.0"
     assert feed_snapshot["incrementality"] == "FULL_DATASET"
@@ -704,15 +731,15 @@ def test_load_realtime_snapshot_to_silver_vehicle_positions_inserts_rows(
         "rt_feed_snapshots": 1,
         "rt_entities": 1,
         "rt_vehicle_positions": 1,
-        "vehicle_positions": 1,
     }
+    assert not (LEGACY_REALTIME_TABLES & set(result.row_counts))
     insert_sql = _insert_call_sql(connection)
     assert any("SELECT rt_feed_snapshot_id" in sql_text for sql_text, _ in connection.calls)
-    assert any("SELECT count(*)" in sql_text for sql_text, _ in connection.calls)
     assert "INSERT INTO silver.rt_feed_snapshots" in insert_sql[0]
     assert "INSERT INTO silver.rt_entities" in insert_sql[1]
     assert "INSERT INTO silver.rt_vehicle_positions" in insert_sql[2]
-    assert "INSERT INTO silver.vehicle_positions" in insert_sql[3]
+    assert len(insert_sql) == 3
+    _assert_no_legacy_realtime_sql(connection)
 
 
 def test_load_realtime_snapshot_to_silver_vehicle_positions_inserts_audited_source_rows(
@@ -731,6 +758,7 @@ def test_load_realtime_snapshot_to_silver_vehicle_positions_inserts_audited_sour
     )
 
     feed_snapshot = _first_call_params(connection, "INSERT INTO silver.rt_feed_snapshots")
+    assert feed_snapshot["source_realtime_snapshot_id"] == 302
     assert feed_snapshot["endpoint_key"] == "vehicle_positions"
     assert feed_snapshot["incrementality"] == "FULL_DATASET"
     entities = _first_call_params(connection, "INSERT INTO silver.rt_entities")
@@ -827,10 +855,8 @@ def test_load_realtime_snapshots_to_silver_aggregates_row_counts(
         "rt_trip_updates": 1,
         "rt_trip_update_stop_times": 1,
         "rt_vehicle_positions": 1,
-        "trip_updates": 1,
-        "trip_update_stop_time_updates": 1,
-        "vehicle_positions": 1,
     }
+    assert not (LEGACY_REALTIME_TABLES & set(result.row_counts))
     assert [item.realtime_snapshot_id for item in result.results] == [301, 302]
 
 
@@ -845,8 +871,6 @@ def test_load_realtime_snapshots_to_silver_skips_existing_when_requested(
             "rt_entities": 1,
             "rt_trip_updates": 1,
             "rt_trip_update_stop_times": 1,
-            "trip_updates": 1,
-            "trip_update_stop_time_updates": 1,
         },
         rt_feed_snapshot_id=901,
     )
@@ -878,8 +902,6 @@ def test_load_realtime_snapshots_to_silver_skips_complete_trip_updates_snapshot(
             "rt_entities": 1,
             "rt_trip_updates": 1,
             "rt_trip_update_stop_times": 1,
-            "trip_updates": 1,
-            "trip_update_stop_time_updates": 1,
         },
         rt_feed_snapshot_id=901,
     )
@@ -900,7 +922,7 @@ def test_load_realtime_snapshots_to_silver_skips_complete_trip_updates_snapshot(
     assert bronze_storage.read_calls == [already_loaded.storage_path]
 
 
-def test_load_realtime_snapshots_to_silver_rejects_legacy_only_complete_snapshot(
+def test_load_realtime_snapshots_to_silver_loads_legacy_only_snapshot_again(
     tmp_path: Path,
 ) -> None:
     archive_path = tmp_path / "trip_updates.pb"
@@ -915,14 +937,23 @@ def test_load_realtime_snapshots_to_silver_rejects_legacy_only_complete_snapshot
     )
     bronze_storage = FakeBronzeStorage(archive_path.read_bytes())
 
-    with pytest.raises(ValueError, match="Incomplete Silver load"):
-        realtime_silver_module.load_realtime_snapshots_to_silver(
-            connection,
-            provider_id="stm",
-            snapshots=[legacy_only],
-            bronze_storage=bronze_storage,
-            skip_existing=True,
-        )
+    result = realtime_silver_module.load_realtime_snapshots_to_silver(
+        connection,
+        provider_id="stm",
+        snapshots=[legacy_only],
+        bronze_storage=bronze_storage,
+        skip_existing=True,
+    )
+
+    assert result.loaded_count == 1
+    assert result.skipped_existing_snapshot_ids == []
+    assert result.row_counts == {
+        "rt_feed_snapshots": 1,
+        "rt_entities": 1,
+        "rt_trip_updates": 1,
+        "rt_trip_update_stop_times": 1,
+    }
+    _assert_no_legacy_realtime_sql(connection)
 
 
 def test_load_realtime_snapshots_to_silver_rejects_partial_trip_updates_skip(
@@ -936,8 +967,6 @@ def test_load_realtime_snapshots_to_silver_rejects_partial_trip_updates_skip(
             "rt_entities": 1,
             "rt_trip_updates": 1,
             "rt_trip_update_stop_times": 0,
-            "trip_updates": 1,
-            "trip_update_stop_time_updates": 0,
         },
         rt_feed_snapshot_id=901,
     )
@@ -963,7 +992,6 @@ def test_load_realtime_snapshots_to_silver_skips_complete_vehicle_positions_snap
         counts={
             "rt_entities": 1,
             "rt_vehicle_positions": 1,
-            "vehicle_positions": 1,
         },
         rt_feed_snapshot_id=901,
     )
@@ -994,7 +1022,6 @@ def test_load_realtime_snapshots_to_silver_skips_complete_zero_row_source_snapsh
         counts={
             "rt_entities": 0,
             "rt_vehicle_positions": 0,
-            "vehicle_positions": 0,
         },
         rt_feed_snapshot_id=901,
     )
@@ -1020,7 +1047,14 @@ def test_load_realtime_snapshots_to_silver_fails_existing_without_skip(
     archive_path = tmp_path / "trip_updates.pb"
     _write_bytes(archive_path, _build_trip_updates_bytes())
     already_loaded = _build_snapshot(archive_path, "trip_updates")
-    connection = ExistingAwareConnection({already_loaded.realtime_snapshot_id})
+    connection = RealtimeSourceAwareConnection(
+        counts={
+            "rt_entities": 1,
+            "rt_trip_updates": 1,
+            "rt_trip_update_stop_times": 0,
+        },
+        rt_feed_snapshot_id=901,
+    )
     bronze_storage = FakeBronzeStorage(archive_path.read_bytes())
 
     with pytest.raises(ValueError, match="already loaded"):
@@ -1044,8 +1078,6 @@ def test_load_realtime_snapshot_to_silver_fails_source_snapshot_without_skip(
             "rt_entities": 1,
             "rt_trip_updates": 1,
             "rt_trip_update_stop_times": 0,
-            "trip_updates": 0,
-            "trip_update_stop_time_updates": 0,
         },
         rt_feed_snapshot_id=901,
     )
@@ -1156,8 +1188,6 @@ def test_load_latest_realtime_to_silver_uses_bronze_snapshot_without_api_key(
         "rt_entities": 1,
         "rt_trip_updates": 1,
         "rt_trip_update_stop_times": 1,
-        "trip_updates": 1,
-        "trip_update_stop_time_updates": 1,
     }
 
 
@@ -1218,6 +1248,5 @@ def test_load_latest_realtime_to_silver_reads_s3_backed_snapshot(
         "rt_feed_snapshots": 1,
         "rt_entities": 1,
         "rt_vehicle_positions": 1,
-        "vehicle_positions": 1,
     }
     assert fake_storage.read_calls == [lookup_row["storage_path"]]

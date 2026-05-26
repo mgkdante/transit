@@ -5,8 +5,8 @@ on:
   schedule:
     # GitHub Actions cron is UTC-based.
     # 07:00 UTC runs after the static pipeline at 06:00 UTC.
-    # Must run at least every 2 days to capture all data before
-    # GOLD_FACT_RETENTION_DAYS=2 prunes the source fact rows.
+    # Daily warm rollups run inside the 7-day detail window, then
+    # aggregates remain available for 365 days after detail rows prune.
     - cron: "0 7 * * *"
 
 permissions:

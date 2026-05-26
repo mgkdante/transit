@@ -67,6 +67,10 @@ def _sql_by_check_id() -> dict[str, str]:
     return {check.check_id: str(check.statement) for check in SOURCE_FACTORY_VALIDATION_CHECKS}
 
 
+def _silver_table(table_name: str) -> str:
+    return f"silver.{table_name}"
+
+
 def test_source_factory_validation_checks_cover_required_contract_surfaces() -> None:
     assert tuple(check.check_id for check in SOURCE_FACTORY_VALIDATION_CHECKS) == EXPECTED_CHECK_IDS
     assert all(
@@ -133,15 +137,19 @@ def test_validation_sql_references_gtfs_rt_source_history_and_flattened_tables()
     trip_sql = _sql_by_check_id()["gtfs_rt_trip_updates_source_history"]
     vehicle_sql = _sql_by_check_id()["gtfs_rt_vehicle_positions_source_history"]
 
+    legacy_tables = {
+        _silver_table("trip_" + "updates"),
+        _silver_table("trip_update_stop_time_" + "updates"),
+        _silver_table("vehicle_" + "positions"),
+    }
     for table_name in (
         "silver.rt_feed_snapshots",
         "silver.rt_entities",
         "silver.rt_trip_updates",
         "silver.rt_trip_update_stop_times",
-        "silver.trip_updates",
-        "silver.trip_update_stop_time_updates",
     ):
         assert table_name in trip_sql
+    assert all(table_name not in trip_sql for table_name in legacy_tables)
     assert "endpoint_key = 'trip_updates'" in trip_sql
     assert "requested_provider" in trip_sql
     assert "COALESCE(sc.source_snapshot_count, 0)" in trip_sql
@@ -150,9 +158,9 @@ def test_validation_sql_references_gtfs_rt_source_history_and_flattened_tables()
         "silver.rt_feed_snapshots",
         "silver.rt_entities",
         "silver.rt_vehicle_positions",
-        "silver.vehicle_positions",
     ):
         assert table_name in vehicle_sql
+    assert all(table_name not in vehicle_sql for table_name in legacy_tables)
     assert "endpoint_key = 'vehicle_positions'" in vehicle_sql
     assert "requested_provider" in vehicle_sql
     assert "COALESCE(sc.source_snapshot_count, 0)" in vehicle_sql

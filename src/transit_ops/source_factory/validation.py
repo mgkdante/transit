@@ -265,18 +265,6 @@ source_counts AS (
     WHERE rfs.provider_id = :provider_id
       AND rfs.endpoint_key = 'trip_updates'
     GROUP BY rfs.provider_id
-),
-flattened_counts AS (
-    SELECT
-        rp.provider_id,
-        (SELECT count(*) FROM silver.trip_updates AS tu WHERE tu.provider_id = rp.provider_id)
-            ::integer AS flattened_trip_updates,
-        (
-            SELECT count(*)
-            FROM silver.trip_update_stop_time_updates AS stu
-            WHERE stu.provider_id = rp.provider_id
-        )::integer AS flattened_stop_time_updates
-    FROM requested_provider AS rp
 )
 SELECT
     rp.provider_id,
@@ -285,16 +273,12 @@ SELECT
     COALESCE(sc.rt_entities, 0) AS rt_entities,
     COALESCE(sc.rt_trip_updates, 0) AS rt_trip_updates,
     COALESCE(sc.rt_trip_update_stop_times, 0) AS rt_trip_update_stop_times,
-    fc.flattened_trip_updates,
-    fc.flattened_stop_time_updates,
     sc.oldest_captured_at_utc,
     sc.newest_captured_at_utc,
     sc.newest_feed_timestamp_utc
 FROM requested_provider AS rp
 LEFT JOIN source_counts AS sc
     ON sc.provider_id = rp.provider_id
-LEFT JOIN flattened_counts AS fc
-    ON fc.provider_id = rp.provider_id
 """
         ),
     ),
@@ -332,13 +316,6 @@ source_counts AS (
     WHERE rfs.provider_id = :provider_id
       AND rfs.endpoint_key = 'vehicle_positions'
     GROUP BY rfs.provider_id
-),
-flattened_counts AS (
-    SELECT
-        rp.provider_id,
-        (SELECT count(*) FROM silver.vehicle_positions AS vp WHERE vp.provider_id = rp.provider_id)
-            ::integer AS flattened_vehicle_positions
-    FROM requested_provider AS rp
 )
 SELECT
     rp.provider_id,
@@ -346,7 +323,6 @@ SELECT
     COALESCE(sc.source_snapshot_count, 0) AS source_snapshot_count,
     COALESCE(sc.rt_entities, 0) AS rt_entities,
     COALESCE(sc.rt_vehicle_positions, 0) AS rt_vehicle_positions,
-    fc.flattened_vehicle_positions,
     sc.oldest_captured_at_utc,
     sc.newest_captured_at_utc,
     sc.newest_feed_timestamp_utc,
@@ -354,8 +330,6 @@ SELECT
 FROM requested_provider AS rp
 LEFT JOIN source_counts AS sc
     ON sc.provider_id = rp.provider_id
-LEFT JOIN flattened_counts AS fc
-    ON fc.provider_id = rp.provider_id
 """
         ),
     ),

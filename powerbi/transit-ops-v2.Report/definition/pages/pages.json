@@ -1,10 +1,13 @@
 {
   "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/pagesMetadata/1.0.0/schema.json",
   "pageOrder": [
-    "a760bf75f99a5f4d4cfc",
-    "d4006f5c33a7e46ecc42",
-    "14d8fbda1f91ecba00d7",
-    "00bfc786b552ca61b2a9"
+    "p00networkhealth",
+    "p01operationsmap",
+    "p02hotspots",
+    "p03networkhabits",
+    "p04history",
+    "p05datatrust",
+    "p06citizenaccountability"
   ],
-  "activePageName": "a760bf75f99a5f4d4cfc"
+  "activePageName": "p00networkhealth"
 }

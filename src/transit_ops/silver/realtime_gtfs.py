@@ -48,6 +48,7 @@ RT_FEED_SNAPSHOTS_INSERT = text(
         checksum_sha256,
         byte_size,
         parser_version,
+        source_realtime_snapshot_id,
         manifest_json
     )
     VALUES (
@@ -66,6 +67,7 @@ RT_FEED_SNAPSHOTS_INSERT = text(
         :checksum_sha256,
         :byte_size,
         :parser_version,
+        :source_realtime_snapshot_id,
         :manifest_json
     )
     RETURNING rt_feed_snapshot_id
@@ -205,118 +207,6 @@ RT_VEHICLE_POSITIONS_INSERT = text(
     )
     """
 )
-
-TRIP_UPDATES_INSERT = text(
-    """
-    INSERT INTO silver.trip_updates (
-        realtime_snapshot_id,
-        entity_index,
-        provider_id,
-        entity_id,
-        trip_id,
-        route_id,
-        direction_id,
-        start_date,
-        vehicle_id,
-        trip_schedule_relationship,
-        delay_seconds,
-        feed_timestamp_utc,
-        captured_at_utc
-    )
-    VALUES (
-        :realtime_snapshot_id,
-        :entity_index,
-        :provider_id,
-        :entity_id,
-        :trip_id,
-        :route_id,
-        :direction_id,
-        :start_date,
-        :vehicle_id,
-        :trip_schedule_relationship,
-        :delay_seconds,
-        :feed_timestamp_utc,
-        :captured_at_utc
-    )
-    """
-)
-
-TRIP_UPDATE_STOP_TIMES_INSERT = text(
-    """
-    INSERT INTO silver.trip_update_stop_time_updates (
-        realtime_snapshot_id,
-        trip_update_entity_index,
-        stop_time_update_index,
-        provider_id,
-        stop_sequence,
-        stop_id,
-        arrival_delay_seconds,
-        arrival_time_utc,
-        departure_delay_seconds,
-        departure_time_utc,
-        schedule_relationship
-    )
-    VALUES (
-        :realtime_snapshot_id,
-        :trip_update_entity_index,
-        :stop_time_update_index,
-        :provider_id,
-        :stop_sequence,
-        :stop_id,
-        :arrival_delay_seconds,
-        :arrival_time_utc,
-        :departure_delay_seconds,
-        :departure_time_utc,
-        :schedule_relationship
-    )
-    """
-)
-
-VEHICLE_POSITIONS_INSERT = text(
-    """
-    INSERT INTO silver.vehicle_positions (
-        realtime_snapshot_id,
-        entity_index,
-        provider_id,
-        entity_id,
-        vehicle_id,
-        trip_id,
-        route_id,
-        stop_id,
-        current_stop_sequence,
-        current_status,
-        occupancy_status,
-        latitude,
-        longitude,
-        bearing,
-        speed,
-        position_timestamp_utc,
-        feed_timestamp_utc,
-        captured_at_utc
-    )
-    VALUES (
-        :realtime_snapshot_id,
-        :entity_index,
-        :provider_id,
-        :entity_id,
-        :vehicle_id,
-        :trip_id,
-        :route_id,
-        :stop_id,
-        :current_stop_sequence,
-        :current_status,
-        :occupancy_status,
-        :latitude,
-        :longitude,
-        :bearing,
-        :speed,
-        :position_timestamp_utc,
-        :feed_timestamp_utc,
-        :captured_at_utc
-    )
-    """
-)
-
 
 SELECT_REALTIME_SNAPSHOTS_IN_WINDOW = text(
     """
@@ -608,60 +498,20 @@ def find_realtime_bronze_snapshots(
     ]
 
 
-def _snapshot_loaded(
-    connection: Connection,
-    *,
-    endpoint_key: str,
-    realtime_snapshot_id: int,
-) -> bool:
-    table_name = "trip_updates" if endpoint_key == "trip_updates" else "vehicle_positions"
-    existing_rows = connection.execute(
-        text(
-            f"""
-            SELECT count(*)
-            FROM silver.{table_name}
-            WHERE realtime_snapshot_id = :realtime_snapshot_id
-            """
-        ),
-        {"realtime_snapshot_id": realtime_snapshot_id},
-    ).scalar_one()
-    return bool(int(existing_rows))
-
-
-def _silver_row_count(
-    connection: Connection,
-    *,
-    table_name: str,
-    realtime_snapshot_id: int,
-) -> int:
-    return int(
-        connection.execute(
-            text(
-                f"""
-                SELECT count(*)
-                FROM silver.{table_name}
-                WHERE realtime_snapshot_id = :realtime_snapshot_id
-                """
-            ),
-            {"realtime_snapshot_id": realtime_snapshot_id},
-        ).scalar_one()
-    )
-
-
 def _rt_feed_snapshot_id(
     connection: Connection,
     *,
-    ingestion_run_id: int,
+    source_realtime_snapshot_id: int,
 ) -> int | None:
     result = connection.execute(
         text(
             """
             SELECT rt_feed_snapshot_id
             FROM silver.rt_feed_snapshots
-            WHERE ingestion_run_id = :ingestion_run_id
+            WHERE source_realtime_snapshot_id = :source_realtime_snapshot_id
             """
         ),
-        {"ingestion_run_id": ingestion_run_id},
+        {"source_realtime_snapshot_id": source_realtime_snapshot_id},
     ).scalar_one_or_none()
     return int(result) if result is not None else None
 
@@ -693,152 +543,13 @@ def _ensure_snapshot_not_loaded(
 ) -> None:
     source_snapshot_id = _rt_feed_snapshot_id(
         connection,
-        ingestion_run_id=snapshot.ingestion_run_id,
+        source_realtime_snapshot_id=snapshot.realtime_snapshot_id,
     )
     if source_snapshot_id is not None:
         raise ValueError(
             f"Bronze realtime snapshot {snapshot.realtime_snapshot_id} was already loaded into "
             f"silver.rt_feed_snapshots as rt_feed_snapshot_id {source_snapshot_id}."
         )
-
-    endpoint_key = snapshot.endpoint_key
-    realtime_snapshot_id = snapshot.realtime_snapshot_id
-    table_name = "trip_updates" if endpoint_key == "trip_updates" else "vehicle_positions"
-    if _snapshot_loaded(
-        connection,
-        endpoint_key=endpoint_key,
-        realtime_snapshot_id=realtime_snapshot_id,
-    ):
-        raise ValueError(
-            f"Bronze realtime snapshot {realtime_snapshot_id} was already loaded into "
-            f"silver.{table_name}."
-        )
-
-
-def normalize_trip_updates(
-    message: gtfs_realtime_pb2.FeedMessage,
-    *,
-    snapshot: BronzeRealtimeSnapshot,
-) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
-    trip_update_rows: list[dict[str, object]] = []
-    stop_time_rows: list[dict[str, object]] = []
-
-    for entity_index, entity in enumerate(message.entity):
-        if not _has_field(entity, "trip_update"):
-            continue
-
-        trip_update = entity.trip_update
-        trip_descriptor = trip_update.trip
-        vehicle_descriptor = trip_update.vehicle
-
-        trip_update_rows.append(
-            {
-                "realtime_snapshot_id": snapshot.realtime_snapshot_id,
-                "entity_index": entity_index,
-                "provider_id": snapshot.provider_id,
-                "entity_id": _blank_to_none(entity.id),
-                "trip_id": _blank_to_none(trip_descriptor.trip_id),
-                "route_id": _blank_to_none(trip_descriptor.route_id),
-                "direction_id": trip_descriptor.direction_id
-                if _has_field(trip_descriptor, "direction_id")
-                else None,
-                "start_date": _parse_optional_gtfs_date(trip_descriptor.start_date),
-                "vehicle_id": _blank_to_none(vehicle_descriptor.id),
-                "trip_schedule_relationship": trip_descriptor.schedule_relationship
-                if _has_field(trip_descriptor, "schedule_relationship")
-                else None,
-                "delay_seconds": trip_update.delay if _has_field(trip_update, "delay") else None,
-                "feed_timestamp_utc": snapshot.feed_timestamp_utc,
-                "captured_at_utc": snapshot.captured_at_utc,
-            }
-        )
-
-        for stop_time_update_index, stop_time_update in enumerate(trip_update.stop_time_update):
-            arrival = stop_time_update.arrival
-            departure = stop_time_update.departure
-            stop_time_rows.append(
-                {
-                    "realtime_snapshot_id": snapshot.realtime_snapshot_id,
-                    "trip_update_entity_index": entity_index,
-                    "stop_time_update_index": stop_time_update_index,
-                    "provider_id": snapshot.provider_id,
-                    "stop_sequence": stop_time_update.stop_sequence
-                    if _has_field(stop_time_update, "stop_sequence")
-                    else None,
-                    "stop_id": _blank_to_none(stop_time_update.stop_id),
-                    "arrival_delay_seconds": (
-                        arrival.delay if _has_field(arrival, "delay") else None
-                    ),
-                    "arrival_time_utc": _parse_optional_timestamp(arrival.time)
-                    if _has_field(arrival, "time")
-                    else None,
-                    "departure_delay_seconds": departure.delay
-                    if _has_field(departure, "delay")
-                    else None,
-                    "departure_time_utc": _parse_optional_timestamp(departure.time)
-                    if _has_field(departure, "time")
-                    else None,
-                    "schedule_relationship": stop_time_update.schedule_relationship
-                    if _has_field(stop_time_update, "schedule_relationship")
-                    else None,
-                }
-            )
-
-    return trip_update_rows, stop_time_rows
-
-
-def normalize_vehicle_positions(
-    message: gtfs_realtime_pb2.FeedMessage,
-    *,
-    snapshot: BronzeRealtimeSnapshot,
-) -> list[dict[str, object]]:
-    vehicle_rows: list[dict[str, object]] = []
-
-    for entity_index, entity in enumerate(message.entity):
-        if not _has_field(entity, "vehicle"):
-            continue
-
-        vehicle = entity.vehicle
-        trip = vehicle.trip
-        descriptor = vehicle.vehicle
-        position = vehicle.position
-
-        vehicle_rows.append(
-            {
-                "realtime_snapshot_id": snapshot.realtime_snapshot_id,
-                "entity_index": entity_index,
-                "provider_id": snapshot.provider_id,
-                "entity_id": _blank_to_none(entity.id),
-                "vehicle_id": _blank_to_none(descriptor.id),
-                "trip_id": _blank_to_none(trip.trip_id),
-                "route_id": _blank_to_none(trip.route_id),
-                "stop_id": _blank_to_none(vehicle.stop_id),
-                "current_stop_sequence": vehicle.current_stop_sequence
-                if _has_field(vehicle, "current_stop_sequence")
-                else None,
-                "current_status": vehicle.current_status
-                if _has_field(vehicle, "current_status")
-                else None,
-                "occupancy_status": vehicle.occupancy_status
-                if _has_field(vehicle, "occupancy_status")
-                else None,
-                "latitude": position.latitude if _has_field(vehicle, "position") else None,
-                "longitude": position.longitude if _has_field(vehicle, "position") else None,
-                "bearing": position.bearing
-                if _has_field(vehicle, "position") and _has_field(position, "bearing")
-                else None,
-                "speed": position.speed
-                if _has_field(vehicle, "position") and _has_field(position, "speed")
-                else None,
-                "position_timestamp_utc": _parse_optional_timestamp(vehicle.timestamp)
-                if _has_field(vehicle, "timestamp")
-                else None,
-                "feed_timestamp_utc": snapshot.feed_timestamp_utc,
-                "captured_at_utc": snapshot.captured_at_utc,
-            }
-        )
-
-    return vehicle_rows
 
 
 def _insert_rt_feed_snapshot(
@@ -867,6 +578,7 @@ def _insert_rt_feed_snapshot(
                 "checksum_sha256": snapshot.checksum_sha256,
                 "byte_size": snapshot.byte_size,
                 "parser_version": PARSER_VERSION,
+                "source_realtime_snapshot_id": snapshot.realtime_snapshot_id,
                 "manifest_json": {
                     "source_realtime_snapshot_id": snapshot.realtime_snapshot_id,
                     "archive_full_path": snapshot.archive_full_path,
@@ -1050,22 +762,27 @@ def _expected_realtime_row_counts(
 ) -> dict[str, int]:
     rt_entity_count = len(message.entity)
     if snapshot.endpoint_key == "trip_updates":
-        trip_update_rows, stop_time_rows = normalize_trip_updates(message, snapshot=snapshot)
+        trip_update_rows, stop_time_rows = _normalize_rt_trip_updates(
+            message,
+            snapshot=snapshot,
+            rt_feed_snapshot_id=0,
+        )
         return {
             "rt_feed_snapshots": 1,
             "rt_entities": rt_entity_count,
             "rt_trip_updates": len(trip_update_rows),
             "rt_trip_update_stop_times": len(stop_time_rows),
-            "trip_updates": len(trip_update_rows),
-            "trip_update_stop_time_updates": len(stop_time_rows),
         }
     if snapshot.endpoint_key == "vehicle_positions":
-        vehicle_rows = normalize_vehicle_positions(message, snapshot=snapshot)
+        vehicle_rows = _normalize_rt_vehicle_positions(
+            message,
+            snapshot=snapshot,
+            rt_feed_snapshot_id=0,
+        )
         return {
             "rt_feed_snapshots": 1,
             "rt_entities": rt_entity_count,
             "rt_vehicle_positions": len(vehicle_rows),
-            "vehicle_positions": len(vehicle_rows),
         }
     raise ValueError(f"Unsupported realtime endpoint '{snapshot.endpoint_key}'.")
 
@@ -1077,7 +794,7 @@ def _actual_realtime_row_counts(
 ) -> dict[str, int]:
     rt_snapshot_id = _rt_feed_snapshot_id(
         connection,
-        ingestion_run_id=snapshot.ingestion_run_id,
+        source_realtime_snapshot_id=snapshot.realtime_snapshot_id,
     )
     source_counts = {"rt_feed_snapshots": 1 if rt_snapshot_id is not None else 0}
     if snapshot.endpoint_key == "trip_updates":
@@ -1106,20 +823,6 @@ def _actual_realtime_row_counts(
                 else 0,
             }
         )
-        source_counts.update(
-            {
-                "trip_updates": _silver_row_count(
-                    connection,
-                    table_name="trip_updates",
-                    realtime_snapshot_id=snapshot.realtime_snapshot_id,
-                ),
-                "trip_update_stop_time_updates": _silver_row_count(
-                    connection,
-                    table_name="trip_update_stop_time_updates",
-                    realtime_snapshot_id=snapshot.realtime_snapshot_id,
-                ),
-            }
-        )
         return source_counts
     if snapshot.endpoint_key == "vehicle_positions":
         source_counts.update(
@@ -1138,15 +841,6 @@ def _actual_realtime_row_counts(
                 )
                 if rt_snapshot_id is not None
                 else 0,
-            }
-        )
-        source_counts.update(
-            {
-                "vehicle_positions": _silver_row_count(
-                    connection,
-                    table_name="vehicle_positions",
-                    realtime_snapshot_id=snapshot.realtime_snapshot_id,
-                )
             }
         )
         return source_counts
@@ -1205,7 +899,6 @@ def _load_realtime_message_to_silver(
             snapshot=snapshot,
             rt_feed_snapshot_id=rt_feed_snapshot_id,
         )
-        trip_update_rows, stop_time_rows = normalize_trip_updates(message, snapshot=snapshot)
         row_counts.update(
             {
                 "rt_trip_updates": _execute_batched_insert(
@@ -1218,16 +911,6 @@ def _load_realtime_message_to_silver(
                     statement=RT_TRIP_UPDATE_STOP_TIMES_INSERT,
                     rows=rt_stop_time_rows,
                 ),
-                "trip_updates": _execute_batched_insert(
-                    connection,
-                    statement=TRIP_UPDATES_INSERT,
-                    rows=trip_update_rows,
-                ),
-                "trip_update_stop_time_updates": _execute_batched_insert(
-                    connection,
-                    statement=TRIP_UPDATE_STOP_TIMES_INSERT,
-                    rows=stop_time_rows,
-                ),
             }
         )
     elif snapshot.endpoint_key == "vehicle_positions":
@@ -1236,18 +919,12 @@ def _load_realtime_message_to_silver(
             snapshot=snapshot,
             rt_feed_snapshot_id=rt_feed_snapshot_id,
         )
-        vehicle_rows = normalize_vehicle_positions(message, snapshot=snapshot)
         row_counts.update(
             {
                 "rt_vehicle_positions": _execute_batched_insert(
                     connection,
                     statement=RT_VEHICLE_POSITIONS_INSERT,
                     rows=rt_vehicle_rows,
-                ),
-                "vehicle_positions": _execute_batched_insert(
-                    connection,
-                    statement=VEHICLE_POSITIONS_INSERT,
-                    rows=vehicle_rows,
                 ),
             }
         )

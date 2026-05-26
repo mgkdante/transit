@@ -1,9 +1,7 @@
 table FactVehicleSnapshot
-	lineageTag: 9986535b-5e9f-4238-b6d9-076f13627120
 
 	column provider_id
 		dataType: string
-		lineageTag: 9ef0ca8e-a33f-4ff9-a474-2da1a141645a
 		summarizeBy: none
 		sourceColumn: provider_id
 
@@ -12,7 +10,6 @@ table FactVehicleSnapshot
 	column realtime_snapshot_id
 		dataType: int64
 		formatString: 0
-		lineageTag: 11d9c307-385a-4cea-a734-fb8d61199377
 		summarizeBy: sum
 		sourceColumn: realtime_snapshot_id
 
@@ -21,7 +18,6 @@ table FactVehicleSnapshot
 	column entity_index
 		dataType: int64
 		formatString: 0
-		lineageTag: fcef6e2b-8720-4edd-a7c1-6fa409e6780a
 		summarizeBy: sum
 		sourceColumn: entity_index
 
@@ -30,27 +26,22 @@ table FactVehicleSnapshot
 	column snapshot_date_key
 		dataType: int64
 		formatString: 0
-		lineageTag: 46b6f557-cbbf-4734-95bb-0cfc187ba47e
-		summarizeBy: none
+		summarizeBy: sum
 		sourceColumn: snapshot_date_key
 
 		annotation SummarizationSetBy = Automatic
 
 	column snapshot_local_date
 		dataType: dateTime
-		formatString: Long Date
-		lineageTag: 9445c90c-9fc4-4aa8-8215-4a895ea5e879
+		formatString: General Date
 		summarizeBy: none
 		sourceColumn: snapshot_local_date
 
 		annotation SummarizationSetBy = Automatic
 
-		annotation UnderlyingDateTimeDataType = Date
-
 	column feed_timestamp_utc
 		dataType: dateTime
 		formatString: General Date
-		lineageTag: 53c7f2f9-6a8e-43e3-8132-702b9bde1ffd
 		summarizeBy: none
 		sourceColumn: feed_timestamp_utc
 
@@ -59,32 +50,13 @@ table FactVehicleSnapshot
 	column captured_at_utc
 		dataType: dateTime
 		formatString: General Date
-		lineageTag: a905886b-1039-4e57-ba54-ca478ab0e035
 		summarizeBy: none
 		sourceColumn: captured_at_utc
 
 		annotation SummarizationSetBy = Automatic
 
-	column position_timestamp_utc
-		dataType: dateTime
-		formatString: General Date
-		lineageTag: 6766df75-2846-4f56-9943-7a9fb3f6c4f0
-		summarizeBy: none
-		sourceColumn: position_timestamp_utc
-
-		annotation SummarizationSetBy = Automatic
-
-	column entity_id
-		dataType: string
-		lineageTag: 539fed80-26b7-48a8-96bf-d9f52d807483
-		summarizeBy: none
-		sourceColumn: entity_id
-
-		annotation SummarizationSetBy = Automatic
-
 	column vehicle_id
 		dataType: string
-		lineageTag: cb972046-de9a-44e4-868d-0d0192eb438c
 		summarizeBy: none
 		sourceColumn: vehicle_id
 
@@ -92,7 +64,6 @@ table FactVehicleSnapshot
 
 	column trip_id
 		dataType: string
-		lineageTag: 4bba137c-6956-413b-aeeb-8fcb12102c7f
 		summarizeBy: none
 		sourceColumn: trip_id
 
@@ -100,7 +71,6 @@ table FactVehicleSnapshot
 
 	column route_id
 		dataType: string
-		lineageTag: c2c5a190-8ba6-491f-8600-05d951a2dbcd
 		summarizeBy: none
 		sourceColumn: route_id
 
@@ -108,42 +78,13 @@ table FactVehicleSnapshot
 
 	column stop_id
 		dataType: string
-		lineageTag: 93d7beea-54a5-47ec-a099-4889e7d967b0
 		summarizeBy: none
 		sourceColumn: stop_id
 
 		annotation SummarizationSetBy = Automatic
 
-	column current_stop_sequence
-		dataType: int64
-		formatString: 0
-		lineageTag: affc7822-6f47-459b-a63f-56deaa447502
-		summarizeBy: sum
-		sourceColumn: current_stop_sequence
-
-		annotation SummarizationSetBy = Automatic
-
-	column current_status
-		dataType: int64
-		formatString: 0
-		lineageTag: 6e1c092f-3598-4601-a478-7be2d88a2aa1
-		summarizeBy: sum
-		sourceColumn: current_status
-
-		annotation SummarizationSetBy = Automatic
-
-	column occupancy_status
-		dataType: int64
-		formatString: 0
-		lineageTag: 95b3b631-b94c-4e31-ac0a-d46201178a5a
-		summarizeBy: sum
-		sourceColumn: occupancy_status
-
-		annotation SummarizationSetBy = Automatic
-
 	column latitude
 		dataType: double
-		lineageTag: 6c89918f-da3f-445c-ba59-b405e1dbc92d
 		summarizeBy: sum
 		sourceColumn: latitude
 
@@ -153,7 +94,6 @@ table FactVehicleSnapshot
 
 	column longitude
 		dataType: double
-		lineageTag: dceff9af-2999-4f09-ac68-1975a695c0ea
 		summarizeBy: sum
 		sourceColumn: longitude
 
@@ -161,19 +101,8 @@ table FactVehicleSnapshot
 
 		annotation PBI_FormatHint = {"isGeneralNumber":true}
 
-	column bearing
-		dataType: double
-		lineageTag: c272dcd4-2a21-475b-a4fa-8a3d41a7258d
-		summarizeBy: sum
-		sourceColumn: bearing
-
-		annotation SummarizationSetBy = Automatic
-
-		annotation PBI_FormatHint = {"isGeneralNumber":true}
-
 	column speed
 		dataType: double
-		lineageTag: b9f8d1ca-a104-4ad8-978f-f5604c5f5b91
 		summarizeBy: sum
 		sourceColumn: speed
 
@@ -193,4 +122,3 @@ table FactVehicleSnapshot
 	annotation PBI_NavigationStepName = Navigation
 
 	annotation PBI_ResultType = Table
-

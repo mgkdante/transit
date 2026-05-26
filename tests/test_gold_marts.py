@@ -5,16 +5,31 @@ import pytest
 from transit_ops.core.models import ProviderManifest
 from transit_ops.gold.marts import (
     ACQUIRE_GOLD_BUILD_LOCK,
+    ANALYZE_REALTIME_SILVER_TABLES,
     INSERT_DIM_DIRECTION,
     INSERT_DIM_ROUTE,
     INSERT_DIM_ROUTE_PATTERN,
     INSERT_FACT_TRIP_DELAY_SNAPSHOT,
+    INSERT_FACT_VEHICLE_SNAPSHOT,
     LOCK_GOLD_TABLES,
     build_gold_marts,
     refresh_gold_realtime,
     refresh_gold_static,
 )
 from transit_ops.settings import Settings
+
+LEGACY_REALTIME_TABLES = (
+    "silver.trip_updates",
+    "silver.trip_update_stop_time_updates",
+    "silver.vehicle_positions",
+)
+NORMALIZED_REALTIME_TABLES = (
+    "silver.rt_feed_snapshots",
+    "silver.rt_entities",
+    "silver.rt_trip_updates",
+    "silver.rt_trip_update_stop_times",
+    "silver.rt_vehicle_positions",
+)
 
 
 class FakeScalarResult:
@@ -47,11 +62,16 @@ class RecordingConnection:
 
         if "FROM core.dataset_versions" in sql_text:
             return FakeMappingResult(self.dataset_row)
-        if "SELECT max(realtime_snapshot_id)" in sql_text and "silver.trip_updates" in sql_text:
+        if (
+            "SELECT max(source_realtime_snapshot_id)" in sql_text
+            and "silver.rt_feed_snapshots" in sql_text
+            and "endpoint_key = 'trip_updates'" in sql_text
+        ):
             return FakeScalarResult(2)
         if (
-            "SELECT max(realtime_snapshot_id)" in sql_text
-            and "silver.vehicle_positions" in sql_text
+            "SELECT max(source_realtime_snapshot_id)" in sql_text
+            and "silver.rt_feed_snapshots" in sql_text
+            and "endpoint_key = 'vehicle_positions'" in sql_text
         ):
             return FakeScalarResult(1)
         if "SELECT count(*)" in sql_text and "gold.dim_route_pattern" in sql_text:
@@ -80,7 +100,7 @@ class RecordingConnection:
 class NoRealtimeSnapshotConnection(RecordingConnection):
     def execute(self, statement, params=None):  # noqa: ANN001
         sql_text = str(statement)
-        if "SELECT max(realtime_snapshot_id)" in sql_text:
+        if "SELECT max(source_realtime_snapshot_id)" in sql_text:
             self.calls.append((sql_text, params))
             return FakeScalarResult(None)
         return super().execute(statement, params)
@@ -169,6 +189,15 @@ def _build_manifest() -> ProviderManifest:
     )
 
 
+def _assert_no_legacy_realtime_sql(sql_text: str) -> None:
+    assert not any(table_name in sql_text for table_name in LEGACY_REALTIME_TABLES)
+
+
+def _assert_normalized_realtime_tables(sql_text: str) -> None:
+    for table_name in NORMALIZED_REALTIME_TABLES:
+        assert table_name in sql_text
+
+
 def test_build_gold_marts_rebuilds_dimensions_and_facts() -> None:
     connection = RecordingConnection(dataset_row={"dataset_version_id": 2})
     engine = FakeEngine(connection)
@@ -198,6 +227,8 @@ def test_build_gold_marts_rebuilds_dimensions_and_facts() -> None:
         "latest_trip_delay_snapshot": 1998,
     }
     sql_calls = [call[0] for call in connection.calls]
+    for sql in sql_calls:
+        _assert_no_legacy_realtime_sql(sql)
     assert any("DELETE FROM gold.fact_trip_delay_snapshot" in sql for sql in sql_calls)
     assert any("INSERT INTO gold.dim_route" in sql for sql in sql_calls)
     fact_trip_insert = next(
@@ -208,13 +239,33 @@ def test_build_gold_marts_rebuilds_dimensions_and_facts() -> None:
     assert fact_trip_insert["dataset_version_id"] == 2
 
 
-def test_trip_delay_fact_backfills_vehicle_and_delay_from_related_tables() -> None:
+def test_vehicle_snapshot_fact_reads_normalized_rt_vehicle_positions() -> None:
+    sql = str(INSERT_FACT_VEHICLE_SNAPSHOT)
+
+    _assert_no_legacy_realtime_sql(sql)
+    assert "FROM silver.rt_vehicle_positions AS vp" in sql
+    assert "INNER JOIN silver.rt_feed_snapshots AS rfs" in sql
+    assert "LEFT JOIN silver.rt_entities AS rte" in sql
+    assert "rfs.source_realtime_snapshot_id AS realtime_snapshot_id" in sql
+    assert "vp.vehicle_timestamp_utc" in sql
+    assert "position_timestamp_utc" in sql
+    assert "rte.entity_id" in sql
+
+
+def test_trip_delay_fact_backfills_vehicle_and_delay_from_normalized_rt_tables() -> None:
     sql = str(INSERT_FACT_TRIP_DELAY_SNAPSHOT)
 
-    assert "COALESCE(tu.vehicle_id, vpm.vehicle_id)" in sql
-    assert "COALESCE(tu.delay_seconds, tdf.derived_delay_seconds)" in sql
+    _assert_no_legacy_realtime_sql(sql)
+    _assert_normalized_realtime_tables(sql)
+    assert "rfs.source_realtime_snapshot_id AS realtime_snapshot_id" in sql
+    assert "rte.entity_id" in sql
+    assert "rtu.schedule_relationship AS trip_schedule_relationship" in sql
+    assert "tdf.derived_delay_seconds" in sql
+    assert "rtu.delay_seconds" not in sql
+    assert "rtu.vehicle_id" not in sql
+    assert "vpm.vehicle_id" in sql
     assert "LEFT JOIN LATERAL" in sql
-    assert "silver.vehicle_positions AS vp" in sql
+    assert "silver.rt_vehicle_positions AS vp" in sql
     assert "silver.stop_times AS st" in sql
     assert "st.dataset_version_id = :dataset_version_id" in sql
 
@@ -280,6 +331,8 @@ def test_refresh_gold_realtime_upserts_latest_snapshots_only() -> None:
         "latest_trip_delay_snapshot": 1998,
     }
     sql_calls = [call[0] for call in connection.calls]
+    for sql in sql_calls:
+        _assert_no_legacy_realtime_sql(sql)
     assert any("DELETE FROM gold.latest_vehicle_snapshot" in sql for sql in sql_calls)
     assert any("INSERT INTO gold.latest_vehicle_snapshot" in sql for sql in sql_calls)
 
@@ -300,7 +353,7 @@ def test_refresh_gold_realtime_analyzes_realtime_silver_before_gold_upserts() ->
     analyze_index = next(
         index
         for index, sql in enumerate(sql_calls)
-        if "ANALYZE silver.trip_updates" in sql
+        if "ANALYZE silver.rt_feed_snapshots" in sql
     )
     first_gold_upsert_index = next(
         index
@@ -310,8 +363,10 @@ def test_refresh_gold_realtime_analyzes_realtime_silver_before_gold_upserts() ->
     )
 
     assert analyze_index < first_gold_upsert_index
-    assert "silver.trip_update_stop_time_updates" in sql_calls[analyze_index]
-    assert "silver.vehicle_positions" in sql_calls[analyze_index]
+    analyze_sql = sql_calls[analyze_index]
+    _assert_no_legacy_realtime_sql(analyze_sql)
+    _assert_normalized_realtime_tables(analyze_sql)
+    assert str(ANALYZE_REALTIME_SILVER_TABLES) == analyze_sql
 
 
 def test_refresh_gold_realtime_analyzes_even_when_no_realtime_snapshots() -> None:
@@ -330,7 +385,9 @@ def test_refresh_gold_realtime_analyzes_even_when_no_realtime_snapshots() -> Non
 
     assert result.latest_trip_updates_snapshot_id is None
     assert result.latest_vehicle_snapshot_id is None
-    assert any("ANALYZE silver.trip_updates" in sql for sql in sql_calls)
+    assert any("ANALYZE silver.rt_feed_snapshots" in sql for sql in sql_calls)
+    for sql in sql_calls:
+        _assert_no_legacy_realtime_sql(sql)
     assert not any("INSERT INTO gold.fact_vehicle_snapshot" in sql for sql in sql_calls)
     assert not any("INSERT INTO gold.fact_trip_delay_snapshot" in sql for sql in sql_calls)
 

@@ -38,6 +38,26 @@ _ZIP_FILENAME_PATTERN = re.compile(r"^.+\.zip$")
 _JSON_FILENAME_PATTERN = re.compile(r"^.+\.json$")
 
 
+def _item_byte_size(item: R2InventoryItem) -> int:
+    return item.byte_size or 0
+
+
+def _total_byte_size(items: Iterable[R2InventoryItem]) -> int:
+    return sum(_item_byte_size(item) for item in items)
+
+
+def _byte_size_by_endpoint(items: Iterable[R2InventoryItem]) -> dict[str, int]:
+    byte_size_by_endpoint: dict[str, int] = {}
+    for item in items:
+        if item.parsed_key is None:
+            continue
+        endpoint_key = item.parsed_key.endpoint_key
+        byte_size_by_endpoint[endpoint_key] = (
+            byte_size_by_endpoint.get(endpoint_key, 0) + _item_byte_size(item)
+        )
+    return dict(sorted(byte_size_by_endpoint.items()))
+
+
 class R2CleanupStorage(Protocol):
     def list_objects(self, prefix: str) -> Iterable[BronzeObjectInfo]: ...
 
@@ -90,10 +110,18 @@ class R2Inventory:
     unknown_keys: list[str]
 
     def display_dict(self) -> dict[str, object]:
+        unknown_items = [item for item in self.objects if item.parsed_key is None]
         return {
             "provider_id": self.provider_id,
             "prefixes": list(self.prefixes),
             "generated_at_utc": self.generated_at_utc.isoformat(),
+            "object_count": len(self.objects),
+            "known_object_count": len(self.known_objects),
+            "unknown_key_count": len(self.unknown_keys),
+            "total_byte_size": _total_byte_size(self.objects),
+            "known_total_byte_size": _total_byte_size(self.known_objects),
+            "unknown_total_byte_size": _total_byte_size(unknown_items),
+            "byte_size_by_endpoint": _byte_size_by_endpoint(self.known_objects),
             "objects": [item.display_dict() for item in self.objects],
             "known_objects": [item.display_dict() for item in self.known_objects],
             "unknown_keys": list(self.unknown_keys),
@@ -110,12 +138,28 @@ class R2CleanupPlan:
     skipped_unknown_keys: list[str]
     unknown_keys_included_in_wipe: list[str] | None = None
     active_prefix_wipe: bool = False
+    skipped_unknown_items: list[R2InventoryItem] | None = None
+    unknown_items_included_in_wipe: list[R2InventoryItem] | None = None
 
     def display_dict(self) -> dict[str, object]:
         return {
             "provider_id": self.provider_id,
             "keep_from_date": self.keep_from_date.isoformat(),
             "inventory_generated_at_utc": self.inventory_generated_at_utc.isoformat(),
+            "eligible_object_count": len(self.eligible_objects),
+            "retained_object_count": len(self.retained_objects),
+            "skipped_unknown_key_count": len(self.skipped_unknown_keys),
+            "unknown_keys_included_in_wipe_count": len(
+                self.unknown_keys_included_in_wipe or []
+            ),
+            "eligible_total_byte_size": _total_byte_size(self.eligible_objects),
+            "retained_total_byte_size": _total_byte_size(self.retained_objects),
+            "skipped_unknown_total_byte_size": _total_byte_size(
+                self.skipped_unknown_items or []
+            ),
+            "unknown_keys_included_in_wipe_total_byte_size": _total_byte_size(
+                self.unknown_items_included_in_wipe or []
+            ),
             "eligible_objects": [item.display_dict() for item in self.eligible_objects],
             "retained_objects": [item.display_dict() for item in self.retained_objects],
             "skipped_unknown_keys": list(self.skipped_unknown_keys),
@@ -135,6 +179,11 @@ class R2CleanupResult:
     failed_keys: list[str]
     skipped_unknown_keys: list[str]
     unknown_keys_included_in_wipe: list[str] | None = None
+    planned_total_byte_size: int = 0
+    deleted_total_byte_size: int = 0
+    failed_total_byte_size: int = 0
+    skipped_unknown_total_byte_size: int = 0
+    unknown_keys_included_in_wipe_total_byte_size: int = 0
 
     def display_dict(self) -> dict[str, object]:
         return {
@@ -143,6 +192,19 @@ class R2CleanupResult:
             "confirm_r2_cleanup": self.confirm_r2_cleanup,
             "confirm_active_prefix_wipe": self.confirm_active_prefix_wipe,
             "planned_count": self.planned_count,
+            "deleted_key_count": len(self.deleted_keys),
+            "failed_key_count": len(self.failed_keys),
+            "skipped_unknown_key_count": len(self.skipped_unknown_keys),
+            "unknown_keys_included_in_wipe_count": len(
+                self.unknown_keys_included_in_wipe or []
+            ),
+            "planned_total_byte_size": self.planned_total_byte_size,
+            "deleted_total_byte_size": self.deleted_total_byte_size,
+            "failed_total_byte_size": self.failed_total_byte_size,
+            "skipped_unknown_total_byte_size": self.skipped_unknown_total_byte_size,
+            "unknown_keys_included_in_wipe_total_byte_size": (
+                self.unknown_keys_included_in_wipe_total_byte_size
+            ),
             "deleted_keys": list(self.deleted_keys),
             "failed_keys": list(self.failed_keys),
             "skipped_unknown_keys": list(self.skipped_unknown_keys),
@@ -274,6 +336,7 @@ def build_r2_cleanup_plan_from_inventory(
     keep_from_date: date,
     active_prefix_wipe: bool = False,
 ) -> R2CleanupPlan:
+    unknown_items = [item for item in inventory.objects if item.parsed_key is None]
     if active_prefix_wipe:
         return R2CleanupPlan(
             provider_id=inventory.provider_id,
@@ -284,6 +347,8 @@ def build_r2_cleanup_plan_from_inventory(
             skipped_unknown_keys=[],
             unknown_keys_included_in_wipe=list(inventory.unknown_keys),
             active_prefix_wipe=True,
+            skipped_unknown_items=[],
+            unknown_items_included_in_wipe=unknown_items,
         )
 
     eligible_objects: list[R2InventoryItem] = []
@@ -305,6 +370,8 @@ def build_r2_cleanup_plan_from_inventory(
         skipped_unknown_keys=list(inventory.unknown_keys),
         unknown_keys_included_in_wipe=[],
         active_prefix_wipe=False,
+        skipped_unknown_items=unknown_items,
+        unknown_items_included_in_wipe=[],
     )
 
 
@@ -335,17 +402,28 @@ def execute_r2_cleanup_plan(
             failed_keys=[],
             skipped_unknown_keys=list(plan.skipped_unknown_keys),
             unknown_keys_included_in_wipe=list(plan.unknown_keys_included_in_wipe or []),
+            planned_total_byte_size=_total_byte_size(plan.eligible_objects),
+            skipped_unknown_total_byte_size=_total_byte_size(
+                plan.skipped_unknown_items or []
+            ),
+            unknown_keys_included_in_wipe_total_byte_size=_total_byte_size(
+                plan.unknown_items_included_in_wipe or []
+            ),
         )
 
     deleted_keys: list[str] = []
     failed_keys: list[str] = []
+    deleted_total_byte_size = 0
+    failed_total_byte_size = 0
     for item in plan.eligible_objects:
         try:
             storage.delete_object(item.storage_path)
         except Exception:
             failed_keys.append(item.storage_path)
+            failed_total_byte_size += _item_byte_size(item)
             continue
         deleted_keys.append(item.storage_path)
+        deleted_total_byte_size += _item_byte_size(item)
 
     return R2CleanupResult(
         provider_id=plan.provider_id,
@@ -357,6 +435,13 @@ def execute_r2_cleanup_plan(
         failed_keys=failed_keys,
         skipped_unknown_keys=list(plan.skipped_unknown_keys),
         unknown_keys_included_in_wipe=list(plan.unknown_keys_included_in_wipe or []),
+        planned_total_byte_size=_total_byte_size(plan.eligible_objects),
+        deleted_total_byte_size=deleted_total_byte_size,
+        failed_total_byte_size=failed_total_byte_size,
+        skipped_unknown_total_byte_size=_total_byte_size(plan.skipped_unknown_items or []),
+        unknown_keys_included_in_wipe_total_byte_size=_total_byte_size(
+            plan.unknown_items_included_in_wipe or []
+        ),
     )
 
 

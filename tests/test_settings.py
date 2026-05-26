@@ -9,8 +9,32 @@ from transit_ops.settings import (
     Settings,
 )
 
+EXPECTED_RETENTION_CONTRACT = {
+    "STATIC_DATASET_RETENTION_COUNT": 1,
+    "SILVER_REALTIME_RETENTION_DAYS": 14,
+    "GOLD_FACT_RETENTION_DAYS": 7,
+    "BRONZE_REALTIME_RETENTION_DAYS": 30,
+    "BRONZE_STATIC_RETENTION_DAYS": 365,
+    "GOLD_WARM_ROLLUP_RETENTION_DAYS": 365,
+}
+SETTINGS_DEFAULT_ENV_KEYS = (*EXPECTED_RETENTION_CONTRACT, "DATABASE_URL")
 
-def test_settings_defaults() -> None:
+
+@pytest.fixture
+def clean_default_settings_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    for key in SETTINGS_DEFAULT_ENV_KEYS:
+        monkeypatch.delenv(key, raising=False)
+
+
+def retention_contract_from_settings(settings: Settings) -> dict[str, int]:
+    return {key: getattr(settings, key) for key in EXPECTED_RETENTION_CONTRACT}
+
+
+def retention_contract_from_display(display: dict[str, object]) -> dict[str, object]:
+    return {key: display[key] for key in EXPECTED_RETENTION_CONTRACT}
+
+
+def test_settings_defaults(clean_default_settings_env: None) -> None:
     settings = Settings(_env_file=None)
 
     assert settings.APP_ENV == "local"
@@ -27,16 +51,19 @@ def test_settings_defaults() -> None:
     assert settings.REALTIME_POLL_SECONDS == 30
     assert settings.REALTIME_STARTUP_DELAY_SECONDS == 0
     assert settings.STM_GIS_URL is None
-    assert settings.STATIC_DATASET_RETENTION_COUNT == 1
-    assert settings.SILVER_REALTIME_RETENTION_DAYS == 30
-    assert settings.GOLD_FACT_RETENTION_DAYS == 365
-    assert settings.BRONZE_REALTIME_RETENTION_DAYS == 30
-    assert settings.BRONZE_STATIC_RETENTION_DAYS == 30
-    assert settings.GOLD_WARM_ROLLUP_RETENTION_DAYS == 90
+    assert retention_contract_from_settings(settings) == EXPECTED_RETENTION_CONTRACT
     assert settings.HEALTH_DATABASE_TIMEOUT_SECONDS == 5.0
     assert settings.HEALTH_FEED_TIMEOUT_SECONDS == 10.0
     assert settings.HEALTH_MAX_PIPELINE_AGE_SECONDS == 900
     assert settings.DATABASE_URL is None
+
+
+def test_retention_defaults_lock_clean_reporting_contract(
+    clean_default_settings_env: None,
+) -> None:
+    settings = Settings(_env_file=None)
+
+    assert retention_contract_from_settings(settings) == EXPECTED_RETENTION_CONTRACT
 
 
 def test_health_settings_are_exposed_in_display_dict() -> None:
@@ -49,7 +76,9 @@ def test_health_settings_are_exposed_in_display_dict() -> None:
     assert display["HEALTH_MAX_PIPELINE_AGE_SECONDS"] == 900
 
 
-def test_retention_static_gis_settings_are_exposed_in_display_dict() -> None:
+def test_retention_static_gis_settings_are_exposed_in_display_dict(
+    clean_default_settings_env: None,
+) -> None:
     settings = Settings(
         _env_file=None,
         STM_GIS_URL="https://example.com/stm_sig.zip",
@@ -59,12 +88,7 @@ def test_retention_static_gis_settings_are_exposed_in_display_dict() -> None:
 
     assert display["STM_GIS_URL"] == "https://example.com/stm_sig.zip"
     assert "STM_STATIC_GTFS_CURRENT_FALLBACK_URL" not in display
-    assert display["STATIC_DATASET_RETENTION_COUNT"] == 1
-    assert display["SILVER_REALTIME_RETENTION_DAYS"] == 30
-    assert display["GOLD_FACT_RETENTION_DAYS"] == 365
-    assert display["BRONZE_REALTIME_RETENTION_DAYS"] == 30
-    assert display["BRONZE_STATIC_RETENTION_DAYS"] == 30
-    assert display["GOLD_WARM_ROLLUP_RETENTION_DAYS"] == 90
+    assert retention_contract_from_display(display) == EXPECTED_RETENTION_CONTRACT
 
 
 def test_sqlalchemy_database_url_conversion() -> None:

@@ -1,0 +1,102 @@
+table SourceLineageReporting
+
+	column provider_id
+		dataType: string
+		summarizeBy: none
+		sourceColumn: provider_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column dataset_kind
+		dataType: string
+		summarizeBy: none
+		sourceColumn: dataset_kind
+
+		annotation SummarizationSetBy = Automatic
+
+	column dataset_version_id
+		dataType: int64
+		formatString: 0
+		summarizeBy: sum
+		sourceColumn: dataset_version_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column endpoint_key
+		dataType: string
+		summarizeBy: none
+		sourceColumn: endpoint_key
+
+		annotation SummarizationSetBy = Automatic
+
+	column source_url
+		dataType: string
+		summarizeBy: none
+		sourceColumn: source_url
+
+		annotation SummarizationSetBy = Automatic
+
+	column storage_backend
+		dataType: string
+		summarizeBy: none
+		sourceColumn: storage_backend
+
+		annotation SummarizationSetBy = Automatic
+
+	column storage_path
+		dataType: string
+		summarizeBy: none
+		sourceColumn: storage_path
+
+		annotation SummarizationSetBy = Automatic
+
+	column checksum_sha256
+		dataType: string
+		summarizeBy: none
+		sourceColumn: checksum_sha256
+
+		annotation SummarizationSetBy = Automatic
+
+	column byte_size
+		dataType: int64
+		formatString: 0
+		summarizeBy: sum
+		sourceColumn: byte_size
+
+		annotation SummarizationSetBy = Automatic
+
+	column loaded_at_utc
+		dataType: dateTime
+		formatString: General Date
+		summarizeBy: none
+		sourceColumn: loaded_at_utc
+
+		annotation SummarizationSetBy = Automatic
+
+	column effective_at_utc
+		dataType: dateTime
+		formatString: General Date
+		summarizeBy: none
+		sourceColumn: effective_at_utc
+
+		annotation SummarizationSetBy = Automatic
+
+	column is_current
+		dataType: boolean
+		summarizeBy: none
+		sourceColumn: is_current
+
+		annotation SummarizationSetBy = Automatic
+
+	partition SourceLineageReporting = m
+		mode: directQuery
+		source =
+				let
+				    Source = PostgreSQL.Database("db.transit.yesid.dev", "transit"),
+				    gold_source_lineage_reporting = Source{[Schema="gold",Item="source_lineage_reporting"]}[Data]
+				in
+				    gold_source_lineage_reporting
+
+	annotation PBI_NavigationStepName = Navigation
+
+	annotation PBI_ResultType = Table

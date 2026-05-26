@@ -9,11 +9,6 @@ from sqlalchemy import text
 from sqlalchemy.engine import Connection, Engine
 
 from transit_ops.db.connection import make_engine
-from transit_ops.gold.rollups import (
-    DELETE_OLD_TRIP_DELAY_SUMMARY_5M,
-    DELETE_OLD_VEHICLE_SUMMARY_5M,
-    DELETE_OLD_WARM_ROLLUP_PERIODS,
-)
 from transit_ops.ingestion.common import utc_now
 from transit_ops.ingestion.storage import BronzeStorage, get_bronze_storage
 from transit_ops.settings import Settings, get_settings
@@ -54,9 +49,6 @@ REALTIME_SILVER_TABLES = (
     "silver.rt_vehicle_positions",
     "silver.rt_entities",
     "silver.rt_feed_snapshots",
-    "silver.trip_update_stop_time_updates",
-    "silver.trip_updates",
-    "silver.vehicle_positions",
 )
 
 GOLD_FACT_TABLES = (
@@ -70,6 +62,42 @@ GOLD_WARM_ROLLUP_TABLES = (
     "gold.warm_rollup_periods",
 )
 
+GOLD_REPORTING_AGGREGATE_TABLES = (
+    "gold.route_delay_hourly",
+    "gold.route_delay_day_of_week",
+    "gold.stop_delay_hourly",
+    "gold.route_reliability_weekly",
+    "gold.route_reliability_monthly",
+    "gold.stop_delay_weekly",
+    "gold.stop_delay_monthly",
+    "gold.route_habit_score",
+    "gold.repeated_problem_route_stop",
+    "gold.citizen_accountability_daily",
+)
+
+GOLD_AGGREGATE_TABLES = (
+    *GOLD_WARM_ROLLUP_TABLES,
+    *GOLD_REPORTING_AGGREGATE_TABLES,
+)
+
+GOLD_AGGREGATE_RETENTION_COLUMNS = (
+    ("gold.vehicle_summary_5m", "period_start_utc", False),
+    ("gold.trip_delay_summary_5m", "period_start_utc", False),
+    ("gold.warm_rollup_periods", "period_start_utc", False),
+    ("gold.route_delay_hourly", "period_start_utc", False),
+    ("gold.route_delay_day_of_week", "built_at_utc", False),
+    ("gold.stop_delay_hourly", "period_start_utc", False),
+    ("gold.route_reliability_weekly", "week_start_local", True),
+    ("gold.route_reliability_monthly", "month_start_local", True),
+    ("gold.stop_delay_weekly", "week_start_local", True),
+    ("gold.stop_delay_monthly", "month_start_local", True),
+    ("gold.route_habit_score", "built_at_utc", False),
+    ("gold.repeated_problem_route_stop", "period_start_local", True),
+    ("gold.citizen_accountability_daily", "provider_local_date", True),
+)
+
+VALID_GOLD_AGGREGATE_RETENTION_TARGETS = frozenset(GOLD_AGGREGATE_RETENTION_COLUMNS)
+
 VACUUM_TABLES = (
     *STATIC_SILVER_TABLES,
     *GIS_SILVER_TABLES,
@@ -77,7 +105,7 @@ VACUUM_TABLES = (
     *GOLD_FACT_TABLES,
     "gold.latest_trip_delay_snapshot",
     "gold.latest_vehicle_snapshot",
-    *GOLD_WARM_ROLLUP_TABLES,
+    *GOLD_AGGREGATE_TABLES,
 )
 
 SELECT_STATIC_DATASET_VERSION_IDS = text(
@@ -387,130 +415,6 @@ COUNT_OLD_RT_FEED_SNAPSHOTS = text(
     """
 )
 
-DELETE_OLD_TRIP_UPDATE_STOP_TIME_UPDATES = text(
-    """
-    DELETE FROM silver.trip_update_stop_time_updates AS stu
-    USING raw.realtime_snapshot_index AS rsi, core.feed_endpoints AS fe
-    WHERE stu.realtime_snapshot_id = rsi.realtime_snapshot_id
-      AND fe.feed_endpoint_id = rsi.feed_endpoint_id
-      AND rsi.provider_id = :provider_id
-      AND fe.endpoint_key = 'trip_updates'
-      AND rsi.captured_at_utc < :cutoff_utc
-      AND rsi.realtime_snapshot_id <> COALESCE((
-            SELECT max(rsi_latest.realtime_snapshot_id)
-            FROM raw.realtime_snapshot_index AS rsi_latest
-            INNER JOIN core.feed_endpoints AS fe_latest
-                ON fe_latest.feed_endpoint_id = rsi_latest.feed_endpoint_id
-            WHERE rsi_latest.provider_id = :provider_id
-              AND fe_latest.endpoint_key = 'trip_updates'
-        ), -1)
-    """
-)
-
-COUNT_OLD_TRIP_UPDATE_STOP_TIME_UPDATES = text(
-    """
-    SELECT COUNT(*) FROM silver.trip_update_stop_time_updates AS stu
-    JOIN raw.realtime_snapshot_index AS rsi
-        ON stu.realtime_snapshot_id = rsi.realtime_snapshot_id
-    JOIN core.feed_endpoints AS fe
-        ON fe.feed_endpoint_id = rsi.feed_endpoint_id
-    WHERE rsi.provider_id = :provider_id
-      AND fe.endpoint_key = 'trip_updates'
-      AND rsi.captured_at_utc < :cutoff_utc
-      AND rsi.realtime_snapshot_id <> COALESCE((
-            SELECT max(rsi_latest.realtime_snapshot_id)
-            FROM raw.realtime_snapshot_index AS rsi_latest
-            INNER JOIN core.feed_endpoints AS fe_latest
-                ON fe_latest.feed_endpoint_id = rsi_latest.feed_endpoint_id
-            WHERE rsi_latest.provider_id = :provider_id
-              AND fe_latest.endpoint_key = 'trip_updates'
-        ), -1)
-    """
-)
-
-DELETE_OLD_TRIP_UPDATES = text(
-    """
-    DELETE FROM silver.trip_updates AS tu
-    USING raw.realtime_snapshot_index AS rsi, core.feed_endpoints AS fe
-    WHERE tu.realtime_snapshot_id = rsi.realtime_snapshot_id
-      AND fe.feed_endpoint_id = rsi.feed_endpoint_id
-      AND rsi.provider_id = :provider_id
-      AND fe.endpoint_key = 'trip_updates'
-      AND rsi.captured_at_utc < :cutoff_utc
-      AND rsi.realtime_snapshot_id <> COALESCE((
-            SELECT max(rsi_latest.realtime_snapshot_id)
-            FROM raw.realtime_snapshot_index AS rsi_latest
-            INNER JOIN core.feed_endpoints AS fe_latest
-                ON fe_latest.feed_endpoint_id = rsi_latest.feed_endpoint_id
-            WHERE rsi_latest.provider_id = :provider_id
-              AND fe_latest.endpoint_key = 'trip_updates'
-        ), -1)
-    """
-)
-
-COUNT_OLD_TRIP_UPDATES = text(
-    """
-    SELECT COUNT(*) FROM silver.trip_updates AS tu
-    JOIN raw.realtime_snapshot_index AS rsi
-        ON tu.realtime_snapshot_id = rsi.realtime_snapshot_id
-    JOIN core.feed_endpoints AS fe
-        ON fe.feed_endpoint_id = rsi.feed_endpoint_id
-    WHERE rsi.provider_id = :provider_id
-      AND fe.endpoint_key = 'trip_updates'
-      AND rsi.captured_at_utc < :cutoff_utc
-      AND rsi.realtime_snapshot_id <> COALESCE((
-            SELECT max(rsi_latest.realtime_snapshot_id)
-            FROM raw.realtime_snapshot_index AS rsi_latest
-            INNER JOIN core.feed_endpoints AS fe_latest
-                ON fe_latest.feed_endpoint_id = rsi_latest.feed_endpoint_id
-            WHERE rsi_latest.provider_id = :provider_id
-              AND fe_latest.endpoint_key = 'trip_updates'
-        ), -1)
-    """
-)
-
-DELETE_OLD_VEHICLE_POSITIONS = text(
-    """
-    DELETE FROM silver.vehicle_positions AS vp
-    USING raw.realtime_snapshot_index AS rsi, core.feed_endpoints AS fe
-    WHERE vp.realtime_snapshot_id = rsi.realtime_snapshot_id
-      AND fe.feed_endpoint_id = rsi.feed_endpoint_id
-      AND rsi.provider_id = :provider_id
-      AND fe.endpoint_key = 'vehicle_positions'
-      AND rsi.captured_at_utc < :cutoff_utc
-      AND rsi.realtime_snapshot_id <> COALESCE((
-            SELECT max(rsi_latest.realtime_snapshot_id)
-            FROM raw.realtime_snapshot_index AS rsi_latest
-            INNER JOIN core.feed_endpoints AS fe_latest
-                ON fe_latest.feed_endpoint_id = rsi_latest.feed_endpoint_id
-            WHERE rsi_latest.provider_id = :provider_id
-              AND fe_latest.endpoint_key = 'vehicle_positions'
-        ), -1)
-    """
-)
-
-COUNT_OLD_VEHICLE_POSITIONS = text(
-    """
-    SELECT COUNT(*) FROM silver.vehicle_positions AS vp
-    JOIN raw.realtime_snapshot_index AS rsi
-        ON vp.realtime_snapshot_id = rsi.realtime_snapshot_id
-    JOIN core.feed_endpoints AS fe
-        ON fe.feed_endpoint_id = rsi.feed_endpoint_id
-    WHERE rsi.provider_id = :provider_id
-      AND fe.endpoint_key = 'vehicle_positions'
-      AND rsi.captured_at_utc < :cutoff_utc
-      AND rsi.realtime_snapshot_id <> COALESCE((
-            SELECT max(rsi_latest.realtime_snapshot_id)
-            FROM raw.realtime_snapshot_index AS rsi_latest
-            INNER JOIN core.feed_endpoints AS fe_latest
-                ON fe_latest.feed_endpoint_id = rsi_latest.feed_endpoint_id
-            WHERE rsi_latest.provider_id = :provider_id
-              AND fe_latest.endpoint_key = 'vehicle_positions'
-        ), -1)
-    """
-)
-
-
 DELETE_OLD_FACT_TRIP_DELAY_SNAPSHOTS = text(
     """
     DELETE FROM gold.fact_trip_delay_snapshot
@@ -561,20 +465,9 @@ SELECT_ELIGIBLE_BRONZE_REALTIME_OBJECTS = text(
     WHERE rsi.provider_id = :provider_id
       AND rsi.captured_at_utc < :cutoff_utc
       AND NOT EXISTS (
-          SELECT 1 FROM silver.trip_updates tu
-          WHERE tu.realtime_snapshot_id = rsi.realtime_snapshot_id
-      )
-      AND NOT EXISTS (
-          SELECT 1 FROM silver.vehicle_positions vp
-          WHERE vp.realtime_snapshot_id = rsi.realtime_snapshot_id
-      )
-      AND NOT EXISTS (
-          SELECT 1 FROM silver.trip_update_stop_time_updates stu
-          WHERE stu.realtime_snapshot_id = rsi.realtime_snapshot_id
-      )
-      AND NOT EXISTS (
           SELECT 1 FROM silver.rt_feed_snapshots rfs
-          WHERE rfs.ingestion_object_id = io.ingestion_object_id
+          WHERE rfs.source_realtime_snapshot_id = rsi.realtime_snapshot_id
+             OR rfs.ingestion_object_id = io.ingestion_object_id
       )
       AND rsi.realtime_snapshot_id <> COALESCE((
           SELECT MAX(rsi_latest.realtime_snapshot_id)
@@ -657,6 +550,40 @@ COUNT_OLD_WARM_ROLLUP_PERIODS = text(
 )
 
 
+def _gold_aggregate_retention_statement(
+    table_name: str,
+    retention_column: str,
+    *,
+    date_only: bool,
+    dry_run: bool,
+) -> object:
+    if (
+        table_name,
+        retention_column,
+        date_only,
+    ) not in VALID_GOLD_AGGREGATE_RETENTION_TARGETS:
+        raise ValueError(
+            "Unknown Gold aggregate retention target: "
+            f"{table_name}.{retention_column} date_only={date_only}"
+        )
+
+    operation = "DELETE FROM"
+    if dry_run:
+        operation = (
+            "SELECT count(*) FROM"
+            if table_name in GOLD_REPORTING_AGGREGATE_TABLES
+            else "SELECT COUNT(*) FROM"
+        )
+    cutoff_expression = "CAST(:cutoff_utc AS date)" if date_only else ":cutoff_utc"
+    return text(
+        f"""
+        {operation} {table_name}
+        WHERE provider_id = :provider_id
+          AND {retention_column} < {cutoff_expression}
+        """
+    )
+
+
 @dataclass(frozen=True)
 class BronzeStoragePruneResult:
     provider_id: str
@@ -737,6 +664,8 @@ def _safe_rowcount(result) -> int:  # noqa: ANN001
 
 
 def _safe_scalar_count(result) -> int:  # noqa: ANN001
+    if not hasattr(result, "scalar_one"):
+        raise TypeError("Dry-run count result must provide scalar_one()")
     value = result.scalar_one()
     return max(int(value or 0), 0)
 
@@ -831,15 +760,6 @@ def prune_realtime_silver_history(
             "silver.rt_feed_snapshots": _safe_scalar_count(
                 connection.execute(COUNT_OLD_RT_FEED_SNAPSHOTS, params)
             ),
-            "silver.trip_update_stop_time_updates": _safe_scalar_count(
-                connection.execute(COUNT_OLD_TRIP_UPDATE_STOP_TIME_UPDATES, params)
-            ),
-            "silver.trip_updates": _safe_scalar_count(
-                connection.execute(COUNT_OLD_TRIP_UPDATES, params)
-            ),
-            "silver.vehicle_positions": _safe_scalar_count(
-                connection.execute(COUNT_OLD_VEHICLE_POSITIONS, params)
-            ),
         }
     else:
         deleted_row_counts = {
@@ -857,15 +777,6 @@ def prune_realtime_silver_history(
             ),
             "silver.rt_feed_snapshots": _safe_rowcount(
                 connection.execute(DELETE_OLD_RT_FEED_SNAPSHOTS, params)
-            ),
-            "silver.trip_update_stop_time_updates": _safe_rowcount(
-                connection.execute(DELETE_OLD_TRIP_UPDATE_STOP_TIME_UPDATES, params)
-            ),
-            "silver.trip_updates": _safe_rowcount(
-                connection.execute(DELETE_OLD_TRIP_UPDATES, params)
-            ),
-            "silver.vehicle_positions": _safe_rowcount(
-                connection.execute(DELETE_OLD_VEHICLE_POSITIONS, params)
             ),
         }
     return cutoff_utc, deleted_row_counts
@@ -1254,11 +1165,7 @@ def prune_warm_rollup_storage(
             dry_run=dry_run,
             retention_days=retention_days,
             cutoff_utc=None,
-            deleted_row_counts={
-                "gold.vehicle_summary_5m": 0,
-                "gold.trip_delay_summary_5m": 0,
-                "gold.warm_rollup_periods": 0,
-            },
+            deleted_row_counts={table_name: 0 for table_name in GOLD_AGGREGATE_TABLES},
             completed_at_utc=utc_now(),
         )
 
@@ -1266,26 +1173,21 @@ def prune_warm_rollup_storage(
     params = {"provider_id": provider_id, "cutoff_utc": cutoff_utc}
 
     with engine.begin() as connection:
-        if dry_run:
-            vehicle_deleted = _safe_scalar_count(
-                connection.execute(COUNT_OLD_VEHICLE_SUMMARY_5M, params)
+        counter = _safe_scalar_count if dry_run else _safe_rowcount
+        deleted_row_counts = {
+            table_name: counter(
+                connection.execute(
+                    _gold_aggregate_retention_statement(
+                        table_name,
+                        retention_column,
+                        date_only=date_only,
+                        dry_run=dry_run,
+                    ),
+                    params,
+                )
             )
-            trip_delay_deleted = _safe_scalar_count(
-                connection.execute(COUNT_OLD_TRIP_DELAY_SUMMARY_5M, params)
-            )
-            periods_deleted = _safe_scalar_count(
-                connection.execute(COUNT_OLD_WARM_ROLLUP_PERIODS, params)
-            )
-        else:
-            vehicle_deleted = _safe_rowcount(
-                connection.execute(DELETE_OLD_VEHICLE_SUMMARY_5M, params)
-            )
-            trip_delay_deleted = _safe_rowcount(
-                connection.execute(DELETE_OLD_TRIP_DELAY_SUMMARY_5M, params)
-            )
-            periods_deleted = _safe_rowcount(
-                connection.execute(DELETE_OLD_WARM_ROLLUP_PERIODS, params)
-            )
+            for table_name, retention_column, date_only in GOLD_AGGREGATE_RETENTION_COLUMNS
+        }
         completed_at_utc = utc_now()
 
     return WarmRollupStoragePruneResult(
@@ -1293,11 +1195,7 @@ def prune_warm_rollup_storage(
         dry_run=dry_run,
         retention_days=retention_days,
         cutoff_utc=cutoff_utc,
-        deleted_row_counts={
-            "gold.vehicle_summary_5m": vehicle_deleted,
-            "gold.trip_delay_summary_5m": trip_delay_deleted,
-            "gold.warm_rollup_periods": periods_deleted,
-        },
+        deleted_row_counts=deleted_row_counts,
         completed_at_utc=completed_at_utc,
     )
 

@@ -1,0 +1,75 @@
+table FeedFreshnessCurrent
+
+	column provider_id
+		dataType: string
+		summarizeBy: none
+		sourceColumn: provider_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column endpoint_key
+		dataType: string
+		summarizeBy: none
+		sourceColumn: endpoint_key
+
+		annotation SummarizationSetBy = Automatic
+
+	column status
+		dataType: string
+		summarizeBy: none
+		sourceColumn: status
+
+		annotation SummarizationSetBy = Automatic
+
+	column requested_at_utc
+		dataType: dateTime
+		formatString: General Date
+		summarizeBy: none
+		sourceColumn: requested_at_utc
+
+		annotation SummarizationSetBy = Automatic
+
+	column started_at_utc
+		dataType: dateTime
+		formatString: General Date
+		summarizeBy: none
+		sourceColumn: started_at_utc
+
+		annotation SummarizationSetBy = Automatic
+
+	column completed_at_utc
+		dataType: dateTime
+		formatString: General Date
+		summarizeBy: none
+		sourceColumn: completed_at_utc
+
+		annotation SummarizationSetBy = Automatic
+
+	column feed_timestamp_utc
+		dataType: dateTime
+		formatString: General Date
+		summarizeBy: none
+		sourceColumn: feed_timestamp_utc
+
+		annotation SummarizationSetBy = Automatic
+
+	column completed_age_seconds
+		dataType: int64
+		formatString: 0
+		summarizeBy: sum
+		sourceColumn: completed_age_seconds
+
+		annotation SummarizationSetBy = Automatic
+
+	partition FeedFreshnessCurrent = m
+		mode: directQuery
+		source =
+				let
+				    Source = PostgreSQL.Database("db.transit.yesid.dev", "transit"),
+				    gold_feed_freshness_current = Source{[Schema="gold",Item="feed_freshness_current"]}[Data]
+				in
+				    gold_feed_freshness_current
+
+	annotation PBI_NavigationStepName = Navigation
+
+	annotation PBI_ResultType = Table
