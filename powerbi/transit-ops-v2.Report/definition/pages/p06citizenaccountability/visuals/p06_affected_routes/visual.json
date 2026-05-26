@@ -18,16 +18,16 @@
             {
               "field": {
                 "Column": {
-                  "Property": "route_id",
+                  "Property": "provider_local_date",
                   "Expression": {
                     "SourceRef": {
-                      "Entity": "CurrentTripDelayComputed"
+                      "Entity": "CitizenAccountabilityDaily"
                     }
                   }
                 }
               },
-              "queryRef": "CurrentTripDelayComputed.route_id",
-              "displayName": "Route"
+              "queryRef": "CitizenAccountabilityDaily.provider_local_date",
+              "displayName": "Date"
             }
           ]
         },
@@ -36,21 +36,21 @@
             {
               "field": {
                 "Aggregation": {
-                  "Function": 2,
+                  "Function": 0,
                   "Expression": {
                     "Column": {
-                      "Property": "trip_id",
+                      "Property": "affected_route_count",
                       "Expression": {
                         "SourceRef": {
-                          "Entity": "CurrentTripDelayComputed"
+                          "Entity": "CitizenAccountabilityDaily"
                         }
                       }
                     }
                   }
                 }
               },
-              "queryRef": "DistinctCount(CurrentTripDelayComputed.trip_id)",
-              "displayName": "Trajets touchés"
+              "queryRef": "Sum(CitizenAccountabilityDaily.affected_route_count)",
+              "displayName": "Routes touchées / jour"
             }
           ]
         }

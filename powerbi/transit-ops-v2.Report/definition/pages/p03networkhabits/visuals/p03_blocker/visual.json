@@ -75,7 +75,7 @@
             "text": {
               "expr": {
                 "Literal": {
-                  "Value": "'Contexte qualité / Quality context'"
+                  "Value": "'Fraîcheur des flux / Feed freshness state'"
                 }
               }
             },

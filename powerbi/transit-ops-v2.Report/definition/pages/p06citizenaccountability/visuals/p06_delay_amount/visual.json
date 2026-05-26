@@ -18,16 +18,16 @@
             {
               "field": {
                 "Column": {
-                  "Property": "route_id",
+                  "Property": "provider_local_date",
                   "Expression": {
                     "SourceRef": {
-                      "Entity": "CurrentTripDelayComputed"
+                      "Entity": "CitizenAccountabilityDaily"
                     }
                   }
                 }
               },
-              "queryRef": "CurrentTripDelayComputed.route_id",
-              "displayName": "Route"
+              "queryRef": "CitizenAccountabilityDaily.provider_local_date",
+              "displayName": "Date"
             }
           ]
         },
@@ -35,22 +35,17 @@
           "projections": [
             {
               "field": {
-                "Aggregation": {
-                  "Function": 4,
+                "Measure": {
+                  "Property": "Score impact citoyens / Citizen Impact Score",
                   "Expression": {
-                    "Column": {
-                      "Property": "max_delay_seconds",
-                      "Expression": {
-                        "SourceRef": {
-                          "Entity": "CurrentTripDelayComputed"
-                        }
-                      }
+                    "SourceRef": {
+                      "Entity": "_Measures"
                     }
                   }
                 }
               },
-              "queryRef": "Max(CurrentTripDelayComputed.max_delay_seconds)",
-              "displayName": "Retard max"
+              "queryRef": "_Measures.Score impact citoyens / Citizen Impact Score",
+              "displayName": "Impact citoyens"
             }
           ]
         }

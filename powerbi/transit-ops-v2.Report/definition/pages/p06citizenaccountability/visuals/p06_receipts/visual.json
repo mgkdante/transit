@@ -18,58 +18,86 @@
             {
               "field": {
                 "Column": {
-                  "Property": "captured_at_utc",
+                  "Property": "provider_local_date",
                   "Expression": {
                     "SourceRef": {
-                      "Entity": "CurrentTripDelayComputed"
+                      "Entity": "CitizenAccountabilityDaily"
                     }
                   }
                 }
               },
-              "queryRef": "CurrentTripDelayComputed.captured_at_utc",
-              "displayName": "Quand"
+              "queryRef": "CitizenAccountabilityDaily.provider_local_date",
+              "displayName": "Date / Day"
             },
             {
               "field": {
                 "Column": {
-                  "Property": "route_id",
+                  "Property": "affected_route_count",
                   "Expression": {
                     "SourceRef": {
-                      "Entity": "CurrentTripDelayComputed"
+                      "Entity": "CitizenAccountabilityDaily"
                     }
                   }
                 }
               },
-              "queryRef": "CurrentTripDelayComputed.route_id",
-              "displayName": "Route"
+              "queryRef": "CitizenAccountabilityDaily.affected_route_count",
+              "displayName": "Routes touchées"
             },
             {
               "field": {
                 "Column": {
-                  "Property": "trip_id",
+                  "Property": "affected_stop_count",
                   "Expression": {
                     "SourceRef": {
-                      "Entity": "CurrentTripDelayComputed"
+                      "Entity": "CitizenAccountabilityDaily"
                     }
                   }
                 }
               },
-              "queryRef": "CurrentTripDelayComputed.trip_id",
-              "displayName": "Trajet"
+              "queryRef": "CitizenAccountabilityDaily.affected_stop_count",
+              "displayName": "Arrêts touchés"
             },
             {
               "field": {
                 "Column": {
-                  "Property": "max_delay_seconds",
+                  "Property": "severe_delay_count",
                   "Expression": {
                     "SourceRef": {
-                      "Entity": "CurrentTripDelayComputed"
+                      "Entity": "CitizenAccountabilityDaily"
                     }
                   }
                 }
               },
-              "queryRef": "CurrentTripDelayComputed.max_delay_seconds",
-              "displayName": "Combien"
+              "queryRef": "CitizenAccountabilityDaily.severe_delay_count",
+              "displayName": "Retards sévères"
+            },
+            {
+              "field": {
+                "Column": {
+                  "Property": "alert_count",
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "CitizenAccountabilityDaily"
+                    }
+                  }
+                }
+              },
+              "queryRef": "CitizenAccountabilityDaily.alert_count",
+              "displayName": "Alertes"
+            },
+            {
+              "field": {
+                "Column": {
+                  "Property": "rider_impact_score",
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "CitizenAccountabilityDaily"
+                    }
+                  }
+                }
+              },
+              "queryRef": "CitizenAccountabilityDaily.rider_impact_score",
+              "displayName": "Impact"
             }
           ]
         }

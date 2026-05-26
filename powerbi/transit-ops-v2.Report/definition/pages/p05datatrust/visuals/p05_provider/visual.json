@@ -32,7 +32,7 @@
             {
               "field": {
                 "Column": {
-                  "Property": "provider_name",
+                  "Property": "display_name",
                   "Expression": {
                     "SourceRef": {
                       "Entity": "DimProvider"
@@ -40,7 +40,7 @@
                   }
                 }
               },
-              "queryRef": "DimProvider.provider_name",
+              "queryRef": "DimProvider.display_name",
               "displayName": "Nom"
             },
             {
@@ -60,7 +60,7 @@
             {
               "field": {
                 "Column": {
-                  "Property": "country_code",
+                  "Property": "default_language",
                   "Expression": {
                     "SourceRef": {
                       "Entity": "DimProvider"
@@ -68,8 +68,8 @@
                   }
                 }
               },
-              "queryRef": "DimProvider.country_code",
-              "displayName": "Pays"
+              "queryRef": "DimProvider.default_language",
+              "displayName": "Langue"
             }
           ]
         }
@@ -89,7 +89,7 @@
             "text": {
               "expr": {
                 "Literal": {
-                  "Value": "'Marqueur dataset / Dataset marker'"
+                  "Value": "'Source actuelle / Current source'"
                 }
               }
             },

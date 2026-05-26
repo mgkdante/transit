@@ -59,9 +59,29 @@ table _Measures
 
 	measure 'Score habitudes / Habit Score' = ```
 			AVERAGE(RouteHabitScore[repeat_problem_score])
-			
+
 			```
 		formatString: 0.0
+
+	measure 'Couleur fraîcheur / Freshness Color' = ```
+			SWITCH(
+			    TRUE(),
+			    SELECTEDVALUE(FeedFreshnessCurrent[completed_age_seconds]) <= 30, "#6ECF8F",
+			    SELECTEDVALUE(FeedFreshnessCurrent[completed_age_seconds]) <= 60, "#FFB627",
+			    "#E07800"
+			)
+
+			```
+
+	measure 'Couleur retard / Delay Color' = ```
+			SWITCH(
+			    TRUE(),
+			    SELECTEDVALUE(CurrentTripDelayComputed[max_delay_seconds]) <= 60, "#6ECF8F",
+			    SELECTEDVALUE(CurrentTripDelayComputed[max_delay_seconds]) <= 300, "#FFB627",
+			    "#E07800"
+			)
+
+			```
 
 	column Column1
 		dataType: string

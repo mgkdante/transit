@@ -92,7 +92,7 @@
             "text": {
               "expr": {
                 "Literal": {
-                  "Value": "'Pires routes maintenant / Worst routes now'"
+                  "Value": "'Plus haut retard / Highest delay now'"
                 }
               }
             },

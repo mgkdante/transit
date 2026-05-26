@@ -21,12 +21,12 @@
                   "Property": "route_id",
                   "Expression": {
                     "SourceRef": {
-                      "Entity": "TripDelaySummary5m"
+                      "Entity": "RouteHabitScore"
                     }
                   }
                 }
               },
-              "queryRef": "TripDelaySummary5m.route_id",
+              "queryRef": "RouteHabitScore.route_id",
               "displayName": "Route"
             }
           ]
@@ -36,21 +36,21 @@
             {
               "field": {
                 "Aggregation": {
-                  "Function": 0,
+                  "Function": 1,
                   "Expression": {
                     "Column": {
-                      "Property": "delayed_trip_count",
+                      "Property": "repeat_problem_score",
                       "Expression": {
                         "SourceRef": {
-                          "Entity": "TripDelaySummary5m"
+                          "Entity": "RouteHabitScore"
                         }
                       }
                     }
                   }
                 }
               },
-              "queryRef": "Sum(TripDelaySummary5m.delayed_trip_count)",
-              "displayName": "Retards"
+              "queryRef": "Avg(RouteHabitScore.repeat_problem_score)",
+              "displayName": "Score habitudes"
             }
           ]
         }

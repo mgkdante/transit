@@ -18,16 +18,16 @@
             {
               "field": {
                 "Column": {
-                  "Property": "period_start_utc",
+                  "Property": "day_of_week_iso",
                   "Expression": {
                     "SourceRef": {
-                      "Entity": "TripDelaySummary5m"
+                      "Entity": "RouteDelayDayOfWeek"
                     }
                   }
                 }
               },
-              "queryRef": "TripDelaySummary5m.period_start_utc",
-              "displayName": "Période"
+              "queryRef": "RouteDelayDayOfWeek.day_of_week_iso",
+              "displayName": "Jour ISO / DoW"
             },
             {
               "field": {
@@ -35,12 +35,12 @@
                   "Property": "route_id",
                   "Expression": {
                     "SourceRef": {
-                      "Entity": "TripDelaySummary5m"
+                      "Entity": "RouteDelayDayOfWeek"
                     }
                   }
                 }
               },
-              "queryRef": "TripDelaySummary5m.route_id",
+              "queryRef": "RouteDelayDayOfWeek.route_id",
               "displayName": "Route"
             },
             {
@@ -49,12 +49,12 @@
                   "Property": "trip_count",
                   "Expression": {
                     "SourceRef": {
-                      "Entity": "TripDelaySummary5m"
+                      "Entity": "RouteDelayDayOfWeek"
                     }
                   }
                 }
               },
-              "queryRef": "TripDelaySummary5m.trip_count",
+              "queryRef": "RouteDelayDayOfWeek.trip_count",
               "displayName": "Trajets"
             },
             {
@@ -63,12 +63,12 @@
                   "Property": "avg_delay_seconds",
                   "Expression": {
                     "SourceRef": {
-                      "Entity": "TripDelaySummary5m"
+                      "Entity": "RouteDelayDayOfWeek"
                     }
                   }
                 }
               },
-              "queryRef": "TripDelaySummary5m.avg_delay_seconds",
+              "queryRef": "RouteDelayDayOfWeek.avg_delay_seconds",
               "displayName": "Retard moyen"
             }
           ]

@@ -21,13 +21,13 @@
                   "Property": "period_start_utc",
                   "Expression": {
                     "SourceRef": {
-                      "Entity": "TripDelaySummary5m"
+                      "Entity": "RouteDelayHourly"
                     }
                   }
                 }
               },
-              "queryRef": "TripDelaySummary5m.period_start_utc",
-              "displayName": "Période"
+              "queryRef": "RouteDelayHourly.period_start_utc",
+              "displayName": "Heure / Hour"
             },
             {
               "field": {
@@ -35,12 +35,12 @@
                   "Property": "route_id",
                   "Expression": {
                     "SourceRef": {
-                      "Entity": "TripDelaySummary5m"
+                      "Entity": "RouteDelayHourly"
                     }
                   }
                 }
               },
-              "queryRef": "TripDelaySummary5m.route_id",
+              "queryRef": "RouteDelayHourly.route_id",
               "displayName": "Route"
             },
             {
@@ -49,12 +49,12 @@
                   "Property": "trip_count",
                   "Expression": {
                     "SourceRef": {
-                      "Entity": "TripDelaySummary5m"
+                      "Entity": "RouteDelayHourly"
                     }
                   }
                 }
               },
-              "queryRef": "TripDelaySummary5m.trip_count",
+              "queryRef": "RouteDelayHourly.trip_count",
               "displayName": "Trajets"
             },
             {
@@ -63,13 +63,13 @@
                   "Property": "delayed_trip_count",
                   "Expression": {
                     "SourceRef": {
-                      "Entity": "TripDelaySummary5m"
+                      "Entity": "RouteDelayHourly"
                     }
                   }
                 }
               },
-              "queryRef": "TripDelaySummary5m.delayed_trip_count",
-              "displayName": "En retard"
+              "queryRef": "RouteDelayHourly.delayed_trip_count",
+              "displayName": "En retard / Delayed"
             }
           ]
         }

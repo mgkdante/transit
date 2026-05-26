@@ -74,6 +74,28 @@ EXPECTED_MEASURES = {
     "Âge fraîcheur sec / Freshness Age Sec",
     "Score impact citoyens / Citizen Impact Score",
     "Score habitudes / Habit Score",
+    "Couleur fraîcheur / Freshness Color",
+    "Couleur retard / Delay Color",
+}
+BRAND_VOICE_TITLES_REQUIRED = {
+    "Source actuelle / Current source",
+    "Fraîcheur des flux / Feed freshness state",
+    "Plus haut retard / Highest delay now",
+    "Trajets problématiques / Problem trips",
+}
+BRAND_VOICE_TITLES_REMOVED = {
+    "Marqueur dataset / Dataset marker",
+    "Contexte qualité / Quality context",
+    "Pires routes maintenant / Worst routes now",
+    "Ce qui cloche maintenant / What is wrong now",
+}
+EXPECTED_DIM_PROVIDER_COLUMNS = {
+    "provider_id",
+    "provider_key",
+    "display_name",
+    "timezone",
+    "default_language",
+    "is_active",
 }
 EXPECTED_VEHICLE_SUMMARY_5M_COLUMNS = {
     "provider_id",
@@ -224,6 +246,11 @@ def test_report_theme_uses_yesid_tokens_not_default_cy_theme() -> None:
     assert "#E07800" in theme_text
     assert "#FFB627" in theme_text
     assert "TransitOpsYesidDark" in report_text
+    # Brand Spine D3 ("Why orange"): #E07800 is interactive-only; not the
+    # primary chart dataColor. Move orange off dataColors[0] so default
+    # bar/line series use a neutral foreground hue.
+    assert theme["dataColors"][0] != "#E07800"
+    assert theme["tableAccent"] == "#E07800"
 
 
 def test_report_definition_uses_supported_schema_shape() -> None:
@@ -311,7 +338,74 @@ def test_relationships_reference_existing_tmdl_source_columns_when_present() -> 
         assert column_name in table_columns[table_name]
 
 
-def test_relationships_are_empty_until_provider_safe_keys_exist() -> None:
+def test_relationships_ship_inactive_so_desktop_refresh_proves_cardinality() -> None:
     relationships = _read(MODEL_ROOT / "relationships.tmdl").strip()
 
-    assert relationships == ""
+    assert relationships, "relationships.tmdl should not be empty after Plan task 9 step 5"
+    blocks = re.findall(
+        r"relationship \w+\n(?:\t[^\n]+\n)+",
+        relationships,
+    )
+    assert blocks, "no relationship blocks parsed"
+    for block in blocks:
+        assert "isActive: false" in block, (
+            f"relationship must ship inactive (operator activates in Desktop after "
+            f"refresh proves uniqueness on the dim side):\n{block}"
+        )
+
+
+def test_p05_provider_binds_to_real_dim_provider_columns() -> None:
+    visual = json.loads(
+        _read(
+            REPORT_ROOT
+            / "pages"
+            / "p05datatrust"
+            / "visuals"
+            / "p05_provider"
+            / "visual.json"
+        )
+    )
+    projections = visual["visual"]["query"]["queryState"]["Values"]["projections"]
+    properties = {
+        projection["field"]["Column"]["Property"] for projection in projections
+    }
+    available_columns = _source_columns("DimProvider")
+
+    assert available_columns == EXPECTED_DIM_PROVIDER_COLUMNS
+    assert properties <= available_columns, (
+        f"p05_provider binds to columns absent from DimProvider: "
+        f"{properties - available_columns}"
+    )
+    assert "provider_name" not in properties
+    assert "country_code" not in properties
+
+
+def test_visual_titles_match_brand_voice_after_slice_8_7_polish() -> None:
+    report_text = _all_model_and_report_text()
+
+    for title in BRAND_VOICE_TITLES_REQUIRED:
+        assert title in report_text, f"expected brand-voice title missing: {title}"
+    for title in BRAND_VOICE_TITLES_REMOVED:
+        assert title not in report_text, (
+            f"old non-brand-voice title still present: {title}"
+        )
+
+
+def test_color_helper_measures_return_brand_hex_palette() -> None:
+    measure_text = _read(TABLE_ROOT / "_Measures.tmdl")
+
+    for measure_name in (
+        "Couleur fraîcheur / Freshness Color",
+        "Couleur retard / Delay Color",
+    ):
+        match = re.search(
+            rf"measure '{re.escape(measure_name)}' = ```(?P<dax>.*?)```",
+            measure_text,
+            flags=re.DOTALL,
+        )
+        assert match is not None, f"missing color helper measure: {measure_name}"
+        dax = match.group("dax")
+        assert "SWITCH(" in dax
+        assert '"#6ECF8F"' in dax  # green: healthy
+        assert '"#FFB627"' in dax  # yellow: warning
+        assert '"#E07800"' in dax  # orange: action required (brand interactive hue)

@@ -1,11 +1,11 @@
 {
   "name": "TransitOpsYesidDark",
   "dataColors": [
-    "#E07800",
-    "#FFB627",
+    "#F4F1EA",
     "#5AB0F2",
     "#6ECF8F",
-    "#F4F1EA",
+    "#FFB627",
+    "#E07800",
     "#7C8187"
   ],
   "background": "#141414",

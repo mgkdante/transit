@@ -24,14 +24,14 @@
                       "Property": "avg_delay_seconds",
                       "Expression": {
                         "SourceRef": {
-                          "Entity": "TripDelaySummary5m"
+                          "Entity": "RouteDelayHourly"
                         }
                       }
                     }
                   }
                 }
               },
-              "queryRef": "Avg(TripDelaySummary5m.avg_delay_seconds)",
+              "queryRef": "Avg(RouteDelayHourly.avg_delay_seconds)",
               "displayName": "Retard moyen"
             }
           ]
@@ -44,12 +44,12 @@
                   "Property": "period_start_utc",
                   "Expression": {
                     "SourceRef": {
-                      "Entity": "TripDelaySummary5m"
+                      "Entity": "RouteDelayHourly"
                     }
                   }
                 }
               },
-              "queryRef": "TripDelaySummary5m.period_start_utc",
+              "queryRef": "RouteDelayHourly.period_start_utc",
               "displayName": "Période"
             }
           ]
