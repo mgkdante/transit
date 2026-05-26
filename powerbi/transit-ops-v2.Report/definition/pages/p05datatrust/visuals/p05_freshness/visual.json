@@ -1,0 +1,230 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.1.0/schema.json",
+  "name": "p05_freshness",
+  "position": {
+    "x": 32,
+    "y": 34,
+    "z": 10,
+    "height": 300,
+    "width": 610,
+    "tabOrder": 10
+  },
+  "visual": {
+    "visualType": "tableEx",
+    "query": {
+      "queryState": {
+        "Values": {
+          "projections": [
+            {
+              "field": {
+                "Column": {
+                  "Property": "endpoint_key",
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "FeedFreshnessCurrent"
+                    }
+                  }
+                }
+              },
+              "queryRef": "FeedFreshnessCurrent.endpoint_key",
+              "displayName": "Flux"
+            },
+            {
+              "field": {
+                "Column": {
+                  "Property": "status",
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "FeedFreshnessCurrent"
+                    }
+                  }
+                }
+              },
+              "queryRef": "FeedFreshnessCurrent.status",
+              "displayName": "Statut"
+            },
+            {
+              "field": {
+                "Column": {
+                  "Property": "requested_at_utc",
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "FeedFreshnessCurrent"
+                    }
+                  }
+                }
+              },
+              "queryRef": "FeedFreshnessCurrent.requested_at_utc",
+              "displayName": "Demandé"
+            },
+            {
+              "field": {
+                "Column": {
+                  "Property": "completed_age_seconds",
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "FeedFreshnessCurrent"
+                    }
+                  }
+                }
+              },
+              "queryRef": "FeedFreshnessCurrent.completed_age_seconds",
+              "displayName": "Âge sec"
+            }
+          ]
+        }
+      }
+    },
+    "visualContainerObjects": {
+      "title": [
+        {
+          "properties": {
+            "show": {
+              "expr": {
+                "Literal": {
+                  "Value": "true"
+                }
+              }
+            },
+            "text": {
+              "expr": {
+                "Literal": {
+                  "Value": "'Fraîcheur / Freshness'"
+                }
+              }
+            },
+            "fontColor": {
+              "solid": {
+                "color": "#F4F1EA"
+              }
+            },
+            "fontSize": {
+              "expr": {
+                "Literal": {
+                  "Value": "12D"
+                }
+              }
+            },
+            "titleWrap": {
+              "expr": {
+                "Literal": {
+                  "Value": "true"
+                }
+              }
+            }
+          }
+        }
+      ],
+      "background": [
+        {
+          "properties": {
+            "show": {
+              "expr": {
+                "Literal": {
+                  "Value": "true"
+                }
+              }
+            },
+            "color": {
+              "solid": {
+                "color": ""
+              }
+            },
+            "transparency": {
+              "expr": {
+                "Literal": {
+                  "Value": "0D"
+                }
+              }
+            }
+          }
+        }
+      ],
+      "border": [
+        {
+          "properties": {
+            "show": {
+              "expr": {
+                "Literal": {
+                  "Value": "true"
+                }
+              }
+            },
+            "color": {
+              "solid": {
+                "color": "#2B2B2B"
+              }
+            },
+            "radius": {
+              "expr": {
+                "Literal": {
+                  "Value": "6D"
+                }
+              }
+            },
+            "width": {
+              "expr": {
+                "Literal": {
+                  "Value": "1D"
+                }
+              }
+            }
+          }
+        }
+      ],
+      "visualHeader": [
+        {
+          "properties": {
+            "show": {
+              "expr": {
+                "Literal": {
+                  "Value": "false"
+                }
+              }
+            }
+          }
+        }
+      ],
+      "subTitle": [
+        {
+          "properties": {
+            "show": {
+              "expr": {
+                "Literal": {
+                  "Value": "true"
+                }
+              }
+            },
+            "text": {
+              "expr": {
+                "Literal": {
+                  "Value": "'Contrôle de confiance'"
+                }
+              }
+            },
+            "fontColor": {
+              "solid": {
+                "color": "#B8B8B8"
+              }
+            },
+            "fontSize": {
+              "expr": {
+                "Literal": {
+                  "Value": "9D"
+                }
+              }
+            },
+            "titleWrap": {
+              "expr": {
+                "Literal": {
+                  "Value": "true"
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  "howCreated": "Default"
+}

@@ -1,0 +1,216 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.1.0/schema.json",
+  "name": "p03_blocker",
+  "position": {
+    "x": 660,
+    "y": 360,
+    "z": 40,
+    "height": 320,
+    "width": 588,
+    "tabOrder": 40
+  },
+  "visual": {
+    "visualType": "tableEx",
+    "query": {
+      "queryState": {
+        "Values": {
+          "projections": [
+            {
+              "field": {
+                "Column": {
+                  "Property": "endpoint_key",
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "FeedFreshnessCurrent"
+                    }
+                  }
+                }
+              },
+              "queryRef": "FeedFreshnessCurrent.endpoint_key",
+              "displayName": "Flux"
+            },
+            {
+              "field": {
+                "Column": {
+                  "Property": "status",
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "FeedFreshnessCurrent"
+                    }
+                  }
+                }
+              },
+              "queryRef": "FeedFreshnessCurrent.status",
+              "displayName": "Statut"
+            },
+            {
+              "field": {
+                "Column": {
+                  "Property": "completed_age_seconds",
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "FeedFreshnessCurrent"
+                    }
+                  }
+                }
+              },
+              "queryRef": "FeedFreshnessCurrent.completed_age_seconds",
+              "displayName": "Âge sec"
+            }
+          ]
+        }
+      }
+    },
+    "visualContainerObjects": {
+      "title": [
+        {
+          "properties": {
+            "show": {
+              "expr": {
+                "Literal": {
+                  "Value": "true"
+                }
+              }
+            },
+            "text": {
+              "expr": {
+                "Literal": {
+                  "Value": "'Contexte qualité / Quality context'"
+                }
+              }
+            },
+            "fontColor": {
+              "solid": {
+                "color": "#F4F1EA"
+              }
+            },
+            "fontSize": {
+              "expr": {
+                "Literal": {
+                  "Value": "12D"
+                }
+              }
+            },
+            "titleWrap": {
+              "expr": {
+                "Literal": {
+                  "Value": "true"
+                }
+              }
+            }
+          }
+        }
+      ],
+      "background": [
+        {
+          "properties": {
+            "show": {
+              "expr": {
+                "Literal": {
+                  "Value": "true"
+                }
+              }
+            },
+            "color": {
+              "solid": {
+                "color": ""
+              }
+            },
+            "transparency": {
+              "expr": {
+                "Literal": {
+                  "Value": "0D"
+                }
+              }
+            }
+          }
+        }
+      ],
+      "border": [
+        {
+          "properties": {
+            "show": {
+              "expr": {
+                "Literal": {
+                  "Value": "true"
+                }
+              }
+            },
+            "color": {
+              "solid": {
+                "color": "#2B2B2B"
+              }
+            },
+            "radius": {
+              "expr": {
+                "Literal": {
+                  "Value": "6D"
+                }
+              }
+            },
+            "width": {
+              "expr": {
+                "Literal": {
+                  "Value": "1D"
+                }
+              }
+            }
+          }
+        }
+      ],
+      "visualHeader": [
+        {
+          "properties": {
+            "show": {
+              "expr": {
+                "Literal": {
+                  "Value": "false"
+                }
+              }
+            }
+          }
+        }
+      ],
+      "subTitle": [
+        {
+          "properties": {
+            "show": {
+              "expr": {
+                "Literal": {
+                  "Value": "true"
+                }
+              }
+            },
+            "text": {
+              "expr": {
+                "Literal": {
+                  "Value": "'Tables habitudes Gold live non déployées'"
+                }
+              }
+            },
+            "fontColor": {
+              "solid": {
+                "color": "#B8B8B8"
+              }
+            },
+            "fontSize": {
+              "expr": {
+                "Literal": {
+                  "Value": "9D"
+                }
+              }
+            },
+            "titleWrap": {
+              "expr": {
+                "Literal": {
+                  "Value": "true"
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  "howCreated": "Default"
+}
