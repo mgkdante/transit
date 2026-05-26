@@ -116,6 +116,17 @@ def _drop_legacy_silver_realtime_tables() -> None:
     op.drop_table("vehicle_positions", schema="silver")
 
 
+def _drop_legacy_gold_kpi_views() -> None:
+    for view_name in (
+        "kpi_delayed_trip_count_latest",
+        "kpi_max_trip_delay_latest",
+        "kpi_avg_trip_delay_latest",
+        "kpi_routes_with_live_vehicles_latest",
+        "kpi_active_vehicles_latest",
+    ):
+        op.execute(f"DROP VIEW IF EXISTS gold.{view_name}")
+
+
 def _create_gold_reporting_tables() -> None:
     op.create_table(
         "route_delay_hourly",
@@ -523,6 +534,7 @@ def _recreate_legacy_silver_realtime_tables_for_dev_reverse() -> None:
 def upgrade() -> None:
     _add_source_realtime_snapshot_link()
     _drop_legacy_silver_realtime_tables()
+    _drop_legacy_gold_kpi_views()
     _create_gold_reporting_tables()
 
 

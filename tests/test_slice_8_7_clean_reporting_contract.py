@@ -197,6 +197,27 @@ def test_slice_8_7_drops_legacy_silver_realtime_tables_in_dependency_order() -> 
     assert positions == sorted(positions)
 
 
+def test_slice_8_7_drops_legacy_gold_kpi_views_before_reporting_rebuild() -> None:
+    migration = _migration_text()
+
+    upgrade_start = migration.index("\ndef upgrade()")
+    upgrade = migration[upgrade_start:]
+    create_reporting_position = upgrade.index("_create_gold_reporting_tables()")
+    expected_views = [
+        "kpi_delayed_trip_count_latest",
+        "kpi_max_trip_delay_latest",
+        "kpi_avg_trip_delay_latest",
+        "kpi_routes_with_live_vehicles_latest",
+        "kpi_active_vehicles_latest",
+    ]
+
+    assert "_drop_legacy_gold_kpi_views()" in upgrade
+    assert upgrade.index("_drop_legacy_gold_kpi_views()") < create_reporting_position
+    assert 'op.execute(f"DROP VIEW IF EXISTS gold.{view_name}")' in migration
+    for view_name in expected_views:
+        assert f'"{view_name}"' in migration
+
+
 def test_slice_8_7_creates_clean_gold_reporting_tables_with_exact_columns() -> None:
     migration = _migration_text()
 
