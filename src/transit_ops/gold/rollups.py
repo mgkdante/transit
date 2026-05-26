@@ -275,6 +275,18 @@ UPSERT_ROUTE_DELAY_DAY_OF_WEEK = text(
 
 UPSERT_STOP_DELAY_HOURLY = text(
     """
+    WITH stop_activity AS (
+        SELECT
+            provider_id,
+            date_trunc('hour', captured_at_utc) AS period_start_utc,
+            COALESCE(stop_id, '__unknown_stop__') AS stop_id,
+            COALESCE(route_id, '__unrouted__') AS route_id,
+            COUNT(*)::integer AS observation_count
+        FROM gold.fact_vehicle_snapshot
+        WHERE provider_id = :provider_id
+          AND stop_id IS NOT NULL
+        GROUP BY 1, 2, 3, 4
+    )
     INSERT INTO gold.stop_delay_hourly (
         provider_id,
         period_start_utc,
@@ -287,20 +299,23 @@ UPSERT_STOP_DELAY_HOURLY = text(
         built_at_utc
     )
     SELECT
-        provider_id,
-        date_trunc('hour', observation_time_utc),
-        COALESCE(stop_id, '__unknown_stop__'),
-        COALESCE(route_id, '__unrouted__'),
-        COUNT(*)::integer,
-        ROUND(AVG(arrival_delay_seconds::numeric), 2),
-        ROUND(AVG(departure_delay_seconds::numeric), 2),
-        COUNT(*) FILTER (
-            WHERE COALESCE(arrival_delay_seconds, departure_delay_seconds) > 300
-        )::integer,
+        sa.provider_id,
+        sa.period_start_utc,
+        sa.stop_id,
+        sa.route_id,
+        sa.observation_count,
+        rd.avg_delay_seconds,
+        rd.avg_delay_seconds,
+        CASE
+            WHEN COALESCE(rd.max_delay_seconds, 0) > 300 THEN sa.observation_count
+            ELSE 0
+        END,
         :built_at_utc
-    FROM gold.fact_stop_time_delay_observation
-    WHERE provider_id = :provider_id
-    GROUP BY 1, 2, 3, 4
+    FROM stop_activity AS sa
+    LEFT JOIN gold.route_delay_hourly AS rd
+        ON rd.provider_id = sa.provider_id
+       AND rd.period_start_utc = sa.period_start_utc
+       AND rd.route_id = sa.route_id
     ON CONFLICT (provider_id, period_start_utc, stop_id, route_id) DO UPDATE SET
         observation_count = EXCLUDED.observation_count,
         avg_arrival_delay_seconds = EXCLUDED.avg_arrival_delay_seconds,
@@ -323,22 +338,22 @@ UPSERT_ROUTE_RELIABILITY_WEEKLY = text(
         built_at_utc
     )
     SELECT
-        f.provider_id,
-        date_trunc('week', timezone(dp.timezone, f.observation_time_utc))::date,
-        COALESCE(f.route_id, '__unrouted__'),
-        COUNT(*)::integer,
-        ROUND(AVG(COALESCE(f.arrival_delay_seconds, f.departure_delay_seconds)::numeric), 2),
-        COUNT(DISTINCT f.trip_id) FILTER (
-            WHERE COALESCE(f.arrival_delay_seconds, f.departure_delay_seconds) > 0
-        )::integer,
-        COUNT(*) FILTER (
-            WHERE COALESCE(f.arrival_delay_seconds, f.departure_delay_seconds) > 300
-        )::integer,
+        rd.provider_id,
+        date_trunc('week', timezone(dp.timezone, rd.period_start_utc))::date,
+        rd.route_id,
+        SUM(rd.observation_count)::integer,
+        ROUND(
+            SUM(rd.avg_delay_seconds * NULLIF(rd.observation_count, 0))
+            / NULLIF(SUM(rd.observation_count), 0),
+            2
+        ),
+        SUM(rd.delayed_trip_count)::integer,
+        SUM(rd.severe_delay_count)::integer,
         :built_at_utc
-    FROM gold.fact_stop_time_delay_observation AS f
+    FROM gold.route_delay_hourly AS rd
     INNER JOIN gold.dim_provider AS dp
-        ON dp.provider_id = f.provider_id
-    WHERE f.provider_id = :provider_id
+        ON dp.provider_id = rd.provider_id
+    WHERE rd.provider_id = :provider_id
     GROUP BY 1, 2, 3
     ON CONFLICT (provider_id, week_start_local, route_id) DO UPDATE SET
         observation_count = EXCLUDED.observation_count,
@@ -362,22 +377,22 @@ UPSERT_ROUTE_RELIABILITY_MONTHLY = text(
         built_at_utc
     )
     SELECT
-        f.provider_id,
-        date_trunc('month', timezone(dp.timezone, f.observation_time_utc))::date,
-        COALESCE(f.route_id, '__unrouted__'),
-        COUNT(*)::integer,
-        ROUND(AVG(COALESCE(f.arrival_delay_seconds, f.departure_delay_seconds)::numeric), 2),
-        COUNT(DISTINCT f.trip_id) FILTER (
-            WHERE COALESCE(f.arrival_delay_seconds, f.departure_delay_seconds) > 0
-        )::integer,
-        COUNT(*) FILTER (
-            WHERE COALESCE(f.arrival_delay_seconds, f.departure_delay_seconds) > 300
-        )::integer,
+        rd.provider_id,
+        date_trunc('month', timezone(dp.timezone, rd.period_start_utc))::date,
+        rd.route_id,
+        SUM(rd.observation_count)::integer,
+        ROUND(
+            SUM(rd.avg_delay_seconds * NULLIF(rd.observation_count, 0))
+            / NULLIF(SUM(rd.observation_count), 0),
+            2
+        ),
+        SUM(rd.delayed_trip_count)::integer,
+        SUM(rd.severe_delay_count)::integer,
         :built_at_utc
-    FROM gold.fact_stop_time_delay_observation AS f
+    FROM gold.route_delay_hourly AS rd
     INNER JOIN gold.dim_provider AS dp
-        ON dp.provider_id = f.provider_id
-    WHERE f.provider_id = :provider_id
+        ON dp.provider_id = rd.provider_id
+    WHERE rd.provider_id = :provider_id
     GROUP BY 1, 2, 3
     ON CONFLICT (provider_id, month_start_local, route_id) DO UPDATE SET
         observation_count = EXCLUDED.observation_count,
@@ -401,20 +416,23 @@ UPSERT_STOP_DELAY_WEEKLY = text(
         built_at_utc
     )
     SELECT
-        f.provider_id,
-        date_trunc('week', timezone(dp.timezone, f.observation_time_utc))::date,
-        COALESCE(f.stop_id, '__unknown_stop__'),
-        COALESCE(f.route_id, '__unrouted__'),
-        COUNT(*)::integer,
-        ROUND(AVG(COALESCE(f.arrival_delay_seconds, f.departure_delay_seconds)::numeric), 2),
-        COUNT(*) FILTER (
-            WHERE COALESCE(f.arrival_delay_seconds, f.departure_delay_seconds) > 300
-        )::integer,
+        sd.provider_id,
+        date_trunc('week', timezone(dp.timezone, sd.period_start_utc))::date,
+        sd.stop_id,
+        sd.route_id,
+        SUM(sd.observation_count)::integer,
+        ROUND(
+            SUM(COALESCE(sd.avg_arrival_delay_seconds, sd.avg_departure_delay_seconds)
+                * NULLIF(sd.observation_count, 0))
+            / NULLIF(SUM(sd.observation_count), 0),
+            2
+        ),
+        SUM(sd.severe_delay_count)::integer,
         :built_at_utc
-    FROM gold.fact_stop_time_delay_observation AS f
+    FROM gold.stop_delay_hourly AS sd
     INNER JOIN gold.dim_provider AS dp
-        ON dp.provider_id = f.provider_id
-    WHERE f.provider_id = :provider_id
+        ON dp.provider_id = sd.provider_id
+    WHERE sd.provider_id = :provider_id
     GROUP BY 1, 2, 3, 4
     ON CONFLICT (provider_id, week_start_local, stop_id, route_id) DO UPDATE SET
         observation_count = EXCLUDED.observation_count,
@@ -437,20 +455,23 @@ UPSERT_STOP_DELAY_MONTHLY = text(
         built_at_utc
     )
     SELECT
-        f.provider_id,
-        date_trunc('month', timezone(dp.timezone, f.observation_time_utc))::date,
-        COALESCE(f.stop_id, '__unknown_stop__'),
-        COALESCE(f.route_id, '__unrouted__'),
-        COUNT(*)::integer,
-        ROUND(AVG(COALESCE(f.arrival_delay_seconds, f.departure_delay_seconds)::numeric), 2),
-        COUNT(*) FILTER (
-            WHERE COALESCE(f.arrival_delay_seconds, f.departure_delay_seconds) > 300
-        )::integer,
+        sd.provider_id,
+        date_trunc('month', timezone(dp.timezone, sd.period_start_utc))::date,
+        sd.stop_id,
+        sd.route_id,
+        SUM(sd.observation_count)::integer,
+        ROUND(
+            SUM(COALESCE(sd.avg_arrival_delay_seconds, sd.avg_departure_delay_seconds)
+                * NULLIF(sd.observation_count, 0))
+            / NULLIF(SUM(sd.observation_count), 0),
+            2
+        ),
+        SUM(sd.severe_delay_count)::integer,
         :built_at_utc
-    FROM gold.fact_stop_time_delay_observation AS f
+    FROM gold.stop_delay_hourly AS sd
     INNER JOIN gold.dim_provider AS dp
-        ON dp.provider_id = f.provider_id
-    WHERE f.provider_id = :provider_id
+        ON dp.provider_id = sd.provider_id
+    WHERE sd.provider_id = :provider_id
     GROUP BY 1, 2, 3, 4
     ON CONFLICT (provider_id, month_start_local, stop_id, route_id) DO UPDATE SET
         observation_count = EXCLUDED.observation_count,
@@ -464,22 +485,23 @@ UPSERT_ROUTE_HABIT_SCORE = text(
     """
     WITH habit AS (
         SELECT
-            f.provider_id,
-            COALESCE(f.route_id, '__unrouted__') AS route_id,
-            EXTRACT(ISODOW FROM timezone(dp.timezone, f.observation_time_utc))::integer
+            rd.provider_id,
+            rd.route_id,
+            EXTRACT(ISODOW FROM timezone(dp.timezone, rd.period_start_utc))::integer
                 AS day_of_week_iso,
-            EXTRACT(HOUR FROM timezone(dp.timezone, f.observation_time_utc))::integer
+            EXTRACT(HOUR FROM timezone(dp.timezone, rd.period_start_utc))::integer
                 AS hour_of_day_local,
-            COUNT(*)::integer AS observation_count,
-            ROUND(AVG(COALESCE(f.arrival_delay_seconds, f.departure_delay_seconds)::numeric), 2)
-                AS avg_delay_seconds,
-            COUNT(*) FILTER (
-                WHERE COALESCE(f.arrival_delay_seconds, f.departure_delay_seconds) > 300
-            )::integer AS severe_delay_count
-        FROM gold.fact_stop_time_delay_observation AS f
+            SUM(rd.observation_count)::integer AS observation_count,
+            ROUND(
+                SUM(rd.avg_delay_seconds * NULLIF(rd.observation_count, 0))
+                / NULLIF(SUM(rd.observation_count), 0),
+                2
+            ) AS avg_delay_seconds,
+            SUM(rd.severe_delay_count)::integer AS severe_delay_count
+        FROM gold.route_delay_hourly AS rd
         INNER JOIN gold.dim_provider AS dp
-            ON dp.provider_id = f.provider_id
-        WHERE f.provider_id = :provider_id
+            ON dp.provider_id = rd.provider_id
+        WHERE rd.provider_id = :provider_id
         GROUP BY 1, 2, 3, 4
     )
     INSERT INTO gold.route_habit_score (
@@ -501,12 +523,15 @@ UPSERT_ROUTE_HABIT_SCORE = text(
         observation_count,
         avg_delay_seconds,
         severe_delay_count,
-        ROUND(
-            (
-                severe_delay_count::numeric * 10
-                + GREATEST(COALESCE(avg_delay_seconds, 0), 0) / 60
+        LEAST(
+            ROUND(
+                (
+                    severe_delay_count::numeric * 10
+                    + GREATEST(COALESCE(avg_delay_seconds, 0), 0) / 60
+                ),
+                4
             ),
-            4
+            9999.9999
         ),
         :built_at_utc
     FROM habit
@@ -528,10 +553,10 @@ UPSERT_REPEATED_PROBLEM_ROUTE_STOP = text(
             COALESCE(r.route_id, '__unrouted__') AS entity_id,
             COALESCE(r.route_id, '__unrouted__') AS route_id,
             'week'::text AS period_grain,
-            date_trunc('week', r.provider_local_date)::date AS period_start_local,
-            SUM(r.severe_delay_observation_count)::integer AS issue_count,
+            r.week_start_local AS period_start_local,
+            SUM(r.severe_delay_count)::integer AS issue_count,
             ROUND(AVG(r.avg_delay_seconds)::numeric, 2) AS avg_delay_seconds
-        FROM gold.public_route_reliability_daily AS r
+        FROM gold.route_reliability_weekly AS r
         WHERE r.provider_id = :provider_id
         GROUP BY 1, 2, 3, 4, 5, 6
     ),
@@ -540,14 +565,12 @@ UPSERT_REPEATED_PROBLEM_ROUTE_STOP = text(
             s.provider_id,
             'stop'::text AS entity_kind,
             COALESCE(s.stop_id, '__unknown_stop__') AS entity_id,
-            '__all_routes__'::text AS route_id,
+            COALESCE(s.route_id, '__unrouted__') AS route_id,
             'week'::text AS period_grain,
-            date_trunc('week', s.provider_local_date)::date AS period_start_local,
-            COUNT(*) FILTER (
-                WHERE s.max_delay_seconds > 300 OR s.avg_delay_seconds > 300
-            )::integer AS issue_count,
+            s.week_start_local AS period_start_local,
+            SUM(s.severe_delay_count)::integer AS issue_count,
             ROUND(AVG(s.avg_delay_seconds)::numeric, 2) AS avg_delay_seconds
-        FROM gold.public_stop_delay_daily AS s
+        FROM gold.stop_delay_weekly AS s
         WHERE s.provider_id = :provider_id
         GROUP BY 1, 2, 3, 4, 5, 6
     ),
@@ -604,26 +627,31 @@ UPSERT_CITIZEN_ACCOUNTABILITY_DAILY = text(
     """
     WITH route_daily AS (
         SELECT
-            provider_id,
-            provider_local_date,
+            rd.provider_id,
+            timezone(dp.timezone, rd.period_start_utc)::date AS provider_local_date,
             COUNT(DISTINCT route_id) FILTER (
-                WHERE avg_delay_seconds > 300 OR severe_delay_observation_count > 0
+                WHERE rd.avg_delay_seconds > 300 OR rd.severe_delay_count > 0
             )::integer AS affected_route_count,
-            COUNT(*) FILTER (WHERE avg_delay_seconds > 0)::integer AS delayed_trip_count,
-            SUM(severe_delay_observation_count)::integer AS severe_delay_count
-        FROM gold.public_route_reliability_daily
-        WHERE provider_id = :provider_id
+            SUM(rd.delayed_trip_count)::integer AS delayed_trip_count,
+            SUM(rd.severe_delay_count)::integer AS severe_delay_count
+        FROM gold.route_delay_hourly AS rd
+        INNER JOIN gold.dim_provider AS dp
+            ON dp.provider_id = rd.provider_id
+        WHERE rd.provider_id = :provider_id
         GROUP BY 1, 2
     ),
     stop_daily AS (
         SELECT
-            provider_id,
-            provider_local_date,
+            sd.provider_id,
+            timezone(dp.timezone, sd.period_start_utc)::date AS provider_local_date,
             COUNT(DISTINCT stop_id) FILTER (
-                WHERE avg_delay_seconds > 300 OR max_delay_seconds > 300
+                WHERE COALESCE(sd.avg_arrival_delay_seconds, sd.avg_departure_delay_seconds) > 300
+                   OR sd.severe_delay_count > 0
             )::integer AS affected_stop_count
-        FROM gold.public_stop_delay_daily
-        WHERE provider_id = :provider_id
+        FROM gold.stop_delay_hourly AS sd
+        INNER JOIN gold.dim_provider AS dp
+            ON dp.provider_id = sd.provider_id
+        WHERE sd.provider_id = :provider_id
         GROUP BY 1, 2
     ),
     public_alert_daily AS (
@@ -675,15 +703,21 @@ UPSERT_CITIZEN_ACCOUNTABILITY_DAILY = text(
             COALESCE(pa.alert_count, 0),
             COALESCE(ia.alert_count, 0)
         ),
-        ROUND(
-            (
-                COALESCE(r.affected_route_count, 0)::numeric * 2
-                + COALESCE(s.affected_stop_count, 0)::numeric
-                + COALESCE(r.delayed_trip_count, 0)::numeric
-                + COALESCE(r.severe_delay_count, 0)::numeric * 3
-                + GREATEST(COALESCE(pa.alert_count, 0), COALESCE(ia.alert_count, 0))::numeric * 2
+        LEAST(
+            ROUND(
+                (
+                    COALESCE(r.affected_route_count, 0)::numeric * 2
+                    + COALESCE(s.affected_stop_count, 0)::numeric
+                    + COALESCE(r.delayed_trip_count, 0)::numeric
+                    + COALESCE(r.severe_delay_count, 0)::numeric * 3
+                    + GREATEST(
+                        COALESCE(pa.alert_count, 0),
+                        COALESCE(ia.alert_count, 0)
+                    )::numeric * 2
+                ),
+                4
             ),
-            4
+            9999.9999
         ),
         :built_at_utc
     FROM calendar AS c

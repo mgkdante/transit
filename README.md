@@ -46,7 +46,7 @@ Operationally:
 
 - Bronze stores raw artifacts plus lineage
 - Silver stores normalized GTFS and GTFS-RT tables
-- Gold serves dimensions, operational facts, map marts, KPI views, alert history, and warm rollups for BI/site consumers
+- Gold serves dimensions, operational facts, map marts, clean reporting marts, alert history, and warm rollups for BI/site consumers
 - the health API reports runtime readiness and freshness signals
 - Power BI and the public site read from Gold/reporting surfaces only
 
@@ -187,7 +187,7 @@ Weekly `pg_repack` maintenance runs in dry-run mode by default through `.github/
 
 ## Retention Proof Reports
 
-The expected retention defaults are: static dataset count 1, Silver realtime 30 days, Gold facts 365 days, warm rollups 90 days, and Bronze realtime/static 30 days.
+The expected retention defaults are: static dataset count 1, Bronze static/GIS 365 days, Bronze GTFS-RT/i3 30 days, Silver realtime 14 days, Gold detail facts 7 days, and Gold aggregate/reporting marts 365 days.
 
 To generate a local non-destructive proof report:
 
@@ -211,7 +211,7 @@ config/providers/                   Provider manifests
 src/transit_ops/
   bronze/                           Feed capture and R2/S3 archiving
   silver/                           GTFS and GTFS-RT normalization
-  gold/                             Mart builders, KPI views, warm rollups
+  gold/                             Mart builders, reporting aggregates, warm rollups
   health/                           Operational health API
   db/migrations/                    Alembic migrations
   orchestration/                    Static pipeline, realtime cycle, worker

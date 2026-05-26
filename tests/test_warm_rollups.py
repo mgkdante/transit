@@ -242,15 +242,10 @@ def test_reporting_aggregate_builders_read_gold_reporting_surfaces_only() -> Non
     assert all(" silver." not in statement.lower() for statement in aggregate_inserts)
     assert any("FROM gold.trip_delay_summary_5m" in statement for statement in aggregate_inserts)
     assert any("FROM gold.fact_trip_delay_snapshot" in statement for statement in aggregate_inserts)
-    assert any(
-        "FROM gold.fact_stop_time_delay_observation" in statement
-        for statement in aggregate_inserts
-    )
-    assert any(
-        "FROM gold.public_route_reliability_daily" in statement
-        for statement in aggregate_inserts
-    )
-    assert any("FROM gold.public_stop_delay_daily" in statement for statement in aggregate_inserts)
+    assert any("FROM gold.fact_vehicle_snapshot" in statement for statement in aggregate_inserts)
+    assert any("FROM gold.route_delay_hourly" in statement for statement in aggregate_inserts)
+    assert any("FROM gold.stop_delay_hourly" in statement for statement in aggregate_inserts)
+    assert any("LEAST(" in statement for statement in aggregate_inserts)
     assert any(
         "FROM gold.public_alert_impact_daily" in statement for statement in aggregate_inserts
     )
@@ -259,6 +254,22 @@ def test_reporting_aggregate_builders_read_gold_reporting_surfaces_only() -> Non
         for statement in aggregate_inserts
     )
     assert any("gold.dim_provider" in statement for statement in aggregate_inserts)
+    assert all(
+        "gold.fact_stop_time_delay_observation" not in statement
+        for statement in aggregate_inserts
+    )
+    assert all(
+        "gold.public_route_reliability_daily" not in statement
+        for statement in aggregate_inserts
+    )
+    assert all(
+        "gold.public_stop_delay_daily" not in statement
+        for statement in aggregate_inserts
+    )
+    assert all(
+        "gold.current_trip_delay_computed" not in statement
+        for statement in aggregate_inserts
+    )
 
 
 def test_build_warm_rollups_result_display_dict() -> None:
