@@ -81,5 +81,11 @@ feeds:
       credential_env_var: STM_API_KEY
       auth_header_name: apiKey
       notes: Optional API i3 service-state alert feed. Keep endpoint configurable because STM portal access may expose provider-specific paths.
-    refresh_interval_seconds: 30
+    # Service alerts change on the order of minutes-to-hours, not seconds.
+    # Per-endpoint cadence gating in orchestration.run_realtime_cycle honors
+    # this interval — the worker loop still cycles every REALTIME_POLL_SECONDS
+    # (30s) but skips i3 capture until 300s has elapsed since the last one.
+    # Prior 30s value produced ~2,880 snapshot rows/day for a single alert
+    # and a 9.6M-row gold.current_i3_alerts view (fixed in migration 0016).
+    refresh_interval_seconds: 300
     is_enabled: true

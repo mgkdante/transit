@@ -116,7 +116,7 @@ def test_stm_manifest_has_live_current_static_gis_and_no_current_fallback() -> N
         provider.i3_alerts_feed().resolved_source_url(settings)
         == "https://api.stm.info/pub/od/i3/v2/messages/etatservice"
     )
-    assert provider.i3_alerts_feed().refresh_interval_seconds == 30
+    assert provider.i3_alerts_feed().refresh_interval_seconds == 300
     assert [seed.endpoint_key for seed in provider.to_feed_endpoint_seeds(settings)] == [
         "static_schedule",
         "gis_static",

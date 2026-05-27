@@ -384,7 +384,7 @@ def test_run_realtime_worker_loop_targets_start_to_start_cadence(
     monkeypatch.setattr(
         orchestration,
         "run_realtime_cycle",
-        lambda provider_id, settings, registry, engine: (
+        lambda provider_id, settings, registry, engine, last_captures=None: (
             cycle_calls.append(provider_id),
             orchestration.RealtimeCycleResult(
                 provider_id=provider_id,
@@ -465,10 +465,10 @@ def test_run_realtime_worker_loop_warns_on_cycle_overrun(
             )
         ),
     )
-    monkeypatch.setattr(
-        orchestration,
-        "run_realtime_cycle",
-        lambda provider_id, settings, registry, engine: orchestration.RealtimeCycleResult(
+    def _fake_overrun_cycle(  # noqa: ANN001
+        provider_id, settings, registry, engine, last_captures=None
+    ):
+        return orchestration.RealtimeCycleResult(
             provider_id=provider_id,
             status="succeeded",
             started_at_utc=datetime(2026, 3, 25, 0, 0, 0, tzinfo=UTC),
@@ -495,8 +495,9 @@ def test_run_realtime_worker_loop_warns_on_cycle_overrun(
             gold_maintenance=None,
             gold_maintenance_duration_seconds=0.1,
             gold_maintenance_error_message=None,
-        ),
-    )
+        )
+
+    monkeypatch.setattr(orchestration, "run_realtime_cycle", _fake_overrun_cycle)
     caplog.set_level(logging.WARNING, logger="transit_ops.orchestration")
 
     run_realtime_worker_loop(
@@ -748,3 +749,202 @@ def test_run_static_pipeline_runs_silver_and_gold_when_ingestion_reports_new_ver
     assert result.skipped_reason is None
     assert result.silver_load is not None
     assert result.gold_build is not None
+
+
+# ---------------------------------------------------------------------------
+# Per-endpoint cadence gating (slice-8.7 i3 cadence work)
+# ---------------------------------------------------------------------------
+
+
+def _fake_registry_with_intervals(
+    *, trip_updates: int = 30, vehicle_positions: int = 30, i3_alerts: int = 300
+):
+    """Fake provider registry whose manifest exposes refresh_interval_seconds."""
+    manifest = SimpleNamespace(
+        feeds={
+            "trip_updates": SimpleNamespace(
+                endpoint_key="trip_updates",
+                refresh_interval_seconds=trip_updates,
+            ),
+            "vehicle_positions": SimpleNamespace(
+                endpoint_key="vehicle_positions",
+                refresh_interval_seconds=vehicle_positions,
+            ),
+            "i3_alerts": SimpleNamespace(
+                endpoint_key="i3_alerts",
+                refresh_interval_seconds=i3_alerts,
+            ),
+        },
+        provider=SimpleNamespace(provider_id="stm", display_name="STM"),
+    )
+    return SimpleNamespace(get_provider=lambda provider_id: manifest)
+
+
+def _install_realtime_cycle_stubs(monkeypatch, call_order: list[str]) -> None:
+    """Common monkeypatches for run_realtime_cycle dependencies."""
+
+    def fake_capture(provider_id, endpoint_key, settings, registry, engine):  # noqa: ANN001
+        call_order.append(f"capture:{endpoint_key}")
+        return _realtime_ingestion_result(endpoint_key, 20)
+
+    def fake_load(provider_id, endpoint_key, settings, registry, engine):  # noqa: ANN001
+        call_order.append(f"load:{endpoint_key}")
+        return _realtime_silver_result(endpoint_key, 20)
+
+    monkeypatch.setattr(orchestration, "capture_realtime_feed", fake_capture)
+    monkeypatch.setattr(orchestration, "load_latest_realtime_to_silver", fake_load)
+    monkeypatch.setattr(
+        orchestration,
+        "capture_i3_alerts",
+        lambda provider_id, settings, registry, engine: (
+            call_order.append("capture:i3_alerts"),
+            _i3_ingestion_result(),
+        )[1],
+        raising=False,
+    )
+    monkeypatch.setattr(
+        orchestration,
+        "load_latest_i3_to_silver",
+        lambda provider_id, settings, engine: (
+            call_order.append("load:i3_alerts"),
+            _i3_silver_result(),
+        )[1],
+        raising=False,
+    )
+    monkeypatch.setattr(
+        orchestration,
+        "refresh_gold_realtime",
+        lambda provider_id, settings, registry, engine: (
+            call_order.append("refresh-gold-realtime"),
+            _gold_refresh_result(),
+        )[1],
+    )
+    monkeypatch.setattr(
+        orchestration,
+        "prune_silver_storage",
+        lambda provider_id, settings, engine: (
+            call_order.append("prune-silver-storage"),
+            SimpleNamespace(display_dict=lambda: {"deleted_row_counts": {}}),
+        )[1],
+    )
+    monkeypatch.setattr(
+        orchestration,
+        "prune_gold_storage",
+        lambda provider_id, settings, engine: (
+            call_order.append("prune-gold-storage"),
+            SimpleNamespace(display_dict=lambda: {"deleted_row_counts": {}}),
+        )[1],
+    )
+
+
+def test_run_realtime_cycle_skips_i3_when_interval_not_elapsed(monkeypatch) -> None:
+    call_order: list[str] = []
+    _install_realtime_cycle_stubs(monkeypatch, call_order)
+
+    # Freeze now so elapsed math is exact
+    frozen_now = datetime(2026, 5, 26, 22, 0, 0, tzinfo=UTC)
+    monkeypatch.setattr(orchestration, "utc_now", lambda: frozen_now)
+
+    last_captures = {
+        "trip_updates": datetime(2026, 5, 26, 21, 59, 30, tzinfo=UTC),  # 30s ago
+        "vehicle_positions": datetime(2026, 5, 26, 21, 59, 30, tzinfo=UTC),  # 30s ago
+        "i3_alerts": datetime(2026, 5, 26, 21, 58, 0, tzinfo=UTC),  # 120s ago (<300)
+    }
+
+    result = run_realtime_cycle(
+        "stm",
+        settings=Settings(_env_file=None, DATABASE_URL="postgresql://user:pass@example.com/transit"),
+        registry=_fake_registry_with_intervals(),
+        engine=object(),
+        last_captures=last_captures,
+    )
+
+    # i3 should be skipped; trip_updates + vehicle_positions still ran (30s elapsed == 30s interval)
+    assert "capture:i3_alerts" not in call_order
+    assert "load:i3_alerts" not in call_order
+    assert "capture:trip_updates" in call_order
+    assert "capture:vehicle_positions" in call_order
+
+    i3_result = next(
+        r for r in result.endpoint_results if r.endpoint_key == "i3_alerts"
+    )
+    assert i3_result.status == "skipped"
+    assert i3_result.capture_result["reason"] == "interval_not_elapsed"
+    assert i3_result.capture_result["refresh_interval_seconds"] == 300
+    assert i3_result.capture_result["elapsed_seconds"] == 120.0
+
+
+def test_run_realtime_cycle_runs_i3_when_interval_elapsed(monkeypatch) -> None:
+    call_order: list[str] = []
+    _install_realtime_cycle_stubs(monkeypatch, call_order)
+
+    frozen_now = datetime(2026, 5, 26, 22, 0, 0, tzinfo=UTC)
+    monkeypatch.setattr(orchestration, "utc_now", lambda: frozen_now)
+
+    last_captures = {
+        "trip_updates": datetime(2026, 5, 26, 21, 59, 30, tzinfo=UTC),
+        "vehicle_positions": datetime(2026, 5, 26, 21, 59, 30, tzinfo=UTC),
+        "i3_alerts": datetime(2026, 5, 26, 21, 54, 30, tzinfo=UTC),  # 330s ago (>=300)
+    }
+
+    result = run_realtime_cycle(
+        "stm",
+        settings=Settings(_env_file=None, DATABASE_URL="postgresql://user:pass@example.com/transit"),
+        registry=_fake_registry_with_intervals(),
+        engine=object(),
+        last_captures=last_captures,
+    )
+
+    assert "capture:i3_alerts" in call_order
+    assert "load:i3_alerts" in call_order
+
+    i3_result = next(
+        r for r in result.endpoint_results if r.endpoint_key == "i3_alerts"
+    )
+    assert i3_result.status == "succeeded"
+    # last_captures was mutated to record this cycle's start
+    assert last_captures["i3_alerts"] == frozen_now
+
+
+def test_run_realtime_cycle_without_last_captures_runs_every_endpoint(monkeypatch) -> None:
+    """Backward compatibility: omitting last_captures bypasses all gating."""
+    call_order: list[str] = []
+    _install_realtime_cycle_stubs(monkeypatch, call_order)
+
+    # Bare registry — never accessed when last_captures is None
+    result = run_realtime_cycle(
+        "stm",
+        settings=Settings(_env_file=None, DATABASE_URL="postgresql://user:pass@example.com/transit"),
+        registry=object(),
+        engine=object(),
+    )
+
+    assert "capture:trip_updates" in call_order
+    assert "capture:vehicle_positions" in call_order
+    assert "capture:i3_alerts" in call_order
+    for endpoint_result in result.endpoint_results:
+        assert endpoint_result.status == "succeeded"
+
+
+def test_run_realtime_cycle_first_endpoint_call_runs_without_gating(monkeypatch) -> None:
+    """Empty last_captures dict (worker startup) means no prior capture, so endpoint runs."""
+    call_order: list[str] = []
+    _install_realtime_cycle_stubs(monkeypatch, call_order)
+
+    frozen_now = datetime(2026, 5, 26, 22, 0, 0, tzinfo=UTC)
+    monkeypatch.setattr(orchestration, "utc_now", lambda: frozen_now)
+
+    last_captures: dict[str, datetime] = {}
+
+    run_realtime_cycle(
+        "stm",
+        settings=Settings(_env_file=None, DATABASE_URL="postgresql://user:pass@example.com/transit"),
+        registry=_fake_registry_with_intervals(),
+        engine=object(),
+        last_captures=last_captures,
+    )
+
+    assert "capture:i3_alerts" in call_order
+    assert last_captures["i3_alerts"] == frozen_now
+    assert last_captures["trip_updates"] == frozen_now
+    assert last_captures["vehicle_positions"] == frozen_now

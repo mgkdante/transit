@@ -578,24 +578,87 @@ def run_realtime_cycle(
     settings: Settings | None = None,
     registry: ProviderRegistry | None = None,
     engine: Engine | None = None,
+    last_captures: dict[str, datetime] | None = None,
 ) -> RealtimeCycleResult:
+    """Run one realtime cycle for a provider.
+
+    When ``last_captures`` is provided, each endpoint is gated by the manifest's
+    ``refresh_interval_seconds`` — endpoints whose last successful capture was
+    within ``refresh_interval_seconds`` are skipped (returning a ``"skipped"``
+    status). The dict is mutated in place so the caller (typically
+    :func:`run_realtime_worker_loop`) can preserve state across cycles.
+
+    When ``last_captures`` is ``None`` (CLI single-cycle calls, tests), no
+    gating happens — every endpoint runs unconditionally.
+    """
     settings = settings or get_settings()
     registry = registry or _provider_registry(settings)
     engine = _engine(settings, engine)
     started_at_utc = utc_now()
     started_at = time.perf_counter()
 
+    refresh_intervals: dict[str, int] = {}
+    if last_captures is not None:
+        manifest = registry.get_provider(provider_id)
+        for endpoint_key in REALTIME_ENDPOINTS:
+            feed = manifest.feeds.get(endpoint_key)
+            if feed is not None:
+                refresh_intervals[endpoint_key] = int(feed.refresh_interval_seconds)
+
     logger.info("Starting realtime cycle for provider '%s'.", provider_id)
-    endpoint_results = [
-        _capture_and_load_realtime_source(
+    endpoint_results: list[RealtimeEndpointCycleResult] = []
+    for endpoint_key in REALTIME_ENDPOINTS:
+        interval_seconds = refresh_intervals.get(endpoint_key)
+        last_capture_at = (
+            last_captures.get(endpoint_key) if last_captures is not None else None
+        )
+        if (
+            interval_seconds is not None
+            and last_capture_at is not None
+        ):
+            elapsed_seconds = (started_at_utc - last_capture_at).total_seconds()
+            if elapsed_seconds < interval_seconds:
+                logger.info(
+                    (
+                        "Skipping realtime cycle endpoint '%s' for provider '%s' "
+                        "(refresh_interval=%ds, last capture %.1fs ago)."
+                    ),
+                    endpoint_key,
+                    provider_id,
+                    interval_seconds,
+                    elapsed_seconds,
+                )
+                endpoint_results.append(
+                    RealtimeEndpointCycleResult(
+                        endpoint_key=endpoint_key,
+                        status="skipped",
+                        capture_duration_seconds=0.0,
+                        silver_load_duration_seconds=None,
+                        total_endpoint_duration_seconds=0.0,
+                        capture_result={
+                            "reason": "interval_not_elapsed",
+                            "refresh_interval_seconds": interval_seconds,
+                            "elapsed_seconds": round(elapsed_seconds, 1),
+                        },
+                        silver_load_result=None,
+                        error_message=None,
+                    )
+                )
+                continue
+
+        endpoint_result = _capture_and_load_realtime_source(
             provider_id,
             endpoint_key,
             settings=settings,
             registry=registry,
             engine=engine,
         )
-        for endpoint_key in REALTIME_ENDPOINTS
-    ]
+        endpoint_results.append(endpoint_result)
+        if (
+            last_captures is not None
+            and endpoint_result.status == "succeeded"
+        ):
+            last_captures[endpoint_key] = started_at_utc
     step_timings_seconds = {
         f"capture_{endpoint_result.endpoint_key}": endpoint_result.capture_duration_seconds
         for endpoint_result in endpoint_results
@@ -607,9 +670,13 @@ def run_realtime_cycle(
     }
 
     failed_endpoint_count = sum(
-        1 for endpoint_result in endpoint_results if endpoint_result.status != "succeeded"
+        1
+        for endpoint_result in endpoint_results
+        if endpoint_result.status not in {"succeeded", "skipped"}
     )
-    successful_endpoint_count = len(endpoint_results) - failed_endpoint_count
+    successful_endpoint_count = sum(
+        1 for endpoint_result in endpoint_results if endpoint_result.status == "succeeded"
+    )
 
     gold_build_result: GoldBuildResult | GoldRealtimeRefreshResult | None = None
     gold_build_duration_seconds: float | None = None
@@ -787,6 +854,7 @@ def run_realtime_worker_loop(
 
     cycle_number = 0
     previous_cycle_start_utc: datetime | None = None
+    last_captures: dict[str, datetime] = {}
     while max_cycles is None or cycle_number < max_cycles:
         if settings.PIPELINE_PAUSED:
             logger.warning(
@@ -810,6 +878,7 @@ def run_realtime_worker_loop(
             settings=settings,
             registry=registry,
             engine=engine,
+            last_captures=last_captures,
         )
         cycle_end_utc = utc_now_fn()
         cycle_duration_seconds = round(perf_counter_fn() - cycle_started_at, 3)
