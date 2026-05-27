@@ -1,13 +1,13 @@
 {
   "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.1.0/schema.json",
-  "name": "p00_freshness_table",
+  "name": "p00_routes_summary",
   "position": {
-    "x": 32,
+    "x": 444,
     "y": 472,
-    "z": 70,
+    "z": 75,
     "height": 214,
     "width": 394,
-    "tabOrder": 70
+    "tabOrder": 75
   },
   "visual": {
     "visualType": "tableEx",
@@ -18,47 +18,126 @@
             {
               "field": {
                 "Column": {
-                  "Property": "endpoint_key",
+                  "Property": "route_id",
                   "Expression": {
                     "SourceRef": {
-                      "Entity": "FeedFreshnessCurrent"
+                      "Entity": "CurrentTripDelayComputed"
                     }
                   }
                 }
               },
-              "queryRef": "FeedFreshnessCurrent.endpoint_key",
-              "displayName": "Flux / Feed"
+              "queryRef": "CurrentTripDelayComputed.route_id",
+              "displayName": "Route"
             },
             {
               "field": {
-                "Column": {
-                  "Property": "status",
+                "Aggregation": {
+                  "Function": 2,
                   "Expression": {
-                    "SourceRef": {
-                      "Entity": "FeedFreshnessCurrent"
+                    "Column": {
+                      "Property": "trip_id",
+                      "Expression": {
+                        "SourceRef": {
+                          "Entity": "CurrentTripDelayComputed"
+                        }
+                      }
                     }
                   }
                 }
               },
-              "queryRef": "FeedFreshnessCurrent.status",
-              "displayName": "Statut"
+              "queryRef": "Count(CurrentTripDelayComputed.trip_id)",
+              "displayName": "Trajets"
             },
             {
               "field": {
-                "Column": {
-                  "Property": "completed_age_seconds",
+                "Measure": {
+                  "Property": "Trajets en retard / Delayed Trips",
                   "Expression": {
                     "SourceRef": {
-                      "Entity": "FeedFreshnessCurrent"
+                      "Entity": "_Measures"
                     }
                   }
                 }
               },
-              "queryRef": "FeedFreshnessCurrent.completed_age_seconds",
-              "displayName": "Âge sec / Age sec"
+              "queryRef": "_Measures.Trajets en retard / Delayed Trips",
+              "displayName": "Retards"
+            },
+            {
+              "field": {
+                "Aggregation": {
+                  "Function": 1,
+                  "Expression": {
+                    "Column": {
+                      "Property": "avg_delay_seconds",
+                      "Expression": {
+                        "SourceRef": {
+                          "Entity": "CurrentTripDelayComputed"
+                        }
+                      }
+                    }
+                  }
+                }
+              },
+              "queryRef": "Avg(CurrentTripDelayComputed.avg_delay_seconds)",
+              "displayName": "Moyen (sec)"
+            },
+            {
+              "field": {
+                "Aggregation": {
+                  "Function": 4,
+                  "Expression": {
+                    "Column": {
+                      "Property": "max_delay_seconds",
+                      "Expression": {
+                        "SourceRef": {
+                          "Entity": "CurrentTripDelayComputed"
+                        }
+                      }
+                    }
+                  }
+                }
+              },
+              "queryRef": "Max(CurrentTripDelayComputed.max_delay_seconds)",
+              "displayName": "Max (sec)"
+            },
+            {
+              "field": {
+                "Measure": {
+                  "Property": "Écart vs moyenne (%) / Delta vs Avg (%)",
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "_Measures"
+                    }
+                  }
+                }
+              },
+              "queryRef": "_Measures.Écart vs moyenne (%) / Delta vs Avg (%)",
+              "displayName": "vs moy."
             }
           ]
         }
+      },
+      "sortDefinition": {
+        "sort": [
+          {
+            "field": {
+              "Aggregation": {
+                "Function": 1,
+                "Expression": {
+                  "Column": {
+                    "Property": "avg_delay_seconds",
+                    "Expression": {
+                      "SourceRef": {
+                        "Entity": "CurrentTripDelayComputed"
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "direction": "Descending"
+          }
+        ]
       }
     },
     "visualContainerObjects": {
@@ -75,7 +154,7 @@
             "text": {
               "expr": {
                 "Literal": {
-                  "Value": "'État des flux / Feed status'"
+                  "Value": "'Routes par état / Routes by status'"
                 }
               }
             },
@@ -184,7 +263,7 @@
             "text": {
               "expr": {
                 "Literal": {
-                  "Value": "'Santé de collecte'"
+                  "Value": "'Trié par retard moyen décroissant'"
                 }
               }
             },

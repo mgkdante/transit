@@ -201,7 +201,7 @@
             "text": {
               "expr": {
                 "Literal": {
-                  "Value": "'Retard agrégé par route'"
+                  "Value": "'1-99 = haute fréquence · 100-299 = locale · 400s = express · 700s = navette'"
                 }
               }
             },

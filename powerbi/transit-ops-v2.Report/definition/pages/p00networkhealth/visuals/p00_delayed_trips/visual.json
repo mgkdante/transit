@@ -156,7 +156,7 @@
             "text": {
               "expr": {
                 "Literal": {
-                  "Value": "'Trajets · retard moyen > 0 s'"
+                  "Value": "'Trajets en service · avg > 0 s (inclut critiques)'"
                 }
               }
             },

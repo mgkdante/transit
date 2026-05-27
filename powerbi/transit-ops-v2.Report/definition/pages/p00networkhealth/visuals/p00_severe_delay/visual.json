@@ -156,7 +156,7 @@
             "text": {
               "expr": {
                 "Literal": {
-                  "Value": "'Trajets · retard max > 5 min'"
+                  "Value": "'Sous-ensemble des trajets en retard · max > 5 min'"
                 }
               }
             },

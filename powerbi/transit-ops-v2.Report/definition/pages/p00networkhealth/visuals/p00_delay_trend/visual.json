@@ -32,7 +32,49 @@
                 }
               },
               "queryRef": "Avg(TripDelaySummary5mLive.avg_delay_seconds)",
-              "displayName": "Retard moyen sec"
+              "displayName": "Moyen (sec)"
+            },
+            {
+              "field": {
+                "Measure": {
+                  "Property": "Retard P95 (sec) / P95 Delay",
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "_Measures"
+                    }
+                  }
+                }
+              },
+              "queryRef": "_Measures.Retard P95 (sec) / P95 Delay",
+              "displayName": "P95 (sec)"
+            },
+            {
+              "field": {
+                "Measure": {
+                  "Property": "Retard moyen 24h / Avg Delay 24h Baseline",
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "_Measures"
+                    }
+                  }
+                }
+              },
+              "queryRef": "_Measures.Retard moyen 24h / Avg Delay 24h Baseline",
+              "displayName": "Moy. 24h (réf.)"
+            },
+            {
+              "field": {
+                "Measure": {
+                  "Property": "Retard 24h hier / Yesterday Same Hour",
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "_Measures"
+                    }
+                  }
+                }
+              },
+              "queryRef": "_Measures.Retard 24h hier / Yesterday Same Hour",
+              "displayName": "Même heure hier"
             }
           ]
         },
@@ -179,7 +221,7 @@
             "text": {
               "expr": {
                 "Literal": {
-                  "Value": "'Par tranche de 5 min'"
+                  "Value": "'Moyen, P95, vs hier, vs moy. 24h · tranches de 5 min'"
                 }
               }
             },

@@ -20,9 +20,123 @@ table _Measures
 
 	measure 'Retard moyen sec / Avg Delay Sec' = ```
 			AVERAGE(CurrentTripDelayComputed[avg_delay_seconds])
-			
+
 			```
 		formatString: 0.0
+
+	measure 'Retard moyen 24h / Avg Delay 24h Baseline' = ```
+			CALCULATE(
+			    AVERAGE(TripDelaySummary5mLive[avg_delay_seconds]),
+			    ALL(TripDelaySummary5mLive[period_start_utc])
+			)
+
+			```
+		formatString: 0.0
+
+	/// P95 of per-route AVERAGE delay in the current period.
+	/// Reads as: "95% of routes had average trip delay no worse than X."
+	/// Replaces raw MAX on the trend chart because MAX is dominated by
+	/// single ghost-trip outliers (~30 min spikes from STM's ghost trips).
+	/// PERCENTILE.INC over avg_delay (not max_delay) scales 3-4x the
+	/// network avg vs 25-30x for raw MAX — coexists naturally on the same
+	/// Y-axis as the avg + baseline lines. Captures "which routes are
+	/// systematically late" while ignoring single-stop spike outliers.
+	measure 'Retard P95 (sec) / P95 Delay' = ```
+			PERCENTILE.INC(TripDelaySummary5mLive[avg_delay_seconds], 0.95)
+
+			```
+		formatString: 0
+
+	measure 'Écart vs moyenne (%) / Delta vs Avg (%)' = ```
+			VAR systemAvg =
+			    CALCULATE(
+			        AVERAGE(CurrentTripDelayComputed[avg_delay_seconds]),
+			        ALL(CurrentTripDelayComputed)
+			    )
+			VAR routeAvg = AVERAGE(CurrentTripDelayComputed[avg_delay_seconds])
+			RETURN DIVIDE(routeAvg - systemAvg, systemAvg)
+
+			```
+		formatString: +0%;-0%;0%
+
+	/// Same hour yesterday — lights up day 1 (live view has 24h window).
+	measure 'Retard 24h hier / Yesterday Same Hour' = ```
+			VAR currentHourStart = DATE(YEAR(NOW()), MONTH(NOW()), DAY(NOW())) + TIME(HOUR(NOW()), 0, 0)
+			VAR yesterdaySameHourStart = currentHourStart - 1
+			VAR yesterdaySameHourEnd = yesterdaySameHourStart + (1/24)
+			RETURN CALCULATE(
+			    AVERAGE(TripDelaySummary5mLive[avg_delay_seconds]),
+			    TripDelaySummary5mLive[period_start_utc] >= yesterdaySameHourStart,
+			    TripDelaySummary5mLive[period_start_utc] < yesterdaySameHourEnd
+			)
+
+			```
+		formatString: 0.0
+
+	/// 7-day rolling average — partial day 1-6, full from day 7. Sourced from
+	/// the batch mart (live view only retains 24h).
+	measure 'Retard 7j moyen / 7-day Rolling Avg' = ```
+			CALCULATE(
+			    AVERAGE(TripDelaySummary5m[avg_delay_seconds]),
+			    TripDelaySummary5m[period_start_utc] >= NOW() - 7,
+			    TripDelaySummary5m[period_start_utc] <= NOW()
+			)
+
+			```
+		formatString: 0.0
+
+	/// Same hour, exactly 7 days ago — returns BLANK until day 7 of accrual.
+	/// Reveals "is today's traffic pattern off-routine vs same time last week."
+	measure 'Retard semaine passée même heure / Last Week Same Hour' = ```
+			VAR currentHourStart = DATE(YEAR(NOW()), MONTH(NOW()), DAY(NOW())) + TIME(HOUR(NOW()), 0, 0)
+			VAR lastWeekSameHourStart = currentHourStart - 7
+			VAR lastWeekSameHourEnd = lastWeekSameHourStart + (1/24)
+			RETURN CALCULATE(
+			    AVERAGE(TripDelaySummary5m[avg_delay_seconds]),
+			    TripDelaySummary5m[period_start_utc] >= lastWeekSameHourStart,
+			    TripDelaySummary5m[period_start_utc] < lastWeekSameHourEnd
+			)
+
+			```
+		formatString: 0.0
+
+	/// Average for the same day-of-week + hour over the last 30 days. Gains
+	/// confidence from day 14 (2 samples per DoW); fully reliable from day 30.
+	/// Reveals slow-drift trends like "Tuesdays getting worse over a month."
+	measure 'Retard 30j même jour de la semaine / Same DoW 30d' = ```
+			VAR currentDoW = WEEKDAY(NOW(), 2)
+			VAR currentHr = HOUR(NOW())
+			RETURN CALCULATE(
+			    AVERAGE(TripDelaySummary5m[avg_delay_seconds]),
+			    FILTER(
+			        TripDelaySummary5m,
+			        WEEKDAY(TripDelaySummary5m[period_start_utc], 2) = currentDoW
+			            && HOUR(TripDelaySummary5m[period_start_utc]) = currentHr
+			            && TripDelaySummary5m[period_start_utc] >= NOW() - 30
+			    )
+			)
+
+			```
+		formatString: 0.0
+
+	/// Z-score: standard deviations from the 7-day mean. |z| > 2 = abnormal.
+	/// Returns BLANK until day 7 (needs variance baseline). Powers anomaly
+	/// detection once active.
+	measure 'Z-score vs moyenne 7j / Z-score vs 7d Avg' = ```
+			VAR currentValue = [Retard moyen sec / Avg Delay Sec]
+			VAR weeklyMean = [Retard 7j moyen / 7-day Rolling Avg]
+			VAR weeklyStdev =
+			    CALCULATE(
+			        STDEVX.P(
+			            VALUES(TripDelaySummary5m[period_start_utc]),
+			            CALCULATE(AVERAGE(TripDelaySummary5m[avg_delay_seconds]))
+			        ),
+			        TripDelaySummary5m[period_start_utc] >= NOW() - 7
+			    )
+			RETURN DIVIDE(currentValue - weeklyMean, weeklyStdev)
+
+			```
+		formatString: 0.00
 
 	measure 'Retard sévère / Severe Delay' = ```
 			COUNTROWS(FILTER(CurrentTripDelayComputed, CurrentTripDelayComputed[max_delay_seconds] > 300))
