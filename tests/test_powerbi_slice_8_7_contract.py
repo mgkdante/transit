@@ -34,6 +34,7 @@ EXPECTED_GOLD_TABLES = {
     "FactStopTimeDelayObservation": "fact_stop_time_delay_observation",
     "VehicleSummary5m": "vehicle_summary_5m",
     "TripDelaySummary5m": "trip_delay_summary_5m",
+    "TripDelaySummary5mLive": "trip_delay_summary_5m_live",
     "PublicRouteReliabilityDaily": "public_route_reliability_daily",
     "PublicStopDelayDaily": "public_stop_delay_daily",
     "PublicAlertImpactDaily": "public_alert_impact_daily",
@@ -378,6 +379,45 @@ def test_p05_provider_binds_to_real_dim_provider_columns() -> None:
     )
     assert "provider_name" not in properties
     assert "country_code" not in properties
+
+
+def test_p00_delay_trend_binds_to_live_view_not_batch_mart() -> None:
+    """Network Health is an operator-now page; its delay-trend line chart
+    must read from gold.trip_delay_summary_5m_live (sub-second-fresh)
+    not gold.trip_delay_summary_5m (built once per day by GH Actions cron
+    which leaves the chart ~24h stale and breaks outright if a single
+    workflow run is missed)."""
+    visual = json.loads(
+        _read(
+            REPORT_ROOT
+            / "pages"
+            / "p00networkhealth"
+            / "visuals"
+            / "p00_delay_trend"
+            / "visual.json"
+        )
+    )
+    query_state = visual["visual"]["query"]["queryState"]
+    entities = set()
+    for role in query_state.values():
+        for projection in role.get("projections", []):
+            field = projection["field"]
+            inner = field.get("Aggregation", field).get("Expression", field)
+            column = inner.get("Column", {})
+            entity = column.get("Expression", {}).get("SourceRef", {}).get("Entity")
+            if entity:
+                entities.add(entity)
+            elif "Column" not in inner:
+                # cope with bare Column projections
+                bare_column = field.get("Column", {})
+                entity = bare_column.get("Expression", {}).get("SourceRef", {}).get("Entity")
+                if entity:
+                    entities.add(entity)
+
+    assert entities == {"TripDelaySummary5mLive"}, (
+        f"p00_delay_trend should bind exclusively to TripDelaySummary5mLive, "
+        f"found: {entities}"
+    )
 
 
 def test_visual_titles_match_brand_voice_after_slice_8_7_polish() -> None:

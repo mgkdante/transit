@@ -24,14 +24,14 @@
                       "Property": "avg_delay_seconds",
                       "Expression": {
                         "SourceRef": {
-                          "Entity": "TripDelaySummary5m"
+                          "Entity": "TripDelaySummary5mLive"
                         }
                       }
                     }
                   }
                 }
               },
-              "queryRef": "Avg(TripDelaySummary5m.avg_delay_seconds)",
+              "queryRef": "Avg(TripDelaySummary5mLive.avg_delay_seconds)",
               "displayName": "Retard moyen sec"
             }
           ]
@@ -44,12 +44,12 @@
                   "Property": "period_start_utc",
                   "Expression": {
                     "SourceRef": {
-                      "Entity": "TripDelaySummary5m"
+                      "Entity": "TripDelaySummary5mLive"
                     }
                   }
                 }
               },
-              "queryRef": "TripDelaySummary5m.period_start_utc",
+              "queryRef": "TripDelaySummary5mLive.period_start_utc",
               "displayName": "Période 5 min"
             }
           ]
@@ -70,7 +70,7 @@
             "text": {
               "expr": {
                 "Literal": {
-                  "Value": "'Tendance 5 min / 5-minute trend'"
+                  "Value": "'Retard moyen du réseau / Network avg delay'"
                 }
               }
             },
@@ -179,7 +179,7 @@
             "text": {
               "expr": {
                 "Literal": {
-                  "Value": "'Retard réseau récent'"
+                  "Value": "'Par tranche de 5 min'"
                 }
               }
             },
@@ -199,6 +199,91 @@
               "expr": {
                 "Literal": {
                   "Value": "true"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "objects": {
+      "valueAxis": [
+        {
+          "properties": {
+            "show": {
+              "expr": {
+                "Literal": {
+                  "Value": "true"
+                }
+              }
+            },
+            "showAxisTitle": {
+              "expr": {
+                "Literal": {
+                  "Value": "true"
+                }
+              }
+            },
+            "titleText": {
+              "expr": {
+                "Literal": {
+                  "Value": "'Secondes / Seconds'"
+                }
+              }
+            },
+            "titleColor": {
+              "solid": {
+                "color": "#B8B8B8"
+              }
+            },
+            "titleFontSize": {
+              "expr": {
+                "Literal": {
+                  "Value": "10D"
+                }
+              }
+            },
+            "labelColor": {
+              "solid": {
+                "color": "#B8B8B8"
+              }
+            },
+            "fontSize": {
+              "expr": {
+                "Literal": {
+                  "Value": "9D"
+                }
+              }
+            },
+            "labelDisplayUnits": {
+              "expr": {
+                "Literal": {
+                  "Value": "0D"
+                }
+              }
+            }
+          }
+        }
+      ],
+      "categoryAxis": [
+        {
+          "properties": {
+            "show": {
+              "expr": {
+                "Literal": {
+                  "Value": "true"
+                }
+              }
+            },
+            "labelColor": {
+              "solid": {
+                "color": "#B8B8B8"
+              }
+            },
+            "fontSize": {
+              "expr": {
+                "Literal": {
+                  "Value": "9D"
                 }
               }
             }
