@@ -1,53 +1,25 @@
 {
   "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.8.0/schema.json",
-  "name": "p01_route_slicer",
+  "name": "p01_row4_vehicle_count",
   "position": {
-    "x": 988,
-    "y": 400,
-    "z": 35,
-    "height": 500,
-    "width": 260,
-    "tabOrder": 35
+    "x": 650,
+    "y": 1600,
+    "z": 210,
+    "height": 420,
+    "width": 598,
+    "tabOrder": 210
   },
   "visual": {
-    "visualType": "slicer",
+    "visualType": "lineChart",
     "query": {
       "queryState": {
-        "Values": {
-          "projections": [
-            {
-              "field": {
-                "Column": {
-                  "Expression": {
-                    "SourceRef": {
-                      "Entity": "CurrentVehicleMap"
-                    }
-                  },
-                  "Property": "route_id"
-                }
-              },
-              "queryRef": "CurrentVehicleMap.route_id",
-              "active": true,
-              "displayName": "Route"
-            }
-          ]
+        "Category": {
+          "projections": []
+        },
+        "Y": {
+          "projections": []
         }
       }
-    },
-    "objects": {
-      "general": [
-        {
-          "properties": {
-            "orientation": {
-              "expr": {
-                "Literal": {
-                  "Value": "2D"
-                }
-              }
-            }
-          }
-        }
-      ]
     },
     "visualContainerObjects": {
       "title": [
@@ -56,7 +28,28 @@
             "show": {
               "expr": {
                 "Literal": {
-                  "Value": "false"
+                  "Value": "true"
+                }
+              }
+            },
+            "text": {
+              "expr": {
+                "Literal": {
+                  "Value": "'Véhicules dans le temps / Vehicle Count'"
+                }
+              }
+            },
+            "fontSize": {
+              "expr": {
+                "Literal": {
+                  "Value": "12D"
+                }
+              }
+            },
+            "titleWrap": {
+              "expr": {
+                "Literal": {
+                  "Value": "true"
                 }
               }
             }
@@ -117,6 +110,40 @@
               "expr": {
                 "Literal": {
                   "Value": "false"
+                }
+              }
+            }
+          }
+        }
+      ],
+      "subTitle": [
+        {
+          "properties": {
+            "show": {
+              "expr": {
+                "Literal": {
+                  "Value": "true"
+                }
+              }
+            },
+            "text": {
+              "expr": {
+                "Literal": {
+                  "Value": "'Phase 4 — placeholder'"
+                }
+              }
+            },
+            "fontSize": {
+              "expr": {
+                "Literal": {
+                  "Value": "9D"
+                }
+              }
+            },
+            "titleWrap": {
+              "expr": {
+                "Literal": {
+                  "Value": "true"
                 }
               }
             }

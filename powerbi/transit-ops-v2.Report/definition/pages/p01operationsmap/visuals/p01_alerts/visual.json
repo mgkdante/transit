@@ -2,11 +2,11 @@
   "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.8.0/schema.json",
   "name": "p01_alerts",
   "position": {
-    "x": 988,
-    "y": 524,
+    "x": 32,
+    "y": 920,
     "z": 40,
-    "height": 152,
-    "width": 260,
+    "height": 240,
+    "width": 1216,
     "tabOrder": 40
   },
   "visual": {
@@ -59,7 +59,42 @@
             }
           ]
         }
+      },
+      "sortDefinition": {
+        "sort": [
+          {
+            "field": {
+              "Column": {
+                "Expression": {
+                  "SourceRef": {
+                    "Entity": "CurrentI3Alerts"
+                  }
+                },
+                "Property": "stop_ids"
+              }
+            },
+            "direction": "Ascending"
+          }
+        ]
       }
+    },
+    "objects": {
+      "columnWidth": [
+        {
+          "properties": {
+            "value": {
+              "expr": {
+                "Literal": {
+                  "Value": "235.17182442377313D"
+                }
+              }
+            }
+          },
+          "selector": {
+            "metadata": "CurrentI3Alerts.stop_ids"
+          }
+        }
+      ]
     },
     "visualContainerObjects": {
       "title": [
@@ -234,7 +269,8 @@
             "Property": "severity"
           }
         },
-        "type": "Categorical"
+        "type": "Categorical",
+        "howCreated": "User"
       },
       {
         "name": "ec58e5ebfdaba9d22853",
@@ -246,6 +282,49 @@
               }
             },
             "Property": "alert_header_text"
+          }
+        },
+        "type": "Categorical",
+        "howCreated": "User"
+      },
+      {
+        "name": "e635b66c6066e27c9a7e",
+        "field": {
+          "Column": {
+            "Expression": {
+              "SourceRef": {
+                "Entity": "CurrentI3Alerts"
+              }
+            },
+            "Property": "route_ids"
+          }
+        },
+        "type": "Categorical"
+      },
+      {
+        "name": "deed7e3e9b029ea63175",
+        "field": {
+          "Column": {
+            "Expression": {
+              "SourceRef": {
+                "Entity": "CurrentI3Alerts"
+              }
+            },
+            "Property": "stop_ids"
+          }
+        },
+        "type": "Categorical"
+      },
+      {
+        "name": "0f07622cdb93598ed91b",
+        "field": {
+          "Column": {
+            "Expression": {
+              "SourceRef": {
+                "Entity": "CurrentI3Alerts"
+              }
+            },
+            "Property": "description_text"
           }
         },
         "type": "Categorical"

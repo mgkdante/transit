@@ -1,83 +1,92 @@
 {
   "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.8.0/schema.json",
-  "name": "p01_vehicle_status",
+  "name": "p01_kpi_off_baseline",
   "position": {
-    "x": 988,
-    "y": 80,
-    "z": 30,
-    "height": 300,
-    "width": 260,
-    "tabOrder": 30
+    "x": 852,
+    "y": 8,
+    "z": 150,
+    "height": 72,
+    "width": 187,
+    "tabOrder": 150
   },
   "visual": {
-    "visualType": "barChart",
+    "visualType": "cardVisual",
     "query": {
       "queryState": {
-        "Category": {
+        "Data": {
           "projections": [
             {
               "field": {
-                "Column": {
+                "Measure": {
                   "Expression": {
                     "SourceRef": {
-                      "Entity": "CurrentVehicleMap"
+                      "Entity": "_Measures"
                     }
                   },
-                  "Property": "status_band"
+                  "Property": "Routes hors-normes / Routes Off-Baseline"
                 }
               },
-              "queryRef": "CurrentVehicleMap.status_band",
-              "active": true,
-              "displayName": "Statut"
-            }
-          ]
-        },
-        "Y": {
-          "projections": [
-            {
-              "field": {
-                "Aggregation": {
-                  "Expression": {
-                    "Column": {
-                      "Expression": {
-                        "SourceRef": {
-                          "Entity": "CurrentVehicleMap"
-                        }
-                      },
-                      "Property": "vehicle_id"
-                    }
-                  },
-                  "Function": 2
-                }
-              },
-              "queryRef": "DistinctCount(CurrentVehicleMap.vehicle_id)",
-              "displayName": "Véhicules"
+              "queryRef": "_Measures.Routes hors-normes / Routes Off-Baseline",
+              "displayName": "Routes hors-normes / Routes Off-Baseline"
             }
           ]
         }
-      },
-      "sortDefinition": {
-        "sort": [
-          {
-            "field": {
-              "Aggregation": {
-                "Expression": {
-                  "Column": {
-                    "Expression": {
-                      "SourceRef": {
-                        "Entity": "CurrentVehicleMap"
-                      }
-                    },
-                    "Property": "vehicle_id"
-                  }
-                },
-                "Function": 2
+      }
+    },
+    "objects": {
+      "value": [
+        {
+          "properties": {
+            "fontSize": {
+              "expr": {
+                "Literal": {
+                  "Value": "18D"
+                }
               }
             },
-            "direction": "Descending"
+            "bold": {
+              "expr": {
+                "Literal": {
+                  "Value": "true"
+                }
+              }
+            },
+            "labelDisplayUnits": {
+              "expr": {
+                "Literal": {
+                  "Value": "1D"
+                }
+              }
+            }
+          },
+          "selector": {
+            "id": "default"
           }
-        ]
-      }
+        }
+      ],
+      "label": [
+        {
+          "properties": {
+            "show": {
+              "expr": {
+                "Literal": {
+                  "Value": "false"
+                }
+              }
+            },
+            "fontSize": {
+              "expr": {
+                "Literal": {
+                  "Value": "8D"
+                }
+              }
+            }
+          },
+          "selector": {
+            "id": "default"
+          }
+        }
+      ]
     },
     "visualContainerObjects": {
       "title": [
@@ -93,14 +102,14 @@
             "text": {
               "expr": {
                 "Literal": {
-                  "Value": "'Véhicules par statut / Vehicles by status'"
+                  "Value": "'Routes hors-normes / Off-Baseline'"
                 }
               }
             },
             "fontSize": {
               "expr": {
                 "Literal": {
-                  "Value": "12D"
+                  "Value": "9D"
                 }
               }
             },
@@ -180,21 +189,21 @@
             "show": {
               "expr": {
                 "Literal": {
-                  "Value": "true"
+                  "Value": "false"
                 }
               }
             },
             "text": {
               "expr": {
                 "Literal": {
-                  "Value": "'Légende couleur · click pour filtrer la carte'"
+                  "Value": "'Véhicules en service / Vehicles in service'"
                 }
               }
             },
             "fontSize": {
               "expr": {
                 "Literal": {
-                  "Value": "9D"
+                  "Value": "8D"
                 }
               }
             },
@@ -209,42 +218,5 @@
         }
       ]
     }
-  },
-  "filterConfig": {
-    "filters": [
-      {
-        "name": "67f67d41c4dc67928e3c",
-        "field": {
-          "Column": {
-            "Expression": {
-              "SourceRef": {
-                "Entity": "CurrentVehicleMap"
-              }
-            },
-            "Property": "status_band"
-          }
-        },
-        "type": "Categorical"
-      },
-      {
-        "name": "439fc8f280f9ee27c780",
-        "field": {
-          "Aggregation": {
-            "Expression": {
-              "Column": {
-                "Expression": {
-                  "SourceRef": {
-                    "Entity": "CurrentVehicleMap"
-                  }
-                },
-                "Property": "vehicle_id"
-              }
-            },
-            "Function": 2
-          }
-        },
-        "type": "Advanced"
-      }
-    ]
   }
 }

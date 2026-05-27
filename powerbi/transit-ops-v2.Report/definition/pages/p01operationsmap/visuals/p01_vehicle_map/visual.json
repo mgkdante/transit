@@ -3,9 +3,9 @@
   "name": "p01_vehicle_map",
   "position": {
     "x": 32,
-    "y": 28,
+    "y": 80,
     "z": 10,
-    "height": 648,
+    "height": 820,
     "width": 940,
     "tabOrder": 10
   },
@@ -231,21 +231,21 @@
             "zoom": {
               "expr": {
                 "Literal": {
-                  "Value": "12.17D"
+                  "Value": "1.38D"
                 }
               }
             },
             "centerLongitude": {
               "expr": {
                 "Literal": {
-                  "Value": "-73.60330113961783D"
+                  "Value": "-79.14524607840326D"
                 }
               }
             },
             "centerLatitude": {
               "expr": {
                 "Literal": {
-                  "Value": "45.5123195611302D"
+                  "Value": "46.995817399832504D"
                 }
               }
             },

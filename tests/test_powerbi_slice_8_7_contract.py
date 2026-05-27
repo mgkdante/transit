@@ -65,6 +65,13 @@ EXPECTED_PAGES = [
 ]
 DESKTOP_REPORT_WIDTH = 1280
 DESKTOP_REPORT_HEIGHT = 720
+# Per-page height overrides. p01 was extended to 2040 in slice-8.7.2 Phase 1 to
+# fit the mission-control layout (sticky KPI strip + hero map + sidebar + full-
+# width alerts row + drill-down placeholders + timeline placeholders). Other
+# pages stay at the default 720 per slice-8.7 doctrine.
+EXPECTED_PAGE_HEIGHTS: dict[str, int] = {
+    "p01operationsmap": 2040,
+}
 EXPECTED_MEASURES = {
     "Véhicules actifs / Active Vehicles",
     "Trajets en retard / Delayed Trips",
@@ -234,8 +241,11 @@ def test_report_pages_are_exact_bilingual_fr_first_desktop_web_layout() -> None:
     # naturally save with different tabs active during iteration.
     assert pages["activePageName"] in page_names
     for page in page_defs:
+        expected_height = EXPECTED_PAGE_HEIGHTS.get(page["name"], DESKTOP_REPORT_HEIGHT)
         assert page["width"] == DESKTOP_REPORT_WIDTH
-        assert page["height"] == DESKTOP_REPORT_HEIGHT
+        assert page["height"] == expected_height, (
+            f"page {page['name']!r} height={page['height']} expected {expected_height}"
+        )
         assert page["displayOption"] == "FitToPage"
 
 

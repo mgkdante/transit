@@ -3,7 +3,7 @@
   "name": "p01operationsmap",
   "displayName": "Carte opérationnelle / Operations Map",
   "displayOption": "FitToPage",
-  "height": 720,
+  "height": 2040,
   "width": 1280,
   "objects": {
     "background": [
