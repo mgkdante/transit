@@ -55,7 +55,7 @@
                 }
               },
               "queryRef": "CurrentTripDelayComputed.avg_delay_seconds",
-              "displayName": "Retard moyen"
+              "displayName": "Retard moyen (sec)"
             },
             {
               "field": {
@@ -69,10 +69,27 @@
                 }
               },
               "queryRef": "CurrentTripDelayComputed.max_delay_seconds",
-              "displayName": "Retard max"
+              "displayName": "Retard max (sec)"
             }
           ]
         }
+      },
+      "sortDefinition": {
+        "sort": [
+          {
+            "field": {
+              "Column": {
+                "Property": "max_delay_seconds",
+                "Expression": {
+                  "SourceRef": {
+                    "Entity": "CurrentTripDelayComputed"
+                  }
+                }
+              }
+            },
+            "direction": "Descending"
+          }
+        ]
       }
     },
     "visualContainerObjects": {
@@ -191,14 +208,14 @@
             "show": {
               "expr": {
                 "Literal": {
-                  "Value": "true"
+                  "Value": "false"
                 }
               }
             },
             "text": {
               "expr": {
                 "Literal": {
-                  "Value": "'Trajets et routes, sans blâme individuel'"
+                  "Value": "''"
                 }
               }
             },
@@ -225,6 +242,59 @@
         }
       ]
     }
+  },
+  "filterConfig": {
+    "filters": [
+      {
+        "name": "Filter_max_delay_above_300s",
+        "field": {
+          "Column": {
+            "Expression": {
+              "SourceRef": {
+                "Entity": "CurrentTripDelayComputed"
+              }
+            },
+            "Property": "max_delay_seconds"
+          }
+        },
+        "type": "Advanced",
+        "howCreated": "User",
+        "filter": {
+          "Version": 2,
+          "From": [
+            {
+              "Name": "c",
+              "Entity": "CurrentTripDelayComputed",
+              "Type": 0
+            }
+          ],
+          "Where": [
+            {
+              "Condition": {
+                "Comparison": {
+                  "ComparisonKind": 1,
+                  "Left": {
+                    "Column": {
+                      "Expression": {
+                        "SourceRef": {
+                          "Source": "c"
+                        }
+                      },
+                      "Property": "max_delay_seconds"
+                    }
+                  },
+                  "Right": {
+                    "Literal": {
+                      "Value": "300L"
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        }
+      }
+    ]
   },
   "howCreated": "Default"
 }

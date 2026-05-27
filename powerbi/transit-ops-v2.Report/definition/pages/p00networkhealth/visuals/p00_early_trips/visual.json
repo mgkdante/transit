@@ -1,81 +1,36 @@
 {
   "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.1.0/schema.json",
-  "name": "p00_route_delay",
+  "name": "p00_early_trips",
   "position": {
-    "x": 32,
-    "y": 218,
-    "z": 50,
-    "height": 228,
-    "width": 610,
-    "tabOrder": 50
+    "x": 524,
+    "y": 28,
+    "z": 25,
+    "height": 164,
+    "width": 228,
+    "tabOrder": 25
   },
   "visual": {
-    "visualType": "barChart",
+    "visualType": "cardVisual",
     "query": {
       "queryState": {
-        "Category": {
+        "Data": {
           "projections": [
             {
               "field": {
-                "Column": {
-                  "Property": "route_id",
+                "Measure": {
+                  "Property": "Trajets en avance / Trips Running Early",
                   "Expression": {
                     "SourceRef": {
-                      "Entity": "CurrentTripDelayComputed"
+                      "Entity": "_Measures"
                     }
                   }
                 }
               },
-              "queryRef": "CurrentTripDelayComputed.route_id",
-              "displayName": "Route"
-            }
-          ]
-        },
-        "Y": {
-          "projections": [
-            {
-              "field": {
-                "Aggregation": {
-                  "Function": 1,
-                  "Expression": {
-                    "Column": {
-                      "Property": "avg_delay_seconds",
-                      "Expression": {
-                        "SourceRef": {
-                          "Entity": "CurrentTripDelayComputed"
-                        }
-                      }
-                    }
-                  }
-                }
-              },
-              "queryRef": "Avg(CurrentTripDelayComputed.avg_delay_seconds)",
-              "displayName": "Retard moyen sec / Avg delay sec"
+              "queryRef": "_Measures.Trajets en avance / Trips Running Early",
+              "displayName": "Trajets en avance / Trips Running Early"
             }
           ]
         }
-      },
-      "sortDefinition": {
-        "sort": [
-          {
-            "field": {
-              "Aggregation": {
-                "Function": 1,
-                "Expression": {
-                  "Column": {
-                    "Property": "avg_delay_seconds",
-                    "Expression": {
-                      "SourceRef": {
-                        "Entity": "CurrentTripDelayComputed"
-                      }
-                    }
-                  }
-                }
-              }
-            },
-            "direction": "Descending"
-          }
-        ]
       }
     },
     "visualContainerObjects": {
@@ -92,7 +47,7 @@
             "text": {
               "expr": {
                 "Literal": {
-                  "Value": "'Routes avec retard moyen / Routes by avg delay'"
+                  "Value": "'Trajets en avance / Trips running early'"
                 }
               }
             },
@@ -104,7 +59,7 @@
             "fontSize": {
               "expr": {
                 "Literal": {
-                  "Value": "12D"
+                  "Value": "11D"
                 }
               }
             },
@@ -130,7 +85,7 @@
             },
             "color": {
               "solid": {
-                "color": ""
+                "color": "#211A12"
               }
             },
             "transparency": {
@@ -201,7 +156,7 @@
             "text": {
               "expr": {
                 "Literal": {
-                  "Value": "'Retard agrégé par route'"
+                  "Value": "'Trajets · retard moyen < 0 s'"
                 }
               }
             },
@@ -213,7 +168,7 @@
             "fontSize": {
               "expr": {
                 "Literal": {
-                  "Value": "9D"
+                  "Value": "8D"
                 }
               }
             },
@@ -229,110 +184,92 @@
       ]
     },
     "objects": {
-      "categoryAxis": [
+      "value": [
         {
+          "selector": {
+            "id": "default"
+          },
           "properties": {
-            "show": {
-              "expr": {
-                "Literal": {
-                  "Value": "true"
-                }
-              }
-            },
-            "showAxisTitle": {
-              "expr": {
-                "Literal": {
-                  "Value": "true"
-                }
-              }
-            },
-            "titleText": {
-              "expr": {
-                "Literal": {
-                  "Value": "'Route'"
-                }
-              }
-            },
-            "titleColor": {
+            "fontColor": {
               "solid": {
-                "color": "#B8B8B8"
-              }
-            },
-            "titleFontSize": {
-              "expr": {
-                "Literal": {
-                  "Value": "10D"
-                }
-              }
-            },
-            "labelColor": {
-              "solid": {
-                "color": "#B8B8B8"
+                "color": "#F4F1EA"
               }
             },
             "fontSize": {
               "expr": {
                 "Literal": {
-                  "Value": "9D"
+                  "Value": "34D"
                 }
               }
-            }
-          }
-        }
-      ],
-      "valueAxis": [
-        {
-          "properties": {
-            "show": {
+            },
+            "bold": {
               "expr": {
                 "Literal": {
                   "Value": "true"
-                }
-              }
-            },
-            "showAxisTitle": {
-              "expr": {
-                "Literal": {
-                  "Value": "true"
-                }
-              }
-            },
-            "titleText": {
-              "expr": {
-                "Literal": {
-                  "Value": "'Retard moyen (sec) / Avg delay (sec)'"
-                }
-              }
-            },
-            "titleColor": {
-              "solid": {
-                "color": "#B8B8B8"
-              }
-            },
-            "titleFontSize": {
-              "expr": {
-                "Literal": {
-                  "Value": "10D"
-                }
-              }
-            },
-            "labelColor": {
-              "solid": {
-                "color": "#B8B8B8"
-              }
-            },
-            "fontSize": {
-              "expr": {
-                "Literal": {
-                  "Value": "9D"
                 }
               }
             },
             "labelDisplayUnits": {
               "expr": {
                 "Literal": {
+                  "Value": "1D"
+                }
+              }
+            },
+            "decimalPlaces": {
+              "expr": {
+                "Literal": {
                   "Value": "0D"
                 }
+              }
+            }
+          }
+        }
+      ],
+      "label": [
+        {
+          "selector": {
+            "id": "default"
+          },
+          "properties": {
+            "show": {
+              "expr": {
+                "Literal": {
+                  "Value": "false"
+                }
+              }
+            },
+            "fontColor": {
+              "solid": {
+                "color": "#B8B8B8"
+              }
+            },
+            "fontSize": {
+              "expr": {
+                "Literal": {
+                  "Value": "8D"
+                }
+              }
+            }
+          }
+        }
+      ],
+      "cards": [
+        {
+          "selector": {
+            "id": "default"
+          },
+          "properties": {
+            "padding": {
+              "expr": {
+                "Literal": {
+                  "Value": "8D"
+                }
+              }
+            },
+            "fill": {
+              "solid": {
+                "color": "#141414"
               }
             }
           }

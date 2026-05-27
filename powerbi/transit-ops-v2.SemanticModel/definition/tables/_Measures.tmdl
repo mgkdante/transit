@@ -8,7 +8,13 @@ table _Measures
 
 	measure 'Trajets en retard / Delayed Trips' = ```
 			COUNTROWS(FILTER(CurrentTripDelayComputed, CurrentTripDelayComputed[avg_delay_seconds] > 0))
-			
+
+			```
+		formatString: 0
+
+	measure 'Trajets en avance / Trips Running Early' = ```
+			COUNTROWS(FILTER(CurrentTripDelayComputed, CurrentTripDelayComputed[avg_delay_seconds] < 0))
+
 			```
 		formatString: 0
 
