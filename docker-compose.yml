@@ -5,6 +5,7 @@ services:
       dockerfile: Dockerfile.postgis
     image: transit-postgres-postgis:16
     restart: unless-stopped
+    shm_size: '256m'
     env_file:
       - .env
     environment:
