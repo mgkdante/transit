@@ -2,11 +2,11 @@
   "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.1.0/schema.json",
   "name": "p00_severe_delay",
   "position": {
-    "x": 770,
+    "x": 647,
     "y": 28,
     "z": 30,
     "height": 164,
-    "width": 228,
+    "width": 187,
     "tabOrder": 30
   },
   "visual": {

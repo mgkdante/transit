@@ -2,11 +2,11 @@
   "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.1.0/schema.json",
   "name": "p00_freshness",
   "position": {
-    "x": 1016,
+    "x": 1057,
     "y": 28,
     "z": 40,
     "height": 164,
-    "width": 228,
+    "width": 187,
     "tabOrder": 40
   },
   "visual": {

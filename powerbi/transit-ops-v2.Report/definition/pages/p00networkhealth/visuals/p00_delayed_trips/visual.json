@@ -2,11 +2,11 @@
   "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.1.0/schema.json",
   "name": "p00_delayed_trips",
   "position": {
-    "x": 278,
+    "x": 237,
     "y": 28,
     "z": 20,
     "height": 164,
-    "width": 228,
+    "width": 187,
     "tabOrder": 20
   },
   "visual": {

@@ -33,16 +33,44 @@ table _Measures
 			```
 		formatString: 0.0
 
-	/// P95 of per-route AVERAGE delay in the current period.
-	/// Reads as: "95% of routes had average trip delay no worse than X."
-	/// Replaces raw MAX on the trend chart because MAX is dominated by
-	/// single ghost-trip outliers (~30 min spikes from STM's ghost trips).
-	/// PERCENTILE.INC over avg_delay (not max_delay) scales 3-4x the
-	/// network avg vs 25-30x for raw MAX — coexists naturally on the same
-	/// Y-axis as the avg + baseline lines. Captures "which routes are
-	/// systematically late" while ignoring single-stop spike outliers.
-	measure 'Retard P95 (sec) / P95 Delay' = ```
-			PERCENTILE.INC(TripDelaySummary5mLive[avg_delay_seconds], 0.95)
+	/// P75 of per-route AVERAGE delay in the current period.
+	/// Reads as: "75% of routes had average trip delay no worse than X."
+	///
+	/// History: First tried raw MAX (25-30x avg, blew up the Y-axis with
+	/// single ghost-trip spikes). Then P95 over avg_delay — daytime
+	/// behaved (200-300s) but overnight spiked to 1000-2500s because
+	/// STM's ~70 night routes have higher variance and a few outliers
+	/// dominated the small sample.
+	///
+	/// P75 is robust across day AND night service (typical range 40-100s
+	/// system-wide, ~1.5x the avg) so the chart stays readable 24h.
+	/// Trades absolute "watch the worst routes" signal for stability;
+	/// the Routes par état table on row 3 carries the per-route max for
+	/// when an operator wants to drill into the absolute worst.
+	measure 'Retard P75 (sec) / P75 Delay' = ```
+			PERCENTILE.INC(TripDelaySummary5mLive[avg_delay_seconds], 0.75)
+
+			```
+		formatString: 0
+
+	/// Count of routes whose average trip delay is more than 2x the system
+	/// average — a proactive anomaly callout for "routes needing attention
+	/// right now". Operator sees the count at a glance; the Routes par état
+	/// table on row 3 lets them drill in to find which routes (look for
+	/// rows with 'vs moy.' > +100%).
+	measure 'Routes hors-normes / Routes Off-Baseline' = ```
+			VAR systemAvg =
+			    CALCULATE(
+			        AVERAGE(CurrentTripDelayComputed[avg_delay_seconds]),
+			        ALL(CurrentTripDelayComputed)
+			    )
+			RETURN COUNTROWS(
+			    FILTER(
+			        VALUES(CurrentTripDelayComputed[route_id]),
+			        CALCULATE(AVERAGE(CurrentTripDelayComputed[avg_delay_seconds]))
+			            > systemAvg * 2
+			    )
+			)
 
 			```
 		formatString: 0

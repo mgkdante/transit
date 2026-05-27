@@ -37,20 +37,6 @@
             {
               "field": {
                 "Measure": {
-                  "Property": "Retard P95 (sec) / P95 Delay",
-                  "Expression": {
-                    "SourceRef": {
-                      "Entity": "_Measures"
-                    }
-                  }
-                }
-              },
-              "queryRef": "_Measures.Retard P95 (sec) / P95 Delay",
-              "displayName": "P95 (sec)"
-            },
-            {
-              "field": {
-                "Measure": {
                   "Property": "Retard moyen 24h / Avg Delay 24h Baseline",
                   "Expression": {
                     "SourceRef": {
@@ -221,7 +207,7 @@
             "text": {
               "expr": {
                 "Literal": {
-                  "Value": "'Moyen, P95, vs hier, vs moy. 24h · tranches de 5 min'"
+                  "Value": "'Maintenant vs hier même heure vs moy. 24h · tranches de 5 min'"
                 }
               }
             },

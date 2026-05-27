@@ -1,13 +1,13 @@
 {
   "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.1.0/schema.json",
-  "name": "p00_early_trips",
+  "name": "p00_off_baseline_routes",
   "position": {
-    "x": 442,
+    "x": 852,
     "y": 28,
-    "z": 25,
+    "z": 35,
     "height": 164,
     "width": 187,
-    "tabOrder": 25
+    "tabOrder": 35
   },
   "visual": {
     "visualType": "cardVisual",
@@ -18,7 +18,7 @@
             {
               "field": {
                 "Measure": {
-                  "Property": "Trajets en avance / Trips Running Early",
+                  "Property": "Routes hors-normes / Routes Off-Baseline",
                   "Expression": {
                     "SourceRef": {
                       "Entity": "_Measures"
@@ -26,8 +26,8 @@
                   }
                 }
               },
-              "queryRef": "_Measures.Trajets en avance / Trips Running Early",
-              "displayName": "Trajets en avance / Trips Running Early"
+              "queryRef": "_Measures.Routes hors-normes / Routes Off-Baseline",
+              "displayName": "Routes hors-normes / Routes Off-Baseline"
             }
           ]
         }
@@ -47,7 +47,7 @@
             "text": {
               "expr": {
                 "Literal": {
-                  "Value": "'Trajets en avance / Trips running early'"
+                  "Value": "'Routes hors-normes / Routes off-baseline'"
                 }
               }
             },
@@ -85,7 +85,7 @@
             },
             "color": {
               "solid": {
-                "color": "#211A12"
+                "color": "#241914"
               }
             },
             "transparency": {
@@ -156,7 +156,7 @@
             "text": {
               "expr": {
                 "Literal": {
-                  "Value": "'Trajets · retard moyen < 0 s'"
+                  "Value": "'Routes · retard moyen > 2× système'"
                 }
               }
             },
