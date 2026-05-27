@@ -1,7 +1,9 @@
 table CurrentI3Alerts
+	lineageTag: 3c5e5e21-9e93-450b-888a-4c65172a85d0
 
 	column provider_id
 		dataType: string
+		lineageTag: 54196d09-e11e-4683-ae73-c28c74811e08
 		summarizeBy: none
 		sourceColumn: provider_id
 
@@ -9,6 +11,7 @@ table CurrentI3Alerts
 
 	column alert_id
 		dataType: string
+		lineageTag: 27259d41-107f-4e8a-8554-d3828450dff9
 		summarizeBy: none
 		sourceColumn: alert_id
 
@@ -16,6 +19,7 @@ table CurrentI3Alerts
 
 	column alert_header_text
 		dataType: string
+		lineageTag: a9ff91fd-06c9-4ce8-89d5-62aede1abcdd
 		summarizeBy: none
 		sourceColumn: alert_header_text
 
@@ -23,6 +27,7 @@ table CurrentI3Alerts
 
 	column description_text
 		dataType: string
+		lineageTag: 753e4b5f-8f31-4330-9f73-bc8c382e5aaa
 		summarizeBy: none
 		sourceColumn: description_text
 
@@ -30,6 +35,7 @@ table CurrentI3Alerts
 
 	column severity
 		dataType: string
+		lineageTag: 53d7b45f-9616-4535-ba1d-01b131e6491c
 		summarizeBy: none
 		sourceColumn: severity
 
@@ -37,6 +43,7 @@ table CurrentI3Alerts
 
 	column cause
 		dataType: string
+		lineageTag: 62affd14-f453-443e-ad2e-35c7b75c663c
 		summarizeBy: none
 		sourceColumn: cause
 
@@ -44,6 +51,7 @@ table CurrentI3Alerts
 
 	column effect
 		dataType: string
+		lineageTag: d63accdc-3541-4207-9046-1156a8a75caf
 		summarizeBy: none
 		sourceColumn: effect
 
@@ -51,6 +59,7 @@ table CurrentI3Alerts
 
 	column route_id
 		dataType: string
+		lineageTag: 88fc296a-d23d-41fb-9dea-97ab63bb3dfc
 		summarizeBy: none
 		sourceColumn: route_id
 
@@ -58,6 +67,7 @@ table CurrentI3Alerts
 
 	column stop_id
 		dataType: string
+		lineageTag: 75ad7105-0c5b-4bd2-a2e1-fe9e69883a33
 		summarizeBy: none
 		sourceColumn: stop_id
 
@@ -65,6 +75,7 @@ table CurrentI3Alerts
 
 	column trip_id
 		dataType: string
+		lineageTag: cd09b499-9c3b-4fa4-81da-69f37addf07b
 		summarizeBy: none
 		sourceColumn: trip_id
 
@@ -72,6 +83,7 @@ table CurrentI3Alerts
 
 	column area_id
 		dataType: string
+		lineageTag: f4d66d37-27f5-43bb-92d2-c90d2a08ea73
 		summarizeBy: none
 		sourceColumn: area_id
 
@@ -80,6 +92,7 @@ table CurrentI3Alerts
 	column active_period_start_utc
 		dataType: dateTime
 		formatString: General Date
+		lineageTag: 81ecc849-5183-4a66-8650-93680e71bad3
 		summarizeBy: none
 		sourceColumn: active_period_start_utc
 
@@ -88,6 +101,7 @@ table CurrentI3Alerts
 	column active_period_end_utc
 		dataType: dateTime
 		formatString: General Date
+		lineageTag: 9a6698db-5898-4e47-824c-8117f81df26c
 		summarizeBy: none
 		sourceColumn: active_period_end_utc
 
@@ -96,6 +110,7 @@ table CurrentI3Alerts
 	column captured_at_utc
 		dataType: dateTime
 		formatString: General Date
+		lineageTag: f8709f5c-153a-4d74-9c2a-c8f8333def3e
 		summarizeBy: none
 		sourceColumn: captured_at_utc
 
@@ -113,3 +128,4 @@ table CurrentI3Alerts
 	annotation PBI_NavigationStepName = Navigation
 
 	annotation PBI_ResultType = Table
+

@@ -1,7 +1,9 @@
 table DimDirection
+	lineageTag: 135a7017-f839-4298-bd86-076c2c509d45
 
 	column provider_id
 		dataType: string
+		lineageTag: 5a50a846-872a-4085-9c28-797f17d8aa4a
 		summarizeBy: none
 		sourceColumn: provider_id
 
@@ -9,6 +11,7 @@ table DimDirection
 
 	column route_id
 		dataType: string
+		lineageTag: ce9e8070-7610-4602-b0d6-8b0dd3951db1
 		summarizeBy: none
 		sourceColumn: route_id
 
@@ -17,6 +20,7 @@ table DimDirection
 	column direction_id
 		dataType: int64
 		formatString: 0
+		lineageTag: e6a777af-ee5a-465c-9487-2cc9a7a44a50
 		summarizeBy: sum
 		sourceColumn: direction_id
 
@@ -24,6 +28,7 @@ table DimDirection
 
 	column direction_label
 		dataType: string
+		lineageTag: 8c38480d-adad-4126-8052-207aedc4e9a4
 		summarizeBy: none
 		sourceColumn: direction_label
 
@@ -41,3 +46,4 @@ table DimDirection
 	annotation PBI_NavigationStepName = Navigation
 
 	annotation PBI_ResultType = Table
+

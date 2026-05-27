@@ -1,7 +1,9 @@
 table PublicStopDelayDaily
+	lineageTag: d51b1aef-855b-4384-91fc-5fba29661774
 
 	column provider_id
 		dataType: string
+		lineageTag: fc7b6b6e-67be-4af0-a632-41e09d14d4b0
 		summarizeBy: none
 		sourceColumn: provider_id
 
@@ -9,6 +11,7 @@ table PublicStopDelayDaily
 
 	column stop_id
 		dataType: string
+		lineageTag: 6d1049cb-832d-45ea-9522-127421977344
 		summarizeBy: none
 		sourceColumn: stop_id
 
@@ -17,6 +20,7 @@ table PublicStopDelayDaily
 	column provider_local_date
 		dataType: dateTime
 		formatString: General Date
+		lineageTag: 3dc9ab2d-ad06-40d0-af13-f93f294e69c9
 		summarizeBy: none
 		sourceColumn: provider_local_date
 
@@ -25,6 +29,7 @@ table PublicStopDelayDaily
 	column stop_time_observation_count
 		dataType: int64
 		formatString: 0
+		lineageTag: d201e17c-aa13-474b-9c24-811b5e98cd5d
 		summarizeBy: sum
 		sourceColumn: stop_time_observation_count
 
@@ -32,6 +37,7 @@ table PublicStopDelayDaily
 
 	column avg_delay_seconds
 		dataType: double
+		lineageTag: 2756dd98-bfda-4785-aaa8-c75d6d7de7f8
 		summarizeBy: sum
 		sourceColumn: avg_delay_seconds
 
@@ -42,6 +48,7 @@ table PublicStopDelayDaily
 	column max_delay_seconds
 		dataType: int64
 		formatString: 0
+		lineageTag: 4a08dcb2-8e16-4251-8f13-0f0e43e9e886
 		summarizeBy: sum
 		sourceColumn: max_delay_seconds
 
@@ -59,3 +66,4 @@ table PublicStopDelayDaily
 	annotation PBI_NavigationStepName = Navigation
 
 	annotation PBI_ResultType = Table
+

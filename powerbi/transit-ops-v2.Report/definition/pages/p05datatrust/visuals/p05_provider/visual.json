@@ -1,5 +1,5 @@
 {
-  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.1.0/schema.json",
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.8.0/schema.json",
   "name": "p05_provider",
   "position": {
     "x": 352,
@@ -18,12 +18,12 @@
             {
               "field": {
                 "Column": {
-                  "Property": "provider_id",
                   "Expression": {
                     "SourceRef": {
                       "Entity": "DimProvider"
                     }
-                  }
+                  },
+                  "Property": "provider_id"
                 }
               },
               "queryRef": "DimProvider.provider_id",
@@ -32,12 +32,12 @@
             {
               "field": {
                 "Column": {
-                  "Property": "display_name",
                   "Expression": {
                     "SourceRef": {
                       "Entity": "DimProvider"
                     }
-                  }
+                  },
+                  "Property": "display_name"
                 }
               },
               "queryRef": "DimProvider.display_name",
@@ -46,12 +46,12 @@
             {
               "field": {
                 "Column": {
-                  "Property": "timezone",
                   "Expression": {
                     "SourceRef": {
                       "Entity": "DimProvider"
                     }
-                  }
+                  },
+                  "Property": "timezone"
                 }
               },
               "queryRef": "DimProvider.timezone",
@@ -60,12 +60,12 @@
             {
               "field": {
                 "Column": {
-                  "Property": "default_language",
                   "Expression": {
                     "SourceRef": {
                       "Entity": "DimProvider"
                     }
-                  }
+                  },
+                  "Property": "default_language"
                 }
               },
               "queryRef": "DimProvider.default_language",
@@ -94,9 +94,7 @@
               }
             },
             "fontColor": {
-              "solid": {
-                "color": "#F4F1EA"
-              }
+              "solid": {}
             },
             "fontSize": {
               "expr": {
@@ -125,11 +123,6 @@
                 }
               }
             },
-            "color": {
-              "solid": {
-                "color": ""
-              }
-            },
             "transparency": {
               "expr": {
                 "Literal": {
@@ -151,9 +144,7 @@
               }
             },
             "color": {
-              "solid": {
-                "color": "#2B2B2B"
-              }
+              "solid": {}
             },
             "radius": {
               "expr": {
@@ -203,9 +194,7 @@
               }
             },
             "fontColor": {
-              "solid": {
-                "color": "#B8B8B8"
-              }
+              "solid": {}
             },
             "fontSize": {
               "expr": {
@@ -225,6 +214,5 @@
         }
       ]
     }
-  },
-  "howCreated": "Default"
+  }
 }

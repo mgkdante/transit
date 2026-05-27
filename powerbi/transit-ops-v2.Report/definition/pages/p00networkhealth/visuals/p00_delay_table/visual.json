@@ -1,5 +1,5 @@
 {
-  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.1.0/schema.json",
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.8.0/schema.json",
   "name": "p00_delay_table",
   "position": {
     "x": 856,
@@ -18,12 +18,12 @@
             {
               "field": {
                 "Column": {
-                  "Property": "route_id",
                   "Expression": {
                     "SourceRef": {
                       "Entity": "CurrentTripDelayComputed"
                     }
-                  }
+                  },
+                  "Property": "route_id"
                 }
               },
               "queryRef": "CurrentTripDelayComputed.route_id",
@@ -32,12 +32,12 @@
             {
               "field": {
                 "Column": {
-                  "Property": "trip_id",
                   "Expression": {
                     "SourceRef": {
                       "Entity": "CurrentTripDelayComputed"
                     }
-                  }
+                  },
+                  "Property": "trip_id"
                 }
               },
               "queryRef": "CurrentTripDelayComputed.trip_id",
@@ -46,12 +46,12 @@
             {
               "field": {
                 "Column": {
-                  "Property": "avg_delay_seconds",
                   "Expression": {
                     "SourceRef": {
                       "Entity": "CurrentTripDelayComputed"
                     }
-                  }
+                  },
+                  "Property": "avg_delay_seconds"
                 }
               },
               "queryRef": "CurrentTripDelayComputed.avg_delay_seconds",
@@ -60,12 +60,12 @@
             {
               "field": {
                 "Column": {
-                  "Property": "max_delay_seconds",
                   "Expression": {
                     "SourceRef": {
                       "Entity": "CurrentTripDelayComputed"
                     }
-                  }
+                  },
+                  "Property": "max_delay_seconds"
                 }
               },
               "queryRef": "CurrentTripDelayComputed.max_delay_seconds",
@@ -79,12 +79,12 @@
           {
             "field": {
               "Column": {
-                "Property": "max_delay_seconds",
                 "Expression": {
                   "SourceRef": {
                     "Entity": "CurrentTripDelayComputed"
                   }
-                }
+                },
+                "Property": "max_delay_seconds"
               }
             },
             "direction": "Descending"
@@ -111,9 +111,7 @@
               }
             },
             "fontColor": {
-              "solid": {
-                "color": "#F4F1EA"
-              }
+              "solid": {}
             },
             "fontSize": {
               "expr": {
@@ -142,11 +140,6 @@
                 }
               }
             },
-            "color": {
-              "solid": {
-                "color": ""
-              }
-            },
             "transparency": {
               "expr": {
                 "Literal": {
@@ -168,9 +161,7 @@
               }
             },
             "color": {
-              "solid": {
-                "color": "#2B2B2B"
-              }
+              "solid": {}
             },
             "radius": {
               "expr": {
@@ -220,9 +211,7 @@
               }
             },
             "fontColor": {
-              "solid": {
-                "color": "#B8B8B8"
-              }
+              "solid": {}
             },
             "fontSize": {
               "expr": {
@@ -258,7 +247,6 @@
           }
         },
         "type": "Advanced",
-        "howCreated": "User",
         "filter": {
           "Version": 2,
           "From": [
@@ -292,9 +280,9 @@
               }
             }
           ]
-        }
+        },
+        "howCreated": "User"
       }
     ]
-  },
-  "howCreated": "Default"
+  }
 }

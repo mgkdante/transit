@@ -1,7 +1,9 @@
 table ReportLabels
+	lineageTag: c932fd0b-26ac-406f-912a-0a38449a6586
 
 	column label_key
 		dataType: string
+		lineageTag: a060a1db-20ef-498a-9b1e-78326bce3d93
 		summarizeBy: none
 		sourceColumn: label_key
 
@@ -9,6 +11,7 @@ table ReportLabels
 
 	column label_fr
 		dataType: string
+		lineageTag: 94351b3c-c630-42b5-a398-a570501e5f84
 		summarizeBy: none
 		sourceColumn: label_fr
 
@@ -16,6 +19,7 @@ table ReportLabels
 
 	column label_en
 		dataType: string
+		lineageTag: 8e0998fc-4741-40ec-89fd-b12264b5ea0f
 		summarizeBy: none
 		sourceColumn: label_en
 
@@ -23,6 +27,7 @@ table ReportLabels
 
 	column label_combined
 		dataType: string
+		lineageTag: eb7474ec-af97-4920-a0fe-95c0a9b06da6
 		summarizeBy: none
 		sourceColumn: label_combined
 
@@ -31,6 +36,7 @@ table ReportLabels
 	column sort_order
 		dataType: int64
 		formatString: 0
+		lineageTag: a071bbde-a821-4eb1-8c5c-fcb7f143577a
 		summarizeBy: sum
 		sourceColumn: sort_order
 
@@ -48,3 +54,4 @@ table ReportLabels
 	annotation PBI_NavigationStepName = Navigation
 
 	annotation PBI_ResultType = Table
+

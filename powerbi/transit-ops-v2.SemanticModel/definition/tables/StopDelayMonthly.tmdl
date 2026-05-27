@@ -1,7 +1,9 @@
 table StopDelayMonthly
+	lineageTag: 61f57f6f-a33c-43c3-8cee-03c6fca57d6e
 
 	column provider_id
 		dataType: string
+		lineageTag: 6379edf5-1784-48f5-9c19-cadbb00afd5a
 		summarizeBy: none
 		sourceColumn: provider_id
 
@@ -10,6 +12,7 @@ table StopDelayMonthly
 	column month_start_local
 		dataType: dateTime
 		formatString: General Date
+		lineageTag: d6cc4348-fa80-4f54-9b8d-fde97de83432
 		summarizeBy: none
 		sourceColumn: month_start_local
 
@@ -17,6 +20,7 @@ table StopDelayMonthly
 
 	column stop_id
 		dataType: string
+		lineageTag: 6a18693a-18b9-40ab-9eb1-a796d3085e7e
 		summarizeBy: none
 		sourceColumn: stop_id
 
@@ -24,6 +28,7 @@ table StopDelayMonthly
 
 	column route_id
 		dataType: string
+		lineageTag: f71f993b-82b7-46d6-bf1e-0c71422da8ee
 		summarizeBy: none
 		sourceColumn: route_id
 
@@ -32,6 +37,7 @@ table StopDelayMonthly
 	column observation_count
 		dataType: int64
 		formatString: 0
+		lineageTag: b6128b3a-412f-4ba8-8753-de2279e4fe1a
 		summarizeBy: sum
 		sourceColumn: observation_count
 
@@ -39,6 +45,7 @@ table StopDelayMonthly
 
 	column avg_delay_seconds
 		dataType: double
+		lineageTag: bd43b3bf-8d27-4ac5-926d-35149941d36c
 		summarizeBy: sum
 		sourceColumn: avg_delay_seconds
 
@@ -49,6 +56,7 @@ table StopDelayMonthly
 	column severe_delay_count
 		dataType: int64
 		formatString: 0
+		lineageTag: afadaa49-2b07-4f01-b03c-32e91df2a76d
 		summarizeBy: sum
 		sourceColumn: severe_delay_count
 
@@ -57,6 +65,7 @@ table StopDelayMonthly
 	column built_at_utc
 		dataType: dateTime
 		formatString: General Date
+		lineageTag: e4f97187-8c40-4a02-bda7-28eb2332d98a
 		summarizeBy: none
 		sourceColumn: built_at_utc
 
@@ -74,3 +83,4 @@ table StopDelayMonthly
 	annotation PBI_NavigationStepName = Navigation
 
 	annotation PBI_ResultType = Table
+

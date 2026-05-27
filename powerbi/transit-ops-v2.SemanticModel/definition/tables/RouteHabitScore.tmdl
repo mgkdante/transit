@@ -1,7 +1,9 @@
 table RouteHabitScore
+	lineageTag: 62cba0e3-f6a2-4a78-91ca-c6c72beebb61
 
 	column provider_id
 		dataType: string
+		lineageTag: aae3aef0-250a-4f9a-b6ac-8b84b43c3238
 		summarizeBy: none
 		sourceColumn: provider_id
 
@@ -9,6 +11,7 @@ table RouteHabitScore
 
 	column route_id
 		dataType: string
+		lineageTag: 517fcc28-698f-49a5-9494-adc7d618ef1e
 		summarizeBy: none
 		sourceColumn: route_id
 
@@ -17,6 +20,7 @@ table RouteHabitScore
 	column day_of_week_iso
 		dataType: int64
 		formatString: 0
+		lineageTag: 4ad21696-0b00-41ce-891c-d0c43ef84133
 		summarizeBy: sum
 		sourceColumn: day_of_week_iso
 
@@ -25,6 +29,7 @@ table RouteHabitScore
 	column hour_of_day_local
 		dataType: int64
 		formatString: 0
+		lineageTag: 70670dfb-183f-450b-ae4c-58dc6fb43f5e
 		summarizeBy: sum
 		sourceColumn: hour_of_day_local
 
@@ -33,6 +38,7 @@ table RouteHabitScore
 	column observation_count
 		dataType: int64
 		formatString: 0
+		lineageTag: fa50c173-126a-416f-ac5b-35e4f00c1347
 		summarizeBy: sum
 		sourceColumn: observation_count
 
@@ -40,6 +46,7 @@ table RouteHabitScore
 
 	column avg_delay_seconds
 		dataType: double
+		lineageTag: 4298c0c8-970b-43be-a7f6-04c41c30aac9
 		summarizeBy: sum
 		sourceColumn: avg_delay_seconds
 
@@ -50,6 +57,7 @@ table RouteHabitScore
 	column severe_delay_count
 		dataType: int64
 		formatString: 0
+		lineageTag: 41969461-8823-4109-a718-6835d573b826
 		summarizeBy: sum
 		sourceColumn: severe_delay_count
 
@@ -57,6 +65,7 @@ table RouteHabitScore
 
 	column repeat_problem_score
 		dataType: double
+		lineageTag: 4f1d958e-c471-4bcd-83a1-044cd33c6ca8
 		summarizeBy: sum
 		sourceColumn: repeat_problem_score
 
@@ -67,6 +76,7 @@ table RouteHabitScore
 	column built_at_utc
 		dataType: dateTime
 		formatString: General Date
+		lineageTag: 968a18a2-7247-4ba1-bbc1-a9b3e4c86033
 		summarizeBy: none
 		sourceColumn: built_at_utc
 
@@ -84,3 +94,4 @@ table RouteHabitScore
 	annotation PBI_NavigationStepName = Navigation
 
 	annotation PBI_ResultType = Table
+

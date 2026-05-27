@@ -1,5 +1,5 @@
 {
-  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.1.0/schema.json",
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.8.0/schema.json",
   "name": "p03_summary",
   "position": {
     "x": 32,
@@ -18,12 +18,12 @@
             {
               "field": {
                 "Column": {
-                  "Property": "day_of_week_iso",
                   "Expression": {
                     "SourceRef": {
                       "Entity": "RouteDelayDayOfWeek"
                     }
-                  }
+                  },
+                  "Property": "day_of_week_iso"
                 }
               },
               "queryRef": "RouteDelayDayOfWeek.day_of_week_iso",
@@ -32,12 +32,12 @@
             {
               "field": {
                 "Column": {
-                  "Property": "route_id",
                   "Expression": {
                     "SourceRef": {
                       "Entity": "RouteDelayDayOfWeek"
                     }
-                  }
+                  },
+                  "Property": "route_id"
                 }
               },
               "queryRef": "RouteDelayDayOfWeek.route_id",
@@ -46,12 +46,12 @@
             {
               "field": {
                 "Column": {
-                  "Property": "trip_count",
                   "Expression": {
                     "SourceRef": {
                       "Entity": "RouteDelayDayOfWeek"
                     }
-                  }
+                  },
+                  "Property": "trip_count"
                 }
               },
               "queryRef": "RouteDelayDayOfWeek.trip_count",
@@ -60,12 +60,12 @@
             {
               "field": {
                 "Column": {
-                  "Property": "avg_delay_seconds",
                   "Expression": {
                     "SourceRef": {
                       "Entity": "RouteDelayDayOfWeek"
                     }
-                  }
+                  },
+                  "Property": "avg_delay_seconds"
                 }
               },
               "queryRef": "RouteDelayDayOfWeek.avg_delay_seconds",
@@ -94,9 +94,7 @@
               }
             },
             "fontColor": {
-              "solid": {
-                "color": "#F4F1EA"
-              }
+              "solid": {}
             },
             "fontSize": {
               "expr": {
@@ -125,11 +123,6 @@
                 }
               }
             },
-            "color": {
-              "solid": {
-                "color": ""
-              }
-            },
             "transparency": {
               "expr": {
                 "Literal": {
@@ -151,9 +144,7 @@
               }
             },
             "color": {
-              "solid": {
-                "color": "#2B2B2B"
-              }
+              "solid": {}
             },
             "radius": {
               "expr": {
@@ -203,9 +194,7 @@
               }
             },
             "fontColor": {
-              "solid": {
-                "color": "#B8B8B8"
-              }
+              "solid": {}
             },
             "fontSize": {
               "expr": {
@@ -225,6 +214,5 @@
         }
       ]
     }
-  },
-  "howCreated": "Default"
+  }
 }

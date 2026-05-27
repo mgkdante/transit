@@ -4,6 +4,1401 @@ cultureInfo en-US
 			{
 			  "Version": "2.0.0",
 			  "Language": "en-US",
-			  "Entities": {}
+			  "Entities": {
+			    "currenttripdelaycomputed.route_id": {
+			      "Definition": {
+			        "Binding": {
+			          "ConceptualEntity": "CurrentTripDelayComputed",
+			          "ConceptualProperty": "route_id"
+			        }
+			      },
+			      "State": "Generated",
+			      "Terms": [
+			        {
+			          "Route": {
+			            "State": "Suggested",
+			            "Source": {
+			              "Type": "External",
+			              "Agent": "PowerBI.VisualColumnRename"
+			            },
+			            "Weight": 0.9
+			          }
+			        }
+			      ]
+			    },
+			    "currenttripdelaycomputed.trip_id": {
+			      "Definition": {
+			        "Binding": {
+			          "ConceptualEntity": "CurrentTripDelayComputed",
+			          "ConceptualProperty": "trip_id"
+			        }
+			      },
+			      "State": "Generated",
+			      "Terms": [
+			        {
+			          "Trajet / Trip": {
+			            "State": "Suggested",
+			            "Source": {
+			              "Type": "External",
+			              "Agent": "PowerBI.VisualColumnRename"
+			            },
+			            "Weight": 0.9
+			          }
+			        },
+			        {
+			          "Trajet": {
+			            "State": "Suggested",
+			            "Source": {
+			              "Type": "External",
+			              "Agent": "PowerBI.VisualColumnRename"
+			            },
+			            "Weight": 0.9
+			          }
+			        }
+			      ]
+			    },
+			    "currenttripdelaycomputed.avg_delay_seconds": {
+			      "Definition": {
+			        "Binding": {
+			          "ConceptualEntity": "CurrentTripDelayComputed",
+			          "ConceptualProperty": "avg_delay_seconds"
+			        }
+			      },
+			      "State": "Generated",
+			      "Terms": [
+			        {
+			          "Retard moyen (sec)": {
+			            "State": "Suggested",
+			            "Source": {
+			              "Type": "External",
+			              "Agent": "PowerBI.VisualColumnRename"
+			            },
+			            "Weight": 0.9
+			          }
+			        }
+			      ]
+			    },
+			    "currenttripdelaycomputed.max_delay_seconds": {
+			      "Definition": {
+			        "Binding": {
+			          "ConceptualEntity": "CurrentTripDelayComputed",
+			          "ConceptualProperty": "max_delay_seconds"
+			        }
+			      },
+			      "State": "Generated",
+			      "Terms": [
+			        {
+			          "Retard max (sec)": {
+			            "State": "Suggested",
+			            "Source": {
+			              "Type": "External",
+			              "Agent": "PowerBI.VisualColumnRename"
+			            },
+			            "Weight": 0.9
+			          }
+			        },
+			        {
+			          "Retard max": {
+			            "State": "Suggested",
+			            "Source": {
+			              "Type": "External",
+			              "Agent": "PowerBI.VisualColumnRename"
+			            },
+			            "Weight": 0.9
+			          }
+			        }
+			      ]
+			    },
+			    "currenttripdelaycomputed.stop_time_observation_count": {
+			      "Definition": {
+			        "Binding": {
+			          "ConceptualEntity": "CurrentTripDelayComputed",
+			          "ConceptualProperty": "stop_time_observation_count"
+			        }
+			      },
+			      "State": "Generated",
+			      "Terms": [
+			        {
+			          "Obs": {
+			            "State": "Suggested",
+			            "Source": {
+			              "Type": "External",
+			              "Agent": "PowerBI.VisualColumnRename"
+			            },
+			            "Weight": 0.9
+			          }
+			        }
+			      ]
+			    },
+			    "table_measures.véhicules_actifs___active_vehicles": {
+			      "Definition": {
+			        "Binding": {
+			          "ConceptualEntity": "_Measures",
+			          "ConceptualProperty": "Véhicules actifs / Active Vehicles"
+			        }
+			      },
+			      "State": "Generated",
+			      "Terms": [
+			        {
+			          "Véhicules actifs / Active Vehicles": {
+			            "State": "Suggested",
+			            "Source": {
+			              "Type": "External",
+			              "Agent": "PowerBI.VisualColumnRename"
+			            },
+			            "Weight": 0.9
+			          }
+			        }
+			      ]
+			    },
+			    "table_measures.trajets_en_retard___delayed_trips": {
+			      "Definition": {
+			        "Binding": {
+			          "ConceptualEntity": "_Measures",
+			          "ConceptualProperty": "Trajets en retard / Delayed Trips"
+			        }
+			      },
+			      "State": "Generated",
+			      "Terms": [
+			        {
+			          "Retards": {
+			            "State": "Suggested",
+			            "Source": {
+			              "Type": "External",
+			              "Agent": "PowerBI.VisualColumnRename"
+			            },
+			            "Weight": 0.9
+			          }
+			        },
+			        {
+			          "Trajets en retard / Delayed Trips": {
+			            "State": "Suggested",
+			            "Source": {
+			              "Type": "External",
+			              "Agent": "PowerBI.VisualColumnRename"
+			            },
+			            "Weight": 0.9
+			          }
+			        }
+			      ]
+			    },
+			    "table_measures.écart_vs_moyenne____delta_vs_avg_": {
+			      "Definition": {
+			        "Binding": {
+			          "ConceptualEntity": "_Measures",
+			          "ConceptualProperty": "Écart vs moyenne (%) / Delta vs Avg (%)"
+			        }
+			      },
+			      "State": "Generated",
+			      "Terms": [
+			        {
+			          "vs moy.": {
+			            "State": "Suggested",
+			            "Source": {
+			              "Type": "External",
+			              "Agent": "PowerBI.VisualColumnRename"
+			            },
+			            "Weight": 0.9
+			          }
+			        }
+			      ]
+			    },
+			    "table_measures.routes_horsnormes___routes_offbaseline": {
+			      "Definition": {
+			        "Binding": {
+			          "ConceptualEntity": "_Measures",
+			          "ConceptualProperty": "Routes hors-normes / Routes Off-Baseline"
+			        }
+			      },
+			      "State": "Generated",
+			      "Terms": [
+			        {
+			          "Routes hors-normes / Routes Off-Baseline": {
+			            "State": "Suggested",
+			            "Source": {
+			              "Type": "External",
+			              "Agent": "PowerBI.VisualColumnRename"
+			            },
+			            "Weight": 0.9
+			          }
+			        }
+			      ]
+			    },
+			    "table_measures.retard_moyen_24h___avg_delay_24h_baseline": {
+			      "Definition": {
+			        "Binding": {
+			          "ConceptualEntity": "_Measures",
+			          "ConceptualProperty": "Retard moyen 24h / Avg Delay 24h Baseline"
+			        }
+			      },
+			      "State": "Generated",
+			      "Terms": [
+			        {
+			          "Moy. 24h (réf.)": {
+			            "State": "Suggested",
+			            "Source": {
+			              "Type": "External",
+			              "Agent": "PowerBI.VisualColumnRename"
+			            },
+			            "Weight": 0.9
+			          }
+			        }
+			      ]
+			    },
+			    "table_measures.retard_24h_hier___yesterday_same_hour": {
+			      "Definition": {
+			        "Binding": {
+			          "ConceptualEntity": "_Measures",
+			          "ConceptualProperty": "Retard 24h hier / Yesterday Same Hour"
+			        }
+			      },
+			      "State": "Generated",
+			      "Terms": [
+			        {
+			          "Même heure hier": {
+			            "State": "Suggested",
+			            "Source": {
+			              "Type": "External",
+			              "Agent": "PowerBI.VisualColumnRename"
+			            },
+			            "Weight": 0.9
+			          }
+			        }
+			      ]
+			    },
+			    "table_measures.retard_sévère___severe_delay": {
+			      "Definition": {
+			        "Binding": {
+			          "ConceptualEntity": "_Measures",
+			          "ConceptualProperty": "Retard sévère / Severe Delay"
+			        }
+			      },
+			      "State": "Generated",
+			      "Terms": [
+			        {
+			          "Retard sévère / Severe Delay": {
+			            "State": "Suggested",
+			            "Source": {
+			              "Type": "External",
+			              "Agent": "PowerBI.VisualColumnRename"
+			            },
+			            "Weight": 0.9
+			          }
+			        }
+			      ]
+			    },
+			    "table_measures.âge_fraîcheur_sec___freshness_age_sec": {
+			      "Definition": {
+			        "Binding": {
+			          "ConceptualEntity": "_Measures",
+			          "ConceptualProperty": "Âge fraîcheur sec / Freshness Age Sec"
+			        }
+			      },
+			      "State": "Generated",
+			      "Terms": [
+			        {
+			          "Âge fraîcheur sec / Freshness Age Sec": {
+			            "State": "Suggested",
+			            "Source": {
+			              "Type": "External",
+			              "Agent": "PowerBI.VisualColumnRename"
+			            },
+			            "Weight": 0.9
+			          }
+			        }
+			      ]
+			    },
+			    "table_measures.trajets_en_avance___trips_running_early": {
+			      "Definition": {
+			        "Binding": {
+			          "ConceptualEntity": "_Measures",
+			          "ConceptualProperty": "Trajets en avance / Trips Running Early"
+			        }
+			      },
+			      "State": "Generated",
+			      "Terms": [
+			        {
+			          "Trajets en avance / Trips Running Early": {
+			            "State": "Suggested",
+			            "Source": {
+			              "Type": "External",
+			              "Agent": "PowerBI.VisualColumnRename"
+			            },
+			            "Weight": 0.9
+			          }
+			        }
+			      ]
+			    },
+			    "table_measures.score_impact_citoyens___citizen_impact_score": {
+			      "Definition": {
+			        "Binding": {
+			          "ConceptualEntity": "_Measures",
+			          "ConceptualProperty": "Score impact citoyens / Citizen Impact Score"
+			        }
+			      },
+			      "State": "Generated",
+			      "Terms": [
+			        {
+			          "Impact citoyens": {
+			            "State": "Suggested",
+			            "Source": {
+			              "Type": "External",
+			              "Agent": "PowerBI.VisualColumnRename"
+			            },
+			            "Weight": 0.9
+			          }
+			        }
+			      ]
+			    },
+			    "tripdelaysummary5mlive.period_start_utc": {
+			      "Definition": {
+			        "Binding": {
+			          "ConceptualEntity": "TripDelaySummary5mLive",
+			          "ConceptualProperty": "period_start_utc"
+			        }
+			      },
+			      "State": "Generated",
+			      "Terms": [
+			        {
+			          "Période 5 min": {
+			            "State": "Suggested",
+			            "Source": {
+			              "Type": "External",
+			              "Agent": "PowerBI.VisualColumnRename"
+			            },
+			            "Weight": 0.9
+			          }
+			        }
+			      ]
+			    },
+			    "feedfreshnesscurrent.endpoint_key": {
+			      "Definition": {
+			        "Binding": {
+			          "ConceptualEntity": "FeedFreshnessCurrent",
+			          "ConceptualProperty": "endpoint_key"
+			        }
+			      },
+			      "State": "Generated",
+			      "Terms": [
+			        {
+			          "Flux / Feed": {
+			            "State": "Suggested",
+			            "Source": {
+			              "Type": "External",
+			              "Agent": "PowerBI.VisualColumnRename"
+			            },
+			            "Weight": 0.9
+			          }
+			        },
+			        {
+			          "Flux": {
+			            "State": "Suggested",
+			            "Source": {
+			              "Type": "External",
+			              "Agent": "PowerBI.VisualColumnRename"
+			            },
+			            "Weight": 0.9
+			          }
+			        }
+			      ]
+			    },
+			    "feedfreshnesscurrent.status": {
+			      "Definition": {
+			        "Binding": {
+			          "ConceptualEntity": "FeedFreshnessCurrent",
+			          "ConceptualProperty": "status"
+			        }
+			      },
+			      "State": "Generated",
+			      "Terms": [
+			        {
+			          "Statut": {
+			            "State": "Suggested",
+			            "Source": {
+			              "Type": "External",
+			              "Agent": "PowerBI.VisualColumnRename"
+			            },
+			            "Weight": 0.9
+			          }
+			        }
+			      ]
+			    },
+			    "feedfreshnesscurrent.completed_age_seconds": {
+			      "Definition": {
+			        "Binding": {
+			          "ConceptualEntity": "FeedFreshnessCurrent",
+			          "ConceptualProperty": "completed_age_seconds"
+			        }
+			      },
+			      "State": "Generated",
+			      "Terms": [
+			        {
+			          "Âge sec / Age sec": {
+			            "State": "Suggested",
+			            "Source": {
+			              "Type": "External",
+			              "Agent": "PowerBI.VisualColumnRename"
+			            },
+			            "Weight": 0.9
+			          }
+			        },
+			        {
+			          "Âge sec": {
+			            "State": "Suggested",
+			            "Source": {
+			              "Type": "External",
+			              "Agent": "PowerBI.VisualColumnRename"
+			            },
+			            "Weight": 0.9
+			          }
+			        }
+			      ]
+			    },
+			    "feedfreshnesscurrent.requested_at_utc": {
+			      "Definition": {
+			        "Binding": {
+			          "ConceptualEntity": "FeedFreshnessCurrent",
+			          "ConceptualProperty": "requested_at_utc"
+			        }
+			      },
+			      "State": "Generated",
+			      "Terms": [
+			        {
+			          "Demandé": {
+			            "State": "Suggested",
+			            "Source": {
+			              "Type": "External",
+			              "Agent": "PowerBI.VisualColumnRename"
+			            },
+			            "Weight": 0.9
+			          }
+			        }
+			      ]
+			    },
+			    "currentvehiclemap.latitude": {
+			      "Definition": {
+			        "Binding": {
+			          "ConceptualEntity": "CurrentVehicleMap",
+			          "ConceptualProperty": "latitude"
+			        }
+			      },
+			      "State": "Generated",
+			      "Terms": [
+			        {
+			          "Latitude": {
+			            "State": "Suggested",
+			            "Source": {
+			              "Type": "External",
+			              "Agent": "PowerBI.VisualColumnRename"
+			            },
+			            "Weight": 0.9
+			          }
+			        }
+			      ]
+			    },
+			    "currentvehiclemap.longitude": {
+			      "Definition": {
+			        "Binding": {
+			          "ConceptualEntity": "CurrentVehicleMap",
+			          "ConceptualProperty": "longitude"
+			        }
+			      },
+			      "State": "Generated",
+			      "Terms": [
+			        {
+			          "Longitude": {
+			            "State": "Suggested",
+			            "Source": {
+			              "Type": "External",
+			              "Agent": "PowerBI.VisualColumnRename"
+			            },
+			            "Weight": 0.9
+			          }
+			        }
+			      ]
+			    },
+			    "currentvehiclemap.vehicle_id": {
+			      "Definition": {
+			        "Binding": {
+			          "ConceptualEntity": "CurrentVehicleMap",
+			          "ConceptualProperty": "vehicle_id"
+			        }
+			      },
+			      "State": "Generated",
+			      "Terms": [
+			        {
+			          "Véhicule / Vehicle": {
+			            "State": "Suggested",
+			            "Source": {
+			              "Type": "External",
+			              "Agent": "PowerBI.VisualColumnRename"
+			            },
+			            "Weight": 0.9
+			          }
+			        }
+			      ]
+			    },
+			    "currentvehiclemap.route_id": {
+			      "Definition": {
+			        "Binding": {
+			          "ConceptualEntity": "CurrentVehicleMap",
+			          "ConceptualProperty": "route_id"
+			        }
+			      },
+			      "State": "Generated",
+			      "Terms": [
+			        {
+			          "Route": {
+			            "State": "Suggested",
+			            "Source": {
+			              "Type": "External",
+			              "Agent": "PowerBI.VisualColumnRename"
+			            },
+			            "Weight": 0.9
+			          }
+			        }
+			      ]
+			    },
+			    "currentvehiclemap.trip_id": {
+			      "Definition": {
+			        "Binding": {
+			          "ConceptualEntity": "CurrentVehicleMap",
+			          "ConceptualProperty": "trip_id"
+			        }
+			      },
+			      "State": "Generated",
+			      "Terms": [
+			        {
+			          "Trajet / Trip": {
+			            "State": "Suggested",
+			            "Source": {
+			              "Type": "External",
+			              "Agent": "PowerBI.VisualColumnRename"
+			            },
+			            "Weight": 0.9
+			          }
+			        }
+			      ]
+			    },
+			    "currentvehiclemap.stop_id": {
+			      "Definition": {
+			        "Binding": {
+			          "ConceptualEntity": "CurrentVehicleMap",
+			          "ConceptualProperty": "stop_id"
+			        }
+			      },
+			      "State": "Generated",
+			      "Terms": [
+			        {
+			          "Arrêt / Stop": {
+			            "State": "Suggested",
+			            "Source": {
+			              "Type": "External",
+			              "Agent": "PowerBI.VisualColumnRename"
+			            },
+			            "Weight": 0.9
+			          }
+			        }
+			      ]
+			    },
+			    "currentvehiclemap.captured_at_utc": {
+			      "Definition": {
+			        "Binding": {
+			          "ConceptualEntity": "CurrentVehicleMap",
+			          "ConceptualProperty": "captured_at_utc"
+			        }
+			      },
+			      "State": "Generated",
+			      "Terms": [
+			        {
+			          "Capturé à": {
+			            "State": "Suggested",
+			            "Source": {
+			              "Type": "External",
+			              "Agent": "PowerBI.VisualColumnRename"
+			            },
+			            "Weight": 0.9
+			          }
+			        }
+			      ]
+			    },
+			    "latestvehiclesnapshot.route_id": {
+			      "Definition": {
+			        "Binding": {
+			          "ConceptualEntity": "LatestVehicleSnapshot",
+			          "ConceptualProperty": "route_id"
+			        }
+			      },
+			      "State": "Generated",
+			      "Terms": [
+			        {
+			          "Route": {
+			            "State": "Suggested",
+			            "Source": {
+			              "Type": "External",
+			              "Agent": "PowerBI.VisualColumnRename"
+			            },
+			            "Weight": 0.9
+			          }
+			        }
+			      ]
+			    },
+			    "currenti3alerts.route_id": {
+			      "Definition": {
+			        "Binding": {
+			          "ConceptualEntity": "CurrentI3Alerts",
+			          "ConceptualProperty": "route_id"
+			        }
+			      },
+			      "State": "Generated",
+			      "Terms": [
+			        {
+			          "Route": {
+			            "State": "Suggested",
+			            "Source": {
+			              "Type": "External",
+			              "Agent": "PowerBI.VisualColumnRename"
+			            },
+			            "Weight": 0.9
+			          }
+			        }
+			      ]
+			    },
+			    "currenti3alerts.stop_id": {
+			      "Definition": {
+			        "Binding": {
+			          "ConceptualEntity": "CurrentI3Alerts",
+			          "ConceptualProperty": "stop_id"
+			        }
+			      },
+			      "State": "Generated",
+			      "Terms": [
+			        {
+			          "Arrêt": {
+			            "State": "Suggested",
+			            "Source": {
+			              "Type": "External",
+			              "Agent": "PowerBI.VisualColumnRename"
+			            },
+			            "Weight": 0.9
+			          }
+			        }
+			      ]
+			    },
+			    "currenti3alerts.severity": {
+			      "Definition": {
+			        "Binding": {
+			          "ConceptualEntity": "CurrentI3Alerts",
+			          "ConceptualProperty": "severity"
+			        }
+			      },
+			      "State": "Generated",
+			      "Terms": [
+			        {
+			          "Sévérité": {
+			            "State": "Suggested",
+			            "Source": {
+			              "Type": "External",
+			              "Agent": "PowerBI.VisualColumnRename"
+			            },
+			            "Weight": 0.9
+			          }
+			        }
+			      ]
+			    },
+			    "currenti3alerts.alert_header_text": {
+			      "Definition": {
+			        "Binding": {
+			          "ConceptualEntity": "CurrentI3Alerts",
+			          "ConceptualProperty": "alert_header_text"
+			        }
+			      },
+			      "State": "Generated",
+			      "Terms": [
+			        {
+			          "Alerte": {
+			            "State": "Suggested",
+			            "Source": {
+			              "Type": "External",
+			              "Agent": "PowerBI.VisualColumnRename"
+			            },
+			            "Weight": 0.9
+			          }
+			        }
+			      ]
+			    },
+			    "currenti3alerts.active_period_start_utc": {
+			      "Definition": {
+			        "Binding": {
+			          "ConceptualEntity": "CurrentI3Alerts",
+			          "ConceptualProperty": "active_period_start_utc"
+			        }
+			      },
+			      "State": "Generated",
+			      "Terms": [
+			        {
+			          "Début": {
+			            "State": "Suggested",
+			            "Source": {
+			              "Type": "External",
+			              "Agent": "PowerBI.VisualColumnRename"
+			            },
+			            "Weight": 0.9
+			          }
+			        }
+			      ]
+			    },
+			    "tripdelaysummary5m.period_start_utc": {
+			      "Definition": {
+			        "Binding": {
+			          "ConceptualEntity": "TripDelaySummary5m",
+			          "ConceptualProperty": "period_start_utc"
+			        }
+			      },
+			      "State": "Generated",
+			      "Terms": [
+			        {
+			          "Période": {
+			            "State": "Suggested",
+			            "Source": {
+			              "Type": "External",
+			              "Agent": "PowerBI.VisualColumnRename"
+			            },
+			            "Weight": 0.9
+			          }
+			        }
+			      ]
+			    },
+			    "factstoptimedelayobservation.route_id": {
+			      "Definition": {
+			        "Binding": {
+			          "ConceptualEntity": "FactStopTimeDelayObservation",
+			          "ConceptualProperty": "route_id"
+			        }
+			      },
+			      "State": "Generated",
+			      "Terms": [
+			        {
+			          "Route": {
+			            "State": "Suggested",
+			            "Source": {
+			              "Type": "External",
+			              "Agent": "PowerBI.VisualColumnRename"
+			            },
+			            "Weight": 0.9
+			          }
+			        }
+			      ]
+			    },
+			    "factstoptimedelayobservation.stop_id": {
+			      "Definition": {
+			        "Binding": {
+			          "ConceptualEntity": "FactStopTimeDelayObservation",
+			          "ConceptualProperty": "stop_id"
+			        }
+			      },
+			      "State": "Generated",
+			      "Terms": [
+			        {
+			          "Arrêt": {
+			            "State": "Suggested",
+			            "Source": {
+			              "Type": "External",
+			              "Agent": "PowerBI.VisualColumnRename"
+			            },
+			            "Weight": 0.9
+			          }
+			        }
+			      ]
+			    },
+			    "factstoptimedelayobservation.arrival_delay_seconds": {
+			      "Definition": {
+			        "Binding": {
+			          "ConceptualEntity": "FactStopTimeDelayObservation",
+			          "ConceptualProperty": "arrival_delay_seconds"
+			        }
+			      },
+			      "State": "Generated",
+			      "Terms": [
+			        {
+			          "Retard arrivée": {
+			            "State": "Suggested",
+			            "Source": {
+			              "Type": "External",
+			              "Agent": "PowerBI.VisualColumnRename"
+			            },
+			            "Weight": 0.9
+			          }
+			        }
+			      ]
+			    },
+			    "factstoptimedelayobservation.departure_delay_seconds": {
+			      "Definition": {
+			        "Binding": {
+			          "ConceptualEntity": "FactStopTimeDelayObservation",
+			          "ConceptualProperty": "departure_delay_seconds"
+			        }
+			      },
+			      "State": "Generated",
+			      "Terms": [
+			        {
+			          "Retard départ": {
+			            "State": "Suggested",
+			            "Source": {
+			              "Type": "External",
+			              "Agent": "PowerBI.VisualColumnRename"
+			            },
+			            "Weight": 0.9
+			          }
+			        }
+			      ]
+			    },
+			    "routedelayhourly.period_start_utc": {
+			      "Definition": {
+			        "Binding": {
+			          "ConceptualEntity": "RouteDelayHourly",
+			          "ConceptualProperty": "period_start_utc"
+			        }
+			      },
+			      "State": "Generated",
+			      "Terms": [
+			        {
+			          "Période": {
+			            "State": "Suggested",
+			            "Source": {
+			              "Type": "External",
+			              "Agent": "PowerBI.VisualColumnRename"
+			            },
+			            "Weight": 0.9
+			          }
+			        },
+			        {
+			          "Heure / Hour": {
+			            "State": "Suggested",
+			            "Source": {
+			              "Type": "External",
+			              "Agent": "PowerBI.VisualColumnRename"
+			            },
+			            "Weight": 0.9
+			          }
+			        }
+			      ]
+			    },
+			    "routedelayhourly.route_id": {
+			      "Definition": {
+			        "Binding": {
+			          "ConceptualEntity": "RouteDelayHourly",
+			          "ConceptualProperty": "route_id"
+			        }
+			      },
+			      "State": "Generated",
+			      "Terms": [
+			        {
+			          "Route": {
+			            "State": "Suggested",
+			            "Source": {
+			              "Type": "External",
+			              "Agent": "PowerBI.VisualColumnRename"
+			            },
+			            "Weight": 0.9
+			          }
+			        }
+			      ]
+			    },
+			    "routedelayhourly.trip_count": {
+			      "Definition": {
+			        "Binding": {
+			          "ConceptualEntity": "RouteDelayHourly",
+			          "ConceptualProperty": "trip_count"
+			        }
+			      },
+			      "State": "Generated",
+			      "Terms": [
+			        {
+			          "Trajets": {
+			            "State": "Suggested",
+			            "Source": {
+			              "Type": "External",
+			              "Agent": "PowerBI.VisualColumnRename"
+			            },
+			            "Weight": 0.9
+			          }
+			        }
+			      ]
+			    },
+			    "routedelayhourly.delayed_trip_count": {
+			      "Definition": {
+			        "Binding": {
+			          "ConceptualEntity": "RouteDelayHourly",
+			          "ConceptualProperty": "delayed_trip_count"
+			        }
+			      },
+			      "State": "Generated",
+			      "Terms": [
+			        {
+			          "En retard / Delayed": {
+			            "State": "Suggested",
+			            "Source": {
+			              "Type": "External",
+			              "Agent": "PowerBI.VisualColumnRename"
+			            },
+			            "Weight": 0.9
+			          }
+			        }
+			      ]
+			    },
+			    "routehabitscore.route_id": {
+			      "Definition": {
+			        "Binding": {
+			          "ConceptualEntity": "RouteHabitScore",
+			          "ConceptualProperty": "route_id"
+			        }
+			      },
+			      "State": "Generated",
+			      "Terms": [
+			        {
+			          "Route": {
+			            "State": "Suggested",
+			            "Source": {
+			              "Type": "External",
+			              "Agent": "PowerBI.VisualColumnRename"
+			            },
+			            "Weight": 0.9
+			          }
+			        }
+			      ]
+			    },
+			    "routedelaydayofweek.day_of_week_iso": {
+			      "Definition": {
+			        "Binding": {
+			          "ConceptualEntity": "RouteDelayDayOfWeek",
+			          "ConceptualProperty": "day_of_week_iso"
+			        }
+			      },
+			      "State": "Generated",
+			      "Terms": [
+			        {
+			          "Jour ISO / DoW": {
+			            "State": "Suggested",
+			            "Source": {
+			              "Type": "External",
+			              "Agent": "PowerBI.VisualColumnRename"
+			            },
+			            "Weight": 0.9
+			          }
+			        }
+			      ]
+			    },
+			    "routedelaydayofweek.route_id": {
+			      "Definition": {
+			        "Binding": {
+			          "ConceptualEntity": "RouteDelayDayOfWeek",
+			          "ConceptualProperty": "route_id"
+			        }
+			      },
+			      "State": "Generated",
+			      "Terms": [
+			        {
+			          "Route": {
+			            "State": "Suggested",
+			            "Source": {
+			              "Type": "External",
+			              "Agent": "PowerBI.VisualColumnRename"
+			            },
+			            "Weight": 0.9
+			          }
+			        }
+			      ]
+			    },
+			    "routedelaydayofweek.trip_count": {
+			      "Definition": {
+			        "Binding": {
+			          "ConceptualEntity": "RouteDelayDayOfWeek",
+			          "ConceptualProperty": "trip_count"
+			        }
+			      },
+			      "State": "Generated",
+			      "Terms": [
+			        {
+			          "Trajets": {
+			            "State": "Suggested",
+			            "Source": {
+			              "Type": "External",
+			              "Agent": "PowerBI.VisualColumnRename"
+			            },
+			            "Weight": 0.9
+			          }
+			        }
+			      ]
+			    },
+			    "routedelaydayofweek.avg_delay_seconds": {
+			      "Definition": {
+			        "Binding": {
+			          "ConceptualEntity": "RouteDelayDayOfWeek",
+			          "ConceptualProperty": "avg_delay_seconds"
+			        }
+			      },
+			      "State": "Generated",
+			      "Terms": [
+			        {
+			          "Retard moyen": {
+			            "State": "Suggested",
+			            "Source": {
+			              "Type": "External",
+			              "Agent": "PowerBI.VisualColumnRename"
+			            },
+			            "Weight": 0.9
+			          }
+			        }
+			      ]
+			    },
+			    "routereliabilityweekly.route_id": {
+			      "Definition": {
+			        "Binding": {
+			          "ConceptualEntity": "RouteReliabilityWeekly",
+			          "ConceptualProperty": "route_id"
+			        }
+			      },
+			      "State": "Generated",
+			      "Terms": [
+			        {
+			          "Route": {
+			            "State": "Suggested",
+			            "Source": {
+			              "Type": "External",
+			              "Agent": "PowerBI.VisualColumnRename"
+			            },
+			            "Weight": 0.9
+			          }
+			        }
+			      ]
+			    },
+			    "vehiclesummary5m.period_start_utc": {
+			      "Definition": {
+			        "Binding": {
+			          "ConceptualEntity": "VehicleSummary5m",
+			          "ConceptualProperty": "period_start_utc"
+			        }
+			      },
+			      "State": "Generated",
+			      "Terms": [
+			        {
+			          "Période": {
+			            "State": "Suggested",
+			            "Source": {
+			              "Type": "External",
+			              "Agent": "PowerBI.VisualColumnRename"
+			            },
+			            "Weight": 0.9
+			          }
+			        }
+			      ]
+			    },
+			    "dimprovider.provider_id": {
+			      "Definition": {
+			        "Binding": {
+			          "ConceptualEntity": "DimProvider",
+			          "ConceptualProperty": "provider_id"
+			        }
+			      },
+			      "State": "Generated",
+			      "Terms": [
+			        {
+			          "Fournisseur": {
+			            "State": "Suggested",
+			            "Source": {
+			              "Type": "External",
+			              "Agent": "PowerBI.VisualColumnRename"
+			            },
+			            "Weight": 0.9
+			          }
+			        }
+			      ]
+			    },
+			    "dimprovider.display_name": {
+			      "Definition": {
+			        "Binding": {
+			          "ConceptualEntity": "DimProvider",
+			          "ConceptualProperty": "display_name"
+			        }
+			      },
+			      "State": "Generated",
+			      "Terms": [
+			        {
+			          "Nom": {
+			            "State": "Suggested",
+			            "Source": {
+			              "Type": "External",
+			              "Agent": "PowerBI.VisualColumnRename"
+			            },
+			            "Weight": 0.9
+			          }
+			        }
+			      ]
+			    },
+			    "dimprovider.timezone": {
+			      "Definition": {
+			        "Binding": {
+			          "ConceptualEntity": "DimProvider",
+			          "ConceptualProperty": "timezone"
+			        }
+			      },
+			      "State": "Generated",
+			      "Terms": [
+			        {
+			          "Fuseau": {
+			            "State": "Suggested",
+			            "Source": {
+			              "Type": "External",
+			              "Agent": "PowerBI.VisualColumnRename"
+			            },
+			            "Weight": 0.9
+			          }
+			        }
+			      ]
+			    },
+			    "dimprovider.default_language": {
+			      "Definition": {
+			        "Binding": {
+			          "ConceptualEntity": "DimProvider",
+			          "ConceptualProperty": "default_language"
+			        }
+			      },
+			      "State": "Generated",
+			      "Terms": [
+			        {
+			          "Langue": {
+			            "State": "Suggested",
+			            "Source": {
+			              "Type": "External",
+			              "Agent": "PowerBI.VisualColumnRename"
+			            },
+			            "Weight": 0.9
+			          }
+			        }
+			      ]
+			    },
+			    "sourcelineagereporting.dataset_kind": {
+			      "Definition": {
+			        "Binding": {
+			          "ConceptualEntity": "SourceLineageReporting",
+			          "ConceptualProperty": "dataset_kind"
+			        }
+			      },
+			      "State": "Generated",
+			      "Terms": [
+			        {
+			          "Jeu": {
+			            "State": "Suggested",
+			            "Source": {
+			              "Type": "External",
+			              "Agent": "PowerBI.VisualColumnRename"
+			            },
+			            "Weight": 0.9
+			          }
+			        }
+			      ]
+			    },
+			    "sourcelineagereporting.endpoint_key": {
+			      "Definition": {
+			        "Binding": {
+			          "ConceptualEntity": "SourceLineageReporting",
+			          "ConceptualProperty": "endpoint_key"
+			        }
+			      },
+			      "State": "Generated",
+			      "Terms": [
+			        {
+			          "Endpoint": {
+			            "State": "Suggested",
+			            "Source": {
+			              "Type": "External",
+			              "Agent": "PowerBI.VisualColumnRename"
+			            },
+			            "Weight": 0.9
+			          }
+			        }
+			      ]
+			    },
+			    "sourcelineagereporting.storage_backend": {
+			      "Definition": {
+			        "Binding": {
+			          "ConceptualEntity": "SourceLineageReporting",
+			          "ConceptualProperty": "storage_backend"
+			        }
+			      },
+			      "State": "Generated",
+			      "Terms": [
+			        {
+			          "Stockage": {
+			            "State": "Suggested",
+			            "Source": {
+			              "Type": "External",
+			              "Agent": "PowerBI.VisualColumnRename"
+			            },
+			            "Weight": 0.9
+			          }
+			        }
+			      ]
+			    },
+			    "sourcelineagereporting.loaded_at_utc": {
+			      "Definition": {
+			        "Binding": {
+			          "ConceptualEntity": "SourceLineageReporting",
+			          "ConceptualProperty": "loaded_at_utc"
+			        }
+			      },
+			      "State": "Generated",
+			      "Terms": [
+			        {
+			          "Chargé": {
+			            "State": "Suggested",
+			            "Source": {
+			              "Type": "External",
+			              "Agent": "PowerBI.VisualColumnRename"
+			            },
+			            "Weight": 0.9
+			          }
+			        }
+			      ]
+			    },
+			    "citizenaccountabilitydaily.provider_local_date": {
+			      "Definition": {
+			        "Binding": {
+			          "ConceptualEntity": "CitizenAccountabilityDaily",
+			          "ConceptualProperty": "provider_local_date"
+			        }
+			      },
+			      "State": "Generated",
+			      "Terms": [
+			        {
+			          "Date": {
+			            "State": "Suggested",
+			            "Source": {
+			              "Type": "External",
+			              "Agent": "PowerBI.VisualColumnRename"
+			            },
+			            "Weight": 0.9
+			          }
+			        },
+			        {
+			          "Date / Day": {
+			            "State": "Suggested",
+			            "Source": {
+			              "Type": "External",
+			              "Agent": "PowerBI.VisualColumnRename"
+			            },
+			            "Weight": 0.9
+			          }
+			        }
+			      ]
+			    },
+			    "citizenaccountabilitydaily.affected_route_count": {
+			      "Definition": {
+			        "Binding": {
+			          "ConceptualEntity": "CitizenAccountabilityDaily",
+			          "ConceptualProperty": "affected_route_count"
+			        }
+			      },
+			      "State": "Generated",
+			      "Terms": [
+			        {
+			          "Routes touchées": {
+			            "State": "Suggested",
+			            "Source": {
+			              "Type": "External",
+			              "Agent": "PowerBI.VisualColumnRename"
+			            },
+			            "Weight": 0.9
+			          }
+			        }
+			      ]
+			    },
+			    "citizenaccountabilitydaily.affected_stop_count": {
+			      "Definition": {
+			        "Binding": {
+			          "ConceptualEntity": "CitizenAccountabilityDaily",
+			          "ConceptualProperty": "affected_stop_count"
+			        }
+			      },
+			      "State": "Generated",
+			      "Terms": [
+			        {
+			          "Arrêts touchés": {
+			            "State": "Suggested",
+			            "Source": {
+			              "Type": "External",
+			              "Agent": "PowerBI.VisualColumnRename"
+			            },
+			            "Weight": 0.9
+			          }
+			        }
+			      ]
+			    },
+			    "citizenaccountabilitydaily.severe_delay_count": {
+			      "Definition": {
+			        "Binding": {
+			          "ConceptualEntity": "CitizenAccountabilityDaily",
+			          "ConceptualProperty": "severe_delay_count"
+			        }
+			      },
+			      "State": "Generated",
+			      "Terms": [
+			        {
+			          "Retards sévères": {
+			            "State": "Suggested",
+			            "Source": {
+			              "Type": "External",
+			              "Agent": "PowerBI.VisualColumnRename"
+			            },
+			            "Weight": 0.9
+			          }
+			        }
+			      ]
+			    },
+			    "citizenaccountabilitydaily.alert_count": {
+			      "Definition": {
+			        "Binding": {
+			          "ConceptualEntity": "CitizenAccountabilityDaily",
+			          "ConceptualProperty": "alert_count"
+			        }
+			      },
+			      "State": "Generated",
+			      "Terms": [
+			        {
+			          "Alertes": {
+			            "State": "Suggested",
+			            "Source": {
+			              "Type": "External",
+			              "Agent": "PowerBI.VisualColumnRename"
+			            },
+			            "Weight": 0.9
+			          }
+			        }
+			      ]
+			    },
+			    "citizenaccountabilitydaily.rider_impact_score": {
+			      "Definition": {
+			        "Binding": {
+			          "ConceptualEntity": "CitizenAccountabilityDaily",
+			          "ConceptualProperty": "rider_impact_score"
+			        }
+			      },
+			      "State": "Generated",
+			      "Terms": [
+			        {
+			          "Impact": {
+			            "State": "Suggested",
+			            "Source": {
+			              "Type": "External",
+			              "Agent": "PowerBI.VisualColumnRename"
+			            },
+			            "Weight": 0.9
+			          }
+			        }
+			      ]
+			    }
+			  }
 			}
 		contentType: json
+

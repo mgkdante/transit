@@ -1,5 +1,5 @@
 {
-  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.1.0/schema.json",
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.8.0/schema.json",
   "name": "p00_severe_delay",
   "position": {
     "x": 647,
@@ -18,12 +18,12 @@
             {
               "field": {
                 "Measure": {
-                  "Property": "Retard sévère / Severe Delay",
                   "Expression": {
                     "SourceRef": {
                       "Entity": "_Measures"
                     }
-                  }
+                  },
+                  "Property": "Retard sévère / Severe Delay"
                 }
               },
               "queryRef": "_Measures.Retard sévère / Severe Delay",
@@ -32,6 +32,67 @@
           ]
         }
       }
+    },
+    "objects": {
+      "value": [
+        {
+          "properties": {
+            "fontColor": {
+              "solid": {}
+            },
+            "fontSize": {
+              "expr": {
+                "Literal": {
+                  "Value": "34D"
+                }
+              }
+            },
+            "bold": {
+              "expr": {
+                "Literal": {
+                  "Value": "true"
+                }
+              }
+            },
+            "labelDisplayUnits": {
+              "expr": {
+                "Literal": {
+                  "Value": "1D"
+                }
+              }
+            }
+          },
+          "selector": {
+            "id": "default"
+          }
+        }
+      ],
+      "label": [
+        {
+          "properties": {
+            "show": {
+              "expr": {
+                "Literal": {
+                  "Value": "false"
+                }
+              }
+            },
+            "fontColor": {
+              "solid": {}
+            },
+            "fontSize": {
+              "expr": {
+                "Literal": {
+                  "Value": "8D"
+                }
+              }
+            }
+          },
+          "selector": {
+            "id": "default"
+          }
+        }
+      ]
     },
     "visualContainerObjects": {
       "title": [
@@ -52,9 +113,7 @@
               }
             },
             "fontColor": {
-              "solid": {
-                "color": "#F4F1EA"
-              }
+              "solid": {}
             },
             "fontSize": {
               "expr": {
@@ -84,9 +143,7 @@
               }
             },
             "color": {
-              "solid": {
-                "color": "#241914"
-              }
+              "solid": {}
             },
             "transparency": {
               "expr": {
@@ -109,9 +166,7 @@
               }
             },
             "color": {
-              "solid": {
-                "color": "#2B2B2B"
-              }
+              "solid": {}
             },
             "radius": {
               "expr": {
@@ -161,9 +216,7 @@
               }
             },
             "fontColor": {
-              "solid": {
-                "color": "#B8B8B8"
-              }
+              "solid": {}
             },
             "fontSize": {
               "expr": {
@@ -182,100 +235,6 @@
           }
         }
       ]
-    },
-    "objects": {
-      "value": [
-        {
-          "selector": {
-            "id": "default"
-          },
-          "properties": {
-            "fontColor": {
-              "solid": {
-                "color": "#F4F1EA"
-              }
-            },
-            "fontSize": {
-              "expr": {
-                "Literal": {
-                  "Value": "34D"
-                }
-              }
-            },
-            "bold": {
-              "expr": {
-                "Literal": {
-                  "Value": "true"
-                }
-              }
-            },
-            "labelDisplayUnits": {
-              "expr": {
-                "Literal": {
-                  "Value": "1D"
-                }
-              }
-            },
-            "decimalPlaces": {
-              "expr": {
-                "Literal": {
-                  "Value": "0D"
-                }
-              }
-            }
-          }
-        }
-      ],
-      "label": [
-        {
-          "selector": {
-            "id": "default"
-          },
-          "properties": {
-            "show": {
-              "expr": {
-                "Literal": {
-                  "Value": "false"
-                }
-              }
-            },
-            "fontColor": {
-              "solid": {
-                "color": "#B8B8B8"
-              }
-            },
-            "fontSize": {
-              "expr": {
-                "Literal": {
-                  "Value": "8D"
-                }
-              }
-            }
-          }
-        }
-      ],
-      "cards": [
-        {
-          "selector": {
-            "id": "default"
-          },
-          "properties": {
-            "padding": {
-              "expr": {
-                "Literal": {
-                  "Value": "8D"
-                }
-              }
-            },
-            "fill": {
-              "solid": {
-                "color": "#141414"
-              }
-            }
-          }
-        }
-      ]
     }
-  },
-  "howCreated": "Default"
+  }
 }

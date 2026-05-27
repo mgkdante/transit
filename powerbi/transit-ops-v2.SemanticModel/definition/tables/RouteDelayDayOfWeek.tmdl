@@ -1,7 +1,9 @@
 table RouteDelayDayOfWeek
+	lineageTag: 28b563a9-b0d9-4b5b-be05-886fb2da2a98
 
 	column provider_id
 		dataType: string
+		lineageTag: 51b7ff5a-fd9f-4324-b9bc-9f848d44df72
 		summarizeBy: none
 		sourceColumn: provider_id
 
@@ -10,6 +12,7 @@ table RouteDelayDayOfWeek
 	column day_of_week_iso
 		dataType: int64
 		formatString: 0
+		lineageTag: 24f78b72-1b9f-41d1-b86b-8d511cf56b7c
 		summarizeBy: sum
 		sourceColumn: day_of_week_iso
 
@@ -17,6 +20,7 @@ table RouteDelayDayOfWeek
 
 	column route_id
 		dataType: string
+		lineageTag: 38a9aa7a-197a-4258-9ccb-daa737382c94
 		summarizeBy: none
 		sourceColumn: route_id
 
@@ -25,6 +29,7 @@ table RouteDelayDayOfWeek
 	column trip_count
 		dataType: int64
 		formatString: 0
+		lineageTag: 693d8868-a1ba-4ca6-8b51-f512e13ff70e
 		summarizeBy: sum
 		sourceColumn: trip_count
 
@@ -33,6 +38,7 @@ table RouteDelayDayOfWeek
 	column observation_count
 		dataType: int64
 		formatString: 0
+		lineageTag: 1f652b2d-5582-447e-a337-a5cf6a1ec0e8
 		summarizeBy: sum
 		sourceColumn: observation_count
 
@@ -40,6 +46,7 @@ table RouteDelayDayOfWeek
 
 	column avg_delay_seconds
 		dataType: double
+		lineageTag: ba13175d-65c1-477f-978d-7679f543f5be
 		summarizeBy: sum
 		sourceColumn: avg_delay_seconds
 
@@ -50,6 +57,7 @@ table RouteDelayDayOfWeek
 	column severe_delay_count
 		dataType: int64
 		formatString: 0
+		lineageTag: 15f56a53-ac11-4186-b6b5-eac499fc0834
 		summarizeBy: sum
 		sourceColumn: severe_delay_count
 
@@ -58,6 +66,7 @@ table RouteDelayDayOfWeek
 	column built_at_utc
 		dataType: dateTime
 		formatString: General Date
+		lineageTag: d67469e3-65d7-40bd-b809-eebe99297a71
 		summarizeBy: none
 		sourceColumn: built_at_utc
 
@@ -75,3 +84,4 @@ table RouteDelayDayOfWeek
 	annotation PBI_NavigationStepName = Navigation
 
 	annotation PBI_ResultType = Table
+

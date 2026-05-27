@@ -1,7 +1,9 @@
 table LatestTripDelaySnapshot
+	lineageTag: cc1f6835-79b2-4191-a0e4-5daa12566ebd
 
 	column provider_id
 		dataType: string
+		lineageTag: 72ee8f51-0298-44ee-afaf-6ee998863c2e
 		summarizeBy: none
 		sourceColumn: provider_id
 
@@ -10,6 +12,7 @@ table LatestTripDelaySnapshot
 	column realtime_snapshot_id
 		dataType: int64
 		formatString: 0
+		lineageTag: 33d0d0e0-3e4a-4365-bc19-5428854b9a1e
 		summarizeBy: sum
 		sourceColumn: realtime_snapshot_id
 
@@ -18,6 +21,7 @@ table LatestTripDelaySnapshot
 	column entity_index
 		dataType: int64
 		formatString: 0
+		lineageTag: 0f17c72d-4d13-406a-9143-2ca25fa6f567
 		summarizeBy: sum
 		sourceColumn: entity_index
 
@@ -26,6 +30,7 @@ table LatestTripDelaySnapshot
 	column feed_timestamp_utc
 		dataType: dateTime
 		formatString: General Date
+		lineageTag: d10b21fc-ba26-4283-a479-bdc6b8cd3989
 		summarizeBy: none
 		sourceColumn: feed_timestamp_utc
 
@@ -34,6 +39,7 @@ table LatestTripDelaySnapshot
 	column captured_at_utc
 		dataType: dateTime
 		formatString: General Date
+		lineageTag: 0cc68ce5-e628-46fa-9289-9e4ef7a0f9d1
 		summarizeBy: none
 		sourceColumn: captured_at_utc
 
@@ -41,6 +47,7 @@ table LatestTripDelaySnapshot
 
 	column trip_id
 		dataType: string
+		lineageTag: 37f9472e-7c07-4e27-a3a4-d0032647857d
 		summarizeBy: none
 		sourceColumn: trip_id
 
@@ -48,6 +55,7 @@ table LatestTripDelaySnapshot
 
 	column route_id
 		dataType: string
+		lineageTag: 92e225c2-d0f4-4dc3-b5c5-a61d0ae99e59
 		summarizeBy: none
 		sourceColumn: route_id
 
@@ -56,6 +64,7 @@ table LatestTripDelaySnapshot
 	column direction_id
 		dataType: int64
 		formatString: 0
+		lineageTag: b10d3f5a-2361-47e4-b8cd-f2abd87d94e0
 		summarizeBy: sum
 		sourceColumn: direction_id
 
@@ -63,6 +72,7 @@ table LatestTripDelaySnapshot
 
 	column vehicle_id
 		dataType: string
+		lineageTag: 1a8615f7-d889-4e7d-9b43-57699df0c0ed
 		summarizeBy: none
 		sourceColumn: vehicle_id
 
@@ -71,6 +81,7 @@ table LatestTripDelaySnapshot
 	column delay_seconds
 		dataType: int64
 		formatString: 0
+		lineageTag: 172f2019-25ff-4914-ade1-81206a42b96f
 		summarizeBy: sum
 		sourceColumn: delay_seconds
 
@@ -79,6 +90,7 @@ table LatestTripDelaySnapshot
 	column stop_time_update_count
 		dataType: int64
 		formatString: 0
+		lineageTag: c8cbc8a1-fc0e-4296-ba88-0aa7a7044b00
 		summarizeBy: sum
 		sourceColumn: stop_time_update_count
 
@@ -96,3 +108,4 @@ table LatestTripDelaySnapshot
 	annotation PBI_NavigationStepName = Navigation
 
 	annotation PBI_ResultType = Table
+

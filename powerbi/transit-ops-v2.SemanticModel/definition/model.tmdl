@@ -12,11 +12,16 @@ annotation PBI_QueryOrder = ["DimProvider", "DimDate", "DimRoute", "DimStop", "D
 
 annotation PBI_ProTooling = ["DevMode"]
 
-ref table DimProvider
 ref table DimDate
-ref table DimRoute
-ref table DimStop
 ref table DimDirection
+ref table DimRoute
+ref table FactTripDelaySnapshot
+ref table DimStop
+ref table FactVehicleSnapshot
+ref table VehicleSummary5m
+ref table TripDelaySummary5m
+ref table _Measures
+ref table DimProvider
 ref table LatestVehicleSnapshot
 ref table LatestTripDelaySnapshot
 ref table CurrentVehicleMap
@@ -24,11 +29,7 @@ ref table CurrentTripDelayComputed
 ref table CurrentI3Alerts
 ref table FeedFreshnessCurrent
 ref table SourceLineageReporting
-ref table FactVehicleSnapshot
-ref table FactTripDelaySnapshot
 ref table FactStopTimeDelayObservation
-ref table VehicleSummary5m
-ref table TripDelaySummary5m
 ref table TripDelaySummary5mLive
 ref table PublicRouteReliabilityDaily
 ref table PublicStopDelayDaily
@@ -45,6 +46,6 @@ ref table RouteHabitScore
 ref table RepeatedProblemRouteStop
 ref table CitizenAccountabilityDaily
 ref table ReportLabels
-ref table _Measures
 
 ref cultureInfo en-US
+

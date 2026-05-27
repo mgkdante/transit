@@ -1,5 +1,5 @@
 {
-  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.1.0/schema.json",
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.8.0/schema.json",
   "name": "p03_routes",
   "position": {
     "x": 660,
@@ -18,15 +18,16 @@
             {
               "field": {
                 "Column": {
-                  "Property": "route_id",
                   "Expression": {
                     "SourceRef": {
                       "Entity": "RouteHabitScore"
                     }
-                  }
+                  },
+                  "Property": "route_id"
                 }
               },
               "queryRef": "RouteHabitScore.route_id",
+              "active": true,
               "displayName": "Route"
             }
           ]
@@ -36,17 +37,17 @@
             {
               "field": {
                 "Aggregation": {
-                  "Function": 1,
                   "Expression": {
                     "Column": {
-                      "Property": "repeat_problem_score",
                       "Expression": {
                         "SourceRef": {
                           "Entity": "RouteHabitScore"
                         }
-                      }
+                      },
+                      "Property": "repeat_problem_score"
                     }
-                  }
+                  },
+                  "Function": 1
                 }
               },
               "queryRef": "Avg(RouteHabitScore.repeat_problem_score)",
@@ -75,9 +76,7 @@
               }
             },
             "fontColor": {
-              "solid": {
-                "color": "#F4F1EA"
-              }
+              "solid": {}
             },
             "fontSize": {
               "expr": {
@@ -106,11 +105,6 @@
                 }
               }
             },
-            "color": {
-              "solid": {
-                "color": ""
-              }
-            },
             "transparency": {
               "expr": {
                 "Literal": {
@@ -132,9 +126,7 @@
               }
             },
             "color": {
-              "solid": {
-                "color": "#2B2B2B"
-              }
+              "solid": {}
             },
             "radius": {
               "expr": {
@@ -184,9 +176,7 @@
               }
             },
             "fontColor": {
-              "solid": {
-                "color": "#B8B8B8"
-              }
+              "solid": {}
             },
             "fontSize": {
               "expr": {
@@ -206,6 +196,5 @@
         }
       ]
     }
-  },
-  "howCreated": "Default"
+  }
 }

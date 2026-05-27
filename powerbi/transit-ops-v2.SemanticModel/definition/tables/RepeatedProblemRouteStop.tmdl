@@ -1,7 +1,9 @@
 table RepeatedProblemRouteStop
+	lineageTag: d9cf6319-7595-4501-810c-88edac2416aa
 
 	column provider_id
 		dataType: string
+		lineageTag: a406d0c8-0906-478e-811b-f33ea79ad6ca
 		summarizeBy: none
 		sourceColumn: provider_id
 
@@ -9,6 +11,7 @@ table RepeatedProblemRouteStop
 
 	column entity_kind
 		dataType: string
+		lineageTag: d8b33a1c-b34c-46cb-9b6d-843800510c61
 		summarizeBy: none
 		sourceColumn: entity_kind
 
@@ -16,6 +19,7 @@ table RepeatedProblemRouteStop
 
 	column entity_id
 		dataType: string
+		lineageTag: 9ff57747-bd86-4fc2-939a-1120f41351ac
 		summarizeBy: none
 		sourceColumn: entity_id
 
@@ -23,6 +27,7 @@ table RepeatedProblemRouteStop
 
 	column route_id
 		dataType: string
+		lineageTag: 1073a6f2-423a-46c7-904e-6ca8e73aca5b
 		summarizeBy: none
 		sourceColumn: route_id
 
@@ -30,6 +35,7 @@ table RepeatedProblemRouteStop
 
 	column period_grain
 		dataType: string
+		lineageTag: 4a9470c9-caf0-4229-af00-0e502f47f655
 		summarizeBy: none
 		sourceColumn: period_grain
 
@@ -38,6 +44,7 @@ table RepeatedProblemRouteStop
 	column period_start_local
 		dataType: dateTime
 		formatString: General Date
+		lineageTag: 37f8f6b0-8a07-4876-8fec-8637fce25bb4
 		summarizeBy: none
 		sourceColumn: period_start_local
 
@@ -46,6 +53,7 @@ table RepeatedProblemRouteStop
 	column issue_count
 		dataType: int64
 		formatString: 0
+		lineageTag: 186e7670-05b5-4cfe-bdb1-68dfbdfa4004
 		summarizeBy: sum
 		sourceColumn: issue_count
 
@@ -53,6 +61,7 @@ table RepeatedProblemRouteStop
 
 	column avg_delay_seconds
 		dataType: double
+		lineageTag: 4d81050d-3831-4eb5-b314-96d1daafbb97
 		summarizeBy: sum
 		sourceColumn: avg_delay_seconds
 
@@ -62,6 +71,7 @@ table RepeatedProblemRouteStop
 
 	column severity_label
 		dataType: string
+		lineageTag: 3debb62d-989d-417d-b889-a6393f6df19f
 		summarizeBy: none
 		sourceColumn: severity_label
 
@@ -70,6 +80,7 @@ table RepeatedProblemRouteStop
 	column built_at_utc
 		dataType: dateTime
 		formatString: General Date
+		lineageTag: 767cc442-529b-4d27-b2a9-4febb0079323
 		summarizeBy: none
 		sourceColumn: built_at_utc
 
@@ -87,3 +98,4 @@ table RepeatedProblemRouteStop
 	annotation PBI_NavigationStepName = Navigation
 
 	annotation PBI_ResultType = Table
+

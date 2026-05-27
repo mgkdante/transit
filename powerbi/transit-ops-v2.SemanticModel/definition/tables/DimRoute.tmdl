@@ -1,7 +1,9 @@
 table DimRoute
+	lineageTag: a1b1a796-c4e9-40d7-b9f1-4ee8b8b49cd8
 
 	column provider_id
 		dataType: string
+		lineageTag: 0573bc36-6722-4420-85d1-a87e15fc8077
 		summarizeBy: none
 		sourceColumn: provider_id
 
@@ -10,6 +12,7 @@ table DimRoute
 	column dataset_version_id
 		dataType: int64
 		formatString: 0
+		lineageTag: 19a04457-0aa3-48fc-b7dd-df4e7f97c103
 		summarizeBy: sum
 		sourceColumn: dataset_version_id
 
@@ -17,6 +20,7 @@ table DimRoute
 
 	column route_id
 		dataType: string
+		lineageTag: 3650e7fd-5d61-4c53-ac94-f886742e2ed3
 		summarizeBy: none
 		sourceColumn: route_id
 
@@ -24,6 +28,7 @@ table DimRoute
 
 	column route_short_name
 		dataType: string
+		lineageTag: ecdbd5ff-71d0-4549-bf43-e6989fe82097
 		summarizeBy: none
 		sourceColumn: route_short_name
 
@@ -31,6 +36,7 @@ table DimRoute
 
 	column route_long_name
 		dataType: string
+		lineageTag: 962f4a53-d6d5-42bb-b025-89fb4eb2a4cb
 		summarizeBy: none
 		sourceColumn: route_long_name
 
@@ -39,6 +45,7 @@ table DimRoute
 	column route_type
 		dataType: int64
 		formatString: 0
+		lineageTag: b49248b2-4f69-44fe-9478-f72a20253f6c
 		summarizeBy: sum
 		sourceColumn: route_type
 
@@ -46,6 +53,7 @@ table DimRoute
 
 	column route_color
 		dataType: string
+		lineageTag: 758c4ae9-2f96-4c36-ae3a-5158652deebd
 		summarizeBy: none
 		sourceColumn: route_color
 
@@ -53,6 +61,7 @@ table DimRoute
 
 	column route_text_color
 		dataType: string
+		lineageTag: 28146c53-0914-4043-890a-ce495875e173
 		summarizeBy: none
 		sourceColumn: route_text_color
 
@@ -70,3 +79,4 @@ table DimRoute
 	annotation PBI_NavigationStepName = Navigation
 
 	annotation PBI_ResultType = Table
+

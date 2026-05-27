@@ -1,7 +1,9 @@
 table DimStop
+	lineageTag: 941a2ad3-001b-4301-b9e5-0bf00e9ec91c
 
 	column provider_id
 		dataType: string
+		lineageTag: bf7f4f55-af79-4fe2-96dc-4d110958c69c
 		summarizeBy: none
 		sourceColumn: provider_id
 
@@ -10,6 +12,7 @@ table DimStop
 	column dataset_version_id
 		dataType: int64
 		formatString: 0
+		lineageTag: aac37437-0841-4a29-999c-fe850832fd21
 		summarizeBy: sum
 		sourceColumn: dataset_version_id
 
@@ -17,6 +20,7 @@ table DimStop
 
 	column stop_id
 		dataType: string
+		lineageTag: 9d1706e0-23e5-43f4-9bd8-0cf0667a8aa3
 		summarizeBy: none
 		sourceColumn: stop_id
 
@@ -24,6 +28,7 @@ table DimStop
 
 	column stop_code
 		dataType: string
+		lineageTag: 86332677-f9ef-45d5-847a-c4f9b5ab578b
 		summarizeBy: none
 		sourceColumn: stop_code
 
@@ -31,6 +36,7 @@ table DimStop
 
 	column stop_name
 		dataType: string
+		lineageTag: 6156d0eb-8491-4131-a828-b58c8c088813
 		summarizeBy: none
 		sourceColumn: stop_name
 
@@ -38,6 +44,7 @@ table DimStop
 
 	column parent_station
 		dataType: string
+		lineageTag: cae6d206-737b-42b3-90bb-5578169a39a8
 		summarizeBy: none
 		sourceColumn: parent_station
 
@@ -46,6 +53,7 @@ table DimStop
 	column location_type
 		dataType: int64
 		formatString: 0
+		lineageTag: 97a425fb-800b-4f21-8a29-0ea632b5ce71
 		summarizeBy: sum
 		sourceColumn: location_type
 
@@ -53,6 +61,7 @@ table DimStop
 
 	column stop_lat
 		dataType: double
+		lineageTag: 63f9e699-54e7-4287-b461-b34153759afc
 		summarizeBy: sum
 		sourceColumn: stop_lat
 
@@ -62,6 +71,7 @@ table DimStop
 
 	column stop_lon
 		dataType: double
+		lineageTag: 435e1fc3-578f-40c9-9bce-5f7201a88ddd
 		summarizeBy: sum
 		sourceColumn: stop_lon
 
@@ -81,3 +91,4 @@ table DimStop
 	annotation PBI_NavigationStepName = Navigation
 
 	annotation PBI_ResultType = Table
+

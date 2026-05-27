@@ -228,7 +228,10 @@ def test_report_pages_are_exact_bilingual_fr_first_desktop_web_layout() -> None:
     display_names = [page["displayName"] for page in page_defs]
 
     assert display_names == EXPECTED_PAGES
-    assert pages["activePageName"] == page_names[0]
+    # activePageName tracks whichever tab was open in Desktop when the
+    # .pbip was last saved. Don't pin it to the first page — operators
+    # naturally save with different tabs active during iteration.
+    assert pages["activePageName"] in page_names
     for page in page_defs:
         assert page["width"] == DESKTOP_REPORT_WIDTH
         assert page["height"] == DESKTOP_REPORT_HEIGHT

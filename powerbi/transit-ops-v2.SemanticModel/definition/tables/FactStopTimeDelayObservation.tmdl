@@ -1,7 +1,9 @@
 table FactStopTimeDelayObservation
+	lineageTag: 36c9019e-efa0-486f-b9dc-98924806bea5
 
 	column provider_id
 		dataType: string
+		lineageTag: 39369e69-92c2-4cf8-9c85-0122fbd538a3
 		summarizeBy: none
 		sourceColumn: provider_id
 
@@ -10,6 +12,7 @@ table FactStopTimeDelayObservation
 	column rt_feed_snapshot_id
 		dataType: int64
 		formatString: 0
+		lineageTag: 15487891-a9ca-4de4-8bce-9a4a4f966f1c
 		summarizeBy: sum
 		sourceColumn: rt_feed_snapshot_id
 
@@ -18,6 +21,7 @@ table FactStopTimeDelayObservation
 	column entity_index
 		dataType: int64
 		formatString: 0
+		lineageTag: 05ba7d6f-cf46-4a48-be9e-6bbf2597426c
 		summarizeBy: sum
 		sourceColumn: entity_index
 
@@ -25,6 +29,7 @@ table FactStopTimeDelayObservation
 
 	column trip_id
 		dataType: string
+		lineageTag: e756c2e6-6f00-4e63-bd17-3265862950c6
 		summarizeBy: none
 		sourceColumn: trip_id
 
@@ -32,6 +37,7 @@ table FactStopTimeDelayObservation
 
 	column route_id
 		dataType: string
+		lineageTag: 6fd4114c-b34b-411f-9dc4-05dadfc01701
 		summarizeBy: none
 		sourceColumn: route_id
 
@@ -40,6 +46,7 @@ table FactStopTimeDelayObservation
 	column direction_id
 		dataType: int64
 		formatString: 0
+		lineageTag: 19e28975-2126-4490-96f7-8b2096135ac0
 		summarizeBy: sum
 		sourceColumn: direction_id
 
@@ -48,6 +55,7 @@ table FactStopTimeDelayObservation
 	column start_date
 		dataType: dateTime
 		formatString: General Date
+		lineageTag: f6c1933f-5b11-4e1e-b153-9cdd31b43ea4
 		summarizeBy: none
 		sourceColumn: start_date
 
@@ -56,6 +64,7 @@ table FactStopTimeDelayObservation
 	column stop_time_update_index
 		dataType: int64
 		formatString: 0
+		lineageTag: 49226188-1752-46a1-8242-f6ad02630c3c
 		summarizeBy: sum
 		sourceColumn: stop_time_update_index
 
@@ -64,6 +73,7 @@ table FactStopTimeDelayObservation
 	column stop_sequence
 		dataType: int64
 		formatString: 0
+		lineageTag: 82e84690-7c58-4dad-87dd-35fd23808146
 		summarizeBy: sum
 		sourceColumn: stop_sequence
 
@@ -71,6 +81,7 @@ table FactStopTimeDelayObservation
 
 	column stop_id
 		dataType: string
+		lineageTag: 48af9ffc-a46e-4a78-a462-bd7365ab1d3f
 		summarizeBy: none
 		sourceColumn: stop_id
 
@@ -79,6 +90,7 @@ table FactStopTimeDelayObservation
 	column dataset_version_id
 		dataType: int64
 		formatString: 0
+		lineageTag: fba47c36-1e24-4c01-a9cb-89d255b338ff
 		summarizeBy: sum
 		sourceColumn: dataset_version_id
 
@@ -87,6 +99,7 @@ table FactStopTimeDelayObservation
 	column scheduled_arrival_utc
 		dataType: dateTime
 		formatString: General Date
+		lineageTag: fe615256-1dd9-4056-b050-a76de555471d
 		summarizeBy: none
 		sourceColumn: scheduled_arrival_utc
 
@@ -95,6 +108,7 @@ table FactStopTimeDelayObservation
 	column predicted_arrival_utc
 		dataType: dateTime
 		formatString: General Date
+		lineageTag: 130c3637-d9fc-49ac-9e6f-0b3c27959fe8
 		summarizeBy: none
 		sourceColumn: predicted_arrival_utc
 
@@ -103,6 +117,7 @@ table FactStopTimeDelayObservation
 	column arrival_delay_seconds
 		dataType: int64
 		formatString: 0
+		lineageTag: 895184be-91fd-4a2d-b019-9f3530c3174b
 		summarizeBy: sum
 		sourceColumn: arrival_delay_seconds
 
@@ -111,6 +126,7 @@ table FactStopTimeDelayObservation
 	column scheduled_departure_utc
 		dataType: dateTime
 		formatString: General Date
+		lineageTag: 4ea9e3fb-3d47-468b-9f20-71d10a3533ac
 		summarizeBy: none
 		sourceColumn: scheduled_departure_utc
 
@@ -119,6 +135,7 @@ table FactStopTimeDelayObservation
 	column predicted_departure_utc
 		dataType: dateTime
 		formatString: General Date
+		lineageTag: 641fe806-1cf0-42d4-b772-92dc48af988b
 		summarizeBy: none
 		sourceColumn: predicted_departure_utc
 
@@ -127,6 +144,7 @@ table FactStopTimeDelayObservation
 	column departure_delay_seconds
 		dataType: int64
 		formatString: 0
+		lineageTag: 69ce20fc-37e8-4f18-b4b5-5d5af2f69a4a
 		summarizeBy: sum
 		sourceColumn: departure_delay_seconds
 
@@ -135,6 +153,7 @@ table FactStopTimeDelayObservation
 	column observation_time_utc
 		dataType: dateTime
 		formatString: General Date
+		lineageTag: dc44f1ca-90ce-4d41-8420-5d8a5cee59b9
 		summarizeBy: none
 		sourceColumn: observation_time_utc
 
@@ -143,6 +162,7 @@ table FactStopTimeDelayObservation
 	column feed_timestamp_utc
 		dataType: dateTime
 		formatString: General Date
+		lineageTag: 29885c6c-079b-4e65-b40b-1331afb58aab
 		summarizeBy: none
 		sourceColumn: feed_timestamp_utc
 
@@ -151,6 +171,7 @@ table FactStopTimeDelayObservation
 	column captured_at_utc
 		dataType: dateTime
 		formatString: General Date
+		lineageTag: 511dbc79-c67e-40cb-afae-9cffbf980ae6
 		summarizeBy: none
 		sourceColumn: captured_at_utc
 
@@ -168,3 +189,4 @@ table FactStopTimeDelayObservation
 	annotation PBI_NavigationStepName = Navigation
 
 	annotation PBI_ResultType = Table
+

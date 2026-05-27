@@ -9,9 +9,6 @@
     "background": [
       {
         "properties": {
-          "color": {
-            "solid": {}
-          },
           "transparency": {
             "expr": {
               "Literal": {

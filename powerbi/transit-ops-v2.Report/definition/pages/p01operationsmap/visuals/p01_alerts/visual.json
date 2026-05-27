@@ -1,12 +1,12 @@
 {
-  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.1.0/schema.json",
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.8.0/schema.json",
   "name": "p01_alerts",
   "position": {
-    "x": 660,
-    "y": 360,
+    "x": 988,
+    "y": 464,
     "z": 40,
-    "height": 320,
-    "width": 588,
+    "height": 212,
+    "width": 260,
     "tabOrder": 40
   },
   "visual": {
@@ -18,12 +18,12 @@
             {
               "field": {
                 "Column": {
-                  "Property": "route_id",
                   "Expression": {
                     "SourceRef": {
                       "Entity": "CurrentI3Alerts"
                     }
-                  }
+                  },
+                  "Property": "route_id"
                 }
               },
               "queryRef": "CurrentI3Alerts.route_id",
@@ -32,12 +32,12 @@
             {
               "field": {
                 "Column": {
-                  "Property": "stop_id",
                   "Expression": {
                     "SourceRef": {
                       "Entity": "CurrentI3Alerts"
                     }
-                  }
+                  },
+                  "Property": "stop_id"
                 }
               },
               "queryRef": "CurrentI3Alerts.stop_id",
@@ -46,12 +46,12 @@
             {
               "field": {
                 "Column": {
-                  "Property": "severity",
                   "Expression": {
                     "SourceRef": {
                       "Entity": "CurrentI3Alerts"
                     }
-                  }
+                  },
+                  "Property": "severity"
                 }
               },
               "queryRef": "CurrentI3Alerts.severity",
@@ -60,12 +60,12 @@
             {
               "field": {
                 "Column": {
-                  "Property": "alert_header_text",
                   "Expression": {
                     "SourceRef": {
                       "Entity": "CurrentI3Alerts"
                     }
-                  }
+                  },
+                  "Property": "alert_header_text"
                 }
               },
               "queryRef": "CurrentI3Alerts.alert_header_text",
@@ -94,9 +94,7 @@
               }
             },
             "fontColor": {
-              "solid": {
-                "color": "#F4F1EA"
-              }
+              "solid": {}
             },
             "fontSize": {
               "expr": {
@@ -125,11 +123,6 @@
                 }
               }
             },
-            "color": {
-              "solid": {
-                "color": ""
-              }
-            },
             "transparency": {
               "expr": {
                 "Literal": {
@@ -151,9 +144,7 @@
               }
             },
             "color": {
-              "solid": {
-                "color": "#2B2B2B"
-              }
+              "solid": {}
             },
             "radius": {
               "expr": {
@@ -203,9 +194,7 @@
               }
             },
             "fontColor": {
-              "solid": {
-                "color": "#B8B8B8"
-              }
+              "solid": {}
             },
             "fontSize": {
               "expr": {
@@ -225,6 +214,5 @@
         }
       ]
     }
-  },
-  "howCreated": "Default"
+  }
 }

@@ -1,7 +1,9 @@
 table TripDelaySummary5m
+	lineageTag: 145ec45e-675f-4e14-85ef-c462a5a817e0
 
 	column provider_id
 		dataType: string
+		lineageTag: 304af930-6ea9-46c2-96e4-51927271b06b
 		summarizeBy: none
 		sourceColumn: provider_id
 
@@ -10,6 +12,7 @@ table TripDelaySummary5m
 	column period_start_utc
 		dataType: dateTime
 		formatString: General Date
+		lineageTag: b02e5116-8d6c-479a-951e-1d4c600f18e7
 		summarizeBy: none
 		sourceColumn: period_start_utc
 
@@ -17,6 +20,7 @@ table TripDelaySummary5m
 
 	column route_id
 		dataType: string
+		lineageTag: 35464767-6bdb-4126-9959-242822ff0c10
 		summarizeBy: none
 		sourceColumn: route_id
 
@@ -25,6 +29,7 @@ table TripDelaySummary5m
 	column trip_count
 		dataType: int64
 		formatString: 0
+		lineageTag: 418fd250-39a7-45c0-999d-921d3853a54c
 		summarizeBy: sum
 		sourceColumn: trip_count
 
@@ -32,6 +37,7 @@ table TripDelaySummary5m
 
 	column avg_delay_seconds
 		dataType: double
+		lineageTag: 99c6fe3c-534c-4613-8306-c25126f144e5
 		summarizeBy: sum
 		sourceColumn: avg_delay_seconds
 
@@ -42,6 +48,7 @@ table TripDelaySummary5m
 	column max_delay_seconds
 		dataType: int64
 		formatString: 0
+		lineageTag: f05da376-f623-49ea-8ba2-93e645742b41
 		summarizeBy: sum
 		sourceColumn: max_delay_seconds
 
@@ -50,6 +57,7 @@ table TripDelaySummary5m
 	column delayed_trip_count
 		dataType: int64
 		formatString: 0
+		lineageTag: 5c3028d0-b53a-4de4-a7a0-b15c30e77122
 		summarizeBy: sum
 		sourceColumn: delayed_trip_count
 
@@ -58,6 +66,7 @@ table TripDelaySummary5m
 	column built_at_utc
 		dataType: dateTime
 		formatString: General Date
+		lineageTag: 93be7e22-73c0-42fa-8e84-7545c4d39dfd
 		summarizeBy: none
 		sourceColumn: built_at_utc
 
@@ -75,3 +84,4 @@ table TripDelaySummary5m
 	annotation PBI_NavigationStepName = Navigation
 
 	annotation PBI_ResultType = Table
+

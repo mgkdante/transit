@@ -1,5 +1,5 @@
 {
-  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.1.0/schema.json",
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.8.0/schema.json",
   "name": "p06_receipts",
   "position": {
     "x": 32,
@@ -18,12 +18,12 @@
             {
               "field": {
                 "Column": {
-                  "Property": "provider_local_date",
                   "Expression": {
                     "SourceRef": {
                       "Entity": "CitizenAccountabilityDaily"
                     }
-                  }
+                  },
+                  "Property": "provider_local_date"
                 }
               },
               "queryRef": "CitizenAccountabilityDaily.provider_local_date",
@@ -32,12 +32,12 @@
             {
               "field": {
                 "Column": {
-                  "Property": "affected_route_count",
                   "Expression": {
                     "SourceRef": {
                       "Entity": "CitizenAccountabilityDaily"
                     }
-                  }
+                  },
+                  "Property": "affected_route_count"
                 }
               },
               "queryRef": "CitizenAccountabilityDaily.affected_route_count",
@@ -46,12 +46,12 @@
             {
               "field": {
                 "Column": {
-                  "Property": "affected_stop_count",
                   "Expression": {
                     "SourceRef": {
                       "Entity": "CitizenAccountabilityDaily"
                     }
-                  }
+                  },
+                  "Property": "affected_stop_count"
                 }
               },
               "queryRef": "CitizenAccountabilityDaily.affected_stop_count",
@@ -60,12 +60,12 @@
             {
               "field": {
                 "Column": {
-                  "Property": "severe_delay_count",
                   "Expression": {
                     "SourceRef": {
                       "Entity": "CitizenAccountabilityDaily"
                     }
-                  }
+                  },
+                  "Property": "severe_delay_count"
                 }
               },
               "queryRef": "CitizenAccountabilityDaily.severe_delay_count",
@@ -74,12 +74,12 @@
             {
               "field": {
                 "Column": {
-                  "Property": "alert_count",
                   "Expression": {
                     "SourceRef": {
                       "Entity": "CitizenAccountabilityDaily"
                     }
-                  }
+                  },
+                  "Property": "alert_count"
                 }
               },
               "queryRef": "CitizenAccountabilityDaily.alert_count",
@@ -88,12 +88,12 @@
             {
               "field": {
                 "Column": {
-                  "Property": "rider_impact_score",
                   "Expression": {
                     "SourceRef": {
                       "Entity": "CitizenAccountabilityDaily"
                     }
-                  }
+                  },
+                  "Property": "rider_impact_score"
                 }
               },
               "queryRef": "CitizenAccountabilityDaily.rider_impact_score",
@@ -122,9 +122,7 @@
               }
             },
             "fontColor": {
-              "solid": {
-                "color": "#F4F1EA"
-              }
+              "solid": {}
             },
             "fontSize": {
               "expr": {
@@ -153,11 +151,6 @@
                 }
               }
             },
-            "color": {
-              "solid": {
-                "color": ""
-              }
-            },
             "transparency": {
               "expr": {
                 "Literal": {
@@ -179,9 +172,7 @@
               }
             },
             "color": {
-              "solid": {
-                "color": "#2B2B2B"
-              }
+              "solid": {}
             },
             "radius": {
               "expr": {
@@ -231,9 +222,7 @@
               }
             },
             "fontColor": {
-              "solid": {
-                "color": "#B8B8B8"
-              }
+              "solid": {}
             },
             "fontSize": {
               "expr": {
@@ -253,6 +242,5 @@
         }
       ]
     }
-  },
-  "howCreated": "Default"
+  }
 }

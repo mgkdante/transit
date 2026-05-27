@@ -1,7 +1,9 @@
 table FactTripDelaySnapshot
+	lineageTag: 1a591e87-789f-4a39-8ece-77aef4f53ab4
 
 	column provider_id
 		dataType: string
+		lineageTag: a9d29ca4-4f58-46af-9c93-560a40326ae5
 		summarizeBy: none
 		sourceColumn: provider_id
 
@@ -10,6 +12,7 @@ table FactTripDelaySnapshot
 	column realtime_snapshot_id
 		dataType: int64
 		formatString: 0
+		lineageTag: 747f6788-14e3-4a94-a414-02d17307f685
 		summarizeBy: sum
 		sourceColumn: realtime_snapshot_id
 
@@ -18,6 +21,7 @@ table FactTripDelaySnapshot
 	column entity_index
 		dataType: int64
 		formatString: 0
+		lineageTag: 91ee0375-180c-4cac-93d8-909b0e729530
 		summarizeBy: sum
 		sourceColumn: entity_index
 
@@ -26,6 +30,7 @@ table FactTripDelaySnapshot
 	column snapshot_date_key
 		dataType: int64
 		formatString: 0
+		lineageTag: 7c778bbb-b127-4d5c-817e-1d81ce0c5bf1
 		summarizeBy: sum
 		sourceColumn: snapshot_date_key
 
@@ -34,6 +39,7 @@ table FactTripDelaySnapshot
 	column snapshot_local_date
 		dataType: dateTime
 		formatString: General Date
+		lineageTag: 745bd853-1718-4a27-952e-27971581e6ef
 		summarizeBy: none
 		sourceColumn: snapshot_local_date
 
@@ -42,6 +48,7 @@ table FactTripDelaySnapshot
 	column feed_timestamp_utc
 		dataType: dateTime
 		formatString: General Date
+		lineageTag: 7cb63b39-934f-46f3-8bfc-77a07700b40c
 		summarizeBy: none
 		sourceColumn: feed_timestamp_utc
 
@@ -50,6 +57,7 @@ table FactTripDelaySnapshot
 	column captured_at_utc
 		dataType: dateTime
 		formatString: General Date
+		lineageTag: 4f1a8b42-ba0f-4a1c-ab16-27ce8c55ad69
 		summarizeBy: none
 		sourceColumn: captured_at_utc
 
@@ -57,6 +65,7 @@ table FactTripDelaySnapshot
 
 	column trip_id
 		dataType: string
+		lineageTag: 445e3f88-c4fa-4248-84b1-ff73f88371f4
 		summarizeBy: none
 		sourceColumn: trip_id
 
@@ -64,6 +73,7 @@ table FactTripDelaySnapshot
 
 	column route_id
 		dataType: string
+		lineageTag: f89f7cc7-47fa-42ec-bbfa-fcdfe7c8cb39
 		summarizeBy: none
 		sourceColumn: route_id
 
@@ -72,6 +82,7 @@ table FactTripDelaySnapshot
 	column direction_id
 		dataType: int64
 		formatString: 0
+		lineageTag: 476f9e4b-24cb-4b22-a288-4545e866816a
 		summarizeBy: sum
 		sourceColumn: direction_id
 
@@ -79,6 +90,7 @@ table FactTripDelaySnapshot
 
 	column vehicle_id
 		dataType: string
+		lineageTag: ce3bf101-944c-4bd8-9e28-f4c0d788a46a
 		summarizeBy: none
 		sourceColumn: vehicle_id
 
@@ -87,6 +99,7 @@ table FactTripDelaySnapshot
 	column delay_seconds
 		dataType: int64
 		formatString: 0
+		lineageTag: b8299720-20b7-4882-9d5d-fd97cbe7097a
 		summarizeBy: sum
 		sourceColumn: delay_seconds
 
@@ -95,6 +108,7 @@ table FactTripDelaySnapshot
 	column stop_time_update_count
 		dataType: int64
 		formatString: 0
+		lineageTag: 825aa6f3-3d2d-482f-bd54-c2b6c3b629fe
 		summarizeBy: sum
 		sourceColumn: stop_time_update_count
 
@@ -112,3 +126,4 @@ table FactTripDelaySnapshot
 	annotation PBI_NavigationStepName = Navigation
 
 	annotation PBI_ResultType = Table
+

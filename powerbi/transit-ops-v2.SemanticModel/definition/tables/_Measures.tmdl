@@ -1,47 +1,53 @@
 table _Measures
+	lineageTag: cd3c0245-b5c2-4197-b8a0-60134dad2184
 
 	measure 'Véhicules actifs / Active Vehicles' = ```
 			DISTINCTCOUNT(LatestVehicleSnapshot[vehicle_id])
 			
 			```
 		formatString: 0
+		lineageTag: 98d4710a-c24b-4b97-87f9-87e008a2b400
 
 	measure 'Trajets en retard / Delayed Trips' = ```
 			COUNTROWS(FILTER(CurrentTripDelayComputed, CurrentTripDelayComputed[avg_delay_seconds] > 0))
-
+			
 			```
 		formatString: 0
+		lineageTag: 61639f0a-f565-4117-9b1f-f10fcfe8c69f
 
 	measure 'Trajets en avance / Trips Running Early' = ```
 			COUNTROWS(FILTER(CurrentTripDelayComputed, CurrentTripDelayComputed[avg_delay_seconds] < 0))
-
+			
 			```
 		formatString: 0
+		lineageTag: e4ddbb9e-de55-4bc1-a48e-4bed5c7af944
 
 	measure 'Retard moyen sec / Avg Delay Sec' = ```
 			AVERAGE(CurrentTripDelayComputed[avg_delay_seconds])
-
+			
 			```
 		formatString: 0.0
+		lineageTag: 450405d1-230c-4dd3-8578-f35b45cb178f
 
 	measure 'Retard moyen 24h / Avg Delay 24h Baseline' = ```
 			CALCULATE(
 			    AVERAGE(TripDelaySummary5mLive[avg_delay_seconds]),
 			    ALL(TripDelaySummary5mLive[period_start_utc])
 			)
-
+			
 			```
 		formatString: 0.0
+		lineageTag: 6da046ad-f484-493c-a709-febd5a5d7142
 
 	/// P75 of per-route AVERAGE delay in the current period.
 	/// Reads as: "75% of routes had average trip delay no worse than X."
-	///
+	/// 
 	/// History: First tried raw MAX (25-30x avg, blew up the Y-axis with
 	/// single ghost-trip spikes). Then P95 over avg_delay — daytime
 	/// behaved (200-300s) but overnight spiked to 1000-2500s because
 	/// STM's ~70 night routes have higher variance and a few outliers
 	/// dominated the small sample.
-	///
+	/// 
 	/// P75 is robust across day AND night service (typical range 40-100s
 	/// system-wide, ~1.5x the avg) so the chart stays readable 24h.
 	/// Trades absolute "watch the worst routes" signal for stability;
@@ -49,9 +55,10 @@ table _Measures
 	/// when an operator wants to drill into the absolute worst.
 	measure 'Retard P75 (sec) / P75 Delay' = ```
 			PERCENTILE.INC(TripDelaySummary5mLive[avg_delay_seconds], 0.75)
-
+			
 			```
 		formatString: 0
+		lineageTag: 960caa79-4af5-4133-88b0-039c20dd83e1
 
 	/// Count of routes whose average trip delay is more than 2x the system
 	/// average — a proactive anomaly callout for "routes needing attention
@@ -71,9 +78,10 @@ table _Measures
 			            > systemAvg * 2
 			    )
 			)
-
+			
 			```
 		formatString: 0
+		lineageTag: 1ce85b02-182a-4b52-99d0-a9954a68024c
 
 	measure 'Écart vs moyenne (%) / Delta vs Avg (%)' = ```
 			VAR systemAvg =
@@ -83,9 +91,10 @@ table _Measures
 			    )
 			VAR routeAvg = AVERAGE(CurrentTripDelayComputed[avg_delay_seconds])
 			RETURN DIVIDE(routeAvg - systemAvg, systemAvg)
-
+			
 			```
 		formatString: +0%;-0%;0%
+		lineageTag: 5c35aaa0-6d57-4e95-a780-c6bdf930288f
 
 	/// Same hour yesterday — lights up day 1 (live view has 24h window).
 	measure 'Retard 24h hier / Yesterday Same Hour' = ```
@@ -97,9 +106,10 @@ table _Measures
 			    TripDelaySummary5mLive[period_start_utc] >= yesterdaySameHourStart,
 			    TripDelaySummary5mLive[period_start_utc] < yesterdaySameHourEnd
 			)
-
+			
 			```
 		formatString: 0.0
+		lineageTag: 5d567dac-3a22-4cdc-b8bb-b522fa8b92eb
 
 	/// 7-day rolling average — partial day 1-6, full from day 7. Sourced from
 	/// the batch mart (live view only retains 24h).
@@ -109,9 +119,10 @@ table _Measures
 			    TripDelaySummary5m[period_start_utc] >= NOW() - 7,
 			    TripDelaySummary5m[period_start_utc] <= NOW()
 			)
-
+			
 			```
 		formatString: 0.0
+		lineageTag: 7ae12a1d-1512-4227-a286-65589d7ada00
 
 	/// Same hour, exactly 7 days ago — returns BLANK until day 7 of accrual.
 	/// Reveals "is today's traffic pattern off-routine vs same time last week."
@@ -124,9 +135,10 @@ table _Measures
 			    TripDelaySummary5m[period_start_utc] >= lastWeekSameHourStart,
 			    TripDelaySummary5m[period_start_utc] < lastWeekSameHourEnd
 			)
-
+			
 			```
 		formatString: 0.0
+		lineageTag: 7e493639-3291-4b91-88b1-2dce6e344791
 
 	/// Average for the same day-of-week + hour over the last 30 days. Gains
 	/// confidence from day 14 (2 samples per DoW); fully reliable from day 30.
@@ -143,9 +155,10 @@ table _Measures
 			            && TripDelaySummary5m[period_start_utc] >= NOW() - 30
 			    )
 			)
-
+			
 			```
 		formatString: 0.0
+		lineageTag: 39294405-d3c6-4673-bc47-2ac6af3db40b
 
 	/// Z-score: standard deviations from the 7-day mean. |z| > 2 = abnormal.
 	/// Returns BLANK until day 7 (needs variance baseline). Powers anomaly
@@ -162,33 +175,38 @@ table _Measures
 			        TripDelaySummary5m[period_start_utc] >= NOW() - 7
 			    )
 			RETURN DIVIDE(currentValue - weeklyMean, weeklyStdev)
-
+			
 			```
 		formatString: 0.00
+		lineageTag: 7a397c66-7da2-410e-801b-b6ede715611c
 
 	measure 'Retard sévère / Severe Delay' = ```
 			COUNTROWS(FILTER(CurrentTripDelayComputed, CurrentTripDelayComputed[max_delay_seconds] > 300))
 			
 			```
 		formatString: 0
+		lineageTag: ca489a9f-4e8b-49f4-a75b-1df694444dd7
 
 	measure 'Routes touchées / Affected Routes' = ```
 			DISTINCTCOUNT(CurrentTripDelayComputed[route_id])
 			
 			```
 		formatString: 0
+		lineageTag: 02fd9c62-37f0-43ce-a92e-d84cb15a61ec
 
 	measure 'Arrêts touchés / Affected Stops' = ```
 			DISTINCTCOUNT(FactStopTimeDelayObservation[stop_id])
 			
 			```
 		formatString: 0
+		lineageTag: aead665d-ce62-451a-9d93-7ce938a62995
 
 	measure 'Alertes actives / Active Alerts' = ```
 			DISTINCTCOUNT(CurrentI3Alerts[alert_id])
 			
 			```
 		formatString: 0
+		lineageTag: d51ba51a-2399-4472-a1cc-5321727051e2
 
 	measure 'Âge fraîcheur sec / Freshness Age Sec' = ```
 			CALCULATE(
@@ -198,18 +216,21 @@ table _Measures
 			
 			```
 		formatString: 0
+		lineageTag: 41372d12-3c78-4870-8a51-7e1ecc27f24e
 
 	measure 'Score impact citoyens / Citizen Impact Score' = ```
 			SUM(CitizenAccountabilityDaily[rider_impact_score])
 			
 			```
 		formatString: 0.0
+		lineageTag: 85adb108-fd95-4b65-8c7e-0068b48b1312
 
 	measure 'Score habitudes / Habit Score' = ```
 			AVERAGE(RouteHabitScore[repeat_problem_score])
-
+			
 			```
 		formatString: 0.0
+		lineageTag: 97ba29f4-7286-44e2-abc3-c6a38617bae0
 
 	measure 'Couleur fraîcheur / Freshness Color' = ```
 			SWITCH(
@@ -218,8 +239,9 @@ table _Measures
 			    SELECTEDVALUE(FeedFreshnessCurrent[completed_age_seconds]) <= 60, "#FFB627",
 			    "#E07800"
 			)
-
+			
 			```
+		lineageTag: 498326fe-1cfd-429c-9d4d-d9dff1859891
 
 	measure 'Couleur retard / Delay Color' = ```
 			SWITCH(
@@ -228,12 +250,14 @@ table _Measures
 			    SELECTEDVALUE(CurrentTripDelayComputed[max_delay_seconds]) <= 300, "#FFB627",
 			    "#E07800"
 			)
-
+			
 			```
+		lineageTag: 8995a3cb-39f8-41e4-9e75-4df6aee2875b
 
 	column Column1
 		dataType: string
 		isHidden
+		lineageTag: 9d137bb5-dd0c-42fd-80d1-12b149ca1a5c
 		summarizeBy: none
 		sourceColumn: Column1
 
@@ -250,3 +274,4 @@ table _Measures
 				    Source
 
 	annotation PBI_ResultType = Table
+

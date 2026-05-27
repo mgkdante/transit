@@ -1,7 +1,9 @@
 table FactVehicleSnapshot
+	lineageTag: 8ce136c7-a088-41b5-aded-d6a900c0b1a5
 
 	column provider_id
 		dataType: string
+		lineageTag: a8de66e2-0513-4dff-9f97-90da930b8c5d
 		summarizeBy: none
 		sourceColumn: provider_id
 
@@ -10,6 +12,7 @@ table FactVehicleSnapshot
 	column realtime_snapshot_id
 		dataType: int64
 		formatString: 0
+		lineageTag: 311a982a-6208-4037-b4a2-41292ac90eda
 		summarizeBy: sum
 		sourceColumn: realtime_snapshot_id
 
@@ -18,6 +21,7 @@ table FactVehicleSnapshot
 	column entity_index
 		dataType: int64
 		formatString: 0
+		lineageTag: 6b034e8a-29fd-4316-94df-285c324473c4
 		summarizeBy: sum
 		sourceColumn: entity_index
 
@@ -26,6 +30,7 @@ table FactVehicleSnapshot
 	column snapshot_date_key
 		dataType: int64
 		formatString: 0
+		lineageTag: 4d99662f-1c37-47dc-a38c-c4e567e82099
 		summarizeBy: sum
 		sourceColumn: snapshot_date_key
 
@@ -34,6 +39,7 @@ table FactVehicleSnapshot
 	column snapshot_local_date
 		dataType: dateTime
 		formatString: General Date
+		lineageTag: 07861bfd-ffb0-4b0b-ba64-deef47033d76
 		summarizeBy: none
 		sourceColumn: snapshot_local_date
 
@@ -42,6 +48,7 @@ table FactVehicleSnapshot
 	column feed_timestamp_utc
 		dataType: dateTime
 		formatString: General Date
+		lineageTag: 9691d9b0-24cf-4451-a636-bbfa6f764a4a
 		summarizeBy: none
 		sourceColumn: feed_timestamp_utc
 
@@ -50,6 +57,7 @@ table FactVehicleSnapshot
 	column captured_at_utc
 		dataType: dateTime
 		formatString: General Date
+		lineageTag: dc483ed7-5f40-4b7a-a231-bd7e6774ae21
 		summarizeBy: none
 		sourceColumn: captured_at_utc
 
@@ -57,6 +65,7 @@ table FactVehicleSnapshot
 
 	column vehicle_id
 		dataType: string
+		lineageTag: 74d6c048-92d6-4418-8e72-e525dd81809a
 		summarizeBy: none
 		sourceColumn: vehicle_id
 
@@ -64,6 +73,7 @@ table FactVehicleSnapshot
 
 	column trip_id
 		dataType: string
+		lineageTag: 7f2b093b-a51b-4f9e-a325-db15141676c9
 		summarizeBy: none
 		sourceColumn: trip_id
 
@@ -71,6 +81,7 @@ table FactVehicleSnapshot
 
 	column route_id
 		dataType: string
+		lineageTag: 71d7d678-1bfa-40c5-b399-9bda7cece641
 		summarizeBy: none
 		sourceColumn: route_id
 
@@ -78,6 +89,7 @@ table FactVehicleSnapshot
 
 	column stop_id
 		dataType: string
+		lineageTag: 29776920-e550-43ab-8638-cde7b4b90ee8
 		summarizeBy: none
 		sourceColumn: stop_id
 
@@ -85,6 +97,7 @@ table FactVehicleSnapshot
 
 	column latitude
 		dataType: double
+		lineageTag: 22a2bc7a-6e41-40bf-a79f-6c5a0ed80e3c
 		summarizeBy: sum
 		sourceColumn: latitude
 
@@ -94,6 +107,7 @@ table FactVehicleSnapshot
 
 	column longitude
 		dataType: double
+		lineageTag: bbe2c8d1-b225-49dd-b798-b7cb76317330
 		summarizeBy: sum
 		sourceColumn: longitude
 
@@ -103,6 +117,7 @@ table FactVehicleSnapshot
 
 	column speed
 		dataType: double
+		lineageTag: 8037f0c4-614e-4f05-bad3-0f105947a3fd
 		summarizeBy: sum
 		sourceColumn: speed
 
@@ -122,3 +137,4 @@ table FactVehicleSnapshot
 	annotation PBI_NavigationStepName = Navigation
 
 	annotation PBI_ResultType = Table
+

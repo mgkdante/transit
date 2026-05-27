@@ -1,7 +1,9 @@
 table SourceLineageReporting
+	lineageTag: 14cf60f2-334a-408b-8d62-8f8838e65c3e
 
 	column provider_id
 		dataType: string
+		lineageTag: 5fe0074f-da07-4c5f-b3d7-7f93ad8bbd1f
 		summarizeBy: none
 		sourceColumn: provider_id
 
@@ -9,6 +11,7 @@ table SourceLineageReporting
 
 	column dataset_kind
 		dataType: string
+		lineageTag: cc0453c7-dc04-4a3f-94d7-092dae99bfbb
 		summarizeBy: none
 		sourceColumn: dataset_kind
 
@@ -17,6 +20,7 @@ table SourceLineageReporting
 	column dataset_version_id
 		dataType: int64
 		formatString: 0
+		lineageTag: d101d7ac-b6e4-482e-8fa0-00420414f186
 		summarizeBy: sum
 		sourceColumn: dataset_version_id
 
@@ -24,6 +28,7 @@ table SourceLineageReporting
 
 	column endpoint_key
 		dataType: string
+		lineageTag: 7395b865-6d34-4cfc-b584-752dc015d42f
 		summarizeBy: none
 		sourceColumn: endpoint_key
 
@@ -31,6 +36,7 @@ table SourceLineageReporting
 
 	column source_url
 		dataType: string
+		lineageTag: f8f51ec2-8670-4dc7-9ef8-2ab78a3c7bfe
 		summarizeBy: none
 		sourceColumn: source_url
 
@@ -38,6 +44,7 @@ table SourceLineageReporting
 
 	column storage_backend
 		dataType: string
+		lineageTag: f96b9086-1b4d-4128-90cf-2ea0f7296c47
 		summarizeBy: none
 		sourceColumn: storage_backend
 
@@ -45,6 +52,7 @@ table SourceLineageReporting
 
 	column storage_path
 		dataType: string
+		lineageTag: cbdf2afe-5e01-4ddb-892d-1b741e6a3682
 		summarizeBy: none
 		sourceColumn: storage_path
 
@@ -52,6 +60,7 @@ table SourceLineageReporting
 
 	column checksum_sha256
 		dataType: string
+		lineageTag: 23788086-846e-49f8-82d1-8b7f17ffcb3d
 		summarizeBy: none
 		sourceColumn: checksum_sha256
 
@@ -60,6 +69,7 @@ table SourceLineageReporting
 	column byte_size
 		dataType: int64
 		formatString: 0
+		lineageTag: 3b06ca74-d4a4-4502-a9c0-7a4ca6a29ead
 		summarizeBy: sum
 		sourceColumn: byte_size
 
@@ -68,6 +78,7 @@ table SourceLineageReporting
 	column loaded_at_utc
 		dataType: dateTime
 		formatString: General Date
+		lineageTag: 2b1b1ce0-b9e7-41ba-83d1-8985b98beb10
 		summarizeBy: none
 		sourceColumn: loaded_at_utc
 
@@ -76,6 +87,7 @@ table SourceLineageReporting
 	column effective_at_utc
 		dataType: dateTime
 		formatString: General Date
+		lineageTag: f350208b-ba57-4a88-903c-cb4641f01730
 		summarizeBy: none
 		sourceColumn: effective_at_utc
 
@@ -83,6 +95,7 @@ table SourceLineageReporting
 
 	column is_current
 		dataType: boolean
+		lineageTag: 3b84af03-c644-45e0-ab7d-fa5143e2dbd3
 		summarizeBy: none
 		sourceColumn: is_current
 
@@ -100,3 +113,4 @@ table SourceLineageReporting
 	annotation PBI_NavigationStepName = Navigation
 
 	annotation PBI_ResultType = Table
+

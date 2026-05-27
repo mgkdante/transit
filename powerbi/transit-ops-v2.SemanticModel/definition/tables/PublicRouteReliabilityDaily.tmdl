@@ -1,7 +1,9 @@
 table PublicRouteReliabilityDaily
+	lineageTag: 3d36c81a-6283-4a5b-9870-6a329c043777
 
 	column provider_id
 		dataType: string
+		lineageTag: b2904d64-5afa-4e6b-a506-ab19bfff56de
 		summarizeBy: none
 		sourceColumn: provider_id
 
@@ -9,6 +11,7 @@ table PublicRouteReliabilityDaily
 
 	column route_id
 		dataType: string
+		lineageTag: 55f5f370-da9c-4adb-869c-eeb4b1f99747
 		summarizeBy: none
 		sourceColumn: route_id
 
@@ -17,6 +20,7 @@ table PublicRouteReliabilityDaily
 	column provider_local_date
 		dataType: dateTime
 		formatString: General Date
+		lineageTag: 7829c938-8ec5-4c47-86d5-6524915a706f
 		summarizeBy: none
 		sourceColumn: provider_local_date
 
@@ -25,6 +29,7 @@ table PublicRouteReliabilityDaily
 	column stop_time_observation_count
 		dataType: int64
 		formatString: 0
+		lineageTag: 9be2b243-34fb-4679-8d83-2b054b5e2516
 		summarizeBy: sum
 		sourceColumn: stop_time_observation_count
 
@@ -32,6 +37,7 @@ table PublicRouteReliabilityDaily
 
 	column avg_delay_seconds
 		dataType: double
+		lineageTag: bea665ea-14c7-4861-ae81-bae361fa9636
 		summarizeBy: sum
 		sourceColumn: avg_delay_seconds
 
@@ -42,6 +48,7 @@ table PublicRouteReliabilityDaily
 	column severe_delay_observation_count
 		dataType: int64
 		formatString: 0
+		lineageTag: 72515de2-1019-4f53-a7c8-3e0c0816e9d2
 		summarizeBy: sum
 		sourceColumn: severe_delay_observation_count
 
@@ -59,3 +66,4 @@ table PublicRouteReliabilityDaily
 	annotation PBI_NavigationStepName = Navigation
 
 	annotation PBI_ResultType = Table
+

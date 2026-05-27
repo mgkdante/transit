@@ -197,3 +197,4 @@ relationship i3AlertHistoryReporting_date
 	isActive: false
 	fromColumn: I3AlertHistoryReporting.provider_local_date
 	toColumn: DimDate.service_date
+

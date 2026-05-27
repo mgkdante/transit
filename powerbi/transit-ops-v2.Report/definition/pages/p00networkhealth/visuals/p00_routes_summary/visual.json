@@ -1,5 +1,5 @@
 {
-  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.1.0/schema.json",
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.8.0/schema.json",
   "name": "p00_routes_summary",
   "position": {
     "x": 444,
@@ -18,12 +18,12 @@
             {
               "field": {
                 "Column": {
-                  "Property": "route_id",
                   "Expression": {
                     "SourceRef": {
                       "Entity": "CurrentTripDelayComputed"
                     }
-                  }
+                  },
+                  "Property": "route_id"
                 }
               },
               "queryRef": "CurrentTripDelayComputed.route_id",
@@ -32,17 +32,17 @@
             {
               "field": {
                 "Aggregation": {
-                  "Function": 2,
                   "Expression": {
                     "Column": {
-                      "Property": "trip_id",
                       "Expression": {
                         "SourceRef": {
                           "Entity": "CurrentTripDelayComputed"
                         }
-                      }
+                      },
+                      "Property": "trip_id"
                     }
-                  }
+                  },
+                  "Function": 2
                 }
               },
               "queryRef": "Count(CurrentTripDelayComputed.trip_id)",
@@ -51,12 +51,12 @@
             {
               "field": {
                 "Measure": {
-                  "Property": "Trajets en retard / Delayed Trips",
                   "Expression": {
                     "SourceRef": {
                       "Entity": "_Measures"
                     }
-                  }
+                  },
+                  "Property": "Trajets en retard / Delayed Trips"
                 }
               },
               "queryRef": "_Measures.Trajets en retard / Delayed Trips",
@@ -65,17 +65,17 @@
             {
               "field": {
                 "Aggregation": {
-                  "Function": 1,
                   "Expression": {
                     "Column": {
-                      "Property": "avg_delay_seconds",
                       "Expression": {
                         "SourceRef": {
                           "Entity": "CurrentTripDelayComputed"
                         }
-                      }
+                      },
+                      "Property": "avg_delay_seconds"
                     }
-                  }
+                  },
+                  "Function": 1
                 }
               },
               "queryRef": "Avg(CurrentTripDelayComputed.avg_delay_seconds)",
@@ -84,17 +84,17 @@
             {
               "field": {
                 "Aggregation": {
-                  "Function": 4,
                   "Expression": {
                     "Column": {
-                      "Property": "max_delay_seconds",
                       "Expression": {
                         "SourceRef": {
                           "Entity": "CurrentTripDelayComputed"
                         }
-                      }
+                      },
+                      "Property": "max_delay_seconds"
                     }
-                  }
+                  },
+                  "Function": 4
                 }
               },
               "queryRef": "Max(CurrentTripDelayComputed.max_delay_seconds)",
@@ -103,12 +103,12 @@
             {
               "field": {
                 "Measure": {
-                  "Property": "Écart vs moyenne (%) / Delta vs Avg (%)",
                   "Expression": {
                     "SourceRef": {
                       "Entity": "_Measures"
                     }
-                  }
+                  },
+                  "Property": "Écart vs moyenne (%) / Delta vs Avg (%)"
                 }
               },
               "queryRef": "_Measures.Écart vs moyenne (%) / Delta vs Avg (%)",
@@ -122,17 +122,17 @@
           {
             "field": {
               "Aggregation": {
-                "Function": 1,
                 "Expression": {
                   "Column": {
-                    "Property": "avg_delay_seconds",
                     "Expression": {
                       "SourceRef": {
                         "Entity": "CurrentTripDelayComputed"
                       }
-                    }
+                    },
+                    "Property": "avg_delay_seconds"
                   }
-                }
+                },
+                "Function": 1
               }
             },
             "direction": "Descending"
@@ -159,9 +159,7 @@
               }
             },
             "fontColor": {
-              "solid": {
-                "color": "#F4F1EA"
-              }
+              "solid": {}
             },
             "fontSize": {
               "expr": {
@@ -190,11 +188,6 @@
                 }
               }
             },
-            "color": {
-              "solid": {
-                "color": ""
-              }
-            },
             "transparency": {
               "expr": {
                 "Literal": {
@@ -216,9 +209,7 @@
               }
             },
             "color": {
-              "solid": {
-                "color": "#2B2B2B"
-              }
+              "solid": {}
             },
             "radius": {
               "expr": {
@@ -268,9 +259,7 @@
               }
             },
             "fontColor": {
-              "solid": {
-                "color": "#B8B8B8"
-              }
+              "solid": {}
             },
             "fontSize": {
               "expr": {
@@ -290,6 +279,5 @@
         }
       ]
     }
-  },
-  "howCreated": "Default"
+  }
 }

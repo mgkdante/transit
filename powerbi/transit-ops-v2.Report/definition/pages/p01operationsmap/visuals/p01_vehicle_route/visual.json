@@ -1,13 +1,13 @@
 {
-  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.1.0/schema.json",
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.8.0/schema.json",
   "name": "p01_vehicle_route",
   "position": {
-    "x": 552,
-    "y": 34,
-    "z": 20,
-    "height": 300,
-    "width": 696,
-    "tabOrder": 20
+    "x": 988,
+    "y": 212,
+    "z": 30,
+    "height": 232,
+    "width": 260,
+    "tabOrder": 30
   },
   "visual": {
     "visualType": "barChart",
@@ -18,15 +18,16 @@
             {
               "field": {
                 "Column": {
-                  "Property": "route_id",
                   "Expression": {
                     "SourceRef": {
                       "Entity": "LatestVehicleSnapshot"
                     }
-                  }
+                  },
+                  "Property": "route_id"
                 }
               },
               "queryRef": "LatestVehicleSnapshot.route_id",
+              "active": true,
               "displayName": "Route"
             }
           ]
@@ -36,17 +37,17 @@
             {
               "field": {
                 "Aggregation": {
-                  "Function": 2,
                   "Expression": {
                     "Column": {
-                      "Property": "vehicle_id",
                       "Expression": {
                         "SourceRef": {
                           "Entity": "LatestVehicleSnapshot"
                         }
-                      }
+                      },
+                      "Property": "vehicle_id"
                     }
-                  }
+                  },
+                  "Function": 2
                 }
               },
               "queryRef": "DistinctCount(LatestVehicleSnapshot.vehicle_id)",
@@ -75,9 +76,7 @@
               }
             },
             "fontColor": {
-              "solid": {
-                "color": "#F4F1EA"
-              }
+              "solid": {}
             },
             "fontSize": {
               "expr": {
@@ -106,11 +105,6 @@
                 }
               }
             },
-            "color": {
-              "solid": {
-                "color": ""
-              }
-            },
             "transparency": {
               "expr": {
                 "Literal": {
@@ -132,9 +126,7 @@
               }
             },
             "color": {
-              "solid": {
-                "color": "#2B2B2B"
-              }
+              "solid": {}
             },
             "radius": {
               "expr": {
@@ -184,9 +176,7 @@
               }
             },
             "fontColor": {
-              "solid": {
-                "color": "#B8B8B8"
-              }
+              "solid": {}
             },
             "fontSize": {
               "expr": {
@@ -206,6 +196,5 @@
         }
       ]
     }
-  },
-  "howCreated": "Default"
+  }
 }

@@ -1,5 +1,5 @@
 {
-  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.1.0/schema.json",
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.8.0/schema.json",
   "name": "p00_delay_trend",
   "position": {
     "x": 660,
@@ -13,22 +13,41 @@
     "visualType": "lineChart",
     "query": {
       "queryState": {
+        "Category": {
+          "projections": [
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "TripDelaySummary5mLive"
+                    }
+                  },
+                  "Property": "period_start_utc"
+                }
+              },
+              "queryRef": "TripDelaySummary5mLive.period_start_utc",
+              "active": true,
+              "displayName": "Période 5 min"
+            }
+          ]
+        },
         "Y": {
           "projections": [
             {
               "field": {
                 "Aggregation": {
-                  "Function": 1,
                   "Expression": {
                     "Column": {
-                      "Property": "avg_delay_seconds",
                       "Expression": {
                         "SourceRef": {
                           "Entity": "TripDelaySummary5mLive"
                         }
-                      }
+                      },
+                      "Property": "avg_delay_seconds"
                     }
-                  }
+                  },
+                  "Function": 1
                 }
               },
               "queryRef": "Avg(TripDelaySummary5mLive.avg_delay_seconds)",
@@ -37,12 +56,12 @@
             {
               "field": {
                 "Measure": {
-                  "Property": "Retard moyen 24h / Avg Delay 24h Baseline",
                   "Expression": {
                     "SourceRef": {
                       "Entity": "_Measures"
                     }
-                  }
+                  },
+                  "Property": "Retard moyen 24h / Avg Delay 24h Baseline"
                 }
               },
               "queryRef": "_Measures.Retard moyen 24h / Avg Delay 24h Baseline",
@@ -51,38 +70,99 @@
             {
               "field": {
                 "Measure": {
-                  "Property": "Retard 24h hier / Yesterday Same Hour",
                   "Expression": {
                     "SourceRef": {
                       "Entity": "_Measures"
                     }
-                  }
+                  },
+                  "Property": "Retard 24h hier / Yesterday Same Hour"
                 }
               },
               "queryRef": "_Measures.Retard 24h hier / Yesterday Same Hour",
               "displayName": "Même heure hier"
             }
           ]
-        },
-        "Category": {
-          "projections": [
-            {
-              "field": {
-                "Column": {
-                  "Property": "period_start_utc",
-                  "Expression": {
-                    "SourceRef": {
-                      "Entity": "TripDelaySummary5mLive"
-                    }
-                  }
-                }
-              },
-              "queryRef": "TripDelaySummary5mLive.period_start_utc",
-              "displayName": "Période 5 min"
-            }
-          ]
         }
       }
+    },
+    "objects": {
+      "valueAxis": [
+        {
+          "properties": {
+            "show": {
+              "expr": {
+                "Literal": {
+                  "Value": "true"
+                }
+              }
+            },
+            "showAxisTitle": {
+              "expr": {
+                "Literal": {
+                  "Value": "true"
+                }
+              }
+            },
+            "titleText": {
+              "expr": {
+                "Literal": {
+                  "Value": "'Secondes / Seconds'"
+                }
+              }
+            },
+            "titleColor": {
+              "solid": {}
+            },
+            "titleFontSize": {
+              "expr": {
+                "Literal": {
+                  "Value": "10D"
+                }
+              }
+            },
+            "labelColor": {
+              "solid": {}
+            },
+            "fontSize": {
+              "expr": {
+                "Literal": {
+                  "Value": "9D"
+                }
+              }
+            },
+            "labelDisplayUnits": {
+              "expr": {
+                "Literal": {
+                  "Value": "0D"
+                }
+              }
+            }
+          }
+        }
+      ],
+      "categoryAxis": [
+        {
+          "properties": {
+            "show": {
+              "expr": {
+                "Literal": {
+                  "Value": "true"
+                }
+              }
+            },
+            "labelColor": {
+              "solid": {}
+            },
+            "fontSize": {
+              "expr": {
+                "Literal": {
+                  "Value": "9D"
+                }
+              }
+            }
+          }
+        }
+      ]
     },
     "visualContainerObjects": {
       "title": [
@@ -103,9 +183,7 @@
               }
             },
             "fontColor": {
-              "solid": {
-                "color": "#F4F1EA"
-              }
+              "solid": {}
             },
             "fontSize": {
               "expr": {
@@ -134,11 +212,6 @@
                 }
               }
             },
-            "color": {
-              "solid": {
-                "color": ""
-              }
-            },
             "transparency": {
               "expr": {
                 "Literal": {
@@ -160,9 +233,7 @@
               }
             },
             "color": {
-              "solid": {
-                "color": "#2B2B2B"
-              }
+              "solid": {}
             },
             "radius": {
               "expr": {
@@ -212,9 +283,7 @@
               }
             },
             "fontColor": {
-              "solid": {
-                "color": "#B8B8B8"
-              }
+              "solid": {}
             },
             "fontSize": {
               "expr": {
@@ -233,92 +302,6 @@
           }
         }
       ]
-    },
-    "objects": {
-      "valueAxis": [
-        {
-          "properties": {
-            "show": {
-              "expr": {
-                "Literal": {
-                  "Value": "true"
-                }
-              }
-            },
-            "showAxisTitle": {
-              "expr": {
-                "Literal": {
-                  "Value": "true"
-                }
-              }
-            },
-            "titleText": {
-              "expr": {
-                "Literal": {
-                  "Value": "'Secondes / Seconds'"
-                }
-              }
-            },
-            "titleColor": {
-              "solid": {
-                "color": "#B8B8B8"
-              }
-            },
-            "titleFontSize": {
-              "expr": {
-                "Literal": {
-                  "Value": "10D"
-                }
-              }
-            },
-            "labelColor": {
-              "solid": {
-                "color": "#B8B8B8"
-              }
-            },
-            "fontSize": {
-              "expr": {
-                "Literal": {
-                  "Value": "9D"
-                }
-              }
-            },
-            "labelDisplayUnits": {
-              "expr": {
-                "Literal": {
-                  "Value": "0D"
-                }
-              }
-            }
-          }
-        }
-      ],
-      "categoryAxis": [
-        {
-          "properties": {
-            "show": {
-              "expr": {
-                "Literal": {
-                  "Value": "true"
-                }
-              }
-            },
-            "labelColor": {
-              "solid": {
-                "color": "#B8B8B8"
-              }
-            },
-            "fontSize": {
-              "expr": {
-                "Literal": {
-                  "Value": "9D"
-                }
-              }
-            }
-          }
-        }
-      ]
     }
-  },
-  "howCreated": "Default"
+  }
 }
