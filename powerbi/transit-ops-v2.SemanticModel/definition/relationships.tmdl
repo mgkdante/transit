@@ -13,10 +13,6 @@ relationship currentVehicleMap_stop
 	fromColumn: CurrentVehicleMap.stop_id
 	toColumn: DimStop.stop_id
 
-# CurrentI3Alerts relationships removed in migration 0022 — route_ids and
-# stop_ids are now comma-separated aggregated strings (one alert can affect
-# many routes/stops), not joinable scalar IDs.
-
 relationship latestVehicleSnapshot_route
 	isActive: false
 	fromColumn: LatestVehicleSnapshot.route_id
