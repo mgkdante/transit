@@ -56,6 +56,20 @@
               },
               "queryRef": "FeedFreshnessCurrent.completed_age_seconds",
               "displayName": "Âge sec / Age sec"
+            },
+            {
+              "field": {
+                "Measure": {
+                  "Property": "Couleur fraîcheur / Freshness Color",
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "_Measures"
+                    }
+                  }
+                }
+              },
+              "queryRef": "_Measures.Couleur fraîcheur / Freshness Color",
+              "displayName": "État"
             }
           ]
         }
