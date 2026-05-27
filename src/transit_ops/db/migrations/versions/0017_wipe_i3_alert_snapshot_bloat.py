@@ -232,10 +232,17 @@ def upgrade() -> None:
         print(f"  raw.i3_alert_snapshots after:  {after_raw:,}")
 
         print("Reclaiming disk + refreshing planner statistics...")
+        # PARALLEL 0 disables parallel VACUUM workers. Default parallel
+        # VACUUM tries to allocate ~64MB shared memory segments per worker
+        # and crashed on the Oracle A1 VM's Docker postgres container with
+        # the default 64MB /dev/shm:
+        #   DiskFull: could not resize shared memory segment to 67145408 bytes
+        # Single-process VACUUM uses only maintenance_work_mem (private
+        # to the backend) and avoids the shared-memory ceiling.
         for stmt in (
-            "VACUUM ANALYZE silver.i3_alerts",
-            "VACUUM ANALYZE silver.i3_alert_informed_entities",
-            "VACUUM ANALYZE raw.i3_alert_snapshots",
+            "VACUUM (PARALLEL 0, ANALYZE) silver.i3_alerts",
+            "VACUUM (PARALLEL 0, ANALYZE) silver.i3_alert_informed_entities",
+            "VACUUM (PARALLEL 0, ANALYZE) raw.i3_alert_snapshots",
         ):
             print(f"  {stmt}")
             op.execute(stmt)

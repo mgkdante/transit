@@ -88,15 +88,22 @@ def test_wipe_uses_keeper_join_for_orphan_detection() -> None:
     assert join_count == 3, f"expected 3 keeper JOINs, found {join_count}"
 
 
-def test_vacuum_analyze_all_three_tables() -> None:
+def test_vacuum_analyze_all_three_tables_with_parallel_zero() -> None:
+    """VACUUM must use PARALLEL 0. The Docker postgres container ships with
+    /dev/shm at 64MB by default, and default VACUUM tries to allocate
+    parallel-worker shared memory beyond that ceiling, raising DiskFull on
+    the Oracle A1 VM. Single-process VACUUM uses only maintenance_work_mem
+    (private to the backend) and works fine."""
     text = _read()
 
     for stmt in (
-        "VACUUM ANALYZE silver.i3_alerts",
-        "VACUUM ANALYZE silver.i3_alert_informed_entities",
-        "VACUUM ANALYZE raw.i3_alert_snapshots",
+        "VACUUM (PARALLEL 0, ANALYZE) silver.i3_alerts",
+        "VACUUM (PARALLEL 0, ANALYZE) silver.i3_alert_informed_entities",
+        "VACUUM (PARALLEL 0, ANALYZE) raw.i3_alert_snapshots",
     ):
-        assert stmt in text
+        assert stmt in text, f"missing VACUUM stmt: {stmt}"
+    # Sanity: should NOT have plain VACUUM ANALYZE (which would crash on shm).
+    assert "VACUUM ANALYZE silver.i3_alerts" not in text
 
 
 def test_downgrade_restores_legacy_view_then_refuses() -> None:
