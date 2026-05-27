@@ -110,9 +110,6 @@
                 }
               }
             },
-            "fontColor": {
-              "solid": {}
-            },
             "fontSize": {
               "expr": {
                 "Literal": {
@@ -160,9 +157,6 @@
                 }
               }
             },
-            "color": {
-              "solid": {}
-            },
             "radius": {
               "expr": {
                 "Literal": {
@@ -209,9 +203,6 @@
                   "Value": "''"
                 }
               }
-            },
-            "fontColor": {
-              "solid": {}
             },
             "fontSize": {
               "expr": {

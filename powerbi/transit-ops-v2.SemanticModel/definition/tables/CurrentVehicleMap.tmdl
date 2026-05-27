@@ -98,14 +98,41 @@ table CurrentVehicleMap
 
 		annotation SummarizationSetBy = Automatic
 
+	column trip_avg_delay_seconds
+		dataType: double
+		lineageTag: 8e9c4f12-7a51-4d28-b2c6-15e8b2f0a3d4
+		summarizeBy: none
+		sourceColumn: trip_avg_delay_seconds
+
+		annotation SummarizationSetBy = User
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	column trip_max_delay_seconds
+		dataType: int64
+		formatString: 0
+		lineageTag: 3f7d5a91-c264-4e88-9f31-7e4a0bcde175
+		summarizeBy: none
+		sourceColumn: trip_max_delay_seconds
+
+		annotation SummarizationSetBy = User
+
+	column status_band
+		dataType: string
+		lineageTag: a1c8b6f3-92d4-4517-bc8e-031a7e5d9c46
+		summarizeBy: none
+		sourceColumn: status_band
+
+		annotation SummarizationSetBy = Automatic
+
 	partition CurrentVehicleMap = m
 		mode: directQuery
 		source =
 				let
 				    Source = PostgreSQL.Database("db.transit.yesid.dev", "transit"),
-				    gold_current_vehicle_map = Source{[Schema="gold",Item="current_vehicle_map"]}[Data]
+				    gold_current_vehicle_map_with_status = Source{[Schema="gold",Item="current_vehicle_map_with_status"]}[Data]
 				in
-				    gold_current_vehicle_map
+				    gold_current_vehicle_map_with_status
 
 	annotation PBI_NavigationStepName = Navigation
 

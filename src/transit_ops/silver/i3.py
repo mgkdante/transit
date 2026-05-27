@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from typing import Any
@@ -10,6 +11,55 @@ from sqlalchemy.engine import Connection, Engine
 
 from transit_ops.db.connection import make_engine
 from transit_ops.settings import Settings, get_settings
+
+# ASCII Unit Separator — non-printable so it won't collide with real text in
+# alert headers/descriptions. MUST match the SQL backfill in migration 0021.
+_HASH_FIELD_SEP = "\x1F"
+
+
+def compute_alert_content_hash(
+    *,
+    alert_id: str | None,
+    alert_header_text: str | None,
+    description_text: str | None,
+    severity: str | None,
+    cause: str | None,
+    effect: str | None,
+    active_period_start_utc: datetime | None,
+    active_period_end_utc: datetime | None,
+    published_at_utc: datetime | None,
+    updated_at_utc: datetime | None,
+) -> str:
+    """SCD2 content hash for silver.i3_alerts.
+
+    Must match the md5() expression in migration 0021 exactly:
+      - Same 10 fields in the same order
+      - NULL → empty string
+      - Timestamps → integer epoch seconds (sub-second precision dropped on
+        purpose — content identity, not snapshot identity)
+      - Joined by ASCII Unit Separator (U+001F)
+      - md5 over UTF-8 bytes
+    """
+
+    def _ts(value: datetime | None) -> str:
+        if value is None:
+            return ""
+        return str(int(value.timestamp()))
+
+    parts = [
+        alert_id or "",
+        alert_header_text or "",
+        description_text or "",
+        severity or "",
+        cause or "",
+        effect or "",
+        _ts(active_period_start_utc),
+        _ts(active_period_end_utc),
+        _ts(published_at_utc),
+        _ts(updated_at_utc),
+    ]
+    canonical = _HASH_FIELD_SEP.join(parts)
+    return hashlib.md5(canonical.encode("utf-8")).hexdigest()
 
 DELETE_I3_ENTITIES = text(
     """
@@ -42,7 +92,10 @@ INSERT_I3_ALERTS = text(
         published_at_utc,
         updated_at_utc,
         captured_at_utc,
-        raw_alert_json
+        raw_alert_json,
+        content_hash,
+        first_seen_at,
+        last_seen_at
     )
     VALUES (
         :i3_alert_snapshot_id,
@@ -59,8 +112,13 @@ INSERT_I3_ALERTS = text(
         :published_at_utc,
         :updated_at_utc,
         :captured_at_utc,
-        :raw_alert_json
+        :raw_alert_json,
+        :content_hash,
+        :captured_at_utc,
+        :captured_at_utc
     )
+    ON CONFLICT (provider_id, content_hash) WHERE valid_to IS NULL
+    DO UPDATE SET last_seen_at = excluded.last_seen_at
     """
 ).bindparams(bindparam("raw_alert_json", type_=postgresql.JSONB))
 
@@ -221,27 +279,48 @@ def normalize_i3_alert_payload(
         if not isinstance(raw_alert, dict):
             continue
         active_start, active_end = _active_period(raw_alert)
+        alert_id = _text(_value(raw_alert, "id", "alertId", "messageId"))
+        alert_header_text = _text(
+            _value(raw_alert, "header", "title", "summary", "header_texts")
+        )
+        description_text = _text(
+            _value(raw_alert, "description", "body", "message", "description_texts")
+        )
+        severity = _text(_value(raw_alert, "severity", "priority"))
+        cause = _text(_value(raw_alert, "cause"))
+        effect = _text(_value(raw_alert, "effect"))
+        published_at_utc = _timestamp(_value(raw_alert, "publishedAt", "published_at"))
+        updated_at_utc = _timestamp(_value(raw_alert, "updatedAt", "updated_at"))
+        content_hash = compute_alert_content_hash(
+            alert_id=alert_id,
+            alert_header_text=alert_header_text,
+            description_text=description_text,
+            severity=severity,
+            cause=cause,
+            effect=effect,
+            active_period_start_utc=active_start,
+            active_period_end_utc=active_end,
+            published_at_utc=published_at_utc,
+            updated_at_utc=updated_at_utc,
+        )
         alert_rows.append(
             {
                 "i3_alert_snapshot_id": snapshot.i3_alert_snapshot_id,
                 "alert_index": alert_index,
                 "provider_id": snapshot.provider_id,
-                "alert_id": _text(_value(raw_alert, "id", "alertId", "messageId")),
-                "alert_header_text": _text(
-                    _value(raw_alert, "header", "title", "summary", "header_texts")
-                ),
-                "description_text": _text(
-                    _value(raw_alert, "description", "body", "message", "description_texts")
-                ),
-                "severity": _text(_value(raw_alert, "severity", "priority")),
-                "cause": _text(_value(raw_alert, "cause")),
-                "effect": _text(_value(raw_alert, "effect")),
+                "alert_id": alert_id,
+                "alert_header_text": alert_header_text,
+                "description_text": description_text,
+                "severity": severity,
+                "cause": cause,
+                "effect": effect,
                 "active_period_start_utc": active_start,
                 "active_period_end_utc": active_end,
-                "published_at_utc": _timestamp(_value(raw_alert, "publishedAt", "published_at")),
-                "updated_at_utc": _timestamp(_value(raw_alert, "updatedAt", "updated_at")),
+                "published_at_utc": published_at_utc,
+                "updated_at_utc": updated_at_utc,
                 "captured_at_utc": snapshot.captured_at_utc,
                 "raw_alert_json": raw_alert,
+                "content_hash": content_hash,
             }
         )
         for entity_index, raw_entity in enumerate(_informed_entities(raw_alert)):

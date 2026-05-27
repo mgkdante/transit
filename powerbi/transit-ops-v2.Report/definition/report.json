@@ -37,6 +37,17 @@
           "type": "BaseTheme"
         }
       ]
+    },
+    {
+      "name": "RegisteredResources",
+      "type": "RegisteredResources",
+      "items": [
+        {
+          "name": "stm-route-lines6861663311138365.geojson",
+          "path": "stm-route-lines6861663311138365.geojson",
+          "type": "ShapeMap"
+        }
+      ]
     }
   ],
   "settings": {

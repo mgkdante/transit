@@ -104,18 +104,12 @@
                 }
               }
             },
-            "titleColor": {
-              "solid": {}
-            },
             "titleFontSize": {
               "expr": {
                 "Literal": {
                   "Value": "10D"
                 }
               }
-            },
-            "labelColor": {
-              "solid": {}
             },
             "fontSize": {
               "expr": {
@@ -151,18 +145,12 @@
                 }
               }
             },
-            "titleColor": {
-              "solid": {}
-            },
             "titleFontSize": {
               "expr": {
                 "Literal": {
                   "Value": "10D"
                 }
               }
-            },
-            "labelColor": {
-              "solid": {}
             },
             "fontSize": {
               "expr": {
@@ -199,9 +187,6 @@
                   "Value": "'Routes avec retard moyen / Routes by avg delay'"
                 }
               }
-            },
-            "fontColor": {
-              "solid": {}
             },
             "fontSize": {
               "expr": {
@@ -250,9 +235,6 @@
                 }
               }
             },
-            "color": {
-              "solid": {}
-            },
             "radius": {
               "expr": {
                 "Literal": {
@@ -299,9 +281,6 @@
                   "Value": "'1-99 = haute fréquence · 100-299 = locale · 400s = express · 700s = navette'"
                 }
               }
-            },
-            "fontColor": {
-              "solid": {}
             },
             "fontSize": {
               "expr": {

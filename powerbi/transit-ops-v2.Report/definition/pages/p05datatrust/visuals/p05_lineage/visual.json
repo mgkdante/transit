@@ -93,9 +93,6 @@
                 }
               }
             },
-            "fontColor": {
-              "solid": {}
-            },
             "fontSize": {
               "expr": {
                 "Literal": {
@@ -143,9 +140,6 @@
                 }
               }
             },
-            "color": {
-              "solid": {}
-            },
             "radius": {
               "expr": {
                 "Literal": {
@@ -192,9 +186,6 @@
                   "Value": "'Source et version'"
                 }
               }
-            },
-            "fontColor": {
-              "solid": {}
             },
             "fontSize": {
               "expr": {

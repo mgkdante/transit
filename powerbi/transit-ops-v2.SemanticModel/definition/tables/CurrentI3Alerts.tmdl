@@ -57,35 +57,64 @@ table CurrentI3Alerts
 
 		annotation SummarizationSetBy = Automatic
 
-	column route_id
+	column route_ids
 		dataType: string
 		lineageTag: 88fc296a-d23d-41fb-9dea-97ab63bb3dfc
 		summarizeBy: none
-		sourceColumn: route_id
+		sourceColumn: route_ids
 
 		annotation SummarizationSetBy = Automatic
 
-	column stop_id
+	column stop_ids
 		dataType: string
 		lineageTag: 75ad7105-0c5b-4bd2-a2e1-fe9e69883a33
 		summarizeBy: none
-		sourceColumn: stop_id
+		sourceColumn: stop_ids
 
 		annotation SummarizationSetBy = Automatic
 
-	column trip_id
-		dataType: string
-		lineageTag: cd09b499-9c3b-4fa4-81da-69f37addf07b
-		summarizeBy: none
-		sourceColumn: trip_id
+	column route_count
+		dataType: int64
+		formatString: 0
+		lineageTag: c14b8af1-5d6c-4e2b-9a1f-83d4e7c052a8
+		summarizeBy: sum
+		sourceColumn: route_count
 
 		annotation SummarizationSetBy = Automatic
 
-	column area_id
-		dataType: string
-		lineageTag: f4d66d37-27f5-43bb-92d2-c90d2a08ea73
+	column stop_count
+		dataType: int64
+		formatString: 0
+		lineageTag: f5e72c93-487d-4f1e-a821-65c89b3d4f12
+		summarizeBy: sum
+		sourceColumn: stop_count
+
+		annotation SummarizationSetBy = Automatic
+
+	column entity_count
+		dataType: int64
+		formatString: 0
+		lineageTag: a82f6b14-3e5d-49c7-b146-7d2e8b0f95c3
+		summarizeBy: sum
+		sourceColumn: entity_count
+
+		annotation SummarizationSetBy = Automatic
+
+	column first_seen_at
+		dataType: dateTime
+		formatString: General Date
+		lineageTag: 6b4c9e25-7a91-4b35-8d04-1f5e7a8c6d20
 		summarizeBy: none
-		sourceColumn: area_id
+		sourceColumn: first_seen_at
+
+		annotation SummarizationSetBy = Automatic
+
+	column last_seen_at
+		dataType: dateTime
+		formatString: General Date
+		lineageTag: 9d3e1f87-2c64-4815-b9f1-5e8a7c4d3b27
+		summarizeBy: none
+		sourceColumn: last_seen_at
 
 		annotation SummarizationSetBy = Automatic
 

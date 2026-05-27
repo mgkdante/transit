@@ -524,19 +524,7 @@ cultureInfo en-US
 			          "ConceptualProperty": "vehicle_id"
 			        }
 			      },
-			      "State": "Generated",
-			      "Terms": [
-			        {
-			          "Véhicule / Vehicle": {
-			            "State": "Suggested",
-			            "Source": {
-			              "Type": "External",
-			              "Agent": "PowerBI.VisualColumnRename"
-			            },
-			            "Weight": 0.9
-			          }
-			        }
-			      ]
+			      "State": "Generated"
 			    },
 			    "currentvehiclemap.route_id": {
 			      "Definition": {
@@ -545,19 +533,7 @@ cultureInfo en-US
 			          "ConceptualProperty": "route_id"
 			        }
 			      },
-			      "State": "Generated",
-			      "Terms": [
-			        {
-			          "Route": {
-			            "State": "Suggested",
-			            "Source": {
-			              "Type": "External",
-			              "Agent": "PowerBI.VisualColumnRename"
-			            },
-			            "Weight": 0.9
-			          }
-			        }
-			      ]
+			      "State": "Generated"
 			    },
 			    "currentvehiclemap.trip_id": {
 			      "Definition": {
@@ -566,19 +542,7 @@ cultureInfo en-US
 			          "ConceptualProperty": "trip_id"
 			        }
 			      },
-			      "State": "Generated",
-			      "Terms": [
-			        {
-			          "Trajet / Trip": {
-			            "State": "Suggested",
-			            "Source": {
-			              "Type": "External",
-			              "Agent": "PowerBI.VisualColumnRename"
-			            },
-			            "Weight": 0.9
-			          }
-			        }
-			      ]
+			      "State": "Generated"
 			    },
 			    "currentvehiclemap.stop_id": {
 			      "Definition": {
@@ -587,19 +551,7 @@ cultureInfo en-US
 			          "ConceptualProperty": "stop_id"
 			        }
 			      },
-			      "State": "Generated",
-			      "Terms": [
-			        {
-			          "Arrêt / Stop": {
-			            "State": "Suggested",
-			            "Source": {
-			              "Type": "External",
-			              "Agent": "PowerBI.VisualColumnRename"
-			            },
-			            "Weight": 0.9
-			          }
-			        }
-			      ]
+			      "State": "Generated"
 			    },
 			    "currentvehiclemap.captured_at_utc": {
 			      "Definition": {
@@ -608,19 +560,7 @@ cultureInfo en-US
 			          "ConceptualProperty": "captured_at_utc"
 			        }
 			      },
-			      "State": "Generated",
-			      "Terms": [
-			        {
-			          "Capturé à": {
-			            "State": "Suggested",
-			            "Source": {
-			              "Type": "External",
-			              "Agent": "PowerBI.VisualColumnRename"
-			            },
-			            "Weight": 0.9
-			          }
-			        }
-			      ]
+			      "State": "Generated"
 			    },
 			    "latestvehiclesnapshot.route_id": {
 			      "Definition": {
@@ -629,19 +569,7 @@ cultureInfo en-US
 			          "ConceptualProperty": "route_id"
 			        }
 			      },
-			      "State": "Generated",
-			      "Terms": [
-			        {
-			          "Route": {
-			            "State": "Suggested",
-			            "Source": {
-			              "Type": "External",
-			              "Agent": "PowerBI.VisualColumnRename"
-			            },
-			            "Weight": 0.9
-			          }
-			        }
-			      ]
+			      "State": "Generated"
 			    },
 			    "currenti3alerts.route_id": {
 			      "Definition": {
@@ -1388,6 +1316,27 @@ cultureInfo en-US
 			      "Terms": [
 			        {
 			          "Impact": {
+			            "State": "Suggested",
+			            "Source": {
+			              "Type": "External",
+			              "Agent": "PowerBI.VisualColumnRename"
+			            },
+			            "Weight": 0.9
+			          }
+			        }
+			      ]
+			    },
+			    "currentvehiclemap.status_band": {
+			      "Definition": {
+			        "Binding": {
+			          "ConceptualEntity": "CurrentVehicleMap",
+			          "ConceptualProperty": "status_band"
+			        }
+			      },
+			      "State": "Generated",
+			      "Terms": [
+			        {
+			          "Statut": {
 			            "State": "Suggested",
 			            "Source": {
 			              "Type": "External",

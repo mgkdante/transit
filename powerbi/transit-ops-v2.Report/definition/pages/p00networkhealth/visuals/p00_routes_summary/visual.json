@@ -158,9 +158,6 @@
                 }
               }
             },
-            "fontColor": {
-              "solid": {}
-            },
             "fontSize": {
               "expr": {
                 "Literal": {
@@ -208,9 +205,6 @@
                 }
               }
             },
-            "color": {
-              "solid": {}
-            },
             "radius": {
               "expr": {
                 "Literal": {
@@ -257,9 +251,6 @@
                   "Value": "'Trié par retard moyen décroissant'"
                 }
               }
-            },
-            "fontColor": {
-              "solid": {}
             },
             "fontSize": {
               "expr": {

@@ -75,9 +75,6 @@
                 }
               }
             },
-            "fontColor": {
-              "solid": {}
-            },
             "fontSize": {
               "expr": {
                 "Literal": {
@@ -125,9 +122,6 @@
                 }
               }
             },
-            "color": {
-              "solid": {}
-            },
             "radius": {
               "expr": {
                 "Literal": {
@@ -174,9 +168,6 @@
                   "Value": "'Impact usager par route'"
                 }
               }
-            },
-            "fontColor": {
-              "solid": {}
             },
             "fontSize": {
               "expr": {

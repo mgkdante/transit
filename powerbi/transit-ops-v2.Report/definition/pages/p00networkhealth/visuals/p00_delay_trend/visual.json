@@ -110,18 +110,12 @@
                 }
               }
             },
-            "titleColor": {
-              "solid": {}
-            },
             "titleFontSize": {
               "expr": {
                 "Literal": {
                   "Value": "10D"
                 }
               }
-            },
-            "labelColor": {
-              "solid": {}
             },
             "fontSize": {
               "expr": {
@@ -149,9 +143,6 @@
                   "Value": "true"
                 }
               }
-            },
-            "labelColor": {
-              "solid": {}
             },
             "fontSize": {
               "expr": {
@@ -181,9 +172,6 @@
                   "Value": "'Retard moyen du réseau / Network avg delay'"
                 }
               }
-            },
-            "fontColor": {
-              "solid": {}
             },
             "fontSize": {
               "expr": {
@@ -232,9 +220,6 @@
                 }
               }
             },
-            "color": {
-              "solid": {}
-            },
             "radius": {
               "expr": {
                 "Literal": {
@@ -281,9 +266,6 @@
                   "Value": "'Maintenant vs hier même heure vs moy. 24h · tranches de 5 min'"
                 }
               }
-            },
-            "fontColor": {
-              "solid": {}
             },
             "fontSize": {
               "expr": {

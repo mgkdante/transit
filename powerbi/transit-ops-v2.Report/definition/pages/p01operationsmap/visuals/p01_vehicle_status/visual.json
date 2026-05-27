@@ -1,6 +1,6 @@
 {
   "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.8.0/schema.json",
-  "name": "p01_vehicle_route",
+  "name": "p01_vehicle_status",
   "position": {
     "x": 988,
     "y": 212,
@@ -20,15 +20,15 @@
                 "Column": {
                   "Expression": {
                     "SourceRef": {
-                      "Entity": "LatestVehicleSnapshot"
+                      "Entity": "CurrentVehicleMap"
                     }
                   },
-                  "Property": "route_id"
+                  "Property": "status_band"
                 }
               },
-              "queryRef": "LatestVehicleSnapshot.route_id",
+              "queryRef": "CurrentVehicleMap.status_band",
               "active": true,
-              "displayName": "Route"
+              "displayName": "Statut"
             }
           ]
         },
@@ -41,7 +41,7 @@
                     "Column": {
                       "Expression": {
                         "SourceRef": {
-                          "Entity": "LatestVehicleSnapshot"
+                          "Entity": "CurrentVehicleMap"
                         }
                       },
                       "Property": "vehicle_id"
@@ -50,11 +50,33 @@
                   "Function": 2
                 }
               },
-              "queryRef": "DistinctCount(LatestVehicleSnapshot.vehicle_id)",
+              "queryRef": "DistinctCount(CurrentVehicleMap.vehicle_id)",
               "displayName": "Véhicules"
             }
           ]
         }
+      },
+      "sortDefinition": {
+        "sort": [
+          {
+            "field": {
+              "Aggregation": {
+                "Expression": {
+                  "Column": {
+                    "Expression": {
+                      "SourceRef": {
+                        "Entity": "CurrentVehicleMap"
+                      }
+                    },
+                    "Property": "vehicle_id"
+                  }
+                },
+                "Function": 2
+              }
+            },
+            "direction": "Descending"
+          }
+        ]
       }
     },
     "visualContainerObjects": {
@@ -71,12 +93,9 @@
             "text": {
               "expr": {
                 "Literal": {
-                  "Value": "'Véhicules par route / Vehicles by route'"
+                  "Value": "'Véhicules par statut / Vehicles by status'"
                 }
               }
-            },
-            "fontColor": {
-              "solid": {}
             },
             "fontSize": {
               "expr": {
@@ -125,9 +144,6 @@
                 }
               }
             },
-            "color": {
-              "solid": {}
-            },
             "radius": {
               "expr": {
                 "Literal": {
@@ -171,12 +187,9 @@
             "text": {
               "expr": {
                 "Literal": {
-                  "Value": "'Charge opérationnelle actuelle'"
+                  "Value": "'Légende couleur · click pour filtrer la carte'"
                 }
               }
-            },
-            "fontColor": {
-              "solid": {}
             },
             "fontSize": {
               "expr": {
@@ -196,5 +209,42 @@
         }
       ]
     }
+  },
+  "filterConfig": {
+    "filters": [
+      {
+        "name": "67f67d41c4dc67928e3c",
+        "field": {
+          "Column": {
+            "Expression": {
+              "SourceRef": {
+                "Entity": "CurrentVehicleMap"
+              }
+            },
+            "Property": "status_band"
+          }
+        },
+        "type": "Categorical"
+      },
+      {
+        "name": "439fc8f280f9ee27c780",
+        "field": {
+          "Aggregation": {
+            "Expression": {
+              "Column": {
+                "Expression": {
+                  "SourceRef": {
+                    "Entity": "CurrentVehicleMap"
+                  }
+                },
+                "Property": "vehicle_id"
+              }
+            },
+            "Function": 2
+          }
+        },
+        "type": "Advanced"
+      }
+    ]
   }
 }

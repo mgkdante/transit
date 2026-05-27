@@ -8,7 +8,7 @@ model Model
 
 annotation __PBI_TimeIntelligenceEnabled = 1
 
-annotation PBI_QueryOrder = ["DimProvider", "DimDate", "DimRoute", "DimStop", "DimDirection", "LatestVehicleSnapshot", "LatestTripDelaySnapshot", "CurrentVehicleMap", "CurrentTripDelayComputed", "CurrentI3Alerts", "FeedFreshnessCurrent", "SourceLineageReporting", "FactVehicleSnapshot", "FactTripDelaySnapshot", "FactStopTimeDelayObservation", "VehicleSummary5m", "TripDelaySummary5m", "TripDelaySummary5mLive", "PublicRouteReliabilityDaily", "PublicStopDelayDaily", "PublicAlertImpactDaily", "I3AlertHistoryReporting", "RouteDelayHourly", "RouteDelayDayOfWeek", "StopDelayHourly", "RouteReliabilityWeekly", "RouteReliabilityMonthly", "StopDelayWeekly", "StopDelayMonthly", "RouteHabitScore", "RepeatedProblemRouteStop", "CitizenAccountabilityDaily", "ReportLabels", "_Measures"]
+annotation PBI_QueryOrder = ["DimProvider", "DimDate", "DimRoute", "DimStop", "DimDirection", "LatestVehicleSnapshot", "LatestTripDelaySnapshot", "CurrentVehicleMap", "CurrentTripDelayComputed", "CurrentI3Alerts", "FeedFreshnessCurrent", "SourceLineageReporting", "FactVehicleSnapshot", "FactTripDelaySnapshot", "FactStopTimeDelayObservation", "VehicleSummary5m", "TripDelaySummary5m", "TripDelaySummary5mLive", "MapRouteLines", "PublicRouteReliabilityDaily", "PublicStopDelayDaily", "PublicAlertImpactDaily", "I3AlertHistoryReporting", "RouteDelayHourly", "RouteDelayDayOfWeek", "StopDelayHourly", "RouteReliabilityWeekly", "RouteReliabilityMonthly", "StopDelayWeekly", "StopDelayMonthly", "RouteHabitScore", "RepeatedProblemRouteStop", "CitizenAccountabilityDaily", "ReportLabels", "_Measures"]
 
 annotation PBI_ProTooling = ["DevMode"]
 
@@ -46,6 +46,7 @@ ref table RouteHabitScore
 ref table RepeatedProblemRouteStop
 ref table CitizenAccountabilityDaily
 ref table ReportLabels
+ref table MapRouteLines
 
 ref cultureInfo en-US
 

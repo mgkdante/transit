@@ -37,9 +37,6 @@
       "value": [
         {
           "properties": {
-            "fontColor": {
-              "solid": {}
-            },
             "fontSize": {
               "expr": {
                 "Literal": {
@@ -77,9 +74,6 @@
                 }
               }
             },
-            "fontColor": {
-              "solid": {}
-            },
             "fontSize": {
               "expr": {
                 "Literal": {
@@ -112,9 +106,6 @@
                 }
               }
             },
-            "fontColor": {
-              "solid": {}
-            },
             "fontSize": {
               "expr": {
                 "Literal": {
@@ -142,9 +133,6 @@
                 }
               }
             },
-            "color": {
-              "solid": {}
-            },
             "transparency": {
               "expr": {
                 "Literal": {
@@ -164,9 +152,6 @@
                   "Value": "true"
                 }
               }
-            },
-            "color": {
-              "solid": {}
             },
             "radius": {
               "expr": {
@@ -214,9 +199,6 @@
                   "Value": "'Trajets en service · avg > 0 s (inclut critiques)'"
                 }
               }
-            },
-            "fontColor": {
-              "solid": {}
             },
             "fontSize": {
               "expr": {

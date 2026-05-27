@@ -13,6 +13,42 @@
     "visualType": "azureMap",
     "query": {
       "queryState": {
+        "Legend": {
+          "projections": [
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "CurrentVehicleMap"
+                    }
+                  },
+                  "Property": "status_band"
+                }
+              },
+              "queryRef": "CurrentVehicleMap.status_band",
+              "displayName": "Statut"
+            }
+          ]
+        },
+        "Series": {
+          "projections": [
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "CurrentVehicleMap"
+                    }
+                  },
+                  "Property": "status_band"
+                }
+              },
+              "queryRef": "CurrentVehicleMap.status_band",
+              "displayName": "Statut"
+            }
+          ]
+        },
         "Tooltips": {
           "projections": [
             {
@@ -33,6 +69,44 @@
               },
               "queryRef": "Min(CurrentVehicleMap.route_id)",
               "nativeQueryRef": "First route_id"
+            },
+            {
+              "field": {
+                "Aggregation": {
+                  "Expression": {
+                    "Column": {
+                      "Expression": {
+                        "SourceRef": {
+                          "Entity": "CurrentVehicleMap"
+                        }
+                      },
+                      "Property": "trip_avg_delay_seconds"
+                    }
+                  },
+                  "Function": 1
+                }
+              },
+              "queryRef": "Avg(CurrentVehicleMap.trip_avg_delay_seconds)",
+              "displayName": "Retard moyen (sec)"
+            },
+            {
+              "field": {
+                "Aggregation": {
+                  "Expression": {
+                    "Column": {
+                      "Expression": {
+                        "SourceRef": {
+                          "Entity": "CurrentVehicleMap"
+                        }
+                      },
+                      "Property": "trip_max_delay_seconds"
+                    }
+                  },
+                  "Function": 4
+                }
+              },
+              "queryRef": "Max(CurrentVehicleMap.trip_max_delay_seconds)",
+              "displayName": "Retard max (sec)"
             },
             {
               "field": {
@@ -157,21 +231,28 @@
             "zoom": {
               "expr": {
                 "Literal": {
-                  "Value": "9.79D"
+                  "Value": "12.17D"
                 }
               }
             },
             "centerLongitude": {
               "expr": {
                 "Literal": {
-                  "Value": "-73.72078704833984D"
+                  "Value": "-73.60330113961783D"
                 }
               }
             },
             "centerLatitude": {
               "expr": {
                 "Literal": {
-                  "Value": "45.55071943105929D"
+                  "Value": "45.5123195611302D"
+                }
+              }
+            },
+            "defaultStyle": {
+              "expr": {
+                "Literal": {
+                  "Value": "'road'"
                 }
               }
             }
@@ -185,6 +266,331 @@
               "expr": {
                 "Literal": {
                   "Value": "false"
+                }
+              }
+            },
+            "showTrafficControl": {
+              "expr": {
+                "Literal": {
+                  "Value": "true"
+                }
+              }
+            }
+          }
+        }
+      ],
+      "filledMap": [
+        {
+          "properties": {
+            "show": {
+              "expr": {
+                "Literal": {
+                  "Value": "true"
+                }
+              }
+            }
+          }
+        }
+      ],
+      "dataPoint": [
+        {
+          "properties": {
+            "fill": {
+              "solid": {
+                "color": {
+                  "expr": {
+                    "ThemeDataColor": {
+                      "ColorId": 3,
+                      "Percent": 0
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "selector": {
+            "data": [
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "CurrentVehicleMap"
+                          }
+                        },
+                        "Property": "status_band"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'À l''heure / On time'"
+                      }
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "properties": {
+            "fill": {
+              "solid": {
+                "color": {
+                  "expr": {
+                    "ThemeDataColor": {
+                      "ColorId": 6,
+                      "Percent": 0
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "selector": {
+            "data": [
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "CurrentVehicleMap"
+                          }
+                        },
+                        "Property": "status_band"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'Critique / Severe'"
+                      }
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "properties": {
+            "fill": {
+              "solid": {
+                "color": {
+                  "expr": {
+                    "ThemeDataColor": {
+                      "ColorId": 2,
+                      "Percent": 0
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "selector": {
+            "data": [
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "CurrentVehicleMap"
+                          }
+                        },
+                        "Property": "status_band"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'Inconnu / Unknown'"
+                      }
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "properties": {
+            "fill": {
+              "solid": {
+                "color": {
+                  "expr": {
+                    "ThemeDataColor": {
+                      "ColorId": 5,
+                      "Percent": 0.2
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "selector": {
+            "data": [
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "CurrentVehicleMap"
+                          }
+                        },
+                        "Property": "status_band"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'En retard / Late'"
+                      }
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "properties": {
+            "fill": {
+              "solid": {
+                "color": {
+                  "expr": {
+                    "ThemeDataColor": {
+                      "ColorId": 4,
+                      "Percent": 0
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "selector": {
+            "data": [
+              {
+                "scopeId": {
+                  "Comparison": {
+                    "ComparisonKind": 0,
+                    "Left": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "CurrentVehicleMap"
+                          }
+                        },
+                        "Property": "status_band"
+                      }
+                    },
+                    "Right": {
+                      "Literal": {
+                        "Value": "'En avance / Early'"
+                      }
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "referenceLayer": [
+        {
+          "properties": {
+            "datasourceType": {
+              "expr": {
+                "Literal": {
+                  "Value": "'file_upload'"
+                }
+              }
+            },
+            "additionalDatasource": {
+              "geoJson": {
+                "type": {
+                  "expr": {
+                    "Literal": {
+                      "Value": "'packaged'"
+                    }
+                  }
+                },
+                "name": {
+                  "expr": {
+                    "Literal": {
+                      "Value": "'stm-route-lines.geojson'"
+                    }
+                  }
+                },
+                "content": {
+                  "expr": {
+                    "ResourcePackageItem": {
+                      "PackageName": "RegisteredResources",
+                      "PackageType": 1,
+                      "ItemName": "stm-route-lines6861663311138365.geojson"
+                    }
+                  }
+                }
+              }
+            },
+            "lineStrokeWidth": {
+              "expr": {
+                "Literal": {
+                  "Value": "1L"
+                }
+              }
+            },
+            "polygonStrokeColor": {
+              "solid": {
+                "color": {
+                  "expr": {
+                    "ThemeDataColor": {
+                      "ColorId": 2,
+                      "Percent": 0
+                    }
+                  }
+                }
+              }
+            },
+            "bubbleStrokeWidth": {
+              "expr": {
+                "Literal": {
+                  "Value": "1L"
+                }
+              }
+            },
+            "polygonStrokeWidth": {
+              "expr": {
+                "Literal": {
+                  "Value": "1L"
+                }
+              }
+            }
+          }
+        }
+      ],
+      "bubbleLayer": [
+        {
+          "properties": {
+            "clusteringEnabled": {
+              "expr": {
+                "Literal": {
+                  "Value": "false"
+                }
+              }
+            },
+            "clusteredBubbleRadius": {
+              "expr": {
+                "Literal": {
+                  "Value": "20L"
                 }
               }
             }
@@ -209,9 +615,6 @@
                   "Value": "'Position des véhicules / Vehicle positions'"
                 }
               }
-            },
-            "fontColor": {
-              "solid": {}
             },
             "fontSize": {
               "expr": {
@@ -260,9 +663,6 @@
                 }
               }
             },
-            "color": {
-              "solid": {}
-            },
             "radius": {
               "expr": {
                 "Literal": {
@@ -309,9 +709,6 @@
                   "Value": "'Tous les véhicules STM en service · capturé toutes les ~30s'"
                 }
               }
-            },
-            "fontColor": {
-              "solid": {}
             },
             "fontSize": {
               "expr": {
@@ -453,6 +850,58 @@
               }
             },
             "Function": 3
+          }
+        },
+        "type": "Advanced"
+      },
+      {
+        "name": "a022d621d12d3ee188a3",
+        "field": {
+          "Column": {
+            "Expression": {
+              "SourceRef": {
+                "Entity": "CurrentVehicleMap"
+              }
+            },
+            "Property": "status_band"
+          }
+        },
+        "type": "Categorical"
+      },
+      {
+        "name": "bfbf25072ea24933fb7c",
+        "field": {
+          "Aggregation": {
+            "Expression": {
+              "Column": {
+                "Expression": {
+                  "SourceRef": {
+                    "Entity": "CurrentVehicleMap"
+                  }
+                },
+                "Property": "trip_avg_delay_seconds"
+              }
+            },
+            "Function": 1
+          }
+        },
+        "type": "Advanced"
+      },
+      {
+        "name": "c66231375da36cad6226",
+        "field": {
+          "Aggregation": {
+            "Expression": {
+              "Column": {
+                "Expression": {
+                  "SourceRef": {
+                    "Entity": "CurrentVehicleMap"
+                  }
+                },
+                "Property": "trip_max_delay_seconds"
+              }
+            },
+            "Function": 4
           }
         },
         "type": "Advanced"

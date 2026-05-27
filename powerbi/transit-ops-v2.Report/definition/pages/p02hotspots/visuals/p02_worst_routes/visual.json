@@ -97,9 +97,6 @@
                 }
               }
             },
-            "fontColor": {
-              "solid": {}
-            },
             "fontSize": {
               "expr": {
                 "Literal": {
@@ -127,9 +124,6 @@
                 }
               }
             },
-            "color": {
-              "solid": {}
-            },
             "transparency": {
               "expr": {
                 "Literal": {
@@ -149,9 +143,6 @@
                   "Value": "true"
                 }
               }
-            },
-            "color": {
-              "solid": {}
             },
             "radius": {
               "expr": {
@@ -199,9 +190,6 @@
                   "Value": "'Retards sévères en premier'"
                 }
               }
-            },
-            "fontColor": {
-              "solid": {}
             },
             "fontSize": {
               "expr": {

@@ -3,9 +3,9 @@
   "name": "p01_alerts",
   "position": {
     "x": 988,
-    "y": 464,
+    "y": 524,
     "z": 40,
-    "height": 212,
+    "height": 152,
     "width": 260,
     "tabOrder": 40
   },
@@ -23,11 +23,11 @@
                       "Entity": "CurrentI3Alerts"
                     }
                   },
-                  "Property": "route_id"
+                  "Property": "route_ids"
                 }
               },
-              "queryRef": "CurrentI3Alerts.route_id",
-              "displayName": "Route"
+              "queryRef": "CurrentI3Alerts.route_ids",
+              "displayName": "Routes"
             },
             {
               "field": {
@@ -37,11 +37,11 @@
                       "Entity": "CurrentI3Alerts"
                     }
                   },
-                  "Property": "stop_id"
+                  "Property": "stop_ids"
                 }
               },
-              "queryRef": "CurrentI3Alerts.stop_id",
-              "displayName": "Arrêt"
+              "queryRef": "CurrentI3Alerts.stop_ids",
+              "displayName": "Arrêts"
             },
             {
               "field": {
@@ -51,25 +51,11 @@
                       "Entity": "CurrentI3Alerts"
                     }
                   },
-                  "Property": "severity"
+                  "Property": "description_text"
                 }
               },
-              "queryRef": "CurrentI3Alerts.severity",
-              "displayName": "Sévérité"
-            },
-            {
-              "field": {
-                "Column": {
-                  "Expression": {
-                    "SourceRef": {
-                      "Entity": "CurrentI3Alerts"
-                    }
-                  },
-                  "Property": "alert_header_text"
-                }
-              },
-              "queryRef": "CurrentI3Alerts.alert_header_text",
-              "displayName": "Alerte"
+              "queryRef": "CurrentI3Alerts.description_text",
+              "displayName": "Description"
             }
           ]
         }
@@ -92,9 +78,6 @@
                   "Value": "'Alertes actives / Active alerts'"
                 }
               }
-            },
-            "fontColor": {
-              "solid": {}
             },
             "fontSize": {
               "expr": {
@@ -143,9 +126,6 @@
                 }
               }
             },
-            "color": {
-              "solid": {}
-            },
             "radius": {
               "expr": {
                 "Literal": {
@@ -189,12 +169,9 @@
             "text": {
               "expr": {
                 "Literal": {
-                  "Value": "'Contexte route/arrêt'"
+                  "Value": "'Contexte route/arrêt · description STM'"
                 }
               }
-            },
-            "fontColor": {
-              "solid": {}
             },
             "fontSize": {
               "expr": {
@@ -214,5 +191,65 @@
         }
       ]
     }
+  },
+  "filterConfig": {
+    "filters": [
+      {
+        "name": "b4c1fec82a88d3352e4a",
+        "field": {
+          "Column": {
+            "Expression": {
+              "SourceRef": {
+                "Entity": "CurrentI3Alerts"
+              }
+            },
+            "Property": "route_id"
+          }
+        },
+        "type": "Categorical"
+      },
+      {
+        "name": "041b1315cd1f156cbbd1",
+        "field": {
+          "Column": {
+            "Expression": {
+              "SourceRef": {
+                "Entity": "CurrentI3Alerts"
+              }
+            },
+            "Property": "stop_id"
+          }
+        },
+        "type": "Categorical"
+      },
+      {
+        "name": "319b59f4c0df9faf98d8",
+        "field": {
+          "Column": {
+            "Expression": {
+              "SourceRef": {
+                "Entity": "CurrentI3Alerts"
+              }
+            },
+            "Property": "severity"
+          }
+        },
+        "type": "Categorical"
+      },
+      {
+        "name": "ec58e5ebfdaba9d22853",
+        "field": {
+          "Column": {
+            "Expression": {
+              "SourceRef": {
+                "Entity": "CurrentI3Alerts"
+              }
+            },
+            "Property": "alert_header_text"
+          }
+        },
+        "type": "Categorical"
+      }
+    ]
   }
 }
