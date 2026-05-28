@@ -187,7 +187,7 @@
             "text": {
               "expr": {
                 "Literal": {
-                  "Value": "'Légende couleur · click pour filtrer la carte'"
+                  "Value": "'Cliquez une bande pour filtrer la carte / Click a band to filter the map'"
                 }
               }
             },
@@ -209,42 +209,5 @@
         }
       ]
     }
-  },
-  "filterConfig": {
-    "filters": [
-      {
-        "name": "67f67d41c4dc67928e3c",
-        "field": {
-          "Column": {
-            "Expression": {
-              "SourceRef": {
-                "Entity": "CurrentVehicleMap"
-              }
-            },
-            "Property": "status_band"
-          }
-        },
-        "type": "Categorical"
-      },
-      {
-        "name": "439fc8f280f9ee27c780",
-        "field": {
-          "Aggregation": {
-            "Expression": {
-              "Column": {
-                "Expression": {
-                  "SourceRef": {
-                    "Entity": "CurrentVehicleMap"
-                  }
-                },
-                "Property": "vehicle_id"
-              }
-            },
-            "Function": 2
-          }
-        },
-        "type": "Advanced"
-      }
-    ]
   }
 }

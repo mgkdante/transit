@@ -1,0 +1,155 @@
+table CurrentMapObjects
+	lineageTag: 4364ece8-63a4-480f-8f2c-29a91499c64a
+
+	column object_type
+		dataType: string
+		lineageTag: bc5eec51-8cbe-4e63-9c15-3d96044f5abc
+		summarizeBy: none
+		sourceColumn: object_type
+
+		annotation SummarizationSetBy = Automatic
+
+	column object_id
+		dataType: string
+		lineageTag: 03e804e6-fb23-4937-8ccc-fcfc1bfeffdf
+		summarizeBy: none
+		sourceColumn: object_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column latitude
+		dataType: double
+		lineageTag: 31d65e50-e216-4257-9b23-548b01ba04ec
+		dataCategory: Latitude
+		summarizeBy: none
+		sourceColumn: latitude
+
+		annotation SummarizationSetBy = User
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	column longitude
+		dataType: double
+		lineageTag: 49d576bf-144e-45af-bd03-5f445d5b9b53
+		dataCategory: Longitude
+		summarizeBy: none
+		sourceColumn: longitude
+
+		annotation SummarizationSetBy = User
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	column status_band
+		dataType: string
+		lineageTag: 3bbd6554-1f16-4caa-a58b-77c1911a131c
+		summarizeBy: none
+		sourceColumn: status_band
+
+		annotation SummarizationSetBy = Automatic
+
+	column route_id
+		dataType: string
+		lineageTag: 024e3a01-fb4c-40d0-9edf-4f2e706f4774
+		summarizeBy: none
+		sourceColumn: route_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column trip_id
+		dataType: string
+		lineageTag: b7d09c62-733b-458d-8c68-a910ad6a210e
+		summarizeBy: none
+		sourceColumn: trip_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column stop_id
+		dataType: string
+		lineageTag: cc1d1a69-bf0a-4e8c-9455-487dc745174c
+		summarizeBy: none
+		sourceColumn: stop_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column trip_avg_delay_seconds
+		dataType: double
+		lineageTag: 11804191-976a-44d2-b2cf-d8a118112fdf
+		summarizeBy: none
+		sourceColumn: trip_avg_delay_seconds
+
+		annotation SummarizationSetBy = User
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	column trip_max_delay_seconds
+		dataType: int64
+		formatString: 0
+		lineageTag: 42fbf246-d814-4a52-bd8b-147236f36ef4
+		summarizeBy: none
+		sourceColumn: trip_max_delay_seconds
+
+		annotation SummarizationSetBy = User
+
+	column captured_at_utc
+		dataType: dateTime
+		formatString: General Date
+		lineageTag: 7d11d543-2688-48dd-95ed-cf4ebf321432
+		summarizeBy: none
+		sourceColumn: captured_at_utc
+
+		annotation SummarizationSetBy = Automatic
+
+	column alert_description
+		dataType: string
+		lineageTag: 06eabcf4-206e-4fcc-ad82-66f2e8f35341
+		summarizeBy: none
+		sourceColumn: alert_description
+
+		annotation SummarizationSetBy = Automatic
+
+	column display_category
+		dataType: string
+		lineageTag: 91d35249-1694-4d5c-9442-8d58a9c97eeb
+		summarizeBy: none
+		sourceColumn: display_category
+
+		annotation SummarizationSetBy = Automatic
+
+	column alert_count
+		dataType: int64
+		formatString: 0
+		lineageTag: 7b941a53-8825-4539-ad3b-104cbf42ac17
+		summarizeBy: sum
+		sourceColumn: alert_count
+
+		annotation SummarizationSetBy = Automatic
+
+	column stop_name
+		dataType: string
+		lineageTag: 0f99df15-0684-472a-894c-110a54156311
+		summarizeBy: none
+		sourceColumn: stop_name
+
+		annotation SummarizationSetBy = Automatic
+
+	column routes_serving
+		dataType: string
+		lineageTag: e166733d-6d63-438d-a604-fd0fdc5b46d9
+		summarizeBy: none
+		sourceColumn: routes_serving
+
+		annotation SummarizationSetBy = Automatic
+
+	partition CurrentMapObjects = m
+		mode: directQuery
+		source =
+				let
+				    Source = PostgreSQL.Database("db.transit.yesid.dev", "transit"),
+				    gold_current_map_objects = Source{[Schema="gold",Item="current_map_objects"]}[Data]
+				in
+				    gold_current_map_objects
+
+	annotation PBI_NavigationStepName = Navigation
+
+	annotation PBI_ResultType = Table
+

@@ -56,6 +56,34 @@
               },
               "queryRef": "CurrentI3Alerts.description_text",
               "displayName": "Description"
+            },
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "CurrentI3Alerts"
+                    }
+                  },
+                  "Property": "active_period_start_utc"
+                }
+              },
+              "queryRef": "CurrentI3Alerts.active_period_start_utc",
+              "displayName": "Début"
+            },
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "CurrentI3Alerts"
+                    }
+                  },
+                  "Property": "captured_at_utc"
+                }
+              },
+              "queryRef": "CurrentI3Alerts.captured_at_utc",
+              "displayName": "Capturé"
             }
           ]
         }
@@ -110,7 +138,7 @@
             "text": {
               "expr": {
                 "Literal": {
-                  "Value": "'Alertes actives / Active alerts'"
+                  "Value": "'Perturbations actives / Active disruptions'"
                 }
               }
             },
@@ -204,7 +232,7 @@
             "text": {
               "expr": {
                 "Literal": {
-                  "Value": "'Contexte route/arrêt · description STM'"
+                  "Value": "'Annonces officielles STM · routes et arrêts affectés · validité + capture'"
                 }
               }
             },
@@ -229,34 +257,6 @@
   },
   "filterConfig": {
     "filters": [
-      {
-        "name": "b4c1fec82a88d3352e4a",
-        "field": {
-          "Column": {
-            "Expression": {
-              "SourceRef": {
-                "Entity": "CurrentI3Alerts"
-              }
-            },
-            "Property": "route_id"
-          }
-        },
-        "type": "Categorical"
-      },
-      {
-        "name": "041b1315cd1f156cbbd1",
-        "field": {
-          "Column": {
-            "Expression": {
-              "SourceRef": {
-                "Entity": "CurrentI3Alerts"
-              }
-            },
-            "Property": "stop_id"
-          }
-        },
-        "type": "Categorical"
-      },
       {
         "name": "319b59f4c0df9faf98d8",
         "field": {
@@ -286,48 +286,6 @@
         },
         "type": "Categorical",
         "howCreated": "User"
-      },
-      {
-        "name": "e635b66c6066e27c9a7e",
-        "field": {
-          "Column": {
-            "Expression": {
-              "SourceRef": {
-                "Entity": "CurrentI3Alerts"
-              }
-            },
-            "Property": "route_ids"
-          }
-        },
-        "type": "Categorical"
-      },
-      {
-        "name": "deed7e3e9b029ea63175",
-        "field": {
-          "Column": {
-            "Expression": {
-              "SourceRef": {
-                "Entity": "CurrentI3Alerts"
-              }
-            },
-            "Property": "stop_ids"
-          }
-        },
-        "type": "Categorical"
-      },
-      {
-        "name": "0f07622cdb93598ed91b",
-        "field": {
-          "Column": {
-            "Expression": {
-              "SourceRef": {
-                "Entity": "CurrentI3Alerts"
-              }
-            },
-            "Property": "description_text"
-          }
-        },
-        "type": "Categorical"
       }
     ]
   }

@@ -1,10 +1,8 @@
 relationship currentTripDelayComputed_route
-	isActive: false
 	fromColumn: CurrentTripDelayComputed.route_id
 	toColumn: DimRoute.route_id
 
 relationship currentVehicleMap_route
-	isActive: false
 	fromColumn: CurrentVehicleMap.route_id
 	toColumn: DimRoute.route_id
 
@@ -187,4 +185,8 @@ relationship i3AlertHistoryReporting_date
 	isActive: false
 	fromColumn: I3AlertHistoryReporting.provider_local_date
 	toColumn: DimDate.service_date
+
+relationship currentMapObjects_route
+	fromColumn: CurrentMapObjects.route_id
+	toColumn: DimRoute.route_id
 

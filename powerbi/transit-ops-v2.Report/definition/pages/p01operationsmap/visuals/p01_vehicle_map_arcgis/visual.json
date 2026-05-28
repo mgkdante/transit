@@ -1,0 +1,527 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.8.0/schema.json",
+  "name": "p01_vehicle_map_arcgis",
+  "position": {
+    "x": 32,
+    "y": 80,
+    "z": 211,
+    "height": 820,
+    "width": 942,
+    "tabOrder": 211
+  },
+  "visual": {
+    "visualType": "esriVisual",
+    "query": {
+      "queryState": {
+        "Color": {
+          "projections": [
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "CurrentMapObjects"
+                    }
+                  },
+                  "Property": "display_category"
+                }
+              },
+              "queryRef": "CurrentMapObjects.display_category",
+              "nativeQueryRef": "display_category"
+            }
+          ]
+        },
+        "Latitude": {
+          "projections": [
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "CurrentMapObjects"
+                    }
+                  },
+                  "Property": "latitude"
+                }
+              },
+              "queryRef": "CurrentMapObjects.latitude",
+              "nativeQueryRef": "latitude"
+            }
+          ]
+        },
+        "Longitude": {
+          "projections": [
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "CurrentMapObjects"
+                    }
+                  },
+                  "Property": "longitude"
+                }
+              },
+              "queryRef": "CurrentMapObjects.longitude",
+              "nativeQueryRef": "longitude"
+            }
+          ]
+        },
+        "Tooltips": {
+          "projections": [
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "CurrentMapObjects"
+                    }
+                  },
+                  "Property": "object_id"
+                }
+              },
+              "queryRef": "CurrentMapObjects.object_id",
+              "nativeQueryRef": "object_id"
+            },
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "CurrentMapObjects"
+                    }
+                  },
+                  "Property": "route_id"
+                }
+              },
+              "queryRef": "CurrentMapObjects.route_id",
+              "nativeQueryRef": "route_id"
+            },
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "CurrentMapObjects"
+                    }
+                  },
+                  "Property": "stop_id"
+                }
+              },
+              "queryRef": "CurrentMapObjects.stop_id",
+              "nativeQueryRef": "stop_id"
+            },
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "CurrentMapObjects"
+                    }
+                  },
+                  "Property": "trip_id"
+                }
+              },
+              "queryRef": "CurrentMapObjects.trip_id",
+              "nativeQueryRef": "trip_id"
+            },
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "CurrentMapObjects"
+                    }
+                  },
+                  "Property": "alert_description"
+                }
+              },
+              "queryRef": "CurrentMapObjects.alert_description",
+              "nativeQueryRef": "alert_description"
+            },
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "CurrentMapObjects"
+                    }
+                  },
+                  "Property": "stop_name"
+                }
+              },
+              "queryRef": "CurrentMapObjects.stop_name",
+              "nativeQueryRef": "stop_name"
+            },
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "CurrentMapObjects"
+                    }
+                  },
+                  "Property": "routes_serving"
+                }
+              },
+              "queryRef": "CurrentMapObjects.routes_serving",
+              "nativeQueryRef": "routes_serving"
+            },
+            {
+              "field": {
+                "Aggregation": {
+                  "Expression": {
+                    "Column": {
+                      "Expression": {
+                        "SourceRef": {
+                          "Entity": "CurrentMapObjects"
+                        }
+                      },
+                      "Property": "alert_count"
+                    }
+                  },
+                  "Function": 0
+                }
+              },
+              "queryRef": "Sum(CurrentMapObjects.alert_count)",
+              "nativeQueryRef": "Sum of alert_count"
+            },
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "CurrentMapObjects"
+                    }
+                  },
+                  "Property": "captured_at_utc"
+                }
+              },
+              "queryRef": "CurrentMapObjects.captured_at_utc",
+              "nativeQueryRef": "captured_at_utc"
+            },
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "CurrentMapObjects"
+                    }
+                  },
+                  "Property": "trip_avg_delay_seconds"
+                }
+              },
+              "queryRef": "CurrentMapObjects.trip_avg_delay_seconds",
+              "nativeQueryRef": "trip_avg_delay_seconds"
+            }
+          ]
+        }
+      },
+      "sortDefinition": {
+        "sort": [
+          {
+            "field": {
+              "Column": {
+                "Expression": {
+                  "SourceRef": {
+                    "Entity": "CurrentMapObjects"
+                  }
+                },
+                "Property": "object_id"
+              }
+            },
+            "direction": "Ascending"
+          }
+        ],
+        "isDefaultSort": true
+      }
+    },
+    "objects": {
+      "mapTools": [
+        {
+          "properties": {
+            "basemaps": {
+              "expr": {
+                "Literal": {
+                  "Value": "true"
+                }
+              }
+            },
+            "share": {
+              "expr": {
+                "Literal": {
+                  "Value": "true"
+                }
+              }
+            }
+          }
+        }
+      ],
+      "mapObject": [
+        {
+          "properties": {
+            "value": {
+              "expr": {
+                "Literal": {
+                  "Value": "'{\"portalUrl\":\"https://www.arcgis.com\",\"version\":\"2.4\",\"isAuthorNamedUser\":false,\"map\":{\"webmap\":{\"is3d\":false,\"itemData\":{\"operationalLayers\":[{\"id\":\"MyLayer\",\"visibility\":true,\"opacity\":1,\"minScale\":0,\"maxScale\":0,\"refreshInterval\":0,\"title\":\"Coordinates\",\"objectIdField\":\"objectId\",\"type\":\"DataLayer\",\"layerType\":\"ArcGISFeatureLayer\",\"popupEnabled\":true,\"disablePopup\":false,\"visible\":true,\"geometryType\":\"point\",\"source\":[{\"attributes\":{},\"geometry\":{\"x\":0,\"y\":0,\"type\":\"point\",\"spatialReference\":{\"latestWkid\":3857,\"wkid\":102100}}}],\"spatialReference\":{\"latestWkid\":3857,\"wkid\":102100},\"esriMaps\":{\"isTimeEnabled\":\"false\",\"clusterInfo\":null,\"lastShareInfo\":null},\"timeInfo\":null,\"showLabels\":true,\"featureCollection\":{\"layers\":[{\"popupInfo\":{\"popupElements\":[{\"type\":\"fields\",\"fieldInfos\":[{\"fieldName\":\"CurrentMapObjects_latitude\",\"format\":{\"digitSeparator\":true,\"places\":2},\"isEditable\":true,\"label\":\"latitude\",\"tooltip\":\"\",\"visible\":true},{\"fieldName\":\"CurrentMapObjects_longitude\",\"format\":{\"digitSeparator\":true,\"places\":2},\"isEditable\":true,\"label\":\"longitude\",\"tooltip\":\"\",\"visible\":true},{\"fieldName\":\"CurrentMapObjects_display_category\",\"isEditable\":true,\"label\":\"display_category\",\"tooltip\":\"\",\"visible\":true},{\"fieldName\":\"CurrentMapObjects_object_id\",\"isEditable\":true,\"label\":\"object_id\",\"tooltip\":\"\",\"visible\":true},{\"fieldName\":\"CurrentMapObjects_route_id\",\"isEditable\":true,\"label\":\"route_id\",\"tooltip\":\"\",\"visible\":true},{\"fieldName\":\"CurrentMapObjects_stop_id\",\"isEditable\":true,\"label\":\"stop_id\",\"tooltip\":\"\",\"visible\":true},{\"fieldName\":\"CurrentMapObjects_trip_id\",\"isEditable\":true,\"label\":\"trip_id\",\"tooltip\":\"\",\"visible\":true},{\"fieldName\":\"CurrentMapObjects_alert_description\",\"isEditable\":true,\"label\":\"alert_description\",\"tooltip\":\"\",\"visible\":true},{\"fieldName\":\"CurrentMapObjects_stop_name\",\"isEditable\":true,\"label\":\"stop_name\",\"tooltip\":\"\",\"visible\":true},{\"fieldName\":\"CurrentMapObjects_routes_serving\",\"isEditable\":true,\"label\":\"routes_serving\",\"tooltip\":\"\",\"visible\":true},{\"fieldName\":\"Sum_CurrentMapObjects_alert_count_\",\"format\":{\"digitSeparator\":true,\"places\":0},\"isEditable\":true,\"label\":\"Sum of alert_count\",\"tooltip\":\"\",\"visible\":true},{\"fieldName\":\"CurrentMapObjects_captured_at_utc\",\"format\":{\"dateFormat\":\"shortDateShortTime\",\"digitSeparator\":false},\"isEditable\":true,\"label\":\"captured_at_utc\",\"tooltip\":\"\",\"visible\":true},{\"fieldName\":\"CurrentMapObjects_trip_avg_delay_seconds\",\"format\":{\"digitSeparator\":true,\"places\":2},\"isEditable\":true,\"label\":\"trip_avg_delay_seconds\",\"tooltip\":\"\",\"visible\":true},{\"fieldName\":\"ROW_ID\",\"format\":{\"digitSeparator\":true,\"places\":0},\"isEditable\":true,\"label\":\"ROW_ID\",\"tooltip\":\"\",\"visible\":true}]}],\"expressionInfos\":[],\"fieldInfos\":[{\"fieldName\":\"CurrentMapObjects_latitude\",\"format\":{\"digitSeparator\":true,\"places\":2},\"isEditable\":true,\"label\":\"latitude\",\"tooltip\":\"\",\"visible\":true},{\"fieldName\":\"CurrentMapObjects_longitude\",\"format\":{\"digitSeparator\":true,\"places\":2},\"isEditable\":true,\"label\":\"longitude\",\"tooltip\":\"\",\"visible\":true},{\"fieldName\":\"CurrentMapObjects_display_category\",\"isEditable\":true,\"label\":\"display_category\",\"tooltip\":\"\",\"visible\":true},{\"fieldName\":\"CurrentMapObjects_object_id\",\"isEditable\":true,\"label\":\"object_id\",\"tooltip\":\"\",\"visible\":true},{\"fieldName\":\"CurrentMapObjects_route_id\",\"isEditable\":true,\"label\":\"route_id\",\"tooltip\":\"\",\"visible\":true},{\"fieldName\":\"CurrentMapObjects_stop_id\",\"isEditable\":true,\"label\":\"stop_id\",\"tooltip\":\"\",\"visible\":true},{\"fieldName\":\"CurrentMapObjects_trip_id\",\"isEditable\":true,\"label\":\"trip_id\",\"tooltip\":\"\",\"visible\":true},{\"fieldName\":\"CurrentMapObjects_alert_description\",\"isEditable\":true,\"label\":\"alert_description\",\"tooltip\":\"\",\"visible\":true},{\"fieldName\":\"CurrentMapObjects_stop_name\",\"isEditable\":true,\"label\":\"stop_name\",\"tooltip\":\"\",\"visible\":true},{\"fieldName\":\"CurrentMapObjects_routes_serving\",\"isEditable\":true,\"label\":\"routes_serving\",\"tooltip\":\"\",\"visible\":true},{\"fieldName\":\"Sum_CurrentMapObjects_alert_count_\",\"format\":{\"digitSeparator\":true,\"places\":0},\"isEditable\":true,\"label\":\"Sum of alert_count\",\"tooltip\":\"\",\"visible\":true},{\"fieldName\":\"CurrentMapObjects_captured_at_utc\",\"format\":{\"dateFormat\":\"shortDateShortTime\",\"digitSeparator\":false},\"isEditable\":true,\"label\":\"captured_at_utc\",\"tooltip\":\"\",\"visible\":true},{\"fieldName\":\"CurrentMapObjects_trip_avg_delay_seconds\",\"format\":{\"digitSeparator\":true,\"places\":2},\"isEditable\":true,\"label\":\"trip_avg_delay_seconds\",\"tooltip\":\"\",\"visible\":true},{\"fieldName\":\"ROW_ID\",\"format\":{\"digitSeparator\":true,\"places\":0},\"isEditable\":true,\"label\":\"ROW_ID\",\"tooltip\":\"\",\"visible\":true}],\"title\":\"\",\"actions\":[]},\"effect\":null,\"layerDefinition\":{\"objectIdField\":\"objectId\",\"fields\":[{\"alias\":\"objectId\",\"editable\":false,\"name\":\"objectId\",\"nullable\":false,\"type\":\"esriFieldTypeOID\"},{\"alias\":\"display_category\",\"editable\":true,\"length\":-1,\"name\":\"CurrentMapObjects_display_category\",\"nullable\":true,\"type\":\"esriFieldTypeString\"},{\"alias\":\"latitude\",\"editable\":true,\"name\":\"CurrentMapObjects_latitude\",\"nullable\":true,\"type\":\"esriFieldTypeDouble\"},{\"alias\":\"longitude\",\"editable\":true,\"name\":\"CurrentMapObjects_longitude\",\"nullable\":true,\"type\":\"esriFieldTypeDouble\"},{\"alias\":\"object_id\",\"editable\":true,\"length\":-1,\"name\":\"CurrentMapObjects_object_id\",\"nullable\":true,\"type\":\"esriFieldTypeString\"},{\"alias\":\"route_id\",\"editable\":true,\"length\":-1,\"name\":\"CurrentMapObjects_route_id\",\"nullable\":true,\"type\":\"esriFieldTypeString\"},{\"alias\":\"stop_id\",\"editable\":true,\"length\":-1,\"name\":\"CurrentMapObjects_stop_id\",\"nullable\":true,\"type\":\"esriFieldTypeString\"},{\"alias\":\"trip_id\",\"editable\":true,\"length\":-1,\"name\":\"CurrentMapObjects_trip_id\",\"nullable\":true,\"type\":\"esriFieldTypeString\"},{\"alias\":\"alert_description\",\"editable\":true,\"length\":-1,\"name\":\"CurrentMapObjects_alert_description\",\"nullable\":true,\"type\":\"esriFieldTypeString\"},{\"alias\":\"stop_name\",\"editable\":true,\"length\":-1,\"name\":\"CurrentMapObjects_stop_name\",\"nullable\":true,\"type\":\"esriFieldTypeString\"},{\"alias\":\"routes_serving\",\"editable\":true,\"length\":-1,\"name\":\"CurrentMapObjects_routes_serving\",\"nullable\":true,\"type\":\"esriFieldTypeString\"},{\"alias\":\"Sum of alert_count\",\"editable\":true,\"name\":\"Sum_CurrentMapObjects_alert_count_\",\"nullable\":true,\"type\":\"esriFieldTypeInteger\"},{\"alias\":\"captured_at_utc\",\"editable\":true,\"length\":8,\"name\":\"CurrentMapObjects_captured_at_utc\",\"nullable\":true,\"type\":\"esriFieldTypeDate\"},{\"alias\":\"trip_avg_delay_seconds\",\"editable\":true,\"name\":\"CurrentMapObjects_trip_avg_delay_seconds\",\"nullable\":true,\"type\":\"esriFieldTypeDouble\"},{\"alias\":\"ROW_ID\",\"editable\":true,\"name\":\"ROW_ID\",\"nullable\":true,\"type\":\"esriFieldTypeInteger\"}],\"geometryType\":\"point\",\"drawingInfo\":{\"renderer\":{\"type\":\"uniqueValue\",\"visualVariables\":[],\"field1\":\"CurrentMapObjects_display_category\",\"legendOptions\":{\"title\":\"display_category\"},\"defaultLabel\":\"Other\",\"uniqueValueGroups\":[{\"classes\":[{\"description\":\"\",\"label\":\"stop_normal\",\"symbol\":{\"type\":\"esriSMS\",\"color\":[160,168,176,255],\"angle\":0,\"xoffset\":0,\"yoffset\":0,\"size\":3,\"style\":\"esriSMSTriangle\",\"outline\":{\"type\":\"esriSLS\",\"color\":[135,135,135,255],\"width\":1,\"style\":\"esriSLSSolid\"}},\"values\":[[\"stop_normal\"]]},{\"description\":\"\",\"label\":\"stop_alert\",\"symbol\":{\"type\":\"esriSMS\",\"color\":[255,31,31,255],\"angle\":0,\"xoffset\":0,\"yoffset\":0,\"size\":5,\"style\":\"esriSMSTriangle\",\"outline\":{\"type\":\"esriSLS\",\"color\":[181,181,181,255],\"width\":1,\"style\":\"esriSLSSolid\"}},\"values\":[[\"stop_alert\"]]},{\"description\":\"\",\"label\":\"vehicle_on_time\",\"symbol\":{\"type\":\"esriSMS\",\"color\":[110,207,143,255],\"angle\":0,\"xoffset\":0,\"yoffset\":0,\"size\":8,\"style\":\"esriSMSCircle\",\"outline\":{\"type\":\"esriSLS\",\"color\":[20,20,20,204],\"width\":1,\"style\":\"esriSLSSolid\"}},\"values\":[[\"vehicle_on_time\"]]},{\"description\":\"\",\"label\":\"vehicle_late\",\"symbol\":{\"type\":\"esriSMS\",\"color\":[255,182,39,255],\"angle\":0,\"xoffset\":0,\"yoffset\":0,\"size\":8,\"style\":\"esriSMSCircle\",\"outline\":{\"type\":\"esriSLS\",\"color\":[20,20,20,204],\"width\":1,\"style\":\"esriSLSSolid\"}},\"values\":[[\"vehicle_late\"]]},{\"description\":\"\",\"label\":\"vehicle_unknown\",\"symbol\":{\"type\":\"esriSMS\",\"color\":[124,129,135,255],\"angle\":0,\"xoffset\":0,\"yoffset\":0,\"size\":8,\"style\":\"esriSMSCircle\",\"outline\":{\"type\":\"esriSLS\",\"color\":[20,20,20,204],\"width\":1,\"style\":\"esriSLSSolid\"}},\"values\":[[\"vehicle_unknown\"]]},{\"description\":\"\",\"label\":\"vehicle_severe\",\"symbol\":{\"type\":\"esriSMS\",\"color\":[200,30,30,255],\"angle\":0,\"xoffset\":0,\"yoffset\":0,\"size\":8,\"style\":\"esriSMSCircle\",\"outline\":{\"type\":\"esriSLS\",\"color\":[20,20,20,204],\"width\":1,\"style\":\"esriSLSSolid\"}},\"values\":[[\"vehicle_severe\"]]},{\"description\":\"\",\"label\":\"vehicle_early\",\"symbol\":{\"type\":\"esriSMS\",\"color\":[90,176,242,255],\"angle\":0,\"xoffset\":0,\"yoffset\":0,\"size\":8,\"style\":\"esriSMSCircle\",\"outline\":{\"type\":\"esriSLS\",\"color\":[20,20,20,204],\"width\":1,\"style\":\"esriSLSSolid\"}},\"values\":[[\"vehicle_early\"]]}]}],\"uniqueValueInfos\":[{\"description\":\"\",\"label\":\"stop_normal\",\"symbol\":{\"type\":\"esriSMS\",\"color\":[160,168,176,255],\"angle\":0,\"xoffset\":0,\"yoffset\":0,\"size\":3,\"style\":\"esriSMSTriangle\",\"outline\":{\"type\":\"esriSLS\",\"color\":[135,135,135,255],\"width\":1,\"style\":\"esriSLSSolid\"}},\"value\":\"stop_normal\"},{\"description\":\"\",\"label\":\"stop_alert\",\"symbol\":{\"type\":\"esriSMS\",\"color\":[255,31,31,255],\"angle\":0,\"xoffset\":0,\"yoffset\":0,\"size\":5,\"style\":\"esriSMSTriangle\",\"outline\":{\"type\":\"esriSLS\",\"color\":[181,181,181,255],\"width\":1,\"style\":\"esriSLSSolid\"}},\"value\":\"stop_alert\"},{\"description\":\"\",\"label\":\"vehicle_on_time\",\"symbol\":{\"type\":\"esriSMS\",\"color\":[110,207,143,255],\"angle\":0,\"xoffset\":0,\"yoffset\":0,\"size\":8,\"style\":\"esriSMSCircle\",\"outline\":{\"type\":\"esriSLS\",\"color\":[20,20,20,204],\"width\":1,\"style\":\"esriSLSSolid\"}},\"value\":\"vehicle_on_time\"},{\"description\":\"\",\"label\":\"vehicle_late\",\"symbol\":{\"type\":\"esriSMS\",\"color\":[255,182,39,255],\"angle\":0,\"xoffset\":0,\"yoffset\":0,\"size\":8,\"style\":\"esriSMSCircle\",\"outline\":{\"type\":\"esriSLS\",\"color\":[20,20,20,204],\"width\":1,\"style\":\"esriSLSSolid\"}},\"value\":\"vehicle_late\"},{\"description\":\"\",\"label\":\"vehicle_unknown\",\"symbol\":{\"type\":\"esriSMS\",\"color\":[124,129,135,255],\"angle\":0,\"xoffset\":0,\"yoffset\":0,\"size\":8,\"style\":\"esriSMSCircle\",\"outline\":{\"type\":\"esriSLS\",\"color\":[20,20,20,204],\"width\":1,\"style\":\"esriSLSSolid\"}},\"value\":\"vehicle_unknown\"},{\"description\":\"\",\"label\":\"vehicle_severe\",\"symbol\":{\"type\":\"esriSMS\",\"color\":[200,30,30,255],\"angle\":0,\"xoffset\":0,\"yoffset\":0,\"size\":8,\"style\":\"esriSMSCircle\",\"outline\":{\"type\":\"esriSLS\",\"color\":[20,20,20,204],\"width\":1,\"style\":\"esriSLSSolid\"}},\"value\":\"vehicle_severe\"},{\"description\":\"\",\"label\":\"vehicle_early\",\"symbol\":{\"type\":\"esriSMS\",\"color\":[90,176,242,255],\"angle\":0,\"xoffset\":0,\"yoffset\":0,\"size\":8,\"style\":\"esriSMSCircle\",\"outline\":{\"type\":\"esriSLS\",\"color\":[20,20,20,204],\"width\":1,\"style\":\"esriSLSSolid\"}},\"value\":\"vehicle_early\"}]},\"transparency\":0},\"featureReduction\":null,\"locationProvider\":{\"type\":\"coordinates\",\"lookupFields\":[{\"lookupField\":\"xFieldName\",\"outField\":\"CurrentMapObjects_longitude\"},{\"lookupField\":\"yFieldName\",\"outField\":\"CurrentMapObjects_latitude\"}],\"sourceSR\":4326,\"targetSR\":102100},\"minScale\":0,\"maxScale\":0,\"definitionExpression\":null,\"templates\":[{\"name\":\"New Feature\",\"description\":\"\",\"prototype\":{\"attributes\":{\"CurrentMapObjects_display_category\":null,\"CurrentMapObjects_latitude\":null,\"CurrentMapObjects_longitude\":null,\"CurrentMapObjects_object_id\":null,\"CurrentMapObjects_route_id\":null,\"CurrentMapObjects_stop_id\":null,\"CurrentMapObjects_trip_id\":null,\"CurrentMapObjects_alert_description\":null,\"CurrentMapObjects_stop_name\":null,\"CurrentMapObjects_routes_serving\":null,\"Sum_CurrentMapObjects_alert_count_\":null,\"CurrentMapObjects_captured_at_utc\":null,\"CurrentMapObjects_trip_avg_delay_seconds\":null,\"ROW_ID\":null}}}],\"elevationInfo\":null,\"name\":\"Coordinates\",\"type\":\"DataLayer\",\"queryParameters\":{\"tableId\":\"\"}},\"featureSet\":{\"features\":[{\"attributes\":{},\"geometry\":{\"x\":0,\"y\":0,\"type\":\"point\",\"spatialReference\":{\"latestWkid\":3857,\"wkid\":102100}}}]}}]}}],\"tables\":[],\"baseMap\":{\"baseMapLayers\":[{\"id\":\"VectorTile_3287\",\"opacity\":1,\"title\":\"OpenStreetMap Style\",\"visibility\":true,\"layerType\":\"VectorTileLayer\",\"styleUrl\":\"https://cdn.arcgis.com/sharing/rest/content/items/165d7a1e43164d828064eb2027e219d5/resources/styles/root.json\"}],\"title\":\"OpenStreetMap Style\",\"origItemId\":\"c29cfb7875fc4b97b58ba6987c460862\"},\"version\":\"2.26\",\"authoringApp\":\"ArcGIS for Power BI\",\"authoringAppVersion\":\"2026.1.970\",\"bookmarks\":[],\"initialState\":{\"viewpoint\":{\"targetGeometry\":{\"spatialReference\":{\"latestWkid\":3857,\"wkid\":102100},\"xmin\":-8217038.893544946,\"ymin\":5688669.492217149,\"xmax\":-8181381.01984996,\"ymax\":5719014.992446323}}}}},\"webmapExtensions\":{\"format\":2}},\"embedCheckPassed\":true}'"
+                }
+              }
+            }
+          }
+        }
+      ],
+      "theme": [
+        {
+          "properties": {
+            "enable": {
+              "expr": {
+                "Literal": {
+                  "Value": "true"
+                }
+              }
+            }
+          }
+        }
+      ],
+      "mapControls": [
+        {
+          "properties": {
+            "zoomTools": {
+              "expr": {
+                "Literal": {
+                  "Value": "true"
+                }
+              }
+            },
+            "lockMapExtent": {
+              "expr": {
+                "Literal": {
+                  "Value": "false"
+                }
+              }
+            },
+            "showHome": {
+              "expr": {
+                "Literal": {
+                  "Value": "false"
+                }
+              }
+            },
+            "homeSetting": {
+              "expr": {
+                "Literal": {
+                  "Value": "'default'"
+                }
+              }
+            }
+          }
+        }
+      ],
+      "featureInfo": [
+        {
+          "properties": {
+            "show": {
+              "expr": {
+                "Literal": {
+                  "Value": "false"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "drillFilterOtherVisuals": true
+  },
+  "filterConfig": {
+    "filters": [
+      {
+        "name": "035917c558720f1c497d",
+        "field": {
+          "Column": {
+            "Expression": {
+              "SourceRef": {
+                "Entity": "CurrentMapObjects"
+              }
+            },
+            "Property": "latitude"
+          }
+        },
+        "type": "Advanced"
+      },
+      {
+        "name": "6bfa51710479f3f490c6",
+        "field": {
+          "Column": {
+            "Expression": {
+              "SourceRef": {
+                "Entity": "CurrentMapObjects"
+              }
+            },
+            "Property": "longitude"
+          }
+        },
+        "type": "Advanced"
+      },
+      {
+        "name": "cf0fa8e0063bbf6852aa",
+        "field": {
+          "Column": {
+            "Expression": {
+              "SourceRef": {
+                "Entity": "CurrentMapObjects"
+              }
+            },
+            "Property": "display_category"
+          }
+        },
+        "type": "Categorical"
+      },
+      {
+        "name": "3cdf4f3a01f280ffda05",
+        "field": {
+          "Column": {
+            "Expression": {
+              "SourceRef": {
+                "Entity": "CurrentMapObjects"
+              }
+            },
+            "Property": "object_id"
+          }
+        },
+        "type": "Categorical"
+      },
+      {
+        "name": "dcd48e79d019349b10bd",
+        "field": {
+          "Column": {
+            "Expression": {
+              "SourceRef": {
+                "Entity": "CurrentMapObjects"
+              }
+            },
+            "Property": "route_id"
+          }
+        },
+        "type": "Categorical"
+      },
+      {
+        "name": "9f39f6a742bb7a19c7f2",
+        "field": {
+          "Column": {
+            "Expression": {
+              "SourceRef": {
+                "Entity": "CurrentMapObjects"
+              }
+            },
+            "Property": "stop_id"
+          }
+        },
+        "type": "Categorical"
+      },
+      {
+        "name": "2defd37e6080b12a86df",
+        "field": {
+          "Column": {
+            "Expression": {
+              "SourceRef": {
+                "Entity": "CurrentMapObjects"
+              }
+            },
+            "Property": "trip_id"
+          }
+        },
+        "type": "Categorical"
+      },
+      {
+        "name": "398bea842db179431479",
+        "field": {
+          "Column": {
+            "Expression": {
+              "SourceRef": {
+                "Entity": "CurrentMapObjects"
+              }
+            },
+            "Property": "alert_description"
+          }
+        },
+        "type": "Categorical"
+      },
+      {
+        "name": "05d45ea14c7a2ac89c15",
+        "field": {
+          "Column": {
+            "Expression": {
+              "SourceRef": {
+                "Entity": "CurrentMapObjects"
+              }
+            },
+            "Property": "stop_name"
+          }
+        },
+        "type": "Categorical"
+      },
+      {
+        "name": "e6d512333ef8e4e7cd09",
+        "field": {
+          "Column": {
+            "Expression": {
+              "SourceRef": {
+                "Entity": "CurrentMapObjects"
+              }
+            },
+            "Property": "routes_serving"
+          }
+        },
+        "type": "Categorical"
+      },
+      {
+        "name": "5a42fdd2ae88041979f2",
+        "field": {
+          "Aggregation": {
+            "Expression": {
+              "Column": {
+                "Expression": {
+                  "SourceRef": {
+                    "Entity": "CurrentMapObjects"
+                  }
+                },
+                "Property": "alert_count"
+              }
+            },
+            "Function": 0
+          }
+        },
+        "type": "Advanced"
+      },
+      {
+        "name": "e2b4abee2bc894803a01",
+        "field": {
+          "Column": {
+            "Expression": {
+              "SourceRef": {
+                "Entity": "CurrentMapObjects"
+              }
+            },
+            "Property": "captured_at_utc"
+          }
+        },
+        "type": "Categorical"
+      },
+      {
+        "name": "e1331d587d05bf3440d2",
+        "field": {
+          "Column": {
+            "Expression": {
+              "SourceRef": {
+                "Entity": "CurrentMapObjects"
+              }
+            },
+            "Property": "trip_avg_delay_seconds"
+          }
+        },
+        "type": "Advanced"
+      }
+    ]
+  }
+}

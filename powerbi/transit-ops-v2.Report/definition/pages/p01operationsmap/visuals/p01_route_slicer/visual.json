@@ -20,13 +20,13 @@
                 "Column": {
                   "Expression": {
                     "SourceRef": {
-                      "Entity": "CurrentVehicleMap"
+                      "Entity": "CurrentMapObjects"
                     }
                   },
                   "Property": "route_id"
                 }
               },
-              "queryRef": "CurrentVehicleMap.route_id",
+              "queryRef": "CurrentMapObjects.route_id",
               "active": true,
               "displayName": "Route"
             }
@@ -41,7 +41,20 @@
             "orientation": {
               "expr": {
                 "Literal": {
-                  "Value": "2D"
+                  "Value": "0D"
+                }
+              }
+            }
+          }
+        }
+      ],
+      "data": [
+        {
+          "properties": {
+            "mode": {
+              "expr": {
+                "Literal": {
+                  "Value": "'Basic'"
                 }
               }
             }
@@ -124,5 +137,23 @@
         }
       ]
     }
+  },
+  "filterConfig": {
+    "filters": [
+      {
+        "name": "cf8c89afdfaf42e126a0",
+        "field": {
+          "Column": {
+            "Expression": {
+              "SourceRef": {
+                "Entity": "CurrentMapObjects"
+              }
+            },
+            "Property": "route_id"
+          }
+        },
+        "type": "Categorical"
+      }
+    ]
   }
 }

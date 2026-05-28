@@ -12,14 +12,7 @@
   "visual": {
     "visualType": "lineChart",
     "query": {
-      "queryState": {
-        "Category": {
-          "projections": []
-        },
-        "Y": {
-          "projections": []
-        }
-      }
+      "queryState": {}
     },
     "visualContainerObjects": {
       "title": [
@@ -129,7 +122,7 @@
             "text": {
               "expr": {
                 "Literal": {
-                  "Value": "'Phase 4 — placeholder'"
+                  "Value": "'À venir — tendance des retards dernière heure'"
                 }
               }
             },

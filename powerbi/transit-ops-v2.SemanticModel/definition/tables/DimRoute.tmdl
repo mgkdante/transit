@@ -67,8 +67,36 @@ table DimRoute
 
 		annotation SummarizationSetBy = Automatic
 
+	column route_desc
+		dataType: string
+		sourceProviderType: nvarchar(max)
+		lineageTag: 80707368-c62e-4497-a638-4663a4fc8940
+		summarizeBy: none
+		sourceColumn: route_desc
+
+		annotation SummarizationSetBy = Automatic
+
+	column route_sort_order
+		dataType: int64
+		formatString: 0
+		sourceProviderType: int
+		lineageTag: b76bfcb4-1f63-46f9-a95a-0f6c5f16ebc1
+		summarizeBy: sum
+		sourceColumn: route_sort_order
+
+		annotation SummarizationSetBy = Automatic
+
+	column route_desc_detail
+		dataType: string
+		sourceProviderType: nvarchar(max)
+		lineageTag: e5864d69-77c1-491f-b083-c7d80fdcb590
+		summarizeBy: none
+		sourceColumn: route_desc_detail
+
+		annotation SummarizationSetBy = Automatic
+
 	partition DimRoute = m
-		mode: directQuery
+		mode: dual
 		source =
 				let
 				    Source = PostgreSQL.Database("db.transit.yesid.dev", "transit"),

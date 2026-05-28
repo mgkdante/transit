@@ -25,6 +25,7 @@ EXPECTED_GOLD_TABLES = {
     "LatestVehicleSnapshot": "latest_vehicle_snapshot",
     "LatestTripDelaySnapshot": "latest_trip_delay_snapshot",
     "CurrentVehicleMap": "current_vehicle_map_with_status",
+    "CurrentMapObjects": "current_map_objects",
     "CurrentTripDelayComputed": "current_trip_delay_computed",
     "CurrentI3Alerts": "current_i3_alerts",
     "FeedFreshnessCurrent": "feed_freshness_current",
@@ -56,7 +57,7 @@ EXPECTED_GOLD_TABLES = {
 EXPECTED_TABLES = set(EXPECTED_GOLD_TABLES) | {"_Measures"}
 EXPECTED_PAGES = [
     "Santé du réseau / Network Health",
-    "Carte opérationnelle / Operations Map",
+    "Le réseau en direct / Live Network",
     "Points chauds / Hotspots",
     "Habitudes du réseau / Network Habits",
     "Historique / History",
@@ -212,10 +213,22 @@ def test_semantic_model_references_exact_gold_table_set_and_measures() -> None:
 
 
 def test_gold_partitions_use_only_reporting_database_gold_navigation() -> None:
+    # Most gold tables ship as DirectQuery. Exception (slice-8.7.2 citizen-analyst
+    # reframe): DimRoute and DimStop ship as Dual storage so they can act as
+    # Import-cached dim tables for bidirectional cross-filter through DimRoute,
+    # while still queryable as DirectQuery for pure-DQ pipelines. Both modes
+    # query the same gold view; the storage mode is what changes.
+    DUAL_MODE_TABLES = {"DimRoute", "DimStop"}
     for table_name, gold_item in EXPECTED_GOLD_TABLES.items():
         table_text = _read(TABLE_ROOT / f"{table_name}.tmdl")
 
-        assert 'mode: directQuery' in table_text
+        if table_name in DUAL_MODE_TABLES:
+            assert 'mode: dual' in table_text, (
+                f"{table_name} must be in Dual mode (enables bidirectional "
+                f"cross-filter through DimRoute hub for p01 citizen-analyst UX)"
+            )
+        else:
+            assert 'mode: directQuery' in table_text
         assert 'PostgreSQL.Database("db.transit.yesid.dev", "transit")' in table_text
         assert f'Source{{[Schema="gold",Item="{gold_item}"]}}[Data]' in table_text
         assert 'Schema="raw"' not in table_text
@@ -354,19 +367,42 @@ def test_relationships_reference_existing_tmdl_source_columns_when_present() -> 
 
 
 def test_relationships_ship_inactive_so_desktop_refresh_proves_cardinality() -> None:
+    """Relationships ship inactive by default — operator activates in Desktop
+    after refresh proves uniqueness on the dim side.
+
+    Exception (slice-8.7.2 citizen-analyst reframe): p01 needs 3 relationships
+    ACTIVE so clicking a route in the slicer / map cross-filters every visual
+    on the page. These 3 are pre-verified to introduce no ambiguity because
+    they're route-only (no dual paths via stop) and route_id has known
+    unique-on-dim cardinality.
+    """
     relationships = _read(MODEL_ROOT / "relationships.tmdl").strip()
 
     assert relationships, "relationships.tmdl should not be empty after Plan task 9 step 5"
     blocks = re.findall(
-        r"relationship \w+\n(?:\t[^\n]+\n)+",
+        r"relationship (\w+)\n((?:\t[^\n]+\n)+)",
         relationships,
     )
     assert blocks, "no relationship blocks parsed"
-    for block in blocks:
-        assert "isActive: false" in block, (
-            f"relationship must ship inactive (operator activates in Desktop after "
-            f"refresh proves uniqueness on the dim side):\n{block}"
-        )
+
+    P01_CROSS_FILTER_ACTIVE = {
+        "currentMapObjects_route",
+        "currentVehicleMap_route",
+        "currentTripDelayComputed_route",
+    }
+    for name, body in blocks:
+        if name in P01_CROSS_FILTER_ACTIVE:
+            # Active = either explicit "isActive: true" OR absence of isActive line
+            # (TMDL canonicalization in Desktop strips redundant defaults, and active
+            # is the default for relationships).
+            assert "isActive: false" not in body, (
+                f"{name} must be ACTIVE — needed for p01 citizen-analyst cross-filter:\n{body}"
+            )
+        else:
+            assert "isActive: false" in body, (
+                f"relationship {name} must ship inactive (operator activates in Desktop "
+                f"after refresh proves uniqueness on the dim side):\n{body}"
+            )
 
 
 def test_p05_provider_binds_to_real_dim_provider_columns() -> None:
