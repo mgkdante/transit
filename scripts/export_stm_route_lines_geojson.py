@@ -1,11 +1,12 @@
 """Export gold.map_route_lines as a single GeoJSON FeatureCollection.
 
-Output is consumed by Power BI's Azure Maps visual as a Reference Layer
-file upload (Format pane → Reference layer → Type: File Upload → Browse).
-
-PBI Azure Maps doesn't support live column binding for reference layers —
-it requires a static GeoJSON file. GTFS shape data updates ~weekly, so
-re-run this script whenever STM publishes a new GTFS feed.
+Output feeds the ArcGIS Location Platform publish pipeline
+(scripts/publish_arcgis_route_lines.py, slice-8.7.2.routes): this GeoJSON is
+uploaded + published as a hosted feature layer, then referenced by the p01
+ArcGIS map visual. Each feature carries route_id so the ArcGIS Join Layer can
+bind GeoJSON.route_id <-> CurrentMapObjects.route_id for cross-filterable route
+lines. GTFS shape data updates ~weekly, so regenerate this after each STM GTFS
+refresh.
 
 Output file:
     powerbi/transit-ops-v2.Report/StaticResources/stm-route-lines.geojson
@@ -51,6 +52,7 @@ def main() -> None:
             text(
                 """
                 SELECT shape_id,
+                       route_id,
                        route_pattern_id,
                        ST_AsGeoJSON(
                            ST_Simplify(geom_wgs84, :tolerance)
@@ -68,6 +70,7 @@ def main() -> None:
                 {
                     "type": "Feature",
                     "properties": {
+                        "route_id": row["route_id"] or "",
                         "shape_id": row["shape_id"],
                         "route_pattern_id": row["route_pattern_id"] or "",
                     },
