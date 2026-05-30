@@ -1,15 +1,12 @@
 """Export gold.map_route_lines as a single GeoJSON FeatureCollection.
 
-Output feeds the ArcGIS Location Platform publish pipeline
-(scripts/publish_arcgis_route_lines.py, slice-8.7.2.routes): this GeoJSON is
-uploaded + published as a hosted feature layer, then referenced by the p01
-ArcGIS map visual. Each feature carries route_id so the ArcGIS Join Layer can
-bind GeoJSON.route_id <-> CurrentMapObjects.route_id for cross-filterable route
-lines. GTFS shape data updates ~weekly, so regenerate this after each STM GTFS
-refresh.
+Produces stm-route-lines.geojson (route polylines, each carrying route_id) for
+the slice-9 citizen web map (MapLibre), published to Cloudflare R2 as part of the
+~30s snapshot set. GTFS shape data updates ~weekly, so regenerate after each STM
+GTFS refresh.
 
 Output file:
-    powerbi/transit-ops-v2.Report/StaticResources/stm-route-lines.geojson
+    data/exports/stm-route-lines.geojson
 
 Geometry is simplified via PostGIS ST_Simplify(0.0001) — about 11m tolerance
 on Earth's surface, which removes ~80% of coordinate noise while preserving
@@ -28,7 +25,7 @@ from pathlib import Path
 from sqlalchemy import create_engine, text
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-OUTPUT_PATH = REPO_ROOT / "powerbi" / "transit-ops-v2.Report" / "StaticResources" / "stm-route-lines.geojson"
+OUTPUT_PATH = REPO_ROOT / "data" / "exports" / "stm-route-lines.geojson"
 
 # 0.0001 degrees ~= 11m. Tight enough that simplified lines look identical
 # to raw at city/neighbourhood zoom; permissive enough to drop ~80% of

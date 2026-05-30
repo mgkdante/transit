@@ -1,11 +1,9 @@
-"""Contract: slice-8.7.2.routes adds route_id to gold.map_route_lines + export.
+"""Contract: gold.map_route_lines carries route_id, and the export emits it.
 
-Why: the ArcGIS Join Layer on the p01 hero map binds
-    GeoJSON.route_id <-> CurrentMapObjects.route_id
-but gold.map_route_lines had no route_id, and route_pattern_id is NULL until
-STM ships route_patterns.txt (~June 15). route_id is therefore sourced from
-shape_id -> silver.trips (verified 1:1 for all 781 STM shapes). Both the Gold
-view (migration 0026) and the GeoJSON export must expose route_id.
+route_pattern_id is NULL until STM ships route_patterns.txt (~June 15), so
+route_id is sourced from shape_id -> silver.trips (verified 1:1 for all 781 STM
+shapes) by migration 0026. route_id feeds the slice-9 citizen web map (per-route
+styling / cross-filter), and the GeoJSON export must expose it.
 """
 from __future__ import annotations
 
@@ -30,13 +28,10 @@ def test_migration_adds_route_id_sourced_from_trips() -> None:
     # route_id must come from trips (shape_id -> route_id), NOT route_pattern_id,
     # which is empty until STM ships route_patterns.txt.
     assert "silver.trips" in src
-    # downgrade must restore the column-less view via drop+recreate.
     assert "DROP VIEW IF EXISTS gold.map_route_lines" in src
 
 
 def test_export_selects_and_emits_route_id() -> None:
     src = EXPORT.read_text(encoding="utf-8")
-    # selected from the Gold view...
     assert "route_id" in src
-    # ...and surfaced as a GeoJSON feature property (the Join Layer key).
     assert '"route_id": row["route_id"]' in src

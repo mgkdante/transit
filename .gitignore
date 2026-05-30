@@ -18,3 +18,8 @@ AGENTS.local.md
 **/.pbi/
 **/cache.abf
 **/localSettings.json
+
+# Local working artifacts, proofs & tool dirs (regenerable, not committed)
+artifacts/
+.superpowers/
+*:Zone.Identifier
