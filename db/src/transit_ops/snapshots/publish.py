@@ -129,11 +129,12 @@ def publish_snapshot(
         Metadata about the completed publish operation.
     """
     settings = settings or get_settings()
-    engine = engine or make_engine(settings)  # type: ignore[arg-type]
-    storage = storage or build_snapshot_storage(settings, provider_id=provider_id)  # type: ignore[arg-type]
 
     if tier != "live":
         raise ValueError(f"tier {tier!r} not implemented in Phase 1")
+
+    engine = engine or make_engine(settings)  # type: ignore[arg-type]
+    storage = storage or build_snapshot_storage(settings, provider_id=provider_id)  # type: ignore[arg-type]
 
     with engine.begin() as conn:  # type: ignore[attr-defined]
         keys = _publish_live(conn, storage, provider_id=provider_id, settings=settings)

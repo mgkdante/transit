@@ -38,6 +38,7 @@ the network KPIs agree:
 
 from __future__ import annotations
 
+from datetime import UTC
 from typing import TYPE_CHECKING
 
 from sqlalchemy import text
@@ -132,10 +133,14 @@ def _opt_int(x: object) -> int | None:
 
 
 def _iso(v: object) -> str:
-    """Render a timestamp as ISO-8601 Z.  Passes strings through untouched."""
+    """Render a timestamp as ISO-8601 UTC 'Z'. Strings pass through untouched.
+
+    tz-aware datetimes are converted to UTC; naive datetimes are assumed UTC.
+    """
     if isinstance(v, str):
         return v
-    return v.strftime("%Y-%m-%dT%H:%M:%SZ")  # type: ignore[union-attr]
+    dt = v if v.tzinfo is not None else v.replace(tzinfo=UTC)  # type: ignore[union-attr]
+    return dt.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def _opt_iso(v: object) -> str | None:
@@ -197,17 +202,18 @@ def _percentile(sorted_values: list[float], pct: float) -> float:
 
 _VEHICLES_SQL = text(
     """
-    SELECT cvm.vehicle_id           AS id,
-           cvm.route_id             AS route,
-           cvm.trip_id              AS trip,
-           cvm.latitude             AS lat,
-           cvm.longitude            AS lon,
-           lvs.bearing              AS bearing,
-           lvs.speed                AS speed_kmh,
-           cvm.status_band          AS status_band,
-           lvs.occupancy_status     AS occupancy_status,
-           cvm.stop_id              AS next_stop,
-           cvm.captured_at_utc      AS updated_utc
+    SELECT cvm.vehicle_id                AS id,
+           cvm.route_id                  AS route,
+           cvm.trip_id                   AS trip,
+           cvm.latitude                  AS lat,
+           cvm.longitude                 AS lon,
+           lvs.bearing                   AS bearing,
+           lvs.speed                     AS speed_kmh,
+           cvm.status_band               AS status_band,
+           lvs.occupancy_status          AS occupancy_status,
+           cvm.stop_id                   AS next_stop,
+           cvm.captured_at_utc           AS updated_utc,
+           cvm.trip_avg_delay_seconds    AS delay_seconds
     FROM gold.current_vehicle_map_with_status AS cvm
     LEFT JOIN gold.latest_vehicle_snapshot AS lvs
         ON  lvs.provider_id          = cvm.provider_id
@@ -241,6 +247,7 @@ def build_vehicles(
                 occupancy=(_OCCUPANCY_MAP.get(int(occ_raw)) if occ_raw is not None else None),
                 next_stop=r["next_stop"],
                 updated_utc=_iso(r["updated_utc"]),
+                delay_min=_delay_min(r["delay_seconds"]),
             )
         )
     return VehiclesFile(generated_utc=generated_utc, vehicles=vehicles)

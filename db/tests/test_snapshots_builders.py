@@ -10,6 +10,7 @@ trip grouping, KPI aggregation, and manifest assembly.
 from __future__ import annotations
 
 from transit_ops.snapshots.builders import (
+    _iso,
     build_alerts,
     build_manifest,
     build_network,
@@ -72,6 +73,22 @@ class FakeConn:
 
 
 # --------------------------------------------------------------------------
+# _iso helper
+# --------------------------------------------------------------------------
+
+
+def test_iso_converts_offset_to_utc() -> None:
+    from datetime import datetime, timedelta, timezone
+
+    dt = datetime(2026, 5, 31, 21, 42, 0, tzinfo=timezone(timedelta(hours=-4)))
+    assert _iso(dt) == "2026-06-01T01:42:00Z"  # -04:00 21:42 -> 01:42Z next day
+
+
+def test_iso_passes_through_strings() -> None:
+    assert _iso("2026-05-31T21:42:00Z") == "2026-05-31T21:42:00Z"
+
+
+# --------------------------------------------------------------------------
 # 6a — build_vehicles
 # --------------------------------------------------------------------------
 
@@ -92,6 +109,7 @@ def test_build_vehicles_maps_status_occupancy_and_rounds_coords() -> None:
                     "occupancy_status": 2,  # GTFS-RT FEW_SEATS_AVAILABLE
                     "next_stop": "S-900",
                     "updated_utc": "2026-05-31T12:00:00Z",
+                    "delay_seconds": 120,  # 2 minutes -> delay_min == 2
                 }
             ]
         }
@@ -113,6 +131,7 @@ def test_build_vehicles_maps_status_occupancy_and_rounds_coords() -> None:
     assert v.speed_kmh == 24
     assert v.next_stop == "S-900"
     assert v.updated_utc == "2026-05-31T12:00:00Z"
+    assert v.delay_min == 2  # 120s -> 2 min
 
 
 def test_build_vehicles_unknown_status_and_null_occupancy() -> None:
@@ -131,6 +150,7 @@ def test_build_vehicles_unknown_status_and_null_occupancy() -> None:
                     "occupancy_status": None,
                     "next_stop": None,
                     "updated_utc": "2026-05-31T12:00:00Z",
+                    "delay_seconds": None,
                 }
             ]
         }
@@ -167,6 +187,7 @@ def test_build_vehicles_all_status_bands_map() -> None:
             "occupancy_status": None,
             "next_stop": None,
             "updated_utc": "2026-05-31T12:00:00Z",
+            "delay_seconds": None,
         }
         for i, band in enumerate(bands)
     ]
