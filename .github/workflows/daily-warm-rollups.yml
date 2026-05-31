@@ -20,6 +20,9 @@ jobs:
   build-warm-rollups:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: db
     env:
       APP_ENV: production
       LOG_LEVEL: INFO

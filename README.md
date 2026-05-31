@@ -1,20 +1,22 @@
-# Transit Ops
+# Transit
 
-A provider-ready GTFS / GTFS-RT analytics pipeline using STM feeds, raw Bronze storage, normalized Postgres tables, and a live Power BI operations dashboard.
+**Monorepo — two domains:**
+- **`db/`** — the GTFS / GTFS-RT analytics **pipeline** (STM feeds → Bronze on R2 → Silver/Gold in Postgres). Run pipeline commands from `db/` (e.g. `cd db && uv run pytest tests -v`).
+- **`web/`** — the public **citizen web app** (SvelteKit on Cloudflare; live map + analytics fed by R2 snapshots of the gold marts). Design locked; implementation in progress.
 
-This repo is the codebase and local artifact store for the project. Long-form business context, architecture notes, runtime decisions, workflow state, and Power BI semantic-model knowledge now live in the Transit Notion workspace. The repo should stay useful to an engineer opening it cold, but it is no longer the canonical place for that prose.
+> The legacy Power BI + ArcGIS reporting layer was retired (2026-05-30); the `web/` citizen app replaces it.
+
+This repo is the codebase and local artifact store for the project. Long-form business context, architecture notes, runtime decisions, and workflow state now live in the Transit Notion workspace. The repo should stay useful to an engineer opening it cold, but it is no longer the canonical place for that prose.
 
 ## Notion Home
 
 [Transit Notion Home](https://www.notion.so/themlabs/Transit-3663e8630690809891abd71e03b57254?source=copy_link)
 
-Start there for business context, architecture, runtime notes, slices, sessions, and Power BI semantic knowledge.
+Start there for business context, architecture, runtime notes, and workflow state.
 
-## Live Dashboard
+## Reporting — Citizen Web App
 
-[View the live Power BI operations dashboard](https://app.powerbi.com/view?r=eyJrIjoiZGYwNTM0NWQtZWQ5Zi00MjdiLTg3NGUtNjQ5ZjBlYzdkMTYxIiwidCI6IjdkM2IyOGRjLWY4MTYtNDk4OC1iOGZkLTczNjJkNDEzMzg5YiJ9)
-
-The dashboard shows live STM network activity: active vehicles, route coverage, trip delay KPIs, and data freshness. It reads from the Gold layer in Postgres. Static schedule data refreshes daily. Realtime vehicle and trip data refresh on a 30-second cadence through the worker.
+The public reporting surface is a free, anonymous **SvelteKit web app** (live map + analytics) at `transit.yesid.dev`, fed by a versioned `/v1` R2 snapshot of the Gold marts. It reads only the `/v1` contract (edge-cached), never the database. It surfaces live STM network activity — active vehicles, route coverage, trip-delay KPIs, occupancy, alerts, and data freshness. Static schedule data refreshes daily; realtime vehicle and trip data on a 30-second cadence through the worker. Design is locked (see the Notion **Source of Truth** bundle); implementation lives in `web/`.
 
 ## What This Project Is
 
@@ -25,30 +27,30 @@ Transit is a portfolio project focused on end-to-end analytics engineering:
 - Bronze / Silver / Gold data modeling with lineage
 - Near-real-time orchestration and retention management
 - Health monitoring for runtime, database, pipeline, refresh, and Bronze storage checks
-- Power BI reporting on top of curated Gold-layer data
+- A free public citizen web app (live map + analytics) over a versioned R2 snapshot of Gold
 
 This is not a SaaS app, not a multi-tenant platform, and not a consumer-facing realtime product.
 
 ## Architecture At A Glance
 
 ```text
-STM GTFS static ZIP   -> Bronze (R2/S3) -> Silver (Postgres) -> Gold dims/maps       -> Power BI/site
-STM GTFS-RT protobuf  -> Bronze (R2/S3) -> Silver (Postgres) -> Gold facts/current   -> Power BI/site
-STM i3 alerts JSON    -> Bronze (R2/S3) -> Silver (Postgres) -> Gold alerts/history  -> Power BI/site
-                                                                  -> Warm rollups     -> Power BI
+STM GTFS static ZIP   -> Bronze (R2/S3) -> Silver (Postgres) -> Gold dims/maps      -> /v1 R2 snapshot -> web app
+STM GTFS-RT protobuf  -> Bronze (R2/S3) -> Silver (Postgres) -> Gold facts/current  -> /v1 R2 snapshot -> web app
+STM i3 alerts JSON    -> Bronze (R2/S3) -> Silver (Postgres) -> Gold alerts/history -> /v1 R2 snapshot -> web app
+                                                                 -> Warm rollups     -> /v1 R2 snapshot
 ```
 
-Stack: Python 3.12, Postgres/PostGIS, Cloudflare R2/S3-compatible Bronze storage, Docker Compose, Caddy, GitHub Actions, Power BI.
+Stack: Python 3.12, Postgres/PostGIS, Cloudflare R2/S3-compatible Bronze storage, Docker Compose, Caddy, GitHub Actions, and a SvelteKit web app on Cloudflare.
 
-The Oracle Always Free A1 host is now the production runtime for the database, realtime worker, health service, and GitHub Actions `DATABASE_URL` jobs. The host exposes hardened PostgreSQL paths: TLS/SCRAM app-owner access for automation, TLS/SCRAM `transit-reporting` access scoped to Gold for Power BI and `transit.yesid.dev`, and SSH-first TLS/SCRAM `transit-db` access for operator SQL analysis.
+The Oracle Always Free A1 host is now the production runtime for the database, realtime worker, health service, and GitHub Actions `DATABASE_URL` jobs. The host exposes hardened PostgreSQL paths: TLS/SCRAM app-owner access for automation, TLS/SCRAM `transit-reporting` access scoped to Gold for the reporting snapshot publisher and `transit.yesid.dev`, and SSH-first TLS/SCRAM `transit-db` access for operator SQL analysis.
 
 Operationally:
 
 - Bronze stores raw artifacts plus lineage
 - Silver stores normalized GTFS and GTFS-RT tables
-- Gold serves dimensions, operational facts, map marts, clean reporting marts, alert history, and warm rollups for BI/site consumers
+- Gold serves dimensions, operational facts, map marts, clean reporting marts, alert history, and warm rollups for the web app / reporting consumers
 - the health API reports runtime readiness and freshness signals
-- Power BI and the public site read from Gold/reporting surfaces only
+- the citizen web app reads from Gold/reporting surfaces only, via the `/v1` R2 snapshot
 
 Notion is the source of truth for the deeper architecture breakdown, runtime behavior, and workflow history.
 
@@ -60,25 +62,17 @@ Notion is the source of truth for the deeper architecture breakdown, runtime beh
 - Durable Bronze archive through Cloudflare R2 today, with an S3-compatible code path
 - Silver normalization in Postgres
 - Gold serving tables and warm rollups
-- Live Power BI dashboard and `transit.yesid.dev` reporting/chrome surfaces
+- The citizen web app at `transit.yesid.dev` (design locked; implementation in progress)
 
 Provider-ready means the schema and manifests are structured so additional GTFS/GTFS-RT/GIS/i3-style providers can be added later, but STM/Montréal is the only active provider today.
 
-## Power BI Artifacts
-
-The repo keeps local `.pbix` working files in `powerbi/`:
-
-- `powerbi/transit-ops-v1.pbix`
-- `powerbi/transit-ops-v2.pbix`
-
-The textual dashboard knowledge pack that used to live beside those files has been migrated out of the repo. Field definitions, DAX semantics, validation notes, and portfolio framing now live in the Transit Notion workspace.
-
 ## Quick Start
 
-Prerequisites: Python 3.12, [`uv`](https://github.com/astral-sh/uv), a Postgres connection string, Cloudflare R2 or S3-compatible credentials, and an STM API key for realtime capture.
+Prerequisites: Python 3.12, [`uv`](https://github.com/astral-sh/uv), a Postgres connection string, Cloudflare R2 or S3-compatible credentials, and an STM API key for realtime capture. Run pipeline commands from `db/`.
 
 ```bash
-cp .env.example .env
+cd db
+cp ../.env.example ../.env
 uv sync
 uv run transit-ops db-test
 uv run transit-ops init-db
@@ -144,7 +138,7 @@ The current Oracle VM baseline is:
 - ports 80 and 443 remain loopback-only for the current staging shape
 - public TCP 5432 is open through OCI NSG and UFW only for hardened PostgreSQL paths
 
-GitHub Actions uses the Oracle app-owner `DATABASE_URL`; the daily static pipeline and warm-rollup workflows are active after manual Oracle-backed proof runs. Power BI and `transit.yesid.dev` use the dedicated `transit-reporting` role against Gold/reporting surfaces. Operator SQL exploration uses `transit-db`, preferably through an SSH tunnel with Postgres TLS still required. Exact instance identifiers, public IP, firewall evidence, rebuild reports, workflow run links, and handoff notes live in Notion under roadmap `upgrading` and its child slices.
+GitHub Actions uses the Oracle app-owner `DATABASE_URL`; the daily static pipeline and warm-rollup workflows are active after manual Oracle-backed proof runs. The reporting snapshot publisher and `transit.yesid.dev` use the dedicated `transit-reporting` role against Gold/reporting surfaces. Operator SQL exploration uses `transit-db`, preferably through an SSH tunnel with Postgres TLS still required. Exact instance identifiers, public IP, firewall evidence, rebuild reports, and workflow run links live in Notion under the `upgrading` roadmap.
 
 The PostgreSQL serving-access helpers live in `infra/postgres-serving-access/`. They render the TLS-only `pg_hba.conf` shape, apply the dedicated `transit-reporting` and `transit-db` grants, and verify current user, TLS, allowed schema reads, denied forbidden schemas, denied writes, and the expected temp-table policy.
 
@@ -166,7 +160,6 @@ To validate the Oracle cutover without changing runtime state:
 
 ```bash
 HEALTH_BASE_URL=https://transit.example.com \
-POWERBI_REPORT_URL="https://app.powerbi.com/view?r=report-id-example" \
 DATABASE_URL="$DATABASE_URL" \
 bash scripts/validate-oracle-cutover.sh
 ```
@@ -176,7 +169,6 @@ If health is intentionally internal-only, run the same validator through SSH:
 ```bash
 HEALTH_BASE_URL=http://127.0.0.1:8080 \
 HEALTH_SSH_TARGET=ubuntu@db.transit.yesid.dev \
-POWERBI_REPORT_URL="https://app.powerbi.com/view?r=report-id-example" \
 DATABASE_URL="$DATABASE_URL" \
 bash scripts/validate-oracle-cutover.sh
 ```
@@ -192,13 +184,13 @@ The expected retention defaults are: static dataset count 1, Bronze static/GIS 3
 To generate a local non-destructive proof report:
 
 ```bash
-uv run python -m transit_ops.cli retention-proof-report stm --report-path artifacts/slice-8.2-retention-proof.json
+uv run python -m transit_ops.cli retention-proof-report stm --report-path artifacts/retention-proof.json
 ```
 
 To validate static feeds separately:
 
 ```bash
-uv run python -m transit_ops.cli validate-static-feeds stm --report-path artifacts/slice-8.2-static-feeds.json
+uv run python -m transit_ops.cli validate-static-feeds stm --report-path artifacts/static-feeds.json
 ```
 
 The retention proof report also embeds the static validation result. These commands are proof/reporting only: they must not ingest feeds, seed provider rows, delete storage, or mutate DB/R2 state. If local `DATABASE_URL` or R2 credentials are missing, sections may report `unavailable` dry-run status. That is an honest local proof state, not hidden success.
@@ -206,19 +198,20 @@ The retention proof report also embeds the static validation result. These comma
 ## Repo Navigation
 
 ```text
-.github/workflows/                  Daily static pipeline + warm rollup build
-config/providers/                   Provider manifests
-src/transit_ops/
-  bronze/                           Feed capture and R2/S3 archiving
-  silver/                           GTFS and GTFS-RT normalization
-  gold/                             Mart builders, reporting aggregates, warm rollups
-  health/                           Operational health API
-  db/migrations/                    Alembic migrations
-  orchestration/                    Static pipeline, realtime cycle, worker
-scripts/                            Pipeline control helpers
-powerbi/                            Local `.pbix` working files
-Dockerfile                          Realtime worker container
-Dockerfile.health                   Health API container
+.github/workflows/                  CI: daily static pipeline + warm rollup build
+db/                                 Pipeline (run commands from here)
+  src/transit_ops/
+    bronze/                         Feed capture and R2/S3 archiving
+    silver/                         GTFS and GTFS-RT normalization
+    gold/                           Mart builders, reporting aggregates, warm rollups
+    health/                         Operational health API
+    db/migrations/                  Alembic migrations
+    orchestration/                  Static pipeline, realtime cycle, worker
+  config/providers/                 Provider manifests
+  scripts/                          Pipeline control helpers
+  infra/postgres-serving-access/    Hardened reader grants
+  Dockerfile / Dockerfile.health    Worker + health API containers
+web/                                Citizen web app (SvelteKit on Cloudflare)
 ```
 
 For workflow and canonical context, start with this README's Notion Home link and then [AGENTS.md](AGENTS.md) for the tool contract.

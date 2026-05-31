@@ -28,6 +28,9 @@ jobs:
   pg-repack-guardrail:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: db
     env:
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
       PG_REPACK_DRY_RUN: "true"

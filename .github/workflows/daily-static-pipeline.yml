@@ -20,6 +20,9 @@ jobs:
   run-static-pipeline:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: db
     env:
       APP_ENV: production
       LOG_LEVEL: INFO
