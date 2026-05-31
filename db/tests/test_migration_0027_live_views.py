@@ -14,3 +14,6 @@ def test_0027_chain_and_objects():
     assert "gold.current_stop_next_departures" in blob
     assert "gold.non_responding_current" in blob
     assert "DROP VIEW IF EXISTS gold.current_stop_next_departures" in m._DROP
+    # correctness fixes locked in:
+    assert "GROUP BY provider_id" in m._CREATE_STOP_NEXT_DEPARTURES  # P1 per-provider latest snapshot
+    assert "exception_type = 2" in m._CREATE_NON_RESPONDING  # non_responding subtracts cancelled services

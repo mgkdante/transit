@@ -56,9 +56,10 @@ depends_on = None
 _CREATE_STOP_NEXT_DEPARTURES = """
 CREATE OR REPLACE VIEW gold.current_stop_next_departures AS
 WITH latest AS (
-    SELECT max(source_realtime_snapshot_id) AS sid
+    SELECT provider_id, max(source_realtime_snapshot_id) AS sid
     FROM silver.rt_feed_snapshots
     WHERE endpoint_key = 'trip_updates' AND source_realtime_snapshot_id IS NOT NULL
+    GROUP BY provider_id
 )
 SELECT
     rtu.provider_id,
@@ -75,7 +76,7 @@ FROM silver.rt_trip_updates AS rtu
 JOIN silver.rt_feed_snapshots AS rfs
     ON rfs.rt_feed_snapshot_id = rtu.rt_feed_snapshot_id
    AND rfs.endpoint_key = 'trip_updates'
-JOIN latest ON latest.sid = rfs.source_realtime_snapshot_id
+JOIN latest ON latest.provider_id = rfs.provider_id AND latest.sid = rfs.source_realtime_snapshot_id
 JOIN silver.rt_trip_update_stop_times AS stu
     ON stu.provider_id = rtu.provider_id
    AND stu.rt_feed_snapshot_id = rtu.rt_feed_snapshot_id
@@ -92,19 +93,27 @@ WITH cur AS (
     WHERE dataset_kind = 'static_schedule' AND is_current = true
 ),
 active_service AS (
-    SELECT c.provider_id, c.service_id
-    FROM silver.calendar AS c
-    JOIN cur ON cur.dataset_version_id = c.dataset_version_id AND cur.provider_id = c.provider_id
-    WHERE CURRENT_DATE BETWEEN c.start_date AND c.end_date
-      AND CASE extract(isodow FROM CURRENT_DATE)
-            WHEN 1 THEN c.monday WHEN 2 THEN c.tuesday WHEN 3 THEN c.wednesday
-            WHEN 4 THEN c.thursday WHEN 5 THEN c.friday WHEN 6 THEN c.saturday
-            ELSE c.sunday END
-    UNION
+    -- calendar-scheduled for today + calendar_dates additions, MINUS today's removals
+    (
+        SELECT c.provider_id, c.service_id
+        FROM silver.calendar AS c
+        JOIN cur ON cur.dataset_version_id = c.dataset_version_id AND cur.provider_id = c.provider_id
+        WHERE CURRENT_DATE BETWEEN c.start_date AND c.end_date
+          AND CASE extract(isodow FROM CURRENT_DATE)
+                WHEN 1 THEN c.monday WHEN 2 THEN c.tuesday WHEN 3 THEN c.wednesday
+                WHEN 4 THEN c.thursday WHEN 5 THEN c.friday WHEN 6 THEN c.saturday
+                ELSE c.sunday END
+        UNION
+        SELECT cd.provider_id, cd.service_id
+        FROM silver.calendar_dates AS cd
+        JOIN cur ON cur.dataset_version_id = cd.dataset_version_id AND cur.provider_id = cd.provider_id
+        WHERE cd.service_date = CURRENT_DATE AND cd.exception_type = 1
+    )
+    EXCEPT
     SELECT cd.provider_id, cd.service_id
     FROM silver.calendar_dates AS cd
     JOIN cur ON cur.dataset_version_id = cd.dataset_version_id AND cur.provider_id = cd.provider_id
-    WHERE cd.service_date = CURRENT_DATE AND cd.exception_type = 1
+    WHERE cd.service_date = CURRENT_DATE AND cd.exception_type = 2
 ),
 scheduled AS (
     SELECT DISTINCT t.provider_id, t.route_id, t.trip_id
