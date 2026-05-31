@@ -45,6 +45,7 @@ from transit_ops.silver import (
     load_latest_realtime_to_silver,
     load_latest_static_to_silver,
 )
+from transit_ops.snapshots.publish import publish_snapshot
 from transit_ops.source_factory.runner import run_source_factory_rebuild
 from transit_ops.validation.proof import build_retention_proof_report
 from transit_ops.validation.static_feeds import validate_static_feeds
@@ -721,6 +722,27 @@ def run_realtime_cycle_command(provider_id: str) -> None:
     typer.echo(json.dumps(result.display_dict(), indent=2))
     if result.has_failures:
         raise typer.Exit(code=1)
+
+
+@app.command("publish-snapshot")
+def publish_snapshot_command(
+    provider_id: str,
+    tier: str = typer.Option("live", "--tier", help="live|static|historic|all"),  # noqa: B008
+    dry_run: bool = typer.Option(False, "--dry-run", help="write to the local backend (requires SNAPSHOT_STORAGE_BACKEND=local + SNAPSHOT_LOCAL_ROOT)"),  # noqa: B008
+) -> None:
+    """Build and publish the /v1 snapshot for a provider to R2 (or local)."""
+    settings = get_settings()
+    if dry_run and settings.SNAPSHOT_STORAGE_BACKEND != "local":
+        raise typer.BadParameter(
+            "--dry-run requires SNAPSHOT_STORAGE_BACKEND=local and SNAPSHOT_LOCAL_ROOT to be set"
+        )
+    try:
+        result = publish_snapshot(
+            provider_id, tier=tier, settings=settings, registry=_provider_registry(settings)
+        )
+    except (KeyError, ValueError, FileNotFoundError) as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    typer.echo(json.dumps(result.display_dict(), indent=2))
 
 
 @app.command("run-realtime-worker")
