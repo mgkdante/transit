@@ -34,6 +34,7 @@ from transit_ops.maintenance import (
 )
 from transit_ops.providers import ProviderRegistry
 from transit_ops.settings import Settings, get_settings
+from transit_ops.snapshots.publish import publish_snapshot
 from transit_ops.silver import (
     load_latest_i3_to_silver,
     load_latest_realtime_to_silver,
@@ -105,6 +106,7 @@ class RealtimeCycleResult:
     gold_maintenance: dict[str, object] | None
     gold_maintenance_duration_seconds: float | None
     gold_maintenance_error_message: str | None
+    live_publish_failures: int = 0
 
     @property
     def has_failures(self) -> bool:
@@ -133,6 +135,7 @@ class RealtimeCycleResult:
             "gold_maintenance": self.gold_maintenance,
             "gold_maintenance_duration_seconds": self.gold_maintenance_duration_seconds,
             "gold_maintenance_error_message": self.gold_maintenance_error_message,
+            "live_publish_failures": self.live_publish_failures,
         }
 
 
@@ -572,6 +575,39 @@ def _capture_and_load_realtime_source(
     )
 
 
+def _best_effort_publish_live(
+    provider_id: str,
+    *,
+    settings: Settings,
+    engine: Engine,
+    registry: ProviderRegistry | None = None,
+) -> int:
+    """Publish the live /v1 snapshot as a best-effort side effect of the cycle.
+
+    Returns the number of publish failures (0 or 1). Never raises: an R2/publish
+    error is logged and counted so the realtime cycle stays green even when the
+    public snapshot bucket is unavailable.
+    """
+    # Skip when no snapshot target is configured.
+    if not (
+        getattr(settings, "SNAPSHOT_R2_BUCKET", None)
+        or getattr(settings, "SNAPSHOT_STORAGE_BACKEND", None) == "local"
+    ):
+        return 0
+    try:
+        publish_snapshot(
+            provider_id,
+            tier="live",
+            settings=settings,
+            registry=registry,
+            engine=engine,
+        )
+        return 0
+    except Exception:  # noqa: BLE001 — best-effort: never fail the cycle on publish
+        logger.exception("live snapshot publish failed (cycle continues)")
+        return 1
+
+
 def run_realtime_cycle(
     provider_id: str,
     *,
@@ -750,6 +786,17 @@ def run_realtime_cycle(
     step_timings_seconds["prune_silver_storage"] = silver_maintenance_duration_seconds
     step_timings_seconds["prune_gold_storage"] = gold_maintenance_duration_seconds
 
+    # Best-effort: publish the live /v1 snapshot after Gold refresh succeeds.
+    # Never fails the cycle — an R2/publish error is logged and counted only.
+    live_publish_failures = 0
+    if successful_endpoint_count and gold_error_message is None:
+        live_publish_failures = _best_effort_publish_live(
+            provider_id,
+            settings=settings,
+            engine=engine,
+            registry=registry,
+        )
+
     completed_at_utc = utc_now()
     total_duration_seconds = round(time.perf_counter() - started_at, 3)
     if (
@@ -788,6 +835,7 @@ def run_realtime_cycle(
         ),
         gold_maintenance_duration_seconds=gold_maintenance_duration_seconds,
         gold_maintenance_error_message=gold_maintenance_error_message,
+        live_publish_failures=live_publish_failures,
     )
 
 
