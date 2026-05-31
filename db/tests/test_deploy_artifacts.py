@@ -2,11 +2,12 @@ from pathlib import Path
 
 import yaml
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
+DB_ROOT = Path(__file__).resolve().parents[1]
+REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 def _compose() -> dict:
-    return yaml.safe_load((REPO_ROOT / "docker-compose.yml").read_text(encoding="utf-8"))
+    return yaml.safe_load((DB_ROOT / "docker-compose.yml").read_text(encoding="utf-8"))
 
 
 def _active_lines(text: str) -> list[str]:
@@ -52,7 +53,7 @@ def test_compose_defaults_app_services_to_internal_postgres() -> None:
 
 
 def test_caddyfile_proxies_only_health_service() -> None:
-    caddyfile = (REPO_ROOT / "Caddyfile").read_text(encoding="utf-8")
+    caddyfile = (DB_ROOT / "Caddyfile").read_text(encoding="utf-8")
     active_directives = _active_lines(caddyfile)
     reverse_proxy_targets = [
         line.split()[1]
