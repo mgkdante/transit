@@ -104,6 +104,13 @@ class Settings(BaseSettings):
     BRONZE_S3_ACCESS_KEY: str | None = None
     BRONZE_S3_SECRET_KEY: str | None = None
     BRONZE_S3_REGION: str = "auto"
+
+    # --- /v1 snapshot publisher (reuses BRONZE_S3_* credentials) ---
+    SNAPSHOT_STORAGE_BACKEND: str = "s3"          # "s3" | "local"
+    SNAPSHOT_LOCAL_ROOT: str | None = None         # used when backend == "local"
+    SNAPSHOT_R2_BUCKET: str | None = None          # public snapshot bucket
+    SNAPSHOT_PUBLIC_BASE_URL: str | None = None    # e.g. https://data.example.com (manifest URLs/basemap)
+
     PIPELINE_PAUSED: bool = False
     REALTIME_POLL_SECONDS: int = 30
     REALTIME_STARTUP_DELAY_SECONDS: int = 0
@@ -167,6 +174,10 @@ class Settings(BaseSettings):
             "BRONZE_S3_ACCESS_KEY": "***configured***" if self.BRONZE_S3_ACCESS_KEY else None,
             "BRONZE_S3_SECRET_KEY": "***configured***" if self.BRONZE_S3_SECRET_KEY else None,
             "BRONZE_S3_REGION": self.BRONZE_S3_REGION,
+            "SNAPSHOT_STORAGE_BACKEND": self.SNAPSHOT_STORAGE_BACKEND,
+            "SNAPSHOT_LOCAL_ROOT": self.SNAPSHOT_LOCAL_ROOT,
+            "SNAPSHOT_R2_BUCKET": self.SNAPSHOT_R2_BUCKET,
+            "SNAPSHOT_PUBLIC_BASE_URL": self.SNAPSHOT_PUBLIC_BASE_URL,
             "PIPELINE_PAUSED": self.PIPELINE_PAUSED,
             "REALTIME_POLL_SECONDS": self.REALTIME_POLL_SECONDS,
             "REALTIME_STARTUP_DELAY_SECONDS": self.REALTIME_STARTUP_DELAY_SECONDS,
