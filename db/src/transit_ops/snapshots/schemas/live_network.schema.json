@@ -1,0 +1,115 @@
+{
+  "$defs": {
+    "OccupancyMix": {
+      "properties": {
+        "empty": {
+          "default": 0.0,
+          "title": "Empty",
+          "type": "number"
+        },
+        "few_seats": {
+          "default": 0.0,
+          "title": "Few Seats",
+          "type": "number"
+        },
+        "full": {
+          "default": 0.0,
+          "title": "Full",
+          "type": "number"
+        },
+        "many_seats": {
+          "default": 0.0,
+          "title": "Many Seats",
+          "type": "number"
+        },
+        "standing": {
+          "default": 0.0,
+          "title": "Standing",
+          "type": "number"
+        }
+      },
+      "title": "OccupancyMix",
+      "type": "object"
+    },
+    "StatusDist": {
+      "properties": {
+        "early": {
+          "default": 0,
+          "title": "Early",
+          "type": "integer"
+        },
+        "late": {
+          "default": 0,
+          "title": "Late",
+          "type": "integer"
+        },
+        "on_time": {
+          "default": 0,
+          "title": "On Time",
+          "type": "integer"
+        },
+        "severe": {
+          "default": 0,
+          "title": "Severe",
+          "type": "integer"
+        },
+        "unknown": {
+          "default": 0,
+          "title": "Unknown",
+          "type": "integer"
+        }
+      },
+      "title": "StatusDist",
+      "type": "object"
+    }
+  },
+  "properties": {
+    "coverage_pct": {
+      "title": "Coverage Pct",
+      "type": "integer"
+    },
+    "delay_p50_min": {
+      "title": "Delay P50 Min",
+      "type": "integer"
+    },
+    "delay_p90_min": {
+      "title": "Delay P90 Min",
+      "type": "integer"
+    },
+    "feed_freshness_s": {
+      "title": "Feed Freshness S",
+      "type": "integer"
+    },
+    "non_responding": {
+      "title": "Non Responding",
+      "type": "integer"
+    },
+    "occupancy_mix": {
+      "$ref": "#/$defs/OccupancyMix"
+    },
+    "on_time_pct": {
+      "title": "On Time Pct",
+      "type": "integer"
+    },
+    "status_dist": {
+      "$ref": "#/$defs/StatusDist"
+    },
+    "vehicles_in_service": {
+      "title": "Vehicles In Service",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "vehicles_in_service",
+    "on_time_pct",
+    "status_dist",
+    "delay_p50_min",
+    "delay_p90_min",
+    "occupancy_mix",
+    "non_responding",
+    "feed_freshness_s",
+    "coverage_pct"
+  ],
+  "title": "NetworkFile",
+  "type": "object"
+}

@@ -1,0 +1,160 @@
+{
+  "$defs": {
+    "Occupancy": {
+      "enum": [
+        "empty",
+        "many_seats",
+        "few_seats",
+        "standing",
+        "full"
+      ],
+      "title": "Occupancy",
+      "type": "string"
+    },
+    "Status": {
+      "enum": [
+        "early",
+        "on_time",
+        "late",
+        "severe",
+        "unknown"
+      ],
+      "title": "Status",
+      "type": "string"
+    },
+    "Vehicle": {
+      "properties": {
+        "bearing": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Bearing"
+        },
+        "delay_min": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Delay Min"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "lat": {
+          "title": "Lat",
+          "type": "number"
+        },
+        "lon": {
+          "title": "Lon",
+          "type": "number"
+        },
+        "next_stop": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Next Stop"
+        },
+        "occupancy": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Occupancy"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "route": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Route"
+        },
+        "speed_kmh": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Speed Kmh"
+        },
+        "status": {
+          "$ref": "#/$defs/Status"
+        },
+        "trip": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Trip"
+        },
+        "updated_utc": {
+          "title": "Updated Utc",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "lat",
+        "lon",
+        "status",
+        "updated_utc"
+      ],
+      "title": "Vehicle",
+      "type": "object"
+    }
+  },
+  "properties": {
+    "generated_utc": {
+      "title": "Generated Utc",
+      "type": "string"
+    },
+    "vehicles": {
+      "items": {
+        "$ref": "#/$defs/Vehicle"
+      },
+      "title": "Vehicles",
+      "type": "array"
+    }
+  },
+  "required": [
+    "generated_utc",
+    "vehicles"
+  ],
+  "title": "VehiclesFile",
+  "type": "object"
+}

@@ -95,3 +95,16 @@ class Manifest(BaseModel):
     labels: dict[str, str]
     files: ManifestFiles
     surfaces: list[str]
+
+
+TOP_LEVEL_MODELS: dict[str, type[BaseModel]] = {
+    "manifest": Manifest,
+    "live_vehicles": VehiclesFile,
+    "live_trips": TripsFile,
+    "live_alerts": AlertsFile,
+    "live_network": NetworkFile,
+}
+
+
+def export_schemas() -> dict[str, dict]:
+    return {name: model.model_json_schema() for name, model in TOP_LEVEL_MODELS.items()}
