@@ -35,6 +35,9 @@ jobs:
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
       BRONZE_S3_ACCESS_KEY: ${{ secrets.BRONZE_S3_ACCESS_KEY }}
       BRONZE_S3_SECRET_KEY: ${{ secrets.BRONZE_S3_SECRET_KEY }}
+      SNAPSHOT_STORAGE_BACKEND: s3
+      SNAPSHOT_R2_BUCKET: ${{ secrets.SNAPSHOT_R2_BUCKET }}
+      SNAPSHOT_PUBLIC_BASE_URL: ${{ secrets.SNAPSHOT_PUBLIC_BASE_URL }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v5
