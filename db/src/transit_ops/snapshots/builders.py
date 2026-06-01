@@ -862,3 +862,110 @@ def build_route(conn: Connection, *, provider_id: str = "stm", route_id: str) ->
         first_departure=first_dep,
         last_departure=last_dep,
     )
+
+
+# ---------------------------------------------------------------------------
+# STATIC stop files (batch — one pass for all stops)
+# ---------------------------------------------------------------------------
+
+_ALL_STOPS_SQL = text("""
+    SELECT stop_id, stop_code, stop_name, stop_lat, stop_lon, wheelchair_boarding
+    FROM gold.dim_stop
+    WHERE provider_id = :provider_id
+      AND (location_type = 0 OR location_type IS NULL)
+    ORDER BY stop_id
+""")
+
+_ALL_STOP_SCHEDULES_SQL = text("""
+    SELECT
+        st.stop_id,
+        t.route_id,
+        t.trip_headsign,
+        st.departure_time
+    FROM silver.stop_times AS st
+    JOIN silver.trips AS t
+        ON  t.trip_id            = st.trip_id
+        AND t.dataset_version_id = st.dataset_version_id
+        AND t.provider_id        = st.provider_id
+    WHERE st.provider_id        = :provider_id
+      AND st.dataset_version_id = :dataset_version_id
+      AND st.departure_time IS NOT NULL
+    ORDER BY st.stop_id, t.route_id, st.departure_time
+""")
+
+
+def build_all_stops_data(conn: Connection, *, provider_id: str = "stm") -> "dict[str, StopFile]":
+    """Build all StopFile objects in a single two-query pass.
+
+    Returns a dict mapping stop_id -> StopFile for every stop in dim_stop.
+    Called once by _publish_static; avoids 9000+ individual queries.
+    """
+    from transit_ops.snapshots.contract import StopFile, ScheduledRoute
+    from collections import defaultdict
+
+    params_base = {"provider_id": provider_id}
+
+    # Get current dataset_version_id
+    dv_row = conn.execute(_CURRENT_DATASET_VERSION_SQL, params_base).mappings().fetchone()
+    if dv_row is None:
+        return {}
+    dv_id = dv_row["dataset_version_id"]
+
+    # Step 1: build base stop info
+    stops: dict[str, StopFile] = {}
+    for r in conn.execute(_ALL_STOPS_SQL, params_base).mappings():
+        sid = str(r["stop_id"])
+        lat = r["stop_lat"]
+        lon = r["stop_lon"]
+        if lat is None or lon is None:
+            continue
+        wheelchair = int(r["wheelchair_boarding"] or 0) == 1
+        stops[sid] = StopFile(
+            id=sid,
+            code=r["stop_code"],
+            name=str(r["stop_name"] or sid),
+            lat=_round5(float(lat)),
+            lon=_round5(float(lon)),
+            wheelchair=wheelchair,
+            routes_served=[],
+            scheduled=[],
+        )
+
+    # Step 2: aggregate schedule (all stops, one query)
+    # group by (stop_id, route_id, headsign) -> list of departure times
+    schedule: dict[str, dict[tuple, list[str]]] = defaultdict(lambda: defaultdict(list))
+    for r in conn.execute(_ALL_STOP_SCHEDULES_SQL,
+                          {"provider_id": provider_id, "dataset_version_id": dv_id}).mappings():
+        sid = str(r["stop_id"])
+        key = (str(r["route_id"]), r["trip_headsign"] or "")
+        t = str(r["departure_time"])[:5]  # "HH:MM"
+        schedule[sid][key].append(t)
+
+    # Step 3: attach schedule to stops, collect routes_served
+    for sid, route_map in schedule.items():
+        if sid not in stops:
+            continue
+        routes_seen: set[str] = set()
+        scheduled: list[ScheduledRoute] = []
+        for (route_id, headsign), times in route_map.items():
+            routes_seen.add(route_id)
+            # keep up to 10 upcoming times to keep file size reasonable
+            scheduled.append(ScheduledRoute(
+                route=route_id,
+                headsign=headsign or None,
+                times=times[:10],
+            ))
+        # sort by route_id for determinism
+        scheduled.sort(key=lambda s: s.route)
+        stops[sid] = StopFile(
+            id=stops[sid].id,
+            code=stops[sid].code,
+            name=stops[sid].name,
+            lat=stops[sid].lat,
+            lon=stops[sid].lon,
+            wheelchair=stops[sid].wheelchair,
+            routes_served=sorted(routes_seen),
+            scheduled=scheduled,
+        )
+
+    return stops

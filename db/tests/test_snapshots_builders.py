@@ -595,3 +595,40 @@ def test_build_route():
     assert rf.directions[0].stops[0].id == "51234"
     assert rf.first_departure == "06:10"
     assert any(sp.shift == "am_peak" for sp in rf.service_periods)
+
+
+def test_build_all_stops_data():
+    from transit_ops.snapshots.builders import build_all_stops_data
+
+    call_idx = [0]
+
+    class FR:
+        def __init__(self, rows): self._rows = rows
+        def mappings(self):
+            class M:
+                def __init__(self, rows): self._rows = rows
+                def fetchone(self): return self._rows[0] if self._rows else None
+                def __iter__(self): return iter(self._rows)
+            return M(self._rows)
+
+    responses = [
+        [{"dataset_version_id": 1}],  # dv query
+        [{"stop_id": "51234", "stop_code": "51234", "stop_name": "Côte-Vertu / Décarie",
+          "stop_lat": 45.49, "stop_lon": -73.66, "wheelchair_boarding": 1}],  # stops
+        [{"stop_id": "51234", "route_id": "165", "trip_headsign": "Côte-Vertu",
+          "departure_time": "17:46:00"},
+         {"stop_id": "51234", "route_id": "165", "trip_headsign": "Côte-Vertu",
+          "departure_time": "17:54:00"}],  # schedule
+    ]
+
+    class FC:
+        def execute(self, *a, **k):
+            idx = call_idx[0]; call_idx[0] += 1
+            return FR(responses[idx] if idx < len(responses) else [])
+
+    result = build_all_stops_data(FC())
+    assert "51234" in result
+    sf = result["51234"]
+    assert sf.wheelchair is True
+    assert "165" in sf.routes_served
+    assert sf.scheduled[0].times == ["17:46", "17:54"]
