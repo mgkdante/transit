@@ -482,3 +482,44 @@ def test_build_manifest_defaults_when_version_missing() -> None:
         settings=_FakeSettings(),
     )
     assert out.dataset_version  # non-empty fallback
+
+
+# --------------------------------------------------------------------------
+# 6f — build_labels
+# --------------------------------------------------------------------------
+
+
+def test_build_labels_fr_includes_static_and_metric():
+    from transit_ops.snapshots.builders import build_labels
+
+    class FakeResult:
+        def __init__(self, rows): self._rows = rows
+        def mappings(self): return self
+        def __iter__(self): return iter(self._rows)
+
+    class FakeConn:
+        def execute(self, *a, **k):
+            return FakeResult([
+                {"label_key": "network_health", "label_fr": "Santé du réseau", "label_en": "Network Health"},
+            ])
+
+    lf = build_labels(FakeConn(), lang="fr")
+    assert lf.labels["status.on_time"] == "À l'heure"
+    assert lf.labels["status.late"] == "En retard"
+    assert lf.labels["metric.network_health"] == "Santé du réseau"
+
+def test_build_labels_en():
+    from transit_ops.snapshots.builders import build_labels
+
+    class FakeResult:
+        def __init__(self, rows): self._rows = rows
+        def mappings(self): return self
+        def __iter__(self): return iter(self._rows)
+
+    class FakeConn:
+        def execute(self, *a, **k):
+            return FakeResult([])
+
+    lf = build_labels(FakeConn(), lang="en")
+    assert lf.labels["status.on_time"] == "On time"
+    assert lf.labels["occupancy.few_seats"] == "Few seats available"

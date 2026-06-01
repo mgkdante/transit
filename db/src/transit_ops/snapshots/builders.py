@@ -554,3 +554,115 @@ def build_manifest(
         files=ManifestFiles(live=ManifestLiveFiles(generated_utc=generated_utc)),
         surfaces=list(_SURFACES),
     )
+
+
+# ---------------------------------------------------------------------------
+# Static labels (status/severity/occupancy codes + metric catalog family names)
+# ---------------------------------------------------------------------------
+
+_STATIC_LABELS_FR: dict[str, str] = {
+    "status.early":     "En avance",
+    "status.on_time":   "À l'heure",
+    "status.late":      "En retard",
+    "status.severe":    "Critique",
+    "status.unknown":   "Inconnu",
+    "severity.critical": "Critique",
+    "severity.high":    "Élevé",
+    "severity.watch":   "Surveillance",
+    "occupancy.empty":        "Vide",
+    "occupancy.many_seats":   "Nombreuses places",
+    "occupancy.few_seats":    "Quelques places",
+    "occupancy.standing":     "Debout seulement",
+    "occupancy.full":         "Complet",
+}
+
+_STATIC_LABELS_EN: dict[str, str] = {
+    "status.early":     "Early",
+    "status.on_time":   "On time",
+    "status.late":      "Late",
+    "status.severe":    "Severe",
+    "status.unknown":   "Unknown",
+    "severity.critical": "Critical",
+    "severity.high":    "High",
+    "severity.watch":   "Watch",
+    "occupancy.empty":        "Empty",
+    "occupancy.many_seats":   "Many seats available",
+    "occupancy.few_seats":    "Few seats available",
+    "occupancy.standing":     "Standing room only",
+    "occupancy.full":         "Full",
+}
+
+_LABELS_SQL = text("""
+    SELECT label_key, label_fr, label_en
+    FROM gold.report_labels
+    ORDER BY sort_order NULLS LAST, label_key
+""")  # no provider_id filter — report_labels is not provider-scoped
+
+def build_labels(conn: Connection, *, lang: str = "fr") -> "LabelsFile":
+    """Build labels/{lang}.json: static code translations + metric catalog family names."""
+    from transit_ops.snapshots.contract import LabelsFile
+
+    static = _STATIC_LABELS_FR if lang == "fr" else _STATIC_LABELS_EN
+    labels: dict[str, str] = dict(static)
+
+    for r in conn.execute(_LABELS_SQL).mappings():
+        key = f"metric.{r['label_key']}"
+        value = r["label_fr"] if lang == "fr" else r["label_en"]
+        if value:
+            labels[key] = value
+
+    return LabelsFile(labels=labels)
+
+
+# ---------------------------------------------------------------------------
+# STATIC indexes
+# ---------------------------------------------------------------------------
+
+_ROUTES_INDEX_SQL = text("""
+    SELECT route_id, route_short_name, route_long_name, route_color, route_type
+    FROM gold.dim_route
+    WHERE provider_id = :provider_id
+    ORDER BY route_sort_order NULLS LAST, route_short_name
+""")
+
+_STOPS_INDEX_SQL = text("""
+    SELECT s.stop_id, s.stop_code, s.stop_name, s.stop_lat, s.stop_lon
+    FROM gold.dim_stop AS s
+    WHERE s.provider_id = :provider_id
+      AND s.location_type IN (0, NULL)
+    ORDER BY s.stop_id
+""")
+
+
+def build_routes_index(conn: Connection, *, provider_id: str = "stm") -> "RoutesIndex":
+    """Build static/routes_index.json from gold.dim_route."""
+    from transit_ops.snapshots.contract import RoutesIndex, RouteIndexEntry
+    routes = []
+    for r in conn.execute(_ROUTES_INDEX_SQL, {"provider_id": provider_id}).mappings():
+        routes.append(RouteIndexEntry(
+            id=str(r["route_id"]),
+            short=str(r["route_short_name"] or r["route_id"]),
+            long=r["route_long_name"],
+            color=r["route_color"],
+            type=int(r["route_type"] or 3),
+        ))
+    return RoutesIndex(routes=routes)
+
+
+def build_stops_index(conn: Connection, *, provider_id: str = "stm") -> "StopsIndex":
+    """Build static/stops_index.json from gold.dim_stop."""
+    from transit_ops.snapshots.contract import StopsIndex, StopIndexEntry
+    stops = []
+    for r in conn.execute(_STOPS_INDEX_SQL, {"provider_id": provider_id}).mappings():
+        lat = r["stop_lat"]
+        lon = r["stop_lon"]
+        if lat is None or lon is None:
+            continue
+        stops.append(StopIndexEntry(
+            id=str(r["stop_id"]),
+            code=r["stop_code"],
+            name=str(r["stop_name"] or r["stop_id"]),
+            lat=_round5(float(lat)),
+            lon=_round5(float(lon)),
+        ))
+    return StopsIndex(stops=stops)
