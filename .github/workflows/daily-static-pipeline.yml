@@ -61,3 +61,6 @@ jobs:
 
       - name: Run static Bronze -> Silver -> Gold pipeline
         run: uv run python -m transit_ops.cli run-static-pipeline stm
+
+      - name: Publish static /v1 snapshot to R2
+        run: uv run python -m transit_ops.cli publish-snapshot stm --tier static
