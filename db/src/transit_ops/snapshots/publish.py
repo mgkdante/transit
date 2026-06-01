@@ -94,6 +94,56 @@ def _publish_live(conn: object, storage: object, *, provider_id: str, settings: 
     return written
 
 
+def _publish_static(conn: object, storage: object, *, provider_id: str, settings: object) -> list[str]:
+    """Build and upload all static-tier snapshot files; return the list of keys written."""
+    from sqlalchemy import text as _text
+
+    written: list[str] = []
+
+    # Indexes
+    written.append(storage.put_json(  # type: ignore[attr-defined]
+        "static/routes_index.json",
+        builders.build_routes_index(conn, provider_id=provider_id),  # type: ignore[arg-type]
+        tier="static",
+    ))
+    written.append(storage.put_json(  # type: ignore[attr-defined]
+        "static/stops_index.json",
+        builders.build_stops_index(conn, provider_id=provider_id),  # type: ignore[arg-type]
+        tier="static",
+    ))
+
+    # Labels
+    for lang in ("fr", "en"):
+        written.append(storage.put_json(  # type: ignore[attr-defined]
+            f"labels/{lang}.json",
+            builders.build_labels(conn, lang=lang),  # type: ignore[arg-type]
+            tier="static",
+        ))
+
+    # Per-route files
+    route_rows = conn.execute(  # type: ignore[attr-defined]
+        _text("SELECT route_id FROM gold.dim_route WHERE provider_id = :provider_id ORDER BY route_id"),
+        {"provider_id": provider_id},
+    ).fetchall()
+    for (route_id,) in route_rows:
+        written.append(storage.put_json(  # type: ignore[attr-defined]
+            f"static/routes/{route_id}.json",
+            builders.build_route(conn, provider_id=provider_id, route_id=str(route_id)),  # type: ignore[arg-type]
+            tier="static",
+        ))
+
+    # Per-stop files (one-pass batch)
+    all_stops = builders.build_all_stops_data(conn, provider_id=provider_id)  # type: ignore[arg-type]
+    for stop_id, stop_file in sorted(all_stops.items()):
+        written.append(storage.put_json(  # type: ignore[attr-defined]
+            f"static/stops/{stop_id}.json",
+            stop_file,
+            tier="static",
+        ))
+
+    return written
+
+
 def publish_snapshot(
     provider_id: str,
     *,
@@ -110,8 +160,8 @@ def publish_snapshot(
     provider_id:
         Transit provider identifier, e.g. ``"stm"``.
     tier:
-        Data tier to publish.  Only ``"live"`` is implemented in Phase 1;
-        passing any other value raises :exc:`ValueError`.
+        Data tier to publish.  ``"live"`` (Phase 1) and ``"static"``
+        (Phase 2) are implemented; any other value raises :exc:`ValueError`.
     settings:
         Application settings object.  When ``None`` the real
         :func:`~transit_ops.settings.get_settings` is called.
@@ -130,13 +180,16 @@ def publish_snapshot(
     """
     settings = settings or get_settings()
 
-    if tier != "live":
-        raise ValueError(f"tier {tier!r} not implemented in Phase 1")
-
     engine = engine or make_engine(settings)  # type: ignore[arg-type]
     storage = storage or build_snapshot_storage(settings, provider_id=provider_id)  # type: ignore[arg-type]
 
-    with engine.begin() as conn:  # type: ignore[attr-defined]
-        keys = _publish_live(conn, storage, provider_id=provider_id, settings=settings)
+    if tier == "live":
+        with engine.begin() as conn:  # type: ignore[attr-defined]
+            keys = _publish_live(conn, storage, provider_id=provider_id, settings=settings)
+    elif tier == "static":
+        with engine.begin() as conn:  # type: ignore[attr-defined]
+            keys = _publish_static(conn, storage, provider_id=provider_id, settings=settings)
+    else:
+        raise ValueError(f"tier {tier!r} not implemented yet (Phase 1=live, Phase 2=static)")
 
     return PublishResult(provider_id=provider_id, tier=tier, keys_written=keys)

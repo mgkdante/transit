@@ -161,3 +161,111 @@ def test_publish_accepts_registry_kwarg() -> None:
     )
     assert res.tier == "live"
     assert len(store.keys) == 5
+
+
+def test_publish_static_writes_expected_keys() -> None:
+    """Static tier writes indexes, labels, per-route and per-stop files."""
+    from contextlib import contextmanager
+
+    class FakeResult:
+        def __init__(self, rows=None):
+            self._rows = rows or []
+
+        def mappings(self):
+            class M:
+                def __init__(self, rows):
+                    self._rows = rows
+
+                def fetchone(self):
+                    return self._rows[0] if self._rows else None
+
+                def __iter__(self):
+                    return iter(self._rows)
+
+            return M(self._rows)
+
+        def fetchall(self):
+            return [(r,) if isinstance(r, str) else tuple(r.values()) for r in self._rows]
+
+        def scalar_one(self):
+            return self._rows[0] if self._rows else 0
+
+    call_idx = [0]
+    # Responses for _publish_static calls in order:
+    # 1. build_routes_index: routes_index query
+    # 2. build_stops_index: stops_index query
+    # 3. build_labels(fr): labels query
+    # 4. build_labels(en): labels query
+    # 5. route_ids query (per-route loop)
+    # 6. build_route("165"): dv query
+    # 7. build_route("165"): route_long_name query
+    # 8. build_route("165"): shapes query (empty → no directions → no stop queries)
+    # 9. build_route("165"): schedule query
+    # 10. build_all_stops_data: dv query
+    # 11. build_all_stops_data: stops query (empty → no stop files)
+    responses = [
+        # build_routes_index
+        [{"route_id": "165", "route_short_name": "165", "route_long_name": "Côte-Vertu", "route_color": "009EE0", "route_type": 3}],
+        # build_stops_index
+        [{"stop_id": "51234", "stop_code": "51234", "stop_name": "Côte-Vertu", "stop_lat": 45.49, "stop_lon": -73.66}],
+        # build_labels fr
+        [{"label_key": "network_health", "label_fr": "Santé", "label_en": "Health"}],
+        # build_labels en
+        [{"label_key": "network_health", "label_fr": "Santé", "label_en": "Health"}],
+        # route_ids for per-route loop
+        [{"route_id": "165"}],
+        # build_route("165"): dv
+        [{"dataset_version_id": 1}],
+        # build_route("165"): route_long_name
+        [{"route_long_name": "Côte-Vertu"}],
+        # build_route("165"): shapes (empty → no directions)
+        [],
+        # build_route("165"): schedule
+        [{"departure_time": "06:10:00"}],
+        # build_all_stops_data: dv
+        [{"dataset_version_id": 1}],
+        # build_all_stops_data: stops (empty → no stop files)
+        [],
+    ]
+
+    class FC:
+        def execute(self, *a, **k):
+            idx = call_idx[0]
+            call_idx[0] += 1
+            return FakeResult(responses[idx] if idx < len(responses) else [])
+
+    class FakeEngine2:
+        def begin(self):
+            @contextmanager
+            def _cm():
+                yield FC()
+
+            return _cm()
+
+    class FakeStore2:
+        def __init__(self):
+            self.keys = []
+
+        def put_json(self, rel_key, payload, *, tier):
+            self.keys.append(rel_key)
+            return rel_key
+
+    store = FakeStore2()
+    res = publish_snapshot(
+        "stm",
+        tier="static",
+        settings=FakeSettings(),
+        engine=FakeEngine2(),
+        storage=store,
+    )
+
+    assert isinstance(res, PublishResult)
+    assert res.tier == "static"
+    assert res.provider_id == "stm"
+    assert "static/routes_index.json" in store.keys
+    assert "static/stops_index.json" in store.keys
+    assert "labels/fr.json" in store.keys
+    assert "labels/en.json" in store.keys
+    assert "static/routes/165.json" in store.keys
+    # no stop files since build_all_stops_data got empty stops
+    assert not any(k.startswith("static/stops/") for k in store.keys)
