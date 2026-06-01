@@ -1,0 +1,93 @@
+{
+  "$defs": {
+    "ScheduledRoute": {
+      "properties": {
+        "headsign": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Headsign"
+        },
+        "route": {
+          "title": "Route",
+          "type": "string"
+        },
+        "times": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Times",
+          "type": "array"
+        }
+      },
+      "required": [
+        "route"
+      ],
+      "title": "ScheduledRoute",
+      "type": "object"
+    }
+  },
+  "properties": {
+    "code": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Code"
+    },
+    "id": {
+      "title": "Id",
+      "type": "string"
+    },
+    "lat": {
+      "title": "Lat",
+      "type": "number"
+    },
+    "lon": {
+      "title": "Lon",
+      "type": "number"
+    },
+    "name": {
+      "title": "Name",
+      "type": "string"
+    },
+    "routes_served": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Routes Served",
+      "type": "array"
+    },
+    "scheduled": {
+      "items": {
+        "$ref": "#/$defs/ScheduledRoute"
+      },
+      "title": "Scheduled",
+      "type": "array"
+    },
+    "wheelchair": {
+      "default": false,
+      "title": "Wheelchair",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "id",
+    "name",
+    "lat",
+    "lon"
+  ],
+  "title": "StopFile",
+  "type": "object"
+}

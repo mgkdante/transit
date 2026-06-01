@@ -1,0 +1,16 @@
+{
+  "properties": {
+    "labels": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "title": "Labels",
+      "type": "object"
+    }
+  },
+  "required": [
+    "labels"
+  ],
+  "title": "LabelsFile",
+  "type": "object"
+}

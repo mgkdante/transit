@@ -97,12 +97,84 @@ class Manifest(BaseModel):
     surfaces: list[str]
 
 
+# ---------------------------------------------------------------------------
+# STATIC tier models (Phase 2) — §8 STATIC shapes, field names ARE the contract
+# ---------------------------------------------------------------------------
+
+class RouteIndexEntry(BaseModel):
+    id: str
+    short: str
+    long: str | None = None
+    color: str | None = None
+    type: int
+
+class RoutesIndex(BaseModel):
+    routes: list[RouteIndexEntry]
+
+class StopIndexEntry(BaseModel):
+    id: str
+    code: str | None = None
+    name: str
+    lat: float
+    lon: float
+
+class StopsIndex(BaseModel):
+    stops: list[StopIndexEntry]
+
+class RouteStop(BaseModel):
+    id: str
+    seq: int
+    name: str | None = None
+
+class RouteDirection(BaseModel):
+    dir: int
+    headsign: str | None = None
+    shape: dict | None = None          # GeoJSON LineString {"type":"LineString","coordinates":[...]}
+    stops: list[RouteStop] = Field(default_factory=list)
+
+class ServicePeriod(BaseModel):
+    shift: str                         # "am_peak"|"pm_peak"|"midday"|"evening"|"night"|"weekend"
+    window: str | None = None          # e.g. "06:00–09:00"
+    headway_min: float | None = None
+
+class RouteFile(BaseModel):
+    id: str
+    long: str | None = None
+    directions: list[RouteDirection] = Field(default_factory=list)
+    service_periods: list[ServicePeriod] = Field(default_factory=list)
+    first_departure: str | None = None
+    last_departure: str | None = None
+
+class ScheduledRoute(BaseModel):
+    route: str
+    headsign: str | None = None
+    times: list[str] = Field(default_factory=list)
+
+class StopFile(BaseModel):
+    id: str
+    code: str | None = None
+    name: str
+    lat: float
+    lon: float
+    wheelchair: bool = False
+    routes_served: list[str] = Field(default_factory=list)
+    scheduled: list[ScheduledRoute] = Field(default_factory=list)
+
+class LabelsFile(BaseModel):
+    labels: dict[str, str]
+
+
 TOP_LEVEL_MODELS: dict[str, type[BaseModel]] = {
     "manifest": Manifest,
     "live_vehicles": VehiclesFile,
     "live_trips": TripsFile,
     "live_alerts": AlertsFile,
     "live_network": NetworkFile,
+    "static_routes_index": RoutesIndex,
+    "static_stops_index": StopsIndex,
+    "static_route": RouteFile,
+    "static_stop": StopFile,
+    "static_labels": LabelsFile,
 }
 
 
