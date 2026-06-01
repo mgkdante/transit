@@ -666,3 +666,199 @@ def build_stops_index(conn: Connection, *, provider_id: str = "stm") -> "StopsIn
             lon=_round5(float(lon)),
         ))
     return StopsIndex(stops=stops)
+
+
+# ---------------------------------------------------------------------------
+# STATIC route file
+# ---------------------------------------------------------------------------
+
+_CURRENT_DATASET_VERSION_SQL = text("""
+    SELECT dataset_version_id
+    FROM core.dataset_versions
+    WHERE provider_id = :provider_id
+      AND dataset_kind = 'static_schedule'
+      AND is_current = true
+    ORDER BY loaded_at_utc DESC
+    LIMIT 1
+""")
+
+_ROUTE_SHAPES_SQL = text("""
+    SELECT
+        mrl.shape_id,
+        mrl.geojson,
+        t.direction_id,
+        t.trip_headsign,
+        count(*) AS trip_count
+    FROM gold.map_route_lines AS mrl
+    JOIN silver.trips AS t
+        ON  t.provider_id        = mrl.provider_id
+        AND t.dataset_version_id = mrl.dataset_version_id
+        AND t.shape_id           = mrl.shape_id
+        AND t.route_id           = mrl.route_id
+    WHERE mrl.provider_id        = :provider_id
+      AND mrl.dataset_version_id = :dataset_version_id
+      AND mrl.route_id           = :route_id
+    GROUP BY mrl.shape_id, mrl.geojson, t.direction_id, t.trip_headsign
+    ORDER BY t.direction_id, count(*) DESC
+""")
+
+_ROUTE_STOPS_SQL = text("""
+    SELECT DISTINCT ON (st.stop_sequence)
+        st.stop_sequence,
+        st.stop_id,
+        ds.stop_name
+    FROM silver.trips AS t
+    JOIN silver.stop_times AS st
+        ON  st.trip_id           = t.trip_id
+        AND st.dataset_version_id = t.dataset_version_id
+        AND st.provider_id       = t.provider_id
+    LEFT JOIN gold.dim_stop AS ds
+        ON  ds.stop_id           = st.stop_id
+        AND ds.provider_id       = t.provider_id
+        AND ds.dataset_version_id = t.dataset_version_id
+    WHERE t.provider_id        = :provider_id
+      AND t.dataset_version_id = :dataset_version_id
+      AND t.route_id           = :route_id
+      AND t.direction_id       = :direction_id
+      AND t.shape_id           = :shape_id
+    ORDER BY st.stop_sequence
+    LIMIT 200
+""")
+
+_ROUTE_SCHEDULE_SQL = text("""
+    SELECT st.departure_time
+    FROM silver.trips AS t
+    JOIN silver.stop_times AS st
+        ON  st.trip_id           = t.trip_id
+        AND st.dataset_version_id = t.dataset_version_id
+        AND st.provider_id       = t.provider_id
+    WHERE t.provider_id        = :provider_id
+      AND t.dataset_version_id = :dataset_version_id
+      AND t.route_id           = :route_id
+      AND st.stop_sequence     = 1
+      AND st.departure_time IS NOT NULL
+    ORDER BY st.departure_time
+""")
+
+
+def _infer_shift(hhmm: str) -> str:
+    """Map a departure time string (HH:MM:SS or HH:MM) to a shift name."""
+    try:
+        h = int(hhmm.split(":")[0])
+    except (ValueError, IndexError):
+        return "unknown"
+    if h >= 6 and h < 9:
+        return "am_peak"
+    if h >= 9 and h < 15:
+        return "midday"
+    if h >= 15 and h < 19:
+        return "pm_peak"
+    if h >= 19 and h < 23:
+        return "evening"
+    return "night"  # covers late-night + early morning (0-6, 23+)
+
+
+def _approx_headway(times: list[str]) -> float | None:
+    """Approximate headway in minutes from a sorted list of HH:MM:SS departure strings."""
+    if len(times) < 2:
+        return None
+    gaps = []
+    for i in range(1, min(len(times), 10)):  # sample first 10 gaps
+        try:
+            def to_min(t: str) -> float:
+                parts = t.split(":")
+                return int(parts[0]) * 60 + int(parts[1]) + int(parts[2] if len(parts) > 2 else 0) / 60
+            gaps.append(to_min(times[i]) - to_min(times[i - 1]))
+        except (ValueError, IndexError):
+            continue
+    if not gaps:
+        return None
+    return round(sum(gaps) / len(gaps), 1)
+
+
+def build_route(conn: Connection, *, provider_id: str = "stm", route_id: str) -> "RouteFile":
+    """Build static/routes/{route_id}.json — directions + shapes + stops + schedule."""
+    from transit_ops.snapshots.contract import RouteFile, RouteDirection, RouteStop, ServicePeriod
+    from collections import defaultdict
+
+    params_base = {"provider_id": provider_id}
+
+    # Get current dataset_version_id
+    dv_row = conn.execute(_CURRENT_DATASET_VERSION_SQL, params_base).mappings().fetchone()
+    if dv_row is None:
+        return RouteFile(id=route_id)
+    dv_id = dv_row["dataset_version_id"]
+    params = {"provider_id": provider_id, "dataset_version_id": dv_id, "route_id": route_id}
+
+    # Get route long name
+    route_name_row = conn.execute(
+        text("SELECT route_long_name FROM gold.dim_route WHERE provider_id=:provider_id AND route_id=:route_id LIMIT 1"),
+        {"provider_id": provider_id, "route_id": route_id}
+    ).mappings().fetchone()
+    long_name = route_name_row["route_long_name"] if route_name_row else None
+
+    # Get shapes grouped by direction
+    shape_rows = list(conn.execute(_ROUTE_SHAPES_SQL, params).mappings())
+
+    # Group: direction_id -> best shape (highest trip_count)
+    dir_shapes: dict[int, dict] = {}
+    for row in shape_rows:
+        dir_id = int(row["direction_id"] or 0)
+        if dir_id not in dir_shapes:  # first row per direction = highest trip_count (ORDER BY count DESC)
+            dir_shapes[dir_id] = {
+                "shape_id": row["shape_id"],
+                "geojson": row["geojson"],
+                "headsign": row["trip_headsign"],
+            }
+
+    # Build directions
+    directions: list[RouteDirection] = []
+    for dir_id in sorted(dir_shapes.keys()):
+        best = dir_shapes[dir_id]
+        # Get stop sequence for this direction's best shape
+        stop_rows = list(conn.execute(_ROUTE_STOPS_SQL, {
+            **params, "direction_id": dir_id, "shape_id": best["shape_id"]
+        }).mappings())
+        stops = [RouteStop(id=str(r["stop_id"]), seq=int(r["stop_sequence"]),
+                           name=r["stop_name"]) for r in stop_rows]
+        directions.append(RouteDirection(
+            dir=dir_id,
+            headsign=best["headsign"],
+            shape=best["geojson"],
+            stops=stops,
+        ))
+
+    # Service periods from first-stop departure times
+    sched_rows = list(conn.execute(_ROUTE_SCHEDULE_SQL, params).mappings())
+    times = [str(r["departure_time"]) for r in sched_rows if r["departure_time"]]
+
+    shift_times: dict[str, list[str]] = defaultdict(list)
+    for t in times:
+        shift_times[_infer_shift(t)].append(t)
+
+    service_periods: list[ServicePeriod] = []
+    shift_order = ["am_peak", "midday", "pm_peak", "evening", "night"]
+    shift_windows = {
+        "am_peak": "06:00–09:00", "midday": "09:00–15:00", "pm_peak": "15:00–19:00",
+        "evening": "19:00–23:00", "night": "23:00–06:00",
+    }
+    for shift in shift_order:
+        st = shift_times.get(shift, [])
+        if not st:
+            continue
+        hw = _approx_headway(st)
+        service_periods.append(ServicePeriod(
+            shift=shift, window=shift_windows.get(shift), headway_min=hw
+        ))
+
+    first_dep = times[0][:5] if times else None   # "HH:MM"
+    last_dep  = times[-1][:5] if times else None
+
+    return RouteFile(
+        id=route_id,
+        long=long_name,
+        directions=directions,
+        service_periods=service_periods,
+        first_departure=first_dep,
+        last_departure=last_dep,
+    )

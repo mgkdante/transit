@@ -556,3 +556,42 @@ def test_build_stops_index():
     idx = build_stops_index(FC())
     assert idx.stops[0].id == "51234"
     assert idx.stops[0].lat == 45.49123  # rounded 5dp
+
+
+def test_build_route():
+    from transit_ops.snapshots.builders import build_route
+
+    call_count = [0]
+
+    class FR:
+        def __init__(self, rows): self._rows = rows
+        def mappings(self):
+            class M:
+                def __init__(self, rows): self._rows = rows
+                def fetchone(self): return self._rows[0] if self._rows else None
+                def __iter__(self): return iter(self._rows)
+            return M(self._rows)
+
+    responses = [
+        [{"dataset_version_id": 1}],                                      # dataset version
+        [{"route_long_name": "Côte-Vertu"}],                               # route name
+        [{"shape_id": "s1", "geojson": {"type": "LineString", "coordinates": []},
+          "direction_id": 0, "trip_headsign": "Côte-Vertu", "trip_count": 10}],  # shapes
+        [{"stop_sequence": 1, "stop_id": "51234", "stop_name": "Côte-Vertu"}],  # stops dir0
+        [{"departure_time": "06:10:00"}, {"departure_time": "06:22:00"},
+         {"departure_time": "14:30:00"}],                                  # schedule
+    ]
+
+    class FC:
+        def execute(self, *a, **k):
+            idx = call_count[0]; call_count[0] += 1
+            return FR(responses[idx] if idx < len(responses) else [])
+
+    rf = build_route(FC(), route_id="165")
+    assert rf.id == "165"
+    assert rf.long == "Côte-Vertu"
+    assert len(rf.directions) == 1
+    assert rf.directions[0].dir == 0
+    assert rf.directions[0].stops[0].id == "51234"
+    assert rf.first_departure == "06:10"
+    assert any(sp.shift == "am_peak" for sp in rf.service_periods)
