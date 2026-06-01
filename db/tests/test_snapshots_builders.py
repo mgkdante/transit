@@ -523,3 +523,36 @@ def test_build_labels_en():
     lf = build_labels(FakeConn(), lang="en")
     assert lf.labels["status.on_time"] == "On time"
     assert lf.labels["occupancy.few_seats"] == "Few seats available"
+
+
+def test_build_routes_index():
+    from transit_ops.snapshots.builders import build_routes_index
+
+    class FR:
+        def mappings(self): return self
+        def __iter__(self): return iter([
+            {"route_id": "165", "route_short_name": "165", "route_long_name": "Côte-Vertu",
+             "route_color": "009EE0", "route_type": 3},
+        ])
+    class FC:
+        def execute(self, *a, **k): return FR()
+
+    idx = build_routes_index(FC())
+    assert idx.routes[0].id == "165"
+    assert idx.routes[0].type == 3
+
+def test_build_stops_index():
+    from transit_ops.snapshots.builders import build_stops_index
+
+    class FR:
+        def mappings(self): return self
+        def __iter__(self): return iter([
+            {"stop_id": "51234", "stop_code": "51234", "stop_name": "Côte-Vertu / Décarie",
+             "stop_lat": 45.4912345, "stop_lon": -73.6612345},
+        ])
+    class FC:
+        def execute(self, *a, **k): return FR()
+
+    idx = build_stops_index(FC())
+    assert idx.stops[0].id == "51234"
+    assert idx.stops[0].lat == 45.49123  # rounded 5dp
