@@ -1,43 +1,36 @@
-"""Live-tier builders: gold views -> /v1 snapshot pydantic models.
+"""Live- and static-tier builders: gold/silver -> /v1 snapshot pydantic models.
 
-Each ``build_*`` function runs one or more SELECTs against the gold layer and
-maps the resulting rows onto the contract models in
-:mod:`transit_ops.snapshots.contract`.  The SQL here is written against the
-column names verified by reading the view-defining Alembic migrations:
+Each ``build_*`` function runs one or more SELECTs and maps the rows onto the
+contract models in :mod:`transit_ops.snapshots.contract`.  SQL is written
+against column names verified by reading the view-defining Alembic migrations
+AND by querying production directly.
 
-    * ``gold.current_vehicle_map_with_status``  (migration 0020) — vehicle
-      positions + a French/English ``status_band`` categorical.  It does NOT
-      carry bearing/speed/occupancy, so we LEFT JOIN ``gold.latest_vehicle_snapshot``
-      (migration 0006) on (provider_id, realtime_snapshot_id, entity_index) to
-      recover those raw fields.
-    * ``gold.current_trip_delay_computed``      (migration 0018) — per-trip
-      ``avg_delay_seconds`` (SECONDS, may be negative for early trips).
-    * ``gold.current_stop_next_departures``     (migration 0027) — per-stop
-      predicted departures with a ``departure_rank``.
-    * ``gold.current_i3_alerts``                (migration 0024) — deduped
-      alerts; ``route_ids`` / ``stop_ids`` are COMMA-SEPARATED STRINGS
-      (``string_agg(..., ', ')``), not arrays.
-    * ``gold.non_responding_current``           (migration 0027) — per-route
-      ``non_responding_count``.
-    * ``gold.feed_freshness_current``           (migration 0013) — per-endpoint
-      ``completed_age_seconds``.
-    * ``gold.dim_provider``                     (migration 0013) — provider
-      display name / timezone / bbox / attribution.
-    * ``core.dataset_versions``                 (migration 0001) — current
-      static-schedule version string.
+LIVE sources:
+    * ``gold.current_vehicle_map_with_status`` (0020) — vehicle positions +
+      bilingual ``status_band`` + ``trip_avg_delay_seconds``.  No bearing/speed/
+      occupancy, so we LEFT JOIN ``gold.latest_vehicle_snapshot`` (0006).
+      NOTE: ``latest_vehicle_snapshot.speed`` is GTFS-RT meters/second.
+    * ``gold.current_trip_delay_computed`` (0018) — per-trip ``avg_delay_seconds``.
+    * ``gold.current_stop_next_departures`` (0027) — per-stop predicted departures
+      (``predicted_departure_utc`` + ``stop_sequence``).
+    * ``gold.current_i3_alerts`` (0024) — alerts; STM leaves ``alert_id`` and
+      ``severity`` NULL, so the id is content-hashed and severity maps to 'watch'.
+    * ``gold.non_responding_current`` (0027), ``gold.feed_freshness_current`` (0013),
+      ``gold.dim_provider`` (0013), ``core.dataset_versions`` (0001).
 
-Status-band thresholds mirror migration 0020 exactly so the vehicle map and
-the network KPIs agree:
+STATIC sources: ``gold.dim_route``/``dim_stop``/``map_stops``, ``gold.map_route_lines``
+(``geojson`` is jsonb), ``silver.trips``/``stop_times``/``calendar``, ``gold.report_labels``.
+Static schedules are computed for a deterministic *representative service date*
+(busiest weekday / weekend in the dataset's current window) so headways and stop
+times reflect one coherent day rather than the union of all 144 service calendars.
 
-    avg_delay < -60s        -> early
-    -60s <= avg_delay < 60s -> on_time
-    60s <= avg_delay < 300s -> late
-    avg_delay >= 300s       -> severe
-    avg_delay IS NULL       -> unknown
+Status-band thresholds mirror migration 0020 so vehicle, trip and network status agree.
 """
 
 from __future__ import annotations
 
+import hashlib
+import statistics
 from datetime import UTC
 from typing import TYPE_CHECKING
 
@@ -66,8 +59,7 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
 # Value-domain mappings
 # --------------------------------------------------------------------------
 
-# gold.current_vehicle_map_with_status.status_band emits bilingual labels
-# (migration 0020).  Map them to the contract Status codes.
+# gold.current_vehicle_map_with_status.status_band emits bilingual labels (0020).
 _STATUS_MAP: dict[str, str] = {
     "EN AVANCE / EARLY": "early",
     "À L'HEURE / ON TIME": "on_time",
@@ -77,26 +69,18 @@ _STATUS_MAP: dict[str, str] = {
     "INCONNU / UNKNOWN": "unknown",
 }
 
-# GTFS-RT OccupancyStatus enum (stored as INTEGER in
-# gold.latest_vehicle_snapshot.occupancy_status, migration 0006) ->
-# contract Occupancy codes.
+# GTFS-RT OccupancyStatus enum (INTEGER in latest_vehicle_snapshot, 0006).
 _OCCUPANCY_MAP: dict[int, str] = {
-    0: "empty",  # EMPTY
-    1: "many_seats",  # MANY_SEATS_AVAILABLE
-    2: "few_seats",  # FEW_SEATS_AVAILABLE
-    3: "standing",  # STANDING_ROOM_ONLY
+    0: "empty",
+    1: "many_seats",
+    2: "few_seats",
+    3: "standing",
     4: "standing",  # CRUSHED_STANDING_ROOM_ONLY
-    5: "full",  # FULL
-    # 6 NOT_ACCEPTING_PASSENGERS / 7 NO_DATA / 8 NOT_BOARDABLE -> None
+    5: "full",
+    # 6/7/8 NOT_ACCEPTING / NO_DATA / NOT_BOARDABLE -> None
 }
 
-# STM i3 / GTFS-RT alert severity tokens -> contract Severity codes.
-# Confirmed sample value from tests/test_i3_silver.py: "warning".  GTFS-RT
-# Alert.SeverityLevel adds INFO / WARNING / SEVERE / UNKNOWN_SEVERITY.  The
-# contract only has critical|high|watch, so we collapse:
-#   severe / critical            -> critical
-#   warning / high / major       -> high
-#   info / unknown / anything else -> watch
+# Alert severity tokens -> contract Severity. STM sends NULL (-> 'watch').
 _SEVERITY_MAP: dict[str, str] = {
     "SEVERE": "critical",
     "CRITICAL": "critical",
@@ -108,7 +92,6 @@ _SEVERITY_MAP: dict[str, str] = {
     "UNKNOWN": "watch",
 }
 
-# Surfaces the citizen web-app renders, in nav order (slice-9 contract).
 _SURFACES: list[str] = [
     "live_map",
     "network_health",
@@ -117,6 +100,19 @@ _SURFACES: list[str] = [
     "accountability",
     "data_trust",
 ]
+
+_SHIFT_ORDER = ["am_peak", "midday", "pm_peak", "evening", "night"]
+_SHIFT_WINDOWS = {
+    "am_peak": "06:00–09:00",
+    "midday": "09:00–15:00",
+    "pm_peak": "15:00–19:00",
+    "evening": "19:00–23:00",
+    "night": "23:00–06:00",
+}
+
+# Boardable-stop predicate shared by the index and per-stop builders so they
+# can never diverge (GTFS location_type 0 or NULL == a stop you can board at).
+_BOARDABLE_STOP = "(location_type = 0 OR location_type IS NULL)"
 
 
 # --------------------------------------------------------------------------
@@ -130,6 +126,13 @@ def _round5(x: object) -> float | None:
 
 def _opt_int(x: object) -> int | None:
     return int(x) if x is not None else None  # type: ignore[arg-type]
+
+
+def _kmh(speed_ms: object) -> int | None:
+    """GTFS-RT Position.speed is meters/second; the contract field is km/h."""
+    if speed_ms is None:
+        return None
+    return round(float(speed_ms) * 3.6)  # type: ignore[arg-type]
 
 
 def _iso(v: object) -> str:
@@ -147,16 +150,44 @@ def _opt_iso(v: object) -> str | None:
     return None if v is None else _iso(v)
 
 
+def _wallclock(t: object) -> str | None:
+    """Normalize a GTFS time (possibly extended >=24:00) to wall-clock 'HH:MM'.
+
+    Display-only: callers keep the RAW text for ordering (raw extended strings
+    sort lexicographically == chronologically), and only normalize the value
+    shown to riders.  '25:48' -> '01:48', '29:03' -> '05:03'.
+    """
+    if not t:
+        return None
+    parts = str(t).split(":")
+    try:
+        h, m = int(parts[0]) % 24, int(parts[1])
+    except (ValueError, IndexError):
+        return str(t)[:5]
+    return f"{h:02d}:{m:02d}"
+
+
+def _gtfs_min(t: object) -> int:
+    """GTFS time 'HH:MM[:SS]' -> minutes since the service-day start (may be >=1440)."""
+    parts = str(t).split(":")
+    try:
+        return int(parts[0]) * 60 + int(parts[1])
+    except (ValueError, IndexError):
+        return 0
+
+
+def _route_sort_key(route_id: object):
+    """Natural sort: numeric routes order 1,2,...,72,...,229; alpha routes stay grouped."""
+    s = str(route_id)
+    return (0, int(s), "") if s.isdigit() else (1, 0, s)
+
+
 def _status_from_band(band: object) -> str:
     return _STATUS_MAP.get((band or "").upper(), "unknown")  # type: ignore[union-attr]
 
 
 def _status_from_delay_seconds(avg_delay_seconds: object) -> str:
-    """Bucket an average delay (SECONDS) into a Status code.
-
-    Mirrors the CASE in migration 0020 so trip status and vehicle status_band
-    agree on identical input.
-    """
+    """Bucket an average delay (SECONDS) into a Status code (mirrors migration 0020)."""
     if avg_delay_seconds is None:
         return "unknown"
     secs = float(avg_delay_seconds)  # type: ignore[arg-type]
@@ -170,21 +201,18 @@ def _status_from_delay_seconds(avg_delay_seconds: object) -> str:
 
 
 def _delay_min(avg_delay_seconds: object) -> int | None:
-    """Convert an average delay in SECONDS to a rounded integer of MINUTES."""
     if avg_delay_seconds is None:
         return None
     return round(float(avg_delay_seconds) / 60.0)  # type: ignore[arg-type]
 
 
 def _split_csv(value: object) -> list[str]:
-    """Split a ``string_agg(..., ', ')`` value into a list, dropping blanks."""
     if not value:
         return []
     return [piece.strip() for piece in str(value).split(",") if piece.strip()]
 
 
 def _percentile(sorted_values: list[float], pct: float) -> float:
-    """Linear-interpolation percentile (matches PG percentile_cont)."""
     if not sorted_values:
         return 0.0
     if len(sorted_values) == 1:
@@ -196,8 +224,38 @@ def _percentile(sorted_values: list[float], pct: float) -> float:
     return sorted_values[lo] + (sorted_values[hi] - sorted_values[lo]) * frac
 
 
+def _median_headway(minutes: list[float]) -> float | None:
+    """Median gap (minutes) between successive DISTINCT departure minutes."""
+    uniq = sorted(set(minutes))
+    if len(uniq) < 2:
+        return None
+    gaps = [uniq[i] - uniq[i - 1] for i in range(1, len(uniq))]
+    return round(statistics.median(gaps), 1) if gaps else None
+
+
+def _infer_shift(hour: int) -> str:
+    if 6 <= hour < 9:
+        return "am_peak"
+    if 9 <= hour < 15:
+        return "midday"
+    if 15 <= hour < 19:
+        return "pm_peak"
+    if 19 <= hour < 23:
+        return "evening"
+    return "night"  # {23, 0..5}
+
+
+def _shift_sort_min(t: object, shift: str) -> float:
+    """Order key within a shift bucket. For 'night', fold post-midnight after 23:xx
+    (23:00->1380 ... 05:59->1799) so the sampled gaps describe contiguous service."""
+    m = _gtfs_min(t) % 1440
+    if shift == "night" and m < 6 * 60:
+        return m + 1440
+    return m
+
+
 # --------------------------------------------------------------------------
-# 6a — build_vehicles
+# build_vehicles
 # --------------------------------------------------------------------------
 
 _VEHICLES_SQL = text(
@@ -208,7 +266,7 @@ _VEHICLES_SQL = text(
            cvm.latitude                  AS lat,
            cvm.longitude                 AS lon,
            lvs.bearing                   AS bearing,
-           lvs.speed                     AS speed_kmh,
+           lvs.speed                     AS speed_ms,
            cvm.status_band               AS status_band,
            lvs.occupancy_status          AS occupancy_status,
            cvm.stop_id                   AS next_stop,
@@ -242,7 +300,7 @@ def build_vehicles(
                 lat=_round5(r["lat"]),
                 lon=_round5(r["lon"]),
                 bearing=_opt_int(r["bearing"]),
-                speed_kmh=_opt_int(r["speed_kmh"]),
+                speed_kmh=_kmh(r["speed_ms"]),
                 status=_status_from_band(r["status_band"]),
                 occupancy=(_OCCUPANCY_MAP.get(int(occ_raw)) if occ_raw is not None else None),
                 next_stop=r["next_stop"],
@@ -254,7 +312,7 @@ def build_vehicles(
 
 
 # --------------------------------------------------------------------------
-# 6b — build_trips
+# build_trips
 # --------------------------------------------------------------------------
 
 _TRIP_DELAY_SQL = text(
@@ -265,23 +323,21 @@ _TRIP_DELAY_SQL = text(
     """
 )
 
+# Order by predicted ETA (primary) + stop_sequence (deterministic tiebreak) so
+# the per-trip stops list is chronological.  departure_rank is partitioned by
+# STOP, not trip, so it must NOT be used to order a trip's stops.
 _TRIP_DEPARTURES_SQL = text(
     """
-    SELECT trip_id, stop_id, predicted_departure_utc, departure_rank
+    SELECT trip_id, route_id, stop_id, predicted_departure_utc, stop_sequence
     FROM gold.current_stop_next_departures
     WHERE provider_id = :provider_id
-    ORDER BY trip_id, departure_rank
+    ORDER BY trip_id, predicted_departure_utc, stop_sequence
     """
 )
 
 
 def build_trips(conn: Connection, *, provider_id: str = "stm") -> TripsFile:
-    """Build the live trips file: per-trip status + delay + next-stop ETAs.
-
-    Trips appear if they have a delay row OR upcoming stop departures, so an
-    in-progress trip with predictions but no computed delay still surfaces
-    (status ``unknown``, ``delay_min`` None).
-    """
+    """Build the live trips file: per-trip status + delay + chronological next-stop ETAs."""
     trips: dict[str, Trip] = {}
 
     for r in conn.execute(_TRIP_DELAY_SQL, {"provider_id": provider_id}).mappings():
@@ -297,7 +353,9 @@ def build_trips(conn: Connection, *, provider_id: str = "stm") -> TripsFile:
         trip_id = str(r["trip_id"])
         trip = trips.get(trip_id)
         if trip is None:
-            trip = Trip(route=None, status="unknown", delay_min=None, stops=[])
+            # in-progress trip with predictions but no computed delay row; the
+            # departures view carries route_id on every row, so don't lose it.
+            trip = Trip(route=r["route_id"], status="unknown", delay_min=None, stops=[])
             trips[trip_id] = trip
         trip.stops.append(
             StopEta(
@@ -311,20 +369,25 @@ def build_trips(conn: Connection, *, provider_id: str = "stm") -> TripsFile:
 
 
 # --------------------------------------------------------------------------
-# 6c — build_alerts
+# build_alerts
 # --------------------------------------------------------------------------
 
+# Deterministic ORDER BY so synthesized ids and array order are stable per cycle.
 _ALERTS_SQL = text(
     """
     SELECT alert_id,
            alert_header_text,
+           description_text,
            severity,
+           cause,
+           effect,
            route_ids,
            stop_ids,
            active_period_start_utc,
            active_period_end_utc
     FROM gold.current_i3_alerts
     WHERE provider_id = :provider_id
+    ORDER BY active_period_start_utc NULLS LAST, alert_header_text, description_text
     """
 )
 
@@ -336,12 +399,15 @@ def _severity_code(severity: object) -> str:
 def build_alerts(conn: Connection, *, provider_id: str = "stm") -> AlertsFile:
     """Build the live alerts file from gold.current_i3_alerts."""
     alerts: list[Alert] = []
-    for idx, r in enumerate(conn.execute(_ALERTS_SQL, {"provider_id": provider_id}).mappings()):
-        # STM's i3 feed often leaves alert_id NULL; synthesize a stable,
-        # within-snapshot-unique id so clients can key/dedupe.
+    for r in conn.execute(_ALERTS_SQL, {"provider_id": provider_id}).mappings():
+        # STM's i3 feed leaves alert_id NULL; synthesize a CONTENT-stable id
+        # (not positional) so a diffing client can key/dedup across cycles.
         alert_id = r["alert_id"]
         if not alert_id:
-            alert_id = f"{provider_id}-alert-{idx}"
+            basis = "|".join(
+                str(r[c] or "") for c in ("description_text", "severity", "cause", "effect")
+            )
+            alert_id = f"{provider_id}-alert-{hashlib.sha1(basis.encode()).hexdigest()[:12]}"
         alerts.append(
             Alert(
                 id=str(alert_id),
@@ -357,7 +423,7 @@ def build_alerts(conn: Connection, *, provider_id: str = "stm") -> AlertsFile:
 
 
 # --------------------------------------------------------------------------
-# 6d — build_network
+# build_network
 # --------------------------------------------------------------------------
 
 _NETWORK_VEHICLES_SQL = text(
@@ -389,8 +455,6 @@ _NETWORK_NON_RESPONDING_SQL = text(
     """
 )
 
-# Freshness for the realtime feeds the live map depends on; take the worst
-# (oldest) age so the number reflects the staleness a citizen would feel.
 _NETWORK_FRESHNESS_SQL = text(
     """
     SELECT COALESCE(MAX(completed_age_seconds), 0) AS feed_freshness_s
@@ -404,20 +468,14 @@ _NETWORK_FRESHNESS_SQL = text(
 def build_network(conn: Connection, *, provider_id: str = "stm") -> NetworkFile:
     """Pre-aggregate network-health KPIs into a single NetworkFile.
 
-    All divisions are guarded against an empty network (zero vehicles /
-    zero trips) and degrade to 0.
+    on_time_pct is over vehicles with a KNOWN status (unknown is a coverage gap,
+    reported separately as coverage_pct); occupancy_mix is over vehicles that
+    actually report an occupancy code, so the fractions sum to ~1.
     """
     params = {"provider_id": provider_id}
 
-    # --- vehicles: status distribution + occupancy mix ---
     dist = StatusDist()
-    occ_counts: dict[str, int] = {
-        "empty": 0,
-        "many_seats": 0,
-        "few_seats": 0,
-        "standing": 0,
-        "full": 0,
-    }
+    occ_counts: dict[str, int] = {k: 0 for k in ("empty", "many_seats", "few_seats", "standing", "full")}
     vehicles_in_service = 0
     for r in conn.execute(_NETWORK_VEHICLES_SQL, params).mappings():
         vehicles_in_service += 1
@@ -429,25 +487,21 @@ def build_network(conn: Connection, *, provider_id: str = "stm") -> NetworkFile:
             if occ_code is not None:
                 occ_counts[occ_code] += 1
 
-    on_time_pct = round(100 * dist.on_time / vehicles_in_service) if vehicles_in_service else 0
+    known = vehicles_in_service - dist.unknown
+    on_time_pct = round(100 * dist.on_time / known) if known else 0
 
-    # occupancy_mix as fractions of all in-service vehicles (0..1)
-    if vehicles_in_service:
-        occupancy_mix = OccupancyMix(**{k: v / vehicles_in_service for k, v in occ_counts.items()})
-    else:
-        occupancy_mix = OccupancyMix()
+    occ_total = sum(occ_counts.values())
+    occupancy_mix = (
+        OccupancyMix(**{k: v / occ_total for k, v in occ_counts.items()})
+        if occ_total
+        else OccupancyMix()
+    )
 
-    # coverage_pct DECISION (see report): fraction of in-service vehicles whose
-    # delay status is KNOWN (not "unknown") — i.e. the share of the live fleet
-    # we can actually report a punctuality colour for.  This is a defensible,
-    # self-consistent definition but is NOT specified by the contract source;
-    # confirm with product before relying on it downstream.
-    if vehicles_in_service:
-        coverage_pct = round(100 * (vehicles_in_service - dist.unknown) / vehicles_in_service)
-    else:
-        coverage_pct = 0
+    # coverage_pct: share of the live fleet with a KNOWN punctuality status.
+    coverage_pct = (
+        round(100 * known / vehicles_in_service) if vehicles_in_service else 0
+    )
 
-    # --- trip delay percentiles (minutes) ---
     delays_min = sorted(
         float(r["avg_delay_seconds"]) / 60.0
         for r in conn.execute(_NETWORK_DELAYS_SQL, params).mappings()
@@ -455,7 +509,6 @@ def build_network(conn: Connection, *, provider_id: str = "stm") -> NetworkFile:
     delay_p50_min = round(_percentile(delays_min, 0.50)) if delays_min else 0
     delay_p90_min = round(_percentile(delays_min, 0.90)) if delays_min else 0
 
-    # --- non-responding + freshness (single-row scalar aggregates) ---
     non_responding = int(conn.execute(_NETWORK_NON_RESPONDING_SQL, params).scalar_one() or 0)
     feed_freshness_s = int(conn.execute(_NETWORK_FRESHNESS_SQL, params).scalar_one() or 0)
 
@@ -473,20 +526,13 @@ def build_network(conn: Connection, *, provider_id: str = "stm") -> NetworkFile:
 
 
 # --------------------------------------------------------------------------
-# 6e — build_manifest
+# build_manifest
 # --------------------------------------------------------------------------
 
 _MANIFEST_PROVIDER_SQL = text(
     """
-    SELECT provider_id,
-           display_name,
-           timezone,
-           default_language,
-           attribution_text,
-           min_latitude,
-           max_latitude,
-           min_longitude,
-           max_longitude
+    SELECT provider_id, display_name, timezone, default_language, attribution_text,
+           min_latitude, max_latitude, min_longitude, max_longitude
     FROM gold.dim_provider
     WHERE provider_id = :provider_id
     """
@@ -512,12 +558,7 @@ def build_manifest(
     generated_utc: str,
     settings: object,
 ) -> Manifest:
-    """Assemble the top-level manifest from provider config + current version.
-
-    ``settings`` must expose ``SNAPSHOT_PUBLIC_BASE_URL`` (used to build the
-    absolute basemap URL).  Passed in rather than imported so the builder
-    stays testable without env wiring.
-    """
+    """Assemble the manifest from provider config + current dataset version."""
     prov = conn.execute(_MANIFEST_PROVIDER_SQL, {"provider_id": provider_id}).mappings()
     prow = next(iter(prov), None) or {}
 
@@ -526,7 +567,6 @@ def build_manifest(
     default_lang = prow.get("default_language") or "fr"
     attribution = prow.get("attribution_text") or ""
 
-    # bbox as [minLon, minLat, maxLon, maxLat] (GeoJSON / MapLibre order).
     bbox = [
         float(prow.get("min_longitude") or 0.0),
         float(prow.get("min_latitude") or 0.0),
@@ -557,49 +597,56 @@ def build_manifest(
 
 
 # ---------------------------------------------------------------------------
-# Static labels (status/severity/occupancy codes + metric catalog family names)
+# Static labels
 # ---------------------------------------------------------------------------
 
 _STATIC_LABELS_FR: dict[str, str] = {
-    "status.early":     "En avance",
-    "status.on_time":   "À l'heure",
-    "status.late":      "En retard",
-    "status.severe":    "Critique",
-    "status.unknown":   "Inconnu",
+    "status.early": "En avance",
+    "status.on_time": "À l'heure",
+    "status.late": "En retard",
+    "status.severe": "Critique",
+    "status.unknown": "Inconnu",
     "severity.critical": "Critique",
-    "severity.high":    "Élevé",
-    "severity.watch":   "Surveillance",
-    "occupancy.empty":        "Vide",
-    "occupancy.many_seats":   "Nombreuses places",
-    "occupancy.few_seats":    "Quelques places",
-    "occupancy.standing":     "Debout seulement",
-    "occupancy.full":         "Complet",
+    "severity.high": "Élevé",
+    "severity.watch": "Surveillance",
+    "occupancy.empty": "Vide",
+    "occupancy.many_seats": "Nombreuses places",
+    "occupancy.few_seats": "Quelques places",
+    "occupancy.standing": "Debout seulement",
+    "occupancy.full": "Complet",
 }
 
 _STATIC_LABELS_EN: dict[str, str] = {
-    "status.early":     "Early",
-    "status.on_time":   "On time",
-    "status.late":      "Late",
-    "status.severe":    "Severe",
-    "status.unknown":   "Unknown",
+    "status.early": "Early",
+    "status.on_time": "On time",
+    "status.late": "Late",
+    "status.severe": "Severe",
+    "status.unknown": "Unknown",
     "severity.critical": "Critical",
-    "severity.high":    "High",
-    "severity.watch":   "Watch",
-    "occupancy.empty":        "Empty",
-    "occupancy.many_seats":   "Many seats available",
-    "occupancy.few_seats":    "Few seats available",
-    "occupancy.standing":     "Standing room only",
-    "occupancy.full":         "Full",
+    "severity.high": "High",
+    "severity.watch": "Watch",
+    "occupancy.empty": "Empty",
+    "occupancy.many_seats": "Many seats available",
+    "occupancy.few_seats": "Few seats available",
+    "occupancy.standing": "Standing room only",
+    "occupancy.full": "Full",
 }
 
-_LABELS_SQL = text("""
+_LABELS_SQL = text(
+    """
     SELECT label_key, label_fr, label_en
     FROM gold.report_labels
     ORDER BY sort_order NULLS LAST, label_key
-""")  # no provider_id filter — report_labels is not provider-scoped
+    """
+)  # not provider-scoped
+
 
 def build_labels(conn: Connection, *, lang: str = "fr") -> "LabelsFile":
-    """Build labels/{lang}.json: static code translations + metric catalog family names."""
+    """Build labels/{lang}.json: static code translations + metric catalog labels.
+
+    Every metric.* key is emitted in BOTH languages (with cross-language / raw-key
+    fallback) so fr.json and en.json always carry an identical key set.
+    """
     from transit_ops.snapshots.contract import LabelsFile
 
     static = _STATIC_LABELS_FR if lang == "fr" else _STATIC_LABELS_EN
@@ -607,9 +654,9 @@ def build_labels(conn: Connection, *, lang: str = "fr") -> "LabelsFile":
 
     for r in conn.execute(_LABELS_SQL).mappings():
         key = f"metric.{r['label_key']}"
-        value = r["label_fr"] if lang == "fr" else r["label_en"]
-        if value:
-            labels[key] = value
+        primary = r["label_fr"] if lang == "fr" else r["label_en"]
+        fallback = r["label_en"] if lang == "fr" else r["label_fr"]
+        labels[key] = primary or fallback or r["label_key"]
 
     return LabelsFile(labels=labels)
 
@@ -618,61 +665,73 @@ def build_labels(conn: Connection, *, lang: str = "fr") -> "LabelsFile":
 # STATIC indexes
 # ---------------------------------------------------------------------------
 
-_ROUTES_INDEX_SQL = text("""
+_ROUTES_INDEX_SQL = text(
+    """
     SELECT route_id, route_short_name, route_long_name, route_color, route_type
     FROM gold.dim_route
     WHERE provider_id = :provider_id
     ORDER BY route_sort_order NULLS LAST, route_short_name
-""")
+    """
+)
 
-_STOPS_INDEX_SQL = text("""
+_STOPS_INDEX_SQL = text(
+    f"""
     SELECT s.stop_id, s.stop_code, s.stop_name, s.stop_lat, s.stop_lon
     FROM gold.dim_stop AS s
     WHERE s.provider_id = :provider_id
-      AND s.location_type IN (0, NULL)
+      AND {_BOARDABLE_STOP.replace("location_type", "s.location_type")}
     ORDER BY s.stop_id
-""")
+    """
+)
 
 
 def build_routes_index(conn: Connection, *, provider_id: str = "stm") -> "RoutesIndex":
     """Build static/routes_index.json from gold.dim_route."""
-    from transit_ops.snapshots.contract import RoutesIndex, RouteIndexEntry
+    from transit_ops.snapshots.contract import RouteIndexEntry, RoutesIndex
+
     routes = []
     for r in conn.execute(_ROUTES_INDEX_SQL, {"provider_id": provider_id}).mappings():
-        routes.append(RouteIndexEntry(
-            id=str(r["route_id"]),
-            short=str(r["route_short_name"] or r["route_id"]),
-            long=r["route_long_name"],
-            color=r["route_color"],
-            type=int(r["route_type"] or 3),
-        ))
+        routes.append(
+            RouteIndexEntry(
+                id=str(r["route_id"]),
+                short=str(r["route_short_name"] or r["route_id"]),
+                long=r["route_long_name"],
+                color=r["route_color"],
+                # preserve legitimate GTFS route_type 0 (tram); only NULL -> bus(3)
+                type=int(r["route_type"]) if r["route_type"] is not None else 3,
+            )
+        )
+    routes.sort(key=lambda e: _route_sort_key(e.id))
     return RoutesIndex(routes=routes)
 
 
 def build_stops_index(conn: Connection, *, provider_id: str = "stm") -> "StopsIndex":
     """Build static/stops_index.json from gold.dim_stop."""
-    from transit_ops.snapshots.contract import StopsIndex, StopIndexEntry
+    from transit_ops.snapshots.contract import StopIndexEntry, StopsIndex
+
     stops = []
     for r in conn.execute(_STOPS_INDEX_SQL, {"provider_id": provider_id}).mappings():
-        lat = r["stop_lat"]
-        lon = r["stop_lon"]
+        lat, lon = r["stop_lat"], r["stop_lon"]
         if lat is None or lon is None:
             continue
-        stops.append(StopIndexEntry(
-            id=str(r["stop_id"]),
-            code=r["stop_code"],
-            name=str(r["stop_name"] or r["stop_id"]),
-            lat=_round5(float(lat)),
-            lon=_round5(float(lon)),
-        ))
+        stops.append(
+            StopIndexEntry(
+                id=str(r["stop_id"]),
+                code=r["stop_code"],
+                name=str(r["stop_name"] or r["stop_id"]),
+                lat=_round5(float(lat)),
+                lon=_round5(float(lon)),
+            )
+        )
     return StopsIndex(stops=stops)
 
 
 # ---------------------------------------------------------------------------
-# STATIC route file
+# Representative service date resolution (deterministic per dataset_version)
 # ---------------------------------------------------------------------------
 
-_CURRENT_DATASET_VERSION_SQL = text("""
+_CURRENT_DATASET_VERSION_SQL = text(
+    """
     SELECT dataset_version_id
     FROM core.dataset_versions
     WHERE provider_id = :provider_id
@@ -680,15 +739,87 @@ _CURRENT_DATASET_VERSION_SQL = text("""
       AND is_current = true
     ORDER BY loaded_at_utc DESC
     LIMIT 1
-""")
+    """
+)
 
-_ROUTE_SHAPES_SQL = text("""
+# Pick the busiest weekday and weekend DATE within the dataset's most recent
+# 6 weeks (deterministic; avoids CURRENT_DATE so the static file is reproducible).
+_REP_DATES_SQL = text(
+    """
+    WITH bounds AS (
+        SELECT max(end_date) AS hi, (max(end_date) - 42) AS lo
+        FROM silver.calendar
+        WHERE provider_id = :provider_id AND dataset_version_id = :dataset_version_id
+    ),
+    days AS (
+        SELECT gs::date AS d, extract(isodow FROM gs)::int AS dow
+        FROM bounds, generate_series(bounds.lo, bounds.hi, interval '1 day') AS gs
+    ),
+    active AS (
+        SELECT d.d, d.dow, c.service_id
+        FROM days d
+        JOIN silver.calendar c
+            ON c.provider_id = :provider_id AND c.dataset_version_id = :dataset_version_id
+           AND d.d BETWEEN c.start_date AND c.end_date
+           AND CASE d.dow
+                 WHEN 1 THEN c.monday WHEN 2 THEN c.tuesday WHEN 3 THEN c.wednesday
+                 WHEN 4 THEN c.thursday WHEN 5 THEN c.friday WHEN 6 THEN c.saturday
+                 ELSE c.sunday END
+    ),
+    tally AS (
+        SELECT a.d, a.dow, count(t.trip_id) AS n
+        FROM active a
+        JOIN silver.trips t
+            ON t.provider_id = :provider_id AND t.dataset_version_id = :dataset_version_id
+           AND t.service_id = a.service_id
+        GROUP BY a.d, a.dow
+    )
     SELECT
-        mrl.shape_id,
-        mrl.geojson,
-        t.direction_id,
-        t.trip_headsign,
-        count(*) AS trip_count
+        (SELECT d FROM tally WHERE dow <= 5 ORDER BY n DESC, d LIMIT 1) AS weekday_date,
+        (SELECT d FROM tally WHERE dow >= 6 ORDER BY n DESC, d LIMIT 1) AS weekend_date
+    """
+)
+
+_ACTIVE_SERVICES_SQL = text(
+    """
+    SELECT c.service_id
+    FROM silver.calendar c
+    WHERE c.provider_id = :provider_id AND c.dataset_version_id = :dataset_version_id
+      AND :repdate BETWEEN c.start_date AND c.end_date
+      AND CASE extract(isodow FROM :repdate)
+            WHEN 1 THEN c.monday WHEN 2 THEN c.tuesday WHEN 3 THEN c.wednesday
+            WHEN 4 THEN c.thursday WHEN 5 THEN c.friday WHEN 6 THEN c.saturday
+            ELSE c.sunday END
+    """
+)
+
+
+def _representative_services(
+    conn: Connection, *, provider_id: str, dataset_version_id: int
+) -> tuple[list[str], list[str]]:
+    """Return (weekday_service_ids, weekend_service_ids) active on the busiest
+    weekday / weekend date of the dataset's current window."""
+    params = {"provider_id": provider_id, "dataset_version_id": dataset_version_id}
+    rep = conn.execute(_REP_DATES_SQL, params).mappings().fetchone()
+    if rep is None:
+        return [], []
+    weekday: list[str] = []
+    weekend: list[str] = []
+    if rep["weekday_date"] is not None:
+        weekday = [row[0] for row in conn.execute(_ACTIVE_SERVICES_SQL, {**params, "repdate": rep["weekday_date"]})]
+    if rep["weekend_date"] is not None:
+        weekend = [row[0] for row in conn.execute(_ACTIVE_SERVICES_SQL, {**params, "repdate": rep["weekend_date"]})]
+    return weekday, weekend
+
+
+# ---------------------------------------------------------------------------
+# STATIC route file
+# ---------------------------------------------------------------------------
+
+_ROUTE_SHAPES_SQL = text(
+    """
+    SELECT mrl.shape_id, mrl.geojson, t.direction_id, t.trip_headsign,
+           count(*) AS trip_count
     FROM gold.map_route_lines AS mrl
     JOIN silver.trips AS t
         ON  t.provider_id        = mrl.provider_id
@@ -699,14 +830,14 @@ _ROUTE_SHAPES_SQL = text("""
       AND mrl.dataset_version_id = :dataset_version_id
       AND mrl.route_id           = :route_id
     GROUP BY mrl.shape_id, mrl.geojson, t.direction_id, t.trip_headsign
-    ORDER BY t.direction_id, count(*) DESC
-""")
+    ORDER BY t.direction_id, count(*) DESC, mrl.shape_id
+    """
+)
 
-_ROUTE_STOPS_SQL = text("""
+_ROUTE_STOPS_SQL = text(
+    """
     SELECT DISTINCT ON (st.stop_sequence)
-        st.stop_sequence,
-        st.stop_id,
-        ds.stop_name
+        st.stop_sequence, st.stop_id, ds.stop_name
     FROM silver.trips AS t
     JOIN silver.stop_times AS st
         ON  st.trip_id           = t.trip_id
@@ -719,14 +850,20 @@ _ROUTE_STOPS_SQL = text("""
     WHERE t.provider_id        = :provider_id
       AND t.dataset_version_id = :dataset_version_id
       AND t.route_id           = :route_id
-      AND t.direction_id       = :direction_id
       AND t.shape_id           = :shape_id
     ORDER BY st.stop_sequence
-    LIMIT 200
-""")
+    LIMIT 400
+    """
+)
 
-_ROUTE_SCHEDULE_SQL = text("""
-    SELECT st.departure_time
+# First-stop departures for a route on the representative service days, tagged
+# weekday/weekend and de-duplicated to distinct (direction, daytype, time).
+_ROUTE_SCHEDULE_SQL = text(
+    """
+    SELECT DISTINCT
+        t.direction_id,
+        (t.service_id = ANY(:weekday_services)) AS is_weekday,
+        st.departure_time
     FROM silver.trips AS t
     JOIN silver.stop_times AS st
         ON  st.trip_id           = t.trip_id
@@ -737,122 +874,104 @@ _ROUTE_SCHEDULE_SQL = text("""
       AND t.route_id           = :route_id
       AND st.stop_sequence     = 1
       AND st.departure_time IS NOT NULL
-    ORDER BY st.departure_time
-""")
-
-
-def _infer_shift(hhmm: str) -> str:
-    """Map a departure time string (HH:MM:SS or HH:MM) to a shift name."""
-    try:
-        h = int(hhmm.split(":")[0])
-    except (ValueError, IndexError):
-        return "unknown"
-    if h >= 6 and h < 9:
-        return "am_peak"
-    if h >= 9 and h < 15:
-        return "midday"
-    if h >= 15 and h < 19:
-        return "pm_peak"
-    if h >= 19 and h < 23:
-        return "evening"
-    return "night"  # covers late-night + early morning (0-6, 23+)
-
-
-def _approx_headway(times: list[str]) -> float | None:
-    """Approximate headway in minutes from a sorted list of HH:MM:SS departure strings."""
-    if len(times) < 2:
-        return None
-    gaps = []
-    for i in range(1, min(len(times), 10)):  # sample first 10 gaps
-        try:
-            def to_min(t: str) -> float:
-                parts = t.split(":")
-                return int(parts[0]) * 60 + int(parts[1]) + int(parts[2] if len(parts) > 2 else 0) / 60
-            gaps.append(to_min(times[i]) - to_min(times[i - 1]))
-        except (ValueError, IndexError):
-            continue
-    if not gaps:
-        return None
-    return round(sum(gaps) / len(gaps), 1)
+      AND (t.service_id = ANY(:weekday_services) OR t.service_id = ANY(:weekend_services))
+    """
+)
 
 
 def build_route(conn: Connection, *, provider_id: str = "stm", route_id: str) -> "RouteFile":
-    """Build static/routes/{route_id}.json — directions + shapes + stops + schedule."""
-    from transit_ops.snapshots.contract import RouteFile, RouteDirection, RouteStop, ServicePeriod
+    """Build static/routes/{route_id}.json — branches + shapes + stops + schedule.
+
+    One RouteDirection is emitted per real branch ((direction, headsign) with its
+    most-used shape + that shape's full stop list), so multi-branch routes are not
+    truncated.  Headways are the median gap between DISTINCT first-stop departures
+    of the busiest direction on a representative weekday, per time-of-day shift,
+    plus one 'weekend' period.  Times are wall-clock (GTFS >=24:00 normalised).
+    """
     from collections import defaultdict
 
-    params_base = {"provider_id": provider_id}
+    from transit_ops.snapshots.contract import RouteDirection, RouteFile, RouteStop, ServicePeriod
 
-    # Get current dataset_version_id
-    dv_row = conn.execute(_CURRENT_DATASET_VERSION_SQL, params_base).mappings().fetchone()
+    dv_row = conn.execute(_CURRENT_DATASET_VERSION_SQL, {"provider_id": provider_id}).mappings().fetchone()
     if dv_row is None:
         return RouteFile(id=route_id)
     dv_id = dv_row["dataset_version_id"]
     params = {"provider_id": provider_id, "dataset_version_id": dv_id, "route_id": route_id}
 
-    # Get route long name
-    route_name_row = conn.execute(
-        text("SELECT route_long_name FROM gold.dim_route WHERE provider_id=:provider_id AND route_id=:route_id LIMIT 1"),
-        {"provider_id": provider_id, "route_id": route_id}
+    weekday_services, weekend_services = _representative_services(
+        conn, provider_id=provider_id, dataset_version_id=dv_id
+    )
+
+    name_row = conn.execute(
+        text(
+            "SELECT route_long_name FROM gold.dim_route "
+            "WHERE provider_id=:provider_id AND route_id=:route_id LIMIT 1"
+        ),
+        {"provider_id": provider_id, "route_id": route_id},
     ).mappings().fetchone()
-    long_name = route_name_row["route_long_name"] if route_name_row else None
+    long_name = name_row["route_long_name"] if name_row else None
 
-    # Get shapes grouped by direction
-    shape_rows = list(conn.execute(_ROUTE_SHAPES_SQL, params).mappings())
+    # --- branches: one per (direction, headsign), best (most-used) shape ---
+    branches: dict[tuple, dict] = {}
+    for row in conn.execute(_ROUTE_SHAPES_SQL, params).mappings():
+        key = (int(row["direction_id"] or 0), row["trip_headsign"])
+        if key not in branches:  # rows ordered direction, count DESC, shape_id
+            branches[key] = {"shape_id": row["shape_id"], "geojson": row["geojson"]}
 
-    # Group: direction_id -> best shape (highest trip_count)
-    dir_shapes: dict[int, dict] = {}
-    for row in shape_rows:
-        dir_id = int(row["direction_id"] or 0)
-        if dir_id not in dir_shapes:  # first row per direction = highest trip_count (ORDER BY count DESC)
-            dir_shapes[dir_id] = {
-                "shape_id": row["shape_id"],
-                "geojson": row["geojson"],
-                "headsign": row["trip_headsign"],
-            }
-
-    # Build directions
     directions: list[RouteDirection] = []
-    for dir_id in sorted(dir_shapes.keys()):
-        best = dir_shapes[dir_id]
-        # Get stop sequence for this direction's best shape
-        stop_rows = list(conn.execute(_ROUTE_STOPS_SQL, {
-            **params, "direction_id": dir_id, "shape_id": best["shape_id"]
-        }).mappings())
-        stops = [RouteStop(id=str(r["stop_id"]), seq=int(r["stop_sequence"]),
-                           name=r["stop_name"]) for r in stop_rows]
-        directions.append(RouteDirection(
-            dir=dir_id,
-            headsign=best["headsign"],
-            shape=best["geojson"],
-            stops=stops,
-        ))
+    for (dir_id, headsign), best in sorted(branches.items(), key=lambda kv: (kv[0][0], str(kv[0][1] or ""))):
+        stop_rows = conn.execute(_ROUTE_STOPS_SQL, {**params, "shape_id": best["shape_id"]}).mappings()
+        stops = [
+            RouteStop(id=str(s["stop_id"]), seq=int(s["stop_sequence"]), name=s["stop_name"])
+            for s in stop_rows
+        ]
+        directions.append(
+            RouteDirection(dir=dir_id, headsign=headsign, shape=best["geojson"], stops=stops)
+        )
 
-    # Service periods from first-stop departure times
-    sched_rows = list(conn.execute(_ROUTE_SCHEDULE_SQL, params).mappings())
-    times = [str(r["departure_time"]) for r in sched_rows if r["departure_time"]]
-
-    shift_times: dict[str, list[str]] = defaultdict(list)
-    for t in times:
-        shift_times[_infer_shift(t)].append(t)
+    # --- schedule: distinct first-stop departures by daytype + direction ---
+    sched_rows = conn.execute(
+        _ROUTE_SCHEDULE_SQL,
+        {**params, "weekday_services": weekday_services or [""], "weekend_services": weekend_services or [""]},
+    ).mappings()
+    wd_by_dir: dict[int, list[str]] = defaultdict(list)
+    we_times: list[str] = []
+    for r in sched_rows:
+        t = str(r["departure_time"])
+        if r["is_weekday"]:
+            wd_by_dir[int(r["direction_id"] or 0)].append(t)
+        else:
+            we_times.append(t)
 
     service_periods: list[ServicePeriod] = []
-    shift_order = ["am_peak", "midday", "pm_peak", "evening", "night"]
-    shift_windows = {
-        "am_peak": "06:00–09:00", "midday": "09:00–15:00", "pm_peak": "15:00–19:00",
-        "evening": "19:00–23:00", "night": "23:00–06:00",
-    }
-    for shift in shift_order:
-        st = shift_times.get(shift, [])
-        if not st:
-            continue
-        hw = _approx_headway(st)
-        service_periods.append(ServicePeriod(
-            shift=shift, window=shift_windows.get(shift), headway_min=hw
-        ))
+    if wd_by_dir:
+        # busiest direction is representative of the route's frequency
+        best_dir = max(wd_by_dir, key=lambda d: len(set(wd_by_dir[d])))
+        shift_times: dict[str, list[str]] = defaultdict(list)
+        for t in set(wd_by_dir[best_dir]):
+            shift_times[_infer_shift((_gtfs_min(t) // 60) % 24)].append(t)
+        for shift in _SHIFT_ORDER:
+            bucket = shift_times.get(shift)
+            if not bucket:
+                continue
+            mins = [_shift_sort_min(t, shift) for t in bucket]
+            service_periods.append(
+                ServicePeriod(shift=shift, window=_SHIFT_WINDOWS[shift], headway_min=_median_headway(mins))
+            )
+    if we_times:
+        service_periods.append(
+            ServicePeriod(
+                shift="weekend",
+                window=None,
+                headway_min=_median_headway([_gtfs_min(t) % 1440 for t in set(we_times)]),
+            )
+        )
 
-    first_dep = times[0][:5] if times else None   # "HH:MM"
-    last_dep  = times[-1][:5] if times else None
+    # span from the representative weekday (fallback weekend), wall-clock display
+    all_wd = sorted({t for ts in wd_by_dir.values() for t in ts}, key=_gtfs_min)
+    span = all_wd or sorted(set(we_times), key=_gtfs_min)
+    first_dep = _wallclock(span[0]) if span else None
+    last_dep = _wallclock(span[-1]) if span else None
 
     return RouteFile(
         id=route_id,
@@ -868,20 +987,22 @@ def build_route(conn: Connection, *, provider_id: str = "stm", route_id: str) ->
 # STATIC stop files (batch — one pass for all stops)
 # ---------------------------------------------------------------------------
 
-_ALL_STOPS_SQL = text("""
+_ALL_STOPS_SQL = text(
+    f"""
     SELECT stop_id, stop_code, stop_name, stop_lat, stop_lon, wheelchair_boarding
     FROM gold.dim_stop
     WHERE provider_id = :provider_id
-      AND (location_type = 0 OR location_type IS NULL)
+      AND {_BOARDABLE_STOP}
     ORDER BY stop_id
-""")
+    """
+)
 
-_ALL_STOP_SCHEDULES_SQL = text("""
-    SELECT
-        st.stop_id,
-        t.route_id,
-        t.trip_headsign,
-        st.departure_time
+# Distinct departures per (stop, route, headsign) for the representative WEEKDAY
+# service only, so each stop shows one coherent day's schedule (not the union of
+# all 144 calendars).  DISTINCT collapses simultaneous branch departures.
+_ALL_STOP_SCHEDULES_SQL = text(
+    """
+    SELECT DISTINCT st.stop_id, t.route_id, t.trip_headsign, st.departure_time
     FROM silver.stop_times AS st
     JOIN silver.trips AS t
         ON  t.trip_id            = st.trip_id
@@ -890,81 +1011,104 @@ _ALL_STOP_SCHEDULES_SQL = text("""
     WHERE st.provider_id        = :provider_id
       AND st.dataset_version_id = :dataset_version_id
       AND st.departure_time IS NOT NULL
+      AND t.service_id = ANY(:weekday_services)
     ORDER BY st.stop_id, t.route_id, st.departure_time
-""")
+    """
+)
+
+_STOP_TIMES_CAP = 12  # representative all-day sample per (route, headsign)
+
+
+def _sample_times(raw_sorted: list[str], cap: int = _STOP_TIMES_CAP) -> list[str]:
+    """Even-sample raw chronologically-sorted GTFS times across the day to <= cap,
+    always keeping the last departure, then render wall-clock for display."""
+    distinct: list[str] = []
+    for t in raw_sorted:  # already chronological (raw text sort == chronological)
+        if not distinct or distinct[-1] != t:
+            distinct.append(t)
+    if len(distinct) <= cap:
+        picked = distinct
+    else:
+        step = len(distinct) / cap
+        picked = [distinct[int(i * step)] for i in range(cap)]
+        picked[-1] = distinct[-1]
+    return [_wallclock(t) or "" for t in picked]
 
 
 def build_all_stops_data(conn: Connection, *, provider_id: str = "stm") -> "dict[str, StopFile]":
-    """Build all StopFile objects in a single two-query pass.
+    """Build all StopFile objects in a single two-query pass (representative weekday).
 
-    Returns a dict mapping stop_id -> StopFile for every stop in dim_stop.
-    Called once by _publish_static; avoids 9000+ individual queries.
+    Returns stop_id -> StopFile. The schedule is a representative all-day sample
+    of the busiest weekday's service; weekend-only stops have an empty schedule.
     """
-    from transit_ops.snapshots.contract import StopFile, ScheduledRoute
+    import logging
     from collections import defaultdict
 
+    from transit_ops.snapshots.contract import ScheduledRoute, StopFile
+
+    logger = logging.getLogger(__name__)
     params_base = {"provider_id": provider_id}
 
-    # Get current dataset_version_id
     dv_row = conn.execute(_CURRENT_DATASET_VERSION_SQL, params_base).mappings().fetchone()
     if dv_row is None:
         return {}
     dv_id = dv_row["dataset_version_id"]
+    weekday_services, _weekend = _representative_services(
+        conn, provider_id=provider_id, dataset_version_id=dv_id
+    )
 
-    # Step 1: build base stop info
     stops: dict[str, StopFile] = {}
     for r in conn.execute(_ALL_STOPS_SQL, params_base).mappings():
         sid = str(r["stop_id"])
-        lat = r["stop_lat"]
-        lon = r["stop_lon"]
+        lat, lon = r["stop_lat"], r["stop_lon"]
         if lat is None or lon is None:
             continue
-        wheelchair = int(r["wheelchair_boarding"] or 0) == 1
+        raw = r["wheelchair_boarding"]
+        # GTFS: 1=accessible, 2=not accessible, 0/NULL=unknown. The contract field
+        # is a bare bool with no 'unknown'; STM only emits 1/2 today.
+        if raw not in (1, 2):
+            logger.warning(
+                "stop %s wheelchair_boarding=%r not in (1,2); publishing wheelchair=False", sid, raw
+            )
         stops[sid] = StopFile(
             id=sid,
             code=r["stop_code"],
             name=str(r["stop_name"] or sid),
             lat=_round5(float(lat)),
             lon=_round5(float(lon)),
-            wheelchair=wheelchair,
+            wheelchair=(raw == 1),
             routes_served=[],
             scheduled=[],
         )
 
-    # Step 2: aggregate schedule (all stops, one query)
-    # group by (stop_id, route_id, headsign) -> list of departure times
     schedule: dict[str, dict[tuple, list[str]]] = defaultdict(lambda: defaultdict(list))
-    for r in conn.execute(_ALL_STOP_SCHEDULES_SQL,
-                          {"provider_id": provider_id, "dataset_version_id": dv_id}).mappings():
+    for r in conn.execute(
+        _ALL_STOP_SCHEDULES_SQL, {**params_base, "dataset_version_id": dv_id, "weekday_services": weekday_services or [""]}
+    ).mappings():
         sid = str(r["stop_id"])
         key = (str(r["route_id"]), r["trip_headsign"] or "")
-        t = str(r["departure_time"])[:5]  # "HH:MM"
-        schedule[sid][key].append(t)
+        schedule[sid][key].append(str(r["departure_time"]))  # raw, already chronological
 
-    # Step 3: attach schedule to stops, collect routes_served
     for sid, route_map in schedule.items():
-        if sid not in stops:
+        stop = stops.get(sid)
+        if stop is None:
             continue
         routes_seen: set[str] = set()
         scheduled: list[ScheduledRoute] = []
-        for (route_id, headsign), times in route_map.items():
+        for (route_id, headsign), raw_times in route_map.items():
             routes_seen.add(route_id)
-            # keep up to 10 upcoming times to keep file size reasonable
-            scheduled.append(ScheduledRoute(
-                route=route_id,
-                headsign=headsign or None,
-                times=times[:10],
-            ))
-        # sort by route_id for determinism
-        scheduled.sort(key=lambda s: s.route)
+            scheduled.append(
+                ScheduledRoute(route=route_id, headsign=headsign or None, times=_sample_times(raw_times))
+            )
+        scheduled.sort(key=lambda s: (_route_sort_key(s.route), s.headsign or ""))
         stops[sid] = StopFile(
-            id=stops[sid].id,
-            code=stops[sid].code,
-            name=stops[sid].name,
-            lat=stops[sid].lat,
-            lon=stops[sid].lon,
-            wheelchair=stops[sid].wheelchair,
-            routes_served=sorted(routes_seen),
+            id=stop.id,
+            code=stop.code,
+            name=stop.name,
+            lat=stop.lat,
+            lon=stop.lon,
+            wheelchair=stop.wheelchair,
+            routes_served=sorted(routes_seen, key=_route_sort_key),
             scheduled=scheduled,
         )
 
