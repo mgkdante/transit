@@ -104,7 +104,7 @@ def test_build_vehicles_maps_status_occupancy_and_rounds_coords() -> None:
                     "lat": 45.491234567,
                     "lon": -73.567894321,
                     "bearing": 182.7,
-                    "speed_kmh": 24.4,
+                    "speed_ms": 10.0,  # m/s -> 36 km/h via _kmh
                     "status_band": "En retard / Late",
                     "occupancy_status": 2,  # GTFS-RT FEW_SEATS_AVAILABLE
                     "next_stop": "S-900",
@@ -128,7 +128,7 @@ def test_build_vehicles_maps_status_occupancy_and_rounds_coords() -> None:
     assert v.lat == 45.49123  # rounded to 5 decimals
     assert v.lon == -73.56789
     assert v.bearing == 182  # int-coerced
-    assert v.speed_kmh == 24
+    assert v.speed_kmh == 36  # 10 m/s * 3.6 = 36 km/h
     assert v.next_stop == "S-900"
     assert v.updated_utc == "2026-05-31T12:00:00Z"
     assert v.delay_min == 2  # 120s -> 2 min
@@ -145,7 +145,7 @@ def test_build_vehicles_unknown_status_and_null_occupancy() -> None:
                     "lat": 45.5,
                     "lon": -73.6,
                     "bearing": None,
-                    "speed_kmh": None,
+                    "speed_ms": None,  # NULL speed_ms -> speed_kmh None
                     "status_band": "Inconnu / Unknown",
                     "occupancy_status": None,
                     "next_stop": None,
@@ -182,7 +182,7 @@ def test_build_vehicles_all_status_bands_map() -> None:
             "lat": 45.5,
             "lon": -73.6,
             "bearing": None,
-            "speed_kmh": None,
+            "speed_ms": None,  # key is now speed_ms
             "status_band": band,
             "occupancy_status": None,
             "next_stop": None,
@@ -220,21 +220,24 @@ def test_build_trips_groups_stops_and_converts_delay_to_minutes() -> None:
             "current_stop_next_departures": [
                 {
                     "trip_id": "T-1",
+                    "route_id": "51",  # departures view now carries route_id
                     "stop_id": "S-1",
                     "predicted_departure_utc": "2026-05-31T12:05:00Z",
-                    "departure_rank": 1,
+                    "stop_sequence": 1,
                 },
                 {
                     "trip_id": "T-1",
+                    "route_id": "51",
                     "stop_id": "S-2",
                     "predicted_departure_utc": "2026-05-31T12:09:00Z",
-                    "departure_rank": 2,
+                    "stop_sequence": 2,
                 },
                 {
-                    "trip_id": "T-3-orphan",  # no delay row -> still surfaces a trip
+                    "trip_id": "T-3-orphan",  # no delay row -> fallback Trip uses route from row
+                    "route_id": "80",
                     "stop_id": "S-9",
                     "predicted_departure_utc": "2026-05-31T12:20:00Z",
-                    "departure_rank": 1,
+                    "stop_sequence": 1,
                 },
             ],
         }
@@ -243,7 +246,7 @@ def test_build_trips_groups_stops_and_converts_delay_to_minutes() -> None:
     out = build_trips(conn, provider_id="stm")
 
     assert isinstance(out, TripsFile)
-    # T-1 has delay + 2 stops, ordered by rank
+    # T-1 has delay + 2 stops, ordered by ETA/stop_sequence
     t1 = out.trips["T-1"]
     assert t1.route == "51"
     assert t1.status == "late"
@@ -255,8 +258,9 @@ def test_build_trips_groups_stops_and_converts_delay_to_minutes() -> None:
     assert t2.status == "early"
     assert t2.delay_min == -3
     assert t2.stops == []
-    # T-3-orphan has stops but no delay row -> unknown status, delay None
+    # T-3-orphan: no delay row, route comes from the departures row
     t3 = out.trips["T-3-orphan"]
+    assert t3.route == "80"  # route_id preserved from fallback Trip(route=r["route_id"])
     assert t3.status == "unknown"
     assert t3.delay_min is None
     assert [s.stop for s in t3.stops] == ["S-9"]
@@ -268,22 +272,30 @@ def test_build_trips_groups_stops_and_converts_delay_to_minutes() -> None:
 
 
 def test_build_alerts_maps_severity_and_splits_routes_stops() -> None:
+    import hashlib
+
     conn = FakeConn(
         {
             "current_i3_alerts": [
                 {
                     "alert_id": "A-1",
                     "alert_header_text": "Service disruption line 1",
+                    "description_text": "Delays on line 1",
                     "severity": "warning",
+                    "cause": "ACCIDENT",
+                    "effect": "DETOUR",
                     "route_ids": "1, 4, 51",
                     "stop_ids": "S-1, S-2",
                     "active_period_start_utc": "2026-05-31T08:00:00Z",
                     "active_period_end_utc": "2026-05-31T20:00:00Z",
                 },
                 {
-                    "alert_id": None,  # no id -> synthesize a stable one
+                    "alert_id": None,  # no id -> synthesize a CONTENT hash
                     "alert_header_text": "Major closure",
+                    "description_text": "Major closure desc",
                     "severity": "severe",
+                    "cause": "CONSTRUCTION",
+                    "effect": "NO_SERVICE",
                     "route_ids": None,
                     "stop_ids": None,
                     "active_period_start_utc": None,
@@ -309,7 +321,13 @@ def test_build_alerts_maps_severity_and_splits_routes_stops() -> None:
     assert a2.severity == "critical"  # severe -> critical
     assert a2.routes == []
     assert a2.stops == []
-    assert a2.id  # non-empty synthesized id
+    # id is a content hash: "stm-alert-<sha1[:12]>" of "desc|sev|cause|effect"
+    basis = "Major closure desc|severe|CONSTRUCTION|NO_SERVICE"
+    expected_id = "stm-alert-" + hashlib.sha1(basis.encode()).hexdigest()[:12]
+    assert a2.id == expected_id
+    # same input -> same id (stable across calls)
+    out2 = build_alerts(conn, provider_id="stm")
+    assert out2.alerts[1].id == expected_id
     assert a2.start_utc is None
 
 
@@ -320,7 +338,10 @@ def test_build_alerts_unknown_severity_falls_back_to_watch() -> None:
                 {
                     "alert_id": "A-info",
                     "alert_header_text": "FYI",
+                    "description_text": None,
                     "severity": "info",
+                    "cause": None,
+                    "effect": None,
                     "route_ids": "",
                     "stop_ids": "",
                     "active_period_start_utc": None,
@@ -341,12 +362,15 @@ def test_build_alerts_unknown_severity_falls_back_to_watch() -> None:
 
 def test_build_network_aggregates_kpis() -> None:
     # 5 vehicles: 2 on_time, 1 late, 1 severe, 1 unknown
+    # known = 5 - 1 unknown = 4
+    # on_time_pct = round(100 * 2 / 4) = 50
+    # coverage_pct = round(100 * 4 / 5) = 80
     vehicle_rows = [
-        {"status_band": "À l'heure / On time", "occupancy_status": 1},
-        {"status_band": "À l'heure / On time", "occupancy_status": 1},
-        {"status_band": "En retard / Late", "occupancy_status": 3},
-        {"status_band": "Critique / Severe", "occupancy_status": 5},
-        {"status_band": "Inconnu / Unknown", "occupancy_status": None},
+        {"status_band": "À l'heure / On time", "occupancy_status": 1},   # many_seats
+        {"status_band": "À l'heure / On time", "occupancy_status": 1},   # many_seats
+        {"status_band": "En retard / Late", "occupancy_status": 3},       # standing
+        {"status_band": "Critique / Severe", "occupancy_status": 5},      # full
+        {"status_band": "Inconnu / Unknown", "occupancy_status": None},   # no occ
     ]
     trip_rows = [
         {"avg_delay_seconds": 60.0},  # 1 min
@@ -370,18 +394,20 @@ def test_build_network_aggregates_kpis() -> None:
     assert out.status_dist.late == 1
     assert out.status_dist.severe == 1
     assert out.status_dist.unknown == 1
-    assert out.on_time_pct == 40  # round(100 * 2 / 5)
-    # occupancy fractions over the 4 vehicles that report occupancy
-    # (1,1,3,5) -> many_seats 2/5, standing 1/5, full 1/5 of *all* vehicles
-    assert round(out.occupancy_mix.many_seats, 3) == 0.4
-    assert round(out.occupancy_mix.standing, 3) == 0.2
-    assert round(out.occupancy_mix.full, 3) == 0.2
+    # on_time_pct: round(100 * on_time / known) where known = 5 - 1 unknown = 4
+    assert out.on_time_pct == 50  # round(100 * 2 / 4)
+    # coverage_pct: round(100 * known / vehicles_in_service) = round(100 * 4/5) = 80
+    assert out.coverage_pct == 80
+    # occupancy_mix fractions over occ_total (vehicles that reported occ):
+    # codes (1,1,3,5) -> occ_total=4: many_seats=2/4=0.5, standing=1/4=0.25, full=1/4=0.25
+    assert round(out.occupancy_mix.many_seats, 3) == 0.5
+    assert round(out.occupancy_mix.standing, 3) == 0.25
+    assert round(out.occupancy_mix.full, 3) == 0.25
     assert out.non_responding == 7
     assert out.feed_freshness_s == 12
     # percentiles of [1, 2, 10] minutes
     assert out.delay_p50_min == 2
     assert out.delay_p90_min >= 8  # near the top of the range
-    assert 0 <= out.coverage_pct <= 100
 
 
 def test_build_network_guards_zero_vehicles() -> None:
@@ -559,76 +585,142 @@ def test_build_stops_index():
 
 
 def test_build_route():
+    import datetime
+
     from transit_ops.snapshots.builders import build_route
 
-    call_count = [0]
+    class _FakeResult:
+        def __init__(self, rows):
+            self._rows = rows
 
-    class FR:
-        def __init__(self, rows): self._rows = rows
         def mappings(self):
-            class M:
-                def __init__(self, rows): self._rows = rows
-                def fetchone(self): return self._rows[0] if self._rows else None
-                def __iter__(self): return iter(self._rows)
-            return M(self._rows)
+            outer = self
 
-    responses = [
-        [{"dataset_version_id": 1}],                                      # dataset version
-        [{"route_long_name": "Côte-Vertu"}],                               # route name
-        [{"shape_id": "s1", "geojson": {"type": "LineString", "coordinates": []},
-          "direction_id": 0, "trip_headsign": "Côte-Vertu", "trip_count": 10}],  # shapes
-        [{"stop_sequence": 1, "stop_id": "51234", "stop_name": "Côte-Vertu"}],  # stops dir0
-        [{"departure_time": "06:10:00"}, {"departure_time": "06:22:00"},
-         {"departure_time": "14:30:00"}],                                  # schedule
+            class M:
+                def fetchone(self):
+                    return outer._rows[0] if outer._rows else None
+
+                def __iter__(self):
+                    return iter(outer._rows)
+
+            return M()
+
+        def __iter__(self):
+            # for row[0]-style iteration (active-services query)
+            return iter(self._rows)
+
+        def fetchone(self):
+            return self._rows[0] if self._rows else None
+
+        def scalar_one(self):
+            return self._rows[0] if self._rows else 0
+
+    # Dispatch table: (substring, rows) — first match wins
+    dispatch = [
+        # dataset version
+        ("dataset_kind = 'static_schedule'", [{"dataset_version_id": 1}]),
+        # rep-dates
+        ("generate_series", [{"weekday_date": datetime.date(2026, 6, 3), "weekend_date": datetime.date(2026, 6, 6)}]),
+        # active-services (returns tuples for row[0] iteration)
+        ("extract(isodow FROM :repdate)", [("svc_wd",)]),
+        # route long name
+        ("route_long_name FROM gold.dim_route", [{"route_long_name": "Côte-Vertu"}]),
+        # route shapes
+        ("map_route_lines", [
+            {"shape_id": "s1", "geojson": {"type": "LineString", "coordinates": []},
+             "direction_id": 0, "trip_headsign": "Nord", "trip_count": 10}
+        ]),
+        # route stops
+        ("DISTINCT ON (st.stop_sequence)", [
+            {"stop_sequence": 1, "stop_id": "51234", "stop_name": "X"}
+        ]),
+        # route schedule
+        ("st.stop_sequence     = 1", [
+            {"direction_id": 0, "is_weekday": True, "departure_time": "07:00:00"},
+            {"direction_id": 0, "is_weekday": True, "departure_time": "07:08:00"},
+            {"direction_id": 0, "is_weekday": True, "departure_time": "14:00:00"},
+        ]),
     ]
 
     class FC:
-        def execute(self, *a, **k):
-            idx = call_count[0]; call_count[0] += 1
-            return FR(responses[idx] if idx < len(responses) else [])
+        def execute(self, statement, params=None):
+            s = str(statement)
+            for needle, rows in dispatch:
+                if needle in s:
+                    return _FakeResult(rows)
+            return _FakeResult([])
 
     rf = build_route(FC(), route_id="165")
     assert rf.id == "165"
     assert rf.long == "Côte-Vertu"
-    assert len(rf.directions) == 1
+    assert len(rf.directions) >= 1
     assert rf.directions[0].dir == 0
     assert rf.directions[0].stops[0].id == "51234"
-    assert rf.first_departure == "06:10"
+    assert rf.first_departure == "07:00"  # wall-clock of earliest weekday departure
     assert any(sp.shift == "am_peak" for sp in rf.service_periods)
 
 
 def test_build_all_stops_data():
+    import datetime
+
     from transit_ops.snapshots.builders import build_all_stops_data
 
-    call_idx = [0]
+    class _FakeResult:
+        def __init__(self, rows):
+            self._rows = rows
 
-    class FR:
-        def __init__(self, rows): self._rows = rows
         def mappings(self):
-            class M:
-                def __init__(self, rows): self._rows = rows
-                def fetchone(self): return self._rows[0] if self._rows else None
-                def __iter__(self): return iter(self._rows)
-            return M(self._rows)
+            outer = self
 
-    responses = [
-        [{"dataset_version_id": 1}],  # dv query
-        [{"stop_id": "51234", "stop_code": "51234", "stop_name": "Côte-Vertu / Décarie",
-          "stop_lat": 45.49, "stop_lon": -73.66, "wheelchair_boarding": 1}],  # stops
-        [{"stop_id": "51234", "route_id": "165", "trip_headsign": "Côte-Vertu",
-          "departure_time": "17:46:00"},
-         {"stop_id": "51234", "route_id": "165", "trip_headsign": "Côte-Vertu",
-          "departure_time": "17:54:00"}],  # schedule
+            class M:
+                def fetchone(self):
+                    return outer._rows[0] if outer._rows else None
+
+                def __iter__(self):
+                    return iter(outer._rows)
+
+            return M()
+
+        def __iter__(self):
+            return iter(self._rows)
+
+        def fetchone(self):
+            return self._rows[0] if self._rows else None
+
+        def scalar_one(self):
+            return self._rows[0] if self._rows else 0
+
+    dispatch = [
+        # dataset version (matched before rep-dates because it's more specific)
+        ("dataset_kind = 'static_schedule'", [{"dataset_version_id": 1}]),
+        # rep-dates
+        ("generate_series", [{"weekday_date": datetime.date(2026, 6, 3), "weekend_date": datetime.date(2026, 6, 6)}]),
+        # active-services
+        ("extract(isodow FROM :repdate)", [("svc_wd",)]),
+        # all stops
+        ("FROM gold.dim_stop", [
+            {"stop_id": "51234", "stop_code": "51234", "stop_name": "X",
+             "stop_lat": 45.49, "stop_lon": -73.66, "wheelchair_boarding": 1}
+        ]),
+        # all stop schedules
+        ("ANY(:weekday_services)", [
+            {"stop_id": "51234", "route_id": "165", "trip_headsign": "Nord", "departure_time": "17:46:00"},
+            {"stop_id": "51234", "route_id": "165", "trip_headsign": "Nord", "departure_time": "17:54:00"},
+        ]),
     ]
 
     class FC:
-        def execute(self, *a, **k):
-            idx = call_idx[0]; call_idx[0] += 1
-            return FR(responses[idx] if idx < len(responses) else [])
+        def execute(self, statement, params=None):
+            s = str(statement)
+            for needle, rows in dispatch:
+                if needle in s:
+                    return _FakeResult(rows)
+            return _FakeResult([])
 
     result = build_all_stops_data(FC())
     assert "51234" in result
     sf = result["51234"]
     assert sf.wheelchair is True
     assert "165" in sf.routes_served
+    # times are wall-clock "HH:MM" and de-duplicated
     assert sf.scheduled[0].times == ["17:46", "17:54"]

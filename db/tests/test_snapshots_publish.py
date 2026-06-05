@@ -164,75 +164,102 @@ def test_publish_accepts_registry_kwarg() -> None:
 
 
 def test_publish_static_writes_expected_keys() -> None:
-    """Static tier writes indexes, labels, per-route and per-stop files."""
+    """Static tier writes indexes, labels, per-route and per-stop files.
+
+    Uses a SQL-text-dispatching fake connection so it is robust to changes
+    in query ordering within build_route / build_all_stops_data.
+    """
+    import datetime
     from contextlib import contextmanager
 
-    class FakeResult:
-        def __init__(self, rows=None):
-            self._rows = rows or []
+    class _FakeResult:
+        def __init__(self, rows):
+            self._rows = list(rows)
 
         def mappings(self):
-            class M:
-                def __init__(self, rows):
-                    self._rows = rows
+            outer = self
 
+            class M:
                 def fetchone(self):
-                    return self._rows[0] if self._rows else None
+                    return outer._rows[0] if outer._rows else None
 
                 def __iter__(self):
-                    return iter(self._rows)
+                    return iter(outer._rows)
 
-            return M(self._rows)
+            return M()
+
+        def __iter__(self):
+            # active-services query iterates row[0]
+            return iter(self._rows)
+
+        def fetchone(self):
+            return self._rows[0] if self._rows else None
 
         def fetchall(self):
-            return [(r,) if isinstance(r, str) else tuple(r.values()) for r in self._rows]
+            # used by _publish_static for the route_ids loop: returns list of tuples
+            result = []
+            for r in self._rows:
+                if isinstance(r, dict):
+                    result.append(tuple(r.values()))
+                elif isinstance(r, tuple):
+                    result.append(r)
+                else:
+                    result.append((r,))
+            return result
 
         def scalar_one(self):
             return self._rows[0] if self._rows else 0
 
-    call_idx = [0]
-    # Responses for _publish_static calls in order:
-    # 1. build_routes_index: routes_index query
-    # 2. build_stops_index: stops_index query
-    # 3. build_labels(fr): labels query
-    # 4. build_labels(en): labels query
-    # 5. route_ids query (per-route loop)
-    # 6. build_route("165"): dv query
-    # 7. build_route("165"): route_long_name query
-    # 8. build_route("165"): shapes query (empty → no directions → no stop queries)
-    # 9. build_route("165"): schedule query
-    # 10. build_all_stops_data: dv query
-    # 11. build_all_stops_data: stops query (empty → no stop files)
-    responses = [
-        # build_routes_index
-        [{"route_id": "165", "route_short_name": "165", "route_long_name": "Côte-Vertu", "route_color": "009EE0", "route_type": 3}],
-        # build_stops_index
-        [{"stop_id": "51234", "stop_code": "51234", "stop_name": "Côte-Vertu", "stop_lat": 45.49, "stop_lon": -73.66}],
-        # build_labels fr
-        [{"label_key": "network_health", "label_fr": "Santé", "label_en": "Health"}],
-        # build_labels en
-        [{"label_key": "network_health", "label_fr": "Santé", "label_en": "Health"}],
-        # route_ids for per-route loop
-        [{"route_id": "165"}],
-        # build_route("165"): dv
-        [{"dataset_version_id": 1}],
-        # build_route("165"): route_long_name
-        [{"route_long_name": "Côte-Vertu"}],
-        # build_route("165"): shapes (empty → no directions)
-        [],
-        # build_route("165"): schedule
-        [{"departure_time": "06:10:00"}],
-        # build_all_stops_data: dv
-        [{"dataset_version_id": 1}],
-        # build_all_stops_data: stops (empty → no stop files)
-        [],
+    # Dispatch table: (substring, rows) — first match wins.
+    # Covers every query issued by build_routes_index, build_stops_index,
+    # build_labels, the route_ids SELECT, build_route, and build_all_stops_data.
+    dispatch = [
+        # routes index
+        ("route_sort_order", [
+            {"route_id": "165", "route_short_name": "165", "route_long_name": "Côte-Vertu",
+             "route_color": "009EE0", "route_type": 3}
+        ]),
+        # stops index (uses aliased "s.location_type" — unique discriminator)
+        ("s.location_type", [
+            {"stop_id": "51234", "stop_code": "51234", "stop_name": "Côte-Vertu",
+             "stop_lat": 45.49, "stop_lon": -73.66}
+        ]),
+        # labels
+        ("report_labels", [
+            {"label_key": "network_health", "label_fr": "Santé", "label_en": "Health"}
+        ]),
+        # route_ids for per-route loop in _publish_static
+        ("SELECT route_id FROM gold.dim_route WHERE provider_id", [
+            {"route_id": "165"}
+        ]),
+        # dataset version (both build_route and build_all_stops_data use this)
+        ("dataset_kind = 'static_schedule'", [{"dataset_version_id": 1}]),
+        # rep-dates
+        ("generate_series", [
+            {"weekday_date": datetime.date(2026, 6, 3), "weekend_date": datetime.date(2026, 6, 6)}
+        ]),
+        # active-services (returns tuples for row[0] iteration)
+        ("extract(isodow FROM :repdate)", [("svc_wd",)]),
+        # route long name
+        ("route_long_name FROM gold.dim_route", [{"route_long_name": "Côte-Vertu"}]),
+        # route shapes (empty → no directions → no stop-sequence queries)
+        ("map_route_lines", []),
+        # route schedule
+        ("st.stop_sequence     = 1", []),
+        # all stops (build_all_stops_data) — "wheelchair_boarding" is unique discriminator
+        # empty → no stop files written
+        ("wheelchair_boarding", []),
+        # all stop schedules
+        ("ANY(:weekday_services)", []),
     ]
 
     class FC:
-        def execute(self, *a, **k):
-            idx = call_idx[0]
-            call_idx[0] += 1
-            return FakeResult(responses[idx] if idx < len(responses) else [])
+        def execute(self, statement, params=None):
+            s = str(statement)
+            for needle, rows in dispatch:
+                if needle in s:
+                    return _FakeResult(rows)
+            return _FakeResult([])
 
     class FakeEngine2:
         def begin(self):
