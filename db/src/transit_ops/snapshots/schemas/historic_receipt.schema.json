@@ -1,0 +1,183 @@
+{
+  "$defs": {
+    "ReceiptWorstRoute": {
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "otp_delta_pts": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Otp Delta Pts"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "title": "ReceiptWorstRoute",
+      "type": "object"
+    },
+    "ReceiptWorstStop": {
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "median_delay_min": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Median Delay Min"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "title": "ReceiptWorstStop",
+      "type": "object"
+    }
+  },
+  "properties": {
+    "affected_routes": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Affected Routes"
+    },
+    "affected_stops": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Affected Stops"
+    },
+    "alerts": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Alerts"
+    },
+    "avg_delay_min": {
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Avg Delay Min"
+    },
+    "date": {
+      "title": "Date",
+      "type": "string"
+    },
+    "otp_pct": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Otp Pct"
+    },
+    "rider_impact_score": {
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Rider Impact Score"
+    },
+    "severe_pct": {
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Severe Pct"
+    },
+    "vehicles": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Vehicles"
+    },
+    "worst_route": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ReceiptWorstRoute"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "worst_stop": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ReceiptWorstStop"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    }
+  },
+  "required": [
+    "date"
+  ],
+  "title": "Receipt",
+  "type": "object"
+}

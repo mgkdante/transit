@@ -1,0 +1,322 @@
+from __future__ import annotations
+from enum import Enum
+from pydantic import BaseModel, Field
+
+class Status(str, Enum):
+    early = "early"; on_time = "on_time"; late = "late"; severe = "severe"; unknown = "unknown"
+
+class Severity(str, Enum):
+    critical = "critical"; high = "high"; watch = "watch"
+
+class Occupancy(str, Enum):
+    empty = "empty"; many_seats = "many_seats"; few_seats = "few_seats"; standing = "standing"; full = "full"
+
+class Vehicle(BaseModel):
+    id: str
+    route: str | None = None
+    trip: str | None = None
+    lat: float
+    lon: float
+    bearing: int | None = None
+    speed_kmh: int | None = None
+    status: Status
+    delay_min: int | None = None
+    occupancy: Occupancy | None = None
+    next_stop: str | None = None
+    updated_utc: str
+
+class VehiclesFile(BaseModel):
+    generated_utc: str
+    vehicles: list[Vehicle]
+
+class StopEta(BaseModel):
+    stop: str
+    eta_utc: str
+    delay_min: int | None = None
+
+class Trip(BaseModel):
+    route: str | None = None
+    status: Status
+    delay_min: int | None = None
+    stops: list[StopEta] = Field(default_factory=list)
+
+class TripsFile(BaseModel):
+    trips: dict[str, Trip]
+
+class Alert(BaseModel):
+    id: str
+    severity: Severity
+    header_key: str
+    routes: list[str] = Field(default_factory=list)
+    stops: list[str] = Field(default_factory=list)
+    start_utc: str | None = None
+    end_utc: str | None = None
+
+class AlertsFile(BaseModel):
+    alerts: list[Alert]
+
+class StatusDist(BaseModel):
+    on_time: int = 0; late: int = 0; severe: int = 0; early: int = 0; unknown: int = 0
+
+class OccupancyMix(BaseModel):
+    empty: float = 0.0; many_seats: float = 0.0; few_seats: float = 0.0; standing: float = 0.0; full: float = 0.0
+
+class NetworkFile(BaseModel):
+    vehicles_in_service: int
+    on_time_pct: int
+    status_dist: StatusDist
+    delay_p50_min: int
+    delay_p90_min: int
+    occupancy_mix: OccupancyMix
+    non_responding: int
+    feed_freshness_s: int
+    coverage_pct: int
+
+class ManifestLiveFiles(BaseModel):
+    vehicles: str = "live/vehicles.json"
+    trips: str = "live/trips.json"
+    alerts: str = "live/alerts.json"
+    network: str = "live/network.json"
+    ttl_s: int = 30
+    generated_utc: str
+
+class ManifestFiles(BaseModel):
+    live: ManifestLiveFiles
+
+class Manifest(BaseModel):
+    provider: str
+    display_name: str
+    tz: str = "America/Toronto"
+    bbox: list[float]
+    default_lang: str = "fr"
+    attribution: str
+    basemap: str
+    dataset_version: str
+    labels: dict[str, str]
+    files: ManifestFiles
+    surfaces: list[str]
+
+
+# ---------------------------------------------------------------------------
+# STATIC tier models (Phase 2) — §8 STATIC shapes, field names ARE the contract
+# ---------------------------------------------------------------------------
+
+class RouteIndexEntry(BaseModel):
+    id: str
+    short: str
+    long: str | None = None
+    color: str | None = None
+    type: int
+
+class RoutesIndex(BaseModel):
+    routes: list[RouteIndexEntry]
+
+class StopIndexEntry(BaseModel):
+    id: str
+    code: str | None = None
+    name: str
+    lat: float
+    lon: float
+
+class StopsIndex(BaseModel):
+    stops: list[StopIndexEntry]
+
+class RouteStop(BaseModel):
+    id: str
+    seq: int
+    name: str | None = None
+
+class RouteDirection(BaseModel):
+    dir: int
+    headsign: str | None = None
+    shape: dict | None = None          # GeoJSON LineString {"type":"LineString","coordinates":[...]}
+    stops: list[RouteStop] = Field(default_factory=list)
+
+class ServicePeriod(BaseModel):
+    shift: str                         # "am_peak"|"pm_peak"|"midday"|"evening"|"night"|"weekend"
+    window: str | None = None          # e.g. "06:00–09:00"
+    headway_min: float | None = None
+
+class RouteFile(BaseModel):
+    id: str
+    long: str | None = None
+    directions: list[RouteDirection] = Field(default_factory=list)
+    service_periods: list[ServicePeriod] = Field(default_factory=list)
+    first_departure: str | None = None
+    last_departure: str | None = None
+
+class ScheduledRoute(BaseModel):
+    route: str
+    headsign: str | None = None
+    times: list[str] = Field(default_factory=list)
+
+class StopFile(BaseModel):
+    id: str
+    code: str | None = None
+    name: str
+    lat: float
+    lon: float
+    wheelchair: bool = False
+    routes_served: list[str] = Field(default_factory=list)
+    scheduled: list[ScheduledRoute] = Field(default_factory=list)
+
+class LabelsFile(BaseModel):
+    labels: dict[str, str]
+
+
+# ---------------------------------------------------------------------------
+# HISTORIC tier models (Phase 3) — §8 HISTORIC shapes
+# ---------------------------------------------------------------------------
+
+class TrendPoint(BaseModel):
+    date: str
+    otp_pct: int | None = None
+    avg_delay_min: float | None = None
+    p90_min: float | None = None
+    vehicles: int | None = None
+
+class NetworkTrend(BaseModel):
+    series: list[TrendPoint] = Field(default_factory=list)
+
+class ReliabilityPeriod(BaseModel):
+    grain: str
+    date: str | None = None
+    otp_pct: int | None = None
+    avg_delay_min: float | None = None
+    p50_min: float | None = None
+    p90_min: float | None = None
+    severe_pct: float | None = None
+
+class HeadwayPeriod(BaseModel):
+    shift: str
+    scheduled_min: float | None = None
+    observed_min: float | None = None
+    excess_wait_min: float | None = None
+
+class RouteHabits(BaseModel):
+    scale: str
+    matrix: list[list[float]] = Field(default_factory=list)
+
+class WeakStop(BaseModel):
+    id: str
+    name: str | None = None
+    median_delay_min: float | None = None
+
+class RouteReliability(BaseModel):
+    id: str
+    periods: list[ReliabilityPeriod] = Field(default_factory=list)
+    headway: list[HeadwayPeriod] = Field(default_factory=list)
+    habits: RouteHabits | None = None
+    weak_stops: list[WeakStop] = Field(default_factory=list)
+
+class StopReliabilityPeriod(BaseModel):
+    grain: str
+    otp_pct: int | None = None
+    median_delay_min: float | None = None
+    severe_pct: float | None = None
+
+class StopByRoute(BaseModel):
+    route: str
+    median_delay_min: float | None = None
+
+class StopReliability(BaseModel):
+    id: str
+    periods: list[StopReliabilityPeriod] = Field(default_factory=list)
+    by_route: list[StopByRoute] = Field(default_factory=list)
+
+class Hotspot(BaseModel):
+    rank: int
+    type: str
+    id: str
+    severity: str | None = None
+    otp_delta_pts: float | None = None
+
+class Hotspots(BaseModel):
+    hotspots: list[Hotspot] = Field(default_factory=list)
+
+class Offender(BaseModel):
+    type: str
+    id: str
+    route: str | None = None
+    recurrence: str | None = None
+    avg_delay_min: float | None = None
+
+class RepeatOffenders(BaseModel):
+    offenders: list[Offender] = Field(default_factory=list)
+
+class ReceiptWorstRoute(BaseModel):
+    id: str
+    otp_delta_pts: float | None = None
+
+class ReceiptWorstStop(BaseModel):
+    id: str
+    median_delay_min: float | None = None
+
+class Receipt(BaseModel):
+    date: str
+    vehicles: int | None = None
+    otp_pct: int | None = None
+    avg_delay_min: float | None = None
+    severe_pct: float | None = None
+    worst_route: ReceiptWorstRoute | None = None
+    worst_stop: ReceiptWorstStop | None = None
+    affected_routes: int | None = None
+    affected_stops: int | None = None
+    alerts: int | None = None
+    rider_impact_score: float | None = None
+
+class AlertHistoryEntry(BaseModel):
+    id: str
+    severity: str | None = None
+    routes: list[str] = Field(default_factory=list)
+    stops: list[str] = Field(default_factory=list)
+    start_utc: str | None = None
+    end_utc: str | None = None
+    duration_min: float | None = None
+    impact_passages: int | None = None
+
+class AlertHistory(BaseModel):
+    alerts: list[AlertHistoryEntry] = Field(default_factory=list)
+
+class ProvenanceSource(BaseModel):
+    feed: str
+    chain: str | None = None
+    last_loaded_utc: str | None = None
+
+class ProvenanceFreshness(BaseModel):
+    feed: str
+    status: str | None = None
+    age_s: int | None = None
+
+class Provenance(BaseModel):
+    sources: list[ProvenanceSource] = Field(default_factory=list)
+    freshness: list[ProvenanceFreshness] = Field(default_factory=list)
+    retention: dict[str, int] = Field(default_factory=dict)
+    methodology: dict = Field(default_factory=dict)  # type: ignore[type-arg]
+    gaps: list[str] = Field(default_factory=list)
+
+
+TOP_LEVEL_MODELS: dict[str, type[BaseModel]] = {
+    "manifest": Manifest,
+    "live_vehicles": VehiclesFile,
+    "live_trips": TripsFile,
+    "live_alerts": AlertsFile,
+    "live_network": NetworkFile,
+    "static_routes_index": RoutesIndex,
+    "static_stops_index": StopsIndex,
+    "static_route": RouteFile,
+    "static_stop": StopFile,
+    "static_labels": LabelsFile,
+    "historic_network_trend": NetworkTrend,
+    "historic_route_reliability": RouteReliability,
+    "historic_stop_reliability": StopReliability,
+    "historic_hotspots": Hotspots,
+    "historic_repeat_offenders": RepeatOffenders,
+    "historic_receipt": Receipt,
+    "historic_alert_history": AlertHistory,
+    "provenance": Provenance,
+}
+
+
+def export_schemas() -> dict[str, dict]:
+    return {name: model.model_json_schema() for name, model in TOP_LEVEL_MODELS.items()}

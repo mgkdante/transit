@@ -1,0 +1,58 @@
+{
+  "$defs": {
+    "StopIndexEntry": {
+      "properties": {
+        "code": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Code"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "lat": {
+          "title": "Lat",
+          "type": "number"
+        },
+        "lon": {
+          "title": "Lon",
+          "type": "number"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "lat",
+        "lon"
+      ],
+      "title": "StopIndexEntry",
+      "type": "object"
+    }
+  },
+  "properties": {
+    "stops": {
+      "items": {
+        "$ref": "#/$defs/StopIndexEntry"
+      },
+      "title": "Stops",
+      "type": "array"
+    }
+  },
+  "required": [
+    "stops"
+  ],
+  "title": "StopsIndex",
+  "type": "object"
+}

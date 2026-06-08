@@ -1,0 +1,177 @@
+{
+  "$defs": {
+    "RouteDirection": {
+      "properties": {
+        "dir": {
+          "title": "Dir",
+          "type": "integer"
+        },
+        "headsign": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Headsign"
+        },
+        "shape": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Shape"
+        },
+        "stops": {
+          "items": {
+            "$ref": "#/$defs/RouteStop"
+          },
+          "title": "Stops",
+          "type": "array"
+        }
+      },
+      "required": [
+        "dir"
+      ],
+      "title": "RouteDirection",
+      "type": "object"
+    },
+    "RouteStop": {
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Name"
+        },
+        "seq": {
+          "title": "Seq",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id",
+        "seq"
+      ],
+      "title": "RouteStop",
+      "type": "object"
+    },
+    "ServicePeriod": {
+      "properties": {
+        "headway_min": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Headway Min"
+        },
+        "shift": {
+          "title": "Shift",
+          "type": "string"
+        },
+        "window": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Window"
+        }
+      },
+      "required": [
+        "shift"
+      ],
+      "title": "ServicePeriod",
+      "type": "object"
+    }
+  },
+  "properties": {
+    "directions": {
+      "items": {
+        "$ref": "#/$defs/RouteDirection"
+      },
+      "title": "Directions",
+      "type": "array"
+    },
+    "first_departure": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "First Departure"
+    },
+    "id": {
+      "title": "Id",
+      "type": "string"
+    },
+    "last_departure": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Last Departure"
+    },
+    "long": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Long"
+    },
+    "service_periods": {
+      "items": {
+        "$ref": "#/$defs/ServicePeriod"
+      },
+      "title": "Service Periods",
+      "type": "array"
+    }
+  },
+  "required": [
+    "id"
+  ],
+  "title": "RouteFile",
+  "type": "object"
+}

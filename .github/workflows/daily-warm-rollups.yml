@@ -5,8 +5,9 @@ on:
   schedule:
     # GitHub Actions cron is UTC-based.
     # 07:00 UTC runs after the static pipeline at 06:00 UTC.
-    # Daily warm rollups run inside the 7-day detail window, then
-    # aggregates remain available for 365 days after detail rows prune.
+    # Daily warm rollups run inside the 14-day detail window (P3 repeat-offender
+    # mart needs the trailing 14d), then aggregates remain available for 365 days
+    # after detail rows prune. The historic /v1 snapshot publishes after rollups.
     - cron: "0 7 * * *"
 
 permissions:
@@ -19,7 +20,12 @@ concurrency:
 jobs:
   build-warm-rollups:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # 25m headroom: rollups + 2 new marts + the historic /v1 publish (per-route
+    # reliability files + the 8M-row alert_history view) all run in this job.
+    timeout-minutes: 25
+    defaults:
+      run:
+        working-directory: db
     env:
       APP_ENV: production
       LOG_LEVEL: INFO
@@ -32,6 +38,9 @@ jobs:
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
       BRONZE_S3_ACCESS_KEY: ${{ secrets.BRONZE_S3_ACCESS_KEY }}
       BRONZE_S3_SECRET_KEY: ${{ secrets.BRONZE_S3_SECRET_KEY }}
+      SNAPSHOT_STORAGE_BACKEND: s3
+      SNAPSHOT_R2_BUCKET: ${{ secrets.SNAPSHOT_R2_BUCKET }}
+      SNAPSHOT_PUBLIC_BASE_URL: ${{ secrets.SNAPSHOT_PUBLIC_BASE_URL }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v5
@@ -49,6 +58,9 @@ jobs:
 
       - name: Build 5-minute warm rollups
         run: uv run python -m transit_ops.cli build-warm-rollups stm
+
+      - name: Publish historic /v1 snapshot to R2
+        run: uv run python -m transit_ops.cli publish-snapshot stm --tier historic
 
       - name: Prune expired warm rollup rows
         run: uv run python -m transit_ops.cli prune-warm-rollup-storage stm

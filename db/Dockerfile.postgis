@@ -1,0 +1,12 @@
+FROM postgres:16
+
+# postgresql-16-repack: enables online table-rewrite via the pg_repack extension.
+# Used by scripts/run-pg-repack.sh and after large DELETE migrations
+# (e.g. 0017 wiped 3.2M silver.i3_alerts snapshot rows; pg_repack reclaims
+# the resulting disk slack that regular VACUUM doesn't return to the OS).
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        postgresql-16-postgis-3 \
+        postgresql-16-postgis-3-scripts \
+        postgresql-16-repack \
+    && rm -rf /var/lib/apt/lists/*

@@ -1,0 +1,123 @@
+{
+  "$defs": {
+    "ManifestFiles": {
+      "properties": {
+        "live": {
+          "$ref": "#/$defs/ManifestLiveFiles"
+        }
+      },
+      "required": [
+        "live"
+      ],
+      "title": "ManifestFiles",
+      "type": "object"
+    },
+    "ManifestLiveFiles": {
+      "properties": {
+        "alerts": {
+          "default": "live/alerts.json",
+          "title": "Alerts",
+          "type": "string"
+        },
+        "generated_utc": {
+          "title": "Generated Utc",
+          "type": "string"
+        },
+        "network": {
+          "default": "live/network.json",
+          "title": "Network",
+          "type": "string"
+        },
+        "trips": {
+          "default": "live/trips.json",
+          "title": "Trips",
+          "type": "string"
+        },
+        "ttl_s": {
+          "default": 30,
+          "title": "Ttl S",
+          "type": "integer"
+        },
+        "vehicles": {
+          "default": "live/vehicles.json",
+          "title": "Vehicles",
+          "type": "string"
+        }
+      },
+      "required": [
+        "generated_utc"
+      ],
+      "title": "ManifestLiveFiles",
+      "type": "object"
+    }
+  },
+  "properties": {
+    "attribution": {
+      "title": "Attribution",
+      "type": "string"
+    },
+    "basemap": {
+      "title": "Basemap",
+      "type": "string"
+    },
+    "bbox": {
+      "items": {
+        "type": "number"
+      },
+      "title": "Bbox",
+      "type": "array"
+    },
+    "dataset_version": {
+      "title": "Dataset Version",
+      "type": "string"
+    },
+    "default_lang": {
+      "default": "fr",
+      "title": "Default Lang",
+      "type": "string"
+    },
+    "display_name": {
+      "title": "Display Name",
+      "type": "string"
+    },
+    "files": {
+      "$ref": "#/$defs/ManifestFiles"
+    },
+    "labels": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "title": "Labels",
+      "type": "object"
+    },
+    "provider": {
+      "title": "Provider",
+      "type": "string"
+    },
+    "surfaces": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Surfaces",
+      "type": "array"
+    },
+    "tz": {
+      "default": "America/Toronto",
+      "title": "Tz",
+      "type": "string"
+    }
+  },
+  "required": [
+    "provider",
+    "display_name",
+    "bbox",
+    "attribution",
+    "basemap",
+    "dataset_version",
+    "labels",
+    "files",
+    "surfaces"
+  ],
+  "title": "Manifest",
+  "type": "object"
+}

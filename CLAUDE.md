@@ -14,6 +14,8 @@ Business / Architecture / Runtime / Vocabulary / Roadmap / Slices / Sessions / T
 
 ## Build commands
 
+> **Monorepo:** the pipeline lives in `db/`, the web app in `web/`. Run all pipeline commands from `db/` (e.g. `cd db && uv run pytest tests -v`).
+
 - `uv sync` — install dependencies
 - `uv run pytest tests -v` — run tests
 - `uv run transit-ops show-config` — print safe config summary

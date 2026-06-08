@@ -1,0 +1,76 @@
+{
+  "$defs": {
+    "TrendPoint": {
+      "properties": {
+        "avg_delay_min": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Avg Delay Min"
+        },
+        "date": {
+          "title": "Date",
+          "type": "string"
+        },
+        "otp_pct": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Otp Pct"
+        },
+        "p90_min": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "P90 Min"
+        },
+        "vehicles": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Vehicles"
+        }
+      },
+      "required": [
+        "date"
+      ],
+      "title": "TrendPoint",
+      "type": "object"
+    }
+  },
+  "properties": {
+    "series": {
+      "items": {
+        "$ref": "#/$defs/TrendPoint"
+      },
+      "title": "Series",
+      "type": "array"
+    }
+  },
+  "title": "NetworkTrend",
+  "type": "object"
+}
