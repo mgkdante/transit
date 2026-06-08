@@ -94,6 +94,84 @@ def _publish_live(conn: object, storage: object, *, provider_id: str, settings: 
     return written
 
 
+def _publish_historic(  # noqa: ARG001
+    conn: object, storage: object, *, provider_id: str, settings: object
+) -> list[str]:
+    """Build and upload all historic-tier snapshot files; return the list of keys written."""
+    from sqlalchemy import text as _text
+
+    written: list[str] = []
+
+    # --- flat historic files ---
+    written.append(storage.put_json(  # type: ignore[attr-defined]
+        "historic/network_trend.json",
+        builders.build_network_trend(conn, provider_id=provider_id),  # type: ignore[arg-type]
+        tier="historic",
+    ))
+    written.append(storage.put_json(  # type: ignore[attr-defined]
+        "historic/hotspots.json",
+        builders.build_hotspots(conn, provider_id),  # type: ignore[arg-type]
+        tier="historic",
+    ))
+    written.append(storage.put_json(  # type: ignore[attr-defined]
+        "historic/repeat_offenders.json",
+        builders.build_repeat_offenders(conn, provider_id),  # type: ignore[arg-type]
+        tier="historic",
+    ))
+    written.append(storage.put_json(  # type: ignore[attr-defined]
+        "historic/alert_history.json",
+        builders.build_alert_history(conn, provider_id),  # type: ignore[arg-type]
+        tier="historic",
+    ))
+
+    # --- provenance at top-level (not under historic/) ---
+    written.append(storage.put_json(  # type: ignore[attr-defined]
+        "provenance.json",
+        builders.build_provenance(conn, provider_id),  # type: ignore[arg-type]
+        tier="historic",
+    ))
+
+    # --- per-route reliability files (routes that have history) ---
+    route_rows = conn.execute(  # type: ignore[attr-defined]
+        _text(
+            "SELECT DISTINCT route_id FROM gold.route_reliability_weekly"
+            " WHERE provider_id = :provider_id"
+            " UNION"
+            " SELECT DISTINCT route_id FROM gold.route_reliability_monthly"
+            " WHERE provider_id = :provider_id"
+        ),
+        {"provider_id": provider_id},
+    ).fetchall()
+    for (route_id,) in route_rows:
+        if route_id is None:
+            continue
+        written.append(storage.put_json(  # type: ignore[attr-defined]
+            f"historic/route_reliability/{route_id}.json",
+            builders.build_route_reliability(conn, provider_id=provider_id, route_id=str(route_id)),  # type: ignore[arg-type]
+            tier="historic",
+        ))
+
+    # --- per-stop reliability files (batched pass) ---
+    all_stops_rel = builders.build_stop_reliability(conn, provider_id=provider_id)  # type: ignore[arg-type]
+    for stop_id, stop_rel in sorted(all_stops_rel.items()):
+        written.append(storage.put_json(  # type: ignore[attr-defined]
+            f"historic/stop_reliability/{stop_id}.json",
+            stop_rel,
+            tier="historic",
+        ))
+
+    # --- per-date receipts ---
+    all_receipts = builders.build_receipts(conn, provider_id)  # type: ignore[arg-type]
+    for date_str, receipt in sorted(all_receipts.items()):
+        written.append(storage.put_json(  # type: ignore[attr-defined]
+            f"historic/receipts/{date_str}.json",
+            receipt,
+            tier="historic",
+        ))
+
+    return written
+
+
 def _publish_static(conn: object, storage: object, *, provider_id: str, settings: object) -> list[str]:
     """Build and upload all static-tier snapshot files; return the list of keys written."""
     from sqlalchemy import text as _text
@@ -189,7 +267,10 @@ def publish_snapshot(
     elif tier == "static":
         with engine.begin() as conn:  # type: ignore[attr-defined]
             keys = _publish_static(conn, storage, provider_id=provider_id, settings=settings)
+    elif tier == "historic":
+        with engine.begin() as conn:  # type: ignore[attr-defined]
+            keys = _publish_historic(conn, storage, provider_id=provider_id, settings=settings)
     else:
-        raise ValueError(f"tier {tier!r} not implemented yet (Phase 1=live, Phase 2=static)")
+        raise ValueError(f"tier {tier!r} not implemented yet (live, static, historic)")
 
     return PublishResult(provider_id=provider_id, tier=tier, keys_written=keys)

@@ -137,11 +137,11 @@ def test_publish_result_display_dict() -> None:
 
 
 def test_publish_rejects_unimplemented_tier() -> None:
-    """Non-'live' tiers raise ValueError (Phase 1 only implements live)."""
+    """Unknown tiers raise ValueError."""
     with pytest.raises(ValueError, match="not implemented"):
         publish_snapshot(
             "stm",
-            tier="historic",
+            tier="unknown_tier",
             settings=FakeSettings(),
             engine=FakeEngine(),
             storage=FakeStore(),
@@ -296,3 +296,247 @@ def test_publish_static_writes_expected_keys() -> None:
     assert "static/routes/165.json" in store.keys
     # no stop files since build_all_stops_data got empty stops
     assert not any(k.startswith("static/stops/") for k in store.keys)
+
+
+def test_publish_historic_writes_expected_keys(tmp_path) -> None:
+    """Historic tier writes network_trend, hotspots, repeat_offenders, alert_history,
+    provenance (top-level), per-route reliability, per-stop reliability and receipts.
+
+    Uses a SQL-text-dispatching fake connection and LocalSnapshotStorage into
+    tmp_path so all files are written to disk.  At least one file is parsed back
+    through its contract model for round-trip validation.
+    """
+    import json
+    import datetime
+    from contextlib import contextmanager
+
+    from transit_ops.snapshots.publish import _publish_historic
+    from transit_ops.snapshots.storage import LocalSnapshotStorage
+    from transit_ops.snapshots.contract import NetworkTrend
+
+    class _FakeResult:
+        def __init__(self, rows):
+            self._rows = list(rows)
+
+        def mappings(self):
+            outer = self
+
+            class M:
+                def fetchone(self):
+                    return outer._rows[0] if outer._rows else None
+
+                def __iter__(self):
+                    return iter(outer._rows)
+
+            return M()
+
+        def __iter__(self):
+            return iter(self._rows)
+
+        def fetchone(self):
+            return self._rows[0] if self._rows else None
+
+        def fetchall(self):
+            result = []
+            for r in self._rows:
+                if isinstance(r, dict):
+                    result.append(tuple(r.values()))
+                elif isinstance(r, tuple):
+                    result.append(r)
+                else:
+                    result.append((r,))
+            return result
+
+        def scalar_one(self):
+            return self._rows[0] if self._rows else 0
+
+    # Dispatch table: (substring, rows) — first match wins.
+    # Covers every query issued by all 8 historic builders.
+    # Ordering matters when two queries share a common substring; the more
+    # specific discriminator must appear first in the list.
+    dispatch = [
+        # build_receipts: network daily — unique discriminator "interval '31 days'"
+        # (must precede the generic 'route_delay_hourly' entry)
+        ("interval '31 days'", [
+            {"local_date": datetime.date(2026, 6, 1), "obs": 100, "delayed": 10,
+             "severe": 5, "weighted_delay_sec": 5000},
+        ]),
+        # build_network_trend: daily OTP from hourly rollup — "interval '90 days'"
+        ("interval '90 days'", [
+            {"local_date": datetime.date(2026, 6, 1), "obs": 100, "delayed": 10,
+             "weighted_delay_sec": 5000},
+        ]),
+        # build_network_trend: p90 from fact table
+        ("fact_trip_delay_snapshot", [
+            {"local_date": datetime.date(2026, 6, 1), "p90_min": 3.5, "vehicles": 42},
+        ]),
+        # build_hotspots
+        ("repeated_problem_route_stop", [
+            {"entity_kind": "route", "entity_id": "165", "issue_count": 5,
+             "severity_label": "high"},
+        ]),
+        # build_repeat_offenders
+        ("repeat_offender_daily", [
+            {"entity_kind": "route", "entity_id": "165", "route_id": "165",
+             "recurrence_days": 7, "window_days": 30, "avg_delay_seconds": 180,
+             "severity_label": "high"},
+        ]),
+        # build_alert_history
+        ("i3_alert_history_reporting", [
+            {"alert_id": "alert-1", "severity": "WARNING",
+             "routes": ["165"], "stops": ["51234"],
+             "start_utc": datetime.datetime(2026, 6, 1, 8, 0, tzinfo=datetime.timezone.utc),
+             "end_utc": datetime.datetime(2026, 6, 1, 9, 0, tzinfo=datetime.timezone.utc)},
+        ]),
+        # build_provenance: source lineage
+        ("source_lineage_reporting", [
+            {"dataset_kind": "static_schedule", "storage_backend": "s3",
+             "storage_path": "bucket/path", "source_url": None,
+             "loaded_at_utc": datetime.datetime(2026, 6, 1, 0, 0, tzinfo=datetime.timezone.utc)},
+        ]),
+        # build_provenance: feed freshness
+        ("feed_freshness_current", [
+            {"endpoint_key": "vehicle_positions", "status": "ok",
+             "completed_age_seconds": 30},
+        ]),
+        # route IDs with history: UNION query — discriminator "UNION" (unique)
+        ("UNION", [
+            ("101",), ("202",),
+        ]),
+        # build_route_reliability: daily view — unique "stop_time_observation_count"
+        ("stop_time_observation_count", [
+            {"d": datetime.date(2026, 6, 1), "obs": 50, "avg_delay_sec": 90, "severe": 5},
+        ]),
+        # build_route_reliability: weekly — unique discriminator "week_start_local"
+        ("week_start_local", [
+            {"d": datetime.date(2026, 5, 26), "obs": 300, "avg_delay_sec": 95,
+             "delayed": 30, "severe": 15},
+        ]),
+        # build_route_reliability: monthly — unique discriminator "month_start_local"
+        ("month_start_local", [
+            {"d": datetime.date(2026, 5, 1), "obs": 1200, "avg_delay_sec": 100,
+             "delayed": 120, "severe": 60},
+        ]),
+        # build_route_reliability: observed headway
+        ("route_headway_daily", [
+            {"shift": "am_peak", "observed_headway_min": 8.0, "sample_count": 20},
+        ]),
+        # _scheduled_headway_by_shift -> dataset version
+        ("dataset_kind = 'static_schedule'", [{"dataset_version_id": 1}]),
+        # _scheduled_headway_by_shift -> rep dates
+        ("generate_series", [
+            {"weekday_date": datetime.date(2026, 6, 3),
+             "weekend_date": datetime.date(2026, 6, 6)},
+        ]),
+        # active services
+        ("extract(isodow FROM :repdate)", [("svc_wd",)]),
+        # route schedule (for _scheduled_headway_by_shift)
+        ("st.stop_sequence     = 1", []),
+        # build_route_reliability: habit score
+        ("route_habit_score", [
+            {"day_of_week_iso": 1, "hour_of_day_local": 8, "repeat_problem_score": 0.7},
+        ]),
+        # build_route_reliability: stop names — "gold.dim_stop" unique discriminator
+        ("gold.dim_stop", [
+            {"stop_id": "51234", "stop_name": "Côte-Vertu"},
+        ]),
+        # build_stop_reliability: by_route — "stop_id, route_id" in SELECT
+        # (must precede the generic stop_delay_weekly entry)
+        ("stop_id, route_id", [
+            {"stop_id": "51234", "route_id": "101", "obs": 100,
+             "weighted_delay_sec": 9000},
+        ]),
+        # weak stops for route_reliability AND stop_reliability weekly share stop_delay_weekly
+        # Both queries want (stop_id, obs, weighted_delay_sec, severe) rows
+        ("stop_delay_weekly", [
+            {"stop_id": "51234", "obs": 100, "weighted_delay_sec": 9000, "severe": 10},
+        ]),
+        # build_stop_reliability: monthly
+        ("stop_delay_monthly", [
+            {"stop_id": "51234", "obs": 400, "weighted_delay_sec": 36000, "severe": 40},
+        ]),
+        # build_receipts: accountability
+        ("citizen_accountability_daily", [
+            {"provider_local_date": datetime.date(2026, 6, 1),
+             "affected_route_count": 3, "affected_stop_count": 12,
+             "delayed_trip_count": 45, "severe_delay_count": 5,
+             "alert_count": 2, "rider_impact_score": 0.35},
+        ]),
+        # build_receipts: worst route — matches public_route_reliability_daily
+        # (stop_time_observation_count entry above already consumed the route_rel daily query)
+        ("public_route_reliability_daily", [
+            {"d": datetime.date(2026, 6, 1), "route_id": "165",
+             "avg_delay_seconds": 200},
+        ]),
+        # build_receipts: worst stop
+        ("public_stop_delay_daily", [
+            {"d": datetime.date(2026, 6, 1), "stop_id": "51234",
+             "avg_delay_seconds": 180, "max_delay_seconds": 600},
+        ]),
+    ]
+
+    class FakeConnHistoric:
+        def execute(self, statement, params=None):
+            s = str(statement)
+            for needle, rows in dispatch:
+                if needle in s:
+                    return _FakeResult(rows)
+            return _FakeResult([])
+
+    class FakeEngineHistoric:
+        def begin(self):
+            @contextmanager
+            def _cm():
+                yield FakeConnHistoric()
+
+            return _cm()
+
+    storage = LocalSnapshotStorage(str(tmp_path), "v1/stm")
+
+    conn = FakeConnHistoric()
+    keys = _publish_historic(
+        conn,
+        storage,
+        provider_id="stm",
+        settings=FakeSettings(),
+    )
+
+    # --- flat keys ---
+    key_set = set(keys)
+    assert any("historic/network_trend.json" in k for k in key_set)
+    assert any("historic/hotspots.json" in k for k in key_set)
+    assert any("historic/repeat_offenders.json" in k for k in key_set)
+    assert any("historic/alert_history.json" in k for k in key_set)
+    assert any("provenance.json" in k for k in key_set)
+    # provenance is top-level (not under historic/)
+    assert not any(k.endswith("historic/provenance.json") for k in key_set)
+
+    # --- per-route files for routes 101 and 202 ---
+    assert any("historic/route_reliability/101.json" in k for k in key_set)
+    assert any("historic/route_reliability/202.json" in k for k in key_set)
+
+    # --- per-stop file for stop 51234 ---
+    assert any("historic/stop_reliability/51234.json" in k for k in key_set)
+
+    # --- receipt for 2026-06-01 ---
+    assert any("historic/receipts/2026-06-01.json" in k for k in key_set)
+
+    # --- round-trip parse: network_trend.json through its contract model ---
+    network_trend_path = next(k for k in keys if "historic/network_trend.json" in k)
+    import pathlib
+    raw = pathlib.Path(network_trend_path).read_bytes()
+    parsed = NetworkTrend.model_validate_json(raw)
+    assert isinstance(parsed.series, list)
+
+    # --- PublishResult via publish_snapshot ---
+    res = publish_snapshot(
+        "stm",
+        tier="historic",
+        settings=FakeSettings(),
+        engine=FakeEngineHistoric(),
+        storage=LocalSnapshotStorage(str(tmp_path / "r2"), "v1/stm"),
+    )
+    assert isinstance(res, PublishResult)
+    assert res.tier == "historic"
+    assert res.provider_id == "stm"
+    assert len(res.keys_written) >= 5  # flat files + provenance at minimum
