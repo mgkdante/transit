@@ -1586,3 +1586,435 @@ def build_stop_reliability(
         routes = sorted(by_route.get(sid, []), key=lambda b: _route_sort_key(b.route))
         out[sid] = StopReliability(id=sid, periods=ordered, by_route=routes)
     return out
+
+
+# --------------------------------------------------------------------------
+# build_hotspots
+# --------------------------------------------------------------------------
+
+# Most-recent week period from gold.repeated_problem_route_stop.
+# Fall back to the max period_start_local of any grain if no 'week' rows exist.
+_HOTSPOTS_SQL = text(
+    """
+    WITH week_max AS (
+        SELECT MAX(period_start_local) AS max_week_start
+        FROM gold.repeated_problem_route_stop
+        WHERE provider_id = :provider_id
+          AND period_grain = 'week'
+    ),
+    any_max AS (
+        SELECT MAX(period_start_local) AS max_any_start
+        FROM gold.repeated_problem_route_stop
+        WHERE provider_id = :provider_id
+    ),
+    target AS (
+        SELECT COALESCE(
+            (SELECT max_week_start FROM week_max),
+            (SELECT max_any_start FROM any_max)
+        ) AS target_start,
+        COALESCE(
+            (SELECT 'week' WHERE (SELECT max_week_start FROM week_max) IS NOT NULL),
+            (SELECT period_grain
+             FROM gold.repeated_problem_route_stop
+             WHERE provider_id = :provider_id
+               AND period_start_local = (SELECT max_any_start FROM any_max)
+             LIMIT 1)
+        ) AS target_grain
+    )
+    SELECT rp.entity_kind, rp.entity_id, rp.issue_count, rp.severity_label
+    FROM gold.repeated_problem_route_stop AS rp, target
+    WHERE rp.provider_id = :provider_id
+      AND rp.period_start_local = target.target_start
+      AND rp.period_grain = target.target_grain
+    ORDER BY rp.issue_count DESC
+    LIMIT 20
+    """
+)
+
+
+def build_hotspots(conn: "Connection", provider_id: str = "stm") -> "Hotspots":
+    """Build historic/hotspots.json — top 20 problem entities in the most recent week.
+
+    Source: gold.repeated_problem_route_stop. Uses the most-recent week-grain period;
+    falls back to the most-recent period of any grain if no week rows are present.
+    otp_delta_pts is None in v1 (not stored in gold).
+    """
+    from transit_ops.snapshots.contract import Hotspot, Hotspots
+
+    rows = list(conn.execute(_HOTSPOTS_SQL, {"provider_id": provider_id}).mappings())
+    hotspots = [
+        Hotspot(
+            rank=i + 1,
+            type=str(r["entity_kind"]),
+            id=str(r["entity_id"]),
+            severity=r["severity_label"],
+            otp_delta_pts=None,  # v1 deferral: not stored in gold.repeated_problem_route_stop
+        )
+        for i, r in enumerate(rows)
+    ]
+    return Hotspots(hotspots=hotspots)
+
+
+# --------------------------------------------------------------------------
+# build_repeat_offenders
+# --------------------------------------------------------------------------
+
+# P3 mart: gold.repeat_offender_daily — persistent problem entities.
+_REPEAT_OFFENDERS_SQL = text(
+    """
+    SELECT entity_kind, entity_id, route_id,
+           recurrence_days, window_days, avg_delay_seconds, severity_label
+    FROM gold.repeat_offender_daily
+    WHERE provider_id = :provider_id
+    ORDER BY recurrence_days DESC, avg_delay_seconds DESC
+    LIMIT 50
+    """
+)
+
+
+def build_repeat_offenders(
+    conn: "Connection", provider_id: str = "stm"
+) -> "RepeatOffenders":
+    """Build historic/repeat_offenders.json — top 50 most-persistent problem entities.
+
+    Source: gold.repeat_offender_daily (P3 mart).
+    Ordered by recurrence_days desc, avg_delay_seconds desc.
+    """
+    from transit_ops.snapshots.contract import Offender, RepeatOffenders
+
+    rows = list(
+        conn.execute(_REPEAT_OFFENDERS_SQL, {"provider_id": provider_id}).mappings()
+    )
+    offenders = [
+        Offender(
+            type=str(r["entity_kind"]),
+            id=str(r["entity_id"]),
+            route=r["route_id"],
+            recurrence=f"{r['recurrence_days']}/{r['window_days']}d",
+            avg_delay_min=round(float(r["avg_delay_seconds"]) / 60.0, 1),
+        )
+        for r in rows
+    ]
+    return RepeatOffenders(offenders=offenders)
+
+
+# --------------------------------------------------------------------------
+# build_receipts
+# --------------------------------------------------------------------------
+
+# Accountability daily summary — one row per date, drives the receipt set.
+_RECEIPTS_ACCOUNTABILITY_SQL = text(
+    """
+    SELECT provider_local_date,
+           affected_route_count,
+           affected_stop_count,
+           delayed_trip_count,
+           severe_delay_count,
+           alert_count,
+           rider_impact_score
+    FROM gold.citizen_accountability_daily
+    WHERE provider_id = :provider_id
+      AND provider_local_date >= current_date - 30
+    ORDER BY provider_local_date
+    """
+)
+
+# Network-level daily aggregation from the hourly rollup.
+_RECEIPTS_NETWORK_DAILY_SQL = text(
+    """
+    SELECT timezone(dp.timezone, rdh.period_start_utc)::date AS local_date,
+           SUM(rdh.observation_count)                         AS obs,
+           SUM(rdh.delayed_trip_count)                        AS delayed,
+           SUM(rdh.severe_delay_count)                        AS severe,
+           SUM(rdh.avg_delay_seconds * rdh.observation_count) AS weighted_delay_sec
+    FROM gold.route_delay_hourly AS rdh
+    JOIN gold.dim_provider AS dp ON dp.provider_id = rdh.provider_id
+    WHERE rdh.provider_id = :provider_id
+      AND rdh.period_start_utc >= now() - interval '31 days'
+    GROUP BY timezone(dp.timezone, rdh.period_start_utc)::date
+    """
+)
+
+# Worst route per date: max avg_delay_seconds from the public reliability view.
+_RECEIPTS_WORST_ROUTE_SQL = text(
+    """
+    SELECT provider_local_date AS d,
+           route_id,
+           avg_delay_seconds
+    FROM gold.public_route_reliability_daily
+    WHERE provider_id = :provider_id
+      AND provider_local_date >= current_date - 30
+    ORDER BY provider_local_date, avg_delay_seconds DESC
+    """
+)
+
+# Worst stop per date: max avg_delay_seconds from the public stop delay view.
+_RECEIPTS_WORST_STOP_SQL = text(
+    """
+    SELECT provider_local_date AS d,
+           stop_id,
+           avg_delay_seconds,
+           max_delay_seconds
+    FROM gold.public_stop_delay_daily
+    WHERE provider_id = :provider_id
+      AND provider_local_date >= current_date - 30
+    ORDER BY provider_local_date, avg_delay_seconds DESC
+    """
+)
+
+
+def build_receipts(
+    conn: "Connection", provider_id: str = "stm"
+) -> "dict[str, Receipt]":
+    """Build historic/receipts/{date}.json for each date in the last 30 days.
+
+    The citizen_accountability_daily table is the driver — one Receipt per date
+    present there.  Network OTP/delay come from route_delay_hourly (hourly rollup
+    aggregated to daily); worst_route and worst_stop come from the public daily
+    views (max avg_delay_seconds per date).
+
+    vehicles is None in v1 (not stored in the receipt source mart).
+    worst_route.otp_delta_pts is None in v1 (not stored in gold).
+    """
+    from transit_ops.snapshots.contract import Receipt, ReceiptWorstRoute, ReceiptWorstStop
+
+    params = {"provider_id": provider_id}
+
+    # 1. accountability rows: one per date (the driver set)
+    acct: dict[str, dict] = {}
+    for r in conn.execute(_RECEIPTS_ACCOUNTABILITY_SQL, params).mappings():
+        ds = _iso_date(r["provider_local_date"])
+        acct[ds] = {
+            "affected_routes": _opt_int(r["affected_route_count"]),
+            "affected_stops": _opt_int(r["affected_stop_count"]),
+            "alerts": _opt_int(r["alert_count"]),
+            "rider_impact_score": (
+                float(r["rider_impact_score"]) if r["rider_impact_score"] is not None else None
+            ),
+        }
+
+    # 2. network daily OTP/delay from hourly rollup
+    net: dict[str, dict] = {}
+    for r in conn.execute(_RECEIPTS_NETWORK_DAILY_SQL, params).mappings():
+        ds = _iso_date(r["local_date"])
+        obs, weighted = r["obs"], r["weighted_delay_sec"]
+        avg_sec = (float(weighted) / float(obs)) if obs and weighted is not None else None
+        net[ds] = {
+            "otp_pct": _otp_pct(obs, r["delayed"]),
+            "avg_delay_min": _avg_delay_min(avg_sec),
+            "severe_pct": _severe_pct(obs, r["severe"]),
+        }
+
+    # 3. worst route per date: first row after ORDER BY avg_delay_seconds DESC
+    worst_route: dict[str, ReceiptWorstRoute] = {}
+    for r in conn.execute(_RECEIPTS_WORST_ROUTE_SQL, params).mappings():
+        ds = _iso_date(r["d"])
+        if ds not in worst_route:  # first = max avg_delay (ordered DESC)
+            worst_route[ds] = ReceiptWorstRoute(
+                id=str(r["route_id"]),
+                otp_delta_pts=None,  # v1 deferral: not stored in gold
+            )
+
+    # 4. worst stop per date: first row after ORDER BY avg_delay_seconds DESC
+    worst_stop: dict[str, ReceiptWorstStop] = {}
+    for r in conn.execute(_RECEIPTS_WORST_STOP_SQL, params).mappings():
+        ds = _iso_date(r["d"])
+        if ds not in worst_stop:  # first = max avg_delay (ordered DESC)
+            worst_stop[ds] = ReceiptWorstStop(
+                id=str(r["stop_id"]),
+                median_delay_min=round(float(r["avg_delay_seconds"]) / 60.0, 1),
+            )
+
+    # merge: only emit dates present in accountability (the driver)
+    out: dict[str, Receipt] = {}
+    for ds, a in acct.items():
+        n = net.get(ds, {})
+        out[ds] = Receipt(
+            date=ds,
+            vehicles=None,  # v1: vehicle count not stored in receipt source mart
+            otp_pct=n.get("otp_pct"),
+            avg_delay_min=n.get("avg_delay_min"),
+            severe_pct=n.get("severe_pct"),
+            worst_route=worst_route.get(ds),
+            worst_stop=worst_stop.get(ds),
+            affected_routes=a["affected_routes"],
+            affected_stops=a["affected_stops"],
+            alerts=a["alerts"],
+            rider_impact_score=a["rider_impact_score"],
+        )
+    return out
+
+
+# --------------------------------------------------------------------------
+# build_alert_history
+# --------------------------------------------------------------------------
+
+# 8M-row table — always filter by date BEFORE aggregating.
+# v1 bounds: 90-day window, LIMIT 200.  impact_passages is None (not in source).
+# array_agg(...) FILTER (WHERE ...) requires PostgreSQL 9.4+.
+_ALERT_HISTORY_SQL = text(
+    """
+    SELECT alert_id,
+           MAX(severity)                                             AS severity,
+           ARRAY_AGG(DISTINCT route_id)
+               FILTER (WHERE route_id IS NOT NULL)                  AS routes,
+           ARRAY_AGG(DISTINCT stop_id)
+               FILTER (WHERE stop_id IS NOT NULL)                   AS stops,
+           MIN(active_period_start_utc)                             AS start_utc,
+           MAX(active_period_end_utc)                               AS end_utc
+    FROM gold.i3_alert_history_reporting
+    WHERE provider_id = :provider_id
+      AND provider_local_date >= current_date - 90
+    GROUP BY alert_id
+    ORDER BY MIN(active_period_start_utc) DESC
+    LIMIT 200
+    """
+)
+
+
+def build_alert_history(
+    conn: "Connection", provider_id: str = "stm"
+) -> "AlertHistory":
+    """Build historic/alert_history.json — last 90 days, capped at 200 alerts.
+
+    Source: gold.i3_alert_history_reporting (8M rows — always filter first).
+    Routes/stops are deduped and natural-sorted.  duration_min is computed from
+    start/end timestamps; impact_passages is None in v1 (not stored in source).
+
+    v1 intentional bounds: 90-day look-back, LIMIT 200, impact_passages=None.
+    """
+    from transit_ops.snapshots.contract import AlertHistory, AlertHistoryEntry
+
+    rows = list(
+        conn.execute(_ALERT_HISTORY_SQL, {"provider_id": provider_id}).mappings()
+    )
+    entries: list[AlertHistoryEntry] = []
+    for r in rows:
+        start = r["start_utc"]
+        end = r["end_utc"]
+        # duration_min: only when both timestamps are available
+        duration_min: float | None = None
+        if start is not None and end is not None:
+            try:
+                start_s = _iso(start)
+                end_s = _iso(end)
+                # Parse ISO strings back to timestamps for diff
+                import datetime as _dt
+
+                s_dt = _dt.datetime.fromisoformat(start_s.replace("Z", "+00:00"))
+                e_dt = _dt.datetime.fromisoformat(end_s.replace("Z", "+00:00"))
+                diff_s = (e_dt - s_dt).total_seconds()
+                duration_min = round(diff_s / 60.0)
+            except (ValueError, TypeError):
+                duration_min = None
+
+        # routes/stops come as PostgreSQL arrays (list) or None.
+        # SQL uses array_agg(DISTINCT ...) which deduplicates in the DB, but we
+        # also deduplicate here for safety (unit-test fake rows pass raw lists).
+        raw_routes = r["routes"] or []
+        raw_stops = r["stops"] or []
+
+        def _natural_sort_dedup(items: list) -> list[str]:
+            seen: set[str] = set()
+            unique = []
+            for x in items:
+                s = str(x)
+                if s not in seen:
+                    seen.add(s)
+                    unique.append(s)
+            unique.sort(key=_route_sort_key)
+            return unique
+
+        entries.append(
+            AlertHistoryEntry(
+                id=str(r["alert_id"]),
+                severity=r["severity"],
+                routes=_natural_sort_dedup(raw_routes),
+                stops=_natural_sort_dedup(raw_stops),
+                start_utc=_opt_iso(start),
+                end_utc=_opt_iso(end),
+                duration_min=duration_min,
+                impact_passages=None,  # v1 deferral: not stored in gold
+            )
+        )
+    return AlertHistory(alerts=entries)
+
+
+# --------------------------------------------------------------------------
+# build_provenance
+# --------------------------------------------------------------------------
+
+_PROVENANCE_SOURCES_SQL = text(
+    """
+    SELECT dataset_kind, storage_backend, storage_path, source_url, loaded_at_utc
+    FROM gold.source_lineage_reporting
+    WHERE provider_id = :provider_id
+      AND is_current = true
+    ORDER BY dataset_kind
+    """
+)
+
+_PROVENANCE_FRESHNESS_SQL = text(
+    """
+    SELECT endpoint_key, status, completed_age_seconds
+    FROM gold.feed_freshness_current
+    WHERE provider_id = :provider_id
+    ORDER BY endpoint_key
+    """
+)
+
+
+def build_provenance(
+    conn: "Connection", provider_id: str = "stm"
+) -> "Provenance":
+    """Build provenance.json — feed lineage, freshness, retention policy, methodology.
+
+    Sources from gold.source_lineage_reporting (is_current=true only).
+    Freshness from gold.feed_freshness_current.
+    Retention and methodology are hardcoded v1 constants.
+    gaps lists known missing feeds (STM metro publishes no realtime feed).
+    """
+    from transit_ops.snapshots.contract import Provenance, ProvenanceFreshness, ProvenanceSource
+
+    params = {"provider_id": provider_id}
+
+    sources: list[ProvenanceSource] = []
+    for r in conn.execute(_PROVENANCE_SOURCES_SQL, params).mappings():
+        backend = r["storage_backend"]
+        path = r["storage_path"]
+        chain = f"{backend}:{path}" if backend else r["source_url"]
+        sources.append(
+            ProvenanceSource(
+                feed=str(r["dataset_kind"]),
+                chain=chain,
+                last_loaded_utc=_opt_iso(r["loaded_at_utc"]),
+            )
+        )
+
+    freshness: list[ProvenanceFreshness] = []
+    for r in conn.execute(_PROVENANCE_FRESHNESS_SQL, params).mappings():
+        freshness.append(
+            ProvenanceFreshness(
+                feed=str(r["endpoint_key"]),
+                status=r["status"],
+                age_s=(
+                    int(r["completed_age_seconds"])
+                    if r["completed_age_seconds"] is not None
+                    else None
+                ),
+            )
+        )
+
+    return Provenance(
+        sources=sources,
+        freshness=freshness,
+        retention={"detail_days": 14, "aggregate_days": 365},
+        methodology={
+            "otp_definition": "on-time = not delayed-trip-flagged per gold reporting",
+            "delay_unit": "seconds from schedule",
+            "percentiles": (
+                "network p90 from fact; route/stop percentiles deferred"
+            ),
+        },
+        gaps=["metro_realtime"],  # STM metro publishes no realtime feed
+    )

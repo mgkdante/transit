@@ -14,12 +14,21 @@ import datetime
 
 from transit_ops.snapshots.builders import (
     _otp_pct,
+    build_alert_history,
+    build_hotspots,
     build_network_trend,
+    build_provenance,
+    build_receipts,
+    build_repeat_offenders,
     build_route_reliability,
     build_stop_reliability,
 )
 from transit_ops.snapshots.contract import (
+    AlertHistory,
+    Hotspots,
     NetworkTrend,
+    Provenance,
+    RepeatOffenders,
     RouteReliability,
     StopReliability,
 )
@@ -491,3 +500,470 @@ def test_build_stop_reliability_weekly_only_stop() -> None:
     assert [p.grain for p in s2.periods] == ["week"]
     assert s2.periods[0].otp_pct == 90  # (80-8)/80
     assert s2.by_route == []
+
+
+# --------------------------------------------------------------------------
+# build_hotspots
+# --------------------------------------------------------------------------
+
+
+def test_build_hotspots_ranks_and_top_20() -> None:
+    """Top-20 cap, rank assigned 1..N, week-period selected."""
+    # 25 rows — only first 20 should appear (SQL LIMIT enforced by fake order)
+    rows = [
+        {
+            "entity_kind": "stop",
+            "entity_id": f"S{i}",
+            "issue_count": 100 - i,
+            "severity_label": "high",
+        }
+        for i in range(25)
+    ]
+    conn = FakeConn([("repeated_problem_route_stop", rows[:20])])  # fake returns 20
+
+    out = build_hotspots(conn, provider_id="stm")
+
+    assert isinstance(out, Hotspots)
+    assert len(out.hotspots) == 20
+    # ranks are 1..20
+    assert [h.rank for h in out.hotspots] == list(range(1, 21))
+    # first hotspot is the highest issue_count row
+    first = out.hotspots[0]
+    assert first.type == "stop"
+    assert first.id == "S0"
+    assert first.severity == "high"
+    assert first.otp_delta_pts is None  # v1 deferral
+
+
+def test_build_hotspots_empty_returns_empty() -> None:
+    conn = FakeConn([("repeated_problem_route_stop", [])])
+    out = build_hotspots(conn)
+    assert out.hotspots == []
+
+
+def test_build_hotspots_week_period_filter() -> None:
+    """SQL needle 'repeated_problem_route_stop' matches — verify entity_kind preserved."""
+    rows = [
+        {"entity_kind": "route", "entity_id": "51", "issue_count": 5, "severity_label": "watch"},
+        {"entity_kind": "stop", "entity_id": "3456", "issue_count": 3, "severity_label": "high"},
+    ]
+    conn = FakeConn([("repeated_problem_route_stop", rows)])
+    out = build_hotspots(conn)
+    assert out.hotspots[0].type == "route"
+    assert out.hotspots[1].type == "stop"
+    assert out.hotspots[0].rank == 1
+    assert out.hotspots[1].rank == 2
+
+
+# --------------------------------------------------------------------------
+# build_repeat_offenders
+# --------------------------------------------------------------------------
+
+
+def test_build_repeat_offenders_recurrence_string() -> None:
+    """recurrence field is formatted as '{recurrence_days}/{window_days}d'."""
+    rows = [
+        {
+            "entity_kind": "stop",
+            "entity_id": "X1",
+            "route_id": "51",
+            "recurrence_days": 7,
+            "window_days": 14,
+            "avg_delay_seconds": 180.0,
+            "severity_label": "high",
+        },
+    ]
+    conn = FakeConn([("repeat_offender_daily", rows)])
+    out = build_repeat_offenders(conn)
+    assert isinstance(out, RepeatOffenders)
+    assert len(out.offenders) == 1
+    o = out.offenders[0]
+    assert o.recurrence == "7/14d"
+    assert o.avg_delay_min == 3.0  # 180s / 60
+    assert o.route == "51"
+    assert o.type == "stop"
+    assert o.id == "X1"
+
+
+def test_build_repeat_offenders_ordering() -> None:
+    """Rows come back pre-ordered by SQL (recurrence_days DESC, delay DESC);
+    Python preserves insertion order."""
+    rows = [
+        {
+            "entity_kind": "route",
+            "entity_id": "9",
+            "route_id": "9",
+            "recurrence_days": 10,
+            "window_days": 14,
+            "avg_delay_seconds": 300.0,
+            "severity_label": "high",
+        },
+        {
+            "entity_kind": "stop",
+            "entity_id": "S2",
+            "route_id": "51",
+            "recurrence_days": 5,
+            "window_days": 14,
+            "avg_delay_seconds": 600.0,
+            "severity_label": "critical",
+        },
+    ]
+    conn = FakeConn([("repeat_offender_daily", rows)])
+    out = build_repeat_offenders(conn)
+    assert out.offenders[0].id == "9"   # higher recurrence_days comes first
+    assert out.offenders[1].id == "S2"
+
+
+def test_build_repeat_offenders_top_50_cap() -> None:
+    """SQL LIMIT 50 enforced — fake returns exactly 50 rows."""
+    rows = [
+        {
+            "entity_kind": "stop",
+            "entity_id": f"S{i}",
+            "route_id": "51",
+            "recurrence_days": 50 - i,
+            "window_days": 60,
+            "avg_delay_seconds": 120.0,
+            "severity_label": "watch",
+        }
+        for i in range(50)
+    ]
+    conn = FakeConn([("repeat_offender_daily", rows)])
+    out = build_repeat_offenders(conn)
+    assert len(out.offenders) == 50
+
+
+# --------------------------------------------------------------------------
+# build_receipts
+# --------------------------------------------------------------------------
+
+
+def _receipts_dispatch(*, acct=None, net=None, worst_route=None, worst_stop=None):
+    """Build dispatch list for build_receipts; needles matched most-specific first."""
+    return [
+        ("citizen_accountability_daily", acct or []),
+        ("route_delay_hourly", net or []),
+        ("public_route_reliability_daily", worst_route or []),
+        ("public_stop_delay_daily", worst_stop or []),
+    ]
+
+
+def test_build_receipts_date_driven_by_accountability() -> None:
+    """Only dates present in citizen_accountability_daily appear in the output."""
+    d1 = datetime.date(2026, 5, 1)
+    d2 = datetime.date(2026, 5, 2)
+    conn = FakeConn(
+        _receipts_dispatch(
+            acct=[
+                {
+                    "provider_local_date": d1,
+                    "affected_route_count": 3,
+                    "affected_stop_count": 10,
+                    "delayed_trip_count": 5,
+                    "severe_delay_count": 2,
+                    "alert_count": 1,
+                    "rider_impact_score": 0.42,
+                },
+            ],
+            # d2 in net but NOT in acct -> should not appear in output
+            net=[
+                {
+                    "local_date": d2,
+                    "obs": 200,
+                    "delayed": 20,
+                    "severe": 10,
+                    "weighted_delay_sec": 18000.0,
+                },
+            ],
+        )
+    )
+    out = build_receipts(conn)
+    assert list(out.keys()) == ["2026-05-01"]
+    assert "2026-05-02" not in out
+
+
+def test_build_receipts_otp_from_network_hourly() -> None:
+    """OTP, avg_delay_min, severe_pct come from route_delay_hourly aggregate."""
+    d = datetime.date(2026, 5, 10)
+    conn = FakeConn(
+        _receipts_dispatch(
+            acct=[
+                {
+                    "provider_local_date": d,
+                    "affected_route_count": 5,
+                    "affected_stop_count": 20,
+                    "delayed_trip_count": 10,
+                    "severe_delay_count": 4,
+                    "alert_count": 2,
+                    "rider_impact_score": 0.7,
+                }
+            ],
+            net=[
+                {
+                    "local_date": d,
+                    "obs": 100,
+                    "delayed": 40,
+                    "severe": 10,
+                    "weighted_delay_sec": 12000.0,  # 120s avg -> 2.0 min
+                }
+            ],
+        )
+    )
+    out = build_receipts(conn)
+    r = out["2026-05-10"]
+    assert r.otp_pct == 60      # (100-40)/100 = 60
+    assert r.avg_delay_min == 2.0
+    assert r.severe_pct == 10.0  # 10/100
+    assert r.vehicles is None   # v1 deferral
+
+
+def test_build_receipts_worst_route_and_stop_by_max_delay() -> None:
+    """worst_route and worst_stop are the rows with max avg_delay_seconds per date."""
+    d = datetime.date(2026, 5, 15)
+    conn = FakeConn(
+        _receipts_dispatch(
+            acct=[
+                {
+                    "provider_local_date": d,
+                    "affected_route_count": 2,
+                    "affected_stop_count": 5,
+                    "delayed_trip_count": 1,
+                    "severe_delay_count": 0,
+                    "alert_count": 0,
+                    "rider_impact_score": None,
+                }
+            ],
+            # rows ordered DESC by avg_delay_seconds in SQL; first = worst
+            worst_route=[
+                {"d": d, "route_id": "105", "avg_delay_seconds": 300.0},
+                {"d": d, "route_id": "51", "avg_delay_seconds": 120.0},
+            ],
+            worst_stop=[
+                {"d": d, "stop_id": "9999", "avg_delay_seconds": 420.0, "max_delay_seconds": 600.0},
+                {"d": d, "stop_id": "1234", "avg_delay_seconds": 60.0, "max_delay_seconds": 90.0},
+            ],
+        )
+    )
+    out = build_receipts(conn)
+    r = out["2026-05-15"]
+    assert r.worst_route is not None
+    assert r.worst_route.id == "105"
+    assert r.worst_route.otp_delta_pts is None  # v1 deferral
+    assert r.worst_stop is not None
+    assert r.worst_stop.id == "9999"
+    assert r.worst_stop.median_delay_min == 7.0  # 420s / 60
+
+
+def test_build_receipts_missing_network_yields_none_otp() -> None:
+    """If a date has no network rows, otp/delay fields are None (not crash)."""
+    d = datetime.date(2026, 5, 20)
+    conn = FakeConn(
+        _receipts_dispatch(
+            acct=[
+                {
+                    "provider_local_date": d,
+                    "affected_route_count": 1,
+                    "affected_stop_count": 2,
+                    "delayed_trip_count": 0,
+                    "severe_delay_count": 0,
+                    "alert_count": 0,
+                    "rider_impact_score": 0.1,
+                }
+            ]
+        )
+    )
+    out = build_receipts(conn)
+    r = out["2026-05-20"]
+    assert r.otp_pct is None
+    assert r.avg_delay_min is None
+    assert r.severe_pct is None
+    assert r.worst_route is None
+    assert r.worst_stop is None
+    assert r.affected_routes == 1
+
+
+# --------------------------------------------------------------------------
+# build_alert_history
+# --------------------------------------------------------------------------
+
+
+def test_build_alert_history_aggregation() -> None:
+    """Routes/stops deduped+sorted, duration_min computed from timestamps."""
+    import datetime as _dt
+
+    start = _dt.datetime(2026, 5, 1, 8, 0, 0, tzinfo=_dt.timezone.utc)
+    end = _dt.datetime(2026, 5, 1, 10, 30, 0, tzinfo=_dt.timezone.utc)  # 150 min
+
+    conn = FakeConn(
+        [
+            (
+                "i3_alert_history_reporting",
+                [
+                    {
+                        "alert_id": "A001",
+                        "severity": "WARNING",
+                        "routes": ["51", "9", "51"],   # dedup -> ["9","51"]
+                        "stops": ["3001", "1002"],
+                        "start_utc": start,
+                        "end_utc": end,
+                    },
+                ],
+            )
+        ]
+    )
+    out = build_alert_history(conn)
+    assert isinstance(out, AlertHistory)
+    assert len(out.alerts) == 1
+    e = out.alerts[0]
+    assert e.id == "A001"
+    assert e.severity == "WARNING"
+    assert e.duration_min == 150.0
+    assert e.impact_passages is None  # v1 deferral
+    # routes natural-sorted: "9" before "51"
+    assert e.routes == ["9", "51"]
+    # stops sorted
+    assert e.stops == ["1002", "3001"]
+
+
+def test_build_alert_history_none_timestamps_yield_none_duration() -> None:
+    conn = FakeConn(
+        [
+            (
+                "i3_alert_history_reporting",
+                [
+                    {
+                        "alert_id": "A002",
+                        "severity": None,
+                        "routes": None,
+                        "stops": None,
+                        "start_utc": None,
+                        "end_utc": None,
+                    },
+                ],
+            )
+        ]
+    )
+    out = build_alert_history(conn)
+    e = out.alerts[0]
+    assert e.duration_min is None
+    assert e.start_utc is None
+    assert e.end_utc is None
+    assert e.routes == []
+    assert e.stops == []
+
+
+def test_build_alert_history_200_cap() -> None:
+    """SQL LIMIT 200 enforced — fake returns exactly 200 rows."""
+    import datetime as _dt
+
+    start = _dt.datetime(2026, 5, 1, tzinfo=_dt.timezone.utc)
+    rows = [
+        {
+            "alert_id": f"A{i:04d}",
+            "severity": "INFO",
+            "routes": None,
+            "stops": None,
+            "start_utc": start,
+            "end_utc": start,
+        }
+        for i in range(200)
+    ]
+    conn = FakeConn([("i3_alert_history_reporting", rows)])
+    out = build_alert_history(conn)
+    assert len(out.alerts) == 200
+
+
+def test_build_alert_history_empty() -> None:
+    conn = FakeConn([("i3_alert_history_reporting", [])])
+    out = build_alert_history(conn)
+    assert out.alerts == []
+
+
+# --------------------------------------------------------------------------
+# build_provenance
+# --------------------------------------------------------------------------
+
+
+def test_build_provenance_sources_and_freshness() -> None:
+    import datetime as _dt
+
+    loaded = _dt.datetime(2026, 6, 1, 12, 0, 0, tzinfo=_dt.timezone.utc)
+    conn = FakeConn(
+        [
+            (
+                "source_lineage_reporting",
+                [
+                    {
+                        "dataset_kind": "static_schedule",
+                        "storage_backend": "r2",
+                        "storage_path": "stm/static/latest.zip",
+                        "source_url": None,
+                        "loaded_at_utc": loaded,
+                    },
+                    {
+                        "dataset_kind": "realtime_vehicle_positions",
+                        "storage_backend": None,
+                        "storage_path": None,
+                        "source_url": "https://stm.info/gtfs-rt/vehicles",
+                        "loaded_at_utc": loaded,
+                    },
+                ],
+            ),
+            (
+                "feed_freshness_current",
+                [
+                    {
+                        "endpoint_key": "vehicle_positions",
+                        "status": "ok",
+                        "completed_age_seconds": 25.0,
+                    },
+                    {
+                        "endpoint_key": "trip_updates",
+                        "status": "stale",
+                        "completed_age_seconds": None,
+                    },
+                ],
+            ),
+        ]
+    )
+
+    out = build_provenance(conn)
+    assert isinstance(out, Provenance)
+
+    # sources
+    by_feed = {s.feed: s for s in out.sources}
+    assert "static_schedule" in by_feed
+    assert by_feed["static_schedule"].chain == "r2:stm/static/latest.zip"
+    assert by_feed["realtime_vehicle_positions"].chain == "https://stm.info/gtfs-rt/vehicles"
+    assert by_feed["static_schedule"].last_loaded_utc == "2026-06-01T12:00:00Z"
+
+    # freshness
+    by_key = {f.feed: f for f in out.freshness}
+    assert by_key["vehicle_positions"].status == "ok"
+    assert by_key["vehicle_positions"].age_s == 25
+    assert by_key["trip_updates"].age_s is None
+
+    # retention
+    assert out.retention == {"detail_days": 14, "aggregate_days": 365}
+
+    # methodology keys
+    assert "otp_definition" in out.methodology
+    assert "delay_unit" in out.methodology
+    assert "percentiles" in out.methodology
+
+    # gaps
+    assert "metro_realtime" in out.gaps
+
+
+def test_build_provenance_empty_sources_still_valid() -> None:
+    conn = FakeConn(
+        [
+            ("source_lineage_reporting", []),
+            ("feed_freshness_current", []),
+        ]
+    )
+    out = build_provenance(conn)
+    assert out.sources == []
+    assert out.freshness == []
+    assert out.gaps == ["metro_realtime"]
+    assert out.retention["detail_days"] == 14
