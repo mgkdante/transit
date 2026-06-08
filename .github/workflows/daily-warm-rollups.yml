@@ -20,7 +20,9 @@ concurrency:
 jobs:
   build-warm-rollups:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # 25m headroom: rollups + 2 new marts + the historic /v1 publish (per-route
+    # reliability files + the 8M-row alert_history view) all run in this job.
+    timeout-minutes: 25
     defaults:
       run:
         working-directory: db

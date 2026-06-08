@@ -383,7 +383,7 @@ def test_publish_historic_writes_expected_keys(tmp_path) -> None:
         ]),
         # build_alert_history
         ("i3_alert_history_reporting", [
-            {"alert_id": "alert-1", "severity": "WARNING",
+            {"alert_header_text": "Votre ligne", "alert_id": None, "severity": "WARNING",
              "routes": ["165"], "stops": ["51234"],
              "start_utc": datetime.datetime(2026, 6, 1, 8, 0, tzinfo=datetime.timezone.utc),
              "end_utc": datetime.datetime(2026, 6, 1, 9, 0, tzinfo=datetime.timezone.utc)},

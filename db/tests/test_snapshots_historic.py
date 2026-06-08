@@ -788,8 +788,11 @@ def test_build_receipts_missing_network_yields_none_otp() -> None:
 
 
 def test_build_alert_history_aggregation() -> None:
-    """Routes/stops deduped+sorted, duration_min computed from timestamps."""
+    """Routes/stops deduped+sorted, duration_min computed, id content-hashed."""
     import datetime as _dt
+    import hashlib
+
+    from transit_ops.snapshots.builders import _severity_code
 
     start = _dt.datetime(2026, 5, 1, 8, 0, 0, tzinfo=_dt.timezone.utc)
     end = _dt.datetime(2026, 5, 1, 10, 30, 0, tzinfo=_dt.timezone.utc)  # 150 min
@@ -800,7 +803,8 @@ def test_build_alert_history_aggregation() -> None:
                 "i3_alert_history_reporting",
                 [
                     {
-                        "alert_id": "A001",
+                        "alert_header_text": "Votre ligne",
+                        "alert_id": None,  # STM feed leaves this NULL — ignored
                         "severity": "WARNING",
                         "routes": ["51", "9", "51"],   # dedup -> ["9","51"]
                         "stops": ["3001", "1002"],
@@ -815,8 +819,10 @@ def test_build_alert_history_aggregation() -> None:
     assert isinstance(out, AlertHistory)
     assert len(out.alerts) == 1
     e = out.alerts[0]
-    assert e.id == "A001"
-    assert e.severity == "WARNING"
+    # id is a content-stable hash of header+severity+period (alert_id is NULL)
+    basis = "|".join(str(x or "") for x in ("Votre ligne", "WARNING", start, end))
+    assert e.id == f"stm-alert-{hashlib.sha1(basis.encode()).hexdigest()[:12]}"
+    assert e.severity == _severity_code("WARNING")
     assert e.duration_min == 150.0
     assert e.impact_passages is None  # v1 deferral
     # routes natural-sorted: "9" before "51"
@@ -832,7 +838,8 @@ def test_build_alert_history_none_timestamps_yield_none_duration() -> None:
                 "i3_alert_history_reporting",
                 [
                     {
-                        "alert_id": "A002",
+                        "alert_header_text": None,
+                        "alert_id": None,
                         "severity": None,
                         "routes": None,
                         "stops": None,
@@ -859,7 +866,8 @@ def test_build_alert_history_200_cap() -> None:
     start = _dt.datetime(2026, 5, 1, tzinfo=_dt.timezone.utc)
     rows = [
         {
-            "alert_id": f"A{i:04d}",
+            "alert_header_text": f"H{i}",
+            "alert_id": None,
             "severity": "INFO",
             "routes": None,
             "stops": None,

@@ -1744,6 +1744,7 @@ _RECEIPTS_WORST_ROUTE_SQL = text(
     FROM gold.public_route_reliability_daily
     WHERE provider_id = :provider_id
       AND provider_local_date >= current_date - 30
+      AND avg_delay_seconds IS NOT NULL
     ORDER BY provider_local_date, avg_delay_seconds DESC
     """
 )
@@ -1758,6 +1759,7 @@ _RECEIPTS_WORST_STOP_SQL = text(
     FROM gold.public_stop_delay_daily
     WHERE provider_id = :provider_id
       AND provider_local_date >= current_date - 30
+      AND avg_delay_seconds IS NOT NULL
     ORDER BY provider_local_date, avg_delay_seconds DESC
     """
 )
@@ -1822,7 +1824,7 @@ def build_receipts(
         if ds not in worst_stop:  # first = max avg_delay (ordered DESC)
             worst_stop[ds] = ReceiptWorstStop(
                 id=str(r["stop_id"]),
-                median_delay_min=round(float(r["avg_delay_seconds"]) / 60.0, 1),
+                median_delay_min=_avg_delay_min(r["avg_delay_seconds"]),
             )
 
     # merge: only emit dates present in accountability (the driver)
@@ -1854,19 +1856,19 @@ def build_receipts(
 # array_agg(...) FILTER (WHERE ...) requires PostgreSQL 9.4+.
 _ALERT_HISTORY_SQL = text(
     """
-    SELECT alert_id,
-           MAX(severity)                                             AS severity,
+    SELECT alert_header_text,
+           MAX(severity)                                            AS severity,
            ARRAY_AGG(DISTINCT route_id)
                FILTER (WHERE route_id IS NOT NULL)                  AS routes,
            ARRAY_AGG(DISTINCT stop_id)
                FILTER (WHERE stop_id IS NOT NULL)                   AS stops,
-           MIN(active_period_start_utc)                             AS start_utc,
-           MAX(active_period_end_utc)                               AS end_utc
+           active_period_start_utc                                  AS start_utc,
+           active_period_end_utc                                    AS end_utc
     FROM gold.i3_alert_history_reporting
     WHERE provider_id = :provider_id
-      AND provider_local_date >= current_date - 90
-    GROUP BY alert_id
-    ORDER BY MIN(active_period_start_utc) DESC
+      AND provider_local_date >= current_date - 30
+    GROUP BY alert_header_text, active_period_start_utc, active_period_end_utc
+    ORDER BY active_period_start_utc DESC NULLS LAST
     LIMIT 200
     """
 )
@@ -1875,13 +1877,16 @@ _ALERT_HISTORY_SQL = text(
 def build_alert_history(
     conn: "Connection", provider_id: str = "stm"
 ) -> "AlertHistory":
-    """Build historic/alert_history.json — last 90 days, capped at 200 alerts.
+    """Build historic/alert_history.json — last 30 days, capped at 200 alerts.
 
     Source: gold.i3_alert_history_reporting (8M rows — always filter first).
-    Routes/stops are deduped and natural-sorted.  duration_min is computed from
-    start/end timestamps; impact_passages is None in v1 (not stored in source).
+    STM's i3 feed leaves alert_id NULL, so grouping by it would collapse every
+    row into one mega-alert; instead we group by the content key
+    (header + active period) and synthesize a content-stable id, mirroring the
+    live build_alerts approach.  Routes/stops are deduped and natural-sorted.
+    duration_min is computed from start/end; impact_passages is None in v1.
 
-    v1 intentional bounds: 90-day look-back, LIMIT 200, impact_passages=None.
+    v1 intentional bounds: 30-day look-back, LIMIT 200, impact_passages=None.
     """
     from transit_ops.snapshots.contract import AlertHistory, AlertHistoryEntry
 
@@ -1925,10 +1930,17 @@ def build_alert_history(
             unique.sort(key=_route_sort_key)
             return unique
 
+        # alert_id is always NULL in this feed — synthesize a content-stable id
+        # from header + severity + active period (mirrors live build_alerts).
+        basis = "|".join(
+            str(r[c] or "")
+            for c in ("alert_header_text", "severity", "start_utc", "end_utc")
+        )
+        alert_id = f"{provider_id}-alert-{hashlib.sha1(basis.encode()).hexdigest()[:12]}"
         entries.append(
             AlertHistoryEntry(
-                id=str(r["alert_id"]),
-                severity=r["severity"],
+                id=alert_id,
+                severity=_severity_code(r["severity"]),
                 routes=_natural_sort_dedup(raw_routes),
                 stops=_natural_sort_dedup(raw_stops),
                 start_utc=_opt_iso(start),
