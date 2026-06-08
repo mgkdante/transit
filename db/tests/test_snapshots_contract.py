@@ -36,3 +36,21 @@ def test_stop_file_valid():
 def test_labels_file_valid():
     lf = LabelsFile(labels={"status.on_time": "À l'heure", "status.late": "En retard"})
     assert lf.labels["status.on_time"] == "À l'heure"
+
+
+def test_historic_models_valid():
+    from transit_ops.snapshots.contract import (
+        NetworkTrend, RouteReliability, HeadwayPeriod, StopReliability, Hotspots, Hotspot,
+        RepeatOffenders, Offender, Receipt, AlertHistory, AlertHistoryEntry, Provenance,
+    )
+    nt = NetworkTrend(series=[{"date": "2026-05-30", "otp_pct": 39, "avg_delay_min": 3.4, "p90_min": 11, "vehicles": 612}])
+    assert nt.series[0].otp_pct == 39
+    rr = RouteReliability(id="165", periods=[{"grain": "day", "otp_pct": 47}],
+                          headway=[HeadwayPeriod(shift="pm_peak", scheduled_min=6, observed_min=7.8, excess_wait_min=1.8)])
+    assert rr.headway[0].excess_wait_min == 1.8
+    ro = RepeatOffenders(offenders=[Offender(type="vehicle", id="29051", route="171", recurrence="6/7d", avg_delay_min=8)])
+    assert ro.offenders[0].recurrence == "6/7d"
+    rc = Receipt(date="2026-05-30", otp_pct=39, worst_route={"id": "171", "otp_delta_pts": -22})
+    assert rc.worst_route.id == "171"
+    prov = Provenance(retention={"detail_days": 14, "aggregate_days": 365}, gaps=["metro_realtime"])
+    assert prov.retention["detail_days"] == 14

@@ -1,0 +1,69 @@
+{
+  "$defs": {
+    "Offender": {
+      "properties": {
+        "avg_delay_min": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Avg Delay Min"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "recurrence": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Recurrence"
+        },
+        "route": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Route"
+        },
+        "type": {
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "id"
+      ],
+      "title": "Offender",
+      "type": "object"
+    }
+  },
+  "properties": {
+    "offenders": {
+      "items": {
+        "$ref": "#/$defs/Offender"
+      },
+      "title": "Offenders",
+      "type": "array"
+    }
+  },
+  "title": "RepeatOffenders",
+  "type": "object"
+}

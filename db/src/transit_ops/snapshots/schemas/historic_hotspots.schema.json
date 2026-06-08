@@ -1,0 +1,62 @@
+{
+  "$defs": {
+    "Hotspot": {
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "otp_delta_pts": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Otp Delta Pts"
+        },
+        "rank": {
+          "title": "Rank",
+          "type": "integer"
+        },
+        "severity": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Severity"
+        },
+        "type": {
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "rank",
+        "type",
+        "id"
+      ],
+      "title": "Hotspot",
+      "type": "object"
+    }
+  },
+  "properties": {
+    "hotspots": {
+      "items": {
+        "$ref": "#/$defs/Hotspot"
+      },
+      "title": "Hotspots",
+      "type": "array"
+    }
+  },
+  "title": "Hotspots",
+  "type": "object"
+}
