@@ -447,7 +447,7 @@ def test_runtime_vm_health_exposes_sanitized_cost_free_metrics() -> None:
         "bronze_realtime": 30,
         "bronze_static": 365,
         "silver_realtime": 14,
-        "gold_fact": 7,
+        "gold_fact": 14,
         "gold_warm_rollup": 365,
     }
     serialized = str(result.display_dict())
