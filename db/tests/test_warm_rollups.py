@@ -7,6 +7,9 @@ from transit_ops.gold.rollups import WarmRollupBuildResult, build_warm_rollups
 from transit_ops.maintenance import WarmRollupStoragePruneResult, prune_warm_rollup_storage
 from transit_ops.settings import Settings
 
+# Tables pruned by prune_warm_rollup_storage (maintenance.py retention registry).
+# These daily marts (route_headway_daily, repeat_offender_daily) are full-rebuilt
+# each run and are NOT time-window pruned, so they are intentionally absent here.
 REPORTING_AGGREGATE_TABLES = (
     "route_delay_hourly",
     "route_delay_day_of_week",
@@ -20,9 +23,22 @@ REPORTING_AGGREGATE_TABLES = (
     "citizen_accountability_daily",
 )
 
+# Tables rebuilt by build_warm_rollups (rollups.py REPORTING_AGGREGATE_TABLES).
+# Superset of the prune registry — adds the HISTORIC-tier daily marts.
+BUILD_REPORTING_AGGREGATE_TABLES = (
+    *REPORTING_AGGREGATE_TABLES,
+    "route_headway_daily",
+    "repeat_offender_daily",
+)
+
 REPORTING_AGGREGATE_ROWCOUNTS = {
     table_name: index
     for index, table_name in enumerate(REPORTING_AGGREGATE_TABLES, start=10)
+}
+
+BUILD_REPORTING_AGGREGATE_ROWCOUNTS = {
+    table_name: index
+    for index, table_name in enumerate(BUILD_REPORTING_AGGREGATE_TABLES, start=10)
 }
 
 
@@ -82,7 +98,7 @@ class FakeConnection:
         if "INSERT INTO gold.warm_rollup_periods" in sql:
             return RowcountResult(1)
 
-        for table_name, rowcount in REPORTING_AGGREGATE_ROWCOUNTS.items():
+        for table_name, rowcount in BUILD_REPORTING_AGGREGATE_ROWCOUNTS.items():
             if f"INSERT INTO gold.{table_name}" in sql:
                 return RowcountResult(rowcount)
             if (
@@ -208,9 +224,9 @@ def test_build_warm_rollups_rebuilds_reporting_aggregate_marts() -> None:
 
     assert result.reporting_aggregate_row_counts == {
         table_name: rowcount
-        for table_name, rowcount in REPORTING_AGGREGATE_ROWCOUNTS.items()
+        for table_name, rowcount in BUILD_REPORTING_AGGREGATE_ROWCOUNTS.items()
     }
-    for table_name in REPORTING_AGGREGATE_TABLES:
+    for table_name in BUILD_REPORTING_AGGREGATE_TABLES:
         delete_index = next(
             index
             for index, statement in enumerate(conn.executed)
@@ -235,10 +251,10 @@ def test_reporting_aggregate_builders_read_gold_reporting_surfaces_only() -> Non
         for statement in conn.executed
         if any(
             f"INSERT INTO gold.{table_name}" in statement
-            for table_name in REPORTING_AGGREGATE_TABLES
+            for table_name in BUILD_REPORTING_AGGREGATE_TABLES
         )
     ]
-    assert len(aggregate_inserts) == len(REPORTING_AGGREGATE_TABLES)
+    assert len(aggregate_inserts) == len(BUILD_REPORTING_AGGREGATE_TABLES)
     assert all(" silver." not in statement.lower() for statement in aggregate_inserts)
     assert any("FROM gold.trip_delay_summary_5m" in statement for statement in aggregate_inserts)
     assert any("FROM gold.fact_trip_delay_snapshot" in statement for statement in aggregate_inserts)
@@ -272,6 +288,73 @@ def test_reporting_aggregate_builders_read_gold_reporting_surfaces_only() -> Non
     )
 
 
+def test_historic_daily_marts_registered_in_registry() -> None:
+    """P2/P3 HISTORIC marts are wired into all three rollups registries."""
+    from transit_ops.gold import rollups
+
+    for table_name in ("route_headway_daily", "repeat_offender_daily"):
+        assert table_name in rollups.REPORTING_AGGREGATE_TABLES
+        assert table_name in rollups.REPORTING_AGGREGATE_UPSERTS
+        assert table_name in rollups.DELETE_REPORTING_AGGREGATES
+        # DELETE is scoped to the provider (delete-then-rebuild semantics).
+        delete_sql = str(rollups.DELETE_REPORTING_AGGREGATES[table_name])
+        assert f"DELETE FROM gold.{table_name}" in delete_sql
+        assert "provider_id = :provider_id" in delete_sql
+
+
+def test_route_headway_daily_upsert_shape() -> None:
+    """P2 observed-headway mart: median trip-gap per route/shift over 14d."""
+    from transit_ops.gold import rollups
+
+    sql = str(rollups.REPORTING_AGGREGATE_UPSERTS["route_headway_daily"])
+
+    assert "INSERT INTO gold.route_headway_daily" in sql
+    assert "FROM gold.fact_trip_delay_snapshot" in sql
+    assert "gold.dim_provider" in sql
+    # Observed headway = median of successive distinct-trip first-seen gaps.
+    assert "percentile_cont(0.5)" in sql
+    assert "LAG(first_seen)" in sql
+    assert "interval '14 days'" in sql
+    # Only observed_headway_min + sample_count populated; the other cols stay NULL.
+    assert "observed_headway_min" in sql
+    assert "sample_count" in sql
+    assert "scheduled_headway_min" not in sql
+    assert "excess_wait_min" not in sql
+    # Shift buckets.
+    for shift in ("am_peak", "midday", "pm_peak", "evening", "night"):
+        assert f"'{shift}'" in sql
+    # Gap sanity filter.
+    assert "gap_min < 240" in sql
+    assert "ON CONFLICT (provider_id, route_id, shift)" in sql
+
+
+def test_repeat_offender_daily_upsert_shape() -> None:
+    """P3 repeat-offender mart: trips + vehicles with >=3 severe-delay days in 14d."""
+    from transit_ops.gold import rollups
+
+    sql = str(rollups.REPORTING_AGGREGATE_UPSERTS["repeat_offender_daily"])
+
+    assert "INSERT INTO gold.repeat_offender_daily" in sql
+    assert "FROM gold.fact_trip_delay_snapshot" in sql
+    assert "gold.dim_provider" in sql
+    assert "interval '14 days'" in sql
+    # Two entity kinds via UNION ALL.
+    assert "'trip'::text" in sql
+    assert "'vehicle'::text" in sql
+    assert "UNION ALL" in sql
+    assert "vehicle_id IS NOT NULL" in sql
+    # Severe-delay day = delay_seconds > 300, distinct local day.
+    assert "COUNT(DISTINCT local_day) FILTER (WHERE delay_seconds > 300)" in sql
+    # Only repeat offenders kept.
+    assert "WHERE recurrence_days >= 3" in sql
+    # Severity tiers.
+    assert "'critical'" in sql
+    assert "'high'" in sql
+    assert "'watch'" in sql
+    assert "recurrence_days >= 10 OR avg_delay_seconds > 600" in sql
+    assert "ON CONFLICT (provider_id, entity_kind, entity_id, route_id)" in sql
+
+
 def test_build_warm_rollups_result_display_dict() -> None:
     conn = FakeConnection(vehicle_periods=[datetime(2026, 3, 25, 12, 0, tzinfo=UTC)])
     engine = FakeEngine(conn)
@@ -284,7 +367,7 @@ def test_build_warm_rollups_result_display_dict() -> None:
     assert d["since_utc"] is None
     assert d["reporting_aggregate_row_counts"] == {
         table_name: rowcount
-        for table_name, rowcount in REPORTING_AGGREGATE_ROWCOUNTS.items()
+        for table_name, rowcount in BUILD_REPORTING_AGGREGATE_ROWCOUNTS.items()
     }
     assert "completed_at_utc" in d
 

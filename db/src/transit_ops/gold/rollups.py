@@ -162,6 +162,8 @@ REPORTING_AGGREGATE_TABLES = (
     "route_habit_score",
     "repeated_problem_route_stop",
     "citizen_accountability_daily",
+    "route_headway_daily",
+    "repeat_offender_daily",
 )
 
 DELETE_REPORTING_AGGREGATES = {
@@ -744,6 +746,163 @@ UPSERT_CITIZEN_ACCOUNTABILITY_DAILY = text(
     """
 )
 
+UPSERT_ROUTE_HEADWAY_DAILY = text(
+    """
+    WITH first_obs AS (
+        SELECT
+            f.provider_id,
+            f.route_id,
+            f.trip_id,
+            MIN(f.captured_at_utc) AS first_seen
+        FROM gold.fact_trip_delay_snapshot AS f
+        WHERE f.provider_id = :provider_id
+          AND f.captured_at_utc >= now() - interval '14 days'
+          AND f.route_id IS NOT NULL
+        GROUP BY f.provider_id, f.route_id, f.trip_id
+    ),
+    shifted AS (
+        SELECT
+            fo.provider_id,
+            fo.route_id,
+            fo.first_seen,
+            CASE
+                WHEN EXTRACT(HOUR FROM timezone(dp.timezone, fo.first_seen))
+                    BETWEEN 6 AND 8 THEN 'am_peak'
+                WHEN EXTRACT(HOUR FROM timezone(dp.timezone, fo.first_seen))
+                    BETWEEN 9 AND 14 THEN 'midday'
+                WHEN EXTRACT(HOUR FROM timezone(dp.timezone, fo.first_seen))
+                    BETWEEN 15 AND 18 THEN 'pm_peak'
+                WHEN EXTRACT(HOUR FROM timezone(dp.timezone, fo.first_seen))
+                    BETWEEN 19 AND 22 THEN 'evening'
+                ELSE 'night'
+            END AS shift
+        FROM first_obs AS fo
+        INNER JOIN gold.dim_provider AS dp
+            ON dp.provider_id = fo.provider_id
+    ),
+    gaps AS (
+        SELECT
+            provider_id,
+            route_id,
+            shift,
+            EXTRACT(
+                EPOCH FROM (
+                    first_seen - LAG(first_seen) OVER (
+                        PARTITION BY provider_id, route_id, shift
+                        ORDER BY first_seen
+                    )
+                )
+            ) / 60.0 AS gap_min
+        FROM shifted
+    )
+    INSERT INTO gold.route_headway_daily (
+        provider_id,
+        route_id,
+        shift,
+        observed_headway_min,
+        sample_count,
+        built_at_utc
+    )
+    SELECT
+        provider_id,
+        route_id,
+        shift,
+        ROUND(
+            percentile_cont(0.5) WITHIN GROUP (ORDER BY gap_min)::numeric,
+            1
+        ),
+        COUNT(*)::integer,
+        :built_at_utc
+    FROM gaps
+    WHERE gap_min IS NOT NULL
+      AND gap_min > 0
+      AND gap_min < 240
+    GROUP BY provider_id, route_id, shift
+    ON CONFLICT (provider_id, route_id, shift) DO UPDATE SET
+        observed_headway_min = EXCLUDED.observed_headway_min,
+        sample_count = EXCLUDED.sample_count,
+        built_at_utc = EXCLUDED.built_at_utc
+    """
+)
+
+UPSERT_REPEAT_OFFENDER_DAILY = text(
+    """
+    WITH obs AS (
+        SELECT
+            f.provider_id,
+            f.route_id,
+            f.trip_id,
+            f.vehicle_id,
+            f.delay_seconds,
+            timezone(dp.timezone, f.captured_at_utc)::date AS local_day
+        FROM gold.fact_trip_delay_snapshot AS f
+        INNER JOIN gold.dim_provider AS dp
+            ON dp.provider_id = f.provider_id
+        WHERE f.provider_id = :provider_id
+          AND f.captured_at_utc >= now() - interval '14 days'
+          AND f.delay_seconds IS NOT NULL
+          AND f.route_id IS NOT NULL
+    ),
+    agg AS (
+        SELECT
+            'trip'::text AS entity_kind,
+            trip_id AS entity_id,
+            route_id,
+            provider_id,
+            COUNT(DISTINCT local_day) FILTER (WHERE delay_seconds > 300)
+                AS recurrence_days,
+            ROUND(AVG(delay_seconds)::numeric, 1) AS avg_delay_seconds
+        FROM obs
+        WHERE trip_id IS NOT NULL
+        GROUP BY provider_id, route_id, trip_id
+        UNION ALL
+        SELECT
+            'vehicle'::text,
+            vehicle_id,
+            route_id,
+            provider_id,
+            COUNT(DISTINCT local_day) FILTER (WHERE delay_seconds > 300),
+            ROUND(AVG(delay_seconds)::numeric, 1)
+        FROM obs
+        WHERE vehicle_id IS NOT NULL
+        GROUP BY provider_id, route_id, vehicle_id
+    )
+    INSERT INTO gold.repeat_offender_daily (
+        provider_id,
+        entity_kind,
+        entity_id,
+        route_id,
+        recurrence_days,
+        window_days,
+        avg_delay_seconds,
+        severity_label,
+        built_at_utc
+    )
+    SELECT
+        provider_id,
+        entity_kind,
+        entity_id,
+        route_id,
+        recurrence_days,
+        14,
+        avg_delay_seconds,
+        CASE
+            WHEN recurrence_days >= 10 OR avg_delay_seconds > 600 THEN 'critical'
+            WHEN recurrence_days >= 5 THEN 'high'
+            ELSE 'watch'
+        END,
+        :built_at_utc
+    FROM agg
+    WHERE recurrence_days >= 3
+    ON CONFLICT (provider_id, entity_kind, entity_id, route_id) DO UPDATE SET
+        recurrence_days = EXCLUDED.recurrence_days,
+        window_days = EXCLUDED.window_days,
+        avg_delay_seconds = EXCLUDED.avg_delay_seconds,
+        severity_label = EXCLUDED.severity_label,
+        built_at_utc = EXCLUDED.built_at_utc
+    """
+)
+
 REPORTING_AGGREGATE_UPSERTS = {
     "route_delay_hourly": UPSERT_ROUTE_DELAY_HOURLY,
     "route_delay_day_of_week": UPSERT_ROUTE_DELAY_DAY_OF_WEEK,
@@ -755,6 +914,8 @@ REPORTING_AGGREGATE_UPSERTS = {
     "route_habit_score": UPSERT_ROUTE_HABIT_SCORE,
     "repeated_problem_route_stop": UPSERT_REPEATED_PROBLEM_ROUTE_STOP,
     "citizen_accountability_daily": UPSERT_CITIZEN_ACCOUNTABILITY_DAILY,
+    "route_headway_daily": UPSERT_ROUTE_HEADWAY_DAILY,
+    "repeat_offender_daily": UPSERT_REPEAT_OFFENDER_DAILY,
 }
 
 # ---------------------------------------------------------------------------
