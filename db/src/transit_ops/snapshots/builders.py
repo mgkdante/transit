@@ -1113,3 +1113,475 @@ def build_all_stops_data(conn: Connection, *, provider_id: str = "stm") -> "dict
         )
 
     return stops
+
+
+# ---------------------------------------------------------------------------
+# HISTORIC tier builders (Phase 3) — gold reliability rollups -> /v1/historic
+# ---------------------------------------------------------------------------
+#
+# OTP convention: otp_pct = round(100 * (obs - delayed) / obs), NULL if obs==0.
+# The daily PUBLIC views expose only severe_delay_*; there 'delayed' == severe.
+# avg_delay_min = round(avg_delay_seconds/60, 1); severe_pct = round(100*sev/obs, 1).
+# p50_min/p90_min for route/stop reliability are NOT stored in gold and are left
+# None (v1 deferral); only network_trend computes a real p90 from the fact table.
+
+
+def _otp_pct(observation_count: object, delayed: object) -> int | None:
+    """round(100 * (obs - delayed) / obs) as int; None when obs is 0/NULL."""
+    if not observation_count:
+        return None
+    obs = float(observation_count)  # type: ignore[arg-type]
+    if obs <= 0:
+        return None
+    return round(100.0 * (obs - float(delayed or 0)) / obs)
+
+
+def _avg_delay_min(avg_delay_seconds: object) -> float | None:
+    if avg_delay_seconds is None:
+        return None
+    return round(float(avg_delay_seconds) / 60.0, 1)  # type: ignore[arg-type]
+
+
+def _severe_pct(observation_count: object, severe: object) -> float | None:
+    if not observation_count:
+        return None
+    obs = float(observation_count)  # type: ignore[arg-type]
+    if obs <= 0:
+        return None
+    return round(100.0 * float(severe or 0) / obs, 1)
+
+
+# --------------------------------------------------------------------------
+# build_network_trend
+# --------------------------------------------------------------------------
+
+# Daily OTP + weighted-avg delay from the hourly rollup (last ~90 local days).
+# Local date = the provider's wall-clock date of the hour bucket.
+_TREND_DAILY_SQL = text(
+    """
+    SELECT timezone(dp.timezone, rdh.period_start_utc)::date AS local_date,
+           SUM(rdh.observation_count)                        AS obs,
+           SUM(rdh.delayed_trip_count)                       AS delayed,
+           SUM(rdh.avg_delay_seconds * rdh.observation_count) AS weighted_delay_sec
+    FROM gold.route_delay_hourly AS rdh
+    JOIN gold.dim_provider AS dp ON dp.provider_id = rdh.provider_id
+    WHERE rdh.provider_id = :provider_id
+      AND rdh.period_start_utc >= now() - interval '90 days'
+    GROUP BY timezone(dp.timezone, rdh.period_start_utc)::date
+    """
+)
+
+# p90 delay (minutes) + distinct vehicles from the raw fact table (~14d retained).
+_TREND_FACT_SQL = text(
+    """
+    SELECT timezone(dp.timezone, fts.recorded_at_utc)::date AS local_date,
+           percentile_cont(0.9) WITHIN GROUP (ORDER BY fts.delay_seconds) / 60.0 AS p90_min,
+           count(DISTINCT fts.vehicle_id)                                       AS vehicles
+    FROM gold.fact_trip_delay_snapshot AS fts
+    JOIN gold.dim_provider AS dp ON dp.provider_id = fts.provider_id
+    WHERE fts.provider_id = :provider_id
+      AND fts.delay_seconds IS NOT NULL
+    GROUP BY timezone(dp.timezone, fts.recorded_at_utc)::date
+    """
+)
+
+
+def build_network_trend(conn: Connection, *, provider_id: str = "stm") -> "NetworkTrend":
+    """Build historic/network_trend.json — one TrendPoint per local date.
+
+    Two daily series merged by date: OTP + weighted-avg delay from the hourly
+    rollup (~90 days) and p90 delay + distinct vehicles from the raw fact table
+    (~14 days retained), so p90_min/vehicles are present only for the recent days
+    the fact table still covers.
+    """
+    from transit_ops.snapshots.contract import NetworkTrend, TrendPoint
+
+    params = {"provider_id": provider_id}
+    points: dict[str, dict] = {}
+
+    for r in conn.execute(_TREND_DAILY_SQL, params).mappings():
+        obs = r["obs"]
+        weighted = r["weighted_delay_sec"]
+        avg_delay_sec = (float(weighted) / float(obs)) if obs and weighted is not None else None
+        points[_iso_date(r["local_date"])] = {
+            "otp_pct": _otp_pct(obs, r["delayed"]),
+            "avg_delay_min": _avg_delay_min(avg_delay_sec),
+            "p90_min": None,
+            "vehicles": None,
+        }
+
+    for r in conn.execute(_TREND_FACT_SQL, params).mappings():
+        key = _iso_date(r["local_date"])
+        entry = points.setdefault(
+            key, {"otp_pct": None, "avg_delay_min": None, "p90_min": None, "vehicles": None}
+        )
+        entry["p90_min"] = round(float(r["p90_min"]), 1) if r["p90_min"] is not None else None
+        entry["vehicles"] = _opt_int(r["vehicles"])
+
+    series = [
+        TrendPoint(
+            date=d,
+            otp_pct=v["otp_pct"],
+            avg_delay_min=v["avg_delay_min"],
+            p90_min=v["p90_min"],
+            vehicles=v["vehicles"],
+        )
+        for d, v in sorted(points.items())
+    ]
+    return NetworkTrend(series=series)
+
+
+def _iso_date(d: object) -> str:
+    """Render a date (or datetime/date-like) as 'YYYY-MM-DD'. Strings pass through."""
+    if isinstance(d, str):
+        return d[:10]
+    return d.isoformat()[:10]  # type: ignore[union-attr]
+
+
+# --------------------------------------------------------------------------
+# build_route_reliability
+# --------------------------------------------------------------------------
+
+# Daily reliability from the PUBLIC view: only severe_delay_* is exposed, so the
+# 'delayed' numerator for OTP is the severe count (documented proxy).
+_ROUTE_REL_DAILY_SQL = text(
+    """
+    SELECT provider_local_date              AS d,
+           stop_time_observation_count      AS obs,
+           avg_delay_seconds                AS avg_delay_sec,
+           severe_delay_observation_count   AS severe
+    FROM gold.public_route_reliability_daily
+    WHERE provider_id = :provider_id AND route_id = :route_id
+    ORDER BY provider_local_date DESC
+    LIMIT 30
+    """
+)
+
+_ROUTE_REL_WEEKLY_SQL = text(
+    """
+    SELECT week_start_local      AS d,
+           observation_count     AS obs,
+           avg_delay_seconds     AS avg_delay_sec,
+           delayed_trip_count    AS delayed,
+           severe_delay_count    AS severe
+    FROM gold.route_reliability_weekly
+    WHERE provider_id = :provider_id AND route_id = :route_id
+    ORDER BY week_start_local
+    """
+)
+
+_ROUTE_REL_MONTHLY_SQL = text(
+    """
+    SELECT month_start_local     AS d,
+           observation_count     AS obs,
+           avg_delay_seconds     AS avg_delay_sec,
+           delayed_trip_count    AS delayed,
+           severe_delay_count    AS severe
+    FROM gold.route_reliability_monthly
+    WHERE provider_id = :provider_id AND route_id = :route_id
+    ORDER BY month_start_local
+    """
+)
+
+# Observed headway per shift (pre-computed in gold).
+_ROUTE_HEADWAY_OBSERVED_SQL = text(
+    """
+    SELECT shift, observed_headway_min, sample_count
+    FROM gold.route_headway_daily
+    WHERE provider_id = :provider_id AND route_id = :route_id
+    """
+)
+
+_ROUTE_HABIT_SQL = text(
+    """
+    SELECT day_of_week_iso, hour_of_day_local, repeat_problem_score
+    FROM gold.route_habit_score
+    WHERE provider_id = :provider_id AND route_id = :route_id
+    """
+)
+
+# Per-stop weekly delay for this route — top weak stops by average delay.
+_ROUTE_WEAK_STOPS_SQL = text(
+    """
+    SELECT stop_id,
+           SUM(observation_count)                          AS obs,
+           SUM(avg_delay_seconds * observation_count)      AS weighted_delay_sec,
+           SUM(severe_delay_count)                         AS severe
+    FROM gold.stop_delay_weekly
+    WHERE provider_id = :provider_id AND route_id = :route_id
+    GROUP BY stop_id
+    """
+)
+
+_STOP_NAMES_SQL = text(
+    """
+    SELECT stop_id, stop_name
+    FROM gold.dim_stop
+    WHERE provider_id = :provider_id
+    """
+)
+
+
+def build_route_reliability(
+    conn: Connection, *, provider_id: str = "stm", route_id: str
+) -> "RouteReliability":
+    """Build historic/route_reliability/{route_id}.json.
+
+    periods: daily (last 30, OTP from severe proxy) + weekly + monthly.
+    headway: observed (gold rollup) vs scheduled (representative-weekday median,
+             mirroring build_route) with excess_wait per shift.
+    habits:  7x24 repeat-problem-score matrix (isodow 1..7 x hour 0..23).
+    weak_stops: top 5 stops on the route by average delay.
+    """
+    from transit_ops.snapshots.contract import (
+        HeadwayPeriod,
+        ReliabilityPeriod,
+        RouteHabits,
+        RouteReliability,
+        WeakStop,
+    )
+
+    params = {"provider_id": provider_id, "route_id": route_id}
+
+    # --- periods (daily severe-proxy OTP, weekly/monthly delayed-trip OTP) ---
+    periods: list[ReliabilityPeriod] = []
+    for r in conn.execute(_ROUTE_REL_DAILY_SQL, params).mappings():
+        periods.append(
+            ReliabilityPeriod(
+                grain="day",
+                date=_iso_date(r["d"]),
+                otp_pct=_otp_pct(r["obs"], r["severe"]),  # daily view exposes severe only
+                avg_delay_min=_avg_delay_min(r["avg_delay_sec"]),
+                p50_min=None,  # percentiles not stored in gold (v1 deferral)
+                p90_min=None,
+                severe_pct=_severe_pct(r["obs"], r["severe"]),
+            )
+        )
+    for grain, sql in (("week", _ROUTE_REL_WEEKLY_SQL), ("month", _ROUTE_REL_MONTHLY_SQL)):
+        for r in conn.execute(sql, params).mappings():
+            periods.append(
+                ReliabilityPeriod(
+                    grain=grain,
+                    date=_iso_date(r["d"]),
+                    otp_pct=_otp_pct(r["obs"], r["delayed"]),
+                    avg_delay_min=_avg_delay_min(r["avg_delay_sec"]),
+                    p50_min=None,
+                    p90_min=None,
+                    severe_pct=_severe_pct(r["obs"], r["severe"]),
+                )
+            )
+
+    # --- headway: observed (gold) vs scheduled (representative weekday) ---
+    observed: dict[str, float] = {}
+    for r in conn.execute(_ROUTE_HEADWAY_OBSERVED_SQL, params).mappings():
+        if r["observed_headway_min"] is not None:
+            observed[str(r["shift"])] = float(r["observed_headway_min"])
+
+    scheduled = _scheduled_headway_by_shift(conn, provider_id=provider_id, route_id=route_id)
+
+    # Order shift buckets by the canonical time-of-day sequence (mirrors
+    # build_route's _SHIFT_ORDER); any unknown shift label sorts last by name.
+    def _shift_key(s: str) -> tuple[int, str]:
+        return (_SHIFT_ORDER.index(s), "") if s in _SHIFT_ORDER else (len(_SHIFT_ORDER), s)
+
+    headway: list[HeadwayPeriod] = []
+    for shift in sorted(set(scheduled) | set(observed), key=_shift_key):
+        sched = scheduled.get(shift)
+        obs = observed.get(shift)
+        both = sched is not None and obs is not None
+        excess = round(max(0.0, obs - sched), 1) if both else None
+        headway.append(
+            HeadwayPeriod(
+                shift=shift,
+                scheduled_min=sched,
+                observed_min=round(obs, 1) if obs is not None else None,
+                excess_wait_min=excess,
+            )
+        )
+
+    # --- habits: 7x24 matrix (rows isodow 1..7, cols hour 0..23) ---
+    matrix = [[0.0 for _ in range(24)] for _ in range(7)]
+    for r in conn.execute(_ROUTE_HABIT_SQL, params).mappings():
+        dow = r["day_of_week_iso"]
+        hour = r["hour_of_day_local"]
+        if dow is None or hour is None:
+            continue
+        di, hi = int(dow) - 1, int(hour)
+        if 0 <= di < 7 and 0 <= hi < 24:
+            matrix[di][hi] = float(r["repeat_problem_score"] or 0.0)
+    habits = RouteHabits(scale="repeat_problem_score", matrix=matrix)
+
+    # --- weak_stops: top 5 by average delay seconds ---
+    names = {
+        str(r["stop_id"]): r["stop_name"]
+        for r in conn.execute(_STOP_NAMES_SQL, params).mappings()
+    }
+    weak_rows = []
+    for r in conn.execute(_ROUTE_WEAK_STOPS_SQL, params).mappings():
+        obs = r["obs"]
+        weighted = r["weighted_delay_sec"]
+        avg_sec = (float(weighted) / float(obs)) if obs and weighted is not None else None
+        if avg_sec is None:
+            continue
+        weak_rows.append((str(r["stop_id"]), avg_sec))
+    weak_rows.sort(key=lambda t: t[1], reverse=True)
+    weak_stops = [
+        WeakStop(id=sid, name=names.get(sid), median_delay_min=round(avg_sec / 60.0, 1))
+        for sid, avg_sec in weak_rows[:5]
+    ]
+
+    return RouteReliability(
+        id=route_id,
+        periods=periods,
+        headway=headway,
+        habits=habits,
+        weak_stops=weak_stops,
+    )
+
+
+def _scheduled_headway_by_shift(
+    conn: Connection, *, provider_id: str, route_id: str
+) -> dict[str, float]:
+    """Per-shift scheduled headway (minutes) for a route on the representative
+    weekday — mirrors the scheduled-headway computation in :func:`build_route`
+    (busiest-direction first-stop departures, bucketed by ``_infer_shift``)."""
+    from collections import defaultdict
+
+    dv_row = (
+        conn.execute(_CURRENT_DATASET_VERSION_SQL, {"provider_id": provider_id})
+        .mappings()
+        .fetchone()
+    )
+    if dv_row is None:
+        return {}
+    dv_id = dv_row["dataset_version_id"]
+    weekday_services, weekend_services = _representative_services(
+        conn, provider_id=provider_id, dataset_version_id=dv_id
+    )
+
+    sched_rows = conn.execute(
+        _ROUTE_SCHEDULE_SQL,
+        {
+            "provider_id": provider_id,
+            "dataset_version_id": dv_id,
+            "route_id": route_id,
+            "weekday_services": weekday_services or [""],
+            "weekend_services": weekend_services or [""],
+        },
+    ).mappings()
+
+    wd_by_dir: dict[int, list[str]] = defaultdict(list)
+    for r in sched_rows:
+        if r["is_weekday"]:
+            wd_by_dir[int(r["direction_id"] or 0)].append(str(r["departure_time"]))
+    if not wd_by_dir:
+        return {}
+
+    # busiest direction is representative of the route's frequency (== build_route)
+    best_dir = max(wd_by_dir, key=lambda d: len(set(wd_by_dir[d])))
+    shift_times: dict[str, list[str]] = defaultdict(list)
+    for t in set(wd_by_dir[best_dir]):
+        shift_times[_infer_shift((_gtfs_min(t) // 60) % 24)].append(t)
+
+    out: dict[str, float] = {}
+    for shift, bucket in shift_times.items():
+        hw = _median_headway([_shift_sort_min(t, shift) for t in bucket])
+        if hw is not None:
+            out[shift] = hw
+    return out
+
+
+# --------------------------------------------------------------------------
+# build_stop_reliability (BATCH — mirrors build_all_stops_data)
+# --------------------------------------------------------------------------
+
+# Per-stop weekly/monthly delay, aggregated across the stop's routes.
+_STOP_REL_WEEKLY_SQL = text(
+    """
+    SELECT stop_id,
+           SUM(observation_count)                      AS obs,
+           SUM(avg_delay_seconds * observation_count)  AS weighted_delay_sec,
+           SUM(severe_delay_count)                     AS severe
+    FROM gold.stop_delay_weekly
+    WHERE provider_id = :provider_id
+    GROUP BY stop_id
+    """
+)
+
+_STOP_REL_MONTHLY_SQL = text(
+    """
+    SELECT stop_id,
+           SUM(observation_count)                      AS obs,
+           SUM(avg_delay_seconds * observation_count)  AS weighted_delay_sec,
+           SUM(severe_delay_count)                     AS severe
+    FROM gold.stop_delay_monthly
+    WHERE provider_id = :provider_id
+    GROUP BY stop_id
+    """
+)
+
+# Per-(stop, route) average delay across the retained weekly window.
+_STOP_REL_BY_ROUTE_SQL = text(
+    """
+    SELECT stop_id, route_id,
+           SUM(observation_count)                      AS obs,
+           SUM(avg_delay_seconds * observation_count)  AS weighted_delay_sec
+    FROM gold.stop_delay_weekly
+    WHERE provider_id = :provider_id
+    GROUP BY stop_id, route_id
+    """
+)
+
+
+def build_stop_reliability(
+    conn: Connection, *, provider_id: str = "stm"
+) -> "dict[str, StopReliability]":
+    """Build all historic/stop_reliability/{stop_id}.json in a batched pass.
+
+    For every stop in gold.stop_delay_weekly/monthly: weekly+monthly periods
+    (aggregated across the stop's routes; OTP from the severe proxy) and a
+    natural-sorted per-route median-delay breakdown. Returns stop_id -> model.
+    """
+    from transit_ops.snapshots.contract import (
+        StopByRoute,
+        StopReliability,
+        StopReliabilityPeriod,
+    )
+
+    params = {"provider_id": provider_id}
+
+    def _weighted_avg_sec(obs: object, weighted: object) -> float | None:
+        return (float(weighted) / float(obs)) if obs and weighted is not None else None
+
+    # period rows keyed stop_id -> {grain: StopReliabilityPeriod}
+    periods: dict[str, dict[str, StopReliabilityPeriod]] = {}
+    for grain, sql in (("week", _STOP_REL_WEEKLY_SQL), ("month", _STOP_REL_MONTHLY_SQL)):
+        for r in conn.execute(sql, params).mappings():
+            sid = str(r["stop_id"])
+            avg_sec = _weighted_avg_sec(r["obs"], r["weighted_delay_sec"])
+            periods.setdefault(sid, {})[grain] = StopReliabilityPeriod(
+                grain=grain,
+                otp_pct=_otp_pct(r["obs"], r["severe"]),  # weekly/monthly stop views expose severe
+                median_delay_min=(round(avg_sec / 60.0, 1) if avg_sec is not None else None),
+                severe_pct=_severe_pct(r["obs"], r["severe"]),
+            )
+
+    # by_route breakdown keyed stop_id -> list[StopByRoute]
+    by_route: dict[str, list[StopByRoute]] = {}
+    for r in conn.execute(_STOP_REL_BY_ROUTE_SQL, params).mappings():
+        sid = str(r["stop_id"])
+        avg_sec = _weighted_avg_sec(r["obs"], r["weighted_delay_sec"])
+        by_route.setdefault(sid, []).append(
+            StopByRoute(
+                route=str(r["route_id"]),
+                median_delay_min=(round(avg_sec / 60.0, 1) if avg_sec is not None else None),
+            )
+        )
+
+    out: dict[str, StopReliability] = {}
+    for sid in set(periods) | set(by_route):
+        grain_map = periods.get(sid, {})
+        ordered = [grain_map[g] for g in ("week", "month") if g in grain_map]
+        routes = sorted(by_route.get(sid, []), key=lambda b: _route_sort_key(b.route))
+        out[sid] = StopReliability(id=sid, periods=ordered, by_route=routes)
+    return out
