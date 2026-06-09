@@ -117,7 +117,7 @@ INSERT_I3_ALERTS = text(
         :captured_at_utc,
         :captured_at_utc
     )
-    ON CONFLICT (provider_id, content_hash) WHERE valid_to IS NULL
+    ON CONFLICT (provider_id, content_hash) WHERE content_hash IS NOT NULL AND valid_to IS NULL
     DO UPDATE SET last_seen_at = excluded.last_seen_at
     """
 ).bindparams(bindparam("raw_alert_json", type_=postgresql.JSONB))
@@ -349,6 +349,28 @@ def normalize_i3_alert_payload(
                     "raw_entity_json": raw_entity,
                 }
             )
+
+    # The i3 feed can emit multiple alerts with identical content (e.g. one
+    # "Service normal du métro" per metro line), which collapse to the same
+    # content_hash. The SCD-2 unique index is on (provider_id, content_hash),
+    # so a single batch INSERT ... ON CONFLICT cannot carry two rows with the
+    # same hash (Postgres: "ON CONFLICT DO UPDATE command cannot affect row a
+    # second time"). Dedup by content_hash, keeping the first occurrence, and
+    # drop the now-orphaned informed entities so the FK stays consistent.
+    if alert_rows:
+        seen: set[tuple[object, object]] = set()
+        kept_indexes: set[object] = set()
+        deduped: list[dict[str, object]] = []
+        for row in alert_rows:
+            key = (row["provider_id"], row["content_hash"])
+            if row["content_hash"] is not None and key in seen:
+                continue
+            seen.add(key)
+            kept_indexes.add(row["alert_index"])
+            deduped.append(row)
+        if len(deduped) != len(alert_rows):
+            alert_rows = deduped
+            entity_rows = [e for e in entity_rows if e["alert_index"] in kept_indexes]
 
     return alert_rows, entity_rows
 
