@@ -117,7 +117,7 @@ INSERT_I3_ALERTS = text(
         :captured_at_utc,
         :captured_at_utc
     )
-    ON CONFLICT (provider_id, content_hash) WHERE valid_to IS NULL
+    ON CONFLICT (provider_id, content_hash) WHERE content_hash IS NOT NULL AND valid_to IS NULL
     DO UPDATE SET last_seen_at = excluded.last_seen_at
     """
 ).bindparams(bindparam("raw_alert_json", type_=postgresql.JSONB))
