@@ -77,6 +77,27 @@ def test_normalize_i3_alert_payload_accepts_common_alert_shapes() -> None:
     assert entities[1]["area_id"] == "metro"
 
 
+def test_normalize_i3_alert_payload_dedups_identical_content_hash() -> None:
+    # STM emits multiple identical-content alerts ("Service normal du métro"
+    # per metro line) that collapse to one content_hash. A single batch
+    # INSERT ... ON CONFLICT (provider_id, content_hash) cannot carry two rows
+    # with the same hash (Postgres: "cannot affect row a second time"), so
+    # normalize must dedup (keeping the first) and drop orphaned entities.
+    one = {
+        "header": {"text": "Votre ligne"},
+        "description": {"text": "Service normal du métro"},
+        "informedEntities": [{"routeId": "1"}],
+    }
+    snapshot = _snapshot({"alerts": [dict(one), dict(one)]})
+
+    alerts, entities = normalize_i3_alert_payload(snapshot)
+
+    assert len(alerts) == 1  # two identical-content alerts deduped to one
+    kept = alerts[0]["alert_index"]
+    assert len(entities) == 1
+    assert {e["alert_index"] for e in entities} == {kept}  # no orphaned entities
+
+
 def test_load_i3_snapshot_to_silver_inserts_alerts_and_entities() -> None:
     connection = RecordingConnection()
     snapshot = _snapshot(
