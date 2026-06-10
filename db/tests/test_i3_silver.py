@@ -10,9 +10,11 @@ from transit_ops.silver.i3 import (
 
 
 class FakeResult:
-    def __init__(self, scalar_value=None, mapping_value=None) -> None:  # noqa: ANN001
+    def __init__(self, scalar_value=None, mapping_value=None, mapping_rows=None) -> None:  # noqa: ANN001
         self.scalar_value = scalar_value
         self.mapping_value = mapping_value
+        self.mapping_rows = mapping_rows or []
+        self.rowcount = 0
 
     def scalar_one_or_none(self):  # noqa: ANN201
         return self.scalar_value
@@ -23,13 +25,35 @@ class FakeResult:
     def one_or_none(self):  # noqa: ANN201
         return self.mapping_value
 
+    def __iter__(self):  # noqa: ANN204
+        return iter(self.mapping_rows)
+
 
 class RecordingConnection:
+    """Replays the loader's call sequence. The surviving-key SELECT is answered
+    from the most recent INSERT_I3_ALERTS batch as if every row inserted fresh
+    (real conflict/redirect behavior is covered by test_i3_real_db_regression)."""
+
     def __init__(self) -> None:
         self.calls: list[tuple[str, object]] = []
+        self._last_alert_batch: list[dict] = []
 
     def execute(self, statement, params=None):  # noqa: ANN001
-        self.calls.append((str(statement), params))
+        sql = str(statement)
+        self.calls.append((sql, params))
+        if "INSERT INTO silver.i3_alerts" in sql and isinstance(params, list):
+            self._last_alert_batch = params
+        if "SELECT content_hash, i3_alert_snapshot_id, alert_index" in sql:
+            return FakeResult(
+                mapping_rows=[
+                    {
+                        "content_hash": row["content_hash"],
+                        "i3_alert_snapshot_id": row["i3_alert_snapshot_id"],
+                        "alert_index": row["alert_index"],
+                    }
+                    for row in self._last_alert_batch
+                ]
+            )
         return FakeResult()
 
 
@@ -121,7 +145,11 @@ def test_load_i3_snapshot_to_silver_inserts_alerts_and_entities() -> None:
     assert "DELETE FROM silver.i3_alert_informed_entities" in connection.calls[0][0]
     assert "DELETE FROM silver.i3_alerts" in connection.calls[1][0]
     assert "INSERT INTO silver.i3_alerts" in connection.calls[2][0]
-    assert "INSERT INTO silver.i3_alert_informed_entities" in connection.calls[3][0]
+    assert "SELECT content_hash, i3_alert_snapshot_id, alert_index" in connection.calls[3][0]
+    assert "INSERT INTO silver.i3_alert_informed_entities" in connection.calls[4][0]
+    assert "SET valid_to" in connection.calls[5][0]
+    assert result.alerts_redirected_to_existing == 0
+    assert result.entities_dropped_missing_parent == 0
 
 
 def test_normalize_i3_alert_payload_accepts_stm_etatservice_shape() -> None:

@@ -146,8 +146,41 @@ INSERT_I3_ENTITIES = text(
         :area_id,
         :raw_entity_json
     )
+    ON CONFLICT (i3_alert_snapshot_id, alert_index, entity_index) DO NOTHING
     """
 ).bindparams(bindparam("raw_entity_json", type_=postgresql.JSONB))
+
+# After the alert upsert, every batch content_hash has exactly one active row —
+# either freshly inserted under this snapshot, or the pre-existing row the
+# ON CONFLICT redirect bumped. Entities must be keyed to THAT row or the FK
+# fk_silver_i3_alert_informed_entities_alert rejects the whole transaction
+# (prod incident 2026-06-09: alerts.json frozen because one persisting alert
+# with entities rolled back every load).
+SELECT_ACTIVE_ALERT_KEYS = text(
+    """
+    SELECT content_hash, i3_alert_snapshot_id, alert_index
+    FROM silver.i3_alerts
+    WHERE provider_id = :provider_id
+      AND valid_to IS NULL
+      AND content_hash IN :content_hashes
+    """
+).bindparams(bindparam("content_hashes", expanding=True))
+
+# SCD-2 close-out: active hashed rows whose content no longer appears in the
+# feed get valid_to stamped. Legacy NULL-hash rows are intentionally excluded
+# (bulk cleanup belongs to slice-9.1.1l, not the 300s hot path), and callers
+# must skip this when the batch is empty (a feed hiccup must not close every
+# active alert).
+SUPERSEDE_VANISHED_ALERTS = text(
+    """
+    UPDATE silver.i3_alerts
+    SET valid_to = :captured_at_utc
+    WHERE provider_id = :provider_id
+      AND valid_to IS NULL
+      AND content_hash IS NOT NULL
+      AND content_hash NOT IN :content_hashes
+    """
+).bindparams(bindparam("content_hashes", expanding=True))
 
 
 @dataclass(frozen=True)
@@ -165,6 +198,9 @@ class I3SilverLoadResult:
     alert_rows_inserted: int
     informed_entity_rows_inserted: int
     loaded_at_utc: datetime
+    alerts_redirected_to_existing: int = 0
+    alerts_superseded: int = 0
+    entities_dropped_missing_parent: int = 0
 
     def display_dict(self) -> dict[str, object]:
         payload = asdict(self)
@@ -398,13 +434,69 @@ def load_i3_snapshot_to_silver(
         {"i3_alert_snapshot_id": snapshot.i3_alert_snapshot_id},
     )
     alert_count = _execute_insert(connection, INSERT_I3_ALERTS, alert_rows)
-    entity_count = _execute_insert(connection, INSERT_I3_ENTITIES, entity_rows)
+
+    surviving_by_hash: dict[object, tuple[int, int]] = {}
+    if alert_rows:
+        surviving_by_hash = {
+            row["content_hash"]: (int(row["i3_alert_snapshot_id"]), int(row["alert_index"]))
+            for row in connection.execute(
+                SELECT_ACTIVE_ALERT_KEYS,
+                {
+                    "provider_id": snapshot.provider_id,
+                    "content_hashes": [row["content_hash"] for row in alert_rows],
+                },
+            ).mappings()
+        }
+
+    # Re-key each entity to its alert's surviving row. For redirected alerts
+    # the surviving row already carries its original entities, so the entity
+    # PK ON CONFLICT DO NOTHING makes unchanged sets a no-op and scope
+    # EXTENSIONS additive. Known v1 limit: an entity REPLACED at the same
+    # entity_index without any content change keeps the old value (in
+    # practice STM edits bump updated_at_utc, which changes the hash).
+    hash_by_index = {row["alert_index"]: row["content_hash"] for row in alert_rows}
+    redirected = sum(
+        1
+        for row in alert_rows
+        if surviving_by_hash.get(row["content_hash"])
+        not in (None, (snapshot.i3_alert_snapshot_id, row["alert_index"]))
+    )
+    rekeyed_entities: list[dict[str, object]] = []
+    dropped_missing_parent = 0
+    for entity in entity_rows:
+        surviving = surviving_by_hash.get(hash_by_index.get(entity["alert_index"]))
+        if surviving is None:
+            dropped_missing_parent += 1
+            continue
+        snap_id, alert_index = surviving
+        if (snap_id, alert_index) != (entity["i3_alert_snapshot_id"], entity["alert_index"]):
+            entity = {**entity, "i3_alert_snapshot_id": snap_id, "alert_index": alert_index}
+        rekeyed_entities.append(entity)
+    entity_count = _execute_insert(connection, INSERT_I3_ENTITIES, rekeyed_entities)
+
+    superseded = 0
+    if alert_rows:
+        result = connection.execute(
+            SUPERSEDE_VANISHED_ALERTS,
+            {
+                "provider_id": snapshot.provider_id,
+                "captured_at_utc": snapshot.captured_at_utc,
+                "content_hashes": sorted(
+                    {row["content_hash"] for row in alert_rows if row["content_hash"]}
+                ),
+            },
+        )
+        superseded = result.rowcount or 0
+
     return I3SilverLoadResult(
         provider_id=snapshot.provider_id,
         i3_alert_snapshot_id=snapshot.i3_alert_snapshot_id,
         alert_rows_inserted=alert_count,
         informed_entity_rows_inserted=entity_count,
         loaded_at_utc=loaded_at_utc or datetime.now(UTC),
+        alerts_redirected_to_existing=redirected,
+        alerts_superseded=superseded,
+        entities_dropped_missing_parent=dropped_missing_parent,
     )
 
 
