@@ -22,7 +22,7 @@ jobs:
     runs-on: ubuntu-latest
     # 25m headroom: rollups + 2 new marts + the historic /v1 publish (per-route
     # reliability files + the 8M-row alert_history view) all run in this job.
-    timeout-minutes: 25
+    timeout-minutes: 50  # tactical bump (was 25): i3-bloated rollups build exceeded it daily since Jun 7; structural fix = slice-9.1.1l
     defaults:
       run:
         working-directory: db
