@@ -19,7 +19,7 @@ concurrency:
 jobs:
   run-static-pipeline:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 90  # tactical bump (was 30): 9.2k-file WAN static publish exceeded it; structural fix = slice-9.1.1r hash-gated PUTs
     defaults:
       run:
         working-directory: db
