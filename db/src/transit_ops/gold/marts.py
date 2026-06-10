@@ -412,6 +412,22 @@ def _trip_delay_snapshot_statement(
     latest_snapshot_filter = (
         "AND rfs.source_realtime_snapshot_id = :realtime_snapshot_id" if latest_only else ""
     )
+    # The per-cycle refresh must not aggregate the whole 14-day
+    # rt_trip_update_stop_times table (prod: ~252M rows / 29 GB -> ~691s
+    # cycles); scope the counts CTE to the snapshot being refreshed. The
+    # full-rebuild path repopulates every retained snapshot, so it keeps the
+    # unscoped aggregate.
+    stop_time_counts_scope_join = (
+        """
+            INNER JOIN silver.rt_feed_snapshots AS sfs
+                ON sfs.rt_feed_snapshot_id = stc.rt_feed_snapshot_id
+               AND sfs.provider_id = stc.provider_id
+               AND sfs.endpoint_key = 'trip_updates'
+               AND sfs.source_realtime_snapshot_id = :realtime_snapshot_id
+        """
+        if latest_only
+        else ""
+    )
     on_conflict_clause = (
         """
         ON CONFLICT (provider_id, realtime_snapshot_id, entity_index) DO UPDATE SET
@@ -436,12 +452,13 @@ def _trip_delay_snapshot_statement(
         f"""
         WITH stop_time_counts AS (
             SELECT
-                rt_feed_snapshot_id,
-                entity_index,
+                stc.rt_feed_snapshot_id,
+                stc.entity_index,
                 count(*)::integer AS stop_time_update_count
-            FROM silver.rt_trip_update_stop_times
-            WHERE provider_id = :provider_id
-            GROUP BY rt_feed_snapshot_id, entity_index
+            FROM silver.rt_trip_update_stop_times AS stc
+            {stop_time_counts_scope_join}
+            WHERE stc.provider_id = :provider_id
+            GROUP BY stc.rt_feed_snapshot_id, stc.entity_index
         ),
         stop_time_candidates AS (
             SELECT
