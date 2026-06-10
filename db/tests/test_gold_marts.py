@@ -12,6 +12,7 @@ from transit_ops.gold.marts import (
     INSERT_FACT_TRIP_DELAY_SNAPSHOT,
     INSERT_FACT_VEHICLE_SNAPSHOT,
     LOCK_GOLD_TABLES,
+    UPSERT_FACT_TRIP_DELAY_SNAPSHOT_LATEST,
     build_gold_marts,
     refresh_gold_realtime,
     refresh_gold_static,
@@ -268,6 +269,24 @@ def test_trip_delay_fact_backfills_vehicle_and_delay_from_normalized_rt_tables()
     assert "silver.rt_vehicle_positions AS vp" in sql
     assert "silver.stop_times AS st" in sql
     assert "st.dataset_version_id = :dataset_version_id" in sql
+
+
+def test_trip_delay_latest_scopes_stop_time_counts_to_snapshot() -> None:
+    """slice-9.1.1i: the per-cycle (latest_only) refresh must not aggregate the
+    whole rt_trip_update_stop_times table inside stop_time_counts — prod
+    measured ~252M rows / 29 GB, making the refresh ~691s instead of <30s."""
+    latest_sql = str(UPSERT_FACT_TRIP_DELAY_SNAPSHOT_LATEST)
+    full_sql = str(INSERT_FACT_TRIP_DELAY_SNAPSHOT)
+
+    latest_counts_cte = latest_sql.split("stop_time_candidates AS")[0]
+    assert "INNER JOIN silver.rt_feed_snapshots AS sfs" in latest_counts_cte
+    assert "sfs.source_realtime_snapshot_id = :realtime_snapshot_id" in latest_counts_cte
+
+    # The full-rebuild variant intentionally keeps the unscoped aggregate
+    # (it repopulates every retained snapshot) and binds no latest param.
+    full_counts_cte = full_sql.split("stop_time_candidates AS")[0]
+    assert "INNER JOIN silver.rt_feed_snapshots AS sfs" not in full_counts_cte
+    assert ":realtime_snapshot_id" not in full_sql
 
 
 def test_dim_direction_uses_beta_directions_source() -> None:
