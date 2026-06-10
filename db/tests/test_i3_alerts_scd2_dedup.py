@@ -171,7 +171,10 @@ def test_ingestion_code_computes_content_hash_and_uses_on_conflict() -> None:
     assert 'hashlib.md5(canonical.encode("utf-8")).hexdigest()' in text
 
     # INSERT statement uses ON CONFLICT DO UPDATE (no-op write if same content)
-    assert "ON CONFLICT (provider_id, content_hash) WHERE valid_to IS NULL" in text
+    assert (
+        "ON CONFLICT (provider_id, content_hash) "
+        "WHERE content_hash IS NOT NULL AND valid_to IS NULL"
+    ) in text
     assert "DO UPDATE SET last_seen_at = excluded.last_seen_at" in text
 
     # content_hash is now part of the normalize output rows
