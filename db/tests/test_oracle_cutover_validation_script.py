@@ -33,6 +33,8 @@ def _stubbed_env(
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir(exist_ok=True)
     (bin_dir / "bash").symlink_to("/usr/bin/bash")
+    (bin_dir / "awk").symlink_to("/usr/bin/awk")
+    (bin_dir / "cat").symlink_to("/bin/cat")
     _make_executable(
         bin_dir / "curl",
         "#!/usr/bin/env bash\n"
@@ -135,7 +137,13 @@ def _stubbed_env(
         )
 
     env = os.environ.copy()
-    env["PATH"] = f"{bin_dir}:{env['PATH']}" if include_gh else str(bin_dir)
+    env["PATH"] = (
+        str(bin_dir)
+        if not include_psql
+        else f"{bin_dir}:{env['PATH']}"
+        if include_gh
+        else str(bin_dir)
+    )
     env["COMMAND_LOG"] = str(_make_log_path(tmp_path))
     env["HEALTH_BASE_URL"] = "https://transit.example.com"
     env["POWERBI_REPORT_URL"] = "https://app.powerbi.com/view?r=report-id-example"
