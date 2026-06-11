@@ -20,6 +20,7 @@ from transit_ops.maintenance import (
     WarmRollupStoragePruneResult,
     prune_bronze_realtime_objects,
     prune_bronze_static_objects,
+    prune_bronze_storage,
     prune_gold_fact_history,
     prune_realtime_silver_history,
     prune_static_silver_datasets,
@@ -83,8 +84,10 @@ class RowcountResult:
 class RecordingEngine:
     def __init__(self, connection: RecordingConnection) -> None:
         self.connection = connection
+        self.begin_calls = 0
 
     def begin(self) -> RecordingConnection:
+        self.begin_calls += 1
         return self.connection
 
 
@@ -817,6 +820,160 @@ def test_prune_bronze_static_objects_disabled_when_zero_retention() -> None:
 
 
 # ---------------------------------------------------------------------------
+# prune_bronze_storage (engine-level batch loop)
+# ---------------------------------------------------------------------------
+
+
+MOCK_REALTIME_PATHS = (
+    "stm/trip_updates/captured_at_utc=2026-01-01/key1.pb",
+    "stm/vehicle_positions/captured_at_utc=2026-01-01/key2.pb",
+    "stm/trip_updates/captured_at_utc=2026-01-02/key3.pb",
+)
+
+
+class BronzePruneSettings:
+    BRONZE_REALTIME_RETENTION_DAYS = 30
+    BRONZE_STATIC_RETENTION_DAYS = 365
+    BRONZE_PRUNE_MAX_OBJECTS_PER_BATCH = 5000
+    BRONZE_PRUNE_MAX_BATCHES = 1
+
+
+def _patch_bronze_storage(monkeypatch, storage: FakeBronzeStorage) -> None:  # noqa: ANN001
+    monkeypatch.setattr(
+        maintenance_module,
+        "get_bronze_storage",
+        lambda settings, project_root=None: storage,
+    )
+
+
+def _realtime_eligible_select_params(connection: RecordingConnection) -> list[dict]:
+    return [
+        params
+        for sql, params in connection.executed
+        if "LIMIT :max_objects" in sql and "raw.realtime_snapshot_index" in sql
+    ]
+
+
+def test_prune_bronze_storage_opens_one_transaction_per_batch(monkeypatch) -> None:
+    connection = RecordingConnection()
+    engine = RecordingEngine(connection)
+    storage = FakeBronzeStorage()
+    _patch_bronze_storage(monkeypatch, storage)
+
+    result = prune_bronze_storage(
+        "stm",
+        settings=BronzePruneSettings(),  # type: ignore[arg-type]
+        engine=engine,  # type: ignore[arg-type]
+        max_objects=3,
+        max_batches=3,
+    )
+
+    # Realtime mock always selects 3 rows == max_objects → 3 full batches;
+    # static selects 1 row < max_objects → exhausted after a single batch.
+    assert engine.begin_calls == 4
+    assert result.batch_counts == {"realtime": 3, "static": 1}
+    assert result.deleted_object_counts == {"realtime": 9, "static": 1}
+    assert result.failed_object_counts == {"realtime": 0, "static": 0}
+    assert result.exhausted is False
+
+
+def test_prune_bronze_storage_sets_exhausted_only_when_both_phases_under_limit(
+    monkeypatch,
+) -> None:
+    storage = FakeBronzeStorage()
+    _patch_bronze_storage(monkeypatch, storage)
+
+    # Default knobs (5000 per batch): both phases drain below the limit.
+    both_under_limit = prune_bronze_storage(
+        "stm",
+        settings=BronzePruneSettings(),  # type: ignore[arg-type]
+        engine=RecordingEngine(RecordingConnection()),  # type: ignore[arg-type]
+    )
+    assert both_under_limit.batch_counts == {"realtime": 1, "static": 1}
+    assert both_under_limit.exhausted is True
+
+    # Realtime fills its only batch exactly → cannot prove exhaustion.
+    realtime_full = prune_bronze_storage(
+        "stm",
+        settings=BronzePruneSettings(),  # type: ignore[arg-type]
+        engine=RecordingEngine(RecordingConnection()),  # type: ignore[arg-type]
+        max_objects=3,
+        max_batches=1,
+    )
+    assert realtime_full.exhausted is False
+
+
+def test_prune_bronze_storage_excludes_failed_ids_from_next_batch(monkeypatch) -> None:
+    connection = RecordingConnection()
+    engine = RecordingEngine(connection)
+    storage = FakeBronzeStorage()
+    storage.fail_on = {MOCK_REALTIME_PATHS[0]}  # ingestion_object_id 10
+    _patch_bronze_storage(monkeypatch, storage)
+
+    result = prune_bronze_storage(
+        "stm",
+        settings=BronzePruneSettings(),  # type: ignore[arg-type]
+        engine=engine,  # type: ignore[arg-type]
+        max_objects=3,
+        max_batches=2,
+    )
+
+    select_params = _realtime_eligible_select_params(connection)
+    assert len(select_params) == 2
+    assert select_params[0]["excluded_object_ids"] == []
+    assert select_params[1]["excluded_object_ids"] == [10]
+    # The poisoned id is counted ONCE even though the mock re-returns it.
+    assert result.failed_object_counts == {"realtime": 1, "static": 0}
+    assert result.batch_counts == {"realtime": 2, "static": 1}
+
+
+def test_prune_bronze_storage_breaks_loop_when_all_r2_deletes_fail(monkeypatch) -> None:
+    connection = RecordingConnection()
+    engine = RecordingEngine(connection)
+    storage = FakeBronzeStorage()
+    storage.fail_on = set(MOCK_REALTIME_PATHS)
+    _patch_bronze_storage(monkeypatch, storage)
+
+    result = prune_bronze_storage(
+        "stm",
+        settings=BronzePruneSettings(),  # type: ignore[arg-type]
+        engine=engine,  # type: ignore[arg-type]
+        max_objects=3,
+        max_batches=5,
+    )
+
+    # A full batch with zero successful deletes (creds down) stops the loop
+    # instead of burning the remaining batches on doomed HTTP calls.
+    assert result.batch_counts["realtime"] == 1
+    assert result.deleted_object_counts["realtime"] == 0
+    assert result.failed_object_counts["realtime"] == 3
+    assert result.exhausted is False
+
+
+def test_prune_bronze_storage_dry_run_reports_unbounded_backlog_and_zero_batches(
+    monkeypatch,
+) -> None:
+    connection = RecordingConnection()
+    engine = RecordingEngine(connection)
+    storage = FakeBronzeStorage()
+    _patch_bronze_storage(monkeypatch, storage)
+
+    result = prune_bronze_storage(
+        "stm",
+        settings=BronzePruneSettings(),  # type: ignore[arg-type]
+        engine=engine,  # type: ignore[arg-type]
+        dry_run=True,
+    )
+
+    assert result.deleted_object_counts == {"realtime": 12345, "static": 678}
+    assert result.batch_counts == {"realtime": 0, "static": 0}
+    assert result.failed_object_counts == {"realtime": 0, "static": 0}
+    assert result.exhausted is False
+    assert storage.deleted == []
+    assert all("DELETE" not in sql for sql in connection.calls)
+
+
+# ---------------------------------------------------------------------------
 # BronzeStoragePruneResult
 # ---------------------------------------------------------------------------
 
@@ -831,6 +988,9 @@ def test_bronze_prune_result_display_dict_formats_timestamps() -> None:
         static_cutoff_utc=datetime(2026, 2, 24, 20, 0, 0, tzinfo=UTC),
         deleted_object_counts={"realtime": 5, "static": 2},
         deleted_metadata_counts={"raw.ingestion_objects": 7},
+        failed_object_counts={"realtime": 0, "static": 0},
+        batch_counts={"realtime": 1, "static": 1},
+        exhausted=True,
         completed_at_utc=datetime(2026, 3, 26, 20, 10, 0, tzinfo=UTC),
     )
 
@@ -840,3 +1000,25 @@ def test_bronze_prune_result_display_dict_formats_timestamps() -> None:
     assert d["static_cutoff_utc"] == "2026-02-24T20:00:00+00:00"
     assert d["completed_at_utc"] == "2026-03-26T20:10:00+00:00"
     assert d["deleted_object_counts"] == {"realtime": 5, "static": 2}
+
+
+def test_bronze_prune_result_display_dict_includes_failed_batches_exhausted() -> None:
+    result = BronzeStoragePruneResult(
+        provider_id="stm",
+        dry_run=False,
+        realtime_retention_days=30,
+        static_retention_days=365,
+        realtime_cutoff_utc=datetime(2026, 5, 11, 7, 0, 0, tzinfo=UTC),
+        static_cutoff_utc=datetime(2025, 6, 10, 7, 0, 0, tzinfo=UTC),
+        deleted_object_counts={"realtime": 4998, "static": 0},
+        deleted_metadata_counts={"raw.ingestion_objects": 4998},
+        failed_object_counts={"realtime": 2, "static": 0},
+        batch_counts={"realtime": 1, "static": 1},
+        exhausted=False,
+        completed_at_utc=datetime(2026, 6, 11, 7, 5, 0, tzinfo=UTC),
+    )
+
+    d = result.display_dict()
+    assert d["failed_object_counts"] == {"realtime": 2, "static": 0}
+    assert d["batch_counts"] == {"realtime": 1, "static": 1}
+    assert d["exhausted"] is False

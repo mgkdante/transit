@@ -647,6 +647,9 @@ class BronzeStoragePruneResult:
     static_cutoff_utc: datetime | None
     deleted_object_counts: dict[str, int]
     deleted_metadata_counts: dict[str, int]
+    failed_object_counts: dict[str, int]
+    batch_counts: dict[str, int]
+    exhausted: bool
     completed_at_utc: datetime
 
     def display_dict(self) -> dict[str, object]:
@@ -1156,37 +1159,154 @@ def prune_bronze_static_objects(
     )
 
 
+def _run_bronze_prune_phase(
+    engine: Engine,
+    prune_batch,  # noqa: ANN001 — connection-level prune callable (4-tuple contract)
+    *,
+    provider_id: str,
+    retention_days: int,
+    bronze_storage: BronzeStorage,
+    max_objects: int,
+    max_batches: int,
+) -> tuple[datetime | None, dict[str, int], dict[str, int], set[int], int, bool]:
+    """Drain one Bronze phase in bounded batches, one transaction per batch.
+
+    Carries failed object ids forward so they are excluded from re-selection
+    (a poisoned queue head cannot stall or double-count), and stops early when
+    a batch selects rows but deletes none (storage outage guard). Designed to
+    be reusable for further raw prune phases (slice-9.1.1l).
+    """
+    phase_now_utc = utc_now()
+    cutoff_utc: datetime | None = None
+    object_counts: dict[str, int] = {}
+    meta_counts: dict[str, int] = {}
+    failed_object_ids: set[int] = set()
+    batches = 0
+    exhausted = False
+
+    while batches < max_batches:
+        with engine.begin() as connection:
+            cutoff_utc, batch_object_counts, batch_meta_counts, batch_failed_ids = (
+                prune_batch(
+                    connection,
+                    provider_id=provider_id,
+                    retention_days=retention_days,
+                    bronze_storage=bronze_storage,
+                    dry_run=False,
+                    now_utc=phase_now_utc,
+                    max_objects=max_objects,
+                    excluded_object_ids=sorted(failed_object_ids),
+                )
+            )
+        batches += 1
+        for key, value in batch_object_counts.items():
+            object_counts[key] = object_counts.get(key, 0) + value
+        for key, value in batch_meta_counts.items():
+            meta_counts[key] = meta_counts.get(key, 0) + value
+        failed_object_ids |= batch_failed_ids
+
+        batch_successes = sum(batch_object_counts.values())
+        batch_selected = batch_successes + len(batch_failed_ids)
+        if batch_selected < max_objects:
+            exhausted = True
+            break
+        if batch_successes == 0:
+            break
+
+    return cutoff_utc, object_counts, meta_counts, failed_object_ids, batches, exhausted
+
+
 def prune_bronze_storage(
     provider_id: str,
     *,
     settings: Settings | None = None,
     engine: Engine | None = None,
     dry_run: bool = False,
+    max_objects: int | None = None,
+    max_batches: int | None = None,
 ) -> BronzeStoragePruneResult:
     settings = settings or get_settings()
     engine = engine or make_engine(settings)
     bronze_storage = get_bronze_storage(settings, project_root=Path(__file__).resolve().parents[2])
 
-    with engine.begin() as connection:
-        realtime_cutoff_utc, realtime_object_counts, realtime_meta_counts, _ = (
-            prune_bronze_realtime_objects(
-                connection,
-                provider_id=provider_id,
-                retention_days=settings.BRONZE_REALTIME_RETENTION_DAYS,
-                bronze_storage=bronze_storage,
-                dry_run=dry_run,
+    resolved_max_objects = max(
+        1,
+        max_objects
+        if max_objects is not None
+        else settings.BRONZE_PRUNE_MAX_OBJECTS_PER_BATCH,
+    )
+    resolved_max_batches = max(
+        1,
+        max_batches if max_batches is not None else settings.BRONZE_PRUNE_MAX_BATCHES,
+    )
+
+    if dry_run:
+        with engine.begin() as connection:
+            realtime_cutoff_utc, realtime_object_counts, realtime_meta_counts, _ = (
+                prune_bronze_realtime_objects(
+                    connection,
+                    provider_id=provider_id,
+                    retention_days=settings.BRONZE_REALTIME_RETENTION_DAYS,
+                    bronze_storage=bronze_storage,
+                    dry_run=True,
+                )
             )
-        )
-        static_cutoff_utc, static_object_counts, static_meta_counts, _ = (
-            prune_bronze_static_objects(
-                connection,
-                provider_id=provider_id,
-                retention_days=settings.BRONZE_STATIC_RETENTION_DAYS,
-                bronze_storage=bronze_storage,
-                dry_run=dry_run,
+            static_cutoff_utc, static_object_counts, static_meta_counts, _ = (
+                prune_bronze_static_objects(
+                    connection,
+                    provider_id=provider_id,
+                    retention_days=settings.BRONZE_STATIC_RETENTION_DAYS,
+                    bronze_storage=bronze_storage,
+                    dry_run=True,
+                )
             )
+        failed_object_counts = {"realtime": 0, "static": 0}
+        batch_counts = {"realtime": 0, "static": 0}
+        exhausted = (
+            sum(realtime_object_counts.values()) == 0
+            and sum(static_object_counts.values()) == 0
         )
-        completed_at_utc = utc_now()
+    else:
+        (
+            realtime_cutoff_utc,
+            realtime_object_counts,
+            realtime_meta_counts,
+            realtime_failed_ids,
+            realtime_batches,
+            realtime_exhausted,
+        ) = _run_bronze_prune_phase(
+            engine,
+            prune_bronze_realtime_objects,
+            provider_id=provider_id,
+            retention_days=settings.BRONZE_REALTIME_RETENTION_DAYS,
+            bronze_storage=bronze_storage,
+            max_objects=resolved_max_objects,
+            max_batches=resolved_max_batches,
+        )
+        (
+            static_cutoff_utc,
+            static_object_counts,
+            static_meta_counts,
+            static_failed_ids,
+            static_batches,
+            static_exhausted,
+        ) = _run_bronze_prune_phase(
+            engine,
+            prune_bronze_static_objects,
+            provider_id=provider_id,
+            retention_days=settings.BRONZE_STATIC_RETENTION_DAYS,
+            bronze_storage=bronze_storage,
+            max_objects=resolved_max_objects,
+            max_batches=resolved_max_batches,
+        )
+        failed_object_counts = {
+            "realtime": len(realtime_failed_ids),
+            "static": len(static_failed_ids),
+        }
+        batch_counts = {"realtime": realtime_batches, "static": static_batches}
+        exhausted = realtime_exhausted and static_exhausted
+
+    completed_at_utc = utc_now()
 
     deleted_object_counts = realtime_object_counts | static_object_counts
     deleted_metadata_counts = {
@@ -1212,6 +1332,9 @@ def prune_bronze_storage(
         static_cutoff_utc=static_cutoff_utc,
         deleted_object_counts=deleted_object_counts,
         deleted_metadata_counts=deleted_metadata_counts,
+        failed_object_counts=failed_object_counts,
+        batch_counts=batch_counts,
+        exhausted=exhausted,
         completed_at_utc=completed_at_utc,
     )
 

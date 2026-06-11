@@ -571,6 +571,9 @@ def test_prune_bronze_storage_dry_run_flag(monkeypatch) -> None:
                 "raw.ingestion_objects": 0,
                 "raw.ingestion_runs": 0,
             },
+            failed_object_counts={"realtime": 0, "static": 0},
+            batch_counts={"realtime": 0, "static": 0},
+            exhausted=True,
             completed_at_utc=datetime(2026, 3, 27, 0, 0, 0, tzinfo=UTC),
         )
 

@@ -109,7 +109,7 @@ class Settings(BaseSettings):
     SNAPSHOT_STORAGE_BACKEND: str = "s3"          # "s3" | "local"
     SNAPSHOT_LOCAL_ROOT: str | None = None         # used when backend == "local"
     SNAPSHOT_R2_BUCKET: str | None = None          # public snapshot bucket
-    SNAPSHOT_PUBLIC_BASE_URL: str | None = None    # e.g. https://data.example.com (manifest URLs/basemap)
+    SNAPSHOT_PUBLIC_BASE_URL: str | None = None    # e.g. https://data.example.com (manifests)
 
     PIPELINE_PAUSED: bool = False
     REALTIME_POLL_SECONDS: int = 30
@@ -124,6 +124,8 @@ class Settings(BaseSettings):
     BRONZE_REALTIME_RETENTION_DAYS: int = 30
     BRONZE_STATIC_RETENTION_DAYS: int = 365
     GOLD_WARM_ROLLUP_RETENTION_DAYS: int = 365
+    BRONZE_PRUNE_MAX_OBJECTS_PER_BATCH: int = 5000
+    BRONZE_PRUNE_MAX_BATCHES: int = 1
 
     @property
     def sqlalchemy_database_url(self) -> str | None:
@@ -191,6 +193,8 @@ class Settings(BaseSettings):
             "BRONZE_REALTIME_RETENTION_DAYS": self.BRONZE_REALTIME_RETENTION_DAYS,
             "BRONZE_STATIC_RETENTION_DAYS": self.BRONZE_STATIC_RETENTION_DAYS,
             "GOLD_WARM_ROLLUP_RETENTION_DAYS": self.GOLD_WARM_ROLLUP_RETENTION_DAYS,
+            "BRONZE_PRUNE_MAX_OBJECTS_PER_BATCH": self.BRONZE_PRUNE_MAX_OBJECTS_PER_BATCH,
+            "BRONZE_PRUNE_MAX_BATCHES": self.BRONZE_PRUNE_MAX_BATCHES,
         }
 
 
