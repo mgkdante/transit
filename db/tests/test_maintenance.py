@@ -7,8 +7,12 @@ import pytest
 
 from transit_ops import maintenance as maintenance_module
 from transit_ops.maintenance import (
+    COUNT_ELIGIBLE_BRONZE_REALTIME_OBJECTS,
+    COUNT_ELIGIBLE_BRONZE_STATIC_OBJECTS,
+    DELETE_ORPHANED_INGESTION_RUNS,
     REALTIME_SILVER_TABLES,
     SELECT_ELIGIBLE_BRONZE_REALTIME_OBJECTS,
+    SELECT_ELIGIBLE_BRONZE_STATIC_OBJECTS,
     VACUUM_TABLES,
     BronzeStoragePruneResult,
     GoldStoragePruneResult,
@@ -87,6 +91,7 @@ class RecordingEngine:
 class RecordingConnection:
     def __init__(self) -> None:
         self.calls: list[str] = []
+        self.executed: list[tuple[str, dict | None]] = []
 
     def __enter__(self) -> RecordingConnection:
         return self
@@ -97,6 +102,7 @@ class RecordingConnection:
     def execute(self, statement, params=None):  # noqa: ANN001
         sql_text = str(statement)
         self.calls.append(sql_text)
+        self.executed.append((sql_text, params))
         for table_name, rowcount in EXPECTED_GOLD_AGGREGATE_TABLE_COUNTS.items():
             if f"DELETE FROM {table_name}" in sql_text:
                 return RowcountResult(rowcount)
@@ -207,6 +213,13 @@ class RecordingConnection:
             return ScalarResult(500)
         if "SELECT COUNT(*) FROM gold.fact_vehicle_snapshot" in sql_text:
             return ScalarResult(300)
+        # Bronze eligible COUNT statements (dry-run, unbounded) — must precede
+        # the row-returning eligible-select heuristics below, which would
+        # otherwise swallow them.
+        if "SELECT COUNT(*)" in sql_text and "raw.realtime_snapshot_index" in sql_text:
+            return ScalarResult(12345)
+        if "SELECT COUNT(*)" in sql_text and "static_schedule" in sql_text:
+            return ScalarResult(678)
         # Bronze eligible object selects (return rows with 5 columns each)
         if "SELECT_ELIGIBLE_BRONZE_REALTIME" in sql_text or (
             "ingestion_object_id" in sql_text
@@ -407,6 +420,50 @@ def test_bronze_realtime_prune_waits_for_source_snapshot_rows_to_be_gone() -> No
         assert dropped_table not in sql
 
 
+def test_eligible_bronze_selects_order_oldest_first_limit_and_exclude() -> None:
+    realtime_sql = str(SELECT_ELIGIBLE_BRONZE_REALTIME_OBJECTS)
+    static_sql = str(SELECT_ELIGIBLE_BRONZE_STATIC_OBJECTS)
+
+    assert "ORDER BY rsi.captured_at_utc ASC, io.ingestion_object_id ASC" in realtime_sql
+    assert "LIMIT :max_objects" in realtime_sql
+    assert ":excluded_object_ids" in realtime_sql
+
+    assert "ORDER BY ir.started_at_utc ASC, io.ingestion_object_id ASC" in static_sql
+    assert "LIMIT :max_objects" in static_sql
+    assert ":excluded_object_ids" in static_sql
+
+
+def test_count_eligible_bronze_statements_are_unbounded() -> None:
+    realtime_sql = str(COUNT_ELIGIBLE_BRONZE_REALTIME_OBJECTS)
+    static_sql = str(COUNT_ELIGIBLE_BRONZE_STATIC_OBJECTS)
+
+    # Same eligibility guards as the batched selects…
+    assert "SELECT COUNT(*)" in realtime_sql
+    assert "NOT EXISTS" in realtime_sql
+    assert "silver.rt_feed_snapshots" in realtime_sql
+    assert "source_realtime_snapshot_id" in realtime_sql
+    assert "rsi_latest" in realtime_sql
+    assert "SELECT COUNT(*)" in static_sql
+    assert "NOT EXISTS" in static_sql
+    assert "core.dataset_versions" in static_sql
+    assert "'static_schedule'" in static_sql
+    # …but no batching: dry-run must report the true unbounded backlog.
+    assert "LIMIT" not in realtime_sql
+    assert ":excluded_object_ids" not in realtime_sql
+    assert "LIMIT" not in static_sql
+    assert ":excluded_object_ids" not in static_sql
+
+
+def test_delete_orphaned_ingestion_runs_is_age_gated() -> None:
+    sql = str(DELETE_ORPHANED_INGESTION_RUNS)
+
+    # The age gate keeps the prune from racing a worker capture whose
+    # ingestion_run committed seconds ago but whose object has not yet.
+    assert "started_at_utc < :cutoff_utc" in sql
+    assert "NOT EXISTS" in sql
+    assert "raw.ingestion_objects" in sql
+
+
 def test_maintenance_has_no_dropped_legacy_silver_realtime_sql() -> None:
     source = inspect.getsource(maintenance_module)
 
@@ -575,7 +632,7 @@ def test_prune_bronze_realtime_objects_dry_run_returns_eligible_count_without_de
     storage = FakeBronzeStorage()
     now_utc = datetime(2026, 3, 26, 20, 0, 0, tzinfo=UTC)
 
-    cutoff_utc, object_counts, meta_counts = prune_bronze_realtime_objects(
+    cutoff_utc, object_counts, meta_counts, failed_object_ids = prune_bronze_realtime_objects(
         connection,
         provider_id="stm",
         retention_days=7,
@@ -585,14 +642,40 @@ def test_prune_bronze_realtime_objects_dry_run_returns_eligible_count_without_de
     )
 
     assert cutoff_utc is not None
-    # 3 rows returned by mock
-    assert object_counts == {"realtime": 3}
-    assert meta_counts["raw.realtime_snapshot_index"] == 3
-    assert meta_counts["raw.ingestion_objects"] == 3
+    # Scalar COUNT returned by mock — dry-run no longer materializes rows
+    assert object_counts == {"realtime": 12345}
+    assert meta_counts["raw.realtime_snapshot_index"] == 12345
+    assert meta_counts["raw.ingestion_objects"] == 12345
+    assert failed_object_ids == set()
     # No actual deletions
     assert storage.deleted == []
     delete_calls = [c for c in connection.calls if "DELETE" in c]
     assert delete_calls == []
+
+
+def test_prune_bronze_realtime_objects_dry_run_counts_unbounded_backlog() -> None:
+    connection = RecordingConnection()
+    storage = FakeBronzeStorage()
+    now_utc = datetime(2026, 3, 26, 20, 0, 0, tzinfo=UTC)
+
+    _cutoff, object_counts, _meta, _failed = prune_bronze_realtime_objects(
+        connection,
+        provider_id="stm",
+        retention_days=7,
+        bronze_storage=storage,
+        dry_run=True,
+        now_utc=now_utc,
+    )
+
+    # The dry-run count is the true backlog: no LIMIT, no exclusion binding.
+    assert object_counts == {"realtime": 12345}
+    assert all("LIMIT :max_objects" not in sql for sql, _ in connection.executed)
+    count_params = next(
+        params
+        for sql, params in connection.executed
+        if "SELECT COUNT(*)" in sql and "raw.realtime_snapshot_index" in sql
+    )
+    assert set(count_params) == {"provider_id", "cutoff_utc"}
 
 
 def test_prune_bronze_realtime_objects_live_deletes_r2_then_metadata() -> None:
@@ -600,7 +683,7 @@ def test_prune_bronze_realtime_objects_live_deletes_r2_then_metadata() -> None:
     storage = FakeBronzeStorage()
     now_utc = datetime(2026, 3, 26, 20, 0, 0, tzinfo=UTC)
 
-    cutoff_utc, object_counts, meta_counts = prune_bronze_realtime_objects(
+    cutoff_utc, object_counts, meta_counts, failed_object_ids = prune_bronze_realtime_objects(
         connection,
         provider_id="stm",
         retention_days=7,
@@ -613,6 +696,7 @@ def test_prune_bronze_realtime_objects_live_deletes_r2_then_metadata() -> None:
     # 3 eligible objects → 3 R2 deletes
     assert object_counts["realtime"] == 3
     assert len(storage.deleted) == 3
+    assert failed_object_ids == set()
     # Metadata DELETEs executed
     rsi_deletes = [c for c in connection.calls if "DELETE FROM raw.realtime_snapshot_index" in c]
     obj_deletes = [c for c in connection.calls if "DELETE FROM raw.ingestion_objects" in c]
@@ -630,7 +714,7 @@ def test_prune_bronze_realtime_objects_skips_failed_r2_deletes() -> None:
     }
     now_utc = datetime(2026, 3, 26, 20, 0, 0, tzinfo=UTC)
 
-    cutoff_utc, object_counts, _meta = prune_bronze_realtime_objects(
+    cutoff_utc, object_counts, _meta, failed_object_ids = prune_bronze_realtime_objects(
         connection,
         provider_id="stm",
         retention_days=7,
@@ -642,13 +726,14 @@ def test_prune_bronze_realtime_objects_skips_failed_r2_deletes() -> None:
     # Only 2 of 3 objects deleted (one failed)
     assert object_counts["realtime"] == 2
     assert len(storage.deleted) == 2
+    assert failed_object_ids == {10}
 
 
 def test_prune_bronze_realtime_objects_disabled_when_zero_retention() -> None:
     connection = RecordingConnection()
     storage = FakeBronzeStorage()
 
-    cutoff_utc, object_counts, meta_counts = prune_bronze_realtime_objects(
+    cutoff_utc, object_counts, meta_counts, failed_object_ids = prune_bronze_realtime_objects(
         connection,
         provider_id="stm",
         retention_days=0,
@@ -657,6 +742,7 @@ def test_prune_bronze_realtime_objects_disabled_when_zero_retention() -> None:
 
     assert cutoff_utc is None
     assert object_counts == {"realtime": 0}
+    assert failed_object_ids == set()
     assert len(connection.calls) == 0
     assert storage.deleted == []
 
@@ -671,7 +757,7 @@ def test_prune_bronze_static_objects_dry_run_returns_eligible_count_without_dele
     storage = FakeBronzeStorage()
     now_utc = datetime(2026, 3, 26, 20, 0, 0, tzinfo=UTC)
 
-    cutoff_utc, object_counts, meta_counts = prune_bronze_static_objects(
+    cutoff_utc, object_counts, meta_counts, failed_object_ids = prune_bronze_static_objects(
         connection,
         provider_id="stm",
         retention_days=30,
@@ -681,8 +767,10 @@ def test_prune_bronze_static_objects_dry_run_returns_eligible_count_without_dele
     )
 
     assert cutoff_utc is not None
-    assert object_counts == {"static": 1}
-    assert meta_counts["raw.ingestion_objects"] == 1
+    # Scalar COUNT returned by mock — dry-run no longer materializes rows
+    assert object_counts == {"static": 678}
+    assert meta_counts["raw.ingestion_objects"] == 678
+    assert failed_object_ids == set()
     assert storage.deleted == []
     delete_calls = [c for c in connection.calls if "DELETE" in c]
     assert delete_calls == []
@@ -693,7 +781,7 @@ def test_prune_bronze_static_objects_live_deletes_r2_then_metadata() -> None:
     storage = FakeBronzeStorage()
     now_utc = datetime(2026, 3, 26, 20, 0, 0, tzinfo=UTC)
 
-    cutoff_utc, object_counts, meta_counts = prune_bronze_static_objects(
+    cutoff_utc, object_counts, meta_counts, failed_object_ids = prune_bronze_static_objects(
         connection,
         provider_id="stm",
         retention_days=30,
@@ -705,6 +793,7 @@ def test_prune_bronze_static_objects_live_deletes_r2_then_metadata() -> None:
     assert cutoff_utc is not None
     assert object_counts["static"] == 1
     assert len(storage.deleted) == 1
+    assert failed_object_ids == set()
     obj_deletes = [c for c in connection.calls if "DELETE FROM raw.ingestion_objects" in c]
     assert len(obj_deletes) == 1
     assert meta_counts["raw.ingestion_objects"] == 3  # mock rowcount
@@ -714,7 +803,7 @@ def test_prune_bronze_static_objects_disabled_when_zero_retention() -> None:
     connection = RecordingConnection()
     storage = FakeBronzeStorage()
 
-    cutoff_utc, object_counts, _ = prune_bronze_static_objects(
+    cutoff_utc, object_counts, _meta, failed_object_ids = prune_bronze_static_objects(
         connection,
         provider_id="stm",
         retention_days=0,
@@ -723,6 +812,7 @@ def test_prune_bronze_static_objects_disabled_when_zero_retention() -> None:
 
     assert cutoff_utc is None
     assert object_counts == {"static": 0}
+    assert failed_object_ids == set()
     assert len(connection.calls) == 0
 
 

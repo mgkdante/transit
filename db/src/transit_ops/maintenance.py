@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Sequence
 from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -477,6 +478,35 @@ SELECT_ELIGIBLE_BRONZE_REALTIME_OBJECTS = text(
           WHERE rsi_latest.provider_id = :provider_id
             AND fe_latest.endpoint_key = fe.endpoint_key
       ), -1)
+      AND NOT (io.ingestion_object_id = ANY(CAST(:excluded_object_ids AS bigint[])))
+    ORDER BY rsi.captured_at_utc ASC, io.ingestion_object_id ASC
+    LIMIT :max_objects
+    """
+)
+
+COUNT_ELIGIBLE_BRONZE_REALTIME_OBJECTS = text(
+    """
+    SELECT COUNT(*)
+    FROM raw.ingestion_objects io
+    JOIN raw.realtime_snapshot_index rsi
+        ON rsi.ingestion_object_id = io.ingestion_object_id
+    JOIN core.feed_endpoints fe
+        ON fe.feed_endpoint_id = rsi.feed_endpoint_id
+    WHERE rsi.provider_id = :provider_id
+      AND rsi.captured_at_utc < :cutoff_utc
+      AND NOT EXISTS (
+          SELECT 1 FROM silver.rt_feed_snapshots rfs
+          WHERE rfs.source_realtime_snapshot_id = rsi.realtime_snapshot_id
+             OR rfs.ingestion_object_id = io.ingestion_object_id
+      )
+      AND rsi.realtime_snapshot_id <> COALESCE((
+          SELECT MAX(rsi_latest.realtime_snapshot_id)
+          FROM raw.realtime_snapshot_index rsi_latest
+          INNER JOIN core.feed_endpoints fe_latest
+              ON fe_latest.feed_endpoint_id = rsi_latest.feed_endpoint_id
+          WHERE rsi_latest.provider_id = :provider_id
+            AND fe_latest.endpoint_key = fe.endpoint_key
+      ), -1)
     """
 )
 
@@ -487,6 +517,25 @@ SELECT_ELIGIBLE_BRONZE_STATIC_OBJECTS = text(
         io.ingestion_run_id,
         io.storage_path,
         io.storage_backend
+    FROM raw.ingestion_objects io
+    JOIN raw.ingestion_runs ir
+        ON ir.ingestion_run_id = io.ingestion_run_id
+    WHERE ir.provider_id = :provider_id
+      AND ir.run_kind = 'static_schedule'
+      AND ir.started_at_utc < :cutoff_utc
+      AND NOT EXISTS (
+          SELECT 1 FROM core.dataset_versions dv
+          WHERE dv.source_ingestion_run_id = io.ingestion_run_id
+      )
+      AND NOT (io.ingestion_object_id = ANY(CAST(:excluded_object_ids AS bigint[])))
+    ORDER BY ir.started_at_utc ASC, io.ingestion_object_id ASC
+    LIMIT :max_objects
+    """
+)
+
+COUNT_ELIGIBLE_BRONZE_STATIC_OBJECTS = text(
+    """
+    SELECT COUNT(*)
     FROM raw.ingestion_objects io
     JOIN raw.ingestion_runs ir
         ON ir.ingestion_run_id = io.ingestion_run_id
@@ -514,10 +563,14 @@ DELETE_INGESTION_OBJECTS_BY_IDS = text(
     """
 )
 
+# Age-gated so a worker capture that committed its ingestion_run but has not
+# yet registered the object (two-transaction pattern) can never be deleted:
+# in-flight runs are seconds old, the phase cutoff is 30/365 days in the past.
 DELETE_ORPHANED_INGESTION_RUNS = text(
     """
     DELETE FROM raw.ingestion_runs ir
     WHERE ir.provider_id = :provider_id
+      AND ir.started_at_utc < :cutoff_utc
       AND NOT EXISTS (
           SELECT 1 FROM raw.ingestion_objects io
           WHERE io.ingestion_run_id = ir.ingestion_run_id
@@ -900,8 +953,10 @@ def prune_bronze_realtime_objects(
     bronze_storage: BronzeStorage,
     dry_run: bool = False,
     now_utc: datetime | None = None,
-) -> tuple[datetime | None, dict[str, int], dict[str, int]]:
-    """Return (cutoff_utc, deleted_object_counts, deleted_metadata_counts)."""
+    max_objects: int = 5000,
+    excluded_object_ids: Sequence[int] = (),
+) -> tuple[datetime | None, dict[str, int], dict[str, int], set[int]]:
+    """Return (cutoff_utc, deleted_object_counts, deleted_metadata_counts, failed_object_ids)."""
     zero_object_counts: dict[str, int] = {"realtime": 0}
     zero_meta_counts: dict[str, int] = {
         "raw.realtime_snapshot_index": 0,
@@ -909,29 +964,42 @@ def prune_bronze_realtime_objects(
         "raw.ingestion_runs": 0,
     }
     if retention_days <= 0:
-        return None, zero_object_counts, zero_meta_counts
+        return None, zero_object_counts, zero_meta_counts, set()
 
     cutoff_utc = (now_utc or utc_now()) - timedelta(days=retention_days)
+
+    if dry_run:
+        eligible_count = _safe_scalar_count(
+            connection.execute(
+                COUNT_ELIGIBLE_BRONZE_REALTIME_OBJECTS,
+                {"provider_id": provider_id, "cutoff_utc": cutoff_utc},
+            )
+        )
+        return (
+            cutoff_utc,
+            {"realtime": eligible_count},
+            {
+                "raw.realtime_snapshot_index": eligible_count,
+                "raw.ingestion_objects": eligible_count,
+                "raw.ingestion_runs": 0,
+            },
+            set(),
+        )
+
     rows = list(
         connection.execute(
             SELECT_ELIGIBLE_BRONZE_REALTIME_OBJECTS,
-            {"provider_id": provider_id, "cutoff_utc": cutoff_utc},
+            {
+                "provider_id": provider_id,
+                "cutoff_utc": cutoff_utc,
+                "max_objects": max_objects,
+                "excluded_object_ids": list(excluded_object_ids),
+            },
         )
     )
 
-    if dry_run:
-        return (
-            cutoff_utc,
-            {"realtime": len(rows)},
-            {
-                "raw.realtime_snapshot_index": len(rows),
-                "raw.ingestion_objects": len(rows),
-                "raw.ingestion_runs": 0,
-            },
-        )
-
     if not rows:
-        return cutoff_utc, zero_object_counts, zero_meta_counts
+        return cutoff_utc, zero_object_counts, zero_meta_counts, set()
 
     deleted_object_count = 0
     failed_object_ids: set[int] = set()
@@ -954,7 +1022,7 @@ def prune_bronze_realtime_objects(
         int(row[0]) for row in rows if int(row[0]) not in failed_object_ids
     ]
     if not successful_object_ids:
-        return cutoff_utc, {"realtime": 0}, zero_meta_counts
+        return cutoff_utc, {"realtime": 0}, zero_meta_counts, failed_object_ids
 
     rsi_deleted = _safe_rowcount(
         connection.execute(
@@ -971,7 +1039,7 @@ def prune_bronze_realtime_objects(
     runs_deleted = _safe_rowcount(
         connection.execute(
             DELETE_ORPHANED_INGESTION_RUNS,
-            {"provider_id": provider_id},
+            {"provider_id": provider_id, "cutoff_utc": cutoff_utc},
         )
     )
 
@@ -983,6 +1051,7 @@ def prune_bronze_realtime_objects(
             "raw.ingestion_objects": obj_deleted,
             "raw.ingestion_runs": runs_deleted,
         },
+        failed_object_ids,
     )
 
 
@@ -994,36 +1063,51 @@ def prune_bronze_static_objects(
     bronze_storage: BronzeStorage,
     dry_run: bool = False,
     now_utc: datetime | None = None,
-) -> tuple[datetime | None, dict[str, int], dict[str, int]]:
-    """Return (cutoff_utc, deleted_object_counts, deleted_metadata_counts)."""
+    max_objects: int = 5000,
+    excluded_object_ids: Sequence[int] = (),
+) -> tuple[datetime | None, dict[str, int], dict[str, int], set[int]]:
+    """Return (cutoff_utc, deleted_object_counts, deleted_metadata_counts, failed_object_ids)."""
     zero_object_counts: dict[str, int] = {"static": 0}
     zero_meta_counts: dict[str, int] = {
         "raw.ingestion_objects": 0,
         "raw.ingestion_runs": 0,
     }
     if retention_days <= 0:
-        return None, zero_object_counts, zero_meta_counts
+        return None, zero_object_counts, zero_meta_counts, set()
 
     cutoff_utc = (now_utc or utc_now()) - timedelta(days=retention_days)
+
+    if dry_run:
+        eligible_count = _safe_scalar_count(
+            connection.execute(
+                COUNT_ELIGIBLE_BRONZE_STATIC_OBJECTS,
+                {"provider_id": provider_id, "cutoff_utc": cutoff_utc},
+            )
+        )
+        return (
+            cutoff_utc,
+            {"static": eligible_count},
+            {
+                "raw.ingestion_objects": eligible_count,
+                "raw.ingestion_runs": 0,
+            },
+            set(),
+        )
+
     rows = list(
         connection.execute(
             SELECT_ELIGIBLE_BRONZE_STATIC_OBJECTS,
-            {"provider_id": provider_id, "cutoff_utc": cutoff_utc},
+            {
+                "provider_id": provider_id,
+                "cutoff_utc": cutoff_utc,
+                "max_objects": max_objects,
+                "excluded_object_ids": list(excluded_object_ids),
+            },
         )
     )
 
-    if dry_run:
-        return (
-            cutoff_utc,
-            {"static": len(rows)},
-            {
-                "raw.ingestion_objects": len(rows),
-                "raw.ingestion_runs": 0,
-            },
-        )
-
     if not rows:
-        return cutoff_utc, zero_object_counts, zero_meta_counts
+        return cutoff_utc, zero_object_counts, zero_meta_counts, set()
 
     deleted_object_count = 0
     failed_object_ids: set[int] = set()
@@ -1046,7 +1130,7 @@ def prune_bronze_static_objects(
         int(row[0]) for row in rows if int(row[0]) not in failed_object_ids
     ]
     if not successful_object_ids:
-        return cutoff_utc, {"static": 0}, zero_meta_counts
+        return cutoff_utc, {"static": 0}, zero_meta_counts, failed_object_ids
 
     obj_deleted = _safe_rowcount(
         connection.execute(
@@ -1057,7 +1141,7 @@ def prune_bronze_static_objects(
     runs_deleted = _safe_rowcount(
         connection.execute(
             DELETE_ORPHANED_INGESTION_RUNS,
-            {"provider_id": provider_id},
+            {"provider_id": provider_id, "cutoff_utc": cutoff_utc},
         )
     )
 
@@ -1068,6 +1152,7 @@ def prune_bronze_static_objects(
             "raw.ingestion_objects": obj_deleted,
             "raw.ingestion_runs": runs_deleted,
         },
+        failed_object_ids,
     )
 
 
@@ -1083,7 +1168,7 @@ def prune_bronze_storage(
     bronze_storage = get_bronze_storage(settings, project_root=Path(__file__).resolve().parents[2])
 
     with engine.begin() as connection:
-        realtime_cutoff_utc, realtime_object_counts, realtime_meta_counts = (
+        realtime_cutoff_utc, realtime_object_counts, realtime_meta_counts, _ = (
             prune_bronze_realtime_objects(
                 connection,
                 provider_id=provider_id,
@@ -1092,7 +1177,7 @@ def prune_bronze_storage(
                 dry_run=dry_run,
             )
         )
-        static_cutoff_utc, static_object_counts, static_meta_counts = (
+        static_cutoff_utc, static_object_counts, static_meta_counts, _ = (
             prune_bronze_static_objects(
                 connection,
                 provider_id=provider_id,
