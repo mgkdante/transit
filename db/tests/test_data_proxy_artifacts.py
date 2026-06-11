@@ -131,6 +131,28 @@ def test_smoke_script_asserts_canonical_and_fallback_objects() -> None:
     assert "access-control-allow-origin" in text
 
 
+@pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
+def test_smoke_script_committed_with_executable_bit() -> None:
+    # os.access(X_OK) only sees the working tree; under core.fileMode=false a
+    # local chmod never reaches the commit, so fresh clones materialize the
+    # tracked mode. Pin the index mode itself (100755, like pipeline-control.sh).
+    result = subprocess.run(
+        ["git", "ls-files", "--stage", "--", "infra/cloudflare/data-proxy/smoke.sh"],
+        cwd=REPO_ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        pytest.skip(f"not a git checkout: {result.stderr.strip()}")
+
+    assert result.stdout.strip(), "smoke.sh must be tracked by git"
+    mode = result.stdout.split()[0]
+    assert mode == "100755", (
+        f"smoke.sh tracked as {mode}; fresh clones would get a non-executable file"
+    )
+
+
 @pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
 def test_worker_behavioral_suite_passes_under_node() -> None:
     result = subprocess.run(
