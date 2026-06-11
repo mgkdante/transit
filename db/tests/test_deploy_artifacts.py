@@ -1,3 +1,4 @@
+import re
 from pathlib import Path
 
 import yaml
@@ -94,3 +95,27 @@ def test_weekly_pg_repack_workflow_runs_guardrail_script() -> None:
     assert 'PG_REPACK_DRY_RUN: "true"' in workflow
     assert "postgresql-16-repack" in workflow
     assert "bash scripts/run-pg-repack.sh" in workflow
+
+
+def test_daily_warm_rollups_workflow_prunes_bronze_and_uploads_retention_proof() -> None:
+    workflow = (REPO_ROOT / ".github/workflows/daily-warm-rollups.yml").read_text(
+        encoding="utf-8"
+    )
+
+    # Bronze prune runs after the warm-rollup prune, with defaults
+    # (1 batch x 5000 per phase) so a backlog can never blow the job timeout.
+    assert "prune-bronze-storage stm" in workflow
+    assert workflow.index("prune-bronze-storage stm") > workflow.index(
+        "prune-warm-rollup-storage stm"
+    )
+    # Proof report + artifact give the prune a daily visible receipt.
+    assert "retention-proof-report stm --report-path" in workflow
+    assert "actions/upload-artifact@v4" in workflow
+    assert "if: always()" in workflow
+    # upload-artifact paths are workspace-relative (working-directory does
+    # not apply to `uses:` steps).
+    assert "db/artifacts/retention-proof.json" in workflow
+
+    timeout_match = re.search(r"timeout-minutes:\s*(\d+)", workflow)
+    assert timeout_match is not None
+    assert int(timeout_match.group(1)) >= 35

@@ -64,3 +64,28 @@ jobs:
 
       - name: Prune expired warm rollup rows
         run: uv run python -m transit_ops.cli prune-warm-rollup-storage stm
+
+      # Bounded by BRONZE_PRUNE_MAX_OBJECTS_PER_BATCH x BRONZE_PRUNE_MAX_BATCHES
+      # (5000 x 1 per phase, ~2-7 min) regardless of backlog. Exits 1 on any
+      # R2 delete failure — a red job is the alert signal until slice-9.1.1o.
+      # Capture-race-safe: the orphan-run delete is age-gated (30d/365d), and
+      # 07:00 UTC runs an hour after the 06:00 static pipeline anyway.
+      - name: Prune expired Bronze objects and raw metadata
+        run: uv run python -m transit_ops.cli prune-bronze-storage stm
+
+      - name: Build retention proof report
+        if: always()
+        continue-on-error: true
+        run: |
+          mkdir -p artifacts
+          uv run python -m transit_ops.cli retention-proof-report stm --report-path artifacts/retention-proof.json
+
+      - name: Upload retention proof artifact
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: retention-proof-${{ github.run_id }}
+          # working-directory does not apply to `uses:` steps — workspace-relative.
+          path: db/artifacts/retention-proof.json
+          retention-days: 30
