@@ -74,8 +74,10 @@ if [[ ! -f "$dump_file" ]]; then
 fi
 
 expected_head=$(uv run alembic heads | awk 'NR==1 {print $1}')
-if [[ -z "$expected_head" ]]; then
-  echo "could not determine the repo alembic head" >&2
+# The head is embedded into smoke SQL below (psql -c does not interpolate
+# psql variables), so insist on the safe revision-id alphabet first.
+if [[ ! "$expected_head" =~ ^[A-Za-z0-9_]+$ ]]; then
+  echo "could not determine a safe repo alembic head (got: '$expected_head')" >&2
   exit 1
 fi
 
@@ -97,8 +99,7 @@ psql_smoke() {
 
 smoke_started=$(date +%s)
 echo "smoke: alembic head must equal repo head $expected_head"
-psql_smoke -v expected_head="$expected_head" \
-  -c "SELECT 1/(version_num = :'expected_head')::int FROM alembic_version"
+psql_smoke -c "SELECT 1/(version_num = '$expected_head')::int FROM alembic_version"
 echo "smoke: core.providers seeded"
 psql_smoke -c "SELECT 1/(count(*) >= 1)::int FROM core.providers"
 echo "smoke: gold.vehicle_summary_5m non-empty (365d warm rollups)"
