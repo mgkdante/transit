@@ -6,6 +6,7 @@ on:
     branches: [main]
     paths:
       - "infra/cloudflare/data-proxy/**"
+      - ".github/workflows/deploy-data-proxy.yml"
 
 permissions:
   contents: read
@@ -38,3 +39,5 @@ jobs:
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           workingDirectory: infra/cloudflare/data-proxy
+          # Keep in lockstep with package-lock.json (pinned by pytest contract).
+          wranglerVersion: "4.100.0"

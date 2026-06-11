@@ -9,6 +9,7 @@ runs under ``node --test`` (bridged below when node is available).
 
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import subprocess
@@ -66,6 +67,8 @@ def test_deploy_workflow_runs_worker_tests_then_wrangler_action() -> None:
     assert "workflow_dispatch" in triggers
     assert triggers["push"]["branches"] == ["main"]
     assert "infra/cloudflare/data-proxy/**" in triggers["push"]["paths"]
+    # The workflow must also redeploy when only the deploy pipeline changes.
+    assert ".github/workflows/deploy-data-proxy.yml" in triggers["push"]["paths"]
     assert workflow["permissions"] == {"contents": "read"}
 
     (job,) = workflow["jobs"].values()
@@ -85,6 +88,14 @@ def test_deploy_workflow_runs_worker_tests_then_wrangler_action() -> None:
     wrangler_step = steps[wrangler_indexes[0]]
     assert wrangler_step["with"]["apiToken"] == "${{ secrets.CLOUDFLARE_API_TOKEN }}"
     assert wrangler_step["with"]["workingDirectory"] == "infra/cloudflare/data-proxy"
+
+    # CI must deploy with the same wrangler the committed lockfile resolves,
+    # or the dry-run-validated toolchain and the deployed one silently drift.
+    lockfile = json.loads(
+        (PROXY_DIR / "package-lock.json").read_text(encoding="utf-8")
+    )
+    locked_wrangler = lockfile["packages"]["node_modules/wrangler"]["version"]
+    assert wrangler_step["with"]["wranglerVersion"] == locked_wrangler
 
 
 def test_env_example_public_base_url_matches_worker_route() -> None:
