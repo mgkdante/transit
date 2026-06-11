@@ -1356,6 +1356,22 @@ _ROUTE_NAMES_SQL = text(
 )
 
 
+def _entity_name_maps(
+    conn: Connection, *, provider_id: str
+) -> tuple[dict[str, str], dict[str, str]]:
+    """(route_id -> name, stop_id -> name) — current dim first, history fallback."""
+    params = {"provider_id": provider_id}
+    route_names = {
+        str(r["route_id"]): r["route_name"]
+        for r in conn.execute(_ROUTE_NAMES_SQL, params).mappings()
+    }
+    stop_names = {
+        str(r["stop_id"]): r["stop_name"]
+        for r in conn.execute(_STOP_NAMES_SQL, params).mappings()
+    }
+    return route_names, stop_names
+
+
 def build_route_reliability(
     conn: Connection, *, provider_id: str = "stm", route_id: str
 ) -> "RouteReliability":
@@ -1688,11 +1704,18 @@ def build_hotspots(conn: "Connection", provider_id: str = "stm") -> "Hotspots":
     from transit_ops.snapshots.contract import Hotspot, Hotspots
 
     rows = list(conn.execute(_HOTSPOTS_SQL, {"provider_id": provider_id}).mappings())
+    route_names, stop_names = _entity_name_maps(conn, provider_id=provider_id)
     hotspots = [
         Hotspot(
             rank=i + 1,
             type=str(r["entity_kind"]),
             id=str(r["entity_id"]),
+            # kinds verified 'route'/'stop' in the mart — per-kind name lookup
+            name=(
+                route_names.get(str(r["entity_id"]))
+                if str(r["entity_kind"]) == "route"
+                else stop_names.get(str(r["entity_id"]))
+            ),
             severity=r["severity_label"],
             otp_delta_pts=None,  # v1 deferral: not stored in gold.repeated_problem_route_stop
         )
@@ -1731,11 +1754,20 @@ def build_repeat_offenders(
     rows = list(
         conn.execute(_REPEAT_OFFENDERS_SQL, {"provider_id": provider_id}).mappings()
     )
+    # Offender entities are 'trip'/'vehicle' kinds with no display name of
+    # their own — resolve the ROUTE context name instead (history-backed).
+    route_names = {
+        str(r["route_id"]): r["route_name"]
+        for r in conn.execute(_ROUTE_NAMES_SQL, {"provider_id": provider_id}).mappings()
+    }
     offenders = [
         Offender(
             type=str(r["entity_kind"]),
             id=str(r["entity_id"]),
             route=r["route_id"],
+            route_name=(
+                route_names.get(str(r["route_id"])) if r["route_id"] is not None else None
+            ),
             recurrence=f"{r['recurrence_days']}/{r['window_days']}d",
             avg_delay_min=round(float(r["avg_delay_seconds"]) / 60.0, 1),
         )
@@ -1827,6 +1859,7 @@ def build_receipts(
     from transit_ops.snapshots.contract import Receipt, ReceiptWorstRoute, ReceiptWorstStop
 
     params = {"provider_id": provider_id}
+    route_names, stop_names = _entity_name_maps(conn, provider_id=provider_id)
 
     # 1. accountability rows: one per date (the driver set)
     acct: dict[str, dict] = {}
@@ -1860,6 +1893,7 @@ def build_receipts(
         if ds not in worst_route:  # first = max avg_delay (ordered DESC)
             worst_route[ds] = ReceiptWorstRoute(
                 id=str(r["route_id"]),
+                name=route_names.get(str(r["route_id"])),
                 otp_delta_pts=None,  # v1 deferral: not stored in gold
             )
 
@@ -1870,6 +1904,7 @@ def build_receipts(
         if ds not in worst_stop:  # first = max avg_delay (ordered DESC)
             worst_stop[ds] = ReceiptWorstStop(
                 id=str(r["stop_id"]),
+                name=stop_names.get(str(r["stop_id"])),
                 median_delay_min=_avg_delay_min(r["avg_delay_seconds"]),
             )
 

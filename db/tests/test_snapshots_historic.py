@@ -643,16 +643,54 @@ def test_build_hotspots_week_period_filter() -> None:
     assert out.hotspots[1].rank == 2
 
 
+def test_build_hotspots_resolves_names() -> None:
+    """Per-kind name resolution: 'route' rows from the route map, 'stop' rows
+    from the stop map (history-backed for retired ids); unknown ids stay None."""
+    rows = [
+        {"entity_kind": "route", "entity_id": "51", "issue_count": 9, "severity_label": "high"},
+        {
+            "entity_kind": "stop",
+            "entity_id": "S_RETIRED",
+            "issue_count": 7,
+            "severity_label": "watch",
+        },
+        {
+            "entity_kind": "stop",
+            "entity_id": "S_UNKNOWN",
+            "issue_count": 5,
+            "severity_label": "watch",
+        },
+    ]
+    conn = FakeConn(
+        [
+            ("repeated_problem_route_stop", rows),
+            ("DISTINCT ON (u.route_id)", [{"route_id": "51", "route_name": "Saint-Laurent"}]),
+            # retired stop id present only via the history half of the UNION
+            ("DISTINCT ON (u.stop_id)", [{"stop_id": "S_RETIRED", "stop_name": "Ancien arret"}]),
+        ]
+    )
+
+    out = build_hotspots(conn)
+
+    assert out.hotspots[0].name == "Saint-Laurent"
+    assert out.hotspots[1].name == "Ancien arret"
+    assert out.hotspots[2].name is None
+
+
 # --------------------------------------------------------------------------
 # build_repeat_offenders
 # --------------------------------------------------------------------------
 
 
 def test_build_repeat_offenders_recurrence_string() -> None:
-    """recurrence field is formatted as '{recurrence_days}/{window_days}d'."""
+    """recurrence field is formatted as '{recurrence_days}/{window_days}d'.
+
+    gold.repeat_offender_daily only ever contains 'trip' and 'vehicle' kinds
+    (rollups aggregate by trip_id/vehicle_id) — fixtures use the real kinds.
+    """
     rows = [
         {
-            "entity_kind": "stop",
+            "entity_kind": "trip",
             "entity_id": "X1",
             "route_id": "51",
             "recurrence_days": 7,
@@ -669,7 +707,7 @@ def test_build_repeat_offenders_recurrence_string() -> None:
     assert o.recurrence == "7/14d"
     assert o.avg_delay_min == 3.0  # 180s / 60
     assert o.route == "51"
-    assert o.type == "stop"
+    assert o.type == "trip"
     assert o.id == "X1"
 
 
@@ -678,8 +716,8 @@ def test_build_repeat_offenders_ordering() -> None:
     Python preserves insertion order."""
     rows = [
         {
-            "entity_kind": "route",
-            "entity_id": "9",
+            "entity_kind": "trip",
+            "entity_id": "T9",
             "route_id": "9",
             "recurrence_days": 10,
             "window_days": 14,
@@ -687,8 +725,8 @@ def test_build_repeat_offenders_ordering() -> None:
             "severity_label": "high",
         },
         {
-            "entity_kind": "stop",
-            "entity_id": "S2",
+            "entity_kind": "vehicle",
+            "entity_id": "V2",
             "route_id": "51",
             "recurrence_days": 5,
             "window_days": 14,
@@ -698,16 +736,16 @@ def test_build_repeat_offenders_ordering() -> None:
     ]
     conn = FakeConn([("repeat_offender_daily", rows)])
     out = build_repeat_offenders(conn)
-    assert out.offenders[0].id == "9"   # higher recurrence_days comes first
-    assert out.offenders[1].id == "S2"
+    assert out.offenders[0].id == "T9"  # higher recurrence_days comes first
+    assert out.offenders[1].id == "V2"
 
 
 def test_build_repeat_offenders_top_50_cap() -> None:
     """SQL LIMIT 50 enforced — fake returns exactly 50 rows."""
     rows = [
         {
-            "entity_kind": "stop",
-            "entity_id": f"S{i}",
+            "entity_kind": "vehicle",
+            "entity_id": f"V{i}",
             "route_id": "51",
             "recurrence_days": 50 - i,
             "window_days": 60,
@@ -721,18 +759,76 @@ def test_build_repeat_offenders_top_50_cap() -> None:
     assert len(out.offenders) == 50
 
 
+def test_build_repeat_offenders_resolves_route_name() -> None:
+    """Offenders are 'trip'/'vehicle' entities with no display name of their
+    own — the ROUTE context gets the resolved name (history-backed for routes
+    retired by a GTFS drop); entity ids stay raw."""
+    rows = [
+        {
+            "entity_kind": "trip",
+            "entity_id": "281234567",
+            "route_id": "51",
+            "recurrence_days": 9,
+            "window_days": 14,
+            "avg_delay_seconds": 240.0,
+            "severity_label": "high",
+        },
+        {
+            "entity_kind": "vehicle",
+            "entity_id": "39041",
+            "route_id": "R_RETIRED",
+            "recurrence_days": 6,
+            "window_days": 14,
+            "avg_delay_seconds": 300.0,
+            "severity_label": "critical",
+        },
+        {
+            "entity_kind": "vehicle",
+            "entity_id": "39042",
+            "route_id": None,
+            "recurrence_days": 4,
+            "window_days": 14,
+            "avg_delay_seconds": 120.0,
+            "severity_label": "watch",
+        },
+    ]
+    conn = FakeConn(
+        [
+            ("repeat_offender_daily", rows),
+            (
+                "DISTINCT ON (u.route_id)",
+                [
+                    {"route_id": "51", "route_name": "Boulevard Saint-Laurent"},
+                    # present only in dim_route_history — retired at the drop
+                    {"route_id": "R_RETIRED", "route_name": "Ancienne ligne"},
+                ],
+            ),
+        ]
+    )
+
+    out = build_repeat_offenders(conn)
+
+    assert out.offenders[0].route_name == "Boulevard Saint-Laurent"
+    assert out.offenders[0].id == "281234567"  # raw trip id, no entity name
+    assert out.offenders[1].route_name == "Ancienne ligne"
+    assert out.offenders[2].route_name is None  # no route context at all
+
+
 # --------------------------------------------------------------------------
 # build_receipts
 # --------------------------------------------------------------------------
 
 
-def _receipts_dispatch(*, acct=None, net=None, worst_route=None, worst_stop=None):
+def _receipts_dispatch(*, acct=None, net=None, worst_route=None, worst_stop=None,
+                       route_names=None, stop_names=None):
     """Build dispatch list for build_receipts; needles matched most-specific first."""
     return [
         ("citizen_accountability_daily", acct or []),
         ("route_delay_hourly", net or []),
         ("public_route_reliability_daily", worst_route or []),
         ("public_stop_delay_daily", worst_stop or []),
+        ("DISTINCT ON (u.route_id)", route_names or []),
+        ("DISTINCT ON (u.stop_id)", stop_names or []),
     ]
 
 
@@ -840,6 +936,40 @@ def test_build_receipts_worst_route_and_stop_by_max_delay() -> None:
     assert r.worst_stop is not None
     assert r.worst_stop.id == "9999"
     assert r.worst_stop.median_delay_min == 7.0  # 420s / 60
+
+
+def test_build_receipts_worst_entity_names() -> None:
+    """worst_route/worst_stop carry resolved display names (history-backed);
+    ids missing from both dim and history stay None."""
+    d = datetime.date(2026, 5, 15)
+    conn = FakeConn(
+        _receipts_dispatch(
+            acct=[
+                {
+                    "provider_local_date": d,
+                    "affected_route_count": 2,
+                    "affected_stop_count": 5,
+                    "delayed_trip_count": 1,
+                    "severe_delay_count": 0,
+                    "alert_count": 0,
+                    "rider_impact_score": None,
+                }
+            ],
+            worst_route=[{"d": d, "route_id": "R_RETIRED", "avg_delay_seconds": 300.0}],
+            worst_stop=[
+                {"d": d, "stop_id": "S_UNKNOWN", "avg_delay_seconds": 420.0,
+                 "max_delay_seconds": 600.0},
+            ],
+            route_names=[{"route_id": "R_RETIRED", "route_name": "Ancienne ligne"}],
+            stop_names=[],
+        )
+    )
+
+    out = build_receipts(conn)
+    r = out["2026-05-15"]
+
+    assert r.worst_route is not None and r.worst_route.name == "Ancienne ligne"
+    assert r.worst_stop is not None and r.worst_stop.name is None
 
 
 def test_build_receipts_missing_network_yields_none_otp() -> None:

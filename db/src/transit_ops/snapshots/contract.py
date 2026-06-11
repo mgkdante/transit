@@ -230,6 +230,7 @@ class Hotspot(BaseModel):
     rank: int
     type: str
     id: str
+    name: str | None = None
     severity: str | None = None
     otp_delta_pts: float | None = None
 
@@ -240,6 +241,9 @@ class Offender(BaseModel):
     type: str
     id: str
     route: str | None = None
+    # Offenders are 'trip'/'vehicle' entities with no display name of their
+    # own — the route context carries the resolved name instead.
+    route_name: str | None = None
     recurrence: str | None = None
     avg_delay_min: float | None = None
 
@@ -248,10 +252,12 @@ class RepeatOffenders(BaseModel):
 
 class ReceiptWorstRoute(BaseModel):
     id: str
+    name: str | None = None
     otp_delta_pts: float | None = None
 
 class ReceiptWorstStop(BaseModel):
     id: str
+    name: str | None = None
     median_delay_min: float | None = None
 
 class Receipt(BaseModel):
