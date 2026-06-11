@@ -204,6 +204,7 @@ class WeakStop(BaseModel):
 
 class RouteReliability(BaseModel):
     id: str
+    name: str | None = None
     periods: list[ReliabilityPeriod] = Field(default_factory=list)
     headway: list[HeadwayPeriod] = Field(default_factory=list)
     habits: RouteHabits | None = None
@@ -221,6 +222,7 @@ class StopByRoute(BaseModel):
 
 class StopReliability(BaseModel):
     id: str
+    name: str | None = None
     periods: list[StopReliabilityPeriod] = Field(default_factory=list)
     by_route: list[StopByRoute] = Field(default_factory=list)
 

@@ -13,6 +13,8 @@ from __future__ import annotations
 import datetime
 
 from transit_ops.snapshots.builders import (
+    _ROUTE_NAMES_SQL,
+    _STOP_NAMES_SQL,
     _otp_pct,
     build_alert_history,
     build_hotspots,
@@ -194,7 +196,8 @@ def test_build_network_trend_fact_only_date() -> None:
 
 
 def _route_reliability_dispatch(*, daily=None, weekly=None, monthly=None, headway=None,
-                                habit=None, weak=None, names=None, schedule=None):
+                                habit=None, weak=None, names=None, schedule=None,
+                                route_names=None):
     """Assemble an ordered dispatch list for build_route_reliability.
 
     Needles are ordered most-specific-first so they never collide. The schedule
@@ -228,8 +231,10 @@ def _route_reliability_dispatch(*, daily=None, weekly=None, monthly=None, headwa
         ("route_habit_score", habit or []),
         # weak stops
         ("stop_delay_weekly", weak or []),
-        # stop names
+        # stop names (current-dim UNION history)
         ("stop_name", names or []),
+        # route names (current-dim UNION history)
+        ("DISTINCT ON (u.route_id)", route_names or []),
     ]
 
 
@@ -393,6 +398,65 @@ def test_build_route_reliability_weak_stops_sorted_and_capped() -> None:
     assert "S5" not in {w.id for w in out.weak_stops}
 
 
+def test_stop_names_sql_unions_history() -> None:
+    """Stop-name lookups must fall back to gold.dim_stop_history so ids retired
+    by a GTFS drop keep resolving names; current dim (pri 0) wins on ties."""
+    sql = str(_STOP_NAMES_SQL)
+    assert "gold.dim_stop_history" in sql
+    assert "UNION ALL" in sql
+    assert "DISTINCT ON (u.stop_id)" in sql
+
+
+def test_route_names_sql_unions_history() -> None:
+    sql = str(_ROUTE_NAMES_SQL)
+    assert "gold.dim_route_history" in sql
+    assert "UNION ALL" in sql
+    assert "DISTINCT ON (u.route_id)" in sql
+    assert "COALESCE(route_long_name, route_short_name)" in sql
+
+
+def test_build_route_reliability_weak_stop_name_from_history() -> None:
+    """A weak stop retired from the current dims still gets a display name via
+    the history-backed UNION (the fake returns the unioned row set)."""
+    weak = [
+        {"stop_id": "S_RETIRED", "obs": 10, "weighted_delay_sec": 6000.0, "severe": 0},
+        {"stop_id": "S1", "obs": 10, "weighted_delay_sec": 1200.0, "severe": 0},
+    ]
+    names = [
+        {"stop_id": "S1", "stop_name": "Stop 1"},
+        # present only in dim_stop_history — surfaced by the UNION query
+        {"stop_id": "S_RETIRED", "stop_name": "Ancien arret"},
+    ]
+    conn = FakeConn(_route_reliability_dispatch(weak=weak, names=names))
+
+    out = build_route_reliability(conn, route_id="51")
+
+    by_id = {w.id: w for w in out.weak_stops}
+    assert by_id["S_RETIRED"].name == "Ancien arret"
+    assert by_id["S1"].name == "Stop 1"
+
+
+def test_build_route_reliability_name_field() -> None:
+    conn = FakeConn(
+        _route_reliability_dispatch(
+            route_names=[
+                {"route_id": "51", "route_name": "Boulevard Saint-Laurent"},
+                {"route_id": "9", "route_name": "Autre ligne"},
+            ],
+        )
+    )
+
+    out = build_route_reliability(conn, route_id="51")
+
+    assert out.name == "Boulevard Saint-Laurent"
+
+
+def test_build_route_reliability_unknown_route_name_is_none() -> None:
+    conn = FakeConn(_route_reliability_dispatch(route_names=[]))
+    out = build_route_reliability(conn, route_id="51")
+    assert out.name is None
+
+
 def test_build_route_reliability_no_dataset_version_still_builds() -> None:
     """No current static dataset -> scheduled headway empty, but periods/habits
     from gold rollups still populate (graceful degradation)."""
@@ -500,6 +564,30 @@ def test_build_stop_reliability_weekly_only_stop() -> None:
     assert [p.grain for p in s2.periods] == ["week"]
     assert s2.periods[0].otp_pct == 90  # (80-8)/80
     assert s2.by_route == []
+
+
+def test_build_stop_reliability_carries_name() -> None:
+    """Per-stop files self-describe: name resolved current-dim-first with the
+    history fallback; ids with no name anywhere stay None."""
+    conn = FakeConn(
+        [
+            ("GROUP BY stop_id, route_id", []),
+            (
+                "stop_delay_weekly",
+                [
+                    {"stop_id": "S1", "obs": 150, "weighted_delay_sec": 12000.0, "severe": 15},
+                    {"stop_id": "S_UNNAMED", "obs": 10, "weighted_delay_sec": 600.0, "severe": 0},
+                ],
+            ),
+            ("stop_delay_monthly", []),
+            ("DISTINCT ON (u.stop_id)", [{"stop_id": "S1", "stop_name": "Station Berri"}]),
+        ]
+    )
+
+    out = build_stop_reliability(conn, provider_id="stm")
+
+    assert out["S1"].name == "Station Berri"
+    assert out["S_UNNAMED"].name is None
 
 
 # --------------------------------------------------------------------------
