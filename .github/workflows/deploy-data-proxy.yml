@@ -1,0 +1,40 @@
+name: Deploy Data Proxy Worker
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "infra/cloudflare/data-proxy/**"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-data-proxy
+  cancel-in-progress: false
+
+jobs:
+  deploy-data-proxy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: infra/cloudflare/data-proxy
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Run worker behavioral suite
+        run: node --test "test/*.test.mjs"
+
+      - name: Deploy worker with wrangler
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          workingDirectory: infra/cloudflare/data-proxy
