@@ -9,6 +9,7 @@ runs under ``node --test`` (bridged below when node is available).
 
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 import tomllib
@@ -98,6 +99,36 @@ def test_env_example_public_base_url_matches_worker_route() -> None:
     (route,) = _wrangler_config()["routes"]
     host_and_path = base_url.removeprefix("https://")
     assert route["pattern"] == f"{host_and_path}/*"
+
+
+def test_smoke_script_asserts_canonical_and_fallback_objects() -> None:
+    smoke = PROXY_DIR / "smoke.sh"
+
+    assert smoke.exists(), "smoke.sh is the prod verification gate for this slice"
+    assert os.access(smoke, os.X_OK), "smoke.sh must be executable"
+
+    syntax_check = subprocess.run(
+        ["bash", "-n", str(smoke)], text=True, capture_output=True, check=False
+    )
+    assert syntax_check.returncode == 0, syntax_check.stderr
+
+    text = smoke.read_text(encoding="utf-8")
+    # Canonical host and untouched fallback origin both probed.
+    assert "transit.yesid.dev/data" in text
+    assert "data.yesid.dev" in text
+    # All three cache tiers hard-asserted (storage.py CACHE_CONTROL values).
+    assert "max-age=30" in text
+    assert "max-age=604800" in text
+    assert "max-age=86400" in text
+    # All three tiers + provenance covered (historic went live 2026-06-10).
+    assert "live/vehicles.json" in text
+    assert "static/routes_index.json" in text
+    assert "historic/network_trend.json" in text
+    assert "provenance.json" in text
+    # Negatives: method guard, error responses never cacheable, CORS proof.
+    assert "405" in text
+    assert "no-store" in text
+    assert "access-control-allow-origin" in text
 
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
