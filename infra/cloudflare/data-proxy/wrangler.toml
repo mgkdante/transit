@@ -1,0 +1,22 @@
+# transit-data-proxy — serves the public /v1 snapshot contract from the
+# transit-snapshots R2 bucket on the canonical host (slice-9.1.1p).
+#
+# Deliberately a narrow zone ROUTE (transit.yesid.dev/data/* only), NOT a
+# Worker custom domain: routes take precedence over Pages custom domains, so
+# when slice-9.2 attaches its app to transit.yesid.dev, /data/* keeps hitting
+# this worker and everything else falls through to Pages. Do not widen or
+# delete this route without re-running smoke.sh.
+name = "transit-data-proxy"
+main = "src/worker.js"
+compatibility_date = "2026-06-10"
+# R2 endpoint account hash already public in .env.example (BRONZE_S3_ENDPOINT).
+account_id = "eccfb9bedd87d413eaf4cac6ae2285d3"
+workers_dev = false
+
+routes = [
+  { pattern = "transit.yesid.dev/data/*", zone_name = "yesid.dev" },
+]
+
+[[r2_buckets]]
+binding = "SNAPSHOTS"
+bucket_name = "transit-snapshots"

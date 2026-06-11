@@ -1,0 +1,83 @@
+#!/usr/bin/env bash
+# Prod smoke for the transit-data-proxy worker (slice-9.1.1p).
+#
+# This script is the slice's failing prod test: it stays red (curl exit 6,
+# could not resolve transit.yesid.dev) until the operator creates the proxied
+# AAAA record and deploys the worker; exit 0 proves the canonical URLs baked
+# into the published manifest resolve end to end, while data.yesid.dev keeps
+# working untouched as the fallback origin.
+#
+# Usage: bash infra/cloudflare/data-proxy/smoke.sh
+#   CANONICAL_BASE / FALLBACK_BASE env vars override the probed hosts.
+set -euo pipefail
+
+CANONICAL_BASE="${CANONICAL_BASE:-https://transit.yesid.dev/data}"
+FALLBACK_BASE="${FALLBACK_BASE:-https://data.yesid.dev}"
+MAX_TIME=15
+
+fail() { echo "FAIL: $*" >&2; exit 1; }
+ok() { echo "ok: $*"; }
+
+headers_of() {
+  # -I HEAD probe; CRLF stripped so greps can anchor on line ends.
+  curl -fsSI --max-time "$MAX_TIME" "$1" | tr -d '\r'
+}
+
+status_of() {
+  curl -s -o /dev/null --max-time "$MAX_TIME" -w '%{http_code}' "$@"
+}
+
+assert_object() {
+  local url="$1" cache_control="$2" headers
+  headers="$(headers_of "$url")" || fail "$url did not return 2xx headers"
+  grep -qi '^content-type: application/json' <<<"$headers" \
+    || fail "$url content-type is not application/json"
+  grep -qi "^cache-control: ${cache_control}$" <<<"$headers" \
+    || fail "$url cache-control != '${cache_control}'"
+  ok "$url -> 200 application/json '${cache_control}'"
+}
+
+# --- canonical host: manifest + all three tiers + provenance (hard asserts;
+# --- historic went publicly live 2026-06-10, values from snapshots/storage.py) ---
+assert_object "$CANONICAL_BASE/v1/stm/manifest.json" "public, max-age=30"
+curl -fsS --max-time "$MAX_TIME" "$CANONICAL_BASE/v1/stm/manifest.json" \
+  | grep -q '"provider":"stm"' || fail "manifest body missing \"provider\":\"stm\""
+ok "manifest body carries provider stm"
+
+assert_object "$CANONICAL_BASE/v1/stm/live/vehicles.json" "public, max-age=30"
+assert_object "$CANONICAL_BASE/v1/stm/static/routes_index.json" "public, max-age=604800"
+assert_object "$CANONICAL_BASE/v1/stm/historic/network_trend.json" "public, max-age=86400"
+assert_object "$CANONICAL_BASE/v1/stm/provenance.json" "public, max-age=86400"
+
+# --- negatives: clean 404/405, and errors are never cacheable ---
+[ "$(status_of "$CANONICAL_BASE/v1/stm/definitely-missing.json")" = "404" ] \
+  || fail "missing key must return 404"
+ok "missing key -> 404"
+
+curl -sI --max-time "$MAX_TIME" "$CANONICAL_BASE/v1/stm/definitely-missing.json" \
+  | tr -d '\r' | grep -qi '^cache-control: no-store' \
+  || fail "404 response must carry cache-control: no-store"
+ok "404 carries cache-control: no-store"
+
+[ "$(status_of "$CANONICAL_BASE/secrets.txt")" = "404" ] \
+  || fail "path outside v1/ must return 404"
+ok "non-v1 path -> 404"
+
+[ "$(status_of -X POST "$CANONICAL_BASE/v1/stm/manifest.json")" = "405" ] \
+  || fail "POST must return 405"
+ok "POST -> 405"
+
+# --- CORS: the recorded slice-9.2 dev decision (fetch canonical host directly) ---
+headers_of "$CANONICAL_BASE/v1/stm/manifest.json" >/dev/null # resolvability guard
+curl -fsSI --max-time "$MAX_TIME" -H 'Origin: http://localhost:5173' \
+  "$CANONICAL_BASE/v1/stm/manifest.json" | tr -d '\r' \
+  | grep -qi '^access-control-allow-origin: \*' \
+  || fail "manifest must carry access-control-allow-origin: *"
+ok "access-control-allow-origin: * present"
+
+# --- fallback origin untouched: data.yesid.dev keeps serving ---
+[ "$(status_of "$FALLBACK_BASE/v1/stm/manifest.json")" = "200" ] \
+  || fail "fallback $FALLBACK_BASE manifest must still return 200"
+ok "fallback $FALLBACK_BASE manifest -> 200"
+
+echo "SMOKE OK: canonical + fallback serving, negatives clean"
