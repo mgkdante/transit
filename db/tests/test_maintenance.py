@@ -485,6 +485,72 @@ def test_vacuum_tables_include_normalized_silver_and_gold_aggregates_only() -> N
         assert dropped_table not in VACUUM_TABLES
 
 
+def test_vacuum_tables_include_raw_bronze_metadata_tables() -> None:
+    for table_name in (
+        "raw.realtime_snapshot_index",
+        "raw.ingestion_objects",
+        "raw.ingestion_runs",
+    ):
+        assert table_name in VACUUM_TABLES
+
+
+class VacuumRecordingConnection:
+    def __init__(self) -> None:
+        self.statements: list[str] = []
+
+    def execution_options(self, **kwargs):  # noqa: ANN003
+        return self
+
+    def __enter__(self) -> VacuumRecordingConnection:
+        return self
+
+    def __exit__(self, exc_type, exc, traceback) -> None:  # noqa: ANN001
+        return None
+
+    def exec_driver_sql(self, statement: str) -> None:
+        self.statements.append(statement)
+
+
+class VacuumRecordingEngine:
+    def __init__(self, connection: VacuumRecordingConnection) -> None:
+        self.connection = connection
+
+    def connect(self) -> VacuumRecordingConnection:
+        return self.connection
+
+
+def test_vacuum_storage_uses_parallel_zero_for_non_full_mode() -> None:
+    # The Oracle A1 VM's postgres container ships /dev/shm at 64MB; parallel
+    # vacuum workers allocate DSM there and crash. PARALLEL 0 is house law.
+    connection = VacuumRecordingConnection()
+
+    maintenance_module.vacuum_storage(
+        "stm",
+        tables=["raw.ingestion_objects"],
+        settings=object(),  # type: ignore[arg-type]
+        engine=VacuumRecordingEngine(connection),  # type: ignore[arg-type]
+    )
+
+    assert connection.statements == [
+        "VACUUM (PARALLEL 0, ANALYZE) raw.ingestion_objects"
+    ]
+
+    full_connection = VacuumRecordingConnection()
+
+    maintenance_module.vacuum_storage(
+        "stm",
+        full=True,
+        tables=["raw.ingestion_objects"],
+        settings=object(),  # type: ignore[arg-type]
+        engine=VacuumRecordingEngine(full_connection),  # type: ignore[arg-type]
+    )
+
+    # PARALLEL is invalid alongside FULL — the full path stays unchanged.
+    assert full_connection.statements == [
+        "VACUUM (FULL, ANALYZE) raw.ingestion_objects"
+    ]
+
+
 def test_prune_result_display_dict_formats_timestamps() -> None:
     result = SilverStoragePruneResult(
         provider_id="stm",

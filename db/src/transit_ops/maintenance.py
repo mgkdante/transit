@@ -99,6 +99,12 @@ GOLD_AGGREGATE_RETENTION_COLUMNS = (
 
 VALID_GOLD_AGGREGATE_RETENTION_TARGETS = frozenset(GOLD_AGGREGATE_RETENTION_COLUMNS)
 
+RAW_BRONZE_METADATA_TABLES = (
+    "raw.realtime_snapshot_index",
+    "raw.ingestion_objects",
+    "raw.ingestion_runs",
+)
+
 VACUUM_TABLES = (
     *STATIC_SILVER_TABLES,
     *GIS_SILVER_TABLES,
@@ -107,6 +113,7 @@ VACUUM_TABLES = (
     "gold.latest_trip_delay_snapshot",
     "gold.latest_vehicle_snapshot",
     *GOLD_AGGREGATE_TABLES,
+    *RAW_BRONZE_METADATA_TABLES,
 )
 
 SELECT_STATIC_DATASET_VERSION_IDS = text(
@@ -1418,7 +1425,9 @@ def vacuum_storage(
 ) -> VacuumResult:
     settings = settings or get_settings()
     engine = engine or make_engine(settings)
-    vacuum_mode = "FULL, ANALYZE" if full else "ANALYZE"
+    # PARALLEL 0: parallel vacuum workers allocate DSM in /dev/shm, which the
+    # A1 VM's postgres container caps at 64MB. PARALLEL is invalid with FULL.
+    vacuum_mode = "FULL, ANALYZE" if full else "PARALLEL 0, ANALYZE"
 
     target_tables = tables if tables is not None else list(VACUUM_TABLES)
     invalid = [t for t in target_tables if t not in VACUUM_TABLES]
