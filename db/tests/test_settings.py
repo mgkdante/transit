@@ -17,7 +17,12 @@ EXPECTED_RETENTION_CONTRACT = {
     "BRONZE_STATIC_RETENTION_DAYS": 365,
     "GOLD_WARM_ROLLUP_RETENTION_DAYS": 365,
 }
-SETTINGS_DEFAULT_ENV_KEYS = (*EXPECTED_RETENTION_CONTRACT, "DATABASE_URL")
+SETTINGS_DEFAULT_ENV_KEYS = (
+    *EXPECTED_RETENTION_CONTRACT,
+    "DATABASE_URL",
+    "BRONZE_PRUNE_MAX_OBJECTS_PER_BATCH",
+    "BRONZE_PRUNE_MAX_BATCHES",
+)
 
 
 @pytest.fixture
@@ -64,6 +69,20 @@ def test_retention_defaults_lock_clean_reporting_contract(
     settings = Settings(_env_file=None)
 
     assert retention_contract_from_settings(settings) == EXPECTED_RETENTION_CONTRACT
+
+
+def test_bronze_prune_batch_knobs_default_and_display(
+    clean_default_settings_env: None,
+) -> None:
+    settings = Settings(_env_file=None)
+
+    assert settings.BRONZE_PRUNE_MAX_OBJECTS_PER_BATCH == 5000
+    assert settings.BRONZE_PRUNE_MAX_BATCHES == 1
+
+    display = settings.display_dict()
+
+    assert display["BRONZE_PRUNE_MAX_OBJECTS_PER_BATCH"] == 5000
+    assert display["BRONZE_PRUNE_MAX_BATCHES"] == 1
 
 
 def test_health_settings_are_exposed_in_display_dict() -> None:
