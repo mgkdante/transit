@@ -9,6 +9,12 @@ from alembic import command
 from alembic.config import Config
 from sqlalchemy import text
 
+from transit_ops.backups import (
+    BackupError,
+    download_latest_backup,
+    list_database_backups,
+    run_database_backup,
+)
 from transit_ops.core.models import FeedKind, ProviderManifest
 from transit_ops.db.connection import make_engine, test_connection
 from transit_ops.gold import (
@@ -950,6 +956,51 @@ def prune_warm_rollup_storage_command(
     settings = get_settings()
     result = prune_warm_rollup_storage(provider_id, settings=settings, dry_run=dry_run)
     typer.echo(json.dumps(result.display_dict(), indent=2))
+
+
+@app.command("backup-database")
+def backup_database_command() -> None:
+    """Stream a pg_dump of the configured database to Bronze R2 and prune old dumps."""
+
+    settings = get_settings()
+    try:
+        result = run_database_backup(settings)
+    except (BackupError, ValueError) as exc:
+        typer.echo(f"Backup failed: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+    typer.echo(json.dumps(result.display_dict(), indent=2))
+
+
+@app.command("list-backups")
+def list_backups_command() -> None:
+    """List database backup objects in Bronze R2, newest first."""
+
+    settings = get_settings()
+    try:
+        backups = list_database_backups(settings)
+    except (BackupError, ValueError) as exc:
+        typer.echo(f"Listing backups failed: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+    typer.echo(json.dumps(backups, indent=2))
+
+
+@app.command("download-latest-backup")
+def download_latest_backup_command(
+    dest: Path = typer.Option(  # noqa: B008
+        ...,
+        "--dest",
+        help="Destination file path for the newest backup dump.",
+    ),
+) -> None:
+    """Download the newest database backup from Bronze R2 to --dest."""
+
+    settings = get_settings()
+    try:
+        result = download_latest_backup(settings, dest)
+    except (BackupError, ValueError) as exc:
+        typer.echo(f"Download failed: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+    typer.echo(json.dumps(result, indent=2))
 
 
 if __name__ == "__main__":
