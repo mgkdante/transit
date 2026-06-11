@@ -127,6 +127,22 @@ class Settings(BaseSettings):
     BRONZE_PRUNE_MAX_OBJECTS_PER_BATCH: int = 5000
     BRONZE_PRUNE_MAX_BATCHES: int = 1
 
+    # --- Nightly logical Postgres backups (stream pg_dump to Bronze R2) ---
+    BACKUP_S3_PREFIX: str = "backups/postgres"
+    BACKUP_RETENTION_COUNT: int = 14
+    BACKUP_EXCLUDE_TABLE_DATA: str = "silver.rt_trip_update_stop_times"
+    BACKUP_COMPRESSION: str = "zstd:3"
+
+    @property
+    def backup_exclude_tables(self) -> list[str]:
+        """Tables whose data is excluded from pg_dump, blanks filtered out."""
+
+        return [
+            table.strip()
+            for table in self.BACKUP_EXCLUDE_TABLE_DATA.split(",")
+            if table.strip()
+        ]
+
     @property
     def sqlalchemy_database_url(self) -> str | None:
         """Return a SQLAlchemy-compatible URL for psycopg."""
@@ -195,6 +211,10 @@ class Settings(BaseSettings):
             "GOLD_WARM_ROLLUP_RETENTION_DAYS": self.GOLD_WARM_ROLLUP_RETENTION_DAYS,
             "BRONZE_PRUNE_MAX_OBJECTS_PER_BATCH": self.BRONZE_PRUNE_MAX_OBJECTS_PER_BATCH,
             "BRONZE_PRUNE_MAX_BATCHES": self.BRONZE_PRUNE_MAX_BATCHES,
+            "BACKUP_S3_PREFIX": self.BACKUP_S3_PREFIX,
+            "BACKUP_RETENTION_COUNT": self.BACKUP_RETENTION_COUNT,
+            "BACKUP_EXCLUDE_TABLE_DATA": self.BACKUP_EXCLUDE_TABLE_DATA,
+            "BACKUP_COMPRESSION": self.BACKUP_COMPRESSION,
         }
 
 

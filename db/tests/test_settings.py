@@ -180,3 +180,38 @@ def test_legacy_neon_database_url_file_secret_input_fails_explicitly(
 
     with pytest.raises(ValueError, match=re.escape(LEGACY_DATABASE_URL_MESSAGE)):
         Settings(_env_file=None, _secrets_dir=secrets_dir)
+
+
+EXPECTED_BACKUP_DEFAULTS = {
+    "BACKUP_S3_PREFIX": "backups/postgres",
+    "BACKUP_RETENTION_COUNT": 14,
+    "BACKUP_EXCLUDE_TABLE_DATA": "silver.rt_trip_update_stop_times",
+    "BACKUP_COMPRESSION": "zstd:3",
+}
+
+
+@pytest.fixture
+def clean_backup_settings_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    for key in EXPECTED_BACKUP_DEFAULTS:
+        monkeypatch.delenv(key, raising=False)
+
+
+def test_settings_backup_defaults(clean_backup_settings_env: None) -> None:
+    settings = Settings(_env_file=None)
+
+    assert settings.BACKUP_S3_PREFIX == "backups/postgres"
+    assert settings.BACKUP_RETENTION_COUNT == 14
+    assert settings.BACKUP_EXCLUDE_TABLE_DATA == "silver.rt_trip_update_stop_times"
+    assert settings.BACKUP_COMPRESSION == "zstd:3"
+
+    display = settings.display_dict()
+    for key, expected in EXPECTED_BACKUP_DEFAULTS.items():
+        assert display[key] == expected
+
+
+def test_backup_exclude_tables_filters_blanks() -> None:
+    empty = Settings(_env_file=None, BACKUP_EXCLUDE_TABLE_DATA="")
+    assert empty.backup_exclude_tables == []
+
+    messy = Settings(_env_file=None, BACKUP_EXCLUDE_TABLE_DATA=" a.b , ,c.d ")
+    assert messy.backup_exclude_tables == ["a.b", "c.d"]
