@@ -41,6 +41,7 @@ import pytest
 from sqlalchemy import create_engine, text
 from sqlalchemy.exc import IntegrityError
 
+from transit_ops.gold.dim_history import _backfill_on_connection, parse_gtfs_name_rows
 from transit_ops.gold.marts import (
     CLOSE_DIM_ROUTE_HISTORY,
     CLOSE_DIM_STOP_HISTORY,
@@ -337,3 +338,58 @@ def test_duplicate_open_row_rejected_then_dataset_version_still_prunable(conn) -
 
     # The breadcrumb dangles on purpose — names must outlive the dataset row.
     assert any(r["last_seen_dataset_version_id"] == DSV1 for r in _stop_rows(conn))
+
+
+def test_backfill_from_gtfs_zip_heals_missing_ids_only(conn, tmp_path) -> None:
+    """The June-2026 heal path: an archived zip containing both tracked ids
+    (R1/S1, already in history) and orphaned ids (R_GONE/S_GONE, names lost
+    before 0029 existed) inserts CLOSED rows only for the orphans."""
+    import zipfile
+
+    _seed_v1_history(conn)
+
+    zip_path = tmp_path / "old_edition.zip"
+    with zipfile.ZipFile(zip_path, "w") as zf:
+        zf.writestr(
+            "routes.txt",
+            "route_id,route_short_name,route_long_name,route_type,route_color\n"
+            "R1,51,Nom Perime,3,00A650\n"
+            "R_GONE,77,Ancienne ligne,3,FF0000\n",
+        )
+        zf.writestr(
+            "stops.txt",
+            "stop_id,stop_name,stop_lat,stop_lon\n"
+            "S1,Nom Perime,45.50,-73.60\n"
+            "S_GONE,Ancien arret,45.49,-73.59\n",
+        )
+        zf.writestr(
+            "feed_info.txt",
+            "feed_publisher_name,feed_start_date,feed_end_date\nSTM,20251102,20260322\n",
+        )
+
+    counts = _backfill_on_connection(
+        conn, provider_id=PROVIDER, parsed=parse_gtfs_name_rows(zip_path)
+    )
+
+    assert counts["dim_route_history_inserted"] == 1
+    assert counts["dim_stop_history_inserted"] == 1
+
+    routes = {(r["route_id"], r["route_long_name"]): r for r in _route_rows(conn)}
+    # tracked id untouched (zip's stale name NOT applied), orphan healed closed
+    assert ("R1", "Ligne Verte") in routes
+    assert ("R1", "Nom Perime") not in routes
+    healed = routes[("R_GONE", "Ancienne ligne")]
+    assert healed["valid_to_utc"] is not None
+    assert healed["valid_from_utc"] == datetime(2025, 11, 2, tzinfo=UTC)
+
+    stops = {(s["stop_id"], s["stop_name"]): s for s in _stop_rows(conn)}
+    assert ("S1", "Station Un") in stops
+    assert ("S1", "Nom Perime") not in stops
+    assert stops[("S_GONE", "Ancien arret")]["valid_to_utc"] is not None
+
+    # rerun with the same zip: idempotent, nothing new
+    rerun = _backfill_on_connection(
+        conn, provider_id=PROVIDER, parsed=parse_gtfs_name_rows(zip_path)
+    )
+    assert rerun["dim_route_history_inserted"] == 0
+    assert rerun["dim_stop_history_inserted"] == 0
