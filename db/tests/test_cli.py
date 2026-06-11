@@ -4,6 +4,7 @@ from datetime import UTC, date, datetime
 from typer.testing import CliRunner
 
 import transit_ops.cli as cli_module
+from transit_ops.backups import BackupError
 from transit_ops.cli import app
 from transit_ops.orchestration import RealtimeCycleResult
 
@@ -939,3 +940,91 @@ def test_run_realtime_cycle_returns_non_zero_on_partial_failure(monkeypatch) -> 
 
     assert result.exit_code == 1
     assert '"status": "partial_failure"' in result.stdout
+
+
+def test_backup_database_command_outputs_summary_json(monkeypatch) -> None:
+    class FakeBackupResult:
+        def display_dict(self) -> dict[str, object]:
+            return {
+                "key": "backups/postgres/transit-20260611T093005Z.dump",
+                "bucket": "transit-raw",
+                "bytes_uploaded": 123456,
+                "duration_seconds": 42.5,
+                "pruned_keys": [],
+                "retained_count": 3,
+            }
+
+    recorded: dict[str, object] = {}
+
+    def fake_run_database_backup(settings):  # noqa: ANN001
+        recorded["settings"] = settings
+        return FakeBackupResult()
+
+    monkeypatch.setattr(cli_module, "run_database_backup", fake_run_database_backup)
+
+    result = runner.invoke(app, ["backup-database"])
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload["key"] == "backups/postgres/transit-20260611T093005Z.dump"
+    assert payload["bytes_uploaded"] == 123456
+    assert payload["retained_count"] == 3
+    assert "settings" in recorded
+
+
+def test_backup_database_command_exits_nonzero_on_backup_error(monkeypatch) -> None:
+    def fake_run_database_backup(settings):  # noqa: ANN001
+        raise BackupError(
+            "Excluded table(s) missing from the database: silver.rt_trip_update_stop_times"
+        )
+
+    monkeypatch.setattr(cli_module, "run_database_backup", fake_run_database_backup)
+
+    result = runner.invoke(app, ["backup-database"])
+
+    assert result.exit_code == 1
+    assert "Excluded table(s) missing" in result.stderr
+
+
+def test_list_backups_command_outputs_json(monkeypatch) -> None:
+    listed = [
+        {
+            "key": "backups/postgres/transit-20260611T093005Z.dump",
+            "size": 2048,
+            "last_modified": "2026-06-11T09:30:05+00:00",
+        },
+        {
+            "key": "backups/postgres/transit-20260610T093005Z.dump",
+            "size": 1024,
+            "last_modified": "2026-06-10T09:30:05+00:00",
+        },
+    ]
+    monkeypatch.setattr(cli_module, "list_database_backups", lambda settings: listed)
+
+    result = runner.invoke(app, ["list-backups"])
+
+    assert result.exit_code == 0
+    assert json.loads(result.stdout) == listed
+
+
+def test_download_latest_backup_command_writes_dest(monkeypatch, tmp_path) -> None:
+    recorded: dict[str, object] = {}
+
+    def fake_download_latest_backup(settings, dest):  # noqa: ANN001
+        recorded["dest"] = dest
+        return {
+            "key": "backups/postgres/transit-20260611T093005Z.dump",
+            "size": 2048,
+            "dest": str(dest),
+        }
+
+    monkeypatch.setattr(cli_module, "download_latest_backup", fake_download_latest_backup)
+
+    dest = tmp_path / "latest.dump"
+    result = runner.invoke(app, ["download-latest-backup", "--dest", str(dest)])
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload["key"] == "backups/postgres/transit-20260611T093005Z.dump"
+    assert payload["dest"] == str(dest)
+    assert recorded["dest"] == dest
