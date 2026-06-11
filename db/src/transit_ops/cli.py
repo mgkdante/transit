@@ -674,15 +674,35 @@ def prune_bronze_storage_command(
         "--dry-run",
         help="Print what would be deleted without executing any deletions or R2 object removals.",
     ),
+    max_objects: int | None = typer.Option(  # noqa: B008
+        None,
+        "--max-objects",
+        min=1,
+        help="Eligible objects per batch (defaults to BRONZE_PRUNE_MAX_OBJECTS_PER_BATCH).",
+    ),
+    max_batches: int | None = typer.Option(  # noqa: B008
+        None,
+        "--max-batches",
+        min=1,
+        help="Batches per phase this invocation (defaults to BRONZE_PRUNE_MAX_BATCHES).",
+    ),
 ) -> None:
     """Prune old Bronze R2 objects and raw metadata after downstream Silver data is gone."""
 
     settings = get_settings()
     try:
-        result = prune_bronze_storage(provider_id, settings=settings, dry_run=dry_run)
+        result = prune_bronze_storage(
+            provider_id,
+            settings=settings,
+            dry_run=dry_run,
+            max_objects=max_objects,
+            max_batches=max_batches,
+        )
     except (ValueError, FileNotFoundError) as exc:
         raise typer.BadParameter(str(exc)) from exc
     typer.echo(json.dumps(result.display_dict(), indent=2))
+    if not dry_run and any(result.failed_object_counts.values()):
+        raise typer.Exit(code=1)
 
 
 @app.command("run-static-pipeline")
@@ -728,7 +748,14 @@ def run_realtime_cycle_command(provider_id: str) -> None:
 def publish_snapshot_command(
     provider_id: str,
     tier: str = typer.Option("live", "--tier", help="live  (static/historic land in later phases)"),  # noqa: B008
-    dry_run: bool = typer.Option(False, "--dry-run", help="write to the local backend (requires SNAPSHOT_STORAGE_BACKEND=local + SNAPSHOT_LOCAL_ROOT)"),  # noqa: B008
+    dry_run: bool = typer.Option(  # noqa: B008
+        False,
+        "--dry-run",
+        help=(
+            "write to the local backend "
+            "(requires SNAPSHOT_STORAGE_BACKEND=local + SNAPSHOT_LOCAL_ROOT)"
+        ),
+    ),
 ) -> None:
     """Build and publish the /v1 snapshot for a provider to R2 (or local)."""
     settings = get_settings()

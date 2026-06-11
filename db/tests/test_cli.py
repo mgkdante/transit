@@ -488,6 +488,8 @@ def test_prune_bronze_storage_help() -> None:
     assert result.exit_code == 0
     assert "Prune old Bronze R2 objects and raw metadata" in result.stdout
     assert "--dry-run" in result.stdout
+    assert "--max-objects" in result.stdout
+    assert "--max-batches" in result.stdout
 
 
 def test_vacuum_storage_table_option_in_help() -> None:
@@ -550,32 +552,42 @@ def test_prune_gold_storage_dry_run_flag(monkeypatch) -> None:
     assert recorded["dry_run"] is True
 
 
-def test_prune_bronze_storage_dry_run_flag(monkeypatch) -> None:
+def _bronze_prune_cli_result(
+    provider_id: str,
+    dry_run: bool,
+    failed_object_counts: dict[str, int] | None = None,
+):
     from transit_ops.maintenance import BronzeStoragePruneResult
 
+    return BronzeStoragePruneResult(
+        provider_id=provider_id,
+        dry_run=dry_run,
+        realtime_retention_days=7,
+        static_retention_days=30,
+        realtime_cutoff_utc=None,
+        static_cutoff_utc=None,
+        deleted_object_counts={"realtime": 0, "static": 0},
+        deleted_metadata_counts={
+            "raw.realtime_snapshot_index": 0,
+            "raw.ingestion_objects": 0,
+            "raw.ingestion_runs": 0,
+        },
+        failed_object_counts=failed_object_counts or {"realtime": 0, "static": 0},
+        batch_counts={"realtime": 0, "static": 0},
+        exhausted=True,
+        completed_at_utc=datetime(2026, 3, 27, 0, 0, 0, tzinfo=UTC),
+    )
+
+
+def test_prune_bronze_storage_dry_run_flag(monkeypatch) -> None:
     recorded: dict[str, object] = {}
 
-    def fake_prune_bronze_storage(provider_id, *, settings, dry_run):  # noqa: ANN001
+    def fake_prune_bronze_storage(
+        provider_id, *, settings, dry_run, max_objects=None, max_batches=None
+    ):  # noqa: ANN001
         recorded["provider_id"] = provider_id
         recorded["dry_run"] = dry_run
-        return BronzeStoragePruneResult(
-            provider_id=provider_id,
-            dry_run=dry_run,
-            realtime_retention_days=7,
-            static_retention_days=30,
-            realtime_cutoff_utc=None,
-            static_cutoff_utc=None,
-            deleted_object_counts={"realtime": 0, "static": 0},
-            deleted_metadata_counts={
-                "raw.realtime_snapshot_index": 0,
-                "raw.ingestion_objects": 0,
-                "raw.ingestion_runs": 0,
-            },
-            failed_object_counts={"realtime": 0, "static": 0},
-            batch_counts={"realtime": 0, "static": 0},
-            exhausted=True,
-            completed_at_utc=datetime(2026, 3, 27, 0, 0, 0, tzinfo=UTC),
-        )
+        return _bronze_prune_cli_result(provider_id, dry_run)
 
     monkeypatch.setattr(cli_module, "prune_bronze_storage", fake_prune_bronze_storage)
 
@@ -583,6 +595,52 @@ def test_prune_bronze_storage_dry_run_flag(monkeypatch) -> None:
 
     assert result.exit_code == 0
     assert recorded["dry_run"] is True
+
+
+def test_prune_bronze_storage_passes_max_objects_and_max_batches(monkeypatch) -> None:
+    recorded: dict[str, object] = {}
+
+    def fake_prune_bronze_storage(
+        provider_id, *, settings, dry_run, max_objects, max_batches
+    ):  # noqa: ANN001
+        recorded["provider_id"] = provider_id
+        recorded["dry_run"] = dry_run
+        recorded["max_objects"] = max_objects
+        recorded["max_batches"] = max_batches
+        return _bronze_prune_cli_result(provider_id, dry_run)
+
+    monkeypatch.setattr(cli_module, "prune_bronze_storage", fake_prune_bronze_storage)
+
+    result = runner.invoke(
+        app,
+        ["prune-bronze-storage", "stm", "--max-objects", "100", "--max-batches", "5"],
+    )
+
+    assert result.exit_code == 0
+    assert recorded == {
+        "provider_id": "stm",
+        "dry_run": False,
+        "max_objects": 100,
+        "max_batches": 5,
+    }
+
+
+def test_prune_bronze_storage_exits_nonzero_when_r2_deletes_failed(monkeypatch) -> None:
+    def fake_prune_bronze_storage(
+        provider_id, *, settings, dry_run, max_objects=None, max_batches=None
+    ):  # noqa: ANN001
+        return _bronze_prune_cli_result(
+            provider_id, dry_run, failed_object_counts={"realtime": 2, "static": 0}
+        )
+
+    monkeypatch.setattr(cli_module, "prune_bronze_storage", fake_prune_bronze_storage)
+
+    live_result = runner.invoke(app, ["prune-bronze-storage", "stm"])
+    assert live_result.exit_code == 1
+
+    # Dry-run never exits nonzero — it deletes nothing.
+    dry_result = runner.invoke(app, ["prune-bronze-storage", "stm", "--dry-run"])
+    assert dry_result.exit_code == 0
 
 
 def test_init_db_requires_database_url(monkeypatch) -> None:
