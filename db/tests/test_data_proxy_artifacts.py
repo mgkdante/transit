@@ -166,8 +166,17 @@ def test_smoke_script_committed_with_executable_bit() -> None:
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
 def test_worker_behavioral_suite_passes_under_node() -> None:
+    # Expand the glob here: node only expands --test glob args itself on
+    # >= 21, and a literal "test/*.test.mjs" hard-fails (MODULE_NOT_FOUND)
+    # on 18/20 LTS. Explicit file paths run on every node with the runner.
+    test_files = sorted(
+        path.relative_to(PROXY_DIR).as_posix()
+        for path in (PROXY_DIR / "test").glob("*.test.mjs")
+    )
+    assert test_files, "worker behavioral suite has no test files"
+
     result = subprocess.run(
-        ["node", "--test", "test/*.test.mjs"],
+        ["node", "--test", *test_files],
         cwd=PROXY_DIR,
         text=True,
         capture_output=True,
