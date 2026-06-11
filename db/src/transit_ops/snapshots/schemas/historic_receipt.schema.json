@@ -6,6 +6,18 @@
           "title": "Id",
           "type": "string"
         },
+        "name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Name"
+        },
         "otp_delta_pts": {
           "anyOf": [
             {
@@ -42,6 +54,18 @@
           ],
           "default": null,
           "title": "Median Delay Min"
+        },
+        "name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Name"
         }
       },
       "required": [

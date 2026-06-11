@@ -399,7 +399,15 @@ def test_publish_historic_writes_expected_keys(tmp_path) -> None:
             {"endpoint_key": "vehicle_positions", "status": "ok",
              "completed_age_seconds": 30},
         ]),
-        # route IDs with history: UNION query — discriminator "UNION" (unique)
+        # name lookups (current dim UNION ALL history) — must precede the
+        # generic "UNION" needle for the route-id enumeration below
+        ("DISTINCT ON (u.stop_id)", [
+            {"stop_id": "51234", "stop_name": "Côte-Vertu"},
+        ]),
+        ("DISTINCT ON (u.route_id)", [
+            {"route_id": "165", "route_name": "Ligne 165"},
+        ]),
+        # route IDs with history: UNION query
         ("UNION", [
             ("101",), ("202",),
         ]),
@@ -436,10 +444,7 @@ def test_publish_historic_writes_expected_keys(tmp_path) -> None:
         ("route_habit_score", [
             {"day_of_week_iso": 1, "hour_of_day_local": 8, "repeat_problem_score": 0.7},
         ]),
-        # build_route_reliability: stop names — "gold.dim_stop" unique discriminator
-        ("gold.dim_stop", [
-            {"stop_id": "51234", "stop_name": "Côte-Vertu"},
-        ]),
+        # (stop names are served by the "DISTINCT ON (u.stop_id)" entry above)
         # build_stop_reliability: by_route — "stop_id, route_id" in SELECT
         # (must precede the generic stop_delay_weekly entry)
         ("stop_id, route_id", [

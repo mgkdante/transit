@@ -6,6 +6,18 @@
           "title": "Id",
           "type": "string"
         },
+        "name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Name"
+        },
         "otp_delta_pts": {
           "anyOf": [
             {

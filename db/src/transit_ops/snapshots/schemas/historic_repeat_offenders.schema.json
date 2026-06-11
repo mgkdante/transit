@@ -42,6 +42,18 @@
           "default": null,
           "title": "Route"
         },
+        "route_name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Route Name"
+        },
         "type": {
           "title": "Type",
           "type": "string"

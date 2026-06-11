@@ -12,6 +12,7 @@ from sqlalchemy import text
 from transit_ops.core.models import FeedKind, ProviderManifest
 from transit_ops.db.connection import make_engine, test_connection
 from transit_ops.gold import (
+    backfill_dim_name_history,
     build_gold_marts,
     build_warm_rollups,
     refresh_gold_realtime,
@@ -576,6 +577,42 @@ def refresh_gold_realtime_command(provider_id: str) -> None:
             provider_id,
             settings=settings,
             registry=_provider_registry(settings),
+        )
+    except KeyError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    except (ValueError, FileNotFoundError) as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    typer.echo(json.dumps(result.display_dict(), indent=2))
+
+
+@app.command("backfill-dim-history")
+def backfill_dim_history_command(
+    provider_id: str,
+    from_gtfs_zip: Path = typer.Option(  # noqa: B008
+        ...,
+        "--from-gtfs-zip",
+        help=(
+            "Archived GTFS zip (e.g. from bronze R2) whose routes.txt/stops.txt "
+            "carry the names of ids retired before migration 0029 existed."
+        ),
+    ),
+) -> None:
+    """Heal gold.dim_*_history from an archived GTFS zip.
+
+    Inserts CLOSED name rows ONLY for ids missing entirely from the history
+    tables (e.g. route/stop ids retired by a GTFS edition drop that predates
+    migration 0029). Existing history rows are never touched, so the command
+    is idempotent and a current-edition zip is a no-op. When healing from
+    several old editions, run the NEWEST zip first — the first zip providing
+    a missing id wins.
+    """
+
+    settings = get_settings()
+    try:
+        result = backfill_dim_name_history(
+            provider_id,
+            gtfs_zip_path=from_gtfs_zip,
+            settings=settings,
         )
     except KeyError as exc:
         raise typer.BadParameter(str(exc)) from exc

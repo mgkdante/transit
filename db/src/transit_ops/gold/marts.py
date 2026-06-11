@@ -305,6 +305,123 @@ INSERT_DIM_DATE = text(
 )
 
 
+# --- dim name history (slice-9.1.1u) -------------------------------------
+# Append-only SCD-lite writers for gold.dim_route_history / dim_stop_history.
+# Diffed against the NEW-version silver rows (never the old version: the
+# per-cycle silver prune deletes the previous dataset within ~one realtime
+# cycle of a GTFS edition flip). CLOSE must run before OPEN on the same
+# connection; rerunning with the same dataset version is a no-op.
+
+CLOSE_DIM_ROUTE_HISTORY = text(
+    """
+    UPDATE gold.dim_route_history AS h
+    SET valid_to_utc = now()
+    WHERE h.provider_id = :provider_id
+      AND h.valid_to_utc IS NULL
+      AND NOT EXISTS (
+          SELECT 1
+          FROM silver.routes AS r
+          WHERE r.provider_id = h.provider_id
+            AND r.dataset_version_id = :dataset_version_id
+            AND r.route_id = h.route_id
+            AND r.route_short_name IS NOT DISTINCT FROM h.route_short_name
+            AND r.route_long_name IS NOT DISTINCT FROM h.route_long_name
+            AND r.route_color IS NOT DISTINCT FROM h.route_color
+            AND r.route_type IS NOT DISTINCT FROM h.route_type
+      )
+    """
+)
+
+OPEN_DIM_ROUTE_HISTORY = text(
+    """
+    INSERT INTO gold.dim_route_history (
+        provider_id,
+        route_id,
+        route_short_name,
+        route_long_name,
+        route_color,
+        route_type,
+        valid_from_utc,
+        valid_to_utc,
+        last_seen_dataset_version_id
+    )
+    SELECT
+        r.provider_id,
+        r.route_id,
+        r.route_short_name,
+        r.route_long_name,
+        r.route_color,
+        r.route_type,
+        now(),
+        NULL,
+        r.dataset_version_id
+    FROM silver.routes AS r
+    WHERE r.provider_id = :provider_id
+      AND r.dataset_version_id = :dataset_version_id
+      AND NOT EXISTS (
+          SELECT 1
+          FROM gold.dim_route_history AS h
+          WHERE h.provider_id = r.provider_id
+            AND h.route_id = r.route_id
+            AND h.valid_to_utc IS NULL
+      )
+    """
+)
+
+CLOSE_DIM_STOP_HISTORY = text(
+    """
+    UPDATE gold.dim_stop_history AS h
+    SET valid_to_utc = now()
+    WHERE h.provider_id = :provider_id
+      AND h.valid_to_utc IS NULL
+      AND NOT EXISTS (
+          SELECT 1
+          FROM silver.stops AS s
+          WHERE s.provider_id = h.provider_id
+            AND s.dataset_version_id = :dataset_version_id
+            AND s.stop_id = h.stop_id
+            AND s.stop_name IS NOT DISTINCT FROM h.stop_name
+            AND s.stop_lat IS NOT DISTINCT FROM h.stop_lat
+            AND s.stop_lon IS NOT DISTINCT FROM h.stop_lon
+      )
+    """
+)
+
+OPEN_DIM_STOP_HISTORY = text(
+    """
+    INSERT INTO gold.dim_stop_history (
+        provider_id,
+        stop_id,
+        stop_name,
+        stop_lat,
+        stop_lon,
+        valid_from_utc,
+        valid_to_utc,
+        last_seen_dataset_version_id
+    )
+    SELECT
+        s.provider_id,
+        s.stop_id,
+        s.stop_name,
+        s.stop_lat,
+        s.stop_lon,
+        now(),
+        NULL,
+        s.dataset_version_id
+    FROM silver.stops AS s
+    WHERE s.provider_id = :provider_id
+      AND s.dataset_version_id = :dataset_version_id
+      AND NOT EXISTS (
+          SELECT 1
+          FROM gold.dim_stop_history AS h
+          WHERE h.provider_id = s.provider_id
+            AND h.stop_id = s.stop_id
+            AND h.valid_to_utc IS NULL
+      )
+    """
+)
+
+
 def _vehicle_snapshot_statement(
     *,
     target_table: str,
@@ -727,6 +844,8 @@ def _table_name(table_name: str) -> str:
         "dim_route_pattern",
         "dim_stop",
         "dim_date",
+        "dim_route_history",
+        "dim_stop_history",
         "fact_vehicle_snapshot",
         "fact_trip_delay_snapshot",
         "latest_vehicle_snapshot",
@@ -853,6 +972,25 @@ def _refresh_gold_dimensions(connection: Connection, *, context: GoldBuildContex
     connection.execute(INSERT_DIM_ROUTE_PATTERN, params)
     connection.execute(INSERT_DIM_STOP, params)
     connection.execute(INSERT_DIM_DATE, params)
+    _record_dim_name_history(connection, context=context)
+
+
+def _record_dim_name_history(connection: Connection, *, context: GoldBuildContext) -> None:
+    """Maintain the append-only name-history tables from new-version silver.
+
+    CLOSE before OPEN, per entity: a renamed/retired id gets its open row
+    closed first, then (if still present in silver) a fresh open row. Both
+    statement pairs are no-ops when rerun for the same dataset version.
+    History rows are never deleted here or anywhere else in the refresh paths.
+    """
+    params = {
+        "provider_id": context.provider_id,
+        "dataset_version_id": context.dataset_version_id,
+    }
+    connection.execute(CLOSE_DIM_ROUTE_HISTORY, params)
+    connection.execute(OPEN_DIM_ROUTE_HISTORY, params)
+    connection.execute(CLOSE_DIM_STOP_HISTORY, params)
+    connection.execute(OPEN_DIM_STOP_HISTORY, params)
 
 
 def _refresh_latest_gold_tables(
@@ -913,6 +1051,7 @@ def _refresh_gold_tables(
     connection.execute(INSERT_DIM_ROUTE_PATTERN, params)
     connection.execute(INSERT_DIM_STOP, params)
     connection.execute(INSERT_DIM_DATE, params)
+    _record_dim_name_history(connection, context=context)
     connection.execute(INSERT_FACT_VEHICLE_SNAPSHOT, params)
     connection.execute(INSERT_FACT_TRIP_DELAY_SNAPSHOT, params)
     latest_row_counts = _refresh_latest_gold_tables(connection, context=context)
@@ -952,6 +1091,16 @@ def _refresh_gold_tables(
             connection,
             provider_id=context.provider_id,
             table_name="fact_trip_delay_snapshot",
+        ),
+        "dim_route_history": _count_gold_rows(
+            connection,
+            provider_id=context.provider_id,
+            table_name="dim_route_history",
+        ),
+        "dim_stop_history": _count_gold_rows(
+            connection,
+            provider_id=context.provider_id,
+            table_name="dim_stop_history",
         ),
     } | latest_row_counts
 
@@ -1100,6 +1249,16 @@ def refresh_gold_static(
                 connection,
                 provider_id=context.provider_id,
                 table_name="dim_date",
+            ),
+            "dim_route_history": _count_gold_rows(
+                connection,
+                provider_id=context.provider_id,
+                table_name="dim_route_history",
+            ),
+            "dim_stop_history": _count_gold_rows(
+                connection,
+                provider_id=context.provider_id,
+                table_name="dim_stop_history",
             ),
         }
         refreshed_at_utc = utc_now()

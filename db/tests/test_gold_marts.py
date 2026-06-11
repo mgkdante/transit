@@ -6,12 +6,16 @@ from transit_ops.core.models import ProviderManifest
 from transit_ops.gold.marts import (
     ACQUIRE_GOLD_BUILD_LOCK,
     ANALYZE_REALTIME_SILVER_TABLES,
+    CLOSE_DIM_ROUTE_HISTORY,
+    CLOSE_DIM_STOP_HISTORY,
     INSERT_DIM_DIRECTION,
     INSERT_DIM_ROUTE,
     INSERT_DIM_ROUTE_PATTERN,
     INSERT_FACT_TRIP_DELAY_SNAPSHOT,
     INSERT_FACT_VEHICLE_SNAPSHOT,
     LOCK_GOLD_TABLES,
+    OPEN_DIM_ROUTE_HISTORY,
+    OPEN_DIM_STOP_HISTORY,
     UPSERT_FACT_TRIP_DELAY_SNAPSHOT_LATEST,
     build_gold_marts,
     refresh_gold_realtime,
@@ -77,8 +81,14 @@ class RecordingConnection:
             return FakeScalarResult(1)
         if "SELECT count(*)" in sql_text and "gold.dim_route_pattern" in sql_text:
             return FakeScalarResult(578)
+        # history branches MUST precede their dim branches: 'gold.dim_route'
+        # is a substring of 'gold.dim_route_history' (ditto stop).
+        if "SELECT count(*)" in sql_text and "gold.dim_route_history" in sql_text:
+            return FakeScalarResult(231)
         if "SELECT count(*)" in sql_text and "gold.dim_route" in sql_text:
             return FakeScalarResult(216)
+        if "SELECT count(*)" in sql_text and "gold.dim_stop_history" in sql_text:
+            return FakeScalarResult(9203)
         if "SELECT count(*)" in sql_text and "gold.dim_stop" in sql_text:
             return FakeScalarResult(8897)
         if "SELECT count(*)" in sql_text and "gold.dim_date" in sql_text:
@@ -222,6 +232,8 @@ def test_build_gold_marts_rebuilds_dimensions_and_facts() -> None:
         "dim_date": 99,
         "dim_direction": 0,
         "dim_route_pattern": 578,
+        "dim_route_history": 231,
+        "dim_stop_history": 9203,
         "fact_vehicle_snapshot": 953,
         "fact_trip_delay_snapshot": 1780,
         "latest_vehicle_snapshot": 883,
@@ -446,6 +458,8 @@ def test_refresh_gold_static_refreshes_only_dimensions() -> None:
         "dim_route_pattern": 578,
         "dim_stop": 8897,
         "dim_date": 99,
+        "dim_route_history": 231,
+        "dim_stop_history": 9203,
     }
     sql_calls = [call[0] for call in connection.calls]
     # Advisory lock acquired — serializes with realtime refresh
@@ -465,3 +479,79 @@ def test_refresh_gold_static_refreshes_only_dimensions() -> None:
     assert not any("fact_trip_delay_snapshot" in sql for sql in sql_calls)
     assert not any("latest_vehicle_snapshot" in sql for sql in sql_calls)
     assert not any("latest_trip_delay_snapshot" in sql for sql in sql_calls)
+
+
+def _assert_name_history_recorded(connection: RecordingConnection) -> None:
+    sql_calls = [call[0] for call in connection.calls]
+
+    # Close-then-open per entity: the UPDATE must run before the INSERT on the
+    # same connection so a renamed id gets its old row closed first.
+    for entity in ("route", "stop"):
+        close_index = next(
+            index
+            for index, sql in enumerate(sql_calls)
+            if f"UPDATE gold.dim_{entity}_history" in sql
+        )
+        open_index = next(
+            index
+            for index, sql in enumerate(sql_calls)
+            if f"INSERT INTO gold.dim_{entity}_history" in sql
+        )
+        assert close_index < open_index
+        assert connection.calls[close_index][1]["dataset_version_id"] == 2
+        assert connection.calls[open_index][1]["dataset_version_id"] == 2
+
+    # Append-only: no refresh path may ever delete history rows.
+    assert not any("DELETE FROM gold.dim_route_history" in sql for sql in sql_calls)
+    assert not any("DELETE FROM gold.dim_stop_history" in sql for sql in sql_calls)
+
+
+def test_refresh_gold_static_records_name_history() -> None:
+    connection = RecordingConnection(dataset_row={"dataset_version_id": 2})
+    engine = FakeEngine(connection)
+    settings = Settings(DATABASE_URL="postgresql://user:pass@example.com/transit")
+
+    refresh_gold_static(
+        "stm",
+        settings=settings,
+        registry=FakeRegistry(_build_manifest()),
+        engine=engine,
+    )
+
+    _assert_name_history_recorded(connection)
+
+
+def test_build_gold_marts_records_name_history() -> None:
+    connection = RecordingConnection(dataset_row={"dataset_version_id": 2})
+    engine = FakeEngine(connection)
+    settings = Settings(DATABASE_URL="postgresql://user:pass@example.com/transit")
+
+    build_gold_marts(
+        "stm",
+        settings=settings,
+        registry=FakeRegistry(_build_manifest()),
+        engine=engine,
+    )
+
+    _assert_name_history_recorded(connection)
+
+
+def test_dim_history_statements_sql_contract() -> None:
+    close_route = str(CLOSE_DIM_ROUTE_HISTORY)
+    close_stop = str(CLOSE_DIM_STOP_HISTORY)
+    open_route = str(OPEN_DIM_ROUTE_HISTORY)
+    open_stop = str(OPEN_DIM_STOP_HISTORY)
+
+    for close_sql in (close_route, close_stop):
+        assert "valid_to_utc IS NULL" in close_sql
+        # NULL-safe attribute comparison — plain '=' would treat NULL names as changed
+        assert "IS NOT DISTINCT FROM" in close_sql
+        assert "DELETE" not in close_sql
+    for open_sql in (open_route, open_stop):
+        assert "NOT EXISTS" in open_sql
+        assert "valid_to_utc IS NULL" in open_sql
+        assert "DELETE" not in open_sql
+
+    # Diffed against NEW-version silver, never the (already pruned) old version.
+    assert "silver.routes" in close_route and "silver.routes" in open_route
+    assert "silver.stops" in close_stop and "silver.stops" in open_stop

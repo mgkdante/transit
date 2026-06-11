@@ -1314,13 +1314,62 @@ _ROUTE_WEAK_STOPS_SQL = text(
     """
 )
 
+# Display-name lookups resolve current-dim-first (pri 0) and fall back to the
+# newest gold.dim_*_history row, so ids retired/renamed by a GTFS drop keep
+# their last known name on historic surfaces (slice-9.1.1u).
 _STOP_NAMES_SQL = text(
     """
-    SELECT stop_id, stop_name
-    FROM gold.dim_stop
-    WHERE provider_id = :provider_id
+    SELECT DISTINCT ON (u.stop_id) u.stop_id, u.stop_name
+    FROM (
+        SELECT stop_id, stop_name, 0 AS pri, NULL::timestamptz AS vf
+        FROM gold.dim_stop
+        WHERE provider_id = :provider_id
+        UNION ALL
+        SELECT stop_id, stop_name, 1 AS pri, valid_from_utc AS vf
+        FROM gold.dim_stop_history
+        WHERE provider_id = :provider_id
+    ) AS u
+    ORDER BY u.stop_id, u.pri, u.vf DESC NULLS LAST
     """
 )
+
+_ROUTE_NAMES_SQL = text(
+    """
+    SELECT DISTINCT ON (u.route_id) u.route_id, u.route_name
+    FROM (
+        SELECT route_id,
+               COALESCE(route_long_name, route_short_name) AS route_name,
+               0 AS pri,
+               NULL::timestamptz AS vf
+        FROM gold.dim_route
+        WHERE provider_id = :provider_id
+        UNION ALL
+        SELECT route_id,
+               COALESCE(route_long_name, route_short_name) AS route_name,
+               1 AS pri,
+               valid_from_utc AS vf
+        FROM gold.dim_route_history
+        WHERE provider_id = :provider_id
+    ) AS u
+    ORDER BY u.route_id, u.pri, u.vf DESC NULLS LAST
+    """
+)
+
+
+def _entity_name_maps(
+    conn: Connection, *, provider_id: str
+) -> tuple[dict[str, str], dict[str, str]]:
+    """(route_id -> name, stop_id -> name) — current dim first, history fallback."""
+    params = {"provider_id": provider_id}
+    route_names = {
+        str(r["route_id"]): r["route_name"]
+        for r in conn.execute(_ROUTE_NAMES_SQL, params).mappings()
+    }
+    stop_names = {
+        str(r["stop_id"]): r["stop_name"]
+        for r in conn.execute(_STOP_NAMES_SQL, params).mappings()
+    }
+    return route_names, stop_names
 
 
 def build_route_reliability(
@@ -1431,8 +1480,15 @@ def build_route_reliability(
         for sid, avg_sec in weak_rows[:5]
     ]
 
+    # --- route display name: current dim first, dim_route_history fallback ---
+    route_names = {
+        str(r["route_id"]): r["route_name"]
+        for r in conn.execute(_ROUTE_NAMES_SQL, {"provider_id": provider_id}).mappings()
+    }
+
     return RouteReliability(
         id=route_id,
+        name=route_names.get(route_id),
         periods=periods,
         headway=headway,
         habits=habits,
@@ -1579,12 +1635,18 @@ def build_stop_reliability(
             )
         )
 
+    # stop display names: current dim first, dim_stop_history fallback
+    names = {
+        str(r["stop_id"]): r["stop_name"]
+        for r in conn.execute(_STOP_NAMES_SQL, params).mappings()
+    }
+
     out: dict[str, StopReliability] = {}
     for sid in set(periods) | set(by_route):
         grain_map = periods.get(sid, {})
         ordered = [grain_map[g] for g in ("week", "month") if g in grain_map]
         routes = sorted(by_route.get(sid, []), key=lambda b: _route_sort_key(b.route))
-        out[sid] = StopReliability(id=sid, periods=ordered, by_route=routes)
+        out[sid] = StopReliability(id=sid, name=names.get(sid), periods=ordered, by_route=routes)
     return out
 
 
@@ -1642,11 +1704,18 @@ def build_hotspots(conn: "Connection", provider_id: str = "stm") -> "Hotspots":
     from transit_ops.snapshots.contract import Hotspot, Hotspots
 
     rows = list(conn.execute(_HOTSPOTS_SQL, {"provider_id": provider_id}).mappings())
+    route_names, stop_names = _entity_name_maps(conn, provider_id=provider_id)
     hotspots = [
         Hotspot(
             rank=i + 1,
             type=str(r["entity_kind"]),
             id=str(r["entity_id"]),
+            # kinds verified 'route'/'stop' in the mart — per-kind name lookup
+            name=(
+                route_names.get(str(r["entity_id"]))
+                if str(r["entity_kind"]) == "route"
+                else stop_names.get(str(r["entity_id"]))
+            ),
             severity=r["severity_label"],
             otp_delta_pts=None,  # v1 deferral: not stored in gold.repeated_problem_route_stop
         )
@@ -1685,11 +1754,20 @@ def build_repeat_offenders(
     rows = list(
         conn.execute(_REPEAT_OFFENDERS_SQL, {"provider_id": provider_id}).mappings()
     )
+    # Offender entities are 'trip'/'vehicle' kinds with no display name of
+    # their own — resolve the ROUTE context name instead (history-backed).
+    route_names = {
+        str(r["route_id"]): r["route_name"]
+        for r in conn.execute(_ROUTE_NAMES_SQL, {"provider_id": provider_id}).mappings()
+    }
     offenders = [
         Offender(
             type=str(r["entity_kind"]),
             id=str(r["entity_id"]),
             route=r["route_id"],
+            route_name=(
+                route_names.get(str(r["route_id"])) if r["route_id"] is not None else None
+            ),
             recurrence=f"{r['recurrence_days']}/{r['window_days']}d",
             avg_delay_min=round(float(r["avg_delay_seconds"]) / 60.0, 1),
         )
@@ -1781,6 +1859,7 @@ def build_receipts(
     from transit_ops.snapshots.contract import Receipt, ReceiptWorstRoute, ReceiptWorstStop
 
     params = {"provider_id": provider_id}
+    route_names, stop_names = _entity_name_maps(conn, provider_id=provider_id)
 
     # 1. accountability rows: one per date (the driver set)
     acct: dict[str, dict] = {}
@@ -1814,6 +1893,7 @@ def build_receipts(
         if ds not in worst_route:  # first = max avg_delay (ordered DESC)
             worst_route[ds] = ReceiptWorstRoute(
                 id=str(r["route_id"]),
+                name=route_names.get(str(r["route_id"])),
                 otp_delta_pts=None,  # v1 deferral: not stored in gold
             )
 
@@ -1824,6 +1904,7 @@ def build_receipts(
         if ds not in worst_stop:  # first = max avg_delay (ordered DESC)
             worst_stop[ds] = ReceiptWorstStop(
                 id=str(r["stop_id"]),
+                name=stop_names.get(str(r["stop_id"])),
                 median_delay_min=_avg_delay_min(r["avg_delay_seconds"]),
             )
 
