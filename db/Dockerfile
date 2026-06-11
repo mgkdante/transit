@@ -8,6 +8,15 @@ WORKDIR /app
 
 RUN pip install --no-cache-dir uv
 
+# pg_dump 16 for backup-database: the compose postgres service runs
+# transit-postgres-postgis:16 (postgres:16 base) and slim bookworm's stock
+# Debian client is 15, which refuses to dump a 16 server — hence pgdg.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends postgresql-common ca-certificates \
+    && /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y \
+    && apt-get install -y --no-install-recommends postgresql-client-16 \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY pyproject.toml uv.lock alembic.ini ./
 COPY config ./config
 COPY src ./src

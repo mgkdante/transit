@@ -85,6 +85,16 @@ def test_env_example_documents_compose_runtime_contract() -> None:
     assert "Oracle VM Postgres" in env_example
 
 
+def test_worker_dockerfile_ships_pg_dump_16_client() -> None:
+    dockerfile = (DB_ROOT / "Dockerfile").read_text(encoding="utf-8")
+
+    # The compose postgres service is transit-postgres-postgis:16 (postgres:16
+    # base), and slim bookworm's stock client is 15, so the worker needs the
+    # pgdg postgresql-client-16 to run pg_dump against it.
+    assert "apt.postgresql.org.sh" in dockerfile
+    assert "postgresql-client-16" in dockerfile
+
+
 def test_weekly_pg_repack_workflow_runs_guardrail_script() -> None:
     workflow = (REPO_ROOT / ".github/workflows/weekly-pg-repack.yml").read_text(
         encoding="utf-8"
