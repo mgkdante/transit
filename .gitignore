@@ -23,3 +23,7 @@ AGENTS.local.md
 artifacts/
 .superpowers/
 *:Zone.Identifier
+
+# Cloudflare Worker tooling (infra/cloudflare/*)
+node_modules/
+.wrangler/
