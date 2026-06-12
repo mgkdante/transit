@@ -98,6 +98,7 @@ UPSERT_TRIP_DELAY_SUMMARY_5M = text(
         trip_count,
         observation_count,
         delay_observation_count,
+        on_time_observation_count,
         avg_delay_seconds,
         avg_delay_seconds_capped,
         max_delay_seconds,
@@ -113,6 +114,7 @@ UPSERT_TRIP_DELAY_SUMMARY_5M = text(
         COUNT(DISTINCT trip_id)::integer,
         COUNT(*)::integer,
         COUNT(delay_seconds)::integer,
+        COUNT(*) FILTER (WHERE delay_seconds >= -60 AND delay_seconds < 300)::integer,
         AVG(delay_seconds::numeric),
         AVG(delay_seconds::numeric) FILTER (WHERE ABS(delay_seconds) <= 3600),
         MAX(delay_seconds),
@@ -128,6 +130,7 @@ UPSERT_TRIP_DELAY_SUMMARY_5M = text(
         trip_count              = EXCLUDED.trip_count,
         observation_count       = EXCLUDED.observation_count,
         delay_observation_count = EXCLUDED.delay_observation_count,
+        on_time_observation_count = EXCLUDED.on_time_observation_count,
         avg_delay_seconds       = EXCLUDED.avg_delay_seconds,
         avg_delay_seconds_capped = EXCLUDED.avg_delay_seconds_capped,
         max_delay_seconds       = EXCLUDED.max_delay_seconds,
@@ -180,6 +183,11 @@ UPSERT_ROUTE_DELAY_HOURLY = text(
             COALESCE(route_id, '__unrouted__') AS route_id,
             SUM(trip_count)::integer AS trip_count,
             SUM(observation_count)::integer AS observation_count,
+            SUM(delay_observation_count)::integer AS delay_observation_count,
+            -- A NULL in any contributing 5m bucket means pre-fix history is unknowable.
+            CASE WHEN COUNT(*) = COUNT(on_time_observation_count)
+                THEN SUM(on_time_observation_count)::integer
+            END AS on_time_observation_count,
             ROUND(
                 SUM(avg_delay_seconds * NULLIF(delay_observation_count, 0))
                 / NULLIF(SUM(delay_observation_count), 0),
@@ -207,6 +215,8 @@ UPSERT_ROUTE_DELAY_HOURLY = text(
         route_id,
         trip_count,
         observation_count,
+        delay_observation_count,
+        on_time_observation_count,
         avg_delay_seconds,
         max_delay_seconds,
         delayed_trip_count,
@@ -219,6 +229,8 @@ UPSERT_ROUTE_DELAY_HOURLY = text(
         s.route_id,
         s.trip_count,
         s.observation_count,
+        s.delay_observation_count,
+        s.on_time_observation_count,
         s.avg_delay_seconds,
         s.max_delay_seconds,
         s.delayed_trip_count,
@@ -232,6 +244,8 @@ UPSERT_ROUTE_DELAY_HOURLY = text(
     ON CONFLICT (provider_id, period_start_utc, route_id) DO UPDATE SET
         trip_count = EXCLUDED.trip_count,
         observation_count = EXCLUDED.observation_count,
+        delay_observation_count = EXCLUDED.delay_observation_count,
+        on_time_observation_count = EXCLUDED.on_time_observation_count,
         avg_delay_seconds = EXCLUDED.avg_delay_seconds,
         max_delay_seconds = EXCLUDED.max_delay_seconds,
         delayed_trip_count = EXCLUDED.delayed_trip_count,
@@ -334,6 +348,8 @@ UPSERT_ROUTE_RELIABILITY_WEEKLY = text(
         week_start_local,
         route_id,
         observation_count,
+        delay_observation_count,
+        on_time_observation_count,
         avg_delay_seconds,
         delayed_trip_count,
         severe_delay_count,
@@ -344,9 +360,14 @@ UPSERT_ROUTE_RELIABILITY_WEEKLY = text(
         date_trunc('week', timezone(dp.timezone, rd.period_start_utc))::date,
         rd.route_id,
         SUM(rd.observation_count)::integer,
+        SUM(rd.delay_observation_count)::integer,
+        -- A NULL in any contributing hour means pre-fix history is unknowable.
+        CASE WHEN COUNT(*) = COUNT(rd.on_time_observation_count)
+            THEN SUM(rd.on_time_observation_count)::integer
+        END,
         ROUND(
-            SUM(rd.avg_delay_seconds * NULLIF(rd.observation_count, 0))
-            / NULLIF(SUM(rd.observation_count), 0),
+            SUM(rd.avg_delay_seconds * NULLIF(rd.delay_observation_count, 0))
+            / NULLIF(SUM(rd.delay_observation_count), 0),
             2
         ),
         SUM(rd.delayed_trip_count)::integer,
@@ -359,6 +380,8 @@ UPSERT_ROUTE_RELIABILITY_WEEKLY = text(
     GROUP BY 1, 2, 3
     ON CONFLICT (provider_id, week_start_local, route_id) DO UPDATE SET
         observation_count = EXCLUDED.observation_count,
+        delay_observation_count = EXCLUDED.delay_observation_count,
+        on_time_observation_count = EXCLUDED.on_time_observation_count,
         avg_delay_seconds = EXCLUDED.avg_delay_seconds,
         delayed_trip_count = EXCLUDED.delayed_trip_count,
         severe_delay_count = EXCLUDED.severe_delay_count,
@@ -373,6 +396,8 @@ UPSERT_ROUTE_RELIABILITY_MONTHLY = text(
         month_start_local,
         route_id,
         observation_count,
+        delay_observation_count,
+        on_time_observation_count,
         avg_delay_seconds,
         delayed_trip_count,
         severe_delay_count,
@@ -383,9 +408,14 @@ UPSERT_ROUTE_RELIABILITY_MONTHLY = text(
         date_trunc('month', timezone(dp.timezone, rd.period_start_utc))::date,
         rd.route_id,
         SUM(rd.observation_count)::integer,
+        SUM(rd.delay_observation_count)::integer,
+        -- A NULL in any contributing hour means pre-fix history is unknowable.
+        CASE WHEN COUNT(*) = COUNT(rd.on_time_observation_count)
+            THEN SUM(rd.on_time_observation_count)::integer
+        END,
         ROUND(
-            SUM(rd.avg_delay_seconds * NULLIF(rd.observation_count, 0))
-            / NULLIF(SUM(rd.observation_count), 0),
+            SUM(rd.avg_delay_seconds * NULLIF(rd.delay_observation_count, 0))
+            / NULLIF(SUM(rd.delay_observation_count), 0),
             2
         ),
         SUM(rd.delayed_trip_count)::integer,
@@ -398,6 +428,8 @@ UPSERT_ROUTE_RELIABILITY_MONTHLY = text(
     GROUP BY 1, 2, 3
     ON CONFLICT (provider_id, month_start_local, route_id) DO UPDATE SET
         observation_count = EXCLUDED.observation_count,
+        delay_observation_count = EXCLUDED.delay_observation_count,
+        on_time_observation_count = EXCLUDED.on_time_observation_count,
         avg_delay_seconds = EXCLUDED.avg_delay_seconds,
         delayed_trip_count = EXCLUDED.delayed_trip_count,
         severe_delay_count = EXCLUDED.severe_delay_count,

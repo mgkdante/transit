@@ -24,7 +24,8 @@ Static schedules are computed for a deterministic *representative service date*
 (busiest weekday / weekend in the dataset's current window) so headways and stop
 times reflect one coherent day rather than the union of all 144 service calendars.
 
-Status-band thresholds mirror migration 0020 so vehicle, trip and network status agree.
+Status-band thresholds mirror migration 0020; network OTP counts on_time+late
+as the unified [-60s,+300s) band over vehicles with known status.
 """
 
 from __future__ import annotations
@@ -468,9 +469,10 @@ _NETWORK_FRESHNESS_SQL = text(
 def build_network(conn: Connection, *, provider_id: str = "stm") -> NetworkFile:
     """Pre-aggregate network-health KPIs into a single NetworkFile.
 
-    on_time_pct is over vehicles with a KNOWN status (unknown is a coverage gap,
-    reported separately as coverage_pct); occupancy_mix is over vehicles that
-    actually report an occupancy code, so the fractions sum to ~1.
+    on_time_pct is the unified [-60s,+300s) OTP band (on_time+late) over
+    vehicles with a KNOWN status; unknown is a coverage gap reported separately
+    as coverage_pct. occupancy_mix is over vehicles that actually report an
+    occupancy code, so the fractions sum to ~1.
     """
     params = {"provider_id": provider_id}
 
@@ -488,7 +490,8 @@ def build_network(conn: Connection, *, provider_id: str = "stm") -> NetworkFile:
                 occ_counts[occ_code] += 1
 
     known = vehicles_in_service - dist.unknown
-    on_time_pct = round(100 * dist.on_time / known) if known else 0
+    on_time_band = dist.on_time + dist.late
+    on_time_pct = round(100 * on_time_band / known) if known else 0
 
     occ_total = sum(occ_counts.values())
     occupancy_mix = (
@@ -1119,21 +1122,32 @@ def build_all_stops_data(conn: Connection, *, provider_id: str = "stm") -> "dict
 # HISTORIC tier builders (Phase 3) — gold reliability rollups -> /v1/historic
 # ---------------------------------------------------------------------------
 #
-# OTP convention: otp_pct = round(100 * (obs - delayed) / obs), NULL if obs==0.
-# The daily PUBLIC views expose only severe_delay_*; there 'delayed' == severe.
-# avg_delay_min = round(avg_delay_seconds/60, 1); severe_pct = round(100*sev/obs, 1).
+# OTP convention: otp_pct = round(100 * on_time / known), NULL if either side is
+# unknown or known==0. Stop reliability keeps a documented severe-delay proxy
+# until gold has per-stop delay observations.
+# avg_delay_min = round(avg_delay_seconds/60, 1); severe_pct = round(100*sev/known, 1).
 # p50_min/p90_min for route/stop reliability are NOT stored in gold and are left
 # None (v1 deferral); only network_trend computes a real p90 from the fact table.
 
 
-def _otp_pct(observation_count: object, delayed: object) -> int | None:
-    """round(100 * (obs - delayed) / obs) as int; None when obs is 0/NULL."""
+def _otp_pct(on_time: object, known: object) -> int | None:
+    """round(100 * on_time / known) as int; None when numerator or denominator is unknown."""
+    if on_time is None or not known:
+        return None
+    known_obs = float(known)  # type: ignore[arg-type]
+    if known_obs <= 0:
+        return None
+    return round(100.0 * float(on_time) / known_obs)
+
+
+def _otp_pct_severe_proxy(observation_count: object, severe: object) -> int | None:
+    """Stop-level OTP proxy: observations not severe over observations."""
     if not observation_count:
         return None
     obs = float(observation_count)  # type: ignore[arg-type]
     if obs <= 0:
         return None
-    return round(100.0 * (obs - float(delayed or 0)) / obs)
+    return round(100.0 * (obs - float(severe or 0)) / obs)
 
 
 def _avg_delay_min(avg_delay_seconds: object) -> float | None:
@@ -1160,9 +1174,11 @@ def _severe_pct(observation_count: object, severe: object) -> float | None:
 _TREND_DAILY_SQL = text(
     """
     SELECT timezone(dp.timezone, rdh.period_start_utc)::date AS local_date,
-           SUM(rdh.observation_count)                        AS obs,
-           SUM(rdh.delayed_trip_count)                       AS delayed,
-           SUM(rdh.avg_delay_seconds * rdh.observation_count) AS weighted_delay_sec
+           SUM(rdh.delay_observation_count)                  AS known_obs,
+           CASE WHEN COUNT(*) = COUNT(rdh.on_time_observation_count)
+                THEN SUM(rdh.on_time_observation_count)
+           END AS on_time,
+           SUM(rdh.avg_delay_seconds * rdh.delay_observation_count) AS weighted_delay_sec
     FROM gold.route_delay_hourly AS rdh
     JOIN gold.dim_provider AS dp ON dp.provider_id = rdh.provider_id
     WHERE rdh.provider_id = :provider_id
@@ -1201,11 +1217,15 @@ def build_network_trend(conn: Connection, *, provider_id: str = "stm") -> "Netwo
     points: dict[str, dict] = {}
 
     for r in conn.execute(_TREND_DAILY_SQL, params).mappings():
-        obs = r["obs"]
+        known_obs = r["known_obs"]
         weighted = r["weighted_delay_sec"]
-        avg_delay_sec = (float(weighted) / float(obs)) if obs and weighted is not None else None
+        avg_delay_sec = (
+            (float(weighted) / float(known_obs))
+            if known_obs and weighted is not None
+            else None
+        )
         points[_iso_date(r["local_date"])] = {
-            "otp_pct": _otp_pct(obs, r["delayed"]),
+            "otp_pct": _otp_pct(r["on_time"], known_obs),
             "avg_delay_min": _avg_delay_min(avg_delay_sec),
             "p90_min": None,
             "vehicles": None,
@@ -1243,12 +1263,11 @@ def _iso_date(d: object) -> str:
 # build_route_reliability
 # --------------------------------------------------------------------------
 
-# Daily reliability from the PUBLIC view: only severe_delay_* is exposed, so the
-# 'delayed' numerator for OTP is the severe count (documented proxy).
 _ROUTE_REL_DAILY_SQL = text(
     """
     SELECT provider_local_date              AS d,
-           stop_time_observation_count      AS obs,
+           delay_observation_count AS known_obs,
+           on_time_observation_count AS on_time,
            avg_delay_seconds                AS avg_delay_sec,
            severe_delay_observation_count   AS severe
     FROM gold.public_route_reliability_daily
@@ -1261,9 +1280,9 @@ _ROUTE_REL_DAILY_SQL = text(
 _ROUTE_REL_WEEKLY_SQL = text(
     """
     SELECT week_start_local      AS d,
-           observation_count     AS obs,
+           delay_observation_count AS known_obs,
+           on_time_observation_count AS on_time,
            avg_delay_seconds     AS avg_delay_sec,
-           delayed_trip_count    AS delayed,
            severe_delay_count    AS severe
     FROM gold.route_reliability_weekly
     WHERE provider_id = :provider_id AND route_id = :route_id
@@ -1274,9 +1293,9 @@ _ROUTE_REL_WEEKLY_SQL = text(
 _ROUTE_REL_MONTHLY_SQL = text(
     """
     SELECT month_start_local     AS d,
-           observation_count     AS obs,
+           delay_observation_count AS known_obs,
+           on_time_observation_count AS on_time,
            avg_delay_seconds     AS avg_delay_sec,
-           delayed_trip_count    AS delayed,
            severe_delay_count    AS severe
     FROM gold.route_reliability_monthly
     WHERE provider_id = :provider_id AND route_id = :route_id
@@ -1377,7 +1396,7 @@ def build_route_reliability(
 ) -> "RouteReliability":
     """Build historic/route_reliability/{route_id}.json.
 
-    periods: daily (last 30, OTP from severe proxy) + weekly + monthly.
+    periods: daily (last 30) + weekly + monthly, all using observation-based OTP.
     headway: observed (gold rollup) vs scheduled (representative-weekday median,
              mirroring build_route) with excess_wait per shift.
     habits:  7x24 repeat-problem-score matrix (isodow 1..7 x hour 0..23).
@@ -1393,18 +1412,18 @@ def build_route_reliability(
 
     params = {"provider_id": provider_id, "route_id": route_id}
 
-    # --- periods (daily severe-proxy OTP, weekly/monthly delayed-trip OTP) ---
+    # --- periods (daily/weekly/monthly observation-based OTP) ---
     periods: list[ReliabilityPeriod] = []
     for r in conn.execute(_ROUTE_REL_DAILY_SQL, params).mappings():
         periods.append(
-            ReliabilityPeriod(
-                grain="day",
-                date=_iso_date(r["d"]),
-                otp_pct=_otp_pct(r["obs"], r["severe"]),  # daily view exposes severe only
-                avg_delay_min=_avg_delay_min(r["avg_delay_sec"]),
-                p50_min=None,  # percentiles not stored in gold (v1 deferral)
-                p90_min=None,
-                severe_pct=_severe_pct(r["obs"], r["severe"]),
+                ReliabilityPeriod(
+                    grain="day",
+                    date=_iso_date(r["d"]),
+                    otp_pct=_otp_pct(r["on_time"], r["known_obs"]),
+                    avg_delay_min=_avg_delay_min(r["avg_delay_sec"]),
+                    p50_min=None,  # percentiles not stored in gold (v1 deferral)
+                    p90_min=None,
+                    severe_pct=_severe_pct(r["known_obs"], r["severe"]),
             )
         )
     for grain, sql in (("week", _ROUTE_REL_WEEKLY_SQL), ("month", _ROUTE_REL_MONTHLY_SQL)):
@@ -1413,11 +1432,11 @@ def build_route_reliability(
                 ReliabilityPeriod(
                     grain=grain,
                     date=_iso_date(r["d"]),
-                    otp_pct=_otp_pct(r["obs"], r["delayed"]),
+                    otp_pct=_otp_pct(r["on_time"], r["known_obs"]),
                     avg_delay_min=_avg_delay_min(r["avg_delay_sec"]),
                     p50_min=None,
                     p90_min=None,
-                    severe_pct=_severe_pct(r["obs"], r["severe"]),
+                    severe_pct=_severe_pct(r["known_obs"], r["severe"]),
                 )
             )
 
@@ -1596,8 +1615,8 @@ def build_stop_reliability(
     """Build all historic/stop_reliability/{stop_id}.json in a batched pass.
 
     For every stop in gold.stop_delay_weekly/monthly: weekly+monthly periods
-    (aggregated across the stop's routes; OTP from the severe proxy) and a
-    natural-sorted per-route median-delay breakdown. Returns stop_id -> model.
+    aggregated across the stop's routes. Stop OTP remains a severe(>300s)-only
+    proxy pending per-stop delay observations. Returns stop_id -> model.
     """
     from transit_ops.snapshots.contract import (
         StopByRoute,
@@ -1618,7 +1637,7 @@ def build_stop_reliability(
             avg_sec = _weighted_avg_sec(r["obs"], r["weighted_delay_sec"])
             periods.setdefault(sid, {})[grain] = StopReliabilityPeriod(
                 grain=grain,
-                otp_pct=_otp_pct(r["obs"], r["severe"]),  # weekly/monthly stop views expose severe
+                otp_pct=_otp_pct_severe_proxy(r["obs"], r["severe"]),
                 median_delay_min=(round(avg_sec / 60.0, 1) if avg_sec is not None else None),
                 severe_pct=_severe_pct(r["obs"], r["severe"]),
             )
@@ -1801,10 +1820,12 @@ _RECEIPTS_ACCOUNTABILITY_SQL = text(
 _RECEIPTS_NETWORK_DAILY_SQL = text(
     """
     SELECT timezone(dp.timezone, rdh.period_start_utc)::date AS local_date,
-           SUM(rdh.observation_count)                         AS obs,
-           SUM(rdh.delayed_trip_count)                        AS delayed,
+           SUM(rdh.delay_observation_count)                   AS known_obs,
+           CASE WHEN COUNT(*) = COUNT(rdh.on_time_observation_count)
+                THEN SUM(rdh.on_time_observation_count)
+           END AS on_time,
            SUM(rdh.severe_delay_count)                        AS severe,
-           SUM(rdh.avg_delay_seconds * rdh.observation_count) AS weighted_delay_sec
+           SUM(rdh.avg_delay_seconds * rdh.delay_observation_count) AS weighted_delay_sec
     FROM gold.route_delay_hourly AS rdh
     JOIN gold.dim_provider AS dp ON dp.provider_id = rdh.provider_id
     WHERE rdh.provider_id = :provider_id
@@ -1878,12 +1899,16 @@ def build_receipts(
     net: dict[str, dict] = {}
     for r in conn.execute(_RECEIPTS_NETWORK_DAILY_SQL, params).mappings():
         ds = _iso_date(r["local_date"])
-        obs, weighted = r["obs"], r["weighted_delay_sec"]
-        avg_sec = (float(weighted) / float(obs)) if obs and weighted is not None else None
+        known_obs, weighted = r["known_obs"], r["weighted_delay_sec"]
+        avg_sec = (
+            (float(weighted) / float(known_obs))
+            if known_obs and weighted is not None
+            else None
+        )
         net[ds] = {
-            "otp_pct": _otp_pct(obs, r["delayed"]),
+            "otp_pct": _otp_pct(r["on_time"], known_obs),
             "avg_delay_min": _avg_delay_min(avg_sec),
-            "severe_pct": _severe_pct(obs, r["severe"]),
+            "severe_pct": _severe_pct(known_obs, r["severe"]),
         }
 
     # 3. worst route per date: first row after ORDER BY avg_delay_seconds DESC
@@ -2103,7 +2128,12 @@ def build_provenance(
         freshness=freshness,
         retention={"detail_days": 14, "aggregate_days": 365},
         methodology={
-            "otp_definition": "on-time = not delayed-trip-flagged per gold reporting",
+            "otp_definition": (
+                "on-time = observed delay between -60s and +300s "
+                "(at most 1 min early, less than 5 min late); OTP = on-time "
+                "observations / observations with known delay; stop-level OTP "
+                "is a severe(>300s)-only proxy pending per-stop observations"
+            ),
             "delay_unit": "seconds from schedule",
             "percentiles": (
                 "network p90 from fact; route/stop percentiles deferred"

@@ -363,7 +363,7 @@ def test_build_alerts_unknown_severity_falls_back_to_watch() -> None:
 def test_build_network_aggregates_kpis() -> None:
     # 5 vehicles: 2 on_time, 1 late, 1 severe, 1 unknown
     # known = 5 - 1 unknown = 4
-    # on_time_pct = round(100 * 2 / 4) = 50
+    # on_time_pct = round(100 * (2+1) / 4) = 75
     # coverage_pct = round(100 * 4 / 5) = 80
     vehicle_rows = [
         {"status_band": "À l'heure / On time", "occupancy_status": 1},   # many_seats
@@ -394,8 +394,8 @@ def test_build_network_aggregates_kpis() -> None:
     assert out.status_dist.late == 1
     assert out.status_dist.severe == 1
     assert out.status_dist.unknown == 1
-    # on_time_pct: round(100 * on_time / known) where known = 5 - 1 unknown = 4
-    assert out.on_time_pct == 50  # round(100 * 2 / 4)
+    # on_time_pct: round(100 * (on_time+late) / known) where known = 4
+    assert out.on_time_pct == 75
     # coverage_pct: round(100 * known / vehicles_in_service) = round(100 * 4/5) = 80
     assert out.coverage_pct == 80
     # occupancy_mix fractions over occ_total (vehicles that reported occ):
@@ -408,6 +408,28 @@ def test_build_network_aggregates_kpis() -> None:
     # percentiles of [1, 2, 10] minutes
     assert out.delay_p50_min == 2
     assert out.delay_p90_min >= 8  # near the top of the range
+
+
+def test_build_network_on_time_pct_counts_late_band_as_on_time() -> None:
+    conn = FakeConn(
+        {
+            "current_vehicle_map_with_status": [
+                {"status_band": "À l'heure / On time", "occupancy_status": None},
+                {"status_band": "En retard / Late", "occupancy_status": None},
+                {"status_band": "Critique / Severe", "occupancy_status": None},
+            ],
+            "current_trip_delay_computed": [],
+            "non_responding_current": [{"non_responding": 0}],
+            "feed_freshness_current": [{"feed_freshness_s": 0}],
+        }
+    )
+
+    out = build_network(conn)
+
+    assert out.on_time_pct == 67
+    assert out.status_dist.on_time == 1
+    assert out.status_dist.late == 1
+    assert out.status_dist.severe == 1
 
 
 def test_build_network_guards_zero_vehicles() -> None:
