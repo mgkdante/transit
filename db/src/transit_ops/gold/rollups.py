@@ -339,19 +339,6 @@ UPSERT_ROUTE_DELAY_DAY_OF_WEEK = text(
 
 UPSERT_STOP_DELAY_HOURLY = text(
     f"""
-    WITH stop_activity AS (
-        SELECT
-            provider_id,
-            date_trunc('hour', captured_at_utc) AS period_start_utc,
-            COALESCE(stop_id, '__unknown_stop__') AS stop_id,
-            COALESCE(route_id, '__unrouted__') AS route_id,
-            COUNT(*)::integer AS observation_count
-        FROM gold.fact_vehicle_snapshot
-        WHERE provider_id = :provider_id
-          AND stop_id IS NOT NULL
-          AND captured_at_utc >= {OPEN_WINDOW_HOURLY_CUTOFF_SQL}
-        GROUP BY 1, 2, 3, 4
-    )
     INSERT INTO gold.stop_delay_hourly (
         provider_id,
         period_start_utc,
@@ -364,23 +351,27 @@ UPSERT_STOP_DELAY_HOURLY = text(
         built_at_utc
     )
     SELECT
-        sa.provider_id,
-        sa.period_start_utc,
-        sa.stop_id,
-        sa.route_id,
-        sa.observation_count,
-        rd.avg_delay_seconds,
-        rd.avg_delay_seconds,
-        CASE
-            WHEN COALESCE(rd.max_delay_seconds, 0) > 300 THEN sa.observation_count
-            ELSE 0
-        END,
+        f.provider_id,
+        date_trunc('hour', f.captured_at_utc) AS period_start_utc,
+        f.delay_stop_id AS stop_id,
+        COALESCE(f.route_id, '__unrouted__') AS route_id,
+        COUNT(*)::integer AS observation_count,
+        -- delay_seconds is a single trip-update delay; stop consumers coalesce
+        -- arrival/departure, so both average columns carry the same value.
+        ROUND(AVG(f.delay_seconds::numeric), 2) AS avg_arrival_delay_seconds,
+        ROUND(AVG(f.delay_seconds::numeric), 2) AS avg_departure_delay_seconds,
+        COUNT(*) FILTER (
+            WHERE f.delay_seconds > {SEVERE_DELAY_SECONDS}
+              AND ABS(f.delay_seconds) <= {GHOST_DELAY_ABS_SECONDS}
+        )::integer AS severe_delay_count,
         :built_at_utc
-    FROM stop_activity AS sa
-    LEFT JOIN gold.route_delay_hourly AS rd
-        ON rd.provider_id = sa.provider_id
-       AND rd.period_start_utc = sa.period_start_utc
-       AND rd.route_id = sa.route_id
+    FROM gold.fact_trip_delay_snapshot AS f
+    WHERE f.provider_id = :provider_id
+      AND f.delay_stop_id IS NOT NULL
+      AND f.delay_seconds IS NOT NULL
+      AND ABS(f.delay_seconds) <= {GHOST_DELAY_ABS_SECONDS}
+      AND f.captured_at_utc >= {OPEN_WINDOW_HOURLY_CUTOFF_SQL}
+    GROUP BY 1, 2, 3, 4
     """
 )
 

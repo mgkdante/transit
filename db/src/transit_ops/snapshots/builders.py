@@ -1123,8 +1123,8 @@ def build_all_stops_data(conn: Connection, *, provider_id: str = "stm") -> "dict
 # ---------------------------------------------------------------------------
 #
 # OTP convention: otp_pct = round(100 * on_time / known), NULL if either side is
-# unknown or known==0. Stop reliability keeps a documented severe-delay proxy
-# until gold has per-stop delay observations.
+# unknown or known==0. Stop reliability keeps a documented severe-delay proxy,
+# now over real per-stop delay observations rather than route-smeared values.
 # avg_delay_min = round(avg_delay_seconds/60, 1); severe_pct = round(100*sev/known, 1).
 # p50_min/p90_min for route/stop reliability are NOT stored in gold and are left
 # None (v1 deferral); only network_trend computes a real p90 from the fact table.
@@ -1141,7 +1141,7 @@ def _otp_pct(on_time: object, known: object) -> int | None:
 
 
 def _otp_pct_severe_proxy(observation_count: object, severe: object) -> int | None:
-    """Stop-level OTP proxy: observations not severe over observations."""
+    """Stop OTP proxy: per-stop delay observations not severe over observations."""
     if not observation_count:
         return None
     obs = float(observation_count)  # type: ignore[arg-type]
@@ -1617,7 +1617,7 @@ def build_stop_reliability(
 
     For every stop in gold.stop_delay_weekly/monthly: weekly+monthly periods
     aggregated across the stop's routes. Stop OTP remains a severe(>300s)-only
-    proxy pending per-stop delay observations. Returns stop_id -> model.
+    proxy, now over per-stop delay observations. Returns stop_id -> model.
     """
     from transit_ops.snapshots.contract import (
         StopByRoute,
@@ -2131,9 +2131,11 @@ def build_provenance(
         methodology={
             "otp_definition": (
                 "on-time = observed delay between -60s and +300s "
-                "(at most 1 min early, less than 5 min late); OTP = on-time "
-                "observations / observations with known delay; stop-level OTP "
-                "is a severe(>300s)-only proxy pending per-stop observations"
+                "(at most 1 min early, less than 5 min late); route OTP = "
+                "on-time observations / observations with known delay; "
+                "stop-level otp_pct is observations not severe(>300s) over "
+                "per-stop delay observations, a severe-delay proxy rather "
+                "than true on-time-band OTP"
             ),
             "delay_unit": (
                 "seconds from schedule; delay statistics exclude observations "
