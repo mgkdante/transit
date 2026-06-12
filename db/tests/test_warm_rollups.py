@@ -310,6 +310,49 @@ def test_route_delay_hourly_carries_observation_unit_counts() -> None:
     assert "on_time_observation_count = EXCLUDED.on_time_observation_count" in sql
 
 
+def test_trip_delay_summary_5m_writes_capped_max() -> None:
+    sql = str(rollups.UPSERT_TRIP_DELAY_SUMMARY_5M)
+
+    assert "max_delay_seconds_capped" in sql
+    assert "MAX(delay_seconds) FILTER (WHERE ABS(delay_seconds) <= 3600)" in sql
+    assert "max_delay_seconds_capped = EXCLUDED.max_delay_seconds_capped" in sql
+
+
+def test_route_delay_hourly_avg_uses_capped_column() -> None:
+    sql = str(rollups.UPSERT_ROUTE_DELAY_HOURLY)
+
+    assert "avg_delay_seconds_capped * NULLIF(delay_observation_count - outlier_count, 0)" in sql
+    assert "NULLIF(SUM(delay_observation_count - outlier_count), 0)" in sql
+    assert "SUM(avg_delay_seconds * " not in sql
+
+
+def test_route_delay_hourly_max_uses_capped_column() -> None:
+    sql = str(rollups.UPSERT_ROUTE_DELAY_HOURLY)
+
+    assert "MAX(max_delay_seconds_capped)" in sql
+    assert "MAX(max_delay_seconds)" not in sql
+
+
+def test_route_delay_hourly_severe_excludes_outliers() -> None:
+    sql = str(rollups.UPSERT_ROUTE_DELAY_HOURLY)
+
+    assert "delay_seconds > 300 AND ABS(delay_seconds) <= 3600" in sql
+
+
+def test_route_delay_day_of_week_caps_delay_inputs() -> None:
+    sql = str(rollups.UPSERT_ROUTE_DELAY_DAY_OF_WEEK)
+
+    assert "AVG(f.delay_seconds::numeric) FILTER (WHERE ABS(f.delay_seconds) <= 3600)" in sql
+    assert "f.delay_seconds > 300 AND ABS(f.delay_seconds) <= 3600" in sql
+
+
+def test_repeat_offender_obs_excludes_outlier_delays() -> None:
+    sql = str(rollups.UPSERT_REPEAT_OFFENDER_DAILY)
+
+    assert "AND ABS(f.delay_seconds) <= 3600" in sql
+    assert sql.index("AND ABS(f.delay_seconds) <= 3600") < sql.index("agg AS")
+
+
 def test_route_reliability_weekly_monthly_carry_otp_counts_and_weights() -> None:
     for sql in (
         str(rollups.UPSERT_ROUTE_RELIABILITY_WEEKLY),
