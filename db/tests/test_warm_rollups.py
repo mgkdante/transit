@@ -280,7 +280,10 @@ def test_reporting_aggregate_builders_read_gold_reporting_surfaces_only() -> Non
     assert all(" silver." not in statement.lower() for statement in aggregate_inserts)
     assert any("FROM gold.trip_delay_summary_5m" in statement for statement in aggregate_inserts)
     assert any("FROM gold.fact_trip_delay_snapshot" in statement for statement in aggregate_inserts)
-    assert any("FROM gold.fact_vehicle_snapshot" in statement for statement in aggregate_inserts)
+    assert all(
+        "FROM gold.fact_vehicle_snapshot" not in statement
+        for statement in aggregate_inserts
+    )
     assert any("FROM gold.route_delay_hourly" in statement for statement in aggregate_inserts)
     assert any("FROM gold.stop_delay_hourly" in statement for statement in aggregate_inserts)
     assert any("LEAST(" in statement for statement in aggregate_inserts)
@@ -409,6 +412,25 @@ def test_route_delay_day_of_week_uses_durable_capped_hourly_inputs() -> None:
     assert "rd.avg_delay_seconds * NULLIF(rd.observation_count, 0)" not in sql
 
 
+def test_stop_delay_hourly_aggregates_real_per_stop_delays() -> None:
+    sql = str(rollups.REPORTING_AGGREGATE_UPSERTS["stop_delay_hourly"])
+    compact = " ".join(sql.split())
+
+    assert "FROM gold.fact_trip_delay_snapshot AS f" in sql
+    assert "f.delay_stop_id" in sql
+    assert "date_trunc('hour', f.captured_at_utc)" in sql
+    assert "f.delay_seconds IS NOT NULL" in sql
+    assert "ABS(f.delay_seconds) <= 3600" in sql
+    assert "delay_seconds > 300 AND ABS(f.delay_seconds) <= 3600" in compact
+    assert "ROUND(AVG(f.delay_seconds::numeric), 2)" in sql
+    assert "COUNT(*)::integer" in sql
+    assert "ON CONFLICT" not in sql
+    assert "fact_vehicle_snapshot" not in sql
+    assert "route_delay_hourly" not in sql
+    assert "max_delay_seconds" not in sql
+    assert "THEN sa.observation_count" not in sql
+
+
 def test_route_delay_hourly_severe_single_sourced_from_5m() -> None:
     sql = str(rollups.UPSERT_ROUTE_DELAY_HOURLY)
 
@@ -448,7 +470,8 @@ def test_stop_delay_hourly_scoped_to_open_window() -> None:
     assert cutoff
     assert cutoff in sql
     assert cutoff in str(rollups.DELETE_REPORTING_AGGREGATES["stop_delay_hourly"])
-    assert "LEFT JOIN gold.route_delay_hourly" in sql
+    assert "FROM gold.fact_trip_delay_snapshot AS f" in sql
+    assert "LEFT JOIN gold.route_delay_hourly" not in sql
     assert "ON CONFLICT" not in sql
 
 

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from transit_ops.core.models import ProviderManifest
@@ -281,6 +283,54 @@ def test_trip_delay_fact_backfills_vehicle_and_delay_from_normalized_rt_tables()
     assert "silver.rt_vehicle_positions AS vp" in sql
     assert "silver.stop_times AS st" in sql
     assert "st.dataset_version_id = :dataset_version_id" in sql
+
+
+def test_trip_delay_fact_attributes_delay_to_next_stop() -> None:
+    sql = str(INSERT_FACT_TRIP_DELAY_SNAPSHOT)
+    insert_columns = sql.split("INSERT INTO", 1)[1].split("SELECT", 1)[0]
+
+    assert "COALESCE(stu.stop_id, st.stop_id) AS delay_stop_id" in sql
+    assert "stu.stop_sequence AS delay_stop_sequence" in sql
+    assert "delay_rank = 1" in sql
+    assert "tdf.delay_stop_id" in sql
+    assert "tdf.delay_stop_sequence" in sql
+    assert "delay_stop_id" in insert_columns
+    assert "delay_stop_sequence" in insert_columns
+
+
+def test_trip_delay_latest_upsert_updates_delay_stop_attribution() -> None:
+    sql = str(UPSERT_FACT_TRIP_DELAY_SNAPSHOT_LATEST)
+
+    assert "delay_stop_id = EXCLUDED.delay_stop_id" in sql
+    assert "delay_stop_sequence = EXCLUDED.delay_stop_sequence" in sql
+
+
+def test_migration_0034_adds_delay_stop_columns_and_repairs_stop_history() -> None:
+    migration_path = (
+        Path(__file__).resolve().parents[1]
+        / "src/transit_ops/db/migrations/versions/0034_trip_delay_stop_attribution.py"
+    )
+    source = migration_path.read_text()
+
+    assert 'revision = "0034_trip_delay_stop_attribution"' in source
+    assert 'down_revision = "0033_trip_delay_summary_severe_counts"' in source
+    assert '"fact_trip_delay_snapshot"' in source
+    assert '"latest_trip_delay_snapshot"' in source
+    assert '"delay_stop_id"' in source
+    assert '"delay_stop_sequence"' in source
+    assert "_BACKFILL_FACT_TRIP_DELAY_STOP_ATTRIBUTION" in source
+    assert "_REBUILD_STOP_DELAY_HOURLY_FROM_FACT" in source
+    assert "DELETE FROM gold.stop_delay_hourly" in source
+    assert "FROM gold.fact_trip_delay_snapshot" in source
+    assert "ABS(delay_seconds) <= 3600" in source
+    assert "gold.stop_delay_weekly" in source
+    assert "gold.stop_delay_monthly" in source
+    assert "_DELETE_STOP_DELAY_WEEKLY" in source
+    assert "_INSERT_STOP_DELAY_WEEKLY" in source
+    assert "_DELETE_STOP_DELAY_MONTHLY" in source
+    assert "_INSERT_STOP_DELAY_MONTHLY" in source
+    assert "_DELETE_REPEATED_PROBLEM_ROUTE_STOP" in source
+    assert "_INSERT_REPEATED_PROBLEM_ROUTE_STOP" in source
 
 
 def test_trip_delay_latest_scopes_stop_time_counts_to_snapshot() -> None:

@@ -125,6 +125,7 @@ def test_otp_pct_all_known_on_time_is_100() -> None:
 
 def test_otp_severe_proxy_for_stops() -> None:
     assert _otp_pct_severe_proxy(80, 8) == 90
+    assert "per-stop delay observations" in (_otp_pct_severe_proxy.__doc__ or "")
 
 
 # --------------------------------------------------------------------------
@@ -1261,6 +1262,8 @@ def test_provenance_methodology_documents_band() -> None:
     assert "-60s" in definition
     assert "+300s" in definition
     assert "proxy" in definition
+    assert "per-stop delay observations" in definition
+    assert "pending per-stop observations" not in definition
     delay_unit = out.methodology["delay_unit"]
     assert "|delay| > 1 hour" in delay_unit
     assert "severe = >300s and <=3600s" in delay_unit

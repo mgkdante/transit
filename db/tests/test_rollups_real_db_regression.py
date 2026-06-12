@@ -115,14 +115,13 @@ def _seed(connection, seed: _SeedData) -> None:  # noqa: ANN001
             seed.snapshot_id,
             captured_at,
             [
-                ("G1", "51T", 25622, seed.base_local_date - timedelta(days=2)),
-                ("L1", "51T", 400, seed.base_local_date),
-                ("O1", "51T", 120, seed.base_local_date),
-                ("G2", "52T", 25622, seed.base_local_date - timedelta(days=2)),
-                ("O2", "52T", 120, seed.base_local_date),
+                ("G1", "51T", 25622, seed.base_local_date - timedelta(days=2), "S_A"),
+                ("L1", "51T", 400, seed.base_local_date, "S_A"),
+                ("O1", "51T", 120, seed.base_local_date, "S_A"),
+                ("G2", "52T", 25622, seed.base_local_date - timedelta(days=2), "S_B"),
+                ("O2", "52T", 120, seed.base_local_date, "S_B"),
             ],
         )
-        _insert_vehicle_stop_row(connection, seed.snapshot_id, captured_at, entity_index=100)
 
     for day_offset in (1, 2):
         captured_at = seed.base_utc - timedelta(days=day_offset)
@@ -133,8 +132,8 @@ def _seed(connection, seed: _SeedData) -> None:  # noqa: ANN001
             seed.snapshot_id,
             captured_at,
             [
-                ("G1", "51T", 25622, local_date - timedelta(days=2)),
-                ("L1", "51T", 400, local_date),
+                ("G1", "51T", 25622, local_date - timedelta(days=2), "S_A"),
+                ("L1", "51T", 400, local_date, "S_A"),
             ],
         )
 
@@ -189,11 +188,11 @@ def _insert_trip_delay_rows(
     connection,  # noqa: ANN001
     snapshot_id: int,
     captured_at: datetime,
-    rows: list[tuple[str, str, int, object]],
+    rows: list[tuple[str, str, int, object, str]],
 ) -> None:
     snapshot_local_date = captured_at.astimezone(TORONTO).date()
     snapshot_date_key = int(snapshot_local_date.strftime("%Y%m%d"))
-    for entity_index, (trip_id, route_id, delay_seconds, start_date) in enumerate(rows):
+    for entity_index, (trip_id, route_id, delay_seconds, start_date, stop_id) in enumerate(rows):
         connection.execute(
             text(
                 """
@@ -201,7 +200,8 @@ def _insert_trip_delay_rows(
                     (provider_id, realtime_snapshot_id, entity_index, snapshot_date_key,
                      snapshot_local_date, feed_timestamp_utc, captured_at_utc, entity_id,
                      trip_id, route_id, direction_id, start_date, vehicle_id,
-                     trip_schedule_relationship, delay_seconds, stop_time_update_count)
+                     trip_schedule_relationship, delay_seconds, stop_time_update_count,
+                     delay_stop_id, delay_stop_sequence)
                 VALUES (
                     :provider_id,
                     :snapshot_id,
@@ -218,7 +218,9 @@ def _insert_trip_delay_rows(
                     NULL,
                     NULL,
                     :delay_seconds,
-                    1
+                    1,
+                    :stop_id,
+                    :stop_sequence
                 )
                 """
             ),
@@ -234,53 +236,10 @@ def _insert_trip_delay_rows(
                 "route_id": route_id,
                 "start_date": start_date,
                 "delay_seconds": delay_seconds,
+                "stop_id": stop_id,
+                "stop_sequence": entity_index + 1,
             },
         )
-
-
-def _insert_vehicle_stop_row(
-    connection,  # noqa: ANN001
-    snapshot_id: int,
-    captured_at: datetime,
-    *,
-    entity_index: int,
-) -> None:
-    snapshot_local_date = captured_at.astimezone(TORONTO).date()
-    connection.execute(
-        text(
-            """
-            INSERT INTO gold.fact_vehicle_snapshot
-                (provider_id, realtime_snapshot_id, entity_index, snapshot_date_key,
-                 snapshot_local_date, feed_timestamp_utc, captured_at_utc,
-                 entity_id, vehicle_id, trip_id, route_id, stop_id)
-            VALUES (
-                :provider_id,
-                :snapshot_id,
-                :entity_index,
-                :snapshot_date_key,
-                :snapshot_local_date,
-                :captured_at,
-                :captured_at,
-                :entity_id,
-                :vehicle_id,
-                :trip_id,
-                '52T',
-                'S_B'
-            )
-            """
-        ),
-        {
-            "provider_id": PROVIDER,
-            "snapshot_id": snapshot_id,
-            "entity_index": entity_index,
-            "snapshot_date_key": int(snapshot_local_date.strftime("%Y%m%d")),
-            "snapshot_local_date": snapshot_local_date,
-            "captured_at": captured_at,
-            "entity_id": f"V-{snapshot_id}",
-            "vehicle_id": f"V-{snapshot_id}",
-            "trip_id": "O2",
-        },
-    )
 
 
 def _build_rollups(connection) -> None:  # noqa: ANN001
@@ -375,7 +334,7 @@ def test_ghost_trip_excluded_from_5m_hourly_and_stop_severe(conn) -> None:  # no
     stop_row = _one(
         connection,
         """
-        SELECT severe_delay_count
+        SELECT observation_count, avg_arrival_delay_seconds, severe_delay_count
         FROM gold.stop_delay_hourly
         WHERE provider_id = :provider_id
           AND route_id = '52T'
@@ -384,6 +343,8 @@ def test_ghost_trip_excluded_from_5m_hourly_and_stop_severe(conn) -> None:  # no
         """,
         {"provider_id": PROVIDER, "period_start_utc": seed.base_utc},
     )
+    assert stop_row["observation_count"] == 12
+    assert _decimal(stop_row["avg_arrival_delay_seconds"]) == Decimal("120.00")
     assert stop_row["severe_delay_count"] == 0
 
     daily = _one(
@@ -396,7 +357,11 @@ def test_ghost_trip_excluded_from_5m_hourly_and_stop_severe(conn) -> None:  # no
         """,
         {"provider_id": PROVIDER, "provider_local_date": seed.base_local_date},
     )
-    assert daily["affected_stop_count"] == 0
+    # Post-0034 per-stop attribution: L1 (delay 400s, severe, attributed to S_A on
+    # the base date) makes S_A a genuinely affected stop — the pre-attribution
+    # expectation of 0 reflected smear-era seeds, not ghost exclusion. The ghost
+    # (base-2d) still contributes nothing to this date.
+    assert daily["affected_stop_count"] == 1
 
 
 def test_ghost_trip_excluded_from_day_of_week_and_repeat_offender(conn) -> None:  # noqa: ANN001
