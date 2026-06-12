@@ -54,6 +54,62 @@ def test_0030_backfill_scoped_to_band_and_joins_on_pk():
     assert "s.route_id = f.route_id" in sql
 
 
+def test_0030_backfills_persisted_hourly_rollups_from_5m():
+    m = _load()
+    sql = m._BACKFILL_HOURLY_OTP_OBSERVATIONS
+    compact = " ".join(sql.split())
+
+    assert "UPDATE gold.route_delay_hourly AS rd" in sql
+    assert "FROM gold.trip_delay_summary_5m" in sql
+    assert "date_trunc('hour', period_start_utc) AS period_start_utc" in sql
+    assert "SUM(delay_observation_count)::integer AS delay_observation_count" in sql
+    assert (
+        "CASE WHEN COUNT(*) = COUNT(on_time_observation_count) "
+        "THEN SUM(on_time_observation_count)::integer END AS on_time_observation_count"
+    ) in compact
+    assert "rd.provider_id = h.provider_id" in sql
+    assert "rd.period_start_utc = h.period_start_utc" in sql
+    assert "rd.route_id = h.route_id" in sql
+
+
+def test_0030_backfills_persisted_weekly_monthly_rollups_without_nulling_legacy_avg():
+    m = _load()
+
+    for attr, table_name, local_column, grain in (
+        (
+            "_BACKFILL_WEEKLY_OTP_OBSERVATIONS",
+            "route_reliability_weekly",
+            "week_start_local",
+            "week",
+        ),
+        (
+            "_BACKFILL_MONTHLY_OTP_OBSERVATIONS",
+            "route_reliability_monthly",
+            "month_start_local",
+            "month",
+        ),
+    ):
+        sql = getattr(m, attr)
+        compact = " ".join(sql.split())
+
+        assert f"UPDATE gold.{table_name} AS rr" in sql
+        assert "FROM gold.route_delay_hourly AS rd" in sql
+        assert "INNER JOIN gold.dim_provider AS dp" in sql
+        assert (
+            f"date_trunc('{grain}', timezone(dp.timezone, rd.period_start_utc))::date "
+            f"AS {local_column}"
+        ) in compact
+        assert "SUM(rd.delay_observation_count)::integer AS delay_observation_count" in sql
+        assert (
+            "CASE WHEN COUNT(*) = COUNT(rd.on_time_observation_count) "
+            "THEN SUM(rd.on_time_observation_count)::integer END AS on_time_observation_count"
+        ) in compact
+        assert "rd.avg_delay_seconds * NULLIF(rd.delay_observation_count, 0)" in sql
+        assert "WHEN b.delay_observation_count > 0 THEN b.avg_delay_seconds" in sql
+        assert "ELSE rr.avg_delay_seconds" in sql
+        assert f"rr.{local_column} = b.{local_column}" in sql
+
+
 def test_0030_replaces_public_daily_view_appending_columns():
     m = _load()
     sql = m._CREATE_PUBLIC_ROUTE_RELIABILITY_DAILY

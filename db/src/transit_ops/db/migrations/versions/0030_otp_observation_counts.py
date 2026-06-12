@@ -36,6 +36,99 @@ WHERE s.provider_id = f.provider_id
 """
 
 
+_BACKFILL_HOURLY_OTP_OBSERVATIONS = """
+UPDATE gold.route_delay_hourly AS rd
+SET
+    delay_observation_count = h.delay_observation_count,
+    on_time_observation_count = h.on_time_observation_count
+FROM (
+    SELECT
+        provider_id,
+        date_trunc('hour', period_start_utc) AS period_start_utc,
+        route_id,
+        SUM(delay_observation_count)::integer AS delay_observation_count,
+        CASE WHEN COUNT(*) = COUNT(on_time_observation_count)
+            THEN SUM(on_time_observation_count)::integer
+        END AS on_time_observation_count
+    FROM gold.trip_delay_summary_5m
+    GROUP BY 1, 2, 3
+) AS h
+WHERE rd.provider_id = h.provider_id
+  AND rd.period_start_utc = h.period_start_utc
+  AND rd.route_id = h.route_id
+"""
+
+
+_BACKFILL_WEEKLY_OTP_OBSERVATIONS = """
+UPDATE gold.route_reliability_weekly AS rr
+SET
+    delay_observation_count = b.delay_observation_count,
+    on_time_observation_count = b.on_time_observation_count,
+    avg_delay_seconds = CASE
+        WHEN b.delay_observation_count > 0 THEN b.avg_delay_seconds
+        ELSE rr.avg_delay_seconds
+    END
+FROM (
+    SELECT
+        rd.provider_id,
+        date_trunc('week', timezone(dp.timezone, rd.period_start_utc))::date
+            AS week_start_local,
+        rd.route_id,
+        SUM(rd.delay_observation_count)::integer AS delay_observation_count,
+        CASE WHEN COUNT(*) = COUNT(rd.on_time_observation_count)
+            THEN SUM(rd.on_time_observation_count)::integer
+        END AS on_time_observation_count,
+        ROUND(
+            SUM(rd.avg_delay_seconds * NULLIF(rd.delay_observation_count, 0))
+            / NULLIF(SUM(rd.delay_observation_count), 0),
+            2
+        ) AS avg_delay_seconds
+    FROM gold.route_delay_hourly AS rd
+    INNER JOIN gold.dim_provider AS dp
+        ON dp.provider_id = rd.provider_id
+    GROUP BY 1, 2, 3
+) AS b
+WHERE rr.provider_id = b.provider_id
+  AND rr.week_start_local = b.week_start_local
+  AND rr.route_id = b.route_id
+"""
+
+
+_BACKFILL_MONTHLY_OTP_OBSERVATIONS = """
+UPDATE gold.route_reliability_monthly AS rr
+SET
+    delay_observation_count = b.delay_observation_count,
+    on_time_observation_count = b.on_time_observation_count,
+    avg_delay_seconds = CASE
+        WHEN b.delay_observation_count > 0 THEN b.avg_delay_seconds
+        ELSE rr.avg_delay_seconds
+    END
+FROM (
+    SELECT
+        rd.provider_id,
+        date_trunc('month', timezone(dp.timezone, rd.period_start_utc))::date
+            AS month_start_local,
+        rd.route_id,
+        SUM(rd.delay_observation_count)::integer AS delay_observation_count,
+        CASE WHEN COUNT(*) = COUNT(rd.on_time_observation_count)
+            THEN SUM(rd.on_time_observation_count)::integer
+        END AS on_time_observation_count,
+        ROUND(
+            SUM(rd.avg_delay_seconds * NULLIF(rd.delay_observation_count, 0))
+            / NULLIF(SUM(rd.delay_observation_count), 0),
+            2
+        ) AS avg_delay_seconds
+    FROM gold.route_delay_hourly AS rd
+    INNER JOIN gold.dim_provider AS dp
+        ON dp.provider_id = rd.provider_id
+    GROUP BY 1, 2, 3
+) AS b
+WHERE rr.provider_id = b.provider_id
+  AND rr.month_start_local = b.month_start_local
+  AND rr.route_id = b.route_id
+"""
+
+
 _CREATE_PUBLIC_ROUTE_RELIABILITY_DAILY = """
 CREATE OR REPLACE VIEW gold.public_route_reliability_daily AS
 SELECT
@@ -173,6 +266,9 @@ def upgrade() -> None:
         )
 
     op.execute(_BACKFILL_5M_ON_TIME)
+    op.execute(_BACKFILL_HOURLY_OTP_OBSERVATIONS)
+    op.execute(_BACKFILL_WEEKLY_OTP_OBSERVATIONS)
+    op.execute(_BACKFILL_MONTHLY_OTP_OBSERVATIONS)
     op.execute(_CREATE_PUBLIC_ROUTE_RELIABILITY_DAILY)
     op.execute(_CREATE_TRIP_DELAY_SUMMARY_5M_LIVE)
 

@@ -182,8 +182,11 @@ def _insert_hourly(
     connection,
     *,
     period: datetime,
+    route_id: str = "51",
     delay_obs: int,
     on_time: int | None,
+    observation_count: int | None = None,
+    avg_delay_seconds: float = 60.0,
 ) -> None:
     connection.execute(
         text(
@@ -193,15 +196,55 @@ def _insert_hourly(
                  delay_observation_count, on_time_observation_count, avg_delay_seconds,
                  max_delay_seconds, delayed_trip_count, severe_delay_count, built_at_utc)
             VALUES
-                (:p, :period, '51', :delay_obs, :delay_obs, :delay_obs, :on_time,
-                 60.0, 120, 1, 2, :built_at)
+                (:p, :period, :route_id, :delay_obs, :observation_count, :delay_obs, :on_time,
+                 :avg_delay_seconds, 120, 1, 2, :built_at)
             """
         ),
         {
             "p": PROVIDER,
             "period": period,
+            "route_id": route_id,
             "delay_obs": delay_obs,
             "on_time": on_time,
+            "observation_count": observation_count
+            if observation_count is not None
+            else delay_obs,
+            "avg_delay_seconds": avg_delay_seconds,
+            "built_at": BUILT_AT,
+        },
+    )
+
+
+def _insert_weekly(
+    connection,
+    *,
+    week_start_local: date,
+    route_id: str,
+    delay_obs: int,
+    on_time: int | None,
+    observation_count: int,
+    avg_delay_seconds: float,
+) -> None:
+    connection.execute(
+        text(
+            """
+            INSERT INTO gold.route_reliability_weekly
+                (provider_id, week_start_local, route_id, observation_count,
+                 delay_observation_count, on_time_observation_count, avg_delay_seconds,
+                 delayed_trip_count, severe_delay_count, built_at_utc)
+            VALUES
+                (:p, :week_start_local, :route_id, :observation_count,
+                 :delay_obs, :on_time, :avg_delay_seconds, 1, 2, :built_at)
+            """
+        ),
+        {
+            "p": PROVIDER,
+            "week_start_local": week_start_local,
+            "route_id": route_id,
+            "observation_count": observation_count,
+            "delay_obs": delay_obs,
+            "on_time": on_time,
+            "avg_delay_seconds": avg_delay_seconds,
             "built_at": BUILT_AT,
         },
     )
@@ -249,7 +292,8 @@ def test_hourly_rollup_null_guard_propagates_legacy_buckets(conn) -> None:
             """
             SELECT delay_observation_count, on_time_observation_count
             FROM gold.route_delay_hourly
-            WHERE provider_id = :p AND period_start_utc = date_trunc('hour', :period::timestamptz)
+            WHERE provider_id = :p
+              AND period_start_utc = date_trunc('hour', CAST(:period AS timestamptz))
             """
         ),
         {"p": PROVIDER, "period": PERIOD},
@@ -276,7 +320,8 @@ def test_hourly_rollup_null_guard_propagates_legacy_buckets(conn) -> None:
             """
             SELECT on_time_observation_count
             FROM gold.route_delay_hourly
-            WHERE provider_id = :p AND period_start_utc = date_trunc('hour', :period::timestamptz)
+            WHERE provider_id = :p
+              AND period_start_utc = date_trunc('hour', CAST(:period AS timestamptz))
             """
         ),
         {"p": PROVIDER, "period": PERIOD},
@@ -354,3 +399,93 @@ def test_migration_backfill_fills_buckets_within_fact_window(conn) -> None:
     }
     assert rows[PERIOD] == 2
     assert rows[datetime(2026, 6, 12, 12, 15, tzinfo=UTC)] is None
+
+
+def test_migration_backfills_legacy_persisted_rollups_without_over_nulling(conn) -> None:
+    migration = _migration_0030()
+    legacy_hour = datetime(2026, 6, 12, 12, 0, tzinfo=UTC)
+    week_start = date(2026, 6, 8)
+
+    _insert_hourly(
+        conn,
+        period=legacy_hour,
+        delay_obs=0,
+        on_time=None,
+        observation_count=12,
+        avg_delay_seconds=75.0,
+    )
+    _insert_5m_summary(conn, period=legacy_hour, delay_obs=6, on_time=None)
+    _insert_5m_summary(
+        conn,
+        period=datetime(2026, 6, 12, 12, 5, tzinfo=UTC),
+        delay_obs=6,
+        on_time=None,
+    )
+    _insert_weekly(
+        conn,
+        week_start_local=week_start,
+        route_id="51",
+        delay_obs=0,
+        on_time=None,
+        observation_count=12,
+        avg_delay_seconds=70.0,
+    )
+    _insert_weekly(
+        conn,
+        week_start_local=week_start,
+        route_id="NO_HOURLY",
+        delay_obs=0,
+        on_time=None,
+        observation_count=5,
+        avg_delay_seconds=33.0,
+    )
+
+    conn.execute(text(migration._BACKFILL_5M_ON_TIME))
+    conn.execute(text(migration._BACKFILL_HOURLY_OTP_OBSERVATIONS))
+    conn.execute(text(migration._BACKFILL_WEEKLY_OTP_OBSERVATIONS))
+    conn.execute(text(migration._BACKFILL_MONTHLY_OTP_OBSERVATIONS))
+
+    daily = conn.execute(
+        text(
+            """
+            SELECT avg_delay_seconds, delay_observation_count, on_time_observation_count
+            FROM gold.public_route_reliability_daily
+            WHERE provider_id = :p AND route_id = '51'
+            """
+        ),
+        {"p": PROVIDER},
+    ).mappings().one()
+    assert daily["avg_delay_seconds"] is not None
+    assert float(daily["avg_delay_seconds"]) == 75.0
+    assert daily["delay_observation_count"] == 12
+    assert daily["on_time_observation_count"] is None
+
+    matched_week = conn.execute(
+        text(
+            """
+            SELECT delay_observation_count, on_time_observation_count, avg_delay_seconds
+            FROM gold.route_reliability_weekly
+            WHERE provider_id = :p AND week_start_local = :week_start AND route_id = '51'
+            """
+        ),
+        {"p": PROVIDER, "week_start": week_start},
+    ).mappings().one()
+    assert matched_week["delay_observation_count"] == 12
+    assert matched_week["on_time_observation_count"] is None
+    assert float(matched_week["avg_delay_seconds"]) == 75.0
+
+    unmatched_week = conn.execute(
+        text(
+            """
+            SELECT delay_observation_count, on_time_observation_count, avg_delay_seconds
+            FROM gold.route_reliability_weekly
+            WHERE provider_id = :p
+              AND week_start_local = :week_start
+              AND route_id = 'NO_HOURLY'
+            """
+        ),
+        {"p": PROVIDER, "week_start": week_start},
+    ).mappings().one()
+    assert unmatched_week["delay_observation_count"] == 0
+    assert unmatched_week["on_time_observation_count"] is None
+    assert float(unmatched_week["avg_delay_seconds"]) == 33.0
