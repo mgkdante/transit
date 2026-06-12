@@ -590,7 +590,14 @@ def _trip_delay_snapshot_statement(
                     EPOCH FROM (
                         COALESCE(stu.arrival_time_utc, stu.departure_time_utc)
                         - (
-                            rtu.start_date::timestamp
+                            -- GTFS service times are elapsed offsets from the
+                            -- noon-minus-12h service-day anchor; slice-9.1.1g
+                            -- keeps DST gap/repeated-hour days honest.
+                            timezone(
+                                :provider_timezone,
+                                rtu.start_date::timestamp + interval '12 hours'
+                            )
+                            - interval '12 hours'
                             + make_interval(
                                 hours => split_part(
                                     COALESCE(st.arrival_time, st.departure_time),
@@ -608,7 +615,7 @@ def _trip_delay_snapshot_statement(
                                     3
                                 )::integer
                             )
-                        ) AT TIME ZONE :provider_timezone
+                        )
                     )
                 )::integer AS derived_delay_seconds,
                 row_number() OVER (

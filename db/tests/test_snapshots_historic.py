@@ -1287,6 +1287,22 @@ def test_provenance_methodology_documents_closed_period_freeze() -> None:
     assert "10-day open window" in freeze_rule
 
 
+def test_provenance_methodology_documents_gtfs_service_time_conversion() -> None:
+    conn = FakeConn(
+        [
+            ("source_lineage_reporting", []),
+            ("feed_freshness_current", []),
+        ]
+    )
+    out = build_provenance(conn)
+
+    service_time = out.methodology["service_time_conversion"]
+    assert "GTFS" in service_time
+    assert "noon-minus-12h" in service_time
+    assert "fall-back" in service_time
+    assert "01:00-01:59" in service_time
+
+
 def test_build_provenance_empty_sources_still_valid() -> None:
     conn = FakeConn(
         [
