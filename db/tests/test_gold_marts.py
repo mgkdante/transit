@@ -351,6 +351,15 @@ def test_trip_delay_latest_scopes_stop_time_counts_to_snapshot() -> None:
     assert ":realtime_snapshot_id" not in full_sql
 
 
+def test_trip_delay_scheduled_time_uses_noon_minus_12h_anchor() -> None:
+    for sql in (str(INSERT_FACT_TRIP_DELAY_SNAPSHOT), str(UPSERT_FACT_TRIP_DELAY_SNAPSHOT_LATEST)):
+        assert "timezone(" in sql
+        assert "rtu.start_date::timestamp + interval '12 hours'" in sql
+        assert "- interval '12 hours'" in sql
+        assert "AT TIME ZONE" not in sql
+        assert "hours => split_part(" in sql
+
+
 def test_dim_direction_uses_beta_directions_source() -> None:
     sql = str(INSERT_DIM_DIRECTION)
 
