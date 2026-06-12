@@ -20,6 +20,7 @@ from transit_ops.snapshots.builders import (
     _ROUTE_REL_WEEKLY_SQL,
     _STOP_NAMES_SQL,
     _TREND_DAILY_SQL,
+    _TREND_FACT_SQL,
     _otp_pct,
     _otp_pct_severe_proxy,
     build_alert_history,
@@ -203,6 +204,13 @@ def test_trend_sql_uses_observation_unit_counts() -> None:
         assert "on_time_observation_count" in sql
         assert "delay_observation_count" in sql
         assert "delayed_trip_count" not in sql
+
+
+def test_trend_fact_sql_caps_p90_delay_input() -> None:
+    sql = str(_TREND_FACT_SQL)
+
+    assert "percentile_cont(0.9)" in sql
+    assert "ABS(fts.delay_seconds) <= 3600" in sql
 
 
 def test_build_network_trend_fact_only_date() -> None:
@@ -1243,6 +1251,9 @@ def test_provenance_methodology_documents_band() -> None:
     assert "-60s" in definition
     assert "+300s" in definition
     assert "proxy" in definition
+    delay_unit = out.methodology["delay_unit"]
+    assert "|delay| > 1 hour" in delay_unit
+    assert "severe = >300s and <=3600s" in delay_unit
 
 
 def test_build_provenance_empty_sources_still_valid() -> None:

@@ -102,6 +102,7 @@ UPSERT_TRIP_DELAY_SUMMARY_5M = text(
         avg_delay_seconds,
         avg_delay_seconds_capped,
         max_delay_seconds,
+        max_delay_seconds_capped,
         min_delay_seconds,
         delayed_trip_count,
         outlier_count,
@@ -118,6 +119,7 @@ UPSERT_TRIP_DELAY_SUMMARY_5M = text(
         AVG(delay_seconds::numeric),
         AVG(delay_seconds::numeric) FILTER (WHERE ABS(delay_seconds) <= 3600),
         MAX(delay_seconds),
+        MAX(delay_seconds) FILTER (WHERE ABS(delay_seconds) <= 3600),
         MIN(delay_seconds),
         COUNT(DISTINCT trip_id) FILTER (WHERE delay_seconds > 0)::integer,
         COUNT(*) FILTER (WHERE ABS(delay_seconds) > 3600)::integer,
@@ -134,6 +136,7 @@ UPSERT_TRIP_DELAY_SUMMARY_5M = text(
         avg_delay_seconds       = EXCLUDED.avg_delay_seconds,
         avg_delay_seconds_capped = EXCLUDED.avg_delay_seconds_capped,
         max_delay_seconds       = EXCLUDED.max_delay_seconds,
+        max_delay_seconds_capped = EXCLUDED.max_delay_seconds_capped,
         min_delay_seconds       = EXCLUDED.min_delay_seconds,
         delayed_trip_count      = EXCLUDED.delayed_trip_count,
         outlier_count           = EXCLUDED.outlier_count,
@@ -189,11 +192,11 @@ UPSERT_ROUTE_DELAY_HOURLY = text(
                 THEN SUM(on_time_observation_count)::integer
             END AS on_time_observation_count,
             ROUND(
-                SUM(avg_delay_seconds * NULLIF(delay_observation_count, 0))
-                / NULLIF(SUM(delay_observation_count), 0),
+                SUM(avg_delay_seconds_capped * NULLIF(delay_observation_count - outlier_count, 0))
+                / NULLIF(SUM(delay_observation_count - outlier_count), 0),
                 2
             ) AS avg_delay_seconds,
-            MAX(max_delay_seconds) AS max_delay_seconds,
+            MAX(max_delay_seconds_capped) AS max_delay_seconds,
             SUM(delayed_trip_count)::integer AS delayed_trip_count
         FROM gold.trip_delay_summary_5m
         WHERE provider_id = :provider_id
@@ -204,7 +207,9 @@ UPSERT_ROUTE_DELAY_HOURLY = text(
             provider_id,
             date_trunc('hour', captured_at_utc) AS period_start_utc,
             COALESCE(route_id, '__unrouted__') AS route_id,
-            COUNT(*) FILTER (WHERE delay_seconds > 300)::integer AS severe_delay_count
+            COUNT(*) FILTER (
+                WHERE delay_seconds > 300 AND ABS(delay_seconds) <= 3600
+            )::integer AS severe_delay_count
         FROM gold.fact_trip_delay_snapshot
         WHERE provider_id = :provider_id
         GROUP BY 1, 2, 3
@@ -272,8 +277,10 @@ UPSERT_ROUTE_DELAY_DAY_OF_WEEK = text(
         COALESCE(f.route_id, '__unrouted__'),
         COUNT(DISTINCT f.trip_id)::integer,
         COUNT(*)::integer,
-        ROUND(AVG(f.delay_seconds::numeric), 2),
-        COUNT(*) FILTER (WHERE f.delay_seconds > 300)::integer,
+        ROUND(AVG(f.delay_seconds::numeric) FILTER (WHERE ABS(f.delay_seconds) <= 3600), 2),
+        COUNT(*) FILTER (
+            WHERE f.delay_seconds > 300 AND ABS(f.delay_seconds) <= 3600
+        )::integer,
         :built_at_utc
     FROM gold.fact_trip_delay_snapshot AS f
     INNER JOIN gold.dim_provider AS dp
@@ -873,6 +880,7 @@ UPSERT_REPEAT_OFFENDER_DAILY = text(
         WHERE f.provider_id = :provider_id
           AND f.captured_at_utc >= now() - interval '14 days'
           AND f.delay_seconds IS NOT NULL
+          AND ABS(f.delay_seconds) <= 3600
           AND f.route_id IS NOT NULL
     ),
     agg AS (

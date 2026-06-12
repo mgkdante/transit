@@ -1187,7 +1187,7 @@ _TREND_DAILY_SQL = text(
     """
 )
 
-# p90 delay (minutes) + distinct vehicles from the raw fact table (~14d retained).
+# p90 delay (minutes) + distinct vehicles from capped raw facts (~14d retained).
 _TREND_FACT_SQL = text(
     """
     SELECT timezone(dp.timezone, fts.captured_at_utc)::date AS local_date,
@@ -1197,6 +1197,7 @@ _TREND_FACT_SQL = text(
     JOIN gold.dim_provider AS dp ON dp.provider_id = fts.provider_id
     WHERE fts.provider_id = :provider_id
       AND fts.delay_seconds IS NOT NULL
+      AND ABS(fts.delay_seconds) <= 3600
       AND fts.captured_at_utc >= now() - interval '14 days'
     GROUP BY timezone(dp.timezone, fts.captured_at_utc)::date
     """
@@ -2134,7 +2135,10 @@ def build_provenance(
                 "observations / observations with known delay; stop-level OTP "
                 "is a severe(>300s)-only proxy pending per-stop observations"
             ),
-            "delay_unit": "seconds from schedule",
+            "delay_unit": (
+                "seconds from schedule; delay statistics exclude observations "
+                "with |delay| > 1 hour (ghost-trip guard); severe = >300s and <=3600s"
+            ),
             "percentiles": (
                 "network p90 from fact; route/stop percentiles deferred"
             ),
