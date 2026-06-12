@@ -2159,6 +2159,11 @@ def build_provenance(
                 "10-day open window; later runs rebuild only open hours/dates "
                 "and derived files read frozen hourly/daily history"
             ),
+            "service_time_conversion": (
+                "GTFS stop_times are interpreted as elapsed service-day offsets "
+                "from the local noon-minus-12h anchor; on fall-back days the "
+                "repeated 01:00-01:59 hour follows that elapsed-time convention"
+            ),
         },
         gaps=["metro_realtime"],  # STM metro publishes no realtime feed
     )
