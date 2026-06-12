@@ -357,7 +357,11 @@ def test_ghost_trip_excluded_from_5m_hourly_and_stop_severe(conn) -> None:  # no
         """,
         {"provider_id": PROVIDER, "provider_local_date": seed.base_local_date},
     )
-    assert daily["affected_stop_count"] == 0
+    # Post-0034 per-stop attribution: L1 (delay 400s, severe, attributed to S_A on
+    # the base date) makes S_A a genuinely affected stop — the pre-attribution
+    # expectation of 0 reflected smear-era seeds, not ghost exclusion. The ghost
+    # (base-2d) still contributes nothing to this date.
+    assert daily["affected_stop_count"] == 1
 
 
 def test_ghost_trip_excluded_from_day_of_week_and_repeat_offender(conn) -> None:  # noqa: ANN001
