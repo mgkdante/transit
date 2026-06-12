@@ -695,20 +695,11 @@ UPSERT_CITIZEN_ACCOUNTABILITY_DAILY = text(
         WHERE sd.provider_id = :provider_id
         GROUP BY 1, 2
     ),
-    public_alert_daily AS (
-        SELECT
-            provider_id,
-            provider_local_date,
-            SUM(alert_count)::integer AS alert_count
-        FROM gold.public_alert_impact_daily
-        WHERE provider_id = :provider_id
-        GROUP BY 1, 2
-    ),
     i3_alert_daily AS (
         SELECT
             provider_id,
             provider_local_date,
-            COUNT(DISTINCT alert_id)::integer AS alert_count
+            COUNT(DISTINCT effective_content_hash)::integer AS alert_count
         FROM gold.i3_alert_history_reporting
         WHERE provider_id = :provider_id
         GROUP BY 1, 2
@@ -717,8 +708,6 @@ UPSERT_CITIZEN_ACCOUNTABILITY_DAILY = text(
         SELECT provider_id, provider_local_date FROM route_daily
         UNION
         SELECT provider_id, provider_local_date FROM stop_daily
-        UNION
-        SELECT provider_id, provider_local_date FROM public_alert_daily
         UNION
         SELECT provider_id, provider_local_date FROM i3_alert_daily
     )
@@ -740,10 +729,7 @@ UPSERT_CITIZEN_ACCOUNTABILITY_DAILY = text(
         COALESCE(s.affected_stop_count, 0),
         COALESCE(r.delayed_trip_count, 0),
         COALESCE(r.severe_delay_count, 0),
-        GREATEST(
-            COALESCE(pa.alert_count, 0),
-            COALESCE(ia.alert_count, 0)
-        ),
+        COALESCE(ia.alert_count, 0),
         LEAST(
             ROUND(
                 (
@@ -751,10 +737,7 @@ UPSERT_CITIZEN_ACCOUNTABILITY_DAILY = text(
                     + COALESCE(s.affected_stop_count, 0)::numeric
                     + COALESCE(r.delayed_trip_count, 0)::numeric
                     + COALESCE(r.severe_delay_count, 0)::numeric * 3
-                    + GREATEST(
-                        COALESCE(pa.alert_count, 0),
-                        COALESCE(ia.alert_count, 0)
-                    )::numeric * 2
+                    + COALESCE(ia.alert_count, 0)::numeric * 2
                 ),
                 4
             ),
@@ -768,9 +751,6 @@ UPSERT_CITIZEN_ACCOUNTABILITY_DAILY = text(
     LEFT JOIN stop_daily AS s
         ON s.provider_id = c.provider_id
        AND s.provider_local_date = c.provider_local_date
-    LEFT JOIN public_alert_daily AS pa
-        ON pa.provider_id = c.provider_id
-       AND pa.provider_local_date = c.provider_local_date
     LEFT JOIN i3_alert_daily AS ia
         ON ia.provider_id = c.provider_id
        AND ia.provider_local_date = c.provider_local_date
