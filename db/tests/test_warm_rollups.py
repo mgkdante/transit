@@ -143,6 +143,8 @@ class FakeEngine:
 def _fake_settings(**kwargs) -> Settings:
     defaults = {
         "DATABASE_URL": None,
+        "GOLD_FACT_RETENTION_DAYS": 14,
+        "GOLD_REPORTING_OPEN_WINDOW_DAYS": 10,
         "GOLD_WARM_ROLLUP_RETENTION_DAYS": 90,
     }
     defaults.update(kwargs)
@@ -241,6 +243,25 @@ def test_build_warm_rollups_rebuilds_reporting_aggregate_marts() -> None:
         assert delete_index < insert_index
 
 
+def test_open_window_guard_rejects_window_gte_fact_retention() -> None:
+    conn = FakeConnection()
+    engine = FakeEngine(conn)
+
+    try:
+        build_warm_rollups(
+            "stm",
+            engine=engine,
+            settings=_fake_settings(
+                GOLD_REPORTING_OPEN_WINDOW_DAYS=14,
+                GOLD_FACT_RETENTION_DAYS=14,
+            ),
+        )
+    except ValueError as exc:
+        assert "GOLD_REPORTING_OPEN_WINDOW_DAYS" in str(exc)
+    else:
+        raise AssertionError("expected open-window guard to reject fact-retention overlap")
+
+
 def test_reporting_aggregate_builders_read_gold_reporting_surfaces_only() -> None:
     conn = FakeConnection()
     engine = FakeEngine(conn)
@@ -288,6 +309,8 @@ def test_reporting_aggregate_builders_read_gold_reporting_surfaces_only() -> Non
         "gold.current_trip_delay_computed" not in statement
         for statement in aggregate_inserts
     )
+    route_hourly_sql = str(rollups.UPSERT_ROUTE_DELAY_HOURLY)
+    assert "FROM gold.fact_trip_delay_snapshot" not in route_hourly_sql
 
 
 def test_citizen_accountability_alert_count_uses_content_hash() -> None:
@@ -305,7 +328,7 @@ def test_citizen_accountability_single_alert_count_source() -> None:
     assert "GREATEST(" not in sql
     assert "public_alert_impact_daily" not in sql
     assert "COALESCE(ia.alert_count, 0)::numeric * 2" in sql
-    assert "ON CONFLICT (provider_id, provider_local_date)" in sql
+    assert "ON CONFLICT (provider_id, provider_local_date)" not in sql
 
 
 def test_trip_delay_summary_5m_counts_on_time_band() -> None:
@@ -313,6 +336,21 @@ def test_trip_delay_summary_5m_counts_on_time_band() -> None:
     assert "on_time_observation_count" in sql
     assert "COUNT(*) FILTER (WHERE delay_seconds >= -60 AND delay_seconds < 300)::integer" in sql
     assert "on_time_observation_count = EXCLUDED.on_time_observation_count" in sql
+
+
+def test_trip_delay_summary_5m_persists_severe_count() -> None:
+    sql = str(rollups.UPSERT_TRIP_DELAY_SUMMARY_5M)
+    severe_threshold = getattr(rollups, "SEVERE_DELAY_SECONDS", 300)
+    compact = " ".join(sql.split())
+
+    assert "severe_delay_observation_count" in sql
+    assert "COUNT(*) FILTER" in compact
+    assert f"delay_seconds > {severe_threshold} AND ABS(delay_seconds) <= 3600" in compact
+    assert ")::integer" in compact
+    assert (
+        "severe_delay_observation_count = "
+        "EXCLUDED.severe_delay_observation_count"
+    ) in sql
 
 
 def test_route_delay_hourly_carries_observation_unit_counts() -> None:
@@ -325,8 +363,6 @@ def test_route_delay_hourly_carries_observation_unit_counts() -> None:
     ) in compact
     assert "delay_observation_count" in sql
     assert "on_time_observation_count" in sql
-    assert "delay_observation_count = EXCLUDED.delay_observation_count" in sql
-    assert "on_time_observation_count = EXCLUDED.on_time_observation_count" in sql
 
 
 def test_trip_delay_summary_5m_writes_capped_max() -> None:
@@ -352,17 +388,76 @@ def test_route_delay_hourly_max_uses_capped_column() -> None:
     assert "MAX(max_delay_seconds)" not in sql
 
 
-def test_route_delay_hourly_severe_excludes_outliers() -> None:
-    sql = str(rollups.UPSERT_ROUTE_DELAY_HOURLY)
+def test_trip_delay_summary_5m_severe_excludes_outliers() -> None:
+    sql = " ".join(str(rollups.UPSERT_TRIP_DELAY_SUMMARY_5M).split())
 
     assert "delay_seconds > 300 AND ABS(delay_seconds) <= 3600" in sql
 
 
-def test_route_delay_day_of_week_caps_delay_inputs() -> None:
+def test_route_delay_day_of_week_uses_durable_capped_hourly_inputs() -> None:
     sql = str(rollups.UPSERT_ROUTE_DELAY_DAY_OF_WEEK)
 
-    assert "AVG(f.delay_seconds::numeric) FILTER (WHERE ABS(f.delay_seconds) <= 3600)" in sql
-    assert "f.delay_seconds > 300 AND ABS(f.delay_seconds) <= 3600" in sql
+    assert "FROM gold.route_delay_hourly" in sql
+    assert "fact_trip_delay_snapshot" not in sql
+    assert "SUM(rd.severe_delay_count)" in sql
+    assert "rd.avg_delay_seconds * NULLIF(rd.observation_count, 0)" in sql
+
+
+def test_route_delay_hourly_severe_single_sourced_from_5m() -> None:
+    sql = str(rollups.UPSERT_ROUTE_DELAY_HOURLY)
+
+    assert "FROM gold.fact_trip_delay_snapshot" not in sql
+    assert "LEFT JOIN" not in sql
+    assert "severe_delay_observation_count" in sql
+    assert ":open_window_days" in sql
+
+
+def test_windowed_cutoffs_share_hour_aligned_expression() -> None:
+    cutoff = getattr(rollups, "OPEN_WINDOW_HOURLY_CUTOFF_SQL", "")
+
+    assert "date_trunc('hour', CAST(:built_at_utc" in cutoff
+    for table_name in ("route_delay_hourly", "stop_delay_hourly"):
+        delete_sql = str(rollups.DELETE_REPORTING_AGGREGATES[table_name])
+        upsert_sql = str(rollups.REPORTING_AGGREGATE_UPSERTS[table_name])
+        assert cutoff in delete_sql
+        assert cutoff in upsert_sql
+
+
+def test_windowed_history_inserts_have_no_on_conflict() -> None:
+    for table_name in (
+        "route_delay_hourly",
+        "stop_delay_hourly",
+        "citizen_accountability_daily",
+    ):
+        assert "ON CONFLICT" not in str(rollups.REPORTING_AGGREGATE_UPSERTS[table_name])
+
+    assert "ON CONFLICT" in str(rollups.UPSERT_TRIP_DELAY_SUMMARY_5M)
+    assert "ON CONFLICT" in str(rollups.UPSERT_ROUTE_RELIABILITY_WEEKLY)
+
+
+def test_stop_delay_hourly_scoped_to_open_window() -> None:
+    cutoff = getattr(rollups, "OPEN_WINDOW_HOURLY_CUTOFF_SQL", "")
+    sql = str(rollups.UPSERT_STOP_DELAY_HOURLY)
+
+    assert cutoff
+    assert cutoff in sql
+    assert cutoff in str(rollups.DELETE_REPORTING_AGGREGATES["stop_delay_hourly"])
+    assert "LEFT JOIN gold.route_delay_hourly" in sql
+    assert "ON CONFLICT" not in sql
+
+
+def test_citizen_accountability_rebuilds_only_open_local_dates() -> None:
+    sql = str(rollups.UPSERT_CITIZEN_ACCOUNTABILITY_DAILY)
+    delete_sql = str(rollups.DELETE_REPORTING_AGGREGATES["citizen_accountability_daily"])
+
+    assert "cutoff AS" in sql
+    assert "min_local_date" in sql
+    assert "provider_local_date >= (SELECT min_local_date FROM cutoff)" in sql
+    assert "i3_alert_daily" in sql
+    assert "provider_local_date >= (SELECT min_local_date FROM cutoff)" in sql
+    assert "provider_local_date >=" in delete_sql
+    assert "timezone(dp.timezone, CAST(:built_at_utc AS timestamptz))" in delete_sql
+    assert "ON CONFLICT" not in sql
 
 
 def test_repeat_offender_obs_excludes_outlier_delays() -> None:

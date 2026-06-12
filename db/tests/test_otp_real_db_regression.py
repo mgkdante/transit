@@ -250,6 +250,16 @@ def _insert_weekly(
     )
 
 
+def _run_route_delay_hourly_rollup(connection) -> None:  # noqa: ANN001
+    params = {
+        "provider_id": PROVIDER,
+        "built_at_utc": BUILT_AT,
+        "open_window_days": 10,
+    }
+    connection.execute(rollups.DELETE_REPORTING_AGGREGATES["route_delay_hourly"], params)
+    connection.execute(rollups.UPSERT_ROUTE_DELAY_HOURLY, params)
+
+
 def test_5m_upsert_counts_on_time_band_edges(conn) -> None:
     _seed_fact_delays(conn, [-120, -60, 0, 299, 300, 400, None])
 
@@ -283,10 +293,7 @@ def test_hourly_rollup_null_guard_propagates_legacy_buckets(conn) -> None:
         on_time=None,
     )
 
-    conn.execute(
-        rollups.UPSERT_ROUTE_DELAY_HOURLY,
-        {"provider_id": PROVIDER, "built_at_utc": BUILT_AT},
-    )
+    _run_route_delay_hourly_rollup(conn)
     row = conn.execute(
         text(
             """
@@ -311,10 +318,7 @@ def test_hourly_rollup_null_guard_propagates_legacy_buckets(conn) -> None:
         ),
         {"p": PROVIDER, "period": PERIOD},
     )
-    conn.execute(
-        rollups.UPSERT_ROUTE_DELAY_HOURLY,
-        {"provider_id": PROVIDER, "built_at_utc": BUILT_AT},
-    )
+    _run_route_delay_hourly_rollup(conn)
     on_time = conn.execute(
         text(
             """

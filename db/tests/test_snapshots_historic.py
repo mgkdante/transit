@@ -14,6 +14,8 @@ import datetime
 
 from transit_ops.snapshots.builders import (
     _RECEIPTS_NETWORK_DAILY_SQL,
+    _RECEIPTS_WORST_ROUTE_SQL,
+    _RECEIPTS_WORST_STOP_SQL,
     _ROUTE_NAMES_SQL,
     _ROUTE_REL_DAILY_SQL,
     _ROUTE_REL_MONTHLY_SQL,
@@ -996,6 +998,14 @@ def test_build_receipts_worst_route_and_stop_by_max_delay() -> None:
     assert r.worst_stop.median_delay_min == 7.0  # 420s / 60
 
 
+def test_receipts_worst_entity_order_has_deterministic_tiebreaker() -> None:
+    route_sql = str(_RECEIPTS_WORST_ROUTE_SQL)
+    stop_sql = str(_RECEIPTS_WORST_STOP_SQL)
+
+    assert "avg_delay_seconds DESC, route_id" in route_sql
+    assert "avg_delay_seconds DESC, stop_id" in stop_sql
+
+
 def test_build_receipts_worst_entity_names() -> None:
     """worst_route/worst_stop carry resolved display names (history-backed);
     ids missing from both dim and history stay None."""
@@ -1254,6 +1264,21 @@ def test_provenance_methodology_documents_band() -> None:
     delay_unit = out.methodology["delay_unit"]
     assert "|delay| > 1 hour" in delay_unit
     assert "severe = >300s and <=3600s" in delay_unit
+
+
+def test_provenance_methodology_documents_closed_period_freeze() -> None:
+    conn = FakeConn(
+        [
+            ("source_lineage_reporting", []),
+            ("feed_freshness_current", []),
+        ]
+    )
+    out = build_provenance(conn)
+
+    freeze_rule = out.methodology["history_freeze"]
+    assert "closed" in freeze_rule
+    assert "immutable" in freeze_rule
+    assert "10-day open window" in freeze_rule
 
 
 def test_build_provenance_empty_sources_still_valid() -> None:

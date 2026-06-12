@@ -46,18 +46,22 @@ class SourceFactoryCatalog:
         }
 
 
+IMMUTABLE_RECEIPT_HISTORY_TABLES: tuple[str, ...] = (
+    "gold.route_delay_hourly",
+    "gold.stop_delay_hourly",
+    "gold.citizen_accountability_daily",
+)
+
+
 SOURCE_FACTORY_RESET_TABLES: tuple[str, ...] = (
     "gold.report_labels",
-    "gold.citizen_accountability_daily",
     "gold.repeated_problem_route_stop",
     "gold.route_habit_score",
     "gold.stop_delay_monthly",
     "gold.stop_delay_weekly",
     "gold.route_reliability_monthly",
     "gold.route_reliability_weekly",
-    "gold.stop_delay_hourly",
     "gold.route_delay_day_of_week",
-    "gold.route_delay_hourly",
     "gold.vehicle_summary_5m",
     "gold.trip_delay_summary_5m",
     "gold.warm_rollup_periods",
