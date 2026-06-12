@@ -3,6 +3,7 @@ from __future__ import annotations
 from contextlib import contextmanager
 from datetime import UTC, datetime
 
+from transit_ops.gold import rollups
 from transit_ops.gold.rollups import WarmRollupBuildResult, build_warm_rollups
 from transit_ops.maintenance import WarmRollupStoragePruneResult, prune_warm_rollup_storage
 from transit_ops.settings import Settings
@@ -286,6 +287,43 @@ def test_reporting_aggregate_builders_read_gold_reporting_surfaces_only() -> Non
         "gold.current_trip_delay_computed" not in statement
         for statement in aggregate_inserts
     )
+
+
+def test_trip_delay_summary_5m_counts_on_time_band() -> None:
+    sql = str(rollups.UPSERT_TRIP_DELAY_SUMMARY_5M)
+    assert "on_time_observation_count" in sql
+    assert "COUNT(*) FILTER (WHERE delay_seconds >= -60 AND delay_seconds < 300)::integer" in sql
+    assert "on_time_observation_count = EXCLUDED.on_time_observation_count" in sql
+
+
+def test_route_delay_hourly_carries_observation_unit_counts() -> None:
+    sql = str(rollups.UPSERT_ROUTE_DELAY_HOURLY)
+    compact = " ".join(sql.split())
+    assert "SUM(delay_observation_count)::integer AS delay_observation_count" in sql
+    assert (
+        "CASE WHEN COUNT(*) = COUNT(on_time_observation_count) "
+        "THEN SUM(on_time_observation_count)::integer END AS on_time_observation_count"
+    ) in compact
+    assert "delay_observation_count" in sql
+    assert "on_time_observation_count" in sql
+    assert "delay_observation_count = EXCLUDED.delay_observation_count" in sql
+    assert "on_time_observation_count = EXCLUDED.on_time_observation_count" in sql
+
+
+def test_route_reliability_weekly_monthly_carry_otp_counts_and_weights() -> None:
+    for sql in (
+        str(rollups.UPSERT_ROUTE_RELIABILITY_WEEKLY),
+        str(rollups.UPSERT_ROUTE_RELIABILITY_MONTHLY),
+    ):
+        compact = " ".join(sql.split())
+        assert "SUM(rd.delay_observation_count)::integer" in sql
+        assert (
+            "CASE WHEN COUNT(*) = COUNT(rd.on_time_observation_count) "
+            "THEN SUM(rd.on_time_observation_count)::integer END"
+        ) in compact
+        assert "rd.avg_delay_seconds * NULLIF(rd.delay_observation_count, 0)" in sql
+        assert "delay_observation_count = EXCLUDED.delay_observation_count" in sql
+        assert "on_time_observation_count = EXCLUDED.on_time_observation_count" in sql
 
 
 def test_historic_daily_marts_registered_in_registry() -> None:
