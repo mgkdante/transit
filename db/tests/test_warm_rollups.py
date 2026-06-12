@@ -264,13 +264,14 @@ def test_reporting_aggregate_builders_read_gold_reporting_surfaces_only() -> Non
     assert any("FROM gold.stop_delay_hourly" in statement for statement in aggregate_inserts)
     assert any("LEAST(" in statement for statement in aggregate_inserts)
     assert any(
-        "FROM gold.public_alert_impact_daily" in statement for statement in aggregate_inserts
-    )
-    assert any(
         "FROM gold.i3_alert_history_reporting" in statement
         for statement in aggregate_inserts
     )
     assert any("gold.dim_provider" in statement for statement in aggregate_inserts)
+    assert all(
+        "FROM gold.public_alert_impact_daily" not in statement
+        for statement in aggregate_inserts
+    )
     assert all(
         "gold.fact_stop_time_delay_observation" not in statement
         for statement in aggregate_inserts
@@ -287,6 +288,24 @@ def test_reporting_aggregate_builders_read_gold_reporting_surfaces_only() -> Non
         "gold.current_trip_delay_computed" not in statement
         for statement in aggregate_inserts
     )
+
+
+def test_citizen_accountability_alert_count_uses_content_hash() -> None:
+    sql = str(rollups.REPORTING_AGGREGATE_UPSERTS["citizen_accountability_daily"])
+
+    assert "COUNT(DISTINCT effective_content_hash)" in sql
+    assert "COUNT(DISTINCT alert_id)" not in sql
+    assert "FROM gold.i3_alert_history_reporting" in sql
+    assert "provider_id = :provider_id" in sql
+
+
+def test_citizen_accountability_single_alert_count_source() -> None:
+    sql = str(rollups.REPORTING_AGGREGATE_UPSERTS["citizen_accountability_daily"])
+
+    assert "GREATEST(" not in sql
+    assert "public_alert_impact_daily" not in sql
+    assert "COALESCE(ia.alert_count, 0)::numeric * 2" in sql
+    assert "ON CONFLICT (provider_id, provider_local_date)" in sql
 
 
 def test_trip_delay_summary_5m_counts_on_time_band() -> None:
