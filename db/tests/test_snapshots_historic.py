@@ -1245,6 +1245,9 @@ def test_build_provenance_sources_and_freshness() -> None:
     assert "otp_definition" in out.methodology
     assert "delay_unit" in out.methodology
     assert "percentiles" in out.methodology
+    assert "headway" in out.methodology
+    assert "busiest direction" in out.methodology["headway"]
+    assert "weekday" in out.methodology["headway"]
 
     # gaps
     assert "metro_realtime" in out.gaps

@@ -803,48 +803,89 @@ UPSERT_CITIZEN_ACCOUNTABILITY_DAILY = text(
 
 UPSERT_ROUTE_HEADWAY_DAILY = text(
     """
-    WITH first_obs AS (
+    WITH trip_starts AS (
+        -- Observed headway uses trip instances, not pooled vehicle pings:
+        -- first in-service realtime observation per trip/service day, weekday
+        -- service only, then the busiest direction to match scheduled parity.
         SELECT
             f.provider_id,
             f.route_id,
+            COALESCE(f.direction_id, 0) AS direction_id,
+            COALESCE(f.start_date, f.snapshot_local_date) AS service_date,
             f.trip_id,
-            MIN(f.captured_at_utc) AS first_seen
+            MIN(f.captured_at_utc) AS trip_start_utc
         FROM gold.fact_trip_delay_snapshot AS f
         WHERE f.provider_id = :provider_id
           AND f.captured_at_utc >= now() - interval '14 days'
           AND f.route_id IS NOT NULL
-        GROUP BY f.provider_id, f.route_id, f.trip_id
+          AND f.trip_id IS NOT NULL
+          AND f.delay_seconds IS NOT NULL
+          AND ABS(f.delay_seconds) <= 3600
+          AND EXTRACT(ISODOW FROM COALESCE(f.start_date, f.snapshot_local_date)) BETWEEN 1 AND 5
+        GROUP BY
+            f.provider_id,
+            f.route_id,
+            COALESCE(f.direction_id, 0),
+            COALESCE(f.start_date, f.snapshot_local_date),
+            f.trip_id
+    ),
+    busiest_direction AS (
+        SELECT
+            provider_id,
+            route_id,
+            direction_id
+        FROM (
+            SELECT
+                provider_id,
+                route_id,
+                direction_id,
+                ROW_NUMBER() OVER (
+                    PARTITION BY provider_id, route_id
+                    ORDER BY COUNT(*) DESC, direction_id
+                ) AS direction_rank
+            FROM trip_starts
+            GROUP BY provider_id, route_id, direction_id
+        ) AS ranked
+        WHERE direction_rank = 1
     ),
     shifted AS (
         SELECT
-            fo.provider_id,
-            fo.route_id,
-            fo.first_seen,
+            ts.provider_id,
+            ts.route_id,
+            ts.direction_id,
+            ts.service_date,
+            ts.trip_start_utc,
             CASE
-                WHEN EXTRACT(HOUR FROM timezone(dp.timezone, fo.first_seen))
+                WHEN EXTRACT(HOUR FROM timezone(dp.timezone, ts.trip_start_utc))
                     BETWEEN 6 AND 8 THEN 'am_peak'
-                WHEN EXTRACT(HOUR FROM timezone(dp.timezone, fo.first_seen))
+                WHEN EXTRACT(HOUR FROM timezone(dp.timezone, ts.trip_start_utc))
                     BETWEEN 9 AND 14 THEN 'midday'
-                WHEN EXTRACT(HOUR FROM timezone(dp.timezone, fo.first_seen))
+                WHEN EXTRACT(HOUR FROM timezone(dp.timezone, ts.trip_start_utc))
                     BETWEEN 15 AND 18 THEN 'pm_peak'
-                WHEN EXTRACT(HOUR FROM timezone(dp.timezone, fo.first_seen))
+                WHEN EXTRACT(HOUR FROM timezone(dp.timezone, ts.trip_start_utc))
                     BETWEEN 19 AND 22 THEN 'evening'
                 ELSE 'night'
             END AS shift
-        FROM first_obs AS fo
+        FROM trip_starts AS ts
+        INNER JOIN busiest_direction AS bd
+            ON bd.provider_id = ts.provider_id
+           AND bd.route_id = ts.route_id
+           AND bd.direction_id = ts.direction_id
         INNER JOIN gold.dim_provider AS dp
-            ON dp.provider_id = fo.provider_id
+            ON dp.provider_id = ts.provider_id
     ),
     gaps AS (
         SELECT
             provider_id,
             route_id,
+            direction_id,
+            service_date,
             shift,
             EXTRACT(
                 EPOCH FROM (
-                    first_seen - LAG(first_seen) OVER (
-                        PARTITION BY provider_id, route_id, shift
-                        ORDER BY first_seen
+                    trip_start_utc - LAG(trip_start_utc) OVER (
+                        PARTITION BY provider_id, route_id, direction_id, service_date, shift
+                        ORDER BY trip_start_utc
                     )
                 )
             ) / 60.0 AS gap_min
