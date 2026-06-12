@@ -527,7 +527,7 @@ def test_historic_daily_marts_registered_in_registry() -> None:
 
 
 def test_route_headway_daily_upsert_shape() -> None:
-    """P2 observed-headway mart: median trip-gap per route/shift over 14d."""
+    """P2 observed-headway mart: per-direction trip-start gaps over weekdays."""
     from transit_ops.gold import rollups
 
     sql = str(rollups.REPORTING_AGGREGATE_UPSERTS["route_headway_daily"])
@@ -535,19 +535,30 @@ def test_route_headway_daily_upsert_shape() -> None:
     assert "INSERT INTO gold.route_headway_daily" in sql
     assert "FROM gold.fact_trip_delay_snapshot" in sql
     assert "gold.dim_provider" in sql
-    # Observed headway = median of successive distinct-trip first-seen gaps.
     assert "percentile_cont(0.5)" in sql
-    assert "LAG(first_seen)" in sql
     assert "interval '14 days'" in sql
-    # Only observed_headway_min + sample_count populated; the other cols stay NULL.
     assert "observed_headway_min" in sql
     assert "sample_count" in sql
     assert "scheduled_headway_min" not in sql
     assert "excess_wait_min" not in sql
+    assert "f.delay_seconds IS NOT NULL" in sql
+    assert "ABS(f.delay_seconds) <= 3600" in sql
+    assert "COALESCE(f.start_date, f.snapshot_local_date)" in sql
+    assert (
+        "EXTRACT(ISODOW FROM COALESCE(f.start_date, f.snapshot_local_date)) BETWEEN 1 AND 5"
+        in sql
+    )
+    assert "busiest_direction" in sql
+    assert "ORDER BY COUNT(*) DESC, direction_id" in sql
+    assert "PARTITION BY provider_id, route_id, direction_id, service_date, shift" in sql
+    assert "LAG(trip_start_utc)" in sql
+    assert "LAG(first_seen)" not in sql
+    assert "f.trip_id IS NOT NULL" in sql
     # Shift buckets.
     for shift in ("am_peak", "midday", "pm_peak", "evening", "night"):
         assert f"'{shift}'" in sql
     # Gap sanity filter.
+    assert "gap_min > 0" in sql
     assert "gap_min < 240" in sql
     assert "ON CONFLICT (provider_id, route_id, shift)" in sql
 

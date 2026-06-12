@@ -1398,8 +1398,9 @@ def build_route_reliability(
     """Build historic/route_reliability/{route_id}.json.
 
     periods: daily (last 30) + weekly + monthly, all using observation-based OTP.
-    headway: observed (gold rollup) vs scheduled (representative-weekday median,
-             mirroring build_route) with excess_wait per shift.
+    headway: observed weekday trip-start gaps from the busiest direction (gold
+             rollup) vs scheduled representative-weekday first-stop departures
+             from the busiest direction, with non-negative excess_wait per shift.
     habits:  7x24 repeat-problem-score matrix (isodow 1..7 x hour 0..23).
     weak_stops: top 5 stops on the route by average delay.
     """
@@ -1441,7 +1442,7 @@ def build_route_reliability(
                 )
             )
 
-    # --- headway: observed (gold) vs scheduled (representative weekday) ---
+    # --- headway: observed and scheduled both use weekday busiest-direction semantics ---
     observed: dict[str, float] = {}
     for r in conn.execute(_ROUTE_HEADWAY_OBSERVED_SQL, params).mappings():
         if r["observed_headway_min"] is not None:
@@ -1459,6 +1460,8 @@ def build_route_reliability(
         sched = scheduled.get(shift)
         obs = observed.get(shift)
         both = sched is not None and obs is not None
+        # Excess wait is a rider-cost metric: early/frequent observed service
+        # stays at zero rather than publishing negative wait.
         excess = round(max(0.0, obs - sched), 1) if both else None
         headway.append(
             HeadwayPeriod(
@@ -2143,6 +2146,13 @@ def build_provenance(
             ),
             "percentiles": (
                 "network p90 from fact; route/stop percentiles deferred"
+            ),
+            "headway": (
+                "observed = median gap between consecutive trip starts "
+                "(first realtime observation with a computed delay) in the "
+                "busiest direction, per weekday service day, trailing 14d; "
+                "scheduled = representative-weekday first-stop departures, "
+                "busiest direction; excess_wait = max(0, observed - scheduled)"
             ),
             "history_freeze": (
                 "closed reporting periods are immutable after they leave the "
