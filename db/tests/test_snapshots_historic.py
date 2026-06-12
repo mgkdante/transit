@@ -13,9 +13,15 @@ from __future__ import annotations
 import datetime
 
 from transit_ops.snapshots.builders import (
+    _RECEIPTS_NETWORK_DAILY_SQL,
     _ROUTE_NAMES_SQL,
+    _ROUTE_REL_DAILY_SQL,
+    _ROUTE_REL_MONTHLY_SQL,
+    _ROUTE_REL_WEEKLY_SQL,
     _STOP_NAMES_SQL,
+    _TREND_DAILY_SQL,
     _otp_pct,
+    _otp_pct_severe_proxy,
     build_alert_history,
     build_hotspots,
     build_network_trend,
@@ -90,26 +96,32 @@ class FakeConn:
 
 
 # --------------------------------------------------------------------------
-# _otp_pct convention (obs=100, delayed=53 -> 47)
+# _otp_pct convention (on_time=47, known=100 -> 47)
 # --------------------------------------------------------------------------
 
 
-def test_otp_pct_basic() -> None:
-    assert _otp_pct(100, 53) == 47
+def test_otp_pct_on_time_over_known() -> None:
+    assert _otp_pct(47, 100) == 47
 
 
 def test_otp_pct_rounds() -> None:
-    # (3 - 1)/3 = 0.6667 -> 67
-    assert _otp_pct(3, 1) == 67
+    assert _otp_pct(2, 3) == 67
 
 
-def test_otp_pct_zero_obs_is_none() -> None:
+def test_otp_pct_zero_known_is_none() -> None:
     assert _otp_pct(0, 0) is None
-    assert _otp_pct(None, 5) is None
 
 
-def test_otp_pct_no_delays_is_100() -> None:
-    assert _otp_pct(50, 0) == 100
+def test_otp_pct_null_on_time_is_none() -> None:
+    assert _otp_pct(None, 100) is None
+
+
+def test_otp_pct_all_known_on_time_is_100() -> None:
+    assert _otp_pct(50, 50) == 100
+
+
+def test_otp_severe_proxy_for_stops() -> None:
+    assert _otp_pct_severe_proxy(80, 8) == 90
 
 
 # --------------------------------------------------------------------------
@@ -128,12 +140,27 @@ def test_build_network_trend_merges_and_orders() -> None:
             (
                 "route_delay_hourly",
                 [
-                    # obs=100, delayed=53 -> otp 47; weighted 100*120s/100 = 120s -> 2.0min
-                    {"local_date": d1, "obs": 100, "delayed": 53, "weighted_delay_sec": 12000.0},
-                    # obs=200, delayed=20 -> otp 90; weighted 200*90s/200 = 90s -> 1.5min
-                    {"local_date": d2, "obs": 200, "delayed": 20, "weighted_delay_sec": 18000.0},
-                    # obs=0 -> otp None, avg None
-                    {"local_date": d3, "obs": 0, "delayed": 0, "weighted_delay_sec": None},
+                    # 47/100 -> otp 47; weighted 100*120s/100 = 120s -> 2.0min
+                    {
+                        "local_date": d1,
+                        "known_obs": 100,
+                        "on_time": 47,
+                        "weighted_delay_sec": 12000.0,
+                    },
+                    # 180/200 -> otp 90; weighted 200*90s/200 = 90s -> 1.5min
+                    {
+                        "local_date": d2,
+                        "known_obs": 200,
+                        "on_time": 180,
+                        "weighted_delay_sec": 18000.0,
+                    },
+                    # legacy NULL on-time count -> honest None OTP, but avg delay still known
+                    {
+                        "local_date": d3,
+                        "known_obs": 10,
+                        "on_time": None,
+                        "weighted_delay_sec": 600.0,
+                    },
                 ],
             ),
             # fact table only retains the two most recent days (d2, d3)
@@ -164,11 +191,18 @@ def test_build_network_trend_merges_and_orders() -> None:
     assert p2.avg_delay_min == 1.5
     assert p2.p90_min == 7.2  # rounded to 1dp
     assert p2.vehicles == 310
-    # d3: obs=0 in rollup (None OTP/avg) but fact covers it (p90/vehicles present)
+    # d3: on_time NULL in rollup (None OTP) but fact covers it (p90/vehicles present)
     assert p3.otp_pct is None
-    assert p3.avg_delay_min is None
+    assert p3.avg_delay_min == 1.0
     assert p3.p90_min == 9.0
     assert p3.vehicles == 280
+
+
+def test_trend_sql_uses_observation_unit_counts() -> None:
+    for sql in (str(_TREND_DAILY_SQL), str(_RECEIPTS_NETWORK_DAILY_SQL)):
+        assert "on_time_observation_count" in sql
+        assert "delay_observation_count" in sql
+        assert "delayed_trip_count" not in sql
 
 
 def test_build_network_trend_fact_only_date() -> None:
@@ -242,30 +276,29 @@ def test_build_route_reliability_periods_and_otp() -> None:
     conn = FakeConn(
         _route_reliability_dispatch(
             daily=[
-                # daily view exposes only severe -> OTP from severe; obs=100,severe=10 -> 90
                 {
                     "d": datetime.date(2026, 6, 1),
-                    "obs": 100,
+                    "known_obs": 100,
+                    "on_time": 90,
                     "avg_delay_sec": 90.0,  # -> 1.5 min
                     "severe": 10,
                 },
             ],
             weekly=[
-                # weekly OTP from delayed; obs=100, delayed=53 -> 47; severe 5 -> 5.0%
                 {
                     "d": datetime.date(2026, 5, 25),
-                    "obs": 100,
+                    "known_obs": 100,
+                    "on_time": 47,
                     "avg_delay_sec": 120.0,  # -> 2.0 min
-                    "delayed": 53,
                     "severe": 5,
                 },
             ],
             monthly=[
                 {
                     "d": datetime.date(2026, 5, 1),
-                    "obs": 1000,
+                    "known_obs": 1000,
+                    "on_time": None,
                     "avg_delay_sec": 150.0,  # -> 2.5 min
-                    "delayed": 200,  # -> 80
                     "severe": 50,  # -> 5.0%
                 },
             ],
@@ -281,20 +314,29 @@ def test_build_route_reliability_periods_and_otp() -> None:
 
     day = by_grain["day"]
     assert day.date == "2026-06-01"
-    assert day.otp_pct == 90  # from severe proxy
+    assert day.otp_pct == 90
     assert day.avg_delay_min == 1.5
     assert day.severe_pct == 10.0
     assert day.p50_min is None and day.p90_min is None  # deferred
 
     week = by_grain["week"]
-    assert week.otp_pct == 47  # from delayed
+    assert week.otp_pct == 47
     assert week.avg_delay_min == 2.0
     assert week.severe_pct == 5.0
 
     month = by_grain["month"]
-    assert month.otp_pct == 80
+    assert month.otp_pct is None
     assert month.avg_delay_min == 2.5
     assert month.severe_pct == 5.0
+
+
+def test_route_reliability_sql_uses_real_otp_columns() -> None:
+    assert "delay_observation_count AS known_obs" in str(_ROUTE_REL_DAILY_SQL)
+    assert "on_time_observation_count AS on_time" in str(_ROUTE_REL_DAILY_SQL)
+    for sql in (str(_ROUTE_REL_WEEKLY_SQL), str(_ROUTE_REL_MONTHLY_SQL)):
+        assert "delay_observation_count AS known_obs" in sql
+        assert "on_time_observation_count AS on_time" in sql
+        assert "delayed_trip_count" not in sql
 
 
 def test_build_route_reliability_headway_excess() -> None:
@@ -465,7 +507,15 @@ def test_build_route_reliability_no_dataset_version_still_builds() -> None:
             ("dataset_kind = 'static_schedule'", []),  # no version
             (
                 "public_route_reliability_daily",
-                [{"d": datetime.date(2026, 6, 1), "obs": 100, "avg_delay_sec": 60.0, "severe": 4}],
+                [
+                    {
+                        "d": datetime.date(2026, 6, 1),
+                        "known_obs": 100,
+                        "on_time": 96,
+                        "avg_delay_sec": 60.0,
+                        "severe": 4,
+                    }
+                ],
             ),
             (
                 "route_headway_daily",
@@ -853,8 +903,8 @@ def test_build_receipts_date_driven_by_accountability() -> None:
             net=[
                 {
                     "local_date": d2,
-                    "obs": 200,
-                    "delayed": 20,
+                    "known_obs": 200,
+                    "on_time": 180,
                     "severe": 10,
                     "weighted_delay_sec": 18000.0,
                 },
@@ -885,8 +935,8 @@ def test_build_receipts_otp_from_network_hourly() -> None:
             net=[
                 {
                     "local_date": d,
-                    "obs": 100,
-                    "delayed": 40,
+                    "known_obs": 100,
+                    "on_time": 60,
                     "severe": 10,
                     "weighted_delay_sec": 12000.0,  # 120s avg -> 2.0 min
                 }
@@ -895,7 +945,7 @@ def test_build_receipts_otp_from_network_hourly() -> None:
     )
     out = build_receipts(conn)
     r = out["2026-05-10"]
-    assert r.otp_pct == 60      # (100-40)/100 = 60
+    assert r.otp_pct == 60      # 60/100 = 60
     assert r.avg_delay_min == 2.0
     assert r.severe_pct == 10.0  # 10/100
     assert r.vehicles is None   # v1 deferral
@@ -1179,6 +1229,20 @@ def test_build_provenance_sources_and_freshness() -> None:
 
     # gaps
     assert "metro_realtime" in out.gaps
+
+
+def test_provenance_methodology_documents_band() -> None:
+    conn = FakeConn(
+        [
+            ("source_lineage_reporting", []),
+            ("feed_freshness_current", []),
+        ]
+    )
+    out = build_provenance(conn)
+    definition = out.methodology["otp_definition"]
+    assert "-60s" in definition
+    assert "+300s" in definition
+    assert "proxy" in definition
 
 
 def test_build_provenance_empty_sources_still_valid() -> None:
