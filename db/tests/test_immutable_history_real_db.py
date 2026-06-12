@@ -190,11 +190,12 @@ def _insert_trip_fact(
                 (provider_id, realtime_snapshot_id, entity_index, snapshot_date_key,
                  snapshot_local_date, feed_timestamp_utc, captured_at_utc, entity_id,
                  trip_id, route_id, direction_id, start_date, vehicle_id,
-                 trip_schedule_relationship, delay_seconds, stop_time_update_count)
+                 trip_schedule_relationship, delay_seconds, stop_time_update_count,
+                 delay_stop_id, delay_stop_sequence)
             VALUES
                 (:p, :snapshot_id, :entity_index, :date_key, :local_date,
                  :captured, :captured, :entity_id, :trip_id, :route_id, 0,
-                 :local_date, :vehicle_id, 0, :delay, 1)
+                 :local_date, :vehicle_id, 0, :delay, 1, :stop_id, :stop_sequence)
             """
         ),
         {
@@ -209,52 +210,8 @@ def _insert_trip_fact(
             "route_id": ROUTE,
             "vehicle_id": f"V-{trip_id}",
             "delay": delay_seconds,
-        },
-    )
-
-
-def _insert_vehicle_fact(
-    connection,  # noqa: ANN001
-    *,
-    captured_at: datetime,
-    snapshot_id: int,
-    entity_index: int,
-    trip_id: str,
-) -> None:
-    local_date = captured_at.date()
-    _insert_snapshot(
-        connection,
-        captured_at=captured_at,
-        run_id=BASE_RUN_ID + snapshot_id,
-        snapshot_id=snapshot_id,
-        endpoint_id=VEHICLE_ENDPOINT_ID,
-        run_kind="vehicle_positions",
-    )
-    connection.execute(
-        text(
-            """
-            INSERT INTO gold.fact_vehicle_snapshot
-                (provider_id, realtime_snapshot_id, entity_index, snapshot_date_key,
-                 snapshot_local_date, feed_timestamp_utc, captured_at_utc,
-                 entity_id, vehicle_id, trip_id, route_id, stop_id)
-            VALUES
-                (:p, :snapshot_id, :entity_index, :date_key, :local_date,
-                 :captured, :captured, :entity_id, :vehicle_id, :trip_id,
-                 :route_id, :stop_id)
-            """
-        ),
-        {
-            "p": PROVIDER,
-            "snapshot_id": snapshot_id,
-            "entity_index": entity_index,
-            "date_key": int(local_date.strftime("%Y%m%d")),
-            "local_date": local_date,
-            "captured": captured_at,
-            "entity_id": f"veh-{snapshot_id}",
-            "vehicle_id": f"veh-{snapshot_id}",
-            "trip_id": trip_id,
-            "route_id": ROUTE,
             "stop_id": STOP,
+            "stop_sequence": entity_index + 1,
         },
     )
 
@@ -329,13 +286,6 @@ def test_frozen_hourly_rows_survive_fact_prune(
         delay_seconds=400,
         trip_id="late-1",
     )
-    _insert_vehicle_fact(
-        conn,
-        captured_at=captured_at,
-        snapshot_id=BASE_SNAPSHOT_ID + 2,
-        entity_index=0,
-        trip_id="late-1",
-    )
     _run_build(conn, monkeypatch, BUILT_T)
 
     hour = captured_at.replace(minute=0, second=0, microsecond=0)
@@ -382,10 +332,6 @@ def test_frozen_hourly_rows_survive_fact_prune(
     )
     conn.execute(
         text("DELETE FROM gold.fact_trip_delay_snapshot WHERE provider_id = :p"),
-        {"p": PROVIDER},
-    )
-    conn.execute(
-        text("DELETE FROM gold.fact_vehicle_snapshot WHERE provider_id = :p"),
         {"p": PROVIDER},
     )
     before = _row(
@@ -548,13 +494,6 @@ def test_rebuild_idempotent_under_pinned_clock(
         snapshot_id=BASE_SNAPSHOT_ID + 20,
         entity_index=0,
         delay_seconds=400,
-        trip_id="late-idempotent",
-    )
-    _insert_vehicle_fact(
-        conn,
-        captured_at=captured_at,
-        snapshot_id=BASE_SNAPSHOT_ID + 21,
-        entity_index=0,
         trip_id="late-idempotent",
     )
 
