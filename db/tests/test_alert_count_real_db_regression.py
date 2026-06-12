@@ -200,9 +200,18 @@ def _alert_row(
 
 
 def _run_citizen_rollup(connection) -> None:  # noqa: ANN001
+    params = {
+        "provider_id": PROVIDER,
+        "built_at_utc": BUILT_AT,
+        "open_window_days": 10,
+    }
+    connection.execute(
+        rollups.DELETE_REPORTING_AGGREGATES["citizen_accountability_daily"],
+        params,
+    )
     connection.execute(
         rollups.UPSERT_CITIZEN_ACCOUNTABILITY_DAILY,
-        {"provider_id": PROVIDER, "built_at_utc": BUILT_AT},
+        params,
     )
 
 

@@ -10,6 +10,13 @@ from transit_ops.db.connection import make_engine
 from transit_ops.ingestion.common import utc_now
 from transit_ops.settings import Settings, get_settings
 
+SEVERE_DELAY_SECONDS = 300
+GHOST_DELAY_ABS_SECONDS = 3600
+OPEN_WINDOW_HOURLY_CUTOFF_SQL = (
+    "date_trunc('hour', CAST(:built_at_utc AS timestamptz)) "
+    "- make_interval(days => :open_window_days)"
+)
+
 # ---------------------------------------------------------------------------
 # SQL — missing period detection
 # ---------------------------------------------------------------------------
@@ -90,7 +97,7 @@ UPSERT_VEHICLE_SUMMARY_5M = text(
 )
 
 UPSERT_TRIP_DELAY_SUMMARY_5M = text(
-    """
+    f"""
     INSERT INTO gold.trip_delay_summary_5m (
         provider_id,
         period_start_utc,
@@ -106,6 +113,7 @@ UPSERT_TRIP_DELAY_SUMMARY_5M = text(
         min_delay_seconds,
         delayed_trip_count,
         outlier_count,
+        severe_delay_observation_count,
         built_at_utc
     )
     SELECT
@@ -123,6 +131,10 @@ UPSERT_TRIP_DELAY_SUMMARY_5M = text(
         MIN(delay_seconds),
         COUNT(DISTINCT trip_id) FILTER (WHERE delay_seconds > 0)::integer,
         COUNT(*) FILTER (WHERE ABS(delay_seconds) > 3600)::integer,
+        COUNT(*) FILTER (
+            WHERE delay_seconds > {SEVERE_DELAY_SECONDS}
+              AND ABS(delay_seconds) <= {GHOST_DELAY_ABS_SECONDS}
+        )::integer,
         :built_at_utc
     FROM gold.fact_trip_delay_snapshot
     WHERE provider_id = :provider_id
@@ -140,6 +152,7 @@ UPSERT_TRIP_DELAY_SUMMARY_5M = text(
         min_delay_seconds       = EXCLUDED.min_delay_seconds,
         delayed_trip_count      = EXCLUDED.delayed_trip_count,
         outlier_count           = EXCLUDED.outlier_count,
+        severe_delay_observation_count = EXCLUDED.severe_delay_observation_count,
         built_at_utc            = EXCLUDED.built_at_utc
     """
 )
@@ -172,13 +185,62 @@ REPORTING_AGGREGATE_TABLES = (
     "repeat_offender_daily",
 )
 
+WINDOWED_HISTORY_TABLES = (
+    "route_delay_hourly",
+    "stop_delay_hourly",
+    "citizen_accountability_daily",
+)
+
+DERIVED_REBUILD_TABLES = (
+    "route_delay_day_of_week",
+    "route_reliability_weekly",
+    "route_reliability_monthly",
+    "stop_delay_weekly",
+    "stop_delay_monthly",
+    "route_habit_score",
+    "repeated_problem_route_stop",
+)
+
+ROLLING_WINDOW_TABLES = (
+    "route_headway_daily",
+    "repeat_offender_daily",
+)
+
 DELETE_REPORTING_AGGREGATES = {
-    table_name: text(f"DELETE FROM gold.{table_name} WHERE provider_id = :provider_id")
-    for table_name in REPORTING_AGGREGATE_TABLES
+    "route_delay_hourly": text(
+        f"""
+        DELETE FROM gold.route_delay_hourly
+        WHERE provider_id = :provider_id
+          AND period_start_utc >= {OPEN_WINDOW_HOURLY_CUTOFF_SQL}
+        """
+    ),
+    "stop_delay_hourly": text(
+        f"""
+        DELETE FROM gold.stop_delay_hourly
+        WHERE provider_id = :provider_id
+          AND period_start_utc >= {OPEN_WINDOW_HOURLY_CUTOFF_SQL}
+        """
+    ),
+    "citizen_accountability_daily": text(
+        """
+        DELETE FROM gold.citizen_accountability_daily
+        WHERE provider_id = :provider_id
+          AND provider_local_date >= (
+              SELECT (timezone(dp.timezone, CAST(:built_at_utc AS timestamptz)))::date
+                     - :open_window_days
+              FROM gold.dim_provider AS dp
+              WHERE dp.provider_id = :provider_id
+          )
+        """
+    ),
+    **{
+        table_name: text(f"DELETE FROM gold.{table_name} WHERE provider_id = :provider_id")
+        for table_name in (*DERIVED_REBUILD_TABLES, *ROLLING_WINDOW_TABLES)
+    },
 }
 
 UPSERT_ROUTE_DELAY_HOURLY = text(
-    """
+    f"""
     WITH summary AS (
         SELECT
             provider_id,
@@ -187,6 +249,7 @@ UPSERT_ROUTE_DELAY_HOURLY = text(
             SUM(trip_count)::integer AS trip_count,
             SUM(observation_count)::integer AS observation_count,
             SUM(delay_observation_count)::integer AS delay_observation_count,
+            SUM(severe_delay_observation_count)::integer AS severe_delay_count,
             -- A NULL in any contributing 5m bucket means pre-fix history is unknowable.
             CASE WHEN COUNT(*) = COUNT(on_time_observation_count)
                 THEN SUM(on_time_observation_count)::integer
@@ -200,18 +263,7 @@ UPSERT_ROUTE_DELAY_HOURLY = text(
             SUM(delayed_trip_count)::integer AS delayed_trip_count
         FROM gold.trip_delay_summary_5m
         WHERE provider_id = :provider_id
-        GROUP BY 1, 2, 3
-    ),
-    severe AS (
-        SELECT
-            provider_id,
-            date_trunc('hour', captured_at_utc) AS period_start_utc,
-            COALESCE(route_id, '__unrouted__') AS route_id,
-            COUNT(*) FILTER (
-                WHERE delay_seconds > 300 AND ABS(delay_seconds) <= 3600
-            )::integer AS severe_delay_count
-        FROM gold.fact_trip_delay_snapshot
-        WHERE provider_id = :provider_id
+          AND period_start_utc >= {OPEN_WINDOW_HOURLY_CUTOFF_SQL}
         GROUP BY 1, 2, 3
     )
     INSERT INTO gold.route_delay_hourly (
@@ -239,23 +291,9 @@ UPSERT_ROUTE_DELAY_HOURLY = text(
         s.avg_delay_seconds,
         s.max_delay_seconds,
         s.delayed_trip_count,
-        COALESCE(severe.severe_delay_count, 0),
+        s.severe_delay_count,
         :built_at_utc
     FROM summary AS s
-    LEFT JOIN severe
-        ON severe.provider_id = s.provider_id
-       AND severe.period_start_utc = s.period_start_utc
-       AND severe.route_id = s.route_id
-    ON CONFLICT (provider_id, period_start_utc, route_id) DO UPDATE SET
-        trip_count = EXCLUDED.trip_count,
-        observation_count = EXCLUDED.observation_count,
-        delay_observation_count = EXCLUDED.delay_observation_count,
-        on_time_observation_count = EXCLUDED.on_time_observation_count,
-        avg_delay_seconds = EXCLUDED.avg_delay_seconds,
-        max_delay_seconds = EXCLUDED.max_delay_seconds,
-        delayed_trip_count = EXCLUDED.delayed_trip_count,
-        severe_delay_count = EXCLUDED.severe_delay_count,
-        built_at_utc = EXCLUDED.built_at_utc
     """
 )
 
@@ -272,20 +310,23 @@ UPSERT_ROUTE_DELAY_DAY_OF_WEEK = text(
         built_at_utc
     )
     SELECT
-        f.provider_id,
-        EXTRACT(ISODOW FROM timezone(dp.timezone, f.captured_at_utc))::integer,
-        COALESCE(f.route_id, '__unrouted__'),
-        COUNT(DISTINCT f.trip_id)::integer,
-        COUNT(*)::integer,
-        ROUND(AVG(f.delay_seconds::numeric) FILTER (WHERE ABS(f.delay_seconds) <= 3600), 2),
-        COUNT(*) FILTER (
-            WHERE f.delay_seconds > 300 AND ABS(f.delay_seconds) <= 3600
-        )::integer,
+        rd.provider_id,
+        EXTRACT(ISODOW FROM timezone(dp.timezone, rd.period_start_utc))::integer,
+        rd.route_id,
+        -- Hourly-distinct-trip sum: upper-bound proxy, not distinct trips per weekday.
+        SUM(rd.trip_count)::integer,
+        SUM(rd.observation_count)::integer,
+        ROUND(
+            SUM(rd.avg_delay_seconds * NULLIF(rd.delay_observation_count, 0))
+            / NULLIF(SUM(rd.delay_observation_count), 0),
+            2
+        ),
+        SUM(rd.severe_delay_count)::integer,
         :built_at_utc
-    FROM gold.fact_trip_delay_snapshot AS f
+    FROM gold.route_delay_hourly AS rd
     INNER JOIN gold.dim_provider AS dp
-        ON dp.provider_id = f.provider_id
-    WHERE f.provider_id = :provider_id
+        ON dp.provider_id = rd.provider_id
+    WHERE rd.provider_id = :provider_id
     GROUP BY 1, 2, 3
     ON CONFLICT (provider_id, day_of_week_iso, route_id) DO UPDATE SET
         trip_count = EXCLUDED.trip_count,
@@ -297,7 +338,7 @@ UPSERT_ROUTE_DELAY_DAY_OF_WEEK = text(
 )
 
 UPSERT_STOP_DELAY_HOURLY = text(
-    """
+    f"""
     WITH stop_activity AS (
         SELECT
             provider_id,
@@ -308,6 +349,7 @@ UPSERT_STOP_DELAY_HOURLY = text(
         FROM gold.fact_vehicle_snapshot
         WHERE provider_id = :provider_id
           AND stop_id IS NOT NULL
+          AND captured_at_utc >= {OPEN_WINDOW_HOURLY_CUTOFF_SQL}
         GROUP BY 1, 2, 3, 4
     )
     INSERT INTO gold.stop_delay_hourly (
@@ -339,12 +381,6 @@ UPSERT_STOP_DELAY_HOURLY = text(
         ON rd.provider_id = sa.provider_id
        AND rd.period_start_utc = sa.period_start_utc
        AND rd.route_id = sa.route_id
-    ON CONFLICT (provider_id, period_start_utc, stop_id, route_id) DO UPDATE SET
-        observation_count = EXCLUDED.observation_count,
-        avg_arrival_delay_seconds = EXCLUDED.avg_arrival_delay_seconds,
-        avg_departure_delay_seconds = EXCLUDED.avg_departure_delay_seconds,
-        severe_delay_count = EXCLUDED.severe_delay_count,
-        built_at_utc = EXCLUDED.built_at_utc
     """
 )
 
@@ -666,7 +702,14 @@ UPSERT_REPEATED_PROBLEM_ROUTE_STOP = text(
 
 UPSERT_CITIZEN_ACCOUNTABILITY_DAILY = text(
     """
-    WITH route_daily AS (
+    WITH cutoff AS (
+        SELECT
+            (timezone(dp.timezone, CAST(:built_at_utc AS timestamptz)))::date
+                - :open_window_days AS min_local_date
+        FROM gold.dim_provider AS dp
+        WHERE dp.provider_id = :provider_id
+    ),
+    route_daily AS (
         SELECT
             rd.provider_id,
             timezone(dp.timezone, rd.period_start_utc)::date AS provider_local_date,
@@ -679,6 +722,10 @@ UPSERT_CITIZEN_ACCOUNTABILITY_DAILY = text(
         INNER JOIN gold.dim_provider AS dp
             ON dp.provider_id = rd.provider_id
         WHERE rd.provider_id = :provider_id
+          AND rd.period_start_utc >= (
+              CAST(:built_at_utc AS timestamptz)
+              - make_interval(days => :open_window_days + 2)
+          )
         GROUP BY 1, 2
     ),
     stop_daily AS (
@@ -693,6 +740,10 @@ UPSERT_CITIZEN_ACCOUNTABILITY_DAILY = text(
         INNER JOIN gold.dim_provider AS dp
             ON dp.provider_id = sd.provider_id
         WHERE sd.provider_id = :provider_id
+          AND sd.period_start_utc >= (
+              CAST(:built_at_utc AS timestamptz)
+              - make_interval(days => :open_window_days + 2)
+          )
         GROUP BY 1, 2
     ),
     i3_alert_daily AS (
@@ -702,6 +753,7 @@ UPSERT_CITIZEN_ACCOUNTABILITY_DAILY = text(
             COUNT(DISTINCT effective_content_hash)::integer AS alert_count
         FROM gold.i3_alert_history_reporting
         WHERE provider_id = :provider_id
+          AND provider_local_date >= (SELECT min_local_date FROM cutoff)
         GROUP BY 1, 2
     ),
     calendar AS (
@@ -754,14 +806,7 @@ UPSERT_CITIZEN_ACCOUNTABILITY_DAILY = text(
     LEFT JOIN i3_alert_daily AS ia
         ON ia.provider_id = c.provider_id
        AND ia.provider_local_date = c.provider_local_date
-    ON CONFLICT (provider_id, provider_local_date) DO UPDATE SET
-        affected_route_count = EXCLUDED.affected_route_count,
-        affected_stop_count = EXCLUDED.affected_stop_count,
-        delayed_trip_count = EXCLUDED.delayed_trip_count,
-        severe_delay_count = EXCLUDED.severe_delay_count,
-        alert_count = EXCLUDED.alert_count,
-        rider_impact_score = EXCLUDED.rider_impact_score,
-        built_at_utc = EXCLUDED.built_at_utc
+    WHERE c.provider_local_date >= (SELECT min_local_date FROM cutoff)
     """
 )
 
@@ -1016,6 +1061,13 @@ def build_warm_rollups(
     """
     if settings is None:
         settings = get_settings()
+    open_window_days = getattr(settings, "GOLD_REPORTING_OPEN_WINDOW_DAYS", 10)
+    fact_retention_days = getattr(settings, "GOLD_FACT_RETENTION_DAYS", 14)
+    if not (0 < open_window_days < fact_retention_days):
+        raise ValueError(
+            "GOLD_REPORTING_OPEN_WINDOW_DAYS must be greater than 0 and less than "
+            "GOLD_FACT_RETENTION_DAYS"
+        )
     if engine is None:
         engine = make_engine(settings)
 
@@ -1078,16 +1130,28 @@ def build_warm_rollups(
             built_trip_delay += 1
 
         for table_name in REPORTING_AGGREGATE_TABLES:
+            delete_params = {"provider_id": provider_id}
+            upsert_params = {
+                "provider_id": provider_id,
+                "built_at_utc": now,
+            }
+            if table_name in WINDOWED_HISTORY_TABLES:
+                delete_params = {
+                    **delete_params,
+                    "built_at_utc": now,
+                    "open_window_days": open_window_days,
+                }
+                upsert_params = {
+                    **upsert_params,
+                    "open_window_days": open_window_days,
+                }
             conn.execute(
                 DELETE_REPORTING_AGGREGATES[table_name],
-                {"provider_id": provider_id},
+                delete_params,
             )
             result = conn.execute(
                 REPORTING_AGGREGATE_UPSERTS[table_name],
-                {
-                    "provider_id": provider_id,
-                    "built_at_utc": now,
-                },
+                upsert_params,
             )
             reporting_aggregate_row_counts[table_name] = _safe_rowcount(result)
 

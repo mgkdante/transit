@@ -1845,7 +1845,7 @@ _RECEIPTS_WORST_ROUTE_SQL = text(
     WHERE provider_id = :provider_id
       AND provider_local_date >= current_date - 30
       AND avg_delay_seconds IS NOT NULL
-    ORDER BY provider_local_date, avg_delay_seconds DESC
+    ORDER BY provider_local_date, avg_delay_seconds DESC, route_id
     """
 )
 
@@ -1860,7 +1860,7 @@ _RECEIPTS_WORST_STOP_SQL = text(
     WHERE provider_id = :provider_id
       AND provider_local_date >= current_date - 30
       AND avg_delay_seconds IS NOT NULL
-    ORDER BY provider_local_date, avg_delay_seconds DESC
+    ORDER BY provider_local_date, avg_delay_seconds DESC, stop_id
     """
 )
 
@@ -2141,6 +2141,11 @@ def build_provenance(
             ),
             "percentiles": (
                 "network p90 from fact; route/stop percentiles deferred"
+            ),
+            "history_freeze": (
+                "closed reporting periods are immutable after they leave the "
+                "10-day open window; later runs rebuild only open hours/dates "
+                "and derived files read frozen hourly/daily history"
             ),
         },
         gaps=["metro_realtime"],  # STM metro publishes no realtime feed
