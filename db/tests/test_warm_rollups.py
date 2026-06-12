@@ -400,7 +400,13 @@ def test_route_delay_day_of_week_uses_durable_capped_hourly_inputs() -> None:
     assert "FROM gold.route_delay_hourly" in sql
     assert "fact_trip_delay_snapshot" not in sql
     assert "SUM(rd.severe_delay_count)" in sql
-    assert "rd.avg_delay_seconds * NULLIF(rd.observation_count, 0)" in sql
+    assert (
+        "Hourly-distinct-trip sum: upper-bound proxy, "
+        "not distinct trips per weekday."
+    ) in sql
+    assert "rd.avg_delay_seconds * NULLIF(rd.delay_observation_count, 0)" in sql
+    assert "NULLIF(SUM(rd.delay_observation_count), 0)" in sql
+    assert "rd.avg_delay_seconds * NULLIF(rd.observation_count, 0)" not in sql
 
 
 def test_route_delay_hourly_severe_single_sourced_from_5m() -> None:

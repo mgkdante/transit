@@ -313,11 +313,12 @@ UPSERT_ROUTE_DELAY_DAY_OF_WEEK = text(
         rd.provider_id,
         EXTRACT(ISODOW FROM timezone(dp.timezone, rd.period_start_utc))::integer,
         rd.route_id,
+        -- Hourly-distinct-trip sum: upper-bound proxy, not distinct trips per weekday.
         SUM(rd.trip_count)::integer,
         SUM(rd.observation_count)::integer,
         ROUND(
-            SUM(rd.avg_delay_seconds * NULLIF(rd.observation_count, 0))
-            / NULLIF(SUM(rd.observation_count), 0),
+            SUM(rd.avg_delay_seconds * NULLIF(rd.delay_observation_count, 0))
+            / NULLIF(SUM(rd.delay_observation_count), 0),
             2
         ),
         SUM(rd.severe_delay_count)::integer,
