@@ -79,8 +79,13 @@ def _seed(connection, seed: _SeedData) -> None:  # noqa: ANN001
     connection.execute(
         text(
             """
-            INSERT INTO core.providers (provider_id, display_name, timezone)
-            VALUES (:provider_id, 'STM capped ghost regression', 'America/Toronto')
+            INSERT INTO core.providers (provider_id, display_name, timezone, provider_key)
+            VALUES (
+                :provider_id,
+                'STM capped ghost regression',
+                'America/Toronto',
+                :provider_id
+            )
             """
         ),
         {"provider_id": PROVIDER},

@@ -2135,7 +2135,10 @@ def build_provenance(
                 "observations / observations with known delay; stop-level OTP "
                 "is a severe(>300s)-only proxy pending per-stop observations"
             ),
-            "delay_unit": "seconds from schedule",
+            "delay_unit": (
+                "seconds from schedule; delay statistics exclude observations "
+                "with |delay| > 1 hour (ghost-trip guard); severe = >300s and <=3600s"
+            ),
             "percentiles": (
                 "network p90 from fact; route/stop percentiles deferred"
             ),

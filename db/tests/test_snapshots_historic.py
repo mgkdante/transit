@@ -1251,6 +1251,9 @@ def test_provenance_methodology_documents_band() -> None:
     assert "-60s" in definition
     assert "+300s" in definition
     assert "proxy" in definition
+    delay_unit = out.methodology["delay_unit"]
+    assert "|delay| > 1 hour" in delay_unit
+    assert "severe = >300s and <=3600s" in delay_unit
 
 
 def test_build_provenance_empty_sources_still_valid() -> None:
