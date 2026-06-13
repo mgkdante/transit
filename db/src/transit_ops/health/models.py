@@ -38,6 +38,17 @@ class ComponentHealthResult:
             "details": _json_safe_value(self.details),
         }
 
+    def public_dict(self) -> dict[str, object]:
+        """Minimal, anonymous-safe view of a single component.
+
+        Exposes only the coarse name + status. Deliberately drops ``message``
+        (raw DB/storage/feed error strings), ``details`` (configured feed URLs,
+        DB DSNs, storage locations), and ``latency_ms`` (an internal timing
+        signal) so the internet-facing /health cannot leak operational internals
+        (audit x-security#4).
+        """
+        return {"name": self.name, "status": self.status}
+
 
 @dataclass(frozen=True)
 class OverallHealthResult:
@@ -82,6 +93,51 @@ class OverallHealthResult:
                 component.display_dict() for component in self.components
             ],
         }
+
+    def public_dict(self) -> dict[str, object]:
+        """Minimal, anonymous-safe view for the internet-facing /health.
+
+        Returns the overall status, the attention flag, coarse per-component
+        up/down, and a single non-sensitive freshness scalar (max realtime
+        endpoint age in seconds). Drops every component message, detail block,
+        feed URL, DB DSN, storage location, and latency that the full
+        display_dict() carries (audit x-security#4). The detailed view stays in
+        server logs / operator tooling, not on the public endpoint.
+        """
+        return {
+            "status": self.status,
+            "checked_at_utc": self.checked_at_utc.isoformat(),
+            "needs_attention": self.status != "ok",
+            "component_counts": self.component_counts(),
+            "components": [component.public_dict() for component in self.components],
+            "pipeline_freshness_age_seconds": self._pipeline_freshness_age_seconds(),
+        }
+
+    def _pipeline_freshness_age_seconds(self) -> int | None:
+        """Max realtime endpoint age (seconds) from the freshness component.
+
+        A non-sensitive operability scalar: it reveals how stale the pipeline
+        is without exposing endpoint names' URLs, capture timestamps, or any
+        configured internals. Returns None when the freshness component or its
+        age data is absent (e.g. the freshness check itself failed).
+        """
+        for component in self.components:
+            if component.name != "pipeline_freshness":
+                continue
+            details = component.details
+            if not isinstance(details, Mapping):
+                return None
+            endpoints = details.get("endpoints")
+            if not isinstance(endpoints, Mapping):
+                return None
+            ages = [
+                value["age_seconds"]
+                for value in endpoints.values()
+                if isinstance(value, Mapping)
+                and isinstance(value.get("age_seconds"), int)
+            ]
+            return max(ages) if ages else None
+        return None
 
     def component_counts(self) -> dict[HealthStatus, int]:
         counts: dict[HealthStatus, int] = {status: 0 for status in HEALTH_STATUSES}

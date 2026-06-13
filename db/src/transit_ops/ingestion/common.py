@@ -19,6 +19,47 @@ from transit_ops.settings import Settings
 
 CHUNK_SIZE_BYTES = 1024 * 1024
 
+REDACTED_PLACEHOLDER = "<redacted>"
+
+# URL userinfo: scheme://user:password@host -> scheme://<redacted>@host.
+# Drops the whole user:pass block (a bare username can itself be a credential).
+_URL_USERINFO_PATTERN = re.compile(
+    r"(?P<scheme>[a-z][a-z0-9+.-]*://)[^/\s:@]+:[^@\s/]+@",
+    re.IGNORECASE,
+)
+
+# Query-string credential params: ?...&token=VALUE -> &token=<redacted>.
+# Matches known secret-bearing keys; preserves the key so the error stays
+# diagnosable. Value is everything up to the next & or whitespace/quote.
+_QUERY_CREDENTIAL_PATTERN = re.compile(
+    r"(?P<key>(?:api[_-]?key|apikey|access[_-]?token|auth[_-]?token|token|key|secret|password|passwd|pwd|credential)=)"
+    r"[^&\s\"']+",
+    re.IGNORECASE,
+)
+
+
+def redact_error_message(message: str) -> str:
+    """Scrub credentials from a free-form error string before it is persisted.
+
+    Ingestion failure paths persist ``str(exc)`` into
+    ``raw.ingestion_runs.error_message``, and urllib/httpx error strings often
+    embed the full request URL. For query-param-auth feeds that URL carries the
+    live API key (build_request_details appends it to the query string), so the
+    raw exception text is a latent credential leak (audit ingestion#3 /
+    x-security#1). This redacts URL userinfo and known credential query params
+    while leaving the diagnostic shell (scheme, host, path, non-secret params,
+    plain prose) intact.
+    """
+    redacted = _URL_USERINFO_PATTERN.sub(
+        lambda match: f"{match.group('scheme')}{REDACTED_PLACEHOLDER}@",
+        message,
+    )
+    redacted = _QUERY_CREDENTIAL_PATTERN.sub(
+        lambda match: f"{match.group('key')}{REDACTED_PLACEHOLDER}",
+        redacted,
+    )
+    return redacted
+
 
 @dataclass(frozen=True)
 class DownloadedArtifact:
@@ -280,7 +321,7 @@ def mark_ingestion_run_failed(
             "ingestion_run_id": ingestion_run_id,
             "completed_at_utc": completed_at_utc,
             "http_status_code": http_status_code,
-            "error_message": error_message[:2000],
+            "error_message": redact_error_message(error_message)[:2000],
         },
     )
 
@@ -345,7 +386,7 @@ def insert_failed_ingestion_run(
             "started_at_utc": started_at_utc,
             "completed_at_utc": completed_at_utc,
             "http_status_code": http_status_code,
-            "error_message": error_message[:2000],
+            "error_message": redact_error_message(error_message)[:2000],
         },
     )
     return int(result.scalar_one())
