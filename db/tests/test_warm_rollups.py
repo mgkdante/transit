@@ -3,6 +3,7 @@ from __future__ import annotations
 from contextlib import contextmanager
 from datetime import UTC, datetime
 
+from transit_ops.gold import rollups
 from transit_ops.gold.rollups import WarmRollupBuildResult, build_warm_rollups
 from transit_ops.maintenance import WarmRollupStoragePruneResult, prune_warm_rollup_storage
 from transit_ops.settings import Settings
@@ -142,6 +143,8 @@ class FakeEngine:
 def _fake_settings(**kwargs) -> Settings:
     defaults = {
         "DATABASE_URL": None,
+        "GOLD_FACT_RETENTION_DAYS": 14,
+        "GOLD_REPORTING_OPEN_WINDOW_DAYS": 10,
         "GOLD_WARM_ROLLUP_RETENTION_DAYS": 90,
     }
     defaults.update(kwargs)
@@ -240,6 +243,25 @@ def test_build_warm_rollups_rebuilds_reporting_aggregate_marts() -> None:
         assert delete_index < insert_index
 
 
+def test_open_window_guard_rejects_window_gte_fact_retention() -> None:
+    conn = FakeConnection()
+    engine = FakeEngine(conn)
+
+    try:
+        build_warm_rollups(
+            "stm",
+            engine=engine,
+            settings=_fake_settings(
+                GOLD_REPORTING_OPEN_WINDOW_DAYS=14,
+                GOLD_FACT_RETENTION_DAYS=14,
+            ),
+        )
+    except ValueError as exc:
+        assert "GOLD_REPORTING_OPEN_WINDOW_DAYS" in str(exc)
+    else:
+        raise AssertionError("expected open-window guard to reject fact-retention overlap")
+
+
 def test_reporting_aggregate_builders_read_gold_reporting_surfaces_only() -> None:
     conn = FakeConnection()
     engine = FakeEngine(conn)
@@ -258,18 +280,22 @@ def test_reporting_aggregate_builders_read_gold_reporting_surfaces_only() -> Non
     assert all(" silver." not in statement.lower() for statement in aggregate_inserts)
     assert any("FROM gold.trip_delay_summary_5m" in statement for statement in aggregate_inserts)
     assert any("FROM gold.fact_trip_delay_snapshot" in statement for statement in aggregate_inserts)
-    assert any("FROM gold.fact_vehicle_snapshot" in statement for statement in aggregate_inserts)
+    assert all(
+        "FROM gold.fact_vehicle_snapshot" not in statement
+        for statement in aggregate_inserts
+    )
     assert any("FROM gold.route_delay_hourly" in statement for statement in aggregate_inserts)
     assert any("FROM gold.stop_delay_hourly" in statement for statement in aggregate_inserts)
     assert any("LEAST(" in statement for statement in aggregate_inserts)
-    assert any(
-        "FROM gold.public_alert_impact_daily" in statement for statement in aggregate_inserts
-    )
     assert any(
         "FROM gold.i3_alert_history_reporting" in statement
         for statement in aggregate_inserts
     )
     assert any("gold.dim_provider" in statement for statement in aggregate_inserts)
+    assert all(
+        "FROM gold.public_alert_impact_daily" not in statement
+        for statement in aggregate_inserts
+    )
     assert all(
         "gold.fact_stop_time_delay_observation" not in statement
         for statement in aggregate_inserts
@@ -286,6 +312,204 @@ def test_reporting_aggregate_builders_read_gold_reporting_surfaces_only() -> Non
         "gold.current_trip_delay_computed" not in statement
         for statement in aggregate_inserts
     )
+    route_hourly_sql = str(rollups.UPSERT_ROUTE_DELAY_HOURLY)
+    assert "FROM gold.fact_trip_delay_snapshot" not in route_hourly_sql
+
+
+def test_citizen_accountability_alert_count_uses_content_hash() -> None:
+    sql = str(rollups.REPORTING_AGGREGATE_UPSERTS["citizen_accountability_daily"])
+
+    assert "COUNT(DISTINCT effective_content_hash)" in sql
+    assert "COUNT(DISTINCT alert_id)" not in sql
+    assert "FROM gold.i3_alert_history_reporting" in sql
+    assert "provider_id = :provider_id" in sql
+
+
+def test_citizen_accountability_single_alert_count_source() -> None:
+    sql = str(rollups.REPORTING_AGGREGATE_UPSERTS["citizen_accountability_daily"])
+
+    assert "GREATEST(" not in sql
+    assert "public_alert_impact_daily" not in sql
+    assert "COALESCE(ia.alert_count, 0)::numeric * 2" in sql
+    assert "ON CONFLICT (provider_id, provider_local_date)" not in sql
+
+
+def test_trip_delay_summary_5m_counts_on_time_band() -> None:
+    sql = str(rollups.UPSERT_TRIP_DELAY_SUMMARY_5M)
+    assert "on_time_observation_count" in sql
+    assert "COUNT(*) FILTER (WHERE delay_seconds >= -60 AND delay_seconds < 300)::integer" in sql
+    assert "on_time_observation_count = EXCLUDED.on_time_observation_count" in sql
+
+
+def test_trip_delay_summary_5m_persists_severe_count() -> None:
+    sql = str(rollups.UPSERT_TRIP_DELAY_SUMMARY_5M)
+    severe_threshold = getattr(rollups, "SEVERE_DELAY_SECONDS", 300)
+    compact = " ".join(sql.split())
+
+    assert "severe_delay_observation_count" in sql
+    assert "COUNT(*) FILTER" in compact
+    assert f"delay_seconds > {severe_threshold} AND ABS(delay_seconds) <= 3600" in compact
+    assert ")::integer" in compact
+    assert (
+        "severe_delay_observation_count = "
+        "EXCLUDED.severe_delay_observation_count"
+    ) in sql
+
+
+def test_route_delay_hourly_carries_observation_unit_counts() -> None:
+    sql = str(rollups.UPSERT_ROUTE_DELAY_HOURLY)
+    compact = " ".join(sql.split())
+    assert "SUM(delay_observation_count)::integer AS delay_observation_count" in sql
+    assert (
+        "CASE WHEN COUNT(*) = COUNT(on_time_observation_count) "
+        "THEN SUM(on_time_observation_count)::integer END AS on_time_observation_count"
+    ) in compact
+    assert "delay_observation_count" in sql
+    assert "on_time_observation_count" in sql
+
+
+def test_trip_delay_summary_5m_writes_capped_max() -> None:
+    sql = str(rollups.UPSERT_TRIP_DELAY_SUMMARY_5M)
+
+    assert "max_delay_seconds_capped" in sql
+    assert "MAX(delay_seconds) FILTER (WHERE ABS(delay_seconds) <= 3600)" in sql
+    assert "max_delay_seconds_capped = EXCLUDED.max_delay_seconds_capped" in sql
+
+
+def test_route_delay_hourly_avg_uses_capped_column() -> None:
+    sql = str(rollups.UPSERT_ROUTE_DELAY_HOURLY)
+
+    assert "avg_delay_seconds_capped * NULLIF(delay_observation_count - outlier_count, 0)" in sql
+    assert "NULLIF(SUM(delay_observation_count - outlier_count), 0)" in sql
+    assert "SUM(avg_delay_seconds * " not in sql
+
+
+def test_route_delay_hourly_max_uses_capped_column() -> None:
+    sql = str(rollups.UPSERT_ROUTE_DELAY_HOURLY)
+
+    assert "MAX(max_delay_seconds_capped)" in sql
+    assert "MAX(max_delay_seconds)" not in sql
+
+
+def test_trip_delay_summary_5m_severe_excludes_outliers() -> None:
+    sql = " ".join(str(rollups.UPSERT_TRIP_DELAY_SUMMARY_5M).split())
+
+    assert "delay_seconds > 300 AND ABS(delay_seconds) <= 3600" in sql
+
+
+def test_route_delay_day_of_week_uses_durable_capped_hourly_inputs() -> None:
+    sql = str(rollups.UPSERT_ROUTE_DELAY_DAY_OF_WEEK)
+
+    assert "FROM gold.route_delay_hourly" in sql
+    assert "fact_trip_delay_snapshot" not in sql
+    assert "SUM(rd.severe_delay_count)" in sql
+    assert (
+        "Hourly-distinct-trip sum: upper-bound proxy, "
+        "not distinct trips per weekday."
+    ) in sql
+    assert "rd.avg_delay_seconds * NULLIF(rd.delay_observation_count, 0)" in sql
+    assert "NULLIF(SUM(rd.delay_observation_count), 0)" in sql
+    assert "rd.avg_delay_seconds * NULLIF(rd.observation_count, 0)" not in sql
+
+
+def test_stop_delay_hourly_aggregates_real_per_stop_delays() -> None:
+    sql = str(rollups.REPORTING_AGGREGATE_UPSERTS["stop_delay_hourly"])
+    compact = " ".join(sql.split())
+
+    assert "FROM gold.fact_trip_delay_snapshot AS f" in sql
+    assert "f.delay_stop_id" in sql
+    assert "date_trunc('hour', f.captured_at_utc)" in sql
+    assert "f.delay_seconds IS NOT NULL" in sql
+    assert "ABS(f.delay_seconds) <= 3600" in sql
+    assert "delay_seconds > 300 AND ABS(f.delay_seconds) <= 3600" in compact
+    assert "ROUND(AVG(f.delay_seconds::numeric), 2)" in sql
+    assert "COUNT(*)::integer" in sql
+    assert "ON CONFLICT" not in sql
+    assert "fact_vehicle_snapshot" not in sql
+    assert "route_delay_hourly" not in sql
+    assert "max_delay_seconds" not in sql
+    assert "THEN sa.observation_count" not in sql
+
+
+def test_route_delay_hourly_severe_single_sourced_from_5m() -> None:
+    sql = str(rollups.UPSERT_ROUTE_DELAY_HOURLY)
+
+    assert "FROM gold.fact_trip_delay_snapshot" not in sql
+    assert "LEFT JOIN" not in sql
+    assert "severe_delay_observation_count" in sql
+    assert ":open_window_days" in sql
+
+
+def test_windowed_cutoffs_share_hour_aligned_expression() -> None:
+    cutoff = getattr(rollups, "OPEN_WINDOW_HOURLY_CUTOFF_SQL", "")
+
+    assert "date_trunc('hour', CAST(:built_at_utc" in cutoff
+    for table_name in ("route_delay_hourly", "stop_delay_hourly"):
+        delete_sql = str(rollups.DELETE_REPORTING_AGGREGATES[table_name])
+        upsert_sql = str(rollups.REPORTING_AGGREGATE_UPSERTS[table_name])
+        assert cutoff in delete_sql
+        assert cutoff in upsert_sql
+
+
+def test_windowed_history_inserts_have_no_on_conflict() -> None:
+    for table_name in (
+        "route_delay_hourly",
+        "stop_delay_hourly",
+        "citizen_accountability_daily",
+    ):
+        assert "ON CONFLICT" not in str(rollups.REPORTING_AGGREGATE_UPSERTS[table_name])
+
+    assert "ON CONFLICT" in str(rollups.UPSERT_TRIP_DELAY_SUMMARY_5M)
+    assert "ON CONFLICT" in str(rollups.UPSERT_ROUTE_RELIABILITY_WEEKLY)
+
+
+def test_stop_delay_hourly_scoped_to_open_window() -> None:
+    cutoff = getattr(rollups, "OPEN_WINDOW_HOURLY_CUTOFF_SQL", "")
+    sql = str(rollups.UPSERT_STOP_DELAY_HOURLY)
+
+    assert cutoff
+    assert cutoff in sql
+    assert cutoff in str(rollups.DELETE_REPORTING_AGGREGATES["stop_delay_hourly"])
+    assert "FROM gold.fact_trip_delay_snapshot AS f" in sql
+    assert "LEFT JOIN gold.route_delay_hourly" not in sql
+    assert "ON CONFLICT" not in sql
+
+
+def test_citizen_accountability_rebuilds_only_open_local_dates() -> None:
+    sql = str(rollups.UPSERT_CITIZEN_ACCOUNTABILITY_DAILY)
+    delete_sql = str(rollups.DELETE_REPORTING_AGGREGATES["citizen_accountability_daily"])
+
+    assert "cutoff AS" in sql
+    assert "min_local_date" in sql
+    assert "provider_local_date >= (SELECT min_local_date FROM cutoff)" in sql
+    assert "i3_alert_daily" in sql
+    assert "provider_local_date >= (SELECT min_local_date FROM cutoff)" in sql
+    assert "provider_local_date >=" in delete_sql
+    assert "timezone(dp.timezone, CAST(:built_at_utc AS timestamptz))" in delete_sql
+    assert "ON CONFLICT" not in sql
+
+
+def test_repeat_offender_obs_excludes_outlier_delays() -> None:
+    sql = str(rollups.UPSERT_REPEAT_OFFENDER_DAILY)
+
+    assert "AND ABS(f.delay_seconds) <= 3600" in sql
+    assert sql.index("AND ABS(f.delay_seconds) <= 3600") < sql.index("agg AS")
+
+
+def test_route_reliability_weekly_monthly_carry_otp_counts_and_weights() -> None:
+    for sql in (
+        str(rollups.UPSERT_ROUTE_RELIABILITY_WEEKLY),
+        str(rollups.UPSERT_ROUTE_RELIABILITY_MONTHLY),
+    ):
+        compact = " ".join(sql.split())
+        assert "SUM(rd.delay_observation_count)::integer" in sql
+        assert (
+            "CASE WHEN COUNT(*) = COUNT(rd.on_time_observation_count) "
+            "THEN SUM(rd.on_time_observation_count)::integer END"
+        ) in compact
+        assert "rd.avg_delay_seconds * NULLIF(rd.delay_observation_count, 0)" in sql
+        assert "delay_observation_count = EXCLUDED.delay_observation_count" in sql
+        assert "on_time_observation_count = EXCLUDED.on_time_observation_count" in sql
 
 
 def test_historic_daily_marts_registered_in_registry() -> None:
@@ -303,7 +527,7 @@ def test_historic_daily_marts_registered_in_registry() -> None:
 
 
 def test_route_headway_daily_upsert_shape() -> None:
-    """P2 observed-headway mart: median trip-gap per route/shift over 14d."""
+    """P2 observed-headway mart: per-direction trip-start gaps over weekdays."""
     from transit_ops.gold import rollups
 
     sql = str(rollups.REPORTING_AGGREGATE_UPSERTS["route_headway_daily"])
@@ -311,19 +535,30 @@ def test_route_headway_daily_upsert_shape() -> None:
     assert "INSERT INTO gold.route_headway_daily" in sql
     assert "FROM gold.fact_trip_delay_snapshot" in sql
     assert "gold.dim_provider" in sql
-    # Observed headway = median of successive distinct-trip first-seen gaps.
     assert "percentile_cont(0.5)" in sql
-    assert "LAG(first_seen)" in sql
     assert "interval '14 days'" in sql
-    # Only observed_headway_min + sample_count populated; the other cols stay NULL.
     assert "observed_headway_min" in sql
     assert "sample_count" in sql
     assert "scheduled_headway_min" not in sql
     assert "excess_wait_min" not in sql
+    assert "f.delay_seconds IS NOT NULL" in sql
+    assert "ABS(f.delay_seconds) <= 3600" in sql
+    assert "COALESCE(f.start_date, f.snapshot_local_date)" in sql
+    assert (
+        "EXTRACT(ISODOW FROM COALESCE(f.start_date, f.snapshot_local_date)) BETWEEN 1 AND 5"
+        in sql
+    )
+    assert "busiest_direction" in sql
+    assert "ORDER BY COUNT(*) DESC, direction_id" in sql
+    assert "PARTITION BY provider_id, route_id, direction_id, service_date, shift" in sql
+    assert "LAG(trip_start_utc)" in sql
+    assert "LAG(first_seen)" not in sql
+    assert "f.trip_id IS NOT NULL" in sql
     # Shift buckets.
     for shift in ("am_peak", "midday", "pm_peak", "evening", "night"):
         assert f"'{shift}'" in sql
     # Gap sanity filter.
+    assert "gap_min > 0" in sql
     assert "gap_min < 240" in sql
     assert "ON CONFLICT (provider_id, route_id, shift)" in sql
 

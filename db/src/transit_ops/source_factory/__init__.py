@@ -1,5 +1,6 @@
 from transit_ops.source_factory.artifacts import write_json_artifact
 from transit_ops.source_factory.catalog import (
+    IMMUTABLE_RECEIPT_HISTORY_TABLES,
     SOURCE_FACTORY_RESET_TABLES,
     SourceFactoryCatalog,
     SourceFactorySource,
@@ -56,6 +57,7 @@ __all__ = [
     "R2PruneCycleResult",
     "PhaseStatus",
     "OptionalSourceUnavailable",
+    "IMMUTABLE_RECEIPT_HISTORY_TABLES",
     "SOURCE_FACTORY_RESET_TABLES",
     "SOURCE_FACTORY_ENDPOINTS",
     "SOURCE_FACTORY_VALIDATION_CHECKS",

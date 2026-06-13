@@ -358,12 +358,12 @@ def test_publish_historic_writes_expected_keys(tmp_path) -> None:
         # build_receipts: network daily — unique discriminator "interval '31 days'"
         # (must precede the generic 'route_delay_hourly' entry)
         ("interval '31 days'", [
-            {"local_date": datetime.date(2026, 6, 1), "obs": 100, "delayed": 10,
+            {"local_date": datetime.date(2026, 6, 1), "known_obs": 100, "on_time": 90,
              "severe": 5, "weighted_delay_sec": 5000},
         ]),
         # build_network_trend: daily OTP from hourly rollup — "interval '90 days'"
         ("interval '90 days'", [
-            {"local_date": datetime.date(2026, 6, 1), "obs": 100, "delayed": 10,
+            {"local_date": datetime.date(2026, 6, 1), "known_obs": 100, "on_time": 90,
              "weighted_delay_sec": 5000},
         ]),
         # build_network_trend: p90 from fact table
@@ -411,19 +411,20 @@ def test_publish_historic_writes_expected_keys(tmp_path) -> None:
         ("UNION", [
             ("101",), ("202",),
         ]),
-        # build_route_reliability: daily view — unique "stop_time_observation_count"
-        ("stop_time_observation_count", [
-            {"d": datetime.date(2026, 6, 1), "obs": 50, "avg_delay_sec": 90, "severe": 5},
+        # build_route_reliability: daily view
+        ("ORDER BY provider_local_date DESC", [
+            {"d": datetime.date(2026, 6, 1), "known_obs": 50, "on_time": 45,
+             "avg_delay_sec": 90, "severe": 5},
         ]),
         # build_route_reliability: weekly — unique discriminator "week_start_local"
         ("week_start_local", [
-            {"d": datetime.date(2026, 5, 26), "obs": 300, "avg_delay_sec": 95,
-             "delayed": 30, "severe": 15},
+            {"d": datetime.date(2026, 5, 26), "known_obs": 300, "on_time": 270,
+             "avg_delay_sec": 95, "severe": 15},
         ]),
         # build_route_reliability: monthly — unique discriminator "month_start_local"
         ("month_start_local", [
-            {"d": datetime.date(2026, 5, 1), "obs": 1200, "avg_delay_sec": 100,
-             "delayed": 120, "severe": 60},
+            {"d": datetime.date(2026, 5, 1), "known_obs": 1200, "on_time": 1080,
+             "avg_delay_sec": 100, "severe": 60},
         ]),
         # build_route_reliability: observed headway
         ("route_headway_daily", [

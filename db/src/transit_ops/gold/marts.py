@@ -560,7 +560,9 @@ def _trip_delay_snapshot_statement(
             vehicle_id = EXCLUDED.vehicle_id,
             trip_schedule_relationship = EXCLUDED.trip_schedule_relationship,
             delay_seconds = EXCLUDED.delay_seconds,
-            stop_time_update_count = EXCLUDED.stop_time_update_count
+            stop_time_update_count = EXCLUDED.stop_time_update_count,
+            delay_stop_id = EXCLUDED.delay_stop_id,
+            delay_stop_sequence = EXCLUDED.delay_stop_sequence
         """
         if upsert
         else ""
@@ -582,13 +584,20 @@ def _trip_delay_snapshot_statement(
                 rfs.source_realtime_snapshot_id AS realtime_snapshot_id,
                 rtu.rt_feed_snapshot_id,
                 rtu.entity_index,
-                stu.stop_id,
-                stu.stop_sequence,
+                COALESCE(stu.stop_id, st.stop_id) AS delay_stop_id,
+                stu.stop_sequence AS delay_stop_sequence,
                 EXTRACT(
                     EPOCH FROM (
                         COALESCE(stu.arrival_time_utc, stu.departure_time_utc)
                         - (
-                            rtu.start_date::timestamp
+                            -- GTFS service times are elapsed offsets from the
+                            -- noon-minus-12h service-day anchor; slice-9.1.1g
+                            -- keeps DST gap/repeated-hour days honest.
+                            timezone(
+                                :provider_timezone,
+                                rtu.start_date::timestamp + interval '12 hours'
+                            )
+                            - interval '12 hours'
                             + make_interval(
                                 hours => split_part(
                                     COALESCE(st.arrival_time, st.departure_time),
@@ -606,7 +615,7 @@ def _trip_delay_snapshot_statement(
                                     3
                                 )::integer
                             )
-                        ) AT TIME ZONE :provider_timezone
+                        )
                     )
                 )::integer AS derived_delay_seconds,
                 row_number() OVER (
@@ -654,8 +663,11 @@ def _trip_delay_snapshot_statement(
             SELECT
                 rt_feed_snapshot_id,
                 entity_index,
-                derived_delay_seconds
+                derived_delay_seconds,
+                delay_stop_id,
+                delay_stop_sequence
             FROM stop_time_candidates
+            -- delay_rank = 1 is the next upcoming stop, matching the delay_seconds source.
             WHERE delay_rank = 1
         )
         INSERT INTO gold.{target_table} (
@@ -674,7 +686,9 @@ def _trip_delay_snapshot_statement(
             vehicle_id,
             trip_schedule_relationship,
             delay_seconds,
-            stop_time_update_count
+            stop_time_update_count,
+            delay_stop_id,
+            delay_stop_sequence
         )
         SELECT
             rtu.provider_id,
@@ -692,7 +706,9 @@ def _trip_delay_snapshot_statement(
             vpm.vehicle_id,
             rtu.schedule_relationship AS trip_schedule_relationship,
             tdf.derived_delay_seconds,
-            COALESCE(stc.stop_time_update_count, 0)
+            COALESCE(stc.stop_time_update_count, 0),
+            tdf.delay_stop_id,
+            tdf.delay_stop_sequence
         FROM silver.rt_trip_updates AS rtu
         INNER JOIN silver.rt_feed_snapshots AS rfs
             ON rfs.rt_feed_snapshot_id = rtu.rt_feed_snapshot_id

@@ -13,6 +13,7 @@ EXPECTED_RETENTION_CONTRACT = {
     "STATIC_DATASET_RETENTION_COUNT": 1,
     "SILVER_REALTIME_RETENTION_DAYS": 14,
     "GOLD_FACT_RETENTION_DAYS": 14,
+    "GOLD_REPORTING_OPEN_WINDOW_DAYS": 10,
     "BRONZE_REALTIME_RETENTION_DAYS": 30,
     "BRONZE_STATIC_RETENTION_DAYS": 365,
     "GOLD_WARM_ROLLUP_RETENTION_DAYS": 365,
@@ -69,6 +70,15 @@ def test_retention_defaults_lock_clean_reporting_contract(
     settings = Settings(_env_file=None)
 
     assert retention_contract_from_settings(settings) == EXPECTED_RETENTION_CONTRACT
+
+
+def test_reporting_open_window_default_inside_fact_retention(
+    clean_default_settings_env: None,
+) -> None:
+    settings = Settings(_env_file=None)
+
+    assert settings.GOLD_REPORTING_OPEN_WINDOW_DAYS == 10
+    assert 0 < settings.GOLD_REPORTING_OPEN_WINDOW_DAYS < settings.GOLD_FACT_RETENTION_DAYS
 
 
 def test_bronze_prune_batch_knobs_default_and_display(

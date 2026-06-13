@@ -4,6 +4,7 @@ import json
 
 from sqlalchemy.sql.elements import TextClause
 
+from transit_ops.source_factory import catalog as catalog_module
 from transit_ops.source_factory.catalog import (
     SOURCE_FACTORY_RESET_TABLES,
     build_source_factory_catalog,
@@ -204,13 +205,26 @@ def test_reset_table_list_includes_source_abundance_gis_and_i3_tables() -> None:
 
 
 def test_reset_table_list_matches_clean_reporting_foundation() -> None:
-    assert LEGACY_SILVER_REALTIME_TABLES.isdisjoint(SOURCE_FACTORY_RESET_TABLES)
-    assert set(REPORTING_AGGREGATE_TABLES).issubset(SOURCE_FACTORY_RESET_TABLES)
-    assert SOURCE_FACTORY_RESET_TABLES.index("gold.route_delay_hourly") < (
-        SOURCE_FACTORY_RESET_TABLES.index("gold.fact_trip_delay_snapshot")
+    immutable_receipt_history = getattr(
+        catalog_module,
+        "IMMUTABLE_RECEIPT_HISTORY_TABLES",
+        (),
     )
-    assert SOURCE_FACTORY_RESET_TABLES.index("gold.stop_delay_hourly") < (
-        SOURCE_FACTORY_RESET_TABLES.index("gold.dim_stop")
+
+    assert immutable_receipt_history == (
+        "gold.route_delay_hourly",
+        "gold.stop_delay_hourly",
+        "gold.citizen_accountability_daily",
+    )
+    assert LEGACY_SILVER_REALTIME_TABLES.isdisjoint(SOURCE_FACTORY_RESET_TABLES)
+    assert set(immutable_receipt_history).isdisjoint(SOURCE_FACTORY_RESET_TABLES)
+    assert (
+        set(REPORTING_AGGREGATE_TABLES) - set(immutable_receipt_history)
+    ).issubset(SOURCE_FACTORY_RESET_TABLES)
+    assert "gold.route_delay_hourly" not in str(build_source_factory_reset_statement())
+    assert "gold.stop_delay_hourly" not in str(build_source_factory_reset_statement())
+    assert "gold.citizen_accountability_daily" not in str(
+        build_source_factory_reset_statement()
     )
     assert SOURCE_FACTORY_RESET_TABLES.index("gold.report_labels") < (
         SOURCE_FACTORY_RESET_TABLES.index("gold.dim_date")
