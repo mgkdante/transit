@@ -146,7 +146,6 @@ def _stubbed_env(
     )
     env["COMMAND_LOG"] = str(_make_log_path(tmp_path))
     env["HEALTH_BASE_URL"] = "https://transit.example.com"
-    env["POWERBI_REPORT_URL"] = "https://app.powerbi.com/view?r=report-id-example"
     env["DATABASE_URL"] = "postgresql://app:secret@example.com/transit"
     return env
 
@@ -201,7 +200,8 @@ def test_validate_oracle_cutover_reports_success_without_mutating_systems(
     assert "PASS GitHub workflow Daily Static Pipeline: active" in result.stdout
     assert "PASS GitHub workflow Daily Warm Rollups: active" in result.stdout
     assert "created_at=2026-05-23T21:44:41Z" in result.stdout
-    assert "PASS Power BI report page: reachable" in result.stdout
+    # slice-9.1.1w: the retired Power BI report check is gone entirely.
+    assert "Power BI" not in result.stdout
     assert "PASS Rollback prereqs:" in result.stdout
     assert (
         "No rollback, merge, push, workflow trigger, docker compose, "
@@ -218,10 +218,7 @@ def test_validate_oracle_cutover_reports_success_without_mutating_systems(
         "--write-out \\n%{http_code} "
         "https://transit.example.com/health"
     ) in log_lines
-    assert (
-        "curl|--fail --silent --show-error --location --max-time 15 "
-        "https://app.powerbi.com/view?r=report-id-example"
-    ) in log_lines
+    assert not any("powerbi.com" in line.lower() for line in log_lines)
     assert any(line.startswith("psql|") for line in log_lines)
     assert any("BEGIN READ ONLY" in line for line in log_lines)
     assert any("gold.latest_vehicle_snapshot" in line for line in log_lines)
@@ -257,7 +254,6 @@ def test_validate_oracle_cutover_fails_when_required_inputs_are_missing(
 ) -> None:
     env = _stubbed_env(tmp_path, include_gh=False)
     env.pop("HEALTH_BASE_URL")
-    env.pop("POWERBI_REPORT_URL")
     env.pop("DATABASE_URL")
 
     result = subprocess.run(
@@ -273,7 +269,9 @@ def test_validate_oracle_cutover_fails_when_required_inputs_are_missing(
     assert "FAIL Health endpoints: HEALTH_BASE_URL is required" in result.stdout
     assert "FAIL Realtime freshness: DATABASE_URL is required" in result.stdout
     assert "FAIL GitHub workflows: gh command is required" in result.stdout
-    assert "FAIL Power BI report page: POWERBI_REPORT_URL is required" in result.stdout
+    # slice-9.1.1w: the retired Power BI check no longer exists, so its required
+    # input is never demanded.
+    assert "POWERBI_REPORT_URL" not in result.stdout
 
     log_lines = _read_log(tmp_path / "commands.log")
     assert not any(line.startswith("psql|") for line in log_lines)

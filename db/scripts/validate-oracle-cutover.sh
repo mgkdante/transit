@@ -360,21 +360,6 @@ check_github_workflows() {
   check_one_workflow "Daily Warm Rollups"
 }
 
-check_powerbi_report() {
-  local report_url="${POWERBI_REPORT_URL:-}"
-
-  if [[ -z "$report_url" ]]; then
-    fail "Power BI report page: POWERBI_REPORT_URL is required"
-    return
-  fi
-
-  if curl --fail --silent --show-error --location --max-time "$CURL_MAX_TIME_SECONDS" "$report_url" >/dev/null; then
-    pass "Power BI report page: reachable"
-  else
-    fail "Power BI report page: unreachable"
-  fi
-}
-
 check_rollback_prereqs() {
   local missing=()
   local compose_database_url_configured=false
@@ -416,7 +401,6 @@ check_git_readiness
 check_health_endpoints
 check_realtime_freshness
 check_github_workflows
-check_powerbi_report
 check_rollback_prereqs
 
 printf 'Summary: %s fail(s), %s warning(s)\n' "$fail_count" "$warn_count"
