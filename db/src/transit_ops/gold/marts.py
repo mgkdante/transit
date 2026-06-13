@@ -107,6 +107,24 @@ ACQUIRE_GOLD_BUILD_LOCK = text(
     """
 )
 
+# Empty-silver guard (slice-9.1.1j): refresh_gold_static DELETEs all dims and
+# re-INSERTs them from the current version's silver rows. If the current version
+# has zero silver.routes rows (the wedged prod state where ingestion flipped
+# is_current but the silver load rolled back), an unguarded refresh would wipe
+# gold dims and INSERT nothing, then the prune would delete the old version's
+# silver too — emptying the static tier. routes.txt is a REQUIRED static member
+# and gold.dim_route is the FK-holder at issue, so silver.routes is the right
+# sentinel.
+SELECT_CURRENT_VERSION_HAS_SILVER_ROUTES = text(
+    """
+    SELECT EXISTS (
+        SELECT 1 FROM silver.routes
+        WHERE provider_id = :provider_id
+          AND dataset_version_id = :dataset_version_id
+    )
+    """
+)
+
 LOCK_GOLD_TABLES = text(
     """
     LOCK TABLE
@@ -1238,6 +1256,18 @@ def refresh_gold_static(
             provider_id=manifest.provider.provider_id,
             provider_timezone=provider_timezone,
         )
+        has_silver_routes = connection.execute(
+            SELECT_CURRENT_VERSION_HAS_SILVER_ROUTES,
+            {
+                "provider_id": context.provider_id,
+                "dataset_version_id": context.dataset_version_id,
+            },
+        ).scalar_one()
+        if not has_silver_routes:
+            raise ValueError(
+                f"Current static dataset version {context.dataset_version_id} has no "
+                "Silver rows — run load-static-silver before refresh-gold-static."
+            )
         connection.execute(ACQUIRE_GOLD_BUILD_LOCK, {"provider_id": context.provider_id})
         _refresh_gold_dimensions(connection, context=context)
         row_counts = {

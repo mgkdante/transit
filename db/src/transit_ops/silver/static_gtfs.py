@@ -23,7 +23,6 @@ from transit_ops.gtfs.types import (
 from transit_ops.ingestion.common import project_root, utc_now
 from transit_ops.ingestion.static_gtfs import build_static_ingestion_config
 from transit_ops.ingestion.storage import get_bronze_storage
-from transit_ops.maintenance import prune_static_silver_datasets
 from transit_ops.providers import ProviderRegistry
 from transit_ops.settings import Settings, get_settings
 
@@ -1604,9 +1603,9 @@ def load_latest_static_to_silver(
             bronze_storage=bronze_storage,
             require_beta_static_contract=_archive_requires_beta_static_contract(archive),
         )
-        prune_static_silver_datasets(
-            connection,
-            provider_id=manifest.provider.provider_id,
-            retention_count=settings.STATIC_DATASET_RETENTION_COUNT,
-        )
+        # NOTE: static dataset pruning is intentionally NOT done here. Running it
+        # inside the load transaction (before refresh_gold_static re-points the
+        # gold dims) FK-violates with STATIC_DATASET_RETENTION_COUNT=1 and rolls
+        # back the entire silver load on every content change. Worker-cycle
+        # prune_silver_storage owns all static cleanup now (slice-9.1.1j).
         return result

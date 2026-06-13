@@ -553,6 +553,7 @@ def test_prune_silver_storage_dry_run_flag(monkeypatch) -> None:
             realtime_retention_days=2,
             retained_dataset_version_ids=[1],
             pruned_dataset_version_ids=[],
+            deferred_dataset_version_ids=[],
             realtime_cutoff_utc=None,
             deleted_row_counts={},
             completed_at_utc=datetime(2026, 3, 27, 0, 0, 0, tzinfo=UTC),

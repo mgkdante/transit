@@ -37,6 +37,19 @@ STATIC_DATASET_REFERENCE_TABLES = (
     "silver.gis_gtfs_matches",
 )
 
+# Every gold table holding an FK to core.dataset_versions
+# (fk_gold_dim_*_dataset_version_id, migrations 0004:33/67/104 + 0011:35).
+# A static dataset version still referenced by any of these must NOT be deleted
+# by the prune (it would FK-violate); it is deferred until gold dims re-point to
+# the current version. Extend this tuple if a future migration adds a gold table
+# with an FK to core.dataset_versions.
+GOLD_DATASET_REFERENCE_TABLES = (
+    "gold.dim_route",
+    "gold.dim_stop",
+    "gold.dim_date",
+    "gold.dim_route_pattern",
+)
+
 GIS_SILVER_TABLES = (
     "silver.gis_gtfs_matches",
     "silver.gis_line_features",
@@ -130,6 +143,22 @@ SELECT_STATIC_DATASET_VERSION_IDS = text(
     WHERE provider_id = :provider_id
       AND dataset_kind = 'static_schedule'
     ORDER BY is_current DESC, loaded_at_utc DESC, dataset_version_id DESC
+    """
+)
+
+# Dataset versions still referenced by any gold dim FK-holder
+# (GOLD_DATASET_REFERENCE_TABLES). Deferred from pruning so the DELETE on
+# core.dataset_versions can never FK-violate. UNION (not UNION ALL) is fine —
+# we only need the distinct set of referenced ids.
+SELECT_GOLD_REFERENCED_DATASET_VERSION_IDS = text(
+    """
+    SELECT DISTINCT dataset_version_id FROM gold.dim_route WHERE provider_id = :provider_id
+    UNION
+    SELECT DISTINCT dataset_version_id FROM gold.dim_stop WHERE provider_id = :provider_id
+    UNION
+    SELECT DISTINCT dataset_version_id FROM gold.dim_date WHERE provider_id = :provider_id
+    UNION
+    SELECT DISTINCT dataset_version_id FROM gold.dim_route_pattern WHERE provider_id = :provider_id
     """
 )
 
@@ -850,6 +879,7 @@ class SilverStoragePruneResult:
     realtime_retention_days: int
     retained_dataset_version_ids: list[int]
     pruned_dataset_version_ids: list[int]
+    deferred_dataset_version_ids: list[int]
     realtime_cutoff_utc: datetime | None
     deleted_row_counts: dict[str, int]
     completed_at_utc: datetime
@@ -888,13 +918,31 @@ def _safe_scalar_count(result) -> int:  # noqa: ANN001
     return max(int(value or 0), 0)
 
 
+def _zero_static_prune_counts() -> dict[str, int]:
+    return {
+        **{table_name: 0 for table_name in STATIC_SILVER_TABLES},
+        **{table_name: 0 for table_name in STATIC_DATASET_REFERENCE_TABLES},
+        "core.dataset_versions": 0,
+    }
+
+
 def prune_static_silver_datasets(
     connection: Connection,
     *,
     provider_id: str,
     retention_count: int,
     dry_run: bool = False,
-) -> tuple[list[int], list[int], dict[str, int]]:
+) -> tuple[list[int], list[int], list[int], dict[str, int]]:
+    """Prune superseded static silver datasets, deferring gold-referenced ones.
+
+    Returns (retained, pruned, deferred, deleted_row_counts). A candidate
+    version still referenced by any gold dim FK-holder
+    (GOLD_DATASET_REFERENCE_TABLES) is DEFERRED — it keeps BOTH its silver rows
+    and its core.dataset_versions row (whole-version retention keeps the
+    silver/dim joins consistent) — instead of being deleted, which would
+    FK-violate. The next worker cycle prunes it once gold dims re-point to the
+    current version (slice-9.1.1j).
+    """
     if retention_count <= 0:
         retention_count = 1
 
@@ -904,13 +952,44 @@ def prune_static_silver_datasets(
     )
     dataset_version_ids = [int(row[0]) for row in dataset_version_rows]
     retained_dataset_version_ids = dataset_version_ids[:retention_count]
-    pruned_dataset_version_ids = dataset_version_ids[retention_count:]
+    candidate_dataset_version_ids = dataset_version_ids[retention_count:]
+    if not candidate_dataset_version_ids:
+        # No candidates → skip the gold-reference lookup entirely (zero added
+        # steady-state cost at the ~57s worker cadence).
+        return retained_dataset_version_ids, [], [], _zero_static_prune_counts()
+
+    gold_referenced_ids = {
+        int(row[0])
+        for row in connection.execute(
+            SELECT_GOLD_REFERENCED_DATASET_VERSION_IDS,
+            {"provider_id": provider_id},
+        )
+    }
+    deferred_dataset_version_ids = [
+        version_id
+        for version_id in candidate_dataset_version_ids
+        if version_id in gold_referenced_ids
+    ]
+    pruned_dataset_version_ids = [
+        version_id
+        for version_id in candidate_dataset_version_ids
+        if version_id not in gold_referenced_ids
+    ]
+    if deferred_dataset_version_ids:
+        logger.warning(
+            "Deferring prune of static dataset versions %s for provider '%s' — "
+            "still referenced by gold dims; will prune once dims re-point.",
+            deferred_dataset_version_ids,
+            provider_id,
+        )
     if not pruned_dataset_version_ids:
-        return retained_dataset_version_ids, [], {
-            **{table_name: 0 for table_name in STATIC_SILVER_TABLES},
-            **{table_name: 0 for table_name in STATIC_DATASET_REFERENCE_TABLES},
-            "core.dataset_versions": 0,
-        }
+        # Everything is deferred — execute no DELETEs/COUNTs.
+        return (
+            retained_dataset_version_ids,
+            [],
+            deferred_dataset_version_ids,
+            _zero_static_prune_counts(),
+        )
 
     params = {
         "provider_id": provider_id,
@@ -941,7 +1020,12 @@ def prune_static_silver_datasets(
             params,
         )
     )
-    return retained_dataset_version_ids, pruned_dataset_version_ids, deleted_row_counts
+    return (
+        retained_dataset_version_ids,
+        pruned_dataset_version_ids,
+        deferred_dataset_version_ids,
+        deleted_row_counts,
+    )
 
 
 def prune_realtime_silver_history(
@@ -1007,25 +1091,43 @@ def prune_silver_storage(
     engine: Engine | None = None,
     dry_run: bool = False,
 ) -> SilverStoragePruneResult:
+    """Prune silver storage in TWO independent transactions (realtime FIRST).
+
+    Realtime 14-day retention and static dataset pruning run in separate
+    engine.begin() blocks, realtime first, so a static-prune failure can never
+    roll back or starve the realtime retention. (A single shared transaction
+    with static-first ordering let an FK abort in the static half kill the
+    realtime DELETEs before they ran — the wave-2 prod regression this fixes,
+    slice-9.1.1j.)
+    """
     settings = settings or get_settings()
     engine = engine or make_engine(settings)
 
+    # Transaction 1: realtime retention — must commit independently of the
+    # static prune below.
     with engine.begin() as connection:
-        retained_dataset_version_ids, pruned_dataset_version_ids, static_deleted_row_counts = (
-            prune_static_silver_datasets(
-                connection,
-                provider_id=provider_id,
-                retention_count=settings.STATIC_DATASET_RETENTION_COUNT,
-                dry_run=dry_run,
-            )
-        )
         realtime_cutoff_utc, realtime_deleted_row_counts = prune_realtime_silver_history(
             connection,
             provider_id=provider_id,
             retention_days=settings.SILVER_REALTIME_RETENTION_DAYS,
             dry_run=dry_run,
         )
-        completed_at_utc = utc_now()
+
+    # Transaction 2: static dataset prune (with gold-reference deferral).
+    with engine.begin() as connection:
+        (
+            retained_dataset_version_ids,
+            pruned_dataset_version_ids,
+            deferred_dataset_version_ids,
+            static_deleted_row_counts,
+        ) = prune_static_silver_datasets(
+            connection,
+            provider_id=provider_id,
+            retention_count=settings.STATIC_DATASET_RETENTION_COUNT,
+            dry_run=dry_run,
+        )
+
+    completed_at_utc = utc_now()
 
     return SilverStoragePruneResult(
         provider_id=provider_id,
@@ -1034,6 +1136,7 @@ def prune_silver_storage(
         realtime_retention_days=settings.SILVER_REALTIME_RETENTION_DAYS,
         retained_dataset_version_ids=retained_dataset_version_ids,
         pruned_dataset_version_ids=pruned_dataset_version_ids,
+        deferred_dataset_version_ids=deferred_dataset_version_ids,
         realtime_cutoff_utc=realtime_cutoff_utc,
         deleted_row_counts=static_deleted_row_counts | realtime_deleted_row_counts,
         completed_at_utc=completed_at_utc,

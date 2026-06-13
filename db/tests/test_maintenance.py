@@ -97,9 +97,15 @@ class RecordingEngine:
 
 
 class RecordingConnection:
-    def __init__(self) -> None:
+    def __init__(self, gold_referenced_rows: list[tuple] | None = None) -> None:
         self.calls: list[str] = []
         self.executed: list[tuple[str, dict | None]] = []
+        # Dataset version ids that gold dims still reference (FK holders). The
+        # default [(7,)] keeps the existing dataset fixture [7, 6, 5] with
+        # retention 1 producing deferred==[] (7 is retained, never a candidate).
+        self.gold_referenced_rows = (
+            gold_referenced_rows if gold_referenced_rows is not None else [(7,)]
+        )
 
     def __enter__(self) -> RecordingConnection:
         return self
@@ -111,6 +117,10 @@ class RecordingConnection:
         sql_text = str(statement)
         self.calls.append(sql_text)
         self.executed.append((sql_text, params))
+        # Gold-reference lookup (UNION over gold.dim_route/stop/date/route_pattern)
+        # MUST be routed before the generic 'SELECT dataset_version_id' branch.
+        if "gold.dim_route" in sql_text and "SELECT DISTINCT dataset_version_id" in sql_text:
+            return IterableResult(self.gold_referenced_rows)
         for table_name, rowcount in EXPECTED_GOLD_AGGREGATE_TABLE_COUNTS.items():
             if f"DELETE FROM {table_name}" in sql_text:
                 return RowcountResult(rowcount)
@@ -309,16 +319,20 @@ class FakeBronzeStorage:
 def test_prune_static_silver_datasets_keeps_only_retained_versions() -> None:
     connection = RecordingConnection()
 
-    retained_dataset_version_ids, pruned_dataset_version_ids, deleted_row_counts = (
-        prune_static_silver_datasets(
-            connection,
-            provider_id="stm",
-            retention_count=1,
-        )
+    (
+        retained_dataset_version_ids,
+        pruned_dataset_version_ids,
+        deferred_dataset_version_ids,
+        deleted_row_counts,
+    ) = prune_static_silver_datasets(
+        connection,
+        provider_id="stm",
+        retention_count=1,
     )
 
     assert retained_dataset_version_ids == [7]
     assert pruned_dataset_version_ids == [6, 5]
+    assert deferred_dataset_version_ids == []
     assert deleted_row_counts == {
         "silver.stop_times": 12,
         "silver.translations": 9,
@@ -352,7 +366,7 @@ def test_prune_static_silver_datasets_keeps_only_retained_versions() -> None:
 def test_prune_static_silver_datasets_dry_run_returns_counts_without_deleting() -> None:
     connection = RecordingConnection()
 
-    retained_ids, pruned_ids, counts = prune_static_silver_datasets(
+    retained_ids, pruned_ids, deferred_ids, counts = prune_static_silver_datasets(
         connection,
         provider_id="stm",
         retention_count=1,
@@ -361,6 +375,7 @@ def test_prune_static_silver_datasets_dry_run_returns_counts_without_deleting() 
 
     assert retained_ids == [7]
     assert pruned_ids == [6, 5]
+    assert deferred_ids == []
     assert counts == {
         "silver.stop_times": 12,
         "silver.translations": 9,
@@ -382,6 +397,136 @@ def test_prune_static_silver_datasets_dry_run_returns_counts_without_deleting() 
     # No DELETE statements should appear in calls
     delete_calls = [c for c in connection.calls if "DELETE" in c]
     assert delete_calls == [], f"Expected no DELETE calls in dry_run but got: {delete_calls}"
+
+
+def test_prune_static_silver_datasets_defers_versions_still_referenced_by_gold_dims() -> None:
+    # versions [7, 6, 5] with retention 1 → candidates [6, 5]; gold dims still
+    # reference version 6, so it is deferred (NOT deleted), only 5 is pruned.
+    connection = RecordingConnection(gold_referenced_rows=[(6,)])
+
+    (
+        retained,
+        pruned,
+        deferred,
+        counts,
+    ) = prune_static_silver_datasets(
+        connection,
+        provider_id="stm",
+        retention_count=1,
+    )
+
+    assert retained == [7]
+    assert deferred == [6]
+    assert pruned == [5]
+    # No executed statement may delete the gold-referenced version 6.
+    delete_dataset_versions_params = [
+        params
+        for sql, params in connection.executed
+        if "DELETE FROM core.dataset_versions" in sql
+    ]
+    assert delete_dataset_versions_params == [
+        {"provider_id": "stm", "dataset_version_ids": [5]}
+    ]
+    for sql, params in connection.executed:
+        if "DELETE" in sql and params and "dataset_version_ids" in params:
+            assert 6 not in params["dataset_version_ids"]
+    assert counts["core.dataset_versions"] == 2
+
+
+def test_prune_static_silver_datasets_skips_gold_reference_lookup_when_no_candidates() -> None:
+    # A single version (retention 1) leaves no prune candidates, so the
+    # gold-reference UNION lookup must never run (zero steady-state cost).
+    connection = RecordingConnection()
+    connection.gold_referenced_rows = [(9,)]
+
+    # Override the dataset-version listing to a single id.
+    original_execute = connection.execute
+
+    def single_version_execute(statement, params=None):  # noqa: ANN001
+        sql_text = str(statement)
+        if (
+            "SELECT dataset_version_id" in sql_text
+            and "gold.dim_route" not in sql_text
+        ):
+            connection.calls.append(sql_text)
+            connection.executed.append((sql_text, params))
+            return IterableResult([(9,)])
+        return original_execute(statement, params)
+
+    connection.execute = single_version_execute  # type: ignore[method-assign]
+
+    retained, pruned, deferred, counts = prune_static_silver_datasets(
+        connection,
+        provider_id="stm",
+        retention_count=1,
+    )
+
+    assert retained == [9]
+    assert pruned == []
+    assert deferred == []
+    assert not any("gold.dim_route" in sql for sql in connection.calls)
+    # No DELETE statements at all when there are no candidates.
+    assert not any("DELETE" in sql for sql in connection.calls)
+
+
+def test_prune_static_silver_datasets_all_candidates_deferred_executes_no_deletes() -> None:
+    # Both candidate versions (6, 5) are still referenced by gold dims → all
+    # deferred, nothing pruned, and no DELETE statement is executed.
+    connection = RecordingConnection(gold_referenced_rows=[(6,), (5,)])
+
+    retained, pruned, deferred, counts = prune_static_silver_datasets(
+        connection,
+        provider_id="stm",
+        retention_count=1,
+    )
+
+    assert retained == [7]
+    assert deferred == [6, 5]
+    assert pruned == []
+    assert not any("DELETE" in sql for sql in connection.calls)
+
+
+def test_prune_static_silver_datasets_dry_run_counts_exclude_deferred_versions() -> None:
+    # Dry-run with version 6 deferred: the COUNT statements must scope to the
+    # pruned set [5] only, never the deferred version 6.
+    connection = RecordingConnection(gold_referenced_rows=[(6,)])
+
+    retained, pruned, deferred, counts = prune_static_silver_datasets(
+        connection,
+        provider_id="stm",
+        retention_count=1,
+        dry_run=True,
+    )
+
+    assert retained == [7]
+    assert deferred == [6]
+    assert pruned == [5]
+    delete_calls = [c for c in connection.calls if "DELETE" in c]
+    assert delete_calls == []
+    for sql, params in connection.executed:
+        if "SELECT COUNT(*)" in sql and params and "dataset_version_ids" in params:
+            assert params["dataset_version_ids"] == [5]
+
+
+def test_select_gold_referenced_dataset_version_ids_covers_all_fk_dims() -> None:
+    sql = str(maintenance_module.SELECT_GOLD_REFERENCED_DATASET_VERSION_IDS)
+    for table_name in (
+        "gold.dim_route",
+        "gold.dim_stop",
+        "gold.dim_date",
+        "gold.dim_route_pattern",
+    ):
+        assert table_name in sql
+    # Four provider filters (one per dim), UNION-combined.
+    assert sql.count(":provider_id") == 4
+    assert "UNION" in sql
+    # Lock-in: the reference tuple lists exactly those four FK-holding dims.
+    assert maintenance_module.GOLD_DATASET_REFERENCE_TABLES == (
+        "gold.dim_route",
+        "gold.dim_stop",
+        "gold.dim_date",
+        "gold.dim_route_pattern",
+    )
 
 
 def test_prune_realtime_silver_history_deletes_rows_older_than_cutoff() -> None:
@@ -590,6 +735,83 @@ def test_vacuum_storage_uses_parallel_zero_for_non_full_mode() -> None:
     ]
 
 
+class PerBeginRecordingEngine:
+    """Engine stub that hands out a FRESH RecordingConnection per begin().
+
+    Distinct from RecordingEngine (which returns one seeded connection) so the
+    two-transaction split in prune_silver_storage can be observed: each
+    engine.begin() corresponds to a separate transaction, and we record what
+    each saw to assert realtime ran in tx1 and static in tx2.
+    """
+
+    def __init__(self) -> None:
+        self.begin_count = 0
+        self.connections: list[RecordingConnection] = []
+
+    def begin(self) -> RecordingConnection:
+        self.begin_count += 1
+        connection = RecordingConnection()
+        self.connections.append(connection)
+        return connection
+
+
+class SilverPruneSettings:
+    STATIC_DATASET_RETENTION_COUNT = 1
+    SILVER_REALTIME_RETENTION_DAYS = 2
+
+
+def test_prune_silver_storage_runs_realtime_and_static_in_separate_transactions() -> None:
+    from transit_ops.maintenance import prune_silver_storage
+
+    engine = PerBeginRecordingEngine()
+
+    prune_silver_storage(
+        "stm",
+        settings=SilverPruneSettings(),  # type: ignore[arg-type]
+        engine=engine,  # type: ignore[arg-type]
+    )
+
+    assert engine.begin_count == 2
+    realtime_conn, static_conn = engine.connections
+
+    # tx1 (realtime first) ran only the silver.rt_* DELETEs — never touched
+    # core.dataset_versions or the static silver tables.
+    assert any(
+        "DELETE FROM silver.rt_feed_snapshots" in sql for sql in realtime_conn.calls
+    )
+    assert not any(
+        "DELETE FROM core.dataset_versions" in sql for sql in realtime_conn.calls
+    )
+    assert not any(
+        "DELETE FROM silver.stop_times" in sql for sql in realtime_conn.calls
+    )
+
+    # tx2 ran the static-dataset statements and no rt_* DELETEs.
+    assert any(
+        "DELETE FROM core.dataset_versions" in sql for sql in static_conn.calls
+    )
+    assert not any(
+        "DELETE FROM silver.rt_feed_snapshots" in sql for sql in static_conn.calls
+    )
+
+
+def test_prune_silver_storage_result_reports_deferred_dataset_version_ids() -> None:
+    from transit_ops.maintenance import prune_silver_storage
+
+    engine = PerBeginRecordingEngine()
+
+    result = prune_silver_storage(
+        "stm",
+        settings=SilverPruneSettings(),  # type: ignore[arg-type]
+        engine=engine,  # type: ignore[arg-type]
+    )
+
+    # Default fixture: versions [7, 6, 5], gold references [7] → 6, 5 prunable,
+    # none deferred.
+    assert result.deferred_dataset_version_ids == []
+    assert "deferred_dataset_version_ids" in result.display_dict()
+
+
 def test_prune_result_display_dict_formats_timestamps() -> None:
     result = SilverStoragePruneResult(
         provider_id="stm",
@@ -598,6 +820,7 @@ def test_prune_result_display_dict_formats_timestamps() -> None:
         realtime_retention_days=2,
         retained_dataset_version_ids=[7],
         pruned_dataset_version_ids=[6, 5],
+        deferred_dataset_version_ids=[],
         realtime_cutoff_utc=datetime(2026, 3, 24, 20, 0, 0, tzinfo=UTC),
         deleted_row_counts={"silver.stop_times": 12},
         completed_at_utc=datetime(2026, 3, 26, 20, 10, 0, tzinfo=UTC),
@@ -606,6 +829,7 @@ def test_prune_result_display_dict_formats_timestamps() -> None:
     assert result.display_dict()["realtime_cutoff_utc"] == "2026-03-24T20:00:00+00:00"
     assert result.display_dict()["completed_at_utc"] == "2026-03-26T20:10:00+00:00"
     assert result.display_dict()["dry_run"] is False
+    assert result.display_dict()["deferred_dataset_version_ids"] == []
 
 
 # ---------------------------------------------------------------------------
