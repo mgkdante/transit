@@ -259,19 +259,27 @@ def _seed_legacy_world(connection) -> None:
     )
 
 
-def _run_collapse(connection) -> None:
+def _build_and_promote(connection) -> None:
     m = _load_0038()
     connection.execute(text(m._BUILD_LEGACY_KEEPERS))
     connection.execute(text(m._BUILD_LEGACY_SPANS))
     connection.execute(text(m._PROMOTE_LEGACY_SURVIVORS))
-    # Loop the batched delete until it deletes nothing.
+    connection.execute(text("DROP TABLE IF EXISTS i3_legacy_keepers"))
+    connection.execute(text("DROP TABLE IF EXISTS i3_legacy_spans"))
+
+
+def _drain_delete(connection) -> None:
+    m = _load_0038()
     while True:
         result = connection.execute(text(m._DELETE_LEGACY_BATCH))
         if (result.rowcount or 0) == 0:
             break
-    # Drop temp tables so a second collapse in the same tx would rebuild cleanly.
-    connection.execute(text("DROP TABLE IF EXISTS i3_legacy_keepers"))
-    connection.execute(text("DROP TABLE IF EXISTS i3_legacy_spans"))
+
+
+def _run_collapse(connection) -> None:
+    _build_and_promote(connection)
+    # Loop the batched delete until it deletes nothing.
+    _drain_delete(connection)
 
 
 def _silver_rows(connection) -> list[dict]:
@@ -386,6 +394,106 @@ def test_0038_promote_does_not_violate_active_partial_unique_index(conn) -> None
     ).mappings().all()
     assert len(active) == 1
     assert active[0]["i3_alert_snapshot_id"] == SNAP_IDS[2]
+
+
+def test_0038_resume_after_partial_delete_keeps_one_survivor_with_full_span(conn) -> None:
+    """Interrupt-mid-DELETE resume must not mint a SECOND closed survivor.
+
+    Because alembic stamps 0038 only AFTER upgrade() returns, an interrupt during
+    the batched DELETE re-runs the WHOLE upgrade(). On the rerun the survivor
+    promoted by the first run is no longer content_hash IS NULL, so a naive
+    build->promote would pick a fresh keeper out of the leftover NULL dups and
+    mint a SECOND closed row for the same content group with a NARROWER span — a
+    silent "exactly one closed survivor per content version" violation that no
+    constraint catches (both closed rows sit outside the active partial index).
+
+    This drives the real fix end-to-end:
+        1. seed ONE content group with THREE NULL-hash dups (T1, T2, T3);
+        2. run build -> promote (closes the T3 survivor, leaves T1/T2 NULL);
+        3. PARTIAL delete — remove the T1 dup only, leaving the T2 dup NULL
+           (simulating an interrupt before the delete drained);
+        4. re-run the FULL build -> promote -> drain delete;
+        5. assert STILL exactly one survivor, span == FULL group (T1..T3),
+           and ZERO NULL-hash rows remain.
+    """
+    # One content group, three NULL-hash captures at T1 < T2 < T3.
+    _insert_legacy_alert(conn, snap_id=SNAP_IDS[0], alert_index=0, content=GROUP_A, captured=T1)
+    _insert_legacy_alert(conn, snap_id=SNAP_IDS[1], alert_index=0, content=GROUP_A, captured=T2)
+    _insert_legacy_alert(conn, snap_id=SNAP_IDS[2], alert_index=0, content=GROUP_A, captured=T3)
+
+    legacy_hash = _hash(GROUP_A)
+
+    # --- First (interrupted) run: build + promote, then a PARTIAL delete. ---
+    _build_and_promote(conn)
+
+    # Exactly one closed survivor so far (the latest-captured T3 dup), carrying
+    # the FULL span T1..T3 even though T1/T2 are still present.
+    survivor = conn.execute(
+        text(
+            """
+            SELECT i3_alert_snapshot_id, first_seen_at, last_seen_at, valid_to
+            FROM silver.i3_alerts
+            WHERE provider_id = :p AND content_hash = :h AND valid_to IS NOT NULL
+            """
+        ),
+        {"p": PROVIDER, "h": legacy_hash},
+    ).mappings().all()
+    assert len(survivor) == 1
+    assert survivor[0]["i3_alert_snapshot_id"] == SNAP_IDS[2]
+    assert survivor[0]["first_seen_at"] == T1
+    assert survivor[0]["last_seen_at"] == T3
+    assert survivor[0]["valid_to"] == T3
+
+    # Two NULL dups remain (the T1 and T2 captures). Delete ONLY the T1 dup to
+    # simulate an interrupt before the batched delete drained the work-set.
+    deleted = conn.execute(
+        text(
+            """
+            DELETE FROM silver.i3_alerts
+            WHERE provider_id = :p AND content_hash IS NULL
+              AND i3_alert_snapshot_id = :s AND alert_index = 0
+            """
+        ),
+        {"p": PROVIDER, "s": SNAP_IDS[0]},
+    ).rowcount
+    assert deleted == 1
+    # One NULL dup (the T2 capture) survives into the resumed run.
+    null_left = conn.execute(
+        text(
+            "SELECT count(*) FROM silver.i3_alerts "
+            "WHERE provider_id = :p AND content_hash IS NULL"
+        ),
+        {"p": PROVIDER},
+    ).scalar()
+    assert null_left == 1
+
+    # --- Resumed run: FULL build -> promote -> drain delete. ---
+    _run_collapse(conn)
+
+    # Zero NULL-hash rows remain.
+    remaining_null = conn.execute(
+        text(
+            "SELECT count(*) FROM silver.i3_alerts "
+            "WHERE provider_id = :p AND content_hash IS NULL"
+        ),
+        {"p": PROVIDER},
+    ).scalar()
+    assert remaining_null == 0
+
+    # STILL exactly one closed survivor for this content version — the leftover
+    # T2 dup folded into the EXISTING survivor, not a second narrower row.
+    rows = _silver_rows(conn)
+    assert len(rows) == 1
+    s = rows[0]
+    assert s["alert_id"] == "ALERT-A"
+    assert s["content_hash"] == legacy_hash
+    # The EXISTING (T3) survivor was re-stamped in place, NOT replaced by a
+    # narrower-span row keyed on the leftover T2 dup.
+    assert s["i3_alert_snapshot_id"] == SNAP_IDS[2]
+    # Span still spans the FULL group T1..T3 (no narrowing to the leftover dup).
+    assert s["first_seen_at"] == T1
+    assert s["last_seen_at"] == T3
+    assert s["valid_to"] == T3
 
 
 def test_prune_i3_raw_keeps_silver_referenced_and_latest_snapshots(conn) -> None:

@@ -33,10 +33,18 @@ What this migration does (collapse + close, batched + /dev/shm-safe):
        drove 0017/0021).
 
     Everything runs inside op.get_context().autocommit_block() so each 100k
-    batch commits independently — WAL stays bounded on the small A1 VM, and the
-    migration is idempotent/resumable: every statement keys on remaining
-    content_hash IS NULL rows, and the survivor-promote no-ops once a hash is
-    promoted (the keeper temp table only sees NULL-hash rows).
+    batch commits independently — WAL stays bounded on the small A1 VM. Because
+    alembic only stamps the revision AFTER upgrade() returns, an interrupt
+    mid-DELETE re-runs the WHOLE upgrade(); the collapse must therefore be
+    idempotent/resumable. It is: the span table is computed over the FULL content
+    group (remaining NULL rows + any survivor a prior partial run already
+    promoted, rejoined by content_hash = legacy_hash), and the promote runs in
+    two passes — re-stamp the EXISTING survivor in place when one exists, else
+    promote a NULL keeper guarded by `content_hash IS NULL`. So a resumed run
+    folds the leftover NULL dup into the existing survivor (re-stamping its full
+    span) instead of minting a SECOND closed survivor for the same content
+    version with a narrower span — which no constraint would catch (both closed
+    rows sit outside the ux_silver_i3_alerts_active_content_hash partial index).
 
 Hash canonicalization:
     _LEGACY_HASH_EXPR copies the md5 body from 0021's _BACKFILL_HASH verbatim —
@@ -84,55 +92,146 @@ _LEGACY_HASH_EXPR = r"""md5(
 
 # One survivor per (provider_id, legacy_hash) over the NULL-hash work-set,
 # choosing the LATEST-captured duplicate (its entity set is the most complete).
+# `existing_survivor_ctid` flags a group that ALREADY has a promoted, closed
+# survivor from a prior partial run (its content_hash == this group's
+# legacy_hash); on resume that survivor is re-stamped (not re-minted) and the
+# remaining NULL dups are simply deleted — preserving "exactly one closed
+# survivor per content version".
 _BUILD_LEGACY_KEEPERS = f"""
 CREATE TEMP TABLE i3_legacy_keepers AS
-SELECT DISTINCT ON (provider_id, legacy_hash)
-    provider_id,
-    legacy_hash,
-    keeper_ctid
+SELECT
+    nulls.provider_id,
+    nulls.legacy_hash,
+    nulls.keeper_ctid,
+    promoted.survivor_ctid AS existing_survivor_ctid
 FROM (
-    SELECT
+    SELECT DISTINCT ON (provider_id, legacy_hash)
         provider_id,
-        {_LEGACY_HASH_EXPR} AS legacy_hash,
-        ctid AS keeper_ctid,
-        captured_at_utc,
-        i3_alert_snapshot_id,
-        alert_index
-    FROM silver.i3_alerts
-    WHERE content_hash IS NULL
-) AS t
-ORDER BY
-    provider_id,
-    legacy_hash,
-    captured_at_utc DESC,
-    i3_alert_snapshot_id DESC,
-    alert_index DESC;
+        legacy_hash,
+        keeper_ctid
+    FROM (
+        SELECT
+            provider_id,
+            {_LEGACY_HASH_EXPR} AS legacy_hash,
+            ctid AS keeper_ctid,
+            captured_at_utc,
+            i3_alert_snapshot_id,
+            alert_index
+        FROM silver.i3_alerts
+        WHERE content_hash IS NULL
+    ) AS t
+    ORDER BY
+        provider_id,
+        legacy_hash,
+        captured_at_utc DESC,
+        i3_alert_snapshot_id DESC,
+        alert_index DESC
+) AS nulls
+LEFT JOIN LATERAL (
+    -- A survivor promoted by a prior partial run carries content_hash =
+    -- legacy_hash AND valid_to IS NOT NULL (closed). DISTINCT ON keeps the
+    -- canonical (latest-captured) one if a defensive read finds more than one.
+    SELECT p.ctid AS survivor_ctid
+    FROM silver.i3_alerts AS p
+    WHERE p.provider_id = nulls.provider_id
+      AND p.content_hash = nulls.legacy_hash
+      AND p.valid_to IS NOT NULL
+    ORDER BY p.last_seen_at DESC NULLS LAST, p.captured_at_utc DESC, p.ctid DESC
+    LIMIT 1
+) AS promoted ON TRUE;
 
 CREATE INDEX ON i3_legacy_keepers (provider_id, legacy_hash);
 """
 
 
-# Group span (MIN/MAX captured) per (provider_id, legacy_hash), NULL-hash only.
+# Group span (MIN/MAX captured) per (provider_id, legacy_hash) over the FULL
+# content group: the remaining NULL-hash rows PLUS any survivor already promoted
+# by a prior partial run (joined back by content_hash = legacy_hash). For an
+# already-promoted survivor we fold in its EXISTING first_seen_at/last_seen_at —
+# the span the first run already computed over the WHOLE group — NOT just its own
+# captured_at_utc. That is what guarantees a resumed run re-stamps the survivor
+# with a span that still covers rows the partial DELETE already removed (e.g. the
+# group's earliest capture), instead of narrowing first_seen to whatever NULL
+# dups happen to survive the interrupt.
 _BUILD_LEGACY_SPANS = f"""
 CREATE TEMP TABLE i3_legacy_spans AS
+WITH null_hash AS (
+    SELECT
+        provider_id,
+        {_LEGACY_HASH_EXPR} AS legacy_hash,
+        captured_at_utc AS first_at,
+        captured_at_utc AS last_at
+    FROM silver.i3_alerts
+    WHERE content_hash IS NULL
+),
+null_groups AS (
+    SELECT DISTINCT provider_id, legacy_hash FROM null_hash
+),
+group_bounds AS (
+    SELECT provider_id, legacy_hash, first_at, last_at FROM null_hash
+    UNION ALL
+    -- Fold in any already-promoted survivor's PRE-COMPUTED span so the resumed
+    -- span covers the WHOLE history, including rows a prior partial DELETE
+    -- already removed (use first_seen_at/last_seen_at, falling back to its own
+    -- captured_at_utc, never just captured_at_utc — that would re-narrow).
+    SELECT
+        g.provider_id,
+        g.legacy_hash,
+        coalesce(p.first_seen_at, p.captured_at_utc) AS first_at,
+        coalesce(p.last_seen_at, p.captured_at_utc) AS last_at
+    FROM null_groups AS g
+    JOIN silver.i3_alerts AS p
+        ON p.provider_id = g.provider_id
+       AND p.content_hash = g.legacy_hash
+       AND p.valid_to IS NOT NULL
+)
 SELECT
     provider_id,
-    {_LEGACY_HASH_EXPR} AS legacy_hash,
-    min(captured_at_utc) AS first_seen,
-    max(captured_at_utc) AS last_seen
-FROM silver.i3_alerts
-WHERE content_hash IS NULL
+    legacy_hash,
+    min(first_at) AS first_seen,
+    max(last_at) AS last_seen
+FROM group_bounds
 GROUP BY 1, 2;
 
 CREATE INDEX ON i3_legacy_spans (provider_id, legacy_hash);
 """
 
 
-# Promote the survivor: content_hash + first/last_seen span + valid_to in ONE
-# statement. content_hash AND valid_to set together => the new row version never
-# satisfies the active partial-index predicate (valid_to IS NULL) => no collision
-# with an active hashed twin sharing the same content.
+# Promote in two passes, both keyed on i3_legacy_keepers/spans:
+#
+#   PASS 1 (resume re-stamp): for a group that ALREADY has a promoted survivor
+#   from a prior partial run, UPDATE that EXISTING survivor row in place with the
+#   FULL-group span. No new row is minted, so the group still has exactly one
+#   closed survivor. Keyed on a.ctid = k.existing_survivor_ctid.
+#
+#   PASS 2 (first-time promote): for a group with NO existing survivor
+#   (existing_survivor_ctid IS NULL), promote the latest NULL-hash keeper —
+#   setting content_hash + first/last_seen span + valid_to together. The
+#   `AND a.content_hash IS NULL` guard means an already-promoted survivor can
+#   never be re-promoted (idempotency (a)); content_hash AND valid_to set
+#   together keep the promoted row OUT of the active partial-index domain
+#   (valid_to IS NULL) so it never collides with an active hashed twin.
+#
+# NOTE: the a.ctid = k.*_ctid joins assume keeper/survivor ctids are stable for
+# the duration of upgrade() — i.e. no concurrent VACUUM FULL or HOT-update of
+# these rows. That holds here: the legacy NULL-hash set (and its already-closed
+# survivors) is disjoint from the live worker write-set, which only touches
+# active hashed rows.
 _PROMOTE_LEGACY_SURVIVORS = """
+WITH restamp AS (
+    UPDATE silver.i3_alerts AS a
+    SET first_seen_at = s.first_seen,
+        last_seen_at  = s.last_seen,
+        valid_to      = s.last_seen
+    FROM i3_legacy_keepers AS k
+    JOIN i3_legacy_spans AS s
+        ON s.provider_id = k.provider_id
+       AND s.legacy_hash = k.legacy_hash
+    WHERE k.existing_survivor_ctid IS NOT NULL
+      AND a.ctid = k.existing_survivor_ctid
+      AND a.content_hash = k.legacy_hash
+    RETURNING 1
+)
 UPDATE silver.i3_alerts AS a
 SET content_hash  = k.legacy_hash,
     first_seen_at = s.first_seen,
@@ -142,7 +241,9 @@ FROM i3_legacy_keepers AS k
 JOIN i3_legacy_spans AS s
     ON s.provider_id = k.provider_id
    AND s.legacy_hash = k.legacy_hash
-WHERE a.ctid = k.keeper_ctid
+WHERE k.existing_survivor_ctid IS NULL
+  AND a.ctid = k.keeper_ctid
+  AND a.content_hash IS NULL
 """
 
 

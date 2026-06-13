@@ -64,16 +64,24 @@ def test_legacy_hash_expr_matches_0021_backfill() -> None:
     assert expr_0038.count("E'\\x1F'") == 9
 
 
-def test_promote_sets_hash_and_valid_to_in_single_statement() -> None:
+def test_promote_sets_hash_span_and_valid_to_and_is_resume_idempotent() -> None:
     m = _load_0038()
     sql = _normalize(m._PROMOTE_LEGACY_SURVIVORS)
-    # One UPDATE assigning BOTH content_hash and valid_to => survivor never
-    # enters the active partial-index domain (no collision with an active twin).
-    assert sql.count("UPDATE silver.i3_alerts") == 1
+    # The first-time-promote pass sets content_hash AND valid_to together =>
+    # survivor never enters the active partial-index domain (no collision with an
+    # active twin), and stamps the full span.
     assert "content_hash" in sql
     assert "valid_to" in sql
     assert "first_seen_at" in sql
     assert "last_seen_at" in sql
+    # Idempotency on resume (the BLOCKER fix): the first-time-promote pass is
+    # guarded by `content_hash IS NULL`, so an already-promoted survivor from a
+    # prior partial run can never be re-promoted into a SECOND closed row with a
+    # narrower span. A separate re-stamp pass updates the EXISTING survivor in
+    # place (keyed on existing_survivor_ctid) — exactly one survivor per group.
+    assert "a.content_hash IS NULL" in sql
+    assert "existing_survivor_ctid IS NULL" in sql
+    assert "existing_survivor_ctid IS NOT NULL" in sql
 
 
 def test_keeper_selection_prefers_latest_captured() -> None:
@@ -85,12 +93,23 @@ def test_keeper_selection_prefers_latest_captured() -> None:
     assert "WHERE content_hash IS NULL" in sql
 
 
-def test_spans_group_min_max_over_null_hash_rows() -> None:
+def test_spans_cover_full_group_including_prior_survivor() -> None:
     m = _load_0038()
     sql = _normalize(m._BUILD_LEGACY_SPANS)
-    assert "min(captured_at_utc)" in sql
-    assert "max(captured_at_utc)" in sql
+    # Span aggregates MIN/MAX bounds per content group.
+    assert "min(first_at) AS first_seen" in sql
+    assert "max(last_at) AS last_seen" in sql
+    # The base set is the remaining NULL-hash rows ...
     assert "WHERE content_hash IS NULL" in sql
+    # ... UNIONed with any already-promoted survivor's PRE-COMPUTED span
+    # (first_seen_at/last_seen_at), so a resumed run re-stamps the FULL group
+    # span and never narrows first_seen to whatever NULL dups survived the
+    # interrupt. Folding only its captured_at_utc would re-narrow — guard against
+    # a regression to that by requiring the survivor's own span columns.
+    assert "UNION ALL" in sql
+    assert "p.valid_to IS NOT NULL" in sql
+    assert "p.first_seen_at" in sql
+    assert "p.last_seen_at" in sql
 
 
 def test_batched_delete_targets_only_null_hash_rows() -> None:
