@@ -37,6 +37,7 @@ def test_cli_help() -> None:
     assert "prune-silver-storage" in result.stdout
     assert "prune-gold-storage" in result.stdout
     assert "prune-bronze-storage" in result.stdout
+    assert "prune-i3-storage" in result.stdout
     assert "vacuum-storage" in result.stdout
     assert "run-static-pipeline" in result.stdout
     assert "run-realtime-cycle" in result.stdout
@@ -491,6 +492,43 @@ def test_prune_bronze_storage_help() -> None:
     assert "--dry-run" in result.stdout
     assert "--max-objects" in result.stdout
     assert "--max-batches" in result.stdout
+
+
+def test_prune_i3_storage_help() -> None:
+    result = runner.invoke(app, ["prune-i3-storage", "--help"])
+
+    assert result.exit_code == 0
+    assert "--dry-run" in result.stdout
+
+
+def test_prune_i3_storage_dry_run_flag(monkeypatch) -> None:
+    from transit_ops.maintenance import I3StoragePruneResult
+
+    recorded: dict[str, object] = {}
+
+    def fake_prune_i3_storage(provider_id, *, settings, dry_run):  # noqa: ANN001
+        recorded["provider_id"] = provider_id
+        recorded["dry_run"] = dry_run
+        return I3StoragePruneResult(
+            provider_id=provider_id,
+            dry_run=dry_run,
+            raw_retention_days=30,
+            silver_closed_retention_days=90,
+            raw_cutoff_utc=None,
+            silver_cutoff_utc=None,
+            deleted_object_counts={"i3_raw": 0},
+            deleted_row_counts={},
+            failed_object_counts={"i3_raw": 0},
+            completed_at_utc=datetime(2026, 6, 13, 0, 0, 0, tzinfo=UTC),
+        )
+
+    monkeypatch.setattr(cli_module, "prune_i3_storage", fake_prune_i3_storage)
+
+    result = runner.invoke(app, ["prune-i3-storage", "stm", "--dry-run"])
+
+    assert result.exit_code == 0
+    assert recorded["provider_id"] == "stm"
+    assert recorded["dry_run"] is True
 
 
 def test_vacuum_storage_table_option_in_help() -> None:

@@ -15,6 +15,8 @@ EXPECTED_RETENTION_CONTRACT = {
     "BRONZE_REALTIME_RETENTION_DAYS": 30,
     "BRONZE_STATIC_RETENTION_DAYS": 365,
     "GOLD_WARM_ROLLUP_RETENTION_DAYS": 365,
+    "BRONZE_I3_RETENTION_DAYS": 30,
+    "SILVER_I3_CLOSED_RETENTION_DAYS": 90,
 }
 DEFAULT_CONTRACT_ENV_KEYS = (*EXPECTED_RETENTION_CONTRACT, "DATABASE_URL")
 
@@ -47,6 +49,8 @@ def test_retention_proof_report_combines_contract_storage_dry_runs_static_valida
         BRONZE_REALTIME_RETENTION_DAYS=32,
         BRONZE_STATIC_RETENTION_DAYS=33,
         GOLD_WARM_ROLLUP_RETENTION_DAYS=91,
+        BRONZE_I3_RETENTION_DAYS=34,
+        SILVER_I3_CLOSED_RETENTION_DAYS=92,
         BRONZE_STORAGE_BACKEND="s3",
         BRONZE_LOCAL_ROOT="/tmp/bronze",
         BRONZE_S3_ENDPOINT="https://example.r2.cloudflarestorage.com",
@@ -78,6 +82,7 @@ def test_retention_proof_report_combines_contract_storage_dry_runs_static_valida
         prune_gold=prune("gold"),
         prune_bronze=prune("bronze"),
         prune_warm_rollup=prune("warm_rollup"),
+        prune_i3=prune("i3"),
     ).display_dict()
 
     assert report["provider_id"] == "stm"
@@ -96,6 +101,8 @@ def test_retention_proof_report_combines_contract_storage_dry_runs_static_valida
         "BRONZE_REALTIME_RETENTION_DAYS": 32,
         "BRONZE_STATIC_RETENTION_DAYS": 33,
         "GOLD_WARM_ROLLUP_RETENTION_DAYS": 91,
+        "BRONZE_I3_RETENTION_DAYS": 34,
+        "SILVER_I3_CLOSED_RETENTION_DAYS": 92,
     }
     assert report["storage"] == {
         "BRONZE_STORAGE_BACKEND": "s3",
@@ -113,6 +120,7 @@ def test_retention_proof_report_combines_contract_storage_dry_runs_static_valida
         ("gold", "stm", True, engine),
         ("bronze", "stm", True, engine),
         ("warm_rollup", "stm", True, engine),
+        ("i3", "stm", True, engine),
     ]
     assert report["dry_runs"] == {
         "silver": {
@@ -140,6 +148,13 @@ def test_retention_proof_report_combines_contract_storage_dry_runs_static_valida
             "status": "ok",
             "dry_run": True,
             "result": {"label": "warm_rollup", "dry_run": True},
+            "message": "Dry-run completed successfully.",
+            "error_type": None,
+        },
+        "i3": {
+            "status": "ok",
+            "dry_run": True,
+            "result": {"label": "i3", "dry_run": True},
             "message": "Dry-run completed successfully.",
             "error_type": None,
         },
@@ -178,9 +193,17 @@ def test_retention_proof_report_marks_db_backed_dry_runs_unavailable_without_db_
         prune_gold=should_not_prune,
         prune_bronze=should_not_prune,
         prune_warm_rollup=should_not_prune,
+        prune_i3=should_not_prune,
     ).display_dict()
 
     assert called is False
+    assert set(report["dry_runs"]) == {
+        "silver",
+        "gold",
+        "bronze",
+        "warm_rollup",
+        "i3",
+    }
     for section in report["dry_runs"].values():
         assert section == {
             "status": "unavailable",
@@ -189,6 +212,34 @@ def test_retention_proof_report_marks_db_backed_dry_runs_unavailable_without_db_
             "message": "DATABASE_URL is required for this dry-run proof surface.",
             "error_type": "missing_database_url",
         }
+
+
+def test_retention_proof_report_includes_i3_dry_run_surface() -> None:
+    settings = Settings(
+        _env_file=None,
+        DATABASE_URL="postgresql://user:secret@localhost:5432/transit",
+    )
+    calls: list[bool] = []
+
+    def fake_prune_i3(provider_id, *, settings, engine, dry_run):  # noqa: ANN001
+        calls.append(dry_run)
+        return FakeDisplayResult(label="i3", dry_run=dry_run)
+
+    report = build_retention_proof_report(
+        "stm",
+        settings=settings,
+        engine=object(),
+        static_feed_validator=lambda provider_id, **kwargs: FakeDisplayResult("static"),
+        prune_silver=lambda provider_id, **kwargs: FakeDisplayResult("silver"),
+        prune_gold=lambda provider_id, **kwargs: FakeDisplayResult("gold"),
+        prune_bronze=lambda provider_id, **kwargs: FakeDisplayResult("bronze"),
+        prune_warm_rollup=lambda provider_id, **kwargs: FakeDisplayResult("warm"),
+        prune_i3=fake_prune_i3,
+    ).display_dict()
+
+    assert calls == [True]
+    assert report["dry_runs"]["i3"]["status"] == "ok"
+    assert report["dry_runs"]["i3"]["result"] == {"label": "i3", "dry_run": True}
 
 
 def test_retention_proof_report_missing_db_url_skips_engine_creation(monkeypatch) -> None:

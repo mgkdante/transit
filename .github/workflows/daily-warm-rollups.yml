@@ -21,8 +21,10 @@ jobs:
   build-warm-rollups:
     runs-on: ubuntu-latest
     # 25m headroom: rollups + 2 new marts + the historic /v1 publish (per-route
-    # reliability files + the 8M-row alert_history view) all run in this job.
-    timeout-minutes: 50  # tactical bump (was 25): i3-bloated rollups build exceeded it daily since Jun 7; structural fix = slice-9.1.1l
+    # reliability files + the alert_history view) all run in this job. The
+    # "8M-row alert_history" qualifier is obsolete after slice-9.1.1l's 0038
+    # legacy NULL-hash collapse shrank the i3 history fan-out.
+    timeout-minutes: 50  # tactical bump (was 25): i3-bloated rollups build exceeded it daily since Jun 7; structural fix = slice-9.1.1l (0038/0039 + daily prune-i3-storage)
     defaults:
       run:
         working-directory: db
@@ -61,6 +63,13 @@ jobs:
 
       - name: Publish historic /v1 snapshot to R2
         run: uv run python -m transit_ops.cli publish-snapshot stm --tier historic
+
+      # Runs AFTER the historic publish so alert_history.json builds from the
+      # unpruned silver history first. Steady-state daily volume is tiny
+      # (~288 raw rows + a few hundred closed silver rows); the silver table is
+      # a few thousand rows post-0038. Exits 1 on any R2 delete failure.
+      - name: Prune i3 raw snapshots + closed silver history
+        run: uv run python -m transit_ops.cli prune-i3-storage stm
 
       - name: Prune expired warm rollup rows
         run: uv run python -m transit_ops.cli prune-warm-rollup-storage stm

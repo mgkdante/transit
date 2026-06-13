@@ -129,3 +129,16 @@ def test_daily_warm_rollups_workflow_prunes_bronze_and_uploads_retention_proof()
     timeout_match = re.search(r"timeout-minutes:\s*(\d+)", workflow)
     assert timeout_match is not None
     assert int(timeout_match.group(1)) >= 35
+
+
+def test_daily_warm_rollups_workflow_prunes_i3_after_historic_publish() -> None:
+    workflow = (REPO_ROOT / ".github/workflows/daily-warm-rollups.yml").read_text(
+        encoding="utf-8"
+    )
+
+    # slice-9.1.1l: the i3 prune runs daily from this job, AFTER the historic
+    # /v1 publish so alert_history.json builds from unpruned silver history.
+    assert "prune-i3-storage stm" in workflow
+    assert workflow.index("prune-i3-storage stm") > workflow.index(
+        "publish-snapshot stm --tier historic"
+    )

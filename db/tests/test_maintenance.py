@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import inspect
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
@@ -10,18 +10,23 @@ from transit_ops.maintenance import (
     COUNT_ELIGIBLE_BRONZE_REALTIME_OBJECTS,
     COUNT_ELIGIBLE_BRONZE_STATIC_OBJECTS,
     DELETE_ORPHANED_INGESTION_RUNS,
+    MIN_SILVER_I3_CLOSED_RETENTION_DAYS,
     REALTIME_SILVER_TABLES,
     SELECT_ELIGIBLE_BRONZE_REALTIME_OBJECTS,
     SELECT_ELIGIBLE_BRONZE_STATIC_OBJECTS,
+    SELECT_ELIGIBLE_I3_RAW_SNAPSHOTS,
     VACUUM_TABLES,
     BronzeStoragePruneResult,
     GoldStoragePruneResult,
+    I3StoragePruneResult,
     SilverStoragePruneResult,
     WarmRollupStoragePruneResult,
     prune_bronze_realtime_objects,
     prune_bronze_static_objects,
     prune_bronze_storage,
     prune_gold_fact_history,
+    prune_i3_raw_snapshots,
+    prune_i3_silver_closed_rows,
     prune_realtime_silver_history,
     prune_static_silver_datasets,
     prune_warm_rollup_storage,
@@ -216,6 +221,40 @@ class RecordingConnection:
             return ScalarResult(500)
         if "SELECT COUNT(*) FROM gold.fact_vehicle_snapshot" in sql_text:
             return ScalarResult(300)
+        # --- i3 retention (slice-9.1.1l) ---
+        # i3 raw eligible COUNT references silver.i3_alerts in a NOT EXISTS
+        # guard, so it MUST be matched before the silver.i3_alerts COUNT below.
+        if "SELECT COUNT(*)" in sql_text and "raw.i3_alert_snapshots" in sql_text:
+            return ScalarResult(9876)
+        # i3 silver-closed prune: entities + alerts DELETE / COUNT.
+        if "DELETE FROM silver.i3_alert_informed_entities" in sql_text:
+            return RowcountResult(7)
+        if "DELETE FROM silver.i3_alerts" in sql_text:
+            return RowcountResult(4)
+        if (
+            "SELECT COUNT(*)" in sql_text
+            and "silver.i3_alert_informed_entities" in sql_text
+        ):
+            return ScalarResult(7)
+        if "SELECT COUNT(*)" in sql_text and "silver.i3_alerts" in sql_text:
+            return ScalarResult(4)
+        # i3 raw eligible row select (live path).
+        if (
+            "raw.i3_alert_snapshots" in sql_text
+            and "SELECT" in sql_text
+            and "DELETE" not in sql_text
+            and "COUNT" not in sql_text
+        ):
+            # (i3_alert_snapshot_id, ingestion_run_id, ingestion_object_id, storage_path)
+            return IterableResult(
+                [
+                    (5001, 6001, 7001, "stm/i3_alerts/captured_at_utc=2026-01-01/a.json"),
+                    (5002, 6002, 7002, "stm/i3_alerts/captured_at_utc=2026-01-02/b.json"),
+                    (5003, 6003, None, None),
+                ]
+            )
+        if "DELETE FROM raw.i3_alert_snapshots" in sql_text:
+            return RowcountResult(3)
         # Bronze eligible COUNT statements (dry-run, unbounded) — must precede
         # the row-returning eligible-select heuristics below, which would
         # otherwise swallow them.
@@ -1088,3 +1127,214 @@ def test_bronze_prune_result_display_dict_includes_failed_batches_exhausted() ->
     assert d["failed_object_counts"] == {"realtime": 2, "static": 0}
     assert d["batch_counts"] == {"realtime": 1, "static": 1}
     assert d["exhausted"] is False
+
+
+# ---------------------------------------------------------------------------
+# i3 retention (slice-9.1.1l): prune_i3_raw_snapshots + prune_i3_silver_closed_rows
+# ---------------------------------------------------------------------------
+
+
+def test_vacuum_tables_include_i3_tables() -> None:
+    for table_name in (
+        "raw.i3_alert_snapshots",
+        "silver.i3_alerts",
+        "silver.i3_alert_informed_entities",
+    ):
+        assert table_name in VACUUM_TABLES
+
+
+def test_prune_i3_raw_snapshots_sql_guards_silver_refs_and_latest() -> None:
+    sql = str(SELECT_ELIGIBLE_I3_RAW_SNAPSHOTS)
+    # FK-cascade trap guard: never delete a raw snapshot a silver row references.
+    assert "NOT EXISTS" in sql
+    assert "silver.i3_alerts" in sql
+    # find_latest_i3_raw_snapshot guard: keep the per-provider latest snapshot.
+    assert "<> COALESCE((" in sql
+    assert "max(s2.i3_alert_snapshot_id)" in sql
+
+
+def test_prune_i3_raw_snapshots_dry_run_counts_without_deleting() -> None:
+    connection = RecordingConnection()
+    storage = FakeBronzeStorage()
+    now_utc = datetime(2026, 6, 13, 7, 0, 0, tzinfo=UTC)
+
+    cutoff_utc, object_counts, meta_counts, failed_ids = prune_i3_raw_snapshots(
+        connection,
+        provider_id="stm",
+        retention_days=30,
+        bronze_storage=storage,
+        dry_run=True,
+        now_utc=now_utc,
+    )
+
+    assert cutoff_utc == now_utc - timedelta(days=30)
+    assert object_counts == {"i3_raw": 9876}
+    assert meta_counts["raw.i3_alert_snapshots"] == 9876
+    assert meta_counts["raw.ingestion_objects"] == 9876
+    assert failed_ids == set()
+    assert storage.deleted == []
+    assert [c for c in connection.calls if "DELETE" in c] == []
+
+
+def test_prune_i3_raw_snapshots_live_deletes_r2_then_metadata_in_fk_order() -> None:
+    connection = RecordingConnection()
+    storage = FakeBronzeStorage()
+    now_utc = datetime(2026, 6, 13, 7, 0, 0, tzinfo=UTC)
+
+    cutoff_utc, object_counts, meta_counts, failed_ids = prune_i3_raw_snapshots(
+        connection,
+        provider_id="stm",
+        retention_days=30,
+        bronze_storage=storage,
+        dry_run=False,
+        now_utc=now_utc,
+    )
+
+    assert cutoff_utc is not None
+    # 2 of the 3 eligible rows carry a storage_path (third is NULL path).
+    assert object_counts["i3_raw"] == 2
+    assert len(storage.deleted) == 2
+    assert failed_ids == set()
+    # Snapshots delete BEFORE ingestion_objects delete (FK order: snapshots ->
+    # ingestion_objects -> ingestion_runs).
+    snap_idx = next(
+        i for i, c in enumerate(connection.calls)
+        if "DELETE FROM raw.i3_alert_snapshots" in c
+    )
+    obj_idx = next(
+        i for i, c in enumerate(connection.calls)
+        if "DELETE FROM raw.ingestion_objects" in c
+    )
+    run_idx = next(
+        i for i, c in enumerate(connection.calls)
+        if "DELETE FROM raw.ingestion_runs" in c
+    )
+    assert snap_idx < obj_idx < run_idx
+    assert meta_counts["raw.i3_alert_snapshots"] == 3
+
+
+def test_prune_i3_raw_snapshots_skips_failed_r2_deletes() -> None:
+    connection = RecordingConnection()
+    storage = FakeBronzeStorage()
+    storage.fail_on = {"stm/i3_alerts/captured_at_utc=2026-01-01/a.json"}
+    now_utc = datetime(2026, 6, 13, 7, 0, 0, tzinfo=UTC)
+
+    _cutoff, object_counts, _meta, failed_ids = prune_i3_raw_snapshots(
+        connection,
+        provider_id="stm",
+        retention_days=30,
+        bronze_storage=storage,
+        dry_run=False,
+        now_utc=now_utc,
+    )
+
+    # One of the two path-bearing rows failed → only 1 deleted, snapshot 5001 skipped.
+    assert object_counts["i3_raw"] == 1
+    assert failed_ids == {5001}
+
+
+def test_prune_i3_raw_snapshots_disabled_when_zero_retention() -> None:
+    connection = RecordingConnection()
+    storage = FakeBronzeStorage()
+
+    cutoff_utc, object_counts, _meta, failed_ids = prune_i3_raw_snapshots(
+        connection,
+        provider_id="stm",
+        retention_days=0,
+        bronze_storage=storage,
+    )
+
+    assert cutoff_utc is None
+    assert object_counts == {"i3_raw": 0}
+    assert failed_ids == set()
+    assert len(connection.calls) == 0
+    assert storage.deleted == []
+
+
+def test_prune_i3_silver_closed_rows_deletes_entities_then_alerts() -> None:
+    connection = RecordingConnection()
+    now_utc = datetime(2026, 6, 13, 7, 0, 0, tzinfo=UTC)
+
+    cutoff_utc, row_counts = prune_i3_silver_closed_rows(
+        connection,
+        provider_id="stm",
+        retention_days=90,
+        dry_run=False,
+        now_utc=now_utc,
+    )
+
+    assert cutoff_utc == now_utc - timedelta(days=90)
+    assert row_counts == {
+        "silver.i3_alert_informed_entities": 7,
+        "silver.i3_alerts": 4,
+    }
+    ent_idx = next(
+        i for i, c in enumerate(connection.calls)
+        if "DELETE FROM silver.i3_alert_informed_entities" in c
+    )
+    alert_idx = next(
+        i for i, c in enumerate(connection.calls)
+        if "DELETE FROM silver.i3_alerts" in c
+    )
+    assert ent_idx < alert_idx
+
+
+def test_prune_i3_silver_closed_rows_floors_retention_at_30_days() -> None:
+    connection = RecordingConnection()
+    now_utc = datetime(2026, 6, 13, 7, 0, 0, tzinfo=UTC)
+
+    cutoff_utc, _row_counts = prune_i3_silver_closed_rows(
+        connection,
+        provider_id="stm",
+        retention_days=7,
+        dry_run=True,
+        now_utc=now_utc,
+    )
+
+    assert MIN_SILVER_I3_CLOSED_RETENTION_DAYS == 30
+    # 7d requested but the 30d floor applies.
+    assert cutoff_utc == now_utc - timedelta(days=30)
+
+
+def test_prune_i3_silver_closed_rows_zero_retention_is_noop() -> None:
+    connection = RecordingConnection()
+
+    cutoff_utc, row_counts = prune_i3_silver_closed_rows(
+        connection,
+        provider_id="stm",
+        retention_days=0,
+    )
+
+    assert cutoff_utc is None
+    assert row_counts == {
+        "silver.i3_alert_informed_entities": 0,
+        "silver.i3_alerts": 0,
+    }
+    assert len(connection.calls) == 0
+
+
+def test_i3_prune_result_display_dict_formats_timestamps() -> None:
+    result = I3StoragePruneResult(
+        provider_id="stm",
+        dry_run=False,
+        raw_retention_days=30,
+        silver_closed_retention_days=90,
+        raw_cutoff_utc=datetime(2026, 5, 14, 7, 0, 0, tzinfo=UTC),
+        silver_cutoff_utc=datetime(2026, 3, 15, 7, 0, 0, tzinfo=UTC),
+        deleted_object_counts={"i3_raw": 5},
+        deleted_row_counts={
+            "silver.i3_alert_informed_entities": 7,
+            "silver.i3_alerts": 4,
+            "raw.i3_alert_snapshots": 5,
+            "raw.ingestion_objects": 5,
+            "raw.ingestion_runs": 1,
+        },
+        failed_object_counts={"i3_raw": 0},
+        completed_at_utc=datetime(2026, 6, 13, 7, 10, 0, tzinfo=UTC),
+    )
+
+    d = result.display_dict()
+    assert d["raw_cutoff_utc"] == "2026-05-14T07:00:00+00:00"
+    assert d["silver_cutoff_utc"] == "2026-03-15T07:00:00+00:00"
+    assert d["completed_at_utc"] == "2026-06-13T07:10:00+00:00"
+    assert d["deleted_object_counts"] == {"i3_raw": 5}

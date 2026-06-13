@@ -14,6 +14,7 @@ from transit_ops.ingestion.storage import BronzeStorageError
 from transit_ops.maintenance import (
     prune_bronze_storage,
     prune_gold_storage,
+    prune_i3_storage,
     prune_silver_storage,
     prune_warm_rollup_storage,
 )
@@ -28,6 +29,8 @@ RETENTION_CONTRACT_KEYS = (
     "BRONZE_REALTIME_RETENTION_DAYS",
     "BRONZE_STATIC_RETENTION_DAYS",
     "GOLD_WARM_ROLLUP_RETENTION_DAYS",
+    "BRONZE_I3_RETENTION_DAYS",
+    "SILVER_I3_CLOSED_RETENTION_DAYS",
 )
 
 DryRunCallable = Callable[..., Any]
@@ -164,6 +167,7 @@ def build_retention_proof_report(
     prune_gold: DryRunCallable | None = None,
     prune_bronze: DryRunCallable | None = None,
     prune_warm_rollup: DryRunCallable | None = None,
+    prune_i3: DryRunCallable | None = None,
 ) -> RetentionProofReport:
     resolved_settings = settings or get_settings()
     resolved_static_feed_validator = static_feed_validator or validate_static_feeds
@@ -173,6 +177,7 @@ def build_retention_proof_report(
         "gold": prune_gold or prune_gold_storage,
         "bronze": prune_bronze or prune_bronze_storage,
         "warm_rollup": prune_warm_rollup or prune_warm_rollup_storage,
+        "i3": prune_i3 or prune_i3_storage,
     }
     if not resolved_settings.sqlalchemy_database_url:
         dry_runs = {
