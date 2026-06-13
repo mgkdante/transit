@@ -2,7 +2,7 @@
 
 Slice `slice-8.5` standardizes two external SQL roles.
 
-- `transit-reporting`: Gold-only reporting reader for Power BI and `transit.yesid.dev`.
+- `transit-reporting`: Gold-only reporting reader for the /v1 snapshot publisher and `transit.yesid.dev`.
 - `transit-db`: SQL developer reader for operator analysis. It can read `raw`, `core`, `silver`, and `gold`, and it can create temporary tables. It cannot write permanent objects.
 
 Both contracts require SCRAM passwords and TLS. `transit-db` is SSH-tunnel first by default; public HBA exposure must be turned on deliberately with `TRANSIT_DB_PUBLIC_MODE=allow`.

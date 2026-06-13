@@ -28,13 +28,13 @@ notion:
 
 ## Project
 
-**Transit** — near-real-time STM transit operations analytics pipeline. GTFS static and GTFS-Realtime feeds are captured to Bronze storage, normalized into Postgres, and served to a Power BI operations dashboard. This is a portfolio project, not a SaaS product.
+**Transit** — near-real-time STM transit operations analytics pipeline. GTFS static and GTFS-Realtime feeds are captured to Bronze storage, normalized into Postgres, and published as versioned /v1 snapshots to Cloudflare R2 for the public citizen web app (web/). This is a portfolio project, not a SaaS product.
 
 ## Workflow
 
 workflow-overlord 3.x orchestrates Claude Code + Codex sessions via Notion shared state. Anti-hallucination through chunked slices. **Notion is the canonical workflow state.** Git branches and worktrees are optional operator workflow, not plugin metadata.
 
-Notion is also the canonical home for long-form business context, architecture context, runtime notes, and Power BI semantic-model knowledge. Repo prose should stay short and practical, not compete with that source of truth.
+Notion is also the canonical home for long-form business context, architecture context, runtime notes, and /v1 snapshot-contract / web-app knowledge. Repo prose should stay short and practical, not compete with that source of truth.
 Humans can discover that Notion home from the tracked link in `README.md` under `Notion Home`. `AGENTS.local.md` is for local machine-readable UUID pointers and override resolution, not the only route to find project context.
 
 ## Core principles — the 6 mechanical guarantees
@@ -117,6 +117,6 @@ Every piece of workflow state has exactly one canonical location. For Transit, t
 ## Stack-specific notes
 
 - **Runtime:** Python 3.12
-- **Core infra:** Oracle VM Postgres + Docker Compose, Cloudflare R2, Caddy, GitHub Actions, Power BI
+- **Core infra:** Oracle VM Postgres + Docker Compose, Cloudflare R2, Caddy, GitHub Actions, SvelteKit web app on Cloudflare (web/)
 - **Realtime cadence:** current runtime behavior lives in Notion → `Architecture` → `Runtime / Operations`
-- **Power BI artifacts:** keep local `.pbix` working files in repo; preserve semantic-model explanations, validation notes, and portfolio framing in Notion
+- **Serving artifacts:** the /v1 R2 snapshot contract (bucket transit-snapshots) feeds web/; keep design/semantic explanations, validation notes, and portfolio framing in Notion

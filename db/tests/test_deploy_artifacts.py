@@ -285,3 +285,18 @@ def test_compose_postgres_environment_is_bootstrap_only() -> None:
         "POSTGRES_USER",
         "POSTGRES_PASSWORD",
     }
+
+
+def test_repo_contracts_describe_web_serving_layer_not_powerbi() -> None:
+    # slice-9.1.1w: Power BI was retired (2026-05-30) for the web/ citizen app
+    # fed by the /v1 R2 snapshot contract. The cross-tool repo contracts must not
+    # still claim Power BI is the serving layer.
+    for rel in ("AGENTS.md", "CLAUDE.md"):
+        text = (REPO_ROOT / rel).read_text(encoding="utf-8")
+        assert "Power BI" not in text, f"{rel} still mentions Power BI"
+        assert ".pbix" not in text, f"{rel} still mentions .pbix"
+    serving_readme = (
+        DB_ROOT / "infra" / "postgres-serving-access" / "README.md"
+    ).read_text(encoding="utf-8")
+    assert "Power BI" not in serving_readme
+    assert "/v1" in (REPO_ROOT / "AGENTS.md").read_text(encoding="utf-8")
