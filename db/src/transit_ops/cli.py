@@ -820,7 +820,7 @@ def run_realtime_cycle_command(provider_id: str) -> None:
 @app.command("publish-snapshot")
 def publish_snapshot_command(
     provider_id: str,
-    tier: str = typer.Option("live", "--tier", help="live  (static/historic land in later phases)"),  # noqa: B008
+    tier: str = typer.Option("live", "--tier", help="live | static | historic"),  # noqa: B008
     dry_run: bool = typer.Option(  # noqa: B008
         False,
         "--dry-run",

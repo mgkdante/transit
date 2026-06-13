@@ -22,6 +22,29 @@ def test_trips_file_indexed_by_trip_id():
     assert tf.trips["t1"].stops[0].stop == "51234"
 
 
+def test_stop_departures_file_indexed_by_stop_id():
+    from transit_ops.snapshots.contract import StopDeparture, StopDeparturesFile
+
+    sdf = StopDeparturesFile(
+        generated_utc="2026-06-10T12:00:00Z",
+        stops={
+            "51234": [
+                StopDeparture(route="165", trip="t1", eta_utc="2026-06-10T12:05:00Z", delay_min=2)
+            ]
+        },
+    )
+    assert sdf.stops["51234"][0].route == "165"
+    assert sdf.stops["51234"][0].eta_utc == "2026-06-10T12:05:00Z"
+    assert sdf.stops["51234"][0].delay_min == 2
+
+
+def test_stop_departure_rejects_missing_eta():
+    from transit_ops.snapshots.contract import StopDeparture
+
+    with pytest.raises(ValidationError):
+        StopDeparture(route="165")
+
+
 def test_route_file_valid():
     rf = RouteFile(generated_utc="t", id="165", long="Côte-Vertu",
                    directions=[RouteDirection(dir=0, headsign="Côte-Vertu",

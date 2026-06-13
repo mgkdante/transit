@@ -14,6 +14,7 @@ from transit_ops.snapshots.builders import (
     build_alerts,
     build_manifest,
     build_network,
+    build_stop_departures,
     build_trips,
     build_vehicles,
 )
@@ -21,6 +22,7 @@ from transit_ops.snapshots.contract import (
     AlertsFile,
     Manifest,
     NetworkFile,
+    StopDeparturesFile,
     TripsFile,
     VehiclesFile,
 )
@@ -265,6 +267,79 @@ def test_build_trips_groups_stops_and_converts_delay_to_minutes() -> None:
     assert t3.status == "unknown"
     assert t3.delay_min is None
     assert [s.stop for s in t3.stops] == ["S-9"]
+
+
+def test_trip_departures_sql_contract_60min_horizon() -> None:
+    """slice-9.1.1q: the trips departures query caps the ETA horizon at 60 min."""
+    from transit_ops.snapshots import builders
+
+    sql = str(builders._TRIP_DEPARTURES_SQL)
+    assert "interval '60 minutes'" in sql
+    assert "predicted_departure_utc <" in sql
+
+
+# --------------------------------------------------------------------------
+# 6b2 — build_stop_departures (slice-9.1.1q)
+# --------------------------------------------------------------------------
+
+
+def test_build_stop_departures_groups_by_stop_in_eta_order_and_maps_delay() -> None:
+    # The view + window are evaluated in SQL; the FakeConn returns the rows the
+    # query WOULD return (already ranked/ordered), so this exercises the
+    # row -> model mapping: dict keying, list order, delay seconds -> minutes,
+    # NULL delay -> None, generated_utc passthrough.
+    conn = FakeConn(
+        {
+            "current_stop_next_departures": [
+                {
+                    "stop_id": "S-1",
+                    "route_id": "165",
+                    "trip_id": "t1",
+                    "predicted_departure_utc": "2026-06-10T12:05:00Z",
+                    "avg_delay_seconds": 130.0,  # -> 2 min
+                },
+                {
+                    "stop_id": "S-1",
+                    "route_id": "171",
+                    "trip_id": "t2",
+                    "predicted_departure_utc": "2026-06-10T12:08:00Z",
+                    "avg_delay_seconds": None,  # -> None
+                },
+                {
+                    "stop_id": "S-2",
+                    "route_id": "24",
+                    "trip_id": "t3",
+                    "predicted_departure_utc": "2026-06-10T12:10:00Z",
+                    "avg_delay_seconds": -200.0,  # early -> -3 min
+                },
+            ]
+        }
+    )
+
+    out = build_stop_departures(conn, provider_id="stm", generated_utc="2026-06-10T12:00:05Z")
+
+    assert isinstance(out, StopDeparturesFile)
+    assert out.generated_utc == "2026-06-10T12:00:05Z"
+    assert set(out.stops) == {"S-1", "S-2"}
+    s1 = out.stops["S-1"]
+    assert [d.route for d in s1] == ["165", "171"]
+    assert [d.eta_utc for d in s1] == ["2026-06-10T12:05:00Z", "2026-06-10T12:08:00Z"]
+    assert s1[0].trip == "t1"
+    assert s1[0].delay_min == 2
+    assert s1[1].delay_min is None
+    assert out.stops["S-2"][0].delay_min == -3
+
+
+def test_build_stop_departures_sql_contract() -> None:
+    from transit_ops.snapshots import builders
+
+    sql = str(builders._STOP_DEPARTURES_SQL)
+    assert "PARTITION BY d.stop_id, d.route_id" in sql
+    assert ":per_route_cap" in sql
+    assert "d.stop_id IS NOT NULL" in sql
+    assert "current_trip_delay_computed" in sql
+    assert "GROUP BY provider_id, trip_id" in sql
+    assert builders._STOP_DEPARTURES_PER_ROUTE_CAP == 2
 
 
 # --------------------------------------------------------------------------
@@ -517,7 +592,7 @@ def test_build_manifest_assembles_from_provider_and_version() -> None:
             "gold.dim_provider": [
                 {
                     "provider_id": "stm",
-                    "display_name": "Societe de transport de Montreal",
+                    "display_name": "Société de transport de Montréal",
                     "timezone": "America/Toronto",
                     "default_language": "fr",
                     "attribution_text": "Contains STM data made available under CC BY 4.0.",
@@ -540,7 +615,7 @@ def test_build_manifest_assembles_from_provider_and_version() -> None:
 
     assert isinstance(out, Manifest)
     assert out.provider == "stm"
-    assert out.display_name == "Societe de transport de Montreal"
+    assert out.display_name == "Société de transport de Montréal"
     assert out.tz == "America/Toronto"
     assert out.default_lang == "fr"
     assert out.attribution == "Contains STM data made available under CC BY 4.0."
@@ -653,6 +728,13 @@ def test_build_manifest_basemap_set_with_setting() -> None:
     assert out.files.static.basemap == "static/basemap.json"
 
 
+def test_manifest_live_files_list_stop_departures() -> None:
+    """slice-9.1.1q: the live inventory advertises live/stop_departures.json."""
+    conn = FakeConn(_MANIFEST_PROVIDER_ROW)
+    out = build_manifest(conn, provider_id="stm", generated_utc="t", settings=_FakeSettings())
+    assert out.files.live.stop_departures == "live/stop_departures.json"
+
+
 # --------------------------------------------------------------------------
 # 6f — build_labels
 # --------------------------------------------------------------------------
@@ -692,6 +774,72 @@ def test_build_labels_en():
     lf = build_labels(FakeConn(), lang="en", generated_utc="t")
     assert lf.labels["status.on_time"] == "On time"
     assert lf.labels["occupancy.few_seats"] == "Few seats available"
+
+
+_METHODOLOGY_GAP_ATTR_KEYS = {
+    "methodology.otp_definition",
+    "methodology.delay_unit",
+    "methodology.percentiles",
+    "methodology.retention",
+    "gap.metro_realtime",
+    "gap.metro_realtime.short",
+    "attribution.data_source",
+    "attribution.disclaimer",
+}
+
+
+def test_build_labels_includes_methodology_gap_attribution():
+    """The 8 citizen-facing methodology/gap/attribution keys ship in BOTH languages,
+    with accents intact and the early-band caveat locked in EN (slice-9.1.1t)."""
+    from transit_ops.snapshots.builders import build_labels
+
+    class FakeResult:
+        def __init__(self, rows): self._rows = rows
+        def mappings(self): return self
+        def __iter__(self): return iter(self._rows)
+
+    class FakeConn:
+        def execute(self, *a, **k):
+            return FakeResult([])  # empty report_labels
+
+    for lang in ("fr", "en"):
+        lf = build_labels(FakeConn(), lang=lang, generated_utc="t")
+        for key in _METHODOLOGY_GAP_ATTR_KEYS:
+            assert key in lf.labels, f"{key} missing in {lang}"
+        # accent survives in the short métro-gap copy in BOTH languages
+        assert "étro" in lf.labels["gap.metro_realtime.short"]
+        # CC BY 4.0 named in the attribution source line
+        assert "CC BY 4.0" in lf.labels["attribution.data_source"]
+
+    # EN otp_definition keeps the early-band caveat (early vehicles are NOT on time)
+    en = build_labels(FakeConn(), lang="en", generated_utc="t")
+    assert "early" in en.labels["methodology.otp_definition"]
+    # The published live on-time band is [-60s, +300s): build_network counts
+    # on_time + late, migration 0030's FILTER is delay >= -60 AND delay < 300.
+    # The copy must state the +300s / 5-minute upper bound — NOT understate it to
+    # "one minute late" (the slice-9.1.1t honesty fix). Lock both languages so the
+    # citizen-facing band can never silently drift below what is actually published.
+    fr = build_labels(FakeConn(), lang="fr", generated_utc="t")
+    assert "five minutes" in en.labels["methodology.otp_definition"]
+    assert "one minute late" not in en.labels["methodology.otp_definition"]
+    assert "cinq minutes" in fr.labels["methodology.otp_definition"]
+    assert "une minute de retard" not in fr.labels["methodology.otp_definition"]
+    # methodology.percentiles must NOT misattribute the 90-day OTP/avg window to
+    # p90: live network p90 is the current snapshot, the trend p90 is the 14-day
+    # fact window (builders.py build_network/build_network_trend; provenance says
+    # only "network p90 from fact"). Lock against the "90 days" mis-statement.
+    assert "90 days" not in en.labels["methodology.percentiles"]
+    assert "14 days" in en.labels["methodology.percentiles"]
+    assert "90 derniers jours" not in fr.labels["methodology.percentiles"]
+    assert "14 derniers jours" in fr.labels["methodology.percentiles"]
+
+
+def test_static_label_key_sets_identical_fr_en():
+    """Parity invariant: the two static dicts must always carry the same key set,
+    so fr.json and en.json never drift apart (slice-9.1.1t)."""
+    from transit_ops.snapshots.builders import _STATIC_LABELS_EN, _STATIC_LABELS_FR
+
+    assert set(_STATIC_LABELS_FR) == set(_STATIC_LABELS_EN)
 
 
 def test_build_routes_index():

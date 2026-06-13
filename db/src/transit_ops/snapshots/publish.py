@@ -1,4 +1,4 @@
-"""Publish orchestrator — builds and uploads all live-tier snapshot files.
+"""Publish orchestrator — builds and uploads all snapshot tiers (live, static, historic).
 
 Ties together:
   - :func:`transit_ops.snapshots.builders` — SQL -> Pydantic models
@@ -10,8 +10,8 @@ Usage (programmatic)::
     result = publish_snapshot("stm")
     print(result.display_dict())
 
-The ``registry`` parameter is accepted for future signature-compatibility with
-CLI / cycle callers even though the live tier does not use it in Phase 1.
+The ``registry`` parameter is accepted for signature parity with CLI / cycle
+callers.
 """
 
 from __future__ import annotations
@@ -209,6 +209,13 @@ def _publish_live(conn: object, storage: object, *, provider_id: str, settings: 
             tier="live",
         )
     )
+    written.append(
+        storage.put_json(  # type: ignore[attr-defined]
+            "live/stop_departures.json",
+            builders.build_stop_departures(conn, provider_id=provider_id, generated_utc=gen),  # type: ignore[arg-type]
+            tier="live",
+        )
+    )
     # manifest LAST — its generated_utc marks a fully-uploaded snapshot
     written.append(
         storage.put_json(  # type: ignore[attr-defined]
@@ -400,7 +407,7 @@ def publish_snapshot(
     *,
     tier: str = "live",
     settings: object = None,
-    registry: object = None,  # accepted for signature-compatibility; unused in Phase 1
+    registry: object = None,  # accepted for signature parity; reserved for route registry
     engine: object = None,
     storage: object = None,
 ) -> PublishResult:
@@ -411,13 +418,13 @@ def publish_snapshot(
     provider_id:
         Transit provider identifier, e.g. ``"stm"``.
     tier:
-        Data tier to publish.  ``"live"`` (Phase 1) and ``"static"``
-        (Phase 2) are implemented; any other value raises :exc:`ValueError`.
+        Data tier to publish.  ``"live"``, ``"static"``, and ``"historic"``
+        are implemented; any other value raises :exc:`ValueError`.
     settings:
         Application settings object.  When ``None`` the real
         :func:`~transit_ops.settings.get_settings` is called.
     registry:
-        Unused in Phase 1; reserved for future route-registry injection.
+        Reserved for future route-registry injection.
     engine:
         SQLAlchemy engine.  When ``None`` a real engine is created from
         *settings*.
@@ -448,7 +455,7 @@ def publish_snapshot(
         publisher = _publish_historic
         stamp_fn = None
     else:
-        raise ValueError(f"tier {tier!r} not implemented yet (live, static, historic)")
+        raise ValueError(f"unknown tier {tier!r} (expected live, static, historic)")
 
     # static / historic — hash-gated against a bucket-stored per-tier state object.
     with engine.begin() as conn:  # type: ignore[attr-defined]

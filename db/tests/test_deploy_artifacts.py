@@ -3,8 +3,60 @@ from pathlib import Path
 
 import yaml
 
+from transit_ops.settings import Settings
+
 DB_ROOT = Path(__file__).resolve().parents[1]
 REPO_ROOT = Path(__file__).resolve().parents[2]
+
+# Third-party / local-tooling secrets the operator keeps in the root .env for AI
+# tooling and 1Password inject. NONE of them are app config, so NO container
+# should ever receive them — the whole point of scoping compose env per service.
+THIRD_PARTY_SECRETS = {
+    "ANTHROPIC_API_KEY",
+    "OPENAI_API_KEY",
+    "GOOGLE_API_KEY",
+    "OP_TOKEN",
+    "NOTION_INTEGRATION_TOKEN",
+    "ARCGIS_API_KEY",
+    "ARCGIS_CLIENT_ID",
+    "ARCGIS_CLIENT_SECRET",
+}
+
+# HEALTH_* knobs are read ONLY by transit_ops.health (verified: no usage outside
+# src/transit_ops/health/). They are the one slice of the Settings surface the
+# worker does NOT need, so the worker env = full Settings surface minus these.
+HEALTH_ONLY_SETTINGS = {
+    "HEALTH_DATABASE_TIMEOUT_SECONDS",
+    "HEALTH_FEED_TIMEOUT_SECONDS",
+    "HEALTH_MAX_PIPELINE_AGE_SECONDS",
+    "HEALTH_RUNTIME_CACHE_SECONDS",
+}
+
+# Explicit pin for the health service: DB + bronze-storage + HEALTH_* + provider
+# id + the five retention values run_health_checks reports. NO STM_API_KEY
+# (run_health_checks never calls check_stm_feed).
+HEALTH_ENVIRONMENT_KEYS = {
+    "DATABASE_URL",
+    "APP_ENV",
+    "LOG_LEVEL",
+    "STM_PROVIDER_ID",
+    "BRONZE_STORAGE_BACKEND",
+    "BRONZE_LOCAL_ROOT",
+    "BRONZE_S3_ENDPOINT",
+    "BRONZE_S3_BUCKET",
+    "BRONZE_S3_ACCESS_KEY",
+    "BRONZE_S3_SECRET_KEY",
+    "BRONZE_S3_REGION",
+    "HEALTH_DATABASE_TIMEOUT_SECONDS",
+    "HEALTH_FEED_TIMEOUT_SECONDS",
+    "HEALTH_MAX_PIPELINE_AGE_SECONDS",
+    "HEALTH_RUNTIME_CACHE_SECONDS",
+    "BRONZE_REALTIME_RETENTION_DAYS",
+    "BRONZE_STATIC_RETENTION_DAYS",
+    "SILVER_REALTIME_RETENTION_DAYS",
+    "GOLD_FACT_RETENTION_DAYS",
+    "GOLD_WARM_ROLLUP_RETENTION_DAYS",
+}
 
 
 def _compose() -> dict:
@@ -175,3 +227,122 @@ def test_daily_warm_rollups_workflow_prunes_i3_after_historic_publish() -> None:
     assert workflow.index("prune-i3-storage stm") > workflow.index(
         "publish-snapshot stm --tier historic"
     )
+
+
+def _environment_keys(service: dict) -> set[str]:
+    env = service.get("environment", {})
+    # compose accepts both a mapping and a list of "KEY=VALUE" strings.
+    if isinstance(env, dict):
+        return set(env)
+    return {entry.split("=", 1)[0] for entry in env}
+
+
+def test_compose_services_define_scoped_environment_without_env_file() -> None:
+    # slice-9.1.1w: dropping the bulk `env_file: - .env` blocks stops every
+    # container (including the third-party caddy:2 image) from receiving the
+    # operator's local AI-tooling secrets. Each service now enumerates only the
+    # vars it needs via compose interpolation.
+    services = _compose()["services"]
+    for name, service in services.items():
+        assert "env_file" not in service, f"{name} still bulk-injects env_file"
+        leaked = _environment_keys(service) & THIRD_PARTY_SECRETS
+        assert not leaked, f"{name} environment leaks third-party secrets: {leaked}"
+
+
+def test_compose_caddy_environment_is_site_address_only() -> None:
+    services = _compose()["services"]
+    assert _environment_keys(services["caddy"]) == {"CADDY_SITE_ADDRESS"}
+
+
+def test_compose_worker_environment_covers_pipeline_settings_only() -> None:
+    # The worker runs the full pipeline (run-realtime-worker), so it must receive
+    # every Settings knob EXCEPT the health-only HEALTH_* ones — otherwise a VM
+    # override silently disappears (Settings has extra="ignore") and the default
+    # is used at runtime. Computing the expectation from Settings.model_fields
+    # keeps this contract honest as new fields land (plan-freshness trigger (b)).
+    services = _compose()["services"]
+    worker_keys = _environment_keys(services["worker"])
+    expected = set(Settings.model_fields) - HEALTH_ONLY_SETTINGS
+    assert worker_keys == expected
+    # Typo guard: every literal env var (minus the interpolated DATABASE_URL) must
+    # be a real Settings field, or extra="ignore" would silently drop it.
+    assert (worker_keys - {"DATABASE_URL"}) <= set(Settings.model_fields)
+    assert "STM_API_KEY" in worker_keys
+
+
+def test_compose_health_environment_excludes_stm_credentials() -> None:
+    services = _compose()["services"]
+    health_keys = _environment_keys(services["health"])
+    assert health_keys == HEALTH_ENVIRONMENT_KEYS
+    assert "STM_API_KEY" not in health_keys
+    assert (health_keys - {"DATABASE_URL"}) <= set(Settings.model_fields)
+
+
+def test_compose_postgres_environment_is_bootstrap_only() -> None:
+    services = _compose()["services"]
+    assert _environment_keys(services["postgres"]) == {
+        "POSTGRES_DB",
+        "POSTGRES_USER",
+        "POSTGRES_PASSWORD",
+    }
+
+
+def test_repo_contracts_describe_web_serving_layer_not_powerbi() -> None:
+    # slice-9.1.1w: Power BI was retired (2026-05-30) for the web/ citizen app
+    # fed by the /v1 R2 snapshot contract. The cross-tool repo contracts must not
+    # still claim Power BI is the serving layer.
+    for rel in ("AGENTS.md", "CLAUDE.md"):
+        text = (REPO_ROOT / rel).read_text(encoding="utf-8")
+        assert "Power BI" not in text, f"{rel} still mentions Power BI"
+        assert ".pbix" not in text, f"{rel} still mentions .pbix"
+    serving_readme = (
+        DB_ROOT / "infra" / "postgres-serving-access" / "README.md"
+    ).read_text(encoding="utf-8")
+    assert "Power BI" not in serving_readme
+    assert "/v1" in (REPO_ROOT / "AGENTS.md").read_text(encoding="utf-8")
+
+
+def test_env_example_documents_all_runtime_knobs() -> None:
+    # slice-9.1.1w: these four knobs were live in settings.py / consumed by the
+    # worker but undocumented in .env.example, so an operator had no way to know
+    # they could be tuned.
+    env_example = (REPO_ROOT / ".env.example").read_text(encoding="utf-8")
+    assignments = {line for line in _active_lines(env_example) if "=" in line}
+    assert {
+        "STM_GIS_URL=",
+        "STM_I3_ALERTS_URL=",
+        "PIPELINE_PAUSED=false",
+        "HEALTH_RUNTIME_CACHE_SECONDS=30",
+        "GOLD_FACT_RETENTION_DAYS=14",
+    }.issubset(assignments)
+
+
+def test_retention_docs_match_gold_fact_default_of_fourteen_days() -> None:
+    # GOLD_FACT_RETENTION_DAYS default is 14 (settings.py); the prose must not
+    # contradict it with a stale "7 days" claim.
+    env_example = (REPO_ROOT / ".env.example").read_text(encoding="utf-8")
+    env_1password = (REPO_ROOT / ".env.1password").read_text(encoding="utf-8")
+    assert "GOLD_FACT_RETENTION_DAYS=7" not in _active_lines(env_example)
+    assert "GOLD_FACT_RETENTION_DAYS=7" not in _active_lines(env_1password)
+    assert "Gold facts keep 14 days" in env_example
+    assert "keep 7 days" not in env_example
+    readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
+    assert "Gold detail facts 14 days" in readme
+    assert "Gold detail facts 7 days" not in readme
+
+
+def test_env_1password_has_no_retired_neon_or_arcgis_entries() -> None:
+    # slice-9.1.1w: the database compute moved off the legacy vendor and ArcGIS
+    # was retired with Power BI, so neither belongs in the inject source. String
+    # concatenation keeps a grep for the legacy vendor from hitting this test.
+    text = (REPO_ROOT / ".env.1password").read_text(encoding="utf-8")
+    assert ("Ne" "on") not in text
+    assert "ARCGIS_API_KEY" not in text
+
+
+def test_dead_module_dirs_stay_deleted() -> None:
+    # slice-9.1.1w: these dirs held only untracked __pycache__ — the source moved
+    # to source_factory/ and infra/postgres-serving-access/. Guard against an
+    # accidental resurrection (a stray import re-creating the package dir).
+    assert not (DB_ROOT / "src" / "transit_ops" / "rebuild").exists()
+    assert not (DB_ROOT / "infra" / "postgres-public-access").exists()

@@ -927,6 +927,52 @@ def test_build_receipts_date_driven_by_accountability() -> None:
     assert "2026-05-02" not in out
 
 
+def test_build_receipts_rider_impact_at_cap_is_nulled() -> None:
+    """An at-cap rider_impact_score (mart LEAST clamp 9999.9999 reached) means the
+    true magnitude overflowed and is unknown — publish honest NULL, not the garbage
+    sentinel (slice-9.1.1t)."""
+    d = datetime.date(2026, 5, 20)
+    conn = FakeConn(
+        _receipts_dispatch(
+            acct=[
+                {
+                    "provider_local_date": d,
+                    "affected_route_count": 1,
+                    "affected_stop_count": 1,
+                    "delayed_trip_count": 1,
+                    "severe_delay_count": 1,
+                    "alert_count": 1,
+                    "rider_impact_score": 9999.9999,
+                }
+            ],
+        )
+    )
+    out = build_receipts(conn, generated_utc="t")
+    assert out["2026-05-20"].rider_impact_score is None
+
+
+def test_build_receipts_rider_impact_below_cap_passthrough() -> None:
+    """A below-cap rider_impact_score passes through unchanged (slice-9.1.1t)."""
+    d = datetime.date(2026, 5, 21)
+    conn = FakeConn(
+        _receipts_dispatch(
+            acct=[
+                {
+                    "provider_local_date": d,
+                    "affected_route_count": 1,
+                    "affected_stop_count": 1,
+                    "delayed_trip_count": 1,
+                    "severe_delay_count": 1,
+                    "alert_count": 1,
+                    "rider_impact_score": 9998.5,
+                }
+            ],
+        )
+    )
+    out = build_receipts(conn, generated_utc="t")
+    assert out["2026-05-21"].rider_impact_score == 9998.5
+
+
 def test_build_receipts_otp_from_network_hourly() -> None:
     """OTP, avg_delay_min, severe_pct come from route_delay_hourly aggregate."""
     d = datetime.date(2026, 5, 10)
@@ -1392,3 +1438,28 @@ def test_build_provenance_empty_sources_still_valid() -> None:
     assert out.freshness == []
     assert out.gaps == ["metro_realtime"]
     assert out.retention["detail_days"] == 14
+
+
+def test_provenance_methodology_keys_have_localized_labels() -> None:
+    """Drift guard (slice-9.1.1t): the core methodology dimensions documented in
+    provenance.json must each have a localized citizen-facing label in BOTH static
+    label dicts, so the machine provenance and the localized copy stay in lockstep.
+
+    provenance.methodology keeps the rich English machine documentation (data-trust
+    surface, locked by the band/service-time/alert-en tests above); the FR/EN
+    labels carry the parallel citizen wording under methodology.<dimension>.
+    """
+    from transit_ops.snapshots.builders import _STATIC_LABELS_EN, _STATIC_LABELS_FR
+
+    conn = FakeConn(
+        [
+            ("source_lineage_reporting", []),
+            ("feed_freshness_current", []),
+        ]
+    )
+    out = build_provenance(conn, generated_utc="t")
+    for dimension in ("otp_definition", "delay_unit", "percentiles"):
+        assert dimension in out.methodology
+        label_key = f"methodology.{dimension}"
+        assert label_key in _STATIC_LABELS_FR
+        assert label_key in _STATIC_LABELS_EN

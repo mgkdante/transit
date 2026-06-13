@@ -6,8 +6,6 @@ services:
     image: transit-postgres-postgis:16
     restart: unless-stopped
     shm_size: '256m'
-    env_file:
-      - .env
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-transit}
       POSTGRES_USER: ${POSTGRES_USER:-transit}
@@ -28,10 +26,61 @@ services:
       context: .
       dockerfile: Dockerfile
     restart: unless-stopped
-    env_file:
-      - .env
+    # Per-service scoped env (slice-9.1.1w): the worker runs the full pipeline, so
+    # it gets every Settings knob EXCEPT the health-only HEALTH_* ones. Typed
+    # int/bool/float fields carry a default mirroring settings.py so an unset var
+    # never becomes "" (which would crash pydantic at start); str|None fields use
+    # ${VAR:-} (empty == None for every consumer). DATABASE_URL is built from the
+    # POSTGRES_* parts, never read from root .env. No third-party AI-tooling
+    # secrets reach the container.
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-transit}:${POSTGRES_PASSWORD:-transit-local-password}@postgres:5432/${POSTGRES_DB:-transit}
+      APP_ENV: ${APP_ENV:-local}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      PROVIDER_TIMEZONE: ${PROVIDER_TIMEZONE:-America/Toronto}
+      STM_PROVIDER_ID: ${STM_PROVIDER_ID:-stm}
+      STM_API_KEY: ${STM_API_KEY:-}
+      STM_STATIC_GTFS_URL: ${STM_STATIC_GTFS_URL:-}
+      STM_GIS_URL: ${STM_GIS_URL:-}
+      STM_RT_TRIP_UPDATES_URL: ${STM_RT_TRIP_UPDATES_URL:-}
+      STM_RT_VEHICLE_POSITIONS_URL: ${STM_RT_VEHICLE_POSITIONS_URL:-}
+      STM_I3_ALERTS_URL: ${STM_I3_ALERTS_URL:-}
+      BRONZE_STORAGE_BACKEND: ${BRONZE_STORAGE_BACKEND:-s3}
+      BRONZE_LOCAL_ROOT: ${BRONZE_LOCAL_ROOT:-./data/bronze}
+      BRONZE_S3_ENDPOINT: ${BRONZE_S3_ENDPOINT:-https://eccfb9bedd87d413eaf4cac6ae2285d3.r2.cloudflarestorage.com}
+      BRONZE_S3_BUCKET: ${BRONZE_S3_BUCKET:-transit-raw}
+      BRONZE_S3_ACCESS_KEY: ${BRONZE_S3_ACCESS_KEY:-}
+      BRONZE_S3_SECRET_KEY: ${BRONZE_S3_SECRET_KEY:-}
+      BRONZE_S3_REGION: ${BRONZE_S3_REGION:-auto}
+      SNAPSHOT_STORAGE_BACKEND: ${SNAPSHOT_STORAGE_BACKEND:-s3}
+      SNAPSHOT_LOCAL_ROOT: ${SNAPSHOT_LOCAL_ROOT:-}
+      SNAPSHOT_R2_BUCKET: ${SNAPSHOT_R2_BUCKET:-}
+      SNAPSHOT_PUBLIC_BASE_URL: ${SNAPSHOT_PUBLIC_BASE_URL:-}
+      SNAPSHOT_BASEMAP_PMTILES_URL: ${SNAPSHOT_BASEMAP_PMTILES_URL:-}
+      SNAPSHOT_BASEMAP_STYLE_URL: ${SNAPSHOT_BASEMAP_STYLE_URL:-}
+      SNAPSHOT_BASEMAP_ATTRIBUTION: ${SNAPSHOT_BASEMAP_ATTRIBUTION:-© OpenStreetMap contributors, © Protomaps}
+      SNAPSHOT_PUBLISH_CONCURRENCY: ${SNAPSHOT_PUBLISH_CONCURRENCY:-16}
+      PIPELINE_PAUSED: ${PIPELINE_PAUSED:-false}
+      REALTIME_POLL_SECONDS: ${REALTIME_POLL_SECONDS:-30}
+      REALTIME_STARTUP_DELAY_SECONDS: ${REALTIME_STARTUP_DELAY_SECONDS:-0}
+      STATIC_DATASET_RETENTION_COUNT: ${STATIC_DATASET_RETENTION_COUNT:-1}
+      SILVER_REALTIME_RETENTION_DAYS: ${SILVER_REALTIME_RETENTION_DAYS:-14}
+      SILVER_REALTIME_PRUNE_BATCH: ${SILVER_REALTIME_PRUNE_BATCH:-50000}
+      GOLD_FACT_RETENTION_DAYS: ${GOLD_FACT_RETENTION_DAYS:-14}
+      GOLD_FACT_PRUNE_BATCH: ${GOLD_FACT_PRUNE_BATCH:-50000}
+      GOLD_REALTIME_ANALYZE_MIN_INTERVAL_SECONDS: ${GOLD_REALTIME_ANALYZE_MIN_INTERVAL_SECONDS:-3600}
+      GOLD_REPORTING_OPEN_WINDOW_DAYS: ${GOLD_REPORTING_OPEN_WINDOW_DAYS:-10}
+      BRONZE_REALTIME_RETENTION_DAYS: ${BRONZE_REALTIME_RETENTION_DAYS:-30}
+      BRONZE_STATIC_RETENTION_DAYS: ${BRONZE_STATIC_RETENTION_DAYS:-365}
+      GOLD_WARM_ROLLUP_RETENTION_DAYS: ${GOLD_WARM_ROLLUP_RETENTION_DAYS:-365}
+      BRONZE_I3_RETENTION_DAYS: ${BRONZE_I3_RETENTION_DAYS:-30}
+      SILVER_I3_CLOSED_RETENTION_DAYS: ${SILVER_I3_CLOSED_RETENTION_DAYS:-90}
+      BRONZE_PRUNE_MAX_OBJECTS_PER_BATCH: ${BRONZE_PRUNE_MAX_OBJECTS_PER_BATCH:-5000}
+      BRONZE_PRUNE_MAX_BATCHES: ${BRONZE_PRUNE_MAX_BATCHES:-1}
+      BACKUP_S3_PREFIX: ${BACKUP_S3_PREFIX:-backups/postgres}
+      BACKUP_RETENTION_COUNT: ${BACKUP_RETENTION_COUNT:-14}
+      BACKUP_EXCLUDE_TABLE_DATA: ${BACKUP_EXCLUDE_TABLE_DATA:-silver.rt_trip_update_stop_times}
+      BACKUP_COMPRESSION: ${BACKUP_COMPRESSION:-zstd:3}
     depends_on:
       postgres:
         condition: service_healthy
@@ -43,10 +92,31 @@ services:
       context: .
       dockerfile: Dockerfile.health
     restart: unless-stopped
-    env_file:
-      - .env
+    # Per-service scoped env (slice-9.1.1w): the health service only reads DB +
+    # bronze-storage + HEALTH_* knobs + the provider id + the five retention
+    # values it reports. It deliberately has NO STM_API_KEY (run_health_checks
+    # never calls check_stm_feed) and no third-party AI-tooling secrets.
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-transit}:${POSTGRES_PASSWORD:-transit-local-password}@postgres:5432/${POSTGRES_DB:-transit}
+      APP_ENV: ${APP_ENV:-local}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      STM_PROVIDER_ID: ${STM_PROVIDER_ID:-stm}
+      BRONZE_STORAGE_BACKEND: ${BRONZE_STORAGE_BACKEND:-s3}
+      BRONZE_LOCAL_ROOT: ${BRONZE_LOCAL_ROOT:-./data/bronze}
+      BRONZE_S3_ENDPOINT: ${BRONZE_S3_ENDPOINT:-https://eccfb9bedd87d413eaf4cac6ae2285d3.r2.cloudflarestorage.com}
+      BRONZE_S3_BUCKET: ${BRONZE_S3_BUCKET:-transit-raw}
+      BRONZE_S3_ACCESS_KEY: ${BRONZE_S3_ACCESS_KEY:-}
+      BRONZE_S3_SECRET_KEY: ${BRONZE_S3_SECRET_KEY:-}
+      BRONZE_S3_REGION: ${BRONZE_S3_REGION:-auto}
+      HEALTH_DATABASE_TIMEOUT_SECONDS: ${HEALTH_DATABASE_TIMEOUT_SECONDS:-5.0}
+      HEALTH_FEED_TIMEOUT_SECONDS: ${HEALTH_FEED_TIMEOUT_SECONDS:-10.0}
+      HEALTH_MAX_PIPELINE_AGE_SECONDS: ${HEALTH_MAX_PIPELINE_AGE_SECONDS:-900}
+      HEALTH_RUNTIME_CACHE_SECONDS: ${HEALTH_RUNTIME_CACHE_SECONDS:-30}
+      BRONZE_REALTIME_RETENTION_DAYS: ${BRONZE_REALTIME_RETENTION_DAYS:-30}
+      BRONZE_STATIC_RETENTION_DAYS: ${BRONZE_STATIC_RETENTION_DAYS:-365}
+      SILVER_REALTIME_RETENTION_DAYS: ${SILVER_REALTIME_RETENTION_DAYS:-14}
+      GOLD_FACT_RETENTION_DAYS: ${GOLD_FACT_RETENTION_DAYS:-14}
+      GOLD_WARM_ROLLUP_RETENTION_DAYS: ${GOLD_WARM_ROLLUP_RETENTION_DAYS:-365}
     depends_on:
       postgres:
         condition: service_healthy
@@ -58,8 +128,10 @@ services:
   caddy:
     image: caddy:2
     restart: unless-stopped
-    env_file:
-      - .env
+    # The third-party caddy:2 image gets ONLY its site address (mirrors the
+    # Caddyfile fallback {$CADDY_SITE_ADDRESS::80}); no app or AI-tooling secrets.
+    environment:
+      CADDY_SITE_ADDRESS: ${CADDY_SITE_ADDRESS:-:80}
     ports:
       - "${CADDY_HTTP_PORT:-8080}:80"
       - "${CADDY_HTTPS_PORT:-8443}:443"
