@@ -21,6 +21,7 @@ EXPECTED_RETENTION_CONTRACT = {
 SETTINGS_DEFAULT_ENV_KEYS = (
     *EXPECTED_RETENTION_CONTRACT,
     "DATABASE_URL",
+    "SILVER_REALTIME_PRUNE_BATCH",
     "BRONZE_PRUNE_MAX_OBJECTS_PER_BATCH",
     "BRONZE_PRUNE_MAX_BATCHES",
     "BRONZE_I3_RETENTION_DAYS",
@@ -95,6 +96,21 @@ def test_bronze_prune_batch_knobs_default_and_display(
 
     assert display["BRONZE_PRUNE_MAX_OBJECTS_PER_BATCH"] == 5000
     assert display["BRONZE_PRUNE_MAX_BATCHES"] == 1
+
+
+def test_silver_realtime_prune_batch_default_and_display(
+    clean_default_settings_env: None,
+) -> None:
+    settings = Settings(_env_file=None)
+
+    # Caps rows/table/cycle for the realtime-history prune so the one-time
+    # backlog drains over many ~57s worker cycles instead of one unbounded
+    # transaction (the unbounded-heavy-op hang class).
+    assert settings.SILVER_REALTIME_PRUNE_BATCH == 50000
+
+    display = settings.display_dict()
+
+    assert display["SILVER_REALTIME_PRUNE_BATCH"] == 50000
 
 
 def test_i3_retention_defaults(clean_default_settings_env: None) -> None:

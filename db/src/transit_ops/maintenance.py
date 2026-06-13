@@ -297,20 +297,32 @@ def _static_dataset_reference_statement(table_name: str, *, dry_run: bool) -> ob
     )
 
 
+# Realtime-history DELETEs are BOUNDED to :batch rows/table/cycle. The prune runs
+# on every ~57s worker cycle, so an unbounded single-transaction DELETE of the
+# accumulated backlog (the unbounded-heavy-op hang class) must never happen. The
+# ctid IN (SELECT ctid ... LIMIT :batch) form caps each statement; the retention
+# predicate is unchanged, so the one-time backlog drains over many cycles and a
+# steady-state delta clears in one pass. (slice-9.1.1g/j retention semantics
+# preserved exactly — same cutoff, same latest-snapshot exclusion.)
 DELETE_OLD_RT_TRIP_UPDATE_STOP_TIMES = text(
     """
     DELETE FROM silver.rt_trip_update_stop_times AS rstu
-    USING silver.rt_feed_snapshots AS rfs
-    WHERE rstu.rt_feed_snapshot_id = rfs.rt_feed_snapshot_id
-      AND rfs.provider_id = :provider_id
-      AND rfs.endpoint_key = 'trip_updates'
-      AND rfs.captured_at_utc < :cutoff_utc
-      AND rfs.rt_feed_snapshot_id <> COALESCE((
-            SELECT max(rfs_latest.rt_feed_snapshot_id)
-            FROM silver.rt_feed_snapshots AS rfs_latest
-            WHERE rfs_latest.provider_id = :provider_id
-              AND rfs_latest.endpoint_key = 'trip_updates'
-        ), -1)
+    WHERE rstu.ctid IN (
+        SELECT rstu_old.ctid
+        FROM silver.rt_trip_update_stop_times AS rstu_old
+        JOIN silver.rt_feed_snapshots AS rfs
+            ON rstu_old.rt_feed_snapshot_id = rfs.rt_feed_snapshot_id
+        WHERE rfs.provider_id = :provider_id
+          AND rfs.endpoint_key = 'trip_updates'
+          AND rfs.captured_at_utc < :cutoff_utc
+          AND rfs.rt_feed_snapshot_id <> COALESCE((
+                SELECT max(rfs_latest.rt_feed_snapshot_id)
+                FROM silver.rt_feed_snapshots AS rfs_latest
+                WHERE rfs_latest.provider_id = :provider_id
+                  AND rfs_latest.endpoint_key = 'trip_updates'
+            ), -1)
+        LIMIT :batch
+    )
     """
 )
 
@@ -334,17 +346,22 @@ COUNT_OLD_RT_TRIP_UPDATE_STOP_TIMES = text(
 DELETE_OLD_RT_TRIP_UPDATES = text(
     """
     DELETE FROM silver.rt_trip_updates AS rtu
-    USING silver.rt_feed_snapshots AS rfs
-    WHERE rtu.rt_feed_snapshot_id = rfs.rt_feed_snapshot_id
-      AND rfs.provider_id = :provider_id
-      AND rfs.endpoint_key = 'trip_updates'
-      AND rfs.captured_at_utc < :cutoff_utc
-      AND rfs.rt_feed_snapshot_id <> COALESCE((
-            SELECT max(rfs_latest.rt_feed_snapshot_id)
-            FROM silver.rt_feed_snapshots AS rfs_latest
-            WHERE rfs_latest.provider_id = :provider_id
-              AND rfs_latest.endpoint_key = 'trip_updates'
-        ), -1)
+    WHERE rtu.ctid IN (
+        SELECT rtu_old.ctid
+        FROM silver.rt_trip_updates AS rtu_old
+        JOIN silver.rt_feed_snapshots AS rfs
+            ON rtu_old.rt_feed_snapshot_id = rfs.rt_feed_snapshot_id
+        WHERE rfs.provider_id = :provider_id
+          AND rfs.endpoint_key = 'trip_updates'
+          AND rfs.captured_at_utc < :cutoff_utc
+          AND rfs.rt_feed_snapshot_id <> COALESCE((
+                SELECT max(rfs_latest.rt_feed_snapshot_id)
+                FROM silver.rt_feed_snapshots AS rfs_latest
+                WHERE rfs_latest.provider_id = :provider_id
+                  AND rfs_latest.endpoint_key = 'trip_updates'
+            ), -1)
+        LIMIT :batch
+    )
     """
 )
 
@@ -368,17 +385,22 @@ COUNT_OLD_RT_TRIP_UPDATES = text(
 DELETE_OLD_RT_VEHICLE_POSITIONS = text(
     """
     DELETE FROM silver.rt_vehicle_positions AS rvp
-    USING silver.rt_feed_snapshots AS rfs
-    WHERE rvp.rt_feed_snapshot_id = rfs.rt_feed_snapshot_id
-      AND rfs.provider_id = :provider_id
-      AND rfs.endpoint_key = 'vehicle_positions'
-      AND rfs.captured_at_utc < :cutoff_utc
-      AND rfs.rt_feed_snapshot_id <> COALESCE((
-            SELECT max(rfs_latest.rt_feed_snapshot_id)
-            FROM silver.rt_feed_snapshots AS rfs_latest
-            WHERE rfs_latest.provider_id = :provider_id
-              AND rfs_latest.endpoint_key = 'vehicle_positions'
-        ), -1)
+    WHERE rvp.ctid IN (
+        SELECT rvp_old.ctid
+        FROM silver.rt_vehicle_positions AS rvp_old
+        JOIN silver.rt_feed_snapshots AS rfs
+            ON rvp_old.rt_feed_snapshot_id = rfs.rt_feed_snapshot_id
+        WHERE rfs.provider_id = :provider_id
+          AND rfs.endpoint_key = 'vehicle_positions'
+          AND rfs.captured_at_utc < :cutoff_utc
+          AND rfs.rt_feed_snapshot_id <> COALESCE((
+                SELECT max(rfs_latest.rt_feed_snapshot_id)
+                FROM silver.rt_feed_snapshots AS rfs_latest
+                WHERE rfs_latest.provider_id = :provider_id
+                  AND rfs_latest.endpoint_key = 'vehicle_positions'
+            ), -1)
+        LIMIT :batch
+    )
     """
 )
 
@@ -402,16 +424,21 @@ COUNT_OLD_RT_VEHICLE_POSITIONS = text(
 DELETE_OLD_RT_ENTITIES = text(
     """
     DELETE FROM silver.rt_entities AS rte
-    USING silver.rt_feed_snapshots AS rfs
-    WHERE rte.rt_feed_snapshot_id = rfs.rt_feed_snapshot_id
-      AND rfs.provider_id = :provider_id
-      AND rfs.captured_at_utc < :cutoff_utc
-      AND rfs.rt_feed_snapshot_id <> COALESCE((
-            SELECT max(rfs_latest.rt_feed_snapshot_id)
-            FROM silver.rt_feed_snapshots AS rfs_latest
-            WHERE rfs_latest.provider_id = :provider_id
-              AND rfs_latest.endpoint_key = rfs.endpoint_key
-        ), -1)
+    WHERE rte.ctid IN (
+        SELECT rte_old.ctid
+        FROM silver.rt_entities AS rte_old
+        JOIN silver.rt_feed_snapshots AS rfs
+            ON rte_old.rt_feed_snapshot_id = rfs.rt_feed_snapshot_id
+        WHERE rfs.provider_id = :provider_id
+          AND rfs.captured_at_utc < :cutoff_utc
+          AND rfs.rt_feed_snapshot_id <> COALESCE((
+                SELECT max(rfs_latest.rt_feed_snapshot_id)
+                FROM silver.rt_feed_snapshots AS rfs_latest
+                WHERE rfs_latest.provider_id = :provider_id
+                  AND rfs_latest.endpoint_key = rfs.endpoint_key
+            ), -1)
+        LIMIT :batch
+    )
     """
 )
 
@@ -431,17 +458,34 @@ COUNT_OLD_RT_ENTITIES = text(
     """
 )
 
+# rt_feed_snapshots is the FK parent of rt_entities (which in turn parents
+# rt_trip_updates / rt_vehicle_positions / rt_trip_update_stop_times) and NONE of
+# those FKs cascade. With per-cycle batching a child table may not be fully
+# drained in the same cycle, so the parent DELETE additionally guards on
+# NOT EXISTS any surviving rt_entities row — a snapshot is removed only once its
+# children are gone (over prior cycles). This preserves FK integrity that the old
+# unbounded child-first ordering gave for free, while staying bounded to :batch.
 DELETE_OLD_RT_FEED_SNAPSHOTS = text(
     """
     DELETE FROM silver.rt_feed_snapshots AS rfs
-    WHERE rfs.provider_id = :provider_id
-      AND rfs.captured_at_utc < :cutoff_utc
-      AND rfs.rt_feed_snapshot_id <> COALESCE((
-            SELECT max(rfs_latest.rt_feed_snapshot_id)
-            FROM silver.rt_feed_snapshots AS rfs_latest
-            WHERE rfs_latest.provider_id = :provider_id
-              AND rfs_latest.endpoint_key = rfs.endpoint_key
-        ), -1)
+    WHERE rfs.ctid IN (
+        SELECT rfs_old.ctid
+        FROM silver.rt_feed_snapshots AS rfs_old
+        WHERE rfs_old.provider_id = :provider_id
+          AND rfs_old.captured_at_utc < :cutoff_utc
+          AND rfs_old.rt_feed_snapshot_id <> COALESCE((
+                SELECT max(rfs_latest.rt_feed_snapshot_id)
+                FROM silver.rt_feed_snapshots AS rfs_latest
+                WHERE rfs_latest.provider_id = :provider_id
+                  AND rfs_latest.endpoint_key = rfs_old.endpoint_key
+            ), -1)
+          AND NOT EXISTS (
+                SELECT 1
+                FROM silver.rt_entities AS rte_child
+                WHERE rte_child.rt_feed_snapshot_id = rfs_old.rt_feed_snapshot_id
+            )
+        LIMIT :batch
+    )
     """
 )
 
@@ -1033,6 +1077,7 @@ def prune_realtime_silver_history(
     *,
     provider_id: str,
     retention_days: int,
+    batch_size: int = 50000,
     dry_run: bool = False,
     now_utc: datetime | None = None,
 ) -> tuple[datetime | None, dict[str, int]]:
@@ -1040,9 +1085,14 @@ def prune_realtime_silver_history(
         return None, {table_name: 0 for table_name in REALTIME_SILVER_TABLES}
 
     cutoff_utc = (now_utc or utc_now()) - timedelta(days=retention_days)
+    # Each live DELETE is bounded to :batch rows so a one-time backlog drains over
+    # many ~57s worker cycles instead of one unbounded transaction (hang class).
+    # batch_size is floored at 1 to avoid a no-op LIMIT 0 that would never drain.
+    batch = max(int(batch_size), 1)
     params = {
         "provider_id": provider_id,
         "cutoff_utc": cutoff_utc,
+        "batch": batch,
     }
 
     if dry_run:
@@ -1110,6 +1160,7 @@ def prune_silver_storage(
             connection,
             provider_id=provider_id,
             retention_days=settings.SILVER_REALTIME_RETENTION_DAYS,
+            batch_size=settings.SILVER_REALTIME_PRUNE_BATCH,
             dry_run=dry_run,
         )
 

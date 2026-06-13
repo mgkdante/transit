@@ -120,6 +120,13 @@ class Settings(BaseSettings):
     HEALTH_RUNTIME_CACHE_SECONDS: int = 30
     STATIC_DATASET_RETENTION_COUNT: int = 1
     SILVER_REALTIME_RETENTION_DAYS: int = 14
+    # Max rows deleted per realtime-history table per prune cycle. The prune runs
+    # on every ~57s worker cycle; an unbounded DELETE of the accumulated backlog
+    # (e.g. ~252M-row silver.rt_trip_update_stop_times after a redeploy) in a
+    # single transaction is the unbounded-heavy-op hang class. Bounding each
+    # DELETE to this many rows/table/cycle drains the one-time backlog gradually
+    # over many cycles while a steady-state delta clears in one quick pass.
+    SILVER_REALTIME_PRUNE_BATCH: int = 50000
     GOLD_FACT_RETENTION_DAYS: int = 14
     GOLD_REPORTING_OPEN_WINDOW_DAYS: int = 10
     BRONZE_REALTIME_RETENTION_DAYS: int = 30
@@ -208,6 +215,7 @@ class Settings(BaseSettings):
             "HEALTH_RUNTIME_CACHE_SECONDS": self.HEALTH_RUNTIME_CACHE_SECONDS,
             "STATIC_DATASET_RETENTION_COUNT": self.STATIC_DATASET_RETENTION_COUNT,
             "SILVER_REALTIME_RETENTION_DAYS": self.SILVER_REALTIME_RETENTION_DAYS,
+            "SILVER_REALTIME_PRUNE_BATCH": self.SILVER_REALTIME_PRUNE_BATCH,
             "GOLD_FACT_RETENTION_DAYS": self.GOLD_FACT_RETENTION_DAYS,
             "GOLD_REPORTING_OPEN_WINDOW_DAYS": self.GOLD_REPORTING_OPEN_WINDOW_DAYS,
             "BRONZE_REALTIME_RETENTION_DAYS": self.BRONZE_REALTIME_RETENTION_DAYS,

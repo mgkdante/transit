@@ -9,6 +9,16 @@ from transit_ops import maintenance as maintenance_module
 from transit_ops.maintenance import (
     COUNT_ELIGIBLE_BRONZE_REALTIME_OBJECTS,
     COUNT_ELIGIBLE_BRONZE_STATIC_OBJECTS,
+    COUNT_OLD_RT_ENTITIES,
+    COUNT_OLD_RT_FEED_SNAPSHOTS,
+    COUNT_OLD_RT_TRIP_UPDATE_STOP_TIMES,
+    COUNT_OLD_RT_TRIP_UPDATES,
+    COUNT_OLD_RT_VEHICLE_POSITIONS,
+    DELETE_OLD_RT_ENTITIES,
+    DELETE_OLD_RT_FEED_SNAPSHOTS,
+    DELETE_OLD_RT_TRIP_UPDATE_STOP_TIMES,
+    DELETE_OLD_RT_TRIP_UPDATES,
+    DELETE_OLD_RT_VEHICLE_POSITIONS,
     DELETE_ORPHANED_INGESTION_RUNS,
     MIN_SILVER_I3_CLOSED_RETENTION_DAYS,
     REALTIME_SILVER_TABLES,
@@ -598,6 +608,132 @@ def test_prune_realtime_silver_history_zero_retention_is_noop() -> None:
     assert connection.calls == []
 
 
+REALTIME_HISTORY_DELETE_STATEMENTS = (
+    ("silver.rt_trip_update_stop_times", DELETE_OLD_RT_TRIP_UPDATE_STOP_TIMES),
+    ("silver.rt_trip_updates", DELETE_OLD_RT_TRIP_UPDATES),
+    ("silver.rt_vehicle_positions", DELETE_OLD_RT_VEHICLE_POSITIONS),
+    ("silver.rt_entities", DELETE_OLD_RT_ENTITIES),
+    ("silver.rt_feed_snapshots", DELETE_OLD_RT_FEED_SNAPSHOTS),
+)
+
+
+@pytest.mark.parametrize("table_name,statement", REALTIME_HISTORY_DELETE_STATEMENTS)
+def test_realtime_history_delete_is_bounded_per_cycle(table_name, statement) -> None:  # noqa: ANN001
+    """Each realtime-history DELETE must cap rows/cycle via ctid IN (... LIMIT :batch).
+
+    The prune runs on every ~57s worker cycle; an unbounded single-transaction
+    DELETE of the accumulated backlog (e.g. ~252M-row rt_trip_update_stop_times
+    after a redeploy) is the unbounded-heavy-op hang class. The bounded ctid form
+    drains the one-time backlog over many cycles instead.
+    """
+    sql = str(statement)
+
+    assert "DELETE" in sql
+    assert ".ctid IN (" in sql, f"{table_name} DELETE must be batched via ctid IN (...)"
+    assert "LIMIT :batch" in sql, f"{table_name} DELETE must cap rows with LIMIT :batch"
+    # Retention predicate is preserved exactly — same cutoff + latest exclusion.
+    assert "captured_at_utc < :cutoff_utc" in sql
+    assert "provider_id = :provider_id" in sql
+
+
+@pytest.mark.parametrize(
+    "statement",
+    [
+        COUNT_OLD_RT_TRIP_UPDATE_STOP_TIMES,
+        COUNT_OLD_RT_TRIP_UPDATES,
+        COUNT_OLD_RT_VEHICLE_POSITIONS,
+        COUNT_OLD_RT_ENTITIES,
+        COUNT_OLD_RT_FEED_SNAPSHOTS,
+    ],
+)
+def test_realtime_history_count_statements_report_unbounded_backlog(statement) -> None:  # noqa: ANN001
+    """Dry-run COUNT must report the TRUE backlog — never the per-cycle batch cap."""
+    sql = str(statement)
+
+    assert "SELECT COUNT(*)" in sql
+    assert "LIMIT" not in sql
+    assert ":batch" not in sql
+
+
+def test_rt_feed_snapshots_delete_guards_on_surviving_children() -> None:
+    """The parent snapshot DELETE must not orphan-violate non-cascading child FKs.
+
+    rt_entities (and transitively rt_trip_updates / rt_vehicle_positions /
+    rt_trip_update_stop_times) FK to rt_feed_snapshots with NO ON DELETE CASCADE.
+    Under per-cycle batching a child table may not be fully drained in the same
+    cycle, so a snapshot is only deletable once no rt_entities row survives.
+    """
+    sql = str(DELETE_OLD_RT_FEED_SNAPSHOTS)
+
+    assert "NOT EXISTS" in sql
+    assert "silver.rt_entities" in sql
+
+
+def test_prune_realtime_silver_history_binds_batch_param() -> None:
+    connection = RecordingConnection()
+    now_utc = datetime(2026, 3, 26, 20, 0, 0, tzinfo=UTC)
+
+    prune_realtime_silver_history(
+        connection,
+        provider_id="stm",
+        retention_days=2,
+        batch_size=12345,
+        now_utc=now_utc,
+    )
+
+    delete_params = [
+        params for sql, params in connection.executed if "DELETE" in sql
+    ]
+    assert delete_params, "expected live DELETE executions"
+    assert all(params.get("batch") == 12345 for params in delete_params)
+
+
+def test_prune_realtime_silver_history_floors_batch_at_one() -> None:
+    connection = RecordingConnection()
+    now_utc = datetime(2026, 3, 26, 20, 0, 0, tzinfo=UTC)
+
+    prune_realtime_silver_history(
+        connection,
+        provider_id="stm",
+        retention_days=2,
+        batch_size=0,
+        now_utc=now_utc,
+    )
+
+    delete_params = [
+        params for sql, params in connection.executed if "DELETE" in sql
+    ]
+    assert delete_params
+    # batch floored at 1 — a LIMIT 0 would never drain the backlog.
+    assert all(params.get("batch") == 1 for params in delete_params)
+
+
+def test_prune_silver_storage_threads_realtime_prune_batch_setting() -> None:
+    from transit_ops.maintenance import prune_silver_storage
+
+    class BatchedSilverPruneSettings:
+        STATIC_DATASET_RETENTION_COUNT = 1
+        SILVER_REALTIME_RETENTION_DAYS = 2
+        SILVER_REALTIME_PRUNE_BATCH = 7777
+
+    engine = PerBeginRecordingEngine()
+
+    prune_silver_storage(
+        "stm",
+        settings=BatchedSilverPruneSettings(),  # type: ignore[arg-type]
+        engine=engine,  # type: ignore[arg-type]
+    )
+
+    realtime_conn = engine.connections[0]
+    rt_delete_params = [
+        params
+        for sql, params in realtime_conn.executed
+        if "DELETE FROM silver.rt_" in sql
+    ]
+    assert rt_delete_params, "expected realtime DELETE executions in tx1"
+    assert all(params.get("batch") == 7777 for params in rt_delete_params)
+
+
 def test_bronze_realtime_prune_waits_for_source_snapshot_rows_to_be_gone() -> None:
     sql = str(SELECT_ELIGIBLE_BRONZE_REALTIME_OBJECTS)
 
@@ -827,6 +963,7 @@ class PerBeginRecordingEngine:
 class SilverPruneSettings:
     STATIC_DATASET_RETENTION_COUNT = 1
     SILVER_REALTIME_RETENTION_DAYS = 2
+    SILVER_REALTIME_PRUNE_BATCH = 50000
 
 
 def test_prune_silver_storage_runs_realtime_and_static_in_separate_transactions() -> None:
