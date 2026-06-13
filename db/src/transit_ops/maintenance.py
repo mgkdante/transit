@@ -162,102 +162,6 @@ SELECT_GOLD_REFERENCED_DATASET_VERSION_IDS = text(
     """
 )
 
-DELETE_SILVER_STOP_TIMES_BY_DATASET = text(
-    """
-    DELETE FROM silver.stop_times
-    WHERE provider_id = :provider_id
-      AND dataset_version_id = ANY(CAST(:dataset_version_ids AS bigint[]))
-    """
-)
-
-COUNT_SILVER_STOP_TIMES_BY_DATASET = text(
-    """
-    SELECT COUNT(*) FROM silver.stop_times
-    WHERE provider_id = :provider_id
-      AND dataset_version_id = ANY(CAST(:dataset_version_ids AS bigint[]))
-    """
-)
-
-DELETE_SILVER_CALENDAR_DATES_BY_DATASET = text(
-    """
-    DELETE FROM silver.calendar_dates
-    WHERE provider_id = :provider_id
-      AND dataset_version_id = ANY(CAST(:dataset_version_ids AS bigint[]))
-    """
-)
-
-COUNT_SILVER_CALENDAR_DATES_BY_DATASET = text(
-    """
-    SELECT COUNT(*) FROM silver.calendar_dates
-    WHERE provider_id = :provider_id
-      AND dataset_version_id = ANY(CAST(:dataset_version_ids AS bigint[]))
-    """
-)
-
-DELETE_SILVER_CALENDAR_BY_DATASET = text(
-    """
-    DELETE FROM silver.calendar
-    WHERE provider_id = :provider_id
-      AND dataset_version_id = ANY(CAST(:dataset_version_ids AS bigint[]))
-    """
-)
-
-COUNT_SILVER_CALENDAR_BY_DATASET = text(
-    """
-    SELECT COUNT(*) FROM silver.calendar
-    WHERE provider_id = :provider_id
-      AND dataset_version_id = ANY(CAST(:dataset_version_ids AS bigint[]))
-    """
-)
-
-DELETE_SILVER_TRIPS_BY_DATASET = text(
-    """
-    DELETE FROM silver.trips
-    WHERE provider_id = :provider_id
-      AND dataset_version_id = ANY(CAST(:dataset_version_ids AS bigint[]))
-    """
-)
-
-COUNT_SILVER_TRIPS_BY_DATASET = text(
-    """
-    SELECT COUNT(*) FROM silver.trips
-    WHERE provider_id = :provider_id
-      AND dataset_version_id = ANY(CAST(:dataset_version_ids AS bigint[]))
-    """
-)
-
-DELETE_SILVER_STOPS_BY_DATASET = text(
-    """
-    DELETE FROM silver.stops
-    WHERE provider_id = :provider_id
-      AND dataset_version_id = ANY(CAST(:dataset_version_ids AS bigint[]))
-    """
-)
-
-COUNT_SILVER_STOPS_BY_DATASET = text(
-    """
-    SELECT COUNT(*) FROM silver.stops
-    WHERE provider_id = :provider_id
-      AND dataset_version_id = ANY(CAST(:dataset_version_ids AS bigint[]))
-    """
-)
-
-DELETE_SILVER_ROUTES_BY_DATASET = text(
-    """
-    DELETE FROM silver.routes
-    WHERE provider_id = :provider_id
-      AND dataset_version_id = ANY(CAST(:dataset_version_ids AS bigint[]))
-    """
-)
-
-COUNT_SILVER_ROUTES_BY_DATASET = text(
-    """
-    SELECT COUNT(*) FROM silver.routes
-    WHERE provider_id = :provider_id
-      AND dataset_version_id = ANY(CAST(:dataset_version_ids AS bigint[]))
-    """
-)
-
 DELETE_DATASET_VERSIONS = text(
     """
     DELETE FROM core.dataset_versions
@@ -815,31 +719,6 @@ COUNT_OLD_I3_SILVER_ALERTS = text(
     WHERE a.provider_id = :provider_id
       AND a.valid_to IS NOT NULL
       AND a.valid_to < :cutoff_utc
-    """
-)
-
-
-COUNT_OLD_VEHICLE_SUMMARY_5M = text(
-    """
-    SELECT COUNT(*) FROM gold.vehicle_summary_5m
-    WHERE provider_id = :provider_id
-      AND period_start_utc < :cutoff_utc
-    """
-)
-
-COUNT_OLD_TRIP_DELAY_SUMMARY_5M = text(
-    """
-    SELECT COUNT(*) FROM gold.trip_delay_summary_5m
-    WHERE provider_id = :provider_id
-      AND period_start_utc < :cutoff_utc
-    """
-)
-
-COUNT_OLD_WARM_ROLLUP_PERIODS = text(
-    """
-    SELECT COUNT(*) FROM gold.warm_rollup_periods
-    WHERE provider_id = :provider_id
-      AND period_start_utc < :cutoff_utc
     """
 )
 

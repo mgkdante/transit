@@ -968,29 +968,6 @@ def _mapping_rows(result: object) -> list[dict[str, object]]:
     return [dict(row) for row in mappings]
 
 
-def _display_mapping(values: Mapping[str, object]) -> dict[str, object]:
-    return {
-        str(key): _display_value(values[key])
-        for key in sorted(values, key=str)
-    }
-
-
-def _display_value(value: object) -> object:
-    if hasattr(value, "display_dict") and callable(value.display_dict):  # type: ignore[attr-defined]
-        return _display_value(value.display_dict())  # type: ignore[attr-defined]
-    if isinstance(value, datetime | date):
-        return value.isoformat()
-    if isinstance(value, Decimal):
-        return str(value)
-    if isinstance(value, Mapping):
-        return _display_mapping({str(key): nested for key, nested in value.items()})
-    if isinstance(value, list | tuple):
-        return [_display_value(item) for item in value]
-    if value is None or isinstance(value, str | int | float | bool):
-        return value
-    return str(value)
-
-
 _SECRET_KEY_PATTERN = re.compile(
     r"(password|passwd|secret|token|(?:api|access)[_-]?key|database[_-]?url|source[_-]?url|dsn)",
     re.IGNORECASE,

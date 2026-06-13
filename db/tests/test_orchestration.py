@@ -707,14 +707,6 @@ def test_run_static_pipeline_uses_ingestion_content_changed_without_hash_lookup(
         "ingest_static_feed",
         lambda provider_id, settings, registry, engine: skipped_ingestion,
     )
-    monkeypatch.setattr(
-        orchestration,
-        "get_current_static_content_hash",
-        lambda connection, provider_id: (_ for _ in ()).throw(
-            AssertionError("legacy hash lookup should not be called")
-        ),
-        raising=False,
-    )
 
     def _should_not_be_called_silver(*args, **kwargs):  # noqa: ANN002, ANN003
         nonlocal silver_called
