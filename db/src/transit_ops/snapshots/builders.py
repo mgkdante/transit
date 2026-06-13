@@ -468,7 +468,7 @@ _NETWORK_NON_RESPONDING_SQL = text(
 
 _NETWORK_FRESHNESS_SQL = text(
     """
-    SELECT COALESCE(MAX(completed_age_seconds), 0) AS feed_freshness_s
+    SELECT MAX(completed_age_seconds) AS feed_freshness_s
     FROM gold.feed_freshness_current
     WHERE provider_id = :provider_id
       AND endpoint_key IN ('vehicle_positions', 'trip_updates')
@@ -483,6 +483,12 @@ def build_network(conn: Connection, *, provider_id: str = "stm", generated_utc: 
     vehicles with a KNOWN status; unknown is a coverage gap reported separately
     as coverage_pct. occupancy_mix is over vehicles that actually report an
     occupancy code, so the fractions sum to ~1.
+
+    Honesty: on_time_pct, coverage_pct, delay_p50_min, delay_p90_min and
+    feed_freshness_s are emitted as None (never a fabricated 0) when their
+    denominator is empty — no known-status vehicles, no live fleet, no delay
+    observations, or no completed run. During a feed blackout consumers must
+    read "no data", not a misleading "0% on time" or "0s fresh".
     """
     params = {"provider_id": provider_id}
 
@@ -501,7 +507,9 @@ def build_network(conn: Connection, *, provider_id: str = "stm", generated_utc: 
 
     known = vehicles_in_service - dist.unknown
     on_time_band = dist.on_time + dist.late
-    on_time_pct = round(100 * on_time_band / known) if known else 0
+    # Honesty: with no known-status vehicles the punctuality rate is unknown,
+    # not 0%. Emit None so the UI shows "no data" instead of a fabricated 0.
+    on_time_pct = round(100 * on_time_band / known) if known else None
 
     occ_total = sum(occ_counts.values())
     occupancy_mix = (
@@ -511,19 +519,25 @@ def build_network(conn: Connection, *, provider_id: str = "stm", generated_utc: 
     )
 
     # coverage_pct: share of the live fleet with a KNOWN punctuality status.
+    # Honesty: with no live fleet there is nothing to cover — None, not 0.
     coverage_pct = (
-        round(100 * known / vehicles_in_service) if vehicles_in_service else 0
+        round(100 * known / vehicles_in_service) if vehicles_in_service else None
     )
 
     delays_min = sorted(
         float(r["avg_delay_seconds"]) / 60.0
         for r in conn.execute(_NETWORK_DELAYS_SQL, params).mappings()
     )
-    delay_p50_min = round(_percentile(delays_min, 0.50)) if delays_min else 0
-    delay_p90_min = round(_percentile(delays_min, 0.90)) if delays_min else 0
+    # Honesty: with no delay observations the percentiles are undefined — None,
+    # not a fabricated 0-minute delay.
+    delay_p50_min = round(_percentile(delays_min, 0.50)) if delays_min else None
+    delay_p90_min = round(_percentile(delays_min, 0.90)) if delays_min else None
 
     non_responding = int(conn.execute(_NETWORK_NON_RESPONDING_SQL, params).scalar_one() or 0)
-    feed_freshness_s = int(conn.execute(_NETWORK_FRESHNESS_SQL, params).scalar_one() or 0)
+    # Honesty: MAX over no completed runs is NULL — freshness is genuinely
+    # unknown. Emit None rather than COALESCE-ing NULL into a false "0s = fresh".
+    freshness_raw = conn.execute(_NETWORK_FRESHNESS_SQL, params).scalar_one()
+    feed_freshness_s = int(freshness_raw) if freshness_raw is not None else None
 
     return NetworkFile(
         generated_utc=generated_utc,
@@ -2229,6 +2243,13 @@ def build_provenance(
                 "honest-NULL otherwise, including for pre-2026-06-09 legacy "
                 "history entries built from NULL-hash rows, which carry no EN "
                 "text until they age out of the history window"
+            ),
+            "network_no_data": (
+                "network.json on_time_pct, coverage_pct, delay_p50_min, "
+                "delay_p90_min and feed_freshness_s are null (not 0) when their "
+                "denominator is empty — no known-status vehicles, no live fleet, "
+                "no delay observations, or no completed ingestion run; a feed "
+                "blackout is reported as no-data, never as a fabricated 0% or 0s"
             ),
         },
         gaps=["metro_realtime"],  # STM metro publishes no realtime feed

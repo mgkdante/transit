@@ -65,20 +65,48 @@
   },
   "properties": {
     "coverage_pct": {
-      "title": "Coverage Pct",
-      "type": "integer"
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Coverage Pct"
     },
     "delay_p50_min": {
-      "title": "Delay P50 Min",
-      "type": "integer"
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Delay P50 Min"
     },
     "delay_p90_min": {
-      "title": "Delay P90 Min",
-      "type": "integer"
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Delay P90 Min"
     },
     "feed_freshness_s": {
-      "title": "Feed Freshness S",
-      "type": "integer"
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Feed Freshness S"
     },
     "generated_utc": {
       "title": "Generated Utc",
@@ -92,8 +120,15 @@
       "$ref": "#/$defs/OccupancyMix"
     },
     "on_time_pct": {
-      "title": "On Time Pct",
-      "type": "integer"
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "On Time Pct"
     },
     "status_dist": {
       "$ref": "#/$defs/StatusDist"

@@ -1016,35 +1016,6 @@ REPORTING_AGGREGATE_UPSERTS = {
 }
 
 # ---------------------------------------------------------------------------
-# SQL — retention deletes
-# ---------------------------------------------------------------------------
-
-DELETE_OLD_VEHICLE_SUMMARY_5M = text(
-    """
-    DELETE FROM gold.vehicle_summary_5m
-    WHERE provider_id = :provider_id
-      AND period_start_utc < :cutoff_utc
-    """
-)
-
-DELETE_OLD_TRIP_DELAY_SUMMARY_5M = text(
-    """
-    DELETE FROM gold.trip_delay_summary_5m
-    WHERE provider_id = :provider_id
-      AND period_start_utc < :cutoff_utc
-    """
-)
-
-DELETE_OLD_WARM_ROLLUP_PERIODS = text(
-    """
-    DELETE FROM gold.warm_rollup_periods
-    WHERE provider_id = :provider_id
-      AND period_start_utc < :cutoff_utc
-    """
-)
-
-
-# ---------------------------------------------------------------------------
 # Result dataclass
 # ---------------------------------------------------------------------------
 

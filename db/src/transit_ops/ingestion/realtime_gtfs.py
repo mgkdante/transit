@@ -48,11 +48,6 @@ class RealtimeIngestionConfig:
     bronze_root: Path
     refresh_interval_seconds: int
 
-    def as_dict(self) -> dict[str, object]:
-        payload = asdict(self)
-        payload["bronze_root"] = str(self.bronze_root)
-        return payload
-
 
 @dataclass(frozen=True)
 class RealtimeMessageMetadata:

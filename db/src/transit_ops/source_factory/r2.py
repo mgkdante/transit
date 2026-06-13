@@ -33,7 +33,6 @@ _EXACT_FILENAME_BY_ENDPOINT = {
 }
 
 _CHECKSUM_PREFIX_PATTERN = re.compile(r"^[0-9a-fA-F]{12}$")
-_OBSERVED_TIMESTAMP_PATTERN = re.compile(r"^\d{8}T\d{6}\d{6}Z$")
 _ZIP_FILENAME_PATTERN = re.compile(r"^.+\.zip$")
 _JSON_FILENAME_PATTERN = re.compile(r"^.+\.json$")
 

@@ -186,6 +186,102 @@ def test_overall_health_result_ok_has_no_attention_flag_and_counts() -> None:
     }
 
 
+def test_component_public_dict_omits_message_details_and_latency() -> None:
+    # x-security#4: the public /health must not echo error strings, feed URLs,
+    # DB/storage detail, or latency — only the coarse name + status survive.
+    checked_at = datetime(2026, 5, 22, 12, 30, tzinfo=UTC)
+    result = ComponentHealthResult(
+        name="stm_trip_updates_feed",
+        status="down",
+        message="STM feed check failed: <ConnectError> https://feed/x?apiKey=SECRET",
+        latency_ms=42.0,
+        checked_at_utc=checked_at,
+        details={"url": "https://feed.example.com/tripUpdates?apiKey=SECRET"},
+    )
+
+    assert result.public_dict() == {
+        "name": "stm_trip_updates_feed",
+        "status": "down",
+    }
+
+
+def test_overall_public_dict_trims_to_coarse_status_and_freshness_age() -> None:
+    checked_at = datetime(2026, 5, 22, 12, 45, tzinfo=UTC)
+    captured_at = datetime(2026, 5, 22, 12, 40, tzinfo=UTC)
+    result = OverallHealthResult.from_components(
+        checked_at_utc=checked_at,
+        components=[
+            ComponentHealthResult(
+                name="database",
+                status="ok",
+                message="connected to postgresql://user:pw@db.internal/transit",
+                latency_ms=1.5,
+                details={"database_url": "postgresql://user:pw@db.internal/transit"},
+            ),
+            ComponentHealthResult(
+                name="pipeline_freshness",
+                status="ok",
+                message="Realtime pipeline data is fresh.",
+                details={
+                    "threshold_seconds": 600,
+                    "endpoints": {
+                        "trip_updates": {
+                            "latest_captured_at_utc": captured_at,
+                            "age_seconds": 120,
+                        },
+                        "vehicle_positions": {
+                            "latest_captured_at_utc": captured_at,
+                            "age_seconds": 300,
+                        },
+                    },
+                },
+            ),
+            ComponentHealthResult(
+                name="stm_trip_updates_feed",
+                status="ok",
+                message="STM feed is reachable.",
+                details={"url": "https://feed.example.com/tripUpdates?apiKey=SECRET"},
+            ),
+        ],
+    )
+
+    payload = result.public_dict()
+
+    assert payload == {
+        "status": "ok",
+        "checked_at_utc": "2026-05-22T12:45:00+00:00",
+        "needs_attention": False,
+        "component_counts": {"ok": 3, "degraded": 0, "down": 0},
+        "components": [
+            {"name": "database", "status": "ok"},
+            {"name": "pipeline_freshness", "status": "ok"},
+            {"name": "stm_trip_updates_feed", "status": "ok"},
+        ],
+        # freshness age = max endpoint age, a non-sensitive scalar
+        "pipeline_freshness_age_seconds": 300,
+    }
+    serialized = json.dumps(payload)
+    # No URLs, hosts, credentials, DB DSNs, or raw error strings leak.
+    assert "SECRET" not in serialized
+    assert "feed.example.com" not in serialized
+    assert "postgresql://" not in serialized
+    assert "db.internal" not in serialized
+
+
+def test_overall_public_dict_freshness_age_is_none_when_unavailable() -> None:
+    result = OverallHealthResult.from_components(
+        checked_at_utc=datetime(2026, 5, 22, 12, 45, tzinfo=UTC),
+        components=[
+            ComponentHealthResult(name="database", status="down", message="boom"),
+        ],
+    )
+
+    payload = result.public_dict()
+
+    assert payload["pipeline_freshness_age_seconds"] is None
+    assert payload["components"] == [{"name": "database", "status": "down"}]
+
+
 def test_aggregate_health_status_rejects_unknown_component_status() -> None:
     class BadComponent:
         status = "unknown"

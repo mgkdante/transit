@@ -18,6 +18,7 @@ from transit_ops.gold.marts import (
     LOCK_GOLD_TABLES,
     OPEN_DIM_ROUTE_HISTORY,
     OPEN_DIM_STOP_HISTORY,
+    SELECT_REALTIME_ANALYZE_AGE_SECONDS,
     UPSERT_FACT_TRIP_DELAY_SNAPSHOT_LATEST,
     build_gold_marts,
     refresh_gold_realtime,
@@ -46,6 +47,9 @@ class FakeScalarResult:
     def scalar_one(self):  # noqa: ANN201
         return self.scalar_value
 
+    def scalar(self):  # noqa: ANN201
+        return self.scalar_value
+
 
 class FakeMappingResult:
     def __init__(self, row: dict[str, object] | None) -> None:
@@ -64,9 +68,14 @@ class RecordingConnection:
         *,
         dataset_row: dict[str, object] | None,
         silver_routes_exists: bool = True,
+        analyze_age_seconds: float | None = None,
     ) -> None:
         self.dataset_row = dataset_row
         self.silver_routes_exists = silver_routes_exists
+        # Seconds since the realtime tables were last ANALYZEd, as the throttle
+        # query (SELECT_REALTIME_ANALYZE_AGE_SECONDS) would report it. Default
+        # None models "never analyzed" (fresh DB) → the ANALYZE is due.
+        self.analyze_age_seconds = analyze_age_seconds
         self.calls: list[tuple[str, object]] = []
 
     def execute(self, statement, params=None):  # noqa: ANN001
@@ -75,6 +84,8 @@ class RecordingConnection:
 
         if "FROM core.dataset_versions" in sql_text:
             return FakeMappingResult(self.dataset_row)
+        if "FROM pg_stat_user_tables" in sql_text:
+            return FakeScalarResult(self.analyze_age_seconds)
         # Empty-silver guard (slice-9.1.1j): EXISTS over silver.routes for the
         # current version. Routed before the dim-history branches (which key on
         # gold.dim_*_history, not silver.routes) so it cannot be swallowed.
@@ -498,6 +509,116 @@ def test_refresh_gold_realtime_analyzes_even_when_no_realtime_snapshots() -> Non
         _assert_no_legacy_realtime_sql(sql)
     assert not any("INSERT INTO gold.fact_vehicle_snapshot" in sql for sql in sql_calls)
     assert not any("INSERT INTO gold.fact_trip_delay_snapshot" in sql for sql in sql_calls)
+
+
+def test_refresh_gold_realtime_skips_analyze_when_recently_analyzed() -> None:
+    """The per-cycle realtime-silver ANALYZE is throttled (gold#2 / x-perf#0).
+
+    The full ANALYZE (incl. the ~500M-row rt_trip_update_stop_times) took SHARE
+    UPDATE EXCLUSIVE + heavy sampling I/O inside the advisory-locked gold-refresh
+    TX and ran unconditionally ~1500x/day. When the realtime tables were analyzed
+    less than GOLD_REALTIME_ANALYZE_MIN_INTERVAL_SECONDS ago, the ANALYZE must be
+    SKIPPED — the upserts filter on a constant rt_feed_snapshot_id, so stale
+    stats barely move the plan.
+    """
+    connection = RecordingConnection(
+        dataset_row={"dataset_version_id": 2},
+        analyze_age_seconds=60.0,  # analyzed 60s ago, well inside the 1h window
+    )
+    engine = FakeEngine(connection)
+    settings = Settings(
+        DATABASE_URL="postgresql://user:pass@example.com/transit",
+        GOLD_REALTIME_ANALYZE_MIN_INTERVAL_SECONDS=3600,
+    )
+
+    refresh_gold_realtime(
+        "stm",
+        settings=settings,
+        registry=FakeRegistry(_build_manifest()),
+        engine=engine,
+    )
+
+    sql_calls = [call[0] for call in connection.calls]
+    # The throttle was consulted...
+    assert any("FROM pg_stat_user_tables" in sql for sql in sql_calls)
+    # ...and the heavy ANALYZE was skipped this cycle.
+    assert not any("ANALYZE silver.rt_feed_snapshots" in sql for sql in sql_calls)
+    # The gold upserts still ran — throttling ANALYZE must not skip the refresh.
+    assert any("INSERT INTO gold.fact_vehicle_snapshot" in sql for sql in sql_calls)
+
+
+def test_refresh_gold_realtime_runs_analyze_when_stats_are_stale() -> None:
+    """Once the realtime stats are older than the throttle interval, ANALYZE runs."""
+    connection = RecordingConnection(
+        dataset_row={"dataset_version_id": 2},
+        analyze_age_seconds=7200.0,  # 2h old, past the 1h throttle window
+    )
+    engine = FakeEngine(connection)
+    settings = Settings(
+        DATABASE_URL="postgresql://user:pass@example.com/transit",
+        GOLD_REALTIME_ANALYZE_MIN_INTERVAL_SECONDS=3600,
+    )
+
+    refresh_gold_realtime(
+        "stm",
+        settings=settings,
+        registry=FakeRegistry(_build_manifest()),
+        engine=engine,
+    )
+
+    sql_calls = [call[0] for call in connection.calls]
+    assert any("ANALYZE silver.rt_feed_snapshots" in sql for sql in sql_calls)
+
+
+def test_refresh_gold_realtime_always_analyzes_when_throttle_disabled() -> None:
+    """interval <= 0 disables the throttle — ANALYZE runs every cycle (escape hatch)."""
+    connection = RecordingConnection(
+        dataset_row={"dataset_version_id": 2},
+        analyze_age_seconds=1.0,  # just analyzed, but throttle disabled
+    )
+    engine = FakeEngine(connection)
+    settings = Settings(
+        DATABASE_URL="postgresql://user:pass@example.com/transit",
+        GOLD_REALTIME_ANALYZE_MIN_INTERVAL_SECONDS=0,
+    )
+
+    refresh_gold_realtime(
+        "stm",
+        settings=settings,
+        registry=FakeRegistry(_build_manifest()),
+        engine=engine,
+    )
+
+    sql_calls = [call[0] for call in connection.calls]
+    assert any("ANALYZE silver.rt_feed_snapshots" in sql for sql in sql_calls)
+    # Throttle disabled — the staleness query is not even issued.
+    assert not any("FROM pg_stat_user_tables" in sql for sql in sql_calls)
+
+
+def test_realtime_analyze_age_query_targets_only_realtime_silver_tables() -> None:
+    """SQL-marker: the throttle reads pg_stat_user_tables for the five rt tables.
+
+    It must take the MIN age (max() over the most-recent analyze/autoanalyze per
+    table, then now() - that) so a single stale table forces a refresh, and must
+    return NULL (HAVING ... IS NOT NULL) when none has ever been analyzed so the
+    fresh-DB bootstrap case still runs ANALYZE.
+    """
+    sql = str(SELECT_REALTIME_ANALYZE_AGE_SECONDS)
+
+    assert "pg_stat_user_tables" in sql
+    assert "schemaname = 'silver'" in sql
+    for relname in (
+        "rt_feed_snapshots",
+        "rt_entities",
+        "rt_trip_updates",
+        "rt_trip_update_stop_times",
+        "rt_vehicle_positions",
+    ):
+        assert relname in sql
+    assert "last_analyze" in sql
+    assert "last_autoanalyze" in sql
+    # NULL when never analyzed → _realtime_analyze_is_due treats it as due.
+    assert "IS NOT NULL" in sql
 
 
 def test_build_gold_marts_requires_current_static_dataset() -> None:

@@ -888,8 +888,6 @@ def build_warm_rollups_command(
     settings = get_settings()
     since_utc = None
     if since:
-        from datetime import UTC, datetime
-
         try:
             since_utc = datetime.strptime(since, "%Y-%m-%d").replace(tzinfo=UTC)
         except ValueError as exc:

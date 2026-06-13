@@ -267,8 +267,9 @@ def upgrade() -> None:
         n_unique = bind.execute(
             text("SELECT count(DISTINCT (provider_id, content_hash)) FROM silver.i3_alerts")
         ).scalar()
+        redundancy_pct = (1 - n_unique / n_total) * 100 if n_total else 0.0
         print(f"  total rows: {n_total:,}  unique by content: {n_unique:,}  "
-              f"redundancy: {(1 - n_unique/n_total)*100:.1f}%")
+              f"redundancy: {redundancy_pct:.1f}%")
 
         print("Promoting one survivor per content_hash...")
         bind.execute(text(_PROMOTE_SURVIVORS))

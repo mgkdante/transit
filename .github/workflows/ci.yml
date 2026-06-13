@@ -1,0 +1,141 @@
+name: CI
+
+# PR-triggered safety net for the db/ pipeline (codebase-audit infra-ci#0).
+# Runs the offline suite, guards the alembic migration chain to a single head,
+# and replays the full migration chain on a disposable Postgres so the real-DB
+# regression suite actually executes in CI. ADDITIVE only — changes no runtime
+# code. The scheduled production jobs (daily-static-pipeline, daily-warm-rollups)
+# are unaffected; this workflow gates pull requests instead of running prod work.
+on:
+  pull_request:
+    paths:
+      - "db/**"
+  push:
+    paths:
+      - "db/**"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # 1. Offline suite — the same `uv run pytest tests` developers run locally with
+  #    TRANSIT_TEST_DATABASE_URL unset. Real-DB regression files self-skip here.
+  offline-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      # CI runs an 80-col TTY; Rich/Typer wrap-truncates CLI help text and breaks
+      # help-output assertions. Render wide so the help is fully present.
+      COLUMNS: "200"
+    defaults:
+      run:
+        working-directory: db
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+
+      - name: Install project dependencies
+        run: uv sync --locked
+
+      - name: Run offline test suite
+        run: uv run pytest tests
+
+  # 2. Single-head guard — `alembic heads` must report exactly one head, or a
+  #    branched/forked migration chain will fail the empty-DB replay below and
+  #    break the production `init-db` (which is `alembic upgrade head`).
+  alembic-single-head:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: db
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+
+      - name: Install project dependencies
+        run: uv sync --locked
+
+      - name: Assert a single alembic head
+        run: |
+          heads="$(uv run alembic heads 2>/dev/null | grep -c '(head)' || true)"
+          echo "alembic heads reporting (head): ${heads}"
+          if [ "${heads}" != "1" ]; then
+            echo "::error::Expected exactly one alembic head, found ${heads}." >&2
+            uv run alembic heads
+            exit 1
+          fi
+
+  # 3. Real-DB suite — spin up a throwaway Postgres 16, replay the whole
+  #    migration chain (`alembic upgrade head`) against the empty DB to catch the
+  #    empty-DB-replay failure class, then export TRANSIT_TEST_DATABASE_URL so the
+  #    real-DB regression files run instead of self-skipping. The container is
+  #    discarded with the runner — never points at production.
+  real-db-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: db
+    services:
+      postgres:
+        # postgis/postgis (not stock postgres:16) — the migration chain does
+        # CREATE EXTENSION postgis; pg_repack (0040) self-skips when absent.
+        image: postgis/postgis:16-3.4
+        env:
+          POSTGRES_USER: transit_ci
+          POSTGRES_PASSWORD: transit_ci
+          POSTGRES_DB: transit_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U transit_ci -d transit_ci"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      # alembic env.py resolves this through Settings.DATABASE_URL; the real-DB
+      # tests read TRANSIT_TEST_DATABASE_URL. Same disposable container for both.
+      DATABASE_URL: postgresql+psycopg://transit_ci:transit_ci@localhost:5432/transit_ci
+      TRANSIT_TEST_DATABASE_URL: postgresql+psycopg://transit_ci:transit_ci@localhost:5432/transit_ci
+      COLUMNS: "200"
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+
+      - name: Install project dependencies
+        run: uv sync --locked
+
+      - name: Replay migration chain on empty Postgres
+        run: uv run alembic upgrade head
+
+      - name: Run real-DB regression suite
+        run: uv run pytest tests

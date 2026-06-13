@@ -23,12 +23,15 @@ def test_health_live_returns_ok_without_running_component_checks() -> None:
     assert response.json() == {"status": "ok"}
 
 
-def test_health_returns_200_and_overall_ok_with_component_payload() -> None:
+def test_health_returns_200_and_minimal_public_component_payload() -> None:
+    # x-security#4: the internet-facing /health emits the coarse public view
+    # (public_dict), NOT the detailed display_dict — no messages, details,
+    # latency, feed URLs, or DB DSNs on the anonymous surface.
     components = _components()
     expected = OverallHealthResult.from_components(
         checked_at_utc=NOW,
         components=components,
-    ).display_dict()
+    ).public_dict()
 
     client = TestClient(create_app(check_runner=lambda: components, clock=lambda: NOW))
 
@@ -41,11 +44,11 @@ def test_health_returns_200_and_overall_ok_with_component_payload() -> None:
     assert response.json()["components"][0] == {
         "name": "database",
         "status": "ok",
-        "message": "connected",
-        "latency_ms": 1.5,
-        "checked_at_utc": "2026-05-22T15:00:00+00:00",
-        "details": {"pool": "primary"},
     }
+    # Internal fields are absent from every component on the public surface.
+    for component in response.json()["components"]:
+        assert set(component) == {"name", "status"}
+    assert "pipeline_freshness_age_seconds" in response.json()
 
 
 def test_health_returns_503_for_degraded_overall() -> None:
@@ -90,26 +93,27 @@ def test_health_returns_structured_down_payload_when_runner_fails() -> None:
             {
                 "name": "health_runner",
                 "status": "down",
-                "message": "Health check runner failed: registry config missing",
-                "latency_ms": None,
-                "checked_at_utc": "2026-05-22T15:00:00+00:00",
-                "details": None,
             }
         ],
+        "pipeline_freshness_age_seconds": None,
     }
+    # The runner's raw failure reason never reaches the public surface.
+    assert "registry config missing" not in response.text
 
 
-def test_health_response_uses_only_component_display_payload_without_settings_dump() -> None:
-    safe_token = "safe-token-reference"
+def test_health_response_does_not_leak_component_details_or_messages() -> None:
+    # x-security#4: the public surface must drop ALL component detail/message
+    # content — feed URLs, DB DSNs, and any error strings — not just secrets.
+    feed_url = "https://feed.example.com/tripUpdates?apiKey=LIVE-STM-KEY"
     components = _components()
     components[0] = ComponentHealthResult(
         name="database",
-        status="ok",
-        message="connected",
+        status="down",
+        message="connect failed: postgresql://user:pw@db.internal/transit",
         checked_at_utc=NOW,
         details={
-            "database_url": "postgresql://example.test/transit",
-            "safe_token": safe_token,
+            "database_url": "postgresql://user:pw@db.internal/transit",
+            "feed_url": feed_url,
         },
     )
 
@@ -125,8 +129,13 @@ def test_health_response_uses_only_component_display_payload_without_settings_du
     assert response.json() == OverallHealthResult.from_components(
         checked_at_utc=NOW,
         components=components,
-    ).display_dict()
-    assert safe_token in response.text
+    ).public_dict()
+    # No DSNs, feed URLs, hosts, credentials, or raw error strings leak.
+    assert "postgresql://" not in response.text
+    assert "db.internal" not in response.text
+    assert "feed.example.com" not in response.text
+    assert "LIVE-STM-KEY" not in response.text
+    assert "connect failed" not in response.text
     assert FAKE_SECRET not in response.text
     assert "settings" not in response.json()
 

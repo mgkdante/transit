@@ -707,14 +707,6 @@ def test_run_static_pipeline_uses_ingestion_content_changed_without_hash_lookup(
         "ingest_static_feed",
         lambda provider_id, settings, registry, engine: skipped_ingestion,
     )
-    monkeypatch.setattr(
-        orchestration,
-        "get_current_static_content_hash",
-        lambda connection, provider_id: (_ for _ in ()).throw(
-            AssertionError("legacy hash lookup should not be called")
-        ),
-        raising=False,
-    )
 
     def _should_not_be_called_silver(*args, **kwargs):  # noqa: ANN002, ANN003
         nonlocal silver_called
@@ -1264,6 +1256,82 @@ def test_run_realtime_cycle_first_endpoint_call_runs_without_gating(monkeypatch)
     assert last_captures["i3_alerts"] == frozen_now
     assert last_captures["trip_updates"] == frozen_now
     assert last_captures["vehicle_positions"] == frozen_now
+
+
+def test_run_realtime_cycle_prunes_even_when_gold_refresh_fails(monkeypatch) -> None:
+    """Retention pruning is best-effort and runs even when gold-refresh fails.
+
+    Pruning previously lived inside the gold-refresh success else-branch, so a
+    persistent gold-build outage (the 0034-backfill stall class) skipped
+    retention every cycle — the silver/gold backlog never drained from the
+    worker, compounding the very stall (ops-core#5). It must now run regardless.
+    """
+    call_order: list[str] = []
+    _install_realtime_cycle_stubs(monkeypatch, call_order)
+
+    def failing_gold_refresh(provider_id, settings, registry, engine):  # noqa: ANN001
+        call_order.append("refresh-gold-realtime")
+        raise RuntimeError("gold build stalled on 0034 backfill")
+
+    monkeypatch.setattr(orchestration, "refresh_gold_realtime", failing_gold_refresh)
+
+    result = run_realtime_cycle(
+        "stm",
+        settings=Settings(_env_file=None, DATABASE_URL="postgresql://user:pass@example.com/transit"),
+        registry=object(),
+        engine=object(),
+    )
+
+    # Gold refresh failed, yet BOTH prunes still ran this cycle.
+    assert result.gold_error_message is not None
+    assert "refresh-gold-realtime" in call_order
+    assert "prune-silver-storage" in call_order
+    assert "prune-gold-storage" in call_order
+    assert result.silver_maintenance is not None
+    assert result.gold_maintenance is not None
+    assert result.silver_maintenance_error_message is None
+    assert result.gold_maintenance_error_message is None
+
+
+def test_run_realtime_cycle_prunes_when_all_endpoints_fail(monkeypatch) -> None:
+    """Even with zero successful endpoints (no gold refresh attempted), pruning runs.
+
+    A busy/failing cycle must not skip retention — that backlog buildup is the
+    wave-2 stall class (ops-core#5). Gold refresh is correctly skipped (no
+    successful endpoint), but the best-effort prunes run unconditionally.
+    """
+    call_order: list[str] = []
+    _install_realtime_cycle_stubs(monkeypatch, call_order)
+
+    def failing_capture(provider_id, endpoint_key, settings, registry, engine):  # noqa: ANN001
+        call_order.append(f"capture:{endpoint_key}")
+        raise RuntimeError(f"{endpoint_key} endpoint down")
+
+    monkeypatch.setattr(orchestration, "capture_realtime_feed", failing_capture)
+    monkeypatch.setattr(
+        orchestration,
+        "capture_i3_alerts",
+        lambda provider_id, settings, registry, engine: (_ for _ in ()).throw(
+            RuntimeError("i3 endpoint down")
+        ),
+        raising=False,
+    )
+
+    result = run_realtime_cycle(
+        "stm",
+        settings=Settings(_env_file=None, DATABASE_URL="postgresql://user:pass@example.com/transit"),
+        registry=object(),
+        engine=object(),
+    )
+
+    assert result.successful_endpoint_count == 0
+    # Gold refresh is NOT attempted with zero successful endpoints...
+    assert "refresh-gold-realtime" not in call_order
+    # ...but retention pruning still runs every cycle.
+    assert "prune-silver-storage" in call_order
+    assert "prune-gold-storage" in call_order
+    assert result.silver_maintenance is not None
+    assert result.gold_maintenance is not None
 
 
 # --- slice-9.1.1o: silver-load failure persistence ----------------------------

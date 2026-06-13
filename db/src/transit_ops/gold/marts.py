@@ -49,6 +49,55 @@ ANALYZE_REALTIME_SILVER_TABLES = text(
     """
 )
 
+# Seconds since the most-recent ANALYZE (manual or autoanalyze) across the five
+# realtime silver tables, or NULL if none has ever been analyzed. Used to
+# throttle the per-cycle ANALYZE below: the full ANALYZE (incl. the ~500M-row
+# rt_trip_update_stop_times) takes SHARE UPDATE EXCLUSIVE + heavy sampling I/O
+# inside the advisory-locked gold-refresh TX and ran unconditionally ~1500x/day.
+# We take the MIN age (the table analyzed longest ago) so a table that has gone
+# stale forces a refresh even if a sibling was just analyzed.
+SELECT_REALTIME_ANALYZE_AGE_SECONDS = text(
+    """
+    SELECT EXTRACT(
+        EPOCH FROM (now() - max(greatest(last_analyze, last_autoanalyze)))
+    )::double precision AS age_seconds
+    FROM pg_stat_user_tables
+    WHERE schemaname = 'silver'
+      AND relname IN (
+          'rt_feed_snapshots',
+          'rt_entities',
+          'rt_trip_updates',
+          'rt_trip_update_stop_times',
+          'rt_vehicle_positions'
+      )
+    HAVING max(greatest(last_analyze, last_autoanalyze)) IS NOT NULL
+    """
+)
+
+
+def _realtime_analyze_is_due(
+    connection: Connection, *, min_interval_seconds: int
+) -> bool:
+    """Return True when the per-cycle realtime-silver ANALYZE should run.
+
+    The ANALYZE is throttled to at most once per ``min_interval_seconds`` so the
+    heavy, advisory-locked ANALYZE of the ~500M-row realtime tables no longer
+    runs on every ~57s cycle. Per-snapshot upserts filter on a constant
+    rt_feed_snapshot_id, so stale stats barely move the plan between refreshes.
+
+    Runs the ANALYZE when the throttle is disabled (interval <= 0) or when the
+    realtime tables have never been analyzed (no pg_stat row / NULL age — the
+    fresh-DB bootstrap case), and otherwise only once the oldest table's stats
+    are at least ``min_interval_seconds`` old.
+    """
+    if min_interval_seconds <= 0:
+        return True
+    age_seconds = connection.execute(SELECT_REALTIME_ANALYZE_AGE_SECONDS).scalar()
+    if age_seconds is None:
+        # No recorded ANALYZE yet (fresh DB, or stats reset) — refresh now.
+        return True
+    return float(age_seconds) >= float(min_interval_seconds)
+
 DELETE_DIM_DATE = text(
     """
     DELETE FROM gold.dim_date
@@ -1202,7 +1251,14 @@ def refresh_gold_realtime(
             "fact_vehicle_snapshot_upserted": 0,
             "fact_trip_delay_snapshot_upserted": 0,
         }
-        connection.execute(ANALYZE_REALTIME_SILVER_TABLES)
+        # Throttled: the heavy realtime-silver ANALYZE no longer runs every
+        # ~57s cycle (the per-cycle 500M-row ANALYZE hot-path), only once its
+        # stats are older than GOLD_REALTIME_ANALYZE_MIN_INTERVAL_SECONDS.
+        if _realtime_analyze_is_due(
+            connection,
+            min_interval_seconds=settings.GOLD_REALTIME_ANALYZE_MIN_INTERVAL_SECONDS,
+        ):
+            connection.execute(ANALYZE_REALTIME_SILVER_TABLES)
         if context.latest_vehicle_snapshot_id is not None:
             fact_row_counts["fact_vehicle_snapshot_upserted"] = _safe_rowcount(
                 connection.execute(

@@ -917,46 +917,54 @@ def run_realtime_cycle(
                 exc,
             )
             gold_error_message = str(exc)
-        else:
-            logger.info("Running prune-silver-storage after realtime cycle for '%s'.", provider_id)
-            try:
-                silver_maintenance_result, silver_maintenance_duration_seconds = (
-                    _run_timed_realtime_step(
-                        "prune-silver-storage",
-                        lambda: prune_silver_storage(
-                            provider_id,
-                            settings=settings,
-                            engine=engine,
-                        ),
-                    )
-                )
-            except Exception as exc:
-                logger.error(
-                    "Realtime cycle Silver maintenance failed for provider '%s': %s",
-                    provider_id,
-                    exc,
-                )
-                silver_maintenance_error_message = str(exc)
 
-            logger.info("Running prune-gold-storage after realtime cycle for '%s'.", provider_id)
-            try:
-                gold_maintenance_result, gold_maintenance_duration_seconds = (
-                    _run_timed_realtime_step(
-                        "prune-gold-storage",
-                        lambda: prune_gold_storage(
-                            provider_id,
-                            settings=settings,
-                            engine=engine,
-                        ),
-                    )
-                )
-            except Exception as exc:
-                logger.error(
-                    "Realtime cycle Gold maintenance failed for provider '%s': %s",
+    # Retention pruning is BEST-EFFORT and runs on EVERY cycle, independent of
+    # endpoint success and of the gold-refresh outcome above. It previously ran
+    # only inside the gold-refresh success branch (gated on
+    # successful_endpoint_count AND a clean refresh), so a persistent gold-build
+    # outage (the 0034-backfill stall class) or a busy/failing cycle skipped
+    # retention every cycle — the silver/gold backlog never drained from the
+    # worker, compounding the very stall. Each prune is bounded per cycle (ctid
+    # LIMIT batching) so draining a backlog never hangs a cycle.
+    logger.info("Running prune-silver-storage after realtime cycle for '%s'.", provider_id)
+    try:
+        silver_maintenance_result, silver_maintenance_duration_seconds = (
+            _run_timed_realtime_step(
+                "prune-silver-storage",
+                lambda: prune_silver_storage(
                     provider_id,
-                    exc,
-                )
-                gold_maintenance_error_message = str(exc)
+                    settings=settings,
+                    engine=engine,
+                ),
+            )
+        )
+    except Exception as exc:
+        logger.error(
+            "Realtime cycle Silver maintenance failed for provider '%s': %s",
+            provider_id,
+            exc,
+        )
+        silver_maintenance_error_message = str(exc)
+
+    logger.info("Running prune-gold-storage after realtime cycle for '%s'.", provider_id)
+    try:
+        gold_maintenance_result, gold_maintenance_duration_seconds = (
+            _run_timed_realtime_step(
+                "prune-gold-storage",
+                lambda: prune_gold_storage(
+                    provider_id,
+                    settings=settings,
+                    engine=engine,
+                ),
+            )
+        )
+    except Exception as exc:
+        logger.error(
+            "Realtime cycle Gold maintenance failed for provider '%s': %s",
+            provider_id,
+            exc,
+        )
+        gold_maintenance_error_message = str(exc)
     step_timings_seconds["refresh_gold_realtime"] = gold_build_duration_seconds
     step_timings_seconds["prune_silver_storage"] = silver_maintenance_duration_seconds
     step_timings_seconds["prune_gold_storage"] = gold_maintenance_duration_seconds

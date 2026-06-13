@@ -146,6 +146,25 @@ def test_downgrade_restores_legacy_view_and_drops_columns() -> None:
     assert "DROP INDEX IF EXISTS" in downgrade_body
 
 
+def test_redundancy_pct_guards_against_empty_table() -> None:
+    """On a fresh/empty silver.i3_alerts (CI bootstrap, new dev box,
+    throwaway test cluster) n_total==0. The redundancy-stats print must
+    NOT divide by n_total without a guard, or `alembic upgrade head`
+    raises ZeroDivisionError and the chain can never reach head on a
+    clean DB. The guarded expression falls back to 0.0 when n_total is 0."""
+    text = _read_migration()
+
+    # The naked unguarded division must not appear.
+    assert "(1 - n_unique/n_total)*100:.1f" not in text, (
+        "unguarded n_unique/n_total division still present — "
+        "ZeroDivisionError on empty DB"
+    )
+    # A zero-guard must be present so empty tables report 0.0% redundancy.
+    assert "if n_total else 0.0" in text, (
+        "redundancy pct must guard against n_total == 0"
+    )
+
+
 def test_ingestion_code_computes_content_hash_and_uses_on_conflict() -> None:
     text = _read_ingestion()
 

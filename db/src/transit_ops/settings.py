@@ -141,6 +141,21 @@ class Settings(BaseSettings):
     # over many cycles while a steady-state delta clears in one quick pass.
     SILVER_REALTIME_PRUNE_BATCH: int = 50000
     GOLD_FACT_RETENTION_DAYS: int = 14
+    # Max rows deleted per gold-fact table per prune cycle. Like the silver
+    # realtime prune, prune_gold_fact_history runs on every ~57s worker cycle; an
+    # unbounded DELETE of the whole backlog (the first cycle after a worker
+    # outage must drain the entire 18.7M-scale fact_trip_delay_snapshot in ONE
+    # transaction — long lock hold, WAL/bloat spike) is the unbounded-heavy-op
+    # hang class the silver prunes were already batched to avoid. Bounding each
+    # DELETE drains a one-time backlog gradually while steady-state clears fast.
+    GOLD_FACT_PRUNE_BATCH: int = 50000
+    # The per-cycle ANALYZE of the realtime silver tables (incl. the ~500M-row
+    # rt_trip_update_stop_times) takes SHARE UPDATE EXCLUSIVE + heavy sampling
+    # I/O inside the advisory-locked gold-refresh TX. Per-snapshot upserts filter
+    # on a constant rt_feed_snapshot_id, so stale stats barely move the plan —
+    # throttle ANALYZE to at most once per this many seconds (rely on tuned
+    # autovacuum/autoanalyze between runs). 0 disables the throttle (always run).
+    GOLD_REALTIME_ANALYZE_MIN_INTERVAL_SECONDS: int = 3600
     GOLD_REPORTING_OPEN_WINDOW_DAYS: int = 10
     BRONZE_REALTIME_RETENTION_DAYS: int = 30
     BRONZE_STATIC_RETENTION_DAYS: int = 365
@@ -234,6 +249,10 @@ class Settings(BaseSettings):
             "SILVER_REALTIME_RETENTION_DAYS": self.SILVER_REALTIME_RETENTION_DAYS,
             "SILVER_REALTIME_PRUNE_BATCH": self.SILVER_REALTIME_PRUNE_BATCH,
             "GOLD_FACT_RETENTION_DAYS": self.GOLD_FACT_RETENTION_DAYS,
+            "GOLD_FACT_PRUNE_BATCH": self.GOLD_FACT_PRUNE_BATCH,
+            "GOLD_REALTIME_ANALYZE_MIN_INTERVAL_SECONDS": (
+                self.GOLD_REALTIME_ANALYZE_MIN_INTERVAL_SECONDS
+            ),
             "GOLD_REPORTING_OPEN_WINDOW_DAYS": self.GOLD_REPORTING_OPEN_WINDOW_DAYS,
             "BRONZE_REALTIME_RETENTION_DAYS": self.BRONZE_REALTIME_RETENTION_DAYS,
             "BRONZE_STATIC_RETENTION_DAYS": self.BRONZE_STATIC_RETENTION_DAYS,
