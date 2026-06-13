@@ -15,11 +15,30 @@ def require_database_url(settings: Settings) -> str:
 
 
 def make_engine(settings: Settings) -> Engine:
-    """Create a SQLAlchemy engine for the configured Postgres database."""
+    """Create a SQLAlchemy engine for the configured Postgres database.
+
+    TCP keepalives are set because the snapshot publishers hold one read
+    connection open across a long, DB-idle network upload (static/historic
+    fan out thousands of per-stop/per-route PUTs to R2 while the connection
+    sits idle-in-transaction). Prod Postgres sets every idle/statement timeout
+    to 0 and tcp_keepalives_idle=7200s, so no keepalive traffic flows for two
+    hours — long enough for the OCI network path to silently drop the idle
+    connection. The publish then fails on its FIRST post-upload statement
+    (slice-r's snapshot_publish_state INSERT) with "SSL error: unexpected eof".
+    Client keepalives keep packets flowing during the idle window so the
+    firewall/NAT never reaps the connection. This matters most on cold-start
+    and new-GTFS-edition days, when the hash-gate can't skip the upload.
+    """
 
     return create_engine(
         require_database_url(settings),
         pool_pre_ping=True,
+        connect_args={
+            "keepalives": 1,
+            "keepalives_idle": 20,
+            "keepalives_interval": 10,
+            "keepalives_count": 6,
+        },
     )
 
 
