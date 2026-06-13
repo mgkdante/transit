@@ -338,3 +338,11 @@ def test_env_1password_has_no_retired_neon_or_arcgis_entries() -> None:
     text = (REPO_ROOT / ".env.1password").read_text(encoding="utf-8")
     assert ("Ne" "on") not in text
     assert "ARCGIS_API_KEY" not in text
+
+
+def test_dead_module_dirs_stay_deleted() -> None:
+    # slice-9.1.1w: these dirs held only untracked __pycache__ — the source moved
+    # to source_factory/ and infra/postgres-serving-access/. Guard against an
+    # accidental resurrection (a stray import re-creating the package dir).
+    assert not (DB_ROOT / "src" / "transit_ops" / "rebuild").exists()
+    assert not (DB_ROOT / "infra" / "postgres-public-access").exists()
