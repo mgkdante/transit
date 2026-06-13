@@ -173,6 +173,72 @@ def _stop(
     )
 
 
+def _add_delay_snapshot(
+    connection,
+    *,
+    entity_index: int,
+    trip_id: str,
+    route_id: str,
+    direction_id: int,
+    delay_seconds: int,
+) -> None:
+    """Insert one gold.latest_trip_delay_snapshot row — the source of
+    gold.current_trip_delay_computed (which groups by realtime_snapshot_id,
+    trip_id, route_id, direction_id). Two rows with the same trip_id but distinct
+    direction_id therefore produce two delay rows for that trip, the exact case
+    build_stop_departures' inner GROUP BY de-dups before the LEFT JOIN."""
+    connection.execute(
+        text(
+            """
+            INSERT INTO gold.latest_trip_delay_snapshot
+                (provider_id, realtime_snapshot_id, entity_index, snapshot_date_key,
+                 snapshot_local_date, feed_timestamp_utc, captured_at_utc,
+                 trip_id, route_id, direction_id, start_date, delay_seconds,
+                 stop_time_update_count)
+            VALUES (:p, :rs, :i, to_char(now(), 'YYYYMMDD')::int,
+                    now()::date, now(), now(),
+                    :trip, :route, :dir, now()::date, :delay, 1)
+            """
+        ),
+        {
+            "p": PROVIDER,
+            "rs": RAW_SNAP_ID,
+            "i": entity_index,
+            "trip": trip_id,
+            "route": route_id,
+            "dir": direction_id,
+            "delay": delay_seconds,
+        },
+    )
+
+
+def test_stop_departures_dedups_multi_direction_delay_rows(conn) -> None:
+    """A trip appearing under two direction_id rows in
+    gold.current_trip_delay_computed must NOT fan out the delay LEFT JOIN:
+    build_stop_departures keeps exactly ONE departure per (stop, route) and reports
+    the per-trip average delay (slice-9.1.1q dedup GROUP BY). Without the inner
+    GROUP BY this stop would list the same departure twice and the route_rank cap
+    would be corrupted — this is the failing-first artifact for that dedup."""
+    # one route-A departure at S1
+    _add_trip_update(conn, entity_index=0, trip_id="DD-trip", route_id="A")
+    _stop(conn, entity_index=0, stu_index=0, stop_id="S1", seq=1, mins=5)
+    # the SAME trip seen under two directions in the delay view (120s and 240s)
+    _add_delay_snapshot(
+        conn, entity_index=10, trip_id="DD-trip", route_id="A", direction_id=0, delay_seconds=120
+    )
+    _add_delay_snapshot(
+        conn, entity_index=11, trip_id="DD-trip", route_id="A", direction_id=1, delay_seconds=240
+    )
+
+    out = build_stop_departures(conn, provider_id=PROVIDER, generated_utc="2026-06-10T12:00:00Z")
+
+    deps = out.stops["S1"]
+    assert len(deps) == 1  # NOT duplicated by the two delay rows
+    assert deps[0].route == "A"
+    assert deps[0].trip == "DD-trip"
+    assert deps[0].delay_min == 3  # avg(120, 240) = 180s -> 3 min, per-trip (de-duped)
+
+
 def test_stop_departures_caps_two_per_route_and_keeps_all_routes(conn) -> None:
     """At stop S1: route A at +5/+15/+25 and route B at +8 -> the file keeps
     A@+5, B@+8, A@+15 (chronological; cap 2 per route drops A@+25)."""

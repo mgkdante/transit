@@ -814,6 +814,16 @@ def test_build_labels_includes_methodology_gap_attribution():
     # EN otp_definition keeps the early-band caveat (early vehicles are NOT on time)
     en = build_labels(FakeConn(), lang="en", generated_utc="t")
     assert "early" in en.labels["methodology.otp_definition"]
+    # The published live on-time band is [-60s, +300s): build_network counts
+    # on_time + late, migration 0030's FILTER is delay >= -60 AND delay < 300.
+    # The copy must state the +300s / 5-minute upper bound — NOT understate it to
+    # "one minute late" (the slice-9.1.1t honesty fix). Lock both languages so the
+    # citizen-facing band can never silently drift below what is actually published.
+    fr = build_labels(FakeConn(), lang="fr", generated_utc="t")
+    assert "five minutes" in en.labels["methodology.otp_definition"]
+    assert "one minute late" not in en.labels["methodology.otp_definition"]
+    assert "cinq minutes" in fr.labels["methodology.otp_definition"]
+    assert "une minute de retard" not in fr.labels["methodology.otp_definition"]
 
 
 def test_static_label_key_sets_identical_fr_en():

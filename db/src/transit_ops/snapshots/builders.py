@@ -399,10 +399,13 @@ _STOP_DEPARTURES_PER_ROUTE_CAP = 2
 # already filters to the latest snapshot and to future departures. A window
 # ranks each (stop, route)'s departures chronologically so we can keep only the
 # next CAP per route. The delay join is a per-trip aggregate of
-# gold.current_trip_delay_computed (0018): that view is grouped by
-# realtime_snapshot_id/direction_id, so a trip can appear on several rows; the
-# inner GROUP BY provider_id, trip_id de-dups it to one avg_delay_seconds per
-# trip before the LEFT JOIN (else duplicate join rows would inflate the rank).
+# gold.current_trip_delay_computed (0018), grouped by
+# (realtime_snapshot_id, trip_id, route_id, direction_id). Its source table holds
+# a single realtime_snapshot_id per provider per cycle, so in normal data a trip
+# is one row — BUT a trip_id appearing under two (route_id, direction_id) groups
+# in one snapshot (malformed feed) would yield several rows. The inner GROUP BY
+# provider_id, trip_id de-dups defensively to one avg_delay_seconds per trip
+# before the LEFT JOIN (else duplicate join rows would inflate the rank).
 # stop_id IS NULL rows (informational stop_time_updates) are excluded.
 _STOP_DEPARTURES_SQL = text(
     """
@@ -784,10 +787,11 @@ _STATIC_LABELS_FR: dict[str, str] = {
     "occupancy.full": "Complet",
     "methodology.otp_definition": (
         "À l'heure : en direct, un véhicule est à l'heure si son retard moyen se "
-        "situe entre une minute d'avance et une minute de retard; plus tôt, il est "
-        "compté « en avance », pas à l'heure. Dans l'historique quotidien, un "
-        "passage est ponctuel s'il n'a aucun retard enregistré; les vues par ligne "
-        "et par arrêt comptent les retards sévères (plus de 5 minutes)."
+        "situe entre une minute d'avance et moins de cinq minutes de retard; plus "
+        "tôt, il est compté « en avance », pas à l'heure, et cinq minutes de retard "
+        "ou plus sont « sévères ». Dans l'historique quotidien, un passage est "
+        "ponctuel s'il n'a aucun retard enregistré; les vues par ligne et par arrêt "
+        "comptent les retards sévères (plus de 5 minutes)."
     ),
     "methodology.delay_unit": (
         "Les retards sont mesurés en secondes par rapport à l'horaire GTFS publié "
@@ -832,10 +836,10 @@ _STATIC_LABELS_EN: dict[str, str] = {
     "occupancy.full": "Full",
     "methodology.otp_definition": (
         "On time: live, a vehicle counts as on time when its average delay is "
-        "between one minute early and one minute late; anything earlier is counted "
-        "as early, not on time. In daily history, a tracked passage counts as "
-        "punctual when no delay was recorded; route and stop views count severe "
-        "delays (over 5 minutes)."
+        "from one minute early to under five minutes late; earlier than that is "
+        "counted as early, not on time, and five minutes or more late is severe. "
+        "In daily history, a tracked passage counts as punctual when no delay was "
+        "recorded; route and stop views count severe delays (over 5 minutes)."
     ),
     "methodology.delay_unit": (
         "Delays are measured in seconds against the STM's published GTFS schedule, "
