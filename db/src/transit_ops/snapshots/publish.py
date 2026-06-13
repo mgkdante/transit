@@ -209,6 +209,13 @@ def _publish_live(conn: object, storage: object, *, provider_id: str, settings: 
             tier="live",
         )
     )
+    written.append(
+        storage.put_json(  # type: ignore[attr-defined]
+            "live/stop_departures.json",
+            builders.build_stop_departures(conn, provider_id=provider_id, generated_utc=gen),  # type: ignore[arg-type]
+            tier="live",
+        )
+    )
     # manifest LAST — its generated_utc marks a fully-uploaded snapshot
     written.append(
         storage.put_json(  # type: ignore[attr-defined]

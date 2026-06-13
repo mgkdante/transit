@@ -107,6 +107,11 @@
           "title": "Network",
           "type": "string"
         },
+        "stop_departures": {
+          "default": "live/stop_departures.json",
+          "title": "Stop Departures",
+          "type": "string"
+        },
         "trips": {
           "default": "live/trips.json",
           "title": "Trips",

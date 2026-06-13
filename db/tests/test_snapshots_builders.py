@@ -14,6 +14,7 @@ from transit_ops.snapshots.builders import (
     build_alerts,
     build_manifest,
     build_network,
+    build_stop_departures,
     build_trips,
     build_vehicles,
 )
@@ -21,6 +22,7 @@ from transit_ops.snapshots.contract import (
     AlertsFile,
     Manifest,
     NetworkFile,
+    StopDeparturesFile,
     TripsFile,
     VehiclesFile,
 )
@@ -265,6 +267,79 @@ def test_build_trips_groups_stops_and_converts_delay_to_minutes() -> None:
     assert t3.status == "unknown"
     assert t3.delay_min is None
     assert [s.stop for s in t3.stops] == ["S-9"]
+
+
+def test_trip_departures_sql_contract_60min_horizon() -> None:
+    """slice-9.1.1q: the trips departures query caps the ETA horizon at 60 min."""
+    from transit_ops.snapshots import builders
+
+    sql = str(builders._TRIP_DEPARTURES_SQL)
+    assert "interval '60 minutes'" in sql
+    assert "predicted_departure_utc <" in sql
+
+
+# --------------------------------------------------------------------------
+# 6b2 — build_stop_departures (slice-9.1.1q)
+# --------------------------------------------------------------------------
+
+
+def test_build_stop_departures_groups_by_stop_in_eta_order_and_maps_delay() -> None:
+    # The view + window are evaluated in SQL; the FakeConn returns the rows the
+    # query WOULD return (already ranked/ordered), so this exercises the
+    # row -> model mapping: dict keying, list order, delay seconds -> minutes,
+    # NULL delay -> None, generated_utc passthrough.
+    conn = FakeConn(
+        {
+            "current_stop_next_departures": [
+                {
+                    "stop_id": "S-1",
+                    "route_id": "165",
+                    "trip_id": "t1",
+                    "predicted_departure_utc": "2026-06-10T12:05:00Z",
+                    "avg_delay_seconds": 130.0,  # -> 2 min
+                },
+                {
+                    "stop_id": "S-1",
+                    "route_id": "171",
+                    "trip_id": "t2",
+                    "predicted_departure_utc": "2026-06-10T12:08:00Z",
+                    "avg_delay_seconds": None,  # -> None
+                },
+                {
+                    "stop_id": "S-2",
+                    "route_id": "24",
+                    "trip_id": "t3",
+                    "predicted_departure_utc": "2026-06-10T12:10:00Z",
+                    "avg_delay_seconds": -200.0,  # early -> -3 min
+                },
+            ]
+        }
+    )
+
+    out = build_stop_departures(conn, provider_id="stm", generated_utc="2026-06-10T12:00:05Z")
+
+    assert isinstance(out, StopDeparturesFile)
+    assert out.generated_utc == "2026-06-10T12:00:05Z"
+    assert set(out.stops) == {"S-1", "S-2"}
+    s1 = out.stops["S-1"]
+    assert [d.route for d in s1] == ["165", "171"]
+    assert [d.eta_utc for d in s1] == ["2026-06-10T12:05:00Z", "2026-06-10T12:08:00Z"]
+    assert s1[0].trip == "t1"
+    assert s1[0].delay_min == 2
+    assert s1[1].delay_min is None
+    assert out.stops["S-2"][0].delay_min == -3
+
+
+def test_build_stop_departures_sql_contract() -> None:
+    from transit_ops.snapshots import builders
+
+    sql = str(builders._STOP_DEPARTURES_SQL)
+    assert "PARTITION BY d.stop_id, d.route_id" in sql
+    assert ":per_route_cap" in sql
+    assert "d.stop_id IS NOT NULL" in sql
+    assert "current_trip_delay_computed" in sql
+    assert "GROUP BY provider_id, trip_id" in sql
+    assert builders._STOP_DEPARTURES_PER_ROUTE_CAP == 2
 
 
 # --------------------------------------------------------------------------
@@ -651,6 +726,13 @@ def test_build_manifest_basemap_set_with_setting() -> None:
     )
     assert out.basemap == "https://data.example.com/v1/stm/static/basemap.json"
     assert out.files.static.basemap == "static/basemap.json"
+
+
+def test_manifest_live_files_list_stop_departures() -> None:
+    """slice-9.1.1q: the live inventory advertises live/stop_departures.json."""
+    conn = FakeConn(_MANIFEST_PROVIDER_ROW)
+    out = build_manifest(conn, provider_id="stm", generated_utc="t", settings=_FakeSettings())
+    assert out.files.live.stop_departures == "live/stop_departures.json"
 
 
 # --------------------------------------------------------------------------

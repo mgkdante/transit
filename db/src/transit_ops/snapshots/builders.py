@@ -12,7 +12,9 @@ LIVE sources:
       NOTE: ``latest_vehicle_snapshot.speed`` is GTFS-RT meters/second.
     * ``gold.current_trip_delay_computed`` (0018) — per-trip ``avg_delay_seconds``.
     * ``gold.current_stop_next_departures`` (0027) — per-stop predicted departures
-      (``predicted_departure_utc`` + ``stop_sequence``).
+      (``predicted_departure_utc`` + ``stop_sequence``); feeds both the trip-keyed
+      ``build_trips`` (60-min horizon) and the stop-keyed ``build_stop_departures``
+      (<=2 per route).
     * ``gold.current_i3_alerts`` (0024) — alerts; STM leaves ``alert_id`` and
       ``severity`` NULL, so the id is content-hashed and severity maps to 'watch'.
     * ``gold.non_responding_current`` (0027), ``gold.feed_freshness_current`` (0013),
@@ -48,6 +50,8 @@ from transit_ops.snapshots.contract import (
     NetworkFile,
     OccupancyMix,
     StatusDist,
+    StopDeparture,
+    StopDeparturesFile,
     StopEta,
     Trip,
     TripsFile,
@@ -329,18 +333,28 @@ _TRIP_DELAY_SQL = text(
 # Order by predicted ETA (primary) + stop_sequence (deterministic tiebreak) so
 # the per-trip stops list is chronological.  departure_rank is partitioned by
 # STOP, not trip, so it must NOT be used to order a trip's stops.
+#
+# slice-9.1.1q: cap the per-trip stops list at the next 60 minutes — every poll
+# shrinks (far-future stop-time updates are pure poll bloat for a live map).
+# Trip-detail lookahead beyond 60 min is deferred to the 9.4 per-trip surfaces.
 _TRIP_DEPARTURES_SQL = text(
     """
     SELECT trip_id, route_id, stop_id, predicted_departure_utc, stop_sequence
     FROM gold.current_stop_next_departures
     WHERE provider_id = :provider_id
+      AND predicted_departure_utc < now() + interval '60 minutes'
     ORDER BY trip_id, predicted_departure_utc, stop_sequence
     """
 )
 
 
 def build_trips(conn: Connection, *, provider_id: str = "stm", generated_utc: str) -> TripsFile:
-    """Build the live trips file: per-trip status + delay + chronological next-stop ETAs."""
+    """Build the live trips file: per-trip status + delay + chronological next-stop ETAs.
+
+    The per-trip stops list is the next 60 minutes only (slice-9.1.1q poll-size
+    cap); trip-detail lookahead beyond that horizon is deferred to the 9.4
+    per-trip surfaces.
+    """
     trips: dict[str, Trip] = {}
 
     for r in conn.execute(_TRIP_DELAY_SQL, {"provider_id": provider_id}).mappings():
@@ -369,6 +383,84 @@ def build_trips(conn: Connection, *, provider_id: str = "stm", generated_utc: st
         )
 
     return TripsFile(generated_utc=generated_utc, trips=trips)
+
+
+# --------------------------------------------------------------------------
+# build_stop_departures (slice-9.1.1q)
+# --------------------------------------------------------------------------
+
+# Keep at most this many upcoming departures per (stop, route) so a multi-route
+# corridor stop never has one frequent route crowd out the others, while the
+# file stays small (~25-30k entries, ~200KB gzipped). Module constant so the
+# cap is tunable without changing the JSON shape.
+_STOP_DEPARTURES_PER_ROUTE_CAP = 2
+
+# One bounded query over gold.current_stop_next_departures (0027) — the view
+# already filters to the latest snapshot and to future departures. A window
+# ranks each (stop, route)'s departures chronologically so we can keep only the
+# next CAP per route. The delay join is a per-trip aggregate of
+# gold.current_trip_delay_computed (0018): that view is grouped by
+# realtime_snapshot_id/direction_id, so a trip can appear on several rows; the
+# inner GROUP BY provider_id, trip_id de-dups it to one avg_delay_seconds per
+# trip before the LEFT JOIN (else duplicate join rows would inflate the rank).
+# stop_id IS NULL rows (informational stop_time_updates) are excluded.
+_STOP_DEPARTURES_SQL = text(
+    """
+    SELECT stop_id, route_id, trip_id, predicted_departure_utc, avg_delay_seconds
+    FROM (
+        SELECT d.stop_id,
+               d.route_id,
+               d.trip_id,
+               d.predicted_departure_utc,
+               c.avg_delay_seconds,
+               row_number() OVER (
+                   PARTITION BY d.stop_id, d.route_id
+                   ORDER BY d.predicted_departure_utc, d.trip_id, d.stop_sequence
+               ) AS route_rank
+        FROM gold.current_stop_next_departures AS d
+        LEFT JOIN (
+            SELECT provider_id, trip_id, avg(avg_delay_seconds) AS avg_delay_seconds
+            FROM gold.current_trip_delay_computed
+            WHERE provider_id = :provider_id
+            GROUP BY provider_id, trip_id
+        ) AS c
+            ON c.provider_id = d.provider_id
+           AND c.trip_id = d.trip_id
+        WHERE d.provider_id = :provider_id
+          AND d.stop_id IS NOT NULL
+    ) AS ranked
+    WHERE route_rank <= :per_route_cap
+    ORDER BY stop_id, predicted_departure_utc, route_id, trip_id
+    """
+)
+
+
+def build_stop_departures(
+    conn: Connection,
+    *,
+    provider_id: str = "stm",
+    generated_utc: str,
+) -> StopDeparturesFile:
+    """Build the live stop-keyed departures file from gold.current_stop_next_departures.
+
+    Each stop maps to its upcoming departures in chronological order, capped at
+    ``_STOP_DEPARTURES_PER_ROUTE_CAP`` per route, so a 9.4 stop page can answer
+    "next buses at MY stop" with one small fetch instead of inverting the
+    trip-keyed live/trips.json. Stops with no live predictions are simply absent
+    (the client falls back to the static schedule; metro is structurally absent).
+    """
+    stops: dict[str, list[StopDeparture]] = {}
+    params = {"provider_id": provider_id, "per_route_cap": _STOP_DEPARTURES_PER_ROUTE_CAP}
+    for r in conn.execute(_STOP_DEPARTURES_SQL, params).mappings():
+        stops.setdefault(str(r["stop_id"]), []).append(
+            StopDeparture(
+                route=r["route_id"],
+                trip=r["trip_id"],
+                eta_utc=_iso(r["predicted_departure_utc"]),
+                delay_min=_delay_min(r["avg_delay_seconds"]),
+            )
+        )
+    return StopDeparturesFile(generated_utc=generated_utc, stops=stops)
 
 
 # --------------------------------------------------------------------------

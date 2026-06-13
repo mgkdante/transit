@@ -78,9 +78,11 @@ class FakeStore:
 
     def __init__(self) -> None:
         self.keys: list[str] = []
+        self.tiers: list[str] = []
 
     def put_json(self, rel_key: str, payload: object, *, tier: str) -> str:
         self.keys.append(rel_key)
+        self.tiers.append(tier)
         return rel_key
 
 
@@ -130,7 +132,8 @@ class FakeSettings:
 
 
 def test_publish_live_uploads_all_files_manifest_last() -> None:
-    """All 5 files are written and manifest.json is the last key."""
+    """All 6 live files are written, manifest.json is LAST, and every PUT is
+    tier='live' (slice-9.1.1q added live/stop_departures.json before manifest)."""
     store = FakeStore()
     res = publish_snapshot(
         "stm",
@@ -145,10 +148,15 @@ def test_publish_live_uploads_all_files_manifest_last() -> None:
         "live/trips.json",
         "live/alerts.json",
         "live/network.json",
+        "live/stop_departures.json",
         "manifest.json",
     ]
     assert store.keys == expected_keys, f"got {store.keys}"
     assert store.keys[-1] == "manifest.json"
+    # stop_departures is uploaded before the manifest (manifest-last invariant)
+    assert store.keys.index("live/stop_departures.json") < store.keys.index("manifest.json")
+    # every live PUT (manifest included) carries tier='live'
+    assert store.tiers == ["live"] * len(expected_keys)
 
     # PublishResult fields
     assert isinstance(res, PublishResult)
@@ -171,7 +179,7 @@ def test_publish_result_display_dict() -> None:
     assert d["provider_id"] == "stm"
     assert d["tier"] == "live"
     assert isinstance(d["keys_written"], list)
-    assert len(d["keys_written"]) == 5
+    assert len(d["keys_written"]) == 6
 
 
 def test_publish_rejects_unimplemented_tier() -> None:
@@ -198,7 +206,7 @@ def test_publish_accepts_registry_kwarg() -> None:
         registry=object(),  # should be silently ignored
     )
     assert res.tier == "live"
-    assert len(store.keys) == 5
+    assert len(store.keys) == 6
 
 
 def test_publish_static_writes_expected_keys() -> None:
@@ -753,7 +761,7 @@ def test_publish_live_is_not_hash_gated() -> None:
         "stm", tier="live", settings=FakeSettings(), engine=FakeEngine(), storage=store
     )
     assert res.tier == "live"
-    assert len(store.keys) == 5
+    assert len(store.keys) == 6
     assert res.keys_skipped == []
 
 

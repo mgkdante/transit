@@ -44,6 +44,19 @@ class TripsFile(BaseModel):
     generated_utc: str
     trips: dict[str, Trip]
 
+class StopDeparture(BaseModel):
+    route: str | None = None
+    trip: str | None = None
+    eta_utc: str
+    delay_min: int | None = None
+
+class StopDeparturesFile(BaseModel):
+    # stop_id -> chronological next departures, <=2 per route. An absent stop_id
+    # means "no live predictions" (client falls back to the static schedule;
+    # metro is structurally absent — STM publishes no metro realtime).
+    generated_utc: str
+    stops: dict[str, list[StopDeparture]] = Field(default_factory=dict)
+
 class Alert(BaseModel):
     id: str
     severity: Severity
@@ -93,6 +106,7 @@ class ManifestLiveFiles(BaseModel):
     trips: str = "live/trips.json"
     alerts: str = "live/alerts.json"
     network: str = "live/network.json"
+    stop_departures: str = "live/stop_departures.json"
     ttl_s: int = 30
     generated_utc: str
 
@@ -432,6 +446,7 @@ TOP_LEVEL_MODELS: dict[str, type[BaseModel]] = {
     "live_trips": TripsFile,
     "live_alerts": AlertsFile,
     "live_network": NetworkFile,
+    "live_stop_departures": StopDeparturesFile,
     "static_routes_index": RoutesIndex,
     "static_stops_index": StopsIndex,
     "static_route": RouteFile,
