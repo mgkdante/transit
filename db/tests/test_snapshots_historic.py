@@ -1362,6 +1362,24 @@ def test_provenance_methodology_documents_gtfs_service_time_conversion() -> None
     assert "01:00-01:59" in service_time
 
 
+def test_provenance_methodology_discloses_alert_text_en_honest_null() -> None:
+    conn = FakeConn(
+        [
+            ("source_lineage_reporting", []),
+            ("feed_freshness_current", []),
+        ]
+    )
+    out = build_provenance(conn)
+
+    alert_en = out.methodology["alert_text_en"]
+    # EN text is present only where STM published it / for hashed rows.
+    assert "header_text_en" in alert_en
+    assert "STM published" in alert_en
+    # Honest-NULL otherwise, including the pre-2026-06-09 legacy history tail.
+    assert "honest-NULL" in alert_en
+    assert "2026-06-09" in alert_en
+
+
 def test_build_provenance_empty_sources_still_valid() -> None:
     conn = FakeConn(
         [

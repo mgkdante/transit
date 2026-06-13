@@ -66,10 +66,29 @@ def _migration_0032():
     return module
 
 
+def _migration_0037():
+    path = (
+        Path(__file__).resolve().parents[1]
+        / "src/transit_ops/db/migrations/versions/0037_i3_alert_text_en.py"
+    )
+    spec = importlib.util.spec_from_file_location("m0037", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 def _install_alert_count_views(connection) -> None:  # noqa: ANN001
-    migration = _migration_0032()
-    connection.execute(text(migration._HISTORY_VIEW))
-    connection.execute(text(migration._IMPACT_VIEW))
+    # Install the 0037 history-view body (the EN superset that keeps
+    # effective_content_hash AND appends alert_header_text_en), not 0032's
+    # EN-less body. CREATE OR REPLACE against the wave-3 head — where 0037 has
+    # already added the EN column to the live view — cannot drop that column,
+    # so re-applying the 0032 shape here fails ("cannot drop columns from
+    # view"). The impact view (public_alert_impact_daily) is byte-identical
+    # across 0032 and 0037 (no EN), so reuse 0032's constant for it.
+    history_migration = _migration_0037()
+    impact_migration = _migration_0032()
+    connection.execute(text(history_migration._REPLACE_HISTORY_VIEW))
+    connection.execute(text(impact_migration._IMPACT_VIEW))
 
 
 def _seed_provider_and_snapshots(connection) -> None:  # noqa: ANN001

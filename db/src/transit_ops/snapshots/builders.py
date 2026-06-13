@@ -2176,6 +2176,14 @@ def build_provenance(
                 "from the local noon-minus-12h anchor; on fall-back days the "
                 "repeated 01:00-01:59 hour follows that elapsed-time convention"
             ),
+            "alert_text_en": (
+                "English alert text (header_text_en, description_en) is present "
+                "only where STM published an explicit English variant and only "
+                "for content-hashed rows captured since 2026-06-09; it is "
+                "honest-NULL otherwise, including for pre-2026-06-09 legacy "
+                "history entries built from NULL-hash rows, which carry no EN "
+                "text until they age out of the history window"
+            ),
         },
         gaps=["metro_realtime"],  # STM metro publishes no realtime feed
     )

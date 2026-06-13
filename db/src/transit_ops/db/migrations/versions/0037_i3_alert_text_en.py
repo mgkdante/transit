@@ -11,18 +11,26 @@ surviving SCD-2 row. EN is NON-identity payload: it is excluded from
 compute_alert_content_hash, the 0021 dedup md5, and the 0024 synthesized hash
 (slice-9.1.1h invariant), so adding it re-keys nothing.
 
-What this migration does (catalog-light, no big-table scan):
+What this migration does (column add is catalog-light; the backfill SEQ-SCANS
+the full table once — see step 2):
   1. ADD COLUMN IF NOT EXISTS x2 — nullable, no DEFAULT. On the 2.8GB table
      this is a catalog-only change (no rewrite, no autocommit_block needed).
   2. Backfill EN from raw_alert_json over ALL HASHED rows
-     (content_hash IS NOT NULL — active AND superseded). The work-set is
-     low-thousands: hashed rows only exist since the 2026-06-09 worker redeploy
-     (0021 collapsed everything on 2026-05-27 and the old worker wrote NULL-hash
-     rows until the redeploy). The 2.7M legacy NULL-hash rows are deliberately
-     NOT touched — that is slice-9.1.1l's cleanup territory. A single inline
-     UPDATE bounded to the hashed work-set stays small; no batching and no
-     explicit table reclaim (the deliberate deviation from the 0017/0021
-     batching precedent, justified by the low-thousands count).
+     (content_hash IS NOT NULL — active AND superseded). The hashed WORK-SET
+     (rows actually UPDATEd) is low-thousands — hashed rows only exist since
+     the 2026-06-09 worker redeploy (0021 collapsed everything on 2026-05-27
+     and the old worker wrote NULL-hash rows until the redeploy). BUT the
+     backfill still reads the WHOLE 2.8GB silver.i3_alerts: the only
+     content_hash index is the 0021 PARTIAL active-only unique index
+     (WHERE valid_to IS NULL) which cannot serve "content_hash IS NOT NULL",
+     and this migration runs BEFORE 0038, so the ~2.7M legacy NULL-hash rows
+     are STILL present and get scanned-then-filtered. So expect a FULL SEQ
+     SCAN of the table (~2.7M+ rows examined) to find the low-thousands hashed
+     rows. This is a single bounded pass over a known-size table — NOT a hang,
+     NOT unbounded — so no batching and no explicit table reclaim (the
+     deliberate deviation from the 0017/0021 batching precedent). The 2.7M
+     legacy NULL-hash rows are not WRITTEN here — collapsing/deleting them is
+     slice-9.1.1l's (0038's) territory.
 
      Why superseded rows too (REVIEW FIX): gold.i3_alert_history_reporting has
      NO valid_to filter and build_alert_history windows 30 days, so superseded
@@ -459,6 +467,13 @@ ALTER TABLE silver.i3_alerts
 
 def upgrade() -> None:
     op.execute(_ADD_COLUMNS)
+    # /dev/shm safety (match 0038's hardening): the backfill SEQ-SCANS the full
+    # 2.8GB silver.i3_alerts (see module docstring). Disable parallel workers so
+    # no parallel scan/hash tries to resize the small containerized
+    # shared-memory segment on prod ("could not resize shared memory segment").
+    # Statement-scoped within this migration's transaction; reverts on
+    # connection close.
+    op.execute("SET max_parallel_workers_per_gather = 0")
     op.execute(_BACKFILL_EN)
     op.execute(_REPLACE_CURRENT_VIEW)
     op.execute(_REPLACE_HISTORY_VIEW)
