@@ -9,16 +9,22 @@ import pytest
 def _deterministic_cli_rendering(monkeypatch: pytest.MonkeyPatch) -> None:
     """Render Typer/Rich CLI help + errors deterministically (plain, no panels).
 
-    CI runners (GitHub Actions) force color via FORCE_COLOR. That makes Typer
-    render help/usage through Rich as styled panels with box-drawing, which wraps
-    and styles option text so the plain-substring assertions in test_cli.py fail
-    in CI while passing locally (where color is not forced). Neutralize the
-    color-forcing env so rendering is plain and identical everywhere.
+    Two CI-vs-local differences break the plain-substring assertions in
+    test_cli.py (and the CLI-invoking tests in test_db_connection /
+    test_orchestration), both rooted in how Typer renders help through Rich:
 
-    NO_COLOR alone is insufficient — Rich lets FORCE_COLOR win — so FORCE_COLOR
-    (and PY_COLORS) must be *removed*, not just countered.
+    1. COLOR — GitHub runners force color via FORCE_COLOR, so help renders as
+       ANSI-styled panels and the styling breaks substrings. NO_COLOR alone is
+       insufficient (Rich lets FORCE_COLOR win), so FORCE_COLOR/PY_COLORS must be
+       *removed*, not just countered.
+    2. WIDTH — Rich's panel defaults to 80 columns when COLUMNS is unset, wrapping
+       long help/usage text across lines so a contiguous substring isn't present.
+       Pin COLUMNS wide in-process (a ci.yml job-level COLUMNS did not reach the
+       test process) so nothing wraps.
+
+    With both pinned here, CLI help renders plain and wide identically everywhere.
     """
     monkeypatch.delenv("FORCE_COLOR", raising=False)
     monkeypatch.delenv("PY_COLORS", raising=False)
     monkeypatch.setenv("NO_COLOR", "1")
-    monkeypatch.setenv("TERM", "dumb")
+    monkeypatch.setenv("COLUMNS", "200")
