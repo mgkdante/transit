@@ -9,11 +9,15 @@ from transit_ops import maintenance as maintenance_module
 from transit_ops.maintenance import (
     COUNT_ELIGIBLE_BRONZE_REALTIME_OBJECTS,
     COUNT_ELIGIBLE_BRONZE_STATIC_OBJECTS,
+    COUNT_OLD_FACT_TRIP_DELAY_SNAPSHOTS,
+    COUNT_OLD_FACT_VEHICLE_SNAPSHOTS,
     COUNT_OLD_RT_ENTITIES,
     COUNT_OLD_RT_FEED_SNAPSHOTS,
     COUNT_OLD_RT_TRIP_UPDATE_STOP_TIMES,
     COUNT_OLD_RT_TRIP_UPDATES,
     COUNT_OLD_RT_VEHICLE_POSITIONS,
+    DELETE_OLD_FACT_TRIP_DELAY_SNAPSHOTS,
+    DELETE_OLD_FACT_VEHICLE_SNAPSHOTS,
     DELETE_OLD_RT_ENTITIES,
     DELETE_OLD_RT_FEED_SNAPSHOTS,
     DELETE_OLD_RT_TRIP_UPDATE_STOP_TIMES,
@@ -35,6 +39,7 @@ from transit_ops.maintenance import (
     prune_bronze_static_objects,
     prune_bronze_storage,
     prune_gold_fact_history,
+    prune_gold_storage,
     prune_i3_raw_snapshots,
     prune_i3_silver_closed_rows,
     prune_realtime_silver_history,
@@ -787,6 +792,26 @@ def test_delete_orphaned_ingestion_runs_is_age_gated() -> None:
     assert "raw.ingestion_objects" in sql
 
 
+def test_delete_orphaned_ingestion_runs_guards_surviving_i3_alert_snapshots() -> None:
+    """An i3 run owns its raw.i3_alert_snapshots row, not a raw.ingestion_objects row.
+
+    fk_raw_i3_alert_snapshots_ingestion_run_id (0013:164-166) is non-cascading
+    with a 1:1 UNIQUE on ingestion_run_id. An i3 run older than the bronze cutoff
+    with no ingestion_objects but a surviving i3_alert_snapshots row (kept under
+    the 90-day silver-closed retention) would otherwise match the "orphaned"
+    DELETE and FK-violate, aborting the whole bronze-realtime prune. The DELETE
+    must also guard NOT EXISTS any surviving i3_alert_snapshots child
+    (ops-core#4), mirroring DELETE_ORPHANED_I3_INGESTION_RUNS.
+    """
+    sql = str(DELETE_ORPHANED_INGESTION_RUNS)
+
+    assert "raw.i3_alert_snapshots" in sql
+    # The guard is on the run-owning FK column (1:1 ownership of the snapshot).
+    assert "s.ingestion_run_id = ir.ingestion_run_id" in sql
+    # Both child guards must be present: objects AND i3 snapshots.
+    assert sql.count("NOT EXISTS") >= 2
+
+
 def test_orphan_run_prune_retains_recent_failed_silver_load_rows() -> None:
     """slice-9.1.1o: the new run_kind='silver_load' failure rows (and every
     capture-failure row) carry zero ingestion_objects, so they look "orphaned".
@@ -1097,6 +1122,107 @@ def test_prune_gold_fact_history_zero_retention_is_noop() -> None:
         "gold.fact_vehicle_snapshot": 0,
     }
     assert len(connection.calls) == 0
+
+
+GOLD_FACT_HISTORY_DELETE_STATEMENTS = (
+    ("gold.fact_trip_delay_snapshot", DELETE_OLD_FACT_TRIP_DELAY_SNAPSHOTS),
+    ("gold.fact_vehicle_snapshot", DELETE_OLD_FACT_VEHICLE_SNAPSHOTS),
+)
+
+
+@pytest.mark.parametrize("table_name,statement", GOLD_FACT_HISTORY_DELETE_STATEMENTS)
+def test_gold_fact_history_delete_is_bounded_per_cycle(table_name, statement) -> None:  # noqa: ANN001
+    """Each gold-fact DELETE must cap rows/cycle via ctid IN (... LIMIT :batch).
+
+    prune_gold_fact_history runs on every ~57s worker cycle. An unbounded single
+    DELETE of the accumulated backlog (the first cycle after a worker outage must
+    drain the entire 18.7M-scale fact_trip_delay_snapshot in ONE transaction —
+    long lock hold + WAL/bloat spike) is the unbounded-heavy-op hang class the
+    silver prunes were already batched to avoid (ops-core#3 / x-perf#3).
+    """
+    sql = str(statement)
+
+    assert "DELETE" in sql
+    assert ".ctid IN (" in sql, f"{table_name} DELETE must be batched via ctid IN (...)"
+    assert "LIMIT :batch" in sql, f"{table_name} DELETE must cap rows with LIMIT :batch"
+    # Retention predicate is preserved exactly — same provider + cutoff filter.
+    assert "captured_at_utc < :cutoff_utc" in sql
+    assert "provider_id = :provider_id" in sql
+
+
+@pytest.mark.parametrize(
+    "statement",
+    [COUNT_OLD_FACT_TRIP_DELAY_SNAPSHOTS, COUNT_OLD_FACT_VEHICLE_SNAPSHOTS],
+)
+def test_gold_fact_history_count_statements_report_unbounded_backlog(statement) -> None:  # noqa: ANN001
+    """Dry-run COUNT must report the TRUE backlog — never the per-cycle batch cap."""
+    sql = str(statement)
+
+    assert "SELECT COUNT(*)" in sql
+    assert "LIMIT" not in sql
+    assert ":batch" not in sql
+
+
+def test_prune_gold_fact_history_binds_batch_param() -> None:
+    connection = RecordingConnection()
+    now_utc = datetime(2026, 3, 26, 20, 0, 0, tzinfo=UTC)
+
+    prune_gold_fact_history(
+        connection,
+        provider_id="stm",
+        retention_days=2,
+        batch_size=24680,
+        now_utc=now_utc,
+    )
+
+    delete_params = [
+        params for sql, params in connection.executed if "DELETE" in sql
+    ]
+    assert delete_params, "expected live DELETE executions"
+    assert all(params.get("batch") == 24680 for params in delete_params)
+
+
+def test_prune_gold_fact_history_floors_batch_at_one() -> None:
+    connection = RecordingConnection()
+    now_utc = datetime(2026, 3, 26, 20, 0, 0, tzinfo=UTC)
+
+    prune_gold_fact_history(
+        connection,
+        provider_id="stm",
+        retention_days=2,
+        batch_size=0,
+        now_utc=now_utc,
+    )
+
+    delete_params = [
+        params for sql, params in connection.executed if "DELETE" in sql
+    ]
+    assert delete_params
+    # batch floored at 1 — a LIMIT 0 would never drain the backlog.
+    assert all(params.get("batch") == 1 for params in delete_params)
+
+
+def test_prune_gold_storage_threads_gold_fact_prune_batch_setting() -> None:
+    class BatchedGoldPruneSettings:
+        GOLD_FACT_RETENTION_DAYS = 2
+        GOLD_FACT_PRUNE_BATCH = 9999
+
+    engine = PerBeginRecordingEngine()
+
+    prune_gold_storage(
+        "stm",
+        settings=BatchedGoldPruneSettings(),  # type: ignore[arg-type]
+        engine=engine,  # type: ignore[arg-type]
+    )
+
+    connection = engine.connections[0]
+    fact_delete_params = [
+        params
+        for sql, params in connection.executed
+        if "DELETE FROM gold.fact_" in sql
+    ]
+    assert fact_delete_params, "expected live gold-fact DELETE executions"
+    assert all(params.get("batch") == 9999 for params in fact_delete_params)
 
 
 def test_gold_prune_result_display_dict_formats_timestamps() -> None:

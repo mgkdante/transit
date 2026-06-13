@@ -503,11 +503,24 @@ COUNT_OLD_RT_FEED_SNAPSHOTS = text(
     """
 )
 
+# Each live gold-fact DELETE is bounded to :batch rows via ctid IN (... LIMIT)
+# — same shape as the silver realtime prunes above. The first cycle after a
+# worker outage must otherwise drain the entire 18.7M-scale backlog in ONE
+# unbounded transaction (long lock hold + WAL/bloat spike — the wave-2 stall
+# class); batching drains it over many ~57s cycles while steady-state clears in
+# one quick pass. These fact tables are FK leaves (no non-cascading children),
+# so no NOT EXISTS child guard is needed. The dry-run COUNT stays unbounded so
+# it reports the TRUE backlog, never the per-cycle cap.
 DELETE_OLD_FACT_TRIP_DELAY_SNAPSHOTS = text(
     """
-    DELETE FROM gold.fact_trip_delay_snapshot
-    WHERE provider_id = :provider_id
-      AND captured_at_utc < :cutoff_utc
+    DELETE FROM gold.fact_trip_delay_snapshot AS fact
+    WHERE fact.ctid IN (
+        SELECT fact_old.ctid
+        FROM gold.fact_trip_delay_snapshot AS fact_old
+        WHERE fact_old.provider_id = :provider_id
+          AND fact_old.captured_at_utc < :cutoff_utc
+        LIMIT :batch
+    )
     """
 )
 
@@ -521,9 +534,14 @@ COUNT_OLD_FACT_TRIP_DELAY_SNAPSHOTS = text(
 
 DELETE_OLD_FACT_VEHICLE_SNAPSHOTS = text(
     """
-    DELETE FROM gold.fact_vehicle_snapshot
-    WHERE provider_id = :provider_id
-      AND captured_at_utc < :cutoff_utc
+    DELETE FROM gold.fact_vehicle_snapshot AS fact
+    WHERE fact.ctid IN (
+        SELECT fact_old.ctid
+        FROM gold.fact_vehicle_snapshot AS fact_old
+        WHERE fact_old.provider_id = :provider_id
+          AND fact_old.captured_at_utc < :cutoff_utc
+        LIMIT :batch
+    )
     """
 )
 
@@ -653,6 +671,15 @@ DELETE_INGESTION_OBJECTS_BY_IDS = text(
 # Age-gated so a worker capture that committed its ingestion_run but has not
 # yet registered the object (two-transaction pattern) can never be deleted:
 # in-flight runs are seconds old, the phase cutoff is 30/365 days in the past.
+#
+# An i3 run owns its raw.i3_alert_snapshots row (fk_raw_i3_alert_snapshots_-
+# ingestion_run_id, 0013:164-166 — non-cascading, 1:1 UNIQUE on ingestion_run_id)
+# rather than a raw.ingestion_objects row. An i3 run older than the bronze cutoff
+# with no ingestion_objects but a surviving i3_alert_snapshots row (kept under the
+# 90-day silver-closed retention) would otherwise match this "orphaned" DELETE and
+# FK-violate, aborting the whole bronze-realtime prune. The NOT EXISTS against
+# raw.i3_alert_snapshots is the same guard the i3 variant
+# (DELETE_ORPHANED_I3_INGESTION_RUNS) already carries.
 DELETE_ORPHANED_INGESTION_RUNS = text(
     """
     DELETE FROM raw.ingestion_runs ir
@@ -661,6 +688,10 @@ DELETE_ORPHANED_INGESTION_RUNS = text(
       AND NOT EXISTS (
           SELECT 1 FROM raw.ingestion_objects io
           WHERE io.ingestion_run_id = ir.ingestion_run_id
+      )
+      AND NOT EXISTS (
+          SELECT 1 FROM raw.i3_alert_snapshots s
+          WHERE s.ingestion_run_id = ir.ingestion_run_id
       )
     """
 )
@@ -1199,6 +1230,7 @@ def prune_gold_fact_history(
     *,
     provider_id: str,
     retention_days: int,
+    batch_size: int = 50000,
     dry_run: bool = False,
     now_utc: datetime | None = None,
 ) -> tuple[datetime | None, dict[str, int]]:
@@ -1209,9 +1241,15 @@ def prune_gold_fact_history(
         }
 
     cutoff_utc = (now_utc or utc_now()) - timedelta(days=retention_days)
+    # Each live DELETE is bounded to :batch rows so a one-time backlog (the first
+    # cycle after a worker outage) drains over many ~57s cycles instead of one
+    # unbounded transaction (hang class). batch_size is floored at 1 to avoid a
+    # no-op LIMIT 0 that would never drain.
+    batch = max(int(batch_size), 1)
     params = {
         "provider_id": provider_id,
         "cutoff_utc": cutoff_utc,
+        "batch": batch,
     }
 
     if dry_run:
@@ -1250,6 +1288,7 @@ def prune_gold_storage(
             connection,
             provider_id=provider_id,
             retention_days=settings.GOLD_FACT_RETENTION_DAYS,
+            batch_size=settings.GOLD_FACT_PRUNE_BATCH,
             dry_run=dry_run,
         )
         completed_at_utc = utc_now()
