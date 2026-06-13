@@ -331,6 +331,13 @@ def test_migration_0034_adds_delay_stop_columns_and_repairs_stop_history() -> No
     assert "_INSERT_STOP_DELAY_MONTHLY" in source
     assert "_DELETE_REPEATED_PROBLEM_ROUTE_STOP" in source
     assert "_INSERT_REPEATED_PROBLEM_ROUTE_STOP" in source
+    # wave-2 prod hardening: the heavy pre-deploy fact backfill is DEFERRED
+    # (unbounded 500M-row scan blew prod /dev/shm, 2h40m hang). The constants
+    # stay defined (recovery) but must NOT be executed in upgrade(); ramp-in
+    # only, per the car-5 reviewer-approved design. Guard against silent re-enable.
+    assert "# op.execute(_BACKFILL_FACT_TRIP_DELAY_STOP_ATTRIBUTION)" in source
+    assert "\n    op.execute(_BACKFILL_FACT_TRIP_DELAY_STOP_ATTRIBUTION)" not in source
+    assert "\n    op.execute(_BACKFILL_LATEST_TRIP_DELAY_STOP_ATTRIBUTION)" not in source
 
 
 def test_trip_delay_latest_scopes_stop_time_counts_to_snapshot() -> None:

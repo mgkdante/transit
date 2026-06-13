@@ -7,10 +7,39 @@ Create Date: 2026-06-12
 The old stop_delay_hourly mart relabeled route-hour delay as stop delay and
 turned any route-hour severe delay into severe counts for every active stop.
 Runtime builds now preserve closed hours, so this migration is the explicit
-history-repair instrument: retained facts are attributed to their next stop
-where normalized stop-time data exists, stop_delay_hourly is rebuilt from that
+history-repair instrument: stop_delay_hourly is rebuilt from attributed fact
 truth, derived stop aggregates are rebuilt, and unrecoverable frozen receipt
 stop counts are nulled rather than left with smear semantics.
+
+WAVE-2 PROD HARDENING -- PRE-DEPLOY FACT BACKFILL DEFERRED. The original
+upgrade() also attributed delay_stop_id onto pre-deploy fact rows by scanning
+silver.rt_trip_update_stop_times (~500M rows) with a large row_number() window
+sort; on prod that overflowed the small containerized /dev/shm and ran 2h40m
+without finishing. upgrade() now reverts to the car-5 reviewer-approved
+ramp-in design: pre-deploy fact rows keep NULL delay_stop_id, the old smeared
+stop_delay_hourly is still deleted, the rebuild is honest-empty for pre-deploy
+history (never wrong data), and gold/marts.py attributes every new fact row at
+insert from deploy forward (ON CONFLICT delay_stop_id = EXCLUDED.delay_stop_id).
+Real per-stop history refills within the 10-day GOLD_REPORTING_OPEN_WINDOW_DAYS
+reporting window and the full GOLD_FACT_RETENTION_DAYS (14d) window within 14
+days. Zero consumers exist at deploy time (web app unbuilt; stop pages are
+slice 9.6).
+
+RECOVERY -- attribute the pre-deploy fact tail later (e.g. before a stop-history
+consumer ships, while it is still inside GOLD_FACT_RETENTION_DAYS). The exact
+SQL is preserved verbatim in this module as the constants
+_BACKFILL_FACT_TRIP_DELAY_STOP_ATTRIBUTION and
+_BACKFILL_LATEST_TRIP_DELAY_STOP_ATTRIBUTION (defined but not executed). Run
+once, off-peak, in a single transaction with the /dev/shm-safe guards:
+    SET LOCAL max_parallel_workers_per_gather = 0;  -- no per-worker /dev/shm sort
+    SET LOCAL work_mem = '256MB';                    -- spill to on-disk pgsql_tmp
+    <execute _BACKFILL_FACT_TRIP_DELAY_STOP_ATTRIBUTION>;
+    <execute _BACKFILL_LATEST_TRIP_DELAY_STOP_ATTRIBUTION>;
+then re-run _DELETE_STOP_DELAY_HOURLY + _REBUILD_STOP_DELAY_HOURLY_FROM_FACT and
+the weekly/monthly/repeated-problem/citizen rebuilds below to propagate. For a
+bounded, faster catch-up that touches only the reporting window, add
+`AND captured_at_utc >= date_trunc('hour', now()) - interval '10 days'` to the
+work_set CTE's WHERE clause before running.
 """
 
 from __future__ import annotations
@@ -25,7 +54,18 @@ depends_on = None
 
 
 _BACKFILL_FACT_TRIP_DELAY_STOP_ATTRIBUTION = """
-WITH stop_time_candidates AS (
+WITH work_set AS (
+    -- Scope the 500M-row rt_trip_update_stop_times scan to only the snapshots
+    -- that actually have fact rows needing attribution (the 14-day fact window).
+    -- The row_number() window below partitions by source_realtime_snapshot_id,
+    -- so restricting to whole snapshots leaves every surviving partition's
+    -- delay_rank=1 winner bit-identical to the unscoped result. (slice-9.1.1i
+    -- snapshot-scoping pattern; prod fix after attempt-1 unbounded-scan hang.)
+    SELECT DISTINCT realtime_snapshot_id
+    FROM gold.fact_trip_delay_snapshot
+    WHERE delay_stop_id IS NULL
+),
+stop_time_candidates AS (
     SELECT
         rtu.provider_id,
         rfs.source_realtime_snapshot_id AS realtime_snapshot_id,
@@ -57,6 +97,7 @@ WITH stop_time_candidates AS (
         ON rfs.rt_feed_snapshot_id = rtu.rt_feed_snapshot_id
        AND rfs.provider_id = rtu.provider_id
        AND rfs.endpoint_key = 'trip_updates'
+       AND rfs.source_realtime_snapshot_id IN (SELECT realtime_snapshot_id FROM work_set)
     INNER JOIN silver.rt_trip_update_stop_times AS stu
         ON stu.provider_id = rtu.provider_id
        AND stu.rt_feed_snapshot_id = rtu.rt_feed_snapshot_id
@@ -363,8 +404,22 @@ def upgrade() -> None:
             schema="gold",
         )
 
-    op.execute(_BACKFILL_FACT_TRIP_DELAY_STOP_ATTRIBUTION)
-    op.execute(_BACKFILL_LATEST_TRIP_DELAY_STOP_ATTRIBUTION)
+    # DEFERRED (wave-2 prod hardening): the two pre-deploy fact backfills are
+    # NOT executed here. _BACKFILL_FACT_TRIP_DELAY_STOP_ATTRIBUTION scans
+    # silver.rt_trip_update_stop_times (~500M rows) plus a large row_number()
+    # window sort that overflows prod's small containerized /dev/shm; attempt-1
+    # ran 2h40m without finishing. This migration therefore reverts to the
+    # car-5 reviewer-approved RAMP-IN design (05-b.md Approach: "No backfill ...
+    # correct data ramps in over <=14 days"): pre-deploy fact rows keep a NULL
+    # delay_stop_id, so the rebuild below is honest-empty for pre-deploy stop
+    # history (the old smear is still deleted), and gold/marts.py's per-cycle
+    # ON CONFLICT (delay_stop_id = EXCLUDED.delay_stop_id) attributes every new
+    # fact row from deploy forward. Both backfill constants are preserved
+    # verbatim above; run them later via the RECOVERY recipe in this module's
+    # docstring if the pre-deploy tail is ever needed before it rolls off
+    # GOLD_FACT_RETENTION_DAYS.
+    # op.execute(_BACKFILL_FACT_TRIP_DELAY_STOP_ATTRIBUTION)
+    # op.execute(_BACKFILL_LATEST_TRIP_DELAY_STOP_ATTRIBUTION)
     op.execute(_DELETE_STOP_DELAY_HOURLY)
     op.execute(_REBUILD_STOP_DELAY_HOURLY_FROM_FACT)
     op.execute(_DELETE_STOP_DELAY_WEEKLY)
