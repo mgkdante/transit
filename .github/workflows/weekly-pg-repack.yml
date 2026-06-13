@@ -1,20 +1,21 @@
-name: Weekly pg_repack Guardrail
+name: Weekly pg_repack Maintenance
 
 on:
   workflow_dispatch:
     inputs:
       dry_run:
-        description: Run pg_repack in dry-run mode.
+        description: Run pg_repack in dry-run mode (manual default; the schedule executes).
         required: true
         type: boolean
         default: true
       tables:
-        description: Optional whitespace-separated table list.
+        description: Optional whitespace-separated table list (empty uses the default churn set).
         required: false
         type: string
         default: ""
   schedule:
     # GitHub Actions cron is UTC-based. Runs after the daily pipeline windows.
+    # 08:00 UTC Sunday = 04:00 Montreal, off-peak.
     - cron: "0 8 * * 0"
 
 permissions:
@@ -25,31 +26,30 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  pg-repack-guardrail:
+  pg-repack-maintenance:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # First execute weeks repack live rows over WAN-orchestrated server-side copies;
+    # GH hard cap is 360. 180 leaves headroom for the medium churn tables.
+    timeout-minutes: 180
     defaults:
       run:
         working-directory: db
     env:
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
-      PG_REPACK_DRY_RUN: "true"
+      # Scheduled Sunday run EXECUTES; manual dispatch defaults to dry-run. A
+      # job-level env here overrides any per-step env-file export, which is
+      # exactly why the old 'Select manual mode' step never took effect — so the
+      # flag is set declaratively as an expression instead.
+      PG_REPACK_DRY_RUN: ${{ github.event_name == 'schedule' && 'false' || format('{0}', inputs.dry_run) }}
+      # Empty on schedule => run-pg-repack.sh ':-' default kicks in (the 10-table
+      # churn set, excluding the 29GB silver.rt_trip_update_stop_times).
+      PG_REPACK_TABLES: ${{ inputs.tables }}
+      PG_REPACK_SIZE_REPORT: pg-repack-size-report.txt
     steps:
       - name: Check out repository
         uses: actions/checkout@v5
 
-      - name: Select manual mode
-        if: github.event_name == 'workflow_dispatch'
-        env:
-          DRY_RUN_INPUT: ${{ inputs.dry_run }}
-          TABLES_INPUT: ${{ inputs.tables }}
-        run: |
-          echo "PG_REPACK_DRY_RUN=$DRY_RUN_INPUT" >> "$GITHUB_ENV"
-          if [[ -n "$TABLES_INPUT" ]]; then
-            echo "PG_REPACK_TABLES=$TABLES_INPUT" >> "$GITHUB_ENV"
-          fi
-
-      - name: Install pg_repack client
+      - name: Install pg_repack + psql client
         run: |
           sudo apt-get update
           sudo apt-get install -y ca-certificates lsb-release wget
@@ -60,7 +60,15 @@ jobs:
           echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt ${VERSION_CODENAME}-pgdg main" \
             | sudo tee /etc/apt/sources.list.d/pgdg.list >/dev/null
           sudo apt-get update
-          sudo apt-get install -y postgresql-16-repack
+          sudo apt-get install -y postgresql-16-repack postgresql-client-16
 
-      - name: Run pg_repack guardrail
+      - name: Run pg_repack maintenance
         run: bash scripts/run-pg-repack.sh
+
+      - name: Upload pg_repack size report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: pg-repack-size-report
+          path: db/pg-repack-size-report.txt
+          if-no-files-found: ignore

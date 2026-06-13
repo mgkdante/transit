@@ -175,7 +175,7 @@ bash scripts/validate-oracle-cutover.sh
 
 The app database contract is `DATABASE_URL`. Oracle VM Postgres stays running during pause/resume; the scripts only disable GitHub Actions schedules and stop or start the Compose worker.
 
-Weekly `pg_repack` maintenance runs in dry-run mode by default through `.github/workflows/weekly-pg-repack.yml`. Use manual dispatch with `dry_run=false` only after confirming the database has the `pg_repack` extension installed and enough free disk for a table rewrite.
+Weekly `pg_repack` maintenance runs through `.github/workflows/weekly-pg-repack.yml`. The scheduled Sunday run (08:00 UTC / 04:00 Montreal) now **executes** a table-scoped repack with `--no-kill-backend` over the 10 current churn tables; manual dispatch defaults to dry-run (`dry_run=false` to execute, optional `tables` to scope). The 29GB `silver.rt_trip_update_stop_times` is excluded from the defaults and repacked from inside the postgres container via the on-VM runbook. The `pg_repack` extension is created by migration `0040`. If a run dies mid-flight it can leave orphaned repack triggers/log tables that tax every write — the job fails loudly and prints the cleanup, which is `DROP EXTENSION pg_repack CASCADE; CREATE EXTENSION pg_repack;`.
 
 ## Retention Proof Reports
 
