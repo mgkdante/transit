@@ -1,5 +1,6 @@
 import json
 from datetime import UTC, date, datetime
+from types import SimpleNamespace
 
 from typer.testing import CliRunner
 
@@ -37,6 +38,7 @@ def test_cli_help() -> None:
     assert "prune-silver-storage" in result.stdout
     assert "prune-gold-storage" in result.stdout
     assert "prune-bronze-storage" in result.stdout
+    assert "prune-i3-storage" in result.stdout
     assert "vacuum-storage" in result.stdout
     assert "run-static-pipeline" in result.stdout
     assert "run-realtime-cycle" in result.stdout
@@ -444,11 +446,34 @@ def test_vacuum_storage_help() -> None:
     assert "--full" in result.stdout
 
 
-def test_run_static_pipeline_help() -> None:
+def test_run_static_pipeline_help(monkeypatch) -> None:
+    # Force a wide terminal so the docstring renders on one line and the
+    # contiguous help phrase below is not split by Rich line-wrapping.
+    monkeypatch.setenv("COLUMNS", "200")
     result = runner.invoke(app, ["run-static-pipeline", "--help"])
 
     assert result.exit_code == 0
-    assert "Run ingest-static, load-static-silver, and refresh-gold-static" in result.stdout
+    assert (
+        "Run ingest-static, load-static-silver, refresh-gold-static, "
+        "then the GIS chain (best-effort)" in result.stdout
+    )
+
+
+def test_run_static_pipeline_warns_on_gis_failure_but_exits_zero(monkeypatch) -> None:
+    """A best-effort GIS failure prints a stderr WARNING but the command still exits 0."""
+
+    def fake_run_static_pipeline(provider_id, *, settings, registry):  # noqa: ANN001, ANN202
+        return SimpleNamespace(
+            display_dict=lambda: {"status": "succeeded", "gis_status": "failed"},
+            gis_error_message="ingest-gis failed: boom",
+        )
+
+    monkeypatch.setattr(cli_module, "run_static_pipeline", fake_run_static_pipeline)
+
+    result = runner.invoke(app, ["run-static-pipeline", "stm"])
+
+    assert result.exit_code == 0
+    assert "WARNING: GIS step failed" in result.output
 
 
 def test_run_realtime_cycle_help() -> None:
@@ -493,6 +518,43 @@ def test_prune_bronze_storage_help() -> None:
     assert "--max-batches" in result.stdout
 
 
+def test_prune_i3_storage_help() -> None:
+    result = runner.invoke(app, ["prune-i3-storage", "--help"])
+
+    assert result.exit_code == 0
+    assert "--dry-run" in result.stdout
+
+
+def test_prune_i3_storage_dry_run_flag(monkeypatch) -> None:
+    from transit_ops.maintenance import I3StoragePruneResult
+
+    recorded: dict[str, object] = {}
+
+    def fake_prune_i3_storage(provider_id, *, settings, dry_run):  # noqa: ANN001
+        recorded["provider_id"] = provider_id
+        recorded["dry_run"] = dry_run
+        return I3StoragePruneResult(
+            provider_id=provider_id,
+            dry_run=dry_run,
+            raw_retention_days=30,
+            silver_closed_retention_days=90,
+            raw_cutoff_utc=None,
+            silver_cutoff_utc=None,
+            deleted_object_counts={"i3_raw": 0},
+            deleted_row_counts={},
+            failed_object_counts={"i3_raw": 0},
+            completed_at_utc=datetime(2026, 6, 13, 0, 0, 0, tzinfo=UTC),
+        )
+
+    monkeypatch.setattr(cli_module, "prune_i3_storage", fake_prune_i3_storage)
+
+    result = runner.invoke(app, ["prune-i3-storage", "stm", "--dry-run"])
+
+    assert result.exit_code == 0
+    assert recorded["provider_id"] == "stm"
+    assert recorded["dry_run"] is True
+
+
 def test_vacuum_storage_table_option_in_help() -> None:
     result = runner.invoke(app, ["vacuum-storage", "--help"])
 
@@ -515,6 +577,7 @@ def test_prune_silver_storage_dry_run_flag(monkeypatch) -> None:
             realtime_retention_days=2,
             retained_dataset_version_ids=[1],
             pruned_dataset_version_ids=[],
+            deferred_dataset_version_ids=[],
             realtime_cutoff_utc=None,
             deleted_row_counts={},
             completed_at_utc=datetime(2026, 3, 27, 0, 0, 0, tzinfo=UTC),

@@ -178,7 +178,7 @@ def test_build_network_trend_merges_and_orders() -> None:
         ]
     )
 
-    out = build_network_trend(conn, provider_id="stm")
+    out = build_network_trend(conn, provider_id="stm", generated_utc="t")
 
     assert isinstance(out, NetworkTrend)
     # sorted ascending by date
@@ -225,7 +225,7 @@ def test_build_network_trend_fact_only_date() -> None:
             ("fact_trip_delay_snapshot", [{"local_date": d, "p90_min": 4.0, "vehicles": 12}]),
         ]
     )
-    out = build_network_trend(conn)
+    out = build_network_trend(conn, generated_utc="t")
     assert len(out.series) == 1
     pt = out.series[0]
     assert pt.date == "2026-06-05"
@@ -316,7 +316,7 @@ def test_build_route_reliability_periods_and_otp() -> None:
         )
     )
 
-    out = build_route_reliability(conn, provider_id="stm", route_id="51")
+    out = build_route_reliability(conn, provider_id="stm", route_id="51", generated_utc="t")
 
     assert isinstance(out, RouteReliability)
     assert out.id == "51"
@@ -369,7 +369,7 @@ def test_build_route_reliability_headway_excess() -> None:
         )
     )
 
-    out = build_route_reliability(conn, route_id="51")
+    out = build_route_reliability(conn, route_id="51", generated_utc="t")
     by_shift = {h.shift: h for h in out.headway}
 
     assert by_shift["am_peak"].scheduled_min == 8.0
@@ -398,7 +398,7 @@ def test_build_route_reliability_excess_clamped_at_zero() -> None:
             ],
         )
     )
-    out = build_route_reliability(conn, route_id="51")
+    out = build_route_reliability(conn, route_id="51", generated_utc="t")
     am = next(h for h in out.headway if h.shift == "am_peak")
     assert am.scheduled_min == 10.0
     assert am.observed_min == 6.0
@@ -415,7 +415,7 @@ def test_build_route_reliability_habits_matrix_is_7x24() -> None:
             ],
         )
     )
-    out = build_route_reliability(conn, route_id="51")
+    out = build_route_reliability(conn, route_id="51", generated_utc="t")
     assert out.habits is not None
     assert out.habits.scale == "repeat_problem_score"
     assert len(out.habits.matrix) == 7
@@ -439,7 +439,7 @@ def test_build_route_reliability_weak_stops_sorted_and_capped() -> None:
     names = [{"stop_id": f"S{i}", "stop_name": f"Stop {i}"} for i in range(6)]
     conn = FakeConn(_route_reliability_dispatch(weak=weak, names=names))
 
-    out = build_route_reliability(conn, route_id="51")
+    out = build_route_reliability(conn, route_id="51", generated_utc="t")
     assert len(out.weak_stops) == 5  # capped at 5
     delays = [w.median_delay_min for w in out.weak_stops]
     assert delays == sorted(delays, reverse=True)  # descending
@@ -482,7 +482,7 @@ def test_build_route_reliability_weak_stop_name_from_history() -> None:
     ]
     conn = FakeConn(_route_reliability_dispatch(weak=weak, names=names))
 
-    out = build_route_reliability(conn, route_id="51")
+    out = build_route_reliability(conn, route_id="51", generated_utc="t")
 
     by_id = {w.id: w for w in out.weak_stops}
     assert by_id["S_RETIRED"].name == "Ancien arret"
@@ -499,14 +499,14 @@ def test_build_route_reliability_name_field() -> None:
         )
     )
 
-    out = build_route_reliability(conn, route_id="51")
+    out = build_route_reliability(conn, route_id="51", generated_utc="t")
 
     assert out.name == "Boulevard Saint-Laurent"
 
 
 def test_build_route_reliability_unknown_route_name_is_none() -> None:
     conn = FakeConn(_route_reliability_dispatch(route_names=[]))
-    out = build_route_reliability(conn, route_id="51")
+    out = build_route_reliability(conn, route_id="51", generated_utc="t")
     assert out.name is None
 
 
@@ -534,7 +534,7 @@ def test_build_route_reliability_no_dataset_version_still_builds() -> None:
             ),
         ]
     )
-    out = build_route_reliability(conn, route_id="51")
+    out = build_route_reliability(conn, route_id="51", generated_utc="t")
     # daily period still present
     assert any(p.grain == "day" for p in out.periods)
     # observed headway present but no scheduled (no dataset) -> excess None
@@ -580,7 +580,7 @@ def test_build_stop_reliability_batch() -> None:
         ]
     )
 
-    out = build_stop_reliability(conn, provider_id="stm")
+    out = build_stop_reliability(conn, provider_id="stm", generated_utc="t")
 
     assert "S1" in out
     s1 = out["S1"]
@@ -619,7 +619,7 @@ def test_build_stop_reliability_weekly_only_stop() -> None:
             ("stop_delay_monthly", []),
         ]
     )
-    out = build_stop_reliability(conn)
+    out = build_stop_reliability(conn, generated_utc="t")
     assert "S2" in out
     s2 = out["S2"]
     assert [p.grain for p in s2.periods] == ["week"]
@@ -645,7 +645,7 @@ def test_build_stop_reliability_carries_name() -> None:
         ]
     )
 
-    out = build_stop_reliability(conn, provider_id="stm")
+    out = build_stop_reliability(conn, provider_id="stm", generated_utc="t")
 
     assert out["S1"].name == "Station Berri"
     assert out["S_UNNAMED"].name is None
@@ -670,7 +670,7 @@ def test_build_hotspots_ranks_and_top_20() -> None:
     ]
     conn = FakeConn([("repeated_problem_route_stop", rows[:20])])  # fake returns 20
 
-    out = build_hotspots(conn, provider_id="stm")
+    out = build_hotspots(conn, provider_id="stm", generated_utc="t")
 
     assert isinstance(out, Hotspots)
     assert len(out.hotspots) == 20
@@ -686,7 +686,7 @@ def test_build_hotspots_ranks_and_top_20() -> None:
 
 def test_build_hotspots_empty_returns_empty() -> None:
     conn = FakeConn([("repeated_problem_route_stop", [])])
-    out = build_hotspots(conn)
+    out = build_hotspots(conn, generated_utc="t")
     assert out.hotspots == []
 
 
@@ -697,7 +697,7 @@ def test_build_hotspots_week_period_filter() -> None:
         {"entity_kind": "stop", "entity_id": "3456", "issue_count": 3, "severity_label": "high"},
     ]
     conn = FakeConn([("repeated_problem_route_stop", rows)])
-    out = build_hotspots(conn)
+    out = build_hotspots(conn, generated_utc="t")
     assert out.hotspots[0].type == "route"
     assert out.hotspots[1].type == "stop"
     assert out.hotspots[0].rank == 1
@@ -731,7 +731,7 @@ def test_build_hotspots_resolves_names() -> None:
         ]
     )
 
-    out = build_hotspots(conn)
+    out = build_hotspots(conn, generated_utc="t")
 
     assert out.hotspots[0].name == "Saint-Laurent"
     assert out.hotspots[1].name == "Ancien arret"
@@ -761,7 +761,7 @@ def test_build_repeat_offenders_recurrence_string() -> None:
         },
     ]
     conn = FakeConn([("repeat_offender_daily", rows)])
-    out = build_repeat_offenders(conn)
+    out = build_repeat_offenders(conn, generated_utc="t")
     assert isinstance(out, RepeatOffenders)
     assert len(out.offenders) == 1
     o = out.offenders[0]
@@ -796,7 +796,7 @@ def test_build_repeat_offenders_ordering() -> None:
         },
     ]
     conn = FakeConn([("repeat_offender_daily", rows)])
-    out = build_repeat_offenders(conn)
+    out = build_repeat_offenders(conn, generated_utc="t")
     assert out.offenders[0].id == "T9"  # higher recurrence_days comes first
     assert out.offenders[1].id == "V2"
 
@@ -816,7 +816,7 @@ def test_build_repeat_offenders_top_50_cap() -> None:
         for i in range(50)
     ]
     conn = FakeConn([("repeat_offender_daily", rows)])
-    out = build_repeat_offenders(conn)
+    out = build_repeat_offenders(conn, generated_utc="t")
     assert len(out.offenders) == 50
 
 
@@ -867,7 +867,7 @@ def test_build_repeat_offenders_resolves_route_name() -> None:
         ]
     )
 
-    out = build_repeat_offenders(conn)
+    out = build_repeat_offenders(conn, generated_utc="t")
 
     assert out.offenders[0].route_name == "Boulevard Saint-Laurent"
     assert out.offenders[0].id == "281234567"  # raw trip id, no entity name
@@ -922,7 +922,7 @@ def test_build_receipts_date_driven_by_accountability() -> None:
             ],
         )
     )
-    out = build_receipts(conn)
+    out = build_receipts(conn, generated_utc="t")
     assert list(out.keys()) == ["2026-05-01"]
     assert "2026-05-02" not in out
 
@@ -954,7 +954,7 @@ def test_build_receipts_otp_from_network_hourly() -> None:
             ],
         )
     )
-    out = build_receipts(conn)
+    out = build_receipts(conn, generated_utc="t")
     r = out["2026-05-10"]
     assert r.otp_pct == 60      # 60/100 = 60
     assert r.avg_delay_min == 2.0
@@ -989,7 +989,7 @@ def test_build_receipts_worst_route_and_stop_by_max_delay() -> None:
             ],
         )
     )
-    out = build_receipts(conn)
+    out = build_receipts(conn, generated_utc="t")
     r = out["2026-05-15"]
     assert r.worst_route is not None
     assert r.worst_route.id == "105"
@@ -1034,7 +1034,7 @@ def test_build_receipts_worst_entity_names() -> None:
         )
     )
 
-    out = build_receipts(conn)
+    out = build_receipts(conn, generated_utc="t")
     r = out["2026-05-15"]
 
     assert r.worst_route is not None and r.worst_route.name == "Ancienne ligne"
@@ -1059,7 +1059,7 @@ def test_build_receipts_missing_network_yields_none_otp() -> None:
             ]
         )
     )
-    out = build_receipts(conn)
+    out = build_receipts(conn, generated_utc="t")
     r = out["2026-05-20"]
     assert r.otp_pct is None
     assert r.avg_delay_min is None
@@ -1091,6 +1091,7 @@ def test_build_alert_history_aggregation() -> None:
                 [
                     {
                         "alert_header_text": "Votre ligne",
+                        "header_text_en": "Your line",
                         "alert_id": None,  # STM feed leaves this NULL — ignored
                         "severity": "WARNING",
                         "routes": ["51", "9", "51"],   # dedup -> ["9","51"]
@@ -1102,7 +1103,7 @@ def test_build_alert_history_aggregation() -> None:
             )
         ]
     )
-    out = build_alert_history(conn)
+    out = build_alert_history(conn, generated_utc="t")
     assert isinstance(out, AlertHistory)
     assert len(out.alerts) == 1
     e = out.alerts[0]
@@ -1110,6 +1111,10 @@ def test_build_alert_history_aggregation() -> None:
     basis = "|".join(str(x or "") for x in ("Votre ligne", "WARNING", start, end))
     assert e.id == f"stm-alert-{hashlib.sha1(basis.encode()).hexdigest()[:12]}"
     assert e.severity == _severity_code("WARNING")
+    # slice-9.1.1s: header_text + MAX'd EN header pass through; grouping/id basis
+    # unchanged (id hashed over header+severity+period, not EN).
+    assert e.header_text == "Votre ligne"
+    assert e.header_text_en == "Your line"
     assert e.duration_min == 150.0
     assert e.impact_passages is None  # v1 deferral
     # routes natural-sorted: "9" before "51"
@@ -1126,6 +1131,7 @@ def test_build_alert_history_none_timestamps_yield_none_duration() -> None:
                 [
                     {
                         "alert_header_text": None,
+                        "header_text_en": None,
                         "alert_id": None,
                         "severity": None,
                         "routes": None,
@@ -1137,7 +1143,7 @@ def test_build_alert_history_none_timestamps_yield_none_duration() -> None:
             )
         ]
     )
-    out = build_alert_history(conn)
+    out = build_alert_history(conn, generated_utc="t")
     e = out.alerts[0]
     assert e.duration_min is None
     assert e.start_utc is None
@@ -1154,6 +1160,7 @@ def test_build_alert_history_200_cap() -> None:
     rows = [
         {
             "alert_header_text": f"H{i}",
+            "header_text_en": None,
             "alert_id": None,
             "severity": "INFO",
             "routes": None,
@@ -1164,13 +1171,13 @@ def test_build_alert_history_200_cap() -> None:
         for i in range(200)
     ]
     conn = FakeConn([("i3_alert_history_reporting", rows)])
-    out = build_alert_history(conn)
+    out = build_alert_history(conn, generated_utc="t")
     assert len(out.alerts) == 200
 
 
 def test_build_alert_history_empty() -> None:
     conn = FakeConn([("i3_alert_history_reporting", [])])
-    out = build_alert_history(conn)
+    out = build_alert_history(conn, generated_utc="t")
     assert out.alerts == []
 
 
@@ -1222,7 +1229,7 @@ def test_build_provenance_sources_and_freshness() -> None:
         ]
     )
 
-    out = build_provenance(conn)
+    out = build_provenance(conn, generated_utc="t")
     assert isinstance(out, Provenance)
 
     # sources
@@ -1253,6 +1260,58 @@ def test_build_provenance_sources_and_freshness() -> None:
     assert "metro_realtime" in out.gaps
 
 
+def test_build_provenance_includes_gis_static_source_and_freshness() -> None:
+    """Passthrough lock (slice-9.1.1v): the gis_static lineage + freshness heartbeat
+    surface in provenance.json with zero code change. gold.source_lineage_reporting
+    has no dataset_kind filter, so a future kind-filter regression turns this red."""
+    import datetime as _dt
+
+    loaded = _dt.datetime(2026, 6, 10, 6, 5, 0, tzinfo=_dt.UTC)
+    conn = FakeConn(
+        [
+            (
+                "source_lineage_reporting",
+                [
+                    {
+                        "dataset_kind": "static_schedule",
+                        "storage_backend": "r2",
+                        "storage_path": "stm/static/latest.zip",
+                        "source_url": None,
+                        "loaded_at_utc": loaded,
+                    },
+                    {
+                        "dataset_kind": "gis_static",
+                        "storage_backend": "s3",
+                        "storage_path": "stm/gis_static/2026/06/10/stm_sig.zip",
+                        "source_url": None,
+                        "loaded_at_utc": loaded,
+                    },
+                ],
+            ),
+            (
+                "feed_freshness_current",
+                [
+                    {
+                        "endpoint_key": "gis_static",
+                        "status": "succeeded",
+                        "completed_age_seconds": 3600.0,
+                    },
+                ],
+            ),
+        ]
+    )
+
+    out = build_provenance(conn, generated_utc="t")
+
+    by_feed = {s.feed: s for s in out.sources}
+    assert "gis_static" in by_feed
+    assert by_feed["gis_static"].chain == "s3:stm/gis_static/2026/06/10/stm_sig.zip"
+    assert by_feed["gis_static"].last_loaded_utc == "2026-06-10T06:05:00Z"
+
+    by_key = {f.feed: f for f in out.freshness}
+    assert by_key["gis_static"].age_s == 3600
+
+
 def test_provenance_methodology_documents_band() -> None:
     conn = FakeConn(
         [
@@ -1260,7 +1319,7 @@ def test_provenance_methodology_documents_band() -> None:
             ("feed_freshness_current", []),
         ]
     )
-    out = build_provenance(conn)
+    out = build_provenance(conn, generated_utc="t")
     definition = out.methodology["otp_definition"]
     assert "-60s" in definition
     assert "+300s" in definition
@@ -1279,7 +1338,7 @@ def test_provenance_methodology_documents_closed_period_freeze() -> None:
             ("feed_freshness_current", []),
         ]
     )
-    out = build_provenance(conn)
+    out = build_provenance(conn, generated_utc="t")
 
     freeze_rule = out.methodology["history_freeze"]
     assert "closed" in freeze_rule
@@ -1294,13 +1353,31 @@ def test_provenance_methodology_documents_gtfs_service_time_conversion() -> None
             ("feed_freshness_current", []),
         ]
     )
-    out = build_provenance(conn)
+    out = build_provenance(conn, generated_utc="t")
 
     service_time = out.methodology["service_time_conversion"]
     assert "GTFS" in service_time
     assert "noon-minus-12h" in service_time
     assert "fall-back" in service_time
     assert "01:00-01:59" in service_time
+
+
+def test_provenance_methodology_discloses_alert_text_en_honest_null() -> None:
+    conn = FakeConn(
+        [
+            ("source_lineage_reporting", []),
+            ("feed_freshness_current", []),
+        ]
+    )
+    out = build_provenance(conn, generated_utc="t")
+
+    alert_en = out.methodology["alert_text_en"]
+    # EN text is present only where STM published it / for hashed rows.
+    assert "header_text_en" in alert_en
+    assert "STM published" in alert_en
+    # Honest-NULL otherwise, including the pre-2026-06-09 legacy history tail.
+    assert "honest-NULL" in alert_en
+    assert "2026-06-09" in alert_en
 
 
 def test_build_provenance_empty_sources_still_valid() -> None:
@@ -1310,7 +1387,7 @@ def test_build_provenance_empty_sources_still_valid() -> None:
             ("feed_freshness_current", []),
         ]
     )
-    out = build_provenance(conn)
+    out = build_provenance(conn, generated_utc="t")
     assert out.sources == []
     assert out.freshness == []
     assert out.gaps == ["metro_realtime"]

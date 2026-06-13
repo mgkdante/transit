@@ -12,6 +12,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 from transit_ops.silver.i3 import (
+    INSERT_I3_ALERTS,
     INSERT_I3_ENTITIES,
     SELECT_ACTIVE_ALERT_KEYS,
     SUPERSEDE_VANISHED_ALERTS,
@@ -73,6 +74,36 @@ def _hash_of(connection, alert_index: int):  # noqa: ANN201
     insert_calls = [p for s, p in connection.calls if "INSERT INTO silver.i3_alerts" in s]
     (batch,) = insert_calls
     return next(r["content_hash"] for r in batch if r["alert_index"] == alert_index)
+
+
+def test_insert_carries_en_columns_and_refreshes_them_on_conflict() -> None:
+    # slice-9.1.1s: EN columns ride the INSERT, and an EN-only edit must
+    # self-heal onto the surviving SCD-2 row without re-keying identity.
+    import re
+
+    sql = str(INSERT_I3_ALERTS)
+    flat = re.sub(r"\s+", " ", sql)
+
+    # column + VALUES lists carry both EN columns
+    assert "alert_header_text_en" in sql
+    assert "description_text_en" in sql
+    assert ":alert_header_text_en" in sql
+    assert ":description_text_en" in sql
+
+    # The legacy first SET clause is preserved (test_i3_alerts_scd2_dedup.py:178
+    # source-greps this exact substring) and stays the FIRST clause.
+    assert "DO UPDATE SET last_seen_at = excluded.last_seen_at" in sql
+
+    # EN refresh COALESCEs the new value over the stored one so a transient
+    # en-less payload can't wipe stored EN (whitespace-tolerant).
+    assert (
+        "alert_header_text_en = COALESCE( "
+        "excluded.alert_header_text_en, silver.i3_alerts.alert_header_text_en )"
+    ).replace(" ", "") in flat.replace(" ", "")
+    assert (
+        "description_text_en = COALESCE( "
+        "excluded.description_text_en, silver.i3_alerts.description_text_en )"
+    ).replace(" ", "") in flat.replace(" ", "")
 
 
 def test_entities_insert_uses_on_conflict_do_nothing() -> None:

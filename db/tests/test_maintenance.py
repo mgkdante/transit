@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import inspect
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
@@ -9,19 +9,34 @@ from transit_ops import maintenance as maintenance_module
 from transit_ops.maintenance import (
     COUNT_ELIGIBLE_BRONZE_REALTIME_OBJECTS,
     COUNT_ELIGIBLE_BRONZE_STATIC_OBJECTS,
+    COUNT_OLD_RT_ENTITIES,
+    COUNT_OLD_RT_FEED_SNAPSHOTS,
+    COUNT_OLD_RT_TRIP_UPDATE_STOP_TIMES,
+    COUNT_OLD_RT_TRIP_UPDATES,
+    COUNT_OLD_RT_VEHICLE_POSITIONS,
+    DELETE_OLD_RT_ENTITIES,
+    DELETE_OLD_RT_FEED_SNAPSHOTS,
+    DELETE_OLD_RT_TRIP_UPDATE_STOP_TIMES,
+    DELETE_OLD_RT_TRIP_UPDATES,
+    DELETE_OLD_RT_VEHICLE_POSITIONS,
     DELETE_ORPHANED_INGESTION_RUNS,
+    MIN_SILVER_I3_CLOSED_RETENTION_DAYS,
     REALTIME_SILVER_TABLES,
     SELECT_ELIGIBLE_BRONZE_REALTIME_OBJECTS,
     SELECT_ELIGIBLE_BRONZE_STATIC_OBJECTS,
+    SELECT_ELIGIBLE_I3_RAW_SNAPSHOTS,
     VACUUM_TABLES,
     BronzeStoragePruneResult,
     GoldStoragePruneResult,
+    I3StoragePruneResult,
     SilverStoragePruneResult,
     WarmRollupStoragePruneResult,
     prune_bronze_realtime_objects,
     prune_bronze_static_objects,
     prune_bronze_storage,
     prune_gold_fact_history,
+    prune_i3_raw_snapshots,
+    prune_i3_silver_closed_rows,
     prune_realtime_silver_history,
     prune_static_silver_datasets,
     prune_warm_rollup_storage,
@@ -92,9 +107,15 @@ class RecordingEngine:
 
 
 class RecordingConnection:
-    def __init__(self) -> None:
+    def __init__(self, gold_referenced_rows: list[tuple] | None = None) -> None:
         self.calls: list[str] = []
         self.executed: list[tuple[str, dict | None]] = []
+        # Dataset version ids that gold dims still reference (FK holders). The
+        # default [(7,)] keeps the existing dataset fixture [7, 6, 5] with
+        # retention 1 producing deferred==[] (7 is retained, never a candidate).
+        self.gold_referenced_rows = (
+            gold_referenced_rows if gold_referenced_rows is not None else [(7,)]
+        )
 
     def __enter__(self) -> RecordingConnection:
         return self
@@ -106,6 +127,10 @@ class RecordingConnection:
         sql_text = str(statement)
         self.calls.append(sql_text)
         self.executed.append((sql_text, params))
+        # Gold-reference lookup (UNION over gold.dim_route/stop/date/route_pattern)
+        # MUST be routed before the generic 'SELECT dataset_version_id' branch.
+        if "gold.dim_route" in sql_text and "SELECT DISTINCT dataset_version_id" in sql_text:
+            return IterableResult(self.gold_referenced_rows)
         for table_name, rowcount in EXPECTED_GOLD_AGGREGATE_TABLE_COUNTS.items():
             if f"DELETE FROM {table_name}" in sql_text:
                 return RowcountResult(rowcount)
@@ -216,6 +241,40 @@ class RecordingConnection:
             return ScalarResult(500)
         if "SELECT COUNT(*) FROM gold.fact_vehicle_snapshot" in sql_text:
             return ScalarResult(300)
+        # --- i3 retention (slice-9.1.1l) ---
+        # i3 raw eligible COUNT references silver.i3_alerts in a NOT EXISTS
+        # guard, so it MUST be matched before the silver.i3_alerts COUNT below.
+        if "SELECT COUNT(*)" in sql_text and "raw.i3_alert_snapshots" in sql_text:
+            return ScalarResult(9876)
+        # i3 silver-closed prune: entities + alerts DELETE / COUNT.
+        if "DELETE FROM silver.i3_alert_informed_entities" in sql_text:
+            return RowcountResult(7)
+        if "DELETE FROM silver.i3_alerts" in sql_text:
+            return RowcountResult(4)
+        if (
+            "SELECT COUNT(*)" in sql_text
+            and "silver.i3_alert_informed_entities" in sql_text
+        ):
+            return ScalarResult(7)
+        if "SELECT COUNT(*)" in sql_text and "silver.i3_alerts" in sql_text:
+            return ScalarResult(4)
+        # i3 raw eligible row select (live path).
+        if (
+            "raw.i3_alert_snapshots" in sql_text
+            and "SELECT" in sql_text
+            and "DELETE" not in sql_text
+            and "COUNT" not in sql_text
+        ):
+            # (i3_alert_snapshot_id, ingestion_run_id, ingestion_object_id, storage_path)
+            return IterableResult(
+                [
+                    (5001, 6001, 7001, "stm/i3_alerts/captured_at_utc=2026-01-01/a.json"),
+                    (5002, 6002, 7002, "stm/i3_alerts/captured_at_utc=2026-01-02/b.json"),
+                    (5003, 6003, None, None),
+                ]
+            )
+        if "DELETE FROM raw.i3_alert_snapshots" in sql_text:
+            return RowcountResult(3)
         # Bronze eligible COUNT statements (dry-run, unbounded) — must precede
         # the row-returning eligible-select heuristics below, which would
         # otherwise swallow them.
@@ -270,16 +329,20 @@ class FakeBronzeStorage:
 def test_prune_static_silver_datasets_keeps_only_retained_versions() -> None:
     connection = RecordingConnection()
 
-    retained_dataset_version_ids, pruned_dataset_version_ids, deleted_row_counts = (
-        prune_static_silver_datasets(
-            connection,
-            provider_id="stm",
-            retention_count=1,
-        )
+    (
+        retained_dataset_version_ids,
+        pruned_dataset_version_ids,
+        deferred_dataset_version_ids,
+        deleted_row_counts,
+    ) = prune_static_silver_datasets(
+        connection,
+        provider_id="stm",
+        retention_count=1,
     )
 
     assert retained_dataset_version_ids == [7]
     assert pruned_dataset_version_ids == [6, 5]
+    assert deferred_dataset_version_ids == []
     assert deleted_row_counts == {
         "silver.stop_times": 12,
         "silver.translations": 9,
@@ -313,7 +376,7 @@ def test_prune_static_silver_datasets_keeps_only_retained_versions() -> None:
 def test_prune_static_silver_datasets_dry_run_returns_counts_without_deleting() -> None:
     connection = RecordingConnection()
 
-    retained_ids, pruned_ids, counts = prune_static_silver_datasets(
+    retained_ids, pruned_ids, deferred_ids, counts = prune_static_silver_datasets(
         connection,
         provider_id="stm",
         retention_count=1,
@@ -322,6 +385,7 @@ def test_prune_static_silver_datasets_dry_run_returns_counts_without_deleting() 
 
     assert retained_ids == [7]
     assert pruned_ids == [6, 5]
+    assert deferred_ids == []
     assert counts == {
         "silver.stop_times": 12,
         "silver.translations": 9,
@@ -343,6 +407,136 @@ def test_prune_static_silver_datasets_dry_run_returns_counts_without_deleting() 
     # No DELETE statements should appear in calls
     delete_calls = [c for c in connection.calls if "DELETE" in c]
     assert delete_calls == [], f"Expected no DELETE calls in dry_run but got: {delete_calls}"
+
+
+def test_prune_static_silver_datasets_defers_versions_still_referenced_by_gold_dims() -> None:
+    # versions [7, 6, 5] with retention 1 → candidates [6, 5]; gold dims still
+    # reference version 6, so it is deferred (NOT deleted), only 5 is pruned.
+    connection = RecordingConnection(gold_referenced_rows=[(6,)])
+
+    (
+        retained,
+        pruned,
+        deferred,
+        counts,
+    ) = prune_static_silver_datasets(
+        connection,
+        provider_id="stm",
+        retention_count=1,
+    )
+
+    assert retained == [7]
+    assert deferred == [6]
+    assert pruned == [5]
+    # No executed statement may delete the gold-referenced version 6.
+    delete_dataset_versions_params = [
+        params
+        for sql, params in connection.executed
+        if "DELETE FROM core.dataset_versions" in sql
+    ]
+    assert delete_dataset_versions_params == [
+        {"provider_id": "stm", "dataset_version_ids": [5]}
+    ]
+    for sql, params in connection.executed:
+        if "DELETE" in sql and params and "dataset_version_ids" in params:
+            assert 6 not in params["dataset_version_ids"]
+    assert counts["core.dataset_versions"] == 2
+
+
+def test_prune_static_silver_datasets_skips_gold_reference_lookup_when_no_candidates() -> None:
+    # A single version (retention 1) leaves no prune candidates, so the
+    # gold-reference UNION lookup must never run (zero steady-state cost).
+    connection = RecordingConnection()
+    connection.gold_referenced_rows = [(9,)]
+
+    # Override the dataset-version listing to a single id.
+    original_execute = connection.execute
+
+    def single_version_execute(statement, params=None):  # noqa: ANN001
+        sql_text = str(statement)
+        if (
+            "SELECT dataset_version_id" in sql_text
+            and "gold.dim_route" not in sql_text
+        ):
+            connection.calls.append(sql_text)
+            connection.executed.append((sql_text, params))
+            return IterableResult([(9,)])
+        return original_execute(statement, params)
+
+    connection.execute = single_version_execute  # type: ignore[method-assign]
+
+    retained, pruned, deferred, counts = prune_static_silver_datasets(
+        connection,
+        provider_id="stm",
+        retention_count=1,
+    )
+
+    assert retained == [9]
+    assert pruned == []
+    assert deferred == []
+    assert not any("gold.dim_route" in sql for sql in connection.calls)
+    # No DELETE statements at all when there are no candidates.
+    assert not any("DELETE" in sql for sql in connection.calls)
+
+
+def test_prune_static_silver_datasets_all_candidates_deferred_executes_no_deletes() -> None:
+    # Both candidate versions (6, 5) are still referenced by gold dims → all
+    # deferred, nothing pruned, and no DELETE statement is executed.
+    connection = RecordingConnection(gold_referenced_rows=[(6,), (5,)])
+
+    retained, pruned, deferred, counts = prune_static_silver_datasets(
+        connection,
+        provider_id="stm",
+        retention_count=1,
+    )
+
+    assert retained == [7]
+    assert deferred == [6, 5]
+    assert pruned == []
+    assert not any("DELETE" in sql for sql in connection.calls)
+
+
+def test_prune_static_silver_datasets_dry_run_counts_exclude_deferred_versions() -> None:
+    # Dry-run with version 6 deferred: the COUNT statements must scope to the
+    # pruned set [5] only, never the deferred version 6.
+    connection = RecordingConnection(gold_referenced_rows=[(6,)])
+
+    retained, pruned, deferred, counts = prune_static_silver_datasets(
+        connection,
+        provider_id="stm",
+        retention_count=1,
+        dry_run=True,
+    )
+
+    assert retained == [7]
+    assert deferred == [6]
+    assert pruned == [5]
+    delete_calls = [c for c in connection.calls if "DELETE" in c]
+    assert delete_calls == []
+    for sql, params in connection.executed:
+        if "SELECT COUNT(*)" in sql and params and "dataset_version_ids" in params:
+            assert params["dataset_version_ids"] == [5]
+
+
+def test_select_gold_referenced_dataset_version_ids_covers_all_fk_dims() -> None:
+    sql = str(maintenance_module.SELECT_GOLD_REFERENCED_DATASET_VERSION_IDS)
+    for table_name in (
+        "gold.dim_route",
+        "gold.dim_stop",
+        "gold.dim_date",
+        "gold.dim_route_pattern",
+    ):
+        assert table_name in sql
+    # Four provider filters (one per dim), UNION-combined.
+    assert sql.count(":provider_id") == 4
+    assert "UNION" in sql
+    # Lock-in: the reference tuple lists exactly those four FK-holding dims.
+    assert maintenance_module.GOLD_DATASET_REFERENCE_TABLES == (
+        "gold.dim_route",
+        "gold.dim_stop",
+        "gold.dim_date",
+        "gold.dim_route_pattern",
+    )
 
 
 def test_prune_realtime_silver_history_deletes_rows_older_than_cutoff() -> None:
@@ -414,6 +608,132 @@ def test_prune_realtime_silver_history_zero_retention_is_noop() -> None:
     assert connection.calls == []
 
 
+REALTIME_HISTORY_DELETE_STATEMENTS = (
+    ("silver.rt_trip_update_stop_times", DELETE_OLD_RT_TRIP_UPDATE_STOP_TIMES),
+    ("silver.rt_trip_updates", DELETE_OLD_RT_TRIP_UPDATES),
+    ("silver.rt_vehicle_positions", DELETE_OLD_RT_VEHICLE_POSITIONS),
+    ("silver.rt_entities", DELETE_OLD_RT_ENTITIES),
+    ("silver.rt_feed_snapshots", DELETE_OLD_RT_FEED_SNAPSHOTS),
+)
+
+
+@pytest.mark.parametrize("table_name,statement", REALTIME_HISTORY_DELETE_STATEMENTS)
+def test_realtime_history_delete_is_bounded_per_cycle(table_name, statement) -> None:  # noqa: ANN001
+    """Each realtime-history DELETE must cap rows/cycle via ctid IN (... LIMIT :batch).
+
+    The prune runs on every ~57s worker cycle; an unbounded single-transaction
+    DELETE of the accumulated backlog (e.g. ~252M-row rt_trip_update_stop_times
+    after a redeploy) is the unbounded-heavy-op hang class. The bounded ctid form
+    drains the one-time backlog over many cycles instead.
+    """
+    sql = str(statement)
+
+    assert "DELETE" in sql
+    assert ".ctid IN (" in sql, f"{table_name} DELETE must be batched via ctid IN (...)"
+    assert "LIMIT :batch" in sql, f"{table_name} DELETE must cap rows with LIMIT :batch"
+    # Retention predicate is preserved exactly — same cutoff + latest exclusion.
+    assert "captured_at_utc < :cutoff_utc" in sql
+    assert "provider_id = :provider_id" in sql
+
+
+@pytest.mark.parametrize(
+    "statement",
+    [
+        COUNT_OLD_RT_TRIP_UPDATE_STOP_TIMES,
+        COUNT_OLD_RT_TRIP_UPDATES,
+        COUNT_OLD_RT_VEHICLE_POSITIONS,
+        COUNT_OLD_RT_ENTITIES,
+        COUNT_OLD_RT_FEED_SNAPSHOTS,
+    ],
+)
+def test_realtime_history_count_statements_report_unbounded_backlog(statement) -> None:  # noqa: ANN001
+    """Dry-run COUNT must report the TRUE backlog — never the per-cycle batch cap."""
+    sql = str(statement)
+
+    assert "SELECT COUNT(*)" in sql
+    assert "LIMIT" not in sql
+    assert ":batch" not in sql
+
+
+def test_rt_feed_snapshots_delete_guards_on_surviving_children() -> None:
+    """The parent snapshot DELETE must not orphan-violate non-cascading child FKs.
+
+    rt_entities (and transitively rt_trip_updates / rt_vehicle_positions /
+    rt_trip_update_stop_times) FK to rt_feed_snapshots with NO ON DELETE CASCADE.
+    Under per-cycle batching a child table may not be fully drained in the same
+    cycle, so a snapshot is only deletable once no rt_entities row survives.
+    """
+    sql = str(DELETE_OLD_RT_FEED_SNAPSHOTS)
+
+    assert "NOT EXISTS" in sql
+    assert "silver.rt_entities" in sql
+
+
+def test_prune_realtime_silver_history_binds_batch_param() -> None:
+    connection = RecordingConnection()
+    now_utc = datetime(2026, 3, 26, 20, 0, 0, tzinfo=UTC)
+
+    prune_realtime_silver_history(
+        connection,
+        provider_id="stm",
+        retention_days=2,
+        batch_size=12345,
+        now_utc=now_utc,
+    )
+
+    delete_params = [
+        params for sql, params in connection.executed if "DELETE" in sql
+    ]
+    assert delete_params, "expected live DELETE executions"
+    assert all(params.get("batch") == 12345 for params in delete_params)
+
+
+def test_prune_realtime_silver_history_floors_batch_at_one() -> None:
+    connection = RecordingConnection()
+    now_utc = datetime(2026, 3, 26, 20, 0, 0, tzinfo=UTC)
+
+    prune_realtime_silver_history(
+        connection,
+        provider_id="stm",
+        retention_days=2,
+        batch_size=0,
+        now_utc=now_utc,
+    )
+
+    delete_params = [
+        params for sql, params in connection.executed if "DELETE" in sql
+    ]
+    assert delete_params
+    # batch floored at 1 — a LIMIT 0 would never drain the backlog.
+    assert all(params.get("batch") == 1 for params in delete_params)
+
+
+def test_prune_silver_storage_threads_realtime_prune_batch_setting() -> None:
+    from transit_ops.maintenance import prune_silver_storage
+
+    class BatchedSilverPruneSettings:
+        STATIC_DATASET_RETENTION_COUNT = 1
+        SILVER_REALTIME_RETENTION_DAYS = 2
+        SILVER_REALTIME_PRUNE_BATCH = 7777
+
+    engine = PerBeginRecordingEngine()
+
+    prune_silver_storage(
+        "stm",
+        settings=BatchedSilverPruneSettings(),  # type: ignore[arg-type]
+        engine=engine,  # type: ignore[arg-type]
+    )
+
+    realtime_conn = engine.connections[0]
+    rt_delete_params = [
+        params
+        for sql, params in realtime_conn.executed
+        if "DELETE FROM silver.rt_" in sql
+    ]
+    assert rt_delete_params, "expected realtime DELETE executions in tx1"
+    assert all(params.get("batch") == 7777 for params in rt_delete_params)
+
+
 def test_bronze_realtime_prune_waits_for_source_snapshot_rows_to_be_gone() -> None:
     sql = str(SELECT_ELIGIBLE_BRONZE_REALTIME_OBJECTS)
 
@@ -465,6 +785,75 @@ def test_delete_orphaned_ingestion_runs_is_age_gated() -> None:
     assert "started_at_utc < :cutoff_utc" in sql
     assert "NOT EXISTS" in sql
     assert "raw.ingestion_objects" in sql
+
+
+def test_orphan_run_prune_retains_recent_failed_silver_load_rows() -> None:
+    """slice-9.1.1o: the new run_kind='silver_load' failure rows (and every
+    capture-failure row) carry zero ingestion_objects, so they look "orphaned".
+    The age gate is the retention guard: only orphans OLDER than the bronze
+    cutoff are deleted, so a recently-written failure row survives for the full
+    retention window and is queryable by the freshness probe. This pins that
+    the age gate (not a status filter) is what protects fresh failure rows —
+    no separate status='failed' predicate is needed or present.
+    """
+    sql = str(DELETE_ORPHANED_INGESTION_RUNS)
+    # Deletion is bounded to rows strictly older than the cutoff.
+    assert "ir.started_at_utc < :cutoff_utc" in sql
+    # The guard is purely age-based; it must NOT special-case status, otherwise
+    # aged failure rows would never purge (they would accumulate forever).
+    assert "status" not in sql
+
+
+def test_prune_bronze_realtime_binds_cutoff_on_orphan_run_delete() -> None:
+    connection = RecordingConnection()
+    storage = FakeBronzeStorage()
+    now_utc = datetime(2026, 3, 26, 20, 0, 0, tzinfo=UTC)
+
+    cutoff_utc, _objects, _meta, _failed = prune_bronze_realtime_objects(
+        connection,
+        provider_id="stm",
+        retention_days=7,
+        bronze_storage=storage,
+        dry_run=False,
+        now_utc=now_utc,
+    )
+
+    orphan_calls = [
+        (sql, params)
+        for sql, params in connection.executed
+        if "DELETE FROM raw.ingestion_runs" in sql
+    ]
+    assert len(orphan_calls) == 1
+    _sql, params = orphan_calls[0]
+    assert params is not None
+    assert params["provider_id"] == "stm"
+    # cutoff is bound so the age gate fires — recent failure rows are retained.
+    assert params["cutoff_utc"] == cutoff_utc
+
+
+def test_prune_bronze_static_binds_cutoff_on_orphan_run_delete() -> None:
+    connection = RecordingConnection()
+    storage = FakeBronzeStorage()
+    now_utc = datetime(2026, 3, 26, 20, 0, 0, tzinfo=UTC)
+
+    cutoff_utc, _objects, _meta, _failed = prune_bronze_static_objects(
+        connection,
+        provider_id="stm",
+        retention_days=7,
+        bronze_storage=storage,
+        dry_run=False,
+        now_utc=now_utc,
+    )
+
+    orphan_calls = [
+        (sql, params)
+        for sql, params in connection.executed
+        if "DELETE FROM raw.ingestion_runs" in sql
+    ]
+    assert len(orphan_calls) == 1
+    _sql, params = orphan_calls[0]
+    assert params is not None
+    assert params["cutoff_utc"] == cutoff_utc
 
 
 def test_maintenance_has_no_dropped_legacy_silver_realtime_sql() -> None:
@@ -551,6 +940,84 @@ def test_vacuum_storage_uses_parallel_zero_for_non_full_mode() -> None:
     ]
 
 
+class PerBeginRecordingEngine:
+    """Engine stub that hands out a FRESH RecordingConnection per begin().
+
+    Distinct from RecordingEngine (which returns one seeded connection) so the
+    two-transaction split in prune_silver_storage can be observed: each
+    engine.begin() corresponds to a separate transaction, and we record what
+    each saw to assert realtime ran in tx1 and static in tx2.
+    """
+
+    def __init__(self) -> None:
+        self.begin_count = 0
+        self.connections: list[RecordingConnection] = []
+
+    def begin(self) -> RecordingConnection:
+        self.begin_count += 1
+        connection = RecordingConnection()
+        self.connections.append(connection)
+        return connection
+
+
+class SilverPruneSettings:
+    STATIC_DATASET_RETENTION_COUNT = 1
+    SILVER_REALTIME_RETENTION_DAYS = 2
+    SILVER_REALTIME_PRUNE_BATCH = 50000
+
+
+def test_prune_silver_storage_runs_realtime_and_static_in_separate_transactions() -> None:
+    from transit_ops.maintenance import prune_silver_storage
+
+    engine = PerBeginRecordingEngine()
+
+    prune_silver_storage(
+        "stm",
+        settings=SilverPruneSettings(),  # type: ignore[arg-type]
+        engine=engine,  # type: ignore[arg-type]
+    )
+
+    assert engine.begin_count == 2
+    realtime_conn, static_conn = engine.connections
+
+    # tx1 (realtime first) ran only the silver.rt_* DELETEs — never touched
+    # core.dataset_versions or the static silver tables.
+    assert any(
+        "DELETE FROM silver.rt_feed_snapshots" in sql for sql in realtime_conn.calls
+    )
+    assert not any(
+        "DELETE FROM core.dataset_versions" in sql for sql in realtime_conn.calls
+    )
+    assert not any(
+        "DELETE FROM silver.stop_times" in sql for sql in realtime_conn.calls
+    )
+
+    # tx2 ran the static-dataset statements and no rt_* DELETEs.
+    assert any(
+        "DELETE FROM core.dataset_versions" in sql for sql in static_conn.calls
+    )
+    assert not any(
+        "DELETE FROM silver.rt_feed_snapshots" in sql for sql in static_conn.calls
+    )
+
+
+def test_prune_silver_storage_result_reports_deferred_dataset_version_ids() -> None:
+    from transit_ops.maintenance import prune_silver_storage
+
+    engine = PerBeginRecordingEngine()
+
+    result = prune_silver_storage(
+        "stm",
+        settings=SilverPruneSettings(),  # type: ignore[arg-type]
+        engine=engine,  # type: ignore[arg-type]
+    )
+
+    # Default fixture: versions [7, 6, 5], gold references [7] → 6, 5 prunable,
+    # none deferred.
+    assert result.deferred_dataset_version_ids == []
+    assert "deferred_dataset_version_ids" in result.display_dict()
+
+
 def test_prune_result_display_dict_formats_timestamps() -> None:
     result = SilverStoragePruneResult(
         provider_id="stm",
@@ -559,6 +1026,7 @@ def test_prune_result_display_dict_formats_timestamps() -> None:
         realtime_retention_days=2,
         retained_dataset_version_ids=[7],
         pruned_dataset_version_ids=[6, 5],
+        deferred_dataset_version_ids=[],
         realtime_cutoff_utc=datetime(2026, 3, 24, 20, 0, 0, tzinfo=UTC),
         deleted_row_counts={"silver.stop_times": 12},
         completed_at_utc=datetime(2026, 3, 26, 20, 10, 0, tzinfo=UTC),
@@ -567,6 +1035,7 @@ def test_prune_result_display_dict_formats_timestamps() -> None:
     assert result.display_dict()["realtime_cutoff_utc"] == "2026-03-24T20:00:00+00:00"
     assert result.display_dict()["completed_at_utc"] == "2026-03-26T20:10:00+00:00"
     assert result.display_dict()["dry_run"] is False
+    assert result.display_dict()["deferred_dataset_version_ids"] == []
 
 
 # ---------------------------------------------------------------------------
@@ -1088,3 +1557,214 @@ def test_bronze_prune_result_display_dict_includes_failed_batches_exhausted() ->
     assert d["failed_object_counts"] == {"realtime": 2, "static": 0}
     assert d["batch_counts"] == {"realtime": 1, "static": 1}
     assert d["exhausted"] is False
+
+
+# ---------------------------------------------------------------------------
+# i3 retention (slice-9.1.1l): prune_i3_raw_snapshots + prune_i3_silver_closed_rows
+# ---------------------------------------------------------------------------
+
+
+def test_vacuum_tables_include_i3_tables() -> None:
+    for table_name in (
+        "raw.i3_alert_snapshots",
+        "silver.i3_alerts",
+        "silver.i3_alert_informed_entities",
+    ):
+        assert table_name in VACUUM_TABLES
+
+
+def test_prune_i3_raw_snapshots_sql_guards_silver_refs_and_latest() -> None:
+    sql = str(SELECT_ELIGIBLE_I3_RAW_SNAPSHOTS)
+    # FK-cascade trap guard: never delete a raw snapshot a silver row references.
+    assert "NOT EXISTS" in sql
+    assert "silver.i3_alerts" in sql
+    # find_latest_i3_raw_snapshot guard: keep the per-provider latest snapshot.
+    assert "<> COALESCE((" in sql
+    assert "max(s2.i3_alert_snapshot_id)" in sql
+
+
+def test_prune_i3_raw_snapshots_dry_run_counts_without_deleting() -> None:
+    connection = RecordingConnection()
+    storage = FakeBronzeStorage()
+    now_utc = datetime(2026, 6, 13, 7, 0, 0, tzinfo=UTC)
+
+    cutoff_utc, object_counts, meta_counts, failed_ids = prune_i3_raw_snapshots(
+        connection,
+        provider_id="stm",
+        retention_days=30,
+        bronze_storage=storage,
+        dry_run=True,
+        now_utc=now_utc,
+    )
+
+    assert cutoff_utc == now_utc - timedelta(days=30)
+    assert object_counts == {"i3_raw": 9876}
+    assert meta_counts["raw.i3_alert_snapshots"] == 9876
+    assert meta_counts["raw.ingestion_objects"] == 9876
+    assert failed_ids == set()
+    assert storage.deleted == []
+    assert [c for c in connection.calls if "DELETE" in c] == []
+
+
+def test_prune_i3_raw_snapshots_live_deletes_r2_then_metadata_in_fk_order() -> None:
+    connection = RecordingConnection()
+    storage = FakeBronzeStorage()
+    now_utc = datetime(2026, 6, 13, 7, 0, 0, tzinfo=UTC)
+
+    cutoff_utc, object_counts, meta_counts, failed_ids = prune_i3_raw_snapshots(
+        connection,
+        provider_id="stm",
+        retention_days=30,
+        bronze_storage=storage,
+        dry_run=False,
+        now_utc=now_utc,
+    )
+
+    assert cutoff_utc is not None
+    # 2 of the 3 eligible rows carry a storage_path (third is NULL path).
+    assert object_counts["i3_raw"] == 2
+    assert len(storage.deleted) == 2
+    assert failed_ids == set()
+    # Snapshots delete BEFORE ingestion_objects delete (FK order: snapshots ->
+    # ingestion_objects -> ingestion_runs).
+    snap_idx = next(
+        i for i, c in enumerate(connection.calls)
+        if "DELETE FROM raw.i3_alert_snapshots" in c
+    )
+    obj_idx = next(
+        i for i, c in enumerate(connection.calls)
+        if "DELETE FROM raw.ingestion_objects" in c
+    )
+    run_idx = next(
+        i for i, c in enumerate(connection.calls)
+        if "DELETE FROM raw.ingestion_runs" in c
+    )
+    assert snap_idx < obj_idx < run_idx
+    assert meta_counts["raw.i3_alert_snapshots"] == 3
+
+
+def test_prune_i3_raw_snapshots_skips_failed_r2_deletes() -> None:
+    connection = RecordingConnection()
+    storage = FakeBronzeStorage()
+    storage.fail_on = {"stm/i3_alerts/captured_at_utc=2026-01-01/a.json"}
+    now_utc = datetime(2026, 6, 13, 7, 0, 0, tzinfo=UTC)
+
+    _cutoff, object_counts, _meta, failed_ids = prune_i3_raw_snapshots(
+        connection,
+        provider_id="stm",
+        retention_days=30,
+        bronze_storage=storage,
+        dry_run=False,
+        now_utc=now_utc,
+    )
+
+    # One of the two path-bearing rows failed → only 1 deleted, snapshot 5001 skipped.
+    assert object_counts["i3_raw"] == 1
+    assert failed_ids == {5001}
+
+
+def test_prune_i3_raw_snapshots_disabled_when_zero_retention() -> None:
+    connection = RecordingConnection()
+    storage = FakeBronzeStorage()
+
+    cutoff_utc, object_counts, _meta, failed_ids = prune_i3_raw_snapshots(
+        connection,
+        provider_id="stm",
+        retention_days=0,
+        bronze_storage=storage,
+    )
+
+    assert cutoff_utc is None
+    assert object_counts == {"i3_raw": 0}
+    assert failed_ids == set()
+    assert len(connection.calls) == 0
+    assert storage.deleted == []
+
+
+def test_prune_i3_silver_closed_rows_deletes_entities_then_alerts() -> None:
+    connection = RecordingConnection()
+    now_utc = datetime(2026, 6, 13, 7, 0, 0, tzinfo=UTC)
+
+    cutoff_utc, row_counts = prune_i3_silver_closed_rows(
+        connection,
+        provider_id="stm",
+        retention_days=90,
+        dry_run=False,
+        now_utc=now_utc,
+    )
+
+    assert cutoff_utc == now_utc - timedelta(days=90)
+    assert row_counts == {
+        "silver.i3_alert_informed_entities": 7,
+        "silver.i3_alerts": 4,
+    }
+    ent_idx = next(
+        i for i, c in enumerate(connection.calls)
+        if "DELETE FROM silver.i3_alert_informed_entities" in c
+    )
+    alert_idx = next(
+        i for i, c in enumerate(connection.calls)
+        if "DELETE FROM silver.i3_alerts" in c
+    )
+    assert ent_idx < alert_idx
+
+
+def test_prune_i3_silver_closed_rows_floors_retention_at_30_days() -> None:
+    connection = RecordingConnection()
+    now_utc = datetime(2026, 6, 13, 7, 0, 0, tzinfo=UTC)
+
+    cutoff_utc, _row_counts = prune_i3_silver_closed_rows(
+        connection,
+        provider_id="stm",
+        retention_days=7,
+        dry_run=True,
+        now_utc=now_utc,
+    )
+
+    assert MIN_SILVER_I3_CLOSED_RETENTION_DAYS == 30
+    # 7d requested but the 30d floor applies.
+    assert cutoff_utc == now_utc - timedelta(days=30)
+
+
+def test_prune_i3_silver_closed_rows_zero_retention_is_noop() -> None:
+    connection = RecordingConnection()
+
+    cutoff_utc, row_counts = prune_i3_silver_closed_rows(
+        connection,
+        provider_id="stm",
+        retention_days=0,
+    )
+
+    assert cutoff_utc is None
+    assert row_counts == {
+        "silver.i3_alert_informed_entities": 0,
+        "silver.i3_alerts": 0,
+    }
+    assert len(connection.calls) == 0
+
+
+def test_i3_prune_result_display_dict_formats_timestamps() -> None:
+    result = I3StoragePruneResult(
+        provider_id="stm",
+        dry_run=False,
+        raw_retention_days=30,
+        silver_closed_retention_days=90,
+        raw_cutoff_utc=datetime(2026, 5, 14, 7, 0, 0, tzinfo=UTC),
+        silver_cutoff_utc=datetime(2026, 3, 15, 7, 0, 0, tzinfo=UTC),
+        deleted_object_counts={"i3_raw": 5},
+        deleted_row_counts={
+            "silver.i3_alert_informed_entities": 7,
+            "silver.i3_alerts": 4,
+            "raw.i3_alert_snapshots": 5,
+            "raw.ingestion_objects": 5,
+            "raw.ingestion_runs": 1,
+        },
+        failed_object_counts={"i3_raw": 0},
+        completed_at_utc=datetime(2026, 6, 13, 7, 10, 0, tzinfo=UTC),
+    )
+
+    d = result.display_dict()
+    assert d["raw_cutoff_utc"] == "2026-05-14T07:00:00+00:00"
+    assert d["silver_cutoff_utc"] == "2026-03-15T07:00:00+00:00"
+    assert d["completed_at_utc"] == "2026-06-13T07:10:00+00:00"
+    assert d["deleted_object_counts"] == {"i3_raw": 5}

@@ -2,6 +2,30 @@
   "$defs": {
     "Alert": {
       "properties": {
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Description"
+        },
+        "description_en": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Description En"
+        },
         "end_utc": {
           "anyOf": [
             {
@@ -17,6 +41,23 @@
         "header_key": {
           "title": "Header Key",
           "type": "string"
+        },
+        "header_text": {
+          "default": "",
+          "title": "Header Text",
+          "type": "string"
+        },
+        "header_text_en": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Header Text En"
         },
         "id": {
           "title": "Id",
@@ -77,9 +118,14 @@
       },
       "title": "Alerts",
       "type": "array"
+    },
+    "generated_utc": {
+      "title": "Generated Utc",
+      "type": "string"
     }
   },
   "required": [
+    "generated_utc",
     "alerts"
   ],
   "title": "AlertsFile",

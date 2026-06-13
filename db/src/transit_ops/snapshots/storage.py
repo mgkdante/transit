@@ -8,9 +8,12 @@ instead (useful for development and CI).
 
 from __future__ import annotations
 
+import hashlib
 import json
 import pathlib
+import threading
 
+from botocore.exceptions import ClientError
 from pydantic import BaseModel
 
 from transit_ops.ingestion.storage import build_s3_client
@@ -18,13 +21,18 @@ from transit_ops.settings import Settings
 
 # Cache-Control header per data tier.
 # live    — 30 s TTL; realtime vehicle positions / alerts
-# static  — 7-day TTL; GTFS-derived shapes, stops, routes
+# static  — 1-day TTL + stale-while-revalidate; GTFS-derived shapes, stops, routes
 # historic — 1-day TTL; aggregated summaries that change once per day
+# internal — private, no-store; per-tier hash-state objects (never client-cached)
 CACHE_CONTROL: dict[str, str] = {
     "live": "public, max-age=30",
-    "static": "public, max-age=604800",
+    "static": "public, max-age=86400, stale-while-revalidate=86400",
     "historic": "public, max-age=86400",
+    "internal": "private, no-store",
 }
+
+# S3/R2 error codes that mean "object does not exist" (mirror ingestion/storage).
+_NOT_FOUND_CODES = {"404", "NoSuchKey", "NotFound"}
 
 
 def _body(payload: BaseModel | dict) -> bytes:  # type: ignore[type-arg]
@@ -35,12 +43,62 @@ def _body(payload: BaseModel | dict) -> bytes:  # type: ignore[type-arg]
 
 
 class SnapshotStorage:
-    """PUT JSON objects to an S3-compatible bucket (Cloudflare R2)."""
+    """PUT JSON objects to an S3-compatible bucket (Cloudflare R2).
 
-    def __init__(self, client: object, *, bucket: str, base_prefix: str) -> None:
+    Thread-safety
+    -------------
+    The stage-2 publish (slice-9.1.1r) uploads per-entity files through a
+    ThreadPoolExecutor. boto3 low-level clients are not documented as safe to
+    share across threads, so when a *client_factory* is supplied each worker
+    thread lazily builds and caches **its own** client in thread-local storage
+    (``put_bytes`` then never shares a client between threads). When only a bare
+    *client* is supplied the same instance is used on every thread, which is
+    fine for the single-threaded path and the test fakes.
+    """
+
+    def __init__(
+        self,
+        client: object,
+        *,
+        bucket: str,
+        base_prefix: str,
+        client_factory: object | None = None,
+    ) -> None:
         self._client = client
         self._bucket = bucket
         self._prefix = base_prefix.strip("/")
+        self._client_factory = client_factory
+        self._local = threading.local()
+
+    def _thread_client(self) -> object:
+        """Return the client for the calling thread.
+
+        With a *client_factory* every thread gets its own cached client; without
+        one the shared *client* is returned (the single-threaded / fake path).
+        """
+        if self._client_factory is None:
+            return self._client
+        cached = getattr(self._local, "client", None)
+        if cached is None:
+            cached = self._client_factory()  # type: ignore[operator]
+            self._local.client = cached
+        return cached
+
+    def full_key(self, rel_key: str) -> str:
+        """Return the full bucket key for *rel_key* (``{base_prefix}/{rel_key}``)."""
+        return f"{self._prefix}/{rel_key}"
+
+    def put_bytes(self, rel_key: str, body: bytes, *, tier: str) -> str:
+        """PUT raw *body* bytes at ``{base_prefix}/{rel_key}`` and return the full key."""
+        key = self.full_key(rel_key)
+        self._thread_client().put_object(  # type: ignore[attr-defined]
+            Bucket=self._bucket,
+            Key=key,
+            Body=body,
+            ContentType="application/json",
+            CacheControl=CACHE_CONTROL[tier],
+        )
+        return key
 
     def put_json(self, rel_key: str, payload: BaseModel | dict, *, tier: str) -> str:  # type: ignore[type-arg]
         """PUT *payload* at ``{base_prefix}/{rel_key}`` and return the full key.
@@ -52,18 +110,31 @@ class SnapshotStorage:
         payload:
             Pydantic model or plain dict to serialise as JSON.
         tier:
-            One of ``"live"``, ``"static"``, or ``"historic"``; controls the
-            ``Cache-Control`` header.
+            One of ``"live"``, ``"static"``, ``"historic"``, or ``"internal"``;
+            controls the ``Cache-Control`` header.
         """
-        key = f"{self._prefix}/{rel_key}"
-        self._client.put_object(  # type: ignore[attr-defined]
-            Bucket=self._bucket,
-            Key=key,
-            Body=_body(payload),
-            ContentType="application/json",
-            CacheControl=CACHE_CONTROL[tier],
-        )
-        return key
+        return self.put_bytes(rel_key, _body(payload), tier=tier)
+
+    def get_json(self, rel_key: str) -> dict | None:  # type: ignore[type-arg]
+        """GET and JSON-decode the object at *rel_key*; ``None`` if it is absent.
+
+        Missing objects (404 / NoSuchKey / NotFound) return ``None`` so callers
+        treat "never published" as an empty hash-state; any other error re-raises.
+        """
+        key = self.full_key(rel_key)
+        try:
+            resp = self._thread_client().get_object(Bucket=self._bucket, Key=key)  # type: ignore[attr-defined]
+        except ClientError as exc:
+            code = str(exc.response.get("Error", {}).get("Code", ""))
+            if code in _NOT_FOUND_CODES:
+                return None
+            raise
+        body = resp["Body"]
+        try:
+            return json.loads(body.read())
+        finally:
+            if hasattr(body, "close"):
+                body.close()
 
 
 class LocalSnapshotStorage:
@@ -73,12 +144,109 @@ class LocalSnapshotStorage:
         self._root = pathlib.Path(root)
         self._prefix = base_prefix.strip("/")
 
-    def put_json(self, rel_key: str, payload: BaseModel | dict, *, tier: str) -> str:  # type: ignore[type-arg]
-        """Write *payload* to ``{root}/{base_prefix}/{rel_key}`` and return the path."""
+    def full_key(self, rel_key: str) -> str:
+        """Return the on-disk path for *rel_key* as a string."""
+        return str(self._root / self._prefix / rel_key)
+
+    def put_bytes(self, rel_key: str, body: bytes, *, tier: str) -> str:  # noqa: ARG002
+        """Write raw *body* bytes to ``{root}/{base_prefix}/{rel_key}``; return path."""
         dest = self._root / self._prefix / rel_key
         dest.parent.mkdir(parents=True, exist_ok=True)
-        dest.write_bytes(_body(payload))
+        dest.write_bytes(body)
         return str(dest)
+
+    def put_json(self, rel_key: str, payload: BaseModel | dict, *, tier: str) -> str:  # type: ignore[type-arg]
+        """Write *payload* to ``{root}/{base_prefix}/{rel_key}`` and return the path."""
+        return self.put_bytes(rel_key, _body(payload), tier=tier)
+
+    def get_json(self, rel_key: str) -> dict | None:  # type: ignore[type-arg]
+        """Read and JSON-decode the object at *rel_key*; ``None`` if the file is missing."""
+        path = self._root / self._prefix / rel_key
+        if not path.exists():
+            return None
+        return json.loads(path.read_bytes())
+
+
+def state_fingerprint(tier: str) -> str:
+    """Stable fingerprint for a tier's hash-state object.
+
+    Embeds the tier's ``Cache-Control`` string so that a header-policy change
+    (e.g. the static 7-day -> 1-day+SWR move) invalidates every prior hash and
+    forces a one-time full rewrite that re-stamps the new header on every object.
+    """
+    return f"v1|cc:{CACHE_CONTROL[tier]}"
+
+
+class HashGatedStorage:
+    """Skip-if-unchanged wrapper around an *inner* snapshot storage backend.
+
+    Compares each payload's content md5 against a bucket-stored per-tier
+    publish-state object (``{rel_key}`` = fingerprint + ``{rel_key: md5}``).
+    When the prior hash matches the current bytes AND the loaded state carries
+    the current fingerprint, the put is skipped entirely (no network write) and
+    the would-be key is still returned. Otherwise the bytes are written and the
+    new hash recorded. :meth:`flush_state` persists the merged hash map at the
+    very end so a mid-run crash leaves the prior state intact and changed files
+    retry next run — the write-then-flush order is what makes a wrongly-skipped
+    PUT impossible.
+    """
+
+    def __init__(self, inner: object, *, state_rel_key: str, fingerprint: str) -> None:
+        self._inner = inner
+        self._state_rel_key = state_rel_key
+        self._fingerprint = fingerprint
+        self._prior: dict[str, str] = {}
+        self._new: dict[str, str] = {}
+        self.written: list[str] = []
+        self.skipped: list[str] = []
+        # Guards the shared _new / written / skipped state so put_json can be
+        # called concurrently from a ThreadPoolExecutor (slice-9.1.1r stage 2).
+        # The actual PUT (slow, network) runs OUTSIDE the lock so threads still
+        # upload in parallel — only the bookkeeping is serialised.
+        self._lock = threading.Lock()
+
+    def load(self) -> None:
+        """Load prior hashes from the state object; empty on fingerprint mismatch/absence."""
+        doc = self._inner.get_json(self._state_rel_key)  # type: ignore[attr-defined]
+        if doc and doc.get("fingerprint") == self._fingerprint:
+            self._prior = dict(doc.get("hashes", {}))
+        else:
+            self._prior = {}
+
+    def full_key(self, rel_key: str) -> str:
+        return self._inner.full_key(rel_key)  # type: ignore[attr-defined]
+
+    def put_json(self, rel_key: str, payload: BaseModel | dict, *, tier: str) -> str:  # type: ignore[type-arg]
+        body = _body(payload)
+        digest = hashlib.md5(body).hexdigest()  # noqa: S324 — content fingerprint, not security
+        # Decide skip-vs-write under the lock so the shared hash map and the
+        # written/skipped lists stay consistent across worker threads. A skipped
+        # file does NO put_bytes (network) — the stage-1 hash-gate is preserved.
+        with self._lock:
+            self._new[rel_key] = digest
+            skip = self._prior.get(rel_key) == digest
+            if skip:
+                self.skipped.append(rel_key)
+        if skip:
+            return self._inner.full_key(rel_key)  # type: ignore[attr-defined]
+        # PUT happens outside the lock: the slow network round-trips run in
+        # parallel; only the bookkeeping below is serialised again.
+        key = self._inner.put_bytes(rel_key, body, tier=tier)  # type: ignore[attr-defined]
+        with self._lock:
+            self.written.append(rel_key)
+        return key
+
+    def flush_state(self) -> str:
+        """Persist the merged (prior + new) hash map as the tier's state object.
+
+        Merging keeps hashes for keys NOT produced this run (receipts older than
+        the 30-day window, vanished stops/routes) so they stay skippable if they
+        ever reappear unchanged — nothing is ever deleted from the state.
+        """
+        merged = {**self._prior, **self._new}
+        doc = {"fingerprint": self._fingerprint, "hashes": merged}
+        body = json.dumps(doc, separators=(",", ":"), sort_keys=True).encode("utf-8")
+        return self._inner.put_bytes(self._state_rel_key, body, tier="internal")  # type: ignore[attr-defined]
 
 
 def build_snapshot_storage(
@@ -118,9 +286,18 @@ def build_snapshot_storage(
     if not settings.SNAPSHOT_R2_BUCKET:
         raise ValueError("SNAPSHOT_R2_BUCKET required for s3 backend")
 
-    resolved_client = client if client is not None else build_s3_client(settings)
+    # A per-thread client factory lets the stage-2 parallel publish give each
+    # worker thread its own boto3 client (boto3 clients are not safe to share
+    # across threads). Skipped when a *client* is injected (tests pass a fake).
+    if client is not None:
+        return SnapshotStorage(
+            client,
+            bucket=settings.SNAPSHOT_R2_BUCKET,
+            base_prefix=base_prefix,
+        )
     return SnapshotStorage(
-        resolved_client,
+        build_s3_client(settings),
         bucket=settings.SNAPSHOT_R2_BUCKET,
         base_prefix=base_prefix,
+        client_factory=lambda: build_s3_client(settings),
     )

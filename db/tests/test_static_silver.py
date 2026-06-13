@@ -736,3 +736,17 @@ def test_load_latest_static_to_silver_accepts_live_current_static_without_beta_m
     assert "directions" not in result.row_counts
     assert "route_patterns" not in result.row_counts
     assert fake_storage.read_calls == [lookup_row["storage_path"]]
+
+
+def test_load_latest_static_to_silver_does_not_prune_inside_the_load_transaction() -> None:
+    """Pruning must not run inside the silver-load transaction.
+
+    With STATIC_DATASET_RETENTION_COUNT=1 an in-load prune FK-fails against gold
+    dims (which still reference the previous version) and rolls back the entire
+    load on every content change — the prod wedge. Worker-cycle pruning
+    (prune_silver_storage) owns all static cleanup now (slice-9.1.1j).
+    """
+    import inspect
+
+    source = inspect.getsource(load_latest_static_to_silver)
+    assert "prune_static_silver_datasets" not in source

@@ -80,6 +80,10 @@
       "title": "Feed Freshness S",
       "type": "integer"
     },
+    "generated_utc": {
+      "title": "Generated Utc",
+      "type": "string"
+    },
     "non_responding": {
       "title": "Non Responding",
       "type": "integer"
@@ -100,6 +104,7 @@
     }
   },
   "required": [
+    "generated_utc",
     "vehicles_in_service",
     "on_time_pct",
     "status_dist",

@@ -34,6 +34,7 @@ from transit_ops.logging import configure_logging
 from transit_ops.maintenance import (
     prune_bronze_storage,
     prune_gold_storage,
+    prune_i3_storage,
     prune_silver_storage,
     prune_warm_rollup_storage,
     vacuum_storage,
@@ -683,6 +684,27 @@ def prune_gold_storage_command(
     typer.echo(json.dumps(result.display_dict(), indent=2))
 
 
+@app.command("prune-i3-storage")
+def prune_i3_storage_command(
+    provider_id: str = typer.Argument("stm"),  # noqa: B008
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        help="Print what would be deleted without executing any deletions or R2 removals.",
+    ),
+) -> None:
+    """Prune closed i3 silver history and old raw i3 snapshots + their R2 JSON."""
+
+    settings = get_settings()
+    try:
+        result = prune_i3_storage(provider_id, settings=settings, dry_run=dry_run)
+    except (ValueError, FileNotFoundError) as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    typer.echo(json.dumps(result.display_dict(), indent=2))
+    if not dry_run and any(result.failed_object_counts.values()):
+        raise typer.Exit(code=1)
+
+
 @app.command("vacuum-storage")
 def vacuum_storage_command(
     provider_id: str,
@@ -750,7 +772,8 @@ def prune_bronze_storage_command(
 
 @app.command("run-static-pipeline")
 def run_static_pipeline_command(provider_id: str) -> None:
-    """Run ingest-static, load-static-silver, and refresh-gold-static for one provider."""
+    """Run ingest-static, load-static-silver, refresh-gold-static, then the GIS
+    chain (best-effort) for one provider."""
 
     settings = get_settings()
     try:
@@ -764,6 +787,13 @@ def run_static_pipeline_command(provider_id: str) -> None:
     except (ValueError, FileNotFoundError) as exc:
         raise typer.BadParameter(str(exc)) from exc
     typer.echo(json.dumps(result.display_dict(), indent=2))
+    # GIS is best-effort: surface a failure on stderr without failing the command,
+    # so the downstream publish-snapshot --tier static step still runs (slice-9.1.1v).
+    if getattr(result, "gis_error_message", None):
+        typer.echo(
+            f"WARNING: GIS step failed (static pipeline succeeded): {result.gis_error_message}",
+            err=True,
+        )
 
 
 @app.command("run-realtime-cycle")

@@ -37,6 +37,19 @@ STATIC_DATASET_REFERENCE_TABLES = (
     "silver.gis_gtfs_matches",
 )
 
+# Every gold table holding an FK to core.dataset_versions
+# (fk_gold_dim_*_dataset_version_id, migrations 0004:33/67/104 + 0011:35).
+# A static dataset version still referenced by any of these must NOT be deleted
+# by the prune (it would FK-violate); it is deferred until gold dims re-point to
+# the current version. Extend this tuple if a future migration adds a gold table
+# with an FK to core.dataset_versions.
+GOLD_DATASET_REFERENCE_TABLES = (
+    "gold.dim_route",
+    "gold.dim_stop",
+    "gold.dim_date",
+    "gold.dim_route_pattern",
+)
+
 GIS_SILVER_TABLES = (
     "silver.gis_gtfs_matches",
     "silver.gis_line_features",
@@ -105,6 +118,12 @@ RAW_BRONZE_METADATA_TABLES = (
     "raw.ingestion_runs",
 )
 
+I3_RETENTION_TABLES = (
+    "raw.i3_alert_snapshots",
+    "silver.i3_alerts",
+    "silver.i3_alert_informed_entities",
+)
+
 VACUUM_TABLES = (
     *STATIC_SILVER_TABLES,
     *GIS_SILVER_TABLES,
@@ -114,6 +133,7 @@ VACUUM_TABLES = (
     "gold.latest_vehicle_snapshot",
     *GOLD_AGGREGATE_TABLES,
     *RAW_BRONZE_METADATA_TABLES,
+    *I3_RETENTION_TABLES,
 )
 
 SELECT_STATIC_DATASET_VERSION_IDS = text(
@@ -123,6 +143,22 @@ SELECT_STATIC_DATASET_VERSION_IDS = text(
     WHERE provider_id = :provider_id
       AND dataset_kind = 'static_schedule'
     ORDER BY is_current DESC, loaded_at_utc DESC, dataset_version_id DESC
+    """
+)
+
+# Dataset versions still referenced by any gold dim FK-holder
+# (GOLD_DATASET_REFERENCE_TABLES). Deferred from pruning so the DELETE on
+# core.dataset_versions can never FK-violate. UNION (not UNION ALL) is fine —
+# we only need the distinct set of referenced ids.
+SELECT_GOLD_REFERENCED_DATASET_VERSION_IDS = text(
+    """
+    SELECT DISTINCT dataset_version_id FROM gold.dim_route WHERE provider_id = :provider_id
+    UNION
+    SELECT DISTINCT dataset_version_id FROM gold.dim_stop WHERE provider_id = :provider_id
+    UNION
+    SELECT DISTINCT dataset_version_id FROM gold.dim_date WHERE provider_id = :provider_id
+    UNION
+    SELECT DISTINCT dataset_version_id FROM gold.dim_route_pattern WHERE provider_id = :provider_id
     """
 )
 
@@ -261,20 +297,32 @@ def _static_dataset_reference_statement(table_name: str, *, dry_run: bool) -> ob
     )
 
 
+# Realtime-history DELETEs are BOUNDED to :batch rows/table/cycle. The prune runs
+# on every ~57s worker cycle, so an unbounded single-transaction DELETE of the
+# accumulated backlog (the unbounded-heavy-op hang class) must never happen. The
+# ctid IN (SELECT ctid ... LIMIT :batch) form caps each statement; the retention
+# predicate is unchanged, so the one-time backlog drains over many cycles and a
+# steady-state delta clears in one pass. (slice-9.1.1g/j retention semantics
+# preserved exactly — same cutoff, same latest-snapshot exclusion.)
 DELETE_OLD_RT_TRIP_UPDATE_STOP_TIMES = text(
     """
     DELETE FROM silver.rt_trip_update_stop_times AS rstu
-    USING silver.rt_feed_snapshots AS rfs
-    WHERE rstu.rt_feed_snapshot_id = rfs.rt_feed_snapshot_id
-      AND rfs.provider_id = :provider_id
-      AND rfs.endpoint_key = 'trip_updates'
-      AND rfs.captured_at_utc < :cutoff_utc
-      AND rfs.rt_feed_snapshot_id <> COALESCE((
-            SELECT max(rfs_latest.rt_feed_snapshot_id)
-            FROM silver.rt_feed_snapshots AS rfs_latest
-            WHERE rfs_latest.provider_id = :provider_id
-              AND rfs_latest.endpoint_key = 'trip_updates'
-        ), -1)
+    WHERE rstu.ctid IN (
+        SELECT rstu_old.ctid
+        FROM silver.rt_trip_update_stop_times AS rstu_old
+        JOIN silver.rt_feed_snapshots AS rfs
+            ON rstu_old.rt_feed_snapshot_id = rfs.rt_feed_snapshot_id
+        WHERE rfs.provider_id = :provider_id
+          AND rfs.endpoint_key = 'trip_updates'
+          AND rfs.captured_at_utc < :cutoff_utc
+          AND rfs.rt_feed_snapshot_id <> COALESCE((
+                SELECT max(rfs_latest.rt_feed_snapshot_id)
+                FROM silver.rt_feed_snapshots AS rfs_latest
+                WHERE rfs_latest.provider_id = :provider_id
+                  AND rfs_latest.endpoint_key = 'trip_updates'
+            ), -1)
+        LIMIT :batch
+    )
     """
 )
 
@@ -298,17 +346,22 @@ COUNT_OLD_RT_TRIP_UPDATE_STOP_TIMES = text(
 DELETE_OLD_RT_TRIP_UPDATES = text(
     """
     DELETE FROM silver.rt_trip_updates AS rtu
-    USING silver.rt_feed_snapshots AS rfs
-    WHERE rtu.rt_feed_snapshot_id = rfs.rt_feed_snapshot_id
-      AND rfs.provider_id = :provider_id
-      AND rfs.endpoint_key = 'trip_updates'
-      AND rfs.captured_at_utc < :cutoff_utc
-      AND rfs.rt_feed_snapshot_id <> COALESCE((
-            SELECT max(rfs_latest.rt_feed_snapshot_id)
-            FROM silver.rt_feed_snapshots AS rfs_latest
-            WHERE rfs_latest.provider_id = :provider_id
-              AND rfs_latest.endpoint_key = 'trip_updates'
-        ), -1)
+    WHERE rtu.ctid IN (
+        SELECT rtu_old.ctid
+        FROM silver.rt_trip_updates AS rtu_old
+        JOIN silver.rt_feed_snapshots AS rfs
+            ON rtu_old.rt_feed_snapshot_id = rfs.rt_feed_snapshot_id
+        WHERE rfs.provider_id = :provider_id
+          AND rfs.endpoint_key = 'trip_updates'
+          AND rfs.captured_at_utc < :cutoff_utc
+          AND rfs.rt_feed_snapshot_id <> COALESCE((
+                SELECT max(rfs_latest.rt_feed_snapshot_id)
+                FROM silver.rt_feed_snapshots AS rfs_latest
+                WHERE rfs_latest.provider_id = :provider_id
+                  AND rfs_latest.endpoint_key = 'trip_updates'
+            ), -1)
+        LIMIT :batch
+    )
     """
 )
 
@@ -332,17 +385,22 @@ COUNT_OLD_RT_TRIP_UPDATES = text(
 DELETE_OLD_RT_VEHICLE_POSITIONS = text(
     """
     DELETE FROM silver.rt_vehicle_positions AS rvp
-    USING silver.rt_feed_snapshots AS rfs
-    WHERE rvp.rt_feed_snapshot_id = rfs.rt_feed_snapshot_id
-      AND rfs.provider_id = :provider_id
-      AND rfs.endpoint_key = 'vehicle_positions'
-      AND rfs.captured_at_utc < :cutoff_utc
-      AND rfs.rt_feed_snapshot_id <> COALESCE((
-            SELECT max(rfs_latest.rt_feed_snapshot_id)
-            FROM silver.rt_feed_snapshots AS rfs_latest
-            WHERE rfs_latest.provider_id = :provider_id
-              AND rfs_latest.endpoint_key = 'vehicle_positions'
-        ), -1)
+    WHERE rvp.ctid IN (
+        SELECT rvp_old.ctid
+        FROM silver.rt_vehicle_positions AS rvp_old
+        JOIN silver.rt_feed_snapshots AS rfs
+            ON rvp_old.rt_feed_snapshot_id = rfs.rt_feed_snapshot_id
+        WHERE rfs.provider_id = :provider_id
+          AND rfs.endpoint_key = 'vehicle_positions'
+          AND rfs.captured_at_utc < :cutoff_utc
+          AND rfs.rt_feed_snapshot_id <> COALESCE((
+                SELECT max(rfs_latest.rt_feed_snapshot_id)
+                FROM silver.rt_feed_snapshots AS rfs_latest
+                WHERE rfs_latest.provider_id = :provider_id
+                  AND rfs_latest.endpoint_key = 'vehicle_positions'
+            ), -1)
+        LIMIT :batch
+    )
     """
 )
 
@@ -366,16 +424,21 @@ COUNT_OLD_RT_VEHICLE_POSITIONS = text(
 DELETE_OLD_RT_ENTITIES = text(
     """
     DELETE FROM silver.rt_entities AS rte
-    USING silver.rt_feed_snapshots AS rfs
-    WHERE rte.rt_feed_snapshot_id = rfs.rt_feed_snapshot_id
-      AND rfs.provider_id = :provider_id
-      AND rfs.captured_at_utc < :cutoff_utc
-      AND rfs.rt_feed_snapshot_id <> COALESCE((
-            SELECT max(rfs_latest.rt_feed_snapshot_id)
-            FROM silver.rt_feed_snapshots AS rfs_latest
-            WHERE rfs_latest.provider_id = :provider_id
-              AND rfs_latest.endpoint_key = rfs.endpoint_key
-        ), -1)
+    WHERE rte.ctid IN (
+        SELECT rte_old.ctid
+        FROM silver.rt_entities AS rte_old
+        JOIN silver.rt_feed_snapshots AS rfs
+            ON rte_old.rt_feed_snapshot_id = rfs.rt_feed_snapshot_id
+        WHERE rfs.provider_id = :provider_id
+          AND rfs.captured_at_utc < :cutoff_utc
+          AND rfs.rt_feed_snapshot_id <> COALESCE((
+                SELECT max(rfs_latest.rt_feed_snapshot_id)
+                FROM silver.rt_feed_snapshots AS rfs_latest
+                WHERE rfs_latest.provider_id = :provider_id
+                  AND rfs_latest.endpoint_key = rfs.endpoint_key
+            ), -1)
+        LIMIT :batch
+    )
     """
 )
 
@@ -395,17 +458,34 @@ COUNT_OLD_RT_ENTITIES = text(
     """
 )
 
+# rt_feed_snapshots is the FK parent of rt_entities (which in turn parents
+# rt_trip_updates / rt_vehicle_positions / rt_trip_update_stop_times) and NONE of
+# those FKs cascade. With per-cycle batching a child table may not be fully
+# drained in the same cycle, so the parent DELETE additionally guards on
+# NOT EXISTS any surviving rt_entities row — a snapshot is removed only once its
+# children are gone (over prior cycles). This preserves FK integrity that the old
+# unbounded child-first ordering gave for free, while staying bounded to :batch.
 DELETE_OLD_RT_FEED_SNAPSHOTS = text(
     """
     DELETE FROM silver.rt_feed_snapshots AS rfs
-    WHERE rfs.provider_id = :provider_id
-      AND rfs.captured_at_utc < :cutoff_utc
-      AND rfs.rt_feed_snapshot_id <> COALESCE((
-            SELECT max(rfs_latest.rt_feed_snapshot_id)
-            FROM silver.rt_feed_snapshots AS rfs_latest
-            WHERE rfs_latest.provider_id = :provider_id
-              AND rfs_latest.endpoint_key = rfs.endpoint_key
-        ), -1)
+    WHERE rfs.ctid IN (
+        SELECT rfs_old.ctid
+        FROM silver.rt_feed_snapshots AS rfs_old
+        WHERE rfs_old.provider_id = :provider_id
+          AND rfs_old.captured_at_utc < :cutoff_utc
+          AND rfs_old.rt_feed_snapshot_id <> COALESCE((
+                SELECT max(rfs_latest.rt_feed_snapshot_id)
+                FROM silver.rt_feed_snapshots AS rfs_latest
+                WHERE rfs_latest.provider_id = :provider_id
+                  AND rfs_latest.endpoint_key = rfs_old.endpoint_key
+            ), -1)
+          AND NOT EXISTS (
+                SELECT 1
+                FROM silver.rt_entities AS rte_child
+                WHERE rte_child.rt_feed_snapshot_id = rfs_old.rt_feed_snapshot_id
+            )
+        LIMIT :batch
+    )
     """
 )
 
@@ -585,6 +665,129 @@ DELETE_ORPHANED_INGESTION_RUNS = text(
     """
 )
 
+# --- i3 retention SQL (slice-9.1.1l) ---
+#
+# Raw i3 snapshots are deletable only when no surviving silver.i3_alerts row
+# still references them — the fk_silver_i3_alerts_snapshot_id FK is ON DELETE
+# CASCADE (0013:200-205), so an unguarded raw delete would silently destroy
+# live SCD-2 history. We also keep the per-provider latest snapshot so
+# find_latest_i3_raw_snapshot (silver/i3.py) keeps resolving.
+MIN_SILVER_I3_CLOSED_RETENTION_DAYS = 30
+
+SELECT_ELIGIBLE_I3_RAW_SNAPSHOTS = text(
+    """
+    SELECT
+        s.i3_alert_snapshot_id,
+        s.ingestion_run_id,
+        s.ingestion_object_id,
+        s.storage_path
+    FROM raw.i3_alert_snapshots s
+    WHERE s.provider_id = :provider_id
+      AND s.captured_at_utc < :cutoff_utc
+      AND NOT EXISTS (
+          SELECT 1 FROM silver.i3_alerts a
+          WHERE a.i3_alert_snapshot_id = s.i3_alert_snapshot_id
+      )
+      AND s.i3_alert_snapshot_id <> COALESCE((
+          SELECT max(s2.i3_alert_snapshot_id)
+          FROM raw.i3_alert_snapshots s2
+          WHERE s2.provider_id = :provider_id
+      ), -1)
+    ORDER BY s.captured_at_utc ASC, s.i3_alert_snapshot_id ASC
+    LIMIT :max_objects
+    """
+)
+
+COUNT_ELIGIBLE_I3_RAW_SNAPSHOTS = text(
+    """
+    SELECT COUNT(*)
+    FROM raw.i3_alert_snapshots s
+    WHERE s.provider_id = :provider_id
+      AND s.captured_at_utc < :cutoff_utc
+      AND NOT EXISTS (
+          SELECT 1 FROM silver.i3_alerts a
+          WHERE a.i3_alert_snapshot_id = s.i3_alert_snapshot_id
+      )
+      AND s.i3_alert_snapshot_id <> COALESCE((
+          SELECT max(s2.i3_alert_snapshot_id)
+          FROM raw.i3_alert_snapshots s2
+          WHERE s2.provider_id = :provider_id
+      ), -1)
+    """
+)
+
+DELETE_I3_RAW_SNAPSHOTS_BY_IDS = text(
+    """
+    DELETE FROM raw.i3_alert_snapshots
+    WHERE i3_alert_snapshot_id = ANY(CAST(:snapshot_ids AS bigint[]))
+    """
+)
+
+DELETE_ORPHANED_I3_INGESTION_RUNS = text(
+    """
+    DELETE FROM raw.ingestion_runs ir
+    WHERE ir.provider_id = :provider_id
+      AND ir.run_kind = 'i3_alerts'
+      AND ir.started_at_utc < :cutoff_utc
+      AND NOT EXISTS (
+          SELECT 1 FROM raw.ingestion_objects io
+          WHERE io.ingestion_run_id = ir.ingestion_run_id
+      )
+      AND NOT EXISTS (
+          SELECT 1 FROM raw.i3_alert_snapshots s
+          WHERE s.ingestion_run_id = ir.ingestion_run_id
+      )
+    """
+)
+
+# Closed silver SCD-2 history rows older than the cutoff. Entities are deleted
+# explicitly first (so the rowcount is reportable); the alerts delete then runs
+# and the (snapshot_id, alert_index) cascade no-ops on already-gone entities.
+DELETE_OLD_I3_SILVER_ENTITIES = text(
+    """
+    DELETE FROM silver.i3_alert_informed_entities e
+    USING silver.i3_alerts a
+    WHERE a.i3_alert_snapshot_id = e.i3_alert_snapshot_id
+      AND a.alert_index = e.alert_index
+      AND a.provider_id = :provider_id
+      AND a.valid_to IS NOT NULL
+      AND a.valid_to < :cutoff_utc
+    """
+)
+
+DELETE_OLD_I3_SILVER_ALERTS = text(
+    """
+    DELETE FROM silver.i3_alerts a
+    WHERE a.provider_id = :provider_id
+      AND a.valid_to IS NOT NULL
+      AND a.valid_to < :cutoff_utc
+    """
+)
+
+COUNT_OLD_I3_SILVER_ENTITIES = text(
+    """
+    SELECT COUNT(*)
+    FROM silver.i3_alert_informed_entities e
+    JOIN silver.i3_alerts a
+      ON a.i3_alert_snapshot_id = e.i3_alert_snapshot_id
+     AND a.alert_index = e.alert_index
+    WHERE a.provider_id = :provider_id
+      AND a.valid_to IS NOT NULL
+      AND a.valid_to < :cutoff_utc
+    """
+)
+
+COUNT_OLD_I3_SILVER_ALERTS = text(
+    """
+    SELECT COUNT(*)
+    FROM silver.i3_alerts a
+    WHERE a.provider_id = :provider_id
+      AND a.valid_to IS NOT NULL
+      AND a.valid_to < :cutoff_utc
+    """
+)
+
+
 COUNT_OLD_VEHICLE_SUMMARY_5M = text(
     """
     SELECT COUNT(*) FROM gold.vehicle_summary_5m
@@ -688,6 +891,31 @@ class GoldStoragePruneResult:
 
 
 @dataclass(frozen=True)
+class I3StoragePruneResult:
+    provider_id: str
+    dry_run: bool
+    raw_retention_days: int
+    silver_closed_retention_days: int
+    raw_cutoff_utc: datetime | None
+    silver_cutoff_utc: datetime | None
+    deleted_object_counts: dict[str, int]
+    deleted_row_counts: dict[str, int]
+    failed_object_counts: dict[str, int]
+    completed_at_utc: datetime
+
+    def display_dict(self) -> dict[str, object]:
+        payload = asdict(self)
+        payload["raw_cutoff_utc"] = (
+            self.raw_cutoff_utc.isoformat() if self.raw_cutoff_utc else None
+        )
+        payload["silver_cutoff_utc"] = (
+            self.silver_cutoff_utc.isoformat() if self.silver_cutoff_utc else None
+        )
+        payload["completed_at_utc"] = self.completed_at_utc.isoformat()
+        return payload
+
+
+@dataclass(frozen=True)
 class SilverStoragePruneResult:
     provider_id: str
     dry_run: bool
@@ -695,6 +923,7 @@ class SilverStoragePruneResult:
     realtime_retention_days: int
     retained_dataset_version_ids: list[int]
     pruned_dataset_version_ids: list[int]
+    deferred_dataset_version_ids: list[int]
     realtime_cutoff_utc: datetime | None
     deleted_row_counts: dict[str, int]
     completed_at_utc: datetime
@@ -733,13 +962,31 @@ def _safe_scalar_count(result) -> int:  # noqa: ANN001
     return max(int(value or 0), 0)
 
 
+def _zero_static_prune_counts() -> dict[str, int]:
+    return {
+        **{table_name: 0 for table_name in STATIC_SILVER_TABLES},
+        **{table_name: 0 for table_name in STATIC_DATASET_REFERENCE_TABLES},
+        "core.dataset_versions": 0,
+    }
+
+
 def prune_static_silver_datasets(
     connection: Connection,
     *,
     provider_id: str,
     retention_count: int,
     dry_run: bool = False,
-) -> tuple[list[int], list[int], dict[str, int]]:
+) -> tuple[list[int], list[int], list[int], dict[str, int]]:
+    """Prune superseded static silver datasets, deferring gold-referenced ones.
+
+    Returns (retained, pruned, deferred, deleted_row_counts). A candidate
+    version still referenced by any gold dim FK-holder
+    (GOLD_DATASET_REFERENCE_TABLES) is DEFERRED — it keeps BOTH its silver rows
+    and its core.dataset_versions row (whole-version retention keeps the
+    silver/dim joins consistent) — instead of being deleted, which would
+    FK-violate. The next worker cycle prunes it once gold dims re-point to the
+    current version (slice-9.1.1j).
+    """
     if retention_count <= 0:
         retention_count = 1
 
@@ -749,13 +996,44 @@ def prune_static_silver_datasets(
     )
     dataset_version_ids = [int(row[0]) for row in dataset_version_rows]
     retained_dataset_version_ids = dataset_version_ids[:retention_count]
-    pruned_dataset_version_ids = dataset_version_ids[retention_count:]
+    candidate_dataset_version_ids = dataset_version_ids[retention_count:]
+    if not candidate_dataset_version_ids:
+        # No candidates → skip the gold-reference lookup entirely (zero added
+        # steady-state cost at the ~57s worker cadence).
+        return retained_dataset_version_ids, [], [], _zero_static_prune_counts()
+
+    gold_referenced_ids = {
+        int(row[0])
+        for row in connection.execute(
+            SELECT_GOLD_REFERENCED_DATASET_VERSION_IDS,
+            {"provider_id": provider_id},
+        )
+    }
+    deferred_dataset_version_ids = [
+        version_id
+        for version_id in candidate_dataset_version_ids
+        if version_id in gold_referenced_ids
+    ]
+    pruned_dataset_version_ids = [
+        version_id
+        for version_id in candidate_dataset_version_ids
+        if version_id not in gold_referenced_ids
+    ]
+    if deferred_dataset_version_ids:
+        logger.warning(
+            "Deferring prune of static dataset versions %s for provider '%s' — "
+            "still referenced by gold dims; will prune once dims re-point.",
+            deferred_dataset_version_ids,
+            provider_id,
+        )
     if not pruned_dataset_version_ids:
-        return retained_dataset_version_ids, [], {
-            **{table_name: 0 for table_name in STATIC_SILVER_TABLES},
-            **{table_name: 0 for table_name in STATIC_DATASET_REFERENCE_TABLES},
-            "core.dataset_versions": 0,
-        }
+        # Everything is deferred — execute no DELETEs/COUNTs.
+        return (
+            retained_dataset_version_ids,
+            [],
+            deferred_dataset_version_ids,
+            _zero_static_prune_counts(),
+        )
 
     params = {
         "provider_id": provider_id,
@@ -786,7 +1064,12 @@ def prune_static_silver_datasets(
             params,
         )
     )
-    return retained_dataset_version_ids, pruned_dataset_version_ids, deleted_row_counts
+    return (
+        retained_dataset_version_ids,
+        pruned_dataset_version_ids,
+        deferred_dataset_version_ids,
+        deleted_row_counts,
+    )
 
 
 def prune_realtime_silver_history(
@@ -794,6 +1077,7 @@ def prune_realtime_silver_history(
     *,
     provider_id: str,
     retention_days: int,
+    batch_size: int = 50000,
     dry_run: bool = False,
     now_utc: datetime | None = None,
 ) -> tuple[datetime | None, dict[str, int]]:
@@ -801,9 +1085,14 @@ def prune_realtime_silver_history(
         return None, {table_name: 0 for table_name in REALTIME_SILVER_TABLES}
 
     cutoff_utc = (now_utc or utc_now()) - timedelta(days=retention_days)
+    # Each live DELETE is bounded to :batch rows so a one-time backlog drains over
+    # many ~57s worker cycles instead of one unbounded transaction (hang class).
+    # batch_size is floored at 1 to avoid a no-op LIMIT 0 that would never drain.
+    batch = max(int(batch_size), 1)
     params = {
         "provider_id": provider_id,
         "cutoff_utc": cutoff_utc,
+        "batch": batch,
     }
 
     if dry_run:
@@ -852,25 +1141,44 @@ def prune_silver_storage(
     engine: Engine | None = None,
     dry_run: bool = False,
 ) -> SilverStoragePruneResult:
+    """Prune silver storage in TWO independent transactions (realtime FIRST).
+
+    Realtime 14-day retention and static dataset pruning run in separate
+    engine.begin() blocks, realtime first, so a static-prune failure can never
+    roll back or starve the realtime retention. (A single shared transaction
+    with static-first ordering let an FK abort in the static half kill the
+    realtime DELETEs before they ran — the wave-2 prod regression this fixes,
+    slice-9.1.1j.)
+    """
     settings = settings or get_settings()
     engine = engine or make_engine(settings)
 
+    # Transaction 1: realtime retention — must commit independently of the
+    # static prune below.
     with engine.begin() as connection:
-        retained_dataset_version_ids, pruned_dataset_version_ids, static_deleted_row_counts = (
-            prune_static_silver_datasets(
-                connection,
-                provider_id=provider_id,
-                retention_count=settings.STATIC_DATASET_RETENTION_COUNT,
-                dry_run=dry_run,
-            )
-        )
         realtime_cutoff_utc, realtime_deleted_row_counts = prune_realtime_silver_history(
             connection,
             provider_id=provider_id,
             retention_days=settings.SILVER_REALTIME_RETENTION_DAYS,
+            batch_size=settings.SILVER_REALTIME_PRUNE_BATCH,
             dry_run=dry_run,
         )
-        completed_at_utc = utc_now()
+
+    # Transaction 2: static dataset prune (with gold-reference deferral).
+    with engine.begin() as connection:
+        (
+            retained_dataset_version_ids,
+            pruned_dataset_version_ids,
+            deferred_dataset_version_ids,
+            static_deleted_row_counts,
+        ) = prune_static_silver_datasets(
+            connection,
+            provider_id=provider_id,
+            retention_count=settings.STATIC_DATASET_RETENTION_COUNT,
+            dry_run=dry_run,
+        )
+
+    completed_at_utc = utc_now()
 
     return SilverStoragePruneResult(
         provider_id=provider_id,
@@ -879,6 +1187,7 @@ def prune_silver_storage(
         realtime_retention_days=settings.SILVER_REALTIME_RETENTION_DAYS,
         retained_dataset_version_ids=retained_dataset_version_ids,
         pruned_dataset_version_ids=pruned_dataset_version_ids,
+        deferred_dataset_version_ids=deferred_dataset_version_ids,
         realtime_cutoff_utc=realtime_cutoff_utc,
         deleted_row_counts=static_deleted_row_counts | realtime_deleted_row_counts,
         completed_at_utc=completed_at_utc,
@@ -1009,7 +1318,28 @@ def prune_bronze_realtime_objects(
     )
 
     if not rows:
-        return cutoff_utc, zero_object_counts, zero_meta_counts, set()
+        # No eligible objects this cycle, but still sweep aged orphaned runs:
+        # slice-o silver_load failure telemetry writes object-less runs that
+        # must stay retention-bounded even when no captures are being pruned
+        # (e.g. the worker failing every cycle → no objects, but failure runs
+        # accumulating). DELETE_ORPHANED_INGESTION_RUNS is age-gated, so
+        # in-flight runs are never touched.
+        runs_deleted = _safe_rowcount(
+            connection.execute(
+                DELETE_ORPHANED_INGESTION_RUNS,
+                {"provider_id": provider_id, "cutoff_utc": cutoff_utc},
+            )
+        )
+        return (
+            cutoff_utc,
+            zero_object_counts,
+            {
+                "raw.realtime_snapshot_index": 0,
+                "raw.ingestion_objects": 0,
+                "raw.ingestion_runs": runs_deleted,
+            },
+            set(),
+        )
 
     deleted_object_count = 0
     failed_object_ids: set[int] = set()
@@ -1342,6 +1672,243 @@ def prune_bronze_storage(
         failed_object_counts=failed_object_counts,
         batch_counts=batch_counts,
         exhausted=exhausted,
+        completed_at_utc=completed_at_utc,
+    )
+
+
+def prune_i3_silver_closed_rows(
+    connection: Connection,
+    *,
+    provider_id: str,
+    retention_days: int,
+    dry_run: bool = False,
+    now_utc: datetime | None = None,
+) -> tuple[datetime | None, dict[str, int]]:
+    """Prune closed (valid_to NOT NULL) silver.i3_alerts SCD-2 history.
+
+    Returns (silver_cutoff_utc, deleted_row_counts). A 30-day floor is enforced
+    in code so the alert_history 30d window (build_alert_history) always has
+    rows to draw from. retention_days <= 0 disables the prune (house
+    convention). Entities are deleted explicitly before alerts so each rowcount
+    is reportable; the FK cascade on the alerts delete then no-ops.
+    """
+
+    zero_counts = {
+        "silver.i3_alert_informed_entities": 0,
+        "silver.i3_alerts": 0,
+    }
+    if retention_days <= 0:
+        return None, zero_counts
+
+    effective_days = max(retention_days, MIN_SILVER_I3_CLOSED_RETENTION_DAYS)
+    cutoff_utc = (now_utc or utc_now()) - timedelta(days=effective_days)
+    params = {"provider_id": provider_id, "cutoff_utc": cutoff_utc}
+
+    if dry_run:
+        entity_count = _safe_scalar_count(
+            connection.execute(COUNT_OLD_I3_SILVER_ENTITIES, params)
+        )
+        alert_count = _safe_scalar_count(
+            connection.execute(COUNT_OLD_I3_SILVER_ALERTS, params)
+        )
+        return cutoff_utc, {
+            "silver.i3_alert_informed_entities": entity_count,
+            "silver.i3_alerts": alert_count,
+        }
+
+    entities_deleted = _safe_rowcount(
+        connection.execute(DELETE_OLD_I3_SILVER_ENTITIES, params)
+    )
+    alerts_deleted = _safe_rowcount(
+        connection.execute(DELETE_OLD_I3_SILVER_ALERTS, params)
+    )
+    return cutoff_utc, {
+        "silver.i3_alert_informed_entities": entities_deleted,
+        "silver.i3_alerts": alerts_deleted,
+    }
+
+
+def prune_i3_raw_snapshots(
+    connection: Connection,
+    *,
+    provider_id: str,
+    retention_days: int,
+    bronze_storage: BronzeStorage,
+    dry_run: bool = False,
+    now_utc: datetime | None = None,
+    max_objects: int = 5000,
+) -> tuple[datetime | None, dict[str, int], dict[str, int], set[int]]:
+    """Prune raw.i3_alert_snapshots + their R2 JSON, FK-safe.
+
+    Returns (raw_cutoff_utc, deleted_object_counts, deleted_metadata_counts,
+    failed_snapshot_ids). Eligible rows are older than the cutoff, no longer
+    referenced by any silver.i3_alerts row (the ON DELETE CASCADE trap), and not
+    the per-provider latest snapshot (find_latest_i3_raw_snapshot must keep
+    working). R2 objects are deleted first with per-object failure-skip (a failed
+    delete leaves the DB row for the next run), then metadata deletes run in FK
+    order: snapshots -> ingestion_objects -> orphaned i3 ingestion runs.
+    """
+
+    zero_object_counts = {"i3_raw": 0}
+    zero_meta_counts = {
+        "raw.i3_alert_snapshots": 0,
+        "raw.ingestion_objects": 0,
+        "raw.ingestion_runs": 0,
+    }
+    if retention_days <= 0:
+        return None, zero_object_counts, zero_meta_counts, set()
+
+    cutoff_utc = (now_utc or utc_now()) - timedelta(days=retention_days)
+
+    if dry_run:
+        eligible_count = _safe_scalar_count(
+            connection.execute(
+                COUNT_ELIGIBLE_I3_RAW_SNAPSHOTS,
+                {"provider_id": provider_id, "cutoff_utc": cutoff_utc},
+            )
+        )
+        return (
+            cutoff_utc,
+            {"i3_raw": eligible_count},
+            {
+                "raw.i3_alert_snapshots": eligible_count,
+                "raw.ingestion_objects": eligible_count,
+                "raw.ingestion_runs": 0,
+            },
+            set(),
+        )
+
+    rows = list(
+        connection.execute(
+            SELECT_ELIGIBLE_I3_RAW_SNAPSHOTS,
+            {
+                "provider_id": provider_id,
+                "cutoff_utc": cutoff_utc,
+                "max_objects": max_objects,
+            },
+        )
+    )
+    if not rows:
+        return cutoff_utc, zero_object_counts, zero_meta_counts, set()
+
+    deleted_object_count = 0
+    failed_snapshot_ids: set[int] = set()
+    for row in rows:
+        snapshot_id = int(row[0])
+        storage_path = row[3]
+        if storage_path is None:
+            # No R2 object to remove (older capture before storage_path was set).
+            continue
+        try:
+            bronze_storage.delete_object(str(storage_path))
+            deleted_object_count += 1
+        except Exception as exc:
+            logger.error(
+                "Failed to delete i3 raw object '%s' (i3_alert_snapshot_id=%s): %s",
+                storage_path,
+                snapshot_id,
+                exc,
+            )
+            failed_snapshot_ids.add(snapshot_id)
+
+    successful_snapshot_ids = [
+        int(row[0]) for row in rows if int(row[0]) not in failed_snapshot_ids
+    ]
+    if not successful_snapshot_ids:
+        return cutoff_utc, {"i3_raw": 0}, zero_meta_counts, failed_snapshot_ids
+
+    successful_object_ids = [
+        int(row[2])
+        for row in rows
+        if int(row[0]) in successful_snapshot_ids and row[2] is not None
+    ]
+
+    snapshots_deleted = _safe_rowcount(
+        connection.execute(
+            DELETE_I3_RAW_SNAPSHOTS_BY_IDS,
+            {"snapshot_ids": successful_snapshot_ids},
+        )
+    )
+    objects_deleted = 0
+    if successful_object_ids:
+        objects_deleted = _safe_rowcount(
+            connection.execute(
+                DELETE_INGESTION_OBJECTS_BY_IDS,
+                {"ingestion_object_ids": successful_object_ids},
+            )
+        )
+    runs_deleted = _safe_rowcount(
+        connection.execute(
+            DELETE_ORPHANED_I3_INGESTION_RUNS,
+            {"provider_id": provider_id, "cutoff_utc": cutoff_utc},
+        )
+    )
+
+    return (
+        cutoff_utc,
+        {"i3_raw": deleted_object_count},
+        {
+            "raw.i3_alert_snapshots": snapshots_deleted,
+            "raw.ingestion_objects": objects_deleted,
+            "raw.ingestion_runs": runs_deleted,
+        },
+        failed_snapshot_ids,
+    )
+
+
+def prune_i3_storage(
+    provider_id: str,
+    *,
+    settings: Settings | None = None,
+    engine: Engine | None = None,
+    dry_run: bool = False,
+) -> I3StoragePruneResult:
+    """Prune closed silver i3 history, then raw i3 snapshots + their R2 JSON.
+
+    Silver-closed runs FIRST so any raw snapshot whose last referencing silver
+    row was just pruned becomes eligible for the raw sweep in the same
+    transaction. Both phases run inside one engine.begin().
+    """
+
+    settings = settings or get_settings()
+    engine = engine or make_engine(settings)
+    bronze_storage = get_bronze_storage(
+        settings, project_root=Path(__file__).resolve().parents[2]
+    )
+
+    silver_retention = settings.SILVER_I3_CLOSED_RETENTION_DAYS
+    raw_retention = settings.BRONZE_I3_RETENTION_DAYS
+
+    with engine.begin() as connection:
+        silver_cutoff_utc, silver_row_counts = prune_i3_silver_closed_rows(
+            connection,
+            provider_id=provider_id,
+            retention_days=silver_retention,
+            dry_run=dry_run,
+        )
+        raw_cutoff_utc, raw_object_counts, raw_meta_counts, failed_snapshot_ids = (
+            prune_i3_raw_snapshots(
+                connection,
+                provider_id=provider_id,
+                retention_days=raw_retention,
+                bronze_storage=bronze_storage,
+                dry_run=dry_run,
+            )
+        )
+        completed_at_utc = utc_now()
+
+    deleted_row_counts = {**silver_row_counts, **raw_meta_counts}
+
+    return I3StoragePruneResult(
+        provider_id=provider_id,
+        dry_run=dry_run,
+        raw_retention_days=raw_retention,
+        silver_closed_retention_days=silver_retention,
+        raw_cutoff_utc=raw_cutoff_utc,
+        silver_cutoff_utc=silver_cutoff_utc,
+        deleted_object_counts=raw_object_counts,
+        deleted_row_counts=deleted_row_counts,
+        failed_object_counts={"i3_raw": len(failed_snapshot_ids)},
         completed_at_utc=completed_at_utc,
     )
 

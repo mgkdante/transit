@@ -110,6 +110,19 @@ class Settings(BaseSettings):
     SNAPSHOT_LOCAL_ROOT: str | None = None         # used when backend == "local"
     SNAPSHOT_R2_BUCKET: str | None = None          # public snapshot bucket
     SNAPSHOT_PUBLIC_BASE_URL: str | None = None    # e.g. https://data.example.com (manifests)
+    # Basemap pointer (slice-9.1.1r). Until the Quebec PMTiles archive is hosted
+    # these stay unset -> manifest.basemap is null and no basemap.json is written.
+    SNAPSHOT_BASEMAP_PMTILES_URL: str | None = None   # absolute URL of the Quebec PMTiles archive
+    SNAPSHOT_BASEMAP_STYLE_URL: str | None = None      # optional MapLibre style JSON URL
+    SNAPSHOT_BASEMAP_ATTRIBUTION: str = "© OpenStreetMap contributors, © Protomaps"
+    # Bounded thread-pool fan-out for per-entity snapshot uploads (slice-9.1.1r
+    # stage 2). On a new-GTFS-edition day the hash-gate skips nothing, so the
+    # publish must re-upload all ~9.3k static + ~8.5k historic files; serial PUTs
+    # over WAN take ~50min and time the daily jobs out. Uploading the per-route /
+    # per-stop / receipts files through a bounded ThreadPoolExecutor parallelises
+    # the network round-trips while keeping the manifest LAST and the flat files
+    # untouched. <=1 disables the pool (sequential, for tests / debugging).
+    SNAPSHOT_PUBLISH_CONCURRENCY: int = 16
 
     PIPELINE_PAUSED: bool = False
     REALTIME_POLL_SECONDS: int = 30
@@ -120,11 +133,20 @@ class Settings(BaseSettings):
     HEALTH_RUNTIME_CACHE_SECONDS: int = 30
     STATIC_DATASET_RETENTION_COUNT: int = 1
     SILVER_REALTIME_RETENTION_DAYS: int = 14
+    # Max rows deleted per realtime-history table per prune cycle. The prune runs
+    # on every ~57s worker cycle; an unbounded DELETE of the accumulated backlog
+    # (e.g. ~252M-row silver.rt_trip_update_stop_times after a redeploy) in a
+    # single transaction is the unbounded-heavy-op hang class. Bounding each
+    # DELETE to this many rows/table/cycle drains the one-time backlog gradually
+    # over many cycles while a steady-state delta clears in one quick pass.
+    SILVER_REALTIME_PRUNE_BATCH: int = 50000
     GOLD_FACT_RETENTION_DAYS: int = 14
     GOLD_REPORTING_OPEN_WINDOW_DAYS: int = 10
     BRONZE_REALTIME_RETENTION_DAYS: int = 30
     BRONZE_STATIC_RETENTION_DAYS: int = 365
     GOLD_WARM_ROLLUP_RETENTION_DAYS: int = 365
+    BRONZE_I3_RETENTION_DAYS: int = 30
+    SILVER_I3_CLOSED_RETENTION_DAYS: int = 90
     BRONZE_PRUNE_MAX_OBJECTS_PER_BATCH: int = 5000
     BRONZE_PRUNE_MAX_BATCHES: int = 1
 
@@ -197,6 +219,10 @@ class Settings(BaseSettings):
             "SNAPSHOT_LOCAL_ROOT": self.SNAPSHOT_LOCAL_ROOT,
             "SNAPSHOT_R2_BUCKET": self.SNAPSHOT_R2_BUCKET,
             "SNAPSHOT_PUBLIC_BASE_URL": self.SNAPSHOT_PUBLIC_BASE_URL,
+            "SNAPSHOT_BASEMAP_PMTILES_URL": self.SNAPSHOT_BASEMAP_PMTILES_URL,
+            "SNAPSHOT_BASEMAP_STYLE_URL": self.SNAPSHOT_BASEMAP_STYLE_URL,
+            "SNAPSHOT_BASEMAP_ATTRIBUTION": self.SNAPSHOT_BASEMAP_ATTRIBUTION,
+            "SNAPSHOT_PUBLISH_CONCURRENCY": self.SNAPSHOT_PUBLISH_CONCURRENCY,
             "PIPELINE_PAUSED": self.PIPELINE_PAUSED,
             "REALTIME_POLL_SECONDS": self.REALTIME_POLL_SECONDS,
             "REALTIME_STARTUP_DELAY_SECONDS": self.REALTIME_STARTUP_DELAY_SECONDS,
@@ -206,11 +232,14 @@ class Settings(BaseSettings):
             "HEALTH_RUNTIME_CACHE_SECONDS": self.HEALTH_RUNTIME_CACHE_SECONDS,
             "STATIC_DATASET_RETENTION_COUNT": self.STATIC_DATASET_RETENTION_COUNT,
             "SILVER_REALTIME_RETENTION_DAYS": self.SILVER_REALTIME_RETENTION_DAYS,
+            "SILVER_REALTIME_PRUNE_BATCH": self.SILVER_REALTIME_PRUNE_BATCH,
             "GOLD_FACT_RETENTION_DAYS": self.GOLD_FACT_RETENTION_DAYS,
             "GOLD_REPORTING_OPEN_WINDOW_DAYS": self.GOLD_REPORTING_OPEN_WINDOW_DAYS,
             "BRONZE_REALTIME_RETENTION_DAYS": self.BRONZE_REALTIME_RETENTION_DAYS,
             "BRONZE_STATIC_RETENTION_DAYS": self.BRONZE_STATIC_RETENTION_DAYS,
             "GOLD_WARM_ROLLUP_RETENTION_DAYS": self.GOLD_WARM_ROLLUP_RETENTION_DAYS,
+            "BRONZE_I3_RETENTION_DAYS": self.BRONZE_I3_RETENTION_DAYS,
+            "SILVER_I3_CLOSED_RETENTION_DAYS": self.SILVER_I3_CLOSED_RETENTION_DAYS,
             "BRONZE_PRUNE_MAX_OBJECTS_PER_BATCH": self.BRONZE_PRUNE_MAX_OBJECTS_PER_BATCH,
             "BRONZE_PRUNE_MAX_BATCHES": self.BRONZE_PRUNE_MAX_BATCHES,
             "BACKUP_S3_PREFIX": self.BACKUP_S3_PREFIX,

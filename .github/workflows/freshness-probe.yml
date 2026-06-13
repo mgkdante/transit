@@ -1,0 +1,35 @@
+name: Freshness Probe
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Every 15 minutes. The pipeline live publish cadence is ~60s, so 300s of
+    # manifest staleness is a real stall. Scheduled workflows only run from the
+    # default branch — this probe goes live on merge to main.
+    - cron: "*/15 * * * *"
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: freshness-probe
+  cancel-in-progress: false
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      # Dependency-light: curl + jq + date + psql are preinstalled on
+      # ubuntu-latest, and gh is too. No python toolchain bootstrap here.
+      - name: Run freshness probe
+        run: .github/scripts/freshness-probe.sh
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SNAPSHOT_PUBLIC_BASE_URL: ${{ secrets.SNAPSHOT_PUBLIC_BASE_URL }}
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}

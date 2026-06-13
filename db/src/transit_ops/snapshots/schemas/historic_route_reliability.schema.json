@@ -196,6 +196,10 @@
     }
   },
   "properties": {
+    "generated_utc": {
+      "title": "Generated Utc",
+      "type": "string"
+    },
     "habits": {
       "anyOf": [
         {
@@ -246,6 +250,7 @@
     }
   },
   "required": [
+    "generated_utc",
     "id"
   ],
   "title": "RouteReliability",

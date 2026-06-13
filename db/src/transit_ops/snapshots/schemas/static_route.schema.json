@@ -133,6 +133,10 @@
       "default": null,
       "title": "First Departure"
     },
+    "generated_utc": {
+      "title": "Generated Utc",
+      "type": "string"
+    },
     "id": {
       "title": "Id",
       "type": "string"
@@ -170,6 +174,7 @@
     }
   },
   "required": [
+    "generated_utc",
     "id"
   ],
   "title": "RouteFile",

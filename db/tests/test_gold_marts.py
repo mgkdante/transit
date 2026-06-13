@@ -59,8 +59,14 @@ class FakeMappingResult:
 
 
 class RecordingConnection:
-    def __init__(self, *, dataset_row: dict[str, object] | None) -> None:
+    def __init__(
+        self,
+        *,
+        dataset_row: dict[str, object] | None,
+        silver_routes_exists: bool = True,
+    ) -> None:
         self.dataset_row = dataset_row
+        self.silver_routes_exists = silver_routes_exists
         self.calls: list[tuple[str, object]] = []
 
     def execute(self, statement, params=None):  # noqa: ANN001
@@ -69,6 +75,11 @@ class RecordingConnection:
 
         if "FROM core.dataset_versions" in sql_text:
             return FakeMappingResult(self.dataset_row)
+        # Empty-silver guard (slice-9.1.1j): EXISTS over silver.routes for the
+        # current version. Routed before the dim-history branches (which key on
+        # gold.dim_*_history, not silver.routes) so it cannot be swallowed.
+        if "SELECT EXISTS" in sql_text and "FROM silver.routes" in sql_text:
+            return FakeScalarResult(self.silver_routes_exists)
         if (
             "SELECT max(source_realtime_snapshot_id)" in sql_text
             and "silver.rt_feed_snapshots" in sql_text
@@ -621,3 +632,36 @@ def test_dim_history_statements_sql_contract() -> None:
     # Diffed against NEW-version silver, never the (already pruned) old version.
     assert "silver.routes" in close_route and "silver.routes" in open_route
     assert "silver.stops" in close_stop and "silver.stops" in open_stop
+
+
+def test_refresh_gold_static_raises_when_current_version_has_no_silver_rows() -> None:
+    # Wedged prod state: is_current version exists but has zero silver.routes
+    # rows. refresh_gold_static must hard-error BEFORE deleting any dim, so it
+    # cannot wipe gold dims and INSERT zero rows (slice-9.1.1j guard).
+    connection = RecordingConnection(
+        dataset_row={"dataset_version_id": 2},
+        silver_routes_exists=False,
+    )
+    engine = FakeEngine(connection)
+    settings = Settings(DATABASE_URL="postgresql://user:pass@example.com/transit")
+
+    with pytest.raises(ValueError, match="load-static-silver"):
+        refresh_gold_static(
+            "stm",
+            settings=settings,
+            registry=FakeRegistry(_build_manifest()),
+            engine=engine,
+        )
+
+    sql_calls = [call[0] for call in connection.calls]
+    assert not any("DELETE FROM gold.dim_" in sql for sql in sql_calls)
+
+
+def test_refresh_gold_static_guard_checks_silver_routes_for_current_version() -> None:
+    from transit_ops.gold.marts import SELECT_CURRENT_VERSION_HAS_SILVER_ROUTES
+
+    sql = str(SELECT_CURRENT_VERSION_HAS_SILVER_ROUTES)
+    assert "silver.routes" in sql
+    assert ":provider_id" in sql
+    assert ":dataset_version_id" in sql
+    assert "EXISTS" in sql

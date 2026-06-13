@@ -1,0 +1,21 @@
+{
+  "properties": {
+    "dates": {
+      "description": "ISO dates with a published receipt in the trailing 30-day build window, ascending; fetch {receipts_prefix}{date}.json; dates absent here either never had data (404 -> empty state) or are older archived receipts",
+      "items": {
+        "type": "string"
+      },
+      "title": "Dates",
+      "type": "array"
+    },
+    "generated_utc": {
+      "title": "Generated Utc",
+      "type": "string"
+    }
+  },
+  "required": [
+    "generated_utc"
+  ],
+  "title": "ReceiptsIndex",
+  "type": "object"
+}

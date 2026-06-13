@@ -23,9 +23,14 @@ from transit_ops.ingestion import (
     build_realtime_ingestion_config,
     capture_i3_alerts,
     capture_realtime_feed,
+    ingest_gis_feed,
     ingest_static_feed,
 )
-from transit_ops.ingestion.common import utc_now
+from transit_ops.ingestion.common import (
+    get_feed_endpoint_id,
+    insert_failed_ingestion_run,
+    utc_now,
+)
 from transit_ops.maintenance import (
     GoldStoragePruneResult,
     SilverStoragePruneResult,
@@ -36,6 +41,7 @@ from transit_ops.providers import ProviderRegistry
 from transit_ops.settings import Settings, get_settings
 from transit_ops.snapshots.publish import publish_snapshot
 from transit_ops.silver import (
+    load_latest_gis_to_silver,
     load_latest_i3_to_silver,
     load_latest_realtime_to_silver,
     load_latest_static_to_silver,
@@ -63,6 +69,14 @@ class StaticPipelineResult:
     gold_build: dict[str, object] | None
     static_changed: bool
     skipped_reason: str | None
+    # GIS best-effort tail (slice-9.1.1v). Defaulted so a GIS failure never blocks
+    # the static publish and pre-existing constructors stay valid.
+    gis_ingestion: dict[str, object] | None = None
+    gis_silver_load: dict[str, object] | None = None
+    gis_ingestion_duration_seconds: float | None = None
+    gis_silver_load_duration_seconds: float | None = None
+    gis_status: str = "failed"
+    gis_error_message: str | None = None
 
     def display_dict(self) -> dict[str, object]:
         payload = asdict(self)
@@ -237,6 +251,82 @@ def _run_timed_realtime_step(step_name: str, step_fn):  # noqa: ANN001, ANN202
     return result, duration_seconds
 
 
+@dataclass(frozen=True)
+class _GisStepsOutcome:
+    gis_ingestion: dict[str, object] | None
+    gis_silver_load: dict[str, object] | None
+    gis_ingestion_duration_seconds: float | None
+    gis_silver_load_duration_seconds: float | None
+    gis_status: str
+    gis_error_message: str | None
+
+
+def _run_gis_steps_best_effort(
+    provider_id: str,
+    *,
+    settings: Settings,
+    registry: ProviderRegistry,
+    engine: Engine,
+) -> _GisStepsOutcome:
+    """Run the GIS chain (ingest + silver load) as a best-effort tail.
+
+    GIS must NEVER fail the static publish: any exception is logged and recorded,
+    the static pipeline result stays status='succeeded'. The silver load runs
+    unconditionally (even when GIS content is unchanged) so gis_gtfs_matches
+    re-key to the current static dataset version on every GTFS drop.
+    """
+    try:
+        gis_ingestion, gis_ingestion_duration_seconds = _run_timed_static_step(
+            "ingest-gis",
+            lambda: ingest_gis_feed(
+                provider_id,
+                settings=settings,
+                registry=registry,
+                engine=engine,
+            ),
+        )
+    except Exception as exc:  # noqa: BLE001 — best-effort: GIS must never fail the static publish
+        logger.exception("GIS ingest failed (static pipeline continues).")
+        return _GisStepsOutcome(
+            gis_ingestion=None,
+            gis_silver_load=None,
+            gis_ingestion_duration_seconds=None,
+            gis_silver_load_duration_seconds=None,
+            gis_status="failed",
+            gis_error_message=f"ingest-gis failed: {exc}",
+        )
+
+    try:
+        gis_silver_load, gis_silver_load_duration_seconds = _run_timed_static_step(
+            "load-gis-silver",
+            lambda: load_latest_gis_to_silver(
+                provider_id,
+                settings=settings,
+                registry=registry,
+                engine=engine,
+            ),
+        )
+    except Exception as exc:  # noqa: BLE001 — best-effort: GIS must never fail the static publish
+        logger.exception("GIS silver load failed (static pipeline continues).")
+        return _GisStepsOutcome(
+            gis_ingestion=gis_ingestion.display_dict(),
+            gis_silver_load=None,
+            gis_ingestion_duration_seconds=gis_ingestion_duration_seconds,
+            gis_silver_load_duration_seconds=None,
+            gis_status="failed",
+            gis_error_message=f"load-gis-silver failed: {exc}",
+        )
+
+    return _GisStepsOutcome(
+        gis_ingestion=gis_ingestion.display_dict(),
+        gis_silver_load=gis_silver_load.display_dict(),
+        gis_ingestion_duration_seconds=gis_ingestion_duration_seconds,
+        gis_silver_load_duration_seconds=gis_silver_load_duration_seconds,
+        gis_status="succeeded",
+        gis_error_message=None,
+    )
+
+
 def run_static_pipeline(
     provider_id: str,
     *,
@@ -272,6 +362,9 @@ def run_static_pipeline(
             provider_id,
             static_ingestion.checksum_sha256,
         )
+        gis = _run_gis_steps_best_effort(
+            provider_id, settings=settings, registry=registry, engine=engine
+        )
         completed_at_utc = utc_now()
         total_duration_seconds = round(time.perf_counter() - started_at, 3)
         return StaticPipelineResult(
@@ -291,6 +384,12 @@ def run_static_pipeline(
                 getattr(static_ingestion, "skipped_reason", None)
                 or "static_content_unchanged"
             ),
+            gis_ingestion=gis.gis_ingestion,
+            gis_silver_load=gis.gis_silver_load,
+            gis_ingestion_duration_seconds=gis.gis_ingestion_duration_seconds,
+            gis_silver_load_duration_seconds=gis.gis_silver_load_duration_seconds,
+            gis_status=gis.gis_status,
+            gis_error_message=gis.gis_error_message,
         )
 
     # Content changed (or no existing version): run steps 2 and 3.
@@ -320,6 +419,9 @@ def run_static_pipeline(
         ),
     )
 
+    gis = _run_gis_steps_best_effort(
+        provider_id, settings=settings, registry=registry, engine=engine
+    )
     completed_at_utc = utc_now()
     total_duration_seconds = round(time.perf_counter() - started_at, 3)
     return StaticPipelineResult(
@@ -336,7 +438,62 @@ def run_static_pipeline(
         gold_build=gold_build.display_dict(),
         static_changed=True,
         skipped_reason=None,
+        gis_ingestion=gis.gis_ingestion,
+        gis_silver_load=gis.gis_silver_load,
+        gis_ingestion_duration_seconds=gis.gis_ingestion_duration_seconds,
+        gis_silver_load_duration_seconds=gis.gis_silver_load_duration_seconds,
+        gis_status=gis.gis_status,
+        gis_error_message=gis.gis_error_message,
     )
+
+
+def _persist_silver_load_failure(
+    engine: Engine,
+    *,
+    provider_id: str,
+    endpoint_key: str,
+    error_message: str,
+    started_at_utc: datetime,
+) -> None:
+    """Best-effort: record a run_kind='silver_load' failed run for DB telemetry.
+
+    The realtime silver-load failure left zero DB trace before slice-9.1.1o
+    (a multi-hour alerts.json freeze was invisible to every DB query). This
+    writes a completed status='failed' row so the freshness probe can detect
+    the failure-burst incident class.
+
+    A FRESH engine.begin() transaction is used because the load transaction
+    just rolled back. The whole body is swallowed: this MUST never raise or
+    change the cycle's status semantics — failure telemetry is strictly
+    additive. If the run_kind CHECK constraint has not yet been migrated
+    (deploy-ordering mistake), the insert raises here and is logged, leaving
+    behavior identical to before.
+    """
+    try:
+        with engine.begin() as connection:
+            feed_endpoint_id = get_feed_endpoint_id(
+                connection,
+                provider_id=provider_id,
+                endpoint_key=endpoint_key,
+                missing_message=(
+                    f"No feed endpoint '{endpoint_key}' for provider '{provider_id}'."
+                ),
+            )
+            insert_failed_ingestion_run(
+                connection,
+                provider_id=provider_id,
+                feed_endpoint_id=feed_endpoint_id,
+                run_kind="silver_load",
+                started_at_utc=started_at_utc,
+                completed_at_utc=utc_now(),
+                error_message=error_message,
+            )
+    except Exception:  # noqa: BLE001 — telemetry must never break the cycle
+        logger.exception(
+            "Failed to persist silver_load failure row for provider '%s', endpoint '%s'.",
+            provider_id,
+            endpoint_key,
+        )
 
 
 def _capture_and_load_endpoint(
@@ -400,6 +557,7 @@ def _capture_and_load_endpoint(
         endpoint_key,
     )
     silver_load_started_at = time.perf_counter()
+    silver_load_started_at_utc = utc_now()
     try:
         silver_load_result, silver_load_duration_seconds = _run_timed_realtime_step(
             f"load-realtime-silver[{endpoint_key}]",
@@ -423,6 +581,14 @@ def _capture_and_load_endpoint(
             endpoint_key,
             exc,
         )
+        error_message = f"load-realtime-silver failed: {exc}"
+        _persist_silver_load_failure(
+            engine,
+            provider_id=provider_id,
+            endpoint_key=endpoint_key,
+            error_message=error_message,
+            started_at_utc=silver_load_started_at_utc,
+        )
         return RealtimeEndpointCycleResult(
             endpoint_key=endpoint_key,
             status="failed",
@@ -434,7 +600,7 @@ def _capture_and_load_endpoint(
             ),
             capture_result=capture_result.display_dict(),
             silver_load_result=None,
-            error_message=f"load-realtime-silver failed: {exc}",
+            error_message=error_message,
         )
 
     return RealtimeEndpointCycleResult(
@@ -502,6 +668,7 @@ def _capture_and_load_i3_alerts(
 
     logger.info("Running i3 alert Silver load step for provider '%s'.", provider_id)
     silver_load_started_at = time.perf_counter()
+    silver_load_started_at_utc = utc_now()
     try:
         silver_load_result, silver_load_duration_seconds = _run_timed_realtime_step(
             f"load-i3-silver[{I3_ALERT_ENDPOINT}]",
@@ -522,6 +689,14 @@ def _capture_and_load_i3_alerts(
             provider_id,
             exc,
         )
+        error_message = f"load-i3-silver failed: {exc}"
+        _persist_silver_load_failure(
+            engine,
+            provider_id=provider_id,
+            endpoint_key=I3_ALERT_ENDPOINT,
+            error_message=error_message,
+            started_at_utc=silver_load_started_at_utc,
+        )
         return RealtimeEndpointCycleResult(
             endpoint_key=I3_ALERT_ENDPOINT,
             status="failed",
@@ -533,7 +708,7 @@ def _capture_and_load_i3_alerts(
             ),
             capture_result=capture_result.display_dict(),
             silver_load_result=None,
-            error_message=f"load-i3-silver failed: {exc}",
+            error_message=error_message,
         )
 
     return RealtimeEndpointCycleResult(

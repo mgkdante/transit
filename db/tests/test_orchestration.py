@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import logging
 from datetime import UTC, datetime
 from types import SimpleNamespace
@@ -9,6 +10,7 @@ import pytest
 import transit_ops.orchestration as orchestration
 from transit_ops.gold import GoldBuildResult, GoldRealtimeRefreshResult, GoldStaticRefreshResult
 from transit_ops.ingestion import I3IngestionResult, RealtimeIngestionResult, StaticIngestionResult
+from transit_ops.ingestion.gis import GisIngestionResult
 from transit_ops.orchestration import (
     run_realtime_cycle,
     run_realtime_worker_loop,
@@ -16,6 +18,7 @@ from transit_ops.orchestration import (
 )
 from transit_ops.settings import Settings
 from transit_ops.silver import I3SilverLoadResult, RealtimeSilverLoadResult, StaticSilverLoadResult
+from transit_ops.silver.gis import GisSilverLoadResult
 
 
 class _FakeEngine:
@@ -100,6 +103,77 @@ def _gold_static_refresh_result() -> GoldStaticRefreshResult:
         refreshed_at_utc=datetime(2026, 3, 25, 0, 2, 0, tzinfo=UTC),
         row_counts={"dim_route": 100, "dim_stop": 200, "dim_date": 365},
     )
+
+
+def _gis_ingestion_result(
+    *,
+    content_changed: bool = True,
+    status: str = "succeeded",
+    skipped_reason: str | None = None,
+) -> GisIngestionResult:
+    return GisIngestionResult(
+        provider_id="stm",
+        endpoint_key="gis_static",
+        source_url="https://stm.info/gis/stm_sig.zip",
+        storage_backend="s3",
+        storage_path="stm/gis_static/2026/06/10/stm_sig.zip",
+        archive_full_path="s3://transit-raw/stm/gis_static/2026/06/10/stm_sig.zip",
+        byte_size=5_000_000,
+        checksum_sha256="f" * 64,
+        http_status_code=200,
+        ingestion_run_id=99,
+        ingestion_object_id=199,
+        status=status,
+        started_at_utc=datetime(2026, 3, 25, 0, 3, 0, tzinfo=UTC),
+        completed_at_utc=datetime(2026, 3, 25, 0, 3, 5, tzinfo=UTC),
+        content_changed=content_changed,
+        dataset_version_id=9,
+        first_seen_at_utc=datetime(2026, 3, 25, 0, 3, 0, tzinfo=UTC),
+        last_seen_at_utc=datetime(2026, 3, 25, 0, 3, 5, tzinfo=UTC),
+        observed_from_utc=datetime(2026, 3, 25, 0, 3, 0, tzinfo=UTC),
+        observed_until_utc=datetime(2026, 3, 25, 0, 3, 5, tzinfo=UTC),
+        skipped_reason=skipped_reason,
+    )
+
+
+def _gis_silver_result() -> GisSilverLoadResult:
+    return GisSilverLoadResult(
+        provider_id="stm",
+        dataset_version_id=9,
+        static_dataset_version_id=7,
+        source_ingestion_run_id=99,
+        source_ingestion_object_id=199,
+        storage_path="stm/gis_static/2026/06/10/stm_sig.zip",
+        archive_full_path="s3://transit-raw/stm/gis_static/2026/06/10/stm_sig.zip",
+        content_hash="f" * 64,
+        row_counts={
+            "gis_datasets": 1,
+            "gis_stop_features": 9000,
+            "gis_line_features": 800,
+            "gis_gtfs_matches": 8500,
+        },
+        shapefile_count=4,
+        stop_feature_count=9000,
+        line_feature_count=800,
+        match_count=8500,
+    )
+
+
+def _patch_gis_steps(monkeypatch, call_order: list[str] | None = None) -> None:
+    """Default-success GIS monkeypatches so static-pipeline tests never hit the network."""
+
+    def _ingest(provider_id, *, settings, registry, engine):  # noqa: ANN001, ANN202, ARG001
+        if call_order is not None:
+            call_order.append("ingest-gis")
+        return _gis_ingestion_result()
+
+    def _silver(provider_id, *, settings, registry, engine):  # noqa: ANN001, ANN202, ARG001
+        if call_order is not None:
+            call_order.append("load-gis-silver")
+        return _gis_silver_result()
+
+    monkeypatch.setattr(orchestration, "ingest_gis_feed", _ingest, raising=False)
+    monkeypatch.setattr(orchestration, "load_latest_gis_to_silver", _silver, raising=False)
 
 
 def _gold_refresh_result() -> GoldRealtimeRefreshResult:
@@ -223,6 +297,7 @@ def test_run_static_pipeline_orders_existing_steps(monkeypatch) -> None:
             _gold_static_refresh_result(),
         )[1],
     )
+    _patch_gis_steps(monkeypatch, call_order)
 
     result = run_static_pipeline(
         "stm",
@@ -231,7 +306,13 @@ def test_run_static_pipeline_orders_existing_steps(monkeypatch) -> None:
         engine=_FakeEngine(),
     )
 
-    assert call_order == ["ingest-static", "load-static-silver", "refresh-gold-static"]
+    assert call_order == [
+        "ingest-static",
+        "load-static-silver",
+        "refresh-gold-static",
+        "ingest-gis",
+        "load-gis-silver",
+    ]
     assert result.status == "succeeded"
     assert result.static_ingestion["storage_backend"] == "s3"
     assert result.gold_build["dataset_version_id"] == 7
@@ -581,6 +662,7 @@ def test_run_static_pipeline_skips_silver_and_gold_when_ingestion_skips_unchange
 
     monkeypatch.setattr(orchestration, "load_latest_static_to_silver", _should_not_be_called_silver)
     monkeypatch.setattr(orchestration, "refresh_gold_static", _should_not_be_called_gold)
+    _patch_gis_steps(monkeypatch)
 
     result = run_static_pipeline(
         "stm",
@@ -646,6 +728,7 @@ def test_run_static_pipeline_uses_ingestion_content_changed_without_hash_lookup(
 
     monkeypatch.setattr(orchestration, "load_latest_static_to_silver", _should_not_be_called_silver)
     monkeypatch.setattr(orchestration, "refresh_gold_static", _should_not_be_called_gold)
+    _patch_gis_steps(monkeypatch)
 
     result = run_static_pipeline(
         "stm",
@@ -689,6 +772,7 @@ def test_run_static_pipeline_runs_silver_and_gold_when_ingestion_changed(monkeyp
             _gold_static_refresh_result(),
         )[1],
     )
+    _patch_gis_steps(monkeypatch)
 
     result = run_static_pipeline(
         "stm",
@@ -736,6 +820,7 @@ def test_run_static_pipeline_runs_silver_and_gold_when_ingestion_reports_new_ver
             _gold_static_refresh_result(),
         )[1],
     )
+    _patch_gis_steps(monkeypatch)
 
     result = run_static_pipeline(
         "stm",
@@ -749,6 +834,237 @@ def test_run_static_pipeline_runs_silver_and_gold_when_ingestion_reports_new_ver
     assert result.skipped_reason is None
     assert result.silver_load is not None
     assert result.gold_build is not None
+
+
+# ---------------------------------------------------------------------------
+# GIS best-effort tail (slice-9.1.1v)
+# ---------------------------------------------------------------------------
+
+
+def test_run_static_pipeline_runs_gis_after_static_chain(monkeypatch) -> None:
+    """GIS chain runs after the full static chain on the changed path."""
+    call_order: list[str] = []
+
+    monkeypatch.setattr(
+        orchestration,
+        "ingest_static_feed",
+        lambda provider_id, settings, registry, engine: (
+            call_order.append("ingest-static"),
+            _static_ingestion_result(),
+        )[1],
+    )
+    monkeypatch.setattr(
+        orchestration,
+        "load_latest_static_to_silver",
+        lambda provider_id, settings, registry, engine: (
+            call_order.append("load-static-silver"),
+            _static_silver_result(),
+        )[1],
+    )
+    monkeypatch.setattr(
+        orchestration,
+        "refresh_gold_static",
+        lambda provider_id, settings, registry, engine: (
+            call_order.append("refresh-gold-static"),
+            _gold_static_refresh_result(),
+        )[1],
+    )
+    _patch_gis_steps(monkeypatch, call_order)
+
+    result = run_static_pipeline(
+        "stm",
+        settings=Settings(_env_file=None, DATABASE_URL="postgresql://user:pass@example.com/transit"),
+        registry=object(),
+        engine=_FakeEngine(),
+    )
+
+    assert call_order == [
+        "ingest-static",
+        "load-static-silver",
+        "refresh-gold-static",
+        "ingest-gis",
+        "load-gis-silver",
+    ]
+    assert result.gis_status == "succeeded"
+    assert result.gis_ingestion is not None
+    assert result.gis_silver_load is not None
+    assert result.gis_ingestion_duration_seconds >= 0
+    assert result.gis_silver_load_duration_seconds >= 0
+    assert result.gis_error_message is None
+    assert result.status == "succeeded"
+
+
+def test_run_static_pipeline_runs_gis_when_static_unchanged(monkeypatch) -> None:
+    """GIS silver load runs even when static content is unchanged (unconditional reload)."""
+    call_order: list[str] = []
+
+    monkeypatch.setattr(
+        orchestration,
+        "ingest_static_feed",
+        lambda provider_id, settings, registry, engine: (
+            call_order.append("ingest-static"),
+            _static_ingestion_result(
+                content_changed=False,
+                status="skipped_unchanged",
+                storage_path=None,
+                archive_full_path=None,
+                ingestion_object_id=None,
+                skipped_reason="static_content_unchanged",
+            ),
+        )[1],
+    )
+
+    def _should_not_run(*args, **kwargs):  # noqa: ANN002, ANN003
+        raise AssertionError("static silver/gold must not run on unchanged path")
+
+    monkeypatch.setattr(orchestration, "load_latest_static_to_silver", _should_not_run)
+    monkeypatch.setattr(orchestration, "refresh_gold_static", _should_not_run)
+    _patch_gis_steps(monkeypatch, call_order)
+
+    result = run_static_pipeline(
+        "stm",
+        settings=Settings(_env_file=None, DATABASE_URL="postgresql://user:pass@example.com/transit"),
+        registry=object(),
+        engine=_FakeEngine(),
+    )
+
+    assert call_order == ["ingest-static", "ingest-gis", "load-gis-silver"]
+    assert result.static_changed is False
+    assert result.gis_status == "succeeded"
+    assert result.gis_ingestion is not None
+    assert result.gis_silver_load is not None
+    assert result.status == "succeeded"
+
+
+def test_run_static_pipeline_gis_ingest_failure_does_not_fail_pipeline(monkeypatch) -> None:
+    """An ingest-gis exception is isolated: pipeline still succeeds, silver load skipped."""
+    silver_called = False
+
+    monkeypatch.setattr(
+        orchestration,
+        "ingest_static_feed",
+        lambda provider_id, settings, registry, engine: _static_ingestion_result(),
+    )
+    monkeypatch.setattr(
+        orchestration,
+        "load_latest_static_to_silver",
+        lambda provider_id, settings, registry, engine: _static_silver_result(),
+    )
+    monkeypatch.setattr(
+        orchestration,
+        "refresh_gold_static",
+        lambda provider_id, settings, registry, engine: _gold_static_refresh_result(),
+    )
+
+    def _ingest_gis_raises(provider_id, *, settings, registry, engine):  # noqa: ANN001, ANN202, ARG001
+        raise RuntimeError("stm sig endpoint down")
+
+    def _gis_silver(provider_id, *, settings, registry, engine):  # noqa: ANN001, ANN202, ARG001
+        nonlocal silver_called
+        silver_called = True
+        return _gis_silver_result()
+
+    monkeypatch.setattr(orchestration, "ingest_gis_feed", _ingest_gis_raises, raising=False)
+    monkeypatch.setattr(orchestration, "load_latest_gis_to_silver", _gis_silver, raising=False)
+
+    result = run_static_pipeline(
+        "stm",
+        settings=Settings(_env_file=None, DATABASE_URL="postgresql://user:pass@example.com/transit"),
+        registry=object(),
+        engine=_FakeEngine(),
+    )
+
+    assert result.status == "succeeded"
+    assert result.gis_status == "failed"
+    assert result.gis_error_message == "ingest-gis failed: stm sig endpoint down"
+    assert result.gis_ingestion is None
+    assert result.gis_silver_load is None
+    assert not silver_called
+
+
+def test_run_static_pipeline_gis_silver_failure_recorded_not_raised(monkeypatch) -> None:
+    """A load-gis-silver exception is isolated; the successful ingest dict is kept."""
+    monkeypatch.setattr(
+        orchestration,
+        "ingest_static_feed",
+        lambda provider_id, settings, registry, engine: _static_ingestion_result(),
+    )
+    monkeypatch.setattr(
+        orchestration,
+        "load_latest_static_to_silver",
+        lambda provider_id, settings, registry, engine: _static_silver_result(),
+    )
+    monkeypatch.setattr(
+        orchestration,
+        "refresh_gold_static",
+        lambda provider_id, settings, registry, engine: _gold_static_refresh_result(),
+    )
+
+    def _gis_silver_raises(provider_id, *, settings, registry, engine):  # noqa: ANN001, ANN202, ARG001
+        raise RuntimeError("shapefile parse error")
+
+    monkeypatch.setattr(
+        orchestration,
+        "ingest_gis_feed",
+        lambda provider_id, *, settings, registry, engine: _gis_ingestion_result(),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        orchestration, "load_latest_gis_to_silver", _gis_silver_raises, raising=False
+    )
+
+    result = run_static_pipeline(
+        "stm",
+        settings=Settings(_env_file=None, DATABASE_URL="postgresql://user:pass@example.com/transit"),
+        registry=object(),
+        engine=_FakeEngine(),
+    )
+
+    assert result.status == "succeeded"
+    assert result.gis_status == "failed"
+    assert result.gis_error_message is not None
+    assert result.gis_error_message.startswith("load-gis-silver failed:")
+    assert result.gis_ingestion is not None
+    assert result.gis_silver_load is None
+
+
+def test_run_static_pipeline_display_dict_carries_gis_fields(monkeypatch) -> None:
+    """display_dict() is json-serializable and carries every gis_* field."""
+    monkeypatch.setattr(
+        orchestration,
+        "ingest_static_feed",
+        lambda provider_id, settings, registry, engine: _static_ingestion_result(),
+    )
+    monkeypatch.setattr(
+        orchestration,
+        "load_latest_static_to_silver",
+        lambda provider_id, settings, registry, engine: _static_silver_result(),
+    )
+    monkeypatch.setattr(
+        orchestration,
+        "refresh_gold_static",
+        lambda provider_id, settings, registry, engine: _gold_static_refresh_result(),
+    )
+    _patch_gis_steps(monkeypatch)
+
+    result = run_static_pipeline(
+        "stm",
+        settings=Settings(_env_file=None, DATABASE_URL="postgresql://user:pass@example.com/transit"),
+        registry=object(),
+        engine=_FakeEngine(),
+    )
+
+    payload = result.display_dict()
+    for key in (
+        "gis_ingestion",
+        "gis_silver_load",
+        "gis_ingestion_duration_seconds",
+        "gis_silver_load_duration_seconds",
+        "gis_status",
+        "gis_error_message",
+    ):
+        assert key in payload
+    json.dumps(payload)
 
 
 # ---------------------------------------------------------------------------
@@ -948,3 +1264,180 @@ def test_run_realtime_cycle_first_endpoint_call_runs_without_gating(monkeypatch)
     assert last_captures["i3_alerts"] == frozen_now
     assert last_captures["trip_updates"] == frozen_now
     assert last_captures["vehicle_positions"] == frozen_now
+
+
+# --- slice-9.1.1o: silver-load failure persistence ----------------------------
+
+
+class _RecordingFailureEngine:
+    """Fake engine whose .begin() yields a recording connection.
+
+    Records every insert_failed_ingestion_run call the orchestrator makes
+    inside its fresh failure-persistence transaction. _explode=True makes
+    .begin() raise to prove the persistence path is strictly best-effort.
+    """
+
+    def __init__(self, *, explode: bool = False) -> None:
+        self.inserts: list[dict] = []
+        self._explode = explode
+
+    def begin(self):  # noqa: ANN201
+        if self._explode:
+            raise RuntimeError("engine.begin exploded")
+        return self
+
+    def connect(self):  # noqa: ANN201
+        return self
+
+    def __enter__(self):  # noqa: ANN204
+        return self
+
+    def __exit__(self, *args) -> None:  # noqa: ANN002
+        return None
+
+
+def _install_failure_persistence_spies(monkeypatch, engine: _RecordingFailureEngine) -> None:
+    """Stub the two DB primitives the failure-persistence helper calls.
+
+    get_feed_endpoint_id resolves a deterministic id per endpoint;
+    insert_failed_ingestion_run records its kwargs onto the engine so tests
+    can assert exactly what would be written.
+    """
+
+    def fake_get_feed_endpoint_id(connection, *, provider_id, endpoint_key, missing_message):  # noqa: ANN001
+        return {"trip_updates": 11, "vehicle_positions": 12, "i3_alerts": 13}[endpoint_key]
+
+    def fake_insert_failed(connection, **kwargs):  # noqa: ANN001
+        engine.inserts.append(kwargs)
+        return 9999
+
+    monkeypatch.setattr(orchestration, "get_feed_endpoint_id", fake_get_feed_endpoint_id)
+    monkeypatch.setattr(orchestration, "insert_failed_ingestion_run", fake_insert_failed)
+
+
+def test_run_realtime_cycle_persists_gtfs_silver_load_failure_row(monkeypatch) -> None:
+    call_order: list[str] = []
+    _install_realtime_cycle_stubs(monkeypatch, call_order)
+
+    def fake_load(provider_id, endpoint_key, settings, registry, engine):  # noqa: ANN001
+        call_order.append(f"load:{endpoint_key}")
+        if endpoint_key == "trip_updates":
+            raise RuntimeError("silver loader exploded")
+        return _realtime_silver_result(endpoint_key, 20)
+
+    monkeypatch.setattr(orchestration, "load_latest_realtime_to_silver", fake_load)
+
+    engine = _RecordingFailureEngine()
+    _install_failure_persistence_spies(monkeypatch, engine)
+
+    result = run_realtime_cycle(
+        "stm",
+        settings=Settings(_env_file=None, DATABASE_URL="postgresql://user:pass@example.com/transit"),
+        registry=object(),
+        engine=engine,
+    )
+
+    # Cycle semantics unchanged: one endpoint failed, the rest succeeded.
+    assert result.status == "partial_failure"
+    assert result.endpoint_results[0].error_message == (
+        "load-realtime-silver failed: silver loader exploded"
+    )
+    # Exactly one silver_load failure row persisted, for trip_updates.
+    assert len(engine.inserts) == 1
+    insert = engine.inserts[0]
+    assert insert["provider_id"] == "stm"
+    assert insert["feed_endpoint_id"] == 11
+    assert insert["run_kind"] == "silver_load"
+    assert insert["error_message"] == "load-realtime-silver failed: silver loader exploded"
+    assert insert["started_at_utc"] is not None
+    assert insert["completed_at_utc"] is not None
+
+
+def test_run_realtime_cycle_persists_i3_silver_load_failure_row(monkeypatch) -> None:
+    call_order: list[str] = []
+    _install_realtime_cycle_stubs(monkeypatch, call_order)
+
+    def fake_i3_load(provider_id, settings, engine):  # noqa: ANN001
+        call_order.append("load:i3_alerts")
+        raise RuntimeError("i3 silver loader exploded")
+
+    monkeypatch.setattr(orchestration, "load_latest_i3_to_silver", fake_i3_load, raising=False)
+
+    engine = _RecordingFailureEngine()
+    _install_failure_persistence_spies(monkeypatch, engine)
+
+    result = run_realtime_cycle(
+        "stm",
+        settings=Settings(_env_file=None, DATABASE_URL="postgresql://user:pass@example.com/transit"),
+        registry=object(),
+        engine=engine,
+    )
+
+    assert result.status == "partial_failure"
+    i3_result = next(r for r in result.endpoint_results if r.endpoint_key == "i3_alerts")
+    assert i3_result.error_message == "load-i3-silver failed: i3 silver loader exploded"
+    assert len(engine.inserts) == 1
+    insert = engine.inserts[0]
+    assert insert["feed_endpoint_id"] == 13
+    assert insert["run_kind"] == "silver_load"
+    assert insert["error_message"] == "load-i3-silver failed: i3 silver loader exploded"
+
+
+def test_silver_load_failure_persistence_is_best_effort(monkeypatch) -> None:
+    """If the persistence helper itself raises, the cycle result is identical."""
+    call_order: list[str] = []
+    _install_realtime_cycle_stubs(monkeypatch, call_order)
+
+    def fake_load(provider_id, endpoint_key, settings, registry, engine):  # noqa: ANN001
+        call_order.append(f"load:{endpoint_key}")
+        if endpoint_key == "trip_updates":
+            raise RuntimeError("silver loader exploded")
+        return _realtime_silver_result(endpoint_key, 20)
+
+    monkeypatch.setattr(orchestration, "load_latest_realtime_to_silver", fake_load)
+
+    # engine.begin() explodes -> persistence is impossible, but must not propagate.
+    engine = _RecordingFailureEngine(explode=True)
+    _install_failure_persistence_spies(monkeypatch, engine)
+
+    result = run_realtime_cycle(
+        "stm",
+        settings=Settings(_env_file=None, DATABASE_URL="postgresql://user:pass@example.com/transit"),
+        registry=object(),
+        engine=engine,
+    )
+
+    # No insert recorded (begin exploded before any write), cycle still partial.
+    assert engine.inserts == []
+    assert result.status == "partial_failure"
+    assert result.endpoint_results[0].error_message == (
+        "load-realtime-silver failed: silver loader exploded"
+    )
+
+
+def test_capture_failures_do_not_write_silver_load_rows(monkeypatch) -> None:
+    """Capture failures persist via mark_ingestion_run_failed already — no
+    silver_load row may be written for a capture-phase failure."""
+    call_order: list[str] = []
+    _install_realtime_cycle_stubs(monkeypatch, call_order)
+
+    def fake_capture(provider_id, endpoint_key, settings, registry, engine):  # noqa: ANN001
+        call_order.append(f"capture:{endpoint_key}")
+        if endpoint_key == "vehicle_positions":
+            raise RuntimeError("capture down")
+        return _realtime_ingestion_result(endpoint_key, 20)
+
+    monkeypatch.setattr(orchestration, "capture_realtime_feed", fake_capture)
+
+    engine = _RecordingFailureEngine()
+    _install_failure_persistence_spies(monkeypatch, engine)
+
+    result = run_realtime_cycle(
+        "stm",
+        settings=Settings(_env_file=None, DATABASE_URL="postgresql://user:pass@example.com/transit"),
+        registry=object(),
+        engine=engine,
+    )
+
+    assert result.status == "partial_failure"
+    assert engine.inserts == []

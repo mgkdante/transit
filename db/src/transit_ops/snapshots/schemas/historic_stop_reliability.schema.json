@@ -83,6 +83,10 @@
       "title": "By Route",
       "type": "array"
     },
+    "generated_utc": {
+      "title": "Generated Utc",
+      "type": "string"
+    },
     "id": {
       "title": "Id",
       "type": "string"
@@ -108,6 +112,7 @@
     }
   },
   "required": [
+    "generated_utc",
     "id"
   ],
   "title": "StopReliability",

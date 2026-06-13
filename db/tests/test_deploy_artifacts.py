@@ -95,15 +95,30 @@ def test_worker_dockerfile_ships_pg_dump_16_client() -> None:
     assert "postgresql-client-16" in dockerfile
 
 
-def test_weekly_pg_repack_workflow_runs_guardrail_script() -> None:
+def test_weekly_pg_repack_workflow_executes_on_schedule() -> None:
     workflow = (REPO_ROOT / ".github/workflows/weekly-pg-repack.yml").read_text(
         encoding="utf-8"
     )
 
-    assert "name: Weekly pg_repack Guardrail" in workflow
+    # slice-9.1.1m: the scheduled Sunday run now EXECUTES a table-scoped repack.
     assert 'cron: "0 8 * * 0"' in workflow
-    assert 'PG_REPACK_DRY_RUN: "true"' in workflow
+    # The dry-run pin is gone: a hard 'PG_REPACK_DRY_RUN: "true"' at job level
+    # overrode GITHUB_ENV, so manual dry_run=false ALSO never executed. The flag
+    # is now an expression — schedule executes, dispatch defaults to dry-run.
+    assert 'PG_REPACK_DRY_RUN: "true"' not in workflow
+    assert "github.event_name == 'schedule' && 'false'" in workflow
+    assert "inputs.dry_run" in workflow
+    # The dead 'Select manual mode' GITHUB_ENV step is removed (job-level env wins
+    # over GITHUB_ENV — that was the original silent-no-execute bug).
+    assert "GITHUB_ENV" not in workflow
+    # psql is needed for the before/after size report + leftover-object check.
     assert "postgresql-16-repack" in workflow
+    assert "postgresql-client-16" in workflow
+    # Size-report artifact gives an execute run an auditable receipt.
+    assert "actions/upload-artifact@v4" in workflow
+    assert "pg-repack-size-report" in workflow
+    # First execute weeks rewrite live rows over WAN copies — give it headroom.
+    assert "timeout-minutes: 180" in workflow
     assert "bash scripts/run-pg-repack.sh" in workflow
 
 
@@ -129,3 +144,34 @@ def test_daily_warm_rollups_workflow_prunes_bronze_and_uploads_retention_proof()
     timeout_match = re.search(r"timeout-minutes:\s*(\d+)", workflow)
     assert timeout_match is not None
     assert int(timeout_match.group(1)) >= 35
+
+
+def test_daily_static_pipeline_workflow_runs_gis_inside_pipeline_before_static_publish() -> None:
+    workflow = (REPO_ROOT / ".github/workflows/daily-static-pipeline.yml").read_text(
+        encoding="utf-8"
+    )
+
+    # slice-9.1.1v: GIS runs in-process as a best-effort tail of run-static-pipeline,
+    # NOT as a separate YAML step (failure isolation lives in run_static_pipeline so a
+    # GIS outage never blocks the static publish).
+    assert 'cron: "0 6 * * *"' in workflow
+    assert "Run static + GIS Bronze -> Silver -> Gold pipeline" in workflow
+    assert "ingest-gis" not in workflow
+    assert workflow.index("run-static-pipeline stm") < workflow.index(
+        "publish-snapshot stm --tier static"
+    )
+    assert "concurrency" in workflow
+    assert "group: daily-static-pipeline" in workflow
+
+
+def test_daily_warm_rollups_workflow_prunes_i3_after_historic_publish() -> None:
+    workflow = (REPO_ROOT / ".github/workflows/daily-warm-rollups.yml").read_text(
+        encoding="utf-8"
+    )
+
+    # slice-9.1.1l: the i3 prune runs daily from this job, AFTER the historic
+    # /v1 publish so alert_history.json builds from unpruned silver history.
+    assert "prune-i3-storage stm" in workflow
+    assert workflow.index("prune-i3-storage stm") > workflow.index(
+        "publish-snapshot stm --tier historic"
+    )

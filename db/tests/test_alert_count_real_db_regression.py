@@ -66,10 +66,29 @@ def _migration_0032():
     return module
 
 
+def _migration_0037():
+    path = (
+        Path(__file__).resolve().parents[1]
+        / "src/transit_ops/db/migrations/versions/0037_i3_alert_text_en.py"
+    )
+    spec = importlib.util.spec_from_file_location("m0037", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 def _install_alert_count_views(connection) -> None:  # noqa: ANN001
-    migration = _migration_0032()
-    connection.execute(text(migration._HISTORY_VIEW))
-    connection.execute(text(migration._IMPACT_VIEW))
+    # Install the 0037 history-view body (the EN superset that keeps
+    # effective_content_hash AND appends alert_header_text_en), not 0032's
+    # EN-less body. CREATE OR REPLACE against the wave-3 head — where 0037 has
+    # already added the EN column to the live view — cannot drop that column,
+    # so re-applying the 0032 shape here fails ("cannot drop columns from
+    # view"). The impact view (public_alert_impact_daily) is byte-identical
+    # across 0032 and 0037 (no EN), so reuse 0032's constant for it.
+    history_migration = _migration_0037()
+    impact_migration = _migration_0032()
+    connection.execute(text(history_migration._REPLACE_HISTORY_VIEW))
+    connection.execute(text(impact_migration._IMPACT_VIEW))
 
 
 def _seed_provider_and_snapshots(connection) -> None:  # noqa: ANN001
@@ -129,9 +148,19 @@ def _seed_provider_and_snapshots(connection) -> None:  # noqa: ANN001
 
 
 def _seed_alert_rows(connection) -> None:  # noqa: ANN001
+    # The two D1 "Elevator issue" rows are the same legacy alert seen twice in a
+    # day. Pre-wave-3 they were seeded with content_hash NULL (synthesized hash
+    # deduped them to 1); wave-3 slice-l 0039 makes content_hash NOT NULL. The
+    # faithful post-l model is an SCD-2 supersession sharing one content_hash:
+    # the first occurrence is CLOSED (valid_to = the second's capture) and the
+    # second stays ACTIVE — both carry the same hash (legal under the active-only
+    # partial unique index) and the reporting view still dedups them to 1.
     rows = [
-        _alert_row(SNAP_IDS[0], 0, D1_CAPTURED_1, "Elevator issue", None),
-        _alert_row(SNAP_IDS[1], 0, D1_CAPTURED_2, "Elevator issue", None),
+        _alert_row(
+            SNAP_IDS[0], 0, D1_CAPTURED_1, "Elevator issue",
+            "legacy-elevator-hash", valid_to=D1_CAPTURED_2,
+        ),
+        _alert_row(SNAP_IDS[1], 0, D1_CAPTURED_2, "Elevator issue", "legacy-elevator-hash"),
         _alert_row(SNAP_IDS[2], 0, D2_CAPTURED_1, "Elevator issue", "realhash-a"),
         _alert_row(SNAP_IDS[3], 0, D2_CAPTURED_2, "Blue line delay", "realhash-b"),
     ]
@@ -148,7 +177,7 @@ def _seed_alert_rows(connection) -> None:  # noqa: ANN001
                 (:snapshot_id, :alert_index, :provider_id, NULL,
                  :header, :description, :severity, :cause, :effect,
                  NULL, NULL, NULL, NULL, :captured, CAST(:raw AS jsonb), :content_hash,
-                 NULL, NULL, NULL)
+                 NULL, NULL, :valid_to)
             """
         ),
         rows,
@@ -183,6 +212,7 @@ def _alert_row(
     captured_at: datetime,
     description: str,
     content_hash: str | None,
+    valid_to: datetime | None = None,
 ) -> dict[str, object]:
     return {
         "snapshot_id": snapshot_id,
@@ -196,6 +226,7 @@ def _alert_row(
         "captured": captured_at,
         "raw": "{}",
         "content_hash": content_hash,
+        "valid_to": valid_to,
     }
 
 
