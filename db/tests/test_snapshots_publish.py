@@ -184,7 +184,7 @@ def test_publish_result_display_dict() -> None:
 
 def test_publish_rejects_unimplemented_tier() -> None:
     """Unknown tiers raise ValueError."""
-    with pytest.raises(ValueError, match="not implemented"):
+    with pytest.raises(ValueError, match="unknown tier"):
         publish_snapshot(
             "stm",
             tier="unknown_tier",
