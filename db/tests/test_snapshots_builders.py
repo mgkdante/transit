@@ -495,7 +495,7 @@ def test_build_network_unknown_only_fleet_emits_none_on_time_pct() -> None:
             "feed_freshness_current": [{"feed_freshness_s": 4}],
         }
     )
-    out = build_network(conn)
+    out = build_network(conn, generated_utc="2026-05-31T12:00:05Z")
     assert out.vehicles_in_service == 2
     assert out.on_time_pct is None  # known == 0 -> unmeasured, not 0%
     assert out.coverage_pct == 0  # honest: 0% of the fleet has a known status
