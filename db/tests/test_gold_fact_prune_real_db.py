@@ -83,7 +83,7 @@ def _seed(connection) -> None:
             """
             INSERT INTO raw.ingestion_runs
                 (ingestion_run_id, provider_id, feed_endpoint_id, run_kind, status)
-            VALUES (:r, :p, :e, 'realtime', 'succeeded')
+            VALUES (:r, :p, :e, 'trip_updates', 'succeeded')
             """
         ),
         {"r": RUN_ID, "p": PROVIDER, "e": ENDPOINT_ID},
@@ -94,8 +94,21 @@ def _insert_fact_rows(connection, *, snapshot_id: int, count: int, captured_at) 
     """Insert ``count`` fact_trip_delay_snapshot rows under one realtime snapshot.
 
     The fact table FKs realtime_snapshot_id -> raw.realtime_snapshot_index, so a
-    snapshot-index row is created first.
+    snapshot-index row is created first. Each snapshot needs its OWN ingestion_run
+    (uq_realtime_snapshot_index_ingestion_run_id is unique on ingestion_run_id —
+    one snapshot per run), so derive a distinct run id from the snapshot id.
     """
+    run_id = snapshot_id + 1_000_000
+    connection.execute(
+        text(
+            """
+            INSERT INTO raw.ingestion_runs
+                (ingestion_run_id, provider_id, feed_endpoint_id, run_kind, status)
+            VALUES (CAST(:r AS bigint), :p, CAST(:e AS bigint), 'trip_updates', 'succeeded')
+            """
+        ),
+        {"r": run_id, "p": PROVIDER, "e": ENDPOINT_ID},
+    )
     connection.execute(
         text(
             """
@@ -108,7 +121,7 @@ def _insert_fact_rows(connection, *, snapshot_id: int, count: int, captured_at) 
             )
             """
         ),
-        {"sid": snapshot_id, "r": RUN_ID, "p": PROVIDER, "e": ENDPOINT_ID, "ts": captured_at},
+        {"sid": snapshot_id, "r": run_id, "p": PROVIDER, "e": ENDPOINT_ID, "ts": captured_at},
     )
     connection.execute(
         text(

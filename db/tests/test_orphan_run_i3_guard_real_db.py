@@ -76,7 +76,7 @@ def _seed(connection) -> None:
             """
             INSERT INTO core.feed_endpoints
                 (feed_endpoint_id, provider_id, endpoint_key, feed_kind, source_format)
-            VALUES (:e, :p, 'i3_alerts', 'i3_alerts', 'stm_i3_alerts_json')
+            VALUES (:e, :p, 'i3_alerts', 'i3_alerts', 'api_i3_json')
             """
         ),
         {"e": ENDPOINT_ID, "p": PROVIDER},
