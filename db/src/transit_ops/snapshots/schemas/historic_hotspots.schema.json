@@ -61,6 +61,10 @@
     }
   },
   "properties": {
+    "generated_utc": {
+      "title": "Generated Utc",
+      "type": "string"
+    },
     "hotspots": {
       "items": {
         "$ref": "#/$defs/Hotspot"
@@ -69,6 +73,9 @@
       "type": "array"
     }
   },
+  "required": [
+    "generated_utc"
+  ],
   "title": "Hotspots",
   "type": "object"
 }

@@ -110,6 +110,11 @@ class Settings(BaseSettings):
     SNAPSHOT_LOCAL_ROOT: str | None = None         # used when backend == "local"
     SNAPSHOT_R2_BUCKET: str | None = None          # public snapshot bucket
     SNAPSHOT_PUBLIC_BASE_URL: str | None = None    # e.g. https://data.example.com (manifests)
+    # Basemap pointer (slice-9.1.1r). Until the Quebec PMTiles archive is hosted
+    # these stay unset -> manifest.basemap is null and no basemap.json is written.
+    SNAPSHOT_BASEMAP_PMTILES_URL: str | None = None   # absolute URL of the Quebec PMTiles archive
+    SNAPSHOT_BASEMAP_STYLE_URL: str | None = None      # optional MapLibre style JSON URL
+    SNAPSHOT_BASEMAP_ATTRIBUTION: str = "© OpenStreetMap contributors, © Protomaps"
 
     PIPELINE_PAUSED: bool = False
     REALTIME_POLL_SECONDS: int = 30
@@ -206,6 +211,9 @@ class Settings(BaseSettings):
             "SNAPSHOT_LOCAL_ROOT": self.SNAPSHOT_LOCAL_ROOT,
             "SNAPSHOT_R2_BUCKET": self.SNAPSHOT_R2_BUCKET,
             "SNAPSHOT_PUBLIC_BASE_URL": self.SNAPSHOT_PUBLIC_BASE_URL,
+            "SNAPSHOT_BASEMAP_PMTILES_URL": self.SNAPSHOT_BASEMAP_PMTILES_URL,
+            "SNAPSHOT_BASEMAP_STYLE_URL": self.SNAPSHOT_BASEMAP_STYLE_URL,
+            "SNAPSHOT_BASEMAP_ATTRIBUTION": self.SNAPSHOT_BASEMAP_ATTRIBUTION,
             "PIPELINE_PAUSED": self.PIPELINE_PAUSED,
             "REALTIME_POLL_SECONDS": self.REALTIME_POLL_SECONDS,
             "REALTIME_STARTUP_DELAY_SECONDS": self.REALTIME_STARTUP_DELAY_SECONDS,

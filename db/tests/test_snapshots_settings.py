@@ -8,3 +8,23 @@ def test_snapshot_settings_load(monkeypatch):
     assert s.SNAPSHOT_R2_BUCKET == "transit-snapshots"
     assert s.SNAPSHOT_STORAGE_BACKEND == "s3"  # default
     assert s.display_dict()["SNAPSHOT_R2_BUCKET"] == "transit-snapshots"
+
+
+def test_snapshot_basemap_settings_defaults():
+    """Basemap pointer settings default off (manifest.basemap stays null)."""
+    s = Settings(DATABASE_URL="postgresql://u:p@example.com/transit")
+    assert s.SNAPSHOT_BASEMAP_PMTILES_URL is None
+    assert s.SNAPSHOT_BASEMAP_STYLE_URL is None
+    assert s.SNAPSHOT_BASEMAP_ATTRIBUTION == "© OpenStreetMap contributors, © Protomaps"
+    d = s.display_dict()
+    assert d["SNAPSHOT_BASEMAP_PMTILES_URL"] is None
+    assert d["SNAPSHOT_BASEMAP_STYLE_URL"] is None
+    assert d["SNAPSHOT_BASEMAP_ATTRIBUTION"] == "© OpenStreetMap contributors, © Protomaps"
+
+
+def test_snapshot_basemap_settings_from_env(monkeypatch):
+    monkeypatch.setenv("SNAPSHOT_BASEMAP_PMTILES_URL", "https://x/quebec.pmtiles")
+    monkeypatch.setenv("SNAPSHOT_BASEMAP_STYLE_URL", "https://x/style.json")
+    s = Settings(DATABASE_URL="postgresql://u:p@example.com/transit")
+    assert s.SNAPSHOT_BASEMAP_PMTILES_URL == "https://x/quebec.pmtiles"
+    assert s.SNAPSHOT_BASEMAP_STYLE_URL == "https://x/style.json"

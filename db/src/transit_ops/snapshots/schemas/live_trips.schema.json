@@ -86,6 +86,10 @@
     }
   },
   "properties": {
+    "generated_utc": {
+      "title": "Generated Utc",
+      "type": "string"
+    },
     "trips": {
       "additionalProperties": {
         "$ref": "#/$defs/Trip"
@@ -95,6 +99,7 @@
     }
   },
   "required": [
+    "generated_utc",
     "trips"
   ],
   "title": "TripsFile",

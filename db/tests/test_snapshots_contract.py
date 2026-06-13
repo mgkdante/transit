@@ -17,24 +17,24 @@ def test_vehicle_rejects_bad_status():
         Vehicle(id="1", lat=0.0, lon=0.0, status="sideways", updated_utc="x")
 
 def test_trips_file_indexed_by_trip_id():
-    tf = TripsFile(trips={"t1": Trip(route="165", status="late", delay_min=4,
+    tf = TripsFile(generated_utc="t", trips={"t1": Trip(route="165", status="late", delay_min=4,
                                      stops=[StopEta(stop="51234", eta_utc="x", delay_min=4)])})
     assert tf.trips["t1"].stops[0].stop == "51234"
 
 
 def test_route_file_valid():
-    rf = RouteFile(id="165", long="Côte-Vertu",
+    rf = RouteFile(generated_utc="t", id="165", long="Côte-Vertu",
                    directions=[RouteDirection(dir=0, headsign="Côte-Vertu",
                                               stops=[RouteStop(id="51234", seq=1, name="Côte-Vertu / Décarie")])])
     assert rf.directions[0].stops[0].id == "51234"
 
 def test_stop_file_valid():
-    sf = StopFile(id="51234", name="Côte-Vertu / Décarie", lat=45.49, lon=-73.66,
+    sf = StopFile(generated_utc="t", id="51234", name="Côte-Vertu / Décarie", lat=45.49, lon=-73.66,
                   scheduled=[ScheduledRoute(route="165", headsign="Côte-Vertu", times=["17:46", "17:54"])])
     assert sf.scheduled[0].times[0] == "17:46"
 
 def test_labels_file_valid():
-    lf = LabelsFile(labels={"status.on_time": "À l'heure", "status.late": "En retard"})
+    lf = LabelsFile(generated_utc="t", labels={"status.on_time": "À l'heure", "status.late": "En retard"})
     assert lf.labels["status.on_time"] == "À l'heure"
 
 
@@ -43,17 +43,90 @@ def test_historic_models_valid():
         NetworkTrend, RouteReliability, HeadwayPeriod, StopReliability, Hotspots, Hotspot,
         RepeatOffenders, Offender, Receipt, AlertHistory, AlertHistoryEntry, Provenance,
     )
-    nt = NetworkTrend(series=[{"date": "2026-05-30", "otp_pct": 39, "avg_delay_min": 3.4, "p90_min": 11, "vehicles": 612}])
+    nt = NetworkTrend(generated_utc="t", series=[{"date": "2026-05-30", "otp_pct": 39, "avg_delay_min": 3.4, "p90_min": 11, "vehicles": 612}])
     assert nt.series[0].otp_pct == 39
-    rr = RouteReliability(id="165", periods=[{"grain": "day", "otp_pct": 47}],
+    rr = RouteReliability(generated_utc="t", id="165", periods=[{"grain": "day", "otp_pct": 47}],
                           headway=[HeadwayPeriod(shift="pm_peak", scheduled_min=6, observed_min=7.8, excess_wait_min=1.8)])
     assert rr.headway[0].excess_wait_min == 1.8
-    ro = RepeatOffenders(offenders=[Offender(type="vehicle", id="29051", route="171", recurrence="6/7d", avg_delay_min=8)])
+    ro = RepeatOffenders(generated_utc="t", offenders=[Offender(type="vehicle", id="29051", route="171", recurrence="6/7d", avg_delay_min=8)])
     assert ro.offenders[0].recurrence == "6/7d"
-    rc = Receipt(date="2026-05-30", otp_pct=39, worst_route={"id": "171", "otp_delta_pts": -22})
+    rc = Receipt(generated_utc="t", date="2026-05-30", otp_pct=39, worst_route={"id": "171", "otp_delta_pts": -22})
     assert rc.worst_route.id == "171"
-    prov = Provenance(retention={"detail_days": 14, "aggregate_days": 365}, gaps=["metro_realtime"])
+    prov = Provenance(generated_utc="t", retention={"detail_days": 14, "aggregate_days": 365}, gaps=["metro_realtime"])
     assert prov.retention["detail_days"] == 14
+
+
+def test_artifact_models_require_generated_utc():
+    """Every published artifact model now requires a generated_utc stamp."""
+    from transit_ops.snapshots.contract import (
+        NetworkTrend, RoutesIndex, StopsIndex, AlertsFile, NetworkFile,
+    )
+
+    with pytest.raises(ValidationError):
+        TripsFile(trips={})
+    with pytest.raises(ValidationError):
+        AlertsFile(alerts=[])
+    with pytest.raises(ValidationError):
+        NetworkFile(vehicles_in_service=0, on_time_pct=0, status_dist={}, delay_p50_min=0,
+                    delay_p90_min=0, occupancy_mix={}, non_responding=0, feed_freshness_s=0,
+                    coverage_pct=0)
+    with pytest.raises(ValidationError):
+        RoutesIndex(routes=[])
+    with pytest.raises(ValidationError):
+        StopsIndex(stops=[])
+    with pytest.raises(ValidationError):
+        NetworkTrend(series=[])
+
+
+def test_manifest_tier_inventories_and_nullable_basemap():
+    """Manifest.basemap is nullable; files gains static/historic inventories
+    with per-tier generated_utc defaulting to None (never published)."""
+    from transit_ops.snapshots.contract import (
+        Manifest, ManifestFiles, ManifestLiveFiles, ManifestStaticFiles, ManifestHistoricFiles,
+    )
+
+    m = Manifest(
+        provider="stm", display_name="STM", bbox=[0, 0, 1, 1], attribution="a",
+        basemap=None, dataset_version="v", labels={}, surfaces=[],
+        files=ManifestFiles(live=ManifestLiveFiles(generated_utc="t")),
+    )
+    assert m.basemap is None
+    assert m.files.static.generated_utc is None
+    assert m.files.historic.generated_utc is None
+    assert m.files.static.routes_index == "static/routes_index.json"
+    assert m.files.static.basemap is None
+    assert m.files.historic.receipts_index == "historic/receipts/index.json"
+    assert m.files.historic.route_reliability_prefix == "historic/route_reliability/"
+
+    # populated tier stamps round-trip
+    m2 = Manifest(
+        provider="stm", display_name="STM", bbox=[0, 0, 1, 1], attribution="a",
+        basemap="https://x/v1/stm/static/basemap.json", dataset_version="v",
+        labels={}, surfaces=[],
+        files=ManifestFiles(
+            live=ManifestLiveFiles(generated_utc="t"),
+            static=ManifestStaticFiles(basemap="static/basemap.json", generated_utc="2026-06-01T00:00:00Z"),
+            historic=ManifestHistoricFiles(generated_utc="2026-06-13T00:00:00Z"),
+        ),
+    )
+    assert m2.files.static.generated_utc == "2026-06-01T00:00:00Z"
+    assert m2.files.static.basemap == "static/basemap.json"
+    assert m2.files.historic.generated_utc == "2026-06-13T00:00:00Z"
+
+
+def test_basemap_and_receipts_index_models():
+    from transit_ops.snapshots.contract import BasemapFile, ReceiptsIndex
+
+    bm = BasemapFile(url="https://x/quebec.pmtiles", attribution="© OSM", generated_utc="t")
+    assert bm.format == "pmtiles"
+    assert bm.style_url is None
+    assert bm.min_zoom == 0 and bm.max_zoom == 15
+
+    ri = ReceiptsIndex(dates=["2026-06-01", "2026-06-02"], generated_utc="t")
+    assert ri.dates == ["2026-06-01", "2026-06-02"]
+    # generated_utc is required
+    with pytest.raises(ValidationError):
+        ReceiptsIndex(dates=[])
 
 
 def test_alert_text_fields_are_additive():

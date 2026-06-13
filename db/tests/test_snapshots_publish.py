@@ -70,7 +70,11 @@ class FakeEngine:
 
 
 class FakeStore:
-    """Storage backend that records rel_keys and returns them."""
+    """Live-tier storage backend: records rel_keys and returns them.
+
+    Used for the live tier only, which is NOT hash-gated; this fake deliberately
+    omits get_json so any accidental gating of the live path fails loudly.
+    """
 
     def __init__(self) -> None:
         self.keys: list[str] = []
@@ -78,6 +82,40 @@ class FakeStore:
     def put_json(self, rel_key: str, payload: object, *, tier: str) -> str:
         self.keys.append(rel_key)
         return rel_key
+
+
+class StatefulFakeStore:
+    """Hash-gate-compatible in-memory store (get_json / put_bytes / full_key).
+
+    ``keys`` records put_json keys (compat with old assertions); ``store`` keeps
+    the raw bytes so a HashGatedStorage second pass can read prior state.
+    """
+
+    def __init__(self) -> None:
+        self.keys: list[str] = []
+        self.store: dict[str, bytes] = {}
+        self.get_json_calls: list[str] = []
+
+    def full_key(self, rel_key: str) -> str:
+        return rel_key
+
+    def put_bytes(self, rel_key: str, body: bytes, *, tier: str) -> str:
+        self.store[rel_key] = body
+        return rel_key
+
+    def put_json(self, rel_key: str, payload: object, *, tier: str) -> str:
+        from transit_ops.snapshots.storage import _body
+
+        self.keys.append(rel_key)
+        self.store[rel_key] = _body(payload)
+        return rel_key
+
+    def get_json(self, rel_key: str):
+        import json as _json
+
+        self.get_json_calls.append(rel_key)
+        raw = self.store.get(rel_key)
+        return _json.loads(raw) if raw is not None else None
 
 
 class FakeSettings:
@@ -253,6 +291,14 @@ def test_publish_static_writes_expected_keys() -> None:
         ("ANY(:weekday_services)", []),
     ]
 
+    # _static_stamp SELECTs loaded_at_utc from the same table — give it a row
+    # (more specific needle must precede the generic dataset_kind entry).
+    import datetime as _dt
+    dispatch.insert(0, (
+        "loaded_at_utc FROM core.dataset_versions",
+        [{"loaded_at_utc": _dt.datetime(2026, 6, 1, 0, 0, tzinfo=_dt.timezone.utc)}],
+    ))
+
     class FC:
         def execute(self, statement, params=None):
             s = str(statement)
@@ -269,15 +315,7 @@ def test_publish_static_writes_expected_keys() -> None:
 
             return _cm()
 
-    class FakeStore2:
-        def __init__(self):
-            self.keys = []
-
-        def put_json(self, rel_key, payload, *, tier):
-            self.keys.append(rel_key)
-            return rel_key
-
-    store = FakeStore2()
+    store = StatefulFakeStore()
     res = publish_snapshot(
         "stm",
         tier="static",
@@ -289,13 +327,22 @@ def test_publish_static_writes_expected_keys() -> None:
     assert isinstance(res, PublishResult)
     assert res.tier == "static"
     assert res.provider_id == "stm"
-    assert "static/routes_index.json" in store.keys
-    assert "static/stops_index.json" in store.keys
-    assert "labels/fr.json" in store.keys
-    assert "labels/en.json" in store.keys
-    assert "static/routes/165.json" in store.keys
+    written = set(res.keys_written)
+    assert "static/routes_index.json" in written
+    assert "static/stops_index.json" in written
+    assert "labels/fr.json" in written
+    assert "labels/en.json" in written
+    assert "static/routes/165.json" in written
     # no stop files since build_all_stops_data got empty stops
-    assert not any(k.startswith("static/stops/") for k in store.keys)
+    assert not any(k.startswith("static/stops/") for k in written)
+    # no basemap without SNAPSHOT_BASEMAP_PMTILES_URL on FakeSettings
+    assert "static/basemap.json" not in written
+    # the hash-state object lands under _meta/ (internal tier), not in keys_written
+    assert "_meta/publish_state_static.json" in store.store
+    # all data files carry the dataset loaded_at stamp, not upload time
+    import json as _json
+    ri = _json.loads(store.store["static/routes_index.json"])
+    assert ri["generated_utc"] == "2026-06-01T00:00:00Z"
 
 
 def test_publish_historic_writes_expected_keys(tmp_path) -> None:
@@ -528,9 +575,15 @@ def test_publish_historic_writes_expected_keys(tmp_path) -> None:
     # --- receipt for 2026-06-01 ---
     assert any("historic/receipts/2026-06-01.json" in k for k in key_set)
 
+    # --- receipts discovery index (T7): exact set of receipt dates written ---
+    from transit_ops.snapshots.contract import ReceiptsIndex
+    import pathlib
+    index_path = next(k for k in keys if "historic/receipts/index.json" in k)
+    ri = ReceiptsIndex.model_validate_json(pathlib.Path(index_path).read_bytes())
+    assert ri.dates == ["2026-06-01"]
+
     # --- round-trip parse: network_trend.json through its contract model ---
     network_trend_path = next(k for k in keys if "historic/network_trend.json" in k)
-    import pathlib
     raw = pathlib.Path(network_trend_path).read_bytes()
     parsed = NetworkTrend.model_validate_json(raw)
     assert isinstance(parsed.series, list)
@@ -547,3 +600,171 @@ def test_publish_historic_writes_expected_keys(tmp_path) -> None:
     assert res.tier == "historic"
     assert res.provider_id == "stm"
     assert len(res.keys_written) >= 5  # flat files + provenance at minimum
+
+
+# ---------------------------------------------------------------------------
+# T3 / T6 / T8 — state upsert, basemap, hash-gating semantics
+# ---------------------------------------------------------------------------
+
+
+class _RecordingConn:
+    """Records executed SQL text (pattern: test_snapshots_builders FakeConn).
+
+    Routes the static-stamp SELECT to a fixed loaded_at_utc; every other query
+    returns an empty result so the static publisher writes only the two indexes
+    + labels (no routes/stops/basemap).
+    """
+
+    def __init__(self):
+        self.sql: list[str] = []
+
+    def execute(self, statement, params=None):  # noqa: ANN001, ARG002
+        s = str(statement)
+        self.sql.append(s)
+        import datetime as _dt
+
+        if "loaded_at_utc FROM core.dataset_versions" in s:
+            return _StampResult(_dt.datetime(2026, 6, 1, 0, 0, tzinfo=_dt.timezone.utc))
+        return _EmptyResult()
+
+
+class _EmptyResult:
+    def mappings(self):
+        return self
+
+    def __iter__(self):
+        return iter([])
+
+    def fetchone(self):
+        return None
+
+    def fetchall(self):
+        return []
+
+    def scalar_one(self):
+        return 0
+
+
+class _StampResult:
+    def __init__(self, value):
+        self._value = value
+
+    def mappings(self):
+        return self
+
+    def fetchone(self):
+        return {"loaded_at_utc": self._value}
+
+
+class _RecordingEngine:
+    def __init__(self, conn):
+        self._conn = conn
+
+    def begin(self):
+        @contextmanager
+        def _cm():
+            yield self._conn
+
+        return _cm()
+
+
+def _publish_static_once(store, conn, settings=None):
+    return publish_snapshot(
+        "stm",
+        tier="static",
+        settings=settings or FakeSettings(),
+        engine=_RecordingEngine(conn),
+        storage=store,
+    )
+
+
+def test_publish_records_state_row_per_tier() -> None:
+    conn = _RecordingConn()
+    _publish_static_once(StatefulFakeStore(), conn)
+    inserts = [s for s in conn.sql if "INSERT INTO core.snapshot_publish_state" in s]
+    assert len(inserts) == 1
+    assert "ON CONFLICT (provider_id, tier)" in inserts[0]
+
+
+def test_publish_result_reports_skip_counts() -> None:
+    conn = _RecordingConn()
+    res = _publish_static_once(StatefulFakeStore(), conn)
+    d = res.display_dict()
+    assert d["files_written"] == len(res.keys_written)
+    assert d["files_skipped"] == 0  # first run: nothing skipped
+    assert d["files_written"] > 0
+
+
+def test_static_stamp_uses_dataset_loaded_at() -> None:
+    import json
+
+    store = StatefulFakeStore()
+    _publish_static_once(store, _RecordingConn())
+    # every static payload carries the dataset loaded_at, not upload time
+    for key in ("static/routes_index.json", "static/stops_index.json", "labels/fr.json"):
+        assert json.loads(store.store[key])["generated_utc"] == "2026-06-01T00:00:00Z"
+
+
+def test_publish_static_second_run_skips_unchanged() -> None:
+    store = StatefulFakeStore()
+    # Run 1 writes everything + the state object.
+    res1 = _publish_static_once(store, _RecordingConn())
+    assert res1.keys_skipped == []
+    run1_written = set(res1.keys_written)
+
+    # Run 2 through the SAME stateful bucket: identical bytes -> all skipped.
+    store.get_json_calls.clear()
+    res2 = _publish_static_once(store, _RecordingConn())
+    assert set(res2.keys_skipped) == run1_written
+    assert res2.keys_written == []
+    # exactly one state GET per run (the load())
+    assert store.get_json_calls.count("_meta/publish_state_static.json") == 1
+
+
+def test_publish_static_rewrites_when_fingerprint_changes() -> None:
+    import json
+
+    from transit_ops.snapshots.storage import _body
+    from transit_ops.snapshots.contract import RoutesIndex
+
+    store = StatefulFakeStore()
+    res1 = _publish_static_once(store, _RecordingConn())
+    run1_written = set(res1.keys_written)
+
+    # Corrupt the stored state fingerprint -> next run must rewrite everything.
+    state = json.loads(store.store["_meta/publish_state_static.json"])
+    state["fingerprint"] = "v1|cc:STALE-HEADER"
+    store.store["_meta/publish_state_static.json"] = _body(state)
+
+    res2 = _publish_static_once(store, _RecordingConn())
+    assert set(res2.keys_written) == run1_written
+    assert res2.keys_skipped == []
+
+
+def test_publish_live_is_not_hash_gated() -> None:
+    """The live path must never call get_json (no per-cycle state read)."""
+
+    class GuardStore(FakeStore):
+        def get_json(self, rel_key):  # pragma: no cover - must not be reached
+            raise AssertionError("live tier must not be hash-gated")
+
+    store = GuardStore()
+    res = publish_snapshot(
+        "stm", tier="live", settings=FakeSettings(), engine=FakeEngine(), storage=store
+    )
+    assert res.tier == "live"
+    assert len(store.keys) == 5
+    assert res.keys_skipped == []
+
+
+def test_publish_static_writes_basemap_when_configured() -> None:
+    class BasemapSettings(FakeSettings):
+        SNAPSHOT_BASEMAP_PMTILES_URL = "https://data.example.com/basemap/quebec.pmtiles"
+
+    store = StatefulFakeStore()
+    res = _publish_static_once(store, _RecordingConn(), settings=BasemapSettings())
+    assert "static/basemap.json" in res.keys_written
+    import json
+    bm = json.loads(store.store["static/basemap.json"])
+    assert bm["url"] == "https://data.example.com/basemap/quebec.pmtiles"
+    assert bm["format"] == "pmtiles"

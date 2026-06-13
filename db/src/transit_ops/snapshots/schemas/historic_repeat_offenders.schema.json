@@ -68,6 +68,10 @@
     }
   },
   "properties": {
+    "generated_utc": {
+      "title": "Generated Utc",
+      "type": "string"
+    },
     "offenders": {
       "items": {
         "$ref": "#/$defs/Offender"
@@ -76,6 +80,9 @@
       "type": "array"
     }
   },
+  "required": [
+    "generated_utc"
+  ],
   "title": "RepeatOffenders",
   "type": "object"
 }

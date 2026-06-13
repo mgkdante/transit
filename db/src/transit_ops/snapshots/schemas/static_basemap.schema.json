@@ -1,0 +1,51 @@
+{
+  "description": "static/basemap.json \u2014 a settings-driven pointer to the hosted PMTiles archive.\n\nPublished only when SNAPSHOT_BASEMAP_PMTILES_URL is configured; until then\nManifest.basemap is null and no basemap.json object exists.",
+  "properties": {
+    "attribution": {
+      "title": "Attribution",
+      "type": "string"
+    },
+    "format": {
+      "default": "pmtiles",
+      "title": "Format",
+      "type": "string"
+    },
+    "generated_utc": {
+      "title": "Generated Utc",
+      "type": "string"
+    },
+    "max_zoom": {
+      "default": 15,
+      "title": "Max Zoom",
+      "type": "integer"
+    },
+    "min_zoom": {
+      "default": 0,
+      "title": "Min Zoom",
+      "type": "integer"
+    },
+    "style_url": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Style Url"
+    },
+    "url": {
+      "title": "Url",
+      "type": "string"
+    }
+  },
+  "required": [
+    "url",
+    "attribution",
+    "generated_utc"
+  ],
+  "title": "BasemapFile",
+  "type": "object"
+}
