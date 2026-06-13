@@ -28,3 +28,16 @@ def test_snapshot_basemap_settings_from_env(monkeypatch):
     s = Settings(DATABASE_URL="postgresql://u:p@example.com/transit")
     assert s.SNAPSHOT_BASEMAP_PMTILES_URL == "https://x/quebec.pmtiles"
     assert s.SNAPSHOT_BASEMAP_STYLE_URL == "https://x/style.json"
+
+
+def test_snapshot_publish_concurrency_default():
+    """Parallel upload fan-out defaults to 16 (slice-9.1.1r stage 2)."""
+    s = Settings(DATABASE_URL="postgresql://u:p@example.com/transit")
+    assert s.SNAPSHOT_PUBLISH_CONCURRENCY == 16
+    assert s.display_dict()["SNAPSHOT_PUBLISH_CONCURRENCY"] == 16
+
+
+def test_snapshot_publish_concurrency_from_env(monkeypatch):
+    monkeypatch.setenv("SNAPSHOT_PUBLISH_CONCURRENCY", "8")
+    s = Settings(DATABASE_URL="postgresql://u:p@example.com/transit")
+    assert s.SNAPSHOT_PUBLISH_CONCURRENCY == 8

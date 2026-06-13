@@ -16,6 +16,7 @@ CLI / cycle callers even though the live tier does not use it in Phase 1.
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 
 from transit_ops.db.connection import make_engine
@@ -28,6 +29,53 @@ from transit_ops.snapshots.storage import (
     build_snapshot_storage,
     state_fingerprint,
 )
+
+# A work item handed to the parallel uploader: (rel_key, payload, tier).
+_PutItem = "tuple[str, object, str]"
+
+
+def _concurrency(settings: object) -> int:
+    """Resolve the bounded upload fan-out from settings (default 16, floor 1)."""
+    value = getattr(settings, "SNAPSHOT_PUBLISH_CONCURRENCY", 16)
+    try:
+        return max(1, int(value))
+    except (TypeError, ValueError):
+        return 16
+
+
+def _parallel_put(storage: object, items: list, *, concurrency: int) -> list[str]:
+    """Upload every ``(rel_key, payload, tier)`` in *items* and return the keys.
+
+    Uploads run through a bounded :class:`ThreadPoolExecutor` so the per-file
+    network round-trips overlap — the new-GTFS-edition-day fix where the
+    hash-gate skips nothing and all files must be re-PUT. Guarantees preserved:
+
+    * The hash-gate still applies per file (a skipped file does no PUT) — that
+      decision lives in ``HashGatedStorage.put_json``, which is thread-safe.
+    * Every future is collected; the FIRST upload to raise propagates out (no
+      silent swallowing) after the pool drains.
+    * ``concurrency <= 1`` runs the puts sequentially (no pool) — used by tests
+      and as an escape hatch.
+
+    Returned keys are in the same order as *items* so callers keep deterministic
+    result ordering regardless of thread completion order.
+    """
+    if not items:
+        return []
+    if concurrency <= 1:
+        return [
+            storage.put_json(rel_key, payload, tier=tier)  # type: ignore[attr-defined]
+            for (rel_key, payload, tier) in items
+        ]
+
+    with ThreadPoolExecutor(max_workers=concurrency) as pool:
+        futures = [
+            pool.submit(storage.put_json, rel_key, payload, tier=tier)  # type: ignore[attr-defined]
+            for (rel_key, payload, tier) in items
+        ]
+        # Resolve in submission order; the first exception re-raises here, and
+        # the `with` block still joins the remaining workers on the way out.
+        return [future.result() for future in futures]
 
 
 @dataclass(frozen=True)
@@ -184,42 +232,51 @@ def _publish_historic(
 
     *stamp* is the day-truncated DATA-time stamp every artifact carries; when
     omitted (direct callers / older tests) it defaults to today's truncated UTC.
+
+    Per-entity files (route_reliability, stop_reliability, receipts) are BUILT
+    sequentially on this thread — every builder touches the non-thread-safe DB
+    *conn* — then UPLOADED concurrently through a bounded thread pool. The
+    receipts discovery index is uploaded only after the receipt files complete,
+    so it never advertises a date whose file is still in flight.
     """
     from sqlalchemy import text as _text
 
     if stamp is None:
         stamp = _historic_stamp()
 
+    concurrency = _concurrency(settings)
     written: list[str] = []
 
-    # --- flat historic files ---
-    written.append(storage.put_json(  # type: ignore[attr-defined]
-        "historic/network_trend.json",
-        builders.build_network_trend(conn, provider_id=provider_id, generated_utc=stamp),  # type: ignore[arg-type]
-        tier="historic",
-    ))
-    written.append(storage.put_json(  # type: ignore[attr-defined]
-        "historic/hotspots.json",
-        builders.build_hotspots(conn, provider_id, generated_utc=stamp),  # type: ignore[arg-type]
-        tier="historic",
-    ))
-    written.append(storage.put_json(  # type: ignore[attr-defined]
-        "historic/repeat_offenders.json",
-        builders.build_repeat_offenders(conn, provider_id, generated_utc=stamp),  # type: ignore[arg-type]
-        tier="historic",
-    ))
-    written.append(storage.put_json(  # type: ignore[attr-defined]
-        "historic/alert_history.json",
-        builders.build_alert_history(conn, provider_id, generated_utc=stamp),  # type: ignore[arg-type]
-        tier="historic",
-    ))
-
-    # --- provenance at top-level (not under historic/) ---
-    written.append(storage.put_json(  # type: ignore[attr-defined]
-        "provenance.json",
-        builders.build_provenance(conn, provider_id, generated_utc=stamp),  # type: ignore[arg-type]
-        tier="historic",
-    ))
+    # --- flat historic files + provenance (small, fixed set) ---
+    flat_items = [
+        (
+            "historic/network_trend.json",
+            builders.build_network_trend(conn, provider_id=provider_id, generated_utc=stamp),  # type: ignore[arg-type]
+            "historic",
+        ),
+        (
+            "historic/hotspots.json",
+            builders.build_hotspots(conn, provider_id, generated_utc=stamp),  # type: ignore[arg-type]
+            "historic",
+        ),
+        (
+            "historic/repeat_offenders.json",
+            builders.build_repeat_offenders(conn, provider_id, generated_utc=stamp),  # type: ignore[arg-type]
+            "historic",
+        ),
+        (
+            "historic/alert_history.json",
+            builders.build_alert_history(conn, provider_id, generated_utc=stamp),  # type: ignore[arg-type]
+            "historic",
+        ),
+        # provenance at top-level (not under historic/)
+        (
+            "provenance.json",
+            builders.build_provenance(conn, provider_id, generated_utc=stamp),  # type: ignore[arg-type]
+            "historic",
+        ),
+    ]
+    written.extend(_parallel_put(storage, flat_items, concurrency=concurrency))
 
     # --- per-route reliability files (routes that have history) ---
     route_rows = conn.execute(  # type: ignore[attr-defined]
@@ -232,34 +289,36 @@ def _publish_historic(
         ),
         {"provider_id": provider_id},
     ).fetchall()
-    for (route_id,) in route_rows:
-        if route_id is None:
-            continue
-        written.append(storage.put_json(  # type: ignore[attr-defined]
+    route_items = [
+        (
             f"historic/route_reliability/{route_id}.json",
             builders.build_route_reliability(conn, provider_id=provider_id, route_id=str(route_id), generated_utc=stamp),  # type: ignore[arg-type]
-            tier="historic",
-        ))
+            "historic",
+        )
+        for (route_id,) in route_rows
+        if route_id is not None
+    ]
+    written.extend(_parallel_put(storage, route_items, concurrency=concurrency))
 
-    # --- per-stop reliability files (batched pass) ---
+    # --- per-stop reliability files (batched build, parallel upload) ---
     all_stops_rel = builders.build_stop_reliability(conn, provider_id=provider_id, generated_utc=stamp)  # type: ignore[arg-type]
-    for stop_id, stop_rel in sorted(all_stops_rel.items()):
-        written.append(storage.put_json(  # type: ignore[attr-defined]
-            f"historic/stop_reliability/{stop_id}.json",
-            stop_rel,
-            tier="historic",
-        ))
+    stop_items = [
+        (f"historic/stop_reliability/{stop_id}.json", stop_rel, "historic")
+        for stop_id, stop_rel in sorted(all_stops_rel.items())
+    ]
+    written.extend(_parallel_put(storage, stop_items, concurrency=concurrency))
 
-    # --- per-date receipts ---
+    # --- per-date receipts (batched build, parallel upload) ---
     all_receipts = builders.build_receipts(conn, provider_id, generated_utc=stamp)  # type: ignore[arg-type]
-    for date_str, receipt in sorted(all_receipts.items()):
-        written.append(storage.put_json(  # type: ignore[attr-defined]
-            f"historic/receipts/{date_str}.json",
-            receipt,
-            tier="historic",
-        ))
+    receipt_items = [
+        (f"historic/receipts/{date_str}.json", receipt, "historic")
+        for date_str, receipt in sorted(all_receipts.items())
+    ]
+    written.extend(_parallel_put(storage, receipt_items, concurrency=concurrency))
 
     # --- receipts discovery index (exact set published this run) ---
+    # Uploaded AFTER every receipt file lands so it never references an in-flight
+    # date — same "pointer last" invariant the manifest follows for the run.
     written.append(storage.put_json(  # type: ignore[attr-defined]
         "historic/receipts/index.json",
         ReceiptsIndex(dates=sorted(all_receipts), generated_utc=stamp),
@@ -282,57 +341,56 @@ def _publish_static(
     if stamp is None:
         stamp = _static_stamp(conn, provider_id)
 
+    concurrency = _concurrency(settings)
     written: list[str] = []
 
-    # Indexes
-    written.append(storage.put_json(  # type: ignore[attr-defined]
-        "static/routes_index.json",
-        builders.build_routes_index(conn, provider_id=provider_id, generated_utc=stamp),  # type: ignore[arg-type]
-        tier="static",
-    ))
-    written.append(storage.put_json(  # type: ignore[attr-defined]
-        "static/stops_index.json",
-        builders.build_stops_index(conn, provider_id=provider_id, generated_utc=stamp),  # type: ignore[arg-type]
-        tier="static",
-    ))
-
+    # --- indexes + basemap + labels (small fixed set, built sequentially) ---
+    head_items: list = [
+        (
+            "static/routes_index.json",
+            builders.build_routes_index(conn, provider_id=provider_id, generated_utc=stamp),  # type: ignore[arg-type]
+            "static",
+        ),
+        (
+            "static/stops_index.json",
+            builders.build_stops_index(conn, provider_id=provider_id, generated_utc=stamp),  # type: ignore[arg-type]
+            "static",
+        ),
+    ]
     # Basemap pointer — only when SNAPSHOT_BASEMAP_PMTILES_URL is configured.
     bm = builders.build_basemap(settings, generated_utc=stamp)
     if bm is not None:
-        written.append(storage.put_json(  # type: ignore[attr-defined]
-            "static/basemap.json",
-            bm,
-            tier="static",
-        ))
-
-    # Labels
+        head_items.append(("static/basemap.json", bm, "static"))
     for lang in ("fr", "en"):
-        written.append(storage.put_json(  # type: ignore[attr-defined]
+        head_items.append((
             f"labels/{lang}.json",
             builders.build_labels(conn, lang=lang, generated_utc=stamp),  # type: ignore[arg-type]
-            tier="static",
+            "static",
         ))
+    written.extend(_parallel_put(storage, head_items, concurrency=concurrency))
 
-    # Per-route files
+    # --- per-route files (built sequentially on this conn, uploaded in pool) ---
     route_rows = conn.execute(  # type: ignore[attr-defined]
         _text("SELECT route_id FROM gold.dim_route WHERE provider_id = :provider_id ORDER BY route_id"),
         {"provider_id": provider_id},
     ).fetchall()
-    for (route_id,) in route_rows:
-        written.append(storage.put_json(  # type: ignore[attr-defined]
+    route_items = [
+        (
             f"static/routes/{route_id}.json",
             builders.build_route(conn, provider_id=provider_id, route_id=str(route_id), generated_utc=stamp),  # type: ignore[arg-type]
-            tier="static",
-        ))
+            "static",
+        )
+        for (route_id,) in route_rows
+    ]
+    written.extend(_parallel_put(storage, route_items, concurrency=concurrency))
 
-    # Per-stop files (one-pass batch)
+    # --- per-stop files (one-pass batch build, parallel upload) ---
     all_stops = builders.build_all_stops_data(conn, provider_id=provider_id, generated_utc=stamp)  # type: ignore[arg-type]
-    for stop_id, stop_file in sorted(all_stops.items()):
-        written.append(storage.put_json(  # type: ignore[attr-defined]
-            f"static/stops/{stop_id}.json",
-            stop_file,
-            tier="static",
-        ))
+    stop_items = [
+        (f"static/stops/{stop_id}.json", stop_file, "static")
+        for stop_id, stop_file in sorted(all_stops.items())
+    ]
+    written.extend(_parallel_put(storage, stop_items, concurrency=concurrency))
 
     return written
 

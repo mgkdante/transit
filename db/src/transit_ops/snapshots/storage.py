@@ -11,6 +11,7 @@ from __future__ import annotations
 import hashlib
 import json
 import pathlib
+import threading
 
 from botocore.exceptions import ClientError
 from pydantic import BaseModel
@@ -42,12 +43,46 @@ def _body(payload: BaseModel | dict) -> bytes:  # type: ignore[type-arg]
 
 
 class SnapshotStorage:
-    """PUT JSON objects to an S3-compatible bucket (Cloudflare R2)."""
+    """PUT JSON objects to an S3-compatible bucket (Cloudflare R2).
 
-    def __init__(self, client: object, *, bucket: str, base_prefix: str) -> None:
+    Thread-safety
+    -------------
+    The stage-2 publish (slice-9.1.1r) uploads per-entity files through a
+    ThreadPoolExecutor. boto3 low-level clients are not documented as safe to
+    share across threads, so when a *client_factory* is supplied each worker
+    thread lazily builds and caches **its own** client in thread-local storage
+    (``put_bytes`` then never shares a client between threads). When only a bare
+    *client* is supplied the same instance is used on every thread, which is
+    fine for the single-threaded path and the test fakes.
+    """
+
+    def __init__(
+        self,
+        client: object,
+        *,
+        bucket: str,
+        base_prefix: str,
+        client_factory: object | None = None,
+    ) -> None:
         self._client = client
         self._bucket = bucket
         self._prefix = base_prefix.strip("/")
+        self._client_factory = client_factory
+        self._local = threading.local()
+
+    def _thread_client(self) -> object:
+        """Return the client for the calling thread.
+
+        With a *client_factory* every thread gets its own cached client; without
+        one the shared *client* is returned (the single-threaded / fake path).
+        """
+        if self._client_factory is None:
+            return self._client
+        cached = getattr(self._local, "client", None)
+        if cached is None:
+            cached = self._client_factory()  # type: ignore[operator]
+            self._local.client = cached
+        return cached
 
     def full_key(self, rel_key: str) -> str:
         """Return the full bucket key for *rel_key* (``{base_prefix}/{rel_key}``)."""
@@ -56,7 +91,7 @@ class SnapshotStorage:
     def put_bytes(self, rel_key: str, body: bytes, *, tier: str) -> str:
         """PUT raw *body* bytes at ``{base_prefix}/{rel_key}`` and return the full key."""
         key = self.full_key(rel_key)
-        self._client.put_object(  # type: ignore[attr-defined]
+        self._thread_client().put_object(  # type: ignore[attr-defined]
             Bucket=self._bucket,
             Key=key,
             Body=body,
@@ -88,7 +123,7 @@ class SnapshotStorage:
         """
         key = self.full_key(rel_key)
         try:
-            resp = self._client.get_object(Bucket=self._bucket, Key=key)  # type: ignore[attr-defined]
+            resp = self._thread_client().get_object(Bucket=self._bucket, Key=key)  # type: ignore[attr-defined]
         except ClientError as exc:
             code = str(exc.response.get("Error", {}).get("Code", ""))
             if code in _NOT_FOUND_CODES:
@@ -164,6 +199,11 @@ class HashGatedStorage:
         self._new: dict[str, str] = {}
         self.written: list[str] = []
         self.skipped: list[str] = []
+        # Guards the shared _new / written / skipped state so put_json can be
+        # called concurrently from a ThreadPoolExecutor (slice-9.1.1r stage 2).
+        # The actual PUT (slow, network) runs OUTSIDE the lock so threads still
+        # upload in parallel — only the bookkeeping is serialised.
+        self._lock = threading.Lock()
 
     def load(self) -> None:
         """Load prior hashes from the state object; empty on fingerprint mismatch/absence."""
@@ -179,12 +219,21 @@ class HashGatedStorage:
     def put_json(self, rel_key: str, payload: BaseModel | dict, *, tier: str) -> str:  # type: ignore[type-arg]
         body = _body(payload)
         digest = hashlib.md5(body).hexdigest()  # noqa: S324 — content fingerprint, not security
-        self._new[rel_key] = digest
-        if self._prior.get(rel_key) == digest:
-            self.skipped.append(rel_key)
+        # Decide skip-vs-write under the lock so the shared hash map and the
+        # written/skipped lists stay consistent across worker threads. A skipped
+        # file does NO put_bytes (network) — the stage-1 hash-gate is preserved.
+        with self._lock:
+            self._new[rel_key] = digest
+            skip = self._prior.get(rel_key) == digest
+            if skip:
+                self.skipped.append(rel_key)
+        if skip:
             return self._inner.full_key(rel_key)  # type: ignore[attr-defined]
+        # PUT happens outside the lock: the slow network round-trips run in
+        # parallel; only the bookkeeping below is serialised again.
         key = self._inner.put_bytes(rel_key, body, tier=tier)  # type: ignore[attr-defined]
-        self.written.append(rel_key)
+        with self._lock:
+            self.written.append(rel_key)
         return key
 
     def flush_state(self) -> str:
@@ -237,9 +286,18 @@ def build_snapshot_storage(
     if not settings.SNAPSHOT_R2_BUCKET:
         raise ValueError("SNAPSHOT_R2_BUCKET required for s3 backend")
 
-    resolved_client = client if client is not None else build_s3_client(settings)
+    # A per-thread client factory lets the stage-2 parallel publish give each
+    # worker thread its own boto3 client (boto3 clients are not safe to share
+    # across threads). Skipped when a *client* is injected (tests pass a fake).
+    if client is not None:
+        return SnapshotStorage(
+            client,
+            bucket=settings.SNAPSHOT_R2_BUCKET,
+            base_prefix=base_prefix,
+        )
     return SnapshotStorage(
-        resolved_client,
+        build_s3_client(settings),
         bucket=settings.SNAPSHOT_R2_BUCKET,
         base_prefix=base_prefix,
+        client_factory=lambda: build_s3_client(settings),
     )
