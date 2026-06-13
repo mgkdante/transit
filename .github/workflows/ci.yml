@@ -27,6 +27,10 @@ jobs:
   offline-tests:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    env:
+      # CI runs an 80-col TTY; Rich/Typer wrap-truncates CLI help text and breaks
+      # help-output assertions. Render wide so the help is fully present.
+      COLUMNS: "200"
     defaults:
       run:
         working-directory: db
@@ -95,7 +99,9 @@ jobs:
         working-directory: db
     services:
       postgres:
-        image: postgres:16
+        # postgis/postgis (not stock postgres:16) — the migration chain does
+        # CREATE EXTENSION postgis; pg_repack (0040) self-skips when absent.
+        image: postgis/postgis:16-3.4
         env:
           POSTGRES_USER: transit_ci
           POSTGRES_PASSWORD: transit_ci
@@ -112,6 +118,7 @@ jobs:
       # tests read TRANSIT_TEST_DATABASE_URL. Same disposable container for both.
       DATABASE_URL: postgresql+psycopg://transit_ci:transit_ci@localhost:5432/transit_ci
       TRANSIT_TEST_DATABASE_URL: postgresql+psycopg://transit_ci:transit_ci@localhost:5432/transit_ci
+      COLUMNS: "200"
     steps:
       - name: Check out repository
         uses: actions/checkout@v5
