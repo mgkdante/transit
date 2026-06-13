@@ -39,6 +39,10 @@ def compute_alert_content_hash(
         purpose — content identity, not snapshot identity)
       - Joined by ASCII Unit Separator (U+001F)
       - md5 over UTF-8 bytes
+
+    EN fields (alert_header_text_en, description_text_en) are deliberately
+    EXCLUDED: content identity is fr-based (0021/slice-9.1.1h invariant). EN is
+    non-identity payload refreshed in place on the surviving SCD-2 row.
     """
 
     def _ts(value: datetime | None) -> str:
@@ -84,6 +88,8 @@ INSERT_I3_ALERTS = text(
         alert_id,
         alert_header_text,
         description_text,
+        alert_header_text_en,
+        description_text_en,
         severity,
         cause,
         effect,
@@ -104,6 +110,8 @@ INSERT_I3_ALERTS = text(
         :alert_id,
         :alert_header_text,
         :description_text,
+        :alert_header_text_en,
+        :description_text_en,
         :severity,
         :cause,
         :effect,
@@ -118,7 +126,11 @@ INSERT_I3_ALERTS = text(
         :captured_at_utc
     )
     ON CONFLICT (provider_id, content_hash) WHERE content_hash IS NOT NULL AND valid_to IS NULL
-    DO UPDATE SET last_seen_at = excluded.last_seen_at
+    DO UPDATE SET last_seen_at = excluded.last_seen_at,
+        alert_header_text_en = COALESCE(
+            excluded.alert_header_text_en, silver.i3_alerts.alert_header_text_en),
+        description_text_en = COALESCE(
+            excluded.description_text_en, silver.i3_alerts.description_text_en)
     """
 ).bindparams(bindparam("raw_alert_json", type_=postgresql.JSONB))
 
@@ -253,6 +265,35 @@ def _text(payload: object) -> str | None:
     return str(payload)
 
 
+def _text_en(payload: object) -> str | None:
+    """Strict English extractor for the bilingual citizen contract.
+
+    EN is non-identity payload (excluded from compute_alert_content_hash, the
+    0021 dedup key, and the 0024 synthesized hash — slice-9.1.1h invariant).
+    Honesty rule: only return text when an EXPLICIT English language marker
+    exists, so the web client can render a faithful "French only" state.
+
+      - None -> None
+      - str -> None (a bare string carries no language marker)
+      - list -> first non-empty _text() of items whose language is en/eng
+      - dict -> _text(payload['en']) only (no 'text'/'value' fallthrough;
+        those are language-less)
+    """
+    if isinstance(payload, list):
+        for item in payload:
+            if (
+                isinstance(item, dict)
+                and str(item.get("language", "")).lower() in {"en", "eng"}
+            ):
+                value = _text(item)
+                if value:
+                    return value
+        return None
+    if isinstance(payload, dict):
+        return _text(payload.get("en"))
+    return None
+
+
 def _timestamp(value: object) -> datetime | None:
     if value is None:
         return None
@@ -322,6 +363,12 @@ def normalize_i3_alert_payload(
         description_text = _text(
             _value(raw_alert, "description", "body", "message", "description_texts")
         )
+        alert_header_text_en = _text_en(
+            _value(raw_alert, "header", "title", "summary", "header_texts")
+        )
+        description_text_en = _text_en(
+            _value(raw_alert, "description", "body", "message", "description_texts")
+        )
         severity = _text(_value(raw_alert, "severity", "priority"))
         cause = _text(_value(raw_alert, "cause"))
         effect = _text(_value(raw_alert, "effect"))
@@ -347,6 +394,8 @@ def normalize_i3_alert_payload(
                 "alert_id": alert_id,
                 "alert_header_text": alert_header_text,
                 "description_text": description_text,
+                "alert_header_text_en": alert_header_text_en,
+                "description_text_en": description_text_en,
                 "severity": severity,
                 "cause": cause,
                 "effect": effect,

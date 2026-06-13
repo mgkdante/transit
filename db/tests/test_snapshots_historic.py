@@ -1091,6 +1091,7 @@ def test_build_alert_history_aggregation() -> None:
                 [
                     {
                         "alert_header_text": "Votre ligne",
+                        "header_text_en": "Your line",
                         "alert_id": None,  # STM feed leaves this NULL — ignored
                         "severity": "WARNING",
                         "routes": ["51", "9", "51"],   # dedup -> ["9","51"]
@@ -1110,6 +1111,10 @@ def test_build_alert_history_aggregation() -> None:
     basis = "|".join(str(x or "") for x in ("Votre ligne", "WARNING", start, end))
     assert e.id == f"stm-alert-{hashlib.sha1(basis.encode()).hexdigest()[:12]}"
     assert e.severity == _severity_code("WARNING")
+    # slice-9.1.1s: header_text + MAX'd EN header pass through; grouping/id basis
+    # unchanged (id hashed over header+severity+period, not EN).
+    assert e.header_text == "Votre ligne"
+    assert e.header_text_en == "Your line"
     assert e.duration_min == 150.0
     assert e.impact_passages is None  # v1 deferral
     # routes natural-sorted: "9" before "51"
@@ -1126,6 +1131,7 @@ def test_build_alert_history_none_timestamps_yield_none_duration() -> None:
                 [
                     {
                         "alert_header_text": None,
+                        "header_text_en": None,
                         "alert_id": None,
                         "severity": None,
                         "routes": None,
@@ -1154,6 +1160,7 @@ def test_build_alert_history_200_cap() -> None:
     rows = [
         {
             "alert_header_text": f"H{i}",
+            "header_text_en": None,
             "alert_id": None,
             "severity": "INFO",
             "routes": None,

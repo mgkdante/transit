@@ -181,6 +181,73 @@ def test_normalize_i3_alert_payload_accepts_stm_etatservice_shape() -> None:
     assert alerts[0]["alert_id"] == "etat-1"
     assert alerts[0]["alert_header_text"] == "Votre ligne"
     assert alerts[0]["description_text"] == "Arrets annules"
+    assert alerts[0]["alert_header_text_en"] == "Your line"
+    assert alerts[0]["description_text_en"] == "Cancelled stops"
     assert entities[0]["route_id"] == "14"
     assert entities[1]["raw_entity_json"] == {"direction_id": "S"}
     assert entities[2]["stop_id"] == "53010"
+
+
+def test_normalize_en_is_none_when_feed_has_no_english() -> None:
+    # Honesty: EN text is only claimed when an explicit en/eng language variant
+    # exists. fr-only lists, bare strings, and {'text': ...} dicts without a
+    # language marker must NOT be surfaced as English.
+    snapshot = _snapshot(
+        {
+            "messages": [
+                {
+                    "id": "fr-only",
+                    "header_texts": [{"language": "fr", "text": "Interruption"}],
+                    "description_texts": [{"language": "fr", "text": "Service interrompu"}],
+                },
+                {
+                    "id": "bare-string",
+                    "header": "Service interruption",
+                    "description": "No service",
+                },
+                {
+                    "id": "marker-less-dict",
+                    "header": {"text": "Avis"},
+                    "description": {"text": "Texte"},
+                },
+            ]
+        }
+    )
+
+    alerts, _ = normalize_i3_alert_payload(snapshot)
+
+    assert len(alerts) == 3
+    for alert in alerts:
+        assert alert["alert_header_text_en"] is None
+        assert alert["description_text_en"] is None
+    # fr text still extracted for the marker-less / bare-string shapes.
+    assert alerts[1]["alert_header_text"] == "Service interruption"
+    assert alerts[2]["alert_header_text"] == "Avis"
+
+
+def test_content_hash_unchanged_by_en_variants() -> None:
+    # EN text is deliberately excluded from content identity (slice-9.1.1h
+    # invariant): two alerts identical except their EN text must hash the same.
+    base = {
+        "id": "hash-stable",
+        "header_texts": [{"language": "fr", "text": "Votre ligne"}],
+        "description_texts": [{"language": "fr", "text": "Arrets annules"}],
+    }
+    with_en = {
+        "id": "hash-stable",
+        "header_texts": [
+            {"language": "fr", "text": "Votre ligne"},
+            {"language": "en", "text": "Your line"},
+        ],
+        "description_texts": [
+            {"language": "fr", "text": "Arrets annules"},
+            {"language": "en", "text": "Cancelled stops"},
+        ],
+    }
+    no_en_alerts, _ = normalize_i3_alert_payload(_snapshot({"messages": [base]}))
+    with_en_alerts, _ = normalize_i3_alert_payload(_snapshot({"messages": [with_en]}))
+
+    assert no_en_alerts[0]["content_hash"] == with_en_alerts[0]["content_hash"]
+    # but the EN payload differs (one has English, the other doesn't)
+    assert no_en_alerts[0]["alert_header_text_en"] is None
+    assert with_en_alerts[0]["alert_header_text_en"] == "Your line"

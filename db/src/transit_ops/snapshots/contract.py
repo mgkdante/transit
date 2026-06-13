@@ -47,6 +47,13 @@ class Alert(BaseModel):
     id: str
     severity: Severity
     header_key: str
+    # slice-9.1.1s additive bilingual text. header_text is the readable header
+    # (today an alias of header_key's value); EN fields are honest-NULL unless
+    # STM publishes an explicit English variant.
+    header_text: str = ""
+    description: str | None = None
+    header_text_en: str | None = None
+    description_en: str | None = None
     routes: list[str] = Field(default_factory=list)
     stops: list[str] = Field(default_factory=list)
     start_utc: str | None = None
@@ -276,6 +283,10 @@ class Receipt(BaseModel):
 class AlertHistoryEntry(BaseModel):
     id: str
     severity: str | None = None
+    # slice-9.1.1s additive bilingual header. EN surfaced via MAX() in the
+    # builder; honest-NULL when STM published no English variant.
+    header_text: str | None = None
+    header_text_en: str | None = None
     routes: list[str] = Field(default_factory=list)
     stops: list[str] = Field(default_factory=list)
     start_utc: str | None = None

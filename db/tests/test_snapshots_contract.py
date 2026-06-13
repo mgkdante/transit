@@ -54,3 +54,41 @@ def test_historic_models_valid():
     assert rc.worst_route.id == "171"
     prov = Provenance(retention={"detail_days": 14, "aggregate_days": 365}, gaps=["metro_realtime"])
     assert prov.retention["detail_days"] == 14
+
+
+def test_alert_text_fields_are_additive():
+    """slice-9.1.1s: new alert text fields are optional-with-default, so the
+    frozen live Alert / historic AlertHistoryEntry contracts stay backward
+    compatible (required arrays unchanged: [id,severity,header_key] / [id])."""
+    from transit_ops.snapshots.contract import Alert, AlertHistoryEntry
+
+    # Old-shape Alert still validates; new fields default to '' / None.
+    a = Alert(id="x", severity="watch", header_key="h")
+    assert a.header_text == ""
+    assert a.description is None
+    assert a.header_text_en is None
+    assert a.description_en is None
+
+    # Fully-populated Alert roundtrips.
+    full = Alert(
+        id="x",
+        severity="watch",
+        header_key="h",
+        header_text="Votre ligne",
+        description="Arrets annules",
+        header_text_en="Your line",
+        description_en="Cancelled stops",
+    )
+    assert full.header_text_en == "Your line"
+    assert full.description == "Arrets annules"
+
+    # AlertHistoryEntry old shape still validates; EN/header default None.
+    e = AlertHistoryEntry(id="x")
+    assert e.header_text is None
+    assert e.header_text_en is None
+    eh = AlertHistoryEntry(id="x", header_text="Votre ligne", header_text_en="Your line")
+    assert eh.header_text_en == "Your line"
+
+    # Freeze-compat: required arrays are exactly the committed ones.
+    assert Alert.model_json_schema()["required"] == ["id", "severity", "header_key"]
+    assert AlertHistoryEntry.model_json_schema()["required"] == ["id"]

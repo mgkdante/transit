@@ -379,6 +379,8 @@ _ALERTS_SQL = text(
     SELECT alert_id,
            alert_header_text,
            description_text,
+           alert_header_text_en,
+           description_text_en,
            severity,
            cause,
            effect,
@@ -414,6 +416,12 @@ def build_alerts(conn: Connection, *, provider_id: str = "stm") -> AlertsFile:
                 id=str(alert_id),
                 severity=_severity_code(r["severity"]),
                 header_key=r["alert_header_text"] or "",
+                # slice-9.1.1s: header_text aliases the header value (header_key
+                # is frozen); description + EN fields are additive passthroughs.
+                header_text=r["alert_header_text"] or "",
+                description=r["description_text"],
+                header_text_en=r["alert_header_text_en"],
+                description_en=r["description_text_en"],
                 routes=_split_csv(r["route_ids"]),
                 stops=_split_csv(r["stop_ids"]),
                 start_utc=_opt_iso(r["active_period_start_utc"]),
@@ -1967,6 +1975,7 @@ def build_receipts(
 _ALERT_HISTORY_SQL = text(
     """
     SELECT alert_header_text,
+           MAX(alert_header_text_en)                                AS header_text_en,
            MAX(severity)                                            AS severity,
            ARRAY_AGG(DISTINCT route_id)
                FILTER (WHERE route_id IS NOT NULL)                  AS routes,
@@ -2051,6 +2060,9 @@ def build_alert_history(
             AlertHistoryEntry(
                 id=alert_id,
                 severity=_severity_code(r["severity"]),
+                # slice-9.1.1s: header + MAX'd EN header (grouping unchanged).
+                header_text=r["alert_header_text"],
+                header_text_en=r["header_text_en"],
                 routes=_natural_sort_dedup(raw_routes),
                 stops=_natural_sort_dedup(raw_stops),
                 start_utc=_opt_iso(start),

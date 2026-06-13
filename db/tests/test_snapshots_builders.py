@@ -281,6 +281,8 @@ def test_build_alerts_maps_severity_and_splits_routes_stops() -> None:
                     "alert_id": "A-1",
                     "alert_header_text": "Service disruption line 1",
                     "description_text": "Delays on line 1",
+                    "alert_header_text_en": "Service disruption line 1 (EN)",
+                    "description_text_en": "Delays on line 1 (EN)",
                     "severity": "warning",
                     "cause": "ACCIDENT",
                     "effect": "DETOUR",
@@ -293,6 +295,8 @@ def test_build_alerts_maps_severity_and_splits_routes_stops() -> None:
                     "alert_id": None,  # no id -> synthesize a CONTENT hash
                     "alert_header_text": "Major closure",
                     "description_text": "Major closure desc",
+                    "alert_header_text_en": None,  # STM published no English
+                    "description_text_en": None,
                     "severity": "severe",
                     "cause": "CONSTRUCTION",
                     "effect": "NO_SERVICE",
@@ -313,6 +317,13 @@ def test_build_alerts_maps_severity_and_splits_routes_stops() -> None:
     assert a1.id == "A-1"
     assert a1.severity == "high"  # warning -> high
     assert a1.header_key == "Service disruption line 1"
+    # slice-9.1.1s: header_text aliases today's header value; description + EN
+    # fields pass through.
+    assert a1.header_text == "Service disruption line 1"
+    assert a1.header_text == a1.header_key
+    assert a1.description == "Delays on line 1"
+    assert a1.header_text_en == "Service disruption line 1 (EN)"
+    assert a1.description_en == "Delays on line 1 (EN)"
     assert a1.routes == ["1", "4", "51"]
     assert a1.stops == ["S-1", "S-2"]
     assert a1.start_utc == "2026-05-31T08:00:00Z"
@@ -321,7 +332,13 @@ def test_build_alerts_maps_severity_and_splits_routes_stops() -> None:
     assert a2.severity == "critical"  # severe -> critical
     assert a2.routes == []
     assert a2.stops == []
-    # id is a content hash: "stm-alert-<sha1[:12]>" of "desc|sev|cause|effect"
+    # en-less row is honest-NULL.
+    assert a2.header_text == "Major closure"
+    assert a2.description == "Major closure desc"
+    assert a2.header_text_en is None
+    assert a2.description_en is None
+    # id is a content hash: "stm-alert-<sha1[:12]>" of "desc|sev|cause|effect".
+    # CRITICAL: EN must NOT shift the content-stable id basis.
     basis = "Major closure desc|severe|CONSTRUCTION|NO_SERVICE"
     expected_id = "stm-alert-" + hashlib.sha1(basis.encode()).hexdigest()[:12]
     assert a2.id == expected_id
@@ -339,6 +356,8 @@ def test_build_alerts_unknown_severity_falls_back_to_watch() -> None:
                     "alert_id": "A-info",
                     "alert_header_text": "FYI",
                     "description_text": None,
+                    "alert_header_text_en": None,
+                    "description_text_en": None,
                     "severity": "info",
                     "cause": None,
                     "effect": None,
