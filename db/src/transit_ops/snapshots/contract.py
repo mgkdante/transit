@@ -70,14 +70,20 @@ class OccupancyMix(BaseModel):
 
 class NetworkFile(BaseModel):
     vehicles_in_service: int
-    on_time_pct: int
+    # Honesty: these KPIs are None (not a fabricated 0) when their denominator
+    # is empty — e.g. during a feed blackout the UI must render "no data", not
+    # a misleading "0% on time". on_time_pct is None with no known-status
+    # vehicles; coverage_pct is None with no live fleet; the delay percentiles
+    # are None with no delay observations; feed_freshness_s is None when no
+    # completed run exists (freshness genuinely unknown, not "0s = fresh").
+    on_time_pct: int | None
     status_dist: StatusDist
-    delay_p50_min: int
-    delay_p90_min: int
+    delay_p50_min: int | None
+    delay_p90_min: int | None
     occupancy_mix: OccupancyMix
     non_responding: int
-    feed_freshness_s: int
-    coverage_pct: int
+    feed_freshness_s: int | None
+    coverage_pct: int | None
 
 class ManifestLiveFiles(BaseModel):
     vehicles: str = "live/vehicles.json"

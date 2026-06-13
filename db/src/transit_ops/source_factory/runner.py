@@ -173,8 +173,8 @@ def run_source_factory_rebuild(
     if not execute:
         phase_status[FactoryPhase.DB_RESET] = PhaseStatus.SKIPPED
         phase_status[FactoryPhase.SOURCE_BACKFILL] = PhaseStatus.SKIPPED
-        phase_status[FactoryPhase.SILVER_VALIDATION] = PhaseStatus.SKIPPED
-        phase_status[FactoryPhase.GOLD_VALIDATION] = PhaseStatus.SKIPPED
+        phase_status[FactoryPhase.SILVER_BUILD] = PhaseStatus.SKIPPED
+        phase_status[FactoryPhase.GOLD_BUILD] = PhaseStatus.SKIPPED
         summaries["reset"] = {"status": PhaseStatus.SKIPPED, "reason": "dry_run"}
         summaries["source_backfill"] = [
             {
@@ -205,7 +205,9 @@ def run_source_factory_rebuild(
         )
         summaries["source_backfill"] = source_backfill
         phase_status[FactoryPhase.SOURCE_BACKFILL] = PhaseStatus.OK
-        phase_status[FactoryPhase.SILVER_VALIDATION] = PhaseStatus.OK
+        # Honesty: the silver layer is now BUILT (backfill complete). No
+        # validation check runs here, so this is *_BUILD, not *_VALIDATION.
+        phase_status[FactoryPhase.SILVER_BUILD] = PhaseStatus.OK
 
         gold_marts_result = operation_impls.build_gold_marts(
             provider_id,
@@ -223,7 +225,9 @@ def run_source_factory_rebuild(
             "build_gold_marts": _display_value(gold_marts_result),
             "build_warm_rollups": _display_value(warm_rollups_result),
         }
-        phase_status[FactoryPhase.GOLD_VALIDATION] = PhaseStatus.OK
+        # Honesty: the gold layer is now BUILT (marts + warm rollups). No
+        # validation check runs here, so this is *_BUILD, not *_VALIDATION.
+        phase_status[FactoryPhase.GOLD_BUILD] = PhaseStatus.OK
 
     completed_at_utc = now()
     phase_status[FactoryPhase.FINAL_REPORT] = PhaseStatus.OK

@@ -451,25 +451,54 @@ def test_build_network_on_time_pct_counts_late_band_as_on_time() -> None:
     assert out.status_dist.severe == 1
 
 
-def test_build_network_guards_zero_vehicles() -> None:
+def test_build_network_zero_vehicles_emits_honest_none_not_zero() -> None:
+    # Honesty-Gate: during a feed blackout (no vehicles, no observations, no
+    # completed run) the rate/percentile/freshness KPIs are UNKNOWN, so they
+    # must surface as None — a fabricated "0% on time" / "0s fresh" on a
+    # citizen-accountability dashboard is materially misleading.
     conn = FakeConn(
         {
             "current_vehicle_map_with_status": [],
             "current_trip_delay_computed": [],
-            # COALESCE(SUM/MAX, 0) aggregates always return one row, even on
-            # empty source tables — model that faithfully.
+            # SUM(...) COALESCE-d to 0 still returns one row; MAX(...) over an
+            # empty set returns a single NULL — model both faithfully.
             "non_responding_current": [{"non_responding": 0}],
-            "feed_freshness_current": [{"feed_freshness_s": 0}],
+            "feed_freshness_current": [{"feed_freshness_s": None}],
         }
     )
     out = build_network(conn)
     assert out.vehicles_in_service == 0
-    assert out.on_time_pct == 0
-    assert out.delay_p50_min == 0
-    assert out.delay_p90_min == 0
-    assert out.coverage_pct == 0
+    assert out.on_time_pct is None
+    assert out.delay_p50_min is None
+    assert out.delay_p90_min is None
+    assert out.coverage_pct is None
+    # non_responding is a genuine count (honest 0 when nothing is failing).
     assert out.non_responding == 0
-    assert out.feed_freshness_s == 0
+    # freshness is genuinely unknown with no completed run -> None, not 0.
+    assert out.feed_freshness_s is None
+
+
+def test_build_network_unknown_only_fleet_emits_none_on_time_pct() -> None:
+    # A live fleet exists but every vehicle has an UNKNOWN status: punctuality
+    # is unmeasured (known == 0). on_time_pct must be None, but coverage_pct is
+    # an honest 0 (0% of the fleet has a known status) and vehicles_in_service
+    # is a real count.
+    conn = FakeConn(
+        {
+            "current_vehicle_map_with_status": [
+                {"status_band": "Inconnu / Unknown", "occupancy_status": None},
+                {"status_band": "Inconnu / Unknown", "occupancy_status": None},
+            ],
+            "current_trip_delay_computed": [],
+            "non_responding_current": [{"non_responding": 0}],
+            "feed_freshness_current": [{"feed_freshness_s": 4}],
+        }
+    )
+    out = build_network(conn)
+    assert out.vehicles_in_service == 2
+    assert out.on_time_pct is None  # known == 0 -> unmeasured, not 0%
+    assert out.coverage_pct == 0  # honest: 0% of the fleet has a known status
+    assert out.feed_freshness_s == 4  # a completed run exists -> real value
 
 
 # --------------------------------------------------------------------------

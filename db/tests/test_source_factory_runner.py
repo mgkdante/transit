@@ -387,7 +387,13 @@ def test_execute_calls_operations_in_required_order(tmp_path) -> None:
     ]
     assert result.phase_status[FactoryPhase.DB_RESET] == PhaseStatus.OK
     assert result.phase_status[FactoryPhase.SOURCE_BACKFILL] == PhaseStatus.OK
-    assert result.phase_status[FactoryPhase.GOLD_VALIDATION] == PhaseStatus.OK
+    # Honesty: the silver/gold phases report a BUILD completing, not a
+    # validation check (none runs in this path), so the phases are *_BUILD.
+    assert result.phase_status[FactoryPhase.SILVER_BUILD] == PhaseStatus.OK
+    assert result.phase_status[FactoryPhase.GOLD_BUILD] == PhaseStatus.OK
+    # The retired "*_validation: ok" claim must not reappear in the report.
+    assert "silver_validation" not in result.phase_status
+    assert "gold_validation" not in result.phase_status
 
 
 def test_execute_records_optional_gis_and_i3_missing_source_as_skipped(tmp_path) -> None:
