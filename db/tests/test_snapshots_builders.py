@@ -592,7 +592,7 @@ def test_build_manifest_assembles_from_provider_and_version() -> None:
             "gold.dim_provider": [
                 {
                     "provider_id": "stm",
-                    "display_name": "Societe de transport de Montreal",
+                    "display_name": "Société de transport de Montréal",
                     "timezone": "America/Toronto",
                     "default_language": "fr",
                     "attribution_text": "Contains STM data made available under CC BY 4.0.",
@@ -615,7 +615,7 @@ def test_build_manifest_assembles_from_provider_and_version() -> None:
 
     assert isinstance(out, Manifest)
     assert out.provider == "stm"
-    assert out.display_name == "Societe de transport de Montreal"
+    assert out.display_name == "Société de transport de Montréal"
     assert out.tz == "America/Toronto"
     assert out.default_lang == "fr"
     assert out.attribution == "Contains STM data made available under CC BY 4.0."
@@ -774,6 +774,54 @@ def test_build_labels_en():
     lf = build_labels(FakeConn(), lang="en", generated_utc="t")
     assert lf.labels["status.on_time"] == "On time"
     assert lf.labels["occupancy.few_seats"] == "Few seats available"
+
+
+_METHODOLOGY_GAP_ATTR_KEYS = {
+    "methodology.otp_definition",
+    "methodology.delay_unit",
+    "methodology.percentiles",
+    "methodology.retention",
+    "gap.metro_realtime",
+    "gap.metro_realtime.short",
+    "attribution.data_source",
+    "attribution.disclaimer",
+}
+
+
+def test_build_labels_includes_methodology_gap_attribution():
+    """The 8 citizen-facing methodology/gap/attribution keys ship in BOTH languages,
+    with accents intact and the early-band caveat locked in EN (slice-9.1.1t)."""
+    from transit_ops.snapshots.builders import build_labels
+
+    class FakeResult:
+        def __init__(self, rows): self._rows = rows
+        def mappings(self): return self
+        def __iter__(self): return iter(self._rows)
+
+    class FakeConn:
+        def execute(self, *a, **k):
+            return FakeResult([])  # empty report_labels
+
+    for lang in ("fr", "en"):
+        lf = build_labels(FakeConn(), lang=lang, generated_utc="t")
+        for key in _METHODOLOGY_GAP_ATTR_KEYS:
+            assert key in lf.labels, f"{key} missing in {lang}"
+        # accent survives in the short métro-gap copy in BOTH languages
+        assert "étro" in lf.labels["gap.metro_realtime.short"]
+        # CC BY 4.0 named in the attribution source line
+        assert "CC BY 4.0" in lf.labels["attribution.data_source"]
+
+    # EN otp_definition keeps the early-band caveat (early vehicles are NOT on time)
+    en = build_labels(FakeConn(), lang="en", generated_utc="t")
+    assert "early" in en.labels["methodology.otp_definition"]
+
+
+def test_static_label_key_sets_identical_fr_en():
+    """Parity invariant: the two static dicts must always carry the same key set,
+    so fr.json and en.json never drift apart (slice-9.1.1t)."""
+    from transit_ops.snapshots.builders import _STATIC_LABELS_EN, _STATIC_LABELS_FR
+
+    assert set(_STATIC_LABELS_FR) == set(_STATIC_LABELS_EN)
 
 
 def test_build_routes_index():

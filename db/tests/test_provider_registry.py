@@ -126,6 +126,24 @@ def test_stm_manifest_has_live_current_static_gis_and_no_current_fallback() -> N
     ]
 
 
+def test_stm_display_name_is_accented() -> None:
+    """The public-facing provider name must carry its French accents end-to-end.
+
+    The accented display_name flows: stm.yaml -> seed-core upsert -> core.providers
+    -> gold.dim_provider -> build_manifest -> manifest.json display_name. This locks
+    the YAML source of truth so the citizen web-app shows 'Société de transport de
+    Montréal', not the ASCII-folded 'Societe de transport de Montreal' (slice-9.1.1t).
+    """
+    settings = Settings(_env_file=None)
+    registry = ProviderRegistry.from_project_root(
+        project_root=Path(__file__).resolve().parents[1],
+        settings=settings,
+    )
+    provider = registry.get_provider("stm")
+
+    assert provider.provider.display_name == "Société de transport de Montréal"
+
+
 def test_live_current_static_feed_is_seeded_as_canonical_static_schedule() -> None:
     settings = Settings(_env_file=None)
     registry = ProviderRegistry.from_project_root(

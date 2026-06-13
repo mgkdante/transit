@@ -755,6 +755,19 @@ def build_manifest(
 # Static labels
 # ---------------------------------------------------------------------------
 
+# Citizen-facing methodology / gap / attribution copy (slice-9.1.1t).
+# The methodology.* wording encodes thresholds that live in SQL/code — when those
+# move, this copy MUST move in the same PR (a cross-invariant test ties provenance
+# methodology keys to these label keys; an 'early' assertion locks the early band).
+# Threshold sources:
+#   - on-time band: migration 0020 status_band CASE — avg_delay < -60s => Early
+#     (NOT on time), < +60s => On time, < +300s => Late, else Severe; build_network
+#     counts only the on-time bucket against known, so early vehicles are excluded.
+#   - delayed = delay_seconds > 0 (gold/rollups.py); severe = > 300s (gold/rollups.py);
+#     daily public views report severe as the "delayed" surface.
+#   - retention constants mirror build_provenance: detail 14d, aggregate 365d.
+# The fr/en key sets MUST stay identical (parity test) — manifest.attribution stays
+# the unlocalized English machine fallback; these labels are the citizen surface.
 _STATIC_LABELS_FR: dict[str, str] = {
     "status.early": "En avance",
     "status.on_time": "À l'heure",
@@ -769,6 +782,38 @@ _STATIC_LABELS_FR: dict[str, str] = {
     "occupancy.few_seats": "Quelques places",
     "occupancy.standing": "Debout seulement",
     "occupancy.full": "Complet",
+    "methodology.otp_definition": (
+        "À l'heure : en direct, un véhicule est à l'heure si son retard moyen se "
+        "situe entre une minute d'avance et une minute de retard; plus tôt, il est "
+        "compté « en avance », pas à l'heure. Dans l'historique quotidien, un "
+        "passage est ponctuel s'il n'a aucun retard enregistré; les vues par ligne "
+        "et par arrêt comptent les retards sévères (plus de 5 minutes)."
+    ),
+    "methodology.delay_unit": (
+        "Les retards sont mesurés en secondes par rapport à l'horaire GTFS publié "
+        "par la STM, puis affichés en minutes."
+    ),
+    "methodology.percentiles": (
+        "Le p90 du réseau provient des passages suivis des 90 derniers jours. Les "
+        "percentiles par ligne et par arrêt seront ajoutés plus tard."
+    ),
+    "methodology.retention": (
+        "Les données détaillées sont conservées 14 jours; les agrégats quotidiens, "
+        "365 jours."
+    ),
+    "gap.metro_realtime": (
+        "La STM ne publie pas de données temps réel pour le métro. Les indicateurs "
+        "en direct couvrent le réseau de bus; les interruptions de métro "
+        "apparaissent dans les alertes de service."
+    ),
+    "gap.metro_realtime.short": "Métro : temps réel non disponible",
+    "attribution.data_source": (
+        "Contient des données de la Société de transport de Montréal, diffusées "
+        "sous licence CC BY 4.0."
+    ),
+    "attribution.disclaimer": (
+        "Site indépendant, non affilié à la STM et non approuvé par elle."
+    ),
 }
 
 _STATIC_LABELS_EN: dict[str, str] = {
@@ -785,6 +830,36 @@ _STATIC_LABELS_EN: dict[str, str] = {
     "occupancy.few_seats": "Few seats available",
     "occupancy.standing": "Standing room only",
     "occupancy.full": "Full",
+    "methodology.otp_definition": (
+        "On time: live, a vehicle counts as on time when its average delay is "
+        "between one minute early and one minute late; anything earlier is counted "
+        "as early, not on time. In daily history, a tracked passage counts as "
+        "punctual when no delay was recorded; route and stop views count severe "
+        "delays (over 5 minutes)."
+    ),
+    "methodology.delay_unit": (
+        "Delays are measured in seconds against the STM's published GTFS schedule, "
+        "then shown in minutes."
+    ),
+    "methodology.percentiles": (
+        "Network p90 comes from tracked passages over the last 90 days. Per-route "
+        "and per-stop percentiles are coming later."
+    ),
+    "methodology.retention": (
+        "Detailed data is kept for 14 days; daily aggregates for 365 days."
+    ),
+    "gap.metro_realtime": (
+        "The STM does not publish real-time data for the métro. Live indicators "
+        "cover the bus network; métro interruptions appear in service alerts."
+    ),
+    "gap.metro_realtime.short": "Métro: real-time not available",
+    "attribution.data_source": (
+        "Contains data from the Société de transport de Montréal, made available "
+        "under the CC BY 4.0 licence."
+    ),
+    "attribution.disclaimer": (
+        "Independent site, not affiliated with or endorsed by the STM."
+    ),
 }
 
 _LABELS_SQL = text(
@@ -801,6 +876,14 @@ def build_labels(conn: Connection, *, lang: str = "fr", generated_utc: str) -> "
 
     Every metric.* key is emitted in BOTH languages (with cross-language / raw-key
     fallback) so fr.json and en.json always carry an identical key set.
+
+    Two UI conventions for the slice-9.1.1t copy (methodology.*, gap.*, attribution.*):
+      1. For each gap g in provenance.gaps, the client shows labels['gap.' + g] on the
+         affected surface; gap.metro_realtime applies to routes_index entries whose
+         type == 1 (métro), with gap.metro_realtime.short as the compact badge.
+      2. The attribution surface is labels['attribution.data_source'] +
+         labels['attribution.disclaimer']; manifest.attribution is the unlocalized
+         machine-level fallback, frozen until the STM licensing determination (T1).
     """
     from transit_ops.snapshots.contract import LabelsFile
 
@@ -1318,6 +1401,22 @@ def _severe_pct(observation_count: object, severe: object) -> float | None:
     if obs <= 0:
         return None
     return round(100.0 * float(severe or 0) / obs, 1)
+
+
+def _public_impact_score(value: object, *, cap: float = 9999.9999) -> float | None:
+    """Guard the rider_impact_score before it reaches public receipts (slice-9.1.1t).
+
+    The mart clamps the raw score with LEAST(raw, 9999.9999) (gold/rollups.py), so an
+    at-cap value means the true magnitude overflowed and is unknown — publish honest
+    NULL, never the sentinel. Negative values (impossible by construction; defensive)
+    are also nulled. Receipt.rider_impact_score is already float | None.
+    """
+    if value is None:
+        return None
+    v = float(value)  # type: ignore[arg-type]
+    if v >= cap or v < 0:
+        return None
+    return v
 
 
 # --------------------------------------------------------------------------
@@ -2052,9 +2151,7 @@ def build_receipts(
             "affected_routes": _opt_int(r["affected_route_count"]),
             "affected_stops": _opt_int(r["affected_stop_count"]),
             "alerts": _opt_int(r["alert_count"]),
-            "rider_impact_score": (
-                float(r["rider_impact_score"]) if r["rider_impact_score"] is not None else None
-            ),
+            "rider_impact_score": _public_impact_score(r["rider_impact_score"]),
         }
 
     # 2. network daily OTP/delay from hourly rollup

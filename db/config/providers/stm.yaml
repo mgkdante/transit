@@ -1,6 +1,6 @@
 provider:
   provider_id: stm
-  display_name: Societe de transport de Montreal
+  display_name: Société de transport de Montréal
   timezone: America/Toronto
   default_language: fr
   default_currency: CAD
