@@ -20,6 +20,7 @@ on:
 
 permissions:
   contents: read
+  issues: write
 
 concurrency:
   group: weekly-pg-repack
@@ -72,3 +73,18 @@ jobs:
           name: pg-repack-size-report
           path: db/pg-repack-size-report.txt
           if-no-files-found: ignore
+
+      # working-directory is db; the shared alert script lives at the repo root.
+      - name: Alert on failure
+        if: failure()
+        run: '../.github/scripts/alert-issue.sh fire weekly-pg-repack "[alert] Weekly pg_repack Maintenance failed" "failed run ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+
+      - name: Resolve alert on success
+        if: success()
+        run: '../.github/scripts/alert-issue.sh resolve weekly-pg-repack "recovered in run ${{ github.run_id }}"'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}

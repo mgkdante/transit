@@ -26,7 +26,11 @@ from transit_ops.ingestion import (
     ingest_gis_feed,
     ingest_static_feed,
 )
-from transit_ops.ingestion.common import utc_now
+from transit_ops.ingestion.common import (
+    get_feed_endpoint_id,
+    insert_failed_ingestion_run,
+    utc_now,
+)
 from transit_ops.maintenance import (
     GoldStoragePruneResult,
     SilverStoragePruneResult,
@@ -443,6 +447,55 @@ def run_static_pipeline(
     )
 
 
+def _persist_silver_load_failure(
+    engine: Engine,
+    *,
+    provider_id: str,
+    endpoint_key: str,
+    error_message: str,
+    started_at_utc: datetime,
+) -> None:
+    """Best-effort: record a run_kind='silver_load' failed run for DB telemetry.
+
+    The realtime silver-load failure left zero DB trace before slice-9.1.1o
+    (a multi-hour alerts.json freeze was invisible to every DB query). This
+    writes a completed status='failed' row so the freshness probe can detect
+    the failure-burst incident class.
+
+    A FRESH engine.begin() transaction is used because the load transaction
+    just rolled back. The whole body is swallowed: this MUST never raise or
+    change the cycle's status semantics — failure telemetry is strictly
+    additive. If the run_kind CHECK constraint has not yet been migrated
+    (deploy-ordering mistake), the insert raises here and is logged, leaving
+    behavior identical to before.
+    """
+    try:
+        with engine.begin() as connection:
+            feed_endpoint_id = get_feed_endpoint_id(
+                connection,
+                provider_id=provider_id,
+                endpoint_key=endpoint_key,
+                missing_message=(
+                    f"No feed endpoint '{endpoint_key}' for provider '{provider_id}'."
+                ),
+            )
+            insert_failed_ingestion_run(
+                connection,
+                provider_id=provider_id,
+                feed_endpoint_id=feed_endpoint_id,
+                run_kind="silver_load",
+                started_at_utc=started_at_utc,
+                completed_at_utc=utc_now(),
+                error_message=error_message,
+            )
+    except Exception:  # noqa: BLE001 — telemetry must never break the cycle
+        logger.exception(
+            "Failed to persist silver_load failure row for provider '%s', endpoint '%s'.",
+            provider_id,
+            endpoint_key,
+        )
+
+
 def _capture_and_load_endpoint(
     provider_id: str,
     endpoint_key: str,
@@ -504,6 +557,7 @@ def _capture_and_load_endpoint(
         endpoint_key,
     )
     silver_load_started_at = time.perf_counter()
+    silver_load_started_at_utc = utc_now()
     try:
         silver_load_result, silver_load_duration_seconds = _run_timed_realtime_step(
             f"load-realtime-silver[{endpoint_key}]",
@@ -527,6 +581,14 @@ def _capture_and_load_endpoint(
             endpoint_key,
             exc,
         )
+        error_message = f"load-realtime-silver failed: {exc}"
+        _persist_silver_load_failure(
+            engine,
+            provider_id=provider_id,
+            endpoint_key=endpoint_key,
+            error_message=error_message,
+            started_at_utc=silver_load_started_at_utc,
+        )
         return RealtimeEndpointCycleResult(
             endpoint_key=endpoint_key,
             status="failed",
@@ -538,7 +600,7 @@ def _capture_and_load_endpoint(
             ),
             capture_result=capture_result.display_dict(),
             silver_load_result=None,
-            error_message=f"load-realtime-silver failed: {exc}",
+            error_message=error_message,
         )
 
     return RealtimeEndpointCycleResult(
@@ -606,6 +668,7 @@ def _capture_and_load_i3_alerts(
 
     logger.info("Running i3 alert Silver load step for provider '%s'.", provider_id)
     silver_load_started_at = time.perf_counter()
+    silver_load_started_at_utc = utc_now()
     try:
         silver_load_result, silver_load_duration_seconds = _run_timed_realtime_step(
             f"load-i3-silver[{I3_ALERT_ENDPOINT}]",
@@ -626,6 +689,14 @@ def _capture_and_load_i3_alerts(
             provider_id,
             exc,
         )
+        error_message = f"load-i3-silver failed: {exc}"
+        _persist_silver_load_failure(
+            engine,
+            provider_id=provider_id,
+            endpoint_key=I3_ALERT_ENDPOINT,
+            error_message=error_message,
+            started_at_utc=silver_load_started_at_utc,
+        )
         return RealtimeEndpointCycleResult(
             endpoint_key=I3_ALERT_ENDPOINT,
             status="failed",
@@ -637,7 +708,7 @@ def _capture_and_load_i3_alerts(
             ),
             capture_result=capture_result.display_dict(),
             silver_load_result=None,
-            error_message=f"load-i3-silver failed: {exc}",
+            error_message=error_message,
         )
 
     return RealtimeEndpointCycleResult(

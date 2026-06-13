@@ -1264,3 +1264,180 @@ def test_run_realtime_cycle_first_endpoint_call_runs_without_gating(monkeypatch)
     assert last_captures["i3_alerts"] == frozen_now
     assert last_captures["trip_updates"] == frozen_now
     assert last_captures["vehicle_positions"] == frozen_now
+
+
+# --- slice-9.1.1o: silver-load failure persistence ----------------------------
+
+
+class _RecordingFailureEngine:
+    """Fake engine whose .begin() yields a recording connection.
+
+    Records every insert_failed_ingestion_run call the orchestrator makes
+    inside its fresh failure-persistence transaction. _explode=True makes
+    .begin() raise to prove the persistence path is strictly best-effort.
+    """
+
+    def __init__(self, *, explode: bool = False) -> None:
+        self.inserts: list[dict] = []
+        self._explode = explode
+
+    def begin(self):  # noqa: ANN201
+        if self._explode:
+            raise RuntimeError("engine.begin exploded")
+        return self
+
+    def connect(self):  # noqa: ANN201
+        return self
+
+    def __enter__(self):  # noqa: ANN204
+        return self
+
+    def __exit__(self, *args) -> None:  # noqa: ANN002
+        return None
+
+
+def _install_failure_persistence_spies(monkeypatch, engine: _RecordingFailureEngine) -> None:
+    """Stub the two DB primitives the failure-persistence helper calls.
+
+    get_feed_endpoint_id resolves a deterministic id per endpoint;
+    insert_failed_ingestion_run records its kwargs onto the engine so tests
+    can assert exactly what would be written.
+    """
+
+    def fake_get_feed_endpoint_id(connection, *, provider_id, endpoint_key, missing_message):  # noqa: ANN001
+        return {"trip_updates": 11, "vehicle_positions": 12, "i3_alerts": 13}[endpoint_key]
+
+    def fake_insert_failed(connection, **kwargs):  # noqa: ANN001
+        engine.inserts.append(kwargs)
+        return 9999
+
+    monkeypatch.setattr(orchestration, "get_feed_endpoint_id", fake_get_feed_endpoint_id)
+    monkeypatch.setattr(orchestration, "insert_failed_ingestion_run", fake_insert_failed)
+
+
+def test_run_realtime_cycle_persists_gtfs_silver_load_failure_row(monkeypatch) -> None:
+    call_order: list[str] = []
+    _install_realtime_cycle_stubs(monkeypatch, call_order)
+
+    def fake_load(provider_id, endpoint_key, settings, registry, engine):  # noqa: ANN001
+        call_order.append(f"load:{endpoint_key}")
+        if endpoint_key == "trip_updates":
+            raise RuntimeError("silver loader exploded")
+        return _realtime_silver_result(endpoint_key, 20)
+
+    monkeypatch.setattr(orchestration, "load_latest_realtime_to_silver", fake_load)
+
+    engine = _RecordingFailureEngine()
+    _install_failure_persistence_spies(monkeypatch, engine)
+
+    result = run_realtime_cycle(
+        "stm",
+        settings=Settings(_env_file=None, DATABASE_URL="postgresql://user:pass@example.com/transit"),
+        registry=object(),
+        engine=engine,
+    )
+
+    # Cycle semantics unchanged: one endpoint failed, the rest succeeded.
+    assert result.status == "partial_failure"
+    assert result.endpoint_results[0].error_message == (
+        "load-realtime-silver failed: silver loader exploded"
+    )
+    # Exactly one silver_load failure row persisted, for trip_updates.
+    assert len(engine.inserts) == 1
+    insert = engine.inserts[0]
+    assert insert["provider_id"] == "stm"
+    assert insert["feed_endpoint_id"] == 11
+    assert insert["run_kind"] == "silver_load"
+    assert insert["error_message"] == "load-realtime-silver failed: silver loader exploded"
+    assert insert["started_at_utc"] is not None
+    assert insert["completed_at_utc"] is not None
+
+
+def test_run_realtime_cycle_persists_i3_silver_load_failure_row(monkeypatch) -> None:
+    call_order: list[str] = []
+    _install_realtime_cycle_stubs(monkeypatch, call_order)
+
+    def fake_i3_load(provider_id, settings, engine):  # noqa: ANN001
+        call_order.append("load:i3_alerts")
+        raise RuntimeError("i3 silver loader exploded")
+
+    monkeypatch.setattr(orchestration, "load_latest_i3_to_silver", fake_i3_load, raising=False)
+
+    engine = _RecordingFailureEngine()
+    _install_failure_persistence_spies(monkeypatch, engine)
+
+    result = run_realtime_cycle(
+        "stm",
+        settings=Settings(_env_file=None, DATABASE_URL="postgresql://user:pass@example.com/transit"),
+        registry=object(),
+        engine=engine,
+    )
+
+    assert result.status == "partial_failure"
+    i3_result = next(r for r in result.endpoint_results if r.endpoint_key == "i3_alerts")
+    assert i3_result.error_message == "load-i3-silver failed: i3 silver loader exploded"
+    assert len(engine.inserts) == 1
+    insert = engine.inserts[0]
+    assert insert["feed_endpoint_id"] == 13
+    assert insert["run_kind"] == "silver_load"
+    assert insert["error_message"] == "load-i3-silver failed: i3 silver loader exploded"
+
+
+def test_silver_load_failure_persistence_is_best_effort(monkeypatch) -> None:
+    """If the persistence helper itself raises, the cycle result is identical."""
+    call_order: list[str] = []
+    _install_realtime_cycle_stubs(monkeypatch, call_order)
+
+    def fake_load(provider_id, endpoint_key, settings, registry, engine):  # noqa: ANN001
+        call_order.append(f"load:{endpoint_key}")
+        if endpoint_key == "trip_updates":
+            raise RuntimeError("silver loader exploded")
+        return _realtime_silver_result(endpoint_key, 20)
+
+    monkeypatch.setattr(orchestration, "load_latest_realtime_to_silver", fake_load)
+
+    # engine.begin() explodes -> persistence is impossible, but must not propagate.
+    engine = _RecordingFailureEngine(explode=True)
+    _install_failure_persistence_spies(monkeypatch, engine)
+
+    result = run_realtime_cycle(
+        "stm",
+        settings=Settings(_env_file=None, DATABASE_URL="postgresql://user:pass@example.com/transit"),
+        registry=object(),
+        engine=engine,
+    )
+
+    # No insert recorded (begin exploded before any write), cycle still partial.
+    assert engine.inserts == []
+    assert result.status == "partial_failure"
+    assert result.endpoint_results[0].error_message == (
+        "load-realtime-silver failed: silver loader exploded"
+    )
+
+
+def test_capture_failures_do_not_write_silver_load_rows(monkeypatch) -> None:
+    """Capture failures persist via mark_ingestion_run_failed already — no
+    silver_load row may be written for a capture-phase failure."""
+    call_order: list[str] = []
+    _install_realtime_cycle_stubs(monkeypatch, call_order)
+
+    def fake_capture(provider_id, endpoint_key, settings, registry, engine):  # noqa: ANN001
+        call_order.append(f"capture:{endpoint_key}")
+        if endpoint_key == "vehicle_positions":
+            raise RuntimeError("capture down")
+        return _realtime_ingestion_result(endpoint_key, 20)
+
+    monkeypatch.setattr(orchestration, "capture_realtime_feed", fake_capture)
+
+    engine = _RecordingFailureEngine()
+    _install_failure_persistence_spies(monkeypatch, engine)
+
+    result = run_realtime_cycle(
+        "stm",
+        settings=Settings(_env_file=None, DATABASE_URL="postgresql://user:pass@example.com/transit"),
+        registry=object(),
+        engine=engine,
+    )
+
+    assert result.status == "partial_failure"
+    assert engine.inserts == []

@@ -651,6 +651,75 @@ def test_delete_orphaned_ingestion_runs_is_age_gated() -> None:
     assert "raw.ingestion_objects" in sql
 
 
+def test_orphan_run_prune_retains_recent_failed_silver_load_rows() -> None:
+    """slice-9.1.1o: the new run_kind='silver_load' failure rows (and every
+    capture-failure row) carry zero ingestion_objects, so they look "orphaned".
+    The age gate is the retention guard: only orphans OLDER than the bronze
+    cutoff are deleted, so a recently-written failure row survives for the full
+    retention window and is queryable by the freshness probe. This pins that
+    the age gate (not a status filter) is what protects fresh failure rows —
+    no separate status='failed' predicate is needed or present.
+    """
+    sql = str(DELETE_ORPHANED_INGESTION_RUNS)
+    # Deletion is bounded to rows strictly older than the cutoff.
+    assert "ir.started_at_utc < :cutoff_utc" in sql
+    # The guard is purely age-based; it must NOT special-case status, otherwise
+    # aged failure rows would never purge (they would accumulate forever).
+    assert "status" not in sql
+
+
+def test_prune_bronze_realtime_binds_cutoff_on_orphan_run_delete() -> None:
+    connection = RecordingConnection()
+    storage = FakeBronzeStorage()
+    now_utc = datetime(2026, 3, 26, 20, 0, 0, tzinfo=UTC)
+
+    cutoff_utc, _objects, _meta, _failed = prune_bronze_realtime_objects(
+        connection,
+        provider_id="stm",
+        retention_days=7,
+        bronze_storage=storage,
+        dry_run=False,
+        now_utc=now_utc,
+    )
+
+    orphan_calls = [
+        (sql, params)
+        for sql, params in connection.executed
+        if "DELETE FROM raw.ingestion_runs" in sql
+    ]
+    assert len(orphan_calls) == 1
+    _sql, params = orphan_calls[0]
+    assert params is not None
+    assert params["provider_id"] == "stm"
+    # cutoff is bound so the age gate fires — recent failure rows are retained.
+    assert params["cutoff_utc"] == cutoff_utc
+
+
+def test_prune_bronze_static_binds_cutoff_on_orphan_run_delete() -> None:
+    connection = RecordingConnection()
+    storage = FakeBronzeStorage()
+    now_utc = datetime(2026, 3, 26, 20, 0, 0, tzinfo=UTC)
+
+    cutoff_utc, _objects, _meta, _failed = prune_bronze_static_objects(
+        connection,
+        provider_id="stm",
+        retention_days=7,
+        bronze_storage=storage,
+        dry_run=False,
+        now_utc=now_utc,
+    )
+
+    orphan_calls = [
+        (sql, params)
+        for sql, params in connection.executed
+        if "DELETE FROM raw.ingestion_runs" in sql
+    ]
+    assert len(orphan_calls) == 1
+    _sql, params = orphan_calls[0]
+    assert params is not None
+    assert params["cutoff_utc"] == cutoff_utc
+
+
 def test_maintenance_has_no_dropped_legacy_silver_realtime_sql() -> None:
     source = inspect.getsource(maintenance_module)
 

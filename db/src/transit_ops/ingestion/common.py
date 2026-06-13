@@ -285,6 +285,72 @@ def mark_ingestion_run_failed(
     )
 
 
+def insert_failed_ingestion_run(
+    connection: Connection,
+    *,
+    provider_id: str,
+    feed_endpoint_id: int,
+    run_kind: str,
+    started_at_utc: datetime,
+    completed_at_utc: datetime,
+    error_message: str,
+    http_status_code: int | None = None,
+) -> int:
+    """Insert one already-completed status='failed' ingestion run.
+
+    Unlike insert_ingestion_run (which opens a 'running' row to be closed
+    later), this writes a terminal failure row in a single statement. It is the
+    DB-truth primitive behind silver-load failure telemetry (slice-9.1.1o):
+    when a realtime silver load raises, the orchestrator records a
+    run_kind='silver_load' failure here so the freshness probe can detect the
+    failure-burst class of incidents that captures-staying-green would hide.
+
+    requested_at_utc and started_at_utc are both set to started_at_utc — the
+    run never reached a 'running' state, so the request and start instants
+    coincide. error_message is truncated to 2000 chars, matching
+    mark_ingestion_run_failed.
+    """
+    result = connection.execute(
+        text(
+            """
+            INSERT INTO raw.ingestion_runs (
+                provider_id,
+                feed_endpoint_id,
+                run_kind,
+                status,
+                requested_at_utc,
+                started_at_utc,
+                completed_at_utc,
+                http_status_code,
+                error_message
+            )
+            VALUES (
+                :provider_id,
+                :feed_endpoint_id,
+                :run_kind,
+                'failed',
+                :started_at_utc,
+                :started_at_utc,
+                :completed_at_utc,
+                :http_status_code,
+                :error_message
+            )
+            RETURNING ingestion_run_id
+            """
+        ),
+        {
+            "provider_id": provider_id,
+            "feed_endpoint_id": feed_endpoint_id,
+            "run_kind": run_kind,
+            "started_at_utc": started_at_utc,
+            "completed_at_utc": completed_at_utc,
+            "http_status_code": http_status_code,
+            "error_message": error_message[:2000],
+        },
+    )
+    return int(result.scalar_one())
+
+
 def insert_ingestion_object(
     connection: Connection,
     *,
