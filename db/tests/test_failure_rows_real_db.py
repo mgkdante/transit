@@ -198,7 +198,7 @@ def test_orphan_prune_retains_fresh_failed_runs_real_db(conn) -> None:
     """A fresh silver_load failure row (no objects) survives the orphan prune;
     an aged one is swept by the same age-gated DELETE."""
     # Fresh failure row — written NOW, must survive the 30-day cutoff.
-    insert_failed_ingestion_run(
+    _fresh_run_id = insert_failed_ingestion_run(
         conn,
         provider_id=PROVIDER,
         feed_endpoint_id=TU_ENDPOINT_ID,
@@ -207,11 +207,13 @@ def test_orphan_prune_retains_fresh_failed_runs_real_db(conn) -> None:
         completed_at_utc=NOW,
         error_message="load-realtime-silver failed: fresh",
     )
+    # Re-id THIS specific fresh run, not max(ingestion_run_id) — the fixture
+    # seeds runs that already own ingestion_objects at higher ids, so max()
+    # would target one of those and the re-id FK-violates on its child objects.
     conn.execute(
         text("UPDATE raw.ingestion_runs SET ingestion_run_id = :new "
-             "WHERE ingestion_run_id = (SELECT max(ingestion_run_id) "
-             "FROM raw.ingestion_runs WHERE provider_id = :p)"),
-        {"new": FRESH_FAILED_RUN_ID, "p": PROVIDER},
+             "WHERE ingestion_run_id = :old"),
+        {"new": FRESH_FAILED_RUN_ID, "old": _fresh_run_id},
     )
     # Aged failure row — 40 days old, must be swept.
     conn.execute(

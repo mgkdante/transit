@@ -148,9 +148,19 @@ def _seed_provider_and_snapshots(connection) -> None:  # noqa: ANN001
 
 
 def _seed_alert_rows(connection) -> None:  # noqa: ANN001
+    # The two D1 "Elevator issue" rows are the same legacy alert seen twice in a
+    # day. Pre-wave-3 they were seeded with content_hash NULL (synthesized hash
+    # deduped them to 1); wave-3 slice-l 0039 makes content_hash NOT NULL. The
+    # faithful post-l model is an SCD-2 supersession sharing one content_hash:
+    # the first occurrence is CLOSED (valid_to = the second's capture) and the
+    # second stays ACTIVE — both carry the same hash (legal under the active-only
+    # partial unique index) and the reporting view still dedups them to 1.
     rows = [
-        _alert_row(SNAP_IDS[0], 0, D1_CAPTURED_1, "Elevator issue", None),
-        _alert_row(SNAP_IDS[1], 0, D1_CAPTURED_2, "Elevator issue", None),
+        _alert_row(
+            SNAP_IDS[0], 0, D1_CAPTURED_1, "Elevator issue",
+            "legacy-elevator-hash", valid_to=D1_CAPTURED_2,
+        ),
+        _alert_row(SNAP_IDS[1], 0, D1_CAPTURED_2, "Elevator issue", "legacy-elevator-hash"),
         _alert_row(SNAP_IDS[2], 0, D2_CAPTURED_1, "Elevator issue", "realhash-a"),
         _alert_row(SNAP_IDS[3], 0, D2_CAPTURED_2, "Blue line delay", "realhash-b"),
     ]
@@ -167,7 +177,7 @@ def _seed_alert_rows(connection) -> None:  # noqa: ANN001
                 (:snapshot_id, :alert_index, :provider_id, NULL,
                  :header, :description, :severity, :cause, :effect,
                  NULL, NULL, NULL, NULL, :captured, CAST(:raw AS jsonb), :content_hash,
-                 NULL, NULL, NULL)
+                 NULL, NULL, :valid_to)
             """
         ),
         rows,
@@ -202,6 +212,7 @@ def _alert_row(
     captured_at: datetime,
     description: str,
     content_hash: str | None,
+    valid_to: datetime | None = None,
 ) -> dict[str, object]:
     return {
         "snapshot_id": snapshot_id,
@@ -215,6 +226,7 @@ def _alert_row(
         "captured": captured_at,
         "raw": "{}",
         "content_hash": content_hash,
+        "valid_to": valid_to,
     }
 
 

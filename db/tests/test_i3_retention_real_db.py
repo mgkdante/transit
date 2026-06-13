@@ -108,6 +108,14 @@ def conn():
     engine = create_engine(DB_URL)
     with engine.connect() as connection:
         transaction = connection.begin()
+        # These tests reconstruct the PRE-0039 world (legacy content_hash IS NULL
+        # rows) to exercise 0038's one-time collapse. At gate time the schema is
+        # at head, where 0039 enforces content_hash NOT NULL, so drop that
+        # constraint inside this rolled-back transaction to seed the legacy rows;
+        # the rollback restores it, and prod is never touched.
+        connection.execute(
+            text("ALTER TABLE silver.i3_alerts ALTER COLUMN content_hash DROP NOT NULL")
+        )
         _seed(connection)
         try:
             yield connection
@@ -153,8 +161,8 @@ def _seed(connection) -> None:
                 """
                 INSERT INTO raw.ingestion_objects
                     (ingestion_object_id, ingestion_run_id, provider_id, storage_backend,
-                     storage_path, content_type)
-                VALUES (:o, :r, :p, 's3', :path, 'application/json')
+                     storage_path, object_kind)
+                VALUES (:o, :r, :p, 's3', :path, 'i3_alerts')
                 """
             ),
             {

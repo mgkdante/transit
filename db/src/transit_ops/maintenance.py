@@ -1318,7 +1318,28 @@ def prune_bronze_realtime_objects(
     )
 
     if not rows:
-        return cutoff_utc, zero_object_counts, zero_meta_counts, set()
+        # No eligible objects this cycle, but still sweep aged orphaned runs:
+        # slice-o silver_load failure telemetry writes object-less runs that
+        # must stay retention-bounded even when no captures are being pruned
+        # (e.g. the worker failing every cycle → no objects, but failure runs
+        # accumulating). DELETE_ORPHANED_INGESTION_RUNS is age-gated, so
+        # in-flight runs are never touched.
+        runs_deleted = _safe_rowcount(
+            connection.execute(
+                DELETE_ORPHANED_INGESTION_RUNS,
+                {"provider_id": provider_id, "cutoff_utc": cutoff_utc},
+            )
+        )
+        return (
+            cutoff_utc,
+            zero_object_counts,
+            {
+                "raw.realtime_snapshot_index": 0,
+                "raw.ingestion_objects": 0,
+                "raw.ingestion_runs": runs_deleted,
+            },
+            set(),
+        )
 
     deleted_object_count = 0
     failed_object_ids: set[int] = set()
