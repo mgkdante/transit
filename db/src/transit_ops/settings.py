@@ -110,6 +110,19 @@ class Settings(BaseSettings):
     SNAPSHOT_LOCAL_ROOT: str | None = None         # used when backend == "local"
     SNAPSHOT_R2_BUCKET: str | None = None          # public snapshot bucket
     SNAPSHOT_PUBLIC_BASE_URL: str | None = None    # e.g. https://data.example.com (manifests)
+    # Basemap pointer (slice-9.1.1r). Until the Quebec PMTiles archive is hosted
+    # these stay unset -> manifest.basemap is null and no basemap.json is written.
+    SNAPSHOT_BASEMAP_PMTILES_URL: str | None = None   # absolute URL of the Quebec PMTiles archive
+    SNAPSHOT_BASEMAP_STYLE_URL: str | None = None      # optional MapLibre style JSON URL
+    SNAPSHOT_BASEMAP_ATTRIBUTION: str = "© OpenStreetMap contributors, © Protomaps"
+    # Bounded thread-pool fan-out for per-entity snapshot uploads (slice-9.1.1r
+    # stage 2). On a new-GTFS-edition day the hash-gate skips nothing, so the
+    # publish must re-upload all ~9.3k static + ~8.5k historic files; serial PUTs
+    # over WAN take ~50min and time the daily jobs out. Uploading the per-route /
+    # per-stop / receipts files through a bounded ThreadPoolExecutor parallelises
+    # the network round-trips while keeping the manifest LAST and the flat files
+    # untouched. <=1 disables the pool (sequential, for tests / debugging).
+    SNAPSHOT_PUBLISH_CONCURRENCY: int = 16
 
     PIPELINE_PAUSED: bool = False
     REALTIME_POLL_SECONDS: int = 30
@@ -221,6 +234,10 @@ class Settings(BaseSettings):
             "SNAPSHOT_LOCAL_ROOT": self.SNAPSHOT_LOCAL_ROOT,
             "SNAPSHOT_R2_BUCKET": self.SNAPSHOT_R2_BUCKET,
             "SNAPSHOT_PUBLIC_BASE_URL": self.SNAPSHOT_PUBLIC_BASE_URL,
+            "SNAPSHOT_BASEMAP_PMTILES_URL": self.SNAPSHOT_BASEMAP_PMTILES_URL,
+            "SNAPSHOT_BASEMAP_STYLE_URL": self.SNAPSHOT_BASEMAP_STYLE_URL,
+            "SNAPSHOT_BASEMAP_ATTRIBUTION": self.SNAPSHOT_BASEMAP_ATTRIBUTION,
+            "SNAPSHOT_PUBLISH_CONCURRENCY": self.SNAPSHOT_PUBLISH_CONCURRENCY,
             "PIPELINE_PAUSED": self.PIPELINE_PAUSED,
             "REALTIME_POLL_SECONDS": self.REALTIME_POLL_SECONDS,
             "REALTIME_STARTUP_DELAY_SECONDS": self.REALTIME_STARTUP_DELAY_SECONDS,

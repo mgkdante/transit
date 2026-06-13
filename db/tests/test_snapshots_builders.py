@@ -243,9 +243,10 @@ def test_build_trips_groups_stops_and_converts_delay_to_minutes() -> None:
         }
     )
 
-    out = build_trips(conn, provider_id="stm")
+    out = build_trips(conn, provider_id="stm", generated_utc="2026-05-31T12:00:05Z")
 
     assert isinstance(out, TripsFile)
+    assert out.generated_utc == "2026-05-31T12:00:05Z"
     # T-1 has delay + 2 stops, ordered by ETA/stop_sequence
     t1 = out.trips["T-1"]
     assert t1.route == "51"
@@ -309,7 +310,7 @@ def test_build_alerts_maps_severity_and_splits_routes_stops() -> None:
         }
     )
 
-    out = build_alerts(conn, provider_id="stm")
+    out = build_alerts(conn, provider_id="stm", generated_utc="2026-05-31T12:00:05Z")
 
     assert isinstance(out, AlertsFile)
     assert len(out.alerts) == 2
@@ -343,7 +344,7 @@ def test_build_alerts_maps_severity_and_splits_routes_stops() -> None:
     expected_id = "stm-alert-" + hashlib.sha1(basis.encode()).hexdigest()[:12]
     assert a2.id == expected_id
     # same input -> same id (stable across calls)
-    out2 = build_alerts(conn, provider_id="stm")
+    out2 = build_alerts(conn, provider_id="stm", generated_utc="2026-05-31T12:00:05Z")
     assert out2.alerts[1].id == expected_id
     assert a2.start_utc is None
 
@@ -369,7 +370,7 @@ def test_build_alerts_unknown_severity_falls_back_to_watch() -> None:
             ]
         }
     )
-    out = build_alerts(conn)
+    out = build_alerts(conn, generated_utc="2026-05-31T12:00:05Z")
     assert out.alerts[0].severity == "watch"
     assert out.alerts[0].routes == []
 
@@ -405,7 +406,7 @@ def test_build_network_aggregates_kpis() -> None:
         }
     )
 
-    out = build_network(conn, provider_id="stm")
+    out = build_network(conn, provider_id="stm", generated_utc="2026-05-31T12:00:05Z")
 
     assert isinstance(out, NetworkFile)
     assert out.vehicles_in_service == 5
@@ -443,7 +444,7 @@ def test_build_network_on_time_pct_counts_late_band_as_on_time() -> None:
         }
     )
 
-    out = build_network(conn)
+    out = build_network(conn, generated_utc="2026-05-31T12:00:05Z")
 
     assert out.on_time_pct == 67
     assert out.status_dist.on_time == 1
@@ -466,7 +467,7 @@ def test_build_network_zero_vehicles_emits_honest_none_not_zero() -> None:
             "feed_freshness_current": [{"feed_freshness_s": None}],
         }
     )
-    out = build_network(conn)
+    out = build_network(conn, generated_utc="2026-05-31T12:00:05Z")
     assert out.vehicles_in_service == 0
     assert out.on_time_pct is None
     assert out.delay_p50_min is None
@@ -545,8 +546,15 @@ def test_build_manifest_assembles_from_provider_and_version() -> None:
     assert out.attribution == "Contains STM data made available under CC BY 4.0."
     assert out.bbox == [-74.1, 45.25, -73.2, 45.75]  # [minLon, minLat, maxLon, maxLat]
     assert out.dataset_version == "2026-05-29-stm"
-    assert out.basemap.startswith("https://data.example.com")
+    # basemap is null without SNAPSHOT_BASEMAP_PMTILES_URL (slice-9.1.1r)
+    assert out.basemap is None
+    assert out.files.static.basemap is None
     assert out.files.live.generated_utc == "2026-05-31T12:00:05Z"
+    # tier inventories present with null stamps (state table empty in this fake)
+    assert out.files.static.routes_index == "static/routes_index.json"
+    assert out.files.static.generated_utc is None
+    assert out.files.historic.receipts_index == "historic/receipts/index.json"
+    assert out.files.historic.generated_utc is None
     assert out.labels == {"fr": "labels/fr.json", "en": "labels/en.json"}
     assert "live_map" in out.surfaces
     assert "data_trust" in out.surfaces
@@ -580,6 +588,71 @@ def test_build_manifest_defaults_when_version_missing() -> None:
     assert out.dataset_version  # non-empty fallback
 
 
+class _FakeSettingsWithBasemap:
+    SNAPSHOT_PUBLIC_BASE_URL = "https://data.example.com"
+    SNAPSHOT_BASEMAP_PMTILES_URL = "https://data.example.com/basemap/quebec.pmtiles"
+
+
+_MANIFEST_PROVIDER_ROW = {
+    "gold.dim_provider": [
+        {
+            "provider_id": "stm",
+            "display_name": "STM",
+            "timezone": "America/Toronto",
+            "default_language": "fr",
+            "attribution_text": "attr",
+            "min_latitude": 45.25,
+            "max_latitude": 45.75,
+            "min_longitude": -74.1,
+            "max_longitude": -73.2,
+        }
+    ],
+    "core.dataset_versions": [{"dataset_version": "2026-05-29-stm"}],
+}
+
+
+def test_build_manifest_tier_inventories_from_state_table() -> None:
+    import datetime
+
+    conn = FakeConn(
+        {
+            **_MANIFEST_PROVIDER_ROW,
+            "snapshot_publish_state": [
+                {"tier": "static", "generated_utc": datetime.datetime(2026, 6, 1, 0, 0, tzinfo=datetime.timezone.utc)},
+                {"tier": "historic", "generated_utc": datetime.datetime(2026, 6, 13, 0, 0, tzinfo=datetime.timezone.utc)},
+            ],
+        }
+    )
+    out = build_manifest(conn, provider_id="stm", generated_utc="t", settings=_FakeSettings())
+    assert out.files.static.generated_utc == "2026-06-01T00:00:00Z"
+    assert out.files.historic.generated_utc == "2026-06-13T00:00:00Z"
+    assert out.files.static.routes_prefix == "static/routes/"
+    assert out.files.historic.receipts_index == "historic/receipts/index.json"
+
+
+def test_build_manifest_tier_inventories_null_when_never_published() -> None:
+    conn = FakeConn(_MANIFEST_PROVIDER_ROW)  # no snapshot_publish_state rows
+    out = build_manifest(conn, provider_id="stm", generated_utc="t", settings=_FakeSettings())
+    assert out.files.static.generated_utc is None
+    assert out.files.historic.generated_utc is None
+
+
+def test_build_manifest_basemap_null_without_setting() -> None:
+    conn = FakeConn(_MANIFEST_PROVIDER_ROW)
+    out = build_manifest(conn, provider_id="stm", generated_utc="t", settings=_FakeSettings())
+    assert out.basemap is None
+    assert out.files.static.basemap is None
+
+
+def test_build_manifest_basemap_set_with_setting() -> None:
+    conn = FakeConn(_MANIFEST_PROVIDER_ROW)
+    out = build_manifest(
+        conn, provider_id="stm", generated_utc="t", settings=_FakeSettingsWithBasemap()
+    )
+    assert out.basemap == "https://data.example.com/v1/stm/static/basemap.json"
+    assert out.files.static.basemap == "static/basemap.json"
+
+
 # --------------------------------------------------------------------------
 # 6f — build_labels
 # --------------------------------------------------------------------------
@@ -599,7 +672,7 @@ def test_build_labels_fr_includes_static_and_metric():
                 {"label_key": "network_health", "label_fr": "Santé du réseau", "label_en": "Network Health"},
             ])
 
-    lf = build_labels(FakeConn(), lang="fr")
+    lf = build_labels(FakeConn(), lang="fr", generated_utc="t")
     assert lf.labels["status.on_time"] == "À l'heure"
     assert lf.labels["status.late"] == "En retard"
     assert lf.labels["metric.network_health"] == "Santé du réseau"
@@ -616,7 +689,7 @@ def test_build_labels_en():
         def execute(self, *a, **k):
             return FakeResult([])
 
-    lf = build_labels(FakeConn(), lang="en")
+    lf = build_labels(FakeConn(), lang="en", generated_utc="t")
     assert lf.labels["status.on_time"] == "On time"
     assert lf.labels["occupancy.few_seats"] == "Few seats available"
 
@@ -633,7 +706,7 @@ def test_build_routes_index():
     class FC:
         def execute(self, *a, **k): return FR()
 
-    idx = build_routes_index(FC())
+    idx = build_routes_index(FC(), generated_utc="t")
     assert idx.routes[0].id == "165"
     assert idx.routes[0].type == 3
 
@@ -649,7 +722,7 @@ def test_build_stops_index():
     class FC:
         def execute(self, *a, **k): return FR()
 
-    idx = build_stops_index(FC())
+    idx = build_stops_index(FC(), generated_utc="t")
     assert idx.stops[0].id == "51234"
     assert idx.stops[0].lat == 45.49123  # rounded 5dp
 
@@ -720,7 +793,7 @@ def test_build_route():
                     return _FakeResult(rows)
             return _FakeResult([])
 
-    rf = build_route(FC(), route_id="165")
+    rf = build_route(FC(), route_id="165", generated_utc="t")
     assert rf.id == "165"
     assert rf.long == "Côte-Vertu"
     assert len(rf.directions) >= 1
@@ -787,10 +860,101 @@ def test_build_all_stops_data():
                     return _FakeResult(rows)
             return _FakeResult([])
 
-    result = build_all_stops_data(FC())
+    result = build_all_stops_data(FC(), generated_utc="t")
     assert "51234" in result
     sf = result["51234"]
     assert sf.wheelchair is True
     assert "165" in sf.routes_served
     # times are wall-clock "HH:MM" and de-duplicated
     assert sf.scheduled[0].times == ["17:46", "17:54"]
+
+
+# --------------------------------------------------------------------------
+# generated_utc stamping per builder family (slice-9.1.1r)
+# --------------------------------------------------------------------------
+
+
+def test_build_trips_stamps_generated_utc() -> None:
+    conn = FakeConn({})
+    out = build_trips(conn, provider_id="stm", generated_utc="2026-06-13T00:00:00Z")
+    assert out.generated_utc == "2026-06-13T00:00:00Z"
+
+
+def test_build_alerts_stamps_generated_utc() -> None:
+    conn = FakeConn({})
+    out = build_alerts(conn, provider_id="stm", generated_utc="2026-06-13T00:00:00Z")
+    assert out.generated_utc == "2026-06-13T00:00:00Z"
+
+
+def test_build_network_stamps_generated_utc() -> None:
+    conn = FakeConn(
+        {
+            "non_responding_current": [{"non_responding": 0}],
+            "feed_freshness_current": [{"feed_freshness_s": 0}],
+        }
+    )
+    out = build_network(conn, provider_id="stm", generated_utc="2026-06-13T00:00:00Z")
+    assert out.generated_utc == "2026-06-13T00:00:00Z"
+
+
+def test_static_builders_stamp_generated_utc() -> None:
+    from transit_ops.snapshots.builders import (
+        build_labels,
+        build_routes_index,
+        build_stops_index,
+    )
+
+    conn = FakeConn({})
+    assert build_routes_index(conn, generated_utc="S").generated_utc == "S"
+    assert build_stops_index(conn, generated_utc="S").generated_utc == "S"
+    assert build_labels(conn, lang="fr", generated_utc="S").generated_utc == "S"
+
+
+def test_historic_flat_builders_stamp_generated_utc() -> None:
+    from transit_ops.snapshots.builders import (
+        build_alert_history,
+        build_hotspots,
+        build_network_trend,
+        build_provenance,
+        build_repeat_offenders,
+    )
+
+    conn = FakeConn({})
+    assert build_network_trend(conn, generated_utc="H").generated_utc == "H"
+    assert build_hotspots(conn, "stm", generated_utc="H").generated_utc == "H"
+    assert build_repeat_offenders(conn, "stm", generated_utc="H").generated_utc == "H"
+    assert build_alert_history(conn, "stm", generated_utc="H").generated_utc == "H"
+    assert build_provenance(conn, "stm", generated_utc="H").generated_utc == "H"
+
+
+# --------------------------------------------------------------------------
+# build_basemap (settings-driven pointer)
+# --------------------------------------------------------------------------
+
+
+def test_build_basemap_none_without_url() -> None:
+    from transit_ops.snapshots.builders import build_basemap
+
+    class _S:
+        SNAPSHOT_BASEMAP_PMTILES_URL = None
+
+    assert build_basemap(_S(), generated_utc="t") is None
+    # also None when the attribute is entirely absent
+    assert build_basemap(object(), generated_utc="t") is None
+
+
+def test_build_basemap_pointer_carries_url_style_attribution() -> None:
+    from transit_ops.snapshots.builders import build_basemap
+
+    class _S:
+        SNAPSHOT_BASEMAP_PMTILES_URL = "https://x/quebec.pmtiles"
+        SNAPSHOT_BASEMAP_STYLE_URL = "https://x/style.json"
+        SNAPSHOT_BASEMAP_ATTRIBUTION = "© OSM, © Protomaps"
+
+    bm = build_basemap(_S(), generated_utc="2026-06-13T00:00:00Z")
+    assert bm is not None
+    assert bm.format == "pmtiles"
+    assert bm.url == "https://x/quebec.pmtiles"
+    assert bm.style_url == "https://x/style.json"
+    assert bm.attribution == "© OSM, © Protomaps"
+    assert bm.generated_utc == "2026-06-13T00:00:00Z"

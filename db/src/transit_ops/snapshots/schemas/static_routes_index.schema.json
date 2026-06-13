@@ -49,6 +49,10 @@
     }
   },
   "properties": {
+    "generated_utc": {
+      "title": "Generated Utc",
+      "type": "string"
+    },
     "routes": {
       "items": {
         "$ref": "#/$defs/RouteIndexEntry"
@@ -58,6 +62,7 @@
     }
   },
   "required": [
+    "generated_utc",
     "routes"
   ],
   "title": "RoutesIndex",

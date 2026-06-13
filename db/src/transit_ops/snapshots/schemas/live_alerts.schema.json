@@ -118,9 +118,14 @@
       },
       "title": "Alerts",
       "type": "array"
+    },
+    "generated_utc": {
+      "title": "Generated Utc",
+      "type": "string"
     }
   },
   "required": [
+    "generated_utc",
     "alerts"
   ],
   "title": "AlertsFile",

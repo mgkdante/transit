@@ -32,6 +32,18 @@ What this migration does (collapse + close, batched + /dev/shm-safe):
     5. VACUUM (PARALLEL 0, ANALYZE) both tables (same /dev/shm constraint that
        drove 0017/0021).
 
+    A transient partial index (ix_silver_i3_alerts_l0038_collapse_helper, on
+    (provider_id, content_hash) WHERE valid_to IS NOT NULL AND content_hash IS
+    NOT NULL) is created before step 1 and dropped after step 4. The keeper
+    LATERAL (step 1) and the span-build JOIN (step 2) both probe already-promoted
+    closed survivors by (provider_id, content_hash) WHERE valid_to IS NOT NULL —
+    a predicate NO production index serves (ux_silver_i3_alerts_active_content_hash
+    is partial on the OPPOSITE valid_to IS NULL). Without it the keeper LATERAL
+    plans as a 273k-row Nested Loop over a full 2.7M-row Seq Scan (cost ~1.2e11 —
+    hours). The index makes those probes index seeks. It is transient: post-collapse
+    no legacy NULL-hash rows remain and nothing queries closed alerts by hash, so
+    keeping it would only tax every worker insert.
+
     Everything runs inside op.get_context().autocommit_block() so each 100k
     batch commits independently — WAL stays bounded on the small A1 VM. Because
     alembic only stamps the revision AFTER upgrade() returns, an interrupt
@@ -88,6 +100,23 @@ _LEGACY_HASH_EXPR = r"""md5(
         coalesce(extract(epoch from published_at_utc)::bigint::text,        '') || E'\x1F' ||
         coalesce(extract(epoch from updated_at_utc)::bigint::text,          '')
     )"""
+
+
+# Transient collapse-helper index. The keeper LATERAL (below) and the span-build
+# JOIN both probe silver.i3_alerts for an already-promoted closed survivor by
+# (provider_id, content_hash) WHERE valid_to IS NOT NULL. No production index
+# serves that predicate (ux_silver_i3_alerts_active_content_hash is partial on the
+# OPPOSITE valid_to IS NULL), so the LATERAL otherwise plans as a 273k-row Nested
+# Loop over a full 2.7M-row Seq Scan (cost ~1.2e11). This partial index (closed,
+# hashed rows only — tiny pre-collapse) turns those probes into index seeks. Built
+# before the temp builds, dropped after the wipe (the worker never needs it).
+_HELPER_INDEX = "ix_silver_i3_alerts_l0038_collapse_helper"
+_CREATE_HELPER_INDEX = f"""
+CREATE INDEX IF NOT EXISTS {_HELPER_INDEX}
+ON silver.i3_alerts (provider_id, content_hash)
+WHERE valid_to IS NOT NULL AND content_hash IS NOT NULL
+"""
+_DROP_HELPER_INDEX = f"DROP INDEX IF EXISTS silver.{_HELPER_INDEX}"
 
 
 # One survivor per (provider_id, legacy_hash) over the NULL-hash work-set,
@@ -296,6 +325,9 @@ def upgrade() -> None:
         print(f"Legacy NULL-hash rows before collapse: {before:,}")
 
         if before:
+            print("Creating transient collapse-helper index (closed-hash probes)...")
+            bind.execute(text(_CREATE_HELPER_INDEX))
+
             print("Building keeper temp table (latest-captured survivor per hash)...")
             bind.execute(text(_BUILD_LEGACY_KEEPERS))
 
@@ -307,6 +339,9 @@ def upgrade() -> None:
 
             print("Wiping remaining NULL-hash rows (entities cascade)...")
             _delete_in_batches(bind, _DELETE_LEGACY_BATCH, "silver.i3_alerts")
+
+            print("Dropping transient collapse-helper index...")
+            bind.execute(text(_DROP_HELPER_INDEX))
         else:
             print("  no legacy NULL-hash rows — nothing to collapse")
 

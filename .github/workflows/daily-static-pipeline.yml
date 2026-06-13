@@ -39,6 +39,10 @@ jobs:
       SNAPSHOT_STORAGE_BACKEND: s3
       SNAPSHOT_R2_BUCKET: ${{ secrets.SNAPSHOT_R2_BUCKET }}
       SNAPSHOT_PUBLIC_BASE_URL: ${{ secrets.SNAPSHOT_PUBLIC_BASE_URL }}
+      # Public basemap pointer URLs (repo variables, not secrets). Unset -> empty
+      # string -> falsy -> manifest.basemap stays null and no basemap.json is written.
+      SNAPSHOT_BASEMAP_PMTILES_URL: ${{ vars.SNAPSHOT_BASEMAP_PMTILES_URL }}
+      SNAPSHOT_BASEMAP_STYLE_URL: ${{ vars.SNAPSHOT_BASEMAP_STYLE_URL }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v5

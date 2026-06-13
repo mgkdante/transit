@@ -128,6 +128,10 @@
       "title": "Date",
       "type": "string"
     },
+    "generated_utc": {
+      "title": "Generated Utc",
+      "type": "string"
+    },
     "otp_pct": {
       "anyOf": [
         {
@@ -200,6 +204,7 @@
     }
   },
   "required": [
+    "generated_utc",
     "date"
   ],
   "title": "Receipt",

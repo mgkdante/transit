@@ -41,6 +41,7 @@ class Trip(BaseModel):
     stops: list[StopEta] = Field(default_factory=list)
 
 class TripsFile(BaseModel):
+    generated_utc: str
     trips: dict[str, Trip]
 
 class Alert(BaseModel):
@@ -60,6 +61,7 @@ class Alert(BaseModel):
     end_utc: str | None = None
 
 class AlertsFile(BaseModel):
+    generated_utc: str
     alerts: list[Alert]
 
 class StatusDist(BaseModel):
@@ -69,6 +71,7 @@ class OccupancyMix(BaseModel):
     empty: float = 0.0; many_seats: float = 0.0; few_seats: float = 0.0; standing: float = 0.0; full: float = 0.0
 
 class NetworkFile(BaseModel):
+    generated_utc: str
     vehicles_in_service: int
     # Honesty: these KPIs are None (not a fabricated 0) when their denominator
     # is empty — e.g. during a feed blackout the UI must render "no data", not
@@ -93,8 +96,63 @@ class ManifestLiveFiles(BaseModel):
     ttl_s: int = 30
     generated_utc: str
 
+# 404-as-empty contract note shared by every per-entity static/historic pointer:
+# a 404 means "no data for this entity" (render an empty state), not a fetch error.
+_404_EMPTY = "; HTTP 404 means no data for this entity — render empty state, not an error"
+
+class ManifestStaticFiles(BaseModel):
+    routes_index: str = Field(default="static/routes_index.json")
+    stops_index: str = Field(default="static/stops_index.json")
+    basemap: str | None = Field(
+        default=None,
+        description="static/basemap.json pointer; null until SNAPSHOT_BASEMAP_PMTILES_URL is set",
+    )
+    routes_prefix: str = Field(
+        default="static/routes/",
+        description="fetch {routes_prefix}{route_id}.json" + _404_EMPTY,
+    )
+    stops_prefix: str = Field(
+        default="static/stops/",
+        description="fetch {stops_prefix}{stop_id}.json" + _404_EMPTY,
+    )
+    ttl_s: int = 86400
+    generated_utc: str | None = Field(
+        default=None,
+        description="DATA time of the current static dataset; null = static tier never published",
+    )
+
+class ManifestHistoricFiles(BaseModel):
+    network_trend: str = Field(default="historic/network_trend.json")
+    hotspots: str = Field(default="historic/hotspots.json")
+    repeat_offenders: str = Field(default="historic/repeat_offenders.json")
+    alert_history: str = Field(default="historic/alert_history.json")
+    provenance: str = Field(default="provenance.json")
+    receipts_index: str = Field(
+        default="historic/receipts/index.json",
+        description="discovery index of published receipt dates" + _404_EMPTY,
+    )
+    route_reliability_prefix: str = Field(
+        default="historic/route_reliability/",
+        description="fetch {route_reliability_prefix}{route_id}.json" + _404_EMPTY,
+    )
+    stop_reliability_prefix: str = Field(
+        default="historic/stop_reliability/",
+        description="fetch {stop_reliability_prefix}{stop_id}.json" + _404_EMPTY,
+    )
+    receipts_prefix: str = Field(
+        default="historic/receipts/",
+        description="fetch {receipts_prefix}{date}.json (dates from receipts_index)" + _404_EMPTY,
+    )
+    ttl_s: int = 86400
+    generated_utc: str | None = Field(
+        default=None,
+        description="DATA time of the current historic build; null = historic tier never published",
+    )
+
 class ManifestFiles(BaseModel):
     live: ManifestLiveFiles
+    static: ManifestStaticFiles = Field(default_factory=ManifestStaticFiles)
+    historic: ManifestHistoricFiles = Field(default_factory=ManifestHistoricFiles)
 
 class Manifest(BaseModel):
     provider: str
@@ -103,7 +161,10 @@ class Manifest(BaseModel):
     bbox: list[float]
     default_lang: str = "fr"
     attribution: str
-    basemap: str
+    basemap: str | None = Field(
+        default=None,
+        description="absolute URL of the basemap pointer; null until a PMTiles archive is hosted",
+    )
     dataset_version: str
     labels: dict[str, str]
     files: ManifestFiles
@@ -122,6 +183,7 @@ class RouteIndexEntry(BaseModel):
     type: int
 
 class RoutesIndex(BaseModel):
+    generated_utc: str
     routes: list[RouteIndexEntry]
 
 class StopIndexEntry(BaseModel):
@@ -132,6 +194,7 @@ class StopIndexEntry(BaseModel):
     lon: float
 
 class StopsIndex(BaseModel):
+    generated_utc: str
     stops: list[StopIndexEntry]
 
 class RouteStop(BaseModel):
@@ -151,6 +214,7 @@ class ServicePeriod(BaseModel):
     headway_min: float | None = None
 
 class RouteFile(BaseModel):
+    generated_utc: str
     id: str
     long: str | None = None
     directions: list[RouteDirection] = Field(default_factory=list)
@@ -164,6 +228,7 @@ class ScheduledRoute(BaseModel):
     times: list[str] = Field(default_factory=list)
 
 class StopFile(BaseModel):
+    generated_utc: str
     id: str
     code: str | None = None
     name: str
@@ -174,6 +239,7 @@ class StopFile(BaseModel):
     scheduled: list[ScheduledRoute] = Field(default_factory=list)
 
 class LabelsFile(BaseModel):
+    generated_utc: str
     labels: dict[str, str]
 
 
@@ -189,6 +255,7 @@ class TrendPoint(BaseModel):
     vehicles: int | None = None
 
 class NetworkTrend(BaseModel):
+    generated_utc: str
     series: list[TrendPoint] = Field(default_factory=list)
 
 class ReliabilityPeriod(BaseModel):
@@ -216,6 +283,7 @@ class WeakStop(BaseModel):
     median_delay_min: float | None = None
 
 class RouteReliability(BaseModel):
+    generated_utc: str
     id: str
     name: str | None = None
     periods: list[ReliabilityPeriod] = Field(default_factory=list)
@@ -234,6 +302,7 @@ class StopByRoute(BaseModel):
     median_delay_min: float | None = None
 
 class StopReliability(BaseModel):
+    generated_utc: str
     id: str
     name: str | None = None
     periods: list[StopReliabilityPeriod] = Field(default_factory=list)
@@ -248,6 +317,7 @@ class Hotspot(BaseModel):
     otp_delta_pts: float | None = None
 
 class Hotspots(BaseModel):
+    generated_utc: str
     hotspots: list[Hotspot] = Field(default_factory=list)
 
 class Offender(BaseModel):
@@ -261,6 +331,7 @@ class Offender(BaseModel):
     avg_delay_min: float | None = None
 
 class RepeatOffenders(BaseModel):
+    generated_utc: str
     offenders: list[Offender] = Field(default_factory=list)
 
 class ReceiptWorstRoute(BaseModel):
@@ -274,6 +345,7 @@ class ReceiptWorstStop(BaseModel):
     median_delay_min: float | None = None
 
 class Receipt(BaseModel):
+    generated_utc: str
     date: str
     vehicles: int | None = None
     otp_pct: int | None = None
@@ -301,6 +373,7 @@ class AlertHistoryEntry(BaseModel):
     impact_passages: int | None = None
 
 class AlertHistory(BaseModel):
+    generated_utc: str
     alerts: list[AlertHistoryEntry] = Field(default_factory=list)
 
 class ProvenanceSource(BaseModel):
@@ -314,11 +387,43 @@ class ProvenanceFreshness(BaseModel):
     age_s: int | None = None
 
 class Provenance(BaseModel):
+    generated_utc: str
     sources: list[ProvenanceSource] = Field(default_factory=list)
     freshness: list[ProvenanceFreshness] = Field(default_factory=list)
     retention: dict[str, int] = Field(default_factory=dict)
     methodology: dict = Field(default_factory=dict)  # type: ignore[type-arg]
     gaps: list[str] = Field(default_factory=list)
+
+
+# ---------------------------------------------------------------------------
+# Basemap pointer + receipts discovery index (slice-9.1.1r)
+# ---------------------------------------------------------------------------
+
+class BasemapFile(BaseModel):
+    """static/basemap.json — a settings-driven pointer to the hosted PMTiles archive.
+
+    Published only when SNAPSHOT_BASEMAP_PMTILES_URL is configured; until then
+    Manifest.basemap is null and no basemap.json object exists.
+    """
+    format: str = "pmtiles"
+    url: str
+    style_url: str | None = None
+    attribution: str
+    min_zoom: int = 0
+    max_zoom: int = 15
+    generated_utc: str
+
+class ReceiptsIndex(BaseModel):
+    dates: list[str] = Field(
+        default_factory=list,
+        description=(
+            "ISO dates with a published receipt in the trailing 30-day build "
+            "window, ascending; fetch {receipts_prefix}{date}.json; dates absent "
+            "here either never had data (404 -> empty state) or are older "
+            "archived receipts"
+        ),
+    )
+    generated_utc: str
 
 
 TOP_LEVEL_MODELS: dict[str, type[BaseModel]] = {
@@ -332,12 +437,14 @@ TOP_LEVEL_MODELS: dict[str, type[BaseModel]] = {
     "static_route": RouteFile,
     "static_stop": StopFile,
     "static_labels": LabelsFile,
+    "static_basemap": BasemapFile,
     "historic_network_trend": NetworkTrend,
     "historic_route_reliability": RouteReliability,
     "historic_stop_reliability": StopReliability,
     "historic_hotspots": Hotspots,
     "historic_repeat_offenders": RepeatOffenders,
     "historic_receipt": Receipt,
+    "historic_receipts_index": ReceiptsIndex,
     "historic_alert_history": AlertHistory,
     "provenance": Provenance,
 }

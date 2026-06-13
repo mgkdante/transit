@@ -42,7 +42,9 @@ from transit_ops.snapshots.contract import (
     AlertsFile,
     Manifest,
     ManifestFiles,
+    ManifestHistoricFiles,
     ManifestLiveFiles,
+    ManifestStaticFiles,
     NetworkFile,
     OccupancyMix,
     StatusDist,
@@ -337,7 +339,7 @@ _TRIP_DEPARTURES_SQL = text(
 )
 
 
-def build_trips(conn: Connection, *, provider_id: str = "stm") -> TripsFile:
+def build_trips(conn: Connection, *, provider_id: str = "stm", generated_utc: str) -> TripsFile:
     """Build the live trips file: per-trip status + delay + chronological next-stop ETAs."""
     trips: dict[str, Trip] = {}
 
@@ -366,7 +368,7 @@ def build_trips(conn: Connection, *, provider_id: str = "stm") -> TripsFile:
             )
         )
 
-    return TripsFile(trips=trips)
+    return TripsFile(generated_utc=generated_utc, trips=trips)
 
 
 # --------------------------------------------------------------------------
@@ -399,7 +401,7 @@ def _severity_code(severity: object) -> str:
     return _SEVERITY_MAP.get((severity or "").strip().upper(), "watch")  # type: ignore[union-attr]
 
 
-def build_alerts(conn: Connection, *, provider_id: str = "stm") -> AlertsFile:
+def build_alerts(conn: Connection, *, provider_id: str = "stm", generated_utc: str) -> AlertsFile:
     """Build the live alerts file from gold.current_i3_alerts."""
     alerts: list[Alert] = []
     for r in conn.execute(_ALERTS_SQL, {"provider_id": provider_id}).mappings():
@@ -428,7 +430,7 @@ def build_alerts(conn: Connection, *, provider_id: str = "stm") -> AlertsFile:
                 end_utc=_opt_iso(r["active_period_end_utc"]),
             )
         )
-    return AlertsFile(alerts=alerts)
+    return AlertsFile(generated_utc=generated_utc, alerts=alerts)
 
 
 # --------------------------------------------------------------------------
@@ -474,7 +476,7 @@ _NETWORK_FRESHNESS_SQL = text(
 )
 
 
-def build_network(conn: Connection, *, provider_id: str = "stm") -> NetworkFile:
+def build_network(conn: Connection, *, provider_id: str = "stm", generated_utc: str) -> NetworkFile:
     """Pre-aggregate network-health KPIs into a single NetworkFile.
 
     on_time_pct is the unified [-60s,+300s) OTP band (on_time+late) over
@@ -538,6 +540,7 @@ def build_network(conn: Connection, *, provider_id: str = "stm") -> NetworkFile:
     feed_freshness_s = int(freshness_raw) if freshness_raw is not None else None
 
     return NetworkFile(
+        generated_utc=generated_utc,
         vehicles_in_service=vehicles_in_service,
         on_time_pct=on_time_pct,
         status_dist=dist,
@@ -575,6 +578,18 @@ _MANIFEST_VERSION_SQL = text(
     """
 )
 
+# Per-tier DATA-time stamps for the manifest inventories, upserted by each
+# tier's publisher in core.snapshot_publish_state (slice-9.1.1r). Rows absent ->
+# None -> "tier never published" in the manifest contract.
+_MANIFEST_TIER_STATE_SQL = text(
+    """
+    SELECT tier, generated_utc
+    FROM core.snapshot_publish_state
+    WHERE provider_id = :provider_id
+      AND tier IN ('static', 'historic')
+    """
+)
+
 
 def build_manifest(
     conn: Connection,
@@ -603,8 +618,22 @@ def build_manifest(
     vrow = next(iter(version_rows), None)
     dataset_version = (vrow["dataset_version"] if vrow else None) or "unknown"
 
+    # Per-tier DATA-time stamps from core.snapshot_publish_state (None if the
+    # tier has never been published, or the table is absent pre-migration).
+    tier_stamps: dict[str, str | None] = {}
+    for r in conn.execute(_MANIFEST_TIER_STATE_SQL, {"provider_id": provider_id}).mappings():
+        tier_stamps[str(r["tier"])] = _opt_iso(r["generated_utc"])
+
+    # basemap ships as a settings-driven pointer; null until the PMTiles archive
+    # is hosted (SNAPSHOT_BASEMAP_PMTILES_URL set). Field is truthfully null
+    # otherwise — no 404-pointing URL.
     base_url = (getattr(settings, "SNAPSHOT_PUBLIC_BASE_URL", None) or "").rstrip("/")
-    basemap = f"{base_url}/v1/{provider_id}/static/basemap.json"
+    if getattr(settings, "SNAPSHOT_BASEMAP_PMTILES_URL", None):
+        basemap: str | None = f"{base_url}/v1/{provider_id}/static/basemap.json"
+        static_basemap: str | None = "static/basemap.json"
+    else:
+        basemap = None
+        static_basemap = None
 
     return Manifest(
         provider=provider_id,
@@ -616,7 +645,16 @@ def build_manifest(
         basemap=basemap,
         dataset_version=str(dataset_version),
         labels={"fr": "labels/fr.json", "en": "labels/en.json"},
-        files=ManifestFiles(live=ManifestLiveFiles(generated_utc=generated_utc)),
+        files=ManifestFiles(
+            live=ManifestLiveFiles(generated_utc=generated_utc),
+            static=ManifestStaticFiles(
+                basemap=static_basemap,
+                generated_utc=tier_stamps.get("static"),
+            ),
+            historic=ManifestHistoricFiles(
+                generated_utc=tier_stamps.get("historic"),
+            ),
+        ),
         surfaces=list(_SURFACES),
     )
 
@@ -666,7 +704,7 @@ _LABELS_SQL = text(
 )  # not provider-scoped
 
 
-def build_labels(conn: Connection, *, lang: str = "fr") -> "LabelsFile":
+def build_labels(conn: Connection, *, lang: str = "fr", generated_utc: str) -> "LabelsFile":
     """Build labels/{lang}.json: static code translations + metric catalog labels.
 
     Every metric.* key is emitted in BOTH languages (with cross-language / raw-key
@@ -683,7 +721,7 @@ def build_labels(conn: Connection, *, lang: str = "fr") -> "LabelsFile":
         fallback = r["label_en"] if lang == "fr" else r["label_fr"]
         labels[key] = primary or fallback or r["label_key"]
 
-    return LabelsFile(labels=labels)
+    return LabelsFile(generated_utc=generated_utc, labels=labels)
 
 
 # ---------------------------------------------------------------------------
@@ -710,7 +748,7 @@ _STOPS_INDEX_SQL = text(
 )
 
 
-def build_routes_index(conn: Connection, *, provider_id: str = "stm") -> "RoutesIndex":
+def build_routes_index(conn: Connection, *, provider_id: str = "stm", generated_utc: str) -> "RoutesIndex":
     """Build static/routes_index.json from gold.dim_route."""
     from transit_ops.snapshots.contract import RouteIndexEntry, RoutesIndex
 
@@ -727,10 +765,10 @@ def build_routes_index(conn: Connection, *, provider_id: str = "stm") -> "Routes
             )
         )
     routes.sort(key=lambda e: _route_sort_key(e.id))
-    return RoutesIndex(routes=routes)
+    return RoutesIndex(generated_utc=generated_utc, routes=routes)
 
 
-def build_stops_index(conn: Connection, *, provider_id: str = "stm") -> "StopsIndex":
+def build_stops_index(conn: Connection, *, provider_id: str = "stm", generated_utc: str) -> "StopsIndex":
     """Build static/stops_index.json from gold.dim_stop."""
     from transit_ops.snapshots.contract import StopIndexEntry, StopsIndex
 
@@ -748,7 +786,7 @@ def build_stops_index(conn: Connection, *, provider_id: str = "stm") -> "StopsIn
                 lon=_round5(float(lon)),
             )
         )
-    return StopsIndex(stops=stops)
+    return StopsIndex(generated_utc=generated_utc, stops=stops)
 
 
 # ---------------------------------------------------------------------------
@@ -904,7 +942,7 @@ _ROUTE_SCHEDULE_SQL = text(
 )
 
 
-def build_route(conn: Connection, *, provider_id: str = "stm", route_id: str) -> "RouteFile":
+def build_route(conn: Connection, *, provider_id: str = "stm", route_id: str, generated_utc: str) -> "RouteFile":
     """Build static/routes/{route_id}.json — branches + shapes + stops + schedule.
 
     One RouteDirection is emitted per real branch ((direction, headsign) with its
@@ -919,7 +957,7 @@ def build_route(conn: Connection, *, provider_id: str = "stm", route_id: str) ->
 
     dv_row = conn.execute(_CURRENT_DATASET_VERSION_SQL, {"provider_id": provider_id}).mappings().fetchone()
     if dv_row is None:
-        return RouteFile(id=route_id)
+        return RouteFile(generated_utc=generated_utc, id=route_id)
     dv_id = dv_row["dataset_version_id"]
     params = {"provider_id": provider_id, "dataset_version_id": dv_id, "route_id": route_id}
 
@@ -999,6 +1037,7 @@ def build_route(conn: Connection, *, provider_id: str = "stm", route_id: str) ->
     last_dep = _wallclock(span[-1]) if span else None
 
     return RouteFile(
+        generated_utc=generated_utc,
         id=route_id,
         long=long_name,
         directions=directions,
@@ -1060,7 +1099,7 @@ def _sample_times(raw_sorted: list[str], cap: int = _STOP_TIMES_CAP) -> list[str
     return [_wallclock(t) or "" for t in picked]
 
 
-def build_all_stops_data(conn: Connection, *, provider_id: str = "stm") -> "dict[str, StopFile]":
+def build_all_stops_data(conn: Connection, *, provider_id: str = "stm", generated_utc: str) -> "dict[str, StopFile]":
     """Build all StopFile objects in a single two-query pass (representative weekday).
 
     Returns stop_id -> StopFile. The schedule is a representative all-day sample
@@ -1096,6 +1135,7 @@ def build_all_stops_data(conn: Connection, *, provider_id: str = "stm") -> "dict
                 "stop %s wheelchair_boarding=%r not in (1,2); publishing wheelchair=False", sid, raw
             )
         stops[sid] = StopFile(
+            generated_utc=generated_utc,
             id=sid,
             code=r["stop_code"],
             name=str(r["stop_name"] or sid),
@@ -1127,6 +1167,7 @@ def build_all_stops_data(conn: Connection, *, provider_id: str = "stm") -> "dict
             )
         scheduled.sort(key=lambda s: (_route_sort_key(s.route), s.headsign or ""))
         stops[sid] = StopFile(
+            generated_utc=generated_utc,
             id=stop.id,
             code=stop.code,
             name=stop.name,
@@ -1226,7 +1267,7 @@ _TREND_FACT_SQL = text(
 )
 
 
-def build_network_trend(conn: Connection, *, provider_id: str = "stm") -> "NetworkTrend":
+def build_network_trend(conn: Connection, *, provider_id: str = "stm", generated_utc: str) -> "NetworkTrend":
     """Build historic/network_trend.json — one TrendPoint per local date.
 
     Two daily series merged by date: OTP + weighted-avg delay from the hourly
@@ -1272,7 +1313,7 @@ def build_network_trend(conn: Connection, *, provider_id: str = "stm") -> "Netwo
         )
         for d, v in sorted(points.items())
     ]
-    return NetworkTrend(series=series)
+    return NetworkTrend(generated_utc=generated_utc, series=series)
 
 
 def _iso_date(d: object) -> str:
@@ -1415,7 +1456,7 @@ def _entity_name_maps(
 
 
 def build_route_reliability(
-    conn: Connection, *, provider_id: str = "stm", route_id: str
+    conn: Connection, *, provider_id: str = "stm", route_id: str, generated_utc: str
 ) -> "RouteReliability":
     """Build historic/route_reliability/{route_id}.json.
 
@@ -1532,6 +1573,7 @@ def build_route_reliability(
     }
 
     return RouteReliability(
+        generated_utc=generated_utc,
         id=route_id,
         name=route_names.get(route_id),
         periods=periods,
@@ -1636,7 +1678,7 @@ _STOP_REL_BY_ROUTE_SQL = text(
 
 
 def build_stop_reliability(
-    conn: Connection, *, provider_id: str = "stm"
+    conn: Connection, *, provider_id: str = "stm", generated_utc: str
 ) -> "dict[str, StopReliability]":
     """Build all historic/stop_reliability/{stop_id}.json in a batched pass.
 
@@ -1691,7 +1733,9 @@ def build_stop_reliability(
         grain_map = periods.get(sid, {})
         ordered = [grain_map[g] for g in ("week", "month") if g in grain_map]
         routes = sorted(by_route.get(sid, []), key=lambda b: _route_sort_key(b.route))
-        out[sid] = StopReliability(id=sid, name=names.get(sid), periods=ordered, by_route=routes)
+        out[sid] = StopReliability(
+            generated_utc=generated_utc, id=sid, name=names.get(sid), periods=ordered, by_route=routes
+        )
     return out
 
 
@@ -1739,7 +1783,7 @@ _HOTSPOTS_SQL = text(
 )
 
 
-def build_hotspots(conn: "Connection", provider_id: str = "stm") -> "Hotspots":
+def build_hotspots(conn: "Connection", provider_id: str = "stm", *, generated_utc: str) -> "Hotspots":
     """Build historic/hotspots.json — top 20 problem entities in the most recent week.
 
     Source: gold.repeated_problem_route_stop. Uses the most-recent week-grain period;
@@ -1766,7 +1810,7 @@ def build_hotspots(conn: "Connection", provider_id: str = "stm") -> "Hotspots":
         )
         for i, r in enumerate(rows)
     ]
-    return Hotspots(hotspots=hotspots)
+    return Hotspots(generated_utc=generated_utc, hotspots=hotspots)
 
 
 # --------------------------------------------------------------------------
@@ -1787,7 +1831,7 @@ _REPEAT_OFFENDERS_SQL = text(
 
 
 def build_repeat_offenders(
-    conn: "Connection", provider_id: str = "stm"
+    conn: "Connection", provider_id: str = "stm", *, generated_utc: str
 ) -> "RepeatOffenders":
     """Build historic/repeat_offenders.json — top 50 most-persistent problem entities.
 
@@ -1818,7 +1862,7 @@ def build_repeat_offenders(
         )
         for r in rows
     ]
-    return RepeatOffenders(offenders=offenders)
+    return RepeatOffenders(generated_utc=generated_utc, offenders=offenders)
 
 
 # --------------------------------------------------------------------------
@@ -1891,7 +1935,7 @@ _RECEIPTS_WORST_STOP_SQL = text(
 
 
 def build_receipts(
-    conn: "Connection", provider_id: str = "stm"
+    conn: "Connection", provider_id: str = "stm", *, generated_utc: str
 ) -> "dict[str, Receipt]":
     """Build historic/receipts/{date}.json for each date in the last 30 days.
 
@@ -1964,6 +2008,7 @@ def build_receipts(
     for ds, a in acct.items():
         n = net.get(ds, {})
         out[ds] = Receipt(
+            generated_utc=generated_utc,
             date=ds,
             vehicles=None,  # v1: vehicle count not stored in receipt source mart
             otp_pct=n.get("otp_pct"),
@@ -2008,7 +2053,7 @@ _ALERT_HISTORY_SQL = text(
 
 
 def build_alert_history(
-    conn: "Connection", provider_id: str = "stm"
+    conn: "Connection", provider_id: str = "stm", *, generated_utc: str
 ) -> "AlertHistory":
     """Build historic/alert_history.json — last 30 days, capped at 200 alerts.
 
@@ -2085,7 +2130,7 @@ def build_alert_history(
                 impact_passages=None,  # v1 deferral: not stored in gold
             )
         )
-    return AlertHistory(alerts=entries)
+    return AlertHistory(generated_utc=generated_utc, alerts=entries)
 
 
 # --------------------------------------------------------------------------
@@ -2113,7 +2158,7 @@ _PROVENANCE_FRESHNESS_SQL = text(
 
 
 def build_provenance(
-    conn: "Connection", provider_id: str = "stm"
+    conn: "Connection", provider_id: str = "stm", *, generated_utc: str
 ) -> "Provenance":
     """Build provenance.json — feed lineage, freshness, retention policy, methodology.
 
@@ -2154,6 +2199,7 @@ def build_provenance(
         )
 
     return Provenance(
+        generated_utc=generated_utc,
         sources=sources,
         freshness=freshness,
         retention={"detail_days": 14, "aggregate_days": 365},
@@ -2207,4 +2253,31 @@ def build_provenance(
             ),
         },
         gaps=["metro_realtime"],  # STM metro publishes no realtime feed
+    )
+
+
+# --------------------------------------------------------------------------
+# build_basemap (settings-driven PMTiles pointer)
+# --------------------------------------------------------------------------
+
+
+def build_basemap(settings: object, *, generated_utc: str) -> "BasemapFile | None":
+    """Build static/basemap.json — a pointer to the hosted PMTiles archive.
+
+    Pure function (no DB): returns ``None`` when SNAPSHOT_BASEMAP_PMTILES_URL is
+    unset/falsy, so the basemap artifact ships only once a real archive exists.
+    """
+    from transit_ops.snapshots.contract import BasemapFile
+
+    url = getattr(settings, "SNAPSHOT_BASEMAP_PMTILES_URL", None)
+    if not url:
+        return None
+    return BasemapFile(
+        url=str(url),
+        style_url=(getattr(settings, "SNAPSHOT_BASEMAP_STYLE_URL", None) or None),
+        attribution=str(
+            getattr(settings, "SNAPSHOT_BASEMAP_ATTRIBUTION", None)
+            or "© OpenStreetMap contributors, © Protomaps"
+        ),
+        generated_utc=generated_utc,
     )

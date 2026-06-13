@@ -28,6 +28,16 @@ FAILED_RUNS_WINDOW_MINUTES="${FAILED_RUNS_WINDOW_MINUTES:-30}"
 FAILED_RUNS_ALERT_THRESHOLD="${FAILED_RUNS_ALERT_THRESHOLD:-10}"
 PROVIDER_ID="${PROVIDER_ID:-stm}"
 
+# psql cannot parse SQLAlchemy's "postgresql+psycopg://" driver tag — strip it so
+# the same secret works for both the python jobs and this bare-psql probe.
+PSQL_URL="${DATABASE_URL//+psycopg/}"
+# These two values are shell-interpolated into the SQL below because psql's
+# :'var' interpolation does NOT fire through -c (it silently errored, making
+# Check B return the 999999 sentinel and Check C return 0 every run). Guard them
+# strictly so a bad override can neither break nor inject into the query.
+[[ "$PROVIDER_ID" =~ ^[A-Za-z0-9_]+$ ]] || { echo "freshness-probe: invalid PROVIDER_ID '${PROVIDER_ID}'" >&2; exit 2; }
+[[ "$FAILED_RUNS_WINDOW_MINUTES" =~ ^[0-9]+$ ]] || FAILED_RUNS_WINDOW_MINUTES=30
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ALERT_ISSUE="${ALERT_ISSUE_SCRIPT:-alert-issue.sh}"
 if ! command -v "$ALERT_ISSUE" >/dev/null 2>&1; then
@@ -58,10 +68,11 @@ fi
 
 # --- Check B: worst-endpoint DB capture age ---------------------------------
 # Mirrors health/checks.py: latest captured_at_utc per realtime endpoint, then
-# the oldest of them as the worst case. Uses CAST(:p AS ...) style is N/A here
-# (psql -v binding), so the provider id is interpolated via a psql variable.
+# the oldest of them as the worst case. The provider id is shell-interpolated
+# (validated ^[A-Za-z0-9_]+$ above) — NOT via psql's :'var', which does not fire
+# through -c and silently pinned this check at the 999999 sentinel.
 capture_age="$(
-  psql "$DATABASE_URL" -tA -v ON_ERROR_STOP=1 -v prov="$PROVIDER_ID" -c "
+  psql "$PSQL_URL" -tA -v ON_ERROR_STOP=1 -c "
     WITH latest AS (
       SELECT
         fe.endpoint_key,
@@ -78,7 +89,7 @@ capture_age="$(
           )
         END AS latest_at
       FROM core.feed_endpoints fe
-      WHERE fe.provider_id = :'prov'
+      WHERE fe.provider_id = '${PROVIDER_ID}'
         AND fe.endpoint_key IN ('trip_updates', 'vehicle_positions', 'i3_alerts')
     )
     SELECT COALESCE(max(EXTRACT(EPOCH FROM (now() - latest_at))::bigint), 999999)
@@ -93,12 +104,11 @@ fi
 
 # --- Check C: failed-run burst ----------------------------------------------
 failed_runs="$(
-  psql "$DATABASE_URL" -tA -v ON_ERROR_STOP=1 \
-    -v window="$FAILED_RUNS_WINDOW_MINUTES" -c "
+  psql "$PSQL_URL" -tA -v ON_ERROR_STOP=1 -c "
     SELECT count(*)
     FROM raw.ingestion_runs
     WHERE status = 'failed'
-      AND started_at_utc > now() - make_interval(mins => :'window'::int)
+      AND started_at_utc > now() - make_interval(mins => ${FAILED_RUNS_WINDOW_MINUTES})
   " 2>/dev/null || echo "0"
 )"
 failed_runs="${failed_runs//[[:space:]]/}"
