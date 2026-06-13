@@ -824,6 +824,14 @@ def test_build_labels_includes_methodology_gap_attribution():
     assert "one minute late" not in en.labels["methodology.otp_definition"]
     assert "cinq minutes" in fr.labels["methodology.otp_definition"]
     assert "une minute de retard" not in fr.labels["methodology.otp_definition"]
+    # methodology.percentiles must NOT misattribute the 90-day OTP/avg window to
+    # p90: live network p90 is the current snapshot, the trend p90 is the 14-day
+    # fact window (builders.py build_network/build_network_trend; provenance says
+    # only "network p90 from fact"). Lock against the "90 days" mis-statement.
+    assert "90 days" not in en.labels["methodology.percentiles"]
+    assert "14 days" in en.labels["methodology.percentiles"]
+    assert "90 derniers jours" not in fr.labels["methodology.percentiles"]
+    assert "14 derniers jours" in fr.labels["methodology.percentiles"]
 
 
 def test_static_label_key_sets_identical_fr_en():
