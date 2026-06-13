@@ -130,7 +130,18 @@ if [[ "$size_report_enabled" == true ]]; then
   capture_sizes "before"
 fi
 
+# Run the repack WITHOUT aborting on a non-zero exit. A mid-run disconnect (the
+# exact failure that leaves orphaned repack.log_* tables / repack_trigger
+# triggers behind) returns non-zero, and under `set -euo pipefail` that would
+# abort the script before the post-run leftover sweep below could ever run —
+# i.e. the cleanup detection would be skipped in precisely the scenario it
+# exists to catch. Capture the exit code instead and run the after-size capture
+# + leftover detection UNCONDITIONALLY, then surface the repack failure (or a
+# dedicated leftover code) on exit.
+set +e
 "${cmd[@]}"
+repack_rc=$?
+set -e
 
 if [[ "$mode" == "execute" ]]; then
   if [[ "$size_report_enabled" == true ]]; then
@@ -146,3 +157,5 @@ if [[ "$mode" == "execute" ]]; then
     fi
   fi
 fi
+
+exit "$repack_rc"

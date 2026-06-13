@@ -29,12 +29,15 @@ def _stubbed_env(
     psql_log.write_text("", encoding="utf-8")
 
     if with_pg_repack:
+        # Honors PG_REPACK_STUB_EXIT so tests can simulate a mid-run failure
+        # (the disconnect that leaves orphaned repack objects); defaults to 0.
         _make_executable(
             bin_dir / "pg_repack",
             "#!/usr/bin/env bash\n"
             "printf '%s\\n' \"$*\" >> \"$PG_REPACK_COMMAND_LOG\"\n"
             'printf "PGOPTIONS=%s\\n" "${PGOPTIONS:-}" >> "$PG_REPACK_COMMAND_LOG"\n'
-            "printf 'pg_repack stub ok\\n'\n",
+            "printf 'pg_repack stub ok\\n'\n"
+            'exit "${PG_REPACK_STUB_EXIT:-0}"\n',
         )
 
     if with_psql:
@@ -226,6 +229,49 @@ def test_pg_repack_guardrail_fails_when_repack_leftovers_detected(
     assert result.returncode == 3, result.stdout
     assert "orphaned repack objects" in result.stderr
     assert "DROP EXTENSION pg_repack CASCADE" in result.stderr
+
+
+def test_pg_repack_guardrail_runs_leftover_sweep_when_repack_fails(
+    tmp_path: Path,
+) -> None:
+    # The regression this fix guards: a mid-run pg_repack failure (non-zero exit)
+    # is the EXACT scenario that orphans repack.log_* tables / repack_trigger
+    # triggers. Under `set -euo pipefail` the failure must NOT abort the script
+    # before the leftover sweep — the sweep has to run and surface the orphans
+    # (exit 3) rather than the run dying silently on the repack exit code.
+    result, _ = _run_guardrail(
+        tmp_path,
+        with_psql=True,
+        PG_REPACK_DRY_RUN="false",
+        PG_REPACK_TABLES="silver.rt_trip_updates",
+        PG_REPACK_STUB_EXIT="1",
+        PSQL_STUB_LEFTOVER_COUNT="3",
+    )
+
+    assert result.returncode == 3, result.stdout
+    assert "orphaned repack objects" in result.stderr
+    assert "DROP EXTENSION pg_repack CASCADE" in result.stderr
+
+
+def test_pg_repack_guardrail_propagates_repack_failure_without_leftovers(
+    tmp_path: Path,
+) -> None:
+    # When pg_repack fails but leaves no orphaned objects, the guardrail must not
+    # swallow the failure: it runs the (clean) leftover sweep and then exits with
+    # the original non-zero repack code so CI still goes red.
+    result, _ = _run_guardrail(
+        tmp_path,
+        with_psql=True,
+        PG_REPACK_DRY_RUN="false",
+        PG_REPACK_TABLES="silver.rt_trip_updates",
+        PG_REPACK_STUB_EXIT="5",
+        PSQL_STUB_LEFTOVER_COUNT="0",
+    )
+
+    assert result.returncode == 5, result.stdout
+    psql_log = (tmp_path / "psql.log").read_text(encoding="utf-8")
+    # The leftover-detection query still ran despite the repack failure.
+    assert "repack" in psql_log or "nspname" in psql_log
 
 
 def test_pg_repack_guardrail_skips_size_report_without_psql(tmp_path: Path) -> None:
