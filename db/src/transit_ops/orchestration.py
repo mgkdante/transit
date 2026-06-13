@@ -23,6 +23,7 @@ from transit_ops.ingestion import (
     build_realtime_ingestion_config,
     capture_i3_alerts,
     capture_realtime_feed,
+    ingest_gis_feed,
     ingest_static_feed,
 )
 from transit_ops.ingestion.common import utc_now
@@ -36,6 +37,7 @@ from transit_ops.providers import ProviderRegistry
 from transit_ops.settings import Settings, get_settings
 from transit_ops.snapshots.publish import publish_snapshot
 from transit_ops.silver import (
+    load_latest_gis_to_silver,
     load_latest_i3_to_silver,
     load_latest_realtime_to_silver,
     load_latest_static_to_silver,
@@ -63,6 +65,14 @@ class StaticPipelineResult:
     gold_build: dict[str, object] | None
     static_changed: bool
     skipped_reason: str | None
+    # GIS best-effort tail (slice-9.1.1v). Defaulted so a GIS failure never blocks
+    # the static publish and pre-existing constructors stay valid.
+    gis_ingestion: dict[str, object] | None = None
+    gis_silver_load: dict[str, object] | None = None
+    gis_ingestion_duration_seconds: float | None = None
+    gis_silver_load_duration_seconds: float | None = None
+    gis_status: str = "failed"
+    gis_error_message: str | None = None
 
     def display_dict(self) -> dict[str, object]:
         payload = asdict(self)
@@ -237,6 +247,82 @@ def _run_timed_realtime_step(step_name: str, step_fn):  # noqa: ANN001, ANN202
     return result, duration_seconds
 
 
+@dataclass(frozen=True)
+class _GisStepsOutcome:
+    gis_ingestion: dict[str, object] | None
+    gis_silver_load: dict[str, object] | None
+    gis_ingestion_duration_seconds: float | None
+    gis_silver_load_duration_seconds: float | None
+    gis_status: str
+    gis_error_message: str | None
+
+
+def _run_gis_steps_best_effort(
+    provider_id: str,
+    *,
+    settings: Settings,
+    registry: ProviderRegistry,
+    engine: Engine,
+) -> _GisStepsOutcome:
+    """Run the GIS chain (ingest + silver load) as a best-effort tail.
+
+    GIS must NEVER fail the static publish: any exception is logged and recorded,
+    the static pipeline result stays status='succeeded'. The silver load runs
+    unconditionally (even when GIS content is unchanged) so gis_gtfs_matches
+    re-key to the current static dataset version on every GTFS drop.
+    """
+    try:
+        gis_ingestion, gis_ingestion_duration_seconds = _run_timed_static_step(
+            "ingest-gis",
+            lambda: ingest_gis_feed(
+                provider_id,
+                settings=settings,
+                registry=registry,
+                engine=engine,
+            ),
+        )
+    except Exception as exc:  # noqa: BLE001 — best-effort: GIS must never fail the static publish
+        logger.exception("GIS ingest failed (static pipeline continues).")
+        return _GisStepsOutcome(
+            gis_ingestion=None,
+            gis_silver_load=None,
+            gis_ingestion_duration_seconds=None,
+            gis_silver_load_duration_seconds=None,
+            gis_status="failed",
+            gis_error_message=f"ingest-gis failed: {exc}",
+        )
+
+    try:
+        gis_silver_load, gis_silver_load_duration_seconds = _run_timed_static_step(
+            "load-gis-silver",
+            lambda: load_latest_gis_to_silver(
+                provider_id,
+                settings=settings,
+                registry=registry,
+                engine=engine,
+            ),
+        )
+    except Exception as exc:  # noqa: BLE001 — best-effort: GIS must never fail the static publish
+        logger.exception("GIS silver load failed (static pipeline continues).")
+        return _GisStepsOutcome(
+            gis_ingestion=gis_ingestion.display_dict(),
+            gis_silver_load=None,
+            gis_ingestion_duration_seconds=gis_ingestion_duration_seconds,
+            gis_silver_load_duration_seconds=None,
+            gis_status="failed",
+            gis_error_message=f"load-gis-silver failed: {exc}",
+        )
+
+    return _GisStepsOutcome(
+        gis_ingestion=gis_ingestion.display_dict(),
+        gis_silver_load=gis_silver_load.display_dict(),
+        gis_ingestion_duration_seconds=gis_ingestion_duration_seconds,
+        gis_silver_load_duration_seconds=gis_silver_load_duration_seconds,
+        gis_status="succeeded",
+        gis_error_message=None,
+    )
+
+
 def run_static_pipeline(
     provider_id: str,
     *,
@@ -272,6 +358,9 @@ def run_static_pipeline(
             provider_id,
             static_ingestion.checksum_sha256,
         )
+        gis = _run_gis_steps_best_effort(
+            provider_id, settings=settings, registry=registry, engine=engine
+        )
         completed_at_utc = utc_now()
         total_duration_seconds = round(time.perf_counter() - started_at, 3)
         return StaticPipelineResult(
@@ -291,6 +380,12 @@ def run_static_pipeline(
                 getattr(static_ingestion, "skipped_reason", None)
                 or "static_content_unchanged"
             ),
+            gis_ingestion=gis.gis_ingestion,
+            gis_silver_load=gis.gis_silver_load,
+            gis_ingestion_duration_seconds=gis.gis_ingestion_duration_seconds,
+            gis_silver_load_duration_seconds=gis.gis_silver_load_duration_seconds,
+            gis_status=gis.gis_status,
+            gis_error_message=gis.gis_error_message,
         )
 
     # Content changed (or no existing version): run steps 2 and 3.
@@ -320,6 +415,9 @@ def run_static_pipeline(
         ),
     )
 
+    gis = _run_gis_steps_best_effort(
+        provider_id, settings=settings, registry=registry, engine=engine
+    )
     completed_at_utc = utc_now()
     total_duration_seconds = round(time.perf_counter() - started_at, 3)
     return StaticPipelineResult(
@@ -336,6 +434,12 @@ def run_static_pipeline(
         gold_build=gold_build.display_dict(),
         static_changed=True,
         skipped_reason=None,
+        gis_ingestion=gis.gis_ingestion,
+        gis_silver_load=gis.gis_silver_load,
+        gis_ingestion_duration_seconds=gis.gis_ingestion_duration_seconds,
+        gis_silver_load_duration_seconds=gis.gis_silver_load_duration_seconds,
+        gis_status=gis.gis_status,
+        gis_error_message=gis.gis_error_message,
     )
 
 

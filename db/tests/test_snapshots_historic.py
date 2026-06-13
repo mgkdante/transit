@@ -1260,6 +1260,58 @@ def test_build_provenance_sources_and_freshness() -> None:
     assert "metro_realtime" in out.gaps
 
 
+def test_build_provenance_includes_gis_static_source_and_freshness() -> None:
+    """Passthrough lock (slice-9.1.1v): the gis_static lineage + freshness heartbeat
+    surface in provenance.json with zero code change. gold.source_lineage_reporting
+    has no dataset_kind filter, so a future kind-filter regression turns this red."""
+    import datetime as _dt
+
+    loaded = _dt.datetime(2026, 6, 10, 6, 5, 0, tzinfo=_dt.UTC)
+    conn = FakeConn(
+        [
+            (
+                "source_lineage_reporting",
+                [
+                    {
+                        "dataset_kind": "static_schedule",
+                        "storage_backend": "r2",
+                        "storage_path": "stm/static/latest.zip",
+                        "source_url": None,
+                        "loaded_at_utc": loaded,
+                    },
+                    {
+                        "dataset_kind": "gis_static",
+                        "storage_backend": "s3",
+                        "storage_path": "stm/gis_static/2026/06/10/stm_sig.zip",
+                        "source_url": None,
+                        "loaded_at_utc": loaded,
+                    },
+                ],
+            ),
+            (
+                "feed_freshness_current",
+                [
+                    {
+                        "endpoint_key": "gis_static",
+                        "status": "succeeded",
+                        "completed_age_seconds": 3600.0,
+                    },
+                ],
+            ),
+        ]
+    )
+
+    out = build_provenance(conn)
+
+    by_feed = {s.feed: s for s in out.sources}
+    assert "gis_static" in by_feed
+    assert by_feed["gis_static"].chain == "s3:stm/gis_static/2026/06/10/stm_sig.zip"
+    assert by_feed["gis_static"].last_loaded_utc == "2026-06-10T06:05:00Z"
+
+    by_key = {f.feed: f for f in out.freshness}
+    assert by_key["gis_static"].age_s == 3600
+
+
 def test_provenance_methodology_documents_band() -> None:
     conn = FakeConn(
         [

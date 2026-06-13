@@ -772,7 +772,8 @@ def prune_bronze_storage_command(
 
 @app.command("run-static-pipeline")
 def run_static_pipeline_command(provider_id: str) -> None:
-    """Run ingest-static, load-static-silver, and refresh-gold-static for one provider."""
+    """Run ingest-static, load-static-silver, refresh-gold-static, then the GIS
+    chain (best-effort) for one provider."""
 
     settings = get_settings()
     try:
@@ -786,6 +787,13 @@ def run_static_pipeline_command(provider_id: str) -> None:
     except (ValueError, FileNotFoundError) as exc:
         raise typer.BadParameter(str(exc)) from exc
     typer.echo(json.dumps(result.display_dict(), indent=2))
+    # GIS is best-effort: surface a failure on stderr without failing the command,
+    # so the downstream publish-snapshot --tier static step still runs (slice-9.1.1v).
+    if getattr(result, "gis_error_message", None):
+        typer.echo(
+            f"WARNING: GIS step failed (static pipeline succeeded): {result.gis_error_message}",
+            err=True,
+        )
 
 
 @app.command("run-realtime-cycle")

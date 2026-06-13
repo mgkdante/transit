@@ -1,5 +1,6 @@
 import json
 from datetime import UTC, date, datetime
+from types import SimpleNamespace
 
 from typer.testing import CliRunner
 
@@ -445,11 +446,34 @@ def test_vacuum_storage_help() -> None:
     assert "--full" in result.stdout
 
 
-def test_run_static_pipeline_help() -> None:
+def test_run_static_pipeline_help(monkeypatch) -> None:
+    # Force a wide terminal so the docstring renders on one line and the
+    # contiguous help phrase below is not split by Rich line-wrapping.
+    monkeypatch.setenv("COLUMNS", "200")
     result = runner.invoke(app, ["run-static-pipeline", "--help"])
 
     assert result.exit_code == 0
-    assert "Run ingest-static, load-static-silver, and refresh-gold-static" in result.stdout
+    assert (
+        "Run ingest-static, load-static-silver, refresh-gold-static, "
+        "then the GIS chain (best-effort)" in result.stdout
+    )
+
+
+def test_run_static_pipeline_warns_on_gis_failure_but_exits_zero(monkeypatch) -> None:
+    """A best-effort GIS failure prints a stderr WARNING but the command still exits 0."""
+
+    def fake_run_static_pipeline(provider_id, *, settings, registry):  # noqa: ANN001, ANN202
+        return SimpleNamespace(
+            display_dict=lambda: {"status": "succeeded", "gis_status": "failed"},
+            gis_error_message="ingest-gis failed: boom",
+        )
+
+    monkeypatch.setattr(cli_module, "run_static_pipeline", fake_run_static_pipeline)
+
+    result = runner.invoke(app, ["run-static-pipeline", "stm"])
+
+    assert result.exit_code == 0
+    assert "WARNING: GIS step failed" in result.output
 
 
 def test_run_realtime_cycle_help() -> None:

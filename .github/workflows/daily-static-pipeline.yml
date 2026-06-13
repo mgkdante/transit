@@ -59,7 +59,7 @@ jobs:
       - name: Seed core metadata
         run: uv run python -m transit_ops.cli seed-core
 
-      - name: Run static Bronze -> Silver -> Gold pipeline
+      - name: Run static + GIS Bronze -> Silver -> Gold pipeline
         run: uv run python -m transit_ops.cli run-static-pipeline stm
 
       - name: Publish static /v1 snapshot to R2

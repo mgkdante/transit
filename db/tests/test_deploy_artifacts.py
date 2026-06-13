@@ -131,6 +131,24 @@ def test_daily_warm_rollups_workflow_prunes_bronze_and_uploads_retention_proof()
     assert int(timeout_match.group(1)) >= 35
 
 
+def test_daily_static_pipeline_workflow_runs_gis_inside_pipeline_before_static_publish() -> None:
+    workflow = (REPO_ROOT / ".github/workflows/daily-static-pipeline.yml").read_text(
+        encoding="utf-8"
+    )
+
+    # slice-9.1.1v: GIS runs in-process as a best-effort tail of run-static-pipeline,
+    # NOT as a separate YAML step (failure isolation lives in run_static_pipeline so a
+    # GIS outage never blocks the static publish).
+    assert 'cron: "0 6 * * *"' in workflow
+    assert "Run static + GIS Bronze -> Silver -> Gold pipeline" in workflow
+    assert "ingest-gis" not in workflow
+    assert workflow.index("run-static-pipeline stm") < workflow.index(
+        "publish-snapshot stm --tier static"
+    )
+    assert "concurrency" in workflow
+    assert "group: daily-static-pipeline" in workflow
+
+
 def test_daily_warm_rollups_workflow_prunes_i3_after_historic_publish() -> None:
     workflow = (REPO_ROOT / ".github/workflows/daily-warm-rollups.yml").read_text(
         encoding="utf-8"
