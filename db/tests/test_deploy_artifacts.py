@@ -300,3 +300,41 @@ def test_repo_contracts_describe_web_serving_layer_not_powerbi() -> None:
     ).read_text(encoding="utf-8")
     assert "Power BI" not in serving_readme
     assert "/v1" in (REPO_ROOT / "AGENTS.md").read_text(encoding="utf-8")
+
+
+def test_env_example_documents_all_runtime_knobs() -> None:
+    # slice-9.1.1w: these four knobs were live in settings.py / consumed by the
+    # worker but undocumented in .env.example, so an operator had no way to know
+    # they could be tuned.
+    env_example = (REPO_ROOT / ".env.example").read_text(encoding="utf-8")
+    assignments = {line for line in _active_lines(env_example) if "=" in line}
+    assert {
+        "STM_GIS_URL=",
+        "STM_I3_ALERTS_URL=",
+        "PIPELINE_PAUSED=false",
+        "HEALTH_RUNTIME_CACHE_SECONDS=30",
+        "GOLD_FACT_RETENTION_DAYS=14",
+    }.issubset(assignments)
+
+
+def test_retention_docs_match_gold_fact_default_of_fourteen_days() -> None:
+    # GOLD_FACT_RETENTION_DAYS default is 14 (settings.py); the prose must not
+    # contradict it with a stale "7 days" claim.
+    env_example = (REPO_ROOT / ".env.example").read_text(encoding="utf-8")
+    env_1password = (REPO_ROOT / ".env.1password").read_text(encoding="utf-8")
+    assert "GOLD_FACT_RETENTION_DAYS=7" not in _active_lines(env_example)
+    assert "GOLD_FACT_RETENTION_DAYS=7" not in _active_lines(env_1password)
+    assert "Gold facts keep 14 days" in env_example
+    assert "keep 7 days" not in env_example
+    readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
+    assert "Gold detail facts 14 days" in readme
+    assert "Gold detail facts 7 days" not in readme
+
+
+def test_env_1password_has_no_retired_neon_or_arcgis_entries() -> None:
+    # slice-9.1.1w: the database compute moved off the legacy vendor and ArcGIS
+    # was retired with Power BI, so neither belongs in the inject source. String
+    # concatenation keeps a grep for the legacy vendor from hitting this test.
+    text = (REPO_ROOT / ".env.1password").read_text(encoding="utf-8")
+    assert ("Ne" "on") not in text
+    assert "ARCGIS_API_KEY" not in text
