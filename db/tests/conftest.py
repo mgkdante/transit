@@ -28,3 +28,18 @@ def _deterministic_cli_rendering(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(_rich_utils, "COLOR_SYSTEM", None, raising=False)
     monkeypatch.setattr(_rich_utils, "FORCE_TERMINAL", False, raising=False)
     monkeypatch.setattr(_rich_utils, "MAX_WIDTH", 200, raising=False)
+
+
+@pytest.fixture(autouse=True)
+def _hermetic_database_url(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Tests must not observe an ambient ``DATABASE_URL``.
+
+    Several tests assert the "missing DATABASE_URL" error path via
+    ``Settings(_env_file=None)`` — but pydantic-settings still reads the env var,
+    so they fail in the CI real-db job, which exports ``DATABASE_URL`` for its
+    ``alembic upgrade head`` replay step. The offline job runs with
+    ``DATABASE_URL`` unset and passes, so make every test's environment match it.
+    Real-DB tests connect via ``TRANSIT_TEST_DATABASE_URL`` (left intact), never
+    ``DATABASE_URL``.
+    """
+    monkeypatch.delenv("DATABASE_URL", raising=False)
