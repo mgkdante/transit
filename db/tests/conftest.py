@@ -3,28 +3,28 @@
 from __future__ import annotations
 
 import pytest
+import typer.rich_utils as _rich_utils
 
 
 @pytest.fixture(autouse=True)
 def _deterministic_cli_rendering(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Render Typer/Rich CLI help + errors deterministically (plain, no panels).
+    """Render Typer/Rich CLI help + usage deterministically (plain, wide).
 
-    Two CI-vs-local differences break the plain-substring assertions in
+    Typer freezes its help-console settings from env vars at IMPORT time
+    (``typer.rich_utils``): ``FORCE_TERMINAL`` is True whenever ``GITHUB_ACTIONS`` /
+    ``FORCE_COLOR`` / ``PY_COLORS`` is set, ``COLOR_SYSTEM`` defaults to ``"auto"``,
+    and width comes from ``TERMINAL_WIDTH`` (not ``COLUMNS``). On GitHub runners
+    ``GITHUB_ACTIONS`` is always set, so help renders as ANSI-styled Rich panels
+    wrapped at 80 columns — which breaks the plain-substring assertions in
     test_cli.py (and the CLI-invoking tests in test_db_connection /
-    test_orchestration), both rooted in how Typer renders help through Rich:
+    test_orchestration) that pass locally where color is off and the terminal is
+    wide.
 
-    1. COLOR — GitHub runners force color via FORCE_COLOR, so help renders as
-       ANSI-styled panels and the styling breaks substrings. NO_COLOR alone is
-       insufficient (Rich lets FORCE_COLOR win), so FORCE_COLOR/PY_COLORS must be
-       *removed*, not just countered.
-    2. WIDTH — Rich's panel defaults to 80 columns when COLUMNS is unset, wrapping
-       long help/usage text across lines so a contiguous substring isn't present.
-       Pin COLUMNS wide in-process (a ci.yml job-level COLUMNS did not reach the
-       test process) so nothing wraps.
-
-    With both pinned here, CLI help renders plain and wide identically everywhere.
+    Because those settings are frozen at import, no runtime *env* change can fix
+    them. Override the module constants directly — ``_get_rich_console()`` reads
+    these globals at render time, so plain + wide rendering is guaranteed
+    everywhere regardless of the ambient/CI environment.
     """
-    monkeypatch.delenv("FORCE_COLOR", raising=False)
-    monkeypatch.delenv("PY_COLORS", raising=False)
-    monkeypatch.setenv("NO_COLOR", "1")
-    monkeypatch.setenv("COLUMNS", "200")
+    monkeypatch.setattr(_rich_utils, "COLOR_SYSTEM", None, raising=False)
+    monkeypatch.setattr(_rich_utils, "FORCE_TERMINAL", False, raising=False)
+    monkeypatch.setattr(_rich_utils, "MAX_WIDTH", 200, raising=False)
