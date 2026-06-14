@@ -34,7 +34,7 @@ HEALTH_ONLY_SETTINGS = {
 
 # Explicit pin for the health service: DB + bronze-storage + HEALTH_* + provider
 # id + the five retention values run_health_checks reports. NO STM_API_KEY
-# (run_health_checks never calls check_stm_feed).
+# (run_health_checks does not reach any STM feed).
 HEALTH_ENVIRONMENT_KEYS = {
     "DATABASE_URL",
     "APP_ENV",

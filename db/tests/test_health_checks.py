@@ -12,7 +12,6 @@ from transit_ops.health.checks import (
     check_database_connectivity,
     check_pipeline_freshness,
     check_runtime_vm_health,
-    check_stm_feed,
     run_health_checks,
 )
 from transit_ops.providers.registry import ProviderRegistry
@@ -350,71 +349,6 @@ def test_s3_bronze_storage_down_when_access_check_fails(tmp_path: Path) -> None:
         "backend": "s3",
         "location": "s3://transit-raw/",
     }
-
-
-def test_stm_realtime_feed_sends_api_key_header_without_exposing_secret() -> None:
-    requests: list[dict[str, object]] = []
-
-    def requester(method: str, url: str, **kwargs: object) -> FakeResponse:
-        requests.append({"method": method, "url": url, **kwargs})
-        return FakeResponse(200)
-
-    result = check_stm_feed(
-        "trip_updates",
-        settings(),
-        requester=requester,
-        now=NOW,
-        project_root=Path(__file__).resolve().parents[1],
-    )
-
-    assert result.name == "stm_trip_updates_feed"
-    assert result.status == "ok"
-    assert requests[0]["method"] == "GET"
-    assert requests[0]["headers"] == {
-        "apiKey": "super-secret-api-key",
-        "Accept": "application/x-protobuf",
-        "User-Agent": "transit-ops/0.1.0",
-    }
-    assert result.details is not None
-    assert "super-secret-api-key" not in str(result.details)
-    assert result.details["status_code"] == 200
-
-
-def test_stm_static_feed_uses_head_without_realtime_headers() -> None:
-    requests: list[dict[str, object]] = []
-
-    def requester(method: str, url: str, **kwargs: object) -> FakeResponse:
-        requests.append({"method": method, "url": url, **kwargs})
-        return FakeResponse(200)
-
-    result = check_stm_feed(
-        "static_schedule",
-        settings(),
-        requester=requester,
-        now=NOW,
-        project_root=Path(__file__).resolve().parents[1],
-    )
-
-    assert result.name == "stm_static_feed"
-    assert result.status == "ok"
-    assert requests[0]["method"] == "HEAD"
-    assert requests[0]["headers"] == {}
-    assert result.details is not None
-    assert result.details["status_code"] == 200
-
-
-def test_stm_feed_http_failure_returns_down() -> None:
-    result = check_stm_feed(
-        "vehicle_positions",
-        settings(),
-        requester=lambda *_args, **_kwargs: FakeResponse(500),
-        now=NOW,
-        project_root=Path(__file__).resolve().parents[1],
-    )
-
-    assert result.name == "stm_vehicle_positions_feed"
-    assert result.status == "down"
-    assert "HTTP 500" in result.message
 
 
 def test_runtime_vm_health_exposes_sanitized_cost_free_metrics() -> None:
