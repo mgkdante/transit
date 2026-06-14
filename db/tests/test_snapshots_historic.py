@@ -1287,6 +1287,40 @@ def test_build_alert_history_none_timestamps_yield_none_duration() -> None:
     assert e.stops == []
 
 
+def test_build_alert_history_negative_window_yields_none_duration() -> None:
+    """A malformed alert with end < start has no meaningful duration — publish
+    null, never a negative duration (slice-9.1.1y). The raw timestamps still pass
+    through; only the derived duration is nulled."""
+    import datetime as _dt
+
+    start = _dt.datetime(2026, 5, 1, 10, 30, 0, tzinfo=_dt.timezone.utc)
+    end = _dt.datetime(2026, 5, 1, 8, 0, 0, tzinfo=_dt.timezone.utc)  # end BEFORE start
+    conn = FakeConn(
+        [
+            (
+                "i3_alert_history_reporting",
+                [
+                    {
+                        "alert_header_text": "Ligne",
+                        "header_text_en": "Line",
+                        "alert_id": None,
+                        "severity": "WARNING",
+                        "routes": ["51"],
+                        "stops": ["3001"],
+                        "start_utc": start,
+                        "end_utc": end,
+                    },
+                ],
+            )
+        ]
+    )
+    out = build_alert_history(conn, generated_utc="t")
+    e = out.alerts[0]
+    assert e.duration_min is None  # end < start -> untrustworthy -> null
+    assert e.start_utc is not None  # raw timestamps unaffected
+    assert e.end_utc is not None
+
+
 def test_build_alert_history_200_cap() -> None:
     """SQL LIMIT 200 enforced — fake returns exactly 200 rows."""
     import datetime as _dt

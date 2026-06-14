@@ -609,10 +609,13 @@ def build_network(conn: Connection, *, provider_id: str = "stm", generated_utc: 
     on_time_pct = round(100 * on_time_band / known) if known else None
 
     occ_total = sum(occ_counts.values())
+    # Honesty: with no occupancy telemetry the distribution is unknown — None,
+    # not an all-zero mix indistinguishable from a real all-empty fleet
+    # (slice-9.1.1y; mirrors on_time_pct/coverage_pct None-when-empty below).
     occupancy_mix = (
         OccupancyMix(**{k: v / occ_total for k, v in occ_counts.items()})
         if occ_total
-        else OccupancyMix()
+        else None
     )
 
     # coverage_pct: share of the live fleet with a KNOWN punctuality status.
@@ -2317,7 +2320,10 @@ def build_alert_history(
                 s_dt = _dt.datetime.fromisoformat(start_s.replace("Z", "+00:00"))
                 e_dt = _dt.datetime.fromisoformat(end_s.replace("Z", "+00:00"))
                 diff_s = (e_dt - s_dt).total_seconds()
-                duration_min = round(diff_s / 60.0)
+                # A malformed window (end < start) yields a meaningless negative
+                # duration — publish null (untrustworthy), never a negative bar
+                # (slice-9.1.1y).
+                duration_min = round(diff_s / 60.0) if diff_s >= 0 else None
             except (ValueError, TypeError):
                 duration_min = None
 

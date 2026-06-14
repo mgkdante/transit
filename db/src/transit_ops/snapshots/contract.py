@@ -91,12 +91,14 @@ class NetworkFile(BaseModel):
     # a misleading "0% on time". on_time_pct is None with no known-status
     # vehicles; coverage_pct is None with no live fleet; the delay percentiles
     # are None with no delay observations; feed_freshness_s is None when no
-    # completed run exists (freshness genuinely unknown, not "0s = fresh").
+    # completed run exists (freshness genuinely unknown, not "0s = fresh");
+    # occupancy_mix is None with no occupancy telemetry (slice-9.1.1y), not an
+    # all-zero mix indistinguishable from a real all-empty fleet.
     on_time_pct: int | None
     status_dist: StatusDist
     delay_p50_min: int | None
     delay_p90_min: int | None
-    occupancy_mix: OccupancyMix
+    occupancy_mix: OccupancyMix | None = None
     non_responding: int
     feed_freshness_s: int | None
     coverage_pct: int | None
