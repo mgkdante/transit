@@ -471,6 +471,25 @@ def test_build_route_reliability_habits_observed_zero_distinct_from_no_data() ->
     assert out.habits.matrix[0][0] is None  # never observed -> null
 
 
+def test_build_route_reliability_habits_present_null_score_is_null_not_zero() -> None:
+    """A present (dow,hour) row whose repeat_problem_score is NULL is observed-but-
+    unknown — it stays null (no data), never a false observed-calm 0.0 (slice-9.1.1x
+    honesty rule). Defensive: the mart cannot currently emit a NULL score for a
+    present row, but the publisher must not silently invent 0.0 if it ever does."""
+    conn = FakeConn(
+        _route_reliability_dispatch(
+            habit=[
+                {"day_of_week_iso": 2, "hour_of_day_local": 9, "repeat_problem_score": None},
+                {"day_of_week_iso": 4, "hour_of_day_local": 18, "repeat_problem_score": 60.0},
+            ],
+        )
+    )
+    out = build_route_reliability(conn, route_id="51", generated_utc="t")
+    assert out.habits is not None
+    assert out.habits.matrix[1][9] is None  # present row, NULL score -> null (not 0.0)
+    assert out.habits.matrix[3][18] == 1.0  # route max
+
+
 def test_build_route_reliability_habits_all_zero_route_no_div_by_zero() -> None:
     """A route whose every observed cell is 0.0 must not divide by zero; observed
     cells stay 0.0 and unobserved cells stay null (slice-9.1.1x)."""
