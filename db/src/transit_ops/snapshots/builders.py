@@ -1676,7 +1676,11 @@ def _build_habits_matrix(rows: "Iterable[Mapping[str, object]]") -> "RouteHabits
             continue
         di, hi = int(dow) - 1, int(hour)  # type: ignore[arg-type]
         if 0 <= di < 7 and 0 <= hi < 24:
-            raw[di][hi] = float(r["repeat_problem_score"] or 0.0)  # type: ignore[arg-type]
+            # A present row with a NULL score is "observed but unknown" — keep it
+            # null (no data), never coerce to a false observed-calm 0.0
+            # (slice-9.1.1x honesty rule). A genuine 0.0 score stays 0.0.
+            score = r["repeat_problem_score"]
+            raw[di][hi] = None if score is None else float(score)  # type: ignore[arg-type]
 
     observed = [v for row in raw for v in row if v is not None]
     route_max = max(observed) if observed else 0.0
