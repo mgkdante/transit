@@ -406,6 +406,8 @@ def test_build_route_reliability_excess_clamped_at_zero() -> None:
 
 
 def test_build_route_reliability_habits_matrix_is_7x24() -> None:
+    # Cells are normalized per-route to a fraction of the route's worst (dow,hour)
+    # cell (slice-9.1.1x). Here max = 0.9, so 0.9 -> 1.0, 0.4 -> 0.4444, 0.75 -> 0.8333.
     conn = FakeConn(
         _route_reliability_dispatch(
             habit=[
@@ -417,17 +419,85 @@ def test_build_route_reliability_habits_matrix_is_7x24() -> None:
     )
     out = build_route_reliability(conn, route_id="51", generated_utc="t")
     assert out.habits is not None
-    assert out.habits.scale == "repeat_problem_score"
+    assert out.habits.scale == "repeat_problem_relative"
     assert len(out.habits.matrix) == 7
     assert all(len(row) == 24 for row in out.habits.matrix)
-    # isodow 1 -> row index 0; hour 0 -> col 0
-    assert out.habits.matrix[0][0] == 0.9
-    # isodow 7 -> row 6; hour 23 -> col 23
-    assert out.habits.matrix[6][23] == 0.4
-    # isodow 3 -> row 2; hour 8 -> col 8
-    assert out.habits.matrix[2][8] == 0.75
-    # unspecified cells default to 0.0
+    # isodow 1 -> row index 0; hour 0 -> col 0; route max -> 1.0
+    assert out.habits.matrix[0][0] == 1.0
+    # isodow 7 -> row 6; hour 23 -> col 23; 0.4 / 0.9
+    assert out.habits.matrix[6][23] == 0.4444
+    # isodow 3 -> row 2; hour 8 -> col 8; 0.75 / 0.9
+    assert out.habits.matrix[2][8] == 0.8333
+    # unobserved cells are null (no service / no data), not 0.0
+    assert out.habits.matrix[1][5] is None
+
+
+def test_build_route_reliability_habits_at_cap_normalizes_to_one() -> None:
+    """Regression: the mart's Numeric(8,4) overflow sentinel 9999.9999 must NOT
+    reach the public matrix. As the route max it normalizes to 1.0 (slice-9.1.1x)."""
+    conn = FakeConn(
+        _route_reliability_dispatch(
+            habit=[
+                # Friday (isodow 5) 17:00 is at the storage cap
+                {"day_of_week_iso": 5, "hour_of_day_local": 17, "repeat_problem_score": 9999.9999},
+                {"day_of_week_iso": 1, "hour_of_day_local": 8, "repeat_problem_score": 50.0},
+            ],
+        )
+    )
+    out = build_route_reliability(conn, route_id="165", generated_utc="t")
+    assert out.habits is not None
+    cap_cell = out.habits.matrix[4][17]
+    assert cap_cell == 1.0
+    assert cap_cell != 9999.9999  # the leak is gone
+    # 50 / 9999.9999 ~= 0.005
+    assert out.habits.matrix[0][8] == 0.005
+
+
+def test_build_route_reliability_habits_observed_zero_distinct_from_no_data() -> None:
+    """An observed cell with a genuine zero score publishes 0.0; a cell the route
+    never ran (no row) publishes null (slice-9.1.1x honesty split)."""
+    conn = FakeConn(
+        _route_reliability_dispatch(
+            habit=[
+                {"day_of_week_iso": 2, "hour_of_day_local": 9, "repeat_problem_score": 0.0},
+                {"day_of_week_iso": 4, "hour_of_day_local": 18, "repeat_problem_score": 80.0},
+            ],
+        )
+    )
+    out = build_route_reliability(conn, route_id="51", generated_utc="t")
+    assert out.habits is not None
+    assert out.habits.matrix[1][9] == 0.0  # observed-calm -> 0.0, not null
+    assert out.habits.matrix[3][18] == 1.0  # route max
+    assert out.habits.matrix[0][0] is None  # never observed -> null
+
+
+def test_build_route_reliability_habits_all_zero_route_no_div_by_zero() -> None:
+    """A route whose every observed cell is 0.0 must not divide by zero; observed
+    cells stay 0.0 and unobserved cells stay null (slice-9.1.1x)."""
+    conn = FakeConn(
+        _route_reliability_dispatch(
+            habit=[
+                {"day_of_week_iso": 1, "hour_of_day_local": 0, "repeat_problem_score": 0.0},
+                {"day_of_week_iso": 2, "hour_of_day_local": 5, "repeat_problem_score": 0.0},
+            ],
+        )
+    )
+    out = build_route_reliability(conn, route_id="51", generated_utc="t")
+    assert out.habits is not None
+    assert out.habits.matrix[0][0] == 0.0
     assert out.habits.matrix[1][5] == 0.0
+    assert out.habits.matrix[3][3] is None
+
+
+def test_build_route_reliability_habits_empty_is_all_null() -> None:
+    """A route with no habit rows publishes an all-null 7x24 matrix (slice-9.1.1x)."""
+    conn = FakeConn(_route_reliability_dispatch(habit=[]))
+    out = build_route_reliability(conn, route_id="51", generated_utc="t")
+    assert out.habits is not None
+    assert out.habits.scale == "repeat_problem_relative"
+    assert len(out.habits.matrix) == 7
+    assert all(len(row) == 24 for row in out.habits.matrix)
+    assert all(cell is None for row in out.habits.matrix for cell in row)
 
 
 def test_build_route_reliability_weak_stops_sorted_and_capped() -> None:

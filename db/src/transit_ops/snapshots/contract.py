@@ -289,7 +289,10 @@ class HeadwayPeriod(BaseModel):
 
 class RouteHabits(BaseModel):
     scale: str
-    matrix: list[list[float]] = Field(default_factory=list)
+    # Per-route relative-problem heatmap: each cell is a fraction of the route's
+    # worst (dow,hour) cell in [0,1] (1.0 = worst hour), or null where the route
+    # had no observations for that cell (slice-9.1.1x).
+    matrix: list[list[float | None]] = Field(default_factory=list)
 
 class WeakStop(BaseModel):
     id: str

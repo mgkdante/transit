@@ -60,6 +60,8 @@ from transit_ops.snapshots.contract import (
 )
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
+    from collections.abc import Iterable, Mapping
+
     from sqlalchemy.engine import Connection
 
 # --------------------------------------------------------------------------
@@ -1652,6 +1654,44 @@ def _entity_name_maps(
     return route_names, stop_names
 
 
+def _build_habits_matrix(rows: "Iterable[Mapping[str, object]]") -> "RouteHabits":
+    """7x24 per-route problem heatmap (rows isodow 1..7, cols hour 0..23).
+
+    Each observed (dow, hour) cell is normalized to its fraction of the route's
+    worst cell, so values land in [0, 1] (1.0 = this route's worst hour). This
+    keeps the mart's Numeric(8,4) storage cap (9999.9999) — an overflow guard,
+    not a real magnitude — from leaking onto the public matrix (slice-9.1.1x):
+    an at-cap cell is simply the route max and normalizes to 1.0. Cells the route
+    never ran (no row) are null (no service / no data), kept distinct from an
+    observed-but-calm 0.0. A route whose every observed cell is 0.0 normalizes to
+    0.0 without dividing by zero.
+    """
+    from transit_ops.snapshots.contract import RouteHabits
+
+    raw: list[list[float | None]] = [[None] * 24 for _ in range(7)]
+    for r in rows:
+        dow = r["day_of_week_iso"]
+        hour = r["hour_of_day_local"]
+        if dow is None or hour is None:
+            continue
+        di, hi = int(dow) - 1, int(hour)  # type: ignore[arg-type]
+        if 0 <= di < 7 and 0 <= hi < 24:
+            raw[di][hi] = float(r["repeat_problem_score"] or 0.0)  # type: ignore[arg-type]
+
+    observed = [v for row in raw for v in row if v is not None]
+    route_max = max(observed) if observed else 0.0
+    matrix: list[list[float | None]] = [
+        [
+            None
+            if v is None
+            else (round(v / route_max, 4) if route_max > 0 else 0.0)
+            for v in row
+        ]
+        for row in raw
+    ]
+    return RouteHabits(scale="repeat_problem_relative", matrix=matrix)
+
+
 def build_route_reliability(
     conn: Connection, *, provider_id: str = "stm", route_id: str, generated_utc: str
 ) -> "RouteReliability":
@@ -1661,13 +1701,13 @@ def build_route_reliability(
     headway: observed weekday trip-start gaps from the busiest direction (gold
              rollup) vs scheduled representative-weekday first-stop departures
              from the busiest direction, with non-negative excess_wait per shift.
-    habits:  7x24 repeat-problem-score matrix (isodow 1..7 x hour 0..23).
+    habits:  7x24 per-route relative-problem matrix (isodow 1..7 x hour 0..23;
+             each cell a fraction of the route's worst hour, null = no data).
     weak_stops: top 5 stops on the route by average delay.
     """
     from transit_ops.snapshots.contract import (
         HeadwayPeriod,
         ReliabilityPeriod,
-        RouteHabits,
         RouteReliability,
         WeakStop,
     )
@@ -1732,17 +1772,8 @@ def build_route_reliability(
             )
         )
 
-    # --- habits: 7x24 matrix (rows isodow 1..7, cols hour 0..23) ---
-    matrix = [[0.0 for _ in range(24)] for _ in range(7)]
-    for r in conn.execute(_ROUTE_HABIT_SQL, params).mappings():
-        dow = r["day_of_week_iso"]
-        hour = r["hour_of_day_local"]
-        if dow is None or hour is None:
-            continue
-        di, hi = int(dow) - 1, int(hour)
-        if 0 <= di < 7 and 0 <= hi < 24:
-            matrix[di][hi] = float(r["repeat_problem_score"] or 0.0)
-    habits = RouteHabits(scale="repeat_problem_score", matrix=matrix)
+    # --- habits: 7x24 per-route relative-problem matrix (isodow 1..7 x hour 0..23) ---
+    habits = _build_habits_matrix(conn.execute(_ROUTE_HABIT_SQL, params).mappings())
 
     # --- weak_stops: top 5 by average delay seconds ---
     names = {
