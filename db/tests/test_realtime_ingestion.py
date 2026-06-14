@@ -9,14 +9,17 @@ import pytest
 from google.transit import gtfs_realtime_pb2
 
 import transit_ops.ingestion.realtime_gtfs as realtime_gtfs
-from transit_ops.ingestion.common import DownloadedArtifact, compute_sha256_hex
+from transit_ops.ingestion.common import (
+    DownloadedArtifact,
+    compute_sha256_hex,
+    insert_ingestion_object,
+    insert_ingestion_run,
+    mark_ingestion_run_succeeded,
+)
 from transit_ops.ingestion.realtime_gtfs import (
     _build_realtime_ssl_context,
     _get_feed_endpoint_id,
-    _insert_ingestion_object,
-    _insert_ingestion_run,
     _insert_realtime_snapshot_index,
-    _mark_ingestion_run_succeeded,
     build_realtime_ingestion_config,
     build_realtime_object_storage_path,
     capture_realtime_feed,
@@ -241,7 +244,7 @@ def test_realtime_database_registration_helpers_capture_expected_values() -> Non
         provider_id="stm",
         endpoint_key="trip_updates",
     )
-    ingestion_run_id = _insert_ingestion_run(
+    ingestion_run_id = insert_ingestion_run(
         connection,
         provider_id="stm",
         feed_endpoint_id=feed_endpoint_id,
@@ -249,7 +252,7 @@ def test_realtime_database_registration_helpers_capture_expected_values() -> Non
         requested_at_utc=started_at_utc,
         started_at_utc=started_at_utc,
     )
-    ingestion_object_id = _insert_ingestion_object(
+    ingestion_object_id = insert_ingestion_object(
         connection,
         ingestion_run_id=ingestion_run_id,
         provider_id="stm",
@@ -273,7 +276,7 @@ def test_realtime_database_registration_helpers_capture_expected_values() -> Non
         entity_count=17,
         captured_at_utc=completed_at_utc,
     )
-    _mark_ingestion_run_succeeded(
+    mark_ingestion_run_succeeded(
         connection,
         ingestion_run_id=ingestion_run_id,
         completed_at_utc=completed_at_utc,

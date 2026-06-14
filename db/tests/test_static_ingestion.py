@@ -4,12 +4,14 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import transit_ops.ingestion.static_gtfs as static_gtfs
-from transit_ops.ingestion.common import DownloadedArtifact
+from transit_ops.ingestion.common import (
+    DownloadedArtifact,
+    insert_ingestion_object,
+    insert_ingestion_run,
+    mark_ingestion_run_succeeded,
+)
 from transit_ops.ingestion.static_gtfs import (
     _get_feed_endpoint_id,
-    _insert_ingestion_object,
-    _insert_ingestion_run,
-    _mark_ingestion_run_succeeded,
     build_static_ingestion_config,
     build_static_object_storage_path,
     compute_sha256_hex,
@@ -199,7 +201,7 @@ def test_database_registration_helpers_capture_expected_values() -> None:
         provider_id="stm",
         endpoint_key="static_schedule",
     )
-    ingestion_run_id = _insert_ingestion_run(
+    ingestion_run_id = insert_ingestion_run(
         connection,
         provider_id="stm",
         feed_endpoint_id=feed_endpoint_id,
@@ -207,7 +209,7 @@ def test_database_registration_helpers_capture_expected_values() -> None:
         requested_at_utc=started_at_utc,
         started_at_utc=started_at_utc,
     )
-    ingestion_object_id = _insert_ingestion_object(
+    ingestion_object_id = insert_ingestion_object(
         connection,
         ingestion_run_id=ingestion_run_id,
         provider_id="stm",
@@ -221,7 +223,7 @@ def test_database_registration_helpers_capture_expected_values() -> None:
         checksum_sha256="a" * 64,
         byte_size=123456,
     )
-    _mark_ingestion_run_succeeded(
+    mark_ingestion_run_succeeded(
         connection,
         ingestion_run_id=ingestion_run_id,
         completed_at_utc=completed_at_utc,

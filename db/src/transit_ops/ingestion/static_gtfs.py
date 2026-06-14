@@ -170,22 +170,6 @@ def _get_feed_endpoint_id(connection, provider_id: str, endpoint_key: str) -> in
     )
 
 
-def _insert_ingestion_run(connection, **kwargs) -> int:  # noqa: ANN003, ANN001
-    return insert_ingestion_run(connection, **kwargs)
-
-
-def _mark_ingestion_run_succeeded(connection, **kwargs) -> None:  # noqa: ANN003, ANN001
-    mark_ingestion_run_succeeded(connection, **kwargs)
-
-
-def _mark_ingestion_run_failed(connection, **kwargs) -> None:  # noqa: ANN003, ANN001
-    mark_ingestion_run_failed(connection, **kwargs)
-
-
-def _insert_ingestion_object(connection, **kwargs) -> int:  # noqa: ANN003, ANN001
-    return insert_ingestion_object(connection, **kwargs)
-
-
 def _dataset_version_observation(
     connection,  # noqa: ANN001
     *,
@@ -275,7 +259,7 @@ def ingest_static_feed(
             provider_id=config.provider_id,
             endpoint_key=config.endpoint_key,
         )
-        ingestion_run_id = _insert_ingestion_run(
+        ingestion_run_id = insert_ingestion_run(
             connection,
             provider_id=config.provider_id,
             feed_endpoint_id=feed_endpoint_id,
@@ -319,7 +303,7 @@ def ingest_static_feed(
             )
             if not dataset_version.content_changed:
                 completed_at_utc = utc_now()
-                _mark_ingestion_run_succeeded(
+                mark_ingestion_run_succeeded(
                     connection,
                     ingestion_run_id=ingestion_run_id,
                     completed_at_utc=completed_at_utc,
@@ -351,7 +335,7 @@ def ingest_static_feed(
                 )
 
             archive_reference = bronze_storage.persist_temp_file(artifact.temp_path, storage_path)
-            ingestion_object_id = _insert_ingestion_object(
+            ingestion_object_id = insert_ingestion_object(
                 connection,
                 ingestion_run_id=ingestion_run_id,
                 provider_id=config.provider_id,
@@ -368,7 +352,7 @@ def ingest_static_feed(
                 ingestion_object_id=ingestion_object_id,
             )
             completed_at_utc = utc_now()
-            _mark_ingestion_run_succeeded(
+            mark_ingestion_run_succeeded(
                 connection,
                 ingestion_run_id=ingestion_run_id,
                 completed_at_utc=completed_at_utc,
@@ -400,7 +384,7 @@ def ingest_static_feed(
     except HTTPError as exc:
         completed_at_utc = utc_now()
         with engine.begin() as connection:
-            _mark_ingestion_run_failed(
+            mark_ingestion_run_failed(
                 connection,
                 ingestion_run_id=ingestion_run_id,
                 completed_at_utc=completed_at_utc,
@@ -414,7 +398,7 @@ def ingest_static_feed(
         completed_at_utc = utc_now()
         http_status_code = artifact.http_status_code if artifact else None
         with engine.begin() as connection:
-            _mark_ingestion_run_failed(
+            mark_ingestion_run_failed(
                 connection,
                 ingestion_run_id=ingestion_run_id,
                 completed_at_utc=completed_at_utc,

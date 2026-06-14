@@ -9,10 +9,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-import httpx
 from sqlalchemy import create_engine, text
 
-from transit_ops.core.models import AuthType
 from transit_ops.db.connection import make_engine
 from transit_ops.health.models import ComponentHealthResult
 from transit_ops.ingestion.storage import (
@@ -24,11 +22,6 @@ from transit_ops.providers.registry import ProviderRegistry
 from transit_ops.settings import Settings, get_settings
 
 REQUIRED_REALTIME_ENDPOINTS = ("trip_updates", "vehicle_positions", "i3_alerts")
-FEED_RESULT_NAMES = {
-    "static_schedule": "stm_static_feed",
-    "trip_updates": "stm_trip_updates_feed",
-    "vehicle_positions": "stm_vehicle_positions_feed",
-}
 
 EngineFactory = Callable[[Settings], Any]
 Requester = Callable[..., Any]
@@ -250,81 +243,6 @@ def check_bronze_storage(
         name="bronze_storage",
         status="ok",
         message="Bronze storage check passed.",
-        latency_ms=_latency_ms(started),
-        checked_at_utc=checked_at,
-        details=details,
-    )
-
-
-def check_stm_feed(
-    endpoint_key: str,
-    settings: Settings | None = None,
-    *,
-    registry: ProviderRegistry | None = None,
-    requester: Requester | None = None,
-    now: datetime | None = None,
-    project_root: Path | None = None,
-) -> ComponentHealthResult:
-    resolved_settings = settings or get_settings()
-    checked_at = _checked_at(now)
-    started = time.perf_counter()
-    result_name = FEED_RESULT_NAMES[endpoint_key]
-    resolved_registry = registry or ProviderRegistry.from_project_root(
-        project_root=project_root,
-        settings=resolved_settings,
-    )
-
-    try:
-        manifest = resolved_registry.get_provider(resolved_settings.STM_PROVIDER_ID)
-        feed = (
-            manifest.static_feed()
-            if endpoint_key == "static_schedule"
-            else manifest.realtime_feed(endpoint_key)
-        )
-        url = feed.resolved_source_url(resolved_settings)
-        if not url:
-            raise RuntimeError(f"No URL configured for STM feed '{endpoint_key}'.")
-
-        headers, params = _feed_auth_parts(feed.auth, resolved_settings)
-        method = "HEAD"
-        if endpoint_key in REQUIRED_REALTIME_ENDPOINTS:
-            method = "GET"
-            headers.setdefault("Accept", "application/x-protobuf")
-            headers.setdefault("User-Agent", "transit-ops/0.1.0")
-        details = {"url": url, "status_code": None}
-        response = (requester or httpx.request)(
-            method,
-            url,
-            headers=headers,
-            params=params,
-            timeout=resolved_settings.HEALTH_FEED_TIMEOUT_SECONDS,
-            follow_redirects=True,
-        )
-        status_code = int(response.status_code)
-        details["status_code"] = status_code
-    except Exception as exc:  # noqa: BLE001
-        return ComponentHealthResult(
-            name=result_name,
-            status="down",
-            message=f"STM feed check failed: {_safe_error(exc)}",
-            latency_ms=_latency_ms(started),
-            checked_at_utc=checked_at,
-            details=locals().get("details", None),
-        )
-
-    if 200 <= status_code < 400:
-        return ComponentHealthResult(
-            name=result_name,
-            status="ok",
-            message="STM feed is reachable.",
-            latency_ms=_latency_ms(started),
-            checked_at_utc=checked_at,
-            details=details,
-        )
-    return ComponentHealthResult(
-        name=result_name,
-        status="down",
-        message=f"STM feed returned HTTP {status_code}.",
         latency_ms=_latency_ms(started),
         checked_at_utc=checked_at,
         details=details,
@@ -622,20 +540,3 @@ def _runtime_status(details: Mapping[str, object]) -> str:
 def _float_detail(details: Mapping[str, object], key: str) -> float:
     value = details.get(key)
     return float(value) if isinstance(value, int | float) else 0.0
-
-
-def _feed_auth_parts(auth: Any, settings: Settings) -> tuple[dict[str, str], dict[str, str]]:
-    headers: dict[str, str] = {}
-    params: dict[str, str] = {}
-    if auth.auth_type == AuthType.NONE:
-        return headers, params
-
-    credential_name = auth.credential_env_var
-    credential = getattr(settings, credential_name, None) if credential_name else None
-    if not credential:
-        raise RuntimeError(f"{credential_name or 'API key'} is not configured.")
-    if auth.auth_header_name:
-        headers[auth.auth_header_name] = credential
-    if auth.auth_query_param:
-        params[auth.auth_query_param] = credential
-    return headers, params

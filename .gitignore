@@ -27,3 +27,6 @@ artifacts/
 # Cloudflare Worker tooling (infra/cloudflare/*)
 node_modules/
 .wrangler/
+
+# Local scratch proposals (e.g. ssh-config drafts)
+*.proposed

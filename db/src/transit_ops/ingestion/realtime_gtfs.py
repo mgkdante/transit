@@ -187,22 +187,6 @@ def _get_feed_endpoint_id(connection: Connection, provider_id: str, endpoint_key
     )
 
 
-def _insert_ingestion_run(connection: Connection, **kwargs) -> int:  # noqa: ANN003
-    return insert_ingestion_run(connection, **kwargs)
-
-
-def _mark_ingestion_run_succeeded(connection: Connection, **kwargs) -> None:  # noqa: ANN003
-    mark_ingestion_run_succeeded(connection, **kwargs)
-
-
-def _mark_ingestion_run_failed(connection: Connection, **kwargs) -> None:  # noqa: ANN003
-    mark_ingestion_run_failed(connection, **kwargs)
-
-
-def _insert_ingestion_object(connection: Connection, **kwargs) -> int:  # noqa: ANN003
-    return insert_ingestion_object(connection, **kwargs)
-
-
 def _insert_realtime_snapshot_index(
     connection: Connection,
     *,
@@ -298,7 +282,7 @@ def capture_realtime_feed(
             provider_id=config.provider_id,
             endpoint_key=config.endpoint_key,
         )
-        ingestion_run_id = _insert_ingestion_run(
+        ingestion_run_id = insert_ingestion_run(
             connection,
             provider_id=config.provider_id,
             feed_endpoint_id=feed_endpoint_id,
@@ -325,7 +309,7 @@ def capture_realtime_feed(
 
         completed_at_utc = utc_now()
         with engine.begin() as connection:
-            ingestion_object_id = _insert_ingestion_object(
+            ingestion_object_id = insert_ingestion_object(
                 connection,
                 ingestion_run_id=ingestion_run_id,
                 provider_id=config.provider_id,
@@ -346,7 +330,7 @@ def capture_realtime_feed(
                 entity_count=metadata.entity_count,
                 captured_at_utc=completed_at_utc,
             )
-            _mark_ingestion_run_succeeded(
+            mark_ingestion_run_succeeded(
                 connection,
                 ingestion_run_id=ingestion_run_id,
                 completed_at_utc=completed_at_utc,
@@ -378,7 +362,7 @@ def capture_realtime_feed(
     except HTTPError as exc:
         completed_at_utc = utc_now()
         with engine.begin() as connection:
-            _mark_ingestion_run_failed(
+            mark_ingestion_run_failed(
                 connection,
                 ingestion_run_id=ingestion_run_id,
                 completed_at_utc=completed_at_utc,
@@ -392,7 +376,7 @@ def capture_realtime_feed(
         completed_at_utc = utc_now()
         http_status_code = artifact.http_status_code if artifact else None
         with engine.begin() as connection:
-            _mark_ingestion_run_failed(
+            mark_ingestion_run_failed(
                 connection,
                 ingestion_run_id=ingestion_run_id,
                 completed_at_utc=completed_at_utc,
