@@ -117,7 +117,15 @@
       "type": "integer"
     },
     "occupancy_mix": {
-      "$ref": "#/$defs/OccupancyMix"
+      "anyOf": [
+        {
+          "$ref": "#/$defs/OccupancyMix"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
     },
     "on_time_pct": {
       "anyOf": [
@@ -145,7 +153,6 @@
     "status_dist",
     "delay_p50_min",
     "delay_p90_min",
-    "occupancy_mix",
     "non_responding",
     "feed_freshness_s",
     "coverage_pct"

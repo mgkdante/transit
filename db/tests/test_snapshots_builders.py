@@ -548,6 +548,8 @@ def test_build_network_zero_vehicles_emits_honest_none_not_zero() -> None:
     assert out.delay_p50_min is None
     assert out.delay_p90_min is None
     assert out.coverage_pct is None
+    # no occupancy telemetry -> None, not an all-zero distribution (slice-9.1.1y)
+    assert out.occupancy_mix is None
     # non_responding is a genuine count (honest 0 when nothing is failing).
     assert out.non_responding == 0
     # freshness is genuinely unknown with no completed run -> None, not 0.
@@ -575,6 +577,26 @@ def test_build_network_unknown_only_fleet_emits_none_on_time_pct() -> None:
     assert out.on_time_pct is None  # known == 0 -> unmeasured, not 0%
     assert out.coverage_pct == 0  # honest: 0% of the fleet has a known status
     assert out.feed_freshness_s == 4  # a completed run exists -> real value
+
+
+def test_build_network_no_occupancy_telemetry_emits_none_not_all_zero() -> None:
+    """A live fleet that reports no occupancy must publish occupancy_mix=None
+    (no data), not an all-zero distribution indistinguishable from a real
+    all-empty fleet (slice-9.1.1y honesty — mirrors on_time_pct/coverage_pct)."""
+    conn = FakeConn(
+        {
+            "current_vehicle_map_with_status": [
+                {"status_band": "À l'heure / On time", "occupancy_status": None},
+                {"status_band": "En retard / Late", "occupancy_status": None},
+            ],
+            "current_trip_delay_computed": [],
+            "non_responding_current": [{"non_responding": 0}],
+            "feed_freshness_current": [{"feed_freshness_s": 5}],
+        }
+    )
+    out = build_network(conn, generated_utc="2026-05-31T12:00:05Z")
+    assert out.vehicles_in_service == 2
+    assert out.occupancy_mix is None  # no telemetry -> null, not all-zero
 
 
 # --------------------------------------------------------------------------
