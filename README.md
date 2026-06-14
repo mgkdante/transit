@@ -2,7 +2,7 @@
 
 **Monorepo — two domains:**
 - **`db/`** — the GTFS / GTFS-RT analytics **pipeline** (STM feeds → Bronze on R2 → Silver/Gold in Postgres). Run pipeline commands from `db/` (e.g. `cd db && uv run pytest tests -v`).
-- **`web/`** — the public **citizen web app** (SvelteKit on Cloudflare; live map + analytics fed by R2 snapshots of the gold marts). Design locked; implementation in progress.
+- **`web/`** — the public **citizen web app** (SvelteKit on Cloudflare; live map + analytics fed by R2 snapshots of the gold marts). Design locked; not yet started.
 
 > The legacy Power BI + ArcGIS reporting layer was retired (2026-05-30); the `web/` citizen app replaces it.
 
@@ -16,7 +16,7 @@ Start there for business context, architecture, runtime notes, and workflow stat
 
 ## Reporting — Citizen Web App
 
-The public reporting surface is a free, anonymous **SvelteKit web app** (live map + analytics) at `transit.yesid.dev`, fed by a versioned `/v1` R2 snapshot of the Gold marts. It reads only the `/v1` contract (edge-cached), never the database. It surfaces live STM network activity — active vehicles, route coverage, trip-delay KPIs, occupancy, alerts, and data freshness. Static schedule data refreshes daily; realtime vehicle and trip data on a 30-second cadence through the worker. Design is locked (see the Notion **Source of Truth** bundle); implementation lives in `web/`.
+The public reporting surface is a free, anonymous **SvelteKit web app** (live map + analytics) at `transit.yesid.dev`, fed by a versioned `/v1` R2 snapshot of the Gold marts. It reads only the `/v1` contract (edge-cached), never the database. It surfaces live STM network activity — active vehicles, route coverage, trip-delay KPIs, occupancy, alerts, and data freshness. Static schedule data refreshes daily; realtime vehicle and trip data on a 30-second cadence through the worker. Design is locked (see the Notion **Source of Truth** bundle); implementation is not yet started (`web/` is empty).
 
 ## What This Project Is
 
@@ -62,7 +62,7 @@ Notion is the source of truth for the deeper architecture breakdown, runtime beh
 - Durable Bronze archive through Cloudflare R2 today, with an S3-compatible code path
 - Silver normalization in Postgres
 - Gold serving tables and warm rollups
-- The citizen web app at `transit.yesid.dev` (design locked; implementation in progress)
+- The citizen web app at `transit.yesid.dev` (design locked; not yet started)
 
 Provider-ready means the schema and manifests are structured so additional GTFS/GTFS-RT/GIS/i3-style providers can be added later, but STM/Montréal is the only active provider today.
 
@@ -201,12 +201,12 @@ The retention proof report also embeds the static validation result. These comma
 .github/workflows/                  CI: daily static pipeline + warm rollup build
 db/                                 Pipeline (run commands from here)
   src/transit_ops/
-    bronze/                         Feed capture and R2/S3 archiving
+    ingestion/                      Feed capture and R2/S3 archiving
     silver/                         GTFS and GTFS-RT normalization
     gold/                           Mart builders, reporting aggregates, warm rollups
     health/                         Operational health API
     db/migrations/                  Alembic migrations
-    orchestration/                  Static pipeline, realtime cycle, worker
+    orchestration.py                Static pipeline, realtime cycle, worker
   config/providers/                 Provider manifests
   scripts/                          Pipeline control helpers
   infra/postgres-serving-access/    Hardened reader grants
