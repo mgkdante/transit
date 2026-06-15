@@ -11,8 +11,12 @@
 //     `matchMedia`, so the initial value is `false` (mobile-first — the safe SSR
 //     default, since a panelled desktop layout degrades cleanly to a single
 //     route surface).
-//   - The live matchMedia subscription is wired LAZILY the first time the value
-//     is observed in a browser context, and exactly once (idempotent).
+//   - The live matchMedia subscription is wired EAGERLY at module load in a
+//     browser context (guarded by `typeof window`), exactly once. It must NOT be
+//     wired lazily on first read: `isDesktop` is read inside `$derived`/template
+//     expressions, and Svelte 5 forbids mutating `$state` during a derived
+//     computation (`state_unsafe_mutation`) — so the getter stays a PURE read and
+//     the only writes happen from the initializer + the `change` event callback.
 //
 // WHY a getter (not a bare exported `$state`): `$state` reassignments only
 // propagate reactively when read through a live accessor. Exposing `isDesktop` as
@@ -24,20 +28,14 @@ const QUERY = '(min-width: 1024px)';
 
 // SSR-safe initial value — no `window`/`matchMedia` on the server. Default to
 // mobile (`false`) so SSR emits the route-push layout, which is the universal
-// fallback; the client re-syncs to the real viewport on first read.
+// fallback; the client picks up the real viewport from the subscription below.
 let desktop = $state(typeof window !== 'undefined' && window.matchMedia(QUERY).matches);
 
-// Idempotent client-side subscription: set up the matchMedia listener exactly
-// once, the first time `isDesktop` is observed in a browser context.
-let subscribed = false;
-
-function ensureSubscribed(): void {
-	if (subscribed || typeof window === 'undefined') return;
-	subscribed = true;
-	const mql = window.matchMedia(QUERY);
-	// Re-sync once in case the viewport changed between module init and first read.
-	desktop = mql.matches;
-	mql.addEventListener('change', (e: MediaQueryListEvent) => {
+// Live subscription, wired once at module load in the browser (never on the
+// server — no `matchMedia` there). The `change` callback fires outside any
+// reactive read, so mutating `desktop` here is safe; the getter never writes.
+if (typeof window !== 'undefined') {
+	window.matchMedia(QUERY).addEventListener('change', (e: MediaQueryListEvent) => {
 		desktop = e.matches;
 	});
 }
@@ -50,7 +48,6 @@ function ensureSubscribed(): void {
 export const layout = {
 	/** True when the viewport is at/above the desktop panel breakpoint. */
 	get isDesktop(): boolean {
-		ensureSubscribed();
 		return desktop;
 	},
 };

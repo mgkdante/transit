@@ -14,6 +14,7 @@
 import { getContext, setContext } from 'svelte';
 import type { Locale } from '$lib/i18n';
 import { DEFAULT_LOCALE } from '$lib/i18n';
+import type { AdapterCtx } from '$lib/v1/adapter';
 import type { Manifest } from '$lib/v1/schemas';
 import { getLabels, getManifest } from '$lib/v1/repositories';
 
@@ -42,8 +43,8 @@ const RESOLVABLE_NAMESPACES = [
 const KEY = Symbol.for('transit.v1.context');
 
 /** Fetch the snapshot manifest (boot step 1). */
-export async function loadManifest(): Promise<Manifest> {
-	return getManifest();
+export async function loadManifest(ctx?: AdapterCtx): Promise<Manifest> {
+	return getManifest(ctx);
 }
 
 /**
@@ -53,13 +54,18 @@ export async function loadManifest(): Promise<Manifest> {
  * refinement over the manifest's base `labels` table. The labels leg is
  * fail-soft: a missing/never-published labels file degrades to the manifest
  * base (and ultimately to raw-code fallback in resolveLabel), never an error.
+ *
+ * `ctx` carries the SSR `fetch` (event.fetch). It MUST be passed from a
+ * SvelteKit `load` under SSR — the snapshot base is a same-origin relative path
+ * and the Worker's global `fetch` rejects relative URLs, so an unthreaded boot
+ * fails the manifest leg and degrades the whole app to the v1-error edge state.
  */
-export async function bootV1(lang: Locale = DEFAULT_LOCALE): Promise<V1Context> {
-	const manifest = await loadManifest();
+export async function bootV1(lang: Locale = DEFAULT_LOCALE, ctx?: AdapterCtx): Promise<V1Context> {
+	const manifest = await loadManifest(ctx);
 	// Labels are an enhancement, not a hard dependency — a missing/never-published
 	// labels file degrades to the manifest base (resolveLabel then falls back to
 	// raw codes), never an error.
-	const langLabels = await getLabels(lang).catch(() => ({}) as Record<string, string>);
+	const langLabels = await getLabels(lang, ctx).catch(() => ({}) as Record<string, string>);
 	const labels: Record<string, string> = { ...manifest.labels, ...langLabels };
 	return { manifest, labels, lang };
 }

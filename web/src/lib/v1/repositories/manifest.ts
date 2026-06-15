@@ -10,10 +10,17 @@
 // This module is a pure delegator so the import surface stays stable while the
 // transport underneath can change.
 
-import { adapter } from '$lib/v1/adapter';
+import { adapter, type AdapterCtx } from '$lib/v1/adapter';
 import type { Manifest } from '$lib/v1/schemas';
 
-/** Fetch + validate the snapshot manifest (snapshot root pointer). */
-export async function getManifest(): Promise<Manifest> {
-	return adapter.manifest.get();
+/**
+ * Fetch + validate the snapshot manifest (snapshot root pointer).
+ *
+ * `ctx` carries the SSR `fetch` (event.fetch). It MUST be threaded under SSR:
+ * the snapshot base is a same-origin relative path (`/data/v1`), and the global
+ * `fetch` rejects a relative URL in a Worker — only the load `fetch` resolves it
+ * against the request origin.
+ */
+export async function getManifest(ctx?: AdapterCtx): Promise<Manifest> {
+	return adapter.manifest.get(ctx);
 }

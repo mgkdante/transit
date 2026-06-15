@@ -16,6 +16,7 @@
 // during SSR so requests are deduped/inlined into the server-rendered payload.
 // It defaults to the global `fetch` (browser / client-side refresh).
 
+import { browser } from '$app/environment';
 import type { z } from 'zod';
 import { parsePort } from '$lib/v1/schemas/parse';
 
@@ -55,9 +56,14 @@ export async function getEntityJson<T>(
 	fetchFn: FetchFn = fetch,
 	init?: { cache?: RequestCache; signal?: AbortSignal },
 ): Promise<T | undefined> {
+	// The `cache` REQUEST mode (e.g. 'force-cache' for long-TTL tiers) is a
+	// browser-only concern: workerd / SvelteKit's SSR `server_fetch` rejects
+	// unsupported modes ("Unsupported cache mode: force-cache"). Server-side,
+	// caching is governed by Cloudflare's edge + the snapshot's `cache-control`
+	// response headers, so we forward the request cache mode in the browser only.
 	const res = await fetchFn(url, {
 		headers: { accept: 'application/json' },
-		cache: init?.cache,
+		cache: browser ? init?.cache : undefined,
 		signal: init?.signal,
 	});
 

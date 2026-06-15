@@ -21,14 +21,20 @@ import { bootV1, type V1Context } from '$lib/v1';
 //      screen. So boot is wrapped: on failure we return `v1: null` and the
 //      layout swaps in the error edge state instead of the page tree (so no
 //      descendant ever calls getV1Context() without a provider).
-export const load: LayoutLoad = async ({ url }) => {
+export const load: LayoutLoad = async ({ url, fetch }) => {
 	const lang = pathLocale(url.pathname);
 
 	let v1: V1Context | null = null;
 	let v1Error = false;
 	try {
-		v1 = await bootV1(lang);
+		// Thread the load `fetch` so SSR resolves the same-origin `/data/v1` base
+		// against the request origin (the Worker global fetch rejects relative URLs).
+		v1 = await bootV1(lang, { fetch });
 	} catch {
+		// SSR boot can fail on Cloudflare: a Worker's fetch to its OWN zone bypasses
+		// the sibling /data worker route and hits a non-existent origin (523). We
+		// fail soft to v1Error here and RE-BOOT client-side in +layout.svelte (the
+		// browser reaches /data fine). In dev the vite proxy makes this leg succeed.
 		v1Error = true;
 	}
 

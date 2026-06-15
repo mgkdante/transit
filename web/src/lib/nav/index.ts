@@ -8,7 +8,7 @@
 // branching on the reactive `layout.isDesktop` store. `routeFor` exposes the
 // shared canonical route map for deep-link / SSR hydration.
 
-export type { SurfaceKind, SurfaceTarget } from './intent';
-export { openSurface, routeFor, activePanel } from './intent';
+export type { SurfaceKind, SurfaceTarget } from './intent.svelte';
+export { openSurface, routeFor, activePanel } from './intent.svelte';
 
 export { layout, isDesktopViewport } from './layout.svelte';

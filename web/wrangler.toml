@@ -1,7 +1,30 @@
-# Cloudflare Pages config for the Transit citizen web app (slice-9.2).
-# /data/* is served by the existing zone-route worker (slice-9.1.1p) / data.yesid.dev —
-# this app reads it over HTTP and binds NO R2 bucket directly.
+# Cloudflare Worker (Static Assets) config for the Transit citizen web app
+# (slice-9.2). Deployed as a WORKER — not Pages — because the operator's
+# account API token carries Workers + Workers Routes + DNS + zone scope but
+# NOT Cloudflare Pages. adapter-cloudflare v7 targets either; the presence of
+# `main` + `[assets]` (and the absence of `pages_build_output_dir`) selects the
+# Workers build (emits `_worker.js` + `.assetsignore`, no `_routes.json`).
+#
+# /data/* stays on the existing zone-route worker (transit-data-proxy,
+# slice-9.1.1p): Cloudflare matches the MORE-SPECIFIC route first, so
+# `transit.yesid.dev/data/*` beats this app's `transit.yesid.dev/*` and the
+# data worker keeps serving the /v1 snapshot contract untouched. Re-run
+# infra/cloudflare/data-proxy/smoke.sh after any route change here.
 name = "transit-web"
+main = ".svelte-kit/cloudflare/_worker.js"
 compatibility_date = "2025-01-01"
 compatibility_flags = ["nodejs_compat"]
-pages_build_output_dir = ".svelte-kit/cloudflare"
+account_id = "eccfb9bedd87d413eaf4cac6ae2285d3"
+# transit.yesid.dev is the target; no public workers.dev fallback URL.
+workers_dev = false
+
+# Bind the app to the apex transit host. Routes are evaluated by specificity,
+# so the data-proxy's transit.yesid.dev/data/* route takes precedence here.
+# (Declared BEFORE [assets] — a trailing array would otherwise nest under it.)
+routes = [
+  { pattern = "transit.yesid.dev/*", zone_name = "yesid.dev" },
+]
+
+[assets]
+binding = "ASSETS"
+directory = ".svelte-kit/cloudflare"

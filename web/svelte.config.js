@@ -16,9 +16,12 @@ const config = {
 		},
 	},
 	kit: {
-		// Cloudflare Pages. Exclude /data/* from the Pages Function so the existing
-		// zone-route snapshot worker (slice-9.1.1p) keeps serving the /v1 contract;
-		// the Function never sees those paths. (Hashed assets are auto-excluded.)
+		// Cloudflare Worker (Static Assets) — see web/wrangler.toml. /data/* is kept
+		// off this app by Cloudflare ROUTE specificity: the data-proxy worker's
+		// transit.yesid.dev/data/* route beats this app's transit.yesid.dev/*.
+		// The `routes.exclude` below only affects the Pages `_routes.json` (a no-op
+		// in the Workers build) — retained so a future switch back to Pages still
+		// hands /data/* to the snapshot worker rather than this Function.
 		adapter: adapter({ routes: { exclude: ['/data/*'] } }),
 	},
 };

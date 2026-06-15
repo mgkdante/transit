@@ -9,7 +9,7 @@
 // (labels/{lang}.json) refines it. The adapter owns the URL/locale plumbing —
 // this module just delegates.
 
-import { adapter } from '$lib/v1/adapter';
+import { adapter, type AdapterCtx } from '$lib/v1/adapter';
 import type { Locale } from '$lib/i18n';
 
 /**
@@ -17,7 +17,9 @@ import type { Locale } from '$lib/i18n';
  *
  * Returns a flat `code -> text` map. Missing file / never-published labels
  * resolve to an empty map so resolveLabel() falls back to the raw code.
+ *
+ * `ctx` carries the SSR `fetch` — thread it under SSR (see getManifest).
  */
-export async function getLabels(lang: Locale): Promise<Record<string, string>> {
-	return adapter.labels.get(lang);
+export async function getLabels(lang: Locale, ctx?: AdapterCtx): Promise<Record<string, string>> {
+	return adapter.labels.get(lang, ctx);
 }
