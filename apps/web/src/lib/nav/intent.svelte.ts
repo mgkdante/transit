@@ -44,7 +44,7 @@ export interface SurfaceTarget {
 	id?: string;
 }
 
-/** Canonical (unlocalized, EN) URL roots per surface kind. */
+/** Canonical (unlocalized, EN) INDEX / singleton route root per surface kind. */
 const SURFACE_ROOT: Record<SurfaceKind, string> = {
 	home: '/',
 	'network-health': '/network',
@@ -54,6 +54,18 @@ const SURFACE_ROOT: Record<SurfaceKind, string> = {
 	vehicle: '/vehicles',
 };
 
+/**
+ * Per-entity DETAIL route roots. These DELIBERATELY differ from the plural index
+ * roots above: the line index is `/lines` but a single line's detail page is
+ * `/route/[id]`; the stop index is `/stops` but a stop's detail is `/stop/[id]`.
+ * A kind absent here has no detail route yet (vehicle) and falls back to its
+ * index root.
+ */
+const ENTITY_DETAIL_ROOT: Partial<Record<SurfaceKind, string>> = {
+	line: '/route',
+	stop: '/stop',
+};
+
 /** True for kinds whose canonical route addresses a single entity by id. */
 function isEntityKind(kind: SurfaceKind): boolean {
 	return kind === 'vehicle' || kind === 'stop' || kind === 'line';
@@ -61,21 +73,24 @@ function isEntityKind(kind: SurfaceKind): boolean {
 
 /**
  * The canonical, UNLOCALIZED page route for a target — the single map both the
- * mobile (route-push) and desktop (panel deep-link) halves agree on. Entity
- * kinds with an `id` resolve to `/{root}/{id}` (id URI-encoded); without an id,
- * or for singleton kinds, they resolve to the surface root.
+ * mobile (route-push) and desktop (panel deep-link) halves agree on. An entity
+ * kind WITH an `id` resolves to its DETAIL route `/{detailRoot}/{id}` (id
+ * URI-encoded) — note the detail root differs from the plural index root
+ * (`/route/[id]`, not `/lines/[id]`). Without an id, or for singleton kinds, it
+ * resolves to the surface (index) root.
  *
  * Localize at the navigation boundary with `localizeHref(routeFor(t), locale)` —
  * this function deliberately stays locale-agnostic so it is reusable for
  * canonical/sitemap/SSR contexts.
  */
 export function routeFor(target: SurfaceTarget): string {
-	const root = SURFACE_ROOT[target.kind];
 	const id = target.id?.trim();
 	if (isEntityKind(target.kind) && id) {
-		return `${root}/${encodeURIComponent(id)}`;
+		const detailRoot = ENTITY_DETAIL_ROOT[target.kind];
+		if (detailRoot) return `${detailRoot}/${encodeURIComponent(id)}`;
+		// No detail route for this kind yet (vehicle) — fall back to the index root.
 	}
-	return root;
+	return SURFACE_ROOT[target.kind];
 }
 
 /** Value-equality for targets — used to avoid redundant panel swaps. */
