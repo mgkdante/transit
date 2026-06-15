@@ -1,0 +1,52 @@
+name: web
+
+on:
+  pull_request:
+    paths:
+      - 'web/**'
+      - '.github/workflows/web.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'web/**'
+      - '.github/workflows/web.yml'
+
+defaults:
+  run:
+    working-directory: web
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      # P0.9 trust anchor: regenerate tokens and fail if the committed outputs drift.
+      - name: Token drift gate
+        run: |
+          pnpm tokens:build
+          git diff --exit-code -- src/lib/styles/tokens.css src/app.css src/lib/motion/tokens.ts
+
+      - name: Type-check
+        run: pnpm check
+
+      - name: Build (adapter-cloudflare)
+        run: pnpm build
+
+      - name: Unit tests
+        run: pnpm test

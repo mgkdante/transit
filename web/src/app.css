@@ -1,0 +1,431 @@
+/* Semantic CSS custom properties (--background, --foreground, --dataviz-*, etc.) */
+@import '$lib/styles/tokens.css';
+
+/* Tailwind CSS v4 (CSS-first config, no tailwind.config.js) */
+@import 'tailwindcss';
+
+/* Cross-browser mobile resets — Brave/Chrome/Safari Android consistency */
+*,
+*::before,
+*::after {
+	-webkit-tap-highlight-color: transparent;
+}
+html {
+	-webkit-text-size-adjust: 100%;
+	text-size-adjust: 100%;
+}
+button,
+[type='button'],
+[type='submit'],
+[type='reset'] {
+	-webkit-appearance: none;
+	appearance: none;
+}
+input,
+textarea,
+select {
+	-webkit-appearance: none;
+	appearance: none;
+}
+
+/* Tap-feedback primitives (reduced-motion-guarded). */
+@utility tap-press {
+	transition:
+		scale 120ms cubic-bezier(0.2, 0, 0, 1),
+		opacity 120ms cubic-bezier(0.2, 0, 0, 1);
+
+	&:active {
+		scale: 0.97;
+		opacity: 0.92;
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		transition: none;
+	}
+}
+
+@utility tap-feedback {
+	transition: opacity 120ms ease-out;
+
+	&:active {
+		opacity: 0.7;
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		transition: none;
+	}
+}
+
+/* shadcn-svelte component animations */
+@import 'tw-animate-css';
+
+/* Map the dark: variant to attribute-based theme switching.
+   .theme-dark wrapper included so dark: utilities also fire inside pinned-dark scenes. */
+@custom-variant dark (&:is([data-theme="dark"] *, .theme-dark *));
+
+/*
+  Static (non-theme-switching) tokens in Tailwind v4 @theme format: type scale,
+  radii, shadows, spacing, z-index, container widths.
+  GENERATED — owned by tools/tokens/build.ts. Do NOT hand-edit the sentinel region.
+  v4 naming: --color-* → bg-*/text-*/border-*, --font-* → font-*, --radius-* → rounded-*.
+*/
+/* ===== TOKENS:START ===== */
+/* GENERATED FROM tools/tokens/tokens.json — DO NOT EDIT */
+/* Hand-edits to this region will be overwritten on the next build. */
+/* Run `pnpm tokens:build` to regenerate. */
+@theme {
+  --font-heading: 'Inter Variable', 'Inter', system-ui, -apple-system, sans-serif;
+  --font-body: 'Inter Variable', 'Inter', system-ui, -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono Variable', 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+  --text-hero: clamp(4rem, min(9vw, 11svh), 8.125rem);
+  --text-hero-mobile: clamp(3rem, min(13vw, 8svh), 4rem);
+  --text-display: clamp(2.5rem, 5vw, 4rem);
+  --text-title: clamp(1.75rem, 4vw, 2.5rem);
+  --text-heading: clamp(1.25rem, 3vw, 1.5rem);
+  --text-subheading: 1.125rem;
+  --text-body: 1rem;
+  --text-small: 0.875rem;
+  --text-mono: 0.8125rem;
+  --text-caption: 0.75rem;
+  --text-micro: 0.625rem;
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-pill: 9999px;
+  --shadow-glow-sm: var(--shadow-glow-sm);
+  --shadow-glow-md: var(--shadow-glow-md);
+  --shadow-glow-lg: var(--shadow-glow-lg);
+  --shadow-card: var(--shadow-card);
+  --shadow-section: var(--shadow-section);
+  --shadow-nav: var(--shadow-nav);
+  --shadow-sheet: var(--shadow-sheet);
+  --z-index-base: var(--z-base);
+  --z-index-content: var(--z-content);
+  --z-index-rail: var(--z-rail);
+  --z-index-sheet: var(--z-sheet);
+  --z-index-menu: var(--z-menu);
+  --z-index-nav: var(--z-nav);
+  --width-content: var(--container-content);
+  --width-wide: var(--container-wide);
+  --spacing-page-x: var(--space-page-x);
+  --spacing-section-y: var(--space-section-y);
+  --spacing-card-gap: var(--space-card-gap);
+}
+/* ===== TOKENS:END ===== */
+
+/* Dynamic theme values — reference tokens.css via var(), resolve at runtime so
+   utilities flip with [data-theme]. shadcn convention: --color-{role} →
+   bg-{role}/text-{role}/border-{role}. */
+@theme inline {
+	/* Core semantic — shadcn convention */
+	--color-background: var(--background);
+	--color-foreground: var(--foreground);
+	--color-card: var(--card);
+	--color-card-foreground: var(--card-foreground);
+	--color-popover: var(--popover);
+	--color-popover-foreground: var(--popover-foreground);
+	--color-primary: var(--primary);
+	--color-primary-foreground: var(--primary-foreground);
+	--color-accent: var(--accent);
+	--color-accent-foreground: var(--accent-foreground);
+	--color-secondary: var(--secondary);
+	--color-secondary-foreground: var(--secondary-foreground);
+	--color-muted: var(--muted);
+	--color-muted-foreground: var(--muted-foreground);
+	--color-border: var(--border);
+	--color-ring: var(--ring);
+	--color-input: var(--input);
+	--color-destructive: var(--destructive);
+	--color-destructive-foreground: var(--destructive-foreground);
+
+	/* Sidebar — maps to existing semantic tokens for shadcn sidebar parts */
+	--color-sidebar: var(--background);
+	--color-sidebar-foreground: var(--foreground);
+	--color-sidebar-accent: var(--accent);
+	--color-sidebar-accent-foreground: var(--accent-foreground);
+	--color-sidebar-border: var(--border);
+	--color-sidebar-ring: var(--ring);
+	--color-sidebar-primary: var(--primary);
+	--color-sidebar-primary-foreground: var(--primary-foreground);
+
+	/* Brand extensions */
+	--color-terminal: var(--terminal);
+	--color-manifesto: var(--manifesto);
+	--color-accent-text: var(--accent-text);
+	--color-border-subtle: var(--border-subtle);
+	--color-border-strong: var(--border-strong);
+	--color-success: var(--success);
+	--color-primary-hover: var(--primary-hover);
+	--color-accent-hover: var(--accent-hover);
+	--color-signage-bg: var(--signage-bg);
+	--color-signage-text: var(--signage-text);
+
+	/* Data-viz scale (SEPARATE from semantic affordance tokens; slice-9.2 P0.8).
+	   Components encode DATA with these, never with --primary/--success/--destructive. */
+	--color-dataviz-status-early: var(--dataviz-status-early);
+	--color-dataviz-status-on-time: var(--dataviz-status-on-time);
+	--color-dataviz-status-late: var(--dataviz-status-late);
+	--color-dataviz-status-severe: var(--dataviz-status-severe);
+	--color-dataviz-status-unknown: var(--dataviz-status-unknown);
+	--color-dataviz-occupancy-empty: var(--dataviz-occupancy-empty);
+	--color-dataviz-occupancy-many-seats: var(--dataviz-occupancy-many-seats);
+	--color-dataviz-occupancy-few-seats: var(--dataviz-occupancy-few-seats);
+	--color-dataviz-occupancy-standing: var(--dataviz-occupancy-standing);
+	--color-dataviz-occupancy-full: var(--dataviz-occupancy-full);
+	--color-dataviz-severity-critical: var(--dataviz-severity-critical);
+	--color-dataviz-severity-high: var(--dataviz-severity-high);
+	--color-dataviz-severity-watch: var(--dataviz-severity-watch);
+	--color-dataviz-heatmap-0: var(--dataviz-heatmap-0);
+	--color-dataviz-heatmap-1: var(--dataviz-heatmap-1);
+	--color-dataviz-heatmap-2: var(--dataviz-heatmap-2);
+	--color-dataviz-heatmap-3: var(--dataviz-heatmap-3);
+	--color-dataviz-heatmap-4: var(--dataviz-heatmap-4);
+	--color-dataviz-heatmap-nodata: var(--dataviz-heatmap-nodata);
+	--color-dataviz-vehicle-on-time: var(--dataviz-vehicle-on-time);
+	--color-dataviz-vehicle-delayed: var(--dataviz-vehicle-delayed);
+	--color-dataviz-vehicle-cancelled: var(--dataviz-vehicle-cancelled);
+	--color-dataviz-vehicle-no-data: var(--dataviz-vehicle-no-data);
+}
+
+/* Self-hosted variable fonts — re-declare outside @theme so Tailwind v4 doesn't
+   strip the multi-word font names. */
+:root {
+	--font-heading: 'Inter Variable', 'Inter', system-ui, -apple-system, sans-serif;
+	--font-body: 'Inter Variable', 'Inter', system-ui, -apple-system, sans-serif;
+	--font-mono: 'JetBrains Mono Variable', 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+}
+
+/* Dark theme is the default — tokens.css handles var(--background) etc. */
+html {
+	background-color: var(--background);
+	color: var(--foreground);
+	font-family: var(--font-body);
+	overflow-x: clip;
+	overscroll-behavior: none;
+}
+
+/* No-overflow guarantees */
+body {
+	overflow-wrap: anywhere;
+	word-break: break-word;
+}
+img,
+svg,
+video,
+iframe,
+canvas {
+	max-width: 100%;
+	height: auto;
+}
+pre,
+code,
+table {
+	overflow-x: auto;
+	max-width: 100%;
+}
+
+/* Brand text selection — yellow highlight, black text */
+::selection {
+	background: var(--accent);
+	color: #000000;
+}
+
+/* Keyboard-focus polish — engineered, on-brand ring everywhere.
+   @layer base so component focus utilities still win; :where() keeps specificity low. */
+@layer base {
+	:where(a, button, input, textarea, select, summary, [tabindex]):focus-visible {
+		outline: 2px solid var(--primary);
+		outline-offset: 2px;
+	}
+}
+
+/* Skip-to-content link (a11y; slice-9.2 P1.3). Off-screen until focused. */
+.skip-link {
+	position: fixed;
+	left: -9999px;
+	top: 0;
+	z-index: 100;
+	background: var(--primary);
+	color: var(--background);
+	padding: 0.5rem 1rem;
+	border-radius: var(--radius-md);
+	font-family: var(--font-body);
+	font-weight: 600;
+}
+.skip-link:focus {
+	left: 0.5rem;
+	top: 0.5rem;
+}
+
+/* Brand scrollbar — orange thumb on transparent track */
+* {
+	scrollbar-width: thin;
+	scrollbar-color: color-mix(in srgb, var(--primary) 40%, transparent) transparent;
+}
+*::-webkit-scrollbar {
+	width: 6px;
+	height: 6px;
+}
+*::-webkit-scrollbar-track {
+	background: transparent;
+}
+*::-webkit-scrollbar-thumb {
+	background: color-mix(in srgb, var(--primary) 35%, transparent);
+	border-radius: 3px;
+}
+*::-webkit-scrollbar-thumb:hover {
+	background: color-mix(in srgb, var(--primary) 60%, transparent);
+}
+[data-theme='light'] *,
+.theme-light * {
+	scrollbar-color: color-mix(in srgb, var(--primary) 50%, transparent) transparent;
+}
+[data-theme='light'] *::-webkit-scrollbar-thumb,
+.theme-light *::-webkit-scrollbar-thumb {
+	background: color-mix(in srgb, var(--primary) 50%, transparent);
+}
+
+/* Circuit-grid schematic background — blueprint feel. The grid is the element's
+   OWN background-image so solid surfaces genuinely occlude it (no isolation/
+   stacking-context, so a fixed nav can still compete with overlays). */
+.circuit-grid {
+	position: relative;
+	background-image:
+		repeating-linear-gradient(90deg, var(--grid-block-marker) 0px, transparent 1px, transparent 400px),
+		repeating-linear-gradient(90deg, var(--grid-line-major) 0px, transparent 1px, transparent 80px),
+		repeating-linear-gradient(0deg, var(--grid-line-major) 0px, transparent 1px, transparent 80px),
+		repeating-linear-gradient(90deg, var(--grid-line-minor) 0px, transparent 1px, transparent 16px),
+		repeating-linear-gradient(0deg, var(--grid-line-minor) 0px, transparent 1px, transparent 16px);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   Light-theme hand overrides (hand-maintained; the generator owns only the
+   sentinel region). Dark = brand default; these fire under [data-theme="light"].
+   ═══════════════════════════════════════════════════════════════ */
+[data-theme='light'],
+.theme-light {
+	--shadow-card: 0 1px 2px rgba(28, 24, 19, 0.06), 0 4px 12px rgba(28, 24, 19, 0.08), inset 0 1px 0 var(--edge-highlight);
+	--shadow-nav: 0 4px 24px rgba(28, 24, 19, 0.1), 0 0 0 1px rgba(28, 24, 19, 0.04);
+	--shadow-section: 0 8px 32px rgba(28, 24, 19, 0.08);
+	--shadow-glow-sm: 0 0 6px color-mix(in srgb, var(--primary) 18%, transparent);
+	--shadow-glow-md: 0 0 12px color-mix(in srgb, var(--primary) 12%, transparent);
+	--shadow-glow-lg: 0 0 24px color-mix(in srgb, var(--primary) 9%, transparent), 0 0 60px color-mix(in srgb, var(--primary) 4%, transparent);
+	--shadow-sheet: 0 -8px 32px rgba(28, 24, 19, 0.12);
+	/* Stronger brand grid on paper (operator: light needs more structural demarcation). */
+	--border-brand: color-mix(in srgb, var(--primary) 60%, transparent);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   Global keyframes — single source, referenced by brand primitives.
+   ═══════════════════════════════════════════════════════════════ */
+@keyframes blink {
+	0%,
+	100% {
+		opacity: 1;
+	}
+	50% {
+		opacity: 0;
+	}
+}
+
+@keyframes pulse-glow {
+	0%,
+	100% {
+		opacity: 1;
+		box-shadow: 0 0 4px 1px rgb(var(--primary-rgb) / 0.5);
+	}
+	50% {
+		opacity: 0.7;
+		box-shadow: 0 0 10px 4px rgb(var(--primary-rgb) / 0.8);
+	}
+}
+
+@keyframes station-ping {
+	0% {
+		transform: scale(1);
+		opacity: 0.6;
+	}
+	75%,
+	100% {
+		transform: scale(2.5);
+		opacity: 0;
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.led-pulse {
+		animation: none;
+	}
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   Brand utility classes — shared patterns extracted from primitives.
+   Four-colour doctrine: label-section = quiet caption (muted); label-station =
+   the YELLOW wayfinding voice (overlines/section labels); label-metric = quiet
+   metric caption (the metric VALUE carries the yellow callout).
+   ═══════════════════════════════════════════════════════════════ */
+.label-section {
+	font-family: var(--font-mono);
+	font-size: var(--text-caption);
+	text-transform: uppercase;
+	letter-spacing: 0.1em;
+	color: var(--muted-foreground);
+}
+.label-station {
+	font-family: var(--font-mono);
+	font-size: var(--text-small);
+	letter-spacing: 3px;
+	text-transform: uppercase;
+	color: var(--accent-text);
+}
+.label-metric {
+	font-family: var(--font-mono);
+	font-size: var(--text-caption);
+	letter-spacing: 2px;
+	text-transform: uppercase;
+	color: var(--muted-foreground);
+}
+
+/* Gradient separator — brand orange fading to transparent */
+.brand-fade-line {
+	background: linear-gradient(90deg, var(--primary), transparent);
+	height: 1px;
+}
+
+/* Dashed divider — filter group separators (route-set orange voice, 2px). */
+.divider-dashed {
+	border-top: 2px dashed var(--border-rule);
+}
+
+/* Hidden scrollbar — preserves scroll, hides chrome */
+.scrollbar-hidden {
+	scrollbar-width: none;
+	-ms-overflow-style: none;
+}
+.scrollbar-hidden::-webkit-scrollbar {
+	display: none;
+}
+
+/* LED pulse — status dots and indicators */
+.led-pulse {
+	animation: pulse-glow 2s ease-in-out infinite;
+}
+
+/* MetricDisplay value — mobile shrink for the lg (text-title) size */
+@media (max-width: 768px) {
+	.metric-value.text-title {
+		font-size: var(--text-heading);
+	}
+}
+
+/* Anchor-link scroll offset so headings land below a sticky nav */
+h1[id],
+h2[id],
+h3[id],
+h4[id],
+h5[id],
+h6[id],
+[data-section-index] {
+	scroll-margin-top: calc(var(--nav-height, 64px) + 1rem);
+}

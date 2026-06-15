@@ -1,0 +1,7 @@
+# Cloudflare Pages config for the Transit citizen web app (slice-9.2).
+# /data/* is served by the existing zone-route worker (slice-9.1.1p) / data.yesid.dev —
+# this app reads it over HTTP and binds NO R2 bucket directly.
+name = "transit-web"
+compatibility_date = "2025-01-01"
+compatibility_flags = ["nodejs_compat"]
+pages_build_output_dir = ".svelte-kit/cloudflare"

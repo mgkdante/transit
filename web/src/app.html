@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+		<!-- Pre-paint theme resolution. Markup default stays dark (no-JS, crawlers, OG).
+		     Synchronous + before CSSOM => zero flash on every edge-cached page.
+		     localStorage choice wins; otherwise dark. (slice-9.2 P1.3) -->
+		<script>
+			(function () {
+				var d = document.documentElement,
+					t = null;
+				try {
+					t = localStorage.getItem('theme');
+				} catch (e) {}
+				if (t !== 'light' && t !== 'dark') {
+					t = 'dark';
+				}
+				d.dataset.theme = t;
+			})();
+		</script>
+		<!-- Fonts: self-hosted via @fontsource-variable (no external requests) -->
+		<link rel="icon" href="%sveltekit.assets%/favicon.svg" />
+		%sveltekit.head%
+	</head>
+	<body data-sveltekit-preload-data="hover">
+		<a class="skip-link" href="#main">Skip to content</a>
+		<div style="display: contents">%sveltekit.body%</div>
+	</body>
+</html>
