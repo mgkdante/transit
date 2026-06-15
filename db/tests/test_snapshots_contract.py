@@ -3,7 +3,7 @@ from pydantic import ValidationError
 from transit_ops.snapshots.contract import Vehicle, TripsFile, Trip, StopEta, Status
 from transit_ops.snapshots.contract import (
     RouteFile, RouteDirection, RouteStop, StopFile, ScheduledRoute,
-    RoutesIndex, RouteIndexEntry, StopsIndex, StopIndexEntry, LabelsFile,
+    RoutesIndex, StopsIndex, LabelsFile,
 )
 
 def test_vehicle_valid():
@@ -63,8 +63,7 @@ def test_labels_file_valid():
 
 def test_historic_models_valid():
     from transit_ops.snapshots.contract import (
-        NetworkTrend, RouteReliability, HeadwayPeriod, StopReliability, Hotspots, Hotspot,
-        RepeatOffenders, Offender, Receipt, AlertHistory, AlertHistoryEntry, Provenance,
+        NetworkTrend, RouteReliability, HeadwayPeriod, RepeatOffenders, Offender, Receipt, Provenance,
     )
     nt = NetworkTrend(generated_utc="t", series=[{"date": "2026-05-30", "otp_pct": 39, "avg_delay_min": 3.4, "p90_min": 11, "vehicles": 612}])
     assert nt.series[0].otp_pct == 39
@@ -82,7 +81,7 @@ def test_historic_models_valid():
 def test_artifact_models_require_generated_utc():
     """Every published artifact model now requires a generated_utc stamp."""
     from transit_ops.snapshots.contract import (
-        NetworkTrend, RoutesIndex, StopsIndex, AlertsFile, NetworkFile,
+        NetworkTrend, AlertsFile, NetworkFile,
     )
 
     with pytest.raises(ValidationError):
