@@ -20,7 +20,8 @@
 	import { onMount } from 'svelte';
 	import type { Map as MapLibreMap } from 'maplibre-gl';
 	import { getLocale, type Locale } from '$lib/i18n';
-	import { createLiveStore, getV1Context, STATUS_CODES, OCCUPANCY_CODES } from '$lib/v1';
+	import { createLiveStore, getV1Context, getBasemap, STATUS_CODES, OCCUPANCY_CODES } from '$lib/v1';
+	import { createResource } from '$lib/v1/resource.svelte';
 	import {
 		MapStage,
 		bakeVehicleSprites,
@@ -36,6 +37,10 @@
 
 	const locale: Locale = getLocale();
 	const t = $derived(MAP_COPY[locale]);
+
+	// Basemap pointer (the hosted Montréal PMTiles archive), or null → MapStage
+	// falls back to the minimal-dark style. Client-only fetch via createResource.
+	const basemap = createResource(() => getBasemap());
 
 	// Live tier — one store for this surface; the v1 context is booted by the time
 	// the page tree renders, so getV1Context() is safe here.
@@ -66,7 +71,17 @@
 </script>
 
 <div class="map-hero">
-	<MapStage class="map-hero-stage" onready={onMapReady} label={t.mapLabel} />
+	<!-- Gate the map's creation on the basemap pointer resolving (data or null),
+	     so MapStage builds with its FINAL style once. A post-mount basemap swap
+	     would setStyle and wipe the vehicle layers added in onready. -->
+	{#if basemap.settled}
+		<MapStage
+			class="map-hero-stage"
+			basemap={basemap.data}
+			onready={onMapReady}
+			label={t.mapLabel}
+		/>
+	{/if}
 
 	<!-- Top-left: heading + the Statut|Crowding mode toggle. -->
 	<div class="map-overlay map-head">

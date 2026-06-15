@@ -19,8 +19,8 @@ concurrency:
 
 env:
   # Bump if the go-pmtiles release asset name/version drifts (confirm at
-  # https://github.com/protomaps/go-pmtiles/releases).
-  PMTILES_VERSION: "1.22.0"
+  # https://github.com/protomaps/go-pmtiles/releases). Verified working 2026-06-15.
+  PMTILES_VERSION: "1.30.3"
   # Looser than the manifest bbox [-74.1,45.25,-73.2,45.75] on purpose so pans
   # never hit a grey tile edge: island + Laval/Longueuil margin.
   BBOX: "-74.20,45.20,-73.10,45.80"

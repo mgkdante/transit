@@ -24,6 +24,7 @@ import {
 	getStopReliability,
 } from './historic';
 import { getProvenance } from './provenance';
+import { getBasemap } from './basemap';
 
 /** Per-family repository ports — the `repositories` grouping in $lib/v1. */
 export const repositories = {
@@ -59,6 +60,9 @@ export const repositories = {
 	provenance: {
 		get: getProvenance,
 	},
+	basemap: {
+		get: getBasemap,
+	},
 } as const;
 
 // Flat named exports — direct-import path for callers that want one function.
@@ -77,3 +81,4 @@ export {
 	getStopReliability,
 } from './historic';
 export { getProvenance } from './provenance';
+export { getBasemap } from './basemap';
