@@ -8,18 +8,18 @@ import { visualizer } from 'rollup-plugin-visualizer';
 export default defineConfig({
 	// Relocate Vitest's cache out of node_modules/.vite so CI can cache it safely.
 	cacheDir: process.env.VITEST ? '.vitest/cache' : undefined,
-	// Dev-only snapshot proxy. In production the /v1 contract is served by the
-	// data.yesid.dev zone-route worker; locally we proxy `/data/*` to it so the
-	// app fetches relative `/data/...` URLs without CORS or a hardcoded origin.
-	// The `/data` prefix is stripped, so `/data/network.json` → the worker's
-	// `https://data.yesid.dev/v1/network.json`.
+	// Dev-only snapshot proxy. In production the /v1 contract is served same-origin
+	// by the transit.yesid.dev/data/* zone-route worker (transit-data-proxy);
+	// locally we proxy `/data/*` to that live worker so the app fetches relative
+	// `/data/v1/...` URLs without CORS or a hardcoded origin. NO rewrite — the
+	// full `/data/v1/...` path is the worker's servable key (and the pmtiles
+	// basemap relies on its Range/206 passthrough), so we keep the prefix intact.
 	server: {
 		proxy: {
 			'/data': {
-				target: 'https://data.yesid.dev/v1',
+				target: 'https://transit.yesid.dev',
 				changeOrigin: true,
 				secure: true,
-				rewrite: (path) => path.replace(/^\/data/, ''),
 			},
 		},
 	},
