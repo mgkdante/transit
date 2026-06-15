@@ -1,0 +1,74 @@
+{
+  "$defs": {
+    "StopDeparture": {
+      "properties": {
+        "delay_min": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Delay Min"
+        },
+        "eta_utc": {
+          "title": "Eta Utc",
+          "type": "string"
+        },
+        "route": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Route"
+        },
+        "trip": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Trip"
+        }
+      },
+      "required": [
+        "eta_utc"
+      ],
+      "title": "StopDeparture",
+      "type": "object"
+    }
+  },
+  "properties": {
+    "generated_utc": {
+      "title": "Generated Utc",
+      "type": "string"
+    },
+    "stops": {
+      "additionalProperties": {
+        "items": {
+          "$ref": "#/$defs/StopDeparture"
+        },
+        "type": "array"
+      },
+      "title": "Stops",
+      "type": "object"
+    }
+  },
+  "required": [
+    "generated_utc"
+  ],
+  "title": "StopDeparturesFile",
+  "type": "object"
+}

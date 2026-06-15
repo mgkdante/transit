@@ -1,0 +1,149 @@
+<!--
+  SeoHead — per-page document head: title, description, canonical, hreflang
+  alternates, Open Graph + Twitter cards (slice-9.2 P5 SEO glue).
+
+  Self-contained and contract-aligned: locale handling goes through the shared
+  `$lib/i18n` helpers (localizeHref / SUPPORTED_LOCALES / DEFAULT_LOCALE) so EN
+  stays unprefixed and FR gets the `/fr` prefix exactly once, idempotently. The
+  og:image points at the pre-built default card `static/og/{lang}.png` (emitted
+  by `scripts/build-og.ts`); the script ships en + fr, so the image URL always
+  resolves to a committed asset.
+
+  Adapted from yesid.dev apps/web/src/lib/components/seo/SeoHead.svelte — gsap /
+  CMS / JsonLd marketing dependencies stripped, re-themed to transit tokens and
+  the transit i18n contract.
+
+  Usage (per page):
+    <SeoHead
+      title="Network health"
+      description="Live STM on-time performance…"
+      path="/network-health"
+      locale={getLocale()}
+    />
+-->
+<script lang="ts">
+	import { dev as runtimeDev } from '$app/environment';
+	import {
+		DEFAULT_LOCALE,
+		SUPPORTED_LOCALES,
+		localizeHref,
+		type Locale
+	} from '$lib/i18n';
+
+	interface SeoHeadProps {
+		/** Page title (already localized by the caller). Site name is appended. */
+		title: string;
+		/** Meta description (already localized). Aim for ~150–160 chars. */
+		description: string;
+		/** Canonical PAGE path, locale-less (e.g. '/route/165'). Defaults to '/'. */
+		path?: string;
+		/** Active request locale. Drives canonical prefix + og:image selection. */
+		locale: Locale;
+		/** Absolute site origin (no trailing slash). */
+		siteOrigin?: string;
+		/** Public-facing site name, appended to <title> and used as og:site_name. */
+		siteName?: string;
+		/** theme-color meta. Defaults to the dark --background board color. */
+		themeColor?: string;
+		/** Emit robots noindex,nofollow (utility / staging surfaces). */
+		noIndex?: boolean;
+		/** Suppress hreflang alternates (single-locale surfaces). */
+		singleLocale?: boolean;
+		/** Test seam to force the dev-warning path. */
+		dev?: boolean;
+	}
+
+	let {
+		title,
+		description,
+		path = '/',
+		locale,
+		siteOrigin = 'https://transit.yesid.dev',
+		siteName = 'Transit · STM Analytics',
+		themeColor = '#141414',
+		noIndex = false,
+		singleLocale = false,
+		dev = runtimeDev
+	}: SeoHeadProps = $props();
+
+	// Title: append the site name unless the page already is the site name.
+	const fullTitle = $derived(title === siteName ? title : `${title} · ${siteName}`);
+
+	// Canonical: locale-prefixed page path on the absolute origin.
+	const canonical = $derived(`${siteOrigin}${localizeHref(path, locale)}`);
+
+	// og:image — the pre-built default card for this locale.
+	const ogImage = $derived(`${siteOrigin}/og/${locale}.png`);
+	const ogImageAlt = $derived(`${siteName} — ${title}`);
+
+	// og:locale uses BCP-47-ish underscore form (Montréal market → _CA).
+	const ogLocale = $derived(`${locale}_CA`);
+	const altLocales = $derived(
+		SUPPORTED_LOCALES.filter((l) => l !== locale).map((l) => `${l}_CA`)
+	);
+
+	// Dev-only ergonomics: warn (never throw) on lengths that risk SERP/social
+	// truncation. Production renders untouched.
+	$effect(() => {
+		if (!dev) return;
+		if (fullTitle.length > 60) {
+			console.warn(
+				`[SeoHead] title > 60 chars (${fullTitle.length}) — may truncate in search. path: ${path}`
+			);
+		}
+		if (description.length < 120 || description.length > 160) {
+			console.warn(
+				`[SeoHead] description outside 120–160 chars (${description.length}). path: ${path}`
+			);
+		}
+	});
+</script>
+
+<svelte:head>
+	<title>{fullTitle}</title>
+	<meta name="description" content={description} />
+	<link rel="canonical" href={canonical} />
+
+	<meta name="theme-color" content={themeColor} />
+	<meta name="color-scheme" content="dark light" />
+
+	{#if noIndex}
+		<meta name="robots" content="noindex,nofollow" />
+	{/if}
+
+	<!-- Open Graph -->
+	<meta property="og:title" content={fullTitle} />
+	<meta property="og:description" content={description} />
+	<meta property="og:image" content={ogImage} />
+	<meta property="og:image:alt" content={ogImageAlt} />
+	<meta property="og:image:width" content="1200" />
+	<meta property="og:image:height" content="630" />
+	<meta property="og:image:type" content="image/png" />
+	<meta property="og:url" content={canonical} />
+	<meta property="og:type" content="website" />
+	<meta property="og:site_name" content={siteName} />
+	<meta property="og:locale" content={ogLocale} />
+	{#each altLocales as alt (alt)}
+		<meta property="og:locale:alternate" content={alt} />
+	{/each}
+
+	<!-- Twitter -->
+	<meta name="twitter:card" content="summary_large_image" />
+	<meta name="twitter:title" content={fullTitle} />
+	<meta name="twitter:description" content={description} />
+	<meta name="twitter:image" content={ogImage} />
+	<meta name="twitter:image:alt" content={ogImageAlt} />
+
+	<!-- hreflang alternates per supported locale + x-default (EN). Suppressed on
+	     single-locale surfaces. -->
+	{#if !singleLocale}
+		{#each SUPPORTED_LOCALES as l (l)}
+			<link rel="alternate" hreflang={l} href={`${siteOrigin}${localizeHref(path, l)}`} />
+		{/each}
+		<link
+			rel="alternate"
+			hreflang="x-default"
+			href={`${siteOrigin}${localizeHref(path, DEFAULT_LOCALE)}`}
+		/>
+	{/if}
+</svelte:head>

@@ -1,0 +1,88 @@
+{
+  "$defs": {
+    "Offender": {
+      "properties": {
+        "avg_delay_min": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Avg Delay Min"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "recurrence": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Recurrence"
+        },
+        "route": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Route"
+        },
+        "route_name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Route Name"
+        },
+        "type": {
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "id"
+      ],
+      "title": "Offender",
+      "type": "object"
+    }
+  },
+  "properties": {
+    "generated_utc": {
+      "title": "Generated Utc",
+      "type": "string"
+    },
+    "offenders": {
+      "items": {
+        "$ref": "#/$defs/Offender"
+      },
+      "title": "Offenders",
+      "type": "array"
+    }
+  },
+  "required": [
+    "generated_utc"
+  ],
+  "title": "RepeatOffenders",
+  "type": "object"
+}

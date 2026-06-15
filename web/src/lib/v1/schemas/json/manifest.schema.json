@@ -1,0 +1,274 @@
+{
+  "$defs": {
+    "ManifestFiles": {
+      "properties": {
+        "historic": {
+          "$ref": "#/$defs/ManifestHistoricFiles"
+        },
+        "live": {
+          "$ref": "#/$defs/ManifestLiveFiles"
+        },
+        "static": {
+          "$ref": "#/$defs/ManifestStaticFiles"
+        }
+      },
+      "required": [
+        "live"
+      ],
+      "title": "ManifestFiles",
+      "type": "object"
+    },
+    "ManifestHistoricFiles": {
+      "properties": {
+        "alert_history": {
+          "default": "historic/alert_history.json",
+          "title": "Alert History",
+          "type": "string"
+        },
+        "generated_utc": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "DATA time of the current historic build; null = historic tier never published",
+          "title": "Generated Utc"
+        },
+        "hotspots": {
+          "default": "historic/hotspots.json",
+          "title": "Hotspots",
+          "type": "string"
+        },
+        "network_trend": {
+          "default": "historic/network_trend.json",
+          "title": "Network Trend",
+          "type": "string"
+        },
+        "provenance": {
+          "default": "provenance.json",
+          "title": "Provenance",
+          "type": "string"
+        },
+        "receipts_index": {
+          "default": "historic/receipts/index.json",
+          "description": "discovery index of published receipt dates; HTTP 404 means no data for this entity \u2014 render empty state, not an error",
+          "title": "Receipts Index",
+          "type": "string"
+        },
+        "receipts_prefix": {
+          "default": "historic/receipts/",
+          "description": "fetch {receipts_prefix}{date}.json (dates from receipts_index); HTTP 404 means no data for this entity \u2014 render empty state, not an error",
+          "title": "Receipts Prefix",
+          "type": "string"
+        },
+        "repeat_offenders": {
+          "default": "historic/repeat_offenders.json",
+          "title": "Repeat Offenders",
+          "type": "string"
+        },
+        "route_reliability_prefix": {
+          "default": "historic/route_reliability/",
+          "description": "fetch {route_reliability_prefix}{route_id}.json; HTTP 404 means no data for this entity \u2014 render empty state, not an error",
+          "title": "Route Reliability Prefix",
+          "type": "string"
+        },
+        "stop_reliability_prefix": {
+          "default": "historic/stop_reliability/",
+          "description": "fetch {stop_reliability_prefix}{stop_id}.json; HTTP 404 means no data for this entity \u2014 render empty state, not an error",
+          "title": "Stop Reliability Prefix",
+          "type": "string"
+        },
+        "ttl_s": {
+          "default": 86400,
+          "title": "Ttl S",
+          "type": "integer"
+        }
+      },
+      "title": "ManifestHistoricFiles",
+      "type": "object"
+    },
+    "ManifestLiveFiles": {
+      "properties": {
+        "alerts": {
+          "default": "live/alerts.json",
+          "title": "Alerts",
+          "type": "string"
+        },
+        "generated_utc": {
+          "title": "Generated Utc",
+          "type": "string"
+        },
+        "network": {
+          "default": "live/network.json",
+          "title": "Network",
+          "type": "string"
+        },
+        "stop_departures": {
+          "default": "live/stop_departures.json",
+          "title": "Stop Departures",
+          "type": "string"
+        },
+        "trips": {
+          "default": "live/trips.json",
+          "title": "Trips",
+          "type": "string"
+        },
+        "ttl_s": {
+          "default": 30,
+          "title": "Ttl S",
+          "type": "integer"
+        },
+        "vehicles": {
+          "default": "live/vehicles.json",
+          "title": "Vehicles",
+          "type": "string"
+        }
+      },
+      "required": [
+        "generated_utc"
+      ],
+      "title": "ManifestLiveFiles",
+      "type": "object"
+    },
+    "ManifestStaticFiles": {
+      "properties": {
+        "basemap": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "static/basemap.json pointer; null until SNAPSHOT_BASEMAP_PMTILES_URL is set",
+          "title": "Basemap"
+        },
+        "generated_utc": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "DATA time of the current static dataset; null = static tier never published",
+          "title": "Generated Utc"
+        },
+        "routes_index": {
+          "default": "static/routes_index.json",
+          "title": "Routes Index",
+          "type": "string"
+        },
+        "routes_prefix": {
+          "default": "static/routes/",
+          "description": "fetch {routes_prefix}{route_id}.json; HTTP 404 means no data for this entity \u2014 render empty state, not an error",
+          "title": "Routes Prefix",
+          "type": "string"
+        },
+        "stops_index": {
+          "default": "static/stops_index.json",
+          "title": "Stops Index",
+          "type": "string"
+        },
+        "stops_prefix": {
+          "default": "static/stops/",
+          "description": "fetch {stops_prefix}{stop_id}.json; HTTP 404 means no data for this entity \u2014 render empty state, not an error",
+          "title": "Stops Prefix",
+          "type": "string"
+        },
+        "ttl_s": {
+          "default": 86400,
+          "title": "Ttl S",
+          "type": "integer"
+        }
+      },
+      "title": "ManifestStaticFiles",
+      "type": "object"
+    }
+  },
+  "properties": {
+    "attribution": {
+      "title": "Attribution",
+      "type": "string"
+    },
+    "basemap": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "absolute URL of the basemap pointer; null until a PMTiles archive is hosted",
+      "title": "Basemap"
+    },
+    "bbox": {
+      "items": {
+        "type": "number"
+      },
+      "title": "Bbox",
+      "type": "array"
+    },
+    "dataset_version": {
+      "title": "Dataset Version",
+      "type": "string"
+    },
+    "default_lang": {
+      "default": "fr",
+      "title": "Default Lang",
+      "type": "string"
+    },
+    "display_name": {
+      "title": "Display Name",
+      "type": "string"
+    },
+    "files": {
+      "$ref": "#/$defs/ManifestFiles"
+    },
+    "labels": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "title": "Labels",
+      "type": "object"
+    },
+    "provider": {
+      "title": "Provider",
+      "type": "string"
+    },
+    "surfaces": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Surfaces",
+      "type": "array"
+    },
+    "tz": {
+      "default": "America/Toronto",
+      "title": "Tz",
+      "type": "string"
+    }
+  },
+  "required": [
+    "provider",
+    "display_name",
+    "bbox",
+    "attribution",
+    "dataset_version",
+    "labels",
+    "files",
+    "surfaces"
+  ],
+  "title": "Manifest",
+  "type": "object"
+}

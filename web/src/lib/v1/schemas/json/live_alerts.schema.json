@@ -1,0 +1,133 @@
+{
+  "$defs": {
+    "Alert": {
+      "properties": {
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Description"
+        },
+        "description_en": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Description En"
+        },
+        "end_utc": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "End Utc"
+        },
+        "header_key": {
+          "title": "Header Key",
+          "type": "string"
+        },
+        "header_text": {
+          "default": "",
+          "title": "Header Text",
+          "type": "string"
+        },
+        "header_text_en": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Header Text En"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "routes": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Routes",
+          "type": "array"
+        },
+        "severity": {
+          "$ref": "#/$defs/Severity"
+        },
+        "start_utc": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Start Utc"
+        },
+        "stops": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Stops",
+          "type": "array"
+        }
+      },
+      "required": [
+        "id",
+        "severity",
+        "header_key"
+      ],
+      "title": "Alert",
+      "type": "object"
+    },
+    "Severity": {
+      "enum": [
+        "critical",
+        "high",
+        "watch"
+      ],
+      "title": "Severity",
+      "type": "string"
+    }
+  },
+  "properties": {
+    "alerts": {
+      "items": {
+        "$ref": "#/$defs/Alert"
+      },
+      "title": "Alerts",
+      "type": "array"
+    },
+    "generated_utc": {
+      "title": "Generated Utc",
+      "type": "string"
+    }
+  },
+  "required": [
+    "generated_utc",
+    "alerts"
+  ],
+  "title": "AlertsFile",
+  "type": "object"
+}

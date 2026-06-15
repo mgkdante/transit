@@ -67,7 +67,7 @@ select {
   Static (non-theme-switching) tokens in Tailwind v4 @theme format: type scale,
   radii, shadows, spacing, z-index, container widths.
   GENERATED — owned by tools/tokens/build.ts. Do NOT hand-edit the sentinel region.
-  v4 naming: --color-* → bg-*/text-*/border-*, --font-* → font-*, --radius-* → rounded-*.
+  v4 naming: --color-NAME makes bg-NAME / text-NAME / border-NAME; --font-NAME makes font-NAME; --radius-NAME makes rounded-NAME.
 */
 /* ===== TOKENS:START ===== */
 /* GENERATED FROM tools/tokens/tokens.json — DO NOT EDIT */

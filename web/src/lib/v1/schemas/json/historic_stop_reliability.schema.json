@@ -1,0 +1,120 @@
+{
+  "$defs": {
+    "StopByRoute": {
+      "properties": {
+        "median_delay_min": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Median Delay Min"
+        },
+        "route": {
+          "title": "Route",
+          "type": "string"
+        }
+      },
+      "required": [
+        "route"
+      ],
+      "title": "StopByRoute",
+      "type": "object"
+    },
+    "StopReliabilityPeriod": {
+      "properties": {
+        "grain": {
+          "title": "Grain",
+          "type": "string"
+        },
+        "median_delay_min": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Median Delay Min"
+        },
+        "otp_pct": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Otp Pct"
+        },
+        "severe_pct": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Severe Pct"
+        }
+      },
+      "required": [
+        "grain"
+      ],
+      "title": "StopReliabilityPeriod",
+      "type": "object"
+    }
+  },
+  "properties": {
+    "by_route": {
+      "items": {
+        "$ref": "#/$defs/StopByRoute"
+      },
+      "title": "By Route",
+      "type": "array"
+    },
+    "generated_utc": {
+      "title": "Generated Utc",
+      "type": "string"
+    },
+    "id": {
+      "title": "Id",
+      "type": "string"
+    },
+    "name": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Name"
+    },
+    "periods": {
+      "items": {
+        "$ref": "#/$defs/StopReliabilityPeriod"
+      },
+      "title": "Periods",
+      "type": "array"
+    }
+  },
+  "required": [
+    "generated_utc",
+    "id"
+  ],
+  "title": "StopReliability",
+  "type": "object"
+}

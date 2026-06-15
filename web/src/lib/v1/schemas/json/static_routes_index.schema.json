@@ -1,0 +1,70 @@
+{
+  "$defs": {
+    "RouteIndexEntry": {
+      "properties": {
+        "color": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Color"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "long": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Long"
+        },
+        "short": {
+          "title": "Short",
+          "type": "string"
+        },
+        "type": {
+          "title": "Type",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id",
+        "short",
+        "type"
+      ],
+      "title": "RouteIndexEntry",
+      "type": "object"
+    }
+  },
+  "properties": {
+    "generated_utc": {
+      "title": "Generated Utc",
+      "type": "string"
+    },
+    "routes": {
+      "items": {
+        "$ref": "#/$defs/RouteIndexEntry"
+      },
+      "title": "Routes",
+      "type": "array"
+    }
+  },
+  "required": [
+    "generated_utc",
+    "routes"
+  ],
+  "title": "RoutesIndex",
+  "type": "object"
+}

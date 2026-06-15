@@ -1,0 +1,133 @@
+{
+  "$defs": {
+    "AlertHistoryEntry": {
+      "properties": {
+        "duration_min": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Duration Min"
+        },
+        "end_utc": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "End Utc"
+        },
+        "header_text": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Header Text"
+        },
+        "header_text_en": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Header Text En"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "impact_passages": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Impact Passages"
+        },
+        "routes": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Routes",
+          "type": "array"
+        },
+        "severity": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Severity"
+        },
+        "start_utc": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Start Utc"
+        },
+        "stops": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Stops",
+          "type": "array"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "title": "AlertHistoryEntry",
+      "type": "object"
+    }
+  },
+  "properties": {
+    "alerts": {
+      "items": {
+        "$ref": "#/$defs/AlertHistoryEntry"
+      },
+      "title": "Alerts",
+      "type": "array"
+    },
+    "generated_utc": {
+      "title": "Generated Utc",
+      "type": "string"
+    }
+  },
+  "required": [
+    "generated_utc"
+  ],
+  "title": "AlertHistory",
+  "type": "object"
+}

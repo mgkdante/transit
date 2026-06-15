@@ -1,0 +1,265 @@
+{
+  "$defs": {
+    "HeadwayPeriod": {
+      "properties": {
+        "excess_wait_min": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Excess Wait Min"
+        },
+        "observed_min": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Observed Min"
+        },
+        "scheduled_min": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Scheduled Min"
+        },
+        "shift": {
+          "title": "Shift",
+          "type": "string"
+        }
+      },
+      "required": [
+        "shift"
+      ],
+      "title": "HeadwayPeriod",
+      "type": "object"
+    },
+    "ReliabilityPeriod": {
+      "properties": {
+        "avg_delay_min": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Avg Delay Min"
+        },
+        "date": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Date"
+        },
+        "grain": {
+          "title": "Grain",
+          "type": "string"
+        },
+        "otp_pct": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Otp Pct"
+        },
+        "p50_min": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "P50 Min"
+        },
+        "p90_min": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "P90 Min"
+        },
+        "severe_pct": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Severe Pct"
+        }
+      },
+      "required": [
+        "grain"
+      ],
+      "title": "ReliabilityPeriod",
+      "type": "object"
+    },
+    "RouteHabits": {
+      "properties": {
+        "matrix": {
+          "items": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "type": "array"
+          },
+          "title": "Matrix",
+          "type": "array"
+        },
+        "scale": {
+          "title": "Scale",
+          "type": "string"
+        }
+      },
+      "required": [
+        "scale"
+      ],
+      "title": "RouteHabits",
+      "type": "object"
+    },
+    "WeakStop": {
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "median_delay_min": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Median Delay Min"
+        },
+        "name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Name"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "title": "WeakStop",
+      "type": "object"
+    }
+  },
+  "properties": {
+    "generated_utc": {
+      "title": "Generated Utc",
+      "type": "string"
+    },
+    "habits": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/RouteHabits"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "headway": {
+      "items": {
+        "$ref": "#/$defs/HeadwayPeriod"
+      },
+      "title": "Headway",
+      "type": "array"
+    },
+    "id": {
+      "title": "Id",
+      "type": "string"
+    },
+    "name": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Name"
+    },
+    "periods": {
+      "items": {
+        "$ref": "#/$defs/ReliabilityPeriod"
+      },
+      "title": "Periods",
+      "type": "array"
+    },
+    "weak_stops": {
+      "items": {
+        "$ref": "#/$defs/WeakStop"
+      },
+      "title": "Weak Stops",
+      "type": "array"
+    }
+  },
+  "required": [
+    "generated_utc",
+    "id"
+  ],
+  "title": "RouteReliability",
+  "type": "object"
+}
