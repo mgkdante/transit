@@ -60,7 +60,6 @@ from transit_ops.snapshots.builders._helpers import (
     _shift_sort_min,
     _split_csv,
     _status_from_band,
-    _status_from_delay_seconds,
     _wallclock,
 )
 
@@ -159,7 +158,6 @@ __all__ = [
     "_split_csv",
     "_percentile",
     "_status_from_band",
-    "_status_from_delay_seconds",
     "_avg_delay_min",
     "_severe_pct",
     "_public_impact_score",
