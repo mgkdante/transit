@@ -40,8 +40,13 @@
 /data/*
   Cache-Control: no-store
 
-# Baseline security headers for every HTML/document response.
+# Baseline security headers for every response.
+# NOTE: script-src keeps 'unsafe-inline' for the pre-paint theme IIFE in app.html;
+# tightening to a hash/nonce-based script-src is a tracked follow-up.
 /*
   X-Content-Type-Options: nosniff
   Referrer-Policy: strict-origin-when-cross-origin
   X-Frame-Options: SAMEORIGIN
+  Permissions-Policy: camera=(), microphone=(), payment=(), geolocation=(self)
+  Strict-Transport-Security: max-age=63072000; includeSubDomains; preload
+  Content-Security-Policy: default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'self'; img-src 'self' data: blob: https:; font-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; connect-src 'self' https://data.yesid.dev https://transit.yesid.dev; worker-src 'self' blob:; manifest-src 'self'; upgrade-insecure-requests
