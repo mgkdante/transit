@@ -207,16 +207,22 @@ def test_build_vehicles_all_status_bands_map() -> None:
 def test_build_trips_groups_stops_and_converts_delay_to_minutes() -> None:
     conn = FakeConn(
         {
+            # status_band is now computed IN-QUERY by STATUS_BAND_CASE_SQL (gold's
+            # 0020 CASE); build_trips reads r["status_band"] and no longer buckets
+            # avg_delay_seconds in Python, so the fake rows must emit the label the
+            # query would (slice-9.1.1-theta). delay_min still derives from seconds.
             "current_trip_delay_computed": [
                 {
                     "trip_id": "T-1",
                     "route_id": "51",
-                    "avg_delay_seconds": 130.0,  # -> 2 min
+                    "avg_delay_seconds": 130.0,  # 130s -> 2 min; band 60<=s<300 -> Late
+                    "status_band": "En retard / Late",
                 },
                 {
                     "trip_id": "T-2",
                     "route_id": "97",
-                    "avg_delay_seconds": -200.0,  # early -> -3 min
+                    "avg_delay_seconds": -200.0,  # -200s -> -3 min; band s<-60 -> Early
+                    "status_band": "En avance / Early",
                 },
             ],
             "current_stop_next_departures": [
@@ -276,6 +282,43 @@ def test_trip_departures_sql_contract_60min_horizon() -> None:
     sql = str(builders._TRIP_DEPARTURES_SQL)
     assert "interval '60 minutes'" in sql
     assert "predicted_departure_utc <" in sql
+
+
+def test_status_band_case_sql_drift_guard_vs_0020() -> None:
+    """DB-free drift guard: STATUS_BAND_CASE_SQL must keep the migration-0020
+    thresholds and all five bilingual labels (slice-9.1.1-theta). If a future
+    edit moves a boundary or relabels a band, this fails before the real-DB
+    equivalence lock can (so it catches drift even offline)."""
+    from transit_ops.snapshots.builders._helpers import STATUS_BAND_CASE_SQL
+
+    sql = STATUS_BAND_CASE_SQL.format(col="avg_delay_seconds")
+    # the three numeric thresholds from the 0020 CASE
+    assert "-60" in sql
+    assert "60" in sql
+    assert "300" in sql
+    # all five bilingual labels (note the doubled '' SQL apostrophe escape)
+    for label in (
+        "Inconnu / Unknown",
+        "En avance / Early",
+        "À l''heure / On time",
+        "En retard / Late",
+        "Critique / Severe",
+    ):
+        assert label in sql
+
+
+def test_build_trips_status_band_computed_in_query_not_python() -> None:
+    """slice-9.1.1-theta: _TRIP_DELAY_SQL emits the status_band IN-QUERY (so the
+    Python recompute is gone) while keeping the SAME FROM/WHERE — the trip set
+    is unchanged, only a derived label column is added."""
+    from transit_ops.snapshots.builders.live import _TRIP_DELAY_SQL
+
+    sql = str(_TRIP_DELAY_SQL)
+    assert "AS status_band" in sql
+    assert "FROM gold.current_trip_delay_computed" in sql
+    assert "WHERE provider_id = :provider_id" in sql
+    # the band is derived in-query from avg_delay_seconds, never re-bucketed in Python
+    assert "CASE" in sql
 
 
 # --------------------------------------------------------------------------
