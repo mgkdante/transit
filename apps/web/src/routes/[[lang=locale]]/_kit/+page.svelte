@@ -60,6 +60,11 @@
 	// Edge states.
 	import { EdgeState } from '$lib/components/edge';
 
+	// Chrome & layout (Set-B brand + layout primitives).
+	import { TerminalChrome, StickyPanel } from '$lib/components/brand';
+	import { Footer } from '$lib/components/layout';
+	import { ResizablePaneGroup, ResizablePane, ResizableHandle } from '$lib/components/ui/resizable';
+
 	// --- Gallery controls --------------------------------------------------------
 	let lang = $state<Locale>(DEFAULT_LOCALE);
 	const isDark = $derived(themeStore.isDark);
@@ -393,6 +398,49 @@
 			{/each}
 		</div>
 	</section>
+
+	<section class="kit-section">
+		<SectionLabel
+			text={lang === 'fr' ? 'CHROME & DISPOSITION' : 'CHROME & LAYOUT'}
+			variant="section"
+		/>
+		<div class="kit-grid2">
+			<TerminalChrome
+				title="receipt.log"
+				tag="STM"
+				status="live"
+				footer={[
+					{ label: 'rows', value: '128' },
+					{ label: 'ms', value: '42' },
+				]}
+			>
+				<pre class="kit-term">route 165 — on_time 0.82
+stop 51234 — next 3 min
+vehicle 40231 — occupancy LOW</pre>
+			</TerminalChrome>
+
+			<StickyPanel top="1rem">
+				<SectionLabel text="STICKY" variant="metric" />
+				<p class="kit-lede">
+					{lang === 'fr' ? 'Panneau en position sticky.' : 'position: sticky panel.'}
+				</p>
+			</StickyPanel>
+
+			<div class="kit-resizable-demo kit-card-wide">
+				<ResizablePaneGroup direction="horizontal">
+					<ResizablePane defaultSize={55}>
+						<div class="kit-pane">{lang === 'fr' ? 'Carte' : 'Map'}</div>
+					</ResizablePane>
+					<ResizableHandle withHandle />
+					<ResizablePane defaultSize={45}>
+						<div class="kit-pane">{lang === 'fr' ? 'Détail' : 'Detail'}</div>
+					</ResizablePane>
+				</ResizablePaneGroup>
+			</div>
+		</div>
+	</section>
+
+	<Footer />
 </div>
 
 <style>
@@ -496,5 +544,26 @@
 	}
 	.kit-tabs-demo {
 		min-width: 16rem;
+	}
+	.kit-term {
+		margin: 0;
+		font-family: var(--font-mono);
+		font-size: var(--text-caption);
+		color: var(--secondary-foreground);
+		white-space: pre-wrap;
+	}
+	.kit-resizable-demo {
+		height: 9rem;
+		border: 1px solid var(--border);
+		border-radius: var(--radius-lg);
+		overflow: hidden;
+	}
+	.kit-pane {
+		display: grid;
+		place-items: center;
+		height: 100%;
+		font-family: var(--font-mono);
+		font-size: var(--text-small);
+		color: var(--muted-foreground);
 	}
 </style>
