@@ -4,54 +4,31 @@ import logging
 from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
-from urllib.error import HTTPError
 
-from sqlalchemy import text
 from sqlalchemy.engine import Engine
 
 from transit_ops.core.models import ProviderManifest
 from transit_ops.db.connection import make_engine
+from transit_ops.ingestion._versioned_capture import (
+    VersionedCaptureSpec,
+    _run_versioned_capture,
+)
 from transit_ops.ingestion.common import (
     DownloadedArtifact,
     build_bronze_object_storage_path,
     download_to_tempfile,
     get_feed_endpoint_id,
-    insert_ingestion_object,
-    insert_ingestion_run,
-    mark_ingestion_run_failed,
-    mark_ingestion_run_succeeded,
     project_root,
     safe_filename,
-    utc_now,
 )
 from transit_ops.ingestion.common import (
     compute_sha256_hex as _compute_sha256_hex,
 )
-from transit_ops.ingestion.dataset_versions import register_or_touch_dataset_version
 from transit_ops.ingestion.storage import get_bronze_storage, resolve_local_bronze_root
 from transit_ops.providers import ProviderRegistry
 from transit_ops.settings import Settings, get_settings
 
 logger = logging.getLogger(__name__)
-
-
-def _best_effort_delete_orphan(bronze_storage: object, storage_path: str) -> None:
-    """Best-effort delete of an uploaded Bronze object after a downstream failure.
-
-    Swallows and logs any delete error so it never masks the original exception.
-    """
-
-    try:
-        bronze_storage.delete_object(storage_path)
-    except Exception:
-        logger.exception(
-            "Failed to delete orphaned Bronze object after metadata failure: %s",
-            storage_path,
-        )
-
-
-def _project_root() -> Path:
-    return project_root()
 
 
 def _safe_filename(source_url: str) -> str:
@@ -136,14 +113,6 @@ class StaticIngestionResult:
         return payload
 
 
-@dataclass(frozen=True)
-class _DatasetVersionObservation:
-    first_seen_at_utc: datetime
-    last_seen_at_utc: datetime
-    observed_from_utc: datetime
-    observed_until_utc: datetime
-
-
 def build_static_ingestion_config(
     manifest: ProviderManifest,
     settings: Settings,
@@ -181,71 +150,14 @@ def _get_feed_endpoint_id(connection, provider_id: str, endpoint_key: str) -> in
         connection,
         provider_id=provider_id,
         endpoint_key=endpoint_key,
-        missing_message=(
-            "Static feed endpoint was not found in core.feed_endpoints. "
-            "Run seed-core before ingest-static."
-        ),
+        missing_message=_MISSING_ENDPOINT_MESSAGE,
     )
 
 
-def _dataset_version_observation(
-    connection,  # noqa: ANN001
-    *,
-    dataset_version_id: int,
-    fallback_observed_at_utc: datetime,
-) -> _DatasetVersionObservation:
-    row = (
-        connection.execute(
-            text(
-                """
-                SELECT
-                    first_seen_at_utc,
-                    last_seen_at_utc,
-                    observed_from_utc,
-                    observed_until_utc
-                FROM core.dataset_versions
-                WHERE dataset_version_id = :dataset_version_id
-                """
-            ),
-            {"dataset_version_id": dataset_version_id},
-        )
-        .mappings()
-        .one_or_none()
-    )
-    if row is None:
-        return _DatasetVersionObservation(
-            first_seen_at_utc=fallback_observed_at_utc,
-            last_seen_at_utc=fallback_observed_at_utc,
-            observed_from_utc=fallback_observed_at_utc,
-            observed_until_utc=fallback_observed_at_utc,
-        )
-    return _DatasetVersionObservation(
-        first_seen_at_utc=row["first_seen_at_utc"] or fallback_observed_at_utc,
-        last_seen_at_utc=row["last_seen_at_utc"] or fallback_observed_at_utc,
-        observed_from_utc=row["observed_from_utc"] or fallback_observed_at_utc,
-        observed_until_utc=row["observed_until_utc"] or fallback_observed_at_utc,
-    )
-
-
-def _set_dataset_version_source_object(
-    connection,  # noqa: ANN001
-    *,
-    dataset_version_id: int,
-    ingestion_object_id: int,
-) -> None:
-    connection.execute(
-        text(
-            """
-            UPDATE core.dataset_versions
-            SET source_ingestion_object_id = :ingestion_object_id
-            WHERE dataset_version_id = :dataset_version_id
-            """
-        ),
-        {
-            "dataset_version_id": dataset_version_id,
-            "ingestion_object_id": ingestion_object_id,
-        },
-    )
+_MISSING_ENDPOINT_MESSAGE = (
+    "Static feed endpoint was not found in core.feed_endpoints. "
+    "Run seed-core before ingest-static."
+)
 
 
 def ingest_static_feed(
@@ -257,179 +169,57 @@ def ingest_static_feed(
 ) -> StaticIngestionResult:
     settings = settings or get_settings()
     registry = registry or ProviderRegistry.from_project_root(
-        project_root=_project_root(),
+        project_root=project_root(),
         settings=settings,
     )
     manifest = registry.get_provider(provider_id)
     config = build_static_ingestion_config(manifest, settings)
-    bronze_root = resolve_local_bronze_root(settings, project_root=_project_root())
+    bronze_root = resolve_local_bronze_root(settings, project_root=project_root())
     bronze_storage = get_bronze_storage(
         settings,
-        project_root=_project_root(),
+        project_root=project_root(),
         storage_backend=config.storage_backend,
     )
-    started_at_utc = utc_now()
 
-    engine = engine or make_engine(settings)
-    with engine.begin() as connection:
-        feed_endpoint_id = _get_feed_endpoint_id(
-            connection,
-            provider_id=config.provider_id,
-            endpoint_key=config.endpoint_key,
-        )
-        ingestion_run_id = insert_ingestion_run(
-            connection,
-            provider_id=config.provider_id,
-            feed_endpoint_id=feed_endpoint_id,
-            run_kind=config.feed_kind,
-            requested_at_utc=started_at_utc,
-            started_at_utc=started_at_utc,
-        )
+    spec = VersionedCaptureSpec(
+        dataset_kind="static_schedule",
+        skipped_reason="static_content_unchanged",
+        build_config=build_static_ingestion_config,
+        build_storage_path=build_static_object_storage_path,
+        download=lambda source_url, temp_dir: _download_to_tempfile(source_url, temp_dir),
+        missing_endpoint_message=_MISSING_ENDPOINT_MESSAGE,
+    )
+    outcome = _run_versioned_capture(
+        provider_id,
+        spec=spec,
+        manifest=manifest,
+        settings=settings,
+        registry=registry,
+        engine=engine or make_engine(settings),
+        bronze_root=bronze_root,
+        bronze_storage=bronze_storage,
+    )
 
-    artifact: DownloadedArtifact | None = None
-    storage_path: str | None = None
-    persisted = False
-    try:
-        artifact = _download_to_tempfile(config.source_url, bronze_root / ".tmp")
-        storage_path = build_static_object_storage_path(
-            provider_id=config.provider_id,
-            endpoint_key=config.endpoint_key,
-            started_at_utc=started_at_utc,
-            source_url=config.source_url,
-            checksum_sha256=artifact.checksum_sha256,
-        )
-
-        observed_at_utc = utc_now()
-        with engine.begin() as connection:
-            dataset_version = register_or_touch_dataset_version(
-                connection,
-                provider_id=config.provider_id,
-                feed_endpoint_id=feed_endpoint_id,
-                dataset_kind="static_schedule",
-                checksum_sha256=artifact.checksum_sha256,
-                source_url=config.source_url,
-                storage_backend=config.storage_backend,
-                storage_path=storage_path,
-                byte_size=artifact.byte_size,
-                observed_at_utc=observed_at_utc,
-                parser_version="slice-8.4",
-                source_ingestion_run_id=ingestion_run_id,
-                source_ingestion_object_id=None,
-            )
-            observation = _dataset_version_observation(
-                connection,
-                dataset_version_id=dataset_version.dataset_version_id,
-                fallback_observed_at_utc=observed_at_utc,
-            )
-            if not dataset_version.content_changed:
-                completed_at_utc = utc_now()
-                mark_ingestion_run_succeeded(
-                    connection,
-                    ingestion_run_id=ingestion_run_id,
-                    completed_at_utc=completed_at_utc,
-                    http_status_code=artifact.http_status_code,
-                )
-                artifact.temp_path.unlink(missing_ok=True)
-                return StaticIngestionResult(
-                    provider_id=config.provider_id,
-                    endpoint_key=config.endpoint_key,
-                    source_url=config.source_url,
-                    storage_backend=config.storage_backend,
-                    storage_path=None,
-                    archive_full_path=None,
-                    byte_size=artifact.byte_size,
-                    checksum_sha256=artifact.checksum_sha256,
-                    http_status_code=artifact.http_status_code,
-                    ingestion_run_id=ingestion_run_id,
-                    ingestion_object_id=None,
-                    status=dataset_version.status,
-                    started_at_utc=started_at_utc,
-                    completed_at_utc=completed_at_utc,
-                    content_changed=False,
-                    dataset_version_id=dataset_version.dataset_version_id,
-                    first_seen_at_utc=observation.first_seen_at_utc,
-                    last_seen_at_utc=observation.last_seen_at_utc,
-                    observed_from_utc=observation.observed_from_utc,
-                    observed_until_utc=observation.observed_until_utc,
-                    skipped_reason="static_content_unchanged",
-                )
-
-            archive_reference = bronze_storage.persist_temp_file(artifact.temp_path, storage_path)
-            persisted = True
-            ingestion_object_id = insert_ingestion_object(
-                connection,
-                ingestion_run_id=ingestion_run_id,
-                provider_id=config.provider_id,
-                object_kind=config.source_format,
-                storage_backend=config.storage_backend,
-                storage_path=storage_path,
-                source_url=config.source_url,
-                checksum_sha256=artifact.checksum_sha256,
-                byte_size=artifact.byte_size,
-            )
-            _set_dataset_version_source_object(
-                connection,
-                dataset_version_id=dataset_version.dataset_version_id,
-                ingestion_object_id=ingestion_object_id,
-            )
-            completed_at_utc = utc_now()
-            mark_ingestion_run_succeeded(
-                connection,
-                ingestion_run_id=ingestion_run_id,
-                completed_at_utc=completed_at_utc,
-                http_status_code=artifact.http_status_code,
-            )
-
-        return StaticIngestionResult(
-            provider_id=config.provider_id,
-            endpoint_key=config.endpoint_key,
-            source_url=config.source_url,
-            storage_backend=config.storage_backend,
-            storage_path=storage_path,
-            archive_full_path=archive_reference,
-            byte_size=artifact.byte_size,
-            checksum_sha256=artifact.checksum_sha256,
-            http_status_code=artifact.http_status_code,
-            ingestion_run_id=ingestion_run_id,
-            ingestion_object_id=ingestion_object_id,
-            status="succeeded",
-            started_at_utc=started_at_utc,
-            completed_at_utc=completed_at_utc,
-            content_changed=True,
-            dataset_version_id=dataset_version.dataset_version_id,
-            first_seen_at_utc=observation.first_seen_at_utc,
-            last_seen_at_utc=observation.last_seen_at_utc,
-            observed_from_utc=observation.observed_from_utc,
-            observed_until_utc=observation.observed_until_utc,
-        )
-    except HTTPError as exc:
-        completed_at_utc = utc_now()
-        with engine.begin() as connection:
-            mark_ingestion_run_failed(
-                connection,
-                ingestion_run_id=ingestion_run_id,
-                completed_at_utc=completed_at_utc,
-                http_status_code=exc.code,
-                error_message=f"HTTP {exc.code}: {exc.reason}",
-            )
-        if artifact is not None:
-            artifact.temp_path.unlink(missing_ok=True)
-        if persisted and storage_path is not None:
-            _best_effort_delete_orphan(bronze_storage, storage_path)
-        raise
-    except Exception as exc:
-        completed_at_utc = utc_now()
-        http_status_code = artifact.http_status_code if artifact else None
-        with engine.begin() as connection:
-            mark_ingestion_run_failed(
-                connection,
-                ingestion_run_id=ingestion_run_id,
-                completed_at_utc=completed_at_utc,
-                http_status_code=http_status_code,
-                error_message=str(exc),
-            )
-        if artifact is not None:
-            artifact.temp_path.unlink(missing_ok=True)
-        if persisted and storage_path is not None:
-            _best_effort_delete_orphan(bronze_storage, storage_path)
-        raise
+    return StaticIngestionResult(
+        provider_id=outcome.provider_id,
+        endpoint_key=outcome.endpoint_key,
+        source_url=outcome.source_url,
+        storage_backend=outcome.storage_backend,
+        storage_path=outcome.storage_path,
+        archive_full_path=outcome.archive_full_path,
+        byte_size=outcome.byte_size,
+        checksum_sha256=outcome.checksum_sha256,
+        http_status_code=outcome.http_status_code,
+        ingestion_run_id=outcome.ingestion_run_id,
+        ingestion_object_id=outcome.ingestion_object_id,
+        status=outcome.status,
+        started_at_utc=outcome.started_at_utc,
+        completed_at_utc=outcome.completed_at_utc,
+        content_changed=outcome.content_changed,
+        dataset_version_id=outcome.dataset_version_id,
+        first_seen_at_utc=outcome.first_seen_at_utc,
+        last_seen_at_utc=outcome.last_seen_at_utc,
+        observed_from_utc=outcome.observed_from_utc,
+        observed_until_utc=outcome.observed_until_utc,
+        skipped_reason=outcome.skipped_reason,
+    )
