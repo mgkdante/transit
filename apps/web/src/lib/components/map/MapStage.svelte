@@ -66,6 +66,12 @@
 		basemap?: BasemapFile | null;
 		/** Accessible name for the map region (icon-/canvas-only control). */
 		label?: string;
+		/**
+		 * Fired ONCE with the Map after its style `load` event — the safe point to
+		 * `addImage`/`addSource`/`addLayer` (e.g. the live vehicle layer). Browser-
+		 * only; never invoked under SSR.
+		 */
+		onready?: (map: MapLibreMap) => void;
 		/** Consumer styling on the host wrapper. */
 		class?: string;
 	}
@@ -76,6 +82,7 @@
 		zoom = 11,
 		basemap = null,
 		label = 'Transit map',
+		onready,
 		class: className,
 	}: MapStageProps = $props();
 
@@ -115,6 +122,12 @@
 				attributionControl: { compact: true },
 			});
 
+			// Notify the consumer once the style is ready, so it can add images /
+			// sources / layers (the live vehicle layer) without racing the load.
+			instance.on('load', () => {
+				if (!disposed) onready?.(instance);
+			});
+
 			map = instance;
 		})();
 
@@ -134,12 +147,21 @@
 		m.jumpTo({ center, zoom });
 	});
 
-	// Swap the basemap style when the basemap pointer changes after creation.
+	// Swap the basemap style ONLY when the basemap pointer changes after the
+	// initial render. The constructor already applied the first style, so skip
+	// the mount run — a redundant setStyle would wipe any layers a consumer added
+	// via `onready` (e.g. the vehicle layer). A genuine later swap re-fires this;
+	// the consumer re-adds its layers on the map's `styledata` if it must.
+	let styleInited = false;
 	$effect(() => {
 		const m = map;
+		const b = basemap;
 		if (!m) return;
-		const next = resolveBasemapStyle({ basemap: basemap ? '' : null }, basemap);
-		m.setStyle(next);
+		if (!styleInited) {
+			styleInited = true;
+			return;
+		}
+		m.setStyle(resolveBasemapStyle({ basemap: b ? '' : null }, b));
 	});
 </script>
 

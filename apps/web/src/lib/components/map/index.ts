@@ -16,3 +16,23 @@ export {
 	toPmtilesUrl,
 	BASEMAP_SOURCE_ID,
 } from './basemap';
+
+// Live vehicle layer kit (slice-9.3) — sprite baker + source/layers + feature
+// builder + the near-me geo util. The runtime pieces touch the map only after
+// MapStage's onready; the geo helpers are pure + SSR-safe.
+export { bakeVehicleSprites, bodyIconId, glyphIconId, OCC_NODATA } from './vehicleSprites';
+
+export {
+	addVehicleSource,
+	addVehicleLayers,
+	setVehicles,
+	setStale,
+	applyFilter,
+	toVehicleFeatures,
+	VEHICLE_SOURCE,
+	VEHICLE_BODY_LAYER,
+	VEHICLE_GLYPH_LAYER,
+	type VehicleMode,
+} from './vehicleLayer';
+
+export { haversineMeters, nearestStops, type LatLon, type WithDistance } from './nearbyStops';
