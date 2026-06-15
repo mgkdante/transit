@@ -9,7 +9,7 @@
 # slice-9.1.1p): Cloudflare matches the MORE-SPECIFIC route first, so
 # `transit.yesid.dev/data/*` beats this app's `transit.yesid.dev/*` and the
 # data worker keeps serving the /v1 snapshot contract untouched. Re-run
-# infra/cloudflare/data-proxy/smoke.sh after any route change here.
+# apps/data-proxy/smoke.sh after any route change here.
 name = "transit-web"
 main = ".svelte-kit/cloudflare/_worker.js"
 compatibility_date = "2025-01-01"

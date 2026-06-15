@@ -19,7 +19,7 @@ They run ONLY when TRANSIT_TEST_DATABASE_URL points at a disposable Postgres
 with the transit schema applied AND migrated to head (>= 0041):
 
     pg_dump --schema-only -n core -n raw -n silver -n gold prod | psql repro
-    cd db && TRANSIT_TEST_DATABASE_URL=... uv run alembic upgrade head
+    cd apps/db && TRANSIT_TEST_DATABASE_URL=... uv run alembic upgrade head
     TRANSIT_TEST_DATABASE_URL=\
         "postgresql+psycopg://repro@/transit_repro?host=/tmp/failrepro" \
         uv run pytest tests/test_failure_rows_real_db.py -v

@@ -28,7 +28,7 @@ notion:
 
 ## Project
 
-**Transit** — near-real-time STM transit operations analytics pipeline. GTFS static and GTFS-Realtime feeds are captured to Bronze storage, normalized into Postgres, and published as versioned /v1 snapshots to Cloudflare R2 for the public citizen web app (web/). This is a portfolio project, not a SaaS product.
+**Transit** — near-real-time STM transit operations analytics pipeline. GTFS static and GTFS-Realtime feeds are captured to Bronze storage, normalized into Postgres, and published as versioned /v1 snapshots to Cloudflare R2 for the public citizen web app (apps/web/). This is a portfolio project, not a SaaS product.
 
 ## Workflow
 
@@ -117,6 +117,6 @@ Every piece of workflow state has exactly one canonical location. For Transit, t
 ## Stack-specific notes
 
 - **Runtime:** Python 3.12
-- **Core infra:** Oracle VM Postgres + Docker Compose, Cloudflare R2, Caddy, GitHub Actions, SvelteKit web app on Cloudflare (web/)
+- **Core infra:** Oracle VM Postgres + Docker Compose, Cloudflare R2, Caddy, GitHub Actions, SvelteKit web app on Cloudflare (apps/web/)
 - **Realtime cadence:** current runtime behavior lives in Notion → `Architecture` → `Runtime / Operations`
-- **Serving artifacts:** the /v1 R2 snapshot contract (bucket transit-snapshots) feeds web/; keep design/semantic explanations, validation notes, and portfolio framing in Notion
+- **Serving artifacts:** the /v1 R2 snapshot contract (bucket transit-snapshots) feeds apps/web/; keep design/semantic explanations, validation notes, and portfolio framing in Notion

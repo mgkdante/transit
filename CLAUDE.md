@@ -14,7 +14,7 @@ Business / Architecture / Runtime / Vocabulary / Roadmap / Slices / Sessions / T
 
 ## Build commands
 
-> **Monorepo:** the pipeline lives in `db/`, the web app in `web/`. Run all pipeline commands from `db/` (e.g. `cd db && uv run pytest tests -v`).
+> **Turborepo (bun + turbo):** apps live under `apps/` — `apps/db` (Python pipeline, uv), `apps/web` (SvelteKit citizen dashboard, bun), `apps/data-proxy` (Cloudflare `/v1` snapshot worker, bun). Run all pipeline commands from `apps/db/` (e.g. `cd apps/db && uv run pytest tests -v`). JS deps: `bun install` once at the repo root; `turbo run check|build|test` spans the workspace.
 
 - `uv sync` — install dependencies
 - `uv run pytest tests -v` — run tests

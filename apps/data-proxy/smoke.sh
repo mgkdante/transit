@@ -7,7 +7,7 @@
 # into the published manifest resolve end to end, while data.yesid.dev keeps
 # working untouched as the fallback origin.
 #
-# Usage: bash infra/cloudflare/data-proxy/smoke.sh
+# Usage: bash apps/data-proxy/smoke.sh
 #   CANONICAL_BASE / FALLBACK_BASE env vars override the probed hosts.
 set -euo pipefail
 

@@ -45,7 +45,7 @@ GTFS_DROP_RUNBOOK = """
 GTFS drop runbook — STM edition flip (next expected ~Aug 24; zips post ~10d early)
 
 HEAL (one-time, June-2026 drop predates migration 0029):
-  cd db && uv run python -m transit_ops.cli backfill-dim-history stm \\
+  cd apps/db && uv run python -m transit_ops.cli backfill-dim-history stm \\
       --from-gtfs-zip <archived-bronze-gtfs.zip>
   The zip comes from bronze R2 (365d retention). Newest old edition first —
   the first zip providing a missing id wins. Idempotent; current ids no-op.

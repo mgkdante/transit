@@ -1,5 +1,5 @@
 // Token build — ported from yesid.dev packages/tokens/build.ts off bun → tsx/node.
-// Run: `pnpm tokens:build` (script = `tsx tools/tokens/build.ts`).
+// Run: `bun run tokens:build` (script = `bun tools/tokens/build.ts`).
 // Source of truth: tools/tokens/tokens.json (DTCG). Emits 3 checked-in artifacts;
 // a CI `tokens:build && git diff --exit-code` gate keeps them in sync (slice-9.2 P0.9).
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';

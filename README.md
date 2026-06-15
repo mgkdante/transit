@@ -1,10 +1,11 @@
 # Transit
 
-**Monorepo — two domains:**
-- **`db/`** — the GTFS / GTFS-RT analytics **pipeline** (STM feeds → Bronze on R2 → Silver/Gold in Postgres). Run pipeline commands from `db/` (e.g. `cd db && uv run pytest tests -v`).
-- **`web/`** — the public **citizen web app** (SvelteKit on Cloudflare; live map + analytics fed by R2 snapshots of the gold marts). Design locked; not yet started.
+**Turborepo (bun + turbo) — apps under `apps/`:**
+- **`apps/db`** — the GTFS / GTFS-RT analytics **pipeline** (STM feeds → Bronze on R2 → Silver/Gold in Postgres), uv-managed. Run pipeline commands from `apps/db` (e.g. `cd apps/db && uv run pytest tests -v`).
+- **`apps/web`** — the public **citizen web app** (SvelteKit deployed as a Cloudflare Worker; live map + analytics fed by R2 snapshots of the gold marts). **Live at `transit.yesid.dev`.**
+- **`apps/data-proxy`** — the Cloudflare Worker serving the public `/v1` snapshot contract at `transit.yesid.dev/data/*`.
 
-> The legacy Power BI + ArcGIS reporting layer was retired (2026-05-30); the `web/` citizen app replaces it.
+> The legacy Power BI + ArcGIS reporting layer was retired (2026-05-30); the `apps/web` citizen app replaces it.
 
 This repo is the codebase and local artifact store for the project. Long-form business context, architecture notes, runtime decisions, and workflow state now live in the Transit Notion workspace. The repo should stay useful to an engineer opening it cold, but it is no longer the canonical place for that prose.
 
@@ -16,7 +17,7 @@ Start there for business context, architecture, runtime notes, and workflow stat
 
 ## Reporting — Citizen Web App
 
-The public reporting surface is a free, anonymous **SvelteKit web app** (live map + analytics) at `transit.yesid.dev`, fed by a versioned `/v1` R2 snapshot of the Gold marts. It reads only the `/v1` contract (edge-cached), never the database. It surfaces live STM network activity — active vehicles, route coverage, trip-delay KPIs, occupancy, alerts, and data freshness. Static schedule data refreshes daily; realtime vehicle and trip data on a 30-second cadence through the worker. Design is locked (see the Notion **Source of Truth** bundle); implementation is not yet started (`web/` is empty).
+The public reporting surface is a free, anonymous **SvelteKit web app** (live map + analytics) at `transit.yesid.dev`, fed by a versioned `/v1` R2 snapshot of the Gold marts. It reads only the `/v1` contract (edge-cached), never the database. It surfaces live STM network activity — active vehicles, route coverage, trip-delay KPIs, occupancy, alerts, and data freshness. Static schedule data refreshes daily; realtime vehicle and trip data on a 30-second cadence through the worker. Design is locked (see the Notion **Source of Truth** bundle); the slice-9.2 foundation is **live** at `transit.yesid.dev` (`apps/web`).
 
 ## What This Project Is
 
@@ -62,17 +63,17 @@ Notion is the source of truth for the deeper architecture breakdown, runtime beh
 - Durable Bronze archive through Cloudflare R2 today, with an S3-compatible code path
 - Silver normalization in Postgres
 - Gold serving tables and warm rollups
-- The citizen web app at `transit.yesid.dev` (design locked; not yet started)
+- The citizen web app at `transit.yesid.dev` (slice-9.2 foundation live)
 
 Provider-ready means the schema and manifests are structured so additional GTFS/GTFS-RT/GIS/i3-style providers can be added later, but STM/Montréal is the only active provider today.
 
 ## Quick Start
 
-Prerequisites: Python 3.12, [`uv`](https://github.com/astral-sh/uv), a Postgres connection string, Cloudflare R2 or S3-compatible credentials, and an STM API key for realtime capture. Run pipeline commands from `db/`.
+Prerequisites: Python 3.12, [`uv`](https://github.com/astral-sh/uv), a Postgres connection string, Cloudflare R2 or S3-compatible credentials, and an STM API key for realtime capture. Run pipeline commands from `apps/db`. (For the web app: `bun install` at the repo root, then `cd apps/web`.)
 
 ```bash
-cd db
-cp ../.env.example ../.env
+cd apps/db
+cp ../../.env.example ../../.env
 uv sync
 uv run transit-ops db-test
 uv run transit-ops init-db
@@ -198,8 +199,9 @@ The retention proof report also embeds the static validation result. These comma
 ## Repo Navigation
 
 ```text
-.github/workflows/                  CI: daily static pipeline + warm rollup build
-db/                                 Pipeline (run commands from here)
+.github/workflows/                  CI: daily static pipeline + warm rollup build + web + data-proxy
+package.json · turbo.json           Root bun + turbo workspace
+apps/db/                            Pipeline (run commands from here; uv-managed)
   src/transit_ops/
     ingestion/                      Feed capture and R2/S3 archiving
     silver/                         GTFS and GTFS-RT normalization
@@ -211,7 +213,9 @@ db/                                 Pipeline (run commands from here)
   scripts/                          Pipeline control helpers
   infra/postgres-serving-access/    Hardened reader grants
   Dockerfile / Dockerfile.health    Worker + health API containers
-web/                                Citizen web app (SvelteKit on Cloudflare)
+apps/web/                           Citizen web app (SvelteKit → Cloudflare Worker, live)
+apps/data-proxy/                    Cloudflare Worker serving /v1 at transit.yesid.dev/data/*
+packages/                           (reserved for future shared workspace packages)
 ```
 
 For workflow and canonical context, start with this README's Notion Home link and then [AGENTS.md](AGENTS.md) for the tool contract.

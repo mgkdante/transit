@@ -3,8 +3,8 @@
 // Renders the two DEFAULT social cards (en + fr) at 1200×630 and writes them to
 // `static/og/{lang}.png`, where SeoHead.svelte points `og:image` / `twitter:image`.
 //
-// Run:  `tsx scripts/build-og.ts`           (regenerate both cards)
-//       `tsx scripts/build-og.ts --check`   (CI: fail if regenerating would change them)
+// Run:  `bun scripts/build-og.ts`           (regenerate both cards)
+//       `bun scripts/build-og.ts --check`   (CI: fail if regenerating would change them)
 //
 // Pipeline: a plain-object element tree (Satori accepts the same shape
 // React.createElement emits — no JSX runtime needed) → Satori (SVG) →
@@ -320,7 +320,7 @@ async function main(): Promise<void> {
 	}
 
 	if (checkOnly && drift) {
-		console.error('[build-og] OG cards are out of date. Run `tsx scripts/build-og.ts`.');
+		console.error('[build-og] OG cards are out of date. Run `bun scripts/build-og.ts`.');
 		process.exit(1);
 	}
 }

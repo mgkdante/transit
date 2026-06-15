@@ -3,7 +3,7 @@
 How the SvelteKit app deploys to Cloudflare and how it talks to the `/v1`
 snapshot contract. Operational truth lives in the Transit Notion subtree
 (Runtime / Architecture); this file is the in-repo quick reference for the
-serving glue that ships in `web/`.
+serving glue that ships in `apps/web/`.
 
 ## Topology
 
@@ -89,7 +89,7 @@ deployed Worker. Production resolves `/data/*` at the zone/origin level (the
 ## Open Graph cards
 
 `scripts/build-og.ts` renders `static/og/en.png` and `static/og/fr.png`
-(1200×630) from vendored TTFs in `scripts/og-fonts/`. Run `tsx scripts/build-og.ts`
+(1200×630) from vendored TTFs in `scripts/og-fonts/`. Run `bun scripts/build-og.ts`
 to regenerate (or `--check` in CI to fail on drift). `SeoHead.svelte` points
 `og:image` at `/og/{lang}.png`; those assets are served static with the `/og/*`
 TTL above.

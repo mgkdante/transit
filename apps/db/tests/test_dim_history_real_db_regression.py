@@ -15,7 +15,7 @@ with the transit schema applied. Throwaway cluster recipe:
     createdb -h /tmp/dimhist_pg -p 55433 transit_repro
     # restore schema from prod (either AFTER prod ran migration 0029, or
     # restore the pre-0029 dump and then apply 0029 by hand:
-    #   cd db && DATABASE_URL=postgresql+psycopg://...55433/transit_repro \
+    #   cd apps/db && DATABASE_URL=postgresql+psycopg://...55433/transit_repro \
     #       uv run python -m transit_ops.cli init-db
     psql -h /tmp/dimhist_pg -p 55433 transit_repro < schema_only_dump.sql
 
