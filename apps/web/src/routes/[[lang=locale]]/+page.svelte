@@ -21,6 +21,7 @@
 	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
 	import MetricDisplay from '$lib/components/brand/MetricDisplay.svelte';
 	import StatusDot from '$lib/components/brand/StatusDot.svelte';
+	import { Surface } from '$lib/components/layout';
 
 	const locale: Locale = getLocale();
 	const ctx = getV1Context();
@@ -100,7 +101,7 @@
 	];
 </script>
 
-<section class="hub">
+<Surface width="content" pad="hub" class="hub">
 	<header class="hub-head">
 		<SectionLabel text={t.kicker} variant="station" />
 		<SectionHeading heading={manifest.display_name} level={1} dot />
@@ -132,17 +133,9 @@
 			</li>
 		{/each}
 	</ul>
-</section>
+</Surface>
 
 <style>
-	.hub {
-		max-width: var(--width-content);
-		margin-inline: auto;
-		padding: clamp(2rem, 6vw, 4rem) var(--space-page-x, 1.5rem);
-		display: flex;
-		flex-direction: column;
-		gap: clamp(2rem, 5vw, 3.5rem);
-	}
 	.hub-head {
 		display: flex;
 		flex-direction: column;

@@ -32,6 +32,21 @@ export type { SeverityBarProps } from './SeverityBar.svelte';
 export { default as StackedBar } from './StackedBar.svelte';
 export type { StackedBarProps, StackedSegment } from './StackedBar.svelte';
 
+export { default as ChartTooltip } from './ChartTooltip.svelte';
+export type { ChartTooltipProps } from './ChartTooltip.svelte';
+
+export { default as ChartLegend } from './ChartLegend.svelte';
+export type { ChartLegendProps, ChartLegendItem } from './ChartLegend.svelte';
+
+// Per-chart tooltip controller (rune factory) + its row/side/args types.
+export { createChartTooltip } from './useChartTooltip.svelte';
+export type {
+	ChartTooltipController,
+	ChartTooltipRow,
+	ChartTooltipShowArgs,
+	ChartTooltipSide,
+} from './useChartTooltip.svelte';
+
 // Internal token + glyph helpers (re-exported for consumers building bespoke
 // marks that must stay on the dataviz scale).
 export {

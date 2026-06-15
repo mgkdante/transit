@@ -15,6 +15,8 @@
 	import { cn, type WithElementRef } from '$lib/utils';
 	import type { HTMLAttributes } from 'svelte/elements';
 	import { heatmapColor, HEATMAP_NODATA } from './tokens';
+	import ChartTooltip from './ChartTooltip.svelte';
+	import { createChartTooltip } from './useChartTooltip.svelte';
 
 	export interface HeatmapProps extends WithElementRef<HTMLAttributes<HTMLDivElement>> {
 		/**
@@ -35,6 +37,12 @@
 		 * Default prints the raw value or "no data".
 		 */
 		cellTitle?: (day: number, hour: number, value: number | null) => string;
+		/**
+		 * Opt-in hover/focus interactivity: each cell becomes a focus target and
+		 * reveals a <ChartTooltip> instead of relying on the native <title>. Default
+		 * off so existing call sites stay byte-identical.
+		 */
+		interactive?: boolean;
 		class?: string;
 	}
 
@@ -45,6 +53,7 @@
 		gap = 2,
 		label,
 		cellTitle,
+		interactive = false,
 		class: className,
 		ref = $bindable(null),
 		...restProps
@@ -61,7 +70,14 @@
 	const width = $derived(LABEL_W + gridW);
 	const height = $derived(HOUR_AXIS_H + gridH);
 
-	type Cell = { x: number; y: number; fill: string; title: string };
+	type Cell = {
+		x: number;
+		y: number;
+		fill: string;
+		title: string;
+		heading: string;
+		valueText: string;
+	};
 
 	const cells = $derived.by<Cell[]>(() => {
 		const out: Cell[] = [];
@@ -92,21 +108,33 @@
 					y: HOUR_AXIS_H + r * step,
 					fill,
 					title,
+					heading: `${dayLabels[r] ?? `Day ${r + 1}`} ${String(c).padStart(2, '0')}:00`,
+					valueText: isNull ? 'no data' : String(raw),
 				});
 			}
 		}
 		return out;
 	});
+
+	// Interactive tooltip controller (only wired when `interactive`).
+	const tip = createChartTooltip();
+
+	function showCell(cl: Cell) {
+		if (!interactive) return;
+		tip.show({
+			xPct: ((cl.x + cell / 2) / width) * 100,
+			yPct: ((cl.y + cell / 2) / height) * 100,
+			heading: cl.heading,
+			rows: [{ colorVar: cl.fill, label: label ?? 'value', value: cl.valueText }],
+			side: 'top',
+		});
+	}
+	function hideTip() {
+		tip.hide();
+	}
 </script>
 
-<div
-	bind:this={ref}
-	class={cn('dv-heatmap inline-block', className)}
-	role="img"
-	aria-label={label ?? 'Heatmap by day and hour'}
-	data-slot="heatmap"
-	{...restProps}
->
+{#snippet svg()}
 	<svg
 		viewBox="0 0 {width} {height}"
 		width="100%"
@@ -138,9 +166,55 @@
 
 		<!-- Cells. -->
 		{#each cells as cl, i (i)}
-			<rect x={cl.x} y={cl.y} width={cell} height={cell} rx="1.5" fill={cl.fill}>
-				<title>{cl.title}</title>
-			</rect>
+			{#if interactive}
+				<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+				<rect
+					x={cl.x}
+					y={cl.y}
+					width={cell}
+					height={cell}
+					rx="1.5"
+					fill={cl.fill}
+					tabindex={0}
+					role="img"
+					aria-label={cl.title}
+					onpointerenter={() => showCell(cl)}
+					onpointerleave={hideTip}
+					onfocus={() => showCell(cl)}
+					onblur={hideTip}
+				>
+					<title>{cl.title}</title>
+				</rect>
+			{:else}
+				<rect x={cl.x} y={cl.y} width={cell} height={cell} rx="1.5" fill={cl.fill}>
+					<title>{cl.title}</title>
+				</rect>
+			{/if}
 		{/each}
 	</svg>
+{/snippet}
+
+<div
+	bind:this={ref}
+	class={cn('dv-heatmap inline-block', className)}
+	role="img"
+	aria-label={label ?? 'Heatmap by day and hour'}
+	data-slot="heatmap"
+	{...restProps}
+>
+	{#if interactive}
+		<ChartTooltip
+			open={tip.open}
+			xPct={tip.xPct}
+			yPct={tip.yPct}
+			heading={tip.heading}
+			rows={tip.rows}
+			side={tip.side}
+			id={tip.id}
+		>
+			{@render svg()}
+		</ChartTooltip>
+	{:else}
+		{@render svg()}
+	{/if}
 </div>

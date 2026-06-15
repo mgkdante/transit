@@ -17,6 +17,8 @@
 <script lang="ts">
 	import { cn, type WithElementRef } from '$lib/utils';
 	import type { HTMLAttributes } from 'svelte/elements';
+	import ChartTooltip from './ChartTooltip.svelte';
+	import { createChartTooltip, type ChartTooltipRow } from './useChartTooltip.svelte';
 
 	export interface DistributionStats {
 		min: number | null;
@@ -44,6 +46,11 @@
 		label?: string;
 		/** Optional unit suffix for the a11y summary (e.g. "min", "%"). */
 		unit?: string;
+		/**
+		 * Opt-in hover/focus interactivity: reveals p25/p50/p75 marker ticks and a
+		 * five-number tooltip. Default off so existing call sites stay byte-identical.
+		 */
+		interactive?: boolean;
 		class?: string;
 	}
 
@@ -55,6 +62,7 @@
 		fillVar = 'var(--dataviz-status-unknown)',
 		label,
 		unit = '',
+		interactive = false,
 		class: className,
 		ref = $bindable(null),
 		...restProps
@@ -87,7 +95,175 @@
 	const summary = $derived(
 		`${label ? label + ' — ' : ''}distribution: min ${fmt(stats.min)}, p25 ${fmt(stats.p25)}, median ${fmt(stats.p50)}, p75 ${fmt(stats.p75)}, max ${fmt(stats.max)}`,
 	);
+
+	// Interactive tooltip controller (only wired when `interactive`).
+	const tip = createChartTooltip();
+
+	// Five-number rows: median carries the --primary affordance swatch, the
+	// quartiles the strong border, whiskers stay neutral (no swatch).
+	const tipRows = $derived<ChartTooltipRow[]>([
+		{ label: 'min', value: fmt(stats.min) },
+		{ colorVar: 'var(--border-strong, var(--border))', label: 'p25', value: fmt(stats.p25) },
+		{ colorVar: 'var(--primary)', label: 'median', value: fmt(stats.p50) },
+		{ colorVar: 'var(--border-strong, var(--border))', label: 'p75', value: fmt(stats.p75) },
+		{ label: 'max', value: fmt(stats.max) },
+	]);
+
+	// Anchor the tooltip over the median tick (falls back to the box centre, then
+	// the track centre) as a percentage of the stretched viewBox width.
+	const anchorX = $derived(xP50 ?? (hasBox ? (xP25! + xP75!) / 2 : width / 2));
+	const xPct = $derived((anchorX / width) * 100);
+
+	// Drives the p25/p50/p75 marker-tick reveal on hover/focus.
+	let active = $state(false);
+
+	function showTip() {
+		if (!interactive) return;
+		active = true;
+		tip.show({ xPct, yPct: 0, heading: label, rows: tipRows, side: 'top' });
+	}
+	function hideTip() {
+		active = false;
+		tip.hide();
+	}
 </script>
+
+{#snippet svgBody()}
+	<!-- Domain baseline (neutral, NOT data). -->
+	<line
+		x1={PAD_X}
+		y1={midY}
+		x2={width - PAD_X}
+		y2={midY}
+		stroke="var(--border)"
+		stroke-width="0.75"
+	/>
+
+	{#if anyData}
+		<!-- Whisker line min..max. -->
+		{#if hasWhiskers}
+			<line
+				x1={xMin}
+				y1={midY}
+				x2={xMax}
+				y2={midY}
+				stroke="var(--border-strong, var(--border))"
+				stroke-width="1"
+			/>
+			<line
+				x1={xMin}
+				y1={midY - boxH / 2}
+				x2={xMin}
+				y2={midY + boxH / 2}
+				stroke="var(--border-strong, var(--border))"
+				stroke-width="1"
+			/>
+			<line
+				x1={xMax}
+				y1={midY - boxH / 2}
+				x2={xMax}
+				y2={midY + boxH / 2}
+				stroke="var(--border-strong, var(--border))"
+				stroke-width="1"
+			/>
+		{/if}
+
+		<!-- p25/p75 marker ticks — interactive-only, revealed on hover/focus. -->
+		{#if interactive && active && xP25 != null}
+			<line
+				x1={xP25}
+				y1={midY - boxH / 2 - 2}
+				x2={xP25}
+				y2={midY + boxH / 2 + 2}
+				stroke="var(--border-strong, var(--border))"
+				stroke-width="1.5"
+				stroke-linecap="round"
+			/>
+		{/if}
+		{#if interactive && active && xP75 != null}
+			<line
+				x1={xP75}
+				y1={midY - boxH / 2 - 2}
+				x2={xP75}
+				y2={midY + boxH / 2 + 2}
+				stroke="var(--border-strong, var(--border))"
+				stroke-width="1.5"
+				stroke-linecap="round"
+			/>
+		{/if}
+
+		<!-- Interquartile box (DATA fill from the dataviz scale). -->
+		{#if hasBox}
+			<rect
+				x={Math.min(xP25!, xP75!)}
+				y={midY - boxH / 2}
+				width={Math.max(1, Math.abs(xP75! - xP25!))}
+				height={boxH}
+				rx="2"
+				fill={fillVar}
+				fill-opacity="0.55"
+				stroke={fillVar}
+				stroke-width="1"
+			/>
+		{/if}
+
+		<!-- p50 MEDIAN: the lone --primary touch, an AFFORDANCE MARKER line. -->
+		{#if xP50 != null}
+			<line
+				x1={xP50}
+				y1={midY - boxH / 2 - 2}
+				x2={xP50}
+				y2={midY + boxH / 2 + 2}
+				stroke="var(--primary)"
+				stroke-width="2"
+				stroke-linecap="round"
+			/>
+		{/if}
+	{:else}
+		<text
+			x={width / 2}
+			y={midY + 3}
+			text-anchor="middle"
+			font-size="10"
+			fill="var(--muted-foreground)">no data</text
+		>
+	{/if}
+{/snippet}
+
+{#snippet chart()}
+	<svg
+		viewBox="0 0 {width} {height}"
+		width="100%"
+		{height}
+		preserveAspectRatio="none"
+		role="img"
+		aria-hidden={!interactive}
+		focusable="false"
+	>
+		{@render svgBody()}
+		{#if interactive}
+			<!-- Transparent focus/pointer target on TOP of the marks: a full-track
+			     hit-area so hovering any mark drives the tooltip. The box rect and
+			     median line stay visual marks; this carries the a11y label + focus. -->
+			<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+			<rect
+				x="0"
+				y="0"
+				{width}
+				{height}
+				fill="transparent"
+				tabindex={0}
+				role="img"
+				aria-label={summary}
+				aria-describedby={tip.open ? tip.id : undefined}
+				onpointerenter={showTip}
+				onpointerleave={hideTip}
+				onfocus={showTip}
+				onblur={hideTip}
+			/>
+		{/if}
+	</svg>
+{/snippet}
 
 <figure
 	bind:this={ref}
@@ -96,89 +272,19 @@
 	data-slot="distribution"
 	{...restProps}
 >
-	<svg
-		viewBox="0 0 {width} {height}"
-		width="100%"
-		{height}
-		preserveAspectRatio="none"
-		role="img"
-		aria-hidden="true"
-		focusable="false"
-	>
-		<!-- Domain baseline (neutral, NOT data). -->
-		<line
-			x1={PAD_X}
-			y1={midY}
-			x2={width - PAD_X}
-			y2={midY}
-			stroke="var(--border)"
-			stroke-width="0.75"
-		/>
-
-		{#if anyData}
-			<!-- Whisker line min..max. -->
-			{#if hasWhiskers}
-				<line
-					x1={xMin}
-					y1={midY}
-					x2={xMax}
-					y2={midY}
-					stroke="var(--border-strong, var(--border))"
-					stroke-width="1"
-				/>
-				<line
-					x1={xMin}
-					y1={midY - boxH / 2}
-					x2={xMin}
-					y2={midY + boxH / 2}
-					stroke="var(--border-strong, var(--border))"
-					stroke-width="1"
-				/>
-				<line
-					x1={xMax}
-					y1={midY - boxH / 2}
-					x2={xMax}
-					y2={midY + boxH / 2}
-					stroke="var(--border-strong, var(--border))"
-					stroke-width="1"
-				/>
-			{/if}
-
-			<!-- Interquartile box (DATA fill from the dataviz scale). -->
-			{#if hasBox}
-				<rect
-					x={Math.min(xP25!, xP75!)}
-					y={midY - boxH / 2}
-					width={Math.max(1, Math.abs(xP75! - xP25!))}
-					height={boxH}
-					rx="2"
-					fill={fillVar}
-					fill-opacity="0.55"
-					stroke={fillVar}
-					stroke-width="1"
-				/>
-			{/if}
-
-			<!-- p50 MEDIAN: the lone --primary touch, an AFFORDANCE MARKER line. -->
-			{#if xP50 != null}
-				<line
-					x1={xP50}
-					y1={midY - boxH / 2 - 2}
-					x2={xP50}
-					y2={midY + boxH / 2 + 2}
-					stroke="var(--primary)"
-					stroke-width="2"
-					stroke-linecap="round"
-				/>
-			{/if}
-		{:else}
-			<text
-				x={width / 2}
-				y={midY + 3}
-				text-anchor="middle"
-				font-size="10"
-				fill="var(--muted-foreground)">no data</text
-			>
-		{/if}
-	</svg>
+	{#if interactive}
+		<ChartTooltip
+			open={tip.open}
+			xPct={tip.xPct}
+			yPct={tip.yPct}
+			heading={tip.heading}
+			rows={tip.rows}
+			side={tip.side}
+			id={tip.id}
+		>
+			{@render chart()}
+		</ChartTooltip>
+	{:else}
+		{@render chart()}
+	{/if}
 </figure>

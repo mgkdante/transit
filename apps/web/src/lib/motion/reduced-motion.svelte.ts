@@ -10,23 +10,23 @@
 //     accessor, so we expose `prefersReducedMotion` as a getter that reads the
 //     rune. Consumers in `.svelte`/`.svelte.ts` modules stay reactive; plain TS
 //     callers get a correct one-time snapshot.
+//   - The matchMedia subscription is wired EAGERLY at module load (browser-only),
+//     NOT lazily inside the getter: `.current` is read inside `$derived`/template
+//     expressions (e.g. ChartTooltip's reduced-motion fade gate), and mutating
+//     `$state` during a derived read throws `state_unsafe_mutation`. So the getter
+//     stays a PURE read; writes happen only from the initializer + the `change`
+//     event callback (which fires outside any reactive read).
 
 const QUERY = '(prefers-reduced-motion: reduce)';
 
 // SSR-safe initial value — no `window` on the server, default to allowing motion.
 let reduced = $state(typeof window !== 'undefined' && window.matchMedia(QUERY).matches);
 
-// Idempotent client-side subscription: set up the matchMedia listener exactly
-// once, the first time the value is observed in a browser context.
-let subscribed = false;
-
-function ensureSubscribed(): void {
-	if (subscribed || typeof window === 'undefined') return;
-	subscribed = true;
-	const mql = window.matchMedia(QUERY);
-	// Sync once in case the value changed between module init and first read.
-	reduced = mql.matches;
-	mql.addEventListener('change', (e: MediaQueryListEvent) => {
+// Live subscription, wired once at module load in the browser (never on the
+// server). The `change` callback fires outside any reactive read, so mutating
+// `reduced` here is safe; the getter never writes.
+if (typeof window !== 'undefined') {
+	window.matchMedia(QUERY).addEventListener('change', (e: MediaQueryListEvent) => {
 		reduced = e.matches;
 	});
 }
@@ -37,7 +37,6 @@ function ensureSubscribed(): void {
  */
 export const prefersReducedMotion = {
 	get current(): boolean {
-		ensureSubscribed();
 		return reduced;
 	},
 };

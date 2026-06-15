@@ -19,4 +19,6 @@ export { default as DashboardGrid } from './DashboardGrid.svelte';
 export { default as ListDetailGrid } from './ListDetailGrid.svelte';
 export { default as EdgeStateGrid } from './EdgeStateGrid.svelte';
 
+export { default as Surface } from './Surface.svelte';
+
 export { default as Footer } from './Footer.svelte';
