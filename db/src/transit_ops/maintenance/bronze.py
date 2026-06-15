@@ -495,8 +495,10 @@ def prune_bronze_storage(
 ) -> BronzeStoragePruneResult:
     settings = settings or get_settings()
     engine = engine or make_engine(settings)
+    # parents[3] (not [2]) because this module now lives one directory deeper
+    # than the pre-split maintenance.py — both must resolve to the db/ project root.
     bronze_storage = _maintenance_pkg.get_bronze_storage(
-        settings, project_root=Path(__file__).resolve().parents[2]
+        settings, project_root=Path(__file__).resolve().parents[3]
     )
 
     resolved_max_objects = max(

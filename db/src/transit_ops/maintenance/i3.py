@@ -9,9 +9,10 @@ from pathlib import Path
 from sqlalchemy import text
 from sqlalchemy.engine import Connection, Engine
 
+import transit_ops.maintenance as _maintenance_pkg
 from transit_ops.db.connection import make_engine
 from transit_ops.ingestion.common import utc_now
-from transit_ops.ingestion.storage import BronzeStorage, get_bronze_storage
+from transit_ops.ingestion.storage import BronzeStorage
 from transit_ops.settings import Settings, get_settings
 
 from ._helpers import _safe_rowcount, _safe_scalar_count, logger
@@ -367,8 +368,12 @@ def prune_i3_storage(
 
     settings = settings or get_settings()
     engine = engine or make_engine(settings)
-    bronze_storage = get_bronze_storage(
-        settings, project_root=Path(__file__).resolve().parents[2]
+    # Resolve get_bronze_storage through the package (not a direct import) so a
+    # monkeypatch of transit_ops.maintenance.get_bronze_storage reaches this call,
+    # matching the pre-split module-global behavior and bronze.prune_bronze_storage.
+    # parents[3]: this module sits one directory deeper than the old maintenance.py.
+    bronze_storage = _maintenance_pkg.get_bronze_storage(
+        settings, project_root=Path(__file__).resolve().parents[3]
     )
 
     silver_retention = settings.SILVER_I3_CLOSED_RETENTION_DAYS
