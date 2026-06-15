@@ -1,0 +1,25 @@
+{
+	"$schema": "https://turbo.build/schema.json",
+	"tasks": {
+		"build": {
+			"dependsOn": ["^build"],
+			"outputs": [".svelte-kit/**", "dist/**", ".wrangler/**"],
+			"inputs": ["$TURBO_DEFAULT$", "!**/.env.local", "!**/.env.*.local"],
+			"env": ["PUBLIC_V1_BASE", "PUBLIC_V1_PROVIDER"]
+		},
+		"test": {
+			"dependsOn": ["^build"],
+			"outputs": []
+		},
+		"check": {
+			"outputs": []
+		},
+		"lint": {
+			"outputs": []
+		},
+		"dev": {
+			"cache": false,
+			"persistent": true
+		}
+	}
+}

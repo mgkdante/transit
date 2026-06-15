@@ -24,9 +24,13 @@ artifacts/
 .superpowers/
 *:Zone.Identifier
 
-# Cloudflare Worker tooling (infra/cloudflare/*)
+# JS workspace tooling (apps/web, apps/data-proxy) + turborepo
 node_modules/
 .wrangler/
+.turbo/
+.svelte-kit/
+# Bun: commit the text lockfile (bun.lock), ignore the legacy binary one
+bun.lockb
 
 # Local scratch proposals (e.g. ssh-config drafts)
 *.proposed
