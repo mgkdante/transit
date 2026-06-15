@@ -1,49 +1,36 @@
 <!--
   TopBar — the fixed app chrome strip (h60 on desktop).
 
-  Three logical clusters, left→right:
-    LEFT  : wordmark "métro." + live LED dot, then a city picker placeholder.
-    CENTER: a multi-value search input (the global "find a line / stop / vehicle"
-            field — surface routing is the caller's job via `onsearch`).
-    RIGHT : the live wall-clock (America/Toronto), an alerts bell + count badge,
-            the theme toggle (signal-lamp) and the language switch (fingerpost).
+  Left→right clusters:
+    BRAND : the yesid. parent-brand wordmark (-> yesid.dev) · divider · the
+            "transit" product home (-> /) with the live LED dot. transit.yesid.dev
+            is a yesid.dev product, so the chrome carries the house mark + links home.
+    CENTER: a multi-value search input (surface routing is the caller's job).
+    RIGHT : the live wall-clock, an alerts bell + count badge, the theme toggle
+            and the language switch.
 
-  Adapted from yesid.dev's floating-pill Nav idioms (wordmark + live dot, the
-  ThemeToggle signal-lamp, the LanguageToggle fingerpost) — re-themed to the
-  transit board strip, stripped of gsap/magnetic/lenis. Pure runes + tokens.
+  Composes reusable controls (BrandWordmark / LiveClock / ThemeToggle / LangSwitch);
+  the bell + city picker stay inline (TopBar-specific). Persistent chrome: `locale`
+  is a prop (with $derived reads) so strings stay reactive across EN⇄FR without a
+  remount; falls back to getLocale() context for isolated renders / tests.
 
-  DOCTRINE: orange --primary is INTERACTIVE-only. The live dot is the ONE place
-  --primary speaks as the "system is live" affordance; the alerts badge encodes
-  a COUNT (interactive number pill), not a data category. No --primary marks
-  stand in for data here.
-
-  PERSISTENT CHROME: this rides the never-remounting shell, so `locale` is a
-  prop (with $derived reads) rather than an init-frozen getLocale() — matching
-  the yesid.dev ThemeToggle/LanguageToggle convention. It still falls back to
-  getLocale() context when the prop is omitted (isolated renders / tests).
+  DOCTRINE: orange --primary is INTERACTIVE-only. The live dot is the ONE "system
+  is live" affordance; the alerts badge encodes a COUNT (number pill). No --primary
+  stands in for data here.
 -->
 <script lang="ts">
 	import { cn } from '$lib/utils';
-	import { formatClock } from '$lib/utils';
-	import { themeStore } from '$lib/stores';
-	import {
-		type Locale,
-		DEFAULT_LOCALE,
-		PUBLISHED_LOCALES,
-		getLocale,
-		localizeUrl,
-	} from '$lib/i18n';
+	import { type Locale, DEFAULT_LOCALE, PUBLISHED_LOCALES, getLocale } from '$lib/i18n';
 	import StatusDot from '$lib/components/brand/StatusDot.svelte';
-	import { onMount } from 'svelte';
-	import { browser } from '$app/environment';
+	import BrandWordmark from './BrandWordmark.svelte';
+	import LiveClock from './LiveClock.svelte';
+	import ThemeToggle from './ThemeToggle.svelte';
+	import LangSwitch from './LangSwitch.svelte';
 
 	interface TopBarProps {
-		/**
-		 * Active request locale. Persistent chrome passes this from the layout so
-		 * label/aria strings stay reactive across EN⇄FR; omitted → getLocale().
-		 */
+		/** Active request locale; omitted → getLocale() context. */
 		locale?: Locale;
-		/** Full current URL — the language switch preserves its path + query + hash. */
+		/** Full current URL — the language switch preserves path + query + hash. */
 		url?: URL;
 		/** Count of active alerts; renders the bell badge when > 0. */
 		alertCount?: number;
@@ -73,44 +60,16 @@
 	const ctxLocale = getLocale();
 	const locale = $derived<Locale>(localeProp ?? ctxLocale ?? DEFAULT_LOCALE);
 
-	// --- Live wall-clock (America/Toronto), ticking once per second ----------
-	let now = $state(new Date());
-	onMount(() => {
-		if (!browser) return;
-		const id = setInterval(() => (now = new Date()), 1000);
-		return () => clearInterval(id);
-	});
-	const clock = $derived(formatClock(now, locale));
-
-	// --- Theme toggle (signal-lamp: top lens lit = dark) ---------------------
-	const isDark = $derived(themeStore.isDark);
-	const themeLabel = $derived(
-		locale === 'fr'
-			? isDark
-				? 'Passer au thème clair'
-				: 'Passer au thème sombre'
-			: isDark
-				? 'Switch to light theme'
-				: 'Switch to dark theme',
-	);
-
-	// --- Language switch (fingerpost) ----------------------------------------
-	const CODE: Record<Locale, string> = { en: 'EN', fr: 'FR' };
-	const NAMES: Record<Locale, string> = { en: 'English', fr: 'Français' };
-	const localeIdx = $derived(Math.max(0, availableLocales.indexOf(locale)));
-	const nextLocale = $derived(availableLocales[(localeIdx + 1) % availableLocales.length]);
-	const langHref = $derived(localizeUrl(url, nextLocale));
-	const langAria = $derived(
-		`${locale === 'fr' ? 'Changer de langue' : 'Switch language'}: ${NAMES[locale] ?? locale}`,
-	);
-
 	// --- Localized strings ---------------------------------------------------
 	const liveLabel = $derived(locale === 'fr' ? 'En direct' : 'Live');
+	const homeAria = $derived(
+		locale === 'fr' ? 'Accueil — tableau de bord transit' : 'Home — transit dashboard',
+	);
 	const searchPlaceholder = $derived(
 		locale === 'fr' ? 'Rechercher une ligne, un arrêt…' : 'Search a line, stop…',
 	);
 	const searchAria = $derived(locale === 'fr' ? 'Rechercher dans le réseau' : 'Search the network');
-	const cityLabel = $derived(locale === 'fr' ? 'Montréal · STM' : 'Montréal · STM');
+	const cityLabel = 'Montréal · STM';
 	const cityAria = $derived(locale === 'fr' ? 'Choisir une ville' : 'Choose a city');
 	const alertsAria = $derived(
 		alertCount > 0
@@ -137,23 +96,23 @@
 	)}
 	data-slot="topbar"
 >
-	<!-- LEFT: wordmark + live dot ------------------------------------------ -->
-	<a
-		href="/"
-		class="group flex shrink-0 items-center gap-2 font-heading text-[1.0625rem] font-bold text-foreground"
-		data-slot="topbar-wordmark"
-	>
-		<span>métro</span><span class="text-primary">.</span>
-		<span class="ml-1 inline-flex items-center gap-1.5" data-slot="topbar-live">
-			<StatusDot color="orange" pulse label={liveLabel} />
-			<span class="label-station hidden text-[0.625rem] sm:inline">{liveLabel}</span>
-		</span>
-	</a>
+	<!-- BRAND: yesid. (-> yesid.dev) · transit home + live dot ------------- -->
+	<div class="flex shrink-0 items-center gap-2 sm:gap-2.5" data-slot="topbar-brand">
+		<BrandWordmark href="https://yesid.dev" />
+		<span class="topbar-divider" aria-hidden="true"></span>
+		<a href="/" class="topbar-home" aria-label={homeAria} data-slot="topbar-home">
+			<span class="topbar-product">transit</span>
+			<span class="inline-flex items-center gap-1.5" data-slot="topbar-live">
+				<StatusDot color="orange" pulse label={liveLabel} />
+				<span class="label-station hidden text-[0.625rem] sm:inline">{liveLabel}</span>
+			</span>
+		</a>
+	</div>
 
 	<!-- City picker placeholder (no Family data in 9.2) -------------------- -->
 	<button
 		type="button"
-		class="tap-press hidden shrink-0 items-center gap-1.5 rounded-lg border border-border-subtle bg-popover px-2.5 py-1.5 text-small text-foreground transition-colors hover:border-primary hover:text-primary md:inline-flex"
+		class="tap-press hidden shrink-0 items-center gap-1.5 rounded-lg border border-border-subtle bg-popover px-2.5 py-1.5 text-small text-foreground transition-colors hover:border-primary hover:text-primary lg:inline-flex"
 		aria-label={cityAria}
 		data-slot="topbar-city"
 		disabled
@@ -208,13 +167,7 @@
 
 	<!-- RIGHT: clock · alerts · theme · lang ------------------------------- -->
 	<div class="flex shrink-0 items-center gap-1 sm:gap-2" data-slot="topbar-controls">
-		<!-- Live clock (America/Toronto). aria-hidden: decorative signage. -->
-		<time
-			class="hidden font-mono text-small tabular-nums text-secondary-foreground sm:inline"
-			datetime={now.toISOString()}
-			aria-hidden="true"
-			data-slot="topbar-clock">{clock}</time
-		>
+		<LiveClock {locale} class="hidden sm:inline" />
 
 		<!-- Alerts bell + count badge -->
 		<button
@@ -248,166 +201,52 @@
 			{/if}
 		</button>
 
-		<!-- Theme toggle — signal-lamp (top lens lit = dark / night running). -->
-		<button
-			type="button"
-			class="theme-toggle tap-press"
-			role="switch"
-			aria-checked={isDark}
-			aria-label={themeLabel}
-			onclick={() => themeStore.toggle()}
-			data-slot="topbar-theme"
-		>
-			<svg viewBox="0 0 20 28" width="13" height="18" aria-hidden="true">
-				<rect
-					x="3"
-					y="2"
-					width="14"
-					height="24"
-					rx="4"
-					fill="none"
-					stroke="currentColor"
-					stroke-width="1.5"
-				/>
-				<line x1="10" y1="26" x2="10" y2="28" stroke="currentColor" stroke-width="1.5" />
-				<circle class="lens" class:lit={isDark} cx="10" cy="9" r="3.5" />
-				<circle class="lens" class:lit={!isDark} cx="10" cy="19" r="3.5" />
-			</svg>
-		</button>
-
-		<!-- Language switch — fingerpost (current locale board filled). -->
-		{#if availableLocales.length >= 2}
-			<a
-				href={langHref}
-				data-sveltekit-preload-data="hover"
-				data-sveltekit-noscroll
-				class="lang-post tap-press"
-				aria-label={langAria}
-				title={NAMES[locale] ?? locale}
-				data-slot="topbar-lang"
-			>
-				<svg viewBox="0 0 44 28" width="34" height="22" aria-hidden="true">
-					<line class="pole" x1="22" y1="4" x2="22" y2="26" stroke-linecap="round" />
-					<circle class="finial" cx="22" cy="3" r="1.6" />
-					<!-- top board: current locale (filled), pointing right -->
-					<g class="board active">
-						<path class="plate" d="M24 7 H40 L43 11 L40 15 H24 Z" />
-						<text x="31.5" y="13">{CODE[locale] ?? locale.toUpperCase()}</text>
-					</g>
-					<!-- bottom board: next locale (outline), pointing left -->
-					<g class="board">
-						<path class="plate" d="M20 16 H4 L1 20 L4 24 H20 Z" />
-						<text x="12" y="22">{CODE[nextLocale] ?? nextLocale.toUpperCase()}</text>
-					</g>
-				</svg>
-				<span class="sr-only" aria-live="polite">{NAMES[locale] ?? locale}</span>
-			</a>
-		{/if}
+		<ThemeToggle {locale} />
+		<LangSwitch {locale} {url} {availableLocales} />
 	</div>
 </header>
 
 <style>
-	/* Signal-lamp theme toggle — line-art signal head, lit lens fills --primary. */
-	.theme-toggle {
-		display: inline-flex;
-		align-items: center;
-		justify-content: center;
-		height: 2.25rem;
-		width: 2.25rem;
-		padding: 0;
-		background: none;
-		border: none;
-		cursor: pointer;
-		color: var(--secondary-foreground);
-		border-radius: var(--radius-lg);
-		transition: color var(--duration-fast, 120ms) var(--ease-default, ease);
-	}
-	.theme-toggle:hover {
-		color: var(--foreground);
-		background: var(--muted);
-	}
-	.theme-toggle:focus-visible {
-		outline: 2px solid var(--ring);
-		outline-offset: 1px;
-	}
-	.lens {
-		fill: transparent;
-		stroke: currentColor;
-		stroke-width: 1.25;
-		transition:
-			fill var(--duration-normal, 220ms) var(--ease-default, ease),
-			filter var(--duration-normal, 220ms) var(--ease-default, ease);
-	}
-	.lens.lit {
-		fill: var(--primary);
-		stroke: var(--primary);
-		filter: drop-shadow(0 0 3px color-mix(in srgb, var(--primary) 60%, transparent));
+	/* Brand divider — the same bold brand-border rule as the yesid.dev nav pill. */
+	.topbar-divider {
+		display: inline-block;
+		width: 2px;
+		height: 18px;
+		background: var(--border-brand);
+		flex-shrink: 0;
 	}
 
-	/* Fingerpost language switch — flat line-art, current board filled. */
-	.lang-post {
+	.topbar-home {
 		display: inline-flex;
 		align-items: center;
-		justify-content: center;
-		height: 2.25rem;
-		min-width: 2.25rem;
-		padding: 0 2px;
-		color: var(--secondary-foreground);
-		border-radius: var(--radius-lg);
+		gap: 0.5rem;
+		border-radius: var(--radius-sm);
 		transition: color var(--duration-fast, 120ms) var(--ease-default, ease);
 	}
-	.lang-post:hover {
-		color: var(--foreground);
-		background: var(--muted);
+	.topbar-home:hover .topbar-product {
+		color: var(--primary);
 	}
-	.lang-post:focus-visible {
+	.topbar-home:focus-visible {
 		outline: 2px solid var(--ring);
-		outline-offset: 1px;
+		outline-offset: 2px;
 	}
-	.pole {
-		stroke: currentColor;
-		stroke-width: 1.5;
-	}
-	.finial {
-		fill: currentColor;
-	}
-	.plate {
-		fill: transparent;
-		stroke: currentColor;
-		stroke-width: 1.25;
-		stroke-linejoin: round;
-	}
-	.board text {
-		font-family: var(--font-mono);
-		font-size: 9px;
+	.topbar-product {
+		font-family: var(--font-heading);
 		font-weight: 700;
-		letter-spacing: 0.02em;
-		fill: currentColor;
-		text-anchor: middle;
-	}
-	.board.active .plate {
-		fill: var(--primary);
-		stroke: var(--primary);
-	}
-	.board.active text {
-		fill: var(--primary-foreground);
-	}
-
-	.sr-only {
-		position: absolute;
-		width: 1px;
-		height: 1px;
-		padding: 0;
-		margin: -1px;
-		overflow: hidden;
-		clip: rect(0, 0, 0, 0);
+		font-size: 1rem;
+		color: var(--foreground);
 		white-space: nowrap;
-		border: 0;
+		transition: color var(--duration-fast, 120ms) var(--ease-default, ease);
 	}
-
+	/* Tightest phones: keep the brand mark + dot, drop the product word. */
+	@media (max-width: 400px) {
+		.topbar-product {
+			display: none;
+		}
+	}
 	@media (prefers-reduced-motion: reduce) {
-		.theme-toggle,
-		.lens {
+		.topbar-home,
+		.topbar-product {
 			transition: none;
 		}
 	}
