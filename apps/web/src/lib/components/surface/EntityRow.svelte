@@ -1,11 +1,11 @@
 <!--
   EntityRow — a linkable row for one navigable entity (line / stop / vehicle).
 
-  Resolves a semantic `SurfaceTarget` through the nav layer: it renders a real
-  localized `<a>` (so deep-links, hover-preload and right-click-open all work),
-  but on desktop the click is intercepted to swap the in-memory detail panel
-  (openSurface) instead of navigating — "panels, not pages". Mobile lets the link
-  navigate normally.
+  Resolves a semantic `SurfaceTarget` to a real localized `<a href>` via the nav
+  layer (routeFor + localizeHref), so deep-links, hover-preload, right-click-open
+  and client-side navigation all work for free — SvelteKit intercepts the anchor
+  click. (Desktop master/detail panels are deferred to the 9.3 brainstorm; see
+  $lib/nav/intent — until that shell is wired, every form factor navigates.)
 
   Layout: an optional mono glyph, a title (+ optional subtitle) body, and an
   optional right-aligned meta cell. Hover/focus states ride the tokens
@@ -14,7 +14,7 @@
 <script lang="ts">
 	import { cn } from '$lib/utils';
 	import { localizeHref, type Locale } from '$lib/i18n';
-	import { routeFor, openSurface, isDesktopViewport, type SurfaceTarget } from '$lib/nav';
+	import { routeFor, type SurfaceTarget } from '$lib/nav';
 
 	interface EntityRowProps {
 		/** The navigation intent this row resolves to. */
@@ -36,22 +36,11 @@
 	let { target, locale, glyph, title, subtitle, meta, class: className }: EntityRowProps = $props();
 
 	const href = $derived(localizeHref(routeFor(target), locale));
-
-	// Desktop: intercept and swap the detail panel (no nav). Mobile: let the link
-	// navigate. Modified clicks (new tab) and non-primary buttons pass through.
-	function onClick(e: MouseEvent) {
-		if (e.defaultPrevented) return;
-		if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
-		if (!isDesktopViewport()) return;
-		e.preventDefault();
-		openSurface(target);
-	}
 </script>
 
 <a
 	{href}
 	data-sveltekit-preload-data="hover"
-	onclick={onClick}
 	class={cn('entity-row', className)}
 	data-slot="entity-row"
 >

@@ -24,6 +24,7 @@
 	import StatusDot from '$lib/components/brand/StatusDot.svelte';
 	import BrandWordmark from './BrandWordmark.svelte';
 	import LiveClock from './LiveClock.svelte';
+	import RefreshButton from './RefreshButton.svelte';
 	import ThemeToggle from './ThemeToggle.svelte';
 	import LangSwitch from './LangSwitch.svelte';
 
@@ -168,6 +169,10 @@
 	<!-- RIGHT: clock · alerts · theme · lang ------------------------------- -->
 	<div class="flex shrink-0 items-center gap-1 sm:gap-2" data-slot="topbar-controls">
 		<LiveClock {locale} class="hidden sm:inline" />
+
+		<!-- Refresh-data control + freshness readout (recovery affordance for an
+		     unreachable /v1; re-runs every data source on the page). -->
+		<RefreshButton {locale} />
 
 		<!-- Alerts bell + count badge -->
 		<button

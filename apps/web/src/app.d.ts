@@ -9,8 +9,18 @@ declare global {
 		// interface PageData {}
 		// interface PageState {}
 		interface Platform {
-			/** Cloudflare Worker bindings/secrets (adapter-cloudflare). */
-			env?: Record<string, string>;
+			/**
+			 * Cloudflare Worker bindings/secrets (adapter-cloudflare). A heterogeneous
+			 * bag: string secrets (CF_PAGES_*) alongside the `DATA` service binding to
+			 * transit-data-proxy, which +layout.server.ts uses to boot the /v1 contract
+			 * server-side (a same-origin SSR fetch to our own zone 523s). `DATA` is
+			 * absent in local dev / `vite preview` — callers must guard for undefined.
+			 */
+			env?: {
+				/** Service binding → transit-data-proxy (SSR /v1 boot). See wrangler.toml. */
+				DATA?: { fetch: typeof fetch };
+				[key: string]: unknown;
+			};
 			context?: { waitUntil(promise: Promise<unknown>): void };
 			caches?: CacheStorage;
 		}

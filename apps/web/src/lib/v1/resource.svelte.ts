@@ -14,6 +14,12 @@
 // Pair it with <ResourceBoundary> ($lib/components/surface) for skeleton / error /
 // empty / loaded rendering — no surface re-implements that. Live-tier data uses
 // the live store (createLiveStore) instead; this is for static + historic.
+//
+// It also honors the global `dataRefresh` epoch: a chrome "refresh data" press
+// bumps it, which re-runs the fetch here (createResource surfaces don't use load
+// functions, so invalidateAll alone would never reach them).
+
+import { dataRefresh } from '$lib/stores';
 
 /** The reactive surface a resource exposes. `data` is null until the first success. */
 export interface Resource<T> {
@@ -54,9 +60,13 @@ export function createResource<T>(fetcher: () => Promise<T>): Resource<T> {
 	$effect(() => {
 		// Reading `manual` registers it as an $effect dependency so reload() re-runs
 		// this fetch; the fetcher's own reactive reads are tracked when it is invoked
-		// synchronously below (before any await). The value itself is unused.
+		// synchronously below (before any await). The values themselves are unused.
 		// eslint-disable-next-line @typescript-eslint/no-unused-expressions
 		manual;
+		// Reading the global refresh epoch makes a chrome "refresh data" press re-run
+		// this fetch too (these surfaces have no load fn for invalidateAll to re-run).
+		// eslint-disable-next-line @typescript-eslint/no-unused-expressions
+		dataRefresh.epoch;
 		const token = ++seq;
 
 		let pending: Promise<T>;

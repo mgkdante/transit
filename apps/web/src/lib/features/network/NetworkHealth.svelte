@@ -92,11 +92,20 @@
 		}));
 	});
 
-	// Trend series: on-time % (green) vs p90 delay (amber). null points are gaps.
+	// Trend series: on-time % (green, 0–100 axis) vs p90 delay (amber, MINUTES).
+	// The two carry different units, so the delay series gets its own y-domain
+	// [0, niceCeil(maxP90)] — plotting minutes on the percentage axis would squash
+	// the delay line flat against the floor. null points are gaps (never zero).
 	function trendSeries(points: { otp_pct?: number | null; p90_min?: number | null }[]) {
+		const retard = points.map((p) => p.p90_min ?? null);
+		const maxP90 = retard.reduce<number>((m, v) => (v != null && v > m ? v : m), 0);
+		// Round the ceiling up to the nearest 5 min (floor of 10) so the delay
+		// trend uses the plot height without hugging the very top edge.
+		const retardCeil = Math.max(10, Math.ceil(maxP90 / 5) * 5);
 		return {
 			onTime: points.map((p) => p.otp_pct ?? null),
-			retard: points.map((p) => p.p90_min ?? null),
+			retard,
+			retardDomain: [0, retardCeil] as [number, number],
 		};
 	}
 </script>
@@ -179,6 +188,7 @@
 					<TrendLine
 						onTime={series.onTime}
 						retard={series.retard}
+						retardDomain={series.retardDomain}
 						onTimeLabel={t.trend.onTimeLabel}
 						retardLabel={t.trend.retardLabel}
 						label={t.trend.summary}

@@ -1,10 +1,12 @@
-// Navigation-as-intent — "panels, not pages".
+// Navigation-as-intent — "panels, not pages" (desktop panels deferred).
 //
 // THE LOAD-BEARING ABSTRACTION of the web app: callers express WHERE they want
 // to go as a semantic `SurfaceTarget` (open the stop drawer, focus this line,
-// show network health) and `openSurface` resolves that intent against the
-// current form factor:
+// show network health) and `openSurface` resolves that intent to a destination.
+// Routing through ONE entry point is the point: the desktop master/detail
+// behavior can be introduced in a single place without touching call sites.
 //
+// TARGET DESIGN (master/detail):
 //   - MOBILE (one surface at a time): push the canonical route for the target
 //     via SvelteKit `goto`, localized to the active locale. The URL is the
 //     surface; back/forward works; deep links are shareable.
@@ -12,18 +14,18 @@
 //     no navigation, no URL churn. The shell renders the panel for the active
 //     target alongside the persistent map/list, so context is never lost.
 //
-// The SAME target therefore resolves to a route-push OR a panel-swap with zero
-// caller awareness of which — that is the whole point. `routeFor` is the shared
-// canonical map both halves agree on (mobile pushes it; a desktop deep-link /
-// SSR load can hydrate `activePanel` from it).
+// CURRENT STATE: the desktop shell that READS `activePanel` is not wired yet
+// (slice-9.3 brainstorm scope), so `openSurface` navigates on EVERY form factor
+// for now — driving the panel store with no observer would leave clicks dead.
+// `activePanel` + `sameTarget` remain as the reserved store for that shell.
+// `routeFor` is the shared canonical map both halves agree on (mobile pushes it;
+// a desktop deep-link / SSR load can hydrate `activePanel` from it).
 //
-// SSR-safe: the form-factor decision uses the non-reactive `isDesktopViewport()`
-// snapshot (false on the server), and `activePanel` is a plain in-memory rune —
+// SSR-safe: `goto` is client-only and `activePanel` is a plain in-memory rune —
 // no DOM access at module scope.
 
 import { goto } from '$app/navigation';
 import { getLocale, localizeHref } from '$lib/i18n';
-import { isDesktopViewport } from './layout.svelte';
 
 /**
  * The kinds of navigable surface in the app. A `vehicle`/`stop`/`line` carries an
@@ -88,6 +90,12 @@ function sameTarget(a: SurfaceTarget | null, b: SurfaceTarget): boolean {
  *
  * Exposed as a getter so reassignments stay reactive for `.svelte` consumers;
  * `set`/`clear` are the only mutators.
+ *
+ * RESERVED for the desktop master/detail shell (slice-9.3 brainstorm scope). The
+ * shell that READS this store — rendering the detail panel alongside the
+ * persistent surface — is not wired yet, so `openSurface` navigates on every
+ * form factor for now (see below). When the shell lands, restore the desktop
+ * branch of `openSurface` to drive this store.
  */
 let panel = $state<SurfaceTarget | null>(null);
 
@@ -108,27 +116,24 @@ export const activePanel = {
 };
 
 /**
- * Resolve a navigation intent against the current form factor.
+ * Resolve a navigation intent to a destination.
  *
- *   - Desktop (>= 1024px): swap the in-memory `activePanel` — no navigation.
- *   - Mobile: push the localized canonical route via SvelteKit `goto`.
+ * Pushes the localized canonical route for the target via SvelteKit `goto`. This
+ * is the SINGLE entry point every call site uses (hub `<button>` tiles, entity
+ * rows) so navigation stays uniform and the desktop master/detail behavior can
+ * be introduced in ONE place later.
  *
- * `home` is special-cased: on desktop, opening `home` clears any detail panel
- * (returns to the bare surface) rather than parking a "home" panel.
+ * DESKTOP PANELS ("panels, not pages") are deferred: the shell that reads
+ * `activePanel` to render a detail pane alongside the persistent surface is not
+ * wired yet (slice-9.3 brainstorm scope). Until it is, we navigate on every form
+ * factor — so hub tiles and entity rows all reach their target route rather than
+ * mutating a store nothing observes. When the shell lands, branch here on
+ * `isDesktopViewport()` to drive `activePanel.set(target)` (and `.clear()` for
+ * `home`) on desktop while keeping this `goto` for mobile.
  *
- * The form-factor read uses the synchronous viewport snapshot so this is a clean
- * one-shot decision (no reactive subscription leak per call); SSR resolves to the
- * mobile branch, which never runs `goto` outside the browser because SvelteKit's
- * `goto` is client-only — call sites invoke `openSurface` from event handlers.
+ * SSR-safe: `goto` is client-only and call sites invoke `openSurface` from event
+ * handlers, so it never runs during server render.
  */
 export function openSurface(target: SurfaceTarget): void {
-	if (isDesktopViewport()) {
-		if (target.kind === 'home') {
-			activePanel.clear();
-		} else {
-			activePanel.set(target);
-		}
-		return;
-	}
 	void goto(localizeHref(routeFor(target), getLocale()));
 }

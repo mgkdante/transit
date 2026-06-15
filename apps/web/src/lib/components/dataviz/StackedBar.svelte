@@ -124,12 +124,17 @@
 </script>
 
 {#snippet bar()}
+	<!-- When interactive, the focusable slices below ARE the accessible content
+	     (each is a labelled, focusable role=img), so the SVG must NOT be hidden —
+	     an aria-hidden ancestor would make every focus stop silent to AT. When
+	     static, the outer role=img + summary carries the meaning and the SVG is
+	     hidden as pure decoration. -->
 	<svg
 		viewBox="0 0 100 {height}"
 		width="100%"
 		{height}
 		preserveAspectRatio="none"
-		aria-hidden="true"
+		aria-hidden={!interactive}
 		focusable="false"
 	>
 		{#if hasData}
@@ -167,10 +172,13 @@
 	</svg>
 {/snippet}
 
+<!-- role: a flat `img` when static (one announcement of `summary`); a labelled
+     `group` when interactive, so AT descends into the per-slice focus stops (a
+     role=img would flatten them away). aria-label carries the summary either way. -->
 <div
 	bind:this={ref}
 	class={cn('dv-stacked-bar', className)}
-	role="img"
+	role={interactive ? 'group' : 'img'}
 	aria-label={summary}
 	data-slot="stacked-bar"
 	data-scale={scale}
