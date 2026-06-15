@@ -20,19 +20,16 @@ export {
 // Live vehicle layer kit (slice-9.3) — sprite baker + source/layers + feature
 // builder + the near-me geo util. The runtime pieces touch the map only after
 // MapStage's onready; the geo helpers are pure + SSR-safe.
-export { bakeVehicleSprites, bodyIconId, glyphIconId, OCC_NODATA } from './vehicleSprites';
+export { bakeVehicleSprites, bodyIconId, BUS_ICON, BUS_ICON_ND, STOP_ICON } from './vehicleSprites';
 
 export {
 	addVehicleSource,
 	addVehicleLayers,
 	setVehicles,
 	setStale,
-	applyFilter,
 	toVehicleFeatures,
 	VEHICLE_SOURCE,
 	VEHICLE_BODY_LAYER,
-	VEHICLE_GLYPH_LAYER,
-	type VehicleMode,
 } from './vehicleLayer';
 
 export { addStopsSource, addStopsLayer, setStops, STOPS_SOURCE, STOPS_LAYER } from './stopsLayer';

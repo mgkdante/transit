@@ -1,32 +1,22 @@
-// map/vehicleLayer.ts — the live vehicle GPU layer.
+// map/vehicleLayer.ts — the live vehicle GPU layer (one symbol layer, no glyph).
 //
-// ONE GeoJSON source + TWO symbol layers, no clustering (clustering would
-// destroy the per-vehicle heading/status story for ~600 buses, which GPU
-// symbols render trivially):
-//   · vehicle-body  — the coloured kite/disc, rotated by `bearing` (alignment
-//     'map'), UNDER the glyph.
-//   · vehicle-glyph — the upright status/occupancy glyph (alignment 'viewport').
-//
-// Honesty is encoded in the icon ids (see vehicleSprites): a null bearing → the
-// bearing-less disc body (never a north-pointing arrow); a null occupancy → the
-// ◌ no-data glyph (never the 'empty' band).
+// A vehicle is a single coloured SHAPE (vehicleSprites): a kite when it reports a
+// heading, a square when it doesn't. NO glyph overlay — the FILTER carries state
+// by REPAINTING the shape's colour and HIDING non-matches:
+//   · NO filter → everything shows, plain default orange (easy on the eye);
+//   · ALL of a dimension selected → everything shows, every state PAINTED in its
+//     own colour (the full picture, for the technical / curious);
+//   · a PARTIAL selection (e.g. 2 statuses) → only those repaint + show, the rest
+//     DISAPPEAR (a real layer filter, not a dim).
+// Status × crowding × routes combine (AND). No clustering — ~600 GPU symbols.
 
-import type {
-	Map as MapLibreMap,
-	GeoJSONSource,
-	FilterSpecification,
-	LayerSpecification,
-} from 'maplibre-gl';
+import type { Map as MapLibreMap, GeoJSONSource, LayerSpecification } from 'maplibre-gl';
 import type { Vehicle } from '$lib/v1/schemas';
-import { bodyIconId, glyphIconId, OCC_NODATA, BUS_ICON, BUS_ICON_ND } from './vehicleSprites';
-
-// 'single' = the calm default (one bus colour, no status glyph). 'status' /
-// 'occupancy' colour matches by state — used when a filter lights a subset up.
-export type VehicleMode = 'single' | 'status' | 'occupancy';
+import type { FilterState } from '$lib/filters';
+import { bodyIconId, BUS_ICON, BUS_ICON_ND } from './vehicleSprites';
 
 export const VEHICLE_SOURCE = 'vehicles';
 export const VEHICLE_BODY_LAYER = 'vehicle-body';
-export const VEHICLE_GLYPH_LAYER = 'vehicle-glyph';
 
 interface VehicleFeature {
 	type: 'Feature';
@@ -34,9 +24,10 @@ interface VehicleFeature {
 	properties: {
 		id: string;
 		body: string;
-		glyph: string;
 		bearing: number;
 		route: string;
+		// 1 = visible (matches the filter, or no narrowing filter); 0 = hidden.
+		matched: number;
 	};
 }
 interface VehicleFC {
@@ -46,30 +37,60 @@ interface VehicleFC {
 
 const EMPTY_FC: VehicleFC = { type: 'FeatureCollection', features: [] };
 
-/** Map a vehicle to its body + glyph icon ids for the active mode. */
-function iconIds(v: Vehicle, mode: VehicleMode): { body: string; glyph: string } {
-	const directional = v.bearing != null;
-	// Default: one calm colour, no glyph (state lives in the filter, not the paint).
-	if (mode === 'single') {
-		return { body: directional ? BUS_ICON : BUS_ICON_ND, glyph: '' };
-	}
-	if (mode === 'status') {
-		return { body: bodyIconId('status', v.status, directional), glyph: glyphIconId('status', v.status) };
-	}
-	const code = v.occupancy ?? OCC_NODATA;
-	return { body: bodyIconId('occupancy', code, directional), glyph: glyphIconId('occupancy', code) };
+// A dimension is ACTIVE when ANY of it is selected. None → no filter (plain
+// orange, all shown). All selected → every match shows, painted (rainbow).
+function activeStatus(f: FilterState): readonly string[] | null {
+	return f.status && f.status.length > 0 ? f.status : null;
+}
+function activeOccupancy(f: FilterState): readonly string[] | null {
+	return f.occupancy && f.occupancy.length > 0 ? f.occupancy : null;
 }
 
-/** Build the GeoJSON FeatureCollection for the current vehicles + mode. */
-export function toVehicleFeatures(vehicles: readonly Vehicle[], mode: VehicleMode): VehicleFC {
+/** The state dimension that repaints matches (status wins over crowding); null = default orange. */
+function colourDimension(f: FilterState): 'status' | 'occupancy' | null {
+	if (activeStatus(f)) return 'status';
+	if (activeOccupancy(f)) return 'occupancy';
+	return null;
+}
+
+/** True when the vehicle satisfies EVERY active dimension (AND-combined). */
+function matchesFilter(v: Vehicle, f: FilterState): boolean {
+	const as = activeStatus(f);
+	if (as && !as.includes(v.status)) return false;
+	const ao = activeOccupancy(f);
+	if (ao && !(v.occupancy != null && ao.includes(v.occupancy))) return false;
+	if (f.routes.size > 0 && !(v.route != null && f.routes.has(v.route))) return false;
+	return true;
+}
+
+/** Body icon id + match flag for a vehicle. Matched + a colour dim → the state-
+ * coloured shape; otherwise the default orange shape (kite / square by heading). */
+function iconFor(v: Vehicle, f: FilterState, dim: 'status' | 'occupancy' | null): {
+	body: string;
+	matched: number;
+} {
+	const directional = v.bearing != null;
+	const matched = matchesFilter(v, f);
+	if (matched && dim === 'status') {
+		return { body: bodyIconId('status', v.status, directional), matched: 1 };
+	}
+	if (matched && dim === 'occupancy' && v.occupancy != null) {
+		return { body: bodyIconId('occupancy', v.occupancy, directional), matched: 1 };
+	}
+	return { body: directional ? BUS_ICON : BUS_ICON_ND, matched: matched ? 1 : 0 };
+}
+
+/** Build the GeoJSON FeatureCollection for the current vehicles under the filter. */
+export function toVehicleFeatures(vehicles: readonly Vehicle[], filter: FilterState): VehicleFC {
+	const dim = colourDimension(filter);
 	return {
 		type: 'FeatureCollection',
 		features: vehicles.map((v) => {
-			const { body, glyph } = iconIds(v, mode);
+			const { body, matched } = iconFor(v, filter, dim);
 			return {
 				type: 'Feature',
 				geometry: { type: 'Point', coordinates: [v.lon, v.lat] },
-				properties: { id: v.id, body, glyph, bearing: v.bearing ?? 0, route: v.route ?? '' },
+				properties: { id: v.id, body, bearing: v.bearing ?? 0, route: v.route ?? '', matched },
 			};
 		}),
 	};
@@ -81,70 +102,43 @@ export function addVehicleSource(map: MapLibreMap): void {
 	map.addSource(VEHICLE_SOURCE, { type: 'geojson', data: EMPTY_FC, promoteId: 'id' });
 }
 
-const ICON_SIZE = ['interpolate', ['linear'], ['zoom'], 11, 0.55, 15, 1] as const;
+const ICON_SIZE = ['interpolate', ['linear'], ['zoom'], 11, 0.55, 15, 1];
 
-/** Add the body + glyph symbol layers. Idempotent. */
+/** Add the vehicle body symbol layer. Non-matched features are filtered OUT
+ * (they disappear); opacity carries only the stale dim. Idempotent. */
 export function addVehicleLayers(map: MapLibreMap): void {
-	if (!map.getLayer(VEHICLE_BODY_LAYER)) {
-		map.addLayer({
-			id: VEHICLE_BODY_LAYER,
-			type: 'symbol',
-			source: VEHICLE_SOURCE,
-			layout: {
-				'icon-image': ['get', 'body'],
-				'icon-rotate': ['coalesce', ['get', 'bearing'], 0],
-				'icon-rotation-alignment': 'map',
-				'icon-allow-overlap': true,
-				'icon-ignore-placement': true,
-				'icon-size': ICON_SIZE,
-			},
-			// maplibre's layout expression types are invariant + mutable; our literal
-			// is structurally correct, so cast through unknown.
-		} as unknown as LayerSpecification);
-	}
-	if (!map.getLayer(VEHICLE_GLYPH_LAYER)) {
-		map.addLayer({
-			id: VEHICLE_GLYPH_LAYER,
-			type: 'symbol',
-			source: VEHICLE_SOURCE,
-			// Skip features with no glyph (single/default mode) — avoids empty-image lookups.
-			filter: ['!=', ['get', 'glyph'], ''],
-			layout: {
-				'icon-image': ['get', 'glyph'],
-				'icon-rotation-alignment': 'viewport',
-				'icon-allow-overlap': true,
-				'icon-ignore-placement': true,
-				'icon-size': ICON_SIZE,
-			},
-			// maplibre's layout expression types are invariant + mutable; our literal
-			// is structurally correct, so cast through unknown.
-		} as unknown as LayerSpecification);
-	}
+	if (map.getLayer(VEHICLE_BODY_LAYER)) return;
+	map.addLayer({
+		id: VEHICLE_BODY_LAYER,
+		type: 'symbol',
+		source: VEHICLE_SOURCE,
+		// Hide non-matched: a real filter (they disappear), not a dim.
+		filter: ['==', ['get', 'matched'], 1],
+		layout: {
+			'icon-image': ['get', 'body'],
+			'icon-rotate': ['coalesce', ['get', 'bearing'], 0],
+			'icon-rotation-alignment': 'map',
+			'icon-allow-overlap': true,
+			'icon-ignore-placement': true,
+			'icon-size': ICON_SIZE,
+		},
+		paint: { 'icon-opacity': 1 },
+		// maplibre's expression types are invariant + mutable; the literal is
+		// structurally correct, so cast through unknown.
+	} as unknown as LayerSpecification);
 }
 
-/** Replace the rendered vehicles (the jump path; the reduced-motion fallback). */
-export function setVehicles(map: MapLibreMap, vehicles: readonly Vehicle[], mode: VehicleMode): void {
+/** Replace the rendered vehicles, repainted/filtered under the active filter. */
+export function setVehicles(map: MapLibreMap, vehicles: readonly Vehicle[], filter: FilterState): void {
 	const src = map.getSource(VEHICLE_SOURCE) as GeoJSONSource | undefined;
 	src?.setData(
-		toVehicleFeatures(vehicles, mode) as unknown as Parameters<GeoJSONSource['setData']>[0],
+		toVehicleFeatures(vehicles, filter) as unknown as Parameters<GeoJSONSource['setData']>[0],
 	);
 }
 
-/** Dim both layers to 45% when the live feed is stale (never extrapolate). */
+/** Dim the layer to 45% when the live feed is stale (never extrapolate). */
 export function setStale(map: MapLibreMap, stale: boolean): void {
-	const opacity = stale ? 0.45 : 1;
-	for (const id of [VEHICLE_BODY_LAYER, VEHICLE_GLYPH_LAYER]) {
-		if (map.getLayer(id)) map.setPaintProperty(id, 'icon-opacity', opacity);
-	}
-}
-
-/**
- * Apply a layer filter (Phase 3 filtered-map). `null` clears the filter (show
- * all). Phase 3 will prefer an opacity expression over hard-hide so the network
- * context is never destroyed; this hard-filter helper backs the simple cases.
- */
-export function applyFilter(map: MapLibreMap, expr: FilterSpecification | null): void {
-	for (const id of [VEHICLE_BODY_LAYER, VEHICLE_GLYPH_LAYER]) {
-		if (map.getLayer(id)) map.setFilter(id, expr);
+	if (map.getLayer(VEHICLE_BODY_LAYER)) {
+		map.setPaintProperty(VEHICLE_BODY_LAYER, 'icon-opacity', stale ? 0.45 : 1);
 	}
 }

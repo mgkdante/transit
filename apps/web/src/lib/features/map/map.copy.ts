@@ -21,9 +21,15 @@ export interface MapCopy {
 	readonly nearMe: string;
 	/** No-data occupancy legend row. */
 	readonly noData: string;
-	/** Entity legend labels (one colour per type). */
-	readonly entityBuses: string;
-	readonly entityStops: string;
+	/** Entity legend labels — the SHAPE key (shape encodes entity + heading). */
+	readonly entityBusHeading: string;
+	readonly entityBusNoHeading: string;
+	readonly entityStop: string;
+	/** Heading for the shape-key legend. */
+	readonly legendTitle: string;
+	/** Filter panel. */
+	readonly filterTitle: string;
+	readonly filterClear: string;
 }
 
 export const copy: Record<Locale, MapCopy> = {
@@ -36,8 +42,12 @@ export const copy: Record<Locale, MapCopy> = {
 		modeAria: 'Colour buses by',
 		nearMe: 'Stops near me',
 		noData: 'No data',
-		entityBuses: 'Buses',
-		entityStops: 'Stops',
+		entityBusHeading: 'Bus · heading',
+		entityBusNoHeading: 'Bus · no heading',
+		entityStop: 'Stop',
+		legendTitle: 'Shapes',
+		filterTitle: 'Filter',
+		filterClear: 'Clear',
 	},
 	fr: {
 		kicker: 'RÉSEAU · EN DIRECT',
@@ -48,8 +58,12 @@ export const copy: Record<Locale, MapCopy> = {
 		modeAria: 'Colorer les bus par',
 		nearMe: 'Arrêts près de moi',
 		noData: 'Aucune donnée',
-		entityBuses: 'Bus',
-		entityStops: 'Arrêts',
+		entityBusHeading: 'Bus · cap',
+		entityBusNoHeading: 'Bus · sans cap',
+		entityStop: 'Arrêt',
+		legendTitle: 'Formes',
+		filterTitle: 'Filtrer',
+		filterClear: 'Effacer',
 	},
 };
 

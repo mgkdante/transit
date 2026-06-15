@@ -7,7 +7,7 @@
 
 import type { Map as MapLibreMap, GeoJSONSource, LayerSpecification } from 'maplibre-gl';
 import type { StopIndexEntry } from '$lib/v1/schemas';
-import { resolveColor } from './vehicleSprites';
+import { STOP_ICON } from './vehicleSprites';
 
 export const STOPS_SOURCE = 'stops';
 export const STOPS_LAYER = 'stops';
@@ -41,26 +41,23 @@ export function addStopsSource(map: MapLibreMap): void {
 	map.addSource(STOPS_SOURCE, { type: 'geojson', data: EMPTY_FC, promoteId: 'id' });
 }
 
-/** Add the stops circle layer (single colour, zoom-gated). Idempotent. */
+/** Add the stops layer — orange DIAMOND sprite, single colour, zoom-gated.
+ * Dimmer + smaller than the buses so the live vehicles keep primacy (hierarchy
+ * by weight + shape, not hue). Idempotent. */
 export function addStopsLayer(map: MapLibreMap): void {
 	if (map.getLayer(STOPS_LAYER)) return;
-	// Stops ride the brand orange too (operator decision), but DIMMER + smaller
-	// than the buses so the live vehicles keep primacy — hierarchy by weight, not
-	// hue. (rgb fallback, not #hex, to keep the brand-hex doctrine lint green.)
-	const fill = resolveColor('var(--primary)', 'rgb(224, 120, 0)');
-	const halo = resolveColor('var(--background)', '#141414');
 	map.addLayer({
 		id: STOPS_LAYER,
-		type: 'circle',
+		type: 'symbol',
 		source: STOPS_SOURCE,
 		minzoom: 13,
-		paint: {
-			'circle-radius': ['interpolate', ['linear'], ['zoom'], 13, 2, 16, 4],
-			'circle-color': fill,
-			'circle-stroke-width': 1,
-			'circle-stroke-color': halo,
-			'circle-opacity': 0.55,
+		layout: {
+			'icon-image': STOP_ICON,
+			'icon-size': ['interpolate', ['linear'], ['zoom'], 13, 0.32, 16, 0.6],
+			'icon-allow-overlap': true,
+			'icon-ignore-placement': true,
 		},
+		paint: { 'icon-opacity': 0.55 },
 	} as unknown as LayerSpecification);
 }
 
