@@ -17,7 +17,8 @@
 <script lang="ts">
 	import { DEFAULT_LOCALE, type Locale } from '$lib/i18n';
 	import { themeStore } from '$lib/stores';
-	import type { StatusCode, OccupancyCode, SeverityCode } from '$lib/v1/schemas';
+	import type { StatusCode, OccupancyCode } from '$lib/v1/schemas';
+	import { STATUS_CODES, OCCUPANCY_CODES, SEVERITY_CODES } from '$lib/v1/schemas';
 
 	// Brand primitives.
 	import SectionHeading from '$lib/components/brand/SectionHeading.svelte';
@@ -68,15 +69,8 @@
 	}
 
 	// --- Sample data (doctrine-clean) -------------------------------------------
-	const STATUS_CODES: readonly StatusCode[] = ['early', 'on_time', 'late', 'severe', 'unknown'];
-	const OCCUPANCY_CODES: readonly OccupancyCode[] = [
-		'empty',
-		'many_seats',
-		'few_seats',
-		'standing',
-		'full',
-	];
-	const SEVERITY_CODES: readonly SeverityCode[] = ['critical', 'high', 'watch'];
+	// STATUS_CODES / OCCUPANCY_CODES / SEVERITY_CODES come from the single source
+	// ($lib/v1/schemas, derived from the zod enums) — imported above.
 
 	const STATUS_LABEL: Record<StatusCode, Record<Locale, string>> = {
 		early: { fr: 'En avance', en: 'Early' },

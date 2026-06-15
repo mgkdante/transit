@@ -11,6 +11,7 @@
 // `window`, or `localStorage`.
 
 import type { StatusCode, OccupancyCode, Grain } from '$lib/v1/schemas';
+import { STATUS_CODES, OCCUPANCY_CODES, GRAINS } from '$lib/v1/schemas';
 
 /**
  * The complete, serializable filter state shared across every surface.
@@ -38,34 +39,13 @@ export interface FilterState {
 }
 
 // ---------------------------------------------------------------------------
-// Enum allow-lists — runtime guards for dropping invalid URL/query values.
-//
-// These mirror the v1 schema enums exactly (the contract source of truth). They
-// live here (not imported as runtime values) so the filter layer can validate
-// input without a hard runtime dependency on the v1 schema module's export
-// surface — the *types* are imported above for compile-time fidelity.
+// Enum allow-lists — the runtime guards for dropping invalid URL/query values.
+// Re-exported from the SINGLE SOURCE ($lib/v1/schemas, where they are derived
+// from the zod enums via `.options`). Re-exporting keeps the public
+// `$lib/filters` surface stable while avoiding a second copy of the tuples (DRY).
 // ---------------------------------------------------------------------------
 
-/** Valid {@link StatusCode} values, in canonical (early→late→severe→unknown) order. */
-export const STATUS_CODES: readonly StatusCode[] = [
-	'early',
-	'on_time',
-	'late',
-	'severe',
-	'unknown',
-];
-
-/** Valid {@link OccupancyCode} values, emptiest→fullest. */
-export const OCCUPANCY_CODES: readonly OccupancyCode[] = [
-	'empty',
-	'many_seats',
-	'few_seats',
-	'standing',
-	'full',
-];
-
-/** Valid {@link Grain} values, finest→coarsest. */
-export const GRAINS: readonly Grain[] = ['live', 'day', 'week', 'month'];
+export { STATUS_CODES, OCCUPANCY_CODES, GRAINS };
 
 const STATUS_SET: ReadonlySet<string> = new Set(STATUS_CODES);
 const OCCUPANCY_SET: ReadonlySet<string> = new Set(OCCUPANCY_CODES);

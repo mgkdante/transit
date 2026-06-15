@@ -35,6 +35,16 @@ export type SeverityCode = z.infer<typeof SeverityCodeSchema>;
 export const GrainSchema = z.enum(['live', 'day', 'week', 'month']);
 export type Grain = z.infer<typeof GrainSchema>;
 
+/**
+ * Canonical code tuples — the SINGLE SOURCE every consumer (aggregate, filters,
+ * the kit gallery) imports. Derived from the zod enums above via `.options`, so
+ * they can never drift from the validated contract.
+ */
+export const STATUS_CODES = StatusCodeSchema.options;
+export const OCCUPANCY_CODES = OccupancyCodeSchema.options;
+export const SEVERITY_CODES = SeverityCodeSchema.options;
+export const GRAINS = GrainSchema.options;
+
 // ---------------------------------------------------------------------------
 // IsoUtc string brand.
 //

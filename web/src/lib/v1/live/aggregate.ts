@@ -17,18 +17,9 @@
 //     vehicle but no usable status" bucket).
 
 import type { OccupancyCode, StatusCode, Vehicle } from '$lib/v1/schemas';
-
-/** Every status bucket, zero-initialized — the StatusDist key set. */
-const STATUS_CODES: readonly StatusCode[] = ['early', 'on_time', 'late', 'severe', 'unknown'];
-
-/** Every occupancy bucket — the OccupancyMix key set. */
-const OCCUPANCY_CODES: readonly OccupancyCode[] = [
-	'empty',
-	'many_seats',
-	'few_seats',
-	'standing',
-	'full',
-];
+// The StatusDist / OccupancyMix key sets — the single source ($lib/v1/schemas,
+// derived from the zod enums). Imported, never re-declared (DRY).
+import { OCCUPANCY_CODES, STATUS_CODES } from '$lib/v1/schemas';
 
 /** Count of vehicles per status; every enum key present (missing -> 0). */
 export type StatusDist = Record<StatusCode, number>;
