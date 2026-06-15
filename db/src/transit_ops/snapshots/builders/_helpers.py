@@ -29,6 +29,21 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
 # Value-domain mappings
 # --------------------------------------------------------------------------
 
+# Reusable status-band CASE fragment. This MUST stay CHARACTER-IDENTICAL to the
+# CASE in migration 0020 (gold.current_vehicle_map_with_status.status_band) so a
+# Python builder that computes the band in-query produces the exact same labels
+# the view does — never re-bucket avg_delay_seconds in Python (that was the old
+# drift risk this constant retires). The doubled single-quote in À l''heure is the
+# SQL string-literal escape for the apostrophe; ``{col}`` is the delay column name.
+STATUS_BAND_CASE_SQL = """
+        CASE
+            WHEN {col} IS NULL THEN 'Inconnu / Unknown'
+            WHEN {col} < -60  THEN 'En avance / Early'
+            WHEN {col} <  60  THEN 'À l''heure / On time'
+            WHEN {col} < 300  THEN 'En retard / Late'
+            ELSE                   'Critique / Severe'
+        END"""
+
 # gold.current_vehicle_map_with_status.status_band emits bilingual labels (0020).
 _STATUS_MAP: dict[str, str] = {
     "EN AVANCE / EARLY": "early",
@@ -156,20 +171,6 @@ def _route_sort_key(route_id: object):
 
 def _status_from_band(band: object) -> str:
     return _STATUS_MAP.get((band or "").upper(), "unknown")  # type: ignore[union-attr]
-
-
-def _status_from_delay_seconds(avg_delay_seconds: object) -> str:
-    """Bucket an average delay (SECONDS) into a Status code (mirrors migration 0020)."""
-    if avg_delay_seconds is None:
-        return "unknown"
-    secs = float(avg_delay_seconds)  # type: ignore[arg-type]
-    if secs < -60:
-        return "early"
-    if secs < 60:
-        return "on_time"
-    if secs < 300:
-        return "late"
-    return "severe"
 
 
 def _delay_min(avg_delay_seconds: object) -> int | None:

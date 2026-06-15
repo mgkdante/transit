@@ -29,6 +29,7 @@ from sqlalchemy import text
 from transit_ops.snapshots.builders._helpers import (
     _OCCUPANCY_MAP,
     _SURFACES,
+    STATUS_BAND_CASE_SQL,
     _delay_min,
     _iso,
     _kmh,
@@ -39,7 +40,6 @@ from transit_ops.snapshots.builders._helpers import (
     _severity_code,
     _split_csv,
     _status_from_band,
-    _status_from_delay_seconds,
 )
 from transit_ops.snapshots.contract import (
     Alert,
@@ -126,9 +126,15 @@ def build_vehicles(
 # build_trips
 # --------------------------------------------------------------------------
 
+# status_band is computed IN-QUERY from gold's authoritative 0020 CASE
+# (STATUS_BAND_CASE_SQL) so build_trips no longer re-buckets avg_delay_seconds in
+# Python (slice-9.1.1-theta). The FROM/WHERE are unchanged — the trip set is
+# identical; only an extra derived label column is added.
 _TRIP_DELAY_SQL = text(
     """
-    SELECT trip_id, route_id, avg_delay_seconds
+    SELECT trip_id, route_id, avg_delay_seconds, """
+    + STATUS_BAND_CASE_SQL.format(col="avg_delay_seconds")
+    + """ AS status_band
     FROM gold.current_trip_delay_computed
     WHERE provider_id = :provider_id
     """
@@ -165,7 +171,7 @@ def build_trips(conn: Connection, *, provider_id: str = "stm", generated_utc: st
         trip_id = str(r["trip_id"])
         trips[trip_id] = Trip(
             route=r["route_id"],
-            status=_status_from_delay_seconds(r["avg_delay_seconds"]),
+            status=_status_from_band(r["status_band"]),
             delay_min=_delay_min(r["avg_delay_seconds"]),
             stops=[],
         )
