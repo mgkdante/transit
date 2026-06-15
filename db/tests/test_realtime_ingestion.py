@@ -83,11 +83,18 @@ class FakeBronzeStorage:
     def __init__(self, prefix: str) -> None:
         self.prefix = prefix.rstrip("/")
         self.persisted: list[tuple[Path, str]] = []
+        self.deleted: list[str] = []
+        self.delete_should_raise = False
 
     def persist_temp_file(self, temp_path: Path, storage_path: str) -> str:
         self.persisted.append((temp_path, storage_path))
         temp_path.unlink(missing_ok=True)
         return f"{self.prefix}/{storage_path}"
+
+    def delete_object(self, storage_path: str) -> None:
+        self.deleted.append(storage_path)
+        if self.delete_should_raise:
+            raise RuntimeError("simulated R2 delete failure")
 
 
 def _build_feed_message_bytes(
@@ -357,3 +364,141 @@ def test_capture_realtime_feed_uses_storage_abstraction_for_s3(
     assert fake_storage.persisted[0][1] == result.storage_path
     assert connection.calls[2][1]["storage_backend"] == "s3"
     assert connection.calls[2][1]["storage_path"] == result.storage_path
+
+
+class _MetadataFailingConnection(RecordingConnection):
+    """Raises when the post-upload metadata write is attempted."""
+
+    def __init__(self, fail_marker: str, error: Exception) -> None:
+        super().__init__()
+        self.fail_marker = fail_marker
+        self.error = error
+
+    def execute(self, statement, params: dict[str, object]) -> FakeResult:  # noqa: ANN001
+        sql_text = str(statement)
+        if self.fail_marker in sql_text:
+            self.calls.append((sql_text, params))
+            raise self.error
+        return super().execute(statement, params)
+
+
+def test_capture_realtime_feed_deletes_orphan_object_when_metadata_write_fails(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    payload = _build_feed_message_bytes(
+        timestamp=1_774_750_400,
+        entity_count=2,
+        endpoint_key="vehicle_positions",
+    )
+    temp_path = tmp_path / "vehicle_positions.pb"
+    temp_path.write_bytes(payload)
+    artifact = DownloadedArtifact(
+        temp_path=temp_path,
+        byte_size=len(payload),
+        checksum_sha256=compute_sha256_hex(temp_path),
+        http_status_code=200,
+        source_url="https://example.com/vehiclePositions",
+    )
+    fake_storage = FakeBronzeStorage("s3://bronze-bucket")
+    boom = RuntimeError("metadata transaction blew up")
+    # The first post-upload write is the ingestion_objects insert.
+    connection = _MetadataFailingConnection("INSERT INTO raw.ingestion_objects", boom)
+    settings = Settings(
+        _env_file=None,
+        DATABASE_URL="postgresql://user:pass@example.com/transit",
+        STM_API_KEY="demo-key",
+        BRONZE_STORAGE_BACKEND="s3",
+        BRONZE_S3_ENDPOINT="https://example.r2.cloudflarestorage.com",
+        BRONZE_S3_BUCKET="bronze-bucket",
+        BRONZE_S3_ACCESS_KEY="access",
+        BRONZE_S3_SECRET_KEY="secret",
+        BRONZE_S3_REGION="auto",
+    )
+    registry = ProviderRegistry.from_project_root(
+        project_root=Path(__file__).resolve().parents[1],
+        settings=settings,
+    )
+
+    monkeypatch.setattr(realtime_gtfs, "_download_to_tempfile", lambda config, temp_dir: artifact)
+    monkeypatch.setattr(
+        realtime_gtfs,
+        "get_bronze_storage",
+        lambda settings, project_root, storage_backend: fake_storage,
+    )
+
+    with pytest.raises(RuntimeError) as exc_info:
+        capture_realtime_feed(
+            "stm",
+            "vehicle_positions",
+            settings=settings,
+            registry=registry,
+            engine=FakeEngine(connection),
+        )
+
+    # The original metadata exception must still propagate.
+    assert exc_info.value is boom
+    # The artifact was uploaded, then the metadata write failed -> the R2 object
+    # must be best-effort deleted so it does not orphan-leak.
+    assert len(fake_storage.persisted) == 1
+    persisted_storage_path = fake_storage.persisted[0][1]
+    assert fake_storage.deleted == [persisted_storage_path]
+
+
+def test_capture_realtime_feed_swallows_delete_failure_and_propagates_original(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    payload = _build_feed_message_bytes(
+        timestamp=1_774_750_400,
+        entity_count=2,
+        endpoint_key="vehicle_positions",
+    )
+    temp_path = tmp_path / "vehicle_positions.pb"
+    temp_path.write_bytes(payload)
+    artifact = DownloadedArtifact(
+        temp_path=temp_path,
+        byte_size=len(payload),
+        checksum_sha256=compute_sha256_hex(temp_path),
+        http_status_code=200,
+        source_url="https://example.com/vehiclePositions",
+    )
+    fake_storage = FakeBronzeStorage("s3://bronze-bucket")
+    fake_storage.delete_should_raise = True
+    boom = RuntimeError("metadata transaction blew up")
+    connection = _MetadataFailingConnection("INSERT INTO raw.ingestion_objects", boom)
+    settings = Settings(
+        _env_file=None,
+        DATABASE_URL="postgresql://user:pass@example.com/transit",
+        STM_API_KEY="demo-key",
+        BRONZE_STORAGE_BACKEND="s3",
+        BRONZE_S3_ENDPOINT="https://example.r2.cloudflarestorage.com",
+        BRONZE_S3_BUCKET="bronze-bucket",
+        BRONZE_S3_ACCESS_KEY="access",
+        BRONZE_S3_SECRET_KEY="secret",
+        BRONZE_S3_REGION="auto",
+    )
+    registry = ProviderRegistry.from_project_root(
+        project_root=Path(__file__).resolve().parents[1],
+        settings=settings,
+    )
+
+    monkeypatch.setattr(realtime_gtfs, "_download_to_tempfile", lambda config, temp_dir: artifact)
+    monkeypatch.setattr(
+        realtime_gtfs,
+        "get_bronze_storage",
+        lambda settings, project_root, storage_backend: fake_storage,
+    )
+
+    with pytest.raises(RuntimeError) as exc_info:
+        capture_realtime_feed(
+            "stm",
+            "vehicle_positions",
+            settings=settings,
+            registry=registry,
+            engine=FakeEngine(connection),
+        )
+
+    # A failing best-effort delete must NOT mask the original metadata exception.
+    assert exc_info.value is boom
+    assert fake_storage.deleted == [fake_storage.persisted[0][1]]

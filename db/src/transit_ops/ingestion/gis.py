@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
@@ -31,6 +32,23 @@ from transit_ops.ingestion.dataset_versions import register_or_touch_dataset_ver
 from transit_ops.ingestion.storage import get_bronze_storage, resolve_local_bronze_root
 from transit_ops.providers import ProviderRegistry
 from transit_ops.settings import Settings, get_settings
+
+logger = logging.getLogger(__name__)
+
+
+def _best_effort_delete_orphan(bronze_storage: object, storage_path: str) -> None:
+    """Best-effort delete of an uploaded Bronze object after a downstream failure.
+
+    Swallows and logs any delete error so it never masks the original exception.
+    """
+
+    try:
+        bronze_storage.delete_object(storage_path)
+    except Exception:
+        logger.exception(
+            "Failed to delete orphaned Bronze object after metadata failure: %s",
+            storage_path,
+        )
 
 
 def _project_root() -> Path:
@@ -270,6 +288,8 @@ def ingest_gis_feed(
         )
 
     artifact: DownloadedArtifact | None = None
+    storage_path: str | None = None
+    persisted = False
     try:
         artifact = _download_to_tempfile(config.source_url, bronze_root / ".tmp")
         storage_path = build_gis_object_storage_path(
@@ -336,6 +356,7 @@ def ingest_gis_feed(
                 )
 
             archive_reference = bronze_storage.persist_temp_file(artifact.temp_path, storage_path)
+            persisted = True
             ingestion_object_id = insert_ingestion_object(
                 connection,
                 ingestion_run_id=ingestion_run_id,
@@ -394,6 +415,8 @@ def ingest_gis_feed(
             )
         if artifact is not None:
             artifact.temp_path.unlink(missing_ok=True)
+        if persisted and storage_path is not None:
+            _best_effort_delete_orphan(bronze_storage, storage_path)
         raise
     except Exception as exc:
         completed_at_utc = utc_now()
@@ -408,4 +431,6 @@ def ingest_gis_feed(
             )
         if artifact is not None:
             artifact.temp_path.unlink(missing_ok=True)
+        if persisted and storage_path is not None:
+            _best_effort_delete_orphan(bronze_storage, storage_path)
         raise

@@ -3,6 +3,8 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from pathlib import Path
 
+import pytest
+
 import transit_ops.ingestion.static_gtfs as static_gtfs
 from transit_ops.ingestion.common import (
     DownloadedArtifact,
@@ -111,11 +113,18 @@ class FakeBronzeStorage:
     def __init__(self, prefix: str) -> None:
         self.prefix = prefix.rstrip("/")
         self.persisted: list[tuple[Path, str]] = []
+        self.deleted: list[str] = []
+        self.delete_should_raise = False
 
     def persist_temp_file(self, temp_path: Path, storage_path: str) -> str:
         self.persisted.append((temp_path, storage_path))
         temp_path.unlink(missing_ok=True)
         return f"{self.prefix}/{storage_path}"
+
+    def delete_object(self, storage_path: str) -> None:
+        self.deleted.append(storage_path)
+        if self.delete_should_raise:
+            raise RuntimeError("simulated R2 delete failure")
 
 
 def test_build_static_object_storage_path() -> None:
@@ -450,3 +459,142 @@ def test_ingest_static_feed_persists_changed_zip_and_registers_dataset_version(
         and "source_ingestion_object_id" in sql
         for sql, _ in connection.calls
     )
+
+
+class _MetadataFailingConnection(RecordingConnection):
+    """Raises when the post-upload metadata write is attempted."""
+
+    def __init__(self, fail_marker: str, error: Exception, **kwargs: object) -> None:
+        super().__init__(**kwargs)
+        self.fail_marker = fail_marker
+        self.error = error
+
+    def execute(self, statement, params: dict[str, object]) -> FakeResult:  # noqa: ANN001
+        sql_text = str(statement)
+        if self.fail_marker in sql_text:
+            self.calls.append((sql_text, params))
+            raise self.error
+        return super().execute(statement, params)
+
+
+def test_ingest_static_feed_deletes_orphan_object_when_metadata_write_fails(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    temp_path = tmp_path / "download.zip"
+    payload = b"changed-static-zip"
+    temp_path.write_bytes(payload)
+    checksum = compute_sha256_hex(temp_path)
+    artifact = DownloadedArtifact(
+        temp_path=temp_path,
+        byte_size=len(payload),
+        checksum_sha256=checksum,
+        http_status_code=200,
+        source_url="https://override.example.com/stm.zip",
+    )
+    fake_storage = FakeBronzeStorage("s3://bronze-bucket")
+    boom = RuntimeError("metadata transaction blew up")
+    # The first write after the upload is the ingestion_objects insert.
+    connection = _MetadataFailingConnection(
+        "INSERT INTO raw.ingestion_objects",
+        boom,
+        current_dataset_checksum="0" * 64,
+        current_dataset_version_id=76,
+        inserted_dataset_version_id=88,
+    )
+    settings = Settings(
+        _env_file=None,
+        DATABASE_URL="postgresql://user:pass@example.com/transit",
+        STM_STATIC_GTFS_URL="https://override.example.com/stm.zip",
+        BRONZE_STORAGE_BACKEND="s3",
+        BRONZE_S3_ENDPOINT="https://example.r2.cloudflarestorage.com",
+        BRONZE_S3_BUCKET="bronze-bucket",
+        BRONZE_S3_ACCESS_KEY="access",
+        BRONZE_S3_SECRET_KEY="secret",
+        BRONZE_S3_REGION="auto",
+    )
+    registry = ProviderRegistry.from_project_root(
+        project_root=Path(__file__).resolve().parents[1],
+        settings=settings,
+    )
+
+    monkeypatch.setattr(static_gtfs, "_download_to_tempfile", lambda source_url, temp_dir: artifact)
+    monkeypatch.setattr(
+        static_gtfs,
+        "get_bronze_storage",
+        lambda settings, project_root, storage_backend: fake_storage,
+    )
+
+    with pytest.raises(RuntimeError) as exc_info:
+        ingest_static_feed(
+            "stm",
+            settings=settings,
+            registry=registry,
+            engine=FakeEngine(connection),
+        )
+
+    assert exc_info.value is boom
+    assert len(fake_storage.persisted) == 1
+    persisted_storage_path = fake_storage.persisted[0][1]
+    assert fake_storage.deleted == [persisted_storage_path]
+
+
+def test_ingest_static_feed_swallows_delete_failure_and_propagates_original(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    temp_path = tmp_path / "download.zip"
+    payload = b"changed-static-zip"
+    temp_path.write_bytes(payload)
+    checksum = compute_sha256_hex(temp_path)
+    artifact = DownloadedArtifact(
+        temp_path=temp_path,
+        byte_size=len(payload),
+        checksum_sha256=checksum,
+        http_status_code=200,
+        source_url="https://override.example.com/stm.zip",
+    )
+    fake_storage = FakeBronzeStorage("s3://bronze-bucket")
+    fake_storage.delete_should_raise = True
+    boom = RuntimeError("metadata transaction blew up")
+    connection = _MetadataFailingConnection(
+        "INSERT INTO raw.ingestion_objects",
+        boom,
+        current_dataset_checksum="0" * 64,
+        current_dataset_version_id=76,
+        inserted_dataset_version_id=88,
+    )
+    settings = Settings(
+        _env_file=None,
+        DATABASE_URL="postgresql://user:pass@example.com/transit",
+        STM_STATIC_GTFS_URL="https://override.example.com/stm.zip",
+        BRONZE_STORAGE_BACKEND="s3",
+        BRONZE_S3_ENDPOINT="https://example.r2.cloudflarestorage.com",
+        BRONZE_S3_BUCKET="bronze-bucket",
+        BRONZE_S3_ACCESS_KEY="access",
+        BRONZE_S3_SECRET_KEY="secret",
+        BRONZE_S3_REGION="auto",
+    )
+    registry = ProviderRegistry.from_project_root(
+        project_root=Path(__file__).resolve().parents[1],
+        settings=settings,
+    )
+
+    monkeypatch.setattr(static_gtfs, "_download_to_tempfile", lambda source_url, temp_dir: artifact)
+    monkeypatch.setattr(
+        static_gtfs,
+        "get_bronze_storage",
+        lambda settings, project_root, storage_backend: fake_storage,
+    )
+
+    with pytest.raises(RuntimeError) as exc_info:
+        ingest_static_feed(
+            "stm",
+            settings=settings,
+            registry=registry,
+            engine=FakeEngine(connection),
+        )
+
+    # A failing best-effort delete must NOT mask the original metadata exception.
+    assert exc_info.value is boom
+    assert fake_storage.deleted == [fake_storage.persisted[0][1]]
