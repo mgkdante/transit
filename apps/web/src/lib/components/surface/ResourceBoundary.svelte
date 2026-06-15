@@ -32,9 +32,13 @@
 		 * empty" (e.g. an empty list), routing to the empty edge state instead of
 		 * the children snippet. Omitted ⇒ any non-null value renders.
 		 */
-		isEmpty?: (data: T) => boolean;
-		/** Rendered with the loaded data once it is present (and not empty). */
-		children: Snippet<[T]>;
+		isEmpty?: (data: NonNullable<T>) => boolean;
+		/**
+		 * Rendered with the loaded data once it is present (and not empty). The
+		 * snippet receives `NonNullable<T>` — the boundary only renders it past the
+		 * non-null/non-empty guard, so consumers never null-check inside it.
+		 */
+		children: Snippet<[NonNullable<T>]>;
 		/** Optional extra classes forwarded to the edge states. */
 		class?: string;
 	}
@@ -44,11 +48,18 @@
 	// Edge density follows the shell breakpoint (desktop 3-volet vs mobile card).
 	const edgeLayout = $derived(layout.isDesktop ? 'desktop' : 'mobile');
 
-	const hasData = $derived(resource.data != null && !(isEmpty?.(resource.data) ?? false));
+	// The single non-null/non-empty narrowing — null otherwise. Consumers get a
+	// guaranteed-present value in `children`, so no surface re-checks for null.
+	const loaded = $derived.by((): NonNullable<T> | null => {
+		const value = resource.data;
+		if (value == null) return null;
+		const present = value as NonNullable<T>;
+		return isEmpty?.(present) ? null : present;
+	});
 </script>
 
-{#if hasData && resource.data != null}
-	{@render children(resource.data)}
+{#if loaded !== null}
+	{@render children(loaded)}
 {:else if resource.error}
 	<EdgeState
 		variant="error-v1"
