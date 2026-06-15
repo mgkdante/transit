@@ -58,7 +58,10 @@ export type IsoUtc = string & { readonly [IsoUtcBrand]: true };
  * tweak. Use `$lib/utils/time` to render.
  */
 export const isoUtc = (): z.ZodType<IsoUtc> =>
-	z.string().min(1).transform((s) => s as IsoUtc);
+	z
+		.string()
+		.min(1)
+		.transform((s) => s as IsoUtc);
 
 // ---------------------------------------------------------------------------
 // Shared structural types.

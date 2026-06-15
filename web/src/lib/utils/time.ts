@@ -13,14 +13,14 @@
  */
 
 /** Supported UI languages. Mirrors `Locale` from `$lib/i18n`. */
-export type TimeLang = "en" | "fr";
+export type TimeLang = 'en' | 'fr';
 
 /** IANA zone all rider-facing times render in. */
-export const DISPLAY_TIME_ZONE = "America/Toronto" as const;
+export const DISPLAY_TIME_ZONE = 'America/Toronto' as const;
 
 /** Map our short lang code to a BCP-47 tag for Intl. */
 function localeTag(lang: TimeLang): string {
-	return lang === "fr" ? "fr-CA" : "en-CA";
+	return lang === 'fr' ? 'fr-CA' : 'en-CA';
 }
 
 /** Parse an ISO string into a Date, returning null for empty/invalid input. */
@@ -40,16 +40,12 @@ function parseIso(iso: string): Date | null {
  * Returns an em dash for empty/invalid input so callers can render the result
  * directly without null-guards.
  */
-export function formatUtc(
-	iso: string,
-	lang: TimeLang,
-	opts?: Intl.DateTimeFormatOptions,
-): string {
+export function formatUtc(iso: string, lang: TimeLang, opts?: Intl.DateTimeFormatOptions): string {
 	const date = parseIso(iso);
-	if (!date) return "—";
+	if (!date) return '—';
 	const base: Intl.DateTimeFormatOptions = {
-		dateStyle: "medium",
-		timeStyle: "short",
+		dateStyle: 'medium',
+		timeStyle: 'short',
 	};
 	// A caller-supplied dateStyle/timeStyle is incompatible with explicit field
 	// options; when opts is provided we hand it through verbatim (minus timeZone)
@@ -67,19 +63,19 @@ export function formatUtc(
  * clock regardless of locale defaults. Returns "—" for an invalid Date.
  */
 export function formatClock(date: Date, lang: TimeLang): string {
-	if (!(date instanceof Date) || Number.isNaN(date.getTime())) return "—";
+	if (!(date instanceof Date) || Number.isNaN(date.getTime())) return '—';
 	// Use formatToParts so we can guarantee "HH:MM" without locale separators.
 	const parts = new Intl.DateTimeFormat(localeTag(lang), {
-		hour: "2-digit",
-		minute: "2-digit",
+		hour: '2-digit',
+		minute: '2-digit',
 		hour12: false,
 		timeZone: DISPLAY_TIME_ZONE,
 	}).formatToParts(date);
-	const hour = parts.find((p) => p.type === "hour")?.value ?? "00";
-	const minute = parts.find((p) => p.type === "minute")?.value ?? "00";
+	const hour = parts.find((p) => p.type === 'hour')?.value ?? '00';
+	const minute = parts.find((p) => p.type === 'minute')?.value ?? '00';
 	// Some locales emit "24" for midnight under hour12:false; normalize to "00".
-	const hh = hour === "24" ? "00" : hour.padStart(2, "0");
-	return `${hh}:${minute.padStart(2, "0")}`;
+	const hh = hour === '24' ? '00' : hour.padStart(2, '0');
+	return `${hh}:${minute.padStart(2, '0')}`;
 }
 
 /**
@@ -88,21 +84,22 @@ export function formatClock(date: Date, lang: TimeLang): string {
  * Positive when `iso` is in the past, negative when in the future. Returns NaN
  * for invalid input so callers can decide how to render "no data".
  */
-export function ageSeconds(iso: string, now: Date = new Date()): number {
+export function ageSeconds(iso: string, now: Date | number = Date.now()): number {
 	const date = parseIso(iso);
 	if (!date) return Number.NaN;
-	return Math.round((now.getTime() - date.getTime()) / 1000);
+	const nowMs = typeof now === 'number' ? now : now.getTime();
+	return Math.round((nowMs - date.getTime()) / 1000);
 }
 
 /** Relative-time unit thresholds (in seconds), largest first. */
 const RELATIVE_UNITS: ReadonlyArray<{ unit: Intl.RelativeTimeFormatUnit; seconds: number }> = [
-	{ unit: "year", seconds: 60 * 60 * 24 * 365 },
-	{ unit: "month", seconds: 60 * 60 * 24 * 30 },
-	{ unit: "week", seconds: 60 * 60 * 24 * 7 },
-	{ unit: "day", seconds: 60 * 60 * 24 },
-	{ unit: "hour", seconds: 60 * 60 },
-	{ unit: "minute", seconds: 60 },
-	{ unit: "second", seconds: 1 },
+	{ unit: 'year', seconds: 60 * 60 * 24 * 365 },
+	{ unit: 'month', seconds: 60 * 60 * 24 * 30 },
+	{ unit: 'week', seconds: 60 * 60 * 24 * 7 },
+	{ unit: 'day', seconds: 60 * 60 * 24 },
+	{ unit: 'hour', seconds: 60 * 60 },
+	{ unit: 'minute', seconds: 60 },
+	{ unit: 'second', seconds: 1 },
 ];
 
 /**
@@ -114,17 +111,17 @@ const RELATIVE_UNITS: ReadonlyArray<{ unit: Intl.RelativeTimeFormatUnit; seconds
  */
 export function formatRelative(iso: string, lang: TimeLang, now: Date = new Date()): string {
 	const seconds = ageSeconds(iso, now);
-	if (Number.isNaN(seconds)) return "—";
-	if (Math.abs(seconds) < 5) return lang === "fr" ? "maintenant" : "now";
+	if (Number.isNaN(seconds)) return '—';
+	if (Math.abs(seconds) < 5) return lang === 'fr' ? 'maintenant' : 'now';
 
-	const rtf = new Intl.RelativeTimeFormat(localeTag(lang), { numeric: "auto" });
+	const rtf = new Intl.RelativeTimeFormat(localeTag(lang), { numeric: 'auto' });
 	for (const { unit, seconds: unitSeconds } of RELATIVE_UNITS) {
-		if (Math.abs(seconds) >= unitSeconds || unit === "second") {
+		if (Math.abs(seconds) >= unitSeconds || unit === 'second') {
 			// Positive `seconds` = past → negative value for RelativeTimeFormat.
 			const value = -Math.round(seconds / unitSeconds);
 			return rtf.format(value, unit);
 		}
 	}
 	// Unreachable (the "second" branch always matches), but keeps TS exhaustive.
-	return rtf.format(-seconds, "second");
+	return rtf.format(-seconds, 'second');
 }

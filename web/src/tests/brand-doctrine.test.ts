@@ -104,11 +104,7 @@ const FILL_PATTERNS: RegExp[] = [
 ];
 
 // Recognised allowlist markers (checked on ORIGINAL source, incl. comments).
-const ALLOW_MARKERS = [
-	'doctrine-allow: interactive',
-	'AFFORDANCE MARKER',
-	'lone --primary touch',
-];
+const ALLOW_MARKERS = ['doctrine-allow: interactive', 'AFFORDANCE MARKER', 'lone --primary touch'];
 
 function datavizViolations(src: string): string[] {
 	const original = src.split('\n');

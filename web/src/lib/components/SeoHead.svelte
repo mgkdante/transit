@@ -23,12 +23,7 @@
 -->
 <script lang="ts">
 	import { dev as runtimeDev } from '$app/environment';
-	import {
-		DEFAULT_LOCALE,
-		SUPPORTED_LOCALES,
-		localizeHref,
-		type Locale
-	} from '$lib/i18n';
+	import { DEFAULT_LOCALE, SUPPORTED_LOCALES, localizeHref, type Locale } from '$lib/i18n';
 
 	interface SeoHeadProps {
 		/** Page title (already localized by the caller). Site name is appended. */
@@ -63,7 +58,7 @@
 		themeColor = '#141414',
 		noIndex = false,
 		singleLocale = false,
-		dev = runtimeDev
+		dev = runtimeDev,
 	}: SeoHeadProps = $props();
 
 	// Title: append the site name unless the page already is the site name.
@@ -78,9 +73,7 @@
 
 	// og:locale uses BCP-47-ish underscore form (Montréal market → _CA).
 	const ogLocale = $derived(`${locale}_CA`);
-	const altLocales = $derived(
-		SUPPORTED_LOCALES.filter((l) => l !== locale).map((l) => `${l}_CA`)
-	);
+	const altLocales = $derived(SUPPORTED_LOCALES.filter((l) => l !== locale).map((l) => `${l}_CA`));
 
 	// Dev-only ergonomics: warn (never throw) on lengths that risk SERP/social
 	// truncation. Production renders untouched.
@@ -88,12 +81,12 @@
 		if (!dev) return;
 		if (fullTitle.length > 60) {
 			console.warn(
-				`[SeoHead] title > 60 chars (${fullTitle.length}) — may truncate in search. path: ${path}`
+				`[SeoHead] title > 60 chars (${fullTitle.length}) — may truncate in search. path: ${path}`,
 			);
 		}
 		if (description.length < 120 || description.length > 160) {
 			console.warn(
-				`[SeoHead] description outside 120–160 chars (${description.length}). path: ${path}`
+				`[SeoHead] description outside 120–160 chars (${description.length}). path: ${path}`,
 			);
 		}
 	});

@@ -96,10 +96,7 @@
 		readonly body: string;
 	};
 
-	const COPY: Record<
-		Exclude<EdgeVariant, 'skeleton'>,
-		Record<Locale, CopyBlock>
-	> = {
+	const COPY: Record<Exclude<EdgeVariant, 'skeleton'>, Record<Locale, CopyBlock>> = {
 		'stale-offline': {
 			fr: {
 				glyph: '▲',
@@ -213,9 +210,7 @@
 	const copy = $derived(
 		isSkeleton ? null : COPY[variant as Exclude<EdgeVariant, 'skeleton'>][lang],
 	);
-	const accent = $derived(
-		isSkeleton ? null : ACCENT[variant as Exclude<EdgeVariant, 'skeleton'>],
-	);
+	const accent = $derived(isSkeleton ? null : ACCENT[variant as Exclude<EdgeVariant, 'skeleton'>]);
 
 	/** Relative "MAJ il y a 4 min" string for the stale variant. */
 	const staleDelta = $derived(
@@ -300,9 +295,7 @@
 		>
 
 		<div class="flex flex-col gap-1.5">
-			<span class="font-heading font-bold text-body text-[var(--foreground)]"
-				>{copy.title}</span
-			>
+			<span class="font-heading font-bold text-body text-[var(--foreground)]">{copy.title}</span>
 			<p
 				class={cn(
 					'font-body text-small text-[var(--muted-foreground)]',

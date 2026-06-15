@@ -72,15 +72,30 @@ type Pair = [string, [Mode, string], [Mode, string], number];
 const TEXT_PAIRS: Pair[] = [
 	['D foreground / background', ['dark', 'foreground'], ['dark', 'background'], 4.5],
 	['D foreground / card', ['dark', 'foreground'], ['dark', 'card'], 4.5],
-	['D muted-foreground / popover (worst case)', ['dark', 'muted-foreground'], ['dark', 'popover'], 4.5],
+	[
+		'D muted-foreground / popover (worst case)',
+		['dark', 'muted-foreground'],
+		['dark', 'popover'],
+		4.5,
+	],
 	['D primary / background (interactive orange)', ['dark', 'primary'], ['dark', 'background'], 4.5],
 	['D primary / card', ['dark', 'primary'], ['dark', 'card'], 4.5],
 	['D accent-text / card (wayfinding amber)', ['dark', 'accent-text'], ['dark', 'card'], 4.5],
 	['D destructive / card', ['dark', 'destructive'], ['dark', 'card'], 4.5],
 	['L foreground / background', ['light', 'foreground'], ['light', 'background'], 4.5],
 	['L foreground / card', ['light', 'foreground'], ['light', 'card'], 4.5],
-	['L muted-foreground / muted (worst case)', ['light', 'muted-foreground'], ['light', 'muted'], 4.5],
-	['L primary / background (interactive orange)', ['light', 'primary'], ['light', 'background'], 4.5],
+	[
+		'L muted-foreground / muted (worst case)',
+		['light', 'muted-foreground'],
+		['light', 'muted'],
+		4.5,
+	],
+	[
+		'L primary / background (interactive orange)',
+		['light', 'primary'],
+		['light', 'background'],
+		4.5,
+	],
 	['L primary / muted (worst case)', ['light', 'primary'], ['light', 'muted'], 4.5],
 	['L accent-text / card (wayfinding amber)', ['light', 'accent-text'], ['light', 'card'], 4.5],
 	['L destructive / muted (worst case)', ['light', 'destructive'], ['light', 'muted'], 4.5],
@@ -93,10 +108,20 @@ const TEXT_PAIRS: Pair[] = [
 const STATUS_KEYS = ['early', 'on-time', 'late', 'severe', 'unknown'] as const;
 const DATAVIZ_STATUS_ON_CARD: Pair[] = [
 	...STATUS_KEYS.map(
-		(k): Pair => [`D dataviz-status-${k} / card`, ['dark', `dataviz.status.${k}`], ['dark', 'card'], 3],
+		(k): Pair => [
+			`D dataviz-status-${k} / card`,
+			['dark', `dataviz.status.${k}`],
+			['dark', 'card'],
+			3,
+		],
 	),
 	...STATUS_KEYS.map(
-		(k): Pair => [`L dataviz-status-${k} / card`, ['light', `dataviz.status.${k}`], ['light', 'card'], 3],
+		(k): Pair => [
+			`L dataviz-status-${k} / card`,
+			['light', `dataviz.status.${k}`],
+			['light', 'card'],
+			3,
+		],
 	),
 ];
 
@@ -110,7 +135,6 @@ describe('tokens AA — computed contrast from tools/tokens/tokens.json', () => 
 			const mark = r >= floor ? 'PASS' : 'FAIL';
 			return `  ${mark}  ${r.toFixed(2)}:1  (>=${floor})  ${label}`;
 		});
-		// eslint-disable-next-line no-console
 		console.log(`\nWCAG contrast ratios (tokens.json):\n${rows.join('\n')}\n`);
 		expect(rows.length).toBe(ALL_PAIRS.length);
 	});

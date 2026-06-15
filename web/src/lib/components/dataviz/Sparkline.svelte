@@ -15,8 +15,7 @@
 	import { cn, type WithElementRef } from '$lib/utils';
 	import type { HTMLAttributes } from 'svelte/elements';
 
-	export interface SparklineProps
-		extends WithElementRef<HTMLAttributes<HTMLDivElement>> {
+	export interface SparklineProps extends WithElementRef<HTMLAttributes<HTMLDivElement>> {
 		/** The series. `null` entries render as gaps (no interpolation). */
 		values: Array<number | null>;
 		/** Drawn width in px (viewBox units). */
@@ -78,13 +77,21 @@
 		let cur: Pt[] = [];
 		for (const p of points) {
 			if (p == null) {
-				if (cur.length) segs.push(cur.map((q, i) => `${i === 0 ? 'M' : 'L'}${q.x.toFixed(2)},${q.y.toFixed(2)}`).join(' '));
+				if (cur.length)
+					segs.push(
+						cur
+							.map((q, i) => `${i === 0 ? 'M' : 'L'}${q.x.toFixed(2)},${q.y.toFixed(2)}`)
+							.join(' '),
+					);
 				cur = [];
 			} else {
 				cur.push(p);
 			}
 		}
-		if (cur.length) segs.push(cur.map((q, i) => `${i === 0 ? 'M' : 'L'}${q.x.toFixed(2)},${q.y.toFixed(2)}`).join(' '));
+		if (cur.length)
+			segs.push(
+				cur.map((q, i) => `${i === 0 ? 'M' : 'L'}${q.x.toFixed(2)},${q.y.toFixed(2)}`).join(' '),
+			);
 		return segs;
 	});
 
@@ -109,8 +116,8 @@
 >
 	<svg
 		viewBox="0 0 {width} {height}"
-		width={width}
-		height={height}
+		{width}
+		{height}
 		preserveAspectRatio="none"
 		aria-hidden="true"
 		focusable="false"

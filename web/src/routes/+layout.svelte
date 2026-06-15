@@ -41,8 +41,7 @@
 	import { layout } from '$lib/nav';
 	import type { LayoutData } from './$types';
 
-	let { data, children }: { data: LayoutData; children: import('svelte').Snippet } =
-		$props();
+	let { data, children }: { data: LayoutData; children: import('svelte').Snippet } = $props();
 
 	// Active request locale (path-derived in +layout.ts). A reader is provided to
 	// context so deep call sites that read it at init stay reactive across page

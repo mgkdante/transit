@@ -16,8 +16,7 @@
 	import type { HTMLAttributes } from 'svelte/elements';
 	import { heatmapColor, HEATMAP_NODATA } from './tokens';
 
-	export interface HeatmapProps
-		extends WithElementRef<HTMLAttributes<HTMLDivElement>> {
+	export interface HeatmapProps extends WithElementRef<HTMLAttributes<HTMLDivElement>> {
 		/**
 		 * 7 rows (days) × 24 columns (hours). Cell = raw value or `null` (no data).
 		 * Rows shorter/longer than 24 are tolerated (missing cells = no data).
@@ -108,7 +107,13 @@
 	data-slot="heatmap"
 	{...restProps}
 >
-	<svg viewBox="0 0 {width} {height}" width="100%" height="auto" focusable="false" aria-hidden="true">
+	<svg
+		viewBox="0 0 {width} {height}"
+		width="100%"
+		height="auto"
+		focusable="false"
+		aria-hidden="true"
+	>
 		<!-- Hour axis ticks (0, 6, 12, 18) — neutral. -->
 		{#each [0, 6, 12, 18] as h (h)}
 			<text
@@ -116,8 +121,8 @@
 				y={HOUR_AXIS_H - 4}
 				font-size="6"
 				fill="var(--muted-foreground)"
-				font-family="var(--font-mono)"
-			>{String(h).padStart(2, '0')}</text>
+				font-family="var(--font-mono)">{String(h).padStart(2, '0')}</text
+			>
 		{/each}
 
 		<!-- Day (row) labels — neutral. -->
@@ -127,8 +132,8 @@
 				y={HOUR_AXIS_H + r * step + cell / 2 + 2}
 				font-size="6"
 				fill="var(--muted-foreground)"
-				font-family="var(--font-mono)"
-			>{d}</text>
+				font-family="var(--font-mono)">{d}</text
+			>
 		{/each}
 
 		<!-- Cells. -->

@@ -26,8 +26,7 @@
 		max: number | null;
 	}
 
-	export interface DistributionProps
-		extends WithElementRef<HTMLAttributes<HTMLElement>> {
+	export interface DistributionProps extends WithElementRef<HTMLAttributes<HTMLElement>> {
 		/** Five-number summary. Any `null` field is treated as missing. */
 		stats: DistributionStats;
 		/** Value domain [min,max] the summary lives in (axis extent). */
@@ -100,21 +99,49 @@
 	<svg
 		viewBox="0 0 {width} {height}"
 		width="100%"
-		height={height}
+		{height}
 		preserveAspectRatio="none"
 		role="img"
 		aria-hidden="true"
 		focusable="false"
 	>
 		<!-- Domain baseline (neutral, NOT data). -->
-		<line x1={PAD_X} y1={midY} x2={width - PAD_X} y2={midY} stroke="var(--border)" stroke-width="0.75" />
+		<line
+			x1={PAD_X}
+			y1={midY}
+			x2={width - PAD_X}
+			y2={midY}
+			stroke="var(--border)"
+			stroke-width="0.75"
+		/>
 
 		{#if anyData}
 			<!-- Whisker line min..max. -->
 			{#if hasWhiskers}
-				<line x1={xMin} y1={midY} x2={xMax} y2={midY} stroke="var(--border-strong, var(--border))" stroke-width="1" />
-				<line x1={xMin} y1={midY - boxH / 2} x2={xMin} y2={midY + boxH / 2} stroke="var(--border-strong, var(--border))" stroke-width="1" />
-				<line x1={xMax} y1={midY - boxH / 2} x2={xMax} y2={midY + boxH / 2} stroke="var(--border-strong, var(--border))" stroke-width="1" />
+				<line
+					x1={xMin}
+					y1={midY}
+					x2={xMax}
+					y2={midY}
+					stroke="var(--border-strong, var(--border))"
+					stroke-width="1"
+				/>
+				<line
+					x1={xMin}
+					y1={midY - boxH / 2}
+					x2={xMin}
+					y2={midY + boxH / 2}
+					stroke="var(--border-strong, var(--border))"
+					stroke-width="1"
+				/>
+				<line
+					x1={xMax}
+					y1={midY - boxH / 2}
+					x2={xMax}
+					y2={midY + boxH / 2}
+					stroke="var(--border-strong, var(--border))"
+					stroke-width="1"
+				/>
 			{/if}
 
 			<!-- Interquartile box (DATA fill from the dataviz scale). -->
@@ -145,7 +172,13 @@
 				/>
 			{/if}
 		{:else}
-			<text x={width / 2} y={midY + 3} text-anchor="middle" font-size="10" fill="var(--muted-foreground)">no data</text>
+			<text
+				x={width / 2}
+				y={midY + 3}
+				text-anchor="middle"
+				font-size="10"
+				fill="var(--muted-foreground)">no data</text
+			>
 		{/if}
 	</svg>
 </figure>

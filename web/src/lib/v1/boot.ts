@@ -56,14 +56,10 @@ export async function loadManifest(): Promise<Manifest> {
  */
 export async function bootV1(lang: Locale = DEFAULT_LOCALE): Promise<V1Context> {
 	const manifest = await loadManifest();
-	let langLabels: Record<string, string> = {};
-	try {
-		langLabels = await getLabels(lang);
-	} catch {
-		// Labels are an enhancement, not a hard dependency — fall back to the
-		// manifest's base table; resolveLabel() then falls back to raw codes.
-		langLabels = {};
-	}
+	// Labels are an enhancement, not a hard dependency — a missing/never-published
+	// labels file degrades to the manifest base (resolveLabel then falls back to
+	// raw codes), never an error.
+	const langLabels = await getLabels(lang).catch(() => ({}) as Record<string, string>);
 	const labels: Record<string, string> = { ...manifest.labels, ...langLabels };
 	return { manifest, labels, lang };
 }
@@ -101,7 +97,9 @@ export function setV1Context(reader: () => V1Context): void {
 export function getV1Context(): V1Context {
 	const reader = getContext<(() => V1Context) | undefined>(KEY);
 	if (!reader) {
-		throw new Error('[v1] getV1Context() called before setV1Context() — boot the v1 context in the root layout first.');
+		throw new Error(
+			'[v1] getV1Context() called before setV1Context() — boot the v1 context in the root layout first.',
+		);
 	}
 	return reader();
 }

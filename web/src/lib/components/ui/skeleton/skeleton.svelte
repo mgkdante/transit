@@ -1,7 +1,7 @@
 <script lang="ts">
-	import type { WithElementRef } from "$lib/utils";
-	import type { HTMLAttributes } from "svelte/elements";
-	import { cn } from "$lib/utils";
+	import type { WithElementRef } from '$lib/utils';
+	import type { HTMLAttributes } from 'svelte/elements';
+	import { cn } from '$lib/utils';
 
 	let {
 		ref = $bindable(null),
@@ -20,7 +20,7 @@ reduced-motion guard below halts it for users who opt out.
 	bind:this={ref}
 	data-slot="skeleton"
 	aria-hidden="true"
-	class={cn("skeleton-pulse rounded-md bg-muted", className)}
+	class={cn('skeleton-pulse rounded-md bg-muted', className)}
 	{...restProps}
 >
 	{@render children?.()}

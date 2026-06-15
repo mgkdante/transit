@@ -17,8 +17,7 @@
 
 	type Series = Array<number | null>;
 
-	export interface TrendLineProps
-		extends WithElementRef<HTMLAttributes<HTMLElement>> {
+	export interface TrendLineProps extends WithElementRef<HTMLAttributes<HTMLElement>> {
 		/** On-time % series (rendered green). */
 		onTime: Series;
 		/** Delay / retard series (rendered amber). */
@@ -83,11 +82,19 @@
 		let cur: Pt[] = [];
 		for (const p of pts) {
 			if (p == null) {
-				if (cur.length) segs.push(cur.map((q, i) => `${i === 0 ? 'M' : 'L'}${q.x.toFixed(2)},${q.y.toFixed(2)}`).join(' '));
+				if (cur.length)
+					segs.push(
+						cur
+							.map((q, i) => `${i === 0 ? 'M' : 'L'}${q.x.toFixed(2)},${q.y.toFixed(2)}`)
+							.join(' '),
+					);
 				cur = [];
 			} else cur.push(p);
 		}
-		if (cur.length) segs.push(cur.map((q, i) => `${i === 0 ? 'M' : 'L'}${q.x.toFixed(2)},${q.y.toFixed(2)}`).join(' '));
+		if (cur.length)
+			segs.push(
+				cur.map((q, i) => `${i === 0 ? 'M' : 'L'}${q.x.toFixed(2)},${q.y.toFixed(2)}`).join(' '),
+			);
 		return segs;
 	}
 
@@ -118,25 +125,48 @@
 	<svg
 		viewBox="0 0 {width} {height}"
 		width="100%"
-		height={height}
+		{height}
 		preserveAspectRatio="none"
 		role="img"
 		aria-hidden="true"
 		focusable="false"
 	>
 		<!-- Neutral orientation grid (NOT data). -->
-		<line x1={PAD} y1={midY} x2={width - PAD} y2={midY} stroke="var(--border)" stroke-width="0.75" stroke-dasharray="3 4" />
+		<line
+			x1={PAD}
+			y1={midY}
+			x2={width - PAD}
+			y2={midY}
+			stroke="var(--border)"
+			stroke-width="0.75"
+			stroke-dasharray="3 4"
+		/>
 
 		<!-- Retard (amber) under on-time so green reads as the headline. -->
 		{#each retardSegs as d, i (i)}
-			<path {d} fill="none" stroke={RETARD_VAR} stroke-width={stroke} stroke-linecap="round" stroke-linejoin="round" opacity="0.95" />
+			<path
+				{d}
+				fill="none"
+				stroke={RETARD_VAR}
+				stroke-width={stroke}
+				stroke-linecap="round"
+				stroke-linejoin="round"
+				opacity="0.95"
+			/>
 		{/each}
 		{#if retardLast}
 			<circle cx={retardLast.x} cy={retardLast.y} r={stroke + 0.5} fill={RETARD_VAR} />
 		{/if}
 
 		{#each onTimeSegs as d, i (i)}
-			<path {d} fill="none" stroke={ON_TIME_VAR} stroke-width={stroke} stroke-linecap="round" stroke-linejoin="round" />
+			<path
+				{d}
+				fill="none"
+				stroke={ON_TIME_VAR}
+				stroke-width={stroke}
+				stroke-linecap="round"
+				stroke-linejoin="round"
+			/>
 		{/each}
 		{#if onTimeLast}
 			<circle cx={onTimeLast.x} cy={onTimeLast.y} r={stroke + 0.5} fill={ON_TIME_VAR} />
@@ -145,11 +175,19 @@
 
 	<figcaption class="mt-1.5 flex items-center gap-3 text-micro text-muted-foreground">
 		<span class="inline-flex items-center gap-1.5">
-			<span class="dv-swatch inline-block size-2 rounded-full" style="background: {ON_TIME_VAR};" aria-hidden="true"></span>
+			<span
+				class="dv-swatch inline-block size-2 rounded-full"
+				style="background: {ON_TIME_VAR};"
+				aria-hidden="true"
+			></span>
 			<span>{onTimeLabel}</span>
 		</span>
 		<span class="inline-flex items-center gap-1.5">
-			<span class="dv-swatch inline-block size-2 rounded-full" style="background: {RETARD_VAR};" aria-hidden="true"></span>
+			<span
+				class="dv-swatch inline-block size-2 rounded-full"
+				style="background: {RETARD_VAR};"
+				aria-hidden="true"
+			></span>
 			<span>{retardLabel}</span>
 		</span>
 	</figcaption>

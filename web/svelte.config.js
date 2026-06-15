@@ -13,13 +13,13 @@ const config = {
 			const pathSegments = relativePath.toLowerCase().split(sep);
 			const isExternalLibrary = pathSegments.includes('node_modules');
 			return isExternalLibrary ? undefined : true;
-		}
+		},
 	},
 	kit: {
 		// Cloudflare Pages (slice-9.2 locked). Adapter auto-generates _routes.json;
 		// /data/* exclusion + cache headers land in P5.
-		adapter: adapter()
-	}
+		adapter: adapter(),
+	},
 };
 
 export default config;

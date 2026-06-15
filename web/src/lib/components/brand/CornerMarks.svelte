@@ -16,12 +16,7 @@
 		class?: string;
 	}
 
-	let {
-		size = 'sm',
-		opacity = 0.4,
-		class: className,
-		...restProps
-	}: CornerMarksProps = $props();
+	let { size = 'sm', opacity = 0.4, class: className, ...restProps }: CornerMarksProps = $props();
 
 	const armMap = { sm: 12, md: 32 } as const;
 	const arm = $derived(armMap[size]);

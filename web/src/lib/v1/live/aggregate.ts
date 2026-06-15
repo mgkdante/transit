@@ -19,13 +19,7 @@
 import type { OccupancyCode, StatusCode, Vehicle } from '$lib/v1/schemas';
 
 /** Every status bucket, zero-initialized — the StatusDist key set. */
-const STATUS_CODES: readonly StatusCode[] = [
-	'early',
-	'on_time',
-	'late',
-	'severe',
-	'unknown',
-];
+const STATUS_CODES: readonly StatusCode[] = ['early', 'on_time', 'late', 'severe', 'unknown'];
 
 /** Every occupancy bucket — the OccupancyMix key set. */
 const OCCUPANCY_CODES: readonly OccupancyCode[] = [
@@ -114,8 +108,7 @@ export function aggregateLive(vehicles: readonly Vehicle[]): LiveAggregate {
 	// on_time_pct: share of STATUSED vehicles (excludes 'unknown' from both
 	// numerator and denominator — an unknown vehicle is not "on time" nor a
 	// fair miss). Null when no vehicle has a usable status.
-	const statusedCount =
-		statusDist.early + statusDist.on_time + statusDist.late + statusDist.severe;
+	const statusedCount = statusDist.early + statusDist.on_time + statusDist.late + statusDist.severe;
 	const onTimePct =
 		statusedCount > 0 ? Math.round((statusDist.on_time / statusedCount) * 100) : null;
 

@@ -109,9 +109,7 @@
 	const searchPlaceholder = $derived(
 		locale === 'fr' ? 'Rechercher une ligne, un arrêt…' : 'Search a line, stop…',
 	);
-	const searchAria = $derived(
-		locale === 'fr' ? 'Rechercher dans le réseau' : 'Search the network',
-	);
+	const searchAria = $derived(locale === 'fr' ? 'Rechercher dans le réseau' : 'Search the network');
 	const cityLabel = $derived(locale === 'fr' ? 'Montréal · STM' : 'Montréal · STM');
 	const cityAria = $derived(locale === 'fr' ? 'Choisir une ville' : 'Choose a city');
 	const alertsAria = $derived(
@@ -187,7 +185,15 @@
 			fill="none"
 		>
 			<circle cx="7" cy="7" r="4.5" stroke="currentColor" stroke-width="1.4" />
-			<line x1="10.4" y1="10.4" x2="14" y2="14" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />
+			<line
+				x1="10.4"
+				y1="10.4"
+				x2="14"
+				y2="14"
+				stroke="currentColor"
+				stroke-width="1.4"
+				stroke-linecap="round"
+			/>
 		</svg>
 		<input
 			type="search"
@@ -225,7 +231,12 @@
 					stroke-width="1.4"
 					stroke-linejoin="round"
 				/>
-				<path d="M8.4 16a1.7 1.7 0 0 0 3.2 0" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />
+				<path
+					d="M8.4 16a1.7 1.7 0 0 0 3.2 0"
+					stroke="currentColor"
+					stroke-width="1.4"
+					stroke-linecap="round"
+				/>
 			</svg>
 			{#if alertCount > 0}
 				<span
@@ -248,7 +259,16 @@
 			data-slot="topbar-theme"
 		>
 			<svg viewBox="0 0 20 28" width="13" height="18" aria-hidden="true">
-				<rect x="3" y="2" width="14" height="24" rx="4" fill="none" stroke="currentColor" stroke-width="1.5" />
+				<rect
+					x="3"
+					y="2"
+					width="14"
+					height="24"
+					rx="4"
+					fill="none"
+					stroke="currentColor"
+					stroke-width="1.5"
+				/>
 				<line x1="10" y1="26" x2="10" y2="28" stroke="currentColor" stroke-width="1.5" />
 				<circle class="lens" class:lit={isDark} cx="10" cy="9" r="3.5" />
 				<circle class="lens" class:lit={!isDark} cx="10" cy="19" r="3.5" />

@@ -10,11 +10,7 @@
 // by replacing '_' with '-' (e.g. status 'on_time' -> --dataviz-status-on-time).
 // Glyphs: early ▼ on_time ● late ▲ severe ◆ unknown ○ (stops ■).
 
-import type {
-	OccupancyCode,
-	SeverityCode,
-	StatusCode,
-} from '$lib/v1/schemas';
+import type { OccupancyCode, SeverityCode, StatusCode } from '$lib/v1/schemas';
 
 /** Enum value -> token suffix (underscores become hyphens). */
 export function tokenSuffix(code: string): string {

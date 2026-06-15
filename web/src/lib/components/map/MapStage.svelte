@@ -101,7 +101,10 @@
 			// If the component was torn down mid-import, bail before creating a map.
 			if (disposed || !container) return;
 
-			const style: StyleSpecification = resolveBasemapStyle({ basemap: basemap ? '' : null }, basemap);
+			const style: StyleSpecification = resolveBasemapStyle(
+				{ basemap: basemap ? '' : null },
+				basemap,
+			);
 
 			const instance = new maplibregl.Map({
 				container,

@@ -31,8 +31,7 @@
 		label?: string;
 	}
 
-	export interface StackedBarProps
-		extends WithElementRef<HTMLAttributes<HTMLDivElement>> {
+	export interface StackedBarProps extends WithElementRef<HTMLAttributes<HTMLDivElement>> {
 		/** Which dataviz scale the codes belong to. */
 		scale: 'status' | 'occupancy';
 		/** The segments. Order is preserved left→right. */
@@ -58,15 +57,16 @@
 	}: StackedBarProps = $props();
 
 	function colorFor(code: AnyCode): string {
-		return scale === 'status'
-			? statusVar(code as StatusCode)
-			: occupancyVar(code as OccupancyCode);
+		return scale === 'status' ? statusVar(code as StatusCode) : occupancyVar(code as OccupancyCode);
 	}
 
 	type Slice = { code: AnyCode; color: string; label: string; pct: number; offset: number };
 
 	const total = $derived(
-		segments.reduce((s, seg) => s + (seg.value != null && !Number.isNaN(seg.value) ? Math.max(0, seg.value) : 0), 0),
+		segments.reduce(
+			(s, seg) => s + (seg.value != null && !Number.isNaN(seg.value) ? Math.max(0, seg.value) : 0),
+			0,
+		),
 	);
 
 	const slices = $derived.by<Slice[]>(() => {
@@ -106,23 +106,36 @@
 	data-scale={scale}
 	{...restProps}
 >
-	<svg viewBox="0 0 100 {height}" width="100%" {height} preserveAspectRatio="none" aria-hidden="true" focusable="false">
+	<svg
+		viewBox="0 0 100 {height}"
+		width="100%"
+		{height}
+		preserveAspectRatio="none"
+		aria-hidden="true"
+		focusable="false"
+	>
 		{#if hasData}
 			{#each slices as s, i (s.code + '-' + i)}
-				<rect x={s.offset} y={0} width={Math.max(0, s.pct)} height={height} fill={s.color}>
+				<rect x={s.offset} y={0} width={Math.max(0, s.pct)} {height} fill={s.color}>
 					<title>{s.label}: {Math.round(s.pct)}%</title>
 				</rect>
 			{/each}
 		{:else}
-			<rect x={0} y={0} width={100} height={height} fill="var(--muted)" />
+			<rect x={0} y={0} width={100} {height} fill="var(--muted)" />
 		{/if}
 	</svg>
 
 	{#if legend && hasData}
-		<ul class="dv-legend-list mt-1.5 flex flex-wrap gap-x-3 gap-y-1 text-micro text-muted-foreground">
+		<ul
+			class="dv-legend-list mt-1.5 flex flex-wrap gap-x-3 gap-y-1 text-micro text-muted-foreground"
+		>
 			{#each slices as s, i (s.code + '-leg-' + i)}
 				<li class="inline-flex items-center gap-1.5">
-					<span class="inline-block size-2 rounded-sm" style="background: {s.color};" aria-hidden="true"></span>
+					<span
+						class="inline-block size-2 rounded-sm"
+						style="background: {s.color};"
+						aria-hidden="true"
+					></span>
 					<span class="text-foreground">{s.label}</span>
 					<span class="font-mono">{Math.round(s.pct)}%</span>
 				</li>

@@ -1,14 +1,14 @@
 <script lang="ts">
-	import type { HTMLAttributes } from "svelte/elements";
-	import { cn, type WithElementRef } from "$lib/utils";
+	import type { HTMLAttributes } from 'svelte/elements';
+	import { cn, type WithElementRef } from '$lib/utils';
 
 	let {
 		ref = $bindable(null),
 		class: className,
 		children,
-		size = "default",
+		size = 'default',
 		...restProps
-	}: WithElementRef<HTMLAttributes<HTMLDivElement>> & { size?: "default" | "sm" } = $props();
+	}: WithElementRef<HTMLAttributes<HTMLDivElement>> & { size?: 'default' | 'sm' } = $props();
 </script>
 
 <div
@@ -16,8 +16,8 @@
 	data-slot="card"
 	data-size={size}
 	class={cn(
-		"card-surface text-card-foreground gap-4 overflow-hidden py-4 text-small has-data-[slot=card-footer]:pb-0 has-[>img:first-child]:pt-0 data-[size=sm]:gap-3 data-[size=sm]:py-3 data-[size=sm]:has-data-[slot=card-footer]:pb-0 *:[img:first-child]:rounded-t-xl *:[img:last-child]:rounded-b-xl group/card flex flex-col",
-		className
+		'card-surface text-card-foreground gap-4 overflow-hidden py-4 text-small has-data-[slot=card-footer]:pb-0 has-[>img:first-child]:pt-0 data-[size=sm]:gap-3 data-[size=sm]:py-3 data-[size=sm]:has-data-[slot=card-footer]:pb-0 *:[img:first-child]:rounded-t-xl *:[img:last-child]:rounded-b-xl group/card flex flex-col',
+		className,
 	)}
 	{...restProps}
 >
@@ -42,6 +42,8 @@
 	}
 	.card-surface:hover {
 		border-color: var(--border-brand-active);
-		box-shadow: var(--shadow-section), inset 0 1px 0 var(--edge-highlight);
+		box-shadow:
+			var(--shadow-section),
+			inset 0 1px 0 var(--edge-highlight);
 	}
 </style>

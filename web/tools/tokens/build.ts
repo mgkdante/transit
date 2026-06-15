@@ -33,7 +33,9 @@ function buildAll(): BuildTarget[] {
 	// app.css: only the sentinel region (TOKENS:START..TOKENS:END) is generated;
 	// everything else is hand-maintained. The file must pre-exist with sentinels.
 	if (!existsSync(APP_CSS)) {
-		throw new Error(`app.css not found at ${APP_CSS} — author it with the TOKENS:START/END sentinels first.`);
+		throw new Error(
+			`app.css not found at ${APP_CSS} — author it with the TOKENS:START/END sentinels first.`,
+		);
 	}
 	const appCssContent = replaceThemeRegion(readFileSync(APP_CSS, 'utf-8'), themeBlock);
 
@@ -60,4 +62,8 @@ for (const t of targets) {
 		changed++;
 	}
 }
-console.log(changed === 0 ? '✓ tokens build idempotent (no changes)' : `✓ tokens build wrote ${changed} file(s)`);
+console.log(
+	changed === 0
+		? '✓ tokens build idempotent (no changes)'
+		: `✓ tokens build wrote ${changed} file(s)`,
+);

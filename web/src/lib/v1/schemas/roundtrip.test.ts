@@ -103,11 +103,7 @@ const CASES: Case[] = [
 			vehicles: [{ id: 'v1', lat: 45.5, lon: -73.6, status: 'late', updated_utc: ISO }],
 		},
 	],
-	[
-		'trips',
-		TripsFileSchema,
-		{ generated_utc: ISO, trips: { t1: { status: 'on_time' } } },
-	],
+	['trips', TripsFileSchema, { generated_utc: ISO, trips: { t1: { status: 'on_time' } } }],
 	['stop_departures', StopDeparturesFileSchema, { generated_utc: ISO }],
 	[
 		'alerts',
@@ -130,8 +126,16 @@ const CASES: Case[] = [
 		StopsIndexSchema,
 		{ generated_utc: ISO, stops: [{ id: 's1', name: 'Côte-des-Neiges', lat: 45.5, lon: -73.6 }] },
 	],
-	['stop', StopFileSchema, { generated_utc: ISO, id: 's1', name: 'Côte-des-Neiges', lat: 45.5, lon: -73.6 }],
-	['basemap', BasemapFileSchema, { url: 'https://x/basemap.pmtiles', attribution: 'STM', generated_utc: ISO }],
+	[
+		'stop',
+		StopFileSchema,
+		{ generated_utc: ISO, id: 's1', name: 'Côte-des-Neiges', lat: 45.5, lon: -73.6 },
+	],
+	[
+		'basemap',
+		BasemapFileSchema,
+		{ url: 'https://x/basemap.pmtiles', attribution: 'STM', generated_utc: ISO },
+	],
 
 	// --- historic tier -------------------------------------------------------
 	['route_reliability', RouteReliabilitySchema, { generated_utc: ISO, id: '165' }],
@@ -177,7 +181,9 @@ describe('schema round-trip — a bad value throws via parsePort, naming the por
 			generated_utc: ISO,
 			vehicles: [{ id: 'v1', lat: 45.5, lon: -73.6, status: 'on_fire', updated_utc: ISO }],
 		};
-		expect(() => parsePort('vehicles', VehiclesFileSchema, bad)).toThrowError(/^\[adapter\.vehicles\]/);
+		expect(() => parsePort('vehicles', VehiclesFileSchema, bad)).toThrowError(
+			/^\[adapter\.vehicles\]/,
+		);
 	});
 
 	it('[network] rejects a missing required headline number', () => {
@@ -192,7 +198,9 @@ describe('schema round-trip — a bad value throws via parsePort, naming the por
 			feed_freshness_s: 31,
 			coverage_pct: 96,
 		};
-		expect(() => parsePort('network', NetworkFileSchema, bad)).toThrowError(/^\[adapter\.network\]/);
+		expect(() => parsePort('network', NetworkFileSchema, bad)).toThrowError(
+			/^\[adapter\.network\]/,
+		);
 	});
 
 	it('[manifest] rejects a wrong-typed required field', () => {

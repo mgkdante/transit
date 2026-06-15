@@ -1,0 +1,19 @@
+# build + deps
+.svelte-kit
+build
+dist
+node_modules
+.wrangler
+.vitest
+pnpm-lock.yaml
+
+# GENERATED — owned by the token pipeline / contract vendoring; do not reformat
+# (prettier would fight the `tokens:build && git diff` drift gate).
+src/app.css
+src/lib/styles/tokens.css
+src/lib/motion/tokens.ts
+src/lib/v1/schemas/json
+
+# static assets + docs
+static
+*.md

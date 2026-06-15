@@ -1,7 +1,7 @@
-import { Tooltip as TooltipPrimitive } from "bits-ui";
-import Root from "./tooltip.svelte";
-import Trigger from "./tooltip-trigger.svelte";
-import Content from "./tooltip-content.svelte";
+import { Tooltip as TooltipPrimitive } from 'bits-ui';
+import Root from './tooltip.svelte';
+import Trigger from './tooltip-trigger.svelte';
+import Content from './tooltip-content.svelte';
 
 const Provider = TooltipPrimitive.Provider;
 const Portal = TooltipPrimitive.Portal;

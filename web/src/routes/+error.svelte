@@ -28,7 +28,8 @@
 			heading404: 'Cette voie n’existe pas',
 			headingGeneric: 'Une erreur est survenue',
 			body404: 'Le chemin demandé n’est pas desservi. Vérifiez l’adresse ou revenez à l’accueil.',
-			bodyGeneric: 'Quelque chose s’est mal passé en chargeant cette vue. Réessayez ou revenez à l’accueil.',
+			bodyGeneric:
+				'Quelque chose s’est mal passé en chargeant cette vue. Réessayez ou revenez à l’accueil.',
 			home: 'Retour à l’accueil',
 		},
 		en: {

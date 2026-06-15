@@ -41,13 +41,7 @@ export {
 } from './repositories';
 
 // --- boot + label resolution + context ---------------------------------------
-export {
-	bootV1,
-	loadManifest,
-	resolveLabel,
-	getV1Context,
-	setV1Context,
-} from './boot';
+export { bootV1, loadManifest, resolveLabel, getV1Context, setV1Context } from './boot';
 export type { V1Context } from './boot';
 
 // --- freshness ---------------------------------------------------------------

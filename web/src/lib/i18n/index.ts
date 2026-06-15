@@ -2,12 +2,7 @@
 // Import everything i18n from here: `import { localizeHref, getLocale } from '$lib/i18n'`.
 
 export type { Locale } from './config';
-export {
-	DEFAULT_LOCALE,
-	SUPPORTED_LOCALES,
-	PREFIX_LOCALES,
-	PUBLISHED_LOCALES,
-} from './config';
+export { DEFAULT_LOCALE, SUPPORTED_LOCALES, PREFIX_LOCALES, PUBLISHED_LOCALES } from './config';
 
 export {
 	localizeHref,

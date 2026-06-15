@@ -107,12 +107,10 @@ export function createLiveStore(manifest: Manifest): LiveStore {
 	const generatedUtc = $derived(network?.generated_utc ?? vehicles?.generated_utc ?? null);
 	const ageSecondsValue = $derived.by<number | null>(() => {
 		if (!generatedUtc) return null;
-		const age = ageSeconds(generatedUtc, new Date(nowMs));
+		const age = ageSeconds(generatedUtc, nowMs);
 		return Number.isNaN(age) ? null : Math.max(0, age);
 	});
-	const isStale = $derived(
-		ageSecondsValue == null ? false : ageSecondsValue >= staleThresholdS,
-	);
+	const isStale = $derived(ageSecondsValue == null ? false : ageSecondsValue >= staleThresholdS);
 
 	/** Fetch all five files in parallel. Conditional GET is the adapter's job. */
 	async function refresh(): Promise<void> {

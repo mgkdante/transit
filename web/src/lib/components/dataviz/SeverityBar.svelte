@@ -14,8 +14,7 @@
 	import type { SeverityCode } from '$lib/v1/schemas';
 	import { severityVar } from './tokens';
 
-	export interface SeverityBarProps
-		extends WithElementRef<HTMLAttributes<HTMLDivElement>> {
+	export interface SeverityBarProps extends WithElementRef<HTMLAttributes<HTMLDivElement>> {
 		/** Severity band — drives the fill colour. */
 		severity: SeverityCode;
 		/** Normalized magnitude in [0,1]. `null` -> empty track (no data). */
@@ -47,7 +46,11 @@
 
 <div
 	bind:this={ref}
-	class={cn('dv-severity-track w-full overflow-hidden rounded-pill bg-muted', heightClass[size], className)}
+	class={cn(
+		'dv-severity-track w-full overflow-hidden rounded-pill bg-muted',
+		heightClass[size],
+		className,
+	)}
 	role="progressbar"
 	aria-valuemin={0}
 	aria-valuemax={100}
@@ -58,7 +61,10 @@
 	{...restProps}
 >
 	{#if hasData}
-		<div class="dv-severity-fill h-full rounded-pill" style="width: {pct}%; background: {color};"></div>
+		<div
+			class="dv-severity-fill h-full rounded-pill"
+			style="width: {pct}%; background: {color};"
+		></div>
 	{/if}
 </div>
 

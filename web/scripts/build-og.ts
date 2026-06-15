@@ -34,7 +34,6 @@ const HEIGHT = 630;
 
 // ── Brand palette (mirrors src/lib/styles/tokens.css dark theme) ────────────
 const BG = '#141414'; // --background (dark)
-const SURFACE = '#1a1a1a'; // --card
 const BORDER = '#3A3A3A'; // --border
 const TEXT_PRIMARY = '#F5F5F0'; // --foreground
 const TEXT_MUTED = '#949494'; // --muted-foreground
@@ -59,13 +58,13 @@ const COPY: Record<Locale, CardCopy> = {
 	en: {
 		eyebrow: 'STM · NETWORK ANALYTICS',
 		tagline: 'On-time performance, crowding and disruptions — measured, never invented.',
-		statusLabel: 'LIVE NETWORK'
+		statusLabel: 'LIVE NETWORK',
 	},
 	fr: {
 		eyebrow: 'STM · ANALYSE DU RÉSEAU',
 		tagline: 'Ponctualité, achalandage et perturbations — mesurés, jamais inventés.',
-		statusLabel: 'RÉSEAU EN DIRECT'
-	}
+		statusLabel: 'RÉSEAU EN DIRECT',
+	},
 };
 
 // ── Satori element-tree helper (React.createElement-shaped POJOs) ───────────
@@ -90,8 +89,8 @@ function buildTree(copy: CardCopy): El {
 				fontFamily: 'Inter',
 				color: TEXT_PRIMARY,
 				// Hairline inner frame (signage feel) — solid surface, no alpha.
-				border: `1px solid ${BORDER}`
-			}
+				border: `1px solid ${BORDER}`,
+			},
 		},
 		[
 			// Top rail: eyebrow chip (left) + live-network status dot (right).
@@ -101,8 +100,8 @@ function buildTree(copy: CardCopy): El {
 					style: {
 						display: 'flex',
 						justifyContent: 'space-between',
-						alignItems: 'center'
-					}
+						alignItems: 'center',
+					},
 				},
 				[
 					el(
@@ -114,10 +113,10 @@ function buildTree(copy: CardCopy): El {
 								fontWeight: 500,
 								letterSpacing: '0.14em',
 								textTransform: 'uppercase',
-								color: ACCENT
-							}
+								color: ACCENT,
+							},
 						},
-						copy.eyebrow
+						copy.eyebrow,
 					),
 					el(
 						'div',
@@ -131,8 +130,8 @@ function buildTree(copy: CardCopy): El {
 								fontWeight: 500,
 								letterSpacing: '0.14em',
 								textTransform: 'uppercase',
-								color: TEXT_MUTED
-							}
+								color: TEXT_MUTED,
+							},
 						},
 						[
 							// On-time green dot = the network-healthy data hue (not orange).
@@ -143,15 +142,15 @@ function buildTree(copy: CardCopy): El {
 										width: '18px',
 										height: '18px',
 										borderRadius: '9999px',
-										backgroundColor: STATUS_ON_TIME
-									}
+										backgroundColor: STATUS_ON_TIME,
+									},
 								},
-								''
+								'',
 							),
-							el('span', {}, copy.statusLabel)
-						]
-					)
-				]
+							el('span', {}, copy.statusLabel),
+						],
+					),
+				],
 			),
 
 			// Middle: wordmark + accent dot, then the muted tagline.
@@ -161,8 +160,8 @@ function buildTree(copy: CardCopy): El {
 					style: {
 						display: 'flex',
 						flexDirection: 'column',
-						gap: '28px'
-					}
+						gap: '28px',
+					},
 				},
 				[
 					el(
@@ -175,13 +174,13 @@ function buildTree(copy: CardCopy): El {
 								fontWeight: 900,
 								fontSize: '168px',
 								letterSpacing: '-0.04em',
-								lineHeight: 1
-							}
+								lineHeight: 1,
+							},
 						},
 						[
 							el('span', { style: { color: TEXT_PRIMARY } }, WORDMARK),
-							el('span', { style: { color: ACCENT } }, '.')
-						]
+							el('span', { style: { color: ACCENT } }, '.'),
+						],
 					),
 					el(
 						'div',
@@ -193,12 +192,12 @@ function buildTree(copy: CardCopy): El {
 								letterSpacing: '-0.01em',
 								color: TEXT_MUTED,
 								maxWidth: '960px',
-								lineHeight: 1.2
-							}
+								lineHeight: 1.2,
+							},
 						},
-						copy.tagline
-					)
-				]
+						copy.tagline,
+					),
+				],
 			),
 
 			// Bottom rail: accent bar + handle (left) / location (right).
@@ -214,14 +213,14 @@ function buildTree(copy: CardCopy): El {
 						fontWeight: 500,
 						letterSpacing: '0.12em',
 						textTransform: 'uppercase',
-						color: TEXT_MUTED
-					}
+						color: TEXT_MUTED,
+					},
 				},
 				[
 					el(
 						'div',
 						{
-							style: { display: 'flex', flexDirection: 'column', gap: '18px' }
+							style: { display: 'flex', flexDirection: 'column', gap: '18px' },
 						},
 						[
 							el(
@@ -230,18 +229,18 @@ function buildTree(copy: CardCopy): El {
 									style: {
 										width: '140px',
 										height: '4px',
-										backgroundColor: ACCENT
-									}
+										backgroundColor: ACCENT,
+									},
 								},
-								''
+								'',
 							),
-							el('span', { style: { color: ACCENT_TEXT } }, SITE_HANDLE)
-						]
+							el('span', { style: { color: ACCENT_TEXT } }, SITE_HANDLE),
+						],
 					),
-					el('span', {}, FOOTER_LOCATION)
-				]
-			)
-		]
+					el('span', {}, FOOTER_LOCATION),
+				],
+			),
+		],
 	);
 }
 
@@ -259,7 +258,7 @@ function loadFonts(): OgFont[] {
 		if (!existsSync(p)) {
 			throw new Error(
 				`OG font missing: ${p}. Expected vendored TTFs in scripts/og-fonts/ ` +
-					`(Inter-Medium.ttf, Inter-Black.ttf, JetBrainsMono-Medium.ttf).`
+					`(Inter-Medium.ttf, Inter-Black.ttf, JetBrainsMono-Medium.ttf).`,
 			);
 		}
 		return readFileSync(p);
@@ -267,7 +266,12 @@ function loadFonts(): OgFont[] {
 	return [
 		{ name: 'Inter', data: read('Inter-Medium.ttf'), weight: 500, style: 'normal' },
 		{ name: 'Inter', data: read('Inter-Black.ttf'), weight: 900, style: 'normal' },
-		{ name: 'JetBrains Mono', data: read('JetBrainsMono-Medium.ttf'), weight: 500, style: 'normal' }
+		{
+			name: 'JetBrains Mono',
+			data: read('JetBrainsMono-Medium.ttf'),
+			weight: 500,
+			style: 'normal',
+		},
 	];
 }
 
@@ -280,8 +284,8 @@ async function renderPng(copy: CardCopy, fonts: OgFont[]): Promise<Buffer> {
 			name: f.name,
 			data: f.data,
 			weight: f.weight,
-			style: f.style
-		}))
+			style: f.style,
+		})),
 	});
 	const resvg = new Resvg(svg, { fitTo: { mode: 'width', value: WIDTH } });
 	return Buffer.from(resvg.render().asPng());

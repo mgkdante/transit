@@ -37,7 +37,7 @@
 		'shrink-0 text-[var(--muted-foreground)] transition-transform',
 		open ? 'chevron-open' : '',
 		direction === 'right' ? 'chevron-right' : 'chevron-down',
-		className
+		className,
 	)}
 	data-slot="chevron-toggle"
 	viewBox="0 0 20 20"

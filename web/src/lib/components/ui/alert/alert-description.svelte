@@ -1,6 +1,6 @@
 <script lang="ts">
-	import type { HTMLAttributes } from "svelte/elements";
-	import { cn, type WithElementRef } from "$lib/utils";
+	import type { HTMLAttributes } from 'svelte/elements';
+	import { cn, type WithElementRef } from '$lib/utils';
 
 	let {
 		ref = $bindable(null),
@@ -14,8 +14,8 @@
 	bind:this={ref}
 	data-slot="alert-description"
 	class={cn(
-		"text-muted-foreground col-start-2 grid justify-items-start gap-1 text-small [&_p]:leading-relaxed",
-		className
+		'text-muted-foreground col-start-2 grid justify-items-start gap-1 text-small [&_p]:leading-relaxed',
+		className,
 	)}
 	{...restProps}
 >

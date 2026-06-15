@@ -17,8 +17,7 @@
 	import type { SeverityCode } from '$lib/v1/schemas';
 	import SeverityBar from './SeverityBar.svelte';
 
-	export interface RankedRowProps
-		extends WithElementRef<HTMLAttributes<HTMLDivElement>> {
+	export interface RankedRowProps extends WithElementRef<HTMLAttributes<HTMLDivElement>> {
 		/** 1-based rank. */
 		rank: number;
 		/** Row title (route/stop name — already localized). */
@@ -101,7 +100,8 @@
 	bind:this={ref}
 	class={cn(
 		'dv-ranked-row grid grid-cols-[auto_1fr_auto] items-center gap-3 rounded-lg border border-border bg-card px-3 py-2',
-		interactive && 'cursor-pointer transition-colors hover:bg-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ring)]',
+		interactive &&
+			'cursor-pointer transition-colors hover:bg-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ring)]',
 		className,
 	)}
 	role={interactive ? 'button' : 'listitem'}
@@ -112,7 +112,10 @@
 	{...restProps}
 >
 	<!-- Rank — monospace ordinal, neutral. -->
-	<span class="dv-rank w-6 text-right font-mono text-small tabular-nums text-muted-foreground" aria-hidden="true">
+	<span
+		class="dv-rank w-6 text-right font-mono text-small tabular-nums text-muted-foreground"
+		aria-hidden="true"
+	>
 		{rank}
 	</span>
 

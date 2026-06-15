@@ -17,8 +17,7 @@
 	import type { StatusCode } from '$lib/v1/schemas';
 	import { STATUS_GLYPH, statusVar } from './tokens';
 
-	export interface StatusBadgeProps
-		extends WithElementRef<HTMLAttributes<HTMLSpanElement>> {
+	export interface StatusBadgeProps extends WithElementRef<HTMLAttributes<HTMLSpanElement>> {
 		/** The realtime delay band to encode. */
 		status: StatusCode;
 		/** Render shape. */
@@ -56,7 +55,11 @@
 	<!-- Glyph-only marker: colour + glyph, with an sr-only label for a11y. -->
 	<span
 		bind:this={ref}
-		class={cn('dv-dot inline-flex shrink-0 items-center justify-center leading-none', sizeText[size], className)}
+		class={cn(
+			'dv-dot inline-flex shrink-0 items-center justify-center leading-none',
+			sizeText[size],
+			className,
+		)}
 		style="color: {color};"
 		role="img"
 		aria-label={text}
@@ -69,7 +72,11 @@
 {:else if mode === 'legend'}
 	<span
 		bind:this={ref}
-		class={cn('dv-legend inline-flex items-center gap-2 text-foreground', sizeText[size], className)}
+		class={cn(
+			'dv-legend inline-flex items-center gap-2 text-foreground',
+			sizeText[size],
+			className,
+		)}
 		data-slot="status-badge"
 		data-status={status}
 		{...restProps}

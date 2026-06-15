@@ -64,7 +64,7 @@
 				? 'var(--container-wide)'
 				: maxWidth === 'none'
 					? 'none'
-					: maxWidth
+					: maxWidth,
 	);
 </script>
 

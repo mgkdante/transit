@@ -33,7 +33,13 @@
 	import { Button } from '$lib/components/ui/button';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Separator } from '$lib/components/ui/separator';
-	import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '$lib/components/ui/card';
+	import {
+		Card,
+		CardHeader,
+		CardTitle,
+		CardDescription,
+		CardContent,
+	} from '$lib/components/ui/card';
 	import { Tabs, TabsList, TabsTrigger, TabsContent } from '$lib/components/ui/tabs';
 
 	// Dataviz kit.
@@ -188,7 +194,9 @@
 					<span>{STATUS_LABEL[code][lang]}</span>
 				</span>
 			{/each}
-			<span class="kit-dot"><StatusDot color="orange" pulse label="accent" /><span>accent (pulse)</span></span>
+			<span class="kit-dot"
+				><StatusDot color="orange" pulse label="accent" /><span>accent (pulse)</span></span
+			>
 		</div>
 	</section>
 
@@ -220,10 +228,18 @@
 			<Card class="max-w-xs">
 				<CardHeader>
 					<CardTitle>{lang === 'fr' ? 'Carte' : 'Card'}</CardTitle>
-					<CardDescription>{lang === 'fr' ? 'Surface solide, ombre carte.' : 'Solid surface, card shadow.'}</CardDescription>
+					<CardDescription
+						>{lang === 'fr'
+							? 'Surface solide, ombre carte.'
+							: 'Solid surface, card shadow.'}</CardDescription
+					>
 				</CardHeader>
 				<CardContent>
-					<MetricDisplay value="91%" label={lang === 'fr' ? 'Fiabilité' : 'Reliability'} size="sm" />
+					<MetricDisplay
+						value="91%"
+						label={lang === 'fr' ? 'Fiabilité' : 'Reliability'}
+						size="sm"
+					/>
 				</CardContent>
 			</Card>
 			<div class="kit-tabs-demo">
@@ -248,7 +264,11 @@
 			<SectionLabel text={lang === 'fr' ? 'LÉGENDE STATUT' : 'STATUS LEGEND'} variant="metric" />
 			<div class="kit-row">
 				{#each STATUS_CODES as code (code)}
-					<StatusBadge status={code} mode="legend" label={`${STATUS_GLYPH[code]} ${STATUS_LABEL[code][lang]}`} />
+					<StatusBadge
+						status={code}
+						mode="legend"
+						label={`${STATUS_GLYPH[code]} ${STATUS_LABEL[code][lang]}`}
+					/>
 				{/each}
 			</div>
 			<div class="kit-row">
@@ -264,23 +284,49 @@
 		<div class="kit-grid2">
 			<div class="kit-card">
 				<SectionLabel text="SPARKLINE" variant="metric" />
-				<Sparkline values={sparkSeries} label="On-time % · 10 builds" colorVar={statusVar('on_time')} />
+				<Sparkline
+					values={sparkSeries}
+					label="On-time % · 10 builds"
+					colorVar={statusVar('on_time')}
+				/>
 			</div>
 			<div class="kit-card">
 				<SectionLabel text="TRENDLINE" variant="metric" />
-				<TrendLine onTime={trendOnTime} retard={trendRetard} onTimeLabel={lang === 'fr' ? 'À l’heure %' : 'On-time %'} retardLabel={lang === 'fr' ? 'Retard %' : 'Delayed %'} label="7-day trend" />
+				<TrendLine
+					onTime={trendOnTime}
+					retard={trendRetard}
+					onTimeLabel={lang === 'fr' ? 'À l’heure %' : 'On-time %'}
+					retardLabel={lang === 'fr' ? 'Retard %' : 'Delayed %'}
+					label="7-day trend"
+				/>
 			</div>
 			<div class="kit-card">
 				<SectionLabel text="DISTRIBUTION" variant="metric" />
-				<Distribution stats={distStats} domain={[0, 14]} unit="min" label={lang === 'fr' ? 'Retard' : 'Delay'} fillVar={statusVar('late')} />
+				<Distribution
+					stats={distStats}
+					domain={[0, 14]}
+					unit="min"
+					label={lang === 'fr' ? 'Retard' : 'Delay'}
+					fillVar={statusVar('late')}
+				/>
 			</div>
 			<div class="kit-card">
 				<SectionLabel text="STACKED · STATUS" variant="metric" />
-				<StackedBar scale="status" segments={stackedStatus} legend label={lang === 'fr' ? 'Répartition statut' : 'Status mix'} />
+				<StackedBar
+					scale="status"
+					segments={stackedStatus}
+					legend
+					label={lang === 'fr' ? 'Répartition statut' : 'Status mix'}
+				/>
 			</div>
 			<div class="kit-card">
 				<SectionLabel text="STACKED · OCCUPANCY" variant="metric" />
-				<StackedBar scale="occupancy" segments={stackedOccupancy} legend label={lang === 'fr' ? 'Achalandage' : 'Occupancy'} />
+				<StackedBar
+					scale="occupancy"
+					segments={stackedOccupancy}
+					legend
+					label={lang === 'fr' ? 'Achalandage' : 'Occupancy'}
+				/>
 			</div>
 			<div class="kit-card">
 				<SectionLabel text="SEVERITY BARS" variant="metric" />
@@ -293,14 +339,43 @@
 			</div>
 			<div class="kit-card kit-card-wide">
 				<SectionLabel text="HEATMAP · 7×24" variant="metric" />
-				<Heatmap grid={heatmapGrid} label={lang === 'fr' ? 'Carte de chaleur des retards' : 'Delay heatmap'} />
+				<Heatmap
+					grid={heatmapGrid}
+					label={lang === 'fr' ? 'Carte de chaleur des retards' : 'Delay heatmap'}
+				/>
 			</div>
 			<div class="kit-card kit-card-wide">
 				<SectionLabel text="RANKED ROWS" variant="metric" />
 				<div class="kit-stack">
-					<RankedRow rank={1} title="Ligne 51" subtitle="Édouard-Montpetit" severity="critical" value={0.92} display="12.4 min" delta={2.1} deltaDisplay="+2.1" />
-					<RankedRow rank={2} title="Ligne 24" subtitle="Sherbrooke" severity="high" value={0.64} display="8.0 min" delta={-1.3} deltaDisplay="-1.3" />
-					<RankedRow rank={3} title="Ligne 105" subtitle="Sherbrooke O." severity="watch" value={null} display="—" delta={null} />
+					<RankedRow
+						rank={1}
+						title="Ligne 51"
+						subtitle="Édouard-Montpetit"
+						severity="critical"
+						value={0.92}
+						display="12.4 min"
+						delta={2.1}
+						deltaDisplay="+2.1"
+					/>
+					<RankedRow
+						rank={2}
+						title="Ligne 24"
+						subtitle="Sherbrooke"
+						severity="high"
+						value={0.64}
+						display="8.0 min"
+						delta={-1.3}
+						deltaDisplay="-1.3"
+					/>
+					<RankedRow
+						rank={3}
+						title="Ligne 105"
+						subtitle="Sherbrooke O."
+						severity="watch"
+						value={null}
+						display="—"
+						delta={null}
+					/>
 				</div>
 			</div>
 		</div>

@@ -35,17 +35,12 @@
 	const locale = $derived<Locale>(localeProp ?? ctxLocale ?? DEFAULT_LOCALE);
 
 	const defaultHeading = $derived(locale === 'fr' ? 'Réseau' : 'Network');
-	const emptyLabel = $derived(
-		locale === 'fr' ? 'Aucun contenu pour le moment' : 'No content yet',
-	);
+	const emptyLabel = $derived(locale === 'fr' ? 'Aucun contenu pour le moment' : 'No content yet');
 	const navAria = $derived(locale === 'fr' ? 'Navigation du réseau' : 'Network navigation');
 </script>
 
 <nav
-	class={cn(
-		'flex h-full w-[300px] shrink-0 flex-col border-r border-border bg-card',
-		className,
-	)}
+	class={cn('flex h-full w-[300px] shrink-0 flex-col border-r border-border bg-card', className)}
 	aria-label={navAria}
 	data-slot="left-rail"
 >

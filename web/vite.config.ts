@@ -19,9 +19,9 @@ export default defineConfig({
 				target: 'https://data.yesid.dev/v1',
 				changeOrigin: true,
 				secure: true,
-				rewrite: (path) => path.replace(/^\/data/, '')
-			}
-		}
+				rewrite: (path) => path.replace(/^\/data/, ''),
+			},
+		},
 	},
 	plugins: [
 		tailwindcss(),
@@ -33,14 +33,14 @@ export default defineConfig({
 			gzipSize: true,
 			brotliSize: true,
 			template: 'treemap',
-			open: false
-		})
+			open: false,
+		}),
 	],
 	ssr: {
 		// bits-ui ships .svelte files in dist/ — Vite SSR must run them through the
 		// Svelte compiler instead of treating them as native ESM. (gsap/embla/lenis
 		// are deliberately NOT used here, so they are absent from this list.)
-		noExternal: ['bits-ui']
+		noExternal: ['bits-ui'],
 	},
 	test: {
 		// Two projects: "data" = pure logic (node, fast), "dom" = components/stores (happy-dom).
@@ -49,21 +49,13 @@ export default defineConfig({
 				extends: true,
 				test: {
 					name: 'data',
-					include: [
-						'src/lib/**/*.test.ts',
-						'src/params/**/*.test.ts',
-						'src/tests/**/*.test.ts'
-					],
-					exclude: [
-						'src/lib/components/**',
-						'src/lib/stores/**',
-						'src/lib/**/*.svelte.test.ts'
-					],
+					include: ['src/lib/**/*.test.ts', 'src/params/**/*.test.ts', 'src/tests/**/*.test.ts'],
+					exclude: ['src/lib/components/**', 'src/lib/stores/**', 'src/lib/**/*.svelte.test.ts'],
 					environment: 'node',
 					globals: true,
 					pool: 'threads',
-					setupFiles: ['./src/tests/setup.data.ts']
-				}
+					setupFiles: ['./src/tests/setup.data.ts'],
+				},
 			},
 			{
 				extends: true,
@@ -73,14 +65,14 @@ export default defineConfig({
 						'src/lib/components/**/*.test.ts',
 						'src/lib/stores/**/*.test.ts',
 						'src/lib/**/*.svelte.test.ts',
-						'src/routes/**/*.test.ts'
+						'src/routes/**/*.test.ts',
 					],
 					environment: 'happy-dom',
 					globals: true,
 					pool: 'threads',
-					setupFiles: ['./src/tests/setup.dom.ts']
-				}
-			}
-		]
-	}
+					setupFiles: ['./src/tests/setup.dom.ts'],
+				},
+			},
+		],
+	},
 });

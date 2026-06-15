@@ -11,12 +11,7 @@
 // and parsePort validation; this module just delegates.
 
 import { adapter } from '$lib/v1/adapter';
-import type {
-	RouteFile,
-	RoutesIndex,
-	StopFile,
-	StopsIndex,
-} from '$lib/v1/schemas';
+import type { RouteFile, RoutesIndex, StopFile, StopsIndex } from '$lib/v1/schemas';
 
 /** Fetch + validate the static routes discovery index. */
 export async function getRoutesIndex(): Promise<RoutesIndex> {

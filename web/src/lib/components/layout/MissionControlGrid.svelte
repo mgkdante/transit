@@ -84,11 +84,7 @@
 	{/if}
 
 	{#if detail}
-		<aside
-			class="mc-detail"
-			data-slot="mc-detail"
-			aria-hidden={detailOpen ? undefined : true}
-		>
+		<aside class="mc-detail" data-slot="mc-detail" aria-hidden={detailOpen ? undefined : true}>
 			{@render detail()}
 		</aside>
 	{/if}

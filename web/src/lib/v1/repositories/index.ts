@@ -11,19 +11,8 @@
 
 import { getManifest } from './manifest';
 import { getLabels } from './labels';
-import {
-	getAlerts,
-	getNetwork,
-	getStopDepartures,
-	getTrips,
-	getVehicles,
-} from './live';
-import {
-	getRoute,
-	getRoutesIndex,
-	getStop,
-	getStopsIndex,
-} from './static';
+import { getAlerts, getNetwork, getStopDepartures, getTrips, getVehicles } from './live';
+import { getRoute, getRoutesIndex, getStop, getStopsIndex } from './static';
 import {
 	getAlertHistory,
 	getHotspots,
@@ -75,19 +64,8 @@ export const repositories = {
 // Flat named exports — direct-import path for callers that want one function.
 export { getManifest } from './manifest';
 export { getLabels } from './labels';
-export {
-	getAlerts,
-	getNetwork,
-	getStopDepartures,
-	getTrips,
-	getVehicles,
-} from './live';
-export {
-	getRoute,
-	getRoutesIndex,
-	getStop,
-	getStopsIndex,
-} from './static';
+export { getAlerts, getNetwork, getStopDepartures, getTrips, getVehicles } from './live';
+export { getRoute, getRoutesIndex, getStop, getStopsIndex } from './static';
 export {
 	getAlertHistory,
 	getHotspots,

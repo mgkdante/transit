@@ -26,7 +26,7 @@ const TITLES = {
 	'no-results': { en: 'No results', fr: 'Aucun résultat' },
 	empty: { en: 'Nothing to show', fr: 'Rien à afficher' },
 	'empty-avis': { en: 'No alerts', fr: 'Aucun avis' },
-	'error-v1': { en: '/v1 contract unreachable', fr: 'Contrat /v1 injoignable' }
+	'error-v1': { en: '/v1 contract unreachable', fr: 'Contrat /v1 injoignable' },
 } satisfies Record<string, Record<Locale, string>>;
 
 const MESSAGE_VARIANTS = Object.keys(TITLES) as Array<keyof typeof TITLES>;

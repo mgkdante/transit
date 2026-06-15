@@ -41,9 +41,7 @@ function apply(next: Theme, persist: boolean): void {
 	theme = next;
 	if (!browser) return;
 	document.documentElement.dataset.theme = next;
-	document
-		.querySelector('meta[name="theme-color"]')
-		?.setAttribute('content', THEME_SURFACE[next]);
+	document.querySelector('meta[name="theme-color"]')?.setAttribute('content', THEME_SURFACE[next]);
 	if (persist) {
 		try {
 			localStorage.setItem('theme', next);

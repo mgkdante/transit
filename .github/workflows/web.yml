@@ -42,6 +42,11 @@ jobs:
           pnpm tokens:build
           git diff --exit-code -- src/lib/styles/tokens.css src/app.css src/lib/motion/tokens.ts
 
+      - name: Lint + format
+        run: |
+          pnpm lint
+          pnpm format:check
+
       - name: Type-check
         run: pnpm check
 

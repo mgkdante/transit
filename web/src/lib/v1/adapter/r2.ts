@@ -20,10 +20,7 @@
 import type { z } from 'zod';
 import { resolveUrl, entityUrl } from '$lib/v1/config';
 import { getEntityJson, type FetchFn } from '$lib/v1/http';
-import type {
-	AdapterCtx,
-	ContentAdapter,
-} from './types';
+import type { AdapterCtx, ContentAdapter } from './types';
 
 import { ManifestSchema, type Manifest } from '$lib/v1/schemas/manifest';
 import { LabelsFileSchema } from '$lib/v1/schemas/labels';
@@ -346,8 +343,7 @@ export const r2Adapter: ContentAdapter = {
 			const m = await loadManifest(ctx);
 			return readEntity(
 				'historic',
-				m.files.historic?.route_reliability_prefix ??
-					DEFAULTS.historic.route_reliability_prefix,
+				m.files.historic?.route_reliability_prefix ?? DEFAULTS.historic.route_reliability_prefix,
 				routeId,
 				RouteReliabilitySchema,
 				'historic.routeReliability',
@@ -359,8 +355,7 @@ export const r2Adapter: ContentAdapter = {
 			const m = await loadManifest(ctx);
 			return readEntity(
 				'historic',
-				m.files.historic?.stop_reliability_prefix ??
-					DEFAULTS.historic.stop_reliability_prefix,
+				m.files.historic?.stop_reliability_prefix ?? DEFAULTS.historic.stop_reliability_prefix,
 				stopId,
 				StopReliabilitySchema,
 				'historic.stopReliability',

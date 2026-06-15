@@ -1,39 +1,41 @@
 <script lang="ts" module>
-	import { tv, type VariantProps } from "tailwind-variants";
-	import { twMergeConfig } from "$lib/utils";
+	import { tv, type VariantProps } from 'tailwind-variants';
+	import { twMergeConfig } from '$lib/utils';
 
 	export const sheetVariants = tv(
 		{
-			base: "bg-popover text-popover-foreground shadow-sheet fixed flex flex-col gap-4 transition ease-in-out data-[state=closed]:duration-300 data-[state=open]:duration-500 data-[state=open]:animate-in data-[state=closed]:animate-out",
+			base: 'bg-popover text-popover-foreground shadow-sheet fixed flex flex-col gap-4 transition ease-in-out data-[state=closed]:duration-300 data-[state=open]:duration-500 data-[state=open]:animate-in data-[state=closed]:animate-out',
 			variants: {
 				side: {
-					left: "data-[state=closed]:slide-out-to-left data-[state=open]:slide-in-from-left inset-y-0 left-0 h-full w-3/4 max-w-sm border-r border-border",
-					right: "data-[state=closed]:slide-out-to-right data-[state=open]:slide-in-from-right inset-y-0 right-0 h-full w-3/4 max-w-sm border-l border-border",
-					bottom: "data-[state=closed]:slide-out-to-bottom data-[state=open]:slide-in-from-bottom inset-x-0 bottom-0 max-h-[90svh] w-full rounded-t-xl border-t border-border",
+					left: 'data-[state=closed]:slide-out-to-left data-[state=open]:slide-in-from-left inset-y-0 left-0 h-full w-3/4 max-w-sm border-r border-border',
+					right:
+						'data-[state=closed]:slide-out-to-right data-[state=open]:slide-in-from-right inset-y-0 right-0 h-full w-3/4 max-w-sm border-l border-border',
+					bottom:
+						'data-[state=closed]:slide-out-to-bottom data-[state=open]:slide-in-from-bottom inset-x-0 bottom-0 max-h-[90svh] w-full rounded-t-xl border-t border-border',
 				},
 			},
 			defaultVariants: {
 				// Bottom drawer is the mobile-first default.
-				side: "bottom",
+				side: 'bottom',
 			},
 		},
-		{ twMergeConfig }
+		{ twMergeConfig },
 	);
 
-	export type SheetSide = VariantProps<typeof sheetVariants>["side"];
+	export type SheetSide = VariantProps<typeof sheetVariants>['side'];
 </script>
 
 <script lang="ts">
-	import { Dialog as SheetPrimitive } from "bits-ui";
-	import XIcon from "@lucide/svelte/icons/x";
-	import type { Snippet } from "svelte";
-	import SheetOverlay from "./sheet-overlay.svelte";
-	import { cn, type WithoutChildrenOrChild } from "$lib/utils";
+	import { Dialog as SheetPrimitive } from 'bits-ui';
+	import XIcon from '@lucide/svelte/icons/x';
+	import type { Snippet } from 'svelte';
+	import SheetOverlay from './sheet-overlay.svelte';
+	import { cn, type WithoutChildrenOrChild } from '$lib/utils';
 
 	let {
 		ref = $bindable(null),
 		class: className,
-		side = "bottom",
+		side = 'bottom',
 		portalProps,
 		showCloseButton = true,
 		children,

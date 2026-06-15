@@ -31,12 +31,6 @@ import type { SeverityCode } from '$lib/v1/schemas';
 const ALLOWED_TAGS: ReadonlySet<string> = new Set(['a', 'b', 'strong', 'br']);
 
 /**
- * Void (self-closing) allowed tags — emitted without a closing tag. `br` is the
- * only void tag in the allowlist.
- */
-const VOID_TAGS: ReadonlySet<string> = new Set(['br']);
-
-/**
  * URL schemes permitted on `<a href>`. Anything else (notably `javascript:`,
  * `data:`, `vbscript:`, `file:`) is rejected and the link is dropped to its
  * text content. Scheme-relative (`//evil`) is also rejected.
@@ -339,7 +333,7 @@ export interface AlertViewModel {
 function pickLocalized(
 	en: string | null | undefined,
 	fr: string | null | undefined,
-	lang: Locale
+	lang: Locale,
 ): string {
 	const primary = lang === 'en' ? en : fr;
 	const secondary = lang === 'en' ? fr : en;
@@ -370,7 +364,7 @@ export function toAlertViewModel(alert: RawAlert, lang: Locale): AlertViewModel 
 		title: stripTags(title),
 		body: sanitizeAlertHtml(rawBody),
 		routes: alert.routes ?? [],
-		stops: alert.stops ?? []
+		stops: alert.stops ?? [],
 	};
 }
 

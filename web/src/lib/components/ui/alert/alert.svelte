@@ -1,6 +1,6 @@
 <script lang="ts" module>
-	import { tv, type VariantProps } from "tailwind-variants";
-	import { twMergeConfig } from "$lib/utils";
+	import { tv, type VariantProps } from 'tailwind-variants';
+	import { twMergeConfig } from '$lib/utils';
 
 	// Alert is a SURFACE (solid bg-card), not an interactive affordance, so its
 	// accent must NEVER borrow --primary/--destructive/--accent. Data severity is
@@ -12,34 +12,34 @@
 	// so the dataviz color names aren't misread as font-sizes and dropped.
 	export const alertVariants = tv(
 		{
-			base: "alert-surface text-card-foreground relative grid w-full grid-cols-[0_1fr] items-start gap-y-0.5 rounded-lg border px-4 py-3 text-small has-[>svg]:grid-cols-[calc(var(--spacing)*5)_1fr] has-[>svg]:gap-x-3 [&>svg]:size-4 [&>svg]:translate-y-0.5",
+			base: 'alert-surface text-card-foreground relative grid w-full grid-cols-[0_1fr] items-start gap-y-0.5 rounded-lg border px-4 py-3 text-small has-[>svg]:grid-cols-[calc(var(--spacing)*5)_1fr] has-[>svg]:gap-x-3 [&>svg]:size-4 [&>svg]:translate-y-0.5',
 			variants: {
 				variant: {
 					// Neutral, no data severity — quiet card surface.
-					default: "alert-neutral [&>svg]:text-muted-foreground",
-					critical: "alert-critical [&>svg]:text-dataviz-severity-critical",
-					high: "alert-high [&>svg]:text-dataviz-severity-high",
-					watch: "alert-watch [&>svg]:text-dataviz-severity-watch",
+					default: 'alert-neutral [&>svg]:text-muted-foreground',
+					critical: 'alert-critical [&>svg]:text-dataviz-severity-critical',
+					high: 'alert-high [&>svg]:text-dataviz-severity-high',
+					watch: 'alert-watch [&>svg]:text-dataviz-severity-watch',
 				},
 			},
 			defaultVariants: {
-				variant: "default",
+				variant: 'default',
 			},
 		},
-		{ twMergeConfig }
+		{ twMergeConfig },
 	);
 
-	export type AlertVariant = VariantProps<typeof alertVariants>["variant"];
+	export type AlertVariant = VariantProps<typeof alertVariants>['variant'];
 </script>
 
 <script lang="ts">
-	import type { HTMLAttributes } from "svelte/elements";
-	import { cn, type WithElementRef } from "$lib/utils";
+	import type { HTMLAttributes } from 'svelte/elements';
+	import { cn, type WithElementRef } from '$lib/utils';
 
 	let {
 		ref = $bindable(null),
 		class: className,
-		variant = "default",
+		variant = 'default',
 		children,
 		...restProps
 	}: WithElementRef<HTMLAttributes<HTMLDivElement>> & {

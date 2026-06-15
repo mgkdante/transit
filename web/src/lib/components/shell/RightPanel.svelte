@@ -67,15 +67,14 @@
 </script>
 
 <aside
-	class={cn(
-		'flex h-full w-[360px] shrink-0 flex-col border-l border-border bg-card',
-		className,
-	)}
+	class={cn('flex h-full w-[360px] shrink-0 flex-col border-l border-border bg-card', className)}
 	aria-label={panelAria}
 	data-slot="right-panel"
 >
 	<!-- Header row -->
-	<div class="flex h-12 shrink-0 items-center justify-between gap-2 border-b border-border-subtle px-4">
+	<div
+		class="flex h-12 shrink-0 items-center justify-between gap-2 border-b border-border-subtle px-4"
+	>
 		<SectionLabel text={title ?? defaultTitle} variant="station" />
 		{#if dismissible}
 			<button
@@ -86,8 +85,24 @@
 				data-slot="right-panel-close"
 			>
 				<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" fill="none">
-					<line x1="4" y1="4" x2="12" y2="12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
-					<line x1="12" y1="4" x2="4" y2="12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+					<line
+						x1="4"
+						y1="4"
+						x2="12"
+						y2="12"
+						stroke="currentColor"
+						stroke-width="1.5"
+						stroke-linecap="round"
+					/>
+					<line
+						x1="12"
+						y1="4"
+						x2="4"
+						y2="12"
+						stroke="currentColor"
+						stroke-width="1.5"
+						stroke-linecap="round"
+					/>
 				</svg>
 			</button>
 		{/if}

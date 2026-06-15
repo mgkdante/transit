@@ -107,11 +107,7 @@
 		<p class="hub-lede">{t.lede}</p>
 
 		<div class="hub-anchors">
-			<MetricDisplay
-				value={manifest.dataset_version}
-				label={t.datasetLabel}
-				size="sm"
-			/>
+			<MetricDisplay value={manifest.dataset_version} label={t.datasetLabel} size="sm" />
 			<div class="hub-anchor-built">
 				<SectionLabel text={t.builtLabel} variant="metric" />
 				<span class="hub-built-value">

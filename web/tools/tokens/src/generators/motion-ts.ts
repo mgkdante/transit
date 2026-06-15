@@ -10,36 +10,36 @@ const HEADER = `// GENERATED FROM tools/tokens/tokens.json — DO NOT EDIT
 `;
 
 function camel(key: string): string {
-  return key.replace(/-([a-z])/g, (_, c: string) => c.toUpperCase());
+	return key.replace(/-([a-z])/g, (_, c: string) => c.toUpperCase());
 }
 
 function parseMs(value: string): number {
-  const m = value.match(/^(\d+(?:\.\d+)?)(ms|s)$/);
-  if (!m || !m[1] || !m[2]) throw new Error(`generateMotionTs: cannot parse duration "${value}"`);
-  const n = parseFloat(m[1]);
-  return m[2] === 's' ? n * 1000 : n;
+	const m = value.match(/^(\d+(?:\.\d+)?)(ms|s)$/);
+	if (!m || !m[1] || !m[2]) throw new Error(`generateMotionTs: cannot parse duration "${value}"`);
+	const n = parseFloat(m[1]);
+	return m[2] === 's' ? n * 1000 : n;
 }
 
 export function generateMotionTs(tree: TokenTree): string {
-  const durations = tree.duration as TokenTree | undefined;
-  const eases = tree.ease as TokenTree | undefined;
-  if (!durations || !eases) {
-    throw new Error('generateMotionTs: tokens.json must define duration and ease branches');
-  }
+	const durations = tree.duration as TokenTree | undefined;
+	const eases = tree.ease as TokenTree | undefined;
+	if (!durations || !eases) {
+		throw new Error('generateMotionTs: tokens.json must define duration and ease branches');
+	}
 
-  const durLines: string[] = [];
-  for (const [k, v] of Object.entries(durations)) {
-    if (!isPrimitive(v)) continue;
-    durLines.push(`\t${camel(k)}: ${parseMs(String(v.$value))},`);
-  }
+	const durLines: string[] = [];
+	for (const [k, v] of Object.entries(durations)) {
+		if (!isPrimitive(v)) continue;
+		durLines.push(`\t${camel(k)}: ${parseMs(String(v.$value))},`);
+	}
 
-  const easeLines: string[] = [];
-  for (const [k, v] of Object.entries(eases)) {
-    if (!isPrimitive(v)) continue;
-    easeLines.push(`\t${camel(k)}: '${v.$value}',`);
-  }
+	const easeLines: string[] = [];
+	for (const [k, v] of Object.entries(eases)) {
+		if (!isPrimitive(v)) continue;
+		easeLines.push(`\t${camel(k)}: '${v.$value}',`);
+	}
 
-  return `${HEADER}export const duration = {
+	return `${HEADER}export const duration = {
 ${durLines.join('\n')}
 } as const;
 

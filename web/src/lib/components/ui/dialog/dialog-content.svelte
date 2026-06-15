@@ -1,9 +1,9 @@
 <script lang="ts">
-	import { Dialog as DialogPrimitive } from "bits-ui";
-	import XIcon from "@lucide/svelte/icons/x";
-	import type { Snippet } from "svelte";
-	import DialogOverlay from "./dialog-overlay.svelte";
-	import { cn, type WithoutChildrenOrChild } from "$lib/utils";
+	import { Dialog as DialogPrimitive } from 'bits-ui';
+	import XIcon from '@lucide/svelte/icons/x';
+	import type { Snippet } from 'svelte';
+	import DialogOverlay from './dialog-overlay.svelte';
+	import { cn, type WithoutChildrenOrChild } from '$lib/utils';
 
 	let {
 		ref = $bindable(null),
@@ -27,8 +27,8 @@
 		data-slot="dialog-content"
 		style="z-index: calc(var(--z-index-menu) + 1);"
 		class={cn(
-			"data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 bg-popover text-popover-foreground border-border shadow-section fixed top-1/2 left-1/2 grid w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-4 rounded-lg border p-6 duration-200 sm:max-w-lg",
-			className
+			'data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 bg-popover text-popover-foreground border-border shadow-section fixed top-1/2 left-1/2 grid w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-4 rounded-lg border p-6 duration-200 sm:max-w-lg',
+			className,
 		)}
 		{...restProps}
 	>
