@@ -361,7 +361,6 @@ def test_publish_historic_writes_expected_keys(tmp_path) -> None:
     tmp_path so all files are written to disk.  At least one file is parsed back
     through its contract model for round-trip validation.
     """
-    import json
     import datetime
     from contextlib import contextmanager
 
@@ -733,7 +732,6 @@ def test_publish_static_rewrites_when_fingerprint_changes() -> None:
     import json
 
     from transit_ops.snapshots.storage import _body
-    from transit_ops.snapshots.contract import RoutesIndex
 
     store = StatefulFakeStore()
     res1 = _publish_static_once(store, _RecordingConn())

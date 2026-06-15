@@ -41,22 +41,56 @@ from sqlalchemy import text
 
 from transit_ops.snapshots.contract import (
     Alert,
+    AlertHistory,
+    AlertHistoryEntry,
     AlertsFile,
+    BasemapFile,
+    HeadwayPeriod,
+    Hotspot,
+    Hotspots,
+    LabelsFile,
     Manifest,
     ManifestFiles,
     ManifestHistoricFiles,
     ManifestLiveFiles,
     ManifestStaticFiles,
     NetworkFile,
+    NetworkTrend,
     OccupancyMix,
+    Offender,
+    Provenance,
+    ProvenanceFreshness,
+    ProvenanceSource,
+    Receipt,
+    ReceiptWorstRoute,
+    ReceiptWorstStop,
+    ReliabilityPeriod,
+    RepeatOffenders,
+    RouteDirection,
+    RouteFile,
+    RouteHabits,
+    RouteIndexEntry,
+    RouteReliability,
+    RouteStop,
+    RoutesIndex,
+    ScheduledRoute,
+    ServicePeriod,
     StatusDist,
+    StopByRoute,
     StopDeparture,
     StopDeparturesFile,
     StopEta,
+    StopFile,
+    StopIndexEntry,
+    StopReliability,
+    StopReliabilityPeriod,
+    StopsIndex,
+    TrendPoint,
     Trip,
     TripsFile,
     Vehicle,
     VehiclesFile,
+    WeakStop,
 )
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
@@ -896,8 +930,6 @@ def build_labels(conn: Connection, *, lang: str = "fr", generated_utc: str) -> "
          labels['attribution.disclaimer']; manifest.attribution is the unlocalized
          machine-level fallback, frozen until the STM licensing determination (T1).
     """
-    from transit_ops.snapshots.contract import LabelsFile
-
     static = _STATIC_LABELS_FR if lang == "fr" else _STATIC_LABELS_EN
     labels: dict[str, str] = dict(static)
 
@@ -936,8 +968,6 @@ _STOPS_INDEX_SQL = text(
 
 def build_routes_index(conn: Connection, *, provider_id: str = "stm", generated_utc: str) -> "RoutesIndex":
     """Build static/routes_index.json from gold.dim_route."""
-    from transit_ops.snapshots.contract import RouteIndexEntry, RoutesIndex
-
     routes = []
     for r in conn.execute(_ROUTES_INDEX_SQL, {"provider_id": provider_id}).mappings():
         routes.append(
@@ -956,8 +986,6 @@ def build_routes_index(conn: Connection, *, provider_id: str = "stm", generated_
 
 def build_stops_index(conn: Connection, *, provider_id: str = "stm", generated_utc: str) -> "StopsIndex":
     """Build static/stops_index.json from gold.dim_stop."""
-    from transit_ops.snapshots.contract import StopIndexEntry, StopsIndex
-
     stops = []
     for r in conn.execute(_STOPS_INDEX_SQL, {"provider_id": provider_id}).mappings():
         lat, lon = r["stop_lat"], r["stop_lon"]
@@ -1139,8 +1167,6 @@ def build_route(conn: Connection, *, provider_id: str = "stm", route_id: str, ge
     """
     from collections import defaultdict
 
-    from transit_ops.snapshots.contract import RouteDirection, RouteFile, RouteStop, ServicePeriod
-
     dv_row = conn.execute(_CURRENT_DATASET_VERSION_SQL, {"provider_id": provider_id}).mappings().fetchone()
     if dv_row is None:
         return RouteFile(generated_utc=generated_utc, id=route_id)
@@ -1293,8 +1319,6 @@ def build_all_stops_data(conn: Connection, *, provider_id: str = "stm", generate
     """
     import logging
     from collections import defaultdict
-
-    from transit_ops.snapshots.contract import ScheduledRoute, StopFile
 
     logger = logging.getLogger(__name__)
     params_base = {"provider_id": provider_id}
@@ -1477,8 +1501,6 @@ def build_network_trend(conn: Connection, *, provider_id: str = "stm", generated
     (~14 days retained), so p90_min/vehicles are present only for the recent days
     the fact table still covers.
     """
-    from transit_ops.snapshots.contract import NetworkTrend, TrendPoint
-
     params = {"provider_id": provider_id}
     points: dict[str, dict] = {}
 
@@ -1669,8 +1691,6 @@ def _build_habits_matrix(rows: "Iterable[Mapping[str, object]]") -> "RouteHabits
     observed-but-calm 0.0. A route whose every observed cell is 0.0 normalizes to
     0.0 without dividing by zero.
     """
-    from transit_ops.snapshots.contract import RouteHabits
-
     raw: list[list[float | None]] = [[None] * 24 for _ in range(7)]
     for r in rows:
         dow = r["day_of_week_iso"]
@@ -1712,13 +1732,6 @@ def build_route_reliability(
              each cell a fraction of the route's worst hour, null = no data).
     weak_stops: top 5 stops on the route by average delay.
     """
-    from transit_ops.snapshots.contract import (
-        HeadwayPeriod,
-        ReliabilityPeriod,
-        RouteReliability,
-        WeakStop,
-    )
-
     params = {"provider_id": provider_id, "route_id": route_id}
 
     # --- periods (daily/weekly/monthly observation-based OTP) ---
@@ -1921,12 +1934,6 @@ def build_stop_reliability(
     aggregated across the stop's routes. Stop OTP remains a severe(>300s)-only
     proxy, now over per-stop delay observations. Returns stop_id -> model.
     """
-    from transit_ops.snapshots.contract import (
-        StopByRoute,
-        StopReliability,
-        StopReliabilityPeriod,
-    )
-
     params = {"provider_id": provider_id}
 
     def _weighted_avg_sec(obs: object, weighted: object) -> float | None:
@@ -2025,8 +2032,6 @@ def build_hotspots(conn: "Connection", provider_id: str = "stm", *, generated_ut
     falls back to the most-recent period of any grain if no week rows are present.
     otp_delta_pts is None in v1 (not stored in gold).
     """
-    from transit_ops.snapshots.contract import Hotspot, Hotspots
-
     rows = list(conn.execute(_HOTSPOTS_SQL, {"provider_id": provider_id}).mappings())
     route_names, stop_names = _entity_name_maps(conn, provider_id=provider_id)
     hotspots = [
@@ -2073,8 +2078,6 @@ def build_repeat_offenders(
     Source: gold.repeat_offender_daily (P3 mart).
     Ordered by recurrence_days desc, avg_delay_seconds desc.
     """
-    from transit_ops.snapshots.contract import Offender, RepeatOffenders
-
     rows = list(
         conn.execute(_REPEAT_OFFENDERS_SQL, {"provider_id": provider_id}).mappings()
     )
@@ -2182,8 +2185,6 @@ def build_receipts(
     vehicles is None in v1 (not stored in the receipt source mart).
     worst_route.otp_delta_pts is None in v1 (not stored in gold).
     """
-    from transit_ops.snapshots.contract import Receipt, ReceiptWorstRoute, ReceiptWorstStop
-
     params = {"provider_id": provider_id}
     route_names, stop_names = _entity_name_maps(conn, provider_id=provider_id)
 
@@ -2299,8 +2300,6 @@ def build_alert_history(
 
     v1 intentional bounds: 30-day look-back, LIMIT 200, impact_passages=None.
     """
-    from transit_ops.snapshots.contract import AlertHistory, AlertHistoryEntry
-
     rows = list(
         conn.execute(_ALERT_HISTORY_SQL, {"provider_id": provider_id}).mappings()
     )
@@ -2403,8 +2402,6 @@ def build_provenance(
     Retention and methodology are hardcoded v1 constants.
     gaps lists known missing feeds (STM metro publishes no realtime feed).
     """
-    from transit_ops.snapshots.contract import Provenance, ProvenanceFreshness, ProvenanceSource
-
     params = {"provider_id": provider_id}
 
     sources: list[ProvenanceSource] = []
@@ -2503,8 +2500,6 @@ def build_basemap(settings: object, *, generated_utc: str) -> "BasemapFile | Non
     Pure function (no DB): returns ``None`` when SNAPSHOT_BASEMAP_PMTILES_URL is
     unset/falsy, so the basemap artifact ships only once a real archive exists.
     """
-    from transit_ops.snapshots.contract import BasemapFile
-
     url = getattr(settings, "SNAPSHOT_BASEMAP_PMTILES_URL", None)
     if not url:
         return None

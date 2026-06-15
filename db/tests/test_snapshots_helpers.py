@@ -7,7 +7,6 @@ failure.  No database connection is required.
 
 from __future__ import annotations
 
-import pytest
 
 from transit_ops.snapshots.builders import (
     _gtfs_min,
