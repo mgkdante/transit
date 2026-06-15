@@ -41,6 +41,28 @@ export const STATUS_GLYPH: Record<StatusCode, string> = {
 	unknown: '○',
 };
 
+/**
+ * Fill-level glyph per OccupancyCode — a DOUBLE channel paired with the
+ * `--dataviz-occupancy-*` purple luminance ramp. Luminance alone fails AA on
+ * near-black (the `empty` band is ~2.4:1), so the glyph is load-bearing, never
+ * decorative: empty ▁ → full █, rising fill = rising crowding.
+ */
+export const OCCUPANCY_GLYPH: Record<OccupancyCode, string> = {
+	empty: '▁',
+	many_seats: '▃',
+	few_seats: '▅',
+	standing: '▇',
+	full: '█',
+};
+
+/** No-telemetry occupancy glyph — the honesty mark; NEVER the `empty` band. */
+export const OCCUPANCY_NODATA_GLYPH = '◌';
+
+/** Glyph for an occupancy code; `null`/`undefined` (no telemetry) → the no-data glyph. */
+export function occupancyGlyph(code: OccupancyCode | null | undefined): string {
+	return code == null ? OCCUPANCY_NODATA_GLYPH : OCCUPANCY_GLYPH[code];
+}
+
 /** The stop marker glyph (per SHARED CONTRACT: stops ■). */
 export const STOP_GLYPH = '■';
 
