@@ -34,8 +34,12 @@ const RATIO = 2;
 /** Sentinel occupancy code for vehicles with no telemetry this cycle. */
 export const OCC_NODATA = 'nodata';
 
+/** The single default-mode bus icon ids (calm white; no status glyph). */
+export const BUS_ICON = 'veh-bus';
+export const BUS_ICON_ND = 'veh-bus-nd';
+
 /** Resolve a `var(--token)` expression to its computed `rgb(...)` string. */
-function resolveColor(varExpr: string, fallback: string): string {
+export function resolveColor(varExpr: string, fallback: string): string {
 	if (typeof document === 'undefined') return fallback;
 	const probe = document.createElement('span');
 	probe.style.cssText = `position:absolute;visibility:hidden;color:${varExpr}`;
@@ -131,4 +135,10 @@ export function bakeVehicleSprites(map: MapLibreMap): void {
 	add(bodyIconId('occupancy', OCC_NODATA, true), bodyImage(nodataFill, halo, true));
 	add(bodyIconId('occupancy', OCC_NODATA, false), bodyImage(nodataFill, halo, false));
 	add(glyphIconId('occupancy', OCC_NODATA), glyphImage(OCCUPANCY_NODATA_GLYPH, halo));
+
+	// Default single-colour bus (the calm default — one colour per entity, no
+	// status glyph). State colour only appears when a filter lights matches up.
+	const busFill = resolveColor('var(--foreground)', '#f5f5f0');
+	add(BUS_ICON, bodyImage(busFill, halo, true));
+	add(BUS_ICON_ND, bodyImage(busFill, halo, false));
 }

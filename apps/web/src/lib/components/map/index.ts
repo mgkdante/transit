@@ -35,4 +35,6 @@ export {
 	type VehicleMode,
 } from './vehicleLayer';
 
+export { addStopsSource, addStopsLayer, setStops, STOPS_SOURCE, STOPS_LAYER } from './stopsLayer';
+
 export { haversineMeters, nearestStops, type LatLon, type WithDistance } from './nearbyStops';

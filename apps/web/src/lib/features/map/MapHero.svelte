@@ -1,26 +1,26 @@
 <!--
   MapHero — the citizen-first live vehicle map (Family A, slice-9.3 hero).
 
-  Composes the map kit + the live store into a full-bleed map: MapStage owns the
-  GL canvas; once it's ready we bake the puck sprites and add the vehicle source
-  + the two symbol layers (rotating body under upright glyph). A live store polls
-  every 30s; an $effect feeds its vehicles + the active mode into the layer and
-  dims it when the feed goes stale.
+  ENCODING DOCTRINE (one colour per entity, state→filter): buses render in ONE
+  calm colour (white) with directional arrows; stops are a single recessive grey,
+  zoom-gated so the 8,986-stop catalogue never blankets the city. No status/
+  crowding colour by default — that lives in the combinable filter (next step),
+  which lights matched subsets up in their state colour. Routes draw on-demand
+  (per-route shape geometry; no bulk file) when filtered/selected — also next.
 
-  Honesty is baked into the layer (bearing-null disc, occupancy-null ◌ glyph;
-  never a fabricated heading or the 'empty' band). DOCTRINE: orange --primary is
-  interactive-only — it lights the active toggle segment, nothing else; every
-  vehicle mark rides the dataviz scale + a glyph.
+  Composes the map kit + live store: MapStage owns the GL canvas; once ready we
+  bake sprites and add the stops layer (under) + the vehicle layers (over). A
+  live store polls every 30s; an $effect feeds vehicles + the stop catalogue into
+  the layers and dims on stale.
 
-  This build ships the map + Statut|Crowding toggle + mode-mirroring legend +
-  freshness over the minimal-dark basemap fallback. Smooth interpolation, the
-  peek→select panel, and 'Arrêts près de moi' land in the next build steps.
+  DOCTRINE: orange --primary stays interactive-only. The basemap rides the brand
+  surface palette; every mark rides a token, no hardcoded hex.
 -->
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import type { Map as MapLibreMap } from 'maplibre-gl';
 	import { getLocale, type Locale } from '$lib/i18n';
-	import { createLiveStore, getV1Context, getBasemap, STATUS_CODES, OCCUPANCY_CODES } from '$lib/v1';
+	import { createLiveStore, getV1Context, getBasemap, getStopsIndex } from '$lib/v1';
 	import { createResource } from '$lib/v1/resource.svelte';
 	import {
 		MapStage,
@@ -29,51 +29,53 @@
 		addVehicleLayers,
 		setVehicles,
 		setStale,
-		type VehicleMode,
+		addStopsSource,
+		addStopsLayer,
+		setStops,
 	} from '$lib/components/map';
 	import { LiveFreshness } from '$lib/components/surface';
-	import { statusVar, occupancyVar, STATUS_GLYPH, OCCUPANCY_GLYPH } from '$lib/components/dataviz';
-	import { copy as MAP_COPY, STATUS_LABELS, OCCUPANCY_LABELS } from './map.copy';
+	import { copy as MAP_COPY } from './map.copy';
 
 	const locale: Locale = getLocale();
 	const t = $derived(MAP_COPY[locale]);
 
-	// Basemap pointer (the hosted Montréal PMTiles archive), or null → MapStage
-	// falls back to the minimal-dark style. Client-only fetch via createResource.
+	// Basemap pointer (hosted Montréal PMTiles), or null → minimal-dark fallback.
 	const basemap = createResource(() => getBasemap());
+	// Static stop catalogue (8,986 stops) for the stops layer + (later) near-me.
+	const stops = createResource(() => getStopsIndex());
 
-	// Live tier — one store for this surface; the v1 context is booted by the time
-	// the page tree renders, so getV1Context() is safe here.
+	// Live tier — one store for this surface (v1 context booted before mount).
 	const live = createLiveStore(getV1Context().manifest);
 	onMount(() => {
 		live.start();
 		return () => live.stop();
 	});
 
-	let mode = $state<VehicleMode>('status');
 	let map = $state<MapLibreMap | null>(null);
 
 	function onMapReady(m: MapLibreMap): void {
 		bakeVehicleSprites(m);
+		// Stops UNDER buses (added first = lower z); buses ride on top.
+		addStopsSource(m);
+		addStopsLayer(m);
 		addVehicleSource(m);
 		addVehicleLayers(m);
 		map = m;
 	}
 
-	// Feed live vehicles + mode into the layer; dim on stale. Re-runs when the
-	// map is wired, on each poll (live.vehicles), and on a mode toggle.
+	// Feed the layers: single-colour buses + the stop catalogue; dim on stale.
 	$effect(() => {
 		const m = map;
 		if (!m) return;
-		setVehicles(m, live.vehicles?.vehicles ?? [], mode);
+		setVehicles(m, live.vehicles?.vehicles ?? [], 'single');
+		setStops(m, stops.data?.stops ?? []);
 		setStale(m, live.isStale);
 	});
 </script>
 
 <div class="map-hero">
 	<!-- Gate the map's creation on the basemap pointer resolving (data or null),
-	     so MapStage builds with its FINAL style once. A post-mount basemap swap
-	     would setStyle and wipe the vehicle layers added in onready. -->
+	     so MapStage builds with its FINAL style once. -->
 	{#if basemap.settled}
 		<MapStage
 			class="map-hero-stage"
@@ -83,33 +85,13 @@
 		/>
 	{/if}
 
-	<!-- Top-left: heading + the Statut|Crowding mode toggle. -->
+	<!-- Top-left: heading. -->
 	<div class="map-overlay map-head">
 		<p class="map-kicker">{t.kicker}</p>
 		<h1 class="map-heading">{t.heading}<span class="map-dot">.</span></h1>
-		<div class="map-toggle" role="group" aria-label={t.modeAria}>
-			<button
-				type="button"
-				class="map-toggle-btn"
-				data-active={mode === 'status'}
-				aria-pressed={mode === 'status'}
-				onclick={() => (mode = 'status')}
-			>
-				{t.modeStatus}
-			</button>
-			<button
-				type="button"
-				class="map-toggle-btn"
-				data-active={mode === 'occupancy'}
-				aria-pressed={mode === 'occupancy'}
-				onclick={() => (mode = 'occupancy')}
-			>
-				{t.modeOccupancy}
-			</button>
-		</div>
 	</div>
 
-	<!-- Top-right: live freshness chip (only once a build is loaded). -->
+	<!-- Top-right: live freshness chip (once a build is loaded). -->
 	{#if live.generatedUtc || live.ageSeconds != null}
 		<div class="map-overlay map-fresh">
 			<LiveFreshness
@@ -121,23 +103,10 @@
 		</div>
 	{/if}
 
-	<!-- Bottom-left: mode-mirroring legend (glyph + colour, colourblind-safe). -->
+	<!-- Bottom-left: entity legend (one colour per type; state lives in the filter). -->
 	<div class="map-overlay map-legend" aria-hidden="true">
-		{#if mode === 'status'}
-			{#each STATUS_CODES as code (code)}
-				<span class="map-legend-item">
-					<span class="map-legend-glyph" style="color:{statusVar(code)}">{STATUS_GLYPH[code]}</span>
-					{STATUS_LABELS[locale][code]}
-				</span>
-			{/each}
-		{:else}
-			{#each OCCUPANCY_CODES as code (code)}
-				<span class="map-legend-item">
-					<span class="map-legend-glyph" style="color:{occupancyVar(code)}">{OCCUPANCY_GLYPH[code]}</span>
-					{OCCUPANCY_LABELS[locale][code]}
-				</span>
-			{/each}
-		{/if}
+		<span class="map-legend-item"><span class="map-legend-glyph map-legend-bus">▲</span>{t.entityBuses}</span>
+		<span class="map-legend-item"><span class="map-legend-dot"></span>{t.entityStops}</span>
 	</div>
 </div>
 
@@ -148,7 +117,6 @@
 		height: 100%;
 		overflow: hidden;
 	}
-	/* Full-bleed: drop MapStage's card radius so the map reaches every edge. */
 	.map-hero :global(.map-stage) {
 		border-radius: 0;
 	}
@@ -162,7 +130,7 @@
 		left: 1rem;
 		display: flex;
 		flex-direction: column;
-		gap: 0.6rem;
+		gap: 0.35rem;
 		max-width: calc(100% - 2rem);
 	}
 	.map-kicker {
@@ -183,42 +151,6 @@
 	}
 	.map-dot {
 		color: var(--primary);
-	}
-
-	.map-toggle {
-		display: inline-flex;
-		align-self: flex-start;
-		padding: 3px;
-		gap: 2px;
-		background: color-mix(in srgb, var(--card) 88%, transparent);
-		border: 1px solid var(--border);
-		border-radius: 999px;
-		backdrop-filter: blur(6px);
-	}
-	.map-toggle-btn {
-		font-family: var(--font-mono);
-		font-size: var(--text-small);
-		padding: 0.3rem 0.85rem;
-		border: none;
-		background: none;
-		color: var(--muted-foreground);
-		border-radius: 999px;
-		cursor: pointer;
-		transition: color 120ms ease;
-	}
-	.map-toggle-btn:hover {
-		color: var(--foreground);
-	}
-	.map-toggle-btn:focus-visible {
-		outline: 2px solid var(--ring);
-		outline-offset: 1px;
-	}
-	/* doctrine-allow: interactive — the ACTIVE toggle segment is a control state
-	   (which mode is selected), not a data mark. The lone --primary touch here. */
-	.map-toggle-btn[data-active='true'] {
-		background: var(--primary);
-		color: var(--primary-foreground);
-		font-weight: 500;
 	}
 
 	.map-fresh {
@@ -257,10 +189,13 @@
 		font-size: var(--text-small);
 		line-height: 1;
 	}
-
-	@media (prefers-reduced-motion: reduce) {
-		.map-toggle-btn {
-			transition: none;
-		}
+	.map-legend-bus {
+		color: var(--foreground);
+	}
+	.map-legend-dot {
+		width: 0.55rem;
+		height: 0.55rem;
+		border-radius: 50%;
+		background: var(--muted-foreground);
 	}
 </style>

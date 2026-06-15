@@ -18,9 +18,11 @@ import type {
 	LayerSpecification,
 } from 'maplibre-gl';
 import type { Vehicle } from '$lib/v1/schemas';
-import { bodyIconId, glyphIconId, OCC_NODATA } from './vehicleSprites';
+import { bodyIconId, glyphIconId, OCC_NODATA, BUS_ICON, BUS_ICON_ND } from './vehicleSprites';
 
-export type VehicleMode = 'status' | 'occupancy';
+// 'single' = the calm default (one bus colour, no status glyph). 'status' /
+// 'occupancy' colour matches by state — used when a filter lights a subset up.
+export type VehicleMode = 'single' | 'status' | 'occupancy';
 
 export const VEHICLE_SOURCE = 'vehicles';
 export const VEHICLE_BODY_LAYER = 'vehicle-body';
@@ -47,6 +49,10 @@ const EMPTY_FC: VehicleFC = { type: 'FeatureCollection', features: [] };
 /** Map a vehicle to its body + glyph icon ids for the active mode. */
 function iconIds(v: Vehicle, mode: VehicleMode): { body: string; glyph: string } {
 	const directional = v.bearing != null;
+	// Default: one calm colour, no glyph (state lives in the filter, not the paint).
+	if (mode === 'single') {
+		return { body: directional ? BUS_ICON : BUS_ICON_ND, glyph: '' };
+	}
 	if (mode === 'status') {
 		return { body: bodyIconId('status', v.status, directional), glyph: glyphIconId('status', v.status) };
 	}
@@ -101,6 +107,8 @@ export function addVehicleLayers(map: MapLibreMap): void {
 			id: VEHICLE_GLYPH_LAYER,
 			type: 'symbol',
 			source: VEHICLE_SOURCE,
+			// Skip features with no glyph (single/default mode) — avoids empty-image lookups.
+			filter: ['!=', ['get', 'glyph'], ''],
 			layout: {
 				'icon-image': ['get', 'glyph'],
 				'icon-rotation-alignment': 'viewport',

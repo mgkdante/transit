@@ -21,6 +21,9 @@ export interface MapCopy {
 	readonly nearMe: string;
 	/** No-data occupancy legend row. */
 	readonly noData: string;
+	/** Entity legend labels (one colour per type). */
+	readonly entityBuses: string;
+	readonly entityStops: string;
 }
 
 export const copy: Record<Locale, MapCopy> = {
@@ -33,6 +36,8 @@ export const copy: Record<Locale, MapCopy> = {
 		modeAria: 'Colour buses by',
 		nearMe: 'Stops near me',
 		noData: 'No data',
+		entityBuses: 'Buses',
+		entityStops: 'Stops',
 	},
 	fr: {
 		kicker: 'RÉSEAU · EN DIRECT',
@@ -43,6 +48,8 @@ export const copy: Record<Locale, MapCopy> = {
 		modeAria: 'Colorer les bus par',
 		nearMe: 'Arrêts près de moi',
 		noData: 'Aucune donnée',
+		entityBuses: 'Bus',
+		entityStops: 'Arrêts',
 	},
 };
 
