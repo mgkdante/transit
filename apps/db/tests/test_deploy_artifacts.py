@@ -6,7 +6,7 @@ import yaml
 from transit_ops.settings import Settings
 
 DB_ROOT = Path(__file__).resolve().parents[1]
-REPO_ROOT = Path(__file__).resolve().parents[2]
+REPO_ROOT = Path(__file__).resolve().parents[3]
 
 # Third-party / local-tooling secrets the operator keeps in the root .env for AI
 # tooling and 1Password inject. NONE of them are app config, so NO container
@@ -191,7 +191,7 @@ def test_daily_warm_rollups_workflow_prunes_bronze_and_uploads_retention_proof()
     assert "if: always()" in workflow
     # upload-artifact paths are workspace-relative (working-directory does
     # not apply to `uses:` steps).
-    assert "db/artifacts/retention-proof.json" in workflow
+    assert "apps/db/artifacts/retention-proof.json" in workflow
 
     timeout_match = re.search(r"timeout-minutes:\s*(\d+)", workflow)
     assert timeout_match is not None

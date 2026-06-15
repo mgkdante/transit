@@ -3,7 +3,7 @@
 The worker serves the canonical snapshot URLs (https://transit.yesid.dev/data/...)
 already baked into the published manifest. These tests pin the wrangler config,
 the deploy workflow, and the .env.example base URL to each other so the canonical
-``cd db && uv run pytest`` gate covers the JS surface; the behavioral suite itself
+``cd apps/db && uv run pytest`` gate covers the JS surface; the behavioral suite itself
 runs under ``node --test`` (bridged below when node is available).
 """
 
@@ -19,8 +19,8 @@ from pathlib import Path
 import pytest
 import yaml
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
-PROXY_DIR = REPO_ROOT / "infra" / "cloudflare" / "data-proxy"
+REPO_ROOT = Path(__file__).resolve().parents[3]
+PROXY_DIR = REPO_ROOT / "apps" / "data-proxy"
 WRANGLER_TOML = PROXY_DIR / "wrangler.toml"
 DEPLOY_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "deploy-data-proxy.yml"
 ENV_EXAMPLE = REPO_ROOT / ".env.example"
@@ -66,7 +66,7 @@ def test_deploy_workflow_runs_worker_tests_then_wrangler_action() -> None:
     triggers = _workflow_triggers(workflow)
     assert "workflow_dispatch" in triggers
     assert triggers["push"]["branches"] == ["main"]
-    assert "infra/cloudflare/data-proxy/**" in triggers["push"]["paths"]
+    assert "apps/data-proxy/**" in triggers["push"]["paths"]
     # The workflow must also redeploy when only the deploy pipeline changes.
     assert ".github/workflows/deploy-data-proxy.yml" in triggers["push"]["paths"]
     assert workflow["permissions"] == {"contents": "read"}
@@ -87,15 +87,18 @@ def test_deploy_workflow_runs_worker_tests_then_wrangler_action() -> None:
 
     wrangler_step = steps[wrangler_indexes[0]]
     assert wrangler_step["with"]["apiToken"] == "${{ secrets.CLOUDFLARE_API_TOKEN }}"
-    assert wrangler_step["with"]["workingDirectory"] == "infra/cloudflare/data-proxy"
+    assert wrangler_step["with"]["workingDirectory"] == "apps/data-proxy"
 
-    # CI must deploy with the same wrangler the committed lockfile resolves,
-    # or the dry-run-validated toolchain and the deployed one silently drift.
-    lockfile = json.loads(
-        (PROXY_DIR / "package-lock.json").read_text(encoding="utf-8")
+    # CI must deploy with the exact wrangler the worker declares, or the
+    # dry-run-validated toolchain and the deployed one silently drift. Under the
+    # bun workspace the data-proxy carries no per-app lockfile (deps resolve via
+    # the root bun.lock), so wrangler is pinned EXACTLY in package.json and the
+    # deploy action must use that same pin.
+    proxy_pkg = json.loads(
+        (PROXY_DIR / "package.json").read_text(encoding="utf-8")
     )
-    locked_wrangler = lockfile["packages"]["node_modules/wrangler"]["version"]
-    assert wrangler_step["with"]["wranglerVersion"] == locked_wrangler
+    declared_wrangler = proxy_pkg["devDependencies"]["wrangler"]
+    assert wrangler_step["with"]["wranglerVersion"] == declared_wrangler
 
 
 def test_env_example_public_base_url_matches_worker_route() -> None:
@@ -148,7 +151,7 @@ def test_smoke_script_committed_with_executable_bit() -> None:
     # local chmod never reaches the commit, so fresh clones materialize the
     # tracked mode. Pin the index mode itself (100755, like pipeline-control.sh).
     result = subprocess.run(
-        ["git", "ls-files", "--stage", "--", "infra/cloudflare/data-proxy/smoke.sh"],
+        ["git", "ls-files", "--stage", "--", "apps/data-proxy/smoke.sh"],
         cwd=REPO_ROOT,
         text=True,
         capture_output=True,

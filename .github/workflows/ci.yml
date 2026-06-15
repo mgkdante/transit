@@ -9,10 +9,10 @@ name: CI
 on:
   pull_request:
     paths:
-      - "db/**"
+      - "apps/db/**"
   push:
     paths:
-      - "db/**"
+      - "apps/db/**"
 
 permissions:
   contents: read
@@ -33,7 +33,7 @@ jobs:
       COLUMNS: "200"
     defaults:
       run:
-        working-directory: db
+        working-directory: apps/db
     steps:
       - name: Check out repository
         uses: actions/checkout@v5
@@ -63,7 +63,7 @@ jobs:
     timeout-minutes: 10
     defaults:
       run:
-        working-directory: db
+        working-directory: apps/db
     steps:
       - name: Check out repository
         uses: actions/checkout@v5
@@ -99,7 +99,7 @@ jobs:
     timeout-minutes: 20
     defaults:
       run:
-        working-directory: db
+        working-directory: apps/db
     services:
       postgres:
         # postgis/postgis (not stock postgres:16) — the migration chain does

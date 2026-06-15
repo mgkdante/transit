@@ -5,7 +5,7 @@ on:
   push:
     branches: [main]
     paths:
-      - "infra/cloudflare/data-proxy/**"
+      - "apps/data-proxy/**"
       - ".github/workflows/deploy-data-proxy.yml"
 
 permissions:
@@ -21,7 +21,7 @@ jobs:
     timeout-minutes: 10
     defaults:
       run:
-        working-directory: infra/cloudflare/data-proxy
+        working-directory: apps/data-proxy
     steps:
       - name: Check out repository
         uses: actions/checkout@v5
@@ -38,6 +38,6 @@ jobs:
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          workingDirectory: infra/cloudflare/data-proxy
+          workingDirectory: apps/data-proxy
           # Keep in lockstep with package-lock.json (pinned by pytest contract).
           wranglerVersion: "4.100.0"

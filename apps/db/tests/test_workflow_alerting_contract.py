@@ -14,7 +14,7 @@ from pathlib import Path
 
 import yaml
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
+REPO_ROOT = Path(__file__).resolve().parents[3]
 WORKFLOWS = REPO_ROOT / ".github" / "workflows"
 
 PROBE = WORKFLOWS / "freshness-probe.yml"

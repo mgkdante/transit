@@ -20,8 +20,8 @@ import subprocess
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-# REPO ROOT (parents[2] of db/tests/) — the scripts live under .github/scripts.
-REPO_ROOT = Path(__file__).resolve().parents[2]
+# REPO ROOT (parents[3] of apps/db/tests/) — the scripts live under .github/scripts.
+REPO_ROOT = Path(__file__).resolve().parents[3]
 GH_SCRIPTS_DIR = REPO_ROOT / ".github" / "scripts"
 ALERT_ISSUE = GH_SCRIPTS_DIR / "alert-issue.sh"
 FRESHNESS_PROBE = GH_SCRIPTS_DIR / "freshness-probe.sh"
