@@ -110,6 +110,7 @@
 								severity="watch"
 								value={period.severePct / 100}
 								label={`${period.grain} — ${t.severe}`}
+								interactive
 							/>
 						</div>
 					{/if}
@@ -120,7 +121,7 @@
 		{#if otpSeries.length > 1}
 			<div class="reliability-trend">
 				<SectionLabel text={t.trend} variant="metric" />
-				<Sparkline values={otpSeries} width={160} height={32} label={t.trend} />
+				<Sparkline values={otpSeries} width={160} height={32} label={t.trend} interactive />
 			</div>
 		{/if}
 	</div>

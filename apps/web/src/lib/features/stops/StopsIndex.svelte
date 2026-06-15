@@ -16,6 +16,8 @@
 	import { getStopsIndex, type StopIndexEntry } from '$lib/v1';
 	import { createResource } from '$lib/v1/resource.svelte';
 	import { ResourceBoundary, SurfaceHeader, EntityList, EntityRow } from '$lib/components/surface';
+	import { Surface } from '$lib/components/layout';
+	import { Separator } from '$lib/components/ui/separator';
 	import { indexCopy } from './stops.copy';
 
 	const locale: Locale = getLocale();
@@ -45,7 +47,7 @@
 	const overflow = $derived(Math.max(0, matches.length - CAP));
 </script>
 
-<section class="stops-index">
+<Surface width="bleed" class="stops-index">
 	<SurfaceHeader kicker={t.kicker} heading={t.heading} subheading={t.subheading} lede={t.lede} />
 
 	<div class="stops-search">
@@ -59,6 +61,8 @@
 			spellcheck="false"
 		/>
 	</div>
+
+	<Separator variant="hazard" />
 
 	<ResourceBoundary resource={index} lang={locale}>
 		{#if !trimmed}
@@ -84,16 +88,11 @@
 			</EntityList>
 		{/if}
 	</ResourceBoundary>
-</section>
+</Surface>
 
 <style>
-	.stops-index {
-		max-width: var(--width-content);
-		margin-inline: auto;
-		padding: clamp(1.5rem, 4vw, 2.5rem) var(--space-page-x, 1.5rem);
-		display: flex;
-		flex-direction: column;
-		gap: 1.5rem;
+	.stops-search {
+		max-width: 28rem;
 	}
 	.stops-search-input {
 		width: 100%;

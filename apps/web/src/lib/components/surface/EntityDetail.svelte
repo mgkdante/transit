@@ -12,9 +12,10 @@
 -->
 <script lang="ts" generics="K extends string">
 	import type { Snippet } from 'svelte';
-	import { cn } from '$lib/utils';
 	import { Tabs, TabsList, TabsTrigger, TabsContent } from '$lib/components/ui/tabs';
 	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
+	import { Surface } from '$lib/components/layout';
+	import { Separator } from '$lib/components/ui/separator';
 
 	interface EntityDetailProps {
 		/** Mono station-voice overline (e.g. "LIGNE", "ARRÊT"). */
@@ -41,11 +42,13 @@
 	}: EntityDetailProps = $props();
 </script>
 
-<div class={cn('surface', className)} data-slot="entity-detail">
+<Surface width="wide" as="div" class={className} data-slot="entity-detail">
 	<div class="surface-head">
 		<SectionLabel text={kicker} variant="station" />
 		{@render header()}
 	</div>
+
+	<Separator variant="hazard" />
 
 	<Tabs bind:value={active}>
 		<TabsList variant="line" class="w-full justify-start">
@@ -58,17 +61,9 @@
 			<TabsContent value={t.key} class="surface-pane">{@render pane(t.key)}</TabsContent>
 		{/each}
 	</Tabs>
-</div>
+</Surface>
 
 <style>
-	.surface {
-		max-width: var(--width-content);
-		margin-inline: auto;
-		padding: clamp(1.5rem, 4vw, 2.5rem) var(--space-page-x, 1.5rem);
-		display: flex;
-		flex-direction: column;
-		gap: 1.5rem;
-	}
 	.surface-head {
 		display: flex;
 		flex-direction: column;

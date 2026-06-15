@@ -31,6 +31,8 @@
 	} from '$lib/v1';
 	import { createResource } from '$lib/v1/resource.svelte';
 	import { SurfaceHeader, LiveFreshness, ResourceBoundary } from '$lib/components/surface';
+	import { Surface } from '$lib/components/layout';
+	import { Separator } from '$lib/components/ui/separator';
 	import { StackedBar, TrendLine, type StackedSegment } from '$lib/components/dataviz';
 	import { EdgeState } from '$lib/components/edge';
 	import MetricDisplay from '$lib/components/brand/MetricDisplay.svelte';
@@ -99,7 +101,7 @@
 	}
 </script>
 
-<section class="network">
+<Surface width="bleed" class="network">
 	<SurfaceHeader kicker={t.kicker} heading={t.heading} lede={t.lede}>
 		<LiveFreshness
 			generatedUtc={live.generatedUtc}
@@ -108,6 +110,8 @@
 			{locale}
 		/>
 	</SurfaceHeader>
+
+	<Separator variant="hazard" />
 
 	{#if live.network}
 		{@const net = live.network}
@@ -127,10 +131,18 @@
 			</div>
 		</div>
 
+		<Separator variant="hazard" />
+
 		<!-- Status mix -->
 		<div class="network-block">
 			<SectionLabel text={t.statusSection} variant="station" />
-			<StackedBar scale="status" segments={statusSegments} label={t.statusBarLabel} legend />
+			<StackedBar
+				scale="status"
+				segments={statusSegments}
+				label={t.statusBarLabel}
+				interactive
+				legend
+			/>
 		</div>
 
 		<!-- Crowding (occupancy) — only when telemetry was received this cycle -->
@@ -141,6 +153,7 @@
 					scale="occupancy"
 					segments={occupancySegments}
 					label={t.occupancyBarLabel}
+					interactive
 					legend
 				/>
 			</div>
@@ -162,28 +175,22 @@
 		<ResourceBoundary resource={trend} lang={locale} isEmpty={(d) => (d.series?.length ?? 0) === 0}>
 			{#snippet children(data)}
 				{@const series = trendSeries(data.series ?? [])}
-				<TrendLine
-					onTime={series.onTime}
-					retard={series.retard}
-					onTimeLabel={t.trend.onTimeLabel}
-					retardLabel={t.trend.retardLabel}
-					label={t.trend.summary}
-					class="network-trend"
-				/>
+				<div class="network-trend">
+					<TrendLine
+						onTime={series.onTime}
+						retard={series.retard}
+						onTimeLabel={t.trend.onTimeLabel}
+						retardLabel={t.trend.retardLabel}
+						label={t.trend.summary}
+						interactive
+					/>
+				</div>
 			{/snippet}
 		</ResourceBoundary>
 	</div>
-</section>
+</Surface>
 
 <style>
-	.network {
-		max-width: var(--width-content);
-		margin-inline: auto;
-		padding: clamp(1.5rem, 4vw, 2.5rem) var(--space-page-x, 1.5rem);
-		display: flex;
-		flex-direction: column;
-		gap: clamp(1.75rem, 4vw, 2.75rem);
-	}
 	.network-block {
 		display: flex;
 		flex-direction: column;
@@ -200,7 +207,7 @@
 			grid-template-columns: repeat(3, minmax(0, 1fr));
 		}
 	}
-	.network :global(.network-trend) {
+	.network-trend {
 		max-width: 40rem;
 	}
 </style>

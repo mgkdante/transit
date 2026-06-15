@@ -19,6 +19,8 @@
 	import type { HTMLAttributes } from 'svelte/elements';
 	import type { OccupancyCode, StatusCode } from '$lib/v1/schemas';
 	import { occupancyVar, statusVar } from './tokens';
+	import ChartTooltip from './ChartTooltip.svelte';
+	import { createChartTooltip } from './useChartTooltip.svelte';
 
 	type AnyCode = StatusCode | OccupancyCode;
 
@@ -42,6 +44,12 @@
 		legend?: boolean;
 		/** Accessible label prefix (e.g. "Route 51 status mix"). */
 		label?: string;
+		/**
+		 * Opt into hover/focus tooltips: each slice becomes a focusable target
+		 * that reveals its label + share. Default off — the bar stays a static
+		 * figure with its <title>-only readout.
+		 */
+		interactive?: boolean;
 		class?: string;
 	}
 
@@ -51,10 +59,28 @@
 		height = 14,
 		legend = false,
 		label,
+		interactive = false,
 		class: className,
 		ref = $bindable(null),
 		...restProps
 	}: StackedBarProps = $props();
+
+	const tip = createChartTooltip();
+
+	// Show the tooltip for slice `s` (anchored at its horizontal midpoint).
+	function showSlice(s: Slice): void {
+		tip.show({
+			xPct: s.offset + s.pct / 2,
+			yPct: 0,
+			side: 'top',
+			heading: s.label,
+			rows: [{ colorVar: s.color, label: s.label, value: `${Math.round(s.pct)}%` }],
+		});
+	}
+
+	function onKeyDown(e: KeyboardEvent): void {
+		if (e.key === 'Escape') tip.hide();
+	}
 
 	function colorFor(code: AnyCode): string {
 		return scale === 'status' ? statusVar(code as StatusCode) : occupancyVar(code as OccupancyCode);
@@ -97,15 +123,7 @@
 	);
 </script>
 
-<div
-	bind:this={ref}
-	class={cn('dv-stacked-bar', className)}
-	role="img"
-	aria-label={summary}
-	data-slot="stacked-bar"
-	data-scale={scale}
-	{...restProps}
->
+{#snippet bar()}
 	<svg
 		viewBox="0 0 100 {height}"
 		width="100%"
@@ -116,14 +134,55 @@
 	>
 		{#if hasData}
 			{#each slices as s, i (s.code + '-' + i)}
-				<rect x={s.offset} y={0} width={Math.max(0, s.pct)} {height} fill={s.color}>
-					<title>{s.label}: {Math.round(s.pct)}%</title>
-				</rect>
+				{#if interactive}
+					<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+					<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+					<rect
+						x={s.offset}
+						y={0}
+						width={Math.max(0, s.pct)}
+						{height}
+						fill={s.color}
+						tabindex={0}
+						role="img"
+						aria-label={`${s.label}: ${Math.round(s.pct)}%`}
+						aria-describedby={tip.id}
+						onpointerenter={() => showSlice(s)}
+						onpointerleave={() => tip.hide()}
+						onfocus={() => showSlice(s)}
+						onblur={() => tip.hide()}
+						onkeydown={onKeyDown}
+					>
+						<title>{s.label}: {Math.round(s.pct)}%</title>
+					</rect>
+				{:else}
+					<rect x={s.offset} y={0} width={Math.max(0, s.pct)} {height} fill={s.color}>
+						<title>{s.label}: {Math.round(s.pct)}%</title>
+					</rect>
+				{/if}
 			{/each}
 		{:else}
 			<rect x={0} y={0} width={100} {height} fill="var(--muted)" />
 		{/if}
 	</svg>
+{/snippet}
+
+<div
+	bind:this={ref}
+	class={cn('dv-stacked-bar', className)}
+	role="img"
+	aria-label={summary}
+	data-slot="stacked-bar"
+	data-scale={scale}
+	{...restProps}
+>
+	{#if interactive}
+		<ChartTooltip {...tip} id={tip.id}>
+			{@render bar()}
+		</ChartTooltip>
+	{:else}
+		{@render bar()}
+	{/if}
 
 	{#if legend && hasData}
 		<ul
@@ -147,5 +206,12 @@
 <style>
 	.rounded-sm {
 		border-radius: var(--radius-sm);
+	}
+
+	/* Focus ring for keyboard-reachable slices (interactive only). Uses --ring
+	   (= --primary) — that is an interactive affordance, not a data mark. */
+	rect:focus-visible {
+		outline: 2px solid var(--ring);
+		outline-offset: 1px;
 	}
 </style>

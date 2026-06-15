@@ -53,8 +53,10 @@
 		RankedRow,
 		SeverityBar,
 		StackedBar,
+		ChartLegend,
 		statusVar,
 		STATUS_GLYPH,
+		type ChartLegendItem,
 	} from '$lib/components/dataviz';
 
 	// Edge states.
@@ -62,7 +64,7 @@
 
 	// Chrome & layout (Set-B brand + layout primitives).
 	import { TerminalChrome, StickyPanel } from '$lib/components/brand';
-	import { Footer } from '$lib/components/layout';
+	import { Footer, Surface } from '$lib/components/layout';
 	import { ResizablePaneGroup, ResizablePane, ResizableHandle } from '$lib/components/ui/resizable';
 
 	// --- Gallery controls --------------------------------------------------------
@@ -117,6 +119,16 @@
 			code,
 			value: [10, 30, 28, 22, 10][i],
 			label: OCC_LABEL[code][lang],
+		})),
+	);
+
+	// Standalone ChartLegend demo — the 5 status codes as glyph+colour swatches
+	// on the dataviz scale (the same legend StackedBar/TrendLine compose).
+	const legendStatusItems = $derived<ChartLegendItem[]>(
+		STATUS_CODES.map((code) => ({
+			colorVar: statusVar(code),
+			label: STATUS_LABEL[code][lang],
+			glyph: STATUS_GLYPH[code],
 		})),
 	);
 
@@ -287,6 +299,7 @@
 					values={sparkSeries}
 					label="On-time % · 10 builds"
 					colorVar={statusVar('on_time')}
+					interactive
 				/>
 			</div>
 			<div class="kit-card">
@@ -297,6 +310,7 @@
 					onTimeLabel={lang === 'fr' ? 'À l’heure %' : 'On-time %'}
 					retardLabel={lang === 'fr' ? 'Retard %' : 'Delayed %'}
 					label="7-day trend"
+					interactive
 				/>
 			</div>
 			<div class="kit-card">
@@ -307,6 +321,7 @@
 					unit="min"
 					label={lang === 'fr' ? 'Retard' : 'Delay'}
 					fillVar={statusVar('late')}
+					interactive
 				/>
 			</div>
 			<div class="kit-card">
@@ -314,6 +329,7 @@
 				<StackedBar
 					scale="status"
 					segments={stackedStatus}
+					interactive
 					legend
 					label={lang === 'fr' ? 'Répartition statut' : 'Status mix'}
 				/>
@@ -323,6 +339,7 @@
 				<StackedBar
 					scale="occupancy"
 					segments={stackedOccupancy}
+					interactive
 					legend
 					label={lang === 'fr' ? 'Achalandage' : 'Occupancy'}
 				/>
@@ -331,9 +348,9 @@
 				<SectionLabel text="SEVERITY BARS" variant="metric" />
 				<div class="kit-stack">
 					{#each SEVERITY_CODES as sev, i (sev)}
-						<SeverityBar severity={sev} value={[0.95, 0.6, 0.3][i]} label={`${sev}`} />
+						<SeverityBar severity={sev} value={[0.95, 0.6, 0.3][i]} label={`${sev}`} interactive />
 					{/each}
-					<SeverityBar severity="watch" value={null} label="no data" />
+					<SeverityBar severity="watch" value={null} label="no data" interactive />
 				</div>
 			</div>
 			<div class="kit-card kit-card-wide">
@@ -341,6 +358,7 @@
 				<Heatmap
 					grid={heatmapGrid}
 					label={lang === 'fr' ? 'Carte de chaleur des retards' : 'Delay heatmap'}
+					interactive
 				/>
 			</div>
 			<div class="kit-card kit-card-wide">
@@ -436,6 +454,39 @@ vehicle 40231 — occupancy LOW</pre>
 						<div class="kit-pane">{lang === 'fr' ? 'Détail' : 'Detail'}</div>
 					</ResizablePane>
 				</ResizablePaneGroup>
+			</div>
+
+			<!-- Surface widths + hazard separator + standalone ChartLegend. -->
+			<div class="kit-card kit-card-wide">
+				<SectionLabel
+					text={lang === 'fr' ? 'SURFACE · LARGEURS' : 'SURFACE · WIDTHS'}
+					variant="metric"
+				/>
+				<div class="kit-stack">
+					<Surface width="content" pad="none" gutter={false} class="kit-surface-demo">
+						<span class="kit-surface-label">content — var(--container-content)</span>
+					</Surface>
+					<Surface width="wide" pad="none" gutter={false} class="kit-surface-demo">
+						<span class="kit-surface-label">wide — var(--container-wide)</span>
+					</Surface>
+					<Surface width="bleed" pad="none" gutter={false} class="kit-surface-demo">
+						<span class="kit-surface-label"
+							>{lang === 'fr' ? 'bleed — pleine largeur' : 'bleed — edge-to-edge'}</span
+						>
+					</Surface>
+				</div>
+
+				<SectionLabel
+					text={lang === 'fr' ? 'SÉPARATEUR · HASARD' : 'SEPARATOR · HAZARD'}
+					variant="metric"
+				/>
+				<Separator variant="hazard" />
+
+				<SectionLabel
+					text={lang === 'fr' ? 'LÉGENDE GRAPHIQUE' : 'CHART LEGEND'}
+					variant="metric"
+				/>
+				<ChartLegend items={legendStatusItems} />
 			</div>
 		</div>
 	</section>
@@ -564,6 +615,17 @@ vehicle 40231 — occupancy LOW</pre>
 		height: 100%;
 		font-family: var(--font-mono);
 		font-size: var(--text-small);
+		color: var(--muted-foreground);
+	}
+	:global(.kit-surface-demo) {
+		padding: 0.5rem 0.75rem;
+		background-color: var(--muted);
+		border: 1px dashed var(--border);
+		border-radius: var(--radius-md);
+	}
+	.kit-surface-label {
+		font-family: var(--font-mono);
+		font-size: var(--text-caption);
 		color: var(--muted-foreground);
 	}
 </style>

@@ -16,6 +16,9 @@
 	import type { HTMLAttributes } from 'svelte/elements';
 	import type { SeverityCode } from '$lib/v1/schemas';
 	import SeverityBar from './SeverityBar.svelte';
+	import ChartTooltip from './ChartTooltip.svelte';
+	import { createChartTooltip, type ChartTooltipRow } from './useChartTooltip.svelte';
+	import type { ChartLegendItem } from './ChartLegend.svelte';
 
 	export interface RankedRowProps extends WithElementRef<HTMLAttributes<HTMLDivElement>> {
 		/** 1-based rank. */
@@ -44,6 +47,15 @@
 		higherIsBetter?: boolean;
 		/** Make the row activatable (keyboard + click). */
 		onSelect?: () => void;
+		/**
+		 * Opt-in richer breakdown tooltip on hover/focus, anchored to the row's
+		 * right edge. Requires `tooltipRows`. Default off; when omitted the row is
+		 * unchanged. Drives the embedded SeverityBar's `interactive` OFF so the two
+		 * never double up.
+		 */
+		tooltip?: boolean;
+		/** Breakdown rows shown when `tooltip` is set (swatch + label + value). */
+		tooltipRows?: ChartLegendItem[];
 		class?: string;
 	}
 
@@ -58,6 +70,8 @@
 		deltaDisplay,
 		higherIsBetter = false,
 		onSelect,
+		tooltip = false,
+		tooltipRows,
 		class: className,
 		ref = $bindable(null),
 		...restProps
@@ -92,25 +106,32 @@
 			onSelect?.();
 		}
 	}
+
+	// Richer-breakdown tooltip, anchored to the row's right edge. Active only when
+	// both `tooltip` and rows are supplied. The row is made focusable for it.
+	const tip = createChartTooltip();
+	const hasTooltip = $derived(tooltip && (tooltipRows?.length ?? 0) > 0);
+	// Map ChartLegendItem -> ChartTooltipRow (value is optional on legend items).
+	const tipRows = $derived<ChartTooltipRow[]>(
+		(tooltipRows ?? []).map((r) => ({
+			colorVar: r.colorVar,
+			label: r.label,
+			value: r.value ?? '',
+		})),
+	);
+	// Focusable when activatable OR when it owns a tooltip.
+	const focusable = $derived(interactive || hasTooltip);
+
+	function showTip() {
+		if (!hasTooltip) return;
+		tip.show({ xPct: 100, yPct: 50, heading: title, rows: tipRows, side: 'left' });
+	}
+	function hideTip() {
+		tip.hide();
+	}
 </script>
 
-<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
-<!-- role + tabindex are correlated: interactive => button + tabindex 0, else listitem + no tabindex. The compiler cannot narrow the conditional. -->
-<div
-	bind:this={ref}
-	class={cn(
-		'dv-ranked-row grid grid-cols-[auto_1fr_auto] items-center gap-3 rounded-lg border border-border bg-card px-3 py-2',
-		interactive &&
-			'cursor-pointer transition-colors hover:bg-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ring)]',
-		className,
-	)}
-	role={interactive ? 'button' : 'listitem'}
-	tabindex={interactive ? 0 : undefined}
-	onclick={interactive ? activate : undefined}
-	onkeydown={interactive ? onKeydown : undefined}
-	data-slot="ranked-row"
-	{...restProps}
->
+{#snippet rowBody()}
 	<!-- Rank — monospace ordinal, neutral. -->
 	<span
 		class="dv-rank w-6 text-right font-mono text-small tabular-nums text-muted-foreground"
@@ -130,7 +151,13 @@
 			<span class="block truncate text-caption text-muted-foreground">{subtitle}</span>
 		{/if}
 		<div class="mt-1.5">
-			<SeverityBar {severity} {value} label={`Rank ${rank}: ${title}`} size="sm" />
+			<SeverityBar
+				{severity}
+				{value}
+				label={`Rank ${rank}: ${title}`}
+				size="sm"
+				interactive={false}
+			/>
 		</div>
 	</div>
 
@@ -143,4 +170,50 @@
 		<span aria-hidden="true">{deltaGlyph}</span>
 		{#if hasDelta}<span aria-hidden="true">{deltaText}</span>{/if}
 	</span>
-</div>
+{/snippet}
+
+{#snippet rowEl()}
+	<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+	<!-- role + tabindex are correlated: interactive => button + tabindex 0, else listitem + no tabindex. The compiler cannot narrow the conditional. -->
+	<div
+		bind:this={ref}
+		class={cn(
+			'dv-ranked-row grid grid-cols-[auto_1fr_auto] items-center gap-3 rounded-lg border border-border bg-card px-3 py-2',
+			interactive &&
+				'cursor-pointer transition-colors hover:bg-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ring)]',
+			!interactive &&
+				hasTooltip &&
+				'transition-colors hover:bg-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ring)]',
+			className,
+		)}
+		role={interactive ? 'button' : 'listitem'}
+		tabindex={focusable ? 0 : undefined}
+		onclick={interactive ? activate : undefined}
+		onkeydown={interactive ? onKeydown : undefined}
+		onpointerenter={hasTooltip ? showTip : undefined}
+		onpointerleave={hasTooltip ? hideTip : undefined}
+		onfocus={hasTooltip ? showTip : undefined}
+		onblur={hasTooltip ? hideTip : undefined}
+		aria-describedby={hasTooltip && tip.open ? tip.id : undefined}
+		data-slot="ranked-row"
+		{...restProps}
+	>
+		{@render rowBody()}
+	</div>
+{/snippet}
+
+{#if hasTooltip}
+	<ChartTooltip
+		open={tip.open}
+		xPct={tip.xPct}
+		yPct={tip.yPct}
+		heading={tip.heading}
+		rows={tip.rows}
+		side={tip.side}
+		id={tip.id}
+	>
+		{@render rowEl()}
+	</ChartTooltip>
+{:else}
+	{@render rowEl()}
+{/if}

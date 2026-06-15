@@ -14,6 +14,8 @@
 <script lang="ts">
 	import { cn, type WithElementRef } from '$lib/utils';
 	import type { HTMLAttributes } from 'svelte/elements';
+	import ChartTooltip from './ChartTooltip.svelte';
+	import { createChartTooltip } from './useChartTooltip.svelte';
 
 	export interface SparklineProps extends WithElementRef<HTMLAttributes<HTMLDivElement>> {
 		/** The series. `null` entries render as gaps (no interpolation). */
@@ -33,6 +35,12 @@
 		showLast?: boolean;
 		/** Accessible summary of the series (e.g. "On-time % last 14 days"). */
 		label?: string;
+		/**
+		 * Opt into hover/focus tooltips: the nearest real point reveals its value
+		 * (a hover dot marks it). Each real point is also keyboard-focusable.
+		 * Default off — the sparkline stays a static inline mark.
+		 */
+		interactive?: boolean;
 		class?: string;
 	}
 
@@ -44,12 +52,18 @@
 		colorVar = 'var(--dataviz-status-on-time)',
 		showLast = true,
 		label,
+		interactive = false,
 		class: className,
 		ref = $bindable(null),
 		...restProps
 	}: SparklineProps = $props();
 
 	const PAD = $derived(stroke + 0.5);
+
+	const tip = createChartTooltip();
+	let svgEl = $state<SVGSVGElement | null>(null);
+	// Index of the point under the pointer / focus; -1 = none (hover dot hidden).
+	let activeIndex = $state(-1);
 
 	type Pt = { x: number; y: number };
 
@@ -104,17 +118,68 @@
 	});
 
 	const hasData = $derived(segments.length > 0);
+
+	// The hover/focus dot for the active point (interactive only).
+	const activePoint = $derived(activeIndex >= 0 ? points[activeIndex] : null);
+
+	// Show the tooltip for index `i` (only if it is a real, plotted point).
+	function showAt(i: number): void {
+		const p = points[i];
+		if (!p) return;
+		activeIndex = i;
+		tip.show({
+			xPct: (p.x / width) * 100,
+			yPct: (p.y / height) * 100,
+			side: 'top',
+			rows: [{ colorVar, label: label ?? 'value', value: String(values[i]) }],
+		});
+	}
+
+	function hide(): void {
+		activeIndex = -1;
+		tip.hide();
+	}
+
+	// Nearest plotted (non-null) point index to a client x; -1 if none.
+	function nearestIndex(clientX: number): number {
+		const el = svgEl;
+		if (!el) return -1;
+		const r = el.getBoundingClientRect();
+		if (r.width === 0) return -1;
+		const frac = Math.min(1, Math.max(0, (clientX - r.left) / r.width));
+		const vbX = frac * width;
+		let best = -1;
+		let bestDist = Infinity;
+		for (let i = 0; i < points.length; i++) {
+			const p = points[i];
+			if (!p) continue;
+			const d = Math.abs(p.x - vbX);
+			if (d < bestDist) {
+				bestDist = d;
+				best = i;
+			}
+		}
+		return best;
+	}
+
+	function onPointerMove(e: PointerEvent): void {
+		const i = nearestIndex(e.clientX);
+		if (i >= 0) showAt(i);
+	}
+
+	function onKeyDown(e: KeyboardEvent): void {
+		if (e.key === 'Escape') hide();
+	}
+
+	// Indices that have a real plotted point — the keyboard-focusable set.
+	const realIndices = $derived(
+		points.map((p, i) => (p ? i : -1)).filter((i): i is number => i >= 0),
+	);
 </script>
 
-<div
-	bind:this={ref}
-	class={cn('dv-sparkline inline-block', className)}
-	role="img"
-	aria-label={label ?? 'Sparkline'}
-	data-slot="sparkline"
-	{...restProps}
->
+{#snippet spark()}
 	<svg
+		bind:this={svgEl}
 		viewBox="0 0 {width} {height}"
 		{width}
 		{height}
@@ -136,6 +201,10 @@
 			{#if showLast && lastPoint}
 				<circle cx={lastPoint.x} cy={lastPoint.y} r={stroke + 0.5} fill={colorVar} />
 			{/if}
+			<!-- Hover/focus dot tracking the active point (interactive only). -->
+			{#if activePoint}
+				<circle cx={activePoint.x} cy={activePoint.y} r={stroke + 1.5} fill={colorVar} />
+			{/if}
 		{:else}
 			<!-- No real points: a faint baseline, NOT a fabricated zero line. -->
 			<line
@@ -149,4 +218,79 @@
 			/>
 		{/if}
 	</svg>
+{/snippet}
+
+<div
+	bind:this={ref}
+	class={cn('dv-sparkline inline-block', className)}
+	role="img"
+	aria-label={label ?? 'Sparkline'}
+	data-slot="sparkline"
+	{...restProps}
+>
+	{#if interactive}
+		<div class="dv-sparkline-plot">
+			<ChartTooltip
+				{...tip}
+				id={tip.id}
+				onpointermove={onPointerMove}
+				onpointerleave={hide}
+				onkeydown={onKeyDown}
+			>
+				{@render spark()}
+			</ChartTooltip>
+
+			<!-- Keyboard / AT focus targets: one per real plotted point. -->
+			<div class="dv-sparkline-targets" aria-hidden="false">
+				{#each realIndices as i (i)}
+					<!-- svelte-ignore a11y_no_interactive_element_to_noninteractive_role -->
+					<!-- Deliberate AT focus target: a focusable <button> that reads its
+					     point's value via role=img + aria-label (keyboard parity). -->
+					<button
+						type="button"
+						class="dv-sparkline-target"
+						role="img"
+						aria-label={`${label ?? 'value'}: ${String(values[i])}`}
+						aria-describedby={tip.id}
+						onfocus={() => showAt(i)}
+						onblur={hide}
+						onkeydown={onKeyDown}
+					></button>
+				{/each}
+			</div>
+		</div>
+	{:else}
+		{@render spark()}
+	{/if}
 </div>
+
+<style>
+	.dv-sparkline-plot {
+		position: relative;
+	}
+
+	/* Invisible per-point focus strips overlaying the line for keyboard + AT;
+	   pointer events fall through to the ChartTooltip wrapper. */
+	.dv-sparkline-targets {
+		position: absolute;
+		inset: 0;
+		display: flex;
+		pointer-events: none;
+	}
+
+	.dv-sparkline-target {
+		flex: 1 1 0;
+		min-width: 0;
+		height: 100%;
+		padding: 0;
+		border: 0;
+		background: none;
+		pointer-events: none;
+	}
+
+	.dv-sparkline-target:focus-visible {
+		outline: 2px solid var(--ring);
+		outline-offset: -1px;
+		border-radius: var(--radius-sm);
+	}
+</style>

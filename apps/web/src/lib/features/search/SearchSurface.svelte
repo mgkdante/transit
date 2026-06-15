@@ -35,6 +35,8 @@
 		type StopIndexEntry,
 	} from '$lib/v1';
 	import { ResourceBoundary, SurfaceHeader, EntityList, EntityRow } from '$lib/components/surface';
+	import { Surface } from '$lib/components/layout';
+	import { Separator } from '$lib/components/ui/separator';
 	import { EdgeState } from '$lib/components/edge';
 	import { copy } from './search.copy';
 
@@ -90,7 +92,7 @@
 	}
 </script>
 
-<section class="surface">
+<Surface width="bleed" class="surface">
 	<SurfaceHeader kicker={t.kicker} heading={t.heading} lede={t.lede} />
 
 	<div class="search-field">
@@ -107,6 +109,8 @@
 			bind:value={query}
 		/>
 	</div>
+
+	<Separator variant="hazard" />
 
 	<!--
 	  Gate on BOTH indexes via a single boundary (routes is the gating resource;
@@ -179,22 +183,14 @@
 			{/if}
 		</ResourceBoundary>
 	</ResourceBoundary>
-</section>
+</Surface>
 
 <style>
-	.surface {
-		max-width: var(--width-content);
-		margin-inline: auto;
-		padding: clamp(1.5rem, 4vw, 2.5rem) var(--space-page-x, 1.5rem);
-		display: flex;
-		flex-direction: column;
-		gap: 1.5rem;
-	}
-
 	.search-field {
 		display: flex;
 		flex-direction: column;
 		gap: 0.5rem;
+		max-width: 32rem;
 	}
 	.search-label {
 		font-family: var(--font-mono);

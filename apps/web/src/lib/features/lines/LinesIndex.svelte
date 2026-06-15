@@ -17,6 +17,8 @@
 	import type { RouteIndexEntry } from '$lib/v1';
 	import { createResource } from '$lib/v1/resource.svelte';
 	import { ResourceBoundary, SurfaceHeader, EntityList, EntityRow } from '$lib/components/surface';
+	import { Surface } from '$lib/components/layout';
+	import { Separator } from '$lib/components/ui/separator';
 	import { indexCopy } from './lines.copy';
 
 	const locale = getLocale();
@@ -53,7 +55,7 @@
 	});
 </script>
 
-<section class="lines-index">
+<Surface width="bleed" pad="hub" class="lines-index">
 	<SurfaceHeader kicker={t.kicker} heading={t.heading} lede={t.lede}>
 		<div class="lines-filter">
 			<label class="label-metric" for="lines-filter-input">{t.filterLabel}</label>
@@ -69,6 +71,8 @@
 		</div>
 	</SurfaceHeader>
 
+	<Separator variant="hazard" />
+
 	<ResourceBoundary resource={routes} lang={locale} isEmpty={(d) => d.routes.length === 0}>
 		<EntityList items={visible} key={(r) => r.id}>
 			{#snippet row(r)}
@@ -82,17 +86,9 @@
 			{/snippet}
 		</EntityList>
 	</ResourceBoundary>
-</section>
+</Surface>
 
 <style>
-	.lines-index {
-		max-width: var(--width-content);
-		margin-inline: auto;
-		padding: clamp(2rem, 6vw, 4rem) var(--space-page-x, 1.5rem);
-		display: flex;
-		flex-direction: column;
-		gap: clamp(1.5rem, 4vw, 2.5rem);
-	}
 	.lines-filter {
 		display: flex;
 		flex-direction: column;

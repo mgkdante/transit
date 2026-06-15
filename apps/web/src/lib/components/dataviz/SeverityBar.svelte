@@ -13,6 +13,8 @@
 	import type { HTMLAttributes } from 'svelte/elements';
 	import type { SeverityCode } from '$lib/v1/schemas';
 	import { severityVar } from './tokens';
+	import ChartTooltip from './ChartTooltip.svelte';
+	import { createChartTooltip } from './useChartTooltip.svelte';
 
 	export interface SeverityBarProps extends WithElementRef<HTMLAttributes<HTMLDivElement>> {
 		/** Severity band — drives the fill colour. */
@@ -23,6 +25,12 @@
 		label?: string;
 		/** Bar thickness. */
 		size?: 'sm' | 'md';
+		/**
+		 * Opt-in hover/focus interactivity: the track becomes a focus target and
+		 * reveals a one-row <ChartTooltip>. Default off so existing call sites stay
+		 * byte-identical. Pass `false` from RankedRow to avoid double tooltips.
+		 */
+		interactive?: boolean;
 		class?: string;
 	}
 
@@ -31,6 +39,7 @@
 		value,
 		label,
 		size = 'md',
+		interactive = false,
 		class: className,
 		ref = $bindable(null),
 		...restProps
@@ -42,31 +51,99 @@
 	const hasData = $derived(value != null && !Number.isNaN(value));
 	const color = $derived(severityVar(severity));
 	const heightClass = { sm: 'h-1.5', md: 'h-2.5' } as const;
+
+	// Interactive tooltip controller (only wired when `interactive`).
+	const tip = createChartTooltip();
+
+	function showTip() {
+		if (!interactive) return;
+		tip.show({
+			xPct: 50,
+			yPct: 0,
+			heading: severity,
+			rows: [
+				{
+					colorVar: color,
+					label: label ?? severity,
+					value: hasData ? `${Math.round(pct)}%` : 'no data',
+				},
+			],
+			side: 'top',
+		});
+	}
+	function hideTip() {
+		tip.hide();
+	}
 </script>
 
-<div
-	bind:this={ref}
-	class={cn(
-		'dv-severity-track w-full overflow-hidden rounded-pill bg-muted',
-		heightClass[size],
-		className,
-	)}
-	role="progressbar"
-	aria-valuemin={0}
-	aria-valuemax={100}
-	aria-valuenow={hasData ? Math.round(pct) : undefined}
-	aria-label={label ? `${label} — ${severity}` : severity}
-	data-slot="severity-bar"
-	data-severity={severity}
-	{...restProps}
->
-	{#if hasData}
+{#if interactive}
+	<ChartTooltip
+		open={tip.open}
+		xPct={tip.xPct}
+		yPct={tip.yPct}
+		heading={tip.heading}
+		rows={tip.rows}
+		side={tip.side}
+		id={tip.id}
+	>
+		<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+		<!-- progressbar is non-interactive, but the track is a deliberate focus target
+		     so keyboard users can reveal the tooltip. -->
 		<div
-			class="dv-severity-fill h-full rounded-pill"
-			style="width: {pct}%; background: {color};"
-		></div>
-	{/if}
-</div>
+			bind:this={ref}
+			class={cn(
+				'dv-severity-track w-full overflow-hidden rounded-pill bg-muted',
+				heightClass[size],
+				className,
+			)}
+			role="progressbar"
+			aria-valuemin={0}
+			aria-valuemax={100}
+			aria-valuenow={hasData ? Math.round(pct) : undefined}
+			aria-label={label ? `${label} — ${severity}` : severity}
+			aria-describedby={tip.open ? tip.id : undefined}
+			tabindex={0}
+			onpointerenter={showTip}
+			onpointerleave={hideTip}
+			onfocus={showTip}
+			onblur={hideTip}
+			data-slot="severity-bar"
+			data-severity={severity}
+			{...restProps}
+		>
+			{#if hasData}
+				<div
+					class="dv-severity-fill h-full rounded-pill"
+					style="width: {pct}%; background: {color};"
+				></div>
+			{/if}
+		</div>
+	</ChartTooltip>
+{:else}
+	<div
+		bind:this={ref}
+		class={cn(
+			'dv-severity-track w-full overflow-hidden rounded-pill bg-muted',
+			heightClass[size],
+			className,
+		)}
+		role="progressbar"
+		aria-valuemin={0}
+		aria-valuemax={100}
+		aria-valuenow={hasData ? Math.round(pct) : undefined}
+		aria-label={label ? `${label} — ${severity}` : severity}
+		data-slot="severity-bar"
+		data-severity={severity}
+		{...restProps}
+	>
+		{#if hasData}
+			<div
+				class="dv-severity-fill h-full rounded-pill"
+				style="width: {pct}%; background: {color};"
+			></div>
+		{/if}
+	</div>
+{/if}
 
 <style>
 	.rounded-pill {
