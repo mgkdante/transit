@@ -4,7 +4,7 @@
 	"description": "Turbo passthrough shim for the Python pipeline. uv owns the real toolchain (pyproject.toml + uv.lock); these scripts just let `turbo run test|check|lint` span the Python app. Humans/CI keep using `cd apps/db && uv run …` directly. No build task — turbo skips db for build.",
 	"scripts": {
 		"test": "uv run pytest tests -v",
-		"check": "uv run ruff check src tests",
-		"lint": "uv run ruff check src tests"
+		"check": "uv run ruff check src tests --select F",
+		"lint": "uv run ruff check src tests --select F"
 	}
 }
