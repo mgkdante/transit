@@ -1,0 +1,68 @@
+name: Refresh Basemap Extract
+
+# Monthly refresh of the Montréal PMTiles basemap extract (slice-9.3, Family A
+# live map). NOT triggered by push/turbo build — the basemap is content-immutable
+# infra on a stable R2 key; a monthly swap keeps roads/landuse current without
+# coupling to app deploys. Manual runs via workflow_dispatch.
+
+on:
+  schedule:
+    - cron: "0 6 1 * *" # 06:00 UTC, 1st of each month
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: refresh-basemap
+  cancel-in-progress: false
+
+env:
+  # Bump if the go-pmtiles release asset name/version drifts (confirm at
+  # https://github.com/protomaps/go-pmtiles/releases).
+  PMTILES_VERSION: "1.22.0"
+  # Looser than the manifest bbox [-74.1,45.25,-73.2,45.75] on purpose so pans
+  # never hit a grey tile edge: island + Laval/Longueuil margin.
+  BBOX: "-74.20,45.20,-73.10,45.80"
+  MAXZOOM: "15"
+  R2_BUCKET: "transit-snapshots"
+  R2_KEY: "v1/stm/static/basemap/montreal.pmtiles"
+
+jobs:
+  refresh-basemap:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Install go-pmtiles
+        run: |
+          curl -sSL "https://github.com/protomaps/go-pmtiles/releases/download/v${PMTILES_VERSION}/go-pmtiles_${PMTILES_VERSION}_Linux_x86_64.tar.gz" | tar xz pmtiles
+          sudo mv pmtiles /usr/local/bin/
+          pmtiles version
+
+      - name: Extract Montréal area from the latest Protomaps daily build
+        run: |
+          DATE="$(date -u -d 'yesterday' +%Y%m%d)"
+          SRC="https://build.protomaps.com/${DATE}.pmtiles"
+          echo "Extracting bbox=${BBOX} maxzoom=${MAXZOOM} from ${SRC}"
+          pmtiles extract "${SRC}" montreal.pmtiles --bbox="${BBOX}" --maxzoom="${MAXZOOM}"
+
+      - name: Verify the extract (fail loudly on regress)
+        run: |
+          pmtiles verify montreal.pmtiles
+          pmtiles show montreal.pmtiles
+          SIZE="$(stat -c%s montreal.pmtiles)"
+          echo "extract size: ${SIZE} bytes"
+          test "${SIZE}" -gt 100000
+
+      - name: Upload to R2 (stable key, content-immutable)
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          # Keep in lockstep with the other workflows (pinned by the pytest contract).
+          wranglerVersion: "4.100.0"
+          command: r2 object put "${{ env.R2_BUCKET }}/${{ env.R2_KEY }}" --file=montreal.pmtiles --content-type=application/octet-stream --remote
+        env:
+          CLOUDFLARE_ACCOUNT_ID: eccfb9bedd87d413eaf4cac6ae2285d3

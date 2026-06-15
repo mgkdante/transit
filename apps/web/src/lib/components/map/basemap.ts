@@ -132,11 +132,16 @@ export function minimalDarkStyle(): StyleSpecification {
  * neutral dark surface palette. The single vector source points at the
  * `pmtiles://` archive; min/max zoom come from the BasemapFile when present.
  *
- * The layer set is intentionally conservative and source-layer-name agnostic
- * where it can be: a solid background + water/land/road fills/lines keyed on
- * the common OpenMapTiles source-layer names (water, landcover, transportation)
- * that the STM basemap archive ships. No glyphs/sprite are referenced, so the
- * style renders even when the archive carries no fonts.
+ * The layer set keys on the PROTOMAPS basemap v3 source-layer names that the
+ * Montréal extract ships (`earth`, `landuse`, `water`, `roads`), NOT the
+ * OpenMapTiles names — a `pmtiles extract` of a build.protomaps.com archive uses
+ * the Protomaps schema. Road tiers are split on the `kind` property
+ * (`highway`/`major_road`/`medium_road` = major, the rest minor). No glyphs or
+ * sprite are referenced, so the style renders offline with no font endpoint.
+ *
+ * CONFIRM against `pmtiles show montreal.pmtiles` at extract time (task 1.2):
+ * if the build's layer/property names differ, reconcile here — a wrong
+ * `source-layer` renders silently empty, not an error.
  */
 export function vectorStyleFromBasemap(file: BasemapFile): StyleSpecification {
 	const sourceUrl = toPmtilesUrl(file.url);
@@ -162,11 +167,18 @@ export function vectorStyleFromBasemap(file: BasemapFile): StyleSpecification {
 				paint: { 'background-color': DATAVIZ_DARK.background },
 			},
 			{
-				id: 'landcover',
+				id: 'earth',
 				type: 'fill',
 				source: BASEMAP_SOURCE_ID,
-				'source-layer': 'landcover',
-				paint: { 'fill-color': DATAVIZ_DARK.land, 'fill-opacity': 0.6 },
+				'source-layer': 'earth',
+				paint: { 'fill-color': DATAVIZ_DARK.land },
+			},
+			{
+				id: 'landuse',
+				type: 'fill',
+				source: BASEMAP_SOURCE_ID,
+				'source-layer': 'landuse',
+				paint: { 'fill-color': DATAVIZ_DARK.land, 'fill-opacity': 0.5 },
 			},
 			{
 				id: 'water',
@@ -179,7 +191,7 @@ export function vectorStyleFromBasemap(file: BasemapFile): StyleSpecification {
 				id: 'roads-minor',
 				type: 'line',
 				source: BASEMAP_SOURCE_ID,
-				'source-layer': 'transportation',
+				'source-layer': 'roads',
 				minzoom: 11,
 				paint: {
 					'line-color': DATAVIZ_DARK.road,
@@ -190,8 +202,8 @@ export function vectorStyleFromBasemap(file: BasemapFile): StyleSpecification {
 				id: 'roads-major',
 				type: 'line',
 				source: BASEMAP_SOURCE_ID,
-				'source-layer': 'transportation',
-				filter: ['in', 'class', 'motorway', 'trunk', 'primary'],
+				'source-layer': 'roads',
+				filter: ['match', ['get', 'kind'], ['highway', 'major_road', 'medium_road'], true, false],
 				paint: {
 					'line-color': DATAVIZ_DARK.roadMajor,
 					'line-width': 1.25,
