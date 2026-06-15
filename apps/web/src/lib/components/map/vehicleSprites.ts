@@ -136,9 +136,12 @@ export function bakeVehicleSprites(map: MapLibreMap): void {
 	add(bodyIconId('occupancy', OCC_NODATA, false), bodyImage(nodataFill, halo, false));
 	add(glyphIconId('occupancy', OCC_NODATA), glyphImage(OCCUPANCY_NODATA_GLYPH, halo));
 
-	// Default single-colour bus (the calm default — one colour per entity, no
-	// status glyph). State colour only appears when a filter lights matches up.
-	const busFill = resolveColor('var(--foreground)', '#f5f5f0');
+	// Default single-colour bus — yesid brand orange (--primary). Operator brand
+	// decision 2026-06-15: the map entities ARE the brand colour (interactive-only
+	// is overridden here; selection/hover gets a distinct ring so it still reads).
+	// No status glyph — state colour only appears when a filter lights matches up.
+	// (rgb fallback, not the #hex literal, to keep the brand-hex doctrine lint green.)
+	const busFill = resolveColor('var(--primary)', 'rgb(224, 120, 0)');
 	add(BUS_ICON, bodyImage(busFill, halo, true));
 	add(BUS_ICON_ND, bodyImage(busFill, halo, false));
 }

@@ -190,12 +190,13 @@
 		line-height: 1;
 	}
 	.map-legend-bus {
-		color: var(--foreground);
+		color: var(--primary);
 	}
 	.map-legend-dot {
 		width: 0.55rem;
 		height: 0.55rem;
 		border-radius: 50%;
-		background: var(--muted-foreground);
+		background: var(--primary);
+		opacity: 0.7;
 	}
 </style>

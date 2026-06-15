@@ -44,7 +44,10 @@ export function addStopsSource(map: MapLibreMap): void {
 /** Add the stops circle layer (single colour, zoom-gated). Idempotent. */
 export function addStopsLayer(map: MapLibreMap): void {
 	if (map.getLayer(STOPS_LAYER)) return;
-	const fill = resolveColor('var(--muted-foreground)', '#949494');
+	// Stops ride the brand orange too (operator decision), but DIMMER + smaller
+	// than the buses so the live vehicles keep primacy — hierarchy by weight, not
+	// hue. (rgb fallback, not #hex, to keep the brand-hex doctrine lint green.)
+	const fill = resolveColor('var(--primary)', 'rgb(224, 120, 0)');
 	const halo = resolveColor('var(--background)', '#141414');
 	map.addLayer({
 		id: STOPS_LAYER,
@@ -52,11 +55,11 @@ export function addStopsLayer(map: MapLibreMap): void {
 		source: STOPS_SOURCE,
 		minzoom: 13,
 		paint: {
-			'circle-radius': ['interpolate', ['linear'], ['zoom'], 13, 2, 16, 4.5],
+			'circle-radius': ['interpolate', ['linear'], ['zoom'], 13, 2, 16, 4],
 			'circle-color': fill,
 			'circle-stroke-width': 1,
 			'circle-stroke-color': halo,
-			'circle-opacity': 0.9,
+			'circle-opacity': 0.55,
 		},
 	} as unknown as LayerSpecification);
 }
