@@ -1,9 +1,7 @@
 from __future__ import annotations
 
-from collections.abc import Iterable, Iterator
 from dataclasses import asdict, dataclass
 from datetime import date, datetime
-from itertools import islice
 from pathlib import Path
 
 from google.transit import gtfs_realtime_pb2
@@ -22,6 +20,7 @@ from transit_ops.ingestion.common import project_root
 from transit_ops.ingestion.storage import get_bronze_storage
 from transit_ops.providers import ProviderRegistry
 from transit_ops.settings import Settings, get_settings
+from transit_ops.silver._batch import execute_batched_insert
 
 CHUNK_SIZE = 10_000
 PARSER_VERSION = "transit_ops.silver.realtime_gtfs.v1"
@@ -371,28 +370,6 @@ def _raw_entity_manifest(entity: gtfs_realtime_pb2.FeedEntity) -> dict[str, obje
         "entity_id": _blank_to_none(entity.id),
         "entity_kind": _entity_kind(entity),
     }
-
-
-def _chunked(
-    rows: Iterable[dict[str, object]],
-    chunk_size: int,
-) -> Iterator[list[dict[str, object]]]:
-    iterator = iter(rows)
-    while chunk := list(islice(iterator, chunk_size)):
-        yield chunk
-
-
-def _execute_batched_insert(
-    connection: Connection,
-    *,
-    statement,
-    rows: Iterable[dict[str, object]],
-) -> int:
-    row_count = 0
-    for chunk in _chunked(rows, CHUNK_SIZE):
-        connection.execute(statement, chunk)
-        row_count += len(chunk)
-    return row_count
 
 
 def _row_to_bronze_realtime_snapshot(
@@ -886,10 +863,11 @@ def _load_realtime_message_to_silver(
     )
     row_counts = {
         "rt_feed_snapshots": 1,
-        "rt_entities": _execute_batched_insert(
+        "rt_entities": execute_batched_insert(
             connection,
             statement=RT_ENTITIES_INSERT,
             rows=rt_entity_rows,
+            chunk_size=CHUNK_SIZE,
         ),
     }
 
@@ -901,15 +879,17 @@ def _load_realtime_message_to_silver(
         )
         row_counts.update(
             {
-                "rt_trip_updates": _execute_batched_insert(
+                "rt_trip_updates": execute_batched_insert(
                     connection,
                     statement=RT_TRIP_UPDATES_INSERT,
                     rows=rt_trip_update_rows,
+                    chunk_size=CHUNK_SIZE,
                 ),
-                "rt_trip_update_stop_times": _execute_batched_insert(
+                "rt_trip_update_stop_times": execute_batched_insert(
                     connection,
                     statement=RT_TRIP_UPDATE_STOP_TIMES_INSERT,
                     rows=rt_stop_time_rows,
+                    chunk_size=CHUNK_SIZE,
                 ),
             }
         )
@@ -921,10 +901,11 @@ def _load_realtime_message_to_silver(
         )
         row_counts.update(
             {
-                "rt_vehicle_positions": _execute_batched_insert(
+                "rt_vehicle_positions": execute_batched_insert(
                     connection,
                     statement=RT_VEHICLE_POSITIONS_INSERT,
                     rows=rt_vehicle_rows,
+                    chunk_size=CHUNK_SIZE,
                 ),
             }
         )

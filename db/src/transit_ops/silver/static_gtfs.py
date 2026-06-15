@@ -2,11 +2,10 @@ from __future__ import annotations
 
 import csv
 import hashlib
-from collections.abc import Callable, Iterable, Iterator, Mapping
+from collections.abc import Callable, Iterator, Mapping
 from dataclasses import asdict, dataclass, field
 from datetime import date, datetime
 from io import BytesIO, TextIOWrapper
-from itertools import islice
 from pathlib import Path
 from zipfile import ZipFile
 
@@ -25,6 +24,7 @@ from transit_ops.ingestion.static_gtfs import build_static_ingestion_config
 from transit_ops.ingestion.storage import get_bronze_storage
 from transit_ops.providers import ProviderRegistry
 from transit_ops.settings import Settings, get_settings
+from transit_ops.silver._batch import execute_batched_insert
 
 CHUNK_SIZE = 5_000
 REQUIRED_STATIC_MEMBERS = {
@@ -672,15 +672,6 @@ def _build_feed_info_record(
     }
 
 
-def _chunked(
-    rows: Iterable[dict[str, object]],
-    chunk_size: int,
-) -> Iterator[list[dict[str, object]]]:
-    iterator = iter(rows)
-    while chunk := list(islice(iterator, chunk_size)):
-        yield chunk
-
-
 def _discover_gtfs_members_from_zip(zip_file: ZipFile) -> dict[str, str]:
     member_map: dict[str, str] = {}
     for member_name in zip_file.namelist():
@@ -1030,17 +1021,6 @@ def _build_translation_record(
     }
 
 
-def _execute_batched_insert(
-    connection: Connection,
-    *,
-    statement,
-    rows: Iterable[dict[str, object]],
-) -> int:
-    row_count = 0
-    for chunk in _chunked(rows, CHUNK_SIZE):
-        connection.execute(statement, chunk)
-        row_count += len(chunk)
-    return row_count
 
 
 def _load_member_rows(
@@ -1070,7 +1050,9 @@ def _load_member_rows(
             required_columns=required_columns,
         )
     )
-    return _execute_batched_insert(connection, statement=statement, rows=rows)
+    return execute_batched_insert(
+        connection, statement=statement, rows=rows, chunk_size=CHUNK_SIZE
+    )
 
 
 def _load_translation_rows(
@@ -1102,7 +1084,9 @@ def _load_translation_rows(
             start=1,
         )
     )
-    return _execute_batched_insert(connection, statement=TRANSLATIONS_INSERT, rows=rows)
+    return execute_batched_insert(
+        connection, statement=TRANSLATIONS_INSERT, rows=rows, chunk_size=CHUNK_SIZE
+    )
 
 
 def _txt_member_items(member_map: Mapping[str, str]) -> list[tuple[str, str]]:
@@ -1145,10 +1129,11 @@ def _record_gtfs_source_members(
                 },
             }
         )
-    return _execute_batched_insert(
+    return execute_batched_insert(
         connection,
         statement=GTFS_SOURCE_MEMBER_INSERT,
         rows=rows,
+        chunk_size=CHUNK_SIZE,
     )
 
 
@@ -1181,10 +1166,11 @@ def _load_extra_member_rows(
                 start=1,
             )
         )
-        extra_row_counts[source_file_name] = _execute_batched_insert(
+        extra_row_counts[source_file_name] = execute_batched_insert(
             connection,
             statement=GTFS_EXTRA_ROW_INSERT,
             rows=rows,
+            chunk_size=CHUNK_SIZE,
         )
     return extra_row_counts
 

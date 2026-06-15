@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import inspect
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
 import pytest
 
@@ -882,7 +882,13 @@ def test_prune_bronze_static_binds_cutoff_on_orphan_run_delete() -> None:
 
 
 def test_maintenance_has_no_dropped_legacy_silver_realtime_sql() -> None:
-    source = inspect.getsource(maintenance_module)
+    # maintenance is now a package; scan every module's source (not just
+    # __init__.py, which inspect.getsource(package) would return) so the
+    # dropped-legacy-SQL guard keeps its protective scope after the zeta split.
+    package_dir = Path(maintenance_module.__file__).parent
+    source = "\n".join(
+        path.read_text(encoding="utf-8") for path in sorted(package_dir.glob("*.py"))
+    )
 
     assert REALTIME_SILVER_TABLES == EXPECTED_NORMALIZED_REALTIME_SILVER_TABLES
     for dropped_table in DROPPED_LEGACY_SILVER_REALTIME_TABLES:
