@@ -2,10 +2,9 @@ from __future__ import annotations
 
 import re
 import struct
-from collections.abc import Iterable, Iterator, Mapping
+from collections.abc import Iterator, Mapping
 from dataclasses import asdict, dataclass, replace
 from io import BytesIO
-from itertools import islice
 from pathlib import Path
 from zipfile import ZipFile
 
@@ -20,6 +19,7 @@ from transit_ops.ingestion.gis import build_gis_ingestion_config
 from transit_ops.ingestion.storage import get_bronze_storage
 from transit_ops.providers import ProviderRegistry
 from transit_ops.settings import Settings, get_settings
+from transit_ops.silver._batch import execute_batched_insert
 
 CHUNK_SIZE = 5_000
 PARSER_VERSION = "transit_ops.silver.gis.v1"
@@ -527,26 +527,6 @@ def _parse_gis_zip(payload: bytes) -> _ParsedGisZip:
     )
 
 
-def _chunked(
-    rows: Iterable[dict[str, object]],
-    chunk_size: int,
-) -> Iterator[list[dict[str, object]]]:
-    iterator = iter(rows)
-    while chunk := list(islice(iterator, chunk_size)):
-        yield chunk
-
-
-def _execute_batched_insert(
-    connection: Connection,
-    *,
-    statement,
-    rows: Iterable[dict[str, object]],
-) -> int:
-    row_count = 0
-    for chunk in _chunked(rows, CHUNK_SIZE):
-        connection.execute(statement, chunk)
-        row_count += len(chunk)
-    return row_count
 
 
 def _delete_existing_gis_rows(connection: Connection, *, dataset_version_id: int) -> None:
@@ -927,20 +907,23 @@ def load_gis_zip_to_silver(
 
     _delete_existing_gis_rows(connection, dataset_version_id=archive.dataset_version_id)
     _insert_gis_dataset(connection, archive=archive, parsed=parsed)
-    stop_count = _execute_batched_insert(
+    stop_count = execute_batched_insert(
         connection,
         statement=GIS_STOP_FEATURE_INSERT,
         rows=stop_rows,
+        chunk_size=CHUNK_SIZE,
     )
-    line_count = _execute_batched_insert(
+    line_count = execute_batched_insert(
         connection,
         statement=GIS_LINE_FEATURE_INSERT,
         rows=line_rows,
+        chunk_size=CHUNK_SIZE,
     )
-    match_count = _execute_batched_insert(
+    match_count = execute_batched_insert(
         connection,
         statement=GIS_GTFS_MATCH_INSERT,
         rows=match_rows,
+        chunk_size=CHUNK_SIZE,
     )
     row_counts = {
         "gis_datasets": 1,
