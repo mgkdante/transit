@@ -17,6 +17,9 @@ importers:
       '@lucide/svelte':
         specifier: ^1.18.0
         version: 1.18.0(svelte@5.56.3(@typescript-eslint/types@8.61.0))
+      gsap:
+        specifier: ^3.15.0
+        version: 3.15.0
       maplibre-gl:
         specifier: ^5.24.0
         version: 5.24.0
@@ -1860,6 +1863,9 @@ packages:
 
   graceful-fs@4.2.11:
     resolution: {integrity: sha512-RbJ5/jmFcNNCcDV5o9eTnBLJ/HszWV0P73bc+Ff4nS/rJj+YaS6IGyiOL0VoBYX+l1Wrl3k63h/KrH+nhJ0XvQ==}
+
+  gsap@3.15.0:
+    resolution: {integrity: sha512-dMW4CWBTUK1AEEDeZc1g4xpPGIrSf9fJF960qbTZmN/QwZIWY5wgliS6JWl9/25fpTGJrMRtSjGtOmPnfjZB+A==}
 
   happy-dom@20.10.3:
     resolution: {integrity: sha512-Hjdiy8RziuCcn5z04QI/rlsNuQoG8P0xxjgvsSMpi89cvIXIOcucQtiHS1yHSShxoBcSCeYqAskINmTiy/mlfw==}
@@ -4085,6 +4091,8 @@ snapshots:
   globals@17.6.0: {}
 
   graceful-fs@4.2.11: {}
+
+  gsap@3.15.0: {}
 
   happy-dom@20.10.3:
     dependencies:

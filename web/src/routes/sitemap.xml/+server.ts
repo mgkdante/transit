@@ -25,9 +25,7 @@ export const GET: RequestHandler = () => {
 	const urls = PATHS.flatMap((path) => {
 		const en = `${SITE}${path === '/' ? '/' : path}`;
 		const fr = `${SITE}/fr${path === '/' ? '' : path}`;
-		return [en, fr].map(
-			(loc) => `  <url>\n    <loc>${loc}</loc>\n${alternates(path)}\n  </url>`,
-		);
+		return [en, fr].map((loc) => `  <url>\n    <loc>${loc}</loc>\n${alternates(path)}\n  </url>`);
 	});
 
 	const body =

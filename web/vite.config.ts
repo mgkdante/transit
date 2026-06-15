@@ -38,9 +38,11 @@ export default defineConfig({
 	],
 	ssr: {
 		// bits-ui ships .svelte files in dist/ — Vite SSR must run them through the
-		// Svelte compiler instead of treating them as native ESM. (gsap/embla/lenis
-		// are deliberately NOT used here, so they are absent from this list.)
-		noExternal: ['bits-ui'],
+		// Svelte compiler instead of treating them as native ESM. gsap's subpath
+		// plugin exports (gsap/SplitText) need bundling for clean SSR ESM interop;
+		// it loads side-effect-free (window access is deferred) and only animates
+		// client-side. (Lenis is still deliberately absent — no smooth-scroll.)
+		noExternal: ['bits-ui', 'gsap'],
 	},
 	test: {
 		// Two projects: "data" = pure logic (node, fast), "dom" = components/stores (happy-dom).
