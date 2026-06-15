@@ -16,9 +16,10 @@ const config = {
 		},
 	},
 	kit: {
-		// Cloudflare Pages (slice-9.2 locked). Adapter auto-generates _routes.json;
-		// /data/* exclusion + cache headers land in P5.
-		adapter: adapter(),
+		// Cloudflare Pages. Exclude /data/* from the Pages Function so the existing
+		// zone-route snapshot worker (slice-9.1.1p) keeps serving the /v1 contract;
+		// the Function never sees those paths. (Hashed assets are auto-excluded.)
+		adapter: adapter({ routes: { exclude: ['/data/*'] } }),
 	},
 };
 

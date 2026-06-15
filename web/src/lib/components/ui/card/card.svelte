@@ -25,14 +25,15 @@
 </div>
 
 <style>
-	/* Unified card surface — the panel lifts off the schematic board. --card is
-	   one solid step above the page (SOLID hex always; alpha on the card bg is
-	   forbidden so the circuit grid never bleeds through), a 2px --border-brand
-	   rule draws the panel edge, and a 1px inset top bevel (--edge-highlight)
-	   catches the lamp light. Hover firms the rule to --border-brand-active and
-	   floats the panel with --shadow-section. */
+	/* Unified card surface — the panel lifts off the schematic board.
+	   --surface-2 (= --card) is one solid step above the page (SOLID hex
+	   always; alpha on the card bg is forbidden so the circuit grid never
+	   bleeds through), a 2px --border-brand rule draws the panel edge, and a
+	   1px inset top bevel (--edge-highlight) catches the lamp light. Hover
+	   firms the rule to --border-brand-active and floats the panel with
+	   --shadow-section. */
 	.card-surface {
-		background: var(--card);
+		background: var(--surface-2);
 		border: 2px solid var(--border-brand);
 		border-radius: var(--radius-lg);
 		box-shadow: inset 0 1px 0 var(--edge-highlight);
