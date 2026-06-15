@@ -630,6 +630,119 @@ def test_run_realtime_worker_loop_rejects_invalid_max_cycles() -> None:
         )
 
 
+def _worker_loop_cycle_result(provider_id: str):
+    """Build a minimal succeeded RealtimeCycleResult for worker-loop tests."""
+    return orchestration.RealtimeCycleResult(
+        provider_id=provider_id,
+        status="succeeded",
+        started_at_utc=datetime(2026, 3, 25, 0, 0, 0, tzinfo=UTC),
+        completed_at_utc=datetime(2026, 3, 25, 0, 0, 1, tzinfo=UTC),
+        total_duration_seconds=1.0,
+        successful_endpoint_count=2,
+        failed_endpoint_count=0,
+        endpoint_results=[],
+        step_timings_seconds={},
+        gold_build=None,
+        gold_build_duration_seconds=0.25,
+        gold_error_message=None,
+        silver_maintenance=None,
+        silver_maintenance_duration_seconds=0.1,
+        silver_maintenance_error_message=None,
+        gold_maintenance=None,
+        gold_maintenance_duration_seconds=0.1,
+        gold_maintenance_error_message=None,
+    )
+
+
+def test_run_realtime_worker_loop_continues_after_cycle_raises(
+    monkeypatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """An uncaught in-cycle exception is logged and the loop continues to the next cycle."""
+    cycle_calls: list[str] = []
+    sleep_calls: list[float] = []
+
+    monkeypatch.setattr(
+        orchestration,
+        "_validate_realtime_worker_startup",
+        lambda provider_id, settings, registry: SimpleNamespace(
+            provider=SimpleNamespace(provider_id=provider_id, display_name="STM"),
+        ),
+    )
+
+    def _flaky_cycle(  # noqa: ANN001
+        provider_id, settings, registry, engine, last_captures=None
+    ):
+        cycle_calls.append(provider_id)
+        if len(cycle_calls) == 1:
+            raise RuntimeError("transient capture failure")
+        return _worker_loop_cycle_result(provider_id)
+
+    monkeypatch.setattr(orchestration, "run_realtime_cycle", _flaky_cycle)
+    caplog.set_level(logging.ERROR, logger="transit_ops.orchestration")
+
+    run_realtime_worker_loop(
+        "stm",
+        settings=Settings(
+            _env_file=None,
+            DATABASE_URL="postgresql://user:pass@example.com/transit",
+            REALTIME_POLL_SECONDS=10,
+        ),
+        registry=object(),
+        engine=object(),
+        sleep_fn=sleep_calls.append,
+        max_cycles=2,
+    )
+
+    # The first cycle raised; the loop must NOT die — a second cycle ran.
+    assert cycle_calls == ["stm", "stm"]
+    assert "transient capture failure" in caplog.text
+
+
+def test_run_realtime_worker_loop_breaks_on_shutdown_flag(
+    monkeypatch,
+) -> None:
+    """Flipping the shutdown flag at the top of the loop breaks cleanly without a crash."""
+    cycle_calls: list[str] = []
+    shutdown = {"requested": False}
+
+    monkeypatch.setattr(
+        orchestration,
+        "_validate_realtime_worker_startup",
+        lambda provider_id, settings, registry: SimpleNamespace(
+            provider=SimpleNamespace(provider_id=provider_id, display_name="STM"),
+        ),
+    )
+
+    def _cycle_then_request_shutdown(  # noqa: ANN001
+        provider_id, settings, registry, engine, last_captures=None
+    ):
+        cycle_calls.append(provider_id)
+        # After draining this cycle, ask the worker to shut down.
+        shutdown["requested"] = True
+        return _worker_loop_cycle_result(provider_id)
+
+    monkeypatch.setattr(orchestration, "run_realtime_cycle", _cycle_then_request_shutdown)
+
+    run_realtime_worker_loop(
+        "stm",
+        settings=Settings(
+            _env_file=None,
+            DATABASE_URL="postgresql://user:pass@example.com/transit",
+            REALTIME_POLL_SECONDS=10,
+        ),
+        registry=object(),
+        engine=object(),
+        sleep_fn=lambda _seconds: None,
+        # No max_cycles cap: only the shutdown flag can stop this loop.
+        max_cycles=None,
+        should_shutdown=lambda: shutdown["requested"],
+    )
+
+    # Exactly one cycle drained, then the flag broke the loop.
+    assert cycle_calls == ["stm"]
+
+
 def test_run_static_pipeline_skips_silver_and_gold_when_ingestion_skips_unchanged(
     monkeypatch,
 ) -> None:

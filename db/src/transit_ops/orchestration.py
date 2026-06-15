@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import logging
+import signal
+import threading
 import time
 from collections.abc import Callable
 from dataclasses import asdict, dataclass
@@ -1041,6 +1043,42 @@ def _validate_realtime_worker_startup(
     return manifest
 
 
+def _install_worker_shutdown_handlers() -> Callable[[], bool]:
+    """Install SIGTERM/SIGINT handlers that flip a shutdown flag.
+
+    Returns a predicate the worker loop polls at the top of each iteration so a
+    deploy's SIGTERM (or an operator's Ctrl-C) lets the worker drain the current
+    cycle and return cleanly instead of being SIGKILLed mid-capture.
+
+    Signal registration only works on the main thread; off the main thread (e.g.
+    inside a test runner) ``signal.signal`` raises ``ValueError``. In that case we
+    skip registration and return an always-false predicate so the loop is governed
+    solely by ``max_cycles`` / an injected ``should_shutdown``.
+    """
+    shutdown_requested = threading.Event()
+
+    def _request_shutdown(signum: int, _frame: object) -> None:
+        logger.info(
+            "Received signal %s — requesting clean realtime worker shutdown after "
+            "the current cycle drains.",
+            signum,
+        )
+        shutdown_requested.set()
+
+    if threading.current_thread() is not threading.main_thread():
+        return shutdown_requested.is_set
+
+    for sig in (signal.SIGTERM, signal.SIGINT):
+        try:
+            signal.signal(sig, _request_shutdown)
+        except (ValueError, OSError):
+            # Not on the main thread, or the platform disallows this signal —
+            # fall back to a flag that only an injected predicate can flip.
+            logger.debug("Could not register handler for signal %s; skipping.", sig)
+
+    return shutdown_requested.is_set
+
+
 def run_realtime_worker_loop(
     provider_id: str,
     *,
@@ -1051,12 +1089,21 @@ def run_realtime_worker_loop(
     max_cycles: int | None = None,
     perf_counter_fn: Callable[[], float] = time.perf_counter,
     utc_now_fn: Callable[[], datetime] = utc_now,
+    should_shutdown: Callable[[], bool] | None = None,
 ) -> None:
     settings = settings or get_settings()
     registry = registry or _provider_registry(settings)
     engine = _engine(settings, engine)
     if max_cycles is not None and max_cycles <= 0:
         raise ValueError("max_cycles must be greater than 0 when provided.")
+
+    # When the caller does not inject a shutdown predicate (production path),
+    # install SIGTERM/SIGINT handlers that flip a flag so a deploy's SIGTERM
+    # lets the worker drain the current cycle and return cleanly (exit 0)
+    # instead of being SIGKILLed mid-capture. Tests inject ``should_shutdown``
+    # directly and skip signal registration entirely.
+    if should_shutdown is None:
+        should_shutdown = _install_worker_shutdown_handlers()
 
     manifest = _validate_realtime_worker_startup(
         provider_id,
@@ -1087,6 +1134,14 @@ def run_realtime_worker_loop(
     previous_cycle_start_utc: datetime | None = None
     last_captures: dict[str, datetime] = {}
     while max_cycles is None or cycle_number < max_cycles:
+        if should_shutdown():
+            logger.info(
+                "Shutdown requested — realtime worker loop is stopping cleanly for "
+                "provider '%s' after %s completed cycle(s).",
+                provider_id,
+                cycle_number,
+            )
+            break
         if settings.PIPELINE_PAUSED:
             logger.warning(
                 "PIPELINE_PAUSED=true — realtime worker is paused for provider '%s'. "
@@ -1104,13 +1159,45 @@ def run_realtime_worker_loop(
             cycle_number,
             provider_id,
         )
-        cycle_result = run_realtime_cycle(
-            provider_id,
-            settings=settings,
-            registry=registry,
-            engine=engine,
-            last_captures=last_captures,
-        )
+        try:
+            cycle_result = run_realtime_cycle(
+                provider_id,
+                settings=settings,
+                registry=registry,
+                engine=engine,
+                last_captures=last_captures,
+            )
+        except Exception as exc:  # noqa: BLE001 — one bad cycle must not kill the loop
+            cycle_duration_seconds = round(perf_counter_fn() - cycle_started_at, 3)
+            logger.exception(
+                "Realtime worker cycle %s for provider '%s' raised an unexpected "
+                "exception and will be skipped; the worker loop continues: %s",
+                cycle_number,
+                provider_id,
+                exc,
+            )
+            previous_cycle_start_utc = cycle_start_utc
+            if max_cycles is not None and cycle_number >= max_cycles:
+                break
+            # Preserve start-to-start cadence: back off by the remaining poll
+            # budget after the (partial) failed cycle before retrying.
+            computed_sleep_seconds = round(
+                max(0.0, poll_seconds - cycle_duration_seconds), 3
+            )
+            logger.info(
+                (
+                    "Sleeping %.3f seconds before realtime worker cycle %s for provider "
+                    "'%s' after a failed cycle to target a %.3f second start-to-start "
+                    "cadence."
+                ),
+                computed_sleep_seconds,
+                cycle_number + 1,
+                provider_id,
+                float(poll_seconds),
+            )
+            if computed_sleep_seconds:
+                sleep_fn(computed_sleep_seconds)
+            continue
         cycle_end_utc = utc_now_fn()
         cycle_duration_seconds = round(perf_counter_fn() - cycle_started_at, 3)
         computed_sleep_seconds = round(max(0.0, poll_seconds - cycle_duration_seconds), 3)
