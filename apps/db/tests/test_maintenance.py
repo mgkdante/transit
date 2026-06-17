@@ -674,6 +674,27 @@ def test_rt_feed_snapshots_delete_guards_on_surviving_children() -> None:
     assert "silver.rt_entities" in sql
 
 
+def test_rt_trip_updates_delete_guards_on_surviving_stop_time_children() -> None:
+    sql = str(DELETE_OLD_RT_TRIP_UPDATES)
+
+    assert "NOT EXISTS" in sql
+    assert "silver.rt_trip_update_stop_times" in sql
+    assert "rstu_child.rt_feed_snapshot_id = rtu_old.rt_feed_snapshot_id" in sql
+    assert "rstu_child.entity_index = rtu_old.entity_index" in sql
+
+
+def test_rt_entities_delete_guards_on_surviving_realtime_children() -> None:
+    sql = str(DELETE_OLD_RT_ENTITIES)
+
+    assert "NOT EXISTS" in sql
+    assert "silver.rt_trip_updates" in sql
+    assert "silver.rt_vehicle_positions" in sql
+    assert "rtu_child.rt_feed_snapshot_id = rte_old.rt_feed_snapshot_id" in sql
+    assert "rtu_child.entity_index = rte_old.entity_index" in sql
+    assert "rvp_child.rt_feed_snapshot_id = rte_old.rt_feed_snapshot_id" in sql
+    assert "rvp_child.entity_index = rte_old.entity_index" in sql
+
+
 def test_prune_realtime_silver_history_binds_batch_param() -> None:
     connection = RecordingConnection()
     now_utc = datetime(2026, 3, 26, 20, 0, 0, tzinfo=UTC)
@@ -1500,7 +1521,7 @@ MOCK_REALTIME_PATHS = (
 
 class BronzePruneSettings:
     BRONZE_REALTIME_RETENTION_DAYS = 30
-    BRONZE_STATIC_RETENTION_DAYS = 365
+    BRONZE_STATIC_RETENTION_DAYS = 30
     BRONZE_PRUNE_MAX_OBJECTS_PER_BATCH = 5000
     BRONZE_PRUNE_MAX_BATCHES = 1
 
@@ -1674,9 +1695,9 @@ def test_bronze_prune_result_display_dict_includes_failed_batches_exhausted() ->
         provider_id="stm",
         dry_run=False,
         realtime_retention_days=30,
-        static_retention_days=365,
+        static_retention_days=30,
         realtime_cutoff_utc=datetime(2026, 5, 11, 7, 0, 0, tzinfo=UTC),
-        static_cutoff_utc=datetime(2025, 6, 10, 7, 0, 0, tzinfo=UTC),
+        static_cutoff_utc=datetime(2026, 5, 12, 7, 0, 0, tzinfo=UTC),
         deleted_object_counts={"realtime": 4998, "static": 0},
         deleted_metadata_counts={"raw.ingestion_objects": 4998},
         failed_object_counts={"realtime": 2, "static": 0},

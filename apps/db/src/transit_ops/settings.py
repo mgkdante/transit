@@ -134,21 +134,21 @@ class Settings(BaseSettings):
     STATIC_DATASET_RETENTION_COUNT: int = 1
     SILVER_REALTIME_RETENTION_DAYS: int = 14
     # Max rows deleted per realtime-history table per prune cycle. The prune runs
-    # on every ~57s worker cycle; an unbounded DELETE of the accumulated backlog
+    # on every ~30s worker cycle; an unbounded DELETE of the accumulated backlog
     # (e.g. ~252M-row silver.rt_trip_update_stop_times after a redeploy) in a
     # single transaction is the unbounded-heavy-op hang class. Bounding each
     # DELETE to this many rows/table/cycle drains the one-time backlog gradually
-    # over many cycles while a steady-state delta clears in one quick pass.
-    SILVER_REALTIME_PRUNE_BATCH: int = 50000
+    # over many cycles while staying above the steady-state stop-time inflow.
+    SILVER_REALTIME_PRUNE_BATCH: int = 100000
     GOLD_FACT_RETENTION_DAYS: int = 14
     # Max rows deleted per gold-fact table per prune cycle. Like the silver
-    # realtime prune, prune_gold_fact_history runs on every ~57s worker cycle; an
+    # realtime prune, prune_gold_fact_history runs on every ~30s worker cycle; an
     # unbounded DELETE of the whole backlog (the first cycle after a worker
     # outage must drain the entire 18.7M-scale fact_trip_delay_snapshot in ONE
     # transaction — long lock hold, WAL/bloat spike) is the unbounded-heavy-op
     # hang class the silver prunes were already batched to avoid. Bounding each
     # DELETE drains a one-time backlog gradually while steady-state clears fast.
-    GOLD_FACT_PRUNE_BATCH: int = 50000
+    GOLD_FACT_PRUNE_BATCH: int = 100000
     # The per-cycle ANALYZE of the realtime silver tables (incl. the ~500M-row
     # rt_trip_update_stop_times) takes SHARE UPDATE EXCLUSIVE + heavy sampling
     # I/O inside the advisory-locked gold-refresh TX. Per-snapshot upserts filter
@@ -158,7 +158,7 @@ class Settings(BaseSettings):
     GOLD_REALTIME_ANALYZE_MIN_INTERVAL_SECONDS: int = 3600
     GOLD_REPORTING_OPEN_WINDOW_DAYS: int = 10
     BRONZE_REALTIME_RETENTION_DAYS: int = 30
-    BRONZE_STATIC_RETENTION_DAYS: int = 365
+    BRONZE_STATIC_RETENTION_DAYS: int = 30
     GOLD_WARM_ROLLUP_RETENTION_DAYS: int = 365
     BRONZE_I3_RETENTION_DAYS: int = 30
     SILVER_I3_CLOSED_RETENTION_DAYS: int = 90

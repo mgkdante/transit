@@ -6,7 +6,7 @@ Why this module exists:
     GTFS edition drop that happened BEFORE 0029 landed have no names anywhere
     in the database (the June-2026 drop orphaned 12 route_ids and 15 stop_ids
     still present in the 365d rollups). Their names survive only inside the
-    archived GTFS zips in bronze R2 (365d retention).
+    archived GTFS zips in bronze R2 while those raw static archives are retained.
 
     ``transit-ops backfill-dim-history <provider> --from-gtfs-zip <path>``
     parses routes.txt/stops.txt out of such a zip and inserts CLOSED history
@@ -47,8 +47,8 @@ GTFS drop runbook — STM edition flip (next expected ~Aug 24; zips post ~10d ea
 HEAL (one-time, June-2026 drop predates migration 0029):
   cd apps/db && uv run python -m transit_ops.cli backfill-dim-history stm \\
       --from-gtfs-zip <archived-bronze-gtfs.zip>
-  The zip comes from bronze R2 (365d retention). Newest old edition first —
-  the first zip providing a missing id wins. Idempotent; current ids no-op.
+  The zip comes from bronze R2. Newest old edition first — the first zip
+  providing a missing id wins. Idempotent; current ids no-op.
 
 MORNING AFTER a drop (first daily-static-pipeline run with static_changed=true):
   [a] daily-static-pipeline green; row_counts: dim_route/dim_stop near prior

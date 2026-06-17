@@ -270,6 +270,31 @@ def test_compose_worker_environment_covers_pipeline_settings_only() -> None:
     assert "STM_API_KEY" in worker_keys
 
 
+def test_compose_runtime_defaults_match_settings_retention_contract() -> None:
+    services = _compose()["services"]
+    settings = Settings(_env_file=None)
+
+    worker_env = services["worker"]["environment"]
+    health_env = services["health"]["environment"]
+
+    assert (
+        worker_env["SILVER_REALTIME_PRUNE_BATCH"]
+        == f"${{SILVER_REALTIME_PRUNE_BATCH:-{settings.SILVER_REALTIME_PRUNE_BATCH}}}"
+    )
+    assert (
+        worker_env["GOLD_FACT_PRUNE_BATCH"]
+        == f"${{GOLD_FACT_PRUNE_BATCH:-{settings.GOLD_FACT_PRUNE_BATCH}}}"
+    )
+    assert (
+        worker_env["BRONZE_STATIC_RETENTION_DAYS"]
+        == f"${{BRONZE_STATIC_RETENTION_DAYS:-{settings.BRONZE_STATIC_RETENTION_DAYS}}}"
+    )
+    assert (
+        health_env["BRONZE_STATIC_RETENTION_DAYS"]
+        == f"${{BRONZE_STATIC_RETENTION_DAYS:-{settings.BRONZE_STATIC_RETENTION_DAYS}}}"
+    )
+
+
 def test_compose_health_environment_excludes_stm_credentials() -> None:
     services = _compose()["services"]
     health_keys = _environment_keys(services["health"])

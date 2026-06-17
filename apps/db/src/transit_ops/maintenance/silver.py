@@ -86,6 +86,12 @@ DELETE_OLD_RT_TRIP_UPDATES = text(
                 WHERE rfs_latest.provider_id = :provider_id
                   AND rfs_latest.endpoint_key = 'trip_updates'
             ), -1)
+          AND NOT EXISTS (
+                SELECT 1
+                FROM silver.rt_trip_update_stop_times AS rstu_child
+                WHERE rstu_child.rt_feed_snapshot_id = rtu_old.rt_feed_snapshot_id
+                  AND rstu_child.entity_index = rtu_old.entity_index
+            )
         LIMIT :batch
     )
     """
@@ -163,6 +169,18 @@ DELETE_OLD_RT_ENTITIES = text(
                 WHERE rfs_latest.provider_id = :provider_id
                   AND rfs_latest.endpoint_key = rfs.endpoint_key
             ), -1)
+          AND NOT EXISTS (
+                SELECT 1
+                FROM silver.rt_trip_updates AS rtu_child
+                WHERE rtu_child.rt_feed_snapshot_id = rte_old.rt_feed_snapshot_id
+                  AND rtu_child.entity_index = rte_old.entity_index
+            )
+          AND NOT EXISTS (
+                SELECT 1
+                FROM silver.rt_vehicle_positions AS rvp_child
+                WHERE rvp_child.rt_feed_snapshot_id = rte_old.rt_feed_snapshot_id
+                  AND rvp_child.entity_index = rte_old.entity_index
+            )
         LIMIT :batch
     )
     """
