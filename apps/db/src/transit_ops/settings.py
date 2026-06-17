@@ -132,7 +132,7 @@ class Settings(BaseSettings):
     HEALTH_MAX_PIPELINE_AGE_SECONDS: int = 900
     HEALTH_RUNTIME_CACHE_SECONDS: int = 30
     STATIC_DATASET_RETENTION_COUNT: int = 1
-    SILVER_REALTIME_RETENTION_DAYS: int = 14
+    SILVER_REALTIME_RETENTION_DAYS: int = 10
     # Max rows deleted per realtime-history table per prune cycle. The prune runs
     # on every ~30s worker cycle; an unbounded DELETE of the accumulated backlog
     # (e.g. ~252M-row silver.rt_trip_update_stop_times after a redeploy) in a

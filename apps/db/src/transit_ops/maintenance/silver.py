@@ -341,7 +341,7 @@ def prune_silver_storage(
 ) -> SilverStoragePruneResult:
     """Prune silver storage in TWO independent transactions (realtime FIRST).
 
-    Realtime 14-day retention and static dataset pruning run in separate
+    Realtime retention and static dataset pruning run in separate
     engine.begin() blocks, realtime first, so a static-prune failure can never
     roll back or starve the realtime retention. (A single shared transaction
     with static-first ordering let an FK abort in the static half kill the

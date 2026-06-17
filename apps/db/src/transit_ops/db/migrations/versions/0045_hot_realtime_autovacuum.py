@@ -1,6 +1,6 @@
 """Tune autovacuum for hot realtime retention tables.
 
-The live VM keeps a 30-second ingest cadence while the 14-day realtime
+The live VM keeps a 30-second ingest cadence while Silver/Gold realtime
 retention prunes high-churn Silver and Gold rows. Postgres defaults wait for a
 20 percent dead-row threshold, which is too high for the large realtime tables.
 These reloptions make ordinary VACUUM reclaim deleted pages for reuse much

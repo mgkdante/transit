@@ -180,7 +180,7 @@ Weekly `pg_repack` maintenance runs through `.github/workflows/weekly-pg-repack.
 
 ## Retention Proof Reports
 
-The expected retention defaults are: static dataset count 1, Bronze raw static/realtime/i3 30 days, Silver realtime 14 days, Gold detail facts 14 days, and Gold aggregate/reporting marts 365 days.
+The expected retention defaults are: static dataset count 1, Bronze raw static/realtime/i3 30 days, Silver realtime 10 days, Gold detail facts 14 days, and Gold aggregate/reporting marts 365 days.
 
 To generate a local non-destructive proof report:
 

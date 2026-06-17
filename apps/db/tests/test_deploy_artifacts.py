@@ -338,6 +338,7 @@ def test_env_example_documents_all_runtime_knobs() -> None:
         "STM_I3_ALERTS_URL=",
         "PIPELINE_PAUSED=false",
         "HEALTH_RUNTIME_CACHE_SECONDS=30",
+        "SILVER_REALTIME_RETENTION_DAYS=10",
         "GOLD_FACT_RETENTION_DAYS=14",
     }.issubset(assignments)
 
