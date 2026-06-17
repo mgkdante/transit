@@ -103,8 +103,9 @@ function paintsForTheme(theme: BasemapTheme): BasemapPaintMap {
 		earth: { 'fill-color': palette.land },
 		landuse: { 'fill-color': palette.land, 'fill-opacity': 0.5 },
 		water: {
-			'fill-color': palette.water,
-			'fill-opacity': 0.62,
+			'line-color': palette.water,
+			'line-width': ['interpolate', ['linear'], ['zoom'], 7, 0.3, 11, 0.55, 14, 0.85],
+			'line-opacity': ['interpolate', ['linear'], ['zoom'], 7, 0.45, 11, 0.62, 14, 0.72],
 		},
 		'water-edge': {
 			'line-color': palette.waterEdge,
@@ -307,7 +308,7 @@ export function vectorStyleFromBasemap(
 			},
 			{
 				id: 'water',
-				type: 'fill',
+				type: 'line',
 				source: BASEMAP_SOURCE_ID,
 				'source-layer': 'water',
 				paint: paint.water,

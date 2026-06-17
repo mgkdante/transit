@@ -192,9 +192,9 @@ describe('vectorStyleFromBasemap (Protomaps schema)', () => {
 			paint: { 'fill-color': '#F2E9D8' },
 		});
 		expect(light.layers.find((l) => l.id === 'water')).toMatchObject({
+			type: 'line',
 			paint: {
-				'fill-color': '#CFE1E6',
-				'fill-opacity': 0.62,
+				'line-color': '#CFE1E6',
 			},
 		});
 		expect(light.layers.find((l) => l.id === 'water-edge')).toMatchObject({
@@ -220,9 +220,9 @@ describe('vectorStyleFromBasemap (Protomaps schema)', () => {
 			paint: { 'fill-color': '#0f0d0a' },
 		});
 		expect(layerOf('water')).toMatchObject({
+			type: 'line',
 			paint: {
-				'fill-color': '#17313a',
-				'fill-opacity': 0.62,
+				'line-color': '#17313a',
 			},
 		});
 		expect(layerOf('water-edge')).toMatchObject({
@@ -259,12 +259,8 @@ describe('applyBasemapTheme', () => {
 
 		expect(calls).toContainEqual(['background', 'background-color', '#F7F2E9']);
 		expect(calls).toContainEqual(['earth', 'fill-color', '#F2E9D8']);
-		expect(calls).toContainEqual(['water', 'fill-color', '#CFE1E6']);
-		expect(calls).toContainEqual([
-			'water',
-			'fill-opacity',
-			0.62,
-		]);
+		expect(calls).toContainEqual(['water', 'line-color', '#CFE1E6']);
+		expect(calls).not.toContainEqual(['water', 'fill-color', '#CFE1E6']);
 		expect(calls).toContainEqual(['water-edge', 'line-color', '#7CA7B2']);
 		expect(calls).toContainEqual(['roads-major', 'line-color', '#6E6557']);
 		expect(calls).toContainEqual(['roads-major-labels', 'text-color', '#5F574C']);
