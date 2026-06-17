@@ -141,6 +141,7 @@ export function createLiveStore(manifest: Manifest): LiveStore {
 			departures = d;
 			alerts = a;
 			network = n;
+			dataRefresh.noteDataGeneratedUtc(n.generated_utc ?? v.generated_utc);
 			error = null;
 		} catch (e) {
 			error = e instanceof Error ? e : new Error(String(e));

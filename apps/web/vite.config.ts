@@ -4,10 +4,27 @@ import { sveltekit } from '@sveltejs/kit/vite';
 import { svelteTesting } from '@testing-library/svelte/vite';
 import { visualizer } from 'rollup-plugin-visualizer';
 
+function mapRuntimeManualChunks(id: string): string | undefined {
+	if (id.endsWith('.css')) return undefined;
+	if (id.includes('/node_modules/') && /\/(maplibre-gl|pmtiles)\//.test(id)) {
+		return 'vendor-maplibre';
+	}
+}
+
 // svelteTesting() only activates under VITEST, so it is safe to include always.
-export default defineConfig({
+export default defineConfig(({ isSsrBuild }) => ({
 	// Relocate Vitest's cache out of node_modules/.vite so CI can cache it safely.
 	cacheDir: process.env.VITEST ? '.vitest/cache' : undefined,
+	build: {
+		chunkSizeWarningLimit: 1100,
+		rollupOptions: isSsrBuild
+			? undefined
+			: {
+					output: {
+						manualChunks: mapRuntimeManualChunks,
+					},
+				},
+	},
 	// Dev-only snapshot proxy. In production the /v1 contract is served same-origin
 	// by the transit.yesid.dev/data/* zone-route worker (transit-data-proxy);
 	// locally we proxy `/data/*` to that live worker so the app fetches relative
@@ -77,4 +94,4 @@ export default defineConfig({
 			},
 		],
 	},
-});
+}));

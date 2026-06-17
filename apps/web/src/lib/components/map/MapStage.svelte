@@ -16,7 +16,7 @@
     - onMount → dynamic import, register pmtiles protocol ONCE globally, create
       the Map, wire it to the container div.
     - $effect → after the map exists, keep center/zoom/basemap in sync when the
-      props change (jumpTo for camera, setStyle for a basemap swap).
+      camera props actually change (jumpTo for camera, setStyle for basemap).
     - teardown → `map.remove()` to release the GL context + listeners.
 -->
 <script module lang="ts">
@@ -48,7 +48,8 @@
 	import { onMount } from 'svelte';
 	import { cn } from '$lib/utils';
 	import type { BasemapFile } from '$lib/v1/schemas';
-	import { resolveBasemapStyle } from './basemap';
+	import { applyBasemapTheme, resolveBasemapStyle, type BasemapTheme } from './basemap';
+	import { mapViewportOptions } from './viewport';
 	// Type-only import — erased at compile time, so it never pulls maplibre-gl
 	// into the server bundle. The RUNTIME import happens dynamically in onMount.
 	import type { Map as MapLibreMap, StyleSpecification } from 'maplibre-gl';
@@ -64,6 +65,10 @@
 		 * dark style (no external glyphs/tiles).
 		 */
 		basemap?: BasemapFile | null;
+		/** Active app theme. Rebuilds the MapLibre style when dark/light changes. */
+		theme?: BasemapTheme;
+		/** Provider bbox as [minLon, minLat, maxLon, maxLat]. */
+		bounds?: readonly number[];
 		/** Accessible name for the map region (icon-/canvas-only control). */
 		label?: string;
 		/**
@@ -72,6 +77,12 @@
 		 * only; never invoked under SSR.
 		 */
 		onready?: (map: MapLibreMap) => void;
+		/**
+		 * Fired after a later style swap caused by a theme/basemap change. Consumers
+		 * must re-add custom images/sources/layers because MapLibre clears them when
+		 * `setStyle` runs.
+		 */
+		onstyleload?: (map: MapLibreMap) => void;
 		/** Consumer styling on the host wrapper. */
 		class?: string;
 	}
@@ -81,8 +92,11 @@
 		center = [-73.5673, 45.5017],
 		zoom = 11,
 		basemap = null,
+		theme = 'dark',
+		bounds,
 		label = 'Transit map',
 		onready,
+		onstyleload,
 		class: className,
 	}: MapStageProps = $props();
 
@@ -90,6 +104,14 @@
 	let container = $state<HTMLDivElement | null>(null);
 	/** The live Map instance (browser-only; null until mounted / after teardown). */
 	let map = $state<MapLibreMap | null>(null);
+
+	function styleKey(file: BasemapFile | null): string {
+		return file?.url ?? 'minimal';
+	}
+
+	function cameraKey(nextCenter: [number, number], nextZoom: number): string {
+		return `${nextCenter[0]},${nextCenter[1]},${nextZoom}`;
+	}
 
 	onMount(() => {
 		// Hard SSR guard: never instantiate WebGL on the server. (onMount already
@@ -111,6 +133,7 @@
 			const style: StyleSpecification = resolveBasemapStyle(
 				{ basemap: basemap ? '' : null },
 				basemap,
+				theme,
 			);
 
 			const instance = new maplibregl.Map({
@@ -118,6 +141,7 @@
 				style,
 				center,
 				zoom,
+				...mapViewportOptions(bounds),
 				// Honest chrome: attribution is owned by the basemap/snapshot, not us.
 				attributionControl: { compact: true },
 			});
@@ -139,29 +163,57 @@
 		};
 	});
 
-	// Keep the camera in sync when center/zoom props change after creation.
+	// Keep the camera in sync when center/zoom props change after creation. The
+	// constructor already applies the first camera, and chrome-only re-renders
+	// must not re-issue jumpTo because that can make the visible map twitch.
+	let activeCameraKey: string | null = null;
 	$effect(() => {
 		const m = map;
 		if (!m) return;
-		// Read the reactive props so this effect re-runs on change.
-		m.jumpTo({ center, zoom });
+		const nextCenter = center;
+		const nextZoom = zoom;
+		const nextCameraKey = cameraKey(nextCenter, nextZoom);
+		if (activeCameraKey === nextCameraKey) return;
+		if (activeCameraKey === null) {
+			activeCameraKey = nextCameraKey;
+			return;
+		}
+		activeCameraKey = nextCameraKey;
+		m.jumpTo({ center: nextCenter, zoom: nextZoom });
 	});
 
-	// Swap the basemap style ONLY when the basemap pointer changes after the
-	// initial render. The constructor already applied the first style, so skip
+	// Swap the basemap style ONLY when the basemap pointer or theme changes after
+	// the initial render. The constructor already applied the first style, so skip
 	// the mount run — a redundant setStyle would wipe any layers a consumer added
-	// via `onready` (e.g. the vehicle layer). A genuine later swap re-fires this;
-	// the consumer re-adds its layers on the map's `styledata` if it must.
+	// via `onready` (e.g. the vehicle layer). Later swaps intentionally re-fire
+	// onstyleload so the consumer can re-add images/sources/layers.
 	let styleInited = false;
+	let activeStyleKey: string | null = null;
+	let activeTheme: BasemapTheme | null = null;
 	$effect(() => {
 		const m = map;
 		const b = basemap;
+		const t = theme;
 		if (!m) return;
+		const nextStyleKey = styleKey(b);
 		if (!styleInited) {
 			styleInited = true;
+			activeStyleKey = nextStyleKey;
+			activeTheme = t;
 			return;
 		}
-		m.setStyle(resolveBasemapStyle({ basemap: b ? '' : null }, b));
+		if (activeStyleKey === nextStyleKey) {
+			if (activeTheme !== t) {
+				applyBasemapTheme(m, t);
+				activeTheme = t;
+				onstyleload?.(m);
+			}
+			return;
+		}
+		activeStyleKey = nextStyleKey;
+		activeTheme = t;
+		m.once('style.load', () => onstyleload?.(m));
+		m.setStyle(resolveBasemapStyle({ basemap: b ? '' : null }, b, t));
 	});
 </script>
 

@@ -18,7 +18,8 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { getLocale, type Locale } from '$lib/i18n';
-	import { layout } from '$lib/nav';
+	import { layout, openSurface } from '$lib/nav';
+	import { emptyFilterState, toSearchString } from '$lib/filters';
 	import {
 		createLiveStore,
 		getNetworkTrend,
@@ -108,6 +109,13 @@
 			retardDomain: [0, retardCeil] as [number, number],
 		};
 	}
+
+	function openStatusOnMap(code: StatusCode | OccupancyCode): void {
+		if (!STATUS_CODES.includes(code as StatusCode)) return;
+		const state = emptyFilterState();
+		state.status = [code as StatusCode];
+		openSurface({ kind: 'map', search: toSearchString(state) });
+	}
 </script>
 
 <Surface width="bleed" class="network">
@@ -151,6 +159,7 @@
 				label={t.statusBarLabel}
 				interactive
 				legend
+				onSelect={openStatusOnMap}
 			/>
 		</div>
 

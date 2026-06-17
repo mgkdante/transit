@@ -50,6 +50,8 @@
 		 * figure with its <title>-only readout.
 		 */
 		interactive?: boolean;
+		/** Optional drilldown/selection callback for interactive slices. */
+		onSelect?: (code: AnyCode) => void;
 		class?: string;
 	}
 
@@ -60,6 +62,7 @@
 		legend = false,
 		label,
 		interactive = false,
+		onSelect,
 		class: className,
 		ref = $bindable(null),
 		...restProps
@@ -78,8 +81,15 @@
 		});
 	}
 
-	function onKeyDown(e: KeyboardEvent): void {
-		if (e.key === 'Escape') tip.hide();
+	function onKeyDown(e: KeyboardEvent, s: Slice): void {
+		if (e.key === 'Escape') {
+			tip.hide();
+			return;
+		}
+		if (e.key === 'Enter' || e.key === ' ') {
+			e.preventDefault();
+			onSelect?.(s.code);
+		}
 	}
 
 	function colorFor(code: AnyCode): string {
@@ -156,7 +166,8 @@
 						onpointerleave={() => tip.hide()}
 						onfocus={() => showSlice(s)}
 						onblur={() => tip.hide()}
-						onkeydown={onKeyDown}
+						onclick={() => onSelect?.(s.code)}
+						onkeydown={(e) => onKeyDown(e, s)}
 					>
 						<title>{s.label}: {Math.round(s.pct)}%</title>
 					</rect>
@@ -194,7 +205,7 @@
 
 	{#if legend && hasData}
 		<ul
-			class="dv-legend-list mt-1.5 flex flex-wrap gap-x-3 gap-y-1 text-micro text-muted-foreground"
+			class="dv-legend-list mt-1.5 flex flex-wrap gap-x-3 gap-y-1 text-caption text-muted-foreground"
 		>
 			{#each slices as s, i (s.code + '-leg-' + i)}
 				<li class="inline-flex items-center gap-1.5">

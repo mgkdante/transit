@@ -19,9 +19,31 @@
 import { browser } from '$app/environment';
 import { invalidateAll } from '$app/navigation';
 
+export const REFRESH_INVALIDATE_TIMEOUT_MS = 8_000;
+
 let epoch = $state(0);
 let refreshing = $state(false);
 let lastRefreshedMs = $state<number | null>(null);
+let dataGeneratedUtc = $state<string | null>(null);
+
+async function invalidateAllBounded(): Promise<void> {
+	let done = false;
+	let timeoutId: ReturnType<typeof setTimeout> | null = null;
+
+	await new Promise<void>((resolve) => {
+		const finish = () => {
+			if (done) return;
+			done = true;
+			if (timeoutId) clearTimeout(timeoutId);
+			resolve();
+		};
+
+		timeoutId = setTimeout(finish, REFRESH_INVALIDATE_TIMEOUT_MS);
+		void invalidateAll()
+			.catch(() => undefined)
+			.finally(finish);
+	});
+}
 
 export const dataRefresh = {
 	/** Monotonic refresh counter. Read it inside a reactive context to re-run on a press. */
@@ -35,6 +57,15 @@ export const dataRefresh = {
 	/** Epoch ms of the last completed refresh / load anchor, or null before any. */
 	get lastRefreshedMs(): number | null {
 		return lastRefreshedMs;
+	},
+	/** UTC data-build timestamp currently loaded in the app chrome, if known. */
+	get dataGeneratedUtc(): string | null {
+		return dataGeneratedUtc;
+	},
+	/** Record the snapshot's own DATA timestamp so chrome and surfaces share one clock. */
+	noteDataGeneratedUtc(generatedUtc: string | null | undefined): void {
+		if (!browser || !generatedUtc) return;
+		dataGeneratedUtc = generatedUtc;
 	},
 	/**
 	 * Anchor the "as of" timestamp to now IF still unset — call once when the
@@ -54,7 +85,7 @@ export const dataRefresh = {
 		refreshing = true;
 		try {
 			epoch += 1;
-			await invalidateAll();
+			await invalidateAllBounded();
 		} finally {
 			lastRefreshedMs = Date.now();
 			refreshing = false;

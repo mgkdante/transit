@@ -28,11 +28,12 @@ describe('fromSearchParams — parsing + self-healing', () => {
 		expect([...s.routes].sort()).toEqual(['10', '80']);
 	});
 
-	it('parses all three id-set families to their state fields', () => {
-		const s = fromSearchParams(sp('route=10&stop=ABC&trip=T1'));
+	it('parses all four id-set families to their state fields', () => {
+		const s = fromSearchParams(sp('route=10&stop=ABC&trip=T1&vehicle=40061'));
 		expect([...s.routes]).toEqual(['10']);
 		expect([...s.stops]).toEqual(['ABC']);
 		expect([...s.trips]).toEqual(['T1']);
+		expect([...s.vehicles]).toEqual(['40061']);
 	});
 
 	it('drops blank tokens (?route=  and 10,,80) instead of inserting empties', () => {
@@ -57,6 +58,16 @@ describe('fromSearchParams — parsing + self-healing', () => {
 		expect(s.occupancy).toEqual(['full', 'empty']);
 	});
 
+	it('drops entity junk, keeps valid shape/entity filters', () => {
+		const s = fromSearchParams(sp('entity=bus_direction,bogus,stop,bus_direction'));
+		expect((s as { entities?: string[] }).entities).toEqual(['bus_direction', 'stop']);
+	});
+
+	it('drops alert junk, keeps valid alert entity filters', () => {
+		const s = fromSearchParams(sp('alert=has_alert,bogus,has_alert'));
+		expect((s as { alerts?: string[] }).alerts).toEqual(['has_alert']);
+	});
+
 	it('keeps grain only when it is a valid Grain', () => {
 		expect(fromSearchParams(sp('grain=week')).grain).toBe('week');
 		expect(fromSearchParams(sp('grain=decade')).grain).toBeUndefined();
@@ -79,23 +90,38 @@ describe('toSearchParams — canonical wire format', () => {
 			routes: new Set(['80', '10', '165']),
 			stops: new Set(),
 			trips: new Set(),
+			vehicles: new Set(),
 			status: ['late', 'severe'],
 		};
 		expect(toSearchParams(s).toString()).toBe('route=10%2C165%2C80&status=late%2Csevere');
 	});
 
-	it('emits keys in the stable contract order (route,stop,trip,status,occupancy,grain,window)', () => {
+	it('emits keys in the stable contract order (route,stop,trip,vehicle,status,occupancy,entity,alert,grain,window)', () => {
 		const s: FilterState = {
 			routes: new Set(['10']),
 			stops: new Set(['S']),
 			trips: new Set(['T']),
+			vehicles: new Set(['40061']),
 			status: ['on_time'],
 			occupancy: ['full'],
+			entities: ['stop'],
+			alerts: ['has_alert'],
 			grain: 'day',
 			window: '7d',
-		};
+		} as unknown as FilterState;
 		const keys = [...toSearchParams(s).keys()];
-		expect(keys).toEqual(['route', 'stop', 'trip', 'status', 'occupancy', 'grain', 'window']);
+		expect(keys).toEqual([
+			'route',
+			'stop',
+			'trip',
+			'vehicle',
+			'status',
+			'occupancy',
+			'entity',
+			'alert',
+			'grain',
+			'window',
+		]);
 	});
 
 	it('omits an empty enum array entirely', () => {
@@ -103,6 +129,7 @@ describe('toSearchParams — canonical wire format', () => {
 			routes: new Set(),
 			stops: new Set(),
 			trips: new Set(),
+			vehicles: new Set(),
 			status: [],
 		};
 		expect(toSearchParams(s).toString()).toBe('');
@@ -117,7 +144,9 @@ describe('round-trip — toSearchParams(fromSearchParams(u)) is an idempotent fi
 		'route=10&route=80', // repeated-key form normalizes to comma form
 		'route=10,,80&stop=', // junk normalizes away
 		'status=bogus,late', // invalid enum drops
-		'route=165&stop=ABC&trip=T1&status=on_time,late&occupancy=full&grain=week&window=7d',
+		'entity=bus_direction,stop,bogus',
+		'alert=has_alert,bogus',
+		'route=165&stop=ABC&trip=T1&vehicle=40061&status=on_time,late&occupancy=full&entity=stop&alert=has_alert&grain=week&window=7d',
 		'utm_source=x&route=10', // unknown key drops
 		'grain=decade', // invalid grain drops -> empty
 	];
@@ -136,8 +165,15 @@ describe('round-trip — toSearchParams(fromSearchParams(u)) is an idempotent fi
 			expect([...second.routes].sort()).toEqual([...first.routes].sort());
 			expect([...second.stops].sort()).toEqual([...first.stops].sort());
 			expect([...second.trips].sort()).toEqual([...first.trips].sort());
+			expect([...second.vehicles].sort()).toEqual([...first.vehicles].sort());
 			expect(second.status).toEqual(first.status);
 			expect(second.occupancy).toEqual(first.occupancy);
+			expect((second as { entities?: string[] }).entities).toEqual(
+				(first as { entities?: string[] }).entities,
+			);
+			expect((second as { alerts?: string[] }).alerts).toEqual(
+				(first as { alerts?: string[] }).alerts,
+			);
 			expect(second.grain).toEqual(first.grain);
 			expect(second.window).toEqual(first.window);
 		});

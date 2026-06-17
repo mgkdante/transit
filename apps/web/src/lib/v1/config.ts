@@ -42,8 +42,7 @@ const DEFAULT_PROVIDER = 'stm';
  * env var, never written into source below this module.
  */
 export function v1BaseUrl(): string {
-	const raw = (env.PUBLIC_V1_BASE ?? DEFAULT_BASE).trim();
-	return stripTrailingSlash(raw || DEFAULT_BASE);
+	return normalizeV1BaseUrl(env.PUBLIC_V1_BASE);
 }
 
 /**
@@ -66,7 +65,9 @@ export function v1Provider(): string {
  * @param relativePath provider-relative path from the manifest (no leading `/`).
  */
 export function resolveUrl(relativePath: string): string {
-	const rel = trimLeadingSlash(relativePath.trim());
+	const raw = relativePath.trim();
+	if (/^[a-z][a-z\d+\-.]*:\/\//i.test(raw)) return raw;
+	const rel = trimLeadingSlash(raw);
 	return `${v1BaseUrl()}/${v1Provider()}/${rel}`;
 }
 
@@ -108,6 +109,14 @@ export function entityUrl(
 
 function stripTrailingSlash(s: string): string {
 	return s.endsWith('/') ? s.slice(0, -1) : s;
+}
+
+export function normalizeV1BaseUrl(value: string | null | undefined): string {
+	const raw = (value ?? DEFAULT_BASE).trim() || DEFAULT_BASE;
+	const withoutTrailingSlash = stripTrailingSlash(raw);
+	if (/^[a-z][a-z\d+\-.]*:\/\//i.test(withoutTrailingSlash)) return withoutTrailingSlash;
+	if (withoutTrailingSlash.startsWith('/')) return withoutTrailingSlash;
+	return `/${withoutTrailingSlash}`;
 }
 
 function trimLeadingSlash(s: string): string {

@@ -31,14 +31,29 @@
 
 	import { onMount } from 'svelte';
 	import { page } from '$app/stores';
+	import { goto } from '$app/navigation';
 	import { browser } from '$app/environment';
 
-	import { setLocaleContext, DEFAULT_LOCALE, type Locale } from '$lib/i18n';
-	import { setV1Context, bootV1, type V1Context } from '$lib/v1';
-	import { themeStore } from '$lib/stores';
+	import { setLocaleContext, DEFAULT_LOCALE, localizeHref, type Locale } from '$lib/i18n';
+	import {
+		setV1Context,
+		bootV1,
+		getRoutesIndex,
+		getStopsIndex,
+		getVehicles,
+		type V1Context,
+	} from '$lib/v1';
+	import { createResource } from '$lib/v1/resource.svelte';
+	import { dataRefresh, themeStore } from '$lib/stores';
 	import { AppShell } from '$lib/components/shell';
 	import { EdgeState } from '$lib/components/edge';
 	import { layout } from '$lib/nav';
+	import {
+		chromeSearchHref,
+		chromeSearchResults,
+		type ChromeSearchResult,
+	} from '$lib/search/chromeSearch';
+	import type { GeocodeSuggestion, GeocodedLocation } from '$lib/geocode/types';
 	import type { LayoutData } from './$types';
 
 	let { data, children }: { data: LayoutData; children: import('svelte').Snippet } = $props();
@@ -58,6 +73,11 @@
 	let clientV1 = $state<V1Context | null>(null);
 	const v1 = $derived<V1Context | null>(data.v1 ?? clientV1);
 	setV1Context(() => (v1 ?? undefined) as V1Context);
+	$effect(() => {
+		dataRefresh.noteDataGeneratedUtc(
+			v1?.manifest.files.live.generated_utc ?? v1?.manifest.files.static?.generated_utc,
+		);
+	});
 
 	// True while a client-side (re-)boot is in flight — lets the edge state show a
 	// "retrying" affordance rather than a dead button.
@@ -77,6 +97,46 @@
 
 	// Shell desktop/mobile split drives the edge-state skeleton/error density.
 	const edgeLayout = $derived(layout.isDesktop ? 'desktop' : 'mobile');
+	let topSearch = $state('');
+	let addressSuggestions = $state<GeocodeSuggestion[]>([]);
+	let addressSessionToken = $state(createAddressSessionToken());
+	const searchRoutes = createResource(() => getRoutesIndex());
+	const searchStops = createResource(() => getStopsIndex());
+	const searchVehicles = createResource(() => getVehicles());
+	const topSearchResults = $derived(
+		chromeSearchResults(topSearch, {
+			routes: searchRoutes.data?.routes ?? [],
+			stops: searchStops.data?.stops ?? [],
+			vehicles: searchVehicles.data?.vehicles ?? [],
+			addresses: addressSuggestions,
+		}),
+	);
+
+	$effect(() => {
+		const query = topSearch.trim();
+		if (!browser || !shouldSuggestAddress(query)) {
+			addressSuggestions = [];
+			return;
+		}
+
+		const controller = new AbortController();
+		const timer = setTimeout(() => {
+			void fetchAddressSuggestions(query, 4, controller.signal)
+				.then((results) => {
+					if (!controller.signal.aborted && topSearch.trim() === query) {
+						addressSuggestions = results;
+					}
+				})
+				.catch(() => {
+					if (!controller.signal.aborted) addressSuggestions = [];
+				});
+		}, 250);
+
+		return () => {
+			clearTimeout(timer);
+			controller.abort();
+		};
+	});
 
 	onMount(() => {
 		// Re-sync the theme store with the pre-paint <html data-theme> attribute
@@ -92,9 +152,116 @@
 	function retryBoot() {
 		void clientBoot();
 	}
+
+	async function selectSearchResult(result: ChromeSearchResult): Promise<void> {
+		if (result.kind === 'address' && !hasResultCoordinates(result)) {
+			await selectUnresolvedAddressResult(result);
+			return;
+		}
+		topSearch = '';
+		addressSessionToken = createAddressSessionToken();
+		void goto(localizeHref(chromeSearchHref(result, $page.url.searchParams), locale), {
+			noScroll: true,
+		});
+	}
+
+	async function submitSearch(value: string): Promise<void> {
+		const query = value.trim();
+		const [first] = chromeSearchResults(query, {
+			routes: searchRoutes.data?.routes ?? [],
+			stops: searchStops.data?.stops ?? [],
+			vehicles: searchVehicles.data?.vehicles ?? [],
+			addresses: addressSuggestions,
+		});
+		if (first) {
+			await selectSearchResult(first);
+			return;
+		}
+
+		if (!shouldSuggestAddress(query)) return;
+		const addresses = await fetchAddressSuggestions(query, 1);
+		const [addressResult] = chromeSearchResults(query, { addresses });
+		if (addressResult) await selectSearchResult(addressResult);
+	}
+
+	function shouldSuggestAddress(query: string): boolean {
+		const trimmed = query.trim();
+		if (trimmed.length < 3) return false;
+		return !/^\s*-?\d+(?:\.\d+)?\s*[, ]\s*-?\d*(?:\.\d*)?\s*$/.test(trimmed);
+	}
+
+	async function fetchAddressSuggestions(
+		query: string,
+		limit: number,
+		signal?: AbortSignal,
+	): Promise<GeocodeSuggestion[]> {
+		const response = await fetch(
+			`/api/geocode/montreal?q=${encodeURIComponent(query)}&suggest=1&limit=${limit}&session=${encodeURIComponent(addressSessionToken)}`,
+			{ signal },
+		);
+		if (!response.ok) return [];
+		const payload = (await response.json()) as { results?: GeocodeSuggestion[] };
+		return payload.results ?? [];
+	}
+
+	async function selectUnresolvedAddressResult(result: ChromeSearchResult): Promise<void> {
+		const resolved = await fetchGeocodedLocation(result.label);
+		if (!resolved) return;
+
+		topSearch = '';
+		addressSessionToken = createAddressSessionToken();
+		void goto(
+			localizeHref(
+				chromeSearchHref(
+					{
+						kind: 'address',
+						id: `${resolved.lat},${resolved.lon}`,
+						label: resolved.label,
+						lat: resolved.lat,
+						lon: resolved.lon,
+						precision: resolved.precision,
+					},
+					$page.url.searchParams,
+				),
+				locale,
+			),
+			{ noScroll: true },
+		);
+	}
+
+	async function fetchGeocodedLocation(query: string): Promise<GeocodedLocation | null> {
+		const response = await fetch(`/api/geocode/montreal?q=${encodeURIComponent(query)}`);
+		if (!response.ok) return null;
+		return (await response.json()) as GeocodedLocation;
+	}
+
+	function hasResultCoordinates(result: ChromeSearchResult): boolean {
+		return typeof result.lat === 'number' && typeof result.lon === 'number';
+	}
+
+	function createAddressSessionToken(): string {
+		return globalThis.crypto?.randomUUID?.() ?? `chrome-${Date.now()}-${Math.random()}`;
+	}
 </script>
 
-<AppShell {locale} url={$page.url}>
+<svelte:head>
+	<title>{locale === 'fr' ? 'Transit · carte STM en direct' : 'Transit · live STM map'}</title>
+	<meta
+		name="description"
+		content={locale === 'fr'
+			? 'Carte en direct des bus, arrêts, lignes et alertes STM à Montréal.'
+			: 'Live STM map for Montreal buses, stops, routes, and alerts.'}
+	/>
+</svelte:head>
+
+<AppShell
+	{locale}
+	url={$page.url}
+	bind:search={topSearch}
+	searchResults={topSearchResults}
+	onsearch={submitSearch}
+	onresultselect={selectSearchResult}
+>
 	{#snippet main()}
 		<!-- Skip-link target. The page tree (or the error edge state) renders here;
 		     each shell zone scrolls internally, so this wrapper owns the scroll. -->

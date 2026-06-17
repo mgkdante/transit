@@ -16,6 +16,7 @@
 -->
 <script lang="ts">
 	import type { Snippet } from 'svelte';
+	import ArrowLeftIcon from '@lucide/svelte/icons/arrow-left';
 	import { cn } from '$lib/utils';
 	import { type Locale, DEFAULT_LOCALE, getLocale } from '$lib/i18n';
 	import * as Sheet from '$lib/components/ui/sheet';
@@ -30,6 +31,10 @@
 		title?: string;
 		/** A stable key for the active surface; re-keys the body on swap. */
 		surfaceKey?: string;
+		/** Whether the active detail surface has a previous item to return to. */
+		canGoBack?: boolean;
+		/** Fired when the back control is activated. */
+		onback?: () => void;
 		/** The detail body — the swapped surface content. */
 		children?: Snippet;
 		/** Sticky footer slot — primary actions / provenance, pinned to the bottom. */
@@ -42,6 +47,8 @@
 		locale: localeProp,
 		title,
 		surfaceKey = 'empty',
+		canGoBack = false,
+		onback,
 		children,
 		footer,
 		class: className,
@@ -54,6 +61,7 @@
 	const emptyLabel = $derived(
 		locale === 'fr' ? 'Sélectionnez un élément' : 'Select something to inspect',
 	);
+	const backAria = $derived(locale === 'fr' ? 'Retour' : 'Back');
 	const sheetAria = $derived(locale === 'fr' ? 'Détails de la sélection' : 'Selection details');
 </script>
 
@@ -71,9 +79,22 @@
 				aria-hidden="true"
 				data-slot="bottom-sheet-grabber"
 			></span>
-			<Sheet.Title>
-				<SectionLabel text={title ?? defaultTitle} variant="station" />
-			</Sheet.Title>
+			<div class="flex min-w-0 items-center gap-2">
+				{#if canGoBack}
+					<button
+						type="button"
+						class="tap-press -ml-1.5 inline-flex size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+						aria-label={backAria}
+						onclick={() => onback?.()}
+						data-slot="bottom-sheet-back"
+					>
+						<ArrowLeftIcon size={15} strokeWidth={2.3} aria-hidden="true" />
+					</button>
+				{/if}
+				<Sheet.Title class="min-w-0 flex-1">
+					<SectionLabel text={title ?? defaultTitle} variant="station" />
+				</Sheet.Title>
+			</div>
 		</Sheet.Header>
 
 		<!-- Body — keyed on the active surface so swaps re-enter cleanly. -->

@@ -12,7 +12,9 @@
   Tokens, no hex; --primary stays interactive-only.
 -->
 <script lang="ts">
-	import { getLocale } from '$lib/i18n';
+	import { getLocale, localizeHref } from '$lib/i18n';
+	import { routeFor } from '$lib/nav';
+	import { emptyFilterState, toSearchString } from '$lib/filters';
 	import { getRoutesIndex } from '$lib/v1';
 	import type { RouteIndexEntry } from '$lib/v1';
 	import { createResource } from '$lib/v1/resource.svelte';
@@ -53,6 +55,16 @@
 			(r) => r.short.toLowerCase().includes(q) || (r.long ?? '').toLowerCase().includes(q),
 		);
 	});
+
+	function routeMapSearch(id: string): string {
+		const state = emptyFilterState();
+		state.routes.add(id);
+		return toSearchString(state);
+	}
+
+	function routeMapHref(id: string): string {
+		return localizeHref(routeFor({ kind: 'map', search: routeMapSearch(id) }), locale);
+	}
 </script>
 
 <Surface width="bleed" pad="hub" class="lines-index">
@@ -76,13 +88,24 @@
 	<ResourceBoundary resource={routes} lang={locale} isEmpty={(d) => d.routes.length === 0}>
 		<EntityList items={visible} key={(r) => r.id}>
 			{#snippet row(r)}
-				<EntityRow
-					target={{ kind: 'line', id: r.id }}
-					{locale}
-					glyph={glyphFor(r.type)}
-					title={r.short}
-					subtitle={r.long ?? undefined}
-				/>
+				<div class="line-result">
+					<EntityRow
+						target={{ kind: 'line', id: r.id }}
+						{locale}
+						glyph={glyphFor(r.type)}
+						title={r.short}
+						subtitle={r.long ?? undefined}
+						class="line-result-main"
+					/>
+					<a
+						href={routeMapHref(r.id)}
+						class="line-map-link"
+						aria-label={t.viewRouteOnMap(r.short)}
+						data-sveltekit-preload-data="hover"
+					>
+						{t.mapAction}
+					</a>
+				</div>
 			{/snippet}
 		</EntityList>
 	</ResourceBoundary>
@@ -113,9 +136,47 @@
 		outline: none;
 		border-color: var(--primary);
 	}
+	.line-result {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr) auto;
+		align-items: center;
+		gap: 0.5rem;
+	}
+	.line-result :global(.line-result-main) {
+		min-width: 0;
+	}
+	.line-map-link {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		min-height: 2rem;
+		margin-right: 0.5rem;
+		padding: 0.25rem 0.65rem;
+		font-family: var(--font-mono);
+		font-size: var(--text-caption);
+		color: var(--primary);
+		text-decoration: none;
+		background: color-mix(in srgb, var(--primary) 8%, transparent);
+		border: 1px solid color-mix(in srgb, var(--primary) 28%, var(--border) 72%);
+		border-radius: var(--radius-pill);
+		transition:
+			color 150ms ease,
+			background-color 150ms ease,
+			border-color 150ms ease;
+	}
+	.line-map-link:hover {
+		color: var(--foreground);
+		background: color-mix(in srgb, var(--primary) 16%, transparent);
+		border-color: color-mix(in srgb, var(--primary) 45%, var(--border) 55%);
+	}
+	.line-map-link:focus-visible {
+		outline: 2px solid var(--ring);
+		outline-offset: 2px;
+	}
 
 	@media (prefers-reduced-motion: reduce) {
-		.lines-filter-input {
+		.lines-filter-input,
+		.line-map-link {
 			transition: none;
 		}
 	}

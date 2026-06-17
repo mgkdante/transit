@@ -4,9 +4,8 @@
 
   Structure: an optional header row, a scrolling body (the swapped detail), and
   a STICKY footer slot pinned to the bottom (for the surface's primary actions /
-  provenance line). The whole dock can collapse to nothing when `open` is false
-  — the shell hides it from layout entirely on close so the MapStage reclaims
-  the width.
+  provenance line). Close clears the selected surface; collapse keeps the
+  selection alive and narrows the dock into a slim rail.
 
   "swap-volet" = the body is keyed on the active surface so each swap re-enters
   cleanly (a subtle slide-in, reduced-motion-guarded). No data is wired in 9.2;
@@ -14,10 +13,14 @@
 
   Adapted from the yesid.dev panel/aside chrome idioms — re-themed to transit
   tokens, gsap/lenis stripped. Surfaces SOLID (bg-card). a11y: complementary
-  landmark, labelled region, close control is icon-only with an aria-label.
+  landmark, labelled region, icon-only controls have aria-labels.
 -->
 <script lang="ts">
 	import type { Snippet } from 'svelte';
+	import ArrowLeftIcon from '@lucide/svelte/icons/arrow-left';
+	import PanelRightCloseIcon from '@lucide/svelte/icons/panel-right-close';
+	import PanelRightOpenIcon from '@lucide/svelte/icons/panel-right-open';
+	import XIcon from '@lucide/svelte/icons/x';
 	import { cn } from '$lib/utils';
 	import { type Locale, DEFAULT_LOCALE, getLocale } from '$lib/i18n';
 	import { ScrollArea } from '$lib/components/ui/scroll-area';
@@ -35,12 +38,22 @@
 		surfaceKey?: string;
 		/** Whether a close control is shown in the header. */
 		dismissible?: boolean;
+		/** Whether the active detail surface has a previous item to return to. */
+		canGoBack?: boolean;
+		/** Fired when the back control is activated. */
+		onback?: () => void;
 		/** Fired when the close control is activated. */
 		onclose?: () => void;
 		/** The detail body — the swapped surface content. */
 		children?: Snippet;
 		/** Sticky footer slot — primary actions / provenance, pinned to the bottom. */
 		footer?: Snippet;
+		/** Fill a parent resizable pane instead of owning a fixed pixel width. */
+		resizable?: boolean;
+		/** Controlled collapsed state for parent-owned resizable panes. */
+		collapsed?: boolean;
+		/** Fired when the collapse/expand control is activated. */
+		ontogglecollapse?: () => void;
 		class?: string;
 	}
 
@@ -49,9 +62,14 @@
 		title,
 		surfaceKey = 'empty',
 		dismissible = true,
+		canGoBack = false,
+		onback,
 		onclose,
 		children,
 		footer,
+		resizable = false,
+		collapsed = $bindable(false),
+		ontogglecollapse,
 		class: className,
 	}: RightPanelProps = $props();
 
@@ -62,21 +80,66 @@
 	const emptyLabel = $derived(
 		locale === 'fr' ? 'Sélectionnez un élément' : 'Select something to inspect',
 	);
+	const backAria = $derived(locale === 'fr' ? 'Retour' : 'Back');
 	const closeAria = $derived(locale === 'fr' ? 'Fermer le volet' : 'Close panel');
+	const collapseAria = $derived(locale === 'fr' ? 'Réduire le volet' : 'Collapse panel');
+	const expandAria = $derived(locale === 'fr' ? 'Ouvrir le volet' : 'Expand panel');
 	const panelAria = $derived(locale === 'fr' ? 'Détails de la sélection' : 'Selection details');
+
+	function toggleCollapsed(): void {
+		if (ontogglecollapse) {
+			ontogglecollapse();
+			return;
+		}
+		collapsed = !collapsed;
+	}
 </script>
 
 <aside
-	class={cn('flex h-full w-[360px] shrink-0 flex-col border-l border-border bg-card', className)}
+	class={cn('right-panel flex h-full shrink-0 flex-col border-l border-border bg-card', className)}
 	aria-label={panelAria}
 	data-slot="right-panel"
+	data-open={collapsed ? 'false' : 'true'}
+	data-resizable={resizable ? 'true' : undefined}
 >
 	<!-- Header row -->
 	<div
-		class="flex h-12 shrink-0 items-center justify-between gap-2 border-b border-border-subtle px-4"
+		class="flex h-12 shrink-0 items-center gap-2 border-b border-border-subtle px-4"
 	>
-		<SectionLabel text={title ?? defaultTitle} variant="station" />
-		{#if dismissible}
+		<button
+			type="button"
+			class="tap-press -ml-1.5 inline-flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+			aria-label={collapsed ? expandAria : collapseAria}
+			aria-expanded={!collapsed}
+			onclick={toggleCollapsed}
+			data-slot="right-panel-toggle"
+		>
+			{#if collapsed}
+				<PanelRightOpenIcon size={15} strokeWidth={2.3} aria-hidden="true" />
+			{:else}
+				<PanelRightCloseIcon size={15} strokeWidth={2.3} aria-hidden="true" />
+			{/if}
+		</button>
+
+		{#if canGoBack && !collapsed}
+			<button
+				type="button"
+				class="tap-press inline-flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+				aria-label={backAria}
+				onclick={() => onback?.()}
+				data-slot="right-panel-back"
+			>
+				<ArrowLeftIcon size={14} strokeWidth={2.3} aria-hidden="true" />
+			</button>
+		{/if}
+
+		{#if !collapsed}
+			<div class="min-w-0 flex-1">
+				<SectionLabel text={title ?? defaultTitle} variant="station" />
+			</div>
+		{/if}
+
+		{#if dismissible && !collapsed}
 			<button
 				type="button"
 				class="tap-press -mr-1.5 inline-flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
@@ -84,47 +147,30 @@
 				onclick={() => onclose?.()}
 				data-slot="right-panel-close"
 			>
-				<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" fill="none">
-					<line
-						x1="4"
-						y1="4"
-						x2="12"
-						y2="12"
-						stroke="currentColor"
-						stroke-width="1.5"
-						stroke-linecap="round"
-					/>
-					<line
-						x1="12"
-						y1="4"
-						x2="4"
-						y2="12"
-						stroke="currentColor"
-						stroke-width="1.5"
-						stroke-linecap="round"
-					/>
-				</svg>
+				<XIcon size={14} strokeWidth={2.3} aria-hidden="true" />
 			</button>
 		{/if}
 	</div>
 
 	<!-- Swap-volet body — keyed so each surface swap re-enters with a slide-in. -->
-	<ScrollArea class="min-h-0 flex-1" data-slot="right-panel-body">
-		{#key surfaceKey}
-			<div class="swap-volet p-4">
-				{#if children}
-					{@render children()}
-				{:else}
-					<p class="px-1 py-8 text-center text-caption text-muted-foreground">
-						{emptyLabel}
-					</p>
-				{/if}
-			</div>
-		{/key}
-	</ScrollArea>
+	{#if !collapsed}
+		<ScrollArea class="min-h-0 flex-1" data-slot="right-panel-body">
+			{#key surfaceKey}
+				<div class="swap-volet p-4">
+					{#if children}
+						{@render children()}
+					{:else}
+						<p class="px-1 py-8 text-center text-caption text-muted-foreground">
+							{emptyLabel}
+						</p>
+					{/if}
+				</div>
+			{/key}
+		</ScrollArea>
+	{/if}
 
 	<!-- Sticky footer — pinned to the bottom for actions / provenance. -->
-	{#if footer}
+	{#if footer && !collapsed}
 		<div
 			class="shrink-0 border-t border-border-subtle bg-card px-4 py-3"
 			data-slot="right-panel-footer"
@@ -135,6 +181,22 @@
 </aside>
 
 <style>
+	.right-panel {
+		width: 360px;
+		overflow: hidden;
+		transition: width 180ms var(--ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+	}
+
+	.right-panel[data-open='false'] {
+		width: 3.7rem;
+	}
+
+	.right-panel[data-resizable='true'],
+	.right-panel[data-resizable='true'][data-open='false'] {
+		width: 100%;
+		min-width: 0;
+	}
+
 	/* Swap-volet entrance — a subtle slide-in on each keyed surface change. */
 	.swap-volet {
 		animation: volet-in 240ms var(--ease-out, cubic-bezier(0.16, 1, 0.3, 1)) both;
@@ -152,6 +214,10 @@
 	}
 
 	@media (prefers-reduced-motion: reduce) {
+		.right-panel {
+			transition: none;
+		}
+
 		.swap-volet {
 			animation: none;
 		}

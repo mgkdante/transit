@@ -3,10 +3,11 @@
 
   DESKTOP (≥1024px, `layout.isDesktop`):
     ┌──────────────────────── TopBar (h60) ────────────────────────┐
-    │ LeftRail (w300) │      MapStage (flex)      │ RightPanel(w360)│
+    │           MapStage (fixed row, full bleed under chrome)       │
+    │ LeftRail overlays left; detail panels overlay right.          │
     └──────────────────────────────────────────────────────────────┘
-    LeftRail + RightPanel are fixed-width; MapStage flexes to fill. The
-    RightPanel is shown only when `detailOpen` — on close the stage reclaims it.
+    Rails do not resize the MapStage, so MapLibre does not visually drift when
+    a rail is dragged, collapsed, or expanded.
 
   MOBILE (<1024px):
     TopBar + a full-bleed <main> (the map fills the viewport) + a BottomSheet
@@ -30,9 +31,12 @@
 -->
 <script lang="ts">
 	import type { Snippet } from 'svelte';
+	import type { PaneAPI } from 'paneforge';
 	import { cn } from '$lib/utils';
 	import { type Locale, DEFAULT_LOCALE, getLocale } from '$lib/i18n';
+	import type { ChromeSearchResult } from '$lib/search/chromeSearch';
 	import { layout } from '$lib/nav';
+	import { ResizablePaneGroup, ResizablePane, ResizableHandle } from '$lib/components/ui/resizable';
 	import TopBar from './TopBar.svelte';
 	import LeftRail from './LeftRail.svelte';
 	import RightPanel from './RightPanel.svelte';
@@ -49,6 +53,8 @@
 		search?: string;
 		/** Fired when the TopBar search is submitted. */
 		onsearch?: (value: string) => void;
+		searchResults?: readonly ChromeSearchResult[];
+		onresultselect?: (result: ChromeSearchResult) => void;
 		/** Fired when the TopBar alerts bell is activated. */
 		onalerts?: () => void;
 
@@ -82,6 +88,8 @@
 		alertCount = 0,
 		search = $bindable(''),
 		onsearch,
+		searchResults = [],
+		onresultselect,
 		onalerts,
 		detailOpen = $bindable(false),
 		detailTitle,
@@ -98,12 +106,47 @@
 	const ctxLocale = getLocale();
 	const locale = $derived<Locale>(localeProp ?? ctxLocale ?? DEFAULT_LOCALE);
 
+	const LEFT_RAIL_COLLAPSED_SIZE = 5;
+	const LEFT_RAIL_MIN_SIZE = 7;
+	const LEFT_RAIL_DEFAULT_SIZE = 16;
+	const LEFT_RAIL_COMPACT_THRESHOLD = 9;
+
 	// The single source of truth for the layout breakpoint (shared app-wide).
 	const isDesktop = $derived(layout.isDesktop);
+	let leftRailCollapsed = $state(false);
+	let leftRailSize = $state(LEFT_RAIL_DEFAULT_SIZE);
+	let leftRailPane = $state<PaneAPI | undefined>();
+	const leftRailOffset = $derived(`${leftRailSize}%`);
 
 	function closeDetail() {
 		detailOpen = false;
 		ondetailclose?.();
+	}
+
+	function syncLeftRailVisualState(size: number): void {
+		leftRailSize = size;
+		leftRailCollapsed = size <= LEFT_RAIL_COMPACT_THRESHOLD;
+	}
+
+	function onLeftRailCollapse(): void {
+		leftRailSize = LEFT_RAIL_COLLAPSED_SIZE;
+		leftRailCollapsed = true;
+	}
+
+	function onLeftRailExpand(): void {
+		syncLeftRailVisualState(leftRailPane?.getSize() ?? LEFT_RAIL_DEFAULT_SIZE);
+	}
+
+	function toggleLeftRailCollapsed(): void {
+		if (leftRailCollapsed) {
+			leftRailSize = LEFT_RAIL_DEFAULT_SIZE;
+			leftRailPane?.resize(LEFT_RAIL_DEFAULT_SIZE);
+			leftRailCollapsed = false;
+		} else {
+			leftRailSize = LEFT_RAIL_COLLAPSED_SIZE;
+			leftRailPane?.collapse();
+			leftRailCollapsed = true;
+		}
 	}
 </script>
 
@@ -112,33 +155,82 @@
 	data-slot="app-shell"
 >
 	<!-- TopBar spans the full width on every breakpoint. -->
-	<TopBar {locale} {url} {alertCount} bind:search {onsearch} {onalerts} />
+	<TopBar
+		{locale}
+		{url}
+		{alertCount}
+		bind:search
+		{onsearch}
+		{searchResults}
+		{onresultselect}
+		{onalerts}
+	/>
 
 	{#if isDesktop}
-		<!-- DESKTOP: 3-zone row. Rail + Detail fixed-width; stage flexes. -->
-		<div class="flex min-h-0 flex-1 overflow-hidden" data-slot="app-shell-row">
-			<LeftRail {locale} heading={railHeading}>
-				{#if rail}{@render rail()}{/if}
-			</LeftRail>
-
+		<!-- DESKTOP: stable map stage; rails overlay it so MapLibre never shifts. -->
+		<div class="app-shell-row min-h-0 flex-1 overflow-hidden" data-slot="app-shell-row">
 			<main
-				class="relative min-w-0 flex-1 overflow-hidden bg-surface-0"
+				class="app-shell-main relative min-w-0 flex-1 overflow-hidden bg-surface-0"
+				style={`--app-left-rail-offset: ${leftRailOffset};`}
 				aria-label={locale === 'fr' ? 'Carte du réseau' : 'Network map'}
 				data-slot="map-stage"
 			>
 				{#if main}{@render main()}{/if}
 			</main>
 
-			{#if detailOpen}
-				<RightPanel
-					{locale}
-					title={detailTitle}
-					{surfaceKey}
-					onclose={closeDetail}
-					footer={detailFooter}
+			<ResizablePaneGroup direction="horizontal" class="app-shell-rail-overlay">
+				<ResizablePane
+					bind:this={leftRailPane}
+					class="app-shell-left-rail-pane"
+					defaultSize={LEFT_RAIL_DEFAULT_SIZE}
+					minSize={LEFT_RAIL_MIN_SIZE}
+					maxSize={24}
+					collapsible
+					collapsedSize={LEFT_RAIL_COLLAPSED_SIZE}
+					onResize={(size) => syncLeftRailVisualState(size)}
+					onCollapse={onLeftRailCollapse}
+					onExpand={onLeftRailExpand}
 				>
-					{#if detail}{@render detail()}{/if}
-				</RightPanel>
+					{#if rail}
+						<LeftRail
+							{locale}
+							{url}
+							heading={railHeading}
+							collapsed={leftRailCollapsed}
+							ontogglecollapse={toggleLeftRailCollapsed}
+						>
+							{@render rail()}
+						</LeftRail>
+					{:else}
+						<LeftRail
+							{locale}
+							{url}
+							heading={railHeading}
+							collapsed={leftRailCollapsed}
+							ontogglecollapse={toggleLeftRailCollapsed}
+						/>
+					{/if}
+				</ResizablePane>
+
+				<ResizableHandle withHandle class="app-shell-resize-handle app-shell-rail-resize-handle" />
+
+				<ResizablePane defaultSize={84} minSize={0} class="app-shell-map-hit-through-pane">
+					<div class="app-shell-map-hit-through" aria-hidden="true"></div>
+				</ResizablePane>
+			</ResizablePaneGroup>
+
+			{#if detailOpen}
+				<div class="app-shell-detail-overlay">
+					<RightPanel
+						{locale}
+						title={detailTitle}
+						{surfaceKey}
+						onclose={closeDetail}
+						footer={detailFooter}
+					>
+						{#if detail}{@render detail()}{/if}
+					</RightPanel>
+				</div>
 			{/if}
 		</div>
 	{:else}
@@ -162,3 +254,67 @@
 		</BottomSheet>
 	{/if}
 </div>
+
+<style>
+	.app-shell-row {
+		position: relative;
+	}
+
+	.app-shell-main {
+		position: absolute;
+		inset: 0;
+	}
+
+	.app-shell-main:not(:has(:global(.map-hero))) {
+		padding-left: var(--app-left-rail-offset, 0px);
+	}
+
+	:global(.app-shell-rail-overlay) {
+		position: absolute;
+		inset: 0;
+		z-index: 30;
+		pointer-events: none;
+	}
+
+	:global(.app-shell-left-rail-pane),
+	:global(.app-shell-rail-resize-handle) {
+		pointer-events: auto;
+	}
+
+	:global(.app-shell-map-hit-through-pane) {
+		pointer-events: none;
+	}
+
+	.app-shell-map-hit-through {
+		width: 100%;
+		height: 100%;
+		pointer-events: none;
+	}
+
+	.app-shell-detail-overlay {
+		position: absolute;
+		inset-block: 0;
+		right: 0;
+		z-index: 32;
+		pointer-events: auto;
+	}
+
+	:global(.app-shell-resize-handle) {
+		width: 8px;
+		background: var(--border);
+		border-radius: var(--radius-sm);
+		transition: background var(--duration-fast, 120ms) var(--ease-default, ease);
+	}
+
+	:global(.app-shell-resize-handle:hover),
+	:global(.app-shell-resize-handle:focus-visible),
+	:global(.app-shell-resize-handle[data-active='pointer']) {
+		background: var(--primary);
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		:global(.app-shell-resize-handle) {
+			transition: none;
+		}
+	}
+</style>

@@ -32,7 +32,14 @@ import { getLocale, localizeHref } from '$lib/i18n';
  * `id`; `search`, `network-health`, and `home` are singletons. Matches the
  * SHARED nav contract exactly — other agents construct these.
  */
-export type SurfaceKind = 'vehicle' | 'stop' | 'line' | 'search' | 'network-health' | 'home';
+export type SurfaceKind =
+	| 'vehicle'
+	| 'stop'
+	| 'line'
+	| 'search'
+	| 'network-health'
+	| 'map'
+	| 'home';
 
 /**
  * A navigation intent: which surface, and (for id-bearing kinds) which entity.
@@ -42,16 +49,18 @@ export type SurfaceKind = 'vehicle' | 'stop' | 'line' | 'search' | 'network-heal
 export interface SurfaceTarget {
 	kind: SurfaceKind;
 	id?: string;
+	search?: string;
 }
 
 /** Canonical (unlocalized, EN) INDEX / singleton route root per surface kind. */
 const SURFACE_ROOT: Record<SurfaceKind, string> = {
 	home: '/',
 	'network-health': '/network',
+	map: '/map',
 	search: '/search',
 	line: '/lines',
 	stop: '/stops',
-	vehicle: '/vehicles',
+	vehicle: '/map',
 };
 
 /**
@@ -85,17 +94,29 @@ function isEntityKind(kind: SurfaceKind): boolean {
  */
 export function routeFor(target: SurfaceTarget): string {
 	const id = target.id?.trim();
+	const search = target.search?.replace(/^\?+/, '').trim();
+	const withSearch = (path: string): string => (search ? `${path}?${search}` : path);
+	if (target.kind === 'vehicle') {
+		if (!id) return withSearch(SURFACE_ROOT.vehicle);
+		const vehicleSearch = `vehicle=${encodeURIComponent(id)}`;
+		return `${SURFACE_ROOT.vehicle}?${search ? `${search}&${vehicleSearch}` : vehicleSearch}`;
+	}
 	if (isEntityKind(target.kind) && id) {
 		const detailRoot = ENTITY_DETAIL_ROOT[target.kind];
-		if (detailRoot) return `${detailRoot}/${encodeURIComponent(id)}`;
+		if (detailRoot) return withSearch(`${detailRoot}/${encodeURIComponent(id)}`);
 		// No detail route for this kind yet (vehicle) — fall back to the index root.
 	}
-	return SURFACE_ROOT[target.kind];
+	return withSearch(SURFACE_ROOT[target.kind]);
 }
 
 /** Value-equality for targets — used to avoid redundant panel swaps. */
 function sameTarget(a: SurfaceTarget | null, b: SurfaceTarget): boolean {
-	return a !== null && a.kind === b.kind && (a.id ?? '') === (b.id ?? '');
+	return (
+		a !== null &&
+		a.kind === b.kind &&
+		(a.id ?? '') === (b.id ?? '') &&
+		(a.search ?? '') === (b.search ?? '')
+	);
 }
 
 /**

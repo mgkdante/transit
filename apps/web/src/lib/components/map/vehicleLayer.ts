@@ -12,27 +12,29 @@
 
 import type { Map as MapLibreMap, GeoJSONSource, LayerSpecification } from 'maplibre-gl';
 import type { Vehicle } from '$lib/v1/schemas';
-import type { FilterState } from '$lib/filters';
+import type { EntityKind, FilterState } from '$lib/filters';
 import { bodyIconId, BUS_ICON, BUS_ICON_ND } from './vehicleSprites';
 
 export const VEHICLE_SOURCE = 'vehicles';
 export const VEHICLE_BODY_LAYER = 'vehicle-body';
 
-interface VehicleFeature {
+export interface VehicleFeature {
 	type: 'Feature';
-	geometry: { type: 'Point'; coordinates: [number, number] };
+	geometry: { type: 'Point'; coordinates: readonly [number, number] };
 	properties: {
 		id: string;
 		body: string;
 		bearing: number;
 		route: string;
+		selected: number;
+		hovered: number;
 		// 1 = visible (matches the filter, or no narrowing filter); 0 = hidden.
 		matched: number;
 	};
 }
-interface VehicleFC {
+export interface VehicleFC {
 	type: 'FeatureCollection';
-	features: VehicleFeature[];
+	features: readonly VehicleFeature[];
 }
 
 const EMPTY_FC: VehicleFC = { type: 'FeatureCollection', features: [] };
@@ -45,6 +47,12 @@ function activeStatus(f: FilterState): readonly string[] | null {
 function activeOccupancy(f: FilterState): readonly string[] | null {
 	return f.occupancy && f.occupancy.length > 0 ? f.occupancy : null;
 }
+function activeEntities(f: FilterState): readonly EntityKind[] | null {
+	return f.entities && f.entities.length > 0 ? f.entities : null;
+}
+function activeAlerts(f: FilterState): readonly string[] | null {
+	return f.alerts && f.alerts.length > 0 ? f.alerts : null;
+}
 
 /** The state dimension that repaints matches (status wins over crowding); null = default orange. */
 function colourDimension(f: FilterState): 'status' | 'occupancy' | null {
@@ -54,23 +62,38 @@ function colourDimension(f: FilterState): 'status' | 'occupancy' | null {
 }
 
 /** True when the vehicle satisfies EVERY active dimension (AND-combined). */
-function matchesFilter(v: Vehicle, f: FilterState): boolean {
+function matchesFilter(v: Vehicle, f: FilterState, alertVehicleIds: ReadonlySet<string>): boolean {
 	const as = activeStatus(f);
 	if (as && !as.includes(v.status)) return false;
 	const ao = activeOccupancy(f);
 	if (ao && !(v.occupancy != null && ao.includes(v.occupancy))) return false;
 	if (f.routes.size > 0 && !(v.route != null && f.routes.has(v.route))) return false;
+	if (f.stops.size > 0 && !(v.next_stop != null && f.stops.has(v.next_stop))) return false;
+	if (f.trips.size > 0 && !(v.trip != null && f.trips.has(v.trip))) return false;
+	if (f.vehicles.size > 0 && !f.vehicles.has(v.id)) return false;
+	const aa = activeAlerts(f);
+	if (aa && !alertVehicleIds.has(v.id)) return false;
+	const ae = activeEntities(f);
+	if (ae) {
+		const kind: EntityKind = v.bearing != null ? 'bus_direction' : 'bus_no_direction';
+		if (!ae.includes(kind)) return false;
+	}
 	return true;
 }
 
 /** Body icon id + match flag for a vehicle. Matched + a colour dim → the state-
  * coloured shape; otherwise the default orange shape (kite / square by heading). */
-function iconFor(v: Vehicle, f: FilterState, dim: 'status' | 'occupancy' | null): {
+function iconFor(
+	v: Vehicle,
+	f: FilterState,
+	dim: 'status' | 'occupancy' | null,
+	alertVehicleIds: ReadonlySet<string>,
+): {
 	body: string;
 	matched: number;
 } {
 	const directional = v.bearing != null;
-	const matched = matchesFilter(v, f);
+	const matched = matchesFilter(v, f, alertVehicleIds);
 	if (matched && dim === 'status') {
 		return { body: bodyIconId('status', v.status, directional), matched: 1 };
 	}
@@ -81,16 +104,30 @@ function iconFor(v: Vehicle, f: FilterState, dim: 'status' | 'occupancy' | null)
 }
 
 /** Build the GeoJSON FeatureCollection for the current vehicles under the filter. */
-export function toVehicleFeatures(vehicles: readonly Vehicle[], filter: FilterState): VehicleFC {
+export function toVehicleFeatures(
+	vehicles: readonly Vehicle[],
+	filter: FilterState,
+	alertVehicleIds: ReadonlySet<string> = new Set(),
+	selectedVehicleId: string | null = null,
+	hoveredVehicleId: string | null = null,
+): VehicleFC {
 	const dim = colourDimension(filter);
 	return {
 		type: 'FeatureCollection',
 		features: vehicles.map((v) => {
-			const { body, matched } = iconFor(v, filter, dim);
+			const { body, matched } = iconFor(v, filter, dim, alertVehicleIds);
 			return {
 				type: 'Feature',
 				geometry: { type: 'Point', coordinates: [v.lon, v.lat] },
-				properties: { id: v.id, body, bearing: v.bearing ?? 0, route: v.route ?? '', matched },
+				properties: {
+					id: v.id,
+					body,
+					bearing: v.bearing ?? 0,
+					route: v.route ?? '',
+					selected: selectedVehicleId === v.id || filter.vehicles.has(v.id) ? 1 : 0,
+					hovered: hoveredVehicleId === v.id ? 1 : 0,
+					matched,
+				},
 			};
 		}),
 	};
@@ -102,7 +139,15 @@ export function addVehicleSource(map: MapLibreMap): void {
 	map.addSource(VEHICLE_SOURCE, { type: 'geojson', data: EMPTY_FC, promoteId: 'id' });
 }
 
-const ICON_SIZE = ['interpolate', ['linear'], ['zoom'], 11, 0.55, 15, 1];
+const ICON_SIZE = [
+	'interpolate',
+	['linear'],
+	['zoom'],
+	11,
+	['case', ['==', ['get', 'hovered'], 1], 1.05, ['==', ['get', 'selected'], 1], 0.78, 0.55],
+	15,
+	['case', ['==', ['get', 'hovered'], 1], 1.95, ['==', ['get', 'selected'], 1], 1.42, 1],
+];
 
 /** Add the vehicle body symbol layer. Non-matched features are filtered OUT
  * (they disappear); opacity carries only the stale dim. Idempotent. */
@@ -129,10 +174,23 @@ export function addVehicleLayers(map: MapLibreMap): void {
 }
 
 /** Replace the rendered vehicles, repainted/filtered under the active filter. */
-export function setVehicles(map: MapLibreMap, vehicles: readonly Vehicle[], filter: FilterState): void {
+export function setVehicles(
+	map: MapLibreMap,
+	vehicles: readonly Vehicle[],
+	filter: FilterState,
+	alertVehicleIds?: ReadonlySet<string>,
+	selectedVehicleId?: string | null,
+	hoveredVehicleId?: string | null,
+): void {
 	const src = map.getSource(VEHICLE_SOURCE) as GeoJSONSource | undefined;
 	src?.setData(
-		toVehicleFeatures(vehicles, filter) as unknown as Parameters<GeoJSONSource['setData']>[0],
+		toVehicleFeatures(
+			vehicles,
+			filter,
+			alertVehicleIds,
+			selectedVehicleId,
+			hoveredVehicleId,
+		) as unknown as Parameters<GeoJSONSource['setData']>[0],
 	);
 }
 

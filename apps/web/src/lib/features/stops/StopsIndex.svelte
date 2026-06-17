@@ -12,7 +12,9 @@
   stops.copy.ts. Tokens only, no hex; --primary stays interactive-only.
 -->
 <script lang="ts">
-	import { getLocale, type Locale } from '$lib/i18n';
+	import { getLocale, localizeHref, type Locale } from '$lib/i18n';
+	import { emptyFilterState, toSearchString } from '$lib/filters';
+	import { routeFor } from '$lib/nav';
 	import { getStopsIndex, type StopIndexEntry } from '$lib/v1';
 	import { createResource } from '$lib/v1/resource.svelte';
 	import { ResourceBoundary, SurfaceHeader, EntityList, EntityRow } from '$lib/components/surface';
@@ -45,6 +47,16 @@
 	});
 
 	const overflow = $derived(Math.max(0, matches.length - CAP));
+
+	function stopMapSearch(id: string): string {
+		const state = emptyFilterState();
+		state.stops.add(id);
+		return toSearchString(state);
+	}
+
+	function stopMapHref(id: string): string {
+		return localizeHref(routeFor({ kind: 'map', search: stopMapSearch(id) }), locale);
+	}
 </script>
 
 <Surface width="bleed" class="stops-index">
@@ -77,13 +89,24 @@
 				truncatedLabel={overflow > 0 ? t.more(overflow) : undefined}
 			>
 				{#snippet row(stop)}
-					<EntityRow
-						target={{ kind: 'stop', id: stop.id }}
-						{locale}
-						glyph="■"
-						title={stop.name}
-						subtitle={stop.code ?? stop.id}
-					/>
+					<div class="stop-result">
+						<EntityRow
+							target={{ kind: 'stop', id: stop.id }}
+							{locale}
+							glyph="■"
+							title={stop.name}
+							subtitle={stop.code ?? stop.id}
+							class="stop-result-main"
+						/>
+						<a
+							href={stopMapHref(stop.id)}
+							class="stop-map-link"
+							aria-label={t.viewStopOnMap(stop.code ?? stop.id)}
+							data-sveltekit-preload-data="hover"
+						>
+							{t.mapAction}
+						</a>
+					</div>
 				{/snippet}
 			</EntityList>
 		{/if}
@@ -119,9 +142,47 @@
 		line-height: 1.5;
 		padding: 0.5rem 0.875rem;
 	}
+	.stop-result {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr) auto;
+		align-items: center;
+		gap: 0.5rem;
+	}
+	.stop-result :global(.stop-result-main) {
+		min-width: 0;
+	}
+	.stop-map-link {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		min-height: 2rem;
+		margin-right: 0.5rem;
+		padding: 0.25rem 0.65rem;
+		font-family: var(--font-mono);
+		font-size: var(--text-caption);
+		color: var(--primary);
+		text-decoration: none;
+		background: color-mix(in srgb, var(--primary) 8%, transparent);
+		border: 1px solid color-mix(in srgb, var(--primary) 28%, var(--border) 72%);
+		border-radius: var(--radius-pill);
+		transition:
+			color 150ms ease,
+			background-color 150ms ease,
+			border-color 150ms ease;
+	}
+	.stop-map-link:hover {
+		color: var(--foreground);
+		background: color-mix(in srgb, var(--primary) 16%, transparent);
+		border-color: color-mix(in srgb, var(--primary) 45%, var(--border) 55%);
+	}
+	.stop-map-link:focus-visible {
+		outline: 2px solid var(--ring);
+		outline-offset: 2px;
+	}
 
 	@media (prefers-reduced-motion: reduce) {
-		.stops-search-input {
+		.stops-search-input,
+		.stop-map-link {
 			transition: none;
 		}
 	}

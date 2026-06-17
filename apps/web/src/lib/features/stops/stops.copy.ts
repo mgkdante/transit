@@ -26,11 +26,17 @@ export interface StopsIndexCopy {
 	readonly noMatches: string;
 	/** "+N more" note builder when the filtered set exceeds the cap. */
 	readonly more: (n: number) => string;
+	/** Compact action linking one stop into the live map. */
+	readonly mapAction: string;
+	readonly viewStopOnMap: (stop: string) => string;
 }
 
 export interface StopDetailCopy {
 	/** Station-voice kicker (EntityDetail). */
 	readonly kicker: string;
+	/** Live-map drilldown action. */
+	readonly viewOnMap: string;
+	readonly viewStopOnMap: (stop: string) => string;
 	/** Tab labels, keyed by tab key. */
 	readonly tabs: {
 		readonly next: string;
@@ -85,6 +91,8 @@ export const indexCopy: Record<Locale, StopsIndexCopy> = {
 		searchPrompt: 'Commencez à taper pour filtrer les arrêts.',
 		noMatches: 'Aucun arrêt ne correspond à cette recherche.',
 		more: (n) => `+${n} autres arrêts — affinez la recherche`,
+		mapAction: 'Carte',
+		viewStopOnMap: (stop) => `Voir l’arrêt ${stop} sur la carte`,
 	},
 	en: {
 		kicker: 'STOPS · CATALOGUE',
@@ -96,12 +104,16 @@ export const indexCopy: Record<Locale, StopsIndexCopy> = {
 		searchPrompt: 'Start typing to filter stops.',
 		noMatches: 'No stops match this search.',
 		more: (n) => `+${n} more stops — refine the search`,
+		mapAction: 'Map',
+		viewStopOnMap: (stop) => `View stop ${stop} on map`,
 	},
 };
 
 export const detailCopy: Record<Locale, StopDetailCopy> = {
 	fr: {
 		kicker: 'ARRÊT',
+		viewOnMap: 'Voir sur la carte',
+		viewStopOnMap: (stop) => `Voir l’arrêt ${stop} sur la carte`,
 		tabs: { next: 'Prochains', schedule: 'Horaire', info: 'Info', reliability: 'Fiabilité' },
 		next: {
 			heading: 'Prochains passages',
@@ -131,6 +143,8 @@ export const detailCopy: Record<Locale, StopDetailCopy> = {
 	},
 	en: {
 		kicker: 'STOP',
+		viewOnMap: 'View on map',
+		viewStopOnMap: (stop) => `View stop ${stop} on map`,
 		tabs: { next: 'Next', schedule: 'Schedule', info: 'Info', reliability: 'Reliability' },
 		next: {
 			heading: 'Next departures',

@@ -19,7 +19,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { browser } from '$app/environment';
-	import { cn, formatRelativeSeconds } from '$lib/utils';
+	import { ageSeconds as dataAgeSeconds, cn, formatRelativeSeconds } from '$lib/utils';
 	import { dataRefresh } from '$lib/stores';
 	import type { Locale } from '$lib/i18n';
 
@@ -42,11 +42,15 @@
 		return () => clearInterval(id);
 	});
 
-	const ageSeconds = $derived(
-		dataRefresh.lastRefreshedMs != null
+	const ageSeconds = $derived.by<number | null>(() => {
+		if (dataRefresh.dataGeneratedUtc) {
+			const age = dataAgeSeconds(dataRefresh.dataGeneratedUtc, nowMs);
+			return Number.isNaN(age) ? null : Math.max(0, age);
+		}
+		return dataRefresh.lastRefreshedMs != null
 			? Math.max(0, Math.round((nowMs - dataRefresh.lastRefreshedMs) / 1000))
-			: null,
-	);
+			: null;
+	});
 	const relative = $derived(ageSeconds != null ? formatRelativeSeconds(ageSeconds, locale) : null);
 
 	const updatedWord = $derived(locale === 'fr' ? 'à jour' : 'updated');

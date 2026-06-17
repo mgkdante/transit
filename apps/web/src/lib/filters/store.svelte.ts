@@ -20,6 +20,8 @@ import type { StatusCode, OccupancyCode, Grain } from '$lib/v1/schemas';
 import {
 	type FilterState,
 	type IdSetKey,
+	type EntityKind,
+	type AlertEntityKind,
 	cloneFilterState,
 	emptyFilterState,
 	isEmptyFilterState,
@@ -39,16 +41,20 @@ export type Chip =
 	| { kind: 'route'; value: string }
 	| { kind: 'stop'; value: string }
 	| { kind: 'trip'; value: string }
+	| { kind: 'vehicle'; value: string }
 	| { kind: 'status'; value: StatusCode }
 	| { kind: 'occupancy'; value: OccupancyCode }
+	| { kind: 'entity'; value: EntityKind }
+	| { kind: 'alert'; value: AlertEntityKind }
 	| { kind: 'grain' }
 	| { kind: 'window' };
 
 /** The id-set chip kinds, mapped to their FilterState fields. */
-const CHIP_TO_SET: Record<'route' | 'stop' | 'trip', IdSetKey> = {
+const CHIP_TO_SET: Record<'route' | 'stop' | 'trip' | 'vehicle', IdSetKey> = {
 	route: 'routes',
 	stop: 'stops',
 	trip: 'trips',
+	vehicle: 'vehicles',
 };
 
 /** The reactive store returned by {@link createFilterStore}. */
@@ -58,8 +64,11 @@ export interface FilterStore {
 	readonly routes: ReadonlySet<string>;
 	readonly stops: ReadonlySet<string>;
 	readonly trips: ReadonlySet<string>;
+	readonly vehicles: ReadonlySet<string>;
 	readonly status: readonly StatusCode[];
 	readonly occupancy: readonly OccupancyCode[];
+	readonly entities: readonly EntityKind[];
+	readonly alerts: readonly AlertEntityKind[];
 	readonly grain: Grain | undefined;
 	readonly window: string | undefined;
 	/** True when no filter of any kind is applied. */
@@ -73,11 +82,17 @@ export interface FilterStore {
 	removeStop(id: string): void;
 	addTrip(id: string): void;
 	removeTrip(id: string): void;
+	addVehicle(id: string): void;
+	removeVehicle(id: string): void;
 
 	toggleStatus(code: StatusCode): void;
 	setStatus(codes: readonly StatusCode[]): void;
 	toggleOccupancy(code: OccupancyCode): void;
 	setOccupancy(codes: readonly OccupancyCode[]): void;
+	toggleEntity(kind: EntityKind): void;
+	setEntities(kinds: readonly EntityKind[]): void;
+	toggleAlert(kind: AlertEntityKind): void;
+	setAlerts(kinds: readonly AlertEntityKind[]): void;
 
 	setGrain(grain: Grain | undefined): void;
 	setWindow(window: string | undefined): void;
@@ -156,11 +171,20 @@ export function createFilterStore(init: FilterState, pushUrl: PushUrl = () => {}
 		get trips() {
 			return current.trips;
 		},
+		get vehicles() {
+			return current.vehicles;
+		},
 		get status() {
 			return current.status ?? [];
 		},
 		get occupancy() {
 			return current.occupancy ?? [];
+		},
+		get entities() {
+			return current.entities ?? [];
+		},
+		get alerts() {
+			return current.alerts ?? [];
 		},
 		get grain() {
 			return current.grain;
@@ -176,8 +200,11 @@ export function createFilterStore(init: FilterState, pushUrl: PushUrl = () => {}
 			for (const value of current.routes) out.push({ kind: 'route', value });
 			for (const value of current.stops) out.push({ kind: 'stop', value });
 			for (const value of current.trips) out.push({ kind: 'trip', value });
+			for (const value of current.vehicles) out.push({ kind: 'vehicle', value });
 			for (const value of current.status ?? []) out.push({ kind: 'status', value });
 			for (const value of current.occupancy ?? []) out.push({ kind: 'occupancy', value });
+			for (const value of current.entities ?? []) out.push({ kind: 'entity', value });
+			for (const value of current.alerts ?? []) out.push({ kind: 'alert', value });
 			if (current.grain !== undefined) out.push({ kind: 'grain' });
 			if (current.window !== undefined && current.window !== '') out.push({ kind: 'window' });
 			return out;
@@ -200,6 +227,12 @@ export function createFilterStore(init: FilterState, pushUrl: PushUrl = () => {}
 		},
 		removeTrip(id) {
 			removeId('trips', id);
+		},
+		addVehicle(id) {
+			addId('vehicles', id);
+		},
+		removeVehicle(id) {
+			removeId('vehicles', id);
 		},
 
 		toggleStatus(code) {
@@ -234,6 +267,38 @@ export function createFilterStore(init: FilterState, pushUrl: PushUrl = () => {}
 				else delete d.occupancy;
 			});
 		},
+		toggleEntity(kind) {
+			toggleEnum<EntityKind>(
+				(d) => d.entities,
+				(d, next) => {
+					if (next) d.entities = next;
+					else delete d.entities;
+				},
+				kind,
+			);
+		},
+		setEntities(kinds) {
+			mutate((d) => {
+				if (kinds.length > 0) d.entities = [...kinds];
+				else delete d.entities;
+			});
+		},
+		toggleAlert(kind) {
+			toggleEnum<AlertEntityKind>(
+				(d) => d.alerts,
+				(d, next) => {
+					if (next) d.alerts = next;
+					else delete d.alerts;
+				},
+				kind,
+			);
+		},
+		setAlerts(kinds) {
+			mutate((d) => {
+				if (kinds.length > 0) d.alerts = [...kinds];
+				else delete d.alerts;
+			});
+		},
 
 		setGrain(grain) {
 			mutate((d) => {
@@ -254,6 +319,7 @@ export function createFilterStore(init: FilterState, pushUrl: PushUrl = () => {}
 				case 'route':
 				case 'stop':
 				case 'trip':
+				case 'vehicle':
 					removeId(CHIP_TO_SET[chip.kind], chip.value);
 					break;
 				case 'status':
@@ -268,6 +334,20 @@ export function createFilterStore(init: FilterState, pushUrl: PushUrl = () => {}
 						const next = (d.occupancy ?? []).filter((c) => c !== chip.value);
 						if (next.length > 0) d.occupancy = next;
 						else delete d.occupancy;
+					});
+					break;
+				case 'entity':
+					mutate((d) => {
+						const next = (d.entities ?? []).filter((e) => e !== chip.value);
+						if (next.length > 0) d.entities = next;
+						else delete d.entities;
+					});
+					break;
+				case 'alert':
+					mutate((d) => {
+						const next = (d.alerts ?? []).filter((a) => a !== chip.value);
+						if (next.length > 0) d.alerts = next;
+						else delete d.alerts;
 					});
 					break;
 				case 'grain':

@@ -32,6 +32,7 @@ from transit_ops.snapshots.builders._helpers import (
     _public_impact_score,
     _route_sort_key,
     _scheduled_headway_by_shift,
+    _sane_en,
     _severe_pct,
     _severity_code,
 )
@@ -809,7 +810,7 @@ def build_alert_history(
                 severity=_severity_code(r["severity"]),
                 # slice-9.1.1s: header + MAX'd EN header (grouping unchanged).
                 header_text=r["alert_header_text"],
-                header_text_en=r["header_text_en"],
+                header_text_en=_sane_en(r["header_text_en"]),
                 routes=_natural_sort_dedup(raw_routes),
                 stops=_natural_sort_dedup(raw_stops),
                 start_utc=_opt_iso(start),

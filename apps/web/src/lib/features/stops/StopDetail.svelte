@@ -20,7 +20,8 @@
 -->
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { getLocale, type Locale } from '$lib/i18n';
+	import { getLocale, localizeHref, type Locale } from '$lib/i18n';
+	import { emptyFilterState, toSearchString } from '$lib/filters';
 	import {
 		getStop,
 		getStopReliability,
@@ -39,7 +40,7 @@
 		type ReliabilityPeriodVM,
 	} from '$lib/components/surface';
 	import { EdgeState } from '$lib/components/edge';
-	import { layout } from '$lib/nav';
+	import { layout, routeFor } from '$lib/nav';
 	import StopLabel from '$lib/components/brand/StopLabel.svelte';
 	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
 	import MetricDisplay from '$lib/components/brand/MetricDisplay.svelte';
@@ -100,11 +101,31 @@
 		if (delayMin == null || delayMin === 0) return t.next.onTime;
 		return delayMin > 0 ? t.next.late(delayMin) : t.next.early(Math.abs(delayMin));
 	}
+
+	function stopMapSearch(stopId: string): string {
+		const state = emptyFilterState();
+		state.stops.add(stopId);
+		return toSearchString(state);
+	}
+
+	function stopMapHref(stopId: string): string {
+		return localizeHref(routeFor({ kind: 'map', search: stopMapSearch(stopId) }), locale);
+	}
 </script>
 
 <EntityDetail kicker={t.kicker} {tabs} bind:active>
 	{#snippet header()}
-		<StopLabel stop={id} label={stop.data?.name ?? `#${id}`} />
+		<div class="stop-detail-head">
+			<StopLabel stop={id} label={stop.data?.name ?? `#${id}`} />
+			<a
+				href={stopMapHref(id)}
+				class="stop-map-action"
+				aria-label={t.viewStopOnMap(id)}
+				data-sveltekit-preload-data="hover"
+			>
+				{t.viewOnMap}
+			</a>
+		</div>
 	{/snippet}
 
 	{#snippet pane(key)}
@@ -249,6 +270,40 @@
 </EntityDetail>
 
 <style>
+	.stop-detail-head {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 1rem;
+	}
+	.stop-map-action {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		min-height: 2.25rem;
+		padding: 0.3rem 0.8rem;
+		font-family: var(--font-mono);
+		font-size: var(--text-caption);
+		color: var(--primary);
+		text-decoration: none;
+		background: color-mix(in srgb, var(--primary) 8%, transparent);
+		border: 1px solid color-mix(in srgb, var(--primary) 30%, var(--border) 70%);
+		border-radius: var(--radius-pill);
+		transition:
+			color 150ms ease,
+			background-color 150ms ease,
+			border-color 150ms ease;
+	}
+	.stop-map-action:hover {
+		color: var(--foreground);
+		background: color-mix(in srgb, var(--primary) 16%, transparent);
+		border-color: color-mix(in srgb, var(--primary) 45%, var(--border) 55%);
+	}
+	.stop-map-action:focus-visible {
+		outline: 2px solid var(--ring);
+		outline-offset: 2px;
+	}
+
 	.stop-next {
 		display: flex;
 		flex-direction: column;
@@ -395,5 +450,18 @@
 		font-family: var(--font-mono);
 		font-size: var(--text-small);
 		color: var(--muted-foreground);
+	}
+
+	@media (max-width: 48rem) {
+		.stop-detail-head {
+			align-items: flex-start;
+			flex-direction: column;
+		}
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.stop-map-action {
+			transition: none;
+		}
 	}
 </style>
