@@ -56,37 +56,35 @@
 	const collator = $derived(new Intl.Collator(locale, { numeric: true, sensitivity: 'base' }));
 	const routeById = $derived(new Map(routes.map((route) => [route.id, route])));
 	const stopById = $derived(new Map(stops.map((stop) => [stop.id, stop])));
-	const selectedRouteIds = $derived(Array.from(store.routes).sort((a, b) => collator.compare(a, b)));
+	const selectedRouteIds = $derived(
+		Array.from(store.routes).sort((a, b) => collator.compare(a, b)),
+	);
 	const selectedRoutes = $derived(
 		selectedRouteIds.map((id) => routeById.get(id) ?? fallbackRoute(id)),
 	);
 	const selectedStopIds = $derived(Array.from(store.stops).sort((a, b) => collator.compare(a, b)));
-	const selectedStops = $derived(
-		selectedStopIds.map((id) => stopById.get(id) ?? fallbackStop(id)),
-	);
+	const selectedStops = $derived(selectedStopIds.map((id) => stopById.get(id) ?? fallbackStop(id)));
 	const selectedVehicleIds = $derived(
 		Array.from(store.vehicles).sort((a, b) => collator.compare(a, b)),
 	);
 	const selectedTripIds = $derived(Array.from(store.trips).sort((a, b) => collator.compare(a, b)));
-	const entityOptions = $derived(
-		[
-			{ kind: 'bus_direction', glyph: '▲', label: t.entityBusDirection },
-			{ kind: 'bus_no_direction', glyph: '■', label: t.entityBusNoDirection },
-			{ kind: 'stop', glyph: '◆', label: t.entityStop, stop: true },
-		] satisfies {
-			kind: EntityKind;
-			glyph: string;
-			label: string;
-			stop?: boolean;
-		}[],
-	);
-	const alertOptions = $derived(
-		[{ kind: 'has_alert', label: t.alertHas, aria: t.alertHasAria }] satisfies {
-			kind: AlertEntityKind;
-			label: string;
-			aria: string;
-		}[],
-	);
+	const entityOptions = $derived([
+		{ kind: 'bus_direction', glyph: '▲', label: t.entityBusDirection },
+		{ kind: 'bus_no_direction', glyph: '■', label: t.entityBusNoDirection },
+		{ kind: 'stop', glyph: '◆', label: t.entityStop, stop: true },
+	] satisfies {
+		kind: EntityKind;
+		glyph: string;
+		label: string;
+		stop?: boolean;
+	}[]);
+	const alertOptions = $derived([
+		{ kind: 'has_alert', label: t.alertHas, aria: t.alertHasAria },
+	] satisfies {
+		kind: AlertEntityKind;
+		label: string;
+		aria: string;
+	}[]);
 
 	function clearFilters(): void {
 		store.clear();

@@ -2,7 +2,12 @@ import type { LayerSpecification, Map as MapLibreMap } from 'maplibre-gl';
 import { describe, expect, it } from 'vitest';
 import type { FilterState } from '$lib/filters';
 import { VehicleSchema } from '$lib/v1/schemas';
-import { addVehicleLayers, VEHICLE_BODY_LAYER, VEHICLE_SOURCE, toVehicleFeatures } from './vehicleLayer';
+import {
+	addVehicleLayers,
+	VEHICLE_BODY_LAYER,
+	VEHICLE_SOURCE,
+	toVehicleFeatures,
+} from './vehicleLayer';
 
 function usesTopLevelZoomExpression(value: unknown): boolean {
 	return (
@@ -75,11 +80,15 @@ describe('toVehicleFeatures entity filtering', () => {
 	it('marks the hovered bus so the map can grow it without selecting it', () => {
 		const features = (
 			toVehicleFeatures as (
-				...args: Parameters<typeof toVehicleFeatures> | [...Parameters<typeof toVehicleFeatures>, string]
+				...args:
+					| Parameters<typeof toVehicleFeatures>
+					| [...Parameters<typeof toVehicleFeatures>, string]
 			) => ReturnType<typeof toVehicleFeatures>
 		)(vehicles, EMPTY_FILTER, new Set(), null, 'directional').features;
 
-		expect(features.map((f) => [f.properties.id, f.properties.selected, f.properties.hovered])).toEqual([
+		expect(
+			features.map((f) => [f.properties.id, f.properties.selected, f.properties.hovered]),
+		).toEqual([
 			['directional', 0, 1],
 			['no-direction', 0, 0],
 		]);
@@ -170,8 +179,11 @@ describe('toVehicleFeatures entity filtering', () => {
 			alerts: ['has_alert'],
 			entities: ['bus_no_direction'],
 		} as unknown as FilterState;
-		const features = toVehicleFeatures(vehicles, filter, new Set(['directional', 'no-direction']))
-			.features;
+		const features = toVehicleFeatures(
+			vehicles,
+			filter,
+			new Set(['directional', 'no-direction']),
+		).features;
 
 		expect(features.map((f) => [f.properties.id, f.properties.matched])).toEqual([
 			['directional', 0],

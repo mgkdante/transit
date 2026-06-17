@@ -66,10 +66,7 @@ export function clearNearTargetSearchParams(searchParams: URLSearchParams): void
 	searchParams.delete(MAP_NEAR_PRECISION_PARAM);
 }
 
-export function copyNearTargetSearchParams(
-	from: URLSearchParams,
-	to: URLSearchParams,
-): void {
+export function copyNearTargetSearchParams(from: URLSearchParams, to: URLSearchParams): void {
 	const target = nearTargetFromSearchParams(from);
 	if (!target) return;
 	setNearTargetSearchParams(to, target);

@@ -92,7 +92,10 @@
 </script>
 
 <nav
-	class={cn('left-rail flex h-full w-full min-w-0 shrink-0 flex-col border-r border-border bg-card', className)}
+	class={cn(
+		'left-rail flex h-full w-full min-w-0 shrink-0 flex-col border-r border-border bg-card',
+		className,
+	)}
 	aria-label={navAria}
 	data-slot="left-rail"
 	data-open={collapsed ? 'false' : 'true'}

@@ -154,7 +154,13 @@ describe('addStopsLayer', () => {
 			's2',
 		).features;
 
-		expect(features.map((feature) => [feature.properties.id, feature.properties.selected, feature.properties.hovered])).toEqual([
+		expect(
+			features.map((feature) => [
+				feature.properties.id,
+				feature.properties.selected,
+				feature.properties.hovered,
+			]),
+		).toEqual([
 			['s1', 0, 0],
 			['s2', 0, 1],
 		]);

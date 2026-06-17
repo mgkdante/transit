@@ -30,7 +30,9 @@ describe('MapFilters', () => {
 		expect(getByText('Markers')).toBeTruthy();
 		expect(getAllByText('Alerts').length).toBeGreaterThan(0);
 		expect(getByRole('button', { name: 'Show markers with alerts' })).not.toBeDisabled();
-		expect(container.querySelectorAll('.mf-group-badge[data-icon]').length).toBeGreaterThanOrEqual(4);
+		expect(container.querySelectorAll('.mf-group-badge[data-icon]').length).toBeGreaterThanOrEqual(
+			4,
+		);
 		expect(container.querySelector('.map-filters')).toHaveAttribute('data-open', 'true');
 		const inactiveClear = getByRole('button', { name: 'Clear' });
 		expect(inactiveClear).toBeDisabled();
@@ -195,7 +197,9 @@ describe('MapFilters', () => {
 			'utf-8',
 		);
 
-		expect(source).toMatch(/\.map-filters\s*\{[\s\S]*max-height:\s*min\(72dvh,\s*calc\(100dvh - 7rem\)\)/);
+		expect(source).toMatch(
+			/\.map-filters\s*\{[\s\S]*max-height:\s*min\(72dvh,\s*calc\(100dvh - 7rem\)\)/,
+		);
 		expect(source).toMatch(/\.map-filters\s*\{[\s\S]*overflow:\s*hidden/);
 		expect(source).toMatch(/\.mf-body\s*\{[\s\S]*min-height:\s*0/);
 		expect(source).toMatch(/\.mf-body\s*\{[\s\S]*overflow-y:\s*auto/);

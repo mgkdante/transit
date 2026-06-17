@@ -1,9 +1,6 @@
 import type { GeocodePrecision, GeocodeSuggestion } from './types';
 
-export type GooglePlacesAutocompleteFetcher = (
-	input: URL,
-	init?: RequestInit,
-) => Promise<Response>;
+export type GooglePlacesAutocompleteFetcher = (input: URL, init?: RequestInit) => Promise<Response>;
 
 const MONTREAL_BOUNDS = {
 	minLat: 45.35,
@@ -128,11 +125,7 @@ function parseAutocompleteSuggestions(payload: GoogleAutocompletePayload): Geoco
 function googlePrecision(types: readonly string[]): GeocodePrecision {
 	const normalized = types.map((type) => type.toLowerCase());
 	if (normalized.some((type) => type.includes('postal_code'))) return 'postal';
-	if (
-		normalized.some((type) =>
-			['street_address', 'premise', 'subpremise'].includes(type),
-		)
-	) {
+	if (normalized.some((type) => ['street_address', 'premise', 'subpremise'].includes(type))) {
 		return 'address';
 	}
 	if (normalized.some((type) => ['route', 'intersection'].includes(type))) return 'street';

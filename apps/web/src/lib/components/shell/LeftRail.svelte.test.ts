@@ -23,18 +23,15 @@ describe('LeftRail', () => {
 			'href',
 			'/lines',
 		);
-		expect(within(rail).getByRole('link', { name: 'Stops departures and schedules' })).toHaveAttribute(
-			'href',
-			'/stops',
-		);
-		expect(within(rail).getByRole('link', { name: 'Network reliability and health' })).toHaveAttribute(
-			'href',
-			'/network',
-		);
-		expect(within(rail).getByRole('link', { name: 'Stops departures and schedules' })).toHaveAttribute(
-			'aria-current',
-			'page',
-		);
+		expect(
+			within(rail).getByRole('link', { name: 'Stops departures and schedules' }),
+		).toHaveAttribute('href', '/stops');
+		expect(
+			within(rail).getByRole('link', { name: 'Network reliability and health' }),
+		).toHaveAttribute('href', '/network');
+		expect(
+			within(rail).getByRole('link', { name: 'Stops departures and schedules' }),
+		).toHaveAttribute('aria-current', 'page');
 		expect(rail).not.toHaveTextContent('No content yet');
 	});
 
@@ -48,7 +45,9 @@ describe('LeftRail', () => {
 			'utf-8',
 		);
 
-		expect(source).toMatch(/<LeftRail[\s\S]*\{locale\}[\s\S]*\{url\}[\s\S]*heading=\{railHeading\}/);
+		expect(source).toMatch(
+			/<LeftRail[\s\S]*\{locale\}[\s\S]*\{url\}[\s\S]*heading=\{railHeading\}/,
+		);
 		expect(source).toContain('collapsed={leftRailCollapsed}');
 		expect(source).toContain('ontogglecollapse={toggleLeftRailCollapsed}');
 		expect(topbarSource).toMatch(/class="tap-press topbar-menu-toggle md:hidden"/);
@@ -83,10 +82,7 @@ describe('LeftRail', () => {
 
 		const rail = getByRole('navigation', { name: 'Network navigation' });
 		expect(rail).toHaveAttribute('data-open', 'false');
-		expect(getByRole('link', { name: 'Map live network' })).toHaveAttribute(
-			'aria-current',
-			'page',
-		);
+		expect(getByRole('link', { name: 'Map live network' })).toHaveAttribute('aria-current', 'page');
 		expect(container.querySelector('.left-rail-copy')).not.toBeInTheDocument();
 		expect(rail).not.toHaveTextContent('Map');
 		expect(rail).not.toHaveTextContent('live network');
@@ -154,7 +150,9 @@ describe('LeftRail', () => {
 		expect(source).toContain('let leftRailSize = $state(LEFT_RAIL_DEFAULT_SIZE)');
 		expect(source).toContain('const leftRailOffset = $derived(`${leftRailSize}%`)');
 		expect(source).toContain('style={`--app-left-rail-offset: ${leftRailOffset};`}');
-		expect(source).toContain('class="app-shell-main relative min-w-0 flex-1 overflow-hidden bg-surface-0"');
+		expect(source).toContain(
+			'class="app-shell-main relative min-w-0 flex-1 overflow-hidden bg-surface-0"',
+		);
 		expect(source).toContain('class="app-shell-rail-overlay"');
 		expect(source).toContain('class="app-shell-left-rail-pane"');
 		expect(source).toContain('class="app-shell-map-hit-through-pane"');

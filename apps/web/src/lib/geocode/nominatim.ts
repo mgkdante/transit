@@ -191,7 +191,10 @@ function rankedLocations(ranked: RankedLocation[]): GeocodedLocation[] {
 		.filter(uniqueLocation);
 }
 
-function rankLocationResults(query: string, locations: readonly GeocodedLocation[]): GeocodedLocation[] {
+function rankLocationResults(
+	query: string,
+	locations: readonly GeocodedLocation[],
+): GeocodedLocation[] {
 	return rankedLocations(
 		locations.map((location) => ({
 			location,
@@ -203,7 +206,11 @@ function rankLocationResults(query: string, locations: readonly GeocodedLocation
 	);
 }
 
-function uniqueLocation(location: GeocodedLocation, index: number, locations: GeocodedLocation[]): boolean {
+function uniqueLocation(
+	location: GeocodedLocation,
+	index: number,
+	locations: GeocodedLocation[],
+): boolean {
 	const key = locationKey(location);
 	return locations.findIndex((item) => locationKey(item) === key) === index;
 }
@@ -212,7 +219,11 @@ function locationKey(location: GeocodedLocation): string {
 	return `${location.lat.toFixed(6)},${location.lon.toFixed(6)}:${normalizeSearchText(location.label)}`;
 }
 
-function geoCaPrecision(label: string, category: string, tags: readonly string[]): GeocodePrecision {
+function geoCaPrecision(
+	label: string,
+	category: string,
+	tags: readonly string[],
+): GeocodePrecision {
 	const normalizedCategory = category.toLowerCase();
 	const normalizedLabel = normalizeSearchText(label);
 	const tagText = tags.join(' ').toLowerCase();
@@ -312,7 +323,8 @@ function geoCaSourceScore(key: string): number {
 function geoCaRelevanceScore(query: string, label: string): number {
 	const postalCode = extractCanadianPostalCode(query);
 	let score = 0;
-	if (postalCode && normalizeSearchText(label).includes(normalizeSearchText(postalCode))) score += 18;
+	if (postalCode && normalizeSearchText(label).includes(normalizeSearchText(postalCode)))
+		score += 18;
 	if (/^\s*\d+/.test(query) && /^\s*\d+/.test(label)) score += 14;
 	return score;
 }

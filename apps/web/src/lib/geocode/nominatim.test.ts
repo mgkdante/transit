@@ -47,9 +47,7 @@ describe('geoCaSearchUrl', () => {
 	it('expands informal Montréal street intent before sending to Geo.ca', () => {
 		const url = geoCaSearchUrl('1234 boul st laurent');
 
-		expect(url.searchParams.get('q')).toBe(
-			'1234 boulevard saint laurent Montreal Quebec Canada',
-		);
+		expect(url.searchParams.get('q')).toBe('1234 boulevard saint laurent Montreal Quebec Canada');
 	});
 });
 

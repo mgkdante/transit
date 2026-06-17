@@ -62,9 +62,9 @@ describe('chromeSearchResults', () => {
 	});
 
 	it('only returns vehicles on exact id matches', () => {
-		expect(chromeSearchResults('400', { routes, stops, vehicles }).some((r) => r.kind === 'vehicle')).toBe(
-			false,
-		);
+		expect(
+			chromeSearchResults('400', { routes, stops, vehicles }).some((r) => r.kind === 'vehicle'),
+		).toBe(false);
 		expect(chromeSearchResults('40061', { routes, stops, vehicles })[0]).toMatchObject({
 			kind: 'vehicle',
 			id: '40061',
@@ -127,12 +127,8 @@ describe('chromeSearchResults', () => {
 describe('chromeSearchHref', () => {
 	it('routes every selected result into the map filter spine', () => {
 		expect(chromeSearchHref({ kind: 'route', id: '161' })).toBe('/map?route=161');
-		expect(chromeSearchHref({ kind: 'stop', id: '52819' })).toBe(
-			'/map?stop=52819',
-		);
-		expect(chromeSearchHref({ kind: 'vehicle', id: '40061' })).toBe(
-			'/map?vehicle=40061',
-		);
+		expect(chromeSearchHref({ kind: 'stop', id: '52819' })).toBe('/map?stop=52819');
+		expect(chromeSearchHref({ kind: 'vehicle', id: '40061' })).toBe('/map?vehicle=40061');
 	});
 
 	it('stacks selected results onto the existing map filter query', () => {

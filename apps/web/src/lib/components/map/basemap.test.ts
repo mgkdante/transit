@@ -204,16 +204,16 @@ describe('vectorStyleFromBasemap (Protomaps schema)', () => {
 				'line-opacity': 0.9,
 			},
 		});
-			expect(light.layers.find((l) => l.id === 'roads-major')).toMatchObject({
-				paint: { 'line-color': '#6E6557' },
-			});
-			expect(light.layers.find((l) => l.id === 'roads-major-labels')).toMatchObject({
-				paint: {
-					'text-color': '#5F574C',
-					'text-halo-color': '#F7F2E9',
-				},
-			});
+		expect(light.layers.find((l) => l.id === 'roads-major')).toMatchObject({
+			paint: { 'line-color': '#6E6557' },
 		});
+		expect(light.layers.find((l) => l.id === 'roads-major-labels')).toMatchObject({
+			paint: {
+				'text-color': '#5F574C',
+				'text-halo-color': '#F7F2E9',
+			},
+		});
+	});
 
 	it('keeps dark water visually separate from dark ground', () => {
 		expect(layerOf('earth')).toMatchObject({

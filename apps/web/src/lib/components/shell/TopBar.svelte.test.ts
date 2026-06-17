@@ -59,10 +59,9 @@ describe('TopBar search results', () => {
 		await fireEvent.click(getByRole('button', { name: 'Open search' }));
 
 		const mobileSearch = within(container).getByTestId('topbar-mobile-search');
-		expect(within(mobileSearch).getByRole('searchbox', { name: 'Search the network' })).toHaveAttribute(
-			'autocomplete',
-			'street-address',
-		);
+		expect(
+			within(mobileSearch).getByRole('searchbox', { name: 'Search the network' }),
+		).toHaveAttribute('autocomplete', 'street-address');
 	});
 
 	it('opens a focused mobile search surface from the search icon', async () => {
@@ -125,18 +124,24 @@ describe('TopBar search results', () => {
 			},
 		});
 
-		expect(getByRole('button', { name: 'Address 5333 Avenue Casgrain, Montréal, Quebec Address' })).toBeInTheDocument();
+		expect(
+			getByRole('button', { name: 'Address 5333 Avenue Casgrain, Montréal, Quebec Address' }),
+		).toBeInTheDocument();
 
 		await fireEvent.pointerDown(document.body);
 
-		expect(queryByRole('button', { name: 'Address 5333 Avenue Casgrain, Montréal, Quebec Address' })).not.toBeInTheDocument();
+		expect(
+			queryByRole('button', { name: 'Address 5333 Avenue Casgrain, Montréal, Quebec Address' }),
+		).not.toBeInTheDocument();
 	});
 
 	it('gives long address search suggestions room to wrap', () => {
 		const source = readSource();
 
 		expect(source).toContain('let searchResultsOpen = $state(true)');
-		expect(source).toContain('<svelte:window onkeydown={onKeydown} onpointerdown={onWindowPointerDown} />');
+		expect(source).toContain(
+			'<svelte:window onkeydown={onKeydown} onpointerdown={onWindowPointerDown} />',
+		);
 		expect(source).toMatch(/\.topbar-search-results\s*\{[\s\S]*width:\s*min\(max\(100%, 38rem\)/);
 		expect(source).toMatch(/\.topbar-search-label\s*\{[\s\S]*white-space:\s*normal/);
 		expect(source).toMatch(/\.topbar-search-result\s*\{[\s\S]*align-items:\s*flex-start/);
@@ -169,15 +174,27 @@ describe('TopBar search results', () => {
 		expect(source).toMatch(/class="tap-press topbar-menu-toggle md:hidden"/);
 		expect(source).toMatch(/\.topbar-mobile-menu\s*\{[\s\S]*position:\s*absolute/);
 		expect(source).toMatch(/\.topbar-mobile-menu\s*\{[\s\S]*right:\s*0\.75rem/);
-		expect(source).toMatch(/\.topbar-mobile-menu\s*\{[\s\S]*width:\s*min\(19rem, calc\(100vw - 1\.5rem\)\)/);
+		expect(source).toMatch(
+			/\.topbar-mobile-menu\s*\{[\s\S]*width:\s*min\(19rem, calc\(100vw - 1\.5rem\)\)/,
+		);
 		expect(source).not.toContain('class="topbar-mobile-menu-content"');
 		expect(source).not.toContain('class="topbar-mobile-menu-stop');
 		expect(source).not.toContain('class="topbar-mobile-menu-line');
-		expect(source).toMatch(/@media \(max-width:\s*760px\)[\s\S]*\.topbar-brand-mark\s*\{[\s\S]*display:\s*none/);
-		expect(source).toMatch(/@media \(max-width:\s*760px\)[\s\S]*\.topbar-divider\s*\{[\s\S]*display:\s*none/);
-		expect(source).not.toMatch(/\.topbar-mobile-menu\s*\{[\s\S]*position:\s*fixed[\s\S]*inset:\s*0/);
-		expect(source).toMatch(/\.topbar-mobile-house-wordmark\s*\{[\s\S]*display:\s*inline-flex[\s\S]*white-space:\s*nowrap/);
-		expect(source).not.toMatch(/@media \(max-width:\s*400px\)[\s\S]*\.topbar-product\s*\{[\s\S]*display:\s*none/);
+		expect(source).toMatch(
+			/@media \(max-width:\s*760px\)[\s\S]*\.topbar-brand-mark\s*\{[\s\S]*display:\s*none/,
+		);
+		expect(source).toMatch(
+			/@media \(max-width:\s*760px\)[\s\S]*\.topbar-divider\s*\{[\s\S]*display:\s*none/,
+		);
+		expect(source).not.toMatch(
+			/\.topbar-mobile-menu\s*\{[\s\S]*position:\s*fixed[\s\S]*inset:\s*0/,
+		);
+		expect(source).toMatch(
+			/\.topbar-mobile-house-wordmark\s*\{[\s\S]*display:\s*inline-flex[\s\S]*white-space:\s*nowrap/,
+		);
+		expect(source).not.toMatch(
+			/@media \(max-width:\s*400px\)[\s\S]*\.topbar-product\s*\{[\s\S]*display:\s*none/,
+		);
 		expect(source).toContain('data-slot="topbar-mobile-menu-toggle"');
 	});
 });

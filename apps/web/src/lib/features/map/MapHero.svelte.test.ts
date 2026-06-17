@@ -72,7 +72,9 @@ describe('MapHero mobile chrome', () => {
 		expect(s).toContain('bind:query={nearMeQuery}');
 		expect(s).toContain('onsuggestion={selectNearMeSuggestion}');
 		expect(s).toContain('onstopselect={selectNearbyStop}');
-		expect(s).toContain('function selectNearMeSuggestion(result: GeocodeSuggestion): Promise<void>');
+		expect(s).toContain(
+			'function selectNearMeSuggestion(result: GeocodeSuggestion): Promise<void>',
+		);
 		expect(s).toContain('hasCoordinates(result)');
 		expect(s).toContain('await resolveNearMeQuery(result.label)');
 	});
@@ -145,7 +147,9 @@ describe('MapHero mobile chrome', () => {
 		const s = optionalSource('src/lib/features/map/MapNearMeControl.svelte');
 
 		expect(s).toMatch(/\.map-near\s*\{[\s\S]*top:\s*auto/);
-		expect(s).toMatch(/\.map-near\s*\{[\s\S]*right:\s*calc\(var\(--map-detail-offset, 0rem\) \+ 1rem\)/);
+		expect(s).toMatch(
+			/\.map-near\s*\{[\s\S]*right:\s*calc\(var\(--map-detail-offset, 0rem\) \+ 1rem\)/,
+		);
 		expect(s).toMatch(/\.map-near\s*\{[\s\S]*bottom:\s*5\.1rem/);
 		expect(s).toMatch(/\.map-near\s*\{[\s\S]*width:\s*auto/);
 	});
@@ -167,21 +171,19 @@ describe('MapHero mobile chrome', () => {
 			/\.map-head\s*\{[\s\S]*left:\s*calc\(var\(--app-left-rail-offset, 0rem\) \+ 1rem\)/,
 		);
 		expect(s).toMatch(
-			/\.map-head\s*\{[\s\S]*max-width:\s*calc\(100% - var\(--app-left-rail-offset, 0rem\) - var\(--map-detail-offset, 0rem\) - 2rem\)/,
+			/\.map-head\s*\{[\s\S]*max-width:\s*calc\(\s*100%\s*-\s*var\(--app-left-rail-offset,\s*0rem\)\s*-\s*var\(--map-detail-offset,\s*0rem\)\s*-\s*2rem\s*\)/,
 		);
 		expect(s).toMatch(
 			/\.map-filter-panel\s*\{[\s\S]*left:\s*calc\(var\(--app-left-rail-offset, 0rem\) \+ 1rem\)/,
 		);
-		expect(s).toMatch(
-			/@media \(max-width: 760px\)[\s\S]*\.map-head\s*\{[\s\S]*left:\s*0\.75rem/,
-		);
+		expect(s).toMatch(/@media \(max-width: 760px\)[\s\S]*\.map-head\s*\{[\s\S]*left:\s*0\.75rem/);
 	});
 
 	it('offsets desktop floating chrome when the right pane is open or collapsed', () => {
 		const s = source();
 		const nearMe = optionalSource('src/lib/features/map/MapNearMeControl.svelte');
 
-		expect(s).toContain("style={`--map-detail-offset: ${mapDetailOffset}`}");
+		expect(s).toContain('style={`--map-detail-offset: ${mapDetailOffset}`}');
 		expect(s).toContain('ResizeObserver');
 		expect(s).toContain('placement="floating"');
 		expect(nearMe).toMatch(
@@ -196,7 +198,9 @@ describe('MapHero mobile chrome', () => {
 		expect(hoverBlock).toContain('hoverDetail');
 		expect(hoverBlock).toContain('layout.isDesktop');
 		expect(hoverBlock).not.toContain('!detailOpen');
-		expect(s).toMatch(/\.map-peek\s*\{[\s\S]*right:\s*calc\(var\(--map-detail-offset, 0rem\) \+ 1rem\)/);
+		expect(s).toMatch(
+			/\.map-peek\s*\{[\s\S]*right:\s*calc\(var\(--map-detail-offset, 0rem\) \+ 1rem\)/,
+		);
 		expect(s).toMatch(/\.map-peek\s*\{[\s\S]*z-index:\s*24/);
 	});
 
@@ -206,8 +210,12 @@ describe('MapHero mobile chrome', () => {
 		const toVehicleFeaturesBlock = s.match(/toVehicleFeatures\([\s\S]*?\),\s*\{/)?.[0] ?? '';
 		const setStopsBlock = s.match(/setStops\([\s\S]*?\);/)?.[0] ?? '';
 
-		expect(s).toContain("const hoveredVehicleId = $derived(hovered?.kind === 'vehicle' ? hovered.id : null)");
-		expect(s).toContain("const hoveredStopId = $derived(hovered?.kind === 'stop' ? hovered.id : null)");
+		expect(s).toContain(
+			"const hoveredVehicleId = $derived(hovered?.kind === 'vehicle' ? hovered.id : null)",
+		);
+		expect(s).toContain(
+			"const hoveredStopId = $derived(hovered?.kind === 'stop' ? hovered.id : null)",
+		);
 		expect(hoverPickedFeature).toContain('sameNullableSelection(hovered, next)');
 		expect(toVehicleFeaturesBlock).toContain('selectedVehicleId');
 		expect(toVehicleFeaturesBlock).toContain('hoveredVehicleId');
@@ -233,8 +241,12 @@ describe('MapHero mobile chrome', () => {
 		expect(s).toContain('class="map-near-icon"');
 		expect(s).toMatch(/@media \(max-width: 760px\)[\s\S]*\.map-near\s*\{[\s\S]*top:\s*auto/);
 		expect(s).toMatch(/@media \(max-width: 760px\)[\s\S]*\.map-near\s*\{[\s\S]*right:\s*0\.75rem/);
-		expect(s).toMatch(/@media \(max-width: 760px\)[\s\S]*\.map-near\s*\{[\s\S]*bottom:\s*calc\(2\.5rem \+ env\(safe-area-inset-bottom, 0px\)\)/);
-		expect(s).toMatch(/@media \(max-width: 760px\)[\s\S]*\.map-near-toggle span\s*\{[\s\S]*display:\s*none/);
+		expect(s).toMatch(
+			/@media \(max-width: 760px\)[\s\S]*\.map-near\s*\{[\s\S]*bottom:\s*calc\(2\.5rem \+ env\(safe-area-inset-bottom, 0px\)\)/,
+		);
+		expect(s).toMatch(
+			/@media \(max-width: 760px\)[\s\S]*\.map-near-toggle span\s*\{[\s\S]*display:\s*none/,
+		);
 	});
 
 	it('re-seeds URL filters after normal client navigation, not only browser popstate', () => {
@@ -281,8 +293,7 @@ describe('MapHero mobile chrome', () => {
 
 	it('wires the mobile detail sheet to the same drilldown back stack', () => {
 		const s = source();
-		const mobileSheetBlock =
-			s.match(/\{:else\}\s*<BottomSheet[\s\S]*?<\/BottomSheet>/)?.[0] ?? '';
+		const mobileSheetBlock = s.match(/\{:else\}\s*<BottomSheet[\s\S]*?<\/BottomSheet>/)?.[0] ?? '';
 
 		expect(mobileSheetBlock).toContain('canGoBack={selectionStack.length > 0}');
 		expect(mobileSheetBlock).toContain('onback={goBackDetail}');
@@ -290,8 +301,7 @@ describe('MapHero mobile chrome', () => {
 
 	it('keeps the detail surfaces mounted while a back target is resolving', () => {
 		const s = source();
-		const mobileSheetBlock =
-			s.match(/\{:else\}\s*<BottomSheet[\s\S]*?<\/BottomSheet>/)?.[0] ?? '';
+		const mobileSheetBlock = s.match(/\{:else\}\s*<BottomSheet[\s\S]*?<\/BottomSheet>/)?.[0] ?? '';
 
 		expect(s).not.toContain('{#if detailOpen && selectedDetail}');
 		expect(s).toContain('{#if detailOpen}');
@@ -309,7 +319,9 @@ describe('MapHero mobile chrome', () => {
 			"import { ResizablePaneGroup, ResizablePane, ResizableHandle } from '$lib/components/ui/resizable'",
 		);
 		expect(desktopDockBlock).toMatch(/<ResizablePaneGroup[\s\S]*direction="horizontal"/);
-		expect(desktopDockBlock).toMatch(/<ResizableHandle[\s\S]*withHandle[\s\S]*class="map-detail-resize-handle"[\s\S]*\/>/);
+		expect(desktopDockBlock).toMatch(
+			/<ResizableHandle[\s\S]*withHandle[\s\S]*class="map-detail-resize-handle"[\s\S]*\/>/,
+		);
 		expect(desktopDockBlock).toContain('bind:this={rightPanelPane}');
 		expect(desktopDockBlock).toContain('defaultSize={51}');
 		expect(desktopDockBlock).toContain('minSize={32}');

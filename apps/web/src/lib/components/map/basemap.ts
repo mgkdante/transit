@@ -117,22 +117,22 @@ function paintsForTheme(theme: BasemapTheme): BasemapPaintMap {
 			'line-width': ['interpolate', ['linear'], ['zoom'], 9, 0.45, 11, 0.8, 14, 1.05],
 			'line-opacity': ['interpolate', ['linear'], ['zoom'], 9, 0.5, 11, 0.78, 13, 0.82],
 		},
-			'roads-major': {
-				'line-color': palette.roadMajor,
-				'line-width': 1.25,
-			},
-			'roads-major-labels': {
-				'text-color': palette.ink,
-				'text-halo-color': palette.labelHalo,
-				'text-halo-width': 1.25,
-			},
-			'roads-minor-labels': {
-				'text-color': palette.ink,
-				'text-halo-color': palette.labelHalo,
-				'text-halo-width': 1.15,
-			},
-		};
-	}
+		'roads-major': {
+			'line-color': palette.roadMajor,
+			'line-width': 1.25,
+		},
+		'roads-major-labels': {
+			'text-color': palette.ink,
+			'text-halo-color': palette.labelHalo,
+			'text-halo-width': 1.25,
+		},
+		'roads-minor-labels': {
+			'text-color': palette.ink,
+			'text-halo-color': palette.labelHalo,
+			'text-halo-width': 1.15,
+		},
+	};
+}
 
 interface PaintableMap {
 	getLayer(id: string): unknown;
@@ -256,9 +256,9 @@ export function minimalDarkStyle(theme: BasemapTheme = 'dark'): StyleSpecificati
  * Montréal extract ships (`earth`, `landuse`, `water`, `roads`), NOT the
  * OpenMapTiles names — a `pmtiles extract` of a build.protomaps.com archive uses
  * the Protomaps schema. Road tiers are split on the `kind` property
-	 * (`highway`/`major_road`/`medium_road` = major, the rest minor). Text labels
-	 * use MapLibre's standard line-placement symbol technique, with a public glyph
-	 * endpoint and no sprite dependency.
+ * (`highway`/`major_road`/`medium_road` = major, the rest minor). Text labels
+ * use MapLibre's standard line-placement symbol technique, with a public glyph
+ * endpoint and no sprite dependency.
  *
  * CONFIRM against `pmtiles show montreal.pmtiles` at extract time (task 1.2):
  * if the build's layer/property names differ, reconcile here — a wrong
@@ -279,13 +279,13 @@ export function vectorStyleFromBasemap(
 		...(file.max_zoom != null ? { maxzoom: file.max_zoom } : {}),
 	};
 
-		return {
-			version: 8,
-			name: `transit-basemap-${theme}`,
-			glyphs: BASEMAP_GLYPHS_URL,
-			sources: {
-				[BASEMAP_SOURCE_ID]: vectorSource,
-			},
+	return {
+		version: 8,
+		name: `transit-basemap-${theme}`,
+		glyphs: BASEMAP_GLYPHS_URL,
+		sources: {
+			[BASEMAP_SOURCE_ID]: vectorSource,
+		},
 		layers: [
 			{
 				id: 'background',
@@ -331,56 +331,56 @@ export function vectorStyleFromBasemap(
 			{
 				id: 'roads-major',
 				type: 'line',
-					source: BASEMAP_SOURCE_ID,
-					'source-layer': 'roads',
-					filter: MAJOR_ROAD_FILTER,
-					paint: paint['roads-major'],
+				source: BASEMAP_SOURCE_ID,
+				'source-layer': 'roads',
+				filter: MAJOR_ROAD_FILTER,
+				paint: paint['roads-major'],
+			},
+			{
+				id: 'roads-major-labels',
+				type: 'symbol',
+				source: BASEMAP_SOURCE_ID,
+				'source-layer': 'roads',
+				minzoom: 10,
+				filter: MAJOR_ROAD_FILTER,
+				layout: {
+					'symbol-placement': 'line',
+					'text-field': ROAD_NAME_FIELD,
+					'text-font': ['Noto Sans Regular'],
+					'text-size': ['interpolate', ['linear'], ['zoom'], 10, 10, 14, 12],
+					'symbol-spacing': 420,
+					'text-rotation-alignment': 'map',
+					'text-keep-upright': true,
+					'text-allow-overlap': false,
+					'text-ignore-placement': false,
+					'text-optional': true,
 				},
-				{
-					id: 'roads-major-labels',
-					type: 'symbol',
-					source: BASEMAP_SOURCE_ID,
-					'source-layer': 'roads',
-					minzoom: 10,
-					filter: MAJOR_ROAD_FILTER,
-					layout: {
-						'symbol-placement': 'line',
-						'text-field': ROAD_NAME_FIELD,
-						'text-font': ['Noto Sans Regular'],
-						'text-size': ['interpolate', ['linear'], ['zoom'], 10, 10, 14, 12],
-						'symbol-spacing': 420,
-						'text-rotation-alignment': 'map',
-						'text-keep-upright': true,
-						'text-allow-overlap': false,
-						'text-ignore-placement': false,
-						'text-optional': true,
-					},
-					paint: paint['roads-major-labels'],
+				paint: paint['roads-major-labels'],
+			},
+			{
+				id: 'roads-minor-labels',
+				type: 'symbol',
+				source: BASEMAP_SOURCE_ID,
+				'source-layer': 'roads',
+				minzoom: 12.5,
+				filter: MINOR_ROAD_FILTER,
+				layout: {
+					'symbol-placement': 'line',
+					'text-field': ROAD_NAME_FIELD,
+					'text-font': ['Noto Sans Regular'],
+					'text-size': ['interpolate', ['linear'], ['zoom'], 12.5, 9, 15, 11],
+					'symbol-spacing': 340,
+					'text-rotation-alignment': 'map',
+					'text-keep-upright': true,
+					'text-allow-overlap': false,
+					'text-ignore-placement': false,
+					'text-optional': true,
 				},
-				{
-					id: 'roads-minor-labels',
-					type: 'symbol',
-					source: BASEMAP_SOURCE_ID,
-					'source-layer': 'roads',
-					minzoom: 12.5,
-					filter: MINOR_ROAD_FILTER,
-					layout: {
-						'symbol-placement': 'line',
-						'text-field': ROAD_NAME_FIELD,
-						'text-font': ['Noto Sans Regular'],
-						'text-size': ['interpolate', ['linear'], ['zoom'], 12.5, 9, 15, 11],
-						'symbol-spacing': 340,
-						'text-rotation-alignment': 'map',
-						'text-keep-upright': true,
-						'text-allow-overlap': false,
-						'text-ignore-placement': false,
-						'text-optional': true,
-					},
-					paint: paint['roads-minor-labels'],
-				},
-			],
-		};
-	}
+				paint: paint['roads-minor-labels'],
+			},
+		],
+	};
+}
 
 /**
  * Resolve the MapLibre style for the current snapshot.

@@ -38,7 +38,11 @@ function interpolateBearing(from: number, to: number, t: number): number {
 	return Math.round(normalizeBearing(from + delta * t));
 }
 
-function interpolateFeature(from: VehicleFeature | undefined, to: VehicleFeature, t: number): VehicleFeature {
+function interpolateFeature(
+	from: VehicleFeature | undefined,
+	to: VehicleFeature,
+	t: number,
+): VehicleFeature {
 	if (!from) return to;
 	const [fromLon, fromLat] = from.geometry.coordinates;
 	const [toLon, toLat] = to.geometry.coordinates;
@@ -59,7 +63,11 @@ function interpolateFeature(from: VehicleFeature | undefined, to: VehicleFeature
 	};
 }
 
-export function interpolateVehicleFeatures(from: VehicleFC, to: VehicleFC, progress: number): VehicleFC {
+export function interpolateVehicleFeatures(
+	from: VehicleFC,
+	to: VehicleFC,
+	progress: number,
+): VehicleFC {
 	const t = clamp01(progress);
 	const previousById = new Map(from.features.map((feature) => [feature.properties.id, feature]));
 

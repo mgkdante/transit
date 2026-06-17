@@ -100,28 +100,32 @@ export function chromeSearchResults(
 
 	const vehicles = (sources.vehicles ?? [])
 		.filter((vehicle) => normalize(vehicle.id) === q)
-		.map((vehicle): ChromeSearchResult => ({
-			kind: 'vehicle',
-			id: vehicle.id,
-			label: vehicle.id,
-			meta: vehicle.route ? `Route ${vehicle.route}` : 'Live bus',
-			priority: 20,
-		}))
+		.map(
+			(vehicle): ChromeSearchResult => ({
+				kind: 'vehicle',
+				id: vehicle.id,
+				label: vehicle.id,
+				meta: vehicle.route ? `Route ${vehicle.route}` : 'Live bus',
+				priority: 20,
+			}),
+		)
 		.sort(collate)
 		.slice(0, 3);
 
 	const addresses = (sources.addresses ?? [])
-		.map((address, index): ChromeSearchResult => ({
-			kind: 'address',
-			id: addressResultId(address, index),
-			label: address.label,
-			meta: precisionLabel(address.precision),
-			priority: 30 + index,
-			lat: address.lat,
-			lon: address.lon,
-			precision: address.precision,
-			attribution: address.attribution,
-		}))
+		.map(
+			(address, index): ChromeSearchResult => ({
+				kind: 'address',
+				id: addressResultId(address, index),
+				label: address.label,
+				meta: precisionLabel(address.precision),
+				priority: 30 + index,
+				lat: address.lat,
+				lon: address.lon,
+				precision: address.precision,
+				attribution: address.attribution,
+			}),
+		)
 		.sort(collate)
 		.slice(0, 3);
 
@@ -158,7 +162,8 @@ function addressResultId(address: GeocodeSuggestion, index: number): string {
 	if (typeof address.lat === 'number' && typeof address.lon === 'number') {
 		return mapNearId(address.lat, address.lon);
 	}
-	if (address.placeId) return `${address.source === 'google_places' ? 'google' : address.source}:${address.placeId}`;
+	if (address.placeId)
+		return `${address.source === 'google_places' ? 'google' : address.source}:${address.placeId}`;
 	return `address:${index}:${address.label}`;
 }
 

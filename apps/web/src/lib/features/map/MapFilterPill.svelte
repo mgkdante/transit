@@ -75,7 +75,7 @@
 
 			<div class="map-filter-drawer" data-testid="map-filter-drawer" bind:this={drawerEl}>
 				<MapFilters
-					store={store}
+					{store}
 					{locale}
 					{routes}
 					{stops}

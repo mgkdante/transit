@@ -216,7 +216,11 @@
 	const hoveredStopId = $derived(hovered?.kind === 'stop' ? hovered.id : null);
 	const selectedRouteLine = $derived(
 		selected?.kind === 'route'
-			? { id: selected.id, direction: selected.direction ?? null, variantKey: selected.variantKey ?? null }
+			? {
+					id: selected.id,
+					direction: selected.direction ?? null,
+					variantKey: selected.variantKey ?? null,
+				}
 			: null,
 	);
 	const selectedDetail = $derived(
@@ -672,7 +676,6 @@
 
 		return () => observer.disconnect();
 	});
-
 </script>
 
 <div class="map-hero" style={`--map-detail-offset: ${mapDetailOffset}`}>
@@ -855,7 +858,9 @@
 		display: flex;
 		flex-direction: column;
 		gap: 0.35rem;
-		max-width: calc(100% - var(--app-left-rail-offset, 0rem) - var(--map-detail-offset, 0rem) - 2rem);
+		max-width: calc(
+			100% - var(--app-left-rail-offset, 0rem) - var(--map-detail-offset, 0rem) - 2rem
+		);
 	}
 	.map-kicker-row {
 		display: flex;

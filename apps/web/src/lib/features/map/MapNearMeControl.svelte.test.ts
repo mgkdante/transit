@@ -53,7 +53,9 @@ describe('MapNearMeControl', () => {
 		const s = source();
 
 		expect(s).toContain('let suggestionsOpen = $state(false)');
-		expect(s).toContain('<svelte:window onpointerdown={handleWindowPointerDown} onkeydown={handleWindowKeydown} />');
+		expect(s).toContain(
+			'<svelte:window onpointerdown={handleWindowPointerDown} onkeydown={handleWindowKeydown} />',
+		);
 		expect(s).toContain('function closeSuggestions()');
 		expect(s).toContain('function handleWindowPointerDown');
 		expect(s).toContain('function handleWindowKeydown');
@@ -68,7 +70,9 @@ describe('MapNearMeControl', () => {
 		expect(s).toMatch(/\.map-near-suggestions\s*\{[\s\S]*grid-column:\s*1 \/ -1/);
 		expect(s).toMatch(/\.map-near-suggestions\s*\{[\s\S]*max-height:\s*min\(18rem/);
 		expect(s).toMatch(/\.map-near-suggestion span\s*\{[\s\S]*white-space:\s*normal/);
-		expect(s).toMatch(/@media \(max-width: 760px\)[\s\S]*\.map-near-panel\s*\{[\s\S]*width:\s*min\(24rem/);
+		expect(s).toMatch(
+			/@media \(max-width: 760px\)[\s\S]*\.map-near-panel\s*\{[\s\S]*width:\s*min\(24rem/,
+		);
 	});
 
 	it('renders Google autocomplete attribution with token-based light and dark styling', () => {
@@ -78,7 +82,9 @@ describe('MapNearMeControl', () => {
 		expect(s).toContain('map-near-google-attribution');
 		expect(s).toContain('Powered by');
 		expect(s).toContain('Google');
-		expect(s).toMatch(/\.map-near-google-attribution\s*\{[\s\S]*background:\s*color-mix\(in srgb, var\(--card\)/);
+		expect(s).toMatch(
+			/\.map-near-google-attribution\s*\{[\s\S]*background:\s*color-mix\(in srgb, var\(--card\)/,
+		);
 		expect(s).toMatch(/\.map-near-google-wordmark\s*\{[\s\S]*font-family:\s*var\(--font-heading\)/);
 	});
 

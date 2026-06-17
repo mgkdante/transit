@@ -62,9 +62,5 @@ export const GET: RequestHandler = async ({ url, fetch }) => {
 };
 
 function googlePlacesApiKey(): string | undefined {
-	return (
-		env.GOOGLE_MAPS_API_KEY ??
-		env.GOOGLE_PLACES_API_KEY ??
-		env.GOOGLE_MAPS_PLATFORM_API_KEY
-	);
+	return env.GOOGLE_MAPS_API_KEY ?? env.GOOGLE_PLACES_API_KEY ?? env.GOOGLE_MAPS_PLATFORM_API_KEY;
 }

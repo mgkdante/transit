@@ -98,7 +98,8 @@ export const copy: Record<Locale, NetworkCopy> = {
 		trend: {
 			onTimeLabel: 'Ponctualité %',
 			retardLabel: '10 % les plus lents (min)',
-			summary: 'Ponctualité quotidienne et retard des 10 % les plus lents (p90) sur la tendance récente du réseau.',
+			summary:
+				'Ponctualité quotidienne et retard des 10 % les plus lents (p90) sur la tendance récente du réseau.',
 		},
 		noData: 'aucune donnée',
 		units: { pct: '%', min: ' min' },

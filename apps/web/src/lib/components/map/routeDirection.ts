@@ -47,11 +47,17 @@ function riderFacingHeadsign(value: string | null | undefined): string {
 }
 
 function keyToken(value: string | number | null | undefined): string {
-	const raw = String(value ?? '').trim().toLowerCase();
+	const raw = String(value ?? '')
+		.trim()
+		.toLowerCase();
 	return encodeURIComponent(raw.replace(/\s+/g, '-'));
 }
 
-function baseVariantKey(routeId: string, direction: RouteDirection, stops: readonly RouteStop[]): string {
+function baseVariantKey(
+	routeId: string,
+	direction: RouteDirection,
+	stops: readonly RouteStop[],
+): string {
 	const first = stops[0] ?? null;
 	const last = stops.at(-1) ?? null;
 	return [
@@ -82,7 +88,9 @@ export function routeDirectionVariants(route: RouteFile): RouteDirectionVariant[
 	}
 
 	const baseCounts = new Map<string, number>();
-	const bases = directions.map((direction) => baseVariantKey(route.id, direction, orderedStops(direction)));
+	const bases = directions.map((direction) =>
+		baseVariantKey(route.id, direction, orderedStops(direction)),
+	);
 	for (const base of bases) baseCounts.set(base, (baseCounts.get(base) ?? 0) + 1);
 
 	return directions.map((direction, index) => {

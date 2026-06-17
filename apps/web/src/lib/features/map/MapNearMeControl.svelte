@@ -230,7 +230,9 @@
 							<div class="map-near-google-attribution" aria-label="Powered by Google">
 								<span>Powered by</span>
 								<span class="map-near-google-wordmark" aria-hidden="true">
-									<span>G</span><span>o</span><span>o</span><span>g</span><span>l</span><span>e</span>
+									<span>G</span><span>o</span><span>o</span><span>g</span><span>l</span><span
+										>e</span
+									>
 								</span>
 							</div>
 						{/if}

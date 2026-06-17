@@ -393,7 +393,11 @@
 				</button>
 
 				{#if showSearchResults}
-					<div class="topbar-search-results topbar-search-results-mobile" role="group" aria-label={searchAria}>
+					<div
+						class="topbar-search-results topbar-search-results-mobile"
+						role="group"
+						aria-label={searchAria}
+					>
 						{#each searchResults as result (`${result.kind}:${result.id}`)}
 							<button
 								type="button"
@@ -414,7 +418,9 @@
 							<div class="topbar-google-attribution" aria-label="Powered by Google">
 								<span>Powered by</span>
 								<span class="topbar-google-wordmark" aria-hidden="true">
-									<span>G</span><span>o</span><span>o</span><span>g</span><span>l</span><span>e</span>
+									<span>G</span><span>o</span><span>o</span><span>g</span><span>l</span><span
+										>e</span
+									>
 								</span>
 							</div>
 						{/if}
@@ -433,20 +439,40 @@
 			onclick={() => (mobileMenuOpen = false)}
 		></button>
 
-		<nav class="topbar-mobile-menu md:hidden" aria-label={menuAria} data-testid="topbar-mobile-menu">
-			<a href="/map" class="topbar-mobile-menu-link" aria-current={url.pathname.endsWith('/map') ? 'page' : undefined}>
+		<nav
+			class="topbar-mobile-menu md:hidden"
+			aria-label={menuAria}
+			data-testid="topbar-mobile-menu"
+		>
+			<a
+				href="/map"
+				class="topbar-mobile-menu-link"
+				aria-current={url.pathname.endsWith('/map') ? 'page' : undefined}
+			>
 				<span>{locale === 'fr' ? 'Carte' : 'Map'}</span>
 				<small>{locale === 'fr' ? 'réseau en direct' : 'live network'}</small>
 			</a>
-			<a href="/lines" class="topbar-mobile-menu-link" aria-current={url.pathname.endsWith('/lines') ? 'page' : undefined}>
+			<a
+				href="/lines"
+				class="topbar-mobile-menu-link"
+				aria-current={url.pathname.endsWith('/lines') ? 'page' : undefined}
+			>
 				<span>{locale === 'fr' ? 'Lignes' : 'Lines'}</span>
 				<small>{locale === 'fr' ? 'itinéraires et directions' : 'routes and directions'}</small>
 			</a>
-			<a href="/stops" class="topbar-mobile-menu-link" aria-current={url.pathname.endsWith('/stops') ? 'page' : undefined}>
+			<a
+				href="/stops"
+				class="topbar-mobile-menu-link"
+				aria-current={url.pathname.endsWith('/stops') ? 'page' : undefined}
+			>
 				<span>{locale === 'fr' ? 'Arrêts' : 'Stops'}</span>
 				<small>{locale === 'fr' ? 'départs et horaires' : 'departures and schedules'}</small>
 			</a>
-			<a href="/network" class="topbar-mobile-menu-link" aria-current={url.pathname.endsWith('/network') ? 'page' : undefined}>
+			<a
+				href="/network"
+				class="topbar-mobile-menu-link"
+				aria-current={url.pathname.endsWith('/network') ? 'page' : undefined}
+			>
 				<span>{locale === 'fr' ? 'Réseau' : 'Network'}</span>
 				<small>{locale === 'fr' ? 'fiabilité et santé' : 'reliability and health'}</small>
 			</a>
@@ -457,7 +483,9 @@
 				class="topbar-mobile-house"
 				aria-label="yesid."
 			>
-				<span class="topbar-mobile-house-wordmark"><span>yesid</span><span class="text-primary">.</span></span>
+				<span class="topbar-mobile-house-wordmark"
+					><span>yesid</span><span class="text-primary">.</span></span
+				>
 			</a>
 		</nav>
 	{/if}
