@@ -1,53 +1,93 @@
-// Transit navigation IA — the bilingual link inventory for the citizen dashboard.
+// Transit navigation IA — the single source of truth for the chrome's links.
 //
-// This is pure content (no imports, no runtime): the single source of truth for
-// WHICH top surfaces the chrome links to and WHAT they are called in each locale.
-// The Nav components own localization — every `href` here is locale-LESS and gets
-// run through `localizeHref` at render time (see TopBar / MenuOverlay). Keep it
-// that way: a locale-prefixed href would double-localize on /fr.
+// Pure content (no imports, no runtime): declares WHICH surfaces the chrome links
+// to and WHAT they are called in each locale. Every `href` is locale-LESS and is
+// run through `localizeHref` at render time by the consumers (TopBar / LeftRail /
+// Footer) — a locale-prefixed href here would double-localize on /fr.
 //
-// `navLinks` are the primary header surfaces (the always-visible top row).
-// `menuItems` is the fuller set behind the menu overlay — navLinks PLUS the
-// external portfolio link + the methodology / à-propos page.
-//
-// Routes here are the planned information architecture for the 9.2 SvelteKit
-// build — some may not exist as pages yet. That is intentional: this file
-// declares the destination map; the route modules land alongside it.
+// ONE manifest, three consumers. Before this, TopBar and LeftRail hand-rolled
+// identical lists inline while Footer rendered a STALE inventory (/, /history,
+// /data-trust) that shipped dead links. Keep every chrome surface iterating
+// SURFACE_NAV so a route rename happens in exactly one place.
 
-/** A single bilingual navigation entry. */
-export interface NavLink {
-	/** Locale-LESS path (e.g. `/network`) or absolute URL for `external` links. */
-	href: string;
-	/** Bilingual label — the Nav picks `en`/`fr` from the active locale. */
-	label: { en: string; fr: string };
-	/** True for off-site links (e.g. the portfolio) — Nav adds rel/target + an icon. */
-	external?: boolean;
+/** Bilingual string — consumers pick `en`/`fr` from the active locale. */
+export interface BilingualLabel {
+	readonly en: string;
+	readonly fr: string;
+}
+
+/** A primary surface in the citizen dashboard's navigation. */
+export interface SurfaceNavItem {
+	/** Stable identity (icon lookup + #each keys). */
+	readonly key: 'map' | 'lines' | 'stops' | 'network';
+	/** Locale-LESS path, e.g. `/map`. */
+	readonly href: string;
+	/** Primary label. */
+	readonly label: BilingualLabel;
+	/** Secondary line (rail subtitle / mobile-menu small). */
+	readonly description: BilingualLabel;
 	/**
-	 * Wayfinding weight. `1` = top-level surface kept visible even when the header
-	 * collapses; `2` = secondary, first to fold into the overflow menu. Absent =
-	 * treated as secondary.
+	 * Delocalized path prefixes that mark this surface active. A prefix matches
+	 * when the current path equals it OR is nested beneath it — e.g. `/route/`
+	 * keeps Lines active on a route-detail page.
 	 */
-	priority?: 1 | 2;
+	readonly activePrefixes: readonly string[];
+}
+
+/** An off-site link (portfolio) shown beside the IA nav. */
+export interface ExternalNavLink {
+	readonly href: string;
+	readonly label: BilingualLabel;
 }
 
 /**
- * The primary header links — the planned top surfaces of the transit citizen
- * dashboard, in wayfinding order: the live map hub first, then the network,
- * history, and data-trust surfaces.
+ * The primary surfaces, in wayfinding order: the live map hub first, then the
+ * per-line and per-stop catalogues, then the network-health / data-trust surface.
+ * These are the REAL shipped routes (verified against src/routes).
  */
-export const navLinks: readonly NavLink[] = [
-	{ href: '/', label: { en: 'Map', fr: 'Carte' }, priority: 1 },
-	{ href: '/network', label: { en: 'Network', fr: 'Réseau' }, priority: 1 },
-	{ href: '/history', label: { en: 'History', fr: 'Historique' }, priority: 2 },
-	{ href: '/data-trust', label: { en: 'Data', fr: 'Données' }, priority: 2 },
+export const SURFACE_NAV: readonly SurfaceNavItem[] = [
+	{
+		key: 'map',
+		href: '/map',
+		label: { en: 'Map', fr: 'Carte' },
+		description: { en: 'live network', fr: 'réseau en direct' },
+		activePrefixes: ['/map'],
+	},
+	{
+		key: 'lines',
+		href: '/lines',
+		label: { en: 'Lines', fr: 'Lignes' },
+		description: { en: 'routes and directions', fr: 'itinéraires et directions' },
+		activePrefixes: ['/lines', '/route/'],
+	},
+	{
+		key: 'stops',
+		href: '/stops',
+		label: { en: 'Stops', fr: 'Arrêts' },
+		description: { en: 'departures and schedules', fr: 'départs et horaires' },
+		activePrefixes: ['/stops', '/stop/'],
+	},
+	{
+		key: 'network',
+		href: '/network',
+		label: { en: 'Network', fr: 'Réseau' },
+		description: { en: 'reliability and health', fr: 'fiabilité et santé' },
+		activePrefixes: ['/network'],
+	},
+] as const;
+
+/** Off-site links — the portfolio at yesid.dev. */
+export const MENU_EXTRAS: readonly ExternalNavLink[] = [
+	{ href: 'https://yesid.dev', label: { en: 'yesid.dev', fr: 'yesid.dev' } },
 ] as const;
 
 /**
- * The full menu-overlay set: every primary surface PLUS the methodology /
- * à-propos page and an external link back to the portfolio at yesid.dev.
+ * True when `currentPath` (a DELOCALIZED pathname, e.g. `/route/1`) falls under
+ * one of the surface's active prefixes. Pure — callers delocalize first.
  */
-export const menuItems: readonly NavLink[] = [
-	...navLinks,
-	{ href: '/methodology', label: { en: 'Methodology', fr: 'À propos' }, priority: 2 },
-	{ href: 'https://yesid.dev', label: { en: 'yesid.dev', fr: 'yesid.dev' }, external: true },
-] as const;
+export function isSurfaceActive(item: SurfaceNavItem, currentPath: string): boolean {
+	return item.activePrefixes.some((prefix) => {
+		const base = prefix.endsWith('/') ? prefix.slice(0, -1) : prefix;
+		return currentPath === base || currentPath.startsWith(`${base}/`);
+	});
+}

@@ -34,7 +34,16 @@
 	import { goto } from '$app/navigation';
 	import { browser } from '$app/environment';
 
-	import { setLocaleContext, DEFAULT_LOCALE, localizeHref, type Locale } from '$lib/i18n';
+	import {
+		setLocaleContext,
+		DEFAULT_LOCALE,
+		delocalizePath,
+		localizeHref,
+		type Locale,
+	} from '$lib/i18n';
+	import SeoHead from '$lib/components/SeoHead.svelte';
+	import { resolveRouteSeo } from '$lib/seo/routeSeo';
+	import { readPublicSiteConfig } from '$lib/site/config';
 	import {
 		setV1Context,
 		bootV1,
@@ -63,6 +72,14 @@
 	// swaps (the root layout never remounts).
 	const locale = $derived<Locale>(data.lang ?? DEFAULT_LOCALE);
 	setLocaleContext(() => data.lang ?? DEFAULT_LOCALE);
+
+	// Per-route document head. One <SeoHead> here resolves title/description/
+	// canonical/OG/hreflang per surface (routeSeo) instead of a single global
+	// title on every page. siteOrigin + indexing come from the public site config
+	// (PUBLIC_SITE_ORIGIN / PUBLIC_INDEXING) so the dev lane is noindex.
+	const siteConfig = readPublicSiteConfig();
+	const seoPath = $derived(delocalizePath($page.url.pathname));
+	const seo = $derived(resolveRouteSeo($page.url.pathname, locale));
 
 	// v1 snapshot context. The SSR boot (+layout.ts) can fail on Cloudflare — a
 	// Worker's fetch to its own zone can't reach the sibling /data route (523) —
@@ -244,15 +261,14 @@
 	}
 </script>
 
-<svelte:head>
-	<title>{locale === 'fr' ? 'Transit · carte STM en direct' : 'Transit · live STM map'}</title>
-	<meta
-		name="description"
-		content={locale === 'fr'
-			? 'Carte en direct des bus, arrêts, lignes et alertes STM à Montréal.'
-			: 'Live STM map for Montreal buses, stops, routes, and alerts.'}
-	/>
-</svelte:head>
+<SeoHead
+	title={seo.title}
+	description={seo.description}
+	path={seoPath}
+	{locale}
+	siteOrigin={siteConfig.siteOrigin}
+	noIndex={!siteConfig.indexing}
+/>
 
 <AppShell
 	{locale}

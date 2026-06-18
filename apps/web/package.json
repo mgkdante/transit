@@ -21,7 +21,6 @@
 	},
 	"devDependencies": {
 		"@eslint/js": "^10.0.1",
-		"@faker-js/faker": "^10.4.0",
 		"@resvg/resvg-js": "^2.6.2",
 		"@sveltejs/adapter-cloudflare": "^7.2.8",
 		"@sveltejs/kit": "^2.50.2",
@@ -37,7 +36,6 @@
 		"eslint-plugin-svelte": "^3.19.0",
 		"globals": "^17.6.0",
 		"happy-dom": "^20.8.9",
-		"interface-forge": "^2.6.6",
 		"prettier": "^3.8.4",
 		"prettier-plugin-svelte": "^4.1.0",
 		"rollup-plugin-visualizer": "^7.0.1",

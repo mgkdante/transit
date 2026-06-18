@@ -389,7 +389,7 @@
 		z-index: 2;
 		display: grid;
 		gap: 0.25rem;
-		max-height: min(18rem, calc(100vh - 10rem));
+		max-height: min(18rem, calc(100dvh - 10rem));
 		overflow-y: auto;
 		padding: 0.3rem;
 		background: color-mix(in srgb, var(--card) 98%, transparent);
