@@ -16,9 +16,8 @@
   copy is co-located. Tokens, no hex; --primary stays interactive-only.
 -->
 <script lang="ts">
-	import { getLocale, localizeHref } from '$lib/i18n';
-	import { routeFor } from '$lib/nav';
-	import { emptyFilterState, toSearchString } from '$lib/filters';
+	import { getLocale } from '$lib/i18n';
+	import { mapHrefFor } from '$lib/nav';
 	import { getRoute, getRouteReliability } from '$lib/v1';
 	import type { RouteFile, RouteReliability, ReliabilityPeriod } from '$lib/v1';
 	import { createResource } from '$lib/v1/resource.svelte';
@@ -68,16 +67,6 @@
 
 	const fmtMin = (v: number | null | undefined): string =>
 		v == null ? '—' : `${v.toFixed(1)} min`;
-
-	function routeMapSearch(routeId: string): string {
-		const state = emptyFilterState();
-		state.routes.add(routeId);
-		return toSearchString(state);
-	}
-
-	function routeMapHref(routeId: string): string {
-		return localizeHref(routeFor({ kind: 'map', search: routeMapSearch(routeId) }), locale);
-	}
 </script>
 
 <EntityDetail kicker={t.kicker} {tabs} bind:active>
@@ -85,7 +74,7 @@
 		<div class="route-detail-head">
 			<SectionHeading heading={id} level={1} dot />
 			<a
-				href={routeMapHref(id)}
+				href={mapHrefFor({ route: id }, locale)}
 				class="route-map-action"
 				aria-label={t.viewRouteOnMap(id)}
 				data-sveltekit-preload-data="hover"

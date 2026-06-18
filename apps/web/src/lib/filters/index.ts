@@ -34,6 +34,9 @@ export {
 
 export { fromSearchParams, toSearchParams, toSearchString } from './url';
 
+export type { MapFilterTarget } from './mapTarget';
+export { mapSearchFor } from './mapTarget';
+
 export type { FilterStore, PushUrl, Chip } from './store.svelte';
 export { createFilterStore } from './store.svelte';
 

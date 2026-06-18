@@ -12,9 +12,8 @@
   Tokens, no hex; --primary stays interactive-only.
 -->
 <script lang="ts">
-	import { getLocale, localizeHref } from '$lib/i18n';
-	import { routeFor } from '$lib/nav';
-	import { emptyFilterState, toSearchString } from '$lib/filters';
+	import { getLocale } from '$lib/i18n';
+	import { mapHrefFor } from '$lib/nav';
 	import { getRoutesIndex } from '$lib/v1';
 	import type { RouteIndexEntry } from '$lib/v1';
 	import { createResource } from '$lib/v1/resource.svelte';
@@ -55,16 +54,6 @@
 			(r) => r.short.toLowerCase().includes(q) || (r.long ?? '').toLowerCase().includes(q),
 		);
 	});
-
-	function routeMapSearch(id: string): string {
-		const state = emptyFilterState();
-		state.routes.add(id);
-		return toSearchString(state);
-	}
-
-	function routeMapHref(id: string): string {
-		return localizeHref(routeFor({ kind: 'map', search: routeMapSearch(id) }), locale);
-	}
 </script>
 
 <Surface width="bleed" pad="hub" class="lines-index">
@@ -98,7 +87,7 @@
 						class="line-result-main"
 					/>
 					<a
-						href={routeMapHref(r.id)}
+						href={mapHrefFor({ route: r.id }, locale)}
 						class="line-map-link"
 						aria-label={t.viewRouteOnMap(r.short)}
 						data-sveltekit-preload-data="hover"

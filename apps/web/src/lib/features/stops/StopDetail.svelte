@@ -20,8 +20,7 @@
 -->
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { getLocale, localizeHref, type Locale } from '$lib/i18n';
-	import { emptyFilterState, toSearchString } from '$lib/filters';
+	import { getLocale, type Locale } from '$lib/i18n';
 	import {
 		getStop,
 		getStopReliability,
@@ -40,7 +39,7 @@
 		type ReliabilityPeriodVM,
 	} from '$lib/components/surface';
 	import { EdgeState } from '$lib/components/edge';
-	import { layout, routeFor } from '$lib/nav';
+	import { layout, mapHrefFor } from '$lib/nav';
 	import StopLabel from '$lib/components/brand/StopLabel.svelte';
 	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
 	import MetricDisplay from '$lib/components/brand/MetricDisplay.svelte';
@@ -101,16 +100,6 @@
 		if (delayMin == null || delayMin === 0) return t.next.onTime;
 		return delayMin > 0 ? t.next.late(delayMin) : t.next.early(Math.abs(delayMin));
 	}
-
-	function stopMapSearch(stopId: string): string {
-		const state = emptyFilterState();
-		state.stops.add(stopId);
-		return toSearchString(state);
-	}
-
-	function stopMapHref(stopId: string): string {
-		return localizeHref(routeFor({ kind: 'map', search: stopMapSearch(stopId) }), locale);
-	}
 </script>
 
 <EntityDetail kicker={t.kicker} {tabs} bind:active>
@@ -118,7 +107,7 @@
 		<div class="stop-detail-head">
 			<StopLabel stop={id} label={stop.data?.name ?? `#${id}`} />
 			<a
-				href={stopMapHref(id)}
+				href={mapHrefFor({ stop: id }, locale)}
 				class="stop-map-action"
 				aria-label={t.viewStopOnMap(id)}
 				data-sveltekit-preload-data="hover"

@@ -6,14 +6,9 @@
 // ReliabilityPane). FR is the canonical product voice; EN mirrors it.
 
 import type { Locale } from '$lib/i18n';
+import type { SurfaceHeadCopy } from '$lib/components/surface';
 
-export interface LinesIndexCopy {
-	/** Station-voice overline above the index heading. */
-	readonly kicker: string;
-	/** Index display heading. */
-	readonly heading: string;
-	/** Muted lede paragraph under the heading. */
-	readonly lede: string;
+export interface LinesIndexCopy extends SurfaceHeadCopy {
 	/** Accessible label + placeholder for the filter input. */
 	readonly filterLabel: string;
 	readonly filterPlaceholder: string;

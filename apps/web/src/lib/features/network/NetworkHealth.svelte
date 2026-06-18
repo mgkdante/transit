@@ -19,7 +19,7 @@
 	import { onMount } from 'svelte';
 	import { getLocale, type Locale } from '$lib/i18n';
 	import { layout, openSurface } from '$lib/nav';
-	import { emptyFilterState, toSearchString } from '$lib/filters';
+	import { mapSearchFor } from '$lib/filters';
 	import {
 		createLiveStore,
 		getNetworkTrend,
@@ -112,9 +112,7 @@
 
 	function openStatusOnMap(code: StatusCode | OccupancyCode): void {
 		if (!STATUS_CODES.includes(code as StatusCode)) return;
-		const state = emptyFilterState();
-		state.status = [code as StatusCode];
-		openSurface({ kind: 'map', search: toSearchString(state) });
+		openSurface({ kind: 'map', search: mapSearchFor({ status: [code as StatusCode] }) });
 	}
 </script>
 
