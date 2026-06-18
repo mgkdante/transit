@@ -11,7 +11,10 @@ describe('MapStage', () => {
 
 		expect(s).toContain('fitPadding?: MapFitPadding');
 		expect(s).toContain('fitPadding = 40');
-		expect(s).toContain('...mapViewportOptions(bounds, fitPadding)');
+		// maxBounds (optional, looser than the fit bounds) is threaded through both
+		// viewport-option call sites so a left fit-padding can reveal west overflow.
+		expect(s).toContain('maxBounds?: readonly number[]');
+		expect(s).toContain('...mapViewportOptions(bounds, fitPadding, maxBounds)');
 		expect(s).toContain(
 			'function fitKey(nextBounds: readonly number[] | undefined, nextPadding: MapFitPadding): string',
 		);

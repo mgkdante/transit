@@ -279,15 +279,20 @@ describe('MapHero mobile chrome', () => {
 		const s = source();
 		const mapStageBlock = s.match(/<MapStage[\s\S]*?\/>/)?.[0] ?? '';
 
-		// Symmetric fit on every form factor — NO asymmetric desktop left-reserve —
-		// so the island centres identically on desktop and mobile.
+		// The camera FITS the island bounds (not the wide square) so the off-island
+		// south-shore east is cropped, framed into a square central gap with static
+		// width-fraction left/right buffers (no re-fit on panel toggle); maxBounds
+		// stays the looser basemap square.
 		expect(s).toContain('const MAP_FIT_PADDING_PX = 40');
-		expect(s).not.toContain('DESKTOP_MAP_FIT_LEFT_PADDING_PX');
+		expect(s).toContain('const ISLAND_FIT_BOUNDS');
+		expect(s).toContain('DESKTOP_LEFT_PAD_FRAC');
+		expect(s).toContain('DESKTOP_RIGHT_PAD_FRAC');
 		expect(s).toContain('const mapFitPadding = $derived');
 		expect(s).not.toContain('{#if basemap.settled}');
 		expect(mapStageBlock).toContain('basemap={basemap.data}');
 		expect(mapStageBlock).toContain('{theme}');
-		expect(mapStageBlock).toContain('bounds={manifest.bbox}');
+		expect(mapStageBlock).toContain('bounds={ISLAND_FIT_BOUNDS}');
+		expect(mapStageBlock).toContain('maxBounds={manifest.bbox}');
 		expect(mapStageBlock).toContain('fitPadding={mapFitPadding}');
 	});
 

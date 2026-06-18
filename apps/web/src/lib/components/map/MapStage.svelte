@@ -67,8 +67,13 @@
 		basemap?: BasemapFile | null;
 		/** Active app theme. Rebuilds the MapLibre style when dark/light changes. */
 		theme?: BasemapTheme;
-		/** Provider bbox as [minLon, minLat, maxLon, maxLat]. */
+		/** Bbox the initial camera FITS to, as [minLon, minLat, maxLon, maxLat]. */
 		bounds?: readonly number[];
+		/**
+		 * Optional pan limit, LOOSER than `bounds`, so a left fit-padding can reveal
+		 * map west of the fit window without MapLibre clamping. Defaults to `bounds`.
+		 */
+		maxBounds?: readonly number[];
 		/** Fit padding used when the provider bbox seeds the initial camera. */
 		fitPadding?: MapFitPadding;
 		/** Accessible name for the map region (icon-/canvas-only control). */
@@ -96,6 +101,7 @@
 		basemap = null,
 		theme = 'dark',
 		bounds,
+		maxBounds,
 		fitPadding = 40,
 		label = 'Transit map',
 		onready,
@@ -159,7 +165,7 @@
 				style,
 				center,
 				zoom,
-				...mapViewportOptions(bounds, fitPadding),
+				...mapViewportOptions(bounds, fitPadding, maxBounds),
 				// Honest chrome: attribution is owned by the basemap/snapshot, not us.
 				attributionControl: { compact: true },
 			});
@@ -207,7 +213,7 @@
 		const nextFitKey = fitKey(bounds, fitPadding);
 		if (activeFitKey === nextFitKey) return;
 		activeFitKey = nextFitKey;
-		const viewport = mapViewportOptions(bounds, fitPadding);
+		const viewport = mapViewportOptions(bounds, fitPadding, maxBounds);
 		m.fitBounds(viewport.bounds, { ...viewport.fitBoundsOptions, duration: 0 });
 	});
 
