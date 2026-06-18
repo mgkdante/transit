@@ -337,6 +337,7 @@ def _historic_dispatch_conn():
         ("cancellation_rate_pct, canceled_trip_days", []),
         ("route_occupancy_band_daily AS rob", []),
         ("first_trip_start_utc", []),
+        ("skipped_stop_rate_pct", []),
         ("ORDER BY provider_local_date DESC", [
             {"d": datetime.date(2026, 6, 1), "known_obs": 50, "on_time": 45,
              "avg_delay_sec": 90, "severe": 5},

@@ -492,6 +492,13 @@ def test_publish_historic_writes_expected_keys(tmp_path) -> None:
              "service_span_min": 900, "first_trip_delay_seconds": 30,
              "last_trip_delay_seconds": 90, "trip_count": 120},
         ]),
+        # build_route_reliability: skipped-stop history — unique discriminator
+        # "skipped_stop_rate_pct" (also ends with ORDER BY provider_local_date DESC).
+        ("skipped_stop_rate_pct", [
+            {"provider_local_date": datetime.date(2026, 6, 1),
+             "skipped_stop_rate_pct": 3.94, "skipped_stop_count": 12,
+             "stop_time_update_count": 305},
+        ]),
         # build_route_reliability: daily view
         ("ORDER BY provider_local_date DESC", [
             {"d": datetime.date(2026, 6, 1), "known_obs": 50, "on_time": 45,

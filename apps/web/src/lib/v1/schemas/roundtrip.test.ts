@@ -251,6 +251,14 @@ describe('tier-2 — headway cov/bunching + service_spans + alert breakdown roun
 					trip_count: 120,
 				},
 			],
+			skipped_stops: [
+				{
+					date: '2026-06-14',
+					skipped_stop_rate_pct: 3.94,
+					skipped_stop_count: 12,
+					stop_time_update_count: 305,
+				},
+			],
 		};
 		expect(() => parsePort('route_reliability', RouteReliabilitySchema, fixture)).not.toThrow();
 	});

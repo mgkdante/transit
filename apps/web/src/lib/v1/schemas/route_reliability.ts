@@ -43,6 +43,15 @@ export const ServiceSpanPeriodSchema = z.object({
 });
 export type ServiceSpanPeriod = z.infer<typeof ServiceSpanPeriodSchema>;
 
+export const SkippedStopPeriodSchema = z.object({
+	date: z.string().nullable().optional(),
+	// skipped / all observed stop-time updates, %; null when none observed.
+	skipped_stop_rate_pct: z.number().nullable().optional(),
+	skipped_stop_count: z.number().int().nullable().optional(),
+	stop_time_update_count: z.number().int().nullable().optional(),
+});
+export type SkippedStopPeriod = z.infer<typeof SkippedStopPeriodSchema>;
+
 export const RouteHabitsSchema = z.object({
 	// e.g. 'repeat_problem_relative' — drives the heatmap normalization on the
 	// consumer side. RAW string; never resolveLabel.
@@ -95,5 +104,7 @@ export const RouteReliabilitySchema = z.object({
 	occupancy_mix: OccupancyMixSchema.nullable().optional(),
 	// per-day service-span / first-last punctuality history.
 	service_spans: z.array(ServiceSpanPeriodSchema).optional(),
+	// per-day skipped-stop rate history (ramp-in, no backfill).
+	skipped_stops: z.array(SkippedStopPeriodSchema).optional(),
 });
 export type RouteReliability = z.infer<typeof RouteReliabilitySchema>;

@@ -336,6 +336,15 @@ class ServiceSpanPeriod(BaseModel):
     last_trip_delay_min: float | None = None
     trip_count: int | None = None
 
+class SkippedStopPeriod(BaseModel):
+    # Per-route skipped-stop rate over one closed local day. rate_pct = skipped /
+    # all observed stop-time updates (GTFS-RT SKIPPED=1); None when none observed.
+    # RAMP-IN: history accrues forward only from the date this metric shipped.
+    date: str | None = None
+    skipped_stop_rate_pct: float | None = None
+    skipped_stop_count: int | None = None
+    stop_time_update_count: int | None = None
+
 class RouteHabits(BaseModel):
     scale: str
     # Per-route relative-problem heatmap: each cell is a fraction of the route's
@@ -372,6 +381,8 @@ class RouteReliability(BaseModel):
     occupancy_mix: OccupancyMix | None = None
     # Tier-2 additive: per-day service-span / first-last punctuality history.
     service_spans: list[ServiceSpanPeriod] = Field(default_factory=list)
+    # Tier-2 additive: per-day skipped-stop rate history (ramp-in, no backfill).
+    skipped_stops: list[SkippedStopPeriod] = Field(default_factory=list)
 
 class StopReliabilityPeriod(BaseModel):
     grain: str

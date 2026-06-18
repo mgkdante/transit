@@ -106,14 +106,18 @@ def _seed(connection, seed: _Seed) -> None:  # noqa: ANN001
         local_date.year, local_date.month, local_date.day, tzinfo=TORONTO
     )
     starts = [
-        ("T1", 10 * 60, 30),   # 10:00, +30s delay (first trip)
-        ("T2", 10 * 60 + 30, 60),
-        ("T3", 14 * 60, 120),  # 14:00 (last trip), +120s delay
+        # (trip, minute_of_day, delay, stop_time_update_count, skipped_stop_count)
+        ("T1", 10 * 60, 30, 10, 2),   # 10:00, +30s delay (first trip)
+        ("T2", 10 * 60 + 30, 60, 10, 0),
+        ("T3", 14 * 60, 120, 10, 1),  # 14:00 (last trip), +120s delay
     ]
-    for trip_id, minute_of_day, delay in starts:
+    # Skipped total = 3, stop-time updates total = 30 → 10.00% skipped-stop rate.
+    for trip_id, minute_of_day, delay, stop_updates, skipped in starts:
         captured_at = (day_local_midnight + timedelta(minutes=minute_of_day)).astimezone(UTC)
         snapshot_id = _insert_snapshot(connection, seed, captured_at)
-        _insert_trip_delay_row(connection, snapshot_id, captured_at, trip_id, "88S", delay)
+        _insert_trip_delay_row(
+            connection, snapshot_id, captured_at, trip_id, "88S", delay, stop_updates, skipped
+        )
 
 
 def _insert_snapshot(connection, seed: _Seed, captured_at: datetime) -> int:  # noqa: ANN001
@@ -149,7 +153,14 @@ def _insert_snapshot(connection, seed: _Seed, captured_at: datetime) -> int:  # 
 
 
 def _insert_trip_delay_row(  # noqa: ANN001
-    connection, snapshot_id: int, captured_at: datetime, trip_id: str, route_id: str, delay: int
+    connection,
+    snapshot_id: int,
+    captured_at: datetime,
+    trip_id: str,
+    route_id: str,
+    delay: int,
+    stop_updates: int = 1,
+    skipped: int = 0,
 ) -> None:
     local_date = captured_at.astimezone(TORONTO).date()
     connection.execute(
@@ -160,9 +171,9 @@ def _insert_trip_delay_row(  # noqa: ANN001
                  snapshot_local_date, feed_timestamp_utc, captured_at_utc, entity_id,
                  trip_id, route_id, direction_id, start_date, vehicle_id,
                  trip_schedule_relationship, delay_seconds, stop_time_update_count,
-                 delay_stop_id, delay_stop_sequence)
+                 skipped_stop_count, delay_stop_id, delay_stop_sequence)
             VALUES (:p, :sid, 0, :dk, :sld, :ts, :ts, :entity_id, :trip_id, :route_id,
-                    0, :sld, NULL, NULL, :delay, 1, 'S1', 1)
+                    0, :sld, NULL, NULL, :delay, :stop_updates, :skipped, 'S1', 1)
             """
         ),
         {
@@ -175,6 +186,8 @@ def _insert_trip_delay_row(  # noqa: ANN001
             "trip_id": trip_id,
             "route_id": route_id,
             "delay": delay,
+            "stop_updates": stop_updates,
+            "skipped": skipped,
         },
     )
 
@@ -236,3 +249,24 @@ def test_service_span_is_append_only_idempotent(conn) -> None:  # noqa: ANN001
         )
     }
     assert "route_service_span_daily" in kinds
+
+
+def test_skipped_stop_rate_sums_fact_counts(conn) -> None:  # noqa: ANN001
+    connection, seed = conn
+
+    row = connection.execute(
+        text(
+            """
+            SELECT stop_time_update_count, skipped_stop_count, skipped_stop_rate_pct
+            FROM gold.route_skipped_stop_daily
+            WHERE provider_id = :p AND route_id = '88S'
+              AND provider_local_date = :d
+            """
+        ),
+        {"p": PROVIDER, "d": seed.closed_local_date},
+    ).mappings().one()
+
+    # Seeded: 3 trips with stop_time_update_count 10 each (30) and skipped 2/0/1 (3).
+    assert row["stop_time_update_count"] == 30
+    assert row["skipped_stop_count"] == 3
+    assert float(row["skipped_stop_rate_pct"]) == 10.00

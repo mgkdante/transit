@@ -417,6 +417,60 @@
       "title": "ServiceSpanPeriod",
       "type": "object"
     },
+    "SkippedStopPeriod": {
+      "properties": {
+        "date": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Date"
+        },
+        "skipped_stop_count": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Skipped Stop Count"
+        },
+        "skipped_stop_rate_pct": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Skipped Stop Rate Pct"
+        },
+        "stop_time_update_count": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Stop Time Update Count"
+        }
+      },
+      "title": "SkippedStopPeriod",
+      "type": "object"
+    },
     "WeakStop": {
       "properties": {
         "id": {
@@ -531,6 +585,13 @@
         "$ref": "#/$defs/ServiceSpanPeriod"
       },
       "title": "Service Spans",
+      "type": "array"
+    },
+    "skipped_stops": {
+      "items": {
+        "$ref": "#/$defs/SkippedStopPeriod"
+      },
+      "title": "Skipped Stops",
       "type": "array"
     },
     "weak_stops": {

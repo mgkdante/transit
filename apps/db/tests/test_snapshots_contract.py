@@ -296,6 +296,7 @@ def test_tier2_headway_servicespan_alertbreakdown_fields_are_additive():
         HeadwayPeriod,
         RouteReliability,
         ServiceSpanPeriod,
+        SkippedStopPeriod,
     )
 
     # HeadwayPeriod regularity fields default None; populated roundtrips.
@@ -303,9 +304,23 @@ def test_tier2_headway_servicespan_alertbreakdown_fields_are_additive():
     assert hp.cov is None and hp.bunched_pct is None
     assert HeadwayPeriod(shift="am_peak", cov=0.42, bunched_pct=12.5).cov == 0.42
 
-    # RouteReliability.service_spans defaults []; populated roundtrips.
+    # RouteReliability.service_spans / skipped_stops default []; populated roundtrips.
     rr = RouteReliability(generated_utc="t", id="165")
     assert rr.service_spans == []
+    assert rr.skipped_stops == []
+    rr_skip = RouteReliability(
+        generated_utc="t",
+        id="165",
+        skipped_stops=[
+            SkippedStopPeriod(
+                date="2026-06-17", skipped_stop_rate_pct=3.94,
+                skipped_stop_count=12, stop_time_update_count=305,
+            )
+        ],
+    )
+    assert rr_skip.skipped_stops[0].skipped_stop_rate_pct == 3.94
+    # Honest-None rate when no stop-time updates observed.
+    assert SkippedStopPeriod(skipped_stop_count=0, stop_time_update_count=0).skipped_stop_rate_pct is None
     full = RouteReliability(
         generated_utc="t",
         id="165",
