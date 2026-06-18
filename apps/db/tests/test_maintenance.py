@@ -75,6 +75,8 @@ EXPECTED_GOLD_AGGREGATE_TABLE_COUNTS = {
     "gold.route_habit_score": 18,
     "gold.repeated_problem_route_stop": 19,
     "gold.citizen_accountability_daily": 20,
+    "gold.route_delay_percentile_daily": 21,
+    "gold.stop_delay_percentile_daily": 22,
 }
 
 

@@ -1,5 +1,35 @@
 {
   "$defs": {
+    "RouteHabits": {
+      "properties": {
+        "matrix": {
+          "items": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "type": "array"
+          },
+          "title": "Matrix",
+          "type": "array"
+        },
+        "scale": {
+          "title": "Scale",
+          "type": "string"
+        }
+      },
+      "required": [
+        "scale"
+      ],
+      "title": "RouteHabits",
+      "type": "object"
+    },
     "StopByRoute": {
       "properties": {
         "median_delay_min": {
@@ -55,6 +85,30 @@
           "default": null,
           "title": "Otp Pct"
         },
+        "p50_min": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "P50 Min"
+        },
+        "p90_min": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "P90 Min"
+        },
         "severe_pct": {
           "anyOf": [
             {
@@ -86,6 +140,17 @@
     "generated_utc": {
       "title": "Generated Utc",
       "type": "string"
+    },
+    "habits": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/RouteHabits"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
     },
     "id": {
       "title": "Id",

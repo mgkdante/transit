@@ -4,8 +4,9 @@ OTP convention: otp_pct = round(100 * on_time / known), NULL if either side is
 unknown or known==0. Stop reliability keeps a documented severe-delay proxy,
 now over real per-stop delay observations rather than route-smeared values.
 avg_delay_min = round(avg_delay_seconds/60, 1); severe_pct = round(100*sev/known, 1).
-p50_min/p90_min for route/stop reliability are NOT stored in gold and are left
-None (v1 deferral); only network_trend computes a real p90 from the fact table.
+p50_min/p90_min for route/stop reliability come from an append-only daily
+percentile rollup (route: per local day; stop: most recent closed day); weekly
+and monthly grains stay None because percentiles are not additively composable.
 """
 
 from __future__ import annotations
@@ -52,6 +53,7 @@ from transit_ops.snapshots.contract import (
     ReceiptWorstStop,
     ReliabilityPeriod,
     RepeatOffenders,
+    RouteDayOfWeek,
     RouteReliability,
     StopByRoute,
     StopReliability,
@@ -225,6 +227,26 @@ _ROUTE_WEAK_STOPS_SQL = text(
 )
 
 
+# Daily p50/p90 delay from the append-only percentile rollup (route grain).
+_ROUTE_PERCENTILE_DAILY_SQL = text(
+    """
+    SELECT provider_local_date, p50_delay_seconds, p90_delay_seconds
+    FROM gold.route_delay_percentile_daily
+    WHERE provider_id = :provider_id AND route_id = :route_id
+    """
+)
+
+# Per-route weekday seasonality (ISO 1=Mon..7=Sun) from the latent daily mart.
+_ROUTE_DOW_SQL = text(
+    """
+    SELECT day_of_week_iso, observation_count, avg_delay_seconds, severe_delay_count
+    FROM gold.route_delay_day_of_week
+    WHERE provider_id = :provider_id AND route_id = :route_id
+    ORDER BY day_of_week_iso
+    """
+)
+
+
 def build_route_reliability(
     conn: Connection, *, provider_id: str = "stm", route_id: str, generated_utc: str
 ) -> "RouteReliability":
@@ -241,17 +263,27 @@ def build_route_reliability(
     params = {"provider_id": provider_id, "route_id": route_id}
 
     # --- periods (daily/weekly/monthly observation-based OTP) ---
+    # Daily p50/p90 from the append-only percentile rollup, keyed by local date;
+    # weekly/monthly stay None (percentiles are not additively composable).
+    route_pctile: dict[str, tuple[float | None, float | None]] = {
+        _iso_date(r["provider_local_date"]): (
+            _avg_delay_min(r["p50_delay_seconds"]),
+            _avg_delay_min(r["p90_delay_seconds"]),
+        )
+        for r in conn.execute(_ROUTE_PERCENTILE_DAILY_SQL, params).mappings()
+    }
     periods: list[ReliabilityPeriod] = []
     for r in conn.execute(_ROUTE_REL_DAILY_SQL, params).mappings():
+        p50_min, p90_min = route_pctile.get(_iso_date(r["d"]), (None, None))
         periods.append(
-                ReliabilityPeriod(
-                    grain="day",
-                    date=_iso_date(r["d"]),
-                    otp_pct=_otp_pct(r["on_time"], r["known_obs"]),
-                    avg_delay_min=_avg_delay_min(r["avg_delay_sec"]),
-                    p50_min=None,  # percentiles not stored in gold (v1 deferral)
-                    p90_min=None,
-                    severe_pct=_severe_pct(r["known_obs"], r["severe"]),
+            ReliabilityPeriod(
+                grain="day",
+                date=_iso_date(r["d"]),
+                otp_pct=_otp_pct(r["on_time"], r["known_obs"]),
+                avg_delay_min=_avg_delay_min(r["avg_delay_sec"]),
+                p50_min=p50_min,
+                p90_min=p90_min,
+                severe_pct=_severe_pct(r["known_obs"], r["severe"]),
             )
         )
     for grain, sql in (("week", _ROUTE_REL_WEEKLY_SQL), ("month", _ROUTE_REL_MONTHLY_SQL)):
@@ -326,6 +358,17 @@ def build_route_reliability(
         for r in conn.execute(_ROUTE_NAMES_SQL, {"provider_id": provider_id}).mappings()
     }
 
+    # --- day_of_week: per-route weekday seasonality (latent daily mart) ---
+    route_dow = [
+        RouteDayOfWeek(
+            day_of_week_iso=int(r["day_of_week_iso"]),
+            avg_delay_min=_avg_delay_min(r["avg_delay_seconds"]),
+            severe_pct=_severe_pct(r["observation_count"], r["severe_delay_count"]),
+            observation_count=_opt_int(r["observation_count"]),
+        )
+        for r in conn.execute(_ROUTE_DOW_SQL, params).mappings()
+    ]
+
     return RouteReliability(
         generated_utc=generated_utc,
         id=route_id,
@@ -333,6 +376,7 @@ def build_route_reliability(
         periods=periods,
         headway=headway,
         habits=habits,
+        day_of_week=route_dow,
         weak_stops=weak_stops,
     )
 
@@ -375,6 +419,37 @@ _STOP_REL_BY_ROUTE_SQL = text(
     FROM gold.stop_delay_weekly
     WHERE provider_id = :provider_id
     GROUP BY stop_id, route_id
+    """
+)
+
+
+# Per-stop 7x24 severe-delay heatmap source (dow x hour from the open-window
+# hourly mart). Cell magnitude = summed severe-delay count; fed to
+# _build_habits_matrix on the DISTINCT 'severe_relative' scale.
+_STOP_HABIT_SQL = text(
+    """
+    SELECT sd.stop_id,
+           EXTRACT(ISODOW FROM timezone(dp.timezone, sd.period_start_utc))::integer
+               AS day_of_week_iso,
+           EXTRACT(HOUR FROM timezone(dp.timezone, sd.period_start_utc))::integer
+               AS hour_of_day_local,
+           SUM(sd.severe_delay_count)::numeric AS repeat_problem_score
+    FROM gold.stop_delay_hourly AS sd
+    INNER JOIN gold.dim_provider AS dp ON dp.provider_id = sd.provider_id
+    WHERE sd.provider_id = :provider_id
+    GROUP BY sd.stop_id, 2, 3
+    ORDER BY sd.stop_id
+    """
+)
+
+# Most-recent closed local day's p50/p90 per stop (append-only percentile rollup).
+_STOP_PERCENTILE_DAILY_SQL = text(
+    """
+    SELECT DISTINCT ON (stop_id)
+        stop_id, p50_delay_seconds, p90_delay_seconds
+    FROM gold.stop_delay_percentile_daily
+    WHERE provider_id = :provider_id
+    ORDER BY stop_id, provider_local_date DESC
     """
 )
 
@@ -424,13 +499,41 @@ def build_stop_reliability(
         for r in conn.execute(_STOP_NAMES_SQL, params).mappings()
     }
 
+    # Per-stop 7x24 severe-delay heatmap (distinct 'severe_relative' scale, so a
+    # shared legend never conflates it with the route repeat-problem matrix).
+    habit_rows: dict[str, list] = {}
+    for r in conn.execute(_STOP_HABIT_SQL, params).mappings():
+        habit_rows.setdefault(str(r["stop_id"]), []).append(r)
+    habits = {
+        sid: _build_habits_matrix(rows, scale="severe_relative")
+        for sid, rows in habit_rows.items()
+    }
+
+    # Per-stop most-recent-day p50/p90 from the append-only percentile rollup.
+    day_period: dict[str, StopReliabilityPeriod] = {
+        str(r["stop_id"]): StopReliabilityPeriod(
+            grain="day",
+            p50_min=_avg_delay_min(r["p50_delay_seconds"]),
+            p90_min=_avg_delay_min(r["p90_delay_seconds"]),
+        )
+        for r in conn.execute(_STOP_PERCENTILE_DAILY_SQL, params).mappings()
+    }
+
     out: dict[str, StopReliability] = {}
-    for sid in set(periods) | set(by_route):
+    for sid in set(periods) | set(by_route) | set(habits) | set(day_period):
         grain_map = periods.get(sid, {})
-        ordered = [grain_map[g] for g in ("week", "month") if g in grain_map]
+        ordered: list[StopReliabilityPeriod] = []
+        if sid in day_period:
+            ordered.append(day_period[sid])
+        ordered.extend(grain_map[g] for g in ("week", "month") if g in grain_map)
         routes = sorted(by_route.get(sid, []), key=lambda b: _route_sort_key(b.route))
         out[sid] = StopReliability(
-            generated_utc=generated_utc, id=sid, name=names.get(sid), periods=ordered, by_route=routes
+            generated_utc=generated_utc,
+            id=sid,
+            name=names.get(sid),
+            periods=ordered,
+            habits=habits.get(sid),
+            by_route=routes,
         )
     return out
 
@@ -904,7 +1007,9 @@ def build_provenance(
                 "with |delay| > 1 hour (ghost-trip guard); severe = >300s and <=3600s"
             ),
             "percentiles": (
-                "network p90 from fact; route/stop percentiles deferred"
+                "network p90 from fact (live + trailing 14d trend); route and "
+                "stop p50/p90 from a daily fact-derived percentile rollup, "
+                "computed per closed local day and retained 365 days"
             ),
             "headway": (
                 "observed = median gap between consecutive trip starts "

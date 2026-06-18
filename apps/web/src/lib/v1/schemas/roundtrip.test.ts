@@ -159,6 +159,31 @@ describe('schema round-trip — every family parses a minimal valid fixture', ()
 	}
 });
 
+describe('reliability — new optional fields (day_of_week / habits / p50,p90) round-trip', () => {
+	it('parses a populated route_reliability with day_of_week + percentile periods', () => {
+		const fixture = {
+			generated_utc: ISO,
+			id: '165',
+			periods: [{ grain: 'day', date: '2026-06-14', p50_min: 1.2, p90_min: 6.5 }],
+			day_of_week: [
+				{ day_of_week_iso: 1, avg_delay_min: 2.1, severe_pct: 4.0, observation_count: 1200 },
+			],
+			habits: { scale: 'repeat_problem_relative', matrix: [[0.0, null]] },
+		};
+		expect(() => parsePort('route_reliability', RouteReliabilitySchema, fixture)).not.toThrow();
+	});
+
+	it('parses a populated stop_reliability with a severe_relative heatmap + day p50/p90', () => {
+		const fixture = {
+			generated_utc: ISO,
+			id: 's1',
+			periods: [{ grain: 'day', p50_min: 0.8, p90_min: 5.0 }],
+			habits: { scale: 'severe_relative', matrix: [[null, 1.0]] },
+		};
+		expect(() => parsePort('stop_reliability', StopReliabilitySchema, fixture)).not.toThrow();
+	});
+});
+
 describe('schema round-trip — a bad value throws via parsePort, naming the port', () => {
 	// Closed-enum families: an out-of-vocabulary value must be rejected.
 	const ENUM_REJECTS: Array<[string, z.ZodTypeAny, unknown]> = [

@@ -38,9 +38,17 @@ GOLD_REPORTING_AGGREGATE_TABLES = (
     "gold.citizen_accountability_daily",
 )
 
+# Append-only daily rollups — NOT in the DELETE+UPSERT reporting registry; they
+# accrue forward and are pruned only at GOLD_WARM_ROLLUP_RETENTION_DAYS.
+GOLD_APPEND_ONLY_DAILY_TABLES = (
+    "gold.route_delay_percentile_daily",
+    "gold.stop_delay_percentile_daily",
+)
+
 GOLD_AGGREGATE_TABLES = (
     *GOLD_WARM_ROLLUP_TABLES,
     *GOLD_REPORTING_AGGREGATE_TABLES,
+    *GOLD_APPEND_ONLY_DAILY_TABLES,
 )
 
 GOLD_AGGREGATE_RETENTION_COLUMNS = (
@@ -57,6 +65,8 @@ GOLD_AGGREGATE_RETENTION_COLUMNS = (
     ("gold.route_habit_score", "built_at_utc", False),
     ("gold.repeated_problem_route_stop", "period_start_local", True),
     ("gold.citizen_accountability_daily", "provider_local_date", True),
+    ("gold.route_delay_percentile_daily", "provider_local_date", True),
+    ("gold.stop_delay_percentile_daily", "provider_local_date", True),
 )
 
 VALID_GOLD_AGGREGATE_RETENTION_TARGETS = frozenset(GOLD_AGGREGATE_RETENTION_COLUMNS)

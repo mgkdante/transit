@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import UTC, datetime
 
 from sqlalchemy import text
 from sqlalchemy.engine import Engine
@@ -169,6 +169,97 @@ UPSERT_WARM_ROLLUP_PERIOD = text(
         built_at_utc = EXCLUDED.built_at_utc
     """
 )
+
+# Append-only daily percentile rollup (route + stop). One row per CLOSED,
+# fully-retained provider-local day, computed from that day's facts. Percentiles
+# are NOT additively composable, so they can't be derived from the 5m rollups —
+# this is the only source of per-route/per-stop p50/p90 with history beyond the
+# 14d fact window. The :lookback_days lower bound (fact_retention_days - 1) keeps
+# the oldest candidate day from being computed over partially-pruned facts on a
+# cold start; in steady state each day is built the day after it closes, intact.
+SELECT_MISSING_PERCENTILE_DAYS = text(
+    """
+    SELECT d.local_date
+    FROM (
+        SELECT DISTINCT
+            timezone(dp.timezone, f.captured_at_utc)::date AS local_date,
+            (now() AT TIME ZONE dp.timezone)::date AS today_local
+        FROM gold.fact_trip_delay_snapshot AS f
+        INNER JOIN gold.dim_provider AS dp ON dp.provider_id = f.provider_id
+        WHERE f.provider_id = :provider_id
+    ) AS d
+    WHERE d.local_date < d.today_local
+      AND d.local_date >= d.today_local - :lookback_days
+      AND timezone('UTC', d.local_date::timestamp) NOT IN (
+          SELECT period_start_utc
+          FROM gold.warm_rollup_periods
+          WHERE provider_id = :provider_id
+            AND rollup_kind = :rollup_kind
+      )
+    ORDER BY d.local_date
+    """
+)
+
+UPSERT_ROUTE_DELAY_PERCENTILE_DAILY = text(
+    f"""
+    INSERT INTO gold.route_delay_percentile_daily (
+        provider_id, provider_local_date, route_id,
+        delay_observation_count, p50_delay_seconds, p90_delay_seconds, built_at_utc
+    )
+    SELECT
+        f.provider_id,
+        :local_date,
+        f.route_id,
+        COUNT(*)::integer,
+        ROUND(percentile_cont(0.5) WITHIN GROUP (ORDER BY f.delay_seconds)::numeric, 2),
+        ROUND(percentile_cont(0.9) WITHIN GROUP (ORDER BY f.delay_seconds)::numeric, 2),
+        :built_at_utc
+    FROM gold.fact_trip_delay_snapshot AS f
+    INNER JOIN gold.dim_provider AS dp ON dp.provider_id = f.provider_id
+    WHERE f.provider_id = :provider_id
+      AND f.route_id IS NOT NULL
+      AND f.delay_seconds IS NOT NULL
+      AND ABS(f.delay_seconds) <= {GHOST_DELAY_ABS_SECONDS}
+      AND timezone(dp.timezone, f.captured_at_utc)::date = :local_date
+    GROUP BY f.provider_id, f.route_id
+    ON CONFLICT (provider_id, provider_local_date, route_id) DO UPDATE SET
+        delay_observation_count = EXCLUDED.delay_observation_count,
+        p50_delay_seconds = EXCLUDED.p50_delay_seconds,
+        p90_delay_seconds = EXCLUDED.p90_delay_seconds,
+        built_at_utc = EXCLUDED.built_at_utc
+    """
+)
+
+UPSERT_STOP_DELAY_PERCENTILE_DAILY = text(
+    f"""
+    INSERT INTO gold.stop_delay_percentile_daily (
+        provider_id, provider_local_date, stop_id,
+        delay_observation_count, p50_delay_seconds, p90_delay_seconds, built_at_utc
+    )
+    SELECT
+        f.provider_id,
+        :local_date,
+        f.delay_stop_id,
+        COUNT(*)::integer,
+        ROUND(percentile_cont(0.5) WITHIN GROUP (ORDER BY f.delay_seconds)::numeric, 2),
+        ROUND(percentile_cont(0.9) WITHIN GROUP (ORDER BY f.delay_seconds)::numeric, 2),
+        :built_at_utc
+    FROM gold.fact_trip_delay_snapshot AS f
+    INNER JOIN gold.dim_provider AS dp ON dp.provider_id = f.provider_id
+    WHERE f.provider_id = :provider_id
+      AND f.delay_stop_id IS NOT NULL
+      AND f.delay_seconds IS NOT NULL
+      AND ABS(f.delay_seconds) <= {GHOST_DELAY_ABS_SECONDS}
+      AND timezone(dp.timezone, f.captured_at_utc)::date = :local_date
+    GROUP BY f.provider_id, f.delay_stop_id
+    ON CONFLICT (provider_id, provider_local_date, stop_id) DO UPDATE SET
+        delay_observation_count = EXCLUDED.delay_observation_count,
+        p50_delay_seconds = EXCLUDED.p50_delay_seconds,
+        p90_delay_seconds = EXCLUDED.p90_delay_seconds,
+        built_at_utc = EXCLUDED.built_at_utc
+    """
+)
+
 
 REPORTING_AGGREGATE_TABLES = (
     "route_delay_hourly",
@@ -1028,6 +1119,8 @@ class WarmRollupBuildResult:
     built_trip_delay_periods: int
     completed_at_utc: datetime
     reporting_aggregate_row_counts: dict[str, int] = field(default_factory=dict)
+    built_route_percentile_days: int = 0
+    built_stop_percentile_days: int = 0
 
     def display_dict(self) -> dict[str, object]:
         return {
@@ -1035,6 +1128,8 @@ class WarmRollupBuildResult:
             "since_utc": self.since_utc.isoformat() if self.since_utc else None,
             "built_vehicle_periods": self.built_vehicle_periods,
             "built_trip_delay_periods": self.built_trip_delay_periods,
+            "built_route_percentile_days": self.built_route_percentile_days,
+            "built_stop_percentile_days": self.built_stop_percentile_days,
             "reporting_aggregate_row_counts": self.reporting_aggregate_row_counts,
             "completed_at_utc": self.completed_at_utc.isoformat(),
         }
@@ -1048,6 +1143,48 @@ class WarmRollupBuildResult:
 def _safe_rowcount(result) -> int:  # noqa: ANN001
     rowcount = getattr(result, "rowcount", 0)
     return max(int(rowcount or 0), 0)
+
+
+def _build_percentile_days(
+    conn,  # noqa: ANN001
+    *,
+    provider_id: str,
+    rollup_kind: str,
+    upsert,  # noqa: ANN001
+    lookback_days: int,
+    now: datetime,
+) -> int:
+    """Build + watermark each missing closed local day for one percentile kind.
+
+    Append-only: a day already in warm_rollup_periods (matched on midnight-UTC of
+    the local date) is skipped, so accrued percentile history is never recomputed.
+    """
+    rows = conn.execute(
+        SELECT_MISSING_PERCENTILE_DAYS,
+        {"provider_id": provider_id, "rollup_kind": rollup_kind, "lookback_days": lookback_days},
+    ).fetchall()
+    built = 0
+    for row in rows:
+        local_date = row.local_date
+        # Watermark key = midnight UTC of the closed local date (documented
+        # overload of warm_rollup_periods.period_start_utc, which otherwise holds
+        # 5-minute UTC bins).
+        period_start_utc = datetime(local_date.year, local_date.month, local_date.day, tzinfo=UTC)
+        conn.execute(
+            upsert,
+            {"provider_id": provider_id, "local_date": local_date, "built_at_utc": now},
+        )
+        conn.execute(
+            UPSERT_WARM_ROLLUP_PERIOD,
+            {
+                "provider_id": provider_id,
+                "rollup_kind": rollup_kind,
+                "period_start_utc": period_start_utc,
+                "built_at_utc": now,
+            },
+        )
+        built += 1
+    return built
 
 
 def build_warm_rollups(
@@ -1132,6 +1269,27 @@ def build_warm_rollups(
             )
             built_trip_delay += 1
 
+        # Append-only daily percentile rollups (route + stop). Built BEFORE the
+        # DELETE+UPSERT reporting tables and deliberately NOT registered in
+        # REPORTING_AGGREGATE_TABLES, so accrued percentile history is never wiped.
+        percentile_lookback_days = fact_retention_days - 1
+        built_route_percentile = _build_percentile_days(
+            conn,
+            provider_id=provider_id,
+            rollup_kind="route_percentile_daily",
+            upsert=UPSERT_ROUTE_DELAY_PERCENTILE_DAILY,
+            lookback_days=percentile_lookback_days,
+            now=now,
+        )
+        built_stop_percentile = _build_percentile_days(
+            conn,
+            provider_id=provider_id,
+            rollup_kind="stop_percentile_daily",
+            upsert=UPSERT_STOP_DELAY_PERCENTILE_DAILY,
+            lookback_days=percentile_lookback_days,
+            now=now,
+        )
+
         for table_name in REPORTING_AGGREGATE_TABLES:
             delete_params = {"provider_id": provider_id}
             upsert_params = {
@@ -1165,4 +1323,6 @@ def build_warm_rollups(
         built_trip_delay_periods=built_trip_delay,
         reporting_aggregate_row_counts=reporting_aggregate_row_counts,
         completed_at_utc=now,
+        built_route_percentile_days=built_route_percentile,
+        built_stop_percentile_days=built_stop_percentile,
     )

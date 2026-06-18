@@ -187,3 +187,46 @@ def test_alert_text_fields_are_additive():
     # Freeze-compat: required arrays are exactly the committed ones.
     assert Alert.model_json_schema()["required"] == ["id", "severity", "header_key"]
     assert AlertHistoryEntry.model_json_schema()["required"] == ["id"]
+
+
+def test_reliability_new_fields_are_additive():
+    """Tier-0 rollup-foundation: RouteReliability.day_of_week, StopReliability.habits,
+    and StopReliabilityPeriod.p50_min/p90_min are optional-with-default, so already-
+    published reliability artifacts still validate and required sets are unchanged."""
+    from transit_ops.snapshots.contract import (
+        RouteDayOfWeek,
+        RouteHabits,
+        RouteReliability,
+        StopReliability,
+        StopReliabilityPeriod,
+    )
+
+    # Old-shape route reliability still validates; day_of_week defaults to [].
+    rr = RouteReliability(generated_utc="t", id="165")
+    assert rr.day_of_week == []
+    full = RouteReliability(
+        generated_utc="t",
+        id="165",
+        day_of_week=[RouteDayOfWeek(day_of_week_iso=1, avg_delay_min=2.1)],
+    )
+    assert full.day_of_week[0].day_of_week_iso == 1
+    assert full.day_of_week[0].observation_count is None
+
+    # Old-shape stop reliability still validates; habits defaults to None.
+    sr = StopReliability(generated_utc="t", id="s1")
+    assert sr.habits is None
+    sr_full = StopReliability(
+        generated_utc="t",
+        id="s1",
+        habits=RouteHabits(scale="severe_relative", matrix=[[None, 1.0]]),
+    )
+    assert sr_full.habits.scale == "severe_relative"
+
+    # StopReliabilityPeriod percentiles are optional.
+    assert StopReliabilityPeriod(grain="week").p50_min is None
+    assert StopReliabilityPeriod(grain="day", p50_min=0.8, p90_min=5.0).p90_min == 5.0
+
+    # Freeze-compat: required sets unchanged by the additive fields.
+    assert RouteReliability.model_json_schema()["required"] == ["generated_utc", "id"]
+    assert StopReliability.model_json_schema()["required"] == ["generated_utc", "id"]
+    assert StopReliabilityPeriod.model_json_schema()["required"] == ["grain"]

@@ -4,6 +4,7 @@
 // Fetched per stop id under stop_reliability_prefix (404 = empty state).
 
 import { z } from 'zod';
+import { RouteHabitsSchema } from './route_reliability';
 import { isoUtc } from './types';
 
 export const StopReliabilityPeriodSchema = z.object({
@@ -11,6 +12,8 @@ export const StopReliabilityPeriodSchema = z.object({
 	grain: z.string(),
 	otp_pct: z.number().int().nullable().optional(),
 	median_delay_min: z.number().nullable().optional(),
+	p50_min: z.number().nullable().optional(),
+	p90_min: z.number().nullable().optional(),
 	severe_pct: z.number().nullable().optional(),
 });
 export type StopReliabilityPeriod = z.infer<typeof StopReliabilityPeriodSchema>;
@@ -26,6 +29,8 @@ export const StopReliabilitySchema = z.object({
 	id: z.string(),
 	name: z.string().nullable().optional(),
 	periods: z.array(StopReliabilityPeriodSchema).optional(),
+	// per-stop 7x24 severe-delay heatmap (RouteHabits shape, 'severe_relative' scale).
+	habits: RouteHabitsSchema.nullable().optional(),
 	by_route: z.array(StopByRouteSchema).optional(),
 });
 export type StopReliability = z.infer<typeof StopReliabilitySchema>;
