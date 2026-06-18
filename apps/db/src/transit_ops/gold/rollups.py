@@ -512,6 +512,45 @@ UPSERT_ROUTE_SERVICE_SPAN_DAILY = text(
     """
 )
 
+# Per-route skipped-stop rate over one CLOSED provider-local day (append-only).
+# Sums the per-trip skipped_stop_count + stop_time_update_count (both carried on
+# the fact by the ETL) for one local day. rate = 100 * skipped / total stop-time
+# updates; None when no stop-time updates were observed. The denominator is ALL
+# stop-time updates (matching the carried stop_time_update_count), NOT filtered on
+# schedule_relationship — a NULL stop-level relationship is SCHEDULED and stays in
+# the denominator. Binds {provider_id, local_date, built_at_utc} for
+# _build_percentile_days. RAMP-IN: no history before this metric shipped.
+UPSERT_ROUTE_SKIPPED_STOP_DAILY = text(
+    """
+    INSERT INTO gold.route_skipped_stop_daily (
+        provider_id, provider_local_date, route_id,
+        stop_time_update_count, skipped_stop_count, skipped_stop_rate_pct, built_at_utc
+    )
+    SELECT
+        f.provider_id,
+        :local_date,
+        f.route_id,
+        SUM(f.stop_time_update_count)::bigint,
+        SUM(f.skipped_stop_count)::bigint,
+        ROUND(
+            100.0 * SUM(f.skipped_stop_count) / NULLIF(SUM(f.stop_time_update_count), 0),
+            2
+        ),
+        :built_at_utc
+    FROM gold.fact_trip_delay_snapshot AS f
+    INNER JOIN gold.dim_provider AS dp ON dp.provider_id = f.provider_id
+    WHERE f.provider_id = :provider_id
+      AND f.route_id IS NOT NULL
+      AND timezone(dp.timezone, f.captured_at_utc)::date = :local_date
+    GROUP BY f.provider_id, f.route_id
+    ON CONFLICT (provider_id, provider_local_date, route_id) DO UPDATE SET
+        stop_time_update_count = EXCLUDED.stop_time_update_count,
+        skipped_stop_count = EXCLUDED.skipped_stop_count,
+        skipped_stop_rate_pct = EXCLUDED.skipped_stop_rate_pct,
+        built_at_utc = EXCLUDED.built_at_utc
+    """
+)
+
 
 REPORTING_AGGREGATE_TABLES = (
     "route_delay_hourly",
@@ -1615,6 +1654,7 @@ class WarmRollupBuildResult:
     built_route_cancellation_days: int = 0
     built_route_occupancy_days: int = 0
     built_route_service_span_days: int = 0
+    built_route_skipped_stop_days: int = 0
 
     def display_dict(self) -> dict[str, object]:
         return {
@@ -1628,6 +1668,7 @@ class WarmRollupBuildResult:
             "built_route_cancellation_days": self.built_route_cancellation_days,
             "built_route_occupancy_days": self.built_route_occupancy_days,
             "built_route_service_span_days": self.built_route_service_span_days,
+            "built_route_skipped_stop_days": self.built_route_skipped_stop_days,
             "reporting_aggregate_row_counts": self.reporting_aggregate_row_counts,
             "completed_at_utc": self.completed_at_utc.isoformat(),
         }
@@ -1848,6 +1889,15 @@ def build_warm_rollups(
             lookback_days=percentile_lookback_days,
             now=now,
         )
+        # Skipped-stop reads fact_trip_delay_snapshot (carried skip count) → default.
+        built_route_skipped_stop = _build_percentile_days(
+            conn,
+            provider_id=provider_id,
+            rollup_kind="route_skipped_stop_daily",
+            upsert=UPSERT_ROUTE_SKIPPED_STOP_DAILY,
+            lookback_days=percentile_lookback_days,
+            now=now,
+        )
 
         for table_name in REPORTING_AGGREGATE_TABLES:
             delete_params = {"provider_id": provider_id}
@@ -1888,4 +1938,5 @@ def build_warm_rollups(
         built_route_cancellation_days=built_route_cancellation,
         built_route_occupancy_days=built_route_occupancy,
         built_route_service_span_days=built_route_service_span,
+        built_route_skipped_stop_days=built_route_skipped_stop,
     )

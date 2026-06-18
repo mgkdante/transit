@@ -145,6 +145,9 @@ class FakeConnection:
         if "INSERT INTO gold.route_service_span_daily" in sql:
             return RowcountResult(1)
 
+        if "INSERT INTO gold.route_skipped_stop_daily" in sql:
+            return RowcountResult(1)
+
         if "INSERT INTO gold.warm_rollup_periods" in sql:
             return RowcountResult(1)
 
@@ -198,6 +201,9 @@ class FakeConnection:
 
         if "SELECT COUNT(*)" in sql and "FROM gold.route_service_span_daily" in sql:
             return ScalarResult(12)
+
+        if "SELECT COUNT(*)" in sql and "FROM gold.route_skipped_stop_daily" in sql:
+            return ScalarResult(14)
 
         return RowcountResult(0)
 
@@ -316,6 +322,7 @@ def test_build_warm_rollups_empty_facts_is_noop() -> None:
     assert result.built_route_cancellation_days == 0
     assert result.built_route_occupancy_days == 0
     assert result.built_route_service_span_days == 0
+    assert result.built_route_skipped_stop_days == 0
     assert isinstance(result.completed_at_utc, datetime)
 
 
@@ -727,6 +734,22 @@ def test_route_service_span_daily_upsert_shape() -> None:
     assert "ON CONFLICT (provider_id, provider_local_date, route_id)" in sql
 
 
+def test_route_skipped_stop_daily_upsert_shape() -> None:
+    """Tier-2 skipped-stop: sums the fact-carried skip + stop-update counts per
+    closed day; rate = skipped / all stop-time updates (denominator NOT filtered)."""
+    sql = str(rollups.UPSERT_ROUTE_SKIPPED_STOP_DAILY)
+    compact = " ".join(sql.split())
+
+    assert "INSERT INTO gold.route_skipped_stop_daily" in sql
+    assert "FROM gold.fact_trip_delay_snapshot" in sql
+    assert "SUM(f.skipped_stop_count)" in compact
+    assert "SUM(f.stop_time_update_count)" in compact
+    # Rate honest-None when no stop-time updates observed.
+    assert "NULLIF(SUM(f.stop_time_update_count), 0)" in compact
+    assert "timezone(dp.timezone, f.captured_at_utc)::date = :local_date" in compact
+    assert "ON CONFLICT (provider_id, provider_local_date, route_id)" in sql
+
+
 def test_repeat_offender_daily_upsert_shape() -> None:
     """P3 repeat-offender mart: trips + vehicles with >=3 severe-delay days in 14d."""
     from transit_ops.gold import rollups
@@ -820,13 +843,14 @@ def test_prune_warm_rollup_storage_dry_run_counts_without_deletes() -> None:
     assert result.deleted_row_counts["gold.occupancy_summary_5m"] == 6
     assert result.deleted_row_counts["gold.route_cancellation_daily"] == 9
     assert result.deleted_row_counts["gold.route_occupancy_band_daily"] == 10
-    # Tier-2 service-span append-only table.
+    # Tier-2 append-only tables.
     assert result.deleted_row_counts["gold.route_service_span_daily"] == 12
+    assert result.deleted_row_counts["gold.route_skipped_stop_daily"] == 14
 
     count_queries = [s for s in conn.executed if "SELECT COUNT(*)" in s or "SELECT count(*)" in s]
-    # 20 prior + 1 Tier-2 service-span aggregate-retention table; it sits in
-    # GOLD_AGGREGATE_RETENTION_COLUMNS so it emits one dry-run COUNT.
-    assert len(count_queries) == 21
+    # 20 prior + 2 Tier-2 aggregate-retention tables (service-span + skipped-stop);
+    # both sit in GOLD_AGGREGATE_RETENTION_COLUMNS so each emits one dry-run COUNT.
+    assert len(count_queries) == 22
 
 
 def test_prune_warm_rollup_storage_display_dict_includes_dry_run() -> None:

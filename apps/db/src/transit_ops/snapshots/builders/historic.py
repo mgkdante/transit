@@ -60,6 +60,7 @@ from transit_ops.snapshots.contract import (
     RouteDayOfWeek,
     RouteReliability,
     ServiceSpanPeriod,
+    SkippedStopPeriod,
     StopByRoute,
     StopReliability,
     StopReliabilityPeriod,
@@ -403,6 +404,19 @@ _ROUTE_SERVICE_SPAN_SQL = text(
     """
 )
 
+# Per-route skipped-stop rate from the append-only daily rollup (last 30 closed
+# local days). Unique discriminator for test dispatch: "skipped_stop_rate_pct".
+_ROUTE_SKIPPED_STOP_SQL = text(
+    """
+    SELECT provider_local_date, skipped_stop_rate_pct, skipped_stop_count,
+           stop_time_update_count
+    FROM gold.route_skipped_stop_daily
+    WHERE provider_id = :provider_id AND route_id = :route_id
+    ORDER BY provider_local_date DESC
+    LIMIT 30
+    """
+)
+
 
 def build_route_reliability(
     conn: Connection, *, provider_id: str = "stm", route_id: str, generated_utc: str
@@ -618,6 +632,24 @@ def build_route_reliability(
         )
     ]
 
+    # --- skipped stops: per-day rate history (30 closed days, ASC; ramp-in) ---
+    skipped_stops = [
+        SkippedStopPeriod(
+            date=_iso_date(r["provider_local_date"]),
+            skipped_stop_rate_pct=(
+                float(r["skipped_stop_rate_pct"])
+                if r["skipped_stop_rate_pct"] is not None
+                else None
+            ),
+            skipped_stop_count=_opt_int(r["skipped_stop_count"]),
+            stop_time_update_count=_opt_int(r["stop_time_update_count"]),
+        )
+        for r in sorted(
+            conn.execute(_ROUTE_SKIPPED_STOP_SQL, params).mappings(),
+            key=lambda r: r["provider_local_date"],
+        )
+    ]
+
     return RouteReliability(
         generated_utc=generated_utc,
         id=route_id,
@@ -630,6 +662,7 @@ def build_route_reliability(
         cancellations=cancellations,
         occupancy_mix=occupancy_mix,
         service_spans=service_spans,
+        skipped_stops=skipped_stops,
     )
 
 
@@ -1380,6 +1413,13 @@ def build_provenance(
                 "GTFS cause/effect/severity; NULL/blank labeled 'unknown' (STM "
                 "frequently omits cause/effect); median duration from active-period "
                 "start/end, the high-confidence dimension; over the 200-alert cap"
+            ),
+            "skipped_stops": (
+                "skipped-stop rate = stop-time updates flagged SKIPPED (GTFS-RT "
+                "StopTimeUpdate.ScheduleRelationship=1) / all observed stop-time "
+                "updates per route per closed local day; accrued FORWARD from the "
+                "date this metric shipped (ramp-in, no historical backfill); null "
+                "when no stop-time updates were observed"
             ),
         },
         gaps=["metro_realtime"],  # STM metro publishes no realtime feed
