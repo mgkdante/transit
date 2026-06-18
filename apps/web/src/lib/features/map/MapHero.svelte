@@ -92,13 +92,41 @@
 	const theme = $derived(themeStore.current);
 	const v1 = getV1Context();
 	const manifest = v1.manifest;
-	const mapInitialCenter = $derived(centerFromProviderBbox(manifest.bbox));
-	// Symmetric fit on BOTH desktop and mobile: the island sits at the centre of
-	// the (square, island-centred) bbox identically on every form factor. The
-	// filter panel is a collapsible overlay, so we centre on the island itself
-	// rather than reserving space for the panel — per the centring spec.
+	// Initial framing fits the ISLAND itself (OSM Île de Montréal extremes), NOT
+	// the wide basemap square — so the off-island south-shore EAST (Longueuil →
+	// Otterburn → past Saint-Basile-le-Grand) is cropped instead of eating the
+	// right half. On desktop a left reserve shifts the island RIGHT, clear of the
+	// filter panel, and reveals west map (Lac Saint-Louis) in the freed-up left.
+	// maxBounds stays the looser basemap square so that west overflow renders
+	// without MapLibre clamping. [minLon, minLat, maxLon, maxLat].
+	const ISLAND_FIT_BOUNDS = [-73.9764, 45.4022, -73.4761, 45.7029] as const;
+	const mapInitialCenter = $derived(centerFromProviderBbox(ISLAND_FIT_BOUNDS));
 	const MAP_FIT_PADDING_PX = 40;
-	const mapFitPadding = $derived<MapFitPadding>(MAP_FIT_PADDING_PX);
+
+	// Map container width — window-reactive ONLY (not panel state), so the framing
+	// adapts to the screen but NEVER re-fits when a panel opens/collapses/closes.
+	let mapWidthPx = $state(0);
+
+	// Desktop frames the island into a roughly SQUARE central gap with generous
+	// left/right BUFFERS sized as a fraction of the width. The buffers (a) crop the
+	// off-island east (south-shore sprawl), (b) keep the whole island visible past
+	// the left filter panel and the right detail panel at their furthest, and
+	// (c) — being static — never shift the map when a panel toggles. The island
+	// sits centred in the visible gap: human-centred, not math-centred on the full
+	// canvas. Tunable knobs:
+	const DESKTOP_LEFT_PAD_FRAC = 0.34; // clears rail + filter panel
+	const DESKTOP_RIGHT_PAD_FRAC = 0.18; // detail-panel buffer
+	const DESKTOP_VERT_PAD_PX = 56; // small top/bottom → island fills the height (bigger)
+	const mapFitPadding = $derived<MapFitPadding>(
+		layout.isDesktop && mapWidthPx > 0
+			? {
+					top: DESKTOP_VERT_PAD_PX,
+					bottom: DESKTOP_VERT_PAD_PX,
+					left: Math.round(mapWidthPx * DESKTOP_LEFT_PAD_FRAC),
+					right: Math.round(mapWidthPx * DESKTOP_RIGHT_PAD_FRAC),
+				}
+			: MAP_FIT_PADDING_PX,
+	);
 	type NearMeOrigin = LatLon & { label: string; precision?: GeocodePrecision };
 
 	// URL-DRIVEN filter state — the reusable spine. Seeded from the URL so a reload
@@ -692,7 +720,11 @@
 	});
 </script>
 
-<div class="map-hero" style={`--map-detail-offset: ${mapDetailOffset}`}>
+<div
+	class="map-hero"
+	bind:clientWidth={mapWidthPx}
+	style={`--map-detail-offset: ${mapDetailOffset}`}
+>
 	<!-- Mount immediately with the built-in fallback style; the optional PMTiles
 	     basemap can resolve later and repaint without leaving the map blank. -->
 	<MapStage
@@ -700,7 +732,8 @@
 		basemap={basemap.data}
 		{theme}
 		center={mapInitialCenter}
-		bounds={manifest.bbox}
+		bounds={ISLAND_FIT_BOUNDS}
+		maxBounds={manifest.bbox}
 		fitPadding={mapFitPadding}
 		onready={onMapReady}
 		onstyleload={onMapStyleLoad}
