@@ -2,8 +2,13 @@ name: Deploy Data Proxy Worker
 
 on:
   workflow_dispatch:
+  pull_request:
+    branches: [main, develop]
+    paths:
+      - "apps/data-proxy/**"
+      - ".github/workflows/deploy-data-proxy.yml"
   push:
-    branches: [main]
+    branches: [main, develop]
     paths:
       - "apps/data-proxy/**"
       - ".github/workflows/deploy-data-proxy.yml"
@@ -16,7 +21,7 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  deploy-data-proxy:
+  test-data-proxy:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     defaults:
@@ -33,6 +38,23 @@ jobs:
 
       - name: Run worker behavioral suite
         run: node --test "test/*.test.mjs"
+
+  deploy-data-proxy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: test-data-proxy
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    defaults:
+      run:
+        working-directory: apps/data-proxy
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
 
       - name: Deploy worker with wrangler
         uses: cloudflare/wrangler-action@v3

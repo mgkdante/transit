@@ -7,12 +7,20 @@ serving glue that ships in `apps/web/`.
 
 ## Topology
 
-- **App**: SvelteKit + `@sveltejs/adapter-cloudflare`, deployed to Cloudflare
-  (Pages-style Workers integration). Hosted at `https://transit.yesid.dev`.
+- **App**: SvelteKit + `@sveltejs/adapter-cloudflare`, deployed as a
+  Cloudflare Worker with static assets. Production is
+  `https://transit.yesid.dev`; the develop lane is
+  `https://dev.transit.yesid.dev`.
 - **Data**: the `/v1` snapshot contract is published to Cloudflare R2 and served
-  by a **separate zone-route Worker on `data.yesid.dev`**. The app NEVER bundles
-  or co-hosts the snapshot JSON — the snapshot-contract firewall (slice-9 plan)
-  keeps the pipeline output behind its own origin with its own freshness rules.
+  by a **separate, more-specific zone-route Worker on
+  `transit.yesid.dev/data/*`**. The app NEVER bundles or co-hosts the snapshot
+  JSON — the snapshot-contract firewall keeps the pipeline output behind its own
+  worker with its own freshness rules.
+- **Develop data**: `dev.transit.yesid.dev` deliberately reads the production
+  `/v1` snapshot contract read-only for now (`PUBLIC_V1_BASE` points at
+  `https://transit.yesid.dev/data/v1`). That gives the web lane a real staging
+  host without duplicating the data pipeline before a schema-contract change
+  needs it.
 
 ## `_routes.json` — generated, do not hand-write
 
@@ -27,12 +35,12 @@ What that means for the paths this slice owns:
   The adapter excludes static files from the Worker invocation automatically, so
   these are served from the edge and pick up the rules in `static/_headers`.
 - `/data/*` — **must NOT be routed to this app at all**. It belongs to the
-  `data.yesid.dev` Worker. In production the app fetches the snapshot from that
-  origin (or a same-origin route bound to it at the zone level), not from a
-  SvelteKit route. There is **no `/data` route in `src/routes/`**, so the adapter
-  will not emit a Worker entry for it — but if a `/data` route is ever added,
-  it must be added to the adapter's `routes.exclude` in `svelte.config.js` so the
-  edge serves it (or 404s) instead of the SvelteKit Worker swallowing it.
+  `transit-data-proxy` Worker. In production Cloudflare's more-specific
+  `transit.yesid.dev/data/*` route wins over the app route
+  `transit.yesid.dev/*`. There is **no `/data` route in `src/routes/`**, so the
+  adapter will not emit a Worker entry for it — but if a `/data` route is ever
+  added, it must be added to the adapter's `routes.exclude` in `svelte.config.js`
+  so the app Worker cannot swallow the data origin.
 
 ### If you ever need explicit excludes
 
@@ -70,7 +78,7 @@ and prevents the Worker from shadowing the data origin.
 **`/data/*` is never cached at this edge.** Stale transit data is the cardinal
 sin of this app — the on-time numbers must reflect the snapshot the worker
 serves, so we refuse to cache it here even though the app normally fetches it
-from the `data.yesid.dev` origin.
+from the `transit-data-proxy` Worker.
 
 ## Local dev — the `/data` proxy
 
@@ -78,13 +86,27 @@ from the `data.yesid.dev` origin.
 `/data/*` URLs locally without CORS or a hardcoded origin:
 
 ```
-/data/network.json  ->  https://data.yesid.dev/v1/network.json
+/data/v1/stm/manifest.json  ->  https://transit.yesid.dev/data/v1/stm/manifest.json
 ```
 
-The `/data` prefix is stripped and the request is forwarded to the worker's
-`/v1` base. This is **dev only** — Vite's `server.proxy` does not run in the
-deployed Worker. Production resolves `/data/*` at the zone/origin level (the
-`data.yesid.dev` worker), matching the dev shape exactly.
+The `/data` prefix is preserved because it is part of the worker route. This is
+**dev only** — Vite's `server.proxy` does not run in the deployed Worker.
+Production resolves `/data/*` at the zone-route level, and SSR reads through the
+`DATA` service binding.
+
+## Develop lane
+
+`develop` deploys to the Wrangler `dev` environment:
+
+- Worker name: `transit-web-dev`
+- Route: `dev.transit.yesid.dev/*`
+- Indexing: disabled (`PUBLIC_INDEXING=false`, static `robots.txt` disallows
+  crawlers, and `sitemap.xml` emits an empty urlset)
+- Data: read-only production `/v1` snapshots via
+  `https://transit.yesid.dev/data/v1`
+
+This lane is for web/UI integration and smoke checks. Do not add a separate dev
+snapshot bucket until a data-contract slice actually needs one.
 
 ## Open Graph cards
 

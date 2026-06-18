@@ -39,3 +39,24 @@ directory = ".svelte-kit/cloudflare"
 [[services]]
 binding = "DATA"
 service = "transit-data-proxy"
+
+[vars]
+PUBLIC_SITE_ORIGIN = "https://transit.yesid.dev"
+PUBLIC_V1_BASE = "/data/v1"
+PUBLIC_INDEXING = "true"
+
+[env.dev]
+name = "transit-web-dev"
+workers_dev = false
+routes = [
+  { pattern = "dev.transit.yesid.dev/*", zone_name = "yesid.dev" },
+]
+
+[env.dev.vars]
+PUBLIC_SITE_ORIGIN = "https://dev.transit.yesid.dev"
+PUBLIC_V1_BASE = "https://transit.yesid.dev/data/v1"
+PUBLIC_INDEXING = "false"
+
+[[env.dev.services]]
+binding = "DATA"
+service = "transit-data-proxy"

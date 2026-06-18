@@ -1,0 +1,23 @@
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Transit false positives and generated/local build outputs"
+paths = [
+  '''(^|/)node_modules/''',
+  '''(^|/)\.svelte-kit/''',
+  '''(^|/)\.turbo/''',
+  '''(^|/)\.wrangler/''',
+  '''(^|/)dist/''',
+  '''(^|/)build/''',
+  '''(^|/)bun\.lock$''',
+  '''(^|/)apps/web/static/fonts/''',
+  '''(^|/)apps/web/scripts/og-fonts/''',
+]
+regexes = [
+  '''postgresql\+psycopg://transit_ci:transit_ci@localhost:5432/transit_ci''',
+  '''POSTGRES_PASSWORD=transit-local-password''',
+  '''(?m)^BRONZE_S3_ACCESS_KEY=$''',
+  '''(?m)^BRONZE_S3_SECRET_KEY=$''',
+  '''https://eccfb9bedd87d413eaf4cac6ae2285d3\.r2\.cloudflarestorage\.com''',
+]
