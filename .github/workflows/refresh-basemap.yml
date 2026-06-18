@@ -21,9 +21,12 @@ env:
   # Bump if the go-pmtiles release asset name/version drifts (confirm at
   # https://github.com/protomaps/go-pmtiles/releases). Verified working 2026-06-15.
   PMTILES_VERSION: "1.30.3"
-  # Square-ish in Web Mercator and centered on the OSM Île de Montréal relation
-  # bounds, so the island shape drives the extract instead of manual nudges.
-  BBOX: "-74.176,45.237,-73.276,45.867"
+  # A Web-Mercator SQUARE centered exactly on the OSM Île de Montréal relation
+  # (3430571) bounds-center (lon -73.72628, lat 45.55253; extremes W -73.97642 /
+  # E -73.47614 / S 45.40217 / N 45.70290). lon span 0.9° for desktop coverage;
+  # the lat span is solved so width/height == 1 in Web Mercator. The island shape
+  # drives the extract — no manual nudges.
+  BBOX: "-74.17628,45.23742,-73.27628,45.86764"
   MAXZOOM: "15"
   R2_BUCKET: "transit-snapshots"
   R2_KEY: "v1/stm/static/basemap/montreal.pmtiles"

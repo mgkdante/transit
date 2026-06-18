@@ -17,7 +17,14 @@
 	import { getRoutesIndex } from '$lib/v1';
 	import type { RouteIndexEntry } from '$lib/v1';
 	import { createResource } from '$lib/v1/resource.svelte';
-	import { ResourceBoundary, SurfaceHeader, EntityList, EntityRow } from '$lib/components/surface';
+	import {
+		ResourceBoundary,
+		SurfaceHeader,
+		EntityList,
+		EntityRow,
+		SearchInput,
+		MapDrilldownLink,
+	} from '$lib/components/surface';
 	import { Surface } from '$lib/components/layout';
 	import { Separator } from '$lib/components/ui/separator';
 	import { indexCopy } from './lines.copy';
@@ -58,18 +65,12 @@
 
 <Surface width="bleed" pad="hub" class="lines-index">
 	<SurfaceHeader kicker={t.kicker} heading={t.heading} lede={t.lede}>
-		<div class="lines-filter">
-			<label class="label-metric" for="lines-filter-input">{t.filterLabel}</label>
-			<input
-				id="lines-filter-input"
-				type="search"
-				class="lines-filter-input"
-				placeholder={t.filterPlaceholder}
-				bind:value={query}
-				autocomplete="off"
-				spellcheck="false"
-			/>
-		</div>
+		<SearchInput
+			id="lines-filter-input"
+			label={t.filterLabel}
+			placeholder={t.filterPlaceholder}
+			bind:value={query}
+		/>
 	</SurfaceHeader>
 
 	<Separator variant="hazard" />
@@ -86,14 +87,11 @@
 						subtitle={r.long ?? undefined}
 						class="line-result-main"
 					/>
-					<a
+					<MapDrilldownLink
 						href={mapHrefFor({ route: r.id }, locale)}
-						class="line-map-link"
-						aria-label={t.viewRouteOnMap(r.short)}
-						data-sveltekit-preload-data="hover"
-					>
-						{t.mapAction}
-					</a>
+						label={t.mapAction}
+						ariaLabel={t.viewRouteOnMap(r.short)}
+					/>
 				</div>
 			{/snippet}
 		</EntityList>
@@ -101,73 +99,14 @@
 </Surface>
 
 <style>
-	.lines-filter {
-		display: flex;
-		flex-direction: column;
-		gap: 0.4rem;
-		max-width: 28rem;
-	}
-	.lines-filter-input {
-		width: 100%;
-		padding: 0.6rem 0.875rem;
-		font-family: var(--font-mono);
-		font-size: var(--text-body);
-		color: var(--foreground);
-		background-color: var(--card);
-		border: 1px solid var(--border);
-		border-radius: var(--radius-md);
-		transition: border-color 150ms ease;
-	}
-	.lines-filter-input::placeholder {
-		color: var(--muted-foreground);
-	}
-	.lines-filter-input:focus-visible {
-		outline: none;
-		border-color: var(--primary);
-		box-shadow: 0 0 0 2px var(--ring);
-	}
 	.line-result {
 		display: grid;
 		grid-template-columns: minmax(0, 1fr) auto;
 		align-items: center;
 		gap: 0.5rem;
+		padding-right: 0.5rem;
 	}
 	.line-result :global(.line-result-main) {
 		min-width: 0;
-	}
-	.line-map-link {
-		display: inline-flex;
-		align-items: center;
-		justify-content: center;
-		min-height: 2rem;
-		margin-right: 0.5rem;
-		padding: 0.25rem 0.65rem;
-		font-family: var(--font-mono);
-		font-size: var(--text-caption);
-		color: var(--primary);
-		text-decoration: none;
-		background: color-mix(in srgb, var(--primary) 8%, transparent);
-		border: 1px solid color-mix(in srgb, var(--primary) 28%, var(--border) 72%);
-		border-radius: var(--radius-pill);
-		transition:
-			color 150ms ease,
-			background-color 150ms ease,
-			border-color 150ms ease;
-	}
-	.line-map-link:hover {
-		color: var(--foreground);
-		background: color-mix(in srgb, var(--primary) 16%, transparent);
-		border-color: color-mix(in srgb, var(--primary) 45%, var(--border) 55%);
-	}
-	.line-map-link:focus-visible {
-		outline: 2px solid var(--ring);
-		outline-offset: 2px;
-	}
-
-	@media (prefers-reduced-motion: reduce) {
-		.lines-filter-input,
-		.line-map-link {
-			transition: none;
-		}
 	}
 </style>

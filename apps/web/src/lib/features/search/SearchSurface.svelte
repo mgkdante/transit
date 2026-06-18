@@ -25,6 +25,7 @@
   invent data, never crash. Mirrors the hub head + surface padding.
 -->
 <script lang="ts">
+	import { page } from '$app/stores';
 	import { getLocale, type Locale } from '$lib/i18n';
 	import { layout } from '$lib/nav';
 	import { createResource } from '$lib/v1/resource.svelte';
@@ -34,7 +35,13 @@
 		type RouteIndexEntry,
 		type StopIndexEntry,
 	} from '$lib/v1';
-	import { ResourceBoundary, SurfaceHeader, EntityList, EntityRow } from '$lib/components/surface';
+	import {
+		ResourceBoundary,
+		SurfaceHeader,
+		EntityList,
+		EntityRow,
+		SearchInput,
+	} from '$lib/components/surface';
 	import { Surface } from '$lib/components/layout';
 	import { Separator } from '$lib/components/ui/separator';
 	import { EdgeState } from '$lib/components/edge';
@@ -51,7 +58,10 @@
 	// Max rows rendered per group — a broad query can't flood the surface.
 	const MAX_RESULTS = 50;
 
-	let query = $state('');
+	// Seed the query from the URL `q` param once, so /search?q=berri deep-links
+	// hydrate the input + results on load. Read at init only (not reactive) — the
+	// input owns the value from here on; the empty state still owns the no-`q` case.
+	let query = $state($page.url.searchParams.get('q') ?? '');
 	const normalized = $derived(query.trim().toLowerCase());
 	const hasQuery = $derived(normalized.length > 0);
 
@@ -95,20 +105,12 @@
 <Surface width="bleed" class="surface">
 	<SurfaceHeader kicker={t.kicker} heading={t.heading} lede={t.lede} />
 
-	<div class="search-field">
-		<label class="search-label" for="surface-search-input">{t.inputLabel}</label>
-		<input
-			id="surface-search-input"
-			class="search-input"
-			type="search"
-			autocomplete="off"
-			autocapitalize="none"
-			spellcheck="false"
-			placeholder={t.inputPlaceholder}
-			aria-label={t.inputLabel}
-			bind:value={query}
-		/>
-	</div>
+	<SearchInput
+		id="surface-search-input"
+		label={t.inputLabel}
+		placeholder={t.inputPlaceholder}
+		bind:value={query}
+	/>
 
 	<Separator variant="hazard" />
 
@@ -186,41 +188,6 @@
 </Surface>
 
 <style>
-	.search-field {
-		display: flex;
-		flex-direction: column;
-		gap: 0.5rem;
-		max-width: 32rem;
-	}
-	.search-label {
-		font-family: var(--font-mono);
-		font-size: var(--text-caption);
-		letter-spacing: 0.06em;
-		text-transform: uppercase;
-		color: var(--muted-foreground);
-	}
-	.search-input {
-		width: 100%;
-		padding: 0.75rem 1rem;
-		font-family: var(--font-body);
-		font-size: var(--text-body);
-		color: var(--foreground);
-		background-color: var(--card);
-		border: 1px solid var(--border);
-		border-radius: var(--radius-md);
-		transition:
-			border-color 150ms ease,
-			box-shadow 150ms ease;
-	}
-	.search-input::placeholder {
-		color: var(--muted-foreground);
-	}
-	.search-input:focus-visible {
-		outline: none;
-		border-color: var(--primary);
-		box-shadow: 0 0 0 2px var(--ring);
-	}
-
 	.search-idle {
 		display: flex;
 		flex-direction: column;
@@ -281,11 +248,5 @@
 		font-family: var(--font-mono);
 		font-size: var(--text-caption);
 		color: var(--muted-foreground);
-	}
-
-	@media (prefers-reduced-motion: reduce) {
-		.search-input {
-			transition: none;
-		}
 	}
 </style>
