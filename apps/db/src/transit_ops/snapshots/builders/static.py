@@ -94,7 +94,8 @@ _STATIC_LABELS_FR: dict[str, str] = {
     "methodology.percentiles": (
         "Le p90 du réseau est mesuré à partir des véhicules suivis en ce moment, "
         "et sur les 14 derniers jours dans la vue de tendance. Les percentiles par "
-        "ligne et par arrêt seront ajoutés plus tard."
+        "ligne et par arrêt sont calculés chaque jour à partir des observations "
+        "et conservés 365 jours."
     ),
     "methodology.retention": (
         "Les données détaillées sont conservées 14 jours; les agrégats quotidiens, "
@@ -143,7 +144,7 @@ _STATIC_LABELS_EN: dict[str, str] = {
     "methodology.percentiles": (
         "Network p90 is measured from the buses tracked right now, and over the "
         "last 14 days in the trend view. Per-route and per-stop percentiles are "
-        "coming later."
+        "computed daily from observations and kept for 365 days."
     ),
     "methodology.retention": (
         "Detailed data is kept for 14 days; daily aggregates for 365 days."

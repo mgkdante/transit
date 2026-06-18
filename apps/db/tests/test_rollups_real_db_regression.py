@@ -410,3 +410,78 @@ def test_ghost_trip_excluded_from_day_of_week_and_repeat_offender(conn) -> None:
     assert late["recurrence_days"] == 3
     assert late["window_days"] == 14
     assert _decimal(late["avg_delay_seconds"]) == Decimal("400.0")
+
+
+def test_percentile_rollup_closed_days_exclude_ghosts_and_today(conn) -> None:  # noqa: ANN001
+    connection, seed = conn
+    today = seed.base_local_date
+
+    rows = (
+        connection.execute(
+            text(
+                """
+                SELECT provider_local_date, p50_delay_seconds, p90_delay_seconds,
+                       delay_observation_count
+                FROM gold.route_delay_percentile_daily
+                WHERE provider_id = :p AND route_id = '51T'
+                ORDER BY provider_local_date
+                """
+            ),
+            {"p": PROVIDER},
+        )
+        .mappings()
+        .all()
+    )
+    dates = {r["provider_local_date"] for r in rows}
+    # The open (current) local day is never built; both closed past days are.
+    assert today not in dates
+    assert today - timedelta(days=1) in dates
+    assert today - timedelta(days=2) in dates
+    # Ghost (|delay| > 3600) excluded — only the 400s observation survives, so
+    # p50 == p90 == 400 over a single observation per closed day.
+    for r in rows:
+        assert r["delay_observation_count"] == 1
+        assert _decimal(r["p50_delay_seconds"]) == Decimal("400.00")
+        assert _decimal(r["p90_delay_seconds"]) == Decimal("400.00")
+
+    # Both append-only percentile watermark kinds recorded.
+    kinds = {
+        k
+        for (k,) in connection.execute(
+            text(
+                "SELECT DISTINCT rollup_kind FROM gold.warm_rollup_periods "
+                "WHERE provider_id = :p"
+            ),
+            {"p": PROVIDER},
+        )
+    }
+    assert {"route_percentile_daily", "stop_percentile_daily"} <= kinds
+
+    # Stop percentile mirrors the closed-day set for the attributed stop.
+    stop_dates = {
+        r["provider_local_date"]
+        for r in connection.execute(
+            text(
+                "SELECT provider_local_date FROM gold.stop_delay_percentile_daily "
+                "WHERE provider_id = :p AND stop_id = 'S_A'"
+            ),
+            {"p": PROVIDER},
+        ).mappings()
+    }
+    assert stop_dates == {today - timedelta(days=1), today - timedelta(days=2)}
+
+
+def test_percentile_rollup_is_idempotent_on_rebuild(conn) -> None:  # noqa: ANN001
+    connection, _seed = conn
+    count_sql = (
+        "SELECT count(*) FROM gold.route_delay_percentile_daily WHERE provider_id = :p"
+    )
+    before = connection.execute(text(count_sql), {"p": PROVIDER}).scalar_one()
+    # Re-running skips already-watermarked days (append-only — no duplicate rows).
+    rollups.build_warm_rollups(
+        PROVIDER,
+        settings=Settings.model_construct(DATABASE_URL=None),
+        engine=_NoCommitEngine(connection),
+    )
+    after = connection.execute(text(count_sql), {"p": PROVIDER}).scalar_one()
+    assert after == before

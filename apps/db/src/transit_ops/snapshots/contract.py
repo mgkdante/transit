@@ -313,6 +313,15 @@ class WeakStop(BaseModel):
     name: str | None = None
     median_delay_min: float | None = None
 
+class RouteDayOfWeek(BaseModel):
+    # Per-route weekday seasonality from gold.route_delay_day_of_week (ISO 1=Mon..7=Sun).
+    # trip_count is intentionally omitted — the gold column is an hourly-distinct-sum
+    # upper-bound proxy, not distinct trips per weekday.
+    day_of_week_iso: int
+    avg_delay_min: float | None = None
+    severe_pct: float | None = None
+    observation_count: int | None = None
+
 class RouteReliability(BaseModel):
     generated_utc: str
     id: str
@@ -320,12 +329,15 @@ class RouteReliability(BaseModel):
     periods: list[ReliabilityPeriod] = Field(default_factory=list)
     headway: list[HeadwayPeriod] = Field(default_factory=list)
     habits: RouteHabits | None = None
+    day_of_week: list[RouteDayOfWeek] = Field(default_factory=list)
     weak_stops: list[WeakStop] = Field(default_factory=list)
 
 class StopReliabilityPeriod(BaseModel):
     grain: str
     otp_pct: int | None = None
     median_delay_min: float | None = None
+    p50_min: float | None = None
+    p90_min: float | None = None
     severe_pct: float | None = None
 
 class StopByRoute(BaseModel):
@@ -337,6 +349,11 @@ class StopReliability(BaseModel):
     id: str
     name: str | None = None
     periods: list[StopReliabilityPeriod] = Field(default_factory=list)
+    # Per-stop 7x24 (dow x hour) heatmap, reusing the RouteHabits shape but on a
+    # DISTINCT scale ('severe_relative'): each cell is the stop's severe-delay count
+    # relative to its own worst cell — NOT the route repeat-problem score, so a
+    # shared legend can't conflate the two.
+    habits: RouteHabits | None = None
     by_route: list[StopByRoute] = Field(default_factory=list)
 
 class Hotspot(BaseModel):

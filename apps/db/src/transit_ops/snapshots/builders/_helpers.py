@@ -489,7 +489,9 @@ def _entity_name_maps(
     return route_names, stop_names
 
 
-def _build_habits_matrix(rows: "Iterable[Mapping[str, object]]") -> "RouteHabits":
+def _build_habits_matrix(
+    rows: "Iterable[Mapping[str, object]]", *, scale: str = "repeat_problem_relative"
+) -> "RouteHabits":
     """7x24 per-route problem heatmap (rows isodow 1..7, cols hour 0..23).
 
     Each observed (dow, hour) cell is normalized to its fraction of the route's
@@ -528,7 +530,7 @@ def _build_habits_matrix(rows: "Iterable[Mapping[str, object]]") -> "RouteHabits
         ]
         for row in raw
     ]
-    return RouteHabits(scale="repeat_problem_relative", matrix=matrix)
+    return RouteHabits(scale=scale, matrix=matrix)
 
 
 def _scheduled_headway_by_shift(

@@ -84,11 +84,27 @@ class FakeConnection:
         sql = str(statement)
         self.executed.append(sql)
 
-        if "fact_vehicle_snapshot" in sql and "warm_rollup_periods" in sql and "NOT IN" in sql:
+        if (
+            "fact_vehicle_snapshot" in sql
+            and "warm_rollup_periods" in sql
+            and "NOT IN" in sql
+            and "DATE_BIN" in sql
+        ):
             return IterableResult([FakeRow(p) for p in self.vehicle_periods])
 
-        if "fact_trip_delay_snapshot" in sql and "warm_rollup_periods" in sql and "NOT IN" in sql:
+        if (
+            "fact_trip_delay_snapshot" in sql
+            and "warm_rollup_periods" in sql
+            and "NOT IN" in sql
+            and "DATE_BIN" in sql
+        ):
             return IterableResult([FakeRow(p) for p in self.trip_delay_periods])
+
+        # Append-only percentile missing-days SELECT (no DATE_BIN; keyed on the
+        # local-day subquery). Default to no missing days so the percentile loop is
+        # a noop here — correctness is covered by the real-DB regression test.
+        if "fact_trip_delay_snapshot" in sql and "today_local" in sql:
+            return IterableResult([])
 
         if "INSERT INTO gold.vehicle_summary_5m" in sql:
             return RowcountResult(1)
@@ -127,6 +143,16 @@ class FakeConnection:
 
         if "SELECT COUNT(*)" in sql and "FROM gold.warm_rollup_periods" in sql:
             return ScalarResult(8)
+
+        if ("SELECT COUNT(*)" in sql or "SELECT count(*)" in sql) and (
+            "FROM gold.route_delay_percentile_daily" in sql
+        ):
+            return ScalarResult(7)
+
+        if ("SELECT COUNT(*)" in sql or "SELECT count(*)" in sql) and (
+            "FROM gold.stop_delay_percentile_daily" in sql
+        ):
+            return ScalarResult(11)
 
         return RowcountResult(0)
 
@@ -650,8 +676,11 @@ def test_prune_warm_rollup_storage_dry_run_counts_without_deletes() -> None:
     deletes = [s for s in conn.executed if "DELETE FROM gold." in s]
     assert deletes == []
 
+    assert result.deleted_row_counts["gold.route_delay_percentile_daily"] == 7
+    assert result.deleted_row_counts["gold.stop_delay_percentile_daily"] == 11
+
     count_queries = [s for s in conn.executed if "SELECT COUNT(*)" in s or "SELECT count(*)" in s]
-    assert len(count_queries) == 13
+    assert len(count_queries) == 15  # +2 append-only percentile tables
 
 
 def test_prune_warm_rollup_storage_display_dict_includes_dry_run() -> None:

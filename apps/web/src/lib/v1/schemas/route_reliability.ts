@@ -44,6 +44,14 @@ export const WeakStopSchema = z.object({
 });
 export type WeakStop = z.infer<typeof WeakStopSchema>;
 
+export const RouteDayOfWeekSchema = z.object({
+	day_of_week_iso: z.number().int(),
+	avg_delay_min: z.number().nullable().optional(),
+	severe_pct: z.number().nullable().optional(),
+	observation_count: z.number().int().nullable().optional(),
+});
+export type RouteDayOfWeek = z.infer<typeof RouteDayOfWeekSchema>;
+
 export const RouteReliabilitySchema = z.object({
 	generated_utc: isoUtc(),
 	id: z.string(),
@@ -52,6 +60,8 @@ export const RouteReliabilitySchema = z.object({
 	headway: z.array(HeadwayPeriodSchema).optional(),
 	// null when the route has no time-of-day habit data.
 	habits: RouteHabitsSchema.nullable().optional(),
+	// per-route weekday seasonality (ISO 1=Mon..7=Sun).
+	day_of_week: z.array(RouteDayOfWeekSchema).optional(),
 	weak_stops: z.array(WeakStopSchema).optional(),
 });
 export type RouteReliability = z.infer<typeof RouteReliabilitySchema>;
