@@ -1,5 +1,6 @@
 import type { Handle } from '@sveltejs/kit';
 import { pathLocale } from '$lib/i18n';
+import { readPublicSiteConfig } from '$lib/site/config';
 
 // Server hooks — the request-time plumbing for the transit web app.
 //
@@ -26,7 +27,11 @@ export const handle: Handle = async ({ event, resolve }) => {
 	// pure function of the URL path, so each URL is independently cacheable.
 	const lang = pathLocale(event.url.pathname);
 
-	return resolve(event, {
+	const response = await resolve(event, {
 		transformPageChunk: ({ html }) => html.replace('%lang%', lang),
 	});
+	if (!readPublicSiteConfig().indexing) {
+		response.headers.set('x-robots-tag', 'noindex, nofollow');
+	}
+	return response;
 };
