@@ -46,6 +46,11 @@
 		setNearTargetSearchParams,
 	} from '$lib/search/mapNear';
 	import { nearTargetFromSearchParams } from '$lib/search/mapNear';
+	import {
+		clearMapFocusSearchParams,
+		parseMapFocus,
+		type MapFocus,
+	} from '$lib/search/mapFocus';
 	import { BottomSheet, RightPanel } from '$lib/components/shell';
 	import { ResizablePaneGroup, ResizablePane, ResizableHandle } from '$lib/components/ui/resizable';
 	import {
@@ -164,10 +169,12 @@
 	afterNavigate(() => {
 		filters.replace(fromSearchParams($page.url.searchParams));
 		syncNearTargetFromUrl($page.url.searchParams);
+		readFocusFromUrl($page.url.searchParams);
 	});
 
 	$effect(() => {
 		syncNearTargetFromUrl($page.url.searchParams);
+		readFocusFromUrl($page.url.searchParams);
 	});
 
 	// Basemap pointer (hosted Montréal PMTiles), or null → minimal-dark fallback.
@@ -205,6 +212,9 @@
 	let nearMeError = $state<string | null>(null);
 	let nearMeOrigin = $state<NearMeOrigin | null>(null);
 	let nearUrlKey = $state('');
+	// One-shot "zoom to this picked entity" hint from the URL `focus` param. The
+	// resolver effect pans/fits once data is available, then strips the param.
+	let pendingFocus = $state<MapFocus | null>(null);
 	let rightPanelCollapsed = $state(false);
 	let rightPanelPane = $state<{ collapse: () => void; expand: () => void } | undefined>();
 	let rightPanelEl = $state<HTMLElement | undefined>();
@@ -499,6 +509,94 @@
 			noScroll: true,
 		});
 	}
+
+	// Pick up a one-shot `focus` param; the resolver effect below acts on it.
+	function readFocusFromUrl(searchParams: URLSearchParams): void {
+		const focus = parseMapFocus(searchParams);
+		if (focus) pendingFocus = focus;
+	}
+
+	function clearFocusFromUrl(): void {
+		const nextSearchParams = new URLSearchParams($page.url.searchParams);
+		clearMapFocusSearchParams(nextSearchParams);
+		const nextSearch = nextSearchParams.toString();
+		void goto(nextSearch ? `?${nextSearch}` : $page.url.pathname, {
+			replaceState: true,
+			keepFocus: true,
+			noScroll: true,
+		});
+	}
+
+	function focusStop(id: string): boolean {
+		const stop = stopList.find((s) => s.id === id);
+		if (!stop) return false;
+		panTo([stop.lon, stop.lat], Math.max(map?.getZoom() ?? 0, 16));
+		return true;
+	}
+
+	function focusVehicle(id: string): boolean {
+		const vehicle = (live.vehicles?.vehicles ?? []).find((v) => v.id === id);
+		if (!vehicle) return false;
+		panTo([vehicle.lon, vehicle.lat], Math.max(map?.getZoom() ?? 0, 16));
+		return true;
+	}
+
+	function focusRoute(id: string): boolean {
+		const route = routeList.find((r) => r.id === id);
+		if (!route) return false;
+		const bounds = routeBoundsFromFile(route);
+		if (!bounds) return false;
+		if (!map) return false;
+		map.fitBounds(bounds, {
+			padding: 64,
+			maxZoom: 15,
+			duration: shouldAnimate('motion-gated') ? 600 : 0,
+		});
+		return true;
+	}
+
+	function routeBoundsFromFile(route: RouteFile): [[number, number], [number, number]] | null {
+		let minLon = Infinity;
+		let minLat = Infinity;
+		let maxLon = -Infinity;
+		let maxLat = -Infinity;
+		for (const direction of route.directions ?? []) {
+			const coords = (direction.shape as { coordinates?: unknown })?.coordinates;
+			if (!Array.isArray(coords)) continue;
+			for (const pair of coords) {
+				if (!Array.isArray(pair) || pair.length < 2) continue;
+				const lon = Number(pair[0]);
+				const lat = Number(pair[1]);
+				if (!Number.isFinite(lon) || !Number.isFinite(lat)) continue;
+				if (lon < minLon) minLon = lon;
+				if (lat < minLat) minLat = lat;
+				if (lon > maxLon) maxLon = lon;
+				if (lat > maxLat) maxLat = lat;
+			}
+		}
+		if (minLon === Infinity) return null;
+		return [
+			[minLon, minLat],
+			[maxLon, maxLat],
+		];
+	}
+
+	// Resolve the pending focus once the map AND the entity's data are available;
+	// reads the kind's reactive source so it re-runs when that data loads, then
+	// pans/fits and strips the param so it fires exactly once.
+	$effect(() => {
+		if (!pendingFocus || !map) return;
+		const focus = pendingFocus;
+		const resolved =
+			focus.kind === 'stop'
+				? focusStop(focus.id)
+				: focus.kind === 'vehicle'
+					? focusVehicle(focus.id)
+					: focusRoute(focus.id);
+		if (!resolved) return;
+		pendingFocus = null;
+		clearFocusFromUrl();
+	});
 
 	/** Camera move that honours prefers-reduced-motion: jumpTo (no flight) under
 	 * reduce, flyTo otherwise. `essential` alone does NOT respect reduced motion. */

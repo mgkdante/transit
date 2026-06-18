@@ -45,7 +45,7 @@
 	import { Surface } from '$lib/components/layout';
 	import { Separator } from '$lib/components/ui/separator';
 	import { EdgeState } from '$lib/components/edge';
-	import { foldSearchText, tokenMatchScore } from '$lib/search/normalize';
+	import { dedupeBy, foldSearchText, tokenMatchScore } from '$lib/search/normalize';
 	import { stopModeHint } from '$lib/search/stopMode';
 	import { copy } from './search.copy';
 
@@ -80,11 +80,13 @@
 	});
 	const matchedStops = $derived.by<StopIndexEntry[]>(() => {
 		if (!hasQuery || !stops.data) return [];
-		return stops.data.stops
+		const ranked = stops.data.stops
 			.map((s) => ({ s, score: tokenMatchScore([s.id, s.name, s.code], normalized) }))
 			.filter((m): m is { s: StopIndexEntry; score: number } => m.score != null)
 			.sort((a, b) => a.score - b.score)
 			.map((m) => m.s);
+		// One result per rider code — collapse the métro interchange's platforms.
+		return dedupeBy(ranked, (s) => s.code ?? s.id);
 	});
 
 	const hasResults = $derived(matchedRoutes.length > 0 || matchedStops.length > 0);

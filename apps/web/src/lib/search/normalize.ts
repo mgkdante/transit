@@ -40,6 +40,24 @@ export function tokenize(value: string | null | undefined): string[] {
 }
 
 /**
+ * Keep the first item per key, preserving order. Used to collapse the métro
+ * interchange's duplicate platform stops (same rider code, several platform ids)
+ * to a single result — keyed on `code ?? id` so coded stops dedupe by code while
+ * code-less stops fall back to their unique id (no accidental collapse).
+ */
+export function dedupeBy<T>(items: readonly T[], key: (item: T) => string): T[] {
+	const seen = new Set<string>();
+	const out: T[] = [];
+	for (const item of items) {
+		const k = key(item);
+		if (seen.has(k)) continue;
+		seen.add(k);
+		out.push(item);
+	}
+	return out;
+}
+
+/**
  * Rank a query against a set of candidate strings for one entity. Lower is a
  * better match; null means no match. Tiers (folded on both sides):
  *   0 — a candidate equals the full query                (exact)

@@ -26,7 +26,7 @@
 	} from '$lib/components/surface';
 	import { Surface } from '$lib/components/layout';
 	import { Separator } from '$lib/components/ui/separator';
-	import { foldSearchText, tokenMatchScore } from '$lib/search/normalize';
+	import { dedupeBy, foldSearchText, tokenMatchScore } from '$lib/search/normalize';
 	import { stopModeHint } from '$lib/search/stopMode';
 	import { indexCopy } from './stops.copy';
 
@@ -48,11 +48,13 @@
 	const matches = $derived.by<readonly StopIndexEntry[]>(() => {
 		const stops = index.data?.stops ?? [];
 		if (!folded) return [];
-		return stops
+		const ranked = stops
 			.map((s) => ({ s, score: tokenMatchScore([s.name, s.code, s.id], folded) }))
 			.filter((m): m is { s: StopIndexEntry; score: number } => m.score != null)
 			.sort((a, b) => a.score - b.score)
 			.map((m) => m.s);
+		// One result per rider code — collapse the métro interchange's platforms.
+		return dedupeBy(ranked, (s) => s.code ?? s.id);
 	});
 
 	const overflow = $derived(Math.max(0, matches.length - CAP));

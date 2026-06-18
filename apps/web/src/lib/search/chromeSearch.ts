@@ -1,7 +1,8 @@
 import type { RouteIndexEntry, StopIndexEntry, Vehicle } from '$lib/v1/schemas';
 import { fromSearchParams, toSearchString } from '$lib/filters';
 import type { GeocodePrecision, GeocodeSource, GeocodeSuggestion } from '$lib/geocode/types';
-import { foldSearchText, tokenMatchScore } from '$lib/search/normalize';
+import { dedupeBy, foldSearchText, tokenMatchScore } from '$lib/search/normalize';
+import { setMapFocusSearchParams, type MapFocusKind } from '$lib/search/mapFocus';
 import {
 	copyNearTargetSearchParams,
 	mapNearId,
@@ -67,20 +68,21 @@ export function chromeSearchResults(
 		.sort(collate)
 		.slice(0, 5);
 
-	const stops = (sources.stops ?? [])
-		.map((stop): ChromeSearchResult | null => {
-			const score = tokenMatchScore([stop.code, stop.id, stop.name], q);
-			if (score == null) return null;
-			return {
+	const stopMatches = (sources.stops ?? [])
+		.map((stop) => ({ stop, score: tokenMatchScore([stop.code, stop.id, stop.name], q) }))
+		.filter((m): m is { stop: StopIndexEntry; score: number } => m.score != null)
+		.sort((a, b) => a.score - b.score);
+	// Collapse the métro interchange's duplicate platform stops (shared code) to one.
+	const stops = dedupeBy(stopMatches, (m) => m.stop.code ?? m.stop.id)
+		.map(
+			({ stop, score }): ChromeSearchResult => ({
 				kind: 'stop',
 				id: stop.id,
 				label: stop.name,
 				meta: stop.code ?? 'Stop',
 				priority: 4 + score,
-			};
-		})
-		.filter((result): result is ChromeSearchResult => result != null)
-		.sort(collate)
+			}),
+		)
 		.slice(0, 5);
 
 	const vehicles = (sources.vehicles ?? [])
@@ -139,6 +141,8 @@ export function chromeSearchHref(
 		if (target) setNearTargetSearchParams(searchParams, target);
 	} else {
 		copyNearTargetSearchParams(currentSearchParams, searchParams);
+		// Tell the map to zoom to the picked entity (one-shot; the map strips it).
+		setMapFocusSearchParams(searchParams, result.kind as MapFocusKind, result.id);
 	}
 
 	const search = searchParams.toString();

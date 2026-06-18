@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { foldDiacritics, foldSearchText, tokenize, tokenMatchScore } from './normalize';
+import { dedupeBy, foldDiacritics, foldSearchText, tokenize, tokenMatchScore } from './normalize';
 
 describe('foldDiacritics', () => {
 	it('strips accents and lowercases without touching separators', () => {
@@ -61,5 +61,24 @@ describe('tokenMatchScore', () => {
 		expect(tokenMatchScore(['Station Berri-UQAM'], 'berri laval')).toBeNull();
 		expect(tokenMatchScore(['anything'], '   ')).toBeNull();
 		expect(tokenMatchScore([null, undefined, ''], 'berri')).toBeNull();
+	});
+});
+
+describe('dedupeBy', () => {
+	it('keeps the first item per key, preserving order', () => {
+		const items = [
+			{ id: 'a', code: '10146' },
+			{ id: 'b', code: '10146' },
+			{ id: 'c', code: '20000' },
+		];
+		expect(dedupeBy(items, (i) => i.code).map((i) => i.id)).toEqual(['a', 'c']);
+	});
+
+	it('does not collapse distinct code-less items (id fallback)', () => {
+		const items = [
+			{ id: 'a', code: undefined },
+			{ id: 'b', code: undefined },
+		];
+		expect(dedupeBy(items, (i) => i.code ?? i.id)).toHaveLength(2);
 	});
 });

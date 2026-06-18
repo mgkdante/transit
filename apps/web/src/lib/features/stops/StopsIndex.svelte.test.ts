@@ -36,7 +36,7 @@ describe('StopsIndex map drilldown', () => {
 		);
 		expect(screen.getByRole('link', { name: 'View stop 57191 on map' })).toHaveAttribute(
 			'href',
-			'/map?stop=57191',
+			'/map?stop=57191&focus=stop%3A57191',
 		);
 	});
 

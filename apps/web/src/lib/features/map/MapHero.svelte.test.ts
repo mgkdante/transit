@@ -85,6 +85,19 @@ describe('MapHero mobile chrome', () => {
 		expect(s).toContain('?placeId=${encodeURIComponent(placeId)}&session=');
 	});
 
+	it('zooms the camera to a route/stop/vehicle picked from search (one-shot focus)', () => {
+		const s = source();
+
+		expect(s).toContain("from '$lib/search/mapFocus'");
+		expect(s).toContain('let pendingFocus = $state<MapFocus | null>(null)');
+		expect(s).toContain('readFocusFromUrl($page.url.searchParams)');
+		// resolves the kind's data then pans/fits and strips the param exactly once
+		expect(s).toContain('function focusStop(id: string)');
+		expect(s).toContain('function focusVehicle(id: string)');
+		expect(s).toContain('function focusRoute(id: string)');
+		expect(s).toContain('clearFocusFromUrl()');
+	});
+
 	it('maps geolocation failure codes to distinct, secure-context-aware copy', () => {
 		const s = source();
 
