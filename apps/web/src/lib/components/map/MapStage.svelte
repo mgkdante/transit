@@ -210,10 +210,15 @@
 	$effect(() => {
 		const m = map;
 		if (!m) return;
-		const nextFitKey = fitKey(bounds, fitPadding);
+		// Re-fit when the fit bounds, padding, OR maxBounds change. maxBounds is in
+		// the key (and re-applied via setMaxBounds) so a bounds/band tweak takes
+		// effect on HMR / prop change WITHOUT a hard reload — it was previously only
+		// applied once at construction, which is why tweaks "didn't land".
+		const nextFitKey = `${fitKey(bounds, fitPadding)}|${maxBounds?.join(',') ?? ''}`;
 		if (activeFitKey === nextFitKey) return;
 		activeFitKey = nextFitKey;
 		const viewport = mapViewportOptions(bounds, fitPadding, maxBounds);
+		m.setMaxBounds(viewport.maxBounds);
 		m.fitBounds(viewport.bounds, { ...viewport.fitBoundsOptions, duration: 0 });
 	});
 
@@ -315,12 +320,13 @@
 		color: var(--muted-foreground);
 		font-family: var(--font-mono);
 		font-size: var(--text-micro);
-		max-width: min(22rem, calc(100vw - var(--map-detail-offset, 0rem) - 2rem));
+		/* Wide enough for the one-line credit; capped to the visible map gap. */
+		max-width: min(32rem, calc(100vw - var(--map-detail-offset, 0rem) - 1.5rem));
 	}
 
+	/* The basemap credit stays on a SINGLE line — never wraps. */
 	.map-stage :global(.maplibregl-ctrl-attrib-inner) {
-		white-space: normal;
-		overflow-wrap: anywhere;
+		white-space: nowrap;
 	}
 
 	.map-stage :global(.maplibregl-ctrl-attrib a) {

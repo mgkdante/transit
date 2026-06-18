@@ -73,10 +73,10 @@ describe('vectorStyleFromBasemap (Protomaps schema)', () => {
 		expect((src as { maxzoom?: number }).maxzoom).toBe(15);
 	});
 
-	it('decorates the public attribution with a small thank-you for OSM contributors', () => {
+	it('decorates the public attribution with a one-line thank-you for OSM contributors', () => {
 		const src = style.sources[BASEMAP_SOURCE_ID];
 		expect((src as { attribution?: string }).attribution).toBe(
-			'© OpenStreetMap contributors, © Protomaps <span class="transit-basemap-thanks" aria-label="thank you">thanks <span style="color:#C96F2D">♥</span></span>',
+			'Big thanks to © OpenStreetMap contributors, © Protomaps <span class="transit-basemap-thanks" aria-label="thank you">🧡</span>',
 		);
 	});
 
