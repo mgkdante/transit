@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { stopModeHint } from './stopMode';
+import { stopGroupKey, stopModeHint } from './stopMode';
 
 describe('stopModeHint', () => {
 	it('tags métro platform stops from the "Station" prefix (accent/case insensitive)', () => {
@@ -15,5 +15,22 @@ describe('stopModeHint', () => {
 		expect(stopModeHint('Berri / Fleury')).toEqual({ glyph: '■', label: null });
 		expect(stopModeHint('')).toEqual({ glyph: '■', label: null });
 		expect(stopModeHint(null)).toEqual({ glyph: '■', label: null });
+	});
+});
+
+describe('stopGroupKey', () => {
+	it('groups all platforms/poles of a station under one name key (any code)', () => {
+		const a = stopGroupKey({ id: '1', code: '10280', name: 'Station Henri-Bourassa' });
+		const b = stopGroupKey({ id: '50301', code: '50301', name: 'Station Henri-Bourassa' });
+		expect(a).toBe(b);
+		expect(a).toBe('name:station henri bourassa');
+	});
+
+	it('groups ordinary stops by rider code, keeping distinct codes separate', () => {
+		const a = stopGroupKey({ id: '52819', code: '52618', name: 'Montgomery / Sherbrooke' });
+		const b = stopGroupKey({ id: '57191', code: '57191', name: 'Van Horne / Rockland' });
+		expect(a).toBe('code:52618');
+		expect(b).toBe('code:57191');
+		expect(a).not.toBe(b);
 	});
 });

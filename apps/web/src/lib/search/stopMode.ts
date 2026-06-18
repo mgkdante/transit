@@ -10,7 +10,7 @@
 // `label` is a locale-invariant transit-mode proper noun (Métro / Train), so it
 // needs no bilingual copy entry.
 
-import { foldDiacritics } from './normalize';
+import { foldDiacritics, foldSearchText } from './normalize';
 
 export interface StopModeHint {
 	/** Mono glyph for the result card, on the shared identity vocabulary. */
@@ -33,4 +33,22 @@ export function stopModeHint(name: string | null | undefined): StopModeHint {
 	if (folded.startsWith('station ')) return { glyph: METRO_GLYPH, label: 'Métro' };
 	if (folded.startsWith('gare ')) return { glyph: RAIL_GLYPH, label: 'Train' };
 	return { glyph: DEFAULT_STOP_GLYPH, label: null };
+}
+
+/**
+ * Dedupe key for collapsing search results to ONE row per logical stop. A métro
+ * station name (e.g. 'Station Berri-UQAM') is attached to many physical stops —
+ * the platforms + every bus pole at that terminal — so station-type stops group
+ * by NAME (one result for the whole station; direction lives on the detail page).
+ * Ordinary stops group by their unique rider code (falling back to id), so only
+ * true duplicates collapse and distinct bus stops stay separate.
+ */
+export function stopGroupKey(stop: {
+	readonly name: string;
+	readonly code?: string | null;
+	readonly id: string;
+}): string {
+	return stopModeHint(stop.name).label
+		? `name:${foldSearchText(stop.name)}`
+		: `code:${stop.code ?? stop.id}`;
 }

@@ -2,6 +2,7 @@ import type { RouteIndexEntry, StopIndexEntry, Vehicle } from '$lib/v1/schemas';
 import { fromSearchParams, toSearchString } from '$lib/filters';
 import type { GeocodePrecision, GeocodeSource, GeocodeSuggestion } from '$lib/geocode/types';
 import { dedupeBy, foldSearchText, tokenMatchScore } from '$lib/search/normalize';
+import { stopGroupKey } from '$lib/search/stopMode';
 import { setMapFocusSearchParams, type MapFocusKind } from '$lib/search/mapFocus';
 import {
 	copyNearTargetSearchParams,
@@ -72,8 +73,9 @@ export function chromeSearchResults(
 		.map((stop) => ({ stop, score: tokenMatchScore([stop.code, stop.id, stop.name], q) }))
 		.filter((m): m is { stop: StopIndexEntry; score: number } => m.score != null)
 		.sort((a, b) => a.score - b.score);
-	// Collapse the métro interchange's duplicate platform stops (shared code) to one.
-	const stops = dedupeBy(stopMatches, (m) => m.stop.code ?? m.stop.id)
+	// One row per logical stop: métro/station names collapse to a single station;
+	// ordinary stops collapse only true code duplicates.
+	const stops = dedupeBy(stopMatches, (m) => stopGroupKey(m.stop))
 		.map(
 			({ stop, score }): ChromeSearchResult => ({
 				kind: 'stop',

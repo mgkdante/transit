@@ -46,7 +46,7 @@
 	import { Separator } from '$lib/components/ui/separator';
 	import { EdgeState } from '$lib/components/edge';
 	import { dedupeBy, foldSearchText, tokenMatchScore } from '$lib/search/normalize';
-	import { stopModeHint } from '$lib/search/stopMode';
+	import { stopGroupKey, stopModeHint } from '$lib/search/stopMode';
 	import { copy } from './search.copy';
 
 	const locale: Locale = getLocale();
@@ -85,8 +85,8 @@
 			.filter((m): m is { s: StopIndexEntry; score: number } => m.score != null)
 			.sort((a, b) => a.score - b.score)
 			.map((m) => m.s);
-		// One result per rider code — collapse the métro interchange's platforms.
-		return dedupeBy(ranked, (s) => s.code ?? s.id);
+		// One row per logical stop — métro/station names collapse to a single station.
+		return dedupeBy(ranked, stopGroupKey);
 	});
 
 	const hasResults = $derived(matchedRoutes.length > 0 || matchedStops.length > 0);

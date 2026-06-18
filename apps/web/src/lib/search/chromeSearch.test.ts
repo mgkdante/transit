@@ -163,6 +163,31 @@ describe('chromeSearchResults', () => {
 		expect(stops[0]?.id).toBe('9999111');
 	});
 
+	it('collapses a station name attached to many stops (different codes) to one', () => {
+		const station: StopIndexEntry[] = [
+			{ id: '1', code: '10280', name: 'Station Henri-Bourassa', lat: 45.554, lon: -73.668 },
+			{ id: '50301', code: '50301', name: 'Station Henri-Bourassa', lat: 45.554, lon: -73.669 },
+			{ id: '50303', code: '50303', name: 'Station Henri-Bourassa', lat: 45.554, lon: -73.668 },
+		];
+
+		const stops = chromeSearchResults('henri bourassa', { stops: station }).filter(
+			(r) => r.kind === 'stop',
+		);
+		expect(stops).toHaveLength(1);
+		expect(stops[0]?.id).toBe('1');
+	});
+
+	it('keeps two distinct same-named non-station stops separate', () => {
+		const twins: StopIndexEntry[] = [
+			{ id: '100', code: '100', name: 'Parc / Laurier', lat: 45.52, lon: -73.6 },
+			{ id: '200', code: '200', name: 'Parc / Laurier', lat: 45.521, lon: -73.601 },
+		];
+		const stops = chromeSearchResults('parc laurier', { stops: twins }).filter(
+			(r) => r.kind === 'stop',
+		);
+		expect(stops).toHaveLength(2);
+	});
+
 	it('matches an intersection stop with the cross streets in either order', () => {
 		const intersection: StopIndexEntry[] = [
 			{ id: '52819', code: '52618', name: 'Montgomery / Sherbrooke', lat: 45.52, lon: -73.55 },
