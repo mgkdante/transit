@@ -510,7 +510,7 @@
 		width: 3.7rem;
 	}
 	.map-filters[data-open='false'][data-scrollable='true'] {
-		width: 4.65rem;
+		width: 4.95rem;
 	}
 	.mf-controls {
 		display: flex;
@@ -576,7 +576,7 @@
 		scrollbar-color: color-mix(in srgb, var(--primary) 42%, var(--border) 58%) transparent;
 	}
 	.map-filters[data-scrollable='true'] .mf-body {
-		padding-right: 0.35rem;
+		padding-right: 0.5rem;
 		scrollbar-gutter: stable;
 	}
 	.mf-body::-webkit-scrollbar {

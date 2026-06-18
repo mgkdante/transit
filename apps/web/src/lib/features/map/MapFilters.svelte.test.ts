@@ -178,7 +178,7 @@ describe('MapFilters', () => {
 		expect(source).toMatch(/data-scrollable=\{bodyScrollable\}/);
 		expect(source).toMatch(/\.map-filters\[data-open='false'\]\s*\{\s*width:\s*3\.7rem;\s*\}/);
 		expect(source).toMatch(
-			/\.map-filters\[data-open='false'\]\[data-scrollable='true'\]\s*\{\s*width:\s*4\.65rem;\s*\}/,
+			/\.map-filters\[data-open='false'\]\[data-scrollable='true'\]\s*\{\s*width:\s*4\.95rem;\s*\}/,
 		);
 		expect(
 			Array.from(
@@ -205,7 +205,7 @@ describe('MapFilters', () => {
 		expect(source).toMatch(/\.mf-body\s*\{[\s\S]*overflow-y:\s*auto/);
 		expect(source).toMatch(/\.mf-body\s*\{[\s\S]*scrollbar-gutter:\s*auto/);
 		expect(source).toMatch(
-			/\.map-filters\[data-scrollable='true'\]\s+\.mf-body\s*\{[\s\S]*padding-right:\s*0\.35rem/,
+			/\.map-filters\[data-scrollable='true'\]\s+\.mf-body\s*\{[\s\S]*padding-right:\s*0\.5rem/,
 		);
 		expect(source).toMatch(
 			/\.map-filters\[data-scrollable='true'\]\s+\.mf-body\s*\{[\s\S]*scrollbar-gutter:\s*stable/,
