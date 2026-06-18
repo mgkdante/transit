@@ -352,17 +352,29 @@ def _publish_static(
     written: list[str] = []
 
     # --- indexes + basemap + labels (small fixed set, built sequentially) ---
+    # Build the routes index + all per-stop data FIRST so the stops index can
+    # carry each stop's `mode` + short `routes` list with NO second heavy query:
+    # the route_type map and routes-served map are derived in memory from these,
+    # and all_stops is reused below for the per-stop uploads.
+    routes_idx = builders.build_routes_index(  # type: ignore[arg-type]
+        conn, provider_id=provider_id, generated_utc=stamp
+    )
+    all_stops = builders.build_all_stops_data(  # type: ignore[arg-type]
+        conn, provider_id=provider_id, generated_utc=stamp
+    )
+    route_type_by_id = {e.id: e.type for e in routes_idx.routes}
+    routes_served_by_stop = {sid: sf.routes_served for sid, sf in all_stops.items()}
+    stops_index = builders.build_stops_index(
+        conn,  # type: ignore[arg-type]
+        provider_id=provider_id,
+        generated_utc=stamp,
+        routes_served_by_stop=routes_served_by_stop,
+        route_type_by_id=route_type_by_id,
+    )
+
     head_items: list = [
-        (
-            "static/routes_index.json",
-            builders.build_routes_index(conn, provider_id=provider_id, generated_utc=stamp),  # type: ignore[arg-type]
-            "static",
-        ),
-        (
-            "static/stops_index.json",
-            builders.build_stops_index(conn, provider_id=provider_id, generated_utc=stamp),  # type: ignore[arg-type]
-            "static",
-        ),
+        ("static/routes_index.json", routes_idx, "static"),
+        ("static/stops_index.json", stops_index, "static"),
     ]
     # Basemap pointer — only when SNAPSHOT_BASEMAP_PMTILES_URL is configured.
     bm = builders.build_basemap(settings, generated_utc=stamp)
@@ -391,8 +403,7 @@ def _publish_static(
     ]
     written.extend(_parallel_put(storage, route_items, concurrency=concurrency))
 
-    # --- per-stop files (one-pass batch build, parallel upload) ---
-    all_stops = builders.build_all_stops_data(conn, provider_id=provider_id, generated_utc=stamp)  # type: ignore[arg-type]
+    # --- per-stop files (reuse all_stops built above, parallel upload) ---
     stop_items = [
         (f"static/stops/{stop_id}.json", stop_file, "static")
         for stop_id, stop_file in sorted(all_stops.items())

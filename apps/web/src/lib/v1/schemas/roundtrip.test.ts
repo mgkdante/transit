@@ -159,6 +159,26 @@ describe('schema round-trip — every family parses a minimal valid fixture', ()
 	}
 });
 
+describe('stops_index — optional mode + routes round-trip', () => {
+	it('parses a populated entry (mode + routes) alongside a minimal one (neither)', () => {
+		const fixture = {
+			generated_utc: ISO,
+			stops: [
+				{
+					id: 's1',
+					name: 'Berri-UQAM',
+					lat: 45.51,
+					lon: -73.56,
+					mode: 'metro',
+					routes: ['1', '165'],
+				},
+				{ id: 's2', name: 'Côte-des-Neiges', lat: 45.5, lon: -73.6 },
+			],
+		};
+		expect(() => parsePort('stops_index', StopsIndexSchema, fixture)).not.toThrow();
+	});
+});
+
 describe('schema round-trip — a bad value throws via parsePort, naming the port', () => {
 	// Closed-enum families: an out-of-vocabulary value must be rejected.
 	const ENUM_REJECTS: Array<[string, z.ZodTypeAny, unknown]> = [
@@ -183,6 +203,16 @@ describe('schema round-trip — a bad value throws via parsePort, naming the por
 		};
 		expect(() => parsePort('vehicles', VehiclesFileSchema, bad)).toThrowError(
 			/^\[adapter\.vehicles\]/,
+		);
+	});
+
+	it('[stops_index] rejects a stop with an out-of-enum mode (nested object path)', () => {
+		const bad = {
+			generated_utc: ISO,
+			stops: [{ id: 's1', name: 'X', lat: 45.5, lon: -73.6, mode: 'spaceship' }],
+		};
+		expect(() => parsePort('stops_index', StopsIndexSchema, bad)).toThrowError(
+			/^\[adapter\.stops_index\]/,
 		);
 	});
 

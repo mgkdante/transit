@@ -951,7 +951,8 @@ def test_build_routes_index():
     assert idx.routes[0].id == "165"
     assert idx.routes[0].type == 3
 
-def test_build_stops_index():
+def _stops_index_first(routes_served_by_stop=None, route_type_by_id=None):  # noqa: ANN001
+    """build_stops_index over a single fixture stop '51234' with optional maps."""
     from transit_ops.snapshots.builders import build_stops_index
 
     class FR:
@@ -963,9 +964,76 @@ def test_build_stops_index():
     class FC:
         def execute(self, *a, **k): return FR()
 
-    idx = build_stops_index(FC(), generated_utc="t")
-    assert idx.stops[0].id == "51234"
-    assert idx.stops[0].lat == 45.49123  # rounded 5dp
+    return build_stops_index(
+        FC(),
+        generated_utc="t",
+        routes_served_by_stop=routes_served_by_stop,
+        route_type_by_id=route_type_by_id,
+    ).stops[0]
+
+
+def test_build_stops_index():
+    # Backward-compatible default path: no maps -> mode null, routes empty.
+    e = _stops_index_first()
+    assert e.id == "51234"
+    assert e.lat == 45.49123  # rounded 5dp
+    assert e.mode is None
+    assert e.routes == []
+
+
+def test_build_stops_index_mode_metro_wins_over_bus():
+    # metro+bus interchange: route_type 1 present -> mode 'metro'.
+    e = _stops_index_first(
+        routes_served_by_stop={"51234": ["1", "165"]},
+        route_type_by_id={"1": 1, "165": 3},
+    )
+    assert e.routes == ["1", "165"]
+    assert e.mode == "metro"
+
+
+def test_build_stops_index_bus_only():
+    e = _stops_index_first(
+        routes_served_by_stop={"51234": ["165", "747"]},
+        route_type_by_id={"165": 3, "747": 3},
+    )
+    assert e.mode == "bus"
+    assert e.routes == ["165", "747"]
+
+
+def test_build_stops_index_routes_capped_mode_from_full_set():
+    # 6 served routes: routes list capped at 5, but mode sees the full set so the
+    # capped-out metro route (sorts last here) still wins the discriminator.
+    served = ["100", "101", "102", "103", "104", "1"]
+    e = _stops_index_first(
+        routes_served_by_stop={"51234": served},
+        route_type_by_id={r: 3 for r in served} | {"1": 1},
+    )
+    assert e.routes == ["100", "101", "102", "103", "104"]
+    assert e.mode == "metro"
+
+
+def test_build_stops_index_stop_absent_from_maps():
+    # Stop missing from the routes map (no weekday service) -> mode null, routes [].
+    e = _stops_index_first(
+        routes_served_by_stop={"99999": ["1"]},
+        route_type_by_id={"1": 1},
+    )
+    assert e.mode is None
+    assert e.routes == []
+
+
+def test_mode_from_route_types():
+    from transit_ops.snapshots.builders.static import _mode_from_route_types
+
+    assert _mode_from_route_types([]) is None
+    assert _mode_from_route_types([3]) == "bus"
+    assert _mode_from_route_types([1]) == "metro"
+    assert _mode_from_route_types([3, 1, 3]) == "metro"   # metro > bus
+    assert _mode_from_route_types([0, 3]) == "tram"       # tram > bus
+    assert _mode_from_route_types([2, 3]) == "rail"       # rail > bus
+    assert _mode_from_route_types([4]) == "ferry"
+    assert _mode_from_route_types([None, 3]) == "bus"     # NULL folds to bus
+    assert _mode_from_route_types([99]) == "bus"          # unknown folds to bus
 
 
 def test_build_route():

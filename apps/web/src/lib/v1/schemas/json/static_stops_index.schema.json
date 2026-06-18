@@ -26,9 +26,30 @@
           "title": "Lon",
           "type": "number"
         },
+        "mode": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "highest-priority GTFS mode serving this stop: metro|tram|rail|bus|ferry; null when no route linkage",
+          "title": "Mode"
+        },
         "name": {
           "title": "Name",
           "type": "string"
+        },
+        "routes": {
+          "description": "up to 5 route ids serving this stop, in route natural-sort order",
+          "items": {
+            "type": "string"
+          },
+          "title": "Routes",
+          "type": "array"
         }
       },
       "required": [

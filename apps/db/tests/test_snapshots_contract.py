@@ -187,3 +187,25 @@ def test_alert_text_fields_are_additive():
     # Freeze-compat: required arrays are exactly the committed ones.
     assert Alert.model_json_schema()["required"] == ["id", "severity", "header_key"]
     assert AlertHistoryEntry.model_json_schema()["required"] == ["id"]
+
+
+def test_stop_index_mode_routes_are_additive():
+    """slice stops-index-mode-routes: mode/routes are optional-with-default, so an
+    already-published stops_index.json (without them) still validates and the
+    frozen StopIndexEntry required set stays [id,name,lat,lon]."""
+    from transit_ops.snapshots.contract import StopIndexEntry
+
+    # Old-shape entry still validates; new fields default to None / [].
+    s = StopIndexEntry(id="51234", name="Côte-Vertu / Décarie", lat=45.49123, lon=-73.66123)
+    assert s.mode is None
+    assert s.routes == []
+
+    # Fully-populated entry roundtrips.
+    full = StopIndexEntry(
+        id="1", name="Berri-UQAM", lat=45.5151, lon=-73.5611, mode="metro", routes=["1", "165"]
+    )
+    assert full.mode == "metro"
+    assert full.routes == ["1", "165"]
+
+    # Freeze-compat: required keys are exactly the committed ones.
+    assert StopIndexEntry.model_json_schema()["required"] == ["id", "name", "lat", "lon"]
