@@ -285,6 +285,59 @@ def test_tier1_cancellation_occupancy_fields_are_additive():
     assert CancellationPeriod.model_json_schema().get("required", []) == []
 
 
+def test_tier2_headway_servicespan_alertbreakdown_fields_are_additive():
+    """Tier-2 rollup-foundation: HeadwayPeriod.cov/bunched_pct, RouteReliability.
+    service_spans, and AlertHistory.breakdown are optional-with-default, so already-
+    published artifacts still validate and required sets stay frozen."""
+    from transit_ops.snapshots.contract import (
+        AlertBreakdown,
+        AlertBreakdownBucket,
+        AlertHistory,
+        HeadwayPeriod,
+        RouteReliability,
+        ServiceSpanPeriod,
+    )
+
+    # HeadwayPeriod regularity fields default None; populated roundtrips.
+    hp = HeadwayPeriod(shift="am_peak")
+    assert hp.cov is None and hp.bunched_pct is None
+    assert HeadwayPeriod(shift="am_peak", cov=0.42, bunched_pct=12.5).cov == 0.42
+
+    # RouteReliability.service_spans defaults []; populated roundtrips.
+    rr = RouteReliability(generated_utc="t", id="165")
+    assert rr.service_spans == []
+    full = RouteReliability(
+        generated_utc="t",
+        id="165",
+        service_spans=[
+            ServiceSpanPeriod(
+                date="2026-06-17", first_trip_utc="2026-06-17T10:00:00Z",
+                last_trip_utc="2026-06-18T01:00:00Z", service_span_min=900,
+                first_trip_delay_min=0.5, last_trip_delay_min=1.5, trip_count=120,
+            )
+        ],
+    )
+    assert full.service_spans[0].service_span_min == 900
+
+    # AlertHistory.breakdown defaults None; populated roundtrips.
+    assert AlertHistory(generated_utc="t").breakdown is None
+    ah = AlertHistory(
+        generated_utc="t",
+        breakdown=AlertBreakdown(
+            by_cause=[AlertBreakdownBucket(key="unknown", count=3, median_duration_min=42.0)],
+            by_severity=[AlertBreakdownBucket(key="high", count=2)],
+        ),
+    )
+    assert ah.breakdown.by_cause[0].key == "unknown"
+    assert ah.breakdown.by_severity[0].median_duration_min is None
+
+    # Freeze-compat: required sets unchanged by the additive fields.
+    assert RouteReliability.model_json_schema()["required"] == ["generated_utc", "id"]
+    assert HeadwayPeriod.model_json_schema()["required"] == ["shift"]
+    assert AlertHistory.model_json_schema()["required"] == ["generated_utc"]
+    assert AlertBreakdownBucket.model_json_schema()["required"] == ["key"]
+
+
 def test_stop_index_mode_routes_are_additive():
     """slice stops-index-mode-routes: mode/routes are optional-with-default, so an
     already-published stops_index.json (without them) still validates and the

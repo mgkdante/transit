@@ -26,8 +26,22 @@ export const HeadwayPeriodSchema = z.object({
 	scheduled_min: z.number().nullable().optional(),
 	observed_min: z.number().nullable().optional(),
 	excess_wait_min: z.number().nullable().optional(),
+	// Tier-2 regularity (busiest-direction rows): stddev/mean of gaps + bunching %.
+	cov: z.number().nullable().optional(),
+	bunched_pct: z.number().nullable().optional(),
 });
 export type HeadwayPeriod = z.infer<typeof HeadwayPeriodSchema>;
+
+export const ServiceSpanPeriodSchema = z.object({
+	date: z.string().nullable().optional(),
+	first_trip_utc: z.string().nullable().optional(),
+	last_trip_utc: z.string().nullable().optional(),
+	service_span_min: z.number().int().nullable().optional(),
+	first_trip_delay_min: z.number().nullable().optional(),
+	last_trip_delay_min: z.number().nullable().optional(),
+	trip_count: z.number().int().nullable().optional(),
+});
+export type ServiceSpanPeriod = z.infer<typeof ServiceSpanPeriodSchema>;
 
 export const RouteHabitsSchema = z.object({
 	// e.g. 'repeat_problem_relative' — drives the heatmap normalization on the
@@ -79,5 +93,7 @@ export const RouteReliabilitySchema = z.object({
 	cancellations: z.array(CancellationPeriodSchema).optional(),
 	// trailing-window crowding band-shares; null when no occupancy telemetry.
 	occupancy_mix: OccupancyMixSchema.nullable().optional(),
+	// per-day service-span / first-last punctuality history.
+	service_spans: z.array(ServiceSpanPeriodSchema).optional(),
 });
 export type RouteReliability = z.infer<typeof RouteReliabilitySchema>;

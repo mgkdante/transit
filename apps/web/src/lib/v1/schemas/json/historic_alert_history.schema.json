@@ -1,5 +1,62 @@
 {
   "$defs": {
+    "AlertBreakdown": {
+      "properties": {
+        "by_cause": {
+          "items": {
+            "$ref": "#/$defs/AlertBreakdownBucket"
+          },
+          "title": "By Cause",
+          "type": "array"
+        },
+        "by_effect": {
+          "items": {
+            "$ref": "#/$defs/AlertBreakdownBucket"
+          },
+          "title": "By Effect",
+          "type": "array"
+        },
+        "by_severity": {
+          "items": {
+            "$ref": "#/$defs/AlertBreakdownBucket"
+          },
+          "title": "By Severity",
+          "type": "array"
+        }
+      },
+      "title": "AlertBreakdown",
+      "type": "object"
+    },
+    "AlertBreakdownBucket": {
+      "properties": {
+        "count": {
+          "default": 0,
+          "title": "Count",
+          "type": "integer"
+        },
+        "key": {
+          "title": "Key",
+          "type": "string"
+        },
+        "median_duration_min": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Median Duration Min"
+        }
+      },
+      "required": [
+        "key"
+      ],
+      "title": "AlertBreakdownBucket",
+      "type": "object"
+    },
     "AlertHistoryEntry": {
       "properties": {
         "duration_min": {
@@ -119,6 +176,17 @@
       },
       "title": "Alerts",
       "type": "array"
+    },
+    "breakdown": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/AlertBreakdown"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
     },
     "generated_utc": {
       "title": "Generated Utc",

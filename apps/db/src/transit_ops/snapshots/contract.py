@@ -317,6 +317,24 @@ class HeadwayPeriod(BaseModel):
     scheduled_min: float | None = None
     observed_min: float | None = None
     excess_wait_min: float | None = None
+    # Tier-2 regularity (busiest-direction rows only): cov = stddev/mean of the
+    # observed trip-start gaps (None when fewer than 2 gaps); bunched_pct = % of
+    # gaps under half the shift median headway (None when no gaps).
+    cov: float | None = None
+    bunched_pct: float | None = None
+
+class ServiceSpanPeriod(BaseModel):
+    # Per-route service span over one closed local day. "trip start" = first
+    # realtime observation of a trip (not the scheduled departure); first/last
+    # delay = that trip's first-observation schedule deviation (minutes).
+    # service_day_kind is derived from the date by consumers (weekday/weekend).
+    date: str | None = None
+    first_trip_utc: str | None = None
+    last_trip_utc: str | None = None
+    service_span_min: int | None = None
+    first_trip_delay_min: float | None = None
+    last_trip_delay_min: float | None = None
+    trip_count: int | None = None
 
 class RouteHabits(BaseModel):
     scale: str
@@ -352,6 +370,8 @@ class RouteReliability(BaseModel):
     # band-shares. cancellations defaults empty, occupancy_mix None when absent.
     cancellations: list[CancellationPeriod] = Field(default_factory=list)
     occupancy_mix: OccupancyMix | None = None
+    # Tier-2 additive: per-day service-span / first-last punctuality history.
+    service_spans: list[ServiceSpanPeriod] = Field(default_factory=list)
 
 class StopReliabilityPeriod(BaseModel):
     grain: str
@@ -441,9 +461,26 @@ class AlertHistoryEntry(BaseModel):
     duration_min: float | None = None
     impact_passages: int | None = None
 
+class AlertBreakdownBucket(BaseModel):
+    # One cause/effect/severity value with its distinct-alert count + median
+    # duration (minutes). key is the decoded label, or "unknown" when STM omits it.
+    key: str
+    count: int = 0
+    median_duration_min: float | None = None
+
+class AlertBreakdown(BaseModel):
+    # Tier-2 additive: distinct-alert distribution over the alert-history window.
+    # cause/effect are frequently NULL on STM (→ mostly "unknown"); duration is
+    # the high-confidence dimension.
+    by_cause: list[AlertBreakdownBucket] = Field(default_factory=list)
+    by_effect: list[AlertBreakdownBucket] = Field(default_factory=list)
+    by_severity: list[AlertBreakdownBucket] = Field(default_factory=list)
+
 class AlertHistory(BaseModel):
     generated_utc: str
     alerts: list[AlertHistoryEntry] = Field(default_factory=list)
+    # Tier-2 additive: None when no alerts in the window.
+    breakdown: AlertBreakdown | None = None
 
 class ProvenanceSource(BaseModel):
     feed: str

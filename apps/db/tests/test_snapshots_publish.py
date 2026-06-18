@@ -480,6 +480,18 @@ def test_publish_historic_writes_expected_keys(tmp_path) -> None:
         ("route_occupancy_band_daily AS rob", [
             {"empty": 0, "many_seats": 50, "few_seats": 30, "standing": 15, "full": 5},
         ]),
+        # build_route_reliability: service-span history — unique discriminator
+        # "first_trip_start_utc". MUST precede the generic daily-view needle below
+        # (its SQL also ends with ORDER BY provider_local_date DESC).
+        ("first_trip_start_utc", [
+            {"provider_local_date": datetime.date(2026, 6, 1),
+             "first_trip_start_utc": datetime.datetime(2026, 6, 1, 10, 0,
+                                                       tzinfo=datetime.timezone.utc),
+             "last_trip_start_utc": datetime.datetime(2026, 6, 2, 1, 0,
+                                                      tzinfo=datetime.timezone.utc),
+             "service_span_min": 900, "first_trip_delay_seconds": 30,
+             "last_trip_delay_seconds": 90, "trip_count": 120},
+        ]),
         # build_route_reliability: daily view
         ("ORDER BY provider_local_date DESC", [
             {"d": datetime.date(2026, 6, 1), "known_obs": 50, "on_time": 45,

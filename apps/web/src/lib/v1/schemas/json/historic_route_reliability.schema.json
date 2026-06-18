@@ -61,6 +61,30 @@
     },
     "HeadwayPeriod": {
       "properties": {
+        "bunched_pct": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Bunched Pct"
+        },
+        "cov": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cov"
+        },
         "excess_wait_min": {
           "anyOf": [
             {
@@ -303,6 +327,96 @@
       "title": "RouteHabits",
       "type": "object"
     },
+    "ServiceSpanPeriod": {
+      "properties": {
+        "date": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Date"
+        },
+        "first_trip_delay_min": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "First Trip Delay Min"
+        },
+        "first_trip_utc": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "First Trip Utc"
+        },
+        "last_trip_delay_min": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Last Trip Delay Min"
+        },
+        "last_trip_utc": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Last Trip Utc"
+        },
+        "service_span_min": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Service Span Min"
+        },
+        "trip_count": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Trip Count"
+        }
+      },
+      "title": "ServiceSpanPeriod",
+      "type": "object"
+    },
     "WeakStop": {
       "properties": {
         "id": {
@@ -410,6 +524,13 @@
         "$ref": "#/$defs/ReliabilityPeriod"
       },
       "title": "Periods",
+      "type": "array"
+    },
+    "service_spans": {
+      "items": {
+        "$ref": "#/$defs/ServiceSpanPeriod"
+      },
+      "title": "Service Spans",
       "type": "array"
     },
     "weak_stops": {

@@ -443,6 +443,75 @@ UPSERT_ROUTE_OCCUPANCY_BAND_DAILY = text(
     """
 )
 
+# Per-route service span over one CLOSED provider-local day (append-only). Grain
+# is route x provider_local_date; weekday/weekend is derived at READ time from the
+# date, so the closed-day calendar (captured-date) is the single source of truth
+# for the grain (no captured-date-vs-start_date ambiguity). "Trip start" = the
+# first realtime observation of a trip (MIN captured_at_utc) — labeled honestly as
+# first-observed activity, not the scheduled departure. first/last delay = that
+# trip's earliest-observation schedule deviation. Binds {provider_id, local_date,
+# built_at_utc} so it drops into _build_percentile_days unchanged.
+UPSERT_ROUTE_SERVICE_SPAN_DAILY = text(
+    """
+    WITH trip_starts AS (
+        SELECT
+            f.provider_id,
+            f.route_id,
+            f.trip_id,
+            MIN(f.captured_at_utc) AS trip_start_utc,
+            (ARRAY_AGG(f.delay_seconds ORDER BY f.captured_at_utc, f.entity_index))[1]
+                AS first_obs_delay
+        FROM gold.fact_trip_delay_snapshot AS f
+        INNER JOIN gold.dim_provider AS dp ON dp.provider_id = f.provider_id
+        WHERE f.provider_id = :provider_id
+          AND f.route_id IS NOT NULL
+          AND f.trip_id IS NOT NULL
+          AND timezone(dp.timezone, f.captured_at_utc)::date = :local_date
+        GROUP BY f.provider_id, f.route_id, f.trip_id
+    ),
+    ranked AS (
+        SELECT
+            provider_id,
+            route_id,
+            trip_start_utc,
+            first_obs_delay,
+            ROW_NUMBER() OVER (
+                PARTITION BY provider_id, route_id ORDER BY trip_start_utc, first_obs_delay
+            ) AS rn_first,
+            ROW_NUMBER() OVER (
+                PARTITION BY provider_id, route_id ORDER BY trip_start_utc DESC, first_obs_delay
+            ) AS rn_last
+        FROM trip_starts
+    )
+    INSERT INTO gold.route_service_span_daily (
+        provider_id, provider_local_date, route_id,
+        first_trip_start_utc, last_trip_start_utc, service_span_min,
+        first_trip_delay_seconds, last_trip_delay_seconds, trip_count, built_at_utc
+    )
+    SELECT
+        provider_id,
+        :local_date,
+        route_id,
+        MIN(trip_start_utc),
+        MAX(trip_start_utc),
+        ROUND(EXTRACT(EPOCH FROM (MAX(trip_start_utc) - MIN(trip_start_utc))) / 60.0)::integer,
+        MAX(first_obs_delay) FILTER (WHERE rn_first = 1),
+        MAX(first_obs_delay) FILTER (WHERE rn_last = 1),
+        COUNT(*)::integer,
+        :built_at_utc
+    FROM ranked
+    GROUP BY provider_id, route_id
+    ON CONFLICT (provider_id, provider_local_date, route_id) DO UPDATE SET
+        first_trip_start_utc = EXCLUDED.first_trip_start_utc,
+        last_trip_start_utc = EXCLUDED.last_trip_start_utc,
+        service_span_min = EXCLUDED.service_span_min,
+        first_trip_delay_seconds = EXCLUDED.first_trip_delay_seconds,
+        last_trip_delay_seconds = EXCLUDED.last_trip_delay_seconds,
+        trip_count = EXCLUDED.trip_count,
+        built_at_utc = EXCLUDED.built_at_utc
+    """
+)
+
 
 REPORTING_AGGREGATE_TABLES = (
     "route_delay_hourly",
@@ -1172,6 +1241,40 @@ UPSERT_ROUTE_HEADWAY_DAILY = text(
                 )
             ) / 60.0 AS gap_min
         FROM shifted
+    ),
+    -- Single shared sanity filter so the median, CoV, and bunching are all
+    -- computed over the IDENTICAL gap sample (no numerator/denominator drift).
+    filtered AS (
+        SELECT provider_id, route_id, shift, gap_min
+        FROM gaps
+        WHERE gap_min IS NOT NULL
+          AND gap_min > 0
+          AND gap_min < 240
+    ),
+    agg AS (
+        SELECT
+            provider_id,
+            route_id,
+            shift,
+            percentile_cont(0.5) WITHIN GROUP (ORDER BY gap_min) AS med_gap,
+            avg(gap_min) AS mean_gap,
+            stddev_samp(gap_min) AS sd_gap,
+            COUNT(*) AS n
+        FROM filtered
+        GROUP BY provider_id, route_id, shift
+    ),
+    -- Bunching = gaps under half the shift median; joins the per-group median
+    -- back onto the same filtered gaps (an aggregate can't be referenced inside
+    -- another aggregate's FILTER at the same level).
+    bunch AS (
+        SELECT
+            f.provider_id,
+            f.route_id,
+            f.shift,
+            COUNT(*) FILTER (WHERE f.gap_min < 0.5 * a.med_gap) AS bunched_count
+        FROM filtered AS f
+        JOIN agg AS a USING (provider_id, route_id, shift)
+        GROUP BY f.provider_id, f.route_id, f.shift
     )
     INSERT INTO gold.route_headway_daily (
         provider_id,
@@ -1179,26 +1282,29 @@ UPSERT_ROUTE_HEADWAY_DAILY = text(
         shift,
         observed_headway_min,
         sample_count,
+        headway_cov,
+        bunched_count,
         built_at_utc
     )
     SELECT
-        provider_id,
-        route_id,
-        shift,
-        ROUND(
-            percentile_cont(0.5) WITHIN GROUP (ORDER BY gap_min)::numeric,
-            1
-        ),
-        COUNT(*)::integer,
+        a.provider_id,
+        a.route_id,
+        a.shift,
+        ROUND(a.med_gap::numeric, 1),
+        a.n::integer,
+        -- CoV undefined for a single gap; mean=0 guard avoids div-by-zero.
+        CASE WHEN a.n >= 2 AND a.mean_gap > 0
+            THEN ROUND((a.sd_gap / a.mean_gap)::numeric, 4)
+        END,
+        COALESCE(b.bunched_count, 0)::integer,
         :built_at_utc
-    FROM gaps
-    WHERE gap_min IS NOT NULL
-      AND gap_min > 0
-      AND gap_min < 240
-    GROUP BY provider_id, route_id, shift
+    FROM agg AS a
+    LEFT JOIN bunch AS b USING (provider_id, route_id, shift)
     ON CONFLICT (provider_id, route_id, shift) DO UPDATE SET
         observed_headway_min = EXCLUDED.observed_headway_min,
         sample_count = EXCLUDED.sample_count,
+        headway_cov = EXCLUDED.headway_cov,
+        bunched_count = EXCLUDED.bunched_count,
         built_at_utc = EXCLUDED.built_at_utc
     """
 )
@@ -1508,6 +1614,7 @@ class WarmRollupBuildResult:
     built_occupancy_periods: int = 0
     built_route_cancellation_days: int = 0
     built_route_occupancy_days: int = 0
+    built_route_service_span_days: int = 0
 
     def display_dict(self) -> dict[str, object]:
         return {
@@ -1520,6 +1627,7 @@ class WarmRollupBuildResult:
             "built_stop_percentile_days": self.built_stop_percentile_days,
             "built_route_cancellation_days": self.built_route_cancellation_days,
             "built_route_occupancy_days": self.built_route_occupancy_days,
+            "built_route_service_span_days": self.built_route_service_span_days,
             "reporting_aggregate_row_counts": self.reporting_aggregate_row_counts,
             "completed_at_utc": self.completed_at_utc.isoformat(),
         }
@@ -1731,6 +1839,15 @@ def build_warm_rollups(
             now=now,
             select_missing=SELECT_MISSING_OCCUPANCY_DAYS,
         )
+        # Service span reads fact_trip_delay_snapshot → default trip-delay calendar.
+        built_route_service_span = _build_percentile_days(
+            conn,
+            provider_id=provider_id,
+            rollup_kind="route_service_span_daily",
+            upsert=UPSERT_ROUTE_SERVICE_SPAN_DAILY,
+            lookback_days=percentile_lookback_days,
+            now=now,
+        )
 
         for table_name in REPORTING_AGGREGATE_TABLES:
             delete_params = {"provider_id": provider_id}
@@ -1770,4 +1887,5 @@ def build_warm_rollups(
         built_occupancy_periods=built_occupancy,
         built_route_cancellation_days=built_route_cancellation,
         built_route_occupancy_days=built_route_occupancy,
+        built_route_service_span_days=built_route_service_span,
     )

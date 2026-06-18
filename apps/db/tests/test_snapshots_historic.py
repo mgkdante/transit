@@ -1258,6 +1258,49 @@ def test_build_alert_history_aggregation() -> None:
     assert e.stops == ["1002", "3001"]
 
 
+def test_build_alert_history_breakdown_buckets_by_cause_effect_severity() -> None:
+    """Tier-2 breakdown groups distinct alerts by cause/effect/severity with median
+    duration; NULL cause/effect fold into 'unknown' (the high-NULL STM reality)."""
+    import datetime as _dt
+
+    from transit_ops.snapshots.builders import _severity_code
+
+    def _row(header, sev, cause, effect, start, end):  # noqa: ANN001, ANN202
+        return {
+            "alert_header_text": header, "header_text_en": None, "alert_id": None,
+            "severity": sev, "cause": cause, "effect": effect,
+            "routes": [], "stops": [], "start_utc": start, "end_utc": end,
+        }
+
+    s = _dt.datetime(2026, 5, 1, 8, 0, 0, tzinfo=_dt.timezone.utc)
+    conn = FakeConn(
+        [
+            (
+                "i3_alert_history_reporting",
+                [
+                    _row("A", "WARNING", "MAINTENANCE", "DETOUR", s, s + _dt.timedelta(minutes=60)),
+                    _row("B", "WARNING", "MAINTENANCE", "DETOUR", s, s + _dt.timedelta(minutes=20)),
+                    # NULL cause/effect → "unknown" bucket; no window → no duration.
+                    _row("C", "INFO", None, None, None, None),
+                ],
+            )
+        ]
+    )
+    out = build_alert_history(conn, generated_utc="t")
+    assert out.breakdown is not None
+    cause = {b.key: b for b in out.breakdown.by_cause}
+    assert cause["MAINTENANCE"].count == 2
+    # median of [60, 20] = 40.0
+    assert cause["MAINTENANCE"].median_duration_min == 40.0
+    assert cause["unknown"].count == 1
+    assert cause["unknown"].median_duration_min is None
+    # by_severity uses the mapped contract code; buckets ordered most-frequent-first.
+    sev = {b.key: b.count for b in out.breakdown.by_severity}
+    assert sev[_severity_code("WARNING")] == 2
+    effect = {b.key: b.count for b in out.breakdown.by_effect}
+    assert effect["DETOUR"] == 2 and effect["unknown"] == 1
+
+
 def test_build_alert_history_none_timestamps_yield_none_duration() -> None:
     conn = FakeConn(
         [
