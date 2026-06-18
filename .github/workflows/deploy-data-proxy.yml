@@ -56,12 +56,12 @@ jobs:
         with:
           node-version: "22"
 
-      - name: Deploy worker with wrangler
-        uses: cloudflare/wrangler-action@v3
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
         with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          workingDirectory: apps/data-proxy
-          # Keep in lockstep with package-lock.json (pinned by pytest contract).
-          wranglerVersion: "4.100.0"
+          bun-version-file: .bun-version
+
+      - name: Deploy worker with wrangler
+        run: bunx wrangler@4.100.0 deploy
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}

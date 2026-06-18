@@ -83,14 +83,10 @@ jobs:
         run: bun run build
 
       - name: Deploy dev Worker
-        uses: cloudflare/wrangler-action@v3
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          workingDirectory: apps/web
-          command: deploy --env dev
-          wranglerVersion: "4.100.0"
+        working-directory: apps/web
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: bunx wrangler@4.100.0 deploy --env dev
 
   deploy-production:
     name: deploy production
@@ -117,11 +113,7 @@ jobs:
         run: bun run build
 
       - name: Deploy production Worker
-        uses: cloudflare/wrangler-action@v3
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          workingDirectory: apps/web
-          command: deploy --env=""
-          wranglerVersion: "4.100.0"
+        working-directory: apps/web
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: bunx wrangler@4.100.0 deploy --env=""
