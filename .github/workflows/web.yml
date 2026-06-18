@@ -105,8 +105,8 @@ jobs:
           proxied="$(jq -r '.result[0].proxied' <<<"${records_json}")"
           comment="$(jq -r '.result[0].comment // ""' <<<"${records_json}")"
           if [ "${content}" != "100::" ] || [ "${proxied}" != "true" ] || [ "${comment}" != "${legacy_comment}" ]; then
-            echo "::error::Existing ${record_name} DNS record is not the expected legacy route host; refusing to delete it."
-            exit 1
+            echo "Existing ${record_name} DNS record is not the legacy route host; leaving it in place."
+            exit 0
           fi
 
           curl -fsS -X DELETE \
