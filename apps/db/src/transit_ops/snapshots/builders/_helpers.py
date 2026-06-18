@@ -65,6 +65,18 @@ _OCCUPANCY_MAP: dict[int, str] = {
     # 6/7/8 NOT_ACCEPTING / NO_DATA / NOT_BOARDABLE -> None
 }
 
+# GTFS-RT TripDescriptor.ScheduleRelationship enum (INTEGER trip_schedule_relationship).
+# Named decode for any /v1 field echoing raw status; the cancellation rollup uses
+# the inline =3 (CANCELED) literal rather than this map.
+_SCHEDULE_RELATIONSHIP_MAP: dict[int, str] = {
+    0: "scheduled",
+    1: "added",
+    2: "unscheduled",
+    3: "canceled",
+    5: "duplicate",
+    6: "deleted",
+}
+
 # Alert severity tokens -> contract Severity. STM sends NULL (-> 'watch').
 _SEVERITY_MAP: dict[str, str] = {
     "SEVERE": "critical",

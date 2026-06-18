@@ -466,6 +466,20 @@ def test_publish_historic_writes_expected_keys(tmp_path) -> None:
         ("UNION", [
             ("101",), ("202",),
         ]),
+        # build_route_reliability: cancellation history — unique discriminator
+        # "cancellation_rate_pct, canceled_trip_days" (its SELECT column list).
+        # MUST precede the generic "ORDER BY provider_local_date DESC" daily-view
+        # needle below, which the cancellation SQL also ends with.
+        ("cancellation_rate_pct, canceled_trip_days", [
+            {"provider_local_date": datetime.date(2026, 6, 1),
+             "cancellation_rate_pct": 2.5, "canceled_trip_days": 3,
+             "total_trip_days": 120},
+        ]),
+        # build_route_reliability: trailing-window occupancy band shares —
+        # unique discriminator "route_occupancy_band_daily AS rob".
+        ("route_occupancy_band_daily AS rob", [
+            {"empty": 0, "many_seats": 50, "few_seats": 30, "standing": 15, "full": 5},
+        ]),
         # build_route_reliability: daily view
         ("ORDER BY provider_local_date DESC", [
             {"d": datetime.date(2026, 6, 1), "known_obs": 50, "on_time": 45,

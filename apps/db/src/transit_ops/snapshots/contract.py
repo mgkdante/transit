@@ -281,6 +281,11 @@ class TrendPoint(BaseModel):
     avg_delay_min: float | None = None
     p90_min: float | None = None
     vehicles: int | None = None
+    # Tier-1 additive: network-wide cancellation rate (canceled / RT-reported
+    # trip-days, %) and crowding band-shares for the day. Both None when their
+    # source rollups have no data for the date.
+    cancellation_rate: float | None = None
+    occupancy_mix: OccupancyMix | None = None
 
 class NetworkTrend(BaseModel):
     generated_utc: str
@@ -294,6 +299,18 @@ class ReliabilityPeriod(BaseModel):
     p50_min: float | None = None
     p90_min: float | None = None
     severe_pct: float | None = None
+
+class CancellationPeriod(BaseModel):
+    # Per-route cancellation over one closed local day (or a derived grain).
+    # cancellation_rate_pct = 100 * canceled_trip_days / total_trip_days, where a
+    # trip-day is a distinct (trip_id, start_date) seen in the RT feed; the rate
+    # is "canceled among RT-reported trips", NOT schedule-complete. None (not 0)
+    # when total_trip_days=0. Counts are carried so weekly/monthly can SUM-derive.
+    grain: str = "day"
+    date: str | None = None
+    cancellation_rate_pct: float | None = None
+    canceled_trip_days: int | None = None
+    total_trip_days: int | None = None
 
 class HeadwayPeriod(BaseModel):
     shift: str
@@ -331,6 +348,10 @@ class RouteReliability(BaseModel):
     habits: RouteHabits | None = None
     day_of_week: list[RouteDayOfWeek] = Field(default_factory=list)
     weak_stops: list[WeakStop] = Field(default_factory=list)
+    # Tier-1 additive: per-day cancellation history + trailing-window crowding
+    # band-shares. cancellations defaults empty, occupancy_mix None when absent.
+    cancellations: list[CancellationPeriod] = Field(default_factory=list)
+    occupancy_mix: OccupancyMix | None = None
 
 class StopReliabilityPeriod(BaseModel):
     grain: str

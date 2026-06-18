@@ -1,5 +1,64 @@
 {
   "$defs": {
+    "CancellationPeriod": {
+      "properties": {
+        "canceled_trip_days": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Canceled Trip Days"
+        },
+        "cancellation_rate_pct": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cancellation Rate Pct"
+        },
+        "date": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Date"
+        },
+        "grain": {
+          "default": "day",
+          "title": "Grain",
+          "type": "string"
+        },
+        "total_trip_days": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Total Trip Days"
+        }
+      },
+      "title": "CancellationPeriod",
+      "type": "object"
+    },
     "HeadwayPeriod": {
       "properties": {
         "excess_wait_min": {
@@ -47,6 +106,37 @@
         "shift"
       ],
       "title": "HeadwayPeriod",
+      "type": "object"
+    },
+    "OccupancyMix": {
+      "properties": {
+        "empty": {
+          "default": 0.0,
+          "title": "Empty",
+          "type": "number"
+        },
+        "few_seats": {
+          "default": 0.0,
+          "title": "Few Seats",
+          "type": "number"
+        },
+        "full": {
+          "default": 0.0,
+          "title": "Full",
+          "type": "number"
+        },
+        "many_seats": {
+          "default": 0.0,
+          "title": "Many Seats",
+          "type": "number"
+        },
+        "standing": {
+          "default": 0.0,
+          "title": "Standing",
+          "type": "number"
+        }
+      },
+      "title": "OccupancyMix",
       "type": "object"
     },
     "ReliabilityPeriod": {
@@ -252,6 +342,13 @@
     }
   },
   "properties": {
+    "cancellations": {
+      "items": {
+        "$ref": "#/$defs/CancellationPeriod"
+      },
+      "title": "Cancellations",
+      "type": "array"
+    },
     "day_of_week": {
       "items": {
         "$ref": "#/$defs/RouteDayOfWeek"
@@ -296,6 +393,17 @@
       ],
       "default": null,
       "title": "Name"
+    },
+    "occupancy_mix": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/OccupancyMix"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
     },
     "periods": {
       "items": {

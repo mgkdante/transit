@@ -40,10 +40,12 @@ from transit_ops.snapshots.builders._helpers import (
 from transit_ops.snapshots.contract import (
     AlertHistory,
     AlertHistoryEntry,
+    CancellationPeriod,
     HeadwayPeriod,
     Hotspot,
     Hotspots,
     NetworkTrend,
+    OccupancyMix,
     Offender,
     Provenance,
     ProvenanceFreshness,
@@ -64,6 +66,25 @@ from transit_ops.snapshots.contract import (
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from sqlalchemy.engine import Connection
+
+
+_OCCUPANCY_BANDS = ("empty", "many_seats", "few_seats", "standing", "full")
+
+
+def _occupancy_mix_from_bands(row: object) -> OccupancyMix | None:
+    """Build OccupancyMix from summed band counts; honest-None when total is 0.
+
+    Mirrors the live build_network occupancy honesty: an all-zero distribution is
+    indistinguishable from a real all-empty fleet, so absence of telemetry must
+    surface as None rather than a fabricated all-zero mix.
+    """
+    if row is None:
+        return None
+    counts = {band: int(row[band] or 0) for band in _OCCUPANCY_BANDS}
+    total = sum(counts.values())
+    if not total:
+        return None
+    return OccupancyMix(**{band: counts[band] / total for band in _OCCUPANCY_BANDS})
 
 
 # --------------------------------------------------------------------------
@@ -104,6 +125,35 @@ _TREND_FACT_SQL = text(
     """
 )
 
+# Network-wide daily cancellation rate from the append-only per-route rollup:
+# sum numerators/denominators across routes, then derive the day's rate.
+_TREND_CANCELLATION_SQL = text(
+    """
+    SELECT provider_local_date AS local_date,
+           SUM(canceled_trip_days) AS canceled,
+           SUM(total_trip_days)    AS total
+    FROM gold.route_cancellation_daily
+    WHERE provider_id = :provider_id
+    GROUP BY provider_local_date
+    """
+)
+
+# Network-wide daily crowding band-shares from the append-only per-route band
+# reduction: sum band counts across routes per local date.
+_TREND_OCCUPANCY_SQL = text(
+    """
+    SELECT provider_local_date AS local_date,
+           SUM(empty_count)      AS empty,
+           SUM(many_seats_count) AS many_seats,
+           SUM(few_seats_count)  AS few_seats,
+           SUM(standing_count)   AS standing,
+           SUM(full_count)       AS full
+    FROM gold.route_occupancy_band_daily
+    WHERE provider_id = :provider_id
+    GROUP BY provider_local_date
+    """
+)
+
 
 def build_network_trend(conn: Connection, *, provider_id: str = "stm", generated_utc: str) -> "NetworkTrend":
     """Build historic/network_trend.json — one TrendPoint per local date.
@@ -116,6 +166,16 @@ def build_network_trend(conn: Connection, *, provider_id: str = "stm", generated
     params = {"provider_id": provider_id}
     points: dict[str, dict] = {}
 
+    def _blank_point() -> dict:
+        return {
+            "otp_pct": None,
+            "avg_delay_min": None,
+            "p90_min": None,
+            "vehicles": None,
+            "cancellation_rate": None,
+            "occupancy_mix": None,
+        }
+
     for r in conn.execute(_TREND_DAILY_SQL, params).mappings():
         known_obs = r["known_obs"]
         weighted = r["weighted_delay_sec"]
@@ -124,20 +184,30 @@ def build_network_trend(conn: Connection, *, provider_id: str = "stm", generated
             if known_obs and weighted is not None
             else None
         )
-        points[_iso_date(r["local_date"])] = {
-            "otp_pct": _otp_pct(r["on_time"], known_obs),
-            "avg_delay_min": _avg_delay_min(avg_delay_sec),
-            "p90_min": None,
-            "vehicles": None,
-        }
+        entry = _blank_point()
+        entry["otp_pct"] = _otp_pct(r["on_time"], known_obs)
+        entry["avg_delay_min"] = _avg_delay_min(avg_delay_sec)
+        points[_iso_date(r["local_date"])] = entry
 
     for r in conn.execute(_TREND_FACT_SQL, params).mappings():
         key = _iso_date(r["local_date"])
-        entry = points.setdefault(
-            key, {"otp_pct": None, "avg_delay_min": None, "p90_min": None, "vehicles": None}
-        )
+        entry = points.setdefault(key, _blank_point())
         entry["p90_min"] = round(float(r["p90_min"]), 1) if r["p90_min"] is not None else None
         entry["vehicles"] = _opt_int(r["vehicles"])
+
+    for r in conn.execute(_TREND_CANCELLATION_SQL, params).mappings():
+        entry = points.setdefault(_iso_date(r["local_date"]), _blank_point())
+        total = r["total"]
+        canceled = r["canceled"]
+        entry["cancellation_rate"] = (
+            round(100.0 * float(canceled) / float(total), 2)
+            if total and canceled is not None
+            else None
+        )
+
+    for r in conn.execute(_TREND_OCCUPANCY_SQL, params).mappings():
+        entry = points.setdefault(_iso_date(r["local_date"]), _blank_point())
+        entry["occupancy_mix"] = _occupancy_mix_from_bands(r)
 
     series = [
         TrendPoint(
@@ -146,6 +216,8 @@ def build_network_trend(conn: Connection, *, provider_id: str = "stm", generated
             avg_delay_min=v["avg_delay_min"],
             p90_min=v["p90_min"],
             vehicles=v["vehicles"],
+            cancellation_rate=v["cancellation_rate"],
+            occupancy_mix=v["occupancy_mix"],
         )
         for d, v in sorted(points.items())
     ]
@@ -281,6 +353,35 @@ _ROUTE_HEADWAY_DIRECTION_SQL = text(
     FROM gold.route_headway_direction_daily
     WHERE provider_id = :provider_id AND route_id = :route_id
     ORDER BY direction_id, service_day_kind, shift
+    """
+)
+
+# Per-route daily cancellation rate from the append-only rollup (last 30 closed
+# local days). cancellation_rate_pct is None when total_trip_days=0.
+_ROUTE_CANCELLATION_DAILY_SQL = text(
+    """
+    SELECT provider_local_date, cancellation_rate_pct, canceled_trip_days, total_trip_days
+    FROM gold.route_cancellation_daily
+    WHERE provider_id = :provider_id AND route_id = :route_id
+    ORDER BY provider_local_date DESC
+    LIMIT 30
+    """
+)
+
+# Trailing-30d crowding band-shares for the route from the append-only daily
+# band-count reduction. Summed counts are divided into shares at read time;
+# honest-None when no band-bearing telemetry exists in the window.
+_ROUTE_OCCUPANCY_BAND_WINDOW_SQL = text(
+    """
+    SELECT SUM(rob.empty_count)       AS empty,
+           SUM(rob.many_seats_count)  AS many_seats,
+           SUM(rob.few_seats_count)   AS few_seats,
+           SUM(rob.standing_count)    AS standing,
+           SUM(rob.full_count)        AS full
+    FROM gold.route_occupancy_band_daily AS rob
+    JOIN gold.dim_provider AS dp ON dp.provider_id = rob.provider_id
+    WHERE rob.provider_id = :provider_id AND rob.route_id = :route_id
+      AND rob.provider_local_date >= (now() AT TIME ZONE dp.timezone)::date - 30
     """
 )
 
@@ -440,6 +541,30 @@ def build_route_reliability(
         for r in conn.execute(_ROUTE_DOW_SQL, params).mappings()
     ]
 
+    # --- cancellations: per-day rate history (most recent 30 closed days, ASC) ---
+    cancellations = [
+        CancellationPeriod(
+            grain="day",
+            date=_iso_date(r["provider_local_date"]),
+            cancellation_rate_pct=(
+                float(r["cancellation_rate_pct"])
+                if r["cancellation_rate_pct"] is not None
+                else None
+            ),
+            canceled_trip_days=_opt_int(r["canceled_trip_days"]),
+            total_trip_days=_opt_int(r["total_trip_days"]),
+        )
+        for r in sorted(
+            conn.execute(_ROUTE_CANCELLATION_DAILY_SQL, params).mappings(),
+            key=lambda r: r["provider_local_date"],
+        )
+    ]
+
+    # --- occupancy_mix: trailing-30d crowding band-shares (honest-None) ---
+    occupancy_mix = _occupancy_mix_from_bands(
+        conn.execute(_ROUTE_OCCUPANCY_BAND_WINDOW_SQL, params).mappings().fetchone()
+    )
+
     return RouteReliability(
         generated_utc=generated_utc,
         id=route_id,
@@ -449,6 +574,8 @@ def build_route_reliability(
         habits=habits,
         day_of_week=route_dow,
         weak_stops=weak_stops,
+        cancellations=cancellations,
+        occupancy_mix=occupancy_mix,
     )
 
 
@@ -1113,6 +1240,21 @@ def build_provenance(
                 "denominator is empty — no known-status vehicles, no live fleet, "
                 "no delay observations, or no completed ingestion run; a feed "
                 "blackout is reported as no-data, never as a fabricated 0% or 0s"
+            ),
+            "cancellation": (
+                "cancellation_rate = canceled trip-days / observed trip-days, "
+                "where a trip-day is a distinct (trip_id, start_date) seen in the "
+                "realtime feed and counts canceled if ever reported with "
+                "schedule_relationship=CANCELED; the denominator is RT-reported "
+                "trips, NOT the full published schedule; computed per closed local "
+                "day and retained 365 days; null when no trips were observed"
+            ),
+            "occupancy": (
+                "historic crowding = GTFS-RT OccupancyStatus band shares over "
+                "band-bearing pings (no numeric load factor); CRUSHED_STANDING "
+                "folds into standing; NOT_ACCEPTING/NO_DATA/NOT_BOARDABLE excluded; "
+                "summed per closed local day and retained 365 days; null when no "
+                "occupancy telemetry exists, never an all-zero mix"
             ),
         },
         gaps=["metro_realtime"],  # STM metro publishes no realtime feed
