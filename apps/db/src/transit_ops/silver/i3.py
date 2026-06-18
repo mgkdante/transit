@@ -262,7 +262,9 @@ def _text(payload: object) -> str | None:
             value = _text(payload.get(key))
             if value:
                 return value
-    return str(payload)
+    if isinstance(payload, int | float):
+        return str(payload)
+    return None
 
 
 def _text_en(payload: object) -> str | None:
@@ -285,12 +287,15 @@ def _text_en(payload: object) -> str | None:
                 isinstance(item, dict)
                 and str(item.get("language", "")).lower() in {"en", "eng"}
             ):
-                value = _text(item)
+                value = _text(item.get("text") or item.get("value"))
                 if value:
                     return value
         return None
     if isinstance(payload, dict):
-        return _text(payload.get("en"))
+        english = payload.get("en")
+        if isinstance(english, dict):
+            return _text(english.get("text") or english.get("value"))
+        return _text(english)
     return None
 
 

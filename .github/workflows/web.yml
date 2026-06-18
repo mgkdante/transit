@@ -2,34 +2,41 @@ name: web
 
 on:
   pull_request:
-    paths:
-      - 'apps/web/**'
-      - '.github/workflows/web.yml'
+    branches: [main, develop]
   push:
-    branches: [main]
-    paths:
-      - 'apps/web/**'
-      - '.github/workflows/web.yml'
+    branches: [main, develop]
+  workflow_dispatch:
+    inputs:
+      deploy_target:
+        description: "Manual deploy/smoke target"
+        required: true
+        default: "dev"
+        type: choice
+        options:
+          - dev
+          - production
+
+permissions:
+  contents: read
+
+concurrency:
+  group: web-${{ github.ref }}
+  cancel-in-progress: true
 
 defaults:
   run:
     working-directory: apps/web
 
 jobs:
-  build:
+  ci:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - name: Check out repository
+        uses: actions/checkout@v5
 
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: 1.3.11
-
-      # Install the whole bun workspace from the repo root (single root bun.lock).
-      - name: Install
-        working-directory: .
-        run: bun install --frozen-lockfile
+      - name: Set up JS workspace
+        uses: ./.github/actions/setup
 
       # P0.9 trust anchor: regenerate tokens and fail if the committed outputs drift.
       - name: Token drift gate
@@ -50,3 +57,96 @@ jobs:
 
       - name: Unit tests
         run: bun run test
+
+  deploy-dev:
+    name: deploy dev
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: ci
+    if: >-
+      (github.event_name == 'push' && github.ref == 'refs/heads/develop') ||
+      (github.event_name == 'workflow_dispatch' && inputs.deploy_target == 'dev')
+    environment: development
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Set up JS workspace
+        uses: ./.github/actions/setup
+
+      - name: Build dev Worker
+        working-directory: apps/web
+        env:
+          PUBLIC_SITE_ORIGIN: https://dev.transit.yesid.dev
+          PUBLIC_V1_BASE: https://transit.yesid.dev/data/v1
+          PUBLIC_INDEXING: "false"
+        run: bun run build
+
+      - name: Remove legacy dev DNS route host
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ZONE_ID: 8a4ad7999bd6c2259b5b4acd52f39015
+        run: |
+          set -euo pipefail
+          record_name="dev.transit.yesid.dev"
+          legacy_comment="develop lane: Workers-route-only hostname for transit-web-dev"
+          api="https://api.cloudflare.com/client/v4/zones/${CLOUDFLARE_ZONE_ID}/dns_records"
+          records_json="$(curl -fsS \
+            -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+            -H "Content-Type: application/json" \
+            "${api}?type=AAAA&name=${record_name}")"
+          existing_id="$(jq -r '.result[0].id // empty' <<<"${records_json}")"
+          if [ -z "${existing_id}" ]; then
+            echo "No legacy DNS route host found for ${record_name}."
+            exit 0
+          fi
+
+          content="$(jq -r '.result[0].content' <<<"${records_json}")"
+          proxied="$(jq -r '.result[0].proxied' <<<"${records_json}")"
+          comment="$(jq -r '.result[0].comment // ""' <<<"${records_json}")"
+          if [ "${content}" != "100::" ] || [ "${proxied}" != "true" ] || [ "${comment}" != "${legacy_comment}" ]; then
+            echo "Existing ${record_name} DNS record is not the legacy route host; leaving it in place."
+            exit 0
+          fi
+
+          curl -fsS -X DELETE \
+            -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+            -H "Content-Type: application/json" \
+            "${api}/${existing_id}" | jq -e '.success == true' >/dev/null
+          echo "Legacy DNS route host removed for ${record_name}; Wrangler will attach it as a custom domain."
+
+      - name: Deploy dev Worker
+        working-directory: apps/web
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: bunx wrangler@4.100.0 deploy --env dev
+
+  deploy-production:
+    name: deploy production
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: ci
+    if: >-
+      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+      (github.event_name == 'workflow_dispatch' && inputs.deploy_target == 'production')
+    environment: production
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Set up JS workspace
+        uses: ./.github/actions/setup
+
+      - name: Build production Worker
+        working-directory: apps/web
+        env:
+          PUBLIC_SITE_ORIGIN: https://transit.yesid.dev
+          PUBLIC_V1_BASE: /data/v1
+          PUBLIC_INDEXING: "true"
+        run: bun run build
+
+      - name: Deploy production Worker
+        working-directory: apps/web
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: bunx wrangler@4.100.0 deploy --env=""

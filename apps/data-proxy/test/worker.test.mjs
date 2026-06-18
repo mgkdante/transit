@@ -10,11 +10,15 @@ import worker from "../src/worker.js";
 const BASE = "https://transit.yesid.dev";
 
 class FakeR2Object {
-  constructor({ body, etag, contentType, cacheControl }) {
+  constructor({ body, etag, contentType, cacheControl, size, range }) {
     this.body = body;
     this.etag = etag;
     this.contentType = contentType;
     this.cacheControl = cacheControl;
+    // R2 exposes the total object size and, for a range read, the resolved
+    // {offset,length} slice. Default size to the (string) body length.
+    this.size = size ?? (typeof body === "string" ? body.length : undefined);
+    this.range = range;
   }
 
   get httpEtag() {
@@ -32,6 +36,7 @@ class FakeR2Object {
       etag: this.etag,
       contentType: this.contentType,
       cacheControl: this.cacheControl,
+      size: this.size,
     });
   }
 }
@@ -56,6 +61,26 @@ class FakeR2Bucket {
       // Precondition failed: the runtime returns R2Object (headers, no body).
       return object.withoutBody();
     }
+    // Range read: R2 accepts the request Headers and returns the byte slice
+    // plus a resolved .range. Parse a single `bytes=start-end` range.
+    const range = options.range;
+    const rangeHeader = range instanceof Headers ? range.get("range") : null;
+    if (rangeHeader && typeof object.body === "string") {
+      const match = /^bytes=(\d+)-(\d*)$/.exec(rangeHeader.trim());
+      if (match) {
+        const offset = Number(match[1]);
+        const end = match[2] === "" ? object.size - 1 : Number(match[2]);
+        const length = end - offset + 1;
+        return new FakeR2Object({
+          body: object.body.slice(offset, end + 1),
+          etag: object.etag,
+          contentType: object.contentType,
+          cacheControl: object.cacheControl,
+          size: object.size,
+          range: { offset, length },
+        });
+      }
+    }
     return object;
   }
 }
@@ -74,6 +99,13 @@ function makeEnv() {
         etag: "routes-rev-7",
         contentType: "application/json",
         cacheControl: "public, max-age=604800",
+      }),
+      // 200-byte basemap archive for the Range/206 cases (slice-9.3).
+      "v1/stm/static/basemap/montreal.pmtiles": new FakeR2Object({
+        body: "P".repeat(200),
+        etag: "basemap-rev-1",
+        contentType: "application/octet-stream",
+        cacheControl: "public, max-age=2592000",
       }),
     }),
   };
@@ -141,8 +173,44 @@ test("OPTIONS preflight returns 204 with CORS headers", async () => {
   assert.equal(response.status, 204);
   assert.equal(response.headers.get("access-control-allow-origin"), "*");
   assert.equal(response.headers.get("access-control-allow-methods"), "GET, HEAD, OPTIONS");
-  assert.equal(response.headers.get("access-control-allow-headers"), "If-None-Match, If-Modified-Since");
+  assert.equal(
+    response.headers.get("access-control-allow-headers"),
+    "If-None-Match, If-Modified-Since, Range",
+  );
+  assert.equal(
+    response.headers.get("access-control-expose-headers"),
+    "Content-Range, Content-Length, Accept-Ranges, ETag",
+  );
   assert.equal(response.headers.get("access-control-max-age"), "86400");
+  assert.equal(await response.text(), "");
+});
+
+test("GET with Range returns 206 with Content-Range + Accept-Ranges (pmtiles)", async () => {
+  const response = await fetchWorker("/data/v1/stm/static/basemap/montreal.pmtiles", {
+    headers: { Range: "bytes=0-99" },
+  });
+  assert.equal(response.status, 206);
+  assert.equal(response.headers.get("content-range"), "bytes 0-99/200");
+  assert.equal(response.headers.get("content-length"), "100");
+  assert.equal(response.headers.get("accept-ranges"), "bytes");
+  assert.equal(response.headers.get("access-control-allow-origin"), "*");
+  assert.equal((await response.text()).length, 100);
+});
+
+test("GET without Range still returns 200 with full body + Accept-Ranges", async () => {
+  const response = await fetchWorker("/data/v1/stm/static/basemap/montreal.pmtiles");
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("accept-ranges"), "bytes");
+  assert.equal(response.headers.get("content-range"), null);
+  assert.equal((await response.text()).length, 200);
+});
+
+test("HEAD advertises Accept-Ranges", async () => {
+  const response = await fetchWorker("/data/v1/stm/static/basemap/montreal.pmtiles", {
+    method: "HEAD",
+  });
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("accept-ranges"), "bytes");
   assert.equal(await response.text(), "");
 });
 

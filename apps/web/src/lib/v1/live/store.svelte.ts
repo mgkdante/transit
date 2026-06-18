@@ -17,6 +17,7 @@
 
 import { browser } from '$app/environment';
 import { ageSeconds } from '$lib/utils/time';
+import { dataRefresh } from '$lib/stores';
 import { adapter } from '$lib/v1/adapter';
 import type {
 	AlertsFile,
@@ -112,6 +113,18 @@ export function createLiveStore(manifest: Manifest): LiveStore {
 	});
 	const isStale = $derived(ageSecondsValue == null ? false : ageSecondsValue >= staleThresholdS);
 
+	// Honor the global "refresh data" press: re-poll immediately on an epoch bump
+	// instead of waiting for the next ttl tick. `epoch` starts at 0; we only react
+	// to CHANGES, so mount does not double-fetch (start() owns the initial poll).
+	let lastRefreshEpoch = dataRefresh.epoch;
+	$effect(() => {
+		const e = dataRefresh.epoch;
+		if (e !== lastRefreshEpoch) {
+			lastRefreshEpoch = e;
+			if (browser) void refresh();
+		}
+	});
+
 	/** Fetch all five files in parallel. Conditional GET is the adapter's job. */
 	async function refresh(): Promise<void> {
 		loading = true;
@@ -128,6 +141,7 @@ export function createLiveStore(manifest: Manifest): LiveStore {
 			departures = d;
 			alerts = a;
 			network = n;
+			dataRefresh.noteDataGeneratedUtc(n.generated_utc ?? v.generated_utc);
 			error = null;
 		} catch (e) {
 			error = e instanceof Error ? e : new Error(String(e));

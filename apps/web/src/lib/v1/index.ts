@@ -38,6 +38,7 @@ export {
 	getRouteReliability,
 	getStopReliability,
 	getProvenance,
+	getBasemap,
 } from './repositories';
 
 // --- boot + label resolution + context ---------------------------------------

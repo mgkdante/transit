@@ -8,16 +8,22 @@
 // DOM, `window`, or navigation directly (the store reaches the URL only through
 // a caller-supplied `pushUrl`).
 
-export type { FilterState, IdSetKey } from './state';
+export type { FilterState, IdSetKey, EntityKind, AlertEntityKind } from './state';
 export {
 	STATUS_CODES,
 	OCCUPANCY_CODES,
 	GRAINS,
+	ENTITY_KINDS,
+	ALERT_ENTITY_KINDS,
 	isStatusCode,
 	isOccupancyCode,
+	isEntityKind,
+	isAlertEntityKind,
 	isGrain,
 	normalizeStatus,
 	normalizeOccupancy,
+	normalizeEntities,
+	normalizeAlerts,
 	emptyFilterState,
 	cloneFilterState,
 	isEmptyFilterState,

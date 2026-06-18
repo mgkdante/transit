@@ -8,9 +8,11 @@ name: CI
 # are unaffected; this workflow gates pull requests instead of running prod work.
 on:
   pull_request:
+    branches: [main, develop]
     paths:
       - "apps/db/**"
   push:
+    branches: [main, develop]
     paths:
       - "apps/db/**"
 

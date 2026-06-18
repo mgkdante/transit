@@ -125,7 +125,70 @@ const DATAVIZ_STATUS_ON_CARD: Pair[] = [
 	),
 ];
 
-const ALL_PAIRS: Pair[] = [...TEXT_PAIRS, ...DATAVIZ_STATUS_ON_CARD];
+// Dataviz OCCUPANCY marks on a card. Occupancy is ALWAYS encoded glyph+color —
+// the fill-level glyph (OCCUPANCY_GLYPH ▁▃▅▇█ in dataviz/tokens.ts) is the
+// load-bearing channel. The purple luminance ramp deliberately puts the LOW
+// bands close to the dark surface, so `empty` (both themes) and light
+// `many-seats` sit BELOW the 3:1 graphical-object floor ON COLOUR ALONE — which
+// is exactly why the glyph is mandatory, never optional (slice-9.3, map hero).
+// Floors here are REGRESSION LOCKS at the measured ratios: a palette drift that
+// darkens a band below its lock fails loudly. Bright bands hold the full 3:1.
+const DATAVIZ_OCCUPANCY_ON_CARD: Pair[] = [
+	[
+		'D dataviz-occupancy-many-seats / card',
+		['dark', 'dataviz.occupancy.many-seats'],
+		['dark', 'card'],
+		3,
+	],
+	[
+		'D dataviz-occupancy-few-seats / card',
+		['dark', 'dataviz.occupancy.few-seats'],
+		['dark', 'card'],
+		3,
+	],
+	[
+		'D dataviz-occupancy-standing / card',
+		['dark', 'dataviz.occupancy.standing'],
+		['dark', 'card'],
+		3,
+	],
+	['D dataviz-occupancy-full / card', ['dark', 'dataviz.occupancy.full'], ['dark', 'card'], 3],
+	[
+		'L dataviz-occupancy-few-seats / card',
+		['light', 'dataviz.occupancy.few-seats'],
+		['light', 'card'],
+		3,
+	],
+	[
+		'L dataviz-occupancy-standing / card',
+		['light', 'dataviz.occupancy.standing'],
+		['light', 'card'],
+		3,
+	],
+	['L dataviz-occupancy-full / card', ['light', 'dataviz.occupancy.full'], ['light', 'card'], 3],
+	// Glyph-load-bearing dim bands — locked at the measured ratio (below 3:1 by
+	// design; the fill-glyph carries the meaning, colour does not).
+	[
+		'D dataviz-occupancy-empty / card (glyph load-bearing)',
+		['dark', 'dataviz.occupancy.empty'],
+		['dark', 'card'],
+		2.1,
+	],
+	[
+		'L dataviz-occupancy-empty / card (glyph load-bearing)',
+		['light', 'dataviz.occupancy.empty'],
+		['light', 'card'],
+		1.7,
+	],
+	[
+		'L dataviz-occupancy-many-seats / card (glyph load-bearing)',
+		['light', 'dataviz.occupancy.many-seats'],
+		['light', 'card'],
+		2.7,
+	],
+];
+
+const ALL_PAIRS: Pair[] = [...TEXT_PAIRS, ...DATAVIZ_STATUS_ON_CARD, ...DATAVIZ_OCCUPANCY_ON_CARD];
 
 describe('tokens AA — computed contrast from tools/tokens/tokens.json', () => {
 	// Print the full ratio table once so a near-miss is visible in CI output.

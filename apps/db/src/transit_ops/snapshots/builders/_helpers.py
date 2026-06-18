@@ -115,6 +115,20 @@ def _opt_int(x: object) -> int | None:
     return int(x) if x is not None else None  # type: ignore[arg-type]
 
 
+def _sane_en(value: str | None) -> str | None:
+    """Drop legacy Python-repr EN alert garbage from the published contract."""
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    if text.startswith("{'") and "'language'" in text and "'text'" in text:
+        return None
+    if text.startswith('{"') and '"language"' in text and '"text"' in text:
+        return None
+    return text
+
+
 def _kmh(speed_ms: object) -> int | None:
     """GTFS-RT Position.speed is meters/second; the contract field is km/h."""
     if speed_ms is None:

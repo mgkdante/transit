@@ -18,5 +18,6 @@ export { default as BottomSheet } from './BottomSheet.svelte';
 // Reusable chrome controls (composed by TopBar; reusable in footer / menu).
 export { default as BrandWordmark } from './BrandWordmark.svelte';
 export { default as LiveClock } from './LiveClock.svelte';
+export { default as RefreshButton } from './RefreshButton.svelte';
 export { default as ThemeToggle } from './ThemeToggle.svelte';
 export { default as LangSwitch } from './LangSwitch.svelte';

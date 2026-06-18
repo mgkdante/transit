@@ -16,7 +16,9 @@
   copy is co-located. Tokens, no hex; --primary stays interactive-only.
 -->
 <script lang="ts">
-	import { getLocale } from '$lib/i18n';
+	import { getLocale, localizeHref } from '$lib/i18n';
+	import { routeFor } from '$lib/nav';
+	import { emptyFilterState, toSearchString } from '$lib/filters';
 	import { getRoute, getRouteReliability } from '$lib/v1';
 	import type { RouteFile, RouteReliability, ReliabilityPeriod } from '$lib/v1';
 	import { createResource } from '$lib/v1/resource.svelte';
@@ -66,11 +68,31 @@
 
 	const fmtMin = (v: number | null | undefined): string =>
 		v == null ? '—' : `${v.toFixed(1)} min`;
+
+	function routeMapSearch(routeId: string): string {
+		const state = emptyFilterState();
+		state.routes.add(routeId);
+		return toSearchString(state);
+	}
+
+	function routeMapHref(routeId: string): string {
+		return localizeHref(routeFor({ kind: 'map', search: routeMapSearch(routeId) }), locale);
+	}
 </script>
 
 <EntityDetail kicker={t.kicker} {tabs} bind:active>
 	{#snippet header()}
-		<SectionHeading heading={id} level={1} dot />
+		<div class="route-detail-head">
+			<SectionHeading heading={id} level={1} dot />
+			<a
+				href={routeMapHref(id)}
+				class="route-map-action"
+				aria-label={t.viewRouteOnMap(id)}
+				data-sveltekit-preload-data="hover"
+			>
+				{t.viewOnMap}
+			</a>
+		</div>
 	{/snippet}
 
 	{#snippet pane(key)}
@@ -202,6 +224,39 @@
 </EntityDetail>
 
 <style>
+	.route-detail-head {
+		display: flex;
+		align-items: end;
+		justify-content: space-between;
+		gap: 1rem;
+	}
+	.route-map-action {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		min-height: 2.25rem;
+		padding: 0.3rem 0.8rem;
+		font-family: var(--font-mono);
+		font-size: var(--text-caption);
+		color: var(--primary);
+		text-decoration: none;
+		background: color-mix(in srgb, var(--primary) 8%, transparent);
+		border: 1px solid color-mix(in srgb, var(--primary) 30%, var(--border) 70%);
+		border-radius: var(--radius-pill);
+		transition:
+			color 150ms ease,
+			background-color 150ms ease,
+			border-color 150ms ease;
+	}
+	.route-map-action:hover {
+		color: var(--foreground);
+		background: color-mix(in srgb, var(--primary) 16%, transparent);
+		border-color: color-mix(in srgb, var(--primary) 45%, var(--border) 55%);
+	}
+	.route-map-action:focus-visible {
+		outline: 2px solid var(--ring);
+		outline-offset: 2px;
+	}
 	.route-section {
 		display: flex;
 		flex-direction: column;
@@ -291,6 +346,17 @@
 	@media (min-width: 640px) {
 		.route-periods {
 			grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+		}
+	}
+	@media (max-width: 520px) {
+		.route-detail-head {
+			align-items: start;
+			flex-direction: column;
+		}
+	}
+	@media (prefers-reduced-motion: reduce) {
+		.route-map-action {
+			transition: none;
 		}
 	}
 	.route-period {

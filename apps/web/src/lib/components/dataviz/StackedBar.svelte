@@ -50,6 +50,8 @@
 		 * figure with its <title>-only readout.
 		 */
 		interactive?: boolean;
+		/** Optional drilldown/selection callback for interactive slices. */
+		onSelect?: (code: AnyCode) => void;
 		class?: string;
 	}
 
@@ -60,6 +62,7 @@
 		legend = false,
 		label,
 		interactive = false,
+		onSelect,
 		class: className,
 		ref = $bindable(null),
 		...restProps
@@ -78,8 +81,15 @@
 		});
 	}
 
-	function onKeyDown(e: KeyboardEvent): void {
-		if (e.key === 'Escape') tip.hide();
+	function onKeyDown(e: KeyboardEvent, s: Slice): void {
+		if (e.key === 'Escape') {
+			tip.hide();
+			return;
+		}
+		if (e.key === 'Enter' || e.key === ' ') {
+			e.preventDefault();
+			onSelect?.(s.code);
+		}
 	}
 
 	function colorFor(code: AnyCode): string {
@@ -124,12 +134,17 @@
 </script>
 
 {#snippet bar()}
+	<!-- When interactive, the focusable slices below ARE the accessible content
+	     (each is a labelled, focusable role=img), so the SVG must NOT be hidden —
+	     an aria-hidden ancestor would make every focus stop silent to AT. When
+	     static, the outer role=img + summary carries the meaning and the SVG is
+	     hidden as pure decoration. -->
 	<svg
 		viewBox="0 0 100 {height}"
 		width="100%"
 		{height}
 		preserveAspectRatio="none"
-		aria-hidden="true"
+		aria-hidden={!interactive}
 		focusable="false"
 	>
 		{#if hasData}
@@ -151,7 +166,8 @@
 						onpointerleave={() => tip.hide()}
 						onfocus={() => showSlice(s)}
 						onblur={() => tip.hide()}
-						onkeydown={onKeyDown}
+						onclick={() => onSelect?.(s.code)}
+						onkeydown={(e) => onKeyDown(e, s)}
 					>
 						<title>{s.label}: {Math.round(s.pct)}%</title>
 					</rect>
@@ -167,10 +183,13 @@
 	</svg>
 {/snippet}
 
+<!-- role: a flat `img` when static (one announcement of `summary`); a labelled
+     `group` when interactive, so AT descends into the per-slice focus stops (a
+     role=img would flatten them away). aria-label carries the summary either way. -->
 <div
 	bind:this={ref}
 	class={cn('dv-stacked-bar', className)}
-	role="img"
+	role={interactive ? 'group' : 'img'}
 	aria-label={summary}
 	data-slot="stacked-bar"
 	data-scale={scale}
@@ -186,7 +205,7 @@
 
 	{#if legend && hasData}
 		<ul
-			class="dv-legend-list mt-1.5 flex flex-wrap gap-x-3 gap-y-1 text-micro text-muted-foreground"
+			class="dv-legend-list mt-1.5 flex flex-wrap gap-x-3 gap-y-1 text-caption text-muted-foreground"
 		>
 			{#each slices as s, i (s.code + '-leg-' + i)}
 				<li class="inline-flex items-center gap-1.5">

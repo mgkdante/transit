@@ -225,6 +225,33 @@ def test_normalize_en_is_none_when_feed_has_no_english() -> None:
     assert alerts[2]["alert_header_text"] == "Avis"
 
 
+def test_normalize_en_text_none_never_stringifies_language_dict() -> None:
+    snapshot = _snapshot(
+        {
+            "messages": [
+                {
+                    "id": "en-none",
+                    "header_texts": [
+                        {"language": "fr", "text": "Votre ligne"},
+                        {"language": "en", "text": None},
+                    ],
+                    "description_texts": [
+                        {"language": "fr", "text": "Service interrompu"},
+                        {"language": "en", "text": None},
+                    ],
+                }
+            ]
+        }
+    )
+
+    alerts, _ = normalize_i3_alert_payload(snapshot)
+
+    assert alerts[0]["alert_header_text"] == "Votre ligne"
+    assert alerts[0]["description_text"] == "Service interrompu"
+    assert alerts[0]["alert_header_text_en"] is None
+    assert alerts[0]["description_text_en"] is None
+
+
 def test_content_hash_unchanged_by_en_variants() -> None:
     # EN text is deliberately excluded from content identity (slice-9.1.1h
     # invariant): two alerts identical except their EN text must hash the same.

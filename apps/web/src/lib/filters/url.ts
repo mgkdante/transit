@@ -5,7 +5,7 @@
 // it before the store ever exists. This module is the ONLY place that knows the
 // wire format:
 //
-//   keys  : route, stop, trip, status, occupancy, grain, window  (stable order)
+//   keys  : route, stop, trip, vehicle, status, occupancy, entity, grain, window  (stable order)
 //   sets  : comma-joined, sorted, deduped (route=10,165,80)
 //   empty : an empty set / absent enum / absent lever is OMITTED entirely
 //   round : fromSearchParams(toSearchParams(s)) is value-equal to a normalized s
@@ -16,7 +16,14 @@
 // SSR-safe: operates purely on URLSearchParams; never touches `window`.
 
 import type { FilterState, IdSetKey } from './state';
-import { emptyFilterState, normalizeStatus, normalizeOccupancy, isGrain } from './state';
+import {
+	emptyFilterState,
+	normalizeStatus,
+	normalizeOccupancy,
+	normalizeEntities,
+	normalizeAlerts,
+	isGrain,
+} from './state';
 
 /**
  * Stable, intentional key order for the serialized URL. Sets first (the primary
@@ -25,13 +32,25 @@ import { emptyFilterState, normalizeStatus, normalizeOccupancy, isGrain } from '
  * insertion order in the source state — which is what makes the round-trip and
  * equality checks deterministic.
  */
-const KEY_ORDER = ['route', 'stop', 'trip', 'status', 'occupancy', 'grain', 'window'] as const;
+const KEY_ORDER = [
+	'route',
+	'stop',
+	'trip',
+	'vehicle',
+	'status',
+	'occupancy',
+	'entity',
+	'alert',
+	'grain',
+	'window',
+] as const;
 
 /** Wire key → the FilterState id-set field it maps to. */
-const SET_KEY_TO_FIELD: Record<'route' | 'stop' | 'trip', IdSetKey> = {
+const SET_KEY_TO_FIELD: Record<'route' | 'stop' | 'trip' | 'vehicle', IdSetKey> = {
 	route: 'routes',
 	stop: 'stops',
 	trip: 'trips',
+	vehicle: 'vehicles',
 };
 
 /**
@@ -83,7 +102,7 @@ export function fromSearchParams(sp: URLSearchParams): FilterState {
 	const state = emptyFilterState();
 
 	for (const [key, field] of Object.entries(SET_KEY_TO_FIELD) as [
-		'route' | 'stop' | 'trip',
+		'route' | 'stop' | 'trip' | 'vehicle',
 		IdSetKey,
 	][]) {
 		for (const token of collect(sp, key)) state[field].add(token);
@@ -94,6 +113,12 @@ export function fromSearchParams(sp: URLSearchParams): FilterState {
 
 	const occupancy = normalizeOccupancy(collect(sp, 'occupancy'));
 	if (occupancy) state.occupancy = occupancy;
+
+	const entities = normalizeEntities(collect(sp, 'entity'));
+	if (entities) state.entities = entities;
+
+	const alerts = normalizeAlerts(collect(sp, 'alert'));
+	if (alerts) state.alerts = alerts;
 
 	const grainTokens = dedupe(collect(sp, 'grain'));
 	const grain = grainTokens.find((g) => isGrain(g));
@@ -118,7 +143,8 @@ export function toSearchParams(s: FilterState): URLSearchParams {
 		switch (key) {
 			case 'route':
 			case 'stop':
-			case 'trip': {
+			case 'trip':
+			case 'vehicle': {
 				const set = s[SET_KEY_TO_FIELD[key]];
 				if (set.size > 0) sp.set(key, [...set].sort().join(','));
 				break;
@@ -129,6 +155,14 @@ export function toSearchParams(s: FilterState): URLSearchParams {
 			}
 			case 'occupancy': {
 				if (s.occupancy && s.occupancy.length > 0) sp.set('occupancy', s.occupancy.join(','));
+				break;
+			}
+			case 'entity': {
+				if (s.entities && s.entities.length > 0) sp.set('entity', s.entities.join(','));
+				break;
+			}
+			case 'alert': {
+				if (s.alerts && s.alerts.length > 0) sp.set('alert', s.alerts.join(','));
 				break;
 			}
 			case 'grain': {

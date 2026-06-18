@@ -42,6 +42,7 @@ import { ReceiptSchema } from '$lib/v1/schemas/receipts';
 import { RouteReliabilitySchema } from '$lib/v1/schemas/route_reliability';
 import { StopReliabilitySchema } from '$lib/v1/schemas/stop_reliability';
 import { ProvenanceSchema } from '$lib/v1/schemas/provenance';
+import { BasemapFileSchema } from '$lib/v1/schemas/basemap';
 
 import type { Locale } from '$lib/i18n';
 
@@ -54,6 +55,7 @@ import type { Locale } from '$lib/i18n';
 const DEFAULTS = {
 	manifest: 'manifest.json',
 	provenance: 'provenance.json',
+	basemap: 'static/basemap.json',
 	live: {
 		vehicles: 'live/vehicles.json',
 		trips: 'live/trips.json',
@@ -362,6 +364,24 @@ export const r2Adapter: ContentAdapter = {
 				SLOW_CACHE,
 				ctx,
 			);
+		},
+	},
+
+	basemap: {
+		// The basemap pointer is a TOP-LEVEL manifest field (null until a PMTiles
+		// archive is hosted), NOT under files.*. 404 → null (no basemap) so the
+		// map degrades to the minimal-dark style. Falls back to the default path
+		// when the manifest pointer is absent so a hosted-but-unpointered archive
+		// (e.g. uploaded out-of-band) still resolves.
+		async get(ctx?: AdapterCtx) {
+			const m = await loadManifest(ctx);
+			const rel = m.basemap ?? DEFAULTS.basemap;
+			const url = resolveUrl(rel);
+			const file = await getEntityJson(url, BasemapFileSchema, 'basemap', fetchOf(ctx), {
+				cache: SLOW_CACHE,
+				signal: ctx?.signal,
+			});
+			return file ?? null;
 		},
 	},
 

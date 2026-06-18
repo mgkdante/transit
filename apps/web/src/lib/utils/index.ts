@@ -5,5 +5,12 @@
 export { cn, twMergeConfig } from './cn';
 export type { WithoutChild, WithoutChildren, WithoutChildrenOrChild, WithElementRef } from './cn';
 
-export { DISPLAY_TIME_ZONE, ageSeconds, formatClock, formatRelative, formatUtc } from './time';
+export {
+	DISPLAY_TIME_ZONE,
+	ageSeconds,
+	formatClock,
+	formatRelative,
+	formatRelativeSeconds,
+	formatUtc,
+} from './time';
 export type { TimeLang } from './time';

@@ -132,15 +132,65 @@
 	function hideTip() {
 		tip.hide();
 	}
+
+	// ROVING TABINDEX. 168 cells must not be 168 sequential tab stops — that is a
+	// keyboard trap. The grid is ONE tab stop (the active cell); arrow keys move
+	// the active cell 2-dimensionally (←/→ = ±1 hour, ↑/↓ = ±1 day), Home/End jump
+	// to the row edges. Only the active cell carries tabindex=0; the rest are -1.
+	let activeIndex = $state(0);
+	let cellEls = $state<(SVGRectElement | null)[]>([]);
+
+	/** Move focus to cell `next` (if in range), syncing the roving index. */
+	function focusCell(next: number): void {
+		if (next < 0 || next >= cells.length) return;
+		activeIndex = next;
+		cellEls[next]?.focus();
+	}
+
+	function onCellKey(e: KeyboardEvent, i: number): void {
+		const row = Math.floor(i / COLS);
+		switch (e.key) {
+			case 'ArrowRight':
+				e.preventDefault();
+				focusCell(i + 1 < cells.length && Math.floor((i + 1) / COLS) === row ? i + 1 : i);
+				break;
+			case 'ArrowLeft':
+				e.preventDefault();
+				focusCell(i - 1 >= 0 && Math.floor((i - 1) / COLS) === row ? i - 1 : i);
+				break;
+			case 'ArrowDown':
+				e.preventDefault();
+				focusCell(i + COLS);
+				break;
+			case 'ArrowUp':
+				e.preventDefault();
+				focusCell(i - COLS);
+				break;
+			case 'Home':
+				e.preventDefault();
+				focusCell(row * COLS);
+				break;
+			case 'End':
+				e.preventDefault();
+				focusCell(row * COLS + COLS - 1);
+				break;
+			case 'Escape':
+				hideTip();
+				break;
+		}
+	}
 </script>
 
 {#snippet svg()}
+	<!-- aria-hidden only when static: when interactive the cells below are the
+	     accessible content (each a labelled, focusable role=img), so an
+	     aria-hidden ancestor would silence every focus stop. -->
 	<svg
 		viewBox="0 0 {width} {height}"
 		width="100%"
 		height="auto"
 		focusable="false"
-		aria-hidden="true"
+		aria-hidden={!interactive}
 	>
 		<!-- Hour axis ticks (0, 6, 12, 18) — neutral. -->
 		{#each [0, 6, 12, 18] as h (h)}
@@ -167,21 +217,29 @@
 		<!-- Cells. -->
 		{#each cells as cl, i (i)}
 			{#if interactive}
+				<!-- Deliberate AT focus targets with roving tabindex + arrow-key nav;
+				     each cell is a labelled role=img, so the interactions are intended. -->
 				<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+				<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 				<rect
+					bind:this={cellEls[i]}
 					x={cl.x}
 					y={cl.y}
 					width={cell}
 					height={cell}
 					rx="1.5"
 					fill={cl.fill}
-					tabindex={0}
+					tabindex={i === activeIndex ? 0 : -1}
 					role="img"
 					aria-label={cl.title}
 					onpointerenter={() => showCell(cl)}
 					onpointerleave={hideTip}
-					onfocus={() => showCell(cl)}
+					onfocus={() => {
+						activeIndex = i;
+						showCell(cl);
+					}}
 					onblur={hideTip}
+					onkeydown={(e) => onCellKey(e, i)}
 				>
 					<title>{cl.title}</title>
 				</rect>
@@ -194,10 +252,12 @@
 	</svg>
 {/snippet}
 
+<!-- role: a labelled `group` when interactive (AT descends into the roving cells),
+     a flat `img` when static (one summary announcement). -->
 <div
 	bind:this={ref}
 	class={cn('dv-heatmap inline-block', className)}
-	role="img"
+	role={interactive ? 'group' : 'img'}
 	aria-label={label ?? 'Heatmap by day and hour'}
 	data-slot="heatmap"
 	{...restProps}

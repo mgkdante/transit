@@ -28,3 +28,35 @@ routes = [
 [assets]
 binding = "ASSETS"
 directory = ".svelte-kit/cloudflare"
+
+# SSR /v1 boot path. A Worker's fetch to its OWN zone (transit.yesid.dev/data/*)
+# bypasses the sibling data-proxy route and hits a non-existent origin (523), so
+# server-side rendering can't reach the snapshot contract over a same-origin URL.
+# A service binding calls transit-data-proxy DIRECTLY (no DNS/route hop), so
+# +layout.server.ts boots the contract through `platform.env.DATA` and ships real
+# data in the first paint — no /v1-unreachable flash. Re-run ../data-proxy/smoke.sh
+# is NOT needed for this (binding-only, the public /data/* route is untouched).
+[[services]]
+binding = "DATA"
+service = "transit-data-proxy"
+
+[vars]
+PUBLIC_SITE_ORIGIN = "https://transit.yesid.dev"
+PUBLIC_V1_BASE = "/data/v1"
+PUBLIC_INDEXING = "true"
+
+[env.dev]
+name = "transit-web-dev"
+workers_dev = false
+routes = [
+  { pattern = "dev.transit.yesid.dev", custom_domain = true },
+]
+
+[env.dev.vars]
+PUBLIC_SITE_ORIGIN = "https://dev.transit.yesid.dev"
+PUBLIC_V1_BASE = "https://transit.yesid.dev/data/v1"
+PUBLIC_INDEXING = "false"
+
+[[env.dev.services]]
+binding = "DATA"
+service = "transit-data-proxy"

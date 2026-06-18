@@ -1,15 +1,41 @@
 import type { LayoutServerLoad } from './$types';
 import { pathLocale } from '$lib/i18n';
+import { bootV1, type V1Context } from '$lib/v1';
+import { bindingFetch } from '$lib/v1/binding';
 
-// Server layout load — a thin pass-through. The per-request /v1 fetch memo
-// (`event.locals.v1Cache`) is initialised in hooks.server.ts, so it is already
-// available to any server loader nested under this layout; nothing to set here.
+// Server layout load — boots the /v1 snapshot contract server-side over the
+// `DATA` service binding so the first paint ships REAL data (no /v1-unreachable
+// flash).
 //
-// We forward the path-derived locale so the server data carries it too (the
-// universal +layout.ts is the authoritative source for `lang`, but echoing it
-// here keeps SSR data self-describing and lets server-only loaders read the
-// locale off `data` without re-deriving it). No header work happens here —
-// cache-control / no-Vary lives centrally in hooks.server.ts.
-export const load: LayoutServerLoad = ({ url }) => {
-	return { lang: pathLocale(url.pathname) };
+// WHY a binding and not a same-origin fetch: on Cloudflare a Worker's fetch to
+// its OWN zone (transit.yesid.dev/data/*) bypasses the sibling data-proxy route
+// and hits a non-existent origin → 523. The `DATA` binding (wrangler.toml →
+// transit-data-proxy) calls that Worker directly, so the SSR boot succeeds.
+//
+// FAIL-SOFT, two ways:
+//   · no binding (local `vite dev` / `vite preview`) → return `v1: null` and let
+//     the UNIVERSAL +layout.ts boot over the load `fetch` (the vite proxy serves
+//     /data in dev).
+//   · binding present but the boot throws (data-proxy down / contract gap) →
+//     also return `v1: null`; +layout.ts fails soft to `v1Error` and
+//     +layout.svelte re-boots client-side (the browser reaches /data fine).
+//
+// The returned `v1` is plain JSON (manifest + labels + lang), so it serializes
+// into the SSR payload and rehydrates without a client round-trip.
+export const load: LayoutServerLoad = async ({ url, platform }) => {
+	const lang = pathLocale(url.pathname);
+	const binding = platform?.env?.DATA;
+
+	if (!binding) {
+		// Local dev / preview: no service binding. Defer the boot to +layout.ts.
+		return { lang, v1: null as V1Context | null };
+	}
+
+	try {
+		const v1 = await bootV1(lang, { fetch: bindingFetch(binding, url.origin) });
+		return { lang, v1 };
+	} catch {
+		// Binding present but unreachable — let the client recover (+layout.svelte).
+		return { lang, v1: null as V1Context | null };
+	}
 };

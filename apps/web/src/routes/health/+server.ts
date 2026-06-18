@@ -9,7 +9,9 @@ import type { RequestHandler } from './$types';
 export const prerender = false;
 
 export const GET: RequestHandler = ({ platform }) => {
-	const env = (platform?.env ?? {}) as Record<string, string | undefined>;
+	// platform.env is a heterogeneous bag (string secrets + the DATA binding); we
+	// only read the CF_PAGES_* string secrets here, so narrow through `unknown`.
+	const env = (platform?.env ?? {}) as unknown as Record<string, string | undefined>;
 	return json(
 		{
 			status: 'ok',

@@ -12,7 +12,56 @@ export {
 	resolveBasemapStyle,
 	minimalDarkStyle,
 	vectorStyleFromBasemap,
+	applyBasemapTheme,
 	graticuleGeoJson,
 	toPmtilesUrl,
 	BASEMAP_SOURCE_ID,
 } from './basemap';
+export { centerFromProviderBbox, mapViewportOptions, MONTREAL_MAP_BOUNDS } from './viewport';
+export type { MapFitPadding } from './viewport';
+export type { MapViewportOptions } from './viewport';
+
+// Live vehicle layer kit (slice-9.3) — sprite baker + source/layers + feature
+// builder + the near-me geo util. The runtime pieces touch the map only after
+// MapStage's onready; the geo helpers are pure + SSR-safe.
+export { bakeVehicleSprites, bodyIconId, BUS_ICON, BUS_ICON_ND, STOP_ICON } from './vehicleSprites';
+
+export {
+	addVehicleSource,
+	addVehicleLayers,
+	setVehicles,
+	setStale,
+	toVehicleFeatures,
+	VEHICLE_SOURCE,
+	VEHICLE_BODY_LAYER,
+} from './vehicleLayer';
+export type { VehicleFC, VehicleFeature } from './vehicleLayer';
+export {
+	createVehicleMotionController,
+	interpolateVehicleFeatures,
+	type VehicleMotionController,
+} from './vehicleMotion';
+
+export { addStopsSource, addStopsLayer, setStops, STOPS_SOURCE, STOPS_LAYER } from './stopsLayer';
+export {
+	addRouteLineSource,
+	addRouteLineLayers,
+	setRouteLines,
+	toRouteLineFeatures,
+	ROUTE_LINE_SOURCE,
+	ROUTE_LINE_CASING_LAYER,
+	ROUTE_LINE_LAYER,
+	ROUTE_LINE_HIT_LAYER,
+} from './routeLines';
+export {
+	bakeLocationPinSprite,
+	addNearTargetSource,
+	addNearTargetLayer,
+	setNearTarget,
+	toNearTargetFeatures,
+	NEAR_TARGET_SOURCE,
+	NEAR_TARGET_LAYER,
+	LOCATION_PIN_ICON,
+} from './nearTargetLayer';
+
+export { haversineMeters, nearestStops, type LatLon, type WithDistance } from './nearbyStops';

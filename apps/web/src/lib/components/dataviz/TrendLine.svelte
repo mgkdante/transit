@@ -6,10 +6,17 @@
   --dataviz-status-on-time (green) and --dataviz-status-late (amber). `null`
   points break the line (gaps, never interpolated).
 
-  DOCTRINE: every line + dot is a data mark on the dataviz scale, NEVER
-  --primary. Grid/baseline are neutral (--border). a11y: figure with an
-  aria-label summary and a visually-hidden legend; decorative geometry is
-  aria-hidden.
+  DUAL Y-DOMAINS: the two series may carry DIFFERENT units (e.g. on-time % vs a
+  p90 delay in MINUTES). Each scales to its OWN y-domain — `domain` for on-time,
+  `retardDomain` for the retard series (defaults to `domain` when both are the
+  same unit). This is why neither axis is numbered: the chart reads as two
+  independent TREND SHAPES, not a shared-scale comparison — the tooltip carries
+  the real per-series values. Plotting minutes on the 0–100 % axis would squash
+  the delay line flat against the floor (and clamp it), so a caller mixing units
+  MUST pass `retardDomain`.
+
+  a11y: figure with an aria-label summary and a visually-hidden legend;
+  decorative geometry is aria-hidden.
 -->
 <script lang="ts">
 	import { cn, type WithElementRef } from '$lib/utils';
@@ -26,10 +33,17 @@
 		/** Delay / retard series (rendered amber). */
 		retard: Series;
 		/**
-		 * Shared y-domain [min,max]. Both series are typically percentages, so the
-		 * default is [0,100]. Pass a custom domain when units differ.
+		 * y-domain [min,max] for the ON-TIME series. Typically a percentage, so the
+		 * default is [0,100].
 		 */
 		domain?: [number, number];
+		/**
+		 * y-domain [min,max] for the RETARD series. Defaults to `domain` (same unit
+		 * as on-time). Pass this when the retard series uses a DIFFERENT unit (e.g.
+		 * a delay in minutes) so it scales to its own range instead of being
+		 * squashed/clamped against the on-time percentage axis.
+		 */
+		retardDomain?: [number, number];
 		/** Drawn width (viewBox units). */
 		width?: number;
 		/** Drawn height (viewBox units). */
@@ -57,6 +71,7 @@
 		onTime,
 		retard,
 		domain = [0, 100],
+		retardDomain,
 		width = 320,
 		height = 120,
 		stroke = 2,
@@ -144,8 +159,8 @@
 
 	type Pt = { x: number; y: number };
 
-	function scale(series: Series): Array<Pt | null> {
-		const [min, max] = domain;
+	function scale(series: Series, dom: [number, number]): Array<Pt | null> {
+		const [min, max] = dom;
 		const span = max - min || 1;
 		const n = Math.max(series.length, 1);
 		const innerW = width - PAD * 2;
@@ -185,8 +200,10 @@
 		return null;
 	}
 
-	const onTimePts = $derived(scale(onTime));
-	const retardPts = $derived(scale(retard));
+	const onTimePts = $derived(scale(onTime, domain));
+	// Retard scales to its OWN domain when given (different unit, e.g. minutes);
+	// otherwise it shares the on-time domain (same unit).
+	const retardPts = $derived(scale(retard, retardDomain ?? domain));
 	const onTimeSegs = $derived(toSegments(onTimePts));
 	const retardSegs = $derived(toSegments(retardPts));
 	const onTimeLast = $derived(lastOf(onTimePts));

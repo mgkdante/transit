@@ -11,11 +11,11 @@ from transit_ops.settings import (
 
 EXPECTED_RETENTION_CONTRACT = {
     "STATIC_DATASET_RETENTION_COUNT": 1,
-    "SILVER_REALTIME_RETENTION_DAYS": 14,
+    "SILVER_REALTIME_RETENTION_DAYS": 10,
     "GOLD_FACT_RETENTION_DAYS": 14,
     "GOLD_REPORTING_OPEN_WINDOW_DAYS": 10,
     "BRONZE_REALTIME_RETENTION_DAYS": 30,
-    "BRONZE_STATIC_RETENTION_DAYS": 365,
+    "BRONZE_STATIC_RETENTION_DAYS": 30,
     "GOLD_WARM_ROLLUP_RETENTION_DAYS": 365,
 }
 SETTINGS_DEFAULT_ENV_KEYS = (
@@ -104,13 +104,25 @@ def test_silver_realtime_prune_batch_default_and_display(
     settings = Settings(_env_file=None)
 
     # Caps rows/table/cycle for the realtime-history prune so the one-time
-    # backlog drains over many ~57s worker cycles instead of one unbounded
-    # transaction (the unbounded-heavy-op hang class).
-    assert settings.SILVER_REALTIME_PRUNE_BATCH == 50000
+    # backlog drains faster than the steady-state stop-time inflow without one
+    # unbounded transaction (the unbounded-heavy-op hang class).
+    assert settings.SILVER_REALTIME_PRUNE_BATCH == 100000
 
     display = settings.display_dict()
 
-    assert display["SILVER_REALTIME_PRUNE_BATCH"] == 50000
+    assert display["SILVER_REALTIME_PRUNE_BATCH"] == 100000
+
+
+def test_gold_fact_prune_batch_default_and_display(
+    clean_default_settings_env: None,
+) -> None:
+    settings = Settings(_env_file=None)
+
+    assert settings.GOLD_FACT_PRUNE_BATCH == 100000
+
+    display = settings.display_dict()
+
+    assert display["GOLD_FACT_PRUNE_BATCH"] == 100000
 
 
 def test_i3_retention_defaults(clean_default_settings_env: None) -> None:

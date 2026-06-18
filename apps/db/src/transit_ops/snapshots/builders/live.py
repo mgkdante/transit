@@ -37,6 +37,7 @@ from transit_ops.snapshots.builders._helpers import (
     _opt_iso,
     _percentile,
     _round5,
+    _sane_en,
     _severity_code,
     _split_csv,
     _status_from_band,
@@ -323,8 +324,8 @@ def build_alerts(conn: Connection, *, provider_id: str = "stm", generated_utc: s
                 # is frozen); description + EN fields are additive passthroughs.
                 header_text=r["alert_header_text"] or "",
                 description=r["description_text"],
-                header_text_en=r["alert_header_text_en"],
-                description_en=r["description_text_en"],
+                header_text_en=_sane_en(r["alert_header_text_en"]),
+                description_en=_sane_en(r["description_text_en"]),
                 routes=_split_csv(r["route_ids"]),
                 stops=_split_csv(r["stop_ids"]),
                 start_utc=_opt_iso(r["active_period_start_utc"]),

@@ -40,6 +40,7 @@ import type { Receipt } from '$lib/v1/schemas/receipts';
 import type { RouteReliability } from '$lib/v1/schemas/route_reliability';
 import type { StopReliability } from '$lib/v1/schemas/stop_reliability';
 import type { Provenance } from '$lib/v1/schemas/provenance';
+import type { BasemapFile } from '$lib/v1/schemas/basemap';
 
 /**
  * Per-request adapter context. Threaded from `event` in SSR loads so reads use
@@ -98,6 +99,11 @@ export interface ProvenancePort {
 	get(ctx?: AdapterCtx): Promise<Provenance>;
 }
 
+/** Basemap pointer: the hosted PMTiles archive descriptor, or null when none. */
+export interface BasemapPort {
+	get(ctx?: AdapterCtx): Promise<BasemapFile | null>;
+}
+
 /**
  * The full content-adapter surface. One implementation is active at a time
  * (r2Adapter today); swap it in adapter/index.ts without touching consumers.
@@ -109,4 +115,5 @@ export interface ContentAdapter {
 	static: StaticPort;
 	historic: HistoricPort;
 	provenance: ProvenancePort;
+	basemap: BasemapPort;
 }

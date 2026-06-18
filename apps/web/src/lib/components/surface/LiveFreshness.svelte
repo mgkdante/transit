@@ -14,7 +14,7 @@
 <script lang="ts">
 	import { cn } from '$lib/utils';
 	import { type Locale } from '$lib/i18n';
-	import { formatRelative } from '$lib/utils/time';
+	import { formatRelativeSeconds } from '$lib/utils/time';
 	import StatusDot from '$lib/components/brand/StatusDot.svelte';
 
 	interface LiveFreshnessProps {
@@ -45,7 +45,13 @@
 	};
 	const t = $derived(L[locale]);
 
-	const relative = $derived(generatedUtc ? formatRelative(generatedUtc, locale) : t.unknown);
+	// Derive the relative age from the store's TICKING `ageSeconds` (advanced every
+	// second), NOT from `generatedUtc` via formatRelative: the latter reads a
+	// one-shot internal `now`, so — with `generatedUtc` unchanged between polls —
+	// the text would freeze. Tracking `ageSeconds` makes this re-derive each tick.
+	const relative = $derived(
+		ageSeconds != null ? formatRelativeSeconds(ageSeconds, locale) : t.unknown,
+	);
 </script>
 
 <span
@@ -56,7 +62,9 @@
 >
 	<StatusDot color={isStale ? 'caution' : 'on_time'} pulse={!isStale} label={t.live} />
 	<span class="live-freshness-label">{t.live}</span>
-	<span class="live-freshness-age">{relative}</span>
+	<!-- Visible relative age (ticks every second) + the machine-readable build
+	     timestamp on the <time> datetime for AT / scrapers. -->
+	<time class="live-freshness-age" datetime={generatedUtc ?? undefined}>{relative}</time>
 	{#if isStale}
 		<span class="live-freshness-stale">· {t.stale}</span>
 	{/if}

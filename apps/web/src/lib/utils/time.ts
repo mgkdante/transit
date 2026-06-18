@@ -103,14 +103,18 @@ const RELATIVE_UNITS: ReadonlyArray<{ unit: Intl.RelativeTimeFormatUnit; seconds
 ];
 
 /**
- * Localized relative time vs now, e.g. "2 minutes ago" / "il y a 2 minutes".
+ * Localized relative time from a PRE-COMPUTED age in seconds, e.g. "2 minutes
+ * ago" / "il y a 2 minutes". Positive = past, negative = future.
  *
- * Built on Intl.RelativeTimeFormat so the phrasing, plurals, and "ago"/future
- * direction are locale-correct. Within 5 seconds it reads as "now"/"maintenant".
- * Returns "—" for invalid input.
+ * Prefer this over `formatRelative` when the caller already tracks a ticking age
+ * (e.g. the live store's `ageSeconds`, advanced every second): a `$derived` over
+ * the age re-runs each tick, whereas `formatRelative(iso)` reads an internal
+ * `now` that is NOT reactive — so the relative text would freeze between the
+ * inputs that DO change. Built on Intl.RelativeTimeFormat for locale-correct
+ * phrasing/plurals/direction. Within 5 seconds reads "now"/"maintenant".
+ * Returns "—" for NaN.
  */
-export function formatRelative(iso: string, lang: TimeLang, now: Date = new Date()): string {
-	const seconds = ageSeconds(iso, now);
+export function formatRelativeSeconds(seconds: number, lang: TimeLang): string {
 	if (Number.isNaN(seconds)) return '—';
 	if (Math.abs(seconds) < 5) return lang === 'fr' ? 'maintenant' : 'now';
 
@@ -124,4 +128,19 @@ export function formatRelative(iso: string, lang: TimeLang, now: Date = new Date
 	}
 	// Unreachable (the "second" branch always matches), but keeps TS exhaustive.
 	return rtf.format(-seconds, 'second');
+}
+
+/**
+ * Localized relative time vs now, e.g. "2 minutes ago" / "il y a 2 minutes".
+ *
+ * Built on Intl.RelativeTimeFormat so the phrasing, plurals, and "ago"/future
+ * direction are locale-correct. Within 5 seconds it reads as "now"/"maintenant".
+ * Returns "—" for invalid input.
+ *
+ * NOTE: `now` defaults to a one-shot snapshot — the result does NOT tick on its
+ * own. For a value that updates every second, track the age reactively and call
+ * `formatRelativeSeconds` instead.
+ */
+export function formatRelative(iso: string, lang: TimeLang, now: Date = new Date()): string {
+	return formatRelativeSeconds(ageSeconds(iso, now), lang);
 }

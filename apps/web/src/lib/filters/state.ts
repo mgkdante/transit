@@ -1,17 +1,22 @@
 // $lib/filters/state — the canonical FilterState shape + pure, immutable helpers.
 //
 // FilterState is the single source of truth for every cross-surface filter the
-// citizen app understands: the three free-text id sets (routes / stops / trips),
-// the two enum chip families (status / occupancy), the time grain, and the time
-// window. It is intentionally plain data — no methods, no runes — so it can be
-// serialized to the URL (see ./url), snapshotted across a locale switch, and
-// hydrated SSR-side without touching `window`.
+// citizen app understands: the free-text id sets (routes / stops / trips / vehicles),
+// the two enum chip families (status / occupancy), the entity/shape family, the
+// time grain, and the time window. It is intentionally plain data — no methods,
+// no runes — so it can be serialized to the URL (see ./url), snapshotted across
+// a locale switch, and hydrated SSR-side without touching `window`.
 //
 // SSR-safe: this module is pure data + pure functions; it never touches the DOM,
 // `window`, or `localStorage`.
 
 import type { StatusCode, OccupancyCode, Grain } from '$lib/v1/schemas';
 import { STATUS_CODES, OCCUPANCY_CODES, GRAINS } from '$lib/v1/schemas';
+
+export const ENTITY_KINDS = ['bus_direction', 'bus_no_direction', 'stop'] as const;
+export type EntityKind = (typeof ENTITY_KINDS)[number];
+export const ALERT_ENTITY_KINDS = ['has_alert'] as const;
+export type AlertEntityKind = (typeof ALERT_ENTITY_KINDS)[number];
 
 /**
  * The complete, serializable filter state shared across every surface.
@@ -28,10 +33,16 @@ export interface FilterState {
 	stops: Set<string>;
 	/** Selected trip ids. */
 	trips: Set<string>;
+	/** Selected vehicle ids (STM bus unit ids). */
+	vehicles: Set<string>;
 	/** On-time status chips; absent = no status filter. */
 	status?: StatusCode[];
 	/** Occupancy/crowding chips; absent = no occupancy filter. */
 	occupancy?: OccupancyCode[];
+	/** Entity/shape chips; absent = no entity filter. */
+	entities?: EntityKind[];
+	/** Entity families with attached alerts; absent = no alert filter. */
+	alerts?: AlertEntityKind[];
 	/** Active time grain; absent = surface default. */
 	grain?: Grain;
 	/** Time window token (opaque to this layer); absent = surface default. */
@@ -50,6 +61,8 @@ export { STATUS_CODES, OCCUPANCY_CODES, GRAINS };
 const STATUS_SET: ReadonlySet<string> = new Set(STATUS_CODES);
 const OCCUPANCY_SET: ReadonlySet<string> = new Set(OCCUPANCY_CODES);
 const GRAIN_SET: ReadonlySet<string> = new Set(GRAINS);
+const ENTITY_SET: ReadonlySet<string> = new Set(ENTITY_KINDS);
+const ALERT_ENTITY_SET: ReadonlySet<string> = new Set(ALERT_ENTITY_KINDS);
 
 /** True when `v` is a valid {@link StatusCode}. */
 export function isStatusCode(v: string): v is StatusCode {
@@ -59,6 +72,16 @@ export function isStatusCode(v: string): v is StatusCode {
 /** True when `v` is a valid {@link OccupancyCode}. */
 export function isOccupancyCode(v: string): v is OccupancyCode {
 	return OCCUPANCY_SET.has(v);
+}
+
+/** True when `v` is a valid {@link EntityKind}. */
+export function isEntityKind(v: string): v is EntityKind {
+	return ENTITY_SET.has(v);
+}
+
+/** True when `v` is a valid alert entity filter. */
+export function isAlertEntityKind(v: string): v is AlertEntityKind {
+	return ALERT_ENTITY_SET.has(v);
 }
 
 /** True when `v` is a valid {@link Grain}. */
@@ -101,12 +124,44 @@ export function normalizeOccupancy(values: readonly string[]): OccupancyCode[] |
 	return out.length > 0 ? out : undefined;
 }
 
+/**
+ * Coerce arbitrary strings to deduped entity/shape filters. Invalid values drop
+ * on input so hand-edited URLs self-heal.
+ */
+export function normalizeEntities(values: readonly string[]): EntityKind[] | undefined {
+	const out: EntityKind[] = [];
+	const seen = new Set<string>();
+	for (const raw of values) {
+		const v = raw.trim();
+		if (isEntityKind(v) && !seen.has(v)) {
+			seen.add(v);
+			out.push(v);
+		}
+	}
+	return out.length > 0 ? out : undefined;
+}
+
+/** Coerce arbitrary strings to deduped alert entity filters. */
+export function normalizeAlerts(values: readonly string[]): AlertEntityKind[] | undefined {
+	const out: AlertEntityKind[] = [];
+	const seen = new Set<string>();
+	for (const raw of values) {
+		const v = raw.trim();
+		if (isAlertEntityKind(v) && !seen.has(v)) {
+			seen.add(v);
+			out.push(v);
+		}
+	}
+	return out.length > 0 ? out : undefined;
+}
+
 /** A pristine, empty FilterState. Fresh `Set`s every call — never share refs. */
 export function emptyFilterState(): FilterState {
 	return {
 		routes: new Set<string>(),
 		stops: new Set<string>(),
 		trips: new Set<string>(),
+		vehicles: new Set<string>(),
 	};
 }
 
@@ -120,15 +175,18 @@ export function cloneFilterState(s: FilterState): FilterState {
 		routes: new Set(s.routes),
 		stops: new Set(s.stops),
 		trips: new Set(s.trips),
+		vehicles: new Set(s.vehicles ?? []),
 		...(s.status ? { status: s.status.slice() } : {}),
 		...(s.occupancy ? { occupancy: s.occupancy.slice() } : {}),
+		...(s.entities ? { entities: s.entities.slice() } : {}),
+		...(s.alerts ? { alerts: s.alerts.slice() } : {}),
 		...(s.grain !== undefined ? { grain: s.grain } : {}),
 		...(s.window !== undefined ? { window: s.window } : {}),
 	};
 }
 
 /** The three id-set fields, named for the set helpers below. */
-export type IdSetKey = 'routes' | 'stops' | 'trips';
+export type IdSetKey = 'routes' | 'stops' | 'trips' | 'vehicles';
 
 /**
  * Return a NEW FilterState with `value` added to the named id set. Empty/blank
@@ -167,8 +225,11 @@ export function isEmptyFilterState(s: FilterState): boolean {
 		s.routes.size === 0 &&
 		s.stops.size === 0 &&
 		s.trips.size === 0 &&
+		(s.vehicles?.size ?? 0) === 0 &&
 		(s.status === undefined || s.status.length === 0) &&
 		(s.occupancy === undefined || s.occupancy.length === 0) &&
+		(s.entities === undefined || s.entities.length === 0) &&
+		(s.alerts === undefined || s.alerts.length === 0) &&
 		s.grain === undefined &&
 		(s.window === undefined || s.window === '')
 	);

@@ -493,6 +493,34 @@ def test_build_alerts_unknown_severity_falls_back_to_watch() -> None:
     assert out.alerts[0].routes == []
 
 
+def test_build_alerts_sanitizes_legacy_python_repr_en_text() -> None:
+    conn = FakeConn(
+        {
+            "current_i3_alerts": [
+                {
+                    "alert_id": "A-garbage",
+                    "alert_header_text": "Votre arrêt",
+                    "description_text": "Service interrompu",
+                    "alert_header_text_en": "{'text': None, 'language': 'en'}",
+                    "description_text_en": "{'text': None, 'language': 'en'}",
+                    "severity": "warning",
+                    "cause": None,
+                    "effect": None,
+                    "route_ids": "161",
+                    "stop_ids": "51234",
+                    "active_period_start_utc": None,
+                    "active_period_end_utc": None,
+                }
+            ]
+        }
+    )
+
+    out = build_alerts(conn, generated_utc="2026-05-31T12:00:05Z")
+
+    assert out.alerts[0].header_text_en is None
+    assert out.alerts[0].description_en is None
+
+
 # --------------------------------------------------------------------------
 # 6d — build_network
 # --------------------------------------------------------------------------
@@ -1138,6 +1166,32 @@ def test_historic_flat_builders_stamp_generated_utc() -> None:
     assert build_repeat_offenders(conn, "stm", generated_utc="H").generated_utc == "H"
     assert build_alert_history(conn, "stm", generated_utc="H").generated_utc == "H"
     assert build_provenance(conn, "stm", generated_utc="H").generated_utc == "H"
+
+
+def test_build_alert_history_sanitizes_legacy_python_repr_en_text() -> None:
+    import datetime
+
+    from transit_ops.snapshots.builders import build_alert_history
+
+    conn = FakeConn(
+        {
+            "i3_alert_history_reporting": [
+                {
+                    "alert_header_text": "Votre ligne",
+                    "header_text_en": "{'text': None, 'language': 'en'}",
+                    "severity": "WARNING",
+                    "routes": ["161"],
+                    "stops": ["51234"],
+                    "start_utc": datetime.datetime(2026, 6, 1, 8, 0, tzinfo=datetime.UTC),
+                    "end_utc": datetime.datetime(2026, 6, 1, 9, 0, tzinfo=datetime.UTC),
+                }
+            ]
+        }
+    )
+
+    out = build_alert_history(conn, "stm", generated_utc="H")
+
+    assert out.alerts[0].header_text_en is None
 
 
 # --------------------------------------------------------------------------

@@ -3,27 +3,80 @@ import tailwindcss from '@tailwindcss/vite';
 import { sveltekit } from '@sveltejs/kit/vite';
 import { svelteTesting } from '@testing-library/svelte/vite';
 import { visualizer } from 'rollup-plugin-visualizer';
+import type { Plugin } from 'vite';
+
+export const ISLAND_CENTERED_BASEMAP_BBOX = [-74.176, 45.237, -73.276, 45.867] as const;
+
+function mapRuntimeManualChunks(id: string): string | undefined {
+	if (id.endsWith('.css')) return undefined;
+	if (id.includes('/node_modules/') && /\/(maplibre-gl|pmtiles)\//.test(id)) {
+		return 'vendor-maplibre';
+	}
+}
+
+export function previewManifestForIslandCenteredBasemap<T>(manifest: T): T {
+	if (!manifest || typeof manifest !== 'object') return manifest;
+	return {
+		...manifest,
+		bbox: [...ISLAND_CENTERED_BASEMAP_BBOX],
+	};
+}
+
+function islandCenteredManifestPreviewPlugin(command: string): Plugin {
+	return {
+		name: 'transit-dev-island-centered-manifest-preview',
+		apply: 'serve',
+		configureServer(server) {
+			if (command !== 'serve') return;
+			server.middlewares.use('/data/v1/stm/manifest.json', async (_req, res, next) => {
+				try {
+					const upstream = await fetch('https://transit.yesid.dev/data/v1/stm/manifest.json');
+					if (!upstream.ok) return next();
+					const manifest = previewManifestForIslandCenteredBasemap(await upstream.json());
+					res.statusCode = 200;
+					res.setHeader('content-type', 'application/json; charset=utf-8');
+					res.setHeader('cache-control', 'no-store');
+					res.setHeader('x-transit-dev-preview', 'island-centered-basemap-bbox');
+					res.end(JSON.stringify(manifest));
+				} catch {
+					next();
+				}
+			});
+		},
+	};
+}
 
 // svelteTesting() only activates under VITEST, so it is safe to include always.
-export default defineConfig({
+export default defineConfig(({ command, isSsrBuild }) => ({
 	// Relocate Vitest's cache out of node_modules/.vite so CI can cache it safely.
 	cacheDir: process.env.VITEST ? '.vitest/cache' : undefined,
-	// Dev-only snapshot proxy. In production the /v1 contract is served by the
-	// data.yesid.dev zone-route worker; locally we proxy `/data/*` to it so the
-	// app fetches relative `/data/...` URLs without CORS or a hardcoded origin.
-	// The `/data` prefix is stripped, so `/data/network.json` → the worker's
-	// `https://data.yesid.dev/v1/network.json`.
+	build: {
+		chunkSizeWarningLimit: 1100,
+		rollupOptions: isSsrBuild
+			? undefined
+			: {
+					output: {
+						manualChunks: mapRuntimeManualChunks,
+					},
+				},
+	},
+	// Dev-only snapshot proxy. In production the /v1 contract is served same-origin
+	// by the transit.yesid.dev/data/* zone-route worker (transit-data-proxy);
+	// locally we proxy `/data/*` to that live worker so the app fetches relative
+	// `/data/v1/...` URLs without CORS or a hardcoded origin. NO rewrite — the
+	// full `/data/v1/...` path is the worker's servable key (and the pmtiles
+	// basemap relies on its Range/206 passthrough), so we keep the prefix intact.
 	server: {
 		proxy: {
 			'/data': {
-				target: 'https://data.yesid.dev/v1',
+				target: 'https://transit.yesid.dev',
 				changeOrigin: true,
 				secure: true,
-				rewrite: (path) => path.replace(/^\/data/, ''),
 			},
 		},
 	},
 	plugins: [
+		islandCenteredManifestPreviewPlugin(command),
 		tailwindcss(),
 		sveltekit(),
 		svelteTesting(),
@@ -77,4 +130,4 @@ export default defineConfig({
 			},
 		],
 	},
-});
+}));

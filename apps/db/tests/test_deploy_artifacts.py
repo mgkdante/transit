@@ -1,3 +1,4 @@
+import math
 import re
 from pathlib import Path
 
@@ -216,6 +217,26 @@ def test_daily_static_pipeline_workflow_runs_gis_inside_pipeline_before_static_p
     assert "group: daily-static-pipeline" in workflow
 
 
+def test_refresh_basemap_workflow_extract_is_square_and_centered_on_montreal_island() -> None:
+    workflow = yaml.safe_load(
+        (REPO_ROOT / ".github/workflows/refresh-basemap.yml").read_text(encoding="utf-8")
+    )
+    bbox_raw = workflow["env"]["BBOX"]
+    min_lon, min_lat, max_lon, max_lat = (float(part) for part in bbox_raw.split(","))
+
+    assert bbox_raw == "-74.176,45.237,-73.276,45.867"
+    assert math.isclose((min_lon + max_lon) / 2, -73.726)
+    assert math.isclose((min_lat + max_lat) / 2, 45.552)
+
+    def mercator_y(lat: float) -> float:
+        radians = math.radians(lat)
+        return math.log(math.tan(math.pi / 4 + radians / 2))
+
+    width = math.radians(max_lon - min_lon)
+    height = mercator_y(max_lat) - mercator_y(min_lat)
+    assert abs(width / height - 1) <= 0.03
+
+
 def test_daily_warm_rollups_workflow_prunes_i3_after_historic_publish() -> None:
     workflow = (REPO_ROOT / ".github/workflows/daily-warm-rollups.yml").read_text(
         encoding="utf-8"
@@ -270,6 +291,31 @@ def test_compose_worker_environment_covers_pipeline_settings_only() -> None:
     assert "STM_API_KEY" in worker_keys
 
 
+def test_compose_runtime_defaults_match_settings_retention_contract() -> None:
+    services = _compose()["services"]
+    settings = Settings(_env_file=None)
+
+    worker_env = services["worker"]["environment"]
+    health_env = services["health"]["environment"]
+
+    assert (
+        worker_env["SILVER_REALTIME_PRUNE_BATCH"]
+        == f"${{SILVER_REALTIME_PRUNE_BATCH:-{settings.SILVER_REALTIME_PRUNE_BATCH}}}"
+    )
+    assert (
+        worker_env["GOLD_FACT_PRUNE_BATCH"]
+        == f"${{GOLD_FACT_PRUNE_BATCH:-{settings.GOLD_FACT_PRUNE_BATCH}}}"
+    )
+    assert (
+        worker_env["BRONZE_STATIC_RETENTION_DAYS"]
+        == f"${{BRONZE_STATIC_RETENTION_DAYS:-{settings.BRONZE_STATIC_RETENTION_DAYS}}}"
+    )
+    assert (
+        health_env["BRONZE_STATIC_RETENTION_DAYS"]
+        == f"${{BRONZE_STATIC_RETENTION_DAYS:-{settings.BRONZE_STATIC_RETENTION_DAYS}}}"
+    )
+
+
 def test_compose_health_environment_excludes_stm_credentials() -> None:
     services = _compose()["services"]
     health_keys = _environment_keys(services["health"])
@@ -313,6 +359,7 @@ def test_env_example_documents_all_runtime_knobs() -> None:
         "STM_I3_ALERTS_URL=",
         "PIPELINE_PAUSED=false",
         "HEALTH_RUNTIME_CACHE_SECONDS=30",
+        "SILVER_REALTIME_RETENTION_DAYS=10",
         "GOLD_FACT_RETENTION_DAYS=14",
     }.issubset(assignments)
 

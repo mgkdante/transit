@@ -1,0 +1,46 @@
+name: Setup Transit JS workspace
+description: Install Bun and cache the Transit JavaScript workspace.
+
+runs:
+  using: composite
+  steps:
+    - name: Set up Bun
+      uses: oven-sh/setup-bun@v2
+      with:
+        bun-version-file: .bun-version
+
+    - name: Prepare cache directories
+      shell: bash
+      working-directory: ${{ github.workspace }}
+      run: mkdir -p ~/.bun/install/cache .turbo/cache apps/web/.vitest/cache
+
+    - name: Cache Bun install cache
+      uses: actions/cache@v5
+      with:
+        path: ~/.bun/install/cache
+        key: ${{ runner.os }}-bun-${{ hashFiles('bun.lock', '.bun-version') }}
+        restore-keys: |
+          ${{ runner.os }}-bun-
+
+    - name: Cache Turbo
+      uses: actions/cache@v5
+      with:
+        path: .turbo/cache
+        key: ${{ runner.os }}-turbo-${{ github.job }}-${{ github.ref_name }}-${{ hashFiles('bun.lock', 'turbo.json', 'apps/**/package.json', 'packages/**/package.json') }}
+        restore-keys: |
+          ${{ runner.os }}-turbo-${{ github.job }}-${{ github.ref_name }}-
+          ${{ runner.os }}-turbo-${{ github.job }}-
+          ${{ runner.os }}-turbo-
+
+    - name: Cache Vitest
+      uses: actions/cache@v5
+      with:
+        path: apps/web/.vitest/cache
+        key: ${{ runner.os }}-vitest-web-${{ hashFiles('bun.lock', 'apps/web/vite.config.ts', 'apps/web/src/**/*.ts', 'apps/web/src/**/*.svelte') }}
+        restore-keys: |
+          ${{ runner.os }}-vitest-web-
+
+    - name: Install dependencies
+      shell: bash
+      working-directory: ${{ github.workspace }}
+      run: bun install --frozen-lockfile

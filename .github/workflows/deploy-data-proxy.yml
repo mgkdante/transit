@@ -2,8 +2,13 @@ name: Deploy Data Proxy Worker
 
 on:
   workflow_dispatch:
+  pull_request:
+    branches: [main, develop]
+    paths:
+      - "apps/data-proxy/**"
+      - ".github/workflows/deploy-data-proxy.yml"
   push:
-    branches: [main]
+    branches: [main, develop]
     paths:
       - "apps/data-proxy/**"
       - ".github/workflows/deploy-data-proxy.yml"
@@ -16,7 +21,7 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  deploy-data-proxy:
+  test-data-proxy:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     defaults:
@@ -27,17 +32,36 @@ jobs:
         uses: actions/checkout@v5
 
       - name: Set up Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: "22"
 
       - name: Run worker behavioral suite
         run: node --test "test/*.test.mjs"
 
-      - name: Deploy worker with wrangler
-        uses: cloudflare/wrangler-action@v3
+  deploy-data-proxy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: test-data-proxy
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    defaults:
+      run:
+        working-directory: apps/data-proxy
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Set up Node
+        uses: actions/setup-node@v5
         with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          workingDirectory: apps/data-proxy
-          # Keep in lockstep with package-lock.json (pinned by pytest contract).
-          wranglerVersion: "4.100.0"
+          node-version: "22"
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .bun-version
+
+      - name: Deploy worker with wrangler
+        run: bunx wrangler@4.100.0 deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}

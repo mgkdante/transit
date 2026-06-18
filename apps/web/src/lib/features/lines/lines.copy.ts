@@ -17,6 +17,9 @@ export interface LinesIndexCopy {
 	/** Accessible label + placeholder for the filter input. */
 	readonly filterLabel: string;
 	readonly filterPlaceholder: string;
+	/** Compact action linking one route into the live map. */
+	readonly mapAction: string;
+	readonly viewRouteOnMap: (route: string) => string;
 	/** "+N more" truncation note builder (count interpolated). */
 	readonly more: (n: number) => string;
 }
@@ -30,6 +33,9 @@ export interface RouteDetailCopy {
 		readonly schedule: string;
 		readonly reliability: string;
 	};
+	/** Live-map drilldown action. */
+	readonly viewOnMap: string;
+	readonly viewRouteOnMap: (route: string) => string;
 	/** Section headings inside the panes. */
 	readonly directions: string;
 	readonly servicePeriods: string;
@@ -58,6 +64,8 @@ export const indexCopy: Record<Locale, LinesIndexCopy> = {
 		lede: 'Toutes les lignes du réseau — détail du parcours, horaire et fiabilité historique par ligne. Mesuré à partir du contrat /v1.',
 		filterLabel: 'Filtrer les lignes',
 		filterPlaceholder: 'Numéro ou nom de ligne…',
+		mapAction: 'Carte',
+		viewRouteOnMap: (route) => `Voir la ligne ${route} sur la carte`,
 		more: (n) => `+${n} de plus`,
 	},
 	en: {
@@ -66,6 +74,8 @@ export const indexCopy: Record<Locale, LinesIndexCopy> = {
 		lede: 'Every line on the network — per-line route detail, schedule and historic reliability. Measured from the /v1 contract.',
 		filterLabel: 'Filter lines',
 		filterPlaceholder: 'Line number or name…',
+		mapAction: 'Map',
+		viewRouteOnMap: (route) => `View route ${route} on map`,
 		more: (n) => `+${n} more`,
 	},
 };
@@ -74,6 +84,8 @@ export const detailCopy: Record<Locale, RouteDetailCopy> = {
 	fr: {
 		kicker: 'LIGNE',
 		tabs: { detail: 'Détail', schedule: 'Horaire', reliability: 'Fiabilité' },
+		viewOnMap: 'Voir sur la carte',
+		viewRouteOnMap: (route) => `Voir la ligne ${route} sur la carte`,
 		directions: 'Directions',
 		servicePeriods: 'Périodes de service',
 		headways: 'Intervalles',
@@ -92,6 +104,8 @@ export const detailCopy: Record<Locale, RouteDetailCopy> = {
 	en: {
 		kicker: 'LINE',
 		tabs: { detail: 'Detail', schedule: 'Schedule', reliability: 'Reliability' },
+		viewOnMap: 'View on map',
+		viewRouteOnMap: (route) => `View route ${route} on map`,
 		directions: 'Directions',
 		servicePeriods: 'Service periods',
 		headways: 'Headways',

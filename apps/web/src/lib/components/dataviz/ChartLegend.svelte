@@ -53,9 +53,9 @@
 <ul
 	bind:this={ref}
 	class={cn(
-		'dv-legend flex text-micro text-muted-foreground',
+		'dv-legend flex text-caption text-muted-foreground',
 		layout === 'stack' ? 'flex-col gap-y-1' : 'flex-wrap gap-x-3 gap-y-1',
-		size === 'md' ? 'text-caption gap-x-4' : '',
+		size === 'md' ? 'text-small gap-x-4' : '',
 		className,
 	)}
 	data-slot="chart-legend"
@@ -63,17 +63,17 @@
 	{...restProps}
 >
 	{#each items as item, i (item.label + '-' + i)}
-		<li class="inline-flex items-center gap-1.5">
+		<li class="inline-flex min-h-6 items-center gap-1.5">
 			{#if item.glyph}
 				<span
-					class="inline-flex size-2 items-center justify-center leading-none"
+					class="inline-flex size-2.5 items-center justify-center leading-none"
 					style="color: {item.colorVar};"
 					aria-hidden="true">{item.glyph}</span
 				>
 			{:else}
 				<span
 					class={cn(
-						'inline-block size-2',
+						'inline-block size-2.5',
 						item.swatch === 'square' ? 'rounded-sm' : 'rounded-full',
 					)}
 					style="background: {item.colorVar};"
