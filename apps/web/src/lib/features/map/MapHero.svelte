@@ -99,13 +99,26 @@
 	// filter panel, and reveals west map (Lac Saint-Louis) in the freed-up left.
 	// maxBounds stays the looser basemap square so that west overflow renders
 	// without MapLibre clamping. [minLon, minLat, maxLon, maxLat].
-	const ISLAND_FIT_BOUNDS = [-73.9764, 45.4022, -73.4761, 45.7029] as const;
+	// Island bounds (verified OSM Île de Montréal extremes: W -73.9757 / E -73.4764
+	// / S 45.4022 / N 45.7028) — the camera FIT target.
+	const ISLAND_FIT_BOUNDS = [-73.9757, 45.4022, -73.4764, 45.7028] as const;
 	const mapInitialCenter = $derived(centerFromProviderBbox(ISLAND_FIT_BOUNDS));
 	const MAP_FIT_PADDING_PX = 40;
 
+	// HARD pan/view limit. East edge ~Saint-Basile-le-Grand (-73.30): far enough
+	// past the island NE tip (-73.476) to leave room for the right BAND/buffer the
+	// detail panel sits over (left maxBounds gives the same ~0.19° room for the
+	// perfect left band), but tight enough that the far sprawl (Otterburn →
+	// Carignan → Saint-Mathias) is still cropped. Fit padding only *positions* — it
+	// can't render a band where maxBounds has no room, which is why a tighter east
+	// edge made the right band vanish while the left one worked.
+	const MAP_MAX_BOUNDS = [-74.32, 45.3, -73.2, 45.82] as const;
+
 	// Map container width — window-reactive ONLY (not panel state), so the framing
 	// adapts to the screen but NEVER re-fits when a panel opens/collapses/closes.
-	let mapWidthPx = $state(0);
+	// Seeded with a desktop default so the fraction padding applies even before the
+	// first clientWidth measurement (a 0 here would fall back to the wide fit).
+	let mapWidthPx = $state(1280);
 
 	// Desktop frames the island into a roughly SQUARE central gap with generous
 	// left/right BUFFERS sized as a fraction of the width. The buffers (a) crop the
@@ -114,8 +127,8 @@
 	// (c) — being static — never shift the map when a panel toggles. The island
 	// sits centred in the visible gap: human-centred, not math-centred on the full
 	// canvas. Tunable knobs:
-	const DESKTOP_LEFT_PAD_FRAC = 0.34; // clears rail + filter panel
-	const DESKTOP_RIGHT_PAD_FRAC = 0.18; // detail-panel buffer
+	const DESKTOP_LEFT_PAD_FRAC = 0.37; // clears rail + filter panel, with band
+	const DESKTOP_RIGHT_PAD_FRAC = 0.43; // buffer for the right detail panel + band
 	const DESKTOP_VERT_PAD_PX = 56; // small top/bottom → island fills the height (bigger)
 	const mapFitPadding = $derived<MapFitPadding>(
 		layout.isDesktop && mapWidthPx > 0
@@ -733,7 +746,7 @@
 		{theme}
 		center={mapInitialCenter}
 		bounds={ISLAND_FIT_BOUNDS}
-		maxBounds={manifest.bbox}
+		maxBounds={MAP_MAX_BOUNDS}
 		fitPadding={mapFitPadding}
 		onready={onMapReady}
 		onstyleload={onMapStyleLoad}

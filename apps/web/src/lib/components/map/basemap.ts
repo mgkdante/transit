@@ -254,8 +254,9 @@ export const BASEMAP_SOURCE_ID = 'basemap';
 
 const BASEMAP_GLYPHS_URL =
 	'https://protomaps.github.io/basemaps-assets/fonts/{fontstack}/{range}.pbf';
-const THANKFUL_ATTRIBUTION_SUFFIX =
-	' <span class="transit-basemap-thanks" aria-label="thank you">thanks <span style="color:#C96F2D">♥</span></span>';
+const THANKFUL_ATTRIBUTION_PREFIX = 'Big thanks to ';
+const THANKFUL_ATTRIBUTION_HEART =
+	' <span class="transit-basemap-thanks" aria-label="thank you">🧡</span>';
 const ROAD_NAME_FIELD = [
 	'coalesce',
 	['get', 'name'],
@@ -361,9 +362,9 @@ const LANDMARK_POI_FILTER = [
 ] as FilterSpecification;
 
 function thankfulAttribution(attribution: string): string {
-	return attribution.includes(THANKFUL_ATTRIBUTION_SUFFIX.trim())
+	return attribution.startsWith(THANKFUL_ATTRIBUTION_PREFIX)
 		? attribution
-		: `${attribution}${THANKFUL_ATTRIBUTION_SUFFIX}`;
+		: `${THANKFUL_ATTRIBUTION_PREFIX}${attribution}${THANKFUL_ATTRIBUTION_HEART}`;
 }
 const MINOR_ROAD_FILTER = [
 	'match',
