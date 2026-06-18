@@ -99,13 +99,24 @@
 	// filter panel, and reveals west map (Lac Saint-Louis) in the freed-up left.
 	// maxBounds stays the looser basemap square so that west overflow renders
 	// without MapLibre clamping. [minLon, minLat, maxLon, maxLat].
-	const ISLAND_FIT_BOUNDS = [-73.9764, 45.4022, -73.4761, 45.7029] as const;
+	// Island bounds (verified OSM Île de Montréal extremes: W -73.9757 / E -73.4764
+	// / S 45.4022 / N 45.7028) — the camera FIT target.
+	const ISLAND_FIT_BOUNDS = [-73.9757, 45.4022, -73.4764, 45.7028] as const;
 	const mapInitialCenter = $derived(centerFromProviderBbox(ISLAND_FIT_BOUNDS));
 	const MAP_FIT_PADDING_PX = 40;
 
+	// HARD pan/view limit. The east edge stops just past the island's NE tip so the
+	// off-island south-shore (Longueuil → Saint-Basile-le-Grand → Otterburn →
+	// Carignan) can NEVER be shown — fit padding only *positions*, it does not crop,
+	// so cropping the east has to come from maxBounds. West/N/S stay near the
+	// basemap coverage so the island always has a little surrounding context.
+	const MAP_MAX_BOUNDS = [-74.17, 45.35, -73.42, 45.78] as const;
+
 	// Map container width — window-reactive ONLY (not panel state), so the framing
 	// adapts to the screen but NEVER re-fits when a panel opens/collapses/closes.
-	let mapWidthPx = $state(0);
+	// Seeded with a desktop default so the fraction padding applies even before the
+	// first clientWidth measurement (a 0 here would fall back to the wide fit).
+	let mapWidthPx = $state(1280);
 
 	// Desktop frames the island into a roughly SQUARE central gap with generous
 	// left/right BUFFERS sized as a fraction of the width. The buffers (a) crop the
@@ -733,7 +744,7 @@
 		{theme}
 		center={mapInitialCenter}
 		bounds={ISLAND_FIT_BOUNDS}
-		maxBounds={manifest.bbox}
+		maxBounds={MAP_MAX_BOUNDS}
 		fitPadding={mapFitPadding}
 		onready={onMapReady}
 		onstyleload={onMapStyleLoad}

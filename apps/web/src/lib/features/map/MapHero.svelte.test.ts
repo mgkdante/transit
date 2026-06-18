@@ -292,7 +292,9 @@ describe('MapHero mobile chrome', () => {
 		expect(mapStageBlock).toContain('basemap={basemap.data}');
 		expect(mapStageBlock).toContain('{theme}');
 		expect(mapStageBlock).toContain('bounds={ISLAND_FIT_BOUNDS}');
-		expect(mapStageBlock).toContain('maxBounds={manifest.bbox}');
+		// maxBounds crops the off-island east (south-shore) — fit padding can't crop.
+		expect(mapStageBlock).toContain('maxBounds={MAP_MAX_BOUNDS}');
+		expect(s).toContain('const MAP_MAX_BOUNDS');
 		expect(mapStageBlock).toContain('fitPadding={mapFitPadding}');
 	});
 
