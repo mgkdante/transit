@@ -222,7 +222,12 @@
 	}
 
 	async function selectUnresolvedAddressResult(result: ChromeSearchResult): Promise<void> {
-		const resolved = await fetchGeocodedLocation(result.label);
+		// A Google suggestion is coordinate-less but carries a placeId — resolve the
+		// EXACT place via Place Details (reusing the autocomplete session token)
+		// instead of re-text-searching its label, which landed on the wrong place.
+		const resolved = result.placeId
+			? await fetchPlaceDetails(result.placeId)
+			: await fetchGeocodedLocation(result.label);
 		if (!resolved) return;
 
 		topSearch = '';
@@ -248,6 +253,14 @@
 
 	async function fetchGeocodedLocation(query: string): Promise<GeocodedLocation | null> {
 		const response = await fetch(`/api/geocode/montreal?q=${encodeURIComponent(query)}`);
+		if (!response.ok) return null;
+		return (await response.json()) as GeocodedLocation;
+	}
+
+	async function fetchPlaceDetails(placeId: string): Promise<GeocodedLocation | null> {
+		const response = await fetch(
+			`/api/geocode/montreal?placeId=${encodeURIComponent(placeId)}&session=${encodeURIComponent(addressSessionToken)}`,
+		);
 		if (!response.ok) return null;
 		return (await response.json()) as GeocodedLocation;
 	}

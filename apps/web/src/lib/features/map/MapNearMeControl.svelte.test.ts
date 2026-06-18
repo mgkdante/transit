@@ -46,7 +46,10 @@ describe('MapNearMeControl', () => {
 		expect(s).toContain('role="listbox"');
 		expect(s).toContain('role="option"');
 		expect(s).toContain('class="map-near-suggestion"');
-		expect(s).toContain('onsuggestion(result)');
+		// Hands the active autocomplete session token to the parent (for the
+		// Place-Details resolution) BEFORE minting a fresh one.
+		expect(s).toContain('const usedToken = suggestionSessionToken');
+		expect(s).toContain('onsuggestion(result, usedToken)');
 	});
 
 	it('closes address suggestions like a standard autocomplete popover', () => {

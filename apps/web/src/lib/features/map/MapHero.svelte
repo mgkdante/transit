@@ -84,7 +84,7 @@
 	import { PICKABLE_MAP_LAYERS, pickMapSelection } from './mapPicking';
 	import { resolveMapSelection, type MapSelection } from './mapSelection';
 	import type { GeocodedLocation, GeocodePrecision, GeocodeSuggestion } from '$lib/geocode/types';
-	import { hasCoordinates } from '$lib/geocode/types';
+	import { hasCoordinates, isInsideMontrealBounds } from '$lib/geocode/types';
 	import type { StopIndexEntry } from '$lib/v1/schemas';
 
 	const locale: Locale = getLocale();
@@ -537,8 +537,14 @@
 
 	function useNearMeLocation(): void {
 		nearMeOpen = true;
+		// Geolocation silently fails on http; surface the actual reason instead of a
+		// generic "place not found".
+		if (typeof window !== 'undefined' && !window.isSecureContext) {
+			nearMeError = t.nearMeGeoInsecure;
+			return;
+		}
 		if (!navigator.geolocation) {
-			nearMeError = t.nearMeError;
+			nearMeError = t.nearMeGeoUnavailable;
 			return;
 		}
 		nearMeLoading = true;
@@ -553,9 +559,14 @@
 					precision: 'address',
 				});
 			},
-			() => {
+			(geoError) => {
 				nearMeLoading = false;
-				nearMeError = t.nearMeError;
+				nearMeError =
+					geoError.code === geoError.PERMISSION_DENIED
+						? t.nearMeGeoDenied
+						: geoError.code === geoError.TIMEOUT
+							? t.nearMeGeoTimeout
+							: t.nearMeGeoUnavailable;
 			},
 			{ enableHighAccuracy: true, timeout: 8_000, maximumAge: 60_000 },
 		);
@@ -594,13 +605,44 @@
 		}
 	}
 
-	async function selectNearMeSuggestion(result: GeocodeSuggestion): Promise<void> {
+	async function selectNearMeSuggestion(
+		result: GeocodeSuggestion,
+		sessionToken: string,
+	): Promise<void> {
 		nearMeQuery = result.label;
 		if (hasCoordinates(result)) {
 			setNearMeOrigin(result);
 			return;
 		}
+		// A Google suggestion carries a placeId but no coordinates — resolve it by
+		// id via Place Details (reusing the autocomplete session) so we pin the EXACT
+		// place picked, not whatever a fresh text search of the label resolves.
+		if (result.placeId && result.source === 'google_places') {
+			await resolveNearMePlace(result.placeId, sessionToken);
+			return;
+		}
 		await resolveNearMeQuery(result.label);
+	}
+
+	async function resolveNearMePlace(placeId: string, sessionToken: string): Promise<void> {
+		nearMeLoading = true;
+		nearMeError = null;
+		try {
+			const response = await fetch(
+				`/api/geocode/montreal?placeId=${encodeURIComponent(placeId)}&session=${encodeURIComponent(sessionToken)}`,
+			);
+			if (!response.ok) {
+				nearMeError = t.nearMeError;
+				return;
+			}
+			const result = (await response.json()) as GeocodedLocation;
+			nearMeQuery = result.label;
+			setNearMeOrigin(result);
+		} catch {
+			nearMeError = t.nearMeError;
+		} finally {
+			nearMeLoading = false;
+		}
 	}
 
 	function selectNearbyStop(stop: WithDistance<StopIndexEntry>): void {
@@ -617,7 +659,7 @@
 		const lat = Number(match[1]);
 		const lon = Number(match[2]);
 		if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
-		if (lat < 45.35 || lat > 45.75 || lon < -74.05 || lon > -73.35) return null;
+		if (!isInsideMontrealBounds(lat, lon)) return null;
 		return { lat, lon };
 	}
 

@@ -73,10 +73,28 @@ describe('MapHero mobile chrome', () => {
 		expect(s).toContain('onsuggestion={selectNearMeSuggestion}');
 		expect(s).toContain('onstopselect={selectNearbyStop}');
 		expect(s).toContain(
-			'function selectNearMeSuggestion(result: GeocodeSuggestion): Promise<void>',
+			'function selectNearMeSuggestion(\n\t\tresult: GeocodeSuggestion,\n\t\tsessionToken: string,\n\t): Promise<void>',
 		);
 		expect(s).toContain('hasCoordinates(result)');
+		// Free-text picks (geo.ca/nominatim) still resolve by label…
 		expect(s).toContain('await resolveNearMeQuery(result.label)');
+		// …but a Google placeId pick resolves the EXACT place by id (Place Details),
+		// reusing the autocomplete session token — the wrong-place fix.
+		expect(s).toContain("result.placeId && result.source === 'google_places'");
+		expect(s).toContain('await resolveNearMePlace(result.placeId, sessionToken)');
+		expect(s).toContain('?placeId=${encodeURIComponent(placeId)}&session=');
+	});
+
+	it('maps geolocation failure codes to distinct, secure-context-aware copy', () => {
+		const s = source();
+
+		expect(s).toContain('window.isSecureContext');
+		expect(s).toContain('t.nearMeGeoInsecure');
+		expect(s).toContain('geoError.code === geoError.PERMISSION_DENIED');
+		expect(s).toContain('t.nearMeGeoDenied');
+		expect(s).toContain('geoError.code === geoError.TIMEOUT');
+		expect(s).toContain('t.nearMeGeoTimeout');
+		expect(s).toContain('t.nearMeGeoUnavailable');
 	});
 
 	it('draws a distinct near-me location pin on the map when an address or browser location is selected', () => {

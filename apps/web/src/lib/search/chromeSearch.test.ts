@@ -118,9 +118,47 @@ describe('chromeSearchResults', () => {
 			label: '5333 Avenue Casgrain, Montréal, QC, Canada',
 			meta: 'Address',
 			attribution: 'google',
+			// placeId + source ride through so selection can resolve by Place Details
+			// instead of re-text-searching the label (the wrong-place fix).
+			placeId: 'google-address',
+			source: 'google_places',
 		});
 		expect(results[0]?.lat).toBeUndefined();
 		expect(results[0]?.lon).toBeUndefined();
+	});
+
+	it('finds métro stations and accented names the way riders type them', () => {
+		const metro: StopIndexEntry[] = [
+			{ id: '10146', code: '10146', name: 'Station Berri-UQAM', lat: 45.51, lon: -73.56 },
+			{ id: '11000', code: '11000', name: 'Station Crémazie', lat: 45.55, lon: -73.62 },
+		];
+
+		// space where the data has a hyphen
+		expect(chromeSearchResults('berri uqam', { stops: metro })[0]).toMatchObject({
+			kind: 'stop',
+			id: '10146',
+		});
+		// reversed token order
+		expect(chromeSearchResults('uqam berri', { stops: metro })[0]).toMatchObject({
+			kind: 'stop',
+			id: '10146',
+		});
+		// no accent on an EN keyboard
+		expect(chromeSearchResults('cremazie', { stops: metro })[0]).toMatchObject({
+			kind: 'stop',
+			id: '11000',
+		});
+	});
+
+	it('matches an intersection stop with the cross streets in either order', () => {
+		const intersection: StopIndexEntry[] = [
+			{ id: '52819', code: '52618', name: 'Montgomery / Sherbrooke', lat: 45.52, lon: -73.55 },
+		];
+
+		expect(chromeSearchResults('sherbrooke montgomery', { stops: intersection })[0]).toMatchObject({
+			kind: 'stop',
+			id: '52819',
+		});
 	});
 });
 

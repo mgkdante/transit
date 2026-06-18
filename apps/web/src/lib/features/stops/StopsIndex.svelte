@@ -26,6 +26,8 @@
 	} from '$lib/components/surface';
 	import { Surface } from '$lib/components/layout';
 	import { Separator } from '$lib/components/ui/separator';
+	import { foldSearchText, tokenMatchScore } from '$lib/search/normalize';
+	import { stopModeHint } from '$lib/search/stopMode';
 	import { indexCopy } from './stops.copy';
 
 	const locale: Locale = getLocale();
@@ -37,19 +39,20 @@
 	const CAP = 100;
 
 	let query = $state('');
-	const trimmed = $derived(query.trim().toLowerCase());
+	const folded = $derived(foldSearchText(query));
 
-	// Filtered set: name OR code substring match. Empty query ⇒ no rows (we show a
-	// prompt instead of the full catalogue). Match count drives the "+N more" note.
+	// Accent-blind, word-order-free token-AND match over name/code/id, ranked by
+	// tier. Empty query ⇒ no rows (we show a prompt instead of the full
+	// catalogue). 'cremazie' finds 'Station Crémazie'; 'berri fleury' finds both
+	// 'Berri / Fleury' and 'Fleury / Berri'. Match count drives the "+N more" note.
 	const matches = $derived.by<readonly StopIndexEntry[]>(() => {
 		const stops = index.data?.stops ?? [];
-		if (!trimmed) return [];
-		return stops.filter(
-			(s) =>
-				s.name.toLowerCase().includes(trimmed) ||
-				(s.code ?? '').toLowerCase().includes(trimmed) ||
-				s.id.toLowerCase().includes(trimmed),
-		);
+		if (!folded) return [];
+		return stops
+			.map((s) => ({ s, score: tokenMatchScore([s.name, s.code, s.id], folded) }))
+			.filter((m): m is { s: StopIndexEntry; score: number } => m.score != null)
+			.sort((a, b) => a.score - b.score)
+			.map((m) => m.s);
 	});
 
 	const overflow = $derived(Math.max(0, matches.length - CAP));
@@ -63,7 +66,7 @@
 	<Separator variant="hazard" />
 
 	<ResourceBoundary resource={index} lang={locale}>
-		{#if !trimmed}
+		{#if !folded}
 			<p class="stops-note">{t.searchPrompt}</p>
 		{:else if matches.length === 0}
 			<p class="stops-note">{t.noMatches}</p>
@@ -75,13 +78,15 @@
 				truncatedLabel={overflow > 0 ? t.more(overflow) : undefined}
 			>
 				{#snippet row(stop)}
+					{@const hint = stopModeHint(stop.name)}
 					<div class="stop-result">
 						<EntityRow
 							target={{ kind: 'stop', id: stop.id }}
 							{locale}
-							glyph="■"
+							glyph={hint.glyph}
 							title={stop.name}
 							subtitle={stop.code ?? stop.id}
+							meta={hint.label ?? undefined}
 							class="stop-result-main"
 						/>
 						<MapDrilldownLink

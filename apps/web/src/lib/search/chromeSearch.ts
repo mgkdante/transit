@@ -1,6 +1,7 @@
 import type { RouteIndexEntry, StopIndexEntry, Vehicle } from '$lib/v1/schemas';
 import { fromSearchParams, toSearchString } from '$lib/filters';
-import type { GeocodePrecision, GeocodeSuggestion } from '$lib/geocode/types';
+import type { GeocodePrecision, GeocodeSource, GeocodeSuggestion } from '$lib/geocode/types';
+import { foldSearchText, tokenMatchScore } from '$lib/search/normalize';
 import {
 	copyNearTargetSearchParams,
 	mapNearId,
@@ -19,6 +20,11 @@ export interface ChromeSearchResult {
 	readonly lon?: number;
 	readonly precision?: GeocodePrecision;
 	readonly attribution?: 'google';
+	// Carried through from the picked GeocodeSuggestion so a coordinate-less
+	// (Google) address can be resolved by placeId on selection instead of being
+	// re-text-searched by its label.
+	readonly placeId?: string;
+	readonly source?: GeocodeSource;
 }
 
 interface ChromeSearchSources {
@@ -26,27 +32,6 @@ interface ChromeSearchSources {
 	readonly stops?: readonly StopIndexEntry[] | null;
 	readonly vehicles?: readonly Vehicle[] | null;
 	readonly addresses?: readonly GeocodeSuggestion[] | null;
-}
-
-function normalize(value: string | null | undefined): string {
-	return (value ?? '').trim().toLowerCase();
-}
-
-function includes(value: string | null | undefined, query: string): boolean {
-	return normalize(value).includes(query);
-}
-
-function matchScore(values: readonly (string | null | undefined)[], query: string): number | null {
-	for (const value of values) {
-		if (normalize(value) === query) return 0;
-	}
-	for (const value of values) {
-		if (normalize(value).startsWith(query)) return 1;
-	}
-	for (const value of values) {
-		if (includes(value, query)) return 2;
-	}
-	return null;
 }
 
 function routeLabel(route: RouteIndexEntry): string {
@@ -64,12 +49,12 @@ export function chromeSearchResults(
 	query: string,
 	sources: ChromeSearchSources,
 ): ChromeSearchResult[] {
-	const q = normalize(query);
+	const q = foldSearchText(query);
 	if (!q) return [];
 
 	const routes = (sources.routes ?? [])
 		.map((route): ChromeSearchResult | null => {
-			const score = matchScore([route.id, route.short, route.long], q);
+			const score = tokenMatchScore([route.id, route.short, route.long], q);
 			if (score == null) return null;
 			return {
 				kind: 'route',
@@ -84,7 +69,7 @@ export function chromeSearchResults(
 
 	const stops = (sources.stops ?? [])
 		.map((stop): ChromeSearchResult | null => {
-			const score = matchScore([stop.code, stop.id, stop.name], q);
+			const score = tokenMatchScore([stop.code, stop.id, stop.name], q);
 			if (score == null) return null;
 			return {
 				kind: 'stop',
@@ -99,7 +84,7 @@ export function chromeSearchResults(
 		.slice(0, 5);
 
 	const vehicles = (sources.vehicles ?? [])
-		.filter((vehicle) => normalize(vehicle.id) === q)
+		.filter((vehicle) => foldSearchText(vehicle.id) === q)
 		.map(
 			(vehicle): ChromeSearchResult => ({
 				kind: 'vehicle',
@@ -124,6 +109,8 @@ export function chromeSearchResults(
 				lon: address.lon,
 				precision: address.precision,
 				attribution: address.attribution,
+				placeId: address.placeId,
+				source: address.source,
 			}),
 		)
 		.sort(collate)

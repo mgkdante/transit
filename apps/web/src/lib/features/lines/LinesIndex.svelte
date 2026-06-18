@@ -27,6 +27,7 @@
 	} from '$lib/components/surface';
 	import { Surface } from '$lib/components/layout';
 	import { Separator } from '$lib/components/ui/separator';
+	import { foldSearchText, tokenMatchScore } from '$lib/search/normalize';
 	import { indexCopy } from './lines.copy';
 
 	const locale = getLocale();
@@ -55,11 +56,11 @@
 	const visible = $derived.by<RouteIndexEntry[]>(() => {
 		const all = routes.data?.routes ?? [];
 		const sorted = [...all].sort((a, b) => collator.compare(a.short, b.short));
-		const q = query.trim().toLowerCase();
+		const q = foldSearchText(query);
 		if (!q) return sorted;
-		return sorted.filter(
-			(r) => r.short.toLowerCase().includes(q) || (r.long ?? '').toLowerCase().includes(q),
-		);
+		// Accent-blind, word-order-free match over id/short/long; keep the numeric
+		// short-name order within the filtered set. 'ile des soeurs' → 'Île-des-Soeurs'.
+		return sorted.filter((r) => tokenMatchScore([r.id, r.short, r.long], q) != null);
 	});
 </script>
 

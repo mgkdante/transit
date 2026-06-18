@@ -1,7 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
+	googlePlaceDetails,
+	googlePlaceDetailsUrl,
 	googlePlacesAutocompleteSuggestions,
 	googlePlacesAutocompleteUrl,
+	type GooglePlaceDetailsFetcher,
 	type GooglePlacesAutocompleteFetcher,
 } from './googlePlaces';
 
@@ -96,6 +99,72 @@ describe('googlePlacesAutocompleteSuggestions', () => {
 		const fetcher = vi.fn<GooglePlacesAutocompleteFetcher>();
 
 		await expect(googlePlacesAutocompleteSuggestions('casgrain', '', fetcher)).resolves.toEqual([]);
+		expect(fetcher).not.toHaveBeenCalled();
+	});
+});
+
+describe('googlePlaceDetailsUrl', () => {
+	it('targets Places Details New by id', () => {
+		expect(googlePlaceDetailsUrl('ChIJabc').toString()).toBe(
+			'https://places.googleapis.com/v1/places/ChIJabc',
+		);
+	});
+});
+
+describe('googlePlaceDetails', () => {
+	it('resolves a placeId to an in-bounds GeocodedLocation, closing the session', async () => {
+		const fetcher = vi.fn<GooglePlaceDetailsFetcher>(async () =>
+			jsonResponse({
+				id: 'ChIJabc',
+				location: { latitude: 45.5256864, longitude: -73.5947644 },
+				formattedAddress: '5333 Avenue Casgrain, Montréal, QC, Canada',
+				types: ['street_address'],
+			}),
+		);
+
+		await expect(
+			googlePlaceDetails('ChIJabc', 'secret-key', fetcher, {
+				sessionToken: 'session-1',
+				languageCode: 'en',
+			}),
+		).resolves.toEqual({
+			lat: 45.5256864,
+			lon: -73.5947644,
+			label: '5333 Avenue Casgrain, Montréal, QC, Canada',
+			source: 'google_places',
+			precision: 'address',
+			placeId: 'ChIJabc',
+			attribution: 'google',
+		});
+
+		const [url, init] = fetcher.mock.calls[0] ?? [];
+		expect(url?.pathname).toBe('/v1/places/ChIJabc');
+		expect(url?.searchParams.get('sessionToken')).toBe('session-1');
+		expect(init?.method).toBe('GET');
+		expect(init?.headers).toMatchObject({
+			'X-Goog-Api-Key': 'secret-key',
+			'X-Goog-FieldMask': 'id,location,formattedAddress,types,displayName',
+		});
+	});
+
+	it('rejects a coordinate outside the Montréal bias rectangle', async () => {
+		const fetcher = vi.fn<GooglePlaceDetailsFetcher>(async () =>
+			jsonResponse({ location: { latitude: 43.65, longitude: -79.38 } }),
+		);
+		await expect(googlePlaceDetails('ChIJtoronto', 'secret-key', fetcher)).resolves.toBeNull();
+	});
+
+	it('returns null on a non-OK response', async () => {
+		const fetcher = vi.fn<GooglePlaceDetailsFetcher>(
+			async () => new Response('nope', { status: 429 }),
+		);
+		await expect(googlePlaceDetails('ChIJabc', 'secret-key', fetcher)).resolves.toBeNull();
+	});
+
+	it('does not call Google without a key or placeId', async () => {
+		const fetcher = vi.fn<GooglePlaceDetailsFetcher>();
+		await expect(googlePlaceDetails('ChIJabc', '', fetcher)).resolves.toBeNull();
+		await expect(googlePlaceDetails('', 'secret-key', fetcher)).resolves.toBeNull();
 		expect(fetcher).not.toHaveBeenCalled();
 	});
 });
