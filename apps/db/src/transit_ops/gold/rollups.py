@@ -61,6 +61,26 @@ SELECT_MISSING_TRIP_DELAY_PERIODS = text(
     """
 )
 
+SELECT_MISSING_OCCUPANCY_PERIODS = text(
+    """
+    SELECT DISTINCT
+        DATE_BIN('5 minutes', captured_at_utc, TIMESTAMPTZ '2000-01-01') AS period_start_utc
+    FROM gold.fact_vehicle_snapshot
+    WHERE provider_id = :provider_id
+      AND (
+          CAST(:since_utc AS timestamptz) IS NULL
+          OR captured_at_utc >= CAST(:since_utc AS timestamptz)
+      )
+      AND DATE_BIN('5 minutes', captured_at_utc, TIMESTAMPTZ '2000-01-01') NOT IN (
+          SELECT period_start_utc
+          FROM gold.warm_rollup_periods
+          WHERE provider_id = :provider_id
+            AND rollup_kind = 'occupancy_summary_5m'
+      )
+    ORDER BY 1
+    """
+)
+
 # ---------------------------------------------------------------------------
 # SQL — upserts
 # ---------------------------------------------------------------------------
@@ -93,6 +113,51 @@ UPSERT_VEHICLE_SUMMARY_5M = text(
         observation_count = EXCLUDED.observation_count,
         snapshot_count   = EXCLUDED.snapshot_count,
         built_at_utc     = EXCLUDED.built_at_utc
+    """
+)
+
+# 5-minute occupancy band-COUNT mirror of vehicle_summary_5m. observation_count
+# is the band-bearing denominator (codes 0-5 only); NULL and codes 6/7/8 are
+# excluded so the five band counts sum to observation_count, matching the live
+# build_network honest-band semantics. Code 4 folds into standing per
+# _OCCUPANCY_MAP. Append-only (idempotent ON CONFLICT), watermarked separately.
+UPSERT_OCCUPANCY_SUMMARY_5M = text(
+    """
+    INSERT INTO gold.occupancy_summary_5m (
+        provider_id,
+        period_start_utc,
+        route_id,
+        observation_count,
+        empty_count,
+        many_seats_count,
+        few_seats_count,
+        standing_count,
+        full_count,
+        built_at_utc
+    )
+    SELECT
+        provider_id,
+        DATE_BIN('5 minutes', captured_at_utc, TIMESTAMPTZ '2000-01-01'),
+        COALESCE(route_id, '__unrouted__'),
+        COUNT(*) FILTER (WHERE occupancy_status IN (0, 1, 2, 3, 4, 5))::integer,
+        COUNT(*) FILTER (WHERE occupancy_status = 0)::integer,
+        COUNT(*) FILTER (WHERE occupancy_status = 1)::integer,
+        COUNT(*) FILTER (WHERE occupancy_status = 2)::integer,
+        COUNT(*) FILTER (WHERE occupancy_status IN (3, 4))::integer,
+        COUNT(*) FILTER (WHERE occupancy_status = 5)::integer,
+        :built_at_utc
+    FROM gold.fact_vehicle_snapshot
+    WHERE provider_id = :provider_id
+      AND DATE_BIN('5 minutes', captured_at_utc, TIMESTAMPTZ '2000-01-01') = :period_start_utc
+    GROUP BY 1, 2, 3
+    ON CONFLICT (provider_id, period_start_utc, route_id) DO UPDATE SET
+        observation_count = EXCLUDED.observation_count,
+        empty_count       = EXCLUDED.empty_count,
+        many_seats_count  = EXCLUDED.many_seats_count,
+        few_seats_count   = EXCLUDED.few_seats_count,
+        standing_count    = EXCLUDED.standing_count,
+        full_count        = EXCLUDED.full_count,
+        built_at_utc      = EXCLUDED.built_at_utc
     """
 )
 
@@ -200,6 +265,35 @@ SELECT_MISSING_PERCENTILE_DAYS = text(
     """
 )
 
+# Sibling of SELECT_MISSING_PERCENTILE_DAYS that scans gold.fact_vehicle_snapshot
+# instead of fact_trip_delay_snapshot. Occupancy lives ONLY on the vehicle fact,
+# and the two fact tables prune independently — enumerating the missing-day
+# calendar against the vehicle fact keeps the watermark + cold-start lookback
+# bound aligned with the actual occupancy data source, so a day with trip-delay
+# facts but no vehicle facts is never watermarked-built with an empty reduction.
+SELECT_MISSING_OCCUPANCY_DAYS = text(
+    """
+    SELECT d.local_date
+    FROM (
+        SELECT DISTINCT
+            timezone(dp.timezone, f.captured_at_utc)::date AS local_date,
+            (now() AT TIME ZONE dp.timezone)::date AS today_local
+        FROM gold.fact_vehicle_snapshot AS f
+        INNER JOIN gold.dim_provider AS dp ON dp.provider_id = f.provider_id
+        WHERE f.provider_id = :provider_id
+    ) AS d
+    WHERE d.local_date < d.today_local
+      AND d.local_date >= d.today_local - :lookback_days
+      AND timezone('UTC', d.local_date::timestamp) NOT IN (
+          SELECT period_start_utc
+          FROM gold.warm_rollup_periods
+          WHERE provider_id = :provider_id
+            AND rollup_kind = :rollup_kind
+      )
+    ORDER BY d.local_date
+    """
+)
+
 UPSERT_ROUTE_DELAY_PERCENTILE_DAILY = text(
     f"""
     INSERT INTO gold.route_delay_percentile_daily (
@@ -256,6 +350,95 @@ UPSERT_STOP_DELAY_PERCENTILE_DAILY = text(
         delay_observation_count = EXCLUDED.delay_observation_count,
         p50_delay_seconds = EXCLUDED.p50_delay_seconds,
         p90_delay_seconds = EXCLUDED.p90_delay_seconds,
+        built_at_utc = EXCLUDED.built_at_utc
+    """
+)
+
+# Per-route daily cancellation rate over one CLOSED provider-local day. A trip-day
+# is a DISTINCT (trip_id, start_date); the inner GROUP BY + MAX collapses per-poll
+# over-count, so a trip seen in many polls counts once and counts canceled if it
+# was EVER observed with trip_schedule_relationship=3. GTFS-RT omits the field for
+# scheduled trips (silver stores NULL); COALESCE(...,0) treats NULL as a normal
+# (non-canceled) trip-day so the denominator is NOT filtered down to only
+# explicitly-tagged trips — otherwise the rate would be systematically inflated.
+# Binds exactly {provider_id, local_date, built_at_utc} so it drops into
+# _build_percentile_days unchanged.
+UPSERT_ROUTE_CANCELLATION_DAILY = text(
+    """
+    WITH trip_day AS (
+        SELECT
+            f.provider_id,
+            f.route_id,
+            f.trip_id,
+            f.start_date AS service_date,
+            MAX((COALESCE(f.trip_schedule_relationship, 0) = 3)::int) AS was_canceled
+        FROM gold.fact_trip_delay_snapshot AS f
+        INNER JOIN gold.dim_provider AS dp ON dp.provider_id = f.provider_id
+        WHERE f.provider_id = :provider_id
+          AND f.route_id IS NOT NULL
+          AND f.trip_id IS NOT NULL
+          AND f.start_date IS NOT NULL
+          AND timezone(dp.timezone, f.captured_at_utc)::date = :local_date
+        GROUP BY f.provider_id, f.route_id, f.trip_id, f.start_date
+    )
+    INSERT INTO gold.route_cancellation_daily (
+        provider_id, provider_local_date, route_id,
+        total_trip_days, canceled_trip_days, cancellation_rate_pct, built_at_utc
+    )
+    SELECT
+        provider_id,
+        :local_date,
+        route_id,
+        COUNT(*)::integer,
+        COUNT(*) FILTER (WHERE was_canceled = 1)::integer,
+        ROUND(100.0 * COUNT(*) FILTER (WHERE was_canceled = 1) / NULLIF(COUNT(*), 0), 2),
+        :built_at_utc
+    FROM trip_day
+    GROUP BY provider_id, route_id
+    ON CONFLICT (provider_id, provider_local_date, route_id) DO UPDATE SET
+        total_trip_days = EXCLUDED.total_trip_days,
+        canceled_trip_days = EXCLUDED.canceled_trip_days,
+        cancellation_rate_pct = EXCLUDED.cancellation_rate_pct,
+        built_at_utc = EXCLUDED.built_at_utc
+    """
+)
+
+# Append-only daily reduction of occupancy band counts for one CLOSED local day,
+# summed straight from fact_vehicle_snapshot (single read, same shape as the
+# percentile daily upserts). Counts are additively composable, so shift/hour/
+# weekly band-SHARES are derived at read time without re-reading pruned facts.
+# observation_count = band-bearing pings (codes 0-5); the five band counts sum to
+# it. Binds {provider_id, local_date, built_at_utc} for _build_percentile_days.
+UPSERT_ROUTE_OCCUPANCY_BAND_DAILY = text(
+    """
+    INSERT INTO gold.route_occupancy_band_daily (
+        provider_id, provider_local_date, route_id,
+        observation_count, empty_count, many_seats_count,
+        few_seats_count, standing_count, full_count, built_at_utc
+    )
+    SELECT
+        f.provider_id,
+        :local_date,
+        COALESCE(f.route_id, '__unrouted__'),
+        COUNT(*) FILTER (WHERE f.occupancy_status IN (0, 1, 2, 3, 4, 5))::integer,
+        COUNT(*) FILTER (WHERE f.occupancy_status = 0)::integer,
+        COUNT(*) FILTER (WHERE f.occupancy_status = 1)::integer,
+        COUNT(*) FILTER (WHERE f.occupancy_status = 2)::integer,
+        COUNT(*) FILTER (WHERE f.occupancy_status IN (3, 4))::integer,
+        COUNT(*) FILTER (WHERE f.occupancy_status = 5)::integer,
+        :built_at_utc
+    FROM gold.fact_vehicle_snapshot AS f
+    INNER JOIN gold.dim_provider AS dp ON dp.provider_id = f.provider_id
+    WHERE f.provider_id = :provider_id
+      AND timezone(dp.timezone, f.captured_at_utc)::date = :local_date
+    GROUP BY f.provider_id, COALESCE(f.route_id, '__unrouted__')
+    ON CONFLICT (provider_id, provider_local_date, route_id) DO UPDATE SET
+        observation_count = EXCLUDED.observation_count,
+        empty_count = EXCLUDED.empty_count,
+        many_seats_count = EXCLUDED.many_seats_count,
+        few_seats_count = EXCLUDED.few_seats_count,
+        standing_count = EXCLUDED.standing_count,
+        full_count = EXCLUDED.full_count,
         built_at_utc = EXCLUDED.built_at_utc
     """
 )
@@ -1322,6 +1505,9 @@ class WarmRollupBuildResult:
     reporting_aggregate_row_counts: dict[str, int] = field(default_factory=dict)
     built_route_percentile_days: int = 0
     built_stop_percentile_days: int = 0
+    built_occupancy_periods: int = 0
+    built_route_cancellation_days: int = 0
+    built_route_occupancy_days: int = 0
 
     def display_dict(self) -> dict[str, object]:
         return {
@@ -1329,8 +1515,11 @@ class WarmRollupBuildResult:
             "since_utc": self.since_utc.isoformat() if self.since_utc else None,
             "built_vehicle_periods": self.built_vehicle_periods,
             "built_trip_delay_periods": self.built_trip_delay_periods,
+            "built_occupancy_periods": self.built_occupancy_periods,
             "built_route_percentile_days": self.built_route_percentile_days,
             "built_stop_percentile_days": self.built_stop_percentile_days,
+            "built_route_cancellation_days": self.built_route_cancellation_days,
+            "built_route_occupancy_days": self.built_route_occupancy_days,
             "reporting_aggregate_row_counts": self.reporting_aggregate_row_counts,
             "completed_at_utc": self.completed_at_utc.isoformat(),
         }
@@ -1354,14 +1543,18 @@ def _build_percentile_days(
     upsert,  # noqa: ANN001
     lookback_days: int,
     now: datetime,
+    select_missing=SELECT_MISSING_PERCENTILE_DAYS,  # noqa: ANN001
 ) -> int:
-    """Build + watermark each missing closed local day for one percentile kind.
+    """Build + watermark each missing closed local day for one append-only kind.
 
     Append-only: a day already in warm_rollup_periods (matched on midnight-UTC of
-    the local date) is skipped, so accrued percentile history is never recomputed.
+    the local date) is skipped, so accrued history is never recomputed.
+    select_missing defaults to the trip-delay-fact calendar; pass
+    SELECT_MISSING_OCCUPANCY_DAYS for rollups sourced from fact_vehicle_snapshot
+    so the missing-day calendar matches the data table.
     """
     rows = conn.execute(
-        SELECT_MISSING_PERCENTILE_DAYS,
+        select_missing,
         {"provider_id": provider_id, "rollup_kind": rollup_kind, "lookback_days": lookback_days},
     ).fetchall()
     built = 0
@@ -1414,6 +1607,7 @@ def build_warm_rollups(
 
     built_vehicle = 0
     built_trip_delay = 0
+    built_occupancy = 0
     reporting_aggregate_row_counts: dict[str, int] = {}
     now = utc_now()
 
@@ -1470,9 +1664,36 @@ def build_warm_rollups(
             )
             built_trip_delay += 1
 
-        # Append-only daily percentile rollups (route + stop). Built BEFORE the
-        # DELETE+UPSERT reporting tables and deliberately NOT registered in
-        # REPORTING_AGGREGATE_TABLES, so accrued percentile history is never wiped.
+        # Occupancy summary 5m (band-count mirror of vehicle_summary_5m).
+        rows = conn.execute(
+            SELECT_MISSING_OCCUPANCY_PERIODS,
+            {"provider_id": provider_id, "since_utc": since_utc},
+        ).fetchall()
+        for row in rows:
+            period = row.period_start_utc
+            conn.execute(
+                UPSERT_OCCUPANCY_SUMMARY_5M,
+                {
+                    "provider_id": provider_id,
+                    "period_start_utc": period,
+                    "built_at_utc": now,
+                },
+            )
+            conn.execute(
+                UPSERT_WARM_ROLLUP_PERIOD,
+                {
+                    "provider_id": provider_id,
+                    "rollup_kind": "occupancy_summary_5m",
+                    "period_start_utc": period,
+                    "built_at_utc": now,
+                },
+            )
+            built_occupancy += 1
+
+        # Append-only daily rollups (route/stop percentiles + cancellation +
+        # occupancy band). Built BEFORE the DELETE+UPSERT reporting tables and
+        # deliberately NOT registered in REPORTING_AGGREGATE_TABLES, so accrued
+        # history is never wiped.
         percentile_lookback_days = fact_retention_days - 1
         built_route_percentile = _build_percentile_days(
             conn,
@@ -1489,6 +1710,26 @@ def build_warm_rollups(
             upsert=UPSERT_STOP_DELAY_PERCENTILE_DAILY,
             lookback_days=percentile_lookback_days,
             now=now,
+        )
+        # Cancellation reads fact_trip_delay_snapshot, so it reuses the default
+        # trip-delay missing-day calendar. Occupancy reads fact_vehicle_snapshot,
+        # so it MUST use SELECT_MISSING_OCCUPANCY_DAYS over its own source table.
+        built_route_cancellation = _build_percentile_days(
+            conn,
+            provider_id=provider_id,
+            rollup_kind="route_cancellation_daily",
+            upsert=UPSERT_ROUTE_CANCELLATION_DAILY,
+            lookback_days=percentile_lookback_days,
+            now=now,
+        )
+        built_route_occupancy = _build_percentile_days(
+            conn,
+            provider_id=provider_id,
+            rollup_kind="route_occupancy_band_daily",
+            upsert=UPSERT_ROUTE_OCCUPANCY_BAND_DAILY,
+            lookback_days=percentile_lookback_days,
+            now=now,
+            select_missing=SELECT_MISSING_OCCUPANCY_DAYS,
         )
 
         for table_name in REPORTING_AGGREGATE_TABLES:
@@ -1526,4 +1767,7 @@ def build_warm_rollups(
         completed_at_utc=now,
         built_route_percentile_days=built_route_percentile,
         built_stop_percentile_days=built_stop_percentile,
+        built_occupancy_periods=built_occupancy,
+        built_route_cancellation_days=built_route_cancellation,
+        built_route_occupancy_days=built_route_occupancy,
     )

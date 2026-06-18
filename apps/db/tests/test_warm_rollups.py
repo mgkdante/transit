@@ -79,14 +79,26 @@ class FakeConnection:
         self,
         vehicle_periods: list[datetime] | None = None,
         trip_delay_periods: list[datetime] | None = None,
+        occupancy_periods: list[datetime] | None = None,
     ) -> None:
         self.vehicle_periods = vehicle_periods or []
         self.trip_delay_periods = trip_delay_periods or []
+        self.occupancy_periods = occupancy_periods or []
         self.executed: list[str] = []
 
     def execute(self, statement, params=None):  # noqa: ANN001
         sql = str(statement)
         self.executed.append(sql)
+
+        # Occupancy 5m missing-periods SELECT shares the vehicle-fact + DATE_BIN
+        # shape; disambiguated by its rollup_kind literal, matched FIRST.
+        if (
+            "fact_vehicle_snapshot" in sql
+            and "occupancy_summary_5m" in sql
+            and "NOT IN" in sql
+            and "DATE_BIN" in sql
+        ):
+            return IterableResult([FakeRow(p) for p in self.occupancy_periods])
 
         if (
             "fact_vehicle_snapshot" in sql
@@ -104,9 +116,14 @@ class FakeConnection:
         ):
             return IterableResult([FakeRow(p) for p in self.trip_delay_periods])
 
-        # Append-only percentile missing-days SELECT (no DATE_BIN; keyed on the
-        # local-day subquery). Default to no missing days so the percentile loop is
-        # a noop here — correctness is covered by the real-DB regression test.
+        # Append-only daily missing-days SELECTs (no DATE_BIN; keyed on the
+        # local-day subquery). Default to no missing days so the daily loops are
+        # noops here — correctness is covered by the real-DB regression test. The
+        # trip-delay branch also serves the cancellation rollup (same source);
+        # occupancy uses its own fact_vehicle_snapshot calendar.
+        if "fact_vehicle_snapshot" in sql and "today_local" in sql:
+            return IterableResult([])
+
         if "fact_trip_delay_snapshot" in sql and "today_local" in sql:
             return IterableResult([])
 
@@ -114,6 +131,15 @@ class FakeConnection:
             return RowcountResult(1)
 
         if "INSERT INTO gold.trip_delay_summary_5m" in sql:
+            return RowcountResult(1)
+
+        if "INSERT INTO gold.occupancy_summary_5m" in sql:
+            return RowcountResult(1)
+
+        if "INSERT INTO gold.route_cancellation_daily" in sql:
+            return RowcountResult(1)
+
+        if "INSERT INTO gold.route_occupancy_band_daily" in sql:
             return RowcountResult(1)
 
         if "INSERT INTO gold.warm_rollup_periods" in sql:
@@ -157,6 +183,15 @@ class FakeConnection:
             "FROM gold.stop_delay_percentile_daily" in sql
         ):
             return ScalarResult(11)
+
+        if "SELECT COUNT(*)" in sql and "FROM gold.occupancy_summary_5m" in sql:
+            return ScalarResult(6)
+
+        if "SELECT COUNT(*)" in sql and "FROM gold.route_cancellation_daily" in sql:
+            return ScalarResult(9)
+
+        if "SELECT COUNT(*)" in sql and "FROM gold.route_occupancy_band_daily" in sql:
+            return ScalarResult(10)
 
         return RowcountResult(0)
 
@@ -238,6 +273,31 @@ def test_build_trip_delay_rollup_inserts_new_periods() -> None:
     assert len(period_upserts) == 3
 
 
+def test_build_occupancy_rollup_inserts_new_periods() -> None:
+    """The occupancy 5m loop mirrors the vehicle loop: one band-count upsert +
+    one watermark per missing period, disjoint from the vehicle_summary stream."""
+    periods = [
+        datetime(2026, 3, 25, 9, 0, tzinfo=UTC),
+        datetime(2026, 3, 25, 9, 5, tzinfo=UTC),
+    ]
+    conn = FakeConnection(occupancy_periods=periods)
+    engine = FakeEngine(conn)
+
+    result = build_warm_rollups("stm", engine=engine)
+
+    assert result.built_occupancy_periods == 2
+    assert result.built_vehicle_periods == 0
+    assert result.built_trip_delay_periods == 0
+
+    occ_upserts = [s for s in conn.executed if "INSERT INTO gold.occupancy_summary_5m" in s]
+    assert len(occ_upserts) == 2
+
+    # The band-count mirror folds CRUSHED_STANDING (code 4) into standing and
+    # excludes NOT_ACCEPTING/NO_DATA/NOT_BOARDABLE from observation_count.
+    assert "occupancy_status IN (3, 4)" in occ_upserts[0]
+    assert "occupancy_status IN (0, 1, 2, 3, 4, 5)" in occ_upserts[0]
+
+
 def test_build_warm_rollups_empty_facts_is_noop() -> None:
     conn = FakeConnection()
     engine = FakeEngine(conn)
@@ -246,6 +306,9 @@ def test_build_warm_rollups_empty_facts_is_noop() -> None:
 
     assert result.built_vehicle_periods == 0
     assert result.built_trip_delay_periods == 0
+    assert result.built_occupancy_periods == 0
+    assert result.built_route_cancellation_days == 0
+    assert result.built_route_occupancy_days == 0
     assert isinstance(result.completed_at_utc, datetime)
 
 
@@ -542,6 +605,45 @@ def test_route_reliability_weekly_monthly_carry_otp_counts_and_weights() -> None
         assert "on_time_observation_count = EXCLUDED.on_time_observation_count" in sql
 
 
+def test_route_cancellation_daily_upsert_dedups_and_keeps_scheduled_in_denominator() -> None:
+    """Tier-1 cancellation dedup: a trip-day is a distinct (trip_id, start_date),
+    collapsed via MAX so multiple polls of one canceled trip count once; and the
+    denominator must NOT filter on trip_schedule_relationship IS NOT NULL — GTFS-RT
+    omits the field for scheduled trips, so COALESCE(...,0) treats NULL as a normal
+    (non-canceled) trip-day rather than dropping it (would inflate the rate)."""
+    sql = str(rollups.UPSERT_ROUTE_CANCELLATION_DAILY)
+    compact = " ".join(sql.split())
+
+    assert "INSERT INTO gold.route_cancellation_daily" in sql
+    assert "FROM gold.fact_trip_delay_snapshot" in sql
+    # Distinct-trip-day grain (per-poll over-count collapse).
+    assert "GROUP BY f.provider_id, f.route_id, f.trip_id, f.start_date" in compact
+    assert "MAX((COALESCE(f.trip_schedule_relationship, 0) = 3)::int)" in compact
+    # The inflating denominator filter must be ABSENT.
+    assert "trip_schedule_relationship IS NOT NULL" not in compact
+    # Rate is None (NULLIF guard) when no trip-days were observed.
+    assert "NULLIF(COUNT(*), 0)" in compact
+
+
+def test_tier1_daily_rollups_are_append_only_not_in_reporting_registry() -> None:
+    """Cancellation + occupancy-band daily tables must stay OUT of the DELETE+UPSERT
+    reporting registry (a per-provider rebuild would wipe accrued history)."""
+    for table_name in ("route_cancellation_daily", "route_occupancy_band_daily"):
+        assert table_name not in rollups.REPORTING_AGGREGATE_TABLES
+        assert table_name not in rollups.DELETE_REPORTING_AGGREGATES
+    assert "occupancy_summary_5m" not in rollups.REPORTING_AGGREGATE_TABLES
+
+
+def test_occupancy_band_daily_uses_vehicle_fact_missing_day_calendar() -> None:
+    """Adversary fix: the occupancy daily reduction reads fact_vehicle_snapshot, so
+    its missing-day watermark calendar must scan that same table — NOT the
+    trip-delay fact (the two prune independently)."""
+    occ_days = str(rollups.SELECT_MISSING_OCCUPANCY_DAYS)
+    assert "FROM gold.fact_vehicle_snapshot" in occ_days
+    assert "fact_trip_delay_snapshot" not in occ_days
+    assert "today_local" in occ_days
+
+
 def test_historic_daily_marts_registered_in_registry() -> None:
     """P2/P3 HISTORIC marts are wired into all three rollups registries."""
     from transit_ops.gold import rollups
@@ -682,9 +784,15 @@ def test_prune_warm_rollup_storage_dry_run_counts_without_deletes() -> None:
 
     assert result.deleted_row_counts["gold.route_delay_percentile_daily"] == 7
     assert result.deleted_row_counts["gold.stop_delay_percentile_daily"] == 11
+    # Tier-1 append-only tables prune at the same 365d boundary.
+    assert result.deleted_row_counts["gold.occupancy_summary_5m"] == 6
+    assert result.deleted_row_counts["gold.route_cancellation_daily"] == 9
+    assert result.deleted_row_counts["gold.route_occupancy_band_daily"] == 10
 
     count_queries = [s for s in conn.executed if "SELECT COUNT(*)" in s or "SELECT count(*)" in s]
-    assert len(count_queries) == 17  # +2 percentile + 2 shift/daytype reliability tables
+    # 17 prior + 3 Tier-1 aggregate-retention tables (occupancy 5m + cancellation
+    # daily + occupancy band daily); all three sit in GOLD_AGGREGATE_RETENTION_COLUMNS.
+    assert len(count_queries) == 20
 
 
 def test_prune_warm_rollup_storage_display_dict_includes_dry_run() -> None:

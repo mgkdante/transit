@@ -191,6 +191,49 @@ describe('reliability — new optional fields (day_of_week / habits / p50,p90) r
 	});
 });
 
+describe('tier-1 — cancellations + occupancy_mix round-trip (additive optional)', () => {
+	it('parses route_reliability carrying cancellations + occupancy_mix', () => {
+		const fixture = {
+			generated_utc: ISO,
+			id: '165',
+			cancellations: [
+				{
+					grain: 'day',
+					date: '2026-06-14',
+					cancellation_rate_pct: 2.56,
+					canceled_trip_days: 4,
+					total_trip_days: 156,
+				},
+			],
+			occupancy_mix: { empty: 0, many_seats: 0.5, few_seats: 0.3, standing: 0.2, full: 0 },
+		};
+		expect(() => parsePort('route_reliability', RouteReliabilitySchema, fixture)).not.toThrow();
+	});
+
+	it('parses network_trend carrying cancellation_rate + occupancy_mix per point', () => {
+		const fixture = {
+			generated_utc: ISO,
+			series: [
+				{
+					date: '2026-06-14',
+					otp_pct: 82,
+					cancellation_rate: 1.2,
+					occupancy_mix: {
+						empty: 0.1,
+						many_seats: 0.4,
+						few_seats: 0.3,
+						standing: 0.15,
+						full: 0.05,
+					},
+				},
+				// honest-null day: both new fields absent — still parses (optional).
+				{ date: '2026-06-15' },
+			],
+		};
+		expect(() => parsePort('network_trend', NetworkTrendSchema, fixture)).not.toThrow();
+	});
+});
+
 describe('stops_index — optional mode + routes round-trip', () => {
 	it('parses a populated entry (mode + routes) alongside a minimal one (neither)', () => {
 		const fixture = {

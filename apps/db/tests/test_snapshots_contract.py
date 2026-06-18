@@ -232,6 +232,59 @@ def test_reliability_new_fields_are_additive():
     assert StopReliabilityPeriod.model_json_schema()["required"] == ["grain"]
 
 
+def test_tier1_cancellation_occupancy_fields_are_additive():
+    """Tier-1 rollup-foundation: RouteReliability.cancellations/occupancy_mix and
+    TrendPoint.cancellation_rate/occupancy_mix are optional-with-default (reusing
+    the existing OccupancyMix model), so already-published route_reliability.json /
+    network_trend.json still validate and required sets stay frozen."""
+    from transit_ops.snapshots.contract import (
+        CancellationPeriod,
+        OccupancyMix,
+        RouteReliability,
+        TrendPoint,
+    )
+
+    # Old-shape route reliability: cancellations defaults [], occupancy_mix None.
+    rr = RouteReliability(generated_utc="t", id="165")
+    assert rr.cancellations == []
+    assert rr.occupancy_mix is None
+
+    # Populated cancellations + occupancy_mix roundtrip.
+    full = RouteReliability(
+        generated_utc="t",
+        id="165",
+        cancellations=[
+            CancellationPeriod(
+                date="2026-06-17",
+                cancellation_rate_pct=2.56,
+                canceled_trip_days=4,
+                total_trip_days=156,
+            )
+        ],
+        occupancy_mix=OccupancyMix(many_seats=0.5, few_seats=0.3, standing=0.2),
+    )
+    assert full.cancellations[0].grain == "day"
+    assert full.cancellations[0].cancellation_rate_pct == 2.56
+    assert full.occupancy_mix.standing == 0.2
+
+    # Honest-None cancellation rate (no trips observed) still validates.
+    empty_rate = CancellationPeriod(canceled_trip_days=0, total_trip_days=0)
+    assert empty_rate.cancellation_rate_pct is None
+
+    # TrendPoint defaults None for both new fields; populated roundtrips.
+    assert TrendPoint(date="2026-06-17").cancellation_rate is None
+    assert TrendPoint(date="2026-06-17").occupancy_mix is None
+    tp = TrendPoint(date="2026-06-17", cancellation_rate=1.2, occupancy_mix=OccupancyMix(full=1.0))
+    assert tp.cancellation_rate == 1.2
+    assert tp.occupancy_mix.full == 1.0
+
+    # Freeze-compat: required sets unchanged by the additive fields.
+    assert RouteReliability.model_json_schema()["required"] == ["generated_utc", "id"]
+    assert TrendPoint.model_json_schema()["required"] == ["date"]
+    # CancellationPeriod is fully optional (grain has a default) — no required set.
+    assert CancellationPeriod.model_json_schema().get("required", []) == []
+
+
 def test_stop_index_mode_routes_are_additive():
     """slice stops-index-mode-routes: mode/routes are optional-with-default, so an
     already-published stops_index.json (without them) still validates and the

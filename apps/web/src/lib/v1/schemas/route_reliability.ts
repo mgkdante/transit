@@ -6,6 +6,7 @@
 
 import { z } from 'zod';
 import { isoUtc } from './types';
+import { OccupancyMixSchema } from './network';
 
 export const ReliabilityPeriodSchema = z.object({
 	// NOTE: free-string grain the pipeline owns (e.g. 'day'/'week'/'month'/
@@ -52,6 +53,17 @@ export const RouteDayOfWeekSchema = z.object({
 });
 export type RouteDayOfWeek = z.infer<typeof RouteDayOfWeekSchema>;
 
+export const CancellationPeriodSchema = z.object({
+	// free-string grain the pipeline owns (e.g. 'day'); NOT the web Grain enum.
+	grain: z.string(),
+	date: z.string().nullable().optional(),
+	// canceled / RT-reported trip-days, %; null when no trips were observed.
+	cancellation_rate_pct: z.number().nullable().optional(),
+	canceled_trip_days: z.number().int().nullable().optional(),
+	total_trip_days: z.number().int().nullable().optional(),
+});
+export type CancellationPeriod = z.infer<typeof CancellationPeriodSchema>;
+
 export const RouteReliabilitySchema = z.object({
 	generated_utc: isoUtc(),
 	id: z.string(),
@@ -63,5 +75,9 @@ export const RouteReliabilitySchema = z.object({
 	// per-route weekday seasonality (ISO 1=Mon..7=Sun).
 	day_of_week: z.array(RouteDayOfWeekSchema).optional(),
 	weak_stops: z.array(WeakStopSchema).optional(),
+	// per-day cancellation history (most recent ~30 closed days).
+	cancellations: z.array(CancellationPeriodSchema).optional(),
+	// trailing-window crowding band-shares; null when no occupancy telemetry.
+	occupancy_mix: OccupancyMixSchema.nullable().optional(),
 });
 export type RouteReliability = z.infer<typeof RouteReliabilitySchema>;

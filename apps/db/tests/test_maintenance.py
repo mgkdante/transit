@@ -64,6 +64,7 @@ EXPECTED_NORMALIZED_REALTIME_SILVER_TABLES = (
 EXPECTED_GOLD_AGGREGATE_TABLE_COUNTS = {
     "gold.vehicle_summary_5m": 5,
     "gold.trip_delay_summary_5m": 3,
+    "gold.occupancy_summary_5m": 25,
     "gold.warm_rollup_periods": 8,
     "gold.route_delay_hourly": 11,
     "gold.route_delay_day_of_week": 12,
@@ -77,6 +78,8 @@ EXPECTED_GOLD_AGGREGATE_TABLE_COUNTS = {
     "gold.citizen_accountability_daily": 20,
     "gold.route_delay_percentile_daily": 21,
     "gold.stop_delay_percentile_daily": 22,
+    "gold.route_cancellation_daily": 26,
+    "gold.route_occupancy_band_daily": 27,
     "gold.route_delay_by_shift": 23,
     "gold.route_delay_by_daytype": 24,
 }
