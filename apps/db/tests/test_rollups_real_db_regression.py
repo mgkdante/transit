@@ -485,3 +485,56 @@ def test_percentile_rollup_is_idempotent_on_rebuild(conn) -> None:  # noqa: ANN0
     )
     after = connection.execute(text(count_sql), {"p": PROVIDER}).scalar_one()
     assert after == before
+
+
+def test_granularity_shift_daytype_conserve_observations(conn) -> None:  # noqa: ANN001
+    connection, _seed = conn
+    hourly_obs = connection.execute(
+        text(
+            "SELECT COALESCE(SUM(observation_count), 0) FROM gold.route_delay_hourly "
+            "WHERE provider_id = :p AND route_id = '51T'"
+        ),
+        {"p": PROVIDER},
+    ).scalar_one()
+    assert hourly_obs > 0
+
+    for table, grain_col, vocab in (
+        ("route_delay_by_shift", "shift", {"am_peak", "midday", "pm_peak", "evening", "night"}),
+        ("route_delay_by_daytype", "day_type", {"weekday", "weekend"}),
+    ):
+        rows = connection.execute(
+            text(
+                f"SELECT {grain_col} AS grain, observation_count "
+                f"FROM gold.{table} WHERE provider_id = :p AND route_id = '51T'"
+            ),
+            {"p": PROVIDER},
+        ).mappings().all()
+        assert rows, f"{table} should have rows for 51T"
+        assert all(r["grain"] in vocab for r in rows), f"{table} grain out of vocabulary"
+        # Regrouping the hourly spine conserves total observations.
+        assert sum(r["observation_count"] for r in rows) == hourly_obs
+
+
+def test_granularity_headway_direction_tags_and_legacy_intact(conn) -> None:  # noqa: ANN001
+    connection, _seed = conn
+    rows = connection.execute(
+        text(
+            "SELECT direction_id, service_day_kind, shift, observed_headway_min "
+            "FROM gold.route_headway_direction_daily WHERE provider_id = :p AND route_id = '51T'"
+        ),
+        {"p": PROVIDER},
+    ).mappings().all()
+    assert rows, "per-direction headway should produce rows"
+    assert all(r["service_day_kind"] in {"weekday", "weekend"} for r in rows)
+    assert all(
+        r["shift"] in {"am_peak", "midday", "pm_peak", "evening", "night"} for r in rows
+    )
+    # The busiest-direction route_headway_daily path is untouched and still builds.
+    legacy = connection.execute(
+        text(
+            "SELECT count(*) FROM gold.route_headway_daily "
+            "WHERE provider_id = :p AND route_id = '51T'"
+        ),
+        {"p": PROVIDER},
+    ).scalar_one()
+    assert legacy >= 1

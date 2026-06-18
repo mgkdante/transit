@@ -164,11 +164,18 @@ describe('reliability — new optional fields (day_of_week / habits / p50,p90) r
 		const fixture = {
 			generated_utc: ISO,
 			id: '165',
-			periods: [{ grain: 'day', date: '2026-06-14', p50_min: 1.2, p90_min: 6.5 }],
+			periods: [
+				{ grain: 'day', date: '2026-06-14', p50_min: 1.2, p90_min: 6.5 },
+				// granularity grains are free-string (locks against enum-tightening)
+				{ grain: 'am_peak', otp_pct: 88, avg_delay_min: 1.4, severe_pct: 3.0 },
+				{ grain: 'weekday', otp_pct: 85, avg_delay_min: 1.8, severe_pct: 4.2 },
+			],
 			day_of_week: [
 				{ day_of_week_iso: 1, avg_delay_min: 2.1, severe_pct: 4.0, observation_count: 1200 },
 			],
 			habits: { scale: 'repeat_problem_relative', matrix: [[0.0, null]] },
+			// direction encoded in the free shift string
+			headway: [{ shift: 'am_peak_dir0_weekend', observed_min: 7.5 }],
 		};
 		expect(() => parsePort('route_reliability', RouteReliabilitySchema, fixture)).not.toThrow();
 	});

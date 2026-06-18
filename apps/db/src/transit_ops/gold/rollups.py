@@ -274,6 +274,11 @@ REPORTING_AGGREGATE_TABLES = (
     "citizen_accountability_daily",
     "route_headway_daily",
     "repeat_offender_daily",
+    # Granularity tier — registered AFTER route_delay_hourly (index 0) so the
+    # shift/daytype regroups rebuild from the freshly-built hourly spine.
+    "route_delay_by_shift",
+    "route_delay_by_daytype",
+    "route_headway_direction_daily",
 )
 
 WINDOWED_HISTORY_TABLES = (
@@ -290,11 +295,14 @@ DERIVED_REBUILD_TABLES = (
     "stop_delay_monthly",
     "route_habit_score",
     "repeated_problem_route_stop",
+    "route_delay_by_shift",
+    "route_delay_by_daytype",
 )
 
 ROLLING_WINDOW_TABLES = (
     "route_headway_daily",
     "repeat_offender_daily",
+    "route_headway_direction_daily",
 )
 
 DELETE_REPORTING_AGGREGATES = {
@@ -1012,6 +1020,196 @@ UPSERT_ROUTE_HEADWAY_DAILY = text(
     """
 )
 
+# Granularity tier: regroup the route_delay_hourly spine by time-of-day band and
+# by weekday/weekend. Same observation-weighted avg + on-time NULL-guard as the
+# weekly/monthly rollups, so OTP/avg/severe are consistent across grains.
+UPSERT_ROUTE_DELAY_BY_SHIFT = text(
+    """
+    INSERT INTO gold.route_delay_by_shift (
+        provider_id, shift, route_id, observation_count, delay_observation_count,
+        on_time_observation_count, avg_delay_seconds, severe_delay_count, built_at_utc
+    )
+    SELECT
+        rd.provider_id,
+        CASE
+            WHEN EXTRACT(HOUR FROM timezone(dp.timezone, rd.period_start_utc))
+                BETWEEN 6 AND 8 THEN 'am_peak'
+            WHEN EXTRACT(HOUR FROM timezone(dp.timezone, rd.period_start_utc))
+                BETWEEN 9 AND 14 THEN 'midday'
+            WHEN EXTRACT(HOUR FROM timezone(dp.timezone, rd.period_start_utc))
+                BETWEEN 15 AND 18 THEN 'pm_peak'
+            WHEN EXTRACT(HOUR FROM timezone(dp.timezone, rd.period_start_utc))
+                BETWEEN 19 AND 22 THEN 'evening'
+            ELSE 'night'
+        END AS shift,
+        rd.route_id,
+        SUM(rd.observation_count)::integer,
+        SUM(rd.delay_observation_count)::integer,
+        CASE WHEN COUNT(*) = COUNT(rd.on_time_observation_count)
+            THEN SUM(rd.on_time_observation_count)::integer
+        END,
+        ROUND(
+            SUM(rd.avg_delay_seconds * NULLIF(rd.delay_observation_count, 0))
+            / NULLIF(SUM(rd.delay_observation_count), 0),
+            2
+        ),
+        SUM(rd.severe_delay_count)::integer,
+        :built_at_utc
+    FROM gold.route_delay_hourly AS rd
+    INNER JOIN gold.dim_provider AS dp
+        ON dp.provider_id = rd.provider_id
+    WHERE rd.provider_id = :provider_id
+    GROUP BY 1, 2, 3
+    ON CONFLICT (provider_id, shift, route_id) DO UPDATE SET
+        observation_count = EXCLUDED.observation_count,
+        delay_observation_count = EXCLUDED.delay_observation_count,
+        on_time_observation_count = EXCLUDED.on_time_observation_count,
+        avg_delay_seconds = EXCLUDED.avg_delay_seconds,
+        severe_delay_count = EXCLUDED.severe_delay_count,
+        built_at_utc = EXCLUDED.built_at_utc
+    """
+)
+
+UPSERT_ROUTE_DELAY_BY_DAYTYPE = text(
+    """
+    INSERT INTO gold.route_delay_by_daytype (
+        provider_id, day_type, route_id, observation_count, delay_observation_count,
+        on_time_observation_count, avg_delay_seconds, severe_delay_count, built_at_utc
+    )
+    SELECT
+        rd.provider_id,
+        CASE
+            WHEN EXTRACT(ISODOW FROM timezone(dp.timezone, rd.period_start_utc))
+                BETWEEN 1 AND 5 THEN 'weekday'
+            ELSE 'weekend'
+        END AS day_type,
+        rd.route_id,
+        SUM(rd.observation_count)::integer,
+        SUM(rd.delay_observation_count)::integer,
+        CASE WHEN COUNT(*) = COUNT(rd.on_time_observation_count)
+            THEN SUM(rd.on_time_observation_count)::integer
+        END,
+        ROUND(
+            SUM(rd.avg_delay_seconds * NULLIF(rd.delay_observation_count, 0))
+            / NULLIF(SUM(rd.delay_observation_count), 0),
+            2
+        ),
+        SUM(rd.severe_delay_count)::integer,
+        :built_at_utc
+    FROM gold.route_delay_hourly AS rd
+    INNER JOIN gold.dim_provider AS dp
+        ON dp.provider_id = rd.provider_id
+    WHERE rd.provider_id = :provider_id
+    GROUP BY 1, 2, 3
+    ON CONFLICT (provider_id, day_type, route_id) DO UPDATE SET
+        observation_count = EXCLUDED.observation_count,
+        delay_observation_count = EXCLUDED.delay_observation_count,
+        on_time_observation_count = EXCLUDED.on_time_observation_count,
+        avg_delay_seconds = EXCLUDED.avg_delay_seconds,
+        severe_delay_count = EXCLUDED.severe_delay_count,
+        built_at_utc = EXCLUDED.built_at_utc
+    """
+)
+
+# Per-direction + weekday/weekend headway. Sibling of route_headway_daily (which
+# is left untouched): the busiest_direction collapse is dropped so EVERY
+# direction survives, and weekend service days are kept (tagged) instead of
+# filtered out. Same 14d rolling reconstruction + median-gap method.
+UPSERT_ROUTE_HEADWAY_DIRECTION_DAILY = text(
+    """
+    WITH trip_starts AS (
+        SELECT
+            f.provider_id,
+            f.route_id,
+            COALESCE(f.direction_id, 0) AS direction_id,
+            COALESCE(f.start_date, f.snapshot_local_date) AS service_date,
+            f.trip_id,
+            MIN(f.captured_at_utc) AS trip_start_utc
+        FROM gold.fact_trip_delay_snapshot AS f
+        WHERE f.provider_id = :provider_id
+          AND f.captured_at_utc >= now() - interval '14 days'
+          AND f.route_id IS NOT NULL
+          AND f.trip_id IS NOT NULL
+          AND f.delay_seconds IS NOT NULL
+          AND ABS(f.delay_seconds) <= 3600
+        GROUP BY
+            f.provider_id,
+            f.route_id,
+            COALESCE(f.direction_id, 0),
+            COALESCE(f.start_date, f.snapshot_local_date),
+            f.trip_id
+    ),
+    shifted AS (
+        SELECT
+            ts.provider_id,
+            ts.route_id,
+            ts.direction_id,
+            ts.service_date,
+            ts.trip_start_utc,
+            CASE
+                WHEN EXTRACT(ISODOW FROM ts.service_date) BETWEEN 1 AND 5 THEN 'weekday'
+                ELSE 'weekend'
+            END AS service_day_kind,
+            CASE
+                WHEN EXTRACT(HOUR FROM timezone(dp.timezone, ts.trip_start_utc))
+                    BETWEEN 6 AND 8 THEN 'am_peak'
+                WHEN EXTRACT(HOUR FROM timezone(dp.timezone, ts.trip_start_utc))
+                    BETWEEN 9 AND 14 THEN 'midday'
+                WHEN EXTRACT(HOUR FROM timezone(dp.timezone, ts.trip_start_utc))
+                    BETWEEN 15 AND 18 THEN 'pm_peak'
+                WHEN EXTRACT(HOUR FROM timezone(dp.timezone, ts.trip_start_utc))
+                    BETWEEN 19 AND 22 THEN 'evening'
+                ELSE 'night'
+            END AS shift
+        FROM trip_starts AS ts
+        INNER JOIN gold.dim_provider AS dp
+            ON dp.provider_id = ts.provider_id
+    ),
+    gaps AS (
+        SELECT
+            provider_id,
+            route_id,
+            direction_id,
+            service_day_kind,
+            service_date,
+            shift,
+            EXTRACT(
+                EPOCH FROM (
+                    trip_start_utc - LAG(trip_start_utc) OVER (
+                        PARTITION BY
+                            provider_id, route_id, direction_id, service_day_kind,
+                            service_date, shift
+                        ORDER BY trip_start_utc
+                    )
+                )
+            ) / 60.0 AS gap_min
+        FROM shifted
+    )
+    INSERT INTO gold.route_headway_direction_daily (
+        provider_id, route_id, direction_id, shift, service_day_kind,
+        observed_headway_min, sample_count, built_at_utc
+    )
+    SELECT
+        provider_id,
+        route_id,
+        direction_id,
+        shift,
+        service_day_kind,
+        ROUND(percentile_cont(0.5) WITHIN GROUP (ORDER BY gap_min)::numeric, 1),
+        COUNT(*)::integer,
+        :built_at_utc
+    FROM gaps
+    WHERE gap_min IS NOT NULL
+      AND gap_min > 0
+      AND gap_min < 240
+    GROUP BY provider_id, route_id, direction_id, shift, service_day_kind
+    ON CONFLICT (provider_id, route_id, direction_id, shift, service_day_kind) DO UPDATE SET
+        observed_headway_min = EXCLUDED.observed_headway_min,
+        sample_count = EXCLUDED.sample_count,
+        built_at_utc = EXCLUDED.built_at_utc
+    """
+)
+
 UPSERT_REPEAT_OFFENDER_DAILY = text(
     """
     WITH obs AS (
@@ -1104,6 +1302,9 @@ REPORTING_AGGREGATE_UPSERTS = {
     "citizen_accountability_daily": UPSERT_CITIZEN_ACCOUNTABILITY_DAILY,
     "route_headway_daily": UPSERT_ROUTE_HEADWAY_DAILY,
     "repeat_offender_daily": UPSERT_REPEAT_OFFENDER_DAILY,
+    "route_delay_by_shift": UPSERT_ROUTE_DELAY_BY_SHIFT,
+    "route_delay_by_daytype": UPSERT_ROUTE_DELAY_BY_DAYTYPE,
+    "route_headway_direction_daily": UPSERT_ROUTE_HEADWAY_DIRECTION_DAILY,
 }
 
 # ---------------------------------------------------------------------------

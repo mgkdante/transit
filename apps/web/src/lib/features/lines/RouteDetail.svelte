@@ -64,7 +64,17 @@
 		p90Min: p.p90_min ?? null,
 		severePct: p.severe_pct ?? null,
 	});
-	const periodVMs = $derived<ReliabilityPeriodVM[]>((reliability.data?.periods ?? []).map(toVM));
+	// The live reliability strip renders only the primary period grains and the
+	// busiest-direction headway. The granularity grains (shift / weekday-weekend
+	// day-type) and per-direction headway ('*_dir*') ride in the /v1 data for the
+	// dedicated grouped sections in the 9.6 reliability surface, not this flat strip.
+	const PRIMARY_GRAINS = new Set(['day', 'week', 'month']);
+	const periodVMs = $derived<ReliabilityPeriodVM[]>(
+		(reliability.data?.periods ?? []).filter((p) => PRIMARY_GRAINS.has(p.grain)).map(toVM),
+	);
+	const displayHeadway = $derived(
+		(reliability.data?.headway ?? []).filter((h) => !h.shift.includes('_dir')),
+	);
 
 	const fmtMin = (v: number | null | undefined): string =>
 		v == null ? '—' : `${v.toFixed(1)} min`;
@@ -156,11 +166,11 @@
 					<div class="route-section">
 						<ReliabilityPane periods={periodVMs} {locale} delayLabelKind="avg" />
 
-						{#if (rel.headway ?? []).length > 0}
+						{#if displayHeadway.length > 0}
 							<div class="route-subsection">
 								<SectionLabel text={t.headways} variant="metric" />
 								<ul class="route-periods">
-									{#each rel.headway ?? [] as hw (hw.shift)}
+									{#each displayHeadway as hw (hw.shift)}
 										<li class="route-period">
 											<SectionLabel text={hw.shift} variant="metric" />
 											<div class="route-period-metrics">
