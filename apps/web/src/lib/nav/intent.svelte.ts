@@ -25,7 +25,8 @@
 // no DOM access at module scope.
 
 import { goto } from '$app/navigation';
-import { getLocale, localizeHref } from '$lib/i18n';
+import { getLocale, localizeHref, type Locale } from '$lib/i18n';
+import { mapSearchFor, type MapFilterTarget } from '$lib/filters';
 
 /**
  * The kinds of navigable surface in the app. A `vehicle`/`stop`/`line` carries an
@@ -107,6 +108,16 @@ export function routeFor(target: SurfaceTarget): string {
 		// No detail route for this kind yet (vehicle) — fall back to the index root.
 	}
 	return withSearch(SURFACE_ROOT[target.kind]);
+}
+
+/**
+ * Localized href to the live map, pre-filtered to a drilldown target (a route,
+ * stop, vehicle, or status set). The one helper behind every "view on map"
+ * affordance — replaces the per-screen `emptyFilterState → add → toSearchString →
+ * routeFor → localizeHref` chain that was copy-pasted across the surfaces.
+ */
+export function mapHrefFor(target: MapFilterTarget, locale: Locale): string {
+	return localizeHref(routeFor({ kind: 'map', search: mapSearchFor(target) }), locale);
 }
 
 /** Value-equality for targets — used to avoid redundant panel swaps. */

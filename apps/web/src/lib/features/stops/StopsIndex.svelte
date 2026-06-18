@@ -12,9 +12,8 @@
   stops.copy.ts. Tokens only, no hex; --primary stays interactive-only.
 -->
 <script lang="ts">
-	import { getLocale, localizeHref, type Locale } from '$lib/i18n';
-	import { emptyFilterState, toSearchString } from '$lib/filters';
-	import { routeFor } from '$lib/nav';
+	import { getLocale, type Locale } from '$lib/i18n';
+	import { mapHrefFor } from '$lib/nav';
 	import { getStopsIndex, type StopIndexEntry } from '$lib/v1';
 	import { createResource } from '$lib/v1/resource.svelte';
 	import { ResourceBoundary, SurfaceHeader, EntityList, EntityRow } from '$lib/components/surface';
@@ -47,16 +46,6 @@
 	});
 
 	const overflow = $derived(Math.max(0, matches.length - CAP));
-
-	function stopMapSearch(id: string): string {
-		const state = emptyFilterState();
-		state.stops.add(id);
-		return toSearchString(state);
-	}
-
-	function stopMapHref(id: string): string {
-		return localizeHref(routeFor({ kind: 'map', search: stopMapSearch(id) }), locale);
-	}
 </script>
 
 <Surface width="bleed" class="stops-index">
@@ -99,7 +88,7 @@
 							class="stop-result-main"
 						/>
 						<a
-							href={stopMapHref(stop.id)}
+							href={mapHrefFor({ stop: stop.id }, locale)}
 							class="stop-map-link"
 							aria-label={t.viewStopOnMap(stop.code ?? stop.id)}
 							data-sveltekit-preload-data="hover"

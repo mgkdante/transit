@@ -20,3 +20,4 @@ export { default as ReliabilityPane } from './ReliabilityPane.svelte';
 export { default as LiveFreshness } from './LiveFreshness.svelte';
 
 export type { ReliabilityPeriodVM } from './ReliabilityPane.svelte';
+export type { SurfaceHeadCopy } from './copy';

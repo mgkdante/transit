@@ -6,16 +6,9 @@
 // already live in those primitives and are NOT duplicated here.
 
 import type { Locale } from '$lib/i18n';
+import type { SurfaceHeadCopy } from '$lib/components/surface';
 
-export interface StopsIndexCopy {
-	/** Station-voice kicker over the heading. */
-	readonly kicker: string;
-	/** Display heading. */
-	readonly heading: string;
-	/** Mono subheading under the heading. */
-	readonly subheading: string;
-	/** Lede paragraph. */
-	readonly lede: string;
+export interface StopsIndexCopy extends SurfaceHeadCopy {
 	/** Search field placeholder. */
 	readonly searchPlaceholder: string;
 	/** Accessible label for the search field. */
