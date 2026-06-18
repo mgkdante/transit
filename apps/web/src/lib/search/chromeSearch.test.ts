@@ -203,10 +203,10 @@ describe('chromeSearchResults', () => {
 describe('chromeSearchHref', () => {
 	it('routes every selected result into the map filter spine', () => {
 		// Each pick also carries a one-shot `focus` so the map zooms to the entity.
-		expect(chromeSearchHref({ kind: 'route', id: '161' })).toBe(
-			'/map?route=161&focus=route%3A161',
+		expect(chromeSearchHref({ kind: 'route', id: '161' })).toBe('/map?route=161&focus=route%3A161');
+		expect(chromeSearchHref({ kind: 'stop', id: '52819' })).toBe(
+			'/map?stop=52819&focus=stop%3A52819',
 		);
-		expect(chromeSearchHref({ kind: 'stop', id: '52819' })).toBe('/map?stop=52819&focus=stop%3A52819');
 		expect(chromeSearchHref({ kind: 'vehicle', id: '40061' })).toBe(
 			'/map?vehicle=40061&focus=vehicle%3A40061',
 		);

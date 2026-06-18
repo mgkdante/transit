@@ -46,11 +46,7 @@
 		setNearTargetSearchParams,
 	} from '$lib/search/mapNear';
 	import { nearTargetFromSearchParams } from '$lib/search/mapNear';
-	import {
-		clearMapFocusSearchParams,
-		parseMapFocus,
-		type MapFocus,
-	} from '$lib/search/mapFocus';
+	import { clearMapFocusSearchParams, parseMapFocus, type MapFocus } from '$lib/search/mapFocus';
 	import { BottomSheet, RightPanel } from '$lib/components/shell';
 	import { ResizablePaneGroup, ResizablePane, ResizableHandle } from '$lib/components/ui/resizable';
 	import {
