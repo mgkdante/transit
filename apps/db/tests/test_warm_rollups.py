@@ -22,14 +22,18 @@ REPORTING_AGGREGATE_TABLES = (
     "route_habit_score",
     "repeated_problem_route_stop",
     "citizen_accountability_daily",
+    "route_delay_by_shift",
+    "route_delay_by_daytype",
 )
 
 # Tables rebuilt by build_warm_rollups (rollups.py REPORTING_AGGREGATE_TABLES).
-# Superset of the prune registry — adds the HISTORIC-tier daily marts.
+# Superset of the prune registry — adds the rolling tables (headway + offender +
+# per-direction headway) that are full-rebuilt each cycle but not time-pruned.
 BUILD_REPORTING_AGGREGATE_TABLES = (
     *REPORTING_AGGREGATE_TABLES,
     "route_headway_daily",
     "repeat_offender_daily",
+    "route_headway_direction_daily",
 )
 
 REPORTING_AGGREGATE_ROWCOUNTS = {
@@ -680,7 +684,7 @@ def test_prune_warm_rollup_storage_dry_run_counts_without_deletes() -> None:
     assert result.deleted_row_counts["gold.stop_delay_percentile_daily"] == 11
 
     count_queries = [s for s in conn.executed if "SELECT COUNT(*)" in s or "SELECT count(*)" in s]
-    assert len(count_queries) == 15  # +2 append-only percentile tables
+    assert len(count_queries) == 17  # +2 percentile + 2 shift/daytype reliability tables
 
 
 def test_prune_warm_rollup_storage_display_dict_includes_dry_run() -> None:

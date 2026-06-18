@@ -77,6 +77,8 @@ EXPECTED_GOLD_AGGREGATE_TABLE_COUNTS = {
     "gold.citizen_accountability_daily": 20,
     "gold.route_delay_percentile_daily": 21,
     "gold.stop_delay_percentile_daily": 22,
+    "gold.route_delay_by_shift": 23,
+    "gold.route_delay_by_daytype": 24,
 }
 
 

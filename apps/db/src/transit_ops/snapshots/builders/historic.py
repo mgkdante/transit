@@ -247,6 +247,44 @@ _ROUTE_DOW_SQL = text(
 )
 
 
+# Granularity grains (time-of-day shift + weekday/weekend day-type), regrouped from
+# the hourly spine; published as additive free-string-grain ReliabilityPeriod rows.
+_ROUTE_BY_SHIFT_SQL = text(
+    """
+    SELECT shift AS grain,
+           delay_observation_count AS known_obs,
+           on_time_observation_count AS on_time,
+           avg_delay_seconds AS avg_delay_sec,
+           severe_delay_count AS severe
+    FROM gold.route_delay_by_shift
+    WHERE provider_id = :provider_id AND route_id = :route_id
+    """
+)
+
+_ROUTE_BY_DAYTYPE_SQL = text(
+    """
+    SELECT day_type AS grain,
+           delay_observation_count AS known_obs,
+           on_time_observation_count AS on_time,
+           avg_delay_seconds AS avg_delay_sec,
+           severe_delay_count AS severe
+    FROM gold.route_delay_by_daytype
+    WHERE provider_id = :provider_id AND route_id = :route_id
+    """
+)
+
+# Per-direction + weekday/weekend observed headway (sibling table; the busiest-direction
+# route_headway_daily is left untouched). Direction is encoded into the free shift string.
+_ROUTE_HEADWAY_DIRECTION_SQL = text(
+    """
+    SELECT shift, direction_id, service_day_kind, observed_headway_min
+    FROM gold.route_headway_direction_daily
+    WHERE provider_id = :provider_id AND route_id = :route_id
+    ORDER BY direction_id, service_day_kind, shift
+    """
+)
+
+
 def build_route_reliability(
     conn: Connection, *, provider_id: str = "stm", route_id: str, generated_utc: str
 ) -> "RouteReliability":
@@ -300,6 +338,23 @@ def build_route_reliability(
                 )
             )
 
+    # --- granularity grains (additive, free-string grain): time-of-day shift +
+    #     weekday/weekend day-type. The live web strip filters to day/week/month;
+    #     these feed the dedicated grouped sections in the 9.6 reliability surface.
+    for grain_sql in (_ROUTE_BY_SHIFT_SQL, _ROUTE_BY_DAYTYPE_SQL):
+        for r in conn.execute(grain_sql, params).mappings():
+            periods.append(
+                ReliabilityPeriod(
+                    grain=str(r["grain"]),
+                    date=None,
+                    otp_pct=_otp_pct(r["on_time"], r["known_obs"]),
+                    avg_delay_min=_avg_delay_min(r["avg_delay_sec"]),
+                    p50_min=None,
+                    p90_min=None,
+                    severe_pct=_severe_pct(r["known_obs"], r["severe"]),
+                )
+            )
+
     # --- headway: observed and scheduled both use weekday busiest-direction semantics ---
     observed: dict[str, float] = {}
     for r in conn.execute(_ROUTE_HEADWAY_OBSERVED_SQL, params).mappings():
@@ -327,6 +382,22 @@ def build_route_reliability(
                 scheduled_min=sched,
                 observed_min=round(obs, 1) if obs is not None else None,
                 excess_wait_min=excess,
+            )
+        )
+
+    # --- per-direction + weekday/weekend headway (additive HeadwayPeriod rows;
+    #     direction encoded in the free shift string). The live strip filters out
+    #     '_dir' shifts; the 9.6 surface renders them grouped.
+    for r in conn.execute(_ROUTE_HEADWAY_DIRECTION_SQL, params).mappings():
+        dir_obs = r["observed_headway_min"]
+        kind = str(r["service_day_kind"])
+        suffix = "" if kind == "weekday" else "_weekend"
+        headway.append(
+            HeadwayPeriod(
+                shift=f'{r["shift"]}_dir{int(r["direction_id"])}{suffix}',
+                scheduled_min=None,
+                observed_min=round(float(dir_obs), 1) if dir_obs is not None else None,
+                excess_wait_min=None,
             )
         )
 
