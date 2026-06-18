@@ -327,6 +327,10 @@
 		selectionStack = [];
 		selected = next;
 		detailOpen = true;
+		// Zoom to whatever was clicked, same as a search pick (data is already
+		// loaded — it's on the map). Point entities centre + zoom in; a route frames
+		// its linework.
+		focusSelection(next);
 	}
 
 	function addSelectionFilter(selection: MapSelection): void {
@@ -525,6 +529,14 @@
 			keepFocus: true,
 			noScroll: true,
 		});
+	}
+
+	// Zoom to a selection directly (click path) — data is already loaded, so no
+	// pending/retry needed. Shared with the URL-driven focus resolver below.
+	function focusSelection(selection: MapSelection): void {
+		if (selection.kind === 'stop') focusStop(selection.id);
+		else if (selection.kind === 'vehicle') focusVehicle(selection.id);
+		else focusRoute(selection.id);
 	}
 
 	function focusStop(id: string): boolean {

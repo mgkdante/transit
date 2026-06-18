@@ -98,6 +98,14 @@ describe('MapHero mobile chrome', () => {
 		expect(s).toContain('clearFocusFromUrl()');
 	});
 
+	it('zooms to a marker clicked directly on the map', () => {
+		const s = source();
+		const selectPickedFeature = s.match(/function selectPickedFeature[\s\S]*?\n\t}/)?.[0] ?? '';
+
+		expect(selectPickedFeature).toContain('focusSelection(next)');
+		expect(s).toContain('function focusSelection(selection: MapSelection)');
+	});
+
 	it('maps geolocation failure codes to distinct, secure-context-aware copy', () => {
 		const s = source();
 
