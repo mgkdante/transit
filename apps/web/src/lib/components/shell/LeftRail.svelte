@@ -14,14 +14,12 @@
 -->
 <script lang="ts">
 	import type { Snippet } from 'svelte';
-	import ActivityIcon from '@lucide/svelte/icons/activity';
-	import CircleStopIcon from '@lucide/svelte/icons/circle-stop';
-	import MapIcon from '@lucide/svelte/icons/map';
 	import PanelLeftCloseIcon from '@lucide/svelte/icons/panel-left-close';
 	import PanelLeftOpenIcon from '@lucide/svelte/icons/panel-left-open';
-	import RouteIcon from '@lucide/svelte/icons/route';
 	import { cn } from '$lib/utils';
 	import { type Locale, DEFAULT_LOCALE, delocalizePath, getLocale, localizeHref } from '$lib/i18n';
+	import { SURFACE_NAV, isSurfaceActive } from '$lib/content/nav';
+	import { navIcons } from './navIcons';
 	import { ScrollArea } from '$lib/components/ui/scroll-area';
 	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
 
@@ -59,36 +57,15 @@
 	const collapseAria = $derived(locale === 'fr' ? 'Réduire la navigation' : 'Collapse navigation');
 	const expandAria = $derived(locale === 'fr' ? 'Ouvrir la navigation' : 'Expand navigation');
 	const currentPath = $derived(delocalizePath(url?.pathname ?? '/'));
-	const navItems = $derived([
-		{
-			key: 'map',
-			href: localizeHref('/map', locale),
-			label: locale === 'fr' ? 'Carte' : 'Map',
-			meta: locale === 'fr' ? 'réseau en direct' : 'live network',
-			active: currentPath === '/map',
-		},
-		{
-			key: 'lines',
-			href: localizeHref('/lines', locale),
-			label: locale === 'fr' ? 'Lignes' : 'Lines',
-			meta: locale === 'fr' ? 'itinéraires et directions' : 'routes and directions',
-			active: currentPath === '/lines' || currentPath.startsWith('/route/'),
-		},
-		{
-			key: 'stops',
-			href: localizeHref('/stops', locale),
-			label: locale === 'fr' ? 'Arrêts' : 'Stops',
-			meta: locale === 'fr' ? 'départs et horaires' : 'departures and schedules',
-			active: currentPath === '/stops' || currentPath.startsWith('/stop/'),
-		},
-		{
-			key: 'network',
-			href: localizeHref('/network', locale),
-			label: locale === 'fr' ? 'Réseau' : 'Network',
-			meta: locale === 'fr' ? 'fiabilité et santé' : 'reliability and health',
-			active: currentPath === '/network',
-		},
-	]);
+	const navItems = $derived(
+		SURFACE_NAV.map((item) => ({
+			key: item.key,
+			href: localizeHref(item.href, locale),
+			label: item.label[locale],
+			meta: item.description[locale],
+			active: isSurfaceActive(item, currentPath),
+		})),
+	);
 </script>
 
 <nav
@@ -131,6 +108,7 @@
 			{:else}
 				<div class="left-rail-nav" data-slot="left-rail-default-nav">
 					{#each navItems as item (item.key)}
+						{@const Icon = navIcons[item.key]}
 						<a
 							href={item.href}
 							class="left-rail-link"
@@ -138,15 +116,7 @@
 							aria-current={item.active ? 'page' : undefined}
 						>
 							<span class="left-rail-icon" aria-hidden="true">
-								{#if item.key === 'map'}
-									<MapIcon size={17} strokeWidth={2.1} />
-								{:else if item.key === 'lines'}
-									<RouteIcon size={17} strokeWidth={2.1} />
-								{:else if item.key === 'stops'}
-									<CircleStopIcon size={17} strokeWidth={2.1} />
-								{:else}
-									<ActivityIcon size={17} strokeWidth={2.1} />
-								{/if}
+								<Icon size={17} strokeWidth={2.1} />
 							</span>
 							{#if !collapsed}
 								<span class="left-rail-copy">
@@ -219,7 +189,13 @@
 		color: var(--primary);
 		background: color-mix(in srgb, var(--primary) 10%, var(--muted) 90%);
 		border-color: color-mix(in srgb, var(--primary) 44%, var(--border) 56%);
-		outline: none;
+	}
+
+	/* Keyboard focus stays DISTINCT from hover/current — a visible ring, not just
+	   the colour shift (which a keyboard user can't tell from the active page). */
+	.left-rail-link:focus-visible {
+		outline: 2px solid var(--ring);
+		outline-offset: 2px;
 	}
 
 	.left-rail-icon {

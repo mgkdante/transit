@@ -137,6 +137,7 @@
 		if (!browser) return;
 
 		let disposed = false;
+		let resizeObserver: ResizeObserver | null = null;
 
 		(async () => {
 			// Dynamic imports — keep maplibre-gl + pmtiles OUT of the server bundle.
@@ -165,9 +166,23 @@
 
 			// Notify the consumer once the style is ready, so it can add images /
 			// sources / layers (the live vehicle layer) without racing the load.
+			// A resize() on load is idiomatic insurance: if the container's final
+			// size wasn't settled when the GL context was created, this forces the
+			// drawing buffer + first frame to match the laid-out container.
 			instance.on('load', () => {
-				if (!disposed) onready?.(instance);
+				if (disposed) return;
+				instance.resize();
+				onready?.(instance);
 			});
+
+			// MapLibre measures the container at construction. In a flex/grid parent
+			// (and after panel transitions / the rail collapsing) layout often hasn't
+			// settled yet, so the GL canvas mounts at the wrong size and paints BLANK
+			// until some later event fires a resize. Observing the container keeps the
+			// viewport in sync — the ResizeObserver fires once immediately, which
+			// repaints the initial frame, and again on every later size change.
+			resizeObserver = new ResizeObserver(() => instance.resize());
+			resizeObserver.observe(container);
 
 			map = instance;
 		})();
@@ -175,6 +190,8 @@
 		// Teardown — release the GL context, event listeners, and DOM nodes.
 		return () => {
 			disposed = true;
+			resizeObserver?.disconnect();
+			resizeObserver = null;
 			map?.remove();
 			map = null;
 		};

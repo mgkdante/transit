@@ -22,7 +22,15 @@
 	import SearchIcon from '@lucide/svelte/icons/search';
 	import XIcon from '@lucide/svelte/icons/x';
 	import { cn } from '$lib/utils';
-	import { type Locale, DEFAULT_LOCALE, PUBLISHED_LOCALES, getLocale } from '$lib/i18n';
+	import {
+		type Locale,
+		DEFAULT_LOCALE,
+		PUBLISHED_LOCALES,
+		delocalizePath,
+		getLocale,
+		localizeHref,
+	} from '$lib/i18n';
+	import { SURFACE_NAV, isSurfaceActive } from '$lib/content/nav';
 	import type { ChromeSearchResult } from '$lib/search/chromeSearch';
 	import StatusDot from '$lib/components/brand/StatusDot.svelte';
 	import BrandWordmark from './BrandWordmark.svelte';
@@ -69,6 +77,7 @@
 	// Prop wins (persistent chrome); fall back to context for isolated renders.
 	const ctxLocale = getLocale();
 	const locale = $derived<Locale>(localeProp ?? ctxLocale ?? DEFAULT_LOCALE);
+	const currentPath = $derived(delocalizePath(url.pathname));
 
 	// --- Localized strings ---------------------------------------------------
 	const liveLabel = $derived(locale === 'fr' ? 'En direct' : 'Live');
@@ -444,38 +453,16 @@
 			aria-label={menuAria}
 			data-testid="topbar-mobile-menu"
 		>
-			<a
-				href="/map"
-				class="topbar-mobile-menu-link"
-				aria-current={url.pathname.endsWith('/map') ? 'page' : undefined}
-			>
-				<span>{locale === 'fr' ? 'Carte' : 'Map'}</span>
-				<small>{locale === 'fr' ? 'réseau en direct' : 'live network'}</small>
-			</a>
-			<a
-				href="/lines"
-				class="topbar-mobile-menu-link"
-				aria-current={url.pathname.endsWith('/lines') ? 'page' : undefined}
-			>
-				<span>{locale === 'fr' ? 'Lignes' : 'Lines'}</span>
-				<small>{locale === 'fr' ? 'itinéraires et directions' : 'routes and directions'}</small>
-			</a>
-			<a
-				href="/stops"
-				class="topbar-mobile-menu-link"
-				aria-current={url.pathname.endsWith('/stops') ? 'page' : undefined}
-			>
-				<span>{locale === 'fr' ? 'Arrêts' : 'Stops'}</span>
-				<small>{locale === 'fr' ? 'départs et horaires' : 'departures and schedules'}</small>
-			</a>
-			<a
-				href="/network"
-				class="topbar-mobile-menu-link"
-				aria-current={url.pathname.endsWith('/network') ? 'page' : undefined}
-			>
-				<span>{locale === 'fr' ? 'Réseau' : 'Network'}</span>
-				<small>{locale === 'fr' ? 'fiabilité et santé' : 'reliability and health'}</small>
-			</a>
+			{#each SURFACE_NAV as item (item.key)}
+				<a
+					href={localizeHref(item.href, locale)}
+					class="topbar-mobile-menu-link"
+					aria-current={isSurfaceActive(item, currentPath) ? 'page' : undefined}
+				>
+					<span>{item.label[locale]}</span>
+					<small>{item.description[locale]}</small>
+				</a>
+			{/each}
 			<a
 				href="https://yesid.dev"
 				target="_blank"
@@ -738,7 +725,7 @@
 		width: min(max(100%, 38rem), calc(100vw - 2rem));
 		display: grid;
 		gap: 0.25rem;
-		max-height: min(22rem, calc(100vh - 5rem));
+		max-height: min(22rem, calc(100dvh - 5rem));
 		overflow-y: auto;
 		padding: 0.35rem;
 		background: color-mix(in srgb, var(--card) 96%, transparent);

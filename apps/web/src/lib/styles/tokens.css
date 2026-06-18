@@ -1,5 +1,5 @@
 /* GENERATED FROM tools/tokens/tokens.json — DO NOT EDIT */
-/* Run `pnpm tokens:build` to regenerate. */
+/* Run `bun run tokens:build` to regenerate. */
 
 :root {
   --primary: #E07800;

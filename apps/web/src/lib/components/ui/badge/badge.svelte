@@ -43,7 +43,7 @@
 			compoundVariants: [
 				{
 					variant: 'number',
-					class: 'h-7 w-7 rounded-full p-0 text-[0.75rem]',
+					class: 'h-7 w-7 rounded-full p-0 text-micro',
 				},
 			],
 			defaultVariants: {

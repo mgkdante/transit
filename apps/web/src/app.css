@@ -72,7 +72,7 @@ select {
 /* ===== TOKENS:START ===== */
 /* GENERATED FROM tools/tokens/tokens.json — DO NOT EDIT */
 /* Hand-edits to this region will be overwritten on the next build. */
-/* Run `pnpm tokens:build` to regenerate. */
+/* Run `bun run tokens:build` to regenerate. */
 @theme {
   --font-heading: 'Inter Variable', 'Inter', system-ui, -apple-system, sans-serif;
   --font-body: 'Inter Variable', 'Inter', system-ui, -apple-system, sans-serif;
@@ -225,10 +225,10 @@ table {
 	max-width: 100%;
 }
 
-/* Brand text selection — yellow highlight, black text */
+/* Brand text selection — yellow highlight, signage ink (theme-aware token). */
 ::selection {
 	background: var(--accent);
-	color: #000000;
+	color: var(--accent-foreground);
 }
 
 /* Keyboard-focus polish — engineered, on-brand ring everywhere.

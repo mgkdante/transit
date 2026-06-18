@@ -1,6 +1,8 @@
 import type { Handle } from '@sveltejs/kit';
+import { dev } from '$app/environment';
 import { pathLocale } from '$lib/i18n';
 import { readPublicSiteConfig } from '$lib/site/config';
+import { securityHeaders } from '$lib/site/securityHeaders';
 
 // Server hooks — the request-time plumbing for the transit web app.
 //
@@ -30,6 +32,15 @@ export const handle: Handle = async ({ event, resolve }) => {
 	const response = await resolve(event, {
 		transformPageChunk: ({ html }) => html.replace('%lang%', lang),
 	});
+
+	// Security headers on the SSR-rendered document. The static `_headers` file
+	// only covers static *assets* in Worker mode, so without this every HTML
+	// document shipped zero CSP/HSTS/frame protection. Source of truth +
+	// _headers parity gate: $lib/site/securityHeaders.
+	for (const [name, value] of Object.entries(securityHeaders({ dev }))) {
+		response.headers.set(name, value);
+	}
+
 	if (!readPublicSiteConfig().indexing) {
 		response.headers.set('x-robots-tag', 'noindex, nofollow');
 	}

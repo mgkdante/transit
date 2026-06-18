@@ -3,7 +3,7 @@ import { serializeCss } from '../serialize.ts';
 import { isLeaf } from '../parse.ts';
 
 const HEADER = `/* GENERATED FROM tools/tokens/tokens.json — DO NOT EDIT */
-/* Run \`pnpm tokens:build\` to regenerate. */
+/* Run \`bun run tokens:build\` to regenerate. */
 `;
 
 /**
