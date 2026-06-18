@@ -82,40 +82,38 @@ jobs:
           PUBLIC_INDEXING: "false"
         run: bun run build
 
-      - name: Ensure dev DNS route host
+      - name: Remove legacy dev DNS route host
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ZONE_ID: 8a4ad7999bd6c2259b5b4acd52f39015
         run: |
           set -euo pipefail
           record_name="dev.transit.yesid.dev"
+          legacy_comment="develop lane: Workers-route-only hostname for transit-web-dev"
           api="https://api.cloudflare.com/client/v4/zones/${CLOUDFLARE_ZONE_ID}/dns_records"
           records_json="$(curl -fsS \
             -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
             -H "Content-Type: application/json" \
             "${api}?type=AAAA&name=${record_name}")"
           existing_id="$(jq -r '.result[0].id // empty' <<<"${records_json}")"
-          if [ -n "${existing_id}" ]; then
-            content="$(jq -r '.result[0].content' <<<"${records_json}")"
-            proxied="$(jq -r '.result[0].proxied' <<<"${records_json}")"
-            if [ "${content}" != "100::" ] || [ "${proxied}" != "true" ]; then
-              echo "::error::Existing ${record_name} DNS record is not the expected proxied AAAA 100:: route host."
-              exit 1
-            fi
-            echo "DNS route host already present for ${record_name}."
+          if [ -z "${existing_id}" ]; then
+            echo "No legacy DNS route host found for ${record_name}."
             exit 0
           fi
 
-          payload="$(jq -n \
-            --arg name "${record_name}" \
-            --arg comment "develop lane: Workers-route-only hostname for transit-web-dev" \
-            '{type:"AAAA", name:$name, content:"100::", ttl:1, proxied:true, comment:$comment}')"
-          curl -fsS -X POST \
+          content="$(jq -r '.result[0].content' <<<"${records_json}")"
+          proxied="$(jq -r '.result[0].proxied' <<<"${records_json}")"
+          comment="$(jq -r '.result[0].comment // ""' <<<"${records_json}")"
+          if [ "${content}" != "100::" ] || [ "${proxied}" != "true" ] || [ "${comment}" != "${legacy_comment}" ]; then
+            echo "::error::Existing ${record_name} DNS record is not the expected legacy route host; refusing to delete it."
+            exit 1
+          fi
+
+          curl -fsS -X DELETE \
             -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
             -H "Content-Type: application/json" \
-            --data "${payload}" \
-            "${api}" | jq -e '.success == true' >/dev/null
-          echo "DNS route host created for ${record_name}."
+            "${api}/${existing_id}" | jq -e '.success == true' >/dev/null
+          echo "Legacy DNS route host removed for ${record_name}; Wrangler will attach it as a custom domain."
 
       - name: Deploy dev Worker
         working-directory: apps/web

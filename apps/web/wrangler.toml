@@ -49,7 +49,7 @@ PUBLIC_INDEXING = "true"
 name = "transit-web-dev"
 workers_dev = false
 routes = [
-  { pattern = "dev.transit.yesid.dev/*", zone_name = "yesid.dev" },
+  { pattern = "dev.transit.yesid.dev", custom_domain = true },
 ]
 
 [env.dev.vars]

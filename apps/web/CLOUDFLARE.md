@@ -99,7 +99,8 @@ Production resolves `/data/*` at the zone-route level, and SSR reads through the
 `develop` deploys to the Wrangler `dev` environment:
 
 - Worker name: `transit-web-dev`
-- Route: `dev.transit.yesid.dev/*`
+- Domain: `dev.transit.yesid.dev` as a Workers Custom Domain, so Cloudflare
+  manages the exact-host edge certificate for this nested subdomain
 - Indexing: disabled (`PUBLIC_INDEXING=false`, static `robots.txt` disallows
   crawlers, and `sitemap.xml` emits an empty urlset)
 - Data: read-only production `/v1` snapshots via
