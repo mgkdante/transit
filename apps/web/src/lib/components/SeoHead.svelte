@@ -24,6 +24,7 @@
 <script lang="ts">
 	import { dev as runtimeDev } from '$app/environment';
 	import { DEFAULT_LOCALE, SUPPORTED_LOCALES, localizeHref, type Locale } from '$lib/i18n';
+	import { websiteJsonLd } from '$lib/seo/jsonld';
 
 	interface SeoHeadProps {
 		/** Page title (already localized by the caller). Site name is appended. */
@@ -44,6 +45,9 @@
 		noIndex?: boolean;
 		/** Suppress hreflang alternates (single-locale surfaces). */
 		singleLocale?: boolean;
+		/** Pre-built schema.org JSON-LD nodes to emit alongside the always-on
+		 *  WebSite+SearchAction node (e.g. a per-entity BreadcrumbList). */
+		jsonLd?: unknown[];
 		/** Test seam to force the dev-warning path. */
 		dev?: boolean;
 	}
@@ -58,6 +62,7 @@
 		themeColor = '#141414',
 		noIndex = false,
 		singleLocale = false,
+		jsonLd = [],
 		dev = runtimeDev,
 	}: SeoHeadProps = $props();
 
@@ -74,6 +79,11 @@
 	// og:locale uses BCP-47-ish underscore form (Montréal market → _CA).
 	const ogLocale = $derived(`${locale}_CA`);
 	const altLocales = $derived(SUPPORTED_LOCALES.filter((l) => l !== locale).map((l) => `${l}_CA`));
+
+	// JSON-LD: every page carries the WebSite+SearchAction node (built from this
+	// component's own origin/name/locale, so callers need not pass it), plus any
+	// pre-built nodes the caller supplies. Serialized via JSON.stringify only.
+	const ldNodes = $derived([websiteJsonLd({ siteOrigin, siteName, locale }), ...jsonLd]);
 
 	// Dev-only ergonomics: warn (never throw) on lengths that risk SERP/social
 	// truncation. Production renders untouched.
@@ -139,4 +149,16 @@
 			href={`${siteOrigin}${localizeHref(path, DEFAULT_LOCALE)}`}
 		/>
 	{/if}
+
+	<!-- schema.org JSON-LD — always-on WebSite+SearchAction node plus any
+	     caller-supplied nodes. Content is app-built objects, JSON-serialized with
+	     `<` escaped to <, so no markup can break out; the closing tag is split
+	     so the Svelte lexer never sees a literal </script>. -->
+	{#each ldNodes as node (node)}
+		<!-- eslint-disable-next-line svelte/no-at-html-tags -- JSON-LD: app-built nodes, < escaped, no user HTML -->
+		{@html '<script type="application/ld+json">' +
+			JSON.stringify(node).replace(/</g, '\\u003c') +
+			'</scr' +
+			'ipt>'}
+	{/each}
 </svelte:head>

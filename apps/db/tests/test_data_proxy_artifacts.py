@@ -65,40 +65,48 @@ def test_deploy_workflow_runs_worker_tests_then_wrangler_action() -> None:
 
     triggers = _workflow_triggers(workflow)
     assert "workflow_dispatch" in triggers
-    assert triggers["push"]["branches"] == ["main"]
+    # CI runs the worker tests on both lanes (develop = dev gate); the deploy STEP
+    # stays main-only (gated by the job `if` on refs/heads/main).
+    assert triggers["push"]["branches"] == ["main", "develop"]
     assert "apps/data-proxy/**" in triggers["push"]["paths"]
     # The workflow must also redeploy when only the deploy pipeline changes.
     assert ".github/workflows/deploy-data-proxy.yml" in triggers["push"]["paths"]
     assert workflow["permissions"] == {"contents": "read"}
 
-    (job,) = workflow["jobs"].values()
-    steps = job["steps"]
-    node_test_indexes = [
-        index for index, step in enumerate(steps) if "node --test" in step.get("run", "")
-    ]
-    wrangler_indexes = [
-        index
-        for index, step in enumerate(steps)
-        if step.get("uses", "").startswith("cloudflare/wrangler-action")
-    ]
-    assert node_test_indexes, "deploy workflow must run the worker behavioral suite"
-    assert wrangler_indexes, "deploy workflow must publish via cloudflare/wrangler-action"
-    assert node_test_indexes[0] < wrangler_indexes[0], "tests must gate the deploy"
+    # Two jobs: the worker behavioral suite gates the (main-only) deploy.
+    jobs = workflow["jobs"]
+    test_job = jobs["test-data-proxy"]
+    deploy_job = jobs["deploy-data-proxy"]
 
-    wrangler_step = steps[wrangler_indexes[0]]
-    assert wrangler_step["with"]["apiToken"] == "${{ secrets.CLOUDFLARE_API_TOKEN }}"
-    assert wrangler_step["with"]["workingDirectory"] == "apps/data-proxy"
+    test_runs = [step.get("run", "") for step in test_job["steps"]]
+    assert any("node --test" in run for run in test_runs), (
+        "test job must run the worker behavioral suite"
+    )
+    assert deploy_job["needs"] == "test-data-proxy", "tests must gate the deploy"
 
-    # CI must deploy with the exact wrangler the worker declares, or the
+    # Deploy is main-only (or manual dispatch); develop pushes run the tests but
+    # never publish.
+    assert "refs/heads/main" in deploy_job["if"]
+    assert "workflow_dispatch" in deploy_job["if"]
+
+    # CI must deploy with the EXACT wrangler the worker declares, or the
     # dry-run-validated toolchain and the deployed one silently drift. Under the
     # bun workspace the data-proxy carries no per-app lockfile (deps resolve via
     # the root bun.lock), so wrangler is pinned EXACTLY in package.json and the
-    # deploy action must use that same pin.
-    proxy_pkg = json.loads(
-        (PROXY_DIR / "package.json").read_text(encoding="utf-8")
-    )
+    # deploy command must use that same pin.
+    deploy_steps = deploy_job["steps"]
+    wrangler_steps = [
+        step
+        for step in deploy_steps
+        if "wrangler" in step.get("run", "") and "deploy" in step.get("run", "")
+    ]
+    assert wrangler_steps, "deploy job must publish via `wrangler deploy`"
+    wrangler_step = wrangler_steps[0]
+    assert wrangler_step["env"]["CLOUDFLARE_API_TOKEN"] == "${{ secrets.CLOUDFLARE_API_TOKEN }}"
+
+    proxy_pkg = json.loads((PROXY_DIR / "package.json").read_text(encoding="utf-8"))
     declared_wrangler = proxy_pkg["devDependencies"]["wrangler"]
-    assert wrangler_step["with"]["wranglerVersion"] == declared_wrangler
+    assert f"wrangler@{declared_wrangler}" in wrangler_step["run"]
 
 
 def test_env_example_public_base_url_matches_worker_route() -> None:

@@ -79,6 +79,7 @@
 	import MapNearMeControl from './MapNearMeControl.svelte';
 	import MapSelectionDetail from './MapSelectionDetail.svelte';
 	import { copy as MAP_COPY } from './map.copy';
+	import { shouldAnimate } from '$lib/motion/policy';
 	import { buildAlertEntitySets, vehicleHasAlert } from './mapAlerts';
 	import { PICKABLE_MAP_LAYERS, pickMapSelection } from './mapPicking';
 	import { resolveMapSelection, type MapSelection } from './mapSelection';
@@ -92,18 +93,12 @@
 	const v1 = getV1Context();
 	const manifest = v1.manifest;
 	const mapInitialCenter = $derived(centerFromProviderBbox(manifest.bbox));
+	// Symmetric fit on BOTH desktop and mobile: the island sits at the centre of
+	// the (square, island-centred) bbox identically on every form factor. The
+	// filter panel is a collapsible overlay, so we centre on the island itself
+	// rather than reserving space for the panel — per the centring spec.
 	const MAP_FIT_PADDING_PX = 40;
-	const DESKTOP_MAP_FIT_LEFT_PADDING_PX = 520;
-	const mapFitPadding = $derived<MapFitPadding>(
-		layout.isDesktop
-			? {
-					top: MAP_FIT_PADDING_PX,
-					bottom: MAP_FIT_PADDING_PX,
-					left: DESKTOP_MAP_FIT_LEFT_PADDING_PX,
-					right: MAP_FIT_PADDING_PX,
-				}
-			: MAP_FIT_PADDING_PX,
-	);
+	const mapFitPadding = $derived<MapFitPadding>(MAP_FIT_PADDING_PX);
 	type NearMeOrigin = LatLon & { label: string; precision?: GeocodePrecision };
 
 	// URL-DRIVEN filter state — the reusable spine. Seeded from the URL so a reload
@@ -464,12 +459,20 @@
 		});
 	}
 
+	/** Camera move that honours prefers-reduced-motion: jumpTo (no flight) under
+	 * reduce, flyTo otherwise. `essential` alone does NOT respect reduced motion. */
+	function panTo(center: [number, number], zoom: number): void {
+		if (!map) return;
+		if (shouldAnimate('motion-gated')) map.flyTo({ center, zoom, essential: true });
+		else map.jumpTo({ center, zoom });
+	}
+
 	function flyToNearMeOrigin(origin: NearMeOrigin): void {
-		map?.flyTo({
-			center: [origin.lon, origin.lat],
-			zoom: Math.max(map.getZoom(), zoomForNearMePrecision(origin.precision)),
-			essential: true,
-		});
+		if (!map) return;
+		panTo(
+			[origin.lon, origin.lat],
+			Math.max(map.getZoom(), zoomForNearMePrecision(origin.precision)),
+		);
 	}
 
 	function zoomForNearMePrecision(precision?: GeocodePrecision): number {
@@ -564,11 +567,7 @@
 		selectionStack = [];
 		selected = { kind: 'stop', id: stop.id };
 		detailOpen = true;
-		map?.flyTo({
-			center: [stop.lon, stop.lat],
-			zoom: Math.max(map.getZoom(), 15),
-			essential: true,
-		});
+		if (map) panTo([stop.lon, stop.lat], Math.max(map.getZoom(), 15));
 	}
 
 	function parseCoordinateQuery(query: string): LatLon | null {

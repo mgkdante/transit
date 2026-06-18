@@ -36,6 +36,7 @@
 		ResourceBoundary,
 		ReliabilityPane,
 		LiveFreshness,
+		MapDrilldownLink,
 		type ReliabilityPeriodVM,
 	} from '$lib/components/surface';
 	import { EdgeState } from '$lib/components/edge';
@@ -106,14 +107,11 @@
 	{#snippet header()}
 		<div class="stop-detail-head">
 			<StopLabel stop={id} label={stop.data?.name ?? `#${id}`} />
-			<a
+			<MapDrilldownLink
 				href={mapHrefFor({ stop: id }, locale)}
-				class="stop-map-action"
-				aria-label={t.viewStopOnMap(id)}
-				data-sveltekit-preload-data="hover"
-			>
-				{t.viewOnMap}
-			</a>
+				label={t.viewOnMap}
+				ariaLabel={t.viewStopOnMap(id)}
+			/>
 		</div>
 	{/snippet}
 
@@ -264,33 +262,6 @@
 		align-items: center;
 		justify-content: space-between;
 		gap: 1rem;
-	}
-	.stop-map-action {
-		display: inline-flex;
-		align-items: center;
-		justify-content: center;
-		min-height: 2.25rem;
-		padding: 0.3rem 0.8rem;
-		font-family: var(--font-mono);
-		font-size: var(--text-caption);
-		color: var(--primary);
-		text-decoration: none;
-		background: color-mix(in srgb, var(--primary) 8%, transparent);
-		border: 1px solid color-mix(in srgb, var(--primary) 30%, var(--border) 70%);
-		border-radius: var(--radius-pill);
-		transition:
-			color 150ms ease,
-			background-color 150ms ease,
-			border-color 150ms ease;
-	}
-	.stop-map-action:hover {
-		color: var(--foreground);
-		background: color-mix(in srgb, var(--primary) 16%, transparent);
-		border-color: color-mix(in srgb, var(--primary) 45%, var(--border) 55%);
-	}
-	.stop-map-action:focus-visible {
-		outline: 2px solid var(--ring);
-		outline-offset: 2px;
 	}
 
 	.stop-next {
@@ -445,12 +416,6 @@
 		.stop-detail-head {
 			align-items: flex-start;
 			flex-direction: column;
-		}
-	}
-
-	@media (prefers-reduced-motion: reduce) {
-		.stop-map-action {
-			transition: none;
 		}
 	}
 </style>

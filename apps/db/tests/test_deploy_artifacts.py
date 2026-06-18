@@ -224,9 +224,10 @@ def test_refresh_basemap_workflow_extract_is_square_and_centered_on_montreal_isl
     bbox_raw = workflow["env"]["BBOX"]
     min_lon, min_lat, max_lon, max_lat = (float(part) for part in bbox_raw.split(","))
 
-    assert bbox_raw == "-74.176,45.237,-73.276,45.867"
-    assert math.isclose((min_lon + max_lon) / 2, -73.726)
-    assert math.isclose((min_lat + max_lat) / 2, 45.552)
+    assert bbox_raw == "-74.17628,45.23742,-73.27628,45.86764"
+    # Centered on the OSM Île de Montréal relation bounds-center.
+    assert math.isclose((min_lon + max_lon) / 2, -73.72628)
+    assert math.isclose((min_lat + max_lat) / 2, 45.55253)
 
     def mercator_y(lat: float) -> float:
         radians = math.radians(lat)

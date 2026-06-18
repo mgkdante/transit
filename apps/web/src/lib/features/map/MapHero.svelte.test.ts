@@ -279,7 +279,10 @@ describe('MapHero mobile chrome', () => {
 		const s = source();
 		const mapStageBlock = s.match(/<MapStage[\s\S]*?\/>/)?.[0] ?? '';
 
-		expect(s).toContain('const DESKTOP_MAP_FIT_LEFT_PADDING_PX = 520');
+		// Symmetric fit on every form factor — NO asymmetric desktop left-reserve —
+		// so the island centres identically on desktop and mobile.
+		expect(s).toContain('const MAP_FIT_PADDING_PX = 40');
+		expect(s).not.toContain('DESKTOP_MAP_FIT_LEFT_PADDING_PX');
 		expect(s).toContain('const mapFitPadding = $derived');
 		expect(s).not.toContain('{#if basemap.settled}');
 		expect(mapStageBlock).toContain('basemap={basemap.data}');

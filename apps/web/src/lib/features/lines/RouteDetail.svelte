@@ -25,6 +25,7 @@
 		EntityDetail,
 		ResourceBoundary,
 		ReliabilityPane,
+		MapDrilldownLink,
 		type ReliabilityPeriodVM,
 	} from '$lib/components/surface';
 	import SectionHeading from '$lib/components/brand/SectionHeading.svelte';
@@ -73,14 +74,11 @@
 	{#snippet header()}
 		<div class="route-detail-head">
 			<SectionHeading heading={id} level={1} dot />
-			<a
+			<MapDrilldownLink
 				href={mapHrefFor({ route: id }, locale)}
-				class="route-map-action"
-				aria-label={t.viewRouteOnMap(id)}
-				data-sveltekit-preload-data="hover"
-			>
-				{t.viewOnMap}
-			</a>
+				label={t.viewOnMap}
+				ariaLabel={t.viewRouteOnMap(id)}
+			/>
 		</div>
 	{/snippet}
 
@@ -219,33 +217,6 @@
 		justify-content: space-between;
 		gap: 1rem;
 	}
-	.route-map-action {
-		display: inline-flex;
-		align-items: center;
-		justify-content: center;
-		min-height: 2.25rem;
-		padding: 0.3rem 0.8rem;
-		font-family: var(--font-mono);
-		font-size: var(--text-caption);
-		color: var(--primary);
-		text-decoration: none;
-		background: color-mix(in srgb, var(--primary) 8%, transparent);
-		border: 1px solid color-mix(in srgb, var(--primary) 30%, var(--border) 70%);
-		border-radius: var(--radius-pill);
-		transition:
-			color 150ms ease,
-			background-color 150ms ease,
-			border-color 150ms ease;
-	}
-	.route-map-action:hover {
-		color: var(--foreground);
-		background: color-mix(in srgb, var(--primary) 16%, transparent);
-		border-color: color-mix(in srgb, var(--primary) 45%, var(--border) 55%);
-	}
-	.route-map-action:focus-visible {
-		outline: 2px solid var(--ring);
-		outline-offset: 2px;
-	}
 	.route-section {
 		display: flex;
 		flex-direction: column;
@@ -341,11 +312,6 @@
 		.route-detail-head {
 			align-items: start;
 			flex-direction: column;
-		}
-	}
-	@media (prefers-reduced-motion: reduce) {
-		.route-map-action {
-			transition: none;
 		}
 	}
 	.route-period {
