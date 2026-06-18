@@ -38,6 +38,8 @@ from transit_ops.snapshots.builders._helpers import (
     _severity_code,
 )
 from transit_ops.snapshots.contract import (
+    AlertBreakdown,
+    AlertBreakdownBucket,
     AlertHistory,
     AlertHistoryEntry,
     CancellationPeriod,
@@ -57,6 +59,7 @@ from transit_ops.snapshots.contract import (
     RepeatOffenders,
     RouteDayOfWeek,
     RouteReliability,
+    ServiceSpanPeriod,
     StopByRoute,
     StopReliability,
     StopReliabilityPeriod,
@@ -268,10 +271,10 @@ _ROUTE_REL_MONTHLY_SQL = text(
     """
 )
 
-# Observed headway per shift (pre-computed in gold).
+# Observed headway per shift (pre-computed in gold) + Tier-2 regularity columns.
 _ROUTE_HEADWAY_OBSERVED_SQL = text(
     """
-    SELECT shift, observed_headway_min, sample_count
+    SELECT shift, observed_headway_min, sample_count, headway_cov, bunched_count
     FROM gold.route_headway_daily
     WHERE provider_id = :provider_id AND route_id = :route_id
     """
@@ -385,6 +388,21 @@ _ROUTE_OCCUPANCY_BAND_WINDOW_SQL = text(
     """
 )
 
+# Per-route service-span / first-last punctuality from the append-only daily
+# rollup (last 30 closed local days). Unique discriminator for test dispatch:
+# "first_trip_start_utc". (Ends with the shared ORDER BY provider_local_date DESC.)
+_ROUTE_SERVICE_SPAN_SQL = text(
+    """
+    SELECT provider_local_date, first_trip_start_utc, last_trip_start_utc,
+           service_span_min, first_trip_delay_seconds, last_trip_delay_seconds,
+           trip_count
+    FROM gold.route_service_span_daily
+    WHERE provider_id = :provider_id AND route_id = :route_id
+    ORDER BY provider_local_date DESC
+    LIMIT 30
+    """
+)
+
 
 def build_route_reliability(
     conn: Connection, *, provider_id: str = "stm", route_id: str, generated_utc: str
@@ -458,9 +476,24 @@ def build_route_reliability(
 
     # --- headway: observed and scheduled both use weekday busiest-direction semantics ---
     observed: dict[str, float] = {}
+    # Tier-2 regularity, keyed by shift (busiest-direction rows). Use .get() so an
+    # old artifact / fixture lacking the columns yields None rather than KeyError.
+    regularity: dict[str, tuple[float | None, float | None]] = {}
     for r in conn.execute(_ROUTE_HEADWAY_OBSERVED_SQL, params).mappings():
+        shift = str(r["shift"])
         if r["observed_headway_min"] is not None:
-            observed[str(r["shift"])] = float(r["observed_headway_min"])
+            observed[shift] = float(r["observed_headway_min"])
+        cov_raw = r.get("headway_cov")
+        bunched = r.get("bunched_count")
+        sample = r.get("sample_count")
+        cov = float(cov_raw) if cov_raw is not None else None
+        # bunched_pct honest-None when no gaps observed.
+        bunched_pct = (
+            round(100.0 * float(bunched) / float(sample), 1)
+            if bunched is not None and sample
+            else None
+        )
+        regularity[shift] = (cov, bunched_pct)
 
     scheduled = _scheduled_headway_by_shift(conn, provider_id=provider_id, route_id=route_id)
 
@@ -477,12 +510,15 @@ def build_route_reliability(
         # Excess wait is a rider-cost metric: early/frequent observed service
         # stays at zero rather than publishing negative wait.
         excess = round(max(0.0, obs - sched), 1) if both else None
+        cov, bunched_pct = regularity.get(shift, (None, None))
         headway.append(
             HeadwayPeriod(
                 shift=shift,
                 scheduled_min=sched,
                 observed_min=round(obs, 1) if obs is not None else None,
                 excess_wait_min=excess,
+                cov=cov,
+                bunched_pct=bunched_pct,
             )
         )
 
@@ -565,6 +601,23 @@ def build_route_reliability(
         conn.execute(_ROUTE_OCCUPANCY_BAND_WINDOW_SQL, params).mappings().fetchone()
     )
 
+    # --- service spans: per-day first/last + span history (30 closed days, ASC) ---
+    service_spans = [
+        ServiceSpanPeriod(
+            date=_iso_date(r["provider_local_date"]),
+            first_trip_utc=_opt_iso(r["first_trip_start_utc"]),
+            last_trip_utc=_opt_iso(r["last_trip_start_utc"]),
+            service_span_min=_opt_int(r["service_span_min"]),
+            first_trip_delay_min=_avg_delay_min(r["first_trip_delay_seconds"]),
+            last_trip_delay_min=_avg_delay_min(r["last_trip_delay_seconds"]),
+            trip_count=_opt_int(r["trip_count"]),
+        )
+        for r in sorted(
+            conn.execute(_ROUTE_SERVICE_SPAN_SQL, params).mappings(),
+            key=lambda r: r["provider_local_date"],
+        )
+    ]
+
     return RouteReliability(
         generated_utc=generated_utc,
         id=route_id,
@@ -576,6 +629,7 @@ def build_route_reliability(
         weak_stops=weak_stops,
         cancellations=cancellations,
         occupancy_mix=occupancy_mix,
+        service_spans=service_spans,
     )
 
 
@@ -1025,6 +1079,8 @@ _ALERT_HISTORY_SQL = text(
     SELECT alert_header_text,
            MAX(alert_header_text_en)                                AS header_text_en,
            MAX(severity)                                            AS severity,
+           MAX(cause)                                               AS cause,
+           MAX(effect)                                              AS effect,
            ARRAY_AGG(DISTINCT route_id)
                FILTER (WHERE route_id IS NOT NULL)                  AS routes,
            ARRAY_AGG(DISTINCT stop_id)
@@ -1039,6 +1095,49 @@ _ALERT_HISTORY_SQL = text(
     LIMIT 200
     """
 )
+
+
+def _alert_breakdown(
+    records: list[tuple[str | None, str | None, str | None, float | None]],
+) -> AlertBreakdown | None:
+    """Bucket distinct alerts by cause / effect / severity with median duration.
+
+    records = (cause, effect, severity, duration_min) per distinct alert. NULL/blank
+    dimensions fold into an 'unknown' bucket (STM frequently omits cause/effect);
+    median duration ignores rows with no usable window. Returns None when empty.
+    """
+    if not records:
+        return None
+    import statistics
+
+    def _buckets(index: int) -> list[AlertBreakdownBucket]:
+        grouped: dict[str, list[float]] = {}
+        counts: dict[str, int] = {}
+        for rec in records:
+            raw = rec[index]
+            key = str(raw).strip() if raw not in (None, "") else "unknown"
+            counts[key] = counts.get(key, 0) + 1
+            if rec[3] is not None:
+                grouped.setdefault(key, []).append(rec[3])
+        out = [
+            AlertBreakdownBucket(
+                key=key,
+                count=counts[key],
+                median_duration_min=(
+                    round(statistics.median(grouped[key]), 1) if grouped.get(key) else None
+                ),
+            )
+            for key in counts
+        ]
+        # Stable, deterministic ordering: most frequent first, then label.
+        out.sort(key=lambda b: (-b.count, b.key))
+        return out
+
+    return AlertBreakdown(
+        by_cause=_buckets(0),
+        by_effect=_buckets(1),
+        by_severity=_buckets(2),
+    )
 
 
 def build_alert_history(
@@ -1059,6 +1158,8 @@ def build_alert_history(
         conn.execute(_ALERT_HISTORY_SQL, {"provider_id": provider_id}).mappings()
     )
     entries: list[AlertHistoryEntry] = []
+    # (cause, effect, severity_code, duration_min) per distinct alert for the breakdown.
+    breakdown_records: list[tuple[str | None, str | None, str | None, float | None]] = []
     for r in rows:
         start = r["start_utc"]
         end = r["end_utc"]
@@ -1105,10 +1206,12 @@ def build_alert_history(
             for c in ("alert_header_text", "severity", "start_utc", "end_utc")
         )
         alert_id = f"{provider_id}-alert-{hashlib.sha1(basis.encode()).hexdigest()[:12]}"
+        severity_code = _severity_code(r["severity"])
+        breakdown_records.append((r.get("cause"), r.get("effect"), severity_code, duration_min))
         entries.append(
             AlertHistoryEntry(
                 id=alert_id,
-                severity=_severity_code(r["severity"]),
+                severity=severity_code,
                 # slice-9.1.1s: header + MAX'd EN header (grouping unchanged).
                 header_text=r["alert_header_text"],
                 header_text_en=_sane_en(r["header_text_en"]),
@@ -1120,7 +1223,11 @@ def build_alert_history(
                 impact_passages=None,  # v1 deferral: not stored in gold
             )
         )
-    return AlertHistory(generated_utc=generated_utc, alerts=entries)
+    return AlertHistory(
+        generated_utc=generated_utc,
+        alerts=entries,
+        breakdown=_alert_breakdown(breakdown_records),
+    )
 
 
 # --------------------------------------------------------------------------
@@ -1255,6 +1362,24 @@ def build_provenance(
                 "folds into standing; NOT_ACCEPTING/NO_DATA/NOT_BOARDABLE excluded; "
                 "summed per closed local day and retained 365 days; null when no "
                 "occupancy telemetry exists, never an all-zero mix"
+            ),
+            "headway_regularity": (
+                "cov = stddev/mean of observed trip-start gaps in the busiest "
+                "weekday direction per shift (trailing 14d), null with fewer than "
+                "2 gaps; bunched = share of gaps under half the shift median "
+                "headway; the 0.5x threshold is a fixed bunching definition"
+            ),
+            "service_span": (
+                "first/last trip = earliest/latest first-realtime-observation "
+                "trip-start per route per closed local day (observed activity, not "
+                "the scheduled departure); span in minutes; first/last delay = that "
+                "trip's first-observation schedule deviation; retained 365 days"
+            ),
+            "alert_breakdown": (
+                "distinct content-hashed alerts in the 30-day window grouped by "
+                "GTFS cause/effect/severity; NULL/blank labeled 'unknown' (STM "
+                "frequently omits cause/effect); median duration from active-period "
+                "start/end, the high-confidence dimension; over the 200-alert cap"
             ),
         },
         gaps=["metro_realtime"],  # STM metro publishes no realtime feed

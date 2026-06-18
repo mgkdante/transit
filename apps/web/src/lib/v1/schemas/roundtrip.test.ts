@@ -234,6 +234,41 @@ describe('tier-1 — cancellations + occupancy_mix round-trip (additive optional
 	});
 });
 
+describe('tier-2 — headway cov/bunching + service_spans + alert breakdown round-trip', () => {
+	it('parses route_reliability carrying headway cov/bunched_pct + service_spans', () => {
+		const fixture = {
+			generated_utc: ISO,
+			id: '165',
+			headway: [{ shift: 'am_peak', observed_min: 8.5, cov: 0.42, bunched_pct: 12.5 }],
+			service_spans: [
+				{
+					date: '2026-06-14',
+					first_trip_utc: '2026-06-14T10:00:00Z',
+					last_trip_utc: '2026-06-15T01:00:00Z',
+					service_span_min: 900,
+					first_trip_delay_min: 0.5,
+					last_trip_delay_min: 1.5,
+					trip_count: 120,
+				},
+			],
+		};
+		expect(() => parsePort('route_reliability', RouteReliabilitySchema, fixture)).not.toThrow();
+	});
+
+	it('parses alert_history carrying a cause/effect/severity breakdown', () => {
+		const fixture = {
+			generated_utc: ISO,
+			alerts: [],
+			breakdown: {
+				by_cause: [{ key: 'unknown', count: 3, median_duration_min: 42 }],
+				by_effect: [{ key: 'DETOUR', count: 2 }],
+				by_severity: [{ key: 'high', count: 2, median_duration_min: null }],
+			},
+		};
+		expect(() => parsePort('alert_history', AlertHistorySchema, fixture)).not.toThrow();
+	});
+});
+
 describe('stops_index — optional mode + routes round-trip', () => {
 	it('parses a populated entry (mode + routes) alongside a minimal one (neither)', () => {
 		const fixture = {

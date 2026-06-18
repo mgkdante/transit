@@ -142,6 +142,9 @@ class FakeConnection:
         if "INSERT INTO gold.route_occupancy_band_daily" in sql:
             return RowcountResult(1)
 
+        if "INSERT INTO gold.route_service_span_daily" in sql:
+            return RowcountResult(1)
+
         if "INSERT INTO gold.warm_rollup_periods" in sql:
             return RowcountResult(1)
 
@@ -192,6 +195,9 @@ class FakeConnection:
 
         if "SELECT COUNT(*)" in sql and "FROM gold.route_occupancy_band_daily" in sql:
             return ScalarResult(10)
+
+        if "SELECT COUNT(*)" in sql and "FROM gold.route_service_span_daily" in sql:
+            return ScalarResult(12)
 
         return RowcountResult(0)
 
@@ -309,6 +315,7 @@ def test_build_warm_rollups_empty_facts_is_noop() -> None:
     assert result.built_occupancy_periods == 0
     assert result.built_route_cancellation_days == 0
     assert result.built_route_occupancy_days == 0
+    assert result.built_route_service_span_days == 0
     assert isinstance(result.completed_at_utc, datetime)
 
 
@@ -693,6 +700,31 @@ def test_route_headway_daily_upsert_shape() -> None:
     assert "gap_min > 0" in sql
     assert "gap_min < 240" in sql
     assert "ON CONFLICT (provider_id, route_id, shift)" in sql
+    # Tier-2 regularity ride-along: CoV + bunching, refreshed on conflict.
+    assert "stddev_samp(gap_min)" in sql
+    assert "headway_cov" in sql
+    assert "bunched_count" in sql
+    assert "0.5 * a.med_gap" in sql
+    assert "headway_cov = EXCLUDED.headway_cov" in sql
+    assert "bunched_count = EXCLUDED.bunched_count" in sql
+
+
+def test_route_service_span_daily_upsert_shape() -> None:
+    """Tier-2 service-span: per-route closed-day first/last + span, append-only.
+
+    Grain is route x provider_local_date (no service_day_kind column — derived at
+    read), trip-start = MIN(captured_at_utc), bound to one local day by the
+    captured-date calendar so it slots into _build_percentile_days."""
+    sql = str(rollups.UPSERT_ROUTE_SERVICE_SPAN_DAILY)
+    compact = " ".join(sql.split())
+
+    assert "INSERT INTO gold.route_service_span_daily" in sql
+    assert "FROM gold.fact_trip_delay_snapshot" in sql
+    assert "MIN(f.captured_at_utc) AS trip_start_utc" in compact
+    assert "timezone(dp.timezone, f.captured_at_utc)::date = :local_date" in compact
+    # span derived from first/last observed trip start.
+    assert "MAX(trip_start_utc) - MIN(trip_start_utc)" in compact
+    assert "ON CONFLICT (provider_id, provider_local_date, route_id)" in sql
 
 
 def test_repeat_offender_daily_upsert_shape() -> None:
@@ -788,11 +820,13 @@ def test_prune_warm_rollup_storage_dry_run_counts_without_deletes() -> None:
     assert result.deleted_row_counts["gold.occupancy_summary_5m"] == 6
     assert result.deleted_row_counts["gold.route_cancellation_daily"] == 9
     assert result.deleted_row_counts["gold.route_occupancy_band_daily"] == 10
+    # Tier-2 service-span append-only table.
+    assert result.deleted_row_counts["gold.route_service_span_daily"] == 12
 
     count_queries = [s for s in conn.executed if "SELECT COUNT(*)" in s or "SELECT count(*)" in s]
-    # 17 prior + 3 Tier-1 aggregate-retention tables (occupancy 5m + cancellation
-    # daily + occupancy band daily); all three sit in GOLD_AGGREGATE_RETENTION_COLUMNS.
-    assert len(count_queries) == 20
+    # 20 prior + 1 Tier-2 service-span aggregate-retention table; it sits in
+    # GOLD_AGGREGATE_RETENTION_COLUMNS so it emits one dry-run COUNT.
+    assert len(count_queries) == 21
 
 
 def test_prune_warm_rollup_storage_display_dict_includes_dry_run() -> None:

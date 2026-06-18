@@ -336,6 +336,7 @@ def _historic_dispatch_conn():
         # generic daily-view "ORDER BY provider_local_date DESC" below).
         ("cancellation_rate_pct, canceled_trip_days", []),
         ("route_occupancy_band_daily AS rob", []),
+        ("first_trip_start_utc", []),
         ("ORDER BY provider_local_date DESC", [
             {"d": datetime.date(2026, 6, 1), "known_obs": 50, "on_time": 45,
              "avg_delay_sec": 90, "severe": 5},
