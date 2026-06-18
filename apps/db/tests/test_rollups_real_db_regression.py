@@ -515,26 +515,8 @@ def test_granularity_shift_daytype_conserve_observations(conn) -> None:  # noqa:
         assert sum(r["observation_count"] for r in rows) == hourly_obs
 
 
-def test_granularity_headway_direction_tags_and_legacy_intact(conn) -> None:  # noqa: ANN001
-    connection, _seed = conn
-    rows = connection.execute(
-        text(
-            "SELECT direction_id, service_day_kind, shift, observed_headway_min "
-            "FROM gold.route_headway_direction_daily WHERE provider_id = :p AND route_id = '51T'"
-        ),
-        {"p": PROVIDER},
-    ).mappings().all()
-    assert rows, "per-direction headway should produce rows"
-    assert all(r["service_day_kind"] in {"weekday", "weekend"} for r in rows)
-    assert all(
-        r["shift"] in {"am_peak", "midday", "pm_peak", "evening", "night"} for r in rows
-    )
-    # The busiest-direction route_headway_daily path is untouched and still builds.
-    legacy = connection.execute(
-        text(
-            "SELECT count(*) FROM gold.route_headway_daily "
-            "WHERE provider_id = :p AND route_id = '51T'"
-        ),
-        {"p": PROVIDER},
-    ).scalar_one()
-    assert legacy >= 1
+# NOTE: per-direction headway is exercised in test_route_headway_real_db_regression.py
+# (test_direction_headway_keeps_both_directions_and_weekends), which seeds trips at
+# distinct times so real inter-trip gaps exist — the ghost-trip fixture here inserts
+# every trip in every snapshot, so MIN(captured_at) per trip coincides (gap 0) and no
+# headway rows are produced.
