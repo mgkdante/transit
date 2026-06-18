@@ -208,6 +208,18 @@ class StopIndexEntry(BaseModel):
     name: str
     lat: float
     lon: float
+    # Additive (slice stops-index-mode-routes): optional so already-published
+    # snapshots lacking these keys still validate. mode = highest-priority GTFS
+    # mode serving the stop, null when no route linkage; routes = up to 5 route
+    # ids serving the stop (route natural-sort order), for search mode + chips.
+    mode: str | None = Field(
+        default=None,
+        description="highest-priority GTFS mode serving this stop: metro|tram|rail|bus|ferry; null when no route linkage",
+    )
+    routes: list[str] = Field(
+        default_factory=list,
+        description="up to 5 route ids serving this stop, in route natural-sort order",
+    )
 
 class StopsIndex(BaseModel):
     generated_utc: str

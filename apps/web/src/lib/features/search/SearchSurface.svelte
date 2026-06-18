@@ -165,7 +165,7 @@
 								truncatedLabel={t.more(matchedStops.length - MAX_RESULTS)}
 							>
 								{#snippet row(s)}
-									{@const hint = stopModeHint(s.name)}
+									{@const hint = stopModeHint(s)}
 									<EntityRow
 										target={{ kind: 'stop', id: s.id }}
 										{locale}
@@ -173,6 +173,7 @@
 										title={s.name}
 										subtitle={s.code ?? undefined}
 										meta={hint.label ?? undefined}
+										routes={s.routes}
 									/>
 								{/snippet}
 							</EntityList>
