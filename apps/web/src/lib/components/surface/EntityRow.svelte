@@ -29,11 +29,22 @@
 		subtitle?: string;
 		/** Optional right-aligned meta cell (e.g. an OTP %, a distance). */
 		meta?: string;
+		/** Optional short list of route ids shown as mono chips under the title. */
+		routes?: string[];
 		/** Optional extra classes on the anchor. */
 		class?: string;
 	}
 
-	let { target, locale, glyph, title, subtitle, meta, class: className }: EntityRowProps = $props();
+	let {
+		target,
+		locale,
+		glyph,
+		title,
+		subtitle,
+		meta,
+		routes,
+		class: className,
+	}: EntityRowProps = $props();
 
 	const href = $derived(localizeHref(routeFor(target), locale));
 </script>
@@ -51,6 +62,13 @@
 		<span class="entity-row-title">{title}</span>
 		{#if subtitle}
 			<span class="entity-row-subtitle">{subtitle}</span>
+		{/if}
+		{#if routes && routes.length > 0}
+			<span class="entity-row-routes">
+				{#each routes as route (route)}
+					<span class="entity-row-route">{route}</span>
+				{/each}
+			</span>
 		{/if}
 	</span>
 	{#if meta}
@@ -105,6 +123,21 @@
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
+	}
+	.entity-row-routes {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.25rem;
+		margin-top: 0.1rem;
+	}
+	.entity-row-route {
+		font-family: var(--font-mono);
+		font-size: var(--text-small);
+		line-height: 1.1;
+		padding: 0.1rem 0.35rem;
+		border-radius: var(--radius-md);
+		background-color: var(--muted);
+		color: var(--muted-foreground);
 	}
 	.entity-row-meta {
 		flex-shrink: 0;

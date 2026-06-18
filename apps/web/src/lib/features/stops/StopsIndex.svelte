@@ -80,7 +80,7 @@
 				truncatedLabel={overflow > 0 ? t.more(overflow) : undefined}
 			>
 				{#snippet row(stop)}
-					{@const hint = stopModeHint(stop.name)}
+					{@const hint = stopModeHint(stop)}
 					<div class="stop-result">
 						<EntityRow
 							target={{ kind: 'stop', id: stop.id }}
@@ -89,6 +89,7 @@
 							title={stop.name}
 							subtitle={stop.code ?? stop.id}
 							meta={hint.label ?? undefined}
+							routes={stop.routes}
 							class="stop-result-main"
 						/>
 						<MapDrilldownLink
