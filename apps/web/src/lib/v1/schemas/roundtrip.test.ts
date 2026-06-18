@@ -218,7 +218,13 @@ describe('tier-1 — cancellations + occupancy_mix round-trip (additive optional
 					date: '2026-06-14',
 					otp_pct: 82,
 					cancellation_rate: 1.2,
-					occupancy_mix: { empty: 0.1, many_seats: 0.4, few_seats: 0.3, standing: 0.15, full: 0.05 },
+					occupancy_mix: {
+						empty: 0.1,
+						many_seats: 0.4,
+						few_seats: 0.3,
+						standing: 0.15,
+						full: 0.05,
+					},
 				},
 				// honest-null day: both new fields absent — still parses (optional).
 				{ date: '2026-06-15' },
