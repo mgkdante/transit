@@ -17,7 +17,8 @@ export {
 	toPmtilesUrl,
 	BASEMAP_SOURCE_ID,
 } from './basemap';
-export { mapViewportOptions, MONTREAL_MAP_BOUNDS } from './viewport';
+export { centerFromProviderBbox, mapViewportOptions, MONTREAL_MAP_BOUNDS } from './viewport';
+export type { MapFitPadding } from './viewport';
 export type { MapViewportOptions } from './viewport';
 
 // Live vehicle layer kit (slice-9.3) — sprite baker + source/layers + feature

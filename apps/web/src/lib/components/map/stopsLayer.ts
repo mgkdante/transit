@@ -1,6 +1,6 @@
 // map/stopsLayer.ts — the static stops layer.
 //
-// One calm orange diamond, ZOOM-GATED to z≥9 so stops appear as soon as the
+// One calm yellow diamond, ZOOM-GATED to z≥9 so stops appear as soon as the
 // low-zoom street network appears, with a tiny early ramp to avoid blanketing.
 // Rendered UNDER the vehicle layers (stops are context; buses ride on top).
 // State (e.g. alert=has_alert) will tint via the filter.
@@ -76,7 +76,7 @@ export function addStopsSource(map: MapLibreMap): void {
 	map.addSource(STOPS_SOURCE, { type: 'geojson', data: EMPTY_FC, promoteId: 'id' });
 }
 
-/** Add the stops layer — orange DIAMOND sprite, single colour, zoom-gated.
+/** Add the stops layer — yellow DIAMOND sprite, single colour, zoom-gated.
  * Dimmer + smaller than the buses so the live vehicles keep primacy (hierarchy
  * by weight + shape, not hue). Idempotent. */
 export function addStopsLayer(map: MapLibreMap): void {

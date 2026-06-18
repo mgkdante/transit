@@ -49,7 +49,7 @@
 	import { cn } from '$lib/utils';
 	import type { BasemapFile } from '$lib/v1/schemas';
 	import { applyBasemapTheme, resolveBasemapStyle, type BasemapTheme } from './basemap';
-	import { mapViewportOptions } from './viewport';
+	import { mapViewportOptions, type MapFitPadding } from './viewport';
 	// Type-only import — erased at compile time, so it never pulls maplibre-gl
 	// into the server bundle. The RUNTIME import happens dynamically in onMount.
 	import type { Map as MapLibreMap, StyleSpecification } from 'maplibre-gl';
@@ -69,6 +69,8 @@
 		theme?: BasemapTheme;
 		/** Provider bbox as [minLon, minLat, maxLon, maxLat]. */
 		bounds?: readonly number[];
+		/** Fit padding used when the provider bbox seeds the initial camera. */
+		fitPadding?: MapFitPadding;
 		/** Accessible name for the map region (icon-/canvas-only control). */
 		label?: string;
 		/**
@@ -94,6 +96,7 @@
 		basemap = null,
 		theme = 'dark',
 		bounds,
+		fitPadding = 40,
 		label = 'Transit map',
 		onready,
 		onstyleload,
@@ -111,6 +114,20 @@
 
 	function cameraKey(nextCenter: [number, number], nextZoom: number): string {
 		return `${nextCenter[0]},${nextCenter[1]},${nextZoom}`;
+	}
+
+	function fitPaddingKey(nextPadding: MapFitPadding): string {
+		if (typeof nextPadding === 'number') return `${nextPadding}`;
+		return [
+			nextPadding.top ?? '',
+			nextPadding.right ?? '',
+			nextPadding.bottom ?? '',
+			nextPadding.left ?? '',
+		].join(',');
+	}
+
+	function fitKey(nextBounds: readonly number[] | undefined, nextPadding: MapFitPadding): string {
+		return `${nextBounds?.join(',') ?? 'fallback'}:${fitPaddingKey(nextPadding)}`;
 	}
 
 	onMount(() => {
@@ -141,7 +158,7 @@
 				style,
 				center,
 				zoom,
-				...mapViewportOptions(bounds),
+				...mapViewportOptions(bounds, fitPadding),
 				// Honest chrome: attribution is owned by the basemap/snapshot, not us.
 				attributionControl: { compact: true },
 			});
@@ -166,6 +183,17 @@
 	// Keep the camera in sync when center/zoom props change after creation. The
 	// constructor already applies the first camera, and chrome-only re-renders
 	// must not re-issue jumpTo because that can make the visible map twitch.
+	let activeFitKey: string | null = null;
+	$effect(() => {
+		const m = map;
+		if (!m) return;
+		const nextFitKey = fitKey(bounds, fitPadding);
+		if (activeFitKey === nextFitKey) return;
+		activeFitKey = nextFitKey;
+		const viewport = mapViewportOptions(bounds, fitPadding);
+		m.fitBounds(viewport.bounds, { ...viewport.fitBoundsOptions, duration: 0 });
+	});
+
 	let activeCameraKey: string | null = null;
 	$effect(() => {
 		const m = map;
@@ -252,14 +280,57 @@
 	/* Re-theme MapLibre's default control chrome to brand surfaces. These are
 	   the only places we reach into maplibre-gl's own class names; scoped via
 	   :global so Svelte doesn't tree-shake them as unused selectors. */
+	.map-stage :global(.maplibregl-ctrl-bottom-right) {
+		right: calc(var(--map-detail-offset, 0rem) + 1rem);
+		bottom: 1rem;
+		z-index: 12;
+		transition: right 180ms var(--ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+	}
+
 	.map-stage :global(.maplibregl-ctrl-attrib) {
 		background-color: var(--card);
 		color: var(--muted-foreground);
 		font-family: var(--font-mono);
 		font-size: var(--text-micro);
+		max-width: min(22rem, calc(100vw - var(--map-detail-offset, 0rem) - 2rem));
+	}
+
+	.map-stage :global(.maplibregl-ctrl-attrib-inner) {
+		white-space: normal;
+		overflow-wrap: anywhere;
 	}
 
 	.map-stage :global(.maplibregl-ctrl-attrib a) {
 		color: var(--accent-text);
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.map-stage :global(.maplibregl-ctrl-bottom-right) {
+			transition: none;
+		}
+	}
+
+	@media (max-width: 760px) {
+		.map-stage :global(.maplibregl-ctrl-bottom-right) {
+			right: 0.75rem;
+			bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
+			max-width: calc(100vw - 5.25rem);
+		}
+
+		.map-stage :global(.maplibregl-ctrl-attrib) {
+			max-width: calc(100vw - 5.25rem);
+			line-height: 1.25;
+		}
+
+		.map-stage :global(.maplibregl-ctrl-attrib.maplibregl-compact) {
+			box-sizing: border-box;
+			min-height: 1.75rem;
+			margin: 0;
+			padding: 0.25rem 1.85rem 0.25rem 0.55rem;
+		}
+
+		.map-stage :global(.maplibregl-ctrl-attrib.maplibregl-compact-show) {
+			max-width: calc(100vw - 5.25rem);
+		}
 	}
 </style>

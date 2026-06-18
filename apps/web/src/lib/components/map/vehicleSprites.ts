@@ -7,8 +7,8 @@
 //   · bus WITH heading → a KITE (nose up, rotated by bearing via the layer);
 //   · bus with NO heading → a SQUARE (honest "no heading", never a fake arrow);
 //   · stop → a DIAMOND (the distinct stop mark; STOP_ICON).
-// Colours are read from the live --dataviz-* / --primary tokens via a probe
-// element (NEVER hardcoded hex), so a theme swap re-bakes to the active palette.
+// Colours are read from live CSS tokens via a probe element (NEVER hardcoded
+// hex), so a theme swap re-bakes to the active palette.
 
 import type { Map as MapLibreMap } from 'maplibre-gl';
 import {
@@ -28,6 +28,15 @@ export const BUS_ICON = 'veh-bus';
 export const BUS_ICON_ND = 'veh-bus-nd';
 /** The stop diamond icon id. */
 export const STOP_ICON = 'veh-stop';
+
+export const BUS_FILL_TOKEN = 'var(--primary)';
+export const BUS_FILL_FALLBACK = 'rgb(224, 120, 0)';
+export const BUS_HALO_TOKEN = 'var(--background)';
+export const BUS_HALO_FALLBACK = '#141414';
+export const STOP_FILL_TOKEN = 'var(--accent)';
+export const STOP_FILL_FALLBACK = 'rgb(255, 182, 39)';
+export const STOP_HALO_TOKEN = BUS_HALO_TOKEN;
+export const STOP_HALO_FALLBACK = BUS_HALO_FALLBACK;
 
 /** Resolve a `var(--token)` expression to its computed `rgb(...)` string. */
 export function resolveColor(varExpr: string, fallback: string): string {
@@ -101,14 +110,14 @@ export const bodyIconId = (
  * so it re-bakes on a theme change). Browser-only (canvas).
  */
 export function bakeVehicleSprites(map: MapLibreMap): void {
-	const halo = resolveColor('var(--background)', '#141414');
+	const busHalo = resolveColor(BUS_HALO_TOKEN, BUS_HALO_FALLBACK);
 	const add = (id: string, img: ImageData) => {
 		if (map.hasImage(id)) map.removeImage(id);
 		map.addImage(id, img, { pixelRatio: RATIO });
 	};
 	// directional → kite; no heading → square.
 	const addBus = (id: string, fill: string, directional: boolean) =>
-		add(id, shapeImage(fill, halo, directional ? 'kite' : 'square'));
+		add(id, shapeImage(fill, busHalo, directional ? 'kite' : 'square'));
 
 	for (const code of STATUS_CODES as readonly StatusCode[]) {
 		const fill = resolveColor(statusVar(code), '#8a8a8a');
@@ -122,12 +131,13 @@ export function bakeVehicleSprites(map: MapLibreMap): void {
 		addBus(bodyIconId('occupancy', code, false), fill, false);
 	}
 
-	// Default (no filter) — yesid brand orange (--primary). rgb fallback, not the
-	// #hex literal, to keep the brand-hex doctrine lint green.
-	const busFill = resolveColor('var(--primary)', 'rgb(224, 120, 0)');
+	// Default (no filter) — yesid brand orange (--primary).
+	const busFill = resolveColor(BUS_FILL_TOKEN, BUS_FILL_FALLBACK);
 	addBus(BUS_ICON, busFill, true);
 	addBus(BUS_ICON_ND, busFill, false);
 
-	// Stops are diamonds (same brand orange; the layer dims them under the buses).
-	add(STOP_ICON, shapeImage(busFill, halo, 'diamond'));
+	// Stops are yellow diamonds, with the same theme surface outline as buses.
+	const stopFill = resolveColor(STOP_FILL_TOKEN, STOP_FILL_FALLBACK);
+	const stopHalo = resolveColor(STOP_HALO_TOKEN, STOP_HALO_FALLBACK);
+	add(STOP_ICON, shapeImage(stopFill, stopHalo, 'diamond'));
 }

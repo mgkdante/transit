@@ -242,11 +242,20 @@ describe('MapHero mobile chrome', () => {
 		expect(s).toMatch(/@media \(max-width: 760px\)[\s\S]*\.map-near\s*\{[\s\S]*top:\s*auto/);
 		expect(s).toMatch(/@media \(max-width: 760px\)[\s\S]*\.map-near\s*\{[\s\S]*right:\s*0\.75rem/);
 		expect(s).toMatch(
-			/@media \(max-width: 760px\)[\s\S]*\.map-near\s*\{[\s\S]*bottom:\s*calc\(2\.5rem \+ env\(safe-area-inset-bottom, 0px\)\)/,
+			/@media \(max-width: 760px\)[\s\S]*\.map-near\s*\{[\s\S]*bottom:\s*calc\(3\.35rem \+ env\(safe-area-inset-bottom, 0px\)\)/,
 		);
 		expect(s).toMatch(
 			/@media \(max-width: 760px\)[\s\S]*\.map-near-toggle span\s*\{[\s\S]*display:\s*none/,
 		);
+	});
+
+	it('does not fake a square basemap by forcing the mobile viewport into a square frame', () => {
+		const s = source();
+		const mobileBlock = s.match(/@media \(max-width: 760px\)\s*\{[\s\S]*?\n\t}/)?.[0] ?? '';
+
+		expect(mobileBlock).not.toContain('aspect-ratio: 1 / 1');
+		expect(mobileBlock).not.toContain('height: min(100dvh, 100vw)');
+		expect(mobileBlock).not.toContain('max-height: 100vw');
 	});
 
 	it('re-seeds URL filters after normal client navigation, not only browser popstate', () => {
@@ -270,10 +279,13 @@ describe('MapHero mobile chrome', () => {
 		const s = source();
 		const mapStageBlock = s.match(/<MapStage[\s\S]*?\/>/)?.[0] ?? '';
 
+		expect(s).toContain('const DESKTOP_MAP_FIT_LEFT_PADDING_PX = 520');
+		expect(s).toContain('const mapFitPadding = $derived');
 		expect(s).not.toContain('{#if basemap.settled}');
 		expect(mapStageBlock).toContain('basemap={basemap.data}');
 		expect(mapStageBlock).toContain('{theme}');
 		expect(mapStageBlock).toContain('bounds={manifest.bbox}');
+		expect(mapStageBlock).toContain('fitPadding={mapFitPadding}');
 	});
 
 	it('keeps right-pane drilldown history separate from direct map picks', () => {

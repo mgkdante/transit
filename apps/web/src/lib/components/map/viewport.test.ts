@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { mapViewportOptions, MONTREAL_MAP_BOUNDS } from './viewport';
+import { centerFromProviderBbox, mapViewportOptions, MONTREAL_MAP_BOUNDS } from './viewport';
 
 describe('mapViewportOptions', () => {
 	it('keeps the citizen map constrained to the Montréal service area', () => {
@@ -17,11 +17,38 @@ describe('mapViewportOptions', () => {
 
 	it('accepts a provider bbox so each provider can constrain to its own city', () => {
 		expect(mapViewportOptions([-79.8, 43.4, -79.0, 44.0])).toMatchObject({
+			bounds: [
+				[-79.8, 43.4],
+				[-79.0, 44.0],
+			],
 			maxBounds: [
 				[-79.8, 43.4],
 				[-79.0, 44.0],
 			],
+			fitBoundsOptions: {
+				padding: 40,
+			},
 		});
+	});
+
+	it('accepts layout-aware fit padding for desktop overlays', () => {
+		const padding = { top: 40, bottom: 40, left: 520, right: 40 };
+
+		expect(mapViewportOptions([-74.176, 45.237, -73.276, 45.867], padding)).toMatchObject({
+			bounds: [
+				[-74.176, 45.237],
+				[-73.276, 45.867],
+			],
+			fitBoundsOptions: {
+				padding,
+			},
+		});
+	});
+
+	it('derives the initial camera center from the provider bbox', () => {
+		const center = centerFromProviderBbox([-74.176, 45.237, -73.276, 45.867]);
+		expect(center[0]).toBeCloseTo(-73.726);
+		expect(center[1]).toBeCloseTo(45.552);
 	});
 
 	it('reduces tile churn during zoom and repeated theme interactions', () => {

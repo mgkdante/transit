@@ -73,6 +73,13 @@ describe('vectorStyleFromBasemap (Protomaps schema)', () => {
 		expect((src as { maxzoom?: number }).maxzoom).toBe(15);
 	});
 
+	it('decorates the public attribution with a small thank-you for OSM contributors', () => {
+		const src = style.sources[BASEMAP_SOURCE_ID];
+		expect((src as { attribution?: string }).attribution).toBe(
+			'© OpenStreetMap contributors, © Protomaps <span class="transit-basemap-thanks" aria-label="thank you">thanks <span style="color:#C96F2D">♥</span></span>',
+		);
+	});
+
 	it('keys land/water/roads on Protomaps source-layer names (not OpenMapTiles)', () => {
 		const sourceLayers = style.layers
 			.filter((l) => 'source-layer' in l)
@@ -80,9 +87,22 @@ describe('vectorStyleFromBasemap (Protomaps schema)', () => {
 		expect(sourceLayers).toEqual([
 			'earth',
 			'landuse',
+			'landuse',
 			'water',
 			'water',
 			'roads',
+			'roads',
+			'roads',
+			'roads',
+			'roads',
+			'roads',
+			'places',
+			'places',
+			'places',
+			'pois',
+			'pois',
+			'pois',
+			'pois',
 			'roads',
 			'roads',
 			'roads',
@@ -97,12 +117,37 @@ describe('vectorStyleFromBasemap (Protomaps schema)', () => {
 			'background',
 			'earth',
 			'landuse',
+			'landuse-green',
 			'water',
-			'water-edge',
 		]);
 	});
 
 	it('splits road tiers on the Protomaps `kind` property', () => {
+		expect(layerOf('roads-casing')).toMatchObject({
+			id: 'roads-casing',
+			type: 'line',
+			source: BASEMAP_SOURCE_ID,
+			'source-layer': 'roads',
+			minzoom: 8,
+			paint: { 'line-color': '#242424' },
+		});
+		expect(layerOf('roads-tunnel')).toMatchObject({
+			id: 'roads-tunnel',
+			type: 'line',
+			source: BASEMAP_SOURCE_ID,
+			'source-layer': 'roads',
+			minzoom: 10,
+			filter: ['==', ['get', 'is_tunnel'], true],
+			paint: { 'line-dasharray': [1.6, 1.2] },
+		});
+		expect(layerOf('roads-link')).toMatchObject({
+			id: 'roads-link',
+			type: 'line',
+			source: BASEMAP_SOURCE_ID,
+			'source-layer': 'roads',
+			minzoom: 10,
+			filter: ['==', ['get', 'is_link'], true],
+		});
 		expect((layerOf('roads-major') as { filter?: unknown }).filter).toEqual([
 			'match',
 			['get', 'kind'],
@@ -110,6 +155,14 @@ describe('vectorStyleFromBasemap (Protomaps schema)', () => {
 			true,
 			false,
 		]);
+		expect(layerOf('roads-bridge')).toMatchObject({
+			id: 'roads-bridge',
+			type: 'line',
+			source: BASEMAP_SOURCE_ID,
+			'source-layer': 'roads',
+			minzoom: 10,
+			filter: ['==', ['get', 'is_bridge'], true],
+		});
 	});
 
 	it('references public glyphs for text labels but no sprite', () => {
@@ -125,15 +178,25 @@ describe('vectorStyleFromBasemap (Protomaps schema)', () => {
 			type: 'symbol',
 			source: BASEMAP_SOURCE_ID,
 			'source-layer': 'roads',
-			minzoom: 10,
+			minzoom: 9,
 			filter: ['match', ['get', 'kind'], ['highway', 'major_road', 'medium_road'], true, false],
 			layout: {
 				'symbol-placement': 'line',
-				'text-field': ['coalesce', ['get', 'name:en'], ['get', 'name'], ['get', 'ref']],
+				'text-field': [
+					'coalesce',
+					['get', 'name'],
+					['get', 'name:fr'],
+					['get', 'name:en'],
+					['get', 'ref'],
+				],
 				'text-font': ['Noto Sans Regular'],
-				'text-size': ['interpolate', ['linear'], ['zoom'], 10, 10, 14, 12],
-				'symbol-spacing': 420,
+				'text-size': ['interpolate', ['linear'], ['zoom'], 9, 10, 12, 11.5, 15, 13],
+				'symbol-spacing': 360,
+				'symbol-sort-key': ['coalesce', ['get', 'sort_rank'], 0],
 				'text-rotation-alignment': 'map',
+				'text-pitch-alignment': 'map',
+				'text-max-angle': 30,
+				'text-padding': 4,
 				'text-keep-upright': true,
 				'text-allow-overlap': false,
 				'text-ignore-placement': false,
@@ -145,19 +208,346 @@ describe('vectorStyleFromBasemap (Protomaps schema)', () => {
 			type: 'symbol',
 			source: BASEMAP_SOURCE_ID,
 			'source-layer': 'roads',
-			minzoom: 12.5,
+			minzoom: 11,
 			filter: ['match', ['get', 'kind'], ['highway', 'major_road', 'medium_road'], false, true],
 			layout: {
 				'symbol-placement': 'line',
-				'text-field': ['coalesce', ['get', 'name:en'], ['get', 'name'], ['get', 'ref']],
+				'text-field': [
+					'coalesce',
+					['get', 'name'],
+					['get', 'name:fr'],
+					['get', 'name:en'],
+					['get', 'ref'],
+				],
 				'text-font': ['Noto Sans Regular'],
-				'text-size': ['interpolate', ['linear'], ['zoom'], 12.5, 9, 15, 11],
-				'symbol-spacing': 340,
+				'text-size': ['interpolate', ['linear'], ['zoom'], 11, 9.25, 13, 10.5, 15, 12],
+				'symbol-spacing': 300,
+				'symbol-sort-key': ['coalesce', ['get', 'sort_rank'], 0],
 				'text-rotation-alignment': 'map',
+				'text-pitch-alignment': 'map',
+				'text-max-angle': 30,
+				'text-padding': 3,
 				'text-keep-upright': true,
 				'text-allow-overlap': false,
 				'text-ignore-placement': false,
 				'text-optional': true,
+			},
+		});
+	});
+
+	it('adds OSM-style place hierarchy labels for city, neighbourhood, and locality context', () => {
+		expect(layerOf('places-city-labels')).toMatchObject({
+			id: 'places-city-labels',
+			type: 'symbol',
+			source: BASEMAP_SOURCE_ID,
+			'source-layer': 'places',
+			minzoom: 6,
+			filter: ['match', ['get', 'kind_detail'], ['city', 'town', 'village'], true, false],
+			layout: {
+				'symbol-placement': 'point',
+				'text-field': [
+					'coalesce',
+					['get', 'name:fr'],
+					['get', 'name:en'],
+					['get', 'name'],
+					['get', 'ref'],
+				],
+				'text-font': ['Noto Sans Medium'],
+				'text-size': ['interpolate', ['linear'], ['zoom'], 6, 12, 10, 15, 14, 18],
+				'symbol-sort-key': ['coalesce', ['get', 'population_rank'], ['get', 'sort_rank'], 0],
+				'text-padding': 14,
+				'text-max-width': 12,
+				'text-allow-overlap': false,
+				'text-ignore-placement': false,
+				'text-optional': true,
+			},
+		});
+
+		expect(layerOf('places-neighbourhood-labels')).toMatchObject({
+			id: 'places-neighbourhood-labels',
+			type: 'symbol',
+			source: BASEMAP_SOURCE_ID,
+			'source-layer': 'places',
+			minzoom: 9,
+			filter: [
+				'any',
+				['match', ['get', 'kind'], ['macrohood', 'neighbourhood'], true, false],
+				['match', ['get', 'kind_detail'], ['neighbourhood', 'quarter'], true, false],
+			],
+			layout: {
+				'symbol-placement': 'point',
+				'text-field': [
+					'coalesce',
+					['get', 'name:fr'],
+					['get', 'name:en'],
+					['get', 'name'],
+					['get', 'ref'],
+				],
+				'text-font': ['Noto Sans Medium'],
+				'text-size': ['interpolate', ['linear'], ['zoom'], 9, 10, 12, 12, 15, 14],
+				'text-variable-anchor': ['top', 'bottom', 'left', 'right'],
+				'text-radial-offset': 0.45,
+				'text-justify': 'auto',
+				'symbol-sort-key': ['coalesce', ['get', 'population_rank'], ['get', 'sort_rank'], 0],
+				'text-max-width': 11,
+				'text-allow-overlap': false,
+				'text-ignore-placement': false,
+				'text-optional': true,
+			},
+		});
+
+		expect(layerOf('places-locality-labels')).toMatchObject({
+			id: 'places-locality-labels',
+			type: 'symbol',
+			source: BASEMAP_SOURCE_ID,
+			'source-layer': 'places',
+			minzoom: 11,
+			filter: [
+				'any',
+				['match', ['get', 'kind'], ['locality'], true, false],
+				[
+					'match',
+					['get', 'kind_detail'],
+					['locality', 'hamlet', 'farm', 'isolated_dwelling'],
+					true,
+					false,
+				],
+			],
+			layout: {
+				'symbol-placement': 'point',
+				'text-field': [
+					'coalesce',
+					['get', 'name:fr'],
+					['get', 'name:en'],
+					['get', 'name'],
+					['get', 'ref'],
+				],
+				'text-font': ['Noto Sans Regular'],
+				'text-size': ['interpolate', ['linear'], ['zoom'], 11, 9, 13, 10.5, 15, 12],
+				'symbol-sort-key': ['coalesce', ['get', 'population_rank'], ['get', 'sort_rank'], 0],
+				'text-padding': 8,
+				'text-max-width': 10,
+				'text-allow-overlap': false,
+				'text-ignore-placement': false,
+				'text-optional': true,
+			},
+		});
+	});
+
+	it('adds POI icon dots plus labels for parks and landmarks', () => {
+		expect(layerOf('poi-park-icons')).toMatchObject({
+			id: 'poi-park-icons',
+			type: 'circle',
+			source: BASEMAP_SOURCE_ID,
+			'source-layer': 'pois',
+			minzoom: 11,
+			filter: [
+				'any',
+				[
+					'match',
+					['get', 'kind'],
+					['park', 'garden', 'recreation_ground', 'nature_reserve', 'forest', 'wood'],
+					true,
+					false,
+				],
+				[
+					'match',
+					['get', 'kind_detail'],
+					['park', 'garden', 'recreation_ground', 'nature_reserve', 'forest', 'wood'],
+					true,
+					false,
+				],
+			],
+			paint: {
+				'circle-color': '#8CBF9B',
+				'circle-stroke-color': '#141414',
+			},
+		});
+
+		expect(layerOf('poi-landmark-icons')).toMatchObject({
+			id: 'poi-landmark-icons',
+			type: 'circle',
+			source: BASEMAP_SOURCE_ID,
+			'source-layer': 'pois',
+			minzoom: 12,
+			filter: [
+				'any',
+				[
+					'match',
+					['get', 'kind'],
+					[
+						'museum',
+						'theatre',
+						'library',
+						'university',
+						'college',
+						'school',
+						'hospital',
+						'stadium',
+						'sports_centre',
+						'attraction',
+						'monument',
+						'memorial',
+						'place_of_worship',
+						'townhall',
+						'station',
+						'landmark',
+						'viewpoint',
+					],
+					true,
+					false,
+				],
+				[
+					'match',
+					['get', 'kind_detail'],
+					[
+						'museum',
+						'theatre',
+						'library',
+						'university',
+						'college',
+						'school',
+						'hospital',
+						'stadium',
+						'sports_centre',
+						'attraction',
+						'monument',
+						'memorial',
+						'place_of_worship',
+						'townhall',
+						'station',
+						'landmark',
+						'viewpoint',
+					],
+					true,
+					false,
+				],
+			],
+		});
+
+		expect(layerOf('poi-park-labels')).toMatchObject({
+			id: 'poi-park-labels',
+			type: 'symbol',
+			source: BASEMAP_SOURCE_ID,
+			'source-layer': 'pois',
+			minzoom: 11,
+			filter: [
+				'any',
+				[
+					'match',
+					['get', 'kind'],
+					['park', 'garden', 'recreation_ground', 'nature_reserve', 'forest', 'wood'],
+					true,
+					false,
+				],
+				[
+					'match',
+					['get', 'kind_detail'],
+					['park', 'garden', 'recreation_ground', 'nature_reserve', 'forest', 'wood'],
+					true,
+					false,
+				],
+			],
+			layout: {
+				'symbol-placement': 'point',
+				'symbol-sort-key': ['coalesce', ['get', 'min_zoom'], ['get', 'sort_rank'], 0],
+				'text-max-width': 10,
+			},
+		});
+
+		expect(layerOf('poi-landmark-labels')).toMatchObject({
+			id: 'poi-landmark-labels',
+			type: 'symbol',
+			source: BASEMAP_SOURCE_ID,
+			'source-layer': 'pois',
+			minzoom: 12,
+			filter: [
+				'any',
+				[
+					'match',
+					['get', 'kind'],
+					[
+						'museum',
+						'theatre',
+						'library',
+						'university',
+						'college',
+						'school',
+						'hospital',
+						'stadium',
+						'sports_centre',
+						'attraction',
+						'monument',
+						'memorial',
+						'place_of_worship',
+						'townhall',
+						'station',
+						'landmark',
+						'viewpoint',
+					],
+					true,
+					false,
+				],
+				[
+					'match',
+					['get', 'kind_detail'],
+					[
+						'museum',
+						'theatre',
+						'library',
+						'university',
+						'college',
+						'school',
+						'hospital',
+						'stadium',
+						'sports_centre',
+						'attraction',
+						'monument',
+						'memorial',
+						'place_of_worship',
+						'townhall',
+						'station',
+						'landmark',
+						'viewpoint',
+					],
+					true,
+					false,
+				],
+			],
+			layout: {
+				'symbol-placement': 'point',
+				'symbol-sort-key': ['coalesce', ['get', 'min_zoom'], ['get', 'sort_rank'], 0],
+				'text-max-width': 10,
+			},
+		});
+	});
+
+	it('adds text-based road shields with line collision rules', () => {
+		expect(layerOf('road-shields')).toMatchObject({
+			id: 'road-shields',
+			type: 'symbol',
+			source: BASEMAP_SOURCE_ID,
+			'source-layer': 'roads',
+			minzoom: 9,
+			filter: ['any', ['has', 'shield_text'], ['has', 'ref']],
+			layout: {
+				'symbol-placement': 'line',
+				'text-field': ['coalesce', ['get', 'shield_text'], ['get', 'ref']],
+				'text-font': ['Noto Sans Medium'],
+				'text-size': ['interpolate', ['linear'], ['zoom'], 9, 8.5, 12, 9.5, 15, 10.5],
+				'symbol-spacing': 520,
+				'symbol-sort-key': ['coalesce', ['get', 'sort_rank'], 0],
+				'text-rotation-alignment': 'map',
+				'text-pitch-alignment': 'map',
+				'text-padding': 7,
+				'text-keep-upright': true,
+				'text-allow-overlap': false,
+				'text-ignore-placement': false,
+				'text-optional': true,
+			},
+			paint: {
+				'text-color': '#141414',
+				'text-halo-color': '#D0D0D0',
 			},
 		});
 	});
@@ -213,6 +603,11 @@ describe('vectorStyleFromBasemap (Protomaps schema)', () => {
 				'text-halo-color': '#F7F2E9',
 			},
 		});
+		expect(light.layers.find((l) => l.id === 'landuse-green')).toMatchObject({
+			paint: {
+				'fill-color': '#DCE8CC',
+			},
+		});
 	});
 
 	it('keeps dark water visually separate from dark ground', () => {
@@ -236,10 +631,22 @@ describe('vectorStyleFromBasemap (Protomaps schema)', () => {
 
 	it('draws minor roads strongly enough by the time stops appear', () => {
 		expect(layerOf('roads-minor')).toMatchObject({
-			minzoom: 9,
+			minzoom: 8,
 			paint: {
-				'line-width': ['interpolate', ['linear'], ['zoom'], 9, 0.45, 11, 0.8, 14, 1.05],
-				'line-opacity': ['interpolate', ['linear'], ['zoom'], 9, 0.5, 11, 0.78, 13, 0.82],
+				'line-width': ['interpolate', ['linear'], ['zoom'], 8, 0.35, 10, 0.65, 12, 0.9, 14, 1.05],
+				'line-opacity': [
+					'interpolate',
+					['linear'],
+					['zoom'],
+					8,
+					0.36,
+					10,
+					0.64,
+					12,
+					0.78,
+					13,
+					0.82,
+				],
 			},
 		});
 	});
@@ -261,8 +668,22 @@ describe('applyBasemapTheme', () => {
 		expect(calls).toContainEqual(['earth', 'fill-color', '#F2E9D8']);
 		expect(calls).toContainEqual(['water', 'line-color', '#CFE1E6']);
 		expect(calls).not.toContainEqual(['water', 'fill-color', '#CFE1E6']);
+		expect(calls).toContainEqual(['landuse-green', 'fill-color', '#DCE8CC']);
 		expect(calls).toContainEqual(['water-edge', 'line-color', '#7CA7B2']);
+		expect(calls).toContainEqual(['roads-casing', 'line-color', '#E5DAC7']);
+		expect(calls).toContainEqual(['roads-tunnel', 'line-color', '#C9BCA1']);
+		expect(calls).toContainEqual(['roads-link', 'line-color', '#C9BCA1']);
 		expect(calls).toContainEqual(['roads-major', 'line-color', '#6E6557']);
+		expect(calls).toContainEqual(['roads-bridge', 'line-color', '#8D806E']);
+		expect(calls).toContainEqual(['places-city-labels', 'text-color', '#4F4A42']);
+		expect(calls).toContainEqual(['places-neighbourhood-labels', 'text-color', '#4F4A42']);
+		expect(calls).toContainEqual(['places-locality-labels', 'text-color', '#4F4A42']);
+		expect(calls).toContainEqual(['poi-park-icons', 'circle-color', '#4F744F']);
+		expect(calls).toContainEqual(['poi-landmark-icons', 'circle-color', '#7A6642']);
+		expect(calls).toContainEqual(['poi-park-labels', 'text-color', '#4F744F']);
+		expect(calls).toContainEqual(['poi-landmark-labels', 'text-color', '#7A6642']);
+		expect(calls).toContainEqual(['road-shields', 'text-color', '#F7F2E9']);
+		expect(calls).toContainEqual(['road-shields', 'text-halo-color', '#4F4A42']);
 		expect(calls).toContainEqual(['roads-major-labels', 'text-color', '#5F574C']);
 		expect(calls).toContainEqual(['roads-major-labels', 'text-halo-color', '#F7F2E9']);
 		expect(calls).toContainEqual(['roads-minor-labels', 'text-color', '#5F574C']);

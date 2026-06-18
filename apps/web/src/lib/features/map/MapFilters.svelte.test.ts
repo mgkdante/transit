@@ -175,11 +175,11 @@ describe('MapFilters', () => {
 		expect(source).not.toMatch(
 			/\.map-filters\[data-open='false'\]\s+\.mf-(?:head|body|group|group-label|chips)\s*\{[^}]*\b(?:align-items|justify-items|justify-content):\s*center/,
 		);
-		expect(source).toMatch(/data-scrollable=\{bodyScrollable\}/);
-		expect(source).toMatch(/\.map-filters\[data-open='false'\]\s*\{\s*width:\s*3\.7rem;\s*\}/);
-		expect(source).toMatch(
-			/\.map-filters\[data-open='false'\]\[data-scrollable='true'\]\s*\{\s*width:\s*4\.95rem;\s*\}/,
-		);
+		expect(source).not.toMatch(/data-scrollable/);
+		expect(source).not.toMatch(/bodyScrollable/);
+		expect(source).not.toMatch(/ResizeObserver/);
+		expect(source).toMatch(/\.map-filters\[data-open='false'\]\s*\{\s*width:\s*4\.95rem;\s*\}/);
+		expect(source).not.toMatch(/\.map-filters\[data-open='false'\]\[data-scrollable='true'\]/);
 		expect(
 			Array.from(
 				source.matchAll(/\.map-filters\[data-open='false'\](?:\s+\.[a-z-]+)?\s*\{/g),
@@ -203,12 +203,8 @@ describe('MapFilters', () => {
 		expect(source).toMatch(/\.map-filters\s*\{[\s\S]*overflow:\s*hidden/);
 		expect(source).toMatch(/\.mf-body\s*\{[\s\S]*min-height:\s*0/);
 		expect(source).toMatch(/\.mf-body\s*\{[\s\S]*overflow-y:\s*auto/);
-		expect(source).toMatch(/\.mf-body\s*\{[\s\S]*scrollbar-gutter:\s*auto/);
-		expect(source).toMatch(
-			/\.map-filters\[data-scrollable='true'\]\s+\.mf-body\s*\{[\s\S]*padding-right:\s*0\.5rem/,
-		);
-		expect(source).toMatch(
-			/\.map-filters\[data-scrollable='true'\]\s+\.mf-body\s*\{[\s\S]*scrollbar-gutter:\s*stable/,
-		);
+		expect(source).toMatch(/\.mf-body\s*\{[\s\S]*padding-right:\s*0\.5rem/);
+		expect(source).toMatch(/\.mf-body\s*\{[\s\S]*scrollbar-gutter:\s*stable/);
+		expect(source).not.toMatch(/\.map-filters\[data-scrollable='true'\]\s+\.mf-body/);
 	});
 });

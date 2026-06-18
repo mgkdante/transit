@@ -3,7 +3,7 @@
 
   ENCODING DOCTRINE (one colour per entity, state→filter): buses render in ONE
   calm brand orange with directional kites; no-heading buses are squares; stops
-  are dimmer orange diamonds, zoom-gated so the 8,986-stop catalogue never
+  are yellow diamonds, zoom-gated so the 8,986-stop catalogue never
   blankets the city. No status/crowding colour by default — that lives in the
   combinable filter, which repaints matched subsets in their state colour and
   hides non-matches. Routes draw on-demand (per-route geometry; no bulk file)
@@ -67,7 +67,9 @@
 		addNearTargetLayer,
 		setNearTarget,
 		nearestStops,
+		centerFromProviderBbox,
 		type LatLon,
+		type MapFitPadding,
 		type WithDistance,
 		type VehicleMotionController,
 	} from '$lib/components/map';
@@ -89,6 +91,19 @@
 	const theme = $derived(themeStore.current);
 	const v1 = getV1Context();
 	const manifest = v1.manifest;
+	const mapInitialCenter = $derived(centerFromProviderBbox(manifest.bbox));
+	const MAP_FIT_PADDING_PX = 40;
+	const DESKTOP_MAP_FIT_LEFT_PADDING_PX = 520;
+	const mapFitPadding = $derived<MapFitPadding>(
+		layout.isDesktop
+			? {
+					top: MAP_FIT_PADDING_PX,
+					bottom: MAP_FIT_PADDING_PX,
+					left: DESKTOP_MAP_FIT_LEFT_PADDING_PX,
+					right: MAP_FIT_PADDING_PX,
+				}
+			: MAP_FIT_PADDING_PX,
+	);
 	type NearMeOrigin = LatLon & { label: string; precision?: GeocodePrecision };
 
 	// URL-DRIVEN filter state — the reusable spine. Seeded from the URL so a reload
@@ -685,7 +700,9 @@
 		class="map-hero-stage"
 		basemap={basemap.data}
 		{theme}
+		center={mapInitialCenter}
 		bounds={manifest.bbox}
+		fitPadding={mapFitPadding}
 		onready={onMapReady}
 		onstyleload={onMapStyleLoad}
 		label={t.mapLabel}

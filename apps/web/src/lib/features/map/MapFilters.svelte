@@ -12,7 +12,6 @@
   --primary stays interactive-only (the active-chip ring/affordance).
 -->
 <script lang="ts">
-	import { tick } from 'svelte';
 	import BusFrontIcon from '@lucide/svelte/icons/bus-front';
 	import GaugeIcon from '@lucide/svelte/icons/gauge';
 	import MapPinnedIcon from '@lucide/svelte/icons/map-pinned';
@@ -49,8 +48,6 @@
 		class: className = '',
 	}: Props = $props();
 	let filterOpen = $state(true);
-	let filterBodyEl = $state<HTMLElement | null>(null);
-	let bodyScrollable = $state(false);
 	const t = $derived(MAP_COPY[locale]);
 	const panelOpen = $derived(!collapsible || filterOpen);
 	const collator = $derived(new Intl.Collator(locale, { numeric: true, sensitivity: 'base' }));
@@ -147,49 +144,12 @@
 		store.toggleAlert(kind);
 		onselect?.();
 	}
-
-	function updateBodyScrollable(): void {
-		const node = filterBodyEl;
-		bodyScrollable = node ? node.scrollHeight > node.clientHeight + 1 : false;
-	}
-
-	const scrollDependency = $derived(
-		[
-			panelOpen,
-			selectedRoutes.length,
-			selectedStops.length,
-			selectedVehicleIds.length,
-			selectedTripIds.length,
-			store.status.join(','),
-			store.occupancy.join(','),
-			store.entities.join(','),
-			store.alerts.join(','),
-		].join('|'),
-	);
-
-	$effect(() => {
-		const node = filterBodyEl;
-		const dependency = scrollDependency;
-		if (!node || !dependency) return;
-		void tick().then(updateBodyScrollable);
-	});
-
-	$effect(() => {
-		const node = filterBodyEl;
-		if (!node || typeof ResizeObserver === 'undefined') return;
-
-		const observer = new ResizeObserver(updateBodyScrollable);
-		observer.observe(node);
-
-		return () => observer.disconnect();
-	});
 </script>
 
 <div
 	class="map-filters {className}"
 	data-open={panelOpen}
 	data-collapsible={collapsible}
-	data-scrollable={bodyScrollable}
 	role="group"
 	aria-label={t.filterTitle}
 >
@@ -233,11 +193,7 @@
 		</div>
 	</div>
 
-	<div
-		bind:this={filterBodyEl}
-		class="mf-body"
-		data-testid={!panelOpen && collapsible ? 'map-filter-rail' : undefined}
-	>
+	<div class="mf-body" data-testid={!panelOpen && collapsible ? 'map-filter-rail' : undefined}>
 		{#if selectedRoutes.length > 0}
 			<div class="mf-group">
 				<span class="mf-group-label" aria-label={t.modeRoutes}>
@@ -287,7 +243,7 @@
 							data-on="true"
 							aria-label="{t.stopRemove} {stop.code ?? stop.id}"
 							aria-pressed="true"
-							style="--chip:var(--primary)"
+							style="--chip:var(--accent)"
 							onclick={() => removeStop(stop)}
 						>
 							<span class="mf-swatch"></span>
@@ -507,9 +463,6 @@
 		transition: width var(--duration-slow) var(--ease-default);
 	}
 	.map-filters[data-open='false'] {
-		width: 3.7rem;
-	}
-	.map-filters[data-open='false'][data-scrollable='true'] {
 		width: 4.95rem;
 	}
 	.mf-controls {
@@ -570,14 +523,10 @@
 		min-height: 0;
 		min-width: 0;
 		overflow-y: auto;
-		padding-right: 0;
-		scrollbar-gutter: auto;
-		scrollbar-width: thin;
-		scrollbar-color: color-mix(in srgb, var(--primary) 42%, var(--border) 58%) transparent;
-	}
-	.map-filters[data-scrollable='true'] .mf-body {
 		padding-right: 0.5rem;
 		scrollbar-gutter: stable;
+		scrollbar-width: thin;
+		scrollbar-color: color-mix(in srgb, var(--primary) 42%, var(--border) 58%) transparent;
 	}
 	.mf-body::-webkit-scrollbar {
 		width: 0.45rem;
@@ -654,7 +603,11 @@
 		background: color-mix(in srgb, var(--accent-text) 14%, transparent);
 		border-color: color-mix(in srgb, var(--accent-text) 34%, transparent);
 	}
-	.mf-group-badge-stops,
+	.mf-group-badge-stops {
+		color: var(--accent);
+		background: color-mix(in srgb, var(--accent) 14%, transparent);
+		border-color: color-mix(in srgb, var(--accent) 34%, transparent);
+	}
 	.mf-group-badge-buses,
 	.mf-group-badge-trips {
 		color: var(--primary);

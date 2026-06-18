@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import config from '../../vite.config';
+import config, {
+	ISLAND_CENTERED_BASEMAP_BBOX,
+	previewManifestForIslandCenteredBasemap,
+} from '../../vite.config';
 import type { UserConfig } from 'vite';
 
 describe('vite production chunk contract', () => {
@@ -29,6 +32,22 @@ describe('vite production chunk contract', () => {
 		const firstOutput = Array.isArray(output) ? output[0] : output;
 
 		expect(firstOutput?.manualChunks).toBeUndefined();
+	});
+});
+
+describe('vite dev snapshot preview', () => {
+	it('can override only the manifest bbox so the dev map previews island-centered framing', () => {
+		const manifest = {
+			provider: 'stm',
+			bbox: [-74.315, 45.235, -73.415, 45.865],
+			files: { live: {} },
+		};
+
+		expect(previewManifestForIslandCenteredBasemap(manifest)).toEqual({
+			...manifest,
+			bbox: ISLAND_CENTERED_BASEMAP_BBOX,
+		});
+		expect(ISLAND_CENTERED_BASEMAP_BBOX).toEqual([-74.176, 45.237, -73.276, 45.867]);
 	});
 });
 

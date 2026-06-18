@@ -3,6 +3,9 @@ import tailwindcss from '@tailwindcss/vite';
 import { sveltekit } from '@sveltejs/kit/vite';
 import { svelteTesting } from '@testing-library/svelte/vite';
 import { visualizer } from 'rollup-plugin-visualizer';
+import type { Plugin } from 'vite';
+
+export const ISLAND_CENTERED_BASEMAP_BBOX = [-74.176, 45.237, -73.276, 45.867] as const;
 
 function mapRuntimeManualChunks(id: string): string | undefined {
 	if (id.endsWith('.css')) return undefined;
@@ -11,8 +14,40 @@ function mapRuntimeManualChunks(id: string): string | undefined {
 	}
 }
 
+export function previewManifestForIslandCenteredBasemap<T>(manifest: T): T {
+	if (!manifest || typeof manifest !== 'object') return manifest;
+	return {
+		...manifest,
+		bbox: [...ISLAND_CENTERED_BASEMAP_BBOX],
+	};
+}
+
+function islandCenteredManifestPreviewPlugin(command: string): Plugin {
+	return {
+		name: 'transit-dev-island-centered-manifest-preview',
+		apply: 'serve',
+		configureServer(server) {
+			if (command !== 'serve') return;
+			server.middlewares.use('/data/v1/stm/manifest.json', async (_req, res, next) => {
+				try {
+					const upstream = await fetch('https://transit.yesid.dev/data/v1/stm/manifest.json');
+					if (!upstream.ok) return next();
+					const manifest = previewManifestForIslandCenteredBasemap(await upstream.json());
+					res.statusCode = 200;
+					res.setHeader('content-type', 'application/json; charset=utf-8');
+					res.setHeader('cache-control', 'no-store');
+					res.setHeader('x-transit-dev-preview', 'island-centered-basemap-bbox');
+					res.end(JSON.stringify(manifest));
+				} catch {
+					next();
+				}
+			});
+		},
+	};
+}
+
 // svelteTesting() only activates under VITEST, so it is safe to include always.
-export default defineConfig(({ isSsrBuild }) => ({
+export default defineConfig(({ command, isSsrBuild }) => ({
 	// Relocate Vitest's cache out of node_modules/.vite so CI can cache it safely.
 	cacheDir: process.env.VITEST ? '.vitest/cache' : undefined,
 	build: {
@@ -41,6 +76,7 @@ export default defineConfig(({ isSsrBuild }) => ({
 		},
 	},
 	plugins: [
+		islandCenteredManifestPreviewPlugin(command),
 		tailwindcss(),
 		sveltekit(),
 		svelteTesting(),

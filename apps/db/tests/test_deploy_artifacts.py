@@ -1,3 +1,4 @@
+import math
 import re
 from pathlib import Path
 
@@ -214,6 +215,26 @@ def test_daily_static_pipeline_workflow_runs_gis_inside_pipeline_before_static_p
     )
     assert "concurrency" in workflow
     assert "group: daily-static-pipeline" in workflow
+
+
+def test_refresh_basemap_workflow_extract_is_square_and_centered_on_montreal_island() -> None:
+    workflow = yaml.safe_load(
+        (REPO_ROOT / ".github/workflows/refresh-basemap.yml").read_text(encoding="utf-8")
+    )
+    bbox_raw = workflow["env"]["BBOX"]
+    min_lon, min_lat, max_lon, max_lat = (float(part) for part in bbox_raw.split(","))
+
+    assert bbox_raw == "-74.176,45.237,-73.276,45.867"
+    assert math.isclose((min_lon + max_lon) / 2, -73.726)
+    assert math.isclose((min_lat + max_lat) / 2, 45.552)
+
+    def mercator_y(lat: float) -> float:
+        radians = math.radians(lat)
+        return math.log(math.tan(math.pi / 4 + radians / 2))
+
+    width = math.radians(max_lon - min_lon)
+    height = mercator_y(max_lat) - mercator_y(min_lat)
+    assert abs(width / height - 1) <= 0.03
 
 
 def test_daily_warm_rollups_workflow_prunes_i3_after_historic_publish() -> None:
