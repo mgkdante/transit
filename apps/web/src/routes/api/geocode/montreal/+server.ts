@@ -1,12 +1,32 @@
 import { json } from '@sveltejs/kit';
 import { env } from '$env/dynamic/private';
 import type { RequestHandler } from './$types';
-import { googlePlacesAutocompleteSuggestions } from '$lib/geocode/googlePlaces';
+import { googlePlaceDetails, googlePlacesAutocompleteSuggestions } from '$lib/geocode/googlePlaces';
 import { geocodeMontreal, geocodeMontrealSuggestions } from '$lib/geocode/nominatim';
 
 export const prerender = false;
 
 export const GET: RequestHandler = async ({ url, fetch }) => {
+	// Place-Details mode: resolve a Google placeId to exact coordinates server-side
+	// (keeps the API key off the client and closes the autocomplete billing
+	// session). This is what a picked Google suggestion calls instead of
+	// re-text-searching its label — the fix for the wrong-place bug.
+	const placeId = url.searchParams.get('placeId');
+	if (placeId?.trim()) {
+		const detail = await googlePlaceDetails(placeId, googlePlacesApiKey(), fetch, {
+			sessionToken: url.searchParams.get('session'),
+			languageCode: 'en',
+		}).catch(() => null);
+		if (!detail) {
+			return json({ error: 'not_found' }, { status: 404 });
+		}
+		return json(detail, {
+			headers: {
+				'cache-control': 'private, max-age=0, no-store',
+			},
+		});
+	}
+
 	const query = url.searchParams.get('q') ?? '';
 	if (!query.trim()) {
 		return json({ error: 'query_required' }, { status: 400 });

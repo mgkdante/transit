@@ -45,6 +45,8 @@
 	import { Surface } from '$lib/components/layout';
 	import { Separator } from '$lib/components/ui/separator';
 	import { EdgeState } from '$lib/components/edge';
+	import { dedupeBy, foldSearchText, tokenMatchScore } from '$lib/search/normalize';
+	import { stopGroupKey, stopModeHint } from '$lib/search/stopMode';
 	import { copy } from './search.copy';
 
 	const locale: Locale = getLocale();
@@ -62,43 +64,36 @@
 	// hydrate the input + results on load. Read at init only (not reactive) — the
 	// input owns the value from here on; the empty state still owns the no-`q` case.
 	let query = $state($page.url.searchParams.get('q') ?? '');
-	const normalized = $derived(query.trim().toLowerCase());
+	const normalized = $derived(foldSearchText(query));
 	const hasQuery = $derived(normalized.length > 0);
 
-	function matchRoute(r: RouteIndexEntry, q: string): boolean {
-		return (
-			r.id.toLowerCase().includes(q) ||
-			r.short.toLowerCase().includes(q) ||
-			(r.long?.toLowerCase().includes(q) ?? false)
-		);
-	}
-
-	function matchStop(s: StopIndexEntry, q: string): boolean {
-		return (
-			s.id.toLowerCase().includes(q) ||
-			s.name.toLowerCase().includes(q) ||
-			(s.code?.toLowerCase().includes(q) ?? false)
-		);
-	}
-
-	// Filtered, capped matches. Derived from the loaded indexes + the live query;
-	// empty when nothing is typed (the idle state owns that case).
-	const matchedRoutes = $derived(
-		hasQuery && routes.data ? routes.data.routes.filter((r) => matchRoute(r, normalized)) : [],
-	);
-	const matchedStops = $derived(
-		hasQuery && stops.data ? stops.data.stops.filter((s) => matchStop(s, normalized)) : [],
-	);
+	// Accent-blind, word-order-free, token-AND matching (shared with every other
+	// search surface) ranked by tier so exact/prefix hits lead within a group.
+	// 'cremazie' → 'Station Crémazie'; 'berri uqam' → 'Station Berri-UQAM'.
+	const matchedRoutes = $derived.by<RouteIndexEntry[]>(() => {
+		if (!hasQuery || !routes.data) return [];
+		return routes.data.routes
+			.map((r) => ({ r, score: tokenMatchScore([r.id, r.short, r.long], normalized) }))
+			.filter((m): m is { r: RouteIndexEntry; score: number } => m.score != null)
+			.sort((a, b) => a.score - b.score)
+			.map((m) => m.r);
+	});
+	const matchedStops = $derived.by<StopIndexEntry[]>(() => {
+		if (!hasQuery || !stops.data) return [];
+		const ranked = stops.data.stops
+			.map((s) => ({ s, score: tokenMatchScore([s.id, s.name, s.code], normalized) }))
+			.filter((m): m is { s: StopIndexEntry; score: number } => m.score != null)
+			.sort((a, b) => a.score - b.score)
+			.map((m) => m.s);
+		// One row per logical stop — métro/station names collapse to a single station.
+		return dedupeBy(ranked, stopGroupKey);
+	});
 
 	const hasResults = $derived(matchedRoutes.length > 0 || matchedStops.length > 0);
 
 	// A line's title is its short name; the long name (when present) is subtitle.
 	function routeTitle(r: RouteIndexEntry): string {
 		return r.short || r.id;
-	}
-	// A stop's code (pole number) is a useful right-aligned meta when present.
-	function stopMeta(s: StopIndexEntry): string | undefined {
-		return s.code ?? undefined;
 	}
 </script>
 
@@ -170,12 +165,14 @@
 								truncatedLabel={t.more(matchedStops.length - MAX_RESULTS)}
 							>
 								{#snippet row(s)}
+									{@const hint = stopModeHint(s.name)}
 									<EntityRow
 										target={{ kind: 'stop', id: s.id }}
 										{locale}
-										glyph="■"
+										glyph={hint.glyph}
 										title={s.name}
-										meta={stopMeta(s)}
+										subtitle={s.code ?? undefined}
+										meta={hint.label ?? undefined}
 									/>
 								{/snippet}
 							</EntityList>

@@ -8,6 +8,7 @@
 // href wrapper.
 
 import type { StatusCode } from '$lib/v1/schemas';
+import { setMapFocusSearchParams } from '$lib/search/mapFocus';
 import { emptyFilterState } from './state';
 import { toSearchString } from './url';
 
@@ -29,5 +30,11 @@ export function mapSearchFor(target: MapFilterTarget): string {
 	if (target.stop) state.stops.add(target.stop);
 	if (target.vehicle) state.vehicles.add(target.vehicle);
 	if (target.status?.length) state.status = [...target.status];
-	return toSearchString(state);
+
+	const search = new URLSearchParams(toSearchString(state));
+	// A single-entity drilldown also asks the map to zoom to it (one-shot focus).
+	if (target.stop) setMapFocusSearchParams(search, 'stop', target.stop);
+	else if (target.vehicle) setMapFocusSearchParams(search, 'vehicle', target.vehicle);
+	else if (target.route) setMapFocusSearchParams(search, 'route', target.route);
+	return search.toString();
 }
