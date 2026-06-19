@@ -16,7 +16,11 @@ from contextlib import contextmanager
 
 import pytest
 
-from transit_ops.snapshots.publish import PublishResult, publish_snapshot
+from transit_ops.snapshots.publish import (
+    _DISTINCT_HISTORIC_ROUTE_IDS_SQL,
+    PublishResult,
+    publish_snapshot,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -807,3 +811,17 @@ def test_publish_static_writes_basemap_when_configured() -> None:
     bm = json.loads(store.store["static/basemap.json"])
     assert bm["url"] == "https://data.example.com/basemap/quebec.pmtiles"
     assert bm["format"] == "pmtiles"
+
+
+def test_historic_route_enumeration_excludes_unrouted_sentinel() -> None:
+    """Per-route reliability files must not be emitted for '__unrouted__'.
+
+    route_id is COALESCE'd to '__unrouted__' in the hourly spine, so it exists
+    in route_reliability_weekly/monthly; the enumeration that decides which
+    routes get a historic/route_reliability/{id}.json must exclude it so the
+    internal sentinel is never published as if it were a real route.
+    """
+    sql = _DISTINCT_HISTORIC_ROUTE_IDS_SQL
+    assert sql.count("route_id <> '__unrouted__'") == 2  # both UNION halves
+    assert "route_reliability_weekly" in sql
+    assert "route_reliability_monthly" in sql

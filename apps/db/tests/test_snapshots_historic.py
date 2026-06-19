@@ -34,6 +34,7 @@ from transit_ops.snapshots.builders import (
     build_route_reliability,
     build_stop_reliability,
 )
+from transit_ops.snapshots.builders.historic import _STOP_REL_BY_ROUTE_SQL
 from transit_ops.snapshots.contract import (
     AlertHistory,
     Hotspots,
@@ -696,6 +697,15 @@ def test_build_stop_reliability_batch() -> None:
     by_route = {b.route: b for b in s1.by_route}
     assert by_route["51"].avg_delay_min == 1.0  # 6000/100 = 60s
     assert by_route["9"].avg_delay_min == 3.0  # 9000/50 = 180s
+
+
+def test_stop_by_route_sql_excludes_unrouted_sentinel() -> None:
+    """A stop's per-route breakdown must not list the '__unrouted__' sentinel.
+
+    stop_delay's feeder COALESCEs a NULL route_id to '__unrouted__', so the
+    by-route aggregate would otherwise surface it as a real route at the stop.
+    """
+    assert "route_id <> '__unrouted__'" in _STOP_REL_BY_ROUTE_SQL.text
 
 
 def test_build_stop_reliability_weekly_only_stop() -> None:

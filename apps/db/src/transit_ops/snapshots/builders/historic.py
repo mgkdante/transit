@@ -706,6 +706,9 @@ _STOP_REL_BY_ROUTE_SQL = text(
            SUM(avg_delay_seconds * observation_count)  AS weighted_delay_sec
     FROM gold.stop_delay_weekly
     WHERE provider_id = :provider_id
+      -- route_id is COALESCE'd to '__unrouted__' in the stop_delay feeder; drop
+      -- it so a stop's per-route breakdown never lists the internal sentinel.
+      AND route_id <> '__unrouted__'
     GROUP BY stop_id, route_id
     """
 )
