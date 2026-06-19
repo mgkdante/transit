@@ -41,8 +41,10 @@
 <script lang="ts">
 	import { onMount, tick } from 'svelte';
 	import { getLocale, type Locale } from '$lib/i18n';
+	import { getProvenance } from '$lib/v1';
+	import { createResource } from '$lib/v1/resource.svelte';
 	import { Surface } from '$lib/components/layout';
-	import { SurfaceHeader } from '$lib/components/surface';
+	import { SurfaceHeader, ConformanceBadge } from '$lib/components/surface';
 	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
 	import CodeBlock from '$lib/components/CodeBlock.svelte';
 	import {
@@ -59,6 +61,11 @@
 
 	const locale: Locale = getLocale();
 	const t = $derived(metricsCopy[locale]);
+
+	// Honesty layer — the active provider's feed-conformance verdict. Supplementary
+	// (the badge renders nothing when conformance is null / the fetch fails), so it
+	// never blocks the static methodology article.
+	const provenance = createResource(() => getProvenance());
 
 	// Group entries by cluster, preserving the canonical surface cluster order and
 	// the in-array metric order within each cluster. Empty clusters are dropped.
@@ -143,6 +150,11 @@
 			<section class="metrics-prose" aria-labelledby="metrics-provenance">
 				<SectionLabel id="metrics-provenance" text={t.provenance.label} variant="station" />
 				<p class="metrics-preamble">{t.provenance.body}</p>
+				{#if provenance.data?.conformance}
+					<div class="metrics-conformance">
+						<ConformanceBadge conformance={provenance.data.conformance} {locale} />
+					</div>
+				{/if}
 				<div class="metrics-legend">
 					<SectionLabel text={t.confidence.label} variant="metric" />
 					<ul class="metrics-legend__list">
@@ -307,6 +319,9 @@
 		font-size: var(--text-small);
 		line-height: 1.7;
 		max-width: 68ch;
+	}
+	.metrics-conformance {
+		display: flex;
 	}
 	.metrics-legend {
 		display: flex;
