@@ -50,6 +50,7 @@ from transit_ops.snapshots.contract import (
     OccupancyMix,
     Offender,
     Provenance,
+    ProvenanceConformance,
     ProvenanceFreshness,
     ProvenanceSource,
     Receipt,
@@ -1310,6 +1311,30 @@ _PROVENANCE_FRESHNESS_SQL = text(
     """
 )
 
+# Feed conformance for the provider's current static load: the out-of-norm signal
+# is the unknown/extra GTFS members captured verbatim in silver.gtfs_extra_rows
+# (mirrors /health check_feed_conformance, scoped to this provider). Empty result
+# => no current static dataset => no conformance block.
+_PROVENANCE_CONFORMANCE_SQL = text(
+    """
+    SELECT
+        (
+            SELECT count(*)
+            FROM silver.gtfs_extra_rows AS ger
+            WHERE ger.dataset_version_id = dv.dataset_version_id
+        )::bigint AS extra_row_count,
+        (
+            SELECT array_agg(DISTINCT ger.source_file_name)
+            FROM silver.gtfs_extra_rows AS ger
+            WHERE ger.dataset_version_id = dv.dataset_version_id
+        ) AS unknown_members
+    FROM core.dataset_versions AS dv
+    WHERE dv.provider_id = :provider_id
+      AND dv.is_current IS TRUE
+      AND dv.dataset_kind = 'static_schedule'
+    """
+)
+
 
 _PROVIDER_GAPS: dict[str, list[str]] = {"stm": ["metro_realtime"]}
 
@@ -1357,10 +1382,13 @@ def build_provenance(
             )
         )
 
+    conformance = _build_provenance_conformance(conn, params)
+
     return Provenance(
         generated_utc=generated_utc,
         sources=sources,
         freshness=freshness,
+        conformance=conformance,
         retention={"detail_days": 14, "aggregate_days": 365},
         methodology={
             "otp_definition": (
@@ -1454,4 +1482,23 @@ def build_provenance(
             ),
         },
         gaps=gaps,
+    )
+
+
+def _build_provenance_conformance(
+    conn: "Connection", params: dict
+) -> "ProvenanceConformance | None":
+    """Feed conformance for the provider's current static load, or None when the
+    provider has no current static dataset (nothing to describe)."""
+    rows = list(conn.execute(_PROVENANCE_CONFORMANCE_SQL, params).mappings())
+    if not rows:
+        return None
+    row = rows[0]
+    unknown_members = sorted(row.get("unknown_members") or [])
+    extra_row_count = int(row.get("extra_row_count") or 0)
+    status = "out_of_norm" if (unknown_members or extra_row_count) else "conformant"
+    return ProvenanceConformance(
+        status=status,
+        unknown_members=unknown_members,
+        extra_row_count=extra_row_count,
     )

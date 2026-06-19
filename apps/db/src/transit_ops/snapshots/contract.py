@@ -529,6 +529,16 @@ class ProvenanceFreshness(BaseModel):
     status: str | None = None
     age_s: int | None = None
 
+class ProvenanceConformance(BaseModel):
+    # GTFS feed-conformance for the provider's latest static load, mirroring the
+    # DB-only /health check_feed_conformance signal so the UI can render a
+    # "data quality" badge. status='out_of_norm' when the feed shipped members
+    # this pipeline does not natively model (captured verbatim, never dropped).
+    status: str  # 'conformant' | 'out_of_norm'
+    unknown_members: list[str] = Field(default_factory=list)
+    extra_row_count: int = 0
+
+
 class Provenance(BaseModel):
     generated_utc: str
     sources: list[ProvenanceSource] = Field(default_factory=list)
@@ -536,6 +546,7 @@ class Provenance(BaseModel):
     retention: dict[str, int] = Field(default_factory=dict)
     methodology: dict = Field(default_factory=dict)  # type: ignore[type-arg]
     gaps: list[str] = Field(default_factory=list)
+    conformance: ProvenanceConformance | None = None
 
 
 # ---------------------------------------------------------------------------

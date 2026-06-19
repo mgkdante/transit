@@ -1282,6 +1282,52 @@ def test_historic_flat_builders_stamp_generated_utc() -> None:
     assert build_provenance(conn, "stm", generated_utc="H").generated_utc == "H"
 
 
+def test_build_provenance_surfaces_out_of_norm_conformance() -> None:
+    from transit_ops.snapshots.builders import build_provenance
+
+    conn = FakeConn(
+        {
+            "gtfs_extra_rows": [
+                {
+                    "extra_row_count": 12,
+                    "unknown_members": ["pathways.txt", "levels.txt"],
+                }
+            ],
+        }
+    )
+
+    prov = build_provenance(conn, "sto", generated_utc="H")
+
+    assert prov.conformance is not None
+    assert prov.conformance.status == "out_of_norm"
+    assert prov.conformance.unknown_members == ["levels.txt", "pathways.txt"]
+    assert prov.conformance.extra_row_count == 12
+
+
+def test_build_provenance_conformant_when_static_load_matched_shape() -> None:
+    from transit_ops.snapshots.builders import build_provenance
+
+    conn = FakeConn(
+        {"gtfs_extra_rows": [{"extra_row_count": 0, "unknown_members": None}]}
+    )
+
+    prov = build_provenance(conn, "stm", generated_utc="H")
+
+    assert prov.conformance is not None
+    assert prov.conformance.status == "conformant"
+    assert prov.conformance.unknown_members == []
+    assert prov.conformance.extra_row_count == 0
+
+
+def test_build_provenance_conformance_none_without_current_static_dataset() -> None:
+    from transit_ops.snapshots.builders import build_provenance
+
+    # No row from the conformance query => provider has no current static dataset.
+    prov = build_provenance(FakeConn({}), "stm", generated_utc="H")
+
+    assert prov.conformance is None
+
+
 def test_build_alert_history_sanitizes_legacy_python_repr_en_text() -> None:
     import datetime
 
