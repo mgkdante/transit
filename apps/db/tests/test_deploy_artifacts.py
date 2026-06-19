@@ -182,12 +182,13 @@ def test_daily_warm_rollups_workflow_prunes_bronze_and_uploads_retention_proof()
 
     # Bronze prune runs after the warm-rollup prune, with defaults
     # (1 batch x 5000 per phase) so a backlog can never blow the job timeout.
-    assert "prune-bronze-storage stm" in workflow
-    assert workflow.index("prune-bronze-storage stm") > workflow.index(
-        "prune-warm-rollup-storage stm"
+    # Looped over every provider; bronze prune still runs after the warm-rollup prune.
+    assert 'prune-bronze-storage "$provider"' in workflow
+    assert workflow.index('prune-bronze-storage "$provider"') > workflow.index(
+        'prune-warm-rollup-storage "$provider"'
     )
     # Proof report + artifact give the prune a daily visible receipt.
-    assert "retention-proof-report stm --report-path" in workflow
+    assert 'retention-proof-report "$provider" --report-path' in workflow
     assert "actions/upload-artifact@v4" in workflow
     assert "if: always()" in workflow
     # upload-artifact paths are workspace-relative (working-directory does
@@ -210,8 +211,12 @@ def test_daily_static_pipeline_workflow_runs_gis_inside_pipeline_before_static_p
     assert 'cron: "0 6 * * *"' in workflow
     assert "Run static + GIS Bronze -> Silver -> Gold pipeline" in workflow
     assert "ingest-gis" not in workflow
-    assert workflow.index("run-static-pipeline stm") < workflow.index(
-        "publish-snapshot stm --tier static"
+    # One looped job over every provider (no per-provider workflow edit), and the
+    # static pipeline still runs before the static publish.
+    assert "list-providers" in workflow
+    assert 'run-static-pipeline "$provider"' in workflow
+    assert workflow.index('run-static-pipeline "$provider"') < workflow.index(
+        "publish-all --tier static"
     )
     assert "concurrency" in workflow
     assert "group: daily-static-pipeline" in workflow
@@ -245,9 +250,9 @@ def test_daily_warm_rollups_workflow_prunes_i3_after_historic_publish() -> None:
 
     # slice-9.1.1l: the i3 prune runs daily from this job, AFTER the historic
     # /v1 publish so alert_history.json builds from unpruned silver history.
-    assert "prune-i3-storage stm" in workflow
-    assert workflow.index("prune-i3-storage stm") > workflow.index(
-        "publish-snapshot stm --tier historic"
+    assert 'prune-i3-storage "$provider"' in workflow
+    assert workflow.index('prune-i3-storage "$provider"') > workflow.index(
+        "publish-all --tier historic"
     )
 
 
