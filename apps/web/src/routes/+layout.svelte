@@ -323,6 +323,7 @@
 <AppShell
 	{locale}
 	url={$page.url}
+	providerName={v1?.manifest.display_name}
 	bind:search={topSearch}
 	searchResults={topSearchResults}
 	{searchScope}

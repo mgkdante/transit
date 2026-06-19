@@ -42,6 +42,8 @@
 		locale?: Locale;
 		/** Full current URL, the language switch preserves path + query + hash. */
 		url?: URL;
+		/** Active provider display name (manifest.display_name); labels the network chip. */
+		providerName?: string;
 		/** Count of active alerts; renders the bell badge when > 0. */
 		alertCount?: number;
 		/** Current value of the multi-value search field (bindable). */
@@ -64,6 +66,7 @@
 	let {
 		locale: localeProp,
 		url = new URL('https://transit.local/'),
+		providerName,
 		alertCount = 0,
 		search = $bindable(''),
 		onsearch,
@@ -119,7 +122,12 @@
 	const openMenuAria = $derived(locale === 'fr' ? 'Ouvrir le menu' : 'Open menu');
 	const closeMenuAria = $derived(locale === 'fr' ? 'Fermer le menu' : 'Close menu');
 	const menuAria = $derived(locale === 'fr' ? 'Navigation mobile' : 'Mobile navigation');
-	const cityLabel = 'Montréal · STM';
+	// Active-network label for the context chip (a future network selector, cf.
+	// cityAria). Provider-agnostic: from the manifest, never a hardcoded 'STM'; a
+	// neutral fallback covers the brief window before the v1 context boots.
+	const cityLabel = $derived(
+		providerName ?? (locale === 'fr' ? 'Réseau de transport' : 'Transit network'),
+	);
 	const cityAria = $derived(locale === 'fr' ? 'Choisir une ville' : 'Choose a city');
 	const alertsAria = $derived(
 		alertCount > 0
@@ -245,7 +253,7 @@
 			/>
 			<circle cx="8" cy="6" r="1.6" stroke="currentColor" stroke-width="1.3" />
 		</svg>
-		<span class="font-mono text-caption">{cityLabel}</span>
+		<span class="max-w-[14rem] truncate font-mono text-caption" title={cityLabel}>{cityLabel}</span>
 	</button>
 
 	<!-- CENTER: multi-value search ----------------------------------------- -->

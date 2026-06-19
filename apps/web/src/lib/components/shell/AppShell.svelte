@@ -47,6 +47,8 @@
 		locale?: Locale;
 		/** Full current URL — passed to the TopBar language switch. */
 		url?: URL;
+		/** Active provider display name (manifest.display_name) for the TopBar network chip. */
+		providerName?: string;
 		/** Active alert count for the TopBar bell badge. */
 		alertCount?: number;
 		/** Bindable search value for the TopBar field. */
@@ -87,6 +89,7 @@
 	let {
 		locale: localeProp,
 		url,
+		providerName,
 		alertCount = 0,
 		search = $bindable(''),
 		onsearch,
@@ -176,6 +179,7 @@
 	<TopBar
 		{locale}
 		{url}
+		{providerName}
 		{alertCount}
 		bind:search
 		{onsearch}
