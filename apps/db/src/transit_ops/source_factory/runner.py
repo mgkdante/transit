@@ -187,11 +187,12 @@ def run_source_factory_rebuild(
     else:
         engine = engine or make_engine(settings)
         with engine.begin() as connection:
-            operation_impls.reset_tables(connection)
+            reset_result = operation_impls.reset_tables(connection, provider_id)
         phase_status[FactoryPhase.DB_RESET] = PhaseStatus.OK
         summaries["reset"] = {
             "status": PhaseStatus.OK,
             "tables": list(catalog.reset_tables),
+            "result": _display_value(reset_result),
         }
 
         source_backfill = _execute_source_backfill(
