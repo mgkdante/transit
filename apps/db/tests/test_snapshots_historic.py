@@ -242,7 +242,7 @@ def test_build_network_trend_fact_only_date() -> None:
 
 def _route_reliability_dispatch(*, daily=None, weekly=None, monthly=None, headway=None,
                                 habit=None, weak=None, names=None, schedule=None,
-                                route_names=None):
+                                route_names=None, dow=None):
     """Assemble an ordered dispatch list for build_route_reliability.
 
     Needles are ordered most-specific-first so they never collide. The schedule
@@ -280,6 +280,8 @@ def _route_reliability_dispatch(*, daily=None, weekly=None, monthly=None, headwa
         ("stop_name", names or []),
         # route names (current-dim UNION history)
         ("DISTINCT ON (u.route_id)", route_names or []),
+        # per-weekday seasonality (route_delay_day_of_week)
+        ("route_delay_day_of_week", dow or []),
     ]
 
 
@@ -738,6 +740,30 @@ def test_build_stop_reliability_carries_name() -> None:
 
     assert out["S1"].name == "Station Berri"
     assert out["S_UNNAMED"].name is None
+
+
+def test_build_route_reliability_dow_severe_pct_uses_delay_observation_count() -> None:
+    """Honesty-fix 3/3: per-weekday severe_pct denominates on delay_observation_count
+    (observations with a known delay), matching every other grain — NOT COUNT(*)
+    observation_count, which would understate it."""
+    conn = FakeConn(
+        _route_reliability_dispatch(
+            dow=[
+                {
+                    "day_of_week_iso": 1, "observation_count": 100,
+                    "delay_observation_count": 40, "avg_delay_seconds": 120.0,
+                    "severe_delay_count": 8,
+                }
+            ],
+        )
+    )
+    out = build_route_reliability(conn, provider_id="stm", route_id="51", generated_utc="t")
+    assert len(out.day_of_week) == 1
+    dow = out.day_of_week[0]
+    assert dow.day_of_week_iso == 1
+    # 8 severe / 40 known-delay obs = 20.0%, NOT 8 / 100 = 8.0%.
+    assert dow.severe_pct == 20.0
+    assert dow.observation_count == 100
 
 
 # --------------------------------------------------------------------------

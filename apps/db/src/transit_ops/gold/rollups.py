@@ -695,6 +695,7 @@ UPSERT_ROUTE_DELAY_DAY_OF_WEEK = text(
         route_id,
         trip_count,
         observation_count,
+        delay_observation_count,
         avg_delay_seconds,
         severe_delay_count,
         built_at_utc
@@ -706,6 +707,9 @@ UPSERT_ROUTE_DELAY_DAY_OF_WEEK = text(
         -- Hourly-distinct-trip sum: upper-bound proxy, not distinct trips per weekday.
         SUM(rd.trip_count)::integer,
         SUM(rd.observation_count)::integer,
+        -- severe_pct denominator: observations with a known delay (matches every
+        -- other grain), persisted so the publisher doesn't fall back to COUNT(*).
+        SUM(rd.delay_observation_count)::integer,
         ROUND(
             SUM(rd.avg_delay_seconds * NULLIF(rd.delay_observation_count, 0))
             / NULLIF(SUM(rd.delay_observation_count), 0),
@@ -721,6 +725,7 @@ UPSERT_ROUTE_DELAY_DAY_OF_WEEK = text(
     ON CONFLICT (provider_id, day_of_week_iso, route_id) DO UPDATE SET
         trip_count = EXCLUDED.trip_count,
         observation_count = EXCLUDED.observation_count,
+        delay_observation_count = EXCLUDED.delay_observation_count,
         avg_delay_seconds = EXCLUDED.avg_delay_seconds,
         severe_delay_count = EXCLUDED.severe_delay_count,
         built_at_utc = EXCLUDED.built_at_utc

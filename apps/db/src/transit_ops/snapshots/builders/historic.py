@@ -315,7 +315,8 @@ _ROUTE_PERCENTILE_DAILY_SQL = text(
 # Per-route weekday seasonality (ISO 1=Mon..7=Sun) from the latent daily mart.
 _ROUTE_DOW_SQL = text(
     """
-    SELECT day_of_week_iso, observation_count, avg_delay_seconds, severe_delay_count
+    SELECT day_of_week_iso, observation_count, delay_observation_count,
+           avg_delay_seconds, severe_delay_count
     FROM gold.route_delay_day_of_week
     WHERE provider_id = :provider_id AND route_id = :route_id
     ORDER BY day_of_week_iso
@@ -585,7 +586,9 @@ def build_route_reliability(
         RouteDayOfWeek(
             day_of_week_iso=int(r["day_of_week_iso"]),
             avg_delay_min=_avg_delay_min(r["avg_delay_seconds"]),
-            severe_pct=_severe_pct(r["observation_count"], r["severe_delay_count"]),
+            # severe_pct over observations with a KNOWN delay (matches every other
+            # grain); COUNT(*) observation_count would understate it (honesty-fix 3/3).
+            severe_pct=_severe_pct(r["delay_observation_count"], r["severe_delay_count"]),
             observation_count=_opt_int(r["observation_count"]),
         )
         for r in conn.execute(_ROUTE_DOW_SQL, params).mappings()
