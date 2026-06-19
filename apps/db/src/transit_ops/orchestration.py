@@ -23,8 +23,10 @@ from transit_ops.gold import (
 from transit_ops.ingestion import (
     build_i3_ingestion_config,
     build_realtime_ingestion_config,
+    build_service_alerts_ingestion_config,
     capture_i3_alerts,
     capture_realtime_feed,
+    capture_service_alerts,
     ingest_gis_feed,
     ingest_static_feed,
 )
@@ -51,7 +53,12 @@ from transit_ops.silver import (
 
 GTFS_REALTIME_ENDPOINTS = ("trip_updates", "vehicle_positions")
 I3_ALERT_ENDPOINT = "i3_alerts"
+SERVICE_ALERTS_ENDPOINT = "service_alerts"
 REALTIME_ENDPOINTS = (*GTFS_REALTIME_ENDPOINTS, I3_ALERT_ENDPOINT)
+# The manifest-driven worker path also polls the generic GTFS-RT service-alerts
+# feed when a provider publishes one (STM uses its proprietary i3 feed instead).
+# REALTIME_ENDPOINTS stays the legacy fixed set for single-shot CLI/test calls.
+ALL_REALTIME_ENDPOINTS = (*REALTIME_ENDPOINTS, SERVICE_ALERTS_ENDPOINT)
 
 logger = logging.getLogger(__name__)
 
@@ -59,14 +66,14 @@ logger = logging.getLogger(__name__)
 def realtime_endpoints_for_manifest(manifest: ProviderManifest) -> tuple[str, ...]:
     """Realtime endpoint keys this provider actually publishes, in canonical order.
 
-    Drives the realtime cycle from the manifest rather than the fixed
-    ``REALTIME_ENDPOINTS`` tuple, so a provider that omits a feed (e.g. no i3
-    alerts, or a static-plus-alerts agency with no live vehicle feed) is simply
-    not polled for it — instead of failing that endpoint every cycle.
+    Drives the realtime cycle from the manifest rather than a fixed tuple, so a
+    provider that omits a feed (no i3 alerts; a static-plus-alerts agency with no
+    live vehicle feed) is simply not polled for it — instead of failing that
+    endpoint every cycle. Considers the full endpoint set (incl. service_alerts).
     """
     return tuple(
         endpoint_key
-        for endpoint_key in REALTIME_ENDPOINTS
+        for endpoint_key in ALL_REALTIME_ENDPOINTS
         if (feed := manifest.feeds.get(endpoint_key)) is not None
         and getattr(feed, "is_enabled", True)
     )
@@ -636,23 +643,36 @@ def _capture_and_load_endpoint(
     )
 
 
-def _capture_and_load_i3_alerts(
+def _capture_and_load_alert_endpoint(
     provider_id: str,
     *,
+    endpoint_key: str,
+    capture_fn: Callable[..., object],
+    capture_label_prefix: str,
+    silver_label_prefix: str,
     settings: Settings,
     registry: ProviderRegistry,
     engine: Engine,
 ) -> RealtimeEndpointCycleResult:
+    """Capture an alert feed and merge it into silver.i3_alerts.
+
+    Shared by STM's proprietary i3 JSON (capture_i3_alerts) and the generic
+    GTFS-RT service-alerts capture; both land in raw.i3_alert_snapshots and use
+    the same load_latest_i3_to_silver SCD-2 merge. Label/error prefixes are
+    passed in so each endpoint keeps its own operator-facing strings.
+    """
     endpoint_started_at = time.perf_counter()
     capture_duration_seconds: float | None = None
     silver_load_duration_seconds: float | None = None
 
-    logger.info("Running i3 alert capture step for provider '%s'.", provider_id)
+    logger.info(
+        "Running alert capture step for provider '%s' (%s).", provider_id, endpoint_key
+    )
     capture_started_at = time.perf_counter()
     try:
         capture_result, capture_duration_seconds = _run_timed_realtime_step(
-            f"capture-i3[{I3_ALERT_ENDPOINT}]",
-            lambda: capture_i3_alerts(
+            f"{capture_label_prefix}[{endpoint_key}]",
+            lambda: capture_fn(
                 provider_id,
                 settings=settings,
                 registry=registry,
@@ -666,12 +686,13 @@ def _capture_and_load_i3_alerts(
                 3,
             )
         logger.error(
-            "Realtime cycle i3 capture failed for provider '%s': %s",
+            "Realtime cycle %s capture failed for provider '%s': %s",
+            endpoint_key,
             provider_id,
             exc,
         )
         return RealtimeEndpointCycleResult(
-            endpoint_key=I3_ALERT_ENDPOINT,
+            endpoint_key=endpoint_key,
             status="failed",
             capture_duration_seconds=capture_duration_seconds,
             silver_load_duration_seconds=silver_load_duration_seconds,
@@ -681,15 +702,19 @@ def _capture_and_load_i3_alerts(
             ),
             capture_result=None,
             silver_load_result=None,
-            error_message=f"capture-i3 failed: {exc}",
+            error_message=f"{capture_label_prefix} failed: {exc}",
         )
 
-    logger.info("Running i3 alert Silver load step for provider '%s'.", provider_id)
+    logger.info(
+        "Running alert Silver load step for provider '%s' (%s).",
+        provider_id,
+        endpoint_key,
+    )
     silver_load_started_at = time.perf_counter()
     silver_load_started_at_utc = utc_now()
     try:
         silver_load_result, silver_load_duration_seconds = _run_timed_realtime_step(
-            f"load-i3-silver[{I3_ALERT_ENDPOINT}]",
+            f"{silver_label_prefix}[{endpoint_key}]",
             lambda: load_latest_i3_to_silver(
                 provider_id,
                 settings=settings,
@@ -703,20 +728,21 @@ def _capture_and_load_i3_alerts(
                 3,
             )
         logger.error(
-            "Realtime cycle i3 Silver load failed for provider '%s': %s",
+            "Realtime cycle %s Silver load failed for provider '%s': %s",
+            endpoint_key,
             provider_id,
             exc,
         )
-        error_message = f"load-i3-silver failed: {exc}"
+        error_message = f"{silver_label_prefix} failed: {exc}"
         _persist_silver_load_failure(
             engine,
             provider_id=provider_id,
-            endpoint_key=I3_ALERT_ENDPOINT,
+            endpoint_key=endpoint_key,
             error_message=error_message,
             started_at_utc=silver_load_started_at_utc,
         )
         return RealtimeEndpointCycleResult(
-            endpoint_key=I3_ALERT_ENDPOINT,
+            endpoint_key=endpoint_key,
             status="failed",
             capture_duration_seconds=capture_duration_seconds,
             silver_load_duration_seconds=silver_load_duration_seconds,
@@ -730,7 +756,7 @@ def _capture_and_load_i3_alerts(
         )
 
     return RealtimeEndpointCycleResult(
-        endpoint_key=I3_ALERT_ENDPOINT,
+        endpoint_key=endpoint_key,
         status="succeeded",
         capture_duration_seconds=capture_duration_seconds,
         silver_load_duration_seconds=silver_load_duration_seconds,
@@ -744,6 +770,44 @@ def _capture_and_load_i3_alerts(
     )
 
 
+def _capture_and_load_i3_alerts(
+    provider_id: str,
+    *,
+    settings: Settings,
+    registry: ProviderRegistry,
+    engine: Engine,
+) -> RealtimeEndpointCycleResult:
+    return _capture_and_load_alert_endpoint(
+        provider_id,
+        endpoint_key=I3_ALERT_ENDPOINT,
+        capture_fn=capture_i3_alerts,
+        capture_label_prefix="capture-i3",
+        silver_label_prefix="load-i3-silver",
+        settings=settings,
+        registry=registry,
+        engine=engine,
+    )
+
+
+def _capture_and_load_service_alerts(
+    provider_id: str,
+    *,
+    settings: Settings,
+    registry: ProviderRegistry,
+    engine: Engine,
+) -> RealtimeEndpointCycleResult:
+    return _capture_and_load_alert_endpoint(
+        provider_id,
+        endpoint_key=SERVICE_ALERTS_ENDPOINT,
+        capture_fn=capture_service_alerts,
+        capture_label_prefix="capture-service-alerts",
+        silver_label_prefix="load-service-alerts-silver",
+        settings=settings,
+        registry=registry,
+        engine=engine,
+    )
+
+
 def _capture_and_load_realtime_source(
     provider_id: str,
     endpoint_key: str,
@@ -754,6 +818,13 @@ def _capture_and_load_realtime_source(
 ) -> RealtimeEndpointCycleResult:
     if endpoint_key == I3_ALERT_ENDPOINT:
         return _capture_and_load_i3_alerts(
+            provider_id,
+            settings=settings,
+            registry=registry,
+            engine=engine,
+        )
+    if endpoint_key == SERVICE_ALERTS_ENDPOINT:
+        return _capture_and_load_service_alerts(
             provider_id,
             settings=settings,
             registry=registry,
@@ -1060,9 +1131,12 @@ def _validate_realtime_worker_startup(
     manifest = registry.get_provider(provider_id)
     for endpoint_key in GTFS_REALTIME_ENDPOINTS:
         build_realtime_ingestion_config(manifest, settings, endpoint_key)
-    # i3 alerts is optional (STM-only today); only validate it when configured.
+    # Alert feeds are optional and provider-specific: STM uses i3, others use
+    # the generic GTFS-RT service-alerts feed. Validate whichever is configured.
     if I3_ALERT_ENDPOINT in manifest.feeds:
         build_i3_ingestion_config(manifest, settings)
+    if SERVICE_ALERTS_ENDPOINT in manifest.feeds:
+        build_service_alerts_ingestion_config(manifest, settings)
     return manifest
 
 

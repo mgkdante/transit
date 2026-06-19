@@ -101,19 +101,6 @@ _STATIC_LABELS_FR: dict[str, str] = {
         "Les données détaillées sont conservées 14 jours; les agrégats quotidiens, "
         "365 jours."
     ),
-    "gap.metro_realtime": (
-        "La STM ne publie pas de données temps réel pour le métro. Les indicateurs "
-        "en direct couvrent le réseau de bus; les interruptions de métro "
-        "apparaissent dans les alertes de service."
-    ),
-    "gap.metro_realtime.short": "Métro : temps réel non disponible",
-    "attribution.data_source": (
-        "Contient des données de la Société de transport de Montréal, diffusées "
-        "sous licence CC BY 4.0."
-    ),
-    "attribution.disclaimer": (
-        "Site indépendant, non affilié à la STM et non approuvé par elle."
-    ),
 }
 
 _STATIC_LABELS_EN: dict[str, str] = {
@@ -149,19 +136,81 @@ _STATIC_LABELS_EN: dict[str, str] = {
     "methodology.retention": (
         "Detailed data is kept for 14 days; daily aggregates for 365 days."
     ),
-    "gap.metro_realtime": (
-        "The STM does not publish real-time data for the métro. Live indicators "
-        "cover the bus network; métro interruptions appear in service alerts."
-    ),
-    "gap.metro_realtime.short": "Métro: real-time not available",
-    "attribution.data_source": (
-        "Contains data from the Société de transport de Montréal, made available "
-        "under the CC BY 4.0 licence."
-    ),
-    "attribution.disclaimer": (
-        "Independent site, not affiliated with or endorsed by the STM."
-    ),
 }
+
+
+# Provider-specific citizen copy (attribution + provider-specific gaps), kept out
+# of the shared universal labels above. STM's curated bilingual copy is preserved
+# verbatim; other providers derive attribution from core.providers at build time
+# (see _provider_label_copy) and carry no metro gap.
+_PROVIDER_LABEL_COPY: dict[str, dict[str, dict[str, str]]] = {
+    "stm": {
+        "fr": {
+            "gap.metro_realtime": (
+                "La STM ne publie pas de données temps réel pour le métro. Les "
+                "indicateurs en direct couvrent le réseau de bus; les interruptions "
+                "de métro apparaissent dans les alertes de service."
+            ),
+            "gap.metro_realtime.short": "Métro : temps réel non disponible",
+            "attribution.data_source": (
+                "Contient des données de la Société de transport de Montréal, "
+                "diffusées sous licence CC BY 4.0."
+            ),
+            "attribution.disclaimer": (
+                "Site indépendant, non affilié à la STM et non approuvé par elle."
+            ),
+        },
+        "en": {
+            "gap.metro_realtime": (
+                "The STM does not publish real-time data for the métro. Live "
+                "indicators cover the bus network; métro interruptions appear in "
+                "service alerts."
+            ),
+            "gap.metro_realtime.short": "Métro: real-time not available",
+            "attribution.data_source": (
+                "Contains data from the Société de transport de Montréal, made "
+                "available under the CC BY 4.0 licence."
+            ),
+            "attribution.disclaimer": (
+                "Independent site, not affiliated with or endorsed by the STM."
+            ),
+        },
+    },
+}
+
+_PROVIDER_ATTRIBUTION_SQL = text(
+    "SELECT display_name, attribution_text FROM core.providers "
+    "WHERE provider_id = :provider_id"
+)
+
+
+def _provider_label_copy(conn: Connection, provider_id: str, lang: str) -> dict[str, str]:
+    """Attribution + provider-specific gap copy for one provider and language.
+
+    Curated providers (STM) return their hand-written bilingual copy. Others
+    derive a licensing-correct attribution from core.providers (the manifest's
+    attribution_text + display_name) and carry no metro-realtime gap.
+    """
+    curated = _PROVIDER_LABEL_COPY.get(provider_id)
+    if curated is not None:
+        return dict(curated[lang])
+
+    row = conn.execute(
+        _PROVIDER_ATTRIBUTION_SQL, {"provider_id": provider_id}
+    ).mappings().one_or_none()
+    display_name = (row["display_name"] if row else None) or provider_id
+    attribution_text = (row["attribution_text"] if row else None) or ""
+    if lang == "fr":
+        disclaimer = (
+            f"Site indépendant, non affilié à {display_name} "
+            f"et non approuvé par {display_name}."
+        )
+    else:
+        disclaimer = f"Independent site, not affiliated with or endorsed by {display_name}."
+    copy: dict[str, str] = {"attribution.disclaimer": disclaimer}
+    if attribution_text:
+        copy["attribution.data_source"] = attribution_text
+    return copy
 
 _LABELS_SQL = text(
     """
@@ -172,7 +221,13 @@ _LABELS_SQL = text(
 )  # not provider-scoped
 
 
-def build_labels(conn: Connection, *, lang: str = "fr", generated_utc: str) -> "LabelsFile":
+def build_labels(
+    conn: Connection,
+    *,
+    provider_id: str = "stm",
+    lang: str = "fr",
+    generated_utc: str,
+) -> "LabelsFile":
     """Build labels/{lang}.json: static code translations + metric catalog labels.
 
     Every metric.* key is emitted in BOTH languages (with cross-language / raw-key
@@ -188,6 +243,7 @@ def build_labels(conn: Connection, *, lang: str = "fr", generated_utc: str) -> "
     """
     static = _STATIC_LABELS_FR if lang == "fr" else _STATIC_LABELS_EN
     labels: dict[str, str] = dict(static)
+    labels.update(_provider_label_copy(conn, provider_id, lang))
 
     for r in conn.execute(_LABELS_SQL).mappings():
         key = f"metric.{r['label_key']}"

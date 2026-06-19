@@ -927,6 +927,44 @@ def test_build_labels_includes_methodology_gap_attribution():
     assert "14 derniers jours" in fr.labels["methodology.percentiles"]
 
 
+def test_build_labels_non_stm_derives_attribution_from_core_providers():
+    """A provider without curated copy gets a licensing-correct attribution from
+    core.providers (manifest display_name + attribution_text) and no metro gap."""
+    from transit_ops.snapshots.builders import build_labels
+
+    class FakeResult:
+        def __init__(self, rows):
+            self._rows = rows
+
+        def mappings(self):
+            return self
+
+        def __iter__(self):
+            return iter(self._rows)
+
+        def one_or_none(self):
+            return self._rows[0] if self._rows else None
+
+    class FakeConn:
+        def execute(self, statement, *a, **k):
+            if "core.providers" in str(statement):
+                return FakeResult(
+                    [
+                        {
+                            "display_name": "Société de transport de l'Outaouais",
+                            "attribution_text": "Contains STO open data.",
+                        }
+                    ]
+                )
+            return FakeResult([])  # gold.report_labels
+
+    fr = build_labels(FakeConn(), provider_id="sto", lang="fr", generated_utc="t")
+    assert fr.labels["attribution.data_source"] == "Contains STO open data."
+    assert "Outaouais" in fr.labels["attribution.disclaimer"]
+    # STM's metro-realtime gap is not carried for a non-metro provider
+    assert "gap.metro_realtime" not in fr.labels
+
+
 def test_static_label_key_sets_identical_fr_en():
     """Parity invariant: the two static dicts must always carry the same key set,
     so fr.json and en.json never drift apart (slice-9.1.1t)."""

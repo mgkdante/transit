@@ -854,6 +854,34 @@ def publish_snapshot_command(
     typer.echo(json.dumps(result.display_dict(), indent=2))
 
 
+@app.command("publish-all")
+def publish_all_command(
+    tier: str = typer.Option("live", "--tier", help="live | static | historic"),  # noqa: B008
+) -> None:
+    """Build and publish the /v1 snapshot for EVERY configured provider.
+
+    Attempts every provider so one provider's failure does not skip the others;
+    exits non-zero if any failed.
+    """
+    settings = get_settings()
+    registry = _provider_registry(settings)
+    results: list[dict[str, object]] = []
+    failures: list[str] = []
+    for provider_id in registry.list_provider_ids():
+        try:
+            result = publish_snapshot(
+                provider_id, tier=tier, settings=settings, registry=registry
+            )
+            results.append(result.display_dict())
+        except (KeyError, ValueError, FileNotFoundError) as exc:
+            failures.append(f"{provider_id}: {exc}")
+    typer.echo(json.dumps(results, indent=2))
+    if failures:
+        for failure in failures:
+            typer.echo(f"publish-all failure — {failure}", err=True)
+        raise typer.Exit(code=1)
+
+
 @app.command("run-realtime-worker")
 def run_realtime_worker_command(
     provider_id: str,

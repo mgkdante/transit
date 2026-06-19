@@ -12,8 +12,11 @@ from transit_ops.ingestion.i3 import (
     I3IngestionResult,
     build_i3_ingestion_config,
     build_i3_object_storage_path,
+    build_service_alerts_ingestion_config,
     capture_i3_alerts,
+    capture_service_alerts,
     extract_i3_metadata,
+    extract_service_alerts_metadata,
 )
 from transit_ops.ingestion.realtime_gtfs import (
     RealtimeIngestionConfig,
@@ -48,8 +51,11 @@ __all__ = [
     "build_realtime_object_storage_path",
     "build_static_ingestion_config",
     "build_static_object_storage_path",
+    "build_service_alerts_ingestion_config",
     "capture_i3_alerts",
     "capture_realtime_feed",
+    "capture_service_alerts",
+    "extract_service_alerts_metadata",
     "extract_i3_metadata",
     "extract_realtime_metadata",
     "ingest_gis_feed",

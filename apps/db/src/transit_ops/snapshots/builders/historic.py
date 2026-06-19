@@ -1311,6 +1311,9 @@ _PROVENANCE_FRESHNESS_SQL = text(
 )
 
 
+_PROVIDER_GAPS: dict[str, list[str]] = {"stm": ["metro_realtime"]}
+
+
 def build_provenance(
     conn: "Connection", provider_id: str = "stm", *, generated_utc: str
 ) -> "Provenance":
@@ -1322,6 +1325,10 @@ def build_provenance(
     gaps lists known missing feeds (STM metro publishes no realtime feed).
     """
     params = {"provider_id": provider_id}
+
+    # Provider-specific known gaps. metro_realtime is STM's: it runs a métro whose
+    # realtime is unpublished. Bus/LRT-only networks (STO/OC/STS) have no such gap.
+    gaps = list(_PROVIDER_GAPS.get(provider_id, []))
 
     sources: list[ProvenanceSource] = []
     for r in conn.execute(_PROVENANCE_SOURCES_SQL, params).mappings():
@@ -1446,5 +1453,5 @@ def build_provenance(
                 "when no stop-time updates were observed"
             ),
         },
-        gaps=["metro_realtime"],  # STM metro publishes no realtime feed
+        gaps=gaps,
     )
