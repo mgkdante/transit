@@ -108,8 +108,10 @@ def run_source_factory_rebuild(
         )
 
     registry = registry or ProviderRegistry.from_project_root(settings=settings)
-    registry.get_provider(provider_id)
-    catalog = build_source_factory_catalog(provider_id)
+    manifest = registry.get_provider(provider_id)
+    catalog = build_source_factory_catalog(
+        provider_id, present_feed_kinds=set(manifest.feeds)
+    )
     bronze_storage = bronze_storage or get_bronze_storage(
         settings,
         project_root=Path(__file__).resolve().parents[3],

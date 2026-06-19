@@ -231,15 +231,15 @@ class ProviderManifest(BaseModel):
 
     @model_validator(mode="after")
     def validate_manifest_shape(self) -> ProviderManifest:
-        # GIS is provider-specific (STM ships a separate stm_sig.zip shapefile).
-        # Standard GTFS agencies carry route geometry in shapes.txt inside the
-        # schedule zip, so gis_static is OPTIONAL. The universal core is the
-        # schedule plus the two GTFS-RT feeds the delay/reliability facts need.
-        required_feeds = {
-            FeedKind.STATIC_SCHEDULE.value,
-            FeedKind.TRIP_UPDATES.value,
-            FeedKind.VEHICLE_POSITIONS.value,
-        }
+        # The only universally required feed is the GTFS schedule. GIS is
+        # provider-specific (STM ships a separate stm_sig.zip; standard agencies
+        # carry geometry in shapes.txt), the GTFS-RT trip/vehicle feeds power the
+        # delay/reliability facts but a fully GTFS-compliant agency may publish
+        # schedule only (or schedule + alerts, like STS), and the alert feeds are
+        # optional too. A provider that omits the realtime feeds simply produces
+        # no realtime/reliability facts — the realtime cycle is manifest-driven
+        # (realtime_endpoints_for_manifest) and skips whatever is absent.
+        required_feeds = {FeedKind.STATIC_SCHEDULE.value}
         missing_feeds = required_feeds - set(self.feeds)
         if missing_feeds:
             missing_display = ", ".join(sorted(missing_feeds))
