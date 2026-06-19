@@ -1,5 +1,23 @@
+"""The /v1 DB->UI contract: these Pydantic models are the single source of truth.
+
+export_schemas() emits one JSON Schema per model; scripts/export_snapshot_schemas.py
+writes them to snapshots/schemas/ and tests/test_snapshots_schema_export.py byte-gates
+them, so the on-disk schemas cannot drift from these models. The web app mirrors
+those schemas (apps/web/.../v1/schemas/json/, gated by
+tests/test_v1_contract_web_mirror_sync.py) and hand-writes the Zod validators.
+
+Growth rule: add fields OPTIONAL-with-default only -- never add a required field or
+flip optional->required, so older clients never break on a republish. Honest NULL:
+a missing value serializes as explicit JSON null, never coerced to 0.
+
+Full doctrine + the add-a-field / add-an-entity playbooks live in Notion ->
+Architecture -> "/v1 Contract Doctrine".
+"""
+
 from __future__ import annotations
+
 from enum import Enum
+
 from pydantic import BaseModel, Field
 
 class Status(str, Enum):
