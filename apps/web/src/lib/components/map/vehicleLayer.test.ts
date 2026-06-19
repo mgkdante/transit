@@ -136,22 +136,12 @@ describe('toVehicleFeatures entity filtering', () => {
 		]);
 	});
 
-	it('keeps only directional buses when the bus_direction shape is selected', () => {
-		const filter = { ...EMPTY_FILTER, entities: ['bus_direction'] } as unknown as FilterState;
+	it('keeps all buses (heading or not) when the bus marker is selected', () => {
+		const filter = { ...EMPTY_FILTER, entities: ['bus'] } as unknown as FilterState;
 		const features = toVehicleFeatures(vehicles, filter).features;
 
 		expect(features.map((f) => [f.properties.id, f.properties.matched])).toEqual([
 			['directional', 1],
-			['no-direction', 0],
-		]);
-	});
-
-	it('keeps only no-direction buses when the bus_no_direction shape is selected', () => {
-		const filter = { ...EMPTY_FILTER, entities: ['bus_no_direction'] } as unknown as FilterState;
-		const features = toVehicleFeatures(vehicles, filter).features;
-
-		expect(features.map((f) => [f.properties.id, f.properties.matched])).toEqual([
-			['directional', 0],
 			['no-direction', 1],
 		]);
 	});
@@ -177,17 +167,13 @@ describe('toVehicleFeatures entity filtering', () => {
 		const filter = {
 			...EMPTY_FILTER,
 			alerts: ['has_alert'],
-			entities: ['bus_no_direction'],
+			entities: ['bus'],
 		} as unknown as FilterState;
-		const features = toVehicleFeatures(
-			vehicles,
-			filter,
-			new Set(['directional', 'no-direction']),
-		).features;
+		const features = toVehicleFeatures(vehicles, filter, new Set(['directional'])).features;
 
 		expect(features.map((f) => [f.properties.id, f.properties.matched])).toEqual([
-			['directional', 0],
-			['no-direction', 1],
+			['directional', 1],
+			['no-direction', 0],
 		]);
 	});
 });

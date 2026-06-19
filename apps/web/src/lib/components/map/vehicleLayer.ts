@@ -13,7 +13,7 @@
 import type { Map as MapLibreMap, GeoJSONSource, LayerSpecification } from 'maplibre-gl';
 import type { Vehicle } from '$lib/v1/schemas';
 import type { EntityKind, FilterState } from '$lib/filters';
-import { bodyIconId, BUS_ICON, BUS_ICON_ND } from './vehicleSprites';
+import { bodyIconId, BUS_ICON } from './vehicleSprites';
 
 export const VEHICLE_SOURCE = 'vehicles';
 export const VEHICLE_BODY_LAYER = 'vehicle-body';
@@ -74,15 +74,13 @@ function matchesFilter(v: Vehicle, f: FilterState, alertVehicleIds: ReadonlySet<
 	const aa = activeAlerts(f);
 	if (aa && !alertVehicleIds.has(v.id)) return false;
 	const ae = activeEntities(f);
-	if (ae) {
-		const kind: EntityKind = v.bearing != null ? 'bus_direction' : 'bus_no_direction';
-		if (!ae.includes(kind)) return false;
-	}
+	if (ae && !ae.includes('bus')) return false;
 	return true;
 }
 
 /** Body icon id + match flag for a vehicle. Matched + a colour dim → the state-
- * coloured shape; otherwise the default orange shape (kite / square by heading). */
+ * coloured shape; otherwise the default orange bus shape. One shape for every
+ * bus — the layer rotates it by bearing (a bus with no heading stays unrotated). */
 function iconFor(
 	v: Vehicle,
 	f: FilterState,
@@ -92,15 +90,14 @@ function iconFor(
 	body: string;
 	matched: number;
 } {
-	const directional = v.bearing != null;
 	const matched = matchesFilter(v, f, alertVehicleIds);
 	if (matched && dim === 'status') {
-		return { body: bodyIconId('status', v.status, directional), matched: 1 };
+		return { body: bodyIconId('status', v.status), matched: 1 };
 	}
 	if (matched && dim === 'occupancy' && v.occupancy != null) {
-		return { body: bodyIconId('occupancy', v.occupancy, directional), matched: 1 };
+		return { body: bodyIconId('occupancy', v.occupancy), matched: 1 };
 	}
-	return { body: directional ? BUS_ICON : BUS_ICON_ND, matched: matched ? 1 : 0 };
+	return { body: BUS_ICON, matched: matched ? 1 : 0 };
 }
 
 /** Build the GeoJSON FeatureCollection for the current vehicles under the filter. */

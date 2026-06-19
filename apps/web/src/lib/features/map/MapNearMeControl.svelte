@@ -299,21 +299,31 @@
 		font-size: var(--text-caption);
 		border: 1px solid var(--border-subtle);
 		cursor: pointer;
+		transition:
+			color var(--duration-fast, 150ms) var(--ease-default, cubic-bezier(0.4, 0, 0.2, 1)),
+			background-color var(--duration-fast, 150ms) var(--ease-default, cubic-bezier(0.4, 0, 0.2, 1)),
+			border-color var(--duration-fast, 150ms) var(--ease-default, cubic-bezier(0.4, 0, 0.2, 1));
 	}
 	.map-near-toggle {
 		display: inline-flex;
 		align-items: center;
 		justify-content: center;
-		gap: 0.45rem;
+		gap: 0.5rem;
 		justify-self: end;
 		min-height: 2rem;
-		padding: 0.35rem 0.7rem;
+		padding: 0.35rem 0.85rem 0.35rem 0.7rem;
+		font-weight: 600;
+		letter-spacing: 0.04em;
 		color: var(--foreground);
-		background: color-mix(in srgb, var(--card) 90%, transparent);
+		background: color-mix(in srgb, var(--card) 88%, transparent);
 		border-color: color-mix(in srgb, var(--border) 82%, var(--primary) 18%);
 		border-radius: var(--radius-pill);
 		box-shadow: var(--shadow-card);
-		backdrop-filter: blur(8px);
+		backdrop-filter: blur(10px) saturate(1.1);
+	}
+	.map-near-toggle[aria-expanded='true'] {
+		color: var(--primary);
+		border-color: color-mix(in srgb, var(--primary) 50%, var(--border) 50%);
 	}
 	.map-near-toggle:hover,
 	.map-near-toggle:focus-visible,
@@ -332,9 +342,19 @@
 		border-color: color-mix(in srgb, var(--primary) 42%, var(--border) 58%);
 		outline: none;
 	}
+	.map-near-toggle:focus-visible,
+	.map-near-action:focus-visible,
+	.map-near-form button:focus-visible,
+	.map-near-stop:focus-visible,
+	.map-near-suggestion:focus-visible,
+	.map-near-clear:focus-visible {
+		outline: 2px solid var(--ring);
+		outline-offset: 2px;
+	}
 	:global(.map-near-icon) {
 		flex: none;
 		color: var(--primary);
+		transition: color var(--duration-fast, 150ms) var(--ease-default, cubic-bezier(0.4, 0, 0.2, 1));
 	}
 	.map-near-panel {
 		position: absolute;
@@ -343,17 +363,28 @@
 		width: min(28rem, calc(100vw - var(--map-detail-offset, 0rem) - 2rem));
 		display: grid;
 		gap: 0.45rem;
-		padding: 0.55rem;
-		background: color-mix(in srgb, var(--card) 94%, transparent);
+		padding: 0.6rem;
+		background: color-mix(in srgb, var(--card) 92%, transparent);
 		border: 1px solid color-mix(in srgb, var(--border) 78%, var(--primary) 22%);
-		border-radius: var(--radius-md);
+		border-radius: var(--radius-lg);
 		box-shadow: var(--shadow-card);
-		backdrop-filter: blur(10px);
+		backdrop-filter: blur(12px) saturate(1.1);
 	}
-	.map-near-action,
+	.map-near-action {
+		min-height: 2rem;
+		padding: 0.4rem 0.65rem;
+		font-weight: 600;
+		letter-spacing: 0.05em;
+		text-transform: uppercase;
+		color: var(--foreground);
+		background: var(--muted);
+		border-color: color-mix(in srgb, var(--border) 70%, var(--primary) 30%);
+		border-radius: var(--radius-pill);
+	}
 	.map-near-form button {
 		min-height: 2rem;
-		padding: 0.3rem 0.65rem;
+		padding: 0.3rem 0.7rem;
+		font-weight: 600;
 		color: var(--foreground);
 		background: var(--muted);
 		border-radius: var(--radius-pill);
@@ -371,13 +402,19 @@
 		width: 100%;
 		min-width: 0;
 		min-height: 2rem;
-		padding: 0.3rem 0.6rem;
+		padding: 0.3rem 0.7rem;
 		font-family: var(--font-mono);
 		font-size: var(--text-caption);
 		color: var(--foreground);
 		background: var(--muted);
 		border: 1px solid var(--border-subtle);
 		border-radius: var(--radius-pill);
+		transition:
+			border-color var(--duration-fast, 150ms) var(--ease-default, cubic-bezier(0.4, 0, 0.2, 1)),
+			background-color var(--duration-fast, 150ms) var(--ease-default, cubic-bezier(0.4, 0, 0.2, 1));
+	}
+	.map-near-form input:hover {
+		border-color: color-mix(in srgb, var(--primary) 28%, var(--border) 72%);
 	}
 	.map-near-form input::placeholder,
 	.map-near-message,
@@ -389,6 +426,7 @@
 	.map-near-form input:focus-visible {
 		outline: 2px solid var(--ring);
 		outline-offset: 1px;
+		border-color: color-mix(in srgb, var(--primary) 50%, var(--border) 50%);
 	}
 	.map-near-suggestions {
 		grid-column: 1 / -1;
@@ -397,7 +435,7 @@
 		gap: 0.25rem;
 		max-height: min(18rem, calc(100dvh - 10rem));
 		overflow-y: auto;
-		padding: 0.3rem;
+		padding: 0.35rem;
 		background: color-mix(in srgb, var(--card) 98%, transparent);
 		border: 1px solid color-mix(in srgb, var(--border) 78%, var(--primary) 22%);
 		border-radius: var(--radius-md);
@@ -405,12 +443,13 @@
 	}
 	.map-near-suggestion {
 		display: grid;
-		gap: 0.1rem;
+		gap: 0.12rem;
 		min-height: 2rem;
-		padding: 0.35rem 0.55rem;
+		padding: 0.4rem 0.6rem;
 		color: var(--foreground);
 		text-align: left;
 		background: var(--muted);
+		border-color: transparent;
 		border-radius: var(--radius-sm);
 	}
 	.map-near-suggestion span {
@@ -418,6 +457,7 @@
 		overflow: visible;
 		text-overflow: clip;
 		white-space: normal;
+		line-height: 1.35;
 	}
 	.map-near-stop span {
 		min-width: 0;
@@ -427,6 +467,8 @@
 	}
 	.map-near-suggestion small {
 		font-size: var(--text-micro);
+		letter-spacing: 0.04em;
+		text-transform: uppercase;
 	}
 	.map-near-google-attribution {
 		display: flex;
@@ -477,10 +519,14 @@
 		grid-template-columns: minmax(0, 1fr) auto;
 		align-items: center;
 		gap: 0.45rem;
+		padding: 0.1rem 0.3rem 0.1rem 0.45rem;
+		border-left: 2px solid color-mix(in srgb, var(--primary) 55%, transparent);
 	}
 	.map-near-origin {
 		min-width: 0;
 		overflow: hidden;
+		font-weight: 600;
+		color: var(--foreground);
 		text-overflow: ellipsis;
 		white-space: nowrap;
 	}
@@ -488,9 +534,9 @@
 		display: inline-flex;
 		align-items: center;
 		justify-content: center;
-		gap: 0.25rem;
+		gap: 0.3rem;
 		min-height: 1.75rem;
-		padding: 0.25rem 0.5rem;
+		padding: 0.25rem 0.55rem;
 		color: var(--muted-foreground);
 		background: var(--muted);
 		border-radius: var(--radius-pill);
@@ -505,18 +551,28 @@
 		justify-content: space-between;
 		gap: 0.6rem;
 		min-height: 2rem;
-		padding: 0.3rem 0.6rem;
+		padding: 0.4rem 0.65rem;
 		color: var(--foreground);
 		text-align: left;
 		background: var(--muted);
+		border-color: transparent;
 		border-radius: var(--radius-sm);
 	}
 	.map-near-stop small {
 		flex: none;
+		font-variant-numeric: tabular-nums;
 	}
 
 	@media (prefers-reduced-motion: reduce) {
-		.map-near {
+		.map-near,
+		.map-near-toggle,
+		.map-near-action,
+		.map-near-form button,
+		.map-near-form input,
+		.map-near-stop,
+		.map-near-suggestion,
+		.map-near-clear,
+		:global(.map-near-icon) {
 			transition: none;
 		}
 	}

@@ -23,9 +23,10 @@ import { statusVar, occupancyVar } from '$lib/components/dataviz';
 const SIZE = 26;
 const RATIO = 2;
 
-/** Default (no-filter) bus icon ids — yesid brand orange. */
+/** Default (no-filter) bus icon id — yesid brand orange. One sprite for every
+ *  bus; the layer rotates it by bearing (a bus with no heading just isn't
+ *  rotated). */
 export const BUS_ICON = 'veh-bus';
-export const BUS_ICON_ND = 'veh-bus-nd';
 /** The stop diamond icon id. */
 export const STOP_ICON = 'veh-stop';
 
@@ -33,7 +34,7 @@ export const BUS_FILL_TOKEN = 'var(--primary)';
 export const BUS_FILL_FALLBACK = 'rgb(224, 120, 0)';
 export const BUS_HALO_TOKEN = 'var(--background)';
 export const BUS_HALO_FALLBACK = '#141414';
-export const STOP_FILL_TOKEN = 'var(--accent)';
+export const STOP_FILL_TOKEN = 'var(--map-stop-fill)';
 export const STOP_FILL_FALLBACK = 'rgb(255, 182, 39)';
 export const STOP_HALO_TOKEN = BUS_HALO_TOKEN;
 export const STOP_HALO_FALLBACK = BUS_HALO_FALLBACK;
@@ -97,11 +98,8 @@ function shapeImage(fill: string, halo: string, shape: Shape): ImageData {
 }
 
 /** Icon id the vehicle layer references per feature (see toVehicleFeatures). */
-export const bodyIconId = (
-	mode: 'status' | 'occupancy',
-	code: string,
-	directional: boolean,
-): string => `veh-${mode === 'status' ? 's' : 'o'}-${code}${directional ? '' : '-nd'}`;
+export const bodyIconId = (mode: 'status' | 'occupancy', code: string): string =>
+	`veh-${mode === 'status' ? 's' : 'o'}-${code}`;
 
 /**
  * Bake + register every vehicle body icon: the default orange pair, plus one
@@ -115,28 +113,22 @@ export function bakeVehicleSprites(map: MapLibreMap): void {
 		if (map.hasImage(id)) map.removeImage(id);
 		map.addImage(id, img, { pixelRatio: RATIO });
 	};
-	// directional → kite; no heading → square.
-	const addBus = (id: string, fill: string, directional: boolean) =>
-		add(id, shapeImage(fill, busHalo, directional ? 'kite' : 'square'));
+	// One bus shape (kite); the layer rotates it by bearing (no heading -> unrotated).
+	const addBus = (id: string, fill: string) => add(id, shapeImage(fill, busHalo, 'kite'));
 
 	for (const code of STATUS_CODES as readonly StatusCode[]) {
-		const fill = resolveColor(statusVar(code), '#8a8a8a');
-		addBus(bodyIconId('status', code, true), fill, true);
-		addBus(bodyIconId('status', code, false), fill, false);
+		addBus(bodyIconId('status', code), resolveColor(statusVar(code), '#8a8a8a'));
 	}
 
 	for (const code of OCCUPANCY_CODES as readonly OccupancyCode[]) {
-		const fill = resolveColor(occupancyVar(code), '#7a5fb0');
-		addBus(bodyIconId('occupancy', code, true), fill, true);
-		addBus(bodyIconId('occupancy', code, false), fill, false);
+		addBus(bodyIconId('occupancy', code), resolveColor(occupancyVar(code), '#7a5fb0'));
 	}
 
 	// Default (no filter) — yesid brand orange (--primary).
-	const busFill = resolveColor(BUS_FILL_TOKEN, BUS_FILL_FALLBACK);
-	addBus(BUS_ICON, busFill, true);
-	addBus(BUS_ICON_ND, busFill, false);
+	addBus(BUS_ICON, resolveColor(BUS_FILL_TOKEN, BUS_FILL_FALLBACK));
 
-	// Stops are yellow diamonds, with the same theme surface outline as buses.
+	// Stops are diamonds (reddish-orange on light, amber on dark), with the same
+	// theme surface outline as buses.
 	const stopFill = resolveColor(STOP_FILL_TOKEN, STOP_FILL_FALLBACK);
 	const stopHalo = resolveColor(STOP_HALO_TOKEN, STOP_HALO_FALLBACK);
 	add(STOP_ICON, shapeImage(stopFill, stopHalo, 'diamond'));

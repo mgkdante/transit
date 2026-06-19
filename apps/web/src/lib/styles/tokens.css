@@ -15,6 +15,9 @@
   --signal-proceed: var(--success);
   --signal-caution: var(--accent);
   --signal-stop: var(--destructive);
+  /* Map stop diamond fill — amber on the dark board; the light theme overrides
+     this to a hard-contrast blue so stops punch on the near-white map. */
+  --map-stop-fill: #FFB627;
   --dataviz-vehicle-on-time: var(--dataviz-status-on-time);
   --dataviz-vehicle-delayed: var(--dataviz-status-late);
   --dataviz-vehicle-cancelled: var(--dataviz-status-severe);
@@ -181,6 +184,9 @@
   --lamp-bezel: #1A1714;
   --line-amber: #B57F00;
   --accent-surface: #FAEECC;
+  /* Stops punch hard on the near-white map: a vivid reddish-orange, brighter +
+     redder than the muted #A05500 bus orange so the two read as distinct. */
+  --map-stop-fill: #E8540E;
   --grid-line-major: color-mix(in srgb, var(--foreground) 8%, transparent);
   --grid-line-minor: color-mix(in srgb, var(--foreground) 4%, transparent);
   --grid-block-marker: color-mix(in srgb, var(--accent-text) 6%, transparent);

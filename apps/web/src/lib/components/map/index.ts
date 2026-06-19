@@ -24,7 +24,7 @@ export type { MapViewportOptions } from './viewport';
 // Live vehicle layer kit (slice-9.3) — sprite baker + source/layers + feature
 // builder + the near-me geo util. The runtime pieces touch the map only after
 // MapStage's onready; the geo helpers are pure + SSR-safe.
-export { bakeVehicleSprites, bodyIconId, BUS_ICON, BUS_ICON_ND, STOP_ICON } from './vehicleSprites';
+export { bakeVehicleSprites, bodyIconId, BUS_ICON, STOP_ICON } from './vehicleSprites';
 
 export {
 	addVehicleSource,

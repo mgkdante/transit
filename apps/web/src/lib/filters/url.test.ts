@@ -59,8 +59,8 @@ describe('fromSearchParams — parsing + self-healing', () => {
 	});
 
 	it('drops entity junk, keeps valid shape/entity filters', () => {
-		const s = fromSearchParams(sp('entity=bus_direction,bogus,stop,bus_direction'));
-		expect((s as { entities?: string[] }).entities).toEqual(['bus_direction', 'stop']);
+		const s = fromSearchParams(sp('entity=bus,bogus,stop,bus'));
+		expect((s as { entities?: string[] }).entities).toEqual(['bus', 'stop']);
 	});
 
 	it('drops alert junk, keeps valid alert entity filters', () => {
@@ -144,7 +144,7 @@ describe('round-trip — toSearchParams(fromSearchParams(u)) is an idempotent fi
 		'route=10&route=80', // repeated-key form normalizes to comma form
 		'route=10,,80&stop=', // junk normalizes away
 		'status=bogus,late', // invalid enum drops
-		'entity=bus_direction,stop,bogus',
+		'entity=bus,stop,bogus',
 		'alert=has_alert,bogus',
 		'route=165&stop=ABC&trip=T1&vehicle=40061&status=on_time,late&occupancy=full&entity=stop&alert=has_alert&grain=week&window=7d',
 		'utm_source=x&route=10', // unknown key drops
