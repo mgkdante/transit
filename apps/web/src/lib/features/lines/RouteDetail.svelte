@@ -19,18 +19,13 @@
 	import { getLocale } from '$lib/i18n';
 	import { mapHrefFor } from '$lib/nav';
 	import { getRoute, getRouteReliability } from '$lib/v1';
-	import type { RouteFile, RouteReliability, ReliabilityPeriod } from '$lib/v1';
+	import type { RouteFile, RouteReliability } from '$lib/v1';
 	import { createResource } from '$lib/v1/resource.svelte';
-	import {
-		EntityDetail,
-		ResourceBoundary,
-		ReliabilityPane,
-		MapDrilldownLink,
-		type ReliabilityPeriodVM,
-	} from '$lib/components/surface';
+	import { EntityDetail, ResourceBoundary, MapDrilldownLink } from '$lib/components/surface';
 	import SectionHeading from '$lib/components/brand/SectionHeading.svelte';
 	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
 	import MetricDisplay from '$lib/components/brand/MetricDisplay.svelte';
+	import RouteReliabilityClusters from './reliability/RouteReliabilityClusters.svelte';
 	import { detailCopy } from './lines.copy';
 
 	interface RouteDetailProps {
@@ -56,26 +51,9 @@
 	// reliability is the historic per-route archive (reactive to `id`).
 	const reliability = createResource<RouteReliability | null>(() => getRouteReliability(id));
 
-	// Raw reliability periods → the spine's normalized VM (delayLabelKind="avg").
-	const toVM = (p: ReliabilityPeriod): ReliabilityPeriodVM => ({
-		grain: p.grain,
-		otpPct: p.otp_pct ?? null,
-		delayMin: p.avg_delay_min ?? null,
-		p90Min: p.p90_min ?? null,
-		severePct: p.severe_pct ?? null,
-	});
-	// The live reliability strip renders only the primary period grains and the
-	// busiest-direction headway. The granularity grains (shift / weekday-weekend
-	// day-type) and per-direction headway ('*_dir*') ride in the /v1 data for the
-	// dedicated grouped sections in the 9.6 reliability surface, not this flat strip.
-	const PRIMARY_GRAINS = new Set(['day', 'week', 'month']);
-	const periodVMs = $derived<ReliabilityPeriodVM[]>(
-		(reliability.data?.periods ?? []).filter((p) => PRIMARY_GRAINS.has(p.grain)).map(toVM),
-	);
-	const displayHeadway = $derived(
-		(reliability.data?.headway ?? []).filter((h) => !h.shift.includes('_dir')),
-	);
-
+	// schedule pane formats headway minutes; the reliability tab is now the
+	// dedicated 9.6 clustered surface (RouteReliabilityClusters) — it owns its own
+	// formatting + the snapshot strip + 5 cluster bands off the same archive.
 	const fmtMin = (v: number | null | undefined): string =>
 		v == null ? '—' : `${v.toFixed(1)} min`;
 </script>
@@ -163,57 +141,7 @@
 		{:else}
 			<ResourceBoundary resource={reliability} lang={locale}>
 				{#snippet children(rel)}
-					<div class="route-section">
-						<ReliabilityPane periods={periodVMs} {locale} delayLabelKind="avg" />
-
-						{#if displayHeadway.length > 0}
-							<div class="route-subsection">
-								<SectionLabel text={t.headways} variant="metric" />
-								<ul class="route-periods">
-									{#each displayHeadway as hw (hw.shift)}
-										<li class="route-period">
-											<SectionLabel text={hw.shift} variant="metric" />
-											<div class="route-period-metrics">
-												<MetricDisplay
-													value={fmtMin(hw.scheduled_min)}
-													label={t.scheduled}
-													size="sm"
-												/>
-												<MetricDisplay
-													value={fmtMin(hw.observed_min)}
-													label={t.observed}
-													size="sm"
-												/>
-												{#if hw.excess_wait_min != null}
-													<MetricDisplay
-														value={fmtMin(hw.excess_wait_min)}
-														label={t.excessWait}
-														size="sm"
-													/>
-												{/if}
-											</div>
-										</li>
-									{/each}
-								</ul>
-							</div>
-						{/if}
-
-						{#if (rel.weak_stops ?? []).length > 0}
-							<div class="route-subsection">
-								<SectionLabel text={t.weakStops} variant="metric" />
-								<ul class="route-weak-stops">
-									{#each rel.weak_stops ?? [] as ws (ws.id)}
-										<li class="route-weak-stop">
-											<span class="route-weak-stop-name">{ws.name ?? ws.id}</span>
-											<span class="route-weak-stop-meta">
-												{t.avgDelay}: {fmtMin(ws.avg_delay_min)}
-											</span>
-										</li>
-									{/each}
-								</ul>
-							</div>
-						{/if}
-					</div>
+					<RouteReliabilityClusters data={rel} {locale} />
 				{/snippet}
 			</ResourceBoundary>
 		{/if}
@@ -231,11 +159,6 @@
 		display: flex;
 		flex-direction: column;
 		gap: 1.25rem;
-	}
-	.route-subsection {
-		display: flex;
-		flex-direction: column;
-		gap: 0.75rem;
 	}
 	.route-directions {
 		list-style: none;
@@ -338,36 +261,5 @@
 		display: flex;
 		flex-wrap: wrap;
 		gap: 1.25rem;
-	}
-	.route-weak-stops {
-		list-style: none;
-		margin: 0;
-		padding: 0;
-		display: flex;
-		flex-direction: column;
-	}
-	.route-weak-stop {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		gap: 1rem;
-		padding: 0.6rem 0;
-		border-bottom: 1px solid var(--border-subtle, var(--border));
-	}
-	.route-weak-stop:last-child {
-		border-bottom: none;
-	}
-	.route-weak-stop-name {
-		font-size: var(--text-body);
-		color: var(--foreground);
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
-	}
-	.route-weak-stop-meta {
-		flex-shrink: 0;
-		font-family: var(--font-mono);
-		font-size: var(--text-small);
-		color: var(--muted-foreground);
 	}
 </style>
