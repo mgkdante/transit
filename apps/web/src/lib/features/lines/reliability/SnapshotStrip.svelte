@@ -1,27 +1,27 @@
 <!--
-  SnapshotStrip — the full-bleed SNAPSHOT STRIP (band 00) of the slice-9.6
+  SnapshotStrip, the full-bleed SNAPSHOT STRIP (band 00) of the slice-9.6
   historic Reliability surface: the single-glance, ZERO-INTERACTION headline.
 
   Reads the `SnapshotStripVM` from clusters.ts and renders one row of
   MetricDisplay tiles for the selected grain:
 
-    · On-time %         — period.otp_pct
-    · Avg delay (min)   — period.avg_delay_min
-    · p90 delay (min)   — period.p90_min
-    · Regularity (CoV)  — busiest-direction headway CoV, expressed as the CoV
+    · On-time %        , period.otp_pct
+    · Avg delay (min)  , period.avg_delay_min
+    · p90 delay (min)  , period.p90_min
+    · Regularity (CoV) , busiest-direction headway CoV, expressed as the CoV
                           value PLUS a plain-language regular/irregular caption
-                          (NOT a raw number dump — the caption is the reading).
-    · Cancellation %    — most-recent rate (RAMP-IN)
-    · Skipped-stop %    — most-recent rate (RAMP-IN)
+                          (NOT a raw number dump, the caption is the reading).
+    · Cancellation %   , most-recent rate (RAMP-IN)
+    · Skipped-stop %   , most-recent rate (RAMP-IN)
 
   DOCTRINE upheld here:
     - Headline numbers ride MetricDisplay; the strip itself paints no data mark,
       so the four-colour doctrine holds trivially (--primary never touches data).
     - Honest states: a null metric renders an explicit "—" no-data tile with the
-      noDataNote caption — NEVER a fabricated 0, never a silently dropped tile.
+      noDataNote caption, NEVER a fabricated 0, never a silently dropped tile.
     - RAMP-IN: cancellation + skipped-stop tiles carry an inline ramp-in
       affordance (perMetric flags from the VM) so an early low number is not
-      misread as "good" — history accrues forward, no backfill.
+      misread as "good", history accrues forward, no backfill.
     - When EVERY headline is null (vm.isEmpty) the strip collapses to a single
       explicit no-data note rather than a wall of em-dashes.
 
@@ -40,7 +40,7 @@
 	interface SnapshotStripProps {
 		/** The 00 snapshot-strip slice of the cluster view-model. */
 		vm: SnapshotStripVM;
-		/** Active locale (FR canonical) — threaded in, not looked up here. */
+		/** Active locale (FR canonical), threaded in, not looked up here. */
 		locale: Locale;
 		/** Co-located reliability copy for the active locale. */
 		copy: ReliabilityCopy;
@@ -64,19 +64,19 @@
 
 	/** Format a nullable integer-ish percent as "82 %"/"82%" or the honest em-dash. */
 	const fmtPct = (v: number | null): string =>
-		v == null ? '—' : `${v.toLocaleString(nf)}${locale === 'fr' ? ' %' : '%'}`;
+		v == null ? '·' : `${v.toLocaleString(nf)}${locale === 'fr' ? ' %' : '%'}`;
 
 	/** Format a nullable minute delay as "3.2 min" or the honest em-dash. */
 	const fmtMin = (v: number | null): string =>
-		v == null ? '—' : `${v.toLocaleString(nf, { maximumFractionDigits: 1 })} min`;
+		v == null ? '·' : `${v.toLocaleString(nf, { maximumFractionDigits: 1 })} min`;
 
 	/** Format the headway CoV as a 2-dp ratio, or the honest em-dash. */
 	const fmtCov = (v: number | null): string =>
-		v == null ? '—' : v.toLocaleString(nf, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+		v == null ? '·' : v.toLocaleString(nf, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 	// Plain-language reading of the CoV: a headway coefficient of variation below
 	// 0.5 reads as "regular" arrivals; at/above 0.5 the gaps swing wide enough to
-	// read as "irregular". This caption — not the raw ratio — is the headline the
+	// read as "irregular". This caption, not the raw ratio, is the headline the
 	// rider acts on. Null CoV → no caption (the tile shows the no-data note).
 	const REGULAR_COV_CEIL = 0.5;
 	const regularityCaption = $derived<string | null>(
@@ -133,7 +133,7 @@
 				{/if}
 			</article>
 
-			<!-- p50 typical delay — daily grain only; honest "—" on week/month. -->
+			<!-- p50 typical delay, daily grain only; honest "—" on week/month. -->
 			<article class="snapshot-tile" data-slot="p50">
 				{@render tileInfo('p50p90', t.p50Min)}
 				<MetricDisplay
@@ -161,7 +161,7 @@
 				{/if}
 			</article>
 
-			<!-- Headway regularity — CoV value + plain regular/irregular reading. -->
+			<!-- Headway regularity, CoV value + plain regular/irregular reading. -->
 			<article class="snapshot-tile" data-slot="regularity">
 				{@render tileInfo('regularityCov', t.headwayRegularityCov)}
 				<MetricDisplay
@@ -242,7 +242,7 @@
 		gap: 0.35rem;
 		min-width: 0;
 	}
-	/* The metric-explainer (i) affordance rides the tile's top-right corner — an
+	/* The metric-explainer (i) affordance rides the tile's top-right corner, an
 	   INTERACTIVE control, never a data mark; doctrine-clean. */
 	:global(.snapshot-tile__info) {
 		position: absolute;

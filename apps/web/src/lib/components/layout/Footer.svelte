@@ -1,17 +1,17 @@
 <!--
-  Footer — the site footer strip.
+  Footer, the site footer strip.
 
   Ported from yesid.dev's layout/Footer.svelte; same two-row structure, re-themed
   to transit tokens and re-contented for the citizen dashboard:
     Row 1 (above the hazard rule):
       LEFT   : the yesid. parent-brand wordmark (-> yesid.dev) + the "transit"
                product mark + a bilingual tagline. transit.yesid.dev is a
-               yesid.dev product, so the chrome carries the house mark — mirrors
+               yesid.dev product, so the chrome carries the house mark, mirrors
                the TopBar brand cluster.
       CENTER : the IA nav links (menuItems from $lib/content/nav), localized.
       RIGHT  : the external portfolio link back to yesid.dev.
     Row 2 (below the hazard rule, departure-board rule):
-      STM open-data attribution ("Données STM — CC BY 4.0") + the unofficial-site
+      STM open-data attribution ("Données STM, CC BY 4.0") + the unofficial-site
       disclaimer (Honesty Gate #6) on the left; the live system-date readout on
       the right (the orange route-set lamp is the lone --primary touch).
 
@@ -39,7 +39,7 @@
 	const ctxLocale = getLocale();
 	const locale = $derived<Locale>(localeProp ?? ctxLocale ?? DEFAULT_LOCALE);
 
-	// System date — the departure-board readout (YYYY.MM.DD), matches yesid's footer.
+	// System date, the departure-board readout (YYYY.MM.DD), matches yesid's footer.
 	const now = new Date();
 	const systemDate = `${now.getFullYear()}.${String(now.getMonth() + 1).padStart(2, '0')}.${String(now.getDate()).padStart(2, '0')}`;
 
@@ -54,23 +54,23 @@
 		fr: {
 			tagline: 'Analytique citoyenne du réseau STM',
 			navAria: 'Pied de page',
-			attribution: 'Données STM — CC BY 4.0',
-			disclaimer: 'Site non officiel — sans affiliation avec la STM.',
+			attribution: 'Données STM, CC BY 4.0',
+			disclaimer: 'Site non officiel, sans affiliation avec la STM.',
 			statusPrefix: 'SYSTÈME',
 			liveLabel: 'En direct',
 		},
 		en: {
 			tagline: 'Citizen analytics for the STM network',
 			navAria: 'Footer',
-			attribution: 'STM data — CC BY 4.0',
-			disclaimer: 'Unofficial website — not affiliated with the STM.',
+			attribution: 'STM data, CC BY 4.0',
+			disclaimer: 'Unofficial website, not affiliated with the STM.',
 			statusPrefix: 'SYSTEM',
 			liveLabel: 'Live',
 		},
 	};
 	const t = $derived(T[locale]);
 
-	// IA links — locale-LESS hrefs from the shared SURFACE_NAV manifest, localized
+	// IA links, locale-LESS hrefs from the shared SURFACE_NAV manifest, localized
 	// at render. The portfolio (off-site) links come from MENU_EXTRAS and render in
 	// the right cluster below.
 	const navLinks = $derived(
@@ -125,7 +125,7 @@
 		</div>
 	</div>
 
-	<!-- Row 2: Status bar — below the hazard rule. STM open-data attribution + the
+	<!-- Row 2: Status bar, below the hazard rule. STM open-data attribution + the
 	     unofficial-site disclaimer (Honesty Gate #6) on the left; the live system
 	     readout on the right (the orange route-set lamp is the lone --primary touch). -->
 	<div
@@ -144,7 +144,7 @@
 </footer>
 
 <style>
-	/* Platform-edge hazard strip (theme-invariant yellow + warm black — matches
+	/* Platform-edge hazard strip (theme-invariant yellow + warm black, matches
 	   the Separator hazard recipe). */
 	.footer-gradient-sep {
 		height: 3px;
@@ -157,7 +157,7 @@
 		);
 	}
 
-	/* The status bar's top line is a BOLD departure-board rule — the yellow
+	/* The status bar's top line is a BOLD departure-board rule, the yellow
 	   wayfinding voice as structure. */
 	.footer-status-border {
 		border-top: 2px solid var(--border-rule-accent);
@@ -168,9 +168,9 @@
 	}
 
 	/* The brand cluster (yesid. mark · divider · transit product mark) now lives in
-	   BrandCluster.svelte — the shared brand primitive, also used by the TopBar. */
+	   BrandCluster.svelte, the shared brand primitive, also used by the TopBar. */
 
-	/* Honesty line — attribution + the unofficial-site disclaimer stack tight. */
+	/* Honesty line, attribution + the unofficial-site disclaimer stack tight. */
 	.footer-honesty {
 		display: flex;
 		flex-direction: column;

@@ -1,12 +1,12 @@
 <!--
-  Distribution — a horizontal box-plot / quantile summary (SVG, no chart lib).
+  Distribution, a horizontal box-plot / quantile summary (SVG, no chart lib).
 
   Renders a five-number summary (min, p25, p50/median, p75, max) on a shared
   domain. The box (p25–p75) and whiskers are DATA marks filled from the dataviz
   scale (default = the unknown/neutral status token, overridable via `fillVar`).
 
   SPECIAL DOCTRINE CARVE-OUT: the p50 MEDIAN line is the one place this kit
-  touches --primary — and ONLY as the interactive *affordance marker* (it marks
+  touches --primary, and ONLY as the interactive *affordance marker* (it marks
   "where the median sits", a UI pointer), NOT as a data-encoding colour. Every
   other mark stays on the dataviz scale.
 
@@ -49,7 +49,7 @@
 		/**
 		 * Render the domain min/max endpoint ticks (with `unit`) under the baseline.
 		 * Default false so existing call sites stay byte-identical. HTML spans, not
-		 * SVG <text> — the SVG is stretched (`preserveAspectRatio none`).
+		 * SVG <text>, the SVG is stretched (`preserveAspectRatio none`).
 		 */
 		showAxis?: boolean;
 		/** Optional axis caption rendered under the track (already localized). */
@@ -101,9 +101,9 @@
 	const hasWhiskers = $derived(xMin != null && xMax != null);
 	const anyData = $derived(hasBox || hasWhiskers || xP50 != null);
 
-	const fmt = (v: number | null) => (v == null ? '—' : `${v}${unit}`);
+	const fmt = (v: number | null) => (v == null ? '·' : `${v}${unit}`);
 	const summary = $derived(
-		`${label ? label + ' — ' : ''}distribution: min ${fmt(stats.min)}, p25 ${fmt(stats.p25)}, median ${fmt(stats.p50)}, p75 ${fmt(stats.p75)}, max ${fmt(stats.max)}`,
+		`${label ? label + ', ' : ''}distribution: min ${fmt(stats.min)}, p25 ${fmt(stats.p25)}, median ${fmt(stats.p50)}, p75 ${fmt(stats.p75)}, max ${fmt(stats.max)}`,
 	);
 
 	// Interactive tooltip controller (only wired when `interactive`).
@@ -178,7 +178,7 @@
 			/>
 		{/if}
 
-		<!-- p25/p75 marker ticks — interactive-only, revealed on hover/focus. -->
+		<!-- p25/p75 marker ticks, interactive-only, revealed on hover/focus. -->
 		{#if interactive && active && xP25 != null}
 			<line
 				x1={xP25}
@@ -300,7 +300,7 @@
 
 	{#if showAxis}
 		<!-- Domain endpoint ticks (with unit) under the track. HTML, not SVG <text>
-		     — the SVG is stretched. Neutral axis colour, never an affordance token. -->
+		    , the SVG is stretched. Neutral axis colour, never an affordance token. -->
 		<div class="dv-distribution-axis" aria-hidden="true">
 			<span class="dv-distribution-tick">{fmt(domain[0])}</span>
 			{#if axisLabel}

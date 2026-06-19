@@ -1,5 +1,5 @@
 <!--
-  TrendLine — dual-series trend chart (SVG, no chart lib).
+  TrendLine, dual-series trend chart (SVG, no chart lib).
 
   Renders two series over a shared x-domain: on-time % (green) and a delay /
   "retard" series (amber). Both colours come from the dataviz scale —
@@ -7,10 +7,10 @@
   points break the line (gaps, never interpolated).
 
   DUAL Y-DOMAINS: the two series may carry DIFFERENT units (e.g. on-time % vs a
-  p90 delay in MINUTES). Each scales to its OWN y-domain — `domain` for on-time,
+  p90 delay in MINUTES). Each scales to its OWN y-domain, `domain` for on-time,
   `retardDomain` for the retard series (defaults to `domain` when both are the
   same unit). This is why neither axis is numbered: the chart reads as two
-  independent TREND SHAPES, not a shared-scale comparison — the tooltip carries
+  independent TREND SHAPES, not a shared-scale comparison, the tooltip carries
   the real per-series values. Plotting minutes on the 0–100 % axis would squash
   the delay line flat against the floor (and clamp it), so a caller mixing units
   MUST pass `retardDomain`.
@@ -60,19 +60,19 @@
 		 * Opt into hover/focus tooltips: a vertical guide tracks the nearest
 		 * x-index and a tooltip reads both series at that index. Per-index focus
 		 * targets expose the same readout to keyboard + assistive tech. Default
-		 * off — the chart stays a static figure.
+		 * off, the chart stays a static figure.
 		 */
 		interactive?: boolean;
 		/** Optional x-axis category labels (one per index) for the tooltip heading. */
 		xLabels?: string[];
 		/**
-		 * Left y-axis metadata for the ON-TIME series — a unit suffix for the
+		 * Left y-axis metadata for the ON-TIME series, a unit suffix for the
 		 * tooltip value (e.g. "%") + an optional label/domain for the endpoint
 		 * ticks. Optional + backward-compatible.
 		 */
 		yAxis?: ChartAxis;
 		/**
-		 * Right y-axis metadata for the RETARD series — its OWN unit (e.g. " min")
+		 * Right y-axis metadata for the RETARD series, its OWN unit (e.g. " min")
 		 * + optional label/domain. Dual-axis honesty: each line is labelled in its
 		 * own unit.
 		 */
@@ -143,18 +143,18 @@
 	// The shared x-domain length (drives index targets + nearest-index math).
 	const n = $derived(Math.max(onTime.length, retard.length, 1));
 
-	const EM_DASH = '—';
+	const NO_DATA = '·';
 
 	function fmt(series: Series, i: number): string {
 		const v = series[i];
-		return v == null || Number.isNaN(v) ? EM_DASH : String(v);
+		return v == null || Number.isNaN(v) ? NO_DATA : String(v);
 	}
 
 	// Like fmt(), but suffixes the axis unit on a real value (never on an em-dash,
 	// so a no-data readout stays an honest dash rather than e.g. "— %").
 	function fmtUnit(series: Series, i: number, axis: ChartAxis | undefined): string {
 		const s = fmt(series, i);
-		return s === EM_DASH ? s : `${s}${axis?.unit ?? ''}`;
+		return s === NO_DATA ? s : `${s}${axis?.unit ?? ''}`;
 	}
 
 	// Labels used for the tooltip rows + keyboard readout (axis label wins).
@@ -429,7 +429,7 @@
 {/snippet}
 
 {#snippet yTickGutter(dom: [number, number], axis: ChartAxis | undefined, side: 'left' | 'right')}
-	<!-- Min/max endpoint ticks for one y-axis. HTML (not SVG <text>) — the SVG is
+	<!-- Min/max endpoint ticks for one y-axis. HTML (not SVG <text>), the SVG is
 	     stretched (`preserveAspectRatio none`). Neutral axis colour, never an
 	     affordance token. -->
 	<div
@@ -450,7 +450,7 @@
 	{...restProps}
 >
 	{#if interactive && readout}
-		<!-- Fixed readout ABOVE the plot — updates on hover/focus, never over the line. -->
+		<!-- Fixed readout ABOVE the plot, updates on hover/focus, never over the line. -->
 		<ChartReadout
 			class="dv-trendline-readout"
 			open={tip.open}
@@ -504,7 +504,7 @@
 	}
 
 	/* Per-axis endpoint ticks (max on top, min on bottom). Mono micro text on the
-	   neutral axis colour — never an affordance token; AA-tested. */
+	   neutral axis colour, never an affordance token; AA-tested. */
 	.dv-trendline-yticks {
 		display: flex;
 		flex: none;

@@ -1,5 +1,5 @@
 <!--
-  Cluster03ServiceDelivered — the "03 Service delivered" band of the slice-9.6
+  Cluster03ServiceDelivered, the "03 Service delivered" band of the slice-9.6
   historic Reliability surface.
 
   Reads the `ServiceDeliveredVM` from clusters.ts and surfaces the two RAMP-IN
@@ -11,13 +11,13 @@
       Sparkline of the rate history.
 
   DOCTRINE upheld here:
-    - Every data mark rides the dataviz scale — the rate history Sparklines use
+    - Every data mark rides the dataviz scale, the rate history Sparklines use
       the "late" amber token (a problem-rate reads as the late/amber voice),
       NEVER --primary.
     - RAMP-IN is shown PROMINENTLY (copy.strip.rampInNote) so an early low number
       is not misread as "good": history accrues forward, no backfill.
     - Honest empty: when the band has nothing to draw it says so explicitly
-      (copy.strip.noDataNote) — never a fabricated 0 and never a dropped section.
+      (copy.strip.noDataNote), never a fabricated 0 and never a dropped section.
       A metric whose rate history is all-null still renders its label with the
       no-data note (the Sparkline draws a baseline gap, not a fake zero line).
     - number | null guarded everywhere; null means "no data", never 0.
@@ -38,7 +38,7 @@
 	interface Cluster03ServiceDeliveredProps {
 		/** The 03 Service-delivered slice of the cluster view-model. */
 		vm: ServiceDeliveredVM;
-		/** Active locale (FR canonical) — threaded in, not looked up here. */
+		/** Active locale (FR canonical), threaded in, not looked up here. */
 		locale: Locale;
 		/** Co-located reliability copy for the active locale. */
 		copy: ReliabilityCopy;
@@ -50,7 +50,7 @@
 	const RATE_VAR = 'var(--dataviz-status-late)';
 
 	/** Format a rate as a percentage, or the honest em-dash when absent. */
-	const fmtPct = (v: number | null): string => (v == null ? '—' : `${v.toFixed(1)}%`);
+	const fmtPct = (v: number | null): string => (v == null ? '·' : `${v.toFixed(1)}%`);
 
 	/**
 	 * Most-recent (tail-scan) non-null value of `pick`. The contract arrays run
@@ -67,7 +67,7 @@
 		return null;
 	}
 
-	// Cancellations — most-recent rate + full rate history (null = gap, never 0).
+	// Cancellations, most-recent rate + full rate history (null = gap, never 0).
 	const cancellationRatePct = $derived(
 		mostRecent(vm.cancellations, (c) => c.cancellation_rate_pct),
 	);
@@ -76,7 +76,7 @@
 	);
 	const hasCancellationHistory = $derived(cancellationSeries.some((v) => v != null));
 
-	// Skipped stops — most-recent rate + full rate history (null = gap, never 0).
+	// Skipped stops, most-recent rate + full rate history (null = gap, never 0).
 	const skippedStopRatePct = $derived(mostRecent(vm.skippedStops, (s) => s.skipped_stop_rate_pct));
 	const skippedSeries = $derived<Array<number | null>>(
 		vm.skippedStops.map((s) => s.skipped_stop_rate_pct ?? null),

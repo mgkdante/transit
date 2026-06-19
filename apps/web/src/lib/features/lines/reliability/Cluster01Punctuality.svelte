@@ -1,22 +1,22 @@
 <!--
-  Cluster01Punctuality — the "01 Punctuality" band of the slice-9.6 historic
+  Cluster01Punctuality, the "01 Punctuality" band of the slice-9.6 historic
   Reliability surface (approach B, one band per cluster).
 
   Reads a `PunctualityVM` (the pure mapper's per-band view-model) + locale +
   the co-located reliability copy. It answers, for the route's punctuality:
 
-    - the headline — OTP %, avg delay, typical (p50) + worst-case (p90) delay
+    - the headline, OTP %, avg delay, typical (p50) + worst-case (p90) delay
       (MetricDisplay) for the latest closed day;
     - the OTP trend SHAPE across the dated day series (TrendLine: OTP green vs
       the avg-delay/retard amber series, dual y-domains since the units differ),
       captioned with its window (last 30 days) and real dated x-ticks;
-    - the SEVERE-DELAY SHARE magnitude of the headline day (SeverityBar — a
+    - the SEVERE-DELAY SHARE magnitude of the headline day (SeverityBar, a
       [0,1] data mark on the dataviz severity scale, NEVER --primary) under its
       OWN dedicated label (it is NOT the p90);
     - the accountability element: the weakest stops ranked worst-delay first
       under an explicit heading + count (RankedRow, normalized against the worst
       stop on the route);
-    - "By time of day" (A1) — the time-of-day shift buckets + a weekday/weekend
+    - "By time of day" (A1), the time-of-day shift buckets + a weekday/weekend
       pair, ranked by severe-delay share, with the honest trailing-window caveat.
 
   HONESTY DOCTRINE upheld here:
@@ -59,7 +59,7 @@
 
 	let { vm, locale, copy, grain = 'day' }: Cluster01PunctualityProps = $props();
 
-	const EM_DASH = '—';
+	const NO_DATA = '·';
 
 	// The in-app metric-explainer (i) affordance: the one-line tip + a localized
 	// deep link to /metrics#<anchor>. An INTERACTIVE control beside each label,
@@ -77,9 +77,9 @@
 		vm.trend.length > 0 ? vm.trend[vm.trend.length - 1] : null,
 	);
 
-	const fmtPct = (v: number | null | undefined): string => (v == null ? EM_DASH : `${v}%`);
+	const fmtPct = (v: number | null | undefined): string => (v == null ? NO_DATA : `${v}%`);
 	const fmtMin = (v: number | null | undefined): string =>
-		v == null ? EM_DASH : `${v.toFixed(1)} min`;
+		v == null ? NO_DATA : `${v.toFixed(1)} min`;
 
 	// OTP trend SHAPE across the dated day series (chronological ascending): green
 	// OTP %, amber avg-delay retard. The x-axis carries real ISO dates, never the
@@ -106,7 +106,7 @@
 		severePct == null ? 'watch' : severePct >= 10 ? 'critical' : severePct >= 5 ? 'high' : 'watch',
 	);
 
-	// Weakest stops, worst mean-delay first — the accountability list. Normalize
+	// Weakest stops, worst mean-delay first, the accountability list. Normalize
 	// each bar against the worst stop so the ranking reads as relative magnitude.
 	const rankedStops = $derived.by(() => {
 		const rows = vm.weakStops
@@ -128,7 +128,7 @@
 		});
 	});
 
-	// Weak-stops heading carries the honest count — when fewer than 5 stops carry
+	// Weak-stops heading carries the honest count, when fewer than 5 stops carry
 	// a delay the heading still reads truthfully (it doesn't promise a fixed 5).
 	const weakStopsHeading = $derived(`${copy.strip.weakStopsHeading} · ${rankedStops.length}`);
 
@@ -137,7 +137,7 @@
 	   by SEVERE-delay share (worst first). Each row's SeverityBar encodes the
 	   severe share as a [0,1] magnitude; null severe → empty track (no fake 0).
 	   These are a trailing-window observation-weighted proxy (date:null), NOT
-	   certified OTP — the band prints that caveat below the block. */
+	   certified OTP, the band prints that caveat below the block. */
 	const SHIFT_LABELS: Record<string, Record<Locale, string>> = {
 		am_peak: { fr: 'Pointe AM', en: 'AM peak' },
 		midday: { fr: 'Journée', en: 'Midday' },
@@ -274,7 +274,7 @@
 			</div>
 		{/if}
 
-		<!-- Severe-delay share of the headline day — its OWN label (NOT p90). -->
+		<!-- Severe-delay share of the headline day, its OWN label (NOT p90). -->
 		<div class="cluster-block">
 			<div class="cluster-block-head">
 				<span class="label-with-info">
@@ -292,7 +292,7 @@
 			<p class="cluster-caption" data-slot="severe-caption">{copy.strip.severeCaption}</p>
 		</div>
 
-		<!-- Weakest stops — the accountability list, worst delay first + count. -->
+		<!-- Weakest stops, the accountability list, worst delay first + count. -->
 		{#if rankedStops.length > 0}
 			<div class="cluster-block">
 				<span class="label-with-info">
@@ -408,7 +408,7 @@
 		font-variant-numeric: tabular-nums;
 		color: var(--foreground);
 	}
-	/* Quiet mono caption (window label / honest caveat) — AA both themes. */
+	/* Quiet mono caption (window label / honest caveat), AA both themes. */
 	.cluster-block-window,
 	.cluster-caption {
 		font-family: var(--font-mono);

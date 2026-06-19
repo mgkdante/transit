@@ -1,5 +1,5 @@
 <!--
-  Hub landing — the network entry surface.
+  Hub landing, the network entry surface.
 
   Renders inside the AppShell `main` zone (the root layout pipes the page tree
   here). Reads the active locale (context) + the booted v1 snapshot context, and
@@ -37,7 +37,7 @@
 	const T: Record<Locale, Record<CopyKey, string>> = {
 		fr: {
 			kicker: 'RÉSEAU EN DIRECT',
-			lede: 'Ponctualité, achalandage et perturbations du réseau — mesurés à partir du contrat /v1. On n’invente jamais de données.',
+			lede: 'Ponctualité, achalandage et perturbations du réseau, mesurés à partir du contrat /v1. On n’invente jamais de données.',
 			datasetLabel: 'Jeu de données',
 			builtLabel: 'Dernière mise à jour',
 			builtUnknown: 'inconnue',
@@ -45,7 +45,7 @@
 		},
 		en: {
 			kicker: 'NETWORK · LIVE',
-			lede: 'Network on-time performance, crowding and disruptions — measured from the /v1 contract. We never invent data.',
+			lede: 'Network on-time performance, crowding and disruptions, measured from the /v1 contract. We never invent data.',
 			datasetLabel: 'Dataset',
 			builtLabel: 'Last updated',
 			builtUnknown: 'unknown',

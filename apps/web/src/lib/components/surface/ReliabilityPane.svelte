@@ -1,10 +1,10 @@
 <!--
-  ReliabilityPane — shared reliability readout for the route + stop surfaces.
+  ReliabilityPane, shared reliability readout for the route + stop surfaces.
 
   Route reliability and stop reliability differ in raw shape, so this primitive
   takes a NORMALIZED view-model (ReliabilityPeriodVM[]) the caller maps into. It
   renders, per period, a small card with the on-time %, the delay (avg|median),
-  an optional p90, and a severe-share bar — plus a Sparkline of OTP across the
+  an optional p90, and a severe-share bar, plus a Sparkline of OTP across the
   periods as an at-a-glance trend.
 
   DOCTRINE: every data mark rides the dataviz scale (Sparkline / SeverityBar);
@@ -26,7 +26,7 @@
 		grain: string;
 		/** On-time share as a percent [0,100], or null when unmeasured. */
 		otpPct: number | null;
-		/** Delay in minutes — a mean or a true percentile per `delayKind`. */
+		/** Delay in minutes, a mean or a true percentile per `delayKind`. */
 		delayMin: number | null;
 		/**
 		 * Per-period override of the delay caption; falls back to the
@@ -45,7 +45,7 @@
 		periods: readonly ReliabilityPeriodVM[];
 		/** UI language for the intrinsic domain labels. */
 		locale: Locale;
-		/** Whether `delayMin` is an average or a median — drives the delay caption. */
+		/** Whether `delayMin` is an average or a median, drives the delay caption. */
 		delayLabelKind?: 'avg' | 'median';
 		/** Optional extra classes on the root. */
 		class?: string;
@@ -58,7 +58,7 @@
 		class: className,
 	}: ReliabilityPaneProps = $props();
 
-	/* Intrinsic domain vocabulary — FR is the canonical product voice. */
+	/* Intrinsic domain vocabulary, FR is the canonical product voice. */
 	type Labels = {
 		readonly otp: string;
 		readonly delayAvg: string;
@@ -97,10 +97,10 @@
 
 	const delayLabel = $derived(delayLabelKind === 'median' ? t.delayMedian : t.delayAvg);
 
-	const fmtPct = (v: number | null) => (v == null ? '—' : `${Math.round(v)}%`);
-	const fmtMin = (v: number | null | undefined) => (v == null ? '—' : `${v.toFixed(1)} min`);
+	const fmtPct = (v: number | null) => (v == null ? '·' : `${Math.round(v)}%`);
+	const fmtMin = (v: number | null | undefined) => (v == null ? '·' : `${v.toFixed(1)} min`);
 
-	// OTP series across periods — drives the trend sparkline (dataviz scale).
+	// OTP series across periods, drives the trend sparkline (dataviz scale).
 	const otpSeries = $derived(periods.map((p) => p.otpPct));
 </script>
 

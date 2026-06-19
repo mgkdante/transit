@@ -1,15 +1,15 @@
 <!--
-  Cluster02WaitRegularity — the "02 Wait & regularity" band of the slice-9.6
+  Cluster02WaitRegularity, the "02 Wait & regularity" band of the slice-9.6
   historic Reliability surface.
 
   Reads two contract slices, both guarded by the foundation VM mapper:
-    · headway[]       (WaitRegularityVM) — scheduled-vs-observed headway +
+    · headway[]       (WaitRegularityVM), scheduled-vs-observed headway +
       excess wait per shift, plus the regularity readings (CoV, bunched %).
-    · service_spans[] (ServiceSpanPeriod[]) — the most-recent service-span day:
+    · service_spans[] (ServiceSpanPeriod[]), the most-recent service-span day:
       first/last trip span (min) + first/last-trip punctuality.
 
   Per shift we render a RankedRow whose SeverityBar encodes EXCESS WAIT
-  (normalized within the band) as the magnitude — the rider-felt penalty over
+  (normalized within the band) as the magnitude, the rider-felt penalty over
   the scheduled gap. The bar colour is a SeverityCode (the dataviz severity
   scale only), never --primary. Scheduled / observed / excess-wait sit beside it
   as MetricDisplays; CoV + bunched % are the regularity caption.
@@ -17,7 +17,7 @@
   DOCTRINE upheld here:
     · every data mark rides the dataviz scale (SeverityBar owns that); --primary
       stays interactive-only.
-    · honest empties — when headway is empty we render the band's no-data note,
+    · honest empties, when headway is empty we render the band's no-data note,
       not a zeroed bar; same for the service-span sub-block. A null metric shows
       "—", never a fabricated 0.
   Bilingual: FR is canonical; band-local labels are co-located below and the
@@ -48,7 +48,7 @@
 		serviceSpans?: ServiceSpanPeriod[];
 		/** Active locale (FR canonical). */
 		locale: Locale;
-		/** The shared reliability copy — cluster overline + honest-state notes. */
+		/** The shared reliability copy, cluster overline + honest-state notes. */
 		copy: ReliabilityCopy;
 	}
 
@@ -93,7 +93,7 @@
 			firstTripDelay: 'Retard 1er départ',
 			lastTripDelay: 'Retard dernier départ',
 			tripCount: 'Voyages',
-			excessWaitMagnitude: (shift) => `Attente excédentaire — ${shift}`,
+			excessWaitMagnitude: (shift) => `Attente excédentaire, ${shift}`,
 			moreDetail: 'Plus de détail · intervalle observé par direction',
 			directionGap: 'Intervalle observé par direction',
 		},
@@ -106,7 +106,7 @@
 			firstTripDelay: 'First-trip delay',
 			lastTripDelay: 'Last-trip delay',
 			tripCount: 'Trips',
-			excessWaitMagnitude: (shift) => `Excess wait — ${shift}`,
+			excessWaitMagnitude: (shift) => `Excess wait, ${shift}`,
 			moreDetail: 'More detail · observed gap by direction',
 			directionGap: 'Observed gap by direction',
 		},
@@ -128,10 +128,10 @@
 
 	/* ── formatters (pure) ─────────────────────────────────────────────────── */
 	const fmtMin = (v: number | null | undefined): string =>
-		v == null ? '—' : `${v.toFixed(1)} min`;
-	const fmtCov = (v: number | null | undefined): string => (v == null ? '—' : v.toFixed(2));
-	const fmtPct = (v: number | null | undefined): string => (v == null ? '—' : `${Math.round(v)}%`);
-	const fmtCount = (v: number | null | undefined): string => (v == null ? '—' : `${v}`);
+		v == null ? '·' : `${v.toFixed(1)} min`;
+	const fmtCov = (v: number | null | undefined): string => (v == null ? '·' : v.toFixed(2));
+	const fmtPct = (v: number | null | undefined): string => (v == null ? '·' : `${Math.round(v)}%`);
+	const fmtCount = (v: number | null | undefined): string => (v == null ? '·' : `${v}`);
 
 	/* ── headway rows → per-shift magnitude rows ───────────────────────────────
 	   Magnitude = excess wait, normalized within the band's max so the bars stay
@@ -210,7 +210,7 @@
 	const mainRows = $derived(primaryRows.length > 0 ? primaryRows : advancedRows);
 	const hasAdvancedReveal = $derived(primaryRows.length > 0 && advancedRows.length > 0);
 
-	/* ── service span — the most-recent row carrying a signal ──────────────────
+	/* ── service span, the most-recent row carrying a signal ──────────────────
 	   serviceSpans arrives in contract order (chronological); the foundation VM
 	   has already dropped signal-less rows, so the tail is the latest day. */
 	const latestSpan = $derived<ServiceSpanPeriod | null>(
@@ -282,7 +282,7 @@
 				<!-- A3: per-direction rows carry ONLY observed_min (scheduled/excess/cov
 				     null), so the SeverityBar + scheduled/excess tiles are empty for them.
 				     Present them as a compact observed-gap-by-direction comparison instead
-				     of an empty RankedRow — their only real signal. -->
+				     of an empty RankedRow, their only real signal. -->
 				{#if hasAdvancedReveal}
 					<details class="shift-more">
 						<summary class="shift-more-summary">{t.moreDetail}</summary>
@@ -305,7 +305,7 @@
 			{/if}
 		</div>
 
-		<!-- Service-span sub-block — only when a signal-carrying day exists. -->
+		<!-- Service-span sub-block, only when a signal-carrying day exists. -->
 		{#if hasSpan && latestSpan}
 			<div class="cluster-sub" data-sub="service-span">
 				<div class="span-head">
@@ -412,7 +412,7 @@
 		font-variant-numeric: tabular-nums;
 		color: var(--muted-foreground);
 	}
-	/* "More detail" reveal — the per-direction / weekend shifts, calm by default
+	/* "More detail" reveal, the per-direction / weekend shifts, calm by default
 	   so the headline shifts never get crowded. The +/− marker is an INTERACTION
 	   accent (--primary belongs here, never on a data mark). */
 	.shift-more {

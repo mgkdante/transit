@@ -1,5 +1,5 @@
 <!--
-  TopBar — the fixed app chrome strip (h60 on desktop).
+  TopBar, the fixed app chrome strip (h60 on desktop).
 
   Left→right clusters:
     BRAND : the yesid. parent-brand wordmark (-> yesid.dev) · divider · the
@@ -40,7 +40,7 @@
 	interface TopBarProps {
 		/** Active request locale; omitted → getLocale() context. */
 		locale?: Locale;
-		/** Full current URL — the language switch preserves path + query + hash. */
+		/** Full current URL, the language switch preserves path + query + hash. */
 		url?: URL;
 		/** Count of active alerts; renders the bell badge when > 0. */
 		alertCount?: number;
@@ -50,7 +50,7 @@
 		onsearch?: (value: string) => void;
 		/** Search matches shown under the chrome field. */
 		searchResults?: readonly ChromeSearchResult[];
-		/** Active surface scope — drives the scoped placeholder hint. */
+		/** Active surface scope, drives the scoped placeholder hint. */
 		searchScope?: ChromeSearchScope;
 		/** Fired when a search result is selected. */
 		onresultselect?: (result: ChromeSearchResult) => void;
@@ -83,7 +83,7 @@
 	// --- Localized strings ---------------------------------------------------
 	const liveLabel = $derived(locale === 'fr' ? 'En direct' : 'Live');
 	const homeAria = $derived(
-		locale === 'fr' ? 'Accueil — tableau de bord transit' : 'Home — transit dashboard',
+		locale === 'fr' ? 'Accueil, tableau de bord transit' : 'Home, transit dashboard',
 	);
 	// Scoped affordance: the placeholder + aria-label tell the rider the field is
 	// restricted to the active surface (a line on /lines, a stop on /stops). FR is
@@ -226,7 +226,7 @@
 	)}
 	data-slot="topbar"
 >
-	<!-- BRAND: yesid. (-> yesid.dev) · transit home + live dot — shared cluster. -->
+	<!-- BRAND: yesid. (-> yesid.dev) · transit home + live dot, shared cluster. -->
 	<BrandCluster variant="topbar" productHref="/" productAria={homeAria} {liveLabel} />
 
 	<!-- City picker placeholder (no Family data in 9.2) -------------------- -->
@@ -483,7 +483,7 @@
 
 <style>
 	/* The brand cluster (yesid. mark · divider · transit home) + its ≤760px
-	   collapse now live in BrandCluster.svelte — the shared brand primitive. */
+	   collapse now live in BrandCluster.svelte, the shared brand primitive. */
 	.topbar-mobile-search-backdrop {
 		position: fixed;
 		inset: 0;
@@ -584,7 +584,7 @@
 	}
 	/* The nav rows are rendered by the shared SurfaceNavList child, so these reach
 	   them via :global scoped UNDER the TopBar-owned .topbar-mobile-menu container
-	   (no leak — the descendant combinator keeps them confined to this menu). */
+	   (no leak, the descendant combinator keeps them confined to this menu). */
 	.topbar-mobile-menu :global(.topbar-mobile-menu-link) {
 		display: flex;
 		min-width: 0;

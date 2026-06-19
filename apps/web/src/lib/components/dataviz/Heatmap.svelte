@@ -1,10 +1,10 @@
 <!--
-  Heatmap — a 7×24 day×hour grid (SVG, no chart lib).
+  Heatmap, a 7×24 day×hour grid (SVG, no chart lib).
 
   Each cell is the value for (day, hour). Normalization is PER-ROW into [0,1]
-  (so each day reads against its own daily range — a route's worst hour vs its
+  (so each day reads against its own daily range, a route's worst hour vs its
   own best), then mapped onto the dataviz heatmap ramp. A `null` cell is "no
-  data" and MUST paint var(--dataviz-heatmap-nodata) — NEVER bucket 0, NEVER a
+  data" and MUST paint var(--dataviz-heatmap-nodata), NEVER bucket 0, NEVER a
   sentinel, NEVER interpolated to a real value (honesty rule).
 
   DOCTRINE: every cell colour is a data mark on the dataviz heatmap scale; the
@@ -58,7 +58,7 @@
 		 */
 		fullDayLabels?: string[];
 		/**
-		 * Tooltip/SR row label — what a cell value represents (e.g. "Intensity").
+		 * Tooltip/SR row label, what a cell value represents (e.g. "Intensity").
 		 * Distinct from `label` (the whole-grid aria summary). Default = `label`.
 		 */
 		valueLabel?: string;
@@ -160,7 +160,7 @@
 				const heading = `${dayName} ${String(c).padStart(2, '0')}:00`;
 				const title = cellTitle
 					? cellTitle(r, c, isNull ? null : (raw as number))
-					: `${heading} — ${valueText}`;
+					: `${heading}, ${valueText}`;
 				out.push({
 					x: originX + c * step,
 					y: HOUR_AXIS_H + r * step,
@@ -191,7 +191,7 @@
 		tip.hide();
 	}
 
-	// ROVING TABINDEX. 168 cells must not be 168 sequential tab stops — that is a
+	// ROVING TABINDEX. 168 cells must not be 168 sequential tab stops, that is a
 	// keyboard trap. The grid is ONE tab stop (the active cell); arrow keys move
 	// the active cell 2-dimensionally (←/→ = ±1 hour, ↑/↓ = ±1 day), Home/End jump
 	// to the row edges. Only the active cell carries tabindex=0; the rest are -1.
@@ -250,7 +250,7 @@
 		focusable="false"
 		aria-hidden={!interactive}
 	>
-		<!-- Hour axis ticks — neutral. Configurable stops; optional clock labels. -->
+		<!-- Hour axis ticks, neutral. Configurable stops; optional clock labels. -->
 		{#each TICKS as h (h)}
 			<text
 				x={originX + h * step}
@@ -261,7 +261,7 @@
 			>
 		{/each}
 
-		<!-- Day (row) labels — neutral. -->
+		<!-- Day (row) labels, neutral. -->
 		{#each dayLabels.slice(0, ROWS) as d, r (r)}
 			<text
 				x={Y_AXIS_W}
@@ -272,7 +272,7 @@
 			>
 		{/each}
 
-		<!-- X-axis caption (hours), centred under the grid — only when requested. -->
+		<!-- X-axis caption (hours), centred under the grid, only when requested. -->
 		{#if hourAxisLabel}
 			<text
 				x={originX + gridW / 2}
@@ -284,7 +284,7 @@
 			>
 		{/if}
 
-		<!-- Y-axis caption (days), rotated beside the day labels — only when requested. -->
+		<!-- Y-axis caption (days), rotated beside the day labels, only when requested. -->
 		{#if dayAxisLabel}
 			<text
 				transform="rotate(-90 6 {HOUR_AXIS_H + gridH / 2})"
