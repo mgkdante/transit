@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import text
 from sqlalchemy.engine import Engine
@@ -239,29 +239,29 @@ UPSERT_WARM_ROLLUP_PERIOD = text(
 # fully-retained provider-local day, computed from that day's facts. Percentiles
 # are NOT additively composable, so they can't be derived from the 5m rollups —
 # this is the only source of per-route/per-stop p50/p90 with history beyond the
-# 14d fact window. The :lookback_days lower bound (fact_retention_days - 1) keeps
+# 14d fact window. The missing-day calendar is enumerated by the indexed,
+# provider-local snapshot_date_key (YYYYMMDD) over a sargable [:floor_key,
+# :today_key) window — an index range scan, NOT a full-table timezone() scan of
+# every fact row. :floor_key (= today_local - (fact_retention_days - 1)) keeps
 # the oldest candidate day from being computed over partially-pruned facts on a
-# cold start; in steady state each day is built the day after it closes, intact.
+# cold start; :today_key (= today_local) excludes the still-open current day. In
+# steady state each day is built the day after it closes, intact.
 SELECT_MISSING_PERCENTILE_DAYS = text(
     """
-    SELECT d.local_date
-    FROM (
-        SELECT DISTINCT
-            timezone(dp.timezone, f.captured_at_utc)::date AS local_date,
-            (now() AT TIME ZONE dp.timezone)::date AS today_local
-        FROM gold.fact_trip_delay_snapshot AS f
-        INNER JOIN gold.dim_provider AS dp ON dp.provider_id = f.provider_id
-        WHERE f.provider_id = :provider_id
-    ) AS d
-    WHERE d.local_date < d.today_local
-      AND d.local_date >= d.today_local - :lookback_days
-      AND timezone('UTC', d.local_date::timestamp) NOT IN (
+    SELECT DISTINCT
+        f.snapshot_local_date AS local_date,
+        f.snapshot_date_key AS date_key
+    FROM gold.fact_trip_delay_snapshot AS f
+    WHERE f.provider_id = :provider_id
+      AND f.snapshot_date_key >= :floor_key
+      AND f.snapshot_date_key < :today_key
+      AND timezone('UTC', f.snapshot_local_date::timestamp) NOT IN (
           SELECT period_start_utc
           FROM gold.warm_rollup_periods
           WHERE provider_id = :provider_id
             AND rollup_kind = :rollup_kind
       )
-    ORDER BY d.local_date
+    ORDER BY f.snapshot_local_date
     """
 )
 
@@ -273,24 +273,20 @@ SELECT_MISSING_PERCENTILE_DAYS = text(
 # facts but no vehicle facts is never watermarked-built with an empty reduction.
 SELECT_MISSING_OCCUPANCY_DAYS = text(
     """
-    SELECT d.local_date
-    FROM (
-        SELECT DISTINCT
-            timezone(dp.timezone, f.captured_at_utc)::date AS local_date,
-            (now() AT TIME ZONE dp.timezone)::date AS today_local
-        FROM gold.fact_vehicle_snapshot AS f
-        INNER JOIN gold.dim_provider AS dp ON dp.provider_id = f.provider_id
-        WHERE f.provider_id = :provider_id
-    ) AS d
-    WHERE d.local_date < d.today_local
-      AND d.local_date >= d.today_local - :lookback_days
-      AND timezone('UTC', d.local_date::timestamp) NOT IN (
+    SELECT DISTINCT
+        f.snapshot_local_date AS local_date,
+        f.snapshot_date_key AS date_key
+    FROM gold.fact_vehicle_snapshot AS f
+    WHERE f.provider_id = :provider_id
+      AND f.snapshot_date_key >= :floor_key
+      AND f.snapshot_date_key < :today_key
+      AND timezone('UTC', f.snapshot_local_date::timestamp) NOT IN (
           SELECT period_start_utc
           FROM gold.warm_rollup_periods
           WHERE provider_id = :provider_id
             AND rollup_kind = :rollup_kind
       )
-    ORDER BY d.local_date
+    ORDER BY f.snapshot_local_date
     """
 )
 
@@ -309,12 +305,11 @@ UPSERT_ROUTE_DELAY_PERCENTILE_DAILY = text(
         ROUND(percentile_cont(0.9) WITHIN GROUP (ORDER BY f.delay_seconds)::numeric, 2),
         :built_at_utc
     FROM gold.fact_trip_delay_snapshot AS f
-    INNER JOIN gold.dim_provider AS dp ON dp.provider_id = f.provider_id
     WHERE f.provider_id = :provider_id
       AND f.route_id IS NOT NULL
       AND f.delay_seconds IS NOT NULL
       AND ABS(f.delay_seconds) <= {GHOST_DELAY_ABS_SECONDS}
-      AND timezone(dp.timezone, f.captured_at_utc)::date = :local_date
+      AND f.snapshot_date_key = :date_key
     GROUP BY f.provider_id, f.route_id
     ON CONFLICT (provider_id, provider_local_date, route_id) DO UPDATE SET
         delay_observation_count = EXCLUDED.delay_observation_count,
@@ -339,12 +334,11 @@ UPSERT_STOP_DELAY_PERCENTILE_DAILY = text(
         ROUND(percentile_cont(0.9) WITHIN GROUP (ORDER BY f.delay_seconds)::numeric, 2),
         :built_at_utc
     FROM gold.fact_trip_delay_snapshot AS f
-    INNER JOIN gold.dim_provider AS dp ON dp.provider_id = f.provider_id
     WHERE f.provider_id = :provider_id
       AND f.delay_stop_id IS NOT NULL
       AND f.delay_seconds IS NOT NULL
       AND ABS(f.delay_seconds) <= {GHOST_DELAY_ABS_SECONDS}
-      AND timezone(dp.timezone, f.captured_at_utc)::date = :local_date
+      AND f.snapshot_date_key = :date_key
     GROUP BY f.provider_id, f.delay_stop_id
     ON CONFLICT (provider_id, provider_local_date, stop_id) DO UPDATE SET
         delay_observation_count = EXCLUDED.delay_observation_count,
@@ -373,12 +367,11 @@ UPSERT_ROUTE_CANCELLATION_DAILY = text(
             f.start_date AS service_date,
             MAX((COALESCE(f.trip_schedule_relationship, 0) = 3)::int) AS was_canceled
         FROM gold.fact_trip_delay_snapshot AS f
-        INNER JOIN gold.dim_provider AS dp ON dp.provider_id = f.provider_id
         WHERE f.provider_id = :provider_id
           AND f.route_id IS NOT NULL
           AND f.trip_id IS NOT NULL
           AND f.start_date IS NOT NULL
-          AND timezone(dp.timezone, f.captured_at_utc)::date = :local_date
+          AND f.snapshot_date_key = :date_key
         GROUP BY f.provider_id, f.route_id, f.trip_id, f.start_date
     )
     INSERT INTO gold.route_cancellation_daily (
@@ -428,9 +421,8 @@ UPSERT_ROUTE_OCCUPANCY_BAND_DAILY = text(
         COUNT(*) FILTER (WHERE f.occupancy_status = 5)::integer,
         :built_at_utc
     FROM gold.fact_vehicle_snapshot AS f
-    INNER JOIN gold.dim_provider AS dp ON dp.provider_id = f.provider_id
     WHERE f.provider_id = :provider_id
-      AND timezone(dp.timezone, f.captured_at_utc)::date = :local_date
+      AND f.snapshot_date_key = :date_key
     GROUP BY f.provider_id, COALESCE(f.route_id, '__unrouted__')
     ON CONFLICT (provider_id, provider_local_date, route_id) DO UPDATE SET
         observation_count = EXCLUDED.observation_count,
@@ -462,11 +454,10 @@ UPSERT_ROUTE_SERVICE_SPAN_DAILY = text(
             (ARRAY_AGG(f.delay_seconds ORDER BY f.captured_at_utc, f.entity_index))[1]
                 AS first_obs_delay
         FROM gold.fact_trip_delay_snapshot AS f
-        INNER JOIN gold.dim_provider AS dp ON dp.provider_id = f.provider_id
         WHERE f.provider_id = :provider_id
           AND f.route_id IS NOT NULL
           AND f.trip_id IS NOT NULL
-          AND timezone(dp.timezone, f.captured_at_utc)::date = :local_date
+          AND f.snapshot_date_key = :date_key
         GROUP BY f.provider_id, f.route_id, f.trip_id
     ),
     ranked AS (
@@ -538,10 +529,9 @@ UPSERT_ROUTE_SKIPPED_STOP_DAILY = text(
         ),
         :built_at_utc
     FROM gold.fact_trip_delay_snapshot AS f
-    INNER JOIN gold.dim_provider AS dp ON dp.provider_id = f.provider_id
     WHERE f.provider_id = :provider_id
       AND f.route_id IS NOT NULL
-      AND timezone(dp.timezone, f.captured_at_utc)::date = :local_date
+      AND f.snapshot_date_key = :date_key
     GROUP BY f.provider_id, f.route_id
     ON CONFLICT (provider_id, provider_local_date, route_id) DO UPDATE SET
         stop_time_update_count = EXCLUDED.stop_time_update_count,
@@ -1690,27 +1680,41 @@ def _safe_rowcount(result) -> int:  # noqa: ANN001
 
 
 def _build_percentile_days(
-    conn,  # noqa: ANN001
+    engine,  # noqa: ANN001
     *,
     provider_id: str,
     rollup_kind: str,
     upsert,  # noqa: ANN001
-    lookback_days: int,
+    today_key: int,
+    floor_key: int,
     now: datetime,
     select_missing=SELECT_MISSING_PERCENTILE_DAYS,  # noqa: ANN001
 ) -> int:
     """Build + watermark each missing closed local day for one append-only kind.
 
-    Append-only: a day already in warm_rollup_periods (matched on midnight-UTC of
-    the local date) is skipped, so accrued history is never recomputed.
-    select_missing defaults to the trip-delay-fact calendar; pass
-    SELECT_MISSING_OCCUPANCY_DAYS for rollups sourced from fact_vehicle_snapshot
-    so the missing-day calendar matches the data table.
+    Append-only + resumable: a day already in warm_rollup_periods (matched on
+    midnight-UTC of the local date) is skipped, so accrued history is never
+    recomputed, and each day is built + watermarked in its OWN transaction — so a
+    cold-start build that is interrupted (e.g. a CI timeout) resumes from the last
+    committed day instead of restarting from scratch.
+
+    The missing-day calendar is enumerated by the indexed, provider-local
+    snapshot_date_key over the sargable [floor_key, today_key) closed-day window
+    (an index range scan, not a full-table timezone() scan). select_missing
+    defaults to the trip-delay-fact calendar; pass SELECT_MISSING_OCCUPANCY_DAYS
+    for rollups sourced from fact_vehicle_snapshot so the missing-day calendar
+    matches the data table.
     """
-    rows = conn.execute(
-        select_missing,
-        {"provider_id": provider_id, "rollup_kind": rollup_kind, "lookback_days": lookback_days},
-    ).fetchall()
+    with engine.begin() as conn:
+        rows = conn.execute(
+            select_missing,
+            {
+                "provider_id": provider_id,
+                "rollup_kind": rollup_kind,
+                "today_key": today_key,
+                "floor_key": floor_key,
+            },
+        ).fetchall()
     built = 0
     for row in rows:
         local_date = row.local_date
@@ -1718,19 +1722,25 @@ def _build_percentile_days(
         # overload of warm_rollup_periods.period_start_utc, which otherwise holds
         # 5-minute UTC bins).
         period_start_utc = datetime(local_date.year, local_date.month, local_date.day, tzinfo=UTC)
-        conn.execute(
-            upsert,
-            {"provider_id": provider_id, "local_date": local_date, "built_at_utc": now},
-        )
-        conn.execute(
-            UPSERT_WARM_ROLLUP_PERIOD,
-            {
-                "provider_id": provider_id,
-                "rollup_kind": rollup_kind,
-                "period_start_utc": period_start_utc,
-                "built_at_utc": now,
-            },
-        )
+        with engine.begin() as conn:
+            conn.execute(
+                upsert,
+                {
+                    "provider_id": provider_id,
+                    "local_date": local_date,
+                    "date_key": row.date_key,
+                    "built_at_utc": now,
+                },
+            )
+            conn.execute(
+                UPSERT_WARM_ROLLUP_PERIOD,
+                {
+                    "provider_id": provider_id,
+                    "rollup_kind": rollup_kind,
+                    "period_start_utc": period_start_utc,
+                    "built_at_utc": now,
+                },
+            )
         built += 1
     return built
 
@@ -1764,6 +1774,23 @@ def build_warm_rollups(
     built_occupancy = 0
     reporting_aggregate_row_counts: dict[str, int] = {}
     now = utc_now()
+
+    # Provider-local "today" anchors the closed-day calendar for the append-only
+    # daily builders. percentile_lookback_days (= fact_retention_days - 1) keeps the
+    # oldest candidate day off partially-pruned facts; today excludes the still-open
+    # current day. Both become sargable snapshot_date_key (YYYYMMDD) bounds so each
+    # daily build is an index range scan rather than a full-table timezone() scan.
+    percentile_lookback_days = fact_retention_days - 1
+    with engine.begin() as conn:
+        today_local = conn.execute(
+            text(
+                "SELECT (now() AT TIME ZONE dp.timezone)::date "
+                "FROM gold.dim_provider AS dp WHERE dp.provider_id = :provider_id"
+            ),
+            {"provider_id": provider_id},
+        ).scalar_one()
+    today_key = int(today_local.strftime("%Y%m%d"))
+    floor_key = int((today_local - timedelta(days=percentile_lookback_days)).strftime("%Y%m%d"))
 
     with engine.begin() as conn:
         # Vehicle summary
@@ -1844,66 +1871,76 @@ def build_warm_rollups(
             )
             built_occupancy += 1
 
-        # Append-only daily rollups (route/stop percentiles + cancellation +
-        # occupancy band). Built BEFORE the DELETE+UPSERT reporting tables and
-        # deliberately NOT registered in REPORTING_AGGREGATE_TABLES, so accrued
-        # history is never wiped.
-        percentile_lookback_days = fact_retention_days - 1
-        built_route_percentile = _build_percentile_days(
-            conn,
-            provider_id=provider_id,
-            rollup_kind="route_percentile_daily",
-            upsert=UPSERT_ROUTE_DELAY_PERCENTILE_DAILY,
-            lookback_days=percentile_lookback_days,
-            now=now,
-        )
-        built_stop_percentile = _build_percentile_days(
-            conn,
-            provider_id=provider_id,
-            rollup_kind="stop_percentile_daily",
-            upsert=UPSERT_STOP_DELAY_PERCENTILE_DAILY,
-            lookback_days=percentile_lookback_days,
-            now=now,
-        )
-        # Cancellation reads fact_trip_delay_snapshot, so it reuses the default
-        # trip-delay missing-day calendar. Occupancy reads fact_vehicle_snapshot,
-        # so it MUST use SELECT_MISSING_OCCUPANCY_DAYS over its own source table.
-        built_route_cancellation = _build_percentile_days(
-            conn,
-            provider_id=provider_id,
-            rollup_kind="route_cancellation_daily",
-            upsert=UPSERT_ROUTE_CANCELLATION_DAILY,
-            lookback_days=percentile_lookback_days,
-            now=now,
-        )
-        built_route_occupancy = _build_percentile_days(
-            conn,
-            provider_id=provider_id,
-            rollup_kind="route_occupancy_band_daily",
-            upsert=UPSERT_ROUTE_OCCUPANCY_BAND_DAILY,
-            lookback_days=percentile_lookback_days,
-            now=now,
-            select_missing=SELECT_MISSING_OCCUPANCY_DAYS,
-        )
-        # Service span reads fact_trip_delay_snapshot → default trip-delay calendar.
-        built_route_service_span = _build_percentile_days(
-            conn,
-            provider_id=provider_id,
-            rollup_kind="route_service_span_daily",
-            upsert=UPSERT_ROUTE_SERVICE_SPAN_DAILY,
-            lookback_days=percentile_lookback_days,
-            now=now,
-        )
-        # Skipped-stop reads fact_trip_delay_snapshot (carried skip count) → default.
-        built_route_skipped_stop = _build_percentile_days(
-            conn,
-            provider_id=provider_id,
-            rollup_kind="route_skipped_stop_daily",
-            upsert=UPSERT_ROUTE_SKIPPED_STOP_DAILY,
-            lookback_days=percentile_lookback_days,
-            now=now,
-        )
+    # Append-only daily rollups (route/stop percentiles + cancellation + occupancy
+    # band + service span + skipped stop). Built AFTER the 5m section commits and
+    # BEFORE the DELETE+UPSERT reporting tables, and deliberately NOT registered in
+    # REPORTING_AGGREGATE_TABLES, so accrued history is never wiped. Each call
+    # commits per-day in its own transaction (see _build_percentile_days), so a
+    # cold-start build is resumable across runs.
+    built_route_percentile = _build_percentile_days(
+        engine,
+        provider_id=provider_id,
+        rollup_kind="route_percentile_daily",
+        upsert=UPSERT_ROUTE_DELAY_PERCENTILE_DAILY,
+        today_key=today_key,
+        floor_key=floor_key,
+        now=now,
+    )
+    built_stop_percentile = _build_percentile_days(
+        engine,
+        provider_id=provider_id,
+        rollup_kind="stop_percentile_daily",
+        upsert=UPSERT_STOP_DELAY_PERCENTILE_DAILY,
+        today_key=today_key,
+        floor_key=floor_key,
+        now=now,
+    )
+    # Cancellation reads fact_trip_delay_snapshot, so it reuses the default
+    # trip-delay missing-day calendar. Occupancy reads fact_vehicle_snapshot,
+    # so it MUST use SELECT_MISSING_OCCUPANCY_DAYS over its own source table.
+    built_route_cancellation = _build_percentile_days(
+        engine,
+        provider_id=provider_id,
+        rollup_kind="route_cancellation_daily",
+        upsert=UPSERT_ROUTE_CANCELLATION_DAILY,
+        today_key=today_key,
+        floor_key=floor_key,
+        now=now,
+    )
+    built_route_occupancy = _build_percentile_days(
+        engine,
+        provider_id=provider_id,
+        rollup_kind="route_occupancy_band_daily",
+        upsert=UPSERT_ROUTE_OCCUPANCY_BAND_DAILY,
+        today_key=today_key,
+        floor_key=floor_key,
+        now=now,
+        select_missing=SELECT_MISSING_OCCUPANCY_DAYS,
+    )
+    # Service span reads fact_trip_delay_snapshot → default trip-delay calendar.
+    built_route_service_span = _build_percentile_days(
+        engine,
+        provider_id=provider_id,
+        rollup_kind="route_service_span_daily",
+        upsert=UPSERT_ROUTE_SERVICE_SPAN_DAILY,
+        today_key=today_key,
+        floor_key=floor_key,
+        now=now,
+    )
+    # Skipped-stop reads fact_trip_delay_snapshot (carried skip count) → default.
+    built_route_skipped_stop = _build_percentile_days(
+        engine,
+        provider_id=provider_id,
+        rollup_kind="route_skipped_stop_daily",
+        upsert=UPSERT_ROUTE_SKIPPED_STOP_DAILY,
+        today_key=today_key,
+        floor_key=floor_key,
+        now=now,
+    )
 
+    # Reporting aggregates (full DELETE+UPSERT refresh) in their own transaction,
+    # so a failure here never rolls back the committed 5m + daily-builder work.
+    with engine.begin() as conn:
         for table_name in REPORTING_AGGREGATE_TABLES:
             delete_params = {"provider_id": provider_id}
             upsert_params = {
