@@ -32,7 +32,7 @@
     },
     "StopByRoute": {
       "properties": {
-        "median_delay_min": {
+        "avg_delay_min": {
           "anyOf": [
             {
               "type": "number"
@@ -42,7 +42,7 @@
             }
           ],
           "default": null,
-          "title": "Median Delay Min"
+          "title": "Avg Delay Min"
         },
         "route": {
           "title": "Route",
@@ -57,11 +57,7 @@
     },
     "StopReliabilityPeriod": {
       "properties": {
-        "grain": {
-          "title": "Grain",
-          "type": "string"
-        },
-        "median_delay_min": {
+        "avg_delay_min": {
           "anyOf": [
             {
               "type": "number"
@@ -71,7 +67,11 @@
             }
           ],
           "default": null,
-          "title": "Median Delay Min"
+          "title": "Avg Delay Min"
+        },
+        "grain": {
+          "title": "Grain",
+          "type": "string"
         },
         "otp_pct": {
           "anyOf": [

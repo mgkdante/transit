@@ -52,8 +52,8 @@ export interface RouteDetailCopy {
 	/** Tier-2 headway-regularity captions (busiest-direction rows). */
 	readonly regularityCov: string;
 	readonly bunched: string;
-	/** Weak-stop caption. */
-	readonly medianDelay: string;
+	/** Weak-stop caption (observation-weighted mean delay). */
+	readonly avgDelay: string;
 	/** Tier-1/2 historic metric sections. */
 	readonly cancellations: string;
 	readonly cancellationRate: string;
@@ -114,7 +114,7 @@ export const detailCopy: Record<Locale, RouteDetailCopy> = {
 		excessWait: 'Attente excédentaire',
 		regularityCov: 'Régularité (CV)',
 		bunched: 'Regroupé',
-		medianDelay: 'Retard médian',
+		avgDelay: 'Retard moyen',
 		cancellations: 'Annulations',
 		cancellationRate: "Taux d'annulation (30 j)",
 		skippedStops: 'Arrêts ignorés',
@@ -153,7 +153,7 @@ export const detailCopy: Record<Locale, RouteDetailCopy> = {
 		excessWait: 'Excess wait',
 		regularityCov: 'Regularity (CoV)',
 		bunched: 'Bunched',
-		medianDelay: 'Median delay',
+		avgDelay: 'Avg delay',
 		cancellations: 'Cancellations',
 		cancellationRate: 'Cancellation rate (30d)',
 		skippedStops: 'Skipped stops',

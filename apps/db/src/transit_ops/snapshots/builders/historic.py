@@ -571,7 +571,7 @@ def build_route_reliability(
         weak_rows.append((str(r["stop_id"]), avg_sec))
     weak_rows.sort(key=lambda t: t[1], reverse=True)
     weak_stops = [
-        WeakStop(id=sid, name=names.get(sid), median_delay_min=round(avg_sec / 60.0, 1))
+        WeakStop(id=sid, name=names.get(sid), avg_delay_min=round(avg_sec / 60.0, 1))
         for sid, avg_sec in weak_rows[:5]
     ]
 
@@ -765,7 +765,7 @@ def build_stop_reliability(
             periods.setdefault(sid, {})[grain] = StopReliabilityPeriod(
                 grain=grain,
                 otp_pct=_otp_pct_severe_proxy(r["obs"], r["severe"]),
-                median_delay_min=(round(avg_sec / 60.0, 1) if avg_sec is not None else None),
+                avg_delay_min=(round(avg_sec / 60.0, 1) if avg_sec is not None else None),
                 severe_pct=_severe_pct(r["obs"], r["severe"]),
             )
 
@@ -777,7 +777,7 @@ def build_stop_reliability(
         by_route.setdefault(sid, []).append(
             StopByRoute(
                 route=str(r["route_id"]),
-                median_delay_min=(round(avg_sec / 60.0, 1) if avg_sec is not None else None),
+                avg_delay_min=(round(avg_sec / 60.0, 1) if avg_sec is not None else None),
             )
         )
 
@@ -1097,7 +1097,7 @@ def build_receipts(
             worst_stop[ds] = ReceiptWorstStop(
                 id=str(r["stop_id"]),
                 name=stop_names.get(str(r["stop_id"])),
-                median_delay_min=_avg_delay_min(r["avg_delay_seconds"]),
+                avg_delay_min=_avg_delay_min(r["avg_delay_seconds"]),
             )
 
     # merge: only emit dates present in accountability (the driver)

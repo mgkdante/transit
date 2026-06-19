@@ -64,7 +64,7 @@ export type RouteHabits = z.infer<typeof RouteHabitsSchema>;
 export const WeakStopSchema = z.object({
 	id: z.string(),
 	name: z.string().nullable().optional(),
-	median_delay_min: z.number().nullable().optional(),
+	avg_delay_min: z.number().nullable().optional(),
 });
 export type WeakStop = z.infer<typeof WeakStopSchema>;
 

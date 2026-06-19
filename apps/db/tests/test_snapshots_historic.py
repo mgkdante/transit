@@ -532,12 +532,12 @@ def test_build_route_reliability_weak_stops_sorted_and_capped() -> None:
 
     out = build_route_reliability(conn, route_id="51", generated_utc="t")
     assert len(out.weak_stops) == 5  # capped at 5
-    delays = [w.median_delay_min for w in out.weak_stops]
+    delays = [w.avg_delay_min for w in out.weak_stops]
     assert delays == sorted(delays, reverse=True)  # descending
     # worst is S1 (600s -> 10.0 min); name resolved from dim_stop
     assert out.weak_stops[0].id == "S1"
     assert out.weak_stops[0].name == "Stop 1"
-    assert out.weak_stops[0].median_delay_min == 10.0
+    assert out.weak_stops[0].avg_delay_min == 10.0
     # the smallest (S5 = 30s -> 0.5 min) is dropped
     assert "S5" not in {w.id for w in out.weak_stops}
 
@@ -683,19 +683,19 @@ def test_build_stop_reliability_batch() -> None:
 
     wk = by_grain["week"]
     assert wk.otp_pct == 90  # (150-15)/150
-    assert wk.median_delay_min == 1.3  # 12000/150 = 80s -> 1.333 -> 1.3
+    assert wk.avg_delay_min == 1.3  # 12000/150 = 80s -> 1.333 -> 1.3
     assert wk.severe_pct == 10.0  # 15/150
 
     mo = by_grain["month"]
     assert mo.otp_pct == 95  # (600-30)/600
-    assert mo.median_delay_min == 2.5  # 90000/600 = 150s
+    assert mo.avg_delay_min == 2.5  # 90000/600 = 150s
     assert mo.severe_pct == 5.0  # 30/600
 
     # by_route natural-sorted: "9" before "51"
     assert [b.route for b in s1.by_route] == ["9", "51"]
     by_route = {b.route: b for b in s1.by_route}
-    assert by_route["51"].median_delay_min == 1.0  # 6000/100 = 60s
-    assert by_route["9"].median_delay_min == 3.0  # 9000/50 = 180s
+    assert by_route["51"].avg_delay_min == 1.0  # 6000/100 = 60s
+    assert by_route["9"].avg_delay_min == 3.0  # 9000/50 = 180s
 
 
 def test_build_stop_reliability_weekly_only_stop() -> None:
@@ -1178,7 +1178,7 @@ def test_build_receipts_worst_route_and_stop_by_max_delay() -> None:
     assert r.worst_route.otp_delta_pts is None  # v1 deferral
     assert r.worst_stop is not None
     assert r.worst_stop.id == "9999"
-    assert r.worst_stop.median_delay_min == 7.0  # 420s / 60
+    assert r.worst_stop.avg_delay_min == 7.0  # 420s / 60
 
 
 def test_build_receipts_skips_sentinel_worst_entities() -> None:

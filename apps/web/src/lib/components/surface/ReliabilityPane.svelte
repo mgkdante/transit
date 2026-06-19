@@ -26,8 +26,14 @@
 		grain: string;
 		/** On-time share as a percent [0,100], or null when unmeasured. */
 		otpPct: number | null;
-		/** Delay in minutes (avg or median per `delayLabelKind`), or null. */
+		/** Delay in minutes — a mean or a true percentile per `delayKind`. */
 		delayMin: number | null;
+		/**
+		 * Per-period override of the delay caption; falls back to the
+		 * pane-level `delayLabelKind`. Lets a real-p50 grain say "median"
+		 * while observation-mean grains in the same pane say "avg".
+		 */
+		delayKind?: 'avg' | 'median';
 		/** Optional p90 delay in minutes. */
 		p90Min?: number | null;
 		/** Optional severe share as a percent [0,100]. */
@@ -98,7 +104,15 @@
 					<SectionLabel text={period.grain} variant="metric" />
 					<div class="reliability-metrics">
 						<MetricDisplay value={fmtPct(period.otpPct)} label={t.otp} size="sm" />
-						<MetricDisplay value={fmtMin(period.delayMin)} label={delayLabel} size="sm" />
+						<MetricDisplay
+							value={fmtMin(period.delayMin)}
+							label={period.delayKind === 'median'
+								? t.delayMedian
+								: period.delayKind === 'avg'
+									? t.delayAvg
+									: delayLabel}
+							size="sm"
+						/>
 						{#if period.p90Min != null}
 							<MetricDisplay value={fmtMin(period.p90Min)} label={t.p90} size="sm" />
 						{/if}
