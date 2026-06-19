@@ -297,6 +297,27 @@ describe('stops_index — optional mode + routes round-trip', () => {
 	});
 });
 
+describe('alerts — additive cause/effect/severity_level round-trip (raw GTFS-RT/i3 passthroughs)', () => {
+	it('parses an alert carrying cause/effect/severity_level alongside a minimal one', () => {
+		const fixture = {
+			generated_utc: ISO,
+			alerts: [
+				{
+					id: 'a1',
+					severity: 'high',
+					header_key: 'Détour sur la ligne 33',
+					cause: 'CONSTRUCTION',
+					effect: 'DETOUR',
+					severity_level: 'WARNING',
+				},
+				// minimal alert: the three new fields absent — still parses (optional).
+				{ id: 'a2', severity: 'watch', header_key: 'Travaux' },
+			],
+		};
+		expect(() => parsePort('alerts', AlertsFileSchema, fixture)).not.toThrow();
+	});
+});
+
 describe('schema round-trip — a bad value throws via parsePort, naming the port', () => {
 	// Closed-enum families: an out-of-vocabulary value must be rejected.
 	const ENUM_REJECTS: Array<[string, z.ZodTypeAny, unknown]> = [

@@ -330,6 +330,10 @@ def build_alerts(conn: Connection, *, provider_id: str = "stm", generated_utc: s
                 stops=_split_csv(r["stop_ids"]),
                 start_utc=_opt_iso(r["active_period_start_utc"]),
                 end_utc=_opt_iso(r["active_period_end_utc"]),
+                # raw GTFS-RT/i3 passthroughs (already selected for the id hash)
+                cause=r["cause"],
+                effect=r["effect"],
+                severity_level=r["severity"],
             )
         )
     return AlertsFile(generated_utc=generated_utc, alerts=alerts)
