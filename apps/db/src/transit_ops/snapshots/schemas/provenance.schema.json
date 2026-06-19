@@ -1,5 +1,30 @@
 {
   "$defs": {
+    "ProvenanceConformance": {
+      "properties": {
+        "extra_row_count": {
+          "default": 0,
+          "title": "Extra Row Count",
+          "type": "integer"
+        },
+        "status": {
+          "title": "Status",
+          "type": "string"
+        },
+        "unknown_members": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Unknown Members",
+          "type": "array"
+        }
+      },
+      "required": [
+        "status"
+      ],
+      "title": "ProvenanceConformance",
+      "type": "object"
+    },
     "ProvenanceFreshness": {
       "properties": {
         "age_s": {
@@ -76,6 +101,17 @@
     }
   },
   "properties": {
+    "conformance": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ProvenanceConformance"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
     "freshness": {
       "items": {
         "$ref": "#/$defs/ProvenanceFreshness"
