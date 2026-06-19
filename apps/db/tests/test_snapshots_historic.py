@@ -793,6 +793,27 @@ def test_build_hotspots_week_period_filter() -> None:
     assert out.hotspots[1].rank == 2
 
 
+def test_build_hotspots_excludes_sentinel_entities() -> None:
+    """Honesty guard (slice-9-honesty-fixes): the __unrouted__ / __unknown_stop__
+    NULL-buckets must never surface as a named hotspot, even if a query path returns
+    them; survivors re-rank from 1 (defense-in-depth over the publish-SQL filter)."""
+    rows = [
+        {"entity_kind": "route", "entity_id": "__unrouted__", "issue_count": 99,
+         "severity_label": "critical"},
+        {"entity_kind": "route", "entity_id": "51", "issue_count": 40, "severity_label": "high"},
+        {"entity_kind": "stop", "entity_id": "__unknown_stop__", "issue_count": 30,
+         "severity_label": "high"},
+        {"entity_kind": "stop", "entity_id": "3456", "issue_count": 10, "severity_label": "watch"},
+    ]
+    conn = FakeConn([("repeated_problem_route_stop", rows)])
+    out = build_hotspots(conn, generated_utc="t")
+    ids = [h.id for h in out.hotspots]
+    assert "__unrouted__" not in ids
+    assert "__unknown_stop__" not in ids
+    assert ids == ["51", "3456"]
+    assert [h.rank for h in out.hotspots] == [1, 2]
+
+
 def test_build_hotspots_resolves_names() -> None:
     """Per-kind name resolution: 'route' rows from the route map, 'stop' rows
     from the stop map (history-backed for retired ids); unknown ids stay None."""
@@ -1134,12 +1155,45 @@ def test_build_receipts_worst_route_and_stop_by_max_delay() -> None:
     assert r.worst_stop.median_delay_min == 7.0  # 420s / 60
 
 
+def test_build_receipts_skips_sentinel_worst_entities() -> None:
+    """Honesty guard: a routeless/unknown-stop sentinel holding the day's max delay
+    must NOT be crowned worst_route/worst_stop; the next real entity wins."""
+    d = datetime.date(2026, 5, 15)
+    conn = FakeConn(
+        _receipts_dispatch(
+            acct=[
+                {
+                    "provider_local_date": d, "affected_route_count": 1,
+                    "affected_stop_count": 1, "delayed_trip_count": 0,
+                    "severe_delay_count": 0, "alert_count": 0, "rider_impact_score": None,
+                }
+            ],
+            worst_route=[
+                {"d": d, "route_id": "__unrouted__", "avg_delay_seconds": 900.0},
+                {"d": d, "route_id": "105", "avg_delay_seconds": 300.0},
+            ],
+            worst_stop=[
+                {"d": d, "stop_id": "__unknown_stop__", "avg_delay_seconds": 800.0,
+                 "max_delay_seconds": 1000.0},
+                {"d": d, "stop_id": "9999", "avg_delay_seconds": 420.0, "max_delay_seconds": 600.0},
+            ],
+        )
+    )
+    out = build_receipts(conn, generated_utc="t")
+    r = out["2026-05-15"]
+    assert r.worst_route is not None and r.worst_route.id == "105"
+    assert r.worst_stop is not None and r.worst_stop.id == "9999"
+
+
 def test_receipts_worst_entity_order_has_deterministic_tiebreaker() -> None:
     route_sql = str(_RECEIPTS_WORST_ROUTE_SQL)
     stop_sql = str(_RECEIPTS_WORST_STOP_SQL)
 
     assert "avg_delay_seconds DESC, route_id" in route_sql
     assert "avg_delay_seconds DESC, stop_id" in stop_sql
+    # slice-9-honesty-fixes: sentinel NULL-buckets filtered at the publish-SQL layer.
+    assert "route_id <> '__unrouted__'" in route_sql
+    assert "stop_id <> '__unknown_stop__'" in stop_sql
 
 
 def test_build_receipts_worst_entity_names() -> None:

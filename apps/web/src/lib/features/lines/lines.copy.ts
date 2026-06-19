@@ -7,6 +7,7 @@
 
 import type { Locale } from '$lib/i18n';
 import type { SurfaceHeadCopy } from '$lib/components/surface';
+import type { OccupancyCode } from '$lib/v1/schemas';
 
 export interface LinesIndexCopy extends SurfaceHeadCopy {
 	/** Accessible label + placeholder for the filter input. */
@@ -48,8 +49,25 @@ export interface RouteDetailCopy {
 	readonly scheduled: string;
 	readonly observed: string;
 	readonly excessWait: string;
+	/** Tier-2 headway-regularity captions (busiest-direction rows). */
+	readonly regularityCov: string;
+	readonly bunched: string;
 	/** Weak-stop caption. */
 	readonly medianDelay: string;
+	/** Tier-1/2 historic metric sections. */
+	readonly cancellations: string;
+	readonly cancellationRate: string;
+	readonly skippedStops: string;
+	readonly skippedStopRate: string;
+	readonly crowding: string;
+	/** Occupancy band labels (legend + a11y) keyed by OccupancyCode. */
+	readonly occupancyBands: Record<OccupancyCode, string>;
+	readonly serviceSpan: string;
+	readonly spanMinutes: string;
+	readonly firstTripDelay: string;
+	readonly lastTripDelay: string;
+	/** a11y trend summary builder: "… over the last N days". */
+	readonly lastNDays: (n: number) => string;
 }
 
 export const indexCopy: Record<Locale, LinesIndexCopy> = {
@@ -94,7 +112,26 @@ export const detailCopy: Record<Locale, RouteDetailCopy> = {
 		scheduled: 'Prévu',
 		observed: 'Observé',
 		excessWait: 'Attente excédentaire',
+		regularityCov: 'Régularité (CV)',
+		bunched: 'Regroupé',
 		medianDelay: 'Retard médian',
+		cancellations: 'Annulations',
+		cancellationRate: "Taux d'annulation (30 j)",
+		skippedStops: 'Arrêts ignorés',
+		skippedStopRate: "Taux d'arrêts ignorés (30 j)",
+		crowding: 'Encombrement',
+		occupancyBands: {
+			empty: 'Vide',
+			many_seats: 'Plusieurs places',
+			few_seats: 'Peu de places',
+			standing: 'Debout',
+			full: 'Plein',
+		},
+		serviceSpan: 'Plage de service',
+		spanMinutes: 'Durée (min)',
+		firstTripDelay: 'Retard 1er trajet',
+		lastTripDelay: 'Retard dernier trajet',
+		lastNDays: (n) => `sur les ${n} derniers jours`,
 	},
 	en: {
 		kicker: 'LINE',
@@ -114,6 +151,25 @@ export const detailCopy: Record<Locale, RouteDetailCopy> = {
 		scheduled: 'Scheduled',
 		observed: 'Observed',
 		excessWait: 'Excess wait',
+		regularityCov: 'Regularity (CoV)',
+		bunched: 'Bunched',
 		medianDelay: 'Median delay',
+		cancellations: 'Cancellations',
+		cancellationRate: 'Cancellation rate (30d)',
+		skippedStops: 'Skipped stops',
+		skippedStopRate: 'Skipped-stop rate (30d)',
+		crowding: 'Crowding',
+		occupancyBands: {
+			empty: 'Empty',
+			many_seats: 'Many seats',
+			few_seats: 'Few seats',
+			standing: 'Standing',
+			full: 'Full',
+		},
+		serviceSpan: 'Service span',
+		spanMinutes: 'Span (min)',
+		firstTripDelay: 'First-trip delay',
+		lastTripDelay: 'Last-trip delay',
+		lastNDays: (n) => `over the last ${n} days`,
 	},
 };

@@ -829,6 +829,13 @@ def build_stop_reliability(
 
 # Most-recent week period from gold.repeated_problem_route_stop.
 # Fall back to the max period_start_local of any grain if no 'week' rows exist.
+# Gold buckets NULL route/stop ids into these sentinels (rollups.py COALESCE).
+# They must NEVER surface to a citizen as a named entity. The publish SQL filters
+# them out; this set is the defense-in-depth publish-time invariant the builders
+# also enforce, so a future un-filtered query path can't leak a phantom entity.
+_SENTINEL_ENTITY_IDS = frozenset({"__unrouted__", "__unknown_stop__"})
+
+
 _HOTSPOTS_SQL = text(
     """
     WITH week_max AS (
@@ -861,6 +868,8 @@ _HOTSPOTS_SQL = text(
     WHERE rp.provider_id = :provider_id
       AND rp.period_start_local = target.target_start
       AND rp.period_grain = target.target_grain
+      AND NOT (rp.entity_kind = 'route' AND rp.entity_id = '__unrouted__')
+      AND NOT (rp.entity_kind = 'stop' AND rp.entity_id = '__unknown_stop__')
     ORDER BY rp.issue_count DESC
     LIMIT 20
     """
@@ -876,6 +885,9 @@ def build_hotspots(conn: "Connection", provider_id: str = "stm", *, generated_ut
     """
     rows = list(conn.execute(_HOTSPOTS_SQL, {"provider_id": provider_id}).mappings())
     route_names, stop_names = _entity_name_maps(conn, provider_id=provider_id)
+    # Defense-in-depth: never publish a sentinel-bucket entity even if a query path
+    # ever forgets the SQL filter (re-ranks over the surviving rows).
+    kept = [r for r in rows if str(r["entity_id"]) not in _SENTINEL_ENTITY_IDS]
     hotspots = [
         Hotspot(
             rank=i + 1,
@@ -890,7 +902,7 @@ def build_hotspots(conn: "Connection", provider_id: str = "stm", *, generated_ut
             severity=r["severity_label"],
             otp_delta_pts=None,  # v1 deferral: not stored in gold.repeated_problem_route_stop
         )
-        for i, r in enumerate(rows)
+        for i, r in enumerate(kept)
     ]
     return Hotspots(generated_utc=generated_utc, hotspots=hotspots)
 
@@ -994,6 +1006,7 @@ _RECEIPTS_WORST_ROUTE_SQL = text(
     WHERE provider_id = :provider_id
       AND provider_local_date >= current_date - 30
       AND avg_delay_seconds IS NOT NULL
+      AND route_id <> '__unrouted__'
     ORDER BY provider_local_date, avg_delay_seconds DESC, route_id
     """
 )
@@ -1009,6 +1022,7 @@ _RECEIPTS_WORST_STOP_SQL = text(
     WHERE provider_id = :provider_id
       AND provider_local_date >= current_date - 30
       AND avg_delay_seconds IS NOT NULL
+      AND stop_id <> '__unknown_stop__'
     ORDER BY provider_local_date, avg_delay_seconds DESC, stop_id
     """
 )
@@ -1060,6 +1074,8 @@ def build_receipts(
     # 3. worst route per date: first row after ORDER BY avg_delay_seconds DESC
     worst_route: dict[str, ReceiptWorstRoute] = {}
     for r in conn.execute(_RECEIPTS_WORST_ROUTE_SQL, params).mappings():
+        if str(r["route_id"]) in _SENTINEL_ENTITY_IDS:
+            continue  # defense-in-depth: never crown the routeless sentinel as worst
         ds = _iso_date(r["d"])
         if ds not in worst_route:  # first = max avg_delay (ordered DESC)
             worst_route[ds] = ReceiptWorstRoute(
@@ -1071,6 +1087,8 @@ def build_receipts(
     # 4. worst stop per date: first row after ORDER BY avg_delay_seconds DESC
     worst_stop: dict[str, ReceiptWorstStop] = {}
     for r in conn.execute(_RECEIPTS_WORST_STOP_SQL, params).mappings():
+        if str(r["stop_id"]) in _SENTINEL_ENTITY_IDS:
+            continue  # defense-in-depth: never crown the unknown-stop sentinel as worst
         ds = _iso_date(r["d"])
         if ds not in worst_stop:  # first = max avg_delay (ordered DESC)
             worst_stop[ds] = ReceiptWorstStop(
