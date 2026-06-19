@@ -69,8 +69,48 @@ describe('Cluster02WaitRegularity', () => {
 		expect(screen.getByText('1140.0 min')).toBeInTheDocument();
 		expect(screen.getByText('214')).toBeInTheDocument();
 
+		// The excess-wait caption explains that 0 is the GOOD case, not missing (#7).
+		expect(screen.getByText(copy.strip.excessWaitCaption)).toBeInTheDocument();
+
+		// The service-span window label names the latest closed service day (#9).
+		expect(screen.getByText(copy.windows.serviceSpan('2026-06-18'))).toBeInTheDocument();
+
 		// No honest-empty note when data is present.
 		expect(screen.queryByText(copy.strip.noDataNote)).not.toBeInTheDocument();
+	});
+
+	it('presents per-direction rows as an observed-gap comparison, not empty bars (A3)', () => {
+		// Direction-variant rows carry ONLY observed_min (scheduled/excess/cov null) →
+		// they must surface as an observed-gap-by-direction comparison, not RankedRows
+		// with empty SeverityBars.
+		const data: RouteReliability = {
+			generated_utc: utc('2026-06-19T00:00:00Z'),
+			id: '10',
+			headway: [
+				{
+					shift: 'am_peak',
+					scheduled_min: 6,
+					observed_min: 8.4,
+					excess_wait_min: 2.4,
+					cov: 0.42,
+					bunched_pct: 18,
+				},
+				// per-direction variant: only observed_min present.
+				{ shift: 'am_peak_dir0', observed_min: 7.9 },
+				{ shift: 'am_peak_dir1', observed_min: 9.1 },
+			],
+		};
+
+		const clusters = toReliabilityClusters(data);
+		render(Cluster02WaitRegularity, {
+			props: { wait: clusters.waitRegularity, serviceSpans: [], locale: 'en', copy },
+		});
+
+		// The reveal carries the observed-gap-by-direction heading + both gaps.
+		const reveal = document.querySelector('[data-slot="direction-gaps"]');
+		expect(reveal).not.toBeNull();
+		expect(screen.getByText('7.9 min')).toBeInTheDocument();
+		expect(screen.getByText('9.1 min')).toBeInTheDocument();
 	});
 
 	it('renders the honest empty state from an empty VM without crashing', () => {

@@ -113,9 +113,16 @@ describe('toReliabilityClusters — populated fixture', () => {
 		expect(c.strip.p90Min).toBe(9.1);
 	});
 
-	it('falls back to the first period when the grain is absent', () => {
+	it('falls back to the first CALENDAR period when the grain is absent', () => {
+		// The mapper partitions periods into calendar (day→week→month) groups, so
+		// the first calendar period is the day row regardless of contract order.
 		const c = toReliabilityClusters(populated, { grain: 'year' });
-		expect(c.strip.otpPct).toBe(71); // first period (week)
+		expect(c.strip.otpPct).toBe(82); // first calendar period (day)
+	});
+
+	it('carries p50 onto the strip (daily grain)', () => {
+		const c = toReliabilityClusters(populated);
+		expect(c.strip.p50Min).toBe(0.5); // the day period's median delay
 	});
 
 	it('pulls the busiest-direction CoV (first row carrying cov)', () => {
@@ -167,6 +174,98 @@ describe('toReliabilityClusters — populated fixture', () => {
 		expect(c.serviceDelivered.serviceSpans).toHaveLength(2);
 		expect(c.serviceDelivered.cancellations).toHaveLength(3);
 		expect(c.serviceDelivered.skippedStops).toHaveLength(2);
+	});
+});
+
+/* F1 — week/month rows arrive ASC; the strip must pick the MOST-RECENT, not the
+   first (oldest). Plus the trend day-only-ascending split, peak/off-peak, and the
+   selectedDate picker resolution. */
+const granular: RouteReliability = {
+	generated_utc: utc('2026-06-19T02:00:00Z'),
+	id: '10',
+	periods: [
+		// Daily rows arrive newest→oldest in the contract; the trend must sort ASC.
+		{
+			grain: 'day',
+			date: '2026-06-18',
+			otp_pct: 84,
+			avg_delay_min: 1.9,
+			p50_min: 0.4,
+			p90_min: 5.5,
+		},
+		{
+			grain: 'day',
+			date: '2026-06-16',
+			otp_pct: 80,
+			avg_delay_min: 2.4,
+			p50_min: 0.6,
+			p90_min: 6.4,
+		},
+		{
+			grain: 'day',
+			date: '2026-06-17',
+			otp_pct: 82,
+			avg_delay_min: 2.1,
+			p50_min: 0.5,
+			p90_min: 6.0,
+		},
+		// Weekly rows ASC (oldest → newest) — F1: most-recent must win.
+		{ grain: 'week', date: '2026-05-25', otp_pct: 70, avg_delay_min: 3.5 },
+		{ grain: 'week', date: '2026-06-15', otp_pct: 76, avg_delay_min: 2.9 },
+		// Monthly rows ASC.
+		{ grain: 'month', date: '2026-05-01', otp_pct: 68, avg_delay_min: 3.9 },
+		{ grain: 'month', date: '2026-06-01', otp_pct: 74, avg_delay_min: 3.1 },
+		// Granular grains (date:null) — the peak/off-peak source.
+		{ grain: 'am_peak', otp_pct: 90, avg_delay_min: 0.7, severe_pct: 4.7 },
+		{ grain: 'pm_peak', otp_pct: 75, avg_delay_min: 3.4, severe_pct: 22.6 },
+		{ grain: 'midday', otp_pct: 86, avg_delay_min: 1.2, severe_pct: 6 },
+		{ grain: 'weekday', otp_pct: 80, avg_delay_min: 2.4, severe_pct: 8 },
+		{ grain: 'weekend', otp_pct: 88, avg_delay_min: 1.1, severe_pct: 4 },
+	],
+};
+
+describe('toReliabilityClusters — F1 most-recent week/month + grain partition', () => {
+	it('picks the MOST-RECENT week, not the oldest (F1)', () => {
+		const c = toReliabilityClusters(granular, { grain: 'week' });
+		expect(c.strip.otpPct).toBe(76); // 2026-06-15, not 2026-05-25 (70)
+	});
+
+	it('picks the MOST-RECENT month, not the oldest (F1)', () => {
+		const c = toReliabilityClusters(granular, { grain: 'month' });
+		expect(c.strip.otpPct).toBe(74); // 2026-06-01, not 2026-05-01 (68)
+	});
+
+	it('trend is the dated DAY-grain series only, chronological ascending', () => {
+		const c = toReliabilityClusters(granular);
+		expect(c.punctuality.trend.map((p) => p.date)).toEqual([
+			'2026-06-16',
+			'2026-06-17',
+			'2026-06-18',
+		]);
+		// No week/month/shift/daytype rows leak into the trend.
+		expect(c.punctuality.trend.every((p) => p.grain === 'day')).toBe(true);
+	});
+
+	it('partitions the granular grains into peak/off-peak (shift + day-type)', () => {
+		const c = toReliabilityClusters(granular);
+		expect(c.punctuality.peakOffPeak.byShift.map((r) => r.grain)).toEqual([
+			'am_peak',
+			'pm_peak',
+			'midday',
+		]);
+		expect(c.punctuality.peakOffPeak.byDayType.map((r) => r.grain)).toEqual(['weekday', 'weekend']);
+		expect(c.punctuality.peakOffPeak.byShift[0].severePct).toBe(4.7);
+		expect(c.punctuality.peakOffPeak.isEmpty).toBe(false);
+	});
+
+	it('honours selectedDate — resolves the strip to that exact day', () => {
+		const c = toReliabilityClusters(granular, { grain: 'day', selectedDate: '2026-06-16' });
+		expect(c.strip.otpPct).toBe(80); // the 2026-06-16 day, not the most-recent
+	});
+
+	it('default day grain resolves to the MOST-RECENT day', () => {
+		const c = toReliabilityClusters(granular, { grain: 'day' });
+		expect(c.strip.otpPct).toBe(84); // 2026-06-18 (max date)
 	});
 });
 

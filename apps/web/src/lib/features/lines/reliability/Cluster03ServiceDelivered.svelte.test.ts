@@ -84,6 +84,14 @@ describe('Cluster03ServiceDelivered — populated VM', () => {
 		expect(container.querySelector('[data-slot="cancellations"]')).not.toBeNull();
 		expect(container.querySelector('[data-slot="skipped-stops"]')).not.toBeNull();
 	});
+
+	it('renders the window caption for the rate histories (#e)', () => {
+		const { getByText, container } = render(Cluster03ServiceDelivered, {
+			props: { vm: populated, locale: 'en', copy },
+		});
+		expect(getByText(copy.windows.trend)).toBeInTheDocument();
+		expect(container.querySelector('[data-slot="service-window"]')).not.toBeNull();
+	});
 });
 
 describe('Cluster03ServiceDelivered — honest empty VM', () => {

@@ -15,6 +15,7 @@
 	import { cn, type WithElementRef } from '$lib/utils';
 	import type { HTMLAttributes } from 'svelte/elements';
 	import ChartTooltip from './ChartTooltip.svelte';
+	import ChartReadout from './ChartReadout.svelte';
 	import { createChartTooltip, type ChartAxis } from './useChartTooltip.svelte';
 
 	export interface SparklineProps extends WithElementRef<HTMLAttributes<HTMLDivElement>> {
@@ -59,6 +60,15 @@
 		 * Default off — the sparkline stays a static inline mark.
 		 */
 		interactive?: boolean;
+		/**
+		 * Place the hover/focus readout in a FIXED row ABOVE the spark instead of a
+		 * floating overlay over the line. Only takes effect with `interactive`.
+		 * Default false → existing inline renders stay byte-identical. The hover dot
+		 * stays on-line; only the value readout moves out.
+		 */
+		readout?: boolean;
+		/** Hint shown in the fixed readout before anything is hovered. `readout` only. */
+		readoutHint?: string;
 		class?: string;
 	}
 
@@ -74,6 +84,8 @@
 		xLabels,
 		showYTicks = false,
 		interactive = false,
+		readout = false,
+		readoutHint,
 		class: className,
 		ref = $bindable(null),
 		...restProps
@@ -269,18 +281,49 @@
 	</div>
 {/snippet}
 
-<div
-	bind:this={ref}
-	class={cn('dv-sparkline inline-flex items-stretch', className)}
-	role="img"
-	aria-label={label ?? 'Sparkline'}
-	data-slot="sparkline"
-	{...restProps}
->
+{#snippet targets()}
+	<!-- Keyboard / AT focus targets: one per real plotted point. -->
+	<div class="dv-sparkline-targets" aria-hidden="false">
+		{#each realIndices as i (i)}
+			<!-- svelte-ignore a11y_no_interactive_element_to_noninteractive_role -->
+			<!-- Deliberate AT focus target: a focusable <button> that reads its
+			     point's value via role=img + aria-label (keyboard parity). -->
+			<button
+				type="button"
+				class="dv-sparkline-target"
+				role="img"
+				aria-label={`${xLabels?.[i] ? xLabels[i] + ' ' : ''}${seriesLabel}: ${withUnit(
+					values[i] as number,
+				)}`}
+				aria-describedby={tip.id}
+				onfocus={() => showAt(i)}
+				onblur={hide}
+				onkeydown={onKeyDown}
+			></button>
+		{/each}
+	</div>
+{/snippet}
+
+{#snippet sparkRow()}
+	<!-- The ticks + plot row. Shared by the floating-tooltip + fixed-readout paths
+	     so the markup stays identical save for the readout target. -->
 	{#if showYTicks}
 		{@render yTicks()}
 	{/if}
-	{#if interactive}
+	{#if interactive && readout}
+		<!-- Fixed-readout path: NO floating overlay over the line. Pointer handlers
+		     ride the plot <div>; the value reads in the row above. -->
+		<div
+			class="dv-sparkline-plot"
+			onpointermove={onPointerMove}
+			onpointerleave={hide}
+			onkeydown={onKeyDown}
+			role="presentation"
+		>
+			{@render spark()}
+			{@render targets()}
+		</div>
+	{:else if interactive}
 		<div class="dv-sparkline-plot">
 			<ChartTooltip
 				{...tip}
@@ -292,33 +335,58 @@
 				{@render spark()}
 			</ChartTooltip>
 
-			<!-- Keyboard / AT focus targets: one per real plotted point. -->
-			<div class="dv-sparkline-targets" aria-hidden="false">
-				{#each realIndices as i (i)}
-					<!-- svelte-ignore a11y_no_interactive_element_to_noninteractive_role -->
-					<!-- Deliberate AT focus target: a focusable <button> that reads its
-					     point's value via role=img + aria-label (keyboard parity). -->
-					<button
-						type="button"
-						class="dv-sparkline-target"
-						role="img"
-						aria-label={`${xLabels?.[i] ? xLabels[i] + ' ' : ''}${seriesLabel}: ${withUnit(
-							values[i] as number,
-						)}`}
-						aria-describedby={tip.id}
-						onfocus={() => showAt(i)}
-						onblur={hide}
-						onkeydown={onKeyDown}
-					></button>
-				{/each}
-			</div>
+			{@render targets()}
 		</div>
 	{:else}
 		{@render spark()}
 	{/if}
-</div>
+{/snippet}
+
+{#if interactive && readout}
+	<!-- Fixed-readout layout: the readout stacks ABOVE the spark row. The labelled
+	     role=img container becomes a column; the spark row keeps its inline-flex. -->
+	<div
+		bind:this={ref}
+		class={cn('dv-sparkline dv-sparkline--readout', className)}
+		role="img"
+		aria-label={label ?? 'Sparkline'}
+		data-slot="sparkline"
+		{...restProps}
+	>
+		<ChartReadout
+			class="dv-sparkline-readout"
+			open={tip.open}
+			heading={tip.heading}
+			rows={tip.rows}
+			id={tip.id}
+			placeholder={readoutHint}
+		/>
+		<div class="dv-sparkline-row inline-flex items-stretch">
+			{@render sparkRow()}
+		</div>
+	</div>
+{:else}
+	<div
+		bind:this={ref}
+		class={cn('dv-sparkline inline-flex items-stretch', className)}
+		role="img"
+		aria-label={label ?? 'Sparkline'}
+		data-slot="sparkline"
+		{...restProps}
+	>
+		{@render sparkRow()}
+	</div>
+{/if}
 
 <style>
+	/* Fixed-readout layout: stack the readout above the spark row. */
+	.dv-sparkline--readout {
+		display: flex;
+		flex-direction: column;
+		align-items: stretch;
+		gap: 0.5rem;
+	}
+
 	.dv-sparkline-plot {
 		position: relative;
 		flex: 1 1 auto;

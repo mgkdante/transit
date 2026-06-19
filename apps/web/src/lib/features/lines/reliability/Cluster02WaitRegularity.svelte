@@ -52,16 +52,21 @@
 	let { wait, serviceSpans = [], locale, copy }: Cluster02WaitRegularityProps = $props();
 
 	/* ── band-local copy ──────────────────────────────────────────────────────
-	   Labels this band needs that are NOT in the shared snapshot strip live here,
-	   co-located and bilingual (FR canonical). The cluster overline + the ramp-in
-	   / no-data notes are read from the passed `copy` so the surface stays the one
-	   source of truth for those. */
+	   Labels this band needs that are NOT in the shared copy live here, co-located
+	   and bilingual (FR canonical). The plain wait-regularity term microcopy
+	   (scheduled gap / observed gap / excess wait / spread / clumped) lives in the
+	   shared `copy.regularityTerms`; the cluster overline + the ramp-in / no-data
+	   notes are read from the passed `copy` so the surface stays the one source of
+	   truth for those. */
 	interface BandCopy {
 		readonly headwaySection: string;
-		readonly scheduled: string;
-		readonly observed: string;
-		readonly excessWait: string;
-		readonly regularityReading: (cov: string, bunched: string) => string;
+		/** Composes the per-shift CoV/bunching reading from the shared term words. */
+		readonly regularityReading: (
+			spread: string,
+			cov: string,
+			clumped: string,
+			bunched: string,
+		) => string;
 		readonly spanSection: string;
 		readonly serviceSpan: string;
 		readonly firstTripDelay: string;
@@ -71,40 +76,42 @@
 		readonly excessWaitMagnitude: (shift: string) => string;
 		/** "more detail" reveal label for the per-direction / weekend shift rows. */
 		readonly moreDetail: string;
+		/** Heading for the per-direction observed-gap comparison inside the reveal. */
+		readonly directionGap: string;
 	}
 
 	const BAND_COPY: Record<Locale, BandCopy> = {
 		fr: {
 			headwaySection: 'Attente par période',
-			scheduled: 'Intervalle prévu',
-			observed: 'Intervalle observé',
-			excessWait: 'Attente excédentaire',
-			regularityReading: (cov, bunched) => `Régularité ${cov} · regroupés ${bunched}`,
+			regularityReading: (spread, cov, clumped, bunched) =>
+				`${spread} ${cov} · ${clumped} ${bunched}`,
 			spanSection: 'Plage de service',
 			serviceSpan: 'Durée de service',
 			firstTripDelay: 'Retard 1er départ',
 			lastTripDelay: 'Retard dernier départ',
 			tripCount: 'Voyages',
 			excessWaitMagnitude: (shift) => `Attente excédentaire — ${shift}`,
-			moreDetail: 'Plus de détail · par direction et fin de semaine',
+			moreDetail: 'Plus de détail · intervalle observé par direction',
+			directionGap: 'Intervalle observé par direction',
 		},
 		en: {
 			headwaySection: 'Wait by shift',
-			scheduled: 'Scheduled gap',
-			observed: 'Observed gap',
-			excessWait: 'Excess wait',
-			regularityReading: (cov, bunched) => `Spread ${cov} · clumped ${bunched}`,
+			regularityReading: (spread, cov, clumped, bunched) =>
+				`${spread} ${cov} · ${clumped} ${bunched}`,
 			spanSection: 'Service span',
 			serviceSpan: 'Span',
 			firstTripDelay: 'First-trip delay',
 			lastTripDelay: 'Last-trip delay',
 			tripCount: 'Trips',
 			excessWaitMagnitude: (shift) => `Excess wait — ${shift}`,
-			moreDetail: 'More detail · by direction & weekend',
+			moreDetail: 'More detail · observed gap by direction',
+			directionGap: 'Observed gap by direction',
 		},
 	};
 
 	const t = $derived(BAND_COPY[locale]);
+	/** Plain-language term microcopy (shared, FR canonical). */
+	const terms = $derived(copy.regularityTerms);
 	const overline = $derived(copy.clusters.waitRegularity);
 	const noData = $derived(copy.strip.noDataNote);
 
@@ -216,16 +223,21 @@
 					<RankedRow
 						rank={i + 1}
 						title={shiftLabel(row.shift)}
-						subtitle={t.regularityReading(fmtCov(row.cov), fmtPct(row.bunched))}
+						subtitle={t.regularityReading(
+							terms.spread,
+							fmtCov(row.cov),
+							terms.clumped,
+							fmtPct(row.bunched),
+						)}
 						severity={row.severity}
 						value={row.magnitude}
 						display={fmtMin(row.excessWait)}
 						aria-label={t.excessWaitMagnitude(shiftLabel(row.shift))}
 					/>
 					<div class="shift-metrics">
-						<MetricDisplay value={fmtMin(row.scheduled)} label={t.scheduled} size="sm" />
-						<MetricDisplay value={fmtMin(row.observed)} label={t.observed} size="sm" />
-						<MetricDisplay value={fmtMin(row.excessWait)} label={t.excessWait} size="sm" />
+						<MetricDisplay value={fmtMin(row.scheduled)} label={terms.scheduledGap} size="sm" />
+						<MetricDisplay value={fmtMin(row.observed)} label={terms.observedGap} size="sm" />
+						<MetricDisplay value={fmtMin(row.excessWait)} label={terms.excessWait} size="sm" />
 					</div>
 				</li>
 			{/snippet}
@@ -235,14 +247,27 @@
 						{@render shiftItem(row, i)}
 					{/each}
 				</ul>
+				<!-- What the excess-wait magnitude encodes: 0 is the GOOD case, not missing. -->
+				<p class="shift-caption" data-slot="excess-wait-caption">{copy.strip.excessWaitCaption}</p>
+				<!-- A3: per-direction rows carry ONLY observed_min (scheduled/excess/cov
+				     null), so the SeverityBar + scheduled/excess tiles are empty for them.
+				     Present them as a compact observed-gap-by-direction comparison instead
+				     of an empty RankedRow — their only real signal. -->
 				{#if hasAdvancedReveal}
 					<details class="shift-more">
 						<summary class="shift-more-summary">{t.moreDetail}</summary>
-						<ul class="shift-list shift-list--more" role="list">
-							{#each advancedRows as row, i (row.shift)}
-								{@render shiftItem(row, i)}
-							{/each}
-						</ul>
+						<div class="shift-direction" data-slot="direction-gaps">
+							<SectionLabel text={t.directionGap} variant="metric" />
+							<div class="shift-metrics shift-metrics--direction">
+								{#each advancedRows as row (row.shift)}
+									<MetricDisplay
+										value={fmtMin(row.observed)}
+										label={shiftLabel(row.shift)}
+										size="sm"
+									/>
+								{/each}
+							</div>
+						</div>
 					</details>
 				{/if}
 			{:else}
@@ -253,7 +278,12 @@
 		<!-- Service-span sub-block — only when a signal-carrying day exists. -->
 		{#if hasSpan && latestSpan}
 			<div class="cluster-sub" data-sub="service-span">
-				<SectionLabel text={t.spanSection} variant="metric" />
+				<div class="span-head">
+					<SectionLabel text={t.spanSection} variant="metric" />
+					<span class="span-window" data-slot="service-span-window">
+						{copy.windows.serviceSpan(latestSpan.date ?? null)}
+					</span>
+				</div>
 				<div class="shift-metrics">
 					<MetricDisplay
 						value={fmtMin(latestSpan.service_span_min)}
@@ -312,6 +342,37 @@
 		flex-wrap: wrap;
 		gap: 1.25rem;
 	}
+	/* What the excess-wait magnitude encodes (0 = on schedule, not missing). */
+	.shift-caption {
+		margin: 0;
+		max-width: 52ch;
+		font-family: var(--font-mono);
+		font-size: var(--text-small);
+		line-height: 1.4;
+		color: var(--muted-foreground);
+	}
+	/* A3: the per-direction observed-gap comparison inside the reveal. */
+	.shift-direction {
+		display: flex;
+		flex-direction: column;
+		gap: 0.6rem;
+	}
+	.shift-metrics--direction {
+		gap: 1.5rem 1.25rem;
+	}
+	/* Service-span sub-block heading + its window label. */
+	.span-head {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: baseline;
+		gap: 0.5rem 1rem;
+	}
+	.span-window {
+		font-family: var(--font-mono);
+		font-size: var(--text-small);
+		font-variant-numeric: tabular-nums;
+		color: var(--muted-foreground);
+	}
 	/* "More detail" reveal — the per-direction / weekend shifts, calm by default
 	   so the headline shifts never get crowded. The +/− marker is an INTERACTION
 	   accent (--primary belongs here, never on a data mark). */
@@ -355,7 +416,7 @@
 		outline: 2px solid var(--ring);
 		outline-offset: 2px;
 	}
-	.shift-list--more {
+	.shift-more[open] .shift-direction {
 		margin-top: 0.85rem;
 	}
 </style>

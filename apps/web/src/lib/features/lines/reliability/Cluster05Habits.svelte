@@ -53,12 +53,22 @@
 
 	/* ── Weekday seasonality ─────────────────────────────────────────────────
 	   Only rows carrying a real mean delay rank; the band degrades to its
-	   honest empty when none do (never a fabricated 0-delay row). */
+	   honest empty when none do (never a fabricated 0-delay row). Each row also
+	   carries its SEVERE-delay share + observation count (A2) — the severe value
+	   is surfaced as a second reading, but ONLY when the sample is large enough
+	   to trust (a 1–2-observation weekday bucket stays unlabelled, never a
+	   fabricated severe number). */
 	type WeekdayRow = {
 		readonly iso: number;
 		readonly name: string;
 		readonly delay: number;
+		readonly severePct: number | null;
+		readonly observationCount: number | null;
 	};
+
+	// A weekday severe share rests on too few observations below this floor → we
+	// keep the row (its mean delay still ranks) but withhold the severe reading.
+	const MIN_SEVERE_OBSERVATIONS = 5;
 
 	const weekdayRows = $derived.by<WeekdayRow[]>(() =>
 		dayOfWeek
@@ -67,6 +77,8 @@
 				iso: d.day_of_week_iso,
 				name: band.weekdays[d.day_of_week_iso] ?? `${d.day_of_week_iso}`,
 				delay: d.avg_delay_min,
+				severePct: d.severe_pct ?? null,
+				observationCount: d.observation_count ?? null,
 			})),
 	);
 
@@ -80,11 +92,19 @@
 				// Normalize against the busiest weekday so the bar reads relative.
 				const norm = max > 0 ? r.delay / max : 0;
 				const severity: SeverityCode = norm >= 0.66 ? 'critical' : norm >= 0.33 ? 'high' : 'watch';
+				// Severe share is shown only when enough observations back it.
+				const severeTrusted =
+					r.severePct != null &&
+					r.observationCount != null &&
+					r.observationCount >= MIN_SEVERE_OBSERVATIONS;
 				return {
 					rank: i + 1,
 					title: r.name,
 					value: norm,
 					display: `${r.delay.toFixed(1)} min`,
+					subtitle: severeTrusted
+						? `${copy.peak.dayOfWeekSevere} ${r.severePct!.toFixed(1)}%`
+						: band.avgDelay,
 					severity,
 					key: r.iso,
 				};
@@ -140,6 +160,8 @@
 
 <section class="habits-band" data-slot="cluster-05-habits" aria-label={copy.clusters.habits}>
 	<SectionLabel text={copy.clusters.habits} variant="station" />
+	<!-- Window caption: the heatmap + weekday seasonality accrue all available data. -->
+	<p class="habits-window" data-slot="habits-window">{copy.windows.habits}</p>
 
 	{#if isEmpty}
 		<p class="habits-empty" data-slot="habits-empty">{copy.strip.noDataNote}</p>
@@ -179,7 +201,7 @@
 								<RankedRow
 									rank={row.rank}
 									title={row.title}
-									subtitle={band.avgDelay}
+									subtitle={row.subtitle}
 									severity={row.severity}
 									value={row.value}
 									display={row.display}
@@ -213,6 +235,14 @@
 		margin: 0;
 		font-family: var(--font-mono);
 		font-size: var(--text-small);
+		color: var(--muted-foreground);
+	}
+	/* Window caption: quiet mono, AA both themes. */
+	.habits-window {
+		margin: 0;
+		font-family: var(--font-mono);
+		font-size: var(--text-small);
+		line-height: 1.4;
 		color: var(--muted-foreground);
 	}
 	.habits-scale-caption {

@@ -78,6 +78,7 @@
 	// Per-tile honest-empty flags (null = no data for this metric → "—" + note).
 	const otpEmpty = $derived(vm.otpPct == null);
 	const avgDelayEmpty = $derived(vm.avgDelayMin == null);
+	const p50Empty = $derived(vm.p50Min == null);
 	const p90Empty = $derived(vm.p90Min == null);
 	const covEmpty = $derived(vm.headwayRegularityCov == null);
 	const cancellationEmpty = $derived(vm.cancellationRatePct == null);
@@ -106,7 +107,20 @@
 				{/if}
 			</article>
 
-			<!-- p90 delay -->
+			<!-- p50 typical delay — daily grain only; honest "—" on week/month. -->
+			<article class="snapshot-tile" data-slot="p50">
+				<MetricDisplay
+					value={fmtMin(vm.p50Min)}
+					label={t.p50Min}
+					sublabel={t.p50Caption}
+					size="lg"
+				/>
+				{#if p50Empty}
+					<p class="snapshot-tile__note" data-slot="p50-empty">{t.noDataNote}</p>
+				{/if}
+			</article>
+
+			<!-- p90 worst-case delay -->
 			<article class="snapshot-tile" data-slot="p90">
 				<MetricDisplay
 					value={fmtMin(vm.p90Min)}
@@ -187,7 +201,7 @@
 	}
 	@media (min-width: 1024px) {
 		.snapshot-strip__grid {
-			grid-template-columns: repeat(6, minmax(0, 1fr));
+			grid-template-columns: repeat(7, minmax(0, 1fr));
 		}
 	}
 	.snapshot-tile {

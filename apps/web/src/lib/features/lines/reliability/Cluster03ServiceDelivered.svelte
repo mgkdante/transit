@@ -97,6 +97,8 @@
 >
 	<header class="cluster03-head">
 		<SectionLabel text={copy.clusters.serviceDelivered} variant="station" />
+		<!-- Window caption: the rate histories cover the most-recent closed days. -->
+		<p class="cluster03-window" data-slot="service-window">{copy.windows.trend}</p>
 		<!-- RAMP-IN is the band's defining caveat → surfaced prominently at the top. -->
 		<p class="cluster03-rampin" data-slot="ramp-in-note">{t.rampInNote}</p>
 	</header>
@@ -123,6 +125,8 @@
 						yAxis={{ label: t.cancellationRatePct, unit: copy.units.pct }}
 						xLabels={cancellationXLabels}
 						interactive
+						readout
+						readoutHint={t.trendReadoutHint}
 					/>
 				{:else}
 					<p class="cluster03-metric-empty" data-slot="cancellations-empty">{t.noDataNote}</p>
@@ -142,6 +146,8 @@
 						yAxis={{ label: t.skippedStopRatePct, unit: copy.units.pct }}
 						xLabels={skippedXLabels}
 						interactive
+						readout
+						readoutHint={t.trendReadoutHint}
 					/>
 				{:else}
 					<p class="cluster03-metric-empty" data-slot="skipped-stops-empty">{t.noDataNote}</p>
@@ -164,6 +170,14 @@
 	}
 	/* The ramp-in caveat: quiet mono caption, but always present + legible (AA). */
 	.cluster03-rampin {
+		margin: 0;
+		font-family: var(--font-mono);
+		font-size: var(--text-small);
+		line-height: 1.4;
+		color: var(--muted-foreground);
+	}
+	/* Window caption: quiet mono, same register as the ramp-in note. */
+	.cluster03-window {
 		margin: 0;
 		font-family: var(--font-mono);
 		font-size: var(--text-small);

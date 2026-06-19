@@ -76,6 +76,8 @@
 	data-slot="cluster-04-crowding"
 >
 	<SectionLabel id="cluster04-crowding-label" text={copy.clusters.crowding} variant="station" />
+	<!-- Window caption: the occupancy mix is a fixed trailing window. -->
+	<p class="crowding-window" data-slot="crowding-window">{copy.windows.crowding}</p>
 
 	{#if vm.isEmpty || dominant == null}
 		<!-- Honest empty state: no occupancy telemetry → say so, never a fake bar. -->
@@ -87,12 +89,14 @@
 			size="lg"
 			class="crowding-headline"
 		/>
+		<!-- Interactive: each band's share reveals on hover/focus (#11). -->
 		<StackedBar
 			scale="occupancy"
 			{segments}
 			label={copy.clusters.crowding}
 			size="sm"
 			legend
+			interactive
 			class="crowding-bar"
 		/>
 	{/if}
@@ -109,6 +113,14 @@
 		margin: 0;
 		font-family: var(--font-mono);
 		font-size: var(--text-caption, 0.8125rem);
+		color: var(--muted-foreground);
+	}
+	/* Window caption: quiet mono, AA both themes. */
+	.crowding-window {
+		margin: 0;
+		font-family: var(--font-mono);
+		font-size: var(--text-small);
+		line-height: 1.4;
 		color: var(--muted-foreground);
 	}
 </style>

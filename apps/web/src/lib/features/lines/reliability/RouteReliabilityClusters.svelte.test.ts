@@ -1,4 +1,4 @@
-import { render, screen, fireEvent } from '@testing-library/svelte';
+import { render, screen, fireEvent, within } from '@testing-library/svelte';
 import { describe, expect, it } from 'vitest';
 import RouteReliabilityClusters from './RouteReliabilityClusters.svelte';
 import { reliabilityCopy } from './reliability.copy';
@@ -155,17 +155,28 @@ describe('RouteReliabilityClusters', () => {
 	});
 
 	it('refines the snapshot strip when the grain control changes', async () => {
-		render(RouteReliabilityClusters, { props: { data: populated, locale: 'en' } });
+		// SPEC CHANGE (foundation): the grain control drives the SNAPSHOT STRIP (the
+		// canonical grain-aware headline). Cluster01's three tiles are day-scoped
+		// (latest closed day), so they keep showing the day value in any grain — we
+		// therefore scope the grain-switch assertions to the strip, not the page.
+		const { container } = render(RouteReliabilityClusters, {
+			props: { data: populated, locale: 'en' },
+		});
+		const strip = () => {
+			const el = container.querySelector('[data-slot="snapshot-strip"]');
+			if (!el) throw new Error('snapshot strip not found');
+			return within(el as HTMLElement);
+		};
 
-		// Default grain ('day') → OTP 82%; the week OTP (77%) is not yet shown.
-		expect(screen.getAllByText('82%').length).toBeGreaterThan(0);
-		expect(screen.queryByText('77%')).not.toBeInTheDocument();
+		// Default grain ('day') → strip OTP 82%; the week OTP (77%) is not yet shown.
+		expect(strip().getAllByText('82%').length).toBeGreaterThan(0);
+		expect(strip().queryByText('77%')).not.toBeInTheDocument();
 
 		// Switch to "This week" → the strip re-answers for the week period (77%).
 		await fireEvent.click(screen.getByRole('radio', { name: copy.controls.thisWeek }));
 
-		expect(screen.getAllByText('77%').length).toBeGreaterThan(0);
-		expect(screen.queryByText('82%')).not.toBeInTheDocument();
+		expect(strip().getAllByText('77%').length).toBeGreaterThan(0);
+		expect(strip().queryByText('82%')).not.toBeInTheDocument();
 	});
 
 	it('honours the FR canonical voice for the cluster overlines', () => {

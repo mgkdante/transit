@@ -12,24 +12,49 @@ import type { PunctualityVM } from './clusters';
 
 const copy = reliabilityCopy.en;
 
+// SPEC CHANGE (foundation): PunctualityVM.periods was split into `trend` (the
+// dated DAY-grain series, chronological ascending) + `peakOffPeak`. The band's
+// headline now reads the MOST-RECENT trend day (the array tail), so the 82% /
+// 2.1 min headline lives on the latest dated day.
 const populated: PunctualityVM = {
-	periods: [
-		{ grain: 'week', otp_pct: 71, avg_delay_min: 3.2, p50_min: 1.0, p90_min: 8.4, severe_pct: 4 },
-		{ grain: 'day', otp_pct: 82, avg_delay_min: 2.1, p50_min: 0.5, p90_min: 6.0, severe_pct: 3 },
-		{ grain: 'month', otp_pct: 68, avg_delay_min: 3.9, p50_min: 1.2, p90_min: 9.1, severe_pct: 5 },
+	trend: [
+		{
+			grain: 'day',
+			date: '2026-06-17',
+			otp_pct: 79,
+			avg_delay_min: 2.8,
+			p50_min: 0.8,
+			p90_min: 7.2,
+			severe_pct: 4,
+		},
+		{
+			grain: 'day',
+			date: '2026-06-18',
+			otp_pct: 82,
+			avg_delay_min: 2.1,
+			p50_min: 0.5,
+			p90_min: 6.0,
+			severe_pct: 3,
+		},
 	],
-	dayOfWeek: [{ day_of_week_iso: 1, avg_delay_min: 1.8, observation_count: 100 }],
+	dayOfWeek: [{ day_of_week_iso: 1, avg_delay_min: 1.8, severe_pct: 5, observation_count: 100 }],
 	weakStops: [
 		{ id: 'S1', name: 'Van Horne', avg_delay_min: 3.7 },
 		{ id: 'S2', name: 'Côte-des-Neiges', avg_delay_min: 6.4 },
 	],
+	peakOffPeak: {
+		byShift: [{ grain: 'am_peak', otpPct: 90, avgDelayMin: 0.7, severePct: 4.7 }],
+		byDayType: [{ grain: 'weekday', otpPct: 80, avgDelayMin: 2.4, severePct: 6 }],
+		isEmpty: false,
+	},
 	isEmpty: false,
 };
 
 const emptyVM: PunctualityVM = {
-	periods: [],
+	trend: [],
 	dayOfWeek: [],
 	weakStops: [],
+	peakOffPeak: { byShift: [], byDayType: [], isEmpty: true },
 	isEmpty: true,
 };
 
@@ -54,6 +79,44 @@ describe('Cluster01Punctuality — populated', () => {
 		expect(worst).toBeInTheDocument();
 		expect(milder).toBeInTheDocument();
 		expect(worst.compareDocumentPosition(milder) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+	});
+
+	it('renders the typical (p50) delay tile alongside the headline (A4)', () => {
+		render(Cluster01Punctuality, { props: { vm: populated, locale: 'en', copy } });
+		// The latest day's p50 = 0.5 min, labelled "Typical delay" (not jargon).
+		expect(screen.getByText(copy.strip.p50Min)).toBeInTheDocument();
+		expect(screen.getByText('0.5 min')).toBeInTheDocument();
+	});
+
+	it('labels the severe-share block with its OWN label, never the p90 label (BUG-1/F3)', () => {
+		const { container } = render(Cluster01Punctuality, {
+			props: { vm: populated, locale: 'en', copy },
+		});
+		// The dedicated severe-share label is present (it also legitimately appears as
+		// the peak-block subtitle — `severePct` and `peak.dayOfWeekSevere` share copy).
+		expect(screen.getAllByText(copy.strip.severePct).length).toBeGreaterThanOrEqual(1);
+		// The severe block carries its own caption (NOT the p90 caption).
+		const caption = container.querySelector('[data-slot="severe-caption"]');
+		expect(caption?.textContent).toBe(copy.strip.severeCaption);
+	});
+
+	it('gives the weak-stops list an explicit heading + honest count (#6)', () => {
+		render(Cluster01Punctuality, { props: { vm: populated, locale: 'en', copy } });
+		// "The 5 stops with the most delay · 2" — the count is honest (only 2 qualify).
+		expect(screen.getByText(`${copy.strip.weakStopsHeading} · 2`)).toBeInTheDocument();
+		expect(screen.getByText(copy.windows.weakStops)).toBeInTheDocument();
+	});
+
+	it('renders the "By time of day" peak block with its honest caveat (A1)', () => {
+		render(Cluster01Punctuality, { props: { vm: populated, locale: 'en', copy } });
+		// Block heading + day-type sub-heading + the trailing-window caveat.
+		expect(screen.getByText(copy.peak.heading)).toBeInTheDocument();
+		expect(screen.getByText(copy.peak.dayType)).toBeInTheDocument();
+		expect(screen.getByText(copy.peak.caveat)).toBeInTheDocument();
+		// The am_peak shift bucket renders (ranked by severe share).
+		expect(screen.getByText('AM peak')).toBeInTheDocument();
+		// The weekday day-type bucket renders.
+		expect(screen.getByText(copy.peak.weekday)).toBeInTheDocument();
 	});
 });
 

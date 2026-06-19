@@ -68,32 +68,57 @@
 	let mode = $state<GrainMode>('day');
 	let specificDate = $state<string>('');
 
-	// Dated periods the contract actually carries (for the specific-date picker).
-	// A period qualifies when it has a non-empty `date`; we offer those verbatim.
+	// Dated DAY-grain periods the contract carries (for the specific-date picker).
+	// A day-grain period with a non-empty `date` qualifies — the picker offers a
+	// concrete day, and the mapper resolves the strip/headline to THAT exact day.
 	const datedPeriods = $derived(
-		(data.periods ?? []).filter((p): p is typeof p & { date: string } => !!p.date),
+		(data.periods ?? []).filter(
+			(p): p is typeof p & { date: string } => p.grain === 'day' && !!p.date,
+		),
 	);
 	const hasDatedPeriods = $derived(datedPeriods.length > 0);
 
-	// The grain handed to the mapper. In date mode we pass the picked period's
-	// `grain` (the mapper selects by grain, not by date) when a date is chosen;
-	// before a pick we fall back to 'day' so the headline still answers.
-	const selectedGrain = $derived.by<string>(() => {
-		if (mode === 'date') {
-			const picked = datedPeriods.find((p) => p.date === specificDate);
-			return picked?.grain ?? 'day';
+	// Which calendar grains the contract actually carries — so we never offer a
+	// grain segment that resolves to nothing (an empty grain is disabled, not a
+	// silent no-op). The mapper still falls back honestly if reached.
+	const availableGrains = $derived.by<Set<string>>(() => {
+		const set = new Set<string>();
+		for (const p of data.periods ?? []) {
+			if (p.grain === 'day' || p.grain === 'week' || p.grain === 'month') set.add(p.grain);
 		}
-		return mode;
+		return set;
 	});
 
-	// One mapping pass — every band reads its slice of this.
-	const clusters = $derived(toReliabilityClusters(data, { grain: selectedGrain }));
+	// What the mapper resolves for. In date mode we thread the picked day to the
+	// mapper via `selectedDate` (grain stays 'day') so the picker selects THAT
+	// day — not merely the most-recent. Outside date mode the segment IS the grain.
+	const mapperOpts = $derived<{ grain: string; selectedDate?: string }>(
+		mode === 'date' ? { grain: 'day', selectedDate: specificDate || undefined } : { grain: mode },
+	);
+	const selectedGrain = $derived(mapperOpts.grain);
 
-	const segments = $derived<{ key: GrainMode; label: string }[]>([
-		{ key: 'day', label: copy.controls.today },
-		{ key: 'week', label: copy.controls.thisWeek },
-		{ key: 'month', label: copy.controls.thisMonth },
-	]);
+	// One mapping pass — every band reads its slice of this.
+	const clusters = $derived(toReliabilityClusters(data, mapperOpts));
+
+	// Segments carry an `available` flag; an unavailable grain renders disabled
+	// (never selectable) so the control can't resolve to an empty grain.
+	const segments = $derived<{ key: 'day' | 'week' | 'month'; label: string; available: boolean }[]>(
+		[
+			{ key: 'day', label: copy.controls.today, available: availableGrains.has('day') },
+			{ key: 'week', label: copy.controls.thisWeek, available: availableGrains.has('week') },
+			{ key: 'month', label: copy.controls.thisMonth, available: availableGrains.has('month') },
+		],
+	);
+
+	// Active-window caption under the control spine — names the resolved window so
+	// "Today / This week / This month / {date}" is never ambiguous about coverage.
+	const activeWindowCaption = $derived.by<string>(() => {
+		const aw = copy.controls.activeWindow;
+		if (mode === 'date') return aw.date(specificDate);
+		if (mode === 'week') return aw.week;
+		if (mode === 'month') return aw.month;
+		return aw.day;
+	});
 
 	// A11y label for the date <select> reuses the "Specific date" control label.
 	const dateSelectLabel = $derived(copy.controls.specificDate);
@@ -110,7 +135,8 @@
 					class="reliability-seg"
 					class:reliability-seg--active={mode === seg.key}
 					aria-checked={mode === seg.key}
-					onclick={() => (mode = seg.key)}
+					disabled={!seg.available}
+					onclick={() => seg.available && (mode = seg.key)}
 				>
 					{seg.label}
 				</button>
@@ -141,6 +167,12 @@
 			</label>
 		{/if}
 	</div>
+
+	<!-- Active-window caption: names the window the selection resolves to so the
+	     reader is never unsure what "Today / This week / {date}" actually covers. -->
+	<p class="reliability-window" data-slot="active-window" aria-live="polite">
+		{activeWindowCaption}
+	</p>
 
 	<!-- 00 — the full-bleed snapshot strip (single-glance, zero-interaction). -->
 	<div class="reliability-band reliability-band--strip surface-bleed" data-band="snapshot">
@@ -222,8 +254,13 @@
 			background-color 0.15s ease,
 			color 0.15s ease;
 	}
-	.reliability-seg:hover {
+	.reliability-seg:hover:not(:disabled) {
 		color: var(--foreground);
+	}
+	/* A grain the contract has no period for is disabled, never a silent no-op. */
+	.reliability-seg:disabled {
+		opacity: 0.4;
+		cursor: not-allowed;
 	}
 	/* The active chip is an INTERACTION accent — --primary belongs here (never on
 	   a data mark). The bands own the data-colour doctrine. */
@@ -264,6 +301,16 @@
 	.reliability-date__select:focus-visible {
 		outline: 2px solid var(--ring);
 		outline-offset: 2px;
+	}
+
+	/* Active-window caption — quiet mono, AA against the page surface; chrome, so
+	   it stays in the reading column (not bled) alongside the control spine. */
+	.reliability-window {
+		margin: -0.5rem 0 0;
+		font-family: var(--font-mono);
+		font-size: var(--text-small);
+		line-height: 1.4;
+		color: var(--muted-foreground);
 	}
 
 	/* Each band is its own edge-to-edge block; the strip carries a quiet rule so

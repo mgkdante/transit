@@ -116,6 +116,41 @@ describe('Cluster05Habits — populated', () => {
 		expect(hot.getAttribute('aria-label')).not.toContain('0.9');
 	});
 
+	it('renders the habits accumulation-window caption', () => {
+		render(Cluster05Habits, {
+			props: {
+				habits: POPULATED_HABITS,
+				dayOfWeek: POPULATED_DOW,
+				locale: 'en',
+				copy: enCopy,
+			},
+		});
+		expect(screen.getByText(enCopy.windows.habits)).toBeInTheDocument();
+	});
+
+	it('surfaces day-of-week severe share as a second value gated by observation_count (A2)', () => {
+		render(Cluster05Habits, {
+			props: {
+				habits: POPULATED_HABITS,
+				dayOfWeek: [
+					// well-sampled weekday → severe share is shown as the second reading.
+					{ day_of_week_iso: 4, avg_delay_min: 6.1, severe_pct: 14.9, observation_count: 120 },
+					// under-sampled weekday → severe share is WITHHELD (no fabricated number),
+					// the row still ranks on its mean delay with the plain avg-delay caption.
+					{ day_of_week_iso: 7, avg_delay_min: 9.2, severe_pct: 16.2, observation_count: 2 },
+				],
+				locale: 'en',
+				copy: enCopy,
+			},
+		});
+
+		// Well-sampled Thursday shows its severe share with the dedicated label.
+		expect(screen.getByText(`${enCopy.peak.dayOfWeekSevere} 14.9%`)).toBeInTheDocument();
+		// Under-sampled Sunday keeps the plain avg-delay caption (severe withheld).
+		expect(screen.queryByText(`${enCopy.peak.dayOfWeekSevere} 16.2%`)).not.toBeInTheDocument();
+		expect(screen.getByText(enBand.avgDelay)).toBeInTheDocument();
+	});
+
 	it('renders the FR canonical scale caption', () => {
 		const { container } = render(Cluster05Habits, {
 			props: {

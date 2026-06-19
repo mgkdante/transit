@@ -44,6 +44,9 @@ export interface SnapshotStripVM {
 	readonly grain: string;
 	readonly otpPct: number | null;
 	readonly avgDelayMin: number | null;
+	/** Typical (median) delay, minutes — daily grain only; null otherwise. */
+	readonly p50Min: number | null;
+	/** Worst-case (p90) delay, minutes — daily grain only; null otherwise. */
 	readonly p90Min: number | null;
 	/** Busiest-direction headway CoV (first headway row carrying `cov`). */
 	readonly headwayRegularityCov: number | null;
@@ -60,14 +63,48 @@ export interface SnapshotStripVM {
 	readonly isEmpty: boolean;
 }
 
+/**
+ * A single time-of-day / day-type comparison row for the peak vs off-peak block.
+ * Each carries the SELECTED-grain punctuality signal for that bucket; `label` is
+ * the RAW grain string (e.g. 'am_peak', 'weekday') — the band resolves the human
+ * label so this VM stays i18n-free. Every value is `number | null` (no fake 0).
+ */
+export interface PeriodComparisonRow {
+	/** Raw grain string (e.g. 'am_peak' / 'pm_peak' / 'weekday' / 'weekend'). */
+	readonly grain: string;
+	readonly otpPct: number | null;
+	readonly avgDelayMin: number | null;
+	readonly severePct: number | null;
+}
+
+/**
+ * Peak vs off-peak punctuality — time-of-day shift buckets + weekday/weekend
+ * day-type buckets, surfaced from the granular grains the contract already
+ * carries (am_peak/pm_peak/midday/evening/night + weekday/weekend). These are a
+ * trailing-window observation-weighted proxy (date:null), NOT certified OTP.
+ */
+export interface PeakOffPeakVM {
+	/** Time-of-day shift rows (am_peak/midday/pm_peak/evening/night), contract order. */
+	readonly byShift: PeriodComparisonRow[];
+	/** Day-type rows (weekday/weekend), contract order. */
+	readonly byDayType: PeriodComparisonRow[];
+	readonly isEmpty: boolean;
+}
+
 /** 01 Punctuality — OTP / delay / percentiles per grain period + weekday seasonality + weak stops. */
 export interface PunctualityVM {
-	/** Periods carrying at least one punctuality signal, in contract order. */
-	readonly periods: ReliabilityPeriod[];
-	/** Weekday seasonality rows, sorted Mon→Sun (ISO 1..7). */
+	/**
+	 * The dated DAY-grain series ONLY, chronological ascending (oldest→newest),
+	 * each row carrying its ISO `date`. This is the trend source — a true time
+	 * axis, never the mixed-grain bag. Week/month/shift/daytype live elsewhere.
+	 */
+	readonly trend: ReliabilityPeriod[];
+	/** Weekday seasonality rows, sorted Mon→Sun (ISO 1..7). Carries severe_pct + observation_count. */
 	readonly dayOfWeek: RouteDayOfWeek[];
 	/** Weakest stops by mean delay (contract order; only rows with a delay). */
 	readonly weakStops: WeakStop[];
+	/** Peak vs off-peak comparison (shift + day-type), surfaced from the granular grains. */
+	readonly peakOffPeak: PeakOffPeakVM;
 	readonly isEmpty: boolean;
 }
 
@@ -120,11 +157,42 @@ export interface ReliabilityClusters {
 export interface ToReliabilityClustersOpts {
 	/** The selected grain the snapshot strip answers for. Defaults to 'day'. */
 	readonly grain?: string;
+	/**
+	 * When set (and `grain` resolves to 'day'), the strip/headline resolves to the
+	 * dated day-grain period matching this ISO date — so the specific-date picker
+	 * selects THAT day, not merely the most-recent one. No match → falls back to
+	 * the normal grain selection (an absent date fabricates nothing).
+	 */
+	readonly selectedDate?: string;
+}
+
+/**
+ * Periods partitioned by grain GROUP so each consumer reads a clean grain:
+ *   - `calendar`  — day / week / month (the dated headline grains)
+ *   - `byShift`   — am_peak / pm_peak / midday / evening / night (date:null)
+ *   - `byDayType` — weekday / weekend (date:null)
+ * The mixed-grain contract array is split ONCE; nothing downstream re-mixes them.
+ */
+export interface PartitionedPeriods {
+	readonly calendar: {
+		day: ReliabilityPeriod[];
+		week: ReliabilityPeriod[];
+		month: ReliabilityPeriod[];
+	};
+	readonly byShift: ReliabilityPeriod[];
+	readonly byDayType: ReliabilityPeriod[];
 }
 
 /* ── helpers (pure) ──────────────────────────────────────────────────────── */
 
 const num = (v: number | null | undefined): number | null => (v == null ? null : v);
+
+/** The time-of-day shift grains the contract emits (gold.route_delay_by_shift). */
+const SHIFT_GRAINS = new Set(['am_peak', 'midday', 'pm_peak', 'evening', 'night']);
+/** The day-type grains the contract emits (gold.route_delay_by_daytype). */
+const DAY_TYPE_GRAINS = new Set(['weekday', 'weekend']);
+/** The dated calendar grains the headline strip selects against. */
+const CALENDAR_GRAINS = new Set(['day', 'week', 'month']);
 
 /** A reliability period carries a signal if any of its numeric fields is present. */
 const periodHasSignal = (p: ReliabilityPeriod): boolean =>
@@ -162,13 +230,72 @@ const skippedHasSignal = (s: SkippedStopPeriod): boolean =>
 const dayOfWeekHasSignal = (d: RouteDayOfWeek): boolean =>
 	d.avg_delay_min != null || d.severe_pct != null || d.observation_count != null;
 
-/** Pick the period answering the selected grain; else the first period; else null. */
+/**
+ * Pick the headline period for the selected grain.
+ *
+ * F1 FIX: week/month rows arrive ASC (oldest→newest), so a naive `.find` would
+ * surface the STALEST week/month. We instead pick the MOST-RECENT matching row
+ * (max `date`; rows without a date keep array order as a tiebreak — daily/dateless
+ * grains fall back to the last match). When `selectedDate` is set and a day-grain
+ * row matches it, that exact day wins (the specific-date picker fix). Falls back
+ * to the first period when the grain is absent, so an unknown grain fabricates
+ * nothing.
+ */
 function selectStripPeriod(
 	periods: readonly ReliabilityPeriod[],
 	grain: string,
+	selectedDate?: string,
 ): ReliabilityPeriod | null {
 	if (periods.length === 0) return null;
-	return periods.find((p) => p.grain === grain) ?? periods[0];
+	const matches = periods.filter((p) => p.grain === grain);
+	if (matches.length === 0) return periods[0];
+	// Specific-date pick: honour an exact dated match when asked.
+	if (selectedDate) {
+		const exact = matches.find((p) => p.date === selectedDate);
+		if (exact) return exact;
+	}
+	// Most-recent matching row: pick the max `date`; if no row carries a date,
+	// keep the LAST array position (contract tail = most-recent for dateless grains).
+	return matches.reduce((best, p) => {
+		if (p.date == null) return best.date == null ? p : best;
+		if (best.date == null) return p;
+		return p.date >= best.date ? p : best;
+	}, matches[0]);
+}
+
+/** Split the mixed-grain contract array into clean grain groups (F4). */
+function partitionPeriods(periods: readonly ReliabilityPeriod[]): PartitionedPeriods {
+	const day: ReliabilityPeriod[] = [];
+	const week: ReliabilityPeriod[] = [];
+	const month: ReliabilityPeriod[] = [];
+	const byShift: ReliabilityPeriod[] = [];
+	const byDayType: ReliabilityPeriod[] = [];
+	for (const p of periods) {
+		if (p.grain === 'day') day.push(p);
+		else if (p.grain === 'week') week.push(p);
+		else if (p.grain === 'month') month.push(p);
+		else if (SHIFT_GRAINS.has(p.grain)) byShift.push(p);
+		else if (DAY_TYPE_GRAINS.has(p.grain)) byDayType.push(p);
+		// Any unrecognised grain is intentionally dropped from every clean group.
+	}
+	return { calendar: { day, week, month }, byShift, byDayType };
+}
+
+/** Project a period to a peak/off-peak comparison row (raw grain + the punctuality triple). */
+const toComparisonRow = (p: ReliabilityPeriod): PeriodComparisonRow => ({
+	grain: p.grain,
+	otpPct: num(p.otp_pct),
+	avgDelayMin: num(p.avg_delay_min),
+	severePct: num(p.severe_pct),
+});
+
+/** Chronological-ascending day-grain dated series — the trend source (oldest→newest). */
+function dayTrend(dayPeriods: readonly ReliabilityPeriod[]): ReliabilityPeriod[] {
+	return dayPeriods
+		.filter((p) => p.date != null)
+		.filter(periodHasSignal)
+		.slice()
+		.sort((a, b) => (a.date! < b.date! ? -1 : a.date! > b.date! ? 1 : 0));
 }
 
 /** First headway row carrying a CoV (the busiest-direction regularity row). */
@@ -201,6 +328,7 @@ export function toReliabilityClusters(
 	opts?: ToReliabilityClustersOpts,
 ): ReliabilityClusters {
 	const grain = opts?.grain ?? 'day';
+	const selectedDate = opts?.selectedDate;
 
 	const allPeriods = data.periods ?? [];
 	const allHeadway = data.headway ?? [];
@@ -210,18 +338,29 @@ export function toReliabilityClusters(
 	const allDayOfWeek = data.day_of_week ?? [];
 	const allWeakStops = data.weak_stops ?? [];
 
-	/* 01-strip — the selected-grain headline. */
-	const stripPeriod = selectStripPeriod(allPeriods, grain);
+	// Split the mixed-grain bag ONCE so every consumer reads a clean grain (F4).
+	const partition = partitionPeriods(allPeriods);
+	// The strip selects only against the calendar (dated headline) grains.
+	const calendarPeriods = [
+		...partition.calendar.day,
+		...partition.calendar.week,
+		...partition.calendar.month,
+	];
+
+	/* 01-strip — the selected-grain headline (F1: most-recent week/month). */
+	const stripPeriod = selectStripPeriod(calendarPeriods, grain, selectedDate);
 	const cancellationRatePct = mostRecentRate(allCancellations, (c) => c.cancellation_rate_pct);
 	const skippedStopRatePct = mostRecentRate(allSkipped, (s) => s.skipped_stop_rate_pct);
 	const otpPct = stripPeriod ? num(stripPeriod.otp_pct) : null;
 	const avgDelayMin = stripPeriod ? num(stripPeriod.avg_delay_min) : null;
+	const p50Min = stripPeriod ? num(stripPeriod.p50_min) : null;
 	const p90Min = stripPeriod ? num(stripPeriod.p90_min) : null;
 	const headwayRegularityCov = selectHeadwayCov(allHeadway);
 	const strip: SnapshotStripVM = {
 		grain,
 		otpPct,
 		avgDelayMin,
+		p50Min,
 		p90Min,
 		headwayRegularityCov,
 		cancellationRatePct,
@@ -230,6 +369,7 @@ export function toReliabilityClusters(
 		isEmpty:
 			otpPct == null &&
 			avgDelayMin == null &&
+			p50Min == null &&
 			p90Min == null &&
 			headwayRegularityCov == null &&
 			cancellationRatePct == null &&
@@ -237,17 +377,28 @@ export function toReliabilityClusters(
 	};
 
 	/* 01 Punctuality. */
-	const periods = allPeriods.filter(periodHasSignal);
+	// Trend source = ONLY the dated day-grain series, chronological ascending (F1/F4).
+	const trend = dayTrend(partition.calendar.day);
 	const dayOfWeek = allDayOfWeek
 		.filter(dayOfWeekHasSignal)
 		.slice()
 		.sort((a, b) => a.day_of_week_iso - b.day_of_week_iso);
 	const weakStops = allWeakStops.filter((w) => w.avg_delay_min != null);
+	// Peak vs off-peak: surface the granular shift + day-type grains (A1/A2).
+	const byShift = partition.byShift.filter(periodHasSignal).map(toComparisonRow);
+	const byDayType = partition.byDayType.filter(periodHasSignal).map(toComparisonRow);
+	const peakOffPeak: PeakOffPeakVM = {
+		byShift,
+		byDayType,
+		isEmpty: byShift.length === 0 && byDayType.length === 0,
+	};
 	const punctuality: PunctualityVM = {
-		periods,
+		trend,
 		dayOfWeek,
 		weakStops,
-		isEmpty: periods.length === 0 && dayOfWeek.length === 0 && weakStops.length === 0,
+		peakOffPeak,
+		isEmpty:
+			trend.length === 0 && dayOfWeek.length === 0 && weakStops.length === 0 && peakOffPeak.isEmpty,
 	};
 
 	/* 02 Wait regularity. */

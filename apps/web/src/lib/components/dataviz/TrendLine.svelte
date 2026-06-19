@@ -22,6 +22,7 @@
 	import { cn, type WithElementRef } from '$lib/utils';
 	import type { HTMLAttributes } from 'svelte/elements';
 	import ChartTooltip from './ChartTooltip.svelte';
+	import ChartReadout from './ChartReadout.svelte';
 	import ChartLegend from './ChartLegend.svelte';
 	import { createChartTooltip, type ChartAxis } from './useChartTooltip.svelte';
 
@@ -92,6 +93,16 @@
 		 * the vertical guide). Defaults to true when `interactive`.
 		 */
 		focusDots?: boolean;
+		/**
+		 * Place the hover/focus readout in a FIXED row ABOVE the plot instead of a
+		 * floating overlay over the lines (the overlay covers the data on a line
+		 * chart). Only takes effect with `interactive`. Default false → existing
+		 * renders keep the floating ChartTooltip path byte-identical. The vertical
+		 * guide + focus dots stay on-plot; only the value readout moves out.
+		 */
+		readout?: boolean;
+		/** Hint shown in the fixed readout before anything is hovered. `readout` only. */
+		readoutHint?: string;
 		class?: string;
 	}
 
@@ -113,6 +124,8 @@
 		showYTicks = false,
 		showXTicks = false,
 		focusDots = true,
+		readout = false,
+		readoutHint,
 		class: className,
 		ref = $bindable(null),
 		...restProps
@@ -356,8 +369,47 @@
 	</svg>
 {/snippet}
 
+{#snippet targets()}
+	<!-- Keyboard / AT focus targets: one transparent strip per x-index,
+	     overlaying the plot, each carrying the both-series readout. -->
+	<div class="dv-trendline-targets" aria-hidden="false">
+		{#each Array.from({ length: n }, (_, i) => i) as i (i)}
+			<!-- svelte-ignore a11y_no_interactive_element_to_noninteractive_role -->
+			<!-- Deliberate AT focus target: a focusable <button> that reads both
+			     series at this x-index via role=img + aria-label (keyboard parity). -->
+			<button
+				type="button"
+				class="dv-trendline-target"
+				role="img"
+				aria-label={`${xLabels?.[i] ?? `#${i + 1}`}: ${onTimeRowLabel} ${fmtUnit(
+					onTime,
+					i,
+					yAxis,
+				)}, ${retardRowLabel} ${fmtUnit(retard, i, retardAxis)}`}
+				aria-describedby={tip.id}
+				onfocus={() => showAt(i)}
+				onblur={hide}
+				onkeydown={onKeyDown}
+			></button>
+		{/each}
+	</div>
+{/snippet}
+
 {#snippet plot()}
-	{#if interactive}
+	{#if interactive && readout}
+		<!-- Fixed-readout path: NO floating overlay over the lines. The pointer
+		     handlers ride a plain plot <div>; the values read in the row above. -->
+		<div
+			class="dv-trendline-plot"
+			onpointermove={onPointerMove}
+			onpointerleave={hide}
+			onkeydown={onKeyDown}
+			role="presentation"
+		>
+			{@render chart()}
+			{@render targets()}
+		</div>
+	{:else if interactive}
 		<div class="dv-trendline-plot">
 			<ChartTooltip
 				{...tip}
@@ -369,29 +421,7 @@
 				{@render chart()}
 			</ChartTooltip>
 
-			<!-- Keyboard / AT focus targets: one transparent strip per x-index,
-			     overlaying the plot, each carrying the both-series readout. -->
-			<div class="dv-trendline-targets" aria-hidden="false">
-				{#each Array.from({ length: n }, (_, i) => i) as i (i)}
-					<!-- svelte-ignore a11y_no_interactive_element_to_noninteractive_role -->
-					<!-- Deliberate AT focus target: a focusable <button> that reads both
-					     series at this x-index via role=img + aria-label (keyboard parity). -->
-					<button
-						type="button"
-						class="dv-trendline-target"
-						role="img"
-						aria-label={`${xLabels?.[i] ?? `#${i + 1}`}: ${onTimeRowLabel} ${fmtUnit(
-							onTime,
-							i,
-							yAxis,
-						)}, ${retardRowLabel} ${fmtUnit(retard, i, retardAxis)}`}
-						aria-describedby={tip.id}
-						onfocus={() => showAt(i)}
-						onblur={hide}
-						onkeydown={onKeyDown}
-					></button>
-				{/each}
-			</div>
+			{@render targets()}
 		</div>
 	{:else}
 		{@render chart()}
@@ -419,6 +449,18 @@
 	data-slot="trend-line"
 	{...restProps}
 >
+	{#if interactive && readout}
+		<!-- Fixed readout ABOVE the plot — updates on hover/focus, never over the line. -->
+		<ChartReadout
+			class="dv-trendline-readout"
+			open={tip.open}
+			heading={tip.heading}
+			rows={tip.rows}
+			id={tip.id}
+			placeholder={readoutHint}
+		/>
+	{/if}
+
 	{#if showYTicks}
 		<div class="dv-trendline-frame">
 			{@render yTickGutter(onTimeTickDomain, yAxis, 'left')}
@@ -442,6 +484,12 @@
 <style>
 	.dv-trendline-plot {
 		position: relative;
+	}
+
+	/* Fixed readout sits above the plot with a small gap; it reserves its own
+	   height so the chart doesn't shift as the reader hovers in/out. */
+	:global(.dv-trendline-readout) {
+		margin-bottom: 0.5rem;
 	}
 
 	/* Axis frame: y-tick gutters flank the stretched plot; plot grows to fill. */

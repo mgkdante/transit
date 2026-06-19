@@ -36,9 +36,11 @@ describe('SnapshotStrip', () => {
 		const { strip } = toReliabilityClusters(POPULATED, { grain: 'day' });
 		render(SnapshotStrip, { props: { vm: strip, locale: 'en', copy: copyEn } });
 
-		// Every metric label is present (the six headline tiles rendered).
+		// Every metric label is present (the seven headline tiles rendered — p50 was
+		// added alongside p90 per A4).
 		expect(screen.getByText(copyEn.strip.otpPct)).toBeInTheDocument();
 		expect(screen.getByText(copyEn.strip.avgDelayMin)).toBeInTheDocument();
+		expect(screen.getByText(copyEn.strip.p50Min)).toBeInTheDocument();
 		expect(screen.getByText(copyEn.strip.p90Min)).toBeInTheDocument();
 		expect(screen.getByText(copyEn.strip.headwayRegularityCov)).toBeInTheDocument();
 		expect(screen.getByText(copyEn.strip.cancellationRatePct)).toBeInTheDocument();
@@ -47,6 +49,8 @@ describe('SnapshotStrip', () => {
 		// Headline values are the real numbers (not fabricated zeros).
 		expect(screen.getByText('82%')).toBeInTheDocument();
 		expect(screen.getByText('3.2 min')).toBeInTheDocument();
+		// p50 = 2 min (typical delay) and p90 = 8.5 min (worst-case) both render.
+		expect(screen.getByText('2 min')).toBeInTheDocument();
 		expect(screen.getByText('8.5 min')).toBeInTheDocument();
 
 		// CoV is expressed as a plain reading — caption, not a raw number dump.
