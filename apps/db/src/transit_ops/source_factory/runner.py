@@ -6,6 +6,9 @@ from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any
 
+# Re-exported for backwards compatibility; canonical home is core.errors so that
+# ingestion modules can raise it without importing source_factory (import cycle).
+from transit_ops.core.errors import OptionalSourceUnavailable
 from transit_ops.db.connection import make_engine
 from transit_ops.gold.marts import build_gold_marts
 from transit_ops.gold.rollups import build_warm_rollups
@@ -39,10 +42,6 @@ from transit_ops.source_factory.models import (
     SourceFactoryResult,
 )
 from transit_ops.source_factory.r2 import run_r2_prune_cycle
-
-
-class OptionalSourceUnavailable(RuntimeError):
-    """Raised by optional source operations when no source is available."""
 
 
 @dataclass(frozen=True)

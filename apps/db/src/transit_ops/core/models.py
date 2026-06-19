@@ -185,9 +185,12 @@ class ProviderManifest(BaseModel):
 
     @model_validator(mode="after")
     def validate_manifest_shape(self) -> ProviderManifest:
+        # GIS is provider-specific (STM ships a separate stm_sig.zip shapefile).
+        # Standard GTFS agencies carry route geometry in shapes.txt inside the
+        # schedule zip, so gis_static is OPTIONAL. The universal core is the
+        # schedule plus the two GTFS-RT feeds the delay/reliability facts need.
         required_feeds = {
             FeedKind.STATIC_SCHEDULE.value,
-            FeedKind.GIS_STATIC.value,
             FeedKind.TRIP_UPDATES.value,
             FeedKind.VEHICLE_POSITIONS.value,
         }
@@ -209,8 +212,16 @@ class ProviderManifest(BaseModel):
             raise TypeError("Static schedule feed did not validate as StaticFeedConfig.")
         return feed
 
-    def gis_feed(self) -> GisStaticFeedConfig:
-        feed = self.feeds[FeedKind.GIS_STATIC.value]
+    def gis_feed(self) -> GisStaticFeedConfig | None:
+        """Return the GIS feed, or ``None`` when the provider ships no GIS bundle.
+
+        Optional because only STM publishes a separate shapefile; standard GTFS
+        agencies derive route geometry from shapes.txt. Mirrors the absence
+        handling callers already use for the optional i3 alerts feed.
+        """
+        feed = self.feeds.get(FeedKind.GIS_STATIC.value)
+        if feed is None:
+            return None
         if not isinstance(feed, GisStaticFeedConfig):
             raise TypeError("GIS static feed did not validate as GisStaticFeedConfig.")
         return feed
@@ -251,12 +262,12 @@ class ProviderManifest(BaseModel):
         )
 
     def to_feed_endpoint_seeds(self, settings: Settings) -> list[FeedEndpointSeed]:
-        ordered_feed_keys = [
-            FeedKind.STATIC_SCHEDULE.value,
-            FeedKind.GIS_STATIC.value,
-            FeedKind.TRIP_UPDATES.value,
-            FeedKind.VEHICLE_POSITIONS.value,
-        ]
+        ordered_feed_keys = [FeedKind.STATIC_SCHEDULE.value]
+        if FeedKind.GIS_STATIC.value in self.feeds:
+            ordered_feed_keys.append(FeedKind.GIS_STATIC.value)
+        ordered_feed_keys.extend(
+            [FeedKind.TRIP_UPDATES.value, FeedKind.VEHICLE_POSITIONS.value]
+        )
         if FeedKind.I3_ALERTS.value in self.feeds:
             ordered_feed_keys.append(FeedKind.I3_ALERTS.value)
 
