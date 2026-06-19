@@ -56,6 +56,22 @@ REALTIME_ENDPOINTS = (*GTFS_REALTIME_ENDPOINTS, I3_ALERT_ENDPOINT)
 logger = logging.getLogger(__name__)
 
 
+def realtime_endpoints_for_manifest(manifest: ProviderManifest) -> tuple[str, ...]:
+    """Realtime endpoint keys this provider actually publishes, in canonical order.
+
+    Drives the realtime cycle from the manifest rather than the fixed
+    ``REALTIME_ENDPOINTS`` tuple, so a provider that omits a feed (e.g. no i3
+    alerts, or a static-plus-alerts agency with no live vehicle feed) is simply
+    not polled for it — instead of failing that endpoint every cycle.
+    """
+    return tuple(
+        endpoint_key
+        for endpoint_key in REALTIME_ENDPOINTS
+        if (feed := manifest.feeds.get(endpoint_key)) is not None
+        and getattr(feed, "is_enabled", True)
+    )
+
+
 @dataclass(frozen=True)
 class StaticPipelineResult:
     provider_id: str
@@ -810,17 +826,22 @@ def run_realtime_cycle(
     started_at_utc = utc_now()
     started_at = time.perf_counter()
 
+    # The worker loop passes last_captures every cycle; there we drive the
+    # endpoint set from the provider's manifest so absent feeds are not polled.
+    # Single-shot CLI/test calls (no last_captures) keep the canonical set.
     refresh_intervals: dict[str, int] = {}
+    cycle_endpoints: tuple[str, ...] = REALTIME_ENDPOINTS
     if last_captures is not None:
         manifest = registry.get_provider(provider_id)
-        for endpoint_key in REALTIME_ENDPOINTS:
+        cycle_endpoints = realtime_endpoints_for_manifest(manifest)
+        for endpoint_key in cycle_endpoints:
             feed = manifest.feeds.get(endpoint_key)
             if feed is not None:
                 refresh_intervals[endpoint_key] = int(feed.refresh_interval_seconds)
 
     logger.info("Starting realtime cycle for provider '%s'.", provider_id)
     endpoint_results: list[RealtimeEndpointCycleResult] = []
-    for endpoint_key in REALTIME_ENDPOINTS:
+    for endpoint_key in cycle_endpoints:
         interval_seconds = refresh_intervals.get(endpoint_key)
         last_capture_at = (
             last_captures.get(endpoint_key) if last_captures is not None else None
@@ -1039,7 +1060,9 @@ def _validate_realtime_worker_startup(
     manifest = registry.get_provider(provider_id)
     for endpoint_key in GTFS_REALTIME_ENDPOINTS:
         build_realtime_ingestion_config(manifest, settings, endpoint_key)
-    build_i3_ingestion_config(manifest, settings)
+    # i3 alerts is optional (STM-only today); only validate it when configured.
+    if I3_ALERT_ENDPOINT in manifest.feeds:
+        build_i3_ingestion_config(manifest, settings)
     return manifest
 
 
