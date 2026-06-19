@@ -251,7 +251,7 @@
 											<li class="stop-reliability-route">
 												<span class="stop-reliability-route-code">{br.route}</span>
 												<span class="stop-reliability-route-delay">
-													{br.avg_delay_min == null ? '—' : `${br.avg_delay_min.toFixed(1)} min`}
+													{br.avg_delay_min == null ? '·' : `${br.avg_delay_min.toFixed(1)} min`}
 												</span>
 											</li>
 										{/each}

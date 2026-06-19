@@ -273,11 +273,11 @@
 {/snippet}
 
 {#snippet yTicks()}
-	<!-- Min/max endpoint ticks (HTML, not SVG <text> — the viewBox stretches).
-	     An em-dash when the domain is unknown: an honest no-data tick, never 0. -->
+	<!-- Min/max endpoint ticks (HTML, not SVG <text>, the viewBox stretches).
+	     A middle dot when the domain is unknown: an honest no-data tick, never 0. -->
 	<div class="dv-sparkline-ticks" aria-hidden="true" style="height: {height}px;">
-		<span class="dv-sparkline-tick">{yDomain ? withUnit(yDomain[1]) : '—'}</span>
-		<span class="dv-sparkline-tick">{yDomain ? withUnit(yDomain[0]) : '—'}</span>
+		<span class="dv-sparkline-tick">{yDomain ? withUnit(yDomain[1]) : '·'}</span>
+		<span class="dv-sparkline-tick">{yDomain ? withUnit(yDomain[0]) : '·'}</span>
 	</div>
 {/snippet}
 

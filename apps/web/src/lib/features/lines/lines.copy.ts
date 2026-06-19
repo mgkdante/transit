@@ -82,7 +82,7 @@ export const indexCopy: Record<Locale, LinesIndexCopy> = {
 	fr: {
 		kicker: 'LIGNES · RÉSEAU',
 		heading: 'Lignes',
-		lede: 'Toutes les lignes du réseau — détail du parcours, horaire et fiabilité historique par ligne. Mesuré à partir du contrat /v1.',
+		lede: 'Toutes les lignes du réseau, détail du parcours, horaire et fiabilité historique par ligne. Mesuré à partir du contrat /v1.',
 		filterLabel: 'Filtrer les lignes',
 		filterPlaceholder: 'Numéro ou nom de ligne…',
 		mapAction: 'Carte',
@@ -92,7 +92,7 @@ export const indexCopy: Record<Locale, LinesIndexCopy> = {
 	en: {
 		kicker: 'LINES · NETWORK',
 		heading: 'Lines',
-		lede: 'Every line on the network — per-line route detail, schedule and historic reliability. Measured from the /v1 contract.',
+		lede: 'Every line on the network, per-line route detail, schedule and historic reliability. Measured from the /v1 contract.',
 		filterLabel: 'Filter lines',
 		filterPlaceholder: 'Line number or name…',
 		mapAction: 'Map',

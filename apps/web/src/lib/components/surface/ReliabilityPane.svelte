@@ -136,7 +136,7 @@
 							<SeverityBar
 								severity="watch"
 								value={period.severePct / 100}
-								label={`${period.grain} — ${t.severe}`}
+								label={`${period.grain}, ${t.severe}`}
 								interactive
 							/>
 						</div>

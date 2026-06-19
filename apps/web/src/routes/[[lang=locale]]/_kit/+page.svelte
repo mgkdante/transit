@@ -410,7 +410,7 @@
 						subtitle="Sherbrooke O."
 						severity="watch"
 						value={null}
-						display="—"
+						display="·"
 						delta={null}
 					/>
 				</div>
@@ -452,9 +452,9 @@
 					{ label: 'ms', value: '42' },
 				]}
 			>
-				<pre class="kit-term">route 165 — on_time 0.82
-stop 51234 — next 3 min
-vehicle 40231 — occupancy LOW</pre>
+				<pre class="kit-term">route 165 · on_time 0.82
+stop 51234 · next 3 min
+vehicle 40231 · occupancy LOW</pre>
 			</TerminalChrome>
 
 			<StickyPanel top="1rem">
@@ -484,14 +484,14 @@ vehicle 40231 — occupancy LOW</pre>
 				/>
 				<div class="kit-stack">
 					<Surface width="content" pad="none" gutter={false} class="kit-surface-demo">
-						<span class="kit-surface-label">content — var(--container-content)</span>
+						<span class="kit-surface-label">content · var(--container-content)</span>
 					</Surface>
 					<Surface width="wide" pad="none" gutter={false} class="kit-surface-demo">
-						<span class="kit-surface-label">wide — var(--container-wide)</span>
+						<span class="kit-surface-label">wide · var(--container-wide)</span>
 					</Surface>
 					<Surface width="bleed" pad="none" gutter={false} class="kit-surface-demo">
 						<span class="kit-surface-label"
-							>{lang === 'fr' ? 'bleed — pleine largeur' : 'bleed — edge-to-edge'}</span
+							>{lang === 'fr' ? 'bleed · pleine largeur' : 'bleed · edge-to-edge'}</span
 						>
 					</Surface>
 				</div>

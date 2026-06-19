@@ -161,7 +161,7 @@ export const reliabilityCopy: Record<Locale, ReliabilityCopy> = {
 			excessWaitCaption: '0 = le service respecte (ou dépasse) sa fréquence prévue',
 			skippedStopCaption: 'Arrêts non desservis',
 			trendReadoutHint: 'Survolez ou tabulez le graphique pour lire chaque jour',
-			rampInNote: 'Nouveau — on compte depuis peu, donc le chiffre se précise avec le temps',
+			rampInNote: 'Nouveau, on compte depuis peu, donc le chiffre se précise avec le temps',
 			noDataNote: 'Aucune donnée',
 			regularity: {
 				regular: 'Passages réguliers',
@@ -181,7 +181,7 @@ export const reliabilityCopy: Record<Locale, ReliabilityCopy> = {
 			dayType: 'Semaine vs fin de semaine',
 			dayOfWeekSevere: 'Part des retards graves',
 			caveat:
-				'Estimation sur fenêtre glissante, pondérée par les observations — pas une ponctualité certifiée; les petits échantillons varient.',
+				'Estimation sur fenêtre glissante, pondérée par les observations, pas une ponctualité certifiée; les petits échantillons varient.',
 			weekday: 'Semaine',
 			weekend: 'Fin de semaine',
 		},
@@ -234,7 +234,7 @@ export const reliabilityCopy: Record<Locale, ReliabilityCopy> = {
 			excessWaitCaption: '0 = runs on schedule (met or beat its planned frequency)',
 			skippedStopCaption: "Stops the bus didn't serve",
 			trendReadoutHint: 'Hover or tab the chart to read each day',
-			rampInNote: 'New metric — we just started counting, so this number sharpens over time',
+			rampInNote: 'New metric, we just started counting, so this number sharpens over time',
 			noDataNote: 'No data yet',
 			regularity: {
 				regular: 'Regular arrivals',
@@ -253,7 +253,7 @@ export const reliabilityCopy: Record<Locale, ReliabilityCopy> = {
 			dayType: 'Weekday vs weekend',
 			dayOfWeekSevere: 'Severe-delay share',
 			caveat:
-				'Trailing-window, observation-weighted estimate — not certified on-time; small samples vary.',
+				'Trailing-window, observation-weighted estimate, not certified on-time; small samples vary.',
 			weekday: 'Weekday',
 			weekend: 'Weekend',
 		},

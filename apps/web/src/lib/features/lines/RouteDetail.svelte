@@ -88,7 +88,7 @@
 	// dedicated 9.6 clustered surface (RouteReliabilityClusters) — it owns its own
 	// formatting + the snapshot strip + 5 cluster bands off the same archive.
 	const fmtMin = (v: number | null | undefined): string =>
-		v == null ? '—' : `${v.toFixed(1)} min`;
+		v == null ? '·' : `${v.toFixed(1)} min`;
 
 	const stopHref = (stopId: string): string =>
 		localizeHref(routeFor({ kind: 'stop', id: stopId }), locale);
@@ -202,11 +202,11 @@
 					<div class="route-section">
 						<div class="route-departures">
 							<MetricDisplay
-								value={file.first_departure ?? '—'}
+								value={file.first_departure ?? '·'}
 								label={t.firstDeparture}
 								size="sm"
 							/>
-							<MetricDisplay value={file.last_departure ?? '—'} label={t.lastDeparture} size="sm" />
+							<MetricDisplay value={file.last_departure ?? '·'} label={t.lastDeparture} size="sm" />
 						</div>
 						<SectionLabel text={t.servicePeriods} variant="metric" />
 						{#if (file.service_periods ?? []).length > 0}
