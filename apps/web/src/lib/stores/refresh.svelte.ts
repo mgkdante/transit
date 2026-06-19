@@ -18,6 +18,8 @@
 
 import { browser } from '$app/environment';
 import { invalidateAll } from '$app/navigation';
+import { ageSeconds as ageSecondsOf } from '$lib/utils/time';
+import { sharedClock } from './clock.svelte';
 
 export const REFRESH_INVALIDATE_TIMEOUT_MS = 8_000;
 
@@ -25,6 +27,22 @@ let epoch = $state(0);
 let refreshing = $state(false);
 let lastRefreshedMs = $state<number | null>(null);
 let dataGeneratedUtc = $state<string | null>(null);
+
+// The freshness age (seconds), DERIVED — not a private interval. It reads the
+// SHARED clock so it ticks in lockstep with every other relative-time label,
+// and the single `dataGeneratedUtc` so the chrome readout never drifts from the
+// data it describes. Falls back to `lastRefreshedMs` (manual press / page-load
+// anchor) when no snapshot timestamp is known yet. `null` when nothing anchors
+// it. Readers must consult `now` inside a reactive context for it to tick; a
+// reader that wants the timer ALIVE subscribes via `sharedClock.subscribe()`.
+const ageSecondsValue = $derived.by<number | null>(() => {
+	const now = sharedClock.now;
+	if (dataGeneratedUtc) {
+		const age = ageSecondsOf(dataGeneratedUtc, now);
+		return Number.isNaN(age) ? null : Math.max(0, age);
+	}
+	return lastRefreshedMs != null ? Math.max(0, Math.round((now - lastRefreshedMs) / 1000)) : null;
+});
 
 async function invalidateAllBounded(): Promise<void> {
 	let done = false;
@@ -62,9 +80,35 @@ export const dataRefresh = {
 	get dataGeneratedUtc(): string | null {
 		return dataGeneratedUtc;
 	},
-	/** Record the snapshot's own DATA timestamp so chrome and surfaces share one clock. */
+	/**
+	 * Freshness age in seconds, DERIVED off the shared clock + the single
+	 * `dataGeneratedUtc` (falling back to `lastRefreshedMs`). `null` when nothing
+	 * anchors it. Read inside a reactive context to tick; pair with
+	 * `sharedClock.subscribe()` to keep the underlying interval alive while a
+	 * freshness readout is on screen.
+	 */
+	get ageSeconds(): number | null {
+		return ageSecondsValue;
+	},
+	/**
+	 * AUTHORITATIVE write of the snapshot's own DATA timestamp. The live store
+	 * calls this on every successful poll; it is the single owner of this value.
+	 * Always overwrites (the freshest poll wins). No-op on the server / for falsy
+	 * input. Chrome and live surfaces then share this one timestamp.
+	 */
 	noteDataGeneratedUtc(generatedUtc: string | null | undefined): void {
 		if (!browser || !generatedUtc) return;
+		dataGeneratedUtc = generatedUtc;
+	},
+	/**
+	 * Seed the snapshot timestamp from the booted manifest as an INITIAL fallback,
+	 * only when no authoritative value has landed yet (seed-if-unset). Lets the
+	 * freshness readout show the page-load data's age on pages WITHOUT a live
+	 * store; the live store's `noteDataGeneratedUtc` supersedes it once polling
+	 * starts. No-op on the server / for falsy input / once a value exists.
+	 */
+	seedDataGeneratedUtc(generatedUtc: string | null | undefined): void {
+		if (!browser || !generatedUtc || dataGeneratedUtc != null) return;
 		dataGeneratedUtc = generatedUtc;
 	},
 	/**

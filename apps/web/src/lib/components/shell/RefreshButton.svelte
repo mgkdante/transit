@@ -18,9 +18,8 @@
 -->
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { browser } from '$app/environment';
-	import { ageSeconds as dataAgeSeconds, cn, formatRelativeSeconds } from '$lib/utils';
-	import { dataRefresh } from '$lib/stores';
+	import { cn, formatRelativeSeconds } from '$lib/utils';
+	import { dataRefresh, sharedClock } from '$lib/stores';
 	import type { Locale } from '$lib/i18n';
 
 	interface Props {
@@ -32,25 +31,20 @@
 
 	const refreshing = $derived(dataRefresh.refreshing);
 
-	// A 1s clock so the "updated <relative>" readout advances between presses.
-	// Browser-only ticking (SSR renders one static frame, no interval).
-	let nowMs = $state(Date.now());
-	onMount(() => {
-		dataRefresh.seedNow(); // anchor the readout to page-load data if unset
-		if (!browser) return;
-		const id = setInterval(() => (nowMs = Date.now()), 1000);
-		return () => clearInterval(id);
-	});
+	// Anchor the readout to page-load data if no snapshot timestamp has landed yet.
+	onMount(() => dataRefresh.seedNow());
 
-	const ageSeconds = $derived.by<number | null>(() => {
-		if (dataRefresh.dataGeneratedUtc) {
-			const age = dataAgeSeconds(dataRefresh.dataGeneratedUtc, nowMs);
-			return Number.isNaN(age) ? null : Math.max(0, age);
-		}
-		return dataRefresh.lastRefreshedMs != null
-			? Math.max(0, Math.round((nowMs - dataRefresh.lastRefreshedMs) / 1000))
-			: null;
-	});
+	// Tick off the ONE shared clock instead of a private interval, so the chrome
+	// "updated <relative>" chip advances in lockstep with every other relative-time
+	// label on the page (the live freshness badge, etc.). subscribe() keeps the
+	// single shared interval alive while this control is mounted; the cleanup
+	// disposes it. SSR-safe (subscribe no-ops without a browser).
+	$effect(() => sharedClock.subscribe());
+
+	// The freshness age is DERIVED in the shared coordinator off sharedClock +
+	// the single dataGeneratedUtc (with the lastRefreshedMs fallback) — read it
+	// straight through so the chrome can never drift from the data it describes.
+	const ageSeconds = $derived(dataRefresh.ageSeconds);
 	const relative = $derived(ageSeconds != null ? formatRelativeSeconds(ageSeconds, locale) : null);
 
 	const updatedWord = $derived(locale === 'fr' ? 'à jour' : 'updated');

@@ -92,34 +92,35 @@ const BASEMAP_PALETTES: Record<BasemapTheme, BasemapPalette> = {
 		labelHalo: '#141414',
 	},
 	light: {
-		/** --background (light) — warm station paper. */
-		background: '#F7F2E9',
-		/** --manifesto (light) — warm land fill. */
-		land: '#F2E9D8',
-		/** Cool river water — not another cream/tan so waterways remain legible. */
+		/** --background (light) — cool-slate void. */
+		background: '#F3F6FB',
+		/** Clean cool near-white land fill (--card) — the island reads bright/white
+		 *  against the cool-slate void + river. */
+		land: '#F9FAFD',
+		/** Cool river water — legible against the warm land + cool void. */
 		water: '#CFE1E6',
 		/** Water boundary ink, quiet enough to stay below roads and entities. */
 		waterEdge: '#7CA7B2',
 		/** Quiet green for parks and other orienting open space. */
 		park: '#DCE8CC',
-		/** Outer road stroke so streets read as streets, not loose hairlines. */
-		roadCasing: '#E5DAC7',
+		/** Cool outer road stroke so streets read as streets, not loose hairlines. */
+		roadCasing: '#DCE3EE',
 		/** --border (light) — minor road / casing strokes. */
-		road: '#C9BCA1',
+		road: '#B5BECD',
 		/** --muted-foreground (light) — major road / graticule ink. */
-		roadMajor: '#6E6557',
-		/** Slightly lifted bridge stroke for overpasses. */
-		roadBridge: '#8D806E',
+		roadMajor: '#545E75',
+		/** Slightly lifted cool bridge stroke for overpasses. */
+		roadBridge: '#7C8395',
 		/** Neutral road-shield ink + halo; never use bus orange for highway numbers. */
-		roadShieldInk: '#F7F2E9',
-		roadShieldHalo: '#4F4A42',
-		/** Label ink: readable on warm paper without becoming primary data. */
-		ink: '#5F574C',
-		placeInk: '#4F4A42',
+		roadShieldInk: '#F3F6FB',
+		roadShieldHalo: '#454F63',
+		/** Label ink: readable cool-slate, below transit markers. */
+		ink: '#454F63',
+		placeInk: '#2E3647',
 		parkInk: '#4F744F',
 		landmarkInk: '#7A6642',
-		/** Label halo blends into the light map surface. */
-		labelHalo: '#F7F2E9',
+		/** Label halo blends into the cool light map surface. */
+		labelHalo: '#F3F6FB',
 	},
 };
 

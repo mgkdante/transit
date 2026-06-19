@@ -154,7 +154,7 @@
 	{#if !collapsed}
 		<ScrollArea class="min-h-0 flex-1" data-slot="right-panel-body">
 			{#key surfaceKey}
-				<div class="swap-volet p-4">
+				<div class="swap-volet right-panel-body-inner p-4">
 					{#if children}
 						{@render children()}
 					{:else}
@@ -182,7 +182,19 @@
 	.right-panel {
 		width: 360px;
 		overflow: hidden;
-		transition: width 180ms var(--ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+		/* Lift the dock off the map: a tight left-cast shadow + a hairline edge
+		   highlight on the leading border (yesid edge-highlight idiom), so the
+		   volet reads as a raised surface over the live canvas in both themes. */
+		box-shadow:
+			-12px 0 28px -20px rgba(0, 0, 0, 0.45),
+			inset 1px 0 0 var(--edge-highlight);
+		transition:
+			width 180ms var(--ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+			box-shadow var(--duration-normal) var(--ease-out);
+		/* Size container so the swapped detail content can reflow against the dock's
+		   OWN width as it is dragged narrower in a resizable pane (grab-resize),
+		   independent of the viewport — content degrades gracefully, never clips. */
+		container: right-panel / inline-size;
 	}
 
 	.right-panel[data-open='false'] {
@@ -193,6 +205,20 @@
 	.right-panel[data-resizable='true'][data-open='false'] {
 		width: 100%;
 		min-width: 0;
+	}
+
+	/* Reserve a stable scrollbar gutter so the dock body never shifts horizontally
+	   when a scrollbar appears as the detail content reflows mid-drag. */
+	.right-panel-body-inner {
+		scrollbar-gutter: stable;
+	}
+	/* Tighten the body padding once the dock is dragged narrow so the detail keeps
+	   as much width as possible (pairs with MapSelectionDetail's container reflow).
+	   The scoped class beats the Tailwind p-4 utility, so this wins when it fires. */
+	@container right-panel (max-width: 18rem) {
+		.right-panel-body-inner {
+			padding: 0.8rem;
+		}
 	}
 
 	/* Swap-volet entrance — a subtle slide-in on each keyed surface change. */

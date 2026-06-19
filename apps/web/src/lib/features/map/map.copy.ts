@@ -38,9 +38,8 @@ export interface MapCopy {
 	readonly nearMeGeoInsecure: string;
 	/** No-data occupancy legend row. */
 	readonly noData: string;
-	/** Entity legend labels — the SHAPE key (shape encodes entity + direction). */
-	readonly entityBusDirection: string;
-	readonly entityBusNoDirection: string;
+	/** Entity legend labels — the SHAPE key (one marker per entity type). */
+	readonly entityBus: string;
 	readonly entityStop: string;
 	/** Label for the marker/entity filter. */
 	readonly legendTitle: string;
@@ -64,7 +63,7 @@ export const copy: Record<Locale, MapCopy> = {
 	en: {
 		kicker: 'NETWORK · LIVE',
 		heading: 'Live map',
-		mapLabel: 'Live transit map of Montréal — buses coloured by status',
+		mapLabel: 'Live transit map of Montréal, buses coloured by status',
 		modeStatus: 'Status',
 		modeOccupancy: 'Crowding',
 		modeAlerts: 'Alerts',
@@ -82,12 +81,11 @@ export const copy: Record<Locale, MapCopy> = {
 		nearMeNoResults: 'No nearby stops',
 		nearMeError: 'Could not find that place',
 		nearMeGeoDenied: 'Location permission denied',
-		nearMeGeoTimeout: 'Location timed out — try again',
+		nearMeGeoTimeout: 'Location timed out. Try again',
 		nearMeGeoUnavailable: 'Location unavailable',
 		nearMeGeoInsecure: 'Location needs a secure (https) connection',
 		noData: 'No data',
-		entityBusDirection: 'Bus - direction',
-		entityBusNoDirection: 'Bus - no direction',
+		entityBus: 'Bus',
 		entityStop: 'Stop',
 		legendTitle: 'Markers',
 		entityFilterTitle: 'Filter map markers',
@@ -107,7 +105,7 @@ export const copy: Record<Locale, MapCopy> = {
 	fr: {
 		kicker: 'RÉSEAU · EN DIRECT',
 		heading: 'Carte en direct',
-		mapLabel: 'Carte en direct du réseau de Montréal — bus colorés par statut',
+		mapLabel: 'Carte en direct du réseau de Montréal, bus colorés par statut',
 		modeStatus: 'Statut',
 		modeOccupancy: 'Achalandage',
 		modeAlerts: 'Alertes',
@@ -125,12 +123,11 @@ export const copy: Record<Locale, MapCopy> = {
 		nearMeNoResults: 'Aucun arrêt proche',
 		nearMeError: 'Lieu introuvable',
 		nearMeGeoDenied: 'Autorisation de localisation refusée',
-		nearMeGeoTimeout: 'Délai de localisation dépassé — réessayez',
+		nearMeGeoTimeout: 'Délai de localisation dépassé. Réessayez',
 		nearMeGeoUnavailable: 'Localisation indisponible',
 		nearMeGeoInsecure: 'La localisation requiert une connexion sécurisée (https)',
 		noData: 'Aucune donnée',
-		entityBusDirection: 'Bus - direction',
-		entityBusNoDirection: 'Bus - sans direction',
+		entityBus: 'Bus',
 		entityStop: 'Arrêt',
 		legendTitle: 'Marqueurs',
 		entityFilterTitle: 'Filtrer les marqueurs de la carte',

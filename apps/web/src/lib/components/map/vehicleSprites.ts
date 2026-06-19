@@ -1,14 +1,17 @@
-// map/vehicleSprites.ts — browser-only canvas baker for vehicle puck icons.
+// map/vehicleSprites.ts — browser-only canvas baker for vehicle + stop icons.
 //
-// A vehicle is a SINGLE coloured shape — no glyph overlay. The filter REPAINTS
-// the shape's colour (default orange → a status/occupancy colour) and hides
-// non-matches; colour alone carries state, so the map stays uncluttered. SHAPE
-// encodes the entity + heading, not state:
-//   · bus WITH heading → a KITE (nose up, rotated by bearing via the layer);
-//   · bus with NO heading → a SQUARE (honest "no heading", never a fake arrow);
-//   · stop → a DIAMOND (the distinct stop mark; STOP_ICON).
+// A vehicle is a single PAINTED BUS pictogram — the filter REPAINTS the bus
+// fill (default orange → a status/occupancy colour) and HIDES non-matches, so
+// colour alone carries state and the map stays uncluttered. The bus glyph is
+// baked UPRIGHT and legible at every bearing: heading is rendered by a SEPARATE
+// rotated CHEVRON layer (see vehicleLayer.ts) that points the way the bus is
+// going, so the bus-front never reads upside-down. SHAPE encodes the entity:
+//   · bus → a BUS-FRONT pictogram (PAINTED with the bus fill);
+//   · heading → a small CHEVRON (separate rotated layer; ONE sprite, neutral);
+//   · stop → a MAP-PIN pictogram (PAINTED with --map-stop-fill).
 // Colours are read from live CSS tokens via a probe element (NEVER hardcoded
-// hex), so a theme swap re-bakes to the active palette.
+// hex), so a theme swap re-bakes to the active palette. Baked at devicePixelRatio
+// so glyphs stay crisp on retina.
 
 import type { Map as MapLibreMap } from 'maplibre-gl';
 import {
@@ -21,22 +24,31 @@ import { statusVar, occupancyVar } from '$lib/components/dataviz';
 
 /** Logical icon box (px); baked at RATIO for retina crispness. */
 const SIZE = 26;
-const RATIO = 2;
+/** Bake at the device pixel ratio (>=2) so glyphs stay crisp on retina. */
+const RATIO =
+	typeof window !== 'undefined' ? Math.max(2, Math.ceil(window.devicePixelRatio || 1)) : 2;
 
-/** Default (no-filter) bus icon ids — yesid brand orange. */
+/** Default (no-filter) bus icon id — yesid brand orange. ONE sprite for every
+ *  bus (no directional variants); the heading chevron is a separate layer. */
 export const BUS_ICON = 'veh-bus';
-export const BUS_ICON_ND = 'veh-bus-nd';
-/** The stop diamond icon id. */
+/** The directional chevron icon id — ONE neutral sprite, rotated by the layer. */
+export const HEADING_ICON = 'veh-heading';
+/** The stop map-pin icon id. */
 export const STOP_ICON = 'veh-stop';
 
 export const BUS_FILL_TOKEN = 'var(--primary)';
 export const BUS_FILL_FALLBACK = 'rgb(224, 120, 0)';
 export const BUS_HALO_TOKEN = 'var(--background)';
 export const BUS_HALO_FALLBACK = '#141414';
-export const STOP_FILL_TOKEN = 'var(--accent)';
+export const STOP_FILL_TOKEN = 'var(--map-stop-fill)';
 export const STOP_FILL_FALLBACK = 'rgb(255, 182, 39)';
 export const STOP_HALO_TOKEN = BUS_HALO_TOKEN;
 export const STOP_HALO_FALLBACK = BUS_HALO_FALLBACK;
+/** The chevron is a neutral direction tick that must read on ANY bus colour. */
+export const HEADING_FILL_TOKEN = 'var(--foreground)';
+export const HEADING_FILL_FALLBACK = '#f5f5f5';
+export const HEADING_HALO_TOKEN = BUS_HALO_TOKEN;
+export const HEADING_HALO_FALLBACK = BUS_HALO_FALLBACK;
 
 /** Resolve a `var(--token)` expression to its computed `rgb(...)` string. */
 export function resolveColor(varExpr: string, fallback: string): string {
@@ -60,54 +72,144 @@ function newCtx(): { ctx: CanvasRenderingContext2D; px: number } {
 	return { ctx, px };
 }
 
-type Shape = 'kite' | 'square' | 'diamond';
+/** Trace a rounded rectangle path (no stroke/fill — caller decides). */
+function roundedRect(
+	ctx: CanvasRenderingContext2D,
+	x: number,
+	y: number,
+	w: number,
+	h: number,
+	r: number,
+): void {
+	const rr = Math.min(r, w / 2, h / 2);
+	ctx.beginPath();
+	ctx.moveTo(x + rr, y);
+	ctx.arcTo(x + w, y, x + w, y + h, rr);
+	ctx.arcTo(x + w, y + h, x, y + h, rr);
+	ctx.arcTo(x, y + h, x, y, rr);
+	ctx.arcTo(x, y, x + w, y, rr);
+	ctx.closePath();
+}
 
-/** Bake one shape (kite / square / diamond), filled + halo-ringed. */
-function shapeImage(fill: string, halo: string, shape: Shape): ImageData {
+/**
+ * Bake the BUS-FRONT pictogram, PAINTED with `fill` and ringed by `halo`. Drawn
+ * upright (the heading chevron is a separate rotated layer), so it reads at
+ * every bearing: a rounded body, a windshield band, and two headlights cut from
+ * the halo colour so the silhouette stays a bus, not a blob, even at small zoom.
+ */
+function busImage(fill: string, halo: string): ImageData {
+	const { ctx, px } = newCtx();
+	ctx.lineJoin = 'round';
+
+	// Body — a tall rounded rect (bus front), centred with a small margin.
+	const bx = 6.5;
+	const by = 3.5;
+	const bw = SIZE - bx * 2;
+	const bh = SIZE - by * 2;
+	roundedRect(ctx, bx, by, bw, bh, 4);
+	ctx.fillStyle = fill;
+	ctx.fill();
+	ctx.lineWidth = 2;
+	ctx.strokeStyle = halo;
+	ctx.stroke();
+
+	// Windshield — a halo-coloured band across the top third (reads as "front").
+	const wm = 2.4; // inset from the body edge
+	roundedRect(ctx, bx + wm, by + 2.4, bw - wm * 2, 5.6, 2);
+	ctx.fillStyle = halo;
+	ctx.globalAlpha = 0.9;
+	ctx.fill();
+	ctx.globalAlpha = 1;
+
+	// Headlights — two small halo-coloured dots near the bottom corners.
+	const ly = SIZE - by - 3.4;
+	for (const lx of [bx + wm + 1.2, bx + bw - wm - 1.2]) {
+		ctx.beginPath();
+		ctx.arc(lx, ly, 1.15, 0, Math.PI * 2);
+		ctx.fillStyle = halo;
+		ctx.fill();
+	}
+
+	return ctx.getImageData(0, 0, px, px);
+}
+
+/**
+ * Bake the STOP map-pin pictogram, PAINTED with `fill` and ringed by `halo`,
+ * with a halo-cut hole so the pin reads as a stop marker, not a solid teardrop.
+ */
+function stopPinImage(fill: string, halo: string): ImageData {
+	const { ctx, px } = newCtx();
+	ctx.lineJoin = 'round';
+	ctx.lineCap = 'round';
+	const c = SIZE / 2;
+
+	// Teardrop body — head arc + tapered point.
+	const headY = c - 2.5;
+	const headR = 6.6;
+	const tipY = SIZE - 3.5;
+	ctx.beginPath();
+	ctx.moveTo(c, tipY);
+	ctx.bezierCurveTo(
+		c - headR * 0.92,
+		headY + headR * 0.7,
+		c - headR,
+		headY,
+		c - headR,
+		headY - 0.5,
+	);
+	ctx.arc(c, headY, headR, Math.PI, 0, false);
+	ctx.bezierCurveTo(c + headR, headY, c + headR * 0.92, headY + headR * 0.7, c, tipY);
+	ctx.closePath();
+	ctx.fillStyle = fill;
+	ctx.fill();
+	ctx.lineWidth = 2;
+	ctx.strokeStyle = halo;
+	ctx.stroke();
+
+	// Inner hole — halo-coloured, so the pin reads hollow (a stop, not a blob).
+	ctx.beginPath();
+	ctx.arc(c, headY, 2.5, 0, Math.PI * 2);
+	ctx.fillStyle = halo;
+	ctx.fill();
+
+	return ctx.getImageData(0, 0, px, px);
+}
+
+/**
+ * Bake the directional CHEVRON — a single neutral arrowhead (nose up), PAINTED
+ * with `fill` and ringed by `halo`. ONE sprite; the layer rotates it by bearing
+ * and floats it just ahead of the bus, so the bus glyph itself stays upright.
+ */
+function chevronImage(fill: string, halo: string): ImageData {
 	const { ctx, px } = newCtx();
 	const c = SIZE / 2;
 	ctx.lineJoin = 'round';
-	ctx.lineWidth = 2;
-	ctx.strokeStyle = halo;
-	ctx.fillStyle = fill;
+	ctx.lineCap = 'round';
+	// A compact chevron near the TOP of the box so it sits ahead of the bus
+	// once the layer offsets + rotates it.
 	ctx.beginPath();
-	if (shape === 'kite') {
-		// Kite, nose up (the layer rotates it to the bearing).
-		ctx.moveTo(c, 2.5);
-		ctx.lineTo(c + 7.5, SIZE - 5);
-		ctx.lineTo(c, SIZE - 9);
-		ctx.lineTo(c - 7.5, SIZE - 5);
-		ctx.closePath();
-	} else if (shape === 'square') {
-		// Axis-aligned square — bus with no heading.
-		const r = 6.5;
-		ctx.rect(c - r, c - r, r * 2, r * 2);
-	} else {
-		// Diamond (square at 45°) — the stop mark.
-		const r = 6.5;
-		ctx.moveTo(c, c - r);
-		ctx.lineTo(c + r, c);
-		ctx.lineTo(c, c + r);
-		ctx.lineTo(c - r, c);
-		ctx.closePath();
-	}
+	ctx.moveTo(c, 3);
+	ctx.lineTo(c + 5, 9.5);
+	ctx.lineTo(c, 7.3);
+	ctx.lineTo(c - 5, 9.5);
+	ctx.closePath();
+	ctx.fillStyle = fill;
 	ctx.fill();
+	ctx.lineWidth = 1.6;
+	ctx.strokeStyle = halo;
 	ctx.stroke();
 	return ctx.getImageData(0, 0, px, px);
 }
 
 /** Icon id the vehicle layer references per feature (see toVehicleFeatures). */
-export const bodyIconId = (
-	mode: 'status' | 'occupancy',
-	code: string,
-	directional: boolean,
-): string => `veh-${mode === 'status' ? 's' : 'o'}-${code}${directional ? '' : '-nd'}`;
+export const bodyIconId = (mode: 'status' | 'occupancy', code: string): string =>
+	`veh-${mode === 'status' ? 's' : 'o'}-${code}`;
 
 /**
- * Bake + register every vehicle body icon: the default orange pair, plus one
- * coloured pair (kite + diamond) per status code and per occupancy code — the
- * "repaint" palette the filter swaps in. Idempotent (re-removes before adding,
- * so it re-bakes on a theme change). Browser-only (canvas).
+ * Bake + register every vehicle icon: the default orange bus, plus one painted
+ * bus per status code and per occupancy code (the "repaint" palette the filter
+ * swaps in), the single directional chevron, and the stop map-pin. Idempotent
+ * (re-removes before adding, so it re-bakes on a theme change). Browser-only.
  */
 export function bakeVehicleSprites(map: MapLibreMap): void {
 	const busHalo = resolveColor(BUS_HALO_TOKEN, BUS_HALO_FALLBACK);
@@ -115,29 +217,32 @@ export function bakeVehicleSprites(map: MapLibreMap): void {
 		if (map.hasImage(id)) map.removeImage(id);
 		map.addImage(id, img, { pixelRatio: RATIO });
 	};
-	// directional → kite; no heading → square.
-	const addBus = (id: string, fill: string, directional: boolean) =>
-		add(id, shapeImage(fill, busHalo, directional ? 'kite' : 'square'));
+	// One bus glyph per colour; the heading chevron is a SEPARATE rotated layer.
+	const addBus = (id: string, fill: string) => add(id, busImage(fill, busHalo));
 
 	for (const code of STATUS_CODES as readonly StatusCode[]) {
-		const fill = resolveColor(statusVar(code), '#8a8a8a');
-		addBus(bodyIconId('status', code, true), fill, true);
-		addBus(bodyIconId('status', code, false), fill, false);
+		addBus(bodyIconId('status', code), resolveColor(statusVar(code), '#8a8a8a'));
 	}
 
 	for (const code of OCCUPANCY_CODES as readonly OccupancyCode[]) {
-		const fill = resolveColor(occupancyVar(code), '#7a5fb0');
-		addBus(bodyIconId('occupancy', code, true), fill, true);
-		addBus(bodyIconId('occupancy', code, false), fill, false);
+		addBus(bodyIconId('occupancy', code), resolveColor(occupancyVar(code), '#7a5fb0'));
 	}
 
 	// Default (no filter) — yesid brand orange (--primary).
-	const busFill = resolveColor(BUS_FILL_TOKEN, BUS_FILL_FALLBACK);
-	addBus(BUS_ICON, busFill, true);
-	addBus(BUS_ICON_ND, busFill, false);
+	addBus(BUS_ICON, resolveColor(BUS_FILL_TOKEN, BUS_FILL_FALLBACK));
 
-	// Stops are yellow diamonds, with the same theme surface outline as buses.
+	// The directional chevron — ONE neutral sprite, rotated per-feature by the layer.
+	add(
+		HEADING_ICON,
+		chevronImage(
+			resolveColor(HEADING_FILL_TOKEN, HEADING_FILL_FALLBACK),
+			resolveColor(HEADING_HALO_TOKEN, HEADING_HALO_FALLBACK),
+		),
+	);
+
+	// Stops are map-pins (reddish-orange on light, amber on dark), with the same
+	// theme surface outline as buses.
 	const stopFill = resolveColor(STOP_FILL_TOKEN, STOP_FILL_FALLBACK);
 	const stopHalo = resolveColor(STOP_HALO_TOKEN, STOP_HALO_FALLBACK);
-	add(STOP_ICON, shapeImage(stopFill, stopHalo, 'diamond'));
+	add(STOP_ICON, stopPinImage(stopFill, stopHalo));
 }

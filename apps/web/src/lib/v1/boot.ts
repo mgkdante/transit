@@ -1,11 +1,11 @@
-// v1 boot — load the snapshot root once, hand surfaces a ready V1Context.
+// v1 boot, load the snapshot root once, hand surfaces a ready V1Context.
 //
 // Boot order (fail-soft on the label leg):
-//   1. loadManifest()      — fetch the snapshot manifest (the file pointers +
+//   1. loadManifest()     , fetch the snapshot manifest (the file pointers +
 //                            base FR label table + dataset version).
-//   2. labels/{lang}.json  — fetch the per-language label refinement and merge
+//   2. labels/{lang}.json , fetch the per-language label refinement and merge
 //                            it ON TOP of the manifest's base table.
-//   3. ready               — return { manifest, labels, lang } as the V1Context.
+//   3. ready              , return { manifest, labels, lang } as the V1Context.
 //
 // The context is provided once (root layout) and read everywhere via
 // getV1Context(); resolveLabel(code, labels) turns a namespaced code into human
@@ -56,13 +56,13 @@ export async function loadManifest(ctx?: AdapterCtx): Promise<Manifest> {
  * base (and ultimately to raw-code fallback in resolveLabel), never an error.
  *
  * `ctx` carries the SSR `fetch` (event.fetch). It MUST be passed from a
- * SvelteKit `load` under SSR — the snapshot base is a same-origin relative path
+ * SvelteKit `load` under SSR, the snapshot base is a same-origin relative path
  * and the Worker's global `fetch` rejects relative URLs, so an unthreaded boot
  * fails the manifest leg and degrades the whole app to the v1-error edge state.
  */
 export async function bootV1(lang: Locale = DEFAULT_LOCALE, ctx?: AdapterCtx): Promise<V1Context> {
 	const manifest = await loadManifest(ctx);
-	// Labels are an enhancement, not a hard dependency — a missing/never-published
+	// Labels are an enhancement, not a hard dependency, a missing/never-published
 	// labels file degrades to the manifest base (resolveLabel then falls back to
 	// raw codes), never an error.
 	const langLabels = await getLabels(lang, ctx).catch(() => ({}) as Record<string, string>);
@@ -76,7 +76,7 @@ export async function bootV1(lang: Locale = DEFAULT_LOCALE, ctx?: AdapterCtx): P
  * Only codes in an allowed namespace (metric./status./severity./occupancy./
  * methodology.) are looked up; anything else (e.g. a raw id, or alert
  * `header_key`/`header_text` FR text) is returned verbatim. Unknown codes in a
- * valid namespace fall back to the code itself — never empty, never a throw.
+ * valid namespace fall back to the code itself, never empty, never a throw.
  */
 export function resolveLabel(code: string, labels: Record<string, string>): string {
 	if (!code) return code;
@@ -88,7 +88,7 @@ export function resolveLabel(code: string, labels: Record<string, string>): stri
 
 /**
  * Provide the V1Context to descendants. Call once from the root layout.
- * Takes a READER (getter) — symmetric with setLocaleContext — so the context
+ * Takes a READER (getter), symmetric with setLocaleContext, so the context
  * stays reactive across EN/FR swaps and re-boots without the root remounting,
  * and callers never capture a stale initial value.
  */
@@ -97,14 +97,14 @@ export function setV1Context(reader: () => V1Context): void {
 }
 
 /**
- * Read the active V1Context. Throws if called without a provider — boot must run
+ * Read the active V1Context. Throws if called without a provider, boot must run
  * before any surface mounts, so a missing context is a wiring bug, not a state.
  */
 export function getV1Context(): V1Context {
 	const reader = getContext<(() => V1Context) | undefined>(KEY);
 	if (!reader) {
 		throw new Error(
-			'[v1] getV1Context() called before setV1Context() — boot the v1 context in the root layout first.',
+			'[v1] getV1Context() called before setV1Context(), boot the v1 context in the root layout first.',
 		);
 	}
 	return reader();

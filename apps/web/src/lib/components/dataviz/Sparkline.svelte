@@ -15,7 +15,8 @@
 	import { cn, type WithElementRef } from '$lib/utils';
 	import type { HTMLAttributes } from 'svelte/elements';
 	import ChartTooltip from './ChartTooltip.svelte';
-	import { createChartTooltip } from './useChartTooltip.svelte';
+	import ChartReadout from './ChartReadout.svelte';
+	import { createChartTooltip, type ChartAxis } from './useChartTooltip.svelte';
 
 	export interface SparklineProps extends WithElementRef<HTMLAttributes<HTMLDivElement>> {
 		/** The series. `null` entries render as gaps (no interpolation). */
@@ -36,11 +37,38 @@
 		/** Accessible summary of the series (e.g. "On-time % last 14 days"). */
 		label?: string;
 		/**
+		 * Y-axis metadata: a unit suffix for the tooltip value (e.g. "%") plus an
+		 * optional axis label/domain. Optional → omitting it leaves the readout
+		 * byte-identical to the old raw-number tooltip.
+		 */
+		yAxis?: ChartAxis;
+		/**
+		 * X-axis category labels (one per index), already localized — drives the
+		 * tooltip heading (the period / date). Omit → no heading.
+		 */
+		xLabels?: string[];
+		/**
+		 * Render min/max y endpoint tick labels in a left gutter beside the line.
+		 * Default false so the tiny 96×24 inline use stays unchanged. The ticks are
+		 * HTML spans (not SVG text) because the viewBox is `preserveAspectRatio
+		 * "none"` → SVG text would stretch.
+		 */
+		showYTicks?: boolean;
+		/**
 		 * Opt into hover/focus tooltips: the nearest real point reveals its value
 		 * (a hover dot marks it). Each real point is also keyboard-focusable.
 		 * Default off — the sparkline stays a static inline mark.
 		 */
 		interactive?: boolean;
+		/**
+		 * Place the hover/focus readout in a FIXED row ABOVE the spark instead of a
+		 * floating overlay over the line. Only takes effect with `interactive`.
+		 * Default false → existing inline renders stay byte-identical. The hover dot
+		 * stays on-line; only the value readout moves out.
+		 */
+		readout?: boolean;
+		/** Hint shown in the fixed readout before anything is hovered. `readout` only. */
+		readoutHint?: string;
 		class?: string;
 	}
 
@@ -52,13 +80,23 @@
 		colorVar = 'var(--dataviz-status-on-time)',
 		showLast = true,
 		label,
+		yAxis,
+		xLabels,
+		showYTicks = false,
 		interactive = false,
+		readout = false,
+		readoutHint,
 		class: className,
 		ref = $bindable(null),
 		...restProps
 	}: SparklineProps = $props();
 
 	const PAD = $derived(stroke + 0.5);
+
+	/** Suffix a value with the y-axis unit (when one was passed). */
+	const withUnit = (v: number | string): string => `${v}${yAxis?.unit ?? ''}`;
+	/** The label used for the tooltip row + keyboard readout. */
+	const seriesLabel = $derived(yAxis?.label ?? label ?? 'value');
 
 	const tip = createChartTooltip();
 	let svgEl = $state<SVGSVGElement | null>(null);
@@ -119,10 +157,23 @@
 
 	const hasData = $derived(segments.length > 0);
 
+	// The real-value y-domain [min,max] that drives the optional endpoint ticks.
+	// Falls back to the explicit yAxis.domain when given; null when no real data
+	// (the ticks then render an em-dash, never a fabricated 0).
+	const yDomain = $derived.by<[number, number] | null>(() => {
+		if (yAxis?.domain) return yAxis.domain;
+		const reals = values.filter((v): v is number => v != null && !Number.isNaN(v));
+		if (reals.length === 0) return null;
+		return [Math.min(...reals), Math.max(...reals)];
+	});
+
 	// The hover/focus dot for the active point (interactive only).
 	const activePoint = $derived(activeIndex >= 0 ? points[activeIndex] : null);
 
-	// Show the tooltip for index `i` (only if it is a real, plotted point).
+	// Show the tooltip for index `i` (only if it is a real, plotted point). The
+	// value carries the y-axis unit; the heading carries the x-axis category. The
+	// tooltip sits ABOVE the point (side 'top') and ChartTooltip flips it below +
+	// clamps horizontally when the point is near an edge, so it never overlaps.
 	function showAt(i: number): void {
 		const p = points[i];
 		if (!p) return;
@@ -131,7 +182,8 @@
 			xPct: (p.x / width) * 100,
 			yPct: (p.y / height) * 100,
 			side: 'top',
-			rows: [{ colorVar, label: label ?? 'value', value: String(values[i]) }],
+			heading: xLabels?.[i],
+			rows: [{ colorVar, label: seriesLabel, value: withUnit(values[i] as number) }],
 		});
 	}
 
@@ -220,15 +272,58 @@
 	</svg>
 {/snippet}
 
-<div
-	bind:this={ref}
-	class={cn('dv-sparkline inline-block', className)}
-	role="img"
-	aria-label={label ?? 'Sparkline'}
-	data-slot="sparkline"
-	{...restProps}
->
-	{#if interactive}
+{#snippet yTicks()}
+	<!-- Min/max endpoint ticks (HTML, not SVG <text>, the viewBox stretches).
+	     A middle dot when the domain is unknown: an honest no-data tick, never 0. -->
+	<div class="dv-sparkline-ticks" aria-hidden="true" style="height: {height}px;">
+		<span class="dv-sparkline-tick">{yDomain ? withUnit(yDomain[1]) : '·'}</span>
+		<span class="dv-sparkline-tick">{yDomain ? withUnit(yDomain[0]) : '·'}</span>
+	</div>
+{/snippet}
+
+{#snippet targets()}
+	<!-- Keyboard / AT focus targets: one per real plotted point. -->
+	<div class="dv-sparkline-targets" aria-hidden="false">
+		{#each realIndices as i (i)}
+			<!-- svelte-ignore a11y_no_interactive_element_to_noninteractive_role -->
+			<!-- Deliberate AT focus target: a focusable <button> that reads its
+			     point's value via role=img + aria-label (keyboard parity). -->
+			<button
+				type="button"
+				class="dv-sparkline-target"
+				role="img"
+				aria-label={`${xLabels?.[i] ? xLabels[i] + ' ' : ''}${seriesLabel}: ${withUnit(
+					values[i] as number,
+				)}`}
+				aria-describedby={tip.id}
+				onfocus={() => showAt(i)}
+				onblur={hide}
+				onkeydown={onKeyDown}
+			></button>
+		{/each}
+	</div>
+{/snippet}
+
+{#snippet sparkRow()}
+	<!-- The ticks + plot row. Shared by the floating-tooltip + fixed-readout paths
+	     so the markup stays identical save for the readout target. -->
+	{#if showYTicks}
+		{@render yTicks()}
+	{/if}
+	{#if interactive && readout}
+		<!-- Fixed-readout path: NO floating overlay over the line. Pointer handlers
+		     ride the plot <div>; the value reads in the row above. -->
+		<div
+			class="dv-sparkline-plot"
+			onpointermove={onPointerMove}
+			onpointerleave={hide}
+			onkeydown={onKeyDown}
+			role="presentation"
+		>
+			{@render spark()}
+			{@render targets()}
+		</div>
+	{:else if interactive}
 		<div class="dv-sparkline-plot">
 			<ChartTooltip
 				{...tip}
@@ -240,33 +335,82 @@
 				{@render spark()}
 			</ChartTooltip>
 
-			<!-- Keyboard / AT focus targets: one per real plotted point. -->
-			<div class="dv-sparkline-targets" aria-hidden="false">
-				{#each realIndices as i (i)}
-					<!-- svelte-ignore a11y_no_interactive_element_to_noninteractive_role -->
-					<!-- Deliberate AT focus target: a focusable <button> that reads its
-					     point's value via role=img + aria-label (keyboard parity). -->
-					<button
-						type="button"
-						class="dv-sparkline-target"
-						role="img"
-						aria-label={`${label ?? 'value'}: ${String(values[i])}`}
-						aria-describedby={tip.id}
-						onfocus={() => showAt(i)}
-						onblur={hide}
-						onkeydown={onKeyDown}
-					></button>
-				{/each}
-			</div>
+			{@render targets()}
 		</div>
 	{:else}
 		{@render spark()}
 	{/if}
-</div>
+{/snippet}
+
+{#if interactive && readout}
+	<!-- Fixed-readout layout: the readout stacks ABOVE the spark row. The labelled
+	     role=img container becomes a column; the spark row keeps its inline-flex. -->
+	<div
+		bind:this={ref}
+		class={cn('dv-sparkline dv-sparkline--readout', className)}
+		role="img"
+		aria-label={label ?? 'Sparkline'}
+		data-slot="sparkline"
+		{...restProps}
+	>
+		<ChartReadout
+			class="dv-sparkline-readout"
+			open={tip.open}
+			heading={tip.heading}
+			rows={tip.rows}
+			id={tip.id}
+			placeholder={readoutHint}
+		/>
+		<div class="dv-sparkline-row inline-flex items-stretch">
+			{@render sparkRow()}
+		</div>
+	</div>
+{:else}
+	<div
+		bind:this={ref}
+		class={cn('dv-sparkline inline-flex items-stretch', className)}
+		role="img"
+		aria-label={label ?? 'Sparkline'}
+		data-slot="sparkline"
+		{...restProps}
+	>
+		{@render sparkRow()}
+	</div>
+{/if}
 
 <style>
+	/* Fixed-readout layout: stack the readout above the spark row. */
+	.dv-sparkline--readout {
+		display: flex;
+		flex-direction: column;
+		align-items: stretch;
+		gap: 0.5rem;
+	}
+
 	.dv-sparkline-plot {
 		position: relative;
+		flex: 1 1 auto;
+		min-width: 0;
+	}
+
+	/* Endpoint-tick gutter (max on top, min on bottom). Mono micro text on the
+	   neutral axis colour — never an affordance token; AA-tested. */
+	.dv-sparkline-ticks {
+		display: flex;
+		flex: none;
+		flex-direction: column;
+		justify-content: space-between;
+		align-items: flex-end;
+		padding-inline-end: 0.375rem;
+		text-align: end;
+	}
+
+	.dv-sparkline-tick {
+		font-family: var(--font-mono);
+		font-size: var(--text-micro);
+		font-variant-numeric: tabular-nums;
+		line-height: 1;
+		color: var(--muted-foreground);
 	}
 
 	/* Invisible per-point focus strips overlaying the line for keyboard + AT;

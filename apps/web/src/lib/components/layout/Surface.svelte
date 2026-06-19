@@ -59,4 +59,22 @@
 	.surface-shell--none {
 		padding-block: 0;
 	}
+
+	/* A child opts into full-bleed by escaping the Surface gutter out to the
+	   content-column edges (the rail-inset <main> box). It does NOT escape the
+	   rail offset — that lives on AppShell's <main> padding-left and is the
+	   "never behind the rail" boundary. Negative margin = the live gutter, so
+	   the band's edges land exactly on the page padding line (no JS, no 100vw —
+	   reacts live as the rail is dragged because <main>'s padding moves the box). */
+	:global(.surface-bleed) {
+		margin-inline: calc(-1 * var(--space-page-x));
+	}
+	/* Dense bodies inside a bled band keep a reading measure: re-apply the gutter
+	   as padding AND re-cap the text column. Compose `.surface-bleed` on the band
+	   wrapper and `.surface-measure` on its inner dense-text block. */
+	:global(.surface-measure) {
+		padding-inline: var(--space-page-x);
+		max-width: var(--container-content);
+		margin-inline: auto;
+	}
 </style>

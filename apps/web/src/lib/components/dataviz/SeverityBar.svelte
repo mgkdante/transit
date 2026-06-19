@@ -100,7 +100,7 @@
 			aria-valuemin={0}
 			aria-valuemax={100}
 			aria-valuenow={hasData ? Math.round(pct) : undefined}
-			aria-label={label ? `${label} — ${severity}` : severity}
+			aria-label={label ? `${label}, ${severity}` : severity}
 			aria-describedby={tip.open ? tip.id : undefined}
 			tabindex={0}
 			onpointerenter={showTip}
@@ -131,7 +131,7 @@
 		aria-valuemin={0}
 		aria-valuemax={100}
 		aria-valuenow={hasData ? Math.round(pct) : undefined}
-		aria-label={label ? `${label} — ${severity}` : severity}
+		aria-label={label ? `${label}, ${severity}` : severity}
 		data-slot="severity-bar"
 		data-severity={severity}
 		{...restProps}

@@ -2,8 +2,8 @@
   MapHero — the citizen-first live vehicle map (Family A, slice-9.3 hero).
 
   ENCODING DOCTRINE (one colour per entity, state→filter): buses render in ONE
-  calm brand orange with directional kites; no-heading buses are squares; stops
-  are yellow diamonds, zoom-gated so the 8,986-stop catalogue never
+  calm brand orange as a single directional kite sprite that rotates by bearing;
+  stops are reddish-orange diamonds, zoom-gated so the 8,986-stop catalogue never
   blankets the city. No status/crowding colour by default — that lives in the
   combinable filter, which repaints matched subsets in their state colour and
   hides non-matches. Routes draw on-demand (per-route geometry; no bulk file)
@@ -901,7 +901,12 @@
 		label={t.mapLabel}
 	/>
 
-	<!-- Top-left: map title. -->
+	<!-- Edge framing: a token-driven vignette so the full-bleed canvas reads as a
+	     deliberate composition (panes float over it) rather than a raw GL square. -->
+	<div class="map-vignette" aria-hidden="true"></div>
+
+	<!-- Top-left: map title. A mono kicker overline + live freshness ride above a
+	     confident heading; a hairline accent rule anchors the block to the edge. -->
 	<div class="map-overlay map-head">
 		<div class="map-kicker-row">
 			<p class="map-kicker">{t.kicker}</p>
@@ -1046,16 +1051,38 @@
 		width: 100%;
 		height: 100%;
 		overflow: hidden;
+		background: var(--background);
+		/* The live offset is driven by the inline `style` binding above
+		   (mapDetailOffset = the measured rail width on desktop, else 0rem); the
+		   fallback keeps left/right chrome anchored before the first measure. */
 		--map-detail-offset: 0rem;
-	}
-	.map-hero:has(:global(.right-panel[data-open='true'])) {
-		--map-detail-offset: 360px;
-	}
-	.map-hero:has(:global(.right-panel[data-open='false'])) {
-		--map-detail-offset: 3.7rem;
 	}
 	.map-hero :global(.map-stage) {
 		border-radius: 0;
+	}
+
+	/* Full-bleed framing: an inset vignette grounds the floating panes against the
+	   live canvas and feathers the top/edges so overlay text stays legible over
+	   busy basemap tiles, without recolouring the map. Tuned per theme via the
+	   --foreground token so it darkens on dark and lightly mutes on cool-slate. */
+	.map-vignette {
+		position: absolute;
+		inset: 0;
+		z-index: 5;
+		pointer-events: none;
+		background:
+			linear-gradient(
+				to bottom,
+				color-mix(in srgb, var(--background) 34%, transparent) 0%,
+				transparent 18%,
+				transparent 86%,
+				color-mix(in srgb, var(--background) 24%, transparent) 100%
+			),
+			radial-gradient(
+				120% 90% at 50% 42%,
+				transparent 58%,
+				color-mix(in srgb, var(--foreground) 7%, transparent) 100%
+			);
 	}
 
 	.map-overlay {
@@ -1063,11 +1090,15 @@
 		z-index: 10;
 	}
 	.map-head {
-		top: 1rem;
+		top: 1.15rem;
 		left: calc(var(--app-left-rail-offset, 0rem) + 1rem);
 		display: flex;
 		flex-direction: column;
-		gap: 0.35rem;
+		gap: 0.4rem;
+		padding-left: 0.85rem;
+		/* Hairline accent rule anchors the title to the canvas edge — font as
+		   architecture: a single vertical brand stroke instead of a chrome box. */
+		border-left: 2px solid var(--border-rule);
 		max-width: calc(
 			100% - var(--app-left-rail-offset, 0rem) - var(--map-detail-offset, 0rem) - 2rem
 		);
@@ -1075,14 +1106,14 @@
 	.map-kicker-row {
 		display: flex;
 		align-items: center;
-		gap: 0.5rem;
+		gap: 0.6rem;
 		min-width: 0;
 	}
 	.map-kicker {
 		margin: 0;
 		font-family: var(--font-mono);
 		font-size: var(--text-micro);
-		letter-spacing: 0.12em;
+		letter-spacing: 0.16em;
 		text-transform: uppercase;
 		color: var(--accent-text);
 	}
@@ -1096,9 +1127,13 @@
 		margin: 0;
 		font-family: var(--font-heading);
 		font-weight: 700;
-		font-size: var(--text-subheading);
-		line-height: 1;
+		font-size: var(--text-heading);
+		letter-spacing: -0.01em;
+		line-height: 0.95;
 		color: var(--foreground);
+		/* Faint legibility lift so the heading survives over busy basemap tiles;
+		   the colour-mix keeps it theme-correct (dark halo on dark, light on light). */
+		text-shadow: 0 1px 16px color-mix(in srgb, var(--background) 70%, transparent);
 	}
 	.map-dot {
 		color: var(--primary);
@@ -1110,15 +1145,20 @@
 
 	.map-peek {
 		right: calc(var(--map-detail-offset, 0rem) + 1rem);
-		bottom: 1rem;
+		bottom: 1.15rem;
 		z-index: 24;
 		max-width: min(20rem, calc(100% - 2rem));
-		padding: 0.75rem;
-		background: color-mix(in srgb, var(--card) 94%, transparent);
-		border: 1px solid color-mix(in srgb, var(--border) 78%, var(--primary) 22%);
+		padding: 0.85rem 0.9rem;
+		background: color-mix(in srgb, var(--card) 92%, transparent);
+		border: 1px solid var(--border-hairline);
+		border-top: 2px solid var(--border-rule);
 		border-radius: var(--radius-md);
 		box-shadow: var(--shadow-card);
-		backdrop-filter: blur(10px);
+		/* The card is already ~92% opaque, so the blur barely shows through; keep
+		   it modest (10px, in line with the rest of the chrome) since this peek
+		   floats over the constantly-repainting live canvas — a heavier blur is
+		   pure compositing cost on the busiest overlay for no visible gain. */
+		backdrop-filter: blur(10px) saturate(1.05);
 		pointer-events: none;
 	}
 	.map-detail-dock {
@@ -1141,17 +1181,37 @@
 		height: 100%;
 		min-width: 0;
 		pointer-events: auto;
+		/* Casts the dock against the map edge so the panel reads as a layer above
+		   the canvas, not a seam in it. */
+		box-shadow: var(--shadow-section);
 	}
+	/* The resize grip: a calm rail at rest that warms to brand on
+	   hover/focus/drag. The rail is a hairline; the withHandle child becomes a
+	   slim centred pill (not a chunky bar). */
 	:global(.map-detail-resize-handle) {
 		width: 8px;
 		pointer-events: auto;
-		background: var(--border);
-		border-radius: var(--radius-sm);
-		transition: background var(--duration-fast, 120ms) var(--ease-default, ease);
+		background: var(--border-hairline);
+		transition: background var(--duration-fast, 150ms) var(--ease-default, ease);
+	}
+	:global(.map-detail-resize-handle > div) {
+		height: 2.25rem;
+		width: 2px;
+		border-radius: var(--radius-pill);
+		background: var(--border-strong);
+		transition:
+			background var(--duration-fast, 150ms) var(--ease-default, ease),
+			height var(--duration-fast, 150ms) var(--ease-default, ease);
 	}
 	:global(.map-detail-resize-handle:hover),
 	:global(.map-detail-resize-handle:focus-visible),
 	:global(.map-detail-resize-handle[data-active='pointer']) {
+		background: color-mix(in srgb, var(--primary) 16%, transparent);
+	}
+	:global(.map-detail-resize-handle:hover > div),
+	:global(.map-detail-resize-handle:focus-visible > div),
+	:global(.map-detail-resize-handle[data-active='pointer'] > div) {
+		height: 3rem;
 		background: var(--primary);
 	}
 
@@ -1159,7 +1219,8 @@
 		:global(.mf-chip) {
 			transition: none;
 		}
-		:global(.map-detail-resize-handle) {
+		:global(.map-detail-resize-handle),
+		:global(.map-detail-resize-handle > div) {
 			transition: none;
 		}
 	}
@@ -1169,7 +1230,11 @@
 			top: 0.75rem;
 			left: 0.75rem;
 			right: 0.75rem;
+			padding-left: 0.7rem;
 			max-width: calc(100% - 1.5rem);
+		}
+		.map-heading {
+			font-size: var(--text-subheading);
 		}
 		.map-filter-panel {
 			display: none;

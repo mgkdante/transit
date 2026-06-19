@@ -1,6 +1,7 @@
 import type { RouteIndexEntry, StopIndexEntry, Vehicle } from '$lib/v1/schemas';
 import { fromSearchParams, toSearchString } from '$lib/filters';
 import type { GeocodePrecision, GeocodeSource, GeocodeSuggestion } from '$lib/geocode/types';
+import { routeFor } from '$lib/nav';
 import { dedupeBy, foldSearchText, tokenMatchScore } from '$lib/search/normalize';
 import { stopGroupKey } from '$lib/search/stopMode';
 import { setMapFocusSearchParams, type MapFocusKind } from '$lib/search/mapFocus';
@@ -11,6 +12,21 @@ import {
 } from '$lib/search/mapNear';
 
 export type ChromeSearchKind = 'route' | 'stop' | 'vehicle' | 'address';
+
+/**
+ * The surface context the chrome search runs in — derived from the active
+ * (delocalized) path. It RESTRICTS the result blend and steers selection:
+ *   `route` (/lines, /route/*) → only lines, deep-link to /route/<id>
+ *   `stop`  (/stops, /stop/*)  → only stops, deep-link to /stop/<id>
+ *   `map`   (/map)             → the full blend, every pick filters the map
+ *   `all`   (hub/network/search/else) → today's blend, map deep-links
+ */
+export type ChromeSearchScope = 'route' | 'stop' | 'map' | 'all';
+
+export interface ChromeSearchOptions {
+	/** Active surface context (delocalized). Default `'all'` (today's blend). */
+	readonly scope?: ChromeSearchScope;
+}
 
 export interface ChromeSearchResult {
 	readonly kind: ChromeSearchKind;
@@ -50,9 +66,12 @@ function collate(a: ChromeSearchResult, b: ChromeSearchResult): number {
 export function chromeSearchResults(
 	query: string,
 	sources: ChromeSearchSources,
+	options: ChromeSearchOptions = {},
 ): ChromeSearchResult[] {
 	const q = foldSearchText(query);
 	if (!q) return [];
+
+	const scope = options.scope ?? 'all';
 
 	const routes = (sources.routes ?? [])
 		.map((route): ChromeSearchResult | null => {
@@ -120,7 +139,45 @@ export function chromeSearchResults(
 		.sort(collate)
 		.slice(0, 3);
 
+	// Scope RESTRICTS, not merely re-ranks: a rider on /lines wants a line, so a
+	// stop here is noise (and an address can never deep-link). `map`/`all` keep
+	// the full blend — the map filters by every entity type.
+	if (scope === 'route') return routes.slice(0, 8);
+	if (scope === 'stop') return stops.slice(0, 8);
 	return [...routes, ...stops, ...vehicles, ...addresses].sort(collate).slice(0, 8);
+}
+
+/**
+ * Scope for the active (DELOCALIZED) path. Mirrors `nav.ts` `activePrefixes`
+ * (`/route/`, `/stop/`) EXACTLY so search scope and nav highlight never disagree.
+ */
+export function scopeForPath(delocalizedPath: string): ChromeSearchScope {
+	if (delocalizedPath === '/lines' || delocalizedPath.startsWith('/route/')) return 'route';
+	if (delocalizedPath === '/stops' || delocalizedPath.startsWith('/stop/')) return 'stop';
+	if (delocalizedPath === '/map') return 'map';
+	return 'all';
+}
+
+/**
+ * Context-aware destination for a picked result. In `route`/`stop` scope a
+ * matching entity deep-links to its DETAIL page (`/route/<id>`, `/stop/<id>`)
+ * via the shared `routeFor` canonical map; everything else — `map`/`all` scope,
+ * addresses, or a kind that does not match its scope — falls through to the
+ * EXISTING `chromeSearchHref` map-filter behavior (unchanged). Returns an
+ * UNLOCALIZED path; the caller localizes at the navigation boundary.
+ */
+export function chromeSearchResultHref(
+	result: ChromeSearchResult,
+	scope: ChromeSearchScope,
+	currentSearchParams?: URLSearchParams,
+): string {
+	if (scope === 'route' && result.kind === 'route') {
+		return routeFor({ kind: 'line', id: result.id });
+	}
+	if (scope === 'stop' && result.kind === 'stop') {
+		return routeFor({ kind: 'stop', id: result.id });
+	}
+	return chromeSearchHref(result, currentSearchParams);
 }
 
 export function chromeSearchHref(

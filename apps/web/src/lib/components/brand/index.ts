@@ -15,6 +15,8 @@
 export { default as StatusDot } from './StatusDot.svelte';
 export type { StatusDotProps } from './StatusDot.svelte';
 
+export { default as BrandCluster } from './BrandCluster.svelte';
+
 export { default as MetricDisplay } from './MetricDisplay.svelte';
 export type { MetricDisplayProps } from './MetricDisplay.svelte';
 

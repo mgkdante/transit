@@ -345,10 +345,12 @@ describe('schema round-trip — a bad value throws via parsePort, naming the por
 		);
 	});
 
-	it('[stops_index] rejects a stop with an out-of-enum mode (nested object path)', () => {
+	it('[stops_index] rejects a stop with a wrong-typed mode (nested object path)', () => {
+		// `mode` is a FREE STRING in the canonical contract (not a closed enum), so an
+		// unknown string value is VALID — only a wrong TYPE (here a number) must throw.
 		const bad = {
 			generated_utc: ISO,
-			stops: [{ id: 's1', name: 'X', lat: 45.5, lon: -73.6, mode: 'spaceship' }],
+			stops: [{ id: 's1', name: 'X', lat: 45.5, lon: -73.6, mode: 42 }],
 		};
 		expect(() => parsePort('stops_index', StopsIndexSchema, bad)).toThrowError(
 			/^\[adapter\.stops_index\]/,

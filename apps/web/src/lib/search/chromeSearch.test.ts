@@ -1,6 +1,20 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { RouteIndexEntry, StopIndexEntry, Vehicle } from '$lib/v1/schemas';
-import { chromeSearchResults, chromeSearchHref } from './chromeSearch';
+
+// `chromeSearchResultHref` reaches `routeFor` via `$lib/nav`, whose `intent`
+// module imports `goto` from `$app/navigation` — the SvelteKit client runtime
+// touches `window` at module load, which the node "data" project lacks. Stub it
+// so the (pure) `routeFor`/`chromeSearchResultHref` graph loads; `goto` is never
+// called in these unit tests.
+vi.mock('$app/navigation', () => ({ goto: () => Promise.resolve() }));
+
+import {
+	chromeSearchResults,
+	chromeSearchHref,
+	chromeSearchResultHref,
+	scopeForPath,
+	type ChromeSearchResult,
+} from './chromeSearch';
 
 const routes: RouteIndexEntry[] = [
 	{ id: '24', short: '24', long: 'Sherbrooke', type: 3 },
@@ -251,5 +265,135 @@ describe('chromeSearchHref', () => {
 		expect(chromeSearchHref({ kind: 'route', id: '161' }, current)).toBe(
 			'/map?route=161&near=45.525686%2C-73.594764&nearLabel=Mile+End&focus=route%3A161',
 		);
+	});
+});
+
+describe('scopeForPath', () => {
+	it('maps the line catalogue and route detail to route scope', () => {
+		expect(scopeForPath('/lines')).toBe('route');
+		expect(scopeForPath('/route/161')).toBe('route');
+	});
+
+	it('maps the stop catalogue and stop detail to stop scope', () => {
+		expect(scopeForPath('/stops')).toBe('stop');
+		expect(scopeForPath('/stop/52819')).toBe('stop');
+	});
+
+	it('maps the map surface to map scope', () => {
+		expect(scopeForPath('/map')).toBe('map');
+	});
+
+	it('falls back to the full blend on the hub, network, and search surfaces', () => {
+		expect(scopeForPath('/')).toBe('all');
+		expect(scopeForPath('/network')).toBe('all');
+		expect(scopeForPath('/search')).toBe('all');
+	});
+});
+
+describe('chromeSearchResults scope', () => {
+	it('restricts route scope to lines, dropping stops, vehicles, and addresses', () => {
+		// "van horne" matches route 161 (long) AND stop 57191 (name) — without scope
+		// the blend carries both; route scope must keep ONLY the line.
+		const blended = chromeSearchResults('van horne', { routes, stops, vehicles });
+		expect(blended.some((result) => result.kind === 'route')).toBe(true);
+		expect(blended.some((result) => result.kind === 'stop')).toBe(true);
+
+		const results = chromeSearchResults(
+			'van horne',
+			{
+				routes,
+				stops,
+				vehicles,
+				addresses: [
+					{ lat: 45.5, lon: -73.6, label: 'Van Horne', source: 'geo_ca', precision: 'address' },
+				],
+			},
+			{ scope: 'route' },
+		);
+
+		expect(results.length).toBeGreaterThan(0);
+		expect(results.every((result) => result.kind === 'route')).toBe(true);
+	});
+
+	it('restricts stop scope to stops, dropping everything else', () => {
+		const results = chromeSearchResults(
+			'van horne',
+			{ routes, stops, vehicles },
+			{ scope: 'stop' },
+		);
+
+		expect(results.length).toBeGreaterThan(0);
+		expect(results.every((result) => result.kind === 'stop')).toBe(true);
+	});
+
+	it('keeps the full blend on map scope (unchanged ordering)', () => {
+		const results = chromeSearchResults('161', { routes, stops, vehicles }, { scope: 'map' });
+
+		expect(results.map((result) => `${result.kind}:${result.id}`)).toEqual([
+			'route:161',
+			'vehicle:161',
+		]);
+	});
+
+	it('matches today behavior on all scope and when scope is omitted', () => {
+		const blend = ['route:161', 'vehicle:161'];
+		expect(
+			chromeSearchResults('161', { routes, stops, vehicles }, { scope: 'all' }).map(
+				(result) => `${result.kind}:${result.id}`,
+			),
+		).toEqual(blend);
+		expect(
+			chromeSearchResults('161', { routes, stops, vehicles }).map(
+				(result) => `${result.kind}:${result.id}`,
+			),
+		).toEqual(blend);
+	});
+});
+
+describe('chromeSearchResultHref', () => {
+	const routeResult: ChromeSearchResult = {
+		kind: 'route',
+		id: '161',
+		label: '161 Van Horne',
+		priority: 0,
+	};
+	const stopResult: ChromeSearchResult = {
+		kind: 'stop',
+		id: '52819',
+		label: 'Montgomery / Sherbrooke',
+		meta: '52618',
+		priority: 4,
+	};
+
+	it('deep-links a route pick to its detail page in route scope', () => {
+		expect(chromeSearchResultHref(routeResult, 'route')).toBe('/route/161');
+	});
+
+	it('deep-links a stop pick to its detail page in stop scope', () => {
+		expect(chromeSearchResultHref(stopResult, 'stop')).toBe('/stop/52819');
+	});
+
+	it('falls through to the map filter spine on map and all scope', () => {
+		expect(chromeSearchResultHref(routeResult, 'map')).toBe('/map?route=161&focus=route%3A161');
+		expect(chromeSearchResultHref(stopResult, 'all')).toBe('/map?stop=52819&focus=stop%3A52819');
+	});
+
+	it('falls through to the map near target for an address (no detail route)', () => {
+		const address: ChromeSearchResult = {
+			kind: 'address',
+			id: '45.525686,-73.594764',
+			label: '5333 Avenue Casgrain, Montréal, Quebec',
+			lat: 45.5256864,
+			lon: -73.5947644,
+			priority: 30,
+		};
+
+		expect(chromeSearchResultHref(address, 'route')).toBe(
+			'/map?near=45.525686%2C-73.594764&nearLabel=5333+Avenue+Casgrain%2C+Montr%C3%A9al%2C+Quebec',
+		);
+	});
+
+	it('URI-encodes the entity id through routeFor', () => {
+		expect(chromeSearchResultHref({ ...routeResult, id: '10 A' }, 'route')).toBe('/route/10%20A');
 	});
 });

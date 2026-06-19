@@ -14,7 +14,8 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
 	import { cn } from '$lib/utils';
-	import { wordmarkHover } from '$lib/motion/actions';
+	import { isPrefersReducedMotion } from '$lib/motion/reduced-motion.svelte';
+	import { isTouchDevice } from '$lib/motion/utils/device';
 
 	interface Props {
 		/** Where the mark links. Default: the parent brand site. */
@@ -38,13 +39,32 @@
 
 	let lettersEl: HTMLSpanElement;
 	let dotEl: HTMLSpanElement;
-	let action: ReturnType<typeof wordmarkHover> | undefined;
+	let action: { destroy(): void } | undefined;
+	let destroyed = false;
 
 	onMount(() => {
-		if (!animate) return;
-		action = wordmarkHover(lettersEl, { dotEl, autoPlay, autoPlayDelay: 500 });
+		// LAZY GSAP: the wordmark hover effect is the ONLY consumer of GSAP in the
+		// chrome, and it is a pure flourish. Keep GSAP out of the critical bundle by
+		// dynamically importing the action only when it will actually run — i.e.
+		// after mount, in the browser, with animation enabled, on a non-touch device,
+		// and NOT under prefers-reduced-motion. Reduced-motion / touch users never
+		// fetch GSAP at all; everyone else fetches it off the critical path.
+		if (!animate || isTouchDevice() || isPrefersReducedMotion()) return;
+		void import('$lib/motion/actions')
+			.then(({ wordmarkHover }) => {
+				// The component may have unmounted before the chunk resolved.
+				if (destroyed || !lettersEl) return;
+				action = wordmarkHover(lettersEl, { dotEl, autoPlay, autoPlayDelay: 500 });
+			})
+			.catch(() => {
+				// Animation is a pure flourish — if the chunk fails to load, the
+				// wordmark simply stays static. Never surface this to the user.
+			});
 	});
-	onDestroy(() => action?.destroy());
+	onDestroy(() => {
+		destroyed = true;
+		action?.destroy();
+	});
 </script>
 
 <a
