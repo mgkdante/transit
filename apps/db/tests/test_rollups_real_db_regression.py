@@ -48,9 +48,17 @@ def conn():
     engine = create_engine(DB_URL)
     with engine.connect() as connection:
         transaction = connection.begin()
+        # Anchor in the provider timezone (America/Toronto) — the same calendar
+        # the percentile rollup's closed-day filter uses (local_date < (now() AT
+        # TIME ZONE provider)::date). A UTC-anchored base flakes at the UTC/Toronto
+        # date boundary: once real Toronto time crosses midnight, base_local_date
+        # (derived from UTC) lags the build's today_local, so the "today" open-day
+        # seed rows fall on a day the build already treats as closed. Noon-today
+        # local keeps base_local_date == today_local at any wall-clock hour.
         base_utc = (
-            datetime.now(UTC).replace(minute=0, second=0, microsecond=0)
-            - timedelta(hours=3)
+            datetime.now(TORONTO)
+            .replace(hour=12, minute=0, second=0, microsecond=0)
+            .astimezone(UTC)
         )
         seed = _SeedData(base_utc)
         _seed(connection, seed)
