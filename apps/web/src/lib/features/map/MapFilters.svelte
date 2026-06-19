@@ -28,6 +28,7 @@
 	import { statusVar, occupancyVar } from '$lib/components/dataviz';
 	import type { Locale } from '$lib/i18n';
 	import { copy as MAP_COPY, STATUS_LABELS, OCCUPANCY_LABELS } from './map.copy';
+	import MarkerGlyph from './MarkerGlyph.svelte';
 
 	interface Props {
 		store: FilterStore;
@@ -66,12 +67,10 @@
 	);
 	const selectedTripIds = $derived(Array.from(store.trips).sort((a, b) => collator.compare(a, b)));
 	const entityOptions = $derived([
-		{ kind: 'bus_direction', glyph: '▲', label: t.entityBusDirection },
-		{ kind: 'bus_no_direction', glyph: '■', label: t.entityBusNoDirection },
-		{ kind: 'stop', glyph: '◆', label: t.entityStop, stop: true },
+		{ kind: 'bus', label: t.entityBus },
+		{ kind: 'stop', label: t.entityStop, stop: true },
 	] satisfies {
 		kind: EntityKind;
-		glyph: string;
 		label: string;
 		stop?: boolean;
 	}[]);
@@ -163,11 +162,15 @@
 					aria-label={t.filterTitle}
 					onclick={() => (filterOpen = !filterOpen)}
 				>
+					<span class="mf-toggle-icon" aria-hidden="true">
+						{#if filterOpen}
+							<PanelLeftCloseIcon size={15} strokeWidth={2.2} />
+						{:else}
+							<PanelLeftOpenIcon size={15} strokeWidth={2.2} />
+						{/if}
+					</span>
 					{#if filterOpen}
-						<PanelLeftCloseIcon size={15} strokeWidth={2.2} aria-hidden="true" />
 						<span class="mf-title">{t.filterTitle}</span>
-					{:else}
-						<PanelLeftOpenIcon size={15} strokeWidth={2.2} aria-hidden="true" />
 					{/if}
 				</button>
 			{:else}
@@ -399,7 +402,9 @@
 						aria-pressed={store.entities.includes(item.kind)}
 						onclick={() => toggleEntity(item.kind)}
 					>
-						<span class:mf-shape-stop={item.stop} class="mf-glyph">{item.glyph}</span>
+						<span class:mf-shape-stop={item.stop} class="mf-glyph">
+							<MarkerGlyph kind={item.kind} />
+						</span>
 						{#if panelOpen}
 							<span class="mf-chip-text">{item.label}</span>
 						{/if}
@@ -443,24 +448,30 @@
 	.map-filters {
 		--mf-control-size: 2rem;
 		--mf-header-control-size: 2rem;
-		--mf-badge-size: 1.35rem;
+		--mf-badge-size: 1.4rem;
 		--mf-badge-icon-size: 0.82rem;
-		--mf-swatch-size: 0.72rem;
+		--mf-swatch-size: 0.7rem;
+		/* The structural hairline tint: a brand-warmed border that reads on both
+		   the dark board and the cool-slate paper. */
+		--mf-edge: color-mix(in srgb, var(--border) 82%, var(--primary) 18%);
 
 		display: flex;
 		flex-direction: column;
-		gap: 0.75rem;
-		width: 15.75rem;
+		gap: 0.7rem;
+		width: 16rem;
 		max-width: calc(100vw - 2rem);
 		max-height: min(72dvh, calc(100dvh - 7rem));
-		padding: 0.85rem;
-		background: color-mix(in srgb, var(--card) 92%, transparent);
-		border: 1px solid color-mix(in srgb, var(--border) 84%, var(--primary) 16%);
-		border-radius: var(--radius-md);
+		padding: 0.55rem 0.7rem 0.7rem;
+		background: color-mix(in srgb, var(--card) 90%, transparent);
+		border: 1px solid var(--mf-edge);
+		border-radius: var(--radius-lg);
 		box-shadow: var(--shadow-card);
-		backdrop-filter: blur(8px);
+		backdrop-filter: blur(10px) saturate(1.1);
 		overflow: hidden;
-		transition: width var(--duration-slow) var(--ease-default);
+		transition:
+			width var(--duration-slow) var(--ease-out),
+			background-color var(--duration-slow) var(--ease-out),
+			border-color var(--duration-slow) var(--ease-out);
 	}
 	.map-filters[data-open='false'] {
 		width: 4.95rem;
@@ -468,8 +479,10 @@
 	.mf-controls {
 		display: flex;
 		flex-direction: column;
-		gap: 0.35rem;
+		gap: 0.5rem;
 		min-width: 0;
+		padding-bottom: 0.6rem;
+		border-bottom: 1px solid color-mix(in srgb, var(--mf-edge) 70%, transparent);
 	}
 	.mf-head {
 		display: flex;
@@ -481,33 +494,55 @@
 	.mf-toggle {
 		display: flex;
 		align-items: center;
-		gap: 0.35rem;
+		gap: 0.5rem;
+		width: 100%;
 		min-height: 2rem;
-		padding: 0;
-		color: inherit;
+		padding: 0.25rem 0.3rem;
+		margin: -0.25rem -0.3rem;
+		color: var(--muted-foreground);
 		background: none;
 		border: none;
+		border-radius: var(--radius-sm);
 		cursor: pointer;
 		overflow: hidden;
 		transition:
 			color var(--duration-fast) var(--ease-default),
 			background-color var(--duration-fast) var(--ease-default);
 	}
-	.mf-toggle:hover {
+	.mf-toggle-icon {
+		display: inline-grid;
+		place-items: center;
+		width: 1.6rem;
+		height: 1.6rem;
+		flex: none;
 		color: var(--primary);
-		background: color-mix(in srgb, var(--primary) 8%, transparent);
+		background: color-mix(in srgb, var(--primary) 12%, transparent);
+		border: 1px solid color-mix(in srgb, var(--primary) 30%, transparent);
+		border-radius: var(--radius-sm);
+		transition:
+			color var(--duration-fast) var(--ease-default),
+			background-color var(--duration-fast) var(--ease-default),
+			border-color var(--duration-fast) var(--ease-default);
+	}
+	.mf-toggle:hover {
+		color: var(--foreground);
+	}
+	.mf-toggle:hover .mf-toggle-icon {
+		color: var(--primary-hover);
+		background: color-mix(in srgb, var(--primary) 18%, transparent);
+		border-color: color-mix(in srgb, var(--primary) 45%, transparent);
 	}
 	.mf-toggle:focus-visible {
 		outline: 2px solid var(--ring);
 		outline-offset: 2px;
-		border-radius: var(--radius-sm);
 	}
 	.mf-title {
 		font-family: var(--font-mono);
-		font-size: var(--text-caption);
-		letter-spacing: 0.12em;
+		font-size: var(--text-mono);
+		font-weight: 600;
+		letter-spacing: 0.14em;
 		text-transform: uppercase;
-		color: var(--muted-foreground);
+		color: var(--foreground);
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
@@ -519,38 +554,44 @@
 	.mf-body {
 		display: flex;
 		flex-direction: column;
-		gap: 0.75rem;
+		gap: 0.85rem;
 		min-height: 0;
 		min-width: 0;
 		overflow-y: auto;
 		padding-right: 0.5rem;
 		scrollbar-gutter: stable;
 		scrollbar-width: thin;
-		scrollbar-color: color-mix(in srgb, var(--primary) 42%, var(--border) 58%) transparent;
+		scrollbar-color: color-mix(in srgb, var(--primary) 40%, var(--border) 60%) transparent;
 	}
 	.mf-body::-webkit-scrollbar {
-		width: 0.45rem;
+		width: 0.4rem;
 	}
 	.mf-body::-webkit-scrollbar-track {
 		background: transparent;
 	}
 	.mf-body::-webkit-scrollbar-thumb {
-		background: color-mix(in srgb, var(--primary) 36%, var(--border) 64%);
+		background: color-mix(in srgb, var(--primary) 32%, var(--border) 68%);
 		border-radius: var(--radius-pill);
+	}
+	.mf-body::-webkit-scrollbar-thumb:hover {
+		background: color-mix(in srgb, var(--primary) 48%, var(--border) 52%);
 	}
 	.mf-group {
 		display: flex;
 		flex-direction: column;
-		gap: 0.4rem;
+		gap: 0.45rem;
 		min-width: 0;
 	}
 	.mf-group-label {
 		display: flex;
 		align-items: center;
-		gap: 0.4rem;
+		gap: 0.45rem;
 		font-family: var(--font-mono);
-		font-size: var(--text-caption);
-		color: var(--accent-text);
+		font-size: var(--text-micro);
+		font-weight: 600;
+		letter-spacing: 0.12em;
+		text-transform: uppercase;
+		color: var(--muted-foreground);
 		min-width: 0;
 		overflow: hidden;
 	}
@@ -559,6 +600,22 @@
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
+	}
+	.map-filters[data-open='true'] .mf-group-label {
+		position: relative;
+	}
+	/* Hairline rule trailing the overline label fills the row — gives each
+	   section a confident, edge-to-edge demarcation without a heavy divider. */
+	.map-filters[data-open='true'] .mf-group-label::after {
+		content: '';
+		flex: 1;
+		height: 1px;
+		min-width: 0.5rem;
+		background: linear-gradient(
+			to right,
+			color-mix(in srgb, var(--mf-edge) 80%, transparent),
+			transparent
+		);
 	}
 	.mf-group-badge {
 		display: inline-grid;
@@ -571,8 +628,8 @@
 		line-height: 1;
 		color: var(--primary);
 		background: color-mix(in srgb, var(--primary) 14%, transparent);
-		border: 1px solid color-mix(in srgb, var(--primary) 34%, transparent);
-		border-radius: var(--radius-pill);
+		border: 1px solid color-mix(in srgb, var(--primary) 32%, transparent);
+		border-radius: var(--radius-sm);
 	}
 	.mf-group-badge :global(svg) {
 		width: var(--mf-badge-icon-size);
@@ -580,73 +637,77 @@
 	}
 	.mf-group-badge-status {
 		color: var(--dataviz-status-late);
-		background: color-mix(in srgb, var(--dataviz-status-late) 14%, transparent);
-		border-color: color-mix(in srgb, var(--dataviz-status-late) 34%, transparent);
+		background: color-mix(in srgb, var(--dataviz-status-late) 15%, transparent);
+		border-color: color-mix(in srgb, var(--dataviz-status-late) 32%, transparent);
 	}
 	.mf-group-badge-crowding {
 		color: var(--dataviz-occupancy-standing);
 		background: color-mix(in srgb, var(--dataviz-occupancy-standing) 16%, transparent);
-		border-color: color-mix(in srgb, var(--dataviz-occupancy-standing) 34%, transparent);
+		border-color: color-mix(in srgb, var(--dataviz-occupancy-standing) 32%, transparent);
 	}
 	.mf-group-badge-shapes {
 		color: var(--primary);
 		background: color-mix(in srgb, var(--primary) 14%, transparent);
-		border-color: color-mix(in srgb, var(--primary) 34%, transparent);
+		border-color: color-mix(in srgb, var(--primary) 32%, transparent);
 	}
 	.mf-group-badge-alerts {
 		color: var(--dataviz-severity-high);
 		background: color-mix(in srgb, var(--dataviz-severity-high) 14%, transparent);
-		border-color: color-mix(in srgb, var(--dataviz-severity-high) 34%, transparent);
+		border-color: color-mix(in srgb, var(--dataviz-severity-high) 32%, transparent);
 	}
 	.mf-group-badge-routes {
 		color: var(--accent-text);
 		background: color-mix(in srgb, var(--accent-text) 14%, transparent);
-		border-color: color-mix(in srgb, var(--accent-text) 34%, transparent);
+		border-color: color-mix(in srgb, var(--accent-text) 32%, transparent);
 	}
 	.mf-group-badge-stops {
-		color: var(--accent);
-		background: color-mix(in srgb, var(--accent) 14%, transparent);
-		border-color: color-mix(in srgb, var(--accent) 34%, transparent);
+		color: var(--map-stop-fill);
+		background: color-mix(in srgb, var(--map-stop-fill) 14%, transparent);
+		border-color: color-mix(in srgb, var(--map-stop-fill) 32%, transparent);
 	}
 	.mf-group-badge-buses,
 	.mf-group-badge-trips {
 		color: var(--primary);
 		background: color-mix(in srgb, var(--primary) 14%, transparent);
-		border-color: color-mix(in srgb, var(--primary) 34%, transparent);
+		border-color: color-mix(in srgb, var(--primary) 32%, transparent);
 	}
 	.mf-chips {
 		display: grid;
 		grid-template-columns: minmax(0, 1fr);
-		gap: 0.35rem;
+		gap: 0.3rem;
 		min-width: 0;
 	}
 	.mf-chip {
 		display: flex;
 		align-items: center;
-		gap: 0.35rem;
+		gap: 0.5rem;
 		justify-content: flex-start;
 		width: 100%;
 		min-height: var(--mf-control-size);
 		font-family: var(--font-mono);
 		font-size: var(--text-caption);
-		padding: 0.28rem 0.55rem;
+		letter-spacing: 0.01em;
+		padding: 0.3rem 0.7rem 0.3rem 0.5rem;
 		text-align: left;
 		color: var(--muted-foreground);
-		background: var(--muted);
+		background: color-mix(in srgb, var(--muted) 70%, transparent);
 		border: 1px solid var(--border-subtle);
-		border-radius: 999px;
+		border-radius: var(--radius-pill);
 		cursor: pointer;
 		overflow: hidden;
 		transition:
-			color 120ms ease,
-			border-color 120ms ease,
-			background-color 120ms ease;
+			color var(--duration-fast) var(--ease-default),
+			border-color var(--duration-fast) var(--ease-default),
+			background-color var(--duration-fast) var(--ease-default),
+			box-shadow var(--duration-fast) var(--ease-default);
 	}
 	.map-filters[data-open='false'] .mf-chip {
 		justify-content: center;
+		gap: 0;
 		width: var(--mf-control-size);
 		height: var(--mf-control-size);
 		min-height: var(--mf-control-size);
+		margin-inline: auto;
 		padding: 0;
 	}
 	.mf-chip-text {
@@ -658,15 +719,15 @@
 	.mf-clear {
 		--chip: var(--primary);
 		color: var(--primary);
-		background: color-mix(in srgb, var(--primary) 8%, var(--muted) 92%);
+		background: color-mix(in srgb, var(--primary) 9%, var(--muted) 91%);
 		border-color: color-mix(in srgb, var(--primary) 30%, var(--border) 70%);
 	}
 	.mf-clear[data-active='false'] {
 		color: var(--muted-foreground);
-		background: var(--muted);
+		background: color-mix(in srgb, var(--muted) 70%, transparent);
 		border-color: var(--border-subtle);
 		cursor: not-allowed;
-		opacity: 0.56;
+		opacity: 0.5;
 	}
 	.mf-clear-icon {
 		display: inline-grid;
@@ -681,23 +742,45 @@
 	}
 	.mf-chip:hover {
 		color: var(--foreground);
-		background: color-mix(in srgb, var(--chip, var(--primary)) 10%, var(--muted) 90%);
-		border-color: color-mix(in srgb, var(--chip, var(--primary)) 42%, var(--border) 58%);
+		background: color-mix(in srgb, var(--chip, var(--primary)) 12%, var(--muted) 88%);
+		border-color: color-mix(in srgb, var(--chip, var(--primary)) 48%, var(--border) 52%);
+	}
+	.mf-chip:hover .mf-swatch {
+		box-shadow: 0 0 0 1px color-mix(in srgb, var(--chip) 65%, transparent);
 	}
 	.mf-clear:disabled:hover {
 		color: var(--muted-foreground);
-		background: var(--muted);
+		background: color-mix(in srgb, var(--muted) 70%, transparent);
 		border-color: var(--border-subtle);
+	}
+	.mf-clear:disabled:hover .mf-clear-icon {
+		box-shadow: none;
 	}
 	.mf-chip:focus-visible {
 		outline: 2px solid var(--ring);
-		outline-offset: 1px;
+		outline-offset: 2px;
 	}
-	/* Active: the chip adopts its state colour (tinted bg + coloured border + text). */
+	.mf-chip:active {
+		transform: translateY(0.5px);
+	}
+	/* Active: the chip adopts its state colour — tinted fill, full-strength
+	   border, and a soft tonal ring so the "on" state reads at a glance. */
 	.mf-chip[data-on='true'] {
 		color: var(--foreground);
-		background: color-mix(in srgb, var(--chip) 22%, transparent);
+		font-weight: 600;
+		background: color-mix(in srgb, var(--chip) 20%, var(--card));
 		border-color: var(--chip);
+		box-shadow:
+			inset 0 0 0 1px color-mix(in srgb, var(--chip) 35%, transparent),
+			0 0 0 1px color-mix(in srgb, var(--chip) 28%, transparent);
+	}
+	.mf-chip[data-on='true']:hover {
+		background: color-mix(in srgb, var(--chip) 26%, var(--card));
+	}
+	.mf-chip[data-on='true'] .mf-swatch {
+		box-shadow:
+			0 0 0 1px color-mix(in srgb, var(--chip) 70%, transparent),
+			0 0 6px color-mix(in srgb, var(--chip) 45%, transparent);
 	}
 	/* Colour swatch only — the chip's state is its hue, never a shape. */
 	.mf-swatch {
@@ -705,37 +788,78 @@
 		height: var(--mf-swatch-size);
 		border-radius: 50%;
 		background: var(--chip);
-		box-shadow: 0 0 0 1px color-mix(in srgb, var(--chip) 55%, transparent);
+		box-shadow: 0 0 0 1px color-mix(in srgb, var(--chip) 50%, transparent);
 		flex: none;
+		transition: box-shadow var(--duration-fast) var(--ease-default);
 	}
 	.mf-glyph {
 		display: inline-grid;
 		place-items: center;
-		width: var(--mf-badge-size);
-		height: var(--mf-badge-size);
+		width: 1.4rem;
+		height: 1.4rem;
+		padding: 0.16rem;
 		flex: none;
-		font-size: var(--text-body);
-		line-height: 1;
 		color: var(--primary);
+		/* Knocked-out parts (windshield / headlights / pin hole) read as cut-outs
+		   against the panel surface, mirroring the sprite's halo cut. */
+		--marker-glyph-cut: var(--card);
 		background: color-mix(in srgb, var(--primary) 16%, transparent);
-		border: 1px solid color-mix(in srgb, var(--primary) 38%, transparent);
-		border-radius: var(--radius-pill);
+		border: 1px solid color-mix(in srgb, var(--primary) 36%, transparent);
+		border-radius: var(--radius-sm);
+		transition:
+			color var(--duration-fast) var(--ease-default),
+			background-color var(--duration-fast) var(--ease-default),
+			border-color var(--duration-fast) var(--ease-default);
 	}
 	.mf-shape-stop {
-		opacity: 0.72;
+		color: var(--map-stop-fill);
+		background: color-mix(in srgb, var(--map-stop-fill) 16%, transparent);
+		border-color: color-mix(in srgb, var(--map-stop-fill) 36%, transparent);
+	}
+	.mf-shape-chip:hover .mf-glyph {
+		background: color-mix(in srgb, var(--primary) 22%, transparent);
+		border-color: color-mix(in srgb, var(--primary) 48%, transparent);
+	}
+	.mf-shape-chip:hover .mf-shape-stop {
+		background: color-mix(in srgb, var(--map-stop-fill) 22%, transparent);
+		border-color: color-mix(in srgb, var(--map-stop-fill) 48%, transparent);
 	}
 	.mf-shape-chip[data-on='true'] {
 		color: var(--foreground);
-		background: color-mix(in srgb, var(--primary) 18%, var(--popover) 72%);
+		font-weight: 600;
+		background: color-mix(in srgb, var(--primary) 16%, var(--card));
+		border-color: color-mix(in srgb, var(--primary) 58%, transparent);
+		box-shadow:
+			inset 0 0 0 1px color-mix(in srgb, var(--primary) 30%, transparent),
+			0 0 0 1px color-mix(in srgb, var(--primary) 24%, transparent);
+	}
+	/* Active keeps the pictogram in its entity hue (bus orange / stop fill) — the
+	   map shows the bus orange in every state, so the legend stays faithful; the
+	   "on" signal is the brighter glyph box + the chip's own border/ring. */
+	.mf-shape-chip[data-on='true'] .mf-glyph {
+		color: var(--primary);
+		background: color-mix(in srgb, var(--primary) 26%, transparent);
 		border-color: color-mix(in srgb, var(--primary) 55%, transparent);
+	}
+	.mf-shape-chip[data-on='true'] .mf-shape-stop {
+		color: var(--map-stop-fill);
+		background: color-mix(in srgb, var(--map-stop-fill) 26%, transparent);
+		border-color: color-mix(in srgb, var(--map-stop-fill) 55%, transparent);
 	}
 	.mf-alert-chip {
 		--chip: var(--dataviz-severity-high);
 	}
 	@media (prefers-reduced-motion: reduce) {
 		.map-filters,
-		.mf-chip {
+		.mf-toggle,
+		.mf-toggle-icon,
+		.mf-chip,
+		.mf-swatch,
+		.mf-glyph {
 			transition: none;
+		}
+		.mf-chip:active {
+			transform: none;
 		}
 	}
 </style>

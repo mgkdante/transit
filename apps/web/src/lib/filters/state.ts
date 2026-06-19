@@ -13,7 +13,7 @@
 import type { StatusCode, OccupancyCode, Grain } from '$lib/v1/schemas';
 import { STATUS_CODES, OCCUPANCY_CODES, GRAINS } from '$lib/v1/schemas';
 
-export const ENTITY_KINDS = ['bus_direction', 'bus_no_direction', 'stop'] as const;
+export const ENTITY_KINDS = ['bus', 'stop'] as const;
 export type EntityKind = (typeof ENTITY_KINDS)[number];
 export const ALERT_ENTITY_KINDS = ['has_alert'] as const;
 export type AlertEntityKind = (typeof ALERT_ENTITY_KINDS)[number];

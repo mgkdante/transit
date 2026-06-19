@@ -38,9 +38,8 @@ export interface MapCopy {
 	readonly nearMeGeoInsecure: string;
 	/** No-data occupancy legend row. */
 	readonly noData: string;
-	/** Entity legend labels — the SHAPE key (shape encodes entity + direction). */
-	readonly entityBusDirection: string;
-	readonly entityBusNoDirection: string;
+	/** Entity legend labels — the SHAPE key (one marker per entity type). */
+	readonly entityBus: string;
 	readonly entityStop: string;
 	/** Label for the marker/entity filter. */
 	readonly legendTitle: string;
@@ -86,8 +85,7 @@ export const copy: Record<Locale, MapCopy> = {
 		nearMeGeoUnavailable: 'Location unavailable',
 		nearMeGeoInsecure: 'Location needs a secure (https) connection',
 		noData: 'No data',
-		entityBusDirection: 'Bus - direction',
-		entityBusNoDirection: 'Bus - no direction',
+		entityBus: 'Bus',
 		entityStop: 'Stop',
 		legendTitle: 'Markers',
 		entityFilterTitle: 'Filter map markers',
@@ -129,8 +127,7 @@ export const copy: Record<Locale, MapCopy> = {
 		nearMeGeoUnavailable: 'Localisation indisponible',
 		nearMeGeoInsecure: 'La localisation requiert une connexion sécurisée (https)',
 		noData: 'Aucune donnée',
-		entityBusDirection: 'Bus - direction',
-		entityBusNoDirection: 'Bus - sans direction',
+		entityBus: 'Bus',
 		entityStop: 'Arrêt',
 		legendTitle: 'Marqueurs',
 		entityFilterTitle: 'Filtrer les marqueurs de la carte',

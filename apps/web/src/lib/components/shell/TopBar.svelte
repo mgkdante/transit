@@ -28,12 +28,10 @@
 		PUBLISHED_LOCALES,
 		delocalizePath,
 		getLocale,
-		localizeHref,
 	} from '$lib/i18n';
-	import { SURFACE_NAV, isSurfaceActive } from '$lib/content/nav';
 	import type { ChromeSearchResult } from '$lib/search/chromeSearch';
-	import StatusDot from '$lib/components/brand/StatusDot.svelte';
-	import BrandWordmark from './BrandWordmark.svelte';
+	import BrandCluster from '$lib/components/brand/BrandCluster.svelte';
+	import SurfaceNavList from './SurfaceNavList.svelte';
 	import LiveClock from './LiveClock.svelte';
 	import RefreshButton from './RefreshButton.svelte';
 	import ThemeToggle from './ThemeToggle.svelte';
@@ -202,20 +200,8 @@
 	)}
 	data-slot="topbar"
 >
-	<!-- BRAND: yesid. (-> yesid.dev) · transit home + live dot ------------- -->
-	<div class="flex shrink-0 items-center gap-2 sm:gap-2.5" data-slot="topbar-brand">
-		<div class="topbar-brand-mark">
-			<BrandWordmark href="https://yesid.dev" />
-		</div>
-		<span class="topbar-divider" aria-hidden="true"></span>
-		<a href="/" class="topbar-home" aria-label={homeAria} data-slot="topbar-home">
-			<span class="topbar-product">transit</span>
-			<span class="inline-flex items-center gap-1.5" data-slot="topbar-live">
-				<StatusDot color="orange" pulse label={liveLabel} />
-				<span class="label-station hidden text-[0.625rem] sm:inline">{liveLabel}</span>
-			</span>
-		</a>
-	</div>
+	<!-- BRAND: yesid. (-> yesid.dev) · transit home + live dot — shared cluster. -->
+	<BrandCluster variant="topbar" productHref="/" productAria={homeAria} {liveLabel} />
 
 	<!-- City picker placeholder (no Family data in 9.2) -------------------- -->
 	<button
@@ -453,16 +439,7 @@
 			aria-label={menuAria}
 			data-testid="topbar-mobile-menu"
 		>
-			{#each SURFACE_NAV as item (item.key)}
-				<a
-					href={localizeHref(item.href, locale)}
-					class="topbar-mobile-menu-link"
-					aria-current={isSurfaceActive(item, currentPath) ? 'page' : undefined}
-				>
-					<span>{item.label[locale]}</span>
-					<small>{item.description[locale]}</small>
-				</a>
-			{/each}
+			<SurfaceNavList {locale} {currentPath} linkClass="topbar-mobile-menu-link" />
 			<a
 				href="https://yesid.dev"
 				target="_blank"
@@ -479,40 +456,8 @@
 </header>
 
 <style>
-	/* Brand divider — the same bold brand-border rule as the yesid.dev nav pill. */
-	.topbar-divider {
-		display: inline-block;
-		width: 2px;
-		height: 18px;
-		background: var(--border-brand);
-		flex-shrink: 0;
-	}
-	.topbar-brand-mark {
-		display: inline-flex;
-	}
-
-	.topbar-home {
-		display: inline-flex;
-		align-items: center;
-		gap: 0.5rem;
-		border-radius: var(--radius-sm);
-		transition: color var(--duration-fast, 120ms) var(--ease-default, ease);
-	}
-	.topbar-home:hover .topbar-product {
-		color: var(--primary);
-	}
-	.topbar-home:focus-visible {
-		outline: 2px solid var(--ring);
-		outline-offset: 2px;
-	}
-	.topbar-product {
-		font-family: var(--font-heading);
-		font-weight: 700;
-		font-size: 1rem;
-		color: var(--foreground);
-		white-space: nowrap;
-		transition: color var(--duration-fast, 120ms) var(--ease-default, ease);
-	}
+	/* The brand cluster (yesid. mark · divider · transit home) + its ≤760px
+	   collapse now live in BrandCluster.svelte — the shared brand primitive. */
 	.topbar-mobile-search-backdrop {
 		position: fixed;
 		inset: 0;
@@ -611,7 +556,10 @@
 		box-shadow: var(--shadow-sheet);
 		backdrop-filter: blur(12px);
 	}
-	.topbar-mobile-menu-link {
+	/* The nav rows are rendered by the shared SurfaceNavList child, so these reach
+	   them via :global scoped UNDER the TopBar-owned .topbar-mobile-menu container
+	   (no leak — the descendant combinator keeps them confined to this menu). */
+	.topbar-mobile-menu :global(.topbar-mobile-menu-link) {
 		display: flex;
 		min-width: 0;
 		align-items: center;
@@ -631,21 +579,21 @@
 			background var(--duration-fast, 120ms) var(--ease-default, ease),
 			border-color var(--duration-fast, 120ms) var(--ease-default, ease);
 	}
-	.topbar-mobile-menu-link:hover,
-	.topbar-mobile-menu-link:focus-visible,
-	.topbar-mobile-menu-link[aria-current='page'] {
+	.topbar-mobile-menu :global(.topbar-mobile-menu-link:hover),
+	.topbar-mobile-menu :global(.topbar-mobile-menu-link:focus-visible),
+	.topbar-mobile-menu :global(.topbar-mobile-menu-link[aria-current='page']) {
 		color: var(--primary);
 		background: color-mix(in srgb, var(--primary) 10%, var(--muted) 90%);
 		border-color: color-mix(in srgb, var(--primary) 44%, var(--border) 56%);
 		outline: none;
 	}
-	.topbar-mobile-menu-link span {
+	.topbar-mobile-menu :global(.topbar-mobile-menu-link span) {
 		min-width: 0;
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
 	}
-	.topbar-mobile-menu-link small {
+	.topbar-mobile-menu :global(.topbar-mobile-menu-link small) {
 		flex: none;
 		color: var(--muted-foreground);
 	}
@@ -789,20 +737,6 @@
 		flex: none;
 		color: var(--muted-foreground);
 	}
-	@media (max-width: 760px) {
-		.topbar-brand-mark {
-			display: none;
-		}
-		.topbar-divider {
-			display: none;
-		}
-		.topbar-home {
-			gap: 0.35rem;
-		}
-		.topbar-product {
-			font-size: 0.98rem;
-		}
-	}
 	@media (min-width: 768px) {
 		.topbar-menu-toggle,
 		.topbar-mobile-menu,
@@ -811,12 +745,12 @@
 		}
 	}
 	@media (prefers-reduced-motion: reduce) {
-		.topbar-home,
-		.topbar-product,
 		.topbar-menu-toggle,
 		.topbar-menu-line,
-		.topbar-mobile-menu-link,
 		.topbar-mobile-house {
+			transition: none;
+		}
+		.topbar-mobile-menu :global(.topbar-mobile-menu-link) {
 			transition: none;
 		}
 	}

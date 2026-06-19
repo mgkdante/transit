@@ -19,6 +19,7 @@
   --dataviz-vehicle-delayed: var(--dataviz-status-late);
   --dataviz-vehicle-cancelled: var(--dataviz-status-severe);
   --dataviz-vehicle-no-data: var(--dataviz-status-unknown);
+  --map-stop-fill: #FFB627;
   --font-heading: 'Inter Variable', 'Inter', system-ui, -apple-system, sans-serif;
   --font-body: 'Inter Variable', 'Inter', system-ui, -apple-system, sans-serif;
   --font-mono: 'JetBrains Mono Variable', 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
@@ -150,35 +151,35 @@
 
 [data-theme="light"], .theme-light {
   color-scheme: light;
-  --background: #F7F2E9;
-  --foreground: #1C1813;
-  --muted: #F1E9DA;
-  --muted-foreground: #6E6557;
-  --card: #FFFDF8;
-  --popover: #FFFDF8;
-  --secondary-foreground: #564E40;
-  --terminal: #F7F2E9;
+  --background: #F3F6FB;
+  --foreground: #131923;
+  --muted: #E4E9F3;
+  --muted-foreground: #545E75;
+  --card: #F9FAFD;
+  --popover: #F9FAFD;
+  --secondary-foreground: #454F63;
+  --terminal: #F3F6FB;
   --manifesto: #F2E9D8;
-  --border: #C9BCA1;
-  --border-subtle: #D5C9B2;
+  --border: #B5BECD;
+  --border-subtle: #C2CBD8;
   --border-strong: #1C1814;
   --destructive: #C62828;
   --destructive-foreground: #FAF6EE;
   --success: #127336;
-  --primary: #9D5200;
+  --primary: #A05500;
   --primary-hover: #854500;
-  --primary-rgb: 157 82 0;
+  --primary-rgb: 160 85 0;
   --accent-text: #815D00;
   --accent-foreground: #1C1813;
   --input: #94897A;
-  --terminal-chrome: #EDE3CF;
+  --terminal-chrome: #EFE5CE;
   --terminal-ink: #3D362B;
   --terminal-ink-muted: #6B6253;
   --signal-lunar: #5E5749;
   --lamp-bezel: #1A1714;
   --line-amber: #B57F00;
   --accent-surface: #FAEECC;
-  --grid-line-major: color-mix(in srgb, var(--primary) 9%, transparent);
+  --grid-line-major: color-mix(in srgb, var(--foreground) 8%, transparent);
   --grid-line-minor: color-mix(in srgb, var(--foreground) 4%, transparent);
   --grid-block-marker: color-mix(in srgb, var(--accent-text) 6%, transparent);
   --grid-glow: transparent;
@@ -202,6 +203,13 @@
   --dataviz-heatmap-3: #dd9347;
   --dataviz-heatmap-4: #c2402f;
   --dataviz-heatmap-nodata: #d6d0c4;
+  --map-stop-fill: #E8540E;
+  --border-brand: color-mix(in srgb, var(--primary) 60%, transparent);
+  --shadow-glow-sm: 0 0 6px color-mix(in srgb, var(--primary) 18%, transparent);
+  --shadow-glow-md: 0 0 12px color-mix(in srgb, var(--primary) 12%, transparent);
+  --shadow-glow-lg: 0 0 24px color-mix(in srgb, var(--primary) 9%, transparent), 0 0 60px color-mix(in srgb, var(--primary) 4%, transparent);
+  --shadow-card: 0 1px 2px rgba(28, 24, 19, 0.06), 0 4px 12px rgba(28, 24, 19, 0.08), inset 0 1px 0 var(--edge-highlight);
+  --shadow-section: 0 8px 32px rgba(28, 24, 19, 0.08);
 
   /* Paired tokens (shadcn-compatible) */
   --card-foreground: var(--foreground);
@@ -279,35 +287,35 @@
 @media (prefers-color-scheme: light) {
   :root:not([data-theme="dark"]) {
     color-scheme: light;
-    --background: #F7F2E9;
-    --foreground: #1C1813;
-    --muted: #F1E9DA;
-    --muted-foreground: #6E6557;
-    --card: #FFFDF8;
-    --popover: #FFFDF8;
-    --secondary-foreground: #564E40;
-    --terminal: #F7F2E9;
+    --background: #F3F6FB;
+    --foreground: #131923;
+    --muted: #E4E9F3;
+    --muted-foreground: #545E75;
+    --card: #F9FAFD;
+    --popover: #F9FAFD;
+    --secondary-foreground: #454F63;
+    --terminal: #F3F6FB;
     --manifesto: #F2E9D8;
-    --border: #C9BCA1;
-    --border-subtle: #D5C9B2;
+    --border: #B5BECD;
+    --border-subtle: #C2CBD8;
     --border-strong: #1C1814;
     --destructive: #C62828;
     --destructive-foreground: #FAF6EE;
     --success: #127336;
-    --primary: #9D5200;
+    --primary: #A05500;
     --primary-hover: #854500;
-    --primary-rgb: 157 82 0;
+    --primary-rgb: 160 85 0;
     --accent-text: #815D00;
     --accent-foreground: #1C1813;
     --input: #94897A;
-    --terminal-chrome: #EDE3CF;
+    --terminal-chrome: #EFE5CE;
     --terminal-ink: #3D362B;
     --terminal-ink-muted: #6B6253;
     --signal-lunar: #5E5749;
     --lamp-bezel: #1A1714;
     --line-amber: #B57F00;
     --accent-surface: #FAEECC;
-    --grid-line-major: color-mix(in srgb, var(--primary) 9%, transparent);
+    --grid-line-major: color-mix(in srgb, var(--foreground) 8%, transparent);
     --grid-line-minor: color-mix(in srgb, var(--foreground) 4%, transparent);
     --grid-block-marker: color-mix(in srgb, var(--accent-text) 6%, transparent);
     --grid-glow: transparent;
@@ -331,6 +339,13 @@
     --dataviz-heatmap-3: #dd9347;
     --dataviz-heatmap-4: #c2402f;
     --dataviz-heatmap-nodata: #d6d0c4;
+    --map-stop-fill: #E8540E;
+    --border-brand: color-mix(in srgb, var(--primary) 60%, transparent);
+    --shadow-glow-sm: 0 0 6px color-mix(in srgb, var(--primary) 18%, transparent);
+    --shadow-glow-md: 0 0 12px color-mix(in srgb, var(--primary) 12%, transparent);
+    --shadow-glow-lg: 0 0 24px color-mix(in srgb, var(--primary) 9%, transparent), 0 0 60px color-mix(in srgb, var(--primary) 4%, transparent);
+    --shadow-card: 0 1px 2px rgba(28, 24, 19, 0.06), 0 4px 12px rgba(28, 24, 19, 0.08), inset 0 1px 0 var(--edge-highlight);
+    --shadow-section: 0 8px 32px rgba(28, 24, 19, 0.08);
 
     /* Paired tokens (shadcn-compatible) */
     --card-foreground: var(--foreground);

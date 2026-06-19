@@ -58,9 +58,9 @@
 			aria-expanded={drawerOpen}
 			aria-label={`${t.filterTitle} ${activeCount} · ${t.filterTitle}`}
 		>
-			<div class="map-filter-pill-dot"></div>
+			<div class="map-filter-pill-dot" data-active={activeCount > 0}></div>
 			<span class="map-filter-pill-name">{t.filterTitle}</span>
-			<span class="map-filter-pill-counter">{activeCount}</span>
+			<span class="map-filter-pill-counter" data-empty={activeCount === 0}>{activeCount}</span>
 			<ChevronToggle open={drawerOpen} size="sm" direction="down" />
 		</button>
 
@@ -100,27 +100,47 @@
 	.map-filter-pill {
 		display: flex;
 		align-items: center;
-		gap: 8px;
+		gap: 0.6rem;
 		min-height: 44px;
 		max-width: calc(100vw - 2rem);
-		padding: 12px 20px;
+		padding: 0.65rem 1rem 0.65rem 0.85rem;
 		font-family: var(--font-mono);
 		font-size: var(--text-caption);
-		color: color-mix(in srgb, var(--foreground) 65%, transparent);
+		font-weight: 600;
+		letter-spacing: 0.06em;
+		text-transform: uppercase;
+		color: var(--foreground);
 		white-space: nowrap;
-		background: color-mix(in srgb, var(--background) 95%, transparent);
-		border: 1px solid color-mix(in srgb, var(--primary) 20%, transparent);
+		background: color-mix(in srgb, var(--card) 92%, transparent);
+		border: 1px solid color-mix(in srgb, var(--border) 80%, var(--primary) 20%);
 		border-radius: var(--radius-pill);
-		backdrop-filter: blur(8px);
+		box-shadow: var(--shadow-card);
+		backdrop-filter: blur(10px) saturate(1.1);
 		cursor: pointer;
+		transition:
+			border-color var(--duration-fast) var(--ease-default),
+			background-color var(--duration-fast) var(--ease-default);
+	}
+
+	.map-filter-pill:hover {
+		border-color: color-mix(in srgb, var(--primary) 45%, var(--border) 55%);
+	}
+
+	.map-filter-pill[aria-expanded='true'] {
+		border-color: color-mix(in srgb, var(--primary) 55%, transparent);
 	}
 
 	.map-filter-pill-dot {
-		width: 0.375rem;
-		height: 0.375rem;
+		width: 0.5rem;
+		height: 0.5rem;
 		flex: none;
 		border-radius: 999px;
 		background: var(--primary);
+		transition: box-shadow var(--duration-fast) var(--ease-default);
+	}
+
+	.map-filter-pill-dot[data-active='true'] {
+		box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 22%, transparent);
 	}
 
 	.map-filter-pill-name {
@@ -131,8 +151,33 @@
 	}
 
 	.map-filter-pill-counter {
-		color: color-mix(in srgb, var(--primary) 85%, transparent);
+		display: inline-grid;
+		place-items: center;
+		min-width: 1.4rem;
+		height: 1.4rem;
+		padding: 0 0.4rem;
+		font-variant-numeric: tabular-nums;
+		color: var(--primary-foreground);
+		background: var(--primary);
+		border-radius: var(--radius-pill);
 		flex-shrink: 0;
+		transition:
+			color var(--duration-fast) var(--ease-default),
+			background-color var(--duration-fast) var(--ease-default);
+	}
+
+	.map-filter-pill-counter[data-empty='true'] {
+		color: var(--muted-foreground);
+		background: color-mix(in srgb, var(--muted) 70%, transparent);
+		box-shadow: inset 0 0 0 1px var(--border-subtle);
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.map-filter-pill,
+		.map-filter-pill-dot,
+		.map-filter-pill-counter {
+			transition: none;
+		}
 	}
 
 	.map-filter-drawer-backdrop {
@@ -151,11 +196,11 @@
 		width: min(21rem, calc(100vw - 2rem));
 		max-height: min(72dvh, calc(100dvh - 7rem));
 		overflow-y: auto;
-		background: color-mix(in srgb, var(--background) 97%, transparent);
-		border: 1px solid color-mix(in srgb, var(--primary) 15%, transparent);
-		border-radius: 12px;
+		background: color-mix(in srgb, var(--card) 95%, transparent);
+		border: 1px solid color-mix(in srgb, var(--border) 78%, var(--primary) 22%);
+		border-radius: var(--radius-lg);
 		box-shadow: var(--shadow-sheet);
-		backdrop-filter: blur(12px);
+		backdrop-filter: blur(12px) saturate(1.1);
 		transform: none;
 		padding-bottom: env(safe-area-inset-bottom, 0px);
 		overscroll-behavior: contain;
