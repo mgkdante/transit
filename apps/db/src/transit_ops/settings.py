@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from collections.abc import Mapping
 from functools import lru_cache
 from pathlib import Path
@@ -81,6 +82,22 @@ class Settings(BaseSettings):
             LegacyDatabaseUrlGuardSource(dotenv_settings),
             LegacyDatabaseUrlGuardSource(file_secret_settings),
         )
+
+    def env_value(self, name: str | None) -> str | None:
+        """Resolve a feed's env-var override (URL or credential) by name.
+
+        Declared settings fields (e.g. ``STM_API_KEY``) resolve through the model
+        exactly as before — their value already reflects env/.env via
+        pydantic-settings. Names that are NOT declared fields fall back to the
+        process environment, so a new provider's ``{PROVIDER}_*`` secrets and URLs
+        resolve by convention without adding a Settings field per provider.
+        """
+        if not name:
+            return None
+        if name in type(self).model_fields:
+            value = getattr(self, name, None)
+            return str(value) if value else None
+        return os.environ.get(name) or None
 
     APP_ENV: str = "local"
     LOG_LEVEL: str = "INFO"

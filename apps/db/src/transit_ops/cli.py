@@ -313,15 +313,24 @@ def init_db() -> None:
 
 
 @app.command("seed-core")
-def seed_core() -> None:
-    """Seed STM provider metadata and feed endpoints."""
+def seed_core(
+    provider: str | None = typer.Option(  # noqa: B008
+        None,
+        "--provider",
+        help="Seed only this provider id; default seeds every configured manifest.",
+    ),
+) -> None:
+    """Seed provider metadata and feed endpoints from the provider manifests."""
 
     settings = get_settings()
-    provider_manifest = _provider_registry(settings).get_provider(settings.STM_PROVIDER_ID)
+    registry = _provider_registry(settings)
+    provider_ids = [provider] if provider else registry.list_provider_ids()
     engine = make_engine(settings)
     with engine.begin() as connection:
-        _seed_provider(connection, provider_manifest)
-        _seed_feed_endpoints(connection, provider_manifest, settings)
+        for provider_id in provider_ids:
+            manifest = registry.get_provider(provider_id)
+            _seed_provider(connection, manifest)
+            _seed_feed_endpoints(connection, manifest, settings)
         provider_count = connection.execute(
             text("SELECT count(*) FROM core.providers")
         ).scalar_one()
@@ -329,8 +338,8 @@ def seed_core() -> None:
             text("SELECT count(*) FROM core.feed_endpoints")
         ).scalar_one()
     typer.echo(
-        f"Seeded core metadata successfully. Providers={provider_count}, "
-        f"Feed endpoints={endpoint_count}."
+        f"Seeded core metadata for {len(provider_ids)} provider(s). "
+        f"Providers={provider_count}, Feed endpoints={endpoint_count}."
     )
 
 
@@ -686,7 +695,7 @@ def prune_gold_storage_command(
 
 @app.command("prune-i3-storage")
 def prune_i3_storage_command(
-    provider_id: str = typer.Argument("stm"),  # noqa: B008
+    provider_id: str,
     dry_run: bool = typer.Option(
         False,
         "--dry-run",

@@ -6,7 +6,9 @@ from pydantic import ValidationError
 from typer.testing import CliRunner
 
 from transit_ops.cli import app
+from transit_ops.core.errors import OptionalSourceUnavailable
 from transit_ops.core.models import ProviderManifest
+from transit_ops.ingestion.gis import build_gis_ingestion_config
 from transit_ops.providers.registry import ProviderRegistry, load_provider_manifest
 from transit_ops.settings import Settings
 
@@ -67,6 +69,106 @@ def _provider_manifest_payload() -> dict[str, object]:
             },
         },
     }
+
+
+def _gtfs_only_manifest_payload() -> dict[str, object]:
+    """A standard GTFS agency: schedule + RT only.
+
+    Route geometry comes from shapes.txt inside the GTFS zip, so there is no
+    separate GIS feed (the STM-specific stm_sig.zip), and no proprietary alerts
+    feed. This is the shape STO / OC Transpo / STS publish.
+    """
+    payload = _provider_manifest_payload()
+    feeds = payload["feeds"]
+    assert isinstance(feeds, dict)
+    del feeds["gis_static"]
+    return payload
+
+
+def test_gtfs_only_manifest_validates_without_gis() -> None:
+    manifest = ProviderManifest.model_validate(_gtfs_only_manifest_payload())
+
+    assert set(manifest.feeds) == {
+        "static_schedule",
+        "trip_updates",
+        "vehicle_positions",
+    }
+    assert manifest.gis_feed() is None
+
+
+def test_gtfs_only_feed_endpoint_seeds_omit_gis() -> None:
+    manifest = ProviderManifest.model_validate(_gtfs_only_manifest_payload())
+
+    seeds = manifest.to_feed_endpoint_seeds(Settings(_env_file=None))
+
+    assert [seed.endpoint_key for seed in seeds] == [
+        "static_schedule",
+        "trip_updates",
+        "vehicle_positions",
+    ]
+
+
+def test_core_feeds_remain_required_without_gis() -> None:
+    for required in ("static_schedule", "trip_updates", "vehicle_positions"):
+        payload = _gtfs_only_manifest_payload()
+        feeds = payload["feeds"]
+        assert isinstance(feeds, dict)
+        del feeds[required]
+        with pytest.raises(ValidationError):
+            ProviderManifest.model_validate(payload)
+
+
+def test_build_gis_ingestion_config_raises_when_no_gis_feed() -> None:
+    manifest = ProviderManifest.model_validate(_gtfs_only_manifest_payload())
+
+    with pytest.raises(OptionalSourceUnavailable):
+        build_gis_ingestion_config(manifest, Settings(_env_file=None))
+
+
+def test_stm_manifest_still_exposes_gis_feed() -> None:
+    settings = Settings(_env_file=None)
+    registry = ProviderRegistry.from_project_root(
+        project_root=Path(__file__).resolve().parents[1],
+        settings=settings,
+    )
+    provider = registry.get_provider("stm")
+
+    gis_feed = provider.gis_feed()
+    assert gis_feed is not None
+    assert gis_feed.source_format.value == "stm_gis_zip"
+
+
+def test_manifest_accepts_generic_service_alerts_feed() -> None:
+    payload = _gtfs_only_manifest_payload()
+    feeds = payload["feeds"]
+    assert isinstance(feeds, dict)
+    feeds["service_alerts"] = {
+        "endpoint_key": "service_alerts",
+        "feed_kind": "service_alerts",
+        "source_format": "gtfs_rt_service_alerts",
+        "source_url": "https://example.test/alerts.pb",
+        "auth": {"auth_type": "none"},
+        "refresh_interval_seconds": 300,
+        "is_enabled": True,
+    }
+
+    manifest = ProviderManifest.model_validate(payload)
+
+    alerts = manifest.service_alerts_feed()
+    assert alerts is not None
+    assert alerts.source_format.value == "gtfs_rt_service_alerts"
+    seeds = manifest.to_feed_endpoint_seeds(Settings(_env_file=None))
+    assert [seed.endpoint_key for seed in seeds] == [
+        "static_schedule",
+        "trip_updates",
+        "vehicle_positions",
+        "service_alerts",
+    ]
+
+
+def test_manifest_without_service_alerts_returns_none() -> None:
+    manifest = ProviderManifest.model_validate(_gtfs_only_manifest_payload())
+    assert manifest.service_alerts_feed() is None
 
 
 def test_manifest_loading() -> None:

@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from sqlalchemy import text
+from sqlalchemy.engine import Connection
 from sqlalchemy.sql.elements import TextClause
 
 
@@ -262,8 +263,75 @@ def build_source_factory_catalog(provider_id: str) -> SourceFactoryCatalog:
 
 
 def build_source_factory_reset_statement() -> TextClause:
+    """Whole-database TRUNCATE; used only for an explicit all-providers reset."""
     return _SOURCE_FACTORY_RESET_STATEMENT
 
 
-def reset_source_factory_tables(connection) -> None:  # noqa: ANN001
-    connection.execute(build_source_factory_reset_statement())
+def _table_has_provider_id(connection: Connection, qualified_table: str) -> bool:
+    schema, _, table = qualified_table.partition(".")
+    row = connection.execute(
+        text(
+            "SELECT 1 FROM information_schema.columns "
+            "WHERE table_schema = :schema "
+            "AND table_name = :table "
+            "AND column_name = 'provider_id' "
+            "LIMIT 1"
+        ),
+        {"schema": schema, "table": table},
+    ).first()
+    return row is not None
+
+
+def reset_source_factory_tables(
+    connection: Connection,
+    provider_id: str | None = None,
+    *,
+    all_providers: bool = False,
+) -> dict[str, object]:
+    """Clear the source-factory tables ahead of a rebuild.
+
+    Per-provider (the default): DELETE only ``provider_id``'s rows from every
+    reset table that carries a ``provider_id`` column, walking the list
+    child-to-parent so foreign keys hold. Tables with no ``provider_id`` column
+    (shared seeds such as ``gold.report_labels``) are left untouched — rebuilding
+    one provider must NEVER wipe another provider's rows or shared seed data.
+
+    ``all_providers=True``: the legacy whole-database
+    ``TRUNCATE ... RESTART IDENTITY CASCADE`` (every provider's rows plus a
+    sequence reset). Kept as an explicit, opt-in escape hatch for a full
+    teardown; never the default now that the database is multi-tenant.
+    """
+    if all_providers:
+        connection.execute(build_source_factory_reset_statement())
+        return {
+            "mode": "all_providers",
+            "truncated_tables": list(SOURCE_FACTORY_RESET_TABLES),
+        }
+
+    if not provider_id:
+        raise ValueError(
+            "reset_source_factory_tables requires a provider_id unless "
+            "all_providers=True is set."
+        )
+
+    deleted_row_counts: dict[str, int] = {}
+    skipped_tables: list[str] = []
+    for qualified_table in SOURCE_FACTORY_RESET_TABLES:
+        if not _table_has_provider_id(connection, qualified_table):
+            skipped_tables.append(qualified_table)
+            continue
+        # qualified_table is a fixed identifier from SOURCE_FACTORY_RESET_TABLES
+        # (never user input); the provider_id value is bound as a parameter.
+        result = connection.execute(
+            text(f"DELETE FROM {qualified_table} WHERE provider_id = :provider_id"),
+            {"provider_id": provider_id},
+        )
+        deleted_row_counts[qualified_table] = (
+            result.rowcount if result.rowcount is not None else -1
+        )
+    return {
+        "mode": "per_provider",
+        "provider_id": provider_id,
+        "deleted_row_counts": deleted_row_counts,
+        "skipped_tables": skipped_tables,
+    }
