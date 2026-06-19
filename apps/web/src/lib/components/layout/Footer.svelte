@@ -21,12 +21,23 @@
   Record<Locale, ...> copy pattern. Reduced-motion-safe (link transitions guarded).
 -->
 <script lang="ts">
-	import { getLocale, localizeHref, type Locale } from '$lib/i18n';
+	import { DEFAULT_LOCALE, getLocale, localizeHref, type Locale } from '$lib/i18n';
 	import { SURFACE_NAV, MENU_EXTRAS } from '$lib/content/nav';
 	import StatusDot from '$lib/components/brand/StatusDot.svelte';
-	import BrandWordmark from '$lib/components/shell/BrandWordmark.svelte';
+	import BrandCluster from '$lib/components/brand/BrandCluster.svelte';
 
-	const locale: Locale = getLocale();
+	interface FooterProps {
+		/** Active locale (prop wins; falls back to context for isolated renders). */
+		locale?: Locale;
+	}
+
+	let { locale: localeProp }: FooterProps = $props();
+
+	// Prop wins (the layout threads the reactive request locale so the footer copy
+	// + localized hrefs stay current across EN⇄FR without a remount); fall back to
+	// the context reader for isolated renders (e.g. the _kit harness / tests).
+	const ctxLocale = getLocale();
+	const locale = $derived<Locale>(localeProp ?? ctxLocale ?? DEFAULT_LOCALE);
 
 	// System date — the departure-board readout (YYYY.MM.DD), matches yesid's footer.
 	const now = new Date();
@@ -81,19 +92,9 @@
 	<div
 		class="mx-auto flex max-w-5xl flex-col items-center gap-6 px-6 pb-5 pt-10 sm:flex-row sm:items-start sm:justify-between sm:px-10 sm:pt-12"
 	>
-		<!-- Left: parent wordmark + transit product mark + tagline -->
+		<!-- Left: parent wordmark + transit product mark + tagline (shared cluster). -->
 		<div class="flex flex-col items-center sm:items-start">
-			<span class="flex items-center gap-2">
-				<BrandWordmark href="https://yesid.dev" animate={false} />
-				<span class="footer-divider" aria-hidden="true"></span>
-				<a
-					href={localizeHref('/', locale)}
-					data-testid="footer-home"
-					class="footer-product font-heading text-xl font-bold text-[var(--foreground)]"
-				>
-					transit
-				</a>
-			</span>
+			<BrandCluster variant="footer" productHref={localizeHref('/', locale)} />
 			<span class="mt-1 font-mono text-caption text-[var(--muted-foreground)]">{t.tagline}</span>
 		</div>
 
@@ -166,29 +167,8 @@
 		padding-bottom: env(safe-area-inset-bottom, 0px);
 	}
 
-	/* Brand divider between the parent wordmark and the product mark — the same
-	   bold brand-border rule as the TopBar brand cluster. */
-	.footer-divider {
-		display: inline-block;
-		width: 2px;
-		height: 18px;
-		background: var(--border-brand);
-		flex-shrink: 0;
-	}
-
-	.footer-product {
-		white-space: nowrap;
-		letter-spacing: -0.01em;
-		border-radius: var(--radius-sm);
-		transition: color var(--duration-fast) var(--ease-default);
-	}
-	.footer-product:hover {
-		color: var(--primary);
-	}
-	.footer-product:focus-visible {
-		outline: 2px solid var(--ring);
-		outline-offset: 2px;
-	}
+	/* The brand cluster (yesid. mark · divider · transit product mark) now lives in
+	   BrandCluster.svelte — the shared brand primitive, also used by the TopBar. */
 
 	/* Honesty line — attribution + the unofficial-site disclaimer stack tight. */
 	.footer-honesty {
@@ -216,7 +196,6 @@
 	}
 
 	@media (prefers-reduced-motion: reduce) {
-		.footer-product,
 		.footer-link {
 			transition: none;
 		}

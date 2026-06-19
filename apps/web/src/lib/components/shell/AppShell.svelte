@@ -109,6 +109,11 @@
 	const LEFT_RAIL_COLLAPSED_SIZE = 5;
 	const LEFT_RAIL_MIN_SIZE = 7;
 	const LEFT_RAIL_DEFAULT_SIZE = 16;
+	// Compact (icon-only) content engages BEFORE the min-size clamp so a narrowing
+	// rail switches to icons while it is still draggable — never a band where the
+	// pane is expanded but the labels are clipped. With the clamp at MIN (7) and
+	// this threshold at 9, the only compact-while-expanded sizes are 7..9, the
+	// approach to collapse; a real collapse snaps the pane to COLLAPSED (5).
 	const LEFT_RAIL_COMPACT_THRESHOLD = 9;
 
 	// The single source of truth for the layout breakpoint (shared app-wide).
@@ -125,7 +130,11 @@
 
 	function syncLeftRailVisualState(size: number): void {
 		leftRailSize = size;
-		leftRailCollapsed = size <= LEFT_RAIL_COMPACT_THRESHOLD;
+		// Use a STRICT compare so the boundary size itself (== threshold) reads as
+		// expanded: dragging the rail back out to the threshold un-compacts it in
+		// the same gesture, instead of staying stuck icon-only until well past it
+		// (the old `<=` left a dead band right at the hand-off).
+		leftRailCollapsed = size < LEFT_RAIL_COMPACT_THRESHOLD;
 	}
 
 	function onLeftRailCollapse(): void {
@@ -134,7 +143,13 @@
 	}
 
 	function onLeftRailExpand(): void {
-		syncLeftRailVisualState(leftRailPane?.getSize() ?? LEFT_RAIL_DEFAULT_SIZE);
+		// paneforge fires onExpand when the pane leaves the collapsed state — that
+		// is an explicit "show me content" intent, so clear compact even though the
+		// transient expand size (≈ MIN) is below the threshold. Without this the rail
+		// would snap back to icon-only the instant it expanded out of collapse (the
+		// dead band): a too-wide rail you couldn't un-compact by dragging.
+		leftRailSize = leftRailPane?.getSize() ?? LEFT_RAIL_DEFAULT_SIZE;
+		leftRailCollapsed = false;
 	}
 
 	function toggleLeftRailCollapsed(): void {

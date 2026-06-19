@@ -55,6 +55,7 @@
 	import { createResource } from '$lib/v1/resource.svelte';
 	import { dataRefresh, themeStore } from '$lib/stores';
 	import { AppShell } from '$lib/components/shell';
+	import { Footer } from '$lib/components/layout';
 	import { EdgeState } from '$lib/components/edge';
 	import { layout } from '$lib/nav';
 	import {
@@ -81,6 +82,13 @@
 	const seoPath = $derived(delocalizePath($page.url.pathname));
 	const seo = $derived(resolveRouteSeo($page.url.pathname, locale));
 
+	// Full-bleed surfaces own the whole viewport: #main must NOT scroll and must
+	// NOT carry a footer. The map fills height:100%, so a trailing footer would
+	// force the main column to scroll with the footer crammed under the canvas
+	// (the "squeezed footer" artifact). Only /map today; its STM/OSM attribution
+	// rides the map's own attribution control instead of the page footer.
+	const isFullBleed = $derived(seoPath === '/map');
+
 	// v1 snapshot context. The SSR boot (+layout.ts) can fail on Cloudflare — a
 	// Worker's fetch to its own zone can't reach the sibling /data route (523) —
 	// so when it does we RE-BOOT client-side: the browser reaches /data fine.
@@ -90,8 +98,12 @@
 	let clientV1 = $state<V1Context | null>(null);
 	const v1 = $derived<V1Context | null>(data.v1 ?? clientV1);
 	setV1Context(() => (v1 ?? undefined) as V1Context);
+	// Seed the chrome freshness timestamp from the booted manifest as an INITIAL
+	// fallback (seed-if-unset) so pages WITHOUT a live store still show the
+	// page-load data's age. The live store is the single AUTHORITATIVE writer —
+	// once it polls, its per-poll timestamp supersedes this seed.
 	$effect(() => {
-		dataRefresh.noteDataGeneratedUtc(
+		dataRefresh.seedDataGeneratedUtc(
 			v1?.manifest.files.live.generated_utc ?? v1?.manifest.files.static?.generated_utc,
 		);
 	});
@@ -292,24 +304,36 @@
 	onresultselect={selectSearchResult}
 >
 	{#snippet main()}
-		<!-- Skip-link target. The page tree (or the error edge state) renders here;
-		     each shell zone scrolls internally, so this wrapper owns the scroll. -->
-		<div id="main" class="h-full w-full overflow-y-auto" tabindex="-1">
-			{#if !v1}
-				<!-- /v1 contract unreachable: render the honest error state, never a
-				     crash. Retry (and an automatic client re-boot on mount) re-fetch
-				     the contract; the page tree renders the moment a context lands. -->
-				<div class="mx-auto flex h-full max-w-2xl items-center justify-center p-6">
-					<EdgeState
-						variant="error-v1"
-						lang={locale}
-						layout={edgeLayout}
-						onRetry={retryBoot}
-						class="w-full"
-					/>
-				</div>
-			{:else}
-				{@render children?.()}
+		<!-- Skip-link target. Layout splits on `isFullBleed` (see the derived above):
+		     full-bleed surfaces (the map) fill the viewport, do NOT scroll, and omit
+		     the Footer (a trailing footer would cram under the height:100% canvas);
+		     document surfaces scroll, with the Footer at the natural bottom of the
+		     flow — content grows to at least the viewport, tall content scrolls. -->
+		<div
+			id="main"
+			class="flex h-full w-full flex-col {isFullBleed ? 'overflow-hidden' : 'overflow-y-auto'}"
+			tabindex="-1"
+		>
+			<div class={isFullBleed ? 'min-h-0 grow' : 'grow shrink-0 basis-auto'}>
+				{#if !v1}
+					<!-- /v1 contract unreachable: render the honest error state, never a
+					     crash. Retry (and an automatic client re-boot on mount) re-fetch
+					     the contract; the page tree renders the moment a context lands. -->
+					<div class="mx-auto flex h-full max-w-2xl items-center justify-center p-6">
+						<EdgeState
+							variant="error-v1"
+							lang={locale}
+							layout={edgeLayout}
+							onRetry={retryBoot}
+							class="w-full"
+						/>
+					</div>
+				{:else}
+					{@render children?.()}
+				{/if}
+			</div>
+			{#if !isFullBleed}
+				<Footer {locale} />
 			{/if}
 		</div>
 	{/snippet}
