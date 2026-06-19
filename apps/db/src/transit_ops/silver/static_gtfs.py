@@ -60,15 +60,18 @@ BETA_STATIC_CONTRACT_COLUMNS_BY_MEMBER = {
     "trips.txt": {"route_pattern_id"},
 }
 REQUIRED_COLUMNS_BY_MEMBER: dict[str, set[str]] = {
+    # agency_id is GTFS-optional for single-agency feeds; synthesized in
+    # _build_agency_record when absent (silver.agency PK still gets a value).
     "agency.txt": {
-        "agency_id",
         "agency_name",
         "agency_url",
         "agency_timezone",
     },
     "routes.txt": {"route_id", "route_type"},
     "trips.txt": {"route_id", "service_id", "trip_id"},
-    "stops.txt": {"stop_id", "stop_name"},
+    # stop_name is GTFS-conditional (required for location_type 0/1/2, optional
+    # for 3/4); enforced per-row in _build_stop_record, not as a header gate.
+    "stops.txt": {"stop_id"},
     "stop_times.txt": {"trip_id", "stop_id", "stop_sequence"},
     "calendar.txt": {
         "service_id",
@@ -90,13 +93,12 @@ REQUIRED_COLUMNS_BY_MEMBER: dict[str, set[str]] = {
         "direction",
         "direction_legacy",
     },
+    # feed_start_date/feed_end_date/feed_version are GTFS-optional; parsed only
+    # when present in _build_feed_info_record. Publisher fields stay required.
     "feed_info.txt": {
         "feed_publisher_name",
         "feed_publisher_url",
         "feed_lang",
-        "feed_start_date",
-        "feed_end_date",
-        "feed_version",
     },
     "route_patterns.txt": {
         "route_pattern_id",
@@ -586,6 +588,15 @@ def _require_value(row: Mapping[str, str], column_name: str, member_name: str) -
     return value
 
 
+def _synthesized_agency_id(provider_id: str) -> str:
+    """GTFS makes ``agency_id`` optional for single-agency feeds, but
+    ``silver.agency`` keys on ``(dataset_version_id, agency_id)`` with
+    ``agency_id NOT NULL``. Synthesize a stable surrogate from the provider id so
+    a compliant single-agency feed still loads. Nothing joins
+    ``routes -> agency`` on this key, so the surrogate stays internal."""
+    return provider_id
+
+
 def _parse_optional_int(value: str | None) -> int | None:
     normalized = _blank_to_none(value)
     return int(normalized) if normalized is not None else None
@@ -602,6 +613,15 @@ def _parse_optional_float(value: str | None) -> float | None:
 
 def _parse_gtfs_date(value: str, member_name: str, column_name: str) -> date:
     return parse_gtfs_date(value, field_name=f"{member_name}.{column_name}")
+
+
+def _parse_optional_gtfs_date(
+    value: str | None, member_name: str, column_name: str
+) -> date | None:
+    normalized = _blank_to_none(value)
+    if normalized is None:
+        return None
+    return _parse_gtfs_date(normalized, member_name, column_name)
 
 
 def _parse_gtfs_bool(row: Mapping[str, str], column_name: str, member_name: str) -> bool:
@@ -628,7 +648,8 @@ def _build_agency_record(
     return {
         "dataset_version_id": dataset_version_id,
         "provider_id": provider_id,
-        "agency_id": _require_value(row, "agency_id", "agency.txt"),
+        "agency_id": _blank_to_none(row.get("agency_id"))
+        or _synthesized_agency_id(provider_id),
         "agency_name": _require_value(row, "agency_name", "agency.txt"),
         "agency_url": _require_value(row, "agency_url", "agency.txt"),
         "agency_timezone": _require_value(row, "agency_timezone", "agency.txt"),
@@ -658,17 +679,13 @@ def _build_feed_info_record(
             "feed_info.txt",
         ),
         "feed_lang": _require_value(row, "feed_lang", "feed_info.txt"),
-        "feed_start_date": _parse_gtfs_date(
-            _require_value(row, "feed_start_date", "feed_info.txt"),
-            "feed_info.txt",
-            "feed_start_date",
+        "feed_start_date": _parse_optional_gtfs_date(
+            row.get("feed_start_date"), "feed_info.txt", "feed_start_date"
         ),
-        "feed_end_date": _parse_gtfs_date(
-            _require_value(row, "feed_end_date", "feed_info.txt"),
-            "feed_info.txt",
-            "feed_end_date",
+        "feed_end_date": _parse_optional_gtfs_date(
+            row.get("feed_end_date"), "feed_info.txt", "feed_end_date"
         ),
-        "feed_version": _require_value(row, "feed_version", "feed_info.txt"),
+        "feed_version": _blank_to_none(row.get("feed_version")),
     }
 
 
@@ -845,18 +862,27 @@ def _build_stop_record(
     provider_id: str,
     dataset_version_id: int,
 ) -> dict[str, object]:
+    # GTFS: stop_name is required for stops/stations/entrances (location_type
+    # 0/1/2, default 0) and optional for generic nodes (3) / boarding areas (4).
+    location_type = _parse_optional_int(row.get("location_type"))
+    stop_name = _blank_to_none(row.get("stop_name"))
+    if stop_name is None and location_type not in (3, 4):
+        raise ValueError(
+            "stops.txt requires non-empty column 'stop_name' for location_type "
+            "0/1/2 (stop/station/entrance)."
+        )
     return {
         "dataset_version_id": dataset_version_id,
         "provider_id": provider_id,
         "stop_id": _require_value(row, "stop_id", "stops.txt"),
         "stop_code": _blank_to_none(row.get("stop_code")),
-        "stop_name": _require_value(row, "stop_name", "stops.txt"),
+        "stop_name": stop_name,
         "stop_desc": _blank_to_none(row.get("stop_desc")),
         "stop_lat": _parse_optional_float(row.get("stop_lat")),
         "stop_lon": _parse_optional_float(row.get("stop_lon")),
         "zone_id": _blank_to_none(row.get("zone_id")),
         "stop_url": _blank_to_none(row.get("stop_url")),
-        "location_type": _parse_optional_int(row.get("location_type")),
+        "location_type": location_type,
         "parent_station": _blank_to_none(row.get("parent_station")),
         "stop_timezone": _blank_to_none(row.get("stop_timezone")),
         "wheelchair_boarding": _parse_optional_int(row.get("wheelchair_boarding")),
