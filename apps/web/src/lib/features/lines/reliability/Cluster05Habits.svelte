@@ -95,11 +95,17 @@
 	const hasWeekday = $derived(weekdayRows.length > 0);
 	const isEmpty = $derived(!hasHeatmap && !hasWeekday);
 
-	// Heatmap scale legend — ramp endpoints + the dedicated no-data swatch. The
-	// ramp colours are data marks (--dataviz-heatmap-*); the legend is decorative
-	// (the Heatmap's own role=img summary is the a11y source of truth).
+	// Full day names in heatmap ROW order (Mon..Sun) for the tooltip heading +
+	// cell aria-label — the axis itself keeps the short labels.
+	const fullDayLabels = $derived(band.weekdays.slice(1));
+
+	// Heatmap scale legend — three ramp buckets (low→high) + the dedicated no-data
+	// swatch, so the legend reads as an ordered scale. The ramp colours are data
+	// marks (--dataviz-heatmap-*); the legend is decorative (the Heatmap's own
+	// role=img summary + the plain-language caption are the a11y source of truth).
 	const legendItems = $derived([
 		{ colorVar: HEATMAP_RAMP[0], label: band.legend.low, swatch: 'square' as const },
+		{ colorVar: HEATMAP_RAMP[2], label: band.legend.medium, swatch: 'square' as const },
 		{
 			colorVar: HEATMAP_RAMP[HEATMAP_RAMP.length - 1],
 			label: band.legend.high,
@@ -107,6 +113,29 @@
 		},
 		{ colorVar: HEATMAP_NODATA, label: band.legend.noData, swatch: 'square' as const },
 	]);
+
+	// Plain-language word for a cell's row-normalized intensity, bucketed on the
+	// SAME 5-stop ramp the colour uses, so the readout word matches the colour.
+	// `null` → the honest no-data text (never a fabricated Low).
+	function heatmapCellText(value: number | null, norm: number | null): string {
+		if (value == null || norm == null) return band.legend.noData;
+		const bucket = Math.min(4, Math.floor(Math.min(1, Math.max(0, norm)) * 5));
+		return [
+			band.legend.low,
+			band.legend.low,
+			band.legend.medium,
+			band.legend.high,
+			band.legend.high,
+		][bucket];
+	}
+
+	// Plain-language caption: the resolved scale phrase (never the raw snake_case
+	// `scale`) + the how-to-read sentence. Null/unmapped scale → heading fallback.
+	const scaleCaptionText = $derived(
+		habits.scale
+			? `${band.scaleLegend[habits.scale] ?? band.heatmapHeading} · ${band.scaleCaption}`
+			: band.scaleCaption,
+	);
 </script>
 
 <section class="habits-band" data-slot="cluster-05-habits" aria-label={copy.clusters.habits}>
@@ -122,11 +151,22 @@
 					<Heatmap
 						grid={habits.matrix}
 						dayLabels={[...band.weekdaysShort]}
+						fullDayLabels={[...fullDayLabels]}
 						label={band.heatmapLabel}
+						hourAxisLabel={band.hourAxisLabel}
+						dayAxisLabel={band.dayAxisLabel}
+						valueLabel={band.cellValueLabel}
+						noDataText={band.legend.noData}
+						hourTicks={[0, 3, 6, 9, 12, 15, 18, 21]}
+						clockTicks
+						valueFormat={heatmapCellText}
 						interactive
 						class="habits-heatmap"
 					/>
 					<ChartLegend items={legendItems} />
+					<p class="habits-scale-caption" data-slot="habits-scale-caption">
+						{scaleCaptionText}
+					</p>
 				</div>
 			{/if}
 
@@ -173,6 +213,13 @@
 		margin: 0;
 		font-family: var(--font-mono);
 		font-size: var(--text-small);
+		color: var(--muted-foreground);
+	}
+	.habits-scale-caption {
+		margin: 0;
+		max-width: 42ch;
+		font-family: var(--font-mono);
+		font-size: var(--text-micro);
 		color: var(--muted-foreground);
 	}
 	.habits-weekday-list {

@@ -37,6 +37,39 @@
 		 * Default prints the raw value or "no data".
 		 */
 		cellTitle?: (day: number, hour: number, value: number | null) => string;
+		/** X-axis caption rendered under the hour ticks (e.g. "Hour of day"). Omit = none. */
+		hourAxisLabel?: string;
+		/** Y-axis caption rendered rotated beside the day labels (e.g. "Day of week"). Omit = none. */
+		dayAxisLabel?: string;
+		/**
+		 * Hour tick stops to render. Default [0, 6, 12, 18] (current behaviour); pass
+		 * a denser set (e.g. [0, 3, 6, 9, 12, 15, 18, 21]) for finer reading.
+		 */
+		hourTicks?: number[];
+		/**
+		 * Append ":00" to hour tick labels when true (reads as a clock time, "06:00"
+		 * not "06"). Default false → current bare-number behaviour preserved.
+		 */
+		clockTicks?: boolean;
+		/**
+		 * Full row (day) names (length 7, ISO row order Mon..Sun) for the tooltip
+		 * HEADING + cell aria-label, when the axis shows short labels. Falls back to
+		 * `dayLabels`.
+		 */
+		fullDayLabels?: string[];
+		/**
+		 * Tooltip/SR row label — what a cell value represents (e.g. "Intensity").
+		 * Distinct from `label` (the whole-grid aria summary). Default = `label`.
+		 */
+		valueLabel?: string;
+		/**
+		 * Formats a cell value for the tooltip ROW value + the <title>/aria-label.
+		 * Receives the RAW cell value (number|null) and its [0,1] row-normalized
+		 * position. Default = String(value) / `noDataText` (current behaviour).
+		 */
+		valueFormat?: (value: number | null, norm: number | null) => string;
+		/** Text for a null (no-data) cell in the <title>/tooltip. Default 'no data'. */
+		noDataText?: string;
 		/**
 		 * Opt-in hover/focus interactivity: each cell becomes a focus target and
 		 * reveals a <ChartTooltip> instead of relying on the native <title>. Default
@@ -53,6 +86,14 @@
 		gap = 2,
 		label,
 		cellTitle,
+		hourAxisLabel,
+		dayAxisLabel,
+		hourTicks,
+		clockTicks = false,
+		fullDayLabels,
+		valueLabel,
+		valueFormat,
+		noDataText = 'no data',
 		interactive = false,
 		class: className,
 		ref = $bindable(null),
@@ -64,11 +105,26 @@
 	const LABEL_W = 30;
 	const HOUR_AXIS_H = 12;
 
+	// Captions grow the gutters ONLY when requested, so the default geometry
+	// (no axis labels) stays byte-identical to the legacy layout.
+	const Y_AXIS_W = $derived(dayAxisLabel ? 10 : 0);
+	const X_AXIS_LABEL_H = $derived(hourAxisLabel ? 10 : 0);
+	const TICKS = $derived(hourTicks ?? [0, 6, 12, 18]);
+	// Row labels used in the tooltip heading + cell aria-label (full names when given).
+	const headingDays = $derived(fullDayLabels ?? dayLabels);
+
 	const step = $derived(cell + gap);
 	const gridW = $derived(COLS * step - gap);
 	const gridH = $derived(ROWS * step - gap);
-	const width = $derived(LABEL_W + gridW);
-	const height = $derived(HOUR_AXIS_H + gridH);
+	const originX = $derived(Y_AXIS_W + LABEL_W);
+	const width = $derived(originX + gridW);
+	const height = $derived(HOUR_AXIS_H + gridH + X_AXIS_LABEL_H);
+
+	/** Tick label: bare zero-padded hour, or a clock time when `clockTicks`. */
+	function tickLabel(h: number): string {
+		const hh = String(h).padStart(2, '0');
+		return clockTicks ? `${hh}:00` : hh;
+	}
 
 	type Cell = {
 		x: number;
@@ -91,25 +147,27 @@
 			for (let c = 0; c < COLS; c++) {
 				const raw = row[c];
 				const isNull = raw == null || Number.isNaN(raw as number);
-				let fill: string;
-				if (isNull) {
-					fill = HEATMAP_NODATA;
-				} else if (span === 0) {
-					// A row with a single distinct value: paint mid-ramp, not 0.
-					fill = heatmapColor(0.5);
-				} else {
-					fill = heatmapColor(((raw as number) - min) / span);
-				}
+				// Row-normalized [0,1] position (null when no data). Computed once and
+				// reused for both the fill and the value formatter.
+				const norm = isNull ? null : span === 0 ? 0.5 : ((raw as number) - min) / span;
+				const fill = norm == null ? HEATMAP_NODATA : heatmapColor(norm);
+				const valueText = isNull
+					? noDataText
+					: valueFormat
+						? valueFormat(raw as number, norm)
+						: String(raw);
+				const dayName = headingDays[r] ?? `Day ${r + 1}`;
+				const heading = `${dayName} ${String(c).padStart(2, '0')}:00`;
 				const title = cellTitle
 					? cellTitle(r, c, isNull ? null : (raw as number))
-					: `${dayLabels[r] ?? `Day ${r + 1}`} ${String(c).padStart(2, '0')}:00 — ${isNull ? 'no data' : String(raw)}`;
+					: `${heading} — ${valueText}`;
 				out.push({
-					x: LABEL_W + c * step,
+					x: originX + c * step,
 					y: HOUR_AXIS_H + r * step,
 					fill,
 					title,
-					heading: `${dayLabels[r] ?? `Day ${r + 1}`} ${String(c).padStart(2, '0')}:00`,
-					valueText: isNull ? 'no data' : String(raw),
+					heading,
+					valueText,
 				});
 			}
 		}
@@ -125,7 +183,7 @@
 			xPct: ((cl.x + cell / 2) / width) * 100,
 			yPct: ((cl.y + cell / 2) / height) * 100,
 			heading: cl.heading,
-			rows: [{ colorVar: cl.fill, label: label ?? 'value', value: cl.valueText }],
+			rows: [{ colorVar: cl.fill, label: valueLabel ?? label ?? 'value', value: cl.valueText }],
 			side: 'top',
 		});
 	}
@@ -192,27 +250,52 @@
 		focusable="false"
 		aria-hidden={!interactive}
 	>
-		<!-- Hour axis ticks (0, 6, 12, 18) — neutral. -->
-		{#each [0, 6, 12, 18] as h (h)}
+		<!-- Hour axis ticks — neutral. Configurable stops; optional clock labels. -->
+		{#each TICKS as h (h)}
 			<text
-				x={LABEL_W + h * step}
+				x={originX + h * step}
 				y={HOUR_AXIS_H - 4}
 				font-size="6"
 				fill="var(--muted-foreground)"
-				font-family="var(--font-mono)">{String(h).padStart(2, '0')}</text
+				font-family="var(--font-mono)">{tickLabel(h)}</text
 			>
 		{/each}
 
 		<!-- Day (row) labels — neutral. -->
 		{#each dayLabels.slice(0, ROWS) as d, r (r)}
 			<text
-				x={0}
+				x={Y_AXIS_W}
 				y={HOUR_AXIS_H + r * step + cell / 2 + 2}
 				font-size="6"
 				fill="var(--muted-foreground)"
 				font-family="var(--font-mono)">{d}</text
 			>
 		{/each}
+
+		<!-- X-axis caption (hours), centred under the grid — only when requested. -->
+		{#if hourAxisLabel}
+			<text
+				x={originX + gridW / 2}
+				y={height - 1}
+				text-anchor="middle"
+				font-size="6"
+				fill="var(--muted-foreground)"
+				font-family="var(--font-mono)">{hourAxisLabel}</text
+			>
+		{/if}
+
+		<!-- Y-axis caption (days), rotated beside the day labels — only when requested. -->
+		{#if dayAxisLabel}
+			<text
+				transform="rotate(-90 6 {HOUR_AXIS_H + gridH / 2})"
+				x={6}
+				y={HOUR_AXIS_H + gridH / 2}
+				text-anchor="middle"
+				font-size="6"
+				fill="var(--muted-foreground)"
+				font-family="var(--font-mono)">{dayAxisLabel}</text
+			>
+		{/if}
 
 		<!-- Cells. -->
 		{#each cells as cl, i (i)}

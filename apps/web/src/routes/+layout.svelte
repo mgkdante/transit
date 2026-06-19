@@ -59,9 +59,11 @@
 	import { EdgeState } from '$lib/components/edge';
 	import { layout } from '$lib/nav';
 	import {
-		chromeSearchHref,
+		chromeSearchResultHref,
 		chromeSearchResults,
+		scopeForPath,
 		type ChromeSearchResult,
+		type ChromeSearchScope,
 	} from '$lib/search/chromeSearch';
 	import type { GeocodeSuggestion, GeocodedLocation } from '$lib/geocode/types';
 	import type { LayoutData } from './$types';
@@ -88,6 +90,13 @@
 	// (the "squeezed footer" artifact). Only /map today; its STM/OSM attribution
 	// rides the map's own attribution control instead of the page footer.
 	const isFullBleed = $derived(seoPath === '/map');
+
+	// Context-aware chrome search: the active surface RESTRICTS the result blend
+	// and steers selection — /lines + /route/* search only lines (→ /route/<id>),
+	// /stops + /stop/* only stops (→ /stop/<id>), /map keeps the full blend, and
+	// the hub/network/search default to today's blend. Derived from the same
+	// delocalized path the nav highlight uses, so the two never disagree.
+	const searchScope = $derived<ChromeSearchScope>(scopeForPath(seoPath));
 
 	// v1 snapshot context. The SSR boot (+layout.ts) can fail on Cloudflare — a
 	// Worker's fetch to its own zone can't reach the sibling /data route (523) —
@@ -133,17 +142,24 @@
 	const searchStops = createResource(() => getStopsIndex());
 	const searchVehicles = createResource(() => getVehicles());
 	const topSearchResults = $derived(
-		chromeSearchResults(topSearch, {
-			routes: searchRoutes.data?.routes ?? [],
-			stops: searchStops.data?.stops ?? [],
-			vehicles: searchVehicles.data?.vehicles ?? [],
-			addresses: addressSuggestions,
-		}),
+		chromeSearchResults(
+			topSearch,
+			{
+				routes: searchRoutes.data?.routes ?? [],
+				stops: searchStops.data?.stops ?? [],
+				vehicles: searchVehicles.data?.vehicles ?? [],
+				addresses: addressSuggestions,
+			},
+			{ scope: searchScope },
+		),
 	);
 
 	$effect(() => {
 		const query = topSearch.trim();
-		if (!browser || !shouldSuggestAddress(query)) {
+		// Only map/all scope surfaces addresses — skip the geocode fetch (and its
+		// "Powered by Google" footer) entirely on the line/stop catalogue surfaces.
+		const wantsAddress = searchScope === 'map' || searchScope === 'all';
+		if (!browser || !wantsAddress || !shouldSuggestAddress(query)) {
 			addressSuggestions = [];
 			return;
 		}
@@ -189,27 +205,34 @@
 		}
 		topSearch = '';
 		addressSessionToken = createAddressSessionToken();
-		void goto(localizeHref(chromeSearchHref(result, $page.url.searchParams), locale), {
-			noScroll: true,
-		});
+		void goto(
+			localizeHref(chromeSearchResultHref(result, searchScope, $page.url.searchParams), locale),
+			{ noScroll: true },
+		);
 	}
 
 	async function submitSearch(value: string): Promise<void> {
 		const query = value.trim();
-		const [first] = chromeSearchResults(query, {
-			routes: searchRoutes.data?.routes ?? [],
-			stops: searchStops.data?.stops ?? [],
-			vehicles: searchVehicles.data?.vehicles ?? [],
-			addresses: addressSuggestions,
-		});
+		const [first] = chromeSearchResults(
+			query,
+			{
+				routes: searchRoutes.data?.routes ?? [],
+				stops: searchStops.data?.stops ?? [],
+				vehicles: searchVehicles.data?.vehicles ?? [],
+				addresses: addressSuggestions,
+			},
+			{ scope: searchScope },
+		);
 		if (first) {
 			await selectSearchResult(first);
 			return;
 		}
 
+		// The line/stop catalogues never resolve an address — no fallback there.
+		if (searchScope === 'route' || searchScope === 'stop') return;
 		if (!shouldSuggestAddress(query)) return;
 		const addresses = await fetchAddressSuggestions(query, 1);
-		const [addressResult] = chromeSearchResults(query, { addresses });
+		const [addressResult] = chromeSearchResults(query, { addresses }, { scope: searchScope });
 		if (addressResult) await selectSearchResult(addressResult);
 	}
 
@@ -246,7 +269,7 @@
 		addressSessionToken = createAddressSessionToken();
 		void goto(
 			localizeHref(
-				chromeSearchHref(
+				chromeSearchResultHref(
 					{
 						kind: 'address',
 						id: `${resolved.lat},${resolved.lon}`,
@@ -254,7 +277,9 @@
 						lat: resolved.lat,
 						lon: resolved.lon,
 						precision: resolved.precision,
+						priority: 30,
 					},
+					searchScope,
 					$page.url.searchParams,
 				),
 				locale,
@@ -300,6 +325,7 @@
 	url={$page.url}
 	bind:search={topSearch}
 	searchResults={topSearchResults}
+	{searchScope}
 	onsearch={submitSearch}
 	onresultselect={selectSearchResult}
 >

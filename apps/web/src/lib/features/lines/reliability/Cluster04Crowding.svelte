@@ -91,6 +91,7 @@
 			scale="occupancy"
 			{segments}
 			label={copy.clusters.crowding}
+			size="sm"
 			legend
 			class="crowding-bar"
 		/>

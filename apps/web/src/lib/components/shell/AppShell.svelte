@@ -34,7 +34,7 @@
 	import type { PaneAPI } from 'paneforge';
 	import { cn } from '$lib/utils';
 	import { type Locale, DEFAULT_LOCALE, getLocale } from '$lib/i18n';
-	import type { ChromeSearchResult } from '$lib/search/chromeSearch';
+	import type { ChromeSearchResult, ChromeSearchScope } from '$lib/search/chromeSearch';
 	import { layout } from '$lib/nav';
 	import { ResizablePaneGroup, ResizablePane, ResizableHandle } from '$lib/components/ui/resizable';
 	import TopBar from './TopBar.svelte';
@@ -55,6 +55,8 @@
 		onsearch?: (value: string) => void;
 		searchResults?: readonly ChromeSearchResult[];
 		onresultselect?: (result: ChromeSearchResult) => void;
+		/** Active surface scope — drives the scoped TopBar placeholder hint. */
+		searchScope?: ChromeSearchScope;
 		/** Fired when the TopBar alerts bell is activated. */
 		onalerts?: () => void;
 
@@ -90,6 +92,7 @@
 		onsearch,
 		searchResults = [],
 		onresultselect,
+		searchScope = 'all',
 		onalerts,
 		detailOpen = $bindable(false),
 		detailTitle,
@@ -178,6 +181,7 @@
 		{onsearch}
 		{searchResults}
 		{onresultselect}
+		{searchScope}
 		{onalerts}
 	/>
 

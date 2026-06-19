@@ -71,6 +71,65 @@ describe('Cluster05Habits — populated', () => {
 		expect(container.querySelector('[data-slot="habits-empty"]')).toBeNull();
 	});
 
+	it('renders a plain-language scale caption with the resolved (non-snake_case) phrase', () => {
+		const { container } = render(Cluster05Habits, {
+			props: {
+				habits: POPULATED_HABITS,
+				dayOfWeek: POPULATED_DOW,
+				locale: 'en',
+				copy: enCopy,
+			},
+		});
+		const caption = container.querySelector('[data-slot="habits-scale-caption"]');
+		expect(caption).toBeInTheDocument();
+		// Plain-language phrase from scaleLegend, NOT the raw scale string.
+		expect(caption?.textContent).toContain('Repeat problems');
+		expect(caption?.textContent).not.toContain('repeat_problem_relative');
+	});
+
+	it('falls back to the heading (never the raw scale string) for an unmapped scale', () => {
+		const { container } = render(Cluster05Habits, {
+			props: {
+				habits: { ...POPULATED_HABITS, scale: 'some_unknown_scale' },
+				dayOfWeek: POPULATED_DOW,
+				locale: 'en',
+				copy: enCopy,
+			},
+		});
+		const caption = container.querySelector('[data-slot="habits-scale-caption"]');
+		expect(caption?.textContent).toContain(enBand.heatmapHeading);
+		expect(caption?.textContent).not.toContain('some_unknown_scale');
+	});
+
+	it('reads cells as plain words + full day names, not raw normalized numbers', () => {
+		render(Cluster05Habits, {
+			props: {
+				habits: POPULATED_HABITS,
+				dayOfWeek: POPULATED_DOW,
+				locale: 'en',
+				copy: enCopy,
+			},
+		});
+		// Mon 08:00 = grid[0][8] = 0.9, the sole real cell on row 0 → mid-ramp word.
+		const hot = screen.getByRole('img', { name: /Monday 08:00/ });
+		expect(hot).toBeInTheDocument();
+		expect(hot.getAttribute('aria-label')).not.toContain('0.9');
+	});
+
+	it('renders the FR canonical scale caption', () => {
+		const { container } = render(Cluster05Habits, {
+			props: {
+				habits: POPULATED_HABITS,
+				dayOfWeek: POPULATED_DOW,
+				locale: 'fr',
+				copy: reliabilityCopy.fr,
+			},
+		});
+		expect(container.querySelector('[data-slot="habits-scale-caption"]')?.textContent).toContain(
+			'Problèmes récurrents',
+		);
+	});
+
 	it('renders the heatmap alone when weekday seasonality is empty', () => {
 		const { container } = render(Cluster05Habits, {
 			props: { habits: POPULATED_HABITS, dayOfWeek: [], locale: 'en', copy: enCopy },

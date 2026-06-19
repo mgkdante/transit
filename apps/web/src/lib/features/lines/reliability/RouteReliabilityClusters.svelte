@@ -143,17 +143,17 @@
 	</div>
 
 	<!-- 00 — the full-bleed snapshot strip (single-glance, zero-interaction). -->
-	<div class="reliability-band reliability-band--strip" data-band="snapshot">
+	<div class="reliability-band reliability-band--strip surface-bleed" data-band="snapshot">
 		<SnapshotStrip vm={clusters.strip} {locale} {copy} />
 	</div>
 
 	<!-- 01 Punctuality. -->
-	<div class="reliability-band" data-band="punctuality">
+	<div class="reliability-band surface-bleed" data-band="punctuality">
 		<Cluster01Punctuality vm={clusters.punctuality} {locale} {copy} grain={selectedGrain} />
 	</div>
 
 	<!-- 02 Wait regularity (service spans ride alongside the headway sub-block). -->
-	<div class="reliability-band" data-band="wait-regularity">
+	<div class="reliability-band surface-bleed" data-band="wait-regularity">
 		<Cluster02WaitRegularity
 			wait={clusters.waitRegularity}
 			serviceSpans={clusters.serviceDelivered.serviceSpans}
@@ -163,17 +163,17 @@
 	</div>
 
 	<!-- 03 Service delivered (ramp-in: cancellations + skipped stops). -->
-	<div class="reliability-band" data-band="service-delivered">
+	<div class="reliability-band surface-bleed" data-band="service-delivered">
 		<Cluster03ServiceDelivered vm={clusters.serviceDelivered} {locale} {copy} />
 	</div>
 
 	<!-- 04 Crowding. -->
-	<div class="reliability-band" data-band="crowding">
+	<div class="reliability-band surface-bleed" data-band="crowding">
 		<Cluster04Crowding vm={clusters.crowding} {locale} {copy} />
 	</div>
 
 	<!-- 05 Time-of-day habits (weekday seasonality rides alongside the heatmap). -->
-	<div class="reliability-band" data-band="habits">
+	<div class="reliability-band surface-bleed" data-band="habits">
 		<Cluster05Habits
 			habits={clusters.habits}
 			dayOfWeek={clusters.punctuality.dayOfWeek}
@@ -267,7 +267,11 @@
 	}
 
 	/* Each band is its own edge-to-edge block; the strip carries a quiet rule so
-	   the single-glance headline reads as its own register above the clusters. */
+	   the single-glance headline reads as its own register above the clusters.
+	   Bands opt into full-bleed at the wrapper (.surface-bleed, see Surface.svelte)
+	   so the data marks reach the content-column edges; dense prose inside re-caps
+	   itself via .surface-measure. The control spine (.reliability-controls) stays
+	   within the reading column — it is chrome, not a band, so it is NOT bled. */
 	.reliability-band {
 		width: 100%;
 	}

@@ -297,8 +297,13 @@
 				<SectionLabel text="SPARKLINE" variant="metric" />
 				<Sparkline
 					values={sparkSeries}
+					width={220}
+					height={48}
 					label="On-time % · 10 builds"
 					colorVar={statusVar('on_time')}
+					yAxis={{ label: lang === 'fr' ? 'À l’heure %' : 'On-time %', unit: '%' }}
+					xLabels={sparkSeries.map((_, i) => `#${i + 1}`)}
+					showYTicks
 					interactive
 				/>
 			</div>
@@ -309,6 +314,19 @@
 					retard={trendRetard}
 					onTimeLabel={lang === 'fr' ? 'À l’heure %' : 'On-time %'}
 					retardLabel={lang === 'fr' ? 'Retard %' : 'Delayed %'}
+					xLabels={trendOnTime.map((_, i) => (lang === 'fr' ? `J${i + 1}` : `D${i + 1}`))}
+					yAxis={{
+						label: lang === 'fr' ? 'À l’heure %' : 'On-time %',
+						unit: '%',
+						domain: [0, 100],
+					}}
+					retardAxis={{
+						label: lang === 'fr' ? 'Retard %' : 'Delayed %',
+						unit: '%',
+						domain: [0, 100],
+					}}
+					showYTicks
+					showXTicks
 					label="7-day trend"
 					interactive
 				/>
@@ -321,6 +339,8 @@
 					unit="min"
 					label={lang === 'fr' ? 'Retard' : 'Delay'}
 					fillVar={statusVar('late')}
+					showAxis
+					axisLabel={lang === 'fr' ? 'Retard (min)' : 'Delay (min)'}
 					interactive
 				/>
 			</div>

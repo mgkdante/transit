@@ -38,8 +38,11 @@
 		scale: 'status' | 'occupancy';
 		/** The segments. Order is preserved left→right. */
 		segments: StackedSegment[];
-		/** Bar height (viewBox units). */
-		height?: number;
+		/**
+		 * Bar thickness. 'md' is the default proportion strip; 'sm' is a slimmer
+		 * variant for dense cluster bands. Maps to a fixed pixel height internally.
+		 */
+		size?: 'sm' | 'md';
 		/** Render an inline legend below the bar. */
 		legend?: boolean;
 		/** Accessible label prefix (e.g. "Route 51 status mix"). */
@@ -58,7 +61,7 @@
 	let {
 		scale,
 		segments,
-		height = 14,
+		size = 'md',
 		legend = false,
 		label,
 		interactive = false,
@@ -67,6 +70,11 @@
 		ref = $bindable(null),
 		...restProps
 	}: StackedBarProps = $props();
+
+	// Thickness map (px / viewBox units). Kept off the token layer — a 2-value
+	// internal proportion-strip scale, not a shared design token.
+	const BAR_HEIGHT = { sm: 8, md: 10 } as const;
+	const height = $derived(BAR_HEIGHT[size]);
 
 	const tip = createChartTooltip();
 
@@ -139,10 +147,16 @@
 	     an aria-hidden ancestor would make every focus stop silent to AT. When
 	     static, the outer role=img + summary carries the meaning and the SVG is
 	     hidden as pure decoration. -->
+	<!-- Explicit CSS height pins the rendered strip to `height` px. Without it a
+	     global `svg { height: auto }` makes the bar width-PROPORTIONAL (≈width×h/100),
+	     so the `size` prop only changed the aspect ratio of a still-chunky bar
+	     instead of actually thinning it. preserveAspectRatio:none then stretches the
+	     viewBox to the exact strip height. -->
 	<svg
 		viewBox="0 0 100 {height}"
 		width="100%"
 		{height}
+		style="display: block; height: {height}px;"
 		preserveAspectRatio="none"
 		aria-hidden={!interactive}
 		focusable="false"
@@ -215,7 +229,7 @@
 						aria-hidden="true"
 					></span>
 					<span class="text-foreground">{s.label}</span>
-					<span class="font-mono">{Math.round(s.pct)}%</span>
+					<span class="font-mono tabular-nums text-foreground">{Math.round(s.pct)}%</span>
 				</li>
 			{/each}
 		</ul>

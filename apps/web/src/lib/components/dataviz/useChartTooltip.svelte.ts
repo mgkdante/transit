@@ -27,6 +27,21 @@ export interface ChartTooltipRow {
 	value: string;
 }
 
+/**
+ * Optional axis metadata a chart consumer passes so the primitive can label its
+ * ticks and suffix the tooltip values with a unit. The single source of truth
+ * for axis shape across the line/area kit (Sparkline / TrendLine / Distribution).
+ * Every field is optional → existing call-sites that omit it stay byte-identical.
+ */
+export interface ChartAxis {
+	/** Short axis title, already localized (e.g. "On-time %", "p90 delay"). */
+	label?: string;
+	/** Unit suffix appended to tick + tooltip values (e.g. "%", " min"). '' = none. */
+	unit?: string;
+	/** Explicit [min,max] for tick endpoints; falls back to the chart's domain. */
+	domain?: [number, number];
+}
+
 /** Which edge of the anchor point the tooltip is placed against. */
 export type ChartTooltipSide = 'top' | 'bottom' | 'left' | 'right';
 

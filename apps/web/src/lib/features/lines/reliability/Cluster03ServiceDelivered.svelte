@@ -83,6 +83,11 @@
 	const t = $derived(copy.strip);
 	const cancellationHistoryLabel = $derived(`${t.cancellationRatePct} · ${locale}`);
 	const skippedHistoryLabel = $derived(`${t.skippedStopRatePct} · ${locale}`);
+
+	// Sparkline axis metadata: a % unit on the value + per-index x-labels (date,
+	// else the pipeline grain) for the tooltip heading.
+	const cancellationXLabels = $derived(vm.cancellations.map((c) => c.date ?? c.grain ?? ''));
+	const skippedXLabels = $derived(vm.skippedStops.map((s) => s.date ?? ''));
 </script>
 
 <section
@@ -115,6 +120,8 @@
 						width={160}
 						height={36}
 						label={cancellationHistoryLabel}
+						yAxis={{ label: t.cancellationRatePct, unit: copy.units.pct }}
+						xLabels={cancellationXLabels}
 						interactive
 					/>
 				{:else}
@@ -132,6 +139,8 @@
 						width={160}
 						height={36}
 						label={skippedHistoryLabel}
+						yAxis={{ label: t.skippedStopRatePct, unit: copy.units.pct }}
+						xLabels={skippedXLabels}
 						interactive
 					/>
 				{:else}

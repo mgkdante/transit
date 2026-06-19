@@ -64,8 +64,12 @@
 		readonly delayAvg: string;
 		readonly delayMedian: string;
 		readonly p90: string;
+		/** Plain caption under the p90 tile (what "p90" means to a rider). */
+		readonly p90Caption: string;
 		readonly severe: string;
 		readonly trend: string;
+		/** Unit suffix for the OTP sparkline tooltip value (axis metadata). */
+		readonly unitPct: string;
 	};
 	const L: Record<Locale, Labels> = {
 		fr: {
@@ -73,16 +77,20 @@
 			delayAvg: 'Retard moyen',
 			delayMedian: 'Retard médian',
 			p90: 'p90',
-			severe: 'Part sévère',
+			p90Caption: '10 % les plus lents',
+			severe: 'Retards majeurs',
 			trend: 'Tendance ponctualité',
+			unitPct: '%',
 		},
 		en: {
 			otp: 'On-time %',
 			delayAvg: 'Avg delay',
 			delayMedian: 'Median delay',
 			p90: 'p90',
-			severe: 'Severe share',
+			p90Caption: 'Slowest 10% of trips',
+			severe: 'Major delays',
 			trend: 'On-time trend',
+			unitPct: '%',
 		},
 	};
 	const t = $derived(L[locale]);
@@ -114,7 +122,12 @@
 							size="sm"
 						/>
 						{#if period.p90Min != null}
-							<MetricDisplay value={fmtMin(period.p90Min)} label={t.p90} size="sm" />
+							<MetricDisplay
+								value={fmtMin(period.p90Min)}
+								label={t.p90}
+								sublabel={t.p90Caption}
+								size="sm"
+							/>
 						{/if}
 					</div>
 					{#if period.severePct != null}
@@ -135,7 +148,15 @@
 		{#if otpSeries.length > 1}
 			<div class="reliability-trend">
 				<SectionLabel text={t.trend} variant="metric" />
-				<Sparkline values={otpSeries} width={160} height={32} label={t.trend} interactive />
+				<Sparkline
+					values={otpSeries}
+					width={160}
+					height={32}
+					label={t.trend}
+					yAxis={{ label: t.otp, unit: t.unitPct }}
+					xLabels={periods.map((p) => p.grain)}
+					interactive
+				/>
 			</div>
 		{/if}
 	</div>

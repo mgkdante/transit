@@ -145,7 +145,7 @@ export const detailCopy: Record<Locale, RouteDetailCopy> = {
 		direction: (dir) => `Direction ${dir}`,
 		stopsCount: (n) => (n === 1 ? '1 stop' : `${n} stops`),
 		window: 'Window',
-		headway: 'Headway',
+		headway: 'Time between buses',
 		firstDeparture: 'First departure',
 		lastDeparture: 'Last departure',
 		scheduled: 'Scheduled',

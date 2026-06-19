@@ -16,9 +16,27 @@ export interface HabitsBandCopy {
 	readonly weekdayHeading: string;
 	/** Caption for a weekday row's mean-delay value. */
 	readonly avgDelay: string;
-	/** Legend ramp endpoints + the dedicated no-data swatch. */
+	/** X-axis caption (hours run left→right). */
+	readonly hourAxisLabel: string;
+	/** Y-axis caption (days run top→bottom). */
+	readonly dayAxisLabel: string;
+	/** Tooltip/SR row label — what a single cell encodes. */
+	readonly cellValueLabel: string;
+	/**
+	 * Plain-language caption beneath the heatmap explaining the relative scale +
+	 * how to read the colour. Pairs with the resolved `scaleLegend` phrase.
+	 */
+	readonly scaleCaption: string;
+	/**
+	 * RAW scale string (RouteHabits.scale) → a plain-language phrase for the
+	 * caption. The snake_case scale value is NEVER shown to a layperson; an
+	 * unmapped/null scale falls back to `heatmapHeading`.
+	 */
+	readonly scaleLegend: Readonly<Record<string, string>>;
+	/** Legend ramp buckets (low→high) + the dedicated no-data swatch. */
 	readonly legend: {
 		readonly low: string;
+		readonly medium: string;
 		readonly high: string;
 		readonly noData: string;
 	};
@@ -32,18 +50,36 @@ export const habitsBandCopy: Record<Locale, HabitsBandCopy> = {
 	fr: {
 		heatmapHeading: 'Problèmes récurrents par heure',
 		heatmapLabel: 'Carte thermique des problèmes par jour et par heure',
-		weekdayHeading: 'Saisonnalité hebdomadaire',
+		weekdayHeading: 'Par jour de la semaine',
 		avgDelay: 'Retard moyen',
-		legend: { low: 'Faible', high: 'Élevé', noData: 'Aucune donnée' },
+		hourAxisLabel: 'Heure de la journée',
+		dayAxisLabel: 'Jour de la semaine',
+		cellValueLabel: 'Intensité',
+		scaleCaption:
+			'La couleur indique la fréquence des problèmes, comparée heure par heure au sein de chaque journée. Plus c’est chaud, plus le problème revient souvent.',
+		scaleLegend: {
+			repeat_problem_relative: 'Problèmes récurrents (relatif par jour)',
+			severe_relative: 'Retards graves (relatif par jour)',
+		},
+		legend: { low: 'Faible', medium: 'Moyen', high: 'Élevé', noData: 'Aucune donnée' },
 		weekdays: ['', 'Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dimanche'],
 		weekdaysShort: ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'],
 	},
 	en: {
 		heatmapHeading: 'Repeat problems by hour',
 		heatmapLabel: 'Repeat-problem heatmap by day and hour',
-		weekdayHeading: 'Weekday seasonality',
+		weekdayHeading: 'By day of week',
 		avgDelay: 'Avg delay',
-		legend: { low: 'Low', high: 'High', noData: 'No data' },
+		hourAxisLabel: 'Hour of day',
+		dayAxisLabel: 'Day of week',
+		cellValueLabel: 'Intensity',
+		scaleCaption:
+			'Colour shows how often problems repeat, compared hour-by-hour within each day. Hotter = the problem comes back more often.',
+		scaleLegend: {
+			repeat_problem_relative: 'Repeat problems (relative per day)',
+			severe_relative: 'Severe delays (relative per day)',
+		},
+		legend: { low: 'Low', medium: 'Medium', high: 'High', noData: 'No data' },
 		weekdays: ['', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'],
 		weekdaysShort: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
 	},

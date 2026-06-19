@@ -31,6 +31,10 @@ export interface ReliabilityCopy {
 		readonly headwayRegularityCov: string;
 		readonly cancellationRatePct: string;
 		readonly skippedStopRatePct: string;
+		/** Plain caption under the p90 tile (what "p90" means to a rider). */
+		readonly p90Caption: string;
+		/** Plain caption under the skipped-stop tile (what it counts). */
+		readonly skippedStopCaption: string;
 		/** Ramp-in caveat shown on no-backfill metrics/sections. */
 		readonly rampInNote: string;
 		/** Explicit empty-state note for a metric/band with no data yet. */
@@ -40,6 +44,11 @@ export interface ReliabilityCopy {
 			readonly regular: string;
 			readonly irregular: string;
 		};
+	};
+	/** Unit suffixes appended to chart tick + tooltip values (axis metadata). */
+	readonly units: {
+		readonly pct: string;
+		readonly min: string;
 	};
 	/** Grain control-spine labels. */
 	readonly controls: {
@@ -66,13 +75,16 @@ export const reliabilityCopy: Record<Locale, ReliabilityCopy> = {
 			headwayRegularityCov: 'Régularité (CV)',
 			cancellationRatePct: "Taux d'annulation",
 			skippedStopRatePct: "Taux d'arrêts ignorés",
-			rampInNote: "Mise en route — l'historique s'accumule vers l'avant, sans rétro-remplissage",
+			p90Caption: '10 % les plus lents',
+			skippedStopCaption: 'Arrêts non desservis',
+			rampInNote: 'Nouveau — on compte depuis peu, donc le chiffre se précise avec le temps',
 			noDataNote: 'Aucune donnée',
 			regularity: {
 				regular: 'Passages réguliers',
 				irregular: 'Passages irréguliers',
 			},
 		},
+		units: { pct: '%', min: ' min' },
 		controls: {
 			today: "Aujourd'hui",
 			thisWeek: 'Cette semaine',
@@ -95,13 +107,16 @@ export const reliabilityCopy: Record<Locale, ReliabilityCopy> = {
 			headwayRegularityCov: 'Regularity (CoV)',
 			cancellationRatePct: 'Cancellation rate',
 			skippedStopRatePct: 'Skipped-stop rate',
-			rampInNote: 'Ramp-in — history accrues forward, no backfill',
+			p90Caption: 'Slowest 10% of trips',
+			skippedStopCaption: "Stops the bus didn't serve",
+			rampInNote: 'New metric — we just started counting, so this number sharpens over time',
 			noDataNote: 'No data yet',
 			regularity: {
 				regular: 'Regular arrivals',
 				irregular: 'Irregular arrivals',
 			},
 		},
+		units: { pct: '%', min: ' min' },
 		controls: {
 			today: 'Today',
 			thisWeek: 'This week',

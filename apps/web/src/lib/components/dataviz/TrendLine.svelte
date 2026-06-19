@@ -23,7 +23,7 @@
 	import type { HTMLAttributes } from 'svelte/elements';
 	import ChartTooltip from './ChartTooltip.svelte';
 	import ChartLegend from './ChartLegend.svelte';
-	import { createChartTooltip } from './useChartTooltip.svelte';
+	import { createChartTooltip, type ChartAxis } from './useChartTooltip.svelte';
 
 	type Series = Array<number | null>;
 
@@ -64,6 +64,34 @@
 		interactive?: boolean;
 		/** Optional x-axis category labels (one per index) for the tooltip heading. */
 		xLabels?: string[];
+		/**
+		 * Left y-axis metadata for the ON-TIME series — a unit suffix for the
+		 * tooltip value (e.g. "%") + an optional label/domain for the endpoint
+		 * ticks. Optional + backward-compatible.
+		 */
+		yAxis?: ChartAxis;
+		/**
+		 * Right y-axis metadata for the RETARD series — its OWN unit (e.g. " min")
+		 * + optional label/domain. Dual-axis honesty: each line is labelled in its
+		 * own unit.
+		 */
+		retardAxis?: ChartAxis;
+		/**
+		 * Show min/max endpoint tick labels on each y-axis (on-time left, retard
+		 * right). Default false → existing renders stay byte-identical. Ticks are
+		 * HTML overlay spans because the SVG stretches (`preserveAspectRatio none`).
+		 */
+		showYTicks?: boolean;
+		/**
+		 * Show the first/last x-labels under the plot. `xLabels` already feeds the
+		 * tooltip heading; this surfaces the endpoints visibly. Default false.
+		 */
+		showXTicks?: boolean;
+		/**
+		 * Track a focus DOT on each series at the hovered x-index (in addition to
+		 * the vertical guide). Defaults to true when `interactive`.
+		 */
+		focusDots?: boolean;
 		class?: string;
 	}
 
@@ -80,6 +108,11 @@
 		label,
 		interactive = false,
 		xLabels,
+		yAxis,
+		retardAxis,
+		showYTicks = false,
+		showXTicks = false,
+		focusDots = true,
 		class: className,
 		ref = $bindable(null),
 		...restProps
@@ -104,6 +137,17 @@
 		return v == null || Number.isNaN(v) ? EM_DASH : String(v);
 	}
 
+	// Like fmt(), but suffixes the axis unit on a real value (never on an em-dash,
+	// so a no-data readout stays an honest dash rather than e.g. "— %").
+	function fmtUnit(series: Series, i: number, axis: ChartAxis | undefined): string {
+		const s = fmt(series, i);
+		return s === EM_DASH ? s : `${s}${axis?.unit ?? ''}`;
+	}
+
+	// Labels used for the tooltip rows + keyboard readout (axis label wins).
+	const onTimeRowLabel = $derived(yAxis?.label ?? onTimeLabel);
+	const retardRowLabel = $derived(retardAxis?.label ?? retardLabel);
+
 	// viewBox x for an index (mirrors scale()): single point centres.
 	function indexX(i: number): number {
 		const innerW = width - PAD * 2;
@@ -122,8 +166,8 @@
 			side: 'bottom',
 			heading,
 			rows: [
-				{ colorVar: ON_TIME_VAR, label: onTimeLabel, value: fmt(onTime, i) },
-				{ colorVar: RETARD_VAR, label: retardLabel, value: fmt(retard, i) },
+				{ colorVar: ON_TIME_VAR, label: onTimeRowLabel, value: fmtUnit(onTime, i, yAxis) },
+				{ colorVar: RETARD_VAR, label: retardRowLabel, value: fmtUnit(retard, i, retardAxis) },
 			],
 		});
 	}
@@ -216,6 +260,21 @@
 	// Vertical guide x (viewBox units) for the active index, when interactive.
 	const guideX = $derived(activeIndex >= 0 ? indexX(activeIndex) : null);
 
+	// Focus dots: the plotted point on each series at the active x-index (drawn in
+	// addition to the guide line so the hover gives per-series feedback). They
+	// reuse the series colour → still a data mark on the dataviz scale.
+	const showFocusDots = $derived(interactive && focusDots && activeIndex >= 0);
+	const onTimeFocus = $derived(showFocusDots ? onTimePts[activeIndex] : null);
+	const retardFocus = $derived(showFocusDots ? retardPts[activeIndex] : null);
+
+	// Endpoint-tick domains. On-time falls back to its [0,100] default; retard to
+	// the on-time domain when it shares the unit. axis.domain overrides either.
+	const onTimeTickDomain = $derived<[number, number]>(yAxis?.domain ?? domain);
+	const retardTickDomain = $derived<[number, number]>(retardAxis?.domain ?? retardDomain ?? domain);
+	const fmtTick = (v: number, axis: ChartAxis | undefined): string => `${v}${axis?.unit ?? ''}`;
+	const firstXLabel = $derived(xLabels?.[0] ?? '');
+	const lastXLabel = $derived(xLabels?.[n - 1] ?? '');
+
 	// Decorative legend rows (dot swatches): on-time + retard series.
 	const legendItems = $derived([
 		{ colorVar: ON_TIME_VAR, label: onTimeLabel, swatch: 'dot' as const },
@@ -286,16 +345,18 @@
 		{#if onTimeLast}
 			<circle cx={onTimeLast.x} cy={onTimeLast.y} r={stroke + 0.5} fill={ON_TIME_VAR} />
 		{/if}
+
+		<!-- Focus dots tracking each series at the hovered x-index (data marks). -->
+		{#if retardFocus}
+			<circle cx={retardFocus.x} cy={retardFocus.y} r={stroke + 1.5} fill={RETARD_VAR} />
+		{/if}
+		{#if onTimeFocus}
+			<circle cx={onTimeFocus.x} cy={onTimeFocus.y} r={stroke + 1.5} fill={ON_TIME_VAR} />
+		{/if}
 	</svg>
 {/snippet}
 
-<figure
-	bind:this={ref}
-	class={cn('dv-trendline m-0', className)}
-	aria-label={summary}
-	data-slot="trend-line"
-	{...restProps}
->
+{#snippet plot()}
 	{#if interactive}
 		<div class="dv-trendline-plot">
 			<ChartTooltip
@@ -319,10 +380,11 @@
 						type="button"
 						class="dv-trendline-target"
 						role="img"
-						aria-label={`${xLabels?.[i] ?? `#${i + 1}`}: ${onTimeLabel} ${fmt(
+						aria-label={`${xLabels?.[i] ?? `#${i + 1}`}: ${onTimeRowLabel} ${fmtUnit(
 							onTime,
 							i,
-						)}, ${retardLabel} ${fmt(retard, i)}`}
+							yAxis,
+						)}, ${retardRowLabel} ${fmtUnit(retard, i, retardAxis)}`}
 						aria-describedby={tip.id}
 						onfocus={() => showAt(i)}
 						onblur={hide}
@@ -334,6 +396,45 @@
 	{:else}
 		{@render chart()}
 	{/if}
+{/snippet}
+
+{#snippet yTickGutter(dom: [number, number], axis: ChartAxis | undefined, side: 'left' | 'right')}
+	<!-- Min/max endpoint ticks for one y-axis. HTML (not SVG <text>) — the SVG is
+	     stretched (`preserveAspectRatio none`). Neutral axis colour, never an
+	     affordance token. -->
+	<div
+		class="dv-trendline-yticks"
+		class:dv-trendline-yticks--right={side === 'right'}
+		aria-hidden="true"
+	>
+		<span class="dv-trendline-tick">{fmtTick(dom[1], axis)}</span>
+		<span class="dv-trendline-tick">{fmtTick(dom[0], axis)}</span>
+	</div>
+{/snippet}
+
+<figure
+	bind:this={ref}
+	class={cn('dv-trendline m-0', className)}
+	aria-label={summary}
+	data-slot="trend-line"
+	{...restProps}
+>
+	{#if showYTicks}
+		<div class="dv-trendline-frame">
+			{@render yTickGutter(onTimeTickDomain, yAxis, 'left')}
+			<div class="dv-trendline-frame-plot">{@render plot()}</div>
+			{@render yTickGutter(retardTickDomain, retardAxis, 'right')}
+		</div>
+	{:else}
+		{@render plot()}
+	{/if}
+
+	{#if showXTicks && xLabels && xLabels.length > 0}
+		<div class="dv-trendline-xticks" aria-hidden="true">
+			<span class="dv-trendline-tick">{firstXLabel}</span>
+			<span class="dv-trendline-tick">{lastXLabel}</span>
+		</div>
+	{/if}
 
 	<ChartLegend class="mt-1.5" items={legendItems} />
 </figure>
@@ -341,6 +442,47 @@
 <style>
 	.dv-trendline-plot {
 		position: relative;
+	}
+
+	/* Axis frame: y-tick gutters flank the stretched plot; plot grows to fill. */
+	.dv-trendline-frame {
+		display: flex;
+		align-items: stretch;
+		gap: 0.375rem;
+	}
+	.dv-trendline-frame-plot {
+		flex: 1 1 auto;
+		min-width: 0;
+	}
+
+	/* Per-axis endpoint ticks (max on top, min on bottom). Mono micro text on the
+	   neutral axis colour — never an affordance token; AA-tested. */
+	.dv-trendline-yticks {
+		display: flex;
+		flex: none;
+		flex-direction: column;
+		justify-content: space-between;
+		align-items: flex-end;
+		text-align: end;
+	}
+	.dv-trendline-yticks--right {
+		align-items: flex-start;
+		text-align: start;
+	}
+
+	/* First/last x-labels, edge-aligned under the plot. */
+	.dv-trendline-xticks {
+		margin-top: 0.25rem;
+		display: flex;
+		justify-content: space-between;
+	}
+
+	.dv-trendline-tick {
+		font-family: var(--font-mono);
+		font-size: var(--text-micro);
+		font-variant-numeric: tabular-nums;
+		line-height: 1;
+		color: var(--muted-foreground);
 	}
 
 	/* Invisible per-index focus strips overlaying the plot for keyboard + AT;

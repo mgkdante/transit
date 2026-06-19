@@ -136,6 +136,9 @@
 					{xLabels}
 					onTimeLabel={copy.strip.otpPct}
 					retardLabel={copy.strip.avgDelayMin}
+					yAxis={{ label: copy.strip.otpPct, unit: copy.units.pct, domain: [0, 100] }}
+					retardAxis={{ label: copy.strip.avgDelayMin, unit: copy.units.min, domain: retardDomain }}
+					showYTicks
 					interactive
 				/>
 			</div>

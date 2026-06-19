@@ -41,6 +41,7 @@ export type { ChartLegendProps, ChartLegendItem } from './ChartLegend.svelte';
 // Per-chart tooltip controller (rune factory) + its row/side/args types.
 export { createChartTooltip } from './useChartTooltip.svelte';
 export type {
+	ChartAxis,
 	ChartTooltipController,
 	ChartTooltipRow,
 	ChartTooltipShowArgs,

@@ -108,7 +108,12 @@
 
 			<!-- p90 delay -->
 			<article class="snapshot-tile" data-slot="p90">
-				<MetricDisplay value={fmtMin(vm.p90Min)} label={t.p90Min} size="lg" />
+				<MetricDisplay
+					value={fmtMin(vm.p90Min)}
+					label={t.p90Min}
+					sublabel={t.p90Caption}
+					size="lg"
+				/>
 				{#if p90Empty}
 					<p class="snapshot-tile__note" data-slot="p90-empty">{t.noDataNote}</p>
 				{/if}
@@ -147,6 +152,7 @@
 				<MetricDisplay
 					value={fmtPct(vm.skippedStopRatePct)}
 					label={t.skippedStopRatePct}
+					sublabel={t.skippedStopCaption}
 					size="lg"
 				/>
 				{#if vm.perMetric.skippedStopRatePct}
@@ -206,8 +212,11 @@
 		line-height: 1.4;
 		color: var(--muted-foreground);
 	}
+	/* When the strip is bled (.surface-bleed on its band wrapper), the honest
+	   no-data note keeps a reading measure rather than stretching edge-to-edge. */
 	.snapshot-strip__empty {
 		margin: 0;
+		max-width: var(--container-content);
 		font-family: var(--font-mono);
 		font-size: var(--text-body);
 		color: var(--muted-foreground);

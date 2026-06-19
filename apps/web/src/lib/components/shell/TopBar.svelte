@@ -29,7 +29,7 @@
 		delocalizePath,
 		getLocale,
 	} from '$lib/i18n';
-	import type { ChromeSearchResult } from '$lib/search/chromeSearch';
+	import type { ChromeSearchResult, ChromeSearchScope } from '$lib/search/chromeSearch';
 	import BrandCluster from '$lib/components/brand/BrandCluster.svelte';
 	import SurfaceNavList from './SurfaceNavList.svelte';
 	import LiveClock from './LiveClock.svelte';
@@ -50,6 +50,8 @@
 		onsearch?: (value: string) => void;
 		/** Search matches shown under the chrome field. */
 		searchResults?: readonly ChromeSearchResult[];
+		/** Active surface scope — drives the scoped placeholder hint. */
+		searchScope?: ChromeSearchScope;
 		/** Fired when a search result is selected. */
 		onresultselect?: (result: ChromeSearchResult) => void;
 		/** Fired when the alerts bell is activated. */
@@ -66,6 +68,7 @@
 		search = $bindable(''),
 		onsearch,
 		searchResults = [],
+		searchScope = 'all',
 		onresultselect,
 		onalerts,
 		availableLocales = PUBLISHED_LOCALES,
@@ -82,12 +85,35 @@
 	const homeAria = $derived(
 		locale === 'fr' ? 'Accueil — tableau de bord transit' : 'Home — transit dashboard',
 	);
+	// Scoped affordance: the placeholder + aria-label tell the rider the field is
+	// restricted to the active surface (a line on /lines, a stop on /stops). FR is
+	// canonical; map/all keep the unchanged full-network strings.
 	const searchPlaceholder = $derived(
-		locale === 'fr'
-			? 'Rechercher une ligne, un arrêt ou une adresse…'
-			: 'Search a line, stop, or address…',
+		searchScope === 'route'
+			? locale === 'fr'
+				? 'Rechercher une ligne…'
+				: 'Search a line…'
+			: searchScope === 'stop'
+				? locale === 'fr'
+					? 'Rechercher un arrêt…'
+					: 'Search a stop…'
+				: locale === 'fr'
+					? 'Rechercher une ligne, un arrêt ou une adresse…'
+					: 'Search a line, stop, or address…',
 	);
-	const searchAria = $derived(locale === 'fr' ? 'Rechercher dans le réseau' : 'Search the network');
+	const searchAria = $derived(
+		searchScope === 'route'
+			? locale === 'fr'
+				? 'Rechercher une ligne'
+				: 'Search a line'
+			: searchScope === 'stop'
+				? locale === 'fr'
+					? 'Rechercher un arrêt'
+					: 'Search a stop'
+				: locale === 'fr'
+					? 'Rechercher dans le réseau'
+					: 'Search the network',
+	);
 	const openSearchAria = $derived(locale === 'fr' ? 'Ouvrir la recherche' : 'Open search');
 	const closeSearchAria = $derived(locale === 'fr' ? 'Fermer la recherche' : 'Close search');
 	const openMenuAria = $derived(locale === 'fr' ? 'Ouvrir le menu' : 'Open menu');

@@ -15,7 +15,7 @@
 	import { cn, type WithElementRef } from '$lib/utils';
 	import type { HTMLAttributes } from 'svelte/elements';
 	import ChartTooltip from './ChartTooltip.svelte';
-	import { createChartTooltip } from './useChartTooltip.svelte';
+	import { createChartTooltip, type ChartAxis } from './useChartTooltip.svelte';
 
 	export interface SparklineProps extends WithElementRef<HTMLAttributes<HTMLDivElement>> {
 		/** The series. `null` entries render as gaps (no interpolation). */
@@ -36,6 +36,24 @@
 		/** Accessible summary of the series (e.g. "On-time % last 14 days"). */
 		label?: string;
 		/**
+		 * Y-axis metadata: a unit suffix for the tooltip value (e.g. "%") plus an
+		 * optional axis label/domain. Optional → omitting it leaves the readout
+		 * byte-identical to the old raw-number tooltip.
+		 */
+		yAxis?: ChartAxis;
+		/**
+		 * X-axis category labels (one per index), already localized — drives the
+		 * tooltip heading (the period / date). Omit → no heading.
+		 */
+		xLabels?: string[];
+		/**
+		 * Render min/max y endpoint tick labels in a left gutter beside the line.
+		 * Default false so the tiny 96×24 inline use stays unchanged. The ticks are
+		 * HTML spans (not SVG text) because the viewBox is `preserveAspectRatio
+		 * "none"` → SVG text would stretch.
+		 */
+		showYTicks?: boolean;
+		/**
 		 * Opt into hover/focus tooltips: the nearest real point reveals its value
 		 * (a hover dot marks it). Each real point is also keyboard-focusable.
 		 * Default off — the sparkline stays a static inline mark.
@@ -52,6 +70,9 @@
 		colorVar = 'var(--dataviz-status-on-time)',
 		showLast = true,
 		label,
+		yAxis,
+		xLabels,
+		showYTicks = false,
 		interactive = false,
 		class: className,
 		ref = $bindable(null),
@@ -59,6 +80,11 @@
 	}: SparklineProps = $props();
 
 	const PAD = $derived(stroke + 0.5);
+
+	/** Suffix a value with the y-axis unit (when one was passed). */
+	const withUnit = (v: number | string): string => `${v}${yAxis?.unit ?? ''}`;
+	/** The label used for the tooltip row + keyboard readout. */
+	const seriesLabel = $derived(yAxis?.label ?? label ?? 'value');
 
 	const tip = createChartTooltip();
 	let svgEl = $state<SVGSVGElement | null>(null);
@@ -119,10 +145,23 @@
 
 	const hasData = $derived(segments.length > 0);
 
+	// The real-value y-domain [min,max] that drives the optional endpoint ticks.
+	// Falls back to the explicit yAxis.domain when given; null when no real data
+	// (the ticks then render an em-dash, never a fabricated 0).
+	const yDomain = $derived.by<[number, number] | null>(() => {
+		if (yAxis?.domain) return yAxis.domain;
+		const reals = values.filter((v): v is number => v != null && !Number.isNaN(v));
+		if (reals.length === 0) return null;
+		return [Math.min(...reals), Math.max(...reals)];
+	});
+
 	// The hover/focus dot for the active point (interactive only).
 	const activePoint = $derived(activeIndex >= 0 ? points[activeIndex] : null);
 
-	// Show the tooltip for index `i` (only if it is a real, plotted point).
+	// Show the tooltip for index `i` (only if it is a real, plotted point). The
+	// value carries the y-axis unit; the heading carries the x-axis category. The
+	// tooltip sits ABOVE the point (side 'top') and ChartTooltip flips it below +
+	// clamps horizontally when the point is near an edge, so it never overlaps.
 	function showAt(i: number): void {
 		const p = points[i];
 		if (!p) return;
@@ -131,7 +170,8 @@
 			xPct: (p.x / width) * 100,
 			yPct: (p.y / height) * 100,
 			side: 'top',
-			rows: [{ colorVar, label: label ?? 'value', value: String(values[i]) }],
+			heading: xLabels?.[i],
+			rows: [{ colorVar, label: seriesLabel, value: withUnit(values[i] as number) }],
 		});
 	}
 
@@ -220,14 +260,26 @@
 	</svg>
 {/snippet}
 
+{#snippet yTicks()}
+	<!-- Min/max endpoint ticks (HTML, not SVG <text> — the viewBox stretches).
+	     An em-dash when the domain is unknown: an honest no-data tick, never 0. -->
+	<div class="dv-sparkline-ticks" aria-hidden="true" style="height: {height}px;">
+		<span class="dv-sparkline-tick">{yDomain ? withUnit(yDomain[1]) : '—'}</span>
+		<span class="dv-sparkline-tick">{yDomain ? withUnit(yDomain[0]) : '—'}</span>
+	</div>
+{/snippet}
+
 <div
 	bind:this={ref}
-	class={cn('dv-sparkline inline-block', className)}
+	class={cn('dv-sparkline inline-flex items-stretch', className)}
 	role="img"
 	aria-label={label ?? 'Sparkline'}
 	data-slot="sparkline"
 	{...restProps}
 >
+	{#if showYTicks}
+		{@render yTicks()}
+	{/if}
 	{#if interactive}
 		<div class="dv-sparkline-plot">
 			<ChartTooltip
@@ -250,7 +302,9 @@
 						type="button"
 						class="dv-sparkline-target"
 						role="img"
-						aria-label={`${label ?? 'value'}: ${String(values[i])}`}
+						aria-label={`${xLabels?.[i] ? xLabels[i] + ' ' : ''}${seriesLabel}: ${withUnit(
+							values[i] as number,
+						)}`}
 						aria-describedby={tip.id}
 						onfocus={() => showAt(i)}
 						onblur={hide}
@@ -267,6 +321,28 @@
 <style>
 	.dv-sparkline-plot {
 		position: relative;
+		flex: 1 1 auto;
+		min-width: 0;
+	}
+
+	/* Endpoint-tick gutter (max on top, min on bottom). Mono micro text on the
+	   neutral axis colour — never an affordance token; AA-tested. */
+	.dv-sparkline-ticks {
+		display: flex;
+		flex: none;
+		flex-direction: column;
+		justify-content: space-between;
+		align-items: flex-end;
+		padding-inline-end: 0.375rem;
+		text-align: end;
+	}
+
+	.dv-sparkline-tick {
+		font-family: var(--font-mono);
+		font-size: var(--text-micro);
+		font-variant-numeric: tabular-nums;
+		line-height: 1;
+		color: var(--muted-foreground);
 	}
 
 	/* Invisible per-point focus strips overlaying the line for keyboard + AT;

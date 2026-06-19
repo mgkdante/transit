@@ -44,8 +44,16 @@
 		fillVar?: string;
 		/** Accessible label prefix (e.g. route/metric name). */
 		label?: string;
-		/** Optional unit suffix for the a11y summary (e.g. "min", "%"). */
+		/** Optional unit suffix for the a11y summary + tooltip values (e.g. "min", "%"). */
 		unit?: string;
+		/**
+		 * Render the domain min/max endpoint ticks (with `unit`) under the baseline.
+		 * Default false so existing call sites stay byte-identical. HTML spans, not
+		 * SVG <text> — the SVG is stretched (`preserveAspectRatio none`).
+		 */
+		showAxis?: boolean;
+		/** Optional axis caption rendered under the track (already localized). */
+		axisLabel?: string;
 		/**
 		 * Opt-in hover/focus interactivity: reveals p25/p50/p75 marker ticks and a
 		 * five-number tooltip. Default off so existing call sites stay byte-identical.
@@ -62,6 +70,8 @@
 		fillVar = 'var(--dataviz-status-unknown)',
 		label,
 		unit = '',
+		showAxis = false,
+		axisLabel,
 		interactive = false,
 		class: className,
 		ref = $bindable(null),
@@ -287,4 +297,38 @@
 	{:else}
 		{@render chart()}
 	{/if}
+
+	{#if showAxis}
+		<!-- Domain endpoint ticks (with unit) under the track. HTML, not SVG <text>
+		     — the SVG is stretched. Neutral axis colour, never an affordance token. -->
+		<div class="dv-distribution-axis" aria-hidden="true">
+			<span class="dv-distribution-tick">{fmt(domain[0])}</span>
+			{#if axisLabel}
+				<span class="dv-distribution-axislabel">{axisLabel}</span>
+			{/if}
+			<span class="dv-distribution-tick">{fmt(domain[1])}</span>
+		</div>
+	{/if}
 </figure>
+
+<style>
+	.dv-distribution-axis {
+		margin-top: 0.25rem;
+		display: flex;
+		align-items: baseline;
+		justify-content: space-between;
+		gap: 0.5rem;
+	}
+	.dv-distribution-tick {
+		font-family: var(--font-mono);
+		font-size: var(--text-micro);
+		font-variant-numeric: tabular-nums;
+		line-height: 1;
+		color: var(--muted-foreground);
+	}
+	.dv-distribution-axislabel {
+		font-family: var(--font-mono);
+		font-size: var(--text-micro);
+		color: var(--muted-foreground);
+	}
+</style>
