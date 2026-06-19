@@ -33,6 +33,15 @@ class StorageBackend(StrEnum):
 class AuthType(StrEnum):
     NONE = "none"
     API_KEY = "api_key"
+    # Static key plus a per-request derived signature (e.g. STO: key=<public> +
+    # hash=SHA256(private_key + UTC timestamp)). Both go in query params.
+    API_KEY_SIGNED = "api_key_signed"
+
+
+class SignatureScheme(StrEnum):
+    # hex SHA-256 of (signing_secret + current UTC time as yyyymmddTHHMMZ),
+    # recomputed per request at minute granularity. Used by STO GTFS-RT.
+    SHA256_UTC_MINUTE = "sha256_utc_minute"
 
 
 class AuthConfig(BaseModel):
@@ -40,6 +49,11 @@ class AuthConfig(BaseModel):
     credential_env_var: str | None = None
     auth_header_name: str | None = None
     auth_query_param: str | None = None
+    # API_KEY_SIGNED only: the secret that is hashed into a per-request signature,
+    # and where/how that signature is attached.
+    signing_secret_env_var: str | None = None
+    signature_query_param: str | None = None
+    signature_scheme: SignatureScheme | None = None
     notes: str | None = None
 
     @model_validator(mode="after")
@@ -50,6 +64,21 @@ class AuthConfig(BaseModel):
             if not self.auth_header_name and not self.auth_query_param:
                 raise ValueError(
                     "API-key auth requires auth_header_name or auth_query_param."
+                )
+        if self.auth_type == AuthType.API_KEY_SIGNED:
+            if not self.credential_env_var or not self.auth_query_param:
+                raise ValueError(
+                    "Signed API-key auth requires credential_env_var and "
+                    "auth_query_param for the static key."
+                )
+            if not (
+                self.signing_secret_env_var
+                and self.signature_query_param
+                and self.signature_scheme
+            ):
+                raise ValueError(
+                    "Signed API-key auth requires signing_secret_env_var, "
+                    "signature_query_param, and signature_scheme."
                 )
         return self
 
@@ -100,7 +129,7 @@ class FeedConfigBase(BaseModel):
 
     def resolved_source_url(self, settings: Settings | None = None) -> str | None:
         if settings and self.source_url_env_var:
-            override = getattr(settings, self.source_url_env_var, None)
+            override = settings.env_value(self.source_url_env_var)
             if override:
                 return override
         return str(self.source_url) if self.source_url else None
