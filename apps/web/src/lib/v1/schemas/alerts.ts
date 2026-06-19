@@ -32,6 +32,12 @@ export const AlertSchema = z.object({
 	stops: z.array(z.string()).optional(),
 	start_utc: isoUtc().nullable().optional(),
 	end_utc: isoUtc().nullable().optional(),
+	/** Raw GTFS-RT/i3 cause (GTFS-RT Cause enum name, e.g. "CONSTRUCTION"); null when absent. */
+	cause: z.string().nullable().optional(),
+	/** Raw GTFS-RT/i3 effect (GTFS-RT Effect enum name, e.g. "DETOUR"); null when absent. */
+	effect: z.string().nullable().optional(),
+	/** Raw upstream severity_level, distinct from the bucketed `severity` enum. */
+	severity_level: z.string().nullable().optional(),
 });
 export type Alert = z.infer<typeof AlertSchema>;
 

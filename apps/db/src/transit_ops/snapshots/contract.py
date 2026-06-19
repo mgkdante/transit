@@ -90,6 +90,14 @@ class Alert(BaseModel):
     stops: list[str] = Field(default_factory=list)
     start_utc: str | None = None
     end_utc: str | None = None
+    # Additive GTFS-RT / i3 passthroughs. cause/effect are the upstream raw values
+    # (the GTFS-RT Alert.Cause / Alert.Effect enum NAME for GTFS-RT feeds, e.g.
+    # "CONSTRUCTION"/"DETOUR"; a provider string for STM's i3). severity_level is
+    # the raw upstream severity, distinct from the bucketed `severity` enum above.
+    # Honest-NULL when the feed omits them. (url is not yet carried upstream.)
+    cause: str | None = None
+    effect: str | None = None
+    severity_level: str | None = None
 
 class AlertsFile(BaseModel):
     generated_utc: str
