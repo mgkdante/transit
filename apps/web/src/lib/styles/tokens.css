@@ -20,6 +20,7 @@
   --dataviz-vehicle-cancelled: var(--dataviz-status-severe);
   --dataviz-vehicle-no-data: var(--dataviz-status-unknown);
   --map-stop-fill: #FFB627;
+  --glow: #E07800;
   --font-heading: 'Inter Variable', 'Inter', system-ui, -apple-system, sans-serif;
   --font-body: 'Inter Variable', 'Inter', system-ui, -apple-system, sans-serif;
   --font-mono: 'JetBrains Mono Variable', 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;

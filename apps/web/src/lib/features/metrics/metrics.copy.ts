@@ -39,6 +39,8 @@ export interface MetricsCopy extends SurfaceHeadCopy {
 	};
 	/** Jump-nav (table of contents) heading. */
 	readonly tocLabel: string;
+	/** Mono prefix for the TOC "{prefix} N / total" counter (yesid uses "SEC"). */
+	readonly tocCounterPrefix: string;
 	/** "Back to top" anchor link text. */
 	readonly backToTop: string;
 	/** Accessible label for the SQL <pre> block (e.g. "Defining SQL"). */
@@ -96,6 +98,7 @@ export const metricsCopy: Record<Locale, MetricsCopy> = {
 			},
 		},
 		tocLabel: 'Aller à une métrique',
+		tocCounterPrefix: 'SEC',
 		backToTop: 'Retour en haut',
 		sqlAria: 'SQL définissant la métrique',
 		tocPill: {
@@ -147,6 +150,7 @@ export const metricsCopy: Record<Locale, MetricsCopy> = {
 			},
 		},
 		tocLabel: 'Jump to a metric',
+		tocCounterPrefix: 'SEC',
 		backToTop: 'Back to top',
 		sqlAria: 'Defining SQL for the metric',
 		tocPill: {

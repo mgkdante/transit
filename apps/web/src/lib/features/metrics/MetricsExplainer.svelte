@@ -1,46 +1,60 @@
 <!--
-  MetricsExplainer — the /metrics surface screen (slice-9.6), blog/project-slug layout.
+  MetricsExplainer: the /metrics surface screen (slice-9.6).
 
   The in-app metric explainer. For every citizen-facing reliability metric it
   renders, grouped by the five reliability clusters: a definition, the math, the
   verbatim Defining SQL, a "what it's NOT" misread warning, and the honest
-  caveats — all bilingual (FR canonical). A (i) tip on the reliability surface
+  caveats, all bilingual (FR canonical). A (i) tip on the reliability surface
   deep-links here at each metric's anchor.
 
-  LAYOUT (yesid.dev blog/project-detail pattern, grid recipe #3):
-    · DESKTOP (≥lg): two columns — a sticky table-of-contents rail (jump-nav,
-      current-section aware via IntersectionObserver) + the main content column.
-    · MOBILE (<lg): the ToC collapses to a fixed floating pill that opens the
-      jump-nav as a focus-trapped, Esc-dismissible sheet; content full-width.
-    · Each metric is a collapsible <details>/<summary> disclosure so the long
-      page stays navigable; a ToC link jumps to AND expands its target.
+  SHELL: built 1:1 on the yesid.dev blog/project detail-page shell (the SAME
+  shared components, on transit tokens + i18n; we are one brand, not lookalikes):
 
-  Composes the brand/layout spine: Surface + SurfaceHeader + SectionLabel +
-  SectionHeading + StickyPanel + the shared CodeBlock (SQL syntax chrome).
+    · A two-column CSS-grid body that is FULL-BLEED within the content area
+      (`.body-grid.surface-bleed` escapes the page gutter out to the rail-inset
+      <main> edges; it never sits behind the left rail and is never artificially
+      narrow). Below the lg breakpoint it collapses to one column.
+    · DESKTOP (>=lg): a sticky, collapsible table-of-contents rail (shared TocNav,
+      which itself wraps a CollapsibleSection) on the left + the content column on
+      the right. The rail tracks the current section (activeId) and scrolls to its
+      target on click.
+    · The provenance preamble + one CollapsibleSection card PER METRIC (number
+      badge, `data-toc` anchor, deep-link `id` on the section block) carry the
+      definition / math / SQL / "what it's NOT" / caveats.
+    · MOBILE (<lg): the shared TocPill floating pill + drawer drives the same
+      activeId/onNavigate.
+    · ONE IntersectionObserver (observeActiveToc over `[data-toc]`) owns activeId
+      and feeds BOTH the rail and the pill (no duplicate observers).
 
-  DOCTRINE: no data marks here (prose + SQL), so the dataviz scale is not in
-  play; --primary appears only on interactive affordances (the SectionHeading
-  flourish dot, the jump-nav / back-to-top / pill). Honest framing is the whole
-  point — the provenance preamble + per-metric caveats carry the "proxy, not
-  certified OTP / no AVL / NULL-not-0" doctrine verbatim. AA via
-  --muted-foreground; reduced-motion guarded (no smooth-scroll, no sheet slide).
+  Composes the brand/layout spine: Surface + SurfaceHeader + SectionLabel + the
+  shared CodeBlock (SQL syntax chrome) + the shared shared/ TOC + collapsible-card
+  kit (CollapsibleSection / TocNav / TocPill / toc.ts).
+
+  DOCTRINE: no data marks here (prose + SQL), so the dataviz scale is not in play;
+  --primary appears only on interactive chrome (the TOC, the pill, the back-to-top
+  link, the section-card accent). Honest framing is the whole point: the
+  provenance preamble + per-metric caveats carry the "proxy, not certified OTP /
+  no AVL / NULL-not-0" doctrine verbatim. AA via --muted-foreground; reduced-motion
+  guarded (the shared CollapsibleSection + TocPill own their reduced-motion gates,
+  and the only motion here is scroll, dropped under prefers-reduced-motion).
 -->
 <script lang="ts">
-	import { tick } from 'svelte';
+	import { onMount, tick } from 'svelte';
 	import { getLocale, type Locale } from '$lib/i18n';
 	import { Surface } from '$lib/components/layout';
 	import { SurfaceHeader } from '$lib/components/surface';
-	import StickyPanel from '$lib/components/brand/StickyPanel.svelte';
 	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
-	import SectionHeading from '$lib/components/brand/SectionHeading.svelte';
 	import CodeBlock from '$lib/components/CodeBlock.svelte';
-	import { prefersReducedMotion } from '$lib/motion/reduced-motion.svelte';
 	import {
-		METRICS,
-		METRIC_CLUSTER_ORDER,
-		type MetricEntry,
-		type MetricKey,
-	} from './metrics.content';
+		CollapsibleSection,
+		TocNav,
+		TocPill,
+		observeActiveToc,
+		tocElement,
+		type TocEntry,
+	} from '$lib/components/shared';
+	import { prefersReducedMotion } from '$lib/motion/reduced-motion.svelte';
+	import { METRICS, METRIC_CLUSTER_ORDER, type MetricEntry } from './metrics.content';
 	import { metricsCopy } from './metrics.copy';
 
 	const locale: Locale = getLocale();
@@ -56,148 +70,76 @@
 		})).filter((g) => g.entries.length > 0),
 	);
 
+	// The metrics in render order (cluster order, then in-array order). The number
+	// badge is the 1-based position in THIS flat list, so the rail's "01 / 02 / …"
+	// reads continuously down the page (same as the yesid blog TOC numbering),
+	// while the cluster overlines on the cards keep the five-cluster grouping.
+	const orderedMetrics = $derived(groups.flatMap((g) => g.entries));
+
 	const confidenceMeaning = $derived(
 		(entry: MetricEntry) => t.confidence.levels[entry.confidence].chip,
 	);
 
-	// ── Collapsible disclosures ───────────────────────────────────────────────
-	// Every metric section is open by default (the page is a reference; nothing is
-	// hidden on first paint). A ToC jump still force-opens its target in case the
-	// reader had collapsed it.
-	let openState = $state<Record<MetricKey, boolean>>(
-		Object.fromEntries(METRICS.map((m) => [m.key, true])) as Record<MetricKey, boolean>,
+	// ── Shared TOC model (consumed by both the desktop rail + the mobile pill) ──
+	// One numbered entry per metric, in render order. badge = the 1-based index in
+	// orderedMetrics; id = the metric anchor (the SAME anchor the (i) tip deep-links
+	// to and the section card carries as data-toc + the section block's element id).
+	const tocEntries = $derived.by((): TocEntry[] =>
+		orderedMetrics.map((entry, i) => ({
+			id: entry.anchor,
+			title: entry.name[locale],
+			level: 2,
+			badge: { kind: 'number', value: i + 1 },
+			children: [],
+		})),
 	);
 
-	// ── Scrollspy (current-section aware ToC) ───────────────────────────────────
-	// Cheap IntersectionObserver: the topmost section intersecting the viewport's
-	// upper band becomes "current". Pure read → write to $state in the callback
-	// (fires outside any reactive read). No-ops gracefully without IO (SSR / old).
-	let activeAnchor = $state<string | null>(null);
+	// ── Active-section tracking ────────────────────────────────────────────────
+	// One IntersectionObserver over the section cards' [data-toc] anchors owns the
+	// active id; the desktop rail and the mobile pill both receive it as a prop (no
+	// duplicate observers). No-ops gracefully without IO (SSR / tests).
+	let activeId = $state('');
+	onMount(() => observeActiveToc((id) => (activeId = id)));
 
-	$effect(() => {
-		if (typeof IntersectionObserver === 'undefined') return;
-		const sections = Array.from(document.querySelectorAll<HTMLElement>('[data-metric-section]'));
-		if (sections.length === 0) return;
-
-		const visible = new Map<string, number>();
-		const io = new IntersectionObserver(
-			(entries) => {
-				for (const e of entries) {
-					const id = (e.target as HTMLElement).id;
-					if (e.isIntersecting) visible.set(id, e.intersectionRatio);
-					else visible.delete(id);
-				}
-				// Pick the section nearest the top among those in view; else keep last.
-				let top: { id: string; y: number } | null = null;
-				for (const id of visible.keys()) {
-					const el = document.getElementById(id);
-					if (!el) continue;
-					const y = el.getBoundingClientRect().top;
-					if (top === null || y < top.y) top = { id, y };
-				}
-				if (top) activeAnchor = top.id;
-			},
-			// Bias the "active" band to the upper third so the current heading wins.
-			{ rootMargin: '-10% 0px -70% 0px', threshold: [0, 0.25, 0.5, 1] },
-		);
-		for (const s of sections) io.observe(s);
-		return () => io.disconnect();
-	});
-
-	// ── ToC navigation: jump to AND expand the target ───────────────────────────
-	async function jumpTo(anchor: string, key: MetricKey, closeSheet = false): Promise<void> {
-		openState[key] = true;
-		if (closeSheet) sheetOpen = false;
-		await tick(); // let the <details> open before measuring scroll position
-		const el = document.getElementById(anchor);
-		if (!el) return;
-		el.scrollIntoView({
+	// ── TOC navigation ──────────────────────────────────────────────────────────
+	// A TOC click scrolls to its section card (1:1 with the yesid detail pages,
+	// whose CollapsibleSection scrollToHeading just scrolls). Cards open by default
+	// and persist their open-state per sectionKey across a locale switch, so a jump
+	// lands on already-open content. await tick() keeps the scroll a frame after any
+	// reactive open settles. Reduced-motion drops the smooth scroll.
+	async function navigate(id: string): Promise<void> {
+		await tick();
+		tocElement(id)?.scrollIntoView({
 			behavior: prefersReducedMotion.current ? 'auto' : 'smooth',
 			block: 'start',
 		});
-		// Move focus to the section heading for keyboard/AT continuity.
-		const heading = el.querySelector<HTMLElement>('summary');
-		heading?.focus();
-	}
-
-	// ── Mobile floating-pill sheet (focus-trapped, Esc-dismiss) ─────────────────
-	let sheetOpen = $state(false);
-	let sheetEl = $state<HTMLElement | null>(null);
-	let pillEl = $state<HTMLButtonElement | null>(null);
-
-	async function openSheet(): Promise<void> {
-		sheetOpen = true;
-		await tick();
-		// Focus the first focusable inside the sheet (the close button).
-		sheetEl?.querySelector<HTMLElement>('button, a')?.focus();
-	}
-
-	function closeSheet(returnFocus = true): void {
-		sheetOpen = false;
-		if (returnFocus) pillEl?.focus();
-	}
-
-	function onSheetKeydown(event: KeyboardEvent): void {
-		if (event.key === 'Escape') {
-			event.stopPropagation();
-			closeSheet();
-			return;
-		}
-		if (event.key !== 'Tab' || !sheetEl) return;
-		// Simple focus trap: wrap Tab/Shift+Tab within the sheet's focusables.
-		const focusables = Array.from(
-			sheetEl.querySelectorAll<HTMLElement>('button, a[href], [tabindex]:not([tabindex="-1"])'),
-		).filter((el) => !el.hasAttribute('disabled'));
-		if (focusables.length === 0) return;
-		const first = focusables[0];
-		const last = focusables[focusables.length - 1];
-		const active = document.activeElement;
-		if (event.shiftKey && active === first) {
-			event.preventDefault();
-			last.focus();
-		} else if (!event.shiftKey && active === last) {
-			event.preventDefault();
-			first.focus();
-		}
 	}
 </script>
 
 <Surface width="wide" class="metrics">
 	<SurfaceHeader kicker={t.kicker} heading={t.heading} subheading={t.subheading} lede={t.lede} />
 
-	<div class="metrics-layout">
-		<!-- ── Sticky ToC rail (desktop) ─────────────────────────────────────── -->
-		<div class="metrics-rail">
-			<StickyPanel top="5.5rem" class="metrics-rail__panel">
-				<nav class="metrics-toc" aria-label={t.tocLabel}>
-					<SectionLabel text={t.tocLabel} variant="metric" class="metrics-toc__heading" />
-					{#each groups as group (group.cluster)}
-						<div class="metrics-toc__group">
-							<span class="metrics-toc__overline">{group.label}</span>
-							<ul class="metrics-toc__list">
-								{#each group.entries as entry (entry.key)}
-									<li>
-										<a
-											class="metrics-toc__link"
-											href={`#${entry.anchor}`}
-											aria-current={activeAnchor === entry.anchor ? 'true' : undefined}
-											onclick={(e) => {
-												e.preventDefault();
-												jumpTo(entry.anchor, entry.key);
-											}}>{entry.name[locale]}</a
-										>
-									</li>
-								{/each}
-							</ul>
-						</div>
-					{/each}
-				</nav>
-			</StickyPanel>
-		</div>
+	<!-- Body: shared detail-page grid (sticky TOC rail | section cards), full-bleed
+	     within the content area (surface-bleed escapes the page gutter, never the
+	     rail). Single column below lg; the rail is replaced by the floating pill. -->
+	<div class="body-grid surface-bleed">
+		<aside class="context-column">
+			<div class="context-panel toc-scroll">
+				<div class="toc-nav-shell">
+					<TocNav
+						entries={tocEntries}
+						{activeId}
+						onNavigate={navigate}
+						heading={t.tocLabel}
+						sectionKey="metrics-toc"
+						counterPrefix={t.tocCounterPrefix}
+					/>
+				</div>
+			</div>
+		</aside>
 
-		<!-- ── Main content column ───────────────────────────────────────────── -->
-		<div class="metrics-content">
-			<!-- Provenance preamble — the honest framing every number inherits. -->
+		<div class="sections-column" data-testid="metrics-sections">
+			<!-- Provenance preamble: the honest framing every number inherits. -->
 			<section class="metrics-prose" aria-labelledby="metrics-provenance">
 				<SectionLabel id="metrics-provenance" text={t.provenance.label} variant="station" />
 				<p class="metrics-preamble">{t.provenance.body}</p>
@@ -214,65 +156,64 @@
 				</div>
 			</section>
 
-			<!-- One collapsible section per metric, in cluster order. -->
+			<!-- One collapsible section card per metric, in cluster order. The cluster
+			     overline groups them; the card number badge is the continuous index. -->
 			{#each groups as group (group.cluster)}
 				<div class="metrics-cluster">
 					<SectionLabel text={group.label} variant="station" class="metrics-cluster__overline" />
 					{#each group.entries as entry (entry.key)}
-						<details
-							id={entry.anchor}
-							data-metric-section
-							class="metric"
-							bind:open={openState[entry.key]}
-						>
-							<summary class="metric__summary">
-								<span class="metric__summary-text">
-									<SectionHeading heading={entry.name[locale]} level={2} dot />
-									<span class="metric__meta">
+						{@const metricIndex = orderedMetrics.findIndex((m) => m.key === entry.key)}
+						<div class="section-block" id={entry.anchor}>
+							<CollapsibleSection
+								title={entry.name[locale]}
+								sectionKey={`metrics-${entry.key}`}
+								anchor={entry.anchor}
+								index={metricIndex}
+								open={true}
+							>
+								<div class="metric__body">
+									<p class="metric__meta">
 										<code class="metric__sci">{entry.sciName}</code>
 										<span class="metrics-chip metrics-chip--meta">{confidenceMeaning(entry)}</span>
-									</span>
-								</span>
-								<span class="metric__chevron" aria-hidden="true"></span>
-							</summary>
+									</p>
 
-							<div class="metric__body">
-								<div class="metric__block">
-									<SectionLabel text={t.sections.definition} variant="metric" />
-									<p class="metric__prose">{entry.definition[locale]}</p>
+									<div class="metric__block">
+										<SectionLabel text={t.sections.definition} variant="metric" />
+										<p class="metric__prose">{entry.definition[locale]}</p>
+									</div>
+
+									<div class="metric__block">
+										<SectionLabel text={t.sections.math} variant="metric" />
+										<p class="metric__prose metric__prose--mono">{entry.math[locale]}</p>
+									</div>
+
+									<div class="metric__block">
+										<SectionLabel text={t.sections.sql} variant="metric" />
+										<CodeBlock
+											code={entry.sql}
+											lang="SQL"
+											ariaLabel={`${t.sqlAria}: ${entry.sciName}`}
+										/>
+									</div>
+
+									<div class="metric__block">
+										<SectionLabel text={t.sections.notReally} variant="metric" />
+										<p class="metric__prose metric__not">{entry.notReally[locale]}</p>
+									</div>
+
+									<div class="metric__block">
+										<SectionLabel text={t.sections.caveats} variant="metric" />
+										<ul class="metric__caveats">
+											{#each entry.caveats[locale] as caveat, i (i)}
+												<li>{caveat}</li>
+											{/each}
+										</ul>
+									</div>
+
+									<a class="metric__top" href="#metrics-provenance">{t.backToTop}</a>
 								</div>
-
-								<div class="metric__block">
-									<SectionLabel text={t.sections.math} variant="metric" />
-									<p class="metric__prose metric__prose--mono">{entry.math[locale]}</p>
-								</div>
-
-								<div class="metric__block">
-									<SectionLabel text={t.sections.sql} variant="metric" />
-									<CodeBlock
-										code={entry.sql}
-										lang="SQL"
-										ariaLabel={`${t.sqlAria}: ${entry.sciName}`}
-									/>
-								</div>
-
-								<div class="metric__block">
-									<SectionLabel text={t.sections.notReally} variant="metric" />
-									<p class="metric__prose metric__not">{entry.notReally[locale]}</p>
-								</div>
-
-								<div class="metric__block">
-									<SectionLabel text={t.sections.caveats} variant="metric" />
-									<ul class="metric__caveats">
-										{#each entry.caveats[locale] as caveat, i (i)}
-											<li>{caveat}</li>
-										{/each}
-									</ul>
-								</div>
-
-								<a class="metric__top" href="#metrics-provenance">{t.backToTop}</a>
-							</div>
-						</details>
+							</CollapsibleSection>
+						</div>
 					{/each}
 				</div>
 			{/each}
@@ -280,105 +221,80 @@
 	</div>
 </Surface>
 
-<!-- ── Mobile floating-pill ToC (hidden ≥lg) ──────────────────────────────── -->
-<button
-	bind:this={pillEl}
-	type="button"
-	class="metrics-pill"
-	aria-haspopup="dialog"
-	aria-expanded={sheetOpen}
-	onclick={openSheet}
->
-	<span class="metrics-pill__glyph" aria-hidden="true"></span>
-	{t.tocPill.open}
-</button>
-
-{#if sheetOpen}
-	<!-- svelte-ignore a11y_click_events_have_key_events -->
-	<!-- svelte-ignore a11y_no_static_element_interactions -->
-	<div class="metrics-sheet__scrim" onclick={() => closeSheet()}></div>
-	<div
-		bind:this={sheetEl}
-		class="metrics-sheet"
-		role="dialog"
-		aria-modal="true"
-		aria-label={t.tocPill.title}
-		tabindex="-1"
-		onkeydown={onSheetKeydown}
-	>
-		<div class="metrics-sheet__head">
-			<SectionLabel text={t.tocPill.title} variant="metric" />
-			<button
-				type="button"
-				class="metrics-sheet__close"
-				aria-label={t.tocPill.close}
-				onclick={() => closeSheet()}
-			>
-				<span aria-hidden="true">&times;</span>
-			</button>
-		</div>
-		<nav class="metrics-toc metrics-toc--sheet" aria-label={t.tocPill.title}>
-			{#each groups as group (group.cluster)}
-				<div class="metrics-toc__group">
-					<span class="metrics-toc__overline">{group.label}</span>
-					<ul class="metrics-toc__list metrics-toc__list--sheet">
-						{#each group.entries as entry (entry.key)}
-							<li>
-								<a
-									class="metrics-toc__link"
-									href={`#${entry.anchor}`}
-									aria-current={activeAnchor === entry.anchor ? 'true' : undefined}
-									onclick={(e) => {
-										e.preventDefault();
-										jumpTo(entry.anchor, entry.key, true);
-									}}>{entry.name[locale]}</a
-								>
-							</li>
-						{/each}
-					</ul>
-				</div>
-			{/each}
-		</nav>
-	</div>
-{/if}
+<!-- Mobile floating TOC pill (hidden ≥lg) -->
+<TocPill entries={tocEntries} {activeId} openAria={t.tocPill.open} closeAria={t.tocPill.close} />
 
 <style>
-	/* Two-column blog/project layout: sticky rail + content. Single column
-	   below the documented lg breakpoint (1024px); the rail is replaced by the
-	   floating pill + sheet there. */
-	.metrics-layout {
+	/* ── Shared detail-page body grid ──────────────────────────────────────────
+	   Mirrors the yesid blog/project detail body grid: one column on mobile, a
+	   sticky TOC rail + content column at lg. The wrapper is `.surface-bleed`, so
+	   inside a `Surface width="wide"` it escapes the page gutter out to the rail-
+	   inset <main> edges (full-bleed within the content area, never behind the
+	   rail). */
+	.body-grid {
 		display: grid;
 		grid-template-columns: 1fr;
-		gap: clamp(1.75rem, 4vw, 2.75rem);
-	}
-	@media (min-width: 1024px) {
-		.metrics-layout {
-			grid-template-columns: minmax(14rem, 16rem) minmax(0, 1fr);
-			align-items: start;
-		}
-	}
-
-	/* The rail itself is hidden below lg (floating pill takes over). */
-	.metrics-rail {
-		display: none;
-	}
-	@media (min-width: 1024px) {
-		.metrics-rail {
-			display: block;
-		}
-	}
-	:global(.metrics-rail__panel) {
-		padding: 1rem 1.1rem;
+		gap: var(--space-card-gap);
+		min-width: 0;
+		overflow-x: clip;
+		/* Re-apply the gutter the surface-bleed escaped, so the content keeps the
+		   page padding line as its edge (matches .surface-measure's intent). */
+		padding-inline: var(--space-page-x);
 	}
 
-	.metrics-content {
-		display: flex;
-		flex-direction: column;
-		gap: clamp(1.75rem, 4vw, 2.75rem);
+	.context-column,
+	.sections-column {
 		min-width: 0;
 	}
 
-	/* ── Provenance preamble ──────────────────────────────────────────────── */
+	/* The TOC rail is hidden below lg (the floating pill takes over). */
+	.toc-nav-shell {
+		display: none;
+	}
+
+	.sections-column {
+		display: flex;
+		flex-direction: column;
+		gap: 1rem;
+		width: 100%;
+	}
+
+	@media (min-width: 1024px) {
+		.body-grid {
+			grid-template-columns: minmax(13rem, 17rem) minmax(0, 1fr);
+			gap: 2rem;
+			align-items: start;
+			padding-block: 0.5rem;
+		}
+
+		.context-column {
+			grid-column: 1;
+		}
+
+		.sections-column {
+			grid-column: 2;
+		}
+
+		.context-panel {
+			position: sticky;
+			top: 5.5rem;
+		}
+
+		.toc-nav-shell {
+			display: block;
+		}
+
+		/* Keep a long TOC scrollable within the sticky viewport (the content column
+		   is the longer one). */
+		.toc-scroll {
+			max-height: calc(100dvh - 7rem);
+			overflow-y: auto;
+			overscroll-behavior: contain;
+			padding-bottom: 1rem;
+		}
+	}
+
+	/* ── Provenance preamble ─────────────────────────────────────────────────── */
 	.metrics-prose {
 		scroll-margin-block-start: 5.5rem;
 		display: flex;
@@ -415,7 +331,7 @@
 		font-size: var(--text-small);
 		line-height: 1.5;
 	}
-	/* The confidence chip — a quiet, muted pill (NOT a data mark, NOT --primary). */
+	/* The confidence chip: a quiet, muted pill (NOT a data mark, NOT --primary). */
 	.metrics-chip {
 		flex-shrink: 0;
 		display: inline-flex;
@@ -435,136 +351,39 @@
 		font-size: 0.6875rem;
 	}
 
-	/* ── Table of contents (rail + sheet) ─────────────────────────────────── */
-	.metrics-toc {
-		display: flex;
-		flex-direction: column;
-		gap: 1rem;
-	}
-	:global(.metrics-toc__heading) {
-		display: block;
-	}
-	.metrics-toc__group {
-		display: flex;
-		flex-direction: column;
-		gap: 0.4rem;
-	}
-	.metrics-toc__overline {
-		font-family: var(--font-mono);
-		font-size: var(--text-caption);
-		text-transform: uppercase;
-		letter-spacing: 0.06em;
-		color: var(--accent-text);
-	}
-	.metrics-toc__list {
-		display: flex;
-		flex-direction: column;
-		gap: 0.25rem;
-		margin: 0;
-		padding: 0;
-		list-style: none;
-	}
-	.metrics-toc__list--sheet {
-		gap: 0.5rem;
-	}
-	.metrics-toc__link {
-		display: block;
-		padding: 0.15rem 0;
-		font-size: var(--text-small);
-		color: var(--secondary-foreground);
-		text-decoration: none;
-		border-inline-start: 2px solid transparent;
-		padding-inline-start: 0.625rem;
-		margin-inline-start: -0.625rem;
-		transition: color var(--duration-fast) var(--ease-default);
-	}
-	.metrics-toc__link:hover,
-	.metrics-toc__link:focus-visible {
-		color: var(--primary);
-	}
-	.metrics-toc__link[aria-current='true'] {
-		color: var(--primary);
-		border-inline-start-color: var(--primary);
-	}
-	.metrics-toc__link:focus-visible {
-		outline: 2px solid var(--ring);
-		outline-offset: 2px;
-		border-radius: 2px;
-	}
-
-	/* ── Metric disclosures ───────────────────────────────────────────────── */
+	/* ── Cluster bands ───────────────────────────────────────────────────────── */
 	.metrics-cluster {
 		display: flex;
 		flex-direction: column;
+		gap: 1rem;
 	}
 	:global(.metrics-cluster__overline) {
-		margin-block-end: 0.5rem;
+		margin-block-end: 0.25rem;
 	}
 
-	.metric {
+	/* The section block carries the deep-link target id (so /metrics#otp scrolls
+	   here natively) and offsets the sticky-header scroll landing. */
+	.section-block {
 		scroll-margin-block-start: 5.5rem;
-		border-block-start: 1px solid var(--border);
 	}
-	.metric__summary {
-		display: flex;
-		align-items: flex-start;
-		justify-content: space-between;
-		gap: 1rem;
-		padding-block: 1.5rem 0.75rem;
-		cursor: pointer;
-		list-style: none;
-	}
-	.metric__summary::-webkit-details-marker {
-		display: none;
-	}
-	.metric__summary:focus-visible {
-		outline: 2px solid var(--ring);
-		outline-offset: 2px;
-		border-radius: var(--radius);
-	}
-	.metric__summary-text {
+
+	/* ── Metric card body (inside the shared CollapsibleSection) ─────────────── */
+	.metric__body {
 		display: flex;
 		flex-direction: column;
-		gap: 0.5rem;
-		min-width: 0;
-	}
-	/* The display heading inside the summary keeps the section-heading flourish
-	   but tightens its trailing margin (the disclosure body provides the gap). */
-	.metric__summary-text :global(.section-heading-text) {
-		font-size: clamp(1.5rem, 4vw, 2rem);
-		margin-block-end: 0;
+		gap: 1.25rem;
 	}
 	.metric__meta {
 		display: flex;
 		flex-wrap: wrap;
 		align-items: center;
 		gap: 0.75rem;
+		margin: 0;
 	}
 	.metric__sci {
 		font-family: var(--font-mono);
 		font-size: var(--text-caption);
 		color: var(--muted-foreground);
-	}
-	/* Disclosure chevron — a muted glyph that rotates on open (interactive). */
-	.metric__chevron {
-		flex-shrink: 0;
-		inline-size: 0.6rem;
-		block-size: 0.6rem;
-		margin-block-start: 0.5rem;
-		border-inline-end: 2px solid var(--muted-foreground);
-		border-block-end: 2px solid var(--muted-foreground);
-		transform: rotate(-45deg);
-		transition: transform var(--duration-fast) var(--ease-default);
-	}
-	.metric[open] .metric__chevron {
-		transform: rotate(45deg);
-	}
-
-	.metric__body {
-		display: flex;
-		flex-direction: column;
-		gap: 1.25rem;
-		padding-block-end: 2rem;
 	}
 	.metric__block {
 		display: flex;
@@ -618,151 +437,9 @@
 		border-radius: 2px;
 	}
 
-	/* ── Mobile floating pill + sheet ─────────────────────────────────────── */
-	.metrics-pill {
-		position: fixed;
-		inset-block-end: 1.25rem;
-		inset-inline-end: 1.25rem;
-		z-index: var(--z-menu);
-		display: inline-flex;
-		align-items: center;
-		gap: 0.5rem;
-		padding: 0.7rem 1.1rem;
-		border: 1px solid var(--border);
-		border-radius: var(--radius-pill);
-		background: var(--popover);
-		color: var(--popover-foreground);
-		font-family: var(--font-mono);
-		font-size: var(--text-caption);
-		text-transform: uppercase;
-		letter-spacing: 0.06em;
-		box-shadow: var(--shadow-card);
-		cursor: pointer;
-		transition: border-color var(--duration-fast) var(--ease-default);
-	}
-	.metrics-pill:hover,
-	.metrics-pill:focus-visible {
-		border-color: var(--primary);
-		color: var(--primary);
-	}
-	.metrics-pill:focus-visible {
-		outline: 2px solid var(--ring);
-		outline-offset: 2px;
-	}
-	.metrics-pill__glyph {
-		display: inline-block;
-		inline-size: 0.85rem;
-		block-size: 0.7rem;
-		border-block-start: 2px solid currentcolor;
-		border-block-end: 2px solid currentcolor;
-		position: relative;
-	}
-	.metrics-pill__glyph::before {
-		content: '';
-		position: absolute;
-		inset-inline: 0;
-		inset-block-start: 50%;
-		transform: translateY(-1px);
-		border-block-start: 2px solid currentcolor;
-	}
-	@media (min-width: 1024px) {
-		.metrics-pill {
-			display: none;
-		}
-	}
-
-	.metrics-sheet__scrim {
-		position: fixed;
-		inset: 0;
-		z-index: var(--z-sheet);
-		background: rgb(0 0 0 / 0.5);
-		animation: metrics-scrim-in var(--duration-fast) var(--ease-out);
-	}
-	.metrics-sheet {
-		position: fixed;
-		inset-inline: 0;
-		inset-block-end: 0;
-		z-index: var(--z-menu);
-		max-block-size: 80dvh;
-		display: flex;
-		flex-direction: column;
-		gap: 1rem;
-		padding: 1.25rem var(--space-page-x) calc(1.25rem + env(safe-area-inset-bottom, 0px));
-		border-block-start: 1px solid var(--border);
-		border-start-start-radius: var(--radius-lg);
-		border-start-end-radius: var(--radius-lg);
-		background: var(--popover);
-		color: var(--popover-foreground);
-		box-shadow: var(--shadow-sheet);
-		overflow-y: auto;
-		animation: metrics-sheet-in var(--duration-normal) var(--ease-out);
-	}
-	@media (min-width: 1024px) {
-		.metrics-sheet,
-		.metrics-sheet__scrim {
-			display: none;
-		}
-	}
-	.metrics-sheet__head {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		gap: 1rem;
-	}
-	.metrics-sheet__close {
-		display: inline-flex;
-		align-items: center;
-		justify-content: center;
-		inline-size: 2rem;
-		block-size: 2rem;
-		padding: 0;
-		border: 1px solid var(--border);
-		border-radius: var(--radius);
-		background: transparent;
-		color: var(--muted-foreground);
-		font-size: 1.25rem;
-		line-height: 1;
-		cursor: pointer;
-		transition: color var(--duration-fast) var(--ease-default);
-	}
-	.metrics-sheet__close:hover,
-	.metrics-sheet__close:focus-visible {
-		color: var(--primary);
-		border-color: var(--primary);
-	}
-	.metrics-sheet__close:focus-visible {
-		outline: 2px solid var(--ring);
-		outline-offset: 2px;
-	}
-
-	@keyframes metrics-scrim-in {
-		from {
-			opacity: 0;
-		}
-		to {
-			opacity: 1;
-		}
-	}
-	@keyframes metrics-sheet-in {
-		from {
-			transform: translateY(100%);
-		}
-		to {
-			transform: translateY(0);
-		}
-	}
-
 	@media (prefers-reduced-motion: reduce) {
-		.metrics-toc__link,
-		.metric__top,
-		.metric__chevron,
-		.metrics-pill,
-		.metrics-sheet__close {
+		.metric__top {
 			transition: none;
-		}
-		.metrics-sheet,
-		.metrics-sheet__scrim {
-			animation: none;
 		}
 	}
 </style>
