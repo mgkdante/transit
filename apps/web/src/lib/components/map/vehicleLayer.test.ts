@@ -5,9 +5,11 @@ import { VehicleSchema } from '$lib/v1/schemas';
 import {
 	addVehicleLayers,
 	VEHICLE_BODY_LAYER,
+	VEHICLE_HEADING_LAYER,
 	VEHICLE_SOURCE,
 	toVehicleFeatures,
 } from './vehicleLayer';
+import { HEADING_ICON } from './vehicleSprites';
 
 function usesTopLevelZoomExpression(value: unknown): boolean {
 	return (
@@ -66,6 +68,52 @@ describe('toVehicleFeatures entity filtering', () => {
 		expect(usesTopLevelZoomExpression(layout['icon-size'])).toBe(true);
 		expect(JSON.stringify(layout['icon-size'])).toContain('selected');
 		expect(JSON.stringify(layout['icon-size'])).toContain('hovered');
+		// The bus glyph is UPRIGHT (legible at every bearing) — heading is the
+		// separate chevron layer, so the body itself never rotates.
+		expect(layout['icon-rotate']).toBeUndefined();
+		expect(layout['icon-rotation-alignment']).toBe('viewport');
+	});
+
+	it('renders heading as a SEPARATE rotated chevron layer that only shows for vehicles with a bearing', () => {
+		const layers: LayerSpecification[] = [];
+		const map = {
+			getLayer: () => undefined,
+			addLayer: (nextLayer: LayerSpecification) => {
+				layers.push(nextLayer);
+			},
+		} as unknown as MapLibreMap;
+
+		addVehicleLayers(map);
+
+		const heading = layers.find((l) => l.id === VEHICLE_HEADING_LAYER);
+		expect(heading).toBeDefined();
+		if (!heading) throw new Error('expected heading layer');
+		expect(heading).toMatchObject({ type: 'symbol', source: VEHICLE_SOURCE });
+		const rendered = heading as LayerSpecification & {
+			layout: Record<string, unknown>;
+			filter: unknown;
+		};
+		const layout = (rendered.layout ?? {}) as Record<string, unknown>;
+		// ONE neutral chevron sprite; rotated by bearing, aligned to the map.
+		expect(layout['icon-image']).toBe(HEADING_ICON);
+		expect(JSON.stringify(layout['icon-rotate'])).toContain('bearing');
+		expect(layout['icon-rotation-alignment']).toBe('map');
+		// Shows only matched buses that actually report a heading (no fake arrows).
+		expect(JSON.stringify(rendered.filter)).toContain('matched');
+		expect(JSON.stringify(rendered.filter)).toContain('hasHeading');
+		// Drawn ABOVE the upright body so the tick is never occluded.
+		const bodyIndex = layers.findIndex((l) => l.id === VEHICLE_BODY_LAYER);
+		const headingIndex = layers.findIndex((l) => l.id === VEHICLE_HEADING_LAYER);
+		expect(headingIndex).toBeGreaterThan(bodyIndex);
+	});
+
+	it('flags whether each bus reports a heading so the chevron layer can hide for headingless buses', () => {
+		const features = toVehicleFeatures(vehicles, EMPTY_FILTER).features;
+
+		expect(features.map((f) => [f.properties.id, f.properties.hasHeading])).toEqual([
+			['directional', 1],
+			['no-direction', 0],
+		]);
 	});
 
 	it('marks the selected bus so the map can highlight it without filtering context', () => {

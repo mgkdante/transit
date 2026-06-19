@@ -28,6 +28,7 @@
 	import { statusVar, occupancyVar } from '$lib/components/dataviz';
 	import type { Locale } from '$lib/i18n';
 	import { copy as MAP_COPY, STATUS_LABELS, OCCUPANCY_LABELS } from './map.copy';
+	import MarkerGlyph from './MarkerGlyph.svelte';
 
 	interface Props {
 		store: FilterStore;
@@ -66,11 +67,10 @@
 	);
 	const selectedTripIds = $derived(Array.from(store.trips).sort((a, b) => collator.compare(a, b)));
 	const entityOptions = $derived([
-		{ kind: 'bus', glyph: '▲', label: t.entityBus },
-		{ kind: 'stop', glyph: '◆', label: t.entityStop, stop: true },
+		{ kind: 'bus', label: t.entityBus },
+		{ kind: 'stop', label: t.entityStop, stop: true },
 	] satisfies {
 		kind: EntityKind;
-		glyph: string;
 		label: string;
 		stop?: boolean;
 	}[]);
@@ -402,7 +402,9 @@
 						aria-pressed={store.entities.includes(item.kind)}
 						onclick={() => toggleEntity(item.kind)}
 					>
-						<span class:mf-shape-stop={item.stop} class="mf-glyph">{item.glyph}</span>
+						<span class:mf-shape-stop={item.stop} class="mf-glyph">
+							<MarkerGlyph kind={item.kind} />
+						</span>
 						{#if panelOpen}
 							<span class="mf-chip-text">{item.label}</span>
 						{/if}
@@ -795,10 +797,12 @@
 		place-items: center;
 		width: 1.4rem;
 		height: 1.4rem;
+		padding: 0.16rem;
 		flex: none;
-		font-size: var(--text-body);
-		line-height: 1;
 		color: var(--primary);
+		/* Knocked-out parts (windshield / headlights / pin hole) read as cut-outs
+		   against the panel surface, mirroring the sprite's halo cut. */
+		--marker-glyph-cut: var(--card);
 		background: color-mix(in srgb, var(--primary) 16%, transparent);
 		border: 1px solid color-mix(in srgb, var(--primary) 36%, transparent);
 		border-radius: var(--radius-sm);
@@ -829,15 +833,18 @@
 			inset 0 0 0 1px color-mix(in srgb, var(--primary) 30%, transparent),
 			0 0 0 1px color-mix(in srgb, var(--primary) 24%, transparent);
 	}
+	/* Active keeps the pictogram in its entity hue (bus orange / stop fill) — the
+	   map shows the bus orange in every state, so the legend stays faithful; the
+	   "on" signal is the brighter glyph box + the chip's own border/ring. */
 	.mf-shape-chip[data-on='true'] .mf-glyph {
-		color: var(--primary-foreground);
-		background: var(--primary);
-		border-color: var(--primary);
+		color: var(--primary);
+		background: color-mix(in srgb, var(--primary) 26%, transparent);
+		border-color: color-mix(in srgb, var(--primary) 55%, transparent);
 	}
 	.mf-shape-chip[data-on='true'] .mf-shape-stop {
-		color: var(--background);
-		background: var(--map-stop-fill);
-		border-color: var(--map-stop-fill);
+		color: var(--map-stop-fill);
+		background: color-mix(in srgb, var(--map-stop-fill) 26%, transparent);
+		border-color: color-mix(in srgb, var(--map-stop-fill) 55%, transparent);
 	}
 	.mf-alert-chip {
 		--chip: var(--dataviz-severity-high);

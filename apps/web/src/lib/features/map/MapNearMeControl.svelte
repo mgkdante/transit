@@ -435,6 +435,9 @@
 		gap: 0.25rem;
 		max-height: min(18rem, calc(100dvh - 10rem));
 		overflow-y: auto;
+		/* Reserve the scrollbar track so the suggestion rows do not shift left
+		   the moment the list grows tall enough to scroll. */
+		scrollbar-gutter: stable;
 		padding: 0.35rem;
 		background: color-mix(in srgb, var(--card) 98%, transparent);
 		border: 1px solid color-mix(in srgb, var(--border) 78%, var(--primary) 22%);

@@ -1,8 +1,10 @@
-// map/vehicleLayer.ts — the live vehicle GPU layer (one symbol layer, no glyph).
+// map/vehicleLayer.ts — the live vehicle GPU layers (an UPRIGHT bus body + a
+// SEPARATE rotated heading chevron).
 //
-// A vehicle is a single coloured SHAPE (vehicleSprites): a kite when it reports a
-// heading, a square when it doesn't. NO glyph overlay — the FILTER carries state
-// by REPAINTING the shape's colour and HIDING non-matches:
+// A vehicle is a single PAINTED BUS pictogram (vehicleSprites) baked UPRIGHT so
+// it reads at every bearing; heading is a SEPARATE chevron layer that rotates by
+// bearing and floats just ahead of the bus. NO state glyph — the FILTER carries
+// state by REPAINTING the bus colour and HIDING non-matches:
 //   · NO filter → everything shows, plain default orange (easy on the eye);
 //   · ALL of a dimension selected → everything shows, every state PAINTED in its
 //     own colour (the full picture, for the technical / curious);
@@ -13,10 +15,12 @@
 import type { Map as MapLibreMap, GeoJSONSource, LayerSpecification } from 'maplibre-gl';
 import type { Vehicle } from '$lib/v1/schemas';
 import type { EntityKind, FilterState } from '$lib/filters';
-import { bodyIconId, BUS_ICON } from './vehicleSprites';
+import { bodyIconId, BUS_ICON, HEADING_ICON } from './vehicleSprites';
 
 export const VEHICLE_SOURCE = 'vehicles';
 export const VEHICLE_BODY_LAYER = 'vehicle-body';
+/** The rotated chevron overlay; same source, filtered to vehicles with a heading. */
+export const VEHICLE_HEADING_LAYER = 'vehicle-heading';
 
 export interface VehicleFeature {
 	type: 'Feature';
@@ -25,6 +29,8 @@ export interface VehicleFeature {
 		id: string;
 		body: string;
 		bearing: number;
+		// 1 = the vehicle reports a real heading (so the chevron layer shows + rotates).
+		hasHeading: number;
 		route: string;
 		selected: number;
 		hovered: number;
@@ -79,8 +85,8 @@ function matchesFilter(v: Vehicle, f: FilterState, alertVehicleIds: ReadonlySet<
 }
 
 /** Body icon id + match flag for a vehicle. Matched + a colour dim → the state-
- * coloured shape; otherwise the default orange bus shape. One shape for every
- * bus — the layer rotates it by bearing (a bus with no heading stays unrotated). */
+ * coloured bus; otherwise the default orange bus. ONE bus glyph (no directional
+ * variants); the chevron layer carries heading on top. */
 function iconFor(
 	v: Vehicle,
 	f: FilterState,
@@ -120,6 +126,9 @@ export function toVehicleFeatures(
 					id: v.id,
 					body,
 					bearing: v.bearing ?? 0,
+					// A bus with no reported heading shows NO chevron (an honest "no
+					// heading", never a fake forward arrow).
+					hasHeading: v.bearing != null ? 1 : 0,
 					route: v.route ?? '',
 					selected: selectedVehicleId === v.id || filter.vehicles.has(v.id) ? 1 : 0,
 					hovered: hoveredVehicleId === v.id ? 1 : 0,
@@ -146,8 +155,11 @@ const ICON_SIZE = [
 	['case', ['==', ['get', 'hovered'], 1], 1.95, ['==', ['get', 'selected'], 1], 1.42, 1],
 ];
 
-/** Add the vehicle body symbol layer. Non-matched features are filtered OUT
- * (they disappear); opacity carries only the stale dim. Idempotent. */
+/** Add the vehicle body + heading symbol layers. Non-matched features are
+ * filtered OUT (they disappear); opacity carries only the stale dim. The bus
+ * body is UPRIGHT (it reads at every bearing); the chevron is a SEPARATE layer
+ * that rotates by bearing and shows ONLY for vehicles reporting a heading.
+ * Idempotent. */
 export function addVehicleLayers(map: MapLibreMap): void {
 	if (map.getLayer(VEHICLE_BODY_LAYER)) return;
 	map.addLayer({
@@ -158,8 +170,8 @@ export function addVehicleLayers(map: MapLibreMap): void {
 		filter: ['==', ['get', 'matched'], 1],
 		layout: {
 			'icon-image': ['get', 'body'],
-			'icon-rotate': ['coalesce', ['get', 'bearing'], 0],
-			'icon-rotation-alignment': 'map',
+			// The bus glyph stays UPRIGHT — heading is the separate chevron layer.
+			'icon-rotation-alignment': 'viewport',
 			'icon-allow-overlap': true,
 			'icon-ignore-placement': true,
 			'icon-size': ICON_SIZE,
@@ -167,6 +179,25 @@ export function addVehicleLayers(map: MapLibreMap): void {
 		paint: { 'icon-opacity': 1 },
 		// maplibre's expression types are invariant + mutable; the literal is
 		// structurally correct, so cast through unknown.
+	} as unknown as LayerSpecification);
+
+	if (map.getLayer(VEHICLE_HEADING_LAYER)) return;
+	// Drawn ABOVE the bus body so the direction tick is never occluded.
+	map.addLayer({
+		id: VEHICLE_HEADING_LAYER,
+		type: 'symbol',
+		source: VEHICLE_SOURCE,
+		// Matched AND reporting a heading — no fake arrows for headingless buses.
+		filter: ['all', ['==', ['get', 'matched'], 1], ['==', ['get', 'hasHeading'], 1]],
+		layout: {
+			'icon-image': HEADING_ICON,
+			'icon-rotate': ['coalesce', ['get', 'bearing'], 0],
+			'icon-rotation-alignment': 'map',
+			'icon-allow-overlap': true,
+			'icon-ignore-placement': true,
+			'icon-size': ICON_SIZE,
+		},
+		paint: { 'icon-opacity': 1 },
 	} as unknown as LayerSpecification);
 }
 
@@ -191,9 +222,13 @@ export function setVehicles(
 	);
 }
 
-/** Dim the layer to 45% when the live feed is stale (never extrapolate). */
+/** Dim the layers to 45% when the live feed is stale (never extrapolate). */
 export function setStale(map: MapLibreMap, stale: boolean): void {
+	const opacity = stale ? 0.45 : 1;
 	if (map.getLayer(VEHICLE_BODY_LAYER)) {
-		map.setPaintProperty(VEHICLE_BODY_LAYER, 'icon-opacity', stale ? 0.45 : 1);
+		map.setPaintProperty(VEHICLE_BODY_LAYER, 'icon-opacity', opacity);
+	}
+	if (map.getLayer(VEHICLE_HEADING_LAYER)) {
+		map.setPaintProperty(VEHICLE_HEADING_LAYER, 'icon-opacity', opacity);
 	}
 }

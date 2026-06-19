@@ -280,7 +280,7 @@
 								aria-label={t.selectStop(nextStop.name)}
 								onclick={() => selectStop(nextStop.id)}
 							>
-								{nextStop.name}
+								<span class="map-inline-label">{nextStop.name}</span>
 								<ChevronRightIcon size={13} strokeWidth={2.4} aria-hidden="true" />
 							</button>
 						{:else}
@@ -801,6 +801,14 @@
 			background-color var(--duration-fast) var(--ease-out),
 			border-color var(--duration-fast) var(--ease-out);
 	}
+	/* The name shrinks + truncates inside the pill so a long stop name (e.g.
+	   "Next station") never pushes the chevron out or overflows a narrow rail. */
+	.map-inline-label {
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
 	.map-inline-action :global(svg) {
 		flex: none;
 		opacity: 0.5;
@@ -1251,6 +1259,12 @@
 			align-items: flex-start;
 			white-space: normal;
 		}
+		/* On phones the pill wraps instead of truncating, so the full name reads. */
+		.map-inline-label {
+			overflow: visible;
+			text-overflow: clip;
+			white-space: normal;
+		}
 		.map-stop-action {
 			align-items: start;
 		}
@@ -1259,6 +1273,47 @@
 		}
 		.map-stop-action strong {
 			white-space: normal;
+		}
+		.map-time-columns {
+			grid-template-columns: minmax(0, 1fr);
+			gap: 0.4rem;
+		}
+	}
+	/* Graceful shrink inside the resizable right-panel dock. The viewport media
+	   query above misses the case the user hits most: dragging the dock narrower
+	   while the viewport stays wide. These container queries reflow against the
+	   PANEL'S OWN width (the `right-panel` container the dock declares), so the
+	   detail degrades — stacks, truncates, drops the least-essential text —
+	   instead of clipping or overflowing as the handle is dragged in. */
+	@container right-panel (max-width: 21rem) {
+		.map-detail-grid div {
+			grid-template-columns: minmax(0, 1fr);
+			align-items: start;
+			min-height: 0;
+			gap: 0.25rem;
+		}
+		.map-detail-grid dd {
+			white-space: normal;
+		}
+		.map-inline-action {
+			align-items: flex-start;
+			white-space: normal;
+		}
+		.map-inline-label {
+			overflow: visible;
+			text-overflow: clip;
+			white-space: normal;
+		}
+		.map-stop-action {
+			align-items: start;
+		}
+		.map-stop-action strong {
+			white-space: normal;
+		}
+		/* The verbose status word drops; the coloured delay tag still carries the
+		   state, so the live-bus row stays legible at a narrow width. */
+		.map-vehicle-action .map-status-label {
+			display: none;
 		}
 		.map-time-columns {
 			grid-template-columns: minmax(0, 1fr);

@@ -1052,13 +1052,10 @@
 		height: 100%;
 		overflow: hidden;
 		background: var(--background);
+		/* The live offset is driven by the inline `style` binding above
+		   (mapDetailOffset = the measured rail width on desktop, else 0rem); the
+		   fallback keeps left/right chrome anchored before the first measure. */
 		--map-detail-offset: 0rem;
-	}
-	.map-hero:has(:global(.right-panel[data-open='true'])) {
-		--map-detail-offset: 360px;
-	}
-	.map-hero:has(:global(.right-panel[data-open='false'])) {
-		--map-detail-offset: 3.7rem;
 	}
 	.map-hero :global(.map-stage) {
 		border-radius: 0;
@@ -1157,7 +1154,11 @@
 		border-top: 2px solid var(--border-rule);
 		border-radius: var(--radius-md);
 		box-shadow: var(--shadow-card);
-		backdrop-filter: blur(14px) saturate(1.05);
+		/* The card is already ~92% opaque, so the blur barely shows through; keep
+		   it modest (10px, in line with the rest of the chrome) since this peek
+		   floats over the constantly-repainting live canvas — a heavier blur is
+		   pure compositing cost on the busiest overlay for no visible gain. */
+		backdrop-filter: blur(10px) saturate(1.05);
 		pointer-events: none;
 	}
 	.map-detail-dock {
