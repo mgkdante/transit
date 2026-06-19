@@ -7,15 +7,17 @@
 //      note and NEITHER data sub-section (no fabricated zero, no dropped band).
 
 import { describe, it, expect } from 'vitest';
-import { render, screen } from '@testing-library/svelte';
+import { fireEvent, render, screen } from '@testing-library/svelte';
 import Cluster05Habits from './Cluster05Habits.svelte';
 import { reliabilityCopy } from './reliability.copy';
 import { habitsBandCopy } from './Cluster05Habits.copy';
+import { metricsCopy } from '$lib/features/metrics/metrics.copy';
 import type { HabitsVM } from './clusters';
 import type { RouteDayOfWeek } from '$lib/v1';
 
 const enCopy = reliabilityCopy.en;
 const enBand = habitsBandCopy.en;
+const info = metricsCopy.en.info;
 
 /** A 7×24 matrix with a couple of real cells, the rest null (no data). */
 function populatedMatrix(): (number | null)[][] {
@@ -214,6 +216,38 @@ describe('Cluster05Habits — honest empty', () => {
 		});
 		expect(container.querySelector('[data-slot="habits-empty"]')?.textContent).toBe(
 			reliabilityCopy.fr.strip.noDataNote,
+		);
+	});
+});
+
+describe('Cluster05Habits — metric explainer (i)', () => {
+	it('deep-links the heatmap (habits) + weekday seasonality (i) affordances', async () => {
+		render(Cluster05Habits, {
+			props: {
+				habits: POPULATED_HABITS,
+				dayOfWeek: POPULATED_DOW,
+				locale: 'en',
+				copy: enCopy,
+			},
+		});
+
+		const heatmapTrigger = screen.getByRole('button', {
+			name: info.trigger(enBand.heatmapHeading),
+		});
+		await fireEvent.click(heatmapTrigger);
+		expect(screen.getByRole('link', { name: new RegExp(info.link, 'i') })).toHaveAttribute(
+			'href',
+			'/metrics#habits',
+		);
+		await fireEvent.click(heatmapTrigger);
+
+		const weekdayTrigger = screen.getByRole('button', {
+			name: info.trigger(enBand.weekdayHeading),
+		});
+		await fireEvent.click(weekdayTrigger);
+		expect(screen.getByRole('link', { name: new RegExp(info.link, 'i') })).toHaveAttribute(
+			'href',
+			'/metrics#seasonality',
 		);
 	});
 });

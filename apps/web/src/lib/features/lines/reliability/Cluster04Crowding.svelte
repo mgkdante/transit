@@ -22,6 +22,9 @@
 	import { StackedBar, type StackedSegment } from '$lib/components/dataviz';
 	import { OCCUPANCY_CODES, type OccupancyCode } from '$lib/v1/schemas';
 	import type { Locale } from '$lib/i18n';
+	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
+	import { metricInfoFor } from '$lib/features/metrics/metrics.content';
+	import { metricsCopy } from '$lib/features/metrics/metrics.copy';
 	import { detailCopy } from '../lines.copy';
 	import type { CrowdingVM } from './clusters';
 	import type { ReliabilityCopy } from './reliability.copy';
@@ -68,6 +71,19 @@
 
 	/** Dominant-band share as a whole-percent string (e.g. "62%"). */
 	const dominantPct = $derived(dominant ? `${Math.round((dominant.share / total) * 100)}%` : null);
+
+	// The in-app metric-explainer (i) affordance for the occupancy band: the
+	// one-line tip + a localized deep link to /metrics#occupancy. An INTERACTIVE
+	// control beside the label, never a data mark.
+	const explainerCopy = $derived(metricsCopy[locale]);
+	const occupancyInfo = $derived.by(() => {
+		const i = metricInfoFor('occupancy', locale);
+		return {
+			...i,
+			label: explainerCopy.info.trigger(copy.clusters.crowding),
+			linkLabel: explainerCopy.info.link,
+		};
+	});
 </script>
 
 <section
@@ -75,7 +91,17 @@
 	aria-labelledby="cluster04-crowding-label"
 	data-slot="cluster-04-crowding"
 >
-	<SectionLabel id="cluster04-crowding-label" text={copy.clusters.crowding} variant="station" />
+	<span class="label-with-info">
+		<SectionLabel id="cluster04-crowding-label" text={copy.clusters.crowding} variant="station" />
+		<MetricInfo
+			class="cluster-info"
+			tip={occupancyInfo.tip}
+			href={occupancyInfo.href}
+			label={occupancyInfo.label}
+			linkLabel={occupancyInfo.linkLabel}
+			side="bottom"
+		/>
+	</span>
 	<!-- Window caption: the occupancy mix is a fixed trailing window. -->
 	<p class="crowding-window" data-slot="crowding-window">{copy.windows.crowding}</p>
 
@@ -107,6 +133,12 @@
 		display: flex;
 		flex-direction: column;
 		gap: var(--spacing-3, 0.75rem);
+	}
+	/* The cluster overline + its explainer (i), kept on the label's baseline. */
+	.label-with-info {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.35rem;
 	}
 
 	.crowding-empty {

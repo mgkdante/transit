@@ -22,7 +22,7 @@
 -->
 <script lang="ts">
 	import { DEFAULT_LOCALE, getLocale, localizeHref, type Locale } from '$lib/i18n';
-	import { SURFACE_NAV, MENU_EXTRAS } from '$lib/content/nav';
+	import { SURFACE_NAV, SECONDARY_NAV, MENU_EXTRAS } from '$lib/content/nav';
 	import StatusDot from '$lib/components/brand/StatusDot.svelte';
 	import BrandCluster from '$lib/components/brand/BrandCluster.svelte';
 
@@ -74,7 +74,7 @@
 	// at render. The portfolio (off-site) links come from MENU_EXTRAS and render in
 	// the right cluster below.
 	const navLinks = $derived(
-		SURFACE_NAV.map((item) => ({
+		[...SURFACE_NAV, ...SECONDARY_NAV].map((item) => ({
 			label: item.label[locale],
 			href: localizeHref(item.href, locale),
 		})),

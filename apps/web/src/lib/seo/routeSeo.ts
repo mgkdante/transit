@@ -64,6 +64,13 @@ const SURFACES: Record<string, BilingualSeo> = {
 			fr: 'Cherchez le réseau STM de Montréal par numéro, nom de ligne, nom ou code d’arrêt — les résultats mènent au détail mesuré en direct, jamais inventé.',
 		},
 	},
+	'/metrics': {
+		title: { en: 'How we measure', fr: 'Comment on mesure' },
+		description: {
+			en: 'How every STM reliability number on this dashboard is measured — definition, exact math, SQL and honest caveats for each metric. Proxy, not certified OTP.',
+			fr: 'Comment chaque chiffre de fiabilité STM de ce tableau de bord est mesuré — définition, calcul exact, SQL et limites honnêtes par métrique. Un proxy, pas une ponctualité certifiée.',
+		},
+	},
 };
 
 const LINE_DETAIL: BilingualSeo = {

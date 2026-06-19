@@ -29,6 +29,9 @@
 	import type { Locale } from '$lib/i18n';
 	import { MetricDisplay, SectionLabel } from '$lib/components/brand';
 	import { Sparkline } from '$lib/components/dataviz';
+	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
+	import { metricInfoFor, type MetricKey } from '$lib/features/metrics/metrics.content';
+	import { metricsCopy } from '$lib/features/metrics/metrics.copy';
 	import type { ServiceDeliveredVM } from './clusters';
 	import type { ReliabilityCopy } from './reliability.copy';
 
@@ -84,6 +87,14 @@
 	const cancellationHistoryLabel = $derived(`${t.cancellationRatePct} · ${locale}`);
 	const skippedHistoryLabel = $derived(`${t.skippedStopRatePct} · ${locale}`);
 
+	// The in-app metric-explainer (i) affordance: the one-line tip + a localized
+	// deep link to /metrics#<anchor>. An INTERACTIVE control beside each label.
+	const explainerCopy = $derived(metricsCopy[locale]);
+	const info = $derived((key: MetricKey, name: string) => {
+		const i = metricInfoFor(key, locale);
+		return { ...i, label: explainerCopy.info.trigger(name), linkLabel: explainerCopy.info.link };
+	});
+
 	// Sparkline axis metadata: a % unit on the value + per-index x-labels (date,
 	// else the pipeline grain) for the tooltip heading.
 	const cancellationXLabels = $derived(vm.cancellations.map((c) => c.date ?? c.grain ?? ''));
@@ -103,6 +114,18 @@
 		<p class="cluster03-rampin" data-slot="ramp-in-note">{t.rampInNote}</p>
 	</header>
 
+	{#snippet metricInfo(key: MetricKey, name: string)}
+		{@const i = info(key, name)}
+		<MetricInfo
+			class="cluster-info"
+			tip={i.tip}
+			href={i.href}
+			label={i.label}
+			linkLabel={i.linkLabel}
+			side="bottom"
+		/>
+	{/snippet}
+
 	{#if vm.isEmpty}
 		<!-- Honest empty: no fabricated zero, no dropped section. -->
 		<p class="cluster03-empty" data-slot="empty-note">{t.noDataNote}</p>
@@ -110,11 +133,14 @@
 		<div class="cluster03-metrics">
 			<!-- Cancellations -->
 			<article class="cluster03-metric" data-slot="cancellations">
-				<MetricDisplay
-					value={fmtPct(cancellationRatePct)}
-					label={t.cancellationRatePct}
-					size="md"
-				/>
+				<div class="metric-with-info">
+					<MetricDisplay
+						value={fmtPct(cancellationRatePct)}
+						label={t.cancellationRatePct}
+						size="md"
+					/>
+					{@render metricInfo('cancellation', t.cancellationRatePct)}
+				</div>
 				{#if hasCancellationHistory}
 					<Sparkline
 						values={cancellationSeries}
@@ -135,7 +161,14 @@
 
 			<!-- Skipped stops -->
 			<article class="cluster03-metric" data-slot="skipped-stops">
-				<MetricDisplay value={fmtPct(skippedStopRatePct)} label={t.skippedStopRatePct} size="md" />
+				<div class="metric-with-info">
+					<MetricDisplay
+						value={fmtPct(skippedStopRatePct)}
+						label={t.skippedStopRatePct}
+						size="md"
+					/>
+					{@render metricInfo('skippedStop', t.skippedStopRatePct)}
+				</div>
 				{#if hasSkippedHistory}
 					<Sparkline
 						values={skippedSeries}
@@ -209,6 +242,12 @@
 		border: 1px solid var(--border);
 		border-radius: var(--radius-lg, 0.75rem);
 		box-shadow: var(--shadow-card);
+	}
+	/* A metric tile + its explainer (i), kept on the tile's top edge. */
+	.metric-with-info {
+		display: inline-flex;
+		align-items: flex-start;
+		gap: 0.35rem;
 	}
 	.cluster03-metric-empty {
 		margin: 0;

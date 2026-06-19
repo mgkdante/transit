@@ -8,13 +8,15 @@
 //      present (we never fabricate a 0 or silently drop the section).
 
 import { describe, it, expect } from 'vitest';
-import { render } from '@testing-library/svelte';
+import { fireEvent, render, screen } from '@testing-library/svelte';
 import type { CancellationPeriod, SkippedStopPeriod } from '$lib/v1';
 import Cluster03ServiceDelivered from './Cluster03ServiceDelivered.svelte';
 import type { ServiceDeliveredVM } from './clusters';
 import { reliabilityCopy } from './reliability.copy';
+import { metricsCopy } from '$lib/features/metrics/metrics.copy';
 
 const copy = reliabilityCopy.en;
+const info = metricsCopy.en.info;
 
 const cancellations: CancellationPeriod[] = [
 	{ grain: 'day', date: '2026-06-16', cancellation_rate_pct: 1.5, canceled_trip_days: 3 },
@@ -140,5 +142,30 @@ describe('Cluster03ServiceDelivered — per-metric no-data branch', () => {
 		expect(
 			container.querySelector('[data-slot="skipped-stops"] [data-slot="sparkline"]'),
 		).toBeNull();
+	});
+});
+
+describe('Cluster03ServiceDelivered — metric explainer (i)', () => {
+	it('deep-links the cancellation + skipped-stop (i) affordances', async () => {
+		render(Cluster03ServiceDelivered, { props: { vm: populated, locale: 'en', copy } });
+
+		const cancelTrigger = screen.getByRole('button', {
+			name: info.trigger(copy.strip.cancellationRatePct),
+		});
+		await fireEvent.click(cancelTrigger);
+		expect(screen.getByRole('link', { name: new RegExp(info.link, 'i') })).toHaveAttribute(
+			'href',
+			'/metrics#cancellation',
+		);
+		await fireEvent.click(cancelTrigger);
+
+		const skipTrigger = screen.getByRole('button', {
+			name: info.trigger(copy.strip.skippedStopRatePct),
+		});
+		await fireEvent.click(skipTrigger);
+		expect(screen.getByRole('link', { name: new RegExp(info.link, 'i') })).toHaveAttribute(
+			'href',
+			'/metrics#skipped-stop',
+		);
 	});
 });

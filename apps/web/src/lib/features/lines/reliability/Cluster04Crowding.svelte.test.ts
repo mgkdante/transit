@@ -1,10 +1,12 @@
-import { render, screen } from '@testing-library/svelte';
+import { fireEvent, render, screen } from '@testing-library/svelte';
 import { describe, expect, it } from 'vitest';
 import Cluster04Crowding from './Cluster04Crowding.svelte';
 import { reliabilityCopy } from './reliability.copy';
+import { metricsCopy } from '$lib/features/metrics/metrics.copy';
 import type { CrowdingVM } from './clusters';
 
 const copy = reliabilityCopy.en;
+const info = metricsCopy.en.info;
 
 // A populated mix: `standing` is the dominant band (0.45 of a 1.0 total).
 const populated: CrowdingVM = {
@@ -72,5 +74,30 @@ describe('Cluster04Crowding', () => {
 		expect(screen.getByText(reliabilityCopy.fr.clusters.crowding)).toBeInTheDocument();
 		// FR band label for `standing` (headline + legend → multiple matches).
 		expect(screen.getAllByText('Debout').length).toBeGreaterThan(0);
+	});
+
+	it('deep-links the occupancy (i) affordance to /metrics#occupancy', async () => {
+		render(Cluster04Crowding, { props: { vm: populated, locale: 'en', copy } });
+
+		const trigger = screen.getByRole('button', { name: info.trigger(copy.clusters.crowding) });
+		await fireEvent.click(trigger);
+		const link = screen.getByRole('link', { name: new RegExp(info.link, 'i') });
+		expect(link).toHaveAttribute('href', '/metrics#occupancy');
+		expect(link).not.toHaveAttribute('target');
+	});
+
+	it('localizes the occupancy (i) deep link in FR (/fr/metrics#occupancy)', async () => {
+		render(Cluster04Crowding, {
+			props: { vm: populated, locale: 'fr', copy: reliabilityCopy.fr },
+		});
+		const frInfo = metricsCopy.fr.info;
+		const trigger = screen.getByRole('button', {
+			name: frInfo.trigger(reliabilityCopy.fr.clusters.crowding),
+		});
+		await fireEvent.click(trigger);
+		expect(screen.getByRole('link', { name: new RegExp(frInfo.link, 'i') })).toHaveAttribute(
+			'href',
+			'/fr/metrics#occupancy',
+		);
 	});
 });

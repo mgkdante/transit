@@ -32,6 +32,9 @@
 		HEATMAP_NODATA,
 	} from '$lib/components/dataviz';
 	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
+	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
+	import { metricInfoFor, type MetricKey } from '$lib/features/metrics/metrics.content';
+	import { metricsCopy } from '$lib/features/metrics/metrics.copy';
 	import type { HabitsVM } from './clusters';
 	import type { ReliabilityCopy } from './reliability.copy';
 	import { habitsBandCopy } from './Cluster05Habits.copy';
@@ -50,6 +53,14 @@
 	let { habits, dayOfWeek, locale, copy }: Cluster05HabitsProps = $props();
 
 	const band = $derived(habitsBandCopy[locale]);
+
+	// The in-app metric-explainer (i) affordance: the one-line tip + a localized
+	// deep link to /metrics#<anchor>. An INTERACTIVE control beside each heading.
+	const explainerCopy = $derived(metricsCopy[locale]);
+	const info = $derived((key: MetricKey, name: string) => {
+		const i = metricInfoFor(key, locale);
+		return { ...i, label: explainerCopy.info.trigger(name), linkLabel: explainerCopy.info.link };
+	});
 
 	/* ── Weekday seasonality ─────────────────────────────────────────────────
 	   Only rows carrying a real mean delay rank; the band degrades to its
@@ -163,13 +174,28 @@
 	<!-- Window caption: the heatmap + weekday seasonality accrue all available data. -->
 	<p class="habits-window" data-slot="habits-window">{copy.windows.habits}</p>
 
+	{#snippet metricInfo(key: MetricKey, name: string)}
+		{@const i = info(key, name)}
+		<MetricInfo
+			class="cluster-info"
+			tip={i.tip}
+			href={i.href}
+			label={i.label}
+			linkLabel={i.linkLabel}
+			side="bottom"
+		/>
+	{/snippet}
+
 	{#if isEmpty}
 		<p class="habits-empty" data-slot="habits-empty">{copy.strip.noDataNote}</p>
 	{:else}
 		<div class="habits-body">
 			{#if hasHeatmap}
 				<div class="habits-subsection" data-slot="habits-heatmap">
-					<SectionLabel text={band.heatmapHeading} variant="metric" />
+					<span class="label-with-info">
+						<SectionLabel text={band.heatmapHeading} variant="metric" />
+						{@render metricInfo('habits', band.heatmapHeading)}
+					</span>
 					<Heatmap
 						grid={habits.matrix}
 						dayLabels={[...band.weekdaysShort]}
@@ -194,7 +220,10 @@
 
 			{#if hasWeekday}
 				<div class="habits-subsection" data-slot="habits-weekday">
-					<SectionLabel text={band.weekdayHeading} variant="metric" />
+					<span class="label-with-info">
+						<SectionLabel text={band.weekdayHeading} variant="metric" />
+						{@render metricInfo('seasonality', band.weekdayHeading)}
+					</span>
 					<ul class="habits-weekday-list" aria-label={band.weekdayHeading}>
 						{#each rankedWeekdays as row (row.key)}
 							<li class="habits-weekday-row">
@@ -230,6 +259,12 @@
 		display: flex;
 		flex-direction: column;
 		gap: 0.75rem;
+	}
+	/* A subsection heading + its explainer (i), kept on the label's baseline. */
+	.label-with-info {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.35rem;
 	}
 	.habits-empty {
 		margin: 0;

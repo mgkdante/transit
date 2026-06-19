@@ -31,6 +31,9 @@
 	import { RankedRow } from '$lib/components/dataviz';
 	import MetricDisplay from '$lib/components/brand/MetricDisplay.svelte';
 	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
+	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
+	import { metricInfoFor, type MetricKey } from '$lib/features/metrics/metrics.content';
+	import { metricsCopy } from '$lib/features/metrics/metrics.copy';
 	import type { WaitRegularityVM } from './clusters';
 	import type { ReliabilityCopy } from './reliability.copy';
 
@@ -114,6 +117,14 @@
 	const terms = $derived(copy.regularityTerms);
 	const overline = $derived(copy.clusters.waitRegularity);
 	const noData = $derived(copy.strip.noDataNote);
+
+	// The in-app metric-explainer (i) affordance: the one-line tip + a localized
+	// deep link to /metrics#<anchor>. An INTERACTIVE control beside each label.
+	const explainerCopy = $derived(metricsCopy[locale]);
+	const info = $derived((key: MetricKey, name: string) => {
+		const i = metricInfoFor(key, locale);
+		return { ...i, label: explainerCopy.info.trigger(name), linkLabel: explainerCopy.info.link };
+	});
 
 	/* ── formatters (pure) ─────────────────────────────────────────────────── */
 	const fmtMin = (v: number | null | undefined): string =>
@@ -208,6 +219,18 @@
 	const hasSpan = $derived(latestSpan != null);
 </script>
 
+{#snippet metricInfo(key: MetricKey, name: string)}
+	{@const i = info(key, name)}
+	<MetricInfo
+		class="cluster-info"
+		tip={i.tip}
+		href={i.href}
+		label={i.label}
+		linkLabel={i.linkLabel}
+		side="bottom"
+	/>
+{/snippet}
+
 <section class="cluster" data-cluster="wait-regularity" aria-label={overline}>
 	<SectionLabel text={overline} variant="station" />
 
@@ -217,7 +240,11 @@
 	{:else}
 		<!-- Headway-by-shift sub-block. -->
 		<div class="cluster-sub" data-sub="headway">
-			<SectionLabel text={t.headwaySection} variant="metric" />
+			<span class="label-with-info">
+				<SectionLabel text={t.headwaySection} variant="metric" />
+				{@render metricInfo('headway', t.headwaySection)}
+				{@render metricInfo('regularityCov', copy.strip.headwayRegularityCov)}
+			</span>
 			{#snippet shiftItem(row: ShiftRow, i: number)}
 				<li class="shift-row">
 					<RankedRow
@@ -248,7 +275,10 @@
 					{/each}
 				</ul>
 				<!-- What the excess-wait magnitude encodes: 0 is the GOOD case, not missing. -->
-				<p class="shift-caption" data-slot="excess-wait-caption">{copy.strip.excessWaitCaption}</p>
+				<p class="shift-caption" data-slot="excess-wait-caption">
+					{copy.strip.excessWaitCaption}
+					{@render metricInfo('excessWait', terms.excessWait)}
+				</p>
 				<!-- A3: per-direction rows carry ONLY observed_min (scheduled/excess/cov
 				     null), so the SeverityBar + scheduled/excess tiles are empty for them.
 				     Present them as a compact observed-gap-by-direction comparison instead
@@ -279,7 +309,10 @@
 		{#if hasSpan && latestSpan}
 			<div class="cluster-sub" data-sub="service-span">
 				<div class="span-head">
-					<SectionLabel text={t.spanSection} variant="metric" />
+					<span class="label-with-info">
+						<SectionLabel text={t.spanSection} variant="metric" />
+						{@render metricInfo('serviceSpan', t.spanSection)}
+					</span>
 					<span class="span-window" data-slot="service-span-window">
 						{copy.windows.serviceSpan(latestSpan.date ?? null)}
 					</span>
@@ -317,6 +350,12 @@
 		display: flex;
 		flex-direction: column;
 		gap: 0.75rem;
+	}
+	/* A sub-block overline + its explainer (i)s, kept on the label's baseline. */
+	.label-with-info {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.35rem;
 	}
 	.cluster-empty {
 		margin: 0;

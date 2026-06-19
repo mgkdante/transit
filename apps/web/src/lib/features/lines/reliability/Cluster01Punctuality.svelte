@@ -36,6 +36,9 @@
 	import MetricDisplay from '$lib/components/brand/MetricDisplay.svelte';
 	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
 	import { TrendLine, SeverityBar, RankedRow } from '$lib/components/dataviz';
+	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
+	import { metricInfoFor, type MetricKey } from '$lib/features/metrics/metrics.content';
+	import { metricsCopy } from '$lib/features/metrics/metrics.copy';
 	import type { PunctualityVM, PeriodComparisonRow } from './clusters';
 	import type { ReliabilityCopy } from './reliability.copy';
 
@@ -57,6 +60,15 @@
 	let { vm, locale, copy, grain = 'day' }: Cluster01PunctualityProps = $props();
 
 	const EM_DASH = '—';
+
+	// The in-app metric-explainer (i) affordance: the one-line tip + a localized
+	// deep link to /metrics#<anchor>. An INTERACTIVE control beside each label,
+	// never a data mark; doctrine-clean.
+	const explainerCopy = $derived(metricsCopy[locale]);
+	const info = $derived((key: MetricKey, name: string) => {
+		const i = metricInfoFor(key, locale);
+		return { ...i, label: explainerCopy.info.trigger(name), linkLabel: explainerCopy.info.link };
+	});
 
 	// The headline period: the most-recent dated day in the trend (the foundation
 	// trend is day-only, ascending). The strip remains the canonical grain-aware
@@ -183,6 +195,18 @@
 	);
 </script>
 
+{#snippet metricInfo(key: MetricKey, name: string)}
+	{@const i = info(key, name)}
+	<MetricInfo
+		class="cluster-info"
+		tip={i.tip}
+		href={i.href}
+		label={i.label}
+		linkLabel={i.linkLabel}
+		side="bottom"
+	/>
+{/snippet}
+
 <section class="cluster" aria-label={copy.clusters.punctuality}>
 	<SectionLabel text={copy.clusters.punctuality} variant="station" />
 
@@ -192,24 +216,36 @@
 	{:else}
 		<!-- Latest-day headline: OTP %, avg delay, typical (p50) + worst-case (p90). -->
 		<div class="cluster-headline">
-			<MetricDisplay value={fmtPct(headline?.otp_pct)} label={copy.strip.otpPct} size="lg" />
-			<MetricDisplay
-				value={fmtMin(headline?.avg_delay_min)}
-				label={copy.strip.avgDelayMin}
-				size="md"
-			/>
-			<MetricDisplay
-				value={fmtMin(headline?.p50_min)}
-				label={copy.strip.p50Min}
-				sublabel={copy.strip.p50Caption}
-				size="md"
-			/>
-			<MetricDisplay
-				value={fmtMin(headline?.p90_min)}
-				label={copy.strip.p90Min}
-				sublabel={copy.strip.p90Caption}
-				size="md"
-			/>
+			<div class="metric-with-info">
+				<MetricDisplay value={fmtPct(headline?.otp_pct)} label={copy.strip.otpPct} size="lg" />
+				{@render metricInfo('otp', copy.strip.otpPct)}
+			</div>
+			<div class="metric-with-info">
+				<MetricDisplay
+					value={fmtMin(headline?.avg_delay_min)}
+					label={copy.strip.avgDelayMin}
+					size="md"
+				/>
+				{@render metricInfo('avgDelay', copy.strip.avgDelayMin)}
+			</div>
+			<div class="metric-with-info">
+				<MetricDisplay
+					value={fmtMin(headline?.p50_min)}
+					label={copy.strip.p50Min}
+					sublabel={copy.strip.p50Caption}
+					size="md"
+				/>
+				{@render metricInfo('p50p90', copy.strip.p50Min)}
+			</div>
+			<div class="metric-with-info">
+				<MetricDisplay
+					value={fmtMin(headline?.p90_min)}
+					label={copy.strip.p90Min}
+					sublabel={copy.strip.p90Caption}
+					size="md"
+				/>
+				{@render metricInfo('p50p90', copy.strip.p90Min)}
+			</div>
 		</div>
 
 		<!-- OTP trend across the dated day series (green) vs avg-delay retard (amber). -->
@@ -241,7 +277,10 @@
 		<!-- Severe-delay share of the headline day — its OWN label (NOT p90). -->
 		<div class="cluster-block">
 			<div class="cluster-block-head">
-				<SectionLabel text={copy.strip.severePct} variant="metric" />
+				<span class="label-with-info">
+					<SectionLabel text={copy.strip.severePct} variant="metric" />
+					{@render metricInfo('severe', copy.strip.severePct)}
+				</span>
 				<span class="cluster-block-value">{fmtPct(severePct)}</span>
 			</div>
 			<SeverityBar
@@ -256,7 +295,10 @@
 		<!-- Weakest stops — the accountability list, worst delay first + count. -->
 		{#if rankedStops.length > 0}
 			<div class="cluster-block">
-				<SectionLabel text={weakStopsHeading} variant="metric" />
+				<span class="label-with-info">
+					<SectionLabel text={weakStopsHeading} variant="metric" />
+					{@render metricInfo('weakStops', copy.strip.weakStopsHeading)}
+				</span>
 				<p class="cluster-caption" data-slot="weak-stops-window">{copy.windows.weakStops}</p>
 				<div class="cluster-ranked" role="list">
 					{#each rankedStops as row (row.key)}
@@ -275,7 +317,10 @@
 		<!-- By time of day (A1): shift buckets + weekday/weekend, ranked by severe share. -->
 		{#if hasPeak}
 			<div class="cluster-block" data-slot="peak-off-peak">
-				<SectionLabel text={copy.peak.heading} variant="metric" />
+				<span class="label-with-info">
+					<SectionLabel text={copy.peak.heading} variant="metric" />
+					{@render metricInfo('severe', copy.peak.heading)}
+				</span>
 				{#if shiftPeakRows.length > 0}
 					<div class="cluster-ranked" role="list" aria-label={copy.peak.heading}>
 						{#each shiftPeakRows as row (row.key)}
@@ -332,6 +377,19 @@
 		display: flex;
 		flex-wrap: wrap;
 		gap: 1.5rem 2rem;
+	}
+	/* A metric tile + its explainer (i): the affordance rides the tile's top edge,
+	   inline so the headline row keeps wrapping naturally (no layout disruption). */
+	.metric-with-info {
+		display: inline-flex;
+		align-items: flex-start;
+		gap: 0.35rem;
+	}
+	/* A block overline + its explainer (i), kept on the label's baseline. */
+	.label-with-info {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.35rem;
 	}
 	.cluster-block {
 		display: flex;

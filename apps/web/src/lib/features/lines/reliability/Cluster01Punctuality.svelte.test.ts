@@ -4,13 +4,15 @@
 //   2. an empty VM → the honest empty/no-data note renders, no crash, and the
 //      headline + accountability list are absent.
 
-import { render, screen, within } from '@testing-library/svelte';
+import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { describe, expect, it } from 'vitest';
 import Cluster01Punctuality from './Cluster01Punctuality.svelte';
 import { reliabilityCopy } from './reliability.copy';
+import { metricsCopy } from '$lib/features/metrics/metrics.copy';
 import type { PunctualityVM } from './clusters';
 
 const copy = reliabilityCopy.en;
+const info = metricsCopy.en.info;
 
 // SPEC CHANGE (foundation): PunctualityVM.periods was split into `trend` (the
 // dated DAY-grain series, chronological ascending) + `peakOffPeak`. The band's
@@ -117,6 +119,35 @@ describe('Cluster01Punctuality — populated', () => {
 		expect(screen.getByText('AM peak')).toBeInTheDocument();
 		// The weekday day-type bucket renders.
 		expect(screen.getByText(copy.peak.weekday)).toBeInTheDocument();
+	});
+});
+
+describe('Cluster01Punctuality — metric explainer (i)', () => {
+	it('renders an explainer (i) beside the headline metric labels with a deep link', async () => {
+		render(Cluster01Punctuality, { props: { vm: populated, locale: 'en', copy } });
+
+		// The on-time tile carries an (i) trigger named from the explainer copy.
+		const trigger = screen.getByRole('button', { name: info.trigger(copy.strip.otpPct) });
+		expect(trigger).toBeInTheDocument();
+
+		// Opening it reveals the in-app deep link to /metrics#otp (same-tab nav).
+		await fireEvent.click(trigger);
+		const link = screen.getByRole('link', { name: new RegExp(info.link, 'i') });
+		expect(link).toHaveAttribute('href', '/metrics#otp');
+		expect(link).not.toHaveAttribute('target');
+	});
+
+	it('points the severe-share (i) at /metrics#severe and localizes the link in FR', async () => {
+		render(Cluster01Punctuality, {
+			props: { vm: populated, locale: 'fr', copy: reliabilityCopy.fr },
+		});
+		const frInfo = metricsCopy.fr.info;
+		const trigger = screen.getByRole('button', {
+			name: frInfo.trigger(reliabilityCopy.fr.strip.severePct),
+		});
+		await fireEvent.click(trigger);
+		const link = screen.getByRole('link', { name: new RegExp(frInfo.link, 'i') });
+		expect(link).toHaveAttribute('href', '/fr/metrics#severe');
 	});
 });
 

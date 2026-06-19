@@ -31,6 +31,9 @@
 <script lang="ts">
 	import type { Locale } from '$lib/i18n';
 	import { MetricDisplay } from '$lib/components/brand';
+	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
+	import { metricInfoFor, type MetricKey } from '$lib/features/metrics/metrics.content';
+	import { metricsCopy } from '$lib/features/metrics/metrics.copy';
 	import type { SnapshotStripVM } from './clusters';
 	import type { ReliabilityCopy } from './reliability.copy';
 
@@ -46,6 +49,15 @@
 	let { vm, locale, copy }: SnapshotStripProps = $props();
 
 	const t = $derived(copy.strip);
+
+	// The in-app metric-explainer (i) affordance for one snapshot tile: the
+	// one-line tip + a localized deep link to /metrics#<anchor>. The tile labels
+	// here ARE the explainer's metric set (parity is gated in metrics.content.test).
+	const explainerCopy = $derived(metricsCopy[locale]);
+	const info = $derived((key: MetricKey, name: string) => {
+		const i = metricInfoFor(key, locale);
+		return { ...i, label: explainerCopy.info.trigger(name), linkLabel: explainerCopy.info.link };
+	});
 
 	/** Localized number formatter (FR uses fr-CA grouping/decimal). */
 	const nf = $derived(locale === 'fr' ? 'fr-CA' : 'en-CA');
@@ -85,6 +97,18 @@
 	const skippedEmpty = $derived(vm.skippedStopRatePct == null);
 </script>
 
+{#snippet tileInfo(key: MetricKey, name: string)}
+	{@const i = info(key, name)}
+	<MetricInfo
+		class="snapshot-tile__info"
+		tip={i.tip}
+		href={i.href}
+		label={i.label}
+		linkLabel={i.linkLabel}
+		side="bottom"
+	/>
+{/snippet}
+
 <section class="snapshot-strip" data-slot="snapshot-strip" aria-label={t.otpPct}>
 	{#if vm.isEmpty}
 		<!-- Honest empty: no wall of em-dashes, no fabricated zero. -->
@@ -93,6 +117,7 @@
 		<div class="snapshot-strip__grid">
 			<!-- On-time % -->
 			<article class="snapshot-tile" data-slot="otp">
+				{@render tileInfo('otp', t.otpPct)}
 				<MetricDisplay value={fmtPct(vm.otpPct)} label={t.otpPct} size="lg" />
 				{#if otpEmpty}
 					<p class="snapshot-tile__note" data-slot="otp-empty">{t.noDataNote}</p>
@@ -101,6 +126,7 @@
 
 			<!-- Avg delay -->
 			<article class="snapshot-tile" data-slot="avg-delay">
+				{@render tileInfo('avgDelay', t.avgDelayMin)}
 				<MetricDisplay value={fmtMin(vm.avgDelayMin)} label={t.avgDelayMin} size="lg" />
 				{#if avgDelayEmpty}
 					<p class="snapshot-tile__note" data-slot="avg-delay-empty">{t.noDataNote}</p>
@@ -109,6 +135,7 @@
 
 			<!-- p50 typical delay — daily grain only; honest "—" on week/month. -->
 			<article class="snapshot-tile" data-slot="p50">
+				{@render tileInfo('p50p90', t.p50Min)}
 				<MetricDisplay
 					value={fmtMin(vm.p50Min)}
 					label={t.p50Min}
@@ -122,6 +149,7 @@
 
 			<!-- p90 worst-case delay -->
 			<article class="snapshot-tile" data-slot="p90">
+				{@render tileInfo('p50p90', t.p90Min)}
 				<MetricDisplay
 					value={fmtMin(vm.p90Min)}
 					label={t.p90Min}
@@ -135,6 +163,7 @@
 
 			<!-- Headway regularity — CoV value + plain regular/irregular reading. -->
 			<article class="snapshot-tile" data-slot="regularity">
+				{@render tileInfo('regularityCov', t.headwayRegularityCov)}
 				<MetricDisplay
 					value={fmtCov(vm.headwayRegularityCov)}
 					label={t.headwayRegularityCov}
@@ -148,6 +177,7 @@
 
 			<!-- Cancellation rate (RAMP-IN) -->
 			<article class="snapshot-tile" data-slot="cancellation">
+				{@render tileInfo('cancellation', t.cancellationRatePct)}
 				<MetricDisplay
 					value={fmtPct(vm.cancellationRatePct)}
 					label={t.cancellationRatePct}
@@ -163,6 +193,7 @@
 
 			<!-- Skipped-stop rate (RAMP-IN) -->
 			<article class="snapshot-tile" data-slot="skipped">
+				{@render tileInfo('skippedStop', t.skippedStopRatePct)}
 				<MetricDisplay
 					value={fmtPct(vm.skippedStopRatePct)}
 					label={t.skippedStopRatePct}
@@ -205,10 +236,18 @@
 		}
 	}
 	.snapshot-tile {
+		position: relative;
 		display: flex;
 		flex-direction: column;
 		gap: 0.35rem;
 		min-width: 0;
+	}
+	/* The metric-explainer (i) affordance rides the tile's top-right corner — an
+	   INTERACTIVE control, never a data mark; doctrine-clean. */
+	:global(.snapshot-tile__info) {
+		position: absolute;
+		inset-block-start: 0;
+		inset-inline-end: 0;
 	}
 	/* Honest no-data caption: quiet mono, always legible (AA both themes). */
 	.snapshot-tile__note {

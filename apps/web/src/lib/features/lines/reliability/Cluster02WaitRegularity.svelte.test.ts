@@ -1,11 +1,13 @@
-import { render, screen } from '@testing-library/svelte';
+import { fireEvent, render, screen } from '@testing-library/svelte';
 import { describe, expect, it } from 'vitest';
 import Cluster02WaitRegularity from './Cluster02WaitRegularity.svelte';
 import { reliabilityCopy } from './reliability.copy';
+import { metricsCopy } from '$lib/features/metrics/metrics.copy';
 import { toReliabilityClusters } from './clusters';
 import type { RouteReliability, IsoUtc } from '$lib/v1';
 
 const copy = reliabilityCopy.en;
+const info = metricsCopy.en.info;
 
 /** Brand a plain string as the IsoUtc the contract requires (codebase fixture idiom). */
 const utc = (value: string): IsoUtc => value as IsoUtc;
@@ -162,5 +164,51 @@ describe('Cluster02WaitRegularity', () => {
 		expect(screen.getByText(reliabilityCopy.fr.clusters.waitRegularity)).toBeInTheDocument();
 		// Service-span sub-block is omitted (no rows).
 		expect(screen.queryByText(reliabilityCopy.fr.strip.noDataNote)).not.toBeInTheDocument();
+	});
+});
+
+describe('Cluster02WaitRegularity — metric explainer (i)', () => {
+	const data: RouteReliability = {
+		generated_utc: utc('2026-06-19T00:00:00Z'),
+		id: '51',
+		headway: [
+			{ shift: 'am_peak', scheduled_min: 6, observed_min: 8.4, excess_wait_min: 2.4, cov: 0.42 },
+		],
+		service_spans: [
+			{
+				date: '2026-06-18',
+				service_span_min: 1140,
+				first_trip_delay_min: 0.5,
+				last_trip_delay_min: 3.2,
+				trip_count: 214,
+			},
+		],
+	};
+
+	it('deep-links the headway, regularity, excess-wait, and service-span (i) affordances', async () => {
+		const clusters = toReliabilityClusters(data);
+		render(Cluster02WaitRegularity, {
+			props: {
+				wait: clusters.waitRegularity,
+				serviceSpans: clusters.serviceDelivered.serviceSpans,
+				locale: 'en',
+				copy,
+			},
+		});
+
+		// Each wired metric exposes its (i) trigger; the deep link resolves to the
+		// metric's explainer anchor when the popover opens.
+		const cases: ReadonlyArray<[string, string]> = [
+			['Wait by shift', '/metrics#headway'],
+			[copy.strip.headwayRegularityCov, '/metrics#regularity'],
+			['Service span', '/metrics#service-span'],
+		];
+		for (const [name, href] of cases) {
+			const trigger = screen.getByRole('button', { name: info.trigger(name) });
+			await fireEvent.click(trigger);
+			const link = screen.getByRole('link', { name: new RegExp(info.link, 'i') });
+			expect(link).toHaveAttribute('href', href);
+			await fireEvent.click(trigger); // close before the next assertion
+		}
 	});
 });
