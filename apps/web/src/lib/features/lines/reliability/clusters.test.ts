@@ -402,3 +402,35 @@ describe('toReliabilityClusters — null fields never crash', () => {
 		expect(c.habits.matrix).toEqual([]);
 	});
 });
+
+/* Duplicate-day dedup — the contract can emit two rows for the same local day (a
+   late re-publish). The trend must draw that day ONCE and the range mean must
+   count it ONCE; the last occurrence (the re-publish) wins. */
+describe('toReliabilityClusters — duplicate-day dedup', () => {
+	const dupDay: RouteReliability = {
+		generated_utc: utc('2026-06-19T02:00:00Z'),
+		id: '11',
+		periods: [
+			{ grain: 'day', date: '2026-06-16', otp_pct: 80, avg_delay_min: 2.0 },
+			{ grain: 'day', date: '2026-06-17', otp_pct: 60, avg_delay_min: 5.0 }, // stale first write
+			{ grain: 'day', date: '2026-06-17', otp_pct: 90, avg_delay_min: 1.0 }, // re-publish wins
+		],
+	};
+
+	it('collapses a duplicate day in the trend (one point per date, last write wins)', () => {
+		const c = toReliabilityClusters(dupDay);
+		expect(c.punctuality.trend.map((p) => p.date)).toEqual(['2026-06-16', '2026-06-17']);
+		expect(c.punctuality.trend.find((p) => p.date === '2026-06-17')?.otp_pct).toBe(90);
+	});
+
+	it('counts a duplicate day only ONCE in the range mean', () => {
+		// 06-16 (80) + deduped 06-17 (90) → round((80+90)/2) = 85.
+		// A double-count would give round((80+60+90)/3) ≈ 77.
+		const c = toReliabilityClusters(dupDay, {
+			grain: 'day',
+			dateRange: { start: '2026-06-16', end: '2026-06-17' },
+		});
+		expect(c.strip.otpPct).toBe(85);
+		expect(c.strip.rangeAggregate).toEqual({ days: 2, start: '2026-06-16', end: '2026-06-17' });
+	});
+});

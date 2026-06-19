@@ -27,6 +27,8 @@ export interface StopsIndexCopy extends SurfaceHeadCopy {
 export interface StopDetailCopy {
 	/** Station-voice kicker (EntityDetail). */
 	readonly kicker: string;
+	/** Back-link label into the stops index ("← Stops"), keeps nav in-chrome. */
+	readonly back: string;
 	/** Live-map drilldown action. */
 	readonly viewOnMap: string;
 	readonly viewStopOnMap: (stop: string) => string;
@@ -105,6 +107,7 @@ export const indexCopy: Record<Locale, StopsIndexCopy> = {
 export const detailCopy: Record<Locale, StopDetailCopy> = {
 	fr: {
 		kicker: 'ARRÊT',
+		back: 'Arrêts',
 		viewOnMap: 'Voir sur la carte',
 		viewStopOnMap: (stop) => `Voir l’arrêt ${stop} sur la carte`,
 		tabs: { next: 'Prochains', schedule: 'Horaire', info: 'Info', reliability: 'Fiabilité' },
@@ -136,6 +139,7 @@ export const detailCopy: Record<Locale, StopDetailCopy> = {
 	},
 	en: {
 		kicker: 'STOP',
+		back: 'Stops',
 		viewOnMap: 'View on map',
 		viewStopOnMap: (stop) => `View stop ${stop} on map`,
 		tabs: { next: 'Next', schedule: 'Schedule', info: 'Info', reliability: 'Reliability' },

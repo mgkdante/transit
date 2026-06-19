@@ -101,10 +101,44 @@ describe('deriveRouteStopPredictions', () => {
 		});
 	});
 
-	it('ignores a vehicle on the route whose trip is not in the index', () => {
+	it('ignores a vehicle on the route whose trip is not in the index and has no next_stop', () => {
 		const index = buildLiveIndex(
 			snapshot([vehicle({ id: 'bus1', route: '161', trip: 'missing' })], {}),
 		);
 		expect(deriveRouteStopPredictions('161', index).size).toBe(0);
+	});
+
+	it('falls back to the vehicle next_stop (no trip ETA) as an etaless approach', () => {
+		const index = buildLiveIndex(
+			snapshot([vehicle({ id: 'bus1', route: '161', next_stop: 'sX', delay_min: 4 })], {}),
+		);
+		// No trips feed, but the bus exposes the stop it is heading to + its delay.
+		expect(deriveRouteStopPredictions('161', index).get('sX')).toEqual({
+			etaUtc: null,
+			delayMin: 4,
+		});
+	});
+
+	it('carries a null delay through for an etaless vehicle next_stop', () => {
+		const index = buildLiveIndex(
+			snapshot([vehicle({ id: 'bus1', route: '161', next_stop: 'sX' })], {}),
+		);
+		expect(deriveRouteStopPredictions('161', index).get('sX')).toEqual({
+			etaUtc: null,
+			delayMin: null,
+		});
+	});
+
+	it('a precise trip ETA wins over an etaless vehicle next_stop for the same stop', () => {
+		const index = buildLiveIndex(
+			snapshot([vehicle({ id: 'bus1', route: '161', trip: 't1', next_stop: 'sA', delay_min: 9 })], {
+				t1: trip({ stops: [{ stop: 'sA', eta_utc: '2026-06-15T12:05:00Z', delay_min: 2 }] }),
+			}),
+		);
+		// The trip's precise ETA (and its delay) wins; the etaless approach never overwrites it.
+		expect(deriveRouteStopPredictions('161', index).get('sA')).toEqual({
+			etaUtc: '2026-06-15T12:05:00Z',
+			delayMin: 2,
+		});
 	});
 });

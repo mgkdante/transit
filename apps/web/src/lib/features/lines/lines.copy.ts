@@ -23,6 +23,8 @@ export interface LinesIndexCopy extends SurfaceHeadCopy {
 export interface RouteDetailCopy {
 	/** Station-voice overline above the line heading. */
 	readonly kicker: string;
+	/** Back-link label into the lines index ("← Lines"), keeps nav in-chrome. */
+	readonly back: string;
 	/** Tab labels, keyed by the EntityDetail tab key. */
 	readonly tabs: {
 		readonly detail: string;
@@ -70,6 +72,8 @@ export interface RouteDetailCopy {
 	readonly lastNDays: (n: number) => string;
 	/** Detail-tab live per-stop readout (derived from the live trips on this route). */
 	readonly noLiveBus: string;
+	/** Shown when a bus is heading to this stop but the feed gave no precise ETA. */
+	readonly approaching: string;
 	readonly viewStop: (stop: string) => string;
 	/** Delay-tone labels reused for the approaching bus's on-time status. */
 	readonly early: (minutes: number) => string;
@@ -104,6 +108,7 @@ export const indexCopy: Record<Locale, LinesIndexCopy> = {
 export const detailCopy: Record<Locale, RouteDetailCopy> = {
 	fr: {
 		kicker: 'LIGNE',
+		back: 'Lignes',
 		tabs: { detail: 'Détail', schedule: 'Horaire', reliability: 'Fiabilité' },
 		viewOnMap: 'Voir sur la carte',
 		viewRouteOnMap: (route) => `Voir la ligne ${route} sur la carte`,
@@ -141,6 +146,7 @@ export const detailCopy: Record<Locale, RouteDetailCopy> = {
 		lastTripDelay: 'Retard dernier trajet',
 		lastNDays: (n) => `sur les ${n} derniers jours`,
 		noLiveBus: 'Aucun bus en direct',
+		approaching: 'À l’approche',
 		viewStop: (stop) => `Voir l’arrêt ${stop}`,
 		early: (minutes) => `${Math.abs(minutes)} min en avance`,
 		late: (minutes) => `${minutes} min en retard`,
@@ -149,6 +155,7 @@ export const detailCopy: Record<Locale, RouteDetailCopy> = {
 	},
 	en: {
 		kicker: 'LINE',
+		back: 'Lines',
 		tabs: { detail: 'Detail', schedule: 'Schedule', reliability: 'Reliability' },
 		viewOnMap: 'View on map',
 		viewRouteOnMap: (route) => `View route ${route} on map`,
@@ -186,6 +193,7 @@ export const detailCopy: Record<Locale, RouteDetailCopy> = {
 		lastTripDelay: 'Last-trip delay',
 		lastNDays: (n) => `over the last ${n} days`,
 		noLiveBus: 'No live bus',
+		approaching: 'Approaching',
 		viewStop: (stop) => `View stop ${stop}`,
 		early: (minutes) => `${Math.abs(minutes)} min early`,
 		late: (minutes) => `${minutes} min late`,

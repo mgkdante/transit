@@ -3,29 +3,37 @@
 // The Detail tab on a line lists every stop in route order. Each stop wants a
 // live readout: "next departure" + the approaching bus's on-time status. Fetching
 // a per-stop departures board would be 30+ requests for one route, so instead we
-// DERIVE the prediction from data the live tick ALREADY holds:
+// DERIVE the prediction from data the live tick ALREADY holds, in two passes:
 //
-//   route -> live vehicles on it (index.vehiclesByRoute)
-//          -> each vehicle's trip (index.byTripId)
-//          -> the trip's ordered remaining-stop ETAs (Trip.stops: StopEta[])
+//   Pass 1 (precise) — per-trip stop ETAs:
+//     route -> live vehicles (index.vehiclesByRoute)
+//           -> each vehicle's trip (index.byTripId)
+//           -> the trip's ordered remaining-stop ETAs (Trip.stops: StopEta[])
+//     Each StopEta carries a predicted `eta_utc` + `delay_min` AT that stop; the
+//     SOONEST eta_utc per stop wins (the next bus a rider waits for).
 //
-// Every StopEta carries a predicted `eta_utc` + the bus's `delay_min` AT that
-// stop. We fold all the route's live trips into a per-stop map, keeping the
-// SOONEST eta_utc for each stop (the next bus to reach it). A stop with no live
-// trip currently predicting it gets NO entry; the caller renders an honest
-// "no live bus", never a fabricated time.
+//   Pass 2 (fallback) — vehicle `next_stop`:
+//     The realtime trips feed often carries NO per-stop ETAs (only VehiclePositions
+//     are live), so Pass 1 can be empty even with buses out. Each route vehicle
+//     still exposes the stop it is heading to (`next_stop`) + its `delay_min` there.
+//     We mark that stop as "approaching" (etaUtc = null, no precise time) — but ONLY
+//     when Pass 1 left it uncovered, so a real ETA always beats an etaless approach.
 //
-// Pure + index-only: no fetch, no DOM. The live store already polls trips.json
-// every tick, so this re-derives for free from the in-memory index. Testable in
-// isolation against a hand-built LiveIndex.
+// A stop neither pass touches gets NO entry; the caller renders an honest
+// "no live bus", never a fabricated time. Pure + index-only: no fetch, no DOM.
 
 import type { LiveIndex } from './index';
 import type { StopEta } from '$lib/v1/schemas';
 
 /** The soonest live predicted arrival at one stop, plus the bus's delay there. */
 export interface StopPrediction {
-	/** ISO 8601 (UTC) predicted arrival of the next bus to reach this stop. */
-	readonly etaUtc: string;
+	/**
+	 * ISO 8601 (UTC) predicted arrival of the next bus to reach this stop, or
+	 * `null` when the prediction comes from a vehicle's `next_stop` (the bus is
+	 * approaching, but the feed gave no per-stop ETA — the caller shows
+	 * "approaching" rather than a fabricated time).
+	 */
+	readonly etaUtc: string | null;
 	/** That bus's delay (minutes) at this stop; null when the feed omits it. */
 	readonly delayMin: number | null;
 }
@@ -52,6 +60,7 @@ export function deriveRouteStopPredictions(
 	const vehicleIds = index.vehiclesByRoute.get(routeId);
 	if (!vehicleIds) return out;
 
+	// Pass 1 — precise per-trip stop ETAs. Soonest eta_utc per stop wins.
 	for (const vehicleId of vehicleIds) {
 		const vehicle = index.byVehicleId.get(vehicleId);
 		const tripId = vehicle?.trip;
@@ -63,9 +72,19 @@ export function deriveRouteStopPredictions(
 			const ms = etaMs(eta.eta_utc);
 			if (!Number.isFinite(ms)) continue;
 			const existing = out.get(eta.stop);
-			if (existing && etaMs(existing.etaUtc) <= ms) continue;
+			// Compare only against another precise ETA; an etaless approach never blocks one.
+			if (existing && existing.etaUtc != null && etaMs(existing.etaUtc) <= ms) continue;
 			out.set(eta.stop, { etaUtc: eta.eta_utc, delayMin: eta.delay_min ?? null });
 		}
+	}
+
+	// Pass 2 — vehicle next_stop fallback. Fills only stops a precise ETA did not
+	// cover, so the trips feed (when populated) always wins over an etaless approach.
+	for (const vehicleId of vehicleIds) {
+		const vehicle = index.byVehicleId.get(vehicleId);
+		const nextStop = vehicle?.next_stop;
+		if (!nextStop || out.has(nextStop)) continue;
+		out.set(nextStop, { etaUtc: null, delayMin: vehicle.delay_min ?? null });
 	}
 
 	return out;

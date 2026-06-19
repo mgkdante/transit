@@ -317,13 +317,20 @@ const toComparisonRow = (p: ReliabilityPeriod): PeriodComparisonRow => ({
 	severePct: num(p.severe_pct),
 });
 
-/** Chronological-ascending day-grain dated series — the trend source (oldest→newest). */
+/**
+ * Chronological-ascending day-grain dated series — the trend source (oldest→newest),
+ * DEDUPED by date. The contract can emit two rows for the same local day (a late
+ * re-publish); without this collapse that day would draw twice on the trend chart
+ * AND count twice in the date-range mean. Last occurrence wins (the contract tail
+ * is the most-recent write for a date). This is the single source of truth for both
+ * the trend and the range aggregate, so deduping here fixes both at once.
+ */
 function dayTrend(dayPeriods: readonly ReliabilityPeriod[]): ReliabilityPeriod[] {
-	return dayPeriods
-		.filter((p) => p.date != null)
-		.filter(periodHasSignal)
-		.slice()
-		.sort((a, b) => (a.date! < b.date! ? -1 : a.date! > b.date! ? 1 : 0));
+	const byDate = new Map<string, ReliabilityPeriod>();
+	for (const p of dayPeriods) {
+		if (p.date != null && periodHasSignal(p)) byDate.set(p.date, p);
+	}
+	return [...byDate.values()].sort((a, b) => (a.date! < b.date! ? -1 : a.date! > b.date! ? 1 : 0));
 }
 
 /**

@@ -40,6 +40,9 @@
 	import MetricDisplay from '$lib/components/brand/MetricDisplay.svelte';
 	import ChevronRightIcon from '@lucide/svelte/icons/chevron-right';
 	import RouteReliabilityClusters from './reliability/RouteReliabilityClusters.svelte';
+	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
+	import { metricInfoFor, type MetricKey } from '$lib/features/metrics/metrics.content';
+	import { metricsCopy } from '$lib/features/metrics/metrics.copy';
 	import { detailCopy } from './lines.copy';
 
 	interface RouteDetailProps {
@@ -51,6 +54,14 @@
 
 	const locale = getLocale();
 	const t = $derived(detailCopy[locale]);
+
+	// The in-app metric-explainer (i) affordance, same wiring as the reliability
+	// clusters: a one-line tip + a localized deep link to /metrics#<anchor>.
+	const explainerCopy = $derived(metricsCopy[locale]);
+	const info = $derived((key: MetricKey, name: string) => {
+		const i = metricInfoFor(key, locale);
+		return { ...i, label: explainerCopy.info.trigger(name), linkLabel: explainerCopy.info.link };
+	});
 
 	type TabKey = 'detail' | 'schedule' | 'reliability';
 	const tabs = $derived<{ key: TabKey; label: string }[]>([
@@ -116,7 +127,26 @@
 	}
 </script>
 
-<EntityDetail kicker={t.kicker} {tabs} bind:active>
+<!-- The (i) metric-explainer affordance, reused inside the Schedule pane. Declared
+     at the top level so the pane snippet (passed to EntityDetail) can render it. -->
+{#snippet scheduleInfo(key: MetricKey, name: string)}
+	{@const i = info(key, name)}
+	<MetricInfo
+		class="route-metric-info"
+		tip={i.tip}
+		href={i.href}
+		label={i.label}
+		linkLabel={i.linkLabel}
+		side="bottom"
+	/>
+{/snippet}
+
+<EntityDetail
+	kicker={t.kicker}
+	back={{ href: localizeHref('/lines', locale), label: t.back }}
+	{tabs}
+	bind:active
+>
 	{#snippet header()}
 		<div class="route-detail-head">
 			<SectionHeading heading={id} level={1} dot />
@@ -170,9 +200,13 @@
 															<span class="route-stop-name">{stop.name ?? stop.id}</span>
 															<span class="route-stop-live">
 																{#if prediction}
-																	<time class="route-stop-eta" datetime={prediction.etaUtc}>
-																		{timeLabel(prediction.etaUtc)}
-																	</time>
+																	{#if prediction.etaUtc}
+																		<time class="route-stop-eta" datetime={prediction.etaUtc}>
+																			{timeLabel(prediction.etaUtc)}
+																		</time>
+																	{:else}
+																		<span class="route-stop-eta">{t.approaching}</span>
+																	{/if}
 																	<span
 																		class="route-stop-delay"
 																		data-tone={delayTone(prediction.delayMin)}
@@ -208,7 +242,10 @@
 							/>
 							<MetricDisplay value={file.last_departure ?? '·'} label={t.lastDeparture} size="sm" />
 						</div>
-						<SectionLabel text={t.servicePeriods} variant="metric" />
+						<div class="route-label-row">
+							<SectionLabel text={t.servicePeriods} variant="metric" />
+							{@render scheduleInfo('headway', t.servicePeriods)}
+						</div>
 						{#if (file.service_periods ?? []).length > 0}
 							<ul class="route-periods">
 								{#each file.service_periods ?? [] as sp, spi (sp.shift + '-' + spi)}
@@ -257,6 +294,12 @@
 		align-items: baseline;
 		justify-content: space-between;
 		gap: 0.75rem;
+	}
+	/* A section label sitting next to its (i) metric-explainer affordance. */
+	.route-label-row {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.4rem;
 	}
 	.route-directions {
 		list-style: none;
