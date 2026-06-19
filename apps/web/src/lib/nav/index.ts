@@ -9,6 +9,6 @@
 // shared canonical route map for deep-link / SSR hydration.
 
 export type { SurfaceKind, SurfaceTarget } from './intent.svelte';
-export { openSurface, routeFor, activePanel } from './intent.svelte';
+export { openSurface, routeFor, mapHrefFor, activePanel } from './intent.svelte';
 
 export { layout, isDesktopViewport } from './layout.svelte';

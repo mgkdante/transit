@@ -1,6 +1,9 @@
 import type { RouteIndexEntry, StopIndexEntry, Vehicle } from '$lib/v1/schemas';
 import { fromSearchParams, toSearchString } from '$lib/filters';
-import type { GeocodePrecision, GeocodeSuggestion } from '$lib/geocode/types';
+import type { GeocodePrecision, GeocodeSource, GeocodeSuggestion } from '$lib/geocode/types';
+import { dedupeBy, foldSearchText, tokenMatchScore } from '$lib/search/normalize';
+import { stopGroupKey } from '$lib/search/stopMode';
+import { setMapFocusSearchParams, type MapFocusKind } from '$lib/search/mapFocus';
 import {
 	copyNearTargetSearchParams,
 	mapNearId,
@@ -19,6 +22,11 @@ export interface ChromeSearchResult {
 	readonly lon?: number;
 	readonly precision?: GeocodePrecision;
 	readonly attribution?: 'google';
+	// Carried through from the picked GeocodeSuggestion so a coordinate-less
+	// (Google) address can be resolved by placeId on selection instead of being
+	// re-text-searched by its label.
+	readonly placeId?: string;
+	readonly source?: GeocodeSource;
 }
 
 interface ChromeSearchSources {
@@ -26,27 +34,6 @@ interface ChromeSearchSources {
 	readonly stops?: readonly StopIndexEntry[] | null;
 	readonly vehicles?: readonly Vehicle[] | null;
 	readonly addresses?: readonly GeocodeSuggestion[] | null;
-}
-
-function normalize(value: string | null | undefined): string {
-	return (value ?? '').trim().toLowerCase();
-}
-
-function includes(value: string | null | undefined, query: string): boolean {
-	return normalize(value).includes(query);
-}
-
-function matchScore(values: readonly (string | null | undefined)[], query: string): number | null {
-	for (const value of values) {
-		if (normalize(value) === query) return 0;
-	}
-	for (const value of values) {
-		if (normalize(value).startsWith(query)) return 1;
-	}
-	for (const value of values) {
-		if (includes(value, query)) return 2;
-	}
-	return null;
 }
 
 function routeLabel(route: RouteIndexEntry): string {
@@ -64,12 +51,12 @@ export function chromeSearchResults(
 	query: string,
 	sources: ChromeSearchSources,
 ): ChromeSearchResult[] {
-	const q = normalize(query);
+	const q = foldSearchText(query);
 	if (!q) return [];
 
 	const routes = (sources.routes ?? [])
 		.map((route): ChromeSearchResult | null => {
-			const score = matchScore([route.id, route.short, route.long], q);
+			const score = tokenMatchScore([route.id, route.short, route.long], q);
 			if (score == null) return null;
 			return {
 				kind: 'route',
@@ -82,24 +69,26 @@ export function chromeSearchResults(
 		.sort(collate)
 		.slice(0, 5);
 
-	const stops = (sources.stops ?? [])
-		.map((stop): ChromeSearchResult | null => {
-			const score = matchScore([stop.code, stop.id, stop.name], q);
-			if (score == null) return null;
-			return {
+	const stopMatches = (sources.stops ?? [])
+		.map((stop) => ({ stop, score: tokenMatchScore([stop.code, stop.id, stop.name], q) }))
+		.filter((m): m is { stop: StopIndexEntry; score: number } => m.score != null)
+		.sort((a, b) => a.score - b.score);
+	// One row per logical stop: métro/station names collapse to a single station;
+	// ordinary stops collapse only true code duplicates.
+	const stops = dedupeBy(stopMatches, (m) => stopGroupKey(m.stop))
+		.map(
+			({ stop, score }): ChromeSearchResult => ({
 				kind: 'stop',
 				id: stop.id,
 				label: stop.name,
 				meta: stop.code ?? 'Stop',
 				priority: 4 + score,
-			};
-		})
-		.filter((result): result is ChromeSearchResult => result != null)
-		.sort(collate)
+			}),
+		)
 		.slice(0, 5);
 
 	const vehicles = (sources.vehicles ?? [])
-		.filter((vehicle) => normalize(vehicle.id) === q)
+		.filter((vehicle) => foldSearchText(vehicle.id) === q)
 		.map(
 			(vehicle): ChromeSearchResult => ({
 				kind: 'vehicle',
@@ -124,6 +113,8 @@ export function chromeSearchResults(
 				lon: address.lon,
 				precision: address.precision,
 				attribution: address.attribution,
+				placeId: address.placeId,
+				source: address.source,
 			}),
 		)
 		.sort(collate)
@@ -152,6 +143,8 @@ export function chromeSearchHref(
 		if (target) setNearTargetSearchParams(searchParams, target);
 	} else {
 		copyNearTargetSearchParams(currentSearchParams, searchParams);
+		// Tell the map to zoom to the picked entity (one-shot; the map strips it).
+		setMapFocusSearchParams(searchParams, result.kind as MapFocusKind, result.id);
 	}
 
 	const search = searchParams.toString();

@@ -22,7 +22,7 @@
 -->
 <script lang="ts">
 	import { getLocale, localizeHref, type Locale } from '$lib/i18n';
-	import { menuItems } from '$lib/content/nav';
+	import { SURFACE_NAV, MENU_EXTRAS } from '$lib/content/nav';
 	import StatusDot from '$lib/components/brand/StatusDot.svelte';
 	import BrandWordmark from '$lib/components/shell/BrandWordmark.svelte';
 
@@ -59,20 +59,17 @@
 	};
 	const t = $derived(T[locale]);
 
-	// IA links — locale-LESS hrefs from the nav inventory, localized at render.
-	// External entries (the portfolio) split out into the right cluster below.
+	// IA links — locale-LESS hrefs from the shared SURFACE_NAV manifest, localized
+	// at render. The portfolio (off-site) links come from MENU_EXTRAS and render in
+	// the right cluster below.
 	const navLinks = $derived(
-		menuItems
-			.filter((item) => !item.external)
-			.map((item) => ({
-				label: item.label[locale],
-				href: localizeHref(item.href, locale),
-			})),
+		SURFACE_NAV.map((item) => ({
+			label: item.label[locale],
+			href: localizeHref(item.href, locale),
+		})),
 	);
 	const externalLinks = $derived(
-		menuItems
-			.filter((item) => item.external)
-			.map((item) => ({ label: item.label[locale], href: item.href })),
+		MENU_EXTRAS.map((item) => ({ label: item.label[locale], href: item.href })),
 	);
 </script>
 

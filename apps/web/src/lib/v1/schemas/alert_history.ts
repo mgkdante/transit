@@ -28,8 +28,25 @@ export const AlertHistoryEntrySchema = z.object({
 });
 export type AlertHistoryEntry = z.infer<typeof AlertHistoryEntrySchema>;
 
+export const AlertBreakdownBucketSchema = z.object({
+	// cause/effect/severity label; "unknown" when STM omitted it.
+	key: z.string(),
+	count: z.number().int().optional(),
+	median_duration_min: z.number().nullable().optional(),
+});
+export type AlertBreakdownBucket = z.infer<typeof AlertBreakdownBucketSchema>;
+
+export const AlertBreakdownSchema = z.object({
+	by_cause: z.array(AlertBreakdownBucketSchema).optional(),
+	by_effect: z.array(AlertBreakdownBucketSchema).optional(),
+	by_severity: z.array(AlertBreakdownBucketSchema).optional(),
+});
+export type AlertBreakdown = z.infer<typeof AlertBreakdownSchema>;
+
 export const AlertHistorySchema = z.object({
 	generated_utc: isoUtc(),
 	alerts: z.array(AlertHistoryEntrySchema).optional(),
+	// Tier-2 distinct-alert distribution; null when no alerts in the window.
+	breakdown: AlertBreakdownSchema.nullable().optional(),
 });
 export type AlertHistory = z.infer<typeof AlertHistorySchema>;

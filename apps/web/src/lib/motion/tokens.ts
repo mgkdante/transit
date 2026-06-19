@@ -2,7 +2,7 @@
 // Mirror of motion tokens for JS consumers (GSAP, Svelte actions) that need
 // these values at compute time without paying for getComputedStyle().
 // A parity test in src/lib/motion/tokens.test.ts keeps this in sync
-// with tokens.css. Run `pnpm tokens:build` to regenerate.
+// with tokens.css. Run `bun run tokens:build` to regenerate.
 
 export const duration = {
 	instant: 100,

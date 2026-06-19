@@ -44,11 +44,17 @@ export function centerFromProviderBbox(bbox?: readonly number[] | null): [number
 export function mapViewportOptions(
 	providerBbox?: readonly number[] | null,
 	fitPadding: MapFitPadding = 40,
+	maxBbox?: readonly number[] | null,
 ): MapViewportOptions {
 	const bounds = boundsFromProviderBbox(providerBbox);
+	// maxBounds may be LOOSER than the initial fit so the camera can show map
+	// beyond the (island-focused) fit window — e.g. the west overflow revealed by
+	// a left fit-padding — without MapLibre clamping it back. Falls back to the
+	// fit bounds when not supplied.
+	const maxBounds = maxBbox ? boundsFromProviderBbox(maxBbox) : bounds;
 	return {
 		bounds,
-		maxBounds: bounds,
+		maxBounds,
 		fitBoundsOptions: {
 			padding: fitPadding,
 		},

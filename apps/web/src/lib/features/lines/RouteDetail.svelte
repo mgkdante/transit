@@ -16,9 +16,8 @@
   copy is co-located. Tokens, no hex; --primary stays interactive-only.
 -->
 <script lang="ts">
-	import { getLocale, localizeHref } from '$lib/i18n';
-	import { routeFor } from '$lib/nav';
-	import { emptyFilterState, toSearchString } from '$lib/filters';
+	import { getLocale } from '$lib/i18n';
+	import { mapHrefFor } from '$lib/nav';
 	import { getRoute, getRouteReliability } from '$lib/v1';
 	import type { RouteFile, RouteReliability, ReliabilityPeriod } from '$lib/v1';
 	import { createResource } from '$lib/v1/resource.svelte';
@@ -26,6 +25,7 @@
 		EntityDetail,
 		ResourceBoundary,
 		ReliabilityPane,
+		MapDrilldownLink,
 		type ReliabilityPeriodVM,
 	} from '$lib/components/surface';
 	import SectionHeading from '$lib/components/brand/SectionHeading.svelte';
@@ -64,34 +64,31 @@
 		p90Min: p.p90_min ?? null,
 		severePct: p.severe_pct ?? null,
 	});
-	const periodVMs = $derived<ReliabilityPeriodVM[]>((reliability.data?.periods ?? []).map(toVM));
+	// The live reliability strip renders only the primary period grains and the
+	// busiest-direction headway. The granularity grains (shift / weekday-weekend
+	// day-type) and per-direction headway ('*_dir*') ride in the /v1 data for the
+	// dedicated grouped sections in the 9.6 reliability surface, not this flat strip.
+	const PRIMARY_GRAINS = new Set(['day', 'week', 'month']);
+	const periodVMs = $derived<ReliabilityPeriodVM[]>(
+		(reliability.data?.periods ?? []).filter((p) => PRIMARY_GRAINS.has(p.grain)).map(toVM),
+	);
+	const displayHeadway = $derived(
+		(reliability.data?.headway ?? []).filter((h) => !h.shift.includes('_dir')),
+	);
 
 	const fmtMin = (v: number | null | undefined): string =>
 		v == null ? '—' : `${v.toFixed(1)} min`;
-
-	function routeMapSearch(routeId: string): string {
-		const state = emptyFilterState();
-		state.routes.add(routeId);
-		return toSearchString(state);
-	}
-
-	function routeMapHref(routeId: string): string {
-		return localizeHref(routeFor({ kind: 'map', search: routeMapSearch(routeId) }), locale);
-	}
 </script>
 
 <EntityDetail kicker={t.kicker} {tabs} bind:active>
 	{#snippet header()}
 		<div class="route-detail-head">
 			<SectionHeading heading={id} level={1} dot />
-			<a
-				href={routeMapHref(id)}
-				class="route-map-action"
-				aria-label={t.viewRouteOnMap(id)}
-				data-sveltekit-preload-data="hover"
-			>
-				{t.viewOnMap}
-			</a>
+			<MapDrilldownLink
+				href={mapHrefFor({ route: id }, locale)}
+				label={t.viewOnMap}
+				ariaLabel={t.viewRouteOnMap(id)}
+			/>
 		</div>
 	{/snippet}
 
@@ -169,11 +166,11 @@
 					<div class="route-section">
 						<ReliabilityPane periods={periodVMs} {locale} delayLabelKind="avg" />
 
-						{#if (rel.headway ?? []).length > 0}
+						{#if displayHeadway.length > 0}
 							<div class="route-subsection">
 								<SectionLabel text={t.headways} variant="metric" />
 								<ul class="route-periods">
-									{#each rel.headway ?? [] as hw (hw.shift)}
+									{#each displayHeadway as hw (hw.shift)}
 										<li class="route-period">
 											<SectionLabel text={hw.shift} variant="metric" />
 											<div class="route-period-metrics">
@@ -209,7 +206,7 @@
 										<li class="route-weak-stop">
 											<span class="route-weak-stop-name">{ws.name ?? ws.id}</span>
 											<span class="route-weak-stop-meta">
-												{t.medianDelay}: {fmtMin(ws.median_delay_min)}
+												{t.avgDelay}: {fmtMin(ws.avg_delay_min)}
 											</span>
 										</li>
 									{/each}
@@ -229,33 +226,6 @@
 		align-items: end;
 		justify-content: space-between;
 		gap: 1rem;
-	}
-	.route-map-action {
-		display: inline-flex;
-		align-items: center;
-		justify-content: center;
-		min-height: 2.25rem;
-		padding: 0.3rem 0.8rem;
-		font-family: var(--font-mono);
-		font-size: var(--text-caption);
-		color: var(--primary);
-		text-decoration: none;
-		background: color-mix(in srgb, var(--primary) 8%, transparent);
-		border: 1px solid color-mix(in srgb, var(--primary) 30%, var(--border) 70%);
-		border-radius: var(--radius-pill);
-		transition:
-			color 150ms ease,
-			background-color 150ms ease,
-			border-color 150ms ease;
-	}
-	.route-map-action:hover {
-		color: var(--foreground);
-		background: color-mix(in srgb, var(--primary) 16%, transparent);
-		border-color: color-mix(in srgb, var(--primary) 45%, var(--border) 55%);
-	}
-	.route-map-action:focus-visible {
-		outline: 2px solid var(--ring);
-		outline-offset: 2px;
 	}
 	.route-section {
 		display: flex;
@@ -352,11 +322,6 @@
 		.route-detail-head {
 			align-items: start;
 			flex-direction: column;
-		}
-	}
-	@media (prefers-reduced-motion: reduce) {
-		.route-map-action {
-			transition: none;
 		}
 	}
 	.route-period {

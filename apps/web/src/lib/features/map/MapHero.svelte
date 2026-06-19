@@ -46,6 +46,7 @@
 		setNearTargetSearchParams,
 	} from '$lib/search/mapNear';
 	import { nearTargetFromSearchParams } from '$lib/search/mapNear';
+	import { clearMapFocusSearchParams, parseMapFocus, type MapFocus } from '$lib/search/mapFocus';
 	import { BottomSheet, RightPanel } from '$lib/components/shell';
 	import { ResizablePaneGroup, ResizablePane, ResizableHandle } from '$lib/components/ui/resizable';
 	import {
@@ -79,11 +80,12 @@
 	import MapNearMeControl from './MapNearMeControl.svelte';
 	import MapSelectionDetail from './MapSelectionDetail.svelte';
 	import { copy as MAP_COPY } from './map.copy';
+	import { shouldAnimate } from '$lib/motion/policy';
 	import { buildAlertEntitySets, vehicleHasAlert } from './mapAlerts';
 	import { PICKABLE_MAP_LAYERS, pickMapSelection } from './mapPicking';
 	import { resolveMapSelection, type MapSelection } from './mapSelection';
 	import type { GeocodedLocation, GeocodePrecision, GeocodeSuggestion } from '$lib/geocode/types';
-	import { hasCoordinates } from '$lib/geocode/types';
+	import { hasCoordinates, isInsideMontrealBounds } from '$lib/geocode/types';
 	import type { StopIndexEntry } from '$lib/v1/schemas';
 
 	const locale: Locale = getLocale();
@@ -91,16 +93,51 @@
 	const theme = $derived(themeStore.current);
 	const v1 = getV1Context();
 	const manifest = v1.manifest;
-	const mapInitialCenter = $derived(centerFromProviderBbox(manifest.bbox));
+	// Initial framing fits the ISLAND itself (OSM Île de Montréal extremes), NOT
+	// the wide basemap square — so the off-island south-shore EAST (Longueuil →
+	// Otterburn → past Saint-Basile-le-Grand) is cropped instead of eating the
+	// right half. On desktop a left reserve shifts the island RIGHT, clear of the
+	// filter panel, and reveals west map (Lac Saint-Louis) in the freed-up left.
+	// maxBounds stays the looser basemap square so that west overflow renders
+	// without MapLibre clamping. [minLon, minLat, maxLon, maxLat].
+	// Island bounds (verified OSM Île de Montréal extremes: W -73.9757 / E -73.4764
+	// / S 45.4022 / N 45.7028) — the camera FIT target.
+	const ISLAND_FIT_BOUNDS = [-73.9757, 45.4022, -73.4764, 45.7028] as const;
+	const mapInitialCenter = $derived(centerFromProviderBbox(ISLAND_FIT_BOUNDS));
 	const MAP_FIT_PADDING_PX = 40;
-	const DESKTOP_MAP_FIT_LEFT_PADDING_PX = 520;
+
+	// HARD pan/view limit. East edge ~Saint-Basile-le-Grand (-73.30): far enough
+	// past the island NE tip (-73.476) to leave room for the right BAND/buffer the
+	// detail panel sits over (left maxBounds gives the same ~0.19° room for the
+	// perfect left band), but tight enough that the far sprawl (Otterburn →
+	// Carignan → Saint-Mathias) is still cropped. Fit padding only *positions* — it
+	// can't render a band where maxBounds has no room, which is why a tighter east
+	// edge made the right band vanish while the left one worked.
+	const MAP_MAX_BOUNDS = [-74.32, 45.3, -73.2, 45.82] as const;
+
+	// Map container width — window-reactive ONLY (not panel state), so the framing
+	// adapts to the screen but NEVER re-fits when a panel opens/collapses/closes.
+	// Seeded with a desktop default so the fraction padding applies even before the
+	// first clientWidth measurement (a 0 here would fall back to the wide fit).
+	let mapWidthPx = $state(1280);
+
+	// Desktop frames the island into a roughly SQUARE central gap with generous
+	// left/right BUFFERS sized as a fraction of the width. The buffers (a) crop the
+	// off-island east (south-shore sprawl), (b) keep the whole island visible past
+	// the left filter panel and the right detail panel at their furthest, and
+	// (c) — being static — never shift the map when a panel toggles. The island
+	// sits centred in the visible gap: human-centred, not math-centred on the full
+	// canvas. Tunable knobs:
+	const DESKTOP_LEFT_PAD_FRAC = 0.37; // clears rail + filter panel, with band
+	const DESKTOP_RIGHT_PAD_FRAC = 0.43; // buffer for the right detail panel + band
+	const DESKTOP_VERT_PAD_PX = 56; // small top/bottom → island fills the height (bigger)
 	const mapFitPadding = $derived<MapFitPadding>(
-		layout.isDesktop
+		layout.isDesktop && mapWidthPx > 0
 			? {
-					top: MAP_FIT_PADDING_PX,
-					bottom: MAP_FIT_PADDING_PX,
-					left: DESKTOP_MAP_FIT_LEFT_PADDING_PX,
-					right: MAP_FIT_PADDING_PX,
+					top: DESKTOP_VERT_PAD_PX,
+					bottom: DESKTOP_VERT_PAD_PX,
+					left: Math.round(mapWidthPx * DESKTOP_LEFT_PAD_FRAC),
+					right: Math.round(mapWidthPx * DESKTOP_RIGHT_PAD_FRAC),
 				}
 			: MAP_FIT_PADDING_PX,
 	);
@@ -128,10 +165,12 @@
 	afterNavigate(() => {
 		filters.replace(fromSearchParams($page.url.searchParams));
 		syncNearTargetFromUrl($page.url.searchParams);
+		readFocusFromUrl($page.url.searchParams);
 	});
 
 	$effect(() => {
 		syncNearTargetFromUrl($page.url.searchParams);
+		readFocusFromUrl($page.url.searchParams);
 	});
 
 	// Basemap pointer (hosted Montréal PMTiles), or null → minimal-dark fallback.
@@ -169,6 +208,9 @@
 	let nearMeError = $state<string | null>(null);
 	let nearMeOrigin = $state<NearMeOrigin | null>(null);
 	let nearUrlKey = $state('');
+	// One-shot "zoom to this picked entity" hint from the URL `focus` param. The
+	// resolver effect pans/fits once data is available, then strips the param.
+	let pendingFocus = $state<MapFocus | null>(null);
 	let rightPanelCollapsed = $state(false);
 	let rightPanelPane = $state<{ collapse: () => void; expand: () => void } | undefined>();
 	let rightPanelEl = $state<HTMLElement | undefined>();
@@ -281,6 +323,10 @@
 		selectionStack = [];
 		selected = next;
 		detailOpen = true;
+		// Zoom to whatever was clicked, same as a search pick (data is already
+		// loaded — it's on the map). Point entities centre + zoom in; a route frames
+		// its linework.
+		focusSelection(next);
 	}
 
 	function addSelectionFilter(selection: MapSelection): void {
@@ -464,12 +510,116 @@
 		});
 	}
 
-	function flyToNearMeOrigin(origin: NearMeOrigin): void {
-		map?.flyTo({
-			center: [origin.lon, origin.lat],
-			zoom: Math.max(map.getZoom(), zoomForNearMePrecision(origin.precision)),
-			essential: true,
+	// Pick up a one-shot `focus` param; the resolver effect below acts on it.
+	function readFocusFromUrl(searchParams: URLSearchParams): void {
+		const focus = parseMapFocus(searchParams);
+		if (focus) pendingFocus = focus;
+	}
+
+	function clearFocusFromUrl(): void {
+		const nextSearchParams = new URLSearchParams($page.url.searchParams);
+		clearMapFocusSearchParams(nextSearchParams);
+		const nextSearch = nextSearchParams.toString();
+		void goto(nextSearch ? `?${nextSearch}` : $page.url.pathname, {
+			replaceState: true,
+			keepFocus: true,
+			noScroll: true,
 		});
+	}
+
+	// Zoom to a selection directly (click path) — data is already loaded, so no
+	// pending/retry needed. Shared with the URL-driven focus resolver below.
+	function focusSelection(selection: MapSelection): void {
+		if (selection.kind === 'stop') focusStop(selection.id);
+		else if (selection.kind === 'vehicle') focusVehicle(selection.id);
+		else focusRoute(selection.id);
+	}
+
+	function focusStop(id: string): boolean {
+		const stop = stopList.find((s) => s.id === id);
+		if (!stop) return false;
+		panTo([stop.lon, stop.lat], Math.max(map?.getZoom() ?? 0, 16));
+		return true;
+	}
+
+	function focusVehicle(id: string): boolean {
+		const vehicle = (live.vehicles?.vehicles ?? []).find((v) => v.id === id);
+		if (!vehicle) return false;
+		panTo([vehicle.lon, vehicle.lat], Math.max(map?.getZoom() ?? 0, 16));
+		return true;
+	}
+
+	function focusRoute(id: string): boolean {
+		const route = routeList.find((r) => r.id === id);
+		if (!route) return false;
+		const bounds = routeBoundsFromFile(route);
+		if (!bounds) return false;
+		if (!map) return false;
+		map.fitBounds(bounds, {
+			padding: 64,
+			maxZoom: 15,
+			duration: shouldAnimate('motion-gated') ? 600 : 0,
+		});
+		return true;
+	}
+
+	function routeBoundsFromFile(route: RouteFile): [[number, number], [number, number]] | null {
+		let minLon = Infinity;
+		let minLat = Infinity;
+		let maxLon = -Infinity;
+		let maxLat = -Infinity;
+		for (const direction of route.directions ?? []) {
+			const coords = (direction.shape as { coordinates?: unknown })?.coordinates;
+			if (!Array.isArray(coords)) continue;
+			for (const pair of coords) {
+				if (!Array.isArray(pair) || pair.length < 2) continue;
+				const lon = Number(pair[0]);
+				const lat = Number(pair[1]);
+				if (!Number.isFinite(lon) || !Number.isFinite(lat)) continue;
+				if (lon < minLon) minLon = lon;
+				if (lat < minLat) minLat = lat;
+				if (lon > maxLon) maxLon = lon;
+				if (lat > maxLat) maxLat = lat;
+			}
+		}
+		if (minLon === Infinity) return null;
+		return [
+			[minLon, minLat],
+			[maxLon, maxLat],
+		];
+	}
+
+	// Resolve the pending focus once the map AND the entity's data are available;
+	// reads the kind's reactive source so it re-runs when that data loads, then
+	// pans/fits and strips the param so it fires exactly once.
+	$effect(() => {
+		if (!pendingFocus || !map) return;
+		const focus = pendingFocus;
+		const resolved =
+			focus.kind === 'stop'
+				? focusStop(focus.id)
+				: focus.kind === 'vehicle'
+					? focusVehicle(focus.id)
+					: focusRoute(focus.id);
+		if (!resolved) return;
+		pendingFocus = null;
+		clearFocusFromUrl();
+	});
+
+	/** Camera move that honours prefers-reduced-motion: jumpTo (no flight) under
+	 * reduce, flyTo otherwise. `essential` alone does NOT respect reduced motion. */
+	function panTo(center: [number, number], zoom: number): void {
+		if (!map) return;
+		if (shouldAnimate('motion-gated')) map.flyTo({ center, zoom, essential: true });
+		else map.jumpTo({ center, zoom });
+	}
+
+	function flyToNearMeOrigin(origin: NearMeOrigin): void {
+		if (!map) return;
+		panTo(
+			[origin.lon, origin.lat],
+			Math.max(map.getZoom(), zoomForNearMePrecision(origin.precision)),
+		);
 	}
 
 	function zoomForNearMePrecision(precision?: GeocodePrecision): number {
@@ -493,8 +643,14 @@
 
 	function useNearMeLocation(): void {
 		nearMeOpen = true;
+		// Geolocation silently fails on http; surface the actual reason instead of a
+		// generic "place not found".
+		if (typeof window !== 'undefined' && !window.isSecureContext) {
+			nearMeError = t.nearMeGeoInsecure;
+			return;
+		}
 		if (!navigator.geolocation) {
-			nearMeError = t.nearMeError;
+			nearMeError = t.nearMeGeoUnavailable;
 			return;
 		}
 		nearMeLoading = true;
@@ -509,9 +665,14 @@
 					precision: 'address',
 				});
 			},
-			() => {
+			(geoError) => {
 				nearMeLoading = false;
-				nearMeError = t.nearMeError;
+				nearMeError =
+					geoError.code === geoError.PERMISSION_DENIED
+						? t.nearMeGeoDenied
+						: geoError.code === geoError.TIMEOUT
+							? t.nearMeGeoTimeout
+							: t.nearMeGeoUnavailable;
 			},
 			{ enableHighAccuracy: true, timeout: 8_000, maximumAge: 60_000 },
 		);
@@ -550,13 +711,44 @@
 		}
 	}
 
-	async function selectNearMeSuggestion(result: GeocodeSuggestion): Promise<void> {
+	async function selectNearMeSuggestion(
+		result: GeocodeSuggestion,
+		sessionToken: string,
+	): Promise<void> {
 		nearMeQuery = result.label;
 		if (hasCoordinates(result)) {
 			setNearMeOrigin(result);
 			return;
 		}
+		// A Google suggestion carries a placeId but no coordinates — resolve it by
+		// id via Place Details (reusing the autocomplete session) so we pin the EXACT
+		// place picked, not whatever a fresh text search of the label resolves.
+		if (result.placeId && result.source === 'google_places') {
+			await resolveNearMePlace(result.placeId, sessionToken);
+			return;
+		}
 		await resolveNearMeQuery(result.label);
+	}
+
+	async function resolveNearMePlace(placeId: string, sessionToken: string): Promise<void> {
+		nearMeLoading = true;
+		nearMeError = null;
+		try {
+			const response = await fetch(
+				`/api/geocode/montreal?placeId=${encodeURIComponent(placeId)}&session=${encodeURIComponent(sessionToken)}`,
+			);
+			if (!response.ok) {
+				nearMeError = t.nearMeError;
+				return;
+			}
+			const result = (await response.json()) as GeocodedLocation;
+			nearMeQuery = result.label;
+			setNearMeOrigin(result);
+		} catch {
+			nearMeError = t.nearMeError;
+		} finally {
+			nearMeLoading = false;
+		}
 	}
 
 	function selectNearbyStop(stop: WithDistance<StopIndexEntry>): void {
@@ -564,11 +756,7 @@
 		selectionStack = [];
 		selected = { kind: 'stop', id: stop.id };
 		detailOpen = true;
-		map?.flyTo({
-			center: [stop.lon, stop.lat],
-			zoom: Math.max(map.getZoom(), 15),
-			essential: true,
-		});
+		if (map) panTo([stop.lon, stop.lat], Math.max(map.getZoom(), 15));
 	}
 
 	function parseCoordinateQuery(query: string): LatLon | null {
@@ -577,7 +765,7 @@
 		const lat = Number(match[1]);
 		const lon = Number(match[2]);
 		if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
-		if (lat < 45.35 || lat > 45.75 || lon < -74.05 || lon > -73.35) return null;
+		if (!isInsideMontrealBounds(lat, lon)) return null;
 		return { lat, lon };
 	}
 
@@ -693,7 +881,11 @@
 	});
 </script>
 
-<div class="map-hero" style={`--map-detail-offset: ${mapDetailOffset}`}>
+<div
+	class="map-hero"
+	bind:clientWidth={mapWidthPx}
+	style={`--map-detail-offset: ${mapDetailOffset}`}
+>
 	<!-- Mount immediately with the built-in fallback style; the optional PMTiles
 	     basemap can resolve later and repaint without leaving the map blank. -->
 	<MapStage
@@ -701,7 +893,8 @@
 		basemap={basemap.data}
 		{theme}
 		center={mapInitialCenter}
-		bounds={manifest.bbox}
+		bounds={ISLAND_FIT_BOUNDS}
+		maxBounds={MAP_MAX_BOUNDS}
 		fitPadding={mapFitPadding}
 		onready={onMapReady}
 		onstyleload={onMapStyleLoad}

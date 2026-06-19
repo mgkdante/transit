@@ -11,12 +11,19 @@ describe('MapStage', () => {
 
 		expect(s).toContain('fitPadding?: MapFitPadding');
 		expect(s).toContain('fitPadding = 40');
-		expect(s).toContain('...mapViewportOptions(bounds, fitPadding)');
+		// maxBounds (optional, looser than the fit bounds) is threaded through both
+		// viewport-option call sites so a left fit-padding can reveal west overflow.
+		expect(s).toContain('maxBounds?: readonly number[]');
+		expect(s).toContain('...mapViewportOptions(bounds, fitPadding, maxBounds)');
 		expect(s).toContain(
 			'function fitKey(nextBounds: readonly number[] | undefined, nextPadding: MapFitPadding): string',
 		);
 		expect(s).toContain('let activeFitKey: string | null = null');
-		expect(s).toContain('const nextFitKey = fitKey(bounds, fitPadding)');
+		// fit key folds maxBounds in so a band tweak re-runs the effect, and the
+		// new maxBounds is pushed via setMaxBounds before the camera refit.
+		expect(s).toContain('fitKey(bounds, fitPadding)');
+		expect(s).toContain("maxBounds?.join(',')");
+		expect(s).toContain('m.setMaxBounds(viewport.maxBounds)');
 		expect(s).toContain(
 			'm.fitBounds(viewport.bounds, { ...viewport.fitBoundsOptions, duration: 0 })',
 		);
@@ -60,9 +67,9 @@ describe('MapStage', () => {
 			/\.map-stage\s*:global\(\.maplibregl-ctrl-bottom-right\)\s*\{[\s\S]*z-index:\s*12/,
 		);
 		expect(s).toMatch(
-			/\.map-stage\s*:global\(\.maplibregl-ctrl-attrib-inner\)\s*\{[\s\S]*white-space:\s*normal/,
+			/\.map-stage\s*:global\(\.maplibregl-ctrl-attrib-inner\)\s*\{[\s\S]*white-space:\s*nowrap/,
 		);
-		expect(s).toMatch(
+		expect(s).not.toMatch(
 			/\.map-stage\s*:global\(\.maplibregl-ctrl-attrib-inner\)\s*\{[\s\S]*overflow-wrap:\s*anywhere/,
 		);
 		expect(s).toMatch(

@@ -67,8 +67,13 @@
 		basemap?: BasemapFile | null;
 		/** Active app theme. Rebuilds the MapLibre style when dark/light changes. */
 		theme?: BasemapTheme;
-		/** Provider bbox as [minLon, minLat, maxLon, maxLat]. */
+		/** Bbox the initial camera FITS to, as [minLon, minLat, maxLon, maxLat]. */
 		bounds?: readonly number[];
+		/**
+		 * Optional pan limit, LOOSER than `bounds`, so a left fit-padding can reveal
+		 * map west of the fit window without MapLibre clamping. Defaults to `bounds`.
+		 */
+		maxBounds?: readonly number[];
 		/** Fit padding used when the provider bbox seeds the initial camera. */
 		fitPadding?: MapFitPadding;
 		/** Accessible name for the map region (icon-/canvas-only control). */
@@ -96,6 +101,7 @@
 		basemap = null,
 		theme = 'dark',
 		bounds,
+		maxBounds,
 		fitPadding = 40,
 		label = 'Transit map',
 		onready,
@@ -137,6 +143,7 @@
 		if (!browser) return;
 
 		let disposed = false;
+		let resizeObserver: ResizeObserver | null = null;
 
 		(async () => {
 			// Dynamic imports — keep maplibre-gl + pmtiles OUT of the server bundle.
@@ -158,16 +165,30 @@
 				style,
 				center,
 				zoom,
-				...mapViewportOptions(bounds, fitPadding),
+				...mapViewportOptions(bounds, fitPadding, maxBounds),
 				// Honest chrome: attribution is owned by the basemap/snapshot, not us.
 				attributionControl: { compact: true },
 			});
 
 			// Notify the consumer once the style is ready, so it can add images /
 			// sources / layers (the live vehicle layer) without racing the load.
+			// A resize() on load is idiomatic insurance: if the container's final
+			// size wasn't settled when the GL context was created, this forces the
+			// drawing buffer + first frame to match the laid-out container.
 			instance.on('load', () => {
-				if (!disposed) onready?.(instance);
+				if (disposed) return;
+				instance.resize();
+				onready?.(instance);
 			});
+
+			// MapLibre measures the container at construction. In a flex/grid parent
+			// (and after panel transitions / the rail collapsing) layout often hasn't
+			// settled yet, so the GL canvas mounts at the wrong size and paints BLANK
+			// until some later event fires a resize. Observing the container keeps the
+			// viewport in sync — the ResizeObserver fires once immediately, which
+			// repaints the initial frame, and again on every later size change.
+			resizeObserver = new ResizeObserver(() => instance.resize());
+			resizeObserver.observe(container);
 
 			map = instance;
 		})();
@@ -175,6 +196,8 @@
 		// Teardown — release the GL context, event listeners, and DOM nodes.
 		return () => {
 			disposed = true;
+			resizeObserver?.disconnect();
+			resizeObserver = null;
 			map?.remove();
 			map = null;
 		};
@@ -187,10 +210,15 @@
 	$effect(() => {
 		const m = map;
 		if (!m) return;
-		const nextFitKey = fitKey(bounds, fitPadding);
+		// Re-fit when the fit bounds, padding, OR maxBounds change. maxBounds is in
+		// the key (and re-applied via setMaxBounds) so a bounds/band tweak takes
+		// effect on HMR / prop change WITHOUT a hard reload — it was previously only
+		// applied once at construction, which is why tweaks "didn't land".
+		const nextFitKey = `${fitKey(bounds, fitPadding)}|${maxBounds?.join(',') ?? ''}`;
 		if (activeFitKey === nextFitKey) return;
 		activeFitKey = nextFitKey;
-		const viewport = mapViewportOptions(bounds, fitPadding);
+		const viewport = mapViewportOptions(bounds, fitPadding, maxBounds);
+		m.setMaxBounds(viewport.maxBounds);
 		m.fitBounds(viewport.bounds, { ...viewport.fitBoundsOptions, duration: 0 });
 	});
 
@@ -292,12 +320,13 @@
 		color: var(--muted-foreground);
 		font-family: var(--font-mono);
 		font-size: var(--text-micro);
-		max-width: min(22rem, calc(100vw - var(--map-detail-offset, 0rem) - 2rem));
+		/* Wide enough for the one-line credit; capped to the visible map gap. */
+		max-width: min(32rem, calc(100vw - var(--map-detail-offset, 0rem) - 1.5rem));
 	}
 
+	/* The basemap credit stays on a SINGLE line — never wraps. */
 	.map-stage :global(.maplibregl-ctrl-attrib-inner) {
-		white-space: normal;
-		overflow-wrap: anywhere;
+		white-space: nowrap;
 	}
 
 	.map-stage :global(.maplibregl-ctrl-attrib a) {

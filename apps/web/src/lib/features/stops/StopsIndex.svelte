@@ -12,14 +12,22 @@
   stops.copy.ts. Tokens only, no hex; --primary stays interactive-only.
 -->
 <script lang="ts">
-	import { getLocale, localizeHref, type Locale } from '$lib/i18n';
-	import { emptyFilterState, toSearchString } from '$lib/filters';
-	import { routeFor } from '$lib/nav';
+	import { getLocale, type Locale } from '$lib/i18n';
+	import { mapHrefFor } from '$lib/nav';
 	import { getStopsIndex, type StopIndexEntry } from '$lib/v1';
 	import { createResource } from '$lib/v1/resource.svelte';
-	import { ResourceBoundary, SurfaceHeader, EntityList, EntityRow } from '$lib/components/surface';
+	import {
+		ResourceBoundary,
+		SurfaceHeader,
+		EntityList,
+		EntityRow,
+		SearchInput,
+		MapDrilldownLink,
+	} from '$lib/components/surface';
 	import { Surface } from '$lib/components/layout';
 	import { Separator } from '$lib/components/ui/separator';
+	import { dedupeBy, foldSearchText, tokenMatchScore } from '$lib/search/normalize';
+	import { stopGroupKey, stopModeHint } from '$lib/search/stopMode';
 	import { indexCopy } from './stops.copy';
 
 	const locale: Locale = getLocale();
@@ -31,53 +39,36 @@
 	const CAP = 100;
 
 	let query = $state('');
-	const trimmed = $derived(query.trim().toLowerCase());
+	const folded = $derived(foldSearchText(query));
 
-	// Filtered set: name OR code substring match. Empty query ⇒ no rows (we show a
-	// prompt instead of the full catalogue). Match count drives the "+N more" note.
+	// Accent-blind, word-order-free token-AND match over name/code/id, ranked by
+	// tier. Empty query ⇒ no rows (we show a prompt instead of the full
+	// catalogue). 'cremazie' finds 'Station Crémazie'; 'berri fleury' finds both
+	// 'Berri / Fleury' and 'Fleury / Berri'. Match count drives the "+N more" note.
 	const matches = $derived.by<readonly StopIndexEntry[]>(() => {
 		const stops = index.data?.stops ?? [];
-		if (!trimmed) return [];
-		return stops.filter(
-			(s) =>
-				s.name.toLowerCase().includes(trimmed) ||
-				(s.code ?? '').toLowerCase().includes(trimmed) ||
-				s.id.toLowerCase().includes(trimmed),
-		);
+		if (!folded) return [];
+		const ranked = stops
+			.map((s) => ({ s, score: tokenMatchScore([s.name, s.code, s.id], folded) }))
+			.filter((m): m is { s: StopIndexEntry; score: number } => m.score != null)
+			.sort((a, b) => a.score - b.score)
+			.map((m) => m.s);
+		// One row per logical stop — métro/station names collapse to a single station.
+		return dedupeBy(ranked, stopGroupKey);
 	});
 
 	const overflow = $derived(Math.max(0, matches.length - CAP));
-
-	function stopMapSearch(id: string): string {
-		const state = emptyFilterState();
-		state.stops.add(id);
-		return toSearchString(state);
-	}
-
-	function stopMapHref(id: string): string {
-		return localizeHref(routeFor({ kind: 'map', search: stopMapSearch(id) }), locale);
-	}
 </script>
 
 <Surface width="bleed" class="stops-index">
 	<SurfaceHeader kicker={t.kicker} heading={t.heading} subheading={t.subheading} lede={t.lede} />
 
-	<div class="stops-search">
-		<input
-			type="search"
-			class="stops-search-input"
-			bind:value={query}
-			placeholder={t.searchPlaceholder}
-			aria-label={t.searchLabel}
-			autocomplete="off"
-			spellcheck="false"
-		/>
-	</div>
+	<SearchInput label={t.searchLabel} placeholder={t.searchPlaceholder} bind:value={query} />
 
 	<Separator variant="hazard" />
 
 	<ResourceBoundary resource={index} lang={locale}>
-		{#if !trimmed}
+		{#if !folded}
 			<p class="stops-note">{t.searchPrompt}</p>
 		{:else if matches.length === 0}
 			<p class="stops-note">{t.noMatches}</p>
@@ -89,23 +80,23 @@
 				truncatedLabel={overflow > 0 ? t.more(overflow) : undefined}
 			>
 				{#snippet row(stop)}
+					{@const hint = stopModeHint(stop)}
 					<div class="stop-result">
 						<EntityRow
 							target={{ kind: 'stop', id: stop.id }}
 							{locale}
-							glyph="■"
+							glyph={hint.glyph}
 							title={stop.name}
 							subtitle={stop.code ?? stop.id}
+							meta={hint.label ?? undefined}
+							routes={stop.routes}
 							class="stop-result-main"
 						/>
-						<a
-							href={stopMapHref(stop.id)}
-							class="stop-map-link"
-							aria-label={t.viewStopOnMap(stop.code ?? stop.id)}
-							data-sveltekit-preload-data="hover"
-						>
-							{t.mapAction}
-						</a>
+						<MapDrilldownLink
+							href={mapHrefFor({ stop: stop.id }, locale)}
+							label={t.mapAction}
+							ariaLabel={t.viewStopOnMap(stop.code ?? stop.id)}
+						/>
 					</div>
 				{/snippet}
 			</EntityList>
@@ -114,28 +105,6 @@
 </Surface>
 
 <style>
-	.stops-search {
-		max-width: 28rem;
-	}
-	.stops-search-input {
-		width: 100%;
-		padding: 0.75rem 0.875rem;
-		font-family: var(--font-mono);
-		font-size: var(--text-body);
-		color: var(--foreground);
-		background-color: var(--card);
-		border: 1px solid var(--border);
-		border-radius: var(--radius-md);
-		transition: border-color 150ms ease;
-	}
-	.stops-search-input::placeholder {
-		color: var(--muted-foreground);
-	}
-	.stops-search-input:focus-visible {
-		outline: 2px solid var(--ring);
-		outline-offset: 2px;
-		border-color: var(--primary);
-	}
 	.stops-note {
 		color: var(--muted-foreground);
 		font-size: var(--text-small);
@@ -147,43 +116,9 @@
 		grid-template-columns: minmax(0, 1fr) auto;
 		align-items: center;
 		gap: 0.5rem;
+		padding-right: 0.5rem;
 	}
 	.stop-result :global(.stop-result-main) {
 		min-width: 0;
-	}
-	.stop-map-link {
-		display: inline-flex;
-		align-items: center;
-		justify-content: center;
-		min-height: 2rem;
-		margin-right: 0.5rem;
-		padding: 0.25rem 0.65rem;
-		font-family: var(--font-mono);
-		font-size: var(--text-caption);
-		color: var(--primary);
-		text-decoration: none;
-		background: color-mix(in srgb, var(--primary) 8%, transparent);
-		border: 1px solid color-mix(in srgb, var(--primary) 28%, var(--border) 72%);
-		border-radius: var(--radius-pill);
-		transition:
-			color 150ms ease,
-			background-color 150ms ease,
-			border-color 150ms ease;
-	}
-	.stop-map-link:hover {
-		color: var(--foreground);
-		background: color-mix(in srgb, var(--primary) 16%, transparent);
-		border-color: color-mix(in srgb, var(--primary) 45%, var(--border) 55%);
-	}
-	.stop-map-link:focus-visible {
-		outline: 2px solid var(--ring);
-		outline-offset: 2px;
-	}
-
-	@media (prefers-reduced-motion: reduce) {
-		.stops-search-input,
-		.stop-map-link {
-			transition: none;
-		}
 	}
 </style>

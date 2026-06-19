@@ -118,30 +118,111 @@ describe('chromeSearchResults', () => {
 			label: '5333 Avenue Casgrain, Montréal, QC, Canada',
 			meta: 'Address',
 			attribution: 'google',
+			// placeId + source ride through so selection can resolve by Place Details
+			// instead of re-text-searching the label (the wrong-place fix).
+			placeId: 'google-address',
+			source: 'google_places',
 		});
 		expect(results[0]?.lat).toBeUndefined();
 		expect(results[0]?.lon).toBeUndefined();
+	});
+
+	it('finds métro stations and accented names the way riders type them', () => {
+		const metro: StopIndexEntry[] = [
+			{ id: '10146', code: '10146', name: 'Station Berri-UQAM', lat: 45.51, lon: -73.56 },
+			{ id: '11000', code: '11000', name: 'Station Crémazie', lat: 45.55, lon: -73.62 },
+		];
+
+		// space where the data has a hyphen
+		expect(chromeSearchResults('berri uqam', { stops: metro })[0]).toMatchObject({
+			kind: 'stop',
+			id: '10146',
+		});
+		// reversed token order
+		expect(chromeSearchResults('uqam berri', { stops: metro })[0]).toMatchObject({
+			kind: 'stop',
+			id: '10146',
+		});
+		// no accent on an EN keyboard
+		expect(chromeSearchResults('cremazie', { stops: metro })[0]).toMatchObject({
+			kind: 'stop',
+			id: '11000',
+		});
+	});
+
+	it('collapses the métro interchange duplicate platforms (shared code) to one result', () => {
+		const platforms: StopIndexEntry[] = [
+			{ id: '9999111', code: '10146', name: 'Station Berri-UQAM', lat: 45.51, lon: -73.56 },
+			{ id: '9999112', code: '10146', name: 'Station Berri-UQAM', lat: 45.51, lon: -73.56 },
+			{ id: '9999114', code: '10146', name: 'Station Berri-UQAM', lat: 45.51, lon: -73.56 },
+		];
+
+		const results = chromeSearchResults('berri uqam', { stops: platforms });
+		const stops = results.filter((r) => r.kind === 'stop');
+		expect(stops).toHaveLength(1);
+		expect(stops[0]?.id).toBe('9999111');
+	});
+
+	it('collapses a station name attached to many stops (different codes) to one', () => {
+		const station: StopIndexEntry[] = [
+			{ id: '1', code: '10280', name: 'Station Henri-Bourassa', lat: 45.554, lon: -73.668 },
+			{ id: '50301', code: '50301', name: 'Station Henri-Bourassa', lat: 45.554, lon: -73.669 },
+			{ id: '50303', code: '50303', name: 'Station Henri-Bourassa', lat: 45.554, lon: -73.668 },
+		];
+
+		const stops = chromeSearchResults('henri bourassa', { stops: station }).filter(
+			(r) => r.kind === 'stop',
+		);
+		expect(stops).toHaveLength(1);
+		expect(stops[0]?.id).toBe('1');
+	});
+
+	it('keeps two distinct same-named non-station stops separate', () => {
+		const twins: StopIndexEntry[] = [
+			{ id: '100', code: '100', name: 'Parc / Laurier', lat: 45.52, lon: -73.6 },
+			{ id: '200', code: '200', name: 'Parc / Laurier', lat: 45.521, lon: -73.601 },
+		];
+		const stops = chromeSearchResults('parc laurier', { stops: twins }).filter(
+			(r) => r.kind === 'stop',
+		);
+		expect(stops).toHaveLength(2);
+	});
+
+	it('matches an intersection stop with the cross streets in either order', () => {
+		const intersection: StopIndexEntry[] = [
+			{ id: '52819', code: '52618', name: 'Montgomery / Sherbrooke', lat: 45.52, lon: -73.55 },
+		];
+
+		expect(chromeSearchResults('sherbrooke montgomery', { stops: intersection })[0]).toMatchObject({
+			kind: 'stop',
+			id: '52819',
+		});
 	});
 });
 
 describe('chromeSearchHref', () => {
 	it('routes every selected result into the map filter spine', () => {
-		expect(chromeSearchHref({ kind: 'route', id: '161' })).toBe('/map?route=161');
-		expect(chromeSearchHref({ kind: 'stop', id: '52819' })).toBe('/map?stop=52819');
-		expect(chromeSearchHref({ kind: 'vehicle', id: '40061' })).toBe('/map?vehicle=40061');
+		// Each pick also carries a one-shot `focus` so the map zooms to the entity.
+		expect(chromeSearchHref({ kind: 'route', id: '161' })).toBe('/map?route=161&focus=route%3A161');
+		expect(chromeSearchHref({ kind: 'stop', id: '52819' })).toBe(
+			'/map?stop=52819&focus=stop%3A52819',
+		);
+		expect(chromeSearchHref({ kind: 'vehicle', id: '40061' })).toBe(
+			'/map?vehicle=40061&focus=vehicle%3A40061',
+		);
 	});
 
 	it('stacks selected results onto the existing map filter query', () => {
 		const current = new URLSearchParams('vehicle=40061&status=late&stop=53355');
 
 		expect(chromeSearchHref({ kind: 'vehicle', id: '40062' }, current)).toBe(
-			'/map?stop=53355&vehicle=40061%2C40062&status=late',
+			'/map?stop=53355&vehicle=40061%2C40062&status=late&focus=vehicle%3A40062',
 		);
 		expect(chromeSearchHref({ kind: 'stop', id: '53355' }, current)).toBe(
-			'/map?stop=53355&vehicle=40061&status=late',
+			'/map?stop=53355&vehicle=40061&status=late&focus=stop%3A53355',
 		);
 		expect(chromeSearchHref({ kind: 'route', id: '161' }, current)).toBe(
-			'/map?route=161&stop=53355&vehicle=40061&status=late',
+			'/map?route=161&stop=53355&vehicle=40061&status=late&focus=route%3A161',
 		);
 	});
 
@@ -168,7 +249,7 @@ describe('chromeSearchHref', () => {
 		const current = new URLSearchParams('near=45.525686,-73.594764&nearLabel=Mile End');
 
 		expect(chromeSearchHref({ kind: 'route', id: '161' }, current)).toBe(
-			'/map?route=161&near=45.525686%2C-73.594764&nearLabel=Mile+End',
+			'/map?route=161&near=45.525686%2C-73.594764&nearLabel=Mile+End&focus=route%3A161',
 		);
 	});
 });

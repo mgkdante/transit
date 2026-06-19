@@ -12,15 +12,22 @@
   Tokens, no hex; --primary stays interactive-only.
 -->
 <script lang="ts">
-	import { getLocale, localizeHref } from '$lib/i18n';
-	import { routeFor } from '$lib/nav';
-	import { emptyFilterState, toSearchString } from '$lib/filters';
+	import { getLocale } from '$lib/i18n';
+	import { mapHrefFor } from '$lib/nav';
 	import { getRoutesIndex } from '$lib/v1';
 	import type { RouteIndexEntry } from '$lib/v1';
 	import { createResource } from '$lib/v1/resource.svelte';
-	import { ResourceBoundary, SurfaceHeader, EntityList, EntityRow } from '$lib/components/surface';
+	import {
+		ResourceBoundary,
+		SurfaceHeader,
+		EntityList,
+		EntityRow,
+		SearchInput,
+		MapDrilldownLink,
+	} from '$lib/components/surface';
 	import { Surface } from '$lib/components/layout';
 	import { Separator } from '$lib/components/ui/separator';
+	import { foldSearchText, tokenMatchScore } from '$lib/search/normalize';
 	import { indexCopy } from './lines.copy';
 
 	const locale = getLocale();
@@ -49,38 +56,22 @@
 	const visible = $derived.by<RouteIndexEntry[]>(() => {
 		const all = routes.data?.routes ?? [];
 		const sorted = [...all].sort((a, b) => collator.compare(a.short, b.short));
-		const q = query.trim().toLowerCase();
+		const q = foldSearchText(query);
 		if (!q) return sorted;
-		return sorted.filter(
-			(r) => r.short.toLowerCase().includes(q) || (r.long ?? '').toLowerCase().includes(q),
-		);
+		// Accent-blind, word-order-free match over id/short/long; keep the numeric
+		// short-name order within the filtered set. 'ile des soeurs' → 'Île-des-Soeurs'.
+		return sorted.filter((r) => tokenMatchScore([r.id, r.short, r.long], q) != null);
 	});
-
-	function routeMapSearch(id: string): string {
-		const state = emptyFilterState();
-		state.routes.add(id);
-		return toSearchString(state);
-	}
-
-	function routeMapHref(id: string): string {
-		return localizeHref(routeFor({ kind: 'map', search: routeMapSearch(id) }), locale);
-	}
 </script>
 
 <Surface width="bleed" pad="hub" class="lines-index">
 	<SurfaceHeader kicker={t.kicker} heading={t.heading} lede={t.lede}>
-		<div class="lines-filter">
-			<label class="label-metric" for="lines-filter-input">{t.filterLabel}</label>
-			<input
-				id="lines-filter-input"
-				type="search"
-				class="lines-filter-input"
-				placeholder={t.filterPlaceholder}
-				bind:value={query}
-				autocomplete="off"
-				spellcheck="false"
-			/>
-		</div>
+		<SearchInput
+			id="lines-filter-input"
+			label={t.filterLabel}
+			placeholder={t.filterPlaceholder}
+			bind:value={query}
+		/>
 	</SurfaceHeader>
 
 	<Separator variant="hazard" />
@@ -97,14 +88,11 @@
 						subtitle={r.long ?? undefined}
 						class="line-result-main"
 					/>
-					<a
-						href={routeMapHref(r.id)}
-						class="line-map-link"
-						aria-label={t.viewRouteOnMap(r.short)}
-						data-sveltekit-preload-data="hover"
-					>
-						{t.mapAction}
-					</a>
+					<MapDrilldownLink
+						href={mapHrefFor({ route: r.id }, locale)}
+						label={t.mapAction}
+						ariaLabel={t.viewRouteOnMap(r.short)}
+					/>
 				</div>
 			{/snippet}
 		</EntityList>
@@ -112,72 +100,14 @@
 </Surface>
 
 <style>
-	.lines-filter {
-		display: flex;
-		flex-direction: column;
-		gap: 0.4rem;
-		max-width: 28rem;
-	}
-	.lines-filter-input {
-		width: 100%;
-		padding: 0.6rem 0.875rem;
-		font-family: var(--font-mono);
-		font-size: var(--text-body);
-		color: var(--foreground);
-		background-color: var(--card);
-		border: 1px solid var(--border);
-		border-radius: var(--radius-md);
-		transition: border-color 150ms ease;
-	}
-	.lines-filter-input::placeholder {
-		color: var(--muted-foreground);
-	}
-	.lines-filter-input:focus-visible {
-		outline: none;
-		border-color: var(--primary);
-	}
 	.line-result {
 		display: grid;
 		grid-template-columns: minmax(0, 1fr) auto;
 		align-items: center;
 		gap: 0.5rem;
+		padding-right: 0.5rem;
 	}
 	.line-result :global(.line-result-main) {
 		min-width: 0;
-	}
-	.line-map-link {
-		display: inline-flex;
-		align-items: center;
-		justify-content: center;
-		min-height: 2rem;
-		margin-right: 0.5rem;
-		padding: 0.25rem 0.65rem;
-		font-family: var(--font-mono);
-		font-size: var(--text-caption);
-		color: var(--primary);
-		text-decoration: none;
-		background: color-mix(in srgb, var(--primary) 8%, transparent);
-		border: 1px solid color-mix(in srgb, var(--primary) 28%, var(--border) 72%);
-		border-radius: var(--radius-pill);
-		transition:
-			color 150ms ease,
-			background-color 150ms ease,
-			border-color 150ms ease;
-	}
-	.line-map-link:hover {
-		color: var(--foreground);
-		background: color-mix(in srgb, var(--primary) 16%, transparent);
-		border-color: color-mix(in srgb, var(--primary) 45%, var(--border) 55%);
-	}
-	.line-map-link:focus-visible {
-		outline: 2px solid var(--ring);
-		outline-offset: 2px;
-	}
-
-	@media (prefers-reduced-motion: reduce) {
-		.lines-filter-input,
-		.line-map-link {
-			transition: none;
-		}
 	}
 </style>

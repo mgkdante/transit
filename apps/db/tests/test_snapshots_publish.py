@@ -16,7 +16,11 @@ from contextlib import contextmanager
 
 import pytest
 
-from transit_ops.snapshots.publish import PublishResult, publish_snapshot
+from transit_ops.snapshots.publish import (
+    _DISTINCT_HISTORIC_ROUTE_IDS_SQL,
+    PublishResult,
+    publish_snapshot,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -466,6 +470,39 @@ def test_publish_historic_writes_expected_keys(tmp_path) -> None:
         ("UNION", [
             ("101",), ("202",),
         ]),
+        # build_route_reliability: cancellation history — unique discriminator
+        # "cancellation_rate_pct, canceled_trip_days" (its SELECT column list).
+        # MUST precede the generic "ORDER BY provider_local_date DESC" daily-view
+        # needle below, which the cancellation SQL also ends with.
+        ("cancellation_rate_pct, canceled_trip_days", [
+            {"provider_local_date": datetime.date(2026, 6, 1),
+             "cancellation_rate_pct": 2.5, "canceled_trip_days": 3,
+             "total_trip_days": 120},
+        ]),
+        # build_route_reliability: trailing-window occupancy band shares —
+        # unique discriminator "route_occupancy_band_daily AS rob".
+        ("route_occupancy_band_daily AS rob", [
+            {"empty": 0, "many_seats": 50, "few_seats": 30, "standing": 15, "full": 5},
+        ]),
+        # build_route_reliability: service-span history — unique discriminator
+        # "first_trip_start_utc". MUST precede the generic daily-view needle below
+        # (its SQL also ends with ORDER BY provider_local_date DESC).
+        ("first_trip_start_utc", [
+            {"provider_local_date": datetime.date(2026, 6, 1),
+             "first_trip_start_utc": datetime.datetime(2026, 6, 1, 10, 0,
+                                                       tzinfo=datetime.timezone.utc),
+             "last_trip_start_utc": datetime.datetime(2026, 6, 2, 1, 0,
+                                                      tzinfo=datetime.timezone.utc),
+             "service_span_min": 900, "first_trip_delay_seconds": 30,
+             "last_trip_delay_seconds": 90, "trip_count": 120},
+        ]),
+        # build_route_reliability: skipped-stop history — unique discriminator
+        # "skipped_stop_rate_pct" (also ends with ORDER BY provider_local_date DESC).
+        ("skipped_stop_rate_pct", [
+            {"provider_local_date": datetime.date(2026, 6, 1),
+             "skipped_stop_rate_pct": 3.94, "skipped_stop_count": 12,
+             "stop_time_update_count": 305},
+        ]),
         # build_route_reliability: daily view
         ("ORDER BY provider_local_date DESC", [
             {"d": datetime.date(2026, 6, 1), "known_obs": 50, "on_time": 45,
@@ -774,3 +811,17 @@ def test_publish_static_writes_basemap_when_configured() -> None:
     bm = json.loads(store.store["static/basemap.json"])
     assert bm["url"] == "https://data.example.com/basemap/quebec.pmtiles"
     assert bm["format"] == "pmtiles"
+
+
+def test_historic_route_enumeration_excludes_unrouted_sentinel() -> None:
+    """Per-route reliability files must not be emitted for '__unrouted__'.
+
+    route_id is COALESCE'd to '__unrouted__' in the hourly spine, so it exists
+    in route_reliability_weekly/monthly; the enumeration that decides which
+    routes get a historic/route_reliability/{id}.json must exclude it so the
+    internal sentinel is never published as if it were a real route.
+    """
+    sql = _DISTINCT_HISTORIC_ROUTE_IDS_SQL
+    assert sql.count("route_id <> '__unrouted__'") == 2  # both UNION halves
+    assert "route_reliability_weekly" in sql
+    assert "route_reliability_monthly" in sql

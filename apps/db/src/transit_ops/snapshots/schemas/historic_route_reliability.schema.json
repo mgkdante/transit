@@ -1,7 +1,90 @@
 {
   "$defs": {
+    "CancellationPeriod": {
+      "properties": {
+        "canceled_trip_days": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Canceled Trip Days"
+        },
+        "cancellation_rate_pct": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cancellation Rate Pct"
+        },
+        "date": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Date"
+        },
+        "grain": {
+          "default": "day",
+          "title": "Grain",
+          "type": "string"
+        },
+        "total_trip_days": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Total Trip Days"
+        }
+      },
+      "title": "CancellationPeriod",
+      "type": "object"
+    },
     "HeadwayPeriod": {
       "properties": {
+        "bunched_pct": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Bunched Pct"
+        },
+        "cov": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cov"
+        },
         "excess_wait_min": {
           "anyOf": [
             {
@@ -47,6 +130,37 @@
         "shift"
       ],
       "title": "HeadwayPeriod",
+      "type": "object"
+    },
+    "OccupancyMix": {
+      "properties": {
+        "empty": {
+          "default": 0.0,
+          "title": "Empty",
+          "type": "number"
+        },
+        "few_seats": {
+          "default": 0.0,
+          "title": "Few Seats",
+          "type": "number"
+        },
+        "full": {
+          "default": 0.0,
+          "title": "Full",
+          "type": "number"
+        },
+        "many_seats": {
+          "default": 0.0,
+          "title": "Many Seats",
+          "type": "number"
+        },
+        "standing": {
+          "default": 0.0,
+          "title": "Standing",
+          "type": "number"
+        }
+      },
+      "title": "OccupancyMix",
       "type": "object"
     },
     "ReliabilityPeriod": {
@@ -134,6 +248,55 @@
       "title": "ReliabilityPeriod",
       "type": "object"
     },
+    "RouteDayOfWeek": {
+      "properties": {
+        "avg_delay_min": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Avg Delay Min"
+        },
+        "day_of_week_iso": {
+          "title": "Day Of Week Iso",
+          "type": "integer"
+        },
+        "observation_count": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Observation Count"
+        },
+        "severe_pct": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Severe Pct"
+        }
+      },
+      "required": [
+        "day_of_week_iso"
+      ],
+      "title": "RouteDayOfWeek",
+      "type": "object"
+    },
     "RouteHabits": {
       "properties": {
         "matrix": {
@@ -164,13 +327,21 @@
       "title": "RouteHabits",
       "type": "object"
     },
-    "WeakStop": {
+    "ServiceSpanPeriod": {
       "properties": {
-        "id": {
-          "title": "Id",
-          "type": "string"
+        "date": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Date"
         },
-        "median_delay_min": {
+        "first_trip_delay_min": {
           "anyOf": [
             {
               "type": "number"
@@ -180,7 +351,143 @@
             }
           ],
           "default": null,
-          "title": "Median Delay Min"
+          "title": "First Trip Delay Min"
+        },
+        "first_trip_utc": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "First Trip Utc"
+        },
+        "last_trip_delay_min": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Last Trip Delay Min"
+        },
+        "last_trip_utc": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Last Trip Utc"
+        },
+        "service_span_min": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Service Span Min"
+        },
+        "trip_count": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Trip Count"
+        }
+      },
+      "title": "ServiceSpanPeriod",
+      "type": "object"
+    },
+    "SkippedStopPeriod": {
+      "properties": {
+        "date": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Date"
+        },
+        "skipped_stop_count": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Skipped Stop Count"
+        },
+        "skipped_stop_rate_pct": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Skipped Stop Rate Pct"
+        },
+        "stop_time_update_count": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Stop Time Update Count"
+        }
+      },
+      "title": "SkippedStopPeriod",
+      "type": "object"
+    },
+    "WeakStop": {
+      "properties": {
+        "avg_delay_min": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Avg Delay Min"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
         },
         "name": {
           "anyOf": [
@@ -203,6 +510,20 @@
     }
   },
   "properties": {
+    "cancellations": {
+      "items": {
+        "$ref": "#/$defs/CancellationPeriod"
+      },
+      "title": "Cancellations",
+      "type": "array"
+    },
+    "day_of_week": {
+      "items": {
+        "$ref": "#/$defs/RouteDayOfWeek"
+      },
+      "title": "Day Of Week",
+      "type": "array"
+    },
     "generated_utc": {
       "title": "Generated Utc",
       "type": "string"
@@ -241,11 +562,36 @@
       "default": null,
       "title": "Name"
     },
+    "occupancy_mix": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/OccupancyMix"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
     "periods": {
       "items": {
         "$ref": "#/$defs/ReliabilityPeriod"
       },
       "title": "Periods",
+      "type": "array"
+    },
+    "service_spans": {
+      "items": {
+        "$ref": "#/$defs/ServiceSpanPeriod"
+      },
+      "title": "Service Spans",
+      "type": "array"
+    },
+    "skipped_stops": {
+      "items": {
+        "$ref": "#/$defs/SkippedStopPeriod"
+      },
+      "title": "Skipped Stops",
       "type": "array"
     },
     "weak_stops": {

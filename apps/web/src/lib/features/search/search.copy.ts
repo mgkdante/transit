@@ -8,14 +8,9 @@
 // the parallel translation. No strings inline in the .svelte.
 
 import type { Locale } from '$lib/i18n';
+import type { SurfaceHeadCopy } from '$lib/components/surface';
 
-export interface SearchCopy {
-	/** Mono station-voice overline. */
-	readonly kicker: string;
-	/** Display heading. */
-	readonly heading: string;
-	/** Muted lede under the heading. */
-	readonly lede: string;
+export interface SearchCopy extends SurfaceHeadCopy {
 	/** Accessible label + placeholder for the search input. */
 	readonly inputLabel: string;
 	readonly inputPlaceholder: string;

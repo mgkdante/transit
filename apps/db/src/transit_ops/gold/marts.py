@@ -628,6 +628,7 @@ def _trip_delay_snapshot_statement(
             trip_schedule_relationship = EXCLUDED.trip_schedule_relationship,
             delay_seconds = EXCLUDED.delay_seconds,
             stop_time_update_count = EXCLUDED.stop_time_update_count,
+            skipped_stop_count = EXCLUDED.skipped_stop_count,
             delay_stop_id = EXCLUDED.delay_stop_id,
             delay_stop_sequence = EXCLUDED.delay_stop_sequence
         """
@@ -640,7 +641,11 @@ def _trip_delay_snapshot_statement(
             SELECT
                 stc.rt_feed_snapshot_id,
                 stc.entity_index,
-                count(*)::integer AS stop_time_update_count
+                count(*)::integer AS stop_time_update_count,
+                -- GTFS-RT StopTimeUpdate.ScheduleRelationship SKIPPED = 1 (stop-level,
+                -- distinct from the trip-level CANCELED = 3); NULL = SCHEDULED.
+                count(*) FILTER (WHERE stc.schedule_relationship = 1)::integer
+                    AS skipped_stop_count
             FROM silver.rt_trip_update_stop_times AS stc
             {stop_time_counts_scope_join}
             WHERE stc.provider_id = :provider_id
@@ -754,6 +759,7 @@ def _trip_delay_snapshot_statement(
             trip_schedule_relationship,
             delay_seconds,
             stop_time_update_count,
+            skipped_stop_count,
             delay_stop_id,
             delay_stop_sequence
         )
@@ -774,6 +780,7 @@ def _trip_delay_snapshot_statement(
             rtu.schedule_relationship AS trip_schedule_relationship,
             tdf.derived_delay_seconds,
             COALESCE(stc.stop_time_update_count, 0),
+            COALESCE(stc.skipped_stop_count, 0),
             tdf.delay_stop_id,
             tdf.delay_stop_sequence
         FROM silver.rt_trip_updates AS rtu

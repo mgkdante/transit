@@ -5,6 +5,7 @@
 
 import { z } from 'zod';
 import { isoUtc } from './types';
+import { OccupancyMixSchema } from './network';
 
 export const TrendPointSchema = z.object({
 	// Calendar date (ISO local-day). Required.
@@ -13,6 +14,10 @@ export const TrendPointSchema = z.object({
 	avg_delay_min: z.number().nullable().optional(),
 	p90_min: z.number().nullable().optional(),
 	vehicles: z.number().int().nullable().optional(),
+	// network-wide canceled / RT-reported trip-days, %; null when none observed.
+	cancellation_rate: z.number().nullable().optional(),
+	// network-wide crowding band-shares; null when no occupancy telemetry.
+	occupancy_mix: OccupancyMixSchema.nullable().optional(),
 });
 export type TrendPoint = z.infer<typeof TrendPointSchema>;
 

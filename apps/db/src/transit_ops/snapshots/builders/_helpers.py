@@ -65,6 +65,18 @@ _OCCUPANCY_MAP: dict[int, str] = {
     # 6/7/8 NOT_ACCEPTING / NO_DATA / NOT_BOARDABLE -> None
 }
 
+# GTFS-RT TripDescriptor.ScheduleRelationship enum (INTEGER trip_schedule_relationship).
+# Named decode for any /v1 field echoing raw status; the cancellation rollup uses
+# the inline =3 (CANCELED) literal rather than this map.
+_SCHEDULE_RELATIONSHIP_MAP: dict[int, str] = {
+    0: "scheduled",
+    1: "added",
+    2: "unscheduled",
+    3: "canceled",
+    5: "duplicate",
+    6: "deleted",
+}
+
 # Alert severity tokens -> contract Severity. STM sends NULL (-> 'watch').
 _SEVERITY_MAP: dict[str, str] = {
     "SEVERE": "critical",
@@ -489,7 +501,9 @@ def _entity_name_maps(
     return route_names, stop_names
 
 
-def _build_habits_matrix(rows: "Iterable[Mapping[str, object]]") -> "RouteHabits":
+def _build_habits_matrix(
+    rows: "Iterable[Mapping[str, object]]", *, scale: str = "repeat_problem_relative"
+) -> "RouteHabits":
     """7x24 per-route problem heatmap (rows isodow 1..7, cols hour 0..23).
 
     Each observed (dow, hour) cell is normalized to its fraction of the route's
@@ -528,7 +542,7 @@ def _build_habits_matrix(rows: "Iterable[Mapping[str, object]]") -> "RouteHabits
         ]
         for row in raw
     ]
-    return RouteHabits(scale="repeat_problem_relative", matrix=matrix)
+    return RouteHabits(scale=scale, matrix=matrix)
 
 
 def _scheduled_headway_by_shift(

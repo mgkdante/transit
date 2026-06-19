@@ -94,7 +94,8 @@ _STATIC_LABELS_FR: dict[str, str] = {
     "methodology.percentiles": (
         "Le p90 du réseau est mesuré à partir des véhicules suivis en ce moment, "
         "et sur les 14 derniers jours dans la vue de tendance. Les percentiles par "
-        "ligne et par arrêt seront ajoutés plus tard."
+        "ligne et par arrêt sont calculés chaque jour à partir des observations "
+        "et conservés 365 jours."
     ),
     "methodology.retention": (
         "Les données détaillées sont conservées 14 jours; les agrégats quotidiens, "
@@ -143,7 +144,7 @@ _STATIC_LABELS_EN: dict[str, str] = {
     "methodology.percentiles": (
         "Network p90 is measured from the buses tracked right now, and over the "
         "last 14 days in the trend view. Per-route and per-stop percentiles are "
-        "coming later."
+        "computed daily from observations and kept for 365 days."
     ),
     "methodology.retention": (
         "Detailed data is kept for 14 days; daily aggregates for 365 days."
@@ -239,20 +240,66 @@ def build_routes_index(conn: Connection, *, provider_id: str = "stm", generated_
     return RoutesIndex(generated_utc=generated_utc, routes=routes)
 
 
-def build_stops_index(conn: Connection, *, provider_id: str = "stm", generated_utc: str) -> "StopsIndex":
-    """Build static/stops_index.json from gold.dim_stop."""
+# GTFS route_type -> contract mode. A stop served by several modes reports its
+# highest-priority one (metro on a metro+bus interchange); NULL/unknown
+# route_type folds to bus, mirroring build_routes_index.
+_ROUTE_TYPE_TO_MODE = {0: "tram", 1: "metro", 2: "rail", 3: "bus", 4: "ferry"}
+_MODE_PRIORITY = {"metro": 0, "tram": 1, "rail": 2, "bus": 3, "ferry": 4}
+
+
+def _mode_from_route_types(route_types: list[int | None]) -> str | None:
+    """Highest-priority transit mode among the GTFS route_types serving a stop.
+
+    Priority metro > tram > rail > bus > ferry. A NULL/unknown route_type folds
+    to bus (same convention as build_routes_index). Returns None for empty input.
+    """
+    best: str | None = None
+    for rt in route_types:
+        mode = _ROUTE_TYPE_TO_MODE.get(rt, "bus")  # NULL/unknown -> bus
+        if best is None or _MODE_PRIORITY[mode] < _MODE_PRIORITY[best]:
+            best = mode
+    return best
+
+
+def build_stops_index(
+    conn: Connection,
+    *,
+    provider_id: str = "stm",
+    generated_utc: str,
+    routes_served_by_stop: dict[str, list[str]] | None = None,
+    route_type_by_id: dict[str, int] | None = None,
+) -> "StopsIndex":
+    """Build static/stops_index.json from gold.dim_stop.
+
+    When *routes_served_by_stop* and *route_type_by_id* are supplied (threaded
+    from the same publish pass — see publish._publish_static), each entry also
+    carries a short top-5 ``routes`` list plus a derived ``mode`` (the
+    highest-priority GTFS mode among ALL routes serving the stop). With neither
+    argument the index still builds standalone (mode null, routes []), so old
+    callers and tests keep working. No second heavy query: both maps are built
+    in memory from build_routes_index + build_all_stops_data, which run anyway.
+    """
+    routes_by_stop = routes_served_by_stop or {}
+    type_by_id = route_type_by_id or {}
     stops = []
     for r in conn.execute(_STOPS_INDEX_SQL, {"provider_id": provider_id}).mappings():
         lat, lon = r["stop_lat"], r["stop_lon"]
         if lat is None or lon is None:
             continue
+        sid = str(r["stop_id"])
+        full_routes = routes_by_stop.get(sid, [])
+        # mode from the FULL served set (metro sorts first so it survives the
+        # cap anyway, but deriving from the full set is robust regardless).
+        mode = _mode_from_route_types([type_by_id.get(rt) for rt in full_routes]) if full_routes else None
         stops.append(
             StopIndexEntry(
-                id=str(r["stop_id"]),
+                id=sid,
                 code=r["stop_code"],
                 name=str(r["stop_name"] or r["stop_id"]),
                 lat=_round5(float(lat)),
                 lon=_round5(float(lon)),
+                mode=mode,
+                routes=full_routes[:5],
             )
         )
     return StopsIndex(generated_utc=generated_utc, stops=stops)

@@ -332,6 +332,12 @@ def _historic_dispatch_conn():
         ("DISTINCT ON (u.stop_id)", [{"stop_id": "S1", "stop_name": "Stop 1"}]),
         ("DISTINCT ON (u.route_id)", [{"route_id": "R1", "route_name": "Route 1"}]),
         ("UNION", [("R1",), ("R2",), ("R3",)]),  # 3 routes with history
+        # Tier-1 cancellation/occupancy reads (more-specific needles precede the
+        # generic daily-view "ORDER BY provider_local_date DESC" below).
+        ("cancellation_rate_pct, canceled_trip_days", []),
+        ("route_occupancy_band_daily AS rob", []),
+        ("first_trip_start_utc", []),
+        ("skipped_stop_rate_pct", []),
         ("ORDER BY provider_local_date DESC", [
             {"d": datetime.date(2026, 6, 1), "known_obs": 50, "on_time": 45,
              "avg_delay_sec": 90, "severe": 5},

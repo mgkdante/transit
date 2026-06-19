@@ -31,6 +31,11 @@ export interface MapCopy {
 	readonly nearMeLoading: string;
 	readonly nearMeNoResults: string;
 	readonly nearMeError: string;
+	/** Geolocation failure modes — distinct, actionable copy per error code. */
+	readonly nearMeGeoDenied: string;
+	readonly nearMeGeoTimeout: string;
+	readonly nearMeGeoUnavailable: string;
+	readonly nearMeGeoInsecure: string;
 	/** No-data occupancy legend row. */
 	readonly noData: string;
 	/** Entity legend labels — the SHAPE key (shape encodes entity + direction). */
@@ -76,6 +81,10 @@ export const copy: Record<Locale, MapCopy> = {
 		nearMeLoading: 'Finding stops...',
 		nearMeNoResults: 'No nearby stops',
 		nearMeError: 'Could not find that place',
+		nearMeGeoDenied: 'Location permission denied',
+		nearMeGeoTimeout: 'Location timed out — try again',
+		nearMeGeoUnavailable: 'Location unavailable',
+		nearMeGeoInsecure: 'Location needs a secure (https) connection',
 		noData: 'No data',
 		entityBusDirection: 'Bus - direction',
 		entityBusNoDirection: 'Bus - no direction',
@@ -115,6 +124,10 @@ export const copy: Record<Locale, MapCopy> = {
 		nearMeLoading: 'Recherche des arrêts...',
 		nearMeNoResults: 'Aucun arrêt proche',
 		nearMeError: 'Lieu introuvable',
+		nearMeGeoDenied: 'Autorisation de localisation refusée',
+		nearMeGeoTimeout: 'Délai de localisation dépassé — réessayez',
+		nearMeGeoUnavailable: 'Localisation indisponible',
+		nearMeGeoInsecure: 'La localisation requiert une connexion sécurisée (https)',
 		noData: 'Aucune donnée',
 		entityBusDirection: 'Bus - direction',
 		entityBusNoDirection: 'Bus - sans direction',

@@ -10,14 +10,9 @@
 
 import type { Locale } from '$lib/i18n';
 import type { OccupancyCode, StatusCode } from '$lib/v1/schemas';
+import type { SurfaceHeadCopy } from '$lib/components/surface';
 
-export interface NetworkCopy {
-	/** Mono station-voice overline. */
-	readonly kicker: string;
-	/** Display heading. */
-	readonly heading: string;
-	/** Muted lede paragraph (~52ch). */
-	readonly lede: string;
+export interface NetworkCopy extends SurfaceHeadCopy {
 	/** Section caption above the live metric grid. */
 	readonly liveSection: string;
 	/** Section caption above the trend chart. */

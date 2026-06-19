@@ -73,10 +73,49 @@ describe('MapHero mobile chrome', () => {
 		expect(s).toContain('onsuggestion={selectNearMeSuggestion}');
 		expect(s).toContain('onstopselect={selectNearbyStop}');
 		expect(s).toContain(
-			'function selectNearMeSuggestion(result: GeocodeSuggestion): Promise<void>',
+			'function selectNearMeSuggestion(\n\t\tresult: GeocodeSuggestion,\n\t\tsessionToken: string,\n\t): Promise<void>',
 		);
 		expect(s).toContain('hasCoordinates(result)');
+		// Free-text picks (geo.ca/nominatim) still resolve by label…
 		expect(s).toContain('await resolveNearMeQuery(result.label)');
+		// …but a Google placeId pick resolves the EXACT place by id (Place Details),
+		// reusing the autocomplete session token — the wrong-place fix.
+		expect(s).toContain("result.placeId && result.source === 'google_places'");
+		expect(s).toContain('await resolveNearMePlace(result.placeId, sessionToken)');
+		expect(s).toContain('?placeId=${encodeURIComponent(placeId)}&session=');
+	});
+
+	it('zooms the camera to a route/stop/vehicle picked from search (one-shot focus)', () => {
+		const s = source();
+
+		expect(s).toContain("from '$lib/search/mapFocus'");
+		expect(s).toContain('let pendingFocus = $state<MapFocus | null>(null)');
+		expect(s).toContain('readFocusFromUrl($page.url.searchParams)');
+		// resolves the kind's data then pans/fits and strips the param exactly once
+		expect(s).toContain('function focusStop(id: string)');
+		expect(s).toContain('function focusVehicle(id: string)');
+		expect(s).toContain('function focusRoute(id: string)');
+		expect(s).toContain('clearFocusFromUrl()');
+	});
+
+	it('zooms to a marker clicked directly on the map', () => {
+		const s = source();
+		const selectPickedFeature = s.match(/function selectPickedFeature[\s\S]*?\n\t}/)?.[0] ?? '';
+
+		expect(selectPickedFeature).toContain('focusSelection(next)');
+		expect(s).toContain('function focusSelection(selection: MapSelection)');
+	});
+
+	it('maps geolocation failure codes to distinct, secure-context-aware copy', () => {
+		const s = source();
+
+		expect(s).toContain('window.isSecureContext');
+		expect(s).toContain('t.nearMeGeoInsecure');
+		expect(s).toContain('geoError.code === geoError.PERMISSION_DENIED');
+		expect(s).toContain('t.nearMeGeoDenied');
+		expect(s).toContain('geoError.code === geoError.TIMEOUT');
+		expect(s).toContain('t.nearMeGeoTimeout');
+		expect(s).toContain('t.nearMeGeoUnavailable');
 	});
 
 	it('draws a distinct near-me location pin on the map when an address or browser location is selected', () => {
@@ -279,12 +318,22 @@ describe('MapHero mobile chrome', () => {
 		const s = source();
 		const mapStageBlock = s.match(/<MapStage[\s\S]*?\/>/)?.[0] ?? '';
 
-		expect(s).toContain('const DESKTOP_MAP_FIT_LEFT_PADDING_PX = 520');
+		// The camera FITS the island bounds (not the wide square) so the off-island
+		// south-shore east is cropped, framed into a square central gap with static
+		// width-fraction left/right buffers (no re-fit on panel toggle); maxBounds
+		// stays the looser basemap square.
+		expect(s).toContain('const MAP_FIT_PADDING_PX = 40');
+		expect(s).toContain('const ISLAND_FIT_BOUNDS');
+		expect(s).toContain('DESKTOP_LEFT_PAD_FRAC');
+		expect(s).toContain('DESKTOP_RIGHT_PAD_FRAC');
 		expect(s).toContain('const mapFitPadding = $derived');
 		expect(s).not.toContain('{#if basemap.settled}');
 		expect(mapStageBlock).toContain('basemap={basemap.data}');
 		expect(mapStageBlock).toContain('{theme}');
-		expect(mapStageBlock).toContain('bounds={manifest.bbox}');
+		expect(mapStageBlock).toContain('bounds={ISLAND_FIT_BOUNDS}');
+		// maxBounds crops the off-island east (south-shore) — fit padding can't crop.
+		expect(mapStageBlock).toContain('maxBounds={MAP_MAX_BOUNDS}');
+		expect(s).toContain('const MAP_MAX_BOUNDS');
 		expect(mapStageBlock).toContain('fitPadding={mapFitPadding}');
 	});
 

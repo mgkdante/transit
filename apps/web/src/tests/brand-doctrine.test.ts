@@ -1,11 +1,12 @@
-// brand-doctrine.test.ts — the lint that enforces the four-colour doctrine in
-// component source. Two gates, scanned over src/lib/components/**:
+// brand-doctrine.test.ts — the lint that enforces the four-colour doctrine.
+// Two gates:
 //
 //   1. NO RAW BRAND HEX. The interactive orange (#E07800) and wayfinding amber
 //      (#FFB627) must always flow through tokens (var(--primary) / var(--accent)
 //      / var(--accent-text) / bg-primary / text-accent-text …). A literal hex in
-//      a component hard-codes one theme and bypasses the light/dark split — it
-//      can never reskin. Banned everywhere under components/ (any case).
+//      source hard-codes one theme and bypasses the light/dark split — it can
+//      never reskin. Banned across ALL of src (any case), except the generated
+//      token source (tokens.css) where the hex is defined.
 //
 //   2. DATAVIZ MARKS STAY ON THE DATAVIZ SCALE. A data mark must be encoded with
 //      var(--dataviz-*) / bg-dataviz-* / text-dataviz-*, NEVER the semantic
@@ -29,14 +30,36 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { resolve, join } from 'node:path';
 
+const SRC = resolve(process.cwd(), 'src');
 const COMPONENTS = resolve(process.cwd(), 'src/lib/components');
 const DATAVIZ = join(COMPONENTS, 'dataviz');
+
+// Generated token source — the brand hex IS the point there (it's where the
+// tokens are defined). Map paint (basemap.ts / vehicleSprites.ts) also holds raw
+// hex, but never the BRAND orange/amber, so it doesn't trip this gate.
+const BRAND_HEX_ALLOWLIST = new Set([resolve(SRC, 'lib/styles/tokens.css')]);
 
 function walk(dir: string, out: string[] = []): string[] {
 	for (const entry of readdirSync(dir)) {
 		const p = join(dir, entry);
 		if (statSync(p).isDirectory()) walk(p, out);
 		else if (p.endsWith('.svelte') || p.endsWith('.ts')) out.push(p);
+	}
+	return out;
+}
+
+// Wider walk for the brand-hex gate: all source (.svelte/.ts/.css), minus tests
+// (which legitimately assert hex values) and the generated token source.
+function walkSrc(dir: string, out: string[] = []): string[] {
+	for (const entry of readdirSync(dir)) {
+		const p = join(dir, entry);
+		if (statSync(p).isDirectory()) walkSrc(p, out);
+		else if (
+			/\.(svelte|ts|css)$/.test(p) &&
+			!/\.(test|spec)\.ts$/.test(p) &&
+			!BRAND_HEX_ALLOWLIST.has(p)
+		)
+			out.push(p);
 	}
 	return out;
 }
@@ -63,26 +86,27 @@ function numbered(src: string): Array<[number, string]> {
 	return src.split('\n').map((line, i) => [i + 1, line]);
 }
 
-// --- Gate 1: raw brand hex anywhere under components/ -----------------------
+// --- Gate 1: raw brand hex anywhere in src ----------------------------------
 
 const RAW_BRAND_HEX = /#(?:e07800|ffb627)\b/i;
 
-describe('brand doctrine — no raw brand hex in component source', () => {
-	const files = walk(COMPONENTS);
+describe('brand doctrine — no raw brand hex anywhere in src', () => {
+	const files = walkSrc(SRC);
 
-	it('scans a non-empty component tree (guards against a wrong path)', () => {
+	it('scans a non-empty source tree (guards against a wrong path)', () => {
 		expect(files.length).toBeGreaterThan(0);
 	});
 
-	for (const file of files) {
-		it(`${rel(file)} contains no raw #E07800 / #FFB627 literal`, () => {
+	it('no source file hardcodes #E07800 / #FFB627 — interactive orange and wayfinding amber must flow through tokens', () => {
+		const violations: string[] = [];
+		for (const file of files) {
 			const scanned = blankComments(readFileSync(file, 'utf-8'));
-			const hits = numbered(scanned)
-				.filter(([, line]) => RAW_BRAND_HEX.test(line))
-				.map(([n, line]) => `L${n}: ${line.trim()}`);
-			expect(hits, hits.join('\n')).toEqual([]);
-		});
-	}
+			for (const [n, line] of numbered(scanned)) {
+				if (RAW_BRAND_HEX.test(line)) violations.push(`${rel(file)}:${n}: ${line.trim()}`);
+			}
+		}
+		expect(violations, violations.join('\n')).toEqual([]);
+	});
 });
 
 // --- Gate 2: dataviz kit must not encode data with affordance tokens --------

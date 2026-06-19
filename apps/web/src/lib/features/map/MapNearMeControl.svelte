@@ -19,7 +19,10 @@
 		stops?: readonly WithDistance<StopIndexEntry>[];
 		onuselocation: () => void;
 		onsearch: (event: SubmitEvent) => void | Promise<void>;
-		onsuggestion: (result: GeocodeSuggestion) => void | Promise<void>;
+		// sessionToken is the autocomplete session that produced this suggestion —
+		// the parent reuses it for the Place-Details call so the two bill as one
+		// Google session. Passed BEFORE the token rotates (see selectSuggestion).
+		onsuggestion: (result: GeocodeSuggestion, sessionToken: string) => void | Promise<void>;
 		onstopselect: (stop: WithDistance<StopIndexEntry>) => void;
 		onclear: () => void;
 	}
@@ -81,13 +84,16 @@
 	}
 
 	function selectSuggestion(result: GeocodeSuggestion): void {
+		// Capture the active session token and hand it to the parent BEFORE minting
+		// a fresh one — the Place-Details resolution must close THIS session.
+		const usedToken = suggestionSessionToken;
 		query = result.label;
 		suggestions = [];
 		suggestionsOpen = false;
 		lastSelectedSuggestionLabel = result.label;
-		suggestionSessionToken = createSuggestionSessionToken();
 		inputEl?.blur();
-		void onsuggestion(result);
+		void onsuggestion(result, usedToken);
+		suggestionSessionToken = createSuggestionSessionToken();
 	}
 
 	function closeSuggestions(): void {
@@ -389,7 +395,7 @@
 		z-index: 2;
 		display: grid;
 		gap: 0.25rem;
-		max-height: min(18rem, calc(100vh - 10rem));
+		max-height: min(18rem, calc(100dvh - 10rem));
 		overflow-y: auto;
 		padding: 0.3rem;
 		background: color-mix(in srgb, var(--card) 98%, transparent);

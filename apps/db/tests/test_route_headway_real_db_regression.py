@@ -217,7 +217,7 @@ def _headway_rows(connection, route_id: str) -> dict[str, dict]:
     rows = connection.execute(
         text(
             """
-            SELECT shift, observed_headway_min, sample_count
+            SELECT shift, observed_headway_min, sample_count, headway_cov, bunched_count
             FROM gold.route_headway_daily
             WHERE provider_id = :p
               AND route_id = :route_id
@@ -257,6 +257,33 @@ def test_interleaved_directions_do_not_halve_headway(conn) -> None:
     midday = _headway_rows(conn, "51")["midday"]
     assert _as_float(midday["observed_headway_min"]) == 8.0
     assert midday["sample_count"] == 3
+    # Tier-2: perfectly regular 8-min gaps → CoV 0.0, no bunching.
+    assert _as_float(midday["headway_cov"]) == 0.0
+    assert midday["bunched_count"] == 0
+
+
+def test_headway_cov_and_bunching_on_irregular_gaps(conn) -> None:
+    # Busiest direction with irregular gaps: starts at +0,+2,+12,+22 min → gaps
+    # [2, 10, 10] min. median=10, mean≈7.33, stddev_samp≈4.62 → CoV≈0.63; the 2-min
+    # gap is < 0.5*median(=5) → 1 bunched.
+    service_date = _recent_weekday(0)
+    _seed_pattern(
+        conn,
+        seq_start=1,
+        route_id="77",
+        service_date=service_date,
+        direction_id=0,
+        local_times=[(10, 0), (10, 2), (10, 12), (10, 22)],
+    )
+
+    _run_headway_rollup(conn)
+
+    midday = _headway_rows(conn, "77")["midday"]
+    assert midday["sample_count"] == 3
+    assert _as_float(midday["observed_headway_min"]) == 10.0
+    # CoV = stddev_samp([2,10,10]) / mean ≈ 4.619 / 7.333 ≈ 0.63 (4dp rounded).
+    assert 0.6 <= _as_float(midday["headway_cov"]) <= 0.66
+    assert midday["bunched_count"] == 1
 
 
 def test_pre_service_feed_rows_ignored(conn) -> None:
@@ -354,3 +381,67 @@ def test_weekend_service_days_excluded(conn) -> None:
     assert _as_float(rows["midday"]["observed_headway_min"]) == 8.0
     assert rows["midday"]["sample_count"] == 3
     assert _headway_rows(conn, "54W") == {}
+
+
+def _run_direction_headway_rollup(connection) -> None:
+    params = {"provider_id": PROVIDER, "built_at_utc": BUILT_AT, "open_window_days": 10}
+    connection.execute(rollups.DELETE_REPORTING_AGGREGATES["route_headway_direction_daily"], params)
+    connection.execute(rollups.REPORTING_AGGREGATE_UPSERTS["route_headway_direction_daily"], params)
+
+
+def _direction_headway_rows(connection, route_id: str) -> list[dict]:
+    rows = connection.execute(
+        text(
+            """
+            SELECT direction_id, service_day_kind, shift, observed_headway_min, sample_count
+            FROM gold.route_headway_direction_daily
+            WHERE provider_id = :p AND route_id = :route_id
+            ORDER BY direction_id, service_day_kind, shift
+            """
+        ),
+        {"p": PROVIDER, "route_id": route_id},
+    ).mappings()
+    return [dict(r) for r in rows]
+
+
+def test_direction_headway_keeps_both_directions_and_weekends(conn) -> None:
+    weekday = _recent_weekday(0)
+    saturday = _recent_saturday()
+    # Two directions on a weekday (interleaved) + direction 0 on a weekend day.
+    seq = _seed_pattern(
+        conn,
+        seq_start=600,
+        route_id="61",
+        service_date=weekday,
+        direction_id=0,
+        local_times=[(10, 0), (10, 8), (10, 16), (10, 24)],
+    )
+    seq = _seed_pattern(
+        conn,
+        seq_start=seq,
+        route_id="61",
+        service_date=weekday,
+        direction_id=1,
+        local_times=[(10, 4), (10, 12), (10, 20)],
+    )
+    _seed_pattern(
+        conn,
+        seq_start=seq,
+        route_id="61",
+        service_date=saturday,
+        direction_id=0,
+        local_times=[(10, 0), (10, 10), (10, 20)],
+    )
+
+    _run_direction_headway_rollup(conn)
+    rows = _direction_headway_rows(conn, "61")
+
+    # Both directions survive on the weekday — NOT collapsed to one busiest direction
+    # (the legacy route_headway_daily keeps only the busiest direction).
+    weekday_dirs = {r["direction_id"] for r in rows if r["service_day_kind"] == "weekday"}
+    assert weekday_dirs == {0, 1}
+    # Weekend service days are KEPT and tagged (route_headway_daily excludes them).
+    weekend_rows = [r for r in rows if r["service_day_kind"] == "weekend"]
+    assert weekend_rows
+    assert all(r["direction_id"] == 0 for r in weekend_rows)
+    assert all(r["shift"] == "midday" for r in rows)

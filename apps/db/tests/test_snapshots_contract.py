@@ -187,3 +187,189 @@ def test_alert_text_fields_are_additive():
     # Freeze-compat: required arrays are exactly the committed ones.
     assert Alert.model_json_schema()["required"] == ["id", "severity", "header_key"]
     assert AlertHistoryEntry.model_json_schema()["required"] == ["id"]
+
+
+def test_reliability_new_fields_are_additive():
+    """Tier-0 rollup-foundation: RouteReliability.day_of_week, StopReliability.habits,
+    and StopReliabilityPeriod.p50_min/p90_min are optional-with-default, so already-
+    published reliability artifacts still validate and required sets are unchanged."""
+    from transit_ops.snapshots.contract import (
+        RouteDayOfWeek,
+        RouteHabits,
+        RouteReliability,
+        StopReliability,
+        StopReliabilityPeriod,
+    )
+
+    # Old-shape route reliability still validates; day_of_week defaults to [].
+    rr = RouteReliability(generated_utc="t", id="165")
+    assert rr.day_of_week == []
+    full = RouteReliability(
+        generated_utc="t",
+        id="165",
+        day_of_week=[RouteDayOfWeek(day_of_week_iso=1, avg_delay_min=2.1)],
+    )
+    assert full.day_of_week[0].day_of_week_iso == 1
+    assert full.day_of_week[0].observation_count is None
+
+    # Old-shape stop reliability still validates; habits defaults to None.
+    sr = StopReliability(generated_utc="t", id="s1")
+    assert sr.habits is None
+    sr_full = StopReliability(
+        generated_utc="t",
+        id="s1",
+        habits=RouteHabits(scale="severe_relative", matrix=[[None, 1.0]]),
+    )
+    assert sr_full.habits.scale == "severe_relative"
+
+    # StopReliabilityPeriod percentiles are optional.
+    assert StopReliabilityPeriod(grain="week").p50_min is None
+    assert StopReliabilityPeriod(grain="day", p50_min=0.8, p90_min=5.0).p90_min == 5.0
+
+    # Freeze-compat: required sets unchanged by the additive fields.
+    assert RouteReliability.model_json_schema()["required"] == ["generated_utc", "id"]
+    assert StopReliability.model_json_schema()["required"] == ["generated_utc", "id"]
+    assert StopReliabilityPeriod.model_json_schema()["required"] == ["grain"]
+
+
+def test_tier1_cancellation_occupancy_fields_are_additive():
+    """Tier-1 rollup-foundation: RouteReliability.cancellations/occupancy_mix and
+    TrendPoint.cancellation_rate/occupancy_mix are optional-with-default (reusing
+    the existing OccupancyMix model), so already-published route_reliability.json /
+    network_trend.json still validate and required sets stay frozen."""
+    from transit_ops.snapshots.contract import (
+        CancellationPeriod,
+        OccupancyMix,
+        RouteReliability,
+        TrendPoint,
+    )
+
+    # Old-shape route reliability: cancellations defaults [], occupancy_mix None.
+    rr = RouteReliability(generated_utc="t", id="165")
+    assert rr.cancellations == []
+    assert rr.occupancy_mix is None
+
+    # Populated cancellations + occupancy_mix roundtrip.
+    full = RouteReliability(
+        generated_utc="t",
+        id="165",
+        cancellations=[
+            CancellationPeriod(
+                date="2026-06-17",
+                cancellation_rate_pct=2.56,
+                canceled_trip_days=4,
+                total_trip_days=156,
+            )
+        ],
+        occupancy_mix=OccupancyMix(many_seats=0.5, few_seats=0.3, standing=0.2),
+    )
+    assert full.cancellations[0].grain == "day"
+    assert full.cancellations[0].cancellation_rate_pct == 2.56
+    assert full.occupancy_mix.standing == 0.2
+
+    # Honest-None cancellation rate (no trips observed) still validates.
+    empty_rate = CancellationPeriod(canceled_trip_days=0, total_trip_days=0)
+    assert empty_rate.cancellation_rate_pct is None
+
+    # TrendPoint defaults None for both new fields; populated roundtrips.
+    assert TrendPoint(date="2026-06-17").cancellation_rate is None
+    assert TrendPoint(date="2026-06-17").occupancy_mix is None
+    tp = TrendPoint(date="2026-06-17", cancellation_rate=1.2, occupancy_mix=OccupancyMix(full=1.0))
+    assert tp.cancellation_rate == 1.2
+    assert tp.occupancy_mix.full == 1.0
+
+    # Freeze-compat: required sets unchanged by the additive fields.
+    assert RouteReliability.model_json_schema()["required"] == ["generated_utc", "id"]
+    assert TrendPoint.model_json_schema()["required"] == ["date"]
+    # CancellationPeriod is fully optional (grain has a default) — no required set.
+    assert CancellationPeriod.model_json_schema().get("required", []) == []
+
+
+def test_tier2_headway_servicespan_alertbreakdown_fields_are_additive():
+    """Tier-2 rollup-foundation: HeadwayPeriod.cov/bunched_pct, RouteReliability.
+    service_spans, and AlertHistory.breakdown are optional-with-default, so already-
+    published artifacts still validate and required sets stay frozen."""
+    from transit_ops.snapshots.contract import (
+        AlertBreakdown,
+        AlertBreakdownBucket,
+        AlertHistory,
+        HeadwayPeriod,
+        RouteReliability,
+        ServiceSpanPeriod,
+        SkippedStopPeriod,
+    )
+
+    # HeadwayPeriod regularity fields default None; populated roundtrips.
+    hp = HeadwayPeriod(shift="am_peak")
+    assert hp.cov is None and hp.bunched_pct is None
+    assert HeadwayPeriod(shift="am_peak", cov=0.42, bunched_pct=12.5).cov == 0.42
+
+    # RouteReliability.service_spans / skipped_stops default []; populated roundtrips.
+    rr = RouteReliability(generated_utc="t", id="165")
+    assert rr.service_spans == []
+    assert rr.skipped_stops == []
+    rr_skip = RouteReliability(
+        generated_utc="t",
+        id="165",
+        skipped_stops=[
+            SkippedStopPeriod(
+                date="2026-06-17", skipped_stop_rate_pct=3.94,
+                skipped_stop_count=12, stop_time_update_count=305,
+            )
+        ],
+    )
+    assert rr_skip.skipped_stops[0].skipped_stop_rate_pct == 3.94
+    # Honest-None rate when no stop-time updates observed.
+    assert SkippedStopPeriod(skipped_stop_count=0, stop_time_update_count=0).skipped_stop_rate_pct is None
+    full = RouteReliability(
+        generated_utc="t",
+        id="165",
+        service_spans=[
+            ServiceSpanPeriod(
+                date="2026-06-17", first_trip_utc="2026-06-17T10:00:00Z",
+                last_trip_utc="2026-06-18T01:00:00Z", service_span_min=900,
+                first_trip_delay_min=0.5, last_trip_delay_min=1.5, trip_count=120,
+            )
+        ],
+    )
+    assert full.service_spans[0].service_span_min == 900
+
+    # AlertHistory.breakdown defaults None; populated roundtrips.
+    assert AlertHistory(generated_utc="t").breakdown is None
+    ah = AlertHistory(
+        generated_utc="t",
+        breakdown=AlertBreakdown(
+            by_cause=[AlertBreakdownBucket(key="unknown", count=3, median_duration_min=42.0)],
+            by_severity=[AlertBreakdownBucket(key="high", count=2)],
+        ),
+    )
+    assert ah.breakdown.by_cause[0].key == "unknown"
+    assert ah.breakdown.by_severity[0].median_duration_min is None
+
+    # Freeze-compat: required sets unchanged by the additive fields.
+    assert RouteReliability.model_json_schema()["required"] == ["generated_utc", "id"]
+    assert HeadwayPeriod.model_json_schema()["required"] == ["shift"]
+    assert AlertHistory.model_json_schema()["required"] == ["generated_utc"]
+    assert AlertBreakdownBucket.model_json_schema()["required"] == ["key"]
+
+
+def test_stop_index_mode_routes_are_additive():
+    """slice stops-index-mode-routes: mode/routes are optional-with-default, so an
+    already-published stops_index.json (without them) still validates and the
+    frozen StopIndexEntry required set stays [id,name,lat,lon]."""
+    from transit_ops.snapshots.contract import StopIndexEntry
+
+    # Old-shape entry still validates; new fields default to None / [].
+    s = StopIndexEntry(id="51234", name="Côte-Vertu / Décarie", lat=45.49123, lon=-73.66123)
+    assert s.mode is None
+    assert s.routes == []
+
+    # Fully-populated entry roundtrips.
+    full = StopIndexEntry(
+        id="1", name="Berri-UQAM", lat=45.5151, lon=-73.5611, mode="metro", routes=["1", "165"]
+    )
+    assert full.mode == "metro"
+    assert full.routes == ["1", "165"]
+
+    # Freeze-compat: required keys are exactly the committed ones.
+    assert StopIndexEntry.model_json_schema()["required"] == ["id", "name", "lat", "lon"]

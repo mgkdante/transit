@@ -25,6 +25,7 @@
   invent data, never crash. Mirrors the hub head + surface padding.
 -->
 <script lang="ts">
+	import { page } from '$app/stores';
 	import { getLocale, type Locale } from '$lib/i18n';
 	import { layout } from '$lib/nav';
 	import { createResource } from '$lib/v1/resource.svelte';
@@ -34,10 +35,18 @@
 		type RouteIndexEntry,
 		type StopIndexEntry,
 	} from '$lib/v1';
-	import { ResourceBoundary, SurfaceHeader, EntityList, EntityRow } from '$lib/components/surface';
+	import {
+		ResourceBoundary,
+		SurfaceHeader,
+		EntityList,
+		EntityRow,
+		SearchInput,
+	} from '$lib/components/surface';
 	import { Surface } from '$lib/components/layout';
 	import { Separator } from '$lib/components/ui/separator';
 	import { EdgeState } from '$lib/components/edge';
+	import { dedupeBy, foldSearchText, tokenMatchScore } from '$lib/search/normalize';
+	import { stopGroupKey, stopModeHint } from '$lib/search/stopMode';
 	import { copy } from './search.copy';
 
 	const locale: Locale = getLocale();
@@ -51,34 +60,34 @@
 	// Max rows rendered per group — a broad query can't flood the surface.
 	const MAX_RESULTS = 50;
 
-	let query = $state('');
-	const normalized = $derived(query.trim().toLowerCase());
+	// Seed the query from the URL `q` param once, so /search?q=berri deep-links
+	// hydrate the input + results on load. Read at init only (not reactive) — the
+	// input owns the value from here on; the empty state still owns the no-`q` case.
+	let query = $state($page.url.searchParams.get('q') ?? '');
+	const normalized = $derived(foldSearchText(query));
 	const hasQuery = $derived(normalized.length > 0);
 
-	function matchRoute(r: RouteIndexEntry, q: string): boolean {
-		return (
-			r.id.toLowerCase().includes(q) ||
-			r.short.toLowerCase().includes(q) ||
-			(r.long?.toLowerCase().includes(q) ?? false)
-		);
-	}
-
-	function matchStop(s: StopIndexEntry, q: string): boolean {
-		return (
-			s.id.toLowerCase().includes(q) ||
-			s.name.toLowerCase().includes(q) ||
-			(s.code?.toLowerCase().includes(q) ?? false)
-		);
-	}
-
-	// Filtered, capped matches. Derived from the loaded indexes + the live query;
-	// empty when nothing is typed (the idle state owns that case).
-	const matchedRoutes = $derived(
-		hasQuery && routes.data ? routes.data.routes.filter((r) => matchRoute(r, normalized)) : [],
-	);
-	const matchedStops = $derived(
-		hasQuery && stops.data ? stops.data.stops.filter((s) => matchStop(s, normalized)) : [],
-	);
+	// Accent-blind, word-order-free, token-AND matching (shared with every other
+	// search surface) ranked by tier so exact/prefix hits lead within a group.
+	// 'cremazie' → 'Station Crémazie'; 'berri uqam' → 'Station Berri-UQAM'.
+	const matchedRoutes = $derived.by<RouteIndexEntry[]>(() => {
+		if (!hasQuery || !routes.data) return [];
+		return routes.data.routes
+			.map((r) => ({ r, score: tokenMatchScore([r.id, r.short, r.long], normalized) }))
+			.filter((m): m is { r: RouteIndexEntry; score: number } => m.score != null)
+			.sort((a, b) => a.score - b.score)
+			.map((m) => m.r);
+	});
+	const matchedStops = $derived.by<StopIndexEntry[]>(() => {
+		if (!hasQuery || !stops.data) return [];
+		const ranked = stops.data.stops
+			.map((s) => ({ s, score: tokenMatchScore([s.id, s.name, s.code], normalized) }))
+			.filter((m): m is { s: StopIndexEntry; score: number } => m.score != null)
+			.sort((a, b) => a.score - b.score)
+			.map((m) => m.s);
+		// One row per logical stop — métro/station names collapse to a single station.
+		return dedupeBy(ranked, stopGroupKey);
+	});
 
 	const hasResults = $derived(matchedRoutes.length > 0 || matchedStops.length > 0);
 
@@ -86,29 +95,17 @@
 	function routeTitle(r: RouteIndexEntry): string {
 		return r.short || r.id;
 	}
-	// A stop's code (pole number) is a useful right-aligned meta when present.
-	function stopMeta(s: StopIndexEntry): string | undefined {
-		return s.code ?? undefined;
-	}
 </script>
 
 <Surface width="bleed" class="surface">
 	<SurfaceHeader kicker={t.kicker} heading={t.heading} lede={t.lede} />
 
-	<div class="search-field">
-		<label class="search-label" for="surface-search-input">{t.inputLabel}</label>
-		<input
-			id="surface-search-input"
-			class="search-input"
-			type="search"
-			autocomplete="off"
-			autocapitalize="none"
-			spellcheck="false"
-			placeholder={t.inputPlaceholder}
-			aria-label={t.inputLabel}
-			bind:value={query}
-		/>
-	</div>
+	<SearchInput
+		id="surface-search-input"
+		label={t.inputLabel}
+		placeholder={t.inputPlaceholder}
+		bind:value={query}
+	/>
 
 	<Separator variant="hazard" />
 
@@ -168,12 +165,15 @@
 								truncatedLabel={t.more(matchedStops.length - MAX_RESULTS)}
 							>
 								{#snippet row(s)}
+									{@const hint = stopModeHint(s)}
 									<EntityRow
 										target={{ kind: 'stop', id: s.id }}
 										{locale}
-										glyph="■"
+										glyph={hint.glyph}
 										title={s.name}
-										meta={stopMeta(s)}
+										subtitle={s.code ?? undefined}
+										meta={hint.label ?? undefined}
+										routes={s.routes}
 									/>
 								{/snippet}
 							</EntityList>
@@ -186,41 +186,6 @@
 </Surface>
 
 <style>
-	.search-field {
-		display: flex;
-		flex-direction: column;
-		gap: 0.5rem;
-		max-width: 32rem;
-	}
-	.search-label {
-		font-family: var(--font-mono);
-		font-size: var(--text-caption);
-		letter-spacing: 0.06em;
-		text-transform: uppercase;
-		color: var(--muted-foreground);
-	}
-	.search-input {
-		width: 100%;
-		padding: 0.75rem 1rem;
-		font-family: var(--font-body);
-		font-size: var(--text-body);
-		color: var(--foreground);
-		background-color: var(--card);
-		border: 1px solid var(--border);
-		border-radius: var(--radius-md);
-		transition:
-			border-color 150ms ease,
-			box-shadow 150ms ease;
-	}
-	.search-input::placeholder {
-		color: var(--muted-foreground);
-	}
-	.search-input:focus-visible {
-		outline: none;
-		border-color: var(--primary);
-		box-shadow: 0 0 0 2px var(--ring);
-	}
-
 	.search-idle {
 		display: flex;
 		flex-direction: column;
@@ -281,11 +246,5 @@
 		font-family: var(--font-mono);
 		font-size: var(--text-caption);
 		color: var(--muted-foreground);
-	}
-
-	@media (prefers-reduced-motion: reduce) {
-		.search-input {
-			transition: none;
-		}
 	}
 </style>

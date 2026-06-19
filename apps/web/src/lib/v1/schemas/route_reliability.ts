@@ -6,6 +6,7 @@
 
 import { z } from 'zod';
 import { isoUtc } from './types';
+import { OccupancyMixSchema } from './network';
 
 export const ReliabilityPeriodSchema = z.object({
 	// NOTE: free-string grain the pipeline owns (e.g. 'day'/'week'/'month'/
@@ -25,8 +26,31 @@ export const HeadwayPeriodSchema = z.object({
 	scheduled_min: z.number().nullable().optional(),
 	observed_min: z.number().nullable().optional(),
 	excess_wait_min: z.number().nullable().optional(),
+	// Tier-2 regularity (busiest-direction rows): stddev/mean of gaps + bunching %.
+	cov: z.number().nullable().optional(),
+	bunched_pct: z.number().nullable().optional(),
 });
 export type HeadwayPeriod = z.infer<typeof HeadwayPeriodSchema>;
+
+export const ServiceSpanPeriodSchema = z.object({
+	date: z.string().nullable().optional(),
+	first_trip_utc: z.string().nullable().optional(),
+	last_trip_utc: z.string().nullable().optional(),
+	service_span_min: z.number().int().nullable().optional(),
+	first_trip_delay_min: z.number().nullable().optional(),
+	last_trip_delay_min: z.number().nullable().optional(),
+	trip_count: z.number().int().nullable().optional(),
+});
+export type ServiceSpanPeriod = z.infer<typeof ServiceSpanPeriodSchema>;
+
+export const SkippedStopPeriodSchema = z.object({
+	date: z.string().nullable().optional(),
+	// skipped / all observed stop-time updates, %; null when none observed.
+	skipped_stop_rate_pct: z.number().nullable().optional(),
+	skipped_stop_count: z.number().int().nullable().optional(),
+	stop_time_update_count: z.number().int().nullable().optional(),
+});
+export type SkippedStopPeriod = z.infer<typeof SkippedStopPeriodSchema>;
 
 export const RouteHabitsSchema = z.object({
 	// e.g. 'repeat_problem_relative' — drives the heatmap normalization on the
@@ -40,9 +64,28 @@ export type RouteHabits = z.infer<typeof RouteHabitsSchema>;
 export const WeakStopSchema = z.object({
 	id: z.string(),
 	name: z.string().nullable().optional(),
-	median_delay_min: z.number().nullable().optional(),
+	avg_delay_min: z.number().nullable().optional(),
 });
 export type WeakStop = z.infer<typeof WeakStopSchema>;
+
+export const RouteDayOfWeekSchema = z.object({
+	day_of_week_iso: z.number().int(),
+	avg_delay_min: z.number().nullable().optional(),
+	severe_pct: z.number().nullable().optional(),
+	observation_count: z.number().int().nullable().optional(),
+});
+export type RouteDayOfWeek = z.infer<typeof RouteDayOfWeekSchema>;
+
+export const CancellationPeriodSchema = z.object({
+	// free-string grain the pipeline owns (e.g. 'day'); NOT the web Grain enum.
+	grain: z.string(),
+	date: z.string().nullable().optional(),
+	// canceled / RT-reported trip-days, %; null when no trips were observed.
+	cancellation_rate_pct: z.number().nullable().optional(),
+	canceled_trip_days: z.number().int().nullable().optional(),
+	total_trip_days: z.number().int().nullable().optional(),
+});
+export type CancellationPeriod = z.infer<typeof CancellationPeriodSchema>;
 
 export const RouteReliabilitySchema = z.object({
 	generated_utc: isoUtc(),
@@ -52,6 +95,16 @@ export const RouteReliabilitySchema = z.object({
 	headway: z.array(HeadwayPeriodSchema).optional(),
 	// null when the route has no time-of-day habit data.
 	habits: RouteHabitsSchema.nullable().optional(),
+	// per-route weekday seasonality (ISO 1=Mon..7=Sun).
+	day_of_week: z.array(RouteDayOfWeekSchema).optional(),
 	weak_stops: z.array(WeakStopSchema).optional(),
+	// per-day cancellation history (most recent ~30 closed days).
+	cancellations: z.array(CancellationPeriodSchema).optional(),
+	// trailing-window crowding band-shares; null when no occupancy telemetry.
+	occupancy_mix: OccupancyMixSchema.nullable().optional(),
+	// per-day service-span / first-last punctuality history.
+	service_spans: z.array(ServiceSpanPeriodSchema).optional(),
+	// per-day skipped-stop rate history (ramp-in, no backfill).
+	skipped_stops: z.array(SkippedStopPeriodSchema).optional(),
 });
 export type RouteReliability = z.infer<typeof RouteReliabilitySchema>;

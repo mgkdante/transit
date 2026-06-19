@@ -12,6 +12,11 @@ export const StopIndexEntrySchema = z.object({
 	lon: z.number(),
 	// Rider-facing stop code (printed on the pole); null when absent.
 	code: z.string().nullable().optional(),
+	// Highest-priority GTFS mode serving this stop (pipeline-derived); null when
+	// no route linkage. Closed enum — drives the search mode glyph/tag.
+	mode: z.enum(['metro', 'tram', 'rail', 'bus', 'ferry']).nullable().optional(),
+	// Up to 5 route ids serving this stop, for the search mode + result chips.
+	routes: z.array(z.string()).optional(),
 });
 export type StopIndexEntry = z.infer<typeof StopIndexEntrySchema>;
 

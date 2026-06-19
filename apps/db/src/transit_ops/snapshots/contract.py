@@ -208,6 +208,18 @@ class StopIndexEntry(BaseModel):
     name: str
     lat: float
     lon: float
+    # Additive (slice stops-index-mode-routes): optional so already-published
+    # snapshots lacking these keys still validate. mode = highest-priority GTFS
+    # mode serving the stop, null when no route linkage; routes = up to 5 route
+    # ids serving the stop (route natural-sort order), for search mode + chips.
+    mode: str | None = Field(
+        default=None,
+        description="highest-priority GTFS mode serving this stop: metro|tram|rail|bus|ferry; null when no route linkage",
+    )
+    routes: list[str] = Field(
+        default_factory=list,
+        description="up to 5 route ids serving this stop, in route natural-sort order",
+    )
 
 class StopsIndex(BaseModel):
     generated_utc: str
@@ -269,6 +281,11 @@ class TrendPoint(BaseModel):
     avg_delay_min: float | None = None
     p90_min: float | None = None
     vehicles: int | None = None
+    # Tier-1 additive: network-wide cancellation rate (canceled / RT-reported
+    # trip-days, %) and crowding band-shares for the day. Both None when their
+    # source rollups have no data for the date.
+    cancellation_rate: float | None = None
+    occupancy_mix: OccupancyMix | None = None
 
 class NetworkTrend(BaseModel):
     generated_utc: str
@@ -283,11 +300,50 @@ class ReliabilityPeriod(BaseModel):
     p90_min: float | None = None
     severe_pct: float | None = None
 
+class CancellationPeriod(BaseModel):
+    # Per-route cancellation over one closed local day (or a derived grain).
+    # cancellation_rate_pct = 100 * canceled_trip_days / total_trip_days, where a
+    # trip-day is a distinct (trip_id, start_date) seen in the RT feed; the rate
+    # is "canceled among RT-reported trips", NOT schedule-complete. None (not 0)
+    # when total_trip_days=0. Counts are carried so weekly/monthly can SUM-derive.
+    grain: str = "day"
+    date: str | None = None
+    cancellation_rate_pct: float | None = None
+    canceled_trip_days: int | None = None
+    total_trip_days: int | None = None
+
 class HeadwayPeriod(BaseModel):
     shift: str
     scheduled_min: float | None = None
     observed_min: float | None = None
     excess_wait_min: float | None = None
+    # Tier-2 regularity (busiest-direction rows only): cov = stddev/mean of the
+    # observed trip-start gaps (None when fewer than 2 gaps); bunched_pct = % of
+    # gaps under half the shift median headway (None when no gaps).
+    cov: float | None = None
+    bunched_pct: float | None = None
+
+class ServiceSpanPeriod(BaseModel):
+    # Per-route service span over one closed local day. "trip start" = first
+    # realtime observation of a trip (not the scheduled departure); first/last
+    # delay = that trip's first-observation schedule deviation (minutes).
+    # service_day_kind is derived from the date by consumers (weekday/weekend).
+    date: str | None = None
+    first_trip_utc: str | None = None
+    last_trip_utc: str | None = None
+    service_span_min: int | None = None
+    first_trip_delay_min: float | None = None
+    last_trip_delay_min: float | None = None
+    trip_count: int | None = None
+
+class SkippedStopPeriod(BaseModel):
+    # Per-route skipped-stop rate over one closed local day. rate_pct = skipped /
+    # all observed stop-time updates (GTFS-RT SKIPPED=1); None when none observed.
+    # RAMP-IN: history accrues forward only from the date this metric shipped.
+    date: str | None = None
+    skipped_stop_rate_pct: float | None = None
+    skipped_stop_count: int | None = None
+    stop_time_update_count: int | None = None
 
 class RouteHabits(BaseModel):
     scale: str
@@ -299,7 +355,16 @@ class RouteHabits(BaseModel):
 class WeakStop(BaseModel):
     id: str
     name: str | None = None
-    median_delay_min: float | None = None
+    avg_delay_min: float | None = None
+
+class RouteDayOfWeek(BaseModel):
+    # Per-route weekday seasonality from gold.route_delay_day_of_week (ISO 1=Mon..7=Sun).
+    # trip_count is intentionally omitted — the gold column is an hourly-distinct-sum
+    # upper-bound proxy, not distinct trips per weekday.
+    day_of_week_iso: int
+    avg_delay_min: float | None = None
+    severe_pct: float | None = None
+    observation_count: int | None = None
 
 class RouteReliability(BaseModel):
     generated_utc: str
@@ -308,23 +373,39 @@ class RouteReliability(BaseModel):
     periods: list[ReliabilityPeriod] = Field(default_factory=list)
     headway: list[HeadwayPeriod] = Field(default_factory=list)
     habits: RouteHabits | None = None
+    day_of_week: list[RouteDayOfWeek] = Field(default_factory=list)
     weak_stops: list[WeakStop] = Field(default_factory=list)
+    # Tier-1 additive: per-day cancellation history + trailing-window crowding
+    # band-shares. cancellations defaults empty, occupancy_mix None when absent.
+    cancellations: list[CancellationPeriod] = Field(default_factory=list)
+    occupancy_mix: OccupancyMix | None = None
+    # Tier-2 additive: per-day service-span / first-last punctuality history.
+    service_spans: list[ServiceSpanPeriod] = Field(default_factory=list)
+    # Tier-2 additive: per-day skipped-stop rate history (ramp-in, no backfill).
+    skipped_stops: list[SkippedStopPeriod] = Field(default_factory=list)
 
 class StopReliabilityPeriod(BaseModel):
     grain: str
     otp_pct: int | None = None
-    median_delay_min: float | None = None
+    avg_delay_min: float | None = None
+    p50_min: float | None = None
+    p90_min: float | None = None
     severe_pct: float | None = None
 
 class StopByRoute(BaseModel):
     route: str
-    median_delay_min: float | None = None
+    avg_delay_min: float | None = None
 
 class StopReliability(BaseModel):
     generated_utc: str
     id: str
     name: str | None = None
     periods: list[StopReliabilityPeriod] = Field(default_factory=list)
+    # Per-stop 7x24 (dow x hour) heatmap, reusing the RouteHabits shape but on a
+    # DISTINCT scale ('severe_relative'): each cell is the stop's severe-delay count
+    # relative to its own worst cell — NOT the route repeat-problem score, so a
+    # shared legend can't conflate the two.
+    habits: RouteHabits | None = None
     by_route: list[StopByRoute] = Field(default_factory=list)
 
 class Hotspot(BaseModel):
@@ -361,7 +442,7 @@ class ReceiptWorstRoute(BaseModel):
 class ReceiptWorstStop(BaseModel):
     id: str
     name: str | None = None
-    median_delay_min: float | None = None
+    avg_delay_min: float | None = None
 
 class Receipt(BaseModel):
     generated_utc: str
@@ -391,9 +472,26 @@ class AlertHistoryEntry(BaseModel):
     duration_min: float | None = None
     impact_passages: int | None = None
 
+class AlertBreakdownBucket(BaseModel):
+    # One cause/effect/severity value with its distinct-alert count + median
+    # duration (minutes). key is the decoded label, or "unknown" when STM omits it.
+    key: str
+    count: int = 0
+    median_duration_min: float | None = None
+
+class AlertBreakdown(BaseModel):
+    # Tier-2 additive: distinct-alert distribution over the alert-history window.
+    # cause/effect are frequently NULL on STM (→ mostly "unknown"); duration is
+    # the high-confidence dimension.
+    by_cause: list[AlertBreakdownBucket] = Field(default_factory=list)
+    by_effect: list[AlertBreakdownBucket] = Field(default_factory=list)
+    by_severity: list[AlertBreakdownBucket] = Field(default_factory=list)
+
 class AlertHistory(BaseModel):
     generated_utc: str
     alerts: list[AlertHistoryEntry] = Field(default_factory=list)
+    # Tier-2 additive: None when no alerts in the window.
+    breakdown: AlertBreakdown | None = None
 
 class ProvenanceSource(BaseModel):
     feed: str

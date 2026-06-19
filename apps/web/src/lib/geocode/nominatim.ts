@@ -1,15 +1,10 @@
 import type { GeocodedLocation, GeocodePrecision } from './types';
+import { isInsideMontrealBounds, montrealViewbox } from './types';
+import { foldDiacritics } from '$lib/search/normalize';
 
 export type { GeocodedLocation, GeocodePrecision } from './types';
 
 export type GeocodeFetcher = (input: URL, init?: RequestInit) => Promise<Response>;
-
-const MONTREAL_BOUNDS = {
-	minLat: 45.35,
-	maxLat: 45.75,
-	minLon: -74.05,
-	maxLon: -73.35,
-};
 
 const GEO_CA_KEYS = 'locate,nominatim,fsa,geonames';
 const CANADIAN_POSTAL_CODE_RE =
@@ -55,7 +50,7 @@ export function nominatimSearchUrl(query: string): URL {
 	url.searchParams.set('bounded', '1');
 	url.searchParams.set('limit', '8');
 	url.searchParams.set('addressdetails', '1');
-	url.searchParams.set('viewbox', '-74.05,45.75,-73.35,45.35');
+	url.searchParams.set('viewbox', montrealViewbox());
 	url.searchParams.set('q', `${normalized} Montréal Québec Canada`.trim());
 	return url;
 }
@@ -397,18 +392,6 @@ function extractCanadianPostalCode(query: string): string | null {
 	return `${match[1]?.toUpperCase()} ${match[2]?.toUpperCase()}`;
 }
 
-function normalizeSearchText(value: string): string {
-	return value
-		.normalize('NFKD')
-		.replace(/\p{Diacritic}/gu, '')
-		.toLowerCase();
-}
-
-function isInsideMontrealBounds(lat: number, lon: number): boolean {
-	return (
-		lat >= MONTREAL_BOUNDS.minLat &&
-		lat <= MONTREAL_BOUNDS.maxLat &&
-		lon >= MONTREAL_BOUNDS.minLon &&
-		lon <= MONTREAL_BOUNDS.maxLon
-	);
-}
+// The geocoder's text key is the diacritic-only fold (no separator folding), so
+// its locationKey dedup + geo.ca relevance ordering keep their exact semantics.
+const normalizeSearchText = foldDiacritics;

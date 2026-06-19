@@ -23,7 +23,7 @@ describe('RouteDetail map drilldown', () => {
 
 		expect(screen.getByRole('link', { name: 'View route 161 on map' })).toHaveAttribute(
 			'href',
-			'/map?route=161',
+			'/map?route=161&focus=route%3A161',
 		);
 	});
 });

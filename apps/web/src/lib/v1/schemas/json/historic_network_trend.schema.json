@@ -1,5 +1,36 @@
 {
   "$defs": {
+    "OccupancyMix": {
+      "properties": {
+        "empty": {
+          "default": 0.0,
+          "title": "Empty",
+          "type": "number"
+        },
+        "few_seats": {
+          "default": 0.0,
+          "title": "Few Seats",
+          "type": "number"
+        },
+        "full": {
+          "default": 0.0,
+          "title": "Full",
+          "type": "number"
+        },
+        "many_seats": {
+          "default": 0.0,
+          "title": "Many Seats",
+          "type": "number"
+        },
+        "standing": {
+          "default": 0.0,
+          "title": "Standing",
+          "type": "number"
+        }
+      },
+      "title": "OccupancyMix",
+      "type": "object"
+    },
     "TrendPoint": {
       "properties": {
         "avg_delay_min": {
@@ -14,9 +45,32 @@
           "default": null,
           "title": "Avg Delay Min"
         },
+        "cancellation_rate": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cancellation Rate"
+        },
         "date": {
           "title": "Date",
           "type": "string"
+        },
+        "occupancy_mix": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/OccupancyMix"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         },
         "otp_pct": {
           "anyOf": [

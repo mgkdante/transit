@@ -108,7 +108,7 @@
 		background-color: var(--signage-bg);
 		color: var(--signage-text);
 		font-family: var(--font-mono);
-		font-size: 0.8125rem;
+		font-size: var(--text-caption);
 		font-weight: 600;
 		line-height: 1;
 		letter-spacing: 0.02em;

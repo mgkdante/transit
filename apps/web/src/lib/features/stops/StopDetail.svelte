@@ -8,7 +8,7 @@
     schedule    STATIC — the static stop's scheduled[] (route + headsign + times).
     info        STATIC — position, code, accessibility + routes served.
     reliability HISTORIC— per-period OTP/delay (→ ReliabilityPane) + by-route
-                         median-delay breakdown.
+                         avg-delay breakdown.
 
   Static + historic reads use createResource (browser-side, reactive to `id`);
   the live tier uses createLiveStore (start on mount, stop on destroy). Each pane
@@ -20,8 +20,7 @@
 -->
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { getLocale, localizeHref, type Locale } from '$lib/i18n';
-	import { emptyFilterState, toSearchString } from '$lib/filters';
+	import { getLocale, type Locale } from '$lib/i18n';
 	import {
 		getStop,
 		getStopReliability,
@@ -37,10 +36,11 @@
 		ResourceBoundary,
 		ReliabilityPane,
 		LiveFreshness,
+		MapDrilldownLink,
 		type ReliabilityPeriodVM,
 	} from '$lib/components/surface';
 	import { EdgeState } from '$lib/components/edge';
-	import { layout, routeFor } from '$lib/nav';
+	import { layout, mapHrefFor } from '$lib/nav';
 	import StopLabel from '$lib/components/brand/StopLabel.svelte';
 	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
 	import MetricDisplay from '$lib/components/brand/MetricDisplay.svelte';
@@ -86,14 +86,26 @@
 	// --- historic tier: stop reliability -------------------------------------
 	const reliability = createResource(() => getStopReliability(id));
 
-	/** Map raw historic periods → the shared ReliabilityPane view-model. */
+	/**
+	 * Map raw historic periods → the shared ReliabilityPane view-model.
+	 *
+	 * The day grain carries a real p50/p90 from the percentile rollup; the
+	 * week/month grains carry only an observation-weighted mean. Surface the
+	 * true percentile where we have it (captioned "median") and the mean
+	 * otherwise (captioned "avg") — never a mean wearing a "median" label.
+	 */
 	function toPeriods(r: StopReliability): ReliabilityPeriodVM[] {
-		return (r.periods ?? []).map((p) => ({
-			grain: p.grain,
-			otpPct: p.otp_pct ?? null,
-			delayMin: p.median_delay_min ?? null,
-			severePct: p.severe_pct ?? null,
-		}));
+		return (r.periods ?? []).map((p) => {
+			const hasRealP50 = p.p50_min != null;
+			return {
+				grain: p.grain,
+				otpPct: p.otp_pct ?? null,
+				delayMin: hasRealP50 ? p.p50_min! : (p.avg_delay_min ?? null),
+				delayKind: hasRealP50 ? ('median' as const) : ('avg' as const),
+				p90Min: p.p90_min ?? null,
+				severePct: p.severe_pct ?? null,
+			};
+		});
 	}
 
 	/** A departure's delay caption — fail-soft when delay is absent. */
@@ -101,30 +113,17 @@
 		if (delayMin == null || delayMin === 0) return t.next.onTime;
 		return delayMin > 0 ? t.next.late(delayMin) : t.next.early(Math.abs(delayMin));
 	}
-
-	function stopMapSearch(stopId: string): string {
-		const state = emptyFilterState();
-		state.stops.add(stopId);
-		return toSearchString(state);
-	}
-
-	function stopMapHref(stopId: string): string {
-		return localizeHref(routeFor({ kind: 'map', search: stopMapSearch(stopId) }), locale);
-	}
 </script>
 
 <EntityDetail kicker={t.kicker} {tabs} bind:active>
 	{#snippet header()}
 		<div class="stop-detail-head">
 			<StopLabel stop={id} label={stop.data?.name ?? `#${id}`} />
-			<a
-				href={stopMapHref(id)}
-				class="stop-map-action"
-				aria-label={t.viewStopOnMap(id)}
-				data-sveltekit-preload-data="hover"
-			>
-				{t.viewOnMap}
-			</a>
+			<MapDrilldownLink
+				href={mapHrefFor({ stop: id }, locale)}
+				label={t.viewOnMap}
+				ariaLabel={t.viewStopOnMap(id)}
+			/>
 		</div>
 	{/snippet}
 
@@ -243,7 +242,7 @@
 				{#snippet children(r: StopReliability | null)}
 					{#if r != null}
 						<div class="stop-reliability">
-							<ReliabilityPane periods={toPeriods(r)} {locale} delayLabelKind="median" />
+							<ReliabilityPane periods={toPeriods(r)} {locale} />
 							{#if (r.by_route?.length ?? 0) > 0}
 								<div class="stop-reliability-routes">
 									<SectionLabel text={t.reliability.byRoute} variant="metric" />
@@ -252,9 +251,7 @@
 											<li class="stop-reliability-route">
 												<span class="stop-reliability-route-code">{br.route}</span>
 												<span class="stop-reliability-route-delay">
-													{br.median_delay_min == null
-														? '—'
-														: `${br.median_delay_min.toFixed(1)} min`}
+													{br.avg_delay_min == null ? '—' : `${br.avg_delay_min.toFixed(1)} min`}
 												</span>
 											</li>
 										{/each}
@@ -275,33 +272,6 @@
 		align-items: center;
 		justify-content: space-between;
 		gap: 1rem;
-	}
-	.stop-map-action {
-		display: inline-flex;
-		align-items: center;
-		justify-content: center;
-		min-height: 2.25rem;
-		padding: 0.3rem 0.8rem;
-		font-family: var(--font-mono);
-		font-size: var(--text-caption);
-		color: var(--primary);
-		text-decoration: none;
-		background: color-mix(in srgb, var(--primary) 8%, transparent);
-		border: 1px solid color-mix(in srgb, var(--primary) 30%, var(--border) 70%);
-		border-radius: var(--radius-pill);
-		transition:
-			color 150ms ease,
-			background-color 150ms ease,
-			border-color 150ms ease;
-	}
-	.stop-map-action:hover {
-		color: var(--foreground);
-		background: color-mix(in srgb, var(--primary) 16%, transparent);
-		border-color: color-mix(in srgb, var(--primary) 45%, var(--border) 55%);
-	}
-	.stop-map-action:focus-visible {
-		outline: 2px solid var(--ring);
-		outline-offset: 2px;
 	}
 
 	.stop-next {
@@ -456,12 +426,6 @@
 		.stop-detail-head {
 			align-items: flex-start;
 			flex-direction: column;
-		}
-	}
-
-	@media (prefers-reduced-motion: reduce) {
-		.stop-map-action {
-			transition: none;
 		}
 	}
 </style>

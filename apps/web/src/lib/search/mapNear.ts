@@ -1,4 +1,5 @@
 import type { GeocodePrecision } from '$lib/geocode/types';
+import { isInsideMontrealBounds } from '$lib/geocode/types';
 
 export interface MapNearTarget {
 	readonly lat: number;
@@ -18,13 +19,6 @@ const VALID_PRECISIONS = new Set<GeocodePrecision>([
 	'postal',
 	'place',
 ]);
-
-const MONTREAL_BOUNDS = {
-	minLat: 45.35,
-	maxLat: 45.75,
-	minLon: -74.05,
-	maxLon: -73.35,
-};
 
 export function mapNearId(lat: number, lon: number): string {
 	return `${lat.toFixed(6)},${lon.toFixed(6)}`;
@@ -70,15 +64,6 @@ export function copyNearTargetSearchParams(from: URLSearchParams, to: URLSearchP
 	const target = nearTargetFromSearchParams(from);
 	if (!target) return;
 	setNearTargetSearchParams(to, target);
-}
-
-function isInsideMontrealBounds(lat: number, lon: number): boolean {
-	return (
-		lat >= MONTREAL_BOUNDS.minLat &&
-		lat <= MONTREAL_BOUNDS.maxLat &&
-		lon >= MONTREAL_BOUNDS.minLon &&
-		lon <= MONTREAL_BOUNDS.maxLon
-	);
 }
 
 function parsePrecision(value: string | null): GeocodePrecision | undefined {

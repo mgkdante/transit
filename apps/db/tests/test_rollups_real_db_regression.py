@@ -48,9 +48,17 @@ def conn():
     engine = create_engine(DB_URL)
     with engine.connect() as connection:
         transaction = connection.begin()
+        # Anchor in the provider timezone (America/Toronto) — the same calendar
+        # the percentile rollup's closed-day filter uses (local_date < (now() AT
+        # TIME ZONE provider)::date). A UTC-anchored base flakes at the UTC/Toronto
+        # date boundary: once real Toronto time crosses midnight, base_local_date
+        # (derived from UTC) lags the build's today_local, so the "today" open-day
+        # seed rows fall on a day the build already treats as closed. Noon-today
+        # local keeps base_local_date == today_local at any wall-clock hour.
         base_utc = (
-            datetime.now(UTC).replace(minute=0, second=0, microsecond=0)
-            - timedelta(hours=3)
+            datetime.now(TORONTO)
+            .replace(hour=12, minute=0, second=0, microsecond=0)
+            .astimezone(UTC)
         )
         seed = _SeedData(base_utc)
         _seed(connection, seed)
@@ -410,3 +418,113 @@ def test_ghost_trip_excluded_from_day_of_week_and_repeat_offender(conn) -> None:
     assert late["recurrence_days"] == 3
     assert late["window_days"] == 14
     assert _decimal(late["avg_delay_seconds"]) == Decimal("400.0")
+
+
+def test_percentile_rollup_closed_days_exclude_ghosts_and_today(conn) -> None:  # noqa: ANN001
+    connection, seed = conn
+    today = seed.base_local_date
+
+    rows = (
+        connection.execute(
+            text(
+                """
+                SELECT provider_local_date, p50_delay_seconds, p90_delay_seconds,
+                       delay_observation_count
+                FROM gold.route_delay_percentile_daily
+                WHERE provider_id = :p AND route_id = '51T'
+                ORDER BY provider_local_date
+                """
+            ),
+            {"p": PROVIDER},
+        )
+        .mappings()
+        .all()
+    )
+    dates = {r["provider_local_date"] for r in rows}
+    # The open (current) local day is never built; both closed past days are.
+    assert today not in dates
+    assert today - timedelta(days=1) in dates
+    assert today - timedelta(days=2) in dates
+    # Ghost (|delay| > 3600) excluded — only the 400s observation survives, so
+    # p50 == p90 == 400 over a single observation per closed day.
+    for r in rows:
+        assert r["delay_observation_count"] == 1
+        assert _decimal(r["p50_delay_seconds"]) == Decimal("400.00")
+        assert _decimal(r["p90_delay_seconds"]) == Decimal("400.00")
+
+    # Both append-only percentile watermark kinds recorded.
+    kinds = {
+        k
+        for (k,) in connection.execute(
+            text(
+                "SELECT DISTINCT rollup_kind FROM gold.warm_rollup_periods "
+                "WHERE provider_id = :p"
+            ),
+            {"p": PROVIDER},
+        )
+    }
+    assert {"route_percentile_daily", "stop_percentile_daily"} <= kinds
+
+    # Stop percentile mirrors the closed-day set for the attributed stop.
+    stop_dates = {
+        r["provider_local_date"]
+        for r in connection.execute(
+            text(
+                "SELECT provider_local_date FROM gold.stop_delay_percentile_daily "
+                "WHERE provider_id = :p AND stop_id = 'S_A'"
+            ),
+            {"p": PROVIDER},
+        ).mappings()
+    }
+    assert stop_dates == {today - timedelta(days=1), today - timedelta(days=2)}
+
+
+def test_percentile_rollup_is_idempotent_on_rebuild(conn) -> None:  # noqa: ANN001
+    connection, _seed = conn
+    count_sql = (
+        "SELECT count(*) FROM gold.route_delay_percentile_daily WHERE provider_id = :p"
+    )
+    before = connection.execute(text(count_sql), {"p": PROVIDER}).scalar_one()
+    # Re-running skips already-watermarked days (append-only — no duplicate rows).
+    rollups.build_warm_rollups(
+        PROVIDER,
+        settings=Settings.model_construct(DATABASE_URL=None),
+        engine=_NoCommitEngine(connection),
+    )
+    after = connection.execute(text(count_sql), {"p": PROVIDER}).scalar_one()
+    assert after == before
+
+
+def test_granularity_shift_daytype_conserve_observations(conn) -> None:  # noqa: ANN001
+    connection, _seed = conn
+    hourly_obs = connection.execute(
+        text(
+            "SELECT COALESCE(SUM(observation_count), 0) FROM gold.route_delay_hourly "
+            "WHERE provider_id = :p AND route_id = '51T'"
+        ),
+        {"p": PROVIDER},
+    ).scalar_one()
+    assert hourly_obs > 0
+
+    for table, grain_col, vocab in (
+        ("route_delay_by_shift", "shift", {"am_peak", "midday", "pm_peak", "evening", "night"}),
+        ("route_delay_by_daytype", "day_type", {"weekday", "weekend"}),
+    ):
+        rows = connection.execute(
+            text(
+                f"SELECT {grain_col} AS grain, observation_count "
+                f"FROM gold.{table} WHERE provider_id = :p AND route_id = '51T'"
+            ),
+            {"p": PROVIDER},
+        ).mappings().all()
+        assert rows, f"{table} should have rows for 51T"
+        assert all(r["grain"] in vocab for r in rows), f"{table} grain out of vocabulary"
+        # Regrouping the hourly spine conserves total observations.
+        assert sum(r["observation_count"] for r in rows) == hourly_obs
+
+
+# NOTE: per-direction headway is exercised in test_route_headway_real_db_regression.py
+# (test_direction_headway_keeps_both_directions_and_weekends), which seeds trips at
+# distinct times so real inter-trip gaps exist — the ghost-trip fixture here inserts
+# every trip in every snapshot, so MIN(captured_at) per trip coincides (gap 0) and no
+# headway rows are produced.
