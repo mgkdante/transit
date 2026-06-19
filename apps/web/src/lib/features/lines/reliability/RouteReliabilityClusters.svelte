@@ -77,6 +77,10 @@
 	const datedPeriods = $derived(
 		(data.periods ?? [])
 			.filter((p): p is typeof p & { date: string } => p.grain === 'day' && !!p.date)
+			// Dedupe by date: the contract can carry a duplicate day period for the
+			// same date; keep the first so the picker options (and their keyed each)
+			// stay unique. Without this the start/end selects crash on a dup key.
+			.filter((p, i, arr) => arr.findIndex((q) => q.date === p.date) === i)
 			.slice()
 			.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0)),
 	);

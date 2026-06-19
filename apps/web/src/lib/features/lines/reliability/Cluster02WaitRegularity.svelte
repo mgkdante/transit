@@ -270,7 +270,7 @@
 			{/snippet}
 			{#if shiftRows.length > 0}
 				<ul class="shift-list" role="list">
-					{#each mainRows as row, i (row.shift)}
+					{#each mainRows as row, i (row.shift + '-' + i)}
 						{@render shiftItem(row, i)}
 					{/each}
 				</ul>
@@ -289,7 +289,7 @@
 						<div class="shift-direction" data-slot="direction-gaps">
 							<SectionLabel text={t.directionGap} variant="metric" />
 							<div class="shift-metrics shift-metrics--direction">
-								{#each advancedRows as row (row.shift)}
+								{#each advancedRows as row, ai (row.shift + '-' + ai)}
 									<MetricDisplay
 										value={fmtMin(row.observed)}
 										label={shiftLabel(row.shift)}

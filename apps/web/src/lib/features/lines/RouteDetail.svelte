@@ -146,7 +146,7 @@
 						</div>
 						{#if (file.directions ?? []).length > 0}
 							<ul class="route-directions">
-								{#each file.directions ?? [] as dir (dir.dir)}
+								{#each file.directions ?? [] as dir, di (di)}
 									<li class="route-direction">
 										<span class="route-direction-head">
 											<span class="route-direction-name">
@@ -158,7 +158,7 @@
 										</span>
 										{#if (dir.stops ?? []).length > 0}
 											<ol class="route-stops">
-												{#each dir.stops ?? [] as stop (stop.id)}
+												{#each dir.stops ?? [] as stop, si (stop.id + '-' + si)}
 													{@const prediction = predictions.get(stop.id) ?? null}
 													<li class="route-stop">
 														<a
@@ -211,7 +211,7 @@
 						<SectionLabel text={t.servicePeriods} variant="metric" />
 						{#if (file.service_periods ?? []).length > 0}
 							<ul class="route-periods">
-								{#each file.service_periods ?? [] as sp (sp.shift)}
+								{#each file.service_periods ?? [] as sp, spi (sp.shift + '-' + spi)}
 									<li class="route-period">
 										<SectionLabel text={sp.shift} variant="metric" />
 										<div class="route-period-metrics">
