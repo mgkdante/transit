@@ -26,6 +26,20 @@ def _has_field(message: object, field_name: str) -> bool:
         return False
 
 
+def _enum_name(enum_type, value: int) -> str:  # noqa: ANN001
+    """Decode a protobuf enum int to its name, tolerating vendor extensions.
+
+    GTFS-RT lets providers carry enum values outside the published Cause / Effect
+    / SeverityLevel sets; ``EnumType.Name(unknown_int)`` raises ``ValueError`` on
+    those. Fall back to the raw int as a string so an extension value degrades
+    gracefully instead of failing the whole alerts capture. Mirrors
+    ``transit_ops.silver.realtime_gtfs._enum_name``."""
+    try:
+        return enum_type.Name(value)
+    except ValueError:
+        return str(value)
+
+
 def _translations(translated_string: object) -> list[dict[str, str]]:
     """TranslatedString -> [{"language": .., "text": ..}] (language optional)."""
     out: list[dict[str, str]] = []
@@ -88,12 +102,12 @@ def convert_gtfs_rt_alerts_to_i3_payload(protobuf_bytes: bytes) -> dict[str, obj
         if _has_field(alert, "description_text"):
             record["description"] = _translations(alert.description_text)
         if _has_field(alert, "cause"):
-            record["cause"] = gtfs_realtime_pb2.Alert.Cause.Name(alert.cause)
+            record["cause"] = _enum_name(gtfs_realtime_pb2.Alert.Cause, alert.cause)
         if _has_field(alert, "effect"):
-            record["effect"] = gtfs_realtime_pb2.Alert.Effect.Name(alert.effect)
+            record["effect"] = _enum_name(gtfs_realtime_pb2.Alert.Effect, alert.effect)
         if _has_field(alert, "severity_level"):
-            record["severity"] = gtfs_realtime_pb2.Alert.SeverityLevel.Name(
-                alert.severity_level
+            record["severity"] = _enum_name(
+                gtfs_realtime_pb2.Alert.SeverityLevel, alert.severity_level
             )
         active_period = _active_period(alert)
         if active_period is not None:
