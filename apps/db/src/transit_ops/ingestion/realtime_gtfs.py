@@ -72,12 +72,19 @@ class RealtimeMessageMetadata:
     provider_id: str
     endpoint_key: str
     feed_kind: str
-    feed_timestamp_utc: datetime
+    # None when the feed omits / zeroes its FeedHeader.timestamp (GTFS-RT
+    # spec-required, but real feeds skip it). The capture resolves it to the
+    # capture time before persisting, so it never aborts the download.
+    feed_timestamp_utc: datetime | None
     entity_count: int
 
     def display_dict(self) -> dict[str, object]:
         payload = asdict(self)
-        payload["feed_timestamp_utc"] = self.feed_timestamp_utc.isoformat()
+        payload["feed_timestamp_utc"] = (
+            self.feed_timestamp_utc.isoformat()
+            if self.feed_timestamp_utc is not None
+            else None
+        )
         return payload
 
 
@@ -173,16 +180,30 @@ def extract_realtime_metadata(
     except DecodeError as exc:
         raise ValueError(f"Failed to parse GTFS-RT protobuf payload: {exc}") from exc
 
+    # GTFS-RT requires FeedHeader.timestamp, but real feeds omit / zero it, and
+    # some emit a value outside datetime's range. Treat any unusable header
+    # timestamp as "absent" (None) rather than aborting the capture; the caller
+    # falls back to the capture time so the snapshot still persists.
     header_timestamp = int(message.header.timestamp or 0)
-    if header_timestamp <= 0:
-        raise ValueError("GTFS-RT feed header timestamp is missing or invalid.")
-
-    try:
-        feed_timestamp_utc = datetime.fromtimestamp(header_timestamp, tz=UTC)
-    except (OverflowError, OSError, ValueError) as exc:
-        raise ValueError(
-            f"GTFS-RT feed header timestamp '{header_timestamp}' is malformed."
-        ) from exc
+    feed_timestamp_utc: datetime | None = None
+    if header_timestamp > 0:
+        try:
+            feed_timestamp_utc = datetime.fromtimestamp(header_timestamp, tz=UTC)
+        except (OverflowError, OSError, ValueError):
+            logger.warning(
+                "GTFS-RT feed header timestamp %r for %s/%s is out of range; "
+                "falling back to capture time.",
+                header_timestamp,
+                provider_id,
+                endpoint_key,
+            )
+    else:
+        logger.info(
+            "GTFS-RT feed for %s/%s omits its header timestamp; "
+            "falling back to capture time.",
+            provider_id,
+            endpoint_key,
+        )
 
     return RealtimeMessageMetadata(
         provider_id=provider_id,
@@ -254,9 +275,11 @@ def _insert_realtime_snapshot_index(
 
 
 def _build_realtime_ssl_context() -> ssl.SSLContext:
+    # Floor only: require TLS 1.2+ but let the handshake negotiate the highest
+    # mutually-supported version. Pinning the maximum to 1.2 rejected TLS-1.3-only
+    # endpoints, which any GTFS-RT provider is free to be.
     context = ssl.create_default_context()
     context.minimum_version = ssl.TLSVersion.TLSv1_2
-    context.maximum_version = ssl.TLSVersion.TLSv1_2
     return context
 
 
@@ -329,6 +352,9 @@ def capture_realtime_feed(
         persisted = True
 
         completed_at_utc = utc_now()
+        # Feeds that omit their header timestamp fall back to the capture time so
+        # the snapshot index / freshness signal stays non-null and monotonic.
+        feed_timestamp_utc = metadata.feed_timestamp_utc or completed_at_utc
         with engine.begin() as connection:
             ingestion_object_id = insert_ingestion_object(
                 connection,
@@ -347,7 +373,7 @@ def capture_realtime_feed(
                 ingestion_object_id=ingestion_object_id,
                 provider_id=config.provider_id,
                 feed_endpoint_id=feed_endpoint_id,
-                feed_timestamp_utc=metadata.feed_timestamp_utc,
+                feed_timestamp_utc=feed_timestamp_utc,
                 entity_count=metadata.entity_count,
                 captured_at_utc=completed_at_utc,
             )
@@ -357,7 +383,7 @@ def capture_realtime_feed(
                 completed_at_utc=completed_at_utc,
                 http_status_code=artifact.http_status_code,
                 entity_count=metadata.entity_count,
-                feed_timestamp_utc=metadata.feed_timestamp_utc,
+                feed_timestamp_utc=feed_timestamp_utc,
             )
 
         return RealtimeIngestionResult(
@@ -374,7 +400,7 @@ def capture_realtime_feed(
             ingestion_run_id=ingestion_run_id,
             ingestion_object_id=ingestion_object_id,
             realtime_snapshot_id=realtime_snapshot_id,
-            feed_timestamp_utc=metadata.feed_timestamp_utc,
+            feed_timestamp_utc=feed_timestamp_utc,
             entity_count=metadata.entity_count,
             status="succeeded",
             started_at_utc=started_at_utc,
