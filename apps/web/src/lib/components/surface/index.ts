@@ -17,10 +17,12 @@ export { default as EntityRow } from './EntityRow.svelte';
 export { default as EntityList } from './EntityList.svelte';
 export { default as EntityDetail } from './EntityDetail.svelte';
 export { default as ReliabilityPane } from './ReliabilityPane.svelte';
+export { default as GrainPicker } from './GrainPicker.svelte';
 export { default as LiveFreshness } from './LiveFreshness.svelte';
 export { default as ConformanceBadge } from './ConformanceBadge.svelte';
 export { default as SearchInput } from './SearchInput.svelte';
 export { default as MapDrilldownLink } from './MapDrilldownLink.svelte';
 
 export type { ReliabilityPeriodVM } from './ReliabilityPane.svelte';
+export type { GrainSegment } from './GrainPicker.svelte';
 export type { SurfaceHeadCopy } from './copy';

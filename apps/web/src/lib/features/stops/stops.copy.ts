@@ -51,6 +51,23 @@ export interface StopDetailCopy {
 		readonly onTime: string;
 		/** Fallback label when a departure has no route code. */
 		readonly route: string;
+		/** Departures status / route filter affordances. */
+		readonly filter: {
+			/** Accessible group label over the status chips. */
+			readonly statusLabel: string;
+			/** On-time / late / early status chip labels. */
+			readonly onTime: string;
+			readonly late: string;
+			readonly early: string;
+			/** Accessible group label over the route chips. */
+			readonly routeLabel: string;
+			/** "All routes" reset chip. */
+			readonly allRoutes: string;
+			/** Shown when every departure is filtered out. */
+			readonly noMatches: string;
+			/** Live-region count of the shown vs total departures. */
+			readonly showing: (shown: number, total: number) => string;
+		};
 	};
 	/** "Info" pane. */
 	readonly info: {
@@ -72,6 +89,57 @@ export interface StopDetailCopy {
 	readonly reliability: {
 		readonly byRoute: string;
 		readonly noRouteBreakdown: string;
+		/** Grain (roll-up) picker affordances. */
+		readonly grain: {
+			/** Accessible group label over the grain segments. */
+			readonly label: string;
+			/** Day / week / month segment labels. */
+			readonly day: string;
+			readonly week: string;
+			readonly month: string;
+			/** Caption naming the resolved roll-up window. */
+			readonly window: (grain: string) => string;
+		};
+		/** Day-grain percentile clarity (typical vs worst-case delay). */
+		readonly percentiles: {
+			/** Section heading over the typical/worst-case pair. */
+			readonly heading: string;
+			/** "Typical" (median, p50) tile label. */
+			readonly typical: string;
+			/** Plain caption under the typical tile. */
+			readonly typicalCaption: string;
+			/** "Worst-case" (p90) tile label. */
+			readonly worstCase: string;
+			/** Plain caption under the worst-case tile. */
+			readonly worstCaseCaption: string;
+		};
+		/** Time-of-day habits heatmap (per-stop 7×24 severe-delay grid). */
+		readonly habits: {
+			/** Section heading over the heatmap. */
+			readonly heading: string;
+			/** Accessible summary for the heatmap (day × hour). */
+			readonly label: string;
+			/** Tooltip/SR row label — what a single cell encodes. */
+			readonly cellValueLabel: string;
+			/** X / Y axis captions. */
+			readonly hourAxisLabel: string;
+			readonly dayAxisLabel: string;
+			/** Plain-language caption explaining the relative scale. */
+			readonly caption: string;
+			/** Legend ramp buckets (low→high) + the dedicated no-data swatch. */
+			readonly legend: {
+				readonly low: string;
+				readonly medium: string;
+				readonly high: string;
+				readonly noData: string;
+			};
+			/** Full weekday names, ISO-indexed (index 0 unused; 1=Mon..7=Sun). */
+			readonly weekdays: readonly [string, string, string, string, string, string, string, string];
+			/** Heatmap row labels, Mon..Sun (length 7, in row order). */
+			readonly weekdaysShort: readonly [string, string, string, string, string, string, string];
+		};
+		/** No-data string for a route row whose delay is absent. */
+		readonly noDelay: string;
 	};
 }
 
@@ -118,6 +186,16 @@ export const detailCopy: Record<Locale, StopDetailCopy> = {
 			early: (min) => `${min} min d’avance`,
 			onTime: 'à l’heure',
 			route: 'Ligne',
+			filter: {
+				statusLabel: 'Filtrer par statut',
+				onTime: 'À l’heure',
+				late: 'En retard',
+				early: 'En avance',
+				routeLabel: 'Filtrer par ligne',
+				allRoutes: 'Toutes les lignes',
+				noMatches: 'Aucun passage ne correspond à ce filtre.',
+				showing: (shown, total) => `${shown} sur ${total} passages affichés`,
+			},
 		},
 		info: {
 			position: 'Position',
@@ -133,8 +211,40 @@ export const detailCopy: Record<Locale, StopDetailCopy> = {
 			moreTimes: (n) => `+${n} autres passages`,
 		},
 		reliability: {
-			byRoute: 'Retard médian par ligne',
+			byRoute: 'Retard moyen par ligne',
 			noRouteBreakdown: 'Aucun détail par ligne pour cet arrêt.',
+			grain: {
+				label: 'Période de regroupement',
+				day: 'Jour',
+				week: 'Semaine',
+				month: 'Mois',
+				window: (grain) =>
+					grain === 'week'
+						? 'Regroupé par semaine.'
+						: grain === 'month'
+							? 'Regroupé par mois.'
+							: 'Regroupé par jour.',
+			},
+			percentiles: {
+				heading: 'Retard journalier',
+				typical: 'Retard typique',
+				typicalCaption: 'La moitié des passages (médiane)',
+				worstCase: 'Pire des cas',
+				worstCaseCaption: '10 % les plus lents (p90)',
+			},
+			habits: {
+				heading: 'Retards graves par heure',
+				label: 'Carte thermique des retards graves par jour et par heure',
+				cellValueLabel: 'Intensité',
+				hourAxisLabel: 'Heure de la journée',
+				dayAxisLabel: 'Jour de la semaine',
+				caption:
+					'La couleur indique la fréquence des retards graves, comparée heure par heure au sein de chaque journée. Plus c’est chaud, plus le problème revient souvent.',
+				legend: { low: 'Faible', medium: 'Moyen', high: 'Élevé', noData: 'Aucune donnée' },
+				weekdays: ['', 'Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dimanche'],
+				weekdaysShort: ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'],
+			},
+			noDelay: 'Aucune donnée',
 		},
 	},
 	en: {
@@ -150,6 +260,16 @@ export const detailCopy: Record<Locale, StopDetailCopy> = {
 			early: (min) => `${min} min early`,
 			onTime: 'on time',
 			route: 'Line',
+			filter: {
+				statusLabel: 'Filter by status',
+				onTime: 'On time',
+				late: 'Late',
+				early: 'Early',
+				routeLabel: 'Filter by line',
+				allRoutes: 'All lines',
+				noMatches: 'No departures match this filter.',
+				showing: (shown, total) => `Showing ${shown} of ${total} departures`,
+			},
 		},
 		info: {
 			position: 'Position',
@@ -165,8 +285,49 @@ export const detailCopy: Record<Locale, StopDetailCopy> = {
 			moreTimes: (n) => `+${n} more times`,
 		},
 		reliability: {
-			byRoute: 'Median delay by route',
+			byRoute: 'Avg delay by route',
 			noRouteBreakdown: 'No per-route breakdown for this stop.',
+			grain: {
+				label: 'Roll-up period',
+				day: 'Day',
+				week: 'Week',
+				month: 'Month',
+				window: (grain) =>
+					grain === 'week'
+						? 'Rolled up by week.'
+						: grain === 'month'
+							? 'Rolled up by month.'
+							: 'Rolled up by day.',
+			},
+			percentiles: {
+				heading: 'Daily delay',
+				typical: 'Typical delay',
+				typicalCaption: 'Half of departures (median)',
+				worstCase: 'Worst case',
+				worstCaseCaption: 'Slowest 10% (p90)',
+			},
+			habits: {
+				heading: 'Severe delays by hour',
+				label: 'Severe-delay heatmap by day and hour',
+				cellValueLabel: 'Intensity',
+				hourAxisLabel: 'Hour of day',
+				dayAxisLabel: 'Day of week',
+				caption:
+					'Colour shows how often severe delays repeat, compared hour-by-hour within each day. Hotter = the problem comes back more often.',
+				legend: { low: 'Low', medium: 'Medium', high: 'High', noData: 'No data' },
+				weekdays: [
+					'',
+					'Monday',
+					'Tuesday',
+					'Wednesday',
+					'Thursday',
+					'Friday',
+					'Saturday',
+					'Sunday',
+				],
+				weekdaysShort: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
+			},
+			noDelay: 'No data',
 		},
 	},
 };
