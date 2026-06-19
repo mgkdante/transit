@@ -1,4 +1,5 @@
 import { render, screen, fireEvent, within } from '@testing-library/svelte';
+import { tick } from 'svelte';
 import { describe, expect, it } from 'vitest';
 import RouteReliabilityClusters from './RouteReliabilityClusters.svelte';
 import { reliabilityCopy } from './reliability.copy';
@@ -186,4 +187,98 @@ describe('RouteReliabilityClusters', () => {
 		expect(screen.getByText(reliabilityCopy.fr.clusters.crowding)).toBeInTheDocument();
 		expect(screen.getByText(reliabilityCopy.fr.controls.today)).toBeInTheDocument();
 	});
+
+	it('offers a Date range segment when the contract carries dated day-periods', () => {
+		render(RouteReliabilityClusters, { props: { data: populated, locale: 'en' } });
+		expect(screen.getByRole('radio', { name: copy.controls.dateRange })).toBeInTheDocument();
+	});
+
+	it('aggregates a multi-day range into a mean headline + an honest caption', async () => {
+		const { container } = render(RouteReliabilityClusters, {
+			props: { data: multiDay, locale: 'en' },
+		});
+
+		// Switch to "Date range" → the start + end pair appears.
+		await fireEvent.click(screen.getByRole('radio', { name: copy.controls.dateRange }));
+		await tick();
+		const startSelect = screen.getByLabelText(
+			`${copy.controls.dateRange} · ${copy.controls.rangeStart}`,
+		);
+		const endSelect = screen.getByLabelText(
+			`${copy.controls.dateRange} · ${copy.controls.rangeEnd}`,
+		);
+
+		// Pick the full 3-day window: mean OTP = round((80+82+84)/3) = 82.
+		await fireEvent.change(startSelect, { target: { value: '2026-06-16' } });
+		await fireEvent.change(endSelect, { target: { value: '2026-06-18' } });
+		await tick();
+
+		// The active-window caption reflects the aggregate (no em dash; "to" joins).
+		expect(
+			screen.getByText(copy.controls.activeWindow.range(3, '2026-06-16', '2026-06-18')),
+		).toBeInTheDocument();
+
+		// The strip's mean OTP headline (82%) shows; percentiles fall to "—" (multi-day).
+		const strip = container.querySelector('[data-slot="snapshot-strip"]') as HTMLElement;
+		expect(within(strip).getAllByText('82%').length).toBeGreaterThan(0);
+	});
+
+	it('keeps a single-day range exact (start == end shows that day, not an average)', async () => {
+		const { container } = render(RouteReliabilityClusters, {
+			props: { data: multiDay, locale: 'en' },
+		});
+
+		await fireEvent.click(screen.getByRole('radio', { name: copy.controls.dateRange }));
+		await tick();
+		const startSelect = screen.getByLabelText(
+			`${copy.controls.dateRange} · ${copy.controls.rangeStart}`,
+		);
+		const endSelect = screen.getByLabelText(
+			`${copy.controls.dateRange} · ${copy.controls.rangeEnd}`,
+		);
+
+		// A single day (06-16, OTP 80%) reads exact + uses the single-day caption.
+		await fireEvent.change(startSelect, { target: { value: '2026-06-16' } });
+		await fireEvent.change(endSelect, { target: { value: '2026-06-16' } });
+		await tick();
+
+		expect(
+			screen.getByText(copy.controls.activeWindow.singleDay('2026-06-16')),
+		).toBeInTheDocument();
+		const strip = container.querySelector('[data-slot="snapshot-strip"]') as HTMLElement;
+		expect(within(strip).getAllByText('80%').length).toBeGreaterThan(0);
+	});
 });
+
+// A multi-day archive (three dated day-periods, contract order newest→oldest) so
+// the date-range aggregation + single-day path can be exercised end-to-end.
+const multiDay: RouteReliability = {
+	id: '10',
+	generated_utc: utc('2026-06-19T02:00:00Z'),
+	periods: [
+		{
+			grain: 'day',
+			date: '2026-06-18',
+			otp_pct: 84,
+			avg_delay_min: 1.9,
+			p50_min: 0.4,
+			p90_min: 5.5,
+		},
+		{
+			grain: 'day',
+			date: '2026-06-16',
+			otp_pct: 80,
+			avg_delay_min: 2.4,
+			p50_min: 0.6,
+			p90_min: 6.4,
+		},
+		{
+			grain: 'day',
+			date: '2026-06-17',
+			otp_pct: 82,
+			avg_delay_min: 2.1,
+			p50_min: 0.5,
+			p90_min: 6.0,
+		},
+	],
+};

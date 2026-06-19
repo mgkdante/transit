@@ -43,6 +43,15 @@ export interface MetricsCopy extends SurfaceHeadCopy {
 	readonly backToTop: string;
 	/** Accessible label for the SQL <pre> block (e.g. "Defining SQL"). */
 	readonly sqlAria: string;
+	/** Mobile floating-pill ToC + sheet a11y strings. */
+	readonly tocPill: {
+		/** Pill button label / sheet trigger (e.g. "Contents"). */
+		readonly open: string;
+		/** Accessible label for the sheet dialog. */
+		readonly title: string;
+		/** Accessible label for the close button. */
+		readonly close: string;
+	};
 	/** Cluster overlines, keyed by cluster (mirror reliability.copy clusters). */
 	readonly clusters: Record<MetricClusterKey, string>;
 	/** (i)-affordance a11y strings (templated with the metric name). */
@@ -89,6 +98,11 @@ export const metricsCopy: Record<Locale, MetricsCopy> = {
 		tocLabel: 'Aller à une métrique',
 		backToTop: 'Retour en haut',
 		sqlAria: 'SQL définissant la métrique',
+		tocPill: {
+			open: 'Sommaire',
+			title: 'Aller à une métrique',
+			close: 'Fermer le sommaire',
+		},
 		clusters: {
 			punctuality: '01 Ponctualité',
 			waitRegularity: '02 Régularité des attentes',
@@ -135,6 +149,11 @@ export const metricsCopy: Record<Locale, MetricsCopy> = {
 		tocLabel: 'Jump to a metric',
 		backToTop: 'Back to top',
 		sqlAria: 'Defining SQL for the metric',
+		tocPill: {
+			open: 'Contents',
+			title: 'Jump to a metric',
+			close: 'Close contents',
+		},
 		clusters: {
 			punctuality: '01 Punctuality',
 			waitRegularity: '02 Wait regularity',

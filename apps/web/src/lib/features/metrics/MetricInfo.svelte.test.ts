@@ -7,7 +7,7 @@
 //   - the link is a same-tab in-app nav by default; newTab opts into _blank,
 //   - Escape closes the popover.
 
-import { describe, it, expect } from 'vitest';
+import { afterEach, describe, it, expect, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/svelte';
 import MetricInfo from './MetricInfo.svelte';
 
@@ -58,5 +58,46 @@ describe('MetricInfo trigger', () => {
 		await fireEvent.keyDown(trigger, { key: 'Escape' });
 		expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
 		expect(trigger).toHaveAttribute('aria-expanded', 'false');
+	});
+});
+
+describe('MetricInfo hover group', () => {
+	afterEach(() => {
+		vi.useRealTimers();
+	});
+
+	it('STAYS open when the pointer moves from the trigger onto the tip (the link is reachable)', async () => {
+		vi.useFakeTimers();
+		const { container } = render(MetricInfo, { props: base });
+		const root = container.querySelector('.metric-info') as HTMLElement;
+
+		// Hover the group → opens.
+		await fireEvent.mouseEnter(root);
+		expect(screen.getByRole('tooltip')).toBeInTheDocument();
+
+		// Pointer crosses the gap toward the tip: leaving the trigger schedules a
+		// short grace close, but re-entering the group (onto the tip) inside the
+		// grace window cancels it, so the in-popover link stays reachable.
+		await fireEvent.mouseLeave(root);
+		await fireEvent.mouseEnter(root);
+
+		vi.advanceTimersByTime(200);
+		expect(screen.queryByRole('tooltip')).toBeInTheDocument();
+		expect(screen.getByRole('link', { name: /How this is measured/ })).toBeInTheDocument();
+	});
+
+	it('dismisses after the grace window once the pointer has left for good', async () => {
+		vi.useFakeTimers();
+		const { container } = render(MetricInfo, { props: base });
+		const root = container.querySelector('.metric-info') as HTMLElement;
+
+		await fireEvent.mouseEnter(root);
+		expect(screen.getByRole('tooltip')).toBeInTheDocument();
+
+		// Leave and never come back: the grace timer elapses and it closes.
+		await fireEvent.mouseLeave(root);
+		expect(screen.queryByRole('tooltip')).toBeInTheDocument(); // still open during grace
+		await vi.advanceTimersByTimeAsync(200);
+		expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
 	});
 });

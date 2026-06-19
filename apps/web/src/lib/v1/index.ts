@@ -65,6 +65,8 @@ export type {
 	OccupancyMix as LiveOccupancyMix,
 	StatusDist as LiveStatusDist,
 } from './live/aggregate';
+export { deriveRouteStopPredictions } from './live/routeStopPredictions';
+export type { StopPrediction } from './live/routeStopPredictions';
 
 // --- config (snapshot URL resolution) ----------------------------------------
 export { v1BaseUrl, v1Provider, resolveUrl, entityUrl } from './config';

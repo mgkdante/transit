@@ -56,27 +56,38 @@
 	   interaction at the default 'day' grain; the control only refines.
 
 	   The three discrete grains map to free-string contract grains the mapper
-	   selects against. "Specific date" is an affordance that swaps the segmented
-	   control for a <select> over the dated periods the contract actually carries
-	   (a date the archive has no period for would fabricate nothing — the mapper
-	   falls back and the bands stay honest), so we only offer real dates.
+	   selects against. "Date range" is an affordance that swaps in a start+end
+	   pair of <select>s over the dated day-periods the contract actually carries.
+	   start == end is a single day (exact, with percentiles); a wider span shows
+	   the MEAN on-time/avg-delay across the in-range days (percentiles are not
+	   averageable → a no-data mark) and zooms the trend to the range. A range the
+	   archive has no day for fabricates nothing — the mapper falls back honestly.
 
 	   TODO(orchestrator): mirror `grain` to a URL search param (?grain=) so the
 	   selection is shareable/deep-linkable. Left out here to keep this component
 	   route-agnostic — the orchestrator owns URL state when it wires the route. */
-	type GrainMode = 'day' | 'week' | 'month' | 'date';
+	type GrainMode = 'day' | 'week' | 'month' | 'range';
 	let mode = $state<GrainMode>('day');
-	let specificDate = $state<string>('');
+	let rangeStart = $state<string>('');
+	let rangeEnd = $state<string>('');
 
-	// Dated DAY-grain periods the contract carries (for the specific-date picker).
-	// A day-grain period with a non-empty `date` qualifies — the picker offers a
-	// concrete day, and the mapper resolves the strip/headline to THAT exact day.
+	// Dated DAY-grain periods the contract carries (for the range picker), sorted
+	// ascending so the start/end dropdowns read oldest→newest. A day-grain period
+	// with a non-empty `date` qualifies — both bounds are concrete real dates.
 	const datedPeriods = $derived(
-		(data.periods ?? []).filter(
-			(p): p is typeof p & { date: string } => p.grain === 'day' && !!p.date,
-		),
+		(data.periods ?? [])
+			.filter((p): p is typeof p & { date: string } => p.grain === 'day' && !!p.date)
+			.slice()
+			.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0)),
 	);
 	const hasDatedPeriods = $derived(datedPeriods.length > 0);
+
+	// The available dated day window (for bounding + the prompt). The picker offers
+	// only real dates, so an out-of-window pick is impossible by construction.
+	const earliestDate = $derived(datedPeriods.length > 0 ? datedPeriods[0].date : '');
+	const latestDate = $derived(
+		datedPeriods.length > 0 ? datedPeriods[datedPeriods.length - 1].date : '',
+	);
 
 	// Which calendar grains the contract actually carries — so we never offer a
 	// grain segment that resolves to nothing (an empty grain is disabled, not a
@@ -89,11 +100,22 @@
 		return set;
 	});
 
-	// What the mapper resolves for. In date mode we thread the picked day to the
-	// mapper via `selectedDate` (grain stays 'day') so the picker selects THAT
-	// day — not merely the most-recent. Outside date mode the segment IS the grain.
-	const mapperOpts = $derived<{ grain: string; selectedDate?: string }>(
-		mode === 'date' ? { grain: 'day', selectedDate: specificDate || undefined } : { grain: mode },
+	// A complete range needs both bounds; we normalise start ≤ end so the user can
+	// pick the two dates in any order without inverting the window.
+	const hasRangePick = $derived(mode === 'range' && !!rangeStart && !!rangeEnd);
+	const normalizedRange = $derived<{ start: string; end: string } | undefined>(
+		hasRangePick
+			? rangeStart <= rangeEnd
+				? { start: rangeStart, end: rangeEnd }
+				: { start: rangeEnd, end: rangeStart }
+			: undefined,
+	);
+
+	// What the mapper resolves for. In range mode we thread the picked window to
+	// the mapper via `dateRange` (grain stays 'day') so the strip aggregates the
+	// in-range days + the trend zooms. Outside range mode the segment IS the grain.
+	const mapperOpts = $derived<{ grain: string; dateRange?: { start: string; end: string } }>(
+		mode === 'range' ? { grain: 'day', dateRange: normalizedRange } : { grain: mode },
 	);
 	const selectedGrain = $derived(mapperOpts.grain);
 
@@ -111,22 +133,27 @@
 	);
 
 	// Active-window caption under the control spine — names the resolved window so
-	// "Today / This week / This month / {date}" is never ambiguous about coverage.
+	// "Today / This week / This month / {range}" is never ambiguous about coverage.
+	// In range mode it reads the strip VM's aggregate (the true in-range day count,
+	// honest about gaps) for a multi-day span; a single resolved day reads exact.
 	const activeWindowCaption = $derived.by<string>(() => {
 		const aw = copy.controls.activeWindow;
-		if (mode === 'date') return aw.date(specificDate);
+		if (mode === 'range') {
+			if (!normalizedRange) return aw.rangePrompt;
+			const agg = clusters.strip.rangeAggregate;
+			if (agg) return aw.range(agg.days, agg.start, agg.end);
+			// One in-range day (start == end, or only one dated day in the span).
+			return aw.singleDay(normalizedRange.start);
+		}
 		if (mode === 'week') return aw.week;
 		if (mode === 'month') return aw.month;
 		return aw.day;
 	});
-
-	// A11y label for the date <select> reuses the "Specific date" control label.
-	const dateSelectLabel = $derived(copy.controls.specificDate);
 </script>
 
 <div class={cn('reliability-clusters', className)} data-slot="reliability-clusters">
 	<!-- Control spine: refines the snapshot grain; the headline shows by default. -->
-	<div class="reliability-controls" role="group" aria-label={copy.controls.specificDate}>
+	<div class="reliability-controls" role="group" aria-label={copy.controls.dateRange}>
 		<div class="reliability-segmented" role="radiogroup" aria-label={copy.controls.today}>
 			{#each segments as seg (seg.key)}
 				<button
@@ -146,25 +173,49 @@
 					type="button"
 					role="radio"
 					class="reliability-seg"
-					class:reliability-seg--active={mode === 'date'}
-					aria-checked={mode === 'date'}
-					onclick={() => (mode = 'date')}
+					class:reliability-seg--active={mode === 'range'}
+					aria-checked={mode === 'range'}
+					onclick={() => (mode = 'range')}
 				>
-					{copy.controls.specificDate}
+					{copy.controls.dateRange}
 				</button>
 			{/if}
 		</div>
 
-		{#if mode === 'date' && hasDatedPeriods}
-			<label class="reliability-date">
-				<span class="reliability-date__label">{dateSelectLabel}</span>
-				<select class="reliability-date__select" bind:value={specificDate}>
-					<option value="">—</option>
-					{#each datedPeriods as p (p.date)}
-						<option value={p.date}>{p.date}</option>
-					{/each}
-				</select>
-			</label>
+		{#if mode === 'range' && hasDatedPeriods}
+			<!-- Start + end pair over the dated day-periods. start == end = one day
+			     (exact); a wider span aggregates the in-range days (mean) + zooms the
+			     trend. Bounds are real dates only, so no out-of-window pick is possible. -->
+			<div class="reliability-range" data-slot="date-range">
+				<label class="reliability-date">
+					<span class="reliability-date__label">{copy.controls.rangeStart}</span>
+					<select
+						class="reliability-date__select"
+						value={rangeStart}
+						onchange={(e) => (rangeStart = e.currentTarget.value)}
+						aria-label={`${copy.controls.dateRange} · ${copy.controls.rangeStart}`}
+					>
+						<option value="">{earliestDate || '—'}</option>
+						{#each datedPeriods as p (p.date)}
+							<option value={p.date}>{p.date}</option>
+						{/each}
+					</select>
+				</label>
+				<label class="reliability-date">
+					<span class="reliability-date__label">{copy.controls.rangeEnd}</span>
+					<select
+						class="reliability-date__select"
+						value={rangeEnd}
+						onchange={(e) => (rangeEnd = e.currentTarget.value)}
+						aria-label={`${copy.controls.dateRange} · ${copy.controls.rangeEnd}`}
+					>
+						<option value="">{latestDate || '—'}</option>
+						{#each datedPeriods as p (p.date)}
+							<option value={p.date}>{p.date}</option>
+						{/each}
+					</select>
+				</label>
+			</div>
 		{/if}
 	</div>
 
@@ -278,6 +329,13 @@
 		}
 	}
 
+	/* The start + end date pair sits inline, wrapping on narrow viewports. */
+	.reliability-range {
+		display: inline-flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 0.75rem 1rem;
+	}
 	.reliability-date {
 		display: inline-flex;
 		align-items: center;

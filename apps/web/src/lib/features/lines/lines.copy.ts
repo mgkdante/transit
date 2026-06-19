@@ -68,6 +68,14 @@ export interface RouteDetailCopy {
 	readonly lastTripDelay: string;
 	/** a11y trend summary builder: "… over the last N days". */
 	readonly lastNDays: (n: number) => string;
+	/** Detail-tab live per-stop readout (derived from the live trips on this route). */
+	readonly noLiveBus: string;
+	readonly viewStop: (stop: string) => string;
+	/** Delay-tone labels reused for the approaching bus's on-time status. */
+	readonly early: (minutes: number) => string;
+	readonly late: (minutes: number) => string;
+	readonly onTime: string;
+	readonly noDelay: string;
 }
 
 export const indexCopy: Record<Locale, LinesIndexCopy> = {
@@ -132,6 +140,12 @@ export const detailCopy: Record<Locale, RouteDetailCopy> = {
 		firstTripDelay: 'Retard 1er trajet',
 		lastTripDelay: 'Retard dernier trajet',
 		lastNDays: (n) => `sur les ${n} derniers jours`,
+		noLiveBus: 'Aucun bus en direct',
+		viewStop: (stop) => `Voir l’arrêt ${stop}`,
+		early: (minutes) => `${Math.abs(minutes)} min en avance`,
+		late: (minutes) => `${minutes} min en retard`,
+		onTime: "À l'heure",
+		noDelay: 'Aucun retard',
 	},
 	en: {
 		kicker: 'LINE',
@@ -171,5 +185,11 @@ export const detailCopy: Record<Locale, RouteDetailCopy> = {
 		firstTripDelay: 'First-trip delay',
 		lastTripDelay: 'Last-trip delay',
 		lastNDays: (n) => `over the last ${n} days`,
+		noLiveBus: 'No live bus',
+		viewStop: (stop) => `View stop ${stop}`,
+		early: (minutes) => `${Math.abs(minutes)} min early`,
+		late: (minutes) => `${minutes} min late`,
+		onTime: 'On time',
+		noDelay: 'No delay',
 	},
 };

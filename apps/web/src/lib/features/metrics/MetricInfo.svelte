@@ -53,17 +53,73 @@
 
 	const tipId = $props.id();
 
+	// The (i) trigger + the popover are ONE hover group: hovering either keeps it
+	// open; the popover only dismisses once the pointer has left BOTH for a short
+	// grace window, so the in-popover link is reachable across the small gap
+	// between trigger and tip. ~120ms is long enough to cross that gap, short
+	// enough not to feel sticky.
+	const GRACE_MS = 120;
+	let graceTimer: ReturnType<typeof setTimeout> | null = null;
+
+	// When we RETURN focus to the trigger as part of a dismiss (Escape, or a
+	// toggle-close), the resulting `focusin` must NOT reopen the popover. This
+	// flag suppresses exactly that one programmatic-focus open; a genuine
+	// keyboard tab-in (no dismiss in flight) still opens normally.
+	let suppressFocusOpen = false;
+
+	function cancelGrace(): void {
+		if (graceTimer !== null) {
+			clearTimeout(graceTimer);
+			graceTimer = null;
+		}
+	}
+
+	function openNow(): void {
+		cancelGrace();
+		open = true;
+	}
+
+	// focusin opener: keeps the group open for keyboard users (so the link stays
+	// tabbable), except when a dismiss just returned focus to the trigger.
+	function onFocusIn(): void {
+		if (suppressFocusOpen) {
+			suppressFocusOpen = false;
+			return;
+		}
+		openNow();
+	}
+
+	// Dismiss after the grace window unless the pointer re-enters the group first.
+	function scheduleClose(): void {
+		cancelGrace();
+		graceTimer = setTimeout(() => {
+			graceTimer = null;
+			open = false;
+		}, GRACE_MS);
+	}
+
+	// Return focus to the trigger, arming the focusin-suppression ONLY when the
+	// focus actually has to move (otherwise no focusin fires and the flag would
+	// linger and wrongly swallow the next genuine tab-in).
+	function returnFocusToTrigger(): void {
+		if (!trigger) return;
+		if (document.activeElement !== trigger) suppressFocusOpen = true;
+		trigger.focus();
+	}
+
 	function close(returnFocus = false): void {
+		cancelGrace();
 		open = false;
-		if (returnFocus) trigger?.focus();
+		if (returnFocus) returnFocusToTrigger();
 	}
 
 	async function toggle(): Promise<void> {
+		cancelGrace();
 		open = !open;
 		// Keep focus management predictable when toggled by keyboard.
 		if (!open) {
 			await tick();
-			trigger?.focus();
+			returnFocusToTrigger();
 		}
 	}
 
@@ -76,29 +132,34 @@
 
 	// Dismiss on focus leaving the whole affordance (trigger + popover), and on an
 	// outside pointer click. Hover open/close lives on the wrapper handlers below;
-	// focus/click keep it usable by keyboard and pointer alike.
+	// focus/click keep it usable by keyboard and pointer alike. focus-within keeps
+	// it open for keyboard users so the link stays tabbable.
 	function onFocusOut(event: FocusEvent): void {
 		const next = event.relatedTarget as Node | null;
 		if (next && root?.contains(next)) return;
-		open = false;
+		close();
 	}
 
 	$effect(() => {
 		if (!open) return;
 		const onDocPointer = (e: PointerEvent) => {
-			if (root && !root.contains(e.target as Node)) open = false;
+			if (root && !root.contains(e.target as Node)) close();
 		};
 		document.addEventListener('pointerdown', onDocPointer, true);
 		return () => document.removeEventListener('pointerdown', onDocPointer, true);
 	});
+
+	// Clear any pending grace timer if the component is torn down mid-hover.
+	$effect(() => () => cancelGrace());
 </script>
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <span
 	bind:this={root}
 	class={cn('metric-info', className)}
-	onmouseenter={() => (open = true)}
-	onmouseleave={() => (open = false)}
+	onmouseenter={openNow}
+	onmouseleave={scheduleClose}
+	onfocusin={onFocusIn}
 	onfocusout={onFocusOut}
 	onkeydown={onKeydown}
 >

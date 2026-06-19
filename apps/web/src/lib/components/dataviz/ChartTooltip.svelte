@@ -1,16 +1,17 @@
 <!--
   ChartTooltip — presentational HTML overlay for chart hover/focus tooltips.
 
-  An HTML overlay (NOT an SVG <foreignObject>): the chart <svg> is passed as
-  `children` and rendered inside a position:relative wrapper; the tooltip is an
-  absolutely-positioned <div role="tooltip"> placed at (xPct, yPct) % of the
-  wrapper, transformed per `side`. pointer-events:none so it never eats the
-  pointer events that drive it.
+  The chart <svg> is passed as `children` and rendered inside a position:relative
+  wrapper that hosts the pointer handlers. The tip itself is PORTALED to <body>
+  as a position:FIXED layer (NOT an in-wrapper absolute box): that frees it from
+  every ancestor's overflow/clip and from the wrapper's width, so it keeps its
+  natural size and is anchored in VIEWPORT coordinates instead. pointer-events:none
+  so it never eats the pointer events that drive it.
 
   State lives in `createChartTooltip()` (useChartTooltip.svelte.ts); this is the
   dumb renderer — spread the controller onto it. On open it measures itself
-  against the wrapper (getBoundingClientRect) and FLIPS the side / CLAMPS the
-  horizontal offset so the box never leaves the wrapper bounds.
+  against the VIEWPORT (getBoundingClientRect) and FLIPS the side / SHIFTS the
+  horizontal offset so the box stays on screen. It REPOSITIONS, never shrinks.
 
   Doctrine: surface tokens only (--popover / --border-strong / --shadow-card);
   NO --primary anywhere in the tooltip (it is not interactive chrome). The fade
@@ -20,6 +21,7 @@
 	import { cn } from '$lib/utils';
 	import type { Snippet } from 'svelte';
 	import type { HTMLAttributes } from 'svelte/elements';
+	import { Portal } from 'bits-ui';
 	import { prefersReducedMotion } from '$lib/motion/reduced-motion.svelte';
 	import type { ChartTooltipRow, ChartTooltipSide } from './useChartTooltip.svelte';
 
@@ -56,36 +58,42 @@
 		...rest
 	}: ChartTooltipProps = $props();
 
-	// The resolved side after flip. Seeded to the literal default; the measuring
-	// $effect below syncs it to the `side` prop (and any flip) on every run, so
-	// it never needs to capture the prop's initial value here.
+	// Gap between the box and its anchor point, and the minimum margin we keep
+	// from the viewport edge when shifting the box back on-screen.
+	const GAP = 8;
+	const EDGE = 8;
+
+	// The resolved side after flip, and the box's final viewport coordinates
+	// (left/top in px). Driven by the measuring $effect below.
 	let resolvedSide = $state<ChartTooltipSide>('top');
-	// Horizontal nudge (px) applied on top of the side transform to clamp into bounds.
-	let clampX = $state(0);
+	let fixedLeft = $state(0);
+	let fixedTop = $state(0);
+	// Whether we have a measured position yet (suppresses a one-frame flash at 0,0).
+	let placed = $state(false);
 
 	let wrapEl = $state<HTMLDivElement | null>(null);
 	let tipEl = $state<HTMLDivElement | null>(null);
 
-	// Per-side base transform. `top`/`bottom` centre horizontally; `left`/`right`
-	// centre vertically. An 8px gap separates the box from the anchor.
+	// Per-side base transform: the box is laid out at (left,top) = the anchor's
+	// VIEWPORT point, then translated so the chosen edge meets the anchor with a
+	// GAP. `top`/`bottom` centre horizontally; `left`/`right` centre vertically.
 	const TRANSFORMS: Record<ChartTooltipSide, string> = {
-		top: 'translate(-50%, calc(-100% - 8px))',
-		bottom: 'translate(-50%, 8px)',
-		left: 'translate(calc(-100% - 8px), -50%)',
-		right: 'translate(8px, -50%)',
+		top: `translate(-50%, calc(-100% - ${GAP}px))`,
+		bottom: `translate(-50%, ${GAP}px)`,
+		left: `translate(calc(-100% - ${GAP}px), -50%)`,
+		right: `translate(${GAP}px, -50%)`,
 	};
 
-	const transform = $derived(
-		clampX !== 0 ? `${TRANSFORMS[resolvedSide]} translateX(${clampX}px)` : TRANSFORMS[resolvedSide],
-	);
+	const transform = $derived(TRANSFORMS[resolvedSide]);
 
-	// On open, measure against the wrapper: flip vertically if the preferred
-	// top/bottom side would overflow, and clamp the horizontal offset so the box
-	// stays inside the wrapper. Runs whenever open / position / content changes.
+	// On open, measure against the VIEWPORT: map the wrapper-relative anchor (xPct,
+	// yPct) to a viewport point, flip top/bottom if the preferred side would clip,
+	// and SHIFT left/top so the natural-width box stays on screen. It repositions,
+	// never shrinks. Re-runs whenever the anchor / content changes.
 	$effect(() => {
 		if (!open) {
 			resolvedSide = side;
-			clampX = 0;
+			placed = false;
 			return;
 		}
 		// Read reactive deps so the effect re-runs when the anchor/content moves.
@@ -105,40 +113,58 @@
 		const tb = tip.getBoundingClientRect();
 		if (wb.width === 0 || wb.height === 0) {
 			resolvedSide = side;
-			clampX = 0;
 			return;
 		}
 
-		const anchorX = (xPct / 100) * wb.width;
-		const anchorY = (yPct / 100) * wb.height;
+		const vw = typeof window !== 'undefined' ? window.innerWidth : wb.right;
+		const vh = typeof window !== 'undefined' ? window.innerHeight : wb.bottom;
+
+		// Anchor point in VIEWPORT coordinates.
+		const anchorX = wb.left + (xPct / 100) * wb.width;
+		const anchorY = wb.top + (yPct / 100) * wb.height;
 
 		// Vertical flip for top/bottom: if the preferred side overflows that edge
-		// but the opposite side fits, flip.
+		// of the viewport but the opposite side fits, flip.
 		let next = side;
-		if (side === 'top' && anchorY - tb.height - 8 < 0 && anchorY + tb.height + 8 <= wb.height) {
+		if (
+			side === 'top' &&
+			anchorY - tb.height - GAP < EDGE &&
+			anchorY + tb.height + GAP <= vh - EDGE
+		) {
 			next = 'bottom';
 		} else if (
 			side === 'bottom' &&
-			anchorY + tb.height + 8 > wb.height &&
-			anchorY - tb.height - 8 >= 0
+			anchorY + tb.height + GAP > vh - EDGE &&
+			anchorY - tb.height - GAP >= EDGE
 		) {
 			next = 'top';
 		}
 		resolvedSide = next;
 
-		// Horizontal clamp for top/bottom (box is centred on the anchor): keep the
-		// half-width inside [0, wrapWidth]. For left/right the box is to the side,
-		// so no horizontal clamp is applied.
+		// Place the box at the anchor point, then shift it back on-screen. The CSS
+		// transform centres/offsets the box around (anchorX, anchorY); we compute
+		// the box's resulting edges and nudge (anchorX, anchorY) so those edges sit
+		// within [EDGE, viewport - EDGE]. Width/height never change.
+		let left = anchorX;
+		const top = anchorY;
+
 		if (next === 'top' || next === 'bottom') {
+			// Box is horizontally centred on `left`.
 			const half = tb.width / 2;
-			const left = anchorX - half;
-			const right = anchorX + half;
-			if (left < 0) clampX = -left;
-			else if (right > wb.width) clampX = wb.width - right;
-			else clampX = 0;
+			const minLeft = EDGE + half;
+			const maxLeft = vw - EDGE - half;
+			// When the box is wider than the viewport, centre it (min wins ≥ max).
+			left = maxLeft >= minLeft ? Math.min(Math.max(left, minLeft), maxLeft) : vw / 2;
 		} else {
-			clampX = 0;
+			// Box sits to the left/right of `left` (its inner edge is GAP from it).
+			const minLeft = next === 'right' ? EDGE - GAP : EDGE + tb.width + GAP;
+			const maxLeft = next === 'right' ? vw - EDGE - tb.width - GAP : vw - EDGE + GAP;
+			left = maxLeft >= minLeft ? Math.min(Math.max(left, minLeft), maxLeft) : left;
 		}
+
+		fixedLeft = left;
+		fixedTop = top;
+		placed = true;
 	});
 
 	const animate = $derived(!prefersReducedMotion.current);
@@ -151,16 +177,20 @@
 	{...rest}
 >
 	{@render children()}
+</div>
 
+<!-- Portaled to <body>: a fixed-position layer immune to ancestor overflow/clip
+     and to the wrapper's width. Anchored in viewport coordinates. -->
+<Portal>
 	<div
 		bind:this={tipEl}
 		{id}
 		role="tooltip"
 		class="chart-tooltip"
-		class:chart-tooltip--open={open}
+		class:chart-tooltip--open={open && placed}
 		class:chart-tooltip--animate={animate}
 		aria-hidden={!open}
-		style="left: {xPct}%; top: {yPct}%; transform: {transform};"
+		style="left: {fixedLeft}px; top: {fixedTop}px; transform: {transform};"
 	>
 		{#if heading}
 			<p class="chart-tooltip__heading">{heading}</p>
@@ -183,7 +213,7 @@
 			</ul>
 		{/if}
 	</div>
-</div>
+</Portal>
 
 <style>
 	.chart-tooltip-wrap {
@@ -191,10 +221,12 @@
 	}
 
 	.chart-tooltip {
-		position: absolute;
-		z-index: 20;
+		position: fixed;
+		z-index: var(--z-nav);
 		pointer-events: none;
-		max-width: 16rem;
+		/* Cap only so a box never exceeds the viewport on tiny screens; on normal
+		   screens the content's natural width wins. It REPOSITIONS, never shrinks. */
+		max-width: min(16rem, calc(100vw - 16px));
 		padding: 6px 8px;
 		background: var(--popover);
 		color: var(--popover-foreground);

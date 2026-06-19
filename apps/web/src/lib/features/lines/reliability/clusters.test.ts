@@ -269,6 +269,83 @@ describe('toReliabilityClusters — F1 most-recent week/month + grain partition'
 	});
 });
 
+/* (A) DATE-RANGE — the start+end window aggregates the in-range days: mean OTP +
+   avg delay; percentiles null on a multi-day span, exact on a single day; the
+   trend zooms to the range; an empty/out-of-window range fabricates nothing. */
+describe('toReliabilityClusters — date range', () => {
+	it('aggregates a multi-day range: mean OTP + avg delay, null percentiles', () => {
+		// In-range days 06-16 (80) / 06-17 (82) / 06-18 (84) → mean OTP = 82.
+		const c = toReliabilityClusters(granular, {
+			grain: 'day',
+			dateRange: { start: '2026-06-16', end: '2026-06-18' },
+		});
+		expect(c.strip.otpPct).toBe(82); // round((80+82+84)/3)
+		expect(c.strip.avgDelayMin).toBeCloseTo(2.1, 5); // (2.4+2.1+1.9)/3 → 2.1
+		// Percentiles are not averageable across days → null on a multi-day range.
+		expect(c.strip.p50Min).toBeNull();
+		expect(c.strip.p90Min).toBeNull();
+	});
+
+	it('carries the aggregate metadata (day count + bounds) for a multi-day range', () => {
+		const c = toReliabilityClusters(granular, {
+			grain: 'day',
+			dateRange: { start: '2026-06-16', end: '2026-06-18' },
+		});
+		expect(c.strip.rangeAggregate).toEqual({ days: 3, start: '2026-06-16', end: '2026-06-18' });
+	});
+
+	it('zooms the trend to the in-range days only', () => {
+		const c = toReliabilityClusters(granular, {
+			grain: 'day',
+			dateRange: { start: '2026-06-16', end: '2026-06-17' },
+		});
+		expect(c.punctuality.trend.map((p) => p.date)).toEqual(['2026-06-16', '2026-06-17']);
+	});
+
+	it('a SINGLE-day range (start == end) keeps that day exact, including percentiles', () => {
+		const c = toReliabilityClusters(granular, {
+			grain: 'day',
+			dateRange: { start: '2026-06-17', end: '2026-06-17' },
+		});
+		expect(c.strip.otpPct).toBe(82);
+		expect(c.strip.avgDelayMin).toBe(2.1);
+		expect(c.strip.p50Min).toBe(0.5);
+		expect(c.strip.p90Min).toBe(6.0);
+		// One exact day is NOT an "average" → no aggregate caption metadata.
+		expect(c.strip.rangeAggregate).toBeNull();
+		expect(c.punctuality.trend.map((p) => p.date)).toEqual(['2026-06-17']);
+	});
+
+	it('normalises an inverted range (start > end) without inverting the window', () => {
+		const c = toReliabilityClusters(granular, {
+			grain: 'day',
+			dateRange: { start: '2026-06-18', end: '2026-06-16' },
+		});
+		expect(c.strip.rangeAggregate).toEqual({ days: 3, start: '2026-06-16', end: '2026-06-18' });
+	});
+
+	it('falls back to the most-recent day when no day falls inside the range', () => {
+		const c = toReliabilityClusters(granular, {
+			grain: 'day',
+			dateRange: { start: '2026-01-01', end: '2026-01-31' },
+		});
+		// No in-range day → normal day selection (most-recent), full trend, no aggregate.
+		expect(c.strip.otpPct).toBe(84); // 2026-06-18
+		expect(c.strip.rangeAggregate).toBeNull();
+		expect(c.punctuality.trend).toHaveLength(3);
+	});
+
+	it('clips the range to the available days when it overhangs the window', () => {
+		// 06-15 has no day row; the range clips to the two in-range days.
+		const c = toReliabilityClusters(granular, {
+			grain: 'day',
+			dateRange: { start: '2026-06-15', end: '2026-06-17' },
+		});
+		expect(c.strip.rangeAggregate).toEqual({ days: 2, start: '2026-06-16', end: '2026-06-17' });
+		expect(c.strip.otpPct).toBe(81); // round((80+82)/2)
+	});
+});
+
 describe('toReliabilityClusters — null fields never crash', () => {
 	it('treats a zeroed occupancy mix as empty (no fake bar)', () => {
 		const c = toReliabilityClusters({

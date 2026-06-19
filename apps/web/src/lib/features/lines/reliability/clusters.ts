@@ -59,6 +59,19 @@ export interface SnapshotStripVM {
 		readonly cancellationRatePct: boolean;
 		readonly skippedStopRatePct: boolean;
 	};
+	/**
+	 * Set ONLY when the strip answers for a multi-day date range (an AGGREGATE of
+	 * several closed days). Carries the in-range day count + bounds so the band can
+	 * caption the headline honestly ("Average across N days, start to end"). null
+	 * for a single day / week / month grain (those are an exact, not-averaged read).
+	 * When set, `otpPct` + `avgDelayMin` are the MEAN across the in-range days, and
+	 * `p50Min` / `p90Min` are null (percentiles are not averageable across days).
+	 */
+	readonly rangeAggregate: {
+		readonly days: number;
+		readonly start: string;
+		readonly end: string;
+	} | null;
 	/** True when EVERY headline value above is null. */
 	readonly isEmpty: boolean;
 }
@@ -164,6 +177,21 @@ export interface ToReliabilityClustersOpts {
 	 * the normal grain selection (an absent date fabricates nothing).
 	 */
 	readonly selectedDate?: string;
+	/**
+	 * A closed date RANGE (inclusive, ISO `YYYY-MM-DD`) over the dated day-grain
+	 * series. When set (with `grain` resolving to 'day') it overrides `selectedDate`
+	 * and drives BOTH the strip and the trend:
+	 *   - the strip's on-time % + avg delay become the MEAN across the in-range
+	 *     days (an aggregate, captioned as such by the band);
+	 *   - percentiles (p50/p90) are NOT averageable across days, so a MULTI-day
+	 *     range nulls them (the band shows the no-data mark), while a SINGLE-day
+	 *     range (`start === end`, or only one in-range day) keeps that day's exact
+	 *     percentiles;
+	 *   - the punctuality trend is ZOOMED to the in-range days only.
+	 * `start > end`, an empty range, or no in-range days fabricates nothing — the
+	 * strip falls back to the normal day selection and the trend stays full.
+	 */
+	readonly dateRange?: { readonly start: string; readonly end: string };
 }
 
 /**
@@ -298,6 +326,41 @@ function dayTrend(dayPeriods: readonly ReliabilityPeriod[]): ReliabilityPeriod[]
 		.sort((a, b) => (a.date! < b.date! ? -1 : a.date! > b.date! ? 1 : 0));
 }
 
+/**
+ * The dated day-grain rows whose `date` falls inside the inclusive [start, end]
+ * range (ISO `YYYY-MM-DD` string ordering = chronological). An inverted or empty
+ * range yields no rows (the caller then falls back to the full series — never a
+ * fabricated window).
+ */
+function daysInRange(
+	dayTrendAsc: readonly ReliabilityPeriod[],
+	range: { start: string; end: string },
+): ReliabilityPeriod[] {
+	const lo = range.start <= range.end ? range.start : range.end;
+	const hi = range.start <= range.end ? range.end : range.start;
+	return dayTrendAsc.filter((p) => p.date != null && p.date >= lo && p.date <= hi);
+}
+
+/** Arithmetic mean of the non-null values `pick` returns, rounded to `dp`. null when none. */
+function meanOf<T>(
+	rows: readonly T[],
+	pick: (row: T) => number | null | undefined,
+	dp: number,
+): number | null {
+	let sum = 0;
+	let n = 0;
+	for (const row of rows) {
+		const v = pick(row);
+		if (v != null && !Number.isNaN(v)) {
+			sum += v;
+			n += 1;
+		}
+	}
+	if (n === 0) return null;
+	const factor = 10 ** dp;
+	return Math.round((sum / n) * factor) / factor;
+}
+
 /** First headway row carrying a CoV (the busiest-direction regularity row). */
 function selectHeadwayCov(headway: readonly HeadwayPeriod[]): number | null {
 	const row = headway.find((h) => h.cov != null);
@@ -329,6 +392,7 @@ export function toReliabilityClusters(
 ): ReliabilityClusters {
 	const grain = opts?.grain ?? 'day';
 	const selectedDate = opts?.selectedDate;
+	const dateRange = opts?.dateRange;
 
 	const allPeriods = data.periods ?? [];
 	const allHeadway = data.headway ?? [];
@@ -347,15 +411,55 @@ export function toReliabilityClusters(
 		...partition.calendar.month,
 	];
 
-	/* 01-strip — the selected-grain headline (F1: most-recent week/month). */
-	const stripPeriod = selectStripPeriod(calendarPeriods, grain, selectedDate);
+	// The dated day-grain series (ascending) — the source for BOTH the trend and
+	// the date-range aggregate. Resolve the in-range day rows ONCE (empty when no
+	// range is set, the range is inverted/empty, or no day falls inside it — the
+	// strip + trend then fall back to their normal full-series behaviour).
+	const dayTrendAsc = dayTrend(partition.calendar.day);
+	const rangeDays = grain === 'day' && dateRange ? daysInRange(dayTrendAsc, dateRange) : [];
+	const hasRange = rangeDays.length > 0;
+
+	/* 01-strip — the selected-grain headline (F1: most-recent week/month). When a
+	   date range is active the strip AGGREGATES the in-range days: on-time % + avg
+	   delay are the MEAN across them; percentiles are NOT averageable, so a multi-
+	   day range nulls them while a single in-range day keeps that day's exact ones. */
 	const cancellationRatePct = mostRecentRate(allCancellations, (c) => c.cancellation_rate_pct);
 	const skippedStopRatePct = mostRecentRate(allSkipped, (s) => s.skipped_stop_rate_pct);
-	const otpPct = stripPeriod ? num(stripPeriod.otp_pct) : null;
-	const avgDelayMin = stripPeriod ? num(stripPeriod.avg_delay_min) : null;
-	const p50Min = stripPeriod ? num(stripPeriod.p50_min) : null;
-	const p90Min = stripPeriod ? num(stripPeriod.p90_min) : null;
 	const headwayRegularityCov = selectHeadwayCov(allHeadway);
+
+	let otpPct: number | null;
+	let avgDelayMin: number | null;
+	let p50Min: number | null;
+	let p90Min: number | null;
+	let rangeAggregate: SnapshotStripVM['rangeAggregate'] = null;
+
+	if (hasRange) {
+		const singleDay = rangeDays.length === 1;
+		otpPct = singleDay ? num(rangeDays[0].otp_pct) : meanOf(rangeDays, (p) => p.otp_pct, 0);
+		avgDelayMin = singleDay
+			? num(rangeDays[0].avg_delay_min)
+			: meanOf(rangeDays, (p) => p.avg_delay_min, 1);
+		// Percentiles are not averageable across days: only a single in-range day
+		// carries them; a multi-day range shows the honest no-data mark.
+		p50Min = singleDay ? num(rangeDays[0].p50_min) : null;
+		p90Min = singleDay ? num(rangeDays[0].p90_min) : null;
+		// A single in-range day reads as an exact day (no "average" caption); a
+		// multi-day range carries the aggregate metadata for an honest caption.
+		rangeAggregate = singleDay
+			? null
+			: {
+					days: rangeDays.length,
+					start: rangeDays[0].date!,
+					end: rangeDays[rangeDays.length - 1].date!,
+				};
+	} else {
+		const stripPeriod = selectStripPeriod(calendarPeriods, grain, selectedDate);
+		otpPct = stripPeriod ? num(stripPeriod.otp_pct) : null;
+		avgDelayMin = stripPeriod ? num(stripPeriod.avg_delay_min) : null;
+		p50Min = stripPeriod ? num(stripPeriod.p50_min) : null;
+		p90Min = stripPeriod ? num(stripPeriod.p90_min) : null;
+	}
+
 	const strip: SnapshotStripVM = {
 		grain,
 		otpPct,
@@ -366,6 +470,7 @@ export function toReliabilityClusters(
 		cancellationRatePct,
 		skippedStopRatePct,
 		perMetric: { cancellationRatePct: true, skippedStopRatePct: true },
+		rangeAggregate,
 		isEmpty:
 			otpPct == null &&
 			avgDelayMin == null &&
@@ -378,7 +483,8 @@ export function toReliabilityClusters(
 
 	/* 01 Punctuality. */
 	// Trend source = ONLY the dated day-grain series, chronological ascending (F1/F4).
-	const trend = dayTrend(partition.calendar.day);
+	// A date range ZOOMS the trend to the in-range days (otherwise the full series).
+	const trend = hasRange ? rangeDays : dayTrendAsc;
 	const dayOfWeek = allDayOfWeek
 		.filter(dayOfWeekHasSignal)
 		.slice()

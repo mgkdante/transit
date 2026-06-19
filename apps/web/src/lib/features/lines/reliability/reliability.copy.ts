@@ -111,14 +111,27 @@ export interface ReliabilityCopy {
 		readonly today: string;
 		readonly thisWeek: string;
 		readonly thisMonth: string;
-		readonly specificDate: string;
+		/** Segment label that opens the start+end date-range affordance. */
+		readonly dateRange: string;
+		/** Field label for the range START date input. */
+		readonly rangeStart: string;
+		/** Field label for the range END date input. */
+		readonly rangeEnd: string;
 		/** Active-window caption rendered under the control spine. */
 		readonly activeWindow: {
 			readonly day: string;
 			readonly week: string;
 			readonly month: string;
-			/** Specific-date window — `date` is the picked ISO date (or '' before a pick). */
-			readonly date: (date: string) => string;
+			/** Single-day range window — `date` is the one picked ISO date. */
+			readonly singleDay: (date: string) => string;
+			/**
+			 * Multi-day range window — `n` in-range days from `start` to `end`. Names
+			 * the aggregate explicitly so the averaged headline is never mistaken for a
+			 * single exact reading. No em dash; "to" joins the bounds.
+			 */
+			readonly range: (n: number, start: string, end: string) => string;
+			/** Prompt before a complete range is picked. */
+			readonly rangePrompt: string;
 		};
 	};
 }
@@ -184,12 +197,16 @@ export const reliabilityCopy: Record<Locale, ReliabilityCopy> = {
 			today: "Aujourd'hui",
 			thisWeek: 'Cette semaine',
 			thisMonth: 'Ce mois-ci',
-			specificDate: 'Date précise',
+			dateRange: 'Plage de dates',
+			rangeStart: 'Du',
+			rangeEnd: 'Au',
 			activeWindow: {
 				day: "Fenêtre : aujourd'hui (dernière journée close)",
 				week: 'Fenêtre : cette semaine (semaine la plus récente)',
 				month: 'Fenêtre : ce mois-ci (mois le plus récent)',
-				date: (date) => (date ? `Fenêtre : ${date}` : 'Fenêtre : choisissez une date'),
+				singleDay: (date) => `Fenêtre : ${date}`,
+				range: (n, start, end) => `Moyenne sur ${n} jours, du ${start} au ${end}`,
+				rangePrompt: 'Fenêtre : choisissez une date de début et de fin',
 			},
 		},
 	},
@@ -252,12 +269,16 @@ export const reliabilityCopy: Record<Locale, ReliabilityCopy> = {
 			today: 'Today',
 			thisWeek: 'This week',
 			thisMonth: 'This month',
-			specificDate: 'Specific date',
+			dateRange: 'Date range',
+			rangeStart: 'From',
+			rangeEnd: 'To',
 			activeWindow: {
 				day: 'Window: today (latest closed day)',
 				week: 'Window: this week (most recent week)',
 				month: 'Window: this month (most recent month)',
-				date: (date) => (date ? `Window: ${date}` : 'Window: pick a date'),
+				singleDay: (date) => `Window: ${date}`,
+				range: (n, start, end) => `Average across ${n} days, ${start} to ${end}`,
+				rangePrompt: 'Window: pick a start and end date',
 			},
 		},
 	},
