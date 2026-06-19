@@ -28,7 +28,14 @@
 	{#if kind === 'bus'}
 		<!-- Bus-front: a tall rounded body, a windshield band, two headlights. -->
 		<rect x="6.5" y="3.5" width="13" height="19" rx="4" fill="currentColor" />
-		<rect x="8.9" y="5.9" width="8.2" height="5.6" rx="2" fill="var(--marker-glyph-cut, var(--card))" />
+		<rect
+			x="8.9"
+			y="5.9"
+			width="8.2"
+			height="5.6"
+			rx="2"
+			fill="var(--marker-glyph-cut, var(--card))"
+		/>
 		<circle cx="9.1" cy="19" r="1.25" fill="var(--marker-glyph-cut, var(--card))" />
 		<circle cx="16.9" cy="19" r="1.25" fill="var(--marker-glyph-cut, var(--card))" />
 	{:else}
