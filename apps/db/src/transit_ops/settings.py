@@ -148,6 +148,9 @@ class Settings(BaseSettings):
     HEALTH_FEED_TIMEOUT_SECONDS: float = 10.0
     HEALTH_MAX_PIPELINE_AGE_SECONDS: int = 900
     HEALTH_RUNTIME_CACHE_SECONDS: int = 30
+    # Global fallback for a provider manifest that omits provider.strict_gtfs.
+    # True = a feed missing a required non-spine column fails the load loud.
+    STRICT_GTFS: bool = True
     STATIC_DATASET_RETENTION_COUNT: int = 1
     SILVER_REALTIME_RETENTION_DAYS: int = 10
     # Max rows deleted per realtime-history table per prune cycle. The prune runs
@@ -262,6 +265,7 @@ class Settings(BaseSettings):
             "HEALTH_FEED_TIMEOUT_SECONDS": self.HEALTH_FEED_TIMEOUT_SECONDS,
             "HEALTH_MAX_PIPELINE_AGE_SECONDS": self.HEALTH_MAX_PIPELINE_AGE_SECONDS,
             "HEALTH_RUNTIME_CACHE_SECONDS": self.HEALTH_RUNTIME_CACHE_SECONDS,
+            "STRICT_GTFS": self.STRICT_GTFS,
             "STATIC_DATASET_RETENTION_COUNT": self.STATIC_DATASET_RETENTION_COUNT,
             "SILVER_REALTIME_RETENTION_DAYS": self.SILVER_REALTIME_RETENTION_DAYS,
             "SILVER_REALTIME_PRUNE_BATCH": self.SILVER_REALTIME_PRUNE_BATCH,

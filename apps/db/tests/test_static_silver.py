@@ -14,6 +14,9 @@ from transit_ops.silver.static_gtfs import (
     GTFS_EXTRA_ROW_INSERT,
     GTFS_SOURCE_MEMBER_INSERT,
     BronzeStaticArchive,
+    _build_agency_record,
+    _build_feed_info_record,
+    _build_stop_record,
     _build_stop_time_record,
     _iter_gtfs_rows,
     discover_gtfs_members,
@@ -237,6 +240,56 @@ def _write_beta_gtfs_zip(
             zip_file.writestr(member_name, content)
 
 
+def _minimal_compliant_members() -> dict[str, str]:
+    """The members of a fully GTFS-compliant single-agency feed that exercises the
+    loader relaxations: agency.txt with no agency_id column, feed_info.txt with no
+    date range / version, and a generic-node stop (location_type 3) with no
+    stop_name. Mirrors the minimal shape a small third-party provider may ship."""
+    return {
+        "agency.txt": (
+            "agency_name,agency_url,agency_timezone\n"
+            "Societe de transport de Sherbrooke,https://www.sts.qc.ca,America/Toronto\n"
+        ),
+        "feed_info.txt": (
+            "feed_publisher_name,feed_publisher_url,feed_lang\n"
+            "STS,https://www.sts.qc.ca,fr\n"
+        ),
+        "routes.txt": (
+            "route_id,route_type,route_short_name,route_long_name\n"
+            "1,3,1,Centre-ville\n"
+        ),
+        "trips.txt": (
+            "route_id,service_id,trip_id,trip_headsign\n"
+            "1,weekday,trip-1,Centre-ville\n"
+        ),
+        "stops.txt": (
+            "stop_id,stop_name,stop_lat,stop_lon,location_type\n"
+            "stop-1,Terminus,45.4000,-71.9000,0\n"
+            "node-1,,45.4010,-71.9010,3\n"
+        ),
+        "stop_times.txt": (
+            "trip_id,arrival_time,departure_time,stop_id,stop_sequence\n"
+            "trip-1,08:00:00,08:00:00,stop-1,1\n"
+            "trip-1,08:10:00,08:10:00,stop-1,2\n"
+        ),
+        "calendar.txt": (
+            "service_id,monday,tuesday,wednesday,thursday,friday,saturday,sunday,"
+            "start_date,end_date\n"
+            "weekday,1,1,1,1,1,0,0,20260324,20260630\n"
+        ),
+    }
+
+
+def _write_members_zip(zip_path: Path, members: dict[str, str]) -> None:
+    with ZipFile(zip_path, "w", compression=ZIP_DEFLATED) as zip_file:
+        for member_name, content in members.items():
+            zip_file.writestr(member_name, content)
+
+
+def _write_minimal_compliant_gtfs_zip(zip_path: Path) -> None:
+    _write_members_zip(zip_path, _minimal_compliant_members())
+
+
 def _build_archive(zip_path: Path) -> BronzeStaticArchive:
     return BronzeStaticArchive(
         provider_id="stm",
@@ -405,6 +458,190 @@ def test_load_static_zip_to_silver_records_row_counts(tmp_path: Path) -> None:
     assert "INSERT INTO silver.stop_times" in connection.calls[5][0]
     assert "INSERT INTO silver.calendar" in connection.calls[6][0]
     assert "INSERT INTO silver.calendar_dates" in connection.calls[7][0]
+
+
+def test_build_agency_record_synthesizes_agency_id_when_absent() -> None:
+    record = _build_agency_record(
+        {
+            "agency_name": "Societe de transport de l'Outaouais",
+            "agency_url": "https://www.sto.ca",
+            "agency_timezone": "America/Toronto",
+        },
+        provider_id="sto",
+        dataset_version_id=700,
+    )
+
+    # GTFS allows omitting agency_id on a single-agency feed; the loader
+    # synthesizes a stable surrogate so silver.agency (agency_id NOT NULL) loads.
+    assert record["agency_id"] == "sto"
+    assert record["agency_name"] == "Societe de transport de l'Outaouais"
+
+
+def test_build_agency_record_keeps_explicit_agency_id() -> None:
+    record = _build_agency_record(
+        {
+            "agency_id": "STM",
+            "agency_name": "Societe de transport de Montreal",
+            "agency_url": "https://www.stm.info",
+            "agency_timezone": "America/Montreal",
+        },
+        provider_id="stm",
+        dataset_version_id=700,
+    )
+
+    assert record["agency_id"] == "STM"
+
+
+def test_build_feed_info_record_allows_missing_dates_and_version() -> None:
+    record = _build_feed_info_record(
+        {
+            "feed_publisher_name": "OC Transpo",
+            "feed_publisher_url": "https://www.octranspo.com",
+            "feed_lang": "en",
+        },
+        provider_id="octranspo",
+        dataset_version_id=700,
+    )
+
+    assert record["feed_start_date"] is None
+    assert record["feed_end_date"] is None
+    assert record["feed_version"] is None
+    assert record["feed_publisher_name"] == "OC Transpo"
+
+
+def test_build_stop_record_allows_missing_name_for_node_and_boarding_area() -> None:
+    for location_type in ("3", "4"):
+        record = _build_stop_record(
+            {"stop_id": "node-1", "location_type": location_type},
+            provider_id="sts",
+            dataset_version_id=700,
+        )
+        assert record["stop_name"] is None
+        assert record["location_type"] == int(location_type)
+
+
+def test_build_stop_record_requires_name_for_stop_station_entrance() -> None:
+    for location_type in ("", "0", "1", "2"):
+        row: dict[str, str] = {"stop_id": "stop-1"}
+        if location_type:
+            row["location_type"] = location_type
+        with pytest.raises(ValueError, match="stop_name"):
+            _build_stop_record(row, provider_id="sts", dataset_version_id=700)
+
+
+def test_load_static_zip_to_silver_welcomes_minimal_compliant_feed(
+    tmp_path: Path,
+) -> None:
+    zip_path = tmp_path / "minimal-gtfs.zip"
+    _write_minimal_compliant_gtfs_zip(zip_path)
+    archive = _build_archive(zip_path)
+    connection = RecordingConnection()
+    bronze_storage = LocalBronzeStorageForTests(zip_path.read_bytes())
+
+    result = load_static_zip_to_silver(
+        connection,
+        archive=archive,
+        bronze_storage=bronze_storage,
+    )
+
+    # A single-agency feed with no agency_id, no feed_info dates/version, and a
+    # nameless generic-node stop loads end-to-end without raising.
+    assert result.row_counts["agency"] == 1
+    assert result.row_counts["feed_info"] == 1
+    assert result.row_counts["routes"] == 1
+    assert result.row_counts["stops"] == 2
+    assert result.conformance_warnings == []
+
+
+def test_strict_gtfs_hard_fails_on_non_spine_member_missing_required_column(
+    tmp_path: Path,
+) -> None:
+    members = _minimal_compliant_members()
+    # agency.txt missing the required agency_timezone column.
+    members["agency.txt"] = "agency_name,agency_url\nSTS,https://www.sts.qc.ca\n"
+    zip_path = tmp_path / "broken-agency.zip"
+    _write_members_zip(zip_path, members)
+    archive = _build_archive(zip_path)
+    bronze_storage = LocalBronzeStorageForTests(zip_path.read_bytes())
+
+    with pytest.raises(ValueError, match="agency.txt is missing required columns"):
+        load_static_zip_to_silver(
+            RecordingConnection(),
+            archive=archive,
+            bronze_storage=bronze_storage,
+            strict_gtfs=True,
+        )
+
+
+def test_tolerant_gtfs_downgrades_non_spine_member_to_conformance_warning(
+    tmp_path: Path,
+) -> None:
+    members = _minimal_compliant_members()
+    members["agency.txt"] = "agency_name,agency_url\nSTS,https://www.sts.qc.ca\n"
+    zip_path = tmp_path / "tolerant-agency.zip"
+    _write_members_zip(zip_path, members)
+    archive = _build_archive(zip_path)
+    bronze_storage = LocalBronzeStorageForTests(zip_path.read_bytes())
+
+    result = load_static_zip_to_silver(
+        RecordingConnection(),
+        archive=archive,
+        bronze_storage=bronze_storage,
+        strict_gtfs=False,
+    )
+
+    # The rest of the feed loads; the broken member is skipped and surfaced.
+    assert result.row_counts["routes"] == 1
+    assert "agency" not in result.row_counts  # skipped, recorded zero
+    assert {
+        "member": "agency.txt",
+        "kind": "missing_required_column",
+        "detail": "agency_timezone",
+    } in result.conformance_warnings
+
+
+def test_tolerant_gtfs_still_hard_fails_on_spine_member_missing_column(
+    tmp_path: Path,
+) -> None:
+    members = _minimal_compliant_members()
+    # routes.txt missing the spine route_type column -- always fatal.
+    members["routes.txt"] = "route_id,route_short_name,route_long_name\n1,1,Centre-ville\n"
+    zip_path = tmp_path / "broken-routes.zip"
+    _write_members_zip(zip_path, members)
+    archive = _build_archive(zip_path)
+    bronze_storage = LocalBronzeStorageForTests(zip_path.read_bytes())
+
+    with pytest.raises(ValueError, match="routes.txt is missing required columns"):
+        load_static_zip_to_silver(
+            RecordingConnection(),
+            archive=archive,
+            bronze_storage=bronze_storage,
+            strict_gtfs=False,
+        )
+
+
+def test_unknown_member_recorded_as_conformance_warning(tmp_path: Path) -> None:
+    members = _minimal_compliant_members()
+    members["pathways.txt"] = (
+        "pathway_id,from_stop_id,to_stop_id,pathway_mode,is_bidirectional\n"
+        "p1,stop-1,node-1,1,0\n"
+    )
+    zip_path = tmp_path / "extra-member.zip"
+    _write_members_zip(zip_path, members)
+    archive = _build_archive(zip_path)
+    bronze_storage = LocalBronzeStorageForTests(zip_path.read_bytes())
+
+    result = load_static_zip_to_silver(
+        RecordingConnection(),
+        archive=archive,
+        bronze_storage=bronze_storage,
+    )
+
+    assert "pathways.txt" in result.unsupported_members
+    assert any(
+        item["member"] == "pathways.txt" and item["kind"] == "unknown_member"
+        for item in result.conformance_warnings
+    )
 
 
 def test_load_static_zip_to_silver_loads_beta_first_static_members(tmp_path: Path) -> None:

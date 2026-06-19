@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 import hashlib
+import logging
 from collections.abc import Callable, Iterator, Mapping
 from dataclasses import asdict, dataclass, field
 from datetime import date, datetime
@@ -25,6 +26,8 @@ from transit_ops.ingestion.storage import get_bronze_storage
 from transit_ops.providers import ProviderRegistry
 from transit_ops.settings import Settings, get_settings
 from transit_ops.silver._batch import execute_batched_insert
+
+logger = logging.getLogger(__name__)
 
 CHUNK_SIZE = 5_000
 REQUIRED_STATIC_MEMBERS = {
@@ -60,15 +63,18 @@ BETA_STATIC_CONTRACT_COLUMNS_BY_MEMBER = {
     "trips.txt": {"route_pattern_id"},
 }
 REQUIRED_COLUMNS_BY_MEMBER: dict[str, set[str]] = {
+    # agency_id is GTFS-optional for single-agency feeds; synthesized in
+    # _build_agency_record when absent (silver.agency PK still gets a value).
     "agency.txt": {
-        "agency_id",
         "agency_name",
         "agency_url",
         "agency_timezone",
     },
     "routes.txt": {"route_id", "route_type"},
     "trips.txt": {"route_id", "service_id", "trip_id"},
-    "stops.txt": {"stop_id", "stop_name"},
+    # stop_name is GTFS-conditional (required for location_type 0/1/2, optional
+    # for 3/4); enforced per-row in _build_stop_record, not as a header gate.
+    "stops.txt": {"stop_id"},
     "stop_times.txt": {"trip_id", "stop_id", "stop_sequence"},
     "calendar.txt": {
         "service_id",
@@ -90,13 +96,12 @@ REQUIRED_COLUMNS_BY_MEMBER: dict[str, set[str]] = {
         "direction",
         "direction_legacy",
     },
+    # feed_start_date/feed_end_date/feed_version are GTFS-optional; parsed only
+    # when present in _build_feed_info_record. Publisher fields stay required.
     "feed_info.txt": {
         "feed_publisher_name",
         "feed_publisher_url",
         "feed_lang",
-        "feed_start_date",
-        "feed_end_date",
-        "feed_version",
     },
     "route_patterns.txt": {
         "route_pattern_id",
@@ -119,6 +124,19 @@ REQUIRED_COLUMNS_BY_MEMBER: dict[str, set[str]] = {
     },
 }
 SUPPORTED_STATIC_MEMBER_KEYS = set(REQUIRED_COLUMNS_BY_MEMBER)
+# Spine members: their required columns are the PK/FK join keys gold depends on,
+# so a missing required column is always a hard failure even in tolerant mode.
+# Every other supported member is non-spine: under strict_gtfs=False a missing
+# required column downgrades to a recorded conformance warning + a skipped load
+# instead of failing the whole transaction.
+SPINE_STATIC_MEMBERS = {
+    "routes.txt",
+    "trips.txt",
+    "stops.txt",
+    "stop_times.txt",
+    "calendar.txt",
+    "calendar_dates.txt",
+}
 
 GTFS_SOURCE_MEMBER_INSERT = text(
     """
@@ -552,6 +570,10 @@ class StaticSilverLoadResult:
     unsupported_members: list[str] = field(default_factory=list)
     typed_row_counts: dict[str, int] = field(default_factory=dict)
     extra_row_counts: dict[str, int] = field(default_factory=dict)
+    # Non-fatal feed conformance notes accumulated during a tolerant load: each
+    # {member, kind, detail} where kind is one of unknown_member,
+    # missing_required_column, missing_service_calendar.
+    conformance_warnings: list[dict[str, str]] = field(default_factory=list)
 
     def display_dict(self) -> dict[str, object]:
         payload = asdict(self)
@@ -586,6 +608,15 @@ def _require_value(row: Mapping[str, str], column_name: str, member_name: str) -
     return value
 
 
+def _synthesized_agency_id(provider_id: str) -> str:
+    """GTFS makes ``agency_id`` optional for single-agency feeds, but
+    ``silver.agency`` keys on ``(dataset_version_id, agency_id)`` with
+    ``agency_id NOT NULL``. Synthesize a stable surrogate from the provider id so
+    a compliant single-agency feed still loads. Nothing joins
+    ``routes -> agency`` on this key, so the surrogate stays internal."""
+    return provider_id
+
+
 def _parse_optional_int(value: str | None) -> int | None:
     normalized = _blank_to_none(value)
     return int(normalized) if normalized is not None else None
@@ -602,6 +633,15 @@ def _parse_optional_float(value: str | None) -> float | None:
 
 def _parse_gtfs_date(value: str, member_name: str, column_name: str) -> date:
     return parse_gtfs_date(value, field_name=f"{member_name}.{column_name}")
+
+
+def _parse_optional_gtfs_date(
+    value: str | None, member_name: str, column_name: str
+) -> date | None:
+    normalized = _blank_to_none(value)
+    if normalized is None:
+        return None
+    return _parse_gtfs_date(normalized, member_name, column_name)
 
 
 def _parse_gtfs_bool(row: Mapping[str, str], column_name: str, member_name: str) -> bool:
@@ -628,7 +668,8 @@ def _build_agency_record(
     return {
         "dataset_version_id": dataset_version_id,
         "provider_id": provider_id,
-        "agency_id": _require_value(row, "agency_id", "agency.txt"),
+        "agency_id": _blank_to_none(row.get("agency_id"))
+        or _synthesized_agency_id(provider_id),
         "agency_name": _require_value(row, "agency_name", "agency.txt"),
         "agency_url": _require_value(row, "agency_url", "agency.txt"),
         "agency_timezone": _require_value(row, "agency_timezone", "agency.txt"),
@@ -658,17 +699,13 @@ def _build_feed_info_record(
             "feed_info.txt",
         ),
         "feed_lang": _require_value(row, "feed_lang", "feed_info.txt"),
-        "feed_start_date": _parse_gtfs_date(
-            _require_value(row, "feed_start_date", "feed_info.txt"),
-            "feed_info.txt",
-            "feed_start_date",
+        "feed_start_date": _parse_optional_gtfs_date(
+            row.get("feed_start_date"), "feed_info.txt", "feed_start_date"
         ),
-        "feed_end_date": _parse_gtfs_date(
-            _require_value(row, "feed_end_date", "feed_info.txt"),
-            "feed_info.txt",
-            "feed_end_date",
+        "feed_end_date": _parse_optional_gtfs_date(
+            row.get("feed_end_date"), "feed_info.txt", "feed_end_date"
         ),
-        "feed_version": _require_value(row, "feed_version", "feed_info.txt"),
+        "feed_version": _blank_to_none(row.get("feed_version")),
     }
 
 
@@ -693,15 +730,32 @@ def discover_gtfs_members(archive_path: Path) -> dict[str, str]:
         return _discover_gtfs_members_from_zip(zip_file)
 
 
-def validate_required_static_members(member_map: Mapping[str, str]) -> None:
+def validate_required_static_members(
+    member_map: Mapping[str, str],
+    *,
+    strict_gtfs: bool = True,
+    conformance: list[dict[str, str]] | None = None,
+) -> None:
     missing_members = sorted(REQUIRED_STATIC_MEMBERS - set(member_map))
     if missing_members:
         missing_display = ", ".join(missing_members)
         raise ValueError(f"Missing required GTFS members: {missing_display}")
     if not (OPTIONAL_SERVICE_MEMBERS & set(member_map)):
-        raise ValueError(
-            "At least one of calendar.txt or calendar_dates.txt must be present."
-        )
+        # GTFS requires at least one of calendar.txt / calendar_dates.txt. In
+        # tolerant mode let the rest of the schedule dims load (the service
+        # calendar will simply be empty) but record the gap.
+        if strict_gtfs:
+            raise ValueError(
+                "At least one of calendar.txt or calendar_dates.txt must be present."
+            )
+        if conformance is not None:
+            conformance.append(
+                {
+                    "member": "calendar.txt",
+                    "kind": "missing_service_calendar",
+                    "detail": "no calendar.txt or calendar_dates.txt present",
+                }
+            )
 
 
 def _read_member_header(zip_file: ZipFile, member_name: str) -> set[str]:
@@ -761,6 +815,37 @@ def validate_beta_static_contract(member_map: Mapping[str, str], zip_file: ZipFi
             for member_key, columns in sorted(missing_columns.items())
         )
         raise ValueError("Missing beta GTFS contract columns: " + details)
+
+
+def _member_should_load(
+    member_key: str,
+    member_name: str,
+    header: set[str],
+    *,
+    strict_gtfs: bool,
+    conformance: list[dict[str, str]],
+) -> bool:
+    """Decide whether a member's typed load proceeds under the tolerance flag.
+
+    Returns True to load, False to skip (downgraded). Raises when a spine column
+    is missing (always) or when any required column is missing under strict mode.
+    A skipped non-spine member records a ``missing_required_column`` conformance
+    warning so the gap is surfaced instead of silently failing the whole load."""
+    missing = REQUIRED_COLUMNS_BY_MEMBER[member_key] - header
+    if not missing:
+        return True
+    missing_is_spine = member_key in SPINE_STATIC_MEMBERS
+    if missing_is_spine or strict_gtfs:
+        missing_display = ", ".join(sorted(missing))
+        raise ValueError(f"{member_name} is missing required columns: {missing_display}")
+    conformance.append(
+        {
+            "member": member_key,
+            "kind": "missing_required_column",
+            "detail": ", ".join(sorted(missing)),
+        }
+    )
+    return False
 
 
 def _iter_gtfs_rows(
@@ -845,18 +930,27 @@ def _build_stop_record(
     provider_id: str,
     dataset_version_id: int,
 ) -> dict[str, object]:
+    # GTFS: stop_name is required for stops/stations/entrances (location_type
+    # 0/1/2, default 0) and optional for generic nodes (3) / boarding areas (4).
+    location_type = _parse_optional_int(row.get("location_type"))
+    stop_name = _blank_to_none(row.get("stop_name"))
+    if stop_name is None and location_type not in (3, 4):
+        raise ValueError(
+            "stops.txt requires non-empty column 'stop_name' for location_type "
+            "0/1/2 (stop/station/entrance)."
+        )
     return {
         "dataset_version_id": dataset_version_id,
         "provider_id": provider_id,
         "stop_id": _require_value(row, "stop_id", "stops.txt"),
         "stop_code": _blank_to_none(row.get("stop_code")),
-        "stop_name": _require_value(row, "stop_name", "stops.txt"),
+        "stop_name": stop_name,
         "stop_desc": _blank_to_none(row.get("stop_desc")),
         "stop_lat": _parse_optional_float(row.get("stop_lat")),
         "stop_lon": _parse_optional_float(row.get("stop_lon")),
         "zone_id": _blank_to_none(row.get("zone_id")),
         "stop_url": _blank_to_none(row.get("stop_url")),
-        "location_type": _parse_optional_int(row.get("location_type")),
+        "location_type": location_type,
         "parent_station": _blank_to_none(row.get("parent_station")),
         "stop_timezone": _blank_to_none(row.get("stop_timezone")),
         "wheelchair_boarding": _parse_optional_int(row.get("wheelchair_boarding")),
@@ -1033,10 +1127,20 @@ def _load_member_rows(
     dataset_version_id: int,
     builder: Callable[..., dict[str, object]],
     statement,
+    strict_gtfs: bool = True,
+    conformance: list[dict[str, str]] | None = None,
 ) -> int:
     if member_key not in member_map:
         return 0
     member_name = member_map[member_key]
+    if not _member_should_load(
+        member_key,
+        member_name,
+        _read_member_header(zip_file, member_name),
+        strict_gtfs=strict_gtfs,
+        conformance=conformance if conformance is not None else [],
+    ):
+        return 0
     required_columns = REQUIRED_COLUMNS_BY_MEMBER[member_key]
     rows = (
         builder(
@@ -1062,11 +1166,21 @@ def _load_translation_rows(
     member_map: Mapping[str, str],
     provider_id: str,
     dataset_version_id: int,
+    strict_gtfs: bool = True,
+    conformance: list[dict[str, str]] | None = None,
 ) -> int:
     member_key = "translations.txt"
     if member_key not in member_map:
         return 0
     member_name = member_map[member_key]
+    if not _member_should_load(
+        member_key,
+        member_name,
+        _read_member_header(zip_file, member_name),
+        strict_gtfs=strict_gtfs,
+        conformance=conformance if conformance is not None else [],
+    ):
+        return 0
     required_columns = REQUIRED_COLUMNS_BY_MEMBER[member_key]
     rows = (
         _build_translation_record(
@@ -1144,11 +1258,20 @@ def _load_extra_member_rows(
     member_map: Mapping[str, str],
     provider_id: str,
     dataset_version_id: int,
+    conformance: list[dict[str, str]] | None = None,
 ) -> dict[str, int]:
     extra_row_counts: dict[str, int] = {}
     for source_file_name, member_path in _txt_member_items(member_map):
         if source_file_name in SUPPORTED_STATIC_MEMBER_KEYS:
             continue
+        if conformance is not None:
+            conformance.append(
+                {
+                    "member": source_file_name,
+                    "kind": "unknown_member",
+                    "detail": "captured verbatim into silver.gtfs_extra_rows",
+                }
+            )
         rows = (
             {
                 "dataset_version_id": dataset_version_id,
@@ -1342,6 +1465,7 @@ def load_static_zip_to_silver(
     archive: BronzeStaticArchive,
     bronze_storage,
     require_beta_static_contract: bool = False,
+    strict_gtfs: bool = True,
 ) -> StaticSilverLoadResult:
     if not bronze_storage.exists(archive.storage_path):
         archive_location = bronze_storage.describe_location(archive.storage_path)
@@ -1356,9 +1480,17 @@ def load_static_zip_to_silver(
         archive=archive,
     )
 
+    # Non-fatal feed conformance notes accumulated under tolerant mode. Spine
+    # members (routes/trips/stops/stop_times/calendar) always hard-fail on a
+    # missing required column regardless of strict_gtfs, so they are not threaded
+    # the flag; only the non-spine optional members can downgrade.
+    conformance: list[dict[str, str]] = []
+
     with ZipFile(BytesIO(archive_bytes)) as zip_file:
         member_map = _discover_gtfs_members_from_zip(zip_file)
-        validate_required_static_members(member_map)
+        validate_required_static_members(
+            member_map, strict_gtfs=strict_gtfs, conformance=conformance
+        )
         if require_beta_static_contract:
             validate_beta_static_contract(member_map, zip_file)
         row_counts = {
@@ -1433,6 +1565,8 @@ def load_static_zip_to_silver(
                 dataset_version_id=dataset_version_id,
                 builder=_build_agency_record,
                 statement=AGENCY_INSERT,
+                strict_gtfs=strict_gtfs,
+                conformance=conformance,
             ),
             "feed_info": _load_member_rows(
                 connection,
@@ -1443,6 +1577,8 @@ def load_static_zip_to_silver(
                 dataset_version_id=dataset_version_id,
                 builder=_build_feed_info_record,
                 statement=FEED_INFO_INSERT,
+                strict_gtfs=strict_gtfs,
+                conformance=conformance,
             ),
             "directions": _load_member_rows(
                 connection,
@@ -1453,6 +1589,8 @@ def load_static_zip_to_silver(
                 dataset_version_id=dataset_version_id,
                 builder=_build_direction_record,
                 statement=DIRECTIONS_INSERT,
+                strict_gtfs=strict_gtfs,
+                conformance=conformance,
             ),
             "route_patterns": _load_member_rows(
                 connection,
@@ -1463,6 +1601,8 @@ def load_static_zip_to_silver(
                 dataset_version_id=dataset_version_id,
                 builder=_build_route_pattern_record,
                 statement=ROUTE_PATTERNS_INSERT,
+                strict_gtfs=strict_gtfs,
+                conformance=conformance,
             ),
             "shapes": _load_member_rows(
                 connection,
@@ -1473,6 +1613,8 @@ def load_static_zip_to_silver(
                 dataset_version_id=dataset_version_id,
                 builder=_build_shape_record,
                 statement=SHAPES_INSERT,
+                strict_gtfs=strict_gtfs,
+                conformance=conformance,
             ),
             "translations": _load_translation_rows(
                 connection,
@@ -1480,6 +1622,8 @@ def load_static_zip_to_silver(
                 member_map=member_map,
                 provider_id=archive.provider_id,
                 dataset_version_id=dataset_version_id,
+                strict_gtfs=strict_gtfs,
+                conformance=conformance,
             ),
         }
         row_counts.update(
@@ -1503,8 +1647,17 @@ def load_static_zip_to_silver(
             member_map=member_map,
             provider_id=archive.provider_id,
             dataset_version_id=dataset_version_id,
+            conformance=conformance,
         )
         unsupported_members = sorted(extra_row_counts)
+
+    if conformance:
+        logger.warning(
+            "Static load for provider %s recorded %d feed conformance warning(s): %s",
+            archive.provider_id,
+            len(conformance),
+            "; ".join(f"{item['member']} ({item['kind']})" for item in conformance),
+        )
 
     return StaticSilverLoadResult(
         provider_id=archive.provider_id,
@@ -1521,6 +1674,7 @@ def load_static_zip_to_silver(
         unsupported_members=unsupported_members,
         typed_row_counts=dict(row_counts),
         extra_row_counts=extra_row_counts,
+        conformance_warnings=conformance,
     )
 
 
@@ -1559,12 +1713,16 @@ def load_latest_static_to_silver(
         storage_backend=archive.storage_backend,
     )
 
+    provider_strict = manifest.provider.strict_gtfs
+    effective_strict = provider_strict if provider_strict is not None else settings.STRICT_GTFS
+
     with engine.begin() as connection:
         result = load_static_zip_to_silver(
             connection,
             archive=archive,
             bronze_storage=bronze_storage,
             require_beta_static_contract=_archive_requires_beta_static_contract(archive),
+            strict_gtfs=effective_strict,
         )
         # NOTE: static dataset pruning is intentionally NOT done here. Running it
         # inside the load transaction (before refresh_gold_static re-points the

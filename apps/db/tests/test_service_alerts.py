@@ -6,7 +6,10 @@ from datetime import UTC, datetime
 
 from google.transit import gtfs_realtime_pb2
 
-from transit_ops.ingestion.service_alerts import convert_gtfs_rt_alerts_to_i3_payload
+from transit_ops.ingestion.service_alerts import (
+    _enum_name,
+    convert_gtfs_rt_alerts_to_i3_payload,
+)
 from transit_ops.silver.i3 import RawI3AlertSnapshot, normalize_i3_alert_payload
 
 
@@ -52,6 +55,39 @@ def test_convert_gtfs_rt_alerts_to_i3_payload() -> None:
     assert {"language": "en", "text": "Route 33 detour"} in alert["header"]
     assert alert["activePeriod"][0] == {"start": 1_774_837_200, "end": 1_774_900_000}
     assert alert["informedEntities"][0] == {"routeId": "33", "stopId": "S1"}
+
+
+def test_enum_name_decodes_known_value_and_degrades_unknown_to_string() -> None:
+    # Known enum values decode to their published name...
+    assert (
+        _enum_name(gtfs_realtime_pb2.Alert.Cause, gtfs_realtime_pb2.Alert.CONSTRUCTION)
+        == "CONSTRUCTION"
+    )
+    # ...while a vendor-extension value outside the published set degrades to the
+    # raw int as a string instead of raising and failing the whole capture.
+    assert _enum_name(gtfs_realtime_pb2.Alert.Cause, 9999) == "9999"
+    assert _enum_name(gtfs_realtime_pb2.Alert.Effect, 8888) == "8888"
+    assert _enum_name(gtfs_realtime_pb2.Alert.SeverityLevel, 7777) == "7777"
+
+
+def test_unknown_enum_value_on_wire_does_not_crash_converter() -> None:
+    # Hand-crafted FeedMessage bytes carrying Alert.cause = 9999 (a value outside
+    # the published Cause enum). Depending on the active protobuf runtime the
+    # value is either dropped to the unknown-field set or retained and degraded;
+    # either way the converter must not raise.
+    raw = bytes(
+        [
+            0x0A, 0x05, 0x0A, 0x03, 0x32, 0x2E, 0x30,  # header { version="2.0" }
+            0x12, 0x08, 0x0A, 0x01, 0x78,              # entity { id="x" ...
+            0x2A, 0x03, 0x30, 0x8F, 0x4E,              # ... alert { cause=9999 } }
+        ]
+    )
+
+    payload = convert_gtfs_rt_alerts_to_i3_payload(raw)
+
+    assert len(payload["alerts"]) == 1
+    cause = payload["alerts"][0].get("cause")
+    assert cause is None or cause == "9999"
 
 
 def test_no_alert_entities_yields_empty_alerts() -> None:

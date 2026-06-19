@@ -113,6 +113,12 @@ class ProviderConfig(BaseModel):
     attribution_text: str | None = None
     website_url: AnyHttpUrl | None = None
     is_active: bool = True
+    # When False, the static loader tolerates a compliant-but-minimal feed whose
+    # non-spine optional members are missing a required column (skip + record a
+    # conformance warning instead of failing the whole load). STM stays True so a
+    # real schema regression still fails loud. Falls back to Settings.STRICT_GTFS
+    # when omitted from the manifest.
+    strict_gtfs: bool | None = None
 
 
 class FeedConfigBase(BaseModel):

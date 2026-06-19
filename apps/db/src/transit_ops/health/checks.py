@@ -297,6 +297,117 @@ def check_runtime_vm_health(
     return result
 
 
+def check_feed_conformance(
+    settings: Settings | None = None,
+    *,
+    engine_factory: EngineFactory | None = None,
+    now: datetime | None = None,
+) -> ComponentHealthResult:
+    """Surface "out-of-norm payload" providers whose latest static feed shipped
+    members this pipeline does not natively model.
+
+    Pure surfacing over data the loader already captures: unknown / extra GTFS
+    members are preserved verbatim in ``silver.gtfs_extra_rows`` (never dropped),
+    and a feed that omits a required member or spine column never produced a
+    current dataset_version in the first place (the load fails loud). So the
+    observable states here are conformant (ok) or out_of_norm (degraded). The
+    detailed per-provider breakdown stays off ``public_dict`` via the model's
+    redaction.
+    """
+    resolved_settings = settings or get_settings()
+    checked_at = _checked_at(now)
+    started = time.perf_counter()
+
+    if not resolved_settings.DATABASE_URL:
+        return ComponentHealthResult(
+            name="feed_conformance",
+            status="down",
+            message="DATABASE_URL is not configured.",
+            latency_ms=_latency_ms(started),
+            checked_at_utc=checked_at,
+        )
+
+    try:
+        engine = (engine_factory or _make_health_engine)(resolved_settings)
+        with engine.connect() as connection:
+            rows = connection.execute(
+                text(
+                    """
+                    SELECT
+                        dv.provider_id,
+                        dv.dataset_version_id,
+                        (
+                            SELECT count(*)
+                            FROM silver.gtfs_extra_rows AS ger
+                            WHERE ger.dataset_version_id = dv.dataset_version_id
+                        )::bigint AS extra_row_count,
+                        (
+                            SELECT array_agg(DISTINCT ger.source_file_name)
+                            FROM silver.gtfs_extra_rows AS ger
+                            WHERE ger.dataset_version_id = dv.dataset_version_id
+                        ) AS unknown_members
+                    FROM core.dataset_versions AS dv
+                    WHERE dv.is_current IS TRUE
+                      AND dv.dataset_kind = 'static_schedule'
+                    ORDER BY dv.provider_id
+                    """
+                )
+            )
+    except Exception as exc:  # noqa: BLE001
+        return ComponentHealthResult(
+            name="feed_conformance",
+            status="down",
+            message=f"Feed conformance query failed: {_safe_error(exc)}",
+            latency_ms=_latency_ms(started),
+            checked_at_utc=checked_at,
+        )
+
+    per_provider: dict[str, object] = {}
+    out_of_norm: list[str] = []
+    for row in rows:
+        mapping = _row_mapping(row)
+        provider_id = str(mapping["provider_id"])
+        unknown_members = sorted(mapping.get("unknown_members") or [])
+        extra_row_count = int(mapping.get("extra_row_count") or 0)
+        per_provider[provider_id] = {
+            "dataset_version_id": int(mapping["dataset_version_id"]),
+            "unknown_members": unknown_members,
+            "extra_row_count": extra_row_count,
+        }
+        if unknown_members or extra_row_count:
+            out_of_norm.append(provider_id)
+
+    details: dict[str, object] = {"label": "conformant", "providers": per_provider}
+
+    if out_of_norm:
+        details["label"] = "out_of_norm"
+        summary = ", ".join(
+            f"{pid} ({len(per_provider[pid]['unknown_members'])} member(s), "
+            f"{per_provider[pid]['extra_row_count']} row(s))"
+            for pid in out_of_norm
+        )
+        return ComponentHealthResult(
+            name="feed_conformance",
+            status="degraded",
+            message=(
+                f"Out-of-norm feed payload for {len(out_of_norm)} provider(s): "
+                f"{summary} — captured verbatim in silver.gtfs_extra_rows."
+            ),
+            latency_ms=_latency_ms(started),
+            checked_at_utc=checked_at,
+            details=details,
+        )
+
+    return ComponentHealthResult(
+        name="feed_conformance",
+        status="ok",
+        message="Latest static load matched the expected GTFS shape.",
+        latency_ms=_latency_ms(started),
+        checked_at_utc=checked_at,
+        details=details,
+    )
+
+
 def run_health_checks(
     settings: Settings | None = None,
     *,
@@ -318,6 +429,11 @@ def run_health_checks(
             now=checked_at,
         ),
         check_pipeline_freshness(
+            resolved_settings,
+            engine_factory=engine_factory,
+            now=checked_at,
+        ),
+        check_feed_conformance(
             resolved_settings,
             engine_factory=engine_factory,
             now=checked_at,

@@ -10,6 +10,7 @@ import pytest
 from transit_ops.health.checks import (
     check_bronze_storage,
     check_database_connectivity,
+    check_feed_conformance,
     check_pipeline_freshness,
     check_runtime_vm_health,
     run_health_checks,
@@ -21,9 +22,15 @@ NOW = datetime(2026, 5, 22, 14, 0, tzinfo=UTC)
 
 
 class FakeConnection:
-    def __init__(self, rows: list[dict[str, Any]] | None = None, exc: Exception | None = None):
+    def __init__(
+        self,
+        rows: list[dict[str, Any]] | None = None,
+        exc: Exception | None = None,
+        conformance_rows: list[dict[str, Any]] | None = None,
+    ):
         self.rows = rows or []
         self.exc = exc
+        self.conformance_rows = conformance_rows or []
         self.queries: list[object] = []
 
     def __enter__(self) -> FakeConnection:
@@ -36,6 +43,11 @@ class FakeConnection:
         self.queries.append(query)
         if self.exc:
             raise self.exc
+        # The feed-conformance check runs a distinct query against
+        # silver.gtfs_extra_rows; route it to its own fixture so freshness rows
+        # never leak into it (they lack provider_id).
+        if "gtfs_extra_rows" in str(query):
+            return self.conformance_rows
         return self.rows
 
 
@@ -142,6 +154,64 @@ def test_database_connectivity_down_when_query_fails() -> None:
     assert result.name == "database"
     assert result.status == "down"
     assert "Database connectivity check failed" in result.message
+
+
+def test_feed_conformance_ok_when_no_extra_members() -> None:
+    conformance_rows = [
+        {
+            "provider_id": "stm",
+            "dataset_version_id": 42,
+            "extra_row_count": 0,
+            "unknown_members": None,
+        }
+    ]
+
+    result = check_feed_conformance(
+        settings(),
+        engine_factory=lambda _: FakeEngine(
+            FakeConnection(conformance_rows=conformance_rows)
+        ),
+        now=NOW,
+    )
+
+    assert result.name == "feed_conformance"
+    assert result.status == "ok"
+    assert result.message == "Latest static load matched the expected GTFS shape."
+    assert result.details is not None
+    assert result.details["label"] == "conformant"
+
+
+def test_feed_conformance_degraded_when_out_of_norm_members_present() -> None:
+    conformance_rows = [
+        {
+            "provider_id": "stm",
+            "dataset_version_id": 42,
+            "extra_row_count": 0,
+            "unknown_members": None,
+        },
+        {
+            "provider_id": "sto",
+            "dataset_version_id": 7,
+            "extra_row_count": 57,
+            "unknown_members": ["pathways.txt", "levels.txt"],
+        },
+    ]
+
+    result = check_feed_conformance(
+        settings(),
+        engine_factory=lambda _: FakeEngine(
+            FakeConnection(conformance_rows=conformance_rows)
+        ),
+        now=NOW,
+    )
+
+    assert result.status == "degraded"
+    assert "sto" in result.message
+    assert "silver.gtfs_extra_rows" in result.message
+    assert result.details["label"] == "out_of_norm"
+    # The detail block carries the per-provider breakdown but is dropped from the
+    # anonymous-safe public_dict (name + status only).
+    assert set(result.public_dict()) == {"name", "status"}
 
 
 def test_pipeline_freshness_ok_when_realtime_endpoints_are_recent() -> None:
@@ -446,6 +516,7 @@ def test_run_health_checks_returns_quota_free_components_in_order(tmp_path: Path
     assert [result.name for result in results] == [
         "database",
         "pipeline_freshness",
+        "feed_conformance",
         "bronze_storage",
         "runtime_vm",
     ]
