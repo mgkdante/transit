@@ -58,7 +58,10 @@
 		path = '/',
 		locale,
 		siteOrigin = 'https://transit.yesid.dev',
-		siteName = 'Transit · STM Analytics',
+		// Provider-neutral brand default — callers (the root layout) pass an
+		// identity-derived name ("STM Analytics"); an un-passed caller must never
+		// leak a hardcoded agency, so the fallback stays generic.
+		siteName = 'Transit Analytics',
 		themeColor = '#141414',
 		noIndex = false,
 		singleLocale = false,

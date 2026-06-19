@@ -690,10 +690,12 @@ class _FakeSettings:
 def test_build_manifest_assembles_from_provider_and_version() -> None:
     conn = FakeConn(
         {
-            "gold.dim_provider": [
+            "core.providers": [
                 {
                     "provider_id": "stm",
                     "display_name": "Société de transport de Montréal",
+                    "short_name": "STM",
+                    "city": "Montréal",
                     "timezone": "America/Toronto",
                     "default_language": "fr",
                     "attribution_text": "Contains STM data made available under CC BY 4.0.",
@@ -717,6 +719,8 @@ def test_build_manifest_assembles_from_provider_and_version() -> None:
     assert isinstance(out, Manifest)
     assert out.provider == "stm"
     assert out.display_name == "Société de transport de Montréal"
+    assert out.short_name == "STM"
+    assert out.city == "Montréal"
     assert out.tz == "America/Toronto"
     assert out.default_lang == "fr"
     assert out.attribution == "Contains STM data made available under CC BY 4.0."
@@ -739,7 +743,7 @@ def test_build_manifest_assembles_from_provider_and_version() -> None:
 def test_build_manifest_defaults_when_version_missing() -> None:
     conn = FakeConn(
         {
-            "gold.dim_provider": [
+            "core.providers": [
                 {
                     "provider_id": "stm",
                     "display_name": "STM",
@@ -762,6 +766,10 @@ def test_build_manifest_defaults_when_version_missing() -> None:
         settings=_FakeSettings(),
     )
     assert out.dataset_version  # non-empty fallback
+    # Copy identity is optional: a provider row without short_name/city yields
+    # null in the manifest (the UI falls back to display_name).
+    assert out.short_name is None
+    assert out.city is None
 
 
 class _FakeSettingsWithBasemap:
@@ -770,7 +778,7 @@ class _FakeSettingsWithBasemap:
 
 
 _MANIFEST_PROVIDER_ROW = {
-    "gold.dim_provider": [
+    "core.providers": [
         {
             "provider_id": "stm",
             "display_name": "STM",

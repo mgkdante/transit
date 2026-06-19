@@ -219,6 +219,18 @@
       "title": "Bbox",
       "type": "array"
     },
+    "city": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "City"
+    },
     "dataset_version": {
       "title": "Dataset Version",
       "type": "string"
@@ -245,6 +257,18 @@
     "provider": {
       "title": "Provider",
       "type": "string"
+    },
+    "short_name": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Short Name"
     },
     "surfaces": {
       "items": {

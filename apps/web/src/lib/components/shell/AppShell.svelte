@@ -49,6 +49,8 @@
 		url?: URL;
 		/** Active provider display name (manifest.display_name) for the TopBar network chip. */
 		providerName?: string;
+		/** Snappy provider brand (manifest.short_name) — preferred for the compact chip. */
+		providerShortName?: string;
 		/** Active alert count for the TopBar bell badge. */
 		alertCount?: number;
 		/** Bindable search value for the TopBar field. */
@@ -90,6 +92,7 @@
 		locale: localeProp,
 		url,
 		providerName,
+		providerShortName,
 		alertCount = 0,
 		search = $bindable(''),
 		onsearch,
@@ -180,6 +183,7 @@
 		{locale}
 		{url}
 		{providerName}
+		{providerShortName}
 		{alertCount}
 		bind:search
 		{onsearch}

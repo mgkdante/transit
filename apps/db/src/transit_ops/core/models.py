@@ -106,6 +106,10 @@ class ProviderBoundsConfig(BaseModel):
 class ProviderConfig(BaseModel):
     provider_id: str
     display_name: str
+    # Copy identity (additive, optional): a snappy brand for chips/SEO ("STM",
+    # "OC Transpo") and the primary place name for SEO + copy ("Montréal").
+    short_name: str | None = None
+    city: str | None = None
     timezone: str
     default_language: str | None = None
     default_currency: str | None = None
@@ -204,6 +208,8 @@ class ProviderSeed:
     max_longitude: float | None
     attribution_text: str
     website_url: str
+    short_name: str | None
+    city: str | None
     is_active: bool = True
 
     def as_params(self) -> dict[str, object]:
@@ -315,6 +321,8 @@ class ProviderManifest(BaseModel):
             max_longitude=bounds.max_longitude if bounds else None,
             attribution_text=self.provider.attribution_text or "",
             website_url=str(self.provider.website_url) if self.provider.website_url else "",
+            short_name=self.provider.short_name,
+            city=self.provider.city,
             is_active=self.provider.is_active,
         )
 

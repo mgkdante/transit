@@ -68,7 +68,9 @@ const CASES: Case[] = [
 		ManifestSchema,
 		{
 			provider: 'stm',
-			display_name: 'STM',
+			display_name: 'Société de transport de Montréal',
+			short_name: 'STM',
+			city: 'Montréal',
 			bbox: [-73.97, 45.4, -73.47, 45.7],
 			attribution: 'STM',
 			dataset_version: '2026.06.15',

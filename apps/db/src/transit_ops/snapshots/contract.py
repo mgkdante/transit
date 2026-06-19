@@ -199,6 +199,11 @@ class ManifestFiles(BaseModel):
 class Manifest(BaseModel):
     provider: str
     display_name: str
+    # Copy identity (additive, optional): snappy brand for chips/SEO ("STM") +
+    # primary place name for SEO/copy ("Montréal"). None when the provider config
+    # omits them; the UI falls back to display_name.
+    short_name: str | None = None
+    city: str | None = None
     tz: str = "America/Toronto"
     bbox: list[float]
     default_lang: str = "fr"

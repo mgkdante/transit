@@ -44,6 +44,9 @@
 		url?: URL;
 		/** Active provider display name (manifest.display_name); labels the network chip. */
 		providerName?: string;
+		/** Snappy provider brand (manifest.short_name, e.g. "STM"); preferred for the
+		 * compact network chip when present — falls back to providerName. */
+		providerShortName?: string;
 		/** Count of active alerts; renders the bell badge when > 0. */
 		alertCount?: number;
 		/** Current value of the multi-value search field (bindable). */
@@ -67,6 +70,7 @@
 		locale: localeProp,
 		url = new URL('https://transit.local/'),
 		providerName,
+		providerShortName,
 		alertCount = 0,
 		search = $bindable(''),
 		onsearch,
@@ -123,10 +127,13 @@
 	const closeMenuAria = $derived(locale === 'fr' ? 'Fermer le menu' : 'Close menu');
 	const menuAria = $derived(locale === 'fr' ? 'Navigation mobile' : 'Mobile navigation');
 	// Active-network label for the context chip (a future network selector, cf.
-	// cityAria). Provider-agnostic: from the manifest, never a hardcoded 'STM'; a
-	// neutral fallback covers the brief window before the v1 context boots.
+	// cityAria). Provider-agnostic: from the manifest, never a hardcoded 'STM'. The
+	// snappy short_name ("STM") is preferred for the compact chip, then the full
+	// display_name; a neutral fallback covers the brief window before v1 boots.
 	const cityLabel = $derived(
-		providerName ?? (locale === 'fr' ? 'Réseau de transport' : 'Transit network'),
+		providerShortName ??
+			providerName ??
+			(locale === 'fr' ? 'Réseau de transport' : 'Transit network'),
 	);
 	const cityAria = $derived(locale === 'fr' ? 'Choisir une ville' : 'Choose a city');
 	const alertsAria = $derived(
