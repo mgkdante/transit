@@ -240,12 +240,12 @@ def _write_beta_gtfs_zip(
             zip_file.writestr(member_name, content)
 
 
-def _write_minimal_compliant_gtfs_zip(zip_path: Path) -> None:
-    """A fully GTFS-compliant single-agency feed that exercises the loader
-    relaxations: agency.txt with no agency_id column, feed_info.txt with no
+def _minimal_compliant_members() -> dict[str, str]:
+    """The members of a fully GTFS-compliant single-agency feed that exercises the
+    loader relaxations: agency.txt with no agency_id column, feed_info.txt with no
     date range / version, and a generic-node stop (location_type 3) with no
     stop_name. Mirrors the minimal shape a small third-party provider may ship."""
-    members: dict[str, str] = {
+    return {
         "agency.txt": (
             "agency_name,agency_url,agency_timezone\n"
             "Societe de transport de Sherbrooke,https://www.sts.qc.ca,America/Toronto\n"
@@ -278,9 +278,16 @@ def _write_minimal_compliant_gtfs_zip(zip_path: Path) -> None:
             "weekday,1,1,1,1,1,0,0,20260324,20260630\n"
         ),
     }
+
+
+def _write_members_zip(zip_path: Path, members: dict[str, str]) -> None:
     with ZipFile(zip_path, "w", compression=ZIP_DEFLATED) as zip_file:
         for member_name, content in members.items():
             zip_file.writestr(member_name, content)
+
+
+def _write_minimal_compliant_gtfs_zip(zip_path: Path) -> None:
+    _write_members_zip(zip_path, _minimal_compliant_members())
 
 
 def _build_archive(zip_path: Path) -> BronzeStaticArchive:
@@ -543,6 +550,98 @@ def test_load_static_zip_to_silver_welcomes_minimal_compliant_feed(
     assert result.row_counts["feed_info"] == 1
     assert result.row_counts["routes"] == 1
     assert result.row_counts["stops"] == 2
+    assert result.conformance_warnings == []
+
+
+def test_strict_gtfs_hard_fails_on_non_spine_member_missing_required_column(
+    tmp_path: Path,
+) -> None:
+    members = _minimal_compliant_members()
+    # agency.txt missing the required agency_timezone column.
+    members["agency.txt"] = "agency_name,agency_url\nSTS,https://www.sts.qc.ca\n"
+    zip_path = tmp_path / "broken-agency.zip"
+    _write_members_zip(zip_path, members)
+    archive = _build_archive(zip_path)
+    bronze_storage = LocalBronzeStorageForTests(zip_path.read_bytes())
+
+    with pytest.raises(ValueError, match="agency.txt is missing required columns"):
+        load_static_zip_to_silver(
+            RecordingConnection(),
+            archive=archive,
+            bronze_storage=bronze_storage,
+            strict_gtfs=True,
+        )
+
+
+def test_tolerant_gtfs_downgrades_non_spine_member_to_conformance_warning(
+    tmp_path: Path,
+) -> None:
+    members = _minimal_compliant_members()
+    members["agency.txt"] = "agency_name,agency_url\nSTS,https://www.sts.qc.ca\n"
+    zip_path = tmp_path / "tolerant-agency.zip"
+    _write_members_zip(zip_path, members)
+    archive = _build_archive(zip_path)
+    bronze_storage = LocalBronzeStorageForTests(zip_path.read_bytes())
+
+    result = load_static_zip_to_silver(
+        RecordingConnection(),
+        archive=archive,
+        bronze_storage=bronze_storage,
+        strict_gtfs=False,
+    )
+
+    # The rest of the feed loads; the broken member is skipped and surfaced.
+    assert result.row_counts["routes"] == 1
+    assert "agency" not in result.row_counts  # skipped, recorded zero
+    assert {
+        "member": "agency.txt",
+        "kind": "missing_required_column",
+        "detail": "agency_timezone",
+    } in result.conformance_warnings
+
+
+def test_tolerant_gtfs_still_hard_fails_on_spine_member_missing_column(
+    tmp_path: Path,
+) -> None:
+    members = _minimal_compliant_members()
+    # routes.txt missing the spine route_type column -- always fatal.
+    members["routes.txt"] = "route_id,route_short_name,route_long_name\n1,1,Centre-ville\n"
+    zip_path = tmp_path / "broken-routes.zip"
+    _write_members_zip(zip_path, members)
+    archive = _build_archive(zip_path)
+    bronze_storage = LocalBronzeStorageForTests(zip_path.read_bytes())
+
+    with pytest.raises(ValueError, match="routes.txt is missing required columns"):
+        load_static_zip_to_silver(
+            RecordingConnection(),
+            archive=archive,
+            bronze_storage=bronze_storage,
+            strict_gtfs=False,
+        )
+
+
+def test_unknown_member_recorded_as_conformance_warning(tmp_path: Path) -> None:
+    members = _minimal_compliant_members()
+    members["pathways.txt"] = (
+        "pathway_id,from_stop_id,to_stop_id,pathway_mode,is_bidirectional\n"
+        "p1,stop-1,node-1,1,0\n"
+    )
+    zip_path = tmp_path / "extra-member.zip"
+    _write_members_zip(zip_path, members)
+    archive = _build_archive(zip_path)
+    bronze_storage = LocalBronzeStorageForTests(zip_path.read_bytes())
+
+    result = load_static_zip_to_silver(
+        RecordingConnection(),
+        archive=archive,
+        bronze_storage=bronze_storage,
+    )
+
+    assert "pathways.txt" in result.unsupported_members
+    assert any(
+        item["member"] == "pathways.txt" and item["kind"] == "unknown_member"
+        for item in result.conformance_warnings
+    )
 
 
 def test_load_static_zip_to_silver_loads_beta_first_static_members(tmp_path: Path) -> None:
