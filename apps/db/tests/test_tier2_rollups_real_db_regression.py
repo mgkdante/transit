@@ -66,8 +66,19 @@ def conn():
     engine = create_engine(DB_URL)
     with engine.connect() as connection:
         transaction = connection.begin()
-        # noon-ish so the closed day's local times stay within one date
-        base_utc = datetime.now(UTC).replace(hour=16, minute=0, second=0, microsecond=0)
+        # Anchor the closed day in the PROVIDER timezone (America/Toronto) — the
+        # same calendar the rollup closes days on (`now() AT TIME ZONE provider`,
+        # SELECT_MISSING_*_DAYS: local_date < today_local). Noon-today local makes
+        # base_utc - 1 day resolve to noon yesterday-local, which is ALWAYS strictly
+        # before today_local, so the daily rollups build it at any wall-clock hour.
+        # The previous UTC-hour anchor (now(UTC).replace(hour=16)) flaked between
+        # 00:00–04:00 UTC: Toronto is still on the prior calendar date then, so the
+        # seeded "closed" day equalled today_local and every daily rollup skipped it.
+        base_utc = (
+            datetime.now(TORONTO)
+            .replace(hour=12, minute=0, second=0, microsecond=0)
+            .astimezone(UTC)
+        )
         seed = _Seed(base_utc)
         _seed(connection, seed)
         _build_rollups(connection)

@@ -355,7 +355,7 @@ class RouteHabits(BaseModel):
 class WeakStop(BaseModel):
     id: str
     name: str | None = None
-    median_delay_min: float | None = None
+    avg_delay_min: float | None = None
 
 class RouteDayOfWeek(BaseModel):
     # Per-route weekday seasonality from gold.route_delay_day_of_week (ISO 1=Mon..7=Sun).
@@ -387,14 +387,14 @@ class RouteReliability(BaseModel):
 class StopReliabilityPeriod(BaseModel):
     grain: str
     otp_pct: int | None = None
-    median_delay_min: float | None = None
+    avg_delay_min: float | None = None
     p50_min: float | None = None
     p90_min: float | None = None
     severe_pct: float | None = None
 
 class StopByRoute(BaseModel):
     route: str
-    median_delay_min: float | None = None
+    avg_delay_min: float | None = None
 
 class StopReliability(BaseModel):
     generated_utc: str
@@ -442,7 +442,7 @@ class ReceiptWorstRoute(BaseModel):
 class ReceiptWorstStop(BaseModel):
     id: str
     name: str | None = None
-    median_delay_min: float | None = None
+    avg_delay_min: float | None = None
 
 class Receipt(BaseModel):
     generated_utc: str

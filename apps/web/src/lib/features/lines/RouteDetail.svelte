@@ -206,7 +206,7 @@
 										<li class="route-weak-stop">
 											<span class="route-weak-stop-name">{ws.name ?? ws.id}</span>
 											<span class="route-weak-stop-meta">
-												{t.medianDelay}: {fmtMin(ws.median_delay_min)}
+												{t.avgDelay}: {fmtMin(ws.avg_delay_min)}
 											</span>
 										</li>
 									{/each}

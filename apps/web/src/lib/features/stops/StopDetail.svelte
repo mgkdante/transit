@@ -8,7 +8,7 @@
     schedule    STATIC — the static stop's scheduled[] (route + headsign + times).
     info        STATIC — position, code, accessibility + routes served.
     reliability HISTORIC— per-period OTP/delay (→ ReliabilityPane) + by-route
-                         median-delay breakdown.
+                         avg-delay breakdown.
 
   Static + historic reads use createResource (browser-side, reactive to `id`);
   the live tier uses createLiveStore (start on mount, stop on destroy). Each pane
@@ -86,14 +86,26 @@
 	// --- historic tier: stop reliability -------------------------------------
 	const reliability = createResource(() => getStopReliability(id));
 
-	/** Map raw historic periods → the shared ReliabilityPane view-model. */
+	/**
+	 * Map raw historic periods → the shared ReliabilityPane view-model.
+	 *
+	 * The day grain carries a real p50/p90 from the percentile rollup; the
+	 * week/month grains carry only an observation-weighted mean. Surface the
+	 * true percentile where we have it (captioned "median") and the mean
+	 * otherwise (captioned "avg") — never a mean wearing a "median" label.
+	 */
 	function toPeriods(r: StopReliability): ReliabilityPeriodVM[] {
-		return (r.periods ?? []).map((p) => ({
-			grain: p.grain,
-			otpPct: p.otp_pct ?? null,
-			delayMin: p.median_delay_min ?? null,
-			severePct: p.severe_pct ?? null,
-		}));
+		return (r.periods ?? []).map((p) => {
+			const hasRealP50 = p.p50_min != null;
+			return {
+				grain: p.grain,
+				otpPct: p.otp_pct ?? null,
+				delayMin: hasRealP50 ? p.p50_min! : (p.avg_delay_min ?? null),
+				delayKind: hasRealP50 ? ('median' as const) : ('avg' as const),
+				p90Min: p.p90_min ?? null,
+				severePct: p.severe_pct ?? null,
+			};
+		});
 	}
 
 	/** A departure's delay caption — fail-soft when delay is absent. */
@@ -230,7 +242,7 @@
 				{#snippet children(r: StopReliability | null)}
 					{#if r != null}
 						<div class="stop-reliability">
-							<ReliabilityPane periods={toPeriods(r)} {locale} delayLabelKind="median" />
+							<ReliabilityPane periods={toPeriods(r)} {locale} />
 							{#if (r.by_route?.length ?? 0) > 0}
 								<div class="stop-reliability-routes">
 									<SectionLabel text={t.reliability.byRoute} variant="metric" />
@@ -239,9 +251,7 @@
 											<li class="stop-reliability-route">
 												<span class="stop-reliability-route-code">{br.route}</span>
 												<span class="stop-reliability-route-delay">
-													{br.median_delay_min == null
-														? '—'
-														: `${br.median_delay_min.toFixed(1)} min`}
+													{br.avg_delay_min == null ? '—' : `${br.avg_delay_min.toFixed(1)} min`}
 												</span>
 											</li>
 										{/each}

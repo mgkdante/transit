@@ -242,7 +242,7 @@ def test_build_network_trend_fact_only_date() -> None:
 
 def _route_reliability_dispatch(*, daily=None, weekly=None, monthly=None, headway=None,
                                 habit=None, weak=None, names=None, schedule=None,
-                                route_names=None):
+                                route_names=None, dow=None):
     """Assemble an ordered dispatch list for build_route_reliability.
 
     Needles are ordered most-specific-first so they never collide. The schedule
@@ -280,6 +280,8 @@ def _route_reliability_dispatch(*, daily=None, weekly=None, monthly=None, headwa
         ("stop_name", names or []),
         # route names (current-dim UNION history)
         ("DISTINCT ON (u.route_id)", route_names or []),
+        # per-weekday seasonality (route_delay_day_of_week)
+        ("route_delay_day_of_week", dow or []),
     ]
 
 
@@ -530,12 +532,12 @@ def test_build_route_reliability_weak_stops_sorted_and_capped() -> None:
 
     out = build_route_reliability(conn, route_id="51", generated_utc="t")
     assert len(out.weak_stops) == 5  # capped at 5
-    delays = [w.median_delay_min for w in out.weak_stops]
+    delays = [w.avg_delay_min for w in out.weak_stops]
     assert delays == sorted(delays, reverse=True)  # descending
     # worst is S1 (600s -> 10.0 min); name resolved from dim_stop
     assert out.weak_stops[0].id == "S1"
     assert out.weak_stops[0].name == "Stop 1"
-    assert out.weak_stops[0].median_delay_min == 10.0
+    assert out.weak_stops[0].avg_delay_min == 10.0
     # the smallest (S5 = 30s -> 0.5 min) is dropped
     assert "S5" not in {w.id for w in out.weak_stops}
 
@@ -681,19 +683,19 @@ def test_build_stop_reliability_batch() -> None:
 
     wk = by_grain["week"]
     assert wk.otp_pct == 90  # (150-15)/150
-    assert wk.median_delay_min == 1.3  # 12000/150 = 80s -> 1.333 -> 1.3
+    assert wk.avg_delay_min == 1.3  # 12000/150 = 80s -> 1.333 -> 1.3
     assert wk.severe_pct == 10.0  # 15/150
 
     mo = by_grain["month"]
     assert mo.otp_pct == 95  # (600-30)/600
-    assert mo.median_delay_min == 2.5  # 90000/600 = 150s
+    assert mo.avg_delay_min == 2.5  # 90000/600 = 150s
     assert mo.severe_pct == 5.0  # 30/600
 
     # by_route natural-sorted: "9" before "51"
     assert [b.route for b in s1.by_route] == ["9", "51"]
     by_route = {b.route: b for b in s1.by_route}
-    assert by_route["51"].median_delay_min == 1.0  # 6000/100 = 60s
-    assert by_route["9"].median_delay_min == 3.0  # 9000/50 = 180s
+    assert by_route["51"].avg_delay_min == 1.0  # 6000/100 = 60s
+    assert by_route["9"].avg_delay_min == 3.0  # 9000/50 = 180s
 
 
 def test_build_stop_reliability_weekly_only_stop() -> None:
@@ -738,6 +740,30 @@ def test_build_stop_reliability_carries_name() -> None:
 
     assert out["S1"].name == "Station Berri"
     assert out["S_UNNAMED"].name is None
+
+
+def test_build_route_reliability_dow_severe_pct_uses_delay_observation_count() -> None:
+    """Honesty-fix 3/3: per-weekday severe_pct denominates on delay_observation_count
+    (observations with a known delay), matching every other grain — NOT COUNT(*)
+    observation_count, which would understate it."""
+    conn = FakeConn(
+        _route_reliability_dispatch(
+            dow=[
+                {
+                    "day_of_week_iso": 1, "observation_count": 100,
+                    "delay_observation_count": 40, "avg_delay_seconds": 120.0,
+                    "severe_delay_count": 8,
+                }
+            ],
+        )
+    )
+    out = build_route_reliability(conn, provider_id="stm", route_id="51", generated_utc="t")
+    assert len(out.day_of_week) == 1
+    dow = out.day_of_week[0]
+    assert dow.day_of_week_iso == 1
+    # 8 severe / 40 known-delay obs = 20.0%, NOT 8 / 100 = 8.0%.
+    assert dow.severe_pct == 20.0
+    assert dow.observation_count == 100
 
 
 # --------------------------------------------------------------------------
@@ -791,6 +817,27 @@ def test_build_hotspots_week_period_filter() -> None:
     assert out.hotspots[1].type == "stop"
     assert out.hotspots[0].rank == 1
     assert out.hotspots[1].rank == 2
+
+
+def test_build_hotspots_excludes_sentinel_entities() -> None:
+    """Honesty guard (slice-9-honesty-fixes): the __unrouted__ / __unknown_stop__
+    NULL-buckets must never surface as a named hotspot, even if a query path returns
+    them; survivors re-rank from 1 (defense-in-depth over the publish-SQL filter)."""
+    rows = [
+        {"entity_kind": "route", "entity_id": "__unrouted__", "issue_count": 99,
+         "severity_label": "critical"},
+        {"entity_kind": "route", "entity_id": "51", "issue_count": 40, "severity_label": "high"},
+        {"entity_kind": "stop", "entity_id": "__unknown_stop__", "issue_count": 30,
+         "severity_label": "high"},
+        {"entity_kind": "stop", "entity_id": "3456", "issue_count": 10, "severity_label": "watch"},
+    ]
+    conn = FakeConn([("repeated_problem_route_stop", rows)])
+    out = build_hotspots(conn, generated_utc="t")
+    ids = [h.id for h in out.hotspots]
+    assert "__unrouted__" not in ids
+    assert "__unknown_stop__" not in ids
+    assert ids == ["51", "3456"]
+    assert [h.rank for h in out.hotspots] == [1, 2]
 
 
 def test_build_hotspots_resolves_names() -> None:
@@ -1131,7 +1178,37 @@ def test_build_receipts_worst_route_and_stop_by_max_delay() -> None:
     assert r.worst_route.otp_delta_pts is None  # v1 deferral
     assert r.worst_stop is not None
     assert r.worst_stop.id == "9999"
-    assert r.worst_stop.median_delay_min == 7.0  # 420s / 60
+    assert r.worst_stop.avg_delay_min == 7.0  # 420s / 60
+
+
+def test_build_receipts_skips_sentinel_worst_entities() -> None:
+    """Honesty guard: a routeless/unknown-stop sentinel holding the day's max delay
+    must NOT be crowned worst_route/worst_stop; the next real entity wins."""
+    d = datetime.date(2026, 5, 15)
+    conn = FakeConn(
+        _receipts_dispatch(
+            acct=[
+                {
+                    "provider_local_date": d, "affected_route_count": 1,
+                    "affected_stop_count": 1, "delayed_trip_count": 0,
+                    "severe_delay_count": 0, "alert_count": 0, "rider_impact_score": None,
+                }
+            ],
+            worst_route=[
+                {"d": d, "route_id": "__unrouted__", "avg_delay_seconds": 900.0},
+                {"d": d, "route_id": "105", "avg_delay_seconds": 300.0},
+            ],
+            worst_stop=[
+                {"d": d, "stop_id": "__unknown_stop__", "avg_delay_seconds": 800.0,
+                 "max_delay_seconds": 1000.0},
+                {"d": d, "stop_id": "9999", "avg_delay_seconds": 420.0, "max_delay_seconds": 600.0},
+            ],
+        )
+    )
+    out = build_receipts(conn, generated_utc="t")
+    r = out["2026-05-15"]
+    assert r.worst_route is not None and r.worst_route.id == "105"
+    assert r.worst_stop is not None and r.worst_stop.id == "9999"
 
 
 def test_receipts_worst_entity_order_has_deterministic_tiebreaker() -> None:
@@ -1140,6 +1217,9 @@ def test_receipts_worst_entity_order_has_deterministic_tiebreaker() -> None:
 
     assert "avg_delay_seconds DESC, route_id" in route_sql
     assert "avg_delay_seconds DESC, stop_id" in stop_sql
+    # slice-9-honesty-fixes: sentinel NULL-buckets filtered at the publish-SQL layer.
+    assert "route_id <> '__unrouted__'" in route_sql
+    assert "stop_id <> '__unknown_stop__'" in stop_sql
 
 
 def test_build_receipts_worst_entity_names() -> None:

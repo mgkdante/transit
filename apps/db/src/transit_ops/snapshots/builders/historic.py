@@ -315,7 +315,8 @@ _ROUTE_PERCENTILE_DAILY_SQL = text(
 # Per-route weekday seasonality (ISO 1=Mon..7=Sun) from the latent daily mart.
 _ROUTE_DOW_SQL = text(
     """
-    SELECT day_of_week_iso, observation_count, avg_delay_seconds, severe_delay_count
+    SELECT day_of_week_iso, observation_count, delay_observation_count,
+           avg_delay_seconds, severe_delay_count
     FROM gold.route_delay_day_of_week
     WHERE provider_id = :provider_id AND route_id = :route_id
     ORDER BY day_of_week_iso
@@ -570,7 +571,7 @@ def build_route_reliability(
         weak_rows.append((str(r["stop_id"]), avg_sec))
     weak_rows.sort(key=lambda t: t[1], reverse=True)
     weak_stops = [
-        WeakStop(id=sid, name=names.get(sid), median_delay_min=round(avg_sec / 60.0, 1))
+        WeakStop(id=sid, name=names.get(sid), avg_delay_min=round(avg_sec / 60.0, 1))
         for sid, avg_sec in weak_rows[:5]
     ]
 
@@ -585,7 +586,9 @@ def build_route_reliability(
         RouteDayOfWeek(
             day_of_week_iso=int(r["day_of_week_iso"]),
             avg_delay_min=_avg_delay_min(r["avg_delay_seconds"]),
-            severe_pct=_severe_pct(r["observation_count"], r["severe_delay_count"]),
+            # severe_pct over observations with a KNOWN delay (matches every other
+            # grain); COUNT(*) observation_count would understate it (honesty-fix 3/3).
+            severe_pct=_severe_pct(r["delay_observation_count"], r["severe_delay_count"]),
             observation_count=_opt_int(r["observation_count"]),
         )
         for r in conn.execute(_ROUTE_DOW_SQL, params).mappings()
@@ -762,7 +765,7 @@ def build_stop_reliability(
             periods.setdefault(sid, {})[grain] = StopReliabilityPeriod(
                 grain=grain,
                 otp_pct=_otp_pct_severe_proxy(r["obs"], r["severe"]),
-                median_delay_min=(round(avg_sec / 60.0, 1) if avg_sec is not None else None),
+                avg_delay_min=(round(avg_sec / 60.0, 1) if avg_sec is not None else None),
                 severe_pct=_severe_pct(r["obs"], r["severe"]),
             )
 
@@ -774,7 +777,7 @@ def build_stop_reliability(
         by_route.setdefault(sid, []).append(
             StopByRoute(
                 route=str(r["route_id"]),
-                median_delay_min=(round(avg_sec / 60.0, 1) if avg_sec is not None else None),
+                avg_delay_min=(round(avg_sec / 60.0, 1) if avg_sec is not None else None),
             )
         )
 
@@ -829,6 +832,13 @@ def build_stop_reliability(
 
 # Most-recent week period from gold.repeated_problem_route_stop.
 # Fall back to the max period_start_local of any grain if no 'week' rows exist.
+# Gold buckets NULL route/stop ids into these sentinels (rollups.py COALESCE).
+# They must NEVER surface to a citizen as a named entity. The publish SQL filters
+# them out; this set is the defense-in-depth publish-time invariant the builders
+# also enforce, so a future un-filtered query path can't leak a phantom entity.
+_SENTINEL_ENTITY_IDS = frozenset({"__unrouted__", "__unknown_stop__"})
+
+
 _HOTSPOTS_SQL = text(
     """
     WITH week_max AS (
@@ -861,6 +871,8 @@ _HOTSPOTS_SQL = text(
     WHERE rp.provider_id = :provider_id
       AND rp.period_start_local = target.target_start
       AND rp.period_grain = target.target_grain
+      AND NOT (rp.entity_kind = 'route' AND rp.entity_id = '__unrouted__')
+      AND NOT (rp.entity_kind = 'stop' AND rp.entity_id = '__unknown_stop__')
     ORDER BY rp.issue_count DESC
     LIMIT 20
     """
@@ -876,6 +888,9 @@ def build_hotspots(conn: "Connection", provider_id: str = "stm", *, generated_ut
     """
     rows = list(conn.execute(_HOTSPOTS_SQL, {"provider_id": provider_id}).mappings())
     route_names, stop_names = _entity_name_maps(conn, provider_id=provider_id)
+    # Defense-in-depth: never publish a sentinel-bucket entity even if a query path
+    # ever forgets the SQL filter (re-ranks over the surviving rows).
+    kept = [r for r in rows if str(r["entity_id"]) not in _SENTINEL_ENTITY_IDS]
     hotspots = [
         Hotspot(
             rank=i + 1,
@@ -890,7 +905,7 @@ def build_hotspots(conn: "Connection", provider_id: str = "stm", *, generated_ut
             severity=r["severity_label"],
             otp_delta_pts=None,  # v1 deferral: not stored in gold.repeated_problem_route_stop
         )
-        for i, r in enumerate(rows)
+        for i, r in enumerate(kept)
     ]
     return Hotspots(generated_utc=generated_utc, hotspots=hotspots)
 
@@ -994,6 +1009,7 @@ _RECEIPTS_WORST_ROUTE_SQL = text(
     WHERE provider_id = :provider_id
       AND provider_local_date >= current_date - 30
       AND avg_delay_seconds IS NOT NULL
+      AND route_id <> '__unrouted__'
     ORDER BY provider_local_date, avg_delay_seconds DESC, route_id
     """
 )
@@ -1009,6 +1025,7 @@ _RECEIPTS_WORST_STOP_SQL = text(
     WHERE provider_id = :provider_id
       AND provider_local_date >= current_date - 30
       AND avg_delay_seconds IS NOT NULL
+      AND stop_id <> '__unknown_stop__'
     ORDER BY provider_local_date, avg_delay_seconds DESC, stop_id
     """
 )
@@ -1060,6 +1077,8 @@ def build_receipts(
     # 3. worst route per date: first row after ORDER BY avg_delay_seconds DESC
     worst_route: dict[str, ReceiptWorstRoute] = {}
     for r in conn.execute(_RECEIPTS_WORST_ROUTE_SQL, params).mappings():
+        if str(r["route_id"]) in _SENTINEL_ENTITY_IDS:
+            continue  # defense-in-depth: never crown the routeless sentinel as worst
         ds = _iso_date(r["d"])
         if ds not in worst_route:  # first = max avg_delay (ordered DESC)
             worst_route[ds] = ReceiptWorstRoute(
@@ -1071,12 +1090,14 @@ def build_receipts(
     # 4. worst stop per date: first row after ORDER BY avg_delay_seconds DESC
     worst_stop: dict[str, ReceiptWorstStop] = {}
     for r in conn.execute(_RECEIPTS_WORST_STOP_SQL, params).mappings():
+        if str(r["stop_id"]) in _SENTINEL_ENTITY_IDS:
+            continue  # defense-in-depth: never crown the unknown-stop sentinel as worst
         ds = _iso_date(r["d"])
         if ds not in worst_stop:  # first = max avg_delay (ordered DESC)
             worst_stop[ds] = ReceiptWorstStop(
                 id=str(r["stop_id"]),
                 name=stop_names.get(str(r["stop_id"])),
-                median_delay_min=_avg_delay_min(r["avg_delay_seconds"]),
+                avg_delay_min=_avg_delay_min(r["avg_delay_seconds"]),
             )
 
     # merge: only emit dates present in accountability (the driver)

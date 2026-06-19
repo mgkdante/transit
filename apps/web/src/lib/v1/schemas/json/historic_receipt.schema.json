@@ -39,11 +39,7 @@
     },
     "ReceiptWorstStop": {
       "properties": {
-        "id": {
-          "title": "Id",
-          "type": "string"
-        },
-        "median_delay_min": {
+        "avg_delay_min": {
           "anyOf": [
             {
               "type": "number"
@@ -53,7 +49,11 @@
             }
           ],
           "default": null,
-          "title": "Median Delay Min"
+          "title": "Avg Delay Min"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
         },
         "name": {
           "anyOf": [

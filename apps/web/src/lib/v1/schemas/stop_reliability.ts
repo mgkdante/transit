@@ -1,6 +1,7 @@
 // stop_reliability.ts — Zod mirror of historic_stop_reliability.schema.json
 // (title: "StopReliability"). The per-stop history surface: OTP/delay per grain
-// period and a per-route median-delay breakdown at this stop.
+// period (day grain carries real p50/p90; week/month carry an observation-
+// weighted mean) and a per-route avg-delay breakdown at this stop.
 // Fetched per stop id under stop_reliability_prefix (404 = empty state).
 
 import { z } from 'zod';
@@ -11,7 +12,7 @@ export const StopReliabilityPeriodSchema = z.object({
 	// Free-string grain the pipeline owns; NOT the web filter Grain enum.
 	grain: z.string(),
 	otp_pct: z.number().int().nullable().optional(),
-	median_delay_min: z.number().nullable().optional(),
+	avg_delay_min: z.number().nullable().optional(),
 	p50_min: z.number().nullable().optional(),
 	p90_min: z.number().nullable().optional(),
 	severe_pct: z.number().nullable().optional(),
@@ -20,7 +21,7 @@ export type StopReliabilityPeriod = z.infer<typeof StopReliabilityPeriodSchema>;
 
 export const StopByRouteSchema = z.object({
 	route: z.string(),
-	median_delay_min: z.number().nullable().optional(),
+	avg_delay_min: z.number().nullable().optional(),
 });
 export type StopByRoute = z.infer<typeof StopByRouteSchema>;
 

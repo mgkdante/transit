@@ -17,7 +17,7 @@ export type ReceiptWorstRoute = z.infer<typeof ReceiptWorstRouteSchema>;
 export const ReceiptWorstStopSchema = z.object({
 	id: z.string(),
 	name: z.string().nullable().optional(),
-	median_delay_min: z.number().nullable().optional(),
+	avg_delay_min: z.number().nullable().optional(),
 });
 export type ReceiptWorstStop = z.infer<typeof ReceiptWorstStopSchema>;
 
