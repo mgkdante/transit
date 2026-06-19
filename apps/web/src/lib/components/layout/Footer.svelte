@@ -11,7 +11,8 @@
       CENTER : the IA nav links (menuItems from $lib/content/nav), localized.
       RIGHT  : the external portfolio link back to yesid.dev.
     Row 2 (below the hazard rule, departure-board rule):
-      STM open-data attribution ("Données STM, CC BY 4.0") + the unofficial-site
+      the active provider's open-data attribution (manifest.attribution, rendered
+      verbatim as a per-provider licence obligation) + the unofficial-site
       disclaimer (Honesty Gate #6) on the left; the live system-date readout on
       the right (the orange route-set lamp is the lone --primary touch).
 
@@ -29,9 +30,17 @@
 	interface FooterProps {
 		/** Active locale (prop wins; falls back to context for isolated renders). */
 		locale?: Locale;
+		/**
+		 * Per-provider open-data licence string (manifest.attribution), rendered
+		 * VERBATIM — a licence obligation, not cosmetic copy. Omitted ⇒ the
+		 * attribution line is hidden (never fabricate a licence we don't hold).
+		 */
+		attribution?: string;
+		/** Provider display name (manifest.display_name); drives the tagline + disclaimer. */
+		providerName?: string;
 	}
 
-	let { locale: localeProp }: FooterProps = $props();
+	let { locale: localeProp, attribution: attributionProp, providerName }: FooterProps = $props();
 
 	// Prop wins (the layout threads the reactive request locale so the footer copy
 	// + localized hrefs stay current across EN⇄FR without a remount); fall back to
@@ -43,32 +52,30 @@
 	const now = new Date();
 	const systemDate = `${now.getFullYear()}.${String(now.getMonth() + 1).padStart(2, '0')}.${String(now.getDate()).padStart(2, '0')}`;
 
-	type CopyKey =
-		| 'tagline'
-		| 'navAria'
-		| 'attribution'
-		| 'disclaimer'
-		| 'statusPrefix'
-		| 'liveLabel';
+	type CopyKey = 'navAria' | 'statusPrefix' | 'liveLabel';
 	const T: Record<Locale, Record<CopyKey, string>> = {
-		fr: {
-			tagline: 'Analytique citoyenne du réseau STM',
-			navAria: 'Pied de page',
-			attribution: 'Données STM, CC BY 4.0',
-			disclaimer: 'Site non officiel, sans affiliation avec la STM.',
-			statusPrefix: 'SYSTÈME',
-			liveLabel: 'En direct',
-		},
-		en: {
-			tagline: 'Citizen analytics for the STM network',
-			navAria: 'Footer',
-			attribution: 'STM data, CC BY 4.0',
-			disclaimer: 'Unofficial website, not affiliated with the STM.',
-			statusPrefix: 'SYSTEM',
-			liveLabel: 'Live',
-		},
+		fr: { navAria: 'Pied de page', statusPrefix: 'SYSTÈME', liveLabel: 'En direct' },
+		en: { navAria: 'Footer', statusPrefix: 'SYSTEM', liveLabel: 'Live' },
 	};
 	const t = $derived(T[locale]);
+
+	// Provider-driven copy (multi-provider Layer A): the agency NAME comes from the
+	// manifest (display_name), with a neutral, provider-agnostic fallback for the
+	// brief window before the v1 context boots — NEVER a hardcoded 'STM'. The
+	// licence line is the manifest's verbatim attribution (a per-provider obligation).
+	const agencyName = $derived(
+		providerName ?? (locale === 'fr' ? 'l’agence de transport' : 'the transit agency'),
+	);
+	const tagline = $derived(
+		locale === 'fr'
+			? `Analytique citoyenne pour ${agencyName}`
+			: `Citizen analytics for ${agencyName}`,
+	);
+	const disclaimer = $derived(
+		locale === 'fr'
+			? `Site non officiel, sans affiliation avec ${agencyName}.`
+			: `Unofficial website, not affiliated with ${agencyName}.`,
+	);
 
 	// IA links, locale-LESS hrefs from the shared SURFACE_NAV manifest, localized
 	// at render. The portfolio (off-site) links come from MENU_EXTRAS and render in
@@ -95,7 +102,7 @@
 		<!-- Left: parent wordmark + transit product mark + tagline (shared cluster). -->
 		<div class="flex flex-col items-center sm:items-start">
 			<BrandCluster variant="footer" productHref={localizeHref('/', locale)} />
-			<span class="mt-1 font-mono text-caption text-[var(--muted-foreground)]">{t.tagline}</span>
+			<span class="mt-1 font-mono text-caption text-[var(--muted-foreground)]">{tagline}</span>
 		</div>
 
 		<!-- Center: IA nav links -->
@@ -132,8 +139,8 @@
 		class="footer-status-border mx-auto flex max-w-5xl flex-col items-center gap-2 px-6 py-4 font-mono text-caption text-[var(--muted-foreground)] sm:flex-row sm:justify-between sm:px-10"
 	>
 		<p class="footer-honesty m-0 text-center sm:text-left">
-			<span>{t.attribution}</span>
-			<span class="footer-disclaimer">{t.disclaimer}</span>
+			{#if attributionProp}<span>{attributionProp}</span>{/if}
+			<span class="footer-disclaimer">{disclaimer}</span>
 		</p>
 		<span class="flex items-center gap-1.5 text-[var(--accent-text)]">
 			<StatusDot color="orange" pulse label={t.liveLabel} />

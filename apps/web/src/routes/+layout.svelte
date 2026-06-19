@@ -359,7 +359,11 @@
 				{/if}
 			</div>
 			{#if !isFullBleed}
-				<Footer {locale} />
+				<Footer
+					{locale}
+					attribution={v1?.manifest.attribution}
+					providerName={v1?.manifest.display_name}
+				/>
 			{/if}
 		</div>
 	{/snippet}
