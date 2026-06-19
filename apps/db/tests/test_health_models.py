@@ -219,28 +219,31 @@ def test_overall_public_dict_trims_to_coarse_status_and_freshness_age() -> None:
                 details={"database_url": "postgresql://user:pw@db.internal/transit"},
             ),
             ComponentHealthResult(
-                name="pipeline_freshness",
+                name="stm_trip_updates",
                 status="ok",
-                message="Realtime pipeline data is fresh.",
+                message="stm/trip_updates: capture is fresh.",
                 details={
-                    "threshold_seconds": 600,
-                    "endpoints": {
-                        "trip_updates": {
-                            "latest_captured_at_utc": captured_at,
-                            "age_seconds": 120,
-                        },
-                        "vehicle_positions": {
-                            "latest_captured_at_utc": captured_at,
-                            "age_seconds": 300,
-                        },
-                    },
+                    "provider_id": "stm",
+                    "endpoint_key": "trip_updates",
+                    "feed_kind": "trip_updates",
+                    "age_seconds": 120,
+                    "threshold_seconds": 900,
+                    "latest_captured_at_utc": captured_at,
                 },
             ),
             ComponentHealthResult(
-                name="stm_trip_updates_feed",
+                name="stm_vehicle_positions",
                 status="ok",
-                message="STM feed is reachable.",
-                details={"url": "https://feed.example.com/tripUpdates?apiKey=SECRET"},
+                message="stm/vehicle_positions: capture is fresh.",
+                details={
+                    "provider_id": "stm",
+                    "endpoint_key": "vehicle_positions",
+                    "feed_kind": "vehicle_positions",
+                    "age_seconds": 300,
+                    "threshold_seconds": 900,
+                    "latest_captured_at_utc": captured_at,
+                    "url": "https://feed.example.com/tripUpdates?apiKey=SECRET",
+                },
             ),
         ],
     )
@@ -254,10 +257,10 @@ def test_overall_public_dict_trims_to_coarse_status_and_freshness_age() -> None:
         "component_counts": {"ok": 3, "degraded": 0, "down": 0},
         "components": [
             {"name": "database", "status": "ok"},
-            {"name": "pipeline_freshness", "status": "ok"},
-            {"name": "stm_trip_updates_feed", "status": "ok"},
+            {"name": "stm_trip_updates", "status": "ok"},
+            {"name": "stm_vehicle_positions", "status": "ok"},
         ],
-        # freshness age = max endpoint age, a non-sensitive scalar
+        # freshness age = max feed-capture age across providers, a non-sensitive scalar
         "pipeline_freshness_age_seconds": 300,
     }
     serialized = json.dumps(payload)
