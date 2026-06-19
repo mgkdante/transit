@@ -149,6 +149,18 @@ _STATIC_STAMP_SQL = (
     "AND is_current = true ORDER BY loaded_at_utc DESC LIMIT 1"
 )
 
+# Routes that get a per-route reliability file. route_id is COALESCE'd to
+# '__unrouted__' in the hourly spine, so the sentinel exists in the reliability
+# marts — exclude it here so historic/route_reliability/__unrouted__.json is
+# never published as if it were a real route.
+_DISTINCT_HISTORIC_ROUTE_IDS_SQL = (
+    "SELECT DISTINCT route_id FROM gold.route_reliability_weekly"
+    " WHERE provider_id = :provider_id AND route_id <> '__unrouted__'"
+    " UNION"
+    " SELECT DISTINCT route_id FROM gold.route_reliability_monthly"
+    " WHERE provider_id = :provider_id AND route_id <> '__unrouted__'"
+)
+
 
 def _static_stamp(conn: object, provider_id: str) -> str:
     """Static-tier stamp = loaded_at_utc of the current static dataset version.
@@ -287,13 +299,7 @@ def _publish_historic(
 
     # --- per-route reliability files (routes that have history) ---
     route_rows = conn.execute(  # type: ignore[attr-defined]
-        _text(
-            "SELECT DISTINCT route_id FROM gold.route_reliability_weekly"
-            " WHERE provider_id = :provider_id"
-            " UNION"
-            " SELECT DISTINCT route_id FROM gold.route_reliability_monthly"
-            " WHERE provider_id = :provider_id"
-        ),
+        _text(_DISTINCT_HISTORIC_ROUTE_IDS_SQL),
         {"provider_id": provider_id},
     ).fetchall()
     route_items = [
