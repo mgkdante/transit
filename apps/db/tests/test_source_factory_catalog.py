@@ -109,6 +109,30 @@ def test_catalog_covers_expected_stm_source_families() -> None:
     assert by_family["i3_alerts"].sibling_group is None
 
 
+def test_catalog_marks_realtime_optional_for_static_only_provider() -> None:
+    # A static-only / static+alerts provider has no trip/vehicle bronze, so the
+    # rebuild must not hard-require those sources.
+    catalog = build_source_factory_catalog(
+        "sts", present_feed_kinds={"static_schedule", "service_alerts"}
+    )
+
+    by_family = {source.family: source for source in catalog.sources}
+    assert by_family["static_schedule"].required is True
+    assert by_family["trip_updates"].required is False
+    assert by_family["vehicle_positions"].required is False
+
+
+def test_catalog_keeps_realtime_required_when_provider_publishes_them() -> None:
+    catalog = build_source_factory_catalog(
+        "stm",
+        present_feed_kinds={"static_schedule", "trip_updates", "vehicle_positions"},
+    )
+
+    by_family = {source.family: source for source in catalog.sources}
+    assert by_family["trip_updates"].required is True
+    assert by_family["vehicle_positions"].required is True
+
+
 def test_catalog_uses_provider_scoped_bronze_prefixes_and_strategies() -> None:
     catalog = build_source_factory_catalog("stm")
 

@@ -24,13 +24,25 @@ STARTED_AT = datetime(2026, 5, 25, 12, 0, tzinfo=UTC)
 COMPLETED_AT = datetime(2026, 5, 25, 12, 1, tzinfo=UTC)
 
 
+class _FakeManifest:
+    # Full STM-shaped feed set so the source-factory catalog keeps trip_updates /
+    # vehicle_positions required (present_feed_kinds = these keys).
+    feeds = {
+        "static_schedule": object(),
+        "gis_static": object(),
+        "trip_updates": object(),
+        "vehicle_positions": object(),
+        "i3_alerts": object(),
+    }
+
+
 class FakeRegistry:
     def __init__(self) -> None:
         self.provider_ids: list[str] = []
 
     def get_provider(self, provider_id: str) -> object:
         self.provider_ids.append(provider_id)
-        return object()
+        return _FakeManifest()
 
 
 class FakeEngine:

@@ -96,6 +96,58 @@ def test_gtfs_only_manifest_validates_without_gis() -> None:
     assert manifest.gis_feed() is None
 
 
+def _static_only_manifest_payload() -> dict[str, object]:
+    """A schedule-only GTFS agency: no realtime trip/vehicle feeds, no alerts.
+
+    Fully GTFS-compliant — it simply produces no realtime / reliability facts.
+    The realtime cycle is manifest-driven, so the absent feeds are never polled.
+    """
+    payload = _provider_manifest_payload()
+    feeds = payload["feeds"]
+    assert isinstance(feeds, dict)
+    del feeds["gis_static"]
+    del feeds["trip_updates"]
+    del feeds["vehicle_positions"]
+    return payload
+
+
+def test_static_only_manifest_validates() -> None:
+    manifest = ProviderManifest.model_validate(_static_only_manifest_payload())
+
+    assert set(manifest.feeds) == {"static_schedule"}
+
+
+def test_static_plus_alerts_manifest_validates() -> None:
+    # The STS shape: schedule + GTFS-RT service alerts, no live trip/vehicle feeds.
+    payload = _static_only_manifest_payload()
+    feeds = payload["feeds"]
+    assert isinstance(feeds, dict)
+    feeds["service_alerts"] = {
+        "endpoint_key": "service_alerts",
+        "feed_kind": "service_alerts",
+        "source_format": "gtfs_rt_service_alerts",
+        "source_url": "https://example.test/alerts.pb",
+        "auth": {"auth_type": "none"},
+        "refresh_interval_seconds": 300,
+        "is_enabled": True,
+    }
+
+    manifest = ProviderManifest.model_validate(payload)
+
+    assert set(manifest.feeds) == {"static_schedule", "service_alerts"}
+    assert manifest.service_alerts_feed() is not None
+
+
+def test_manifest_missing_static_schedule_still_rejected() -> None:
+    payload = _static_only_manifest_payload()
+    feeds = payload["feeds"]
+    assert isinstance(feeds, dict)
+    del feeds["static_schedule"]
+
+    with pytest.raises(ValidationError, match="Missing required feed definitions"):
+        ProviderManifest.model_validate(payload)
+
+
 def test_gtfs_only_feed_endpoint_seeds_omit_gis() -> None:
     manifest = ProviderManifest.model_validate(_gtfs_only_manifest_payload())
 
@@ -108,14 +160,24 @@ def test_gtfs_only_feed_endpoint_seeds_omit_gis() -> None:
     ]
 
 
-def test_core_feeds_remain_required_without_gis() -> None:
-    for required in ("static_schedule", "trip_updates", "vehicle_positions"):
+def test_only_static_schedule_is_universally_required() -> None:
+    # static_schedule is the sole universally-required feed: dropping it fails.
+    payload = _gtfs_only_manifest_payload()
+    feeds = payload["feeds"]
+    assert isinstance(feeds, dict)
+    del feeds["static_schedule"]
+    with pytest.raises(ValidationError, match="Missing required feed definitions"):
+        ProviderManifest.model_validate(payload)
+
+    # The realtime feeds are NOT required — a schedule-only / schedule+alerts
+    # agency is fully GTFS-compliant and must validate.
+    for optional_feed in ("trip_updates", "vehicle_positions"):
         payload = _gtfs_only_manifest_payload()
         feeds = payload["feeds"]
         assert isinstance(feeds, dict)
-        del feeds[required]
-        with pytest.raises(ValidationError):
-            ProviderManifest.model_validate(payload)
+        del feeds[optional_feed]
+        manifest = ProviderManifest.model_validate(payload)
+        assert optional_feed not in manifest.feeds
 
 
 def test_build_gis_ingestion_config_raises_when_no_gis_feed() -> None:
