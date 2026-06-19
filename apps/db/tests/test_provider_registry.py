@@ -138,6 +138,39 @@ def test_stm_manifest_still_exposes_gis_feed() -> None:
     assert gis_feed.source_format.value == "stm_gis_zip"
 
 
+def test_manifest_accepts_generic_service_alerts_feed() -> None:
+    payload = _gtfs_only_manifest_payload()
+    feeds = payload["feeds"]
+    assert isinstance(feeds, dict)
+    feeds["service_alerts"] = {
+        "endpoint_key": "service_alerts",
+        "feed_kind": "service_alerts",
+        "source_format": "gtfs_rt_service_alerts",
+        "source_url": "https://example.test/alerts.pb",
+        "auth": {"auth_type": "none"},
+        "refresh_interval_seconds": 300,
+        "is_enabled": True,
+    }
+
+    manifest = ProviderManifest.model_validate(payload)
+
+    alerts = manifest.service_alerts_feed()
+    assert alerts is not None
+    assert alerts.source_format.value == "gtfs_rt_service_alerts"
+    seeds = manifest.to_feed_endpoint_seeds(Settings(_env_file=None))
+    assert [seed.endpoint_key for seed in seeds] == [
+        "static_schedule",
+        "trip_updates",
+        "vehicle_positions",
+        "service_alerts",
+    ]
+
+
+def test_manifest_without_service_alerts_returns_none() -> None:
+    manifest = ProviderManifest.model_validate(_gtfs_only_manifest_payload())
+    assert manifest.service_alerts_feed() is None
+
+
 def test_manifest_loading() -> None:
     settings = Settings(_env_file=None)
     registry = ProviderRegistry.from_project_root(

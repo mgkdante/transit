@@ -15,6 +15,10 @@ class FeedKind(StrEnum):
     TRIP_UPDATES = "trip_updates"
     VEHICLE_POSITIONS = "vehicle_positions"
     I3_ALERTS = "i3_alerts"
+    # Generic GTFS-RT Service Alerts protobuf (STO/OC/STS and most agencies).
+    # STM's proprietary i3 JSON stays I3_ALERTS; both normalize into the same
+    # alert gold surface.
+    SERVICE_ALERTS = "service_alerts"
 
 
 class SourceFormat(StrEnum):
@@ -23,6 +27,7 @@ class SourceFormat(StrEnum):
     GTFS_RT_TRIP_UPDATES = "gtfs_rt_trip_updates"
     GTFS_RT_VEHICLE_POSITIONS = "gtfs_rt_vehicle_positions"
     API_I3_JSON = "api_i3_json"
+    GTFS_RT_SERVICE_ALERTS = "gtfs_rt_service_alerts"
 
 
 class StorageBackend(StrEnum):
@@ -160,6 +165,11 @@ class I3AlertsFeedConfig(FeedConfigBase):
     source_format: Literal[SourceFormat.API_I3_JSON]
 
 
+class ServiceAlertsFeedConfig(FeedConfigBase):
+    feed_kind: Literal[FeedKind.SERVICE_ALERTS]
+    source_format: Literal[SourceFormat.GTFS_RT_SERVICE_ALERTS]
+
+
 RealtimeFeedConfig = TripUpdatesFeedConfig | VehiclePositionsFeedConfig
 
 
@@ -168,7 +178,8 @@ FeedConfig = Annotated[
     | GisStaticFeedConfig
     | TripUpdatesFeedConfig
     | VehiclePositionsFeedConfig
-    | I3AlertsFeedConfig,
+    | I3AlertsFeedConfig
+    | ServiceAlertsFeedConfig,
     Field(discriminator="feed_kind"),
 ]
 
@@ -261,6 +272,17 @@ class ProviderManifest(BaseModel):
             raise TypeError("i3 alerts feed did not validate as I3AlertsFeedConfig.")
         return feed
 
+    def service_alerts_feed(self) -> ServiceAlertsFeedConfig | None:
+        """Return the generic GTFS-RT service-alerts feed, or None when absent."""
+        feed = self.feeds.get(FeedKind.SERVICE_ALERTS.value)
+        if feed is None:
+            return None
+        if not isinstance(feed, ServiceAlertsFeedConfig):
+            raise TypeError(
+                "Service alerts feed did not validate as ServiceAlertsFeedConfig."
+            )
+        return feed
+
     def realtime_feed(self, endpoint_key: str) -> RealtimeFeedConfig:
         if endpoint_key not in {
             FeedKind.TRIP_UPDATES.value,
@@ -299,6 +321,8 @@ class ProviderManifest(BaseModel):
         )
         if FeedKind.I3_ALERTS.value in self.feeds:
             ordered_feed_keys.append(FeedKind.I3_ALERTS.value)
+        if FeedKind.SERVICE_ALERTS.value in self.feeds:
+            ordered_feed_keys.append(FeedKind.SERVICE_ALERTS.value)
 
         feed_seeds: list[FeedEndpointSeed] = []
         for feed_key in ordered_feed_keys:
