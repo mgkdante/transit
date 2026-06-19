@@ -90,6 +90,11 @@ class FakeConnection:
         sql = str(statement)
         self.executed.append(sql)
 
+        # Provider-local "today" read that anchors the append-only daily-builder
+        # snapshot_date_key window.
+        if "gold.dim_provider" in sql and "AT TIME ZONE" in sql:
+            return ScalarResult(datetime(2026, 3, 26, tzinfo=UTC).date())
+
         # Occupancy 5m missing-periods SELECT shares the vehicle-fact + DATE_BIN
         # shape; disambiguated by its rollup_kind literal, matched FIRST.
         if (
@@ -116,15 +121,26 @@ class FakeConnection:
         ):
             return IterableResult([FakeRow(p) for p in self.trip_delay_periods])
 
-        # Append-only daily missing-days SELECTs (no DATE_BIN; keyed on the
-        # local-day subquery). Default to no missing days so the daily loops are
-        # noops here — correctness is covered by the real-DB regression test. The
-        # trip-delay branch also serves the cancellation rollup (same source);
-        # occupancy uses its own fact_vehicle_snapshot calendar.
-        if "fact_vehicle_snapshot" in sql and "today_local" in sql:
+        # Append-only daily missing-days SELECTs (no DATE_BIN; sargable
+        # snapshot_date_key window minus the warm_rollup_periods watermark).
+        # Default to no missing days so the daily loops are noops here —
+        # correctness is covered by the real-DB regression tests. The trip-delay
+        # branch also serves the cancellation/service-span/skipped-stop rollups
+        # (same source); occupancy uses its own fact_vehicle_snapshot calendar.
+        if (
+            "fact_vehicle_snapshot" in sql
+            and "snapshot_date_key" in sql
+            and "warm_rollup_periods" in sql
+            and "INSERT" not in sql
+        ):
             return IterableResult([])
 
-        if "fact_trip_delay_snapshot" in sql and "today_local" in sql:
+        if (
+            "fact_trip_delay_snapshot" in sql
+            and "snapshot_date_key" in sql
+            and "warm_rollup_periods" in sql
+            and "INSERT" not in sql
+        ):
             return IterableResult([])
 
         if "INSERT INTO gold.vehicle_summary_5m" in sql:
@@ -655,7 +671,9 @@ def test_occupancy_band_daily_uses_vehicle_fact_missing_day_calendar() -> None:
     occ_days = str(rollups.SELECT_MISSING_OCCUPANCY_DAYS)
     assert "FROM gold.fact_vehicle_snapshot" in occ_days
     assert "fact_trip_delay_snapshot" not in occ_days
-    assert "today_local" in occ_days
+    # Sargable, indexed snapshot_date_key window (not a full-table timezone scan).
+    assert "f.snapshot_date_key >= :floor_key" in occ_days
+    assert "f.snapshot_date_key < :today_key" in occ_days
 
 
 def test_historic_daily_marts_registered_in_registry() -> None:
@@ -721,14 +739,15 @@ def test_route_service_span_daily_upsert_shape() -> None:
 
     Grain is route x provider_local_date (no service_day_kind column — derived at
     read), trip-start = MIN(captured_at_utc), bound to one local day by the
-    captured-date calendar so it slots into _build_percentile_days."""
+    indexed provider-local snapshot_date_key so it slots into
+    _build_percentile_days."""
     sql = str(rollups.UPSERT_ROUTE_SERVICE_SPAN_DAILY)
     compact = " ".join(sql.split())
 
     assert "INSERT INTO gold.route_service_span_daily" in sql
     assert "FROM gold.fact_trip_delay_snapshot" in sql
     assert "MIN(f.captured_at_utc) AS trip_start_utc" in compact
-    assert "timezone(dp.timezone, f.captured_at_utc)::date = :local_date" in compact
+    assert "f.snapshot_date_key = :date_key" in compact
     # span derived from first/last observed trip start.
     assert "MAX(trip_start_utc) - MIN(trip_start_utc)" in compact
     assert "ON CONFLICT (provider_id, provider_local_date, route_id)" in sql
@@ -746,7 +765,7 @@ def test_route_skipped_stop_daily_upsert_shape() -> None:
     assert "SUM(f.stop_time_update_count)" in compact
     # Rate honest-None when no stop-time updates observed.
     assert "NULLIF(SUM(f.stop_time_update_count), 0)" in compact
-    assert "timezone(dp.timezone, f.captured_at_utc)::date = :local_date" in compact
+    assert "f.snapshot_date_key = :date_key" in compact
     assert "ON CONFLICT (provider_id, provider_local_date, route_id)" in sql
 
 
