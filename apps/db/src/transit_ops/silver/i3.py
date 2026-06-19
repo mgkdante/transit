@@ -239,6 +239,18 @@ def _value(payload: dict[str, Any], *keys: str) -> object:
     return None
 
 
+def _primary_language(value: object) -> str:
+    """BCP-47 primary language subtag, lowercased.
+
+    ``fr-CA`` -> ``fr``, ``en_US`` -> ``en``, ``EN`` -> ``en``. Region/script
+    subtags are dropped so region-tagged feeds (STO / STS publish ``fr-CA`` /
+    ``en-CA``) match the same language buckets as bare ``fr`` / ``en``.
+    """
+    if not isinstance(value, str):
+        return ""
+    return value.strip().lower().replace("_", "-").split("-", 1)[0]
+
+
 def _text(payload: object) -> str | None:
     if payload is None:
         return None
@@ -250,7 +262,7 @@ def _text(payload: object) -> str | None:
             item
             for item in payload
             if isinstance(item, dict)
-            and str(item.get("language", "")).lower() in {"fr", "fra"}
+            and _primary_language(item.get("language")) in {"fr", "fra"}
         ]
         for item in [*preferred, *payload]:
             value = _text(item)
@@ -285,7 +297,7 @@ def _text_en(payload: object) -> str | None:
         for item in payload:
             if (
                 isinstance(item, dict)
-                and str(item.get("language", "")).lower() in {"en", "eng"}
+                and _primary_language(item.get("language")) in {"en", "eng"}
             ):
                 value = _text(item.get("text") or item.get("value"))
                 if value:
