@@ -447,6 +447,11 @@ def test_build_alerts_maps_severity_and_splits_routes_stops() -> None:
     assert a1.stops == ["S-1", "S-2"]
     assert a1.start_utc == "2026-05-31T08:00:00Z"
     assert a1.end_utc == "2026-05-31T20:00:00Z"
+    # raw GTFS-RT/i3 passthroughs; severity_level is the raw value, distinct from
+    # the bucketed severity ("warning" -> "high").
+    assert a1.cause == "ACCIDENT"
+    assert a1.effect == "DETOUR"
+    assert a1.severity_level == "warning"
     a2 = out.alerts[1]
     assert a2.severity == "critical"  # severe -> critical
     assert a2.routes == []
@@ -465,6 +470,9 @@ def test_build_alerts_maps_severity_and_splits_routes_stops() -> None:
     out2 = build_alerts(conn, provider_id="stm", generated_utc="2026-05-31T12:00:05Z")
     assert out2.alerts[1].id == expected_id
     assert a2.start_utc is None
+    assert a2.cause == "CONSTRUCTION"
+    assert a2.effect == "NO_SERVICE"
+    assert a2.severity_level == "severe"
 
 
 def test_build_alerts_unknown_severity_falls_back_to_watch() -> None:
