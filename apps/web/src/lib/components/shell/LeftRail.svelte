@@ -100,9 +100,11 @@
 		{/if}
 	</div>
 
-	<!-- Rail body — scrolls internally so the map stage stays put. -->
+	<!-- Rail body — scrolls internally so the map stage stays put. The padded
+	     wrapper reserves a stable scrollbar gutter so content never shifts when a
+	     scrollbar appears as the rail is dragged narrower. -->
 	<ScrollArea class="min-h-0 flex-1" data-slot="left-rail-body">
-		<div class="p-3">
+		<div class="left-rail-body-inner p-3">
 			{#if children && !collapsed}
 				{@render children()}
 			{:else}
@@ -136,6 +138,18 @@
 	.left-rail {
 		--left-rail-tile-size: 3.35rem;
 		overflow: hidden;
+		/* Make the rail a size container so its CONTENT reflows against the rail's
+		   own width as it is dragged — independent of the viewport. The expanded
+		   nav rows progressively drop their description, then tighten, BEFORE the
+		   hard icon-only collapse, so a narrow rail reflows gracefully instead of
+		   clipping/truncating its labels. */
+		container: left-rail / inline-size;
+	}
+
+	/* Reserve a stable scrollbar gutter so the rail body never shifts horizontally
+	   when a vertical scrollbar appears mid-drag. */
+	.left-rail-body-inner {
+		scrollbar-gutter: stable;
 	}
 
 	.left-rail[data-open='true'] .left-rail-head {
@@ -215,6 +229,11 @@
 		display: grid;
 		min-width: 0;
 		gap: 0.15rem;
+		/* Ease the copy in/out on collapse-expand (the row text fading rather than
+		   snapping); guarded under prefers-reduced-motion below. */
+		transition:
+			opacity var(--duration-normal, 180ms) var(--ease-default, ease),
+			transform var(--duration-normal, 180ms) var(--ease-out, ease);
 	}
 
 	.left-rail-copy span {
@@ -234,10 +253,38 @@
 		color: var(--muted-foreground);
 		text-overflow: ellipsis;
 		white-space: nowrap;
+		/* Reflow gate: the description fades out (see the @container rule) before the
+		   label, so a narrowing rail sheds the secondary line gracefully. */
+		transition: opacity var(--duration-fast, 120ms) var(--ease-default, ease);
+	}
+
+	/* Container-query reflow — drives the EXPANDED rail's content off the rail's own
+	   inline size so it degrades gracefully as it is dragged narrower, well before
+	   the icon-only collapse. Two steps: drop the secondary description, then tighten
+	   the row gap so the primary label keeps breathing room instead of truncating. */
+	@container left-rail (max-width: 12rem) {
+		.left-rail-copy small {
+			height: 0;
+			margin: 0;
+			opacity: 0;
+			pointer-events: none;
+		}
+	}
+
+	@container left-rail (max-width: 9.5rem) {
+		.left-rail-link {
+			gap: 0.5rem;
+			padding-inline: 0.55rem;
+		}
+		.left-rail-copy span {
+			font-size: 0.9rem;
+		}
 	}
 
 	@media (prefers-reduced-motion: reduce) {
-		.left-rail-link {
+		.left-rail-link,
+		.left-rail-copy,
+		.left-rail-copy small {
 			transition: none;
 		}
 	}

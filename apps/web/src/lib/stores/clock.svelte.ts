@@ -1,0 +1,128 @@
+// sharedClock — ONE app-wide "now" tick (Svelte 5 runes).
+//
+// Every relative-time readout in the chrome (TopBar refresh chip, the live
+// freshness badge, the live clock) used to own its own `setInterval`. Those
+// intervals drifted: each started on its own mount, so two "updated 12s ago"
+// labels on the same page could advance a fraction of a second apart and read
+// different values. This store collapses them into a SINGLE interval and a
+// SINGLE `$state nowMs`, so every label reads the exact same clock and ticks in
+// lockstep.
+//
+// Lifecycle (reference-counted, lazy):
+//   - The interval is NOT running at module load. The first reader that calls
+//     `subscribe()` starts it; the last reader to call the returned dispose
+//     stops it. A component wires this with one `$effect(() => sharedClock.subscribe())`
+//     — the effect's cleanup runs the dispose, so the timer lives exactly as
+//     long as something is on screen reading it.
+//   - `now` is also readable WITHOUT subscribing (a plain getter). Reading it
+//     reactively in a `$derived`/template keeps you live to the tick, but only a
+//     `subscribe()` keeps the interval ALIVE — a lone reader with no subscriber
+//     sees a frozen snapshot (intended: nothing on screen needs it to move).
+//
+// Cadence honors `prefers-reduced-motion`: a per-second text update is motion.
+// Under reduce we tick on a calmer cadence (still honest — freshness advances,
+// just not animated character-by-character). The cadence is re-picked live when
+// the OS preference flips while the clock is running.
+//
+// SSR-safe: `subscribe()` no-ops without a browser (returns a no-op dispose),
+// so the timer only ever exists client-side. The initial `now` is a one-shot
+// `Date.now()` snapshot, valid for the SSR frame.
+
+import { browser } from '$app/environment';
+import { isPrefersReducedMotion } from '$lib/motion/reduced-motion.svelte';
+
+/** Normal tick: per-second, so "12s ago" counts up smoothly. */
+const TICK_MS = 1000;
+
+/**
+ * Reduced-motion tick: a calmer 30s cadence. Freshness still advances honestly
+ * (and any age-based staleness flips within one window of the budget) without
+ * animating a per-second counter for users who asked for less motion.
+ */
+const REDUCED_MOTION_TICK_MS = 30_000;
+
+/** Shared "now" in epoch ms. Advanced by the single interval below. */
+let nowMs = $state(Date.now());
+
+/** Active reader count; the interval runs iff this is > 0. */
+let subscribers = 0;
+/** The single interval handle, or null when stopped. */
+let timer: ReturnType<typeof setInterval> | null = null;
+/** Cadence the running timer was started at, so we can detect a needed re-pick. */
+let timerIntervalMs = 0;
+/** Wired once: re-pick cadence when the OS reduced-motion preference flips. */
+let motionListenerWired = false;
+
+/** Tick cadence for the current motion preference. */
+function currentIntervalMs(): number {
+	return isPrefersReducedMotion() ? REDUCED_MOTION_TICK_MS : TICK_MS;
+}
+
+/** (Re)start the interval at the cadence for the current motion preference. */
+function startTimer(): void {
+	if (!browser) return;
+	if (timer) clearInterval(timer);
+	timerIntervalMs = currentIntervalMs();
+	// Advance immediately so a cadence re-pick (e.g. reduced-motion just turned
+	// off) refreshes the readout without waiting a full interval.
+	nowMs = Date.now();
+	timer = setInterval(() => {
+		nowMs = Date.now();
+	}, timerIntervalMs);
+}
+
+/** Stop the interval (last subscriber left). */
+function stopTimer(): void {
+	if (timer) {
+		clearInterval(timer);
+		timer = null;
+	}
+	timerIntervalMs = 0;
+}
+
+/**
+ * Wire a one-time OS-preference listener (browser-only) that re-picks the
+ * cadence if reduced-motion flips WHILE the clock is running. The callback
+ * fires outside any reactive read, so restarting the timer here is safe.
+ */
+function wireMotionListener(): void {
+	if (motionListenerWired || typeof window === 'undefined') return;
+	motionListenerWired = true;
+	window.matchMedia('(prefers-reduced-motion: reduce)').addEventListener('change', () => {
+		if (timer && currentIntervalMs() !== timerIntervalMs) startTimer();
+	});
+}
+
+export const sharedClock = {
+	/**
+	 * Reactive shared "now" in epoch ms. Read inside a `$derived`/template to
+	 * stay live with the tick; pair with `subscribe()` to keep the tick running.
+	 */
+	get now(): number {
+		return nowMs;
+	},
+
+	/**
+	 * Register as a reader and ensure the single interval is running. Returns a
+	 * dispose that decrements the reader count and stops the interval when the
+	 * last reader leaves. SSR-safe: returns a no-op dispose without a browser.
+	 *
+	 * Idiomatic use in a component:
+	 *   $effect(() => sharedClock.subscribe());
+	 * The effect cleanup runs the dispose, so the timer is alive exactly while
+	 * the component is mounted.
+	 */
+	subscribe(): () => void {
+		if (!browser) return () => {};
+		wireMotionListener();
+		subscribers += 1;
+		if (subscribers === 1) startTimer();
+		let disposed = false;
+		return () => {
+			if (disposed) return;
+			disposed = true;
+			subscribers = Math.max(0, subscribers - 1);
+			if (subscribers === 0) stopTimer();
+		};
+	},
+};

@@ -5,10 +5,8 @@ describe('map copy', () => {
 	it('uses vernacular marker labels', () => {
 		expect(copy.en.legendTitle).toBe('Markers');
 		expect(copy.fr.legendTitle).toBe('Marqueurs');
-		expect(copy.en.entityBusDirection).toBe('Bus - direction');
-		expect(copy.en.entityBusNoDirection).toBe('Bus - no direction');
-		expect(copy.fr.entityBusDirection).toBe('Bus - direction');
-		expect(copy.fr.entityBusNoDirection).toBe('Bus - sans direction');
+		expect(copy.en.entityBus).toBe('Bus');
+		expect(copy.fr.entityBus).toBe('Bus');
 	});
 
 	it('invites precise near-me address searches', () => {

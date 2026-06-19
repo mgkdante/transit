@@ -23,6 +23,54 @@ function localeTag(lang: TimeLang): string {
 	return lang === 'fr' ? 'fr-CA' : 'en-CA';
 }
 
+// ---------------------------------------------------------------------------
+// Memoized Intl formatters.
+//
+// Constructing an Intl.* formatter is comparatively expensive, and these
+// helpers run on a hot, per-second-ticking path (relative-age readouts, the
+// live clock). The locale + options are drawn from a tiny fixed set, so we
+// cache one instance per (locale, options) key and reuse it. Outputs are
+// byte-identical to constructing a fresh formatter each call — the cache only
+// removes the constructor cost, never changes formatting.
+//
+// The key is `${locale}|${JSON.stringify(options)}`. JSON.stringify is stable
+// here because every call site passes plain option objects with primitive
+// values; key collisions only happen for genuinely identical option sets,
+// which is exactly when sharing an instance is correct.
+// ---------------------------------------------------------------------------
+
+const dateTimeFormatCache = new Map<string, Intl.DateTimeFormat>();
+const relativeTimeFormatCache = new Map<string, Intl.RelativeTimeFormat>();
+
+function formatterKey(locale: string, options: object): string {
+	return `${locale}|${JSON.stringify(options)}`;
+}
+
+/** Cached Intl.DateTimeFormat, one instance per (locale, options) key. */
+function dateTimeFormat(locale: string, options: Intl.DateTimeFormatOptions): Intl.DateTimeFormat {
+	const key = formatterKey(locale, options);
+	let fmt = dateTimeFormatCache.get(key);
+	if (!fmt) {
+		fmt = new Intl.DateTimeFormat(locale, options);
+		dateTimeFormatCache.set(key, fmt);
+	}
+	return fmt;
+}
+
+/** Cached Intl.RelativeTimeFormat, one instance per (locale, options) key. */
+function relativeTimeFormat(
+	locale: string,
+	options: Intl.RelativeTimeFormatOptions,
+): Intl.RelativeTimeFormat {
+	const key = formatterKey(locale, options);
+	let fmt = relativeTimeFormatCache.get(key);
+	if (!fmt) {
+		fmt = new Intl.RelativeTimeFormat(locale, options);
+		relativeTimeFormatCache.set(key, fmt);
+	}
+	return fmt;
+}
+
 /** Parse an ISO string into a Date, returning null for empty/invalid input. */
 function parseIso(iso: string): Date | null {
 	if (!iso) return null;
@@ -53,7 +101,7 @@ export function formatUtc(iso: string, lang: TimeLang, opts?: Intl.DateTimeForma
 	const resolved: Intl.DateTimeFormatOptions = opts
 		? { ...opts, timeZone: DISPLAY_TIME_ZONE }
 		: { ...base, timeZone: DISPLAY_TIME_ZONE };
-	return new Intl.DateTimeFormat(localeTag(lang), resolved).format(date);
+	return dateTimeFormat(localeTag(lang), resolved).format(date);
 }
 
 /**
@@ -65,7 +113,7 @@ export function formatUtc(iso: string, lang: TimeLang, opts?: Intl.DateTimeForma
 export function formatClock(date: Date, lang: TimeLang): string {
 	if (!(date instanceof Date) || Number.isNaN(date.getTime())) return '—';
 	// Use formatToParts so we can guarantee "HH:MM" without locale separators.
-	const parts = new Intl.DateTimeFormat(localeTag(lang), {
+	const parts = dateTimeFormat(localeTag(lang), {
 		hour: '2-digit',
 		minute: '2-digit',
 		hour12: false,
@@ -118,7 +166,7 @@ export function formatRelativeSeconds(seconds: number, lang: TimeLang): string {
 	if (Number.isNaN(seconds)) return '—';
 	if (Math.abs(seconds) < 5) return lang === 'fr' ? 'maintenant' : 'now';
 
-	const rtf = new Intl.RelativeTimeFormat(localeTag(lang), { numeric: 'auto' });
+	const rtf = relativeTimeFormat(localeTag(lang), { numeric: 'auto' });
 	for (const { unit, seconds: unitSeconds } of RELATIVE_UNITS) {
 		if (Math.abs(seconds) >= unitSeconds || unit === 'second') {
 			// Positive `seconds` = past → negative value for RelativeTimeFormat.

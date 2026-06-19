@@ -111,6 +111,17 @@
 		return t.onTime;
 	}
 
+	// Presentation-only tone for a delay reading — maps a delay value to a
+	// dataviz status band so on-time / early / late punch in colour. No data
+	// wiring change: derived purely from the same value delayLabel() formats.
+	function delayTone(delay: number | null | undefined): string {
+		if (delay == null) return 'none';
+		if (delay < 0) return 'early';
+		if (delay >= 5) return 'severe';
+		if (delay > 0) return 'late';
+		return 'on-time';
+	}
+
 	function timeLabel(iso: string | null | undefined): string {
 		return iso ? formatUtc(iso, locale, { hour: '2-digit', minute: '2-digit', hour12: false }) : '';
 	}
@@ -252,7 +263,11 @@
 				</div>
 				<div>
 					<dt>{t.delay}</dt>
-					<dd>{delayLabel(detail.vehicle.delay_min)}</dd>
+					<dd>
+						<span class="map-delay-tag" data-tone={delayTone(detail.vehicle.delay_min)}>
+							{delayLabel(detail.vehicle.delay_min)}
+						</span>
+					</dd>
 				</div>
 				<div>
 					<dt>{t.nextStop}</dt>
@@ -265,7 +280,7 @@
 								aria-label={t.selectStop(nextStop.name)}
 								onclick={() => selectStop(nextStop.id)}
 							>
-								{nextStop.name}
+								<span class="map-inline-label">{nextStop.name}</span>
 								<ChevronRightIcon size={13} strokeWidth={2.4} aria-hidden="true" />
 							</button>
 						{:else}
@@ -330,7 +345,12 @@
 										<strong>{stop.name}</strong>
 										<ChevronRightIcon size={13} strokeWidth={2.4} aria-hidden="true" />
 										{#if stop.etaUtc}
-											<small>{timeLabel(stop.etaUtc)} · {delayLabel(stop.delayMin)}</small>
+											<small>
+												<time>{timeLabel(stop.etaUtc)}</time>
+												<span class="map-delay-tag" data-tone={delayTone(stop.delayMin)}>
+													{delayLabel(stop.delayMin)}
+												</span>
+											</small>
 										{/if}
 									</button>
 								</li>
@@ -371,11 +391,12 @@
 								>
 									<strong>{vehicle.id}</strong>
 									<span>{vehicle.route ? `${t.route} ${vehicle.route}` : t.bus}</span>
-									<small
-										>{STATUS_LABELS[locale][vehicle.status]} · {delayLabel(
-											vehicle.delay_min,
-										)}</small
-									>
+									<small>
+										<span class="map-status-label">{STATUS_LABELS[locale][vehicle.status]}</span>
+										<span class="map-delay-tag" data-tone={delayTone(vehicle.delay_min)}>
+											{delayLabel(vehicle.delay_min)}
+										</span>
+									</small>
 									<ChevronRightIcon size={13} strokeWidth={2.4} aria-hidden="true" />
 								</button>
 							</li>
@@ -437,11 +458,12 @@
 								>
 									<strong>{vehicle.id}</strong>
 									<span>{vehicle.route ? `${t.route} ${vehicle.route}` : t.bus}</span>
-									<small
-										>{STATUS_LABELS[locale][vehicle.status]} · {delayLabel(
-											vehicle.delay_min,
-										)}</small
-									>
+									<small>
+										<span class="map-status-label">{STATUS_LABELS[locale][vehicle.status]}</span>
+										<span class="map-delay-tag" data-tone={delayTone(vehicle.delay_min)}>
+											{delayLabel(vehicle.delay_min)}
+										</span>
+									</small>
 									<ChevronRightIcon size={13} strokeWidth={2.4} aria-hidden="true" />
 								</button>
 							</li>
@@ -492,7 +514,9 @@
 									<ChevronRightIcon size={13} strokeWidth={2.4} aria-hidden="true" />
 								</button>
 							{/if}
-							<span>{delayLabel(departure.delay_min)}</span>
+							<span class="map-delay-tag" data-tone={delayTone(departure.delay_min)}>
+								{delayLabel(departure.delay_min)}
+							</span>
 						</li>
 					{/each}
 				</ol>
@@ -543,7 +567,12 @@
 										<h4>{t.live}</h4>
 										<ul>
 											{#each route.liveDepartures.slice(0, 3) as departure (`live-${route.route}-${departure.trip ?? departure.eta_utc}`)}
-												<li>{timeLabel(departure.eta_utc)} · {delayLabel(departure.delay_min)}</li>
+												<li>
+													<time>{timeLabel(departure.eta_utc)}</time>
+													<span class="map-delay-tag" data-tone={delayTone(departure.delay_min)}>
+														{delayLabel(departure.delay_min)}
+													</span>
+												</li>
 											{/each}
 										</ul>
 									</div>
@@ -584,38 +613,61 @@
 	.map-selection-detail {
 		display: flex;
 		flex-direction: column;
-		gap: 0.9rem;
-		font-family: var(--font-sans);
+		gap: 1.15rem;
+		font-family: var(--font-body);
 		color: var(--foreground);
 	}
 	.map-selection-detail.compact {
-		gap: 0.65rem;
+		gap: 0.7rem;
 		min-width: 14rem;
 		max-width: 18rem;
 	}
+
+	/* ── Header ───────────────────────────────────────────────── */
 	.map-selection-head {
 		display: flex;
 		flex-direction: column;
-		gap: 0.25rem;
+		gap: 0.3rem;
+		padding-bottom: 0.85rem;
+		border-bottom: 1px solid var(--border-subtle);
+	}
+	.compact .map-selection-head {
+		padding-bottom: 0.55rem;
 	}
 	.map-selection-kind {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.5rem;
 		margin: 0;
 		font-family: var(--font-mono);
 		font-size: var(--text-micro);
-		letter-spacing: 0.12em;
+		font-weight: 500;
+		letter-spacing: 0.18em;
 		text-transform: uppercase;
 		color: var(--accent-text);
+	}
+	/* Leading signage tick — a short brand rule before the kicker. */
+	.map-selection-kind::before {
+		content: '';
+		width: 1.35rem;
+		height: 2px;
+		border-radius: var(--radius-pill);
+		background: var(--primary);
 	}
 	.map-selection-title {
 		margin: 0;
 		font-family: var(--font-heading);
-		font-size: var(--text-subheading);
-		line-height: 1.05;
+		font-size: var(--text-heading);
+		font-weight: 600;
+		line-height: 1.08;
+		letter-spacing: -0.01em;
+		text-wrap: balance;
 		color: var(--foreground);
 	}
 	.compact .map-selection-title {
-		font-size: var(--text-body);
+		font-size: var(--text-subheading);
 	}
+	/* ── Identity + stat pills ────────────────────────────────── */
 	.map-selection-id,
 	.map-stop-stats {
 		display: flex;
@@ -626,36 +678,48 @@
 	.map-selection-id span,
 	.map-stop-stats span {
 		display: inline-flex;
-		min-height: 1.8rem;
+		min-height: 1.85rem;
 		align-items: center;
 		border: 1px solid var(--border-subtle);
 		border-radius: var(--radius-pill);
 		background: var(--muted);
-		padding: 0.25rem 0.6rem;
+		padding: 0.25rem 0.7rem;
 		font-family: var(--font-mono);
 		font-size: var(--text-caption);
+		letter-spacing: 0.01em;
+		color: var(--muted-foreground);
+	}
+	.map-selection-id span {
+		font-size: var(--text-micro);
+		letter-spacing: 0.1em;
+		text-transform: uppercase;
+		background: transparent;
+		border-color: transparent;
+		padding-inline: 0;
 		color: var(--muted-foreground);
 	}
 	.map-selection-id strong,
 	.map-id-action {
 		display: inline-flex;
-		min-height: 1.8rem;
+		min-height: 1.85rem;
 		align-items: center;
-		border: 1px solid color-mix(in srgb, var(--primary) 42%, var(--border) 58%);
+		border: 1px solid var(--border-brand);
 		border-radius: var(--radius-pill);
-		background: color-mix(in srgb, var(--primary) 14%, transparent);
-		padding: 0.25rem 0.6rem;
+		background: color-mix(in srgb, var(--primary) 12%, transparent);
+		padding: 0.25rem 0.7rem;
 		font-family: var(--font-mono);
 		font-size: var(--text-caption);
+		font-weight: 600;
+		letter-spacing: 0.02em;
 		color: var(--foreground);
 	}
 	.map-id-action {
-		gap: 0.3rem;
+		gap: 0.35rem;
 		cursor: pointer;
 		transition:
-			color 150ms ease,
-			background-color 150ms ease,
-			border-color 150ms ease;
+			color var(--duration-fast) var(--ease-out),
+			background-color var(--duration-fast) var(--ease-out),
+			border-color var(--duration-fast) var(--ease-out);
 	}
 	.map-id-action strong {
 		display: inline;
@@ -664,28 +728,42 @@
 		background: transparent;
 		padding: 0;
 	}
+	.map-id-action :global(svg) {
+		opacity: 0.55;
+		transition: transform var(--duration-fast) var(--ease-out);
+	}
 	.map-id-action:hover {
 		color: var(--primary);
 		background: color-mix(in srgb, var(--primary) 18%, transparent);
-		border-color: color-mix(in srgb, var(--primary) 52%, var(--border) 48%);
+		border-color: var(--border-brand-active);
 	}
+	.map-id-action:hover :global(svg) {
+		opacity: 1;
+		transform: translateX(2px);
+	}
+	/* ── Attribute grid (status / crowding / delay …) ─────────── */
 	.map-detail-grid {
 		display: grid;
 		grid-template-columns: minmax(0, 1fr);
-		gap: 0.45rem;
+		gap: 0;
 		margin: 0;
 	}
 	.map-detail-grid div {
 		display: grid;
-		grid-template-columns: 5.5rem minmax(0, 1fr);
-		gap: 0.55rem;
-		align-items: baseline;
+		grid-template-columns: 5.75rem minmax(0, 1fr);
+		gap: 0.6rem;
+		align-items: center;
+		min-height: 2.4rem;
 		border-bottom: 1px solid var(--border-subtle);
-		padding-bottom: 0.45rem;
+		padding-block: 0.5rem;
+	}
+	.map-detail-grid div:last-child {
+		border-bottom: 0;
 	}
 	.map-detail-grid dt {
 		font-family: var(--font-mono);
 		font-size: var(--text-micro);
+		letter-spacing: 0.08em;
 		text-transform: uppercase;
 		color: var(--muted-foreground);
 	}
@@ -704,28 +782,90 @@
 		max-width: 100%;
 		align-items: center;
 		justify-content: flex-start;
-		min-height: 1.65rem;
-		padding: 0.15rem 0.5rem;
+		min-height: 1.7rem;
+		padding: 0.2rem 0.55rem;
 		font-family: var(--font-mono);
 		font-size: var(--text-caption);
+		font-weight: 500;
 		color: var(--foreground);
 		text-align: left;
-		background: color-mix(in srgb, var(--primary) 10%, transparent);
-		border: 1px solid color-mix(in srgb, var(--primary) 32%, var(--border) 68%);
+		background: color-mix(in srgb, var(--primary) 9%, transparent);
+		border: 1px solid color-mix(in srgb, var(--primary) 28%, var(--border) 72%);
 		border-radius: var(--radius-pill);
 		cursor: pointer;
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
 		transition:
-			color 150ms ease,
-			background-color 150ms ease,
-			border-color 150ms ease;
+			color var(--duration-fast) var(--ease-out),
+			background-color var(--duration-fast) var(--ease-out),
+			border-color var(--duration-fast) var(--ease-out);
+	}
+	/* The name shrinks + truncates inside the pill so a long stop name (e.g.
+	   "Next station") never pushes the chevron out or overflows a narrow rail. */
+	.map-inline-label {
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+	.map-inline-action :global(svg) {
+		flex: none;
+		opacity: 0.5;
+		transition:
+			opacity var(--duration-fast) var(--ease-out),
+			transform var(--duration-fast) var(--ease-out);
 	}
 	.map-inline-action:hover {
 		color: var(--primary);
 		background: color-mix(in srgb, var(--primary) 16%, transparent);
-		border-color: color-mix(in srgb, var(--primary) 48%, var(--border) 52%);
+		border-color: var(--border-brand);
+	}
+	.map-inline-action:hover :global(svg) {
+		opacity: 1;
+		transform: translateX(2px);
+	}
+
+	/* ── Delay tone tag — colour-codes early / on-time / late ─── */
+	.map-delay-tag {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.3rem;
+		font-family: var(--font-mono);
+		font-size: inherit;
+		font-weight: 600;
+		letter-spacing: 0.01em;
+		color: var(--muted-foreground);
+		white-space: nowrap;
+	}
+	.map-delay-tag::before {
+		content: '';
+		width: 0.45rem;
+		height: 0.45rem;
+		border-radius: var(--radius-pill);
+		background: currentcolor;
+		flex: none;
+	}
+	.map-delay-tag[data-tone='none'] {
+		color: var(--muted-foreground);
+	}
+	.map-delay-tag[data-tone='none']::before {
+		display: none;
+	}
+	.map-delay-tag[data-tone='early'] {
+		color: var(--dataviz-status-early);
+	}
+	.map-delay-tag[data-tone='on-time'] {
+		color: var(--dataviz-status-on-time);
+	}
+	.map-delay-tag[data-tone='late'] {
+		color: var(--dataviz-status-late);
+	}
+	.map-delay-tag[data-tone='severe'] {
+		color: var(--dataviz-status-severe);
+	}
+	.map-status-label {
+		color: var(--muted-foreground);
 	}
 	.map-inline-action:focus-visible,
 	.map-id-action:focus-visible,
@@ -735,10 +875,11 @@
 		outline: 2px solid var(--ring);
 		outline-offset: 2px;
 	}
+	/* ── Departures list ──────────────────────────────────────── */
 	.map-departures {
 		display: flex;
 		flex-direction: column;
-		gap: 0.35rem;
+		gap: 0.4rem;
 		margin: 0;
 		padding: 0;
 		list-style: none;
@@ -748,29 +889,56 @@
 		flex-wrap: wrap;
 		align-items: center;
 		justify-content: space-between;
-		gap: 0.75rem;
+		gap: 0.6rem;
+		position: relative;
 		border: 1px solid var(--border-subtle);
-		border-radius: var(--radius-sm);
+		border-radius: var(--radius-md);
 		background: var(--muted);
-		padding: 0.45rem 0.55rem;
+		padding: 0.5rem 0.65rem 0.5rem 0.85rem;
 		font-family: var(--font-mono);
 		font-size: var(--text-caption);
+		overflow: hidden;
 	}
+	/* Left signage rail accent on each departure row. */
+	.map-departures li::before {
+		content: '';
+		position: absolute;
+		inset-block: 0;
+		inset-inline-start: 0;
+		width: 3px;
+		background: var(--primary);
+		opacity: 0.55;
+	}
+
+	/* ── Section scaffolding (shared) ─────────────────────────── */
 	.map-stop-sequence,
 	.map-route-times,
 	.map-live-buses {
 		display: flex;
 		flex-direction: column;
-		gap: 0.5rem;
+		gap: 0.55rem;
 	}
 	.map-stop-sequence h3,
 	.map-route-times h3,
 	.map-live-buses h3 {
+		display: flex;
+		align-items: center;
+		gap: 0.55rem;
 		margin: 0;
 		font-family: var(--font-mono);
-		font-size: var(--text-caption);
+		font-size: var(--text-micro);
+		font-weight: 500;
+		letter-spacing: 0.14em;
 		text-transform: uppercase;
 		color: var(--accent-text);
+	}
+	.map-stop-sequence h3::after,
+	.map-route-times h3::after,
+	.map-live-buses h3::after {
+		content: '';
+		flex: 1;
+		height: 1px;
+		background: var(--border-subtle);
 	}
 	.map-stop-sequence ol,
 	.map-route-times ul,
@@ -782,13 +950,17 @@
 	.map-direction-block {
 		display: flex;
 		flex-direction: column;
-		gap: 0.4rem;
+		gap: 0.3rem;
+	}
+	.map-direction-block + .map-direction-block {
+		margin-top: 0.55rem;
 	}
 	.map-direction-block h4,
 	.map-route-time h4 {
 		margin: 0;
 		font-family: var(--font-mono);
 		font-size: var(--text-micro);
+		letter-spacing: 0.08em;
 		text-transform: uppercase;
 		color: var(--muted-foreground);
 	}
@@ -796,28 +968,37 @@
 		display: flex;
 		flex-direction: column;
 		gap: 0.15rem;
+		padding-bottom: 0.3rem;
 		color: var(--accent-text);
 	}
 	.map-direction-block h4 small {
+		text-transform: none;
+		letter-spacing: 0;
 		color: var(--muted-foreground);
 	}
+
+	/* ── Stop sequence rows ───────────────────────────────────── */
 	.map-stop-action {
 		display: grid;
-		grid-template-columns: 2rem minmax(0, 1fr) auto;
-		gap: 0.55rem;
-		width: 100%;
-		align-items: baseline;
-		padding: 0.42rem 0;
+		grid-template-columns: 1.9rem minmax(0, 1fr) auto;
+		gap: 0.65rem;
+		width: calc(100% + 1.1rem);
+		margin-inline: -0.55rem;
+		align-items: center;
+		padding: 0.5rem 0.55rem;
+		border-radius: var(--radius-sm);
 		color: var(--foreground);
 		text-align: left;
 		background: transparent;
 		border: 0;
 		border-bottom: 1px solid var(--border-subtle);
 		cursor: pointer;
+		transition: background-color var(--duration-fast) var(--ease-out);
 	}
 	.map-stop-action span {
 		font-family: var(--font-mono);
 		font-size: var(--text-caption);
+		text-align: center;
 		color: var(--muted-foreground);
 	}
 	.map-stop-action strong {
@@ -827,64 +1008,116 @@
 		white-space: nowrap;
 		font-size: var(--text-small);
 		font-weight: 500;
+		transition: color var(--duration-fast) var(--ease-out);
+	}
+	.map-stop-action :global(svg) {
+		opacity: 0.45;
+		transition:
+			opacity var(--duration-fast) var(--ease-out),
+			transform var(--duration-fast) var(--ease-out);
 	}
 	.map-stop-action small {
 		grid-column: 2;
+		display: inline-flex;
+		align-items: center;
+		gap: 0.45rem;
+		margin-top: 0.1rem;
 		font-family: var(--font-mono);
 		font-size: var(--text-micro);
 		color: var(--muted-foreground);
 	}
+	.map-stop-action small time {
+		font-weight: 600;
+		color: var(--foreground);
+	}
+	.map-stop-action:hover {
+		background: color-mix(in srgb, var(--primary) 7%, transparent);
+	}
 	.map-stop-action:hover strong {
 		color: var(--primary);
 	}
+	.map-stop-action:hover :global(svg) {
+		opacity: 1;
+		transform: translateX(2px);
+	}
+
+	/* ── Live-bus rows ────────────────────────────────────────── */
 	.map-vehicle-action {
 		display: grid;
 		grid-template-columns: minmax(3.5rem, auto) minmax(0, 1fr) auto auto;
-		gap: 0.55rem;
-		width: 100%;
-		align-items: baseline;
-		padding: 0.42rem 0;
+		gap: 0.6rem;
+		width: calc(100% + 1.1rem);
+		margin-inline: -0.55rem;
+		align-items: center;
+		padding: 0.5rem 0.55rem;
+		border-radius: var(--radius-sm);
 		color: var(--foreground);
 		text-align: left;
 		background: transparent;
 		border: 0;
 		border-bottom: 1px solid var(--border-subtle);
 		cursor: pointer;
+		transition: background-color var(--duration-fast) var(--ease-out);
 	}
 	.map-vehicle-action strong {
 		font-family: var(--font-mono);
 		font-size: var(--text-caption);
+		font-weight: 600;
 		color: var(--primary);
 	}
-	.map-vehicle-action span {
+	.map-vehicle-action > span {
 		min-width: 0;
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
 		font-size: var(--text-small);
+		transition: color var(--duration-fast) var(--ease-out);
 	}
 	.map-vehicle-action small {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.5rem;
 		font-family: var(--font-mono);
 		font-size: var(--text-micro);
 		color: var(--muted-foreground);
 	}
-	.map-vehicle-action:hover span {
+	.map-vehicle-action :global(svg) {
+		opacity: 0.45;
+		transition:
+			opacity var(--duration-fast) var(--ease-out),
+			transform var(--duration-fast) var(--ease-out);
+	}
+	.map-vehicle-action:hover {
+		background: color-mix(in srgb, var(--primary) 7%, transparent);
+	}
+	.map-vehicle-action:hover > span {
 		color: var(--primary);
+	}
+	.map-vehicle-action:hover :global(svg) {
+		opacity: 1;
+		transform: translateX(2px);
+	}
+	/* ── Route-time card (stop detail) ────────────────────────── */
+	.map-route-times {
+		gap: 0.6rem;
 	}
 	.map-route-time {
 		display: flex;
 		flex-direction: column;
-		gap: 0.5rem;
-		padding: 0.65rem;
-		background: var(--muted);
+		gap: 0.65rem;
+		padding: 0.75rem;
+		background: var(--card);
 		border: 1px solid var(--border-subtle);
-		border-radius: var(--radius-sm);
+		border-radius: var(--radius-md);
+		box-shadow: var(--shadow-card);
 	}
 	.map-route-time header {
 		display: flex;
 		flex-wrap: wrap;
 		align-items: center;
-		gap: 0.45rem;
+		gap: 0.5rem;
+		padding-bottom: 0.55rem;
+		border-bottom: 1px solid var(--border-subtle);
 	}
 	.map-route-time header span {
 		font-size: var(--text-caption);
@@ -893,70 +1126,131 @@
 	.map-time-columns {
 		display: grid;
 		grid-template-columns: repeat(3, minmax(0, 1fr));
-		gap: 0.6rem;
+		gap: 0.75rem;
+	}
+	.map-time-columns h4 {
+		margin-bottom: 0.2rem;
 	}
 	.map-time-columns li {
-		padding: 0.15rem 0;
+		display: flex;
+		align-items: center;
+		gap: 0.4rem;
+		padding: 0.18rem 0;
 		font-family: var(--font-mono);
 		font-size: var(--text-caption);
 		color: var(--foreground);
 	}
+	.map-time-columns li time {
+		font-weight: 600;
+	}
+	/* ── Alerts — severity-coded signage rail ─────────────────── */
 	.map-alerts {
 		display: flex;
 		flex-direction: column;
-		gap: 0.45rem;
+		gap: 0.55rem;
 	}
 	.map-alerts h3 {
+		display: flex;
+		align-items: center;
+		gap: 0.55rem;
 		margin: 0;
 		font-family: var(--font-mono);
-		font-size: var(--text-caption);
+		font-size: var(--text-micro);
+		font-weight: 500;
+		letter-spacing: 0.14em;
 		text-transform: uppercase;
 		color: var(--accent-text);
+	}
+	.map-alerts h3::after {
+		content: '';
+		flex: 1;
+		height: 1px;
+		background: var(--border-subtle);
 	}
 	.map-alerts ul {
 		display: flex;
 		flex-direction: column;
-		gap: 0.35rem;
+		gap: 0.4rem;
 		margin: 0;
 		padding: 0;
 		list-style: none;
 	}
-	.map-alerts li,
-	.map-alerts p {
+	.map-alerts li {
+		--alert-tone: var(--dataviz-severity-high);
+		position: relative;
 		margin: 0;
-		border: 1px solid color-mix(in srgb, var(--dataviz-severity-high) 30%, var(--border) 70%);
-		border-radius: var(--radius-sm);
-		background: color-mix(in srgb, var(--dataviz-severity-high) 10%, transparent);
-		padding: 0.45rem 0.55rem;
+		border: 1px solid color-mix(in srgb, var(--alert-tone) 32%, var(--border) 68%);
+		border-radius: var(--radius-md);
+		background: color-mix(in srgb, var(--alert-tone) 9%, var(--card));
+		padding: 0.5rem 0.6rem 0.5rem 0.85rem;
 		font-size: var(--text-small);
 		color: var(--foreground);
+		overflow: hidden;
+	}
+	/* Severity rail down the leading edge. */
+	.map-alerts li::before {
+		content: '';
+		position: absolute;
+		inset-block: 0;
+		inset-inline-start: 0;
+		width: 3px;
+		background: var(--alert-tone);
+	}
+	.map-alerts li[data-severity='critical'] {
+		--alert-tone: var(--dataviz-severity-critical);
+	}
+	.map-alerts li[data-severity='high'] {
+		--alert-tone: var(--dataviz-severity-high);
+	}
+	.map-alerts li[data-severity='watch'] {
+		--alert-tone: var(--dataviz-severity-watch);
 	}
 	.map-alert-button {
 		display: flex;
-		gap: 0.35rem;
+		gap: 0.5rem;
 		align-items: center;
 		justify-content: space-between;
 		width: 100%;
 		padding: 0;
 		color: inherit;
 		font: inherit;
+		line-height: 1.35;
 		text-align: left;
 		background: transparent;
 		border: 0;
 		cursor: pointer;
+		transition: color var(--duration-fast) var(--ease-out);
+	}
+	.map-alert-button :global(svg) {
+		flex: none;
+		opacity: 0.55;
+		transition:
+			opacity var(--duration-fast) var(--ease-out),
+			transform var(--duration-fast) var(--ease-out);
 	}
 	.map-alert-button:hover {
 		color: var(--primary);
 	}
+	.map-alert-button:hover :global(svg) {
+		opacity: 1;
+		transform: translateX(2px);
+	}
+	/* Empty state — quiet, distinct from an active alert. */
 	.map-alerts p {
-		border-color: var(--border-subtle);
+		margin: 0;
+		border: 1px dashed var(--border-subtle);
+		border-radius: var(--radius-md);
 		background: var(--muted);
+		padding: 0.55rem 0.7rem;
+		font-size: var(--text-small);
 		color: var(--muted-foreground);
 	}
 	@media (max-width: 42rem) {
 		.map-detail-grid div {
 			grid-template-columns: minmax(0, 1fr);
-			gap: 0.2rem;
+			align-items: start;
+			min-height: 0;
+			gap: 0.25rem;
 		}
 		.map-detail-grid dd {
 			white-space: normal;
@@ -965,16 +1259,86 @@
 			align-items: flex-start;
 			white-space: normal;
 		}
+		/* On phones the pill wraps instead of truncating, so the full name reads. */
+		.map-inline-label {
+			overflow: visible;
+			text-overflow: clip;
+			white-space: normal;
+		}
+		.map-stop-action {
+			align-items: start;
+		}
+		.map-stop-action span {
+			padding-top: 0.1rem;
+		}
 		.map-stop-action strong {
 			white-space: normal;
 		}
 		.map-time-columns {
 			grid-template-columns: minmax(0, 1fr);
+			gap: 0.4rem;
+		}
+	}
+	/* Graceful shrink inside the resizable right-panel dock. The viewport media
+	   query above misses the case the user hits most: dragging the dock narrower
+	   while the viewport stays wide. These container queries reflow against the
+	   PANEL'S OWN width (the `right-panel` container the dock declares), so the
+	   detail degrades — stacks, truncates, drops the least-essential text —
+	   instead of clipping or overflowing as the handle is dragged in. */
+	@container right-panel (max-width: 21rem) {
+		.map-detail-grid div {
+			grid-template-columns: minmax(0, 1fr);
+			align-items: start;
+			min-height: 0;
+			gap: 0.25rem;
+		}
+		.map-detail-grid dd {
+			white-space: normal;
+		}
+		.map-inline-action {
+			align-items: flex-start;
+			white-space: normal;
+		}
+		.map-inline-label {
+			overflow: visible;
+			text-overflow: clip;
+			white-space: normal;
+		}
+		.map-stop-action {
+			align-items: start;
+		}
+		.map-stop-action strong {
+			white-space: normal;
+		}
+		/* The verbose status word drops; the coloured delay tag still carries the
+		   state, so the live-bus row stays legible at a narrow width. */
+		.map-vehicle-action .map-status-label {
+			display: none;
+		}
+		.map-time-columns {
+			grid-template-columns: minmax(0, 1fr);
+			gap: 0.4rem;
 		}
 	}
 	@media (prefers-reduced-motion: reduce) {
-		.map-inline-action {
+		.map-inline-action,
+		.map-id-action,
+		.map-stop-action,
+		.map-vehicle-action,
+		.map-alert-button,
+		.map-inline-action :global(svg),
+		.map-id-action :global(svg),
+		.map-stop-action :global(svg),
+		.map-vehicle-action :global(svg),
+		.map-alert-button :global(svg) {
 			transition: none;
+		}
+		.map-inline-action:hover :global(svg),
+		.map-id-action:hover :global(svg),
+		.map-stop-action:hover :global(svg),
+		.map-vehicle-action:hover :global(svg),
+		.map-alert-button:hover :global(svg) {
+			transform: none;
 		}
 	}
 </style>

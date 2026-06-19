@@ -169,8 +169,14 @@ describe('TopBar search results', () => {
 
 	it('uses a mobile-only compact navigation menu without duplicating the desktop rail', () => {
 		const source = readSource();
+		// The brand cluster (yesid. mark · divider · transit home) + its ≤760px
+		// collapse were extracted into the shared BrandCluster.svelte primitive
+		// (Wave 4 chrome de-dup). The invariants below (brand-mark present, brand-
+		// mark + divider hide ≤760px, product never fully hidden) are unchanged —
+		// they are now verified at their new home.
+		const brand = readBrandClusterSource();
 
-		expect(source).toContain('class="topbar-brand-mark"');
+		expect(brand).toContain('class="topbar-brand-mark"');
 		expect(source).toMatch(/class="tap-press topbar-menu-toggle md:hidden"/);
 		expect(source).toMatch(/\.topbar-mobile-menu\s*\{[\s\S]*position:\s*absolute/);
 		expect(source).toMatch(/\.topbar-mobile-menu\s*\{[\s\S]*right:\s*0\.75rem/);
@@ -180,10 +186,10 @@ describe('TopBar search results', () => {
 		expect(source).not.toContain('class="topbar-mobile-menu-content"');
 		expect(source).not.toContain('class="topbar-mobile-menu-stop');
 		expect(source).not.toContain('class="topbar-mobile-menu-line');
-		expect(source).toMatch(
+		expect(brand).toMatch(
 			/@media \(max-width:\s*760px\)[\s\S]*\.topbar-brand-mark\s*\{[\s\S]*display:\s*none/,
 		);
-		expect(source).toMatch(
+		expect(brand).toMatch(
 			/@media \(max-width:\s*760px\)[\s\S]*\.topbar-divider\s*\{[\s\S]*display:\s*none/,
 		);
 		expect(source).not.toMatch(
@@ -192,7 +198,7 @@ describe('TopBar search results', () => {
 		expect(source).toMatch(
 			/\.topbar-mobile-house-wordmark\s*\{[\s\S]*display:\s*inline-flex[\s\S]*white-space:\s*nowrap/,
 		);
-		expect(source).not.toMatch(
+		expect(brand).not.toMatch(
 			/@media \(max-width:\s*400px\)[\s\S]*\.topbar-product\s*\{[\s\S]*display:\s*none/,
 		);
 		expect(source).toContain('data-slot="topbar-mobile-menu-toggle"');
@@ -201,4 +207,11 @@ describe('TopBar search results', () => {
 
 function readSource(): string {
 	return readFileSync(resolve(process.cwd(), 'src/lib/components/shell/TopBar.svelte'), 'utf-8');
+}
+
+function readBrandClusterSource(): string {
+	return readFileSync(
+		resolve(process.cwd(), 'src/lib/components/brand/BrandCluster.svelte'),
+		'utf-8',
+	);
 }

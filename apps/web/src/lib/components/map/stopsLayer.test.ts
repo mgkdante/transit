@@ -55,7 +55,7 @@ describe('addStopsLayer', () => {
 			stops: new Set(),
 			trips: new Set(),
 			vehicles: new Set(),
-			entities: ['bus_direction'],
+			entities: ['bus'],
 		} as unknown as FilterState;
 
 		expect(
@@ -91,7 +91,7 @@ describe('addStopsLayer', () => {
 			trips: new Set(),
 			vehicles: new Set(),
 			alerts: ['has_alert'],
-			entities: ['bus_direction'],
+			entities: ['bus'],
 		} as unknown as FilterState;
 
 		expect(

@@ -52,11 +52,11 @@ describe('minimalDarkStyle (no-basemap honesty state)', () => {
 		expect(light.name).toBe('transit-minimal-light');
 		expect(light.layers[0]).toMatchObject({
 			id: 'background',
-			paint: { 'background-color': '#F7F2E9' },
+			paint: { 'background-color': '#F3F6FB' },
 		});
 		expect(light.layers[1]).toMatchObject({
 			id: 'graticule',
-			paint: { 'line-color': '#6E6557' },
+			paint: { 'line-color': '#545E75' },
 		});
 	});
 });
@@ -564,8 +564,8 @@ describe('vectorStyleFromBasemap (Protomaps schema)', () => {
 		const light = vectorStyleFromBasemap(FILE, 'light');
 		expect(light.layers.find((l) => l.id === 'roads-major-labels')).toMatchObject({
 			paint: {
-				'text-color': '#5F574C',
-				'text-halo-color': '#F7F2E9',
+				'text-color': '#454F63',
+				'text-halo-color': '#F3F6FB',
 				'text-halo-width': 1.25,
 			},
 		});
@@ -576,10 +576,10 @@ describe('vectorStyleFromBasemap (Protomaps schema)', () => {
 		expect(light.name).toBe('transit-basemap-light');
 		expect(light.layers[0]).toMatchObject({
 			id: 'background',
-			paint: { 'background-color': '#F7F2E9' },
+			paint: { 'background-color': '#F3F6FB' },
 		});
 		expect(light.layers.find((l) => l.id === 'earth')).toMatchObject({
-			paint: { 'fill-color': '#F2E9D8' },
+			paint: { 'fill-color': '#F9FAFD' },
 		});
 		expect(light.layers.find((l) => l.id === 'water')).toMatchObject({
 			type: 'line',
@@ -595,12 +595,12 @@ describe('vectorStyleFromBasemap (Protomaps schema)', () => {
 			},
 		});
 		expect(light.layers.find((l) => l.id === 'roads-major')).toMatchObject({
-			paint: { 'line-color': '#6E6557' },
+			paint: { 'line-color': '#545E75' },
 		});
 		expect(light.layers.find((l) => l.id === 'roads-major-labels')).toMatchObject({
 			paint: {
-				'text-color': '#5F574C',
-				'text-halo-color': '#F7F2E9',
+				'text-color': '#454F63',
+				'text-halo-color': '#F3F6FB',
 			},
 		});
 		expect(light.layers.find((l) => l.id === 'landuse-green')).toMatchObject({
@@ -664,30 +664,30 @@ describe('applyBasemapTheme', () => {
 
 		applyBasemapTheme(map, 'light');
 
-		expect(calls).toContainEqual(['background', 'background-color', '#F7F2E9']);
-		expect(calls).toContainEqual(['earth', 'fill-color', '#F2E9D8']);
+		expect(calls).toContainEqual(['background', 'background-color', '#F3F6FB']);
+		expect(calls).toContainEqual(['earth', 'fill-color', '#F9FAFD']);
 		expect(calls).toContainEqual(['water', 'line-color', '#CFE1E6']);
 		expect(calls).not.toContainEqual(['water', 'fill-color', '#CFE1E6']);
 		expect(calls).toContainEqual(['landuse-green', 'fill-color', '#DCE8CC']);
 		expect(calls).toContainEqual(['water-edge', 'line-color', '#7CA7B2']);
-		expect(calls).toContainEqual(['roads-casing', 'line-color', '#E5DAC7']);
-		expect(calls).toContainEqual(['roads-tunnel', 'line-color', '#C9BCA1']);
-		expect(calls).toContainEqual(['roads-link', 'line-color', '#C9BCA1']);
-		expect(calls).toContainEqual(['roads-major', 'line-color', '#6E6557']);
-		expect(calls).toContainEqual(['roads-bridge', 'line-color', '#8D806E']);
-		expect(calls).toContainEqual(['places-city-labels', 'text-color', '#4F4A42']);
-		expect(calls).toContainEqual(['places-neighbourhood-labels', 'text-color', '#4F4A42']);
-		expect(calls).toContainEqual(['places-locality-labels', 'text-color', '#4F4A42']);
+		expect(calls).toContainEqual(['roads-casing', 'line-color', '#DCE3EE']);
+		expect(calls).toContainEqual(['roads-tunnel', 'line-color', '#B5BECD']);
+		expect(calls).toContainEqual(['roads-link', 'line-color', '#B5BECD']);
+		expect(calls).toContainEqual(['roads-major', 'line-color', '#545E75']);
+		expect(calls).toContainEqual(['roads-bridge', 'line-color', '#7C8395']);
+		expect(calls).toContainEqual(['places-city-labels', 'text-color', '#2E3647']);
+		expect(calls).toContainEqual(['places-neighbourhood-labels', 'text-color', '#2E3647']);
+		expect(calls).toContainEqual(['places-locality-labels', 'text-color', '#2E3647']);
 		expect(calls).toContainEqual(['poi-park-icons', 'circle-color', '#4F744F']);
 		expect(calls).toContainEqual(['poi-landmark-icons', 'circle-color', '#7A6642']);
 		expect(calls).toContainEqual(['poi-park-labels', 'text-color', '#4F744F']);
 		expect(calls).toContainEqual(['poi-landmark-labels', 'text-color', '#7A6642']);
-		expect(calls).toContainEqual(['road-shields', 'text-color', '#F7F2E9']);
-		expect(calls).toContainEqual(['road-shields', 'text-halo-color', '#4F4A42']);
-		expect(calls).toContainEqual(['roads-major-labels', 'text-color', '#5F574C']);
-		expect(calls).toContainEqual(['roads-major-labels', 'text-halo-color', '#F7F2E9']);
-		expect(calls).toContainEqual(['roads-minor-labels', 'text-color', '#5F574C']);
-		expect(calls).toContainEqual(['roads-minor-labels', 'text-halo-color', '#F7F2E9']);
+		expect(calls).toContainEqual(['road-shields', 'text-color', '#F3F6FB']);
+		expect(calls).toContainEqual(['road-shields', 'text-halo-color', '#454F63']);
+		expect(calls).toContainEqual(['roads-major-labels', 'text-color', '#454F63']);
+		expect(calls).toContainEqual(['roads-major-labels', 'text-halo-color', '#F3F6FB']);
+		expect(calls).toContainEqual(['roads-minor-labels', 'text-color', '#454F63']);
+		expect(calls).toContainEqual(['roads-minor-labels', 'text-halo-color', '#F3F6FB']);
 	});
 
 	it('skips missing layers so the no-basemap fallback stays safe', () => {

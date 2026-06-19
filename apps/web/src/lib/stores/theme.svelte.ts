@@ -18,11 +18,11 @@ export type Theme = 'dark' | 'light';
  * Address-bar / PWA surface colour per theme. These mirror the resolved
  * --background token for each theme:
  *   dark  -> #141414 (near-black board)
- *   light -> #F7F2E9 (warm station paper)
+ *   light -> #F3F6FB (cool-slate paper)
  */
 const THEME_SURFACE: Record<Theme, string> = {
 	dark: '#141414',
-	light: '#F7F2E9',
+	light: '#F3F6FB',
 };
 
 /** Read the theme the pre-paint script applied to <html data-theme>. */
