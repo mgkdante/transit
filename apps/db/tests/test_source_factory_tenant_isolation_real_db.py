@@ -40,8 +40,9 @@ PROVIDER_B = "mpp_iso_b"
 def _seed_provider(connection: Connection, provider_id: str) -> None:
     connection.execute(
         text(
-            "INSERT INTO core.providers (provider_id, display_name, timezone) "
-            "VALUES (:pid, :name, 'America/Toronto')"
+            "INSERT INTO core.providers "
+            "(provider_id, provider_key, display_name, timezone) "
+            "VALUES (:pid, :pid, :name, 'America/Toronto')"
         ),
         {"pid": provider_id, "name": f"Isolation {provider_id}"},
     )
