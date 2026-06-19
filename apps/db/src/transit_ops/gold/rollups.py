@@ -106,6 +106,11 @@ UPSERT_VEHICLE_SUMMARY_5M = text(
         :built_at_utc
     FROM gold.fact_vehicle_snapshot
     WHERE provider_id = :provider_id
+      -- Sargable range bound (logically identical to the DATE_BIN bin, but
+      -- index-usable on (provider_id, captured_at_utc)) so a per-period upsert is
+      -- an index range scan of one 5-min slice, NOT a full seq scan of the fact.
+      AND captured_at_utc >= :period_start_utc
+      AND captured_at_utc < :period_start_utc + INTERVAL '5 minutes'
       AND DATE_BIN('5 minutes', captured_at_utc, TIMESTAMPTZ '2000-01-01') = :period_start_utc
     GROUP BY 1, 2, 3
     ON CONFLICT (provider_id, period_start_utc, route_id) DO UPDATE SET
@@ -148,6 +153,11 @@ UPSERT_OCCUPANCY_SUMMARY_5M = text(
         :built_at_utc
     FROM gold.fact_vehicle_snapshot
     WHERE provider_id = :provider_id
+      -- Sargable range bound (logically identical to the DATE_BIN bin, but
+      -- index-usable on (provider_id, captured_at_utc)) so a per-period upsert is
+      -- an index range scan of one 5-min slice, NOT a full seq scan of the fact.
+      AND captured_at_utc >= :period_start_utc
+      AND captured_at_utc < :period_start_utc + INTERVAL '5 minutes'
       AND DATE_BIN('5 minutes', captured_at_utc, TIMESTAMPTZ '2000-01-01') = :period_start_utc
     GROUP BY 1, 2, 3
     ON CONFLICT (provider_id, period_start_utc, route_id) DO UPDATE SET
@@ -203,6 +213,11 @@ UPSERT_TRIP_DELAY_SUMMARY_5M = text(
         :built_at_utc
     FROM gold.fact_trip_delay_snapshot
     WHERE provider_id = :provider_id
+      -- Sargable range bound (logically identical to the DATE_BIN bin, but
+      -- index-usable on (provider_id, captured_at_utc)) so a per-period upsert is
+      -- an index range scan of one 5-min slice, NOT a full seq scan of the fact.
+      AND captured_at_utc >= :period_start_utc
+      AND captured_at_utc < :period_start_utc + INTERVAL '5 minutes'
       AND DATE_BIN('5 minutes', captured_at_utc, TIMESTAMPTZ '2000-01-01') = :period_start_utc
     GROUP BY 1, 2, 3
     ON CONFLICT (provider_id, period_start_utc, route_id) DO UPDATE SET
