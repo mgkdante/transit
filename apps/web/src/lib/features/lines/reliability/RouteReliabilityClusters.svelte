@@ -29,6 +29,7 @@
 	import { cn } from '$lib/utils';
 	import type { Locale } from '$lib/i18n';
 	import type { RouteReliability } from '$lib/v1';
+	import { SvelteSet } from 'svelte/reactivity';
 	import { toReliabilityClusters } from './clusters';
 	import { reliabilityCopy } from './reliability.copy';
 	import SnapshotStrip from './SnapshotStrip.svelte';
@@ -97,7 +98,7 @@
 	// grain segment that resolves to nothing (an empty grain is disabled, not a
 	// silent no-op). The mapper still falls back honestly if reached.
 	const availableGrains = $derived.by<Set<string>>(() => {
-		const set = new Set<string>();
+		const set = new SvelteSet<string>();
 		for (const p of data.periods ?? []) {
 			if (p.grain === 'day' || p.grain === 'week' || p.grain === 'month') set.add(p.grain);
 		}

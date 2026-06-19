@@ -57,7 +57,7 @@
 		grain?: string;
 	}
 
-	let { vm, locale, copy, grain = 'day' }: Cluster01PunctualityProps = $props();
+	let { vm, locale, copy }: Cluster01PunctualityProps = $props();
 
 	const NO_DATA = '·';
 

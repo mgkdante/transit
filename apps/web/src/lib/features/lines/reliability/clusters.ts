@@ -219,8 +219,6 @@ const num = (v: number | null | undefined): number | null => (v == null ? null :
 const SHIFT_GRAINS = new Set(['am_peak', 'midday', 'pm_peak', 'evening', 'night']);
 /** The day-type grains the contract emits (gold.route_delay_by_daytype). */
 const DAY_TYPE_GRAINS = new Set(['weekday', 'weekend']);
-/** The dated calendar grains the headline strip selects against. */
-const CALENDAR_GRAINS = new Set(['day', 'week', 'month']);
 
 /** A reliability period carries a signal if any of its numeric fields is present. */
 const periodHasSignal = (p: ReliabilityPeriod): boolean =>
