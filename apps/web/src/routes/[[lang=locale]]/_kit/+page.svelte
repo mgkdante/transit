@@ -297,8 +297,13 @@
 				<SectionLabel text="SPARKLINE" variant="metric" />
 				<Sparkline
 					values={sparkSeries}
+					width={220}
+					height={48}
 					label="On-time % · 10 builds"
 					colorVar={statusVar('on_time')}
+					yAxis={{ label: lang === 'fr' ? 'À l’heure %' : 'On-time %', unit: '%' }}
+					xLabels={sparkSeries.map((_, i) => `#${i + 1}`)}
+					showYTicks
 					interactive
 				/>
 			</div>
@@ -309,6 +314,19 @@
 					retard={trendRetard}
 					onTimeLabel={lang === 'fr' ? 'À l’heure %' : 'On-time %'}
 					retardLabel={lang === 'fr' ? 'Retard %' : 'Delayed %'}
+					xLabels={trendOnTime.map((_, i) => (lang === 'fr' ? `J${i + 1}` : `D${i + 1}`))}
+					yAxis={{
+						label: lang === 'fr' ? 'À l’heure %' : 'On-time %',
+						unit: '%',
+						domain: [0, 100],
+					}}
+					retardAxis={{
+						label: lang === 'fr' ? 'Retard %' : 'Delayed %',
+						unit: '%',
+						domain: [0, 100],
+					}}
+					showYTicks
+					showXTicks
 					label="7-day trend"
 					interactive
 				/>
@@ -321,6 +339,8 @@
 					unit="min"
 					label={lang === 'fr' ? 'Retard' : 'Delay'}
 					fillVar={statusVar('late')}
+					showAxis
+					axisLabel={lang === 'fr' ? 'Retard (min)' : 'Delay (min)'}
 					interactive
 				/>
 			</div>
@@ -390,7 +410,7 @@
 						subtitle="Sherbrooke O."
 						severity="watch"
 						value={null}
-						display="—"
+						display="·"
 						delta={null}
 					/>
 				</div>
@@ -432,9 +452,9 @@
 					{ label: 'ms', value: '42' },
 				]}
 			>
-				<pre class="kit-term">route 165 — on_time 0.82
-stop 51234 — next 3 min
-vehicle 40231 — occupancy LOW</pre>
+				<pre class="kit-term">route 165 · on_time 0.82
+stop 51234 · next 3 min
+vehicle 40231 · occupancy LOW</pre>
 			</TerminalChrome>
 
 			<StickyPanel top="1rem">
@@ -464,14 +484,14 @@ vehicle 40231 — occupancy LOW</pre>
 				/>
 				<div class="kit-stack">
 					<Surface width="content" pad="none" gutter={false} class="kit-surface-demo">
-						<span class="kit-surface-label">content — var(--container-content)</span>
+						<span class="kit-surface-label">content · var(--container-content)</span>
 					</Surface>
 					<Surface width="wide" pad="none" gutter={false} class="kit-surface-demo">
-						<span class="kit-surface-label">wide — var(--container-wide)</span>
+						<span class="kit-surface-label">wide · var(--container-wide)</span>
 					</Surface>
 					<Surface width="bleed" pad="none" gutter={false} class="kit-surface-demo">
 						<span class="kit-surface-label"
-							>{lang === 'fr' ? 'bleed — pleine largeur' : 'bleed — edge-to-edge'}</span
+							>{lang === 'fr' ? 'bleed · pleine largeur' : 'bleed · edge-to-edge'}</span
 						>
 					</Surface>
 				</div>

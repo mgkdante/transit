@@ -74,7 +74,7 @@
 
 	// og:image — the pre-built default card for this locale.
 	const ogImage = $derived(`${siteOrigin}/og/${locale}.png`);
-	const ogImageAlt = $derived(`${siteName} — ${title}`);
+	const ogImageAlt = $derived(`${siteName}: ${title}`);
 
 	// og:locale uses BCP-47-ish underscore form (Montréal market → _CA).
 	const ogLocale = $derived(`${locale}_CA`);
@@ -91,7 +91,7 @@
 		if (!dev) return;
 		if (fullTitle.length > 60) {
 			console.warn(
-				`[SeoHead] title > 60 chars (${fullTitle.length}) — may truncate in search. path: ${path}`,
+				`[SeoHead] title > 60 chars (${fullTitle.length}), may truncate in search. path: ${path}`,
 			);
 		}
 		if (description.length < 120 || description.length > 160) {

@@ -15,6 +15,7 @@
 	import { cn } from '$lib/utils';
 	import { type Locale } from '$lib/i18n';
 	import { formatRelativeSeconds } from '$lib/utils/time';
+	import { sharedClock } from '$lib/stores';
 	import StatusDot from '$lib/components/brand/StatusDot.svelte';
 
 	interface LiveFreshnessProps {
@@ -37,6 +38,13 @@
 		locale,
 		class: className,
 	}: LiveFreshnessProps = $props();
+
+	// Keep the ONE shared clock alive while this chip is on screen so its relative
+	// age ticks in lockstep with every other time label in the chrome (the TopBar
+	// refresh chip, etc.). The age itself is supplied by the caller (the live store,
+	// whose `ageSeconds` already re-derives off this same clock); subscribing here
+	// guarantees the tick keeps running for as long as a freshness chip is visible.
+	$effect(() => sharedClock.subscribe());
 
 	type Labels = { readonly live: string; readonly stale: string; readonly unknown: string };
 	const L: Record<Locale, Labels> = {

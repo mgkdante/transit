@@ -41,6 +41,17 @@ export interface ExternalNavLink {
 }
 
 /**
+ * A secondary IN-APP reference link (not a primary wayfinding surface). Locale-
+ * LESS href, localized at render like SURFACE_NAV. Kept OUT of SURFACE_NAV so the
+ * 4-item rail + its `key`/icon union stay untouched — these are reference pages
+ * (e.g. the metric explainer), surfaced in the footer, not the rail.
+ */
+export interface SecondaryNavLink {
+	readonly href: string;
+	readonly label: BilingualLabel;
+}
+
+/**
  * The primary surfaces, in wayfinding order: the live map hub first, then the
  * per-line and per-stop catalogues, then the network-health / data-trust surface.
  * These are the REAL shipped routes (verified against src/routes).
@@ -79,6 +90,15 @@ export const SURFACE_NAV: readonly SurfaceNavItem[] = [
 /** Off-site links — the portfolio at yesid.dev. */
 export const MENU_EXTRAS: readonly ExternalNavLink[] = [
 	{ href: 'https://yesid.dev', label: { en: 'yesid.dev', fr: 'yesid.dev' } },
+] as const;
+
+/**
+ * Secondary in-app reference links — surfaced in the footer, not the primary
+ * rail. The metric explainer (/metrics) lives here: it is a site-wide
+ * methodology reference every surface deep-links into, not a wayfinding surface.
+ */
+export const SECONDARY_NAV: readonly SecondaryNavLink[] = [
+	{ href: '/metrics', label: { en: 'How we measure', fr: 'Comment on mesure' } },
 ] as const;
 
 /**

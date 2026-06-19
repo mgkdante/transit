@@ -27,6 +27,8 @@ export interface StopsIndexCopy extends SurfaceHeadCopy {
 export interface StopDetailCopy {
 	/** Station-voice kicker (EntityDetail). */
 	readonly kicker: string;
+	/** Back-link label into the stops index ("← Stops"), keeps nav in-chrome. */
+	readonly back: string;
 	/** Live-map drilldown action. */
 	readonly viewOnMap: string;
 	readonly viewStopOnMap: (stop: string) => string;
@@ -83,7 +85,7 @@ export const indexCopy: Record<Locale, StopsIndexCopy> = {
 		searchLabel: 'Rechercher un arrêt',
 		searchPrompt: 'Commencez à taper pour filtrer les arrêts.',
 		noMatches: 'Aucun arrêt ne correspond à cette recherche.',
-		more: (n) => `+${n} autres arrêts — affinez la recherche`,
+		more: (n) => `+${n} autres arrêts, affinez la recherche`,
 		mapAction: 'Carte',
 		viewStopOnMap: (stop) => `Voir l’arrêt ${stop} sur la carte`,
 	},
@@ -96,7 +98,7 @@ export const indexCopy: Record<Locale, StopsIndexCopy> = {
 		searchLabel: 'Search stops',
 		searchPrompt: 'Start typing to filter stops.',
 		noMatches: 'No stops match this search.',
-		more: (n) => `+${n} more stops — refine the search`,
+		more: (n) => `+${n} more stops, refine the search`,
 		mapAction: 'Map',
 		viewStopOnMap: (stop) => `View stop ${stop} on map`,
 	},
@@ -105,6 +107,7 @@ export const indexCopy: Record<Locale, StopsIndexCopy> = {
 export const detailCopy: Record<Locale, StopDetailCopy> = {
 	fr: {
 		kicker: 'ARRÊT',
+		back: 'Arrêts',
 		viewOnMap: 'Voir sur la carte',
 		viewStopOnMap: (stop) => `Voir l’arrêt ${stop} sur la carte`,
 		tabs: { next: 'Prochains', schedule: 'Horaire', info: 'Info', reliability: 'Fiabilité' },
@@ -136,6 +139,7 @@ export const detailCopy: Record<Locale, StopDetailCopy> = {
 	},
 	en: {
 		kicker: 'STOP',
+		back: 'Stops',
 		viewOnMap: 'View on map',
 		viewStopOnMap: (stop) => `View stop ${stop} on map`,
 		tabs: { next: 'Next', schedule: 'Schedule', info: 'Info', reliability: 'Reliability' },

@@ -51,7 +51,7 @@ export const copy: Record<Locale, NetworkCopy> = {
 	en: {
 		kicker: 'NETWORK · LIVE',
 		heading: 'Network health',
-		lede: 'Live network-wide on-time performance, crowding and feed freshness — measured from the /v1 contract. We never invent data: a missing signal shows as “no data”, not a fabricated zero.',
+		lede: 'Live network-wide on-time performance, crowding and feed freshness, measured from the /v1 contract. We never invent data: a missing signal shows as “no data”, not a fabricated zero.',
 		liveSection: 'Live now',
 		trendSection: 'Daily trend',
 		statusSection: 'Status mix',
@@ -76,7 +76,7 @@ export const copy: Record<Locale, NetworkCopy> = {
 	fr: {
 		kicker: 'RÉSEAU · EN DIRECT',
 		heading: 'Santé du réseau',
-		lede: 'Ponctualité, achalandage et fraîcheur du flux à l’échelle du réseau — mesurés à partir du contrat /v1. On n’invente jamais de données : un signal absent s’affiche « aucune donnée », jamais un zéro fabriqué.',
+		lede: 'Ponctualité, achalandage et fraîcheur du flux à l’échelle du réseau, mesurés à partir du contrat /v1. On n’invente jamais de données : un signal absent s’affiche « aucune donnée », jamais un zéro fabriqué.',
 		liveSection: 'En direct',
 		trendSection: 'Tendance quotidienne',
 		statusSection: 'Répartition des statuts',

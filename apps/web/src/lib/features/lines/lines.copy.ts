@@ -23,6 +23,8 @@ export interface LinesIndexCopy extends SurfaceHeadCopy {
 export interface RouteDetailCopy {
 	/** Station-voice overline above the line heading. */
 	readonly kicker: string;
+	/** Back-link label into the lines index ("← Lines"), keeps nav in-chrome. */
+	readonly back: string;
 	/** Tab labels, keyed by the EntityDetail tab key. */
 	readonly tabs: {
 		readonly detail: string;
@@ -68,13 +70,23 @@ export interface RouteDetailCopy {
 	readonly lastTripDelay: string;
 	/** a11y trend summary builder: "… over the last N days". */
 	readonly lastNDays: (n: number) => string;
+	/** Detail-tab live per-stop readout (derived from the live trips on this route). */
+	readonly noLiveBus: string;
+	/** Shown when a bus is heading to this stop but the feed gave no precise ETA. */
+	readonly approaching: string;
+	readonly viewStop: (stop: string) => string;
+	/** Delay-tone labels reused for the approaching bus's on-time status. */
+	readonly early: (minutes: number) => string;
+	readonly late: (minutes: number) => string;
+	readonly onTime: string;
+	readonly noDelay: string;
 }
 
 export const indexCopy: Record<Locale, LinesIndexCopy> = {
 	fr: {
 		kicker: 'LIGNES · RÉSEAU',
 		heading: 'Lignes',
-		lede: 'Toutes les lignes du réseau — détail du parcours, horaire et fiabilité historique par ligne. Mesuré à partir du contrat /v1.',
+		lede: 'Toutes les lignes du réseau, détail du parcours, horaire et fiabilité historique par ligne. Mesuré à partir du contrat /v1.',
 		filterLabel: 'Filtrer les lignes',
 		filterPlaceholder: 'Numéro ou nom de ligne…',
 		mapAction: 'Carte',
@@ -84,7 +96,7 @@ export const indexCopy: Record<Locale, LinesIndexCopy> = {
 	en: {
 		kicker: 'LINES · NETWORK',
 		heading: 'Lines',
-		lede: 'Every line on the network — per-line route detail, schedule and historic reliability. Measured from the /v1 contract.',
+		lede: 'Every line on the network, per-line route detail, schedule and historic reliability. Measured from the /v1 contract.',
 		filterLabel: 'Filter lines',
 		filterPlaceholder: 'Line number or name…',
 		mapAction: 'Map',
@@ -96,6 +108,7 @@ export const indexCopy: Record<Locale, LinesIndexCopy> = {
 export const detailCopy: Record<Locale, RouteDetailCopy> = {
 	fr: {
 		kicker: 'LIGNE',
+		back: 'Lignes',
 		tabs: { detail: 'Détail', schedule: 'Horaire', reliability: 'Fiabilité' },
 		viewOnMap: 'Voir sur la carte',
 		viewRouteOnMap: (route) => `Voir la ligne ${route} sur la carte`,
@@ -132,9 +145,17 @@ export const detailCopy: Record<Locale, RouteDetailCopy> = {
 		firstTripDelay: 'Retard 1er trajet',
 		lastTripDelay: 'Retard dernier trajet',
 		lastNDays: (n) => `sur les ${n} derniers jours`,
+		noLiveBus: 'Aucun bus en direct',
+		approaching: 'À l’approche',
+		viewStop: (stop) => `Voir l’arrêt ${stop}`,
+		early: (minutes) => `${Math.abs(minutes)} min en avance`,
+		late: (minutes) => `${minutes} min en retard`,
+		onTime: "À l'heure",
+		noDelay: 'Aucun retard',
 	},
 	en: {
 		kicker: 'LINE',
+		back: 'Lines',
 		tabs: { detail: 'Detail', schedule: 'Schedule', reliability: 'Reliability' },
 		viewOnMap: 'View on map',
 		viewRouteOnMap: (route) => `View route ${route} on map`,
@@ -145,7 +166,7 @@ export const detailCopy: Record<Locale, RouteDetailCopy> = {
 		direction: (dir) => `Direction ${dir}`,
 		stopsCount: (n) => (n === 1 ? '1 stop' : `${n} stops`),
 		window: 'Window',
-		headway: 'Headway',
+		headway: 'Time between buses',
 		firstDeparture: 'First departure',
 		lastDeparture: 'Last departure',
 		scheduled: 'Scheduled',
@@ -171,5 +192,12 @@ export const detailCopy: Record<Locale, RouteDetailCopy> = {
 		firstTripDelay: 'First-trip delay',
 		lastTripDelay: 'Last-trip delay',
 		lastNDays: (n) => `over the last ${n} days`,
+		noLiveBus: 'No live bus',
+		approaching: 'Approaching',
+		viewStop: (stop) => `View stop ${stop}`,
+		early: (minutes) => `${Math.abs(minutes)} min early`,
+		late: (minutes) => `${minutes} min late`,
+		onTime: 'On time',
+		noDelay: 'No delay',
 	},
 };

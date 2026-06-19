@@ -20,7 +20,7 @@
 -->
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { getLocale, type Locale } from '$lib/i18n';
+	import { getLocale, localizeHref, type Locale } from '$lib/i18n';
 	import {
 		getStop,
 		getStopReliability,
@@ -115,7 +115,12 @@
 	}
 </script>
 
-<EntityDetail kicker={t.kicker} {tabs} bind:active>
+<EntityDetail
+	kicker={t.kicker}
+	back={{ href: localizeHref('/stops', locale), label: t.back }}
+	{tabs}
+	bind:active
+>
 	{#snippet header()}
 		<div class="stop-detail-head">
 			<StopLabel stop={id} label={stop.data?.name ?? `#${id}`} />
@@ -251,7 +256,7 @@
 											<li class="stop-reliability-route">
 												<span class="stop-reliability-route-code">{br.route}</span>
 												<span class="stop-reliability-route-delay">
-													{br.avg_delay_min == null ? '—' : `${br.avg_delay_min.toFixed(1)} min`}
+													{br.avg_delay_min == null ? '·' : `${br.avg_delay_min.toFixed(1)} min`}
 												</span>
 											</li>
 										{/each}

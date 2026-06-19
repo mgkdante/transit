@@ -196,8 +196,16 @@
 						onTime={series.onTime}
 						retard={series.retard}
 						retardDomain={series.retardDomain}
+						xLabels={(data.series ?? []).map((p) => p.date)}
 						onTimeLabel={t.trend.onTimeLabel}
 						retardLabel={t.trend.retardLabel}
+						yAxis={{ label: t.trend.onTimeLabel, unit: t.units.pct, domain: [0, 100] }}
+						retardAxis={{
+							label: t.trend.retardLabel,
+							unit: t.units.min,
+							domain: series.retardDomain,
+						}}
+						showYTicks
 						label={t.trend.summary}
 						interactive
 					/>

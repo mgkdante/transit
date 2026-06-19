@@ -1,10 +1,10 @@
 <!--
-  ReliabilityPane — shared reliability readout for the route + stop surfaces.
+  ReliabilityPane, shared reliability readout for the route + stop surfaces.
 
   Route reliability and stop reliability differ in raw shape, so this primitive
   takes a NORMALIZED view-model (ReliabilityPeriodVM[]) the caller maps into. It
   renders, per period, a small card with the on-time %, the delay (avg|median),
-  an optional p90, and a severe-share bar — plus a Sparkline of OTP across the
+  an optional p90, and a severe-share bar, plus a Sparkline of OTP across the
   periods as an at-a-glance trend.
 
   DOCTRINE: every data mark rides the dataviz scale (Sparkline / SeverityBar);
@@ -26,7 +26,7 @@
 		grain: string;
 		/** On-time share as a percent [0,100], or null when unmeasured. */
 		otpPct: number | null;
-		/** Delay in minutes — a mean or a true percentile per `delayKind`. */
+		/** Delay in minutes, a mean or a true percentile per `delayKind`. */
 		delayMin: number | null;
 		/**
 		 * Per-period override of the delay caption; falls back to the
@@ -45,7 +45,7 @@
 		periods: readonly ReliabilityPeriodVM[];
 		/** UI language for the intrinsic domain labels. */
 		locale: Locale;
-		/** Whether `delayMin` is an average or a median — drives the delay caption. */
+		/** Whether `delayMin` is an average or a median, drives the delay caption. */
 		delayLabelKind?: 'avg' | 'median';
 		/** Optional extra classes on the root. */
 		class?: string;
@@ -58,14 +58,18 @@
 		class: className,
 	}: ReliabilityPaneProps = $props();
 
-	/* Intrinsic domain vocabulary — FR is the canonical product voice. */
+	/* Intrinsic domain vocabulary, FR is the canonical product voice. */
 	type Labels = {
 		readonly otp: string;
 		readonly delayAvg: string;
 		readonly delayMedian: string;
 		readonly p90: string;
+		/** Plain caption under the p90 tile (what "p90" means to a rider). */
+		readonly p90Caption: string;
 		readonly severe: string;
 		readonly trend: string;
+		/** Unit suffix for the OTP sparkline tooltip value (axis metadata). */
+		readonly unitPct: string;
 	};
 	const L: Record<Locale, Labels> = {
 		fr: {
@@ -73,26 +77,30 @@
 			delayAvg: 'Retard moyen',
 			delayMedian: 'Retard médian',
 			p90: 'p90',
-			severe: 'Part sévère',
+			p90Caption: '10 % les plus lents',
+			severe: 'Retards majeurs',
 			trend: 'Tendance ponctualité',
+			unitPct: '%',
 		},
 		en: {
 			otp: 'On-time %',
 			delayAvg: 'Avg delay',
 			delayMedian: 'Median delay',
 			p90: 'p90',
-			severe: 'Severe share',
+			p90Caption: 'Slowest 10% of trips',
+			severe: 'Major delays',
 			trend: 'On-time trend',
+			unitPct: '%',
 		},
 	};
 	const t = $derived(L[locale]);
 
 	const delayLabel = $derived(delayLabelKind === 'median' ? t.delayMedian : t.delayAvg);
 
-	const fmtPct = (v: number | null) => (v == null ? '—' : `${Math.round(v)}%`);
-	const fmtMin = (v: number | null | undefined) => (v == null ? '—' : `${v.toFixed(1)} min`);
+	const fmtPct = (v: number | null) => (v == null ? '·' : `${Math.round(v)}%`);
+	const fmtMin = (v: number | null | undefined) => (v == null ? '·' : `${v.toFixed(1)} min`);
 
-	// OTP series across periods — drives the trend sparkline (dataviz scale).
+	// OTP series across periods, drives the trend sparkline (dataviz scale).
 	const otpSeries = $derived(periods.map((p) => p.otpPct));
 </script>
 
@@ -114,7 +122,12 @@
 							size="sm"
 						/>
 						{#if period.p90Min != null}
-							<MetricDisplay value={fmtMin(period.p90Min)} label={t.p90} size="sm" />
+							<MetricDisplay
+								value={fmtMin(period.p90Min)}
+								label={t.p90}
+								sublabel={t.p90Caption}
+								size="sm"
+							/>
 						{/if}
 					</div>
 					{#if period.severePct != null}
@@ -123,7 +136,7 @@
 							<SeverityBar
 								severity="watch"
 								value={period.severePct / 100}
-								label={`${period.grain} — ${t.severe}`}
+								label={`${period.grain}, ${t.severe}`}
 								interactive
 							/>
 						</div>
@@ -135,7 +148,15 @@
 		{#if otpSeries.length > 1}
 			<div class="reliability-trend">
 				<SectionLabel text={t.trend} variant="metric" />
-				<Sparkline values={otpSeries} width={160} height={32} label={t.trend} interactive />
+				<Sparkline
+					values={otpSeries}
+					width={160}
+					height={32}
+					label={t.trend}
+					yAxis={{ label: t.otp, unit: t.unitPct }}
+					xLabels={periods.map((p) => p.grain)}
+					interactive
+				/>
 			</div>
 		{/if}
 	</div>

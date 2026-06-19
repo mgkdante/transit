@@ -889,7 +889,8 @@ def run_realtime_cycle(
     :func:`run_realtime_worker_loop`) can preserve state across cycles.
 
     When ``last_captures`` is ``None`` (CLI single-cycle calls, tests), no
-    gating happens — every endpoint runs unconditionally.
+    gating happens — every endpoint the provider's manifest publishes runs
+    unconditionally.
     """
     settings = settings or get_settings()
     registry = registry or _provider_registry(settings)
@@ -897,18 +898,19 @@ def run_realtime_cycle(
     started_at_utc = utc_now()
     started_at = time.perf_counter()
 
-    # The worker loop passes last_captures every cycle; there we drive the
-    # endpoint set from the provider's manifest so absent feeds are not polled.
-    # Single-shot CLI/test calls (no last_captures) keep the canonical set.
-    refresh_intervals: dict[str, int] = {}
-    cycle_endpoints: tuple[str, ...] = REALTIME_ENDPOINTS
-    if last_captures is not None:
-        manifest = registry.get_provider(provider_id)
-        cycle_endpoints = realtime_endpoints_for_manifest(manifest)
-        for endpoint_key in cycle_endpoints:
-            feed = manifest.feeds.get(endpoint_key)
-            if feed is not None:
-                refresh_intervals[endpoint_key] = int(feed.refresh_interval_seconds)
+    # Drive the endpoint set from the provider's manifest for BOTH single-shot
+    # and worker-loop calls, so a provider's actual feeds are polled: its generic
+    # GTFS-RT service-alerts feed is captured, and an absent feed (no i3 alerts,
+    # no live vehicle feed) is never polled. Refresh-interval gating only applies
+    # when last_captures is supplied (the worker loop); single-shot (last_captures
+    # is None) runs every present endpoint unconditionally.
+    manifest = registry.get_provider(provider_id)
+    cycle_endpoints = realtime_endpoints_for_manifest(manifest)
+    refresh_intervals: dict[str, int] = {
+        endpoint_key: int(manifest.feeds[endpoint_key].refresh_interval_seconds)
+        for endpoint_key in cycle_endpoints
+        if manifest.feeds.get(endpoint_key) is not None
+    }
 
     logger.info("Starting realtime cycle for provider '%s'.", provider_id)
     endpoint_results: list[RealtimeEndpointCycleResult] = []

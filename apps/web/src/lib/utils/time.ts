@@ -3,7 +3,7 @@
  *
  * Every timestamp the pipeline emits is UTC (ISO 8601). Riders read times in
  * Montreal/Toronto wall-clock, so EVERYTHING renders in the America/Toronto
- * zone via Intl — never the browser's local zone, never raw UTC. Keep all
+ * zone via Intl, never the browser's local zone, never raw UTC. Keep all
  * timestamp rendering behind these helpers so the zone is enforced in one place.
  *
  * `lang` is the BCP-47-ish locale tag we support ('en' | 'fr'), matching the
@@ -21,6 +21,54 @@ export const DISPLAY_TIME_ZONE = 'America/Toronto' as const;
 /** Map our short lang code to a BCP-47 tag for Intl. */
 function localeTag(lang: TimeLang): string {
 	return lang === 'fr' ? 'fr-CA' : 'en-CA';
+}
+
+// ---------------------------------------------------------------------------
+// Memoized Intl formatters.
+//
+// Constructing an Intl.* formatter is comparatively expensive, and these
+// helpers run on a hot, per-second-ticking path (relative-age readouts, the
+// live clock). The locale + options are drawn from a tiny fixed set, so we
+// cache one instance per (locale, options) key and reuse it. Outputs are
+// byte-identical to constructing a fresh formatter each call, the cache only
+// removes the constructor cost, never changes formatting.
+//
+// The key is `${locale}|${JSON.stringify(options)}`. JSON.stringify is stable
+// here because every call site passes plain option objects with primitive
+// values; key collisions only happen for genuinely identical option sets,
+// which is exactly when sharing an instance is correct.
+// ---------------------------------------------------------------------------
+
+const dateTimeFormatCache = new Map<string, Intl.DateTimeFormat>();
+const relativeTimeFormatCache = new Map<string, Intl.RelativeTimeFormat>();
+
+function formatterKey(locale: string, options: object): string {
+	return `${locale}|${JSON.stringify(options)}`;
+}
+
+/** Cached Intl.DateTimeFormat, one instance per (locale, options) key. */
+function dateTimeFormat(locale: string, options: Intl.DateTimeFormatOptions): Intl.DateTimeFormat {
+	const key = formatterKey(locale, options);
+	let fmt = dateTimeFormatCache.get(key);
+	if (!fmt) {
+		fmt = new Intl.DateTimeFormat(locale, options);
+		dateTimeFormatCache.set(key, fmt);
+	}
+	return fmt;
+}
+
+/** Cached Intl.RelativeTimeFormat, one instance per (locale, options) key. */
+function relativeTimeFormat(
+	locale: string,
+	options: Intl.RelativeTimeFormatOptions,
+): Intl.RelativeTimeFormat {
+	const key = formatterKey(locale, options);
+	let fmt = relativeTimeFormatCache.get(key);
+	if (!fmt) {
+		fmt = new Intl.RelativeTimeFormat(locale, options);
+		relativeTimeFormatCache.set(key, fmt);
+	}
+	return fmt;
 }
 
 /** Parse an ISO string into a Date, returning null for empty/invalid input. */
@@ -42,7 +90,7 @@ function parseIso(iso: string): Date | null {
  */
 export function formatUtc(iso: string, lang: TimeLang, opts?: Intl.DateTimeFormatOptions): string {
 	const date = parseIso(iso);
-	if (!date) return '—';
+	if (!date) return '·';
 	const base: Intl.DateTimeFormatOptions = {
 		dateStyle: 'medium',
 		timeStyle: 'short',
@@ -53,19 +101,19 @@ export function formatUtc(iso: string, lang: TimeLang, opts?: Intl.DateTimeForma
 	const resolved: Intl.DateTimeFormatOptions = opts
 		? { ...opts, timeZone: DISPLAY_TIME_ZONE }
 		: { ...base, timeZone: DISPLAY_TIME_ZONE };
-	return new Intl.DateTimeFormat(localeTag(lang), resolved).format(date);
+	return dateTimeFormat(localeTag(lang), resolved).format(date);
 }
 
 /**
  * Format a Date as a 24-hour clock "HH:MM" in America/Toronto.
  *
  * Always zero-padded, 24-hour (hour12 disabled) so it reads as a stable signage
- * clock regardless of locale defaults. Returns "—" for an invalid Date.
+ * clock regardless of locale defaults. Returns '·' for an invalid Date.
  */
 export function formatClock(date: Date, lang: TimeLang): string {
-	if (!(date instanceof Date) || Number.isNaN(date.getTime())) return '—';
+	if (!(date instanceof Date) || Number.isNaN(date.getTime())) return '·';
 	// Use formatToParts so we can guarantee "HH:MM" without locale separators.
-	const parts = new Intl.DateTimeFormat(localeTag(lang), {
+	const parts = dateTimeFormat(localeTag(lang), {
 		hour: '2-digit',
 		minute: '2-digit',
 		hour12: false,
@@ -109,16 +157,16 @@ const RELATIVE_UNITS: ReadonlyArray<{ unit: Intl.RelativeTimeFormatUnit; seconds
  * Prefer this over `formatRelative` when the caller already tracks a ticking age
  * (e.g. the live store's `ageSeconds`, advanced every second): a `$derived` over
  * the age re-runs each tick, whereas `formatRelative(iso)` reads an internal
- * `now` that is NOT reactive — so the relative text would freeze between the
+ * `now` that is NOT reactive, so the relative text would freeze between the
  * inputs that DO change. Built on Intl.RelativeTimeFormat for locale-correct
  * phrasing/plurals/direction. Within 5 seconds reads "now"/"maintenant".
- * Returns "—" for NaN.
+ * Returns '·' for NaN.
  */
 export function formatRelativeSeconds(seconds: number, lang: TimeLang): string {
-	if (Number.isNaN(seconds)) return '—';
+	if (Number.isNaN(seconds)) return '·';
 	if (Math.abs(seconds) < 5) return lang === 'fr' ? 'maintenant' : 'now';
 
-	const rtf = new Intl.RelativeTimeFormat(localeTag(lang), { numeric: 'auto' });
+	const rtf = relativeTimeFormat(localeTag(lang), { numeric: 'auto' });
 	for (const { unit, seconds: unitSeconds } of RELATIVE_UNITS) {
 		if (Math.abs(seconds) >= unitSeconds || unit === 'second') {
 			// Positive `seconds` = past → negative value for RelativeTimeFormat.
@@ -135,9 +183,9 @@ export function formatRelativeSeconds(seconds: number, lang: TimeLang): string {
  *
  * Built on Intl.RelativeTimeFormat so the phrasing, plurals, and "ago"/future
  * direction are locale-correct. Within 5 seconds it reads as "now"/"maintenant".
- * Returns "—" for invalid input.
+ * Returns '·' for invalid input.
  *
- * NOTE: `now` defaults to a one-shot snapshot — the result does NOT tick on its
+ * NOTE: `now` defaults to a one-shot snapshot, the result does NOT tick on its
  * own. For a value that updates every second, track the age reactively and call
  * `formatRelativeSeconds` instead.
  */

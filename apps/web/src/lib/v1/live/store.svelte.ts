@@ -10,6 +10,14 @@
 // network.json's generated_utc against the manifest's live ttl (stale once age
 // >= 2x ttl) — NEVER a literal 30s, so it tracks the publisher's cadence.
 //
+// The age advances off the SHARED clock (`$lib/stores` sharedClock), not a
+// private interval, so the freshness here ticks in lockstep with every other
+// relative-time label in the chrome (the TopBar refresh chip, etc.). This store
+// is also the SINGLE authoritative writer of the chrome's `dataGeneratedUtc`:
+// each successful poll pushes the snapshot's own DATA timestamp into the shared
+// `dataRefresh` coordinator, so the freshness readout never drifts from the
+// data it describes.
+//
 // Lifecycle: createLiveStore(manifest) builds an instance; call .start() from
 // onMount and .stop() from onDestroy (or use the $effect convenience in a
 // component). SSR-safe: start() no-ops without a browser, the initial render
@@ -17,7 +25,7 @@
 
 import { browser } from '$app/environment';
 import { ageSeconds } from '$lib/utils/time';
-import { dataRefresh } from '$lib/stores';
+import { dataRefresh, sharedClock } from '$lib/stores';
 import { adapter } from '$lib/v1/adapter';
 import type {
 	AlertsFile,
@@ -89,13 +97,12 @@ export function createLiveStore(manifest: Manifest): LiveStore {
 	let network = $state<NetworkFile | null>(null);
 	let loading = $state(false);
 	let error = $state<Error | null>(null);
-	// Re-evaluated each poll so age-based staleness advances between fetches too.
-	let nowMs = $state(Date.now());
 
-	// Two handles: the poll timer (live ttl cadence) and a 1s clock that advances
-	// the age/staleness derivation between polls (so a 304 still ages visibly).
+	// One handle: the poll timer (live ttl cadence). The age/staleness derivation
+	// advances off the SHARED clock (started via `clockDispose` below) so a 304
+	// still ages visibly AND every chrome relative-time label ticks in lockstep.
 	let pollTimer: ReturnType<typeof setInterval> | null = null;
-	let clockTimer: ReturnType<typeof setInterval> | null = null;
+	let clockDispose: (() => void) | null = null;
 	let started = false;
 
 	const index = $derived(
@@ -108,7 +115,10 @@ export function createLiveStore(manifest: Manifest): LiveStore {
 	const generatedUtc = $derived(network?.generated_utc ?? vehicles?.generated_utc ?? null);
 	const ageSecondsValue = $derived.by<number | null>(() => {
 		if (!generatedUtc) return null;
-		const age = ageSeconds(generatedUtc, nowMs);
+		// Read the SHARED clock: this re-derives every shared tick, so the age (and
+		// the staleness verdict below) advances between polls in lockstep with the
+		// rest of the chrome instead of off a private interval.
+		const age = ageSeconds(generatedUtc, sharedClock.now);
 		return Number.isNaN(age) ? null : Math.max(0, age);
 	});
 	const isStale = $derived(ageSecondsValue == null ? false : ageSecondsValue >= staleThresholdS);
@@ -141,12 +151,13 @@ export function createLiveStore(manifest: Manifest): LiveStore {
 			departures = d;
 			alerts = a;
 			network = n;
+			// SINGLE authoritative writer: push the snapshot's own DATA timestamp into
+			// the shared chrome coordinator so the freshness readout tracks this poll.
 			dataRefresh.noteDataGeneratedUtc(n.generated_utc ?? v.generated_utc);
 			error = null;
 		} catch (e) {
 			error = e instanceof Error ? e : new Error(String(e));
 		} finally {
-			nowMs = Date.now();
 			loading = false;
 		}
 	}
@@ -154,11 +165,9 @@ export function createLiveStore(manifest: Manifest): LiveStore {
 	function start(): void {
 		if (started || !browser) return;
 		started = true;
-		// Advance the clock between fetches so age/staleness keep moving even when
-		// a 304 leaves the files untouched.
-		clockTimer = setInterval(() => {
-			nowMs = Date.now();
-		}, 1000);
+		// Subscribe to the SHARED clock so age/staleness keep moving between fetches
+		// (a 304 still ages visibly) on the SAME tick as every other chrome label.
+		clockDispose = sharedClock.subscribe();
 		void refresh();
 		pollTimer = setInterval(() => {
 			void refresh();
@@ -170,9 +179,9 @@ export function createLiveStore(manifest: Manifest): LiveStore {
 			clearInterval(pollTimer);
 			pollTimer = null;
 		}
-		if (clockTimer) {
-			clearInterval(clockTimer);
-			clockTimer = null;
+		if (clockDispose) {
+			clockDispose();
+			clockDispose = null;
 		}
 		started = false;
 	}

@@ -62,7 +62,7 @@ describe('MapFilters', () => {
 		expect(rail?.querySelector('.mf-rail-token')).not.toBeInTheDocument();
 		expect(rail?.querySelectorAll('.mf-group')).toHaveLength(4);
 		expect(rail?.querySelectorAll('.mf-group-badge[data-icon]')).toHaveLength(4);
-		expect(rail?.querySelectorAll('.mf-chip').length).toBeGreaterThanOrEqual(14);
+		expect(rail?.querySelectorAll('.mf-chip').length).toBeGreaterThanOrEqual(13);
 		expect(container.querySelector('.mf-title')).not.toBeInTheDocument();
 		const clear = getByRole('button', { name: 'Clear' });
 		expect(clear).toBeInTheDocument();

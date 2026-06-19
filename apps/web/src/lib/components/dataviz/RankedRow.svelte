@@ -1,5 +1,5 @@
 <!--
-  RankedRow — one row of a ranked list: rank + title + severity bar + delta.
+  RankedRow, one row of a ranked list: rank + title + severity bar + delta.
 
   Used for "worst offenders" / hotspot lists. The magnitude bar is a SeverityBar
   (dataviz severity scale only). The delta chip shows movement vs a prior period
@@ -23,11 +23,11 @@
 	export interface RankedRowProps extends WithElementRef<HTMLAttributes<HTMLDivElement>> {
 		/** 1-based rank. */
 		rank: number;
-		/** Row title (route/stop name — already localized). */
+		/** Row title (route/stop name, already localized). */
 		title: string;
 		/** Optional secondary line (e.g. route id, branch). */
 		subtitle?: string;
-		/** Severity band — drives the bar fill. */
+		/** Severity band, drives the bar fill. */
 		severity: SeverityCode;
 		/** Normalized magnitude in [0,1] for the bar. `null` -> no-data bar. */
 		value: number | null;
@@ -79,8 +79,8 @@
 
 	const hasDelta = $derived(delta != null && !Number.isNaN(delta));
 
-	// Direction glyph — never colour-only.
-	const deltaGlyph = $derived(!hasDelta ? '—' : delta! > 0 ? '▲' : delta! < 0 ? '▼' : '—');
+	// Direction glyph, never colour-only.
+	const deltaGlyph = $derived(!hasDelta ? '·' : delta! > 0 ? '▲' : delta! < 0 ? '▼' : '·');
 
 	// Delta colour on the dataviz scale: improvement = on-time green token,
 	// regression = severity-critical token, flat / no-data = unknown token.
@@ -132,7 +132,7 @@
 </script>
 
 {#snippet rowBody()}
-	<!-- Rank — monospace ordinal, neutral. -->
+	<!-- Rank, monospace ordinal, neutral. -->
 	<span
 		class="dv-rank w-6 text-right font-mono text-small tabular-nums text-muted-foreground"
 		aria-hidden="true"
