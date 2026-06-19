@@ -114,30 +114,23 @@ class OverallHealthResult:
         }
 
     def _pipeline_freshness_age_seconds(self) -> int | None:
-        """Max realtime endpoint age (seconds) from the freshness component.
+        """Max capture age (seconds) across every per-provider feed component.
 
-        A non-sensitive operability scalar: it reveals how stale the pipeline
-        is without exposing endpoint names' URLs, capture timestamps, or any
-        configured internals. Returns None when the freshness component or its
-        age data is absent (e.g. the freshness check itself failed).
+        A non-sensitive operability scalar: it reveals how stale the freshest-
+        lagging feed is across all providers without exposing provider ids,
+        endpoint URLs, capture timestamps, or any configured internals. Each
+        per-feed freshness component carries an ``age_seconds`` in its (redacted)
+        details; this rolls them up to a single max. Returns None when no feed
+        component reports an age (e.g. the freshness check failed, or no feed has
+        ever been captured).
         """
-        for component in self.components:
-            if component.name != "pipeline_freshness":
-                continue
-            details = component.details
-            if not isinstance(details, Mapping):
-                return None
-            endpoints = details.get("endpoints")
-            if not isinstance(endpoints, Mapping):
-                return None
-            ages = [
-                value["age_seconds"]
-                for value in endpoints.values()
-                if isinstance(value, Mapping)
-                and isinstance(value.get("age_seconds"), int)
-            ]
-            return max(ages) if ages else None
-        return None
+        ages = [
+            details["age_seconds"]
+            for component in self.components
+            if isinstance((details := component.details), Mapping)
+            and isinstance(details.get("age_seconds"), int)
+        ]
+        return max(ages) if ages else None
 
     def component_counts(self) -> dict[HealthStatus, int]:
         counts: dict[HealthStatus, int] = {status: 0 for status in HEALTH_STATUSES}

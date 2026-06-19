@@ -11,7 +11,7 @@ from transit_ops.health.checks import (
     check_bronze_storage,
     check_database_connectivity,
     check_feed_conformance,
-    check_pipeline_freshness,
+    check_provider_feed_freshness,
     check_runtime_vm_health,
     run_health_checks,
 )
@@ -214,92 +214,127 @@ def test_feed_conformance_degraded_when_out_of_norm_members_present() -> None:
     assert set(result.public_dict()) == {"name", "status"}
 
 
-def test_pipeline_freshness_ok_when_realtime_endpoints_are_recent() -> None:
+def _feed_row(
+    provider_id: str,
+    endpoint_key: str,
+    feed_kind: str,
+    refresh_interval_seconds: int,
+    latest: datetime | None,
+) -> dict[str, Any]:
+    return {
+        "provider_id": provider_id,
+        "endpoint_key": endpoint_key,
+        "feed_kind": feed_kind,
+        "refresh_interval_seconds": refresh_interval_seconds,
+        "latest_captured_at_utc": latest,
+    }
+
+
+def test_provider_feed_freshness_emits_ok_component_per_fresh_feed() -> None:
+    # Holistic per provider: one component per (provider, feed), and a second
+    # provider's feeds appear automatically — no hardcoded provider.
     rows = [
-        {
-            "endpoint_key": "trip_updates",
-            "latest_captured_at_utc": NOW - timedelta(seconds=60),
-        },
-        {
-            "endpoint_key": "vehicle_positions",
-            "latest_captured_at_utc": NOW - timedelta(seconds=120),
-        },
-        {
-            "endpoint_key": "i3_alerts",
-            "latest_captured_at_utc": NOW - timedelta(seconds=90),
-        },
+        _feed_row("stm", "trip_updates", "trip_updates", 30, NOW - timedelta(seconds=60)),
+        _feed_row("sto", "trip_updates", "trip_updates", 30, NOW - timedelta(seconds=120)),
     ]
 
-    result = check_pipeline_freshness(
-        settings(HEALTH_MAX_PIPELINE_AGE_SECONDS=300),
+    results = check_provider_feed_freshness(
+        settings(HEALTH_MAX_PIPELINE_AGE_SECONDS=900),
         engine_factory=lambda _: FakeEngine(FakeConnection(rows)),
         now=NOW,
     )
 
-    assert result.name == "pipeline_freshness"
-    assert result.status == "ok"
-    assert result.details is not None
-    assert result.details["threshold_seconds"] == 300
-    assert result.details["endpoints"]["trip_updates"]["age_seconds"] == 60
-    assert result.details["endpoints"]["vehicle_positions"]["age_seconds"] == 120
-    assert result.details["endpoints"]["i3_alerts"]["age_seconds"] == 90
+    by_name = {r.name: r for r in results}
+    assert set(by_name) == {"stm_trip_updates", "sto_trip_updates"}
+    assert all(r.status == "ok" for r in results)
+    assert by_name["stm_trip_updates"].details["age_seconds"] == 60
+    assert by_name["sto_trip_updates"].details["provider_id"] == "sto"
 
 
-def test_pipeline_freshness_degraded_when_endpoint_is_stale() -> None:
+def test_provider_feed_freshness_degraded_when_feed_is_stale() -> None:
     rows = [
-        {
-            "endpoint_key": "trip_updates",
-            "latest_captured_at_utc": NOW - timedelta(seconds=301),
-        },
-        {
-            "endpoint_key": "vehicle_positions",
-            "latest_captured_at_utc": NOW - timedelta(seconds=30),
-        },
-        {
-            "endpoint_key": "i3_alerts",
-            "latest_captured_at_utc": NOW - timedelta(seconds=30),
-        },
+        _feed_row("stm", "trip_updates", "trip_updates", 30, NOW - timedelta(seconds=1000)),
     ]
 
-    result = check_pipeline_freshness(
-        settings(HEALTH_MAX_PIPELINE_AGE_SECONDS=300),
+    results = check_provider_feed_freshness(
+        settings(HEALTH_MAX_PIPELINE_AGE_SECONDS=900),
         engine_factory=lambda _: FakeEngine(FakeConnection(rows)),
         now=NOW,
     )
 
-    assert result.status == "degraded"
-    assert "stale" in result.message
+    assert results[0].name == "stm_trip_updates"
+    assert results[0].status == "degraded"
+    assert "exceeds" in results[0].message
+    # 30s refresh * 3 grace = 90, floored at the 900s pipeline budget.
+    assert results[0].details["threshold_seconds"] == 900
 
 
-def test_pipeline_freshness_degraded_when_endpoint_data_is_missing() -> None:
+def test_provider_feed_freshness_uses_per_feed_cadence_for_daily_static() -> None:
+    # A daily static feed 2h old is fresh: its threshold derives from its own
+    # 86400s refresh, not the 900s realtime floor.
     rows = [
-        {
-            "endpoint_key": "trip_updates",
-            "latest_captured_at_utc": NOW - timedelta(seconds=60),
-        },
+        _feed_row(
+            "stm", "static_schedule", "static_schedule", 86400, NOW - timedelta(hours=2)
+        ),
     ]
 
-    result = check_pipeline_freshness(
+    results = check_provider_feed_freshness(
+        settings(HEALTH_MAX_PIPELINE_AGE_SECONDS=900),
+        engine_factory=lambda _: FakeEngine(FakeConnection(rows)),
+        now=NOW,
+    )
+
+    assert results[0].status == "ok"
+    assert results[0].details["threshold_seconds"] == 86400 * 3
+
+
+def test_provider_feed_freshness_degraded_when_no_successful_capture() -> None:
+    rows = [_feed_row("stm", "i3_alerts", "i3_alerts", 300, None)]
+
+    results = check_provider_feed_freshness(
         settings(),
         engine_factory=lambda _: FakeEngine(FakeConnection(rows)),
         now=NOW,
     )
 
-    assert result.status == "degraded"
-    assert "vehicle_positions" in result.message
-    assert result.details is not None
-    assert result.details["endpoints"]["vehicle_positions"]["latest_captured_at_utc"] is None
+    assert results[0].status == "degraded"
+    assert "no successful capture" in results[0].message
+    assert results[0].details["age_seconds"] is None
 
 
-def test_pipeline_freshness_down_when_query_fails() -> None:
-    result = check_pipeline_freshness(
+def test_provider_feed_freshness_down_when_query_fails() -> None:
+    results = check_provider_feed_freshness(
         settings(),
         engine_factory=lambda _: FakeEngine(FakeConnection(exc=RuntimeError("db offline"))),
         now=NOW,
     )
 
-    assert result.status == "down"
-    assert "Pipeline freshness query failed" in result.message
+    assert len(results) == 1
+    assert results[0].name == "provider_feeds"
+    assert results[0].status == "down"
+    assert "Provider feed freshness query failed" in results[0].message
+
+
+def test_provider_feed_freshness_degraded_when_no_feeds_configured() -> None:
+    results = check_provider_feed_freshness(
+        settings(),
+        engine_factory=lambda _: FakeEngine(FakeConnection(rows=[])),
+        now=NOW,
+    )
+
+    assert len(results) == 1
+    assert results[0].name == "provider_feeds"
+    assert results[0].status == "degraded"
+    assert "No active provider feeds" in results[0].message
+
+
+def test_provider_feed_freshness_down_when_database_url_missing() -> None:
+    results = check_provider_feed_freshness(settings(DATABASE_URL=""), now=NOW)
+
+    assert len(results) == 1
+    assert results[0].name == "provider_feeds"
+    assert results[0].status == "down"
+    assert "DATABASE_URL is not configured" in results[0].message
 
 
 def test_local_bronze_storage_ok_when_root_exists_and_can_be_read(tmp_path: Path) -> None:
@@ -477,18 +512,10 @@ def test_runtime_vm_health_degrades_on_high_storage_or_memory() -> None:
 
 def test_run_health_checks_returns_quota_free_components_in_order(tmp_path: Path) -> None:
     rows = [
-        {
-            "endpoint_key": "trip_updates",
-            "latest_captured_at_utc": NOW - timedelta(seconds=60),
-        },
-        {
-            "endpoint_key": "vehicle_positions",
-            "latest_captured_at_utc": NOW - timedelta(seconds=120),
-        },
-        {
-            "endpoint_key": "i3_alerts",
-            "latest_captured_at_utc": NOW - timedelta(seconds=90),
-        },
+        _feed_row("stm", "trip_updates", "trip_updates", 30, NOW - timedelta(seconds=60)),
+        _feed_row(
+            "stm", "vehicle_positions", "vehicle_positions", 30, NOW - timedelta(seconds=120)
+        ),
     ]
 
     health_settings = settings(
@@ -513,9 +540,12 @@ def test_run_health_checks_returns_quota_free_components_in_order(tmp_path: Path
         requester=forbidden_requester,
     )
 
+    # database, then one component per (provider, feed) from the freshness query,
+    # then feed_conformance, bronze_storage, runtime_vm.
     assert [result.name for result in results] == [
         "database",
-        "pipeline_freshness",
+        "stm_trip_updates",
+        "stm_vehicle_positions",
         "feed_conformance",
         "bronze_storage",
         "runtime_vm",

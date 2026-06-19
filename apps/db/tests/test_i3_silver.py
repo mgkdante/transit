@@ -188,6 +188,39 @@ def test_normalize_i3_alert_payload_accepts_stm_etatservice_shape() -> None:
     assert entities[2]["stop_id"] == "53010"
 
 
+def test_normalize_i3_alert_payload_matches_bcp47_region_language_tags() -> None:
+    # STO / STS publish fr-CA / en-CA region tags. The primary subtag must still
+    # bucket French as canonical and surface the English bilingual field — the
+    # exact-match matcher dropped both (English went NULL, French lost primacy).
+    snapshot = _snapshot(
+        {
+            "messages": [
+                {
+                    "id": "region-1",
+                    "header_texts": [
+                        {"language": "en-CA", "text": "Detour on route 1"},
+                        {"language": "fr-CA", "text": "Detour ligne 1"},
+                    ],
+                    "description_texts": [
+                        {"language": "en-CA", "text": "Major works"},
+                        {"language": "fr-CA", "text": "Travaux majeurs"},
+                    ],
+                }
+            ]
+        }
+    )
+
+    alerts, _ = normalize_i3_alert_payload(snapshot)
+
+    # French is canonical despite the fr-CA tag and despite English appearing
+    # first in the list...
+    assert alerts[0]["alert_header_text"] == "Detour ligne 1"
+    assert alerts[0]["description_text"] == "Travaux majeurs"
+    # ...and the en-CA English text is no longer dropped to NULL.
+    assert alerts[0]["alert_header_text_en"] == "Detour on route 1"
+    assert alerts[0]["description_text_en"] == "Major works"
+
+
 def test_normalize_en_is_none_when_feed_has_no_english() -> None:
     # Honesty: EN text is only claimed when an explicit en/eng language variant
     # exists. fr-only lists, bare strings, and {'text': ...} dicts without a

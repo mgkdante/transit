@@ -114,7 +114,21 @@ _SOURCE_FACTORY_RESET_STATEMENT = text(
 )
 
 
-def build_source_factory_catalog(provider_id: str) -> SourceFactoryCatalog:
+def build_source_factory_catalog(
+    provider_id: str,
+    *,
+    present_feed_kinds: set[str] | None = None,
+) -> SourceFactoryCatalog:
+    # The realtime feeds are required for the rebuild only when the provider
+    # actually publishes them. A static-only / static+alerts agency (e.g. STS)
+    # has no trip/vehicle bronze, so marking those sources required=True would
+    # fail its rebuild on a legitimately-absent feed. When present_feed_kinds is
+    # None (legacy callers / tests) the historical "required" behavior is kept.
+    def _rt_required(feed_kind: str) -> bool:
+        if present_feed_kinds is None:
+            return True
+        return feed_kind in present_feed_kinds
+
     return SourceFactoryCatalog(
         provider_id=provider_id,
         sources=(
@@ -166,7 +180,7 @@ def build_source_factory_catalog(provider_id: str) -> SourceFactoryCatalog:
             SourceFactorySource(
                 family="trip_updates",
                 endpoint_key="trip_updates",
-                required=True,
+                required=_rt_required("trip_updates"),
                 bronze_prefix=f"{provider_id}/trip_updates/",
                 raw_tables=("raw.realtime_snapshot_index",),
                 silver_tables=(
@@ -198,7 +212,7 @@ def build_source_factory_catalog(provider_id: str) -> SourceFactoryCatalog:
             SourceFactorySource(
                 family="vehicle_positions",
                 endpoint_key="vehicle_positions",
-                required=True,
+                required=_rt_required("vehicle_positions"),
                 bronze_prefix=f"{provider_id}/vehicle_positions/",
                 raw_tables=("raw.realtime_snapshot_index",),
                 silver_tables=(
