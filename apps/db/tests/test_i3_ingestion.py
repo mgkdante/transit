@@ -194,7 +194,7 @@ def test_capture_i3_alerts_persists_payload_and_registers_snapshot(
         settings=settings,
     )
 
-    monkeypatch.setattr(i3_ingestion, "_download_to_tempfile", lambda config, temp_dir: artifact)
+    monkeypatch.setattr(i3_ingestion, "download_to_tempfile", lambda **kwargs: artifact)
     monkeypatch.setattr(
         i3_ingestion,
         "get_bronze_storage",

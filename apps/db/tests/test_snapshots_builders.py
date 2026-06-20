@@ -68,10 +68,18 @@ class FakeConn:
     def execute(self, statement, params=None):  # noqa: ANN001, ARG002
         sql = str(statement)
         self.executed.append(sql)
+        # Most-specific-wins: pick the LONGEST matching needle so a query that
+        # contains a broad table-name substring (e.g. the per-route
+        # non_responding query also contains "non_responding_current") is
+        # dispatched by its distinctive marker (e.g. "nr_by_route") rather than
+        # colliding with the broad scalar needle.
+        best_rows = None
+        best_len = -1
         for needle, rows in self._responses.items():
-            if needle in sql:
-                return FakeResult(rows)
-        return FakeResult([])
+            if needle in sql and len(needle) > best_len:
+                best_rows = rows
+                best_len = len(needle)
+        return FakeResult(best_rows if best_rows is not None else [])
 
 
 # --------------------------------------------------------------------------
@@ -447,6 +455,11 @@ def test_build_alerts_maps_severity_and_splits_routes_stops() -> None:
     assert a1.stops == ["S-1", "S-2"]
     assert a1.start_utc == "2026-05-31T08:00:00Z"
     assert a1.end_utc == "2026-05-31T20:00:00Z"
+    # raw GTFS-RT/i3 passthroughs; severity_level is the raw value, distinct from
+    # the bucketed severity ("warning" -> "high").
+    assert a1.cause == "ACCIDENT"
+    assert a1.effect == "DETOUR"
+    assert a1.severity_level == "warning"
     a2 = out.alerts[1]
     assert a2.severity == "critical"  # severe -> critical
     assert a2.routes == []
@@ -465,6 +478,9 @@ def test_build_alerts_maps_severity_and_splits_routes_stops() -> None:
     out2 = build_alerts(conn, provider_id="stm", generated_utc="2026-05-31T12:00:05Z")
     assert out2.alerts[1].id == expected_id
     assert a2.start_utc is None
+    assert a2.cause == "CONSTRUCTION"
+    assert a2.effect == "NO_SERVICE"
+    assert a2.severity_level == "severe"
 
 
 def test_build_alerts_unknown_severity_falls_back_to_watch() -> None:
@@ -547,7 +563,12 @@ def test_build_network_aggregates_kpis() -> None:
         {
             "current_vehicle_map_with_status": vehicle_rows,
             "current_trip_delay_computed": trip_rows,
-            "non_responding_current": [{"non_responding": 7}],
+            "0) AS non_responding": [{"non_responding": 7}],
+            # per-route breakdown (distinctive "nr_by_route" needle) — sums to 7
+            "nr_by_route": [
+                {"route_id": "51", "nr_count": 4},
+                {"route_id": "165", "nr_count": 3},
+            ],
             "feed_freshness_current": [{"feed_freshness_s": 12}],
         }
     )
@@ -574,6 +595,25 @@ def test_build_network_aggregates_kpis() -> None:
     # percentiles of [1, 2, 10] minutes
     assert out.delay_p50_min == 2
     assert out.delay_p90_min >= 8  # near the top of the range
+    # per-route non_responding breakdown: ordered count DESC, sums to scalar
+    assert out.non_responding_by_route is not None
+    assert [(r.route_id, r.count) for r in out.non_responding_by_route] == [
+        ("51", 4),
+        ("165", 3),
+    ]
+    assert sum(r.count for r in out.non_responding_by_route) == out.non_responding
+    # delay_histogram: all 8 buckets present, sums to len(delays), values land
+    # in the right bins. delays = [1, 2, 10] -> [0,2)=1 [2,5)=1 [5,10)... 10 -> [10,15)=1
+    assert out.delay_histogram is not None
+    assert len(out.delay_histogram) == 8
+    assert sum(b.count for b in out.delay_histogram) == 3
+    by_edges = {(b.lo_min, b.hi_min): b.count for b in out.delay_histogram}
+    assert by_edges[(0, 2)] == 1  # 1 min
+    assert by_edges[(2, 5)] == 1  # 2 min
+    assert by_edges[(10, 15)] == 1  # 10 min
+    # fixed edges + zero buckets present
+    assert by_edges[(None, -5)] == 0
+    assert by_edges[(15, None)] == 0
 
 
 def test_build_network_on_time_pct_counts_late_band_as_on_time() -> None:
@@ -585,7 +625,7 @@ def test_build_network_on_time_pct_counts_late_band_as_on_time() -> None:
                 {"status_band": "Critique / Severe", "occupancy_status": None},
             ],
             "current_trip_delay_computed": [],
-            "non_responding_current": [{"non_responding": 0}],
+            "0) AS non_responding": [{"non_responding": 0}],
             "feed_freshness_current": [{"feed_freshness_s": 0}],
         }
     )
@@ -609,7 +649,7 @@ def test_build_network_zero_vehicles_emits_honest_none_not_zero() -> None:
             "current_trip_delay_computed": [],
             # SUM(...) COALESCE-d to 0 still returns one row; MAX(...) over an
             # empty set returns a single NULL — model both faithfully.
-            "non_responding_current": [{"non_responding": 0}],
+            "0) AS non_responding": [{"non_responding": 0}],
             "feed_freshness_current": [{"feed_freshness_s": None}],
         }
     )
@@ -639,7 +679,7 @@ def test_build_network_unknown_only_fleet_emits_none_on_time_pct() -> None:
                 {"status_band": "Inconnu / Unknown", "occupancy_status": None},
             ],
             "current_trip_delay_computed": [],
-            "non_responding_current": [{"non_responding": 0}],
+            "0) AS non_responding": [{"non_responding": 0}],
             "feed_freshness_current": [{"feed_freshness_s": 4}],
         }
     )
@@ -661,13 +701,82 @@ def test_build_network_no_occupancy_telemetry_emits_none_not_all_zero() -> None:
                 {"status_band": "En retard / Late", "occupancy_status": None},
             ],
             "current_trip_delay_computed": [],
-            "non_responding_current": [{"non_responding": 0}],
+            "0) AS non_responding": [{"non_responding": 0}],
             "feed_freshness_current": [{"feed_freshness_s": 5}],
         }
     )
     out = build_network(conn, generated_utc="2026-05-31T12:00:05Z")
     assert out.vehicles_in_service == 2
     assert out.occupancy_mix is None  # no telemetry -> null, not all-zero
+
+
+def test_build_network_delay_histogram_none_when_no_delay_observations() -> None:
+    """delay_histogram is honest-None (not 8 zero buckets) iff there are zero
+    delay observations — the same guard that nulls delay_p50_min/delay_p90_min."""
+    conn = FakeConn(
+        {
+            "current_vehicle_map_with_status": [
+                {"status_band": "À l'heure / On time", "occupancy_status": None},
+            ],
+            "current_trip_delay_computed": [],  # zero delay observations
+            "0) AS non_responding": [{"non_responding": 0}],
+            "feed_freshness_current": [{"feed_freshness_s": 5}],
+        }
+    )
+    out = build_network(conn, generated_utc="2026-05-31T12:00:05Z")
+    assert out.delay_p50_min is None
+    assert out.delay_p90_min is None
+    assert out.delay_histogram is None  # no observations -> None, not zero buckets
+
+
+def test_build_network_delay_histogram_signed_bucket_edges() -> None:
+    """Signed-minute classification: lo inclusive, hi exclusive, unbounded ends.
+    Covers every one of the 8 fixed buckets and the boundary semantics."""
+    # one observation squarely inside each of the 8 buckets (seconds -> minutes):
+    #  -7 -> (-inf,-5) | -3 -> [-5,-2) | -1 -> [-2,0) | 1 -> [0,2)
+    #   3 -> [2,5)     |  7 -> [5,10)  | 12 -> [10,15) | 20 -> [15,+inf)
+    # plus boundary cases: -5 lands in [-5,-2) (lo inclusive); 0 lands in [0,2)
+    # (lo inclusive, NOT [-2,0) which is hi-exclusive); 15 lands in [15,+inf).
+    minutes = [-7, -3, -1, 1, 3, 7, 12, 20, -5, 0, 15]
+    trip_rows = [{"avg_delay_seconds": m * 60.0} for m in minutes]
+    conn = FakeConn(
+        {
+            "current_vehicle_map_with_status": [],
+            "current_trip_delay_computed": trip_rows,
+            "0) AS non_responding": [{"non_responding": 0}],
+            "feed_freshness_current": [{"feed_freshness_s": 5}],
+        }
+    )
+    out = build_network(conn, generated_utc="2026-05-31T12:00:05Z")
+    assert out.delay_histogram is not None
+    assert len(out.delay_histogram) == 8  # all 8 always emitted
+    assert sum(b.count for b in out.delay_histogram) == len(minutes)
+    by_edges = {(b.lo_min, b.hi_min): b.count for b in out.delay_histogram}
+    assert by_edges[(None, -5)] == 1  # -7
+    assert by_edges[(-5, -2)] == 2  # -3 and boundary -5 (lo inclusive)
+    assert by_edges[(-2, 0)] == 1  # -1  (0 is excluded: hi exclusive)
+    assert by_edges[(0, 2)] == 2  # 1 and boundary 0 (lo inclusive)
+    assert by_edges[(2, 5)] == 1  # 3
+    assert by_edges[(5, 10)] == 1  # 7
+    assert by_edges[(10, 15)] == 1  # 12
+    assert by_edges[(15, None)] == 2  # 20 and boundary 15 (lo inclusive)
+
+
+def test_build_network_non_responding_by_route_none_when_no_routes() -> None:
+    """non_responding_by_route is None (UI stands down) when no route is silent —
+    never an empty-but-present list. The scalar non_responding stays an honest 0."""
+    conn = FakeConn(
+        {
+            "current_vehicle_map_with_status": [],
+            "current_trip_delay_computed": [],
+            "0) AS non_responding": [{"non_responding": 0}],
+            # no "nr_by_route" fixture -> per-route query yields no rows
+            "feed_freshness_current": [{"feed_freshness_s": 5}],
+        }
+    )
+    out = build_network(conn, generated_utc="2026-05-31T12:00:05Z")
+    assert out.non_responding == 0
+    assert out.non_responding_by_route is None  # empty -> None, not []
 
 
 # --------------------------------------------------------------------------
@@ -682,10 +791,12 @@ class _FakeSettings:
 def test_build_manifest_assembles_from_provider_and_version() -> None:
     conn = FakeConn(
         {
-            "gold.dim_provider": [
+            "core.providers": [
                 {
                     "provider_id": "stm",
                     "display_name": "Société de transport de Montréal",
+                    "short_name": "STM",
+                    "city": "Montréal",
                     "timezone": "America/Toronto",
                     "default_language": "fr",
                     "attribution_text": "Contains STM data made available under CC BY 4.0.",
@@ -709,6 +820,8 @@ def test_build_manifest_assembles_from_provider_and_version() -> None:
     assert isinstance(out, Manifest)
     assert out.provider == "stm"
     assert out.display_name == "Société de transport de Montréal"
+    assert out.short_name == "STM"
+    assert out.city == "Montréal"
     assert out.tz == "America/Toronto"
     assert out.default_lang == "fr"
     assert out.attribution == "Contains STM data made available under CC BY 4.0."
@@ -731,7 +844,7 @@ def test_build_manifest_assembles_from_provider_and_version() -> None:
 def test_build_manifest_defaults_when_version_missing() -> None:
     conn = FakeConn(
         {
-            "gold.dim_provider": [
+            "core.providers": [
                 {
                     "provider_id": "stm",
                     "display_name": "STM",
@@ -754,6 +867,10 @@ def test_build_manifest_defaults_when_version_missing() -> None:
         settings=_FakeSettings(),
     )
     assert out.dataset_version  # non-empty fallback
+    # Copy identity is optional: a provider row without short_name/city yields
+    # null in the manifest (the UI falls back to display_name).
+    assert out.short_name is None
+    assert out.city is None
 
 
 class _FakeSettingsWithBasemap:
@@ -762,7 +879,7 @@ class _FakeSettingsWithBasemap:
 
 
 _MANIFEST_PROVIDER_ROW = {
-    "gold.dim_provider": [
+    "core.providers": [
         {
             "provider_id": "stm",
             "display_name": "STM",
@@ -925,6 +1042,44 @@ def test_build_labels_includes_methodology_gap_attribution():
     assert "14 days" in en.labels["methodology.percentiles"]
     assert "90 derniers jours" not in fr.labels["methodology.percentiles"]
     assert "14 derniers jours" in fr.labels["methodology.percentiles"]
+
+
+def test_build_labels_non_stm_derives_attribution_from_core_providers():
+    """A provider without curated copy gets a licensing-correct attribution from
+    core.providers (manifest display_name + attribution_text) and no metro gap."""
+    from transit_ops.snapshots.builders import build_labels
+
+    class FakeResult:
+        def __init__(self, rows):
+            self._rows = rows
+
+        def mappings(self):
+            return self
+
+        def __iter__(self):
+            return iter(self._rows)
+
+        def one_or_none(self):
+            return self._rows[0] if self._rows else None
+
+    class FakeConn:
+        def execute(self, statement, *a, **k):
+            if "core.providers" in str(statement):
+                return FakeResult(
+                    [
+                        {
+                            "display_name": "Société de transport de l'Outaouais",
+                            "attribution_text": "Contains STO open data.",
+                        }
+                    ]
+                )
+            return FakeResult([])  # gold.report_labels
+
+    fr = build_labels(FakeConn(), provider_id="sto", lang="fr", generated_utc="t")
+    assert fr.labels["attribution.data_source"] == "Contains STO open data."
+    assert "Outaouais" in fr.labels["attribution.disclaimer"]
+    # STM's metro-realtime gap is not carried for a non-metro provider
+    assert "gap.metro_realtime" not in fr.labels
 
 
 def test_static_label_key_sets_identical_fr_en():
@@ -1198,7 +1353,7 @@ def test_build_alerts_stamps_generated_utc() -> None:
 def test_build_network_stamps_generated_utc() -> None:
     conn = FakeConn(
         {
-            "non_responding_current": [{"non_responding": 0}],
+            "0) AS non_responding": [{"non_responding": 0}],
             "feed_freshness_current": [{"feed_freshness_s": 0}],
         }
     )
@@ -1234,6 +1389,52 @@ def test_historic_flat_builders_stamp_generated_utc() -> None:
     assert build_repeat_offenders(conn, "stm", generated_utc="H").generated_utc == "H"
     assert build_alert_history(conn, "stm", generated_utc="H").generated_utc == "H"
     assert build_provenance(conn, "stm", generated_utc="H").generated_utc == "H"
+
+
+def test_build_provenance_surfaces_out_of_norm_conformance() -> None:
+    from transit_ops.snapshots.builders import build_provenance
+
+    conn = FakeConn(
+        {
+            "gtfs_extra_rows": [
+                {
+                    "extra_row_count": 12,
+                    "unknown_members": ["pathways.txt", "levels.txt"],
+                }
+            ],
+        }
+    )
+
+    prov = build_provenance(conn, "sto", generated_utc="H")
+
+    assert prov.conformance is not None
+    assert prov.conformance.status == "out_of_norm"
+    assert prov.conformance.unknown_members == ["levels.txt", "pathways.txt"]
+    assert prov.conformance.extra_row_count == 12
+
+
+def test_build_provenance_conformant_when_static_load_matched_shape() -> None:
+    from transit_ops.snapshots.builders import build_provenance
+
+    conn = FakeConn(
+        {"gtfs_extra_rows": [{"extra_row_count": 0, "unknown_members": None}]}
+    )
+
+    prov = build_provenance(conn, "stm", generated_utc="H")
+
+    assert prov.conformance is not None
+    assert prov.conformance.status == "conformant"
+    assert prov.conformance.unknown_members == []
+    assert prov.conformance.extra_row_count == 0
+
+
+def test_build_provenance_conformance_none_without_current_static_dataset() -> None:
+    from transit_ops.snapshots.builders import build_provenance
+
+    # No row from the conformance query => provider has no current static dataset.
+    prov = build_provenance(FakeConn({}), "stm", generated_utc="H")
+
+    assert prov.conformance is None
 
 
 def test_build_alert_history_sanitizes_legacy_python_repr_en_text() -> None:
@@ -1293,3 +1494,389 @@ def test_build_basemap_pointer_carries_url_style_attribution() -> None:
     assert bm.style_url == "https://x/style.json"
     assert bm.attribution == "© OSM, © Protomaps"
     assert bm.generated_utc == "2026-06-13T00:00:00Z"
+
+
+# --------------------------------------------------------------------------
+# build_stop_reliability — shift + day-type granularity grains (folded data depth)
+# --------------------------------------------------------------------------
+
+
+def test_build_stop_reliability_emits_shift_and_daytype_grains() -> None:
+    """Stop reliability publishes additive shift + weekday/weekend grains.
+
+    The hour->shift band CASE and the ISODOW weekday/weekend split run in Postgres,
+    so the FakeConn returns grain-resolved rows (the bucketing is exercised against
+    a real DB separately) — mirroring how the route grain tests are structured.
+    avg delay is observation-weighted; honest None (never 0) when obs is 0/missing.
+    """
+    from transit_ops.snapshots.builders.historic import build_stop_reliability
+
+    # _STOP_BY_GRAIN_SQL returns (stop_id, grain, obs, severe, weighted_delay_sec)
+    # for the union of shift buckets (peak hour + off-peak hour) and day-type
+    # (weekday + weekend). 60s weighted per obs -> avg 1.0 min for the populated
+    # rows; the weekend row has obs=0 to assert the honest-None path.
+    grain_rows = [
+        # am_peak: 10 obs, 1 severe, 600s weighted -> avg 1.0 min, otp 90, severe 10.0
+        {"stop_id": "51234", "grain": "am_peak", "obs": 10, "severe": 1,
+         "weighted_delay_sec": 600.0},
+        # night (off-peak): 4 obs, 0 severe, 480s weighted -> avg 2.0 min, otp 100
+        {"stop_id": "51234", "grain": "night", "obs": 4, "severe": 0,
+         "weighted_delay_sec": 480.0},
+        # weekday: 14 obs, 1 severe, 1080s weighted -> avg ~1.3 min
+        {"stop_id": "51234", "grain": "weekday", "obs": 14, "severe": 1,
+         "weighted_delay_sec": 1080.0},
+        # weekend: 0 obs -> honest None across otp/avg/severe
+        {"stop_id": "51234", "grain": "weekend", "obs": 0, "severe": 0,
+         "weighted_delay_sec": None},
+    ]
+
+    # _STOP_DOW_SQL returns (stop_id, day_of_week_iso, dow_obs, severe, weighted_delay_sec)
+    # per weekday. The ISODOW resolution runs in Postgres, so the FakeConn returns
+    # already-resolved iso days. The fixture is pre-sorted (iso 1, 3, 7) and FakeConn
+    # returns rows verbatim, so the ORDER BY (stop_id, isodow) is enforced by Postgres,
+    # not asserted by this offline test; the emitted day_of_week list mirrors this order.
+    # Sun (iso 7) carries obs=0 to assert the honest-None path.
+    dow_rows = [
+        # Mon (1): 20 obs, 2 severe, 1200s weighted -> avg 1.0 min, severe 10.0
+        {"stop_id": "51234", "day_of_week_iso": 1, "dow_obs": 20, "severe": 2,
+         "weighted_delay_sec": 1200.0},
+        # Wed (3): 10 obs, 0 severe, 1200s weighted -> avg 2.0 min, severe 0.0
+        {"stop_id": "51234", "day_of_week_iso": 3, "dow_obs": 10, "severe": 0,
+         "weighted_delay_sec": 1200.0},
+        # Sun (7): 0 obs -> honest None across avg/severe; obs None
+        {"stop_id": "51234", "day_of_week_iso": 7, "dow_obs": 0, "severe": 0,
+         "weighted_delay_sec": None},
+    ]
+
+    dispatch = [
+        # by-route breakdown reads stop_delay_weekly too — match its unique
+        # sentinel-filter clause first so it doesn't shadow the weekly period query.
+        ("'__unrouted__'", []),
+        # grain SQL (shift + day-type union) — unique discriminator "AS banded".
+        ("AS banded", grain_rows),
+        # day-of-week seasonality — unique discriminator "AS dow_obs" (must match
+        # before the bare stop_delay_hourly habits needle below).
+        ("AS dow_obs", dow_rows),
+        # weekly period rows (one stop) so the stop survives into output.
+        ("FROM gold.stop_delay_weekly", [
+            {"stop_id": "51234", "obs": 50, "weighted_delay_sec": 3000.0, "severe": 2},
+        ]),
+        ("FROM gold.stop_delay_monthly", []),
+        ("FROM gold.stop_delay_hourly", []),  # habits matrix: empty
+        ("stop_delay_percentile_daily", []),  # day p50/p90: none
+        # Trailing-30d crowding band counts for the stop — unique discriminator
+        # "stop_occupancy_band_daily AS sob". 50 many_seats + 25 standing + 25 full
+        # over 100 band-bearing pings -> shares 0.5 / 0.25 / 0.25.
+        ("stop_occupancy_band_daily AS sob", [
+            {"stop_id": "51234", "empty": 0, "many_seats": 50,
+             "few_seats": 0, "standing": 25, "full": 25},
+        ]),
+        ("stop_name", [{"stop_id": "51234", "stop_name": "Berri-UQAM"}]),
+    ]
+
+    class FC:
+        def execute(self, statement, params=None):  # noqa: ANN001, ANN201, ARG002
+            s = str(statement)
+            for needle, rows in dispatch:
+                if needle in s:
+                    return FakeResult(rows)
+            return FakeResult([])
+
+    out = build_stop_reliability(FC(), provider_id="stm", generated_utc="t")
+    assert "51234" in out
+    by_grain = {p.grain: p for p in out["51234"].periods}
+
+    # week stays present; the four granularity grains are additive alongside it.
+    assert "week" in by_grain
+    assert {"am_peak", "night", "weekday", "weekend"} <= set(by_grain)
+
+    am = by_grain["am_peak"]
+    assert am.avg_delay_min == 1.0          # 600s weighted / 10 obs / 60
+    assert am.severe_pct == 10.0            # 1 / 10
+    assert am.otp_pct == 90                 # severe proxy: (10-1)/10
+
+    night = by_grain["night"]
+    assert night.avg_delay_min == 2.0       # 480s / 4 obs / 60
+    assert night.otp_pct == 100             # no severe
+    assert night.severe_pct == 0.0
+
+    weekday = by_grain["weekday"]
+    assert weekday.avg_delay_min == 1.3     # round(1080/14/60, 1)
+
+    # Honest NULLs (never 0) when obs is 0.
+    weekend = by_grain["weekend"]
+    assert weekend.otp_pct is None
+    assert weekend.avg_delay_min is None
+    assert weekend.severe_pct is None
+
+    # --- per-stop weekday seasonality (day_of_week, ISO 1..7), route parity ---
+    dow = {d.day_of_week_iso: d for d in out["51234"].day_of_week}
+    # Emission stays sorted by ISODOW (SQL ORDER BY); the populated iso days surface.
+    assert [d.day_of_week_iso for d in out["51234"].day_of_week] == [1, 3, 7]
+
+    mon = dow[1]
+    assert mon.avg_delay_min == 1.0          # 1200s weighted / 20 obs / 60
+    assert mon.severe_pct == 10.0            # 2 / 20
+    assert mon.observation_count == 20
+
+    wed = dow[3]
+    assert wed.avg_delay_min == 2.0          # 1200s / 10 obs / 60
+    assert wed.severe_pct == 0.0
+    assert wed.observation_count == 10
+
+    # Honest None (never 0) on a zero-observation weekday.
+    sun = dow[7]
+    assert sun.avg_delay_min is None
+    assert sun.severe_pct is None
+    assert sun.observation_count is None
+
+    # --- per-stop crowding band shares (occupancy_mix), honest-None on zero ---
+    mix = out["51234"].occupancy_mix
+    assert mix is not None
+    assert mix.empty == 0.0
+    assert mix.many_seats == 0.5            # 50 / 100 band-bearing pings
+    assert mix.standing == 0.25             # 25 / 100
+    assert mix.full == 0.25                 # 25 / 100
+    assert mix.few_seats == 0.0
+
+
+def test_build_stop_reliability_occupancy_mix_none_when_no_telemetry() -> None:
+    """A stop with delay history but NO occupancy telemetry attributed to it must
+    publish occupancy_mix=None (honest-None), never a fabricated all-zero mix — an
+    all-zero distribution is indistinguishable from a real all-empty fleet. Mirrors
+    the route occupancy honesty path."""
+    from transit_ops.snapshots.builders.historic import build_stop_reliability
+
+    dispatch = [
+        ("'__unrouted__'", []),
+        ("AS banded", []),
+        ("AS dow_obs", []),
+        # The stop survives into output purely on its weekly period row.
+        ("FROM gold.stop_delay_weekly", [
+            {"stop_id": "51234", "obs": 50, "weighted_delay_sec": 3000.0, "severe": 2},
+        ]),
+        ("FROM gold.stop_delay_monthly", []),
+        ("FROM gold.stop_delay_hourly", []),
+        ("stop_delay_percentile_daily", []),
+        # No occupancy rows attributed to this stop -> honest-None occupancy_mix.
+        ("stop_occupancy_band_daily AS sob", []),
+        ("stop_name", [{"stop_id": "51234", "stop_name": "Berri-UQAM"}]),
+    ]
+
+    class FC:
+        def execute(self, statement, params=None):  # noqa: ANN001, ANN201, ARG002
+            s = str(statement)
+            for needle, rows in dispatch:
+                if needle in s:
+                    return FakeResult(rows)
+            return FakeResult([])
+
+    out = build_stop_reliability(FC(), provider_id="stm", generated_utc="t")
+    assert "51234" in out
+    assert out["51234"].occupancy_mix is None  # no telemetry -> null, not all-zero
+
+
+# --------------------------------------------------------------------------
+# build_network_trend — network-wide shift + day-type reliability (folded depth)
+# --------------------------------------------------------------------------
+
+
+def test_build_network_trend_emits_network_shift_and_daytype() -> None:
+    """Network trend aggregates the per-route shift / day-type rollups network-wide.
+
+    The GROUP BY shift / GROUP BY day_type runs in Postgres over ALL routes; the
+    FakeConn returns the already-aggregated grain rows. OTP is the REAL
+    on_time/otp_known (not the severe proxy) — numerator and denominator share
+    scope so the gold on-time NULL-guard does not bias OTP low — avg delay is
+    observation-weighted via SUM(avg*known)/SUM(known) over the full known_obs,
+    severe_pct = severe/known_obs, and every metric is honest None (never 0) on a
+    grain with no known-delay observations.
+    """
+    from transit_ops.snapshots.builders.historic import build_network_trend
+
+    # _NETWORK_BY_SHIFT_SQL returns
+    # (grain, on_time, otp_known, known_obs, severe, weighted_delay_sec)
+    # aggregated across all routes. otp_known is delay obs scoped to rows whose
+    # on_time_observation_count is NOT NULL (the OTP NULL-guard denominator);
+    # known_obs is the FULL delay-observation total (severe + avg denominator).
+    # Out-of-canonical order on purpose to assert the builder re-orders to
+    # am_peak, midday, pm_peak, evening, night.
+    shift_rows = [
+        # pm_peak: 1000 known, but only 900 of those came from on-time-known
+        #   routes (otp_known=900). on_time=720 -> REAL otp 80 (720/900), NOT
+        #   the biased 72 a bare SUM(on_time)/SUM(known) would give. avg/severe
+        #   stay over the full 1000: avg 2.0 min (120000/1000/60), severe 5.0.
+        {"grain": "pm_peak", "on_time": 720, "otp_known": 900, "known_obs": 1000,
+         "severe": 50, "weighted_delay_sec": 120000.0},
+        # am_peak: every route on-time-known -> otp_known == known_obs == 500.
+        #   on_time=450 -> otp 90, avg 1.0 min, severe 2.0
+        {"grain": "am_peak", "on_time": 450, "otp_known": 500, "known_obs": 500,
+         "severe": 10, "weighted_delay_sec": 30000.0},
+        # night: 0 known -> honest None across otp/avg/severe
+        {"grain": "night", "on_time": 0, "otp_known": 0, "known_obs": 0,
+         "severe": 0, "weighted_delay_sec": None},
+    ]
+
+    # _NETWORK_BY_DAYTYPE_SQL returns the same shape grouped by day_type.
+    daytype_rows = [
+        # weekend: 200 known, 150 on_time, 20 severe, 24000s weighted; all routes
+        #   on-time-known -> otp_known 200 -> otp 75, avg 2.0 min, severe 10.0
+        {"grain": "weekend", "on_time": 150, "otp_known": 200, "known_obs": 200,
+         "severe": 20, "weighted_delay_sec": 24000.0},
+        # weekday: 2000 known, 1800 on_time, 60 severe, 180000s weighted; all
+        #   routes on-time-known -> otp_known 2000 -> otp 90, avg 1.5, severe 3.0
+        {"grain": "weekday", "on_time": 1800, "otp_known": 2000,
+         "known_obs": 2000, "severe": 60, "weighted_delay_sec": 180000.0},
+    ]
+
+    dispatch = [
+        # network-wide shift grain — unique discriminator "GROUP BY shift".
+        ("GROUP BY shift", shift_rows),
+        # network-wide day-type grain — unique discriminator "GROUP BY day_type".
+        ("GROUP BY day_type", daytype_rows),
+        # the daily/fact/cancellation/occupancy trend queries can be empty here;
+        # this test exercises only the new network grain aggregation.
+    ]
+
+    class FC:
+        def execute(self, statement, params=None):  # noqa: ANN001, ANN201, ARG002
+            s = str(statement)
+            for needle, rows in dispatch:
+                if needle in s:
+                    return FakeResult(rows)
+            return FakeResult([])
+
+    out = build_network_trend(FC(), provider_id="stm", generated_utc="t")
+
+    # The daily/week/month fixtures are exercised in a dedicated test below; this
+    # grain-aggregation test leaves them empty.
+    assert out.weekly == []
+    assert out.monthly == []
+
+    # --- by_shift: canonical order, REAL OTP, weighted avg, honest-None grain ---
+    assert [s.grain for s in out.by_shift] == ["am_peak", "pm_peak", "night"]
+    by_shift = {s.grain: s for s in out.by_shift}
+
+    am = by_shift["am_peak"]
+    assert am.otp_pct == 90                  # 450 / 500 (REAL on_time/known)
+    assert am.avg_delay_min == 1.0           # 30000 / 500 / 60
+    assert am.severe_pct == 2.0              # 10 / 500
+
+    pm = by_shift["pm_peak"]
+    # OTP NULL-guard: 720 / 900 (otp_known), NOT the biased 72 = 720 / 1000.
+    assert pm.otp_pct == 80                  # 720 on_time / 900 otp_known
+    assert pm.avg_delay_min == 2.0           # 120000 / 1000 / 60 (full known_obs)
+    assert pm.severe_pct == 5.0              # 50 / 1000 (full known_obs)
+
+    # Honest NULLs (never 0) when the grain has no known-delay observations.
+    night = by_shift["night"]
+    assert night.otp_pct is None
+    assert night.avg_delay_min is None
+    assert night.severe_pct is None
+
+    # --- by_daytype: weekday before weekend, REAL OTP, weighted avg ---
+    assert [d.grain for d in out.by_daytype] == ["weekday", "weekend"]
+    by_daytype = {d.grain: d for d in out.by_daytype}
+
+    weekday = by_daytype["weekday"]
+    assert weekday.otp_pct == 90             # 1800 / 2000
+    assert weekday.avg_delay_min == 1.5      # 180000 / 2000 / 60
+    assert weekday.severe_pct == 3.0         # 60 / 2000
+
+    weekend = by_daytype["weekend"]
+    assert weekend.otp_pct == 75             # 150 / 200
+    assert weekend.avg_delay_min == 2.0      # 24000 / 200 / 60
+    assert weekend.severe_pct == 10.0        # 20 / 200
+
+
+def test_build_network_trend_emits_week_and_month_grain_series() -> None:
+    """Weekly + monthly TrendPoint lists re-aggregate the SAME daily sources.
+
+    The date_trunc('week'/'month', ...) GROUP BY runs in Postgres; the FakeConn
+    returns already-bucketed rows keyed by the bucket-start local date. OTP +
+    weighted-avg + cancellation_rate + occupancy_mix are observation-weighted
+    exactly like the daily series; p90_min/vehicles stay None on every week/month
+    point (no fact_sql is dispatched for those grains). Lists sort ascending by
+    bucket date. Dispatch keys use the unique `-- trend:<grain>:<source>` markers.
+    """
+    import datetime
+
+    from transit_ops.snapshots.builders.historic import build_network_trend
+
+    # Two ISO-week buckets (Mon 2026-06-01, Mon 2026-06-08), out of order to
+    # assert ascending sort. otp = on_time/known, avg = weighted/known/60.
+    week_hourly = [
+        {"local_date": datetime.date(2026, 6, 8), "known_obs": 200, "on_time": 150,
+         "weighted_delay_sec": 24000.0},  # otp 75, avg 2.0
+        {"local_date": datetime.date(2026, 6, 1), "known_obs": 100, "on_time": 90,
+         "weighted_delay_sec": 6000.0},   # otp 90, avg 1.0
+    ]
+    week_cancel = [
+        {"local_date": datetime.date(2026, 6, 1), "canceled": 3, "total": 120},  # 2.5%
+    ]
+    week_occupancy = [
+        {"local_date": datetime.date(2026, 6, 1), "empty": 0, "many_seats": 50,
+         "few_seats": 30, "standing": 15, "full": 5},  # total 100
+    ]
+    # One calendar-month bucket (2026-06-01).
+    month_hourly = [
+        {"local_date": datetime.date(2026, 6, 1), "known_obs": 1000, "on_time": 820,
+         "weighted_delay_sec": 90000.0},  # otp 82, avg 1.5
+    ]
+    month_cancel = [
+        {"local_date": datetime.date(2026, 6, 1), "canceled": 12, "total": 600},  # 2.0%
+    ]
+    month_occupancy = [
+        {"local_date": datetime.date(2026, 6, 1), "empty": 10, "many_seats": 40,
+         "few_seats": 30, "standing": 15, "full": 5},  # total 100
+    ]
+
+    dispatch = [
+        ("trend:week:hourly", week_hourly),
+        ("trend:week:cancel", week_cancel),
+        ("trend:week:occupancy", week_occupancy),
+        ("trend:month:hourly", month_hourly),
+        ("trend:month:cancel", month_cancel),
+        ("trend:month:occupancy", month_occupancy),
+        # daily series + network grains left empty for this test.
+    ]
+
+    class FC:
+        def execute(self, statement, params=None):  # noqa: ANN001, ANN201, ARG002
+            s = str(statement)
+            for needle, rows in dispatch:
+                if needle in s:
+                    return FakeResult(rows)
+            return FakeResult([])
+
+    out = build_network_trend(FC(), provider_id="stm", generated_utc="t")
+
+    # --- weekly: ascending by bucket date, weighted OTP/avg, honest fields ---
+    assert [p.date for p in out.weekly] == ["2026-06-01", "2026-06-08"]
+    w0, w1 = out.weekly
+    assert w0.otp_pct == 90                  # 90 / 100
+    assert w0.avg_delay_min == 1.0           # 6000 / 100 / 60
+    assert w0.cancellation_rate == 2.5       # 100 * 3 / 120
+    assert w0.occupancy_mix is not None
+    assert w0.occupancy_mix.many_seats == 0.5  # 50 / 100
+    # p90/vehicles NEVER aggregated to week (no fact_sql dispatched).
+    assert w0.p90_min is None
+    assert w0.vehicles is None
+    # Second week bucket has only hourly data → cancel/occupancy honest-None.
+    assert w1.otp_pct == 75                  # 150 / 200
+    assert w1.avg_delay_min == 2.0           # 24000 / 200 / 60
+    assert w1.cancellation_rate is None
+    assert w1.occupancy_mix is None
+    assert w1.p90_min is None
+    assert w1.vehicles is None
+
+    # --- monthly: one bucket, same weighted math, null p90/vehicles ---
+    assert [p.date for p in out.monthly] == ["2026-06-01"]
+    m0 = out.monthly[0]
+    assert m0.otp_pct == 82                  # 820 / 1000
+    assert m0.avg_delay_min == 1.5           # 90000 / 1000 / 60
+    assert m0.cancellation_rate == 2.0       # 100 * 12 / 600
+    assert m0.occupancy_mix is not None
+    assert m0.occupancy_mix.empty == 0.1     # 10 / 100
+    assert m0.p90_min is None
+    assert m0.vehicles is None

@@ -58,7 +58,10 @@
 		path = '/',
 		locale,
 		siteOrigin = 'https://transit.yesid.dev',
-		siteName = 'Transit · STM Analytics',
+		// Provider-neutral brand default — callers (the root layout) pass an
+		// identity-derived name ("STM Analytics"); an un-passed caller must never
+		// leak a hardcoded agency, so the fallback stays generic.
+		siteName = 'Transit Analytics',
 		themeColor = '#141414',
 		noIndex = false,
 		singleLocale = false,
@@ -74,7 +77,7 @@
 
 	// og:image — the pre-built default card for this locale.
 	const ogImage = $derived(`${siteOrigin}/og/${locale}.png`);
-	const ogImageAlt = $derived(`${siteName} — ${title}`);
+	const ogImageAlt = $derived(`${siteName}: ${title}`);
 
 	// og:locale uses BCP-47-ish underscore form (Montréal market → _CA).
 	const ogLocale = $derived(`${locale}_CA`);
@@ -91,7 +94,7 @@
 		if (!dev) return;
 		if (fullTitle.length > 60) {
 			console.warn(
-				`[SeoHead] title > 60 chars (${fullTitle.length}) — may truncate in search. path: ${path}`,
+				`[SeoHead] title > 60 chars (${fullTitle.length}), may truncate in search. path: ${path}`,
 			);
 		}
 		if (description.length < 120 || description.length > 160) {

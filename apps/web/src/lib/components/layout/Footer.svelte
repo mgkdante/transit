@@ -1,17 +1,18 @@
 <!--
-  Footer — the site footer strip.
+  Footer, the site footer strip.
 
   Ported from yesid.dev's layout/Footer.svelte; same two-row structure, re-themed
   to transit tokens and re-contented for the citizen dashboard:
     Row 1 (above the hazard rule):
       LEFT   : the yesid. parent-brand wordmark (-> yesid.dev) + the "transit"
                product mark + a bilingual tagline. transit.yesid.dev is a
-               yesid.dev product, so the chrome carries the house mark — mirrors
+               yesid.dev product, so the chrome carries the house mark, mirrors
                the TopBar brand cluster.
       CENTER : the IA nav links (menuItems from $lib/content/nav), localized.
       RIGHT  : the external portfolio link back to yesid.dev.
     Row 2 (below the hazard rule, departure-board rule):
-      STM open-data attribution ("Données STM — CC BY 4.0") + the unofficial-site
+      the active provider's open-data attribution (manifest.attribution, rendered
+      verbatim as a per-provider licence obligation) + the unofficial-site
       disclaimer (Honesty Gate #6) on the left; the live system-date readout on
       the right (the orange route-set lamp is the lone --primary touch).
 
@@ -22,16 +23,24 @@
 -->
 <script lang="ts">
 	import { DEFAULT_LOCALE, getLocale, localizeHref, type Locale } from '$lib/i18n';
-	import { SURFACE_NAV, MENU_EXTRAS } from '$lib/content/nav';
+	import { SURFACE_NAV, SECONDARY_NAV, MENU_EXTRAS } from '$lib/content/nav';
 	import StatusDot from '$lib/components/brand/StatusDot.svelte';
 	import BrandCluster from '$lib/components/brand/BrandCluster.svelte';
 
 	interface FooterProps {
 		/** Active locale (prop wins; falls back to context for isolated renders). */
 		locale?: Locale;
+		/**
+		 * Per-provider open-data licence string (manifest.attribution), rendered
+		 * VERBATIM — a licence obligation, not cosmetic copy. Omitted ⇒ the
+		 * attribution line is hidden (never fabricate a licence we don't hold).
+		 */
+		attribution?: string;
+		/** Provider display name (manifest.display_name); drives the tagline + disclaimer. */
+		providerName?: string;
 	}
 
-	let { locale: localeProp }: FooterProps = $props();
+	let { locale: localeProp, attribution: attributionProp, providerName }: FooterProps = $props();
 
 	// Prop wins (the layout threads the reactive request locale so the footer copy
 	// + localized hrefs stay current across EN⇄FR without a remount); fall back to
@@ -39,42 +48,40 @@
 	const ctxLocale = getLocale();
 	const locale = $derived<Locale>(localeProp ?? ctxLocale ?? DEFAULT_LOCALE);
 
-	// System date — the departure-board readout (YYYY.MM.DD), matches yesid's footer.
+	// System date, the departure-board readout (YYYY.MM.DD), matches yesid's footer.
 	const now = new Date();
 	const systemDate = `${now.getFullYear()}.${String(now.getMonth() + 1).padStart(2, '0')}.${String(now.getDate()).padStart(2, '0')}`;
 
-	type CopyKey =
-		| 'tagline'
-		| 'navAria'
-		| 'attribution'
-		| 'disclaimer'
-		| 'statusPrefix'
-		| 'liveLabel';
+	type CopyKey = 'navAria' | 'statusPrefix' | 'liveLabel';
 	const T: Record<Locale, Record<CopyKey, string>> = {
-		fr: {
-			tagline: 'Analytique citoyenne du réseau STM',
-			navAria: 'Pied de page',
-			attribution: 'Données STM — CC BY 4.0',
-			disclaimer: 'Site non officiel — sans affiliation avec la STM.',
-			statusPrefix: 'SYSTÈME',
-			liveLabel: 'En direct',
-		},
-		en: {
-			tagline: 'Citizen analytics for the STM network',
-			navAria: 'Footer',
-			attribution: 'STM data — CC BY 4.0',
-			disclaimer: 'Unofficial website — not affiliated with the STM.',
-			statusPrefix: 'SYSTEM',
-			liveLabel: 'Live',
-		},
+		fr: { navAria: 'Pied de page', statusPrefix: 'SYSTÈME', liveLabel: 'En direct' },
+		en: { navAria: 'Footer', statusPrefix: 'SYSTEM', liveLabel: 'Live' },
 	};
 	const t = $derived(T[locale]);
 
-	// IA links — locale-LESS hrefs from the shared SURFACE_NAV manifest, localized
+	// Provider-driven copy (multi-provider Layer A): the agency NAME comes from the
+	// manifest (display_name), with a neutral, provider-agnostic fallback for the
+	// brief window before the v1 context boots — NEVER a hardcoded 'STM'. The
+	// licence line is the manifest's verbatim attribution (a per-provider obligation).
+	const agencyName = $derived(
+		providerName ?? (locale === 'fr' ? 'l’agence de transport' : 'the transit agency'),
+	);
+	const tagline = $derived(
+		locale === 'fr'
+			? `Analytique citoyenne pour ${agencyName}`
+			: `Citizen analytics for ${agencyName}`,
+	);
+	const disclaimer = $derived(
+		locale === 'fr'
+			? `Site non officiel, sans affiliation avec ${agencyName}.`
+			: `Unofficial website, not affiliated with ${agencyName}.`,
+	);
+
+	// IA links, locale-LESS hrefs from the shared SURFACE_NAV manifest, localized
 	// at render. The portfolio (off-site) links come from MENU_EXTRAS and render in
 	// the right cluster below.
 	const navLinks = $derived(
-		SURFACE_NAV.map((item) => ({
+		[...SURFACE_NAV, ...SECONDARY_NAV].map((item) => ({
 			label: item.label[locale],
 			href: localizeHref(item.href, locale),
 		})),
@@ -95,7 +102,7 @@
 		<!-- Left: parent wordmark + transit product mark + tagline (shared cluster). -->
 		<div class="flex flex-col items-center sm:items-start">
 			<BrandCluster variant="footer" productHref={localizeHref('/', locale)} />
-			<span class="mt-1 font-mono text-caption text-[var(--muted-foreground)]">{t.tagline}</span>
+			<span class="mt-1 font-mono text-caption text-[var(--muted-foreground)]">{tagline}</span>
 		</div>
 
 		<!-- Center: IA nav links -->
@@ -125,15 +132,15 @@
 		</div>
 	</div>
 
-	<!-- Row 2: Status bar — below the hazard rule. STM open-data attribution + the
+	<!-- Row 2: Status bar, below the hazard rule. STM open-data attribution + the
 	     unofficial-site disclaimer (Honesty Gate #6) on the left; the live system
 	     readout on the right (the orange route-set lamp is the lone --primary touch). -->
 	<div
 		class="footer-status-border mx-auto flex max-w-5xl flex-col items-center gap-2 px-6 py-4 font-mono text-caption text-[var(--muted-foreground)] sm:flex-row sm:justify-between sm:px-10"
 	>
 		<p class="footer-honesty m-0 text-center sm:text-left">
-			<span>{t.attribution}</span>
-			<span class="footer-disclaimer">{t.disclaimer}</span>
+			{#if attributionProp}<span>{attributionProp}</span>{/if}
+			<span class="footer-disclaimer">{disclaimer}</span>
 		</p>
 		<span class="flex items-center gap-1.5 text-[var(--accent-text)]">
 			<StatusDot color="orange" pulse label={t.liveLabel} />
@@ -144,7 +151,7 @@
 </footer>
 
 <style>
-	/* Platform-edge hazard strip (theme-invariant yellow + warm black — matches
+	/* Platform-edge hazard strip (theme-invariant yellow + warm black, matches
 	   the Separator hazard recipe). */
 	.footer-gradient-sep {
 		height: 3px;
@@ -157,7 +164,7 @@
 		);
 	}
 
-	/* The status bar's top line is a BOLD departure-board rule — the yellow
+	/* The status bar's top line is a BOLD departure-board rule, the yellow
 	   wayfinding voice as structure. */
 	.footer-status-border {
 		border-top: 2px solid var(--border-rule-accent);
@@ -168,9 +175,9 @@
 	}
 
 	/* The brand cluster (yesid. mark · divider · transit product mark) now lives in
-	   BrandCluster.svelte — the shared brand primitive, also used by the TopBar. */
+	   BrandCluster.svelte, the shared brand primitive, also used by the TopBar. */
 
-	/* Honesty line — attribution + the unofficial-site disclaimer stack tight. */
+	/* Honesty line, attribution + the unofficial-site disclaimer stack tight. */
 	.footer-honesty {
 		display: flex;
 		flex-direction: column;

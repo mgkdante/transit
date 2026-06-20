@@ -63,36 +63,53 @@ jobs:
       - name: Install project dependencies
         run: uv sync --locked
 
-      - name: Build 5-minute warm rollups
-        run: uv run python -m transit_ops.cli build-warm-rollups stm
+      - name: Build 5-minute warm rollups (all providers)
+        # One looped job over every provider; the expensive setup is paid once.
+        run: |
+          for provider in $(uv run python -m transit_ops.cli list-providers); do
+            echo "::group::build-warm-rollups ${provider}"
+            uv run python -m transit_ops.cli build-warm-rollups "$provider"
+            echo "::endgroup::"
+          done
 
-      - name: Publish historic /v1 snapshot to R2
-        run: uv run python -m transit_ops.cli publish-snapshot stm --tier historic
+      - name: Publish historic /v1 snapshot to R2 (all providers)
+        run: uv run python -m transit_ops.cli publish-all --tier historic
 
       # Runs AFTER the historic publish so alert_history.json builds from the
       # unpruned silver history first. Steady-state daily volume is tiny
       # (~288 raw rows + a few hundred closed silver rows); the silver table is
       # a few thousand rows post-0038. Exits 1 on any R2 delete failure.
-      - name: Prune i3 raw snapshots + closed silver history
-        run: uv run python -m transit_ops.cli prune-i3-storage stm
+      - name: Prune i3 raw snapshots + closed silver history (all providers)
+        run: |
+          for provider in $(uv run python -m transit_ops.cli list-providers); do
+            uv run python -m transit_ops.cli prune-i3-storage "$provider"
+          done
 
-      - name: Prune expired warm rollup rows
-        run: uv run python -m transit_ops.cli prune-warm-rollup-storage stm
+      - name: Prune expired warm rollup rows (all providers)
+        run: |
+          for provider in $(uv run python -m transit_ops.cli list-providers); do
+            uv run python -m transit_ops.cli prune-warm-rollup-storage "$provider"
+          done
 
       # Bounded by BRONZE_PRUNE_MAX_OBJECTS_PER_BATCH x BRONZE_PRUNE_MAX_BATCHES
       # (5000 x 1 per phase, ~2-7 min) regardless of backlog. Exits 1 on any
       # R2 delete failure — a red job is the alert signal until slice-9.1.1o.
       # Capture-race-safe: the orphan-run delete is age-gated (30d/365d), and
       # 07:00 UTC runs an hour after the 06:00 static pipeline anyway.
-      - name: Prune expired Bronze objects and raw metadata
-        run: uv run python -m transit_ops.cli prune-bronze-storage stm
+      - name: Prune expired Bronze objects and raw metadata (all providers)
+        run: |
+          for provider in $(uv run python -m transit_ops.cli list-providers); do
+            uv run python -m transit_ops.cli prune-bronze-storage "$provider"
+          done
 
-      - name: Build retention proof report
+      - name: Build retention proof report (all providers)
         if: always()
         continue-on-error: true
         run: |
           mkdir -p artifacts
-          uv run python -m transit_ops.cli retention-proof-report stm --report-path artifacts/retention-proof.json
+          for provider in $(uv run python -m transit_ops.cli list-providers); do
+            uv run python -m transit_ops.cli retention-proof-report "$provider" --report-path "artifacts/retention-proof-${provider}.json"
+          done
 
       - name: Upload retention proof artifact
         if: always()

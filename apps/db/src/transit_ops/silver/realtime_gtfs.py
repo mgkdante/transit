@@ -9,6 +9,7 @@ from sqlalchemy import bindparam, text
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.engine import Connection, Engine
 
+from transit_ops.core.models import ProviderManifest
 from transit_ops.db.connection import make_engine
 from transit_ops.gtfs.types import (
     ProviderBounds,
@@ -24,10 +25,6 @@ from transit_ops.silver._batch import execute_batched_insert
 
 CHUNK_SIZE = 10_000
 PARSER_VERSION = "transit_ops.silver.realtime_gtfs.v1"
-MONTREAL_MIN_LONGITUDE = -74.1
-MONTREAL_MAX_LONGITUDE = -73.2
-MONTREAL_MIN_LATITUDE = 45.25
-MONTREAL_MAX_LATITUDE = 45.75
 
 RT_FEED_SNAPSHOTS_INSERT = text(
     """
@@ -321,25 +318,21 @@ def _has_field(message, field_name: str) -> bool:  # noqa: ANN001
         return False
 
 
-def classify_montreal_position_quality(
-    latitude: float | None,
-    longitude: float | None,
-) -> str:
-    quality = validate_wgs84_position(
-        latitude,
-        longitude,
-        bounds=ProviderBounds(
-            min_latitude=MONTREAL_MIN_LATITUDE,
-            max_latitude=MONTREAL_MAX_LATITUDE,
-            min_longitude=MONTREAL_MIN_LONGITUDE,
-            max_longitude=MONTREAL_MAX_LONGITUDE,
-        ),
+def _manifest_provider_bounds(manifest: ProviderManifest) -> ProviderBounds | None:
+    """Convert a provider manifest's WGS84 bounds into ProviderBounds, if set.
+
+    Bounds are optional per provider; when absent the position-quality check
+    falls back to a generic WGS84 validity test (no bbox).
+    """
+    bounds = manifest.provider.bounds
+    if bounds is None:
+        return None
+    return ProviderBounds(
+        min_latitude=bounds.min_latitude,
+        max_latitude=bounds.max_latitude,
+        min_longitude=bounds.min_longitude,
+        max_longitude=bounds.max_longitude,
     )
-    if quality == "valid_provider_bbox":
-        return "valid_montreal_bbox"
-    if quality == "outside_provider_bbox":
-        return "outside_montreal_bbox"
-    return quality
 
 
 def _enum_name(enum_type, value: int | None) -> str | None:  # noqa: ANN001
@@ -656,6 +649,7 @@ def _normalize_rt_vehicle_positions(
     *,
     snapshot: BronzeRealtimeSnapshot,
     rt_feed_snapshot_id: int,
+    provider_bounds: ProviderBounds | None = None,
 ) -> list[dict[str, object]]:
     vehicle_rows: list[dict[str, object]] = []
 
@@ -704,7 +698,9 @@ def _normalize_rt_vehicle_positions(
                 "vehicle_timestamp_utc": _parse_optional_timestamp(vehicle.timestamp)
                 if _has_field(vehicle, "timestamp")
                 else None,
-                "position_quality": classify_montreal_position_quality(latitude, longitude),
+                "position_quality": validate_wgs84_position(
+                    latitude, longitude, bounds=provider_bounds
+                ),
                 "feed_timestamp_utc": snapshot.feed_timestamp_utc,
                 "captured_at_utc": snapshot.captured_at_utc,
             }
@@ -847,6 +843,7 @@ def _load_realtime_message_to_silver(
     *,
     snapshot: BronzeRealtimeSnapshot,
     message: gtfs_realtime_pb2.FeedMessage,
+    provider_bounds: ProviderBounds | None = None,
 ) -> RealtimeSilverLoadResult:
     if snapshot.endpoint_key not in {"trip_updates", "vehicle_positions"}:
         raise ValueError(f"Unsupported realtime endpoint '{snapshot.endpoint_key}'.")
@@ -898,6 +895,7 @@ def _load_realtime_message_to_silver(
             message,
             snapshot=snapshot,
             rt_feed_snapshot_id=rt_feed_snapshot_id,
+            provider_bounds=provider_bounds,
         )
         row_counts.update(
             {
@@ -930,6 +928,7 @@ def load_realtime_snapshot_to_silver(
     *,
     snapshot: BronzeRealtimeSnapshot,
     bronze_storage,
+    provider_bounds: ProviderBounds | None = None,
 ) -> RealtimeSilverLoadResult:
     if not bronze_storage.exists(snapshot.storage_path):
         raise FileNotFoundError(
@@ -945,6 +944,7 @@ def load_realtime_snapshot_to_silver(
         connection,
         snapshot=snapshot,
         message=message,
+        provider_bounds=provider_bounds,
     )
 
 
@@ -955,6 +955,7 @@ def load_realtime_snapshots_to_silver(
     snapshots: list[BronzeRealtimeSnapshot],
     bronze_storage,
     skip_existing: bool = False,
+    provider_bounds: ProviderBounds | None = None,
 ) -> RealtimeSilverBatchLoadResult:
     results: list[RealtimeSilverLoadResult] = []
     skipped_existing_snapshot_ids: list[int] = []
@@ -980,6 +981,7 @@ def load_realtime_snapshots_to_silver(
                 connection,
                 snapshot=snapshot,
                 bronze_storage=bronze_storage,
+                provider_bounds=provider_bounds,
             )
         else:
             _ensure_snapshot_not_loaded(
@@ -990,6 +992,7 @@ def load_realtime_snapshots_to_silver(
                 connection,
                 snapshot=snapshot,
                 message=message,
+                provider_bounds=provider_bounds,
             )
         results.append(result)
         for table_name, count in result.row_counts.items():
@@ -1019,6 +1022,7 @@ def load_latest_realtime_to_silver(
     )
     manifest = registry.get_provider(provider_id)
     realtime_feed = manifest.realtime_feed(endpoint_key)
+    provider_bounds = _manifest_provider_bounds(manifest)
     engine = engine or make_engine(settings)
 
     with engine.connect() as connection:
@@ -1040,4 +1044,5 @@ def load_latest_realtime_to_silver(
             connection,
             snapshot=snapshot,
             bronze_storage=bronze_storage,
+            provider_bounds=provider_bounds,
         )

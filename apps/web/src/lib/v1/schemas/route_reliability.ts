@@ -78,7 +78,11 @@ export type RouteDayOfWeek = z.infer<typeof RouteDayOfWeekSchema>;
 
 export const CancellationPeriodSchema = z.object({
 	// free-string grain the pipeline owns (e.g. 'day'); NOT the web Grain enum.
-	grain: z.string(),
+	// Optional to match the canonical schema (DB↔UI contract doctrine): the producer
+	// always emits it today, but the contract permits omitting it — the web validator
+	// must never be STRICTER than the canonical contract, or it would reject a valid
+	// snapshot. (Drift caught by the contract audit; fixtures masked it.)
+	grain: z.string().optional(),
 	date: z.string().nullable().optional(),
 	// canceled / RT-reported trip-days, %; null when no trips were observed.
 	cancellation_rate_pct: z.number().nullable().optional(),

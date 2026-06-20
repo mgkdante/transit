@@ -1,5 +1,5 @@
 <!--
-  TopBar — the fixed app chrome strip (h60 on desktop).
+  TopBar, the fixed app chrome strip (h60 on desktop).
 
   Left→right clusters:
     BRAND : the yesid. parent-brand wordmark (-> yesid.dev) · divider · the
@@ -29,7 +29,7 @@
 		delocalizePath,
 		getLocale,
 	} from '$lib/i18n';
-	import type { ChromeSearchResult } from '$lib/search/chromeSearch';
+	import type { ChromeSearchResult, ChromeSearchScope } from '$lib/search/chromeSearch';
 	import BrandCluster from '$lib/components/brand/BrandCluster.svelte';
 	import SurfaceNavList from './SurfaceNavList.svelte';
 	import LiveClock from './LiveClock.svelte';
@@ -40,8 +40,13 @@
 	interface TopBarProps {
 		/** Active request locale; omitted → getLocale() context. */
 		locale?: Locale;
-		/** Full current URL — the language switch preserves path + query + hash. */
+		/** Full current URL, the language switch preserves path + query + hash. */
 		url?: URL;
+		/** Active provider display name (manifest.display_name); labels the network chip. */
+		providerName?: string;
+		/** Snappy provider brand (manifest.short_name, e.g. "STM"); preferred for the
+		 * compact network chip when present — falls back to providerName. */
+		providerShortName?: string;
 		/** Count of active alerts; renders the bell badge when > 0. */
 		alertCount?: number;
 		/** Current value of the multi-value search field (bindable). */
@@ -50,6 +55,8 @@
 		onsearch?: (value: string) => void;
 		/** Search matches shown under the chrome field. */
 		searchResults?: readonly ChromeSearchResult[];
+		/** Active surface scope, drives the scoped placeholder hint. */
+		searchScope?: ChromeSearchScope;
 		/** Fired when a search result is selected. */
 		onresultselect?: (result: ChromeSearchResult) => void;
 		/** Fired when the alerts bell is activated. */
@@ -62,10 +69,13 @@
 	let {
 		locale: localeProp,
 		url = new URL('https://transit.local/'),
+		providerName,
+		providerShortName,
 		alertCount = 0,
 		search = $bindable(''),
 		onsearch,
 		searchResults = [],
+		searchScope = 'all',
 		onresultselect,
 		onalerts,
 		availableLocales = PUBLISHED_LOCALES,
@@ -80,20 +90,51 @@
 	// --- Localized strings ---------------------------------------------------
 	const liveLabel = $derived(locale === 'fr' ? 'En direct' : 'Live');
 	const homeAria = $derived(
-		locale === 'fr' ? 'Accueil — tableau de bord transit' : 'Home — transit dashboard',
+		locale === 'fr' ? 'Accueil, tableau de bord transit' : 'Home, transit dashboard',
 	);
+	// Scoped affordance: the placeholder + aria-label tell the rider the field is
+	// restricted to the active surface (a line on /lines, a stop on /stops). FR is
+	// canonical; map/all keep the unchanged full-network strings.
 	const searchPlaceholder = $derived(
-		locale === 'fr'
-			? 'Rechercher une ligne, un arrêt ou une adresse…'
-			: 'Search a line, stop, or address…',
+		searchScope === 'route'
+			? locale === 'fr'
+				? 'Rechercher une ligne…'
+				: 'Search a line…'
+			: searchScope === 'stop'
+				? locale === 'fr'
+					? 'Rechercher un arrêt…'
+					: 'Search a stop…'
+				: locale === 'fr'
+					? 'Rechercher une ligne, un arrêt ou une adresse…'
+					: 'Search a line, stop, or address…',
 	);
-	const searchAria = $derived(locale === 'fr' ? 'Rechercher dans le réseau' : 'Search the network');
+	const searchAria = $derived(
+		searchScope === 'route'
+			? locale === 'fr'
+				? 'Rechercher une ligne'
+				: 'Search a line'
+			: searchScope === 'stop'
+				? locale === 'fr'
+					? 'Rechercher un arrêt'
+					: 'Search a stop'
+				: locale === 'fr'
+					? 'Rechercher dans le réseau'
+					: 'Search the network',
+	);
 	const openSearchAria = $derived(locale === 'fr' ? 'Ouvrir la recherche' : 'Open search');
 	const closeSearchAria = $derived(locale === 'fr' ? 'Fermer la recherche' : 'Close search');
 	const openMenuAria = $derived(locale === 'fr' ? 'Ouvrir le menu' : 'Open menu');
 	const closeMenuAria = $derived(locale === 'fr' ? 'Fermer le menu' : 'Close menu');
 	const menuAria = $derived(locale === 'fr' ? 'Navigation mobile' : 'Mobile navigation');
-	const cityLabel = 'Montréal · STM';
+	// Active-network label for the context chip (a future network selector, cf.
+	// cityAria). Provider-agnostic: from the manifest, never a hardcoded 'STM'. The
+	// snappy short_name ("STM") is preferred for the compact chip, then the full
+	// display_name; a neutral fallback covers the brief window before v1 boots.
+	const cityLabel = $derived(
+		providerShortName ??
+			providerName ??
+			(locale === 'fr' ? 'Réseau de transport' : 'Transit network'),
+	);
 	const cityAria = $derived(locale === 'fr' ? 'Choisir une ville' : 'Choose a city');
 	const alertsAria = $derived(
 		alertCount > 0
@@ -200,7 +241,7 @@
 	)}
 	data-slot="topbar"
 >
-	<!-- BRAND: yesid. (-> yesid.dev) · transit home + live dot — shared cluster. -->
+	<!-- BRAND: yesid. (-> yesid.dev) · transit home + live dot, shared cluster. -->
 	<BrandCluster variant="topbar" productHref="/" productAria={homeAria} {liveLabel} />
 
 	<!-- City picker placeholder (no Family data in 9.2) -------------------- -->
@@ -219,7 +260,7 @@
 			/>
 			<circle cx="8" cy="6" r="1.6" stroke="currentColor" stroke-width="1.3" />
 		</svg>
-		<span class="font-mono text-caption">{cityLabel}</span>
+		<span class="max-w-[14rem] truncate font-mono text-caption" title={cityLabel}>{cityLabel}</span>
 	</button>
 
 	<!-- CENTER: multi-value search ----------------------------------------- -->
@@ -457,7 +498,7 @@
 
 <style>
 	/* The brand cluster (yesid. mark · divider · transit home) + its ≤760px
-	   collapse now live in BrandCluster.svelte — the shared brand primitive. */
+	   collapse now live in BrandCluster.svelte, the shared brand primitive. */
 	.topbar-mobile-search-backdrop {
 		position: fixed;
 		inset: 0;
@@ -558,7 +599,7 @@
 	}
 	/* The nav rows are rendered by the shared SurfaceNavList child, so these reach
 	   them via :global scoped UNDER the TopBar-owned .topbar-mobile-menu container
-	   (no leak — the descendant combinator keeps them confined to this menu). */
+	   (no leak, the descendant combinator keeps them confined to this menu). */
 	.topbar-mobile-menu :global(.topbar-mobile-menu-link) {
 		display: flex;
 		min-width: 0;

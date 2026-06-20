@@ -23,12 +23,23 @@
 		locale: Locale;
 		/** Optional leading mono glyph (decorative). */
 		glyph?: string;
+		/**
+		 * Optional GUARDED brand-colour swatch (e.g. a GTFS route colour). This is
+		 * the ONE allowed dynamic colour in the row: the caller MUST pass a sanitized
+		 * `#rrggbb` (via $lib/search/routeColor) — null/absent renders no swatch.
+		 * Applied via an inline `background` bound to the contract value.
+		 */
+		swatch?: string | null;
+		/** Optional mono mode tag chip shown beside the title (e.g. "Métro", "Bus"). */
+		tag?: string;
 		/** Primary row label. */
 		title: string;
 		/** Optional secondary line under the title. */
 		subtitle?: string;
 		/** Optional right-aligned meta cell (e.g. an OTP %, a distance). */
 		meta?: string;
+		/** Optional inline content for the meta cell (e.g. a ReliabilityBadge). */
+		metaSlot?: import('svelte').Snippet;
 		/** Optional short list of route ids shown as mono chips under the title. */
 		routes?: string[];
 		/** Optional extra classes on the anchor. */
@@ -39,9 +50,12 @@
 		target,
 		locale,
 		glyph,
+		swatch,
+		tag,
 		title,
 		subtitle,
 		meta,
+		metaSlot,
 		routes,
 		class: className,
 	}: EntityRowProps = $props();
@@ -55,11 +69,21 @@
 	class={cn('entity-row', className)}
 	data-slot="entity-row"
 >
+	{#if swatch}
+		<!-- The one allowed dynamic colour: a GUARDED GTFS brand swatch (sanitized
+		     #rrggbb by the caller), applied via an inline background. -->
+		<span class="entity-row-swatch" style="background:{swatch};" aria-hidden="true"></span>
+	{/if}
 	{#if glyph}
 		<span class="entity-row-glyph" aria-hidden="true">{glyph}</span>
 	{/if}
 	<span class="entity-row-body">
-		<span class="entity-row-title">{title}</span>
+		<span class="entity-row-title">
+			<span class="entity-row-title-text">{title}</span>
+			{#if tag}
+				<span class="entity-row-tag">{tag}</span>
+			{/if}
+		</span>
 		{#if subtitle}
 			<span class="entity-row-subtitle">{subtitle}</span>
 		{/if}
@@ -71,7 +95,9 @@
 			</span>
 		{/if}
 	</span>
-	{#if meta}
+	{#if metaSlot}
+		<span class="entity-row-meta">{@render metaSlot()}</span>
+	{:else if meta}
 		<span class="entity-row-meta">{meta}</span>
 	{/if}
 </a>
@@ -101,6 +127,15 @@
 		color: var(--accent-text);
 		flex-shrink: 0;
 	}
+	/* GUARDED brand-colour swatch — a small round chip carrying the GTFS route
+	   hue (the lone dynamic colour; everything else is a token). */
+	.entity-row-swatch {
+		flex-shrink: 0;
+		width: 0.85rem;
+		height: 0.85rem;
+		border-radius: var(--radius-pill);
+		box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--foreground) 18%, transparent);
+	}
 	.entity-row-body {
 		display: flex;
 		flex-direction: column;
@@ -109,12 +144,30 @@
 		min-width: 0;
 	}
 	.entity-row-title {
+		display: flex;
+		align-items: baseline;
+		gap: 0.5rem;
+		min-width: 0;
+	}
+	.entity-row-title-text {
 		font-family: var(--font-heading);
 		font-weight: 600;
 		font-size: var(--text-body);
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
+	}
+	/* Mode tag chip — a quiet mono caption (Métro / Bus …) beside the title. */
+	.entity-row-tag {
+		flex-shrink: 0;
+		font-family: var(--font-mono);
+		font-size: var(--text-micro);
+		letter-spacing: 0.04em;
+		text-transform: uppercase;
+		padding: 0.05rem 0.4rem;
+		border-radius: var(--radius-pill);
+		background-color: var(--muted);
+		color: var(--muted-foreground);
 	}
 	.entity-row-subtitle {
 		color: var(--muted-foreground);

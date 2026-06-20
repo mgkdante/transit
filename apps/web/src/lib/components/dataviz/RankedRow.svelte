@@ -1,5 +1,5 @@
 <!--
-  RankedRow — one row of a ranked list: rank + title + severity bar + delta.
+  RankedRow, one row of a ranked list: rank + title + severity bar + delta.
 
   Used for "worst offenders" / hotspot lists. The magnitude bar is a SeverityBar
   (dataviz severity scale only). The delta chip shows movement vs a prior period
@@ -23,12 +23,20 @@
 	export interface RankedRowProps extends WithElementRef<HTMLAttributes<HTMLDivElement>> {
 		/** 1-based rank. */
 		rank: number;
-		/** Row title (route/stop name — already localized). */
+		/** Row title (route/stop name, already localized). */
 		title: string;
 		/** Optional secondary line (e.g. route id, branch). */
 		subtitle?: string;
-		/** Severity band — drives the bar fill. */
+		/** Severity band, drives the bar fill AND the announced a11y band. */
 		severity: SeverityCode;
+		/**
+		 * Optional fill-colour override (a `var(--dataviz-*)` token), forwarded to
+		 * the SeverityBar. Use ONLY for a calm, honest encoding where the problem-
+		 * severity scale would misframe the data (e.g. the live-bus roster colouring
+		 * early/on-time on the calm `--dataviz-status-*` scale). Omit for the default
+		 * worst-offenders severity colours.
+		 */
+		colorVar?: string;
 		/** Normalized magnitude in [0,1] for the bar. `null` -> no-data bar. */
 		value: number | null;
 		/** Display value text (e.g. "12.4 min", "84%"). */
@@ -48,6 +56,15 @@
 		/** Make the row activatable (keyboard + click). */
 		onSelect?: () => void;
 		/**
+		 * Render the root WITHOUT the self `role="listitem"` (a plain presentational
+		 * container). Set this when the row is wrapped by an outer `<a>`/`<li>` that
+		 * already owns the listitem semantics (the correct list > listitem > link
+		 * shape), so the row never double-declares the role. Ignored when the row is
+		 * interactive (an activatable row keeps its button role). Default false: the
+		 * row self-declares `role="listitem"` for placement directly in a role="list".
+		 */
+		bare?: boolean;
+		/**
 		 * Opt-in richer breakdown tooltip on hover/focus, anchored to the row's
 		 * right edge. Requires `tooltipRows`. Default off; when omitted the row is
 		 * unchanged. Drives the embedded SeverityBar's `interactive` OFF so the two
@@ -64,12 +81,14 @@
 		title,
 		subtitle,
 		severity,
+		colorVar,
 		value,
 		display,
 		delta = null,
 		deltaDisplay,
 		higherIsBetter = false,
 		onSelect,
+		bare = false,
 		tooltip = false,
 		tooltipRows,
 		class: className,
@@ -79,8 +98,8 @@
 
 	const hasDelta = $derived(delta != null && !Number.isNaN(delta));
 
-	// Direction glyph — never colour-only.
-	const deltaGlyph = $derived(!hasDelta ? '—' : delta! > 0 ? '▲' : delta! < 0 ? '▼' : '—');
+	// Direction glyph, never colour-only.
+	const deltaGlyph = $derived(!hasDelta ? '·' : delta! > 0 ? '▲' : delta! < 0 ? '▼' : '·');
 
 	// Delta colour on the dataviz scale: improvement = on-time green token,
 	// regression = severity-critical token, flat / no-data = unknown token.
@@ -95,6 +114,12 @@
 	);
 
 	const interactive = $derived(typeof onSelect === 'function');
+
+	// Root role: an interactive row is a button; a default row self-declares
+	// listitem for placement directly in a role="list"; a `bare` (non-interactive)
+	// row drops the role entirely so an outer <li>/<a> owns the list semantics
+	// (the correct list > listitem > link shape).
+	const rootRole = $derived(interactive ? 'button' : bare ? undefined : 'listitem');
 
 	function activate() {
 		onSelect?.();
@@ -132,7 +157,7 @@
 </script>
 
 {#snippet rowBody()}
-	<!-- Rank — monospace ordinal, neutral. -->
+	<!-- Rank, monospace ordinal, neutral. -->
 	<span
 		class="dv-rank w-6 text-right font-mono text-small tabular-nums text-muted-foreground"
 		aria-hidden="true"
@@ -153,6 +178,7 @@
 		<div class="mt-1.5">
 			<SeverityBar
 				{severity}
+				{colorVar}
 				{value}
 				label={`Rank ${rank}: ${title}`}
 				size="sm"
@@ -174,7 +200,7 @@
 
 {#snippet rowEl()}
 	<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
-	<!-- role + tabindex are correlated: interactive => button + tabindex 0, else listitem + no tabindex. The compiler cannot narrow the conditional. -->
+	<!-- role + tabindex are correlated: interactive => button + tabindex 0, else listitem + no tabindex (or no role when `bare`, so an outer li/a owns the listitem). The compiler cannot narrow the conditional. -->
 	<div
 		bind:this={ref}
 		class={cn(
@@ -186,7 +212,7 @@
 				'transition-colors hover:bg-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ring)]',
 			className,
 		)}
-		role={interactive ? 'button' : 'listitem'}
+		role={rootRole}
 		tabindex={focusable ? 0 : undefined}
 		onclick={interactive ? activate : undefined}
 		onkeydown={interactive ? onKeydown : undefined}

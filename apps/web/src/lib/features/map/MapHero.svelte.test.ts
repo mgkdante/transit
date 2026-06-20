@@ -314,6 +314,34 @@ describe('MapHero mobile chrome', () => {
 		expect(setRouteLinesBlock).not.toContain('contextRoutes');
 	});
 
+	it('surfaces a non-blocking live-feed edge notice without wrapping the GL canvas', () => {
+		const s = source();
+
+		// Derives a tri-state from the LIVE STORE (error + generatedUtc + vehicles),
+		// NOT a ResourceBoundary wrap (the live store is not a Resource, and a wrap
+		// would blank the canvas — the wrong loading model for this surface).
+		expect(s).toContain('liveEdgeState');
+		expect(s).toContain("'unavailable'");
+		expect(s).toContain("'no-vehicles'");
+		// 'unavailable' is cold-start-down: an error AND no build ever loaded (a prior
+		// build leaves the freshness pill's stale verdict to carry the signal).
+		expect(s).toContain('live.error != null && live.generatedUtc == null');
+		// 'no-vehicles' is a fresh, successful build that reports zero vehicles.
+		expect(s).toContain('live.vehicles != null && !live.isStale');
+		// The notice is a floating overlay (not a boundary): a polite live region.
+		expect(s).toContain('class="map-overlay map-live-edge"');
+		expect(s).toContain('role="status"');
+		expect(s).toContain('aria-live="polite"');
+		expect(s).toContain('{liveEdgeMessage}');
+		// Localized copy, not inline literals.
+		expect(s).toContain('t.liveUnavailable');
+		expect(s).toContain('t.liveNoVehicles');
+		// The notice never intercepts pointer input (the map stays fully usable).
+		expect(s).toMatch(/\.map-live-edge\s*\{[\s\S]*pointer-events:\s*none/);
+		// It is NOT a ResourceBoundary around the map.
+		expect(s).not.toContain('<ResourceBoundary');
+	});
+
 	it('mounts the map stage without waiting for the optional basemap pointer', () => {
 		const s = source();
 		const mapStageBlock = s.match(/<MapStage[\s\S]*?\/>/)?.[0] ?? '';

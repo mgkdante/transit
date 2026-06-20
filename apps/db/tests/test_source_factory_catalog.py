@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 
+import pytest
 from sqlalchemy.sql.elements import TextClause
 
 from transit_ops.source_factory import catalog as catalog_module
@@ -46,6 +47,45 @@ class RecordingConnection:
         self.statements.append(statement)
 
 
+class _ProviderScopedResult:
+    def __init__(self, first_value: object, rowcount: int = 0) -> None:
+        self._first = first_value
+        self.rowcount = rowcount
+
+    def first(self) -> object:
+        return self._first
+
+
+class _ProviderScopedConnection:
+    """Fake connection for the per-provider reset path.
+
+    Answers the ``information_schema`` provider_id probes (every table is scoped
+    except those passed in ``tables_without_provider_id``) and records each
+    DELETE the reset issues, so the test can assert what got deleted, in what
+    order, and with which bound parameters — without a real database.
+    """
+
+    def __init__(self, tables_without_provider_id: set[str]) -> None:
+        self._tables_without_provider_id = tables_without_provider_id
+        self.deletes: list[tuple[str, dict[str, object]]] = []
+        self.delete_sql: list[str] = []
+
+    def execute(
+        self, statement: object, parameters: dict[str, object] | None = None
+    ) -> _ProviderScopedResult:
+        sql = str(statement)
+        params = parameters or {}
+        if "information_schema.columns" in sql:
+            qualified = f"{params['schema']}.{params['table']}"
+            has_provider_id = qualified not in self._tables_without_provider_id
+            return _ProviderScopedResult((1,) if has_provider_id else None)
+        # DELETE FROM <schema.table> WHERE provider_id = :provider_id
+        table = sql.split("DELETE FROM ", 1)[1].split(" WHERE", 1)[0].strip()
+        self.deletes.append((table, params))
+        self.delete_sql.append(sql)
+        return _ProviderScopedResult(None, rowcount=0)
+
+
 def test_catalog_covers_expected_stm_source_families() -> None:
     catalog = build_source_factory_catalog("stm")
 
@@ -67,6 +107,30 @@ def test_catalog_covers_expected_stm_source_families() -> None:
     assert by_family["vehicle_positions"].sibling_group == "gtfs_rt"
     assert by_family["gis_static"].sibling_group is None
     assert by_family["i3_alerts"].sibling_group is None
+
+
+def test_catalog_marks_realtime_optional_for_static_only_provider() -> None:
+    # A static-only / static+alerts provider has no trip/vehicle bronze, so the
+    # rebuild must not hard-require those sources.
+    catalog = build_source_factory_catalog(
+        "sts", present_feed_kinds={"static_schedule", "service_alerts"}
+    )
+
+    by_family = {source.family: source for source in catalog.sources}
+    assert by_family["static_schedule"].required is True
+    assert by_family["trip_updates"].required is False
+    assert by_family["vehicle_positions"].required is False
+
+
+def test_catalog_keeps_realtime_required_when_provider_publishes_them() -> None:
+    catalog = build_source_factory_catalog(
+        "stm",
+        present_feed_kinds={"static_schedule", "trip_updates", "vehicle_positions"},
+    )
+
+    by_family = {source.family: source for source in catalog.sources}
+    assert by_family["trip_updates"].required is True
+    assert by_family["vehicle_positions"].required is True
 
 
 def test_catalog_uses_provider_scoped_bronze_prefixes_and_strategies() -> None:
@@ -244,9 +308,44 @@ def test_reset_statement_truncates_all_source_factory_tables() -> None:
         assert table_name not in sql
 
 
-def test_reset_source_factory_tables_executes_the_reset_statement() -> None:
+def test_reset_all_providers_executes_the_truncate_statement() -> None:
     connection = RecordingConnection()
 
-    reset_source_factory_tables(connection)
+    summary = reset_source_factory_tables(connection, all_providers=True)
 
     assert connection.statements == [build_source_factory_reset_statement()]
+    assert summary["mode"] == "all_providers"
+
+
+def test_reset_requires_provider_id_without_all_providers() -> None:
+    connection = RecordingConnection()
+
+    with pytest.raises(ValueError, match="requires a provider_id"):
+        reset_source_factory_tables(connection)
+
+    assert connection.statements == []
+
+
+def test_reset_per_provider_deletes_only_scoped_rows_and_skips_shared_seeds() -> None:
+    # gold.report_labels is the one reset table with no provider_id column; it is
+    # a shared seed and must survive a single-provider rebuild.
+    connection = _ProviderScopedConnection(
+        tables_without_provider_id={"gold.report_labels"}
+    )
+
+    summary = reset_source_factory_tables(connection, "sto")
+
+    assert summary["mode"] == "per_provider"
+    assert summary["provider_id"] == "sto"
+    assert summary["skipped_tables"] == ["gold.report_labels"]
+
+    # Every scoped table is deleted exactly once, in the catalog's child->parent
+    # order, scoped to the provider; the shared seed is never deleted.
+    expected_deleted = [
+        table for table in SOURCE_FACTORY_RESET_TABLES if table != "gold.report_labels"
+    ]
+    assert [table for table, _ in connection.deletes] == expected_deleted
+    assert set(summary["deleted_row_counts"]) == set(expected_deleted)
+    assert all(params == {"provider_id": "sto"} for _, params in connection.deletes)
+    assert not any("report_labels" in sql for sql in connection.delete_sql)
+    assert all("WHERE provider_id = :provider_id" in sql for sql in connection.delete_sql)

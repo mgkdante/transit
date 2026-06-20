@@ -258,6 +258,31 @@
 		return out;
 	});
 	const contextStopFiles = $derived(focusedStop.data ? [focusedStop.data] : []);
+	// Live-feed edge state, surfaced as a small non-blocking floating notice (the
+	// basemap, the stop catalogue, and near-me all stay usable behind it). We never
+	// wrap the GL canvas in a boundary — that would blank the whole surface, which is
+	// the wrong loading model here (the map mounts immediately and repaints).
+	//   · 'unavailable' — the live feed could not be reached AND no build has ever
+	//     loaded (cold-start-down). With a prior build, the freshness pill's stale
+	//     verdict already carries the signal, so we do not double up.
+	//   · 'no-vehicles' — a build loaded fine + is fresh, but reports zero vehicles
+	//     to plot (e.g. overnight, or a partial feed). Honest "nothing to show" beats
+	//     a silent empty map.
+	const liveEdgeState = $derived.by<'unavailable' | 'no-vehicles' | null>(() => {
+		if (live.error != null && live.generatedUtc == null) return 'unavailable';
+		if (live.vehicles != null && !live.isStale && (live.vehicles.vehicles?.length ?? 0) === 0) {
+			return 'no-vehicles';
+		}
+		return null;
+	});
+	const liveEdgeMessage = $derived(
+		liveEdgeState === 'unavailable'
+			? t.liveUnavailable
+			: liveEdgeState === 'no-vehicles'
+				? t.liveNoVehicles
+				: null,
+	);
+
 	const alertList = $derived(live.alerts?.alerts ?? []);
 	const alertEntitySets = $derived(buildAlertEntitySets(alertList));
 	const alertVehicleIds = $derived.by(() => {
@@ -965,6 +990,21 @@
 		{locale}
 	/>
 
+	<!-- Live-feed edge notice: a small, non-blocking pill centred near the top of
+	     the canvas when the live feed is unreachable or currently has no vehicles.
+	     It floats OVER the map (pointer-events: none) so the basemap, stops, and
+	     near-me stay fully usable; it is not a boundary and never blanks the canvas. -->
+	{#if liveEdgeMessage}
+		<div
+			class="map-overlay map-live-edge"
+			data-state={liveEdgeState}
+			role="status"
+			aria-live="polite"
+		>
+			{liveEdgeMessage}
+		</div>
+	{/if}
+
 	{#if hoverDetail && layout.isDesktop}
 		<div class="map-overlay map-peek" aria-live="polite">
 			<MapSelectionDetail
@@ -1161,6 +1201,37 @@
 		backdrop-filter: blur(10px) saturate(1.05);
 		pointer-events: none;
 	}
+	/* Live-feed edge notice: a calm, centred pill near the top of the canvas. Token-
+	   driven (card surface + hairline + blur, like the rest of the floating chrome),
+	   non-interactive (it states a fact; it does not block the map). Centred between
+	   the left rail and the right detail offset so it never hides behind a pane. */
+	.map-live-edge {
+		top: 1.15rem;
+		left: calc(var(--app-left-rail-offset, 0rem) / 2 + var(--map-detail-offset, 0rem) / 2);
+		right: 0;
+		margin-inline: auto;
+		z-index: 12;
+		width: max-content;
+		max-width: min(26rem, calc(100% - 2rem));
+		padding: 0.45rem 0.85rem;
+		text-align: center;
+		font-size: var(--text-caption);
+		line-height: 1.4;
+		color: var(--muted-foreground);
+		background: color-mix(in srgb, var(--card) 88%, transparent);
+		border: 1px solid var(--border-hairline);
+		border-top: 2px solid var(--border-rule);
+		border-radius: var(--radius-pill);
+		box-shadow: var(--shadow-card);
+		backdrop-filter: blur(10px) saturate(1.05);
+		pointer-events: none;
+	}
+	/* The feed-down state warms the border with the caution hue (a data verdict),
+	   echoing the stale-freshness chrome; the text still carries the meaning. */
+	.map-live-edge[data-state='unavailable'] {
+		border-top-color: color-mix(in srgb, var(--dataviz-status-late) 48%, var(--border-rule) 52%);
+	}
+
 	.map-detail-dock {
 		position: absolute;
 		inset-block: 0;

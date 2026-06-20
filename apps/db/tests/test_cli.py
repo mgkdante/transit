@@ -555,6 +555,21 @@ def test_prune_i3_storage_dry_run_flag(monkeypatch) -> None:
     assert recorded["dry_run"] is True
 
 
+def test_prune_i3_storage_requires_provider_id() -> None:
+    # the provider_id argument is now required (no 'stm' default) so a
+    # multi-provider setup cannot silently prune only stm.
+    result = runner.invoke(app, ["prune-i3-storage"])
+
+    assert result.exit_code != 0
+
+
+def test_seed_core_help_documents_provider_option() -> None:
+    result = runner.invoke(app, ["seed-core", "--help"])
+
+    assert result.exit_code == 0
+    assert "--provider" in result.stdout
+
+
 def test_vacuum_storage_table_option_in_help() -> None:
     result = runner.invoke(app, ["vacuum-storage", "--help"])
 

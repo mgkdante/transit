@@ -8,6 +8,7 @@ from google.transit import gtfs_realtime_pb2
 
 import transit_ops.silver.realtime_gtfs as realtime_silver_module
 from transit_ops.core.models import ProviderManifest
+from transit_ops.gtfs.types import ProviderBounds
 from transit_ops.settings import Settings
 from transit_ops.silver.realtime_gtfs import (
     BronzeRealtimeSnapshot,
@@ -795,30 +796,44 @@ def test_load_realtime_snapshot_to_silver_vehicle_positions_inserts_audited_sour
             "occupancy_status": gtfs_realtime_pb2.VehiclePosition.MANY_SEATS_AVAILABLE,
             "congestion_level": gtfs_realtime_pb2.VehiclePosition.STOP_AND_GO,
             "vehicle_timestamp_utc": datetime.fromtimestamp(1_774_837_205, tz=UTC),
-            "position_quality": "valid_montreal_bbox",
+            "position_quality": "valid_wgs84",
             "feed_timestamp_utc": datetime(2026, 3, 25, 0, 0, 0, tzinfo=UTC),
             "captured_at_utc": datetime(2026, 3, 25, 0, 0, 5, tzinfo=UTC),
         }
     ]
 
 
-def test_classify_montreal_position_quality_marks_valid_and_bad_coordinates() -> None:
-    assert (
-        realtime_silver_module.classify_montreal_position_quality(45.501, -73.567)
-        == "valid_montreal_bbox"
+def test_normalize_rt_vehicle_positions_classifies_against_provider_bounds(
+    tmp_path: Path,
+) -> None:
+    archive_path = tmp_path / "vehicle_positions.pb"
+    _write_bytes(archive_path, _build_vehicle_positions_bytes())
+    snapshot = _build_snapshot(archive_path, "vehicle_positions")
+    message = gtfs_realtime_pb2.FeedMessage()
+    message.ParseFromString(archive_path.read_bytes())
+
+    # the fixture vehicle sits at 45.501, -73.567 (inside Montréal)
+    montreal = ProviderBounds(
+        min_latitude=45.25, max_latitude=45.75, min_longitude=-74.1, max_longitude=-73.2
     )
-    assert (
-        realtime_silver_module.classify_montreal_position_quality(0.0, 0.0)
-        == "outside_montreal_bbox"
+    elsewhere = ProviderBounds(
+        min_latitude=0.0, max_latitude=1.0, min_longitude=0.0, max_longitude=1.0
     )
-    assert (
-        realtime_silver_module.classify_montreal_position_quality(45.501, -0.01)
-        == "outside_montreal_bbox"
+
+    in_bounds = realtime_silver_module._normalize_rt_vehicle_positions(
+        message, snapshot=snapshot, rt_feed_snapshot_id=1, provider_bounds=montreal
     )
-    assert (
-        realtime_silver_module.classify_montreal_position_quality(None, None)
-        == "missing_position"
+    out_of_bounds = realtime_silver_module._normalize_rt_vehicle_positions(
+        message, snapshot=snapshot, rt_feed_snapshot_id=1, provider_bounds=elsewhere
     )
+    no_bounds = realtime_silver_module._normalize_rt_vehicle_positions(
+        message, snapshot=snapshot, rt_feed_snapshot_id=1
+    )
+
+    assert in_bounds[0]["position_quality"] == "valid_provider_bbox"
+    assert out_of_bounds[0]["position_quality"] == "outside_provider_bbox"
+    # with no provider bounds, the check falls back to generic WGS84 validity
+    assert no_bounds[0]["position_quality"] == "valid_wgs84"
 
 
 def test_load_realtime_snapshots_to_silver_aggregates_row_counts(

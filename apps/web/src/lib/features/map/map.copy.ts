@@ -57,13 +57,22 @@ export interface MapCopy {
 	readonly tripRemove: string;
 	readonly alertHas: string;
 	readonly alertHasAria: string;
+	/**
+	 * Live-feed edge states. Non-blocking notices that float over the map (the
+	 * basemap, stops, and near-me stay usable); they never wrap or blank the
+	 * canvas. `liveUnavailable` shows when the live feed cannot be reached at all
+	 * (no successful build yet + an error); `liveNoVehicles` shows when the feed
+	 * loaded fine but currently reports zero vehicles to plot.
+	 */
+	readonly liveUnavailable: string;
+	readonly liveNoVehicles: string;
 }
 
 export const copy: Record<Locale, MapCopy> = {
 	en: {
 		kicker: 'NETWORK · LIVE',
 		heading: 'Live map',
-		mapLabel: 'Live transit map of Montréal — buses coloured by status',
+		mapLabel: 'Live transit map of Montréal, buses coloured by status',
 		modeStatus: 'Status',
 		modeOccupancy: 'Crowding',
 		modeAlerts: 'Alerts',
@@ -81,7 +90,7 @@ export const copy: Record<Locale, MapCopy> = {
 		nearMeNoResults: 'No nearby stops',
 		nearMeError: 'Could not find that place',
 		nearMeGeoDenied: 'Location permission denied',
-		nearMeGeoTimeout: 'Location timed out — try again',
+		nearMeGeoTimeout: 'Location timed out. Try again',
 		nearMeGeoUnavailable: 'Location unavailable',
 		nearMeGeoInsecure: 'Location needs a secure (https) connection',
 		noData: 'No data',
@@ -101,11 +110,13 @@ export const copy: Record<Locale, MapCopy> = {
 		tripRemove: 'Remove trip',
 		alertHas: 'Has alert',
 		alertHasAria: 'Show markers with alerts',
+		liveUnavailable: 'Live data unavailable right now. The map and stops still work.',
+		liveNoVehicles: 'No vehicles to show right now.',
 	},
 	fr: {
 		kicker: 'RÉSEAU · EN DIRECT',
 		heading: 'Carte en direct',
-		mapLabel: 'Carte en direct du réseau de Montréal — bus colorés par statut',
+		mapLabel: 'Carte en direct du réseau de Montréal, bus colorés par statut',
 		modeStatus: 'Statut',
 		modeOccupancy: 'Achalandage',
 		modeAlerts: 'Alertes',
@@ -123,7 +134,7 @@ export const copy: Record<Locale, MapCopy> = {
 		nearMeNoResults: 'Aucun arrêt proche',
 		nearMeError: 'Lieu introuvable',
 		nearMeGeoDenied: 'Autorisation de localisation refusée',
-		nearMeGeoTimeout: 'Délai de localisation dépassé — réessayez',
+		nearMeGeoTimeout: 'Délai de localisation dépassé. Réessayez',
 		nearMeGeoUnavailable: 'Localisation indisponible',
 		nearMeGeoInsecure: 'La localisation requiert une connexion sécurisée (https)',
 		noData: 'Aucune donnée',
@@ -143,6 +154,9 @@ export const copy: Record<Locale, MapCopy> = {
 		tripRemove: 'Retirer le trajet',
 		alertHas: 'Avec alerte',
 		alertHasAria: 'Afficher les marqueurs avec alertes',
+		liveUnavailable:
+			'Données en direct indisponibles pour l’instant. La carte et les arrêts fonctionnent toujours.',
+		liveNoVehicles: 'Aucun véhicule à afficher pour l’instant.',
 	},
 };
 

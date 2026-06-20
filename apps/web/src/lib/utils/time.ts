@@ -3,7 +3,7 @@
  *
  * Every timestamp the pipeline emits is UTC (ISO 8601). Riders read times in
  * Montreal/Toronto wall-clock, so EVERYTHING renders in the America/Toronto
- * zone via Intl — never the browser's local zone, never raw UTC. Keep all
+ * zone via Intl, never the browser's local zone, never raw UTC. Keep all
  * timestamp rendering behind these helpers so the zone is enforced in one place.
  *
  * `lang` is the BCP-47-ish locale tag we support ('en' | 'fr'), matching the
@@ -30,7 +30,7 @@ function localeTag(lang: TimeLang): string {
 // helpers run on a hot, per-second-ticking path (relative-age readouts, the
 // live clock). The locale + options are drawn from a tiny fixed set, so we
 // cache one instance per (locale, options) key and reuse it. Outputs are
-// byte-identical to constructing a fresh formatter each call — the cache only
+// byte-identical to constructing a fresh formatter each call, the cache only
 // removes the constructor cost, never changes formatting.
 //
 // The key is `${locale}|${JSON.stringify(options)}`. JSON.stringify is stable
@@ -90,7 +90,7 @@ function parseIso(iso: string): Date | null {
  */
 export function formatUtc(iso: string, lang: TimeLang, opts?: Intl.DateTimeFormatOptions): string {
 	const date = parseIso(iso);
-	if (!date) return '—';
+	if (!date) return '·';
 	const base: Intl.DateTimeFormatOptions = {
 		dateStyle: 'medium',
 		timeStyle: 'short',
@@ -105,13 +105,33 @@ export function formatUtc(iso: string, lang: TimeLang, opts?: Intl.DateTimeForma
 }
 
 /**
+ * Format a bare calendar day-key ("YYYY-MM-DD") into a localized short date,
+ * e.g. "Jun 15" / "15 juin".
+ *
+ * A day-key is a CALENDAR DATE, not an instant: the pipeline already folds UTC
+ * capture timestamps to the provider's local day before keying. `new Date(key)`
+ * parses it as UTC midnight, so we MUST format in UTC — formatting in
+ * America/Toronto would roll it back to the previous evening and render the
+ * wrong day. Returns '·' for empty/invalid input.
+ */
+export function formatDateKey(key: string, lang: TimeLang): string {
+	const date = parseIso(key);
+	if (!date) return '·';
+	return dateTimeFormat(localeTag(lang), {
+		month: 'short',
+		day: 'numeric',
+		timeZone: 'UTC',
+	}).format(date);
+}
+
+/**
  * Format a Date as a 24-hour clock "HH:MM" in America/Toronto.
  *
  * Always zero-padded, 24-hour (hour12 disabled) so it reads as a stable signage
- * clock regardless of locale defaults. Returns "—" for an invalid Date.
+ * clock regardless of locale defaults. Returns '·' for an invalid Date.
  */
 export function formatClock(date: Date, lang: TimeLang): string {
-	if (!(date instanceof Date) || Number.isNaN(date.getTime())) return '—';
+	if (!(date instanceof Date) || Number.isNaN(date.getTime())) return '·';
 	// Use formatToParts so we can guarantee "HH:MM" without locale separators.
 	const parts = dateTimeFormat(localeTag(lang), {
 		hour: '2-digit',
@@ -157,13 +177,13 @@ const RELATIVE_UNITS: ReadonlyArray<{ unit: Intl.RelativeTimeFormatUnit; seconds
  * Prefer this over `formatRelative` when the caller already tracks a ticking age
  * (e.g. the live store's `ageSeconds`, advanced every second): a `$derived` over
  * the age re-runs each tick, whereas `formatRelative(iso)` reads an internal
- * `now` that is NOT reactive — so the relative text would freeze between the
+ * `now` that is NOT reactive, so the relative text would freeze between the
  * inputs that DO change. Built on Intl.RelativeTimeFormat for locale-correct
  * phrasing/plurals/direction. Within 5 seconds reads "now"/"maintenant".
- * Returns "—" for NaN.
+ * Returns '·' for NaN.
  */
 export function formatRelativeSeconds(seconds: number, lang: TimeLang): string {
-	if (Number.isNaN(seconds)) return '—';
+	if (Number.isNaN(seconds)) return '·';
 	if (Math.abs(seconds) < 5) return lang === 'fr' ? 'maintenant' : 'now';
 
 	const rtf = relativeTimeFormat(localeTag(lang), { numeric: 'auto' });
@@ -183,9 +203,9 @@ export function formatRelativeSeconds(seconds: number, lang: TimeLang): string {
  *
  * Built on Intl.RelativeTimeFormat so the phrasing, plurals, and "ago"/future
  * direction are locale-correct. Within 5 seconds it reads as "now"/"maintenant".
- * Returns "—" for invalid input.
+ * Returns '·' for invalid input.
  *
- * NOTE: `now` defaults to a one-shot snapshot — the result does NOT tick on its
+ * NOTE: `now` defaults to a one-shot snapshot, the result does NOT tick on its
  * own. For a value that updates every second, track the age reactively and call
  * `formatRelativeSeconds` instead.
  */

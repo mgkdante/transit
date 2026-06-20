@@ -42,7 +42,7 @@
 		type Locale,
 	} from '$lib/i18n';
 	import SeoHead from '$lib/components/SeoHead.svelte';
-	import { resolveRouteSeo } from '$lib/seo/routeSeo';
+	import { resolveRouteSeo, isEphemeralPath } from '$lib/seo/routeSeo';
 	import { readPublicSiteConfig } from '$lib/site/config';
 	import {
 		setV1Context,
@@ -59,9 +59,11 @@
 	import { EdgeState } from '$lib/components/edge';
 	import { layout } from '$lib/nav';
 	import {
-		chromeSearchHref,
+		chromeSearchResultHref,
 		chromeSearchResults,
+		scopeForPath,
 		type ChromeSearchResult,
+		type ChromeSearchScope,
 	} from '$lib/search/chromeSearch';
 	import type { GeocodeSuggestion, GeocodedLocation } from '$lib/geocode/types';
 	import type { LayoutData } from './$types';
@@ -74,13 +76,19 @@
 	const locale = $derived<Locale>(data.lang ?? DEFAULT_LOCALE);
 	setLocaleContext(() => data.lang ?? DEFAULT_LOCALE);
 
-	// Per-route document head. One <SeoHead> here resolves title/description/
-	// canonical/OG/hreflang per surface (routeSeo) instead of a single global
-	// title on every page. siteOrigin + indexing come from the public site config
-	// (PUBLIC_SITE_ORIGIN / PUBLIC_INDEXING) so the dev lane is noindex.
+	// Per-route document head config. One <SeoHead> resolves title/description/
+	// canonical/OG/hreflang per surface (routeSeo, derived below once v1 is in
+	// scope) instead of a single global title on every page. siteOrigin + indexing
+	// + the provider identity fallback come from the public site config
+	// (PUBLIC_SITE_ORIGIN / PUBLIC_INDEXING / PUBLIC_PROVIDER_*) so the dev lane is
+	// noindex and SSR copy stays provider-specific before the manifest boots.
 	const siteConfig = readPublicSiteConfig();
 	const seoPath = $derived(delocalizePath($page.url.pathname));
-	const seo = $derived(resolveRouteSeo($page.url.pathname, locale));
+
+	// noindex when the dev lane is off-index OR the surface is EPHEMERAL (a /trip/
+	// [id] deep link whose id rotates within minutes — indexing it would fill
+	// search with dead pages). Stable detail surfaces (/route, /stop) stay indexed.
+	const noIndex = $derived(!siteConfig.indexing || isEphemeralPath($page.url.pathname));
 
 	// Full-bleed surfaces own the whole viewport: #main must NOT scroll and must
 	// NOT carry a footer. The map fills height:100%, so a trailing footer would
@@ -88,6 +96,13 @@
 	// (the "squeezed footer" artifact). Only /map today; its STM/OSM attribution
 	// rides the map's own attribution control instead of the page footer.
 	const isFullBleed = $derived(seoPath === '/map');
+
+	// Context-aware chrome search: the active surface RESTRICTS the result blend
+	// and steers selection — /lines + /route/* search only lines (→ /route/<id>),
+	// /stops + /stop/* only stops (→ /stop/<id>), /map keeps the full blend, and
+	// the hub/network/search default to today's blend. Derived from the same
+	// delocalized path the nav highlight uses, so the two never disagree.
+	const searchScope = $derived<ChromeSearchScope>(scopeForPath(seoPath));
 
 	// v1 snapshot context. The SSR boot (+layout.ts) can fail on Cloudflare — a
 	// Worker's fetch to its own zone can't reach the sibling /data route (523) —
@@ -98,6 +113,27 @@
 	let clientV1 = $state<V1Context | null>(null);
 	const v1 = $derived<V1Context | null>(data.v1 ?? clientV1);
 	setV1Context(() => (v1 ?? undefined) as V1Context);
+
+	// Provider copy identity for the document head (resolved AFTER v1, since the
+	// keyworded SEO copy reads it). Manifest-first (live; SSR via the DATA service
+	// binding, client via boot) then env fallback (PUBLIC_PROVIDER_* — SSR-visible
+	// when the manifest is absent / not yet republished). Absent identity → neutral.
+	const providerShortName = $derived(v1?.manifest.short_name ?? siteConfig.providerShortName);
+	const providerCity = $derived(v1?.manifest.city ?? siteConfig.providerCity);
+
+	// Per-route document head. The same identity drives BOTH the per-surface
+	// title/description (routeSeo) AND the brand siteName appended to every <title>/
+	// og:site_name / WebSite JSON-LD — so an absent or non-STM provider never leaks
+	// a hardcoded agency name in the head.
+	const seo = $derived(
+		resolveRouteSeo($page.url.pathname, locale, {
+			shortName: providerShortName,
+			city: providerCity,
+		}),
+	);
+	const seoSiteName = $derived(
+		providerShortName ? `${providerShortName} Analytics` : 'Transit Analytics',
+	);
 	// Seed the chrome freshness timestamp from the booted manifest as an INITIAL
 	// fallback (seed-if-unset) so pages WITHOUT a live store still show the
 	// page-load data's age. The live store is the single AUTHORITATIVE writer —
@@ -133,17 +169,24 @@
 	const searchStops = createResource(() => getStopsIndex());
 	const searchVehicles = createResource(() => getVehicles());
 	const topSearchResults = $derived(
-		chromeSearchResults(topSearch, {
-			routes: searchRoutes.data?.routes ?? [],
-			stops: searchStops.data?.stops ?? [],
-			vehicles: searchVehicles.data?.vehicles ?? [],
-			addresses: addressSuggestions,
-		}),
+		chromeSearchResults(
+			topSearch,
+			{
+				routes: searchRoutes.data?.routes ?? [],
+				stops: searchStops.data?.stops ?? [],
+				vehicles: searchVehicles.data?.vehicles ?? [],
+				addresses: addressSuggestions,
+			},
+			{ scope: searchScope },
+		),
 	);
 
 	$effect(() => {
 		const query = topSearch.trim();
-		if (!browser || !shouldSuggestAddress(query)) {
+		// Only map/all scope surfaces addresses — skip the geocode fetch (and its
+		// "Powered by Google" footer) entirely on the line/stop catalogue surfaces.
+		const wantsAddress = searchScope === 'map' || searchScope === 'all';
+		if (!browser || !wantsAddress || !shouldSuggestAddress(query)) {
 			addressSuggestions = [];
 			return;
 		}
@@ -189,27 +232,34 @@
 		}
 		topSearch = '';
 		addressSessionToken = createAddressSessionToken();
-		void goto(localizeHref(chromeSearchHref(result, $page.url.searchParams), locale), {
-			noScroll: true,
-		});
+		void goto(
+			localizeHref(chromeSearchResultHref(result, searchScope, $page.url.searchParams), locale),
+			{ noScroll: true },
+		);
 	}
 
 	async function submitSearch(value: string): Promise<void> {
 		const query = value.trim();
-		const [first] = chromeSearchResults(query, {
-			routes: searchRoutes.data?.routes ?? [],
-			stops: searchStops.data?.stops ?? [],
-			vehicles: searchVehicles.data?.vehicles ?? [],
-			addresses: addressSuggestions,
-		});
+		const [first] = chromeSearchResults(
+			query,
+			{
+				routes: searchRoutes.data?.routes ?? [],
+				stops: searchStops.data?.stops ?? [],
+				vehicles: searchVehicles.data?.vehicles ?? [],
+				addresses: addressSuggestions,
+			},
+			{ scope: searchScope },
+		);
 		if (first) {
 			await selectSearchResult(first);
 			return;
 		}
 
+		// The line/stop catalogues never resolve an address — no fallback there.
+		if (searchScope === 'route' || searchScope === 'stop') return;
 		if (!shouldSuggestAddress(query)) return;
 		const addresses = await fetchAddressSuggestions(query, 1);
-		const [addressResult] = chromeSearchResults(query, { addresses });
+		const [addressResult] = chromeSearchResults(query, { addresses }, { scope: searchScope });
 		if (addressResult) await selectSearchResult(addressResult);
 	}
 
@@ -246,7 +296,7 @@
 		addressSessionToken = createAddressSessionToken();
 		void goto(
 			localizeHref(
-				chromeSearchHref(
+				chromeSearchResultHref(
 					{
 						kind: 'address',
 						id: `${resolved.lat},${resolved.lon}`,
@@ -254,7 +304,9 @@
 						lat: resolved.lat,
 						lon: resolved.lon,
 						precision: resolved.precision,
+						priority: 30,
 					},
+					searchScope,
 					$page.url.searchParams,
 				),
 				locale,
@@ -289,17 +341,21 @@
 <SeoHead
 	title={seo.title}
 	description={seo.description}
+	siteName={seoSiteName}
 	path={seoPath}
 	{locale}
 	siteOrigin={siteConfig.siteOrigin}
-	noIndex={!siteConfig.indexing}
+	{noIndex}
 />
 
 <AppShell
 	{locale}
 	url={$page.url}
+	providerName={v1?.manifest.display_name}
+	providerShortName={v1?.manifest.short_name ?? undefined}
 	bind:search={topSearch}
 	searchResults={topSearchResults}
+	{searchScope}
 	onsearch={submitSearch}
 	onresultselect={selectSearchResult}
 >
@@ -333,7 +389,11 @@
 				{/if}
 			</div>
 			{#if !isFullBleed}
-				<Footer {locale} />
+				<Footer
+					{locale}
+					attribution={v1?.manifest.attribution}
+					providerName={v1?.manifest.display_name}
+				/>
 			{/if}
 		</div>
 	{/snippet}

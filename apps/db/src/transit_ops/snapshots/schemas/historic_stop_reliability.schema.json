@@ -1,5 +1,85 @@
 {
   "$defs": {
+    "OccupancyMix": {
+      "properties": {
+        "empty": {
+          "default": 0.0,
+          "title": "Empty",
+          "type": "number"
+        },
+        "few_seats": {
+          "default": 0.0,
+          "title": "Few Seats",
+          "type": "number"
+        },
+        "full": {
+          "default": 0.0,
+          "title": "Full",
+          "type": "number"
+        },
+        "many_seats": {
+          "default": 0.0,
+          "title": "Many Seats",
+          "type": "number"
+        },
+        "standing": {
+          "default": 0.0,
+          "title": "Standing",
+          "type": "number"
+        }
+      },
+      "title": "OccupancyMix",
+      "type": "object"
+    },
+    "RouteDayOfWeek": {
+      "properties": {
+        "avg_delay_min": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Avg Delay Min"
+        },
+        "day_of_week_iso": {
+          "title": "Day Of Week Iso",
+          "type": "integer"
+        },
+        "observation_count": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Observation Count"
+        },
+        "severe_pct": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Severe Pct"
+        }
+      },
+      "required": [
+        "day_of_week_iso"
+      ],
+      "title": "RouteDayOfWeek",
+      "type": "object"
+    },
     "RouteHabits": {
       "properties": {
         "matrix": {
@@ -137,6 +217,13 @@
       "title": "By Route",
       "type": "array"
     },
+    "day_of_week": {
+      "items": {
+        "$ref": "#/$defs/RouteDayOfWeek"
+      },
+      "title": "Day Of Week",
+      "type": "array"
+    },
     "generated_utc": {
       "title": "Generated Utc",
       "type": "string"
@@ -167,6 +254,17 @@
       ],
       "default": null,
       "title": "Name"
+    },
+    "occupancy_mix": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/OccupancyMix"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
     },
     "periods": {
       "items": {

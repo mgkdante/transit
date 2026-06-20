@@ -64,11 +64,19 @@ jobs:
       - name: Seed core metadata
         run: uv run python -m transit_ops.cli seed-core
 
-      - name: Run static + GIS Bronze -> Silver -> Gold pipeline
-        run: uv run python -m transit_ops.cli run-static-pipeline stm
+      - name: Run static + GIS Bronze -> Silver -> Gold pipeline (all providers)
+        # One looped job over every configured provider so onboarding a provider
+        # needs no workflow edit and the expensive setup (uv sync / init-db /
+        # seed-core) is paid once per cron, not once per provider (a matrix would).
+        run: |
+          for provider in $(uv run python -m transit_ops.cli list-providers); do
+            echo "::group::run-static-pipeline ${provider}"
+            uv run python -m transit_ops.cli run-static-pipeline "$provider"
+            echo "::endgroup::"
+          done
 
-      - name: Publish static /v1 snapshot to R2
-        run: uv run python -m transit_ops.cli publish-snapshot stm --tier static
+      - name: Publish static /v1 snapshot to R2 (all providers)
+        run: uv run python -m transit_ops.cli publish-all --tier static
 
       # working-directory is db; the shared alert script lives at the repo root.
       - name: Alert on failure

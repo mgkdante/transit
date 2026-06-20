@@ -389,7 +389,7 @@ def _publish_static(
     for lang in ("fr", "en"):
         head_items.append((
             f"labels/{lang}.json",
-            builders.build_labels(conn, lang=lang, generated_utc=stamp),  # type: ignore[arg-type]
+            builders.build_labels(conn, provider_id=provider_id, lang=lang, generated_utc=stamp),  # type: ignore[arg-type]
             "static",
         ))
     written.extend(_parallel_put(storage, head_items, concurrency=concurrency))

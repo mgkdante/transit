@@ -35,12 +35,16 @@ export type { StackedBarProps, StackedSegment } from './StackedBar.svelte';
 export { default as ChartTooltip } from './ChartTooltip.svelte';
 export type { ChartTooltipProps } from './ChartTooltip.svelte';
 
+export { default as ChartReadout } from './ChartReadout.svelte';
+export type { ChartReadoutProps } from './ChartReadout.svelte';
+
 export { default as ChartLegend } from './ChartLegend.svelte';
 export type { ChartLegendProps, ChartLegendItem } from './ChartLegend.svelte';
 
 // Per-chart tooltip controller (rune factory) + its row/side/args types.
 export { createChartTooltip } from './useChartTooltip.svelte';
 export type {
+	ChartAxis,
 	ChartTooltipController,
 	ChartTooltipRow,
 	ChartTooltipShowArgs,

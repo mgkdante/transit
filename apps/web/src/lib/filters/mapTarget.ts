@@ -7,7 +7,7 @@
 // Pure: no DOM, no nav, no i18n — see `mapHrefFor` in $lib/nav for the localized
 // href wrapper.
 
-import type { StatusCode } from '$lib/v1/schemas';
+import type { OccupancyCode, StatusCode } from '$lib/v1/schemas';
 import { setMapFocusSearchParams } from '$lib/search/mapFocus';
 import { emptyFilterState } from './state';
 import { toSearchString } from './url';
@@ -17,10 +17,14 @@ export interface MapFilterTarget {
 	readonly route?: string;
 	/** Focus a single stop id. */
 	readonly stop?: string;
+	/** Filter to a single trip id (the map has no 'trip' focus kind, so no zoom). */
+	readonly trip?: string;
 	/** Focus a single vehicle id. */
 	readonly vehicle?: string;
 	/** Pre-apply on-time status chips. */
 	readonly status?: readonly StatusCode[];
+	/** Pre-apply crowding / occupancy chips (the map filters + repaints by band). */
+	readonly occupancy?: readonly OccupancyCode[];
 }
 
 /** Serialize a map drilldown target to the /map query string (no leading '?'). */
@@ -28,8 +32,10 @@ export function mapSearchFor(target: MapFilterTarget): string {
 	const state = emptyFilterState();
 	if (target.route) state.routes.add(target.route);
 	if (target.stop) state.stops.add(target.stop);
+	if (target.trip) state.trips.add(target.trip);
 	if (target.vehicle) state.vehicles.add(target.vehicle);
 	if (target.status?.length) state.status = [...target.status];
+	if (target.occupancy?.length) state.occupancy = [...target.occupancy];
 
 	const search = new URLSearchParams(toSearchString(state));
 	// A single-entity drilldown also asks the map to zoom to it (one-shot focus).

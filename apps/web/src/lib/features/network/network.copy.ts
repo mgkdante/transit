@@ -17,17 +17,37 @@ export interface NetworkCopy extends SurfaceHeadCopy {
 	readonly liveSection: string;
 	/** Section caption above the trend chart. */
 	readonly trendSection: string;
+	/** Section caption above the cancellation-rate trend. */
+	readonly cancelSection: string;
+	/** Section caption above the per-day crowding-mix small multiple. */
+	readonly occupancyTrendSection: string;
+	/** Section caption above the network "by time of day" readout. */
+	readonly shiftSection: string;
+	/** Section caption above the weekday-vs-weekend readout. */
+	readonly dayTypeSection: string;
 	/** Section caption above the status-mix bar. */
 	readonly statusSection: string;
 	/** Section caption above the occupancy-mix bar. */
 	readonly occupancySection: string;
+	/** Section caption above the delay-distribution histogram. */
+	readonly delayHistogramSection: string;
+	/** Section caption above the non-responding-by-route ranked list. */
+	readonly nonRespondingSection: string;
 	/** Metric labels for the headline grid. */
 	readonly metrics: {
 		readonly onTime: string;
 		readonly vehicles: string;
+		readonly notReporting: string;
 		readonly coverage: string;
 		readonly delayP50: string;
 		readonly delayP90: string;
+	};
+	/** Worker-cycle feed-staleness chip (distinct from snapshot-publish age). */
+	readonly feedAge: {
+		/** Leading label for the chip (e.g. "FEED"). */
+		readonly label: string;
+		/** Accessible prefix read before the formatted age. */
+		readonly a11yPrefix: string;
 	};
 	/** A11y / legend labels for the two distribution bars. */
 	readonly statusBarLabel: string;
@@ -36,7 +56,95 @@ export interface NetworkCopy extends SurfaceHeadCopy {
 	readonly trend: {
 		readonly onTimeLabel: string;
 		readonly retardLabel: string;
+		/** The two retard-series choices for the toggle. */
+		readonly retardP90: string;
+		readonly retardAvg: string;
+		/** Accessible group label for the retard-series toggle. */
+		readonly retardToggleLabel: string;
 		readonly summary: string;
+		/** Accessible summary of the vehicles-in-service context sparkline. */
+		readonly vehiclesSpark: string;
+		/** Caption shown under the vehicles context sparkline. */
+		readonly vehiclesContext: string;
+	};
+	/** Cancellation-rate trend labels. */
+	readonly cancel: {
+		/** Headline metric label (latest day's value). */
+		readonly metric: string;
+		/** Trend series + axis label. */
+		readonly seriesLabel: string;
+		/** Accessible chart summary. */
+		readonly summary: string;
+	};
+	/** Per-day crowding small-multiple labels. */
+	readonly occupancyTrend: {
+		/** Accessible summary of the whole small-multiple. */
+		readonly summary: string;
+	};
+	/** Network "by time of day" + weekday/weekend readouts (shared shift vocab). */
+	readonly shift: {
+		/** Accessible summary of the time-of-day ranked list. */
+		readonly shiftSummary: string;
+		/** Accessible summary of the weekday/weekend ranked list. */
+		readonly dayTypeSummary: string;
+		/** Per-row caption — what the headline value + magnitude bar encode. */
+		readonly rowCaption: string;
+		/** Subtitle prefix for the average-delay reading. */
+		readonly avgLabel: string;
+		/** Subtitle prefix for the severe-delay-share reading. */
+		readonly severeLabel: string;
+		/**
+		 * Honest caveat: these grains are a real on-time/known OTP over the
+		 * trailing window — a punctuality proxy, not certified OTP — so small
+		 * samples vary.
+		 */
+		readonly caveat: string;
+	};
+	/** Delay-distribution histogram (8 fixed signed-minute buckets). */
+	readonly delayHistogram: {
+		/** Accessible summary of the whole histogram (role=list). */
+		readonly summary: string;
+		/** Honest caption: same basis as the p50/p90 headline numbers. */
+		readonly caption: string;
+		/**
+		 * Per-bar edge labels, in the fixed 8-bucket order:
+		 * (-inf,-5) [-5,-2) [-2,0) [0,2) [2,5) [5,10) [10,15) [15,+inf).
+		 * Early (ahead of schedule) reads left; late reads right.
+		 */
+		readonly buckets: readonly string[];
+		/** Accessible per-bar value prefix (e.g. "<bucket>: <n> trips"). */
+		readonly barValue: (bucket: string, count: number) => string;
+	};
+	/** Non-responding (silent) scheduled trips, ranked per route. */
+	readonly nonResponding: {
+		/** Accessible summary of the ranked list (role=list). */
+		readonly summary: string;
+		/** Honest caption framing what a silent trip is (metro excluded). */
+		readonly caption: string;
+		/** Per-row subtitle prefix (e.g. "Line"). */
+		readonly rowLabel: string;
+		/** Accessible name for each row's deep link (e.g. "View line 51"). */
+		readonly viewDetail: (route: string) => string;
+		/** Unit suffix for the per-route silent-trip count. */
+		readonly tripsUnit: string;
+	};
+	/** Trend grain selector (day / week / month) labels. */
+	readonly grain: {
+		/** Accessible group label for the grain selector. */
+		readonly label: string;
+		/** Segment labels. */
+		readonly day: string;
+		readonly week: string;
+		readonly month: string;
+	};
+	/** Window selector (7/30/90-day) labels. */
+	readonly window: {
+		/** Accessible group label for the window selector. */
+		readonly label: string;
+		/** Segment labels, keyed by day count. */
+		readonly d7: string;
+		readonly d30: string;
+		readonly d90: string;
 	};
 	/** Shown in place of a metric value when the contract reports null. */
 	readonly noData: string;
@@ -51,51 +159,150 @@ export const copy: Record<Locale, NetworkCopy> = {
 	en: {
 		kicker: 'NETWORK · LIVE',
 		heading: 'Network health',
-		lede: 'Live network-wide on-time performance, crowding and feed freshness — measured from the /v1 contract. We never invent data: a missing signal shows as “no data”, not a fabricated zero.',
+		lede: 'Live network-wide on-time performance, crowding and feed freshness, measured from the /v1 contract. We never invent data: a missing signal shows as “no data”, not a fabricated zero.',
 		liveSection: 'Live now',
 		trendSection: 'Daily trend',
+		cancelSection: 'Cancellations',
+		occupancyTrendSection: 'Crowding by day',
+		shiftSection: 'By time of day',
+		dayTypeSection: 'Weekday vs weekend',
 		statusSection: 'Status mix',
 		occupancySection: 'Crowding',
+		delayHistogramSection: 'Delay distribution',
+		nonRespondingSection: 'Silent trips by line',
 		metrics: {
 			onTime: 'On-time',
 			vehicles: 'Vehicles in service',
+			notReporting: 'Not reporting',
 			coverage: 'Coverage',
 			delayP50: 'Median delay',
 			delayP90: 'Slowest 10%',
 		},
+		feedAge: { label: 'FEED', a11yPrefix: 'Worker feed updated' },
 		statusBarLabel: 'Network status mix',
 		occupancyBarLabel: 'Network crowding mix',
 		trend: {
 			onTimeLabel: 'On-time %',
 			retardLabel: 'Slowest 10% (min)',
-			summary: 'Daily on-time % and the slowest-10% (p90) delay over the recent network trend.',
+			retardP90: 'Slowest 10%',
+			retardAvg: 'Typical',
+			retardToggleLabel: 'Delay series',
+			summary: 'Daily on-time % and the chosen delay series over the recent network trend.',
+			vehiclesSpark: 'Vehicles in service, recent days',
+			vehiclesContext: 'Vehicles reporting each day',
 		},
+		cancel: {
+			metric: 'Canceled (latest day)',
+			seriesLabel: '% canceled trip-days',
+			summary: 'Daily share of canceled trip-days across the network.',
+		},
+		occupancyTrend: {
+			summary: 'Crowding band mix per day across the recent network trend.',
+		},
+		shift: {
+			shiftSummary: 'Network on-time performance ranked by time of day, worst punctuality first.',
+			dayTypeSummary:
+				'Network on-time performance for weekdays versus weekends, worst punctuality first.',
+			rowCaption: 'On-time %, with average delay and severe-delay share',
+			avgLabel: 'avg delay',
+			severeLabel: 'severe',
+			caveat:
+				'A real on-time over known share across the network, measured over the trailing window. It is a punctuality proxy, not certified on-time performance, and small samples vary.',
+		},
+		delayHistogram: {
+			summary: 'Distribution of trip-average delays across the network, earliest to latest.',
+			caption:
+				'How trip-average delays are spread right now, in signed minutes. Same basis as the median and slowest-10% numbers above: negative is ahead of schedule, positive is behind.',
+			buckets: ['< -5', '-5 to -2', '-2 to 0', '0 to 2', '2 to 5', '5 to 10', '10 to 15', '15+'],
+			barValue: (bucket, count) => `${bucket} min: ${count} trips`,
+		},
+		nonResponding: {
+			summary: 'Lines with scheduled trips currently running with no live vehicle, most first.',
+			caption:
+				'Scheduled trips currently running with no live vehicle, by line. A silent trip has no vehicle to track, so this counts trips per line, not vehicles. Metro is excluded.',
+			rowLabel: 'Line',
+			viewDetail: (route) => `View line ${route}`,
+			tripsUnit: 'trips',
+		},
+		grain: { label: 'Trend grain', day: 'Day', week: 'Week', month: 'Month' },
+		window: { label: 'Trend window', d7: '7d', d30: '30d', d90: '90d' },
 		noData: 'no data',
 		units: { pct: '%', min: ' min' },
 	},
 	fr: {
 		kicker: 'RÉSEAU · EN DIRECT',
 		heading: 'Santé du réseau',
-		lede: 'Ponctualité, achalandage et fraîcheur du flux à l’échelle du réseau — mesurés à partir du contrat /v1. On n’invente jamais de données : un signal absent s’affiche « aucune donnée », jamais un zéro fabriqué.',
+		lede: 'Ponctualité, achalandage et fraîcheur du flux à l’échelle du réseau, mesurés à partir du contrat /v1. On n’invente jamais de données : un signal absent s’affiche « aucune donnée », jamais un zéro fabriqué.',
 		liveSection: 'En direct',
 		trendSection: 'Tendance quotidienne',
+		cancelSection: 'Annulations',
+		occupancyTrendSection: 'Achalandage par jour',
+		shiftSection: 'Par moment de la journée',
+		dayTypeSection: 'Semaine et fin de semaine',
 		statusSection: 'Répartition des statuts',
 		occupancySection: 'Achalandage',
+		delayHistogramSection: 'Répartition des retards',
+		nonRespondingSection: 'Voyages silencieux par ligne',
 		metrics: {
 			onTime: 'À l’heure',
 			vehicles: 'Véhicules en service',
+			notReporting: 'Sans signal',
 			coverage: 'Couverture',
 			delayP50: 'Retard médian',
 			delayP90: '10 % les plus lents',
 		},
+		feedAge: { label: 'FLUX', a11yPrefix: 'Flux du travailleur mis à jour' },
 		statusBarLabel: 'Répartition des statuts du réseau',
 		occupancyBarLabel: 'Répartition de l’achalandage du réseau',
 		trend: {
 			onTimeLabel: 'Ponctualité %',
 			retardLabel: '10 % les plus lents (min)',
+			retardP90: '10 % les plus lents',
+			retardAvg: 'Typique',
+			retardToggleLabel: 'Série de retard',
 			summary:
-				'Ponctualité quotidienne et retard des 10 % les plus lents (p90) sur la tendance récente du réseau.',
+				'Ponctualité quotidienne et la série de retard choisie sur la tendance récente du réseau.',
+			vehiclesSpark: 'Véhicules en service, jours récents',
+			vehiclesContext: 'Véhicules signalés chaque jour',
 		},
+		cancel: {
+			metric: 'Annulé (dernier jour)',
+			seriesLabel: '% de jours-voyages annulés',
+			summary: 'Part quotidienne des jours-voyages annulés à l’échelle du réseau.',
+		},
+		occupancyTrend: {
+			summary: 'Répartition des bandes d’achalandage par jour sur la tendance récente du réseau.',
+		},
+		shift: {
+			shiftSummary:
+				'Ponctualité du réseau classée par moment de la journée, la pire ponctualité d’abord.',
+			dayTypeSummary:
+				'Ponctualité du réseau en semaine et en fin de semaine, la pire ponctualité d’abord.',
+			rowCaption: 'Ponctualité %, avec le retard moyen et la part de retards sévères',
+			avgLabel: 'retard moyen',
+			severeLabel: 'sévère',
+			caveat:
+				'Une part réelle à l’heure sur connus à l’échelle du réseau, mesurée sur la fenêtre glissante. C’est une estimation de ponctualité, pas une ponctualité certifiée, et les petits échantillons varient.',
+		},
+		delayHistogram: {
+			summary:
+				'Répartition des retards moyens par voyage à l’échelle du réseau, du plus tôt au plus tard.',
+			caption:
+				'La répartition actuelle des retards moyens par voyage, en minutes signées. Même base que le retard médian et les 10 % les plus lents ci-dessus : négatif signifie en avance, positif signifie en retard.',
+			buckets: ['< -5', '-5 à -2', '-2 à 0', '0 à 2', '2 à 5', '5 à 10', '10 à 15', '15+'],
+			barValue: (bucket, count) => `${bucket} min : ${count} voyages`,
+		},
+		nonResponding: {
+			summary:
+				'Lignes dont des voyages planifiés circulent sans véhicule en direct, les plus nombreuses d’abord.',
+			caption:
+				'Voyages planifiés qui circulent actuellement sans véhicule en direct, par ligne. Un voyage silencieux n’a aucun véhicule à suivre : on compte donc les voyages par ligne, pas les véhicules. Le métro est exclu.',
+			rowLabel: 'Ligne',
+			viewDetail: (route) => `Voir la ligne ${route}`,
+			tripsUnit: 'voyages',
+		},
+		grain: { label: 'Granularité de tendance', day: 'Jour', week: 'Semaine', month: 'Mois' },
+		window: { label: 'Fenêtre de tendance', d7: '7 j', d30: '30 j', d90: '90 j' },
 		noData: 'aucune donnée',
 		units: { pct: '%', min: ' min' },
 	},

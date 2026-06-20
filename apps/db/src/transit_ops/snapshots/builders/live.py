@@ -45,12 +45,14 @@ from transit_ops.snapshots.builders._helpers import (
 from transit_ops.snapshots.contract import (
     Alert,
     AlertsFile,
+    DelayBucket,
     Manifest,
     ManifestFiles,
     ManifestHistoricFiles,
     ManifestLiveFiles,
     ManifestStaticFiles,
     NetworkFile,
+    NonRespondingRoute,
     OccupancyMix,
     StatusDist,
     StopDeparture,
@@ -330,6 +332,10 @@ def build_alerts(conn: Connection, *, provider_id: str = "stm", generated_utc: s
                 stops=_split_csv(r["stop_ids"]),
                 start_utc=_opt_iso(r["active_period_start_utc"]),
                 end_utc=_opt_iso(r["active_period_end_utc"]),
+                # raw GTFS-RT/i3 passthroughs (already selected for the id hash)
+                cause=r["cause"],
+                effect=r["effect"],
+                severity_level=r["severity"],
             )
         )
     return AlertsFile(generated_utc=generated_utc, alerts=alerts)
@@ -367,6 +373,60 @@ _NETWORK_NON_RESPONDING_SQL = text(
     WHERE provider_id = :provider_id
     """
 )
+
+# Per-route breakdown of the scalar non_responding total. The `-- nr_by_route`
+# marker is a UNIQUE dispatch needle: tests fixture-match queries by SQL
+# substring, and this query also contains "non_responding_current" (shared with
+# the scalar above), so the marker lets fixtures route the more-specific query
+# first. SUM(nr_count) over these rows equals the scalar non_responding.
+_NETWORK_NON_RESPONDING_BY_ROUTE_SQL = text(
+    """
+    -- nr_by_route
+    SELECT route_id, SUM(non_responding_count) AS nr_count
+    FROM gold.non_responding_current
+    WHERE provider_id = :provider_id
+    GROUP BY route_id
+    ORDER BY nr_count DESC, route_id ASC
+    """
+)
+
+
+# 8 fixed signed-minute bins (lo inclusive, hi exclusive; null = unbounded).
+# Edges mirror the contract: (-inf,-5)[-5,-2)[-2,0)[0,2)[2,5)[5,10)[10,15)[15,+inf).
+_DELAY_HISTOGRAM_EDGES: tuple[tuple[int | None, int | None], ...] = (
+    (None, -5),
+    (-5, -2),
+    (-2, 0),
+    (0, 2),
+    (2, 5),
+    (5, 10),
+    (10, 15),
+    (15, None),
+)
+
+
+def _delay_histogram(delays_min: list[float]) -> list[DelayBucket] | None:
+    """Distribution of the (signed) network delay minutes into 8 fixed buckets.
+
+    Each value is rounded to whole minutes (the same rounding p50/p90 emit) and
+    classified into the single bucket where (lo is None or lo <= d) and (hi is
+    None or d < hi). All 8 buckets are always returned (count may be 0) so the
+    UI can draw the full shape; honest-None only when there are zero delay
+    observations (the same guard that nulls delay_p50_min/delay_p90_min).
+    """
+    if not delays_min:
+        return None
+    counts = [0] * len(_DELAY_HISTOGRAM_EDGES)
+    for value in delays_min:
+        d = round(value)
+        for i, (lo, hi) in enumerate(_DELAY_HISTOGRAM_EDGES):
+            if (lo is None or lo <= d) and (hi is None or d < hi):
+                counts[i] += 1
+                break
+    return [
+        DelayBucket(lo_min=lo, hi_min=hi, count=counts[i])
+        for i, (lo, hi) in enumerate(_DELAY_HISTOGRAM_EDGES)
+    ]
 
 _NETWORK_FRESHNESS_SQL = text(
     """
@@ -437,8 +497,18 @@ def build_network(conn: Connection, *, provider_id: str = "stm", generated_utc: 
     # not a fabricated 0-minute delay.
     delay_p50_min = round(_percentile(delays_min, 0.50)) if delays_min else None
     delay_p90_min = round(_percentile(delays_min, 0.90)) if delays_min else None
+    # Distribution of the SAME delays_min list (None iff no observations, same
+    # guard as the percentiles above; all 8 buckets emitted otherwise).
+    delay_histogram = _delay_histogram(delays_min)
 
     non_responding = int(conn.execute(_NETWORK_NON_RESPONDING_SQL, params).scalar_one() or 0)
+    # Per-route breakdown of non_responding (already grouped in gold). Honesty:
+    # empty -> None so the UI stands down; never an empty-but-present list.
+    by_route = [
+        NonRespondingRoute(route_id=str(r["route_id"]), count=int(r["nr_count"]))
+        for r in conn.execute(_NETWORK_NON_RESPONDING_BY_ROUTE_SQL, params).mappings()
+    ]
+    non_responding_by_route = by_route or None
     # Honesty: MAX over no completed runs is NULL — freshness is genuinely
     # unknown. Emit None rather than COALESCE-ing NULL into a false "0s = fresh".
     freshness_raw = conn.execute(_NETWORK_FRESHNESS_SQL, params).scalar_one()
@@ -455,6 +525,8 @@ def build_network(conn: Connection, *, provider_id: str = "stm", generated_utc: 
         non_responding=non_responding,
         feed_freshness_s=feed_freshness_s,
         coverage_pct=coverage_pct,
+        delay_histogram=delay_histogram,
+        non_responding_by_route=non_responding_by_route,
     )
 
 
@@ -462,11 +534,16 @@ def build_network(conn: Connection, *, provider_id: str = "stm", generated_utc: 
 # build_manifest
 # --------------------------------------------------------------------------
 
+# Provider identity for the manifest comes from core.providers (the config
+# source of truth), same as the static builder's attribution read. short_name /
+# city are UI copy, not analytics dimensions, so they live here rather than in
+# the gold.dim_provider passthrough view.
 _MANIFEST_PROVIDER_SQL = text(
     """
-    SELECT provider_id, display_name, timezone, default_language, attribution_text,
+    SELECT provider_id, display_name, short_name, city, timezone, default_language,
+           attribution_text,
            min_latitude, max_latitude, min_longitude, max_longitude
-    FROM gold.dim_provider
+    FROM core.providers
     WHERE provider_id = :provider_id
     """
 )
@@ -508,6 +585,10 @@ def build_manifest(
     prow = next(iter(prov), None) or {}
 
     display_name = prow.get("display_name") or provider_id
+    # Copy identity (optional): None when the provider config omits them — the
+    # contract keeps them nullable and the UI falls back to display_name.
+    short_name = prow.get("short_name") or None
+    city = prow.get("city") or None
     tz = prow.get("timezone") or "America/Toronto"
     default_lang = prow.get("default_language") or "fr"
     attribution = prow.get("attribution_text") or ""
@@ -543,6 +624,8 @@ def build_manifest(
     return Manifest(
         provider=provider_id,
         display_name=display_name,
+        short_name=short_name,
+        city=city,
         tz=tz,
         bbox=bbox,
         default_lang=default_lang,

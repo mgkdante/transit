@@ -65,9 +65,30 @@ export type {
 	OccupancyMix as LiveOccupancyMix,
 	StatusDist as LiveStatusDist,
 } from './live/aggregate';
+export { deriveRouteStopPredictions } from './live/routeStopPredictions';
+export type { StopPrediction } from './live/routeStopPredictions';
 
 // --- config (snapshot URL resolution) ----------------------------------------
 export { v1BaseUrl, v1Provider, resolveUrl, entityUrl } from './config';
+
+// --- affected-alerts selectors (narrow live alerts to one stop / route) -------
+export { alertsForRoute, alertsForStop } from './affectedAlerts';
+
+// --- reliability snapshot (shared lazy list-row loader + verdict) -------------
+export { createReliabilityLoader } from './reliabilitySnapshot.svelte';
+export type {
+	ReliabilityLoader,
+	ReliabilityKind,
+	ReliabilityPhase,
+	ReliabilitySnapshot,
+} from './reliabilitySnapshot.svelte';
+export {
+	otpVerdict,
+	isProblemVerdict,
+	PROBLEM_VERDICTS,
+	OTP_ON_TIME_FLOOR,
+	OTP_LATE_FLOOR,
+} from './reliabilityVerdict';
 
 // --- schemas (enums + contract types) — re-export the typed contract surface --
 export * from './schemas';

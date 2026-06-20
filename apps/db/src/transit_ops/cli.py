@@ -143,6 +143,8 @@ def _seed_provider(connection, manifest: ProviderManifest) -> None:
                 max_longitude,
                 attribution_text,
                 website_url,
+                short_name,
+                city,
                 is_active
             )
             VALUES (
@@ -158,6 +160,8 @@ def _seed_provider(connection, manifest: ProviderManifest) -> None:
                 :max_longitude,
                 :attribution_text,
                 :website_url,
+                :short_name,
+                :city,
                 :is_active
             )
             ON CONFLICT (provider_id) DO UPDATE SET
@@ -172,6 +176,8 @@ def _seed_provider(connection, manifest: ProviderManifest) -> None:
                 max_longitude = EXCLUDED.max_longitude,
                 attribution_text = EXCLUDED.attribution_text,
                 website_url = EXCLUDED.website_url,
+                short_name = EXCLUDED.short_name,
+                city = EXCLUDED.city,
                 is_active = EXCLUDED.is_active,
                 updated_at_utc = now()
             """
@@ -313,15 +319,24 @@ def init_db() -> None:
 
 
 @app.command("seed-core")
-def seed_core() -> None:
-    """Seed STM provider metadata and feed endpoints."""
+def seed_core(
+    provider: str | None = typer.Option(  # noqa: B008
+        None,
+        "--provider",
+        help="Seed only this provider id; default seeds every configured manifest.",
+    ),
+) -> None:
+    """Seed provider metadata and feed endpoints from the provider manifests."""
 
     settings = get_settings()
-    provider_manifest = _provider_registry(settings).get_provider(settings.STM_PROVIDER_ID)
+    registry = _provider_registry(settings)
+    provider_ids = [provider] if provider else registry.list_provider_ids()
     engine = make_engine(settings)
     with engine.begin() as connection:
-        _seed_provider(connection, provider_manifest)
-        _seed_feed_endpoints(connection, provider_manifest, settings)
+        for provider_id in provider_ids:
+            manifest = registry.get_provider(provider_id)
+            _seed_provider(connection, manifest)
+            _seed_feed_endpoints(connection, manifest, settings)
         provider_count = connection.execute(
             text("SELECT count(*) FROM core.providers")
         ).scalar_one()
@@ -329,8 +344,8 @@ def seed_core() -> None:
             text("SELECT count(*) FROM core.feed_endpoints")
         ).scalar_one()
     typer.echo(
-        f"Seeded core metadata successfully. Providers={provider_count}, "
-        f"Feed endpoints={endpoint_count}."
+        f"Seeded core metadata for {len(provider_ids)} provider(s). "
+        f"Providers={provider_count}, Feed endpoints={endpoint_count}."
     )
 
 
@@ -686,7 +701,7 @@ def prune_gold_storage_command(
 
 @app.command("prune-i3-storage")
 def prune_i3_storage_command(
-    provider_id: str = typer.Argument("stm"),  # noqa: B008
+    provider_id: str,
     dry_run: bool = typer.Option(
         False,
         "--dry-run",
@@ -843,6 +858,34 @@ def publish_snapshot_command(
     except (KeyError, ValueError, FileNotFoundError) as exc:
         raise typer.BadParameter(str(exc)) from exc
     typer.echo(json.dumps(result.display_dict(), indent=2))
+
+
+@app.command("publish-all")
+def publish_all_command(
+    tier: str = typer.Option("live", "--tier", help="live | static | historic"),  # noqa: B008
+) -> None:
+    """Build and publish the /v1 snapshot for EVERY configured provider.
+
+    Attempts every provider so one provider's failure does not skip the others;
+    exits non-zero if any failed.
+    """
+    settings = get_settings()
+    registry = _provider_registry(settings)
+    results: list[dict[str, object]] = []
+    failures: list[str] = []
+    for provider_id in registry.list_provider_ids():
+        try:
+            result = publish_snapshot(
+                provider_id, tier=tier, settings=settings, registry=registry
+            )
+            results.append(result.display_dict())
+        except (KeyError, ValueError, FileNotFoundError) as exc:
+            failures.append(f"{provider_id}: {exc}")
+    typer.echo(json.dumps(results, indent=2))
+    if failures:
+        for failure in failures:
+            typer.echo(f"publish-all failure — {failure}", err=True)
+        raise typer.Exit(code=1)
 
 
 @app.command("run-realtime-worker")

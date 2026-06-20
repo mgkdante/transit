@@ -1,5 +1,5 @@
 <!--
-  TrendLine — dual-series trend chart (SVG, no chart lib).
+  TrendLine, dual-series trend chart (SVG, no chart lib).
 
   Renders two series over a shared x-domain: on-time % (green) and a delay /
   "retard" series (amber). Both colours come from the dataviz scale —
@@ -7,10 +7,10 @@
   points break the line (gaps, never interpolated).
 
   DUAL Y-DOMAINS: the two series may carry DIFFERENT units (e.g. on-time % vs a
-  p90 delay in MINUTES). Each scales to its OWN y-domain — `domain` for on-time,
+  p90 delay in MINUTES). Each scales to its OWN y-domain, `domain` for on-time,
   `retardDomain` for the retard series (defaults to `domain` when both are the
   same unit). This is why neither axis is numbered: the chart reads as two
-  independent TREND SHAPES, not a shared-scale comparison — the tooltip carries
+  independent TREND SHAPES, not a shared-scale comparison, the tooltip carries
   the real per-series values. Plotting minutes on the 0–100 % axis would squash
   the delay line flat against the floor (and clamp it), so a caller mixing units
   MUST pass `retardDomain`.
@@ -22,8 +22,9 @@
 	import { cn, type WithElementRef } from '$lib/utils';
 	import type { HTMLAttributes } from 'svelte/elements';
 	import ChartTooltip from './ChartTooltip.svelte';
+	import ChartReadout from './ChartReadout.svelte';
 	import ChartLegend from './ChartLegend.svelte';
-	import { createChartTooltip } from './useChartTooltip.svelte';
+	import { createChartTooltip, type ChartAxis } from './useChartTooltip.svelte';
 
 	type Series = Array<number | null>;
 
@@ -59,11 +60,57 @@
 		 * Opt into hover/focus tooltips: a vertical guide tracks the nearest
 		 * x-index and a tooltip reads both series at that index. Per-index focus
 		 * targets expose the same readout to keyboard + assistive tech. Default
-		 * off — the chart stays a static figure.
+		 * off, the chart stays a static figure.
 		 */
 		interactive?: boolean;
 		/** Optional x-axis category labels (one per index) for the tooltip heading. */
 		xLabels?: string[];
+		/**
+		 * Left y-axis metadata for the ON-TIME series, a unit suffix for the
+		 * tooltip value (e.g. "%") + an optional label/domain for the endpoint
+		 * ticks. Optional + backward-compatible.
+		 */
+		yAxis?: ChartAxis;
+		/**
+		 * Right y-axis metadata for the RETARD series, its OWN unit (e.g. " min")
+		 * + optional label/domain. Dual-axis honesty: each line is labelled in its
+		 * own unit.
+		 */
+		retardAxis?: ChartAxis;
+		/**
+		 * Show min/max endpoint tick labels on each y-axis (on-time left, retard
+		 * right). Default false → existing renders stay byte-identical. Ticks are
+		 * HTML overlay spans because the SVG stretches (`preserveAspectRatio none`).
+		 */
+		showYTicks?: boolean;
+		/**
+		 * SINGLE-SERIES mode: the chart carries only the on-time channel and the
+		 * `retard` series is decorative-empty (all-null). When set, the retard
+		 * LEGEND swatch is suppressed (one line ⇒ one legend entry) AND the
+		 * right-hand retard y-tick gutter is dropped (no second axis to label).
+		 * Default false → dual-series renders stay byte-identical.
+		 */
+		singleSeries?: boolean;
+		/**
+		 * Show the first/last x-labels under the plot. `xLabels` already feeds the
+		 * tooltip heading; this surfaces the endpoints visibly. Default false.
+		 */
+		showXTicks?: boolean;
+		/**
+		 * Track a focus DOT on each series at the hovered x-index (in addition to
+		 * the vertical guide). Defaults to true when `interactive`.
+		 */
+		focusDots?: boolean;
+		/**
+		 * Place the hover/focus readout in a FIXED row ABOVE the plot instead of a
+		 * floating overlay over the lines (the overlay covers the data on a line
+		 * chart). Only takes effect with `interactive`. Default false → existing
+		 * renders keep the floating ChartTooltip path byte-identical. The vertical
+		 * guide + focus dots stay on-plot; only the value readout moves out.
+		 */
+		readout?: boolean;
+		/** Hint shown in the fixed readout before anything is hovered. `readout` only. */
+		readoutHint?: string;
 		class?: string;
 	}
 
@@ -80,6 +127,14 @@
 		label,
 		interactive = false,
 		xLabels,
+		yAxis,
+		retardAxis,
+		showYTicks = false,
+		showXTicks = false,
+		focusDots = true,
+		readout = false,
+		readoutHint,
+		singleSeries = false,
 		class: className,
 		ref = $bindable(null),
 		...restProps
@@ -97,12 +152,23 @@
 	// The shared x-domain length (drives index targets + nearest-index math).
 	const n = $derived(Math.max(onTime.length, retard.length, 1));
 
-	const EM_DASH = '—';
+	const NO_DATA = '·';
 
 	function fmt(series: Series, i: number): string {
 		const v = series[i];
-		return v == null || Number.isNaN(v) ? EM_DASH : String(v);
+		return v == null || Number.isNaN(v) ? NO_DATA : String(v);
 	}
+
+	// Like fmt(), but suffixes the axis unit on a real value (never on an em-dash,
+	// so a no-data readout stays an honest dash rather than e.g. "— %").
+	function fmtUnit(series: Series, i: number, axis: ChartAxis | undefined): string {
+		const s = fmt(series, i);
+		return s === NO_DATA ? s : `${s}${axis?.unit ?? ''}`;
+	}
+
+	// Labels used for the tooltip rows + keyboard readout (axis label wins).
+	const onTimeRowLabel = $derived(yAxis?.label ?? onTimeLabel);
+	const retardRowLabel = $derived(retardAxis?.label ?? retardLabel);
 
 	// viewBox x for an index (mirrors scale()): single point centres.
 	function indexX(i: number): number {
@@ -122,8 +188,8 @@
 			side: 'bottom',
 			heading,
 			rows: [
-				{ colorVar: ON_TIME_VAR, label: onTimeLabel, value: fmt(onTime, i) },
-				{ colorVar: RETARD_VAR, label: retardLabel, value: fmt(retard, i) },
+				{ colorVar: ON_TIME_VAR, label: onTimeRowLabel, value: fmtUnit(onTime, i, yAxis) },
+				{ colorVar: RETARD_VAR, label: retardRowLabel, value: fmtUnit(retard, i, retardAxis) },
 			],
 		});
 	}
@@ -216,11 +282,32 @@
 	// Vertical guide x (viewBox units) for the active index, when interactive.
 	const guideX = $derived(activeIndex >= 0 ? indexX(activeIndex) : null);
 
-	// Decorative legend rows (dot swatches): on-time + retard series.
-	const legendItems = $derived([
-		{ colorVar: ON_TIME_VAR, label: onTimeLabel, swatch: 'dot' as const },
-		{ colorVar: RETARD_VAR, label: retardLabel, swatch: 'dot' as const },
-	]);
+	// Focus dots: the plotted point on each series at the active x-index (drawn in
+	// addition to the guide line so the hover gives per-series feedback). They
+	// reuse the series colour → still a data mark on the dataviz scale.
+	const showFocusDots = $derived(interactive && focusDots && activeIndex >= 0);
+	const onTimeFocus = $derived(showFocusDots ? onTimePts[activeIndex] : null);
+	const retardFocus = $derived(showFocusDots ? retardPts[activeIndex] : null);
+
+	// Endpoint-tick domains. On-time falls back to its [0,100] default; retard to
+	// the on-time domain when it shares the unit. axis.domain overrides either.
+	const onTimeTickDomain = $derived<[number, number]>(yAxis?.domain ?? domain);
+	const retardTickDomain = $derived<[number, number]>(retardAxis?.domain ?? retardDomain ?? domain);
+	const fmtTick = (v: number, axis: ChartAxis | undefined): string => `${v}${axis?.unit ?? ''}`;
+	const firstXLabel = $derived(xLabels?.[0] ?? '');
+	const lastXLabel = $derived(xLabels?.[n - 1] ?? '');
+
+	// Decorative legend rows (dot swatches): on-time + retard series. In
+	// single-series mode the retard channel is empty (all-null), so we drop its
+	// swatch — one plotted line ⇒ one legend entry.
+	const legendItems = $derived(
+		singleSeries
+			? [{ colorVar: ON_TIME_VAR, label: onTimeLabel, swatch: 'dot' as const }]
+			: [
+					{ colorVar: ON_TIME_VAR, label: onTimeLabel, swatch: 'dot' as const },
+					{ colorVar: RETARD_VAR, label: retardLabel, swatch: 'dot' as const },
+				],
+	);
 </script>
 
 {#snippet chart()}
@@ -286,17 +373,58 @@
 		{#if onTimeLast}
 			<circle cx={onTimeLast.x} cy={onTimeLast.y} r={stroke + 0.5} fill={ON_TIME_VAR} />
 		{/if}
+
+		<!-- Focus dots tracking each series at the hovered x-index (data marks). -->
+		{#if retardFocus}
+			<circle cx={retardFocus.x} cy={retardFocus.y} r={stroke + 1.5} fill={RETARD_VAR} />
+		{/if}
+		{#if onTimeFocus}
+			<circle cx={onTimeFocus.x} cy={onTimeFocus.y} r={stroke + 1.5} fill={ON_TIME_VAR} />
+		{/if}
 	</svg>
 {/snippet}
 
-<figure
-	bind:this={ref}
-	class={cn('dv-trendline m-0', className)}
-	aria-label={summary}
-	data-slot="trend-line"
-	{...restProps}
->
-	{#if interactive}
+{#snippet targets()}
+	<!-- Keyboard / AT focus targets: one transparent strip per x-index,
+	     overlaying the plot, each carrying the both-series readout. -->
+	<div class="dv-trendline-targets" aria-hidden="false">
+		{#each Array.from({ length: n }, (_, i) => i) as i (i)}
+			<!-- svelte-ignore a11y_no_interactive_element_to_noninteractive_role -->
+			<!-- Deliberate AT focus target: a focusable <button> that reads both
+			     series at this x-index via role=img + aria-label (keyboard parity). -->
+			<button
+				type="button"
+				class="dv-trendline-target"
+				role="img"
+				aria-label={`${xLabels?.[i] ?? `#${i + 1}`}: ${onTimeRowLabel} ${fmtUnit(
+					onTime,
+					i,
+					yAxis,
+				)}, ${retardRowLabel} ${fmtUnit(retard, i, retardAxis)}`}
+				aria-describedby={tip.id}
+				onfocus={() => showAt(i)}
+				onblur={hide}
+				onkeydown={onKeyDown}
+			></button>
+		{/each}
+	</div>
+{/snippet}
+
+{#snippet plot()}
+	{#if interactive && readout}
+		<!-- Fixed-readout path: NO floating overlay over the lines. The pointer
+		     handlers ride a plain plot <div>; the values read in the row above. -->
+		<div
+			class="dv-trendline-plot"
+			onpointermove={onPointerMove}
+			onpointerleave={hide}
+			onkeydown={onKeyDown}
+			role="presentation"
+		>
+			{@render chart()}
+			{@render targets()}
+		</div>
+	{:else if interactive}
 		<div class="dv-trendline-plot">
 			<ChartTooltip
 				{...tip}
@@ -308,31 +436,64 @@
 				{@render chart()}
 			</ChartTooltip>
 
-			<!-- Keyboard / AT focus targets: one transparent strip per x-index,
-			     overlaying the plot, each carrying the both-series readout. -->
-			<div class="dv-trendline-targets" aria-hidden="false">
-				{#each Array.from({ length: n }, (_, i) => i) as i (i)}
-					<!-- svelte-ignore a11y_no_interactive_element_to_noninteractive_role -->
-					<!-- Deliberate AT focus target: a focusable <button> that reads both
-					     series at this x-index via role=img + aria-label (keyboard parity). -->
-					<button
-						type="button"
-						class="dv-trendline-target"
-						role="img"
-						aria-label={`${xLabels?.[i] ?? `#${i + 1}`}: ${onTimeLabel} ${fmt(
-							onTime,
-							i,
-						)}, ${retardLabel} ${fmt(retard, i)}`}
-						aria-describedby={tip.id}
-						onfocus={() => showAt(i)}
-						onblur={hide}
-						onkeydown={onKeyDown}
-					></button>
-				{/each}
-			</div>
+			{@render targets()}
 		</div>
 	{:else}
 		{@render chart()}
+	{/if}
+{/snippet}
+
+{#snippet yTickGutter(dom: [number, number], axis: ChartAxis | undefined, side: 'left' | 'right')}
+	<!-- Min/max endpoint ticks for one y-axis. HTML (not SVG <text>), the SVG is
+	     stretched (`preserveAspectRatio none`). Neutral axis colour, never an
+	     affordance token. -->
+	<div
+		class="dv-trendline-yticks"
+		class:dv-trendline-yticks--right={side === 'right'}
+		aria-hidden="true"
+	>
+		<span class="dv-trendline-tick">{fmtTick(dom[1], axis)}</span>
+		<span class="dv-trendline-tick">{fmtTick(dom[0], axis)}</span>
+	</div>
+{/snippet}
+
+<figure
+	bind:this={ref}
+	class={cn('dv-trendline m-0', className)}
+	aria-label={summary}
+	data-slot="trend-line"
+	{...restProps}
+>
+	{#if interactive && readout}
+		<!-- Fixed readout ABOVE the plot, updates on hover/focus, never over the line. -->
+		<ChartReadout
+			class="dv-trendline-readout"
+			open={tip.open}
+			heading={tip.heading}
+			rows={tip.rows}
+			id={tip.id}
+			placeholder={readoutHint}
+		/>
+	{/if}
+
+	{#if showYTicks}
+		<div class="dv-trendline-frame">
+			{@render yTickGutter(onTimeTickDomain, yAxis, 'left')}
+			<div class="dv-trendline-frame-plot">{@render plot()}</div>
+			<!-- Single-series mode has no second axis → drop the retard gutter. -->
+			{#if !singleSeries}
+				{@render yTickGutter(retardTickDomain, retardAxis, 'right')}
+			{/if}
+		</div>
+	{:else}
+		{@render plot()}
+	{/if}
+
+	{#if showXTicks && xLabels && xLabels.length > 0}
+		<div class="dv-trendline-xticks" aria-hidden="true">
+			<span class="dv-trendline-tick">{firstXLabel}</span>
+			<span class="dv-trendline-tick">{lastXLabel}</span>
+		</div>
 	{/if}
 
 	<ChartLegend class="mt-1.5" items={legendItems} />
@@ -341,6 +502,53 @@
 <style>
 	.dv-trendline-plot {
 		position: relative;
+	}
+
+	/* Fixed readout sits above the plot with a small gap; it reserves its own
+	   height so the chart doesn't shift as the reader hovers in/out. */
+	:global(.dv-trendline-readout) {
+		margin-bottom: 0.5rem;
+	}
+
+	/* Axis frame: y-tick gutters flank the stretched plot; plot grows to fill. */
+	.dv-trendline-frame {
+		display: flex;
+		align-items: stretch;
+		gap: 0.375rem;
+	}
+	.dv-trendline-frame-plot {
+		flex: 1 1 auto;
+		min-width: 0;
+	}
+
+	/* Per-axis endpoint ticks (max on top, min on bottom). Mono micro text on the
+	   neutral axis colour, never an affordance token; AA-tested. */
+	.dv-trendline-yticks {
+		display: flex;
+		flex: none;
+		flex-direction: column;
+		justify-content: space-between;
+		align-items: flex-end;
+		text-align: end;
+	}
+	.dv-trendline-yticks--right {
+		align-items: flex-start;
+		text-align: start;
+	}
+
+	/* First/last x-labels, edge-aligned under the plot. */
+	.dv-trendline-xticks {
+		margin-top: 0.25rem;
+		display: flex;
+		justify-content: space-between;
+	}
+
+	.dv-trendline-tick {
+		font-family: var(--font-mono);
+		font-size: var(--text-micro);
+		font-variant-numeric: tabular-nums;
+		line-height: 1;
+		color: var(--muted-foreground);
 	}
 
 	/* Invisible per-index focus strips overlaying the plot for keyboard + AT;
