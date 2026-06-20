@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { resolveRouteSeo } from './routeSeo';
+import { resolveRouteSeo, isEphemeralPath } from './routeSeo';
 
 const PATHS = [
 	'/',
@@ -94,7 +94,23 @@ describe('resolveRouteSeo', () => {
 		expect(resolveRouteSeo('/', 'en', STM_IDENTITY).title).toBe('Live STM map');
 		expect(resolveRouteSeo('/', 'fr', STM_IDENTITY).title).toBe('Carte STM en direct');
 	});
+});
 
+describe('isEphemeralPath', () => {
+	// Guards the central "trip ids rotate → never index" promise: only /trip is
+	// ephemeral; detail surfaces over STABLE ids (/route, /stop) stay indexable.
+	it('flags trip detail (and its locale-prefixed form) as ephemeral', () => {
+		expect(isEphemeralPath('/trip/x')).toBe(true);
+		expect(isEphemeralPath('/fr/trip/x')).toBe(true);
+	});
+
+	it('keeps stable detail surfaces indexable', () => {
+		expect(isEphemeralPath('/route/1')).toBe(false);
+		expect(isEphemeralPath('/stop/5')).toBe(false);
+	});
+});
+
+describe('resolveRouteSeo — neutral copy fallback', () => {
 	it('uses neutral, agency-free copy when identity is absent or partial', () => {
 		const partials = [
 			undefined,

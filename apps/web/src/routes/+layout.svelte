@@ -42,7 +42,7 @@
 		type Locale,
 	} from '$lib/i18n';
 	import SeoHead from '$lib/components/SeoHead.svelte';
-	import { resolveRouteSeo } from '$lib/seo/routeSeo';
+	import { resolveRouteSeo, isEphemeralPath } from '$lib/seo/routeSeo';
 	import { readPublicSiteConfig } from '$lib/site/config';
 	import {
 		setV1Context,
@@ -84,6 +84,11 @@
 	// noindex and SSR copy stays provider-specific before the manifest boots.
 	const siteConfig = readPublicSiteConfig();
 	const seoPath = $derived(delocalizePath($page.url.pathname));
+
+	// noindex when the dev lane is off-index OR the surface is EPHEMERAL (a /trip/
+	// [id] deep link whose id rotates within minutes — indexing it would fill
+	// search with dead pages). Stable detail surfaces (/route, /stop) stay indexed.
+	const noIndex = $derived(!siteConfig.indexing || isEphemeralPath($page.url.pathname));
 
 	// Full-bleed surfaces own the whole viewport: #main must NOT scroll and must
 	// NOT carry a footer. The map fills height:100%, so a trailing footer would
@@ -340,7 +345,7 @@
 	path={seoPath}
 	{locale}
 	siteOrigin={siteConfig.siteOrigin}
-	noIndex={!siteConfig.indexing}
+	{noIndex}
 />
 
 <AppShell

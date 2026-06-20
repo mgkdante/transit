@@ -217,12 +217,36 @@ const STOP_DETAIL: BilingualSeo = {
 	},
 };
 
+const TRIP_DETAIL: BilingualSeo = {
+	title: { en: 'Trip detail', fr: 'Détail du trajet' },
+	description: (id) => ({
+		en: `${id.shortName} trip detail: live status, delay and remaining-stop predictions for one running ${id.city} trip, measured from the open /v1 data contract.`,
+		fr: `Détail de trajet ${id.shortName}: statut, retard et prédictions des prochains arrêts pour un trajet en cours à ${id.city}, mesurés depuis le contrat ouvert /v1.`,
+	}),
+	neutralDescription: {
+		en: 'Transit trip detail: live status, delay and remaining-stop predictions for one running trip, from the open /v1 data contract. Predictions, not guarantees.',
+		fr: 'Détail de trajet: statut, retard et prédictions des prochains arrêts pour un trajet en cours, depuis le contrat ouvert /v1. Prédictions, pas garanties.',
+	},
+};
+
 function entryFor(path: string): BilingualSeo {
 	if (path === '/') return HOME;
 	if (SURFACES[path]) return SURFACES[path];
 	if (path.startsWith('/route/')) return LINE_DETAIL;
 	if (path.startsWith('/stop/')) return STOP_DETAIL;
+	if (path.startsWith('/trip/')) return TRIP_DETAIL;
 	return HOME;
+}
+
+/**
+ * EPHEMERAL surfaces whose URL identifies a short-lived entity that should never
+ * be indexed even when the site is indexable. A trip id rotates with each run of
+ * the GTFS-rt feed, so /trip/[id] deep links go stale within minutes — indexing
+ * them would fill search results with dead pages. Detail surfaces over STABLE
+ * ids (/route, /stop) stay indexable; only /trip is ephemeral today.
+ */
+export function isEphemeralPath(pathname: string): boolean {
+	return delocalizePath(pathname).startsWith('/trip/');
 }
 
 /** Resolve a non-empty (shortName, city) pair, or null when either is missing. */

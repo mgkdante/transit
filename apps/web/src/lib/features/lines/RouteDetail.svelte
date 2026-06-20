@@ -27,7 +27,7 @@
 		getV1Context,
 		alertsForRoute,
 	} from '$lib/v1';
-	import type { RouteFile, RouteReliability, StopPrediction } from '$lib/v1';
+	import type { RouteFile, RouteReliability, StopPrediction, Vehicle, SeverityCode } from '$lib/v1';
 	import { createResource } from '$lib/v1/resource.svelte';
 	import { formatUtc } from '$lib/utils/time';
 	import {
@@ -37,10 +37,12 @@
 		LiveFreshness,
 		AffectedAlerts,
 	} from '$lib/components/surface';
+	import { RankedRow } from '$lib/components/dataviz';
 	import SectionHeading from '$lib/components/brand/SectionHeading.svelte';
 	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
 	import MetricDisplay from '$lib/components/brand/MetricDisplay.svelte';
 	import ChevronRightIcon from '@lucide/svelte/icons/chevron-right';
+	import MapPinIcon from '@lucide/svelte/icons/map-pin';
 	import RouteReliabilityClusters from './reliability/RouteReliabilityClusters.svelte';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
 	import { metricInfoFor, type MetricKey } from '$lib/features/metrics/metrics.content';
@@ -102,6 +104,103 @@
 	// Empty -> the AffectedAlerts section stands down. Honest: never fabricated.
 	const routeAlerts = $derived(alertsForRoute(live.alerts?.alerts, id));
 
+	// CURRENT-BUSES ROSTER: the live vehicles running THIS route right now, read
+	// from the SAME live index (vehiclesByRoute → byVehicleId) the predictions use
+	// — NO second poll. Sorted MOST-LATE first (the honest "worst"); an early or
+	// on-time bus reads calm, and a vehicle with no delay value sorts last (never a
+	// fabricated 0). The whole section stands down when no live vehicle is on this
+	// route (metro, or a feed gap) — never an empty roster.
+	const roster = $derived.by<Vehicle[]>(() => {
+		const ids = live.index.vehiclesByRoute.get(id);
+		if (!ids) return [];
+		const out: Vehicle[] = [];
+		for (const vid of ids) {
+			const v = live.index.byVehicleId.get(vid);
+			if (v) out.push(v);
+		}
+		// Most-late first; a null delay sinks to the bottom (NEGATIVE_INFINITY-keyed).
+		return out.sort((a, b) => delaySortKey(b.delay_min) - delaySortKey(a.delay_min));
+	});
+
+	// Sort key: a known delay sorts by SIGNED lateness (most late = worst, first;
+	// early buses trail on-time ones); an absent delay sorts last (no fabricated 0
+	// jumping it ahead of a real reading). Agrees with the colour channel on
+	// "worst = most late".
+	function delaySortKey(delay: number | null | undefined): number {
+		return delay == null ? Number.NEGATIVE_INFINITY : delay;
+	}
+
+	// The worst LATENESS on the roster, used to normalize the bar LENGTH. Only
+	// positive (late) delays count — early/on-time buses contribute 0 so they never
+	// inflate the denominator or earn a long bar.
+	const rosterWorstDelay = $derived(
+		roster.reduce(
+			(m, v) => Math.max(m, v.delay_min != null && v.delay_min > 0 ? v.delay_min : 0),
+			0,
+		),
+	);
+
+	/**
+	 * A vehicle's delay banded to a dataviz STATUS tone (calm-by-default), matching
+	 * TripDetail.delayTone and the map's selection detail: early / on-time read
+	 * calm, late / severe escalate. Drives the bar's COLOUR (status scale), NOT the
+	 * problem-severity scale — an early bus is honest blue, never RED.
+	 */
+	function delayTone(delay: number | null | undefined): string {
+		if (delay == null) return 'none';
+		if (delay < 0) return 'early';
+		if (delay >= 5) return 'severe';
+		if (delay > 0) return 'late';
+		return 'on-time';
+	}
+
+	// Map a delay-tone to the `var(--dataviz-status-*)` fill colour for the bar.
+	const TONE_VAR: Record<string, string | undefined> = {
+		early: 'var(--dataviz-status-early)',
+		'on-time': 'var(--dataviz-status-on-time)',
+		late: 'var(--dataviz-status-late)',
+		severe: 'var(--dataviz-status-severe)',
+		none: undefined,
+	};
+
+	/** Status-band fill colour for a vehicle's delay (undefined → no-data track). */
+	function delayColorVar(delay: number | null | undefined): string | undefined {
+		return TONE_VAR[delayTone(delay)];
+	}
+
+	/**
+	 * The a11y band SeverityBar announces. Keyed off LATENESS only so an early /
+	 * on-time bus is announced calm ('watch', the lowest band), never 'critical' /
+	 * 'high'. A null delay is also calm — the visible "no data" text carries the
+	 * honesty. Visible colour comes from delayColorVar (status scale), not this.
+	 */
+	function delaySeverity(delay: number | null | undefined): SeverityCode {
+		if (delay == null || delay <= 0) return 'watch';
+		return delay >= 10 ? 'critical' : delay >= 5 ? 'high' : 'watch';
+	}
+
+	/**
+	 * Normalized [0,1] bar LENGTH = how LATE (only positive delay). Early / on-time
+	 * read near-zero length (calm); a null delay → null (no-data track, never 0).
+	 */
+	function delayMagnitude(delay: number | null | undefined): number | null {
+		if (delay == null) return null;
+		if (delay <= 0) return 0;
+		if (rosterWorstDelay <= 0) return 0;
+		return Math.min(1, delay / rosterWorstDelay);
+	}
+
+	// The roster's delay reading: a known delay reads early / on time / N min late;
+	// a NULL delay reads an honest "no data" (not "no delay", which would imply
+	// on-time), and is NEVER rendered as a fabricated 0.
+	function rosterDelayLabel(delay: number | null | undefined): string {
+		if (delay == null) return t.roster.noData;
+		return delayLabel(delay);
+	}
+
+	const tripHref = (tripId: string): string =>
+		localizeHref(routeFor({ kind: 'trip', id: tripId }), locale);
+
 	// schedule pane formats headway minutes; the reliability tab is now the
 	// dedicated 9.6 clustered surface (RouteReliabilityClusters) — it owns its own
 	// formatting + the snapshot strip + 5 cluster bands off the same archive.
@@ -116,21 +215,11 @@
 
 	// Plain-language delay reading for the approaching bus, reused from the live
 	// vocabulary: early / on time / N min late, or "no delay" when the feed omits it.
-	function delayLabel(delay: number | null): string {
+	function delayLabel(delay: number | null | undefined): string {
 		if (delay == null) return t.noDelay;
 		if (delay < 0) return t.early(delay);
 		if (delay > 0) return t.late(delay);
 		return t.onTime;
-	}
-
-	// Presentation-only tone mapping a delay to a dataviz status band, matching the
-	// map's selection detail so on-time / early / late punch in colour consistently.
-	function delayTone(delay: number | null): string {
-		if (delay == null) return 'none';
-		if (delay < 0) return 'early';
-		if (delay >= 5) return 'severe';
-		if (delay > 0) return 'late';
-		return 'on-time';
 	}
 </script>
 
@@ -172,6 +261,70 @@
 					<div class="route-section">
 						<!-- LIVE: service alerts affecting this route (stands down when none). -->
 						<AffectedAlerts alerts={routeAlerts} {locale} copy={t.alerts} testId="route-alerts" />
+
+						<!-- LIVE: current-buses roster — the vehicles running this route right
+						     now, worst-delay first, each linking to its trip. Stands down
+						     entirely when no live bus is on the route (metro / feed gap). -->
+						{#if roster.length > 0}
+							<div class="route-roster" data-testid="route-roster">
+								<div class="route-section-head">
+									<SectionLabel text={t.roster.heading} variant="metric" />
+									<span class="route-roster-count">{t.roster.count(roster.length)}</span>
+								</div>
+								<ul class="route-roster-list" aria-label={t.roster.listLabel}>
+									{#each roster as bus, bi (bus.id)}
+										<li class="route-roster-item">
+											{#if bus.trip}
+												<a
+													class="route-roster-link"
+													href={tripHref(bus.trip)}
+													aria-label={t.roster.viewTrip(bus.id)}
+												>
+													<RankedRow
+														bare
+														rank={bi + 1}
+														title={t.roster.busLabel(bus.id)}
+														subtitle={bus.next_stop != null
+															? t.roster.nextStop(bus.next_stop)
+															: undefined}
+														severity={delaySeverity(bus.delay_min)}
+														colorVar={delayColorVar(bus.delay_min)}
+														value={delayMagnitude(bus.delay_min)}
+														display={rosterDelayLabel(bus.delay_min)}
+													/>
+													<ChevronRightIcon size={14} strokeWidth={2.4} aria-hidden="true" />
+												</a>
+											{:else}
+												<!-- No trip id to link to: still surface the bus + its map link. -->
+												<div class="route-roster-link route-roster-link--static">
+													<RankedRow
+														bare
+														rank={bi + 1}
+														title={t.roster.busLabel(bus.id)}
+														subtitle={bus.next_stop != null
+															? t.roster.nextStop(bus.next_stop)
+															: undefined}
+														severity={delaySeverity(bus.delay_min)}
+														colorVar={delayColorVar(bus.delay_min)}
+														value={delayMagnitude(bus.delay_min)}
+														display={rosterDelayLabel(bus.delay_min)}
+													/>
+												</div>
+											{/if}
+											<a
+												class="route-roster-map"
+												href={mapHrefFor({ vehicle: bus.id }, locale)}
+												aria-label={t.roster.viewBusOnMap(bus.id)}
+											>
+												<MapPinIcon size={13} strokeWidth={2.4} aria-hidden="true" />
+												<span>{t.roster.mapAction}</span>
+											</a>
+										</li>
+									{/each}
+								</ul>
+							</div>
+						{/if}
+
 						<div class="route-section-head">
 							<SectionLabel text={t.directions} variant="metric" />
 							{#if live.generatedUtc != null || live.ageSeconds != null}
@@ -309,6 +462,91 @@
 		display: inline-flex;
 		align-items: center;
 		gap: 0.4rem;
+	}
+	/* Current-buses roster: one row per live vehicle, worst-delay first. */
+	.route-roster {
+		display: flex;
+		flex-direction: column;
+		gap: 0.75rem;
+	}
+	.route-roster-count {
+		flex-shrink: 0;
+		font-family: var(--font-mono);
+		font-size: var(--text-small);
+		color: var(--muted-foreground);
+	}
+	.route-roster-list {
+		list-style: none;
+		margin: 0;
+		padding: 0;
+		display: flex;
+		flex-direction: column;
+		gap: 0.25rem;
+	}
+	.route-roster-item {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+	}
+	/* The bus row links to its trip; the RankedRow renders bare inside this <a>. */
+	.route-roster-link {
+		flex: 1 1 auto;
+		min-width: 0;
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		padding: 0.4rem 0.5rem;
+		margin-inline: -0.5rem;
+		border-radius: var(--radius-sm, 0.375rem);
+		color: var(--foreground);
+		text-decoration: none;
+		transition: background-color var(--duration-fast) var(--ease-out);
+	}
+	.route-roster-link--static {
+		cursor: default;
+	}
+	.route-roster-link :global(svg) {
+		flex: none;
+		opacity: 0.45;
+		transition:
+			opacity var(--duration-fast) var(--ease-out),
+			transform var(--duration-fast) var(--ease-out);
+	}
+	a.route-roster-link:hover {
+		background: color-mix(in srgb, var(--primary) 7%, transparent);
+	}
+	a.route-roster-link:hover :global(svg) {
+		opacity: 1;
+		transform: translateX(2px);
+	}
+	.route-roster-link:focus-visible {
+		outline: 2px solid var(--ring);
+		outline-offset: 2px;
+	}
+	/* Compact "view on map" pill for each bus. */
+	.route-roster-map {
+		flex-shrink: 0;
+		display: inline-flex;
+		align-items: center;
+		gap: 0.3rem;
+		padding: 0.3rem 0.6rem;
+		border-radius: var(--radius-pill, 999px);
+		font-family: var(--font-mono);
+		font-size: var(--text-micro);
+		color: var(--muted-foreground);
+		text-decoration: none;
+		border: 1px solid var(--border);
+		transition:
+			color var(--duration-fast) var(--ease-out),
+			border-color var(--duration-fast) var(--ease-out);
+	}
+	.route-roster-map:hover {
+		color: var(--primary);
+		border-color: color-mix(in srgb, var(--primary) 40%, var(--border));
+	}
+	.route-roster-map:focus-visible {
+		outline: 2px solid var(--ring);
+		outline-offset: 2px;
 	}
 	.route-directions {
 		list-style: none;
@@ -497,10 +735,14 @@
 	@media (prefers-reduced-motion: reduce) {
 		.route-stop-link,
 		.route-stop-name,
-		.route-stop-link :global(svg) {
+		.route-stop-link :global(svg),
+		.route-roster-link,
+		.route-roster-link :global(svg),
+		.route-roster-map {
 			transition: none;
 		}
-		.route-stop-link:hover :global(svg) {
+		.route-stop-link:hover :global(svg),
+		a.route-roster-link:hover :global(svg) {
 			transform: none;
 		}
 	}

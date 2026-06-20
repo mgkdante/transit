@@ -13,6 +13,10 @@ describe('mapSearchFor', () => {
 		expect([...parse(mapSearchFor({ stop: '57191' })).stops]).toEqual(['57191']);
 	});
 
+	it('targets a single trip', () => {
+		expect([...parse(mapSearchFor({ trip: 'STM-1234' })).trips]).toEqual(['STM-1234']);
+	});
+
 	it('targets a single vehicle', () => {
 		expect([...parse(mapSearchFor({ vehicle: '40061' })).vehicles]).toEqual(['40061']);
 	});
