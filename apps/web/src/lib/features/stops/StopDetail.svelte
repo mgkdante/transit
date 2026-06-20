@@ -51,6 +51,14 @@
 	} from '$lib/components/dataviz';
 	import type { SeverityCode } from '$lib/v1/schemas';
 	import { availableGrains } from '$lib/filters/grain';
+	import {
+		SHIFT_GRAIN_ORDER,
+		DAY_TYPE_GRAIN_ORDER,
+		isShiftGrain,
+		isDayTypeGrain,
+		shiftLabel,
+		dayTypeLabel,
+	} from '$lib/features/reliability/shiftGrains';
 	import { EdgeState } from '$lib/components/edge';
 	import { layout, mapHrefFor } from '$lib/nav';
 	import StopLabel from '$lib/components/brand/StopLabel.svelte';
@@ -202,6 +210,86 @@
 			};
 		});
 	});
+
+	/* ── Reliability: by time of day (shift + day-type grains) ────────────────
+	   The pipeline emits, alongside the calendar grains (day/week/month), two
+	   extra grain families on the SAME periods[] array — SHIFT grains
+	   (am_peak…night) and DAY-TYPE grains (weekday/weekend). We partition them
+	   out HERE (the calendar grains keep feeding the GrainPicker + ReliabilityPane
+	   untouched) and surface them the way the lines surface does:
+	     - SHIFT grains → a "By time of day" ranked list (worst severe share first);
+	     - DAY-TYPE grains → a weekday-vs-weekend 2-row ranked comparison.
+	   Honesty: a grain with no severe + no avg signal is DROPPED (never a fake-0
+	   bar); the whole section stands down when the stop carries none of them. */
+	type ShiftRow = { grain: string; severePct: number | null; avgDelayMin: number | null };
+
+	/** Split this stop's periods into clean shift / day-type groups (calendar grains stay out). */
+	const partitionedToD = $derived.by<{ byShift: ShiftRow[]; byDayType: ShiftRow[] }>(() => {
+		const byShift: ShiftRow[] = [];
+		const byDayType: ShiftRow[] = [];
+		for (const p of reliability.data?.periods ?? []) {
+			// These sections RANK by severe share (the bar + the "% severe" display),
+			// so a period earns a row only when it carries a real severe share. A
+			// period with only an avg delay has no place in a severe-share ranking —
+			// dropping it here keeps the partition and the ranker in lock-step (an
+			// avg-only period would otherwise survive the partition yet vanish from
+			// the list). Its avg delay still surfaces in the by-route / calendar panes;
+			// we never fabricate a severe share (or a 0) to keep it.
+			if (p.severe_pct == null) continue;
+			const row: ShiftRow = {
+				grain: p.grain,
+				severePct: p.severe_pct ?? null,
+				avgDelayMin: p.avg_delay_min ?? null,
+			};
+			if (isShiftGrain(p.grain)) byShift.push(row);
+			else if (isDayTypeGrain(p.grain)) byDayType.push(row);
+		}
+		return { byShift, byDayType };
+	});
+
+	/**
+	 * Rank a group of shift/day-type rows worst-first by severe share, banding each
+	 * bar on the dataviz severity scale + normalizing against the worst row in the
+	 * SAME group (mirroring Cluster01Punctuality.rankBySevere). A row with a null
+	 * severe share is dropped (no fake-0 ranking); `order` keeps a stable secondary
+	 * sort so equal-severe rows read in canonical chronological token order.
+	 */
+	function rankBySevere(
+		rows: readonly ShiftRow[],
+		order: readonly string[],
+		label: (g: string) => string,
+	) {
+		const real = rows.filter((r) => r.severePct != null);
+		const worst = real.reduce((m, r) => Math.max(m, r.severePct ?? 0), 0);
+		const rank = (g: string) => {
+			const i = order.indexOf(g);
+			return i === -1 ? order.length : i;
+		};
+		return real
+			.slice()
+			.sort((a, b) => (b.severePct ?? 0) - (a.severePct ?? 0) || rank(a.grain) - rank(b.grain))
+			.map((r, i) => {
+				const sev = r.severePct ?? 0;
+				const severity: SeverityCode = sev >= 10 ? 'critical' : sev >= 5 ? 'high' : 'watch';
+				return {
+					key: r.grain,
+					rank: i + 1,
+					title: label(r.grain),
+					severity,
+					value: worst > 0 ? Math.min(1, Math.max(0, sev / worst)) : null,
+					display: `${sev.toFixed(1)}%`,
+				};
+			});
+	}
+
+	const shiftRows = $derived(
+		rankBySevere(partitionedToD.byShift, SHIFT_GRAIN_ORDER, (g) => shiftLabel(g, locale)),
+	);
+	const dayTypeRows = $derived(
+		rankBySevere(partitionedToD.byDayType, DAY_TYPE_GRAIN_ORDER, (g) => dayTypeLabel(g, locale)),
+	);
+	/** The whole "By time of day" section stands down unless a shift OR day-type row survived. */
+	const hasTimeOfDay = $derived(shiftRows.length > 0 || dayTypeRows.length > 0);
 
 	/* ── Reliability: time-of-day habits heatmap ──────────────────────────────
 	   The per-stop habits matrix (7×24, cells number|null) reuses the Heatmap +
@@ -569,6 +657,59 @@
 								</div>
 							{/if}
 
+							<!-- By time of day: SHIFT buckets (ranked by severe share) + a
+							     weekday-vs-weekend day-type comparison. Surfaced from the granular
+							     grains the pipeline emits alongside the calendar ones; these never
+							     enter the GrainPicker above. Stands down entirely when the stop
+							     carries no shift/day-type grain. A trailing-window proxy. -->
+							{#if hasTimeOfDay}
+								<div class="stop-reliability-tod" data-slot="stop-time-of-day">
+									<SectionLabel text={t.reliability.timeOfDay.heading} variant="metric" />
+									{#if shiftRows.length > 0}
+										<div
+											class="stop-reliability-route-list"
+											role="list"
+											aria-label={t.reliability.timeOfDay.heading}
+										>
+											{#each shiftRows as row (row.key)}
+												<RankedRow
+													rank={row.rank}
+													title={row.title}
+													subtitle={t.reliability.timeOfDay.severeShare}
+													severity={row.severity}
+													value={row.value}
+													display={row.display}
+												/>
+											{/each}
+										</div>
+									{/if}
+
+									{#if dayTypeRows.length > 0}
+										<div class="stop-reliability-tod-daytype" data-slot="stop-day-type">
+											<SectionLabel text={t.reliability.timeOfDay.dayType} variant="metric" />
+											<div
+												class="stop-reliability-route-list"
+												role="list"
+												aria-label={t.reliability.timeOfDay.dayType}
+											>
+												{#each dayTypeRows as row (row.key)}
+													<RankedRow
+														rank={row.rank}
+														title={row.title}
+														subtitle={t.reliability.timeOfDay.severeShare}
+														severity={row.severity}
+														value={row.value}
+														display={row.display}
+													/>
+												{/each}
+											</div>
+										</div>
+									{/if}
+
+									<p class="stop-reliability-tod-caveat">{t.reliability.timeOfDay.caveat}</p>
+								</div>
+							{/if}
+
 							<!-- By-route ranked severity bars: worst line first, banded off its
 							     avg delay so the reader sees WHICH line drags this stop down. -->
 							{#if rankedRoutes.length > 0}
@@ -764,6 +905,26 @@
 		display: flex;
 		flex-direction: column;
 		gap: 0.5rem;
+	}
+	.stop-reliability-tod {
+		display: flex;
+		flex-direction: column;
+		gap: 0.6rem;
+	}
+	.stop-reliability-tod-daytype {
+		display: flex;
+		flex-direction: column;
+		gap: 0.5rem;
+		margin-top: 0.5rem;
+	}
+	/* Honest caveat: trailing-window observation-weighted proxy, AA both themes. */
+	.stop-reliability-tod-caveat {
+		margin: 0;
+		max-width: 52ch;
+		font-family: var(--font-mono);
+		font-size: var(--text-micro);
+		line-height: 1.4;
+		color: var(--muted-foreground);
 	}
 
 	/* Live-departures filter chips + count. */

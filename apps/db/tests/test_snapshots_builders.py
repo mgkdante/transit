@@ -1393,3 +1393,89 @@ def test_build_basemap_pointer_carries_url_style_attribution() -> None:
     assert bm.style_url == "https://x/style.json"
     assert bm.attribution == "© OSM, © Protomaps"
     assert bm.generated_utc == "2026-06-13T00:00:00Z"
+
+
+# --------------------------------------------------------------------------
+# build_stop_reliability — shift + day-type granularity grains (folded data depth)
+# --------------------------------------------------------------------------
+
+
+def test_build_stop_reliability_emits_shift_and_daytype_grains() -> None:
+    """Stop reliability publishes additive shift + weekday/weekend grains.
+
+    The hour->shift band CASE and the ISODOW weekday/weekend split run in Postgres,
+    so the FakeConn returns grain-resolved rows (the bucketing is exercised against
+    a real DB separately) — mirroring how the route grain tests are structured.
+    avg delay is observation-weighted; honest None (never 0) when obs is 0/missing.
+    """
+    from transit_ops.snapshots.builders.historic import build_stop_reliability
+
+    # _STOP_BY_GRAIN_SQL returns (stop_id, grain, obs, severe, weighted_delay_sec)
+    # for the union of shift buckets (peak hour + off-peak hour) and day-type
+    # (weekday + weekend). 60s weighted per obs -> avg 1.0 min for the populated
+    # rows; the weekend row has obs=0 to assert the honest-None path.
+    grain_rows = [
+        # am_peak: 10 obs, 1 severe, 600s weighted -> avg 1.0 min, otp 90, severe 10.0
+        {"stop_id": "51234", "grain": "am_peak", "obs": 10, "severe": 1,
+         "weighted_delay_sec": 600.0},
+        # night (off-peak): 4 obs, 0 severe, 480s weighted -> avg 2.0 min, otp 100
+        {"stop_id": "51234", "grain": "night", "obs": 4, "severe": 0,
+         "weighted_delay_sec": 480.0},
+        # weekday: 14 obs, 1 severe, 1080s weighted -> avg ~1.3 min
+        {"stop_id": "51234", "grain": "weekday", "obs": 14, "severe": 1,
+         "weighted_delay_sec": 1080.0},
+        # weekend: 0 obs -> honest None across otp/avg/severe
+        {"stop_id": "51234", "grain": "weekend", "obs": 0, "severe": 0,
+         "weighted_delay_sec": None},
+    ]
+
+    dispatch = [
+        # by-route breakdown reads stop_delay_weekly too — match its unique
+        # sentinel-filter clause first so it doesn't shadow the weekly period query.
+        ("'__unrouted__'", []),
+        # grain SQL (shift + day-type union) — unique discriminator "AS banded".
+        ("AS banded", grain_rows),
+        # weekly period rows (one stop) so the stop survives into output.
+        ("FROM gold.stop_delay_weekly", [
+            {"stop_id": "51234", "obs": 50, "weighted_delay_sec": 3000.0, "severe": 2},
+        ]),
+        ("FROM gold.stop_delay_monthly", []),
+        ("FROM gold.stop_delay_hourly", []),  # habits matrix: empty
+        ("stop_delay_percentile_daily", []),  # day p50/p90: none
+        ("stop_name", [{"stop_id": "51234", "stop_name": "Berri-UQAM"}]),
+    ]
+
+    class FC:
+        def execute(self, statement, params=None):  # noqa: ANN001, ANN201, ARG002
+            s = str(statement)
+            for needle, rows in dispatch:
+                if needle in s:
+                    return FakeResult(rows)
+            return FakeResult([])
+
+    out = build_stop_reliability(FC(), provider_id="stm", generated_utc="t")
+    assert "51234" in out
+    by_grain = {p.grain: p for p in out["51234"].periods}
+
+    # week stays present; the four granularity grains are additive alongside it.
+    assert "week" in by_grain
+    assert {"am_peak", "night", "weekday", "weekend"} <= set(by_grain)
+
+    am = by_grain["am_peak"]
+    assert am.avg_delay_min == 1.0          # 600s weighted / 10 obs / 60
+    assert am.severe_pct == 10.0            # 1 / 10
+    assert am.otp_pct == 90                 # severe proxy: (10-1)/10
+
+    night = by_grain["night"]
+    assert night.avg_delay_min == 2.0       # 480s / 4 obs / 60
+    assert night.otp_pct == 100             # no severe
+    assert night.severe_pct == 0.0
+
+    weekday = by_grain["weekday"]
+    assert weekday.avg_delay_min == 1.3     # round(1080/14/60, 1)
+
+    # Honest NULLs (never 0) when obs is 0.
+    weekend = by_grain["weekend"]
+    assert weekend.otp_pct is None
+    assert weekend.avg_delay_min is None
+    assert weekend.severe_pct is None

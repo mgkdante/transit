@@ -138,6 +138,21 @@ export interface StopDetailCopy {
 			/** Heatmap row labels, Mon..Sun (length 7, in row order). */
 			readonly weekdaysShort: readonly [string, string, string, string, string, string, string];
 		};
+		/**
+		 * Time-of-day shift + day-type breakdown (am_peak…night, weekday/weekend).
+		 * Surfaced alongside the calendar grains; the SHIFT grains never enter the
+		 * GrainPicker. A trailing-window observation-weighted proxy, NOT certified.
+		 */
+		readonly timeOfDay: {
+			/** Section heading over the by-shift ranked list. */
+			readonly heading: string;
+			/** Per-row subtitle naming what the bar magnitude encodes (severe share). */
+			readonly severeShare: string;
+			/** Sub-heading over the weekday-vs-weekend comparison pair. */
+			readonly dayType: string;
+			/** Honest caveat: trailing-window proxy, small samples vary. */
+			readonly caveat: string;
+		};
 		/** No-data string for a route row whose delay is absent. */
 		readonly noDelay: string;
 	};
@@ -244,6 +259,13 @@ export const detailCopy: Record<Locale, StopDetailCopy> = {
 				weekdays: ['', 'Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dimanche'],
 				weekdaysShort: ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'],
 			},
+			timeOfDay: {
+				heading: 'Par période de la journée',
+				severeShare: 'Part des retards graves',
+				dayType: 'Semaine vs fin de semaine',
+				caveat:
+					'Estimation sur fenêtre glissante, pondérée par les observations, pas une ponctualité certifiée; les petits échantillons varient.',
+			},
 			noDelay: 'Aucune donnée',
 		},
 	},
@@ -326,6 +348,13 @@ export const detailCopy: Record<Locale, StopDetailCopy> = {
 					'Sunday',
 				],
 				weekdaysShort: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
+			},
+			timeOfDay: {
+				heading: 'By time of day',
+				severeShare: 'Severe-delay share',
+				dayType: 'Weekday vs weekend',
+				caveat:
+					'Trailing-window, observation-weighted estimate, not certified on-time; small samples vary.',
 			},
 			noDelay: 'No data',
 		},

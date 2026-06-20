@@ -41,6 +41,7 @@
 	import { metricsCopy } from '$lib/features/metrics/metrics.copy';
 	import type { PunctualityVM, PeriodComparisonRow } from './clusters';
 	import type { ReliabilityCopy } from './reliability.copy';
+	import { shiftLabel as shiftGrainLabel } from '$lib/features/reliability/shiftGrains';
 
 	export interface Cluster01PunctualityProps {
 		/** The punctuality view-model from `toReliabilityClusters`. */
@@ -138,15 +139,10 @@
 	   severe share as a [0,1] magnitude; null severe → empty track (no fake 0).
 	   These are a trailing-window observation-weighted proxy (date:null), NOT
 	   certified OTP, the band prints that caveat below the block. */
-	const SHIFT_LABELS: Record<string, Record<Locale, string>> = {
-		am_peak: { fr: 'Pointe AM', en: 'AM peak' },
-		midday: { fr: 'Journée', en: 'Midday' },
-		pm_peak: { fr: 'Pointe PM', en: 'PM peak' },
-		evening: { fr: 'Soirée', en: 'Evening' },
-		night: { fr: 'Nuit', en: 'Night' },
-	};
+	// Shift-grain labels come from the shared reliability vocabulary so the lines +
+	// stops surfaces speak identical tokens (no re-invented labels here).
 	function shiftLabel(g: string): string {
-		return SHIFT_LABELS[g]?.[locale] ?? g;
+		return shiftGrainLabel(g, locale);
 	}
 	function dayTypeLabel(g: string): string {
 		if (g === 'weekday') return copy.peak.weekday;

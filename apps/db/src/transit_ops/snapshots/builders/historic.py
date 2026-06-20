@@ -746,6 +746,60 @@ _STOP_PERCENTILE_DAILY_SQL = text(
 )
 
 
+# Granularity grains for stops, computed ON THE FLY from the hourly mart (stops
+# have no rollup table). The hour->shift band CASE and the ISODOW weekday/weekend
+# split MUST stay byte-identical to the canonical route populate logic in
+# gold/rollups.py (UPSERT_ROUTE_DELAY_BY_SHIFT / UPSERT_ROUTE_DELAY_BY_DAYTYPE) so
+# stop grains line up with route grains. Avg delay mirrors the stop weekly rollup:
+# COALESCE(arrival, departure), observation-weighted (_weighted_avg_sec). Stop OTP
+# stays a severe(>300s)-only proxy (no on_time column in the stop hourly mart), so
+# only obs + severe are aggregated. One UNION'd pass over both grain families.
+_STOP_BY_GRAIN_SQL = text(
+    """
+    SELECT stop_id, grain,
+           SUM(observation_count)::numeric                AS obs,
+           SUM(severe_delay_count)::numeric               AS severe,
+           SUM(avg_delay_sec * NULLIF(observation_count, 0)) AS weighted_delay_sec
+    FROM (
+        SELECT sd.stop_id,
+               CASE
+                   WHEN EXTRACT(HOUR FROM timezone(dp.timezone, sd.period_start_utc))
+                       BETWEEN 6 AND 8 THEN 'am_peak'
+                   WHEN EXTRACT(HOUR FROM timezone(dp.timezone, sd.period_start_utc))
+                       BETWEEN 9 AND 14 THEN 'midday'
+                   WHEN EXTRACT(HOUR FROM timezone(dp.timezone, sd.period_start_utc))
+                       BETWEEN 15 AND 18 THEN 'pm_peak'
+                   WHEN EXTRACT(HOUR FROM timezone(dp.timezone, sd.period_start_utc))
+                       BETWEEN 19 AND 22 THEN 'evening'
+                   ELSE 'night'
+               END AS grain,
+               sd.observation_count,
+               sd.severe_delay_count,
+               COALESCE(sd.avg_arrival_delay_seconds, sd.avg_departure_delay_seconds)
+                   AS avg_delay_sec
+        FROM gold.stop_delay_hourly AS sd
+        INNER JOIN gold.dim_provider AS dp ON dp.provider_id = sd.provider_id
+        WHERE sd.provider_id = :provider_id
+        UNION ALL
+        SELECT sd.stop_id,
+               CASE
+                   WHEN EXTRACT(ISODOW FROM timezone(dp.timezone, sd.period_start_utc))
+                       BETWEEN 1 AND 5 THEN 'weekday'
+                   ELSE 'weekend'
+               END AS grain,
+               sd.observation_count,
+               sd.severe_delay_count,
+               COALESCE(sd.avg_arrival_delay_seconds, sd.avg_departure_delay_seconds)
+                   AS avg_delay_sec
+        FROM gold.stop_delay_hourly AS sd
+        INNER JOIN gold.dim_provider AS dp ON dp.provider_id = sd.provider_id
+        WHERE sd.provider_id = :provider_id
+    ) AS banded
+    GROUP BY stop_id, grain
+    """
+)
+
+
 def build_stop_reliability(
     conn: Connection, *, provider_id: str = "stm", generated_utc: str
 ) -> "dict[str, StopReliability]":
@@ -772,6 +826,21 @@ def build_stop_reliability(
                 avg_delay_min=(round(avg_sec / 60.0, 1) if avg_sec is not None else None),
                 severe_pct=_severe_pct(r["obs"], r["severe"]),
             )
+
+    # Granularity grains (additive, free-string grain): time-of-day shift +
+    # weekday/weekend day-type, computed on the fly from the hourly mart with the
+    # canonical route hour->shift / ISODOW split. Stop OTP stays the severe proxy;
+    # honest-None (never 0) flows from the helpers when obs is 0/missing.
+    for r in conn.execute(_STOP_BY_GRAIN_SQL, params).mappings():
+        sid = str(r["stop_id"])
+        grain = str(r["grain"])
+        avg_sec = _weighted_avg_sec(r["obs"], r["weighted_delay_sec"])
+        periods.setdefault(sid, {})[grain] = StopReliabilityPeriod(
+            grain=grain,
+            otp_pct=_otp_pct_severe_proxy(r["obs"], r["severe"]),
+            avg_delay_min=(round(avg_sec / 60.0, 1) if avg_sec is not None else None),
+            severe_pct=_severe_pct(r["obs"], r["severe"]),
+        )
 
     # by_route breakdown keyed stop_id -> list[StopByRoute]
     by_route: dict[str, list[StopByRoute]] = {}
@@ -818,6 +887,13 @@ def build_stop_reliability(
         if sid in day_period:
             ordered.append(day_period[sid])
         ordered.extend(grain_map[g] for g in ("week", "month") if g in grain_map)
+        # Additive granularity grains (canonical shift + day-type tokens), in the
+        # same time-of-day / weekday-first order the route surface publishes.
+        ordered.extend(
+            grain_map[g]
+            for g in ("am_peak", "midday", "pm_peak", "evening", "night", "weekday", "weekend")
+            if g in grain_map
+        )
         routes = sorted(by_route.get(sid, []), key=lambda b: _route_sort_key(b.route))
         out[sid] = StopReliability(
             generated_utc=generated_utc,

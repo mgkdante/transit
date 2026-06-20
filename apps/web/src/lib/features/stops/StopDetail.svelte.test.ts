@@ -42,6 +42,24 @@ const RELIABILITY = {
 	],
 } as StopReliability;
 
+// A reliability fixture that ALSO carries the additive SHIFT grains
+// (am_peak…night) + DAY-TYPE grains (weekday/weekend) the pipeline now emits on
+// the same periods[] array, alongside the calendar grains. pm_peak (12%) is the
+// worst severe share; night has a null severe share (must be dropped, no fake-0).
+const RELIABILITY_WITH_TOD = {
+	...RELIABILITY,
+	periods: [
+		...RELIABILITY.periods!,
+		{ grain: 'am_peak', otp_pct: 88, avg_delay_min: 2.1, severe_pct: 5 },
+		{ grain: 'midday', otp_pct: 91, avg_delay_min: 1.4, severe_pct: 3 },
+		{ grain: 'pm_peak', otp_pct: 74, avg_delay_min: 5.6, severe_pct: 12 },
+		{ grain: 'evening', otp_pct: 90, avg_delay_min: 1.8, severe_pct: 4 },
+		{ grain: 'night', otp_pct: null, avg_delay_min: null, severe_pct: null }, // dropped
+		{ grain: 'weekday', otp_pct: 80, avg_delay_min: 3.4, severe_pct: 7 },
+		{ grain: 'weekend', otp_pct: 86, avg_delay_min: 2.2, severe_pct: 4 },
+	],
+} as StopReliability;
+
 // A live board for this stop: three departures across late / on-time / early,
 // two routes (51, 80) so the by-route chips appear.
 const DEPARTURES = [
@@ -242,6 +260,105 @@ describe('StopDetail reliability — by_route ranked bars', () => {
 		const milderIdx = ranked.findIndex((r) => within(r).queryByText('4.1 min'));
 		expect(worstIdx).toBeGreaterThanOrEqual(0);
 		expect(worstIdx).toBeLessThan(milderIdx);
+	});
+});
+
+describe('StopDetail reliability — by time of day (shift + day-type grains)', () => {
+	it('renders the by-time-of-day shift list + weekday/weekend comparison when present', () => {
+		reset();
+		reliabilityData = RELIABILITY_WITH_TOD;
+		render(StopDetail, { props: { id: '57191' } });
+		fireEvent.click(screen.getByRole('tab', { name: 'Reliability' }));
+
+		const tod = document.querySelector('[data-slot="stop-time-of-day"]') as HTMLElement;
+		expect(tod).not.toBeNull();
+		// Section heading + the day-type sub-comparison heading.
+		expect(within(tod).getByText('By time of day')).toBeInTheDocument();
+		expect(within(tod).getByText('Weekday vs weekend')).toBeInTheDocument();
+
+		// The shift list uses the SHARED lines vocabulary (AM peak / PM peak …).
+		expect(within(tod).getByText('PM peak')).toBeInTheDocument();
+		expect(within(tod).getByText('AM peak')).toBeInTheDocument();
+		// Day-type rows use the shared weekday/weekend labels.
+		expect(within(tod).getByText('Weekday')).toBeInTheDocument();
+		expect(within(tod).getByText('Weekend')).toBeInTheDocument();
+
+		// Worst severe share (pm_peak, 12%) ranks first, ahead of am_peak (5%).
+		const shiftList = within(tod).getByRole('list', { name: 'By time of day' });
+		const shiftRows = within(shiftList).getAllByRole('listitem');
+		const pmIdx = shiftRows.findIndex((r) => within(r).queryByText('PM peak'));
+		const amIdx = shiftRows.findIndex((r) => within(r).queryByText('AM peak'));
+		expect(pmIdx).toBeGreaterThanOrEqual(0);
+		expect(pmIdx).toBeLessThan(amIdx);
+
+		// Honesty: the null-severe `night` shift is dropped (no fabricated 0 bar).
+		expect(within(tod).queryByText('Night')).not.toBeInTheDocument();
+		// Honest trailing-window caveat is printed.
+		expect(
+			within(tod).getByText(/Trailing-window, observation-weighted estimate/),
+		).toBeInTheDocument();
+	});
+
+	it('stands the whole section down when the stop carries no shift/day-type grains', () => {
+		reset();
+		// Default fixture = calendar grains only (day + week).
+		render(StopDetail, { props: { id: '57191' } });
+		fireEvent.click(screen.getByRole('tab', { name: 'Reliability' }));
+
+		expect(document.querySelector('[data-slot="stop-time-of-day"]')).toBeNull();
+		expect(screen.queryByText('By time of day')).not.toBeInTheDocument();
+	});
+
+	it('drops an avg-only (severe-null) shift period — partition + ranker stay in lock-step', () => {
+		reset();
+		// A shift period carrying a real avg delay but a NULL severe share must NOT
+		// survive into the severe-share ranking: dropping it at partition time keeps
+		// the partition guard and the ranker consistent, and never fabricates a 0%
+		// severe share. midday (severe 3%) is the only shift row that should render.
+		reliabilityData = {
+			...RELIABILITY,
+			periods: [
+				...RELIABILITY.periods!,
+				{ grain: 'am_peak', otp_pct: 70, avg_delay_min: 6.4, severe_pct: null }, // avg-only → dropped
+				{ grain: 'midday', otp_pct: 91, avg_delay_min: 1.4, severe_pct: 3 }, // real severe → kept
+			],
+		} as StopReliability;
+		render(StopDetail, { props: { id: '57191' } });
+		fireEvent.click(screen.getByRole('tab', { name: 'Reliability' }));
+
+		const tod = document.querySelector('[data-slot="stop-time-of-day"]') as HTMLElement;
+		expect(tod).not.toBeNull();
+		// The avg-only am_peak period is gone (no fabricated 0% severe bar)…
+		expect(within(tod).queryByText('AM peak')).not.toBeInTheDocument();
+		// …and its avg delay (6.4 min) never leaks into this severe-share section.
+		expect(within(tod).queryByText('6.4 min')).not.toBeInTheDocument();
+		// The real-severe midday row survives and reads its honest severe share.
+		expect(within(tod).getByText('Midday')).toBeInTheDocument();
+		expect(within(tod).getByText('3.0%')).toBeInTheDocument();
+	});
+
+	it('keeps the GrainPicker calendar-only even when shift grains are present', () => {
+		reset();
+		reliabilityData = RELIABILITY_WITH_TOD;
+		render(StopDetail, { props: { id: '57191' } });
+		fireEvent.click(screen.getByRole('tab', { name: 'Reliability' }));
+
+		const group = screen.getByRole('radiogroup', { name: 'Roll-up period' });
+		// EXACTLY the three calendar grains are offered — never a shift token.
+		const radios = within(group).getAllByRole('radio');
+		expect(radios.map((r) => r.textContent?.trim())).toEqual(['Day', 'Week', 'Month']);
+		// No shift / day-type token ever leaked into the picker.
+		for (const token of [
+			'AM peak',
+			'PM peak',
+			'Midday',
+			'Evening',
+			'Night',
+			'Weekday',
+			'Weekend',
+		]) {
+			expect(within(group).queryByRole('radio', { name: token })).toBeNull();
+		}
 	});
 });
 
