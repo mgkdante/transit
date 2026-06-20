@@ -1521,3 +1521,111 @@ def test_build_stop_reliability_emits_shift_and_daytype_grains() -> None:
     assert sun.avg_delay_min is None
     assert sun.severe_pct is None
     assert sun.observation_count is None
+
+
+# --------------------------------------------------------------------------
+# build_network_trend — network-wide shift + day-type reliability (folded depth)
+# --------------------------------------------------------------------------
+
+
+def test_build_network_trend_emits_network_shift_and_daytype() -> None:
+    """Network trend aggregates the per-route shift / day-type rollups network-wide.
+
+    The GROUP BY shift / GROUP BY day_type runs in Postgres over ALL routes; the
+    FakeConn returns the already-aggregated grain rows. OTP is the REAL
+    on_time/otp_known (not the severe proxy) — numerator and denominator share
+    scope so the gold on-time NULL-guard does not bias OTP low — avg delay is
+    observation-weighted via SUM(avg*known)/SUM(known) over the full known_obs,
+    severe_pct = severe/known_obs, and every metric is honest None (never 0) on a
+    grain with no known-delay observations.
+    """
+    from transit_ops.snapshots.builders.historic import build_network_trend
+
+    # _NETWORK_BY_SHIFT_SQL returns
+    # (grain, on_time, otp_known, known_obs, severe, weighted_delay_sec)
+    # aggregated across all routes. otp_known is delay obs scoped to rows whose
+    # on_time_observation_count is NOT NULL (the OTP NULL-guard denominator);
+    # known_obs is the FULL delay-observation total (severe + avg denominator).
+    # Out-of-canonical order on purpose to assert the builder re-orders to
+    # am_peak, midday, pm_peak, evening, night.
+    shift_rows = [
+        # pm_peak: 1000 known, but only 900 of those came from on-time-known
+        #   routes (otp_known=900). on_time=720 -> REAL otp 80 (720/900), NOT
+        #   the biased 72 a bare SUM(on_time)/SUM(known) would give. avg/severe
+        #   stay over the full 1000: avg 2.0 min (120000/1000/60), severe 5.0.
+        {"grain": "pm_peak", "on_time": 720, "otp_known": 900, "known_obs": 1000,
+         "severe": 50, "weighted_delay_sec": 120000.0},
+        # am_peak: every route on-time-known -> otp_known == known_obs == 500.
+        #   on_time=450 -> otp 90, avg 1.0 min, severe 2.0
+        {"grain": "am_peak", "on_time": 450, "otp_known": 500, "known_obs": 500,
+         "severe": 10, "weighted_delay_sec": 30000.0},
+        # night: 0 known -> honest None across otp/avg/severe
+        {"grain": "night", "on_time": 0, "otp_known": 0, "known_obs": 0,
+         "severe": 0, "weighted_delay_sec": None},
+    ]
+
+    # _NETWORK_BY_DAYTYPE_SQL returns the same shape grouped by day_type.
+    daytype_rows = [
+        # weekend: 200 known, 150 on_time, 20 severe, 24000s weighted; all routes
+        #   on-time-known -> otp_known 200 -> otp 75, avg 2.0 min, severe 10.0
+        {"grain": "weekend", "on_time": 150, "otp_known": 200, "known_obs": 200,
+         "severe": 20, "weighted_delay_sec": 24000.0},
+        # weekday: 2000 known, 1800 on_time, 60 severe, 180000s weighted; all
+        #   routes on-time-known -> otp_known 2000 -> otp 90, avg 1.5, severe 3.0
+        {"grain": "weekday", "on_time": 1800, "otp_known": 2000,
+         "known_obs": 2000, "severe": 60, "weighted_delay_sec": 180000.0},
+    ]
+
+    dispatch = [
+        # network-wide shift grain — unique discriminator "GROUP BY shift".
+        ("GROUP BY shift", shift_rows),
+        # network-wide day-type grain — unique discriminator "GROUP BY day_type".
+        ("GROUP BY day_type", daytype_rows),
+        # the daily/fact/cancellation/occupancy trend queries can be empty here;
+        # this test exercises only the new network grain aggregation.
+    ]
+
+    class FC:
+        def execute(self, statement, params=None):  # noqa: ANN001, ANN201, ARG002
+            s = str(statement)
+            for needle, rows in dispatch:
+                if needle in s:
+                    return FakeResult(rows)
+            return FakeResult([])
+
+    out = build_network_trend(FC(), provider_id="stm", generated_utc="t")
+
+    # --- by_shift: canonical order, REAL OTP, weighted avg, honest-None grain ---
+    assert [s.grain for s in out.by_shift] == ["am_peak", "pm_peak", "night"]
+    by_shift = {s.grain: s for s in out.by_shift}
+
+    am = by_shift["am_peak"]
+    assert am.otp_pct == 90                  # 450 / 500 (REAL on_time/known)
+    assert am.avg_delay_min == 1.0           # 30000 / 500 / 60
+    assert am.severe_pct == 2.0              # 10 / 500
+
+    pm = by_shift["pm_peak"]
+    # OTP NULL-guard: 720 / 900 (otp_known), NOT the biased 72 = 720 / 1000.
+    assert pm.otp_pct == 80                  # 720 on_time / 900 otp_known
+    assert pm.avg_delay_min == 2.0           # 120000 / 1000 / 60 (full known_obs)
+    assert pm.severe_pct == 5.0              # 50 / 1000 (full known_obs)
+
+    # Honest NULLs (never 0) when the grain has no known-delay observations.
+    night = by_shift["night"]
+    assert night.otp_pct is None
+    assert night.avg_delay_min is None
+    assert night.severe_pct is None
+
+    # --- by_daytype: weekday before weekend, REAL OTP, weighted avg ---
+    assert [d.grain for d in out.by_daytype] == ["weekday", "weekend"]
+    by_daytype = {d.grain: d for d in out.by_daytype}
+
+    weekday = by_daytype["weekday"]
+    assert weekday.otp_pct == 90             # 1800 / 2000
+    assert weekday.avg_delay_min == 1.5      # 180000 / 2000 / 60
+    assert weekday.severe_pct == 3.0         # 60 / 2000
+
+    weekend = by_daytype["weekend"]
+    assert weekend.otp_pct == 75             # 150 / 200
+    assert weekend.avg_delay_min == 2.0      # 24000 / 200 / 60
+    assert weekend.severe_pct == 10.0        # 20 / 200

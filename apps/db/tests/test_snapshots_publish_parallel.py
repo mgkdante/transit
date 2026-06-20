@@ -331,6 +331,25 @@ def _historic_dispatch_conn():
         ("feed_freshness_current", []),
         ("DISTINCT ON (u.stop_id)", [{"stop_id": "S1", "stop_name": "Stop 1"}]),
         ("DISTINCT ON (u.route_id)", [{"route_id": "R1", "route_name": "Route 1"}]),
+        # build_stop_reliability: shift + day-type grains — unique discriminator
+        # "AS banded". MUST precede the generic "UNION" needle below: _STOP_BY_GRAIN_SQL
+        # contains "UNION ALL" and would otherwise fall through to the route-id
+        # enumeration (tuple rows) and crash on r["stop_id"].
+        ("AS banded", [
+            {"stop_id": "S1", "grain": "am_peak", "obs": 10, "severe": 1,
+             "weighted_delay_sec": 600.0},
+            {"stop_id": "S1", "grain": "weekday", "obs": 14, "severe": 1,
+             "weighted_delay_sec": 1080.0},
+        ]),
+        # build_stop_reliability: weekday seasonality — unique discriminator
+        # "AS dow_obs". Listed before the generic "UNION" needle so the day-of-week
+        # rows aren't shadowed.
+        ("AS dow_obs", [
+            {"stop_id": "S1", "day_of_week_iso": 1, "dow_obs": 20, "severe": 2,
+             "weighted_delay_sec": 1200.0},
+            {"stop_id": "S1", "day_of_week_iso": 7, "dow_obs": 0, "severe": 0,
+             "weighted_delay_sec": None},
+        ]),
         ("UNION", [("R1",), ("R2",), ("R3",)]),  # 3 routes with history
         # Tier-1 cancellation/occupancy reads (more-specific needles precede the
         # generic daily-view "ORDER BY provider_local_date DESC" below).

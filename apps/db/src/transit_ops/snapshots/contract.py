@@ -318,9 +318,29 @@ class TrendPoint(BaseModel):
     cancellation_rate: float | None = None
     occupancy_mix: OccupancyMix | None = None
 
+class NetworkShift(BaseModel):
+    # Network-wide reliability for one time-of-day shift or weekday/weekend
+    # day-type grain, aggregated across ALL of the provider's routes from
+    # gold.route_delay_by_shift / gold.route_delay_by_daytype (which carry an
+    # on_time_observation_count, so otp_pct is a REAL on_time/known OTP — NOT the
+    # severe-delay proxy used for stops). grain is the canonical shift token
+    # (am_peak|midday|pm_peak|evening|night) or day-type token (weekday|weekend).
+    # Honest-NULL: every metric is None (never a fabricated 0) when the grain has
+    # no known-delay observations across the network for the window.
+    grain: str
+    otp_pct: int | None = None
+    avg_delay_min: float | None = None
+    severe_pct: float | None = None
+
 class NetworkTrend(BaseModel):
     generated_utc: str
     series: list[TrendPoint] = Field(default_factory=list)
+    # Additive-optional network-wide reliability by time-of-day shift and by
+    # weekday/weekend day-type, aggregated across all routes. Both default empty
+    # so already-published snapshots lacking these keys still validate; the
+    # NetworkShift rows keep honest-NULL semantics (None, never 0, on zero-obs).
+    by_shift: list[NetworkShift] = Field(default_factory=list)
+    by_daytype: list[NetworkShift] = Field(default_factory=list)
 
 class ReliabilityPeriod(BaseModel):
     grain: str

@@ -239,6 +239,24 @@ describe('tier-1 — cancellations + occupancy_mix round-trip (additive optional
 		};
 		expect(() => parsePort('network_trend', NetworkTrendSchema, fixture)).not.toThrow();
 	});
+
+	it('parses network_trend carrying network-wide by_shift + by_daytype readouts', () => {
+		const fixture = {
+			generated_utc: ISO,
+			by_shift: [
+				{ grain: 'am_peak', otp_pct: 88, avg_delay_min: 1.4, severe_pct: 3.0 },
+				{ grain: 'pm_peak', otp_pct: 79, avg_delay_min: 2.6, severe_pct: 7.4 },
+				// honest-null grain: too little data → metrics null, still parses.
+				{ grain: 'night', otp_pct: null, avg_delay_min: null, severe_pct: null },
+			],
+			by_daytype: [
+				{ grain: 'weekday', otp_pct: 84, avg_delay_min: 1.9, severe_pct: 4.1 },
+				// metrics absent entirely (optional) — still parses.
+				{ grain: 'weekend' },
+			],
+		};
+		expect(() => parsePort('network_trend', NetworkTrendSchema, fixture)).not.toThrow();
+	});
 });
 
 describe('tier-2 — headway cov/bunching + service_spans + alert breakdown round-trip', () => {

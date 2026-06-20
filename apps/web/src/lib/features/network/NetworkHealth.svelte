@@ -36,11 +36,18 @@
 		STATUS_CODES,
 		OCCUPANCY_CODES,
 		type NetworkFile,
+		type NetworkShift,
 		type OccupancyCode,
 		type StatusCode,
 		type TrendPoint,
 	} from '$lib/v1';
+	import type { SeverityCode } from '$lib/v1/schemas';
 	import { createResource } from '$lib/v1/resource.svelte';
+	import {
+		shiftLabel,
+		dayTypeLabel,
+		severeShareToSeverity,
+	} from '$lib/features/reliability/shiftGrains';
 	import {
 		SurfaceHeader,
 		LiveFreshness,
@@ -51,7 +58,13 @@
 	} from '$lib/components/surface';
 	import { Surface } from '$lib/components/layout';
 	import { Separator } from '$lib/components/ui/separator';
-	import { Sparkline, StackedBar, TrendLine, type StackedSegment } from '$lib/components/dataviz';
+	import {
+		RankedRow,
+		Sparkline,
+		StackedBar,
+		TrendLine,
+		type StackedSegment,
+	} from '$lib/components/dataviz';
 	import { EdgeState } from '$lib/components/edge';
 	import MetricDisplay from '$lib/components/brand/MetricDisplay.svelte';
 	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
@@ -287,6 +300,87 @@
 	);
 	const hasOccupancyTrend = $derived(occupancyDays.length > 0);
 
+	// --- By time of day + weekday/weekend (network-wide by_shift / by_daytype) --
+	// The historic trend additionally carries network-wide reliability per
+	// time-of-day shift (am_peak…night) and day-type (weekday/weekend). The
+	// HEADLINE per grain is the REAL on-time % (otp_pct = on-time/known over the
+	// trailing window), ranked worst-PUNCTUALITY first (lowest OTP first); a grain
+	// with no OTP reading falls back to its severe-delay share for ordering and
+	// sorts AFTER every OTP-known grain (worst severe-share first among those). The
+	// magnitude bar still encodes the SEVERE-delay share as a [0,1] mark on the
+	// dataviz severity scale (NEVER --primary), and avg delay + severe share read
+	// as the row subtitle. Honesty: a grain with NO otp AND no severe reading is
+	// DROPPED (never a fabricated 0); a null-OTP grain shows the localized no-data
+	// string in its headline, never a fake 0%. Each group's section stands down
+	// when nothing carries data. Labels come from the SHARED reliability vocabulary
+	// (shiftGrains). These grains are a trailing-window proxy → the caveat below.
+	type ShiftRow = {
+		readonly key: string;
+		readonly rank: number;
+		readonly title: string;
+		readonly severity: SeverityCode;
+		readonly value: number | null;
+		readonly display: string;
+		readonly subtitle: string;
+	};
+
+	/** Subtitle: avg delay + severe share, each honest no-data when null. */
+	function shiftSubtitle(avg: number | null, severe: number | null): string {
+		const avgText = `${t.shift.avgLabel} ${fmtMin(avg)}`;
+		const sevText = `${t.shift.severeLabel} ${severe == null ? t.noData : `${severe.toFixed(1)}${t.units.pct}`}`;
+		return `${avgText} · ${sevText}`;
+	}
+
+	// Rank worst-punctuality first: lowest OTP first; grains with no OTP fall back
+	// to severe-share for ordering and sort AFTER every OTP-known grain (worst
+	// severe-share first). A grain carrying NEITHER otp NOR severe is dropped (no
+	// fabricated 0). The severity bar always encodes the severe share (banded via
+	// the shared severeShareToSeverity), so a null-severe grain reads as a quiet
+	// no-data bar while its OTP headline still leads.
+	function rankByPunctuality(
+		rows: readonly NetworkShift[],
+		label: (g: string) => string,
+	): ShiftRow[] {
+		const real = rows.filter((r) => r.otp_pct != null || r.severe_pct != null);
+		const worstSevere = real.reduce((m, r) => Math.max(m, r.severe_pct ?? 0), 0);
+		return real
+			.slice()
+			.sort((a, b) => {
+				// OTP-known grains always sort before OTP-unknown grains.
+				const aHas = a.otp_pct != null;
+				const bHas = b.otp_pct != null;
+				if (aHas !== bHas) return aHas ? -1 : 1;
+				// Both OTP-known: lowest OTP (worst punctuality) first.
+				if (aHas && bHas) return (a.otp_pct ?? 0) - (b.otp_pct ?? 0);
+				// Both OTP-unknown: worst severe-share first.
+				return (b.severe_pct ?? 0) - (a.severe_pct ?? 0);
+			})
+			.map((r, i) => {
+				const sev = r.severe_pct ?? null;
+				return {
+					key: r.grain,
+					rank: i + 1,
+					title: label(r.grain),
+					// The bar encodes the severe share; null severe → quiet no-data bar.
+					severity: severeShareToSeverity(sev),
+					value:
+						sev != null && worstSevere > 0 ? Math.min(1, Math.max(0, sev / worstSevere)) : null,
+					// HEADLINE: the real OTP % (or honest no-data when null).
+					display: fmtPct(r.otp_pct ?? null),
+					subtitle: shiftSubtitle(r.avg_delay_min ?? null, sev),
+				};
+			});
+	}
+
+	const shiftRows = $derived.by<ShiftRow[]>(() =>
+		rankByPunctuality(trend.data?.by_shift ?? [], (g) => shiftLabel(g, locale)),
+	);
+	const dayTypeRows = $derived.by<ShiftRow[]>(() =>
+		rankByPunctuality(trend.data?.by_daytype ?? [], (g) => dayTypeLabel(g, locale)),
+	);
+	const hasShift = $derived(shiftRows.length > 0);
+	const hasDayType = $derived(dayTypeRows.length > 0);
+
 	function openStatusOnMap(code: StatusCode | OccupancyCode): void {
 		if (!STATUS_CODES.includes(code as StatusCode)) return;
 		openSurface({ kind: 'map', search: mapSearchFor({ status: [code as StatusCode] }) });
@@ -510,6 +604,59 @@
 			</ul>
 		</div>
 	{/if}
+
+	<!-- By time of day + weekday/weekend — network-wide reliability ranked by
+	     PUNCTUALITY (lowest on-time % first). Each row leads with the real OTP %
+	     (avg delay + severe share read as the subtitle); the magnitude bar encodes
+	     the severe-delay share on the severity scale. Each section stands down when
+	     its group carries no data; a grain with no OTP shows honest no-data and a
+	     grain with neither OTP nor severe is dropped (never a fake 0). The
+	     shift/day-type labels are the SHARED reliability vocabulary. -->
+	{#if hasShift || hasDayType}
+		<Separator variant="hazard" />
+		<div class="network-block" data-slot="network-shift">
+			{#if hasShift}
+				<div class="network-block">
+					<SectionLabel text={t.shiftSection} variant="station" />
+					<p class="network-shift-caption">{t.shift.rowCaption}</p>
+					<div class="network-ranked" role="list" aria-label={t.shift.shiftSummary}>
+						{#each shiftRows as row (row.key)}
+							<RankedRow
+								rank={row.rank}
+								title={row.title}
+								subtitle={row.subtitle}
+								severity={row.severity}
+								value={row.value}
+								display={row.display}
+							/>
+						{/each}
+					</div>
+				</div>
+			{/if}
+
+			{#if hasDayType}
+				<div class="network-block network-daytype">
+					<SectionLabel text={t.dayTypeSection} variant="station" />
+					<p class="network-shift-caption">{t.shift.rowCaption}</p>
+					<div class="network-ranked" role="list" aria-label={t.shift.dayTypeSummary}>
+						{#each dayTypeRows as row (row.key)}
+							<RankedRow
+								rank={row.rank}
+								title={row.title}
+								subtitle={row.subtitle}
+								severity={row.severity}
+								value={row.value}
+								display={row.display}
+							/>
+						{/each}
+					</div>
+				</div>
+			{/if}
+
+			<!-- Honest caveat: trailing-window observation-weighted proxy, not certified OTP. -->
+			<p class="network-shift-caveat" data-slot="shift-caveat">{t.shift.caveat}</p>
+		</div>
+	{/if}
 </Surface>
 
 <style>
@@ -602,5 +749,28 @@
 		font-size: var(--text-micro);
 		font-variant-numeric: tabular-nums;
 		color: var(--muted-foreground);
+	}
+
+	/* By time of day + weekday/weekend ranked lists (worst severe-share first). */
+	.network-ranked {
+		display: flex;
+		flex-direction: column;
+		gap: 0.5rem;
+		max-width: 40rem;
+	}
+	.network-daytype {
+		margin-top: 0.5rem;
+	}
+	/* Quiet mono caption (what the bar encodes) + the honest trailing-window caveat. */
+	.network-shift-caption,
+	.network-shift-caveat {
+		margin: 0;
+		font-family: var(--font-mono);
+		font-size: var(--text-small);
+		line-height: 1.4;
+		color: var(--muted-foreground);
+	}
+	.network-shift-caveat {
+		max-width: 52ch;
 	}
 </style>

@@ -59,6 +59,7 @@
 		shiftLabel,
 		dayTypeLabel,
 		weekdayLabel,
+		severeShareToSeverity,
 	} from '$lib/features/reliability/shiftGrains';
 	import { EdgeState } from '$lib/components/edge';
 	import { layout, mapHrefFor } from '$lib/nav';
@@ -326,12 +327,11 @@
 			.sort((a, b) => (b.severePct ?? 0) - (a.severePct ?? 0) || rank(a.grain) - rank(b.grain))
 			.map((r, i) => {
 				const sev = r.severePct ?? 0;
-				const severity: SeverityCode = sev >= 10 ? 'critical' : sev >= 5 ? 'high' : 'watch';
 				return {
 					key: r.grain,
 					rank: i + 1,
 					title: label(r.grain),
-					severity,
+					severity: severeShareToSeverity(r.severePct),
 					value: worst > 0 ? Math.min(1, Math.max(0, sev / worst)) : null,
 					display: `${sev.toFixed(1)}%`,
 				};

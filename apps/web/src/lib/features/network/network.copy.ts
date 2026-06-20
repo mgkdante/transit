@@ -21,6 +21,10 @@ export interface NetworkCopy extends SurfaceHeadCopy {
 	readonly cancelSection: string;
 	/** Section caption above the per-day crowding-mix small multiple. */
 	readonly occupancyTrendSection: string;
+	/** Section caption above the network "by time of day" readout. */
+	readonly shiftSection: string;
+	/** Section caption above the weekday-vs-weekend readout. */
+	readonly dayTypeSection: string;
 	/** Section caption above the status-mix bar. */
 	readonly statusSection: string;
 	/** Section caption above the occupancy-mix bar. */
@@ -73,6 +77,25 @@ export interface NetworkCopy extends SurfaceHeadCopy {
 		/** Accessible summary of the whole small-multiple. */
 		readonly summary: string;
 	};
+	/** Network "by time of day" + weekday/weekend readouts (shared shift vocab). */
+	readonly shift: {
+		/** Accessible summary of the time-of-day ranked list. */
+		readonly shiftSummary: string;
+		/** Accessible summary of the weekday/weekend ranked list. */
+		readonly dayTypeSummary: string;
+		/** Per-row caption — what the headline value + magnitude bar encode. */
+		readonly rowCaption: string;
+		/** Subtitle prefix for the average-delay reading. */
+		readonly avgLabel: string;
+		/** Subtitle prefix for the severe-delay-share reading. */
+		readonly severeLabel: string;
+		/**
+		 * Honest caveat: these grains are a real on-time/known OTP over the
+		 * trailing window — a punctuality proxy, not certified OTP — so small
+		 * samples vary.
+		 */
+		readonly caveat: string;
+	};
 	/** Window selector (7/30/90-day) labels. */
 	readonly window: {
 		/** Accessible group label for the window selector. */
@@ -100,6 +123,8 @@ export const copy: Record<Locale, NetworkCopy> = {
 		trendSection: 'Daily trend',
 		cancelSection: 'Cancellations',
 		occupancyTrendSection: 'Crowding by day',
+		shiftSection: 'By time of day',
+		dayTypeSection: 'Weekday vs weekend',
 		statusSection: 'Status mix',
 		occupancySection: 'Crowding',
 		metrics: {
@@ -131,6 +156,16 @@ export const copy: Record<Locale, NetworkCopy> = {
 		occupancyTrend: {
 			summary: 'Crowding band mix per day across the recent network trend.',
 		},
+		shift: {
+			shiftSummary: 'Network on-time performance ranked by time of day, worst punctuality first.',
+			dayTypeSummary:
+				'Network on-time performance for weekdays versus weekends, worst punctuality first.',
+			rowCaption: 'On-time %, with average delay and severe-delay share',
+			avgLabel: 'avg delay',
+			severeLabel: 'severe',
+			caveat:
+				'A real on-time over known share across the network, measured over the trailing window. It is a punctuality proxy, not certified on-time performance, and small samples vary.',
+		},
 		window: { label: 'Trend window', d7: '7d', d30: '30d', d90: '90d' },
 		noData: 'no data',
 		units: { pct: '%', min: ' min' },
@@ -143,6 +178,8 @@ export const copy: Record<Locale, NetworkCopy> = {
 		trendSection: 'Tendance quotidienne',
 		cancelSection: 'Annulations',
 		occupancyTrendSection: 'Achalandage par jour',
+		shiftSection: 'Par moment de la journée',
+		dayTypeSection: 'Semaine et fin de semaine',
 		statusSection: 'Répartition des statuts',
 		occupancySection: 'Achalandage',
 		metrics: {
@@ -174,6 +211,17 @@ export const copy: Record<Locale, NetworkCopy> = {
 		},
 		occupancyTrend: {
 			summary: 'Répartition des bandes d’achalandage par jour sur la tendance récente du réseau.',
+		},
+		shift: {
+			shiftSummary:
+				'Ponctualité du réseau classée par moment de la journée, la pire ponctualité d’abord.',
+			dayTypeSummary:
+				'Ponctualité du réseau en semaine et en fin de semaine, la pire ponctualité d’abord.',
+			rowCaption: 'Ponctualité %, avec le retard moyen et la part de retards sévères',
+			avgLabel: 'retard moyen',
+			severeLabel: 'sévère',
+			caveat:
+				'Une part réelle à l’heure sur connus à l’échelle du réseau, mesurée sur la fenêtre glissante. C’est une estimation de ponctualité, pas une ponctualité certifiée, et les petits échantillons varient.',
 		},
 		window: { label: 'Fenêtre de tendance', d7: '7 j', d30: '30 j', d90: '90 j' },
 		noData: 'aucune donnée',

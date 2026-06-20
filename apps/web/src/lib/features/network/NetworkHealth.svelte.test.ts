@@ -1,10 +1,10 @@
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { NetworkFile, TrendPoint } from '$lib/v1';
+import type { NetworkFile, NetworkShift, TrendPoint } from '$lib/v1';
 import type { IsoUtc } from '$lib/v1/schemas';
 import NetworkHealth from './NetworkHealth.svelte';
 
-const { openSurface, network, trendSeries } = vi.hoisted(() => ({
+const { openSurface, network, trendSeries, byShift, byDaytype } = vi.hoisted(() => ({
 	openSurface: vi.fn(),
 	network: {
 		generated_utc: '2026-06-16T02:00:00Z' as IsoUtc,
@@ -57,6 +57,20 @@ const { openSurface, network, trendSeries } = vi.hoisted(() => ({
 			},
 		},
 	] satisfies TrendPoint[] as TrendPoint[],
+	// Network-wide by-shift readout: the HEADLINE is the real OTP %, ranked
+	// worst-PUNCTUALITY first (lowest OTP first) → pm_peak (79%) precedes am_peak
+	// (88%). `night` carries a null OTP AND null severe share → it is DROPPED
+	// (honesty: never a fabricated 0). Mutable for the empty test.
+	byShift: [
+		{ grain: 'am_peak', otp_pct: 88, avg_delay_min: 1.4, severe_pct: 3.0 },
+		{ grain: 'pm_peak', otp_pct: 79, avg_delay_min: 2.6, severe_pct: 7.4 },
+		{ grain: 'night', otp_pct: null, avg_delay_min: null, severe_pct: null },
+	] satisfies NetworkShift[] as NetworkShift[],
+	// Weekday (84%) vs weekend (81% — worst punctuality) → weekend ranks first.
+	byDaytype: [
+		{ grain: 'weekday', otp_pct: 84, avg_delay_min: 1.9, severe_pct: 4.1 },
+		{ grain: 'weekend', otp_pct: 81, avg_delay_min: 2.3, severe_pct: 6.2 },
+	] satisfies NetworkShift[] as NetworkShift[],
 }));
 
 vi.mock('$lib/nav', async () => {
@@ -107,7 +121,9 @@ vi.mock('$lib/v1/resource.svelte', () => ({
 		const src = loader.toString();
 		const isProvenance = src.includes('Provenance') || src.includes('provenance');
 		return {
-			data: isProvenance ? { conformance: null } : { series: trendSeries },
+			data: isProvenance
+				? { conformance: null }
+				: { series: trendSeries, by_shift: byShift, by_daytype: byDaytype },
 			error: null,
 			loading: false,
 			settled: true,
@@ -245,6 +261,112 @@ describe('NetworkHealth per-day crowding', () => {
 		// 06-15 key shows "Jun 15"; the skipped 06-14 key's "Jun 14" is absent.
 		expect(within(list).getByText('Jun 15')).toBeInTheDocument();
 		expect(within(list).queryByText('Jun 14')).toBeNull();
+	});
+});
+
+describe('NetworkHealth by time of day + weekday/weekend', () => {
+	afterEach(() => {
+		// Restore the default fixtures after the empty-section mutations below.
+		byShift.splice(
+			0,
+			byShift.length,
+			{ grain: 'am_peak', otp_pct: 88, avg_delay_min: 1.4, severe_pct: 3.0 },
+			{ grain: 'pm_peak', otp_pct: 79, avg_delay_min: 2.6, severe_pct: 7.4 },
+			{ grain: 'night', otp_pct: null, avg_delay_min: null, severe_pct: null },
+		);
+		byDaytype.splice(
+			0,
+			byDaytype.length,
+			{ grain: 'weekday', otp_pct: 84, avg_delay_min: 1.9, severe_pct: 4.1 },
+			{ grain: 'weekend', otp_pct: 81, avg_delay_min: 2.3, severe_pct: 6.2 },
+		);
+	});
+
+	it('leads each by-time-of-day row with the real OTP %, ranked worst-punctuality first', () => {
+		render(NetworkHealth);
+		const list = screen.getByRole('list', { name: /ranked by time of day/i });
+		const rows = within(list).getAllByText(/peak/i);
+		// Worst punctuality first: pm_peak (OTP 79%) precedes am_peak (OTP 88%).
+		expect(rows[0]).toHaveTextContent('PM peak');
+		expect(rows[1]).toHaveTextContent('AM peak');
+		// The HEADLINE per row is the real OTP %, not the severe share.
+		expect(within(list).getByText('79%')).toBeInTheDocument();
+		expect(within(list).getByText('88%')).toBeInTheDocument();
+		// The severe share + avg delay survive as the secondary subtitle reading.
+		expect(within(list).getByText(/avg delay 2\.6 min · severe 7\.4%/i)).toBeInTheDocument();
+		expect(within(list).getByText(/avg delay 1\.4 min · severe 3\.0%/i)).toBeInTheDocument();
+	});
+
+	it('drops a shift grain with no OTP and no severe share (no fabricated 0)', () => {
+		render(NetworkHealth);
+		const list = screen.getByRole('list', { name: /ranked by time of day/i });
+		// `night` carries otp_pct:null AND severe_pct:null → dropped entirely (honesty).
+		expect(within(list).queryByText('Night')).toBeNull();
+	});
+
+	it('keeps a null-OTP grain (with a real severe share) and shows honest no-data, never a fake 0%', () => {
+		// midday has NO otp but a real severe share → it stays (ordered after the
+		// OTP-known grains) and its headline reads the localized no-data string.
+		byShift.splice(
+			0,
+			byShift.length,
+			{ grain: 'am_peak', otp_pct: 88, avg_delay_min: 1.4, severe_pct: 3.0 },
+			{ grain: 'midday', otp_pct: null, avg_delay_min: 2.0, severe_pct: 9.0 },
+		);
+		render(NetworkHealth);
+		const list = screen.getByRole('list', { name: /ranked by time of day/i });
+		const midday = within(list).getByText('Midday').closest('[data-slot="ranked-row"]');
+		expect(midday).not.toBeNull();
+		// Honest no-data headline (never "0%") for the OTP-unknown grain.
+		expect(within(midday as HTMLElement).getByText('no data')).toBeInTheDocument();
+		expect(within(midday as HTMLElement).queryByText('0%')).toBeNull();
+		// The OTP-known am_peak grain sorts BEFORE the OTP-unknown midday grain.
+		const am = within(list).getByText('AM peak');
+		expect(
+			am.compareDocumentPosition(within(list).getByText('Midday')) &
+				Node.DOCUMENT_POSITION_FOLLOWING,
+		).toBeTruthy();
+	});
+
+	it('renders the weekday-vs-weekend list worst-punctuality first (weekend before weekday)', () => {
+		render(NetworkHealth);
+		const list = screen.getByRole('list', { name: /weekdays versus weekends/i });
+		const weekend = within(list).getByText('Weekend');
+		const weekday = within(list).getByText('Weekday');
+		expect(weekend).toBeInTheDocument();
+		expect(weekday).toBeInTheDocument();
+		// Weekend (OTP 81%) ranks ahead of weekday (OTP 84%) in DOM order.
+		expect(
+			weekend.compareDocumentPosition(weekday) & Node.DOCUMENT_POSITION_FOLLOWING,
+		).toBeTruthy();
+		// Both lead with the real OTP % headline.
+		expect(within(list).getByText('81%')).toBeInTheDocument();
+		expect(within(list).getByText('84%')).toBeInTheDocument();
+	});
+
+	it('prints the honest trailing-window caveat under the readout', () => {
+		render(NetworkHealth);
+		const caveat = document.querySelector('[data-slot="shift-caveat"]');
+		expect(caveat).not.toBeNull();
+		expect((caveat as HTMLElement).textContent).toMatch(/not certified/i);
+	});
+
+	it('stands the whole section down when by_shift + by_daytype are both empty', () => {
+		byShift.splice(0, byShift.length);
+		byDaytype.splice(0, byDaytype.length);
+		render(NetworkHealth);
+		expect(screen.queryByText('By time of day')).toBeNull();
+		expect(screen.queryByText('Weekday vs weekend')).toBeNull();
+		expect(document.querySelector('[data-slot="network-shift"]')).toBeNull();
+	});
+
+	it('shows only the day-type list when by_shift is empty but by_daytype has data', () => {
+		byShift.splice(0, byShift.length);
+		render(NetworkHealth);
+		expect(screen.queryByText('By time of day')).toBeNull();
+		expect(screen.getByText('Weekday vs weekend')).toBeInTheDocument();
+		// The section as a whole stays up (the day-type group still carries data).
+		expect(document.querySelector('[data-slot="network-shift"]')).not.toBeNull();
 	});
 });
 

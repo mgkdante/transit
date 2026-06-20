@@ -41,7 +41,10 @@
 	import { metricsCopy } from '$lib/features/metrics/metrics.copy';
 	import type { PunctualityVM, PeriodComparisonRow } from './clusters';
 	import type { ReliabilityCopy } from './reliability.copy';
-	import { shiftLabel as shiftGrainLabel } from '$lib/features/reliability/shiftGrains';
+	import {
+		shiftLabel as shiftGrainLabel,
+		severeShareToSeverity,
+	} from '$lib/features/reliability/shiftGrains';
 
 	export interface Cluster01PunctualityProps {
 		/** The punctuality view-model from `toReliabilityClusters`. */
@@ -102,10 +105,9 @@
 	const severeValue = $derived<number | null>(
 		severePct == null ? null : Math.min(1, Math.max(0, severePct / 100)),
 	);
-	// Severe share is itself a severity reading: band it so the bar colour is honest.
-	const severeSeverity = $derived<SeverityCode>(
-		severePct == null ? 'watch' : severePct >= 10 ? 'critical' : severePct >= 5 ? 'high' : 'watch',
-	);
+	// Severe share is itself a severity reading: band it so the bar colour is honest
+	// (shared thresholds — see severeShareToSeverity; null bands to 'watch').
+	const severeSeverity = $derived<SeverityCode>(severeShareToSeverity(severePct));
 
 	// Weakest stops, worst mean-delay first, the accountability list. Normalize
 	// each bar against the worst stop so the ranking reads as relative magnitude.
@@ -172,12 +174,11 @@
 			.sort((a, b) => (b.severePct ?? 0) - (a.severePct ?? 0))
 			.map((r, i) => {
 				const sev = r.severePct ?? 0;
-				const severity: SeverityCode = sev >= 10 ? 'critical' : sev >= 5 ? 'high' : 'watch';
 				return {
 					key: r.grain,
 					rank: i + 1,
 					title: label(r.grain),
-					severity,
+					severity: severeShareToSeverity(r.severePct),
 					value: worst > 0 ? Math.min(1, Math.max(0, sev / worst)) : null,
 					display: fmtPct(r.severePct),
 				};

@@ -46,6 +46,7 @@ from transit_ops.snapshots.contract import (
     HeadwayPeriod,
     Hotspot,
     Hotspots,
+    NetworkShift,
     NetworkTrend,
     OccupancyMix,
     Offender,
@@ -159,6 +160,90 @@ _TREND_OCCUPANCY_SQL = text(
     """
 )
 
+# Network-wide reliability by time-of-day shift, aggregated across ALL routes
+# from the per-route shift rollup. on_time/otp_known give a REAL OTP (not the
+# severe proxy); avg delay is observation-weighted via SUM(avg*known)/SUM(known).
+# OTP NULL-guard: gold stores on_time_observation_count as NULL for routes whose
+# on-time count could not be computed (the rollup's COUNT(*)=COUNT(on_time)
+# guard). A bare SUM(on_time) over SUM(delay_observation_count) would keep those
+# routes in the denominator but drop them from the numerator, biasing OTP low. We
+# scope the OTP numerator and denominator together: otp_known sums delay obs only
+# from rows where on_time_observation_count IS NOT NULL, so both share scope.
+# severe + the weighted-avg denominator stay over the FULL known_obs (every
+# delay-observed route counts toward severe-share and avg, regardless of the
+# on-time guard). Unique discriminator for test dispatch: "GROUP BY shift".
+_NETWORK_BY_SHIFT_SQL = text(
+    """
+    SELECT shift AS grain,
+           SUM(on_time_observation_count)                     AS on_time,
+           SUM(delay_observation_count) FILTER (
+               WHERE on_time_observation_count IS NOT NULL)   AS otp_known,
+           SUM(delay_observation_count)                       AS known_obs,
+           SUM(severe_delay_count)                            AS severe,
+           SUM(avg_delay_seconds * delay_observation_count)   AS weighted_delay_sec
+    FROM gold.route_delay_by_shift
+    WHERE provider_id = :provider_id
+    GROUP BY shift
+    """
+)
+
+# Network-wide reliability by weekday/weekend day-type — identical aggregation
+# over the per-route day-type rollup, including the same OTP NULL-guard
+# (otp_known = delay obs scoped to on-time-known rows; severe/avg over full
+# known_obs). Unique discriminator for test dispatch: "GROUP BY day_type".
+_NETWORK_BY_DAYTYPE_SQL = text(
+    """
+    SELECT day_type AS grain,
+           SUM(on_time_observation_count)                     AS on_time,
+           SUM(delay_observation_count) FILTER (
+               WHERE on_time_observation_count IS NOT NULL)   AS otp_known,
+           SUM(delay_observation_count)                       AS known_obs,
+           SUM(severe_delay_count)                            AS severe,
+           SUM(avg_delay_seconds * delay_observation_count)   AS weighted_delay_sec
+    FROM gold.route_delay_by_daytype
+    WHERE provider_id = :provider_id
+    GROUP BY day_type
+    """
+)
+
+# Canonical emit order for the network grains (mirrors the route/stop surface).
+_NETWORK_SHIFT_ORDER = ("am_peak", "midday", "pm_peak", "evening", "night")
+_NETWORK_DAYTYPE_ORDER = ("weekday", "weekend")
+
+
+def _network_shift_rows(
+    conn: Connection, sql, params: dict, order: tuple[str, ...]
+) -> list[NetworkShift]:
+    """Aggregate a network grain query into ordered NetworkShift rows.
+
+    REAL OTP = on_time/otp_known (numerator and denominator share scope: both come
+    only from routes whose on_time_observation_count is known, so the gold NULL-
+    guard does not bias OTP low). avg is observation-weighted over the FULL
+    known_obs; severe_pct is severe over the full known_obs. Honest-NULL: every
+    metric is None (never 0) on a grain with no known-delay observations. Grains
+    are emitted in the canonical order; any unexpected token sorts last by name so
+    the contract never silently drops it.
+    """
+    by_grain: dict[str, NetworkShift] = {}
+    for r in conn.execute(sql, params).mappings():
+        known = r["known_obs"]
+        otp_known = r["otp_known"]
+        weighted = r["weighted_delay_sec"]
+        grain = str(r["grain"])
+        if known and weighted is not None:
+            avg_sec = float(weighted) / float(known)
+        else:
+            avg_sec = None
+        by_grain[grain] = NetworkShift(
+            grain=grain,
+            otp_pct=_otp_pct(r["on_time"], otp_known),
+            avg_delay_min=_avg_delay_min(avg_sec),
+            severe_pct=_severe_pct(known, r["severe"]),
+        )
+    ordered = [by_grain[g] for g in order if g in by_grain]
+    ordered.extend(by_grain[g] for g in sorted(set(by_grain) - set(order)))
+    return ordered
+
 
 def build_network_trend(conn: Connection, *, provider_id: str = "stm", generated_utc: str) -> "NetworkTrend":
     """Build historic/network_trend.json — one TrendPoint per local date.
@@ -226,7 +311,21 @@ def build_network_trend(conn: Connection, *, provider_id: str = "stm", generated
         )
         for d, v in sorted(points.items())
     ]
-    return NetworkTrend(generated_utc=generated_utc, series=series)
+
+    # Network-wide reliability by time-of-day shift + weekday/weekend day-type,
+    # aggregated across all routes (REAL on_time/known OTP, observation-weighted
+    # avg delay, honest-NULL on zero-obs grains).
+    by_shift = _network_shift_rows(conn, _NETWORK_BY_SHIFT_SQL, params, _NETWORK_SHIFT_ORDER)
+    by_daytype = _network_shift_rows(
+        conn, _NETWORK_BY_DAYTYPE_SQL, params, _NETWORK_DAYTYPE_ORDER
+    )
+
+    return NetworkTrend(
+        generated_utc=generated_utc,
+        series=series,
+        by_shift=by_shift,
+        by_daytype=by_daytype,
+    )
 
 
 # --------------------------------------------------------------------------

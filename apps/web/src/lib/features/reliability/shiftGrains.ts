@@ -16,6 +16,32 @@
 // Pure data + pure functions; no DOM, no i18n context — SSR-safe.
 
 import type { Locale } from '$lib/i18n';
+import type { SeverityCode } from '$lib/v1/schemas';
+
+// ── Severe-share severity banding ────────────────────────────────────────────
+// A severe-delay share is itself a severity reading: the ranked reliability
+// surfaces (network by_shift/by_daytype, lines Cluster01, stops StopDetail) all
+// band the same percentage thresholds so the SeverityBar/RankedRow colour stays
+// honest and consistent. This is the SINGLE source of those thresholds (was
+// inlined verbatim 3×). The input is a percentage (0..100); null bands to the
+// quietest 'watch' (a no-data row never reads as a hot 'critical').
+
+/** Threshold (severe-share %) at or above which a grain bands to 'critical'. */
+const SEVERE_CRITICAL_PCT = 10;
+/** Threshold (severe-share %) at or above which a grain bands to 'high'. */
+const SEVERE_HIGH_PCT = 5;
+
+/**
+ * Band a severe-delay share (percentage, 0..100) onto the dataviz SeverityCode
+ * scale: >=10% critical, >=5% high, else watch. A null share (no data) bands to
+ * the quietest 'watch' so an absent reading never paints as a hot severity.
+ */
+export function severeShareToSeverity(pct: number | null): SeverityCode {
+	if (pct == null) return 'watch';
+	if (pct >= SEVERE_CRITICAL_PCT) return 'critical';
+	if (pct >= SEVERE_HIGH_PCT) return 'high';
+	return 'watch';
+}
 
 /** The time-of-day shift grains, in canonical chronological order (AM → night). */
 export const SHIFT_GRAIN_ORDER = ['am_peak', 'midday', 'pm_peak', 'evening', 'night'] as const;
