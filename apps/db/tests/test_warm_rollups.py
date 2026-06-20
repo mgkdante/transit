@@ -619,6 +619,40 @@ def test_citizen_accountability_rebuilds_only_open_local_dates() -> None:
     assert "ON CONFLICT" not in sql
 
 
+def test_citizen_accountability_does_not_fabricate_zero_or_score_on_no_data() -> None:
+    """Truth-audit data-honesty guards on the citizen-accountability rollup.
+
+    1. A LEFT-JOIN miss (no route_daily / stop_daily source row for a date) must
+       NOT be coerced to a fabricated 0 — the affected_route_count / affected_stop_count
+       projections must select the raw column so a genuine join-miss flows through as
+       NULL (a present row still carries its real integer, including a real 0).
+    2. rider_impact_score must be NULL when the delay telemetry feeding it is absent
+       (neither route_daily nor stop_daily row exists), instead of collapsing to a
+       pure alerts*2 composite while otp/avg/severe publish honest-NULL.
+    """
+    sql = str(rollups.UPSERT_CITIZEN_ACCOUNTABILITY_DAILY)
+    compact = " ".join(sql.split())
+
+    # Bug 1: the affected-count projections are now bare columns, NOT COALESCE-to-0.
+    assert "COALESCE(r.affected_route_count, 0)," not in compact
+    assert "COALESCE(s.affected_stop_count, 0)," not in compact
+    assert "r.affected_route_count, s.affected_stop_count," in compact
+
+    # Bug 2: rider_impact_score is guarded so it is NULL when BOTH delay-source
+    # rows are absent for the date.
+    assert (
+        "CASE WHEN r.provider_local_date IS NULL "
+        "AND s.provider_local_date IS NULL THEN NULL ELSE LEAST(" in compact
+    )
+    # The 9999.9999 clamp for real days is unchanged.
+    assert "9999.9999" in sql
+    # delayed/severe/alert terms still COALESCE-to-0 inside the real-day composite
+    # (a present route_daily row means those NULLs are genuinely "no such trips").
+    assert "COALESCE(r.delayed_trip_count, 0)" in sql
+    assert "COALESCE(r.severe_delay_count, 0)" in sql
+    assert "COALESCE(ia.alert_count, 0)" in sql
+
+
 def test_repeat_offender_obs_excludes_outlier_delays() -> None:
     sql = str(rollups.UPSERT_REPEAT_OFFENDER_DAILY)
 

@@ -1119,6 +1119,63 @@ def test_build_receipts_rider_impact_below_cap_passthrough() -> None:
     assert out["2026-05-21"].rider_impact_score == 9998.5
 
 
+def test_build_receipts_join_miss_publishes_null_affected_counts() -> None:
+    """Truth-audit honesty fix: on a date whose route_daily / stop_daily source
+    row is absent, the mart now stores affected_route_count / affected_stop_count
+    as NULL (not a fabricated 0). The builder must pass that NULL straight through
+    to affected_routes / affected_stops (int|None in the contract), never coerce
+    it to 0. Pairs with the rollup-SQL fix that drops the COALESCE(...,0) wrappers."""
+    d = datetime.date(2026, 5, 25)
+    conn = FakeConn(
+        _receipts_dispatch(
+            acct=[
+                {
+                    "provider_local_date": d,
+                    # join-miss day: counts stored NULL, score stored NULL
+                    "affected_route_count": None,
+                    "affected_stop_count": None,
+                    "delayed_trip_count": 0,
+                    "severe_delay_count": 0,
+                    "alert_count": 7,
+                    "rider_impact_score": None,
+                }
+            ],
+        )
+    )
+    r = build_receipts(conn, generated_utc="t")["2026-05-25"]
+    assert r.affected_routes is None
+    assert r.affected_stops is None
+    assert r.rider_impact_score is None
+    assert r.alerts == 7  # alerts are real and stay populated
+
+
+def test_build_receipts_genuine_zero_affected_counts_preserved() -> None:
+    """Truth-audit honesty fix: when the source row genuinely EXISTS for the date
+    (delay telemetry was present) but zero entities crossed the threshold, the mart
+    stores a real 0. That real 0 must be preserved as 0 in the receipt — distinct
+    from the join-miss NULL above — so a present-and-quiet day still reads honestly."""
+    d = datetime.date(2026, 5, 26)
+    conn = FakeConn(
+        _receipts_dispatch(
+            acct=[
+                {
+                    "provider_local_date": d,
+                    "affected_route_count": 0,
+                    "affected_stop_count": 0,
+                    "delayed_trip_count": 0,
+                    "severe_delay_count": 0,
+                    "alert_count": 0,
+                    "rider_impact_score": 0.0,
+                }
+            ],
+        )
+    )
+    r = build_receipts(conn, generated_utc="t")["2026-05-26"]
+    assert r.affected_routes == 0
+    assert r.affected_stops == 0
+    assert r.rider_impact_score == 0.0
+
+
 def test_build_receipts_otp_from_network_hourly() -> None:
     """OTP, avg_delay_min, severe_pct come from route_delay_hourly aggregate."""
     d = datetime.date(2026, 5, 10)

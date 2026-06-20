@@ -123,7 +123,13 @@
 			const target = offenderTarget(o);
 			const title = offenderTitle(o);
 			return {
-				key: `${o.type}:${o.id}:${i}`,
+				// Composite key over the (type, id, route) accountability unit: the
+				// SAME offender id can legitimately appear on two different routes (one
+				// vehicle, two lines — truth-audit found vehicle 42010 on routes 49 AND
+				// 55), so the route is what disambiguates the unit. Keying on the
+				// (type, id, route) triple keeps the {#each} reconciler stable across
+				// reorders without leaning on the array index as a tie-breaker.
+				key: `${o.type}:${o.id}:${o.route ?? ''}`,
 				rank: i + 1,
 				title,
 				subtitle: offenderSubtitle(o),
