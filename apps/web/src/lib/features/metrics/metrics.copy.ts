@@ -22,6 +22,12 @@ export interface MetricsCopy extends SurfaceHeadCopy {
 		readonly sql: string;
 		readonly notReally: string;
 		readonly caveats: string;
+		/**
+		 * Overline above the live "Pipeline note (current run)" block — the verbatim
+		 * provenance.methodology string for this metric from the latest build, set
+		 * apart from the static science above it.
+		 */
+		readonly pipelineNote: string;
 	};
 	/** The provenance preamble — the honest framing every number inherits. */
 	readonly provenance: {
@@ -77,6 +83,7 @@ export const metricsCopy: Record<Locale, MetricsCopy> = {
 			sql: 'Le SQL',
 			notReally: 'Ce que ce n’est PAS',
 			caveats: 'Limites',
+			pipelineNote: 'Note du pipeline (exécution actuelle)',
 		},
 		provenance: {
 			label: 'Provenance (vaut pour chaque métrique)',
@@ -129,6 +136,7 @@ export const metricsCopy: Record<Locale, MetricsCopy> = {
 			sql: 'The SQL',
 			notReally: 'What it’s NOT',
 			caveats: 'Caveats',
+			pipelineNote: 'Pipeline note (current run)',
 		},
 		provenance: {
 			label: 'Provenance (applies to every metric)',

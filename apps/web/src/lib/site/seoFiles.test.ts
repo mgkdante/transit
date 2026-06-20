@@ -1,7 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import { PATHS, _sitemapEntries, buildRobotsTxt, buildSitemapXml } from './seoFiles';
 
-const SURFACES = ['/', '/map', '/lines', '/stops', '/network', '/search', '/metrics'] as const;
+const SURFACES = [
+	'/',
+	'/map',
+	'/lines',
+	'/stops',
+	'/network',
+	'/search',
+	'/metrics',
+	'/status',
+] as const;
 
 describe('SEO static files', () => {
 	it('allows production indexing and points at the configured sitemap', () => {

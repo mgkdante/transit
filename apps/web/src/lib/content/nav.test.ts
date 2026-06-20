@@ -4,7 +4,7 @@
 import { describe, it, expect } from 'vitest';
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { SURFACE_NAV, MENU_EXTRAS, isSurfaceActive } from './nav';
+import { SURFACE_NAV, SECONDARY_NAV, MENU_EXTRAS, isSurfaceActive } from './nav';
 
 const ROUTES = resolve(process.cwd(), 'src/routes/[[lang=locale]]');
 const surface = (key: SurfaceKey) => SURFACE_NAV.find((i) => i.key === key)!;
@@ -12,7 +12,9 @@ type SurfaceKey = (typeof SURFACE_NAV)[number]['key'];
 
 describe('SURFACE_NAV manifest', () => {
 	it('every surface href resolves to a real +page.svelte (no dead links)', () => {
-		for (const item of SURFACE_NAV) {
+		// Both the primary rail surfaces AND the secondary footer links (/metrics,
+		// /status live here) — a typo in either ships a dead link.
+		for (const item of [...SURFACE_NAV, ...SECONDARY_NAV]) {
 			const page = resolve(ROUTES, item.href.replace(/^\//, ''), '+page.svelte');
 			expect(existsSync(page), `${item.href} -> ${page}`).toBe(true);
 		}

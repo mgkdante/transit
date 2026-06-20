@@ -3,7 +3,16 @@ import type { PublicSiteConfig } from './config';
 // Static surfaces only. Dynamic per-entity URLs (/route/[id], /stop/[id]) are
 // deliberately omitted — enumerating them needs a build-time snapshot fetch.
 // TODO: add per-route/per-stop URLs once a build-time snapshot read is wired in.
-export const PATHS = ['/', '/map', '/lines', '/stops', '/network', '/search', '/metrics'] as const;
+export const PATHS = [
+	'/',
+	'/map',
+	'/lines',
+	'/stops',
+	'/network',
+	'/search',
+	'/metrics',
+	'/status',
+] as const;
 
 export function buildRobotsTxt(config: PublicSiteConfig): string {
 	if (!config.indexing) {
