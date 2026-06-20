@@ -43,11 +43,20 @@
 		themeColor?: string;
 		/** Emit robots noindex,nofollow (utility / staging surfaces). */
 		noIndex?: boolean;
+		/** Suppress the self-referential canonical link (soft-404 / error renders —
+		 *  a broken URL must not advertise itself as canonical). */
+		suppressCanonical?: boolean;
 		/** Suppress hreflang alternates (single-locale surfaces). */
 		singleLocale?: boolean;
 		/** Pre-built schema.org JSON-LD nodes to emit alongside the always-on
 		 *  WebSite+SearchAction node (e.g. a per-entity BreadcrumbList). */
 		jsonLd?: unknown[];
+		/** Twitter publishing account @handle (twitter:site). Omitted when unset. */
+		twitterSite?: string;
+		/** Twitter content-author @handle (twitter:creator). Omitted when unset. */
+		twitterCreator?: string;
+		/** Human-readable author byline (meta name="author"). Omitted when unset. */
+		author?: string;
 		/** Test seam to force the dev-warning path. */
 		dev?: boolean;
 	}
@@ -64,8 +73,12 @@
 		siteName = 'Transit Analytics',
 		themeColor = '#141414',
 		noIndex = false,
+		suppressCanonical = false,
 		singleLocale = false,
 		jsonLd = [],
+		twitterSite,
+		twitterCreator,
+		author,
 		dev = runtimeDev,
 	}: SeoHeadProps = $props();
 
@@ -108,7 +121,12 @@
 <svelte:head>
 	<title>{fullTitle}</title>
 	<meta name="description" content={description} />
-	<link rel="canonical" href={canonical} />
+	{#if !suppressCanonical}
+		<link rel="canonical" href={canonical} />
+	{/if}
+	{#if author}
+		<meta name="author" content={author} />
+	{/if}
 
 	<meta name="theme-color" content={themeColor} />
 	<meta name="color-scheme" content="dark light" />
@@ -139,10 +157,17 @@
 	<meta name="twitter:description" content={description} />
 	<meta name="twitter:image" content={ogImage} />
 	<meta name="twitter:image:alt" content={ogImageAlt} />
+	{#if twitterSite}
+		<meta name="twitter:site" content={twitterSite} />
+	{/if}
+	{#if twitterCreator}
+		<meta name="twitter:creator" content={twitterCreator} />
+	{/if}
 
 	<!-- hreflang alternates per supported locale + x-default (EN). Suppressed on
-	     single-locale surfaces. -->
-	{#if !singleLocale}
+	     single-locale surfaces and on error renders (the canonical is suppressed,
+	     so alternates would point crawlers at the same broken URL). -->
+	{#if !singleLocale && !suppressCanonical}
 		{#each SUPPORTED_LOCALES as l (l)}
 			<link rel="alternate" hreflang={l} href={`${siteOrigin}${localizeHref(path, l)}`} />
 		{/each}

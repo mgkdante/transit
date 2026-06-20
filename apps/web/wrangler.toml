@@ -50,6 +50,12 @@ PUBLIC_INDEXING = "true"
 # Per-deploy: each provider sets its own.
 PUBLIC_PROVIDER_SHORT_NAME = "STM"
 PUBLIC_PROVIDER_CITY = "Montréal"
+# Social / authorship identity for the document head (Twitter card + author meta).
+# AUTHOR is the human byline; the @handles drive twitter:site / twitter:creator.
+# Leave a handle empty to omit that tag gracefully (no empty meta is emitted).
+PUBLIC_SITE_AUTHOR = "Yesid"
+PUBLIC_TWITTER_SITE = ""
+PUBLIC_TWITTER_CREATOR = ""
 
 [env.dev]
 name = "transit-web-dev"
@@ -64,6 +70,9 @@ PUBLIC_V1_BASE = "https://transit.yesid.dev/data/v1"
 PUBLIC_INDEXING = "false"
 PUBLIC_PROVIDER_SHORT_NAME = "STM"
 PUBLIC_PROVIDER_CITY = "Montréal"
+PUBLIC_SITE_AUTHOR = "Yesid"
+PUBLIC_TWITTER_SITE = ""
+PUBLIC_TWITTER_CREATOR = ""
 
 [[env.dev.services]]
 binding = "DATA"

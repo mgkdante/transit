@@ -35,6 +35,7 @@
 	import { cn } from '$lib/utils';
 	import { type Locale, DEFAULT_LOCALE, getLocale } from '$lib/i18n';
 	import type { ChromeSearchResult, ChromeSearchScope } from '$lib/search/chromeSearch';
+	import type { BilingualLabel } from '$lib/content/nav';
 	import { layout } from '$lib/nav';
 	import { ResizablePaneGroup, ResizablePane, ResizableHandle } from '$lib/components/ui/resizable';
 	import TopBar from './TopBar.svelte';
@@ -75,6 +76,13 @@
 
 		/** Heading for the desktop LeftRail. */
 		railHeading?: string;
+		/**
+		 * Bilingual accessible name for the `<main>` landmark, surface-appropriate
+		 * (e.g. Lines / Daily receipt). The shell renders ONE persistent `<main>`
+		 * across routes, so without this every surface would announce the same stale
+		 * "Network map". Omitted → the network-map label (the map is the backdrop).
+		 */
+		mainLabel?: BilingualLabel;
 
 		/** LeftRail body (desktop) / folded into the sheet body on mobile. */
 		rail?: Snippet;
@@ -105,6 +113,7 @@
 		surfaceKey = 'empty',
 		ondetailclose,
 		railHeading,
+		mainLabel,
 		rail,
 		main,
 		detail,
@@ -114,6 +123,15 @@
 
 	const ctxLocale = getLocale();
 	const locale = $derived<Locale>(localeProp ?? ctxLocale ?? DEFAULT_LOCALE);
+	// Surface-appropriate `<main>` landmark name. Falls back to the network-map
+	// label (EN/FR) so an omitted prop preserves the prior behavior verbatim.
+	const mainAriaLabel = $derived(
+		mainLabel
+			? mainLabel[locale === 'fr' ? 'fr' : 'en']
+			: locale === 'fr'
+				? 'Carte du réseau'
+				: 'Network map',
+	);
 
 	const LEFT_RAIL_COLLAPSED_SIZE = 5;
 	const LEFT_RAIL_MIN_SIZE = 7;
@@ -199,7 +217,7 @@
 			<main
 				class="app-shell-main relative min-w-0 flex-1 overflow-hidden bg-surface-0"
 				style={`--app-left-rail-offset: ${leftRailOffset};`}
-				aria-label={locale === 'fr' ? 'Carte du réseau' : 'Network map'}
+				aria-label={mainAriaLabel}
 				data-slot="map-stage"
 			>
 				{#if main}{@render main()}{/if}
@@ -264,7 +282,7 @@
 		<!-- MOBILE: full-bleed map + bottom sheet for the selected surface. -->
 		<main
 			class="relative min-h-0 flex-1 overflow-hidden bg-surface-0"
-			aria-label={locale === 'fr' ? 'Carte du réseau' : 'Network map'}
+			aria-label={mainAriaLabel}
 			data-slot="map-stage"
 		>
 			{#if main}{@render main()}{/if}

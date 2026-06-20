@@ -31,9 +31,9 @@ const { payload } = vi.hoisted(() => ({
 					otp_delta_pts: -6.2,
 					severity: 'high',
 				},
-				// Honesty fixture: a null OTP delta → honest no-data display + a null
-				// (no-data) magnitude bar, never a fabricated 0. Unknown severity →
-				// quiet 'watch' band, never a guessed 'critical'.
+				// Honesty fixture: a null OTP delta → OMITTED display value (no "no data"
+				// string) + a null (no-data) magnitude bar, never a fabricated 0. Unknown
+				// severity → quiet 'watch' band, never a guessed 'critical'.
 				{ rank: 3, type: 'route', id: '24', name: null, otp_delta_pts: null, severity: 'mystery' },
 			],
 		} satisfies Hotspots as Hotspots,
@@ -116,12 +116,15 @@ describe('HotspotsBoard ranked list', () => {
 		expect(screen.getByText('12.4 on-time points lost')).toBeInTheDocument();
 	});
 
-	it('renders the honest no-data string for a row whose OTP delta is absent', () => {
+	it('omits the delta display entirely for a row whose OTP delta is absent', () => {
 		render(HotspotsBoard);
 		const unnamed = screen.getByRole('link', { name: 'View detail for Item 24' });
 		expect(unnamed).toBeInTheDocument();
-		// The null-delta row never fabricates a 0 — it reads the localized no-data.
-		expect(within(unnamed).getByText('No data')).toBeInTheDocument();
+		// The null-delta row neither fabricates a 0 NOR reads a permanent "no data"
+		// placeholder — its display value is omitted (RankedRow only renders
+		// {#if display}), so the all-null delta column simply disappears.
+		expect(within(unnamed).queryByText('No data')).toBeNull();
+		expect(within(unnamed).queryByText(/on-time points lost/)).toBeNull();
 	});
 
 	it('falls back to a localized unnamed title when the roll-up published no name', () => {

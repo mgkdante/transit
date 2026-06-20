@@ -173,6 +173,12 @@
 </script>
 
 <Surface width="content" class="health">
+	<!-- The surface head renders UNCONDITIONALLY (h1 present in every state — skeleton,
+	     error, empty — matching every other surface). The ResourceBoundary below gates
+	     only the provenance body; the once-daily "Updated N ago" stamp rides inside it
+	     because it reads prov.generated_utc. -->
+	<SurfaceHeader kicker={t.kicker} heading={t.heading} subheading={t.subheading} lede={t.lede} />
+
 	<ResourceBoundary resource={provenance} lang={locale}>
 		{#snippet children(prov)}
 			{@const freshness = freshnessOf(prov)}
@@ -183,20 +189,18 @@
 			{@const pipelineNotes = pipelineNotesOf(prov)}
 			{@const hasRetention = retention.detail != null || retention.aggregate != null}
 
-			<SurfaceHeader kicker={t.kicker} heading={t.heading} subheading={t.subheading} lede={t.lede}>
-				<!-- Neutral "Updated N ago" stamp — a non-pulsing dot + relative age of the
-				     once-daily generated_utc. Deliberately NOT the live-tier LiveFreshness
-				     chip (no "LIVE"/"EN DIRECT", no pulse): this document is daily, not live. -->
-				<div class="health-asof" data-slot="health-asof">
-					<span class="health-asof-label">{t.asOf}</span>
-					<span class="health-asof-stamp">
-						<StatusDot color="unknown" aria-hidden="true" />
-						<time class="health-asof-age" datetime={prov.generated_utc}>
-							{updatedStamp(prov.generated_utc)}
-						</time>
-					</span>
-				</div>
-			</SurfaceHeader>
+			<!-- Neutral "Updated N ago" stamp — a non-pulsing dot + relative age of the
+			     once-daily generated_utc. Deliberately NOT the live-tier LiveFreshness
+			     chip (no "LIVE"/"EN DIRECT", no pulse): this document is daily, not live. -->
+			<div class="health-asof" data-slot="health-asof">
+				<span class="health-asof-label">{t.asOf}</span>
+				<span class="health-asof-stamp">
+					<StatusDot color="unknown" aria-hidden="true" />
+					<time class="health-asof-age" datetime={prov.generated_utc}>
+						{updatedStamp(prov.generated_utc)}
+					</time>
+				</span>
+			</div>
 
 			<!-- ── Per-feed freshness ─────────────────────────────────────────── -->
 			{#if freshness.length > 0}

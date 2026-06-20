@@ -42,7 +42,13 @@
 		type Locale,
 	} from '$lib/i18n';
 	import SeoHead from '$lib/components/SeoHead.svelte';
-	import { resolveRouteSeo, isEphemeralPath } from '$lib/seo/routeSeo';
+	import {
+		resolveRouteSeo,
+		isEphemeralPath,
+		breadcrumbItemsForHead,
+		resolveDatasetSeo,
+	} from '$lib/seo/routeSeo';
+	import { breadcrumbJsonLd, organizationJsonLd, datasetJsonLd } from '$lib/seo/jsonld';
 	import { readPublicSiteConfig } from '$lib/site/config';
 	import {
 		setV1Context,
@@ -58,6 +64,7 @@
 	import { Footer } from '$lib/components/layout';
 	import { EdgeState } from '$lib/components/edge';
 	import { layout } from '$lib/nav';
+	import { mainLandmarkLabel } from '$lib/content/nav';
 	import {
 		chromeSearchResultHref,
 		chromeSearchResults,
@@ -104,6 +111,11 @@
 	// delocalized path the nav highlight uses, so the two never disagree.
 	const searchScope = $derived<ChromeSearchScope>(scopeForPath(seoPath));
 
+	// Surface-appropriate `<main>` landmark name (the shell renders ONE persistent
+	// <main> across routes). Derived from the SAME delocalized path the nav highlight
+	// + search scope use, so the landmark, the highlight, and the scope never diverge.
+	const mainLabel = $derived(mainLandmarkLabel(seoPath));
+
 	// v1 snapshot context. The SSR boot (+layout.ts) can fail on Cloudflare — a
 	// Worker's fetch to its own zone can't reach the sibling /data route (523) —
 	// so when it does we RE-BOOT client-side: the browser reaches /data fine.
@@ -134,6 +146,37 @@
 	const seoSiteName = $derived(
 		providerShortName ? `${providerShortName} Analytics` : 'Transit Analytics',
 	);
+
+	// Soft-404 / error renders: a bare or invalid deep link (e.g. /trip with no id,
+	// or any surface that resolved to an error status) renders the +error page with
+	// $page.status >= 400. Such a URL must NOT be indexed and must NOT advertise a
+	// self-canonical (it would tell crawlers a broken URL is the canonical one).
+	const isErrorStatus = $derived(($page.status ?? 200) >= 400);
+
+	// Site-wide structured data plus the per-surface BreadcrumbList on the stable
+	// detail surfaces (/route, /stop). The WebSite+SearchAction node is always-on
+	// inside SeoHead; here we add the Organization (publisher identity), a Dataset
+	// node for the open /v1 transit data (CC BY 4.0), and a path-derived breadcrumb
+	// trail. Error renders carry no meaningful structured data, so we emit none.
+	const datasetCopy = $derived(resolveDatasetSeo(locale));
+	const jsonLd = $derived.by(() => {
+		if (isErrorStatus) return [];
+		const nodes: unknown[] = [
+			organizationJsonLd({ siteOrigin: siteConfig.siteOrigin, siteName: seoSiteName }),
+			datasetJsonLd({
+				siteOrigin: siteConfig.siteOrigin,
+				siteName: seoSiteName,
+				name: datasetCopy.name,
+				description: datasetCopy.description,
+				locale,
+			}),
+		];
+		const breadcrumb = breadcrumbJsonLd(
+			breadcrumbItemsForHead($page.url.pathname, locale, siteConfig.siteOrigin),
+		);
+		if (breadcrumb) nodes.push(breadcrumb);
+		return nodes;
+	});
 	// Seed the chrome freshness timestamp from the booted manifest as an INITIAL
 	// fallback (seed-if-unset) so pages WITHOUT a live store still show the
 	// page-load data's age. The live store is the single AUTHORITATIVE writer —
@@ -345,7 +388,12 @@
 	path={seoPath}
 	{locale}
 	siteOrigin={siteConfig.siteOrigin}
-	{noIndex}
+	noIndex={noIndex || isErrorStatus}
+	suppressCanonical={isErrorStatus}
+	twitterSite={siteConfig.twitterSite}
+	twitterCreator={siteConfig.twitterCreator}
+	author={siteConfig.author}
+	{jsonLd}
 />
 
 <AppShell
@@ -358,6 +406,7 @@
 	{searchScope}
 	onsearch={submitSearch}
 	onresultselect={selectSearchResult}
+	{mainLabel}
 >
 	{#snippet main()}
 		<!-- Skip-link target. Layout splits on `isFullBleed` (see the derived above):

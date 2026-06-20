@@ -112,7 +112,7 @@ export interface NetworkCopy extends SurfaceHeadCopy {
 		 * Early (ahead of schedule) reads left; late reads right.
 		 */
 		readonly buckets: readonly string[];
-		/** Accessible per-bar value prefix (e.g. "<bucket>: <n> trips"). */
+		/** Accessible per-bar value (e.g. "<bucket> min: 1 trip" / "<bucket> min: 4 trips"). */
 		readonly barValue: (bucket: string, count: number) => string;
 	};
 	/** Non-responding (silent) scheduled trips, ranked per route. */
@@ -125,8 +125,8 @@ export interface NetworkCopy extends SurfaceHeadCopy {
 		readonly rowLabel: string;
 		/** Accessible name for each row's deep link (e.g. "View line 51"). */
 		readonly viewDetail: (route: string) => string;
-		/** Unit suffix for the per-route silent-trip count. */
-		readonly tripsUnit: string;
+		/** Pluralized unit suffix for a trip count ("1 trip" / "2 trips"). */
+		readonly tripsUnit: (count: number) => string;
 	};
 	/** Trend grain selector (day / week / month) labels. */
 	readonly grain: {
@@ -214,7 +214,7 @@ export const copy: Record<Locale, NetworkCopy> = {
 			caption:
 				'How trip-average delays are spread right now, in signed minutes. Same basis as the median and slowest-10% numbers above: negative is ahead of schedule, positive is behind.',
 			buckets: ['< -5', '-5 to -2', '-2 to 0', '0 to 2', '2 to 5', '5 to 10', '10 to 15', '15+'],
-			barValue: (bucket, count) => `${bucket} min: ${count} trips`,
+			barValue: (bucket, count) => `${bucket} min: ${count} ${count === 1 ? 'trip' : 'trips'}`,
 		},
 		nonResponding: {
 			summary: 'Lines with scheduled trips currently running with no live vehicle, most first.',
@@ -222,7 +222,7 @@ export const copy: Record<Locale, NetworkCopy> = {
 				'Scheduled trips currently running with no live vehicle, by line. A silent trip has no vehicle to track, so this counts trips per line, not vehicles. Metro is excluded.',
 			rowLabel: 'Line',
 			viewDetail: (route) => `View line ${route}`,
-			tripsUnit: 'trips',
+			tripsUnit: (count) => (count === 1 ? 'trip' : 'trips'),
 		},
 		grain: { label: 'Trend grain', day: 'Day', week: 'Week', month: 'Month' },
 		window: { label: 'Trend window', d7: '7d', d30: '30d', d90: '90d' },
@@ -290,7 +290,7 @@ export const copy: Record<Locale, NetworkCopy> = {
 			caption:
 				'La répartition actuelle des retards moyens par voyage, en minutes signées. Même base que le retard médian et les 10 % les plus lents ci-dessus : négatif signifie en avance, positif signifie en retard.',
 			buckets: ['< -5', '-5 à -2', '-2 à 0', '0 à 2', '2 à 5', '5 à 10', '10 à 15', '15+'],
-			barValue: (bucket, count) => `${bucket} min : ${count} voyages`,
+			barValue: (bucket, count) => `${bucket} min : ${count} ${count <= 1 ? 'voyage' : 'voyages'}`,
 		},
 		nonResponding: {
 			summary:
@@ -299,7 +299,7 @@ export const copy: Record<Locale, NetworkCopy> = {
 				'Voyages planifiés qui circulent actuellement sans véhicule en direct, par ligne. Un voyage silencieux n’a aucun véhicule à suivre : on compte donc les voyages par ligne, pas les véhicules. Le métro est exclu.',
 			rowLabel: 'Ligne',
 			viewDetail: (route) => `Voir la ligne ${route}`,
-			tripsUnit: 'voyages',
+			tripsUnit: (count) => (count <= 1 ? 'voyage' : 'voyages'),
 		},
 		grain: { label: 'Granularité de tendance', day: 'Jour', week: 'Semaine', month: 'Mois' },
 		window: { label: 'Fenêtre de tendance', d7: '7 j', d30: '30 j', d90: '90 j' },

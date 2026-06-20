@@ -17,10 +17,10 @@ export interface HotspotsCopy extends SurfaceHeadCopy {
 	readonly rowCaption: string;
 	/** Honest empty state: the roll-up published no hotspots. */
 	readonly empty: string;
-	/** Per-row delta: on-time points lost vs the network baseline. Null → no-data. */
+	/** Per-row delta: on-time points lost vs the network baseline. A null delta
+	 * OMITS the display value entirely (no "no data" string), so the all-null
+	 * column disappears rather than reading a permanent placeholder. */
 	readonly deltaLost: (pts: string) => string;
-	/** Honest no-data string for a row whose OTP delta is absent. */
-	readonly noData: string;
 	/** Mode tag chips by hotspot type (route / stop), shown beside the title. */
 	readonly type: {
 		readonly route: string;
@@ -48,7 +48,6 @@ export const copy: Record<Locale, HotspotsCopy> = {
 		rowCaption: 'La barre indique l’ampleur du problème par rapport au pire cas.',
 		empty: 'Aucun point chaud publié pour le moment.',
 		deltaLost: (pts) => `${pts} pts de ponctualité perdus`,
-		noData: 'Aucune donnée',
 		type: {
 			route: 'Ligne',
 			stop: 'Arrêt',
@@ -68,7 +67,6 @@ export const copy: Record<Locale, HotspotsCopy> = {
 		rowCaption: 'The bar shows the problem size relative to the worst case.',
 		empty: 'No hotspots published right now.',
 		deltaLost: (pts) => `${pts} on-time points lost`,
-		noData: 'No data',
 		type: {
 			route: 'Line',
 			stop: 'Stop',

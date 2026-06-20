@@ -1,5 +1,13 @@
 import { describe, it, expect } from 'vitest';
-import { resolveRouteSeo, isEphemeralPath } from './routeSeo';
+import {
+	resolveRouteSeo,
+	isEphemeralPath,
+	resolveBreadcrumbTrail,
+	breadcrumbItemsForHead,
+	resolveDatasetSeo,
+} from './routeSeo';
+
+const ORIGIN = 'https://transit.yesid.dev';
 
 const PATHS = [
 	'/',
@@ -130,5 +138,52 @@ describe('resolveRouteSeo — neutral copy fallback', () => {
 		// The neutral home title stays distinct from the keyworded one.
 		expect(resolveRouteSeo('/', 'en').title).toBe('Live transit map');
 		expect(resolveRouteSeo('/', 'fr').title).toBe('Carte du réseau en direct');
+	});
+});
+
+describe('resolveBreadcrumbTrail', () => {
+	it('builds Home > Lines > <id> for a route detail path', () => {
+		const trail = resolveBreadcrumbTrail('/route/165', 'en');
+		expect(trail.map((c) => c.name)).toEqual(['Home', 'Lines', '165']);
+		expect(trail.map((c) => c.path)).toEqual(['/', '/lines', '/route/165']);
+	});
+
+	it('builds Home > Stops > <id> for a stop detail path, localized', () => {
+		const trail = resolveBreadcrumbTrail('/fr/stop/52001', 'fr');
+		expect(trail.map((c) => c.name)).toEqual(['Accueil', 'Arrêts', '52001']);
+		expect(trail.map((c) => c.path)).toEqual(['/', '/stops', '/stop/52001']);
+	});
+
+	it('returns an empty trail for non-detail surfaces and bare detail paths', () => {
+		expect(resolveBreadcrumbTrail('/', 'en')).toEqual([]);
+		expect(resolveBreadcrumbTrail('/lines', 'en')).toEqual([]);
+		expect(resolveBreadcrumbTrail('/route/', 'en')).toEqual([]);
+	});
+});
+
+describe('breadcrumbItemsForHead', () => {
+	it('localizes crumb paths against the origin (fr gets the /fr prefix)', () => {
+		const items = breadcrumbItemsForHead('/fr/route/165', 'fr', ORIGIN);
+		expect(items.map((i) => i.url)).toEqual([
+			`${ORIGIN}/fr`,
+			`${ORIGIN}/fr/lines`,
+			`${ORIGIN}/fr/route/165`,
+		]);
+	});
+
+	it('emits unprefixed EN URLs and an empty array off-detail', () => {
+		expect(breadcrumbItemsForHead('/route/1', 'en', ORIGIN)[1].url).toBe(`${ORIGIN}/lines`);
+		expect(breadcrumbItemsForHead('/network', 'en', ORIGIN)).toEqual([]);
+	});
+});
+
+describe('resolveDatasetSeo', () => {
+	it('returns localized, non-empty dataset name + description', () => {
+		for (const l of ['en', 'fr'] as const) {
+			const { name, description } = resolveDatasetSeo(l);
+			expect(name.length).toBeGreaterThan(0);
+			expect(description).toContain('/v1');
+		}
+		expect(resolveDatasetSeo('en').name).not.toBe(resolveDatasetSeo('fr').name);
 	});
 });
