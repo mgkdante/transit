@@ -18,6 +18,16 @@ export interface LinesIndexCopy extends SurfaceHeadCopy {
 	readonly viewRouteOnMap: (route: string) => string;
 	/** "+N more" truncation note builder (count interpolated). */
 	readonly more: (n: number) => string;
+	/** Sort control (alphabetical | worst reliability first). */
+	readonly sortLabel: string;
+	readonly sortAlpha: string;
+	readonly sortWorst: string;
+	/** Reliability status filter (show only problem lines). */
+	readonly statusFilterLabel: string;
+	readonly statusAll: string;
+	readonly statusProblem: string;
+	/** SR caption when the problem filter is on but no line has loaded its verdict yet. */
+	readonly statusPending: string;
 }
 
 export interface RouteDetailCopy {
@@ -92,6 +102,13 @@ export const indexCopy: Record<Locale, LinesIndexCopy> = {
 		mapAction: 'Carte',
 		viewRouteOnMap: (route) => `Voir la ligne ${route} sur la carte`,
 		more: (n) => `+${n} de plus`,
+		sortLabel: 'Trier',
+		sortAlpha: 'Alphabétique',
+		sortWorst: 'Moins fiables',
+		statusFilterLabel: 'Fiabilité',
+		statusAll: 'Toutes',
+		statusProblem: 'En retard',
+		statusPending: 'Chargement de la fiabilité des lignes visibles…',
 	},
 	en: {
 		kicker: 'LINES · NETWORK',
@@ -102,6 +119,13 @@ export const indexCopy: Record<Locale, LinesIndexCopy> = {
 		mapAction: 'Map',
 		viewRouteOnMap: (route) => `View route ${route} on map`,
 		more: (n) => `+${n} more`,
+		sortLabel: 'Sort',
+		sortAlpha: 'Alphabetical',
+		sortWorst: 'Least reliable',
+		statusFilterLabel: 'Reliability',
+		statusAll: 'All',
+		statusProblem: 'Late',
+		statusPending: 'Loading reliability for the visible lines…',
 	},
 };
 

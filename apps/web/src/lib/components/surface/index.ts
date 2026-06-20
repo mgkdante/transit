@@ -20,6 +20,7 @@ export { default as ReliabilityPane } from './ReliabilityPane.svelte';
 export { default as GrainPicker } from './GrainPicker.svelte';
 export { default as LiveFreshness } from './LiveFreshness.svelte';
 export { default as ConformanceBadge } from './ConformanceBadge.svelte';
+export { default as ReliabilityBadge } from './ReliabilityBadge.svelte';
 export { default as SearchInput } from './SearchInput.svelte';
 export { default as MapDrilldownLink } from './MapDrilldownLink.svelte';
 
