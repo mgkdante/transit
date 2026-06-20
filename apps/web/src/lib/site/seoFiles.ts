@@ -14,6 +14,10 @@ export const PATHS = [
 	'/search',
 	'/metrics',
 	'/status',
+	'/hotspots',
+	'/receipt',
+	'/repeat-offenders',
+	'/alerts',
 ] as const;
 
 // sitemaps.org caps a single sitemap file at 50,000 URLs / 50 MB. EN and FR are

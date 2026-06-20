@@ -10,8 +10,29 @@ const PATHS = [
 	'/search',
 	'/metrics',
 	'/status',
+	'/hotspots',
+	'/receipt',
+	'/repeat-offenders',
+	'/alerts',
 	'/route/1',
 	'/stop/5',
+];
+
+// The full set of static surfaces (no detail routes) used by the title-
+// distinctness checks — every entry here must render a unique <title>.
+const SURFACE_PATHS = [
+	'/',
+	'/map',
+	'/lines',
+	'/stops',
+	'/network',
+	'/search',
+	'/metrics',
+	'/status',
+	'/hotspots',
+	'/receipt',
+	'/repeat-offenders',
+	'/alerts',
 ];
 
 // A representative identity (STM / Montréal) for the keyworded-copy path. The
@@ -20,30 +41,12 @@ const STM_IDENTITY = { shortName: 'STM', city: 'Montréal' } as const;
 
 describe('resolveRouteSeo', () => {
 	it('returns a distinct title per surface (no more single global title)', () => {
-		const titles = [
-			'/',
-			'/map',
-			'/lines',
-			'/stops',
-			'/network',
-			'/search',
-			'/metrics',
-			'/status',
-		].map((p) => resolveRouteSeo(p, 'en').title);
+		const titles = SURFACE_PATHS.map((p) => resolveRouteSeo(p, 'en').title);
 		expect(new Set(titles).size).toBe(titles.length);
 	});
 
 	it('keeps surface titles distinct on the keyworded identity path too', () => {
-		const titles = [
-			'/',
-			'/map',
-			'/lines',
-			'/stops',
-			'/network',
-			'/search',
-			'/metrics',
-			'/status',
-		].map((p) => resolveRouteSeo(p, 'en', STM_IDENTITY).title);
+		const titles = SURFACE_PATHS.map((p) => resolveRouteSeo(p, 'en', STM_IDENTITY).title);
 		expect(new Set(titles).size).toBe(titles.length);
 	});
 

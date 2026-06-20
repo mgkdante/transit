@@ -147,6 +147,50 @@ const SURFACES: Record<string, BilingualSeo> = {
 			fr: 'Santé des données du réseau: fraîcheur de chaque source, provenance, lacunes connues, conservation et conformité, depuis le contrat ouvert /v1.',
 		},
 	},
+	'/hotspots': {
+		title: { en: 'Hotspots', fr: 'Points chauds' },
+		description: (id) => ({
+			en: `The ${id.shortName} lines and stops dragging ${id.city} down, ranked worst first by on-time points lost, measured from the open /v1 data contract.`,
+			fr: `Les lignes et arrêts ${id.shortName} qui tirent ${id.city} vers le bas, classés du pire au moins pire selon la ponctualité perdue, depuis le contrat ouvert /v1.`,
+		}),
+		neutralDescription: {
+			en: 'The transit lines and stops dragging the network down, ranked worst first by on-time points lost, measured from the open /v1 data contract.',
+			fr: 'Les lignes et arrêts qui tirent le réseau vers le bas, classés du pire au moins pire selon la ponctualité perdue, depuis le contrat ouvert /v1.',
+		},
+	},
+	'/receipt': {
+		title: { en: 'Daily receipt', fr: 'Reçu quotidien' },
+		description: (id) => ({
+			en: `The ${id.shortName} daily service receipt for ${id.city}: one day's reliability, average delay and the worst route and stop, issued daily from the open /v1 contract.`,
+			fr: `Le reçu de service ${id.shortName} quotidien de ${id.city}: fiabilité du jour, retard moyen et pire ligne et arrêt, émis chaque jour depuis le contrat ouvert /v1.`,
+		}),
+		neutralDescription: {
+			en: "The daily transit service receipt: one day's reliability, average delay and the worst route and stop on the network, issued daily from the open /v1 contract.",
+			fr: 'Le reçu de service quotidien du réseau: fiabilité du jour, retard moyen et pire ligne et arrêt, émis chaque jour depuis le contrat ouvert /v1, jamais inventés.',
+		},
+	},
+	'/repeat-offenders': {
+		title: { en: 'Repeat offenders', fr: 'Récidivistes' },
+		description: (id) => ({
+			en: `The ${id.shortName} routes and stops in ${id.city} that run late again and again, ranked worst first by how reliably they slip, from the open /v1 data contract.`,
+			fr: `Les lignes et arrêts ${id.shortName} de ${id.city} qui accumulent les retards, classés du pire au moins pire selon la régularité des ratés, depuis le contrat ouvert /v1.`,
+		}),
+		neutralDescription: {
+			en: 'The transit routes and stops that run late again and again, ranked worst first by how reliably they slip, measured from the open /v1 data contract.',
+			fr: 'Les lignes et arrêts du réseau qui accumulent les retards, classés du pire au moins pire selon la régularité de leurs ratés, depuis le contrat ouvert /v1.',
+		},
+	},
+	'/alerts': {
+		title: { en: 'Alerts', fr: 'Avis' },
+		description: (id) => ({
+			en: `Past ${id.shortName} service alerts for ${id.city}, newest first, with their duration, cause, effect and reach, archived from the open /v1 data contract. Never invented.`,
+			fr: `Les avis de service ${id.shortName} passés de ${id.city}, du plus récent au plus ancien, avec durée, cause, effet et portée, archivés depuis le contrat ouvert /v1.`,
+		}),
+		neutralDescription: {
+			en: 'Past transit service alerts across the network, newest first, with their duration, cause, effect and reach, archived from the open /v1 data contract.',
+			fr: 'Les avis de service passés du réseau, du plus récent au plus ancien, avec durée, cause, effet et portée, archivés depuis le contrat ouvert /v1.',
+		},
+	},
 };
 
 const LINE_DETAIL: BilingualSeo = {
