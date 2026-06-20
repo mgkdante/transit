@@ -15,6 +15,8 @@ import type { SurfaceHeadCopy } from '$lib/components/surface';
 export interface ReceiptCopy extends SurfaceHeadCopy {
 	/** Accessible group label for the date selector (the index of receipt dates). */
 	readonly dateSelectLabel: string;
+	/** ControlsRail overline naming the date-selector control zone. */
+	readonly controlsLabel: string;
 	/** Caption above the receipt body. */
 	readonly receiptSection: string;
 	/** TerminalChrome title bar text (the receipt "window" title). */
@@ -75,6 +77,7 @@ export const copy: Record<Locale, ReceiptCopy> = {
 		subheading: '// RECEIPT',
 		lede: 'One day, one receipt: the headline reliability of the service, the day it covers, and the worst of it, issued daily with nothing hidden.',
 		dateSelectLabel: 'Choose a receipt day',
+		controlsLabel: 'Day',
 		receiptSection: 'The receipt',
 		terminalTitle: 'service-receipt',
 		terminalTag: 'DAILY',
@@ -117,6 +120,7 @@ export const copy: Record<Locale, ReceiptCopy> = {
 		subheading: '// REÇU',
 		lede: 'Un jour, un reçu : la fiabilité globale du service, la journée couverte et le pire de la journée, émis chaque jour, rien de caché.',
 		dateSelectLabel: 'Choisir une journée',
+		controlsLabel: 'Jour',
 		receiptSection: 'Le reçu',
 		terminalTitle: 'recu-de-service',
 		terminalTag: 'QUOTIDIEN',

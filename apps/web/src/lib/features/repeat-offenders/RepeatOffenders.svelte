@@ -27,7 +27,7 @@
 	import type { SeverityCode } from '$lib/v1/schemas';
 	import { createResource } from '$lib/v1/resource.svelte';
 	import { ResourceBoundary, SurfaceHeader } from '$lib/components/surface';
-	import { Surface } from '$lib/components/layout';
+	import { Surface, DashboardGrid } from '$lib/components/layout';
 	import { Separator } from '$lib/components/ui/separator';
 	import { RankedRow } from '$lib/components/dataviz';
 	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
@@ -159,7 +159,17 @@
 		<div class="repeat-offenders-block">
 			<SectionLabel text={t.listSection} variant="station" />
 			<p class="repeat-offenders-caption">{t.rowCaption}</p>
-			<ul class="repeat-offenders-ranked" role="list" aria-label={t.listSummary}>
+			<!-- The ranked ledger rides the SHARED DashboardGrid auto-fit recipe as a
+			     semantic <ul> (worst-first published order honoured left-to-right then
+			     down), so the list>listitem>link a11y survives and the grid-track recipe
+			     lives ONLY in DashboardGrid. -->
+			<DashboardGrid
+				as="ul"
+				minTile="360px"
+				gutter={false}
+				class="repeat-offenders-ranked"
+				aria-label={t.listSummary}
+			>
 				{#each rows as row (row.key)}
 					<!-- list > listitem > link: the <li> owns the listitem semantics so AT
 					     can count the rows; the anchor owns the interactivity + accessible
@@ -184,7 +194,7 @@
 						</a>
 					</li>
 				{/each}
-			</ul>
+			</DashboardGrid>
 			<!-- Honest caveat: trailing-window recurrence proxy, not a certified scorecard. -->
 			<p class="repeat-offenders-caveat" data-slot="offenders-caveat">{t.caveat}</p>
 		</div>
@@ -197,14 +207,12 @@
 		flex-direction: column;
 		gap: 0.75rem;
 	}
-	.repeat-offenders-ranked {
-		display: flex;
-		flex-direction: column;
-		gap: 0.5rem;
-		max-width: 40rem;
-		margin: 0;
-		padding: 0;
-		list-style: none;
+	/* The ranked ledger rides the SHARED DashboardGrid auto-fit recipe (rendered as a
+	   semantic <ul> via `as="ul"`); the grid-track recipe + minTile live in
+	   DashboardGrid. Here we only widen the measure so the board uses the desktop
+	   real estate instead of a single narrow column. */
+	:global(.dashboard-grid.repeat-offenders-ranked) {
+		max-width: 76rem;
 	}
 	.repeat-offenders-item {
 		display: block;

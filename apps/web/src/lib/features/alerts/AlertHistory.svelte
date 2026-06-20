@@ -41,7 +41,7 @@
 	import { createResource } from '$lib/v1/resource.svelte';
 	import { ageSeconds as ageSecondsOf, formatUtc } from '$lib/utils/time';
 	import { ResourceBoundary, SurfaceHeader, LiveFreshness } from '$lib/components/surface';
-	import { Surface } from '$lib/components/layout';
+	import { Surface, DashboardGrid } from '$lib/components/layout';
 	import { Separator } from '$lib/components/ui/separator';
 	import { RankedRow } from '$lib/components/dataviz';
 	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
@@ -297,7 +297,15 @@
 			<Separator variant="hazard" />
 			<div class="alert-history-block" data-slot="alert-breakdown">
 				<SectionLabel text={t.breakdown.section} variant="station" />
-				<div class="alert-history-breakdown">
+				<!-- The three distributions tile into a fluid board: 3-up on a wide
+				     desktop, 2-up mid, one column on a phone (auto-fit reflow, no
+				     breakpoint bookkeeping). Each distribution stands DOWN on its own
+				     {#if} — an empty bucket list emits NO tile and the grid reflows past
+				     it, never a fabricated empty card. (The chronological LOG above stays
+				     a single column — reading order is sacred there.) No `label`: the
+				     enclosing breakdown block's SectionLabel already names the zone, so the
+				     grid stays a plain layout container (no redundant region landmark). -->
+				<DashboardGrid minTile="240px" gutter={false}>
 					{#if causeRows.length > 0}
 						<div class="alert-history-dist">
 							<SectionLabel text={t.breakdown.byCause} variant="metric" />
@@ -353,7 +361,7 @@
 							</div>
 						</div>
 					{/if}
-				</div>
+				</DashboardGrid>
 			</div>
 		{/if}
 	</ResourceBoundary>
@@ -490,21 +498,19 @@
 		outline-offset: 2px;
 		border-radius: var(--radius-sm, 0.375rem);
 	}
-	/* Cause / effect / severity distributions — a responsive column set. */
-	.alert-history-breakdown {
-		display: grid;
-		gap: 1.25rem 2rem;
-		grid-template-columns: minmax(0, 1fr);
-	}
-	@media (min-width: 768px) {
-		.alert-history-breakdown {
-			grid-template-columns: repeat(3, minmax(0, 1fr));
-		}
-	}
+	/* Each cause / effect / severity distribution is a quiet bordered tile that
+	   fills its DashboardGrid cell, so the three use the desktop width instead of
+	   being capped narrow. Chrome only (--card bg, --border) — never a data mark;
+	   the RankedRow bars bring their own dataviz-severity scale colour. */
 	.alert-history-dist {
 		display: flex;
 		flex-direction: column;
-		gap: 0.5rem;
+		gap: 0.6rem;
+		min-width: 0;
+		padding: 1rem;
+		border: 1px solid var(--border);
+		border-radius: var(--radius-lg);
+		background: var(--card);
 	}
 	.alert-history-ranked {
 		display: flex;

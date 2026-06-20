@@ -13,6 +13,8 @@ export interface LinesIndexCopy extends SurfaceHeadCopy {
 	/** Accessible label + placeholder for the filter input. */
 	readonly filterLabel: string;
 	readonly filterPlaceholder: string;
+	/** Mono group overline for the ControlsRail collecting search + sort + status. */
+	readonly controlsLabel: string;
 	/** Compact action linking one route into the live map. */
 	readonly mapAction: string;
 	readonly viewRouteOnMap: (route: string) => string;
@@ -128,6 +130,7 @@ export const indexCopy: Record<Locale, LinesIndexCopy> = {
 		lede: 'Toutes les lignes du réseau, détail du parcours, horaire et fiabilité historique par ligne. Mesuré à partir du contrat /v1.',
 		filterLabel: 'Filtrer les lignes',
 		filterPlaceholder: 'Numéro ou nom de ligne…',
+		controlsLabel: 'Contrôles',
 		mapAction: 'Carte',
 		viewRouteOnMap: (route) => `Voir la ligne ${route} sur la carte`,
 		more: (n) => `+${n} de plus`,
@@ -145,6 +148,7 @@ export const indexCopy: Record<Locale, LinesIndexCopy> = {
 		lede: 'Every line on the network, per-line route detail, schedule and historic reliability. Measured from the /v1 contract.',
 		filterLabel: 'Filter lines',
 		filterPlaceholder: 'Line number or name…',
+		controlsLabel: 'Controls',
 		mapAction: 'Map',
 		viewRouteOnMap: (route) => `View route ${route} on map`,
 		more: (n) => `+${n} more`,

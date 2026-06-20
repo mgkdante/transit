@@ -65,7 +65,7 @@
 		GrainPicker,
 		type GrainSegment,
 	} from '$lib/components/surface';
-	import { Surface } from '$lib/components/layout';
+	import { Surface, ControlsRail, DashboardGrid } from '$lib/components/layout';
 	import { Separator } from '$lib/components/ui/separator';
 	import {
 		RankedRow,
@@ -600,12 +600,24 @@
 
 	<Separator variant="hazard" />
 
+	<!-- ── LIVE region ─────────────────────────────────────────────────────────
+	     The live half: the headline metric tiles, then the distribution marks
+	     (status mix · crowding mix · delay histogram · silent trips) laid into an
+	     auto-fit board so they sit side-by-side on desktop and reflow to one
+	     column on mobile. Each {#if has...} stand-down keeps its tile OUT of the
+	     grid entirely (the auto-fit board reflows past it; never a fabricated
+	     empty card). --primary stays interactive-only — every band is a dataviz
+	     scale mark. -->
 	{#if live.network}
 		{@const net = live.network}
-		<!-- Live headline grid -->
-		<div class="network-block">
-			<SectionLabel text={t.liveSection} variant="station" />
-			<div class="network-metrics">
+		<section class="network-region" aria-label={t.liveRegion}>
+			<SectionLabel text={t.liveRegion} variant="station" />
+
+			<!-- Headline metric board — the six scalars on an auto-fit grid so they
+			     fill the desktop width and reflow to one column on a phone. No `label`:
+			     the enclosing <section aria-label> already names the LIVE region, so the
+			     grid stays a plain layout container (no redundant nested landmark). -->
+			<DashboardGrid minTile="200px" gutter={false}>
 				<MetricDisplay value={fmtPct(net.on_time_pct)} label={t.metrics.onTime} size="lg" />
 				<MetricDisplay
 					value={fmtCount(net.vehicles_in_service)}
@@ -623,113 +635,115 @@
 				<MetricDisplay value={fmtPct(net.coverage_pct)} label={t.metrics.coverage} size="lg" />
 				<MetricDisplay value={fmtMin(net.delay_p50_min)} label={t.metrics.delayP50} size="md" />
 				<MetricDisplay value={fmtMin(net.delay_p90_min)} label={t.metrics.delayP90} size="md" />
-			</div>
-		</div>
+			</DashboardGrid>
 
-		<Separator variant="hazard" />
+			<!-- Distribution board — status mix · crowding mix · delay histogram ·
+			     silent-trips list sit side-by-side on desktop (auto-fit ~320px) and
+			     stack on mobile. Each tile is a quiet bordered card; a tile whose
+			     condition stands down is dropped whole (never an empty card). -->
+			<DashboardGrid minTile="320px" gutter={false}>
+				<!-- Status mix -->
+				<div class="network-tile">
+					<SectionLabel text={t.statusSection} variant="station" />
+					<StackedBar
+						scale="status"
+						segments={statusSegments}
+						label={t.statusBarLabel}
+						interactive
+						legend
+						onSelect={openStatusOnMap}
+					/>
+				</div>
 
-		<!-- Status mix -->
-		<div class="network-block">
-			<SectionLabel text={t.statusSection} variant="station" />
-			<StackedBar
-				scale="status"
-				segments={statusSegments}
-				label={t.statusBarLabel}
-				interactive
-				legend
-				onSelect={openStatusOnMap}
-			/>
-		</div>
+				<!-- Crowding (occupancy) — only when telemetry was received this cycle -->
+				{#if hasOccupancy}
+					<div class="network-tile">
+						<SectionLabel text={t.occupancySection} variant="station" />
+						<StackedBar
+							scale="occupancy"
+							segments={occupancySegments}
+							label={t.occupancyBarLabel}
+							interactive
+							legend
+							onSelect={openOccupancyOnMap}
+						/>
+					</div>
+				{/if}
 
-		<!-- Crowding (occupancy) — only when telemetry was received this cycle -->
-		{#if hasOccupancy}
-			<div class="network-block">
-				<SectionLabel text={t.occupancySection} variant="station" />
-				<StackedBar
-					scale="occupancy"
-					segments={occupancySegments}
-					label={t.occupancyBarLabel}
-					interactive
-					legend
-					onSelect={openOccupancyOnMap}
-				/>
-			</div>
-		{/if}
+				<!-- Delay distribution — the 8 fixed signed-minute buckets of the SAME
+				     trip-level delays that power p50/p90. Stands DOWN entirely when
+				     `delay_histogram` is null (zero delay observations this cycle); when
+				     it is present the contract emits all 8 buckets (zeros included) so we
+				     draw the full shape. A token-only bar list (role=list): length encodes
+				     the COUNT, colour reads the early/late sense off the status scale. -->
+				{#if hasDelayHistogram}
+					<div class="network-tile">
+						<SectionLabel text={t.delayHistogramSection} variant="station" />
+						<p class="network-hist-caption">{t.delayHistogram.caption}</p>
+						<ul
+							class="network-hist"
+							role="list"
+							aria-label={t.delayHistogram.summary}
+							data-slot="delay-histogram"
+						>
+							{#each delayBars as bar (bar.key)}
+								<li class="network-hist-row" aria-label={bar.a11y}>
+									<span class="network-hist-label" aria-hidden="true">{bar.label}</span>
+									<span class="network-hist-track" aria-hidden="true">
+										<span
+											class="network-hist-fill"
+											style="width: {bar.pct}%; background: {bar.colorVar};"
+										></span>
+									</span>
+									<span class="network-hist-count" aria-hidden="true">{fmtCount(bar.count)}</span>
+								</li>
+							{/each}
+						</ul>
+					</div>
+				{/if}
 
-		<!-- Delay distribution — the 8 fixed signed-minute buckets of the SAME
-		     trip-level delays that power p50/p90. Stands DOWN entirely when
-		     `delay_histogram` is null (zero delay observations this cycle); when it
-		     is present the contract emits all 8 buckets (zeros included) so we draw
-		     the full shape. A token-only bar list (role=list): length encodes the
-		     COUNT, colour reads the early/late sense off the status scale. -->
-		{#if hasDelayHistogram}
-			<Separator variant="hazard" />
-			<div class="network-block">
-				<SectionLabel text={t.delayHistogramSection} variant="station" />
-				<p class="network-hist-caption">{t.delayHistogram.caption}</p>
-				<ul
-					class="network-hist"
-					role="list"
-					aria-label={t.delayHistogram.summary}
-					data-slot="delay-histogram"
-				>
-					{#each delayBars as bar (bar.key)}
-						<li class="network-hist-row" aria-label={bar.a11y}>
-							<span class="network-hist-label" aria-hidden="true">{bar.label}</span>
-							<span class="network-hist-track" aria-hidden="true">
-								<span
-									class="network-hist-fill"
-									style="width: {bar.pct}%; background: {bar.colorVar};"
-								></span>
-							</span>
-							<span class="network-hist-count" aria-hidden="true">{fmtCount(bar.count)}</span>
-						</li>
-					{/each}
-				</ul>
-			</div>
-		{/if}
-
-		<!-- Non-responding (silent) scheduled trips, by line — a ranked list (worst
-		     first) of lines running scheduled trips with NO live vehicle. Placed
-		     beside the `non_responding` total tile above; stands DOWN when
-		     `non_responding_by_route` is null/empty (the scalar total still shows).
-		     list > listitem > link: the <li> owns the listitem role, the anchor owns
-		     the interactivity + accessible name, the inner RankedRow is `bare`. -->
-		{#if hasSilentRows}
-			<Separator variant="hazard" />
-			<div class="network-block">
-				<SectionLabel text={t.nonRespondingSection} variant="station" />
-				<p class="network-silent-caption">{t.nonResponding.caption}</p>
-				<ul
-					class="network-silent"
-					role="list"
-					aria-label={t.nonResponding.summary}
-					data-slot="non-responding-by-route"
-				>
-					{#each silentRows as row (row.key)}
-						<li class="network-silent-item">
-							<a
-								class="network-silent-link"
-								href={row.href}
-								data-sveltekit-preload-data="hover"
-								data-slot="silent-link"
-								aria-label={row.ariaLabel}
-							>
-								<RankedRow
-									bare
-									rank={row.rank}
-									title={row.title}
-									subtitle={row.subtitle}
-									severity={row.severity}
-									value={row.value}
-									display={row.display}
-								/>
-							</a>
-						</li>
-					{/each}
-				</ul>
-			</div>
-		{/if}
+				<!-- Non-responding (silent) scheduled trips, by line — a ranked list
+				     (worst first) of lines running scheduled trips with NO live vehicle.
+				     Stands DOWN when `non_responding_by_route` is null/empty (the scalar
+				     `non_responding` total tile above still carries the count). list >
+				     listitem > link: the <li> owns the listitem role, the anchor owns the
+				     interactivity + accessible name, the inner RankedRow is `bare`. -->
+				{#if hasSilentRows}
+					<div class="network-tile">
+						<SectionLabel text={t.nonRespondingSection} variant="station" />
+						<p class="network-silent-caption">{t.nonResponding.caption}</p>
+						<ul
+							class="network-silent"
+							role="list"
+							aria-label={t.nonResponding.summary}
+							data-slot="non-responding-by-route"
+						>
+							{#each silentRows as row (row.key)}
+								<li class="network-silent-item">
+									<a
+										class="network-silent-link"
+										href={row.href}
+										data-sveltekit-preload-data="hover"
+										data-slot="silent-link"
+										aria-label={row.ariaLabel}
+									>
+										<RankedRow
+											bare
+											rank={row.rank}
+											title={row.title}
+											subtitle={row.subtitle}
+											severity={row.severity}
+											value={row.value}
+											display={row.display}
+										/>
+									</a>
+								</li>
+							{/each}
+						</ul>
+					</div>
+				{/if}
+			</DashboardGrid>
+		</section>
 	{:else if live.error}
 		<EdgeState
 			variant="error-v1"
@@ -741,35 +755,63 @@
 		<EdgeState variant="skeleton" lang={locale} layout={edgeLayout} />
 	{/if}
 
-	<!-- Historic daily trend -->
-	<div class="network-block">
-		<div class="network-trend-head">
-			<SectionLabel text={t.trendSection} variant="station" />
-			<div class="network-trend-controls">
-				<!-- Trend grain (day / week / month). Offered ONLY when a coarser series
-				     carries data — a lone "day" chip is a dead control, so the picker
-				     stands down then. p90 / vehicles / per-day crowding are daily-only. -->
-				{#if showGrainPicker}
-					<GrainPicker
-						segments={grainSegments}
-						bind:value={grainKey}
-						label={t.grain.label}
-						class="network-grain"
-					/>
-				{/if}
-				<!-- Trend window (7/30/90-day) — DAY grain only; slices the tail of the
-				     daily series. A window longer than the data is disabled (never a dead
-				     control). Week/month render their full short series → no window. -->
-				{#if isDailyGrain}
-					<GrainPicker
-						segments={windowSegments}
-						bind:value={windowKey}
-						label={t.window.label}
-						class="network-window"
-					/>
-				{/if}
-			</div>
-		</div>
+	<!-- Hazard tape discerns the LIVE region from the HISTORIC region. -->
+	<Separator variant="hazard" />
+
+	<!-- ── HISTORIC region ─────────────────────────────────────────────────────
+	     The historic half: the three scattered controls (grain · window · delay
+	     series) collected into ONE ControlsRail at the top, separated by hazard
+	     tape from the readouts below, which lay into an auto-fit board (the main
+	     TrendLine spanning a wide cell). Each {#if has...} stand-down keeps its
+	     readout out of the grid (the board reflows; never a fabricated tile).
+	     The grain/window/series clamp + stand-down logic is UNCHANGED — only its
+	     placement moved into the rail. --primary lives only on the active picker
+	     chips (the dataviz marks own their scales). -->
+	<section class="network-region" aria-label={t.historicRegion}>
+		<SectionLabel text={t.historicRegion} variant="station" />
+
+		<!-- ONE control panel collects every historic control. The radiogroup roles
+		     stay inside the rail (one tab stop per picker). The grain picker stands
+		     down to nothing when only the daily series exists; the window picker is
+		     day-grain-only; the delay-series toggle's p90 chip disables on a coarse
+		     grain — all the existing guard logic intact, just relocated here. -->
+		<ControlsRail label={t.viewControlsLabel}>
+			<!-- Trend grain (day / week / month). Offered ONLY when a coarser series
+			     carries data — a lone "day" chip is a dead control, so the picker
+			     stands down then. p90 / vehicles / per-day crowding are daily-only. -->
+			{#if showGrainPicker}
+				<GrainPicker
+					segments={grainSegments}
+					bind:value={grainKey}
+					label={t.grain.label}
+					class="network-grain"
+				/>
+			{/if}
+			<!-- Trend window (7/30/90-day) — DAY grain only; slices the tail of the
+			     daily series. A window longer than the data is disabled (never a dead
+			     control). Week/month render their full short series → no window. -->
+			{#if isDailyGrain}
+				<GrainPicker
+					segments={windowSegments}
+					bind:value={windowKey}
+					label={t.window.label}
+					class="network-window"
+				/>
+			{/if}
+			<!-- Delay-series toggle: p90 "slowest 10%" vs avg "typical". Re-feeds the
+			     retard channel + its y-domain + axis label. p90 disables on a coarse
+			     grain (it carries no week/month data) → the channel reads avg there. -->
+			<GrainPicker
+				segments={retardSegments}
+				bind:value={retardKey}
+				label={t.trend.retardToggleLabel}
+				class="network-retard-toggle"
+			/>
+		</ControlsRail>
+
+		<!-- Hazard tape discerns the controls zone from the data canvas. -->
+		<Separator variant="hazard" hazardSize="sm" />
+
 		<ResourceBoundary
 			resource={trend}
 			lang={locale}
@@ -778,164 +820,174 @@
 				(d.weekly?.length ?? 0) === 0 &&
 				(d.monthly?.length ?? 0) === 0}
 		>
-			<!-- The trend chart reads the module-level windowed series (not the
-			     boundary payload), so the gated content needs no snippet param —
-			     render it as default children. ONE window slice for every mark:
-			     buildTrendChart consumes the same `windowedSeries` that the sparkline,
-			     cancellation and crowding marks read — the tail is sliced exactly once. -->
+			<!-- The readouts read the module-level windowed series (not the boundary
+			     payload), so the gated content needs no snippet param. ONE window slice
+			     for every mark: buildTrendChart consumes the same `windowedSeries` that
+			     the sparkline, cancellation and crowding marks read — sliced once. -->
 			{@const chart = buildTrendChart(windowedSeries)}
-			<div class="network-trend">
-				<!-- Delay-series toggle: p90 "slowest 10%" vs avg "typical". Re-feeds
-				     the retard channel + its y-domain + axis label below. -->
-				<GrainPicker
-					segments={retardSegments}
-					bind:value={retardKey}
-					label={t.trend.retardToggleLabel}
-					class="network-retard-toggle"
-				/>
-				<TrendLine
-					onTime={chart.onTime}
-					retard={chart.retard}
-					retardDomain={chart.retardDomain}
-					xLabels={chart.xLabels}
-					onTimeLabel={t.trend.onTimeLabel}
-					{retardLabel}
-					yAxis={{ label: t.trend.onTimeLabel, unit: t.units.pct, domain: [0, 100] }}
-					retardAxis={{
-						label: retardLabel,
-						unit: t.units.min,
-						domain: chart.retardDomain,
-					}}
-					showYTicks
-					label={t.trend.summary}
-					interactive
-				/>
-				<!-- Vehicles-in-service context: how much fleet reported each day, so
-				     OTP/delay reads against its denominator. Null → gap. DAY grain only —
-				     vehicles is null on week/month (14d-daily-only). -->
-				{#if isDailyGrain}
-					<div class="network-vehicles-context">
-						<Sparkline
-							values={vehiclesSeries}
-							label={t.trend.vehiclesSpark}
+
+			<!-- Historic readouts board — the main TrendLine spans a wide cell; the
+			     cancellation trend, per-day crowding small-multiple, by-shift and
+			     by-day-type ranked lists fill the remaining cells (auto-fit ~360px on
+			     desktop, one column on mobile). Each stands down to nothing when its
+			     signal is absent and the board reflows past it. -->
+			<DashboardGrid minTile="360px" gutter={false}>
+				<!-- Primary trend: on-time % vs the chosen delay series + the vehicles
+				     context sparkline. A wide cell — the daily line needs the room. -->
+				<div class="network-tile network-tile--wide">
+					<SectionLabel text={t.trendSection} variant="station" />
+					<div class="network-trend">
+						<TrendLine
+							onTime={chart.onTime}
+							retard={chart.retard}
+							retardDomain={chart.retardDomain}
 							xLabels={chart.xLabels}
-							colorVar="var(--dataviz-status-unknown)"
+							onTimeLabel={t.trend.onTimeLabel}
+							{retardLabel}
+							yAxis={{ label: t.trend.onTimeLabel, unit: t.units.pct, domain: [0, 100] }}
+							retardAxis={{
+								label: retardLabel,
+								unit: t.units.min,
+								domain: chart.retardDomain,
+							}}
+							showYTicks
+							label={t.trend.summary}
 							interactive
-							showLast
 						/>
-						<span class="network-context-caption">{t.trend.vehiclesContext}</span>
+						<!-- Vehicles-in-service context: how much fleet reported each day, so
+						     OTP/delay reads against its denominator. Null → gap. DAY grain only —
+						     vehicles is null on week/month (14d-daily-only). -->
+						{#if isDailyGrain}
+							<div class="network-vehicles-context">
+								<Sparkline
+									values={vehiclesSeries}
+									label={t.trend.vehiclesSpark}
+									xLabels={chart.xLabels}
+									colorVar="var(--dataviz-status-unknown)"
+									interactive
+									showLast
+								/>
+								<span class="network-context-caption">{t.trend.vehiclesContext}</span>
+							</div>
+						{/if}
+					</div>
+				</div>
+
+				<!-- Network-wide cancellation-rate trend — stood DOWN entirely when the
+				     series carries no cancellation data (never a flat zero line). -->
+				{#if hasCancel}
+					<div class="network-tile">
+						<SectionLabel text={t.cancelSection} variant="station" />
+						<div class="network-trend">
+							<MetricDisplay value={fmtCancel(cancelLatest)} label={t.cancel.metric} size="md" />
+							<!-- Single-series: only the cancellation rate is plotted. `singleSeries`
+							     suppresses the empty retard legend swatch + its y-tick gutter, so the
+							     legend renders ONE line, not a phantom second swatch. -->
+							<TrendLine
+								onTime={cancelSeries}
+								retard={cancelEmpty}
+								domain={cancelDomain}
+								xLabels={cancelXLabels}
+								onTimeLabel={t.cancel.seriesLabel}
+								yAxis={{ label: t.cancel.seriesLabel, unit: t.units.pct, domain: cancelDomain }}
+								showYTicks
+								singleSeries
+								label={t.cancel.summary}
+								interactive
+							/>
+						</div>
 					</div>
 				{/if}
-			</div>
+
+				<!-- Per-day crowding small-multiple — one 100% StackedBar per day WITH
+				     occupancy telemetry. Days with no telemetry are skipped (never an even
+				     split); the whole tile stands down when no day carries crowding data. -->
+				{#if hasOccupancyTrend}
+					<div class="network-tile">
+						<SectionLabel text={t.occupancyTrendSection} variant="station" />
+						<ul
+							class="network-occupancy-days"
+							aria-label={t.occupancyTrend.summary}
+							data-slot="occupancy-trend"
+						>
+							{#each occupancyDays as day (day.date)}
+								<li class="network-occupancy-day">
+									<span class="network-occupancy-date">{day.dateLabel}</span>
+									<StackedBar
+										scale="occupancy"
+										segments={day.segments}
+										size="sm"
+										label={`${t.occupancySection} · ${day.dateLabel}`}
+									/>
+								</li>
+							{/each}
+						</ul>
+					</div>
+				{/if}
+
+				<!-- By time of day — network-wide reliability ranked by PUNCTUALITY
+				     (lowest on-time % first). Each row leads with the real OTP % (avg
+				     delay + severe share read as the subtitle); the magnitude bar encodes
+				     the severe-delay share on the severity scale. Stands down when the
+				     group carries no data; a grain with no OTP shows honest no-data and a
+				     grain with neither OTP nor severe is dropped (never a fake 0). The
+				     shift labels are the SHARED reliability vocabulary. The data-slot
+				     wraps the whole shift/day-type pair so the existing stand-down test
+				     anchor is preserved — it spans the two ranked tiles + the caveat. -->
+				{#if hasShift}
+					<div class="network-tile" data-slot="network-shift">
+						<SectionLabel text={t.shiftSection} variant="station" />
+						<p class="network-shift-caption">{t.shift.rowCaption}</p>
+						<div class="network-ranked" role="list" aria-label={t.shift.shiftSummary}>
+							{#each shiftRows as row (row.key)}
+								<RankedRow
+									rank={row.rank}
+									title={row.title}
+									subtitle={row.subtitle}
+									severity={row.severity}
+									value={row.value}
+									display={row.display}
+								/>
+							{/each}
+						</div>
+						<!-- Honest caveat: trailing-window observation-weighted proxy. When the
+						     day-type tile also renders it carries the caveat instead, so this one
+						     only shows when there is no day-type tile to host it (no duplicate). -->
+						{#if !hasDayType}
+							<p class="network-shift-caveat" data-slot="shift-caveat">{t.shift.caveat}</p>
+						{/if}
+					</div>
+				{/if}
+
+				<!-- Weekday vs weekend — the day-type companion to the time-of-day list,
+				     same punctuality ranking + honesty rules. Hosts the shared caveat
+				     (it is the trailing reliability tile when present). The
+				     `network-shift` data-slot lives on the shift tile above; when only
+				     the day-type group carries data this tile still carries the caveat
+				     and the test's `network-shift` anchor falls to THIS tile instead. -->
+				{#if hasDayType}
+					<div class="network-tile" data-slot={hasShift ? undefined : 'network-shift'}>
+						<SectionLabel text={t.dayTypeSection} variant="station" />
+						<p class="network-shift-caption">{t.shift.rowCaption}</p>
+						<div class="network-ranked" role="list" aria-label={t.shift.dayTypeSummary}>
+							{#each dayTypeRows as row (row.key)}
+								<RankedRow
+									rank={row.rank}
+									title={row.title}
+									subtitle={row.subtitle}
+									severity={row.severity}
+									value={row.value}
+									display={row.display}
+								/>
+							{/each}
+						</div>
+						<!-- Honest caveat: trailing-window observation-weighted proxy, not certified OTP. -->
+						<p class="network-shift-caveat" data-slot="shift-caveat">{t.shift.caveat}</p>
+					</div>
+				{/if}
+			</DashboardGrid>
 		</ResourceBoundary>
-	</div>
-
-	<!-- Network-wide cancellation-rate trend — stood DOWN entirely when the series
-	     carries no cancellation data (never a flat zero line). -->
-	{#if hasCancel}
-		<Separator variant="hazard" />
-		<div class="network-block">
-			<SectionLabel text={t.cancelSection} variant="station" />
-			<div class="network-trend">
-				<MetricDisplay value={fmtCancel(cancelLatest)} label={t.cancel.metric} size="md" />
-				<!-- Single-series: only the cancellation rate is plotted. `singleSeries`
-				     suppresses the empty retard legend swatch + its y-tick gutter, so the
-				     legend renders ONE line, not a phantom second swatch. -->
-				<TrendLine
-					onTime={cancelSeries}
-					retard={cancelEmpty}
-					domain={cancelDomain}
-					xLabels={cancelXLabels}
-					onTimeLabel={t.cancel.seriesLabel}
-					yAxis={{ label: t.cancel.seriesLabel, unit: t.units.pct, domain: cancelDomain }}
-					showYTicks
-					singleSeries
-					label={t.cancel.summary}
-					interactive
-				/>
-			</div>
-		</div>
-	{/if}
-
-	<!-- Per-day crowding small-multiple — one 100% StackedBar per day WITH
-	     occupancy telemetry. Days with no telemetry are skipped (never an even
-	     split); the whole block stands down when no day carries crowding data. -->
-	{#if hasOccupancyTrend}
-		<Separator variant="hazard" />
-		<div class="network-block">
-			<SectionLabel text={t.occupancyTrendSection} variant="station" />
-			<ul
-				class="network-occupancy-days"
-				aria-label={t.occupancyTrend.summary}
-				data-slot="occupancy-trend"
-			>
-				{#each occupancyDays as day (day.date)}
-					<li class="network-occupancy-day">
-						<span class="network-occupancy-date">{day.dateLabel}</span>
-						<StackedBar
-							scale="occupancy"
-							segments={day.segments}
-							size="sm"
-							label={`${t.occupancySection} · ${day.dateLabel}`}
-						/>
-					</li>
-				{/each}
-			</ul>
-		</div>
-	{/if}
-
-	<!-- By time of day + weekday/weekend — network-wide reliability ranked by
-	     PUNCTUALITY (lowest on-time % first). Each row leads with the real OTP %
-	     (avg delay + severe share read as the subtitle); the magnitude bar encodes
-	     the severe-delay share on the severity scale. Each section stands down when
-	     its group carries no data; a grain with no OTP shows honest no-data and a
-	     grain with neither OTP nor severe is dropped (never a fake 0). The
-	     shift/day-type labels are the SHARED reliability vocabulary. -->
-	{#if hasShift || hasDayType}
-		<Separator variant="hazard" />
-		<div class="network-block" data-slot="network-shift">
-			{#if hasShift}
-				<div class="network-block">
-					<SectionLabel text={t.shiftSection} variant="station" />
-					<p class="network-shift-caption">{t.shift.rowCaption}</p>
-					<div class="network-ranked" role="list" aria-label={t.shift.shiftSummary}>
-						{#each shiftRows as row (row.key)}
-							<RankedRow
-								rank={row.rank}
-								title={row.title}
-								subtitle={row.subtitle}
-								severity={row.severity}
-								value={row.value}
-								display={row.display}
-							/>
-						{/each}
-					</div>
-				</div>
-			{/if}
-
-			{#if hasDayType}
-				<div class="network-block network-daytype">
-					<SectionLabel text={t.dayTypeSection} variant="station" />
-					<p class="network-shift-caption">{t.shift.rowCaption}</p>
-					<div class="network-ranked" role="list" aria-label={t.shift.dayTypeSummary}>
-						{#each dayTypeRows as row (row.key)}
-							<RankedRow
-								rank={row.rank}
-								title={row.title}
-								subtitle={row.subtitle}
-								severity={row.severity}
-								value={row.value}
-								display={row.display}
-							/>
-						{/each}
-					</div>
-				</div>
-			{/if}
-
-			<!-- Honest caveat: trailing-window observation-weighted proxy, not certified OTP. -->
-			<p class="network-shift-caveat" data-slot="shift-caveat">{t.shift.caveat}</p>
-		</div>
-	{/if}
+	</section>
 </Surface>
 
 <style>
@@ -945,27 +997,42 @@
 		align-items: center;
 		gap: 0.5rem 1.25rem;
 	}
-	.network-block {
+
+	/* A surface region (LIVE / HISTORIC) — its station label, control panel and
+	   readout board stacked. The hazard Separator between regions lives outside. */
+	.network-region {
+		display: flex;
+		flex-direction: column;
+		gap: 1rem;
+	}
+
+	/* A readout tile: a quiet bordered card that FILLS its auto-fit grid cell, so
+	   each readout uses the desktop real estate instead of being capped narrow.
+	   Chrome only (--card bg, --border) — never a data mark; the dataviz marks
+	   inside bring their own scale colour. Mirrors the /stop template's tile. */
+	.network-tile {
 		display: flex;
 		flex-direction: column;
 		gap: 0.75rem;
+		min-width: 0;
+		padding: 1rem;
+		border: 1px solid var(--border);
+		border-radius: var(--radius-lg);
+		background: var(--card);
 	}
-	.network-metrics {
-		margin: 0;
-		display: grid;
-		gap: 1.25rem 2rem;
-		grid-template-columns: repeat(2, minmax(0, 1fr));
-	}
-	@media (min-width: 640px) {
-		.network-metrics {
-			grid-template-columns: repeat(3, minmax(0, 1fr));
+	/* The primary TrendLine is a wide readout — span the whole board on desktop,
+	   collapse to a single column on mobile (the auto-fit reflow handles <lg). */
+	@media (min-width: 1024px) {
+		.network-tile--wide {
+			grid-column: 1 / -1;
 		}
 	}
+
 	.network-trend {
 		display: flex;
 		flex-direction: column;
 		gap: 0.75rem;
-		max-width: 40rem;
+		max-width: 100%;
 	}
 
 	/* Worker-feed-age chip — a quiet mono badge beside the LIVE freshness chip. */
@@ -986,22 +1053,6 @@
 		color: var(--foreground);
 	}
 
-	/* Trend header: the section label + the grain/window selectors on one row. */
-	.network-trend-head {
-		display: flex;
-		flex-wrap: wrap;
-		align-items: center;
-		justify-content: space-between;
-		gap: 0.5rem 1rem;
-	}
-	/* The grain + window pickers sit together at the trailing edge of the header. */
-	.network-trend-controls {
-		display: flex;
-		flex-wrap: wrap;
-		align-items: center;
-		gap: 0.5rem 0.75rem;
-	}
-
 	/* Vehicles-in-service context line under the trend. */
 	.network-vehicles-context {
 		display: flex;
@@ -1014,7 +1065,8 @@
 		color: var(--muted-foreground);
 	}
 
-	/* Per-day crowding small-multiple — a stacked column of dated mini-bars. */
+	/* Per-day crowding small-multiple — a stacked column of dated mini-bars. Fills
+	   its tile cell (the auto-fit board caps the tile width, not the bars). */
 	.network-occupancy-days {
 		margin: 0;
 		padding: 0;
@@ -1022,7 +1074,7 @@
 		display: flex;
 		flex-direction: column;
 		gap: 0.4rem;
-		max-width: 40rem;
+		max-width: 100%;
 	}
 	.network-occupancy-day {
 		display: grid;
@@ -1037,15 +1089,13 @@
 		color: var(--muted-foreground);
 	}
 
-	/* By time of day + weekday/weekend ranked lists (worst severe-share first). */
+	/* By time of day + weekday/weekend ranked lists (worst severe-share first).
+	   Fills its tile cell. */
 	.network-ranked {
 		display: flex;
 		flex-direction: column;
 		gap: 0.5rem;
-		max-width: 40rem;
-	}
-	.network-daytype {
-		margin-top: 0.5rem;
+		max-width: 100%;
 	}
 	/* Quiet mono caption (what the bar encodes) + the honest trailing-window caveat. */
 	.network-shift-caption,
@@ -1057,7 +1107,7 @@
 		color: var(--muted-foreground);
 	}
 	.network-shift-caveat {
-		max-width: 52ch;
+		max-width: 100%;
 	}
 
 	/* Delay-distribution histogram — a token-only horizontal bar list. Length
@@ -1069,7 +1119,7 @@
 		display: flex;
 		flex-direction: column;
 		gap: 0.4rem;
-		max-width: 40rem;
+		max-width: 100%;
 	}
 	.network-hist-row {
 		display: grid;
@@ -1111,7 +1161,7 @@
 		font-size: var(--text-small);
 		line-height: 1.4;
 		color: var(--muted-foreground);
-		max-width: 52ch;
+		max-width: 100%;
 	}
 
 	/* Non-responding-by-route ranked list — list > listitem > link; the whole
@@ -1120,7 +1170,7 @@
 		display: flex;
 		flex-direction: column;
 		gap: 0.5rem;
-		max-width: 40rem;
+		max-width: 100%;
 		margin: 0;
 		padding: 0;
 		list-style: none;

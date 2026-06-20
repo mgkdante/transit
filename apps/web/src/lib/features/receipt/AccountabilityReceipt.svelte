@@ -31,7 +31,7 @@
 	import { createResource } from '$lib/v1/resource.svelte';
 	import { SurfaceHeader, ResourceBoundary, GrainPicker } from '$lib/components/surface';
 	import type { GrainSegment } from '$lib/components/surface';
-	import { Surface } from '$lib/components/layout';
+	import { Surface, ControlsRail, DashboardGrid } from '$lib/components/layout';
 	import { Separator } from '$lib/components/ui/separator';
 	import { EdgeState } from '$lib/components/edge';
 	import EntityRow from '$lib/components/surface/EntityRow.svelte';
@@ -133,15 +133,21 @@
 		{#if !hasDates}
 			<p class="receipt-note" data-slot="receipt-empty-index">{t.emptyIndex}</p>
 		{:else}
-			<div class="receipt-datebar">
-				<SectionLabel text={t.dateSelectLabel} variant="station" />
+			<!-- The date selector lives in a ControlsRail (quiet infra control panel)
+			     ABOVE the TerminalChrome receipt frame: the picker is an INTERACTION
+			     control, so --primary lives only on the active date chip, never on the
+			     rail chrome. The GrainPicker's radiogroup stays inside the rail. -->
+			<ControlsRail label={t.controlsLabel} class="receipt-controls">
 				<GrainPicker
 					segments={dateSegments}
 					bind:value={selectedDate}
 					label={t.dateSelectLabel}
 					class="receipt-dates"
 				/>
-			</div>
+			</ControlsRail>
+
+			<!-- Hazard tape discerns the controls zone from the data canvas. -->
+			<Separator variant="hazard" hazardSize="sm" />
 
 			<!-- The per-date receipt. We branch explicitly rather than via ResourceBoundary
 		     because a 404 surfaces as a loaded `null` (the adapter's empty signal) that
@@ -167,83 +173,93 @@
 					status={formatDateKey(r.date, locale)}
 					footer={[{ label: t.issuedLabel, value: formatDateKey(r.date, locale) }]}
 				>
-					<!-- Headline figures -->
-					<div class="receipt-block">
-						<SectionLabel text={t.receiptSection} variant="metric" />
-						<div class="receipt-metrics">
-							<MetricDisplay value={fmtPct(r.otp_pct)} label={t.metrics.onTime} size="lg" />
-							<MetricDisplay value={fmtMin(r.avg_delay_min)} label={t.metrics.avgDelay} size="lg" />
-							<MetricDisplay
-								value={fmtSeverePct(r.severe_pct)}
-								label={t.metrics.severe}
-								size="md"
-							/>
-							<MetricDisplay
-								value={fmtScore(r.rider_impact_score)}
-								label={t.metrics.riderImpact}
-								size="md"
-							/>
+					<!-- The receipt's three readout blocks tile into a fluid board: a
+					     multi-column board on desktop (the headline figures, the
+					     affected-counts and the worst-of-day each fill their own cell), one
+					     column on mobile (auto-fit reflow handles <lg). The worst-of-day tile
+					     stands DOWN entirely when the receipt carries no worst route/stop —
+					     the grid reflows past it, never a fabricated empty card. -->
+					<DashboardGrid minTile="260px" gutter={false} label={t.receiptSection}>
+						<!-- Headline figures -->
+						<div class="receipt-tile receipt-block">
+							<SectionLabel text={t.receiptSection} variant="station" />
+							<div class="receipt-metrics">
+								<MetricDisplay value={fmtPct(r.otp_pct)} label={t.metrics.onTime} size="lg" />
+								<MetricDisplay
+									value={fmtMin(r.avg_delay_min)}
+									label={t.metrics.avgDelay}
+									size="lg"
+								/>
+								<MetricDisplay
+									value={fmtSeverePct(r.severe_pct)}
+									label={t.metrics.severe}
+									size="md"
+								/>
+								<MetricDisplay
+									value={fmtScore(r.rider_impact_score)}
+									label={t.metrics.riderImpact}
+									size="md"
+								/>
+							</div>
 						</div>
-					</div>
 
-					<Separator variant="default" />
-
-					<!-- Affected counts on the day -->
-					<div class="receipt-block">
-						<SectionLabel text={t.countsSection} variant="metric" />
-						<dl class="receipt-counts">
-							<div class="receipt-count">
-								<dt>{t.counts.routes}</dt>
-								<dd>{fmtCount(r.affected_routes)}</dd>
-							</div>
-							<div class="receipt-count">
-								<dt>{t.counts.stops}</dt>
-								<dd>{fmtCount(r.affected_stops)}</dd>
-							</div>
-							<div class="receipt-count">
-								<dt>{t.counts.alerts}</dt>
-								<dd>{fmtCount(r.alerts)}</dd>
-							</div>
-							<!-- `vehicles` is structurally always-null on /v1 (the daily receipt
-							     carries no per-vehicle count), so we OMIT the cell entirely rather
-							     than render a permanent "no data" row. A real count would surface it
-							     again. The other counts stay honest (a null reads no-data). -->
-							{#if r.vehicles != null}
+						<!-- Affected counts on the day -->
+						<div class="receipt-tile receipt-block">
+							<SectionLabel text={t.countsSection} variant="station" />
+							<dl class="receipt-counts">
 								<div class="receipt-count">
-									<dt>{t.counts.vehicles}</dt>
-									<dd>{fmtCount(r.vehicles)}</dd>
+									<dt>{t.counts.routes}</dt>
+									<dd>{fmtCount(r.affected_routes)}</dd>
 								</div>
-							{/if}
-						</dl>
-					</div>
-
-					<!-- Worst of the day — linked entity rows, stood down when absent -->
-					{#if hasWorst}
-						<Separator variant="default" />
-						<div class="receipt-block">
-							<SectionLabel text={t.worstSection} variant="metric" />
-							<div class="receipt-worst">
-								{#if hasWorstRoute && worstRoute}
-									<EntityRow
-										target={{ kind: 'line', id: worstRoute.id }}
-										{locale}
-										title={worstRoute.name ?? t.worst.unnamed}
-										subtitle={`${t.worst.routeLabel} · ${worstRoute.id}`}
-										meta={`${t.worst.routeDeltaLabel} ${fmtDelta(worstRoute.otp_delta_pts)}`}
-									/>
+								<div class="receipt-count">
+									<dt>{t.counts.stops}</dt>
+									<dd>{fmtCount(r.affected_stops)}</dd>
+								</div>
+								<div class="receipt-count">
+									<dt>{t.counts.alerts}</dt>
+									<dd>{fmtCount(r.alerts)}</dd>
+								</div>
+								<!-- `vehicles` is structurally always-null on /v1 (the daily receipt
+								     carries no per-vehicle count), so we OMIT the cell entirely rather
+								     than render a permanent "no data" row. A real count would surface it
+								     again. The other counts stay honest (a null reads no-data). -->
+								{#if r.vehicles != null}
+									<div class="receipt-count">
+										<dt>{t.counts.vehicles}</dt>
+										<dd>{fmtCount(r.vehicles)}</dd>
+									</div>
 								{/if}
-								{#if hasWorstStop && worstStop}
-									<EntityRow
-										target={{ kind: 'stop', id: worstStop.id }}
-										{locale}
-										title={worstStop.name ?? t.worst.unnamed}
-										subtitle={`${t.worst.stopLabel} · ${worstStop.id}`}
-										meta={`${t.worst.stopDelayLabel} ${fmtMin(worstStop.avg_delay_min)}`}
-									/>
-								{/if}
-							</div>
+							</dl>
 						</div>
-					{/if}
+
+						<!-- Worst of the day — linked entity rows, the whole tile stood down
+						     when the receipt carries no worst route/stop (no empty card). -->
+						{#if hasWorst}
+							<div class="receipt-tile receipt-block">
+								<SectionLabel text={t.worstSection} variant="station" />
+								<div class="receipt-worst">
+									{#if hasWorstRoute && worstRoute}
+										<EntityRow
+											target={{ kind: 'line', id: worstRoute.id }}
+											{locale}
+											title={worstRoute.name ?? t.worst.unnamed}
+											subtitle={`${t.worst.routeLabel} · ${worstRoute.id}`}
+											meta={`${t.worst.routeDeltaLabel} ${fmtDelta(worstRoute.otp_delta_pts)}`}
+										/>
+									{/if}
+									{#if hasWorstStop && worstStop}
+										<EntityRow
+											target={{ kind: 'stop', id: worstStop.id }}
+											{locale}
+											title={worstStop.name ?? t.worst.unnamed}
+											subtitle={`${t.worst.stopLabel} · ${worstStop.id}`}
+											meta={`${t.worst.stopDelayLabel} ${fmtMin(worstStop.avg_delay_min)}`}
+										/>
+									{/if}
+								</div>
+							</div>
+						{/if}
+					</DashboardGrid>
 				</TerminalChrome>
 
 				<!-- Honest caveat: a daily observed summary, not a certified report. -->
@@ -254,25 +270,34 @@
 </Surface>
 
 <style>
-	.receipt-datebar {
-		display: flex;
-		flex-direction: column;
-		gap: 0.5rem;
+	/* The ControlsRail owns its own bordered chrome; the hazard Separator below it
+	   discerns the controls zone from the receipt frame. The class lands on the
+	   rail's child-component root, so scope the spacing via its data-slot (the
+	   scoped analyzer can't otherwise see a child root). */
+	:global(.receipt .receipt-controls[data-slot='controls-rail']) {
 		margin-bottom: 1rem;
 	}
 	/* TerminalChrome owns its own root element, so scope its width via the slot
-	   it stamps (a child-component root the scoped analyzer can't otherwise see). */
+	   it stamps (a child-component root the scoped analyzer can't otherwise see).
+	   Widened to a board measure so the inner DashboardGrid can go multi-column on
+	   desktop rather than the old single-stack 34rem column. */
 	:global(.receipt [data-slot='terminal-chrome']) {
-		max-width: 34rem;
+		max-width: var(--container-content);
 	}
 	.receipt-block {
 		display: flex;
 		flex-direction: column;
 		gap: 0.75rem;
 	}
-	.receipt-block + :global(.separator),
-	:global(.separator) + .receipt-block {
-		margin-block: 0.5rem;
+	/* Each readout block becomes a quiet bordered tile that fills its grid cell, so
+	   the three blocks use the frame width instead of stacking. Chrome only
+	   (--card bg, --border) — never a data mark; the metrics bring their own. */
+	.receipt-tile {
+		min-width: 0;
+		padding: 1rem;
+		border: 1px solid var(--border);
+		border-radius: var(--radius-lg);
+		background: var(--card);
 	}
 	.receipt-metrics {
 		margin: 0;

@@ -30,6 +30,9 @@
 	import type { Locale } from '$lib/i18n';
 	import type { RouteReliability } from '$lib/v1';
 	import { SvelteSet } from 'svelte/reactivity';
+	import { ControlsRail } from '$lib/components/layout';
+	import { GrainPicker, type GrainSegment } from '$lib/components/surface';
+	import { Separator } from '$lib/components/ui/separator';
 	import { toReliabilityClusters } from './clusters';
 	import { reliabilityCopy } from './reliability.copy';
 	import SnapshotStrip from './SnapshotStrip.svelte';
@@ -64,11 +67,25 @@
 	   averageable → a no-data mark) and zooms the trend to the range. A range the
 	   archive has no day for fabricates nothing — the mapper falls back honestly.
 
+	   The discrete grains + the lines-only "Date range" affordance now ride ONE
+	   SHARED GrainPicker (seated in a ControlsRail) as a single mutually-exclusive
+	   radiogroup: day | week | month | range. Folding range into the SAME control
+	   guarantees EXACTLY ONE active chip at a time — selecting range deselects the
+	   grain (and vice-versa), with no competing dual highlight — and keeps the
+	   control a single a11y-correct radiogroup. `viewKey` is the one binding; the
+	   effective window `mode` IS `viewKey`. The "range" segment is offered only when
+	   the contract carries dated day-periods (else there is nothing to range over).
+
 	   TODO(orchestrator): mirror `grain` to a URL search param (?grain=) so the
 	   selection is shareable/deep-linkable. Left out here to keep this component
 	   route-agnostic — the orchestrator owns URL state when it wires the route. */
 	type GrainMode = 'day' | 'week' | 'month' | 'range';
-	let mode = $state<GrainMode>('day');
+	// The single radiogroup selection — exactly one of day|week|month|range is active.
+	let viewKey = $state<GrainMode>('day');
+	// The effective window mode IS the single selection (range when 'range' is picked,
+	// otherwise the calendar grain). Kept as a named derived so the mapper/caption
+	// logic below reads unchanged from the prior single-select model.
+	const mode = $derived<GrainMode>(viewKey);
 	let rangeStart = $state<string>('');
 	let rangeEnd = $state<string>('');
 
@@ -128,14 +145,17 @@
 	const clusters = $derived(toReliabilityClusters(data, mapperOpts));
 
 	// Segments carry an `available` flag; an unavailable grain renders disabled
-	// (never selectable) so the control can't resolve to an empty grain.
-	const segments = $derived<{ key: 'day' | 'week' | 'month'; label: string; available: boolean }[]>(
-		[
-			{ key: 'day', label: copy.controls.today, available: availableGrains.has('day') },
-			{ key: 'week', label: copy.controls.thisWeek, available: availableGrains.has('week') },
-			{ key: 'month', label: copy.controls.thisMonth, available: availableGrains.has('month') },
-		],
-	);
+	// (never selectable) so the control can't resolve to an empty grain. ONE control:
+	// the three calendar grains PLUS the lines-only "range" option (offered only when
+	// the contract carries dated day-periods to range over). Folding range in as a 4th
+	// mutually-exclusive segment makes the active highlight single-select by
+	// construction — picking range deselects the grain and vice-versa.
+	const segments = $derived<GrainSegment<GrainMode>[]>([
+		{ key: 'day', label: copy.controls.today, available: availableGrains.has('day') },
+		{ key: 'week', label: copy.controls.thisWeek, available: availableGrains.has('week') },
+		{ key: 'month', label: copy.controls.thisMonth, available: availableGrains.has('month') },
+		{ key: 'range', label: copy.controls.dateRange, available: hasDatedPeriods },
+	]);
 
 	// Active-window caption under the control spine — names the resolved window so
 	// "Today / This week / This month / {range}" is never ambiguous about coverage.
@@ -157,37 +177,18 @@
 </script>
 
 <div class={cn('reliability-clusters', className)} data-slot="reliability-clusters">
-	<!-- Control spine: refines the snapshot grain; the headline shows by default. -->
-	<div class="reliability-controls" role="group" aria-label={copy.controls.dateRange}>
-		<div class="reliability-segmented" role="radiogroup" aria-label={copy.controls.today}>
-			{#each segments as seg (seg.key)}
-				<button
-					type="button"
-					role="radio"
-					class="reliability-seg"
-					class:reliability-seg--active={mode === seg.key}
-					aria-checked={mode === seg.key}
-					disabled={!seg.available}
-					onclick={() => seg.available && (mode = seg.key)}
-				>
-					{seg.label}
-				</button>
-			{/each}
-			{#if hasDatedPeriods}
-				<button
-					type="button"
-					role="radio"
-					class="reliability-seg"
-					class:reliability-seg--active={mode === 'range'}
-					aria-checked={mode === 'range'}
-					onclick={() => (mode = 'range')}
-				>
-					{copy.controls.dateRange}
-				</button>
-			{/if}
-		</div>
+	<!-- Control panel: the grain/date controls collected into ONE ControlsRail (quiet
+	     infra chrome, mono "View" overline) so the control reads identically to /stop
+	     and /network. ONE shared GrainPicker owns the whole radiogroup —
+	     day|week|month PLUS the lines-only "range" segment — so EXACTLY ONE chip is
+	     active at a time (picking range deselects the grain and vice-versa; no dual
+	     highlight). The headline shows with ZERO interaction at the default 'day'
+	     grain — the controls only refine. --primary lives only on the active control
+	     chip, never on the rail chrome. -->
+	<ControlsRail label={copy.controls.viewLabel}>
+		<GrainPicker {segments} bind:value={viewKey} label={copy.controls.grainLabel} />
 
-		{#if mode === 'range' && hasDatedPeriods}
+		{#if mode === 'range'}
 			<!-- Start + end pair over the dated day-periods. start == end = one day
 			     (exact); a wider span aggregates the in-range days (mean) + zooms the
 			     trend. Bounds are real dates only, so no out-of-window pick is possible. -->
@@ -222,13 +223,16 @@
 				</label>
 			</div>
 		{/if}
-	</div>
 
-	<!-- Active-window caption: names the window the selection resolves to so the
-	     reader is never unsure what "Today / This week / {date}" actually covers. -->
-	<p class="reliability-window" data-slot="active-window" aria-live="polite">
-		{activeWindowCaption}
-	</p>
+		<!-- Active-window caption: names the window the selection resolves to so the
+		     reader is never unsure what "Today / This week / {date}" actually covers. -->
+		<p class="reliability-window" data-slot="active-window" aria-live="polite">
+			{activeWindowCaption}
+		</p>
+	</ControlsRail>
+
+	<!-- Hazard tape discerns the controls zone from the data canvas. -->
+	<Separator variant="hazard" hazardSize="sm" />
 
 	<!-- 00 — the full-bleed snapshot strip (single-glance, zero-interaction). -->
 	<div class="reliability-band reliability-band--strip surface-bleed" data-band="snapshot">
@@ -279,60 +283,9 @@
 		width: 100%;
 	}
 
-	/* Control spine. */
-	.reliability-controls {
-		display: flex;
-		flex-wrap: wrap;
-		align-items: center;
-		gap: 1rem;
-	}
-	.reliability-segmented {
-		display: inline-flex;
-		flex-wrap: wrap;
-		gap: 0.25rem;
-		padding: 0.25rem;
-		border: 1px solid var(--border);
-		border-radius: var(--radius-lg, 0.75rem);
-		background-color: var(--card);
-	}
-	.reliability-seg {
-		appearance: none;
-		border: 0;
-		background: transparent;
-		color: var(--muted-foreground);
-		font-family: var(--font-mono);
-		font-size: var(--text-small);
-		line-height: 1.2;
-		padding: 0.4rem 0.8rem;
-		border-radius: var(--radius-md, 0.5rem);
-		cursor: pointer;
-		transition:
-			background-color 0.15s ease,
-			color 0.15s ease;
-	}
-	.reliability-seg:hover:not(:disabled) {
-		color: var(--foreground);
-	}
-	/* A grain the contract has no period for is disabled, never a silent no-op. */
-	.reliability-seg:disabled {
-		opacity: 0.4;
-		cursor: not-allowed;
-	}
-	/* The active chip is an INTERACTION accent — --primary belongs here (never on
-	   a data mark). The bands own the data-colour doctrine. */
-	.reliability-seg--active {
-		background-color: var(--primary);
-		color: var(--primary-foreground);
-	}
-	.reliability-seg:focus-visible {
-		outline: 2px solid var(--ring);
-		outline-offset: 2px;
-	}
-	@media (prefers-reduced-motion: reduce) {
-		.reliability-seg {
-			transition: none;
-		}
-	}
+	/* The grain + range control is now ONE shared GrainPicker (day|week|month|range),
+	   so the bespoke companion-chip styles are gone — the active-chip accent lives in
+	   GrainPicker. */
 
 	/* The start + end date pair sits inline, wrapping on narrow viewports. */
 	.reliability-range {
@@ -366,10 +319,12 @@
 		outline-offset: 2px;
 	}
 
-	/* Active-window caption — quiet mono, AA against the page surface; chrome, so
-	   it stays in the reading column (not bled) alongside the control spine. */
+	/* Active-window caption — quiet mono, AA against the page surface; chrome, so it
+	   stays inside the ControlsRail body alongside the grain control. Full-width so it
+	   drops onto its own row beneath the chips. */
 	.reliability-window {
-		margin: -0.5rem 0 0;
+		flex-basis: 100%;
+		margin: 0;
 		font-family: var(--font-mono);
 		font-size: var(--text-small);
 		line-height: 1.4;

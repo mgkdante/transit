@@ -41,7 +41,7 @@
 		ReliabilityBadge,
 		GrainPicker,
 	} from '$lib/components/surface';
-	import { Surface } from '$lib/components/layout';
+	import { Surface, ControlsRail } from '$lib/components/layout';
 	import { Separator } from '$lib/components/ui/separator';
 	import { foldSearchText, tokenMatchScore } from '$lib/search/normalize';
 	import { routeModeHint } from '$lib/search/stopMode';
@@ -138,24 +138,31 @@
 
 <Surface width="bleed" pad="hub" class="lines-index">
 	<SurfaceHeader kicker={t.kicker} heading={t.heading} lede={t.lede}>
-		<SearchInput
-			id="lines-filter-input"
-			label={t.filterLabel}
-			placeholder={t.filterPlaceholder}
-			bind:value={query}
-		/>
-		<div class="lines-controls">
-			<div class="lines-control">
-				<!-- Visible caption only; GrainPicker self-labels its radiogroup via `label`,
-				     so the span is decorative (aria-hidden) — no dangling labelledby id. -->
-				<span class="lines-control-label" aria-hidden="true">{t.sortLabel}</span>
-				<GrainPicker segments={sortSegments} bind:value={sort} label={t.sortLabel} />
+		<!-- The search box + the sort/status pickers are collected into ONE
+		     ControlsRail (quiet infra control panel, mono group overline), so this
+		     surface's controls read as the same discerned-from-data zone the rest of
+		     the analytics surfaces use. --primary lives only on the active picker
+		     segment inside; the rail chrome stays quiet. -->
+		<ControlsRail label={t.controlsLabel} class="lines-controls-rail">
+			<SearchInput
+				id="lines-filter-input"
+				label={t.filterLabel}
+				placeholder={t.filterPlaceholder}
+				bind:value={query}
+			/>
+			<div class="lines-controls">
+				<div class="lines-control">
+					<!-- Visible caption only; GrainPicker self-labels its radiogroup via `label`,
+					     so the span is decorative (aria-hidden) — no dangling labelledby id. -->
+					<span class="lines-control-label" aria-hidden="true">{t.sortLabel}</span>
+					<GrainPicker segments={sortSegments} bind:value={sort} label={t.sortLabel} />
+				</div>
+				<div class="lines-control">
+					<span class="lines-control-label" aria-hidden="true">{t.statusFilterLabel}</span>
+					<GrainPicker segments={statusSegments} bind:value={status} label={t.statusFilterLabel} />
+				</div>
 			</div>
-			<div class="lines-control">
-				<span class="lines-control-label" aria-hidden="true">{t.statusFilterLabel}</span>
-				<GrainPicker segments={statusSegments} bind:value={status} label={t.statusFilterLabel} />
-			</div>
-		</div>
+		</ControlsRail>
 	</SurfaceHeader>
 
 	<Separator variant="hazard" />
@@ -167,7 +174,12 @@
 		<p class="sr-only" role="status" aria-live="polite">
 			{statusPending ? t.statusPending : ''}
 		</p>
-		<EntityList items={visible} key={(r) => r.id}>
+		<!-- The catalogue lays out as a 2-up auto-fit board on desktop (each line
+		     result fills its grid cell), reflowing to a single column on a phone —
+		     EntityList's `grid` mode renders its rows through the SHARED DashboardGrid
+		     auto-fit recipe, so the list>listitem semantics (and the lazy reliability
+		     action per row) stay intact and the grid track lives ONLY in DashboardGrid. -->
+		<EntityList items={visible} key={(r) => r.id} grid minTile="360px">
 			{#snippet row(r)}
 				<div class="line-result" use:observeReliability={r.id}>
 					<EntityRow
@@ -202,11 +214,20 @@
 		white-space: nowrap;
 		border: 0;
 	}
+	/* The control panel fills the header measure; its body lays the search box
+	   across the top with the sort/status pickers beneath. */
+	:global(.lines-controls-rail) {
+		width: 100%;
+	}
+	:global(.lines-controls-rail [data-slot='controls-rail-body']) {
+		flex-direction: column;
+		align-items: stretch;
+		gap: 0.85rem;
+	}
 	.lines-controls {
 		display: flex;
 		flex-wrap: wrap;
 		gap: 1.25rem;
-		margin-top: 0.85rem;
 	}
 	.lines-control {
 		display: flex;
@@ -221,12 +242,15 @@
 		text-transform: uppercase;
 		color: var(--muted-foreground);
 	}
+	/* The catalogue rides EntityList's grid mode (the SHARED DashboardGrid auto-fit
+	   recipe + the bordered-tile row treatment live there); this surface only styles
+	   the row body below. */
 	.line-result {
 		display: grid;
 		grid-template-columns: minmax(0, 1fr) auto auto;
 		align-items: center;
 		gap: 0.75rem;
-		padding-right: 0.5rem;
+		padding: 0.75rem 0.875rem;
 	}
 	.line-result :global(.line-result-main) {
 		min-width: 0;

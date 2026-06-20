@@ -29,7 +29,7 @@
 	import type { Hotspot, SeverityCode } from '$lib/v1/schemas';
 	import { createResource } from '$lib/v1/resource.svelte';
 	import { ResourceBoundary, SurfaceHeader } from '$lib/components/surface';
-	import { Surface } from '$lib/components/layout';
+	import { Surface, DashboardGrid } from '$lib/components/layout';
 	import { Separator } from '$lib/components/ui/separator';
 	import { RankedRow } from '$lib/components/dataviz';
 	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
@@ -153,7 +153,17 @@
 			<div class="hotspots-body">
 				<SectionLabel text={t.heading} variant="station" />
 				<p class="hotspots-caption">{t.rowCaption}</p>
-				<ul class="hotspots-ranked" role="list" aria-label={t.listLabel}>
+				<!-- The ranked list rides the SHARED DashboardGrid auto-fit recipe as a
+				     semantic <ul> (worst-first published order honoured left-to-right then
+				     down by the grid), so the list>listitem>link a11y survives and the
+				     grid-track recipe lives ONLY in DashboardGrid. -->
+				<DashboardGrid
+					as="ul"
+					minTile="360px"
+					gutter={false}
+					class="hotspots-ranked"
+					aria-label={t.listLabel}
+				>
 					{#each rows as row (row.key)}
 						<!-- list > listitem > link: the <li> owns the listitem semantics so AT
 						     can count the rows; the inner RankedRow is `bare` (no self role) and
@@ -191,7 +201,7 @@
 							{/if}
 						</li>
 					{/each}
-				</ul>
+				</DashboardGrid>
 				<!-- Honest caveat: a trailing-window ranking, not a certified league table. -->
 				<p class="hotspots-caveat" data-slot="hotspots-caveat">{t.caveat}</p>
 			</div>
@@ -205,14 +215,12 @@
 		flex-direction: column;
 		gap: 0.75rem;
 	}
-	.hotspots-ranked {
-		display: flex;
-		flex-direction: column;
-		gap: 0.5rem;
-		max-width: 40rem;
-		margin: 0;
-		padding: 0;
-		list-style: none;
+	/* The ranked list rides the SHARED DashboardGrid auto-fit recipe (rendered as a
+	   semantic <ul> via `as="ul"`); the grid-track recipe + minTile live in
+	   DashboardGrid. Here we only widen the measure so the board uses the desktop
+	   real estate instead of a single narrow column. */
+	:global(.dashboard-grid.hotspots-ranked) {
+		max-width: 76rem;
 	}
 	.hotspots-item {
 		display: block;
