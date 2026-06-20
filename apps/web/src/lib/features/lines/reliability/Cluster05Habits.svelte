@@ -35,6 +35,7 @@
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
 	import { metricInfoFor, type MetricKey } from '$lib/features/metrics/metrics.content';
 	import { metricsCopy } from '$lib/features/metrics/metrics.copy';
+	import { weekdayLabel } from '$lib/features/reliability/shiftGrains';
 	import type { HabitsVM } from './clusters';
 	import type { ReliabilityCopy } from './reliability.copy';
 	import { habitsBandCopy } from './Cluster05Habits.copy';
@@ -86,7 +87,9 @@
 			.filter((d): d is RouteDayOfWeek & { avg_delay_min: number } => d.avg_delay_min != null)
 			.map((d) => ({
 				iso: d.day_of_week_iso,
-				name: band.weekdays[d.day_of_week_iso] ?? `${d.day_of_week_iso}`,
+				// Shared ISO weekday vocabulary (1=Mon..7=Sun) — same table the stops
+				// surface reads, so the two never drift.
+				name: weekdayLabel(d.day_of_week_iso, locale),
 				delay: d.avg_delay_min,
 				severePct: d.severe_pct ?? null,
 				observationCount: d.observation_count ?? null,

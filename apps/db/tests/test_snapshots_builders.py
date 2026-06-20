@@ -1429,12 +1429,33 @@ def test_build_stop_reliability_emits_shift_and_daytype_grains() -> None:
          "weighted_delay_sec": None},
     ]
 
+    # _STOP_DOW_SQL returns (stop_id, day_of_week_iso, dow_obs, severe, weighted_delay_sec)
+    # per weekday. The ISODOW resolution runs in Postgres, so the FakeConn returns
+    # already-resolved iso days. The fixture is pre-sorted (iso 1, 3, 7) and FakeConn
+    # returns rows verbatim, so the ORDER BY (stop_id, isodow) is enforced by Postgres,
+    # not asserted by this offline test; the emitted day_of_week list mirrors this order.
+    # Sun (iso 7) carries obs=0 to assert the honest-None path.
+    dow_rows = [
+        # Mon (1): 20 obs, 2 severe, 1200s weighted -> avg 1.0 min, severe 10.0
+        {"stop_id": "51234", "day_of_week_iso": 1, "dow_obs": 20, "severe": 2,
+         "weighted_delay_sec": 1200.0},
+        # Wed (3): 10 obs, 0 severe, 1200s weighted -> avg 2.0 min, severe 0.0
+        {"stop_id": "51234", "day_of_week_iso": 3, "dow_obs": 10, "severe": 0,
+         "weighted_delay_sec": 1200.0},
+        # Sun (7): 0 obs -> honest None across avg/severe; obs None
+        {"stop_id": "51234", "day_of_week_iso": 7, "dow_obs": 0, "severe": 0,
+         "weighted_delay_sec": None},
+    ]
+
     dispatch = [
         # by-route breakdown reads stop_delay_weekly too — match its unique
         # sentinel-filter clause first so it doesn't shadow the weekly period query.
         ("'__unrouted__'", []),
         # grain SQL (shift + day-type union) — unique discriminator "AS banded".
         ("AS banded", grain_rows),
+        # day-of-week seasonality — unique discriminator "AS dow_obs" (must match
+        # before the bare stop_delay_hourly habits needle below).
+        ("AS dow_obs", dow_rows),
         # weekly period rows (one stop) so the stop survives into output.
         ("FROM gold.stop_delay_weekly", [
             {"stop_id": "51234", "obs": 50, "weighted_delay_sec": 3000.0, "severe": 2},
@@ -1479,3 +1500,24 @@ def test_build_stop_reliability_emits_shift_and_daytype_grains() -> None:
     assert weekend.otp_pct is None
     assert weekend.avg_delay_min is None
     assert weekend.severe_pct is None
+
+    # --- per-stop weekday seasonality (day_of_week, ISO 1..7), route parity ---
+    dow = {d.day_of_week_iso: d for d in out["51234"].day_of_week}
+    # Emission stays sorted by ISODOW (SQL ORDER BY); the populated iso days surface.
+    assert [d.day_of_week_iso for d in out["51234"].day_of_week] == [1, 3, 7]
+
+    mon = dow[1]
+    assert mon.avg_delay_min == 1.0          # 1200s weighted / 20 obs / 60
+    assert mon.severe_pct == 10.0            # 2 / 20
+    assert mon.observation_count == 20
+
+    wed = dow[3]
+    assert wed.avg_delay_min == 2.0          # 1200s / 10 obs / 60
+    assert wed.severe_pct == 0.0
+    assert wed.observation_count == 10
+
+    # Honest None (never 0) on a zero-observation weekday.
+    sun = dow[7]
+    assert sun.avg_delay_min is None
+    assert sun.severe_pct is None
+    assert sun.observation_count is None

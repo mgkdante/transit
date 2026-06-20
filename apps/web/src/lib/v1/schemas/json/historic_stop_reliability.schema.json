@@ -1,5 +1,54 @@
 {
   "$defs": {
+    "RouteDayOfWeek": {
+      "properties": {
+        "avg_delay_min": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Avg Delay Min"
+        },
+        "day_of_week_iso": {
+          "title": "Day Of Week Iso",
+          "type": "integer"
+        },
+        "observation_count": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Observation Count"
+        },
+        "severe_pct": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Severe Pct"
+        }
+      },
+      "required": [
+        "day_of_week_iso"
+      ],
+      "title": "RouteDayOfWeek",
+      "type": "object"
+    },
     "RouteHabits": {
       "properties": {
         "matrix": {
@@ -135,6 +184,13 @@
         "$ref": "#/$defs/StopByRoute"
       },
       "title": "By Route",
+      "type": "array"
+    },
+    "day_of_week": {
+      "items": {
+        "$ref": "#/$defs/RouteDayOfWeek"
+      },
+      "title": "Day Of Week",
       "type": "array"
     },
     "generated_utc": {

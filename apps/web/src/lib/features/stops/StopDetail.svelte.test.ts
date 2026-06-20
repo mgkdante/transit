@@ -40,6 +40,16 @@ const RELIABILITY = {
 		{ route: '80', avg_delay_min: 12.5 },
 		{ route: '99', avg_delay_min: null }, // dropped — no fake-0 ranking
 	],
+	// Per-stop weekday seasonality (ISO 1=Mon..7=Sun). Friday (5, 9.4 min) is the
+	// worst mean delay → rank 1; Monday (1) is well-sampled so its severe share is
+	// shown; Wednesday (3) is under-sampled (2 obs) so its severe share is withheld;
+	// Sunday (7) carries a null mean delay (+ zero obs) and must be dropped.
+	day_of_week: [
+		{ day_of_week_iso: 1, avg_delay_min: 2.4, severe_pct: 5.0, observation_count: 140 },
+		{ day_of_week_iso: 3, avg_delay_min: 3.1, severe_pct: 18.2, observation_count: 2 },
+		{ day_of_week_iso: 5, avg_delay_min: 9.4, severe_pct: 14.9, observation_count: 96 },
+		{ day_of_week_iso: 7, avg_delay_min: null, severe_pct: null, observation_count: 0 },
+	],
 } as StopReliability;
 
 // A reliability fixture that ALSO carries the additive SHIFT grains
@@ -260,6 +270,94 @@ describe('StopDetail reliability — by_route ranked bars', () => {
 		const milderIdx = ranked.findIndex((r) => within(r).queryByText('4.1 min'));
 		expect(worstIdx).toBeGreaterThanOrEqual(0);
 		expect(worstIdx).toBeLessThan(milderIdx);
+	});
+});
+
+describe('StopDetail reliability — weekday seasonality (day_of_week)', () => {
+	it('ranks weekdays worst-delay first and drops a null-mean weekday (no fake-0 row)', () => {
+		reset();
+		render(StopDetail, { props: { id: '57191' } });
+		fireEvent.click(screen.getByRole('tab', { name: 'Reliability' }));
+
+		const weekday = document.querySelector('[data-slot="stop-weekday"]') as HTMLElement;
+		expect(weekday).not.toBeNull();
+		expect(within(weekday).getByText('By day of week')).toBeInTheDocument();
+
+		// Friday (9.4) worst → rank 1; Monday (2.4) and Wednesday (3.1) follow; Sunday
+		// (null mean) is dropped entirely — never a fabricated 0-delay bar.
+		expect(within(weekday).getByText('Friday')).toBeInTheDocument();
+		expect(within(weekday).getByText('Monday')).toBeInTheDocument();
+		expect(within(weekday).getByText('Wednesday')).toBeInTheDocument();
+		expect(within(weekday).queryByText('Sunday')).not.toBeInTheDocument();
+
+		// Worst weekday (Friday) precedes the milder ones in the DOM.
+		const list = within(weekday).getByRole('list', { name: 'By day of week' });
+		const rows = within(list).getAllByRole('listitem');
+		const friIdx = rows.findIndex((r) => within(r).queryByText('Friday'));
+		const monIdx = rows.findIndex((r) => within(r).queryByText('Monday'));
+		expect(friIdx).toBeGreaterThanOrEqual(0);
+		expect(friIdx).toBeLessThan(monIdx);
+		// The dropped Sunday's no-data never surfaces as a 0.0 min bar.
+		expect(within(weekday).queryByText('0.0 min')).not.toBeInTheDocument();
+	});
+
+	it('gates the severe share on observation count (under-sampled weekday withheld)', () => {
+		reset();
+		render(StopDetail, { props: { id: '57191' } });
+		fireEvent.click(screen.getByRole('tab', { name: 'Reliability' }));
+
+		const weekday = document.querySelector('[data-slot="stop-weekday"]') as HTMLElement;
+		// Monday is well-sampled (140 obs) → its severe share (5.0%) is shown.
+		expect(within(weekday).getByText('Severe-delay share 5.0%')).toBeInTheDocument();
+		// Wednesday is under-sampled (2 obs) → its severe share (18.2%) is WITHHELD;
+		// the row falls back to the plain avg-delay caption, never a fabricated number.
+		expect(within(weekday).queryByText('Severe-delay share 18.2%')).not.toBeInTheDocument();
+		expect(within(weekday).getAllByText('Avg delay').length).toBeGreaterThan(0);
+		// Honest trailing-window caveat is printed.
+		expect(
+			within(weekday).getByText(/Trailing-window, observation-weighted estimate/),
+		).toBeInTheDocument();
+	});
+
+	it('stands the weekday section down when day_of_week is absent', () => {
+		reset();
+		reliabilityData = { ...RELIABILITY, day_of_week: undefined };
+		render(StopDetail, { props: { id: '57191' } });
+		fireEvent.click(screen.getByRole('tab', { name: 'Reliability' }));
+
+		expect(document.querySelector('[data-slot="stop-weekday"]')).toBeNull();
+		expect(screen.queryByText('By day of week')).not.toBeInTheDocument();
+	});
+
+	it('stands the weekday section down when every weekday carries a null mean (no fake-0)', () => {
+		reset();
+		reliabilityData = {
+			...RELIABILITY,
+			day_of_week: [
+				{ day_of_week_iso: 2, avg_delay_min: null, severe_pct: null, observation_count: 0 },
+				{ day_of_week_iso: 6, avg_delay_min: null, severe_pct: 4.0, observation_count: 0 },
+			],
+		} as StopReliability;
+		render(StopDetail, { props: { id: '57191' } });
+		fireEvent.click(screen.getByRole('tab', { name: 'Reliability' }));
+
+		expect(document.querySelector('[data-slot="stop-weekday"]')).toBeNull();
+	});
+
+	it('localizes weekday names in FR (Vendredi, not the ISO integer or EN name)', () => {
+		reset();
+		currentLocale = 'fr';
+		render(StopDetail, { props: { id: '57191' } });
+		fireEvent.click(screen.getByRole('tab', { name: 'Fiabilité' }));
+
+		const weekday = document.querySelector('[data-slot="stop-weekday"]') as HTMLElement;
+		expect(weekday).not.toBeNull();
+		expect(within(weekday).getByText('Par jour de la semaine')).toBeInTheDocument();
+		expect(within(weekday).getByText('Vendredi')).toBeInTheDocument();
+		expect(within(weekday).getByText('Lundi')).toBeInTheDocument();
+		// Never the raw ISO key or the English label.
+		expect(within(weekday).queryByText('Friday')).not.toBeInTheDocument();
+		expect(within(weekday).queryByText('5')).not.toBeInTheDocument();
 	});
 });
 

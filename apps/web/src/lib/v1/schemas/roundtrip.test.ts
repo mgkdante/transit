@@ -188,6 +188,11 @@ describe('reliability — new optional fields (day_of_week / habits / p50,p90) r
 			id: 's1',
 			periods: [{ grain: 'day', p50_min: 0.8, p90_min: 5.0 }],
 			habits: { scale: 'severe_relative', matrix: [[null, 1.0]] },
+			// per-stop weekday seasonality (ISO 1=Mon..7=Sun); the additive optional
+			// field mirrors the route shape (day_of_week_iso required, rest nullable).
+			day_of_week: [
+				{ day_of_week_iso: 5, avg_delay_min: 3.4, severe_pct: 7.1, observation_count: 320 },
+			],
 		};
 		expect(() => parsePort('stop_reliability', StopReliabilitySchema, fixture)).not.toThrow();
 	});

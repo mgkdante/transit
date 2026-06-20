@@ -800,6 +800,32 @@ _STOP_BY_GRAIN_SQL = text(
 )
 
 
+# Per-stop weekday seasonality (ISO 1=Mon..7=Sun), computed on the fly from the
+# hourly mart for route parity (gold.route_delay_day_of_week has no stop sibling).
+# The ISODOW resolution + timezone() mirror _STOP_HABIT_SQL / _STOP_BY_GRAIN_SQL.
+# Avg delay mirrors the stop weekly rollup: COALESCE(arrival, departure),
+# observation-weighted. Stop OTP stays a severe(>300s)-only proxy, so only obs +
+# severe are aggregated. Unique discriminator for test dispatch: "AS dow_obs".
+_STOP_DOW_SQL = text(
+    """
+    SELECT sd.stop_id,
+           EXTRACT(ISODOW FROM timezone(dp.timezone, sd.period_start_utc))::integer
+               AS day_of_week_iso,
+           SUM(sd.observation_count)::numeric                AS dow_obs,
+           SUM(sd.severe_delay_count)::numeric               AS severe,
+           SUM(
+               COALESCE(sd.avg_arrival_delay_seconds, sd.avg_departure_delay_seconds)
+               * NULLIF(sd.observation_count, 0)
+           )                                                 AS weighted_delay_sec
+    FROM gold.stop_delay_hourly AS sd
+    INNER JOIN gold.dim_provider AS dp ON dp.provider_id = sd.provider_id
+    WHERE sd.provider_id = :provider_id
+    GROUP BY sd.stop_id, 2
+    ORDER BY sd.stop_id, 2
+    """
+)
+
+
 def build_stop_reliability(
     conn: Connection, *, provider_id: str = "stm", generated_utc: str
 ) -> "dict[str, StopReliability]":
@@ -870,6 +896,24 @@ def build_stop_reliability(
         for sid, rows in habit_rows.items()
     }
 
+    # Per-stop weekday seasonality (ISO 1=Mon..7=Sun), computed on the fly from the
+    # hourly mart for route parity. Rows arrive ordered by (stop_id, isodow), so the
+    # per-stop list is already 1..7-sorted. Honest None (never 0) when obs is 0.
+    day_of_week: dict[str, list[RouteDayOfWeek]] = {}
+    for r in conn.execute(_STOP_DOW_SQL, params).mappings():
+        sid = str(r["stop_id"])
+        obs = r["dow_obs"]
+        avg_sec = _weighted_avg_sec(obs, r["weighted_delay_sec"])
+        day_of_week.setdefault(sid, []).append(
+            RouteDayOfWeek(
+                day_of_week_iso=int(r["day_of_week_iso"]),
+                avg_delay_min=(round(avg_sec / 60.0, 1) if avg_sec is not None else None),
+                severe_pct=_severe_pct(obs, r["severe"]),
+                # Honest None (never 0): a zero-observation weekday has no count.
+                observation_count=(_opt_int(obs) if obs else None),
+            )
+        )
+
     # Per-stop most-recent-day p50/p90 from the append-only percentile rollup.
     day_period: dict[str, StopReliabilityPeriod] = {
         str(r["stop_id"]): StopReliabilityPeriod(
@@ -881,7 +925,7 @@ def build_stop_reliability(
     }
 
     out: dict[str, StopReliability] = {}
-    for sid in set(periods) | set(by_route) | set(habits) | set(day_period):
+    for sid in set(periods) | set(by_route) | set(habits) | set(day_period) | set(day_of_week):
         grain_map = periods.get(sid, {})
         ordered: list[StopReliabilityPeriod] = []
         if sid in day_period:
@@ -901,6 +945,7 @@ def build_stop_reliability(
             name=names.get(sid),
             periods=ordered,
             habits=habits.get(sid),
+            day_of_week=day_of_week.get(sid, []),
             by_route=routes,
         )
     return out

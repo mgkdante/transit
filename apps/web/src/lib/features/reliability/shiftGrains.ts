@@ -59,3 +59,30 @@ export function shiftLabel(grain: string, locale: Locale): string {
 export function dayTypeLabel(grain: string, locale: Locale): string {
 	return isDayTypeGrain(grain) ? DAY_TYPE_LABELS[grain][locale] : grain;
 }
+
+// ── ISO weekday vocabulary ───────────────────────────────────────────────────
+// The per-stop / per-route weekday-seasonality surfaces carry an ISO weekday key
+// (1=Mon..7=Sun, the pipeline's day_of_week_iso). Both the lines and stops
+// surfaces resolve that integer to a localized day name; the labels live HERE,
+// once, so the two surfaces speak the same weekday vocabulary (no re-invented or
+// drifting Mon/Lun tables in each copy file).
+
+/** Full localized weekday names indexed by ISO weekday (1=Mon..7=Sun), FR canonical. */
+export const ISO_WEEKDAY_LABELS: Record<number, Record<Locale, string>> = {
+	1: { fr: 'Lundi', en: 'Monday' },
+	2: { fr: 'Mardi', en: 'Tuesday' },
+	3: { fr: 'Mercredi', en: 'Wednesday' },
+	4: { fr: 'Jeudi', en: 'Thursday' },
+	5: { fr: 'Vendredi', en: 'Friday' },
+	6: { fr: 'Samedi', en: 'Saturday' },
+	7: { fr: 'Dimanche', en: 'Sunday' },
+};
+
+/**
+ * Localized full weekday name for an ISO weekday (1=Mon..7=Sun). An out-of-range
+ * integer falls back to its own string (e.g. `8` → "8") so a malformed key is
+ * never silently mapped to a real day.
+ */
+export function weekdayLabel(iso: number, locale: Locale): string {
+	return ISO_WEEKDAY_LABELS[iso]?.[locale] ?? `${iso}`;
+}

@@ -139,6 +139,22 @@ export interface StopDetailCopy {
 			readonly weekdaysShort: readonly [string, string, string, string, string, string, string];
 		};
 		/**
+		 * Weekday seasonality (day_of_week, ISO 1=Mon..7=Sun): which weekday drags
+		 * this stop down most, ranked worst-first by mean delay. The weekday NAMES
+		 * come from the shared shiftGrains vocabulary, not from here. A trailing-
+		 * window observation-weighted proxy, NOT certified.
+		 */
+		readonly weekday: {
+			/** Section heading over the weekday ranked list. */
+			readonly heading: string;
+			/** Per-row subtitle when the mean delay is the reading (no trusted severe share). */
+			readonly avgDelay: string;
+			/** Per-row subtitle prefix when a well-sampled severe share is the reading. */
+			readonly severeShare: string;
+			/** Honest caveat: trailing-window proxy, small samples vary. */
+			readonly caveat: string;
+		};
+		/**
 		 * Time-of-day shift + day-type breakdown (am_peak…night, weekday/weekend).
 		 * Surfaced alongside the calendar grains; the SHIFT grains never enter the
 		 * GrainPicker. A trailing-window observation-weighted proxy, NOT certified.
@@ -259,6 +275,13 @@ export const detailCopy: Record<Locale, StopDetailCopy> = {
 				weekdays: ['', 'Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dimanche'],
 				weekdaysShort: ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'],
 			},
+			weekday: {
+				heading: 'Par jour de la semaine',
+				avgDelay: 'Retard moyen',
+				severeShare: 'Part des retards graves',
+				caveat:
+					'Estimation sur fenêtre glissante, pondérée par les observations, pas une ponctualité certifiée; les petits échantillons varient.',
+			},
 			timeOfDay: {
 				heading: 'Par période de la journée',
 				severeShare: 'Part des retards graves',
@@ -348,6 +371,13 @@ export const detailCopy: Record<Locale, StopDetailCopy> = {
 					'Sunday',
 				],
 				weekdaysShort: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
+			},
+			weekday: {
+				heading: 'By day of week',
+				avgDelay: 'Avg delay',
+				severeShare: 'Severe-delay share',
+				caveat:
+					'Trailing-window, observation-weighted estimate, not certified on-time; small samples vary.',
 			},
 			timeOfDay: {
 				heading: 'By time of day',

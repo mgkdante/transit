@@ -58,6 +58,7 @@
 		isDayTypeGrain,
 		shiftLabel,
 		dayTypeLabel,
+		weekdayLabel,
 	} from '$lib/features/reliability/shiftGrains';
 	import { EdgeState } from '$lib/components/edge';
 	import { layout, mapHrefFor } from '$lib/nav';
@@ -210,6 +211,61 @@
 			};
 		});
 	});
+
+	/* ── Reliability: weekday seasonality (day_of_week) ───────────────────────
+	   The pipeline emits, alongside the calendar/shift grains, a per-stop weekday
+	   series (ISO 1=Mon..7=Sun): each row carries a mean delay + a severe share +
+	   an observation count for that weekday across the trailing window. We rank it
+	   worst-first by mean delay (mirroring the lines surface's Cluster05 weekday
+	   list) on the dataviz severity scale.
+
+	   Honesty: a weekday earns a row ONLY when it carries a real mean delay — a
+	   null-avg or zero-observation weekday is dropped (never a fabricated 0-delay
+	   bar). The severe share is shown as a second reading ONLY when enough
+	   observations back it (a 1–2-observation bucket keeps the plain avg caption,
+	   never a severe number on thin air). The whole section stands down when
+	   day_of_week is empty/absent. */
+
+	// A weekday severe share resting on too few observations is withheld (the mean
+	// delay still ranks, but the severe reading would over-claim from a thin sample).
+	const MIN_WEEKDAY_SEVERE_OBSERVATIONS = 5;
+
+	const rankedWeekdays = $derived.by(() => {
+		const rows = (reliability.data?.day_of_week ?? [])
+			.filter((d): d is typeof d & { avg_delay_min: number } => d.avg_delay_min != null)
+			.map((d) => ({
+				iso: d.day_of_week_iso,
+				delay: d.avg_delay_min,
+				severePct: d.severe_pct ?? null,
+				observationCount: d.observation_count ?? null,
+			}));
+		const worst = rows.reduce((m, r) => Math.max(m, r.delay), 0);
+		return rows
+			.slice()
+			.sort((a, b) => b.delay - a.delay)
+			.map((r, i) => {
+				// Normalize against the busiest weekday so the bar reads relative.
+				const norm = worst > 0 ? r.delay / worst : 0;
+				const severity: SeverityCode = norm >= 0.66 ? 'critical' : norm >= 0.33 ? 'high' : 'watch';
+				const severeTrusted =
+					r.severePct != null &&
+					r.observationCount != null &&
+					r.observationCount >= MIN_WEEKDAY_SEVERE_OBSERVATIONS;
+				return {
+					key: r.iso,
+					rank: i + 1,
+					title: weekdayLabel(r.iso, locale),
+					subtitle: severeTrusted
+						? `${t.reliability.weekday.severeShare} ${r.severePct!.toFixed(1)}%`
+						: t.reliability.weekday.avgDelay,
+					severity,
+					value: norm,
+					display: `${r.delay.toFixed(1)} min`,
+				};
+			});
+	});
+	/** The weekday-seasonality section stands down unless a real-delay weekday survived. */
+	const hasWeekday = $derived(rankedWeekdays.length > 0);
 
 	/* ── Reliability: by time of day (shift + day-type grains) ────────────────
 	   The pipeline emits, alongside the calendar grains (day/week/month), two
@@ -657,6 +713,34 @@
 								</div>
 							{/if}
 
+							<!-- Weekday seasonality (day_of_week): which weekday drags this stop
+							     down most, ranked worst-first by mean delay on the dataviz severity
+							     scale. A weekday with no mean delay is dropped (never a fake-0 bar);
+							     the severe share rides as a second reading only when enough
+							     observations back it. Stands down when day_of_week is empty/absent. -->
+							{#if hasWeekday}
+								<div class="stop-reliability-weekday" data-slot="stop-weekday">
+									<SectionLabel text={t.reliability.weekday.heading} variant="metric" />
+									<div
+										class="stop-reliability-route-list"
+										role="list"
+										aria-label={t.reliability.weekday.heading}
+									>
+										{#each rankedWeekdays as row (row.key)}
+											<RankedRow
+												rank={row.rank}
+												title={row.title}
+												subtitle={row.subtitle}
+												severity={row.severity}
+												value={row.value}
+												display={row.display}
+											/>
+										{/each}
+									</div>
+									<p class="stop-reliability-weekday-caveat">{t.reliability.weekday.caveat}</p>
+								</div>
+							{/if}
+
 							<!-- By time of day: SHIFT buckets (ranked by severe share) + a
 							     weekday-vs-weekend day-type comparison. Surfaced from the granular
 							     grains the pipeline emits alongside the calendar ones; these never
@@ -905,6 +989,20 @@
 		display: flex;
 		flex-direction: column;
 		gap: 0.5rem;
+	}
+	.stop-reliability-weekday {
+		display: flex;
+		flex-direction: column;
+		gap: 0.6rem;
+	}
+	/* Honest caveat: trailing-window observation-weighted proxy, AA both themes. */
+	.stop-reliability-weekday-caveat {
+		margin: 0;
+		max-width: 52ch;
+		font-family: var(--font-mono);
+		font-size: var(--text-micro);
+		line-height: 1.4;
+		color: var(--muted-foreground);
 	}
 	.stop-reliability-tod {
 		display: flex;

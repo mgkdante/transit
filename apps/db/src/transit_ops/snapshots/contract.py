@@ -437,6 +437,11 @@ class StopReliability(BaseModel):
     # relative to its own worst cell — NOT the route repeat-problem score, so a
     # shared legend can't conflate the two.
     habits: RouteHabits | None = None
+    # Per-stop weekday seasonality (ISO 1=Mon..7=Sun), computed on the fly from
+    # gold.stop_delay_hourly. Reuses the RouteDayOfWeek shape for route parity; here
+    # observation_count is the summed hourly observation count for the weekday and
+    # avg_delay_min is the observation-weighted COALESCE(arrival, departure) delay.
+    day_of_week: list[RouteDayOfWeek] = Field(default_factory=list)
     by_route: list[StopByRoute] = Field(default_factory=list)
 
 class Hotspot(BaseModel):

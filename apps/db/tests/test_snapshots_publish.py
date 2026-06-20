@@ -466,6 +466,25 @@ def test_publish_historic_writes_expected_keys(tmp_path) -> None:
         ("DISTINCT ON (u.route_id)", [
             {"route_id": "165", "route_name": "Ligne 165"},
         ]),
+        # build_stop_reliability: shift + day-type grains — unique discriminator
+        # "AS banded". MUST precede the generic "UNION" needle below, because
+        # _STOP_BY_GRAIN_SQL contains "UNION ALL" and would otherwise fall through
+        # to the route-id enumeration (tuple rows) and crash on r["stop_id"].
+        ("AS banded", [
+            {"stop_id": "51234", "grain": "am_peak", "obs": 10, "severe": 1,
+             "weighted_delay_sec": 600.0},
+            {"stop_id": "51234", "grain": "weekday", "obs": 14, "severe": 1,
+             "weighted_delay_sec": 1080.0},
+        ]),
+        # build_stop_reliability: weekday seasonality — unique discriminator
+        # "AS dow_obs". Listed before the generic "UNION" / stop_delay_hourly needles
+        # so the day-of-week rows aren't shadowed.
+        ("AS dow_obs", [
+            {"stop_id": "51234", "day_of_week_iso": 1, "dow_obs": 20, "severe": 2,
+             "weighted_delay_sec": 1200.0},
+            {"stop_id": "51234", "day_of_week_iso": 7, "dow_obs": 0, "severe": 0,
+             "weighted_delay_sec": None},
+        ]),
         # route IDs with history: UNION query
         ("UNION", [
             ("101",), ("202",),
