@@ -122,6 +122,48 @@ describe('RepeatOffenders ranked ledger', () => {
 		expect(screen.getByText(/recurrence not recorded/i)).toBeInTheDocument();
 	});
 
+	it('renders BOTH rows when two offenders share an id on different routes (no each_key_duplicate)', () => {
+		// Truth-audit case: the same offender id (vehicle 42010) is a legitimate
+		// repeat offender on TWO different routes (49 AND 55) — one accountability
+		// unit per (id, route), not a data bug. Keying the {#each} on the offender
+		// id alone would trip Svelte's each_key_duplicate and crash the surface; the
+		// (type, id, route) composite key keeps both rows.
+		mockData = {
+			generated_utc: GENERATED,
+			offenders: [
+				{
+					type: 'route',
+					id: '42010',
+					route: '49',
+					route_name: null,
+					avg_delay_min: 11.3,
+					recurrence: 'most weekday afternoons',
+				},
+				{
+					type: 'route',
+					id: '42010',
+					route: '55',
+					route_name: null,
+					avg_delay_min: 9.7,
+					recurrence: 'weekday PM peaks',
+				},
+			],
+		};
+
+		// Must not throw each_key_duplicate, and must render BOTH rows.
+		expect(() => render(RepeatOffenders)).not.toThrow();
+
+		const list = screen.getByRole('list', { name: /ranked by average delay/i });
+		const items = within(list).getAllByRole('listitem');
+		expect(items).toHaveLength(2);
+
+		// Both rows survive and link to their respective offending routes.
+		const links = within(list).getAllByRole('link');
+		expect(links).toHaveLength(2);
+		expect(links[0]).toHaveAttribute('href', '/route/49');
+		expect(links[1]).toHaveAttribute('href', '/route/55');
+	});
+
 	it('routes an empty offenders list to the boundary empty state, never an invented row', () => {
 		mockData = { generated_utc: GENERATED, offenders: [] };
 

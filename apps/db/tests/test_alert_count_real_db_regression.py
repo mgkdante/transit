@@ -251,7 +251,8 @@ def _daily_row(connection, provider_local_date: date) -> dict[str, object]:  # n
         connection.execute(
             text(
                 """
-                SELECT alert_count, rider_impact_score
+                SELECT affected_route_count, affected_stop_count,
+                       alert_count, rider_impact_score
                 FROM gold.citizen_accountability_daily
                 WHERE provider_id = :p
                   AND provider_local_date = :d
@@ -298,10 +299,28 @@ def test_alert_count_distinct_content_across_eras(conn) -> None:  # noqa: ANN001
     assert _daily_row(conn, date(2026, 6, 9))["alert_count"] == 2
 
 
-def test_rider_impact_score_includes_alert_term(conn) -> None:  # noqa: ANN001
+def test_alerts_only_day_is_honest_no_delay_data(conn) -> None:  # noqa: ANN001
+    """Truth-audit honesty fix (slice/truth-audit-fixes).
+
+    This fixture seeds ONLY alert rows — no route_delay_hourly / stop_delay_hourly
+    telemetry — so the route_daily and stop_daily CTEs both LEFT-JOIN-miss for the
+    date. The rollup must NOT fabricate data on such a day:
+
+      * affected_route_count / affected_stop_count publish NULL (the honest "no
+        data"), NEVER a fabricated 0 that reads as "zero entities affected".
+      * rider_impact_score publishes NULL, NEVER a composite (it would otherwise
+        collapse to pure alerts*2 — here 2*2=4.0 — while every reliability input
+        is honest-NULL, an internally inconsistent receipt).
+
+    alert_count itself is real (alerts ARE present) so it stays populated.
+    """
     _run_citizen_rollup(conn)
 
-    assert _daily_row(conn, date(2026, 6, 9))["rider_impact_score"] == Decimal("4.0000")
+    row = _daily_row(conn, date(2026, 6, 9))
+    assert row["alert_count"] == 2
+    assert row["affected_route_count"] is None
+    assert row["affected_stop_count"] is None
+    assert row["rider_impact_score"] is None
 
 
 def test_migration_backfill_recomputes_existing_citizen_daily_rows(conn) -> None:  # noqa: ANN001

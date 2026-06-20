@@ -1213,24 +1213,45 @@ UPSERT_CITIZEN_ACCOUNTABILITY_DAILY = text(
     SELECT
         c.provider_id,
         c.provider_local_date,
-        COALESCE(r.affected_route_count, 0),
-        COALESCE(s.affected_stop_count, 0),
+        -- Honesty (truth-audit): a LEFT-JOIN miss means "no delay telemetry for
+        -- this date", NOT "zero entities affected". Do NOT COALESCE the miss to 0
+        -- (that fabricates an honest-looking zero). A present source row already
+        -- carries its real integer, including a genuine 0 when telemetry existed
+        -- and no entity crossed the threshold; that real 0 is preserved untouched.
+        -- affected_route_count / affected_stop_count are int|None in the Receipt
+        -- contract, so emitting NULL on a miss is contract-valid honest "no data".
+        r.affected_route_count,
+        s.affected_stop_count,
         COALESCE(r.delayed_trip_count, 0),
         COALESCE(r.severe_delay_count, 0),
         COALESCE(ia.alert_count, 0),
-        LEAST(
-            ROUND(
-                (
-                    COALESCE(r.affected_route_count, 0)::numeric * 2
-                    + COALESCE(s.affected_stop_count, 0)::numeric
-                    + COALESCE(r.delayed_trip_count, 0)::numeric
-                    + COALESCE(r.severe_delay_count, 0)::numeric * 3
-                    + COALESCE(ia.alert_count, 0)::numeric * 2
+        -- Honesty (truth-audit): rider_impact_score is a composite of the
+        -- delay/severe/route/stop terms. When the delay telemetry feeding it is
+        -- absent for the date (neither the route_daily nor the stop_daily source
+        -- row exists — the calendar date is present only because alerts arrived),
+        -- every reliability term is a join-miss and the score would collapse to
+        -- pure alerts*2 while otp/avg/severe publish honest-NULL. That is
+        -- internally inconsistent, so we emit NULL (float|None in the contract)
+        -- to match the honest-NULL reliability inputs on the same receipt. The
+        -- 9999.9999 clamp is unchanged for real days.
+        CASE
+            WHEN r.provider_local_date IS NULL
+                 AND s.provider_local_date IS NULL
+            THEN NULL
+            ELSE LEAST(
+                ROUND(
+                    (
+                        COALESCE(r.affected_route_count, 0)::numeric * 2
+                        + COALESCE(s.affected_stop_count, 0)::numeric
+                        + COALESCE(r.delayed_trip_count, 0)::numeric
+                        + COALESCE(r.severe_delay_count, 0)::numeric * 3
+                        + COALESCE(ia.alert_count, 0)::numeric * 2
+                    ),
+                    4
                 ),
-                4
-            ),
-            9999.9999
-        ),
+                9999.9999
+            )
+        END,
         :built_at_utc
     FROM calendar AS c
     LEFT JOIN route_daily AS r
