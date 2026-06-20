@@ -16,11 +16,39 @@
 //     contract is read from PUBLIC_V1_BASE (absolute): cross-origin in dev,
 //     same-origin in prod.
 //   • worker-src blob: — pmtiles/maplibre spin up workers from blob URLs.
+//   • img-src is 'self' data: blob: + the basemap host + the OG-image origin —
+//     NOT a broad `https:` wildcard. The map bakes its vehicle/stop/pin sprites
+//     CLIENT-SIDE (canvas → addImage, so data:/blob:) and fetches glyph PBFs over
+//     connect-src, not img-src; protomaps.github.io stays whitelisted here purely
+//     as defense-in-depth for any future basemap raster (sprite/tile) image. The
+//     OG card (static/og/{lang}.png) is read from transit.yesid.dev — same-origin
+//     in prod, explicit so a cross-origin scrape still resolves.
 //   • script-src/style-src keep 'unsafe-inline' for the pre-paint theme IIFE in
 //     app.html + Svelte's injected styles; tightening to nonce/hash is a tracked
 //     follow-up.
+//
+// TODO(security/csp-hardening): drop script-src 'unsafe-inline' in favor of a
+// sha256-<hash> allowlist for the app.html pre-paint theme IIFE. This is a
+// deliberate SEPARATE follow-up — it needs a Content-Security-Policy-Report-Only
+// rollout first to confirm nothing else inline-injects before enforcing.
 
-export const PERMISSIONS_POLICY = 'camera=(), microphone=(), payment=(), geolocation=(self)';
+// Basemap glyph/raster host — kept in img-src as defense-in-depth (see CSP NOTES).
+const BASEMAP_IMG_HOST = 'https://protomaps.github.io';
+// OG-image origin — the social card lives at {origin}/og/{lang}.png. Same-origin
+// in prod; listed so a cross-origin fetch (dev, scrapers) still resolves.
+const OG_IMAGE_ORIGIN = 'https://transit.yesid.dev';
+
+// Explicitly DENY powerful features the app never uses (defense-in-depth: an
+// empty allowlist `feature=()` blocks it for the document and all frames). KEEP
+// geolocation=(self) — the near-me feature needs it. browsing-topics +
+// interest-cohort opt out of the Topics/FLoC ad-interest APIs.
+export const PERMISSIONS_POLICY =
+	'accelerometer=(), bluetooth=(), browsing-topics=(), camera=(), gyroscope=(), hid=(), interest-cohort=(), magnetometer=(), microphone=(), payment=(), serial=(), usb=(), geolocation=(self)';
+export const CROSS_ORIGIN_OPENER_POLICY = 'same-origin';
+// NOTE: Cross-Origin-Resource-Policy is intentionally OMITTED. `same-origin`
+// would block social scrapers (Twitter/Facebook/Slack) from fetching our OG card
+// at /og/{lang}.png cross-origin, breaking link previews. COOP (above) already
+// isolates the browsing context, which is the win we want here.
 export const STRICT_TRANSPORT_SECURITY = 'max-age=63072000; includeSubDomains; preload';
 export const REFERRER_POLICY = 'strict-origin-when-cross-origin';
 export const X_FRAME_OPTIONS = 'SAMEORIGIN';
@@ -34,7 +62,7 @@ function baseCspDirectives(): Record<string, string[]> {
 		'base-uri': ["'self'"],
 		'object-src': ["'none'"],
 		'frame-ancestors': ["'self'"],
-		'img-src': ["'self'", 'data:', 'blob:', 'https:'],
+		'img-src': ["'self'", 'data:', 'blob:', BASEMAP_IMG_HOST, OG_IMAGE_ORIGIN],
 		'font-src': ["'self'"],
 		'style-src': ["'self'", "'unsafe-inline'"],
 		'script-src': ["'self'", "'unsafe-inline'"],
@@ -73,6 +101,7 @@ export function securityHeaders({ dev }: { dev: boolean }): Record<string, strin
 		'X-Content-Type-Options': X_CONTENT_TYPE_OPTIONS,
 		'Referrer-Policy': REFERRER_POLICY,
 		'X-Frame-Options': X_FRAME_OPTIONS,
+		'Cross-Origin-Opener-Policy': CROSS_ORIGIN_OPENER_POLICY,
 		'Permissions-Policy': PERMISSIONS_POLICY,
 		'Strict-Transport-Security': STRICT_TRANSPORT_SECURITY,
 		'Content-Security-Policy': dev ? devContentSecurityPolicy() : contentSecurityPolicy(),

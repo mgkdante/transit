@@ -41,7 +41,13 @@ function apply(next: Theme, persist: boolean): void {
 	theme = next;
 	if (!browser) return;
 	document.documentElement.dataset.theme = next;
-	document.querySelector('meta[name="theme-color"]')?.setAttribute('content', THEME_SURFACE[next]);
+	// Target the NON-media theme-color meta (SeoHead's, in %sveltekit.head%). The
+	// two media-scoped metas in app.html own the no-JS first paint; once the user
+	// makes an explicit choice we drive the unscoped tag, which wins regardless of
+	// the OS prefers-color-scheme.
+	document
+		.querySelector('meta[name="theme-color"]:not([media])')
+		?.setAttribute('content', THEME_SURFACE[next]);
 	if (persist) {
 		try {
 			localStorage.setItem('theme', next);

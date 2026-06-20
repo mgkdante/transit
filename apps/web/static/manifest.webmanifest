@@ -13,6 +13,7 @@
 	"categories": ["travel", "navigation", "utilities"],
 	"icons": [
 		{ "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
-		{ "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "maskable" }
+		{ "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "maskable" },
+		{ "src": "/apple-touch-icon-180.png", "sizes": "180x180", "type": "image/png", "purpose": "any" }
 	]
 }
