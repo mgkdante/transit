@@ -380,6 +380,8 @@ def _historic_dispatch_conn():
         # generic daily-view "ORDER BY provider_local_date DESC" below).
         ("cancellation_rate_pct, canceled_trip_days", []),
         ("route_occupancy_band_daily AS rob", []),
+        # build_stop_reliability: per-stop occupancy band shares (batched).
+        ("stop_occupancy_band_daily AS sob", []),
         ("first_trip_start_utc", []),
         ("skipped_stop_rate_pct", []),
         ("ORDER BY provider_local_date DESC", [

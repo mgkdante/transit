@@ -193,6 +193,9 @@ describe('reliability — new optional fields (day_of_week / habits / p50,p90) r
 			day_of_week: [
 				{ day_of_week_iso: 5, avg_delay_min: 3.4, severe_pct: 7.1, observation_count: 320 },
 			],
+			// trailing-window crowding of buses observed AT this stop — additive
+			// optional, reuses the canonical OccupancyMix shape (route surface mirror).
+			occupancy_mix: { empty: 0.05, many_seats: 0.2, few_seats: 0.3, standing: 0.4, full: 0.05 },
 		};
 		expect(() => parsePort('stop_reliability', StopReliabilitySchema, fixture)).not.toThrow();
 	});

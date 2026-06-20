@@ -1014,6 +1014,29 @@ _STOP_PERCENTILE_DAILY_SQL = text(
 )
 
 
+# Trailing-30d crowding band-shares per stop from the append-only daily band-count
+# reduction (twin of _ROUTE_OCCUPANCY_BAND_WINDOW_SQL, but batched over ALL stops:
+# one summed row per stop_id rather than a single per-entity bind). Summed counts
+# are divided into shares at read time; honest-None when no band-bearing telemetry
+# exists in the window. Unique discriminator for test dispatch:
+# "stop_occupancy_band_daily AS sob".
+_STOP_OCCUPANCY_BAND_WINDOW_SQL = text(
+    """
+    SELECT sob.stop_id                    AS stop_id,
+           SUM(sob.empty_count)           AS empty,
+           SUM(sob.many_seats_count)      AS many_seats,
+           SUM(sob.few_seats_count)       AS few_seats,
+           SUM(sob.standing_count)        AS standing,
+           SUM(sob.full_count)            AS full
+    FROM gold.stop_occupancy_band_daily AS sob
+    JOIN gold.dim_provider AS dp ON dp.provider_id = sob.provider_id
+    WHERE sob.provider_id = :provider_id
+      AND sob.provider_local_date >= (now() AT TIME ZONE dp.timezone)::date - 30
+    GROUP BY sob.stop_id
+    """
+)
+
+
 # Granularity grains for stops, computed ON THE FLY from the hourly mart (stops
 # have no rollup table). The hour->shift band CASE and the ISODOW weekday/weekend
 # split MUST stay byte-identical to the canonical route populate logic in
@@ -1192,8 +1215,24 @@ def build_stop_reliability(
         for r in conn.execute(_STOP_PERCENTILE_DAILY_SQL, params).mappings()
     }
 
+    # Per-stop trailing-30d crowding band-shares from the append-only daily band
+    # reduction (honest-None when the stop had no band-bearing telemetry; the
+    # helper drops a zero-total row by returning None, so absent stops are absent).
+    occupancy_mix: dict[str, OccupancyMix] = {}
+    for r in conn.execute(_STOP_OCCUPANCY_BAND_WINDOW_SQL, params).mappings():
+        mix = _occupancy_mix_from_bands(r)
+        if mix is not None:
+            occupancy_mix[str(r["stop_id"])] = mix
+
     out: dict[str, StopReliability] = {}
-    for sid in set(periods) | set(by_route) | set(habits) | set(day_period) | set(day_of_week):
+    for sid in (
+        set(periods)
+        | set(by_route)
+        | set(habits)
+        | set(day_period)
+        | set(day_of_week)
+        | set(occupancy_mix)
+    ):
         grain_map = periods.get(sid, {})
         ordered: list[StopReliabilityPeriod] = []
         if sid in day_period:
@@ -1215,6 +1254,7 @@ def build_stop_reliability(
             habits=habits.get(sid),
             day_of_week=day_of_week.get(sid, []),
             by_route=routes,
+            occupancy_mix=occupancy_mix.get(sid),
         )
     return out
 

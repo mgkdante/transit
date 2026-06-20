@@ -46,10 +46,16 @@
 		Heatmap,
 		RankedRow,
 		ChartLegend,
+		StackedBar,
+		type StackedSegment,
 		HEATMAP_RAMP,
 		HEATMAP_NODATA,
 	} from '$lib/components/dataviz';
+	import { OCCUPANCY_CODES, type OccupancyCode } from '$lib/v1/schemas';
 	import type { SeverityCode } from '$lib/v1/schemas';
+	// Reuse the SHARED occupancy band vocabulary (the same labels the lines surface
+	// renders via detailCopy[locale].occupancyBands) — never a new stop-local table.
+	import { detailCopy as linesDetailCopy } from '$lib/features/lines/lines.copy';
 	import { availableGrains } from '$lib/filters/grain';
 	import {
 		SHIFT_GRAIN_ORDER,
@@ -395,6 +401,75 @@
 		][bucket];
 	}
 
+	/* ── Reliability: crowding (occupancy_mix) ────────────────────────────────
+	   The trailing-window occupancy band-shares of buses OBSERVED AT this stop
+	   (GTFS-RT VehiclePosition stop_id) — NOT a stop attribute. Rendered as a
+	   100%-stacked proportion bar (StackedBar, scale='occupancy'), reusing the
+	   dataviz occupancy scale + the SHARED lines band vocabulary, mirroring the
+	   lines Cluster04Crowding pattern.
+
+	   Honesty (Cluster04 doctrine): occupancy_mix is null when no telemetry was
+	   attributed to this stop. An all-zero mix is ALSO treated as empty. In both
+	   cases the bar stands down; once the reliability resource HAS loaded but
+	   carries no crowding telemetry, an explicit bilingual "no telemetry" note
+	   renders in its place (template {:else} branch) — NEVER a fabricated bar and
+	   never an even/all-empty split. Every band is a data mark on the dataviz
+	   occupancy scale; --primary never colours a band. */
+
+	/** The shared occupancy band labels (legend + a11y + headline), keyed by code. */
+	const occupancyBands = $derived(linesDetailCopy[locale].occupancyBands);
+
+	/** The raw mix, treated as empty unless at least one band carries a real share. */
+	const crowdingMix = $derived.by(() => {
+		const mix = reliability.data?.occupancy_mix ?? null;
+		if (mix == null) return null;
+		const hasShare = OCCUPANCY_CODES.some((c: OccupancyCode) => (mix[c] ?? 0) > 0);
+		return hasShare ? mix : null;
+	});
+	/** The whole crowding section stands down when there is no real telemetry. */
+	const hasCrowding = $derived(crowdingMix != null);
+
+	/**
+	 * Honest no-telemetry note: shown when the reliability resource HAS loaded
+	 * (reliability.data != null) but no crowding telemetry was attributed to this
+	 * stop (occupancy_mix null/absent, or an all-zero mix that crowdingMix treats
+	 * as empty). This is crowding-specific — a stop with reliability data but no
+	 * observed-bus loading earns an explicit note rather than silently nothing.
+	 * Before the resource settles we render neither (the bar's skeleton owns that).
+	 */
+	const showCrowdingNoTelemetry = $derived(reliability.data != null && !hasCrowding);
+
+	/** The five occupancy bands as StackedBar segments (fractions 0..1). */
+	const crowdingSegments = $derived.by<StackedSegment[]>(() =>
+		OCCUPANCY_CODES.map((code: OccupancyCode) => ({
+			code,
+			value: crowdingMix ? (crowdingMix[code] ?? null) : null,
+			label: occupancyBands[code],
+		})),
+	);
+
+	/** Total band share — guards the dominant-band headline + its share math. */
+	const crowdingTotal = $derived(
+		crowdingSegments.reduce((sum, s) => sum + (s.value != null && s.value > 0 ? s.value : 0), 0),
+	);
+
+	/** The largest band — lifted to a MetricDisplay as the single-glance read. */
+	const crowdingDominant = $derived.by(() => {
+		if (!hasCrowding || crowdingTotal <= 0) return null;
+		let best: { code: OccupancyCode; label: string; share: number } | null = null;
+		for (const code of OCCUPANCY_CODES) {
+			const v = crowdingMix ? (crowdingMix[code] ?? null) : null;
+			if (v == null || v <= 0) continue;
+			if (best == null || v > best.share) best = { code, label: occupancyBands[code], share: v };
+		}
+		return best;
+	});
+
+	/** Dominant-band share as a whole-percent string (e.g. "62%"). */
+	const crowdingDominantPct = $derived(
+		crowdingDominant ? `${Math.round((crowdingDominant.share / crowdingTotal) * 100)}%` : null,
+	);
+
 	/* ── Live departures: status + route filters ──────────────────────────────
 	   The live board carries a delay_min per departure; the reader narrows it
 	   with combinable status chips (on-time / late / early) + an optional
@@ -646,7 +721,12 @@
 			<ResourceBoundary
 				resource={reliability}
 				lang={locale}
-				isEmpty={(r: StopReliability | null) => r == null || (r.periods?.length ?? 0) === 0}
+				isEmpty={(r: StopReliability | null) =>
+					r == null ||
+					((r.periods?.length ?? 0) === 0 &&
+						r.occupancy_mix == null &&
+						(r.day_of_week?.length ?? 0) === 0 &&
+						(r.by_route?.length ?? 0) === 0)}
 			>
 				{#snippet children(r: StopReliability | null)}
 					{#if r != null}
@@ -710,6 +790,44 @@
 									<p class="stop-reliability-habits-caption">
 										{t.reliability.habits.caption}
 									</p>
+								</div>
+							{/if}
+
+							<!-- Crowding (occupancy_mix): how full the buses OBSERVED AT this stop
+							     ran over the trailing window — a property of the buses seen here,
+							     NOT of the stop. A 100%-stacked occupancy proportion bar reusing the
+							     dataviz occupancy scale + the shared lines band vocabulary. When no
+							     occupancy data was attributed (mix null/absent or all-zero), the bar
+							     stands down and — once the reliability resource has loaded — an
+							     explicit bilingual "no telemetry" note renders in its place; never a
+							     fabricated bar, never an even/all-empty split. -->
+							{#if hasCrowding && crowdingDominant != null}
+								<div class="stop-reliability-crowding" data-slot="stop-crowding">
+									<SectionLabel text={t.reliability.crowding.heading} variant="metric" />
+									<p class="stop-reliability-window">{t.reliability.crowding.window}</p>
+									<MetricDisplay
+										value={crowdingDominantPct ?? t.reliability.noDelay}
+										label={crowdingDominant.label}
+										sublabel={t.reliability.crowding.dominantLabel}
+										size="md"
+									/>
+									<StackedBar
+										scale="occupancy"
+										segments={crowdingSegments}
+										label={t.reliability.crowding.barLabel}
+										size="sm"
+										legend
+										interactive
+										class="stop-crowding-bar"
+									/>
+								</div>
+							{:else if showCrowdingNoTelemetry}
+								<!-- Reliability loaded, but no crowding telemetry was attributed to
+								     this stop: an honest note rather than silently nothing. Keeps the
+								     "buses observed here, not a stop attribute" framing via the heading. -->
+								<div class="stop-reliability-crowding" data-slot="stop-crowding-empty">
+									<SectionLabel text={t.reliability.crowding.heading} variant="metric" />
+									<p class="stop-reliability-window">{t.reliability.crowding.noTelemetry}</p>
 								</div>
 							{/if}
 
@@ -989,6 +1107,11 @@
 		display: flex;
 		flex-direction: column;
 		gap: 0.5rem;
+	}
+	.stop-reliability-crowding {
+		display: flex;
+		flex-direction: column;
+		gap: 0.6rem;
 	}
 	.stop-reliability-weekday {
 		display: flex;

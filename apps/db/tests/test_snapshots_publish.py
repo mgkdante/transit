@@ -529,6 +529,13 @@ def test_publish_historic_writes_expected_keys(tmp_path) -> None:
         ("route_occupancy_band_daily AS rob", [
             {"empty": 0, "many_seats": 50, "few_seats": 30, "standing": 15, "full": 5},
         ]),
+        # build_stop_reliability: per-stop trailing-window occupancy band shares —
+        # unique discriminator "stop_occupancy_band_daily AS sob" (batched: one
+        # summed row per stop_id, keyed by stop_id, no sentinel).
+        ("stop_occupancy_band_daily AS sob", [
+            {"stop_id": "51234", "empty": 0, "many_seats": 50,
+             "few_seats": 30, "standing": 15, "full": 5},
+        ]),
         # build_route_reliability: service-span history — unique discriminator
         # "first_trip_start_utc". MUST precede the generic daily-view needle below
         # (its SQL also ends with ORDER BY provider_local_date DESC).

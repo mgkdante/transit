@@ -169,6 +169,24 @@ export interface StopDetailCopy {
 			/** Honest caveat: trailing-window proxy, small samples vary. */
 			readonly caveat: string;
 		};
+		/**
+		 * Crowding (occupancy_mix): the band-shares of buses OBSERVED AT this stop
+		 * (GTFS-RT VehiclePosition stop_id) over a trailing window — NOT a stop
+		 * attribute per se. The band NAMES come from the shared lines occupancy
+		 * vocabulary, not from here. Stands down entirely when no telemetry.
+		 */
+		readonly crowding: {
+			/** Section heading over the occupancy bar. */
+			readonly heading: string;
+			/** Window + provenance caption: WHAT this measures + over WHAT window. */
+			readonly window: string;
+			/** Accessible label for the proportion bar. */
+			readonly barLabel: string;
+			/** Headline label under the dominant band's share. */
+			readonly dominantLabel: string;
+			/** Honest empty state when no occupancy telemetry was attributed here. */
+			readonly noTelemetry: string;
+		};
 		/** No-data string for a route row whose delay is absent. */
 		readonly noDelay: string;
 	};
@@ -289,6 +307,14 @@ export const detailCopy: Record<Locale, StopDetailCopy> = {
 				caveat:
 					'Estimation sur fenêtre glissante, pondérée par les observations, pas une ponctualité certifiée; les petits échantillons varient.',
 			},
+			crowding: {
+				heading: 'Encombrement des bus vus ici',
+				window:
+					'Répartition de l’occupation des bus observés à cet arrêt sur les 30 derniers jours, tous transporteurs confondus. Ce n’est pas une caractéristique de l’arrêt.',
+				barLabel: 'Répartition de l’occupation des bus observés à cet arrêt',
+				dominantLabel: 'Occupation la plus fréquente',
+				noTelemetry: 'Aucune donnée d’occupation rattachée à cet arrêt.',
+			},
 			noDelay: 'Aucune donnée',
 		},
 	},
@@ -385,6 +411,14 @@ export const detailCopy: Record<Locale, StopDetailCopy> = {
 				dayType: 'Weekday vs weekend',
 				caveat:
 					'Trailing-window, observation-weighted estimate, not certified on-time; small samples vary.',
+			},
+			crowding: {
+				heading: 'Crowding on buses seen here',
+				window:
+					'How full the buses observed at this stop ran over the last 30 days, across all carriers. This is not a property of the stop itself.',
+				barLabel: 'Occupancy mix of buses observed at this stop',
+				dominantLabel: 'Most common loading',
+				noTelemetry: 'No occupancy telemetry attributed to this stop.',
 			},
 			noDelay: 'No data',
 		},

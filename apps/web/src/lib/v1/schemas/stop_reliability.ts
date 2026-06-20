@@ -6,6 +6,10 @@
 
 import { z } from 'zod';
 import { RouteHabitsSchema, RouteDayOfWeekSchema } from './route_reliability';
+// Reuse the canonical OccupancyMixSchema from the network surface — the SAME
+// source route_reliability.ts imports it from. The crowding band-shares are one
+// shape across the network / lines / stops surfaces; never re-declare it.
+import { OccupancyMixSchema } from './network';
 import { isoUtc } from './types';
 
 export const StopReliabilityPeriodSchema = z.object({
@@ -39,5 +43,9 @@ export const StopReliabilitySchema = z.object({
 	// per-stop weekday seasonality (ISO 1=Mon..7=Sun) — reuses RouteDayOfWeek.
 	day_of_week: z.array(RouteDayOfWeekSchema).optional(),
 	by_route: z.array(StopByRouteSchema).optional(),
+	// trailing-window crowding band-shares — the occupancy of buses OBSERVED AT
+	// this stop (GTFS-RT VehiclePosition stop_id), NOT a stop attribute. null when
+	// no occupancy telemetry was attributed to this stop. Reuses OccupancyMixSchema.
+	occupancy_mix: OccupancyMixSchema.nullable().optional(),
 });
 export type StopReliability = z.infer<typeof StopReliabilitySchema>;

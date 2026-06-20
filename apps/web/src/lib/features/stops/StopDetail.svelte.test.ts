@@ -50,6 +50,10 @@ const RELIABILITY = {
 		{ day_of_week_iso: 5, avg_delay_min: 9.4, severe_pct: 14.9, observation_count: 96 },
 		{ day_of_week_iso: 7, avg_delay_min: null, severe_pct: null, observation_count: 0 },
 	],
+	// Crowding of buses OBSERVED AT this stop over the trailing window. "Standing"
+	// (0.45) is the dominant band → the headline reads its share; the bar is a
+	// 100%-stacked occupancy proportion.
+	occupancy_mix: { empty: 0.05, many_seats: 0.15, few_seats: 0.25, standing: 0.45, full: 0.1 },
 } as StopReliability;
 
 // A reliability fixture that ALSO carries the additive SHIFT grains
@@ -250,6 +254,117 @@ describe('StopDetail reliability — habits heatmap', () => {
 		fireEvent.click(screen.getByRole('tab', { name: 'Reliability' }));
 
 		expect(screen.queryByText('Severe delays by hour')).not.toBeInTheDocument();
+	});
+});
+
+describe('StopDetail reliability — crowding (occupancy_mix)', () => {
+	it('renders the occupancy proportion bar when occupancy_mix is present', () => {
+		reset();
+		render(StopDetail, { props: { id: '57191' } });
+		fireEvent.click(screen.getByRole('tab', { name: 'Reliability' }));
+
+		const crowding = document.querySelector('[data-slot="stop-crowding"]') as HTMLElement;
+		expect(crowding).not.toBeNull();
+		// Honest framing: buses OBSERVED AT this stop, not a stop attribute.
+		expect(within(crowding).getByText('Crowding on buses seen here')).toBeInTheDocument();
+		expect(
+			within(crowding).getByText(/How full the buses observed at this stop ran/),
+		).toBeInTheDocument();
+		// The interactive proportion bar renders as a labelled group (AT descends into
+		// the focusable slices); its aria-label is the occupancy mix summary.
+		expect(
+			within(crowding).getByRole('group', {
+				name: /Occupancy mix of buses observed at this stop/,
+			}),
+		).toBeInTheDocument();
+		// Dominant band (standing, 45%) is lifted to the headline with its band label.
+		// "45%" appears in both the headline MetricDisplay and the bar legend slice.
+		expect(within(crowding).getAllByText('45%').length).toBeGreaterThan(0);
+		expect(within(crowding).getAllByText('Standing').length).toBeGreaterThan(0);
+	});
+
+	it('stands the crowding BAR down but shows the honest no-telemetry note when occupancy_mix is null', () => {
+		reset();
+		reliabilityData = { ...RELIABILITY, occupancy_mix: null };
+		render(StopDetail, { props: { id: '57191' } });
+		fireEvent.click(screen.getByRole('tab', { name: 'Reliability' }));
+
+		// No fabricated bar…
+		expect(document.querySelector('[data-slot="stop-crowding"]')).toBeNull();
+		// …but the reliability resource HAS loaded with no crowding telemetry, so the
+		// explicit bilingual note renders in its place (keeps the heading framing).
+		const empty = document.querySelector('[data-slot="stop-crowding-empty"]') as HTMLElement;
+		expect(empty).not.toBeNull();
+		expect(within(empty).getByText('Crowding on buses seen here')).toBeInTheDocument();
+		expect(
+			within(empty).getByText('No occupancy telemetry attributed to this stop.'),
+		).toBeInTheDocument();
+	});
+
+	it('stands the crowding section down when occupancy_mix is absent (undefined)', () => {
+		reset();
+		reliabilityData = { ...RELIABILITY, occupancy_mix: undefined } as StopReliability;
+		render(StopDetail, { props: { id: '57191' } });
+		fireEvent.click(screen.getByRole('tab', { name: 'Reliability' }));
+
+		expect(document.querySelector('[data-slot="stop-crowding"]')).toBeNull();
+	});
+
+	it('stands down on an all-zero mix (no even split, no all-empty bar)', () => {
+		reset();
+		reliabilityData = {
+			...RELIABILITY,
+			occupancy_mix: { empty: 0, many_seats: 0, few_seats: 0, standing: 0, full: 0 },
+		} as StopReliability;
+		render(StopDetail, { props: { id: '57191' } });
+		fireEvent.click(screen.getByRole('tab', { name: 'Reliability' }));
+
+		// No fabricated bar from an all-zero mix; the honest note takes its place.
+		expect(document.querySelector('[data-slot="stop-crowding"]')).toBeNull();
+		expect(document.querySelector('[data-slot="stop-crowding-empty"]')).not.toBeNull();
+	});
+
+	it('renders the FR no-telemetry note when occupancy_mix is null', () => {
+		reset();
+		currentLocale = 'fr';
+		reliabilityData = { ...RELIABILITY, occupancy_mix: null };
+		render(StopDetail, { props: { id: '57191' } });
+		fireEvent.click(screen.getByRole('tab', { name: 'Fiabilité' }));
+
+		const empty = document.querySelector('[data-slot="stop-crowding-empty"]') as HTMLElement;
+		expect(empty).not.toBeNull();
+		expect(
+			within(empty).getByText('Aucune donnée d’occupation rattachée à cet arrêt.'),
+		).toBeInTheDocument();
+	});
+});
+
+describe('StopDetail reliability — occupancy-only stop is not gated out as empty', () => {
+	it('renders the crowding section for a stop with ONLY occupancy_mix (no periods/dow/by_route)', () => {
+		reset();
+		// A stop the pipeline emits with crowding telemetry but no delay periods,
+		// weekday series, or per-route breakdown. The widened isEmpty predicate must
+		// NOT gate the whole reliability tab to its empty state — the crowding section
+		// (and its honest framing) must still render.
+		reliabilityData = {
+			generated_utc: '2026-06-15T12:00:00Z',
+			id: '57191',
+			name: 'Test stop',
+			periods: [],
+			habits: null,
+			day_of_week: [],
+			by_route: [],
+			occupancy_mix: { empty: 0.1, many_seats: 0.2, few_seats: 0.2, standing: 0.4, full: 0.1 },
+		} as unknown as StopReliability;
+		render(StopDetail, { props: { id: '57191' } });
+		fireEvent.click(screen.getByRole('tab', { name: 'Reliability' }));
+
+		const crowding = document.querySelector('[data-slot="stop-crowding"]') as HTMLElement;
+		expect(crowding).not.toBeNull();
+		expect(within(crowding).getByText('Crowding on buses seen here')).toBeInTheDocument();
+		// Dominant band (standing, 40%) surfaces — proof the section rendered, not the
+		// reliability empty state.
+		expect(within(crowding).getAllByText('Standing').length).toBeGreaterThan(0);
 	});
 });
 

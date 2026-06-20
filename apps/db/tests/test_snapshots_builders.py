@@ -1463,6 +1463,13 @@ def test_build_stop_reliability_emits_shift_and_daytype_grains() -> None:
         ("FROM gold.stop_delay_monthly", []),
         ("FROM gold.stop_delay_hourly", []),  # habits matrix: empty
         ("stop_delay_percentile_daily", []),  # day p50/p90: none
+        # Trailing-30d crowding band counts for the stop — unique discriminator
+        # "stop_occupancy_band_daily AS sob". 50 many_seats + 25 standing + 25 full
+        # over 100 band-bearing pings -> shares 0.5 / 0.25 / 0.25.
+        ("stop_occupancy_band_daily AS sob", [
+            {"stop_id": "51234", "empty": 0, "many_seats": 50,
+             "few_seats": 0, "standing": 25, "full": 25},
+        ]),
         ("stop_name", [{"stop_id": "51234", "stop_name": "Berri-UQAM"}]),
     ]
 
@@ -1521,6 +1528,51 @@ def test_build_stop_reliability_emits_shift_and_daytype_grains() -> None:
     assert sun.avg_delay_min is None
     assert sun.severe_pct is None
     assert sun.observation_count is None
+
+    # --- per-stop crowding band shares (occupancy_mix), honest-None on zero ---
+    mix = out["51234"].occupancy_mix
+    assert mix is not None
+    assert mix.empty == 0.0
+    assert mix.many_seats == 0.5            # 50 / 100 band-bearing pings
+    assert mix.standing == 0.25             # 25 / 100
+    assert mix.full == 0.25                 # 25 / 100
+    assert mix.few_seats == 0.0
+
+
+def test_build_stop_reliability_occupancy_mix_none_when_no_telemetry() -> None:
+    """A stop with delay history but NO occupancy telemetry attributed to it must
+    publish occupancy_mix=None (honest-None), never a fabricated all-zero mix — an
+    all-zero distribution is indistinguishable from a real all-empty fleet. Mirrors
+    the route occupancy honesty path."""
+    from transit_ops.snapshots.builders.historic import build_stop_reliability
+
+    dispatch = [
+        ("'__unrouted__'", []),
+        ("AS banded", []),
+        ("AS dow_obs", []),
+        # The stop survives into output purely on its weekly period row.
+        ("FROM gold.stop_delay_weekly", [
+            {"stop_id": "51234", "obs": 50, "weighted_delay_sec": 3000.0, "severe": 2},
+        ]),
+        ("FROM gold.stop_delay_monthly", []),
+        ("FROM gold.stop_delay_hourly", []),
+        ("stop_delay_percentile_daily", []),
+        # No occupancy rows attributed to this stop -> honest-None occupancy_mix.
+        ("stop_occupancy_band_daily AS sob", []),
+        ("stop_name", [{"stop_id": "51234", "stop_name": "Berri-UQAM"}]),
+    ]
+
+    class FC:
+        def execute(self, statement, params=None):  # noqa: ANN001, ANN201, ARG002
+            s = str(statement)
+            for needle, rows in dispatch:
+                if needle in s:
+                    return FakeResult(rows)
+            return FakeResult([])
+
+    out = build_stop_reliability(FC(), provider_id="stm", generated_utc="t")
+    assert "51234" in out
+    assert out["51234"].occupancy_mix is None  # no telemetry -> null, not all-zero
 
 
 # --------------------------------------------------------------------------

@@ -481,6 +481,12 @@ class StopReliability(BaseModel):
     # avg_delay_min is the observation-weighted COALESCE(arrival, departure) delay.
     day_of_week: list[RouteDayOfWeek] = Field(default_factory=list)
     by_route: list[StopByRoute] = Field(default_factory=list)
+    # Trailing-30d crowding band-shares for the stop, summed from the append-only
+    # gold.stop_occupancy_band_daily reduction (GTFS-RT OccupancyStatus attributed
+    # to this stop). Additive-optional: null when no occupancy telemetry was
+    # attributed to the stop — an all-zero mix is indistinguishable from a real
+    # all-empty fleet, so absence surfaces as None, never a fabricated split.
+    occupancy_mix: OccupancyMix | None = None
 
 class Hotspot(BaseModel):
     rank: int

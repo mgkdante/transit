@@ -450,6 +450,51 @@ UPSERT_ROUTE_OCCUPANCY_BAND_DAILY = text(
     """
 )
 
+# Per-STOP twin of UPSERT_ROUTE_OCCUPANCY_BAND_DAILY: append-only daily reduction
+# of occupancy band counts for one CLOSED local day, summed straight from
+# fact_vehicle_snapshot but GROUPED BY the GTFS-RT VehiclePosition current/next
+# stop_id. CRITICAL stop-vs-route difference: a ping with NULL stop_id cannot be
+# attributed to a stop, so this filters `f.stop_id IS NOT NULL` and groups on the
+# raw stop_id — there is NO sentinel bucket (the route mirror COALESCEs NULL
+# route_id to '__unrouted__'; a NULL stop has no honest stop to attribute to).
+# observation_count = band-bearing pings (codes 0-5, code 4 folded into standing);
+# the five band counts sum to it. Binds {provider_id, local_date, built_at_utc} for
+# _build_percentile_days, sourced from fact_vehicle_snapshot (same closed-day
+# missing-day calendar as the route occupancy rollup).
+UPSERT_STOP_OCCUPANCY_BAND_DAILY = text(
+    """
+    INSERT INTO gold.stop_occupancy_band_daily (
+        provider_id, provider_local_date, stop_id,
+        observation_count, empty_count, many_seats_count,
+        few_seats_count, standing_count, full_count, built_at_utc
+    )
+    SELECT
+        f.provider_id,
+        :local_date,
+        f.stop_id,
+        COUNT(*) FILTER (WHERE f.occupancy_status IN (0, 1, 2, 3, 4, 5))::integer,
+        COUNT(*) FILTER (WHERE f.occupancy_status = 0)::integer,
+        COUNT(*) FILTER (WHERE f.occupancy_status = 1)::integer,
+        COUNT(*) FILTER (WHERE f.occupancy_status = 2)::integer,
+        COUNT(*) FILTER (WHERE f.occupancy_status IN (3, 4))::integer,
+        COUNT(*) FILTER (WHERE f.occupancy_status = 5)::integer,
+        :built_at_utc
+    FROM gold.fact_vehicle_snapshot AS f
+    WHERE f.provider_id = :provider_id
+      AND f.snapshot_date_key = :date_key
+      AND f.stop_id IS NOT NULL
+    GROUP BY f.provider_id, f.stop_id
+    ON CONFLICT (provider_id, provider_local_date, stop_id) DO UPDATE SET
+        observation_count = EXCLUDED.observation_count,
+        empty_count = EXCLUDED.empty_count,
+        many_seats_count = EXCLUDED.many_seats_count,
+        few_seats_count = EXCLUDED.few_seats_count,
+        standing_count = EXCLUDED.standing_count,
+        full_count = EXCLUDED.full_count,
+        built_at_utc = EXCLUDED.built_at_utc
+    """
+)
+
 # Per-route service span over one CLOSED provider-local day (append-only). Grain
 # is route x provider_local_date; weekday/weekend is derived at READ time from the
 # date, so the closed-day calendar (captured-date) is the single source of truth
@@ -1663,6 +1708,7 @@ class WarmRollupBuildResult:
     built_occupancy_periods: int = 0
     built_route_cancellation_days: int = 0
     built_route_occupancy_days: int = 0
+    built_stop_occupancy_days: int = 0
     built_route_service_span_days: int = 0
     built_route_skipped_stop_days: int = 0
 
@@ -1677,6 +1723,7 @@ class WarmRollupBuildResult:
             "built_stop_percentile_days": self.built_stop_percentile_days,
             "built_route_cancellation_days": self.built_route_cancellation_days,
             "built_route_occupancy_days": self.built_route_occupancy_days,
+            "built_stop_occupancy_days": self.built_stop_occupancy_days,
             "built_route_service_span_days": self.built_route_service_span_days,
             "built_route_skipped_stop_days": self.built_route_skipped_stop_days,
             "reporting_aggregate_row_counts": self.reporting_aggregate_row_counts,
@@ -1932,6 +1979,18 @@ def build_warm_rollups(
         now=now,
         select_missing=SELECT_MISSING_OCCUPANCY_DAYS,
     )
+    # Per-stop occupancy band reduction — twin of route occupancy, same
+    # fact_vehicle_snapshot source, so it MUST use SELECT_MISSING_OCCUPANCY_DAYS too.
+    built_stop_occupancy = _build_percentile_days(
+        engine,
+        provider_id=provider_id,
+        rollup_kind="stop_occupancy_band_daily",
+        upsert=UPSERT_STOP_OCCUPANCY_BAND_DAILY,
+        today_key=today_key,
+        floor_key=floor_key,
+        now=now,
+        select_missing=SELECT_MISSING_OCCUPANCY_DAYS,
+    )
     # Service span reads fact_trip_delay_snapshot → default trip-delay calendar.
     built_route_service_span = _build_percentile_days(
         engine,
@@ -1994,6 +2053,7 @@ def build_warm_rollups(
         built_occupancy_periods=built_occupancy,
         built_route_cancellation_days=built_route_cancellation,
         built_route_occupancy_days=built_route_occupancy,
+        built_stop_occupancy_days=built_stop_occupancy,
         built_route_service_span_days=built_route_service_span,
         built_route_skipped_stop_days=built_route_skipped_stop,
     )
