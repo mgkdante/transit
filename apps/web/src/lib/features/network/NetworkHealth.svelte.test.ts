@@ -242,7 +242,7 @@ describe('NetworkHealth delay distribution', () => {
 		const rows = within(list).getAllByRole('listitem');
 		expect(rows).toHaveLength(8);
 		// Each row's accessible name carries its edge label + count ("<bucket> min: <n> trips").
-		expect(within(list).getByLabelText('< -5 min: 1 trips')).toBeInTheDocument();
+		expect(within(list).getByLabelText('< -5 min: 1 trip')).toBeInTheDocument();
 		expect(within(list).getByLabelText('2 to 5 min: 30 trips')).toBeInTheDocument();
 		expect(within(list).getByLabelText('15+ min: 2 trips')).toBeInTheDocument();
 	});
@@ -279,7 +279,7 @@ describe('NetworkHealth non-responding by route', () => {
 		expect(links[1]).toHaveAttribute('href', '/route/105');
 		// The per-route silent-trip count reads in the row display.
 		expect(within(list).getByText('2 trips')).toBeInTheDocument();
-		expect(within(list).getByText('1 trips')).toBeInTheDocument();
+		expect(within(list).getByText('1 trip')).toBeInTheDocument();
 	});
 
 	it('uses the list > listitem > link a11y shape (li owns the listitem role)', () => {

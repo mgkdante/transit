@@ -11,8 +11,8 @@ let indexData: ReceiptsIndex = {
 };
 
 // One day's receipt for the seeded default date. Carries a full headline + counts
-// + a worst route AND a worst stop. Null severe-share + null vehicles exercise the
-// honesty no-data branches.
+// + a worst route AND a worst stop. A null severe-share exercises the honesty
+// no-data branch; a null vehicles exercises the always-null cell OMISSION.
 let receiptData: Receipt | null = {
 	generated_utc: '2026-06-17T07:00:00Z' as IsoUtc,
 	date: '2026-06-17',
@@ -126,12 +126,20 @@ describe('AccountabilityReceipt headline + counts', () => {
 });
 
 describe('AccountabilityReceipt honesty', () => {
-	it('shows the localized no-data string for a null severe-share and null vehicles, never a fabricated 0', async () => {
+	it('shows the localized no-data string for a null severe-share, never a fabricated 0', async () => {
 		render(AccountabilityReceipt);
-		// severe % is null AND vehicles is null → two honest no-data marks; never "0".
+		// severe % is null → an honest no-data mark; never "0".
 		const noData = await screen.findAllByText('no data');
-		expect(noData.length).toBeGreaterThanOrEqual(2);
+		expect(noData.length).toBeGreaterThanOrEqual(1);
 		expect(screen.queryByText('0%')).not.toBeInTheDocument();
+	});
+
+	it('OMITS the always-null vehicles cell entirely rather than a permanent no-data row', async () => {
+		render(AccountabilityReceipt);
+		// `vehicles` is structurally always-null on /v1, so its cell (label + value)
+		// is dropped rather than rendering a permanent "no data" row.
+		await screen.findByText('340');
+		expect(screen.queryByText('Vehicles')).not.toBeInTheDocument();
 	});
 
 	it('shows the SPECIFIC empty-index copy when no receipt dates are published', async () => {

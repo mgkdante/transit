@@ -204,10 +204,16 @@
 								<dt>{t.counts.alerts}</dt>
 								<dd>{fmtCount(r.alerts)}</dd>
 							</div>
-							<div class="receipt-count">
-								<dt>{t.counts.vehicles}</dt>
-								<dd>{fmtCount(r.vehicles)}</dd>
-							</div>
+							<!-- `vehicles` is structurally always-null on /v1 (the daily receipt
+							     carries no per-vehicle count), so we OMIT the cell entirely rather
+							     than render a permanent "no data" row. A real count would surface it
+							     again. The other counts stay honest (a null reads no-data). -->
+							{#if r.vehicles != null}
+								<div class="receipt-count">
+									<dt>{t.counts.vehicles}</dt>
+									<dd>{fmtCount(r.vehicles)}</dd>
+								</div>
+							{/if}
 						</dl>
 					</div>
 

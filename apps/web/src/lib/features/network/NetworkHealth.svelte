@@ -230,7 +230,7 @@
 			// scaled; a silent trip is a service gap). null only if worst is 0,
 			// which the empty-guard above already excludes.
 			value: worst > 0 ? Math.min(1, Math.max(0, r.count / worst)) : null,
-			display: `${fmtCount(r.count)} ${t.nonResponding.tripsUnit}`,
+			display: `${fmtCount(r.count)} ${t.nonResponding.tripsUnit(r.count)}`,
 			href: localizeHref(routeFor({ kind: 'line', id: r.route_id }), locale),
 			ariaLabel: t.nonResponding.viewDetail(r.route_id),
 		}));

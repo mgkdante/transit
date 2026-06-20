@@ -3,6 +3,7 @@ import {
 	DEFAULT_SITE_ORIGIN,
 	normalizeOptionalText,
 	normalizeSiteOrigin,
+	normalizeTwitterHandle,
 	parsePublicBoolean,
 } from './config';
 
@@ -24,6 +25,18 @@ describe('public site config', () => {
 		expect(normalizeOptionalText('   ')).toBeUndefined();
 		expect(normalizeOptionalText('  STM  ')).toBe('STM');
 		expect(normalizeOptionalText('Montréal')).toBe('Montréal');
+	});
+
+	it('normalizes Twitter handles to a single-@ form or undefined', () => {
+		expect(normalizeTwitterHandle(undefined)).toBeUndefined();
+		expect(normalizeTwitterHandle('')).toBeUndefined();
+		expect(normalizeTwitterHandle('   ')).toBeUndefined();
+		expect(normalizeTwitterHandle('@')).toBeUndefined();
+		expect(normalizeTwitterHandle('yesid')).toBe('@yesid');
+		expect(normalizeTwitterHandle('@yesid')).toBe('@yesid');
+		expect(normalizeTwitterHandle('  @@yesid  ')).toBe('@yesid');
+		expect(normalizeTwitterHandle('https://twitter.com/yesid')).toBe('@yesid');
+		expect(normalizeTwitterHandle('https://x.com/yesid/')).toBe('@yesid');
 	});
 
 	it('parses public boolean env flags conservatively', () => {

@@ -122,7 +122,22 @@
 	// One numbered entry per metric, in render order. badge = the 1-based index in
 	// orderedMetrics; id = the metric anchor (the SAME anchor the (i) tip deep-links
 	// to and the section card carries as data-toc + the section block's element id).
+	// Stable, locale-free anchor for the provenance preamble. It renders FIRST and
+	// is a non-metric section, so it leads the ToC with an icon badge (not the
+	// metric number run); the same anchor is its data-toc hook + ToC entry id.
+	const PROVENANCE_ANCHOR = 'metrics-provenance';
+
 	const tocEntries = $derived.by((): TocEntry[] => [
+		// The provenance preamble opens the page — a non-metric section, so it
+		// carries an icon mark (not the metric number run), keeping the TOC entry in
+		// lock-step with its leading position above every metric card.
+		{
+			id: PROVENANCE_ANCHOR,
+			title: t.provenance.label,
+			level: 2,
+			badge: { kind: 'icon' as const, name: 'layers' },
+			children: [],
+		},
 		...orderedMetrics.map((entry, i) => ({
 			id: entry.anchor,
 			title: entry.name[locale],
@@ -187,8 +202,14 @@
 		</aside>
 
 		<div class="sections-column" data-testid="metrics-sections">
-			<!-- Provenance preamble: the honest framing every number inherits. -->
-			<section class="metrics-prose" aria-labelledby="metrics-provenance">
+			<!-- Provenance preamble: the honest framing every number inherits. Carries
+			     the data-toc anchor so it is the FIRST tracked ToC target (active-section
+			     observer + click-to-scroll), mirroring the structural-gaps card pattern. -->
+			<section
+				class="metrics-prose"
+				aria-labelledby="metrics-provenance"
+				data-toc={PROVENANCE_ANCHOR}
+			>
 				<SectionLabel id="metrics-provenance" text={t.provenance.label} variant="station" />
 				<p class="metrics-preamble">{t.provenance.body}</p>
 				{#if provenance.data?.conformance}

@@ -76,13 +76,15 @@
 		}
 	}
 
-	// Format a nullable OTP-points delta as "−3.2 pts" (the points of on-time the
-	// spot has lost vs baseline) or the honest no-data string. The roll-up may emit
-	// the delta as a negative (points below baseline) or a positive magnitude; we
-	// read its absolute size for the human "points lost" reading and let the
-	// magnitude bar carry the relative scale.
-	function fmtDelta(pts: number | null | undefined): string {
-		if (pts == null) return t.noData;
+	// Format a non-null OTP-points delta as "−3.2 pts" (the points of on-time the
+	// spot has lost vs baseline). The roll-up may emit the delta as a negative
+	// (points below baseline) or a positive magnitude; we read its absolute size for
+	// the human "points lost" reading and let the magnitude bar carry the relative
+	// scale. A NULL delta returns undefined so the row OMITS its display value
+	// entirely (RankedRow only renders {#if display}) — the all-null delta column
+	// disappears rather than reading a permanent "no data" string.
+	function fmtDelta(pts: number | null | undefined): string | undefined {
+		if (pts == null) return undefined;
 		const mag = Math.abs(pts);
 		return t.deltaLost(`${mag.toFixed(1)}`);
 	}
@@ -94,7 +96,7 @@
 		readonly subtitle: string;
 		readonly severity: SeverityCode;
 		readonly value: number | null;
-		readonly display: string;
+		readonly display: string | undefined;
 		readonly href: string | null;
 		readonly ariaLabel: string;
 	};

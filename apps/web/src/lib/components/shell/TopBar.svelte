@@ -136,6 +136,12 @@
 			(locale === 'fr' ? 'Réseau de transport' : 'Transit network'),
 	);
 	const cityAria = $derived(locale === 'fr' ? 'Choisir une ville' : 'Choose a city');
+	// The network switcher is inert while a single provider is published: a
+	// visually-hidden hint tells AT WHY the control does nothing (one network, the
+	// active provider), naming the active network so it never reads as a dead button.
+	const singleNetworkHint = $derived(
+		locale === 'fr' ? `Réseau unique (${cityLabel})` : `Single network (${cityLabel})`,
+	);
 	const alertsAria = $derived(
 		alertCount > 0
 			? locale === 'fr'
@@ -244,13 +250,17 @@
 	<!-- BRAND: yesid. (-> yesid.dev) · transit home + live dot, shared cluster. -->
 	<BrandCluster variant="topbar" productHref="/" productAria={homeAria} {liveLabel} />
 
-	<!-- City picker placeholder (no Family data in 9.2) -------------------- -->
+	<!-- City picker placeholder (no Family data in 9.2). The single published
+	     provider makes this inert: `aria-disabled` (not native `disabled`, so AT can
+	     still read the control + its hint) + out of the tab order, with a
+	     visually-hidden reason naming the one active network. -->
 	<button
 		type="button"
 		class="tap-press hidden shrink-0 items-center gap-1.5 rounded-lg border border-border-subtle bg-popover px-2.5 py-1.5 text-small text-foreground transition-colors hover:border-primary hover:text-primary lg:inline-flex"
 		aria-label={cityAria}
+		aria-disabled="true"
+		tabindex="-1"
 		data-slot="topbar-city"
-		disabled
 	>
 		<svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true" fill="none">
 			<path
@@ -261,6 +271,7 @@
 			<circle cx="8" cy="6" r="1.6" stroke="currentColor" stroke-width="1.3" />
 		</svg>
 		<span class="max-w-[14rem] truncate font-mono text-caption" title={cityLabel}>{cityLabel}</span>
+		<span class="sr-only">{singleNetworkHint}</span>
 	</button>
 
 	<!-- CENTER: multi-value search ----------------------------------------- -->
@@ -281,7 +292,7 @@
 			bind:value={search}
 			placeholder={searchPlaceholder}
 			aria-label={searchAria}
-			autocomplete="street-address"
+			autocomplete="off"
 			spellcheck="false"
 			onfocus={openSearchResults}
 			oninput={handleSearchInput}
@@ -412,7 +423,7 @@
 					bind:value={search}
 					placeholder={searchPlaceholder}
 					aria-label={searchAria}
-					autocomplete="street-address"
+					autocomplete="off"
 					spellcheck="false"
 					onfocus={openSearchResults}
 					oninput={handleSearchInput}

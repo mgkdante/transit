@@ -46,14 +46,16 @@ describe('TopBar search results', () => {
 		});
 	});
 
-	it('lets browser address autofill assist the chrome search inputs', async () => {
+	it('turns browser autofill off on the chrome search inputs', async () => {
 		const { container, getByRole } = render(TopBar, {
 			props: { locale: 'en' },
 		});
 
+		// The chrome search is a transit query box (lines/stops/addresses), not a
+		// postal-address field, so it opts OUT of browser address autofill.
 		expect(getByRole('searchbox', { name: 'Search the network' })).toHaveAttribute(
 			'autocomplete',
-			'street-address',
+			'off',
 		);
 
 		await fireEvent.click(getByRole('button', { name: 'Open search' }));
@@ -61,7 +63,7 @@ describe('TopBar search results', () => {
 		const mobileSearch = within(container).getByTestId('topbar-mobile-search');
 		expect(
 			within(mobileSearch).getByRole('searchbox', { name: 'Search the network' }),
-		).toHaveAttribute('autocomplete', 'street-address');
+		).toHaveAttribute('autocomplete', 'off');
 	});
 
 	it('opens a focused mobile search surface from the search icon', async () => {

@@ -15,12 +15,36 @@
 // render the KEYWORDED copy; otherwise we fall back to the NEUTRAL,
 // network-generic copy. Both variants are held inside the 120–160 char budget.
 
-import { delocalizePath, type Locale } from '$lib/i18n';
+import { delocalizePath, localizeHref, type Locale } from '$lib/i18n';
 
 export interface RouteSeo {
 	title: string;
 	description: string;
 }
+
+/** One resolved breadcrumb crumb: a localized label and a delocalized path. */
+export interface BreadcrumbTrailItem {
+	/** Already-localized, human-facing label. */
+	name: string;
+	/** Delocalized path for this crumb (locale prefix applied by the consumer). */
+	path: string;
+}
+
+/** Bilingual crumb labels for the breadcrumb trail (the leaf is the URL id). */
+const CRUMB_LABELS = {
+	home: { en: 'Home', fr: 'Accueil' },
+	lines: { en: 'Lines', fr: 'Lignes' },
+	stops: { en: 'Stops', fr: 'Arrêts' },
+} satisfies Record<string, BilingualText>;
+
+/** Bilingual name/description for the open-transit-data Dataset JSON-LD node. */
+const DATASET_COPY = {
+	name: { en: 'Open transit dataset', fr: 'Jeu de données de transport ouvert' },
+	description: {
+		en: 'Open transit reliability, schedule and live-feed data measured from the public /v1 contract, refreshed continuously and free to reuse under CC BY 4.0.',
+		fr: 'Données ouvertes de fiabilité, horaires et flux en direct mesurées depuis le contrat public /v1, rafraîchies en continu et libres de réutilisation sous CC BY 4.0.',
+	},
+} satisfies Record<'name' | 'description', BilingualText>;
 
 /**
  * Provider identity tokens injected into the keyworded SEO copy. When both
@@ -275,4 +299,53 @@ export function resolveRouteSeo(
 		return { title: title[locale], description: entry.description(resolved)[locale] };
 	}
 	return { title: entry.title[locale], description: entry.neutralDescription[locale] };
+}
+
+/**
+ * Resolve the breadcrumb trail for a (possibly locale-prefixed) pathname. Only
+ * the STABLE detail surfaces get a trail today: /route/[id] → Home > Lines >
+ * <id> and /stop/[id] → Home > Stops > <id>. The leaf label is the URL id
+ * segment (route number / stop code) — crawler-visible at SSR with no client
+ * data. Every other surface returns an empty trail (the caller omits the node).
+ *
+ * Paths are delocalized; the caller localizes each crumb path for the active
+ * locale. Returns [] for surfaces without a meaningful hierarchy.
+ *
+ * TODO(seo): the leaf uses the URL id (route number / stop code), not the entity
+ * NAME (line headsign / stop name). A per-entity leaf label — and matching per-
+ * entity <title>/description — needs the data-binding SSR-seed (the /v1 entity
+ * resolved server-side), which is out of scope for this header-level pass.
+ */
+export function resolveBreadcrumbTrail(pathname: string, locale: Locale): BreadcrumbTrailItem[] {
+	const path = delocalizePath(pathname);
+	const home: BreadcrumbTrailItem = { name: CRUMB_LABELS.home[locale], path: '/' };
+
+	if (path.startsWith('/route/')) {
+		const id = decodeURIComponent(path.slice('/route/'.length));
+		if (!id) return [];
+		return [home, { name: CRUMB_LABELS.lines[locale], path: '/lines' }, { name: id, path }];
+	}
+	if (path.startsWith('/stop/')) {
+		const id = decodeURIComponent(path.slice('/stop/'.length));
+		if (!id) return [];
+		return [home, { name: CRUMB_LABELS.stops[locale], path: '/stops' }, { name: id, path }];
+	}
+	return [];
+}
+
+/** Bilingual Dataset JSON-LD copy (name + description) for the active locale. */
+export function resolveDatasetSeo(locale: Locale): { name: string; description: string } {
+	return { name: DATASET_COPY.name[locale], description: DATASET_COPY.description[locale] };
+}
+
+/** Build absolute, locale-prefixed breadcrumb items for the BreadcrumbList node. */
+export function breadcrumbItemsForHead(
+	pathname: string,
+	locale: Locale,
+	siteOrigin: string,
+): { name: string; url: string }[] {
+	return resolveBreadcrumbTrail(pathname, locale).map((crumb) => ({
+		name: crumb.name,
+		url: `${siteOrigin}${localizeHref(crumb.path, locale)}`,
+	}));
 }

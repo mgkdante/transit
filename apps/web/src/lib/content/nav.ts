@@ -120,3 +120,25 @@ export function isSurfaceActive(item: SurfaceNavItem, currentPath: string): bool
 		return currentPath === base || currentPath.startsWith(`${base}/`);
 	});
 }
+
+/**
+ * Bilingual label for the `<main>` landmark on a given DELOCALIZED path — so the
+ * single full-bleed `<main>` reads as the ACTIVE surface to assistive tech (a
+ * screen-reader landmark menu shows "Lines" / "Daily receipt", never a stale
+ * "Network map" on every route). Resolves against the same SURFACE_NAV /
+ * SECONDARY_NAV manifests the chrome links from, so the landmark and the nav
+ * highlight never disagree. The home hub + the live map (and any unmapped path)
+ * fall back to the map label — the map is the persistent backdrop of the shell.
+ * Pure — callers delocalize first.
+ */
+export function mainLandmarkLabel(currentPath: string): BilingualLabel {
+	const surface = SURFACE_NAV.find((item) => isSurfaceActive(item, currentPath));
+	if (surface) return surface.label;
+	const secondary = SECONDARY_NAV.find((link) => {
+		const base = link.href.endsWith('/') ? link.href.slice(0, -1) : link.href;
+		return currentPath === base || currentPath.startsWith(`${base}/`);
+	});
+	if (secondary) return secondary.label;
+	// Home hub or an unmapped path: the live map is the shell's backdrop.
+	return SURFACE_NAV[0].label;
+}

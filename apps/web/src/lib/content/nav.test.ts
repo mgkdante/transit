@@ -4,7 +4,7 @@
 import { describe, it, expect } from 'vitest';
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { SURFACE_NAV, SECONDARY_NAV, MENU_EXTRAS, isSurfaceActive } from './nav';
+import { SURFACE_NAV, SECONDARY_NAV, MENU_EXTRAS, isSurfaceActive, mainLandmarkLabel } from './nav';
 
 const ROUTES = resolve(process.cwd(), 'src/routes/[[lang=locale]]');
 const surface = (key: SurfaceKey) => SURFACE_NAV.find((i) => i.key === key)!;
@@ -70,6 +70,30 @@ describe('isSurfaceActive', () => {
 		expect(isSurfaceActive(surface('map'), '/network')).toBe(false);
 		expect(isSurfaceActive(surface('stops'), '/route/1')).toBe(false);
 		expect(isSurfaceActive(surface('map'), '/')).toBe(false);
+	});
+});
+
+describe('mainLandmarkLabel', () => {
+	it('names the active primary surface (not a stale "Network map" everywhere)', () => {
+		expect(mainLandmarkLabel('/lines')).toEqual({ en: 'Lines', fr: 'Lignes' });
+		expect(mainLandmarkLabel('/route/1')).toEqual({ en: 'Lines', fr: 'Lignes' });
+		expect(mainLandmarkLabel('/stop/5')).toEqual({ en: 'Stops', fr: 'Arrêts' });
+		expect(mainLandmarkLabel('/network')).toEqual({ en: 'Network', fr: 'Réseau' });
+	});
+
+	it('names secondary (accountability/methodology) surfaces too', () => {
+		expect(mainLandmarkLabel('/receipt')).toEqual({ en: 'Daily receipt', fr: 'Reçu quotidien' });
+		expect(mainLandmarkLabel('/metrics')).toEqual({
+			en: 'How we measure',
+			fr: 'Comment on mesure',
+		});
+	});
+
+	it('falls back to the map label for the home hub, the map, and unmapped paths', () => {
+		const mapLabel = { en: 'Map', fr: 'Carte' };
+		expect(mainLandmarkLabel('/')).toEqual(mapLabel);
+		expect(mainLandmarkLabel('/map')).toEqual(mapLabel);
+		expect(mainLandmarkLabel('/totally-unknown')).toEqual(mapLabel);
 	});
 });
 
