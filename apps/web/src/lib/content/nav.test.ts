@@ -33,6 +33,25 @@ describe('SURFACE_NAV manifest', () => {
 		const keys = SURFACE_NAV.map((i) => i.key);
 		expect(new Set(keys).size).toBe(keys.length);
 	});
+
+	it('registers the four accountability surfaces in SECONDARY_NAV with EN + FR labels', () => {
+		// slice-9.6: the audit/meta surfaces ride SECONDARY_NAV beside /metrics +
+		// /status. Each must be present (so it is reachable) and carry both labels.
+		const hrefs = SECONDARY_NAV.map((i) => i.href);
+		for (const href of ['/hotspots', '/receipt', '/repeat-offenders', '/alerts']) {
+			expect(hrefs, `${href} missing from SECONDARY_NAV`).toContain(href);
+			const item = SECONDARY_NAV.find((i) => i.href === href)!;
+			expect(item.label.en, `${href} en label`).toBeTruthy();
+			expect(item.label.fr, `${href} fr label`).toBeTruthy();
+		}
+	});
+
+	it('every SECONDARY_NAV href carries an EN + FR label (no half-localized link)', () => {
+		for (const item of SECONDARY_NAV) {
+			expect(item.label.en, item.href).toBeTruthy();
+			expect(item.label.fr, item.href).toBeTruthy();
+		}
+	});
 });
 
 describe('isSurfaceActive', () => {

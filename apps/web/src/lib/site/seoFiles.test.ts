@@ -19,6 +19,10 @@ const SURFACES = [
 	'/search',
 	'/metrics',
 	'/status',
+	'/hotspots',
+	'/receipt',
+	'/repeat-offenders',
+	'/alerts',
 ] as const;
 
 describe('SEO static files', () => {
@@ -140,7 +144,7 @@ describe('sitemap entity enumeration', () => {
 		);
 
 		const locCount = (sitemap.match(/<loc>/g) ?? []).length;
-		// 8 surfaces + 2 routes + 3 stops = 13 entities × 2 locales = 26.
+		// 12 surfaces + 2 routes + 3 stops = 17 entities x 2 locales = 34.
 		expect(locCount).toBe((SURFACES.length + 2 + 3) * 2);
 	});
 

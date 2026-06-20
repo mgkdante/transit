@@ -96,10 +96,18 @@ export const MENU_EXTRAS: readonly ExternalNavLink[] = [
  * Secondary in-app reference links — surfaced in the footer, not the primary
  * rail. The metric explainer (/metrics) lives here: it is a site-wide
  * methodology reference every surface deep-links into, not a wayfinding surface.
+ * The accountability surfaces (/hotspots, /receipt, /repeat-offenders, /alerts)
+ * are audit/meta pages in the same vein as /metrics + /status — they read the
+ * roll-ups to hold the service to account, rather than being primary wayfinding
+ * surfaces, so they live here beside the methodology + data-health links.
  */
 export const SECONDARY_NAV: readonly SecondaryNavLink[] = [
 	{ href: '/metrics', label: { en: 'How we measure', fr: 'Comment on mesure' } },
 	{ href: '/status', label: { en: 'Data health', fr: 'Santé des données' } },
+	{ href: '/hotspots', label: { en: 'Hotspots', fr: 'Points chauds' } },
+	{ href: '/receipt', label: { en: 'Daily receipt', fr: 'Reçu quotidien' } },
+	{ href: '/repeat-offenders', label: { en: 'Repeat offenders', fr: 'Récidivistes' } },
+	{ href: '/alerts', label: { en: 'Alerts', fr: 'Avis' } },
 ] as const;
 
 /**

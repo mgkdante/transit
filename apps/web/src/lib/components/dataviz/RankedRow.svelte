@@ -48,6 +48,15 @@
 		/** Make the row activatable (keyboard + click). */
 		onSelect?: () => void;
 		/**
+		 * Render the root WITHOUT the self `role="listitem"` (a plain presentational
+		 * container). Set this when the row is wrapped by an outer `<a>`/`<li>` that
+		 * already owns the listitem semantics (the correct list > listitem > link
+		 * shape), so the row never double-declares the role. Ignored when the row is
+		 * interactive (an activatable row keeps its button role). Default false: the
+		 * row self-declares `role="listitem"` for placement directly in a role="list".
+		 */
+		bare?: boolean;
+		/**
 		 * Opt-in richer breakdown tooltip on hover/focus, anchored to the row's
 		 * right edge. Requires `tooltipRows`. Default off; when omitted the row is
 		 * unchanged. Drives the embedded SeverityBar's `interactive` OFF so the two
@@ -70,6 +79,7 @@
 		deltaDisplay,
 		higherIsBetter = false,
 		onSelect,
+		bare = false,
 		tooltip = false,
 		tooltipRows,
 		class: className,
@@ -95,6 +105,12 @@
 	);
 
 	const interactive = $derived(typeof onSelect === 'function');
+
+	// Root role: an interactive row is a button; a default row self-declares
+	// listitem for placement directly in a role="list"; a `bare` (non-interactive)
+	// row drops the role entirely so an outer <li>/<a> owns the list semantics
+	// (the correct list > listitem > link shape).
+	const rootRole = $derived(interactive ? 'button' : bare ? undefined : 'listitem');
 
 	function activate() {
 		onSelect?.();
@@ -174,7 +190,7 @@
 
 {#snippet rowEl()}
 	<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
-	<!-- role + tabindex are correlated: interactive => button + tabindex 0, else listitem + no tabindex. The compiler cannot narrow the conditional. -->
+	<!-- role + tabindex are correlated: interactive => button + tabindex 0, else listitem + no tabindex (or no role when `bare`, so an outer li/a owns the listitem). The compiler cannot narrow the conditional. -->
 	<div
 		bind:this={ref}
 		class={cn(
@@ -186,7 +202,7 @@
 				'transition-colors hover:bg-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ring)]',
 			className,
 		)}
-		role={interactive ? 'button' : 'listitem'}
+		role={rootRole}
 		tabindex={focusable ? 0 : undefined}
 		onclick={interactive ? activate : undefined}
 		onkeydown={interactive ? onKeydown : undefined}
