@@ -41,6 +41,10 @@
 	import { metricsCopy } from '$lib/features/metrics/metrics.copy';
 	import type { PunctualityVM, PeriodComparisonRow } from './clusters';
 	import type { ReliabilityCopy } from './reliability.copy';
+	import {
+		shiftLabel as shiftGrainLabel,
+		severeShareToSeverity,
+	} from '$lib/features/reliability/shiftGrains';
 
 	export interface Cluster01PunctualityProps {
 		/** The punctuality view-model from `toReliabilityClusters`. */
@@ -101,10 +105,9 @@
 	const severeValue = $derived<number | null>(
 		severePct == null ? null : Math.min(1, Math.max(0, severePct / 100)),
 	);
-	// Severe share is itself a severity reading: band it so the bar colour is honest.
-	const severeSeverity = $derived<SeverityCode>(
-		severePct == null ? 'watch' : severePct >= 10 ? 'critical' : severePct >= 5 ? 'high' : 'watch',
-	);
+	// Severe share is itself a severity reading: band it so the bar colour is honest
+	// (shared thresholds — see severeShareToSeverity; null bands to 'watch').
+	const severeSeverity = $derived<SeverityCode>(severeShareToSeverity(severePct));
 
 	// Weakest stops, worst mean-delay first, the accountability list. Normalize
 	// each bar against the worst stop so the ranking reads as relative magnitude.
@@ -138,15 +141,10 @@
 	   severe share as a [0,1] magnitude; null severe → empty track (no fake 0).
 	   These are a trailing-window observation-weighted proxy (date:null), NOT
 	   certified OTP, the band prints that caveat below the block. */
-	const SHIFT_LABELS: Record<string, Record<Locale, string>> = {
-		am_peak: { fr: 'Pointe AM', en: 'AM peak' },
-		midday: { fr: 'Journée', en: 'Midday' },
-		pm_peak: { fr: 'Pointe PM', en: 'PM peak' },
-		evening: { fr: 'Soirée', en: 'Evening' },
-		night: { fr: 'Nuit', en: 'Night' },
-	};
+	// Shift-grain labels come from the shared reliability vocabulary so the lines +
+	// stops surfaces speak identical tokens (no re-invented labels here).
 	function shiftLabel(g: string): string {
-		return SHIFT_LABELS[g]?.[locale] ?? g;
+		return shiftGrainLabel(g, locale);
 	}
 	function dayTypeLabel(g: string): string {
 		if (g === 'weekday') return copy.peak.weekday;
@@ -176,12 +174,11 @@
 			.sort((a, b) => (b.severePct ?? 0) - (a.severePct ?? 0))
 			.map((r, i) => {
 				const sev = r.severePct ?? 0;
-				const severity: SeverityCode = sev >= 10 ? 'critical' : sev >= 5 ? 'high' : 'watch';
 				return {
 					key: r.grain,
 					rank: i + 1,
 					title: label(r.grain),
-					severity,
+					severity: severeShareToSeverity(r.severePct),
 					value: worst > 0 ? Math.min(1, Math.max(0, sev / worst)) : null,
 					display: fmtPct(r.severePct),
 				};

@@ -36,6 +36,7 @@
 	import { metricsCopy } from '$lib/features/metrics/metrics.copy';
 	import type { WaitRegularityVM } from './clusters';
 	import type { ReliabilityCopy } from './reliability.copy';
+	import { shiftLabel as baseShiftLabel } from '$lib/features/reliability/shiftGrains';
 
 	export interface Cluster02WaitRegularityProps {
 		/** The wait-regularity VM (headway rows carrying a signal, contract order). */
@@ -183,19 +184,14 @@
 	   per-direction (`_dir*`) and weekend variants are a noisier advanced grain
 	   tucked behind a "more detail" reveal, per the 9.6 control-spine doctrine
 	   (advanced grains never crowd the headline). Raw shift keys decode to
-	   readable, bilingual labels. */
-	const SHIFT_BASE: Record<string, Record<Locale, string>> = {
-		am_peak: { fr: 'Pointe AM', en: 'AM peak' },
-		pm_peak: { fr: 'Pointe PM', en: 'PM peak' },
-		midday: { fr: 'Journée', en: 'Midday' },
-		evening: { fr: 'Soirée', en: 'Evening' },
-		night: { fr: 'Nuit', en: 'Night' },
-	};
+	   readable, bilingual labels: the base am_peak/midday/… token resolves through
+	   the SHARED shift vocabulary (so every surface speaks one language), and this
+	   band keeps its own per-direction / weekend suffix decoration on top. */
 	function shiftLabel(shift: string): string {
 		const weekend = shift.includes('_weekend');
 		const dir = shift.match(/_dir(\d)/)?.[1] ?? null;
 		const base = shift.replace(/_dir\d/, '').replace(/_weekend/, '');
-		const baseLabel = SHIFT_BASE[base]?.[locale] ?? base;
+		const baseLabel = baseShiftLabel(base, locale);
 		const extras: string[] = [];
 		if (dir != null) extras.push(`dir ${dir}`);
 		if (weekend) extras.push(locale === 'fr' ? 'fin de sem.' : 'weekend');

@@ -13,14 +13,23 @@
       cancellation-rate TrendLine (stood down when the series carries none), and
       a per-day crowding small-multiple (one 100% StackedBar per day with data).
 
+    · the historic trend reads at a day / week / month GRAIN the rider picks:
+      day uses the daily `series` (the 7/30/90 window still applies); week uses
+      the additive `weekly` series (week-start dated); month uses `monthly`
+      (month-start dated). p90 + vehicles are null on week/month (14d-daily-only),
+      so on those grains the retard channel reads the avg-delay series and the
+      vehicles sparkline + per-day crowding small-multiple stand down. A grain is
+      offered ONLY when its series carries data; the picker stands down (one
+      grain) when only the daily series exists.
+
   DOCTRINE: every data mark rides the dataviz scale (StackedBar/TrendLine/
-  Sparkline own that); --primary stays interactive-only (the window + delay-series
-  pickers are interactive affordances). Honesty rule — a null headline shows the
-  localized "no data" string, never a fabricated 0; null trend points are gaps
-  (never zero); a day with no occupancy telemetry is SKIPPED (never an even split).
-  Before the first live tick we show a skeleton EdgeState; a live-store error
-  shows error-v1. All user-facing prose comes from ./network.copy; band labels
-  are localized there.
+  Sparkline own that); --primary stays interactive-only (the grain + window +
+  delay-series pickers are interactive affordances). Honesty rule — a null
+  headline shows the localized "no data" string, never a fabricated 0; null trend
+  points are gaps (never zero); a day with no occupancy telemetry is SKIPPED
+  (never an even split). Before the first live tick we show a skeleton EdgeState;
+  a live-store error shows error-v1. All user-facing prose comes from
+  ./network.copy; band labels are localized there.
 -->
 <script lang="ts">
 	import { onMount } from 'svelte';
@@ -36,11 +45,18 @@
 		STATUS_CODES,
 		OCCUPANCY_CODES,
 		type NetworkFile,
+		type NetworkShift,
 		type OccupancyCode,
 		type StatusCode,
 		type TrendPoint,
 	} from '$lib/v1';
+	import type { SeverityCode } from '$lib/v1/schemas';
 	import { createResource } from '$lib/v1/resource.svelte';
+	import {
+		shiftLabel,
+		dayTypeLabel,
+		severeShareToSeverity,
+	} from '$lib/features/reliability/shiftGrains';
 	import {
 		SurfaceHeader,
 		LiveFreshness,
@@ -51,7 +67,13 @@
 	} from '$lib/components/surface';
 	import { Surface } from '$lib/components/layout';
 	import { Separator } from '$lib/components/ui/separator';
-	import { Sparkline, StackedBar, TrendLine, type StackedSegment } from '$lib/components/dataviz';
+	import {
+		RankedRow,
+		Sparkline,
+		StackedBar,
+		TrendLine,
+		type StackedSegment,
+	} from '$lib/components/dataviz';
 	import { EdgeState } from '$lib/components/edge';
 	import MetricDisplay from '$lib/components/brand/MetricDisplay.svelte';
 	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
@@ -124,16 +146,68 @@
 		}));
 	});
 
+	// --- Trend grain (day / week / month) ------------------------------------
+	// The historic trend reads at a calendar grain the rider chooses: day uses the
+	// daily `series` (the 7/30/90 window below still applies), week uses the
+	// additive `weekly` series (week-start dated), month uses `monthly`
+	// (month-start dated). On week/month, p90_min + vehicles are null (those are
+	// 14d-daily-only) → the retard channel reads avg-delay and the vehicles
+	// sparkline + per-day crowding small-multiple stand down. A grain is offered
+	// ONLY when its series carries data; the picker stands down to a single chip
+	// when no coarser series was published.
+	type Grain = 'day' | 'week' | 'month';
+
+	const dailySeries = $derived<TrendPoint[]>(trend.data?.series ?? []);
+	const weeklySeries = $derived<TrendPoint[]>(trend.data?.weekly ?? []);
+	const monthlySeries = $derived<TrendPoint[]>(trend.data?.monthly ?? []);
+
+	const hasDaily = $derived(dailySeries.length > 0);
+	const hasWeekly = $derived(weeklySeries.length > 0);
+	const hasMonthly = $derived(monthlySeries.length > 0);
+
+	let grainKey = $state('day');
+	const grain = $derived<Grain>(
+		grainKey === 'week' || grainKey === 'month' ? (grainKey as Grain) : 'day',
+	);
+	// Coarse grains carry no p90 / no per-day crowding / no daily vehicles spark.
+	const isDailyGrain = $derived(grain === 'day');
+
+	const grainSegments = $derived.by<GrainSegment<string>[]>(() => [
+		// `day` is the always-present base WHEN the daily series carries data; a
+		// snapshot with an empty `series` but populated coarse grains must not offer
+		// (or default to) an empty day grain.
+		{ key: 'day', label: t.grain.day, available: hasDaily },
+		{ key: 'week', label: t.grain.week, available: hasWeekly },
+		{ key: 'month', label: t.grain.month, available: hasMonthly },
+	]);
+	// Offer the picker whenever MORE THAN ONE grain carries data — a lone enabled
+	// grain is a dead control, so the picker stands down to nothing then.
+	const showGrainPicker = $derived([hasDaily, hasWeekly, hasMonthly].filter(Boolean).length > 1);
+
+	// Keep `grainKey` on an AVAILABLE grain. Clamp a chosen coarse grain back when
+	// its series is absent (e.g. an older snapshot with no weekly/monthly); and when
+	// the daily series itself is empty, fall the day grain forward to the first
+	// populated coarse grain — never a dead/empty grain.
+	$effect(() => {
+		if (grainKey === 'week' && !hasWeekly)
+			grainKey = hasDaily ? 'day' : hasMonthly ? 'month' : 'day';
+		else if (grainKey === 'month' && !hasMonthly)
+			grainKey = hasDaily ? 'day' : hasWeekly ? 'week' : 'day';
+		else if (grainKey === 'day' && !hasDaily)
+			grainKey = hasWeekly ? 'week' : hasMonthly ? 'month' : 'day';
+	});
+
 	// --- Trend window (7/30/90-day) ------------------------------------------
 	// build_network_trend publishes the full series (~90d OTP/avg-delay, ~14d
 	// p90/vehicles). We slice the TAIL (most recent N days) and offer only windows
 	// that fit the data: a window longer than the series is disabled (never a
 	// dead control). Default to the richest ENABLED window that fits the loaded
-	// series (the largest WINDOW ≤ the data length), falling back to 7.
+	// series (the largest WINDOW ≤ the data length), falling back to 7. The window
+	// applies to the DAY grain only; week/month render their full (short) series.
 	const WINDOWS = [7, 30, 90] as const;
 	type WindowDays = (typeof WINDOWS)[number];
 
-	const fullSeries = $derived<TrendPoint[]>(trend.data?.series ?? []);
+	const fullSeries = $derived<TrendPoint[]>(dailySeries);
 
 	/** The richest WINDOW that fits the loaded series (largest ≤ n), else 7. */
 	const bestFitWindow = $derived.by<WindowDays>(() => {
@@ -189,22 +263,46 @@
 		}
 	});
 
-	/** The most-recent `windowDays` points (clamped to the available length). */
-	const windowedSeries = $derived<TrendPoint[]>(
-		fullSeries.slice(Math.max(0, fullSeries.length - windowDays)),
-	);
+	// The points the trend renders. On the DAY grain this is the most-recent
+	// `windowDays` daily points (clamped to the available length); on week/month it
+	// is the FULL (short) coarse series — the 7/30/90 window has no meaning there.
+	const windowedSeries = $derived.by<TrendPoint[]>(() => {
+		if (grain === 'week') return weeklySeries;
+		if (grain === 'month') return monthlySeries;
+		return fullSeries.slice(Math.max(0, fullSeries.length - windowDays));
+	});
 
 	// --- Delay series toggle (p90 "slowest 10%" vs avg "typical") ------------
 	// The retard line can read either the p90 or the avg-delay series; the toggle
-	// re-feeds TrendLine's retard series + its own y-domain + axis label.
+	// re-feeds TrendLine's retard series + its own y-domain + axis label. p90 is
+	// null on week/month (14d-daily-only), so on a coarse grain the p90 segment is
+	// DISABLED and the channel reads avg-delay regardless of the rider's pick.
 	let retardKey = $state('p90');
 
 	const retardSegments = $derived.by<GrainSegment<string>[]>(() => [
-		{ key: 'p90', label: t.trend.retardP90 },
+		// p90 has no week/month data → disabled on a coarse grain (never a flat-null line).
+		{ key: 'p90', label: t.trend.retardP90, available: isDailyGrain },
 		{ key: 'avg', label: t.trend.retardAvg },
 	]);
 
-	const retardLabel = $derived(retardKey === 'avg' ? t.metrics.delayP50 : t.trend.retardLabel);
+	// The EFFECTIVE retard series: the rider's pick on the day grain, forced to avg
+	// on week/month (where p90 carries no data). A null-safe fallback, never a gap.
+	const effectiveRetard = $derived<'p90' | 'avg'>(
+		isDailyGrain && retardKey === 'p90' ? 'p90' : 'avg',
+	);
+
+	// Clamp the picker's SELECTION (not just the effective series) to 'avg' on a
+	// coarse grain. p90 is disabled on week/month, so leaving retardKey='p90' would
+	// render the p90 chip BOTH active (value===key) AND disabled while the chart
+	// plots avg — a contradictory control. Snapping the key to 'avg' keeps the
+	// highlighted chip in lockstep with the plotted series.
+	$effect(() => {
+		if (!isDailyGrain && retardKey === 'p90') retardKey = 'avg';
+	});
+
+	const retardLabel = $derived(
+		effectiveRetard === 'avg' ? t.metrics.delayP50 : t.trend.retardLabel,
+	);
 
 	// Trend series: on-time % (green, 0–100 axis) vs the chosen delay series
 	// (amber, MINUTES). The two carry different units, so the delay series gets its
@@ -215,7 +313,7 @@
 	function buildTrendChart(points: readonly TrendPoint[]) {
 		const onTime = points.map((p) => p.otp_pct ?? null);
 		const retard = points.map((p) =>
-			retardKey === 'avg' ? (p.avg_delay_min ?? null) : (p.p90_min ?? null),
+			effectiveRetard === 'avg' ? (p.avg_delay_min ?? null) : (p.p90_min ?? null),
 		);
 		const maxRetard = retard.reduce<number>((m, v) => (v != null && v > m ? v : m), 0);
 		// Round the ceiling up to the nearest 5 min (floor of 10) so the delay
@@ -285,7 +383,90 @@
 				})),
 			})),
 	);
-	const hasOccupancyTrend = $derived(occupancyDays.length > 0);
+	// Per-day crowding is a DAILY artifact (week/month carry no per-point occupancy
+	// mix) → it only shows on the day grain, and only when a day carries telemetry.
+	const hasOccupancyTrend = $derived(isDailyGrain && occupancyDays.length > 0);
+
+	// --- By time of day + weekday/weekend (network-wide by_shift / by_daytype) --
+	// The historic trend additionally carries network-wide reliability per
+	// time-of-day shift (am_peak…night) and day-type (weekday/weekend). The
+	// HEADLINE per grain is the REAL on-time % (otp_pct = on-time/known over the
+	// trailing window), ranked worst-PUNCTUALITY first (lowest OTP first); a grain
+	// with no OTP reading falls back to its severe-delay share for ordering and
+	// sorts AFTER every OTP-known grain (worst severe-share first among those). The
+	// magnitude bar still encodes the SEVERE-delay share as a [0,1] mark on the
+	// dataviz severity scale (NEVER --primary), and avg delay + severe share read
+	// as the row subtitle. Honesty: a grain with NO otp AND no severe reading is
+	// DROPPED (never a fabricated 0); a null-OTP grain shows the localized no-data
+	// string in its headline, never a fake 0%. Each group's section stands down
+	// when nothing carries data. Labels come from the SHARED reliability vocabulary
+	// (shiftGrains). These grains are a trailing-window proxy → the caveat below.
+	type ShiftRow = {
+		readonly key: string;
+		readonly rank: number;
+		readonly title: string;
+		readonly severity: SeverityCode;
+		readonly value: number | null;
+		readonly display: string;
+		readonly subtitle: string;
+	};
+
+	/** Subtitle: avg delay + severe share, each honest no-data when null. */
+	function shiftSubtitle(avg: number | null, severe: number | null): string {
+		const avgText = `${t.shift.avgLabel} ${fmtMin(avg)}`;
+		const sevText = `${t.shift.severeLabel} ${severe == null ? t.noData : `${severe.toFixed(1)}${t.units.pct}`}`;
+		return `${avgText} · ${sevText}`;
+	}
+
+	// Rank worst-punctuality first: lowest OTP first; grains with no OTP fall back
+	// to severe-share for ordering and sort AFTER every OTP-known grain (worst
+	// severe-share first). A grain carrying NEITHER otp NOR severe is dropped (no
+	// fabricated 0). The severity bar always encodes the severe share (banded via
+	// the shared severeShareToSeverity), so a null-severe grain reads as a quiet
+	// no-data bar while its OTP headline still leads.
+	function rankByPunctuality(
+		rows: readonly NetworkShift[],
+		label: (g: string) => string,
+	): ShiftRow[] {
+		const real = rows.filter((r) => r.otp_pct != null || r.severe_pct != null);
+		const worstSevere = real.reduce((m, r) => Math.max(m, r.severe_pct ?? 0), 0);
+		return real
+			.slice()
+			.sort((a, b) => {
+				// OTP-known grains always sort before OTP-unknown grains.
+				const aHas = a.otp_pct != null;
+				const bHas = b.otp_pct != null;
+				if (aHas !== bHas) return aHas ? -1 : 1;
+				// Both OTP-known: lowest OTP (worst punctuality) first.
+				if (aHas && bHas) return (a.otp_pct ?? 0) - (b.otp_pct ?? 0);
+				// Both OTP-unknown: worst severe-share first.
+				return (b.severe_pct ?? 0) - (a.severe_pct ?? 0);
+			})
+			.map((r, i) => {
+				const sev = r.severe_pct ?? null;
+				return {
+					key: r.grain,
+					rank: i + 1,
+					title: label(r.grain),
+					// The bar encodes the severe share; null severe → quiet no-data bar.
+					severity: severeShareToSeverity(sev),
+					value:
+						sev != null && worstSevere > 0 ? Math.min(1, Math.max(0, sev / worstSevere)) : null,
+					// HEADLINE: the real OTP % (or honest no-data when null).
+					display: fmtPct(r.otp_pct ?? null),
+					subtitle: shiftSubtitle(r.avg_delay_min ?? null, sev),
+				};
+			});
+	}
+
+	const shiftRows = $derived.by<ShiftRow[]>(() =>
+		rankByPunctuality(trend.data?.by_shift ?? [], (g) => shiftLabel(g, locale)),
+	);
+	const dayTypeRows = $derived.by<ShiftRow[]>(() =>
+		rankByPunctuality(trend.data?.by_daytype ?? [], (g) => dayTypeLabel(g, locale)),
+	);
+	const hasShift = $derived(shiftRows.length > 0);
+	const hasDayType = $derived(dayTypeRows.length > 0);
 
 	function openStatusOnMap(code: StatusCode | OccupancyCode): void {
 		if (!STATUS_CODES.includes(code as StatusCode)) return;
@@ -398,16 +579,39 @@
 	<div class="network-block">
 		<div class="network-trend-head">
 			<SectionLabel text={t.trendSection} variant="station" />
-			<!-- Trend window (7/30/90-day) — slices the tail of the published series.
-			     A window longer than the data is disabled (never a dead control). -->
-			<GrainPicker
-				segments={windowSegments}
-				bind:value={windowKey}
-				label={t.window.label}
-				class="network-window"
-			/>
+			<div class="network-trend-controls">
+				<!-- Trend grain (day / week / month). Offered ONLY when a coarser series
+				     carries data — a lone "day" chip is a dead control, so the picker
+				     stands down then. p90 / vehicles / per-day crowding are daily-only. -->
+				{#if showGrainPicker}
+					<GrainPicker
+						segments={grainSegments}
+						bind:value={grainKey}
+						label={t.grain.label}
+						class="network-grain"
+					/>
+				{/if}
+				<!-- Trend window (7/30/90-day) — DAY grain only; slices the tail of the
+				     daily series. A window longer than the data is disabled (never a dead
+				     control). Week/month render their full short series → no window. -->
+				{#if isDailyGrain}
+					<GrainPicker
+						segments={windowSegments}
+						bind:value={windowKey}
+						label={t.window.label}
+						class="network-window"
+					/>
+				{/if}
+			</div>
 		</div>
-		<ResourceBoundary resource={trend} lang={locale} isEmpty={(d) => (d.series?.length ?? 0) === 0}>
+		<ResourceBoundary
+			resource={trend}
+			lang={locale}
+			isEmpty={(d) =>
+				(d.series?.length ?? 0) === 0 &&
+				(d.weekly?.length ?? 0) === 0 &&
+				(d.monthly?.length ?? 0) === 0}
+		>
 			<!-- The trend chart reads the module-level windowed series (not the
 			     boundary payload), so the gated content needs no snippet param —
 			     render it as default children. ONE window slice for every mark:
@@ -441,18 +645,21 @@
 					interactive
 				/>
 				<!-- Vehicles-in-service context: how much fleet reported each day, so
-				     OTP/delay reads against its denominator. Null → gap. -->
-				<div class="network-vehicles-context">
-					<Sparkline
-						values={vehiclesSeries}
-						label={t.trend.vehiclesSpark}
-						xLabels={chart.xLabels}
-						colorVar="var(--dataviz-status-unknown)"
-						interactive
-						showLast
-					/>
-					<span class="network-context-caption">{t.trend.vehiclesContext}</span>
-				</div>
+				     OTP/delay reads against its denominator. Null → gap. DAY grain only —
+				     vehicles is null on week/month (14d-daily-only). -->
+				{#if isDailyGrain}
+					<div class="network-vehicles-context">
+						<Sparkline
+							values={vehiclesSeries}
+							label={t.trend.vehiclesSpark}
+							xLabels={chart.xLabels}
+							colorVar="var(--dataviz-status-unknown)"
+							interactive
+							showLast
+						/>
+						<span class="network-context-caption">{t.trend.vehiclesContext}</span>
+					</div>
+				{/if}
 			</div>
 		</ResourceBoundary>
 	</div>
@@ -510,6 +717,59 @@
 			</ul>
 		</div>
 	{/if}
+
+	<!-- By time of day + weekday/weekend — network-wide reliability ranked by
+	     PUNCTUALITY (lowest on-time % first). Each row leads with the real OTP %
+	     (avg delay + severe share read as the subtitle); the magnitude bar encodes
+	     the severe-delay share on the severity scale. Each section stands down when
+	     its group carries no data; a grain with no OTP shows honest no-data and a
+	     grain with neither OTP nor severe is dropped (never a fake 0). The
+	     shift/day-type labels are the SHARED reliability vocabulary. -->
+	{#if hasShift || hasDayType}
+		<Separator variant="hazard" />
+		<div class="network-block" data-slot="network-shift">
+			{#if hasShift}
+				<div class="network-block">
+					<SectionLabel text={t.shiftSection} variant="station" />
+					<p class="network-shift-caption">{t.shift.rowCaption}</p>
+					<div class="network-ranked" role="list" aria-label={t.shift.shiftSummary}>
+						{#each shiftRows as row (row.key)}
+							<RankedRow
+								rank={row.rank}
+								title={row.title}
+								subtitle={row.subtitle}
+								severity={row.severity}
+								value={row.value}
+								display={row.display}
+							/>
+						{/each}
+					</div>
+				</div>
+			{/if}
+
+			{#if hasDayType}
+				<div class="network-block network-daytype">
+					<SectionLabel text={t.dayTypeSection} variant="station" />
+					<p class="network-shift-caption">{t.shift.rowCaption}</p>
+					<div class="network-ranked" role="list" aria-label={t.shift.dayTypeSummary}>
+						{#each dayTypeRows as row (row.key)}
+							<RankedRow
+								rank={row.rank}
+								title={row.title}
+								subtitle={row.subtitle}
+								severity={row.severity}
+								value={row.value}
+								display={row.display}
+							/>
+						{/each}
+					</div>
+				</div>
+			{/if}
+
+			<!-- Honest caveat: trailing-window observation-weighted proxy, not certified OTP. -->
+			<p class="network-shift-caveat" data-slot="shift-caveat">{t.shift.caveat}</p>
+		</div>
+	{/if}
 </Surface>
 
 <style>
@@ -560,13 +820,20 @@
 		color: var(--foreground);
 	}
 
-	/* Trend header: the section label + the window selector on one row. */
+	/* Trend header: the section label + the grain/window selectors on one row. */
 	.network-trend-head {
 		display: flex;
 		flex-wrap: wrap;
 		align-items: center;
 		justify-content: space-between;
 		gap: 0.5rem 1rem;
+	}
+	/* The grain + window pickers sit together at the trailing edge of the header. */
+	.network-trend-controls {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 0.5rem 0.75rem;
 	}
 
 	/* Vehicles-in-service context line under the trend. */
@@ -602,5 +869,28 @@
 		font-size: var(--text-micro);
 		font-variant-numeric: tabular-nums;
 		color: var(--muted-foreground);
+	}
+
+	/* By time of day + weekday/weekend ranked lists (worst severe-share first). */
+	.network-ranked {
+		display: flex;
+		flex-direction: column;
+		gap: 0.5rem;
+		max-width: 40rem;
+	}
+	.network-daytype {
+		margin-top: 0.5rem;
+	}
+	/* Quiet mono caption (what the bar encodes) + the honest trailing-window caveat. */
+	.network-shift-caption,
+	.network-shift-caveat {
+		margin: 0;
+		font-family: var(--font-mono);
+		font-size: var(--text-small);
+		line-height: 1.4;
+		color: var(--muted-foreground);
+	}
+	.network-shift-caveat {
+		max-width: 52ch;
 	}
 </style>

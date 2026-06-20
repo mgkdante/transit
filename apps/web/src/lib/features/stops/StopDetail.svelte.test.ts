@@ -40,6 +40,38 @@ const RELIABILITY = {
 		{ route: '80', avg_delay_min: 12.5 },
 		{ route: '99', avg_delay_min: null }, // dropped — no fake-0 ranking
 	],
+	// Per-stop weekday seasonality (ISO 1=Mon..7=Sun). Friday (5, 9.4 min) is the
+	// worst mean delay → rank 1; Monday (1) is well-sampled so its severe share is
+	// shown; Wednesday (3) is under-sampled (2 obs) so its severe share is withheld;
+	// Sunday (7) carries a null mean delay (+ zero obs) and must be dropped.
+	day_of_week: [
+		{ day_of_week_iso: 1, avg_delay_min: 2.4, severe_pct: 5.0, observation_count: 140 },
+		{ day_of_week_iso: 3, avg_delay_min: 3.1, severe_pct: 18.2, observation_count: 2 },
+		{ day_of_week_iso: 5, avg_delay_min: 9.4, severe_pct: 14.9, observation_count: 96 },
+		{ day_of_week_iso: 7, avg_delay_min: null, severe_pct: null, observation_count: 0 },
+	],
+	// Crowding of buses OBSERVED AT this stop over the trailing window. "Standing"
+	// (0.45) is the dominant band → the headline reads its share; the bar is a
+	// 100%-stacked occupancy proportion.
+	occupancy_mix: { empty: 0.05, many_seats: 0.15, few_seats: 0.25, standing: 0.45, full: 0.1 },
+} as StopReliability;
+
+// A reliability fixture that ALSO carries the additive SHIFT grains
+// (am_peak…night) + DAY-TYPE grains (weekday/weekend) the pipeline now emits on
+// the same periods[] array, alongside the calendar grains. pm_peak (12%) is the
+// worst severe share; night has a null severe share (must be dropped, no fake-0).
+const RELIABILITY_WITH_TOD = {
+	...RELIABILITY,
+	periods: [
+		...RELIABILITY.periods!,
+		{ grain: 'am_peak', otp_pct: 88, avg_delay_min: 2.1, severe_pct: 5 },
+		{ grain: 'midday', otp_pct: 91, avg_delay_min: 1.4, severe_pct: 3 },
+		{ grain: 'pm_peak', otp_pct: 74, avg_delay_min: 5.6, severe_pct: 12 },
+		{ grain: 'evening', otp_pct: 90, avg_delay_min: 1.8, severe_pct: 4 },
+		{ grain: 'night', otp_pct: null, avg_delay_min: null, severe_pct: null }, // dropped
+		{ grain: 'weekday', otp_pct: 80, avg_delay_min: 3.4, severe_pct: 7 },
+		{ grain: 'weekend', otp_pct: 86, avg_delay_min: 2.2, severe_pct: 4 },
+	],
 } as StopReliability;
 
 // A live board for this stop: three departures across late / on-time / early,
@@ -225,6 +257,117 @@ describe('StopDetail reliability — habits heatmap', () => {
 	});
 });
 
+describe('StopDetail reliability — crowding (occupancy_mix)', () => {
+	it('renders the occupancy proportion bar when occupancy_mix is present', () => {
+		reset();
+		render(StopDetail, { props: { id: '57191' } });
+		fireEvent.click(screen.getByRole('tab', { name: 'Reliability' }));
+
+		const crowding = document.querySelector('[data-slot="stop-crowding"]') as HTMLElement;
+		expect(crowding).not.toBeNull();
+		// Honest framing: buses OBSERVED AT this stop, not a stop attribute.
+		expect(within(crowding).getByText('Crowding on buses seen here')).toBeInTheDocument();
+		expect(
+			within(crowding).getByText(/How full the buses observed at this stop ran/),
+		).toBeInTheDocument();
+		// The interactive proportion bar renders as a labelled group (AT descends into
+		// the focusable slices); its aria-label is the occupancy mix summary.
+		expect(
+			within(crowding).getByRole('group', {
+				name: /Occupancy mix of buses observed at this stop/,
+			}),
+		).toBeInTheDocument();
+		// Dominant band (standing, 45%) is lifted to the headline with its band label.
+		// "45%" appears in both the headline MetricDisplay and the bar legend slice.
+		expect(within(crowding).getAllByText('45%').length).toBeGreaterThan(0);
+		expect(within(crowding).getAllByText('Standing').length).toBeGreaterThan(0);
+	});
+
+	it('stands the crowding BAR down but shows the honest no-telemetry note when occupancy_mix is null', () => {
+		reset();
+		reliabilityData = { ...RELIABILITY, occupancy_mix: null };
+		render(StopDetail, { props: { id: '57191' } });
+		fireEvent.click(screen.getByRole('tab', { name: 'Reliability' }));
+
+		// No fabricated bar…
+		expect(document.querySelector('[data-slot="stop-crowding"]')).toBeNull();
+		// …but the reliability resource HAS loaded with no crowding telemetry, so the
+		// explicit bilingual note renders in its place (keeps the heading framing).
+		const empty = document.querySelector('[data-slot="stop-crowding-empty"]') as HTMLElement;
+		expect(empty).not.toBeNull();
+		expect(within(empty).getByText('Crowding on buses seen here')).toBeInTheDocument();
+		expect(
+			within(empty).getByText('No occupancy telemetry attributed to this stop.'),
+		).toBeInTheDocument();
+	});
+
+	it('stands the crowding section down when occupancy_mix is absent (undefined)', () => {
+		reset();
+		reliabilityData = { ...RELIABILITY, occupancy_mix: undefined } as StopReliability;
+		render(StopDetail, { props: { id: '57191' } });
+		fireEvent.click(screen.getByRole('tab', { name: 'Reliability' }));
+
+		expect(document.querySelector('[data-slot="stop-crowding"]')).toBeNull();
+	});
+
+	it('stands down on an all-zero mix (no even split, no all-empty bar)', () => {
+		reset();
+		reliabilityData = {
+			...RELIABILITY,
+			occupancy_mix: { empty: 0, many_seats: 0, few_seats: 0, standing: 0, full: 0 },
+		} as StopReliability;
+		render(StopDetail, { props: { id: '57191' } });
+		fireEvent.click(screen.getByRole('tab', { name: 'Reliability' }));
+
+		// No fabricated bar from an all-zero mix; the honest note takes its place.
+		expect(document.querySelector('[data-slot="stop-crowding"]')).toBeNull();
+		expect(document.querySelector('[data-slot="stop-crowding-empty"]')).not.toBeNull();
+	});
+
+	it('renders the FR no-telemetry note when occupancy_mix is null', () => {
+		reset();
+		currentLocale = 'fr';
+		reliabilityData = { ...RELIABILITY, occupancy_mix: null };
+		render(StopDetail, { props: { id: '57191' } });
+		fireEvent.click(screen.getByRole('tab', { name: 'Fiabilité' }));
+
+		const empty = document.querySelector('[data-slot="stop-crowding-empty"]') as HTMLElement;
+		expect(empty).not.toBeNull();
+		expect(
+			within(empty).getByText('Aucune donnée d’occupation rattachée à cet arrêt.'),
+		).toBeInTheDocument();
+	});
+});
+
+describe('StopDetail reliability — occupancy-only stop is not gated out as empty', () => {
+	it('renders the crowding section for a stop with ONLY occupancy_mix (no periods/dow/by_route)', () => {
+		reset();
+		// A stop the pipeline emits with crowding telemetry but no delay periods,
+		// weekday series, or per-route breakdown. The widened isEmpty predicate must
+		// NOT gate the whole reliability tab to its empty state — the crowding section
+		// (and its honest framing) must still render.
+		reliabilityData = {
+			generated_utc: '2026-06-15T12:00:00Z',
+			id: '57191',
+			name: 'Test stop',
+			periods: [],
+			habits: null,
+			day_of_week: [],
+			by_route: [],
+			occupancy_mix: { empty: 0.1, many_seats: 0.2, few_seats: 0.2, standing: 0.4, full: 0.1 },
+		} as unknown as StopReliability;
+		render(StopDetail, { props: { id: '57191' } });
+		fireEvent.click(screen.getByRole('tab', { name: 'Reliability' }));
+
+		const crowding = document.querySelector('[data-slot="stop-crowding"]') as HTMLElement;
+		expect(crowding).not.toBeNull();
+		expect(within(crowding).getByText('Crowding on buses seen here')).toBeInTheDocument();
+		// Dominant band (standing, 40%) surfaces — proof the section rendered, not the
+		// reliability empty state.
+		expect(within(crowding).getAllByText('Standing').length).toBeGreaterThan(0);
+	});
+});
+
 describe('StopDetail reliability — by_route ranked bars', () => {
 	it('ranks routes worst-delay first and drops rows with no delay', () => {
 		reset();
@@ -242,6 +385,193 @@ describe('StopDetail reliability — by_route ranked bars', () => {
 		const milderIdx = ranked.findIndex((r) => within(r).queryByText('4.1 min'));
 		expect(worstIdx).toBeGreaterThanOrEqual(0);
 		expect(worstIdx).toBeLessThan(milderIdx);
+	});
+});
+
+describe('StopDetail reliability — weekday seasonality (day_of_week)', () => {
+	it('ranks weekdays worst-delay first and drops a null-mean weekday (no fake-0 row)', () => {
+		reset();
+		render(StopDetail, { props: { id: '57191' } });
+		fireEvent.click(screen.getByRole('tab', { name: 'Reliability' }));
+
+		const weekday = document.querySelector('[data-slot="stop-weekday"]') as HTMLElement;
+		expect(weekday).not.toBeNull();
+		expect(within(weekday).getByText('By day of week')).toBeInTheDocument();
+
+		// Friday (9.4) worst → rank 1; Monday (2.4) and Wednesday (3.1) follow; Sunday
+		// (null mean) is dropped entirely — never a fabricated 0-delay bar.
+		expect(within(weekday).getByText('Friday')).toBeInTheDocument();
+		expect(within(weekday).getByText('Monday')).toBeInTheDocument();
+		expect(within(weekday).getByText('Wednesday')).toBeInTheDocument();
+		expect(within(weekday).queryByText('Sunday')).not.toBeInTheDocument();
+
+		// Worst weekday (Friday) precedes the milder ones in the DOM.
+		const list = within(weekday).getByRole('list', { name: 'By day of week' });
+		const rows = within(list).getAllByRole('listitem');
+		const friIdx = rows.findIndex((r) => within(r).queryByText('Friday'));
+		const monIdx = rows.findIndex((r) => within(r).queryByText('Monday'));
+		expect(friIdx).toBeGreaterThanOrEqual(0);
+		expect(friIdx).toBeLessThan(monIdx);
+		// The dropped Sunday's no-data never surfaces as a 0.0 min bar.
+		expect(within(weekday).queryByText('0.0 min')).not.toBeInTheDocument();
+	});
+
+	it('gates the severe share on observation count (under-sampled weekday withheld)', () => {
+		reset();
+		render(StopDetail, { props: { id: '57191' } });
+		fireEvent.click(screen.getByRole('tab', { name: 'Reliability' }));
+
+		const weekday = document.querySelector('[data-slot="stop-weekday"]') as HTMLElement;
+		// Monday is well-sampled (140 obs) → its severe share (5.0%) is shown.
+		expect(within(weekday).getByText('Severe-delay share 5.0%')).toBeInTheDocument();
+		// Wednesday is under-sampled (2 obs) → its severe share (18.2%) is WITHHELD;
+		// the row falls back to the plain avg-delay caption, never a fabricated number.
+		expect(within(weekday).queryByText('Severe-delay share 18.2%')).not.toBeInTheDocument();
+		expect(within(weekday).getAllByText('Avg delay').length).toBeGreaterThan(0);
+		// Honest trailing-window caveat is printed.
+		expect(
+			within(weekday).getByText(/Trailing-window, observation-weighted estimate/),
+		).toBeInTheDocument();
+	});
+
+	it('stands the weekday section down when day_of_week is absent', () => {
+		reset();
+		reliabilityData = { ...RELIABILITY, day_of_week: undefined };
+		render(StopDetail, { props: { id: '57191' } });
+		fireEvent.click(screen.getByRole('tab', { name: 'Reliability' }));
+
+		expect(document.querySelector('[data-slot="stop-weekday"]')).toBeNull();
+		expect(screen.queryByText('By day of week')).not.toBeInTheDocument();
+	});
+
+	it('stands the weekday section down when every weekday carries a null mean (no fake-0)', () => {
+		reset();
+		reliabilityData = {
+			...RELIABILITY,
+			day_of_week: [
+				{ day_of_week_iso: 2, avg_delay_min: null, severe_pct: null, observation_count: 0 },
+				{ day_of_week_iso: 6, avg_delay_min: null, severe_pct: 4.0, observation_count: 0 },
+			],
+		} as StopReliability;
+		render(StopDetail, { props: { id: '57191' } });
+		fireEvent.click(screen.getByRole('tab', { name: 'Reliability' }));
+
+		expect(document.querySelector('[data-slot="stop-weekday"]')).toBeNull();
+	});
+
+	it('localizes weekday names in FR (Vendredi, not the ISO integer or EN name)', () => {
+		reset();
+		currentLocale = 'fr';
+		render(StopDetail, { props: { id: '57191' } });
+		fireEvent.click(screen.getByRole('tab', { name: 'Fiabilité' }));
+
+		const weekday = document.querySelector('[data-slot="stop-weekday"]') as HTMLElement;
+		expect(weekday).not.toBeNull();
+		expect(within(weekday).getByText('Par jour de la semaine')).toBeInTheDocument();
+		expect(within(weekday).getByText('Vendredi')).toBeInTheDocument();
+		expect(within(weekday).getByText('Lundi')).toBeInTheDocument();
+		// Never the raw ISO key or the English label.
+		expect(within(weekday).queryByText('Friday')).not.toBeInTheDocument();
+		expect(within(weekday).queryByText('5')).not.toBeInTheDocument();
+	});
+});
+
+describe('StopDetail reliability — by time of day (shift + day-type grains)', () => {
+	it('renders the by-time-of-day shift list + weekday/weekend comparison when present', () => {
+		reset();
+		reliabilityData = RELIABILITY_WITH_TOD;
+		render(StopDetail, { props: { id: '57191' } });
+		fireEvent.click(screen.getByRole('tab', { name: 'Reliability' }));
+
+		const tod = document.querySelector('[data-slot="stop-time-of-day"]') as HTMLElement;
+		expect(tod).not.toBeNull();
+		// Section heading + the day-type sub-comparison heading.
+		expect(within(tod).getByText('By time of day')).toBeInTheDocument();
+		expect(within(tod).getByText('Weekday vs weekend')).toBeInTheDocument();
+
+		// The shift list uses the SHARED lines vocabulary (AM peak / PM peak …).
+		expect(within(tod).getByText('PM peak')).toBeInTheDocument();
+		expect(within(tod).getByText('AM peak')).toBeInTheDocument();
+		// Day-type rows use the shared weekday/weekend labels.
+		expect(within(tod).getByText('Weekday')).toBeInTheDocument();
+		expect(within(tod).getByText('Weekend')).toBeInTheDocument();
+
+		// Worst severe share (pm_peak, 12%) ranks first, ahead of am_peak (5%).
+		const shiftList = within(tod).getByRole('list', { name: 'By time of day' });
+		const shiftRows = within(shiftList).getAllByRole('listitem');
+		const pmIdx = shiftRows.findIndex((r) => within(r).queryByText('PM peak'));
+		const amIdx = shiftRows.findIndex((r) => within(r).queryByText('AM peak'));
+		expect(pmIdx).toBeGreaterThanOrEqual(0);
+		expect(pmIdx).toBeLessThan(amIdx);
+
+		// Honesty: the null-severe `night` shift is dropped (no fabricated 0 bar).
+		expect(within(tod).queryByText('Night')).not.toBeInTheDocument();
+		// Honest trailing-window caveat is printed.
+		expect(
+			within(tod).getByText(/Trailing-window, observation-weighted estimate/),
+		).toBeInTheDocument();
+	});
+
+	it('stands the whole section down when the stop carries no shift/day-type grains', () => {
+		reset();
+		// Default fixture = calendar grains only (day + week).
+		render(StopDetail, { props: { id: '57191' } });
+		fireEvent.click(screen.getByRole('tab', { name: 'Reliability' }));
+
+		expect(document.querySelector('[data-slot="stop-time-of-day"]')).toBeNull();
+		expect(screen.queryByText('By time of day')).not.toBeInTheDocument();
+	});
+
+	it('drops an avg-only (severe-null) shift period — partition + ranker stay in lock-step', () => {
+		reset();
+		// A shift period carrying a real avg delay but a NULL severe share must NOT
+		// survive into the severe-share ranking: dropping it at partition time keeps
+		// the partition guard and the ranker consistent, and never fabricates a 0%
+		// severe share. midday (severe 3%) is the only shift row that should render.
+		reliabilityData = {
+			...RELIABILITY,
+			periods: [
+				...RELIABILITY.periods!,
+				{ grain: 'am_peak', otp_pct: 70, avg_delay_min: 6.4, severe_pct: null }, // avg-only → dropped
+				{ grain: 'midday', otp_pct: 91, avg_delay_min: 1.4, severe_pct: 3 }, // real severe → kept
+			],
+		} as StopReliability;
+		render(StopDetail, { props: { id: '57191' } });
+		fireEvent.click(screen.getByRole('tab', { name: 'Reliability' }));
+
+		const tod = document.querySelector('[data-slot="stop-time-of-day"]') as HTMLElement;
+		expect(tod).not.toBeNull();
+		// The avg-only am_peak period is gone (no fabricated 0% severe bar)…
+		expect(within(tod).queryByText('AM peak')).not.toBeInTheDocument();
+		// …and its avg delay (6.4 min) never leaks into this severe-share section.
+		expect(within(tod).queryByText('6.4 min')).not.toBeInTheDocument();
+		// The real-severe midday row survives and reads its honest severe share.
+		expect(within(tod).getByText('Midday')).toBeInTheDocument();
+		expect(within(tod).getByText('3.0%')).toBeInTheDocument();
+	});
+
+	it('keeps the GrainPicker calendar-only even when shift grains are present', () => {
+		reset();
+		reliabilityData = RELIABILITY_WITH_TOD;
+		render(StopDetail, { props: { id: '57191' } });
+		fireEvent.click(screen.getByRole('tab', { name: 'Reliability' }));
+
+		const group = screen.getByRole('radiogroup', { name: 'Roll-up period' });
+		// EXACTLY the three calendar grains are offered — never a shift token.
+		const radios = within(group).getAllByRole('radio');
+		expect(radios.map((r) => r.textContent?.trim())).toEqual(['Day', 'Week', 'Month']);
+		// No shift / day-type token ever leaked into the picker.
+		for (const token of [
+			'AM peak',
+			'PM peak',
+			'Midday',
+			'Evening',
+			'Night',
+			'Weekday',
+			'Weekend',
+		]) {
+			expect(within(group).queryByRole('radio', { name: token })).toBeNull();
+		}
 	});
 });
 

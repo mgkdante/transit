@@ -31,6 +31,7 @@ import type {
 	WeakStop,
 	OccupancyMix,
 } from '$lib/v1';
+import { SHIFT_GRAINS, DAY_TYPE_GRAINS } from '$lib/features/reliability/shiftGrains';
 
 /* ── VM types ────────────────────────────────────────────────────────────── */
 
@@ -215,10 +216,8 @@ export interface PartitionedPeriods {
 
 const num = (v: number | null | undefined): number | null => (v == null ? null : v);
 
-/** The time-of-day shift grains the contract emits (gold.route_delay_by_shift). */
-const SHIFT_GRAINS = new Set(['am_peak', 'midday', 'pm_peak', 'evening', 'night']);
-/** The day-type grains the contract emits (gold.route_delay_by_daytype). */
-const DAY_TYPE_GRAINS = new Set(['weekday', 'weekend']);
+// The SHIFT + DAY-TYPE grain token sets are the shared reliability vocabulary
+// (imported above) so the lines + stops surfaces partition on identical tokens.
 
 /** A reliability period carries a signal if any of its numeric fields is present. */
 const periodHasSignal = (p: ReliabilityPeriod): boolean =>

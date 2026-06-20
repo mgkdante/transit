@@ -46,11 +46,27 @@
 		Heatmap,
 		RankedRow,
 		ChartLegend,
+		StackedBar,
+		type StackedSegment,
 		HEATMAP_RAMP,
 		HEATMAP_NODATA,
 	} from '$lib/components/dataviz';
+	import { OCCUPANCY_CODES, type OccupancyCode } from '$lib/v1/schemas';
 	import type { SeverityCode } from '$lib/v1/schemas';
+	// Reuse the SHARED occupancy band vocabulary (the same labels the lines surface
+	// renders via detailCopy[locale].occupancyBands) — never a new stop-local table.
+	import { detailCopy as linesDetailCopy } from '$lib/features/lines/lines.copy';
 	import { availableGrains } from '$lib/filters/grain';
+	import {
+		SHIFT_GRAIN_ORDER,
+		DAY_TYPE_GRAIN_ORDER,
+		isShiftGrain,
+		isDayTypeGrain,
+		shiftLabel,
+		dayTypeLabel,
+		weekdayLabel,
+		severeShareToSeverity,
+	} from '$lib/features/reliability/shiftGrains';
 	import { EdgeState } from '$lib/components/edge';
 	import { layout, mapHrefFor } from '$lib/nav';
 	import StopLabel from '$lib/components/brand/StopLabel.svelte';
@@ -203,6 +219,140 @@
 		});
 	});
 
+	/* ── Reliability: weekday seasonality (day_of_week) ───────────────────────
+	   The pipeline emits, alongside the calendar/shift grains, a per-stop weekday
+	   series (ISO 1=Mon..7=Sun): each row carries a mean delay + a severe share +
+	   an observation count for that weekday across the trailing window. We rank it
+	   worst-first by mean delay (mirroring the lines surface's Cluster05 weekday
+	   list) on the dataviz severity scale.
+
+	   Honesty: a weekday earns a row ONLY when it carries a real mean delay — a
+	   null-avg or zero-observation weekday is dropped (never a fabricated 0-delay
+	   bar). The severe share is shown as a second reading ONLY when enough
+	   observations back it (a 1–2-observation bucket keeps the plain avg caption,
+	   never a severe number on thin air). The whole section stands down when
+	   day_of_week is empty/absent. */
+
+	// A weekday severe share resting on too few observations is withheld (the mean
+	// delay still ranks, but the severe reading would over-claim from a thin sample).
+	const MIN_WEEKDAY_SEVERE_OBSERVATIONS = 5;
+
+	const rankedWeekdays = $derived.by(() => {
+		const rows = (reliability.data?.day_of_week ?? [])
+			.filter((d): d is typeof d & { avg_delay_min: number } => d.avg_delay_min != null)
+			.map((d) => ({
+				iso: d.day_of_week_iso,
+				delay: d.avg_delay_min,
+				severePct: d.severe_pct ?? null,
+				observationCount: d.observation_count ?? null,
+			}));
+		const worst = rows.reduce((m, r) => Math.max(m, r.delay), 0);
+		return rows
+			.slice()
+			.sort((a, b) => b.delay - a.delay)
+			.map((r, i) => {
+				// Normalize against the busiest weekday so the bar reads relative.
+				const norm = worst > 0 ? r.delay / worst : 0;
+				const severity: SeverityCode = norm >= 0.66 ? 'critical' : norm >= 0.33 ? 'high' : 'watch';
+				const severeTrusted =
+					r.severePct != null &&
+					r.observationCount != null &&
+					r.observationCount >= MIN_WEEKDAY_SEVERE_OBSERVATIONS;
+				return {
+					key: r.iso,
+					rank: i + 1,
+					title: weekdayLabel(r.iso, locale),
+					subtitle: severeTrusted
+						? `${t.reliability.weekday.severeShare} ${r.severePct!.toFixed(1)}%`
+						: t.reliability.weekday.avgDelay,
+					severity,
+					value: norm,
+					display: `${r.delay.toFixed(1)} min`,
+				};
+			});
+	});
+	/** The weekday-seasonality section stands down unless a real-delay weekday survived. */
+	const hasWeekday = $derived(rankedWeekdays.length > 0);
+
+	/* ── Reliability: by time of day (shift + day-type grains) ────────────────
+	   The pipeline emits, alongside the calendar grains (day/week/month), two
+	   extra grain families on the SAME periods[] array — SHIFT grains
+	   (am_peak…night) and DAY-TYPE grains (weekday/weekend). We partition them
+	   out HERE (the calendar grains keep feeding the GrainPicker + ReliabilityPane
+	   untouched) and surface them the way the lines surface does:
+	     - SHIFT grains → a "By time of day" ranked list (worst severe share first);
+	     - DAY-TYPE grains → a weekday-vs-weekend 2-row ranked comparison.
+	   Honesty: a grain with no severe + no avg signal is DROPPED (never a fake-0
+	   bar); the whole section stands down when the stop carries none of them. */
+	type ShiftRow = { grain: string; severePct: number | null; avgDelayMin: number | null };
+
+	/** Split this stop's periods into clean shift / day-type groups (calendar grains stay out). */
+	const partitionedToD = $derived.by<{ byShift: ShiftRow[]; byDayType: ShiftRow[] }>(() => {
+		const byShift: ShiftRow[] = [];
+		const byDayType: ShiftRow[] = [];
+		for (const p of reliability.data?.periods ?? []) {
+			// These sections RANK by severe share (the bar + the "% severe" display),
+			// so a period earns a row only when it carries a real severe share. A
+			// period with only an avg delay has no place in a severe-share ranking —
+			// dropping it here keeps the partition and the ranker in lock-step (an
+			// avg-only period would otherwise survive the partition yet vanish from
+			// the list). Its avg delay still surfaces in the by-route / calendar panes;
+			// we never fabricate a severe share (or a 0) to keep it.
+			if (p.severe_pct == null) continue;
+			const row: ShiftRow = {
+				grain: p.grain,
+				severePct: p.severe_pct ?? null,
+				avgDelayMin: p.avg_delay_min ?? null,
+			};
+			if (isShiftGrain(p.grain)) byShift.push(row);
+			else if (isDayTypeGrain(p.grain)) byDayType.push(row);
+		}
+		return { byShift, byDayType };
+	});
+
+	/**
+	 * Rank a group of shift/day-type rows worst-first by severe share, banding each
+	 * bar on the dataviz severity scale + normalizing against the worst row in the
+	 * SAME group (mirroring Cluster01Punctuality.rankBySevere). A row with a null
+	 * severe share is dropped (no fake-0 ranking); `order` keeps a stable secondary
+	 * sort so equal-severe rows read in canonical chronological token order.
+	 */
+	function rankBySevere(
+		rows: readonly ShiftRow[],
+		order: readonly string[],
+		label: (g: string) => string,
+	) {
+		const real = rows.filter((r) => r.severePct != null);
+		const worst = real.reduce((m, r) => Math.max(m, r.severePct ?? 0), 0);
+		const rank = (g: string) => {
+			const i = order.indexOf(g);
+			return i === -1 ? order.length : i;
+		};
+		return real
+			.slice()
+			.sort((a, b) => (b.severePct ?? 0) - (a.severePct ?? 0) || rank(a.grain) - rank(b.grain))
+			.map((r, i) => {
+				const sev = r.severePct ?? 0;
+				return {
+					key: r.grain,
+					rank: i + 1,
+					title: label(r.grain),
+					severity: severeShareToSeverity(r.severePct),
+					value: worst > 0 ? Math.min(1, Math.max(0, sev / worst)) : null,
+					display: `${sev.toFixed(1)}%`,
+				};
+			});
+	}
+
+	const shiftRows = $derived(
+		rankBySevere(partitionedToD.byShift, SHIFT_GRAIN_ORDER, (g) => shiftLabel(g, locale)),
+	);
+	const dayTypeRows = $derived(
+		rankBySevere(partitionedToD.byDayType, DAY_TYPE_GRAIN_ORDER, (g) => dayTypeLabel(g, locale)),
+	);
+	/** The whole "By time of day" section stands down unless a shift OR day-type row survived. */
+	const hasTimeOfDay = $derived(shiftRows.length > 0 || dayTypeRows.length > 0);
+
 	/* ── Reliability: time-of-day habits heatmap ──────────────────────────────
 	   The per-stop habits matrix (7×24, cells number|null) reuses the Heatmap +
 	   ChartLegend dataviz primitives directly (same encoding the lines surface
@@ -250,6 +400,75 @@
 			t.reliability.habits.legend.high,
 		][bucket];
 	}
+
+	/* ── Reliability: crowding (occupancy_mix) ────────────────────────────────
+	   The trailing-window occupancy band-shares of buses OBSERVED AT this stop
+	   (GTFS-RT VehiclePosition stop_id) — NOT a stop attribute. Rendered as a
+	   100%-stacked proportion bar (StackedBar, scale='occupancy'), reusing the
+	   dataviz occupancy scale + the SHARED lines band vocabulary, mirroring the
+	   lines Cluster04Crowding pattern.
+
+	   Honesty (Cluster04 doctrine): occupancy_mix is null when no telemetry was
+	   attributed to this stop. An all-zero mix is ALSO treated as empty. In both
+	   cases the bar stands down; once the reliability resource HAS loaded but
+	   carries no crowding telemetry, an explicit bilingual "no telemetry" note
+	   renders in its place (template {:else} branch) — NEVER a fabricated bar and
+	   never an even/all-empty split. Every band is a data mark on the dataviz
+	   occupancy scale; --primary never colours a band. */
+
+	/** The shared occupancy band labels (legend + a11y + headline), keyed by code. */
+	const occupancyBands = $derived(linesDetailCopy[locale].occupancyBands);
+
+	/** The raw mix, treated as empty unless at least one band carries a real share. */
+	const crowdingMix = $derived.by(() => {
+		const mix = reliability.data?.occupancy_mix ?? null;
+		if (mix == null) return null;
+		const hasShare = OCCUPANCY_CODES.some((c: OccupancyCode) => (mix[c] ?? 0) > 0);
+		return hasShare ? mix : null;
+	});
+	/** The whole crowding section stands down when there is no real telemetry. */
+	const hasCrowding = $derived(crowdingMix != null);
+
+	/**
+	 * Honest no-telemetry note: shown when the reliability resource HAS loaded
+	 * (reliability.data != null) but no crowding telemetry was attributed to this
+	 * stop (occupancy_mix null/absent, or an all-zero mix that crowdingMix treats
+	 * as empty). This is crowding-specific — a stop with reliability data but no
+	 * observed-bus loading earns an explicit note rather than silently nothing.
+	 * Before the resource settles we render neither (the bar's skeleton owns that).
+	 */
+	const showCrowdingNoTelemetry = $derived(reliability.data != null && !hasCrowding);
+
+	/** The five occupancy bands as StackedBar segments (fractions 0..1). */
+	const crowdingSegments = $derived.by<StackedSegment[]>(() =>
+		OCCUPANCY_CODES.map((code: OccupancyCode) => ({
+			code,
+			value: crowdingMix ? (crowdingMix[code] ?? null) : null,
+			label: occupancyBands[code],
+		})),
+	);
+
+	/** Total band share — guards the dominant-band headline + its share math. */
+	const crowdingTotal = $derived(
+		crowdingSegments.reduce((sum, s) => sum + (s.value != null && s.value > 0 ? s.value : 0), 0),
+	);
+
+	/** The largest band — lifted to a MetricDisplay as the single-glance read. */
+	const crowdingDominant = $derived.by(() => {
+		if (!hasCrowding || crowdingTotal <= 0) return null;
+		let best: { code: OccupancyCode; label: string; share: number } | null = null;
+		for (const code of OCCUPANCY_CODES) {
+			const v = crowdingMix ? (crowdingMix[code] ?? null) : null;
+			if (v == null || v <= 0) continue;
+			if (best == null || v > best.share) best = { code, label: occupancyBands[code], share: v };
+		}
+		return best;
+	});
+
+	/** Dominant-band share as a whole-percent string (e.g. "62%"). */
+	const crowdingDominantPct = $derived(
+		crowdingDominant ? `${Math.round((crowdingDominant.share / crowdingTotal) * 100)}%` : null,
+	);
 
 	/* ── Live departures: status + route filters ──────────────────────────────
 	   The live board carries a delay_min per departure; the reader narrows it
@@ -502,7 +721,12 @@
 			<ResourceBoundary
 				resource={reliability}
 				lang={locale}
-				isEmpty={(r: StopReliability | null) => r == null || (r.periods?.length ?? 0) === 0}
+				isEmpty={(r: StopReliability | null) =>
+					r == null ||
+					((r.periods?.length ?? 0) === 0 &&
+						r.occupancy_mix == null &&
+						(r.day_of_week?.length ?? 0) === 0 &&
+						(r.by_route?.length ?? 0) === 0)}
 			>
 				{#snippet children(r: StopReliability | null)}
 					{#if r != null}
@@ -566,6 +790,125 @@
 									<p class="stop-reliability-habits-caption">
 										{t.reliability.habits.caption}
 									</p>
+								</div>
+							{/if}
+
+							<!-- Crowding (occupancy_mix): how full the buses OBSERVED AT this stop
+							     ran over the trailing window — a property of the buses seen here,
+							     NOT of the stop. A 100%-stacked occupancy proportion bar reusing the
+							     dataviz occupancy scale + the shared lines band vocabulary. When no
+							     occupancy data was attributed (mix null/absent or all-zero), the bar
+							     stands down and — once the reliability resource has loaded — an
+							     explicit bilingual "no telemetry" note renders in its place; never a
+							     fabricated bar, never an even/all-empty split. -->
+							{#if hasCrowding && crowdingDominant != null}
+								<div class="stop-reliability-crowding" data-slot="stop-crowding">
+									<SectionLabel text={t.reliability.crowding.heading} variant="metric" />
+									<p class="stop-reliability-window">{t.reliability.crowding.window}</p>
+									<MetricDisplay
+										value={crowdingDominantPct ?? t.reliability.noDelay}
+										label={crowdingDominant.label}
+										sublabel={t.reliability.crowding.dominantLabel}
+										size="md"
+									/>
+									<StackedBar
+										scale="occupancy"
+										segments={crowdingSegments}
+										label={t.reliability.crowding.barLabel}
+										size="sm"
+										legend
+										interactive
+										class="stop-crowding-bar"
+									/>
+								</div>
+							{:else if showCrowdingNoTelemetry}
+								<!-- Reliability loaded, but no crowding telemetry was attributed to
+								     this stop: an honest note rather than silently nothing. Keeps the
+								     "buses observed here, not a stop attribute" framing via the heading. -->
+								<div class="stop-reliability-crowding" data-slot="stop-crowding-empty">
+									<SectionLabel text={t.reliability.crowding.heading} variant="metric" />
+									<p class="stop-reliability-window">{t.reliability.crowding.noTelemetry}</p>
+								</div>
+							{/if}
+
+							<!-- Weekday seasonality (day_of_week): which weekday drags this stop
+							     down most, ranked worst-first by mean delay on the dataviz severity
+							     scale. A weekday with no mean delay is dropped (never a fake-0 bar);
+							     the severe share rides as a second reading only when enough
+							     observations back it. Stands down when day_of_week is empty/absent. -->
+							{#if hasWeekday}
+								<div class="stop-reliability-weekday" data-slot="stop-weekday">
+									<SectionLabel text={t.reliability.weekday.heading} variant="metric" />
+									<div
+										class="stop-reliability-route-list"
+										role="list"
+										aria-label={t.reliability.weekday.heading}
+									>
+										{#each rankedWeekdays as row (row.key)}
+											<RankedRow
+												rank={row.rank}
+												title={row.title}
+												subtitle={row.subtitle}
+												severity={row.severity}
+												value={row.value}
+												display={row.display}
+											/>
+										{/each}
+									</div>
+									<p class="stop-reliability-weekday-caveat">{t.reliability.weekday.caveat}</p>
+								</div>
+							{/if}
+
+							<!-- By time of day: SHIFT buckets (ranked by severe share) + a
+							     weekday-vs-weekend day-type comparison. Surfaced from the granular
+							     grains the pipeline emits alongside the calendar ones; these never
+							     enter the GrainPicker above. Stands down entirely when the stop
+							     carries no shift/day-type grain. A trailing-window proxy. -->
+							{#if hasTimeOfDay}
+								<div class="stop-reliability-tod" data-slot="stop-time-of-day">
+									<SectionLabel text={t.reliability.timeOfDay.heading} variant="metric" />
+									{#if shiftRows.length > 0}
+										<div
+											class="stop-reliability-route-list"
+											role="list"
+											aria-label={t.reliability.timeOfDay.heading}
+										>
+											{#each shiftRows as row (row.key)}
+												<RankedRow
+													rank={row.rank}
+													title={row.title}
+													subtitle={t.reliability.timeOfDay.severeShare}
+													severity={row.severity}
+													value={row.value}
+													display={row.display}
+												/>
+											{/each}
+										</div>
+									{/if}
+
+									{#if dayTypeRows.length > 0}
+										<div class="stop-reliability-tod-daytype" data-slot="stop-day-type">
+											<SectionLabel text={t.reliability.timeOfDay.dayType} variant="metric" />
+											<div
+												class="stop-reliability-route-list"
+												role="list"
+												aria-label={t.reliability.timeOfDay.dayType}
+											>
+												{#each dayTypeRows as row (row.key)}
+													<RankedRow
+														rank={row.rank}
+														title={row.title}
+														subtitle={t.reliability.timeOfDay.severeShare}
+														severity={row.severity}
+														value={row.value}
+														display={row.display}
+													/>
+												{/each}
+											</div>
+										</div>
+									{/if}
+
+									<p class="stop-reliability-tod-caveat">{t.reliability.timeOfDay.caveat}</p>
 								</div>
 							{/if}
 
@@ -764,6 +1107,45 @@
 		display: flex;
 		flex-direction: column;
 		gap: 0.5rem;
+	}
+	.stop-reliability-crowding {
+		display: flex;
+		flex-direction: column;
+		gap: 0.6rem;
+	}
+	.stop-reliability-weekday {
+		display: flex;
+		flex-direction: column;
+		gap: 0.6rem;
+	}
+	/* Honest caveat: trailing-window observation-weighted proxy, AA both themes. */
+	.stop-reliability-weekday-caveat {
+		margin: 0;
+		max-width: 52ch;
+		font-family: var(--font-mono);
+		font-size: var(--text-micro);
+		line-height: 1.4;
+		color: var(--muted-foreground);
+	}
+	.stop-reliability-tod {
+		display: flex;
+		flex-direction: column;
+		gap: 0.6rem;
+	}
+	.stop-reliability-tod-daytype {
+		display: flex;
+		flex-direction: column;
+		gap: 0.5rem;
+		margin-top: 0.5rem;
+	}
+	/* Honest caveat: trailing-window observation-weighted proxy, AA both themes. */
+	.stop-reliability-tod-caveat {
+		margin: 0;
+		max-width: 52ch;
+		font-family: var(--font-mono);
+		font-size: var(--text-micro);
+		line-height: 1.4;
+		color: var(--muted-foreground);
 	}
 
 	/* Live-departures filter chips + count. */

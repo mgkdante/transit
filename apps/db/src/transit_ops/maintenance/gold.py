@@ -48,6 +48,7 @@ GOLD_APPEND_ONLY_DAILY_TABLES = (
     "gold.stop_delay_percentile_daily",
     "gold.route_cancellation_daily",
     "gold.route_occupancy_band_daily",
+    "gold.stop_occupancy_band_daily",
     "gold.route_service_span_daily",
     "gold.route_skipped_stop_daily",
 )
@@ -77,6 +78,7 @@ GOLD_AGGREGATE_RETENTION_COLUMNS = (
     ("gold.stop_delay_percentile_daily", "provider_local_date", True),
     ("gold.route_cancellation_daily", "provider_local_date", True),
     ("gold.route_occupancy_band_daily", "provider_local_date", True),
+    ("gold.stop_occupancy_band_daily", "provider_local_date", True),
     ("gold.route_service_span_daily", "provider_local_date", True),
     ("gold.route_skipped_stop_daily", "provider_local_date", True),
     ("gold.route_delay_by_shift", "built_at_utc", False),

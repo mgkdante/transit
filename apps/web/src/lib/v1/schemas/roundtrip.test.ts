@@ -188,6 +188,14 @@ describe('reliability — new optional fields (day_of_week / habits / p50,p90) r
 			id: 's1',
 			periods: [{ grain: 'day', p50_min: 0.8, p90_min: 5.0 }],
 			habits: { scale: 'severe_relative', matrix: [[null, 1.0]] },
+			// per-stop weekday seasonality (ISO 1=Mon..7=Sun); the additive optional
+			// field mirrors the route shape (day_of_week_iso required, rest nullable).
+			day_of_week: [
+				{ day_of_week_iso: 5, avg_delay_min: 3.4, severe_pct: 7.1, observation_count: 320 },
+			],
+			// trailing-window crowding of buses observed AT this stop — additive
+			// optional, reuses the canonical OccupancyMix shape (route surface mirror).
+			occupancy_mix: { empty: 0.05, many_seats: 0.2, few_seats: 0.3, standing: 0.4, full: 0.05 },
 		};
 		expect(() => parsePort('stop_reliability', StopReliabilitySchema, fixture)).not.toThrow();
 	});
@@ -230,6 +238,54 @@ describe('tier-1 — cancellations + occupancy_mix round-trip (additive optional
 				},
 				// honest-null day: both new fields absent — still parses (optional).
 				{ date: '2026-06-15' },
+			],
+		};
+		expect(() => parsePort('network_trend', NetworkTrendSchema, fixture)).not.toThrow();
+	});
+
+	it('parses network_trend carrying network-wide by_shift + by_daytype readouts', () => {
+		const fixture = {
+			generated_utc: ISO,
+			by_shift: [
+				{ grain: 'am_peak', otp_pct: 88, avg_delay_min: 1.4, severe_pct: 3.0 },
+				{ grain: 'pm_peak', otp_pct: 79, avg_delay_min: 2.6, severe_pct: 7.4 },
+				// honest-null grain: too little data → metrics null, still parses.
+				{ grain: 'night', otp_pct: null, avg_delay_min: null, severe_pct: null },
+			],
+			by_daytype: [
+				{ grain: 'weekday', otp_pct: 84, avg_delay_min: 1.9, severe_pct: 4.1 },
+				// metrics absent entirely (optional) — still parses.
+				{ grain: 'weekend' },
+			],
+		};
+		expect(() => parsePort('network_trend', NetworkTrendSchema, fixture)).not.toThrow();
+	});
+
+	it('parses network_trend carrying additive weekly + monthly trend series', () => {
+		const fixture = {
+			generated_utc: ISO,
+			// week-start / month-start dated TrendPoints. p90_min + vehicles are null
+			// on these coarse grains (14d-daily-only) — honest gaps, never fabricated.
+			weekly: [
+				{
+					date: '2026-06-08',
+					otp_pct: 80,
+					avg_delay_min: 2.0,
+					p90_min: null,
+					vehicles: null,
+				},
+				// honest-null week: otp absent (optional) — still parses.
+				{ date: '2026-06-15' },
+			],
+			monthly: [
+				{
+					date: '2026-05-01',
+					otp_pct: 79,
+					avg_delay_min: 2.2,
+					p90_min: null,
+					vehicles: null,
+				},
+				{ date: '2026-06-01' },
 			],
 		};
 		expect(() => parsePort('network_trend', NetworkTrendSchema, fixture)).not.toThrow();
