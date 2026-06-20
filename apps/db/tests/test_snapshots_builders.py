@@ -1595,6 +1595,11 @@ def test_build_network_trend_emits_network_shift_and_daytype() -> None:
 
     out = build_network_trend(FC(), provider_id="stm", generated_utc="t")
 
+    # The daily/week/month fixtures are exercised in a dedicated test below; this
+    # grain-aggregation test leaves them empty.
+    assert out.weekly == []
+    assert out.monthly == []
+
     # --- by_shift: canonical order, REAL OTP, weighted avg, honest-None grain ---
     assert [s.grain for s in out.by_shift] == ["am_peak", "pm_peak", "night"]
     by_shift = {s.grain: s for s in out.by_shift}
@@ -1629,3 +1634,96 @@ def test_build_network_trend_emits_network_shift_and_daytype() -> None:
     assert weekend.otp_pct == 75             # 150 / 200
     assert weekend.avg_delay_min == 2.0      # 24000 / 200 / 60
     assert weekend.severe_pct == 10.0        # 20 / 200
+
+
+def test_build_network_trend_emits_week_and_month_grain_series() -> None:
+    """Weekly + monthly TrendPoint lists re-aggregate the SAME daily sources.
+
+    The date_trunc('week'/'month', ...) GROUP BY runs in Postgres; the FakeConn
+    returns already-bucketed rows keyed by the bucket-start local date. OTP +
+    weighted-avg + cancellation_rate + occupancy_mix are observation-weighted
+    exactly like the daily series; p90_min/vehicles stay None on every week/month
+    point (no fact_sql is dispatched for those grains). Lists sort ascending by
+    bucket date. Dispatch keys use the unique `-- trend:<grain>:<source>` markers.
+    """
+    import datetime
+
+    from transit_ops.snapshots.builders.historic import build_network_trend
+
+    # Two ISO-week buckets (Mon 2026-06-01, Mon 2026-06-08), out of order to
+    # assert ascending sort. otp = on_time/known, avg = weighted/known/60.
+    week_hourly = [
+        {"local_date": datetime.date(2026, 6, 8), "known_obs": 200, "on_time": 150,
+         "weighted_delay_sec": 24000.0},  # otp 75, avg 2.0
+        {"local_date": datetime.date(2026, 6, 1), "known_obs": 100, "on_time": 90,
+         "weighted_delay_sec": 6000.0},   # otp 90, avg 1.0
+    ]
+    week_cancel = [
+        {"local_date": datetime.date(2026, 6, 1), "canceled": 3, "total": 120},  # 2.5%
+    ]
+    week_occupancy = [
+        {"local_date": datetime.date(2026, 6, 1), "empty": 0, "many_seats": 50,
+         "few_seats": 30, "standing": 15, "full": 5},  # total 100
+    ]
+    # One calendar-month bucket (2026-06-01).
+    month_hourly = [
+        {"local_date": datetime.date(2026, 6, 1), "known_obs": 1000, "on_time": 820,
+         "weighted_delay_sec": 90000.0},  # otp 82, avg 1.5
+    ]
+    month_cancel = [
+        {"local_date": datetime.date(2026, 6, 1), "canceled": 12, "total": 600},  # 2.0%
+    ]
+    month_occupancy = [
+        {"local_date": datetime.date(2026, 6, 1), "empty": 10, "many_seats": 40,
+         "few_seats": 30, "standing": 15, "full": 5},  # total 100
+    ]
+
+    dispatch = [
+        ("trend:week:hourly", week_hourly),
+        ("trend:week:cancel", week_cancel),
+        ("trend:week:occupancy", week_occupancy),
+        ("trend:month:hourly", month_hourly),
+        ("trend:month:cancel", month_cancel),
+        ("trend:month:occupancy", month_occupancy),
+        # daily series + network grains left empty for this test.
+    ]
+
+    class FC:
+        def execute(self, statement, params=None):  # noqa: ANN001, ANN201, ARG002
+            s = str(statement)
+            for needle, rows in dispatch:
+                if needle in s:
+                    return FakeResult(rows)
+            return FakeResult([])
+
+    out = build_network_trend(FC(), provider_id="stm", generated_utc="t")
+
+    # --- weekly: ascending by bucket date, weighted OTP/avg, honest fields ---
+    assert [p.date for p in out.weekly] == ["2026-06-01", "2026-06-08"]
+    w0, w1 = out.weekly
+    assert w0.otp_pct == 90                  # 90 / 100
+    assert w0.avg_delay_min == 1.0           # 6000 / 100 / 60
+    assert w0.cancellation_rate == 2.5       # 100 * 3 / 120
+    assert w0.occupancy_mix is not None
+    assert w0.occupancy_mix.many_seats == 0.5  # 50 / 100
+    # p90/vehicles NEVER aggregated to week (no fact_sql dispatched).
+    assert w0.p90_min is None
+    assert w0.vehicles is None
+    # Second week bucket has only hourly data → cancel/occupancy honest-None.
+    assert w1.otp_pct == 75                  # 150 / 200
+    assert w1.avg_delay_min == 2.0           # 24000 / 200 / 60
+    assert w1.cancellation_rate is None
+    assert w1.occupancy_mix is None
+    assert w1.p90_min is None
+    assert w1.vehicles is None
+
+    # --- monthly: one bucket, same weighted math, null p90/vehicles ---
+    assert [p.date for p in out.monthly] == ["2026-06-01"]
+    m0 = out.monthly[0]
+    assert m0.otp_pct == 82                  # 820 / 1000
+    assert m0.avg_delay_min == 1.5           # 90000 / 1000 / 60
+    assert m0.cancellation_rate == 2.0       # 100 * 12 / 600
+    assert m0.occupancy_mix is not None
+    assert m0.occupancy_mix.empty == 0.1     # 10 / 100
+    assert m0.p90_min is None
+    assert m0.vehicles is None

@@ -41,6 +41,11 @@ export type TrendPoint = z.infer<typeof TrendPointSchema>;
 export const NetworkTrendSchema = z.object({
 	generated_utc: isoUtc(),
 	series: z.array(TrendPointSchema).optional(),
+	// Additive coarser-grain trend series: one TrendPoint per week-start
+	// (weekly) / month-start (monthly) date. p90_min + vehicles are null on
+	// these grains (they are 14d-daily-only). Absent on older snapshots.
+	weekly: z.array(TrendPointSchema).optional(),
+	monthly: z.array(TrendPointSchema).optional(),
 	// Network-wide reliability by time-of-day shift (am_peak…night) and by
 	// day-type (weekday/weekend). Additive optional — absent on older snapshots.
 	by_shift: z.array(NetworkShiftSchema).optional(),

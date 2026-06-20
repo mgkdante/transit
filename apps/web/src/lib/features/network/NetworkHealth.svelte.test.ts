@@ -4,74 +4,88 @@ import type { NetworkFile, NetworkShift, TrendPoint } from '$lib/v1';
 import type { IsoUtc } from '$lib/v1/schemas';
 import NetworkHealth from './NetworkHealth.svelte';
 
-const { openSurface, network, trendSeries, byShift, byDaytype } = vi.hoisted(() => ({
-	openSurface: vi.fn(),
-	network: {
-		generated_utc: '2026-06-16T02:00:00Z' as IsoUtc,
-		vehicles_in_service: 10,
-		on_time_pct: 80,
-		status_dist: {
-			early: 0,
-			on_time: 8,
-			late: 2,
-			severe: 0,
-			unknown: 0,
-		},
-		delay_p50_min: 1,
-		delay_p90_min: 6,
-		non_responding: 3,
-		feed_freshness_s: 20,
-		coverage_pct: 95,
-		occupancy_mix: null,
-		// `satisfies` keeps the compile-time contract check on the literal; the
-		// trailing `as NetworkFile` widens the (otherwise narrowed) inferred type
-		// back to the mutable contract type so a test may flip e.g. occupancy_mix.
-	} satisfies NetworkFile as NetworkFile,
-	// A small daily trend carrying all seven NetworkTrend fields, including a
-	// cancellation rate and a per-day occupancy mix on the latest day only. Typed
-	// as TrendPoint[] (each element `satisfies TrendPoint`) so a longer fixture
-	// with null cancellation/occupancy can be spliced in for the re-slice test.
-	trendSeries: [
-		{
-			date: '2026-06-14',
-			otp_pct: 78,
-			avg_delay_min: 2.1,
-			p90_min: 5,
-			vehicles: 9,
-			cancellation_rate: 1.2,
-			occupancy_mix: null,
-		},
-		{
-			date: '2026-06-15',
-			otp_pct: 81,
-			avg_delay_min: 1.8,
-			p90_min: 6,
-			vehicles: 11,
-			cancellation_rate: 2.6,
-			occupancy_mix: {
-				empty: 0.1,
-				many_seats: 0.4,
-				few_seats: 0.3,
-				standing: 0.15,
-				full: 0.05,
+const { openSurface, network, trendSeries, weeklySeries, monthlySeries, byShift, byDaytype } =
+	vi.hoisted(() => ({
+		openSurface: vi.fn(),
+		network: {
+			generated_utc: '2026-06-16T02:00:00Z' as IsoUtc,
+			vehicles_in_service: 10,
+			on_time_pct: 80,
+			status_dist: {
+				early: 0,
+				on_time: 8,
+				late: 2,
+				severe: 0,
+				unknown: 0,
 			},
-		},
-	] satisfies TrendPoint[] as TrendPoint[],
-	// Network-wide by-shift readout: the HEADLINE is the real OTP %, ranked
-	// worst-PUNCTUALITY first (lowest OTP first) → pm_peak (79%) precedes am_peak
-	// (88%). `night` carries a null OTP AND null severe share → it is DROPPED
-	// (honesty: never a fabricated 0). Mutable for the empty test.
-	byShift: [
-		{ grain: 'am_peak', otp_pct: 88, avg_delay_min: 1.4, severe_pct: 3.0 },
-		{ grain: 'pm_peak', otp_pct: 79, avg_delay_min: 2.6, severe_pct: 7.4 },
-		{ grain: 'night', otp_pct: null, avg_delay_min: null, severe_pct: null },
-	] satisfies NetworkShift[] as NetworkShift[],
-	// Weekday (84%) vs weekend (81% — worst punctuality) → weekend ranks first.
-	byDaytype: [
-		{ grain: 'weekday', otp_pct: 84, avg_delay_min: 1.9, severe_pct: 4.1 },
-		{ grain: 'weekend', otp_pct: 81, avg_delay_min: 2.3, severe_pct: 6.2 },
-	] satisfies NetworkShift[] as NetworkShift[],
-}));
+			delay_p50_min: 1,
+			delay_p90_min: 6,
+			non_responding: 3,
+			feed_freshness_s: 20,
+			coverage_pct: 95,
+			occupancy_mix: null,
+			// `satisfies` keeps the compile-time contract check on the literal; the
+			// trailing `as NetworkFile` widens the (otherwise narrowed) inferred type
+			// back to the mutable contract type so a test may flip e.g. occupancy_mix.
+		} satisfies NetworkFile as NetworkFile,
+		// A small daily trend carrying all seven NetworkTrend fields, including a
+		// cancellation rate and a per-day occupancy mix on the latest day only. Typed
+		// as TrendPoint[] (each element `satisfies TrendPoint`) so a longer fixture
+		// with null cancellation/occupancy can be spliced in for the re-slice test.
+		trendSeries: [
+			{
+				date: '2026-06-14',
+				otp_pct: 78,
+				avg_delay_min: 2.1,
+				p90_min: 5,
+				vehicles: 9,
+				cancellation_rate: 1.2,
+				occupancy_mix: null,
+			},
+			{
+				date: '2026-06-15',
+				otp_pct: 81,
+				avg_delay_min: 1.8,
+				p90_min: 6,
+				vehicles: 11,
+				cancellation_rate: 2.6,
+				occupancy_mix: {
+					empty: 0.1,
+					many_seats: 0.4,
+					few_seats: 0.3,
+					standing: 0.15,
+					full: 0.05,
+				},
+			},
+		] satisfies TrendPoint[] as TrendPoint[],
+		// Additive coarser-grain series. Week-start / month-start dated; p90_min +
+		// vehicles are null (14d-daily-only) — honest gaps. Distinct OTP values from
+		// the daily fixture so the plotted-series swap is observable. Mutable so the
+		// "stands down when empty" test can clear them.
+		weeklySeries: [
+			{ date: '2026-06-01', otp_pct: 75, avg_delay_min: 2.4, p90_min: null, vehicles: null },
+			{ date: '2026-06-08', otp_pct: 77, avg_delay_min: 2.2, p90_min: null, vehicles: null },
+			{ date: '2026-06-15', otp_pct: 83, avg_delay_min: 1.6, p90_min: null, vehicles: null },
+		] satisfies TrendPoint[] as TrendPoint[],
+		monthlySeries: [
+			{ date: '2026-04-01', otp_pct: 72, avg_delay_min: 2.8, p90_min: null, vehicles: null },
+			{ date: '2026-05-01', otp_pct: 76, avg_delay_min: 2.5, p90_min: null, vehicles: null },
+		] satisfies TrendPoint[] as TrendPoint[],
+		// Network-wide by-shift readout: the HEADLINE is the real OTP %, ranked
+		// worst-PUNCTUALITY first (lowest OTP first) → pm_peak (79%) precedes am_peak
+		// (88%). `night` carries a null OTP AND null severe share → it is DROPPED
+		// (honesty: never a fabricated 0). Mutable for the empty test.
+		byShift: [
+			{ grain: 'am_peak', otp_pct: 88, avg_delay_min: 1.4, severe_pct: 3.0 },
+			{ grain: 'pm_peak', otp_pct: 79, avg_delay_min: 2.6, severe_pct: 7.4 },
+			{ grain: 'night', otp_pct: null, avg_delay_min: null, severe_pct: null },
+		] satisfies NetworkShift[] as NetworkShift[],
+		// Weekday (84%) vs weekend (81% — worst punctuality) → weekend ranks first.
+		byDaytype: [
+			{ grain: 'weekday', otp_pct: 84, avg_delay_min: 1.9, severe_pct: 4.1 },
+			{ grain: 'weekend', otp_pct: 81, avg_delay_min: 2.3, severe_pct: 6.2 },
+		] satisfies NetworkShift[] as NetworkShift[],
+	}));
 
 vi.mock('$lib/nav', async () => {
 	return {
@@ -123,7 +137,13 @@ vi.mock('$lib/v1/resource.svelte', () => ({
 		return {
 			data: isProvenance
 				? { conformance: null }
-				: { series: trendSeries, by_shift: byShift, by_daytype: byDaytype },
+				: {
+						series: trendSeries,
+						weekly: weeklySeries,
+						monthly: monthlySeries,
+						by_shift: byShift,
+						by_daytype: byDaytype,
+					},
 			error: null,
 			loading: false,
 			settled: true,
@@ -238,6 +258,107 @@ describe('NetworkHealth trend window + series', () => {
 		const lastAvg = targetsAvg[targetsAvg.length - 1];
 		expect(lastAvg.getAttribute('aria-label')).toContain('Median delay 1.8 min');
 		expect(lastAvg.getAttribute('aria-label')).not.toContain('Slowest 10% (min)');
+	});
+});
+
+describe('NetworkHealth trend grain (day/week/month)', () => {
+	const weeklyOriginal = weeklySeries.slice();
+	const monthlyOriginal = monthlySeries.slice();
+	afterEach(() => {
+		weeklySeries.splice(0, weeklySeries.length, ...weeklyOriginal);
+		monthlySeries.splice(0, monthlySeries.length, ...monthlyOriginal);
+	});
+
+	/** The day-grain delay TrendLine (scoped by its summary aria-label). */
+	const trendFigure = (container: HTMLElement) =>
+		container.querySelector(
+			'[data-slot="trend-line"][aria-label*="chosen delay series"]',
+		) as HTMLElement;
+
+	it('offers a day/week/month grain picker when the coarse series carry data', () => {
+		render(NetworkHealth);
+		const group = screen.getByRole('radiogroup', { name: 'Trend grain' });
+		expect(within(group).getByRole('radio', { name: 'Day' })).toBeInTheDocument();
+		expect(within(group).getByRole('radio', { name: 'Week' })).toBeInTheDocument();
+		expect(within(group).getByRole('radio', { name: 'Month' })).toBeInTheDocument();
+	});
+
+	it('switches the plotted series from daily to weekly when "Week" is picked', async () => {
+		const { container } = render(NetworkHealth);
+
+		// Day grain: 2 daily points, OTP 78/81 — the latest reads the p90 series.
+		const dayTargets = within(trendFigure(container)).getAllByRole('img');
+		expect(dayTargets).toHaveLength(2);
+		expect(dayTargets[dayTargets.length - 1].getAttribute('aria-label')).toContain('On-time % 81%');
+
+		// Pick Week → the weekly series (3 points, OTP 75/77/83) feeds the chart.
+		await fireEvent.click(screen.getByRole('radio', { name: 'Week' }));
+		const weekTargets = within(trendFigure(container)).getAllByRole('img');
+		expect(weekTargets).toHaveLength(3);
+		expect(weekTargets[weekTargets.length - 1].getAttribute('aria-label')).toContain(
+			'On-time % 83%',
+		);
+	});
+
+	it('switches the plotted series to monthly when "Month" is picked', async () => {
+		const { container } = render(NetworkHealth);
+		await fireEvent.click(screen.getByRole('radio', { name: 'Month' }));
+		const monthTargets = within(trendFigure(container)).getAllByRole('img');
+		// Monthly fixture carries 2 month-start points.
+		expect(monthTargets).toHaveLength(2);
+		expect(monthTargets[monthTargets.length - 1].getAttribute('aria-label')).toContain(
+			'On-time % 76%',
+		);
+	});
+
+	it('hides the daily-only marks under week/month (window picker, vehicles spark, per-day crowding)', async () => {
+		render(NetworkHealth);
+		// Day grain shows the window picker + per-day crowding small-multiple.
+		expect(screen.getByRole('radiogroup', { name: 'Trend window' })).toBeInTheDocument();
+		expect(screen.getByRole('list', { name: /Crowding band mix per day/i })).toBeInTheDocument();
+
+		await fireEvent.click(screen.getByRole('radio', { name: 'Week' }));
+
+		// Week grain: window picker stands down; per-day crowding small-multiple gone;
+		// the vehicles context caption (daily-only) is gone.
+		expect(screen.queryByRole('radiogroup', { name: 'Trend window' })).toBeNull();
+		expect(screen.queryByRole('list', { name: /Crowding band mix per day/i })).toBeNull();
+		expect(screen.queryByText('Vehicles reporting each day')).toBeNull();
+	});
+
+	it('disables the p90 delay segment on week/month (p90 is null there) and reads avg', async () => {
+		const { container } = render(NetworkHealth);
+		await fireEvent.click(screen.getByRole('radio', { name: 'Week' }));
+
+		// p90 ("Slowest 10%") is disabled on the coarse grain; the retard channel
+		// reads the avg-delay series under the median label (never a flat-null line).
+		const delayGroup = screen.getByRole('radiogroup', { name: 'Delay series' });
+		expect(within(delayGroup).getByRole('radio', { name: 'Slowest 10%' })).toBeDisabled();
+
+		const targets = within(trendFigure(container)).getAllByRole('img');
+		const last = targets[targets.length - 1];
+		// Latest weekly avg_delay_min = 1.6 → reads under the median label, not p90.
+		expect(last.getAttribute('aria-label')).toContain('Median delay 1.6 min');
+		expect(last.getAttribute('aria-label')).not.toContain('Slowest 10% (min)');
+	});
+
+	it('stands the grain picker down when no coarse series carries data', () => {
+		weeklySeries.splice(0, weeklySeries.length);
+		monthlySeries.splice(0, monthlySeries.length);
+		render(NetworkHealth);
+		// Only the daily series exists → a lone "Day" chip is a dead control → no picker.
+		expect(screen.queryByRole('radiogroup', { name: 'Trend grain' })).toBeNull();
+		// The daily trend still renders (the window picker is present).
+		expect(screen.getByRole('radiogroup', { name: 'Trend window' })).toBeInTheDocument();
+	});
+
+	it('offers the grain picker when only weekly data exists (monthly empty)', () => {
+		monthlySeries.splice(0, monthlySeries.length);
+		render(NetworkHealth);
+		const group = screen.getByRole('radiogroup', { name: 'Trend grain' });
+		expect(within(group).getByRole('radio', { name: 'Week' })).not.toBeDisabled();
+		// Month carries no data → its segment is disabled (never a dead pick).
+		expect(within(group).getByRole('radio', { name: 'Month' })).toBeDisabled();
 	});
 });
 

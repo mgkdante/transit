@@ -307,14 +307,22 @@ class LabelsFile(BaseModel):
 # ---------------------------------------------------------------------------
 
 class TrendPoint(BaseModel):
+    # One trend observation at a single bucket. date is the bucket-start LOCAL
+    # date: the day itself for the daily `series`, the ISO week-start (Monday)
+    # for `weekly` points, and the month-start (1st) for `monthly` points.
+    # otp_pct / avg_delay_min / cancellation_rate / occupancy_mix are honestly
+    # re-aggregatable to week/month (observation-weighted over the same daily
+    # sources). p90_min / vehicles come from the ~14-day raw fact window only,
+    # which is NOT additively composable across a week/month — so they are
+    # always None on weekly/monthly points (present only on recent daily ones).
     date: str
     otp_pct: int | None = None
     avg_delay_min: float | None = None
     p90_min: float | None = None
     vehicles: int | None = None
     # Tier-1 additive: network-wide cancellation rate (canceled / RT-reported
-    # trip-days, %) and crowding band-shares for the day. Both None when their
-    # source rollups have no data for the date.
+    # trip-days, %) and crowding band-shares for the bucket. Both None when their
+    # source rollups have no data for the bucket.
     cancellation_rate: float | None = None
     occupancy_mix: OccupancyMix | None = None
 
@@ -335,6 +343,16 @@ class NetworkShift(BaseModel):
 class NetworkTrend(BaseModel):
     generated_utc: str
     series: list[TrendPoint] = Field(default_factory=list)
+    # Additive-optional WEEK + MONTH grain trend series: the SAME daily sources
+    # (gold.route_delay_hourly OTP/avg, route_cancellation_daily,
+    # route_occupancy_band_daily) re-aggregated into ISO-week / calendar-month
+    # buckets, observation-weighted exactly like `series`. Each TrendPoint.date
+    # is the bucket-start local date (Monday for weekly, the 1st for monthly).
+    # p90_min/vehicles stay None on these grains (the raw fact window is ~14d
+    # only — not additively composable to a week/month). Both default empty so
+    # already-published snapshots lacking these keys still validate.
+    weekly: list[TrendPoint] = Field(default_factory=list)
+    monthly: list[TrendPoint] = Field(default_factory=list)
     # Additive-optional network-wide reliability by time-of-day shift and by
     # weekday/weekend day-type, aggregated across all routes. Both default empty
     # so already-published snapshots lacking these keys still validate; the

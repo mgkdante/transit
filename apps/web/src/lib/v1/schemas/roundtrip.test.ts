@@ -257,6 +257,36 @@ describe('tier-1 — cancellations + occupancy_mix round-trip (additive optional
 		};
 		expect(() => parsePort('network_trend', NetworkTrendSchema, fixture)).not.toThrow();
 	});
+
+	it('parses network_trend carrying additive weekly + monthly trend series', () => {
+		const fixture = {
+			generated_utc: ISO,
+			// week-start / month-start dated TrendPoints. p90_min + vehicles are null
+			// on these coarse grains (14d-daily-only) — honest gaps, never fabricated.
+			weekly: [
+				{
+					date: '2026-06-08',
+					otp_pct: 80,
+					avg_delay_min: 2.0,
+					p90_min: null,
+					vehicles: null,
+				},
+				// honest-null week: otp absent (optional) — still parses.
+				{ date: '2026-06-15' },
+			],
+			monthly: [
+				{
+					date: '2026-05-01',
+					otp_pct: 79,
+					avg_delay_min: 2.2,
+					p90_min: null,
+					vehicles: null,
+				},
+				{ date: '2026-06-01' },
+			],
+		};
+		expect(() => parsePort('network_trend', NetworkTrendSchema, fixture)).not.toThrow();
+	});
 });
 
 describe('tier-2 — headway cov/bunching + service_spans + alert breakdown round-trip', () => {

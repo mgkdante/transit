@@ -324,6 +324,31 @@ def _historic_dispatch_conn():
         ("fact_trip_delay_snapshot", [
             {"local_date": datetime.date(2026, 6, 1), "p90_min": 3.5, "vehicles": 42},
         ]),
+        # build_network_trend: WEEK + MONTH grain re-aggregation. Unique
+        # `-- trend:<grain>:<source>` markers dispatch each bucketed query to its
+        # own canned row-set (no collision with the daily hourly/cancel/occupancy).
+        ("trend:week:hourly", [
+            {"local_date": datetime.date(2026, 6, 1), "known_obs": 200, "on_time": 180,
+             "weighted_delay_sec": 12000},
+        ]),
+        ("trend:week:cancel", [
+            {"local_date": datetime.date(2026, 6, 1), "canceled": 4, "total": 200},
+        ]),
+        ("trend:week:occupancy", [
+            {"local_date": datetime.date(2026, 6, 1), "empty": 0, "many_seats": 60,
+             "few_seats": 25, "standing": 10, "full": 5},
+        ]),
+        ("trend:month:hourly", [
+            {"local_date": datetime.date(2026, 6, 1), "known_obs": 1000, "on_time": 820,
+             "weighted_delay_sec": 90000},
+        ]),
+        ("trend:month:cancel", [
+            {"local_date": datetime.date(2026, 6, 1), "canceled": 12, "total": 600},
+        ]),
+        ("trend:month:occupancy", [
+            {"local_date": datetime.date(2026, 6, 1), "empty": 10, "many_seats": 40,
+             "few_seats": 30, "standing": 15, "full": 5},
+        ]),
         ("repeated_problem_route_stop", []),
         ("repeat_offender_daily", []),
         ("i3_alert_history_reporting", []),

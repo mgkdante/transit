@@ -96,6 +96,15 @@ export interface NetworkCopy extends SurfaceHeadCopy {
 		 */
 		readonly caveat: string;
 	};
+	/** Trend grain selector (day / week / month) labels. */
+	readonly grain: {
+		/** Accessible group label for the grain selector. */
+		readonly label: string;
+		/** Segment labels. */
+		readonly day: string;
+		readonly week: string;
+		readonly month: string;
+	};
 	/** Window selector (7/30/90-day) labels. */
 	readonly window: {
 		/** Accessible group label for the window selector. */
@@ -166,6 +175,7 @@ export const copy: Record<Locale, NetworkCopy> = {
 			caveat:
 				'A real on-time over known share across the network, measured over the trailing window. It is a punctuality proxy, not certified on-time performance, and small samples vary.',
 		},
+		grain: { label: 'Trend grain', day: 'Day', week: 'Week', month: 'Month' },
 		window: { label: 'Trend window', d7: '7d', d30: '30d', d90: '90d' },
 		noData: 'no data',
 		units: { pct: '%', min: ' min' },
@@ -223,6 +233,7 @@ export const copy: Record<Locale, NetworkCopy> = {
 			caveat:
 				'Une part réelle à l’heure sur connus à l’échelle du réseau, mesurée sur la fenêtre glissante. C’est une estimation de ponctualité, pas une ponctualité certifiée, et les petits échantillons varient.',
 		},
+		grain: { label: 'Granularité de tendance', day: 'Jour', week: 'Semaine', month: 'Mois' },
 		window: { label: 'Fenêtre de tendance', d7: '7 j', d30: '30 j', d90: '90 j' },
 		noData: 'aucune donnée',
 		units: { pct: '%', min: ' min' },

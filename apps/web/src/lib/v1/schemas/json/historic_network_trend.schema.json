@@ -184,11 +184,25 @@
       "title": "Generated Utc",
       "type": "string"
     },
+    "monthly": {
+      "items": {
+        "$ref": "#/$defs/TrendPoint"
+      },
+      "title": "Monthly",
+      "type": "array"
+    },
     "series": {
       "items": {
         "$ref": "#/$defs/TrendPoint"
       },
       "title": "Series",
+      "type": "array"
+    },
+    "weekly": {
+      "items": {
+        "$ref": "#/$defs/TrendPoint"
+      },
+      "title": "Weekly",
       "type": "array"
     }
   },
