@@ -2,6 +2,18 @@
   "$defs": {
     "Alert": {
       "properties": {
+        "cause": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cause"
+        },
         "description": {
           "anyOf": [
             {
@@ -25,6 +37,18 @@
           ],
           "default": null,
           "title": "Description En"
+        },
+        "effect": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Effect"
         },
         "end_utc": {
           "anyOf": [
@@ -72,6 +96,18 @@
         },
         "severity": {
           "$ref": "#/$defs/Severity"
+        },
+        "severity_level": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Severity Level"
         },
         "start_utc": {
           "anyOf": [

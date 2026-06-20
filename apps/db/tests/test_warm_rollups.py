@@ -158,6 +158,9 @@ class FakeConnection:
         if "INSERT INTO gold.route_occupancy_band_daily" in sql:
             return RowcountResult(1)
 
+        if "INSERT INTO gold.stop_occupancy_band_daily" in sql:
+            return RowcountResult(1)
+
         if "INSERT INTO gold.route_service_span_daily" in sql:
             return RowcountResult(1)
 
@@ -214,6 +217,9 @@ class FakeConnection:
 
         if "SELECT COUNT(*)" in sql and "FROM gold.route_occupancy_band_daily" in sql:
             return ScalarResult(10)
+
+        if "SELECT COUNT(*)" in sql and "FROM gold.stop_occupancy_band_daily" in sql:
+            return ScalarResult(15)
 
         if "SELECT COUNT(*)" in sql and "FROM gold.route_service_span_daily" in sql:
             return ScalarResult(12)
@@ -337,6 +343,7 @@ def test_build_warm_rollups_empty_facts_is_noop() -> None:
     assert result.built_occupancy_periods == 0
     assert result.built_route_cancellation_days == 0
     assert result.built_route_occupancy_days == 0
+    assert result.built_stop_occupancy_days == 0
     assert result.built_route_service_span_days == 0
     assert result.built_route_skipped_stop_days == 0
     assert isinstance(result.completed_at_utc, datetime)
@@ -676,6 +683,71 @@ def test_occupancy_band_daily_uses_vehicle_fact_missing_day_calendar() -> None:
     assert "f.snapshot_date_key < :today_key" in occ_days
 
 
+def test_stop_occupancy_band_daily_upsert_keys_on_stop_id_not_null_no_sentinel() -> None:
+    """Per-stop occupancy band reduction is a clean mirror of the route version but
+    keyed by stop_id. CRITICAL difference: a ping with NULL stop_id cannot be
+    attributed to a stop, so the upsert FILTERS stop_id IS NOT NULL and GROUPs on
+    the raw stop_id — there is NO __unrouted__-style sentinel bucket. Same band
+    FILTERs (code 4 folded into standing), same closed-day source/calendar as the
+    route occupancy rollup (fact_vehicle_snapshot + snapshot_date_key)."""
+    sql = str(rollups.UPSERT_STOP_OCCUPANCY_BAND_DAILY)
+    compact = " ".join(sql.split())
+
+    assert "INSERT INTO gold.stop_occupancy_band_daily" in sql
+    assert "FROM gold.fact_vehicle_snapshot AS f" in sql
+    # Stop-vs-route: NULL stop_id is excluded, grouped on the raw stop_id.
+    assert "f.stop_id IS NOT NULL" in sql
+    assert "GROUP BY f.provider_id, f.stop_id" in compact
+    # No sentinel bucket — the route mirror's __unrouted__ COALESCE must be ABSENT.
+    assert "__unrouted__" not in sql
+    assert "__unknown_stop__" not in sql
+    assert "COALESCE(f.stop_id" not in sql
+    # Same band math as the route mirror (CRUSHED_STANDING folds into standing).
+    assert "occupancy_status IN (3, 4)" in sql
+    assert "occupancy_status IN (0, 1, 2, 3, 4, 5)" in sql
+    # Same closed-day filter + idempotent upsert on the stop PK.
+    assert "f.snapshot_date_key = :date_key" in sql
+    assert "ON CONFLICT (provider_id, provider_local_date, stop_id)" in sql
+
+
+def test_stop_occupancy_band_daily_is_append_only_not_in_reporting_registry() -> None:
+    """Per-stop occupancy-band daily table must stay OUT of the DELETE+UPSERT
+    reporting registry (a per-provider rebuild would wipe accrued history),
+    exactly like its route sibling."""
+    assert "stop_occupancy_band_daily" not in rollups.REPORTING_AGGREGATE_TABLES
+    assert "stop_occupancy_band_daily" not in rollups.DELETE_REPORTING_AGGREGATES
+
+
+def test_build_warm_rollups_wires_stop_occupancy_and_counts_it() -> None:
+    """The stop occupancy daily reduction is wired into build_warm_rollups via
+    _build_percentile_days (sourced from fact_vehicle_snapshot, same as the route
+    occupancy rollup), and its build count is plumbed through the result + display
+    dict on built_stop_occupancy_days (mirror of built_route_occupancy_days).
+
+    Scope of this test: the FakeConn harness only verifies WIRING/DISPATCH (the
+    upsert is referenced + reads the right fact) and the COUNTER (present + zero,
+    not absent). The fake keeps the daily loops noop (no missing days), so the count
+    is 0 here — this does NOT exercise band math against real rows. Band-count
+    correctness (the GROUP BY stop_id reduction + share derivation) is verified by
+    the offline builder/upsert tests, not by any real-DB occupancy-band regression
+    (none exists; one would need a live cluster)."""
+    conn = FakeConnection()
+    engine = FakeEngine(conn)
+
+    result = build_warm_rollups("stm", engine=engine)
+
+    # Counter plumbed through the dataclass AND the display dict (mirror of route).
+    assert result.built_stop_occupancy_days == 0
+    assert result.display_dict()["built_stop_occupancy_days"] == 0
+    assert "built_route_occupancy_days" in result.display_dict()
+    # The stop occupancy upsert is referenced in the build_warm_rollups source and
+    # reads the same vehicle fact as the route occupancy rollup.
+    assert "INSERT INTO gold.stop_occupancy_band_daily" in str(
+        rollups.UPSERT_STOP_OCCUPANCY_BAND_DAILY
+    )
+    assert "FROM gold.fact_vehicle_snapshot" in str(rollups.UPSERT_STOP_OCCUPANCY_BAND_DAILY)
+
+
 def test_historic_daily_marts_registered_in_registry() -> None:
     """P2/P3 HISTORIC marts are wired into all three rollups registries."""
     from transit_ops.gold import rollups
@@ -862,14 +934,18 @@ def test_prune_warm_rollup_storage_dry_run_counts_without_deletes() -> None:
     assert result.deleted_row_counts["gold.occupancy_summary_5m"] == 6
     assert result.deleted_row_counts["gold.route_cancellation_daily"] == 9
     assert result.deleted_row_counts["gold.route_occupancy_band_daily"] == 10
+    # The per-STOP occupancy-band twin is now registered for retention pruning too
+    # (provider_local_date boundary, mirroring route_occupancy_band_daily).
+    assert result.deleted_row_counts["gold.stop_occupancy_band_daily"] == 15
     # Tier-2 append-only tables.
     assert result.deleted_row_counts["gold.route_service_span_daily"] == 12
     assert result.deleted_row_counts["gold.route_skipped_stop_daily"] == 14
 
     count_queries = [s for s in conn.executed if "SELECT COUNT(*)" in s or "SELECT count(*)" in s]
-    # 20 prior + 2 Tier-2 aggregate-retention tables (service-span + skipped-stop);
-    # both sit in GOLD_AGGREGATE_RETENTION_COLUMNS so each emits one dry-run COUNT.
-    assert len(count_queries) == 22
+    # 20 prior + 2 Tier-2 aggregate-retention tables (service-span + skipped-stop) +
+    # the per-stop occupancy-band twin (newly registered); each sits in
+    # GOLD_AGGREGATE_RETENTION_COLUMNS so each emits one dry-run COUNT.
+    assert len(count_queries) == 23
 
 
 def test_prune_warm_rollup_storage_display_dict_includes_dry_run() -> None:

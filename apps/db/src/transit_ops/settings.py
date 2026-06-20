@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from collections.abc import Mapping
 from functools import lru_cache
 from pathlib import Path
@@ -82,6 +83,22 @@ class Settings(BaseSettings):
             LegacyDatabaseUrlGuardSource(file_secret_settings),
         )
 
+    def env_value(self, name: str | None) -> str | None:
+        """Resolve a feed's env-var override (URL or credential) by name.
+
+        Declared settings fields (e.g. ``STM_API_KEY``) resolve through the model
+        exactly as before — their value already reflects env/.env via
+        pydantic-settings. Names that are NOT declared fields fall back to the
+        process environment, so a new provider's ``{PROVIDER}_*`` secrets and URLs
+        resolve by convention without adding a Settings field per provider.
+        """
+        if not name:
+            return None
+        if name in type(self).model_fields:
+            value = getattr(self, name, None)
+            return str(value) if value else None
+        return os.environ.get(name) or None
+
     APP_ENV: str = "local"
     LOG_LEVEL: str = "INFO"
     DATABASE_URL: str | None = None
@@ -131,6 +148,9 @@ class Settings(BaseSettings):
     HEALTH_FEED_TIMEOUT_SECONDS: float = 10.0
     HEALTH_MAX_PIPELINE_AGE_SECONDS: int = 900
     HEALTH_RUNTIME_CACHE_SECONDS: int = 30
+    # Global fallback for a provider manifest that omits provider.strict_gtfs.
+    # True = a feed missing a required non-spine column fails the load loud.
+    STRICT_GTFS: bool = True
     STATIC_DATASET_RETENTION_COUNT: int = 1
     SILVER_REALTIME_RETENTION_DAYS: int = 10
     # Max rows deleted per realtime-history table per prune cycle. The prune runs
@@ -245,6 +265,7 @@ class Settings(BaseSettings):
             "HEALTH_FEED_TIMEOUT_SECONDS": self.HEALTH_FEED_TIMEOUT_SECONDS,
             "HEALTH_MAX_PIPELINE_AGE_SECONDS": self.HEALTH_MAX_PIPELINE_AGE_SECONDS,
             "HEALTH_RUNTIME_CACHE_SECONDS": self.HEALTH_RUNTIME_CACHE_SECONDS,
+            "STRICT_GTFS": self.STRICT_GTFS,
             "STATIC_DATASET_RETENTION_COUNT": self.STATIC_DATASET_RETENTION_COUNT,
             "SILVER_REALTIME_RETENTION_DAYS": self.SILVER_REALTIME_RETENTION_DAYS,
             "SILVER_REALTIME_PRUNE_BATCH": self.SILVER_REALTIME_PRUNE_BATCH,

@@ -41,6 +41,17 @@ export interface ExternalNavLink {
 }
 
 /**
+ * A secondary IN-APP reference link (not a primary wayfinding surface). Locale-
+ * LESS href, localized at render like SURFACE_NAV. Kept OUT of SURFACE_NAV so the
+ * 4-item rail + its `key`/icon union stay untouched — these are reference pages
+ * (e.g. the metric explainer), surfaced in the footer, not the rail.
+ */
+export interface SecondaryNavLink {
+	readonly href: string;
+	readonly label: BilingualLabel;
+}
+
+/**
  * The primary surfaces, in wayfinding order: the live map hub first, then the
  * per-line and per-stop catalogues, then the network-health / data-trust surface.
  * These are the REAL shipped routes (verified against src/routes).
@@ -79,6 +90,24 @@ export const SURFACE_NAV: readonly SurfaceNavItem[] = [
 /** Off-site links — the portfolio at yesid.dev. */
 export const MENU_EXTRAS: readonly ExternalNavLink[] = [
 	{ href: 'https://yesid.dev', label: { en: 'yesid.dev', fr: 'yesid.dev' } },
+] as const;
+
+/**
+ * Secondary in-app reference links — surfaced in the footer, not the primary
+ * rail. The metric explainer (/metrics) lives here: it is a site-wide
+ * methodology reference every surface deep-links into, not a wayfinding surface.
+ * The accountability surfaces (/hotspots, /receipt, /repeat-offenders, /alerts)
+ * are audit/meta pages in the same vein as /metrics + /status — they read the
+ * roll-ups to hold the service to account, rather than being primary wayfinding
+ * surfaces, so they live here beside the methodology + data-health links.
+ */
+export const SECONDARY_NAV: readonly SecondaryNavLink[] = [
+	{ href: '/metrics', label: { en: 'How we measure', fr: 'Comment on mesure' } },
+	{ href: '/status', label: { en: 'Data health', fr: 'Santé des données' } },
+	{ href: '/hotspots', label: { en: 'Hotspots', fr: 'Points chauds' } },
+	{ href: '/receipt', label: { en: 'Daily receipt', fr: 'Reçu quotidien' } },
+	{ href: '/repeat-offenders', label: { en: 'Repeat offenders', fr: 'Récidivistes' } },
+	{ href: '/alerts', label: { en: 'Alerts', fr: 'Avis' } },
 ] as const;
 
 /**

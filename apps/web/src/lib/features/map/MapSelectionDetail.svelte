@@ -6,6 +6,7 @@
 	import { formatUtc } from '$lib/utils/time';
 	import { OCCUPANCY_LABELS, STATUS_LABELS } from './map.copy';
 	import { alertDisplayText } from './mapAlerts';
+	import { causeLabel, effectLabel } from './gtfsAlertLabels';
 	import type { MapSelection, MapSelectionDetail } from './mapSelection';
 
 	interface Props {
@@ -31,6 +32,8 @@
 			nextStop: 'Next stop',
 			stopCode: 'Stop code',
 			alerts: 'Alerts',
+			cause: 'Cause',
+			effect: 'Effect',
 			noAlerts: 'No alerts attached',
 			noData: 'No data',
 			noTrip: 'No trip linked',
@@ -71,6 +74,8 @@
 			nextStop: 'Prochain arrêt',
 			stopCode: "Code d'arrêt",
 			alerts: 'Alertes',
+			cause: 'Cause',
+			effect: 'Effet',
 			noAlerts: 'Aucune alerte liée',
 			noData: 'Aucune donnée',
 			noTrip: 'Aucun trajet lié',
@@ -589,6 +594,8 @@
 			{#if detail.alerts.length > 0}
 				<ul>
 					{#each detail.alerts.slice(0, compact ? 2 : 4) as alert (alert.id)}
+						{@const cause = causeLabel(alert.cause, locale)}
+						{@const effect = effectLabel(alert.effect, locale)}
 						<li data-severity={alert.severity}>
 							<button
 								type="button"
@@ -599,6 +606,22 @@
 								{displayAlert(alert)}
 								<ChevronRightIcon size={13} strokeWidth={2.4} aria-hidden="true" />
 							</button>
+							{#if cause || effect}
+								<dl class="map-alert-meta">
+									{#if cause}
+										<div>
+											<dt>{t.cause}</dt>
+											<dd>{cause}</dd>
+										</div>
+									{/if}
+									{#if effect}
+										<div>
+											<dt>{t.effect}</dt>
+											<dd>{effect}</dd>
+										</div>
+									{/if}
+								</dl>
+							{/if}
 						</li>
 					{/each}
 				</ul>
@@ -1234,6 +1257,36 @@
 	.map-alert-button:hover :global(svg) {
 		opacity: 1;
 		transform: translateX(2px);
+	}
+	/* Cause / effect metadata — a labeled mono caption line under the headline.
+	   Each entry is a small uppercase caption + value pill, tinted by the alert's
+	   own severity tone so it reads as part of the same signage block. */
+	.map-alert-meta {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.35rem 0.6rem;
+		margin: 0.5rem 0 0;
+	}
+	.map-alert-meta div {
+		display: inline-flex;
+		align-items: baseline;
+		gap: 0.35rem;
+		min-width: 0;
+	}
+	.map-alert-meta dt {
+		font-family: var(--font-mono);
+		font-size: var(--text-micro);
+		font-weight: 500;
+		letter-spacing: 0.08em;
+		text-transform: uppercase;
+		color: color-mix(in srgb, var(--alert-tone) 70%, var(--muted-foreground));
+	}
+	.map-alert-meta dd {
+		margin: 0;
+		min-width: 0;
+		font-size: var(--text-caption);
+		font-weight: 500;
+		color: var(--foreground);
 	}
 	/* Empty state — quiet, distinct from an active alert. */
 	.map-alerts p {

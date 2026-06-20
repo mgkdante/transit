@@ -12,7 +12,7 @@ from typing import Any
 from sqlalchemy import create_engine, text
 
 from transit_ops.db.connection import make_engine
-from transit_ops.health.models import ComponentHealthResult
+from transit_ops.health.models import ComponentHealthResult, HealthStatus
 from transit_ops.ingestion.storage import (
     LocalBronzeStorage,
     S3BronzeStorage,
@@ -21,7 +21,35 @@ from transit_ops.ingestion.storage import (
 from transit_ops.providers.registry import ProviderRegistry
 from transit_ops.settings import Settings, get_settings
 
-REQUIRED_REALTIME_ENDPOINTS = ("trip_updates", "vehicle_positions", "i3_alerts")
+# A feed is stale once it misses this many of its own declared refresh cycles
+# (floored at HEALTH_MAX_PIPELINE_AGE_SECONDS). Deriving the budget from each
+# feed's refresh_interval_seconds lets a daily static feed and a 30s realtime
+# feed share one check without a per-feed-kind threshold table.
+FRESHNESS_GRACE_CYCLES = 3
+
+# Latest successful capture per enabled feed of every ACTIVE provider. Driven by
+# core.feed_endpoints (seeded from the manifests) + raw.ingestion_runs, so health
+# is holistic per provider with no hardcoded provider id. run_kind = feed_kind
+# excludes derived runs (e.g. silver_load) from the feed's capture recency.
+_PROVIDER_FEED_FRESHNESS_SQL = """
+    SELECT
+        fe.provider_id,
+        fe.endpoint_key,
+        fe.feed_kind,
+        fe.refresh_interval_seconds,
+        max(ir.completed_at_utc) AS latest_captured_at_utc
+    FROM core.feed_endpoints AS fe
+    JOIN core.providers AS p
+        ON p.provider_id = fe.provider_id
+       AND p.is_active IS TRUE
+    LEFT JOIN raw.ingestion_runs AS ir
+        ON ir.feed_endpoint_id = fe.feed_endpoint_id
+       AND ir.run_kind = fe.feed_kind
+       AND ir.status = 'succeeded'
+    WHERE fe.is_enabled IS TRUE
+    GROUP BY fe.provider_id, fe.endpoint_key, fe.feed_kind, fe.refresh_interval_seconds
+    ORDER BY fe.provider_id, fe.endpoint_key
+"""
 
 EngineFactory = Callable[[Settings], Any]
 Requester = Callable[..., Any]
@@ -71,118 +99,114 @@ def check_database_connectivity(
     )
 
 
-def check_pipeline_freshness(
+def check_provider_feed_freshness(
     settings: Settings | None = None,
     *,
     engine_factory: EngineFactory | None = None,
     now: datetime | None = None,
-) -> ComponentHealthResult:
+) -> list[ComponentHealthResult]:
+    """Per-provider, per-feed capture freshness — one component per enabled feed
+    of every active provider, named ``{provider_id}_{endpoint_key}``.
+
+    Registry/DB-driven (no hardcoded provider): reads ``core.feed_endpoints``
+    (seeded from the manifests) joined to the latest successful
+    ``raw.ingestion_runs`` capture, so onboarding a provider automatically adds
+    its feed components and health becomes holistic per provider. Each feed's
+    staleness threshold is derived from its own ``refresh_interval_seconds`` so a
+    daily static feed is not judged by a realtime cadence, floored at
+    ``HEALTH_MAX_PIPELINE_AGE_SECONDS``. Detail blocks (provider ids, timestamps)
+    stay off the anonymous ``public_dict`` via the model's redaction.
+    """
     resolved_settings = settings or get_settings()
     checked_at = _checked_at(now)
     started = time.perf_counter()
-    threshold_seconds = int(resolved_settings.HEALTH_MAX_PIPELINE_AGE_SECONDS)
+    floor_seconds = int(resolved_settings.HEALTH_MAX_PIPELINE_AGE_SECONDS)
 
     if not resolved_settings.DATABASE_URL:
-        return ComponentHealthResult(
-            name="pipeline_freshness",
-            status="down",
-            message="DATABASE_URL is not configured.",
-            latency_ms=_latency_ms(started),
-            checked_at_utc=checked_at,
-            details=_freshness_details({}, checked_at, threshold_seconds),
-        )
+        return [
+            _provider_feeds_unavailable(
+                "DATABASE_URL is not configured.", checked_at, started
+            )
+        ]
 
     try:
         engine = (engine_factory or _make_health_engine)(resolved_settings)
         with engine.connect() as connection:
-            rows = connection.execute(
-                text(
-                    """
-                    WITH gtfs_rt AS (
-                        SELECT
-                            fe.endpoint_key,
-                            max(rsi.captured_at_utc) AS latest_captured_at_utc
-                        FROM core.feed_endpoints AS fe
-                        LEFT JOIN raw.realtime_snapshot_index AS rsi
-                            ON rsi.provider_id = fe.provider_id
-                            AND rsi.feed_endpoint_id = fe.feed_endpoint_id
-                        WHERE fe.provider_id = :provider_id
-                            AND fe.endpoint_key IN ('trip_updates', 'vehicle_positions')
-                        GROUP BY fe.endpoint_key
-                    ),
-                    i3 AS (
-                        SELECT
-                            fe.endpoint_key,
-                            max(snapshots.captured_at_utc) AS latest_captured_at_utc
-                        FROM core.feed_endpoints AS fe
-                        LEFT JOIN raw.i3_alert_snapshots AS snapshots
-                            ON snapshots.provider_id = fe.provider_id
-                            AND snapshots.feed_endpoint_id = fe.feed_endpoint_id
-                        WHERE fe.provider_id = :provider_id
-                            AND fe.endpoint_key = 'i3_alerts'
-                        GROUP BY fe.endpoint_key
-                    )
-                    SELECT endpoint_key, latest_captured_at_utc
-                    FROM gtfs_rt
-                    UNION ALL
-                    SELECT endpoint_key, latest_captured_at_utc
-                    FROM i3
-                    """
-                ),
-                {"provider_id": resolved_settings.STM_PROVIDER_ID},
-            )
+            rows = list(connection.execute(text(_PROVIDER_FEED_FRESHNESS_SQL)))
     except Exception as exc:  # noqa: BLE001
-        return ComponentHealthResult(
-            name="pipeline_freshness",
-            status="down",
-            message=f"Pipeline freshness query failed: {_safe_error(exc)}",
-            latency_ms=_latency_ms(started),
-            checked_at_utc=checked_at,
-            details=_freshness_details({}, checked_at, threshold_seconds),
-        )
+        return [
+            _provider_feeds_unavailable(
+                f"Provider feed freshness query failed: {_safe_error(exc)}",
+                checked_at,
+                started,
+            )
+        ]
 
-    latest_by_endpoint = _latest_timestamps_by_endpoint(rows)
-    details = _freshness_details(latest_by_endpoint, checked_at, threshold_seconds)
-    missing = [
-        endpoint
-        for endpoint in REQUIRED_REALTIME_ENDPOINTS
-        if latest_by_endpoint.get(endpoint) is None
-    ]
-    stale = [
-        endpoint
-        for endpoint in REQUIRED_REALTIME_ENDPOINTS
-        if (
-            latest_by_endpoint.get(endpoint) is not None
-            and _age_seconds(checked_at, latest_by_endpoint[endpoint]) > threshold_seconds
-        )
-    ]
+    mappings = [_row_mapping(row) for row in rows]
+    if not mappings:
+        return [
+            ComponentHealthResult(
+                name="provider_feeds",
+                status="degraded",
+                message="No active provider feeds are configured.",
+                latency_ms=_latency_ms(started),
+                checked_at_utc=checked_at,
+            )
+        ]
 
-    if missing:
-        return ComponentHealthResult(
-            name="pipeline_freshness",
-            status="degraded",
-            message=f"Missing realtime freshness data for: {', '.join(missing)}.",
-            latency_ms=_latency_ms(started),
-            checked_at_utc=checked_at,
-            details=details,
-        )
-    if stale:
-        return ComponentHealthResult(
-            name="pipeline_freshness",
-            status="degraded",
-            message=f"Realtime pipeline data is stale for: {', '.join(stale)}.",
-            latency_ms=_latency_ms(started),
-            checked_at_utc=checked_at,
-            details=details,
-        )
+    components: list[ComponentHealthResult] = []
+    for mapping in mappings:
+        provider_id = str(mapping["provider_id"])
+        endpoint_key = str(mapping["endpoint_key"])
+        feed_kind = str(mapping["feed_kind"])
+        refresh_seconds = int(mapping.get("refresh_interval_seconds") or 0)
+        threshold_seconds = max(floor_seconds, refresh_seconds * FRESHNESS_GRACE_CYCLES)
+        latest = mapping.get("latest_captured_at_utc")
+        age_seconds = _age_seconds(checked_at, latest)
+        details = {
+            "provider_id": provider_id,
+            "endpoint_key": endpoint_key,
+            "feed_kind": feed_kind,
+            "age_seconds": age_seconds,
+            "threshold_seconds": threshold_seconds,
+            "latest_captured_at_utc": latest,
+        }
 
+        if latest is None:
+            status: HealthStatus = "degraded"
+            message = f"{provider_id}/{endpoint_key}: no successful capture recorded."
+        elif age_seconds is not None and age_seconds > threshold_seconds:
+            status = "degraded"
+            message = (
+                f"{provider_id}/{endpoint_key}: last capture {age_seconds}s ago "
+                f"exceeds the {threshold_seconds}s freshness budget."
+            )
+        else:
+            status = "ok"
+            message = f"{provider_id}/{endpoint_key}: capture is fresh."
+
+        components.append(
+            ComponentHealthResult(
+                name=f"{provider_id}_{endpoint_key}",
+                status=status,
+                message=message,
+                latency_ms=_latency_ms(started),
+                checked_at_utc=checked_at,
+                details=details,
+            )
+        )
+    return components
+
+
+def _provider_feeds_unavailable(
+    message: str, checked_at: datetime, started: float
+) -> ComponentHealthResult:
     return ComponentHealthResult(
-        name="pipeline_freshness",
-        status="ok",
-        message="Realtime pipeline data is fresh.",
+        name="provider_feeds",
+        status="down",
+        message=message,
         latency_ms=_latency_ms(started),
         checked_at_utc=checked_at,
-        details=details,
     )
 
 
@@ -297,6 +321,117 @@ def check_runtime_vm_health(
     return result
 
 
+def check_feed_conformance(
+    settings: Settings | None = None,
+    *,
+    engine_factory: EngineFactory | None = None,
+    now: datetime | None = None,
+) -> ComponentHealthResult:
+    """Surface "out-of-norm payload" providers whose latest static feed shipped
+    members this pipeline does not natively model.
+
+    Pure surfacing over data the loader already captures: unknown / extra GTFS
+    members are preserved verbatim in ``silver.gtfs_extra_rows`` (never dropped),
+    and a feed that omits a required member or spine column never produced a
+    current dataset_version in the first place (the load fails loud). So the
+    observable states here are conformant (ok) or out_of_norm (degraded). The
+    detailed per-provider breakdown stays off ``public_dict`` via the model's
+    redaction.
+    """
+    resolved_settings = settings or get_settings()
+    checked_at = _checked_at(now)
+    started = time.perf_counter()
+
+    if not resolved_settings.DATABASE_URL:
+        return ComponentHealthResult(
+            name="feed_conformance",
+            status="down",
+            message="DATABASE_URL is not configured.",
+            latency_ms=_latency_ms(started),
+            checked_at_utc=checked_at,
+        )
+
+    try:
+        engine = (engine_factory or _make_health_engine)(resolved_settings)
+        with engine.connect() as connection:
+            rows = connection.execute(
+                text(
+                    """
+                    SELECT
+                        dv.provider_id,
+                        dv.dataset_version_id,
+                        (
+                            SELECT count(*)
+                            FROM silver.gtfs_extra_rows AS ger
+                            WHERE ger.dataset_version_id = dv.dataset_version_id
+                        )::bigint AS extra_row_count,
+                        (
+                            SELECT array_agg(DISTINCT ger.source_file_name)
+                            FROM silver.gtfs_extra_rows AS ger
+                            WHERE ger.dataset_version_id = dv.dataset_version_id
+                        ) AS unknown_members
+                    FROM core.dataset_versions AS dv
+                    WHERE dv.is_current IS TRUE
+                      AND dv.dataset_kind = 'static_schedule'
+                    ORDER BY dv.provider_id
+                    """
+                )
+            )
+    except Exception as exc:  # noqa: BLE001
+        return ComponentHealthResult(
+            name="feed_conformance",
+            status="down",
+            message=f"Feed conformance query failed: {_safe_error(exc)}",
+            latency_ms=_latency_ms(started),
+            checked_at_utc=checked_at,
+        )
+
+    per_provider: dict[str, object] = {}
+    out_of_norm: list[str] = []
+    for row in rows:
+        mapping = _row_mapping(row)
+        provider_id = str(mapping["provider_id"])
+        unknown_members = sorted(mapping.get("unknown_members") or [])
+        extra_row_count = int(mapping.get("extra_row_count") or 0)
+        per_provider[provider_id] = {
+            "dataset_version_id": int(mapping["dataset_version_id"]),
+            "unknown_members": unknown_members,
+            "extra_row_count": extra_row_count,
+        }
+        if unknown_members or extra_row_count:
+            out_of_norm.append(provider_id)
+
+    details: dict[str, object] = {"label": "conformant", "providers": per_provider}
+
+    if out_of_norm:
+        details["label"] = "out_of_norm"
+        summary = ", ".join(
+            f"{pid} ({len(per_provider[pid]['unknown_members'])} member(s), "
+            f"{per_provider[pid]['extra_row_count']} row(s))"
+            for pid in out_of_norm
+        )
+        return ComponentHealthResult(
+            name="feed_conformance",
+            status="degraded",
+            message=(
+                f"Out-of-norm feed payload for {len(out_of_norm)} provider(s): "
+                f"{summary} — captured verbatim in silver.gtfs_extra_rows."
+            ),
+            latency_ms=_latency_ms(started),
+            checked_at_utc=checked_at,
+            details=details,
+        )
+
+    return ComponentHealthResult(
+        name="feed_conformance",
+        status="ok",
+        message="Latest static load matched the expected GTFS shape.",
+        latency_ms=_latency_ms(started),
+        checked_at_utc=checked_at,
+        details=details,
+    )
+
+
 def run_health_checks(
     settings: Settings | None = None,
     *,
@@ -317,7 +452,12 @@ def run_health_checks(
             engine_factory=engine_factory,
             now=checked_at,
         ),
-        check_pipeline_freshness(
+        *check_provider_feed_freshness(
+            resolved_settings,
+            engine_factory=engine_factory,
+            now=checked_at,
+        ),
+        check_feed_conformance(
             resolved_settings,
             engine_factory=engine_factory,
             now=checked_at,
@@ -373,16 +513,6 @@ def _row_mapping(row: Any) -> Mapping[str, Any]:
     return {"endpoint_key": row[0], "latest_captured_at_utc": row[1]}
 
 
-def _latest_timestamps_by_endpoint(rows: Any) -> dict[str, datetime | None]:
-    latest: dict[str, datetime | None] = {}
-    for row in rows:
-        mapping = _row_mapping(row)
-        endpoint_key = str(mapping["endpoint_key"])
-        timestamp = mapping.get("latest_captured_at_utc")
-        latest[endpoint_key] = _normalize_datetime(timestamp) if timestamp else None
-    return latest
-
-
 def _normalize_datetime(value: datetime) -> datetime:
     if value.tzinfo is None:
         return value.replace(tzinfo=UTC)
@@ -393,23 +523,6 @@ def _age_seconds(now: datetime, timestamp: datetime | None) -> int | None:
     if timestamp is None:
         return None
     return max(0, int((now - _normalize_datetime(timestamp)).total_seconds()))
-
-
-def _freshness_details(
-    latest_by_endpoint: Mapping[str, datetime | None],
-    now: datetime,
-    threshold_seconds: int,
-) -> dict[str, object]:
-    return {
-        "threshold_seconds": threshold_seconds,
-        "endpoints": {
-            endpoint: {
-                "latest_captured_at_utc": latest_by_endpoint.get(endpoint),
-                "age_seconds": _age_seconds(now, latest_by_endpoint.get(endpoint)),
-            }
-            for endpoint in REQUIRED_REALTIME_ENDPOINTS
-        },
-    }
 
 
 def _bronze_location(storage: Any) -> str:

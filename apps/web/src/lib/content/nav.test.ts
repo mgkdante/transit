@@ -4,7 +4,7 @@
 import { describe, it, expect } from 'vitest';
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { SURFACE_NAV, MENU_EXTRAS, isSurfaceActive } from './nav';
+import { SURFACE_NAV, SECONDARY_NAV, MENU_EXTRAS, isSurfaceActive } from './nav';
 
 const ROUTES = resolve(process.cwd(), 'src/routes/[[lang=locale]]');
 const surface = (key: SurfaceKey) => SURFACE_NAV.find((i) => i.key === key)!;
@@ -12,7 +12,9 @@ type SurfaceKey = (typeof SURFACE_NAV)[number]['key'];
 
 describe('SURFACE_NAV manifest', () => {
 	it('every surface href resolves to a real +page.svelte (no dead links)', () => {
-		for (const item of SURFACE_NAV) {
+		// Both the primary rail surfaces AND the secondary footer links (/metrics,
+		// /status live here) — a typo in either ships a dead link.
+		for (const item of [...SURFACE_NAV, ...SECONDARY_NAV]) {
 			const page = resolve(ROUTES, item.href.replace(/^\//, ''), '+page.svelte');
 			expect(existsSync(page), `${item.href} -> ${page}`).toBe(true);
 		}
@@ -30,6 +32,25 @@ describe('SURFACE_NAV manifest', () => {
 	it('keys are unique', () => {
 		const keys = SURFACE_NAV.map((i) => i.key);
 		expect(new Set(keys).size).toBe(keys.length);
+	});
+
+	it('registers the four accountability surfaces in SECONDARY_NAV with EN + FR labels', () => {
+		// slice-9.6: the audit/meta surfaces ride SECONDARY_NAV beside /metrics +
+		// /status. Each must be present (so it is reachable) and carry both labels.
+		const hrefs = SECONDARY_NAV.map((i) => i.href);
+		for (const href of ['/hotspots', '/receipt', '/repeat-offenders', '/alerts']) {
+			expect(hrefs, `${href} missing from SECONDARY_NAV`).toContain(href);
+			const item = SECONDARY_NAV.find((i) => i.href === href)!;
+			expect(item.label.en, `${href} en label`).toBeTruthy();
+			expect(item.label.fr, `${href} fr label`).toBeTruthy();
+		}
+	});
+
+	it('every SECONDARY_NAV href carries an EN + FR label (no half-localized link)', () => {
+		for (const item of SECONDARY_NAV) {
+			expect(item.label.en, item.href).toBeTruthy();
+			expect(item.label.fr, item.href).toBeTruthy();
+		}
 	});
 });
 

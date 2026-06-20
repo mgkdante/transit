@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { stopGroupKey, stopModeHint } from './stopMode';
+import { modeKeyForTag, routeModeHint, stopGroupKey, stopModeHint, stopModeTag } from './stopMode';
 
 describe('stopModeHint — real mode field wins over the name', () => {
 	it('tags metro/rail from the real mode regardless of the name', () => {
@@ -42,6 +42,65 @@ describe('stopModeHint — name-prefix fallback when mode is absent/null', () =>
 		expect(stopModeHint({ name: 'Berri / Fleury' })).toEqual({ glyph: '■', label: null });
 		expect(stopModeHint({ name: '' })).toEqual({ glyph: '■', label: null });
 		expect(stopModeHint({ name: null })).toEqual({ glyph: '■', label: null });
+	});
+});
+
+describe('stopModeTag — a visible tag for EVERY mode', () => {
+	it('tags tram/bus/ferry too (where stopModeHint.label is null)', () => {
+		expect(stopModeTag({ name: 'X', mode: 'tram' })).toBe('Tram');
+		expect(stopModeTag({ name: 'X', mode: 'bus' })).toBe('Bus');
+		expect(stopModeTag({ name: 'X', mode: 'ferry' })).toBe('Ferry');
+	});
+
+	it('tags metro/rail from the real mode', () => {
+		expect(stopModeTag({ name: 'Anywhere', mode: 'metro' })).toBe('Métro');
+		expect(stopModeTag({ name: 'Anywhere', mode: 'rail' })).toBe('Train');
+	});
+
+	it('falls back to the name prefix when mode is absent', () => {
+		expect(stopModeTag({ name: 'Station Crémazie' })).toBe('Métro');
+		expect(stopModeTag({ name: 'Gare Centrale' })).toBe('Train');
+		expect(stopModeTag({ name: 'Berri / Fleury' })).toBeNull();
+	});
+
+	it('returns null for an unknown future mode — no fabricated tag', () => {
+		expect(stopModeTag({ name: 'X', mode: 'monorail' })).toBeNull();
+	});
+});
+
+describe('routeModeHint — GTFS route_type → glyph + tag', () => {
+	it('maps the known route types to the shared glyph + a mode tag', () => {
+		expect(routeModeHint(0)).toEqual({ glyph: '╤', tag: 'Tram' });
+		expect(routeModeHint(1)).toEqual({ glyph: '◉', tag: 'Métro' });
+		expect(routeModeHint(2)).toEqual({ glyph: '╪', tag: 'Train' });
+		expect(routeModeHint(3)).toEqual({ glyph: '═', tag: 'Bus' });
+		expect(routeModeHint(4)).toEqual({ glyph: '≈', tag: 'Ferry' });
+	});
+
+	it('defaults an unmapped type to the bus glyph with no tag', () => {
+		expect(routeModeHint(99)).toEqual({ glyph: '═', tag: null });
+	});
+});
+
+describe('modeKeyForTag — reverse of MODE_TAGS, single source of truth', () => {
+	it('maps each visible tag back to its mode key', () => {
+		expect(modeKeyForTag('Métro')).toBe('metro');
+		expect(modeKeyForTag('Tram')).toBe('tram');
+		expect(modeKeyForTag('Train')).toBe('rail');
+		expect(modeKeyForTag('Bus')).toBe('bus');
+		expect(modeKeyForTag('Ferry')).toBe('ferry');
+	});
+
+	it('round-trips with stopModeTag for every known mode (no drift)', () => {
+		for (const mode of ['metro', 'tram', 'rail', 'bus', 'ferry'] as const) {
+			const tag = stopModeTag({ name: 'X', mode });
+			expect(modeKeyForTag(tag)).toBe(mode);
+		}
+	});
+
+	it('returns null for null/undefined (no fabricated mode)', () => {
+		expect(modeKeyForTag(null)).toBeNull();
+		expect(modeKeyForTag(undefined)).toBeNull();
 	});
 });
 

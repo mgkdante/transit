@@ -46,10 +46,12 @@ from transit_ops.snapshots.contract import (
     HeadwayPeriod,
     Hotspot,
     Hotspots,
+    NetworkShift,
     NetworkTrend,
     OccupancyMix,
     Offender,
     Provenance,
+    ProvenanceConformance,
     ProvenanceFreshness,
     ProvenanceSource,
     Receipt,
@@ -158,29 +160,241 @@ _TREND_OCCUPANCY_SQL = text(
     """
 )
 
+# --- WEEK / MONTH grain trend series -------------------------------------------
+# Additive-optional re-aggregation of the SAME daily sources into ISO-week /
+# calendar-month buckets, observation-weighted EXACTLY like the daily queries
+# above (mirror their math byte-for-byte; only the GROUP BY key changes from the
+# day to date_trunc(<unit>, day)). p90_min/vehicles are intentionally NOT
+# re-aggregated here — the raw fact window is ~14d only and percentiles are not
+# additively composable, so those stay None on every week/month point.
+#
+# Postgres date_trunc('week', d) returns the Monday of d's ISO week;
+# date_trunc('month', d) returns the 1st of d's month. We cast back to ::date so
+# the bucket key is a plain local date (the TrendPoint.date contract).
+#
+# Each query carries a UNIQUE `-- trend:<grain>:<source>` marker comment so the
+# publish-test FakeConn can dispatch a single canned row-set per query without
+# the substrings colliding with one another or with the daily variants.
 
-def build_network_trend(conn: Connection, *, provider_id: str = "stm", generated_utc: str) -> "NetworkTrend":
-    """Build historic/network_trend.json — one TrendPoint per local date.
-
-    Two daily series merged by date: OTP + weighted-avg delay from the hourly
-    rollup (~90 days) and p90 delay + distinct vehicles from the raw fact table
-    (~14 days retained), so p90_min/vehicles are present only for the recent days
-    the fact table still covers.
+# Hourly-rollup OTP + weighted-avg delay, grouped by the bucket-start local date.
+# Mirrors _TREND_DAILY_SQL: same SUM(delay)/CASE-guard on_time/weighted-delay and
+# the same sargable upper-history bound on the indexed period_start_utc column,
+# only the date expression is wrapped in date_trunc(<unit>, ...). The bound is
+# widened to ~371 days (>= 53 ISO weeks / 12 months) so the coarse buckets stay
+# useful while the scan over gold.route_delay_hourly stays bounded (the daily
+# variant caps at 90 days; an unbounded full-retention scan is a cost/timeout
+# risk — see the prior prod rollup-timeout incident).
+_TREND_WEEKLY_SQL = text(
     """
-    params = {"provider_id": provider_id}
+    SELECT date_trunc('week', timezone(dp.timezone, rdh.period_start_utc))::date AS local_date,
+           SUM(rdh.delay_observation_count)                  AS known_obs,
+           CASE WHEN COUNT(*) = COUNT(rdh.on_time_observation_count)
+                THEN SUM(rdh.on_time_observation_count)
+           END AS on_time,
+           SUM(rdh.avg_delay_seconds * rdh.delay_observation_count) AS weighted_delay_sec
+    FROM gold.route_delay_hourly AS rdh  -- trend:week:hourly
+    JOIN gold.dim_provider AS dp ON dp.provider_id = rdh.provider_id
+    WHERE rdh.provider_id = :provider_id
+      AND rdh.period_start_utc >= now() - interval '371 days'
+    GROUP BY date_trunc('week', timezone(dp.timezone, rdh.period_start_utc))::date
+    """
+)
+
+_TREND_MONTHLY_SQL = text(
+    """
+    SELECT date_trunc('month', timezone(dp.timezone, rdh.period_start_utc))::date AS local_date,
+           SUM(rdh.delay_observation_count)                  AS known_obs,
+           CASE WHEN COUNT(*) = COUNT(rdh.on_time_observation_count)
+                THEN SUM(rdh.on_time_observation_count)
+           END AS on_time,
+           SUM(rdh.avg_delay_seconds * rdh.delay_observation_count) AS weighted_delay_sec
+    FROM gold.route_delay_hourly AS rdh  -- trend:month:hourly
+    JOIN gold.dim_provider AS dp ON dp.provider_id = rdh.provider_id
+    WHERE rdh.provider_id = :provider_id
+      AND rdh.period_start_utc >= now() - interval '371 days'
+    GROUP BY date_trunc('month', timezone(dp.timezone, rdh.period_start_utc))::date
+    """
+)
+
+# Cancellation numerators/denominators summed across routes, bucketed by week/month.
+# Mirrors _TREND_CANCELLATION_SQL; provider_local_date is already a local date.
+# Intentionally unbounded to match the daily variant: gold.route_cancellation_daily
+# is a small append-only per-route-day rollup (not a fact table), so a full scan is
+# cheap. Do NOT add a horizon bound here without also bounding the daily variant —
+# diverging them would make the week/month rate cover a different window than daily.
+_TREND_CANCELLATION_WEEKLY_SQL = text(
+    """
+    SELECT date_trunc('week', provider_local_date)::date AS local_date,
+           SUM(canceled_trip_days) AS canceled,
+           SUM(total_trip_days)    AS total
+    FROM gold.route_cancellation_daily  -- trend:week:cancel
+    WHERE provider_id = :provider_id
+    GROUP BY date_trunc('week', provider_local_date)::date
+    """
+)
+
+_TREND_CANCELLATION_MONTHLY_SQL = text(
+    """
+    SELECT date_trunc('month', provider_local_date)::date AS local_date,
+           SUM(canceled_trip_days) AS canceled,
+           SUM(total_trip_days)    AS total
+    FROM gold.route_cancellation_daily  -- trend:month:cancel
+    WHERE provider_id = :provider_id
+    GROUP BY date_trunc('month', provider_local_date)::date
+    """
+)
+
+# Crowding band-counts summed across routes, bucketed by week/month.
+# Mirrors _TREND_OCCUPANCY_SQL. Intentionally unbounded for the same reason as the
+# cancellation variants above: gold.route_occupancy_band_daily is a small
+# append-only per-route-day rollup; the daily variant is unbounded, so stay
+# consistent with it rather than diverging the window.
+_TREND_OCCUPANCY_WEEKLY_SQL = text(
+    """
+    SELECT date_trunc('week', provider_local_date)::date AS local_date,
+           SUM(empty_count)      AS empty,
+           SUM(many_seats_count) AS many_seats,
+           SUM(few_seats_count)  AS few_seats,
+           SUM(standing_count)   AS standing,
+           SUM(full_count)       AS full
+    FROM gold.route_occupancy_band_daily  -- trend:week:occupancy
+    WHERE provider_id = :provider_id
+    GROUP BY date_trunc('week', provider_local_date)::date
+    """
+)
+
+_TREND_OCCUPANCY_MONTHLY_SQL = text(
+    """
+    SELECT date_trunc('month', provider_local_date)::date AS local_date,
+           SUM(empty_count)      AS empty,
+           SUM(many_seats_count) AS many_seats,
+           SUM(few_seats_count)  AS few_seats,
+           SUM(standing_count)   AS standing,
+           SUM(full_count)       AS full
+    FROM gold.route_occupancy_band_daily  -- trend:month:occupancy
+    WHERE provider_id = :provider_id
+    GROUP BY date_trunc('month', provider_local_date)::date
+    """
+)
+
+# Network-wide reliability by time-of-day shift, aggregated across ALL routes
+# from the per-route shift rollup. on_time/otp_known give a REAL OTP (not the
+# severe proxy); avg delay is observation-weighted via SUM(avg*known)/SUM(known).
+# OTP NULL-guard: gold stores on_time_observation_count as NULL for routes whose
+# on-time count could not be computed (the rollup's COUNT(*)=COUNT(on_time)
+# guard). A bare SUM(on_time) over SUM(delay_observation_count) would keep those
+# routes in the denominator but drop them from the numerator, biasing OTP low. We
+# scope the OTP numerator and denominator together: otp_known sums delay obs only
+# from rows where on_time_observation_count IS NOT NULL, so both share scope.
+# severe + the weighted-avg denominator stay over the FULL known_obs (every
+# delay-observed route counts toward severe-share and avg, regardless of the
+# on-time guard). Unique discriminator for test dispatch: "GROUP BY shift".
+_NETWORK_BY_SHIFT_SQL = text(
+    """
+    SELECT shift AS grain,
+           SUM(on_time_observation_count)                     AS on_time,
+           SUM(delay_observation_count) FILTER (
+               WHERE on_time_observation_count IS NOT NULL)   AS otp_known,
+           SUM(delay_observation_count)                       AS known_obs,
+           SUM(severe_delay_count)                            AS severe,
+           SUM(avg_delay_seconds * delay_observation_count)   AS weighted_delay_sec
+    FROM gold.route_delay_by_shift
+    WHERE provider_id = :provider_id
+    GROUP BY shift
+    """
+)
+
+# Network-wide reliability by weekday/weekend day-type — identical aggregation
+# over the per-route day-type rollup, including the same OTP NULL-guard
+# (otp_known = delay obs scoped to on-time-known rows; severe/avg over full
+# known_obs). Unique discriminator for test dispatch: "GROUP BY day_type".
+_NETWORK_BY_DAYTYPE_SQL = text(
+    """
+    SELECT day_type AS grain,
+           SUM(on_time_observation_count)                     AS on_time,
+           SUM(delay_observation_count) FILTER (
+               WHERE on_time_observation_count IS NOT NULL)   AS otp_known,
+           SUM(delay_observation_count)                       AS known_obs,
+           SUM(severe_delay_count)                            AS severe,
+           SUM(avg_delay_seconds * delay_observation_count)   AS weighted_delay_sec
+    FROM gold.route_delay_by_daytype
+    WHERE provider_id = :provider_id
+    GROUP BY day_type
+    """
+)
+
+# Canonical emit order for the network grains (mirrors the route/stop surface).
+_NETWORK_SHIFT_ORDER = ("am_peak", "midday", "pm_peak", "evening", "night")
+_NETWORK_DAYTYPE_ORDER = ("weekday", "weekend")
+
+
+def _network_shift_rows(
+    conn: Connection, sql, params: dict, order: tuple[str, ...]
+) -> list[NetworkShift]:
+    """Aggregate a network grain query into ordered NetworkShift rows.
+
+    REAL OTP = on_time/otp_known (numerator and denominator share scope: both come
+    only from routes whose on_time_observation_count is known, so the gold NULL-
+    guard does not bias OTP low). avg is observation-weighted over the FULL
+    known_obs; severe_pct is severe over the full known_obs. Honest-NULL: every
+    metric is None (never 0) on a grain with no known-delay observations. Grains
+    are emitted in the canonical order; any unexpected token sorts last by name so
+    the contract never silently drops it.
+    """
+    by_grain: dict[str, NetworkShift] = {}
+    for r in conn.execute(sql, params).mappings():
+        known = r["known_obs"]
+        otp_known = r["otp_known"]
+        weighted = r["weighted_delay_sec"]
+        grain = str(r["grain"])
+        if known and weighted is not None:
+            avg_sec = float(weighted) / float(known)
+        else:
+            avg_sec = None
+        by_grain[grain] = NetworkShift(
+            grain=grain,
+            otp_pct=_otp_pct(r["on_time"], otp_known),
+            avg_delay_min=_avg_delay_min(avg_sec),
+            severe_pct=_severe_pct(known, r["severe"]),
+        )
+    ordered = [by_grain[g] for g in order if g in by_grain]
+    ordered.extend(by_grain[g] for g in sorted(set(by_grain) - set(order)))
+    return ordered
+
+
+def _blank_trend_point() -> dict:
+    return {
+        "otp_pct": None,
+        "avg_delay_min": None,
+        "p90_min": None,
+        "vehicles": None,
+        "cancellation_rate": None,
+        "occupancy_mix": None,
+    }
+
+
+def _trend_points(
+    conn: Connection,
+    params: dict,
+    *,
+    otp_sql,
+    cancellation_sql,
+    occupancy_sql,
+    fact_sql=None,
+) -> list[TrendPoint]:
+    """Re-aggregate the daily sources into one TrendPoint list at a single grain.
+
+    Shared by the daily/weekly/monthly builders so the OTP / weighted-avg /
+    cancellation / occupancy mapping is identical across grains and only the
+    bucket key (local date vs ISO-week-start vs month-start) differs — supplied
+    by the caller via the bucketed SQL. `fact_sql` (p90/vehicles from the ~14d
+    raw fact window) is only passed for the daily grain; week/month omit it, so
+    their p90_min/vehicles stay None (the fact window is not week/month-composable).
+    Points are returned sorted ascending by bucket date.
+    """
     points: dict[str, dict] = {}
 
-    def _blank_point() -> dict:
-        return {
-            "otp_pct": None,
-            "avg_delay_min": None,
-            "p90_min": None,
-            "vehicles": None,
-            "cancellation_rate": None,
-            "occupancy_mix": None,
-        }
-
-    for r in conn.execute(_TREND_DAILY_SQL, params).mappings():
+    for r in conn.execute(otp_sql, params).mappings():
         known_obs = r["known_obs"]
         weighted = r["weighted_delay_sec"]
         avg_delay_sec = (
@@ -188,19 +402,21 @@ def build_network_trend(conn: Connection, *, provider_id: str = "stm", generated
             if known_obs and weighted is not None
             else None
         )
-        entry = _blank_point()
+        entry = _blank_trend_point()
         entry["otp_pct"] = _otp_pct(r["on_time"], known_obs)
         entry["avg_delay_min"] = _avg_delay_min(avg_delay_sec)
         points[_iso_date(r["local_date"])] = entry
 
-    for r in conn.execute(_TREND_FACT_SQL, params).mappings():
-        key = _iso_date(r["local_date"])
-        entry = points.setdefault(key, _blank_point())
-        entry["p90_min"] = round(float(r["p90_min"]), 1) if r["p90_min"] is not None else None
-        entry["vehicles"] = _opt_int(r["vehicles"])
+    if fact_sql is not None:
+        for r in conn.execute(fact_sql, params).mappings():
+            entry = points.setdefault(_iso_date(r["local_date"]), _blank_trend_point())
+            entry["p90_min"] = (
+                round(float(r["p90_min"]), 1) if r["p90_min"] is not None else None
+            )
+            entry["vehicles"] = _opt_int(r["vehicles"])
 
-    for r in conn.execute(_TREND_CANCELLATION_SQL, params).mappings():
-        entry = points.setdefault(_iso_date(r["local_date"]), _blank_point())
+    for r in conn.execute(cancellation_sql, params).mappings():
+        entry = points.setdefault(_iso_date(r["local_date"]), _blank_trend_point())
         total = r["total"]
         canceled = r["canceled"]
         entry["cancellation_rate"] = (
@@ -209,11 +425,11 @@ def build_network_trend(conn: Connection, *, provider_id: str = "stm", generated
             else None
         )
 
-    for r in conn.execute(_TREND_OCCUPANCY_SQL, params).mappings():
-        entry = points.setdefault(_iso_date(r["local_date"]), _blank_point())
+    for r in conn.execute(occupancy_sql, params).mappings():
+        entry = points.setdefault(_iso_date(r["local_date"]), _blank_trend_point())
         entry["occupancy_mix"] = _occupancy_mix_from_bands(r)
 
-    series = [
+    return [
         TrendPoint(
             date=d,
             otp_pct=v["otp_pct"],
@@ -225,7 +441,60 @@ def build_network_trend(conn: Connection, *, provider_id: str = "stm", generated
         )
         for d, v in sorted(points.items())
     ]
-    return NetworkTrend(generated_utc=generated_utc, series=series)
+
+
+def build_network_trend(conn: Connection, *, provider_id: str = "stm", generated_utc: str) -> "NetworkTrend":
+    """Build historic/network_trend.json — daily + weekly + monthly trend points.
+
+    Daily `series`: OTP + weighted-avg delay from the hourly rollup (~90 days)
+    merged with p90 delay + distinct vehicles from the raw fact table (~14 days
+    retained), so p90_min/vehicles are present only for the recent days the fact
+    table still covers. `weekly`/`monthly` re-aggregate the SAME daily sources
+    (hourly OTP/avg, cancellation, occupancy) into ISO-week / calendar-month
+    buckets, observation-weighted identically; p90_min/vehicles stay None on
+    those grains (the ~14d fact window is not additively composable).
+    """
+    params = {"provider_id": provider_id}
+
+    series = _trend_points(
+        conn,
+        params,
+        otp_sql=_TREND_DAILY_SQL,
+        cancellation_sql=_TREND_CANCELLATION_SQL,
+        occupancy_sql=_TREND_OCCUPANCY_SQL,
+        fact_sql=_TREND_FACT_SQL,
+    )
+    weekly = _trend_points(
+        conn,
+        params,
+        otp_sql=_TREND_WEEKLY_SQL,
+        cancellation_sql=_TREND_CANCELLATION_WEEKLY_SQL,
+        occupancy_sql=_TREND_OCCUPANCY_WEEKLY_SQL,
+    )
+    monthly = _trend_points(
+        conn,
+        params,
+        otp_sql=_TREND_MONTHLY_SQL,
+        cancellation_sql=_TREND_CANCELLATION_MONTHLY_SQL,
+        occupancy_sql=_TREND_OCCUPANCY_MONTHLY_SQL,
+    )
+
+    # Network-wide reliability by time-of-day shift + weekday/weekend day-type,
+    # aggregated across all routes (REAL on_time/known OTP, observation-weighted
+    # avg delay, honest-NULL on zero-obs grains).
+    by_shift = _network_shift_rows(conn, _NETWORK_BY_SHIFT_SQL, params, _NETWORK_SHIFT_ORDER)
+    by_daytype = _network_shift_rows(
+        conn, _NETWORK_BY_DAYTYPE_SQL, params, _NETWORK_DAYTYPE_ORDER
+    )
+
+    return NetworkTrend(
+        generated_utc=generated_utc,
+        series=series,
+        weekly=weekly,
+        monthly=monthly,
+        by_shift=by_shift,
+        by_daytype=by_daytype,
+    )
 
 
 # --------------------------------------------------------------------------
@@ -745,6 +1014,109 @@ _STOP_PERCENTILE_DAILY_SQL = text(
 )
 
 
+# Trailing-30d crowding band-shares per stop from the append-only daily band-count
+# reduction (twin of _ROUTE_OCCUPANCY_BAND_WINDOW_SQL, but batched over ALL stops:
+# one summed row per stop_id rather than a single per-entity bind). Summed counts
+# are divided into shares at read time; honest-None when no band-bearing telemetry
+# exists in the window. Unique discriminator for test dispatch:
+# "stop_occupancy_band_daily AS sob".
+_STOP_OCCUPANCY_BAND_WINDOW_SQL = text(
+    """
+    SELECT sob.stop_id                    AS stop_id,
+           SUM(sob.empty_count)           AS empty,
+           SUM(sob.many_seats_count)      AS many_seats,
+           SUM(sob.few_seats_count)       AS few_seats,
+           SUM(sob.standing_count)        AS standing,
+           SUM(sob.full_count)            AS full
+    FROM gold.stop_occupancy_band_daily AS sob
+    JOIN gold.dim_provider AS dp ON dp.provider_id = sob.provider_id
+    WHERE sob.provider_id = :provider_id
+      AND sob.provider_local_date >= (now() AT TIME ZONE dp.timezone)::date - 30
+    GROUP BY sob.stop_id
+    """
+)
+
+
+# Granularity grains for stops, computed ON THE FLY from the hourly mart (stops
+# have no rollup table). The hour->shift band CASE and the ISODOW weekday/weekend
+# split MUST stay byte-identical to the canonical route populate logic in
+# gold/rollups.py (UPSERT_ROUTE_DELAY_BY_SHIFT / UPSERT_ROUTE_DELAY_BY_DAYTYPE) so
+# stop grains line up with route grains. Avg delay mirrors the stop weekly rollup:
+# COALESCE(arrival, departure), observation-weighted (_weighted_avg_sec). Stop OTP
+# stays a severe(>300s)-only proxy (no on_time column in the stop hourly mart), so
+# only obs + severe are aggregated. One UNION'd pass over both grain families.
+_STOP_BY_GRAIN_SQL = text(
+    """
+    SELECT stop_id, grain,
+           SUM(observation_count)::numeric                AS obs,
+           SUM(severe_delay_count)::numeric               AS severe,
+           SUM(avg_delay_sec * NULLIF(observation_count, 0)) AS weighted_delay_sec
+    FROM (
+        SELECT sd.stop_id,
+               CASE
+                   WHEN EXTRACT(HOUR FROM timezone(dp.timezone, sd.period_start_utc))
+                       BETWEEN 6 AND 8 THEN 'am_peak'
+                   WHEN EXTRACT(HOUR FROM timezone(dp.timezone, sd.period_start_utc))
+                       BETWEEN 9 AND 14 THEN 'midday'
+                   WHEN EXTRACT(HOUR FROM timezone(dp.timezone, sd.period_start_utc))
+                       BETWEEN 15 AND 18 THEN 'pm_peak'
+                   WHEN EXTRACT(HOUR FROM timezone(dp.timezone, sd.period_start_utc))
+                       BETWEEN 19 AND 22 THEN 'evening'
+                   ELSE 'night'
+               END AS grain,
+               sd.observation_count,
+               sd.severe_delay_count,
+               COALESCE(sd.avg_arrival_delay_seconds, sd.avg_departure_delay_seconds)
+                   AS avg_delay_sec
+        FROM gold.stop_delay_hourly AS sd
+        INNER JOIN gold.dim_provider AS dp ON dp.provider_id = sd.provider_id
+        WHERE sd.provider_id = :provider_id
+        UNION ALL
+        SELECT sd.stop_id,
+               CASE
+                   WHEN EXTRACT(ISODOW FROM timezone(dp.timezone, sd.period_start_utc))
+                       BETWEEN 1 AND 5 THEN 'weekday'
+                   ELSE 'weekend'
+               END AS grain,
+               sd.observation_count,
+               sd.severe_delay_count,
+               COALESCE(sd.avg_arrival_delay_seconds, sd.avg_departure_delay_seconds)
+                   AS avg_delay_sec
+        FROM gold.stop_delay_hourly AS sd
+        INNER JOIN gold.dim_provider AS dp ON dp.provider_id = sd.provider_id
+        WHERE sd.provider_id = :provider_id
+    ) AS banded
+    GROUP BY stop_id, grain
+    """
+)
+
+
+# Per-stop weekday seasonality (ISO 1=Mon..7=Sun), computed on the fly from the
+# hourly mart for route parity (gold.route_delay_day_of_week has no stop sibling).
+# The ISODOW resolution + timezone() mirror _STOP_HABIT_SQL / _STOP_BY_GRAIN_SQL.
+# Avg delay mirrors the stop weekly rollup: COALESCE(arrival, departure),
+# observation-weighted. Stop OTP stays a severe(>300s)-only proxy, so only obs +
+# severe are aggregated. Unique discriminator for test dispatch: "AS dow_obs".
+_STOP_DOW_SQL = text(
+    """
+    SELECT sd.stop_id,
+           EXTRACT(ISODOW FROM timezone(dp.timezone, sd.period_start_utc))::integer
+               AS day_of_week_iso,
+           SUM(sd.observation_count)::numeric                AS dow_obs,
+           SUM(sd.severe_delay_count)::numeric               AS severe,
+           SUM(
+               COALESCE(sd.avg_arrival_delay_seconds, sd.avg_departure_delay_seconds)
+               * NULLIF(sd.observation_count, 0)
+           )                                                 AS weighted_delay_sec
+    FROM gold.stop_delay_hourly AS sd
+    INNER JOIN gold.dim_provider AS dp ON dp.provider_id = sd.provider_id
+    WHERE sd.provider_id = :provider_id
+    GROUP BY sd.stop_id, 2
+    ORDER BY sd.stop_id, 2
+    """
+)
+
+
 def build_stop_reliability(
     conn: Connection, *, provider_id: str = "stm", generated_utc: str
 ) -> "dict[str, StopReliability]":
@@ -771,6 +1143,21 @@ def build_stop_reliability(
                 avg_delay_min=(round(avg_sec / 60.0, 1) if avg_sec is not None else None),
                 severe_pct=_severe_pct(r["obs"], r["severe"]),
             )
+
+    # Granularity grains (additive, free-string grain): time-of-day shift +
+    # weekday/weekend day-type, computed on the fly from the hourly mart with the
+    # canonical route hour->shift / ISODOW split. Stop OTP stays the severe proxy;
+    # honest-None (never 0) flows from the helpers when obs is 0/missing.
+    for r in conn.execute(_STOP_BY_GRAIN_SQL, params).mappings():
+        sid = str(r["stop_id"])
+        grain = str(r["grain"])
+        avg_sec = _weighted_avg_sec(r["obs"], r["weighted_delay_sec"])
+        periods.setdefault(sid, {})[grain] = StopReliabilityPeriod(
+            grain=grain,
+            otp_pct=_otp_pct_severe_proxy(r["obs"], r["severe"]),
+            avg_delay_min=(round(avg_sec / 60.0, 1) if avg_sec is not None else None),
+            severe_pct=_severe_pct(r["obs"], r["severe"]),
+        )
 
     # by_route breakdown keyed stop_id -> list[StopByRoute]
     by_route: dict[str, list[StopByRoute]] = {}
@@ -800,6 +1187,24 @@ def build_stop_reliability(
         for sid, rows in habit_rows.items()
     }
 
+    # Per-stop weekday seasonality (ISO 1=Mon..7=Sun), computed on the fly from the
+    # hourly mart for route parity. Rows arrive ordered by (stop_id, isodow), so the
+    # per-stop list is already 1..7-sorted. Honest None (never 0) when obs is 0.
+    day_of_week: dict[str, list[RouteDayOfWeek]] = {}
+    for r in conn.execute(_STOP_DOW_SQL, params).mappings():
+        sid = str(r["stop_id"])
+        obs = r["dow_obs"]
+        avg_sec = _weighted_avg_sec(obs, r["weighted_delay_sec"])
+        day_of_week.setdefault(sid, []).append(
+            RouteDayOfWeek(
+                day_of_week_iso=int(r["day_of_week_iso"]),
+                avg_delay_min=(round(avg_sec / 60.0, 1) if avg_sec is not None else None),
+                severe_pct=_severe_pct(obs, r["severe"]),
+                # Honest None (never 0): a zero-observation weekday has no count.
+                observation_count=(_opt_int(obs) if obs else None),
+            )
+        )
+
     # Per-stop most-recent-day p50/p90 from the append-only percentile rollup.
     day_period: dict[str, StopReliabilityPeriod] = {
         str(r["stop_id"]): StopReliabilityPeriod(
@@ -810,13 +1215,36 @@ def build_stop_reliability(
         for r in conn.execute(_STOP_PERCENTILE_DAILY_SQL, params).mappings()
     }
 
+    # Per-stop trailing-30d crowding band-shares from the append-only daily band
+    # reduction (honest-None when the stop had no band-bearing telemetry; the
+    # helper drops a zero-total row by returning None, so absent stops are absent).
+    occupancy_mix: dict[str, OccupancyMix] = {}
+    for r in conn.execute(_STOP_OCCUPANCY_BAND_WINDOW_SQL, params).mappings():
+        mix = _occupancy_mix_from_bands(r)
+        if mix is not None:
+            occupancy_mix[str(r["stop_id"])] = mix
+
     out: dict[str, StopReliability] = {}
-    for sid in set(periods) | set(by_route) | set(habits) | set(day_period):
+    for sid in (
+        set(periods)
+        | set(by_route)
+        | set(habits)
+        | set(day_period)
+        | set(day_of_week)
+        | set(occupancy_mix)
+    ):
         grain_map = periods.get(sid, {})
         ordered: list[StopReliabilityPeriod] = []
         if sid in day_period:
             ordered.append(day_period[sid])
         ordered.extend(grain_map[g] for g in ("week", "month") if g in grain_map)
+        # Additive granularity grains (canonical shift + day-type tokens), in the
+        # same time-of-day / weekday-first order the route surface publishes.
+        ordered.extend(
+            grain_map[g]
+            for g in ("am_peak", "midday", "pm_peak", "evening", "night", "weekday", "weekend")
+            if g in grain_map
+        )
         routes = sorted(by_route.get(sid, []), key=lambda b: _route_sort_key(b.route))
         out[sid] = StopReliability(
             generated_utc=generated_utc,
@@ -824,7 +1252,9 @@ def build_stop_reliability(
             name=names.get(sid),
             periods=ordered,
             habits=habits.get(sid),
+            day_of_week=day_of_week.get(sid, []),
             by_route=routes,
+            occupancy_mix=occupancy_mix.get(sid),
         )
     return out
 
@@ -1310,6 +1740,33 @@ _PROVENANCE_FRESHNESS_SQL = text(
     """
 )
 
+# Feed conformance for the provider's current static load: the out-of-norm signal
+# is the unknown/extra GTFS members captured verbatim in silver.gtfs_extra_rows
+# (mirrors /health check_feed_conformance, scoped to this provider). Empty result
+# => no current static dataset => no conformance block.
+_PROVENANCE_CONFORMANCE_SQL = text(
+    """
+    SELECT
+        (
+            SELECT count(*)
+            FROM silver.gtfs_extra_rows AS ger
+            WHERE ger.dataset_version_id = dv.dataset_version_id
+        )::bigint AS extra_row_count,
+        (
+            SELECT array_agg(DISTINCT ger.source_file_name)
+            FROM silver.gtfs_extra_rows AS ger
+            WHERE ger.dataset_version_id = dv.dataset_version_id
+        ) AS unknown_members
+    FROM core.dataset_versions AS dv
+    WHERE dv.provider_id = :provider_id
+      AND dv.is_current IS TRUE
+      AND dv.dataset_kind = 'static_schedule'
+    """
+)
+
+
+_PROVIDER_GAPS: dict[str, list[str]] = {"stm": ["metro_realtime"]}
+
 
 def build_provenance(
     conn: "Connection", provider_id: str = "stm", *, generated_utc: str
@@ -1322,6 +1779,10 @@ def build_provenance(
     gaps lists known missing feeds (STM metro publishes no realtime feed).
     """
     params = {"provider_id": provider_id}
+
+    # Provider-specific known gaps. metro_realtime is STM's: it runs a métro whose
+    # realtime is unpublished. Bus/LRT-only networks (STO/OC/STS) have no such gap.
+    gaps = list(_PROVIDER_GAPS.get(provider_id, []))
 
     sources: list[ProvenanceSource] = []
     for r in conn.execute(_PROVENANCE_SOURCES_SQL, params).mappings():
@@ -1350,10 +1811,13 @@ def build_provenance(
             )
         )
 
+    conformance = _build_provenance_conformance(conn, params)
+
     return Provenance(
         generated_utc=generated_utc,
         sources=sources,
         freshness=freshness,
+        conformance=conformance,
         retention={"detail_days": 14, "aggregate_days": 365},
         methodology={
             "otp_definition": (
@@ -1446,5 +1910,24 @@ def build_provenance(
                 "when no stop-time updates were observed"
             ),
         },
-        gaps=["metro_realtime"],  # STM metro publishes no realtime feed
+        gaps=gaps,
+    )
+
+
+def _build_provenance_conformance(
+    conn: "Connection", params: dict
+) -> "ProvenanceConformance | None":
+    """Feed conformance for the provider's current static load, or None when the
+    provider has no current static dataset (nothing to describe)."""
+    rows = list(conn.execute(_PROVENANCE_CONFORMANCE_SQL, params).mappings())
+    if not rows:
+        return None
+    row = rows[0]
+    unknown_members = sorted(row.get("unknown_members") or [])
+    extra_row_count = int(row.get("extra_row_count") or 0)
+    status = "out_of_norm" if (unknown_members or extra_row_count) else "conformant"
+    return ProvenanceConformance(
+        status=status,
+        unknown_members=unknown_members,
+        extra_row_count=extra_row_count,
     )

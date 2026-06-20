@@ -34,7 +34,7 @@
 	import type { PaneAPI } from 'paneforge';
 	import { cn } from '$lib/utils';
 	import { type Locale, DEFAULT_LOCALE, getLocale } from '$lib/i18n';
-	import type { ChromeSearchResult } from '$lib/search/chromeSearch';
+	import type { ChromeSearchResult, ChromeSearchScope } from '$lib/search/chromeSearch';
 	import { layout } from '$lib/nav';
 	import { ResizablePaneGroup, ResizablePane, ResizableHandle } from '$lib/components/ui/resizable';
 	import TopBar from './TopBar.svelte';
@@ -47,6 +47,10 @@
 		locale?: Locale;
 		/** Full current URL — passed to the TopBar language switch. */
 		url?: URL;
+		/** Active provider display name (manifest.display_name) for the TopBar network chip. */
+		providerName?: string;
+		/** Snappy provider brand (manifest.short_name) — preferred for the compact chip. */
+		providerShortName?: string;
 		/** Active alert count for the TopBar bell badge. */
 		alertCount?: number;
 		/** Bindable search value for the TopBar field. */
@@ -55,6 +59,8 @@
 		onsearch?: (value: string) => void;
 		searchResults?: readonly ChromeSearchResult[];
 		onresultselect?: (result: ChromeSearchResult) => void;
+		/** Active surface scope — drives the scoped TopBar placeholder hint. */
+		searchScope?: ChromeSearchScope;
 		/** Fired when the TopBar alerts bell is activated. */
 		onalerts?: () => void;
 
@@ -85,11 +91,14 @@
 	let {
 		locale: localeProp,
 		url,
+		providerName,
+		providerShortName,
 		alertCount = 0,
 		search = $bindable(''),
 		onsearch,
 		searchResults = [],
 		onresultselect,
+		searchScope = 'all',
 		onalerts,
 		detailOpen = $bindable(false),
 		detailTitle,
@@ -173,11 +182,14 @@
 	<TopBar
 		{locale}
 		{url}
+		{providerName}
+		{providerShortName}
 		{alertCount}
 		bind:search
 		{onsearch}
 		{searchResults}
 		{onresultselect}
+		{searchScope}
 		{onalerts}
 	/>
 

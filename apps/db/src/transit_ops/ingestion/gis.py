@@ -8,6 +8,7 @@ from urllib.parse import urlparse
 
 from sqlalchemy.engine import Engine
 
+from transit_ops.core.errors import OptionalSourceUnavailable
 from transit_ops.core.models import ProviderManifest
 from transit_ops.db.connection import make_engine
 from transit_ops.ingestion._versioned_capture import (
@@ -118,6 +119,11 @@ def build_gis_ingestion_config(
     settings: Settings,
 ) -> GisIngestionConfig:
     gis_feed = manifest.gis_feed()
+    if gis_feed is None:
+        raise OptionalSourceUnavailable(
+            f"Provider '{manifest.provider.provider_id}' has no gis_static feed "
+            "configured; route geometry comes from the GTFS shapes.txt instead."
+        )
     source_url = gis_feed.resolved_source_url(settings)
     if not source_url:
         raise ValueError(

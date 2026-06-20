@@ -1,28 +1,28 @@
 <!--
-  EdgeState — the 6-variant edge-condition primitive (slice-9.2).
+  EdgeState, the 6-variant edge-condition primitive (slice-9.2).
 
   One component for every "the data isn't the happy path" surface: loading,
   empty, stale, network-down, error. Layout-aware (desktop 3-volet vs mobile
   schedule-fallback card) and fully bilingual (FR/EN copy object below).
 
   Variants
-    stale-offline  amber  — feed is behind; shows the last-MAJ delta so the
+    stale-offline  amber , feed is behind; shows the last-MAJ delta so the
                             rider knows HOW stale ("MAJ il y a 4 min").
-    skeleton              — loading placeholder; layout-aware (desktop = 3-volet
+    skeleton             , loading placeholder; layout-aware (desktop = 3-volet
                             shimmer columns, mobile = a single schedule-fallback
                             card of shimmer rows).
-    no-results            — a filter/search returned nothing for THIS query.
-    empty                — a surface has no data yet (never populated).
-    empty-avis    green   — the GOOD empty: zero alerts ⇒ "le réseau roule
+    no-results           , a filter/search returned nothing for THIS query.
+    empty               , a surface has no data yet (never populated).
+    empty-avis    green  , the GOOD empty: zero alerts ⇒ "le réseau roule
                             normalement". Green is a DATA verdict (network
                             healthy), so it rides the dataviz status scale.
-    error-v1      red     — the /v1 contract is unreachable; offers retry and
+    error-v1      red    , the /v1 contract is unreachable; offers retry and
                             states the honesty pledge ("on n'invente jamais de
                             données").
 
   DOCTRINE
     Edge conditions are DATA verdicts, so their colour rides the dataviz status
-    scale — NEVER --primary/--success/--destructive:
+    scale, NEVER --primary/--success/--destructive:
       stale  -> --dataviz-status-late   (amber)
       empty-avis -> --dataviz-status-on-time (green)
       error  -> --dataviz-status-severe (red)
@@ -30,7 +30,7 @@
     not a data mark). Surfaces stay solid (no alpha on the card bg).
 
   a11y
-    Status is glyph + colour + text — never colour alone. The container is a
+    Status is glyph + colour + text, never colour alone. The container is a
     polite live region (role=status) so screen readers announce the verdict;
     error-v1 escalates to role=alert. The icon-only nuance carries aria-hidden.
 -->
@@ -70,7 +70,7 @@
 		lastUpdated?: string;
 		/**
 		 * Retry handler. When provided on error-v1, renders the retry button.
-		 * (Interactive affordance — the only --primary touch in this component.)
+		 * (Interactive affordance, the only --primary touch in this component.)
 		 */
 		onRetry?: () => void;
 		/** Optional extra classes on the root. */
@@ -137,12 +137,12 @@
 			fr: {
 				glyph: '●',
 				title: 'Aucun avis',
-				body: 'Le réseau roule normalement — aucune perturbation signalée.',
+				body: 'Le réseau roule normalement, aucune perturbation signalée.',
 			},
 			en: {
 				glyph: '●',
 				title: 'No alerts',
-				body: 'The network is running normally — no disruptions reported.',
+				body: 'The network is running normally, no disruptions reported.',
 			},
 		},
 		'error-v1': {
@@ -228,9 +228,9 @@
 
 {#if isSkeleton}
 	<!--
-	  Skeleton — layout-aware loading scaffold.
+	  Skeleton, layout-aware loading scaffold.
 	  Desktop: a 3-volet grid of shimmer columns (mirrors the desktop 3-panel
-	  shell). Mobile: a single "schedule-fallback" card — header row + a stack of
+	  shell). Mobile: a single "schedule-fallback" card, header row + a stack of
 	  departure-row placeholders. aria-busy + an sr-only label so AT announces the
 	  load instead of an empty region.
 	-->
@@ -270,7 +270,7 @@
 	</div>
 {:else if copy && accent}
 	<!--
-	  Message variants — glyph + title + body + (stale delta | retry).
+	  Message variants, glyph + title + body + (stale delta | retry).
 	  role/aria-live escalate for error-v1. The accent bar + glyph carry the
 	  doctrine colour; copy stays on the foreground/muted scale.
 	-->
@@ -307,14 +307,14 @@
 		</div>
 
 		{#if staleDelta}
-			<!-- Last-MAJ delta — amber mono caption, the proof of HOW stale. -->
+			<!-- Last-MAJ delta, amber mono caption, the proof of HOW stale. -->
 			<span class={cn('font-mono text-caption', accent.text)} data-slot="edge-stale-delta">
 				{staleDelta}
 			</span>
 		{/if}
 
 		{#if variant === 'error-v1' && onRetry}
-			<!-- Retry — the lone interactive affordance (the only --primary touch). -->
+			<!-- Retry, the lone interactive affordance (the only --primary touch). -->
 			<button type="button" class="edge-retry" onclick={onRetry} data-slot="edge-retry">
 				{RETRY_LABEL[lang]}
 			</button>
@@ -323,7 +323,7 @@
 {/if}
 
 <style>
-	/* Visually-hidden label — readable by AT, invisible on screen. */
+	/* Visually-hidden label, readable by AT, invisible on screen. */
 	.sr-only {
 		position: absolute;
 		width: 1px;
@@ -336,13 +336,13 @@
 		border: 0;
 	}
 
-	/* Accent bar — a 3px top rule in the variant's doctrine colour. Pulled from
+	/* Accent bar, a 3px top rule in the variant's doctrine colour. Pulled from
 	   the --edge-rule custom prop set inline per variant. */
 	.edge-accent-bar {
 		border-top: 3px solid var(--edge-rule);
 	}
 
-	/* Retry button — interactive affordance, so --primary is doctrine-clean here.
+	/* Retry button, interactive affordance, so --primary is doctrine-clean here.
 	   Solid orange fill, brand pill, visible focus inherited from the base ring. */
 	.edge-retry {
 		font-family: var(--font-body);

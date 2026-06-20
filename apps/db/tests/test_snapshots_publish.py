@@ -428,6 +428,32 @@ def test_publish_historic_writes_expected_keys(tmp_path) -> None:
         ("fact_trip_delay_snapshot", [
             {"local_date": datetime.date(2026, 6, 1), "p90_min": 3.5, "vehicles": 42},
         ]),
+        # build_network_trend: WEEK + MONTH grain re-aggregation of the daily
+        # sources. Unique `-- trend:<grain>:<source>` marker comments keep each of
+        # the 6 bucketed queries dispatched to its own canned row-set (no collision
+        # with the daily hourly/cancel/occupancy queries, which lack the marker).
+        ("trend:week:hourly", [
+            {"local_date": datetime.date(2026, 6, 1), "known_obs": 200, "on_time": 180,
+             "weighted_delay_sec": 12000},
+        ]),
+        ("trend:week:cancel", [
+            {"local_date": datetime.date(2026, 6, 1), "canceled": 4, "total": 200},
+        ]),
+        ("trend:week:occupancy", [
+            {"local_date": datetime.date(2026, 6, 1), "empty": 0, "many_seats": 60,
+             "few_seats": 25, "standing": 10, "full": 5},
+        ]),
+        ("trend:month:hourly", [
+            {"local_date": datetime.date(2026, 6, 1), "known_obs": 1000, "on_time": 820,
+             "weighted_delay_sec": 90000},
+        ]),
+        ("trend:month:cancel", [
+            {"local_date": datetime.date(2026, 6, 1), "canceled": 12, "total": 600},
+        ]),
+        ("trend:month:occupancy", [
+            {"local_date": datetime.date(2026, 6, 1), "empty": 10, "many_seats": 40,
+             "few_seats": 30, "standing": 15, "full": 5},
+        ]),
         # build_hotspots
         ("repeated_problem_route_stop", [
             {"entity_kind": "route", "entity_id": "165", "issue_count": 5,
@@ -466,6 +492,25 @@ def test_publish_historic_writes_expected_keys(tmp_path) -> None:
         ("DISTINCT ON (u.route_id)", [
             {"route_id": "165", "route_name": "Ligne 165"},
         ]),
+        # build_stop_reliability: shift + day-type grains — unique discriminator
+        # "AS banded". MUST precede the generic "UNION" needle below, because
+        # _STOP_BY_GRAIN_SQL contains "UNION ALL" and would otherwise fall through
+        # to the route-id enumeration (tuple rows) and crash on r["stop_id"].
+        ("AS banded", [
+            {"stop_id": "51234", "grain": "am_peak", "obs": 10, "severe": 1,
+             "weighted_delay_sec": 600.0},
+            {"stop_id": "51234", "grain": "weekday", "obs": 14, "severe": 1,
+             "weighted_delay_sec": 1080.0},
+        ]),
+        # build_stop_reliability: weekday seasonality — unique discriminator
+        # "AS dow_obs". Listed before the generic "UNION" / stop_delay_hourly needles
+        # so the day-of-week rows aren't shadowed.
+        ("AS dow_obs", [
+            {"stop_id": "51234", "day_of_week_iso": 1, "dow_obs": 20, "severe": 2,
+             "weighted_delay_sec": 1200.0},
+            {"stop_id": "51234", "day_of_week_iso": 7, "dow_obs": 0, "severe": 0,
+             "weighted_delay_sec": None},
+        ]),
         # route IDs with history: UNION query
         ("UNION", [
             ("101",), ("202",),
@@ -483,6 +528,13 @@ def test_publish_historic_writes_expected_keys(tmp_path) -> None:
         # unique discriminator "route_occupancy_band_daily AS rob".
         ("route_occupancy_band_daily AS rob", [
             {"empty": 0, "many_seats": 50, "few_seats": 30, "standing": 15, "full": 5},
+        ]),
+        # build_stop_reliability: per-stop trailing-window occupancy band shares —
+        # unique discriminator "stop_occupancy_band_daily AS sob" (batched: one
+        # summed row per stop_id, keyed by stop_id, no sentinel).
+        ("stop_occupancy_band_daily AS sob", [
+            {"stop_id": "51234", "empty": 0, "many_seats": 50,
+             "few_seats": 30, "standing": 15, "full": 5},
         ]),
         # build_route_reliability: service-span history — unique discriminator
         # "first_trip_start_utc". MUST precede the generic daily-view needle below
@@ -631,6 +683,14 @@ def test_publish_historic_writes_expected_keys(tmp_path) -> None:
     raw = pathlib.Path(network_trend_path).read_bytes()
     parsed = NetworkTrend.model_validate_json(raw)
     assert isinstance(parsed.series, list)
+    # WEEK + MONTH grains landed: the canned trend:week:* / trend:month:* rows
+    # dispatched above must produce non-empty weekly/monthly series, and the
+    # None-on-coarse-grain contract must hold — p90_min and vehicles come from the
+    # ~14d raw fact window only, so they are ALWAYS None on every coarse point.
+    assert isinstance(parsed.weekly, list) and len(parsed.weekly) > 0
+    assert isinstance(parsed.monthly, list) and len(parsed.monthly) > 0
+    assert all(p.p90_min is None and p.vehicles is None for p in parsed.weekly)
+    assert all(p.p90_min is None and p.vehicles is None for p in parsed.monthly)
 
     # --- PublishResult via publish_snapshot ---
     res = publish_snapshot(

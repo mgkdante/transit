@@ -389,7 +389,7 @@ def test_run_realtime_cycle_reports_partial_failure_and_continues(monkeypatch) -
     result = run_realtime_cycle(
         "stm",
         settings=Settings(_env_file=None, DATABASE_URL="postgresql://user:pass@example.com/transit"),
-        registry=object(),
+        registry=_fake_registry_with_intervals(),
         engine=object(),
     )
 
@@ -1336,7 +1336,7 @@ def test_run_realtime_cycle_without_last_captures_runs_every_endpoint(monkeypatc
     result = run_realtime_cycle(
         "stm",
         settings=Settings(_env_file=None, DATABASE_URL="postgresql://user:pass@example.com/transit"),
-        registry=object(),
+        registry=_fake_registry_with_intervals(),
         engine=object(),
     )
 
@@ -1345,6 +1345,60 @@ def test_run_realtime_cycle_without_last_captures_runs_every_endpoint(monkeypatc
     assert "capture:i3_alerts" in call_order
     for endpoint_result in result.endpoint_results:
         assert endpoint_result.status == "succeeded"
+
+
+def _fake_registry_with_service_alerts():
+    """A non-STM provider: the two RT feeds + a generic GTFS-RT service-alerts
+    feed, and NO proprietary i3 feed (the STO / future-provider shape)."""
+    manifest = SimpleNamespace(
+        feeds={
+            "trip_updates": SimpleNamespace(
+                endpoint_key="trip_updates", refresh_interval_seconds=30
+            ),
+            "vehicle_positions": SimpleNamespace(
+                endpoint_key="vehicle_positions", refresh_interval_seconds=30
+            ),
+            "service_alerts": SimpleNamespace(
+                endpoint_key="service_alerts", refresh_interval_seconds=300
+            ),
+        },
+        provider=SimpleNamespace(provider_id="sto", display_name="STO"),
+    )
+    return SimpleNamespace(get_provider=lambda provider_id: manifest)
+
+
+def test_single_shot_cycle_is_manifest_driven_captures_service_alerts(monkeypatch) -> None:
+    # Holistic per provider: a single-shot cycle for a provider that publishes
+    # the generic service-alerts feed (and no i3) captures its alerts and never
+    # polls the STM-specific i3 feed it doesn't have.
+    call_order: list[str] = []
+    _install_realtime_cycle_stubs(monkeypatch, call_order)
+    monkeypatch.setattr(
+        orchestration,
+        "capture_service_alerts",
+        lambda provider_id, settings, registry, engine: (
+            call_order.append("capture:service_alerts"),
+            _i3_ingestion_result(),
+        )[1],
+        raising=False,
+    )
+
+    result = run_realtime_cycle(
+        "sto",
+        settings=Settings(_env_file=None, DATABASE_URL="postgresql://user:pass@example.com/transit"),
+        registry=_fake_registry_with_service_alerts(),
+        engine=object(),
+    )
+
+    assert "capture:trip_updates" in call_order
+    assert "capture:vehicle_positions" in call_order
+    assert "capture:service_alerts" in call_order
+    assert "capture:i3_alerts" not in call_order
+    assert {r.endpoint_key for r in result.endpoint_results} == {
+        "trip_updates",
+        "vehicle_positions",
+        "service_alerts",
+    }
 
 
 def test_run_realtime_cycle_first_endpoint_call_runs_without_gating(monkeypatch) -> None:
@@ -1391,7 +1445,7 @@ def test_run_realtime_cycle_prunes_even_when_gold_refresh_fails(monkeypatch) -> 
     result = run_realtime_cycle(
         "stm",
         settings=Settings(_env_file=None, DATABASE_URL="postgresql://user:pass@example.com/transit"),
-        registry=object(),
+        registry=_fake_registry_with_intervals(),
         engine=object(),
     )
 
@@ -1433,7 +1487,7 @@ def test_run_realtime_cycle_prunes_when_all_endpoints_fail(monkeypatch) -> None:
     result = run_realtime_cycle(
         "stm",
         settings=Settings(_env_file=None, DATABASE_URL="postgresql://user:pass@example.com/transit"),
-        registry=object(),
+        registry=_fake_registry_with_intervals(),
         engine=object(),
     )
 
@@ -1514,7 +1568,7 @@ def test_run_realtime_cycle_persists_gtfs_silver_load_failure_row(monkeypatch) -
     result = run_realtime_cycle(
         "stm",
         settings=Settings(_env_file=None, DATABASE_URL="postgresql://user:pass@example.com/transit"),
-        registry=object(),
+        registry=_fake_registry_with_intervals(),
         engine=engine,
     )
 
@@ -1550,7 +1604,7 @@ def test_run_realtime_cycle_persists_i3_silver_load_failure_row(monkeypatch) -> 
     result = run_realtime_cycle(
         "stm",
         settings=Settings(_env_file=None, DATABASE_URL="postgresql://user:pass@example.com/transit"),
-        registry=object(),
+        registry=_fake_registry_with_intervals(),
         engine=engine,
     )
 
@@ -1584,7 +1638,7 @@ def test_silver_load_failure_persistence_is_best_effort(monkeypatch) -> None:
     result = run_realtime_cycle(
         "stm",
         settings=Settings(_env_file=None, DATABASE_URL="postgresql://user:pass@example.com/transit"),
-        registry=object(),
+        registry=_fake_registry_with_intervals(),
         engine=engine,
     )
 
@@ -1616,9 +1670,93 @@ def test_capture_failures_do_not_write_silver_load_rows(monkeypatch) -> None:
     result = run_realtime_cycle(
         "stm",
         settings=Settings(_env_file=None, DATABASE_URL="postgresql://user:pass@example.com/transit"),
-        registry=object(),
+        registry=_fake_registry_with_intervals(),
         engine=engine,
     )
 
     assert result.status == "partial_failure"
     assert engine.inserts == []
+
+
+def test_realtime_endpoints_for_manifest_filters_absent_and_disabled_feeds() -> None:
+    full = SimpleNamespace(
+        feeds={
+            "trip_updates": SimpleNamespace(is_enabled=True),
+            "vehicle_positions": SimpleNamespace(is_enabled=True),
+            "i3_alerts": SimpleNamespace(is_enabled=True),
+        }
+    )
+    assert orchestration.realtime_endpoints_for_manifest(full) == (
+        "trip_updates",
+        "vehicle_positions",
+        "i3_alerts",
+    )
+
+    no_i3 = SimpleNamespace(
+        feeds={
+            "trip_updates": SimpleNamespace(is_enabled=True),
+            "vehicle_positions": SimpleNamespace(is_enabled=True),
+        }
+    )
+    assert orchestration.realtime_endpoints_for_manifest(no_i3) == (
+        "trip_updates",
+        "vehicle_positions",
+    )
+
+    disabled_vehicles = SimpleNamespace(
+        feeds={
+            "trip_updates": SimpleNamespace(is_enabled=True),
+            "vehicle_positions": SimpleNamespace(is_enabled=False),
+            "i3_alerts": SimpleNamespace(is_enabled=True),
+        }
+    )
+    assert orchestration.realtime_endpoints_for_manifest(disabled_vehicles) == (
+        "trip_updates",
+        "i3_alerts",
+    )
+
+
+def _fake_registry_without_i3(*, trip_updates: int = 30, vehicle_positions: int = 30):
+    manifest = SimpleNamespace(
+        feeds={
+            "trip_updates": SimpleNamespace(
+                endpoint_key="trip_updates",
+                refresh_interval_seconds=trip_updates,
+                is_enabled=True,
+            ),
+            "vehicle_positions": SimpleNamespace(
+                endpoint_key="vehicle_positions",
+                refresh_interval_seconds=vehicle_positions,
+                is_enabled=True,
+            ),
+        },
+        provider=SimpleNamespace(provider_id="sto", display_name="STO"),
+    )
+    return SimpleNamespace(get_provider=lambda provider_id: manifest)
+
+
+def test_run_realtime_cycle_does_not_poll_an_absent_i3_feed(monkeypatch) -> None:
+    # A provider without an i3 alerts feed (e.g. STO/OC Transpo) must not be
+    # polled for it every worker cycle.
+    call_order: list[str] = []
+    _install_realtime_cycle_stubs(monkeypatch, call_order)
+    frozen_now = datetime(2026, 5, 26, 22, 0, 0, tzinfo=UTC)
+    monkeypatch.setattr(orchestration, "utc_now", lambda: frozen_now)
+
+    result = run_realtime_cycle(
+        "sto",
+        settings=Settings(
+            _env_file=None, DATABASE_URL="postgresql://user:pass@example.com/transit"
+        ),
+        registry=_fake_registry_without_i3(),
+        engine=object(),
+        last_captures={},  # worker path, nothing gated yet
+    )
+
+    assert "capture:i3_alerts" not in call_order
+    assert "capture:trip_updates" in call_order
+    assert "capture:vehicle_positions" in call_order
+    assert {r.endpoint_key for r in result.endpoint_results} == {
+        "trip_updates",
+        "vehicle_positions",
+    }

@@ -15,6 +15,10 @@ class FeedKind(StrEnum):
     TRIP_UPDATES = "trip_updates"
     VEHICLE_POSITIONS = "vehicle_positions"
     I3_ALERTS = "i3_alerts"
+    # Generic GTFS-RT Service Alerts protobuf (STO/OC/STS and most agencies).
+    # STM's proprietary i3 JSON stays I3_ALERTS; both normalize into the same
+    # alert gold surface.
+    SERVICE_ALERTS = "service_alerts"
 
 
 class SourceFormat(StrEnum):
@@ -23,6 +27,7 @@ class SourceFormat(StrEnum):
     GTFS_RT_TRIP_UPDATES = "gtfs_rt_trip_updates"
     GTFS_RT_VEHICLE_POSITIONS = "gtfs_rt_vehicle_positions"
     API_I3_JSON = "api_i3_json"
+    GTFS_RT_SERVICE_ALERTS = "gtfs_rt_service_alerts"
 
 
 class StorageBackend(StrEnum):
@@ -33,6 +38,15 @@ class StorageBackend(StrEnum):
 class AuthType(StrEnum):
     NONE = "none"
     API_KEY = "api_key"
+    # Static key plus a per-request derived signature (e.g. STO: key=<public> +
+    # hash=SHA256(private_key + UTC timestamp)). Both go in query params.
+    API_KEY_SIGNED = "api_key_signed"
+
+
+class SignatureScheme(StrEnum):
+    # hex SHA-256 of (signing_secret + current UTC time as yyyymmddTHHMMZ),
+    # recomputed per request at minute granularity. Used by STO GTFS-RT.
+    SHA256_UTC_MINUTE = "sha256_utc_minute"
 
 
 class AuthConfig(BaseModel):
@@ -40,6 +54,11 @@ class AuthConfig(BaseModel):
     credential_env_var: str | None = None
     auth_header_name: str | None = None
     auth_query_param: str | None = None
+    # API_KEY_SIGNED only: the secret that is hashed into a per-request signature,
+    # and where/how that signature is attached.
+    signing_secret_env_var: str | None = None
+    signature_query_param: str | None = None
+    signature_scheme: SignatureScheme | None = None
     notes: str | None = None
 
     @model_validator(mode="after")
@@ -50,6 +69,21 @@ class AuthConfig(BaseModel):
             if not self.auth_header_name and not self.auth_query_param:
                 raise ValueError(
                     "API-key auth requires auth_header_name or auth_query_param."
+                )
+        if self.auth_type == AuthType.API_KEY_SIGNED:
+            if not self.credential_env_var or not self.auth_query_param:
+                raise ValueError(
+                    "Signed API-key auth requires credential_env_var and "
+                    "auth_query_param for the static key."
+                )
+            if not (
+                self.signing_secret_env_var
+                and self.signature_query_param
+                and self.signature_scheme
+            ):
+                raise ValueError(
+                    "Signed API-key auth requires signing_secret_env_var, "
+                    "signature_query_param, and signature_scheme."
                 )
         return self
 
@@ -72,6 +106,10 @@ class ProviderBoundsConfig(BaseModel):
 class ProviderConfig(BaseModel):
     provider_id: str
     display_name: str
+    # Copy identity (additive, optional): a snappy brand for chips/SEO ("STM",
+    # "OC Transpo") and the primary place name for SEO + copy ("Montréal").
+    short_name: str | None = None
+    city: str | None = None
     timezone: str
     default_language: str | None = None
     default_currency: str | None = None
@@ -79,6 +117,12 @@ class ProviderConfig(BaseModel):
     attribution_text: str | None = None
     website_url: AnyHttpUrl | None = None
     is_active: bool = True
+    # When False, the static loader tolerates a compliant-but-minimal feed whose
+    # non-spine optional members are missing a required column (skip + record a
+    # conformance warning instead of failing the whole load). STM stays True so a
+    # real schema regression still fails loud. Falls back to Settings.STRICT_GTFS
+    # when omitted from the manifest.
+    strict_gtfs: bool | None = None
 
 
 class FeedConfigBase(BaseModel):
@@ -100,7 +144,7 @@ class FeedConfigBase(BaseModel):
 
     def resolved_source_url(self, settings: Settings | None = None) -> str | None:
         if settings and self.source_url_env_var:
-            override = getattr(settings, self.source_url_env_var, None)
+            override = settings.env_value(self.source_url_env_var)
             if override:
                 return override
         return str(self.source_url) if self.source_url else None
@@ -131,6 +175,11 @@ class I3AlertsFeedConfig(FeedConfigBase):
     source_format: Literal[SourceFormat.API_I3_JSON]
 
 
+class ServiceAlertsFeedConfig(FeedConfigBase):
+    feed_kind: Literal[FeedKind.SERVICE_ALERTS]
+    source_format: Literal[SourceFormat.GTFS_RT_SERVICE_ALERTS]
+
+
 RealtimeFeedConfig = TripUpdatesFeedConfig | VehiclePositionsFeedConfig
 
 
@@ -139,7 +188,8 @@ FeedConfig = Annotated[
     | GisStaticFeedConfig
     | TripUpdatesFeedConfig
     | VehiclePositionsFeedConfig
-    | I3AlertsFeedConfig,
+    | I3AlertsFeedConfig
+    | ServiceAlertsFeedConfig,
     Field(discriminator="feed_kind"),
 ]
 
@@ -158,6 +208,8 @@ class ProviderSeed:
     max_longitude: float | None
     attribution_text: str
     website_url: str
+    short_name: str | None
+    city: str | None
     is_active: bool = True
 
     def as_params(self) -> dict[str, object]:
@@ -185,12 +237,15 @@ class ProviderManifest(BaseModel):
 
     @model_validator(mode="after")
     def validate_manifest_shape(self) -> ProviderManifest:
-        required_feeds = {
-            FeedKind.STATIC_SCHEDULE.value,
-            FeedKind.GIS_STATIC.value,
-            FeedKind.TRIP_UPDATES.value,
-            FeedKind.VEHICLE_POSITIONS.value,
-        }
+        # The only universally required feed is the GTFS schedule. GIS is
+        # provider-specific (STM ships a separate stm_sig.zip; standard agencies
+        # carry geometry in shapes.txt), the GTFS-RT trip/vehicle feeds power the
+        # delay/reliability facts but a fully GTFS-compliant agency may publish
+        # schedule only (or schedule + alerts, like STS), and the alert feeds are
+        # optional too. A provider that omits the realtime feeds simply produces
+        # no realtime/reliability facts — the realtime cycle is manifest-driven
+        # (realtime_endpoints_for_manifest) and skips whatever is absent.
+        required_feeds = {FeedKind.STATIC_SCHEDULE.value}
         missing_feeds = required_feeds - set(self.feeds)
         if missing_feeds:
             missing_display = ", ".join(sorted(missing_feeds))
@@ -209,8 +264,16 @@ class ProviderManifest(BaseModel):
             raise TypeError("Static schedule feed did not validate as StaticFeedConfig.")
         return feed
 
-    def gis_feed(self) -> GisStaticFeedConfig:
-        feed = self.feeds[FeedKind.GIS_STATIC.value]
+    def gis_feed(self) -> GisStaticFeedConfig | None:
+        """Return the GIS feed, or ``None`` when the provider ships no GIS bundle.
+
+        Optional because only STM publishes a separate shapefile; standard GTFS
+        agencies derive route geometry from shapes.txt. Mirrors the absence
+        handling callers already use for the optional i3 alerts feed.
+        """
+        feed = self.feeds.get(FeedKind.GIS_STATIC.value)
+        if feed is None:
+            return None
         if not isinstance(feed, GisStaticFeedConfig):
             raise TypeError("GIS static feed did not validate as GisStaticFeedConfig.")
         return feed
@@ -219,6 +282,17 @@ class ProviderManifest(BaseModel):
         feed = self.feeds[FeedKind.I3_ALERTS.value]
         if not isinstance(feed, I3AlertsFeedConfig):
             raise TypeError("i3 alerts feed did not validate as I3AlertsFeedConfig.")
+        return feed
+
+    def service_alerts_feed(self) -> ServiceAlertsFeedConfig | None:
+        """Return the generic GTFS-RT service-alerts feed, or None when absent."""
+        feed = self.feeds.get(FeedKind.SERVICE_ALERTS.value)
+        if feed is None:
+            return None
+        if not isinstance(feed, ServiceAlertsFeedConfig):
+            raise TypeError(
+                "Service alerts feed did not validate as ServiceAlertsFeedConfig."
+            )
         return feed
 
     def realtime_feed(self, endpoint_key: str) -> RealtimeFeedConfig:
@@ -247,18 +321,22 @@ class ProviderManifest(BaseModel):
             max_longitude=bounds.max_longitude if bounds else None,
             attribution_text=self.provider.attribution_text or "",
             website_url=str(self.provider.website_url) if self.provider.website_url else "",
+            short_name=self.provider.short_name,
+            city=self.provider.city,
             is_active=self.provider.is_active,
         )
 
     def to_feed_endpoint_seeds(self, settings: Settings) -> list[FeedEndpointSeed]:
-        ordered_feed_keys = [
-            FeedKind.STATIC_SCHEDULE.value,
-            FeedKind.GIS_STATIC.value,
-            FeedKind.TRIP_UPDATES.value,
-            FeedKind.VEHICLE_POSITIONS.value,
-        ]
+        ordered_feed_keys = [FeedKind.STATIC_SCHEDULE.value]
+        if FeedKind.GIS_STATIC.value in self.feeds:
+            ordered_feed_keys.append(FeedKind.GIS_STATIC.value)
+        ordered_feed_keys.extend(
+            [FeedKind.TRIP_UPDATES.value, FeedKind.VEHICLE_POSITIONS.value]
+        )
         if FeedKind.I3_ALERTS.value in self.feeds:
             ordered_feed_keys.append(FeedKind.I3_ALERTS.value)
+        if FeedKind.SERVICE_ALERTS.value in self.feeds:
+            ordered_feed_keys.append(FeedKind.SERVICE_ALERTS.value)
 
         feed_seeds: list[FeedEndpointSeed] = []
         for feed_key in ordered_feed_keys:

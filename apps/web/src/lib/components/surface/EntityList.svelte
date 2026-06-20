@@ -9,9 +9,10 @@
 -->
 <script lang="ts" generics="T">
 	import type { Snippet } from 'svelte';
+	import type { HTMLAttributes } from 'svelte/elements';
 	import { cn } from '$lib/utils';
 
-	interface EntityListProps {
+	interface EntityListProps extends Omit<HTMLAttributes<HTMLUListElement>, 'children'> {
 		/** The full item set (sliced to `max` for render). */
 		items: readonly T[];
 		/** Stable key for each item (keyed `{#each}`). */
@@ -29,13 +30,21 @@
 		class?: string;
 	}
 
-	let { items, key, row, max = 200, truncatedLabel, class: className }: EntityListProps = $props();
+	let {
+		items,
+		key,
+		row,
+		max = 200,
+		truncatedLabel,
+		class: className,
+		...restProps
+	}: EntityListProps = $props();
 
 	const visible = $derived(items.slice(0, max));
 	const truncated = $derived(items.length > max);
 </script>
 
-<ul class={cn('entity-list', className)} data-slot="entity-list">
+<ul class={cn('entity-list', className)} data-slot="entity-list" {...restProps}>
 	{#each visible as item (key(item))}
 		<li class="entity-list-item">{@render row(item)}</li>
 	{/each}

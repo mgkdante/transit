@@ -1,5 +1,23 @@
+"""The /v1 DB->UI contract: these Pydantic models are the single source of truth.
+
+export_schemas() emits one JSON Schema per model; scripts/export_snapshot_schemas.py
+writes them to snapshots/schemas/ and tests/test_snapshots_schema_export.py byte-gates
+them, so the on-disk schemas cannot drift from these models. The web app mirrors
+those schemas (apps/web/.../v1/schemas/json/, gated by
+tests/test_v1_contract_web_mirror_sync.py) and hand-writes the Zod validators.
+
+Growth rule: add fields OPTIONAL-with-default only -- never add a required field or
+flip optional->required, so older clients never break on a republish. Honest NULL:
+a missing value serializes as explicit JSON null, never coerced to 0.
+
+Full doctrine + the add-a-field / add-an-entity playbooks live in Notion ->
+Architecture -> "/v1 Contract Doctrine".
+"""
+
 from __future__ import annotations
+
 from enum import Enum
+
 from pydantic import BaseModel, Field
 
 class Status(str, Enum):
@@ -72,6 +90,14 @@ class Alert(BaseModel):
     stops: list[str] = Field(default_factory=list)
     start_utc: str | None = None
     end_utc: str | None = None
+    # Additive GTFS-RT / i3 passthroughs. cause/effect are the upstream raw values
+    # (the GTFS-RT Alert.Cause / Alert.Effect enum NAME for GTFS-RT feeds, e.g.
+    # "CONSTRUCTION"/"DETOUR"; a provider string for STM's i3). severity_level is
+    # the raw upstream severity, distinct from the bucketed `severity` enum above.
+    # Honest-NULL when the feed omits them. (url is not yet carried upstream.)
+    cause: str | None = None
+    effect: str | None = None
+    severity_level: str | None = None
 
 class AlertsFile(BaseModel):
     generated_utc: str
@@ -82,6 +108,23 @@ class StatusDist(BaseModel):
 
 class OccupancyMix(BaseModel):
     empty: float = 0.0; many_seats: float = 0.0; few_seats: float = 0.0; standing: float = 0.0; full: float = 0.0
+
+class DelayBucket(BaseModel):
+    # One fixed bin of the network delay distribution. lo_min is the inclusive
+    # lower edge in (signed, rounded) minutes; null = unbounded below. hi_min is
+    # the exclusive upper edge; null = unbounded above. A value d lands here when
+    # (lo_min is None or lo_min <= d) and (hi_min is None or d < hi_min).
+    lo_min: int | None = None
+    hi_min: int | None = None
+    count: int = 0
+
+class NonRespondingRoute(BaseModel):
+    # Scheduled trips running NOW with no live vehicle (silent service), per
+    # route. Silent trips have no vehicle id by definition, so count is a
+    # per-ROUTE silent-trip tally, not a vehicle list. SUM(count) over the list
+    # equals the scalar non_responding total.
+    route_id: str
+    count: int
 
 class NetworkFile(BaseModel):
     generated_utc: str
@@ -102,6 +145,17 @@ class NetworkFile(BaseModel):
     non_responding: int
     feed_freshness_s: int | None
     coverage_pct: int | None
+    # slice-9.5 additive live-tier fields (optional-with-default; existing
+    # NetworkFile shape unchanged). delay_histogram is the distribution of the
+    # SAME trip-level signed-minute delays that power delay_p50_min/delay_p90_min:
+    # None only when there are zero delay observations (the p50/p90 guard); when
+    # there ARE observations all 8 fixed buckets are emitted (zeros included) so
+    # the UI can draw the full shape. non_responding_by_route is the per-route
+    # breakdown of `non_responding` (SUM(count) == non_responding); None when
+    # there are no non-responding routes, so the UI stands down (never an empty
+    # list, never a fabricated 0-row).
+    delay_histogram: list[DelayBucket] | None = None
+    non_responding_by_route: list[NonRespondingRoute] | None = None
 
 class ManifestLiveFiles(BaseModel):
     vehicles: str = "live/vehicles.json"
@@ -173,6 +227,11 @@ class ManifestFiles(BaseModel):
 class Manifest(BaseModel):
     provider: str
     display_name: str
+    # Copy identity (additive, optional): snappy brand for chips/SEO ("STM") +
+    # primary place name for SEO/copy ("Montréal"). None when the provider config
+    # omits them; the UI falls back to display_name.
+    short_name: str | None = None
+    city: str | None = None
     tz: str = "America/Toronto"
     bbox: list[float]
     default_lang: str = "fr"
@@ -276,20 +335,58 @@ class LabelsFile(BaseModel):
 # ---------------------------------------------------------------------------
 
 class TrendPoint(BaseModel):
+    # One trend observation at a single bucket. date is the bucket-start LOCAL
+    # date: the day itself for the daily `series`, the ISO week-start (Monday)
+    # for `weekly` points, and the month-start (1st) for `monthly` points.
+    # otp_pct / avg_delay_min / cancellation_rate / occupancy_mix are honestly
+    # re-aggregatable to week/month (observation-weighted over the same daily
+    # sources). p90_min / vehicles come from the ~14-day raw fact window only,
+    # which is NOT additively composable across a week/month — so they are
+    # always None on weekly/monthly points (present only on recent daily ones).
     date: str
     otp_pct: int | None = None
     avg_delay_min: float | None = None
     p90_min: float | None = None
     vehicles: int | None = None
     # Tier-1 additive: network-wide cancellation rate (canceled / RT-reported
-    # trip-days, %) and crowding band-shares for the day. Both None when their
-    # source rollups have no data for the date.
+    # trip-days, %) and crowding band-shares for the bucket. Both None when their
+    # source rollups have no data for the bucket.
     cancellation_rate: float | None = None
     occupancy_mix: OccupancyMix | None = None
+
+class NetworkShift(BaseModel):
+    # Network-wide reliability for one time-of-day shift or weekday/weekend
+    # day-type grain, aggregated across ALL of the provider's routes from
+    # gold.route_delay_by_shift / gold.route_delay_by_daytype (which carry an
+    # on_time_observation_count, so otp_pct is a REAL on_time/known OTP — NOT the
+    # severe-delay proxy used for stops). grain is the canonical shift token
+    # (am_peak|midday|pm_peak|evening|night) or day-type token (weekday|weekend).
+    # Honest-NULL: every metric is None (never a fabricated 0) when the grain has
+    # no known-delay observations across the network for the window.
+    grain: str
+    otp_pct: int | None = None
+    avg_delay_min: float | None = None
+    severe_pct: float | None = None
 
 class NetworkTrend(BaseModel):
     generated_utc: str
     series: list[TrendPoint] = Field(default_factory=list)
+    # Additive-optional WEEK + MONTH grain trend series: the SAME daily sources
+    # (gold.route_delay_hourly OTP/avg, route_cancellation_daily,
+    # route_occupancy_band_daily) re-aggregated into ISO-week / calendar-month
+    # buckets, observation-weighted exactly like `series`. Each TrendPoint.date
+    # is the bucket-start local date (Monday for weekly, the 1st for monthly).
+    # p90_min/vehicles stay None on these grains (the raw fact window is ~14d
+    # only — not additively composable to a week/month). Both default empty so
+    # already-published snapshots lacking these keys still validate.
+    weekly: list[TrendPoint] = Field(default_factory=list)
+    monthly: list[TrendPoint] = Field(default_factory=list)
+    # Additive-optional network-wide reliability by time-of-day shift and by
+    # weekday/weekend day-type, aggregated across all routes. Both default empty
+    # so already-published snapshots lacking these keys still validate; the
+    # NetworkShift rows keep honest-NULL semantics (None, never 0, on zero-obs).
+    by_shift: list[NetworkShift] = Field(default_factory=list)
+    by_daytype: list[NetworkShift] = Field(default_factory=list)
 
 class ReliabilityPeriod(BaseModel):
     grain: str
@@ -406,7 +503,18 @@ class StopReliability(BaseModel):
     # relative to its own worst cell — NOT the route repeat-problem score, so a
     # shared legend can't conflate the two.
     habits: RouteHabits | None = None
+    # Per-stop weekday seasonality (ISO 1=Mon..7=Sun), computed on the fly from
+    # gold.stop_delay_hourly. Reuses the RouteDayOfWeek shape for route parity; here
+    # observation_count is the summed hourly observation count for the weekday and
+    # avg_delay_min is the observation-weighted COALESCE(arrival, departure) delay.
+    day_of_week: list[RouteDayOfWeek] = Field(default_factory=list)
     by_route: list[StopByRoute] = Field(default_factory=list)
+    # Trailing-30d crowding band-shares for the stop, summed from the append-only
+    # gold.stop_occupancy_band_daily reduction (GTFS-RT OccupancyStatus attributed
+    # to this stop). Additive-optional: null when no occupancy telemetry was
+    # attributed to the stop — an all-zero mix is indistinguishable from a real
+    # all-empty fleet, so absence surfaces as None, never a fabricated split.
+    occupancy_mix: OccupancyMix | None = None
 
 class Hotspot(BaseModel):
     rank: int
@@ -503,6 +611,16 @@ class ProvenanceFreshness(BaseModel):
     status: str | None = None
     age_s: int | None = None
 
+class ProvenanceConformance(BaseModel):
+    # GTFS feed-conformance for the provider's latest static load, mirroring the
+    # DB-only /health check_feed_conformance signal so the UI can render a
+    # "data quality" badge. status='out_of_norm' when the feed shipped members
+    # this pipeline does not natively model (captured verbatim, never dropped).
+    status: str  # 'conformant' | 'out_of_norm'
+    unknown_members: list[str] = Field(default_factory=list)
+    extra_row_count: int = 0
+
+
 class Provenance(BaseModel):
     generated_utc: str
     sources: list[ProvenanceSource] = Field(default_factory=list)
@@ -510,6 +628,7 @@ class Provenance(BaseModel):
     retention: dict[str, int] = Field(default_factory=dict)
     methodology: dict = Field(default_factory=dict)  # type: ignore[type-arg]
     gaps: list[str] = Field(default_factory=list)
+    conformance: ProvenanceConformance | None = None
 
 
 # ---------------------------------------------------------------------------

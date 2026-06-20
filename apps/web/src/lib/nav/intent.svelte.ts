@@ -35,6 +35,7 @@ import { mapSearchFor, type MapFilterTarget } from '$lib/filters';
  */
 export type SurfaceKind =
 	| 'vehicle'
+	| 'trip'
 	| 'stop'
 	| 'line'
 	| 'search'
@@ -62,6 +63,8 @@ const SURFACE_ROOT: Record<SurfaceKind, string> = {
 	line: '/lines',
 	stop: '/stops',
 	vehicle: '/map',
+	// A trip has no index surface; an idless trip target falls back to the map.
+	trip: '/map',
 };
 
 /**
@@ -74,11 +77,12 @@ const SURFACE_ROOT: Record<SurfaceKind, string> = {
 const ENTITY_DETAIL_ROOT: Partial<Record<SurfaceKind, string>> = {
 	line: '/route',
 	stop: '/stop',
+	trip: '/trip',
 };
 
 /** True for kinds whose canonical route addresses a single entity by id. */
 function isEntityKind(kind: SurfaceKind): boolean {
-	return kind === 'vehicle' || kind === 'stop' || kind === 'line';
+	return kind === 'vehicle' || kind === 'stop' || kind === 'line' || kind === 'trip';
 }
 
 /**

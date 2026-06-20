@@ -135,6 +135,46 @@ describe('TopBar search results', () => {
 		).not.toBeInTheDocument();
 	});
 
+	it('scopes the search placeholder and aria-label to the line catalogue', () => {
+		const { getByRole } = render(TopBar, { props: { locale: 'en', searchScope: 'route' } });
+		expect(getByRole('searchbox', { name: 'Search a line' })).toHaveAttribute(
+			'placeholder',
+			'Search a line…',
+		);
+	});
+
+	it('scopes the search placeholder and aria-label to the stop catalogue', () => {
+		const { getByRole } = render(TopBar, { props: { locale: 'en', searchScope: 'stop' } });
+		expect(getByRole('searchbox', { name: 'Search a stop' })).toHaveAttribute(
+			'placeholder',
+			'Search a stop…',
+		);
+	});
+
+	it('keeps the full-network search affordance on map scope', () => {
+		const { getByRole } = render(TopBar, { props: { locale: 'en', searchScope: 'map' } });
+		expect(getByRole('searchbox', { name: 'Search the network' })).toHaveAttribute(
+			'placeholder',
+			'Search a line, stop, or address…',
+		);
+	});
+
+	it('authors the FR-canonical scoped placeholder for the line catalogue', () => {
+		const { getByRole } = render(TopBar, { props: { locale: 'fr', searchScope: 'route' } });
+		expect(getByRole('searchbox', { name: 'Rechercher une ligne' })).toHaveAttribute(
+			'placeholder',
+			'Rechercher une ligne…',
+		);
+	});
+
+	it('authors the FR-canonical scoped placeholder for the stop catalogue', () => {
+		const { getByRole } = render(TopBar, { props: { locale: 'fr', searchScope: 'stop' } });
+		expect(getByRole('searchbox', { name: 'Rechercher un arrêt' })).toHaveAttribute(
+			'placeholder',
+			'Rechercher un arrêt…',
+		);
+	});
+
 	it('gives long address search suggestions room to wrap', () => {
 		const source = readSource();
 

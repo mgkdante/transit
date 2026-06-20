@@ -192,11 +192,16 @@ def test_manifest_driven_realtime_config_supports_s3_backend() -> None:
     assert config.bronze_root == Path("./data/bronze")
 
 
-def test_build_realtime_ssl_context_pins_tls_1_2() -> None:
+def test_build_realtime_ssl_context_floors_tls_1_2_without_capping() -> None:
     context = _build_realtime_ssl_context()
 
+    # Floor at TLS 1.2 but allow 1.3 to negotiate (no maximum pin) so TLS-1.3-only
+    # GTFS-RT endpoints still connect.
     assert context.minimum_version == ssl.TLSVersion.TLSv1_2
-    assert context.maximum_version == ssl.TLSVersion.TLSv1_2
+    assert context.maximum_version in (
+        ssl.TLSVersion.MAXIMUM_SUPPORTED,
+        ssl.TLSVersion.TLSv1_3,
+    )
 
 
 def test_realtime_checksum_uses_sha256(tmp_path: Path) -> None:
@@ -227,17 +232,21 @@ def test_extract_realtime_metadata_from_protobuf_bytes() -> None:
     assert metadata.feed_timestamp_utc == datetime.fromtimestamp(1_774_750_400, tz=UTC)
 
 
-def test_extract_realtime_metadata_rejects_missing_header_timestamp() -> None:
+def test_extract_realtime_metadata_tolerates_missing_header_timestamp() -> None:
     message = gtfs_realtime_pb2.FeedMessage()
     message.header.gtfs_realtime_version = "2.0"
     message.entity.add().id = "missing-ts"
 
-    with pytest.raises(ValueError, match="timestamp is missing or invalid"):
-        extract_realtime_metadata(
-            message.SerializeToString(),
-            provider_id="stm",
-            endpoint_key="vehicle_positions",
-        )
+    # A feed that omits its header timestamp no longer aborts the capture; the
+    # metadata carries None and the capture resolves it to the capture time.
+    metadata = extract_realtime_metadata(
+        message.SerializeToString(),
+        provider_id="stm",
+        endpoint_key="vehicle_positions",
+    )
+
+    assert metadata.feed_timestamp_utc is None
+    assert metadata.entity_count == 1
 
 
 def test_realtime_database_registration_helpers_capture_expected_values() -> None:
@@ -364,6 +373,68 @@ def test_capture_realtime_feed_uses_storage_abstraction_for_s3(
     assert fake_storage.persisted[0][1] == result.storage_path
     assert connection.calls[2][1]["storage_backend"] == "s3"
     assert connection.calls[2][1]["storage_path"] == result.storage_path
+
+
+def test_capture_realtime_feed_falls_back_to_capture_time_when_header_timestamp_missing(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    payload = _build_feed_message_bytes(
+        timestamp=0,
+        entity_count=1,
+        endpoint_key="vehicle_positions",
+    )
+    temp_path = tmp_path / "vehicle_positions.pb"
+    temp_path.write_bytes(payload)
+    artifact = DownloadedArtifact(
+        temp_path=temp_path,
+        byte_size=len(payload),
+        checksum_sha256=compute_sha256_hex(temp_path),
+        http_status_code=200,
+        source_url="https://example.com/vehiclePositions",
+    )
+    fake_storage = FakeBronzeStorage("s3://bronze-bucket")
+    connection = RecordingConnection()
+    settings = Settings(
+        _env_file=None,
+        DATABASE_URL="postgresql://user:pass@example.com/transit",
+        STM_API_KEY="demo-key",
+        BRONZE_STORAGE_BACKEND="s3",
+        BRONZE_S3_ENDPOINT="https://example.r2.cloudflarestorage.com",
+        BRONZE_S3_BUCKET="bronze-bucket",
+        BRONZE_S3_ACCESS_KEY="access",
+        BRONZE_S3_SECRET_KEY="secret",
+        BRONZE_S3_REGION="auto",
+    )
+    registry = ProviderRegistry.from_project_root(
+        project_root=Path(__file__).resolve().parents[1],
+        settings=settings,
+    )
+
+    monkeypatch.setattr(realtime_gtfs, "_download_to_tempfile", lambda config, temp_dir: artifact)
+    monkeypatch.setattr(
+        realtime_gtfs,
+        "get_bronze_storage",
+        lambda settings, project_root, storage_backend: fake_storage,
+    )
+
+    result = capture_realtime_feed(
+        "stm",
+        "vehicle_positions",
+        settings=settings,
+        registry=registry,
+        engine=FakeEngine(connection),
+    )
+
+    # The feed omitted its header timestamp, so the persisted feed_timestamp_utc
+    # falls back to the capture time rather than aborting the capture.
+    assert result.feed_timestamp_utc == result.completed_at_utc
+    snapshot_index_params = next(
+        params
+        for sql, params in connection.calls
+        if "INSERT INTO raw.realtime_snapshot_index" in sql
+    )
+    assert snapshot_index_params["feed_timestamp_utc"] == result.completed_at_utc
 
 
 class _MetadataFailingConnection(RecordingConnection):

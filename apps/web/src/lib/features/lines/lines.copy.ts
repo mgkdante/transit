@@ -6,7 +6,7 @@
 // ReliabilityPane). FR is the canonical product voice; EN mirrors it.
 
 import type { Locale } from '$lib/i18n';
-import type { SurfaceHeadCopy } from '$lib/components/surface';
+import type { AffectedAlertsCopy, SurfaceHeadCopy } from '$lib/components/surface';
 import type { OccupancyCode } from '$lib/v1/schemas';
 
 export interface LinesIndexCopy extends SurfaceHeadCopy {
@@ -18,11 +18,23 @@ export interface LinesIndexCopy extends SurfaceHeadCopy {
 	readonly viewRouteOnMap: (route: string) => string;
 	/** "+N more" truncation note builder (count interpolated). */
 	readonly more: (n: number) => string;
+	/** Sort control (alphabetical | worst reliability first). */
+	readonly sortLabel: string;
+	readonly sortAlpha: string;
+	readonly sortWorst: string;
+	/** Reliability status filter (show only problem lines). */
+	readonly statusFilterLabel: string;
+	readonly statusAll: string;
+	readonly statusProblem: string;
+	/** SR caption when the problem filter is on but no line has loaded its verdict yet. */
+	readonly statusPending: string;
 }
 
 export interface RouteDetailCopy {
 	/** Station-voice overline above the line heading. */
 	readonly kicker: string;
+	/** Back-link label into the lines index ("← Lines"), keeps nav in-chrome. */
+	readonly back: string;
 	/** Tab labels, keyed by the EntityDetail tab key. */
 	readonly tabs: {
 		readonly detail: string;
@@ -32,6 +44,11 @@ export interface RouteDetailCopy {
 	/** Live-map drilldown action. */
 	readonly viewOnMap: string;
 	readonly viewRouteOnMap: (route: string) => string;
+	/**
+	 * Live service alerts affecting THIS route (alerts whose routes[] lists this
+	 * route id). Surfaced in the detail pane; stands down when none are active.
+	 */
+	readonly alerts: AffectedAlertsCopy;
 	/** Section headings inside the panes. */
 	readonly directions: string;
 	readonly servicePeriods: string;
@@ -68,37 +85,97 @@ export interface RouteDetailCopy {
 	readonly lastTripDelay: string;
 	/** a11y trend summary builder: "… over the last N days". */
 	readonly lastNDays: (n: number) => string;
+	/**
+	 * Current-buses roster (the live vehicles running THIS route right now). Stands
+	 * down entirely when no live vehicle is on the route (metro, or a feed gap).
+	 */
+	readonly roster: {
+		/** Section heading. */
+		readonly heading: string;
+		/** a11y label for the roster list. */
+		readonly listLabel: string;
+		/** Bus row title builder (vehicle id/label). */
+		readonly busLabel: (id: string) => string;
+		/** Next-stop subtitle builder; shown only when the vehicle reports one. */
+		readonly nextStop: (stop: string) => string;
+		/** Accessible label for the per-bus trip link. */
+		readonly viewTrip: (id: string) => string;
+		/** Accessible label for the per-bus map drilldown. */
+		readonly viewBusOnMap: (id: string) => string;
+		/** Compact "map" pill text. */
+		readonly mapAction: string;
+		/** Count caption ("N buses running"). */
+		readonly count: (n: number) => string;
+		/** Honest unknown when the feed omits a bus's delay (never rendered as 0). */
+		readonly noData: string;
+	};
+	/** Detail-tab live per-stop readout (derived from the live trips on this route). */
+	readonly noLiveBus: string;
+	/** Shown when a bus is heading to this stop but the feed gave no precise ETA. */
+	readonly approaching: string;
+	readonly viewStop: (stop: string) => string;
+	/** Delay-tone labels reused for the approaching bus's on-time status. */
+	readonly early: (minutes: number) => string;
+	readonly late: (minutes: number) => string;
+	readonly onTime: string;
+	readonly noDelay: string;
 }
 
 export const indexCopy: Record<Locale, LinesIndexCopy> = {
 	fr: {
 		kicker: 'LIGNES · RÉSEAU',
 		heading: 'Lignes',
-		lede: 'Toutes les lignes du réseau — détail du parcours, horaire et fiabilité historique par ligne. Mesuré à partir du contrat /v1.',
+		lede: 'Toutes les lignes du réseau, détail du parcours, horaire et fiabilité historique par ligne. Mesuré à partir du contrat /v1.',
 		filterLabel: 'Filtrer les lignes',
 		filterPlaceholder: 'Numéro ou nom de ligne…',
 		mapAction: 'Carte',
 		viewRouteOnMap: (route) => `Voir la ligne ${route} sur la carte`,
 		more: (n) => `+${n} de plus`,
+		sortLabel: 'Trier',
+		sortAlpha: 'Alphabétique',
+		sortWorst: 'Moins fiables',
+		statusFilterLabel: 'Fiabilité',
+		statusAll: 'Toutes',
+		statusProblem: 'En retard',
+		statusPending: 'Chargement de la fiabilité des lignes visibles…',
 	},
 	en: {
 		kicker: 'LINES · NETWORK',
 		heading: 'Lines',
-		lede: 'Every line on the network — per-line route detail, schedule and historic reliability. Measured from the /v1 contract.',
+		lede: 'Every line on the network, per-line route detail, schedule and historic reliability. Measured from the /v1 contract.',
 		filterLabel: 'Filter lines',
 		filterPlaceholder: 'Line number or name…',
 		mapAction: 'Map',
 		viewRouteOnMap: (route) => `View route ${route} on map`,
 		more: (n) => `+${n} more`,
+		sortLabel: 'Sort',
+		sortAlpha: 'Alphabetical',
+		sortWorst: 'Least reliable',
+		statusFilterLabel: 'Reliability',
+		statusAll: 'All',
+		statusProblem: 'Late',
+		statusPending: 'Loading reliability for the visible lines…',
 	},
 };
 
 export const detailCopy: Record<Locale, RouteDetailCopy> = {
 	fr: {
 		kicker: 'LIGNE',
+		back: 'Lignes',
 		tabs: { detail: 'Détail', schedule: 'Horaire', reliability: 'Fiabilité' },
 		viewOnMap: 'Voir sur la carte',
 		viewRouteOnMap: (route) => `Voir la ligne ${route} sur la carte`,
+		alerts: {
+			heading: 'Avis de service',
+			listLabel: 'Avis de service touchant cette ligne',
+			cause: 'Cause',
+			effect: 'Effet',
+			from: 'À partir de',
+			until: 'Jusqu’à',
+			severity: { critical: 'Critique', high: 'Élevé', watch: 'À surveiller' },
+			more: (n) => `+${n} de plus`,
+			showLess: 'Réduire',
+		},
 		directions: 'Directions',
 		servicePeriods: 'Périodes de service',
 		headways: 'Intervalles',
@@ -132,12 +209,42 @@ export const detailCopy: Record<Locale, RouteDetailCopy> = {
 		firstTripDelay: 'Retard 1er trajet',
 		lastTripDelay: 'Retard dernier trajet',
 		lastNDays: (n) => `sur les ${n} derniers jours`,
+		roster: {
+			heading: 'Bus en service',
+			listLabel: 'Bus en service sur cette ligne',
+			busLabel: (id) => `Bus ${id}`,
+			nextStop: (stop) => `Prochain arrêt ${stop}`,
+			viewTrip: (id) => `Voir le trajet du bus ${id}`,
+			viewBusOnMap: (id) => `Voir le bus ${id} sur la carte`,
+			mapAction: 'Carte',
+			count: (n) => (n === 1 ? '1 bus en service' : `${n} bus en service`),
+			noData: 'Aucune donnée',
+		},
+		noLiveBus: 'Aucun bus en direct',
+		approaching: 'À l’approche',
+		viewStop: (stop) => `Voir l’arrêt ${stop}`,
+		early: (minutes) => `${Math.abs(minutes)} min en avance`,
+		late: (minutes) => `${minutes} min en retard`,
+		onTime: "À l'heure",
+		noDelay: 'Aucun retard',
 	},
 	en: {
 		kicker: 'LINE',
+		back: 'Lines',
 		tabs: { detail: 'Detail', schedule: 'Schedule', reliability: 'Reliability' },
 		viewOnMap: 'View on map',
 		viewRouteOnMap: (route) => `View route ${route} on map`,
+		alerts: {
+			heading: 'Service alerts',
+			listLabel: 'Service alerts affecting this line',
+			cause: 'Cause',
+			effect: 'Effect',
+			from: 'From',
+			until: 'Until',
+			severity: { critical: 'Critical', high: 'High', watch: 'Watch' },
+			more: (n) => `+${n} more`,
+			showLess: 'Show less',
+		},
 		directions: 'Directions',
 		servicePeriods: 'Service periods',
 		headways: 'Headways',
@@ -145,7 +252,7 @@ export const detailCopy: Record<Locale, RouteDetailCopy> = {
 		direction: (dir) => `Direction ${dir}`,
 		stopsCount: (n) => (n === 1 ? '1 stop' : `${n} stops`),
 		window: 'Window',
-		headway: 'Headway',
+		headway: 'Time between buses',
 		firstDeparture: 'First departure',
 		lastDeparture: 'Last departure',
 		scheduled: 'Scheduled',
@@ -171,5 +278,23 @@ export const detailCopy: Record<Locale, RouteDetailCopy> = {
 		firstTripDelay: 'First-trip delay',
 		lastTripDelay: 'Last-trip delay',
 		lastNDays: (n) => `over the last ${n} days`,
+		roster: {
+			heading: 'Buses in service',
+			listLabel: 'Buses currently running this line',
+			busLabel: (id) => `Bus ${id}`,
+			nextStop: (stop) => `Next stop ${stop}`,
+			viewTrip: (id) => `View the trip for bus ${id}`,
+			viewBusOnMap: (id) => `View bus ${id} on map`,
+			mapAction: 'Map',
+			count: (n) => (n === 1 ? '1 bus in service' : `${n} buses in service`),
+			noData: 'No data',
+		},
+		noLiveBus: 'No live bus',
+		approaching: 'Approaching',
+		viewStop: (stop) => `View stop ${stop}`,
+		early: (minutes) => `${Math.abs(minutes)} min early`,
+		late: (minutes) => `${minutes} min late`,
+		onTime: 'On time',
+		noDelay: 'No delay',
 	},
 };

@@ -14,7 +14,7 @@ from urllib.request import Request, urlopen
 from sqlalchemy import text
 from sqlalchemy.engine import Connection
 
-from transit_ops.core.models import AuthConfig, AuthType
+from transit_ops.core.models import AuthConfig, AuthType, SignatureScheme
 from transit_ops.settings import Settings
 
 CHUNK_SIZE_BYTES = 1024 * 1024
@@ -119,49 +119,71 @@ def build_bronze_object_storage_path(
     ).as_posix()
 
 
+def _append_query_params(url: str, params: list[tuple[str, str]]) -> str:
+    parts = urlsplit(url)
+    query_items = parse_qsl(parts.query, keep_blank_values=True)
+    query_items.extend(params)
+    return urlunsplit(
+        (parts.scheme, parts.netloc, parts.path, urlencode(query_items), parts.fragment)
+    )
+
+
+def _compute_signature(
+    scheme: SignatureScheme | None, signing_secret: str, now: datetime
+) -> str:
+    if scheme == SignatureScheme.SHA256_UTC_MINUTE:
+        timestamp = now.astimezone(UTC).strftime("%Y%m%dT%H%MZ")
+        return hashlib.sha256(f"{signing_secret}{timestamp}".encode()).hexdigest()
+    raise ValueError(f"Unsupported signature scheme '{scheme}'.")
+
+
+def _require_credential(settings: Settings, env_var: str | None) -> str:
+    value = settings.env_value(env_var)
+    if not value:
+        raise ValueError(
+            f"Environment variable '{env_var}' must be configured for this feed."
+        )
+    return value
+
+
 def build_request_details(
     *,
     source_url: str,
     auth: AuthConfig,
     settings: Settings,
+    now: datetime | None = None,
 ) -> RequestDetails:
     if auth.auth_type == AuthType.NONE:
         return RequestDetails(request_url=source_url, request_headers={})
 
-    if auth.auth_type != AuthType.API_KEY:
-        raise ValueError(f"Unsupported auth type '{auth.auth_type}'.")
-
-    if not auth.credential_env_var:
-        raise ValueError("API-key auth requires credential_env_var.")
-
-    credential = getattr(settings, auth.credential_env_var, None)
-    if not credential:
-        raise ValueError(
-            f"Environment variable '{auth.credential_env_var}' must be configured "
-            "for this feed."
-        )
-
-    request_url = source_url
-    request_headers: dict[str, str] = {}
-
-    if auth.auth_header_name:
-        request_headers[auth.auth_header_name] = credential
-
-    if auth.auth_query_param:
-        parts = urlsplit(source_url)
-        query_items = parse_qsl(parts.query, keep_blank_values=True)
-        query_items.append((auth.auth_query_param, credential))
-        request_url = urlunsplit(
-            (
-                parts.scheme,
-                parts.netloc,
-                parts.path,
-                urlencode(query_items),
-                parts.fragment,
+    if auth.auth_type == AuthType.API_KEY:
+        credential = _require_credential(settings, auth.credential_env_var)
+        request_url = source_url
+        request_headers: dict[str, str] = {}
+        if auth.auth_header_name:
+            request_headers[auth.auth_header_name] = credential
+        if auth.auth_query_param:
+            request_url = _append_query_params(
+                source_url, [(auth.auth_query_param, credential)]
             )
-        )
+        return RequestDetails(request_url=request_url, request_headers=request_headers)
 
-    return RequestDetails(request_url=request_url, request_headers=request_headers)
+    if auth.auth_type == AuthType.API_KEY_SIGNED:
+        key = _require_credential(settings, auth.credential_env_var)
+        signing_secret = _require_credential(settings, auth.signing_secret_env_var)
+        signature = _compute_signature(
+            auth.signature_scheme, signing_secret, now or datetime.now(UTC)
+        )
+        request_url = _append_query_params(
+            source_url,
+            [
+                (auth.auth_query_param, key),
+                (auth.signature_query_param, signature),
+            ],
+        )
+        return RequestDetails(request_url=request_url, request_headers={})
+
+    raise ValueError(f"Unsupported auth type '{auth.auth_type}'.")
 
 
 def download_to_tempfile(

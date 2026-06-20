@@ -9,6 +9,7 @@ export {
 	DISPLAY_TIME_ZONE,
 	ageSeconds,
 	formatClock,
+	formatDateKey,
 	formatRelative,
 	formatRelativeSeconds,
 	formatUtc,

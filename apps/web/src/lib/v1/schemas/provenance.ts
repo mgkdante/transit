@@ -21,6 +21,19 @@ export const ProvenanceFreshnessSchema = z.object({
 });
 export type ProvenanceFreshness = z.infer<typeof ProvenanceFreshnessSchema>;
 
+// Feed-conformance verdict for the active provider — how well the upstream GTFS
+// payload matched the schema the pipeline expects. `status` is the only required
+// field (canonical leaves the vocabulary open: "compliant", "out-of-norm", …);
+// `extra_row_count` counts rows the loader saw but did not recognize, and
+// `unknown_members` names the unexpected columns/enum members. Powers the
+// data-quality badge — present per-provider, null when the feed wasn't checked.
+export const ProvenanceConformanceSchema = z.object({
+	status: z.string(),
+	extra_row_count: z.number().int().optional(),
+	unknown_members: z.array(z.string()).optional(),
+});
+export type ProvenanceConformance = z.infer<typeof ProvenanceConformanceSchema>;
+
 export const ProvenanceSchema = z.object({
 	generated_utc: isoUtc(),
 	sources: z.array(ProvenanceSourceSchema).optional(),
@@ -30,5 +43,7 @@ export const ProvenanceSchema = z.object({
 	retention: z.record(z.string(), z.number().int()).optional(),
 	// Free-form methodology notes (additionalProperties: true). Kept loose.
 	methodology: z.record(z.string(), z.unknown()).optional(),
+	// Feed-conformance verdict — nullable (default null) when not checked.
+	conformance: ProvenanceConformanceSchema.nullable().optional(),
 });
 export type Provenance = z.infer<typeof ProvenanceSchema>;

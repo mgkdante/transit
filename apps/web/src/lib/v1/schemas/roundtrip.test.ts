@@ -68,7 +68,9 @@ const CASES: Case[] = [
 		ManifestSchema,
 		{
 			provider: 'stm',
-			display_name: 'STM',
+			display_name: 'Société de transport de Montréal',
+			short_name: 'STM',
+			city: 'Montréal',
 			bbox: [-73.97, 45.4, -73.47, 45.7],
 			attribution: 'STM',
 			dataset_version: '2026.06.15',
@@ -186,6 +188,14 @@ describe('reliability — new optional fields (day_of_week / habits / p50,p90) r
 			id: 's1',
 			periods: [{ grain: 'day', p50_min: 0.8, p90_min: 5.0 }],
 			habits: { scale: 'severe_relative', matrix: [[null, 1.0]] },
+			// per-stop weekday seasonality (ISO 1=Mon..7=Sun); the additive optional
+			// field mirrors the route shape (day_of_week_iso required, rest nullable).
+			day_of_week: [
+				{ day_of_week_iso: 5, avg_delay_min: 3.4, severe_pct: 7.1, observation_count: 320 },
+			],
+			// trailing-window crowding of buses observed AT this stop — additive
+			// optional, reuses the canonical OccupancyMix shape (route surface mirror).
+			occupancy_mix: { empty: 0.05, many_seats: 0.2, few_seats: 0.3, standing: 0.4, full: 0.05 },
 		};
 		expect(() => parsePort('stop_reliability', StopReliabilitySchema, fixture)).not.toThrow();
 	});
@@ -228,6 +238,54 @@ describe('tier-1 — cancellations + occupancy_mix round-trip (additive optional
 				},
 				// honest-null day: both new fields absent — still parses (optional).
 				{ date: '2026-06-15' },
+			],
+		};
+		expect(() => parsePort('network_trend', NetworkTrendSchema, fixture)).not.toThrow();
+	});
+
+	it('parses network_trend carrying network-wide by_shift + by_daytype readouts', () => {
+		const fixture = {
+			generated_utc: ISO,
+			by_shift: [
+				{ grain: 'am_peak', otp_pct: 88, avg_delay_min: 1.4, severe_pct: 3.0 },
+				{ grain: 'pm_peak', otp_pct: 79, avg_delay_min: 2.6, severe_pct: 7.4 },
+				// honest-null grain: too little data → metrics null, still parses.
+				{ grain: 'night', otp_pct: null, avg_delay_min: null, severe_pct: null },
+			],
+			by_daytype: [
+				{ grain: 'weekday', otp_pct: 84, avg_delay_min: 1.9, severe_pct: 4.1 },
+				// metrics absent entirely (optional) — still parses.
+				{ grain: 'weekend' },
+			],
+		};
+		expect(() => parsePort('network_trend', NetworkTrendSchema, fixture)).not.toThrow();
+	});
+
+	it('parses network_trend carrying additive weekly + monthly trend series', () => {
+		const fixture = {
+			generated_utc: ISO,
+			// week-start / month-start dated TrendPoints. p90_min + vehicles are null
+			// on these coarse grains (14d-daily-only) — honest gaps, never fabricated.
+			weekly: [
+				{
+					date: '2026-06-08',
+					otp_pct: 80,
+					avg_delay_min: 2.0,
+					p90_min: null,
+					vehicles: null,
+				},
+				// honest-null week: otp absent (optional) — still parses.
+				{ date: '2026-06-15' },
+			],
+			monthly: [
+				{
+					date: '2026-05-01',
+					otp_pct: 79,
+					avg_delay_min: 2.2,
+					p90_min: null,
+					vehicles: null,
+				},
+				{ date: '2026-06-01' },
 			],
 		};
 		expect(() => parsePort('network_trend', NetworkTrendSchema, fixture)).not.toThrow();
@@ -277,6 +335,90 @@ describe('tier-2 — headway cov/bunching + service_spans + alert breakdown roun
 	});
 });
 
+describe('network — delay_histogram + non_responding_by_route round-trip (additive optional)', () => {
+	it('parses a network file carrying the 8-bucket delay histogram + per-route silent counts', () => {
+		const fixture = {
+			generated_utc: ISO,
+			vehicles_in_service: 812,
+			on_time_pct: 82,
+			status_dist: {},
+			delay_p50_min: 2,
+			delay_p90_min: 9,
+			non_responding: 14,
+			feed_freshness_s: 31,
+			coverage_pct: 96,
+			// All 8 fixed signed-minute buckets (null edge = unbounded). `count`
+			// defaults to 0, so a bucket may omit it.
+			delay_histogram: [
+				{ lo_min: null, hi_min: -5, count: 3 },
+				{ lo_min: -5, hi_min: -2, count: 12 },
+				{ lo_min: -2, hi_min: 0, count: 40 },
+				{ lo_min: 0, hi_min: 2 },
+				{ lo_min: 2, hi_min: 5, count: 90 },
+				{ lo_min: 5, hi_min: 10, count: 30 },
+				{ lo_min: 10, hi_min: 15, count: 8 },
+				{ lo_min: 15, hi_min: null, count: 2 },
+			],
+			// Per-route silent-trip counts; SUM(count)=14 equals `non_responding`.
+			non_responding_by_route: [
+				{ route_id: '51', count: 9 },
+				{ route_id: '105', count: 5 },
+			],
+		};
+		expect(() => parsePort('network', NetworkFileSchema, fixture)).not.toThrow();
+	});
+
+	it('parses a network file with BOTH new fields absent (back-compat)', () => {
+		const fixture = {
+			generated_utc: ISO,
+			vehicles_in_service: 812,
+			on_time_pct: 82,
+			status_dist: {},
+			delay_p50_min: 2,
+			delay_p90_min: 9,
+			non_responding: 0,
+			feed_freshness_s: 31,
+			coverage_pct: 96,
+		};
+		expect(() => parsePort('network', NetworkFileSchema, fixture)).not.toThrow();
+	});
+
+	it('parses a network file with both new fields explicitly null (honest empty)', () => {
+		const fixture = {
+			generated_utc: ISO,
+			vehicles_in_service: 812,
+			on_time_pct: 82,
+			status_dist: {},
+			delay_p50_min: 2,
+			delay_p90_min: 9,
+			non_responding: 0,
+			feed_freshness_s: 31,
+			coverage_pct: 96,
+			delay_histogram: null,
+			non_responding_by_route: null,
+		};
+		expect(() => parsePort('network', NetworkFileSchema, fixture)).not.toThrow();
+	});
+
+	it('rejects a non_responding_by_route entry missing its required count', () => {
+		const bad = {
+			generated_utc: ISO,
+			vehicles_in_service: 812,
+			on_time_pct: 82,
+			status_dist: {},
+			delay_p50_min: 2,
+			delay_p90_min: 9,
+			non_responding: 1,
+			feed_freshness_s: 31,
+			coverage_pct: 96,
+			non_responding_by_route: [{ route_id: '51' }],
+		};
+		expect(() => parsePort('network', NetworkFileSchema, bad)).toThrowError(
+			/^\[adapter\.network\]/,
+		);
+	});
+});
+
 describe('stops_index — optional mode + routes round-trip', () => {
 	it('parses a populated entry (mode + routes) alongside a minimal one (neither)', () => {
 		const fixture = {
@@ -294,6 +436,27 @@ describe('stops_index — optional mode + routes round-trip', () => {
 			],
 		};
 		expect(() => parsePort('stops_index', StopsIndexSchema, fixture)).not.toThrow();
+	});
+});
+
+describe('alerts — additive cause/effect/severity_level round-trip (raw GTFS-RT/i3 passthroughs)', () => {
+	it('parses an alert carrying cause/effect/severity_level alongside a minimal one', () => {
+		const fixture = {
+			generated_utc: ISO,
+			alerts: [
+				{
+					id: 'a1',
+					severity: 'high',
+					header_key: 'Détour sur la ligne 33',
+					cause: 'CONSTRUCTION',
+					effect: 'DETOUR',
+					severity_level: 'WARNING',
+				},
+				// minimal alert: the three new fields absent — still parses (optional).
+				{ id: 'a2', severity: 'watch', header_key: 'Travaux' },
+			],
+		};
+		expect(() => parsePort('alerts', AlertsFileSchema, fixture)).not.toThrow();
 	});
 });
 
@@ -324,10 +487,12 @@ describe('schema round-trip — a bad value throws via parsePort, naming the por
 		);
 	});
 
-	it('[stops_index] rejects a stop with an out-of-enum mode (nested object path)', () => {
+	it('[stops_index] rejects a stop with a wrong-typed mode (nested object path)', () => {
+		// `mode` is a FREE STRING in the canonical contract (not a closed enum), so an
+		// unknown string value is VALID — only a wrong TYPE (here a number) must throw.
 		const bad = {
 			generated_utc: ISO,
-			stops: [{ id: 's1', name: 'X', lat: 45.5, lon: -73.6, mode: 'spaceship' }],
+			stops: [{ id: 's1', name: 'X', lat: 45.5, lon: -73.6, mode: 42 }],
 		};
 		expect(() => parsePort('stops_index', StopsIndexSchema, bad)).toThrowError(
 			/^\[adapter\.stops_index\]/,

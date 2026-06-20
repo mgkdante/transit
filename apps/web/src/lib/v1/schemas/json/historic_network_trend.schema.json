@@ -1,5 +1,54 @@
 {
   "$defs": {
+    "NetworkShift": {
+      "properties": {
+        "avg_delay_min": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Avg Delay Min"
+        },
+        "grain": {
+          "title": "Grain",
+          "type": "string"
+        },
+        "otp_pct": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Otp Pct"
+        },
+        "severe_pct": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Severe Pct"
+        }
+      },
+      "required": [
+        "grain"
+      ],
+      "title": "NetworkShift",
+      "type": "object"
+    },
     "OccupancyMix": {
       "properties": {
         "empty": {
@@ -117,15 +166,43 @@
     }
   },
   "properties": {
+    "by_daytype": {
+      "items": {
+        "$ref": "#/$defs/NetworkShift"
+      },
+      "title": "By Daytype",
+      "type": "array"
+    },
+    "by_shift": {
+      "items": {
+        "$ref": "#/$defs/NetworkShift"
+      },
+      "title": "By Shift",
+      "type": "array"
+    },
     "generated_utc": {
       "title": "Generated Utc",
       "type": "string"
+    },
+    "monthly": {
+      "items": {
+        "$ref": "#/$defs/TrendPoint"
+      },
+      "title": "Monthly",
+      "type": "array"
     },
     "series": {
       "items": {
         "$ref": "#/$defs/TrendPoint"
       },
       "title": "Series",
+      "type": "array"
+    },
+    "weekly": {
+      "items": {
+        "$ref": "#/$defs/TrendPoint"
+      },
+      "title": "Weekly",
       "type": "array"
     }
   },

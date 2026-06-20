@@ -62,6 +62,12 @@ export type ManifestFiles = z.infer<typeof ManifestFilesSchema>;
 export const ManifestSchema = z.object({
 	provider: z.string(),
 	display_name: z.string(),
+	// Copy identity (additive, optional): short_name = a snappy brand for chips/SEO
+	// ("STM", "OC Transpo"); city = the primary place name for SEO + copy
+	// ("Montréal"). null/absent when the provider config omits them — the UI falls
+	// back to display_name. anyOf [string, null] default null in the canonical.
+	short_name: z.string().nullable().optional(),
+	city: z.string().nullable().optional(),
 	// [minLon, minLat, maxLon, maxLat] (the schema only constrains: array of number).
 	bbox: z.array(z.number()),
 	attribution: z.string(),
