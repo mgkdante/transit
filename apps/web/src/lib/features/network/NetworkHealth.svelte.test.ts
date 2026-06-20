@@ -24,6 +24,27 @@ const { openSurface, network, trendSeries, weeklySeries, monthlySeries, byShift,
 			feed_freshness_s: 20,
 			coverage_pct: 95,
 			occupancy_mix: null,
+			// The 8 fixed signed-minute buckets (the same trip-level delays that power
+			// p50/p90). Distinct counts so the bars + a11y values are observable; the
+			// 2..5 bucket is the tallest (proportional fill anchor). Mutable so a test
+			// can null it to assert the section stands down.
+			delay_histogram: [
+				{ lo_min: null, hi_min: -5, count: 1 },
+				{ lo_min: -5, hi_min: -2, count: 4 },
+				{ lo_min: -2, hi_min: 0, count: 12 },
+				{ lo_min: 0, hi_min: 2, count: 20 },
+				{ lo_min: 2, hi_min: 5, count: 30 },
+				{ lo_min: 5, hi_min: 10, count: 9 },
+				{ lo_min: 10, hi_min: 15, count: 3 },
+				{ lo_min: 15, hi_min: null, count: 2 },
+			],
+			// Per-route silent-trip counts, ordered count DESC / route_id ASC by the
+			// builder. SUM(count)=3 equals the scalar non_responding above. Mutable so a
+			// test can null/empty it to assert the section stands down.
+			non_responding_by_route: [
+				{ route_id: '51', count: 2 },
+				{ route_id: '105', count: 1 },
+			],
 			// `satisfies` keeps the compile-time contract check on the literal; the
 			// trailing `as NetworkFile` widens the (otherwise narrowed) inferred type
 			// back to the mutable contract type so a test may flip e.g. occupancy_mix.
@@ -91,6 +112,11 @@ vi.mock('$lib/nav', async () => {
 	return {
 		layout: { isDesktop: true },
 		openSurface,
+		// The non-responding-by-route rows deep-link to /route/[id]; mirror the real
+		// routeFor's line-detail mapping (kind:'line' → /route/{id}) so the link href
+		// assertions exercise the same canonical shape the surface uses in prod.
+		routeFor: (t: { kind: string; id?: string }) =>
+			t.kind === 'line' && t.id ? `/route/${encodeURIComponent(t.id)}` : '/lines',
 	};
 });
 
@@ -205,6 +231,90 @@ describe('NetworkHealth crowding cross-filter', () => {
 			search: 'occupancy=standing',
 		});
 		network.occupancy_mix = null;
+	});
+});
+
+describe('NetworkHealth delay distribution', () => {
+	it('renders the 8-bucket histogram with per-bucket counts and edge labels', () => {
+		render(NetworkHealth);
+		const list = screen.getByRole('list', { name: /Distribution of trip-average delays/i });
+		// 8 fixed buckets always emit (zeros included) when the field is present.
+		const rows = within(list).getAllByRole('listitem');
+		expect(rows).toHaveLength(8);
+		// Each row's accessible name carries its edge label + count ("<bucket> min: <n> trips").
+		expect(within(list).getByLabelText('< -5 min: 1 trips')).toBeInTheDocument();
+		expect(within(list).getByLabelText('2 to 5 min: 30 trips')).toBeInTheDocument();
+		expect(within(list).getByLabelText('15+ min: 2 trips')).toBeInTheDocument();
+	});
+
+	it('stands the histogram down when delay_histogram is null', () => {
+		network.delay_histogram = null;
+		render(NetworkHealth);
+		expect(screen.queryByRole('list', { name: /Distribution of trip-average delays/i })).toBeNull();
+		expect(document.querySelector('[data-slot="delay-histogram"]')).toBeNull();
+		network.delay_histogram = [
+			{ lo_min: null, hi_min: -5, count: 1 },
+			{ lo_min: -5, hi_min: -2, count: 4 },
+			{ lo_min: -2, hi_min: 0, count: 12 },
+			{ lo_min: 0, hi_min: 2, count: 20 },
+			{ lo_min: 2, hi_min: 5, count: 30 },
+			{ lo_min: 5, hi_min: 10, count: 9 },
+			{ lo_min: 10, hi_min: 15, count: 3 },
+			{ lo_min: 15, hi_min: null, count: 2 },
+		];
+	});
+});
+
+describe('NetworkHealth non-responding by route', () => {
+	it('renders a ranked list of silent lines, each deep-linking to /route/[id]', () => {
+		render(NetworkHealth);
+		const list = screen.getByRole('list', {
+			name: /scheduled trips currently running with no live vehicle/i,
+		});
+		// Two routes, worst (count DESC) first → 51 (2) before 105 (1).
+		const links = within(list).getAllByRole('link');
+		expect(links).toHaveLength(2);
+		expect(links[0]).toHaveAttribute('href', '/route/51');
+		expect(links[0]).toHaveAttribute('aria-label', 'View line 51');
+		expect(links[1]).toHaveAttribute('href', '/route/105');
+		// The per-route silent-trip count reads in the row display.
+		expect(within(list).getByText('2 trips')).toBeInTheDocument();
+		expect(within(list).getByText('1 trips')).toBeInTheDocument();
+	});
+
+	it('uses the list > listitem > link a11y shape (li owns the listitem role)', () => {
+		render(NetworkHealth);
+		const list = screen.getByRole('list', {
+			name: /scheduled trips currently running with no live vehicle/i,
+		});
+		// Each <li> is the listitem; the inner RankedRow is `bare` (no self role).
+		const items = within(list).getAllByRole('listitem');
+		expect(items).toHaveLength(2);
+	});
+
+	it('stands the section down when non_responding_by_route is null', () => {
+		network.non_responding_by_route = null;
+		render(NetworkHealth);
+		expect(
+			screen.queryByRole('list', {
+				name: /scheduled trips currently running with no live vehicle/i,
+			}),
+		).toBeNull();
+		expect(document.querySelector('[data-slot="non-responding-by-route"]')).toBeNull();
+		network.non_responding_by_route = [
+			{ route_id: '51', count: 2 },
+			{ route_id: '105', count: 1 },
+		];
+	});
+
+	it('stands the section down when non_responding_by_route is an empty list', () => {
+		network.non_responding_by_route = [];
+		render(NetworkHealth);
+		expect(document.querySelector('[data-slot="non-responding-by-route"]')).toBeNull();
+		network.non_responding_by_route = [
+			{ route_id: '51', count: 2 },
+			{ route_id: '105', count: 1 },
+		];
 	});
 });
 

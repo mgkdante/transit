@@ -1,5 +1,58 @@
 {
   "$defs": {
+    "DelayBucket": {
+      "properties": {
+        "count": {
+          "default": 0,
+          "title": "Count",
+          "type": "integer"
+        },
+        "hi_min": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Hi Min"
+        },
+        "lo_min": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Lo Min"
+        }
+      },
+      "title": "DelayBucket",
+      "type": "object"
+    },
+    "NonRespondingRoute": {
+      "properties": {
+        "count": {
+          "title": "Count",
+          "type": "integer"
+        },
+        "route_id": {
+          "title": "Route Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "route_id",
+        "count"
+      ],
+      "title": "NonRespondingRoute",
+      "type": "object"
+    },
     "OccupancyMix": {
       "properties": {
         "empty": {
@@ -75,6 +128,21 @@
       ],
       "title": "Coverage Pct"
     },
+    "delay_histogram": {
+      "anyOf": [
+        {
+          "items": {
+            "$ref": "#/$defs/DelayBucket"
+          },
+          "type": "array"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Delay Histogram"
+    },
     "delay_p50_min": {
       "anyOf": [
         {
@@ -115,6 +183,21 @@
     "non_responding": {
       "title": "Non Responding",
       "type": "integer"
+    },
+    "non_responding_by_route": {
+      "anyOf": [
+        {
+          "items": {
+            "$ref": "#/$defs/NonRespondingRoute"
+          },
+          "type": "array"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Non Responding By Route"
     },
     "occupancy_mix": {
       "anyOf": [

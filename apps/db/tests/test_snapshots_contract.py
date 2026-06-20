@@ -189,6 +189,63 @@ def test_alert_text_fields_are_additive():
     assert AlertHistoryEntry.model_json_schema()["required"] == ["id"]
 
 
+def test_network_delay_histogram_and_non_responding_by_route_are_additive():
+    """slice-9.5: NetworkFile.delay_histogram and .non_responding_by_route are
+    optional-with-default (None), so already-published network.json stays valid
+    and the frozen required set is unchanged."""
+    from transit_ops.snapshots.contract import (
+        DelayBucket,
+        NetworkFile,
+        NonRespondingRoute,
+    )
+
+    # Old-shape NetworkFile still validates; the two new fields default None.
+    n = NetworkFile(
+        generated_utc="2026-06-20T00:00:00Z",
+        vehicles_in_service=0,
+        on_time_pct=None,
+        status_dist={},
+        delay_p50_min=None,
+        delay_p90_min=None,
+        non_responding=0,
+        feed_freshness_s=None,
+        coverage_pct=None,
+    )
+    assert n.delay_histogram is None
+    assert n.non_responding_by_route is None
+
+    # Populated shape roundtrips; DelayBucket edges accept null (unbounded).
+    full = NetworkFile(
+        generated_utc="2026-06-20T00:00:00Z",
+        vehicles_in_service=3,
+        on_time_pct=67,
+        status_dist={},
+        delay_p50_min=2,
+        delay_p90_min=10,
+        non_responding=5,
+        feed_freshness_s=12,
+        coverage_pct=100,
+        delay_histogram=[
+            DelayBucket(lo_min=None, hi_min=-5, count=0),
+            DelayBucket(lo_min=15, hi_min=None, count=2),
+        ],
+        non_responding_by_route=[
+            NonRespondingRoute(route_id="51", count=3),
+            NonRespondingRoute(route_id="165", count=2),
+        ],
+    )
+    assert full.delay_histogram[0].lo_min is None
+    assert full.delay_histogram[0].hi_min == -5
+    assert full.delay_histogram[1].lo_min == 15
+    assert full.delay_histogram[1].hi_min is None
+    assert sum(r.count for r in full.non_responding_by_route) == full.non_responding
+
+    # Freeze-compat: required set excludes the two additive fields.
+    required = set(NetworkFile.model_json_schema()["required"])
+    assert "delay_histogram" not in required
+    assert "non_responding_by_route" not in required
+
+
 def test_reliability_new_fields_are_additive():
     """Tier-0 rollup-foundation: RouteReliability.day_of_week, StopReliability.habits,
     and StopReliabilityPeriod.p50_min/p90_min are optional-with-default, so already-

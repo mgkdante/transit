@@ -29,6 +29,10 @@ export interface NetworkCopy extends SurfaceHeadCopy {
 	readonly statusSection: string;
 	/** Section caption above the occupancy-mix bar. */
 	readonly occupancySection: string;
+	/** Section caption above the delay-distribution histogram. */
+	readonly delayHistogramSection: string;
+	/** Section caption above the non-responding-by-route ranked list. */
+	readonly nonRespondingSection: string;
 	/** Metric labels for the headline grid. */
 	readonly metrics: {
 		readonly onTime: string;
@@ -96,6 +100,34 @@ export interface NetworkCopy extends SurfaceHeadCopy {
 		 */
 		readonly caveat: string;
 	};
+	/** Delay-distribution histogram (8 fixed signed-minute buckets). */
+	readonly delayHistogram: {
+		/** Accessible summary of the whole histogram (role=list). */
+		readonly summary: string;
+		/** Honest caption: same basis as the p50/p90 headline numbers. */
+		readonly caption: string;
+		/**
+		 * Per-bar edge labels, in the fixed 8-bucket order:
+		 * (-inf,-5) [-5,-2) [-2,0) [0,2) [2,5) [5,10) [10,15) [15,+inf).
+		 * Early (ahead of schedule) reads left; late reads right.
+		 */
+		readonly buckets: readonly string[];
+		/** Accessible per-bar value prefix (e.g. "<bucket>: <n> trips"). */
+		readonly barValue: (bucket: string, count: number) => string;
+	};
+	/** Non-responding (silent) scheduled trips, ranked per route. */
+	readonly nonResponding: {
+		/** Accessible summary of the ranked list (role=list). */
+		readonly summary: string;
+		/** Honest caption framing what a silent trip is (metro excluded). */
+		readonly caption: string;
+		/** Per-row subtitle prefix (e.g. "Line"). */
+		readonly rowLabel: string;
+		/** Accessible name for each row's deep link (e.g. "View line 51"). */
+		readonly viewDetail: (route: string) => string;
+		/** Unit suffix for the per-route silent-trip count. */
+		readonly tripsUnit: string;
+	};
 	/** Trend grain selector (day / week / month) labels. */
 	readonly grain: {
 		/** Accessible group label for the grain selector. */
@@ -136,6 +168,8 @@ export const copy: Record<Locale, NetworkCopy> = {
 		dayTypeSection: 'Weekday vs weekend',
 		statusSection: 'Status mix',
 		occupancySection: 'Crowding',
+		delayHistogramSection: 'Delay distribution',
+		nonRespondingSection: 'Silent trips by line',
 		metrics: {
 			onTime: 'On-time',
 			vehicles: 'Vehicles in service',
@@ -175,6 +209,21 @@ export const copy: Record<Locale, NetworkCopy> = {
 			caveat:
 				'A real on-time over known share across the network, measured over the trailing window. It is a punctuality proxy, not certified on-time performance, and small samples vary.',
 		},
+		delayHistogram: {
+			summary: 'Distribution of trip-average delays across the network, earliest to latest.',
+			caption:
+				'How trip-average delays are spread right now, in signed minutes. Same basis as the median and slowest-10% numbers above: negative is ahead of schedule, positive is behind.',
+			buckets: ['< -5', '-5 to -2', '-2 to 0', '0 to 2', '2 to 5', '5 to 10', '10 to 15', '15+'],
+			barValue: (bucket, count) => `${bucket} min: ${count} trips`,
+		},
+		nonResponding: {
+			summary: 'Lines with scheduled trips currently running with no live vehicle, most first.',
+			caption:
+				'Scheduled trips currently running with no live vehicle, by line. A silent trip has no vehicle to track, so this counts trips per line, not vehicles. Metro is excluded.',
+			rowLabel: 'Line',
+			viewDetail: (route) => `View line ${route}`,
+			tripsUnit: 'trips',
+		},
 		grain: { label: 'Trend grain', day: 'Day', week: 'Week', month: 'Month' },
 		window: { label: 'Trend window', d7: '7d', d30: '30d', d90: '90d' },
 		noData: 'no data',
@@ -192,6 +241,8 @@ export const copy: Record<Locale, NetworkCopy> = {
 		dayTypeSection: 'Semaine et fin de semaine',
 		statusSection: 'Répartition des statuts',
 		occupancySection: 'Achalandage',
+		delayHistogramSection: 'Répartition des retards',
+		nonRespondingSection: 'Voyages silencieux par ligne',
 		metrics: {
 			onTime: 'À l’heure',
 			vehicles: 'Véhicules en service',
@@ -232,6 +283,23 @@ export const copy: Record<Locale, NetworkCopy> = {
 			severeLabel: 'sévère',
 			caveat:
 				'Une part réelle à l’heure sur connus à l’échelle du réseau, mesurée sur la fenêtre glissante. C’est une estimation de ponctualité, pas une ponctualité certifiée, et les petits échantillons varient.',
+		},
+		delayHistogram: {
+			summary:
+				'Répartition des retards moyens par voyage à l’échelle du réseau, du plus tôt au plus tard.',
+			caption:
+				'La répartition actuelle des retards moyens par voyage, en minutes signées. Même base que le retard médian et les 10 % les plus lents ci-dessus : négatif signifie en avance, positif signifie en retard.',
+			buckets: ['< -5', '-5 à -2', '-2 à 0', '0 à 2', '2 à 5', '5 à 10', '10 à 15', '15+'],
+			barValue: (bucket, count) => `${bucket} min : ${count} voyages`,
+		},
+		nonResponding: {
+			summary:
+				'Lignes dont des voyages planifiés circulent sans véhicule en direct, les plus nombreuses d’abord.',
+			caption:
+				'Voyages planifiés qui circulent actuellement sans véhicule en direct, par ligne. Un voyage silencieux n’a aucun véhicule à suivre : on compte donc les voyages par ligne, pas les véhicules. Le métro est exclu.',
+			rowLabel: 'Ligne',
+			viewDetail: (route) => `Voir la ligne ${route}`,
+			tripsUnit: 'voyages',
 		},
 		grain: { label: 'Granularité de tendance', day: 'Jour', week: 'Semaine', month: 'Mois' },
 		window: { label: 'Fenêtre de tendance', d7: '7 j', d30: '30 j', d90: '90 j' },

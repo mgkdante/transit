@@ -33,8 +33,8 @@
 -->
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { getLocale, type Locale } from '$lib/i18n';
-	import { layout, openSurface } from '$lib/nav';
+	import { getLocale, localizeHref, type Locale } from '$lib/i18n';
+	import { layout, openSurface, routeFor } from '$lib/nav';
 	import { mapSearchFor } from '$lib/filters';
 	import { formatDateKey, formatRelativeSeconds } from '$lib/utils/time';
 	import {
@@ -145,6 +145,97 @@
 			label: OCCUPANCY_LABELS[locale][code],
 		}));
 	});
+
+	// --- Delay distribution (live histogram) ---------------------------------
+	// The 8 fixed signed-minute buckets of `delay_histogram` — the DISTRIBUTION of
+	// the SAME trip-level delays that power p50/p90. The contract emits all 8
+	// buckets (zeros included) whenever there ARE observations, and null ONLY when
+	// there are none (same guard as the percentiles), so we stand the whole
+	// section down on null. Bars encode COUNT by length; their colour reads the
+	// early/late SENSE off the status scale (early/ahead = on-time green, the
+	// on-time band stays green, late bands climb amber→severe), never --primary.
+	type DelayBar = {
+		readonly key: number;
+		readonly label: string;
+		readonly count: number;
+		readonly pct: number;
+		readonly colorVar: string;
+		readonly a11y: string;
+	};
+	const hasDelayHistogram = $derived((live.network?.delay_histogram?.length ?? 0) > 0);
+	// Colour each bucket by its delay sense (index 0..7 over the fixed edges):
+	// the two early buckets (<-2) read on-time green, the [-2,2) on-time band
+	// stays green, [2,10) is amber (late), [10,inf) is severe. Length = count.
+	const DELAY_BAR_COLORS: readonly string[] = [
+		'var(--dataviz-status-on-time)', // < -5  (very early)
+		'var(--dataviz-status-on-time)', // -5..-2 (early)
+		'var(--dataviz-status-on-time)', // -2..0 (on time)
+		'var(--dataviz-status-on-time)', // 0..2  (on time)
+		'var(--dataviz-severity-high)', // 2..5  (late)
+		'var(--dataviz-severity-high)', // 5..10 (late)
+		'var(--dataviz-severity-critical)', // 10..15 (severe)
+		'var(--dataviz-severity-critical)', // 15+    (severe)
+	];
+	const delayBars = $derived.by<DelayBar[]>(() => {
+		const buckets = live.network?.delay_histogram ?? [];
+		if (buckets.length === 0) return [];
+		const labels = t.delayHistogram.buckets;
+		const max = buckets.reduce((m, b) => Math.max(m, b.count), 0);
+		return buckets.map((b, i) => {
+			const label = labels[i] ?? '';
+			return {
+				key: i,
+				label,
+				count: b.count,
+				// Bar fill proportion of the tallest bucket; max 0 → all-zero bars
+				// render as a flat baseline (never a divide-by-zero).
+				pct: max > 0 ? (b.count / max) * 100 : 0,
+				colorVar: DELAY_BAR_COLORS[i] ?? 'var(--dataviz-status-unknown)',
+				a11y: t.delayHistogram.barValue(label, b.count),
+			};
+		});
+	});
+
+	// --- Non-responding (silent) trips by route ------------------------------
+	// `non_responding_by_route` is per-ROUTE counts of scheduled trips running NOW
+	// with no live vehicle (already ordered count DESC, route_id ASC by the
+	// builder). Honest: silent trips have no vehicle id, so this is a per-line
+	// silent-trip tally, NOT vehicle ids. null/empty → the section stands down
+	// (the scalar `non_responding` tile still carries the total). Each row is a
+	// ranked link to /route/[id] via the shared routeFor → localizeHref pattern.
+	type SilentRow = {
+		readonly key: string;
+		readonly rank: number;
+		readonly title: string;
+		readonly subtitle: string;
+		readonly severity: SeverityCode;
+		readonly value: number | null;
+		readonly display: string;
+		readonly href: string;
+		readonly ariaLabel: string;
+	};
+	const silentRows = $derived.by<SilentRow[]>(() => {
+		const rows = live.network?.non_responding_by_route ?? null;
+		if (rows == null || rows.length === 0) return [];
+		const worst = rows.reduce((m, r) => Math.max(m, r.count), 0);
+		return rows.map((r, i) => ({
+			key: r.route_id,
+			rank: i + 1,
+			title: r.route_id,
+			subtitle: t.nonResponding.rowLabel,
+			// A silent scheduled trip is a service gap → the bar reads on the
+			// critical severity band (never --primary); length encodes the count.
+			severity: 'critical' as SeverityCode,
+			// Magnitude bar normalized against the worst line (always severity-
+			// scaled; a silent trip is a service gap). null only if worst is 0,
+			// which the empty-guard above already excludes.
+			value: worst > 0 ? Math.min(1, Math.max(0, r.count / worst)) : null,
+			display: `${fmtCount(r.count)} ${t.nonResponding.tripsUnit}`,
+			href: localizeHref(routeFor({ kind: 'line', id: r.route_id }), locale),
+			ariaLabel: t.nonResponding.viewDetail(r.route_id),
+		}));
+	});
+	const hasSilentRows = $derived(silentRows.length > 0);
 
 	// --- Trend grain (day / week / month) ------------------------------------
 	// The historic trend reads at a calendar grain the rider chooses: day uses the
@@ -564,6 +655,81 @@
 				/>
 			</div>
 		{/if}
+
+		<!-- Delay distribution — the 8 fixed signed-minute buckets of the SAME
+		     trip-level delays that power p50/p90. Stands DOWN entirely when
+		     `delay_histogram` is null (zero delay observations this cycle); when it
+		     is present the contract emits all 8 buckets (zeros included) so we draw
+		     the full shape. A token-only bar list (role=list): length encodes the
+		     COUNT, colour reads the early/late sense off the status scale. -->
+		{#if hasDelayHistogram}
+			<Separator variant="hazard" />
+			<div class="network-block">
+				<SectionLabel text={t.delayHistogramSection} variant="station" />
+				<p class="network-hist-caption">{t.delayHistogram.caption}</p>
+				<ul
+					class="network-hist"
+					role="list"
+					aria-label={t.delayHistogram.summary}
+					data-slot="delay-histogram"
+				>
+					{#each delayBars as bar (bar.key)}
+						<li class="network-hist-row" aria-label={bar.a11y}>
+							<span class="network-hist-label" aria-hidden="true">{bar.label}</span>
+							<span class="network-hist-track" aria-hidden="true">
+								<span
+									class="network-hist-fill"
+									style="width: {bar.pct}%; background: {bar.colorVar};"
+								></span>
+							</span>
+							<span class="network-hist-count" aria-hidden="true">{fmtCount(bar.count)}</span>
+						</li>
+					{/each}
+				</ul>
+			</div>
+		{/if}
+
+		<!-- Non-responding (silent) scheduled trips, by line — a ranked list (worst
+		     first) of lines running scheduled trips with NO live vehicle. Placed
+		     beside the `non_responding` total tile above; stands DOWN when
+		     `non_responding_by_route` is null/empty (the scalar total still shows).
+		     list > listitem > link: the <li> owns the listitem role, the anchor owns
+		     the interactivity + accessible name, the inner RankedRow is `bare`. -->
+		{#if hasSilentRows}
+			<Separator variant="hazard" />
+			<div class="network-block">
+				<SectionLabel text={t.nonRespondingSection} variant="station" />
+				<p class="network-silent-caption">{t.nonResponding.caption}</p>
+				<ul
+					class="network-silent"
+					role="list"
+					aria-label={t.nonResponding.summary}
+					data-slot="non-responding-by-route"
+				>
+					{#each silentRows as row (row.key)}
+						<li class="network-silent-item">
+							<a
+								class="network-silent-link"
+								href={row.href}
+								data-sveltekit-preload-data="hover"
+								data-slot="silent-link"
+								aria-label={row.ariaLabel}
+							>
+								<RankedRow
+									bare
+									rank={row.rank}
+									title={row.title}
+									subtitle={row.subtitle}
+									severity={row.severity}
+									value={row.value}
+									display={row.display}
+								/>
+							</a>
+						</li>
+					{/each}
+				</ul>
+			</div>
+		{/if}
 	{:else if live.error}
 		<EdgeState
 			variant="error-v1"
@@ -892,5 +1058,84 @@
 	}
 	.network-shift-caveat {
 		max-width: 52ch;
+	}
+
+	/* Delay-distribution histogram — a token-only horizontal bar list. Length
+	   encodes the bucket count; colour reads the early/late sense (status scale). */
+	.network-hist {
+		margin: 0;
+		padding: 0;
+		list-style: none;
+		display: flex;
+		flex-direction: column;
+		gap: 0.4rem;
+		max-width: 40rem;
+	}
+	.network-hist-row {
+		display: grid;
+		grid-template-columns: 5rem minmax(0, 1fr) 3rem;
+		align-items: center;
+		gap: 0.75rem;
+	}
+	.network-hist-label {
+		font-family: var(--font-mono);
+		font-size: var(--text-micro);
+		font-variant-numeric: tabular-nums;
+		color: var(--muted-foreground);
+		text-align: right;
+	}
+	.network-hist-track {
+		display: block;
+		height: 0.75rem;
+		border-radius: var(--radius-sm);
+		background: var(--muted);
+		overflow: hidden;
+	}
+	.network-hist-fill {
+		display: block;
+		height: 100%;
+		min-width: 2px;
+		border-radius: var(--radius-sm);
+	}
+	.network-hist-count {
+		font-family: var(--font-mono);
+		font-size: var(--text-micro);
+		font-variant-numeric: tabular-nums;
+		color: var(--foreground);
+		text-align: right;
+	}
+	.network-hist-caption,
+	.network-silent-caption {
+		margin: 0;
+		font-family: var(--font-mono);
+		font-size: var(--text-small);
+		line-height: 1.4;
+		color: var(--muted-foreground);
+		max-width: 52ch;
+	}
+
+	/* Non-responding-by-route ranked list — list > listitem > link; the whole
+	   row is a link, strip anchor chrome so RankedRow owns the visuals. */
+	.network-silent {
+		display: flex;
+		flex-direction: column;
+		gap: 0.5rem;
+		max-width: 40rem;
+		margin: 0;
+		padding: 0;
+		list-style: none;
+	}
+	.network-silent-item {
+		display: block;
+	}
+	.network-silent-link {
+		display: block;
+		text-decoration: none;
+		color: inherit;
+		border-radius: var(--radius-lg);
+	}
+	.network-silent-link:focus-visible {
+		outline: 2px solid var(--ring);
+		outline-offset: 2px;
 	}
 </style>
