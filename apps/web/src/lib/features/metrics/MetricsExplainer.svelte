@@ -56,7 +56,12 @@
 		type TocEntry,
 	} from '$lib/components/shared';
 	import { prefersReducedMotion } from '$lib/motion/reduced-motion.svelte';
-	import { METRICS, METRIC_CLUSTER_ORDER, type MetricEntry } from './metrics.content';
+	import {
+		METRICS,
+		METRIC_CLUSTER_ORDER,
+		methodologyNoteFor,
+		type MetricEntry,
+	} from './metrics.content';
 	import { metricsCopy } from './metrics.copy';
 
 	const locale: Locale = getLocale();
@@ -85,6 +90,16 @@
 
 	const confidenceMeaning = $derived(
 		(entry: MetricEntry) => t.confidence.levels[entry.confidence].chip,
+	);
+
+	// Live pipeline note — the verbatim provenance.methodology string for THIS
+	// metric from the latest build, when one is mapped + present. Rendered as-is
+	// (a published string), set apart from the static science. Null/absent
+	// methodology → no note (the card is unchanged). Re-derives as the supplementary
+	// provenance resource settles; the resource is supplementary, so a failed/empty
+	// fetch simply yields no note.
+	const methodologyNote = $derived((entry: MetricEntry): string | null =>
+		methodologyNoteFor(entry.key, provenance.data?.methodology),
 	);
 
 	// ── Shared TOC model (consumed by both the desktop rail + the mobile pill) ──
@@ -175,6 +190,7 @@
 					<SectionLabel text={group.label} variant="station" class="metrics-cluster__overline" />
 					{#each group.entries as entry (entry.key)}
 						{@const metricIndex = orderedMetrics.findIndex((m) => m.key === entry.key)}
+						{@const note = methodologyNote(entry)}
 						<div class="section-block" id={entry.anchor}>
 							<CollapsibleSection
 								title={entry.name[locale]}
@@ -221,6 +237,18 @@
 											{/each}
 										</ul>
 									</div>
+
+									<!-- Live pipeline note: the verbatim provenance.methodology string
+									     for this metric from the CURRENT build, distinguished from the
+									     static science above. Stands down entirely when unmapped/absent.
+									     `note` is bound once at the #each level (above) — looked up once,
+									     used as the guard AND the body. -->
+									{#if note}
+										<div class="metric__block metric__note-block" data-slot="pipeline-note">
+											<SectionLabel text={t.sections.pipelineNote} variant="metric" />
+											<p class="metric__prose metric__pipeline-note">{note}</p>
+										</div>
+									{/if}
 
 									<a class="metric__top" href="#metrics-provenance">{t.backToTop}</a>
 								</div>
@@ -420,6 +448,21 @@
 	}
 	.metric__not {
 		color: var(--muted-foreground);
+	}
+	/* Live pipeline note: a quiet card-inset block, visually set apart from the
+	   static science with a left rule + muted surface (NOT --primary, no data
+	   mark). The verbatim methodology string reads on the mono caption voice. */
+	.metric__note-block {
+		padding: 0.75rem 0.875rem;
+		border-left: 3px solid var(--border-rule-accent, var(--border));
+		border-radius: var(--radius-md);
+		background: var(--muted);
+	}
+	.metric__pipeline-note {
+		font-family: var(--font-mono);
+		font-size: var(--text-caption);
+		color: var(--muted-foreground);
+		line-height: 1.7;
 	}
 	.metric__caveats {
 		display: flex;

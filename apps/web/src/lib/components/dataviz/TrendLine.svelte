@@ -84,6 +84,14 @@
 		 */
 		showYTicks?: boolean;
 		/**
+		 * SINGLE-SERIES mode: the chart carries only the on-time channel and the
+		 * `retard` series is decorative-empty (all-null). When set, the retard
+		 * LEGEND swatch is suppressed (one line ⇒ one legend entry) AND the
+		 * right-hand retard y-tick gutter is dropped (no second axis to label).
+		 * Default false → dual-series renders stay byte-identical.
+		 */
+		singleSeries?: boolean;
+		/**
 		 * Show the first/last x-labels under the plot. `xLabels` already feeds the
 		 * tooltip heading; this surfaces the endpoints visibly. Default false.
 		 */
@@ -126,6 +134,7 @@
 		focusDots = true,
 		readout = false,
 		readoutHint,
+		singleSeries = false,
 		class: className,
 		ref = $bindable(null),
 		...restProps
@@ -288,11 +297,17 @@
 	const firstXLabel = $derived(xLabels?.[0] ?? '');
 	const lastXLabel = $derived(xLabels?.[n - 1] ?? '');
 
-	// Decorative legend rows (dot swatches): on-time + retard series.
-	const legendItems = $derived([
-		{ colorVar: ON_TIME_VAR, label: onTimeLabel, swatch: 'dot' as const },
-		{ colorVar: RETARD_VAR, label: retardLabel, swatch: 'dot' as const },
-	]);
+	// Decorative legend rows (dot swatches): on-time + retard series. In
+	// single-series mode the retard channel is empty (all-null), so we drop its
+	// swatch — one plotted line ⇒ one legend entry.
+	const legendItems = $derived(
+		singleSeries
+			? [{ colorVar: ON_TIME_VAR, label: onTimeLabel, swatch: 'dot' as const }]
+			: [
+					{ colorVar: ON_TIME_VAR, label: onTimeLabel, swatch: 'dot' as const },
+					{ colorVar: RETARD_VAR, label: retardLabel, swatch: 'dot' as const },
+				],
+	);
 </script>
 
 {#snippet chart()}
@@ -465,7 +480,10 @@
 		<div class="dv-trendline-frame">
 			{@render yTickGutter(onTimeTickDomain, yAxis, 'left')}
 			<div class="dv-trendline-frame-plot">{@render plot()}</div>
-			{@render yTickGutter(retardTickDomain, retardAxis, 'right')}
+			<!-- Single-series mode has no second axis → drop the retard gutter. -->
+			{#if !singleSeries}
+				{@render yTickGutter(retardTickDomain, retardAxis, 'right')}
+			{/if}
 		</div>
 	{:else}
 		{@render plot()}

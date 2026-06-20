@@ -99,6 +99,7 @@ export const MENU_EXTRAS: readonly ExternalNavLink[] = [
  */
 export const SECONDARY_NAV: readonly SecondaryNavLink[] = [
 	{ href: '/metrics', label: { en: 'How we measure', fr: 'Comment on mesure' } },
+	{ href: '/status', label: { en: 'Data health', fr: 'Santé des données' } },
 ] as const;
 
 /**

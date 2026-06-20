@@ -1,7 +1,18 @@
 import { describe, it, expect } from 'vitest';
 import { resolveRouteSeo } from './routeSeo';
 
-const PATHS = ['/', '/map', '/lines', '/stops', '/network', '/search', '/route/1', '/stop/5'];
+const PATHS = [
+	'/',
+	'/map',
+	'/lines',
+	'/stops',
+	'/network',
+	'/search',
+	'/metrics',
+	'/status',
+	'/route/1',
+	'/stop/5',
+];
 
 // A representative identity (STM / Montréal) for the keyworded-copy path. The
 // module itself holds NO agency/city literals — these tokens are injected here.
@@ -9,16 +20,30 @@ const STM_IDENTITY = { shortName: 'STM', city: 'Montréal' } as const;
 
 describe('resolveRouteSeo', () => {
 	it('returns a distinct title per surface (no more single global title)', () => {
-		const titles = ['/', '/map', '/lines', '/stops', '/network', '/search'].map(
-			(p) => resolveRouteSeo(p, 'en').title,
-		);
+		const titles = [
+			'/',
+			'/map',
+			'/lines',
+			'/stops',
+			'/network',
+			'/search',
+			'/metrics',
+			'/status',
+		].map((p) => resolveRouteSeo(p, 'en').title);
 		expect(new Set(titles).size).toBe(titles.length);
 	});
 
 	it('keeps surface titles distinct on the keyworded identity path too', () => {
-		const titles = ['/', '/map', '/lines', '/stops', '/network', '/search'].map(
-			(p) => resolveRouteSeo(p, 'en', STM_IDENTITY).title,
-		);
+		const titles = [
+			'/',
+			'/map',
+			'/lines',
+			'/stops',
+			'/network',
+			'/search',
+			'/metrics',
+			'/status',
+		].map((p) => resolveRouteSeo(p, 'en', STM_IDENTITY).title);
 		expect(new Set(titles).size).toBe(titles.length);
 	});
 

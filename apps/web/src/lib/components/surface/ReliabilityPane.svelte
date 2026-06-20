@@ -111,7 +111,11 @@
 				<div class="reliability-card">
 					<SectionLabel text={period.grain} variant="metric" />
 					<div class="reliability-metrics">
-						<MetricDisplay value={fmtPct(period.otpPct)} label={t.otp} size="sm" />
+						<!-- A null OTP is genuinely unmeasured (e.g. the day grain emits only
+						     p50/p90) — render nothing rather than a bare "·" placeholder. -->
+						{#if period.otpPct != null}
+							<MetricDisplay value={fmtPct(period.otpPct)} label={t.otp} size="sm" />
+						{/if}
 						<MetricDisplay
 							value={fmtMin(period.delayMin)}
 							label={period.delayKind === 'median'

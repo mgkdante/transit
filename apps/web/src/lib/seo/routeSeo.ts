@@ -136,6 +136,17 @@ const SURFACES: Record<string, BilingualSeo> = {
 			fr: 'Comment chaque chiffre de fiabilité du réseau est mesuré: définition, calcul exact, SQL et limites honnêtes. Un proxy, pas une ponctualité certifiée ici.',
 		},
 	},
+	'/status': {
+		title: { en: 'Data health', fr: 'Santé des données' },
+		description: (id) => ({
+			en: `Data health for the ${id.shortName} feeds in ${id.city}: how fresh each source is, where it came from, known gaps, retention and feed conformance, from the /v1 contract.`,
+			fr: `Santé des données des flux ${id.shortName} de ${id.city}: fraîcheur de chaque source, provenance, lacunes connues, conservation et conformité, depuis le contrat ouvert /v1.`,
+		}),
+		neutralDescription: {
+			en: 'Data health for the network feeds: how fresh each source is, where it came from, known gaps, retention and feed conformance, from the open /v1 contract.',
+			fr: 'Santé des données du réseau: fraîcheur de chaque source, provenance, lacunes connues, conservation et conformité, depuis le contrat ouvert /v1.',
+		},
+	},
 };
 
 const LINE_DETAIL: BilingualSeo = {

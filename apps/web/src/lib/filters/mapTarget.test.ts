@@ -21,6 +21,10 @@ describe('mapSearchFor', () => {
 		expect(parse(mapSearchFor({ status: ['late'] })).status).toEqual(['late']);
 	});
 
+	it('applies occupancy chips', () => {
+		expect(parse(mapSearchFor({ occupancy: ['standing'] })).occupancy).toEqual(['standing']);
+	});
+
 	it('is empty for an empty target', () => {
 		expect(mapSearchFor({})).toBe('');
 	});

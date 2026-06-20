@@ -1030,6 +1030,60 @@ export const METRICS_BY_KEY: Readonly<Record<MetricKey, MetricEntry>> = Object.f
 /** The metric ids in surface order, for the ToC + the parity test's coverage set. */
 export const METRIC_KEYS: readonly MetricKey[] = METRICS.map((m) => m.key);
 
+/**
+ * Map each /v1 provenance.methodology key to the explainer MetricEntry it best
+ * describes, so /metrics can render the live "Pipeline note (current run)" string
+ * inside the matching metric's card. ONE methodology key → ONE metric (no
+ * fan-out): each key annotates its single most relevant metric (`delay_unit` is
+ * about delay-in-minutes/the ghost guard → avg delay; `headway` covers
+ * excess-wait too), and keys with no citizen-metric home (`history_freeze`,
+ * `service_time_conversion`, `alert_text_en`, `network_no_data`,
+ * `alert_breakdown`) are deliberately left out — they render on the /status
+ * data-health surface's Pipeline-notes section instead, so no string is lost.
+ *
+ * Keyed by the PROVENANCE key (the published string's dictionary key); the value
+ * is the explainer MetricKey. A provenance key absent here, or absent from the
+ * published methodology dict, simply yields no note (the card is unchanged).
+ */
+export const METHODOLOGY_METRIC_KEY: Readonly<Record<string, MetricKey>> = {
+	otp_definition: 'otp',
+	delay_unit: 'avgDelay',
+	percentiles: 'p50p90',
+	headway: 'headway',
+	headway_regularity: 'regularityCov',
+	service_span: 'serviceSpan',
+	skipped_stops: 'skippedStop',
+	cancellation: 'cancellation',
+	occupancy: 'occupancy',
+};
+
+/**
+ * Invert METHODOLOGY_METRIC_KEY to a MetricKey → provenance-key lookup, so the
+ * explainer can ask "which methodology string, if any, annotates THIS metric?".
+ * One metric maps to at most one methodology key by construction.
+ */
+export const METRIC_METHODOLOGY_KEY: Readonly<Partial<Record<MetricKey, string>>> =
+	Object.fromEntries(
+		Object.entries(METHODOLOGY_METRIC_KEY).map(([provKey, metricKey]) => [metricKey, provKey]),
+	) as Partial<Record<MetricKey, string>>;
+
+/**
+ * Resolve the live methodology note for a metric from a published methodology
+ * dict (provenance.methodology). Returns the verbatim published string when the
+ * metric has a mapped key AND that key holds a non-empty string, else null (→ the
+ * card renders no pipeline note). The value is rendered as-is (a published string).
+ */
+export function methodologyNoteFor(
+	key: MetricKey,
+	methodology: Record<string, unknown> | null | undefined,
+): string | null {
+	if (!methodology) return null;
+	const provKey = METRIC_METHODOLOGY_KEY[key];
+	if (!provKey) return null;
+	const value = methodology[provKey];
+	return typeof value === 'string' && value.trim().length > 0 ? value : null;
+}
+
 /** Localized name for a metric key (FR canonical / EN mirror). */
 export function metricName(key: MetricKey, locale: Locale): string {
 	return METRICS_BY_KEY[key].name[locale];
