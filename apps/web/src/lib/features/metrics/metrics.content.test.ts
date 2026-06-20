@@ -82,11 +82,54 @@ describe('metrics.content — EN/FR parity', () => {
 			expect(c.heading).toBeTruthy();
 			expect(c.lede).toBeTruthy();
 			expect(c.provenance.body).toBeTruthy();
+			expect(c.provenance.unavailable).toBeTruthy();
 			expect(c.tocLabel).toBeTruthy();
 			expect(c.backToTop).toBeTruthy();
 			expect(c.info.link).toBeTruthy();
 			expect(c.info.trigger('X')).toContain('X');
 		}
+	});
+
+	it('carries the structural-gaps ("Lacunes") card with all three named gaps in both locales', () => {
+		for (const c of [metricsCopy.en, metricsCopy.fr]) {
+			expect(c.lacunes.title, 'lacunes title').toBeTruthy();
+			expect(c.lacunes.lede, 'lacunes lede').toBeTruthy();
+			// Exactly the three honest gaps, each a non-empty heading + body.
+			expect(c.lacunes.gaps.length, 'three structural gaps').toBe(3);
+			for (const gap of c.lacunes.gaps) {
+				expect(gap.heading.trim(), 'gap heading non-empty').toBeTruthy();
+				expect(gap.body.trim(), 'gap body non-empty').toBeTruthy();
+			}
+		}
+		// EN gap parity with FR (same count, both locales present).
+		expect(metricsCopy.en.lacunes.gaps.length).toBe(metricsCopy.fr.lacunes.gaps.length);
+	});
+
+	it('names the three structural gaps verbatim (passenger-weighting / no-realtime / OD) in EN', () => {
+		const en = metricsCopy.en.lacunes;
+		const headings = en.gaps.map((g) => g.heading);
+		// (a) reliability is not passenger-weighted
+		expect(headings).toContain('Reliability is NOT passenger-weighted');
+		// (b) no realtime for rapid-transit modes that do not broadcast it (provider-agnostic)
+		expect(headings).toContain('No realtime for rapid-transit modes that do not broadcast it');
+		// (c) stop/route-level, not journey (OD) reliability
+		expect(headings).toContain('Stop-level and route-level, NOT journey (origin to destination)');
+		// The OD gap names the journey/origin-destination concept in its body.
+		const odGap = en.gaps.find((g) => g.heading.includes('journey'));
+		expect(odGap?.body).toContain('origin to destination');
+		expect(odGap?.body.toLowerCase()).toContain('origin-destination');
+	});
+
+	it('keeps the structural-gaps copy provider-agnostic (no hardcoded provider/mode name)', () => {
+		// The no-realtime gap must frame the mode provider-agnostically ("rapid-transit
+		// modes that do not broadcast realtime"), never naming STM/métro specifically.
+		const allGapText = [...metricsCopy.en.lacunes.gaps, ...metricsCopy.fr.lacunes.gaps]
+			.flatMap((g) => [g.heading, g.body])
+			.join(' ')
+			.toLowerCase();
+		expect(allGapText).not.toContain('métro');
+		expect(allGapText).not.toContain('metro');
+		expect(allGapText).not.toContain('stm');
 	});
 
 	it('every cluster used by an entry has an overline in both locales', () => {

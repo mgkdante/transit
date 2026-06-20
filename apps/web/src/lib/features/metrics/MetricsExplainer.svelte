@@ -49,6 +49,7 @@
 	import CodeBlock from '$lib/components/CodeBlock.svelte';
 	import {
 		CollapsibleSection,
+		SectionIcon,
 		TocNav,
 		TocPill,
 		observeActiveToc,
@@ -67,10 +68,25 @@
 	const locale: Locale = getLocale();
 	const t = $derived(metricsCopy[locale]);
 
+	// Stable, locale-free anchor for the structural-gaps ("Lacunes") card. It is a
+	// non-metric section, so it carries an icon badge (not the continuous metric
+	// number) and sits after the metric clusters; the same anchor is its element id,
+	// its data-toc hook, and its ToC entry id.
+	const LACUNES_ANCHOR = 'structural-gaps';
+
 	// Honesty layer — the active provider's feed-conformance verdict. Supplementary
 	// (the badge renders nothing when conformance is null / the fetch fails), so it
 	// never blocks the static methodology article.
 	const provenance = createResource(() => getProvenance());
+
+	// The supplementary provenance fetch errored (or settled with nothing), so the
+	// live conformance badge cannot render. The static methodology + the structural-
+	// gaps card always render regardless; this only swaps the live badge for an
+	// honest, localized "verdict unavailable" stand-down line (never a blank gap, never
+	// a thrown error). Only after the resource has settled, so it never flashes mid-load.
+	const provenanceUnavailable = $derived(
+		provenance.settled && !provenance.data?.conformance && provenance.error != null,
+	);
 
 	// Group entries by cluster, preserving the canonical surface cluster order and
 	// the in-array metric order within each cluster. Empty clusters are dropped.
@@ -106,15 +122,25 @@
 	// One numbered entry per metric, in render order. badge = the 1-based index in
 	// orderedMetrics; id = the metric anchor (the SAME anchor the (i) tip deep-links
 	// to and the section card carries as data-toc + the section block's element id).
-	const tocEntries = $derived.by((): TocEntry[] =>
-		orderedMetrics.map((entry, i) => ({
+	const tocEntries = $derived.by((): TocEntry[] => [
+		...orderedMetrics.map((entry, i) => ({
 			id: entry.anchor,
 			title: entry.name[locale],
 			level: 2,
-			badge: { kind: 'number', value: i + 1 },
+			badge: { kind: 'number' as const, value: i + 1 },
 			children: [],
 		})),
-	);
+		// The structural-gaps card closes the page — a non-metric section, so it
+		// carries the same 'eye' icon mark its card shows (not the metric number run),
+		// keeping the TOC entry and the card badge in lock-step.
+		{
+			id: LACUNES_ANCHOR,
+			title: t.lacunes.title,
+			level: 2,
+			badge: { kind: 'icon' as const, name: 'eye' },
+			children: [],
+		},
+	]);
 
 	// ── Active-section tracking ────────────────────────────────────────────────
 	// One IntersectionObserver over the section cards' [data-toc] anchors owns the
@@ -169,6 +195,11 @@
 					<div class="metrics-conformance">
 						<ConformanceBadge conformance={provenance.data.conformance} {locale} />
 					</div>
+				{:else if provenanceUnavailable}
+					<!-- Supplementary provenance failed to load: degrade honestly with a
+					     localized stand-down line instead of a silent gap. The static
+					     methodology + structural-gaps card below are unaffected. -->
+					<p class="metrics-provenance-down" role="status">{t.provenance.unavailable}</p>
 				{/if}
 				<div class="metrics-legend">
 					<SectionLabel text={t.confidence.label} variant="metric" />
@@ -257,6 +288,35 @@
 					{/each}
 				</div>
 			{/each}
+
+			<!-- Structural gaps ("Lacunes"): the honest close — what these metrics
+			     CANNOT tell the rider. Same collapsible-card spine as the methodology
+			     sections, but an icon badge (not a metric number) marks it as a
+			     non-metric section; carries the deep-link target id + data-toc anchor. -->
+			<div class="section-block metrics-lacunes" id={LACUNES_ANCHOR}>
+				<CollapsibleSection
+					title={t.lacunes.title}
+					sectionKey="metrics-lacunes"
+					anchor={LACUNES_ANCHOR}
+					open={true}
+				>
+					{#snippet icon()}
+						<SectionIcon name="eye" class="h-4 w-4 shrink-0 text-primary" />
+					{/snippet}
+					<div class="metric__body">
+						<p class="metric__prose metrics-lacunes__lede">{t.lacunes.lede}</p>
+						<ul class="metrics-lacunes__list">
+							{#each t.lacunes.gaps as gap (gap.heading)}
+								<li class="metrics-lacunes__gap">
+									<h3 class="metrics-lacunes__heading">{gap.heading}</h3>
+									<p class="metric__prose">{gap.body}</p>
+								</li>
+							{/each}
+						</ul>
+						<a class="metric__top" href="#metrics-provenance">{t.backToTop}</a>
+					</div>
+				</CollapsibleSection>
+			</div>
 		</div>
 	</div>
 </Surface>
@@ -350,6 +410,16 @@
 	}
 	.metrics-conformance {
 		display: flex;
+	}
+	/* Provenance stand-down: a quiet, muted line that takes the badge's slot when
+	   the supplementary fetch fails. Not a data verdict (no dataviz status colour),
+	   not --primary; it just states the live check is momentarily out. */
+	.metrics-provenance-down {
+		margin: 0;
+		color: var(--muted-foreground);
+		font-size: var(--text-small);
+		line-height: 1.6;
+		max-width: 68ch;
 	}
 	.metrics-legend {
 		display: flex;
@@ -475,6 +545,41 @@
 		line-height: 1.6;
 		max-width: 72ch;
 	}
+	/* ── Structural-gaps card ─────────────────────────────────────────────────
+	   Same card spine as a metric section; the gap list reads as discrete named
+	   blocks (heading + plain body), separated by a hairline rule so each gap is a
+	   clear, self-contained admission. No data marks, no --primary. */
+	.metrics-lacunes__lede {
+		color: var(--muted-foreground);
+	}
+	.metrics-lacunes__list {
+		display: flex;
+		flex-direction: column;
+		gap: 1.25rem;
+		margin: 0;
+		padding: 0;
+		list-style: none;
+	}
+	.metrics-lacunes__gap {
+		display: flex;
+		flex-direction: column;
+		gap: 0.4rem;
+		padding-block-start: 1.25rem;
+		border-block-start: 1px solid var(--border-hairline, var(--border));
+	}
+	.metrics-lacunes__gap:first-child {
+		padding-block-start: 0;
+		border-block-start: none;
+	}
+	.metrics-lacunes__heading {
+		margin: 0;
+		font-family: var(--font-heading);
+		font-size: var(--text-small);
+		font-weight: 600;
+		line-height: 1.4;
+		color: var(--foreground);
+	}
+
 	.metric__top {
 		align-self: flex-start;
 		font-family: var(--font-mono);

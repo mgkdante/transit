@@ -151,4 +151,37 @@ describe('MetricsExplainer', () => {
 			expect(within(rail).getByRole('button', { name: entry.name.en })).toBeInTheDocument();
 		}
 	});
+
+	it('renders the structural-gaps ("Lacunes") card with all three named gaps', () => {
+		const { container } = render(MetricsExplainer);
+
+		// The card is an anchored section block (deep-linkable like a metric card).
+		const block = container.querySelector('#structural-gaps');
+		expect(block, 'structural-gaps section block').not.toBeNull();
+		expect(
+			block?.querySelector('[data-toc="structural-gaps"]'),
+			'structural-gaps card [data-toc]',
+		).not.toBeNull();
+
+		// Title + lede + the three honest gap headings + bodies survive into the DOM
+		// (content is force-mounted by the shared collapsible).
+		const text = block?.textContent ?? '';
+		expect(text).toContain(en.lacunes.title);
+		expect(text).toContain(en.lacunes.lede);
+		for (const gap of en.lacunes.gaps) {
+			expect(text).toContain(gap.heading);
+			expect(text).toContain(gap.body);
+		}
+		// The three gaps render as a list, each gap an <li> + an <h3> heading (a11y).
+		expect(block?.querySelectorAll('.metrics-lacunes__list li')).toHaveLength(3);
+		expect(block?.querySelectorAll('.metrics-lacunes__heading')).toHaveLength(3);
+	});
+
+	it('registers the structural-gaps section in the desktop TOC rail (after the metrics)', () => {
+		const { container } = render(MetricsExplainer);
+		const rail = container.querySelector('.context-column') as HTMLElement;
+
+		// The rail offers a jump to the Lacunes card by its title (one ToC entry).
+		expect(within(rail).getByRole('button', { name: en.lacunes.title })).toBeInTheDocument();
+	});
 });

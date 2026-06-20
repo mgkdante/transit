@@ -16,7 +16,11 @@ import MetricsExplainer from './MetricsExplainer.svelte';
 import { metricsCopy } from './metrics.copy';
 
 const { provState } = vi.hoisted(() => ({
-	provState: { data: null as { conformance: null; methodology: unknown } | null },
+	provState: {
+		data: null as { conformance: null; methodology: unknown } | null,
+		error: null as Error | null,
+		settled: true,
+	},
 }));
 
 vi.mock('$lib/v1', () => ({ getProvenance: vi.fn() }));
@@ -25,15 +29,21 @@ vi.mock('$lib/v1/resource.svelte', () => ({
 		get data() {
 			return provState.data;
 		},
-		error: null,
+		get error() {
+			return provState.error;
+		},
 		loading: false,
-		settled: true,
+		get settled() {
+			return provState.settled;
+		},
 		reload: vi.fn(),
 	}),
 }));
 
 afterEach(() => {
 	provState.data = null;
+	provState.error = null;
+	provState.settled = true;
 });
 
 const liveMethodology = {
@@ -65,5 +75,54 @@ describe('MetricsExplainer — live pipeline note', () => {
 
 		expect(screen.queryByText(metricsCopy.en.sections.pipelineNote)).toBeNull();
 		expect(document.querySelectorAll('[data-slot="pipeline-note"]').length).toBe(0);
+	});
+});
+
+describe('MetricsExplainer — provenance edge states (supplementary, never blocking)', () => {
+	const en = metricsCopy.en;
+
+	it('renders the full methodology + structural-gaps card when provenance is null (no error)', () => {
+		provState.data = null;
+		provState.error = null;
+		const { container } = render(MetricsExplainer);
+
+		// The static article is intact: head, provenance preamble, every metric card,
+		// and the structural-gaps card. No stand-down line (null is not an error).
+		expect(screen.getByRole('heading', { level: 1, name: en.heading })).toBeInTheDocument();
+		expect(screen.getByText(en.provenance.body)).toBeInTheDocument();
+		expect(container.querySelector('#structural-gaps')).not.toBeNull();
+		expect(screen.getByText(en.lacunes.gaps[0].body)).toBeInTheDocument();
+		expect(screen.queryByText(en.provenance.unavailable)).toBeNull();
+	});
+
+	it('degrades to a localized stand-down line when provenance errors, methodology + LACUNES still render', () => {
+		provState.data = null;
+		provState.error = new Error('provenance fetch failed');
+		provState.settled = true;
+		const { container } = render(MetricsExplainer);
+
+		// Honest stand-down line takes the conformance badge's slot.
+		expect(screen.getByText(en.provenance.unavailable)).toBeInTheDocument();
+
+		// The article never blanks or throws: the full methodology + structural-gaps
+		// card render exactly as on the happy path.
+		expect(screen.getByRole('heading', { level: 1, name: en.heading })).toBeInTheDocument();
+		expect(screen.getByText(en.provenance.body)).toBeInTheDocument();
+		const lacunes = container.querySelector('#structural-gaps');
+		expect(lacunes).not.toBeNull();
+		expect(lacunes?.textContent).toContain(en.lacunes.title);
+		for (const gap of en.lacunes.gaps) {
+			expect(lacunes?.textContent).toContain(gap.heading);
+		}
+	});
+
+	it('shows no stand-down line before the provenance fetch settles', () => {
+		provState.data = null;
+		provState.error = null;
+		provState.settled = false;
+		render(MetricsExplainer);
+
+		// Mid-load: no premature "unavailable" flash.
+		expect(screen.queryByText(en.provenance.unavailable)).toBeNull();
 	});
 });
