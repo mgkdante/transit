@@ -1,0 +1,76 @@
+/*
+ * fonts.css — latin + latin-ext ONLY @font-face for the two app typefaces.
+ *
+ * WHY: the bare `import '@fontsource-variable/inter'` (and jetbrains-mono) pulls
+ * the package `index.css`, which ships @font-face for EVERY subset — cyrillic,
+ * cyrillic-ext, greek, greek-ext, vietnamese, latin-ext, latin — i.e. up to 7
+ * woff2 per family the app never renders. This app is EN + FR only, so latin +
+ * latin-ext (FR accents: é è ê à ç ô …) is the complete coverage. Dropping the
+ * other five subsets removes their @font-face rules AND their woff2 from the
+ * served bundle.
+ *
+ * The family names (`Inter Variable`, `JetBrains Mono Variable`), weight axis
+ * (100 900 / 100 800), font-display: swap, and unicode-range values are copied
+ * VERBATIM from the @fontsource-variable package CSS, so the families resolve
+ * exactly as before — zero visual change, just fewer bytes.
+ *
+ * The `src` points at STABLE, content-stable copies under /fonts/ (pinned from
+ * node_modules, cached immutable by _headers, and the SAME URLs app.html
+ * preloads — so the preload actually warms the request the @font-face issues,
+ * instead of a hashed bundle path the preload would miss). Regenerate the pinned
+ * copies if @fontsource-variable/inter or /jetbrains-mono is bumped.
+ */
+
+/* ── Inter Variable (body + headings) ─────────────────────────────────────── */
+
+/* inter-latin-wght-normal — preloaded in app.html (LCP path). */
+@font-face {
+	font-family: 'Inter Variable';
+	font-style: normal;
+	font-display: swap;
+	font-weight: 100 900;
+	src: url(/fonts/inter-latin-wght-normal.woff2) format('woff2-variations');
+	unicode-range:
+		U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
+		U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+/* inter-latin-ext-wght-normal — FR accents + extended latin. */
+@font-face {
+	font-family: 'Inter Variable';
+	font-style: normal;
+	font-display: swap;
+	font-weight: 100 900;
+	src: url(/fonts/inter-latin-ext-wght-normal.woff2) format('woff2-variations');
+	unicode-range:
+		U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329,
+		U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F,
+		U+A720-A7FF;
+}
+
+/* ── JetBrains Mono Variable (mono numerals / code) ───────────────────────── */
+
+/* jetbrains-mono-latin-wght-normal — preloaded in app.html (LCP path). */
+@font-face {
+	font-family: 'JetBrains Mono Variable';
+	font-style: normal;
+	font-display: swap;
+	font-weight: 100 800;
+	src: url(/fonts/jetbrains-mono-latin-wght-normal.woff2) format('woff2-variations');
+	unicode-range:
+		U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
+		U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+/* jetbrains-mono-latin-ext-wght-normal — FR accents + extended latin. */
+@font-face {
+	font-family: 'JetBrains Mono Variable';
+	font-style: normal;
+	font-display: swap;
+	font-weight: 100 800;
+	src: url(/fonts/jetbrains-mono-latin-ext-wght-normal.woff2) format('woff2-variations');
+	unicode-range:
+		U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329,
+		U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F,
+		U+A720-A7FF;
+}

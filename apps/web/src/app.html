@@ -19,10 +19,48 @@
 				d.dataset.theme = t;
 			})();
 		</script>
-		<!-- Fonts: self-hosted via @fontsource-variable (no external requests) -->
+		<!-- No-JS / pre-hydration theme-color: two media-scoped metas so the first
+		     paint's address bar / PWA surface matches the OS theme before the runtime
+		     theme store (theme.svelte.ts) takes over. The runtime override mutates the
+		     non-media <meta name="theme-color"> emitted in %sveltekit.head% (SeoHead),
+		     which it targets via the `:not([media])` selector so these two are left
+		     intact. Colors are the resolved --background tokens (dark #141414 / light
+		     #F3F6FB). -->
+		<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#141414" />
+		<meta name="theme-color" media="(prefers-color-scheme: light)" content="#F3F6FB" />
+		<!-- Basemap origin (MapLibre glyph PBFs) — warm DNS+TLS on the /map LCP path. -->
+		<link rel="preconnect" href="https://protomaps.github.io" crossorigin />
+		<link rel="dns-prefetch" href="https://protomaps.github.io" />
+		<!-- Fonts: self-hosted via @fontsource-variable (no external requests). Preload
+		     the latin variable woff2 for Inter (body/headings) + JetBrains Mono (mono
+		     numerals) on the LCP path. These point at content-stable copies under
+		     /fonts/ (cached immutable by _headers); the @font-face that consumes them
+		     is the latin-subset CSS imported in +layout.svelte. -->
+		<link
+			rel="preload"
+			as="font"
+			type="font/woff2"
+			href="%sveltekit.assets%/fonts/inter-latin-wght-normal.woff2"
+			crossorigin
+		/>
+		<link
+			rel="preload"
+			as="font"
+			type="font/woff2"
+			href="%sveltekit.assets%/fonts/jetbrains-mono-latin-wght-normal.woff2"
+			crossorigin
+		/>
 		<link rel="icon" href="%sveltekit.assets%/favicon.svg" />
-		<link rel="apple-touch-icon" href="%sveltekit.assets%/favicon.svg" />
+		<link
+			rel="apple-touch-icon"
+			sizes="180x180"
+			href="%sveltekit.assets%/apple-touch-icon-180.png"
+		/>
 		<link rel="manifest" href="%sveltekit.assets%/manifest.webmanifest" />
+		<!-- iOS standalone (Add to Home Screen) chrome. -->
+		<meta name="apple-mobile-web-app-capable" content="yes" />
+		<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+		<meta name="apple-mobile-web-app-title" content="Transit" />
 		%sveltekit.head%
 	</head>
 	<body data-sveltekit-preload-data="hover">

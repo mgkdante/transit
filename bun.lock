@@ -52,6 +52,7 @@
         "prettier-plugin-svelte": "^4.1.0",
         "rollup-plugin-visualizer": "^7.0.1",
         "satori": "^0.26.0",
+        "sharp": "^0.34.5",
         "svelte": "^5.54.0",
         "svelte-check": "^4.4.2",
         "tailwind-merge": "^3.5.0",

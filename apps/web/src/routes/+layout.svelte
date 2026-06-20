@@ -24,9 +24,11 @@
   marketing stripped, re-themed to the transit shell. Tokens only.
 -->
 <script lang="ts">
-	// Self-hosted variable fonts (side-effect imports) BEFORE app.css.
-	import '@fontsource-variable/inter';
-	import '@fontsource-variable/jetbrains-mono';
+	// Self-hosted variable fonts — latin + latin-ext subsets ONLY (EN + FR), via
+	// a local @font-face sheet instead of the bare @fontsource-variable imports
+	// that pulled all 7 subsets (cyrillic/greek/vietnamese/…). Side-effect import
+	// BEFORE app.css. See $lib/styles/fonts.css for the why + the pinned woff2.
+	import '$lib/styles/fonts.css';
 	import '../app.css';
 
 	import { onMount } from 'svelte';

@@ -33,9 +33,10 @@ function parseHeadersFileGlobBlock(): Record<string, string> {
 describe('securityHeaders — production set', () => {
 	const headers = securityHeaders({ dev: false });
 
-	it('ships all six security headers', () => {
+	it('ships all seven security headers', () => {
 		expect(Object.keys(headers).sort()).toEqual([
 			'Content-Security-Policy',
+			'Cross-Origin-Opener-Policy',
 			'Permissions-Policy',
 			'Referrer-Policy',
 			'Strict-Transport-Security',
@@ -49,7 +50,34 @@ describe('securityHeaders — production set', () => {
 		expect(headers['X-Frame-Options']).toBe('SAMEORIGIN');
 		expect(headers['Referrer-Policy']).toBe('strict-origin-when-cross-origin');
 		expect(headers['Strict-Transport-Security']).toContain('max-age=63072000');
-		expect(headers['Permissions-Policy']).toContain('geolocation=(self)');
+		expect(headers['Cross-Origin-Opener-Policy']).toBe('same-origin');
+	});
+
+	it('keeps geolocation enabled (near-me) but denies the unused powerful features', () => {
+		const pp = headers['Permissions-Policy'];
+		// near-me needs geolocation — must stay self-allowed, never ().
+		expect(pp).toContain('geolocation=(self)');
+		// every powerful feature the app never uses is explicitly denied.
+		for (const feature of [
+			'accelerometer',
+			'bluetooth',
+			'browsing-topics',
+			'camera',
+			'gyroscope',
+			'hid',
+			'interest-cohort',
+			'magnetometer',
+			'microphone',
+			'payment',
+			'serial',
+			'usb',
+		]) {
+			expect(pp).toContain(`${feature}=()`);
+		}
+	});
+
+	it('omits Cross-Origin-Resource-Policy (it would break social OG scrapes)', () => {
+		expect(headers['Cross-Origin-Resource-Policy']).toBeUndefined();
 	});
 });
 
@@ -70,6 +98,15 @@ describe('contentSecurityPolicy — invariants', () => {
 
 	it('drops the retired data.yesid.dev origin', () => {
 		expect(csp).not.toContain('data.yesid.dev');
+	});
+
+	it('narrows img-src off the broad https: wildcard, keeping the basemap + OG hosts', () => {
+		expect(csp).toContain(
+			"img-src 'self' data: blob: https://protomaps.github.io https://transit.yesid.dev",
+		);
+		// the old broad `https:` wildcard token is gone from img-src (a bare
+		// `https:` source, not the `https://host` scheme prefix of a real origin).
+		expect(csp).not.toMatch(/img-src[^;]*\bhttps:(?!\/\/)/);
 	});
 });
 
@@ -98,5 +135,6 @@ describe('drift gate — _headers /* block matches the TS source of truth', () =
 		expect(fileHeaders['referrer-policy']).toBe(prod['Referrer-Policy']);
 		expect(fileHeaders['strict-transport-security']).toBe(prod['Strict-Transport-Security']);
 		expect(fileHeaders['permissions-policy']).toBe(prod['Permissions-Policy']);
+		expect(fileHeaders['cross-origin-opener-policy']).toBe(prod['Cross-Origin-Opener-Policy']);
 	});
 });
