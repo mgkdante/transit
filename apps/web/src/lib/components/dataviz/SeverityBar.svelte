@@ -17,10 +17,20 @@
 	import { createChartTooltip } from './useChartTooltip.svelte';
 
 	export interface SeverityBarProps extends WithElementRef<HTMLAttributes<HTMLDivElement>> {
-		/** Severity band — drives the fill colour. */
+		/** Severity band — drives the fill colour AND the announced a11y band. */
 		severity: SeverityCode;
 		/** Normalized magnitude in [0,1]. `null` -> empty track (no data). */
 		value: number | null;
+		/**
+		 * Optional fill-colour override (a `var(--dataviz-*)` token). Use ONLY for a
+		 * calm, honest encoding where the problem-severity scale would misframe the
+		 * data — e.g. the live-bus roster colours early/on-time on the calm
+		 * `--dataviz-status-*` scale rather than RED/amber. When omitted the fill
+		 * defaults to the severity scale (the worst-offenders doctrine). The `label`
+		 * carries the human band for screen readers, so colour is never the sole
+		 * channel either way.
+		 */
+		colorVar?: string;
 		/** Accessible label for the measured quantity (e.g. route name + metric). */
 		label?: string;
 		/** Bar thickness. */
@@ -37,6 +47,7 @@
 	let {
 		severity,
 		value,
+		colorVar,
 		label,
 		size = 'md',
 		interactive = false,
@@ -49,7 +60,7 @@
 		value == null || Number.isNaN(value) ? 0 : Math.min(1, Math.max(0, value)) * 100,
 	);
 	const hasData = $derived(value != null && !Number.isNaN(value));
-	const color = $derived(severityVar(severity));
+	const color = $derived(colorVar ?? severityVar(severity));
 	const heightClass = { sm: 'h-1.5', md: 'h-2.5' } as const;
 
 	// Interactive tooltip controller (only wired when `interactive`).

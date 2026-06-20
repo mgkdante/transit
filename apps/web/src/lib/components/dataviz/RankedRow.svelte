@@ -27,8 +27,16 @@
 		title: string;
 		/** Optional secondary line (e.g. route id, branch). */
 		subtitle?: string;
-		/** Severity band, drives the bar fill. */
+		/** Severity band, drives the bar fill AND the announced a11y band. */
 		severity: SeverityCode;
+		/**
+		 * Optional fill-colour override (a `var(--dataviz-*)` token), forwarded to
+		 * the SeverityBar. Use ONLY for a calm, honest encoding where the problem-
+		 * severity scale would misframe the data (e.g. the live-bus roster colouring
+		 * early/on-time on the calm `--dataviz-status-*` scale). Omit for the default
+		 * worst-offenders severity colours.
+		 */
+		colorVar?: string;
 		/** Normalized magnitude in [0,1] for the bar. `null` -> no-data bar. */
 		value: number | null;
 		/** Display value text (e.g. "12.4 min", "84%"). */
@@ -73,6 +81,7 @@
 		title,
 		subtitle,
 		severity,
+		colorVar,
 		value,
 		display,
 		delta = null,
@@ -169,6 +178,7 @@
 		<div class="mt-1.5">
 			<SeverityBar
 				{severity}
+				{colorVar}
 				{value}
 				label={`Rank ${rank}: ${title}`}
 				size="sm"

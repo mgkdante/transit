@@ -17,6 +17,8 @@ export interface MapFilterTarget {
 	readonly route?: string;
 	/** Focus a single stop id. */
 	readonly stop?: string;
+	/** Filter to a single trip id (the map has no 'trip' focus kind, so no zoom). */
+	readonly trip?: string;
 	/** Focus a single vehicle id. */
 	readonly vehicle?: string;
 	/** Pre-apply on-time status chips. */
@@ -30,6 +32,7 @@ export function mapSearchFor(target: MapFilterTarget): string {
 	const state = emptyFilterState();
 	if (target.route) state.routes.add(target.route);
 	if (target.stop) state.stops.add(target.stop);
+	if (target.trip) state.trips.add(target.trip);
 	if (target.vehicle) state.vehicles.add(target.vehicle);
 	if (target.status?.length) state.status = [...target.status];
 	if (target.occupancy?.length) state.occupancy = [...target.occupancy];

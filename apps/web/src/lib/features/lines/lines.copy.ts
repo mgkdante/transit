@@ -85,6 +85,30 @@ export interface RouteDetailCopy {
 	readonly lastTripDelay: string;
 	/** a11y trend summary builder: "… over the last N days". */
 	readonly lastNDays: (n: number) => string;
+	/**
+	 * Current-buses roster (the live vehicles running THIS route right now). Stands
+	 * down entirely when no live vehicle is on the route (metro, or a feed gap).
+	 */
+	readonly roster: {
+		/** Section heading. */
+		readonly heading: string;
+		/** a11y label for the roster list. */
+		readonly listLabel: string;
+		/** Bus row title builder (vehicle id/label). */
+		readonly busLabel: (id: string) => string;
+		/** Next-stop subtitle builder; shown only when the vehicle reports one. */
+		readonly nextStop: (stop: string) => string;
+		/** Accessible label for the per-bus trip link. */
+		readonly viewTrip: (id: string) => string;
+		/** Accessible label for the per-bus map drilldown. */
+		readonly viewBusOnMap: (id: string) => string;
+		/** Compact "map" pill text. */
+		readonly mapAction: string;
+		/** Count caption ("N buses running"). */
+		readonly count: (n: number) => string;
+		/** Honest unknown when the feed omits a bus's delay (never rendered as 0). */
+		readonly noData: string;
+	};
 	/** Detail-tab live per-stop readout (derived from the live trips on this route). */
 	readonly noLiveBus: string;
 	/** Shown when a bus is heading to this stop but the feed gave no precise ETA. */
@@ -185,6 +209,17 @@ export const detailCopy: Record<Locale, RouteDetailCopy> = {
 		firstTripDelay: 'Retard 1er trajet',
 		lastTripDelay: 'Retard dernier trajet',
 		lastNDays: (n) => `sur les ${n} derniers jours`,
+		roster: {
+			heading: 'Bus en service',
+			listLabel: 'Bus en service sur cette ligne',
+			busLabel: (id) => `Bus ${id}`,
+			nextStop: (stop) => `Prochain arrêt ${stop}`,
+			viewTrip: (id) => `Voir le trajet du bus ${id}`,
+			viewBusOnMap: (id) => `Voir le bus ${id} sur la carte`,
+			mapAction: 'Carte',
+			count: (n) => (n === 1 ? '1 bus en service' : `${n} bus en service`),
+			noData: 'Aucune donnée',
+		},
 		noLiveBus: 'Aucun bus en direct',
 		approaching: 'À l’approche',
 		viewStop: (stop) => `Voir l’arrêt ${stop}`,
@@ -243,6 +278,17 @@ export const detailCopy: Record<Locale, RouteDetailCopy> = {
 		firstTripDelay: 'First-trip delay',
 		lastTripDelay: 'Last-trip delay',
 		lastNDays: (n) => `over the last ${n} days`,
+		roster: {
+			heading: 'Buses in service',
+			listLabel: 'Buses currently running this line',
+			busLabel: (id) => `Bus ${id}`,
+			nextStop: (stop) => `Next stop ${stop}`,
+			viewTrip: (id) => `View the trip for bus ${id}`,
+			viewBusOnMap: (id) => `View bus ${id} on map`,
+			mapAction: 'Map',
+			count: (n) => (n === 1 ? '1 bus in service' : `${n} buses in service`),
+			noData: 'No data',
+		},
 		noLiveBus: 'No live bus',
 		approaching: 'Approaching',
 		viewStop: (stop) => `View stop ${stop}`,
