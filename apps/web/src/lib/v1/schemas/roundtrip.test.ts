@@ -335,6 +335,90 @@ describe('tier-2 — headway cov/bunching + service_spans + alert breakdown roun
 	});
 });
 
+describe('network — delay_histogram + non_responding_by_route round-trip (additive optional)', () => {
+	it('parses a network file carrying the 8-bucket delay histogram + per-route silent counts', () => {
+		const fixture = {
+			generated_utc: ISO,
+			vehicles_in_service: 812,
+			on_time_pct: 82,
+			status_dist: {},
+			delay_p50_min: 2,
+			delay_p90_min: 9,
+			non_responding: 14,
+			feed_freshness_s: 31,
+			coverage_pct: 96,
+			// All 8 fixed signed-minute buckets (null edge = unbounded). `count`
+			// defaults to 0, so a bucket may omit it.
+			delay_histogram: [
+				{ lo_min: null, hi_min: -5, count: 3 },
+				{ lo_min: -5, hi_min: -2, count: 12 },
+				{ lo_min: -2, hi_min: 0, count: 40 },
+				{ lo_min: 0, hi_min: 2 },
+				{ lo_min: 2, hi_min: 5, count: 90 },
+				{ lo_min: 5, hi_min: 10, count: 30 },
+				{ lo_min: 10, hi_min: 15, count: 8 },
+				{ lo_min: 15, hi_min: null, count: 2 },
+			],
+			// Per-route silent-trip counts; SUM(count)=14 equals `non_responding`.
+			non_responding_by_route: [
+				{ route_id: '51', count: 9 },
+				{ route_id: '105', count: 5 },
+			],
+		};
+		expect(() => parsePort('network', NetworkFileSchema, fixture)).not.toThrow();
+	});
+
+	it('parses a network file with BOTH new fields absent (back-compat)', () => {
+		const fixture = {
+			generated_utc: ISO,
+			vehicles_in_service: 812,
+			on_time_pct: 82,
+			status_dist: {},
+			delay_p50_min: 2,
+			delay_p90_min: 9,
+			non_responding: 0,
+			feed_freshness_s: 31,
+			coverage_pct: 96,
+		};
+		expect(() => parsePort('network', NetworkFileSchema, fixture)).not.toThrow();
+	});
+
+	it('parses a network file with both new fields explicitly null (honest empty)', () => {
+		const fixture = {
+			generated_utc: ISO,
+			vehicles_in_service: 812,
+			on_time_pct: 82,
+			status_dist: {},
+			delay_p50_min: 2,
+			delay_p90_min: 9,
+			non_responding: 0,
+			feed_freshness_s: 31,
+			coverage_pct: 96,
+			delay_histogram: null,
+			non_responding_by_route: null,
+		};
+		expect(() => parsePort('network', NetworkFileSchema, fixture)).not.toThrow();
+	});
+
+	it('rejects a non_responding_by_route entry missing its required count', () => {
+		const bad = {
+			generated_utc: ISO,
+			vehicles_in_service: 812,
+			on_time_pct: 82,
+			status_dist: {},
+			delay_p50_min: 2,
+			delay_p90_min: 9,
+			non_responding: 1,
+			feed_freshness_s: 31,
+			coverage_pct: 96,
+			non_responding_by_route: [{ route_id: '51' }],
+		};
+		expect(() => parsePort('network', NetworkFileSchema, bad)).toThrowError(
+			/^\[adapter\.network\]/,
+		);
+	});
+});
+
 describe('stops_index — optional mode + routes round-trip', () => {
 	it('parses a populated entry (mode + routes) alongside a minimal one (neither)', () => {
 		const fixture = {

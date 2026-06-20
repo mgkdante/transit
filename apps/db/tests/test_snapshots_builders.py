@@ -68,10 +68,18 @@ class FakeConn:
     def execute(self, statement, params=None):  # noqa: ANN001, ARG002
         sql = str(statement)
         self.executed.append(sql)
+        # Most-specific-wins: pick the LONGEST matching needle so a query that
+        # contains a broad table-name substring (e.g. the per-route
+        # non_responding query also contains "non_responding_current") is
+        # dispatched by its distinctive marker (e.g. "nr_by_route") rather than
+        # colliding with the broad scalar needle.
+        best_rows = None
+        best_len = -1
         for needle, rows in self._responses.items():
-            if needle in sql:
-                return FakeResult(rows)
-        return FakeResult([])
+            if needle in sql and len(needle) > best_len:
+                best_rows = rows
+                best_len = len(needle)
+        return FakeResult(best_rows if best_rows is not None else [])
 
 
 # --------------------------------------------------------------------------
@@ -555,7 +563,12 @@ def test_build_network_aggregates_kpis() -> None:
         {
             "current_vehicle_map_with_status": vehicle_rows,
             "current_trip_delay_computed": trip_rows,
-            "non_responding_current": [{"non_responding": 7}],
+            "0) AS non_responding": [{"non_responding": 7}],
+            # per-route breakdown (distinctive "nr_by_route" needle) — sums to 7
+            "nr_by_route": [
+                {"route_id": "51", "nr_count": 4},
+                {"route_id": "165", "nr_count": 3},
+            ],
             "feed_freshness_current": [{"feed_freshness_s": 12}],
         }
     )
@@ -582,6 +595,25 @@ def test_build_network_aggregates_kpis() -> None:
     # percentiles of [1, 2, 10] minutes
     assert out.delay_p50_min == 2
     assert out.delay_p90_min >= 8  # near the top of the range
+    # per-route non_responding breakdown: ordered count DESC, sums to scalar
+    assert out.non_responding_by_route is not None
+    assert [(r.route_id, r.count) for r in out.non_responding_by_route] == [
+        ("51", 4),
+        ("165", 3),
+    ]
+    assert sum(r.count for r in out.non_responding_by_route) == out.non_responding
+    # delay_histogram: all 8 buckets present, sums to len(delays), values land
+    # in the right bins. delays = [1, 2, 10] -> [0,2)=1 [2,5)=1 [5,10)... 10 -> [10,15)=1
+    assert out.delay_histogram is not None
+    assert len(out.delay_histogram) == 8
+    assert sum(b.count for b in out.delay_histogram) == 3
+    by_edges = {(b.lo_min, b.hi_min): b.count for b in out.delay_histogram}
+    assert by_edges[(0, 2)] == 1  # 1 min
+    assert by_edges[(2, 5)] == 1  # 2 min
+    assert by_edges[(10, 15)] == 1  # 10 min
+    # fixed edges + zero buckets present
+    assert by_edges[(None, -5)] == 0
+    assert by_edges[(15, None)] == 0
 
 
 def test_build_network_on_time_pct_counts_late_band_as_on_time() -> None:
@@ -593,7 +625,7 @@ def test_build_network_on_time_pct_counts_late_band_as_on_time() -> None:
                 {"status_band": "Critique / Severe", "occupancy_status": None},
             ],
             "current_trip_delay_computed": [],
-            "non_responding_current": [{"non_responding": 0}],
+            "0) AS non_responding": [{"non_responding": 0}],
             "feed_freshness_current": [{"feed_freshness_s": 0}],
         }
     )
@@ -617,7 +649,7 @@ def test_build_network_zero_vehicles_emits_honest_none_not_zero() -> None:
             "current_trip_delay_computed": [],
             # SUM(...) COALESCE-d to 0 still returns one row; MAX(...) over an
             # empty set returns a single NULL — model both faithfully.
-            "non_responding_current": [{"non_responding": 0}],
+            "0) AS non_responding": [{"non_responding": 0}],
             "feed_freshness_current": [{"feed_freshness_s": None}],
         }
     )
@@ -647,7 +679,7 @@ def test_build_network_unknown_only_fleet_emits_none_on_time_pct() -> None:
                 {"status_band": "Inconnu / Unknown", "occupancy_status": None},
             ],
             "current_trip_delay_computed": [],
-            "non_responding_current": [{"non_responding": 0}],
+            "0) AS non_responding": [{"non_responding": 0}],
             "feed_freshness_current": [{"feed_freshness_s": 4}],
         }
     )
@@ -669,13 +701,82 @@ def test_build_network_no_occupancy_telemetry_emits_none_not_all_zero() -> None:
                 {"status_band": "En retard / Late", "occupancy_status": None},
             ],
             "current_trip_delay_computed": [],
-            "non_responding_current": [{"non_responding": 0}],
+            "0) AS non_responding": [{"non_responding": 0}],
             "feed_freshness_current": [{"feed_freshness_s": 5}],
         }
     )
     out = build_network(conn, generated_utc="2026-05-31T12:00:05Z")
     assert out.vehicles_in_service == 2
     assert out.occupancy_mix is None  # no telemetry -> null, not all-zero
+
+
+def test_build_network_delay_histogram_none_when_no_delay_observations() -> None:
+    """delay_histogram is honest-None (not 8 zero buckets) iff there are zero
+    delay observations — the same guard that nulls delay_p50_min/delay_p90_min."""
+    conn = FakeConn(
+        {
+            "current_vehicle_map_with_status": [
+                {"status_band": "À l'heure / On time", "occupancy_status": None},
+            ],
+            "current_trip_delay_computed": [],  # zero delay observations
+            "0) AS non_responding": [{"non_responding": 0}],
+            "feed_freshness_current": [{"feed_freshness_s": 5}],
+        }
+    )
+    out = build_network(conn, generated_utc="2026-05-31T12:00:05Z")
+    assert out.delay_p50_min is None
+    assert out.delay_p90_min is None
+    assert out.delay_histogram is None  # no observations -> None, not zero buckets
+
+
+def test_build_network_delay_histogram_signed_bucket_edges() -> None:
+    """Signed-minute classification: lo inclusive, hi exclusive, unbounded ends.
+    Covers every one of the 8 fixed buckets and the boundary semantics."""
+    # one observation squarely inside each of the 8 buckets (seconds -> minutes):
+    #  -7 -> (-inf,-5) | -3 -> [-5,-2) | -1 -> [-2,0) | 1 -> [0,2)
+    #   3 -> [2,5)     |  7 -> [5,10)  | 12 -> [10,15) | 20 -> [15,+inf)
+    # plus boundary cases: -5 lands in [-5,-2) (lo inclusive); 0 lands in [0,2)
+    # (lo inclusive, NOT [-2,0) which is hi-exclusive); 15 lands in [15,+inf).
+    minutes = [-7, -3, -1, 1, 3, 7, 12, 20, -5, 0, 15]
+    trip_rows = [{"avg_delay_seconds": m * 60.0} for m in minutes]
+    conn = FakeConn(
+        {
+            "current_vehicle_map_with_status": [],
+            "current_trip_delay_computed": trip_rows,
+            "0) AS non_responding": [{"non_responding": 0}],
+            "feed_freshness_current": [{"feed_freshness_s": 5}],
+        }
+    )
+    out = build_network(conn, generated_utc="2026-05-31T12:00:05Z")
+    assert out.delay_histogram is not None
+    assert len(out.delay_histogram) == 8  # all 8 always emitted
+    assert sum(b.count for b in out.delay_histogram) == len(minutes)
+    by_edges = {(b.lo_min, b.hi_min): b.count for b in out.delay_histogram}
+    assert by_edges[(None, -5)] == 1  # -7
+    assert by_edges[(-5, -2)] == 2  # -3 and boundary -5 (lo inclusive)
+    assert by_edges[(-2, 0)] == 1  # -1  (0 is excluded: hi exclusive)
+    assert by_edges[(0, 2)] == 2  # 1 and boundary 0 (lo inclusive)
+    assert by_edges[(2, 5)] == 1  # 3
+    assert by_edges[(5, 10)] == 1  # 7
+    assert by_edges[(10, 15)] == 1  # 12
+    assert by_edges[(15, None)] == 2  # 20 and boundary 15 (lo inclusive)
+
+
+def test_build_network_non_responding_by_route_none_when_no_routes() -> None:
+    """non_responding_by_route is None (UI stands down) when no route is silent —
+    never an empty-but-present list. The scalar non_responding stays an honest 0."""
+    conn = FakeConn(
+        {
+            "current_vehicle_map_with_status": [],
+            "current_trip_delay_computed": [],
+            "0) AS non_responding": [{"non_responding": 0}],
+            # no "nr_by_route" fixture -> per-route query yields no rows
+            "feed_freshness_current": [{"feed_freshness_s": 5}],
+        }
+    )
+    out = build_network(conn, generated_utc="2026-05-31T12:00:05Z")
+    assert out.non_responding == 0
+    assert out.non_responding_by_route is None  # empty -> None, not []
 
 
 # --------------------------------------------------------------------------
@@ -1252,7 +1353,7 @@ def test_build_alerts_stamps_generated_utc() -> None:
 def test_build_network_stamps_generated_utc() -> None:
     conn = FakeConn(
         {
-            "non_responding_current": [{"non_responding": 0}],
+            "0) AS non_responding": [{"non_responding": 0}],
             "feed_freshness_current": [{"feed_freshness_s": 0}],
         }
     )

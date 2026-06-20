@@ -109,6 +109,23 @@ class StatusDist(BaseModel):
 class OccupancyMix(BaseModel):
     empty: float = 0.0; many_seats: float = 0.0; few_seats: float = 0.0; standing: float = 0.0; full: float = 0.0
 
+class DelayBucket(BaseModel):
+    # One fixed bin of the network delay distribution. lo_min is the inclusive
+    # lower edge in (signed, rounded) minutes; null = unbounded below. hi_min is
+    # the exclusive upper edge; null = unbounded above. A value d lands here when
+    # (lo_min is None or lo_min <= d) and (hi_min is None or d < hi_min).
+    lo_min: int | None = None
+    hi_min: int | None = None
+    count: int = 0
+
+class NonRespondingRoute(BaseModel):
+    # Scheduled trips running NOW with no live vehicle (silent service), per
+    # route. Silent trips have no vehicle id by definition, so count is a
+    # per-ROUTE silent-trip tally, not a vehicle list. SUM(count) over the list
+    # equals the scalar non_responding total.
+    route_id: str
+    count: int
+
 class NetworkFile(BaseModel):
     generated_utc: str
     vehicles_in_service: int
@@ -128,6 +145,17 @@ class NetworkFile(BaseModel):
     non_responding: int
     feed_freshness_s: int | None
     coverage_pct: int | None
+    # slice-9.5 additive live-tier fields (optional-with-default; existing
+    # NetworkFile shape unchanged). delay_histogram is the distribution of the
+    # SAME trip-level signed-minute delays that power delay_p50_min/delay_p90_min:
+    # None only when there are zero delay observations (the p50/p90 guard); when
+    # there ARE observations all 8 fixed buckets are emitted (zeros included) so
+    # the UI can draw the full shape. non_responding_by_route is the per-route
+    # breakdown of `non_responding` (SUM(count) == non_responding); None when
+    # there are no non-responding routes, so the UI stands down (never an empty
+    # list, never a fabricated 0-row).
+    delay_histogram: list[DelayBucket] | None = None
+    non_responding_by_route: list[NonRespondingRoute] | None = None
 
 class ManifestLiveFiles(BaseModel):
     vehicles: str = "live/vehicles.json"
