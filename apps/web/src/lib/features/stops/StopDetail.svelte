@@ -70,6 +70,8 @@
 		severeShareToSeverity,
 	} from '$lib/features/reliability/shiftGrains';
 	import { EdgeState } from '$lib/components/edge';
+	import { ControlsRail, DashboardGrid } from '$lib/components/layout';
+	import { Separator } from '$lib/components/ui/separator';
 	import { layout, mapHrefFor } from '$lib/nav';
 	import StopLabel from '$lib/components/brand/StopLabel.svelte';
 	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
@@ -588,9 +590,11 @@
 						<EdgeState variant="empty" lang={locale} layout={edgeLayout} />
 					{:else}
 						<!-- Combinable status chips + an optional by-route chip narrow the
-						     board. Both default off (everything shown); the data marks are
-						     unchanged — these are INTERACTION controls. -->
-						<div class="stop-departures-filters">
+						     board, collected into ONE ControlsRail (quiet infra chrome,
+						     discerned from the data canvas). Both default off (everything
+						     shown); the data marks are unchanged — these are INTERACTION
+						     controls, so --primary lives only on the active chip. -->
+						<ControlsRail label={t.next.controlsLabel}>
 							<div class="stop-chip-group" role="group" aria-label={t.next.filter.statusLabel}>
 								{#each ['on-time', 'late', 'early'] as const as s (s)}
 									<button
@@ -635,7 +639,10 @@
 							<p class="stop-departures-count" aria-live="polite">
 								{t.next.filter.showing(filteredDepartures?.length ?? 0, departures.length)}
 							</p>
-						</div>
+						</ControlsRail>
+
+						<!-- Hazard tape discerns the controls zone from the data canvas. -->
+						<Separator variant="hazard" hazardSize="sm" />
 
 						{#if (filteredDepartures?.length ?? 0) === 0}
 							<p class="stop-departures-empty" data-testid="departures-filter-empty">
@@ -746,69 +753,94 @@
 				{#snippet children(r: StopReliability | null)}
 					{#if r != null}
 						<div class="stop-reliability">
-							<!-- Grain (roll-up) picker: the reader chooses day|week|month instead
-							     of all three dumped as undifferentiated cards. Only grains with
-							     data are offered; default = the richest available grain. -->
-							<GrainPicker
-								segments={grainSegments}
-								bind:value={grain}
-								label={t.reliability.grain.label}
-							/>
-							<p class="stop-reliability-window" aria-live="polite">
-								{t.reliability.grain.window(grain)}
-							</p>
+							<!-- Grain (roll-up) picker + window caption, collected into ONE
+							     ControlsRail (quiet infra chrome): the reader chooses day|week|month
+							     instead of all three dumped as undifferentiated cards. Only grains
+							     with data are offered; default = the richest available grain. The
+							     radiogroup role stays inside the rail. -->
+							<ControlsRail label={t.reliability.controlsLabel}>
+								<GrainPicker
+									segments={grainSegments}
+									bind:value={grain}
+									label={t.reliability.grain.label}
+								/>
+								<p class="stop-reliability-window" aria-live="polite">
+									{t.reliability.grain.window(grain)}
+								</p>
+							</ControlsRail>
 
-							<!-- Day-grain percentile clarity: typical (p50) vs worst-case (p90),
+							<!-- Hazard tape discerns the controls zone from the data canvas. -->
+							<Separator variant="hazard" hazardSize="sm" />
+
+							<!-- The seven readouts tile into a fluid board: multi-column on
+							     desktop, one column on mobile. Each {#if has...} stand-down keeps a
+							     readout out of the grid entirely (the grid reflows; never a
+							     fabricated tile). The habits heatmap spans the full board width since
+							     it is a 7x24 matrix. -->
+							<DashboardGrid minTile="340px" gutter={false}>
+								<!-- Day-grain percentile clarity: typical (p50) vs worst-case (p90),
 							     surfaced prominently rather than buried with a placeholder. -->
-							{#if dayPercentiles != null}
-								<div class="stop-reliability-percentiles">
-									<SectionLabel text={t.reliability.percentiles.heading} variant="metric" />
-									<div class="stop-reliability-percentile-tiles">
-										<MetricDisplay
-											value={fmtMin(dayPercentiles.p50)}
-											label={t.reliability.percentiles.typical}
-											sublabel={t.reliability.percentiles.typicalCaption}
-											size="md"
-										/>
-										<MetricDisplay
-											value={fmtMin(dayPercentiles.p90)}
-											label={t.reliability.percentiles.worstCase}
-											sublabel={t.reliability.percentiles.worstCaseCaption}
-											size="md"
-										/>
+								{#if dayPercentiles != null}
+									<div class="stop-tile stop-reliability-percentiles">
+										<SectionLabel text={t.reliability.percentiles.heading} variant="station" />
+										<div class="stop-reliability-percentile-tiles">
+											<MetricDisplay
+												value={fmtMin(dayPercentiles.p50)}
+												label={t.reliability.percentiles.typical}
+												sublabel={t.reliability.percentiles.typicalCaption}
+												size="md"
+											/>
+											<MetricDisplay
+												value={fmtMin(dayPercentiles.p90)}
+												label={t.reliability.percentiles.worstCase}
+												sublabel={t.reliability.percentiles.worstCaseCaption}
+												size="md"
+											/>
+										</div>
 									</div>
-								</div>
-							{/if}
+								{/if}
 
-							<ReliabilityPane periods={gradedPeriods} {locale} />
+								<!-- ReliabilityPane self-guards on a non-empty `periods`, so guard its
+							     wrapping tile on the SAME condition — otherwise an empty bordered
+							     card (a fabricated tile) lingers in the grid when the selected grain
+							     carries no periods. Standing the tile down lets the auto-fit grid
+							     reflow past it, exactly like every sibling readout. -->
+								{#if gradedPeriods.length > 0}
+									<div class="stop-tile" data-slot="stop-reliability-pane">
+										<ReliabilityPane periods={gradedPeriods} {locale} />
+									</div>
+								{/if}
 
-							<!-- Time-of-day habits heatmap (per-stop 7×24 severe-delay grid).
+								<!-- Time-of-day habits heatmap (per-stop 7×24 severe-delay grid).
 							     Stands down entirely when no cell carries data. -->
-							{#if hasHabits}
-								<div class="stop-reliability-habits" data-slot="stop-habits">
-									<SectionLabel text={t.reliability.habits.heading} variant="metric" />
-									<Heatmap
-										grid={habitsMatrix}
-										dayLabels={[...t.reliability.habits.weekdaysShort]}
-										fullDayLabels={[...habitsFullDays]}
-										label={t.reliability.habits.label}
-										hourAxisLabel={t.reliability.habits.hourAxisLabel}
-										dayAxisLabel={t.reliability.habits.dayAxisLabel}
-										valueLabel={t.reliability.habits.cellValueLabel}
-										noDataText={t.reliability.habits.legend.noData}
-										hourTicks={[0, 3, 6, 9, 12, 15, 18, 21]}
-										clockTicks
-										valueFormat={habitsCellText}
-										interactive
-									/>
-									<ChartLegend items={habitsLegend} />
-									<p class="stop-reliability-habits-caption">
-										{t.reliability.habits.caption}
-									</p>
-								</div>
-							{/if}
+								{#if hasHabits}
+									<div
+										class="stop-tile stop-tile--wide stop-reliability-habits"
+										data-slot="stop-habits"
+									>
+										<SectionLabel text={t.reliability.habits.heading} variant="station" />
+										<Heatmap
+											grid={habitsMatrix}
+											dayLabels={[...t.reliability.habits.weekdaysShort]}
+											fullDayLabels={[...habitsFullDays]}
+											label={t.reliability.habits.label}
+											hourAxisLabel={t.reliability.habits.hourAxisLabel}
+											dayAxisLabel={t.reliability.habits.dayAxisLabel}
+											valueLabel={t.reliability.habits.cellValueLabel}
+											noDataText={t.reliability.habits.legend.noData}
+											hourTicks={[0, 3, 6, 9, 12, 15, 18, 21]}
+											clockTicks
+											valueFormat={habitsCellText}
+											interactive
+										/>
+										<ChartLegend items={habitsLegend} />
+										<p class="stop-reliability-habits-caption">
+											{t.reliability.habits.caption}
+										</p>
+									</div>
+								{/if}
 
-							<!-- Crowding (occupancy_mix): how full the buses OBSERVED AT this stop
+								<!-- Crowding (occupancy_mix): how full the buses OBSERVED AT this stop
 							     ran over the trailing window — a property of the buses seen here,
 							     NOT of the stop. A 100%-stacked occupancy proportion bar reusing the
 							     dataviz occupancy scale + the shared lines band vocabulary. When no
@@ -816,100 +848,79 @@
 							     stands down and — once the reliability resource has loaded — an
 							     explicit bilingual "no telemetry" note renders in its place; never a
 							     fabricated bar, never an even/all-empty split. -->
-							{#if hasCrowding && crowdingDominant != null}
-								<div class="stop-reliability-crowding" data-slot="stop-crowding">
-									<SectionLabel text={t.reliability.crowding.heading} variant="metric" />
-									<p class="stop-reliability-window">{t.reliability.crowding.window}</p>
-									<MetricDisplay
-										value={crowdingDominantPct ?? t.reliability.noDelay}
-										label={crowdingDominant.label}
-										sublabel={t.reliability.crowding.dominantLabel}
-										size="md"
-									/>
-									<StackedBar
-										scale="occupancy"
-										segments={crowdingSegments}
-										label={t.reliability.crowding.barLabel}
-										size="sm"
-										legend
-										interactive
-										class="stop-crowding-bar"
-									/>
-								</div>
-							{:else if showCrowdingNoTelemetry}
-								<!-- Reliability loaded, but no crowding telemetry was attributed to
+								{#if hasCrowding && crowdingDominant != null}
+									<div class="stop-tile stop-reliability-crowding" data-slot="stop-crowding">
+										<SectionLabel text={t.reliability.crowding.heading} variant="station" />
+										<p class="stop-reliability-window">{t.reliability.crowding.window}</p>
+										<MetricDisplay
+											value={crowdingDominantPct ?? t.reliability.noDelay}
+											label={crowdingDominant.label}
+											sublabel={t.reliability.crowding.dominantLabel}
+											size="md"
+										/>
+										<StackedBar
+											scale="occupancy"
+											segments={crowdingSegments}
+											label={t.reliability.crowding.barLabel}
+											size="sm"
+											legend
+											interactive
+											class="stop-crowding-bar"
+										/>
+									</div>
+								{:else if showCrowdingNoTelemetry}
+									<!-- Reliability loaded, but no crowding telemetry was attributed to
 								     this stop: an honest note rather than silently nothing. Keeps the
 								     "buses observed here, not a stop attribute" framing via the heading. -->
-								<div class="stop-reliability-crowding" data-slot="stop-crowding-empty">
-									<SectionLabel text={t.reliability.crowding.heading} variant="metric" />
-									<p class="stop-reliability-window">{t.reliability.crowding.noTelemetry}</p>
-								</div>
-							{/if}
+									<div class="stop-tile stop-reliability-crowding" data-slot="stop-crowding-empty">
+										<SectionLabel text={t.reliability.crowding.heading} variant="station" />
+										<p class="stop-reliability-window">{t.reliability.crowding.noTelemetry}</p>
+									</div>
+								{/if}
 
-							<!-- Weekday seasonality (day_of_week): which weekday drags this stop
+								<!-- Weekday seasonality (day_of_week): which weekday drags this stop
 							     down most, ranked worst-first by mean delay on the dataviz severity
 							     scale. A weekday with no mean delay is dropped (never a fake-0 bar);
 							     the severe share rides as a second reading only when enough
 							     observations back it. Stands down when day_of_week is empty/absent. -->
-							{#if hasWeekday}
-								<div class="stop-reliability-weekday" data-slot="stop-weekday">
-									<SectionLabel text={t.reliability.weekday.heading} variant="metric" />
-									<div
-										class="stop-reliability-route-list"
-										role="list"
-										aria-label={t.reliability.weekday.heading}
-									>
-										{#each rankedWeekdays as row (row.key)}
-											<RankedRow
-												rank={row.rank}
-												title={row.title}
-												subtitle={row.subtitle}
-												severity={row.severity}
-												value={row.value}
-												display={row.display}
-											/>
-										{/each}
-									</div>
-									<p class="stop-reliability-weekday-caveat">{t.reliability.weekday.caveat}</p>
-								</div>
-							{/if}
-
-							<!-- By time of day: SHIFT buckets (ranked by severe share) + a
-							     weekday-vs-weekend day-type comparison. Surfaced from the granular
-							     grains the pipeline emits alongside the calendar ones; these never
-							     enter the GrainPicker above. Stands down entirely when the stop
-							     carries no shift/day-type grain. A trailing-window proxy. -->
-							{#if hasTimeOfDay}
-								<div class="stop-reliability-tod" data-slot="stop-time-of-day">
-									<SectionLabel text={t.reliability.timeOfDay.heading} variant="metric" />
-									{#if shiftRows.length > 0}
+								{#if hasWeekday}
+									<div class="stop-tile stop-reliability-weekday" data-slot="stop-weekday">
+										<SectionLabel text={t.reliability.weekday.heading} variant="station" />
 										<div
 											class="stop-reliability-route-list"
 											role="list"
-											aria-label={t.reliability.timeOfDay.heading}
+											aria-label={t.reliability.weekday.heading}
 										>
-											{#each shiftRows as row (row.key)}
+											{#each rankedWeekdays as row (row.key)}
 												<RankedRow
 													rank={row.rank}
 													title={row.title}
-													subtitle={t.reliability.timeOfDay.severeShare}
+													subtitle={row.subtitle}
 													severity={row.severity}
 													value={row.value}
 													display={row.display}
 												/>
 											{/each}
 										</div>
-									{/if}
+										<p class="stop-reliability-weekday-caveat">{t.reliability.weekday.caveat}</p>
+									</div>
+								{/if}
 
-									{#if dayTypeRows.length > 0}
-										<div class="stop-reliability-tod-daytype" data-slot="stop-day-type">
-											<SectionLabel text={t.reliability.timeOfDay.dayType} variant="metric" />
+								<!-- By time of day: SHIFT buckets (ranked by severe share) + a
+							     weekday-vs-weekend day-type comparison. Surfaced from the granular
+							     grains the pipeline emits alongside the calendar ones; these never
+							     enter the GrainPicker above. Stands down entirely when the stop
+							     carries no shift/day-type grain. A trailing-window proxy. -->
+								{#if hasTimeOfDay}
+									<div class="stop-tile stop-reliability-tod" data-slot="stop-time-of-day">
+										<SectionLabel text={t.reliability.timeOfDay.heading} variant="station" />
+										{#if shiftRows.length > 0}
 											<div
 												class="stop-reliability-route-list"
 												role="list"
-												aria-label={t.reliability.timeOfDay.dayType}
+												aria-label={t.reliability.timeOfDay.heading}
 											>
-												{#each dayTypeRows as row (row.key)}
+												{#each shiftRows as row (row.key)}
 													<RankedRow
 														rank={row.rank}
 														title={row.title}
@@ -920,39 +931,61 @@
 													/>
 												{/each}
 											</div>
-										</div>
-									{/if}
+										{/if}
 
-									<p class="stop-reliability-tod-caveat">{t.reliability.timeOfDay.caveat}</p>
-								</div>
-							{/if}
+										{#if dayTypeRows.length > 0}
+											<div class="stop-reliability-tod-daytype" data-slot="stop-day-type">
+												<SectionLabel text={t.reliability.timeOfDay.dayType} variant="metric" />
+												<div
+													class="stop-reliability-route-list"
+													role="list"
+													aria-label={t.reliability.timeOfDay.dayType}
+												>
+													{#each dayTypeRows as row (row.key)}
+														<RankedRow
+															rank={row.rank}
+															title={row.title}
+															subtitle={t.reliability.timeOfDay.severeShare}
+															severity={row.severity}
+															value={row.value}
+															display={row.display}
+														/>
+													{/each}
+												</div>
+											</div>
+										{/if}
 
-							<!-- By-route ranked severity bars: worst line first, banded off its
-							     avg delay so the reader sees WHICH line drags this stop down. -->
-							{#if rankedRoutes.length > 0}
-								<div class="stop-reliability-routes">
-									<SectionLabel text={t.reliability.byRoute} variant="metric" />
-									<div class="stop-reliability-route-list" role="list">
-										{#each rankedRoutes as row (row.key)}
-											<RankedRow
-												rank={row.rank}
-												title={row.title}
-												severity={row.severity}
-												value={row.value}
-												display={row.display}
-											/>
-										{/each}
+										<p class="stop-reliability-tod-caveat">{t.reliability.timeOfDay.caveat}</p>
 									</div>
-								</div>
-							{:else if (reliability.data?.by_route?.length ?? 0) > 0}
-								<!-- Stop HAS by-route associations but every one carries a null delay,
+								{/if}
+
+								<!-- By-route ranked severity bars: worst line first, banded off its
+							     avg delay so the reader sees WHICH line drags this stop down. -->
+								{#if rankedRoutes.length > 0}
+									<div class="stop-tile stop-reliability-routes">
+										<SectionLabel text={t.reliability.byRoute} variant="station" />
+										<div class="stop-reliability-route-list" role="list">
+											{#each rankedRoutes as row (row.key)}
+												<RankedRow
+													rank={row.rank}
+													title={row.title}
+													severity={row.severity}
+													value={row.value}
+													display={row.display}
+												/>
+											{/each}
+										</div>
+									</div>
+								{:else if (reliability.data?.by_route?.length ?? 0) > 0}
+									<!-- Stop HAS by-route associations but every one carries a null delay,
 								     so the ranked list is empty. Say so rather than vanishing the
 								     section silently. -->
-								<div class="stop-reliability-routes">
-									<SectionLabel text={t.reliability.byRoute} variant="metric" />
-									<p class="stop-reliability-window">{t.reliability.noRouteBreakdown}</p>
-								</div>
-							{/if}
+									<div class="stop-tile stop-reliability-routes">
+										<SectionLabel text={t.reliability.byRoute} variant="station" />
+										<p class="stop-reliability-window">{t.reliability.noRouteBreakdown}</p>
+									</div>
+								{/if}
+							</DashboardGrid>
 						</div>
 					{/if}
 				{/snippet}
@@ -1025,6 +1058,28 @@
 		display: flex;
 		flex-direction: column;
 		gap: 1.25rem;
+	}
+
+	/* Reliability readout tile: a quiet bordered card that fills its grid cell,
+	   so each readout uses the desktop real estate instead of being capped narrow.
+	   Chrome only (--card bg, --border) — never a data mark; the dataviz marks
+	   inside bring their own scale colour. */
+	.stop-tile {
+		display: flex;
+		flex-direction: column;
+		gap: 0.6rem;
+		min-width: 0;
+		padding: 1rem;
+		border: 1px solid var(--border);
+		border-radius: var(--radius-lg);
+		background: var(--card);
+	}
+	/* The 7x24 habits matrix is a wide readout — span the whole board on desktop,
+	   collapse to a single column on mobile (auto-fit reflow handles <lg). */
+	@media (min-width: 1024px) {
+		.stop-tile--wide {
+			grid-column: 1 / -1;
+		}
 	}
 	.stop-schedule-route {
 		display: flex;
@@ -1107,7 +1162,7 @@
 	}
 	.stop-reliability-habits-caption {
 		margin: 0;
-		max-width: 52ch;
+		max-width: 100%;
 		font-family: var(--font-mono);
 		font-size: var(--text-micro);
 		line-height: 1.4;
@@ -1136,7 +1191,7 @@
 	/* Honest caveat: trailing-window observation-weighted proxy, AA both themes. */
 	.stop-reliability-weekday-caveat {
 		margin: 0;
-		max-width: 52ch;
+		max-width: 100%;
 		font-family: var(--font-mono);
 		font-size: var(--text-micro);
 		line-height: 1.4;
@@ -1156,19 +1211,14 @@
 	/* Honest caveat: trailing-window observation-weighted proxy, AA both themes. */
 	.stop-reliability-tod-caveat {
 		margin: 0;
-		max-width: 52ch;
+		max-width: 100%;
 		font-family: var(--font-mono);
 		font-size: var(--text-micro);
 		line-height: 1.4;
 		color: var(--muted-foreground);
 	}
 
-	/* Live-departures filter chips + count. */
-	.stop-departures-filters {
-		display: flex;
-		flex-direction: column;
-		gap: 0.6rem;
-	}
+	/* Live-departures filter chips + count (laid out inside the ControlsRail body). */
 	.stop-chip-group {
 		display: flex;
 		flex-wrap: wrap;
