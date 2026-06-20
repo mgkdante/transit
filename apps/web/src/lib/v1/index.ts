@@ -71,6 +71,9 @@ export type { StopPrediction } from './live/routeStopPredictions';
 // --- config (snapshot URL resolution) ----------------------------------------
 export { v1BaseUrl, v1Provider, resolveUrl, entityUrl } from './config';
 
+// --- affected-alerts selectors (narrow live alerts to one stop / route) -------
+export { alertsForRoute, alertsForStop } from './affectedAlerts';
+
 // --- reliability snapshot (shared lazy list-row loader + verdict) -------------
 export { createReliabilityLoader } from './reliabilitySnapshot.svelte';
 export type {

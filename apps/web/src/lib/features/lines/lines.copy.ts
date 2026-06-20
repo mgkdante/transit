@@ -6,7 +6,7 @@
 // ReliabilityPane). FR is the canonical product voice; EN mirrors it.
 
 import type { Locale } from '$lib/i18n';
-import type { SurfaceHeadCopy } from '$lib/components/surface';
+import type { AffectedAlertsCopy, SurfaceHeadCopy } from '$lib/components/surface';
 import type { OccupancyCode } from '$lib/v1/schemas';
 
 export interface LinesIndexCopy extends SurfaceHeadCopy {
@@ -44,6 +44,11 @@ export interface RouteDetailCopy {
 	/** Live-map drilldown action. */
 	readonly viewOnMap: string;
 	readonly viewRouteOnMap: (route: string) => string;
+	/**
+	 * Live service alerts affecting THIS route (alerts whose routes[] lists this
+	 * route id). Surfaced in the detail pane; stands down when none are active.
+	 */
+	readonly alerts: AffectedAlertsCopy;
 	/** Section headings inside the panes. */
 	readonly directions: string;
 	readonly servicePeriods: string;
@@ -136,6 +141,17 @@ export const detailCopy: Record<Locale, RouteDetailCopy> = {
 		tabs: { detail: 'Détail', schedule: 'Horaire', reliability: 'Fiabilité' },
 		viewOnMap: 'Voir sur la carte',
 		viewRouteOnMap: (route) => `Voir la ligne ${route} sur la carte`,
+		alerts: {
+			heading: 'Avis de service',
+			listLabel: 'Avis de service touchant cette ligne',
+			cause: 'Cause',
+			effect: 'Effet',
+			from: 'À partir de',
+			until: 'Jusqu’à',
+			severity: { critical: 'Critique', high: 'Élevé', watch: 'À surveiller' },
+			more: (n) => `+${n} de plus`,
+			showLess: 'Réduire',
+		},
 		directions: 'Directions',
 		servicePeriods: 'Périodes de service',
 		headways: 'Intervalles',
@@ -183,6 +199,17 @@ export const detailCopy: Record<Locale, RouteDetailCopy> = {
 		tabs: { detail: 'Detail', schedule: 'Schedule', reliability: 'Reliability' },
 		viewOnMap: 'View on map',
 		viewRouteOnMap: (route) => `View route ${route} on map`,
+		alerts: {
+			heading: 'Service alerts',
+			listLabel: 'Service alerts affecting this line',
+			cause: 'Cause',
+			effect: 'Effect',
+			from: 'From',
+			until: 'Until',
+			severity: { critical: 'Critical', high: 'High', watch: 'Watch' },
+			more: (n) => `+${n} more`,
+			showLess: 'Show less',
+		},
 		directions: 'Directions',
 		servicePeriods: 'Service periods',
 		headways: 'Headways',

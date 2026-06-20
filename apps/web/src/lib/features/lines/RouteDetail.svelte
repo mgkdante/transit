@@ -25,6 +25,7 @@
 		getRoute,
 		getRouteReliability,
 		getV1Context,
+		alertsForRoute,
 	} from '$lib/v1';
 	import type { RouteFile, RouteReliability, StopPrediction } from '$lib/v1';
 	import { createResource } from '$lib/v1/resource.svelte';
@@ -34,6 +35,7 @@
 		ResourceBoundary,
 		MapDrilldownLink,
 		LiveFreshness,
+		AffectedAlerts,
 	} from '$lib/components/surface';
 	import SectionHeading from '$lib/components/brand/SectionHeading.svelte';
 	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
@@ -94,6 +96,11 @@
 	const predictions = $derived<ReadonlyMap<string, StopPrediction>>(
 		deriveRouteStopPredictions(id, live.index),
 	);
+
+	// Service alerts affecting THIS route: live alerts whose routes[] lists this
+	// route id. Reuses the live store's already-loaded alerts — no second fetch.
+	// Empty -> the AffectedAlerts section stands down. Honest: never fabricated.
+	const routeAlerts = $derived(alertsForRoute(live.alerts?.alerts, id));
 
 	// schedule pane formats headway minutes; the reliability tab is now the
 	// dedicated 9.6 clustered surface (RouteReliabilityClusters) — it owns its own
@@ -163,6 +170,8 @@
 			<ResourceBoundary resource={route} lang={locale}>
 				{#snippet children(file)}
 					<div class="route-section">
+						<!-- LIVE: service alerts affecting this route (stands down when none). -->
+						<AffectedAlerts alerts={routeAlerts} {locale} copy={t.alerts} testId="route-alerts" />
 						<div class="route-section-head">
 							<SectionLabel text={t.directions} variant="metric" />
 							{#if live.generatedUtc != null || live.ageSeconds != null}

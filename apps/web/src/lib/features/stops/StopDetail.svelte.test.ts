@@ -13,7 +13,43 @@ const STOP_FILE = {
 	lat: 45.5,
 	lon: -73.6,
 	scheduled: [],
+	// Routes that SERVE this stop — the route-keying arm of alertsForStop matches a
+	// route-scoped alert (routes[] = ['51']) onto this stop via this list.
+	routes_served: ['51', '80'],
 } as unknown as StopFile;
+
+// Live service alerts. AL_STOP lists this stop directly (stops[]); AL_ROUTE is
+// route-scoped to a route this stop serves (51); AL_OTHER touches neither this
+// stop nor any route it serves → must NOT surface on this stop.
+const ALERTS = [
+	{
+		id: 'al-stop',
+		severity: 'high',
+		header_key: 'Ascenseur hors service',
+		header_text: 'Ascenseur hors service',
+		header_text_en: 'Elevator out of service',
+		stops: ['57191'],
+	},
+	{
+		id: 'al-route',
+		severity: 'critical',
+		header_key: 'Détour ligne 51',
+		header_text: 'Détour ligne 51',
+		header_text_en: 'Detour on line 51',
+		cause: 'CONSTRUCTION',
+		effect: 'DETOUR',
+		routes: ['51'],
+	},
+	{
+		id: 'al-other',
+		severity: 'watch',
+		header_key: 'Autre avis',
+		header_text: 'Autre avis',
+		header_text_en: 'Unrelated alert',
+		routes: ['999'],
+		stops: ['88888'],
+	},
+];
 
 // Reliability with BOTH day + week grains, a day-grain p50/p90 pair, a 7×24
 // habits matrix carrying a real cell, and a 3-route by_route breakdown (out of
@@ -89,11 +125,46 @@ const DEPARTURES_B = [
 	{ eta_utc: '2026-06-15T12:09:00Z', route: '12', delay_min: 0 },
 ] as StopDeparture[];
 
+// Mutable fixtures so individual tests can drive the static stop file + the live
+// alert payload without re-mocking. Default = the standard stop + alert set.
+let stopFileData: StopFile = STOP_FILE;
+let alertsData: { generated_utc: string; alerts: typeof ALERTS } | null = {
+	generated_utc: '2026-06-15T12:00:00Z',
+	alerts: ALERTS,
+};
+
+// A metro-style stop whose static index id differs from its public code, plus an
+// alert the live feed targets by that CODE (stops:['10254']) — the regression the
+// old id-only keying masked (fixtures used id == code, so the bug never showed).
+const STOP_FILE_BY_CODE = {
+	generated_utc: '2026-06-15T12:00:00Z',
+	id: 'STATION-1',
+	name: 'Metro station',
+	lat: 45.5,
+	lon: -73.6,
+	code: '10254',
+	scheduled: [],
+	routes_served: [],
+} as unknown as StopFile;
+
+const ALERTS_BY_CODE = [
+	{
+		id: 'al-code',
+		severity: 'critical',
+		header_key: 'Ascenseur de métro hors service',
+		header_text: 'Ascenseur de métro hors service',
+		header_text_en: 'Metro elevator out of service',
+		stops: ['10254'], // targets the CODE, never the index id
+	},
+];
+
 const liveStore = {
 	vehicles: null,
 	trips: null,
 	departures: { generated_utc: '2026-06-15T12:00:00Z' },
-	alerts: null,
+	get alerts() {
+		return alertsData;
+	},
 	network: null,
 	index: {
 		byStopId: new Map<string, StopDeparture[]>([
@@ -114,6 +185,7 @@ const liveStore = {
 const emptyLiveStore = {
 	...liveStore,
 	departures: null,
+	alerts: null,
 	index: { byStopId: new Map<string, StopDeparture[]>() },
 };
 
@@ -132,12 +204,21 @@ vi.mock('$lib/i18n', async (importOriginal) => {
 	return { ...actual, getLocale: () => currentLocale };
 });
 
-vi.mock('$lib/v1', () => ({
-	getStop: () => STOP_FILE,
-	getStopReliability: () => reliabilityData,
-	getV1Context: () => ({ manifest: { files: { live: { ttl_s: 30 } } }, labels: {}, lang: 'en' }),
-	createLiveStore: () => (useEmptyLive ? emptyLiveStore : liveStore),
-}));
+// Mock $lib/v1 with a clean factory (importing the real barrel pulls the full
+// module graph incl. $app/environment, which the jsdom env can't boot). We DO
+// use the real alertsForStop selector — it's a pure file (type-only imports), so
+// vi.importActual on it is safe and keeps the keying logic genuinely under test.
+vi.mock('$lib/v1', async () => {
+	const affected =
+		await vi.importActual<typeof import('$lib/v1/affectedAlerts')>('$lib/v1/affectedAlerts');
+	return {
+		getStop: () => stopFileData,
+		getStopReliability: () => reliabilityData,
+		getV1Context: () => ({ manifest: { files: { live: { ttl_s: 30 } } }, labels: {}, lang: 'en' }),
+		createLiveStore: () => (useEmptyLive ? emptyLiveStore : liveStore),
+		alertsForStop: affected.alertsForStop,
+	};
+});
 
 // The resource mock calls the loader and uses its return as `data` — so getStop
 // vs getStopReliability resolve to the right fixture (RouteDetail-style pattern).
@@ -154,6 +235,8 @@ vi.mock('$lib/v1/resource.svelte', () => ({
 function reset() {
 	useEmptyLive = false;
 	reliabilityData = RELIABILITY;
+	stopFileData = STOP_FILE;
+	alertsData = { generated_utc: '2026-06-15T12:00:00Z', alerts: ALERTS };
 	currentLocale = 'en';
 }
 
@@ -605,6 +688,65 @@ describe('StopDetail live departures — status filter', () => {
 
 		expect(screen.getByTestId('departures-filter-empty')).toBeInTheDocument();
 		expect(screen.getByText('Showing 0 of 3 departures')).toBeInTheDocument();
+	});
+});
+
+describe('StopDetail — service alerts affecting this stop', () => {
+	it('surfaces alerts that list this stop OR a route it serves, and hides unrelated ones', () => {
+		reset();
+		render(StopDetail, { props: { id: '57191' } });
+		fireEvent.click(screen.getByRole('tab', { name: 'Info' }));
+
+		const alerts = document.querySelector('[data-testid="stop-alerts"]') as HTMLElement;
+		expect(alerts).not.toBeNull();
+		expect(within(alerts).getByText('Service alerts')).toBeInTheDocument();
+
+		// Stop-scoped alert (stops[] lists 57191) surfaces.
+		expect(within(alerts).getByText('Elevator out of service')).toBeInTheDocument();
+		// Route-scoped alert on route 51 (which this stop serves) surfaces.
+		expect(within(alerts).getByText('Detour on line 51')).toBeInTheDocument();
+		// An alert touching neither this stop nor any route it serves must NOT appear.
+		expect(within(alerts).queryByText('Unrelated alert')).not.toBeInTheDocument();
+		// The route-scoped alert's cause/effect resolve through gtfsAlertLabels.
+		expect(within(alerts).getByText('Construction')).toBeInTheDocument();
+		expect(within(alerts).getByText('Detour')).toBeInTheDocument();
+	});
+
+	it('localizes the alerts section + headlines in FR', () => {
+		reset();
+		currentLocale = 'fr';
+		render(StopDetail, { props: { id: '57191' } });
+		fireEvent.click(screen.getByRole('tab', { name: 'Info' }));
+
+		const alerts = document.querySelector('[data-testid="stop-alerts"]') as HTMLElement;
+		expect(within(alerts).getByText('Avis de service')).toBeInTheDocument();
+		expect(within(alerts).getByText('Détour ligne 51')).toBeInTheDocument();
+		// CONSTRUCTION → Travaux (fr).
+		expect(within(alerts).getByText('Travaux')).toBeInTheDocument();
+	});
+
+	it('stands the alerts section down when no live alert affects this stop', () => {
+		reset();
+		useEmptyLive = true; // empty live store: no alerts loaded
+		render(StopDetail, { props: { id: '57191' } });
+		fireEvent.click(screen.getByRole('tab', { name: 'Info' }));
+
+		expect(document.querySelector('[data-testid="stop-alerts"]')).toBeNull();
+	});
+
+	it('surfaces an alert the live feed targets by CODE when id != code (metro regression)', () => {
+		reset();
+		// The static index id ('STATION-1') differs from the public code ('10254');
+		// the live feed targets the stop by its CODE. The alert must surface — the
+		// old id-only keying silently missed it for the ~72 stops where id != code.
+		stopFileData = STOP_FILE_BY_CODE;
+		alertsData = { generated_utc: '2026-06-15T12:00:00Z', alerts: ALERTS_BY_CODE as typeof ALERTS };
+		render(StopDetail, { props: { id: 'STATION-1' } });
+		fireEvent.click(screen.getByRole('tab', { name: 'Info' }));
+
+		const alerts = document.querySelector('[data-testid="stop-alerts"]') as HTMLElement;
+		expect(alerts).not.toBeNull();
+		expect(within(alerts).getByText('Metro elevator out of service')).toBeInTheDocument();
 	});
 });
 
