@@ -6,7 +6,7 @@
 // already live in those primitives and are NOT duplicated here.
 
 import type { Locale } from '$lib/i18n';
-import type { SurfaceHeadCopy } from '$lib/components/surface';
+import type { AffectedAlertsCopy, SurfaceHeadCopy } from '$lib/components/surface';
 
 export interface StopsIndexCopy extends SurfaceHeadCopy {
 	/** Search field placeholder. */
@@ -69,6 +69,12 @@ export interface StopDetailCopy {
 			readonly showing: (shown: number, total: number) => string;
 		};
 	};
+	/**
+	 * Live service alerts affecting THIS stop (alerts whose stops[] lists this
+	 * stop, or whose routes[] serve it). Surfaced in the info pane; stands down
+	 * when none are active.
+	 */
+	readonly alerts: AffectedAlertsCopy;
 	/** "Info" pane. */
 	readonly info: {
 		readonly position: string;
@@ -246,6 +252,17 @@ export const detailCopy: Record<Locale, StopDetailCopy> = {
 				showing: (shown, total) => `${shown} sur ${total} passages affichés`,
 			},
 		},
+		alerts: {
+			heading: 'Avis de service',
+			listLabel: 'Avis de service touchant cet arrêt',
+			cause: 'Cause',
+			effect: 'Effet',
+			from: 'À partir de',
+			until: 'Jusqu’à',
+			severity: { critical: 'Critique', high: 'Élevé', watch: 'À surveiller' },
+			more: (n) => `+${n} de plus`,
+			showLess: 'Réduire',
+		},
 		info: {
 			position: 'Position',
 			code: 'Code d’arrêt',
@@ -341,6 +358,17 @@ export const detailCopy: Record<Locale, StopDetailCopy> = {
 				noMatches: 'No departures match this filter.',
 				showing: (shown, total) => `Showing ${shown} of ${total} departures`,
 			},
+		},
+		alerts: {
+			heading: 'Service alerts',
+			listLabel: 'Service alerts affecting this stop',
+			cause: 'Cause',
+			effect: 'Effect',
+			from: 'From',
+			until: 'Until',
+			severity: { critical: 'Critical', high: 'High', watch: 'Watch' },
+			more: (n) => `+${n} more`,
+			showLess: 'Show less',
 		},
 		info: {
 			position: 'Position',

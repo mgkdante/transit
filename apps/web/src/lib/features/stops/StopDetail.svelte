@@ -27,6 +27,7 @@
 		getStopReliability,
 		createLiveStore,
 		getV1Context,
+		alertsForStop,
 		type StopFile,
 		type StopReliability,
 		type StopDeparture,
@@ -39,6 +40,7 @@
 		GrainPicker,
 		LiveFreshness,
 		MapDrilldownLink,
+		AffectedAlerts,
 		type ReliabilityPeriodVM,
 		type GrainSegment,
 	} from '$lib/components/surface';
@@ -110,6 +112,17 @@
 
 	// --- static tier: stop detail (info + schedule) --------------------------
 	const stop = createResource(() => getStop(id));
+
+	// --- live tier: service alerts affecting THIS stop ------------------------
+	// An alert affects this stop if it lists the stop id OR its public code in
+	// stops[] (the live feed targets stops by CODE, which differs from the static
+	// index id for metro stations), OR lists a route (in routes[]) that SERVES
+	// this stop (routes_served from the static file). Reuses the live store's
+	// already-loaded alerts — no second fetch. Empty -> the AffectedAlerts section
+	// stands down. Honest: never fabricated.
+	const stopAlerts = $derived(
+		alertsForStop(live.alerts?.alerts, id, stop.data?.code, stop.data?.routes_served),
+	);
 
 	// --- historic tier: stop reliability -------------------------------------
 	const reliability = createResource(() => getStopReliability(id));
@@ -685,6 +698,8 @@
 						<EdgeState variant="empty" lang={locale} layout={edgeLayout} />
 					{:else}
 						<div class="stop-info">
+							<!-- LIVE: service alerts affecting this stop (stands down when none). -->
+							<AffectedAlerts alerts={stopAlerts} {locale} copy={t.alerts} testId="stop-alerts" />
 							<div class="stop-info-metrics">
 								<MetricDisplay
 									value={`${s.lat.toFixed(5)}, ${s.lon.toFixed(5)}`}
