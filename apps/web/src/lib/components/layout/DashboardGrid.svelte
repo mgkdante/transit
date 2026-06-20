@@ -22,9 +22,20 @@
 	import type { Snippet } from 'svelte';
 	import type { HTMLAttributes } from 'svelte/elements';
 
-	interface DashboardGridProps extends Omit<HTMLAttributes<HTMLDivElement>, 'children'> {
+	// Polymorphic (`as`), so the rest-props use the generic HTMLElement attribute set
+	// rather than HTMLDivElement — a caller rendering `as="ul"` then passes <ul>-typed
+	// attributes (e.g. aria-label) without a div/ul handler-type mismatch.
+	interface DashboardGridProps extends Omit<HTMLAttributes<HTMLElement>, 'children'> {
 		/** The KPI tiles. */
 		children?: Snippet;
+		/**
+		 * The element the grid renders as. Default 'div'. Pass a list element
+		 * ('ul' / 'ol') so a caller can render a SEMANTIC ranked/entity list on the
+		 * SAME auto-fit grid track — the track recipe + minTile live ONLY here while
+		 * the caller keeps its `<li>` rows. The grid is layout-only; list semantics
+		 * come from the element + the caller's items (NOT a `role`/`label`).
+		 */
+		as?: 'div' | 'ul' | 'ol' | 'section';
 		/**
 		 * Minimum tile width before the grid drops a column. Any CSS length.
 		 * Default 240px — comfortable for a label + large metric value.
@@ -38,13 +49,20 @@
 		maxWidth?: 'content' | 'wide' | 'none' | (string & {});
 		/** Apply the symmetric page gutter (--space-page-x). Default true. */
 		gutter?: boolean;
-		/** Accessible label for the dashboard region. */
+		/**
+		 * Opt the grid IN to being a named `role="region"` landmark with this
+		 * accessible name. OMIT it (the default) so the grid stays a plain layout
+		 * container — the surrounding `<section aria-label>` already names the region,
+		 * and a list (`as="ul"`) brings its own list semantics, so a region landmark
+		 * here would only add redundant/nested-landmark noise.
+		 */
 		label?: string;
 		class?: string;
 	}
 
 	let {
 		children,
+		as = 'div',
 		minTile = '240px',
 		maxWidth = 'none',
 		gutter = true,
@@ -66,18 +84,30 @@
 					? 'none'
 					: maxWidth,
 	);
+
+	// A list element brings its own list semantics, so it must NOT also become a
+	// `role="region"` landmark (that would be redundant/nested) even if a `label`
+	// is passed — guard the landmark emission on a non-list element.
+	const isListElement = $derived(as === 'ul' || as === 'ol');
 </script>
 
-<div
+<!--
+  Render as the requested element (default <div>) so a caller can put the SAME
+  auto-fit recipe on a semantic <ul>/<ol> while owning its own <li> rows. The
+  region landmark is OPT-IN (a `label` is passed) and is suppressed on a list
+  element so a `<ul aria-label>` never doubles as a redundant region landmark.
+-->
+<svelte:element
+	this={as}
 	class={cn('dashboard-grid', gutter && 'dashboard-grid--gutter', className)}
 	data-slot="dashboard-grid"
 	style="--min-tile: {minTile}; --board-max: {maxWidthValue};"
-	role={label ? 'region' : undefined}
-	aria-label={label}
+	role={label && !isListElement ? 'region' : undefined}
+	aria-label={label && !isListElement ? label : undefined}
 	{...restProps}
 >
 	{@render children?.()}
-</div>
+</svelte:element>
 
 <style>
 	.dashboard-grid {
@@ -86,7 +116,12 @@
 		gap: var(--space-card-gap);
 		width: 100%;
 		max-width: var(--board-max);
-		margin-inline: auto;
+		margin: 0 auto;
+		/* Neutral list reset so an `as="ul"`/`"ol"` render is a clean grid container
+		   (no default bullets/indent/margin) while the caller's <li> rows ride the
+		   cells. A <div> is unaffected by these. */
+		list-style: none;
+		padding-inline-start: 0;
 	}
 
 	.dashboard-grid--gutter {

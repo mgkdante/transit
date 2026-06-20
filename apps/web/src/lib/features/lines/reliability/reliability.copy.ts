@@ -108,6 +108,10 @@ export interface ReliabilityCopy {
 	};
 	/** Grain control-spine labels + the active-window caption. */
 	readonly controls: {
+		/** ControlsRail group overline ("View" / "Vue") — same voice as /stop + /network. */
+		readonly viewLabel: string;
+		/** Accessible label for the grain radiogroup itself. */
+		readonly grainLabel: string;
 		readonly today: string;
 		readonly thisWeek: string;
 		readonly thisMonth: string;
@@ -194,6 +198,8 @@ export const reliabilityCopy: Record<Locale, ReliabilityCopy> = {
 		},
 		units: { pct: '%', min: ' min' },
 		controls: {
+			viewLabel: 'Vue',
+			grainLabel: 'Granularité',
 			today: "Aujourd'hui",
 			thisWeek: 'Cette semaine',
 			thisMonth: 'Ce mois-ci',
@@ -266,6 +272,8 @@ export const reliabilityCopy: Record<Locale, ReliabilityCopy> = {
 		},
 		units: { pct: '%', min: ' min' },
 		controls: {
+			viewLabel: 'View',
+			grainLabel: 'Granularity',
 			today: 'Today',
 			thisWeek: 'This week',
 			thisMonth: 'This month',

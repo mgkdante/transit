@@ -38,6 +38,7 @@
 		AffectedAlerts,
 	} from '$lib/components/surface';
 	import { RankedRow } from '$lib/components/dataviz';
+	import { ListDetailGrid } from '$lib/components/layout';
 	import SectionHeading from '$lib/components/brand/SectionHeading.svelte';
 	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
 	import MetricDisplay from '$lib/components/brand/MetricDisplay.svelte';
@@ -139,6 +140,13 @@
 			0,
 		),
 	);
+
+	// The Detail pane lays the live roster + affected alerts into a ListDetailGrid
+	// LIST column beside the directions-with-stops DETAIL pane. The list column is
+	// rendered ONLY when it has content (a live bus on the route OR an active alert)
+	// so it stands down entirely otherwise and the directions take the full width
+	// (never an empty bordered list column).
+	const hasListColumn = $derived(roster.length > 0 || routeAlerts.length > 0);
 
 	/**
 	 * A vehicle's delay banded to a dataviz STATUS tone (calm-by-default), matching
@@ -258,138 +266,163 @@
 		{#if key === 'detail'}
 			<ResourceBoundary resource={route} lang={locale}>
 				{#snippet children(file)}
-					<div class="route-section">
-						<!-- LIVE: service alerts affecting this route (stands down when none). -->
-						<AffectedAlerts alerts={routeAlerts} {locale} copy={t.alerts} testId="route-alerts" />
+					<!-- The Detail pane uses the full desktop width: the live roster + the
+					     affected alerts sit in a fixed-width LIST column; the static
+					     directions-with-stops fill the flexing DETAIL pane (single column on
+					     mobile). The list column stands down entirely when no live bus is on
+					     the route AND no alert is active (hasListColumn) so the directions take
+					     the whole width, never an empty bordered column. -->
+					<ListDetailGrid listWidth="360px" label={t.tabs.detail}>
+						{#snippet list()}
+							{#if hasListColumn}
+								<div class="route-aside">
+									<!-- LIVE: service alerts affecting this route (stands down when none). -->
+									<AffectedAlerts
+										alerts={routeAlerts}
+										{locale}
+										copy={t.alerts}
+										testId="route-alerts"
+									/>
 
-						<!-- LIVE: current-buses roster — the vehicles running this route right
-						     now, worst-delay first, each linking to its trip. Stands down
-						     entirely when no live bus is on the route (metro / feed gap). -->
-						{#if roster.length > 0}
-							<div class="route-roster" data-testid="route-roster">
-								<div class="route-section-head">
-									<SectionLabel text={t.roster.heading} variant="metric" />
-									<span class="route-roster-count">{t.roster.count(roster.length)}</span>
-								</div>
-								<ul class="route-roster-list" aria-label={t.roster.listLabel}>
-									{#each roster as bus, bi (bus.id)}
-										<li class="route-roster-item">
-											{#if bus.trip}
-												<a
-													class="route-roster-link"
-													href={tripHref(bus.trip)}
-													aria-label={t.roster.viewTrip(bus.id)}
-												>
-													<RankedRow
-														bare
-														rank={bi + 1}
-														title={t.roster.busLabel(bus.id)}
-														subtitle={bus.next_stop != null
-															? t.roster.nextStop(bus.next_stop)
-															: undefined}
-														severity={delaySeverity(bus.delay_min)}
-														colorVar={delayColorVar(bus.delay_min)}
-														value={delayMagnitude(bus.delay_min)}
-														display={rosterDelayLabel(bus.delay_min)}
-													/>
-													<ChevronRightIcon size={14} strokeWidth={2.4} aria-hidden="true" />
-												</a>
-											{:else}
-												<!-- No trip id to link to: still surface the bus + its map link. -->
-												<div class="route-roster-link route-roster-link--static">
-													<RankedRow
-														bare
-														rank={bi + 1}
-														title={t.roster.busLabel(bus.id)}
-														subtitle={bus.next_stop != null
-															? t.roster.nextStop(bus.next_stop)
-															: undefined}
-														severity={delaySeverity(bus.delay_min)}
-														colorVar={delayColorVar(bus.delay_min)}
-														value={delayMagnitude(bus.delay_min)}
-														display={rosterDelayLabel(bus.delay_min)}
-													/>
-												</div>
-											{/if}
-											<a
-												class="route-roster-map"
-												href={mapHrefFor({ vehicle: bus.id }, locale)}
-												aria-label={t.roster.viewBusOnMap(bus.id)}
-											>
-												<MapPinIcon size={13} strokeWidth={2.4} aria-hidden="true" />
-												<span>{t.roster.mapAction}</span>
-											</a>
-										</li>
-									{/each}
-								</ul>
-							</div>
-						{/if}
-
-						<div class="route-section-head">
-							<SectionLabel text={t.directions} variant="metric" />
-							{#if live.generatedUtc != null || live.ageSeconds != null}
-								<LiveFreshness
-									generatedUtc={live.generatedUtc}
-									ageSeconds={live.ageSeconds}
-									isStale={live.isStale}
-									{locale}
-								/>
-							{/if}
-						</div>
-						{#if (file.directions ?? []).length > 0}
-							<ul class="route-directions">
-								{#each file.directions ?? [] as dir, di (di)}
-									<li class="route-direction">
-										<span class="route-direction-head">
-											<span class="route-direction-name">
-												{dir.headsign ?? t.direction(dir.dir)}
-											</span>
-											<span class="route-direction-meta">
-												{t.stopsCount((dir.stops ?? []).length)}
-											</span>
-										</span>
-										{#if (dir.stops ?? []).length > 0}
-											<ol class="route-stops">
-												{#each dir.stops ?? [] as stop, si (stop.id + '-' + si)}
-													{@const prediction = predictions.get(stop.id) ?? null}
-													<li class="route-stop">
+									<!-- LIVE: current-buses roster — the vehicles running this route right
+									     now, worst-delay first, each linking to its trip. Stands down
+									     entirely when no live bus is on the route (metro / feed gap). -->
+									{#if roster.length > 0}
+										<div class="route-roster" data-testid="route-roster">
+											<div class="route-section-head">
+												<SectionLabel text={t.roster.heading} variant="station" />
+												<span class="route-roster-count">{t.roster.count(roster.length)}</span>
+											</div>
+											<ul class="route-roster-list" aria-label={t.roster.listLabel}>
+												{#each roster as bus, bi (bus.id)}
+													<li class="route-roster-item">
+														{#if bus.trip}
+															<a
+																class="route-roster-link"
+																href={tripHref(bus.trip)}
+																aria-label={t.roster.viewTrip(bus.id)}
+															>
+																<RankedRow
+																	bare
+																	rank={bi + 1}
+																	title={t.roster.busLabel(bus.id)}
+																	subtitle={bus.next_stop != null
+																		? t.roster.nextStop(bus.next_stop)
+																		: undefined}
+																	severity={delaySeverity(bus.delay_min)}
+																	colorVar={delayColorVar(bus.delay_min)}
+																	value={delayMagnitude(bus.delay_min)}
+																	display={rosterDelayLabel(bus.delay_min)}
+																/>
+																<ChevronRightIcon size={14} strokeWidth={2.4} aria-hidden="true" />
+															</a>
+														{:else}
+															<!-- No trip id to link to: still surface the bus + its map link. -->
+															<div class="route-roster-link route-roster-link--static">
+																<RankedRow
+																	bare
+																	rank={bi + 1}
+																	title={t.roster.busLabel(bus.id)}
+																	subtitle={bus.next_stop != null
+																		? t.roster.nextStop(bus.next_stop)
+																		: undefined}
+																	severity={delaySeverity(bus.delay_min)}
+																	colorVar={delayColorVar(bus.delay_min)}
+																	value={delayMagnitude(bus.delay_min)}
+																	display={rosterDelayLabel(bus.delay_min)}
+																/>
+															</div>
+														{/if}
 														<a
-															class="route-stop-link"
-															href={stopHref(stop.id)}
-															aria-label={t.viewStop(stop.name ?? stop.id)}
+															class="route-roster-map"
+															href={mapHrefFor({ vehicle: bus.id }, locale)}
+															aria-label={t.roster.viewBusOnMap(bus.id)}
 														>
-															<span class="route-stop-seq">{stop.seq}</span>
-															<span class="route-stop-name">{stop.name ?? stop.id}</span>
-															<span class="route-stop-live">
-																{#if prediction}
-																	{#if prediction.etaUtc}
-																		<time class="route-stop-eta" datetime={prediction.etaUtc}>
-																			{timeLabel(prediction.etaUtc)}
-																		</time>
-																	{:else}
-																		<span class="route-stop-eta">{t.approaching}</span>
-																	{/if}
-																	<span
-																		class="route-stop-delay"
-																		data-tone={delayTone(prediction.delayMin)}
-																	>
-																		{delayLabel(prediction.delayMin)}
-																	</span>
-																{:else}
-																	<span class="route-stop-nolive">{t.noLiveBus}</span>
-																{/if}
-															</span>
-															<ChevronRightIcon size={14} strokeWidth={2.4} aria-hidden="true" />
+															<MapPinIcon size={13} strokeWidth={2.4} aria-hidden="true" />
+															<span>{t.roster.mapAction}</span>
 														</a>
 													</li>
 												{/each}
-											</ol>
-										{/if}
-									</li>
-								{/each}
-							</ul>
-						{/if}
-					</div>
+											</ul>
+										</div>
+									{/if}
+								</div>
+							{/if}
+						{/snippet}
+
+						{#snippet detail()}
+							<div class="route-section route-directions-pane">
+								<div class="route-section-head">
+									<SectionLabel text={t.directions} variant="station" />
+									{#if live.generatedUtc != null || live.ageSeconds != null}
+										<LiveFreshness
+											generatedUtc={live.generatedUtc}
+											ageSeconds={live.ageSeconds}
+											isStale={live.isStale}
+											{locale}
+										/>
+									{/if}
+								</div>
+								{#if (file.directions ?? []).length > 0}
+									<ul class="route-directions">
+										{#each file.directions ?? [] as dir, di (di)}
+											<li class="route-direction">
+												<span class="route-direction-head">
+													<span class="route-direction-name">
+														{dir.headsign ?? t.direction(dir.dir)}
+													</span>
+													<span class="route-direction-meta">
+														{t.stopsCount((dir.stops ?? []).length)}
+													</span>
+												</span>
+												{#if (dir.stops ?? []).length > 0}
+													<ol class="route-stops">
+														{#each dir.stops ?? [] as stop, si (stop.id + '-' + si)}
+															{@const prediction = predictions.get(stop.id) ?? null}
+															<li class="route-stop">
+																<a
+																	class="route-stop-link"
+																	href={stopHref(stop.id)}
+																	aria-label={t.viewStop(stop.name ?? stop.id)}
+																>
+																	<span class="route-stop-seq">{stop.seq}</span>
+																	<span class="route-stop-name">{stop.name ?? stop.id}</span>
+																	<span class="route-stop-live">
+																		{#if prediction}
+																			{#if prediction.etaUtc}
+																				<time class="route-stop-eta" datetime={prediction.etaUtc}>
+																					{timeLabel(prediction.etaUtc)}
+																				</time>
+																			{:else}
+																				<span class="route-stop-eta">{t.approaching}</span>
+																			{/if}
+																			<span
+																				class="route-stop-delay"
+																				data-tone={delayTone(prediction.delayMin)}
+																			>
+																				{delayLabel(prediction.delayMin)}
+																			</span>
+																		{:else}
+																			<span class="route-stop-nolive">{t.noLiveBus}</span>
+																		{/if}
+																	</span>
+																	<ChevronRightIcon
+																		size={14}
+																		strokeWidth={2.4}
+																		aria-hidden="true"
+																	/>
+																</a>
+															</li>
+														{/each}
+													</ol>
+												{/if}
+											</li>
+										{/each}
+									</ul>
+								{/if}
+							</div>
+						{/snippet}
+					</ListDetailGrid>
 				{/snippet}
 			</ResourceBoundary>
 		{:else if key === 'schedule'}
@@ -449,6 +482,25 @@
 		display: flex;
 		flex-direction: column;
 		gap: 1.25rem;
+	}
+	/* Detail-tab LIST column: the live roster + affected alerts stacked. On desktop
+	   ListDetailGrid gives it a fixed 360px column with its own scroll + a divider
+	   rule; here we just space its stacked children. */
+	.route-aside {
+		display: flex;
+		flex-direction: column;
+		gap: 1.25rem;
+	}
+	/* Detail-tab DETAIL pane: the directions-with-stops fill the flexing column.
+	   On desktop ListDetailGrid scrolls it independently of the list; the inner pad
+	   keeps the stop rows off the divider rule so the two panes breathe. */
+	@media (min-width: 1024px) {
+		.route-aside {
+			padding-inline-end: 1.5rem;
+		}
+		.route-directions-pane {
+			padding-inline-start: 1.5rem;
+		}
 	}
 	.route-section-head {
 		display: flex;

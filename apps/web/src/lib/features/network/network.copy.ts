@@ -13,6 +13,12 @@ import type { OccupancyCode, StatusCode } from '$lib/v1/schemas';
 import type { SurfaceHeadCopy } from '$lib/components/surface';
 
 export interface NetworkCopy extends SurfaceHeadCopy {
+	/** Region heading above the LIVE half of the surface. */
+	readonly liveRegion: string;
+	/** Region heading above the HISTORIC half of the surface. */
+	readonly historicRegion: string;
+	/** Bilingual group label for the historic ControlsRail (grain + window + series). */
+	readonly viewControlsLabel: string;
 	/** Section caption above the live metric grid. */
 	readonly liveSection: string;
 	/** Section caption above the trend chart. */
@@ -160,6 +166,9 @@ export const copy: Record<Locale, NetworkCopy> = {
 		kicker: 'NETWORK · LIVE',
 		heading: 'Network health',
 		lede: 'Live network-wide on-time performance, crowding and feed freshness, measured from the /v1 contract. We never invent data: a missing signal shows as “no data”, not a fabricated zero.',
+		liveRegion: 'Live now',
+		historicRegion: 'Historic trend',
+		viewControlsLabel: 'View',
 		liveSection: 'Live now',
 		trendSection: 'Daily trend',
 		cancelSection: 'Cancellations',
@@ -233,6 +242,9 @@ export const copy: Record<Locale, NetworkCopy> = {
 		kicker: 'RÉSEAU · EN DIRECT',
 		heading: 'Santé du réseau',
 		lede: 'Ponctualité, achalandage et fraîcheur du flux à l’échelle du réseau, mesurés à partir du contrat /v1. On n’invente jamais de données : un signal absent s’affiche « aucune donnée », jamais un zéro fabriqué.',
+		liveRegion: 'En direct',
+		historicRegion: 'Tendance historique',
+		viewControlsLabel: 'Vue',
 		liveSection: 'En direct',
 		trendSection: 'Tendance quotidienne',
 		cancelSection: 'Annulations',
