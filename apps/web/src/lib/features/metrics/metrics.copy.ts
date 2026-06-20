@@ -35,6 +35,26 @@ export interface MetricsCopy extends SurfaceHeadCopy {
 		readonly label: string;
 		/** The doctrine paragraph (proxy / no AVL / NULL-not-0). */
 		readonly body: string;
+		/**
+		 * Honest stand-down line shown in place of the live conformance badge when
+		 * the supplementary provenance document fails to load. The static
+		 * methodology below it (incl. the structural-gaps card) always renders; this
+		 * just names that the live feed-conformance verdict is momentarily absent.
+		 */
+		readonly unavailable: string;
+	};
+	/**
+	 * The structural-gaps ("Lacunes structurelles") card — an honest, named list of
+	 * what these metrics CANNOT tell the rider. Renders on the same spine as the
+	 * per-metric methodology cards (a collapsible section, registered in the ToC).
+	 */
+	readonly lacunes: {
+		/** ToC + card title. */
+		readonly title: string;
+		/** Lede paragraph framing the whole card. */
+		readonly lede: string;
+		/** The three named gaps; each a heading + plain-language body. */
+		readonly gaps: ReadonlyArray<{ readonly heading: string; readonly body: string }>;
 	};
 	/** Confidence-legend strings (chip + one line each). */
 	readonly confidence: {
@@ -88,6 +108,26 @@ export const metricsCopy: Record<Locale, MetricsCopy> = {
 		provenance: {
 			label: 'Provenance (vaut pour chaque métrique)',
 			body: 'Source = écart à l’horaire PRÉDIT du GTFS-RT + alertes. Chaque chiffre de retard / ponctualité / gravité dérive du delay_seconds prédit du flux temps réel, comment les prédictions ont suivi l’horaire. Il n’y a AUCUNE vérité GPS/AVL et rien n’est une ponctualité certifiée par l’agence. Tout est pondéré par observations (un relevé = une mise à jour de trajet), pas par trajets ni par usagers : les lignes et les heures à haute fréquence pèsent plus de relevés. Bande à l’heure = delay ∈ [-60 s, +300 s); grave = delay > 300 s (avec |delay| ≤ 3600 s, garde anti-fantôme). NULL est honnête : un dénominateur vide s’affiche « aucune donnée », jamais un 0 fabriqué. Les sentinelles internes __unrouted__ / __unknown_stop__ ne sont jamais de vraies lignes/arrêts.',
+			unavailable:
+				'Le verdict de conformité du flux n’a pas pu être chargé pour l’instant. La méthodologie ci-dessous reste exacte et complète; seule cette vérification en direct est momentanément indisponible.',
+		},
+		lacunes: {
+			title: 'Lacunes structurelles',
+			lede: 'Aussi honnêtes soient-ils, ces chiffres ont des angles morts qu’aucun calcul ne comble. Voici ce qu’ils ne peuvent PAS dire à l’usager, nommé sans détour.',
+			gaps: [
+				{
+					heading: 'La fiabilité n’est PAS pondérée par les usagers',
+					body: 'Chaque relevé compte pareil, qu’il vienne d’une ligne bondée ou d’un véhicule presque vide. Une ligne très achalandée en retard pèse autant qu’une ligne déserte en retard. Nous n’avons aucun flux de charge ou d’achalandage pour pondérer selon l’impact humain réel, donc un retard qui touche des centaines de personnes et un retard qui n’en touche presque aucune se valent dans le chiffre.',
+				},
+				{
+					heading: 'Aucun temps réel pour les modes rapides qui n’en diffusent pas',
+					body: 'Certains modes de transport rapide ne publient aucun flux GTFS temps réel. Pour eux, la fiabilité en direct (retards, encombrement, non-réponse) n’existe pas dans nos données : seul l’horaire est affiché. La fiabilité en direct sur ce site ne couvre donc que les modes de surface qui diffusent leur position (bus, etc.); les autres montrent l’horaire seul.',
+				},
+				{
+					heading: 'Par arrêt et par ligne, PAS par trajet (origine vers destination)',
+					body: 'On mesure la fiabilité à un arrêt et sur une ligne, jamais la fiabilité d’un trajet complet de l’origine à la destination. Les correspondances, le temps de bout en bout et le risque de manquer une connexion ne sont pas mesurés. Nous n’avons aucune matrice origine-destination ni donnée au niveau du trajet, donc un parcours fiable arrêt par arrêt peut quand même mal tourner une fois les correspondances enchaînées.',
+				},
+			],
 		},
 		confidence: {
 			label: 'Niveaux de confiance',
@@ -141,6 +181,26 @@ export const metricsCopy: Record<Locale, MetricsCopy> = {
 		provenance: {
 			label: 'Provenance (applies to every metric)',
 			body: 'Source = GTFS-RT PREDICTED schedule-deviation + alerts. Every delay / on-time / severe number derives from the realtime feed’s predicted delay_seconds, how predictions tracked the timetable. There is NO GPS/AVL ground truth and none of it is agency-certified OTP. Everything is observation-weighted (one reading = one trip-update), not trip- or rider-weighted: high-frequency routes and hours contribute more readings. On-time band = delay ∈ [-60s, +300s); severe = delay > 300s (with |delay| ≤ 3600s, the ghost guard). NULL is honest: an empty denominator shows “no data”, never a fabricated 0. The internal sentinels __unrouted__ / __unknown_stop__ are never real routes/stops.',
+			unavailable:
+				'The live feed-conformance verdict could not be loaded right now. The methodology below is still exact and complete; only this live check is momentarily unavailable.',
+		},
+		lacunes: {
+			title: 'Structural gaps',
+			lede: 'Honest as these numbers are, they have blind spots no amount of math closes. Here is what they CANNOT tell the rider, named plainly.',
+			gaps: [
+				{
+					heading: 'Reliability is NOT passenger-weighted',
+					body: 'Every reading counts the same, whether it comes from a packed route or a near-empty vehicle. A delayed busy route counts exactly the same as a delayed near-empty one. We have no passenger-load or ridership feed to weight by real human impact, so a delay that hits hundreds of riders and one that hits almost nobody land identically in the number.',
+				},
+				{
+					heading: 'No realtime for rapid-transit modes that do not broadcast it',
+					body: 'Some rapid-transit modes publish no GTFS-realtime feed at all. For those modes, live reliability (delays, crowding, non-responding) does not exist in our data: only the schedule is shown. So live reliability on this site is surface-mode only (bus, etc.), the modes that broadcast their position; the rest show schedule only.',
+				},
+				{
+					heading: 'Stop-level and route-level, NOT journey (origin to destination)',
+					body: 'We measure reliability per stop and per route, never the reliability of a full journey from origin to destination. Transfers, end-to-end trip time, and the risk of missing a connection are not measured. We have no origin-destination matrix and no journey-level data, so a trip that looks reliable stop by stop can still go wrong once the connections are chained together.',
+				},
+			],
 		},
 		confidence: {
 			label: 'Confidence levels',
