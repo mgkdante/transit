@@ -143,6 +143,8 @@ def _seed_provider(connection, manifest: ProviderManifest) -> None:
                 max_longitude,
                 attribution_text,
                 website_url,
+                short_name,
+                city,
                 is_active
             )
             VALUES (
@@ -158,6 +160,8 @@ def _seed_provider(connection, manifest: ProviderManifest) -> None:
                 :max_longitude,
                 :attribution_text,
                 :website_url,
+                :short_name,
+                :city,
                 :is_active
             )
             ON CONFLICT (provider_id) DO UPDATE SET
@@ -172,6 +176,8 @@ def _seed_provider(connection, manifest: ProviderManifest) -> None:
                 max_longitude = EXCLUDED.max_longitude,
                 attribution_text = EXCLUDED.attribution_text,
                 website_url = EXCLUDED.website_url,
+                short_name = EXCLUDED.short_name,
+                city = EXCLUDED.city,
                 is_active = EXCLUDED.is_active,
                 updated_at_utc = now()
             """

@@ -76,13 +76,14 @@
 	const locale = $derived<Locale>(data.lang ?? DEFAULT_LOCALE);
 	setLocaleContext(() => data.lang ?? DEFAULT_LOCALE);
 
-	// Per-route document head. One <SeoHead> here resolves title/description/
-	// canonical/OG/hreflang per surface (routeSeo) instead of a single global
-	// title on every page. siteOrigin + indexing come from the public site config
-	// (PUBLIC_SITE_ORIGIN / PUBLIC_INDEXING) so the dev lane is noindex.
+	// Per-route document head config. One <SeoHead> resolves title/description/
+	// canonical/OG/hreflang per surface (routeSeo, derived below once v1 is in
+	// scope) instead of a single global title on every page. siteOrigin + indexing
+	// + the provider identity fallback come from the public site config
+	// (PUBLIC_SITE_ORIGIN / PUBLIC_INDEXING / PUBLIC_PROVIDER_*) so the dev lane is
+	// noindex and SSR copy stays provider-specific before the manifest boots.
 	const siteConfig = readPublicSiteConfig();
 	const seoPath = $derived(delocalizePath($page.url.pathname));
-	const seo = $derived(resolveRouteSeo($page.url.pathname, locale));
 
 	// Full-bleed surfaces own the whole viewport: #main must NOT scroll and must
 	// NOT carry a footer. The map fills height:100%, so a trailing footer would
@@ -107,6 +108,27 @@
 	let clientV1 = $state<V1Context | null>(null);
 	const v1 = $derived<V1Context | null>(data.v1 ?? clientV1);
 	setV1Context(() => (v1 ?? undefined) as V1Context);
+
+	// Provider copy identity for the document head (resolved AFTER v1, since the
+	// keyworded SEO copy reads it). Manifest-first (live; SSR via the DATA service
+	// binding, client via boot) then env fallback (PUBLIC_PROVIDER_* — SSR-visible
+	// when the manifest is absent / not yet republished). Absent identity → neutral.
+	const providerShortName = $derived(v1?.manifest.short_name ?? siteConfig.providerShortName);
+	const providerCity = $derived(v1?.manifest.city ?? siteConfig.providerCity);
+
+	// Per-route document head. The same identity drives BOTH the per-surface
+	// title/description (routeSeo) AND the brand siteName appended to every <title>/
+	// og:site_name / WebSite JSON-LD — so an absent or non-STM provider never leaks
+	// a hardcoded agency name in the head.
+	const seo = $derived(
+		resolveRouteSeo($page.url.pathname, locale, {
+			shortName: providerShortName,
+			city: providerCity,
+		}),
+	);
+	const seoSiteName = $derived(
+		providerShortName ? `${providerShortName} Analytics` : 'Transit Analytics',
+	);
 	// Seed the chrome freshness timestamp from the booted manifest as an INITIAL
 	// fallback (seed-if-unset) so pages WITHOUT a live store still show the
 	// page-load data's age. The live store is the single AUTHORITATIVE writer —
@@ -314,6 +336,7 @@
 <SeoHead
 	title={seo.title}
 	description={seo.description}
+	siteName={seoSiteName}
 	path={seoPath}
 	{locale}
 	siteOrigin={siteConfig.siteOrigin}
@@ -324,6 +347,7 @@
 	{locale}
 	url={$page.url}
 	providerName={v1?.manifest.display_name}
+	providerShortName={v1?.manifest.short_name ?? undefined}
 	bind:search={topSearch}
 	searchResults={topSearchResults}
 	{searchScope}

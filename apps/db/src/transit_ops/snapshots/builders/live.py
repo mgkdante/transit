@@ -466,11 +466,16 @@ def build_network(conn: Connection, *, provider_id: str = "stm", generated_utc: 
 # build_manifest
 # --------------------------------------------------------------------------
 
+# Provider identity for the manifest comes from core.providers (the config
+# source of truth), same as the static builder's attribution read. short_name /
+# city are UI copy, not analytics dimensions, so they live here rather than in
+# the gold.dim_provider passthrough view.
 _MANIFEST_PROVIDER_SQL = text(
     """
-    SELECT provider_id, display_name, timezone, default_language, attribution_text,
+    SELECT provider_id, display_name, short_name, city, timezone, default_language,
+           attribution_text,
            min_latitude, max_latitude, min_longitude, max_longitude
-    FROM gold.dim_provider
+    FROM core.providers
     WHERE provider_id = :provider_id
     """
 )
@@ -512,6 +517,10 @@ def build_manifest(
     prow = next(iter(prov), None) or {}
 
     display_name = prow.get("display_name") or provider_id
+    # Copy identity (optional): None when the provider config omits them — the
+    # contract keeps them nullable and the UI falls back to display_name.
+    short_name = prow.get("short_name") or None
+    city = prow.get("city") or None
     tz = prow.get("timezone") or "America/Toronto"
     default_lang = prow.get("default_language") or "fr"
     attribution = prow.get("attribution_text") or ""
@@ -547,6 +556,8 @@ def build_manifest(
     return Manifest(
         provider=provider_id,
         display_name=display_name,
+        short_name=short_name,
+        city=city,
         tz=tz,
         bbox=bbox,
         default_lang=default_lang,

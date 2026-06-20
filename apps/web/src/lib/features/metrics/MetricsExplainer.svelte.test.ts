@@ -15,11 +15,27 @@
 // These are the affordances the (i) tip deep-links into (/metrics#<anchor>), so
 // every anchor must exist as an in-page element id and stay reachable.
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import MetricsExplainer from './MetricsExplainer.svelte';
 import { METRICS, METRIC_KEYS } from './metrics.content';
 import { metricsCopy } from './metrics.copy';
+
+// The explainer now reads the provider's feed-conformance verdict off
+// provenance.json for the honesty-layer badge. Stub the data ports so this DOM
+// gate stays env-free (the real $lib/v1 chain reads $env/dynamic/public) and
+// off-network. data:null → no conformance → the badge renders nothing, leaving
+// every assertion below about the static article untouched.
+vi.mock('$lib/v1', () => ({ getProvenance: vi.fn() }));
+vi.mock('$lib/v1/resource.svelte', () => ({
+	createResource: () => ({
+		data: null,
+		error: null,
+		loading: false,
+		settled: true,
+		reload: vi.fn(),
+	}),
+}));
 
 const en = metricsCopy.en;
 

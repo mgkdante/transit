@@ -23,6 +23,7 @@
 	import {
 		createLiveStore,
 		getNetworkTrend,
+		getProvenance,
 		getV1Context,
 		STATUS_CODES,
 		OCCUPANCY_CODES,
@@ -31,7 +32,12 @@
 		type StatusCode,
 	} from '$lib/v1';
 	import { createResource } from '$lib/v1/resource.svelte';
-	import { SurfaceHeader, LiveFreshness, ResourceBoundary } from '$lib/components/surface';
+	import {
+		SurfaceHeader,
+		LiveFreshness,
+		ConformanceBadge,
+		ResourceBoundary,
+	} from '$lib/components/surface';
 	import { Surface } from '$lib/components/layout';
 	import { Separator } from '$lib/components/ui/separator';
 	import { StackedBar, TrendLine, type StackedSegment } from '$lib/components/dataviz';
@@ -53,6 +59,12 @@
 
 	// Historic tier — the daily network trend (createResource, browser-only).
 	const trend = createResource(() => getNetworkTrend());
+
+	// Honesty layer — the provider's feed-conformance verdict (provenance.json).
+	// Supplementary, not core: if this fetch errors or `conformance` is null (a
+	// provider with no current static dataset), the badge renders nothing and the
+	// surface is unaffected — never a blocking boundary.
+	const provenance = createResource(() => getProvenance());
 
 	const edgeLayout = $derived(layout.isDesktop ? 'desktop' : 'mobile');
 
@@ -118,12 +130,15 @@
 
 <Surface width="bleed" class="network">
 	<SurfaceHeader kicker={t.kicker} heading={t.heading} lede={t.lede}>
-		<LiveFreshness
-			generatedUtc={live.generatedUtc}
-			ageSeconds={live.ageSeconds}
-			isStale={live.isStale}
-			{locale}
-		/>
+		<div class="network-feed-health">
+			<LiveFreshness
+				generatedUtc={live.generatedUtc}
+				ageSeconds={live.ageSeconds}
+				isStale={live.isStale}
+				{locale}
+			/>
+			<ConformanceBadge conformance={provenance.data?.conformance} {locale} />
+		</div>
 	</SurfaceHeader>
 
 	<Separator variant="hazard" />
@@ -216,6 +231,12 @@
 </Surface>
 
 <style>
+	.network-feed-health {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 0.5rem 1.25rem;
+	}
 	.network-block {
 		display: flex;
 		flex-direction: column;
