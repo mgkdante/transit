@@ -448,6 +448,13 @@ describe('StopDetail reliability — occupancy-only stop is not gated out as emp
 		// Dominant band (standing, 40%) surfaces — proof the section rendered, not the
 		// reliability empty state.
 		expect(within(crowding).getAllByText('Standing').length).toBeGreaterThan(0);
+
+		// Honesty regression guard: with NO graded periods, the ReliabilityPane
+		// self-guards to render nothing — so its wrapping stop-tile must ALSO stand
+		// down. Neither the bordered tile nor the pane may linger in the grid; an
+		// empty bordered card is a fabricated tile.
+		expect(document.querySelector('[data-slot="stop-reliability-pane"]')).toBeNull();
+		expect(document.querySelector('[data-slot="reliability-pane"]')).toBeNull();
 	});
 });
 

@@ -51,6 +51,8 @@ export interface StopDetailCopy {
 		readonly onTime: string;
 		/** Fallback label when a departure has no route code. */
 		readonly route: string;
+		/** Controls-rail label collecting the departure filter chips + count. */
+		readonly controlsLabel: string;
 		/** Departures status / route filter affordances. */
 		readonly filter: {
 			/** Accessible group label over the status chips. */
@@ -95,6 +97,8 @@ export interface StopDetailCopy {
 	readonly reliability: {
 		readonly byRoute: string;
 		readonly noRouteBreakdown: string;
+		/** Controls-rail label collecting the grain picker + window caption. */
+		readonly controlsLabel: string;
 		/** Grain (roll-up) picker affordances. */
 		readonly grain: {
 			/** Accessible group label over the grain segments. */
@@ -241,6 +245,7 @@ export const detailCopy: Record<Locale, StopDetailCopy> = {
 			early: (min) => `${min} min d’avance`,
 			onTime: 'à l’heure',
 			route: 'Ligne',
+			controlsLabel: 'Filtres',
 			filter: {
 				statusLabel: 'Filtrer par statut',
 				onTime: 'À l’heure',
@@ -279,6 +284,7 @@ export const detailCopy: Record<Locale, StopDetailCopy> = {
 		reliability: {
 			byRoute: 'Retard moyen par ligne',
 			noRouteBreakdown: 'Aucun détail par ligne pour cet arrêt.',
+			controlsLabel: 'Vue',
 			grain: {
 				label: 'Période de regroupement',
 				day: 'Jour',
@@ -348,6 +354,7 @@ export const detailCopy: Record<Locale, StopDetailCopy> = {
 			early: (min) => `${min} min early`,
 			onTime: 'on time',
 			route: 'Line',
+			controlsLabel: 'Filters',
 			filter: {
 				statusLabel: 'Filter by status',
 				onTime: 'On time',
@@ -386,6 +393,7 @@ export const detailCopy: Record<Locale, StopDetailCopy> = {
 		reliability: {
 			byRoute: 'Avg delay by route',
 			noRouteBreakdown: 'No per-route breakdown for this stop.',
+			controlsLabel: 'View',
 			grain: {
 				label: 'Roll-up period',
 				day: 'Day',
