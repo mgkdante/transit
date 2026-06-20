@@ -3,23 +3,31 @@
 
   Composes the surface spine + dataviz kit into the network-wide health readout:
     · live tier  — createLiveStore polls network.json; we render the headline
-      MetricDisplay grid (on-time %, vehicles in service, coverage %, p50/p90
-      delay), a status-mix StackedBar (5 StatusCodes by count) and an
-      occupancy-mix StackedBar (5 OccupancyCodes by fraction, null-guarded).
-    · historic   — createResource(getNetworkTrend) feeds a TrendLine (on-time %
-      vs p90 delay) wrapped in <ResourceBoundary>.
+      MetricDisplay grid (on-time %, vehicles in service, not-reporting count,
+      coverage %, p50/p90 delay), a worker-feed-age chip beside LiveFreshness, a
+      status-mix StackedBar (5 StatusCodes by count) and an occupancy-mix
+      StackedBar (5 OccupancyCodes by fraction, null-guarded).
+    · historic   — createResource(getNetworkTrend) feeds, over a 7/30/90-day
+      window the rider chooses: a TrendLine (on-time % vs a selectable delay
+      series — p90 or avg), a vehicles-in-service context Sparkline, a
+      cancellation-rate TrendLine (stood down when the series carries none), and
+      a per-day crowding small-multiple (one 100% StackedBar per day with data).
 
-  DOCTRINE: every data mark rides the dataviz scale (StackedBar/TrendLine own
-  that); --primary stays interactive-only. Honesty rule — a null headline shows
-  the localized "no data" string, never a fabricated 0. Before the first live
-  tick we show a skeleton EdgeState; a live-store error shows error-v1. All
-  user-facing prose comes from ./network.copy; band labels are localized there.
+  DOCTRINE: every data mark rides the dataviz scale (StackedBar/TrendLine/
+  Sparkline own that); --primary stays interactive-only (the window + delay-series
+  pickers are interactive affordances). Honesty rule — a null headline shows the
+  localized "no data" string, never a fabricated 0; null trend points are gaps
+  (never zero); a day with no occupancy telemetry is SKIPPED (never an even split).
+  Before the first live tick we show a skeleton EdgeState; a live-store error
+  shows error-v1. All user-facing prose comes from ./network.copy; band labels
+  are localized there.
 -->
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { getLocale, type Locale } from '$lib/i18n';
 	import { layout, openSurface } from '$lib/nav';
 	import { mapSearchFor } from '$lib/filters';
+	import { formatDateKey, formatRelativeSeconds } from '$lib/utils/time';
 	import {
 		createLiveStore,
 		getNetworkTrend,
@@ -30,6 +38,7 @@
 		type NetworkFile,
 		type OccupancyCode,
 		type StatusCode,
+		type TrendPoint,
 	} from '$lib/v1';
 	import { createResource } from '$lib/v1/resource.svelte';
 	import {
@@ -37,10 +46,12 @@
 		LiveFreshness,
 		ConformanceBadge,
 		ResourceBoundary,
+		GrainPicker,
+		type GrainSegment,
 	} from '$lib/components/surface';
 	import { Surface } from '$lib/components/layout';
 	import { Separator } from '$lib/components/ui/separator';
-	import { StackedBar, TrendLine, type StackedSegment } from '$lib/components/dataviz';
+	import { Sparkline, StackedBar, TrendLine, type StackedSegment } from '$lib/components/dataviz';
 	import { EdgeState } from '$lib/components/edge';
 	import MetricDisplay from '$lib/components/brand/MetricDisplay.svelte';
 	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
@@ -76,10 +87,18 @@
 	function fmtMin(v: number | null): string {
 		return v == null ? t.noData : `${v}${t.units.min}`;
 	}
-	/** Vehicles in service is a required count — render as a plain integer. */
+	/** A required count → plain integer (localized thousands separators). */
 	function fmtCount(v: number): string {
 		return v.toLocaleString(locale === 'fr' ? 'fr-CA' : 'en-CA');
 	}
+
+	// Worker-cycle feed staleness, distinct from the snapshot-publish age that
+	// LiveFreshness shows. `feed_freshness_s` is the seconds since the worker last
+	// refreshed the realtime feed; null → no signal → the honest "no data".
+	const feedAge = $derived.by<string | null>(() => {
+		const s = live.network?.feed_freshness_s ?? null;
+		return s == null ? null : formatRelativeSeconds(s, locale);
+	});
 
 	// Status-mix segments: the 5 StatusCodes by count (StackedBar drops zeros).
 	const statusSegments = $derived.by<StackedSegment[]>(() => {
@@ -105,26 +124,180 @@
 		}));
 	});
 
-	// Trend series: on-time % (green, 0–100 axis) vs p90 delay (amber, MINUTES).
-	// The two carry different units, so the delay series gets its own y-domain
-	// [0, niceCeil(maxP90)] — plotting minutes on the percentage axis would squash
-	// the delay line flat against the floor. null points are gaps (never zero).
-	function trendSeries(points: { otp_pct?: number | null; p90_min?: number | null }[]) {
-		const retard = points.map((p) => p.p90_min ?? null);
-		const maxP90 = retard.reduce<number>((m, v) => (v != null && v > m ? v : m), 0);
+	// --- Trend window (7/30/90-day) ------------------------------------------
+	// build_network_trend publishes the full series (~90d OTP/avg-delay, ~14d
+	// p90/vehicles). We slice the TAIL (most recent N days) and offer only windows
+	// that fit the data: a window longer than the series is disabled (never a
+	// dead control). Default to the richest ENABLED window that fits the loaded
+	// series (the largest WINDOW ≤ the data length), falling back to 7.
+	const WINDOWS = [7, 30, 90] as const;
+	type WindowDays = (typeof WINDOWS)[number];
+
+	const fullSeries = $derived<TrendPoint[]>(trend.data?.series ?? []);
+
+	/** The richest WINDOW that fits the loaded series (largest ≤ n), else 7. */
+	const bestFitWindow = $derived.by<WindowDays>(() => {
+		const n = fullSeries.length;
+		return [...WINDOWS].reverse().find((d) => d <= n) ?? 7;
+	});
+
+	// The picker binds a string key (GrainPicker is string-keyed); `windowDays` is
+	// the numeric projection. Seed it at the smallest (always-valid) window; the
+	// effect below raises it to the richest-fit default once the data settles
+	// (unless the rider has already picked), and clamps it back down if the series
+	// later shrinks past the chosen window.
+	let windowKey = $state('7');
+	// Set once the rider picks a window OR the auto-default has been applied, so we
+	// never stomp a deliberate choice with the best-fit default.
+	let windowSeeded = $state(false);
+	const windowDays = $derived.by<WindowDays>(() => {
+		const d = Number(windowKey);
+		return (WINDOWS as readonly number[]).includes(d) ? (d as WindowDays) : bestFitWindow;
+	});
+
+	const windowSegments = $derived.by<GrainSegment<string>[]>(() => {
+		const n = fullSeries.length;
+		const labels: Record<WindowDays, string> = {
+			7: t.window.d7,
+			30: t.window.d30,
+			90: t.window.d90,
+		};
+		// A window is offered when ANY data exists; it is DISABLED (never picked)
+		// when it would exceed the available length — except the smallest window,
+		// which is always offered so there is at least one enabled segment.
+		return WINDOWS.map((d, i) => ({
+			key: String(d),
+			label: labels[d],
+			available: n > 0 && (i === 0 || d <= n),
+		}));
+	});
+
+	// Default to the richest-fit window the first time the data settles, then clamp
+	// DOWN if a later (smaller) series no longer fits the chosen window. The 7-day
+	// window always fits, so this never loops. The best-fit DEFAULT is applied only
+	// ONCE (windowSeeded); afterwards a rider's pick (always ≤ an enabled window)
+	// sticks — the clamp branch only fires if a SHRINKING series leaves the chosen
+	// window over-long, which a deliberate pick of an enabled segment cannot be.
+	$effect(() => {
+		const n = fullSeries.length;
+		if (n === 0) return;
+		if (!windowSeeded) {
+			windowKey = String(bestFitWindow);
+			windowSeeded = true;
+		} else if (windowDays > n && windowDays !== 7) {
+			windowKey = String(bestFitWindow);
+		}
+	});
+
+	/** The most-recent `windowDays` points (clamped to the available length). */
+	const windowedSeries = $derived<TrendPoint[]>(
+		fullSeries.slice(Math.max(0, fullSeries.length - windowDays)),
+	);
+
+	// --- Delay series toggle (p90 "slowest 10%" vs avg "typical") ------------
+	// The retard line can read either the p90 or the avg-delay series; the toggle
+	// re-feeds TrendLine's retard series + its own y-domain + axis label.
+	let retardKey = $state('p90');
+
+	const retardSegments = $derived.by<GrainSegment<string>[]>(() => [
+		{ key: 'p90', label: t.trend.retardP90 },
+		{ key: 'avg', label: t.trend.retardAvg },
+	]);
+
+	const retardLabel = $derived(retardKey === 'avg' ? t.metrics.delayP50 : t.trend.retardLabel);
+
+	// Trend series: on-time % (green, 0–100 axis) vs the chosen delay series
+	// (amber, MINUTES). The two carry different units, so the delay series gets its
+	// own y-domain [0, niceCeil(max)] — plotting minutes on the percentage axis
+	// would squash the delay line flat against the floor. null points are gaps.
+	// Consumes the ALREADY-windowed series (one slice, shared with every other
+	// mark); the retard channel follows the delay-series toggle (p90 vs avg).
+	function buildTrendChart(points: readonly TrendPoint[]) {
+		const onTime = points.map((p) => p.otp_pct ?? null);
+		const retard = points.map((p) =>
+			retardKey === 'avg' ? (p.avg_delay_min ?? null) : (p.p90_min ?? null),
+		);
+		const maxRetard = retard.reduce<number>((m, v) => (v != null && v > m ? v : m), 0);
 		// Round the ceiling up to the nearest 5 min (floor of 10) so the delay
 		// trend uses the plot height without hugging the very top edge.
-		const retardCeil = Math.max(10, Math.ceil(maxP90 / 5) * 5);
+		const retardCeil = Math.max(10, Math.ceil(maxRetard / 5) * 5);
 		return {
-			onTime: points.map((p) => p.otp_pct ?? null),
+			onTime,
 			retard,
 			retardDomain: [0, retardCeil] as [number, number],
+			xLabels: points.map((p) => p.date),
 		};
 	}
+
+	// --- Vehicles-in-service context sparkline -------------------------------
+	const vehiclesSeries = $derived<Array<number | null>>(
+		windowedSeries.map((p) => p.vehicles ?? null),
+	);
+
+	// --- Cancellation-rate trend ---------------------------------------------
+	// Stand the whole block DOWN when the series carries no cancellation data
+	// (every day null) — never plot a flat zero line.
+	const cancelSeries = $derived<Array<number | null>>(
+		windowedSeries.map((p) => p.cancellation_rate ?? null),
+	);
+	const hasCancel = $derived(cancelSeries.some((v) => v != null));
+	const cancelLatest = $derived.by<number | null>(() => {
+		for (let i = cancelSeries.length - 1; i >= 0; i--) {
+			const v = cancelSeries[i];
+			if (v != null) return v;
+		}
+		return null;
+	});
+	// 0..ceil(max%) domain for the single-series cancellation TrendLine. The
+	// onTime channel carries the data; retard is empty (all-null gaps).
+	const cancelDomain = $derived.by<[number, number]>(() => {
+		const max = cancelSeries.reduce<number>((m, v) => (v != null && v > m ? v : m), 0);
+		return [0, Math.max(1, Math.ceil(max))];
+	});
+	const cancelXLabels = $derived(windowedSeries.map((p) => p.date));
+	const cancelEmpty = $derived(cancelSeries.map(() => null) as Array<number | null>);
+	/** Format a fractional/percent cancellation value as "2.6%" or "no data". */
+	function fmtCancel(v: number | null): string {
+		return v == null ? t.noData : `${v.toFixed(1)}${t.units.pct}`;
+	}
+
+	// --- Per-day crowding small-multiple -------------------------------------
+	// One 100% StackedBar(scale='occupancy') per day THAT HAS occupancy telemetry.
+	// A day whose occupancy_mix is null/absent is SKIPPED entirely (never an even
+	// split). Each kept day's segments null-guard the same way the live bar does.
+	type OccupancyDay = { date: string; dateLabel: string; segments: StackedSegment[] };
+	const occupancyDays = $derived.by<OccupancyDay[]>(() =>
+		windowedSeries
+			.filter(
+				(p): p is TrendPoint & { occupancy_mix: NonNullable<TrendPoint['occupancy_mix']> } =>
+					p.occupancy_mix != null,
+			)
+			.map((p) => ({
+				date: p.date,
+				// Localized short date (e.g. "Jun 15" / "15 juin") — the raw key is a
+				// calendar day, so formatDateKey renders it in UTC (never shifting the
+				// day). Shared by the visible label + the StackedBar a11y label.
+				dateLabel: formatDateKey(p.date, locale),
+				segments: OCCUPANCY_CODES.map((code: OccupancyCode) => ({
+					code,
+					value: p.occupancy_mix[code] ?? null,
+					label: OCCUPANCY_LABELS[locale][code],
+				})),
+			})),
+	);
+	const hasOccupancyTrend = $derived(occupancyDays.length > 0);
 
 	function openStatusOnMap(code: StatusCode | OccupancyCode): void {
 		if (!STATUS_CODES.includes(code as StatusCode)) return;
 		openSurface({ kind: 'map', search: mapSearchFor({ status: [code as StatusCode] }) });
+	}
+
+	// Wire the crowding bar to the map: the map's vehicle layer consumes an
+	// occupancy filter (matchesFilter hides non-matching bands + repaints matches),
+	// so selecting a band opens /map pre-filtered to it — a real cross-filter.
+	function openOccupancyOnMap(code: StatusCode | OccupancyCode): void {
+		if (!OCCUPANCY_CODES.includes(code as OccupancyCode)) return;
+		openSurface({ kind: 'map', search: mapSearchFor({ occupancy: [code as OccupancyCode] }) });
 	}
 </script>
 
@@ -137,6 +310,18 @@
 				isStale={live.isStale}
 				{locale}
 			/>
+			<!-- Worker-cycle feed age — a SECOND freshness signal, distinct from the
+			     snapshot-publish age in LiveFreshness. Null → honest no-data. -->
+			{#if feedAge != null}
+				<span
+					class="network-feed-age"
+					data-slot="feed-age"
+					aria-label={`${t.feedAge.a11yPrefix} ${feedAge}`}
+				>
+					<span class="network-feed-age-label">{t.feedAge.label}</span>
+					<span class="network-feed-age-value">{feedAge}</span>
+				</span>
+			{/if}
 			<ConformanceBadge conformance={provenance.data?.conformance} {locale} />
 		</div>
 	</SurfaceHeader>
@@ -153,6 +338,14 @@
 				<MetricDisplay
 					value={fmtCount(net.vehicles_in_service)}
 					label={t.metrics.vehicles}
+					size="lg"
+				/>
+				<!-- Silent vehicles this cycle — an honest denominator for coverage.
+				     `non_responding` is a contract-required int, so a plain count is
+				     correct here (it is never null → no no-data branch to guard). -->
+				<MetricDisplay
+					value={fmtCount(net.non_responding)}
+					label={t.metrics.notReporting}
 					size="lg"
 				/>
 				<MetricDisplay value={fmtPct(net.coverage_pct)} label={t.metrics.coverage} size="lg" />
@@ -186,6 +379,7 @@
 					label={t.occupancyBarLabel}
 					interactive
 					legend
+					onSelect={openOccupancyOnMap}
 				/>
 			</div>
 		{/if}
@@ -202,32 +396,120 @@
 
 	<!-- Historic daily trend -->
 	<div class="network-block">
-		<SectionLabel text={t.trendSection} variant="station" />
+		<div class="network-trend-head">
+			<SectionLabel text={t.trendSection} variant="station" />
+			<!-- Trend window (7/30/90-day) — slices the tail of the published series.
+			     A window longer than the data is disabled (never a dead control). -->
+			<GrainPicker
+				segments={windowSegments}
+				bind:value={windowKey}
+				label={t.window.label}
+				class="network-window"
+			/>
+		</div>
 		<ResourceBoundary resource={trend} lang={locale} isEmpty={(d) => (d.series?.length ?? 0) === 0}>
-			{#snippet children(data)}
-				{@const series = trendSeries(data.series ?? [])}
-				<div class="network-trend">
-					<TrendLine
-						onTime={series.onTime}
-						retard={series.retard}
-						retardDomain={series.retardDomain}
-						xLabels={(data.series ?? []).map((p) => p.date)}
-						onTimeLabel={t.trend.onTimeLabel}
-						retardLabel={t.trend.retardLabel}
-						yAxis={{ label: t.trend.onTimeLabel, unit: t.units.pct, domain: [0, 100] }}
-						retardAxis={{
-							label: t.trend.retardLabel,
-							unit: t.units.min,
-							domain: series.retardDomain,
-						}}
-						showYTicks
-						label={t.trend.summary}
+			<!-- The trend chart reads the module-level windowed series (not the
+			     boundary payload), so the gated content needs no snippet param —
+			     render it as default children. ONE window slice for every mark:
+			     buildTrendChart consumes the same `windowedSeries` that the sparkline,
+			     cancellation and crowding marks read — the tail is sliced exactly once. -->
+			{@const chart = buildTrendChart(windowedSeries)}
+			<div class="network-trend">
+				<!-- Delay-series toggle: p90 "slowest 10%" vs avg "typical". Re-feeds
+				     the retard channel + its y-domain + axis label below. -->
+				<GrainPicker
+					segments={retardSegments}
+					bind:value={retardKey}
+					label={t.trend.retardToggleLabel}
+					class="network-retard-toggle"
+				/>
+				<TrendLine
+					onTime={chart.onTime}
+					retard={chart.retard}
+					retardDomain={chart.retardDomain}
+					xLabels={chart.xLabels}
+					onTimeLabel={t.trend.onTimeLabel}
+					{retardLabel}
+					yAxis={{ label: t.trend.onTimeLabel, unit: t.units.pct, domain: [0, 100] }}
+					retardAxis={{
+						label: retardLabel,
+						unit: t.units.min,
+						domain: chart.retardDomain,
+					}}
+					showYTicks
+					label={t.trend.summary}
+					interactive
+				/>
+				<!-- Vehicles-in-service context: how much fleet reported each day, so
+				     OTP/delay reads against its denominator. Null → gap. -->
+				<div class="network-vehicles-context">
+					<Sparkline
+						values={vehiclesSeries}
+						label={t.trend.vehiclesSpark}
+						xLabels={chart.xLabels}
+						colorVar="var(--dataviz-status-unknown)"
 						interactive
+						showLast
 					/>
+					<span class="network-context-caption">{t.trend.vehiclesContext}</span>
 				</div>
-			{/snippet}
+			</div>
 		</ResourceBoundary>
 	</div>
+
+	<!-- Network-wide cancellation-rate trend — stood DOWN entirely when the series
+	     carries no cancellation data (never a flat zero line). -->
+	{#if hasCancel}
+		<Separator variant="hazard" />
+		<div class="network-block">
+			<SectionLabel text={t.cancelSection} variant="station" />
+			<div class="network-trend">
+				<MetricDisplay value={fmtCancel(cancelLatest)} label={t.cancel.metric} size="md" />
+				<!-- Single-series: only the cancellation rate is plotted. `singleSeries`
+				     suppresses the empty retard legend swatch + its y-tick gutter, so the
+				     legend renders ONE line, not a phantom second swatch. -->
+				<TrendLine
+					onTime={cancelSeries}
+					retard={cancelEmpty}
+					domain={cancelDomain}
+					xLabels={cancelXLabels}
+					onTimeLabel={t.cancel.seriesLabel}
+					yAxis={{ label: t.cancel.seriesLabel, unit: t.units.pct, domain: cancelDomain }}
+					showYTicks
+					singleSeries
+					label={t.cancel.summary}
+					interactive
+				/>
+			</div>
+		</div>
+	{/if}
+
+	<!-- Per-day crowding small-multiple — one 100% StackedBar per day WITH
+	     occupancy telemetry. Days with no telemetry are skipped (never an even
+	     split); the whole block stands down when no day carries crowding data. -->
+	{#if hasOccupancyTrend}
+		<Separator variant="hazard" />
+		<div class="network-block">
+			<SectionLabel text={t.occupancyTrendSection} variant="station" />
+			<ul
+				class="network-occupancy-days"
+				aria-label={t.occupancyTrend.summary}
+				data-slot="occupancy-trend"
+			>
+				{#each occupancyDays as day (day.date)}
+					<li class="network-occupancy-day">
+						<span class="network-occupancy-date">{day.dateLabel}</span>
+						<StackedBar
+							scale="occupancy"
+							segments={day.segments}
+							size="sm"
+							label={`${t.occupancySection} · ${day.dateLabel}`}
+						/>
+					</li>
+				{/each}
+			</ul>
+		</div>
+	{/if}
 </Surface>
 
 <style>
@@ -254,6 +536,71 @@
 		}
 	}
 	.network-trend {
+		display: flex;
+		flex-direction: column;
+		gap: 0.75rem;
 		max-width: 40rem;
+	}
+
+	/* Worker-feed-age chip — a quiet mono badge beside the LIVE freshness chip. */
+	.network-feed-age {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.4rem;
+		font-family: var(--font-mono);
+		font-size: var(--text-small);
+		color: var(--muted-foreground);
+	}
+	.network-feed-age-label {
+		letter-spacing: 1px;
+		text-transform: uppercase;
+		color: var(--muted-foreground);
+	}
+	.network-feed-age-value {
+		color: var(--foreground);
+	}
+
+	/* Trend header: the section label + the window selector on one row. */
+	.network-trend-head {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		justify-content: space-between;
+		gap: 0.5rem 1rem;
+	}
+
+	/* Vehicles-in-service context line under the trend. */
+	.network-vehicles-context {
+		display: flex;
+		flex-direction: column;
+		gap: 0.25rem;
+	}
+	.network-context-caption {
+		font-family: var(--font-mono);
+		font-size: var(--text-micro);
+		color: var(--muted-foreground);
+	}
+
+	/* Per-day crowding small-multiple — a stacked column of dated mini-bars. */
+	.network-occupancy-days {
+		margin: 0;
+		padding: 0;
+		list-style: none;
+		display: flex;
+		flex-direction: column;
+		gap: 0.4rem;
+		max-width: 40rem;
+	}
+	.network-occupancy-day {
+		display: grid;
+		grid-template-columns: 5.5rem minmax(0, 1fr);
+		align-items: center;
+		gap: 0.75rem;
+	}
+	.network-occupancy-date {
+		font-family: var(--font-mono);
+		font-size: var(--text-micro);
+		font-variant-numeric: tabular-nums;
+		color: var(--muted-foreground);
 	}
 </style>

@@ -17,6 +17,10 @@ export interface NetworkCopy extends SurfaceHeadCopy {
 	readonly liveSection: string;
 	/** Section caption above the trend chart. */
 	readonly trendSection: string;
+	/** Section caption above the cancellation-rate trend. */
+	readonly cancelSection: string;
+	/** Section caption above the per-day crowding-mix small multiple. */
+	readonly occupancyTrendSection: string;
 	/** Section caption above the status-mix bar. */
 	readonly statusSection: string;
 	/** Section caption above the occupancy-mix bar. */
@@ -25,9 +29,17 @@ export interface NetworkCopy extends SurfaceHeadCopy {
 	readonly metrics: {
 		readonly onTime: string;
 		readonly vehicles: string;
+		readonly notReporting: string;
 		readonly coverage: string;
 		readonly delayP50: string;
 		readonly delayP90: string;
+	};
+	/** Worker-cycle feed-staleness chip (distinct from snapshot-publish age). */
+	readonly feedAge: {
+		/** Leading label for the chip (e.g. "FEED"). */
+		readonly label: string;
+		/** Accessible prefix read before the formatted age. */
+		readonly a11yPrefix: string;
 	};
 	/** A11y / legend labels for the two distribution bars. */
 	readonly statusBarLabel: string;
@@ -36,7 +48,39 @@ export interface NetworkCopy extends SurfaceHeadCopy {
 	readonly trend: {
 		readonly onTimeLabel: string;
 		readonly retardLabel: string;
+		/** The two retard-series choices for the toggle. */
+		readonly retardP90: string;
+		readonly retardAvg: string;
+		/** Accessible group label for the retard-series toggle. */
+		readonly retardToggleLabel: string;
 		readonly summary: string;
+		/** Accessible summary of the vehicles-in-service context sparkline. */
+		readonly vehiclesSpark: string;
+		/** Caption shown under the vehicles context sparkline. */
+		readonly vehiclesContext: string;
+	};
+	/** Cancellation-rate trend labels. */
+	readonly cancel: {
+		/** Headline metric label (latest day's value). */
+		readonly metric: string;
+		/** Trend series + axis label. */
+		readonly seriesLabel: string;
+		/** Accessible chart summary. */
+		readonly summary: string;
+	};
+	/** Per-day crowding small-multiple labels. */
+	readonly occupancyTrend: {
+		/** Accessible summary of the whole small-multiple. */
+		readonly summary: string;
+	};
+	/** Window selector (7/30/90-day) labels. */
+	readonly window: {
+		/** Accessible group label for the window selector. */
+		readonly label: string;
+		/** Segment labels, keyed by day count. */
+		readonly d7: string;
+		readonly d30: string;
+		readonly d90: string;
 	};
 	/** Shown in place of a metric value when the contract reports null. */
 	readonly noData: string;
@@ -54,22 +98,40 @@ export const copy: Record<Locale, NetworkCopy> = {
 		lede: 'Live network-wide on-time performance, crowding and feed freshness, measured from the /v1 contract. We never invent data: a missing signal shows as “no data”, not a fabricated zero.',
 		liveSection: 'Live now',
 		trendSection: 'Daily trend',
+		cancelSection: 'Cancellations',
+		occupancyTrendSection: 'Crowding by day',
 		statusSection: 'Status mix',
 		occupancySection: 'Crowding',
 		metrics: {
 			onTime: 'On-time',
 			vehicles: 'Vehicles in service',
+			notReporting: 'Not reporting',
 			coverage: 'Coverage',
 			delayP50: 'Median delay',
 			delayP90: 'Slowest 10%',
 		},
+		feedAge: { label: 'FEED', a11yPrefix: 'Worker feed updated' },
 		statusBarLabel: 'Network status mix',
 		occupancyBarLabel: 'Network crowding mix',
 		trend: {
 			onTimeLabel: 'On-time %',
 			retardLabel: 'Slowest 10% (min)',
-			summary: 'Daily on-time % and the slowest-10% (p90) delay over the recent network trend.',
+			retardP90: 'Slowest 10%',
+			retardAvg: 'Typical',
+			retardToggleLabel: 'Delay series',
+			summary: 'Daily on-time % and the chosen delay series over the recent network trend.',
+			vehiclesSpark: 'Vehicles in service, recent days',
+			vehiclesContext: 'Vehicles reporting each day',
 		},
+		cancel: {
+			metric: 'Canceled (latest day)',
+			seriesLabel: '% canceled trip-days',
+			summary: 'Daily share of canceled trip-days across the network.',
+		},
+		occupancyTrend: {
+			summary: 'Crowding band mix per day across the recent network trend.',
+		},
+		window: { label: 'Trend window', d7: '7d', d30: '30d', d90: '90d' },
 		noData: 'no data',
 		units: { pct: '%', min: ' min' },
 	},
@@ -79,23 +141,41 @@ export const copy: Record<Locale, NetworkCopy> = {
 		lede: 'Ponctualité, achalandage et fraîcheur du flux à l’échelle du réseau, mesurés à partir du contrat /v1. On n’invente jamais de données : un signal absent s’affiche « aucune donnée », jamais un zéro fabriqué.',
 		liveSection: 'En direct',
 		trendSection: 'Tendance quotidienne',
+		cancelSection: 'Annulations',
+		occupancyTrendSection: 'Achalandage par jour',
 		statusSection: 'Répartition des statuts',
 		occupancySection: 'Achalandage',
 		metrics: {
 			onTime: 'À l’heure',
 			vehicles: 'Véhicules en service',
+			notReporting: 'Sans signal',
 			coverage: 'Couverture',
 			delayP50: 'Retard médian',
 			delayP90: '10 % les plus lents',
 		},
+		feedAge: { label: 'FLUX', a11yPrefix: 'Flux du travailleur mis à jour' },
 		statusBarLabel: 'Répartition des statuts du réseau',
 		occupancyBarLabel: 'Répartition de l’achalandage du réseau',
 		trend: {
 			onTimeLabel: 'Ponctualité %',
 			retardLabel: '10 % les plus lents (min)',
+			retardP90: '10 % les plus lents',
+			retardAvg: 'Typique',
+			retardToggleLabel: 'Série de retard',
 			summary:
-				'Ponctualité quotidienne et retard des 10 % les plus lents (p90) sur la tendance récente du réseau.',
+				'Ponctualité quotidienne et la série de retard choisie sur la tendance récente du réseau.',
+			vehiclesSpark: 'Véhicules en service, jours récents',
+			vehiclesContext: 'Véhicules signalés chaque jour',
 		},
+		cancel: {
+			metric: 'Annulé (dernier jour)',
+			seriesLabel: '% de jours-voyages annulés',
+			summary: 'Part quotidienne des jours-voyages annulés à l’échelle du réseau.',
+		},
+		occupancyTrend: {
+			summary: 'Répartition des bandes d’achalandage par jour sur la tendance récente du réseau.',
+		},
+		window: { label: 'Fenêtre de tendance', d7: '7 j', d30: '30 j', d90: '90 j' },
 		noData: 'aucune donnée',
 		units: { pct: '%', min: ' min' },
 	},

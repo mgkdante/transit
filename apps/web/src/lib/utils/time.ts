@@ -105,6 +105,26 @@ export function formatUtc(iso: string, lang: TimeLang, opts?: Intl.DateTimeForma
 }
 
 /**
+ * Format a bare calendar day-key ("YYYY-MM-DD") into a localized short date,
+ * e.g. "Jun 15" / "15 juin".
+ *
+ * A day-key is a CALENDAR DATE, not an instant: the pipeline already folds UTC
+ * capture timestamps to the provider's local day before keying. `new Date(key)`
+ * parses it as UTC midnight, so we MUST format in UTC — formatting in
+ * America/Toronto would roll it back to the previous evening and render the
+ * wrong day. Returns '·' for empty/invalid input.
+ */
+export function formatDateKey(key: string, lang: TimeLang): string {
+	const date = parseIso(key);
+	if (!date) return '·';
+	return dateTimeFormat(localeTag(lang), {
+		month: 'short',
+		day: 'numeric',
+		timeZone: 'UTC',
+	}).format(date);
+}
+
+/**
  * Format a Date as a 24-hour clock "HH:MM" in America/Toronto.
  *
  * Always zero-padded, 24-hour (hour12 disabled) so it reads as a stable signage
