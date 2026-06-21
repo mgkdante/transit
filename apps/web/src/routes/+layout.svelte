@@ -33,7 +33,7 @@
 
 	import { onMount } from 'svelte';
 	import { page } from '$app/stores';
-	import { goto } from '$app/navigation';
+	import { goto, onNavigate } from '$app/navigation';
 	import { browser } from '$app/environment';
 
 	import {
@@ -62,6 +62,7 @@
 	} from '$lib/v1';
 	import { createResource } from '$lib/v1/resource.svelte';
 	import { dataRefresh, themeStore } from '$lib/stores';
+	import { runViewTransition } from '$lib/motion';
 	import { AppShell } from '$lib/components/shell';
 	import { Footer } from '$lib/components/layout';
 	import { EdgeState } from '$lib/components/edge';
@@ -263,6 +264,16 @@
 		// worker could not. No-op when SSR already produced a context.
 		if (data.v1Error && !data.v1) void clientBoot();
 	});
+
+	// SPA View Transitions — a tasteful root cross-fade between surfaces. The
+	// helper feature-detects `document.startViewTransition` AND respects
+	// `prefers-reduced-motion: reduce` (returning `undefined` so SvelteKit does
+	// its instant swap in both cases). On the happy path it resolves the DOM swap
+	// INSIDE startViewTransition and awaits `navigation.complete`, so the new
+	// surface settles within the transition. CSS side lives in app.css
+	// (@view-transition + the ::view-transition-*(root) cross-fade, reduced-motion
+	// guarded). Canonical SvelteKit + View Transitions recipe.
+	onNavigate((navigation) => runViewTransition(navigation));
 
 	// Retry from the error edge state: re-boot client-side (a full reload would
 	// just re-run the same failing SSR boot). Browser-only via clientBoot's guard.
