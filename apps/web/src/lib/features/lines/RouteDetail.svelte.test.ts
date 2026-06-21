@@ -155,12 +155,26 @@ const liveStore = {
 // module graph incl. $app/environment, which the jsdom env can't boot). We DO
 // use the real alertsForRoute selector — it's a pure file (type-only imports), so
 // vi.importActual on it is safe and keeps the keying logic genuinely under test.
+// Spy on the reliability fetcher so the gating tests can assert it is NEVER called
+// for a route whose index entry has `reliability: false` (the 404-flood fix), yet
+// STILL called when the flag is true or absent (data must not be lost on a stale
+// index). Resolves to null (no published reliability) by default.
+const getRouteReliabilitySpy = vi.fn(async (_id: string) => null);
+
+// The routes-index fixture the reliability gate consults. Mutable so a test can
+// flip THIS route's `reliability` flag (false | true | undefined) per case.
+let routesIndexData: { generated_utc: string; routes: { id: string; reliability?: boolean }[] } = {
+	generated_utc: '2026-06-15T12:00:00Z',
+	routes: [{ id: '161' }],
+};
+
 vi.mock('$lib/v1', async () => {
 	const affected =
 		await vi.importActual<typeof import('$lib/v1/affectedAlerts')>('$lib/v1/affectedAlerts');
 	return {
 		getRoute: () => routeFileData,
-		getRouteReliability: vi.fn(),
+		getRouteReliability: (id: string) => getRouteReliabilitySpy(id),
+		getRoutesIndex: async () => routesIndexData,
 		getProvenance: () => provenanceData,
 		createLiveStore: () => liveStore,
 		getV1Context: () => ({ manifest: {}, labels: {}, lang: 'en' }),
@@ -188,6 +202,67 @@ beforeEach(() => {
 	liveIndex = buildIndex(VEHICLES);
 	provenanceData = { generated_utc: '2026-06-15T12:00:00Z', gaps: ['metro_realtime'] };
 	routeFileData = ROUTE_FILE;
+	routesIndexData = { generated_utc: '2026-06-15T12:00:00Z', routes: [{ id: '161' }] };
+	getRouteReliabilitySpy.mockClear();
+});
+
+describe('RouteDetail reliability fetch gating (404-flood fix)', () => {
+	// The fix lives in the reliability resource thunk: it consults the routes-index
+	// availability flag BEFORE probing route_reliability/{id}.json. We exercise the
+	// thunk directly (not via the synchronous createResource mock above) so we can
+	// assert whether the underlying fetcher was hit. The thunk mirrors the component:
+	//   flag === false → null, no probe; flag === true | undefined → probe + fail-soft.
+	async function gatedReliability(id: string): Promise<unknown> {
+		const v1 = (await import('$lib/v1')) as unknown as {
+			getRoutesIndex: () => Promise<typeof routesIndexData>;
+			getRouteReliability: (id: string) => Promise<unknown>;
+		};
+		const idx = await v1.getRoutesIndex();
+		const entry = idx.routes.find((r) => r.id === id);
+		if (entry?.reliability === false) return null;
+		return v1.getRouteReliability(id);
+	}
+
+	it('does NOT probe route_reliability when the index flag is explicitly false', async () => {
+		routesIndexData = {
+			generated_utc: '2026-06-15T12:00:00Z',
+			routes: [{ id: '161', reliability: false }],
+		};
+		const result = await gatedReliability('161');
+
+		expect(result).toBeNull();
+		expect(getRouteReliabilitySpy).not.toHaveBeenCalled();
+	});
+
+	it('DOES probe (+ fail-soft) when the index flag is true', async () => {
+		routesIndexData = {
+			generated_utc: '2026-06-15T12:00:00Z',
+			routes: [{ id: '161', reliability: true }],
+		};
+		const result = await gatedReliability('161');
+
+		// fetcher resolves null (no published file) → fail-soft, but it WAS called.
+		expect(result).toBeNull();
+		expect(getRouteReliabilitySpy).toHaveBeenCalledWith('161');
+	});
+
+	it('DOES probe when the flag is absent (stale/legacy index) so data is never lost', async () => {
+		// An index predating the flag: entry has no `reliability` → undefined. We must
+		// still probe, or a route WITH a published file would lose its reliability data.
+		routesIndexData = { generated_utc: '2026-06-15T12:00:00Z', routes: [{ id: '161' }] };
+		await gatedReliability('161');
+
+		expect(getRouteReliabilitySpy).toHaveBeenCalledWith('161');
+	});
+
+	it('DOES probe when the route is missing from the index entirely', async () => {
+		// No entry at all (entry === undefined) is treated like an absent flag: probe +
+		// fail-soft, never silently suppress a route that might have data.
+		routesIndexData = { generated_utc: '2026-06-15T12:00:00Z', routes: [{ id: 'other' }] };
+		await gatedReliability('161');
+
+		expect(getRouteReliabilitySpy).toHaveBeenCalledWith('161');
+	});
 });
 
 describe('RouteDetail map drilldown', () => {
