@@ -209,6 +209,47 @@ describe('TopBar search results', () => {
 		expect(queryByTestId('topbar-mobile-menu')).not.toBeInTheDocument();
 	});
 
+	it('returns focus to the hamburger toggle when the mobile menu closes', async () => {
+		const { getByRole, queryByTestId } = render(TopBar, {
+			props: { locale: 'en', url: new URL('https://transit.local/map') },
+		});
+
+		const toggle = getByRole('button', { name: 'Open menu' });
+		await fireEvent.click(toggle);
+		expect(queryByTestId('topbar-mobile-menu')).toBeInTheDocument();
+
+		// Escape closes the menu and parks focus back on its trigger — the menu is the
+		// primary mobile /map escape, so focus must not be stranded on a removed node.
+		await fireEvent.keyDown(window, { key: 'Escape' });
+		expect(queryByTestId('topbar-mobile-menu')).not.toBeInTheDocument();
+		expect(document.activeElement).toBe(toggle);
+	});
+
+	it('returns focus to the toggle when an Audit menu link closes the mobile menu', async () => {
+		const { getByRole, queryByTestId } = render(TopBar, {
+			props: { locale: 'en', url: new URL('https://transit.local/map') },
+		});
+
+		const toggle = getByRole('button', { name: 'Open menu' });
+		await fireEvent.click(toggle);
+		const menu = queryByTestId('topbar-mobile-menu') as HTMLElement;
+		const audit = within(menu).getByRole('group', { name: 'Audit' });
+
+		await fireEvent.click(within(audit).getByRole('link', { name: 'Hotspots' }));
+		expect(queryByTestId('topbar-mobile-menu')).not.toBeInTheDocument();
+		expect(document.activeElement).toBe(toggle);
+	});
+
+	it('caps the mobile menu height so a grown menu scrolls instead of clipping', () => {
+		const source = readSource();
+		// The menu grew (primaries + Audit group + house link); without an internal
+		// cap its tail overflows the non-scrolling header on short viewports (and /map
+		// locks the body), so it must scroll itself — mirroring the search-results cap.
+		expect(source).toMatch(
+			/\.topbar-mobile-menu\s*\{[\s\S]*max-height:\s*min\(calc\(100dvh - 5rem\), 34rem\)[\s\S]*overflow-y:\s*auto[\s\S]*overscroll-behavior:\s*contain/,
+		);
+	});
+
 	it('uses a mobile-only compact navigation menu without duplicating the desktop rail', () => {
 		const source = readSource();
 		// The brand cluster (yesid. mark · divider · transit home) + its ≤760px

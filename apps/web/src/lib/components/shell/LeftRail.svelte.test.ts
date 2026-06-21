@@ -1,8 +1,14 @@
 import { fireEvent, render, within } from '@testing-library/svelte';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { createRawSnippet } from 'svelte';
 import { describe, expect, it, vi } from 'vitest';
 import LeftRail from './LeftRail.svelte';
+
+// A page-supplied custom rail body, e.g. /map or /lines filters.
+const customRail = createRawSnippet(() => ({
+	render: () => `<div data-testid="custom-rail-body">Page filters</div>`,
+}));
 
 describe('LeftRail', () => {
 	it('renders default desktop navigation with the current page highlighted', () => {
@@ -33,6 +39,72 @@ describe('LeftRail', () => {
 			within(rail).getByRole('link', { name: 'Stops departures and schedules' }),
 		).toHaveAttribute('aria-current', 'page');
 		expect(rail).not.toHaveTextContent('No content yet');
+	});
+
+	it('exposes the Audit group below the primaries with localized, active-aware links', () => {
+		const { getByRole } = render(LeftRail, {
+			props: {
+				locale: 'en',
+				url: new URL('https://transit.local/hotspots'),
+			},
+		});
+
+		// The group is a labelled landmark below the four primaries.
+		const audit = getByRole('group', { name: 'Audit' });
+		expect(audit).toHaveTextContent('Audit');
+		// Its surfaces are reachable as links, and the active one is highlighted.
+		const hotspots = within(audit).getByRole('link', { name: 'Hotspots' });
+		expect(hotspots).toHaveAttribute('href', '/hotspots');
+		expect(hotspots).toHaveAttribute('aria-current', 'page');
+		expect(within(audit).getByRole('link', { name: 'Alerts' })).toHaveAttribute('href', '/alerts');
+	});
+
+	it('keeps the Audit group reachable below a page-supplied custom rail when expanded', () => {
+		const { getByRole, getByTestId } = render(LeftRail, {
+			props: {
+				locale: 'en',
+				url: new URL('https://transit.local/map'),
+				children: customRail,
+			},
+		});
+
+		// The page's own rail body renders…
+		expect(getByTestId('custom-rail-body')).toBeInTheDocument();
+		// …and the Audit group is STILL present below it (not swallowed by the
+		// custom-rail branch), with its named, active-aware links.
+		const audit = getByRole('group', { name: 'Audit' });
+		expect(audit).toHaveTextContent('Audit');
+		const map = within(audit).queryByRole('link', { name: 'Map' });
+		expect(map).toBeNull(); // primaries are the page's job; Audit holds meta surfaces
+		expect(within(audit).getByRole('link', { name: 'Hotspots' })).toHaveAttribute(
+			'href',
+			'/hotspots',
+		);
+	});
+
+	it('localizes the Audit group heading + hrefs in French', () => {
+		const { getByRole } = render(LeftRail, {
+			props: { locale: 'fr', url: new URL('https://transit.local/fr/network') },
+		});
+		const audit = getByRole('group', { name: 'Vérification' });
+		expect(within(audit).getByRole('link', { name: 'Récidivistes' })).toHaveAttribute(
+			'href',
+			'/fr/repeat-offenders',
+		);
+	});
+
+	it('keeps Audit links accessible (named) but hides the heading text when collapsed', () => {
+		const { getByRole } = render(LeftRail, {
+			props: {
+				locale: 'en',
+				url: new URL('https://transit.local/map'),
+				collapsed: true,
+			},
+		});
+		const audit = getByRole('group', { name: 'Audit' });
+		// Icon-only: the heading text is gone, but the links keep their aria-label.
+		expect(audit).not.toHaveTextContent('Audit');
+		expect(within(audit).getByRole('link', { name: 'Hotspots' })).toBeInTheDocument();
 	});
 
 	it('keeps the burger out of desktop by threading url into the left rail', () => {

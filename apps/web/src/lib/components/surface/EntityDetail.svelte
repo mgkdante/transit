@@ -12,11 +12,15 @@
 -->
 <script lang="ts" generics="K extends string">
 	import type { Snippet } from 'svelte';
+	import { page } from '$app/state';
 	import { Tabs, TabsList, TabsTrigger, TabsContent } from '$lib/components/ui/tabs';
 	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
 	import { Surface } from '$lib/components/layout';
 	import { Separator } from '$lib/components/ui/separator';
 	import ChevronLeftIcon from '@lucide/svelte/icons/chevron-left';
+	import { getLocale } from '$lib/i18n';
+	import { resolveBreadcrumbTrail } from '$lib/seo/routeSeo';
+	import Breadcrumb from './Breadcrumb.svelte';
 
 	interface EntityDetailProps {
 		/** Mono station-voice overline (e.g. "LIGNE", "ARRÊT"). */
@@ -47,10 +51,23 @@
 		back,
 		class: className,
 	}: EntityDetailProps = $props();
+
+	// Visible breadcrumb on the stable detail surfaces (/route/[id], /stop/[id]).
+	// Locale via context (siblings read getLocale()); the path from $app/state so
+	// the trail follows client navigations. resolveBreadcrumbTrail returns [] for
+	// every other surface, so the Breadcrumb (which itself guards on >1 crumb) is
+	// inert elsewhere. The leaf label is the URL id segment (route #/stop code) —
+	// a per-entity NAME leaf is a tracked follow-up (see routeSeo TODO(seo); needs
+	// the SSR entity seed), so this matches the JSON-LD trail exactly today.
+	const locale = getLocale();
+	const trail = $derived(resolveBreadcrumbTrail(page.url.pathname, locale));
 </script>
 
 <Surface width="wide" as="div" class={className} data-slot="entity-detail">
 	<div class="surface-head">
+		{#if trail.length > 1}
+			<Breadcrumb {trail} {locale} />
+		{/if}
 		{#if back}
 			<a class="surface-back" href={back.href}>
 				<ChevronLeftIcon size={14} strokeWidth={2.4} aria-hidden="true" />

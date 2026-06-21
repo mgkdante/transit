@@ -4,7 +4,14 @@
 import { describe, it, expect } from 'vitest';
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { SURFACE_NAV, SECONDARY_NAV, MENU_EXTRAS, isSurfaceActive, mainLandmarkLabel } from './nav';
+import {
+	SURFACE_NAV,
+	SECONDARY_NAV,
+	AUDIT_NAV,
+	MENU_EXTRAS,
+	isSurfaceActive,
+	mainLandmarkLabel,
+} from './nav';
 
 const ROUTES = resolve(process.cwd(), 'src/routes/[[lang=locale]]');
 const surface = (key: SurfaceKey) => SURFACE_NAV.find((i) => i.key === key)!;
@@ -51,6 +58,62 @@ describe('SURFACE_NAV manifest', () => {
 			expect(item.label.en, item.href).toBeTruthy();
 			expect(item.label.fr, item.href).toBeTruthy();
 		}
+	});
+});
+
+describe('AUDIT_NAV (side-nav Audit group)', () => {
+	it('exposes the accountability/meta surfaces as a side-nav-consumable group', () => {
+		// PR-5: the Audit group rides AUDIT_NAV for the LeftRail + mobile menu. The
+		// four accountability surfaces (plus the methodology + data-health anchors)
+		// must be present with a stable icon key + EN/FR label.
+		const hrefs = AUDIT_NAV.map((i) => i.href);
+		for (const href of [
+			'/metrics',
+			'/status',
+			'/hotspots',
+			'/receipt',
+			'/repeat-offenders',
+			'/alerts',
+		]) {
+			expect(hrefs, `${href} missing from AUDIT_NAV`).toContain(href);
+		}
+	});
+
+	it('each audit item carries a key, EN + FR label, and active prefixes', () => {
+		for (const item of AUDIT_NAV) {
+			expect(item.key, item.href).toBeTruthy();
+			expect(item.label.en, item.href).toBeTruthy();
+			expect(item.label.fr, item.href).toBeTruthy();
+			expect(item.activePrefixes.length, item.href).toBeGreaterThan(0);
+		}
+	});
+
+	it('keys are unique', () => {
+		const keys = AUDIT_NAV.map((i) => i.key);
+		expect(new Set(keys).size).toBe(keys.length);
+	});
+
+	it('every audit href resolves to a real +page.svelte (no dead links)', () => {
+		for (const item of AUDIT_NAV) {
+			const page = resolve(ROUTES, item.href.replace(/^\//, ''), '+page.svelte');
+			expect(existsSync(page), `${item.href} -> ${page}`).toBe(true);
+		}
+	});
+
+	it('stays footer-reachable: every audit surface is still in SECONDARY_NAV', () => {
+		// The footer consumes SECONDARY_NAV — promoting these into the side-nav must
+		// NOT drop footer reachability. SECONDARY_NAV is derived from AUDIT_NAV, so
+		// the two can never drift.
+		const secondaryHrefs = SECONDARY_NAV.map((i) => i.href);
+		for (const item of AUDIT_NAV) {
+			expect(secondaryHrefs, `${item.href} dropped from footer`).toContain(item.href);
+		}
+	});
+
+	it('isSurfaceActive highlights the audit item on its own path', () => {
+		const hotspots = AUDIT_NAV.find((i) => i.key === 'hotspots')!;
+		expect(isSurfaceActive(hotspots, '/hotspots')).toBe(true);
+		expect(isSurfaceActive(hotspots, '/status')).toBe(false);
 	});
 });
 
