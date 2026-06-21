@@ -374,7 +374,7 @@
 		min-height: 2rem;
 		padding: 0.4rem 0.65rem;
 		font-weight: 600;
-		letter-spacing: 0.05em;
+		letter-spacing: var(--tracking-eyebrow);
 		text-transform: uppercase;
 		color: var(--foreground);
 		background: var(--muted);
@@ -470,7 +470,7 @@
 	}
 	.map-near-suggestion small {
 		font-size: var(--text-micro);
-		letter-spacing: 0.04em;
+		letter-spacing: var(--tracking-eyebrow);
 		text-transform: uppercase;
 	}
 	.map-near-google-attribution {

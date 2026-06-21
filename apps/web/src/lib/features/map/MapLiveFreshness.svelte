@@ -106,7 +106,7 @@
 		}
 
 		.map-live-freshness[data-placement='head'] :global(.live-freshness-label) {
-			letter-spacing: 0.06em;
+			letter-spacing: var(--tracking-eyebrow);
 		}
 	}
 </style>

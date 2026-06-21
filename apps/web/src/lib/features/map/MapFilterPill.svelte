@@ -107,7 +107,7 @@
 		font-family: var(--font-mono);
 		font-size: var(--text-caption);
 		font-weight: 600;
-		letter-spacing: 0.06em;
+		letter-spacing: var(--tracking-eyebrow);
 		text-transform: uppercase;
 		color: var(--foreground);
 		white-space: nowrap;

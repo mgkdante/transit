@@ -1153,7 +1153,7 @@
 		margin: 0;
 		font-family: var(--font-mono);
 		font-size: var(--text-micro);
-		letter-spacing: 0.16em;
+		letter-spacing: var(--tracking-eyebrow);
 		text-transform: uppercase;
 		color: var(--accent-text);
 	}

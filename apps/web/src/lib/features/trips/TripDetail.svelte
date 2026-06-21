@@ -398,7 +398,7 @@
 	.trip-stop-prediction {
 		color: var(--muted-foreground);
 		text-transform: uppercase;
-		letter-spacing: 0.04em;
+		letter-spacing: var(--tracking-eyebrow);
 	}
 	.trip-stop-delay {
 		display: inline-flex;

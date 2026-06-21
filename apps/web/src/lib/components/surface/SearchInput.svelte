@@ -66,7 +66,7 @@
 	.search-input-label {
 		font-family: var(--font-mono);
 		font-size: var(--text-caption);
-		letter-spacing: 0.06em;
+		letter-spacing: var(--tracking-eyebrow);
 		text-transform: uppercase;
 		color: var(--muted-foreground);
 	}
