@@ -270,11 +270,19 @@
 		max-width: 100%;
 		overflow-x: auto;
 	}
-	/* A subsection heading + its explainer (i), kept on the label's baseline. */
+	/* A subsection heading + its explainer (i), kept centred on the label. The label
+	   keeps a measure (min-width:0) so a long heading wraps cleanly; the (i) wrapper
+	   never shrinks (flex:none) so the glyph stays whole beside it. */
 	.label-with-info {
 		display: inline-flex;
 		align-items: center;
 		gap: 0.35rem;
+	}
+	.label-with-info :global([data-slot='section-label']) {
+		min-width: 0;
+	}
+	.label-with-info :global(.cluster-info) {
+		flex: none;
 	}
 	.habits-empty {
 		margin: 0;

@@ -44,6 +44,33 @@ export interface AlertHistoryCopy extends SurfaceHeadCopy {
 	};
 	/** Visually-hidden severity words, keyed by SeverityCode (a11y). */
 	readonly severity: Record<SeverityCode, string>;
+	/** The client-side filter rail over the alert log (entity type + severity). */
+	readonly filters: {
+		/** Group label for the whole filter control panel. */
+		readonly railLabel: string;
+		/** Entity-type axis: filter by what an alert affects (lines / stops). */
+		readonly entity: {
+			/** Radiogroup label. */
+			readonly label: string;
+			/** "All" — clears the entity filter. */
+			readonly all: string;
+			/** Alerts that affect at least one line. */
+			readonly lines: string;
+			/** Alerts that affect at least one stop. */
+			readonly stops: string;
+		};
+		/** Severity axis: filter by the alert's banded severity. */
+		readonly severity: {
+			/** Radiogroup label. */
+			readonly label: string;
+			/** "All" — clears the severity filter. */
+			readonly all: string;
+		};
+		/** Honest no-match note shown when the active filters narrow the log to zero. */
+		readonly noMatch: string;
+		/** "Clear filters" action that restores the full log. */
+		readonly clear: string;
+	};
 	/** The cause / effect / severity distribution sections (Tier-2 breakdown). */
 	readonly breakdown: {
 		/** Section label over the whole distribution block. */
@@ -92,6 +119,21 @@ export const alertHistoryCopy: Record<Locale, AlertHistoryCopy> = {
 			impactValue: (passages) => `${passages.toLocaleString('fr-CA')} passages`,
 		},
 		severity: SEVERITY_WORDS.fr,
+		filters: {
+			railLabel: 'Filtres',
+			entity: {
+				label: 'Touche',
+				all: 'Tout',
+				lines: 'Lignes',
+				stops: 'Arrêts',
+			},
+			severity: {
+				label: 'Gravité',
+				all: 'Toutes',
+			},
+			noMatch: 'Aucun avis ne correspond aux filtres sélectionnés.',
+			clear: 'Effacer les filtres',
+		},
 		breakdown: {
 			section: 'Répartition',
 			byCause: 'Par cause',
@@ -127,6 +169,21 @@ export const alertHistoryCopy: Record<Locale, AlertHistoryCopy> = {
 			impactValue: (passages) => `${passages.toLocaleString('en-CA')} passages`,
 		},
 		severity: SEVERITY_WORDS.en,
+		filters: {
+			railLabel: 'Filters',
+			entity: {
+				label: 'Affects',
+				all: 'All',
+				lines: 'Lines',
+				stops: 'Stops',
+			},
+			severity: {
+				label: 'Severity',
+				all: 'All',
+			},
+			noMatch: 'No alerts match the selected filters.',
+			clear: 'Clear filters',
+		},
 		breakdown: {
 			section: 'Breakdown',
 			byCause: 'By cause',

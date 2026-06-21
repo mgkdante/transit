@@ -187,6 +187,23 @@ describe('Cluster01Punctuality — metric explainer (i)', () => {
 	});
 });
 
+describe('Cluster01Punctuality — (i) label resilience (C1)', () => {
+	it('seats each label (i) wrapper as a flex:none sibling of a wrappable section label', () => {
+		const { container } = render(Cluster01Punctuality, {
+			props: { vm: populated, locale: 'en', copy },
+		});
+		// The severe-share / weak-stops / peak headings use the .label-with-info row:
+		// a SectionLabel (min-width:0, can wrap) beside a non-shrinking (i) wrapper
+		// (.cluster-info, flex:none) so a long label never collides with the glyph.
+		const rows = container.querySelectorAll('.label-with-info');
+		expect(rows.length).toBeGreaterThan(0);
+		for (const row of rows) {
+			expect(row.querySelector('[data-slot="section-label"]')).not.toBeNull();
+			expect(row.querySelector('.cluster-info')).not.toBeNull();
+		}
+	});
+});
+
 describe('Cluster01Punctuality — honest empty', () => {
 	it('renders the no-data note and no headline when the VM is empty', () => {
 		render(Cluster01Punctuality, { props: { vm: emptyVM, locale: 'en', copy } });

@@ -285,7 +285,12 @@
 
 	/* The grain + range control is now ONE shared GrainPicker (day|week|month|range),
 	   so the bespoke companion-chip styles are gone — the active-chip accent lives in
-	   GrainPicker. */
+	   GrainPicker. The segmented row keeps a measure + wraps so a long localized
+	   segment label never collides with its neighbour or overflows the rail. */
+	.reliability-clusters :global([data-slot='grain-picker']) {
+		min-width: 0;
+		flex-wrap: wrap;
+	}
 
 	/* The start + end date pair sits inline, wrapping on narrow viewports. */
 	.reliability-range {

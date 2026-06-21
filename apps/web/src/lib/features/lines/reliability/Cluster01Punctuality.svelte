@@ -386,17 +386,33 @@
 		gap: 1.5rem 2rem;
 	}
 	/* A metric tile + its explainer (i): the affordance rides the tile's top edge,
-	   inline so the headline row keeps wrapping naturally (no layout disruption). */
+	   inline so the headline row keeps wrapping naturally (no layout disruption). The
+	   tile keeps a measure (min-width:0) so a long label wraps cleanly; the (i) wrapper
+	   never shrinks (flex:none) so the glyph stays whole beside it, never colliding. */
 	.metric-with-info {
 		display: inline-flex;
 		align-items: flex-start;
 		gap: 0.35rem;
 	}
-	/* A block overline + its explainer (i), kept on the label's baseline. */
+	.metric-with-info :global([data-slot='metric-display']) {
+		min-width: 0;
+	}
+	.metric-with-info :global(.cluster-info) {
+		flex: none;
+	}
+	/* A block overline + its explainer (i), kept centred on the label. The label
+	   keeps a measure (min-width:0) so a long overline wraps cleanly; the (i)
+	   wrapper never shrinks (flex:none) so the glyph stays whole beside it. */
 	.label-with-info {
 		display: inline-flex;
 		align-items: center;
 		gap: 0.35rem;
+	}
+	.label-with-info :global([data-slot='section-label']) {
+		min-width: 0;
+	}
+	.label-with-info :global(.cluster-info) {
+		flex: none;
 	}
 	.cluster-block {
 		display: flex;

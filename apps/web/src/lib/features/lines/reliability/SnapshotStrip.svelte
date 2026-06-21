@@ -251,13 +251,24 @@
 		flex-direction: column;
 		gap: 0.35rem;
 		min-width: 0;
+		/* Reserve a top-right gutter clearing the ~1.05rem (i) glyph + its gap so a
+		   long metric label wraps to the LEFT of the badge, never under/over it. */
+		padding-inline-end: 1.4rem;
 	}
-	/* The metric-explainer (i) affordance rides the tile's top-right corner, an
-	   INTERACTIVE control, never a data mark; doctrine-clean. */
+	/* The metric-explainer (i) affordance rides the tile's top-right CORNER, an
+	   INTERACTIVE control, never a data mark; doctrine-clean. Pinned absolutely so
+	   the label flows past it. The small inset-block-start nudge optically centres
+	   the round glyph on the label cap-height instead of poking above it. */
 	:global(.snapshot-tile__info) {
 		position: absolute;
-		inset-block-start: 0;
+		inset-block-start: 0.1rem;
 		inset-inline-end: 0;
+	}
+	/* The label must keep a measure (min-width:0) and clear the badge gutter so it
+	   wraps cleanly to the left of the corner (i) rather than colliding with it. */
+	.snapshot-tile :global([data-slot='metric-display'] .label-metric) {
+		min-width: 0;
+		padding-inline-end: 1.4rem;
 	}
 	/* Honest no-data caption: quiet mono, always legible (AA both themes). */
 	.snapshot-tile__note {
