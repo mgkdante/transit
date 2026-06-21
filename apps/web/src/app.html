@@ -22,8 +22,8 @@
 		<!-- No-JS / pre-hydration theme-color: two media-scoped metas so the first
 		     paint's address bar / PWA surface matches the OS theme before the runtime
 		     theme store (theme.svelte.ts) takes over. The runtime override mutates the
-		     non-media <meta name="theme-color"> emitted in %sveltekit.head% (SeoHead),
-		     which it targets via the `:not([media])` selector so these two are left
+		     non-media <meta name="theme-color"> emitted in the SvelteKit head (SeoHead),
+		     which it targets via the :not([media]) selector so these two are left
 		     intact. Colors are the resolved --background tokens (dark #141414 / light
 		     #F3F6FB). -->
 		<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#141414" />
