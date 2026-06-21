@@ -1,8 +1,14 @@
 <!--
-  TocNav - the desktop table-of-contents card. Shared across detail pages: a
-  CollapsibleSection wrapper + a badge-led nav + a "section N / total" counter.
-  Badges come from TocBadge (same marks as the section cards). The page owns the
-  active id + scroll handler and passes them in.
+  TocNav - the desktop table-of-contents rail. Shared across detail pages: a
+  non-hideable heading + a badge-led nav + a "section N / total" counter. Badges
+  come from TocBadge (same marks as the section cards). The page owns the active
+  id + scroll handler and passes them in.
+
+  The rail is NEVER user-collapsible: navigation must stay reachable at all times
+  (quiet/focus mode collapses the section CARDS, not the ToC). It renders the
+  heading as a plain (non-toggle, no-chevron, no-persisted-state) header so a
+  reader can never hide the ToC, and a previously-collapsed ToC self-heals — there
+  is no persisted collapsed state to restore.
 
   Ported from yesid.dev shared/TocNav. Deviation: yesid's `.toc-counter-dot`
   glow uses `--glow` (a token transit lacks). Substituted `--primary` (transit's
@@ -19,15 +25,12 @@
 		activeId,
 		onNavigate,
 		heading,
-		sectionKey,
 		counterPrefix = 'SEC',
 	}: {
 		entries: TocEntry[];
 		activeId: string;
 		onNavigate: (id: string) => void;
 		heading: string;
-		/** Unique persisted-open-state key for this TOC instance. */
-		sectionKey: string;
 		counterPrefix?: string;
 	} = $props();
 
@@ -44,7 +47,13 @@
 	);
 </script>
 
-<CollapsibleSection title={heading} {sectionKey} open={true}>
+<!--
+	The ToC rail is non-hideable: `collapsible={false}` renders the heading as a
+	plain header (no chevron, no toggle), and we pass NO `sectionKey`, so there is
+	no persisted collapsed state to ever hide or restore. The nav stays mounted
+	and reachable in every mode (quiet/focus collapses the section cards, not this).
+-->
+<CollapsibleSection title={heading} collapsible={false} open={true}>
 	{#snippet icon()}
 		<SectionIcon name="toc" class="h-4 w-4 shrink-0 text-primary" />
 	{/snippet}

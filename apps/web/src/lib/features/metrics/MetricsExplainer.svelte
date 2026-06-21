@@ -14,10 +14,10 @@
       (`.body-grid.surface-bleed` escapes the page gutter out to the rail-inset
       <main> edges; it never sits behind the left rail and is never artificially
       narrow). Below the lg breakpoint it collapses to one column.
-    · DESKTOP (>=lg): a sticky, collapsible table-of-contents rail (shared TocNav,
-      which itself wraps a CollapsibleSection) on the left + the content column on
-      the right. The rail tracks the current section (activeId) and scrolls to its
-      target on click.
+    · DESKTOP (>=lg): a sticky, NON-hideable table-of-contents rail (shared TocNav)
+      on the left + the content column on the right. The rail tracks the current
+      section (activeId) and scrolls to its target on click; it stays fully visible
+      in every mode (quiet/focus collapses the section cards, never the ToC).
     · The provenance preamble + one CollapsibleSection card PER METRIC (number
       badge, `data-toc` anchor, deep-link `id` on the section block) carry the
       definition / math / SQL / "what it's NOT" / caveats.
@@ -160,18 +160,27 @@
 	// ── Quiet mode (focus reading) ─────────────────────────────────────────────
 	// A single, restrained header toggle that enters a distraction-free reading
 	// state for the methodology article (mirrors the yesid.dev detail-page "Quiet
-	// mode" switch, kept to one control): it drops the re-applied page gutter so the
-	// prose goes TRUE full-bleed within the content area — held to a comfortable
-	// reading measure via .surface-measure so line-length stays readable — and
-	// quiets the chrome (hides the sticky TOC rail, dims non-essential furniture) so
-	// the prose is the focus. Default OFF leaves today's layout untouched.
+	// mode" switch, kept to one control). Per the yesid.dev contract, quiet mode
+	// does exactly ONE thing: it COLLAPSES every metric section card so the page
+	// becomes a scannable stack of headings. It NEVER hides the table of contents,
+	// NEVER changes the grid columns, and NEVER drops the page gutter — the ToC rail
+	// stays fully visible so the reader can still navigate while the cards are shut.
+	// Default OFF leaves the cards open (today's layout).
 	//
-	// The choice PERSISTS across navigations in localStorage. SSR-safe: the initial
-	// read and every write are window-guarded (no window on the server / in tests),
-	// so the page renders in the default (non-quiet) layout server-side and the
-	// stored preference is re-applied on mount without a layout flash mid-paint.
+	// The choice PERSISTS across navigations in localStorage — it remembers the
+	// CARD-collapse preference, never a hidden ToC. SSR-safe: the initial read and
+	// every write are window-guarded (no window on the server / in tests), so the
+	// page renders in the default (cards-open) layout server-side and the stored
+	// preference is re-applied on mount without a layout flash mid-paint.
 	const QUIET_STORAGE_KEY = 'metrics-quiet';
 	let quiet = $state(false);
+
+	// Quiet mode drives the metric/lacunes cards' open state directly: open when
+	// calm, collapsed when quiet. This is the LOCAL analog of yesid.dev's shared
+	// quiet-mode collapse signal (transit has no shared quiet-mode store yet, so we
+	// keep the collapse contained to this surface rather than introducing a global
+	// store in this change). `cardsOpen` is the single source the cards bind to.
+	const cardsOpen = $derived(!quiet);
 
 	onMount(() => {
 		try {
@@ -244,9 +253,9 @@
 	<!-- Body: shared detail-page grid (sticky TOC rail | section cards), full-bleed
 	     within the content area (surface-bleed escapes the page gutter, never the
 	     rail). Single column below lg; the rail is replaced by the floating pill.
-	     In quiet mode (.is-quiet) it drops the re-applied gutter for TRUE full-bleed
-	     prose (held to a reading measure via .surface-measure) and hides the rail. -->
-	<div class="body-grid surface-bleed" class:is-quiet={quiet}>
+	     The grid + gutter are IDENTICAL whether quiet mode is on or off — quiet only
+	     collapses the section cards (below); the ToC rail stays fully visible. -->
+	<div class="body-grid surface-bleed">
 		<aside class="context-column">
 			<div class="context-panel toc-scroll">
 				<div class="toc-nav-shell">
@@ -255,7 +264,6 @@
 						{activeId}
 						onNavigate={navigate}
 						heading={t.tocLabel}
-						sectionKey="metrics-toc"
 						counterPrefix={t.tocCounterPrefix}
 					/>
 				</div>
@@ -307,10 +315,9 @@
 						<div class="section-block" id={entry.anchor}>
 							<CollapsibleSection
 								title={entry.name[locale]}
-								sectionKey={`metrics-${entry.key}`}
 								anchor={entry.anchor}
 								index={metricIndex}
-								open={true}
+								open={cardsOpen}
 							>
 								<div class="metric__body">
 									<p class="metric__meta">
@@ -376,12 +383,7 @@
 			     sections, but an icon badge (not a metric number) marks it as a
 			     non-metric section; carries the deep-link target id + data-toc anchor. -->
 			<div class="section-block metrics-lacunes" id={LACUNES_ANCHOR}>
-				<CollapsibleSection
-					title={t.lacunes.title}
-					sectionKey="metrics-lacunes"
-					anchor={LACUNES_ANCHOR}
-					open={true}
-				>
+				<CollapsibleSection title={t.lacunes.title} anchor={LACUNES_ANCHOR} open={cardsOpen}>
 					{#snippet icon()}
 						<SectionIcon name="eye" class="h-4 w-4 shrink-0 text-primary" />
 					{/snippet}
@@ -420,22 +422,9 @@
 		min-width: 0;
 		overflow-x: clip;
 		/* Re-apply the gutter the surface-bleed escaped, so the content keeps the
-		   page padding line as its edge (matches .surface-measure's intent). */
+		   page padding line as its edge (matches .surface-measure's intent). The
+		   grid + gutter are identical in quiet mode (quiet only collapses cards). */
 		padding-inline: var(--space-page-x);
-		transition: padding var(--duration-normal) var(--ease-default);
-	}
-
-	/* ── Quiet mode (focus reading) ────────────────────────────────────────────
-	   Drop the re-applied gutter so the article goes TRUE full-bleed within the
-	   content area (the surface-bleed negative margin is no longer cancelled by
-	   padding); the prose keeps a comfortable reading measure via .surface-measure
-	   on the content column below, so line-length stays readable edge-to-edge. The
-	   rail column collapses and the grid becomes a single content column. */
-	.body-grid.is-quiet {
-		padding-inline: 0;
-	}
-	.body-grid.is-quiet .context-column {
-		display: none;
 	}
 
 	.context-column,
@@ -488,25 +477,6 @@
 			overscroll-behavior: contain;
 			padding-bottom: 1rem;
 		}
-
-		/* Quiet mode at lg: the rail is gone (collapsed above), so the grid is a
-		   single content column. The article reads full-bleed but the prose stays
-		   capped to a comfortable measure (centered), so line-length is unaffected. */
-		.body-grid.is-quiet {
-			grid-template-columns: minmax(0, 1fr);
-		}
-		.body-grid.is-quiet .sections-column {
-			grid-column: 1;
-			max-width: var(--container-content);
-			margin-inline: auto;
-		}
-	}
-
-	/* Below lg the rail is already replaced by the floating pill; in quiet mode keep
-	   the prose capped to a reading measure even as the gutter is dropped. */
-	.body-grid.is-quiet .sections-column {
-		max-width: var(--container-content);
-		margin-inline: auto;
 	}
 
 	/* ── Provenance preamble ─────────────────────────────────────────────────── */
@@ -762,22 +732,6 @@
 		filter: drop-shadow(0 0 4px color-mix(in srgb, var(--glow) 60%, transparent));
 	}
 
-	/* ── Quiet-mode chrome quieting ────────────────────────────────────────────
-	   In focus reading, dim the non-essential furniture so the prose is the focus:
-	   the per-card "back to top" anchors and the cluster overlines recede. The prose
-	   itself, the SectionLabels on each block, and the SQL stay at full strength. */
-	.body-grid.is-quiet :global(.metrics-cluster__overline) {
-		opacity: 0.55;
-		transition: opacity var(--duration-normal) var(--ease-default);
-	}
-	.body-grid.is-quiet .metric__top {
-		opacity: 0.55;
-	}
-	.body-grid.is-quiet .metric__top:hover,
-	.body-grid.is-quiet .metric__top:focus-visible {
-		opacity: 1;
-	}
-
 	.metric__top {
 		align-self: flex-start;
 		font-family: var(--font-mono);
@@ -800,11 +754,9 @@
 
 	@media (prefers-reduced-motion: reduce) {
 		.metric__top,
-		.body-grid,
 		.metrics-quiet-toggle,
 		.metrics-quiet-toggle .q-wave,
-		.metrics-quiet-toggle .q-core,
-		.body-grid.is-quiet :global(.metrics-cluster__overline) {
+		.metrics-quiet-toggle .q-core {
 			transition: none;
 		}
 	}
