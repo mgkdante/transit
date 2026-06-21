@@ -18,7 +18,7 @@
   rides the brand surface palette; every mark rides a token, no hardcoded hex.
 -->
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, untrack } from 'svelte';
 	import { SvelteSet } from 'svelte/reactivity';
 	import { page } from '$app/stores';
 	import { goto, afterNavigate } from '$app/navigation';
@@ -74,6 +74,14 @@
 		type WithDistance,
 		type VehicleMotionController,
 	} from '$lib/components/map';
+	import {
+		liveTtlS,
+		silenceAgeS,
+		silenceOpacity,
+		silenceOpacityDiscrete,
+	} from '$lib/components/map/vehicleSilence';
+	import { sharedClock } from '$lib/stores';
+	import { isPrefersReducedMotion } from '$lib/motion/reduced-motion.svelte';
 	import MapFilters from './MapFilters.svelte';
 	import MapFilterPill from './MapFilterPill.svelte';
 	import MapLiveFreshness from './MapLiveFreshness.svelte';
@@ -203,9 +211,34 @@
 		return () => live.stop();
 	});
 
+	// Keep the shared clock ticking while the map is mounted: the per-vehicle
+	// silence fade re-evaluates off `sharedClock.serverNow`, so a bus can fade
+	// BETWEEN polls (the clock cadence honors prefers-reduced-motion).
+	$effect(() => sharedClock.subscribe());
+
+	// Tear the motion controller down on component unmount: it owns a running gsap
+	// tween (the position lerp), which is otherwise only killed inside
+	// installMapLayers when the MAP instance changes — so navigating away from /map
+	// would leak a live tween. This effect has no tracked reads, so it runs once and
+	// its cleanup fires only on unmount; it reads vehicleMotion lazily there to kill
+	// whatever controller is current. The map-instance-change path is unaffected: it
+	// destroys the OLD controller before creating a new one, so there is no double
+	// destroy (destroy() just kills an already-killed tween, which is a no-op).
+	$effect(() => () => untrack(() => vehicleMotion)?.destroy());
+
+	// Live tier ttl (seconds) → derives the silence fade windows so they track the
+	// publisher's cadence, not a magic number. Default 30s if the manifest omits it.
+	const liveTtl = liveTtlS(manifest.files?.live?.ttl_s);
+
 	let map = $state<MapLibreMap | null>(null);
 	let vehicleMotion = $state<VehicleMotionController | null>(null);
 	let vehicleMotionMap: MapLibreMap | null = null;
+	// Signature of the per-vehicle silence-opacity buckets at the last clock-tick
+	// re-feed. The tick effect skips re-feeding the vehicle layer when this is
+	// unchanged (no bus crossed/moved within the fade window since last tick) so a
+	// feed of buses all-fresh or all-floored doesn't rebuild + setData every second
+	// for nothing. Reset to '' so the first tick after a (re)install always feeds.
+	let lastSilenceSignature = '';
 	let layerRevision = $state(0);
 	let interactionsMap: MapLibreMap | null = null;
 	let selected = $state<MapSelection | null>(null);
@@ -891,6 +924,10 @@
 		addNearTargetSource(m);
 		addNearTargetLayer(m);
 		installMapInteractions(m);
+		// Force the next clock-tick re-feed: MapLibre cleared the custom source on a
+		// style swap, so the tick effect's short-circuit must not skip the first
+		// post-install feed even if the opacity buckets are unchanged.
+		lastSilenceSignature = '';
 		layerRevision += 1;
 	}
 
@@ -913,7 +950,12 @@
 		// eslint-disable-next-line @typescript-eslint/no-unused-expressions
 		layerRevision;
 		if (!m) return;
+		const reduceMotion = isPrefersReducedMotion();
 		setRouteLines(m, routeLineRoutes, selectedRouteLine);
+		// serverNow read UNTRACKED here so this poll/filter/selection effect is NOT
+		// re-run by the per-second clock tick (that is the dedicated silence effect's
+		// job below). This pass only needs a current opacity baseline.
+		const serverNow = untrack(() => sharedClock.serverNow);
 		vehicleMotion?.set(
 			toVehicleFeatures(
 				live.vehicles?.vehicles ?? [],
@@ -921,12 +963,21 @@
 				alertVehicleIds,
 				selectedVehicleId,
 				hoveredVehicleId,
+				{ serverNow, ttlS: liveTtl, reduceMotion },
 			),
 			{
 				tickKey: live.vehicles?.generated_utc ?? live.generatedUtc,
 				stale: live.isStale,
+				// Per-frame continuous fade while the position tween runs — but NOT
+				// under reduced motion (then opacity is set discretely at poll/tick
+				// time, no per-frame ramp). Reads the live clock each frame so a bus
+				// that goes silent mid-interval fades in place.
+				refreshOpacity: reduceMotion ? undefined : refreshSilenceOpacity,
 			},
 		);
+		// Sync the tick effect's baseline to what we just fed, so the next clock tick
+		// does not redundantly re-feed an identical opacity set right after this poll.
+		lastSilenceSignature = untrack(() => silenceSignature(serverNow, reduceMotion));
 		setStops(
 			m,
 			stops.data?.stops ?? [],
@@ -937,6 +988,85 @@
 		);
 		setNearTarget(m, nearMeOrigin);
 		setStale(m, live.isStale);
+	});
+
+	// Per-frame silence-fade refresher: recompute a bus's opacity from its frozen
+	// last-report time and the LIVE skew-free clock. Passed to the motion
+	// controller so the running position tween re-stamps opacity every frame — a
+	// bus going quiet mid-interval fades in place without waiting for a poll.
+	function refreshSilenceOpacity(feature: { properties: { id: string; opacity: number } }): number {
+		const updatedUtc = live.index.byVehicleId.get(feature.properties.id)?.updated_utc;
+		return updatedUtc == null
+			? feature.properties.opacity
+			: silenceOpacity(silenceAgeS(updatedUtc, sharedClock.serverNow), liveTtl);
+	}
+
+	// Cheap signature of the per-vehicle silence-opacity buckets at a given clock
+	// reading. Two ticks with the SAME signature would feed byte-identical opacity,
+	// so the tick effect can skip the rebuild + setData. Opacity is quantised to
+	// 3 decimals (~0.001 step) so a bus actively fading still changes the signature
+	// every tick (it MUST keep updating), while an all-fresh / all-floored feed —
+	// where opacity is pinned at 1 or the floor — yields a stable signature and is
+	// skipped. Uses the same discrete/continuous branch as the feed so the
+	// signature tracks exactly what would be drawn. Cost is one pass over the live
+	// vehicles (no FeatureCollection rebuild, no GL call).
+	function silenceSignature(serverNow: number, reduceMotion: boolean): string {
+		const vehicles = live.vehicles?.vehicles ?? [];
+		let sig = `${vehicles.length}`;
+		for (const v of vehicles) {
+			const ageS = silenceAgeS(v.updated_utc, serverNow);
+			const opacity = reduceMotion
+				? silenceOpacityDiscrete(ageS, liveTtl)
+				: silenceOpacity(ageS, liveTtl);
+			sig += `|${v.id}:${opacity.toFixed(3)}`;
+		}
+		return sig;
+	}
+
+	// SECOND, lightweight tick effect: re-target ONLY the vehicle layer on the
+	// shared clock so the silence fade advances between polls. Under reduced
+	// motion the clock ticks calmly (~30s) and we re-feed discrete opacity — no
+	// per-frame ramp. Re-targets via the SAME tickKey so the in-flight position
+	// tween is preserved (no motion restart), only opacity is refreshed.
+	$effect(() => {
+		// ONLY serverNow (+ the layer-install revision) is a tracked dependency, so
+		// this effect fires on the clock tick and after a style swap — NOT on every
+		// filter/selection change (the main effect above already handles those). All
+		// other reads are untracked.
+		const serverNow = sharedClock.serverNow;
+		// eslint-disable-next-line @typescript-eslint/no-unused-expressions
+		layerRevision;
+		untrack(() => {
+			const m = map;
+			if (!m || !vehicleMotion) return;
+			const reduceMotion = isPrefersReducedMotion();
+			// Short-circuit: if no vehicle's opacity bucket changed since the last
+			// re-feed (every bus still fresh or still floored), the rebuilt
+			// FeatureCollection would be byte-identical — skip the rebuild + setData.
+			// A bus crossing into / fading within the silence window changes the
+			// signature (opacity is quantised finely enough to move every tick mid-
+			// fade), so correctness is preserved: that bus still updates. The
+			// lastSilenceSignature reset on (re)install guarantees the first
+			// post-style-swap tick always feeds.
+			const signature = silenceSignature(serverNow, reduceMotion);
+			if (signature === lastSilenceSignature) return;
+			lastSilenceSignature = signature;
+			vehicleMotion.set(
+				toVehicleFeatures(
+					live.vehicles?.vehicles ?? [],
+					filters.state,
+					alertVehicleIds,
+					selectedVehicleId,
+					hoveredVehicleId,
+					{ serverNow, ttlS: liveTtl, reduceMotion },
+				),
+				{
+					tickKey: live.vehicles?.generated_utc ?? live.generatedUtc,
+					stale: live.isStale,
+					refreshOpacity: reduceMotion ? undefined : refreshSilenceOpacity,
+				},
+			);
+		});
 	});
 
 	$effect(() => {

@@ -16,6 +16,12 @@ import type { Map as MapLibreMap, GeoJSONSource, LayerSpecification } from 'mapl
 import type { Vehicle } from '$lib/v1/schemas';
 import type { EntityKind, FilterState } from '$lib/filters';
 import { bodyIconId, BUS_ICON, HEADING_ICON } from './vehicleSprites';
+import {
+	DEFAULT_LIVE_TTL_S,
+	silenceAgeS,
+	silenceOpacity,
+	silenceOpacityDiscrete,
+} from './vehicleSilence';
 
 export const VEHICLE_SOURCE = 'vehicles';
 export const VEHICLE_BODY_LAYER = 'vehicle-body';
@@ -36,6 +42,14 @@ export interface VehicleFeature {
 		hovered: number;
 		// 1 = visible (matches the filter, or no narrowing filter); 0 = hidden.
 		matched: number;
+		// Per-vehicle silence fade in [SILENCE_FLOOR_OPACITY, 1]: full when the bus
+		// just reported, fading toward the floor the longer ITS OWN last fix is.
+		// Driven data-driven into icon-opacity so one quiet bus dims independently
+		// of the global stale-dim. NEVER 0 (the feed still lists it = "last seen N").
+		opacity: number;
+		// Seconds since the vehicle's own last report (server clock). Carried for
+		// debugging / a future "last seen" hover; the fade reads `opacity`.
+		silenceAgeS: number;
 	};
 }
 export interface VehicleFC {
@@ -106,19 +120,47 @@ function iconFor(
 	return { body: BUS_ICON, matched: matched ? 1 : 0 };
 }
 
-/** Build the GeoJSON FeatureCollection for the current vehicles under the filter. */
+/** Skew-free "now" + live ttl so per-vehicle silence is measured honestly. */
+export interface VehicleSilenceContext {
+	/** `sharedClock.serverNow` (epoch ms) — skew-corrected, server timeline. */
+	serverNow: number;
+	/** Live tier ttl (seconds) from the manifest; default 30s. */
+	ttlS?: number;
+	/**
+	 * When true (prefers-reduced-motion), the silence opacity is set DISCRETELY
+	 * (a single mid step) instead of a continuous ramp — still honest, no
+	 * per-frame fade.
+	 */
+	reduceMotion?: boolean;
+}
+
+/** Build the GeoJSON FeatureCollection for the current vehicles under the filter.
+ *
+ * `silence` (optional) carries the skew-free clock + live ttl so each vehicle's
+ * OWN report age maps to a per-vehicle fade (see vehicleSilence.ts). Omitting it
+ * (e.g. legacy callers / tests) leaves every bus at full opacity — the fade is
+ * additive, never a regression. */
 export function toVehicleFeatures(
 	vehicles: readonly Vehicle[],
 	filter: FilterState,
 	alertVehicleIds: ReadonlySet<string> = new Set(),
 	selectedVehicleId: string | null = null,
 	hoveredVehicleId: string | null = null,
+	silence?: VehicleSilenceContext,
 ): VehicleFC {
 	const dim = colourDimension(filter);
+	const ttlS = silence?.ttlS ?? DEFAULT_LIVE_TTL_S;
 	return {
 		type: 'FeatureCollection',
 		features: vehicles.map((v) => {
 			const { body, matched } = iconFor(v, filter, dim, alertVehicleIds);
+			// Per-vehicle silence: 0 age (full opacity) when no clock is supplied.
+			const ageS = silence ? silenceAgeS(v.updated_utc, silence.serverNow) : 0;
+			const opacity = !silence
+				? 1
+				: silence.reduceMotion
+					? silenceOpacityDiscrete(ageS, ttlS)
+					: silenceOpacity(ageS, ttlS);
 			return {
 				type: 'Feature',
 				geometry: { type: 'Point', coordinates: [v.lon, v.lat] },
@@ -133,6 +175,8 @@ export function toVehicleFeatures(
 					selected: selectedVehicleId === v.id || filter.vehicles.has(v.id) ? 1 : 0,
 					hovered: hoveredVehicleId === v.id ? 1 : 0,
 					matched,
+					opacity,
+					silenceAgeS: Number.isFinite(ageS) ? Math.round(ageS) : -1,
 				},
 			};
 		}),
@@ -155,6 +199,33 @@ const ICON_SIZE = [
 	['case', ['==', ['get', 'hovered'], 1], 1.95, ['==', ['get', 'selected'], 1], 1.42, 1],
 ];
 
+// Per-vehicle silence fade, read from the feature's `opacity` property (computed
+// in toVehicleFeatures from each bus's OWN report age). `coalesce` defaults to
+// full strength when the property is absent (legacy/no-clock data), so the layer
+// is correct even before the first silence-aware setData. This composes with the
+// GLOBAL stale-dim via setStale (which multiplies the whole layer) — taking the
+// per-vehicle value as the primary signal and the global dim as a layer-wide
+// floor so we never double-darken a bus into invisibility.
+const SILENCE_OPACITY = ['coalesce', ['get', 'opacity'], 1];
+
+/** Global stale-dim multiplier: 45% when the WHOLE live tier is behind, else 1. */
+const GLOBAL_STALE_OPACITY = 0.45;
+
+/**
+ * Composed icon-opacity = per-vehicle silence × global stale multiplier.
+ *
+ * The per-vehicle fade is the primary signal (one quiet bus dims on its own);
+ * the global stale-dim is a layer-wide multiplier on top. We MULTIPLY rather
+ * than `min` so the two honest signals stack continuously — but because the
+ * silence floor is already ~0.25 and the stale factor 0.45, the deepest a bus
+ * can go is ~0.11, still faintly visible (never erased). When NOT globally stale
+ * the multiplier is 1, so silence is shown exactly as computed.
+ */
+function composedOpacity(globalStale: boolean): unknown {
+	const factor = globalStale ? GLOBAL_STALE_OPACITY : 1;
+	return factor === 1 ? SILENCE_OPACITY : ['*', SILENCE_OPACITY, factor];
+}
+
 /** Add the vehicle body + heading symbol layers. Non-matched features are
  * filtered OUT (they disappear); opacity carries only the stale dim. The bus
  * body is UPRIGHT (it reads at every bearing); the chevron is a SEPARATE layer
@@ -176,7 +247,9 @@ export function addVehicleLayers(map: MapLibreMap): void {
 			'icon-ignore-placement': true,
 			'icon-size': ICON_SIZE,
 		},
-		paint: { 'icon-opacity': 1 },
+		// Per-vehicle silence fade (data-driven); setStale multiplies the global
+		// stale-dim on top.
+		paint: { 'icon-opacity': composedOpacity(false) },
 		// maplibre's expression types are invariant + mutable; the literal is
 		// structurally correct, so cast through unknown.
 	} as unknown as LayerSpecification);
@@ -197,7 +270,7 @@ export function addVehicleLayers(map: MapLibreMap): void {
 			'icon-ignore-placement': true,
 			'icon-size': ICON_SIZE,
 		},
-		paint: { 'icon-opacity': 1 },
+		paint: { 'icon-opacity': composedOpacity(false) },
 	} as unknown as LayerSpecification);
 }
 
@@ -209,6 +282,7 @@ export function setVehicles(
 	alertVehicleIds?: ReadonlySet<string>,
 	selectedVehicleId?: string | null,
 	hoveredVehicleId?: string | null,
+	silence?: VehicleSilenceContext,
 ): void {
 	const src = map.getSource(VEHICLE_SOURCE) as GeoJSONSource | undefined;
 	src?.setData(
@@ -218,13 +292,18 @@ export function setVehicles(
 			alertVehicleIds,
 			selectedVehicleId,
 			hoveredVehicleId,
+			silence,
 		) as unknown as Parameters<GeoJSONSource['setData']>[0],
 	);
 }
 
-/** Dim the layers to 45% when the live feed is stale (never extrapolate). */
+/** Apply the GLOBAL stale-dim (whole live tier behind) ON TOP of each vehicle's
+ * per-vehicle silence fade. When stale, every bus is multiplied by 45%; the
+ * per-vehicle `opacity` property still carries each bus's own silence, so the two
+ * honest signals compose (see composedOpacity). Never extrapolate — this only
+ * dims, it never moves a bus. */
 export function setStale(map: MapLibreMap, stale: boolean): void {
-	const opacity = stale ? 0.45 : 1;
+	const opacity = composedOpacity(stale) as Parameters<MapLibreMap['setPaintProperty']>[2];
 	if (map.getLayer(VEHICLE_BODY_LAYER)) {
 		map.setPaintProperty(VEHICLE_BODY_LAYER, 'icon-opacity', opacity);
 	}

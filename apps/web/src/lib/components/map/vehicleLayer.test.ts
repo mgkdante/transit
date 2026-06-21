@@ -10,6 +10,11 @@ import {
 	toVehicleFeatures,
 } from './vehicleLayer';
 import { HEADING_ICON } from './vehicleSprites';
+import {
+	SILENCE_FLOOR_OPACITY,
+	FRESH_TTL_MULTIPLIER,
+	SILENT_TTL_MULTIPLIER,
+} from './vehicleSilence';
 
 function usesTopLevelZoomExpression(value: unknown): boolean {
 	return (
@@ -223,5 +228,95 @@ describe('toVehicleFeatures entity filtering', () => {
 			['directional', 1],
 			['no-direction', 0],
 		]);
+	});
+});
+
+describe('toVehicleFeatures per-vehicle silence fade', () => {
+	const TTL = 30;
+	// A fresh bus + a long-silent bus (same shape, different report time).
+	function fleet(freshUtc: string, silentUtc: string) {
+		return [
+			{ id: 'fresh', lat: 45.5, lon: -73.6, status: 'on_time', updated_utc: freshUtc, bearing: 90 },
+			{
+				id: 'silent',
+				lat: 45.51,
+				lon: -73.61,
+				status: 'on_time',
+				updated_utc: silentUtc,
+				bearing: 90,
+			},
+		].map((v) => VehicleSchema.parse(v));
+	}
+
+	it('defaults every bus to full opacity when no silence context is supplied', () => {
+		const features = toVehicleFeatures(vehicles, EMPTY_FILTER).features;
+		expect(features.map((f) => f.properties.opacity)).toEqual([1, 1]);
+	});
+
+	it('carries updated_utc into the feature opacity: fresh = full, long-silent = floor', () => {
+		const now = Date.parse('2026-06-21T12:00:00Z');
+		const fresh = '2026-06-21T12:00:00Z'; // age 0 → full
+		const silent = '2026-06-21T11:55:00Z'; // age 300s >> 3×ttl=90 → floor
+		const features = toVehicleFeatures(fleet(fresh, silent), EMPTY_FILTER, new Set(), null, null, {
+			serverNow: now,
+			ttlS: TTL,
+		}).features;
+		const byId = Object.fromEntries(features.map((f) => [f.properties.id, f.properties]));
+		expect(byId.fresh.opacity).toBe(1);
+		expect(byId.silent.opacity).toBe(SILENCE_FLOOR_OPACITY);
+		// silenceAgeS is carried (rounded seconds) for hover / debug.
+		expect(byId.silent.silenceAgeS).toBe(300);
+	});
+
+	it('fades a bus that is mid-window to a partial (visible) opacity', () => {
+		const now = Date.parse('2026-06-21T12:00:00Z');
+		const fadeStart = FRESH_TTL_MULTIPLIER * TTL; // 45
+		const fadeEnd = SILENT_TTL_MULTIPLIER * TTL; // 90
+		const midAge = (fadeStart + fadeEnd) / 2; // 67.5s
+		const reportedAt = new Date(now - midAge * 1000).toISOString();
+		const features = toVehicleFeatures(
+			fleet(reportedAt, reportedAt),
+			EMPTY_FILTER,
+			new Set(),
+			null,
+			null,
+			{ serverNow: now, ttlS: TTL },
+		).features;
+		const o = features[0].properties.opacity;
+		expect(o).toBeGreaterThan(SILENCE_FLOOR_OPACITY);
+		expect(o).toBeLessThan(1);
+	});
+
+	it('under reduced motion sets the silence opacity DISCRETELY (stepped, not a ramp)', () => {
+		const now = Date.parse('2026-06-21T12:00:00Z');
+		const midAge = (FRESH_TTL_MULTIPLIER + 0.5) * TTL; // inside fade window
+		const reportedAt = new Date(now - midAge * 1000).toISOString();
+		const features = toVehicleFeatures(
+			fleet(reportedAt, reportedAt),
+			EMPTY_FILTER,
+			new Set(),
+			null,
+			null,
+			{ serverNow: now, ttlS: TTL, reduceMotion: true },
+		).features;
+		// Discrete: the single mid step, exactly halfway between full and floor.
+		expect(features[0].properties.opacity).toBe((1 + SILENCE_FLOOR_OPACITY) / 2);
+	});
+
+	it('drives a data-driven icon-opacity from the opacity property on both layers', () => {
+		const layers: LayerSpecification[] = [];
+		const map = {
+			getLayer: () => undefined,
+			addLayer: (nextLayer: LayerSpecification) => {
+				layers.push(nextLayer);
+			},
+		} as unknown as MapLibreMap;
+		addVehicleLayers(map);
+		for (const id of [VEHICLE_BODY_LAYER, VEHICLE_HEADING_LAYER]) {
+			const layer = layers.find((l) => l.id === id);
+			expect(layer).toBeDefined();
+			const paint = (layer?.paint ?? {}) as Record<string, unknown>;
+			expect(JSON.stringify(paint['icon-opacity'])).toContain('opacity');
+		}
 	});
 });
