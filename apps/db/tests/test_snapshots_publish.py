@@ -532,6 +532,13 @@ def test_publish_historic_writes_expected_keys(tmp_path) -> None:
              "cancellation_rate_pct": 2.5, "canceled_trip_days": 3,
              "total_trip_days": 120},
         ]),
+        # build_route_reliability: tier-3 2D shift×day_type crosstab — unique
+        # discriminator "-- by_shift_daytype". MUST precede the broader
+        # "route_delay_by_shift" / "route_delay_hourly" substrings.
+        ("-- by_shift_daytype", [
+            {"shift": "am_peak", "day_type": "weekday", "known_obs": 40,
+             "on_time": 36, "avg_delay_sec": 90, "severe": 4, "obs": 50},
+        ]),
         # build_route_reliability: per-band delay×crowding — unique discriminator
         # "-- delay_by_crowding". MUST precede the broader "public_route_reliability
         # _daily" / "route_occupancy_band_daily" needles (both substrings appear in

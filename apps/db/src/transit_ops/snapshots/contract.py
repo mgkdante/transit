@@ -471,6 +471,24 @@ class CrowdingDelayCell(BaseModel):
     observation_count: int | None = None
     day_count: int | None = None
 
+class CrosstabCell(BaseModel):
+    # Tier-3 2D delay crosstab cell from gold.route_delay_by_shift_daytype: the
+    # per-route reliability for ONE (shift, day_type) intersection, regrouped from
+    # the same hourly spine as the 1D by_shift / by_daytype grains (so the cells
+    # reconcile with those marginals). shift uses the canonical time-of-day token
+    # (am_peak|midday|pm_peak|evening|night); day_type is weekday|weekend. The web
+    # reshapes a 5-shift x 2-day_type grid and shows a no-data MESSAGE per absent
+    # cell, so the list is SPARSE — only cells with observations are emitted.
+    # Honest-NULL: every metric is None (never a fabricated 0) when its input is
+    # absent. otp_pct is a REAL on_time/known OTP (the table carries an
+    # on_time_observation_count).
+    shift: str
+    day_type: str
+    otp_pct: float | None = None
+    avg_delay_min: float | None = None
+    severe_pct: float | None = None
+    observation_count: int | None = None
+
 class RouteHabits(BaseModel):
     scale: str
     # Per-route relative-problem heatmap: each cell is a fraction of the route's
@@ -513,6 +531,12 @@ class RouteReliability(BaseModel):
     # window (each route×day attributed to its dominant occupancy band). Empty
     # when the route has no occupancy telemetry in the window.
     delay_by_crowding: list[CrowdingDelayCell] = Field(default_factory=list)
+    # Tier-3 additive: 2D shift x day_type delay crosstab from
+    # gold.route_delay_by_shift_daytype. SPARSE — only (shift, day_type) cells with
+    # observations are emitted; the web reshapes a 5x2 grid and shows a no-data
+    # MESSAGE per absent cell. Defaults empty so already-published snapshots
+    # lacking this key still validate. Purely additive.
+    by_shift_daytype: list[CrosstabCell] = Field(default_factory=list)
 
 class StopReliabilityPeriod(BaseModel):
     grain: str

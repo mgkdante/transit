@@ -523,6 +523,57 @@ def test_granularity_shift_daytype_conserve_observations(conn) -> None:  # noqa:
         assert sum(r["observation_count"] for r in rows) == hourly_obs
 
 
+def test_crosstab_shift_daytype_conserves_and_reconciles(conn) -> None:  # noqa: ANN001
+    """Tier-3 2D crosstab: total obs == hourly spine, and each cell reconciles
+    with the 1D by_shift marginal (summing the crosstab over day_type)."""
+    connection, _seed = conn
+    hourly_obs = connection.execute(
+        text(
+            "SELECT COALESCE(SUM(observation_count), 0) FROM gold.route_delay_hourly "
+            "WHERE provider_id = :p AND route_id = '51T'"
+        ),
+        {"p": PROVIDER},
+    ).scalar_one()
+    assert hourly_obs > 0
+
+    cells = connection.execute(
+        text(
+            "SELECT shift, day_type, observation_count "
+            "FROM gold.route_delay_by_shift_daytype "
+            "WHERE provider_id = :p AND route_id = '51T'"
+        ),
+        {"p": PROVIDER},
+    ).mappings().all()
+    assert cells, "crosstab should have rows for 51T"
+    shift_vocab = {"am_peak", "midday", "pm_peak", "evening", "night"}
+    daytype_vocab = {"weekday", "weekend"}
+    assert all(c["shift"] in shift_vocab for c in cells), "shift out of vocabulary"
+    assert all(c["day_type"] in daytype_vocab for c in cells), "day_type out of vocabulary"
+    # PK uniqueness: at most one cell per (shift, day_type).
+    assert len({(c["shift"], c["day_type"]) for c in cells}) == len(cells)
+    # Regrouping the hourly spine conserves total observations.
+    assert sum(c["observation_count"] for c in cells) == hourly_obs
+
+    # Marginal reconciliation: summing the crosstab over day_type == the 1D
+    # by_shift observation_count for that shift (same hourly spine, same CASE).
+    by_shift = {
+        r["shift"]: r["observation_count"]
+        for r in connection.execute(
+            text(
+                "SELECT shift, observation_count FROM gold.route_delay_by_shift "
+                "WHERE provider_id = :p AND route_id = '51T'"
+            ),
+            {"p": PROVIDER},
+        ).mappings()
+    }
+    crosstab_by_shift: dict[str, int] = {}
+    for c in cells:
+        crosstab_by_shift[c["shift"]] = (
+            crosstab_by_shift.get(c["shift"], 0) + c["observation_count"]
+        )
+    assert crosstab_by_shift == by_shift
+
+
 # NOTE: per-direction headway is exercised in test_route_headway_real_db_regression.py
 # (test_direction_headway_keeps_both_directions_and_weekends), which seeds trips at
 # distinct times so real inter-trip gaps exist — the ghost-trip fixture here inserts

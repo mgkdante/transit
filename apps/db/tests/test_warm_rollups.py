@@ -22,6 +22,11 @@ REPORTING_AGGREGATE_TABLES = (
     "route_habit_score",
     "repeated_problem_route_stop",
     "citizen_accountability_daily",
+    # NOTE: route_delay_by_shift_daytype is listed BEFORE route_delay_by_shift so
+    # the FakeConnection substring dispatch matches the longer (_daytype) INSERT/
+    # DELETE/COUNT to its OWN entry rather than shadowing it under the shorter
+    # "route_delay_by_shift" needle.
+    "route_delay_by_shift_daytype",
     "route_delay_by_shift",
     "route_delay_by_daytype",
 )
@@ -981,9 +986,10 @@ def test_prune_warm_rollup_storage_dry_run_counts_without_deletes() -> None:
 
     count_queries = [s for s in conn.executed if "SELECT COUNT(*)" in s or "SELECT count(*)" in s]
     # 20 prior + 2 Tier-2 aggregate-retention tables (service-span + skipped-stop) +
-    # the per-stop occupancy-band twin (newly registered); each sits in
-    # GOLD_AGGREGATE_RETENTION_COLUMNS so each emits one dry-run COUNT.
-    assert len(count_queries) == 23
+    # the per-stop occupancy-band twin + the Tier-3 route_delay_by_shift_daytype
+    # crosstab (newly registered); each sits in GOLD_AGGREGATE_RETENTION_COLUMNS so
+    # each emits one dry-run COUNT.
+    assert len(count_queries) == 24
 
 
 def test_prune_warm_rollup_storage_display_dict_includes_dry_run() -> None:

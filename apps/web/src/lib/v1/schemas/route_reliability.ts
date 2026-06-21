@@ -104,6 +104,19 @@ export const CrowdingDelayCellSchema = z.object({
 });
 export type CrowdingDelayCell = z.infer<typeof CrowdingDelayCellSchema>;
 
+export const CrosstabCellSchema = z.object({
+	// canonical time-of-day shift token (am_peak|midday|pm_peak|evening|night).
+	shift: z.string(),
+	// weekday|weekend.
+	day_type: z.string(),
+	// REAL on_time/known OTP for this (shift, day_type) cell; null when no obs.
+	otp_pct: z.number().nullable().optional(),
+	avg_delay_min: z.number().nullable().optional(),
+	severe_pct: z.number().nullable().optional(),
+	observation_count: z.number().int().nullable().optional(),
+});
+export type CrosstabCell = z.infer<typeof CrosstabCellSchema>;
+
 export const RouteReliabilitySchema = z.object({
 	generated_utc: isoUtc(),
 	id: z.string(),
@@ -126,5 +139,8 @@ export const RouteReliabilitySchema = z.object({
 	// per-band delay×crowding correlation over trailing 30d; empty when no
 	// occupancy telemetry. Additive-optional (back-compat with older artifacts).
 	delay_by_crowding: z.array(CrowdingDelayCellSchema).optional(),
+	// Tier-3 2D shift × day_type delay crosstab; SPARSE (only cells with
+	// observations). Additive-optional (back-compat with older artifacts).
+	by_shift_daytype: z.array(CrosstabCellSchema).optional(),
 });
 export type RouteReliability = z.infer<typeof RouteReliabilitySchema>;
