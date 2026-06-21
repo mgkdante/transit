@@ -30,7 +30,10 @@
 		getLocale,
 	} from '$lib/i18n';
 	import type { ChromeSearchResult, ChromeSearchScope } from '$lib/search/chromeSearch';
+	import { localizeHref } from '$lib/i18n';
+	import { AUDIT_NAV, isSurfaceActive } from '$lib/content/nav';
 	import BrandCluster from '$lib/components/brand/BrandCluster.svelte';
+	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
 	import SurfaceNavList from './SurfaceNavList.svelte';
 	import LiveClock from './LiveClock.svelte';
 	import RefreshButton from './RefreshButton.svelte';
@@ -126,6 +129,19 @@
 	const openMenuAria = $derived(locale === 'fr' ? 'Ouvrir le menu' : 'Open menu');
 	const closeMenuAria = $derived(locale === 'fr' ? 'Fermer le menu' : 'Close menu');
 	const menuAria = $derived(locale === 'fr' ? 'Navigation mobile' : 'Mobile navigation');
+	// The mobile menu's Audit group (the accountability/meta surfaces): mobile has
+	// no LeftRail, and /map omits the footer, so without this the only escape from
+	// mobile /map is the brand→home link. Same AUDIT_NAV the rail iterates → no
+	// drift; localized + active-aware here.
+	const auditLabel = $derived(locale === 'fr' ? 'Vérification' : 'Audit');
+	const auditItems = $derived(
+		AUDIT_NAV.map((item) => ({
+			key: item.key,
+			href: localizeHref(item.href, locale),
+			label: item.label[locale],
+			active: isSurfaceActive(item, currentPath),
+		})),
+	);
 	// Active-network label for the context chip (a future network selector, cf.
 	// cityAria). Provider-agnostic: from the manifest, never a hardcoded 'STM'. The
 	// snappy short_name ("STM") is preferred for the compact chip, then the full
@@ -154,6 +170,10 @@
 	let mobileSearchOpen = $state(false);
 	let mobileMenuOpen = $state(false);
 	let mobileSearchInput = $state<HTMLInputElement>();
+	// The hamburger toggle, so closing the menu (Escape / backdrop / nav-link) can
+	// return focus to its trigger — the menu is now the primary mobile /map escape,
+	// so a keyboard/AT user must not be stranded with focus on a removed element.
+	let mobileMenuToggle = $state<HTMLButtonElement>();
 	let searchResultsOpen = $state(true);
 	let headerEl = $state<HTMLElement>();
 	// Cap the visible badge count so the pill never blows out the strip.
@@ -205,6 +225,14 @@
 		mobileMenuOpen = !mobileMenuOpen;
 	}
 
+	// Close the mobile menu and return focus to its trigger (Escape / backdrop /
+	// nav-link). Guarded on open so a stray call never steals focus.
+	function closeMobileMenu(): void {
+		if (!mobileMenuOpen) return;
+		mobileMenuOpen = false;
+		mobileMenuToggle?.focus();
+	}
+
 	function onKeydown(e: KeyboardEvent): void {
 		if (e.key === 'Escape' && showSearchResults) {
 			searchResultsOpen = false;
@@ -215,7 +243,7 @@
 		}
 		if (e.key === 'Escape' && mobileMenuOpen) {
 			e.stopPropagation();
-			mobileMenuOpen = false;
+			closeMobileMenu();
 		}
 	}
 
@@ -383,6 +411,7 @@
 		<LangSwitch {locale} {url} {availableLocales} />
 
 		<button
+			bind:this={mobileMenuToggle}
 			type="button"
 			class="tap-press topbar-menu-toggle md:hidden"
 			aria-label={mobileMenuOpen ? closeMenuAria : openMenuAria}
@@ -483,7 +512,7 @@
 			class="topbar-mobile-menu-backdrop md:hidden"
 			tabindex="-1"
 			aria-hidden="true"
-			onclick={() => (mobileMenuOpen = false)}
+			onclick={closeMobileMenu}
 		></button>
 
 		<nav
@@ -492,6 +521,33 @@
 			data-testid="topbar-mobile-menu"
 		>
 			<SurfaceNavList {locale} {currentPath} linkClass="topbar-mobile-menu-link" />
+
+			<!-- Audit group — the accountability/meta surfaces, the mobile counterpart
+			     of the LeftRail's Audit section. A labelled sub-group so mobile /map
+			     (no rail, no footer) is no longer a dead-end. -->
+			<div
+				class="topbar-mobile-menu-group"
+				role="group"
+				aria-label={auditLabel}
+				data-slot="topbar-mobile-audit"
+			>
+				<SectionLabel
+					text={auditLabel}
+					variant="station"
+					class="topbar-mobile-menu-group-heading"
+				/>
+				{#each auditItems as item (item.key)}
+					<a
+						href={item.href}
+						class="topbar-mobile-menu-link"
+						aria-current={item.active ? 'page' : undefined}
+						onclick={closeMobileMenu}
+					>
+						<span>{item.label}</span>
+					</a>
+				{/each}
+			</div>
+
 			<a
 				href="https://yesid.dev"
 				target="_blank"
@@ -601,6 +657,15 @@
 		display: grid;
 		gap: 0.35rem;
 		width: min(19rem, calc(100vw - 1.5rem));
+		/* Cap the height so the grown menu (primaries + Audit group + house link)
+		   scrolls INTERNALLY on short viewports instead of overflowing past the
+		   non-scrolling header — critical on /map, where the body is overflow-hidden
+		   and the page itself cannot scroll the tail into reach. Mirrors the search-
+		   results cap above; `overscroll-behavior: contain` keeps the scroll from
+		   chaining to the locked page behind it. */
+		max-height: min(calc(100dvh - 5rem), 34rem);
+		overflow-y: auto;
+		overscroll-behavior: contain;
 		padding: 0.55rem;
 		background: color-mix(in srgb, var(--card) 96%, transparent);
 		border: 1px solid color-mix(in srgb, var(--border) 82%, var(--primary) 18%);
@@ -648,6 +713,19 @@
 	.topbar-mobile-menu :global(.topbar-mobile-menu-link small) {
 		flex: none;
 		color: var(--muted-foreground);
+	}
+	/* Audit sub-group — separated from the primaries by a quiet rule + a station-
+	   voice heading, mirroring the LeftRail Audit section. */
+	.topbar-mobile-menu-group {
+		display: grid;
+		gap: 0.35rem;
+		margin-top: 0.5rem;
+		padding-top: 0.55rem;
+		border-top: 1px solid var(--border-subtle);
+	}
+	.topbar-mobile-menu :global(.topbar-mobile-menu-group-heading) {
+		padding-inline: 0.15rem;
+		padding-bottom: 0.1rem;
 	}
 	.topbar-mobile-house {
 		display: inline-flex;

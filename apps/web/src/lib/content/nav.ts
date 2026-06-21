@@ -52,6 +52,25 @@ export interface SecondaryNavLink {
 }
 
 /**
+ * An accountability/meta surface exposed in the side-nav "Audit" group (and the
+ * footer). Like SURFACE_NAV it carries an icon `key` (for the rail glyph) + an
+ * `activePrefixes` set (so the rail highlights it on its own path); unlike it,
+ * these are NOT primary wayfinding surfaces — they read the roll-ups to hold the
+ * service to account, so they live in their own labelled group below the four
+ * primaries. Locale-LESS href, localized at render.
+ */
+export interface AuditNavItem {
+	/** Stable identity (icon lookup + #each keys). */
+	readonly key: 'metrics' | 'status' | 'hotspots' | 'receipt' | 'repeatOffenders' | 'alerts';
+	/** Locale-LESS path, e.g. `/hotspots`. */
+	readonly href: string;
+	/** Primary label. */
+	readonly label: BilingualLabel;
+	/** Delocalized path prefixes that mark this item active (cf. SurfaceNavItem). */
+	readonly activePrefixes: readonly string[];
+}
+
+/**
  * The primary surfaces, in wayfinding order: the live map hub first, then the
  * per-line and per-stop catalogues, then the network-health / data-trust surface.
  * These are the REAL shipped routes (verified against src/routes).
@@ -93,28 +112,73 @@ export const MENU_EXTRAS: readonly ExternalNavLink[] = [
 ] as const;
 
 /**
- * Secondary in-app reference links — surfaced in the footer, not the primary
- * rail. The metric explainer (/metrics) lives here: it is a site-wide
- * methodology reference every surface deep-links into, not a wayfinding surface.
- * The accountability surfaces (/hotspots, /receipt, /repeat-offenders, /alerts)
- * are audit/meta pages in the same vein as /metrics + /status — they read the
- * roll-ups to hold the service to account, rather than being primary wayfinding
- * surfaces, so they live here beside the methodology + data-health links.
+ * The "Audit" group — the accountability/meta surfaces, the SINGLE source for
+ * both the side-nav Audit section (LeftRail / mobile menu) and the footer. The
+ * metric explainer (/metrics) + data-health (/status) anchor it; the four
+ * accountability surfaces (/hotspots, /receipt, /repeat-offenders, /alerts) read
+ * the roll-ups to hold the service to account. None are primary wayfinding
+ * surfaces, so they ride this labelled group below the four primaries rather than
+ * SURFACE_NAV. Locale-LESS hrefs, localized at render by every consumer.
  */
-export const SECONDARY_NAV: readonly SecondaryNavLink[] = [
-	{ href: '/metrics', label: { en: 'How we measure', fr: 'Comment on mesure' } },
-	{ href: '/status', label: { en: 'Data health', fr: 'Santé des données' } },
-	{ href: '/hotspots', label: { en: 'Hotspots', fr: 'Points chauds' } },
-	{ href: '/receipt', label: { en: 'Daily receipt', fr: 'Reçu quotidien' } },
-	{ href: '/repeat-offenders', label: { en: 'Repeat offenders', fr: 'Récidivistes' } },
-	{ href: '/alerts', label: { en: 'Alerts', fr: 'Avis' } },
+export const AUDIT_NAV: readonly AuditNavItem[] = [
+	{
+		key: 'metrics',
+		href: '/metrics',
+		label: { en: 'How we measure', fr: 'Comment on mesure' },
+		activePrefixes: ['/metrics'],
+	},
+	{
+		key: 'status',
+		href: '/status',
+		label: { en: 'Data health', fr: 'Santé des données' },
+		activePrefixes: ['/status'],
+	},
+	{
+		key: 'hotspots',
+		href: '/hotspots',
+		label: { en: 'Hotspots', fr: 'Points chauds' },
+		activePrefixes: ['/hotspots'],
+	},
+	{
+		key: 'receipt',
+		href: '/receipt',
+		label: { en: 'Daily receipt', fr: 'Reçu quotidien' },
+		activePrefixes: ['/receipt'],
+	},
+	{
+		key: 'repeatOffenders',
+		href: '/repeat-offenders',
+		label: { en: 'Repeat offenders', fr: 'Récidivistes' },
+		activePrefixes: ['/repeat-offenders'],
+	},
+	{
+		key: 'alerts',
+		href: '/alerts',
+		label: { en: 'Alerts', fr: 'Avis' },
+		activePrefixes: ['/alerts'],
+	},
 ] as const;
 
 /**
- * True when `currentPath` (a DELOCALIZED pathname, e.g. `/route/1`) falls under
- * one of the surface's active prefixes. Pure — callers delocalize first.
+ * Secondary in-app reference links — surfaced in the footer. Derived from
+ * AUDIT_NAV so the footer and the side-nav Audit group can never drift: every
+ * audit surface stays footer-reachable (no regression) while AUDIT_NAV is the
+ * canonical list the rail iterates.
  */
-export function isSurfaceActive(item: SurfaceNavItem, currentPath: string): boolean {
+export const SECONDARY_NAV: readonly SecondaryNavLink[] = AUDIT_NAV.map((item) => ({
+	href: item.href,
+	label: item.label,
+}));
+
+/**
+ * True when `currentPath` (a DELOCALIZED pathname, e.g. `/route/1`) falls under
+ * one of the item's active prefixes. Pure — callers delocalize first. Structural
+ * over `activePrefixes`, so it serves both SURFACE_NAV and AUDIT_NAV items.
+ */
+export function isSurfaceActive(
+	item: { readonly activePrefixes: readonly string[] },
+	currentPath: string,
+): boolean {
 	return item.activePrefixes.some((prefix) => {
 		const base = prefix.endsWith('/') ? prefix.slice(0, -1) : prefix;
 		return currentPath === base || currentPath.startsWith(`${base}/`);

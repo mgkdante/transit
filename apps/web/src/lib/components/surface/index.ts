@@ -16,6 +16,7 @@ export { default as SurfaceHeader } from './SurfaceHeader.svelte';
 export { default as EntityRow } from './EntityRow.svelte';
 export { default as EntityList } from './EntityList.svelte';
 export { default as EntityDetail } from './EntityDetail.svelte';
+export { default as Breadcrumb } from './Breadcrumb.svelte';
 export { default as ReliabilityPane } from './ReliabilityPane.svelte';
 export { default as GrainPicker } from './GrainPicker.svelte';
 export { default as LiveFreshness } from './LiveFreshness.svelte';

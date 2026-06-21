@@ -18,8 +18,8 @@
 	import PanelLeftOpenIcon from '@lucide/svelte/icons/panel-left-open';
 	import { cn } from '$lib/utils';
 	import { type Locale, DEFAULT_LOCALE, delocalizePath, getLocale, localizeHref } from '$lib/i18n';
-	import { SURFACE_NAV, isSurfaceActive } from '$lib/content/nav';
-	import { navIcons } from './navIcons';
+	import { SURFACE_NAV, AUDIT_NAV, isSurfaceActive } from '$lib/content/nav';
+	import { navIcons, auditIcons } from './navIcons';
 	import { ScrollArea } from '$lib/components/ui/scroll-area';
 	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
 
@@ -56,6 +56,10 @@
 	const navAria = $derived(locale === 'fr' ? 'Navigation du réseau' : 'Network navigation');
 	const collapseAria = $derived(locale === 'fr' ? 'Réduire la navigation' : 'Collapse navigation');
 	const expandAria = $derived(locale === 'fr' ? 'Ouvrir la navigation' : 'Expand navigation');
+	// The Audit group heading + its accessible name. FR "Vérification" is the honest
+	// term for the accountability/meta surfaces (records examined to hold the service
+	// to account), not the loanword "Audit".
+	const auditLabel = $derived(locale === 'fr' ? 'Vérification' : 'Audit');
 	const currentPath = $derived(delocalizePath(url?.pathname ?? '/'));
 	const navItems = $derived(
 		SURFACE_NAV.map((item) => ({
@@ -63,6 +67,14 @@
 			href: localizeHref(item.href, locale),
 			label: item.label[locale],
 			meta: item.description[locale],
+			active: isSurfaceActive(item, currentPath),
+		})),
+	);
+	const auditItems = $derived(
+		AUDIT_NAV.map((item) => ({
+			key: item.key,
+			href: localizeHref(item.href, locale),
+			label: item.label[locale],
 			active: isSurfaceActive(item, currentPath),
 		})),
 	);
@@ -105,6 +117,10 @@
 	     scrollbar appears as the rail is dragged narrower. -->
 	<ScrollArea class="min-h-0 flex-1" data-slot="left-rail-body">
 		<div class="left-rail-body-inner p-3">
+			<!-- Active rail body — the page's custom rail snippet when expanded, else the
+			     default primary nav (also the collapsed icon-only treatment). The Audit
+			     group renders BELOW this on EVERY surface so it stays reachable in the
+			     expanded rail even when a page supplies its own rail content. -->
 			{#if children && !collapsed}
 				{@render children()}
 			{:else}
@@ -130,6 +146,39 @@
 					{/each}
 				</div>
 			{/if}
+
+			<!-- Audit group — the accountability/meta surfaces, below whatever rail body
+			     is active. A labelled <div role="group">: the heading shows when expanded
+			     and hides under the icon-only collapse, but the group keeps its aria-label
+			     so it stays a named section for AT at every width. Items carry icon +
+			     title/aria tooltips so they survive the collapse. Always rendered (custom
+			     rail or default nav, expanded or collapsed) so it is never unreachable. -->
+			<div class="left-rail-group" role="group" aria-label={auditLabel} data-slot="left-rail-audit">
+				{#if !collapsed}
+					<SectionLabel text={auditLabel} variant="station" class="left-rail-group-heading" />
+				{/if}
+				<div class="left-rail-nav">
+					{#each auditItems as item (item.key)}
+						{@const Icon = auditIcons[item.key]}
+						<a
+							href={item.href}
+							class="left-rail-link"
+							title={collapsed ? item.label : undefined}
+							aria-label={item.label}
+							aria-current={item.active ? 'page' : undefined}
+						>
+							<span class="left-rail-icon" aria-hidden="true">
+								<Icon size={17} strokeWidth={2.1} />
+							</span>
+							{#if !collapsed}
+								<span class="left-rail-copy">
+									<span>{item.label}</span>
+								</span>
+							{/if}
+						</a>
+					{/each}
+				</div>
+			</div>
 		</div>
 	</ScrollArea>
 </nav>
@@ -167,6 +216,29 @@
 
 	.left-rail[data-open='false'] .left-rail-nav {
 		justify-items: center;
+	}
+
+	/* Audit group — separated from the primaries by a quiet rule + breathing room,
+	   so it reads as a distinct section without shouting. The heading is a station-
+	   voice SectionLabel; under the icon-only collapse it is omitted in markup, and
+	   the rule tightens so the icons stay flush. */
+	.left-rail-group {
+		display: grid;
+		gap: 0.4rem;
+		margin-top: 0.85rem;
+		padding-top: 0.75rem;
+		border-top: 1px solid var(--border-subtle);
+	}
+
+	.left-rail[data-open='false'] .left-rail-group {
+		justify-items: center;
+		margin-top: 0.55rem;
+		padding-top: 0.55rem;
+	}
+
+	:global(.left-rail-group-heading) {
+		padding-inline: 0.2rem;
+		padding-bottom: 0.1rem;
 	}
 
 	.left-rail-link {
