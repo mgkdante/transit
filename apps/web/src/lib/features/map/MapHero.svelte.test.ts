@@ -384,7 +384,13 @@ describe('MapHero mobile chrome', () => {
 		expect(s).toContain('DESKTOP_RIGHT_PAD_FRAC');
 		expect(s).toContain('const mapFitPadding = $derived');
 		expect(s).not.toContain('{#if basemap.settled}');
-		expect(mapStageBlock).toContain('basemap={basemap.data}');
+		// B2 — the basemap resolves via `basemapLoader` (awaited inside MapStage's
+		// onMount, baked into the constructor style) for a HOT first paint with no
+		// post-mount setStyle wipe. It is no longer a post-mount createResource whose
+		// null→file settle triggered a full style rebuild (the flicker).
+		expect(mapStageBlock).toContain('basemapLoader={() => getBasemap()}');
+		expect(mapStageBlock).not.toContain('basemap={basemap.data}');
+		expect(s).not.toContain('const basemap = createResource');
 		expect(mapStageBlock).toContain('{theme}');
 		expect(mapStageBlock).toContain('bounds={ISLAND_FIT_BOUNDS}');
 		// maxBounds crops the off-island east (south-shore) — fit padding can't crop.
@@ -458,11 +464,14 @@ describe('MapHero mobile chrome', () => {
 			/<ResizableHandle[\s\S]*withHandle[\s\S]*class="map-detail-resize-handle"[\s\S]*\/>/,
 		);
 		expect(paneGroupBlock).toContain('bind:this={rightPanelPane}');
-		expect(paneGroupBlock).toContain('defaultSize={51}');
-		expect(paneGroupBlock).toContain('minSize={32}');
-		expect(paneGroupBlock).toContain('maxSize={74}');
+		// B1 — the rail pane sizes from the responsive helper (percents derived from
+		// the live hero width so a constant-rem rail reads the same at every desktop
+		// width), not the old fixed too-wide percents.
+		expect(paneGroupBlock).toContain('defaultSize={railSizing.defaultSize}');
+		expect(paneGroupBlock).toContain('minSize={railSizing.minSize}');
+		expect(paneGroupBlock).toContain('maxSize={railSizing.maxSize}');
 		expect(paneGroupBlock).toContain('collapsible');
-		expect(paneGroupBlock).toContain('collapsedSize={9}');
+		expect(paneGroupBlock).toContain('collapsedSize={railSizing.collapsedSize}');
 		expect(paneGroupBlock).toContain('{@render detailPanel()}');
 		// The detail panel snippet keeps the resizable RightPanel + collapse wiring.
 		const detailPanelBlock =
@@ -491,5 +500,60 @@ describe('MapHero mobile chrome', () => {
 		expect(s).toContain('{@render mapBody()}');
 		expect(s).toContain('{#if layout.isDesktop && detailOpen}');
 		expect(s).not.toContain('{:else}\n\t\t{@render mapBody()}');
+	});
+
+	// B1 — the right rail is sized off a CONSTANT-rem target re-expressed as a
+	// responsive percent (mapRailSizing), and clamped in px on the pane itself so it
+	// is genuinely narrow + can't eat the map at any desktop width.
+	it('sizes the right rail responsively from the live hero width (B1)', () => {
+		const s = source();
+
+		expect(s).toContain("import { mapRailSizing } from './mapRailSizing'");
+		expect(s).toContain('const railSizing = $derived(mapRailSizing(mapWidthPx))');
+		// The pane consumes the derived percents, not the old fixed too-wide ones.
+		expect(s).not.toContain('defaultSize={51}');
+		expect(s).not.toContain('minSize={32}');
+		expect(s).not.toContain('collapsedSize={9}');
+	});
+
+	it('hard-clamps the expanded rail to a rem floor/ceiling and drops it when collapsed (B1)', () => {
+		const s = source();
+		const paneClampBlock =
+			s.match(/:global\(\.map-detail-pane:not\(\[data-collapsed\]\)\)\s*\{[\s\S]*?\}/)?.[0] ?? '';
+
+		expect(s).toContain('class="map-detail-pane"');
+		// The clamp is scoped to NOT collapsed so the 3.7rem icon strip is not forced
+		// back to the 22rem floor when paneforge sets data-collapsed.
+		expect(paneClampBlock).toContain('min-width: 22rem');
+		expect(paneClampBlock).toContain('max-width: 34rem');
+	});
+
+	// B3 — clicking a bus promotes its route to the filter spine (route= param + a
+	// removable chip), and the route-line highlight is gated on that filter so the
+	// chip and highlight stay in lockstep (discard the chip → un-highlight).
+	it('promotes a clicked bus route to the URL filter spine as a removable chip (B3)', () => {
+		const s = source();
+		const addSelectionFilter = s.match(/function addSelectionFilter[\s\S]*?\n\t}/)?.[0] ?? '';
+		const promote = s.match(/function promoteVehicleRoute[\s\S]*?\n\t}/)?.[0] ?? '';
+
+		// The vehicle branch adds the vehicle AND promotes its route.
+		expect(addSelectionFilter).toContain('filters.addVehicle(selection.id)');
+		expect(addSelectionFilter).toContain('promoteVehicleRoute(selection.id)');
+		// The route is resolved via the SAME live index the highlight uses, then added
+		// to the route filter (which renders the existing removable route chip + the
+		// route= URL param). A bus with no route id is a no-op.
+		expect(promote).toContain('live.index.byVehicleId.get(vehicleId)?.route');
+		expect(promote).toContain('filters.addRoute(route)');
+	});
+
+	it('gates the selected-vehicle route-line highlight on the route filter so discarding the chip un-highlights (B3)', () => {
+		const s = source();
+		const selectedRouteLineIdBlock =
+			s.match(/const selectedRouteLineId = \$derived\.by[\s\S]*?\n\t\}\);/)?.[0] ?? '';
+
+		// The vehicle case only highlights while the route is still in filters.routes;
+		// removing the chip (filters.removeRoute) drops it from the set → no highlight.
+		expect(selectedRouteLineIdBlock).toContain("selected?.kind === 'vehicle'");
+		expect(selectedRouteLineIdBlock).toContain('filters.routes.has(route)');
 	});
 });

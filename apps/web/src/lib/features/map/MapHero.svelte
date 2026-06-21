@@ -83,6 +83,7 @@
 	import { sharedClock } from '$lib/stores';
 	import { isPrefersReducedMotion } from '$lib/motion/reduced-motion.svelte';
 	import MapFilters from './MapFilters.svelte';
+	import { mapRailSizing } from './mapRailSizing';
 	import MapFilterPill from './MapFilterPill.svelte';
 	import MapLiveFreshness from './MapLiveFreshness.svelte';
 	import MapNearMeControl from './MapNearMeControl.svelte';
@@ -192,7 +193,10 @@
 	});
 
 	// Basemap pointer (hosted Montréal PMTiles), or null → minimal-dark fallback.
-	const basemap = createResource(() => getBasemap());
+	// NOT a createResource here: MapStage resolves it via `basemapLoader` at mount
+	// (B2 hot first paint) so it is baked into the constructor style — a resource
+	// that settled AFTER mount used to flip basemap.data null→file and trigger a
+	// full setStyle wipe (the flicker). getBasemap() is passed straight to the stage.
 	// Static stop catalogue (8,986 stops) for the stops layer + (later) near-me.
 	const stops = createResource(() => getStopsIndex());
 	const routesIndex = createResource(() => getRoutesIndex());
@@ -297,10 +301,17 @@
 	// route, OR the route a selected vehicle is working (so clicking a bus lights
 	// up its line). Null when nothing route-bearing is selected — no highlight,
 	// honest. Vehicles carry no direction, so the whole route lights up.
+	//
+	// B3 — for the vehicle case the highlight is GATED on the route still being in
+	// the filter spine: selecting a bus promotes its route to filters (the chip),
+	// so the line lights up; discarding that route chip removes it from
+	// filters.routes, which both drops the `route=` param AND un-highlights the
+	// line here — chip and highlight stay in lockstep.
 	const selectedRouteLineId = $derived.by<string | null>(() => {
 		if (selected?.kind === 'route') return selected.id;
 		if (selected?.kind === 'vehicle') {
-			return live.index.byVehicleId.get(selected.id)?.route ?? null;
+			const route = live.index.byVehicleId.get(selected.id)?.route ?? null;
+			return route != null && filters.routes.has(route) ? route : null;
 		}
 		return null;
 	});
@@ -422,6 +433,16 @@
 		detailOpen && layout.isDesktop ? `${Math.round(rightPanelWidthPx)}px` : '0rem',
 	);
 
+	// Right-rail paneforge percents derived from the LIVE hero width (B1). paneforge
+	// sizes in percent, so a constant-rem rail (narrow floor + ceiling + thin
+	// collapsed strip) must be re-expressed as a percent of the current hero width —
+	// otherwise the same percent renders too wide at every desktop width. mapWidthPx
+	// tracks the hero clientWidth (window resize only, NOT pane drag), so these stay
+	// stable while dragging yet responsive across 1024/1280/1600. The CSS min/max-
+	// width clamp on the pane agrees with these (both derive from the same rems), so
+	// the percent floor and the px clamp never fight.
+	const railSizing = $derived(mapRailSizing(mapWidthPx));
+
 	function clearHover(m: MapLibreMap): void {
 		hovered = null;
 		m.getCanvas().style.cursor = '';
@@ -450,6 +471,12 @@
 		switch (selection.kind) {
 			case 'vehicle':
 				filters.addVehicle(selection.id);
+				// B3 — promote the bus's route to the filter spine so a `route=` param
+				// lands in the URL AND a removable route chip renders in MapFilters.
+				// Resolve it via the SAME live index the route-line highlight uses
+				// (byVehicleId.route), so chip + highlight stay in lockstep. A bus with
+				// no route id adds no chip (honest — addRoute('') is a no-op via trim).
+				promoteVehicleRoute(selection.id);
 				break;
 			case 'stop':
 				filters.addStop(selection.id);
@@ -458,6 +485,12 @@
 				filters.addRoute(selection.id);
 				break;
 		}
+	}
+
+	/** Resolve a vehicle's route from the live index and add it to the filter store. */
+	function promoteVehicleRoute(vehicleId: string): void {
+		const route = live.index.byVehicleId.get(vehicleId)?.route;
+		if (route) filters.addRoute(route);
 	}
 
 	function hoverPickedFeature(m: MapLibreMap, e: MapMouseEvent): void {
@@ -1115,11 +1148,17 @@
      physically shrinks when the right detail pane opens/resizes; MapStage's own
      ResizeObserver then re-fits the GL viewport to the narrower width. -->
 {#snippet mapBody()}
-	<!-- Mount immediately with the built-in fallback style; the optional PMTiles
-	     basemap can resolve later and repaint without leaving the map blank. -->
+	<!-- HOT FIRST PAINT (B2): MapStage awaits the basemap via `basemapLoader` INSIDE
+	     its own onMount and bakes the resolved basemap into the constructor style, so
+	     the very first frame already carries the hosted basemap — no post-mount
+	     `setStyle` wipe, no flicker, no blank-then-repaint. The `basemap` prop stays
+	     `undefined` (deferred) so the live resource settling from null does NOT fire a
+	     downgrade swap; a real pointer change (snapshot republish via dataRefresh)
+	     re-runs getBasemap through the same loader on remount. Theme swaps still
+	     repaint via the `theme` prop's lighter applyBasemapTheme path. -->
 	<MapStage
 		class="map-hero-stage"
-		basemap={basemap.data}
+		basemapLoader={() => getBasemap()}
 		{theme}
 		center={mapInitialCenter}
 		bounds={ISLAND_FIT_BOUNDS}
@@ -1183,12 +1222,13 @@
 			<ResizableHandle withHandle class="map-detail-resize-handle" />
 			<ResizablePane
 				bind:this={rightPanelPane}
+				class="map-detail-pane"
 				order={2}
-				defaultSize={51}
-				minSize={32}
-				maxSize={74}
+				defaultSize={railSizing.defaultSize}
+				minSize={railSizing.minSize}
+				maxSize={railSizing.maxSize}
 				collapsible
-				collapsedSize={9}
+				collapsedSize={railSizing.collapsedSize}
 				onCollapse={() => (rightPanelCollapsed = true)}
 				onExpand={() => (rightPanelCollapsed = false)}
 			>
@@ -1478,6 +1518,18 @@
 	   echoing the stale-freshness chrome; the text still carries the meaning. */
 	.map-live-edge[data-state='unavailable'] {
 		border-top-color: color-mix(in srgb, var(--dataviz-status-late) 48%, var(--border-rule) 52%);
+	}
+
+	/* B1 — the right rail pane carries a HARD rem clamp so the EXPANDED rail has a
+	   genuinely narrow floor (22rem) and a real ceiling (34rem), independent of the
+	   percent paneforge layouts it with. The percent minSize/maxSize (derived from
+	   these exact rems at the live hero width) stop the drag at the same pixel, so
+	   the clamp and the percent never fight; the clamp only has to bite during the
+	   brief pre-measure frame. It is REMOVED while collapsed (paneforge sets
+	   data-collapsed) so the thin 3.7rem icon strip is not forced back to 22rem. */
+	:global(.map-detail-pane:not([data-collapsed])) {
+		min-width: 22rem;
+		max-width: 34rem;
 	}
 
 	.map-detail-panel-frame {

@@ -201,10 +201,21 @@
 		width: 3.7rem;
 	}
 
-	.right-panel[data-resizable='true'],
-	.right-panel[data-resizable='true'][data-open='false'] {
+	/* EXPANDED in a resizable pane: fill the pane's allotted width (paneforge owns
+	   the rem floor/ceiling on the pane itself). */
+	.right-panel[data-resizable='true'] {
 		width: 100%;
 		min-width: 0;
+	}
+	/* COLLAPSED in a resizable pane: shrink to the icon-strip rem floor instead of
+	   filling 100% — that override used to leave RightPanel's good 3.7rem collapsed
+	   width dead, so the "collapsed" rail was as wide as the pane percent (the B1
+	   too-wide-strip bug). 3.7rem is just the toggle/back icon column; it matches
+	   the pane's collapsedSize percent (both derive from 3.7rem), so the strip is a
+	   constant width across desktop widths and never leaves a gap in the pane. */
+	.right-panel[data-resizable='true'][data-open='false'] {
+		width: 3.7rem;
+		min-width: 3.7rem;
 	}
 
 	/* Reserve a stable scrollbar gutter so the dock body never shifts horizontally
