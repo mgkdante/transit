@@ -91,6 +91,19 @@ export const CancellationPeriodSchema = z.object({
 });
 export type CancellationPeriod = z.infer<typeof CancellationPeriodSchema>;
 
+export const CrowdingDelayCellSchema = z.object({
+	// occupancy band label, same vocabulary as OccupancyMix keys
+	// (empty/many_seats/few_seats/standing/full).
+	band: z.string(),
+	// observation-weighted avg delay for route×days whose dominant band was this.
+	avg_delay_min: z.number().nullable().optional(),
+	// best-effort observation-weighted mean of contributing daily p50s.
+	p50_min: z.number().nullable().optional(),
+	observation_count: z.number().int().nullable().optional(),
+	day_count: z.number().int().nullable().optional(),
+});
+export type CrowdingDelayCell = z.infer<typeof CrowdingDelayCellSchema>;
+
 export const RouteReliabilitySchema = z.object({
 	generated_utc: isoUtc(),
 	id: z.string(),
@@ -110,5 +123,8 @@ export const RouteReliabilitySchema = z.object({
 	service_spans: z.array(ServiceSpanPeriodSchema).optional(),
 	// per-day skipped-stop rate history (ramp-in, no backfill).
 	skipped_stops: z.array(SkippedStopPeriodSchema).optional(),
+	// per-band delay×crowding correlation over trailing 30d; empty when no
+	// occupancy telemetry. Additive-optional (back-compat with older artifacts).
+	delay_by_crowding: z.array(CrowdingDelayCellSchema).optional(),
 });
 export type RouteReliability = z.infer<typeof RouteReliabilitySchema>;

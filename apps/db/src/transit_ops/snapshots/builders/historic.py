@@ -44,6 +44,7 @@ from transit_ops.snapshots.contract import (
     AlertHistory,
     AlertHistoryEntry,
     CancellationPeriod,
+    CrowdingDelayCell,
     HeadwayPeriod,
     Hotspot,
     Hotspots,
@@ -92,6 +93,68 @@ def _occupancy_mix_from_bands(row: object) -> OccupancyMix | None:
     if not total:
         return None
     return OccupancyMix(**{band: counts[band] / total for band in _OCCUPANCY_BANDS})
+
+
+def _delay_by_crowding_cells(
+    rows, route_pctile: dict[str, tuple[float | None, float | None]]
+) -> list[CrowdingDelayCell]:
+    """Build per-band delay×crowding cells from per-day band-count + delay rows.
+
+    For each route×day: pick the DOMINANT band (argmax of that day's 5 band
+    counts; days with zero band observations are skipped) and bucket that day's
+    delay under it. Ties resolve to canonical band order (``_OCCUPANCY_BANDS``,
+    i.e. the lower-crowding band wins) — deterministic, rare in practice.
+    Aggregate per band over the window: avg_delay_min is
+    observation-weighted by the day's delay_observation_count; p50_min is a
+    best-effort observation-weighted mean of the contributing daily p50s (an
+    approximation — daily percentiles are not exactly additively composable);
+    observation_count sums the daily delay observations; day_count counts the
+    contributing days. Bands with zero contributing days are omitted; the result
+    is empty when the route has no band-bearing telemetry in the window.
+    """
+    # Per band: weighted delay-seconds sum, p50-seconds weighted sum, obs sum,
+    # day count. p50 sums track their own obs total because p50 may be absent on
+    # a day the avg-delay is present.
+    acc: dict[str, dict[str, float]] = {}
+    for r in rows:
+        counts = {band: int(r[band] or 0) for band in _OCCUPANCY_BANDS}
+        total = sum(counts.values())
+        if not total:
+            continue  # no occupancy observations this day -> no dominant band
+        dominant = max(_OCCUPANCY_BANDS, key=lambda b: counts[b])
+        delay_obs = int(r["delay_obs"] or 0)
+        avg_sec = r["avg_delay_sec"]
+        p50_min, _p90 = route_pctile.get(_iso_date(r["d"]), (None, None))
+        cell = acc.setdefault(
+            dominant,
+            {"w_delay_sec": 0.0, "obs": 0, "w_p50_min": 0.0, "p50_obs": 0, "days": 0},
+        )
+        cell["days"] += 1
+        if avg_sec is not None and delay_obs:
+            cell["w_delay_sec"] += float(avg_sec) * delay_obs
+            cell["obs"] += delay_obs
+        if p50_min is not None and delay_obs:
+            cell["w_p50_min"] += float(p50_min) * delay_obs
+            cell["p50_obs"] += delay_obs
+    cells: list[CrowdingDelayCell] = []
+    for band in _OCCUPANCY_BANDS:  # canonical band order
+        cell = acc.get(band)
+        if not cell:
+            continue
+        obs = int(cell["obs"])
+        p50_obs = int(cell["p50_obs"])
+        cells.append(
+            CrowdingDelayCell(
+                band=band,
+                avg_delay_min=(
+                    round(cell["w_delay_sec"] / obs / 60.0, 1) if obs else None
+                ),
+                p50_min=(round(cell["w_p50_min"] / p50_obs, 1) if p50_obs else None),
+                observation_count=(obs or None),
+                day_count=int(cell["days"]),
+            )
+        )
+    return cells
 
 
 # --------------------------------------------------------------------------
@@ -694,6 +757,35 @@ _ROUTE_SKIPPED_STOP_SQL = text(
     """
 )
 
+# Track-B delay×crowding: per route×day join of the append-only band-count
+# reduction (dominant band chosen at read time, in Python) with the per-day
+# delay rollup, over a trailing 30d window. A literal 30d window is fine here
+# because both inputs are gold rollups, not capped raw facts. Unique discriminator
+# for the FakeConn substring dispatch: the "-- delay_by_crowding" needle, which
+# MUST precede the broader "public_route_reliability_daily" / "route_occupancy_
+# band_daily" needles in the test dispatch table.
+_ROUTE_CROWDING_DELAY_SQL = text(
+    """
+    -- delay_by_crowding: dominant-band attribution chosen in Python
+    SELECT rocd.provider_local_date              AS d,
+           rocd.empty_count                      AS empty,
+           rocd.many_seats_count                 AS many_seats,
+           rocd.few_seats_count                  AS few_seats,
+           rocd.standing_count                   AS standing,
+           rocd.full_count                       AS full,
+           prr.avg_delay_seconds                 AS avg_delay_sec,
+           prr.delay_observation_count           AS delay_obs
+    FROM gold.route_occupancy_band_daily AS rocd
+    JOIN gold.dim_provider AS dp ON dp.provider_id = rocd.provider_id
+    LEFT JOIN gold.public_route_reliability_daily AS prr
+      ON prr.provider_id = rocd.provider_id
+     AND prr.route_id = rocd.route_id
+     AND prr.provider_local_date = rocd.provider_local_date
+    WHERE rocd.provider_id = :provider_id AND rocd.route_id = :route_id
+      AND rocd.provider_local_date >= (now() AT TIME ZONE dp.timezone)::date - 30
+    """
+)
+
 
 def build_route_reliability(
     conn: Connection, *, provider_id: str = "stm", route_id: str, generated_utc: str
@@ -929,6 +1021,12 @@ def build_route_reliability(
         )
     ]
 
+    # --- delay_by_crowding: per-band delay×crowding over trailing 30d (honest
+    #     empty when no occupancy telemetry; reuses route_pctile for daily p50) ---
+    delay_by_crowding = _delay_by_crowding_cells(
+        conn.execute(_ROUTE_CROWDING_DELAY_SQL, params).mappings(), route_pctile
+    )
+
     return RouteReliability(
         generated_utc=generated_utc,
         id=route_id,
@@ -942,6 +1040,7 @@ def build_route_reliability(
         occupancy_mix=occupancy_mix,
         service_spans=service_spans,
         skipped_stops=skipped_stops,
+        delay_by_crowding=delay_by_crowding,
     )
 
 

@@ -456,6 +456,21 @@ class SkippedStopPeriod(BaseModel):
     skipped_stop_count: int | None = None
     stop_time_update_count: int | None = None
 
+class CrowdingDelayCell(BaseModel):
+    # Per-route delay×crowding correlation: each route×day is attributed to its
+    # DOMINANT occupancy band (argmax of that day's band counts), and that day's
+    # delay is bucketed under the dominant band over a trailing 30d window. band
+    # uses the same vocabulary as OccupancyMix / route_occupancy_band_daily
+    # (empty/many_seats/few_seats/standing/full). Cells are observation-weighted;
+    # each field is None when its input is absent. p50_min is a best-effort
+    # observation-weighted mean of the contributing daily p50s (an approximation —
+    # daily percentiles are not exactly additively composable).
+    band: str
+    avg_delay_min: float | None = None
+    p50_min: float | None = None
+    observation_count: int | None = None
+    day_count: int | None = None
+
 class RouteHabits(BaseModel):
     scale: str
     # Per-route relative-problem heatmap: each cell is a fraction of the route's
@@ -494,6 +509,10 @@ class RouteReliability(BaseModel):
     service_spans: list[ServiceSpanPeriod] = Field(default_factory=list)
     # Tier-2 additive: per-day skipped-stop rate history (ramp-in, no backfill).
     skipped_stops: list[SkippedStopPeriod] = Field(default_factory=list)
+    # Track-B additive: per-band delay×crowding correlation over a trailing 30d
+    # window (each route×day attributed to its dominant occupancy band). Empty
+    # when the route has no occupancy telemetry in the window.
+    delay_by_crowding: list[CrowdingDelayCell] = Field(default_factory=list)
 
 class StopReliabilityPeriod(BaseModel):
     grain: str
