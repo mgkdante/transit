@@ -360,6 +360,43 @@ table {
 }
 
 /* ═══════════════════════════════════════════════════════════════
+   View Transitions — a tasteful root cross-fade between surfaces.
+   Cross-document opt-in (@view-transition) for any MPA-style nav; the SPA path
+   is driven by the root +layout `onNavigate` hook (see runViewTransition). We
+   keep it to a fast OPACITY cross-fade — no slide/scale, which would feel jarring
+   on a data dashboard (restraint per the yesid.dev operator bar). Fully disabled
+   under prefers-reduced-motion via the guard below.
+   ═══════════════════════════════════════════════════════════════ */
+@view-transition {
+	navigation: auto;
+}
+
+@keyframes vt-fade-in {
+	from {
+		opacity: 0;
+	}
+}
+@keyframes vt-fade-out {
+	to {
+		opacity: 0;
+	}
+}
+
+::view-transition-old(root) {
+	animation: vt-fade-out 200ms cubic-bezier(0.2, 0, 0, 1) both;
+}
+::view-transition-new(root) {
+	animation: vt-fade-in 200ms cubic-bezier(0.2, 0, 0, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	::view-transition-old(root),
+	::view-transition-new(root) {
+		animation: none;
+	}
+}
+
+/* ═══════════════════════════════════════════════════════════════
    Brand utility classes — shared patterns extracted from primitives.
    Four-colour doctrine: label-section = quiet caption (muted); label-station =
    the YELLOW wayfinding voice (overlines/section labels); label-metric = quiet

@@ -4,3 +4,4 @@
 export * from './policy';
 export * from './reduced-motion.svelte';
 export * from './tokens';
+export * from './view-transition';
