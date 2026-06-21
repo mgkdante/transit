@@ -14,6 +14,12 @@
 #      captures and publishes kept succeeding (so A and B stayed green) while
 #      the silver load failed silently. The new run_kind='silver_load' rows
 #      (slice-9.1.1o) make those failures countable here.
+#   D. Stale newest silver snapshot — the newest silver.rt_feed_snapshots row
+#      must be younger than SILVER_STALE_MAX_AGE_SECONDS. With silver now
+#      ephemeral (1-day retention; raw R2 is the rebuild source), a silent
+#      silver-load freeze must be caught even when raw capture stays green
+#      (Check A/B watch raw, not silver): this is the positive signal that the
+#      silver load is still ADVANCING, not just that raw is fresh.
 #
 # Any failed check fires a single alert issue and exits nonzero (so the run
 # itself goes red); all-green resolves any open alert.
@@ -26,6 +32,7 @@ LIVE_MAX_AGE_SECONDS="${LIVE_MAX_AGE_SECONDS:-300}"
 DB_MAX_AGE_SECONDS="${DB_MAX_AGE_SECONDS:-900}"
 FAILED_RUNS_WINDOW_MINUTES="${FAILED_RUNS_WINDOW_MINUTES:-30}"
 FAILED_RUNS_ALERT_THRESHOLD="${FAILED_RUNS_ALERT_THRESHOLD:-10}"
+SILVER_STALE_MAX_AGE_SECONDS="${SILVER_STALE_MAX_AGE_SECONDS:-900}"
 PROVIDER_ID="${PROVIDER_ID:-stm}"
 
 # psql cannot parse SQLAlchemy's "postgresql+psycopg://" driver tag — strip it so
@@ -37,6 +44,7 @@ PSQL_URL="${DATABASE_URL//+psycopg/}"
 # strictly so a bad override can neither break nor inject into the query.
 [[ "$PROVIDER_ID" =~ ^[A-Za-z0-9_]+$ ]] || { echo "freshness-probe: invalid PROVIDER_ID '${PROVIDER_ID}'" >&2; exit 2; }
 [[ "$FAILED_RUNS_WINDOW_MINUTES" =~ ^[0-9]+$ ]] || FAILED_RUNS_WINDOW_MINUTES=30
+[[ "$SILVER_STALE_MAX_AGE_SECONDS" =~ ^[0-9]+$ ]] || SILVER_STALE_MAX_AGE_SECONDS=900
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ALERT_ISSUE="${ALERT_ISSUE_SCRIPT:-alert-issue.sh}"
@@ -115,6 +123,24 @@ failed_runs="${failed_runs//[[:space:]]/}"
 [[ "$failed_runs" =~ ^[0-9]+$ ]] || failed_runs=0
 if (( failed_runs >= FAILED_RUNS_ALERT_THRESHOLD )); then
   failures+=("failed_runs: ${failed_runs} failed runs in ${FAILED_RUNS_WINDOW_MINUTES}m >= ${FAILED_RUNS_ALERT_THRESHOLD}")
+fi
+
+# --- Check D: stale newest silver snapshot ----------------------------------
+# silver.rt_feed_snapshots is the small snapshot-grain parent table; its newest
+# row is the high-water mark of the silver load. With ephemeral silver, a silent
+# silver-load freeze (raw capture still green) shows up here as a stalled
+# high-water mark long before retention notices anything. Same hardening as B/C:
+# ON_ERROR_STOP, sentinel-on-error, whitespace strip, ^[0-9]+$ guard.
+silver_age="$(
+  psql "$PSQL_URL" -tA -v ON_ERROR_STOP=1 -c "
+    SELECT COALESCE(EXTRACT(EPOCH FROM (now() - max(captured_at_utc)))::bigint, 999999)
+    FROM silver.rt_feed_snapshots
+  " 2>/dev/null || echo "999999"
+)"
+silver_age="${silver_age//[[:space:]]/}"
+[[ "$silver_age" =~ ^[0-9]+$ ]] || silver_age=999999
+if (( silver_age > SILVER_STALE_MAX_AGE_SECONDS )); then
+  failures+=("silver_stale: newest silver snapshot age ${silver_age}s > ${SILVER_STALE_MAX_AGE_SECONDS}s")
 fi
 
 # --- Fire / resolve ----------------------------------------------------------

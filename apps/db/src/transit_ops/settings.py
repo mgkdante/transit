@@ -152,7 +152,12 @@ class Settings(BaseSettings):
     # True = a feed missing a required non-spine column fails the load loud.
     STRICT_GTFS: bool = True
     STATIC_DATASET_RETENTION_COUNT: int = 1
-    SILVER_REALTIME_RETENTION_DAYS: int = 10
+    # Silver is ephemeral staging, not a retention tier: raw .pb in Bronze R2 is
+    # the authoritative rebuild source and the replay-realtime-silver CLI (#106)
+    # can reconstruct silver from raw on demand. Hold 1 day so a worker cycle
+    # always has its immediate predecessor on hand; everything older is
+    # reconstructable from raw, so keeping it on the VM is dead storage.
+    SILVER_REALTIME_RETENTION_DAYS: int = 1
     # Max rows deleted per realtime-history table per prune cycle. The prune runs
     # on every ~30s worker cycle; an unbounded DELETE of the accumulated backlog
     # (e.g. ~252M-row silver.rt_trip_update_stop_times after a redeploy) in a
@@ -160,6 +165,10 @@ class Settings(BaseSettings):
     # DELETE to this many rows/table/cycle drains the one-time backlog gradually
     # over many cycles while staying above the steady-state stop-time inflow.
     SILVER_REALTIME_PRUNE_BATCH: int = 100000
+    # Granular facts stay capped at 14 days — this is the storage win. Longer
+    # historical horizons are served by the cheap warm rollups, NOT by widening
+    # fact retention. Four fact-coupled queries bind this value as
+    # :fact_retention_days so the 14d horizon can never silently drift.
     GOLD_FACT_RETENTION_DAYS: int = 14
     # Max rows deleted per gold-fact table per prune cycle. Like the silver
     # realtime prune, prune_gold_fact_history runs on every ~30s worker cycle; an
@@ -177,9 +186,14 @@ class Settings(BaseSettings):
     # autovacuum/autoanalyze between runs). 0 disables the throttle (always run).
     GOLD_REALTIME_ANALYZE_MIN_INTERVAL_SECONDS: int = 3600
     GOLD_REPORTING_OPEN_WINDOW_DAYS: int = 10
-    BRONZE_REALTIME_RETENTION_DAYS: int = 30
+    # Bronze raw is the replay-from-raw safety net for ephemeral silver (#106):
+    # 90 days extends the window over which silver can be rebuilt from raw .pb.
+    # Raw NEVER moves onto the VM — it lives only in Bronze R2.
+    BRONZE_REALTIME_RETENTION_DAYS: int = 90
     BRONZE_STATIC_RETENTION_DAYS: int = 30
-    GOLD_WARM_ROLLUP_RETENTION_DAYS: int = 365
+    # Warm rollups are cheap pre-aggregated rows: hold 2 years to serve long
+    # historical horizons that the 14d facts no longer cover.
+    GOLD_WARM_ROLLUP_RETENTION_DAYS: int = 730
     BRONZE_I3_RETENTION_DAYS: int = 30
     SILVER_I3_CLOSED_RETENTION_DAYS: int = 90
     BRONZE_PRUNE_MAX_OBJECTS_PER_BATCH: int = 5000

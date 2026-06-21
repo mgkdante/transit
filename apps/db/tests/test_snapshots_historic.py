@@ -1605,7 +1605,7 @@ def test_build_provenance_sources_and_freshness() -> None:
     assert by_key["trip_updates"].age_s is None
 
     # retention
-    assert out.retention == {"detail_days": 14, "aggregate_days": 365}
+    assert out.retention == {"detail_days": 14, "aggregate_days": 730}
 
     # methodology keys
     assert "otp_definition" in out.methodology

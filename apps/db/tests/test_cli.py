@@ -1,5 +1,5 @@
 import json
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from types import SimpleNamespace
 
 from typer.testing import CliRunner
@@ -1107,6 +1107,66 @@ def test_download_latest_backup_command_writes_dest(monkeypatch, tmp_path) -> No
     assert payload["key"] == "backups/postgres/transit-20260611T093005Z.dump"
     assert payload["dest"] == str(dest)
     assert recorded["dest"] == dest
+
+
+def test_verify_backup_freshness_ok_when_recent(monkeypatch) -> None:
+    monkeypatch.setattr(cli_module, "get_settings", lambda: cli_module.Settings(_env_file=None))
+    recent = datetime.now(UTC).isoformat()
+    listed = [
+        {"key": "backups/postgres/transit-recent.dump", "size": 2048, "last_modified": recent},
+    ]
+    monkeypatch.setattr(cli_module, "list_database_backups", lambda settings: listed)
+
+    result = runner.invoke(app, ["verify-backup-freshness"])
+
+    assert result.exit_code == 0
+    assert "Backup freshness OK" in result.stdout
+
+
+def test_verify_backup_freshness_fails_when_stale(monkeypatch) -> None:
+    monkeypatch.setattr(cli_module, "get_settings", lambda: cli_module.Settings(_env_file=None))
+    stale = (datetime.now(UTC) - timedelta(hours=48)).isoformat()
+    listed = [
+        {"key": "backups/postgres/transit-stale.dump", "size": 2048, "last_modified": stale},
+    ]
+    monkeypatch.setattr(cli_module, "list_database_backups", lambda settings: listed)
+
+    result = runner.invoke(app, ["verify-backup-freshness"])
+
+    assert result.exit_code == 1
+    assert "FAILED" in result.output
+
+
+def test_verify_backup_freshness_fails_when_empty(monkeypatch) -> None:
+    monkeypatch.setattr(cli_module, "get_settings", lambda: cli_module.Settings(_env_file=None))
+    monkeypatch.setattr(cli_module, "list_database_backups", lambda settings: [])
+
+    result = runner.invoke(app, ["verify-backup-freshness"])
+
+    assert result.exit_code == 1
+    assert "no backup objects found" in result.output
+
+
+def test_verify_backup_freshness_respects_custom_threshold(monkeypatch) -> None:
+    monkeypatch.setattr(cli_module, "get_settings", lambda: cli_module.Settings(_env_file=None))
+    # 30h old: stale at the 26h default, but fresh under a 48h override.
+    older = (datetime.now(UTC) - timedelta(hours=30)).isoformat()
+    listed = [
+        {"key": "backups/postgres/transit-30h.dump", "size": 2048, "last_modified": older},
+    ]
+    monkeypatch.setattr(cli_module, "list_database_backups", lambda settings: listed)
+
+    result = runner.invoke(app, ["verify-backup-freshness", "--max-age-hours", "48"])
+
+    assert result.exit_code == 0
+    assert "Backup freshness OK" in result.stdout
+
+
+def test_db_storage_report_help() -> None:
+    result = runner.invoke(app, ["db-storage-report", "--help"])
+
+    assert result.exit_code == 0
+    assert "--limit" in result.stdout
 
 
 class _FakeBatchLoadResult:
