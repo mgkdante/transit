@@ -219,6 +219,45 @@
 		if (i >= 0) showAt(i);
 	}
 
+	// Touch DRAG scrubbing: pointerdown captures the pointer (moves keep targeting
+	// THIS spark as the finger slides) and seats the hover dot at the touched x.
+	// `touch-action: pan-y` on the plot lets a vertical drag still scroll the page
+	// while a horizontal drag scrubs. Desktop hover is unchanged (a mouse hovers
+	// via plain moves, it never fires pointerdown to read a value).
+	function onPointerDown(e: PointerEvent): void {
+		const el = e.currentTarget as Element | null;
+		// happy-dom (tests) + very old engines may lack pointer capture; guard it.
+		if (el && typeof (el as HTMLElement).setPointerCapture === 'function') {
+			try {
+				(el as HTMLElement).setPointerCapture(e.pointerId);
+			} catch {
+				// A non-capturable pointer id is non-fatal — scrubbing still works
+				// via the move handler, it just won't track outside the element.
+			}
+		}
+		const i = nearestIndex(e.clientX);
+		if (i >= 0) showAt(i);
+	}
+
+	// End a drag: release the capture and hide the dot (mirrors pointerleave on
+	// desktop). Fires on lift (pointerup) and on an interrupted touch (pointercancel).
+	function onPointerUp(e: PointerEvent): void {
+		const el = e.currentTarget as Element | null;
+		if (el && typeof (el as HTMLElement).releasePointerCapture === 'function') {
+			try {
+				if (
+					typeof (el as HTMLElement).hasPointerCapture !== 'function' ||
+					(el as HTMLElement).hasPointerCapture(e.pointerId)
+				) {
+					(el as HTMLElement).releasePointerCapture(e.pointerId);
+				}
+			} catch {
+				// Already released / never captured — nothing to do.
+			}
+		}
+		hide();
+	}
+
 	function onKeyDown(e: KeyboardEvent): void {
 		if (e.key === 'Escape') hide();
 	}
@@ -312,10 +351,15 @@
 	{/if}
 	{#if interactive && readout}
 		<!-- Fixed-readout path: NO floating overlay over the line. Pointer handlers
-		     ride the plot <div>; the value reads in the row above. -->
+		     ride the plot <div>; the value reads in the row above. pointerdown/up/
+		     cancel add TOUCH-DRAG scrubbing (the hover dot slides with the finger);
+		     pointermove keeps desktop hover identical. -->
 		<div
-			class="dv-sparkline-plot"
+			class="dv-sparkline-plot dv-sparkline-plot--scrub"
 			onpointermove={onPointerMove}
+			onpointerdown={onPointerDown}
+			onpointerup={onPointerUp}
+			onpointercancel={onPointerUp}
 			onpointerleave={hide}
 			onkeydown={onKeyDown}
 			role="presentation"
@@ -325,10 +369,16 @@
 		</div>
 	{:else if interactive}
 		<div class="dv-sparkline-plot">
+			<!-- ChartTooltip spreads these onto its position:relative wrap div, so the
+			     scrub handlers + touch-action land on the same box the spark sits in. -->
 			<ChartTooltip
 				{...tip}
 				id={tip.id}
+				class="dv-sparkline-plot--scrub"
 				onpointermove={onPointerMove}
+				onpointerdown={onPointerDown}
+				onpointerup={onPointerUp}
+				onpointercancel={onPointerUp}
 				onpointerleave={hide}
 				onkeydown={onKeyDown}
 			>
@@ -391,6 +441,16 @@
 		position: relative;
 		flex: 1 1 auto;
 		min-width: 0;
+	}
+
+	/* TOUCH-DRAG scrub surface: pan-y lets a VERTICAL drag still scroll the page
+	   while a HORIZONTAL drag is captured to scrub the hover dot along the line
+	   (never touch-action:none, which would trap page scroll). Applies to the
+	   plain readout plot AND — via the class passed to ChartTooltip — its wrap div.
+	   Desktop hover is unaffected (mouse moves don't consult touch-action). */
+	.dv-sparkline-plot--scrub,
+	:global(.chart-tooltip-wrap.dv-sparkline-plot--scrub) {
+		touch-action: pan-y;
 	}
 
 	/* Endpoint-tick gutter (max on top, min on bottom). Mono micro text on the
