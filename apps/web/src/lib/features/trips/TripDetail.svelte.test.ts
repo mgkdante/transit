@@ -51,6 +51,24 @@ vi.mock('$lib/v1/resource.svelte', () => ({
 	}),
 }));
 
+// Mock the shared clock with a FIXED, skewed `serverNow` so the freshness age the
+// LiveFreshness chip renders is anchored to the SERVER clock (PR-6), not the raw
+// client `Date.now()`. serverNow = the file's generated_utc + exactly 5 minutes →
+// the chip must read "5 minutes ago" regardless of the machine's real clock. A
+// drift-bugged readout (off Date.now()) would NOT land on that controlled value.
+const SERVER_NOW_MS = Date.parse('2026-06-15T12:05:00Z'); // generated_utc + 5 min
+vi.mock('$lib/stores', () => ({
+	sharedClock: {
+		get now() {
+			return SERVER_NOW_MS;
+		},
+		get serverNow() {
+			return SERVER_NOW_MS;
+		},
+		subscribe: () => () => {},
+	},
+}));
+
 beforeEach(() => {
 	tripsData = TRIPS_FILE;
 });
@@ -69,6 +87,20 @@ describe('TripDetail: a broadcasting trip', () => {
 		expect(screen.getByText('Late')).toBeInTheDocument();
 		// "4 min late" appears at trip level AND on the matching stop; both are honest.
 		expect(screen.getAllByText('4 min late').length).toBeGreaterThanOrEqual(1);
+	});
+
+	it('anchors the LiveFreshness age to the SERVER clock (serverNow), not Date.now()', () => {
+		render(TripDetail, { props: { id: 't161' } });
+
+		// The chip's age derives from generated_utc (12:00:00Z) vs the mocked
+		// sharedClock.serverNow (12:05:00Z) → exactly "5 minutes ago". This only
+		// holds if the surface reads serverNow; an age off the raw client clock
+		// would render whatever the wall clock minus 12:00Z happens to be.
+		const chip = document.querySelector('[data-slot="live-freshness"]') as HTMLElement;
+		expect(chip).not.toBeNull();
+		expect(within(chip).getByText('5 minutes ago')).toBeInTheDocument();
+		// The machine-readable build stamp rides the <time datetime>, unchanged.
+		expect(chip.querySelector('time')).toHaveAttribute('datetime', '2026-06-15T12:00:00Z');
 	});
 
 	it('frames each remaining-stop ETA as a live prediction with an honest delay basis', () => {

@@ -40,6 +40,7 @@
 	import { SEVERITY_CODES } from '$lib/v1/schemas';
 	import { createResource } from '$lib/v1/resource.svelte';
 	import { ageSeconds as ageSecondsOf, formatUtc } from '$lib/utils/time';
+	import { sharedClock } from '$lib/stores';
 	import { ResourceBoundary, SurfaceHeader, LiveFreshness } from '$lib/components/surface';
 	import { Surface, DashboardGrid } from '$lib/components/layout';
 	import { Separator } from '$lib/components/ui/separator';
@@ -54,6 +55,10 @@
 
 	const locale: Locale = getLocale();
 	const t = $derived(alertHistoryCopy[locale]);
+
+	// Keep the ONE shared clock alive while this surface is on screen so the
+	// freshness chip's age re-derives off the shared tick (and stays advancing).
+	$effect(() => sharedClock.subscribe());
 
 	// Historic tier — the daily-rebuilt alert archive (createResource, browser-only).
 	const history = createResource(() => getAlertHistory());
@@ -122,9 +127,14 @@
 	const visible = $derived(expanded || overflow === 0 ? sorted : sorted.slice(0, VISIBLE_CAP));
 
 	// Freshness off the archive's generated_utc (a daily rebuild, not live → never
-	// "stale"). A null stamp reads as the chip's own unknown state.
+	// "stale"). A null stamp reads as the chip's own unknown state. The displayed
+	// age is anchored to the SHARED SERVER clock (sharedClock.serverNow), not the
+	// raw client clock, so a skewed client can't mis-report it — generated_utc is a
+	// server stamp, so both operands live on the server's timeline.
 	const generatedUtc = $derived(history.data?.generated_utc ?? null);
-	const ageSeconds = $derived(generatedUtc != null ? ageSecondsOf(generatedUtc) : null);
+	const ageSeconds = $derived(
+		generatedUtc != null ? ageSecondsOf(generatedUtc, sharedClock.serverNow) : null,
+	);
 
 	// --- Tier-2 breakdown (by_cause / by_effect / by_severity) ---------------
 	// Distinct-alert distribution; null/absent when no alerts in the window. Each

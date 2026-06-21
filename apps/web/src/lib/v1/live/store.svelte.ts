@@ -2,9 +2,12 @@
 //
 // Polls vehicles / trips / stop_departures / alerts / network on the live tier's
 // ttl cadence (from the manifest, default 30s) and exposes them as reactive
-// runes. The actual HTTP is the adapter's job — it owns conditional GET
-// (If-None-Match / ETag): a 304 returns the previously-parsed file unchanged, so
-// re-polling is cheap and the runes only churn when bytes actually change.
+// runes. The actual HTTP is the adapter's job. There is NO app-level ETag/304
+// handling: conditional revalidation is the browser/edge HTTP cache's job (the
+// fetch uses cache: 'default' against the snapshot's cache-control), so JS always
+// sees a 200 — served from cache or origin — carrying Date/Age headers that keep
+// the shared server-time offset fresh. The runes only churn when the bytes a poll
+// returns actually change.
 //
 // Freshness (generatedUtc / ageSeconds / isStale) is derived from the live
 // network.json's generated_utc against the manifest's live ttl (stale once age
@@ -99,8 +102,9 @@ export function createLiveStore(manifest: Manifest): LiveStore {
 	let error = $state<Error | null>(null);
 
 	// One handle: the poll timer (live ttl cadence). The age/staleness derivation
-	// advances off the SHARED clock (started via `clockDispose` below) so a 304
-	// still ages visibly AND every chrome relative-time label ticks in lockstep.
+	// advances off the SHARED clock (started via `clockDispose` below) so the data
+	// still ages visibly between polls (and when a poll is served unchanged from the
+	// browser/edge cache) AND every chrome relative-time label ticks in lockstep.
 	let pollTimer: ReturnType<typeof setInterval> | null = null;
 	let clockDispose: (() => void) | null = null;
 	let started = false;
@@ -115,10 +119,12 @@ export function createLiveStore(manifest: Manifest): LiveStore {
 	const generatedUtc = $derived(network?.generated_utc ?? vehicles?.generated_utc ?? null);
 	const ageSecondsValue = $derived.by<number | null>(() => {
 		if (!generatedUtc) return null;
-		// Read the SHARED clock: this re-derives every shared tick, so the age (and
-		// the staleness verdict below) advances between polls in lockstep with the
-		// rest of the chrome instead of off a private interval.
-		const age = ageSeconds(generatedUtc, sharedClock.now);
+		// Read the SHARED SERVER clock: this re-derives every shared tick, so the
+		// age (and the staleness verdict below) advances between polls in lockstep
+		// with the rest of the chrome instead of off a private interval. `serverNow`
+		// (not `now`) anchors the age to server time so a skewed client clock can't
+		// mis-report it or falsely trip the 2x-ttl stale threshold.
+		const age = ageSeconds(generatedUtc, sharedClock.serverNow);
 		return Number.isNaN(age) ? null : Math.max(0, age);
 	});
 	const isStale = $derived(ageSecondsValue == null ? false : ageSecondsValue >= staleThresholdS);
@@ -135,7 +141,12 @@ export function createLiveStore(manifest: Manifest): LiveStore {
 		}
 	});
 
-	/** Fetch all five files in parallel. Conditional GET is the adapter's job. */
+	/**
+	 * Fetch all five files in parallel. Revalidation is the browser/edge HTTP
+	 * cache's job (cache: 'default' + the snapshot's cache-control); each fetch
+	 * resolves to a 200 — from cache or origin — whose Date/Age refreshes the
+	 * shared server-time anchor.
+	 */
 	async function refresh(): Promise<void> {
 		loading = true;
 		try {
@@ -166,7 +177,8 @@ export function createLiveStore(manifest: Manifest): LiveStore {
 		if (started || !browser) return;
 		started = true;
 		// Subscribe to the SHARED clock so age/staleness keep moving between fetches
-		// (a 304 still ages visibly) on the SAME tick as every other chrome label.
+		// (the data still ages visibly even when a poll is served unchanged from the
+		// browser/edge cache) on the SAME tick as every other chrome label.
 		clockDispose = sharedClock.subscribe();
 		void refresh();
 		pollTimer = setInterval(() => {

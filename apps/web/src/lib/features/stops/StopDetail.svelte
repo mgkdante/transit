@@ -181,7 +181,9 @@
 		inferAbsenceReason({
 			firstDeparture: stopWindow?.first ?? null,
 			lastDeparture: stopWindow?.last ?? null,
-			nowMinutes: minutesSinceMidnight(new Date(sharedClock.now)),
+			// serverNow: the open/closed verdict must use the true (server-anchored)
+			// wall clock, not a skewed client clock (same skew class as freshness).
+			nowMinutes: minutesSinceMidnight(new Date(sharedClock.serverNow)),
 			nonResponding: stopNonResponding,
 		}),
 	);
