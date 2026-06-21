@@ -141,7 +141,7 @@ describe('Cluster02WaitRegularity', () => {
 		expect(screen.queryByText('Service span')).not.toBeInTheDocument();
 	});
 
-	it('guards null headway fields — renders em-dashes, no crash', () => {
+	it('guards null headway fields — renders the muted "no data" label, no crash', () => {
 		const data: RouteReliability = {
 			generated_utc: utc('2026-06-19T00:00:00Z'),
 			id: '51',
@@ -150,7 +150,7 @@ describe('Cluster02WaitRegularity', () => {
 		};
 
 		const clusters = toReliabilityClusters(data);
-		render(Cluster02WaitRegularity, {
+		const { container } = render(Cluster02WaitRegularity, {
 			props: {
 				wait: clusters.waitRegularity,
 				serviceSpans: [],
@@ -162,6 +162,13 @@ describe('Cluster02WaitRegularity', () => {
 		expect(screen.getByText('Evening')).toBeInTheDocument();
 		// FR cluster overline (canonical voice).
 		expect(screen.getByText(reliabilityCopy.fr.clusters.waitRegularity)).toBeInTheDocument();
+		// The absent scheduled/observed/excess tiles read the explicit muted "no
+		// data" label — never a bare "·", never a fabricated 0.
+		expect(screen.getAllByText(reliabilityCopy.fr.strip.noData).length).toBeGreaterThan(0);
+		// Those empty tiles ride the muted .metric-empty voice (not the amber value).
+		expect(container.querySelectorAll('[data-slot="metric-empty"]').length).toBeGreaterThan(0);
+		// Honesty: no metric tile falls back to a bare middot value.
+		expect(screen.queryByText('·', { selector: '.metric-value' })).not.toBeInTheDocument();
 		// Service-span sub-block is omitted (no rows).
 		expect(screen.queryByText(reliabilityCopy.fr.strip.noDataNote)).not.toBeInTheDocument();
 	});

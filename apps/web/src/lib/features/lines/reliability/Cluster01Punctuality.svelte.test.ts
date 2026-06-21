@@ -90,6 +90,42 @@ describe('Cluster01Punctuality — populated', () => {
 		expect(screen.getByText('0.5 min')).toBeInTheDocument();
 	});
 
+	// HONESTY (#6/#6b): the headline-day percentiles are null network-wide today —
+	// this is the most visible "·" leak the operator flagged. The p50/p90 tiles must
+	// show the explicit muted "no data" message, never a bare middot, never a 0.
+	it('shows the muted "no data" message (never "·") when p50/p90 are null', () => {
+		const nullPercentiles: PunctualityVM = {
+			...populated,
+			trend: [
+				{
+					grain: 'day',
+					date: '2026-06-18',
+					otp_pct: 82,
+					avg_delay_min: 2.1,
+					// The network-wide reality: daily percentiles unmeasured.
+					p50_min: null,
+					p90_min: null,
+					severe_pct: null,
+				},
+			],
+		};
+		const { container } = render(Cluster01Punctuality, {
+			props: { vm: nullPercentiles, locale: 'en', copy },
+		});
+
+		// The two percentile tiles + the inline severe value render the no-data label.
+		const emptyLabels = screen.getAllByText(copy.strip.noData);
+		expect(emptyLabels.length).toBeGreaterThanOrEqual(2);
+		// Those no-data tiles ride the muted .metric-empty voice, never the amber value.
+		expect(container.querySelectorAll('[data-slot="metric-empty"]').length).toBeGreaterThanOrEqual(
+			2,
+		);
+		// The real value still speaks the amber voice (not blanked out).
+		expect(screen.getByText('82%')).toBeInTheDocument();
+		// Doctrine: the no-data tiles do NOT fall back to a bare middot value.
+		expect(screen.queryByText('·', { selector: '.metric-value' })).not.toBeInTheDocument();
+	});
+
 	it('labels the severe-share block with its OWN label, never the p90 label (BUG-1/F3)', () => {
 		const { container } = render(Cluster01Punctuality, {
 			props: { vm: populated, locale: 'en', copy },

@@ -121,6 +121,8 @@ export interface RouteDetailCopy {
 	readonly late: (minutes: number) => string;
 	readonly onTime: string;
 	readonly noDelay: string;
+	/** Short value-level no-data label for an absent metric tile. */
+	readonly noData: string;
 }
 
 export const indexCopy: Record<Locale, LinesIndexCopy> = {
@@ -231,6 +233,7 @@ export const detailCopy: Record<Locale, RouteDetailCopy> = {
 		late: (minutes) => `${minutes} min en retard`,
 		onTime: "À l'heure",
 		noDelay: 'Aucun retard',
+		noData: 'sans données',
 	},
 	en: {
 		kicker: 'LINE',
@@ -300,5 +303,6 @@ export const detailCopy: Record<Locale, RouteDetailCopy> = {
 		late: (minutes) => `${minutes} min late`,
 		onTime: 'On time',
 		noDelay: 'No delay',
+		noData: 'no data',
 	},
 };

@@ -101,7 +101,9 @@
 	const hasWhiskers = $derived(xMin != null && xMax != null);
 	const anyData = $derived(hasBox || hasWhiskers || xP50 != null);
 
-	const fmt = (v: number | null) => (v == null ? '·' : `${v}${unit}`);
+	// An absent quantile reads as an empty string in the value readout / aria
+	// summary (no locale here to carry a "no data" message), never a stray "·".
+	const fmt = (v: number | null) => (v == null ? '' : `${v}${unit}`);
 	const summary = $derived(
 		`${label ? label + ', ' : ''}distribution: min ${fmt(stats.min)}, p25 ${fmt(stats.p25)}, median ${fmt(stats.p50)}, p75 ${fmt(stats.p75)}, max ${fmt(stats.max)}`,
 	);

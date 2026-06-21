@@ -49,8 +49,8 @@
 	// A problem-rate is the late/amber voice on the dataviz scale (never --primary).
 	const RATE_VAR = 'var(--dataviz-status-late)';
 
-	/** Format a rate as a percentage, or the honest em-dash when absent. */
-	const fmtPct = (v: number | null): string => (v == null ? '·' : `${v.toFixed(1)}%`);
+	/** Format a rate as a percentage, else null (the muted no-data label). */
+	const fmtPct = (v: number | null): string | null => (v == null ? null : `${v.toFixed(1)}%`);
 
 	/**
 	 * Most-recent (tail-scan) non-null value of `pick`. The contract arrays run
@@ -136,6 +136,7 @@
 				<div class="metric-with-info">
 					<MetricDisplay
 						value={fmtPct(cancellationRatePct)}
+						emptyLabel={t.noData}
 						label={t.cancellationRatePct}
 						size="md"
 					/>
@@ -164,6 +165,7 @@
 				<div class="metric-with-info">
 					<MetricDisplay
 						value={fmtPct(skippedStopRatePct)}
+						emptyLabel={t.noData}
 						label={t.skippedStopRatePct}
 						size="md"
 					/>

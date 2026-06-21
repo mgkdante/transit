@@ -63,8 +63,6 @@
 
 	let { vm, locale, copy }: Cluster01PunctualityProps = $props();
 
-	const NO_DATA = '·';
-
 	// The in-app metric-explainer (i) affordance: the one-line tip + a localized
 	// deep link to /metrics#<anchor>. An INTERACTIVE control beside each label,
 	// never a data mark; doctrine-clean.
@@ -81,9 +79,11 @@
 		vm.trend.length > 0 ? vm.trend[vm.trend.length - 1] : null,
 	);
 
-	const fmtPct = (v: number | null | undefined): string => (v == null ? NO_DATA : `${v}%`);
-	const fmtMin = (v: number | null | undefined): string =>
-		v == null ? NO_DATA : `${v.toFixed(1)} min`;
+	// Honest absence → null (MetricDisplay renders the muted no-data label); a real
+	// value speaks the amber metric voice. Never a bare "·", never a fabricated 0.
+	const fmtPct = (v: number | null | undefined): string | null => (v == null ? null : `${v}%`);
+	const fmtMin = (v: number | null | undefined): string | null =>
+		v == null ? null : `${v.toFixed(1)} min`;
 
 	// OTP trend SHAPE across the dated day series (chronological ascending): green
 	// OTP %, amber avg-delay retard. The x-axis carries real ISO dates, never the
@@ -126,7 +126,7 @@
 				title: w.name ?? w.id,
 				severity: sev,
 				value: worst > 0 ? Math.min(1, Math.max(0, delay / worst)) : null,
-				display: fmtMin(w.avg_delay_min),
+				display: fmtMin(w.avg_delay_min) ?? copy.strip.noData,
 			};
 		});
 	});
@@ -180,7 +180,7 @@
 					title: label(r.grain),
 					severity: severeShareToSeverity(r.severePct),
 					value: worst > 0 ? Math.min(1, Math.max(0, sev / worst)) : null,
-					display: fmtPct(r.severePct),
+					display: fmtPct(r.severePct) ?? copy.strip.noData,
 				};
 			});
 	}
@@ -214,12 +214,18 @@
 		<!-- Latest-day headline: OTP %, avg delay, typical (p50) + worst-case (p90). -->
 		<div class="cluster-headline">
 			<div class="metric-with-info">
-				<MetricDisplay value={fmtPct(headline?.otp_pct)} label={copy.strip.otpPct} size="lg" />
+				<MetricDisplay
+					value={fmtPct(headline?.otp_pct)}
+					emptyLabel={copy.strip.noData}
+					label={copy.strip.otpPct}
+					size="lg"
+				/>
 				{@render metricInfo('otp', copy.strip.otpPct)}
 			</div>
 			<div class="metric-with-info">
 				<MetricDisplay
 					value={fmtMin(headline?.avg_delay_min)}
+					emptyLabel={copy.strip.noData}
 					label={copy.strip.avgDelayMin}
 					size="md"
 				/>
@@ -228,6 +234,7 @@
 			<div class="metric-with-info">
 				<MetricDisplay
 					value={fmtMin(headline?.p50_min)}
+					emptyLabel={copy.strip.noData}
 					label={copy.strip.p50Min}
 					sublabel={copy.strip.p50Caption}
 					size="md"
@@ -237,6 +244,7 @@
 			<div class="metric-with-info">
 				<MetricDisplay
 					value={fmtMin(headline?.p90_min)}
+					emptyLabel={copy.strip.noData}
 					label={copy.strip.p90Min}
 					sublabel={copy.strip.p90Caption}
 					size="md"
@@ -278,7 +286,9 @@
 					<SectionLabel text={copy.strip.severePct} variant="metric" />
 					{@render metricInfo('severe', copy.strip.severePct)}
 				</span>
-				<span class="cluster-block-value">{fmtPct(severePct)}</span>
+				<span class="cluster-block-value" class:cluster-block-value--empty={severePct == null}
+					>{fmtPct(severePct) ?? copy.strip.noData}</span
+				>
 			</div>
 			<SeverityBar
 				severity={severeSeverity}
@@ -404,6 +414,10 @@
 		font-size: var(--text-small);
 		font-variant-numeric: tabular-nums;
 		color: var(--foreground);
+	}
+	/* Honest no-data reading of the inline severe value: quiet muted mono. */
+	.cluster-block-value--empty {
+		color: var(--muted-foreground);
 	}
 	/* Quiet mono caption (window label / honest caveat), AA both themes. */
 	.cluster-block-window,
