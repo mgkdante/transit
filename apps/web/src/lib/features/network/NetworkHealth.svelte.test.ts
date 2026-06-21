@@ -4,9 +4,12 @@ import type { NetworkFile, NetworkShift, TrendPoint } from '$lib/v1';
 import type { IsoUtc } from '$lib/v1/schemas';
 import NetworkHealth from './NetworkHealth.svelte';
 
-const { openSurface, network, trendSeries, weeklySeries, monthlySeries, byShift, byDaytype } =
+const { openSurface, live, network, trendSeries, weeklySeries, monthlySeries, byShift, byDaytype } =
 	vi.hoisted(() => ({
 		openSurface: vi.fn(),
+		// Mutable live-store harness: `ageSeconds` is the ticking shared-clock delta a
+		// test can advance to prove the feed age (feed_freshness_s + ageSeconds) ticks.
+		live: { ageSeconds: 20 as number | null },
 		network: {
 			generated_utc: '2026-06-16T02:00:00Z' as IsoUtc,
 			vehicles_in_service: 10,
@@ -140,7 +143,9 @@ vi.mock('$lib/v1', async () => {
 				alertsById: new Map(),
 			},
 			generatedUtc: network.generated_utc,
-			ageSeconds: 20,
+			get ageSeconds() {
+				return live.ageSeconds;
+			},
 			isStale: false,
 			loading: false,
 			error: null,
@@ -203,6 +208,27 @@ describe('NetworkHealth live tiles', () => {
 		expect(chip).not.toBeNull();
 		// A human age string (formatRelativeSeconds), never a raw "20".
 		expect((chip as HTMLElement).getAttribute('aria-label')).toContain('Worker feed updated');
+	});
+
+	it('ticks the feed age between polls by adding the live shared-clock delta', () => {
+		// feed_freshness_s = 20 (as of the snapshot) + live.ageSeconds = 40 elapsed
+		// since the snapshot was generated → the displayed feed age is 60s, NOT the
+		// frozen 20s. Proving the chip advances with the shared clock between polls.
+		live.ageSeconds = 40;
+		render(NetworkHealth);
+		const chip = screen.getByText('FEED').closest('[data-slot="feed-age"]') as HTMLElement;
+		// 20 + 40 = 60s → "a minute ago" (Intl numeric:auto), never "20 seconds ago".
+		const value = chip.querySelector('.network-feed-age-value')?.textContent ?? '';
+		expect(value).toMatch(/minute/i);
+		expect(value).not.toMatch(/20 seconds/i);
+		live.ageSeconds = 20;
+	});
+
+	it('keeps the feed age null (no chip) when feed_freshness_s is null', () => {
+		network.feed_freshness_s = null;
+		render(NetworkHealth);
+		expect(document.querySelector('[data-slot="feed-age"]')).toBeNull();
+		network.feed_freshness_s = 20;
 	});
 });
 

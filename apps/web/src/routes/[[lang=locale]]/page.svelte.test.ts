@@ -146,6 +146,42 @@ describe('Home hub — live pulse honesty', () => {
 		expect(screen.getAllByText('LIVE').length).toBeGreaterThanOrEqual(1);
 		expect(screen.queryByText('STANDBY')).toBeNull();
 	});
+
+	it('announces live pulse updates to AT (aria-live="polite" on the pulse grid)', () => {
+		state.network = liveNetwork;
+		render(Page);
+		const board = screen.getByRole('list', { name: /the network, right now/i });
+		expect(board).toHaveAttribute('aria-live', 'polite');
+	});
+
+	it('wires an (i) metric explainer onto every pulse tile', () => {
+		state.network = liveNetwork;
+		render(Page);
+		const board = screen.getByRole('list', { name: /the network, right now/i });
+		// One (i) explainer trigger per tile — each pulse number carries its honest
+		// definition + a deep link, the same affordance the /network KPIs use.
+		const triggers = within(board)
+			.getAllByRole('button')
+			.filter((b) => b.classList.contains('metric-info__trigger'));
+		expect(triggers).toHaveLength(4);
+		expect(within(board).getByRole('button', { name: /About On-time/i })).toBeInTheDocument();
+		expect(
+			within(board).getByRole('button', { name: /About Vehicles in service/i }),
+		).toBeInTheDocument();
+		expect(within(board).getByRole('button', { name: /About Not reporting/i })).toBeInTheDocument();
+		expect(within(board).getByRole('button', { name: /About Coverage/i })).toBeInTheDocument();
+	});
+
+	it('renders the muted no-data state on each pulse tile when a metric is null', () => {
+		state.network = null;
+		render(Page);
+		const board = screen.getByRole('list', { name: /the network, right now/i });
+		// MetricDisplay's emptyLabel branch: a null value reads the muted no-data
+		// caption (data-slot="metric-empty"), never the amber value voice or a 0.
+		const empties = board.querySelectorAll('[data-slot="metric-empty"]');
+		expect(empties).toHaveLength(4);
+		for (const el of empties) expect(el.textContent).toBe('no data');
+	});
 });
 
 describe('Home hub — explore everything wayfinding', () => {

@@ -132,10 +132,16 @@
 
 	// Worker-cycle feed staleness, distinct from the snapshot-publish age that
 	// LiveFreshness shows. `feed_freshness_s` is the seconds since the worker last
-	// refreshed the realtime feed; null → no signal → the honest "no data".
+	// refreshed the realtime feed AS OF the snapshot's generation; null → no signal
+	// → the honest "no data". We add `live.ageSeconds` (the seconds elapsed since the
+	// snapshot was generated, advanced off the SHARED clock) so the feed age TICKS
+	// between the 30s polls in lockstep with LiveFreshness instead of freezing at the
+	// snapshot value. live.ageSeconds is null before the first build → treat as 0.
 	const feedAge = $derived.by<string | null>(() => {
 		const s = live.network?.feed_freshness_s ?? null;
-		return s == null ? null : formatRelativeSeconds(s, locale);
+		if (s == null) return null;
+		const elapsed = live.ageSeconds ?? 0;
+		return formatRelativeSeconds(s + elapsed, locale);
 	});
 
 	// Status-mix segments: the 5 StatusCodes by count (StackedBar drops zeros).
@@ -658,7 +664,7 @@
 			     fill the desktop width and reflow to one column on a phone. No `label`:
 			     the enclosing <section aria-label> already names the LIVE region, so the
 			     grid stays a plain layout container (no redundant nested landmark). -->
-			<DashboardGrid minTile="200px" gutter={false}>
+			<DashboardGrid minTile="200px" align="start" gutter={false}>
 				{@render kpi(fmtPct(net.on_time_pct), t.metrics.onTime, 'otp', 'lg')}
 				{@render kpi(fmtCount(net.vehicles_in_service), t.metrics.vehicles, 'vehicleCount', 'lg')}
 				<!-- Silent vehicles this cycle — an honest denominator for coverage.
@@ -674,7 +680,7 @@
 			     silent-trips list sit side-by-side on desktop (auto-fit ~320px) and
 			     stack on mobile. Each tile is a quiet bordered card; a tile whose
 			     condition stands down is dropped whole (never an empty card). -->
-			<DashboardGrid minTile="320px" gutter={false}>
+			<DashboardGrid minTile="320px" align="start" gutter={false}>
 				<!-- Status mix -->
 				<div class="network-tile">
 					<SectionLabel text={t.statusSection} variant="station" />
@@ -864,7 +870,7 @@
 			     by-day-type ranked lists fill the remaining cells (auto-fit ~360px on
 			     desktop, one column on mobile). Each stands down to nothing when its
 			     signal is absent and the board reflows past it. -->
-			<DashboardGrid minTile="360px" gutter={false}>
+			<DashboardGrid minTile="360px" align="start" gutter={false}>
 				<!-- Primary trend: on-time % vs the chosen delay series + the vehicles
 				     context sparkline. A wide cell — the daily line needs the room. -->
 				<div class="network-tile network-tile--wide">
@@ -892,10 +898,15 @@
 						     vehicles is null on week/month (14d-daily-only). -->
 						{#if isDailyGrain}
 							<div class="network-vehicles-context">
+								<!-- Legible daily-fleet trend — taller + wider than the inline 96x24
+								     default so the per-day vehicles reporting reads clearly under the
+								     OTP/delay line (operator: the spark + caption were too small). -->
 								<Sparkline
 									values={vehiclesSeries}
 									label={t.trend.vehiclesSpark}
 									xLabels={chart.xLabels}
+									width={320}
+									height={56}
 									colorVar="var(--dataviz-status-unknown)"
 									interactive
 									showLast
@@ -950,6 +961,7 @@
 										scale="occupancy"
 										segments={day.segments}
 										size="sm"
+										interactive
 										label={`${t.occupancySection} · ${day.dateLabel}`}
 									/>
 								</li>
@@ -1112,7 +1124,9 @@
 	}
 	.network-context-caption {
 		font-family: var(--font-mono);
-		font-size: var(--text-micro);
+		/* Quiet caption, but legible — bumped from --text-micro so the daily-fleet
+		   trend label reads at the same weight as the other tile captions (muted). */
+		font-size: var(--text-small);
 		color: var(--muted-foreground);
 	}
 
