@@ -61,11 +61,9 @@ describe('securityHeaders — production set', () => {
 		for (const feature of [
 			'accelerometer',
 			'bluetooth',
-			'browsing-topics',
 			'camera',
 			'gyroscope',
 			'hid',
-			'interest-cohort',
 			'magnetometer',
 			'microphone',
 			'payment',
@@ -74,6 +72,12 @@ describe('securityHeaders — production set', () => {
 		]) {
 			expect(pp).toContain(`${feature}=()`);
 		}
+	});
+
+	it('drops browsing-topics + interest-cohort (browsers log them as unrecognised)', () => {
+		const pp = headers['Permissions-Policy'];
+		expect(pp).not.toContain('browsing-topics');
+		expect(pp).not.toContain('interest-cohort');
 	});
 
 	it('omits Cross-Origin-Resource-Policy (it would break social OG scrapes)', () => {
@@ -87,6 +91,10 @@ describe('contentSecurityPolicy — invariants', () => {
 	it('allows the basemap glyph host (else map labels break) and the /v1 origin', () => {
 		expect(csp).toContain('https://protomaps.github.io');
 		expect(csp).toContain('https://transit.yesid.dev');
+	});
+
+	it('allows Cloudflare Web Analytics beacon in script-src', () => {
+		expect(csp).toMatch(/script-src[^;]*https:\/\/static\.cloudflareinsights\.com/);
 	});
 
 	it('allows blob workers (pmtiles/maplibre) and locks framing/objects down', () => {

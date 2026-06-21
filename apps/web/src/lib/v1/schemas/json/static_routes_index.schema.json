@@ -30,6 +30,12 @@
           "default": null,
           "title": "Long"
         },
+        "reliability": {
+          "default": false,
+          "description": "True when historic/route_reliability/{id}.json is published for this route (route has weekly/monthly reliability history); the client skips fetching it when False.",
+          "title": "Reliability",
+          "type": "boolean"
+        },
         "short": {
           "title": "Short",
           "type": "string"

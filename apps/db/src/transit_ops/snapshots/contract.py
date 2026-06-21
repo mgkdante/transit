@@ -256,6 +256,14 @@ class RouteIndexEntry(BaseModel):
     long: str | None = None
     color: str | None = None
     type: int
+    reliability: bool = Field(
+        default=False,
+        description=(
+            "True when historic/route_reliability/{id}.json is published for "
+            "this route (route has weekly/monthly reliability history); the "
+            "client skips fetching it when False."
+        ),
+    )
 
 class RoutesIndex(BaseModel):
     generated_utc: str

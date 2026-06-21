@@ -264,6 +264,10 @@ def test_publish_static_writes_expected_keys() -> None:
     # Covers every query issued by build_routes_index, build_stops_index,
     # build_labels, the route_ids SELECT, build_route, and build_all_stops_data.
     dispatch = [
+        # reliability-availability set for build_routes_index. MUST precede the
+        # broader needles (it shares the generic "route_id" column); 165 has
+        # reliability history so its routes_index entry gets reliability=True.
+        ("route_reliability_weekly", [{"route_id": "165"}]),
         # routes index
         ("route_sort_order", [
             {"route_id": "165", "route_short_name": "165", "route_long_name": "Côte-Vertu",
@@ -355,6 +359,9 @@ def test_publish_static_writes_expected_keys() -> None:
     import json as _json
     ri = _json.loads(store.store["static/routes_index.json"])
     assert ri["generated_utc"] == "2026-06-01T00:00:00Z"
+    # 165 is in the reliability-availability set -> its entry carries reliability=True
+    assert ri["routes"][0]["id"] == "165"
+    assert ri["routes"][0]["reliability"] is True
 
 
 def test_publish_historic_writes_expected_keys(tmp_path) -> None:

@@ -44,7 +44,8 @@
 # /_app/immutable). In Worker mode `_headers` only decorates assets — the
 # SSR-rendered HTML documents get the same set from hooks.server.ts. Both pull
 # from $lib/site/securityHeaders, kept in lockstep by securityHeaders.test.ts.
-# NOTE: script-src keeps 'unsafe-inline' for the pre-paint theme IIFE in app.html;
+# NOTE: script-src keeps 'unsafe-inline' for the pre-paint theme IIFE in app.html
+# and allows https://static.cloudflareinsights.com for Cloudflare Web Analytics;
 # tightening to a hash/nonce-based script-src is a tracked follow-up.
 # NOTE: img-src is narrowed off the old `https:` wildcard to 'self' data: blob:
 # + the basemap host (defense-in-depth) + the OG-image origin. Cross-Origin-
@@ -54,6 +55,6 @@
   Referrer-Policy: strict-origin-when-cross-origin
   X-Frame-Options: SAMEORIGIN
   Cross-Origin-Opener-Policy: same-origin
-  Permissions-Policy: accelerometer=(), bluetooth=(), browsing-topics=(), camera=(), gyroscope=(), hid=(), interest-cohort=(), magnetometer=(), microphone=(), payment=(), serial=(), usb=(), geolocation=(self)
+  Permissions-Policy: accelerometer=(), bluetooth=(), camera=(), gyroscope=(), hid=(), magnetometer=(), microphone=(), payment=(), serial=(), usb=(), geolocation=(self)
   Strict-Transport-Security: max-age=63072000; includeSubDomains; preload
-  Content-Security-Policy: default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'self'; img-src 'self' data: blob: https://protomaps.github.io https://transit.yesid.dev; font-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; connect-src 'self' https://transit.yesid.dev https://protomaps.github.io; worker-src 'self' blob:; manifest-src 'self'; upgrade-insecure-requests
+  Content-Security-Policy: default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'self'; img-src 'self' data: blob: https://protomaps.github.io https://transit.yesid.dev; font-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline' https://static.cloudflareinsights.com; connect-src 'self' https://transit.yesid.dev https://protomaps.github.io; worker-src 'self' blob:; manifest-src 'self'; upgrade-insecure-requests
