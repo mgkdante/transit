@@ -655,6 +655,13 @@
 	     grid entirely (the auto-fit board reflows past it; never a fabricated
 	     empty card). --primary stays interactive-only — every band is a dataviz
 	     scale mark. -->
+	<!-- TODO(beauty2-honest-absence PR-3): when net.vehicles_in_service === 0 (live
+	     zero / overnight), surface an honest-absence banner above the headline board
+	     via $lib/site/serviceWindow.inferAbsenceReason. Like /map this is a
+	     NETWORK-WIDE view with no single first/last window, so a "service closed /
+	     overnight" verdict needs a network service-span signal we do not yet publish;
+	     the per-route silent tally (non_responding_by_route) already feeds the
+	     per-route surfaces. Deferred to keep this PR scoped to /route + /stop. -->
 	{#if live.network}
 		{@const net = live.network}
 		<section class="network-region" aria-label={t.liveRegion}>

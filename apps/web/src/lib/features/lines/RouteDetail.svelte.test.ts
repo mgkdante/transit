@@ -57,6 +57,18 @@ let liveAlerts: { generated_utc: string; alerts: typeof ALERTS } | null = {
 	alerts: ALERTS,
 };
 
+// Provenance fixture for the honest-absence inference (declared gaps). Default
+// carries the metro_realtime gap so the metro stand-down test can assert the
+// inferred metro message; non-metro routes ignore it (route_type !== 1).
+let provenanceData: { generated_utc: string; gaps: string[] } = {
+	generated_utc: '2026-06-15T12:00:00Z',
+	gaps: ['metro_realtime'],
+};
+
+// Mutable route-file fixture so the honest-absence tests can drive a metro route
+// (type 1) without re-mocking the module. Defaults to the bus ROUTE_FILE.
+let routeFileData: RouteFile = ROUTE_FILE;
+
 // Live vehicles on route 161 for the current-buses roster. busLate is 8 min late
 // (worst → sorts first), busEarly is 3 min early, busNoDelay has a null delay
 // (honest "no data", sorts last). busOther is on route 999 → must NOT appear.
@@ -147,8 +159,9 @@ vi.mock('$lib/v1', async () => {
 	const affected =
 		await vi.importActual<typeof import('$lib/v1/affectedAlerts')>('$lib/v1/affectedAlerts');
 	return {
-		getRoute: vi.fn(),
+		getRoute: () => routeFileData,
 		getRouteReliability: vi.fn(),
+		getProvenance: () => provenanceData,
 		createLiveStore: () => liveStore,
 		getV1Context: () => ({ manifest: {}, labels: {}, lang: 'en' }),
 		deriveRouteStopPredictions: () => PREDICTIONS,
@@ -157,10 +170,12 @@ vi.mock('$lib/v1', async () => {
 });
 
 vi.mock('$lib/v1/resource.svelte', () => ({
-	// Both the detail/schedule (route) and reliability resources go through this;
-	// the Detail tab only reads the route file, so returning it for both is fine.
-	createResource: () => ({
-		data: ROUTE_FILE,
+	// The detail/schedule (route), reliability, AND provenance resources go through
+	// this. Call the loader so each resolves to its own fixture: getRoute →
+	// ROUTE_FILE, getProvenance → provenanceData, reliability (vi.fn → undefined) →
+	// the route file is the only one the Detail tab reads, so undefined is fine.
+	createResource: (loader: () => unknown) => ({
+		data: loader() ?? ROUTE_FILE,
 		error: null,
 		loading: false,
 		settled: true,
@@ -171,6 +186,8 @@ vi.mock('$lib/v1/resource.svelte', () => ({
 beforeEach(() => {
 	liveAlerts = { generated_utc: '2026-06-15T12:00:00Z', alerts: ALERTS };
 	liveIndex = buildIndex(VEHICLES);
+	provenanceData = { generated_utc: '2026-06-15T12:00:00Z', gaps: ['metro_realtime'] };
+	routeFileData = ROUTE_FILE;
 });
 
 describe('RouteDetail map drilldown', () => {
@@ -322,5 +339,30 @@ describe('RouteDetail Detail tab: current-buses roster', () => {
 		render(RouteDetail, { props: { id: '161' } });
 
 		expect(document.querySelector('[data-testid="route-roster"]')).toBeNull();
+	});
+});
+
+describe('RouteDetail Detail tab: HONEST ABSENCE (no live bus)', () => {
+	it('states the metro reason for a route_type 1 route with the metro_realtime gap', () => {
+		// A metro route (type 1) with no live bus AND the declared metro gap → the
+		// detail pane STATES "no live positions for the metro", not a silent stand-down.
+		routeFileData = { ...ROUTE_FILE, type: 1 };
+		liveIndex = buildIndex([]);
+		render(RouteDetail, { props: { id: '1' } });
+
+		expect(screen.getByText('Live positions are not published for the metro.')).toBeInTheDocument();
+	});
+
+	it('falls back to a plain no-data note when no reason is derivable (no window, not metro)', () => {
+		// ROUTE_FILE has no first/last departure + no type, gap present but type ≠ 1 →
+		// inferAbsenceReason returns null → the generic honest no-data copy, never a
+		// fabricated reason.
+		liveIndex = buildIndex([]);
+		render(RouteDetail, { props: { id: '161' } });
+
+		expect(screen.getAllByText('Nothing to show').length).toBeGreaterThan(0);
+		expect(
+			screen.queryByText('Live positions are not published for the metro.'),
+		).not.toBeInTheDocument();
 	});
 });

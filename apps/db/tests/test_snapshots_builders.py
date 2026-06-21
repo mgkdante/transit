@@ -1243,8 +1243,9 @@ def test_build_route():
         ("generate_series", [{"weekday_date": datetime.date(2026, 6, 3), "weekend_date": datetime.date(2026, 6, 6)}]),
         # active-services (returns tuples for row[0] iteration)
         ("extract(isodow FROM :repdate)", [("svc_wd",)]),
-        # route long name
-        ("route_long_name FROM gold.dim_route", [{"route_long_name": "Côte-Vertu"}]),
+        # route long name + route_type (the build_route name query now also selects
+        # route_type for the self-describing mode field; route 165 is a bus = type 3)
+        ("route_long_name, route_type FROM gold.dim_route", [{"route_long_name": "Côte-Vertu", "route_type": 3}]),
         # route shapes
         ("map_route_lines", [
             {"shape_id": "s1", "geojson": {"type": "LineString", "coordinates": []},
@@ -1273,6 +1274,7 @@ def test_build_route():
     rf = build_route(FC(), route_id="165", generated_utc="t")
     assert rf.id == "165"
     assert rf.long == "Côte-Vertu"
+    assert rf.type == 3  # GTFS route_type emitted on the self-describing route file
     assert len(rf.directions) >= 1
     assert rf.directions[0].dir == 0
     assert rf.directions[0].stops[0].id == "51234"

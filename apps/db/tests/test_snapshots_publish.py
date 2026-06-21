@@ -294,8 +294,9 @@ def test_publish_static_writes_expected_keys() -> None:
         ]),
         # active-services (returns tuples for row[0] iteration)
         ("extract(isodow FROM :repdate)", [("svc_wd",)]),
-        # route long name
-        ("route_long_name FROM gold.dim_route", [{"route_long_name": "Côte-Vertu"}]),
+        # route long name + route_type (build_route now also selects route_type for
+        # the self-describing mode field; 165 is a bus = type 3)
+        ("route_long_name, route_type FROM gold.dim_route", [{"route_long_name": "Côte-Vertu", "route_type": 3}]),
         # route shapes (empty → no directions → no stop-sequence queries)
         ("map_route_lines", []),
         # route schedule

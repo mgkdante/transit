@@ -112,3 +112,76 @@ describe('EdgeState — error-v1 retry affordance', () => {
 		expect(delta!.textContent).toContain('MAJ');
 	});
 });
+
+describe('EdgeState — HONEST ABSENCE reason copy (empty variant)', () => {
+	it('metro-no-realtime replaces the generic empty copy (EN + FR)', () => {
+		const en = render(EdgeState, {
+			props: { variant: 'empty', lang: 'en', emptyReason: { key: 'metro-no-realtime' } },
+		});
+		expect(en.getByText('Live positions are not published for the metro.')).toBeInTheDocument();
+		// The generic empty body must NOT also render.
+		expect(en.queryByText('No data has been published for this view yet.')).toBeNull();
+
+		const fr = render(EdgeState, {
+			props: { variant: 'empty', lang: 'fr', emptyReason: { key: 'metro-no-realtime' } },
+		});
+		expect(
+			fr.getByText('Les positions en temps réel ne sont pas publiées pour le métro.'),
+		).toBeInTheDocument();
+	});
+
+	it('closed-opens-at names the FIRST departure (EN + FR)', () => {
+		const en = render(EdgeState, {
+			props: {
+				variant: 'empty',
+				lang: 'en',
+				emptyReason: { key: 'closed-opens-at', firstDeparture: '06:00' },
+			},
+		});
+		expect(en.getByText('Service closed. Opens at 06:00.')).toBeInTheDocument();
+
+		const fr = render(EdgeState, {
+			props: {
+				variant: 'empty',
+				lang: 'fr',
+				emptyReason: { key: 'closed-opens-at', firstDeparture: '06:00' },
+			},
+		});
+		expect(fr.getByText('Service terminé. Reprise à 06:00.')).toBeInTheDocument();
+	});
+
+	it('overnight-opens-at reads "no service at this hour" with FIRST', () => {
+		const { getByText } = render(EdgeState, {
+			props: {
+				variant: 'empty',
+				lang: 'en',
+				emptyReason: { key: 'overnight-opens-at', firstDeparture: '05:11' },
+			},
+		});
+		expect(getByText('No service at this hour. Opens at 05:11.')).toBeInTheDocument();
+	});
+
+	it('scheduled-silent reads the honest "no vehicle reporting" message', () => {
+		const { getByText } = render(EdgeState, {
+			props: { variant: 'empty', lang: 'en', emptyReason: { key: 'scheduled-silent' } },
+		});
+		expect(getByText('Scheduled, but no vehicle is reporting live right now.')).toBeInTheDocument();
+	});
+
+	it('a reason is IGNORED on the error variant (an error is never mislabeled)', () => {
+		const { queryByText, getByText } = render(EdgeState, {
+			props: {
+				variant: 'error-v1',
+				lang: 'en',
+				emptyReason: { key: 'closed-opens-at', firstDeparture: '06:00' },
+			},
+		});
+		expect(queryByText('Service closed. Opens at 06:00.')).toBeNull();
+		expect(getByText('/v1 contract unreachable')).toBeInTheDocument();
+	});
+
+	it('the empty variant with NO reason falls back to the generic honest no-data copy', () => {
+		const { getByText } = render(EdgeState, { props: { variant: 'empty', lang: 'en' } });
+		expect(getByText('Nothing to show')).toBeInTheDocument();
+	});
+});

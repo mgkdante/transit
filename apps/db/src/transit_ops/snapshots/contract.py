@@ -312,6 +312,12 @@ class RouteFile(BaseModel):
     generated_utc: str
     id: str
     long: str | None = None
+    # Additive-optional (default None) so snapshots published before this field
+    # still validate. GTFS route_type integer (0=tram,1=metro,3=bus,...) for this
+    # route, sourced from gold.dim_route. Self-describes the route's mode so the
+    # detail surface can infer "metro has no realtime" without cross-referencing
+    # routes_index. Mirrors RouteIndexEntry.type.
+    type: int | None = None
     directions: list[RouteDirection] = Field(default_factory=list)
     service_periods: list[ServicePeriod] = Field(default_factory=list)
     first_departure: str | None = None

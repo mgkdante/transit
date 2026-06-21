@@ -189,10 +189,30 @@ const emptyLiveStore = {
 	index: { byStopId: new Map<string, StopDeparture[]>() },
 };
 
+// A SETTLED board with NO departures for this stop (departures file present so the
+// board is past the skeleton; the index has no row for the stop → an empty board)
+// AND a live network reporting a served route as scheduled-but-silent. Drives the
+// honest-absence "scheduled-silent" path.
+const silentBoardLiveStore = {
+	...liveStore,
+	departures: { generated_utc: '2026-06-15T12:00:00Z' },
+	network: { non_responding_by_route: [{ route_id: '51', count: 3 }] },
+	index: { byStopId: new Map<string, StopDeparture[]>() },
+};
+
 // Toggles the live store + reliability fixture so individual tests can drive an
 // empty / null state without re-mocking.
 let useEmptyLive = false;
+// Selects the settled-but-empty board (with a silent served route) for the
+// honest-absence "scheduled-silent" path.
+let useSilentBoard = false;
 let reliabilityData: StopReliability | null = RELIABILITY;
+// Provenance fixture for the honest-absence inference (declared gaps). Default
+// has no gaps; tests that need a window/silent reason drive stopFileData + live.
+let provenanceData: { generated_utc: string; gaps: string[] } = {
+	generated_utc: '2026-06-15T12:00:00Z',
+	gaps: [],
+};
 // Active UI locale for getLocale() — mutable so a FR-localization test can flip it
 // without disturbing the (default EN) suite.
 let currentLocale: 'en' | 'fr' = 'en';
@@ -214,8 +234,10 @@ vi.mock('$lib/v1', async () => {
 	return {
 		getStop: () => stopFileData,
 		getStopReliability: () => reliabilityData,
+		getProvenance: () => provenanceData,
 		getV1Context: () => ({ manifest: { files: { live: { ttl_s: 30 } } }, labels: {}, lang: 'en' }),
-		createLiveStore: () => (useEmptyLive ? emptyLiveStore : liveStore),
+		createLiveStore: () =>
+			useSilentBoard ? silentBoardLiveStore : useEmptyLive ? emptyLiveStore : liveStore,
 		alertsForStop: affected.alertsForStop,
 	};
 });
@@ -234,9 +256,11 @@ vi.mock('$lib/v1/resource.svelte', () => ({
 
 function reset() {
 	useEmptyLive = false;
+	useSilentBoard = false;
 	reliabilityData = RELIABILITY;
 	stopFileData = STOP_FILE;
 	alertsData = { generated_utc: '2026-06-15T12:00:00Z', alerts: ALERTS };
+	provenanceData = { generated_utc: '2026-06-15T12:00:00Z', gaps: [] };
 	currentLocale = 'en';
 }
 
@@ -695,6 +719,40 @@ describe('StopDetail live departures — status filter', () => {
 
 		expect(screen.getByTestId('departures-filter-empty')).toBeInTheDocument();
 		expect(screen.getByText('Showing 0 of 3 departures')).toBeInTheDocument();
+	});
+});
+
+describe('StopDetail live departures — HONEST ABSENCE (empty board)', () => {
+	it('states "scheduled, but no vehicle reporting" when a served route is silent in-window', () => {
+		reset();
+		// A 24h schedule window (00:00 → 23:59 → always open regardless of the test
+		// clock) on a served route (51) that the live network reports silent.
+		stopFileData = {
+			...STOP_FILE,
+			scheduled: [{ route: '51', headsign: 'X', times: ['00:00', '23:59'] }],
+		} as unknown as StopFile;
+		useSilentBoard = true;
+		render(StopDetail, { props: { id: '57191' } });
+
+		expect(
+			screen.getByText('Scheduled, but no vehicle is reporting live right now.'),
+		).toBeInTheDocument();
+	});
+
+	it('falls back to the generic honest no-data copy when no reason is derivable', () => {
+		reset();
+		// No schedule window + no silent signal → inferAbsenceReason returns null →
+		// the plain honest "Nothing to show", never a fabricated reason.
+		stopFileData = { ...STOP_FILE, scheduled: [] } as unknown as StopFile;
+		useSilentBoard = true;
+		render(StopDetail, { props: { id: '57191' } });
+
+		// The board's empty state shows the generic honest no-data copy (the active
+		// "next" tab renders one; getAllByText tolerates other inert panes).
+		expect(screen.getAllByText('Nothing to show').length).toBeGreaterThan(0);
+		expect(
+			screen.queryByText('Scheduled, but no vehicle is reporting live right now.'),
+		).not.toBeInTheDocument();
 	});
 });
 

@@ -204,10 +204,14 @@
 
 	<Separator variant="hazard" />
 
+	<!-- HONEST ABSENCE: a zero-length alert archive is the GOOD empty — the network
+	     ran normally with no disruptions in the window. Route it to the green
+	     network-healthy verdict (empty-avis) rather than a grey nothing-to-show. -->
 	<ResourceBoundary
 		resource={history}
 		lang={locale}
 		isEmpty={(d: AlertHistory) => (d.alerts?.length ?? 0) === 0}
+		emptyVariant="empty-avis"
 	>
 		<div class="alert-history-block">
 			<div class="alert-history-head">

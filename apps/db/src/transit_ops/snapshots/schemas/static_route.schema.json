@@ -171,6 +171,18 @@
       },
       "title": "Service Periods",
       "type": "array"
+    },
+    "type": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Type"
     }
   },
   "required": [

@@ -33,6 +33,9 @@
 		type StopDeparture,
 	} from '$lib/v1';
 	import { createResource } from '$lib/v1/resource.svelte';
+	import { sharedClock } from '$lib/stores';
+	import { minutesSinceMidnight } from '$lib/utils/time';
+	import { inferAbsenceReason, stopServiceWindow } from '$lib/site/serviceWindow';
 	import {
 		EntityDetail,
 		ResourceBoundary,
@@ -144,6 +147,44 @@
 
 	// --- historic tier: stop reliability -------------------------------------
 	const reliability = createResource(() => getStopReliability(id));
+
+	// --- HONEST ABSENCE: infer WHY the live board is empty --------------------
+	// The stop's own service window is derived from its static schedule times
+	// (earliest → latest, GTFS >=24:00 folded so an overnight window wraps). When
+	// the board is empty we STATE the inferred reason (service closed — opens at
+	// FIRST / overnight / scheduled-but-silent) rather than a generic no-data.
+	// Honest by construction: a closed verdict needs a real window; silent needs
+	// the non-responding signal; else null → the plain honest no-data copy. NOTE:
+	// no metro gap inference at the stop level — a stop can serve mixed modes, so
+	// we never over-claim "metro has no realtime" for a stop (that is route-scoped).
+
+	// The stop's service window from its static schedule (all routes' times). null
+	// when the static file has no scheduled times to claim a window against.
+	const stopWindow = $derived(
+		stopServiceWindow((stop.data?.scheduled ?? []).flatMap((s) => s.times ?? [])),
+	);
+
+	// Is ANY route serving this stop reported scheduled-but-silent by the live
+	// network? (Per-route silent-trip tally ∩ this stop's routes_served.) A hit
+	// means "within the window yet nothing is reporting here".
+	const stopNonResponding = $derived.by(() => {
+		const silent = new Set((live.network?.non_responding_by_route ?? []).map((r) => r.route_id));
+		if (silent.size === 0) return false;
+		return (stop.data?.routes_served ?? []).some((r) => silent.has(r));
+	});
+
+	// The inferred reason the board is empty, recomputed each shared tick. No
+	// route_type/gaps metro inference at the stop level (a stop can serve mixed
+	// modes — we never over-claim "metro has no realtime" for a stop), so this
+	// rests on the service window + the silent signal. Null → plain no-data.
+	const departuresAbsenceReason = $derived(
+		inferAbsenceReason({
+			firstDeparture: stopWindow?.first ?? null,
+			lastDeparture: stopWindow?.last ?? null,
+			nowMinutes: minutesSinceMidnight(new Date(sharedClock.now)),
+			nonResponding: stopNonResponding,
+		}),
+	);
 
 	/* ── Reliability: grain (roll-up) picker ──────────────────────────────────
 	   The historic tier offers day|week|month (availableGrains('historic')). We
@@ -618,7 +659,17 @@
 						/>
 					</div>
 					{#if departures.length === 0}
-						<EdgeState variant="empty" lang={locale} layout={edgeLayout} />
+						<!-- HONEST ABSENCE: an empty live board STATES the inferred reason
+						     (service closed — opens at FIRST / no service at this hour /
+						     scheduled-but-silent) from the stop's own window + the live silent
+						     signal. emptyReason is null when no reason is derivable → the plain
+						     honest no-data copy, never a fabricated reason. -->
+						<EdgeState
+							variant="empty"
+							lang={locale}
+							layout={edgeLayout}
+							emptyReason={departuresAbsenceReason}
+						/>
 					{:else}
 						<!-- Combinable status chips + an optional by-route chip narrow the
 						     board, collected into ONE ControlsRail (quiet infra chrome,

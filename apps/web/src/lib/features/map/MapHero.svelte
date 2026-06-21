@@ -268,6 +268,15 @@
 	//   · 'no-vehicles' — a build loaded fine + is fresh, but reports zero vehicles
 	//     to plot (e.g. overnight, or a partial feed). Honest "nothing to show" beats
 	//     a silent empty map.
+	// TODO(beauty2-honest-absence PR-3): upgrade 'no-vehicles' to the inferred
+	// reason via $lib/site/serviceWindow.inferAbsenceReason. The map spans the WHOLE
+	// network (mixed modes + every route), so there is no single first/last window
+	// to claim "closed" against here — a network-wide overnight verdict needs a
+	// network service-span signal we do not yet publish. ALSO: a selected-but-silent
+	// vehicle should read "last seen N ago" via the 'last-seen' reason key
+	// (inferAbsenceReason carries lastSeenIso through) — wire it into the selected-
+	// detail panel when the chosen vehicle has gone quiet. Deferred to keep this PR
+	// scoped to /route + /stop (the well-defined per-entity windows).
 	const liveEdgeState = $derived.by<'unavailable' | 'no-vehicles' | null>(() => {
 		if (live.error != null && live.generatedUtc == null) return 'unavailable';
 		if (live.vehicles != null && !live.isStale && (live.vehicles.vehicles?.length ?? 0) === 0) {
