@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+		<meta name="robots" content="noindex" />
+		<meta name="theme-color" content="#141414" />
+		<title>Offline — Transit</title>
+		<link rel="icon" href="/favicon.svg" />
+		<style>
+			/* Self-contained: no external CSS so it renders while genuinely offline.
+			   Brand tokens inlined from $lib/styles/tokens.css (control-room dark). */
+			:root {
+				color-scheme: dark;
+				--background: #141414;
+				--card: #1a1a1a;
+				--foreground: #f5f5f0;
+				--muted-foreground: #949494;
+				--border: #3a3a3a;
+				--primary: #e07800;
+				--amber: #d9a300;
+			}
+			* {
+				box-sizing: border-box;
+			}
+			html,
+			body {
+				margin: 0;
+				min-height: 100%;
+			}
+			body {
+				background: var(--background);
+				color: var(--foreground);
+				font-family:
+					'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+				display: flex;
+				align-items: center;
+				justify-content: center;
+				padding: 1.5rem;
+				min-height: 100dvh;
+				-webkit-font-smoothing: antialiased;
+			}
+			.panel {
+				width: 100%;
+				max-width: 30rem;
+				background: var(--card);
+				border: 1px solid var(--border);
+				border-radius: 0.75rem;
+				padding: 2rem;
+				text-align: left;
+			}
+			.tag {
+				display: inline-flex;
+				align-items: center;
+				gap: 0.5rem;
+				font-family: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+				font-size: 0.7rem;
+				letter-spacing: 0.12em;
+				text-transform: uppercase;
+				color: var(--amber);
+			}
+			.dot {
+				width: 0.5rem;
+				height: 0.5rem;
+				border-radius: 50%;
+				background: var(--amber);
+				display: inline-block;
+			}
+			h1 {
+				font-size: 1.35rem;
+				line-height: 1.25;
+				margin: 1rem 0 0.5rem;
+			}
+			p {
+				color: var(--muted-foreground);
+				font-size: 0.95rem;
+				line-height: 1.55;
+				margin: 0 0 0.5rem;
+			}
+			.fr {
+				font-size: 0.85rem;
+				color: var(--muted-foreground);
+				opacity: 0.85;
+			}
+			.actions {
+				margin-top: 1.5rem;
+			}
+			button {
+				font: inherit;
+				font-weight: 600;
+				color: #141414;
+				background: var(--primary);
+				border: none;
+				border-radius: 0.5rem;
+				padding: 0.65rem 1.1rem;
+				cursor: pointer;
+			}
+			button:hover {
+				background: #c96a00;
+			}
+		</style>
+	</head>
+	<body>
+		<main class="panel" role="alert">
+			<span class="tag"><span class="dot"></span> Connection lost</span>
+			<h1>You are offline</h1>
+			<p>
+				Transit shows live, real-time transit data, and that needs a connection. We never invent or
+				cache stale numbers, so there is nothing honest to show right now.
+			</p>
+			<p class="fr">
+				Vous etes hors ligne. Les donnees de transit en temps reel necessitent une connexion. Nous
+				n'inventons jamais de donnees.
+			</p>
+			<div class="actions">
+				<button type="button" onclick="location.reload()">Retry / Reessayer</button>
+			</div>
+		</main>
+	</body>
+</html>
