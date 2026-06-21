@@ -140,7 +140,9 @@
 			gaps: provenance.data?.gaps ?? null,
 			firstDeparture: route.data?.first_departure ?? null,
 			lastDeparture: route.data?.last_departure ?? null,
-			nowMinutes: minutesSinceMidnight(new Date(sharedClock.now)),
+			// serverNow: the closed/overnight verdict must use the true (server-
+			// anchored) wall clock, not a skewed client clock (same skew class).
+			nowMinutes: minutesSinceMidnight(new Date(sharedClock.serverNow)),
 			nonResponding: routeNonResponding,
 		}),
 	);

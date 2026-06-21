@@ -19,6 +19,33 @@
 import { browser } from '$app/environment';
 import type { z } from 'zod';
 import { parsePort } from '$lib/v1/schemas/parse';
+import { sharedClock } from '$lib/stores/clock.svelte';
+
+/**
+ * Browser-only: estimate the SERVER's current time from a response and feed it
+ * to the shared clock so every freshness readout is anchored to server time
+ * (skew-immune), not the client's possibly-wrong clock.
+ *
+ *   serverEpochMs = Date.parse(<Date header>) + (<Age header> seconds * 1000)
+ *
+ * The `Date` header is the origin's response time; the `Age` header is how long
+ * the response sat in an intermediary cache. The live file is
+ * `cache-control: max-age=30`, so a cached hit can be up to ~30s old — adding
+ * `Age` makes the estimate the server's CURRENT time at RECEIPT, not when the
+ * body was first generated (without it freshness would over-report by up to 30s
+ * and could falsely flip stale at the 2x-ttl=60s threshold). Fail-soft: skips
+ * silently with no `Date` header / on a NaN parse; never throws (SSR-safe — the
+ * whole call is browser-gated, and the server's own clock is already accurate).
+ */
+function noteServerTime(res: Response): void {
+	if (!browser) return;
+	const dateHeader = res.headers.get('date');
+	if (!dateHeader) return;
+	const dateMs = Date.parse(dateHeader);
+	if (Number.isNaN(dateMs)) return;
+	const ageMs = (Number.parseInt(res.headers.get('age') ?? '0', 10) || 0) * 1000;
+	sharedClock.noteServerEpochMs(dateMs + ageMs);
+}
 
 /** A fetch-shaped function. Matches both the global `fetch` and SvelteKit's `event.fetch`. */
 export type FetchFn = typeof fetch;
@@ -66,6 +93,11 @@ export async function getEntityJson<T>(
 		cache: browser ? init?.cache : undefined,
 		signal: init?.signal,
 	});
+
+	// Anchor the shared freshness clock to server time (browser-only, fail-soft).
+	// Done before the 404/!ok branches so even a 404/error response with a `Date`
+	// header still corrects the offset.
+	noteServerTime(res);
 
 	// 404 is the contract's "no data for this entity" signal — render empty.
 	if (res.status === 404) return undefined;

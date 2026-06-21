@@ -37,6 +37,7 @@
 <script lang="ts">
 	import { cn } from '$lib/utils';
 	import { formatRelative } from '$lib/utils/time';
+	import { sharedClock } from '$lib/stores';
 	import type { Locale } from '$lib/i18n';
 	import type { AbsenceReason } from '$lib/site/serviceWindow';
 	import { Skeleton } from '$lib/components/ui/skeleton';
@@ -275,6 +276,11 @@
 		},
 	};
 
+	// Keep the ONE shared clock alive while this edge state is on screen so the
+	// last-seen / stale "MAJ N ago" relative readouts tick in lockstep with the
+	// rest of the chrome (and re-derive off the shared SERVER tick below).
+	$effect(() => sharedClock.subscribe());
+
 	const isSkeleton = $derived(variant === 'skeleton');
 
 	/**
@@ -297,7 +303,10 @@
 			const param =
 				activeReason.key === 'last-seen'
 					? activeReason.lastSeenIso
-						? formatRelative(activeReason.lastSeenIso, lang)
+						? // lastSeenIso is a SERVER timestamp (the vehicle's last report) →
+							// anchor the "last seen N ago" age to the shared SERVER clock so a
+							// skewed client can't mis-report it; re-derives off the shared tick.
+							formatRelative(activeReason.lastSeenIso, lang, new Date(sharedClock.serverNow))
 						: ''
 					: (activeReason.firstDeparture ?? '');
 			return { glyph: block.glyph, title: block.title[lang], body: block.body(param, lang) };
@@ -309,7 +318,10 @@
 	/** Relative "MAJ il y a 4 min" string for the stale variant. */
 	const staleDelta = $derived(
 		variant === 'stale-offline' && lastUpdated
-			? `${MAJ_PREFIX[lang]} ${formatRelative(lastUpdated, lang)}`
+			? // lastUpdated is the SERVER build timestamp → anchor the age to the shared
+				// SERVER clock so a skewed client can't mis-report how stale the feed is;
+				// re-derives off the shared tick.
+				`${MAJ_PREFIX[lang]} ${formatRelative(lastUpdated, lang, new Date(sharedClock.serverNow))}`
 			: null,
 	);
 

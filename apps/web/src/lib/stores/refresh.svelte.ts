@@ -36,12 +36,19 @@ let dataGeneratedUtc = $state<string | null>(null);
 // it. Readers must consult `now` inside a reactive context for it to tick; a
 // reader that wants the timer ALIVE subscribes via `sharedClock.subscribe()`.
 const ageSecondsValue = $derived.by<number | null>(() => {
-	const now = sharedClock.now;
 	if (dataGeneratedUtc) {
-		const age = ageSecondsOf(dataGeneratedUtc, now);
+		// SERVER-anchored now: `dataGeneratedUtc` is server time, so subtracting a
+		// skewed CLIENT clock would mis-report the age. `serverNow` ticks every
+		// shared interval AND corrects for clock skew (see sharedClock).
+		const age = ageSecondsOf(dataGeneratedUtc, sharedClock.serverNow);
 		return Number.isNaN(age) ? null : Math.max(0, age);
 	}
-	return lastRefreshedMs != null ? Math.max(0, Math.round((now - lastRefreshedMs) / 1000)) : null;
+	// `lastRefreshedMs` is a CLIENT `Date.now()` anchor (manual press / page load),
+	// so it must subtract the raw client `now` — mixing in the server offset would
+	// re-introduce skew into a purely client-clock delta.
+	return lastRefreshedMs != null
+		? Math.max(0, Math.round((sharedClock.now - lastRefreshedMs) / 1000))
+		: null;
 });
 
 async function invalidateAllBounded(): Promise<void> {

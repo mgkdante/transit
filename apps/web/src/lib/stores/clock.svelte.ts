@@ -27,6 +27,18 @@
 // SSR-safe: `subscribe()` no-ops without a browser (returns a no-op dispose),
 // so the timer only ever exists client-side. The initial `now` is a one-shot
 // `Date.now()` snapshot, valid for the SSR frame.
+//
+// CLOCK SKEW (server-anchored age): `generated_utc` is stamped by the SERVER,
+// but the per-second tick above runs off the CLIENT's `Date.now()`. On a client
+// whose clock is skewed (e.g. 9 minutes fast) every "updated N ago" readout is
+// wrong by the skew — fresh data reads "9 minutes ago", and freshness can
+// falsely flip stale. The fix: `noteServerEpochMs()` records the offset between
+// the server's clock (captured from the HTTP response `Date` header by the v1
+// fetch primitive) and `Date.now()`, and `serverNow` exposes a tick that is the
+// client tick PLUS that offset — i.e. an estimate of the SERVER's current time.
+// Age computed against `serverNow` is skew-immune: both the build timestamp and
+// the "now" it is subtracted from are on the server's clock. `now` (raw client)
+// stays unchanged for any non-freshness caller; FRESHNESS reads `serverNow`.
 
 import { browser } from '$app/environment';
 import { isPrefersReducedMotion } from '$lib/motion/reduced-motion.svelte';
@@ -43,6 +55,15 @@ const REDUCED_MOTION_TICK_MS = 30_000;
 
 /** Shared "now" in epoch ms. Advanced by the single interval below. */
 let nowMs = $state(Date.now());
+
+/**
+ * Client→server clock offset in ms: `serverEpochMs - Date.now()` at the moment
+ * of the latest valid sample. Added to `nowMs` to estimate the server's current
+ * time. Starts at 0 (no skew correction yet — `serverNow === now`), which is the
+ * correct SSR/pre-fetch behavior (the server's own clock is accurate). The 30s
+ * live poll feeds a fresh sample on every cycle, so the offset stays current.
+ */
+let offsetMs = $state(0);
 
 /** Active reader count; the interval runs iff this is > 0. */
 let subscribers = 0;
@@ -100,6 +121,32 @@ export const sharedClock = {
 	 */
 	get now(): number {
 		return nowMs;
+	},
+
+	/**
+	 * SERVER-anchored "now" in epoch ms: the client tick PLUS the recorded
+	 * client→server offset, so it ticks every interval AND reflects the skew
+	 * correction. THIS is the freshness clock — age computed as
+	 * `serverNow - generated_utc` is immune to a skewed client clock because both
+	 * operands are on the server's timeline. Falls back to the raw client `now`
+	 * (offset 0) on the server / before any sample, where the local clock is
+	 * already trustworthy.
+	 */
+	get serverNow(): number {
+		return nowMs + offsetMs;
+	},
+
+	/**
+	 * Record a fresh server-time sample (epoch ms), recomputing the offset as
+	 * `serverEpochMs - Date.now()`. Latest valid sample wins (the 30s live poll
+	 * keeps it fresh). Browser-only and side-effect-guarded: no-ops without a
+	 * browser (the offset stays 0 → `serverNow === now` on the server, whose
+	 * clock is already accurate) and ignores a non-finite sample (a missing /
+	 * unparseable `Date` header must never poison the offset).
+	 */
+	noteServerEpochMs(serverEpochMs: number): void {
+		if (!browser || !Number.isFinite(serverEpochMs)) return;
+		offsetMs = serverEpochMs - Date.now();
 	},
 
 	/**

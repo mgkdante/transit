@@ -30,6 +30,7 @@
 	import MapDrilldownLink from '$lib/components/surface/MapDrilldownLink.svelte';
 	import ChevronRightIcon from '@lucide/svelte/icons/chevron-right';
 	import { formatUtc, ageSeconds } from '$lib/utils/time';
+	import { sharedClock } from '$lib/stores';
 	import { tripCopy } from './trips.copy';
 
 	interface TripDetailProps {
@@ -41,6 +42,10 @@
 
 	const locale: Locale = getLocale();
 	const t = $derived(tripCopy[locale]);
+
+	// Keep the ONE shared clock alive while this surface is on screen so the live
+	// freshness chip's age ticks in lockstep with the rest of the chrome.
+	$effect(() => sharedClock.subscribe());
 
 	// The whole live trips map (trip-keyed). One read, reactive to `id`. We look up
 	// THIS trip below; an absent entry is the honest "not broadcasting" signal.
@@ -58,10 +63,16 @@
 	const timeLabel = (iso: string): string =>
 		formatUtc(iso, locale, { hour: '2-digit', minute: '2-digit', hour12: false });
 
-	/** Freshness derived once from the file's build timestamp (no polling here). */
+	/**
+	 * Freshness off the file's build timestamp. Age is anchored to the SHARED
+	 * SERVER clock (sharedClock.serverNow), not the raw client clock, so a skewed
+	 * client can't mis-report the LIVE chip's "N ago" — both the build stamp and
+	 * the "now" it is subtracted from live on the server's timeline. Re-derives off
+	 * the shared tick (subscribed above), so the chip advances while on screen.
+	 */
 	const generatedUtc = $derived(trips.data?.generated_utc ?? null);
 	const freshnessAge = $derived<number | null>(
-		generatedUtc ? Math.max(0, ageSeconds(generatedUtc)) : null,
+		generatedUtc ? Math.max(0, ageSeconds(generatedUtc, sharedClock.serverNow)) : null,
 	);
 
 	/** Localized status-band label for the v1 StatusCode. */

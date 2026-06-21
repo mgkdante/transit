@@ -73,7 +73,9 @@
 	// (the resource only renders past the boundary); a NaN age falls back to the
 	// localized no-age note rather than a fabricated value.
 	function updatedStamp(generatedUtc: string): string {
-		const s = ageSecondsOf(generatedUtc, sharedClock.now);
+		// serverNow: generated_utc is server time, so anchor the age to the
+		// server-corrected clock — a skewed client clock must not mis-stamp it.
+		const s = ageSecondsOf(generatedUtc, sharedClock.serverNow);
 		const age = Number.isNaN(s) ? t.freshness.noAge : formatRelativeSeconds(s, locale);
 		return t.updated(age);
 	}
@@ -106,7 +108,8 @@
 	/** Relative last-loaded stamp from an ISO string, or the localized fallback. */
 	function lastLoaded(iso: string | null | undefined): string {
 		if (!iso) return t.sources.neverLoaded;
-		const s = ageSecondsOf(iso, sharedClock.now);
+		// serverNow: last_loaded_utc is a server timestamp — server-anchor the age.
+		const s = ageSecondsOf(iso, sharedClock.serverNow);
 		return Number.isNaN(s) ? t.sources.neverLoaded : formatRelativeSeconds(s, locale);
 	}
 

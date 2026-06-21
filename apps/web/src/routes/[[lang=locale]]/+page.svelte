@@ -40,7 +40,8 @@
 	import { getLocale, localizeHref, type Locale } from '$lib/i18n';
 	import { getV1Context, createLiveStore } from '$lib/v1';
 	import { openSurface, type SurfaceTarget } from '$lib/nav';
-	import { formatRelative, formatRelativeSeconds } from '$lib/utils/time';
+	import { ageSeconds, formatRelativeSeconds } from '$lib/utils/time';
+	import { sharedClock } from '$lib/stores';
 	import SectionHeading from '$lib/components/brand/SectionHeading.svelte';
 	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
 	import MetricDisplay from '$lib/components/brand/MetricDisplay.svelte';
@@ -83,6 +84,11 @@
 		return () => live.stop();
 	});
 
+	// Keep the ONE shared clock alive while this page is on screen so the boot
+	// fallback below ticks (the live store also subscribes once started; this is
+	// idempotent and covers the pre-tick fallback window).
+	$effect(() => sharedClock.subscribe());
+
 	const net = $derived(live.network);
 
 	// "Last updated X ago" in the terminal chrome — TICKS off the live store so it
@@ -95,7 +101,13 @@
 		live.generatedUtc != null
 			? formatRelativeSeconds(live.ageSeconds ?? 0, locale)
 			: generatedUtc != null
-				? formatRelative(generatedUtc, locale)
+				? // The pre-tick fallback is a SERVER build timestamp → anchor its age to
+					// the shared SERVER clock (same skew-correction the primary live path
+					// already uses), so the two paths stay consistent on a skewed client.
+					formatRelativeSeconds(
+						Math.max(0, ageSeconds(generatedUtc, sharedClock.serverNow)),
+						locale,
+					)
 				: null,
 	);
 

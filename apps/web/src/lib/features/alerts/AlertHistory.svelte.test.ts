@@ -49,6 +49,24 @@ vi.mock('$lib/v1', () => ({
 	getAlertHistory: vi.fn(),
 }));
 
+// Mock the shared clock with a FIXED, skewed `serverNow` so the freshness age the
+// LiveFreshness chip renders is anchored to the SERVER clock (PR-6), not the raw
+// client `Date.now()`. serverNow = the archive's generated_utc + exactly 2 hours →
+// the chip must read "2 hours ago" regardless of the machine's real clock. A
+// drift-bugged readout (off Date.now()) would NOT land on that controlled value.
+const SERVER_NOW_MS = Date.parse('2026-06-20T02:00:00Z'); // generated_utc + 2 h
+vi.mock('$lib/stores', () => ({
+	sharedClock: {
+		get now() {
+			return SERVER_NOW_MS;
+		},
+		get serverNow() {
+			return SERVER_NOW_MS;
+		},
+		subscribe: () => () => {},
+	},
+}));
+
 // createResource is the only data port this surface uses; return the shared
 // fixture as already-settled data.
 vi.mock('$lib/v1/resource.svelte', () => ({
@@ -99,6 +117,17 @@ describe('AlertHistory log', () => {
 		render(AlertHistoryScreen);
 		expect(screen.getByText('2040 min')).toBeInTheDocument();
 		expect(screen.getByText('210 min')).toBeInTheDocument();
+	});
+
+	it('anchors the LiveFreshness age to the SERVER clock (serverNow), not Date.now()', () => {
+		render(AlertHistoryScreen);
+		// The chip's age derives from generated_utc (2026-06-20T00:00:00Z) vs the
+		// mocked sharedClock.serverNow (02:00:00Z) → exactly "2 hours ago". This only
+		// holds if the surface reads serverNow; an age off the raw client clock would
+		// render whatever the wall clock minus midnight 06-20 happens to be.
+		const chip = document.querySelector('[data-slot="live-freshness"]') as HTMLElement;
+		expect(chip).not.toBeNull();
+		expect(within(chip).getByText('2 hours ago')).toBeInTheDocument();
 	});
 });
 
