@@ -7,17 +7,25 @@
   caveats, all bilingual (FR canonical). A (i) tip on the reliability surface
   deep-links here at each metric's anchor.
 
-  SHELL: built 1:1 on the yesid.dev blog/project detail-page shell (the SAME
-  shared components, on transit tokens + i18n; we are one brand, not lookalikes):
+  SHELL: a MEASURED ARTICLE built 1:1 on the yesid.dev blog/project detail-page
+  shell (the SAME shared components, on transit tokens + i18n; we are one brand,
+  not lookalikes). This is a PROSE / methodology page — the sibling of yesid's
+  blog/[slug] + projects/[slug] — so it is measured, NOT full-bleed:
 
-    · A two-column CSS-grid body that is FULL-BLEED within the content area
-      (`.body-grid.surface-bleed` escapes the page gutter out to the rail-inset
-      <main> edges; it never sits behind the left rail and is never artificially
-      narrow). Below the lg breakpoint it collapses to one column.
+    · A full-bleed ARTICLE HEADER band carrying the .detail-header-grid dot-grid
+      chrome (the "Manifesto schematic" behind the yesid detail headers) + the
+      SurfaceHeader (kicker / heading / lede) + the quiet-mode switch, closed off
+      by an edge-to-edge `<Separator variant="hazard">` stripe — 1:1 with the blog/
+      projects detail header + hazard separator.
+    · The `.body-grid` below it is the yesid article grid: max-width container-wide,
+      centred, with the page gutter; at lg it becomes a THREE-column measured grid
+      `minmax(12rem,1fr) | minmax(0,46rem) | minmax(12rem,1fr)` — a TOC rail, a
+      46rem-capped reading column, and a (currently empty) right rail that holds
+      the measure. It is NOT full-bleed: the reading column stays ~46rem.
     · DESKTOP (>=lg): a sticky, NON-hideable table-of-contents rail (shared TocNav)
-      on the left + the content column on the right. The rail tracks the current
-      section (activeId) and scrolls to its target on click; it stays fully visible
-      in every mode (quiet/focus collapses the section cards, never the ToC).
+      on the left + the measured content column in the centre. The rail tracks the
+      current section (activeId) and scrolls to its target on click; it stays fully
+      visible in every mode (quiet/focus collapses the section cards, never the ToC).
     · The provenance preamble + one CollapsibleSection card PER METRIC (number
       badge, `data-toc` anchor, deep-link `id` on the section block) carry the
       definition / math / SQL / "what it's NOT" / caveats.
@@ -26,9 +34,12 @@
     · ONE IntersectionObserver (observeActiveToc over `[data-toc]`) owns activeId
       and feeds BOTH the rail and the pill (no duplicate observers).
 
-  Composes the brand/layout spine: Surface + SurfaceHeader + SectionLabel + the
-  shared CodeBlock (SQL syntax chrome) + the shared shared/ TOC + collapsible-card
-  kit (CollapsibleSection / TocNav / TocPill / toc.ts).
+  Composes the brand/layout spine: the article header band (SurfaceHeader +
+  .detail-header-grid) + the hazard Separator + SectionLabel + the shared CodeBlock
+  (SQL syntax chrome) + the shared shared/ TOC + collapsible-card kit
+  (CollapsibleSection / TocNav / TocPill / toc.ts). The measured-article OUTER
+  chrome (the edge-title grid + accent-rail + metro dots) lives in the co-located
+  metrics/+layout.svelte, ported from the yesid blog/projects listing layout.
 
   DOCTRINE: no data marks here (prose + SQL), so the dataviz scale is not in play;
   --primary appears only on interactive chrome (the TOC, the pill, the back-to-top
@@ -43,7 +54,7 @@
 	import { getLocale, type Locale } from '$lib/i18n';
 	import { getProvenance } from '$lib/v1';
 	import { createResource } from '$lib/v1/resource.svelte';
-	import { Surface } from '$lib/components/layout';
+	import { Separator } from '$lib/components/ui/separator';
 	import { SurfaceHeader, ConformanceBadge } from '$lib/components/surface';
 	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
 	import CodeBlock from '$lib/components/CodeBlock.svelte';
@@ -221,41 +232,56 @@
 	}
 </script>
 
-<Surface width="wide" class="metrics">
-	<SurfaceHeader kicker={t.kicker} heading={t.heading} subheading={t.subheading} lede={t.lede}>
-		<!-- Quiet-mode (focus reading) affordance — a single restrained switch in the
-		     header. --primary lights up only when active (the mono "wave" icon collapses
-		     to a glowing core dot), 1:1 with the yesid.dev "Quiet mode" switch on transit
-		     tokens. A real <button role="switch"> with aria-checked + a bilingual label;
-		     the press flips the persisted quiet state. -->
-		<div class="metrics-quiet-controls">
-			<button
-				type="button"
-				class="metrics-quiet-toggle"
-				role="switch"
-				aria-checked={quiet}
-				aria-label={quiet ? t.quiet.disable : t.quiet.enable}
-				data-testid="metrics-quiet-toggle"
-				onclick={toggleQuiet}
-			>
-				<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
-					<path class="q-wave" d="M8.4 8.4a5 5 0 0 0 0 7.2" />
-					<path class="q-wave" d="M15.6 8.4a5 5 0 0 1 0 7.2" />
-					<path class="q-wave q-wave--far" d="M5.7 5.7a8.9 8.9 0 0 0 0 12.6" />
-					<path class="q-wave q-wave--far" d="M18.3 5.7a8.9 8.9 0 0 1 0 12.6" />
-					<circle class="q-core" cx="12" cy="12" r="2.3" />
-				</svg>
-				<span>{t.quiet.label}</span>
-			</button>
+<article class="metrics-article" data-testid="metrics-article">
+	<!-- Full-bleed ARTICLE HEADER band — the .detail-header-grid dot-grid chrome
+	     (the "Manifesto schematic" behind the yesid blog/projects detail headers)
+	     behind the SurfaceHeader + the quiet-mode switch. Measured: the header
+	     content re-caps to container-content so the title block reads like an
+	     article masthead, while the dot-grid band itself spans the full width. -->
+	<header class="metrics-header detail-header-grid">
+		<div class="metrics-header__inner">
+			<SurfaceHeader kicker={t.kicker} heading={t.heading} subheading={t.subheading} lede={t.lede}>
+				<!-- Quiet-mode (focus reading) affordance — a single restrained switch in the
+				     header. --primary lights up only when active (the mono "wave" icon collapses
+				     to a glowing core dot), 1:1 with the yesid.dev "Quiet mode" switch on transit
+				     tokens. A real <button role="switch"> with aria-checked + a bilingual label;
+				     the press flips the persisted quiet state. -->
+				<div class="metrics-quiet-controls">
+					<button
+						type="button"
+						class="metrics-quiet-toggle"
+						role="switch"
+						aria-checked={quiet}
+						aria-label={quiet ? t.quiet.disable : t.quiet.enable}
+						data-testid="metrics-quiet-toggle"
+						onclick={toggleQuiet}
+					>
+						<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+							<path class="q-wave" d="M8.4 8.4a5 5 0 0 0 0 7.2" />
+							<path class="q-wave" d="M15.6 8.4a5 5 0 0 1 0 7.2" />
+							<path class="q-wave q-wave--far" d="M5.7 5.7a8.9 8.9 0 0 0 0 12.6" />
+							<path class="q-wave q-wave--far" d="M18.3 5.7a8.9 8.9 0 0 1 0 12.6" />
+							<circle class="q-core" cx="12" cy="12" r="2.3" />
+						</svg>
+						<span>{t.quiet.label}</span>
+					</button>
+				</div>
+			</SurfaceHeader>
 		</div>
-	</SurfaceHeader>
+	</header>
 
-	<!-- Body: shared detail-page grid (sticky TOC rail | section cards), full-bleed
-	     within the content area (surface-bleed escapes the page gutter, never the
-	     rail). Single column below lg; the rail is replaced by the floating pill.
-	     The grid + gutter are IDENTICAL whether quiet mode is on or off — quiet only
-	     collapses the section cards (below); the ToC rail stays fully visible. -->
-	<div class="body-grid surface-bleed">
+	<!-- Edge-to-edge hazard stripe closing the header — 1:1 with the blog/projects
+	     detail header → <Separator variant="hazard"> contract. -->
+	<Separator variant="hazard" />
+
+	<!-- Body: the yesid article grid (max-width container-wide, centred, with the
+	     page gutter; at lg a measured 3-col grid → TOC rail | 46rem reading column |
+	     empty right rail holding the measure). NOT full-bleed: the reading column
+	     stays ~46rem. Single column below lg; the rail is replaced by the floating
+	     pill. The grid + gutter are IDENTICAL whether quiet mode is on or off —
+	     quiet only collapses the section cards (below); the ToC rail stays fully
+	     visible. -->
+	<div class="body-grid">
 		<aside class="context-column">
 			<div class="context-panel toc-scroll">
 				<div class="toc-nav-shell">
@@ -402,33 +428,70 @@
 				</CollapsibleSection>
 			</div>
 		</div>
+
+		<!-- Right rail (lg+). Empty today — it exists to hold the 3-column measure so
+		     the centre reading column stays capped at ~46rem (1:1 with the yesid blog
+		     grid's entry rail column). A cluster legend / back-to-top can land here in
+		     a follow-up without disturbing the measure. -->
+		<aside class="entry-column" aria-hidden="true"></aside>
 	</div>
-</Surface>
+</article>
 
 <!-- Mobile floating TOC pill (hidden ≥lg) -->
 <TocPill entries={tocEntries} {activeId} openAria={t.tocPill.open} closeAria={t.tocPill.close} />
 
 <style>
-	/* ── Shared detail-page body grid ──────────────────────────────────────────
-	   Mirrors the yesid blog/project detail body grid: one column on mobile, a
-	   sticky TOC rail + content column at lg. The wrapper is `.surface-bleed`, so
-	   inside a `Surface width="wide"` it escapes the page gutter out to the rail-
-	   inset <main> edges (full-bleed within the content area, never behind the
-	   rail). */
+	/* ── Article shell ─────────────────────────────────────────────────────────
+	   The whole surface is a measured article (the yesid blog/projects detail
+	   page on transit tokens): a full-bleed header band, an edge-to-edge hazard
+	   stripe, then the measured body grid. The article itself sets no max-width —
+	   the header band + hazard span the rail-inset <main> width, and the body grid
+	   owns the reading measure. */
+	.metrics-article {
+		display: flex;
+		flex-direction: column;
+		gap: 0;
+		width: 100%;
+	}
+
+	/* Full-bleed header band carrying the .detail-header-grid dot-grid chrome.
+	   `position: relative` + `overflow: hidden` anchor the grid's ::after solder
+	   dots; the band spans full width while its inner block re-caps to the reading
+	   measure so the masthead reads like an article header (not edge-to-edge text). */
+	.metrics-header {
+		position: relative;
+		overflow: hidden;
+		padding-block: clamp(1.75rem, 4vw, 3rem);
+		padding-inline: var(--space-page-x);
+		background: var(--manifesto);
+	}
+	.metrics-header__inner {
+		position: relative;
+		z-index: var(--z-content);
+		max-width: var(--container-content);
+		margin-inline: auto;
+	}
+
+	/* ── Body grid (yesid article grid) ────────────────────────────────────────
+	   Mobile: one column, container-wide, centred, with the page gutter. At lg it
+	   becomes a measured 3-col grid → TOC rail | 46rem reading column | right rail,
+	   so the reading column stays ~46rem (NOT full-bleed). The grid + gutter are
+	   IDENTICAL whether quiet mode is on or off (quiet only collapses cards). */
 	.body-grid {
+		max-width: var(--container-wide);
+		margin: 0 auto;
+		padding-inline: var(--space-page-x);
+		padding-block: 1.5rem;
+		min-width: 0;
+		overflow-x: clip;
 		display: grid;
 		grid-template-columns: 1fr;
 		gap: var(--space-card-gap);
-		min-width: 0;
-		overflow-x: clip;
-		/* Re-apply the gutter the surface-bleed escaped, so the content keeps the
-		   page padding line as its edge (matches .surface-measure's intent). The
-		   grid + gutter are identical in quiet mode (quiet only collapses cards). */
-		padding-inline: var(--space-page-x);
 	}
 
 	.context-column,
-	.sections-column {
+	.sections-column,
+	.entry-column {
 		min-width: 0;
 	}
 
@@ -444,25 +507,43 @@
 		width: 100%;
 	}
 
+	/* The right rail is desktop-only ornament that holds the measure (empty today). */
+	.entry-column {
+		display: none;
+	}
+
 	@media (min-width: 1024px) {
 		.body-grid {
-			grid-template-columns: minmax(13rem, 17rem) minmax(0, 1fr);
+			width: 100%;
+			max-width: none;
+			grid-template-columns: minmax(12rem, 1fr) minmax(0, 46rem) minmax(12rem, 1fr);
 			gap: 2rem;
 			align-items: start;
-			padding-block: 0.5rem;
+			padding-block: 2.5rem;
 		}
 
 		.context-column {
 			grid-column: 1;
+			justify-self: end;
+			width: min(18rem, 100%);
 		}
 
 		.sections-column {
 			grid-column: 2;
+			justify-self: center;
+			max-width: 46rem;
+		}
+
+		.entry-column {
+			display: block;
+			grid-column: 3;
+			justify-self: start;
+			width: min(18rem, 100%);
 		}
 
 		.context-panel {
 			position: sticky;
-			top: 5.5rem;
+			top: 5rem;
 		}
 
 		.toc-nav-shell {
@@ -472,10 +553,30 @@
 		/* Keep a long TOC scrollable within the sticky viewport (the content column
 		   is the longer one). */
 		.toc-scroll {
-			max-height: calc(100dvh - 7rem);
+			max-height: calc(100dvh - 6rem);
 			overflow-y: auto;
 			overscroll-behavior: contain;
 			padding-bottom: 1rem;
+		}
+	}
+
+	/* Narrow desktop (lg→xl): the 46rem centre + two 18rem rails overflow, so let
+	   the rails stretch and the centre uncap — same fallback the yesid grid uses. */
+	@media (min-width: 1024px) and (max-width: 1279px) {
+		.body-grid {
+			gap: 1.25rem;
+		}
+		.context-column {
+			width: 100%;
+			justify-self: stretch;
+		}
+		.sections-column {
+			max-width: none;
+			justify-self: stretch;
+		}
+		.entry-column {
+			width: 100%;
+			justify-self: stretch;
 		}
 	}
 
