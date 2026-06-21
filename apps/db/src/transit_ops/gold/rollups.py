@@ -619,6 +619,9 @@ REPORTING_AGGREGATE_TABLES = (
     # shift/daytype regroups rebuild from the freshly-built hourly spine.
     "route_delay_by_shift",
     "route_delay_by_daytype",
+    # Tier-3 2D crosstab — also AFTER route_delay_hourly so it rebuilds from the
+    # fresh hourly spine; consistent with the 1D shift/daytype marginals above.
+    "route_delay_by_shift_daytype",
     "route_headway_direction_daily",
 )
 
@@ -638,6 +641,7 @@ DERIVED_REBUILD_TABLES = (
     "repeated_problem_route_stop",
     "route_delay_by_shift",
     "route_delay_by_daytype",
+    "route_delay_by_shift_daytype",
 )
 
 ROLLING_WINDOW_TABLES = (
@@ -1515,6 +1519,67 @@ UPSERT_ROUTE_DELAY_BY_DAYTYPE = text(
     """
 )
 
+# Tier-3: 2D crosstab regroup of the route_delay_hourly spine by route + shift +
+# day_type. The shift CASE and day_type CASE are byte-identical to the 1D
+# route_delay_by_shift / route_delay_by_daytype upserts above, so each 2D cell is
+# consistent with the 1D marginals. Same observation-weighted avg + on-time
+# NULL-guard. The "-- route_delay_by_shift_daytype" needle is a unique test
+# discriminator and MUST precede the broader "route_delay_hourly" /
+# "route_delay_by_shift" substrings (both appear below) in any substring dispatch.
+UPSERT_ROUTE_DELAY_BY_SHIFT_DAYTYPE = text(
+    """
+    -- route_delay_by_shift_daytype: 2D shift x day_type crosstab regroup
+    INSERT INTO gold.route_delay_by_shift_daytype (
+        provider_id, shift, day_type, route_id, observation_count,
+        delay_observation_count, on_time_observation_count, avg_delay_seconds,
+        severe_delay_count, built_at_utc
+    )
+    SELECT
+        rd.provider_id,
+        CASE
+            WHEN EXTRACT(HOUR FROM timezone(dp.timezone, rd.period_start_utc))
+                BETWEEN 6 AND 8 THEN 'am_peak'
+            WHEN EXTRACT(HOUR FROM timezone(dp.timezone, rd.period_start_utc))
+                BETWEEN 9 AND 14 THEN 'midday'
+            WHEN EXTRACT(HOUR FROM timezone(dp.timezone, rd.period_start_utc))
+                BETWEEN 15 AND 18 THEN 'pm_peak'
+            WHEN EXTRACT(HOUR FROM timezone(dp.timezone, rd.period_start_utc))
+                BETWEEN 19 AND 22 THEN 'evening'
+            ELSE 'night'
+        END AS shift,
+        CASE
+            WHEN EXTRACT(ISODOW FROM timezone(dp.timezone, rd.period_start_utc))
+                BETWEEN 1 AND 5 THEN 'weekday'
+            ELSE 'weekend'
+        END AS day_type,
+        rd.route_id,
+        SUM(rd.observation_count)::integer,
+        SUM(rd.delay_observation_count)::integer,
+        CASE WHEN COUNT(*) = COUNT(rd.on_time_observation_count)
+            THEN SUM(rd.on_time_observation_count)::integer
+        END,
+        ROUND(
+            SUM(rd.avg_delay_seconds * NULLIF(rd.delay_observation_count, 0))
+            / NULLIF(SUM(rd.delay_observation_count), 0),
+            2
+        ),
+        SUM(rd.severe_delay_count)::integer,
+        :built_at_utc
+    FROM gold.route_delay_hourly AS rd
+    INNER JOIN gold.dim_provider AS dp
+        ON dp.provider_id = rd.provider_id
+    WHERE rd.provider_id = :provider_id
+    GROUP BY 1, 2, 3, 4
+    ON CONFLICT (provider_id, shift, day_type, route_id) DO UPDATE SET
+        observation_count = EXCLUDED.observation_count,
+        delay_observation_count = EXCLUDED.delay_observation_count,
+        on_time_observation_count = EXCLUDED.on_time_observation_count,
+        avg_delay_seconds = EXCLUDED.avg_delay_seconds,
+        severe_delay_count = EXCLUDED.severe_delay_count,
+        built_at_utc = EXCLUDED.built_at_utc
+    """
+)
+
 # Per-direction + weekday/weekend headway. Sibling of route_headway_daily (which
 # is left untouched): the busiest_direction collapse is dropped so EVERY
 # direction survives, and weekend service days are kept (tagged) instead of
@@ -1708,6 +1773,7 @@ REPORTING_AGGREGATE_UPSERTS = {
     "repeat_offender_daily": UPSERT_REPEAT_OFFENDER_DAILY,
     "route_delay_by_shift": UPSERT_ROUTE_DELAY_BY_SHIFT,
     "route_delay_by_daytype": UPSERT_ROUTE_DELAY_BY_DAYTYPE,
+    "route_delay_by_shift_daytype": UPSERT_ROUTE_DELAY_BY_SHIFT_DAYTYPE,
     "route_headway_direction_daily": UPSERT_ROUTE_HEADWAY_DIRECTION_DAILY,
 }
 

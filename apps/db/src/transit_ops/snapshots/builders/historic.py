@@ -44,6 +44,7 @@ from transit_ops.snapshots.contract import (
     AlertHistory,
     AlertHistoryEntry,
     CancellationPeriod,
+    CrosstabCell,
     CrowdingDelayCell,
     HeadwayPeriod,
     Hotspot,
@@ -689,6 +690,26 @@ _ROUTE_BY_DAYTYPE_SQL = text(
     """
 )
 
+# Tier-3 2D crosstab: per-route delay by (shift, day_type) intersection, from the
+# gold.route_delay_by_shift_daytype crosstab table. SPARSE — only stored cells are
+# returned; the builder emits one CrosstabCell per row, honest-None per metric.
+# Unique discriminator for the FakeConn substring dispatch: "-- by_shift_daytype",
+# which MUST precede the broader "route_delay_by_shift" needle below.
+_ROUTE_BY_SHIFT_DAYTYPE_SQL = text(
+    """
+    -- by_shift_daytype: 2D shift x day_type delay crosstab cells
+    SELECT shift,
+           day_type,
+           delay_observation_count AS known_obs,
+           on_time_observation_count AS on_time,
+           avg_delay_seconds AS avg_delay_sec,
+           severe_delay_count AS severe,
+           observation_count AS obs
+    FROM gold.route_delay_by_shift_daytype
+    WHERE provider_id = :provider_id AND route_id = :route_id
+    """
+)
+
 # Per-direction + weekday/weekend observed headway (sibling table; the busiest-direction
 # route_headway_daily is left untouched). Direction is encoded into the free shift string.
 _ROUTE_HEADWAY_DIRECTION_SQL = text(
@@ -1027,6 +1048,21 @@ def build_route_reliability(
         conn.execute(_ROUTE_CROWDING_DELAY_SQL, params).mappings(), route_pctile
     )
 
+    # --- by_shift_daytype: tier-3 2D shift x day_type delay crosstab (SPARSE —
+    #     only stored cells; honest-None per metric). Read new cols defensively via
+    #     r.get(...) so fixtures lacking a column yield None rather than KeyError. ---
+    by_shift_daytype = [
+        CrosstabCell(
+            shift=str(r["shift"]),
+            day_type=str(r["day_type"]),
+            otp_pct=_otp_pct(r.get("on_time"), r.get("known_obs")),
+            avg_delay_min=_avg_delay_min(r.get("avg_delay_sec")),
+            severe_pct=_severe_pct(r.get("known_obs"), r.get("severe")),
+            observation_count=_opt_int(r.get("obs")),
+        )
+        for r in conn.execute(_ROUTE_BY_SHIFT_DAYTYPE_SQL, params).mappings()
+    ]
+
     return RouteReliability(
         generated_utc=generated_utc,
         id=route_id,
@@ -1041,6 +1077,7 @@ def build_route_reliability(
         service_spans=service_spans,
         skipped_stops=skipped_stops,
         delay_by_crowding=delay_by_crowding,
+        by_shift_daytype=by_shift_daytype,
     )
 
 

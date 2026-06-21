@@ -243,7 +243,7 @@ def test_build_network_trend_fact_only_date() -> None:
 
 def _route_reliability_dispatch(*, daily=None, weekly=None, monthly=None, headway=None,
                                 habit=None, weak=None, names=None, schedule=None,
-                                route_names=None, dow=None, crowding=None):
+                                route_names=None, dow=None, crowding=None, crosstab=None):
     """Assemble an ordered dispatch list for build_route_reliability.
 
     Needles are ordered most-specific-first so they never collide. The schedule
@@ -266,6 +266,9 @@ def _route_reliability_dispatch(*, daily=None, weekly=None, monthly=None, headwa
         ("extract(isodow FROM :repdate)", [("svc_wd",)]),
         # route schedule (first-stop departures) — drives scheduled headway
         ("st.stop_sequence     = 1", schedule or []),
+        # tier-3 2D crosstab — discriminator '-- by_shift_daytype'; MUST precede
+        # the broader 'route_delay_by_shift' substring.
+        ("-- by_shift_daytype", crosstab or []),
         # delay×crowding — MUST precede the daily-view needle (its JOIN contains
         # 'public_route_reliability_daily'); discriminator '-- delay_by_crowding'.
         ("-- delay_by_crowding", crowding or []),
@@ -615,6 +618,58 @@ def test_build_route_reliability_delay_by_crowding_skips_zero_obs_days() -> None
     conn = FakeConn(_route_reliability_dispatch(crowding=crowding))
     out = build_route_reliability(conn, route_id="51", generated_utc="t")
     assert out.delay_by_crowding == []
+
+
+def test_build_route_reliability_by_shift_daytype_cells() -> None:
+    # Tier-3 2D crosstab: each (shift, day_type) row becomes one CrosstabCell with
+    # a REAL on_time/known OTP, weighted avg (sec->min), severe% over known obs.
+    crosstab = [
+        {"shift": "am_peak", "day_type": "weekday", "known_obs": 100,
+         "on_time": 90, "avg_delay_sec": 120.0, "severe": 10, "obs": 150},
+        {"shift": "am_peak", "day_type": "weekend", "known_obs": 40,
+         "on_time": 20, "avg_delay_sec": 300.0, "severe": 8, "obs": 50},
+    ]
+    conn = FakeConn(_route_reliability_dispatch(crosstab=crosstab))
+
+    out = build_route_reliability(conn, route_id="51", generated_utc="t")
+
+    by_cell = {(c.shift, c.day_type): c for c in out.by_shift_daytype}
+    assert set(by_cell) == {("am_peak", "weekday"), ("am_peak", "weekend")}
+
+    wd = by_cell[("am_peak", "weekday")]
+    assert wd.otp_pct == 90  # 90/100
+    assert wd.avg_delay_min == 2.0  # 120s
+    assert wd.severe_pct == 10.0  # 10/100
+    assert wd.observation_count == 150
+
+    we = by_cell[("am_peak", "weekend")]
+    assert we.otp_pct == 50  # 20/40
+    assert we.avg_delay_min == 5.0  # 300s
+    assert we.severe_pct == 20.0  # 8/40
+    assert we.observation_count == 50
+
+
+def test_build_route_reliability_by_shift_daytype_empty_when_absent() -> None:
+    # No crosstab rows -> empty list (SPARSE / honest absence, never fabricated).
+    conn = FakeConn(_route_reliability_dispatch(crosstab=[]))
+    out = build_route_reliability(conn, route_id="51", generated_utc="t")
+    assert out.by_shift_daytype == []
+
+
+def test_build_route_reliability_by_shift_daytype_honest_null_metrics() -> None:
+    # A cell with no known-delay observations -> honest-None per metric, but the
+    # cell is still emitted (it has a shift/day_type identity + observation_count).
+    crosstab = [
+        {"shift": "night", "day_type": "weekend", "known_obs": 0,
+         "on_time": None, "avg_delay_sec": None, "severe": 0, "obs": 0},
+    ]
+    conn = FakeConn(_route_reliability_dispatch(crosstab=crosstab))
+    out = build_route_reliability(conn, route_id="51", generated_utc="t")
+    cell = out.by_shift_daytype[0]
+    assert cell.shift == "night" and cell.day_type == "weekend"
+    assert cell.otp_pct is None
+    assert cell.avg_delay_min is None
+    assert cell.severe_pct is None
 
 
 def test_stop_names_sql_unions_history() -> None:

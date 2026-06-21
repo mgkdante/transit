@@ -59,6 +59,72 @@
       "title": "CancellationPeriod",
       "type": "object"
     },
+    "CrosstabCell": {
+      "properties": {
+        "avg_delay_min": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Avg Delay Min"
+        },
+        "day_type": {
+          "title": "Day Type",
+          "type": "string"
+        },
+        "observation_count": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Observation Count"
+        },
+        "otp_pct": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Otp Pct"
+        },
+        "severe_pct": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Severe Pct"
+        },
+        "shift": {
+          "title": "Shift",
+          "type": "string"
+        }
+      },
+      "required": [
+        "shift",
+        "day_type"
+      ],
+      "title": "CrosstabCell",
+      "type": "object"
+    },
     "CrowdingDelayCell": {
       "properties": {
         "avg_delay_min": {
@@ -571,6 +637,13 @@
     }
   },
   "properties": {
+    "by_shift_daytype": {
+      "items": {
+        "$ref": "#/$defs/CrosstabCell"
+      },
+      "title": "By Shift Daytype",
+      "type": "array"
+    },
     "cancellations": {
       "items": {
         "$ref": "#/$defs/CancellationPeriod"

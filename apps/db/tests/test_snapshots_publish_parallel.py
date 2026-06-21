@@ -379,6 +379,9 @@ def _historic_dispatch_conn():
         # Tier-1 cancellation/occupancy reads (more-specific needles precede the
         # generic daily-view "ORDER BY provider_local_date DESC" below).
         ("cancellation_rate_pct, canceled_trip_days", []),
+        # build_route_reliability: tier-3 2D shift×day_type crosstab (precedes the
+        # broader route_delay_by_shift / route_delay_hourly substrings).
+        ("-- by_shift_daytype", []),
         # build_route_reliability: delay×crowding (precedes the broader
         # public_route_reliability_daily / route_occupancy_band_daily needles).
         ("-- delay_by_crowding", []),
