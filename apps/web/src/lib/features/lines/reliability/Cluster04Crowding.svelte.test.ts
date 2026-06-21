@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/svelte';
+import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { describe, expect, it } from 'vitest';
 import Cluster04Crowding from './Cluster04Crowding.svelte';
 import { reliabilityCopy } from './reliability.copy';
@@ -11,11 +11,12 @@ const info = metricsCopy.en.info;
 // A populated mix: `standing` is the dominant band (0.45 of a 1.0 total).
 const populated: CrowdingVM = {
 	mix: { empty: 0.1, many_seats: 0.2, few_seats: 0.15, standing: 0.45, full: 0.1 },
+	delayByCrowding: [],
 	isEmpty: false,
 };
 
 // The honest empty state: no telemetry → the VM is empty (no mix to draw).
-const empty: CrowdingVM = { mix: null, isEmpty: true };
+const empty: CrowdingVM = { mix: null, delayByCrowding: [], isEmpty: true };
 
 describe('Cluster04Crowding', () => {
 	it('renders the cluster overline + occupancy bar with a populated VM', () => {
@@ -99,5 +100,81 @@ describe('Cluster04Crowding', () => {
 			'href',
 			'/fr/metrics#occupancy',
 		);
+	});
+});
+
+describe('Cluster04Crowding — delay by crowding (G1)', () => {
+	// A sparse delay×crowding set: two present bands with a real delay, one present
+	// band with a NULL delay (must show the no-data message, never a "·"/0).
+	const withDelay: CrowdingVM = {
+		mix: { empty: 0.1, many_seats: 0.2, few_seats: 0.15, standing: 0.45, full: 0.1 },
+		delayByCrowding: [
+			{ band: 'many_seats', avg_delay_min: 1.2, p50_min: 0.4 },
+			{ band: 'standing', avg_delay_min: 4.5 },
+			{ band: 'full', avg_delay_min: null, day_count: 3 },
+		],
+		isEmpty: false,
+	};
+
+	it('renders the present bands with their avg delay, ordered empty→full', () => {
+		const { container } = render(Cluster04Crowding, {
+			props: { vm: withDelay, locale: 'en', copy },
+		});
+		const sub = container.querySelector('[data-slot="delay-by-crowding"]');
+		expect(sub).not.toBeNull();
+		expect(within(sub as HTMLElement).getByText(copy.delayByCrowding.heading)).toBeInTheDocument();
+		// Present bands read their delay.
+		expect(within(sub as HTMLElement).getByText('1.2 min')).toBeInTheDocument();
+		expect(within(sub as HTMLElement).getByText('4.5 min')).toBeInTheDocument();
+		// Secondary p50 caption rides the many_seats band.
+		expect(
+			within(sub as HTMLElement).getByText(copy.delayByCrowding.typical('0.4 min')),
+		).toBeInTheDocument();
+		// Natural occupancy order (empty→full): standing precedes full in the DOM.
+		const rows = sub!.querySelectorAll('[data-slot="delay-by-crowding-row"]');
+		const order = [...rows].map((r) => r.getAttribute('data-band'));
+		expect(order).toEqual(['empty', 'many_seats', 'few_seats', 'standing', 'full']);
+	});
+
+	it('shows the no-data message (never "·"/0) for a band with a null delay', () => {
+		const { container } = render(Cluster04Crowding, {
+			props: { vm: withDelay, locale: 'en', copy },
+		});
+		const sub = container.querySelector('[data-slot="delay-by-crowding"]') as HTMLElement;
+		// `full` is present with a null delay → its cell reads the no-data message.
+		const fullCell = sub.querySelector('[data-band="full"] [data-empty="true"]');
+		expect(fullCell?.textContent?.trim()).toBe(copy.strip.noData);
+		// `empty` + `few_seats` are absent from the contract → also no-data, not "·".
+		expect(sub.querySelector('[data-band="empty"] [data-empty="true"]')?.textContent?.trim()).toBe(
+			copy.strip.noData,
+		);
+		// No middot leak anywhere in the sub-block.
+		expect(sub.textContent).not.toContain('·');
+	});
+
+	it('shows ONE honest no-data note when there is no delay-by-crowding data at all', () => {
+		const { container } = render(Cluster04Crowding, {
+			props: { vm: populated, locale: 'en', copy },
+		});
+		const sub = container.querySelector('[data-slot="delay-by-crowding"]') as HTMLElement;
+		expect(within(sub).getByText(copy.delayByCrowding.empty)).toBeInTheDocument();
+		// Not a fabricated per-band grid.
+		expect(sub.querySelector('[data-slot="delay-by-crowding-row"]')).toBeNull();
+	});
+
+	it('surfaces delay-by-crowding even when the occupancy mix is empty (no telemetry)', () => {
+		const mixEmptyWithDelay: CrowdingVM = {
+			mix: null,
+			delayByCrowding: [{ band: 'standing', avg_delay_min: 3.3 }],
+			isEmpty: true,
+		};
+		const { container } = render(Cluster04Crowding, {
+			props: { vm: mixEmptyWithDelay, locale: 'en', copy },
+		});
+		// The mix block shows its own no-data note...
+		expect(screen.getByText(copy.strip.noDataNote)).toBeInTheDocument();
+		// ...but the delay-by-crowding sub-block still renders its data.
+		const sub = container.querySelector('[data-slot="delay-by-crowding"]') as HTMLElement;
+		expect(within(sub).getByText('3.3 min')).toBeInTheDocument();
 	});
 });

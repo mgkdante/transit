@@ -434,3 +434,60 @@ describe('toReliabilityClusters — duplicate-day dedup', () => {
 		expect(c.strip.rangeAggregate).toEqual({ days: 2, start: '2026-06-16', end: '2026-06-17' });
 	});
 });
+
+describe('toReliabilityClusters — delay_by_crowding (G1)', () => {
+	it('keeps the per-band delay cells verbatim on the crowding VM (signal-filtered)', () => {
+		const data: RouteReliability = {
+			generated_utc: utc('2026-06-19T02:00:00Z'),
+			id: '11',
+			delay_by_crowding: [
+				{ band: 'many_seats', avg_delay_min: 1.2, p50_min: 0.4, observation_count: 50 },
+				{ band: 'standing', avg_delay_min: 4.5, day_count: 7 },
+				// A present-but-null band still has a non-delay signal (day_count) → kept,
+				// but the band must show the no-data message for its delay downstream.
+				{ band: 'full', avg_delay_min: null, day_count: 3 },
+				// An all-null cell carries no signal → dropped.
+				{ band: 'empty' },
+			],
+		};
+		const c = toReliabilityClusters(data);
+		expect(c.crowding.delayByCrowding.map((d) => d.band)).toEqual([
+			'many_seats',
+			'standing',
+			'full',
+		]);
+		expect(c.crowding.delayByCrowding.find((d) => d.band === 'standing')?.avg_delay_min).toBe(4.5);
+	});
+
+	it('resolves to an empty delayByCrowding when the contract omits it', () => {
+		const c = toReliabilityClusters({ generated_utc: utc('2026-06-19T02:00:00Z'), id: '11' });
+		expect(c.crowding.delayByCrowding).toEqual([]);
+	});
+});
+
+describe('toReliabilityClusters — by_shift_daytype crosstab (G1)', () => {
+	it('keeps the sparse crosstab cells verbatim on the punctuality VM', () => {
+		const data: RouteReliability = {
+			generated_utc: utc('2026-06-19T02:00:00Z'),
+			id: '11',
+			by_shift_daytype: [
+				{ shift: 'am_peak', day_type: 'weekday', otp_pct: 88, avg_delay_min: 1.1 },
+				{ shift: 'pm_peak', day_type: 'weekday', otp_pct: 74, severe_pct: 9 },
+				// SPARSE: am_peak/weekend, midday/*, evening/*, night/* are simply absent.
+				// An all-null cell carries no signal → dropped (not present-but-blank).
+				{ shift: 'night', day_type: 'weekend' },
+			],
+		};
+		const c = toReliabilityClusters(data);
+		expect(c.punctuality.byShiftDaytype.map((x) => `${x.shift}|${x.day_type}`)).toEqual([
+			'am_peak|weekday',
+			'pm_peak|weekday',
+		]);
+		expect(c.punctuality.isEmpty).toBe(false);
+	});
+
+	it('resolves to an empty byShiftDaytype when the contract omits it', () => {
+		const c = toReliabilityClusters({ generated_utc: utc('2026-06-19T02:00:00Z'), id: '11' });
+		expect(c.punctuality.byShiftDaytype).toEqual([]);
+	});
+});
