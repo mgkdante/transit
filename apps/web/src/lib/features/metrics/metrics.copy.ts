@@ -64,11 +64,12 @@ export interface MetricsCopy extends SurfaceHeadCopy {
 		readonly levels: Record<Confidence, { readonly chip: string; readonly meaning: string }>;
 	};
 	/**
-	 * Quiet-mode (focus reading) affordance — a single header toggle that drops the
-	 * page gutter (true full-bleed prose at a comfortable measure) and quiets the
-	 * chrome (TOC rail + non-essential furniture) so the methodology reads
-	 * distraction-free. The choice persists across navigations. Mirrors the
-	 * yesid.dev detail-page "Quiet mode" switch, kept to one restrained control.
+	 * Quiet-mode (focus reading) affordance — a single header toggle that COLLAPSES
+	 * every metric section card so the page becomes a scannable stack of headings,
+	 * while leaving the ToC rail fully visible (it never hides the ToC, changes the
+	 * grid, or drops the gutter). The choice persists across navigations (the
+	 * card-collapse preference, never a hidden ToC). Mirrors the yesid.dev detail-
+	 * page "Quiet mode" switch, kept to one restrained control.
 	 */
 	readonly quiet: {
 		/** Visible button label (mono control voice). */
