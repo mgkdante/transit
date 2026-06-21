@@ -13,6 +13,10 @@ export const RouteIndexEntrySchema = z.object({
 	long: z.string().nullable().optional(),
 	// Hex brand colour from GTFS (e.g. "009EE0"); null when the feed omits it.
 	color: z.string().nullable().optional(),
+	// True when historic/route_reliability/{id}.json is published for this route;
+	// the loader skips probing reliability for routes where this is explicitly
+	// false. Optional so snapshots published before this field still parse.
+	reliability: z.boolean().optional(),
 });
 export type RouteIndexEntry = z.infer<typeof RouteIndexEntrySchema>;
 

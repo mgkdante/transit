@@ -28,10 +28,13 @@ vi.mock('$lib/v1', () => ({
 	isProblemVerdict: (v: string | null) => v === 'late' || v === 'severe',
 	createReliabilityLoader: () => ({
 		get: (id: string) => snapshots.get(id) ?? snap({}),
-		request: (id: string) => requested.push(id),
+		request: (target: string | { id: string; known?: boolean }) =>
+			requested.push(typeof target === 'string' ? target : target.id),
 		// The action immediately registers interest (no real IntersectionObserver).
-		reliability: (_node: Element, id: string) => {
-			requested.push(id);
+		// The row now passes { id, known } — record just the id (matches prod, which
+		// dedupes on id), so the lazy-request assertions still read plain ids.
+		reliability: (_node: Element, target: string | { id: string; known?: boolean }) => {
+			requested.push(typeof target === 'string' ? target : target.id);
 			return { destroy() {} };
 		},
 		get inFlight() {

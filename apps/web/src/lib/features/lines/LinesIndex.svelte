@@ -181,7 +181,7 @@
 		     action per row) stay intact and the grid track lives ONLY in DashboardGrid. -->
 		<EntityList items={visible} key={(r) => r.id} grid minTile="360px">
 			{#snippet row(r)}
-				<div class="line-result" use:observeReliability={r.id}>
+				<div class="line-result" use:observeReliability={{ id: r.id, known: r.reliability }}>
 					<EntityRow
 						target={{ kind: 'line', id: r.id }}
 						{locale}

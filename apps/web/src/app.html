@@ -57,7 +57,10 @@
 			href="%sveltekit.assets%/apple-touch-icon-180.png"
 		/>
 		<link rel="manifest" href="%sveltekit.assets%/manifest.webmanifest" />
-		<!-- iOS standalone (Add to Home Screen) chrome. -->
+		<!-- Standalone (Add to Home Screen) chrome. The standard
+		     `mobile-web-app-capable` is the modern, cross-browser token; the
+		     `apple-` prefixed one is kept for older iOS that still needs it. -->
+		<meta name="mobile-web-app-capable" content="yes" />
 		<meta name="apple-mobile-web-app-capable" content="yes" />
 		<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
 		<meta name="apple-mobile-web-app-title" content="Transit" />

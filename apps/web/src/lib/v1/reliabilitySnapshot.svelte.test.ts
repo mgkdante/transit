@@ -103,6 +103,52 @@ describe('createReliabilityLoader — concurrency cap', () => {
 	});
 });
 
+describe('createReliabilityLoader — known-absent skip (kills the 404 flood)', () => {
+	it('does NOT fetch when known === false, resolving straight to empty', async () => {
+		routeFetch.mockResolvedValue(routeFile('199', [90]));
+		let phase = 'idle';
+		const cleanup = $effect.root(() => {
+			const loader = createReliabilityLoader('route');
+			loader.request({ id: '199', known: false });
+			flushSync();
+			$effect(() => {
+				phase = loader.get('199').phase;
+			});
+		});
+		await vi.waitFor(() => {
+			flushSync();
+			expect(phase).toBe('empty');
+		});
+		// The whole point: zero network probe for a known-absent id.
+		expect(routeFetch).not.toHaveBeenCalled();
+		cleanup();
+	});
+
+	it('STILL fetches when known === true (route has history)', async () => {
+		routeFetch.mockResolvedValue(routeFile('161', [90, 95]));
+		const cleanup = $effect.root(() => {
+			const loader = createReliabilityLoader('route');
+			loader.request({ id: '161', known: true });
+			flushSync();
+		});
+		await vi.waitFor(() => expect(routeFetch).toHaveBeenCalledTimes(1));
+		cleanup();
+	});
+
+	it('STILL fetches when known is undefined (pre-flag snapshot — no regression)', async () => {
+		routeFetch.mockResolvedValue(routeFile('162', [88]));
+		const cleanup = $effect.root(() => {
+			const loader = createReliabilityLoader('route');
+			// object form without `known`, and bare-string form, both probe.
+			loader.request({ id: '162' });
+			loader.request('163');
+			flushSync();
+		});
+		await vi.waitFor(() => expect(routeFetch).toHaveBeenCalledTimes(2));
+		cleanup();
+	});
+});
+
 describe('createReliabilityLoader — fail-soft', () => {
 	it('a 404 (null) resolves to an empty no-data snapshot, never an error', async () => {
 		routeFetch.mockResolvedValue(null);

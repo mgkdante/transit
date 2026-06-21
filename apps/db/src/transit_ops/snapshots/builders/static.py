@@ -267,6 +267,20 @@ _ROUTES_INDEX_SQL = text(
     """
 )
 
+# Routes that get a per-route historic/route_reliability/{id}.json file. MUST
+# mirror publish._DISTINCT_HISTORIC_ROUTE_IDS_SQL exactly so the published
+# `reliability` flag matches the set of files actually written (route_id is
+# COALESCE'd to '__unrouted__' in the hourly spine, so exclude the sentinel).
+_RELIABILITY_ROUTE_IDS_SQL = text(
+    """
+    SELECT DISTINCT route_id FROM gold.route_reliability_weekly
+     WHERE provider_id = :provider_id AND route_id <> '__unrouted__'
+     UNION
+    SELECT DISTINCT route_id FROM gold.route_reliability_monthly
+     WHERE provider_id = :provider_id AND route_id <> '__unrouted__'
+    """
+)
+
 _STOPS_INDEX_SQL = text(
     f"""
     SELECT s.stop_id, s.stop_code, s.stop_name, s.stop_lat, s.stop_lon
@@ -279,17 +293,32 @@ _STOPS_INDEX_SQL = text(
 
 
 def build_routes_index(conn: Connection, *, provider_id: str = "stm", generated_utc: str) -> "RoutesIndex":
-    """Build static/routes_index.json from gold.dim_route."""
+    """Build static/routes_index.json from gold.dim_route.
+
+    Each entry carries a ``reliability`` flag (True when a per-route
+    historic/route_reliability/{id}.json is published for it), so the client can
+    skip probing routes with no weekly/monthly reliability history. The set is
+    fetched once from the SAME source publish.py uses to decide which files to
+    write, so the flag matches the published files exactly.
+    """
+    reliability_ids = {
+        str(row["route_id"])
+        for row in conn.execute(
+            _RELIABILITY_ROUTE_IDS_SQL, {"provider_id": provider_id}
+        ).mappings()
+    }
     routes = []
     for r in conn.execute(_ROUTES_INDEX_SQL, {"provider_id": provider_id}).mappings():
+        route_id = str(r["route_id"])
         routes.append(
             RouteIndexEntry(
-                id=str(r["route_id"]),
+                id=route_id,
                 short=str(r["route_short_name"] or r["route_id"]),
                 long=r["route_long_name"],
                 color=r["route_color"],
                 # preserve legitimate GTFS route_type 0 (tram); only NULL -> bus(3)
                 type=int(r["route_type"]) if r["route_type"] is not None else 3,
+                reliability=route_id in reliability_ids,
             )
         )
     routes.sort(key=lambda e: _route_sort_key(e.id))
