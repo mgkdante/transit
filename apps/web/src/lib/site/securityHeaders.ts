@@ -25,7 +25,8 @@
 //     in prod, explicit so a cross-origin scrape still resolves.
 //   • script-src/style-src keep 'unsafe-inline' for the pre-paint theme IIFE in
 //     app.html + Svelte's injected styles; tightening to nonce/hash is a tracked
-//     follow-up.
+//     follow-up. script-src also allows https://static.cloudflareinsights.com so
+//     Cloudflare Web Analytics' beacon.min.js can load (else the CSP blocks it).
 //
 // TODO(security/csp-hardening): drop script-src 'unsafe-inline' in favor of a
 // sha256-<hash> allowlist for the app.html pre-paint theme IIFE. This is a
@@ -37,13 +38,18 @@ const BASEMAP_IMG_HOST = 'https://protomaps.github.io';
 // OG-image origin — the social card lives at {origin}/og/{lang}.png. Same-origin
 // in prod; listed so a cross-origin fetch (dev, scrapers) still resolves.
 const OG_IMAGE_ORIGIN = 'https://transit.yesid.dev';
+// Cloudflare Web Analytics — its beacon.min.js loads from this host; allowlisted
+// in script-src so the CSP doesn't block it (operator keeps CF Web Analytics).
+const CF_INSIGHTS_HOST = 'https://static.cloudflareinsights.com';
 
 // Explicitly DENY powerful features the app never uses (defense-in-depth: an
 // empty allowlist `feature=()` blocks it for the document and all frames). KEEP
-// geolocation=(self) — the near-me feature needs it. browsing-topics +
-// interest-cohort opt out of the Topics/FLoC ad-interest APIs.
+// geolocation=(self) — the near-me feature needs it. We deliberately do NOT list
+// browsing-topics / interest-cohort: browsers don't recognise those Permissions-
+// Policy tokens and log a console warning for each, and the Topics/FLoC APIs are
+// gated separately (they require an explicit opt-in document, not a deny token).
 export const PERMISSIONS_POLICY =
-	'accelerometer=(), bluetooth=(), browsing-topics=(), camera=(), gyroscope=(), hid=(), interest-cohort=(), magnetometer=(), microphone=(), payment=(), serial=(), usb=(), geolocation=(self)';
+	'accelerometer=(), bluetooth=(), camera=(), gyroscope=(), hid=(), magnetometer=(), microphone=(), payment=(), serial=(), usb=(), geolocation=(self)';
 export const CROSS_ORIGIN_OPENER_POLICY = 'same-origin';
 // NOTE: Cross-Origin-Resource-Policy is intentionally OMITTED. `same-origin`
 // would block social scrapers (Twitter/Facebook/Slack) from fetching our OG card
@@ -65,7 +71,7 @@ function baseCspDirectives(): Record<string, string[]> {
 		'img-src': ["'self'", 'data:', 'blob:', BASEMAP_IMG_HOST, OG_IMAGE_ORIGIN],
 		'font-src': ["'self'"],
 		'style-src': ["'self'", "'unsafe-inline'"],
-		'script-src': ["'self'", "'unsafe-inline'"],
+		'script-src': ["'self'", "'unsafe-inline'", CF_INSIGHTS_HOST],
 		'connect-src': ["'self'", 'https://transit.yesid.dev', 'https://protomaps.github.io'],
 		'worker-src': ["'self'", 'blob:'],
 		'manifest-src': ["'self'"],

@@ -486,6 +486,11 @@ class _RecordingStaticConn:
         if "loaded_at_utc FROM core.dataset_versions" in s:
             loaded = _dt.datetime(2026, 6, 1, tzinfo=_dt.UTC)
             return _StaticResult([{"loaded_at_utc": loaded}])
+        # reliability-availability set for build_routes_index — MUST precede the
+        # broader route_id needles below (shares the generic "route_id" column).
+        # Only R1 has history, so its routes_index entry gets reliability=True.
+        if "route_reliability_weekly" in s:
+            return _StaticResult([{"route_id": "R1"}])
         if "SELECT route_id FROM gold.dim_route WHERE provider_id" in s:
             return _StaticResult([{"route_id": "R1"}, {"route_id": "R2"}, {"route_id": "R3"}])
         if "route_sort_order" in s:

@@ -1093,18 +1093,31 @@ def test_static_label_key_sets_identical_fr_en():
 def test_build_routes_index():
     from transit_ops.snapshots.builders import build_routes_index
 
-    class FR:
+    class _Result:
+        def __init__(self, rows): self._rows = rows
         def mappings(self): return self
-        def __iter__(self): return iter([
-            {"route_id": "165", "route_short_name": "165", "route_long_name": "Côte-Vertu",
-             "route_color": "009EE0", "route_type": 3},
-        ])
+        def __iter__(self): return iter(self._rows)
+
     class FC:
-        def execute(self, *a, **k): return FR()
+        # build_routes_index issues TWO queries: the reliability-availability set
+        # (route_reliability_weekly ...) then the routes index. Dispatch by needle
+        # so the flag is set deterministically: 165 has history, 999 does not.
+        def execute(self, statement, params=None):  # noqa: ANN001, ARG002
+            s = str(statement)
+            if "route_reliability_weekly" in s:
+                return _Result([{"route_id": "165"}])
+            return _Result([
+                {"route_id": "165", "route_short_name": "165", "route_long_name": "Côte-Vertu",
+                 "route_color": "009EE0", "route_type": 3},
+                {"route_id": "999", "route_short_name": "999", "route_long_name": "No History",
+                 "route_color": None, "route_type": 1},
+            ])
 
     idx = build_routes_index(FC(), generated_utc="t")
-    assert idx.routes[0].id == "165"
-    assert idx.routes[0].type == 3
+    by_id = {r.id: r for r in idx.routes}
+    assert by_id["165"].type == 3
+    assert by_id["165"].reliability is True
+    assert by_id["999"].reliability is False
 
 def _stops_index_first(routes_served_by_stop=None, route_type_by_id=None):  # noqa: ANN001
     """build_stops_index over a single fixture stop '51234' with optional maps."""

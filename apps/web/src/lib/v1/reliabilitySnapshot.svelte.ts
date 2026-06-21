@@ -130,6 +130,22 @@ function summarizeStop(file: StopReliability | null): ReliabilitySnapshot {
 	return summarize(file.periods);
 }
 
+/**
+ * The `reliability` action / `request` argument. A bare id keeps the legacy
+ * probe-everything behaviour; the object form lets a caller pass the published
+ * availability flag (`RouteIndexEntry.reliability`) so the loader can SKIP a
+ * fetch for an id that is explicitly known to have no published file.
+ */
+export type ReliabilityTarget = string | { id: string; known?: boolean };
+
+function targetId(target: ReliabilityTarget): string {
+	return typeof target === 'string' ? target : target.id;
+}
+
+function targetKnown(target: ReliabilityTarget): boolean | undefined {
+	return typeof target === 'string' ? undefined : target.known;
+}
+
 /** The public surface of a reliability snapshot loader instance. */
 export interface ReliabilityLoader {
 	/**
@@ -139,12 +155,19 @@ export interface ReliabilityLoader {
 	 */
 	get(id: string): ReliabilitySnapshot;
 	/**
-	 * Register interest in an id. Fetches it (subject to the concurrency cap) the
-	 * first time only; subsequent calls are no-ops thanks to the per-id cache.
+	 * Register interest in a row. Fetches its id (subject to the concurrency cap)
+	 * the first time only; subsequent calls are no-ops thanks to the per-id cache.
+	 *
+	 * When passed `{ id, known: false }` the loader treats the id as explicitly
+	 * having NO published reliability file and resolves it straight to the
+	 * terminal no-data state WITHOUT a network probe (kills the 404 flood). For a
+	 * bare id, or `known` `true`/`undefined`, the legacy probe behaviour is kept —
+	 * so snapshots published before the `reliability` flag existed still surface
+	 * badges via the fail-soft 404 path.
 	 */
-	request(id: string): void;
-	/** A Svelte action: request the id when the row scrolls into view (browser). */
-	reliability: (node: Element, id: string) => { destroy(): void };
+	request(target: ReliabilityTarget): void;
+	/** A Svelte action: request the row when it scrolls into view (browser). */
+	reliability: (node: Element, target: ReliabilityTarget) => { destroy(): void };
 	/** Test/diagnostic: how many fetches are currently in flight. */
 	readonly inFlight: number;
 }
@@ -195,9 +218,17 @@ export function createReliabilityLoader(kind: ReliabilityKind): ReliabilityLoade
 		}
 	}
 
-	function request(id: string): void {
+	function request(target: ReliabilityTarget): void {
+		const id = targetId(target);
 		if (!id || started.has(id)) return;
 		started.add(id);
+		// Explicitly-absent (known === false): skip the probe and resolve straight
+		// to no-data. `undefined`/`true` keep the legacy fetch (pre-flag snapshots
+		// + routes that do have history). Does NOT touch the fail-soft 404 path.
+		if (targetKnown(target) === false) {
+			set(id, NO_DATA_SNAPSHOT);
+			return;
+		}
 		queue.push(id);
 		pump();
 	}
@@ -211,16 +242,16 @@ export function createReliabilityLoader(kind: ReliabilityKind): ReliabilityLoade
 	// back to an immediate request where IntersectionObserver is unavailable
 	// (SSR / older test env), so the badge still loads — just without the
 	// viewport gate.
-	function reliability(node: Element, id: string): { destroy(): void } {
+	function reliability(node: Element, target: ReliabilityTarget): { destroy(): void } {
 		if (typeof IntersectionObserver === 'undefined') {
-			request(id);
+			request(target);
 			return { destroy() {} };
 		}
 		const io = new IntersectionObserver(
 			(entries) => {
 				for (const entry of entries) {
 					if (entry.isIntersecting) {
-						request(id);
+						request(target);
 						io.disconnect();
 						break;
 					}

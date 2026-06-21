@@ -296,7 +296,7 @@
 							>
 								{#snippet row(r)}
 									{@const hint = routeModeHint(r.type)}
-									<div use:observeRouteReliability={r.id}>
+									<div use:observeRouteReliability={{ id: r.id, known: r.reliability }}>
 										<EntityRow
 											target={{ kind: 'line', id: r.id }}
 											{locale}
