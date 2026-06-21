@@ -683,10 +683,11 @@
 				{@render kpi(fmtMin(net.delay_p90_min), t.metrics.delayP90, 'p50p90', 'md')}
 			</DashboardGrid>
 
-			<!-- Distribution board — status mix · crowding mix · delay histogram ·
-			     silent-trips list sit side-by-side on desktop (auto-fit ~320px) and
-			     stack on mobile. Each tile is a quiet bordered card; a tile whose
-			     condition stands down is dropped whole (never an empty card). -->
+			<!-- Distribution board — status mix · crowding mix · delay histogram sit
+			     side-by-side on desktop (auto-fit ~320px) and stack on mobile. Each tile
+			     is a quiet bordered card; a tile whose condition stands down is dropped
+			     whole (never an empty card). The silent-trips-by-line list is NOT here —
+			     it reads differently, so it gets its OWN full-width row below this grid. -->
 			<DashboardGrid minTile="320px" align="start" gutter={false}>
 				<!-- Status mix -->
 				<div class="network-tile">
@@ -747,15 +748,21 @@
 						</ul>
 					</div>
 				{/if}
+			</DashboardGrid>
 
-				<!-- Non-responding (silent) scheduled trips, by line — a ranked list
-				     (worst first) of lines running scheduled trips with NO live vehicle.
-				     Stands DOWN when `non_responding_by_route` is null/empty (the scalar
-				     `non_responding` total tile above still carries the count). list >
-				     listitem > link: the <li> owns the listitem role, the anchor owns the
-				     interactivity + accessible name, the inner RankedRow is `bare`. -->
-				{#if hasSilentRows}
-					<div class="network-tile">
+			<!-- Non-responding (silent) scheduled trips, by line — a ranked list
+			     (worst first) of lines running scheduled trips with NO live vehicle.
+			     Lifted OUT of the distribution grid into its OWN full-width row below it:
+			     the by-line list reads differently than the status/crowding/histogram
+			     tiles, so it gets a deliberate full-width section with its own internal
+			     auto-fit grid (sized for the ranked rows) rather than a cramped, mis-sized
+			     cell beside them. Stands DOWN when `non_responding_by_route` is null/empty
+			     (the scalar `non_responding` total tile above still carries the count).
+			     list > listitem > link: the <li> owns the listitem role, the anchor owns
+			     the interactivity + accessible name, the inner RankedRow is `bare`. -->
+			{#if hasSilentRows}
+				<section class="network-silent-section" data-slot="non-responding-section">
+					<div class="network-tile network-silent-tile">
 						{@render sectionInfo(t.nonRespondingSection, 'silentTrip')}
 						<p class="network-silent-caption">{t.nonResponding.caption}</p>
 						<ul
@@ -787,8 +794,8 @@
 							{/each}
 						</ul>
 					</div>
-				{/if}
-			</DashboardGrid>
+				</section>
+			{/if}
 		</section>
 	{:else if live.error}
 		<EdgeState
@@ -1236,12 +1243,24 @@
 		max-width: 100%;
 	}
 
+	/* Silent-trips-by-line is its OWN full-width row beneath the distribution grid
+	   (it reads as a deliberate row, not a leftover cell). The tile fills the row. */
+	.network-silent-section {
+		display: block;
+		width: 100%;
+	}
+	.network-silent-tile {
+		width: 100%;
+	}
 	/* Non-responding-by-route ranked list — list > listitem > link; the whole
-	   row is a link, strip anchor chrome so RankedRow owns the visuals. */
+	   row is a link, strip anchor chrome so RankedRow owns the visuals. As its own
+	   full-width row, the by-line entries lay into an auto-fit grid (one column on a
+	   phone, several across a wide desktop) so the row reads as a deliberate block
+	   sized for its list rather than a single cramped column. */
 	.network-silent {
-		display: flex;
-		flex-direction: column;
-		gap: 0.5rem;
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(min(16rem, 100%), 1fr));
+		gap: 0.5rem 1.25rem;
 		max-width: 100%;
 		margin: 0;
 		padding: 0;

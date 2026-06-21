@@ -155,11 +155,19 @@
 		flex-direction: column;
 		gap: var(--spacing-3, 0.75rem);
 	}
-	/* The cluster overline + its explainer (i), kept on the label's baseline. */
+	/* The cluster overline + its explainer (i), kept centred on the label. The label
+	   keeps a measure (min-width:0) so a long overline wraps cleanly; the (i) wrapper
+	   never shrinks (flex:none) so the glyph stays whole beside it. */
 	.label-with-info {
 		display: inline-flex;
 		align-items: center;
 		gap: 0.35rem;
+	}
+	.label-with-info :global([data-slot='section-label']) {
+		min-width: 0;
+	}
+	.label-with-info :global(.cluster-info) {
+		flex: none;
 	}
 
 	.crowding-empty {
@@ -176,10 +184,18 @@
 		line-height: 1.4;
 		color: var(--muted-foreground);
 	}
-	/* The dominant-band headline + its explainer (i), kept on the tile's top edge. */
+	/* The dominant-band headline + its explainer (i), kept on the tile's top edge.
+	   The tile keeps a measure (min-width:0) so a long band label wraps cleanly; the
+	   (i) wrapper never shrinks (flex:none) so the glyph stays whole beside it. */
 	.crowding-headline-row {
 		display: inline-flex;
 		align-items: flex-start;
 		gap: 0.35rem;
+	}
+	.crowding-headline-row :global([data-slot='metric-display']) {
+		min-width: 0;
+	}
+	.crowding-headline-row :global(.cluster-info) {
+		flex: none;
 	}
 </style>

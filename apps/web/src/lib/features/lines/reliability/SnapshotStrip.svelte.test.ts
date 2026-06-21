@@ -65,6 +65,27 @@ describe('SnapshotStrip', () => {
 		expect(screen.queryByText(copyEn.strip.noDataNote)).not.toBeInTheDocument();
 	});
 
+	it('anchors each tile (i) badge in the corner with the label as a sibling that can wrap (C1)', () => {
+		const { strip } = toReliabilityClusters(POPULATED, { grain: 'day' });
+		const { container } = render(SnapshotStrip, {
+			props: { vm: strip, locale: 'en', copy: copyEn },
+		});
+
+		// Every tile owns a corner-anchored (i) badge (the .snapshot-tile__info hook
+		// the CSS pins to inset-block-start/inset-inline-end), seated INSIDE the tile
+		// — not in a header bar above the label, so the label can wrap to its left.
+		const tiles = container.querySelectorAll('.snapshot-tile');
+		expect(tiles.length).toBeGreaterThan(0);
+		for (const tile of tiles) {
+			const badge = tile.querySelector('.snapshot-tile__info');
+			expect(badge).not.toBeNull();
+			// The badge is a direct child of the tile (corner-anchored sibling of the
+			// metric label), and the tile carries a metric-display whose label wraps.
+			expect(badge!.parentElement).toBe(tile);
+			expect(tile.querySelector('[data-slot="metric-display"] .label-metric')).not.toBeNull();
+		}
+	});
+
 	it('renders the honest empty state for an all-null VM without crashing', () => {
 		// An empty contract → every strip headline is null → vm.isEmpty.
 		const { strip } = toReliabilityClusters({} as RouteReliability);
