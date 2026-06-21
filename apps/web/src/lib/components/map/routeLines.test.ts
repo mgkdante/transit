@@ -154,6 +154,35 @@ describe('toRouteLineFeatures', () => {
 		expect(selected.map((feature) => feature.properties.selected)).toEqual([0, 1, 0]);
 	});
 
+	it('highlights every direction of a route selected via a vehicle (no direction → whole route)', () => {
+		// Click-a-bus-shows-its-route: the vehicle carries only a route id (buses have
+		// no direction), so the selection is { id, direction: null } and BOTH directions
+		// of the route light up.
+		const features = toRouteLineFeatures([route161, route24], {
+			id: '161',
+			direction: null,
+		}).features;
+
+		expect(features.map((feature) => feature.properties.route_id)).toEqual(['161', '161', '24']);
+		expect(features.map((feature) => feature.properties.selected)).toEqual([1, 1, 0]);
+	});
+
+	it('renders no highlighted line when the selected vehicle route has no geometry', () => {
+		// Honest fallback: a route whose directions all have null shapes yields no line
+		// features at all — nothing fabricated, no error.
+		const shapeless: RouteFile = {
+			generated_utc: utc('2026-06-16T00:00:00Z'),
+			id: '999',
+			long: 'Ghost',
+			directions: [
+				{ dir: 0, headsign: 'Nowhere', shape: null },
+				{ dir: 1, headsign: 'Nowhere', shape: null },
+			],
+		};
+		const features = toRouteLineFeatures([shapeless], { id: '999', direction: null }).features;
+		expect(features).toEqual([]);
+	});
+
 	it('drops missing or malformed shapes', () => {
 		const features = toRouteLineFeatures([
 			{ ...route161, directions: [{ dir: 0, shape: null }] },

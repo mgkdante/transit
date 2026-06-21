@@ -305,13 +305,41 @@ describe('MapHero mobile chrome', () => {
 		expect(navigationBlock).not.toContain("nav.type === 'popstate'");
 	});
 
-	it('clears route linework when the URL has no route filter params', () => {
+	it('draws route linework from the filter-selected routes plus a selected vehicle route', () => {
 		const s = source();
 		const setRouteLinesBlock = s.match(/setRouteLines\([\s\S]*?\);/)?.[0] ?? '';
+		const routeLineRoutesBlock =
+			s.match(/const routeLineRoutes = \$derived\.by[\s\S]*?\n\t\}\);/)?.[0] ?? '';
 
-		expect(s).toContain('const routeLineRoutes = $derived(routeList)');
+		// routeLineRoutes is the DRAW list: filter-selected routes (routeList) plus
+		// the selected vehicle's route geometry so its highlight has a line. With no
+		// route filter AND no selected vehicle route, it collapses to routeList (empty).
+		expect(routeLineRoutesBlock).toContain('[...routeList]');
+		expect(routeLineRoutesBlock).toContain('selectedVehicleRoute');
 		expect(setRouteLinesBlock).toContain('routeLineRoutes');
+		expect(setRouteLinesBlock).toContain('selectedRouteLine');
+		// The hover-context route bundle is NOT the draw list (that would draw lines on
+		// hover); only routeList + the selected vehicle route render.
 		expect(setRouteLinesBlock).not.toContain('contextRoutes');
+	});
+
+	it('highlights the route line of a selected vehicle (click-a-bus-shows-its-route)', () => {
+		const s = source();
+		const selectedRouteLineBlock =
+			s.match(/const selectedRouteLine = \$derived\([\s\S]*?\);/)?.[0] ?? '';
+		const selectedRouteLineIdBlock =
+			s.match(/const selectedRouteLineId = \$derived\.by[\s\S]*?\n\t\}\);/)?.[0] ?? '';
+
+		// The highlighted line id resolves from a directly-selected route OR a selected
+		// vehicle's route (via the live byVehicleId lookup — the same one focusedRouteId
+		// uses). A bus with no route id yields null → no highlight (honest).
+		expect(selectedRouteLineIdBlock).toContain("selected?.kind === 'route'");
+		expect(selectedRouteLineIdBlock).toContain("selected?.kind === 'vehicle'");
+		expect(selectedRouteLineIdBlock).toContain('live.index.byVehicleId.get(selected.id)?.route');
+		// selectedRouteLine carries that id for the vehicle case (whole route lights up,
+		// no direction on a vehicle), and stays null when there is no route id.
+		expect(selectedRouteLineBlock).toContain("selected?.kind === 'vehicle' && selectedRouteLineId");
+		expect(selectedRouteLineBlock).toContain('id: selectedRouteLineId');
 	});
 
 	it('surfaces a non-blocking live-feed edge notice without wrapping the GL canvas', () => {
@@ -382,7 +410,8 @@ describe('MapHero mobile chrome', () => {
 
 	it('wires the mobile detail sheet to the same drilldown back stack', () => {
 		const s = source();
-		const mobileSheetBlock = s.match(/\{:else\}\s*<BottomSheet[\s\S]*?<\/BottomSheet>/)?.[0] ?? '';
+		const mobileSheetBlock =
+			s.match(/\{#if detailOpen && !layout\.isDesktop\}[\s\S]*?<\/BottomSheet>/)?.[0] ?? '';
 
 		expect(mobileSheetBlock).toContain('canGoBack={selectionStack.length > 0}');
 		expect(mobileSheetBlock).toContain('onback={goBackDetail}');
@@ -390,37 +419,77 @@ describe('MapHero mobile chrome', () => {
 
 	it('keeps the detail surfaces mounted while a back target is resolving', () => {
 		const s = source();
-		const mobileSheetBlock = s.match(/\{:else\}\s*<BottomSheet[\s\S]*?<\/BottomSheet>/)?.[0] ?? '';
+		const mobileSheetBlock =
+			s.match(/\{#if detailOpen && !layout\.isDesktop\}[\s\S]*?<\/BottomSheet>/)?.[0] ?? '';
 
 		expect(s).not.toContain('{#if detailOpen && selectedDetail}');
-		expect(s).toContain('{#if detailOpen}');
+		// The desktop detail pane mounts on `detailOpen` (not on resolved data), so the
+		// surface stays mounted while a back target resolves. The pane now gates on
+		// `layout.isDesktop && detailOpen` since the pane group is always rendered.
+		expect(s).toContain('{#if layout.isDesktop && detailOpen}');
 		expect(mobileSheetBlock).toContain('title={selectedDetail?.title}');
 		expect(mobileSheetBlock).toContain('{#if selectedDetail}');
 		expect(mobileSheetBlock).toContain('detail={selectedDetail}');
 	});
 
-	it('hosts the desktop detail rail in the same draggable split as the left rail', () => {
+	it('unifies the map and the detail rail into one root-level draggable split (desktop)', () => {
 		const s = source();
-		const desktopDockBlock =
-			s.match(/<div class="map-detail-dock"[\s\S]*?<\/ResizablePaneGroup>\s*<\/div>/)?.[0] ?? '';
+		const paneGroupBlock =
+			s.match(
+				/<ResizablePaneGroup direction="horizontal" class="map-pane-group"[\s\S]*?<\/ResizablePaneGroup>/,
+			)?.[0] ?? '';
 
 		expect(s).toContain(
 			"import { ResizablePaneGroup, ResizablePane, ResizableHandle } from '$lib/components/ui/resizable'",
 		);
-		expect(desktopDockBlock).toMatch(/<ResizablePaneGroup[\s\S]*direction="horizontal"/);
-		expect(desktopDockBlock).toMatch(
+		// The pane group (and the map stage pane inside it) is ALWAYS rendered, never
+		// gated on isDesktop — so crossing the 1024px breakpoint keeps MapStage in one
+		// DOM position and never tears down/recreates the GL context.
+		expect(s).not.toContain('{#if layout.isDesktop}\n\t\t<!-- Desktop');
+		expect(paneGroupBlock).not.toContain('{:else}');
+		// The map IS the left pane (so the handle resizes it); the detail IS the right
+		// pane, mounted only when a selection is open on desktop. The map pane carries
+		// its order + a ref binding (the live width drives the fit padding fractions).
+		expect(paneGroupBlock).toMatch(
+			/<ResizablePane class="map-stage-pane"[\s\S]*?>[\s\S]*\{@render mapBody\(\)\}/,
+		);
+		expect(paneGroupBlock).toContain('{#if layout.isDesktop && detailOpen}');
+		expect(paneGroupBlock).toMatch(
 			/<ResizableHandle[\s\S]*withHandle[\s\S]*class="map-detail-resize-handle"[\s\S]*\/>/,
 		);
-		expect(desktopDockBlock).toContain('bind:this={rightPanelPane}');
-		expect(desktopDockBlock).toContain('defaultSize={51}');
-		expect(desktopDockBlock).toContain('minSize={32}');
-		expect(desktopDockBlock).toContain('maxSize={74}');
-		expect(desktopDockBlock).toContain('collapsible');
-		expect(desktopDockBlock).toContain('collapsedSize={9}');
-		expect(desktopDockBlock).toContain('resizable');
-		expect(desktopDockBlock).toContain('collapsed={rightPanelCollapsed}');
-		expect(desktopDockBlock).toContain('ontogglecollapse={toggleRightPanelCollapsed}');
-		expect(s).toMatch(/\.map-detail-dock\s*\{[\s\S]*width:\s*min\(44rem, calc\(100% - 4rem\)\)/);
+		expect(paneGroupBlock).toContain('bind:this={rightPanelPane}');
+		expect(paneGroupBlock).toContain('defaultSize={51}');
+		expect(paneGroupBlock).toContain('minSize={32}');
+		expect(paneGroupBlock).toContain('maxSize={74}');
+		expect(paneGroupBlock).toContain('collapsible');
+		expect(paneGroupBlock).toContain('collapsedSize={9}');
+		expect(paneGroupBlock).toContain('{@render detailPanel()}');
+		// The detail panel snippet keeps the resizable RightPanel + collapse wiring.
+		const detailPanelBlock =
+			s.match(/\{#snippet detailPanel\(\)\}[\s\S]*?\{\/snippet\}/)?.[0] ?? '';
+		expect(detailPanelBlock).toContain('resizable');
+		expect(detailPanelBlock).toContain('collapsed={rightPanelCollapsed}');
+		expect(detailPanelBlock).toContain('ontogglecollapse={toggleRightPanelCollapsed}');
+		// The map stage pane fills the canvas as the base layer; the old absolute dock
+		// is gone and the resize handle styling is preserved.
+		expect(s).toContain('class="map-stage-pane"');
+		expect(s).not.toContain('class="map-detail-dock"');
 		expect(s).toMatch(/:global\(\.map-detail-resize-handle\)[\s\S]*width:\s*8px/);
+	});
+
+	it('keeps mobile detail on the bottom sheet (no right pane) while the map shares one stable pane group', () => {
+		const s = source();
+		const mobileSheetBlock =
+			s.match(/\{#if detailOpen && !layout\.isDesktop\}[\s\S]*?<\/BottomSheet>/)?.[0] ?? '';
+
+		expect(mobileSheetBlock).toContain('<BottomSheet');
+		expect(mobileSheetBlock).toContain('bind:open={detailOpen}');
+		// The map renders through the SAME pane group on every breakpoint (one MapStage,
+		// one GL context). On mobile the group is just the single full-width map pane —
+		// the handle + right detail pane only mount on `layout.isDesktop && detailOpen`,
+		// so no right pane appears on mobile; the detail rides the BottomSheet instead.
+		expect(s).toContain('{@render mapBody()}');
+		expect(s).toContain('{#if layout.isDesktop && detailOpen}');
+		expect(s).not.toContain('{:else}\n\t\t{@render mapBody()}');
 	});
 });
