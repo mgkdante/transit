@@ -33,3 +33,54 @@ jobs:
           SNAPSHOT_PUBLIC_BASE_URL: ${{ secrets.SNAPSHOT_PUBLIC_BASE_URL }}
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
+
+  # External check on the backup ARTIFACT in R2. The nightly pg_dump runs as a
+  # VM cron (not a workflow), so a failed/missing backup never turns a GHA red
+  # today — with ephemeral silver that is a DR hole. This job also catches the
+  # R2-disabled outage class. Needs the python toolchain (the CLI reads R2),
+  # unlike the bare-bash probe above.
+  backup-freshness:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: apps/db
+    env:
+      APP_ENV: production
+      BRONZE_STORAGE_BACKEND: s3
+      BRONZE_S3_ENDPOINT: https://eccfb9bedd87d413eaf4cac6ae2285d3.r2.cloudflarestorage.com
+      BRONZE_S3_BUCKET: transit-raw
+      BRONZE_S3_REGION: auto
+      BRONZE_S3_ACCESS_KEY: ${{ secrets.BRONZE_S3_ACCESS_KEY }}
+      BRONZE_S3_SECRET_KEY: ${{ secrets.BRONZE_S3_SECRET_KEY }}
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+
+      - name: Install project dependencies
+        run: uv sync --locked
+
+      # set +e to capture the CLI exit code so we can fire/resolve the alert,
+      # mirroring how the bash freshness probe wires alert-issue.sh. The shared
+      # alert script lives at the repo root; working-directory is apps/db.
+      - name: Verify backup freshness
+        run: |
+          set +e
+          uv run python -m transit_ops.cli verify-backup-freshness
+          rc=$?
+          set -e
+          if [ "$rc" -ne 0 ]; then
+            ../../.github/scripts/alert-issue.sh fire backup "[alert] postgres backup stale/missing" "verify-backup-freshness exited ${rc} in run ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            exit 1
+          fi
+          ../../.github/scripts/alert-issue.sh resolve backup "recovered: backup fresh"

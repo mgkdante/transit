@@ -6,7 +6,7 @@ on:
     # GitHub Actions cron is UTC-based.
     # 07:00 UTC runs after the static pipeline at 06:00 UTC.
     # Daily warm rollups run inside the 14-day detail window (P3 repeat-offender
-    # mart needs the trailing 14d), then aggregates remain available for 365 days
+    # mart needs the trailing 14d), then aggregates remain available for 730 days
     # after detail rows prune. The historic /v1 snapshot publishes after rollups.
     - cron: "0 7 * * *"
 
@@ -94,7 +94,7 @@ jobs:
       # Bounded by BRONZE_PRUNE_MAX_OBJECTS_PER_BATCH x BRONZE_PRUNE_MAX_BATCHES
       # (5000 x 1 per phase, ~2-7 min) regardless of backlog. Exits 1 on any
       # R2 delete failure — a red job is the alert signal until slice-9.1.1o.
-      # Capture-race-safe: the orphan-run delete is age-gated (30d/365d), and
+      # Capture-race-safe: the orphan-run delete is age-gated (bronze 90d), and
       # 07:00 UTC runs an hour after the 06:00 static pipeline anyway.
       - name: Prune expired Bronze objects and raw metadata (all providers)
         run: |

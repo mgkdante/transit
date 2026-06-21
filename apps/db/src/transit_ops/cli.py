@@ -1137,7 +1137,7 @@ def prune_warm_rollup_storage_command(
         help="Print what would be deleted without executing any deletions.",
     ),
 ) -> None:
-    """Prune warm rollup rows older than GOLD_WARM_ROLLUP_RETENTION_DAYS (default 365 days)."""
+    """Prune warm rollup rows older than GOLD_WARM_ROLLUP_RETENTION_DAYS (default 730 days)."""
 
     settings = get_settings()
     result = prune_warm_rollup_storage(provider_id, settings=settings, dry_run=dry_run)
@@ -1187,6 +1187,124 @@ def download_latest_backup_command(
         typer.echo(f"Download failed: {exc}", err=True)
         raise typer.Exit(code=1) from exc
     typer.echo(json.dumps(result, indent=2))
+
+
+@app.command("verify-backup-freshness")
+def verify_backup_freshness_command(
+    max_age_hours: float = typer.Option(
+        26.0,
+        "--max-age-hours",
+        help="Fail if the newest backup is older than this many hours (default 26; "
+        "the backup cron runs daily at 09:30, so 26h tolerates a late run).",
+    ),
+) -> None:
+    """Verify a fresh database backup artifact exists in Bronze R2 (READ-ONLY).
+
+    With silver now ephemeral (raw R2 is the rebuild source), a silently-missing
+    backup is a DR hole the GHA graph never catches today (the pg_dump runs as a
+    VM cron, not a workflow). This external check on the backup ARTIFACT also
+    covers the R2-disabled outage class. Exits 1 if no backup exists or the newest
+    one is stale.
+    """
+
+    settings = get_settings()
+    try:
+        backups = list_database_backups(settings)
+    except (BackupError, ValueError) as exc:
+        typer.echo(f"Backup freshness check failed: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+    if not backups:
+        typer.echo("Backup freshness check FAILED: no backup objects found in R2", err=True)
+        raise typer.Exit(code=1)
+
+    # Entries are sorted newest-first by timestamped key; last_modified is an ISO
+    # string. Parse it and compare to a UTC now, normalizing naive -> aware so the
+    # subtraction never raises on a missing tzinfo.
+    newest = backups[0]
+    last_modified_raw = newest.get("last_modified")
+    if not isinstance(last_modified_raw, str):
+        typer.echo(
+            f"Backup freshness check FAILED: newest backup '{newest.get('key')}' "
+            "has no parseable last_modified",
+            err=True,
+        )
+        raise typer.Exit(code=1)
+    try:
+        last_modified = datetime.fromisoformat(last_modified_raw)
+    except ValueError as exc:
+        typer.echo(
+            f"Backup freshness check FAILED: unparseable last_modified "
+            f"'{last_modified_raw}'",
+            err=True,
+        )
+        raise typer.Exit(code=1) from exc
+    if last_modified.tzinfo is None:
+        last_modified = last_modified.replace(tzinfo=UTC)
+
+    age = datetime.now(UTC) - last_modified
+    age_hours = age.total_seconds() / 3600.0
+    if age_hours > max_age_hours:
+        typer.echo(
+            f"Backup freshness check FAILED: newest backup '{newest.get('key')}' is "
+            f"{age_hours:.1f}h old > {max_age_hours:.1f}h threshold",
+            err=True,
+        )
+        raise typer.Exit(code=1)
+
+    typer.echo(
+        f"Backup freshness OK: newest backup '{newest.get('key')}' is "
+        f"{age_hours:.1f}h old (<= {max_age_hours:.1f}h)"
+    )
+
+
+@app.command("db-storage-report")
+def db_storage_report_command(
+    limit: int = typer.Option(
+        15,
+        "--limit",
+        help="Number of largest tables to report per schema.",
+    ),
+) -> None:
+    """Report pg_total_relation_size for the largest silver.* / gold.* tables (READ-ONLY).
+
+    Pure SELECT against pg_catalog — no writes, no DDL. Lets the operator measure
+    storage before/after the thin-silver live prune. Sizes are pg_size_pretty'd.
+    """
+
+    settings = get_settings()
+    engine = make_engine(settings)
+    report: dict[str, object] = {}
+    table_sql = text(
+        """
+        SELECT n.nspname AS schema,
+               c.relname AS table,
+               pg_size_pretty(pg_total_relation_size(c.oid)) AS total_size,
+               pg_total_relation_size(c.oid) AS total_bytes
+        FROM pg_class AS c
+        JOIN pg_namespace AS n ON n.oid = c.relnamespace
+        WHERE c.relkind = 'r'
+          AND n.nspname = :schema
+        ORDER BY pg_total_relation_size(c.oid) DESC
+        LIMIT :limit
+        """
+    )
+    with engine.connect() as conn:
+        for schema in ("silver", "gold"):
+            rows = conn.execute(table_sql, {"schema": schema, "limit": limit}).mappings()
+            report[schema] = [
+                {
+                    "table": f"{r['schema']}.{r['table']}",
+                    "total_size": r["total_size"],
+                    "total_bytes": int(r["total_bytes"]),
+                }
+                for r in rows
+            ]
+        grand = conn.execute(
+            text("SELECT pg_size_pretty(pg_database_size(current_database())) AS pretty")
+        ).scalar_one()
+    report["database_total"] = grand
+    typer.echo(json.dumps(report, indent=2))
 
 
 if __name__ == "__main__":

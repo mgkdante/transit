@@ -1282,7 +1282,7 @@ UPSERT_ROUTE_HEADWAY_DAILY = text(
             MIN(f.captured_at_utc) AS trip_start_utc
         FROM gold.fact_trip_delay_snapshot AS f
         WHERE f.provider_id = :provider_id
-          AND f.captured_at_utc >= now() - interval '14 days'
+          AND f.captured_at_utc >= now() - make_interval(days => :fact_retention_days)
           AND f.route_id IS NOT NULL
           AND f.trip_id IS NOT NULL
           AND f.delay_seconds IS NOT NULL
@@ -1531,7 +1531,7 @@ UPSERT_ROUTE_HEADWAY_DIRECTION_DAILY = text(
             MIN(f.captured_at_utc) AS trip_start_utc
         FROM gold.fact_trip_delay_snapshot AS f
         WHERE f.provider_id = :provider_id
-          AND f.captured_at_utc >= now() - interval '14 days'
+          AND f.captured_at_utc >= now() - make_interval(days => :fact_retention_days)
           AND f.route_id IS NOT NULL
           AND f.trip_id IS NOT NULL
           AND f.delay_seconds IS NOT NULL
@@ -1628,7 +1628,7 @@ UPSERT_REPEAT_OFFENDER_DAILY = text(
         INNER JOIN gold.dim_provider AS dp
             ON dp.provider_id = f.provider_id
         WHERE f.provider_id = :provider_id
-          AND f.captured_at_utc >= now() - interval '14 days'
+          AND f.captured_at_utc >= now() - make_interval(days => :fact_retention_days)
           AND f.delay_seconds IS NOT NULL
           AND ABS(f.delay_seconds) <= 3600
           AND f.route_id IS NOT NULL
@@ -2041,6 +2041,11 @@ def build_warm_rollups(
             upsert_params = {
                 "provider_id": provider_id,
                 "built_at_utc": now,
+                # Binds the ~14d fact window into the three fact-coupled headway/
+                # repeat-offender upserts so they track GOLD_FACT_RETENTION_DAYS
+                # instead of a drift-prone literal. Harmless on rollup-fed upserts
+                # that never reference it.
+                "fact_retention_days": fact_retention_days,
             }
             if table_name in WINDOWED_HISTORY_TABLES:
                 delete_params = {

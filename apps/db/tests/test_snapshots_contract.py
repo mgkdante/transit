@@ -74,7 +74,7 @@ def test_historic_models_valid():
     assert ro.offenders[0].recurrence == "6/7d"
     rc = Receipt(generated_utc="t", date="2026-05-30", otp_pct=39, worst_route={"id": "171", "otp_delta_pts": -22})
     assert rc.worst_route.id == "171"
-    prov = Provenance(generated_utc="t", retention={"detail_days": 14, "aggregate_days": 365}, gaps=["metro_realtime"])
+    prov = Provenance(generated_utc="t", retention={"detail_days": 14, "aggregate_days": 730}, gaps=["metro_realtime"])
     assert prov.retention["detail_days"] == 14
 
 

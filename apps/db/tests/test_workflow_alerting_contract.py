@@ -59,10 +59,14 @@ def test_freshness_probe_workflow_schedule_permissions_and_secrets() -> None:
     assert doc["permissions"]["issues"] == "write"
 
     raw = _raw(PROBE)
-    # No uv / python setup — dependency-light bash only.
-    assert "uv sync" not in raw
-    assert "astral-sh/setup-uv" not in raw
-    assert "setup-python" not in raw
+    # The bare-bash `probe` job stays dependency-light (curl/jq/psql, no python).
+    # Scope the no-uv assertion to that job's step block, NOT the whole file: the
+    # sibling `backup-freshness` job legitimately needs the python CLI to read R2
+    # (the pg_dump runs as a VM cron, so its artifact has no other GHA watcher).
+    probe_steps = yaml.safe_dump(doc["jobs"]["probe"]["steps"])
+    assert "uv sync" not in probe_steps
+    assert "astral-sh/setup-uv" not in probe_steps
+    assert "setup-python" not in probe_steps
 
     # Both secrets wired + the script invoked.
     assert "secrets.DATABASE_URL" in raw
@@ -71,6 +75,16 @@ def test_freshness_probe_workflow_schedule_permissions_and_secrets() -> None:
     # github.token + repository passed for the gh CLI inside the script.
     assert "github.token" in raw
     assert "github.repository" in raw
+
+    # The backup-freshness job fires/resolves the 'backup' alert and runs the CLI.
+    # Concatenate the parsed `run` blocks (not a YAML re-dump, which re-wraps long
+    # shell lines and would split substrings like "fire backup").
+    backup_runs = "\n".join(
+        str(step.get("run", "")) for step in doc["jobs"]["backup-freshness"]["steps"]
+    )
+    assert "verify-backup-freshness" in backup_runs
+    assert "fire backup" in backup_runs
+    assert "resolve backup" in backup_runs
 
 
 # --- cron workflows ----------------------------------------------------------

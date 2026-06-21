@@ -806,7 +806,9 @@ def test_route_headway_daily_upsert_shape() -> None:
     assert "FROM gold.fact_trip_delay_snapshot" in sql
     assert "gold.dim_provider" in sql
     assert "percentile_cont(0.5)" in sql
-    assert "interval '14 days'" in sql
+    # Fact window is now a bind (:fact_retention_days) so it tracks
+    # GOLD_FACT_RETENTION_DAYS instead of a drift-prone literal.
+    assert "make_interval(days => :fact_retention_days)" in sql
     assert "observed_headway_min" in sql
     assert "sample_count" in sql
     assert "scheduled_headway_min" not in sql
@@ -884,7 +886,9 @@ def test_repeat_offender_daily_upsert_shape() -> None:
     assert "INSERT INTO gold.repeat_offender_daily" in sql
     assert "FROM gold.fact_trip_delay_snapshot" in sql
     assert "gold.dim_provider" in sql
-    assert "interval '14 days'" in sql
+    # Fact window is now a bind (:fact_retention_days) so it tracks
+    # GOLD_FACT_RETENTION_DAYS instead of a drift-prone literal.
+    assert "make_interval(days => :fact_retention_days)" in sql
     # Two entity kinds via UNION ALL.
     assert "'trip'::text" in sql
     assert "'vehicle'::text" in sql
@@ -964,7 +968,7 @@ def test_prune_warm_rollup_storage_dry_run_counts_without_deletes() -> None:
 
     assert result.deleted_row_counts["gold.route_delay_percentile_daily"] == 7
     assert result.deleted_row_counts["gold.stop_delay_percentile_daily"] == 11
-    # Tier-1 append-only tables prune at the same 365d boundary.
+    # Tier-1 append-only tables prune at the same 730d boundary.
     assert result.deleted_row_counts["gold.occupancy_summary_5m"] == 6
     assert result.deleted_row_counts["gold.route_cancellation_daily"] == 9
     assert result.deleted_row_counts["gold.route_occupancy_band_daily"] == 10

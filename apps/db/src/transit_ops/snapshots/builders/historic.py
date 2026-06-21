@@ -37,6 +37,7 @@ from transit_ops.snapshots.builders._helpers import (
     _severe_pct,
     _severity_code,
 )
+from transit_ops.settings import get_settings
 from transit_ops.snapshots.contract import (
     AlertBreakdown,
     AlertBreakdownBucket,
@@ -126,7 +127,7 @@ _TREND_FACT_SQL = text(
     WHERE fts.provider_id = :provider_id
       AND fts.delay_seconds IS NOT NULL
       AND ABS(fts.delay_seconds) <= 3600
-      AND fts.captured_at_utc >= now() - interval '14 days'
+      AND fts.captured_at_utc >= now() - make_interval(days => :fact_retention_days)
     GROUP BY timezone(dp.timezone, fts.captured_at_utc)::date
     """
 )
@@ -454,7 +455,13 @@ def build_network_trend(conn: Connection, *, provider_id: str = "stm", generated
     buckets, observation-weighted identically; p90_min/vehicles stay None on
     those grains (the ~14d fact window is not additively composable).
     """
-    params = {"provider_id": provider_id}
+    # fact_retention_days binds the ~14d fact window into _TREND_FACT_SQL so it
+    # tracks GOLD_FACT_RETENTION_DAYS instead of a drift-prone literal. The bind
+    # is harmless on the otp/cancellation/occupancy SQL (which never reference it).
+    params = {
+        "provider_id": provider_id,
+        "fact_retention_days": get_settings().GOLD_FACT_RETENTION_DAYS,
+    }
 
     series = _trend_points(
         conn,
@@ -1813,12 +1820,19 @@ def build_provenance(
 
     conformance = _build_provenance_conformance(conn, params)
 
+    # Retention numbers derive from settings so the citizen-facing policy can
+    # never drift from the actual prune defaults (detail = capped facts, aggregate
+    # = warm rollups). The methodology copy below mirrors aggregate_days verbatim.
+    _settings = get_settings()
     return Provenance(
         generated_utc=generated_utc,
         sources=sources,
         freshness=freshness,
         conformance=conformance,
-        retention={"detail_days": 14, "aggregate_days": 365},
+        retention={
+            "detail_days": _settings.GOLD_FACT_RETENTION_DAYS,
+            "aggregate_days": _settings.GOLD_WARM_ROLLUP_RETENTION_DAYS,
+        },
         methodology={
             "otp_definition": (
                 "on-time = observed delay between -60s and +300s "
@@ -1835,7 +1849,7 @@ def build_provenance(
             "percentiles": (
                 "network p90 from fact (live + trailing 14d trend); route and "
                 "stop p50/p90 from a daily fact-derived percentile rollup, "
-                "computed per closed local day and retained 365 days"
+                "computed per closed local day and retained 730 days"
             ),
             "headway": (
                 "observed = median gap between consecutive trip starts "
@@ -1875,13 +1889,13 @@ def build_provenance(
                 "realtime feed and counts canceled if ever reported with "
                 "schedule_relationship=CANCELED; the denominator is RT-reported "
                 "trips, NOT the full published schedule; computed per closed local "
-                "day and retained 365 days; null when no trips were observed"
+                "day and retained 730 days; null when no trips were observed"
             ),
             "occupancy": (
                 "historic crowding = GTFS-RT OccupancyStatus band shares over "
                 "band-bearing pings (no numeric load factor); CRUSHED_STANDING "
                 "folds into standing; NOT_ACCEPTING/NO_DATA/NOT_BOARDABLE excluded; "
-                "summed per closed local day and retained 365 days; null when no "
+                "summed per closed local day and retained 730 days; null when no "
                 "occupancy telemetry exists, never an all-zero mix"
             ),
             "headway_regularity": (
@@ -1894,7 +1908,7 @@ def build_provenance(
                 "first/last trip = earliest/latest first-realtime-observation "
                 "trip-start per route per closed local day (observed activity, not "
                 "the scheduled departure); span in minutes; first/last delay = that "
-                "trip's first-observation schedule deviation; retained 365 days"
+                "trip's first-observation schedule deviation; retained 730 days"
             ),
             "alert_breakdown": (
                 "distinct content-hashed alerts in the 30-day window grouped by "

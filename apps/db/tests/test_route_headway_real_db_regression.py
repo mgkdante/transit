@@ -208,6 +208,8 @@ def _run_headway_rollup(connection) -> None:
         "provider_id": PROVIDER,
         "built_at_utc": BUILT_AT,
         "open_window_days": 10,
+        # The upsert now binds the fact window (was a hardcoded 14-day literal).
+        "fact_retention_days": 14,
     }
     connection.execute(rollups.DELETE_REPORTING_AGGREGATES["route_headway_daily"], params)
     connection.execute(rollups.REPORTING_AGGREGATE_UPSERTS["route_headway_daily"], params)
@@ -384,7 +386,13 @@ def test_weekend_service_days_excluded(conn) -> None:
 
 
 def _run_direction_headway_rollup(connection) -> None:
-    params = {"provider_id": PROVIDER, "built_at_utc": BUILT_AT, "open_window_days": 10}
+    params = {
+        "provider_id": PROVIDER,
+        "built_at_utc": BUILT_AT,
+        "open_window_days": 10,
+        # The upsert now binds the fact window (was a hardcoded 14-day literal).
+        "fact_retention_days": 14,
+    }
     connection.execute(rollups.DELETE_REPORTING_AGGREGATES["route_headway_direction_daily"], params)
     connection.execute(rollups.REPORTING_AGGREGATE_UPSERTS["route_headway_direction_daily"], params)
 

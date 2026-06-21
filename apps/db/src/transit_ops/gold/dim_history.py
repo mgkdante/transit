@@ -5,7 +5,7 @@ Why this module exists:
     marts writer maintains them on every dim refresh — but ids retired by a
     GTFS edition drop that happened BEFORE 0029 landed have no names anywhere
     in the database (the June-2026 drop orphaned 12 route_ids and 15 stop_ids
-    still present in the 365d rollups). Their names survive only inside the
+    still present in the 730d rollups). Their names survive only inside the
     archived GTFS zips in bronze R2 while those raw static archives are retained.
 
     ``transit-ops backfill-dim-history <provider> --from-gtfs-zip <path>``

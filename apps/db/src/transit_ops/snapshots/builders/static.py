@@ -62,7 +62,9 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
 #     counts only the on-time bucket against known, so early vehicles are excluded.
 #   - delayed = delay_seconds > 0 (gold/rollups.py); severe = > 300s (gold/rollups.py);
 #     daily public views report severe as the "delayed" surface.
-#   - retention constants mirror build_provenance: detail 14d, aggregate 365d.
+#   - retention constants mirror build_provenance: detail 14d (GOLD_FACT_RETENTION_DAYS),
+#     aggregate 730d (GOLD_WARM_ROLLUP_RETENTION_DAYS). Literals below are locked by
+#     the parity test; keep them in step with settings when those defaults move.
 # The fr/en key sets MUST stay identical (parity test) — manifest.attribution stays
 # the unlocalized English machine fallback; these labels are the citizen surface.
 _STATIC_LABELS_FR: dict[str, str] = {
@@ -95,11 +97,11 @@ _STATIC_LABELS_FR: dict[str, str] = {
         "Le p90 du réseau est mesuré à partir des véhicules suivis en ce moment, "
         "et sur les 14 derniers jours dans la vue de tendance. Les percentiles par "
         "ligne et par arrêt sont calculés chaque jour à partir des observations "
-        "et conservés 365 jours."
+        "et conservés 730 jours."
     ),
     "methodology.retention": (
         "Les données détaillées sont conservées 14 jours; les agrégats quotidiens, "
-        "365 jours."
+        "730 jours."
     ),
 }
 
@@ -131,10 +133,10 @@ _STATIC_LABELS_EN: dict[str, str] = {
     "methodology.percentiles": (
         "Network p90 is measured from the buses tracked right now, and over the "
         "last 14 days in the trend view. Per-route and per-stop percentiles are "
-        "computed daily from observations and kept for 365 days."
+        "computed daily from observations and kept for 730 days."
     ),
     "methodology.retention": (
-        "Detailed data is kept for 14 days; daily aggregates for 365 days."
+        "Detailed data is kept for 14 days; daily aggregates for 730 days."
     ),
 }
 
