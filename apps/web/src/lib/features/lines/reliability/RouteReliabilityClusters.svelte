@@ -336,9 +336,18 @@
 	   Bands opt into full-bleed at the wrapper (.surface-bleed, see Surface.svelte)
 	   so the data marks reach the content-column edges; dense prose inside re-caps
 	   itself via .surface-measure. The control spine (.reliability-controls) stays
-	   within the reading column — it is chrome, not a band, so it is NOT bled. */
+	   within the reading column — it is chrome, not a band, so it is NOT bled.
+
+	   The .surface-bleed escapes the Surface gutter via a negative inline margin;
+	   left UNCANCELLED the band content would hug the bled edge and read LEFT-
+	   SHIFTED / wider than the inset (non-bled) control spine — the off-centre
+	   complaint on mobile/tablet. Re-apply the gutter as padding (matching
+	   .surface-measure's intent + MetricsExplainer's .body-grid) so the band's
+	   content edges land back on the page-padding line — centred at every width,
+	   aligned with the control spine + the /stop DashboardGrid. */
 	.reliability-band {
 		width: 100%;
+		padding-inline: var(--space-page-x);
 	}
 	.reliability-band--strip {
 		padding-bottom: clamp(1.5rem, 4vw, 2.25rem);
