@@ -301,6 +301,31 @@ table {
 		repeating-linear-gradient(0deg, var(--grid-line-minor) 0px, transparent 1px, transparent 16px);
 }
 
+/* Detail-header dot-grid — the "Manifesto schematic" chrome behind the measured
+   article headers (ported 1:1 from yesid.dev's shared .detail-header-grid in
+   app.css). Single source of truth for the grid lines + solder-dot
+   pseudo-element; each surface sets --header-accent to its own accent colour
+   (default --primary). The consumer must give the element
+   `position: absolute; inset: 0` + a z-index — those are surface-layout
+   concerns, not part of the shared dot pattern. */
+.detail-header-grid {
+	background-image:
+		repeating-linear-gradient(90deg, color-mix(in srgb, var(--header-accent, var(--primary)) 3.5%, transparent) 0px, color-mix(in srgb, var(--header-accent, var(--primary)) 3.5%, transparent) 1px, transparent 1px, transparent 80px),
+		repeating-linear-gradient(0deg, color-mix(in srgb, var(--header-accent, var(--primary)) 3.5%, transparent) 0px, color-mix(in srgb, var(--header-accent, var(--primary)) 3.5%, transparent) 1px, transparent 1px, transparent 80px);
+}
+
+.detail-header-grid::after {
+	content: '';
+	position: absolute;
+	inset: 0;
+	background-image:
+		radial-gradient(circle 2.5px at 80px 80px, color-mix(in srgb, var(--header-accent, var(--primary)) 12%, transparent) 0%, transparent 4px),
+		radial-gradient(circle 2px at 160px 160px, color-mix(in srgb, var(--header-accent, var(--primary)) 8%, transparent) 0%, transparent 3px),
+		radial-gradient(circle 2.5px at 240px 80px, color-mix(in srgb, var(--header-accent, var(--primary)) 10%, transparent) 0%, transparent 4px),
+		radial-gradient(circle 2px at 80px 240px, color-mix(in srgb, var(--header-accent, var(--primary)) 6%, transparent) 0%, transparent 3px);
+	background-size: 320px 320px;
+}
+
 /* ═══════════════════════════════════════════════════════════════
    Light-theme hand overrides (hand-maintained; the generator owns only the
    sentinel region). Dark = brand default; these fire under [data-theme="light"].

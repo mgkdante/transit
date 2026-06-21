@@ -63,7 +63,17 @@
 	const trail = $derived(resolveBreadcrumbTrail(page.url.pathname, locale));
 </script>
 
-<Surface width="wide" as="div" class={className} data-slot="entity-detail">
+<Surface width="bleed" as="div" class={className} data-slot="entity-detail">
+	<!-- A4 (slice-9.7): route/stop detail is a DATA DASHBOARD — it fills the
+	     rail-inset <main> width edge-to-edge (width="bleed"), keeping the page
+	     gutter (--space-page-x, from the surface-shell--gutter) and the "never
+	     behind the left rail" boundary (AppShell's <main> padding-left, untouched).
+	     The masthead (breadcrumb + back + kicker + heading) and the tabs + their
+	     data panes (tables / charts / crosstabs) all share the gutter-aligned left
+	     edge and span the full bleed width. EntityDetail's own template carries no
+	     long-form prose paragraphs to re-cap — the honest no-data notes / caveats
+	     live in the caller panes (RouteDetail / StopDetail), which own their own
+	     reading measures; .surface-measure is available there if they need it. -->
 	<div class="surface-head">
 		{#if trail.length > 1}
 			<Breadcrumb {trail} {locale} />

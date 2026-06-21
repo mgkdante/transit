@@ -79,6 +79,13 @@ export interface MetricsCopy extends SurfaceHeadCopy {
 		/** aria-label when quiet mode is ON (the action the press performs). */
 		readonly disable: string;
 	};
+	/**
+	 * The giant vertical edge word for the measured-article shell (the rotated
+	 * writing-mode title in the left rail, mirroring yesid.dev's blog/projects
+	 * listing layout). A single uppercase word derived from the page subject;
+	 * the layout appends a --primary period after it.
+	 */
+	readonly edgeTitle: string;
 	/** Jump-nav (table of contents) heading. */
 	readonly tocLabel: string;
 	/** Mono prefix for the TOC "{prefix} N / total" counter (yesid uses "SEC"). */
@@ -165,6 +172,7 @@ export const metricsCopy: Record<Locale, MetricsCopy> = {
 			enable: 'Activer le mode lecture',
 			disable: 'Quitter le mode lecture',
 		},
+		edgeTitle: 'MESURE',
 		tocLabel: 'Aller à une métrique',
 		tocCounterPrefix: 'SEC',
 		backToTop: 'Retour en haut',
@@ -243,6 +251,7 @@ export const metricsCopy: Record<Locale, MetricsCopy> = {
 			enable: 'Enter focus reading',
 			disable: 'Exit focus reading',
 		},
+		edgeTitle: 'METRICS',
 		tocLabel: 'Jump to a metric',
 		tocCounterPrefix: 'SEC',
 		backToTop: 'Back to top',
