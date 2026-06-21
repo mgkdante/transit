@@ -41,7 +41,7 @@ def test_publish_all_cmd_loops_every_provider(monkeypatch):
     result = CliRunner().invoke(cli.app, ["publish-all", "--tier", "static"])
 
     assert result.exit_code == 0, result.output
-    assert calls == ["stm"]  # the only configured provider today
+    assert calls == ["octranspo", "stm", "sto"]  # every enrolled provider
     assert "manifest.json" in result.output
 
 

@@ -1,0 +1,107 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# STO — Société de transport de l'Outaouais (Gatineau, QC)
+#
+# Real provider manifest (validates against the current contract). The registry
+# globs config/providers/*.yaml non-recursively, so this file enrolls STO in
+# seed-core, the daily static/warm-rollup loops, and publish-all.
+#
+# Geometry ships in shapes.txt (no separate GIS bundle), so there is no
+# gis_static feed — gis_static is provider-specific to STM (stm_sig.zip).
+#
+# RT auth (verified spec — supersedes the stale draft's api_key_derived_hash):
+#   Each realtime request carries TWO query params:
+#     key=<STO_PUBLIC_KEY>
+#     hash=SHA256( STO_PRIVATE_KEY + <UTC yyyymmddTHHMMZ> )  (recomputed per minute)
+#   Expressed by AuthType.API_KEY_SIGNED + SignatureScheme.SHA256_UTC_MINUTE.
+#   The worker host MUST run NTP — the hash is minute-granular; clock drift = 401.
+#
+# Credentials (resolved by `op` at deploy time — never inline):
+#   STO_PUBLIC_KEY   →  op://yesid-dev/x7l35eiiryhwbdic33mqkm4lre/username
+#   STO_PRIVATE_KEY  →  op://yesid-dev/x7l35eiiryhwbdic33mqkm4lre/credential
+#
+# RT base URLs are not pinned here (confirm exact paths from the STO dev PDF);
+# supply them at deploy time via the source_url_env_var overrides below.
+# ─────────────────────────────────────────────────────────────────────────────
+
+provider:
+  provider_id: sto
+  display_name: Société de transport de l'Outaouais
+  short_name: STO
+  city: Gatineau
+  timezone: America/Toronto
+  default_language: fr
+  default_currency: CAD
+  bounds:
+    # Gatineau / Outaouais (widen if cross-river Ottawa stops appear in the feed)
+    min_latitude: 45.40
+    max_latitude: 45.60
+    min_longitude: -76.10
+    max_longitude: -75.55
+  attribution_text: Contains STO (Société de transport de l'Outaouais) open data, used under the STO open-data conditions of use.
+  website_url: https://www.sto.ca/
+  is_active: true
+
+feeds:
+  static_schedule:
+    endpoint_key: static_schedule
+    feed_kind: static_schedule
+    source_format: gtfs_schedule_zip
+    source_url: https://contenu.sto.ca/GTFS/GTFS.zip
+    source_url_env_var: STO_STATIC_GTFS_URL
+    documentation_url: https://www.sto.ca/en/business/developer-space-open-data/
+    auth:
+      auth_type: none
+      notes: Keyless static GTFS, auto-refreshed every 24h. Geometry is in shapes.txt — no GIS feed.
+    refresh_interval_seconds: 86400
+    is_enabled: true
+
+  trip_updates:
+    endpoint_key: trip_updates
+    feed_kind: trip_updates
+    source_format: gtfs_rt_trip_updates
+    source_url_env_var: STO_RT_TRIP_UPDATES_URL
+    documentation_url: https://www.sto.ca/en/business/developer-space-open-data/
+    auth:
+      auth_type: api_key_signed
+      credential_env_var: STO_PUBLIC_KEY
+      auth_query_param: key
+      signing_secret_env_var: STO_PRIVATE_KEY
+      signature_query_param: hash
+      signature_scheme: sha256_utc_minute
+      notes: key=<STO_PUBLIC_KEY> + hash=SHA256(STO_PRIVATE_KEY + UTC yyyymmddTHHMMZ), recomputed per minute. Worker host must run NTP.
+    refresh_interval_seconds: 30
+    is_enabled: true
+
+  vehicle_positions:
+    endpoint_key: vehicle_positions
+    feed_kind: vehicle_positions
+    source_format: gtfs_rt_vehicle_positions
+    source_url_env_var: STO_RT_VEHICLE_POSITIONS_URL
+    documentation_url: https://www.sto.ca/en/business/developer-space-open-data/
+    auth:
+      auth_type: api_key_signed
+      credential_env_var: STO_PUBLIC_KEY
+      auth_query_param: key
+      signing_secret_env_var: STO_PRIVATE_KEY
+      signature_query_param: hash
+      signature_scheme: sha256_utc_minute
+      notes: Same key+hash scheme as trip_updates. STO names the vehicle file with the French spelling (file=vehicule).
+    refresh_interval_seconds: 30
+    is_enabled: true
+
+  service_alerts:
+    endpoint_key: service_alerts
+    feed_kind: service_alerts
+    source_format: gtfs_rt_service_alerts
+    source_url_env_var: STO_SERVICE_ALERTS_URL
+    documentation_url: https://www.sto.ca/en/business/developer-space-open-data/
+    auth:
+      auth_type: api_key_signed
+      credential_env_var: STO_PUBLIC_KEY
+      auth_query_param: key
+      signing_secret_env_var: STO_PRIVATE_KEY
+      signature_query_param: hash
+      signature_scheme: sha256_utc_minute
+      notes: Standard GTFS-RT Alert.pb. Same key+hash scheme. Ingested by the generic service_alerts ingester.
+    refresh_interval_seconds: 300
+    is_enabled: true
