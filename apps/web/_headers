@@ -40,6 +40,22 @@
 /data/*
   Cache-Control: no-store
 
+# PWA remote kill-switch flag — MUST never be edge-cached, or the operator could
+# not remotely disable a misbehaving service worker (a cached flag would pin the
+# old value). The SW + client both fetch it with cache:'no-store'; belt-and-
+# suspenders, refuse to cache it at the edge too.
+/sw-kill.json
+  Cache-Control: no-store
+
+# Service worker script — keep the registration short-lived so a new deploy (and
+# any fix / the in-SW kill logic) is picked up promptly rather than pinned.
+/service-worker.js
+  Cache-Control: public, max-age=0, must-revalidate
+
+# Offline fallback — content-stable shell page; modest TTL.
+/offline.html
+  Cache-Control: public, max-age=3600
+
 # Baseline security headers for static ASSET responses (favicon, fonts,
 # /_app/immutable). In Worker mode `_headers` only decorates assets — the
 # SSR-rendered HTML documents get the same set from hooks.server.ts. Both pull

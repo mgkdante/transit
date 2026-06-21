@@ -62,6 +62,7 @@
 	} from '$lib/v1';
 	import { createResource } from '$lib/v1/resource.svelte';
 	import { dataRefresh, themeStore } from '$lib/stores';
+	import { registerServiceWorker } from '$lib/pwa/register';
 	import { runViewTransition } from '$lib/motion';
 	import { AppShell } from '$lib/components/shell';
 	import { Footer } from '$lib/components/layout';
@@ -263,6 +264,21 @@
 		// Recover a failed SSR boot — the browser can reach /data even when the SSR
 		// worker could not. No-op when SSR already produced a context.
 		if (data.v1Error && !data.v1) void clientBoot();
+
+		// PWA service-worker lifecycle + remote kill-switch (browser + production +
+		// secure-context only). This ALSO enforces the kill-flag client-side on
+		// every load: a misbehaving / killed SW is torn down here before any
+		// (re-)registration. The network-first shell guarantees this code re-runs
+		// with the latest deploy, so the kill-switch can always reach an installed SW.
+		// A killed SW posts SW_KILLED → reload into the now-SW-free live site.
+		if (browser && navigator.serviceWorker) {
+			navigator.serviceWorker.addEventListener('message', (event) => {
+				if ((event.data as { type?: string } | undefined)?.type === 'SW_KILLED') {
+					location.reload();
+				}
+			});
+		}
+		void registerServiceWorker({ browser, production: import.meta.env.PROD });
 	});
 
 	// SPA View Transitions — a tasteful root cross-fade between surfaces. The
