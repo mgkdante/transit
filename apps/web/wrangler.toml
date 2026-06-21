@@ -40,7 +40,34 @@ directory = ".svelte-kit/cloudflare"
 binding = "DATA"
 service = "transit-data-proxy"
 
+# ── Web-Vitals RUM (slice-9.7 item D) — INERT BY DEFAULT ────────────────────
+# The web app ships a Core-Web-Vitals collector ($lib/vitals/collect.ts) + a
+# beacon endpoint (/api/vitals → src/routes/api/vitals/+server.ts) that writes
+# to a Cloudflare Analytics Engine dataset. BOTH halves are dormant until the
+# OPERATOR wires the infra here — merging the code changes NOTHING in prod:
+#   * collector: no-op unless PUBLIC_VITALS_ENABLED == "true" (commented below);
+#   * endpoint:  204 no-op while the WEB_VITALS binding is absent (commented).
+#
+# OPERATOR — to ENABLE Web-Vitals RUM (exact steps, in order):
+#   (a) Uncomment the [[analytics_engine_datasets]] block just below
+#       (creating/enabling the dataset is automatic on first deploy with the
+#       binding present — Analytics Engine has no separate "create" step).
+#   (b) Uncomment `PUBLIC_VITALS_ENABLED = "true"` in [vars] below (and, if you
+#       want RUM on the dev lane too, in [env.dev.vars]).
+#   (c) Redeploy: merge to the deploy branch (auto-deploy) OR `wrangler deploy`.
+# To DISABLE again: re-comment both, redeploy. Query the data via the
+# Analytics Engine SQL API on dataset `transit_web_vitals`.
+#
+# [[analytics_engine_datasets]]
+# binding = "WEB_VITALS"
+# dataset = "transit_web_vitals"
+
 [vars]
+# Web-Vitals RUM master switch (slice-9.7 D). Commented = OFF = inert: the
+# client collector imports nothing and beacons nothing. Uncomment to "true"
+# (step (b) above) to turn the browser collector on. Keep in sync with the
+# WEB_VITALS binding above — flag on + binding present = data flows.
+# PUBLIC_VITALS_ENABLED = "true"
 PUBLIC_SITE_ORIGIN = "https://transit.yesid.dev"
 PUBLIC_V1_BASE = "/data/v1"
 PUBLIC_INDEXING = "true"

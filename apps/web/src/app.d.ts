@@ -19,6 +19,19 @@ declare global {
 			env?: {
 				/** Service binding → transit-data-proxy (SSR /v1 boot). See wrangler.toml. */
 				DATA?: { fetch: typeof fetch };
+				/**
+				 * Cloudflare Analytics Engine dataset for Web-Vitals RUM (slice-9.7 D).
+				 * ABSENT by default — the binding lives COMMENTED in wrangler.toml until
+				 * the operator wires the dataset. /api/vitals no-ops (204) when this is
+				 * absent, so the feature stays inert until the operator enables it.
+				 */
+				WEB_VITALS?: {
+					writeDataPoint(point: {
+						indexes?: string[];
+						blobs?: (string | null)[];
+						doubles?: number[];
+					}): void;
+				};
 				[key: string]: unknown;
 			};
 			context?: { waitUntil(promise: Promise<unknown>): void };

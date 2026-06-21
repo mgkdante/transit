@@ -62,6 +62,7 @@
 	} from '$lib/v1';
 	import { createResource } from '$lib/v1/resource.svelte';
 	import { dataRefresh, themeStore } from '$lib/stores';
+	import { startVitals } from '$lib/vitals/collect';
 	import { runViewTransition } from '$lib/motion';
 	import { AppShell } from '$lib/components/shell';
 	import { Footer } from '$lib/components/layout';
@@ -263,6 +264,10 @@
 		// Recover a failed SSR boot — the browser can reach /data even when the SSR
 		// worker could not. No-op when SSR already produced a context.
 		if (data.v1Error && !data.v1) void clientBoot();
+		// Web-Vitals RUM (slice-9.7 D). INERT BY DEFAULT: a no-op unless
+		// PUBLIC_VITALS_ENABLED === 'true'. When off it registers no listeners and
+		// never imports web-vitals. Returns a disposer onMount tears down on unmount.
+		return startVitals();
 	});
 
 	// SPA View Transitions — a tasteful root cross-fade between surfaces. The
