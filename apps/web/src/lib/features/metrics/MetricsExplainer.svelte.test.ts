@@ -184,4 +184,50 @@ describe('MetricsExplainer', () => {
 		// The rail offers a jump to the Lacunes card by its title (one ToC entry).
 		expect(within(rail).getByRole('button', { name: en.lacunes.title })).toBeInTheDocument();
 	});
+
+	it('quiet-mode toggle flips aria-checked, applies the full-bleed class, and persists', async () => {
+		localStorage.removeItem('metrics-quiet');
+		const { container } = render(MetricsExplainer);
+
+		// The header carries a single quiet/focus switch — a real <button role="switch">,
+		// OFF by default (aria-checked=false), labelled to ENTER focus reading.
+		const toggle = screen.getByTestId('metrics-quiet-toggle');
+		expect(toggle).toHaveAttribute('role', 'switch');
+		expect(toggle).toHaveAttribute('aria-checked', 'false');
+		expect(toggle).toHaveAttribute('aria-label', en.quiet.enable);
+
+		// Default (non-quiet): the body grid is NOT full-bleed and the TOC rail exists.
+		const bodyGrid = container.querySelector('.body-grid') as HTMLElement;
+		expect(bodyGrid).not.toBeNull();
+		expect(bodyGrid.classList.contains('is-quiet')).toBe(false);
+
+		// Press it ON → aria-checked flips, the full-bleed class lands, the label swaps
+		// to the EXIT action, and the choice persists to localStorage.
+		await fireEvent.click(toggle);
+		expect(toggle).toHaveAttribute('aria-checked', 'true');
+		expect(toggle).toHaveAttribute('aria-label', en.quiet.disable);
+		expect(bodyGrid.classList.contains('is-quiet')).toBe(true);
+		expect(localStorage.getItem('metrics-quiet')).toBe('1');
+
+		// Press it OFF → everything reverts and the persisted flag clears to '0'.
+		await fireEvent.click(toggle);
+		expect(toggle).toHaveAttribute('aria-checked', 'false');
+		expect(bodyGrid.classList.contains('is-quiet')).toBe(false);
+		expect(localStorage.getItem('metrics-quiet')).toBe('0');
+	});
+
+	it('restores the persisted quiet-mode preference on mount', () => {
+		// A prior session left quiet mode ON; the screen re-applies it on mount
+		// (SSR-safe: the onMount localStorage read drives the initial quiet state).
+		localStorage.setItem('metrics-quiet', '1');
+		const { container } = render(MetricsExplainer);
+
+		const toggle = screen.getByTestId('metrics-quiet-toggle');
+		expect(toggle).toHaveAttribute('aria-checked', 'true');
+		expect(
+			(container.querySelector('.body-grid') as HTMLElement).classList.contains('is-quiet'),
+		).toBe(true);
+
+		localStorage.removeItem('metrics-quiet');
+	});
 });
