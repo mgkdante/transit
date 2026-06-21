@@ -157,6 +157,39 @@
 		},
 	]);
 
+	// ── Quiet mode (focus reading) ─────────────────────────────────────────────
+	// A single, restrained header toggle that enters a distraction-free reading
+	// state for the methodology article (mirrors the yesid.dev detail-page "Quiet
+	// mode" switch, kept to one control): it drops the re-applied page gutter so the
+	// prose goes TRUE full-bleed within the content area — held to a comfortable
+	// reading measure via .surface-measure so line-length stays readable — and
+	// quiets the chrome (hides the sticky TOC rail, dims non-essential furniture) so
+	// the prose is the focus. Default OFF leaves today's layout untouched.
+	//
+	// The choice PERSISTS across navigations in localStorage. SSR-safe: the initial
+	// read and every write are window-guarded (no window on the server / in tests),
+	// so the page renders in the default (non-quiet) layout server-side and the
+	// stored preference is re-applied on mount without a layout flash mid-paint.
+	const QUIET_STORAGE_KEY = 'metrics-quiet';
+	let quiet = $state(false);
+
+	onMount(() => {
+		try {
+			quiet = localStorage.getItem(QUIET_STORAGE_KEY) === '1';
+		} catch {
+			/* private mode / disabled storage — session-only quiet mode is fine */
+		}
+	});
+
+	function toggleQuiet(): void {
+		quiet = !quiet;
+		try {
+			localStorage.setItem(QUIET_STORAGE_KEY, quiet ? '1' : '0');
+		} catch {
+			/* private mode / disabled storage — the in-memory toggle still works */
+		}
+	}
+
 	// ── Active-section tracking ────────────────────────────────────────────────
 	// One IntersectionObserver over the section cards' [data-toc] anchors owns the
 	// active id; the desktop rail and the mobile pill both receive it as a prop (no
@@ -180,12 +213,40 @@
 </script>
 
 <Surface width="wide" class="metrics">
-	<SurfaceHeader kicker={t.kicker} heading={t.heading} subheading={t.subheading} lede={t.lede} />
+	<SurfaceHeader kicker={t.kicker} heading={t.heading} subheading={t.subheading} lede={t.lede}>
+		<!-- Quiet-mode (focus reading) affordance — a single restrained switch in the
+		     header. --primary lights up only when active (the mono "wave" icon collapses
+		     to a glowing core dot), 1:1 with the yesid.dev "Quiet mode" switch on transit
+		     tokens. A real <button role="switch"> with aria-checked + a bilingual label;
+		     the press flips the persisted quiet state. -->
+		<div class="metrics-quiet-controls">
+			<button
+				type="button"
+				class="metrics-quiet-toggle"
+				role="switch"
+				aria-checked={quiet}
+				aria-label={quiet ? t.quiet.disable : t.quiet.enable}
+				data-testid="metrics-quiet-toggle"
+				onclick={toggleQuiet}
+			>
+				<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+					<path class="q-wave" d="M8.4 8.4a5 5 0 0 0 0 7.2" />
+					<path class="q-wave" d="M15.6 8.4a5 5 0 0 1 0 7.2" />
+					<path class="q-wave q-wave--far" d="M5.7 5.7a8.9 8.9 0 0 0 0 12.6" />
+					<path class="q-wave q-wave--far" d="M18.3 5.7a8.9 8.9 0 0 1 0 12.6" />
+					<circle class="q-core" cx="12" cy="12" r="2.3" />
+				</svg>
+				<span>{t.quiet.label}</span>
+			</button>
+		</div>
+	</SurfaceHeader>
 
 	<!-- Body: shared detail-page grid (sticky TOC rail | section cards), full-bleed
 	     within the content area (surface-bleed escapes the page gutter, never the
-	     rail). Single column below lg; the rail is replaced by the floating pill. -->
-	<div class="body-grid surface-bleed">
+	     rail). Single column below lg; the rail is replaced by the floating pill.
+	     In quiet mode (.is-quiet) it drops the re-applied gutter for TRUE full-bleed
+	     prose (held to a reading measure via .surface-measure) and hides the rail. -->
+	<div class="body-grid surface-bleed" class:is-quiet={quiet}>
 		<aside class="context-column">
 			<div class="context-panel toc-scroll">
 				<div class="toc-nav-shell">
@@ -361,6 +422,20 @@
 		/* Re-apply the gutter the surface-bleed escaped, so the content keeps the
 		   page padding line as its edge (matches .surface-measure's intent). */
 		padding-inline: var(--space-page-x);
+		transition: padding var(--duration-normal) var(--ease-default);
+	}
+
+	/* ── Quiet mode (focus reading) ────────────────────────────────────────────
+	   Drop the re-applied gutter so the article goes TRUE full-bleed within the
+	   content area (the surface-bleed negative margin is no longer cancelled by
+	   padding); the prose keeps a comfortable reading measure via .surface-measure
+	   on the content column below, so line-length stays readable edge-to-edge. The
+	   rail column collapses and the grid becomes a single content column. */
+	.body-grid.is-quiet {
+		padding-inline: 0;
+	}
+	.body-grid.is-quiet .context-column {
+		display: none;
 	}
 
 	.context-column,
@@ -413,6 +488,25 @@
 			overscroll-behavior: contain;
 			padding-bottom: 1rem;
 		}
+
+		/* Quiet mode at lg: the rail is gone (collapsed above), so the grid is a
+		   single content column. The article reads full-bleed but the prose stays
+		   capped to a comfortable measure (centered), so line-length is unaffected. */
+		.body-grid.is-quiet {
+			grid-template-columns: minmax(0, 1fr);
+		}
+		.body-grid.is-quiet .sections-column {
+			grid-column: 1;
+			max-width: var(--container-content);
+			margin-inline: auto;
+		}
+	}
+
+	/* Below lg the rail is already replaced by the floating pill; in quiet mode keep
+	   the prose capped to a reading measure even as the gutter is dropped. */
+	.body-grid.is-quiet .sections-column {
+		max-width: var(--container-content);
+		margin-inline: auto;
 	}
 
 	/* ── Provenance preamble ─────────────────────────────────────────────────── */
@@ -601,6 +695,89 @@
 		color: var(--foreground);
 	}
 
+	/* ── Quiet-mode (focus reading) toggle ─────────────────────────────────────
+	   The single header switch, ported 1:1 from the yesid.dev "Quiet mode" control
+	   onto transit tokens: a quiet mono pill that lights up in --primary ONLY when
+	   active (the wave strokes fade and the core dot glows), so OFF it is calm
+	   chrome and ON it reads as a clear, lit state. */
+	.metrics-quiet-controls {
+		display: inline-flex;
+		align-items: center;
+		margin-block-start: 0.25rem;
+	}
+	.metrics-quiet-toggle {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		gap: 0.5rem;
+		min-height: 44px;
+		padding-inline: 0.875rem 1rem;
+		border: 2px solid var(--border-brand);
+		border-radius: var(--radius-md);
+		background: var(--background);
+		box-shadow: inset 0 1px 0 var(--edge-highlight);
+		color: var(--secondary-foreground);
+		font-family: var(--font-mono);
+		font-size: var(--text-control);
+		letter-spacing: 0;
+		cursor: pointer;
+		transition:
+			border-color var(--duration-normal) var(--ease-default),
+			color var(--duration-normal) var(--ease-default),
+			background var(--duration-normal) var(--ease-default);
+	}
+	.metrics-quiet-toggle:hover,
+	.metrics-quiet-toggle:focus-visible,
+	.metrics-quiet-toggle[aria-checked='true'] {
+		border-color: var(--primary);
+		color: var(--primary);
+		background: color-mix(in srgb, var(--primary) 7%, var(--background));
+	}
+	.metrics-quiet-toggle:focus-visible {
+		outline: 2px solid var(--ring);
+		outline-offset: 3px;
+	}
+	.metrics-quiet-toggle .q-wave,
+	.metrics-quiet-toggle .q-core {
+		fill: none;
+		stroke: currentColor;
+		stroke-width: 1.5;
+		stroke-linecap: round;
+		stroke-linejoin: round;
+		transition:
+			opacity var(--duration-normal) var(--ease-default),
+			fill var(--duration-normal) var(--ease-default),
+			stroke var(--duration-normal) var(--ease-default),
+			filter var(--duration-normal) var(--ease-default);
+	}
+	.metrics-quiet-toggle .q-wave--far {
+		opacity: 0.5;
+	}
+	.metrics-quiet-toggle[aria-checked='true'] .q-wave {
+		opacity: 0;
+	}
+	.metrics-quiet-toggle[aria-checked='true'] .q-core {
+		fill: var(--primary);
+		stroke: var(--primary);
+		filter: drop-shadow(0 0 4px color-mix(in srgb, var(--glow) 60%, transparent));
+	}
+
+	/* ── Quiet-mode chrome quieting ────────────────────────────────────────────
+	   In focus reading, dim the non-essential furniture so the prose is the focus:
+	   the per-card "back to top" anchors and the cluster overlines recede. The prose
+	   itself, the SectionLabels on each block, and the SQL stay at full strength. */
+	.body-grid.is-quiet :global(.metrics-cluster__overline) {
+		opacity: 0.55;
+		transition: opacity var(--duration-normal) var(--ease-default);
+	}
+	.body-grid.is-quiet .metric__top {
+		opacity: 0.55;
+	}
+	.body-grid.is-quiet .metric__top:hover,
+	.body-grid.is-quiet .metric__top:focus-visible {
+		opacity: 1;
+	}
+
 	.metric__top {
 		align-self: flex-start;
 		font-family: var(--font-mono);
@@ -609,7 +786,7 @@
 		letter-spacing: var(--tracking-eyebrow);
 		color: var(--primary);
 		text-decoration: none;
-		transition: opacity var(--duration-fast) var(--ease-default);
+		transition: opacity var(--duration-normal) var(--ease-default);
 	}
 	.metric__top:hover,
 	.metric__top:focus-visible {
@@ -622,7 +799,12 @@
 	}
 
 	@media (prefers-reduced-motion: reduce) {
-		.metric__top {
+		.metric__top,
+		.body-grid,
+		.metrics-quiet-toggle,
+		.metrics-quiet-toggle .q-wave,
+		.metrics-quiet-toggle .q-core,
+		.body-grid.is-quiet :global(.metrics-cluster__overline) {
 			transition: none;
 		}
 	}

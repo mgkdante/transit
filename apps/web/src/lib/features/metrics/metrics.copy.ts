@@ -63,6 +63,21 @@ export interface MetricsCopy extends SurfaceHeadCopy {
 		/** Chip text + meaning per confidence level. */
 		readonly levels: Record<Confidence, { readonly chip: string; readonly meaning: string }>;
 	};
+	/**
+	 * Quiet-mode (focus reading) affordance — a single header toggle that drops the
+	 * page gutter (true full-bleed prose at a comfortable measure) and quiets the
+	 * chrome (TOC rail + non-essential furniture) so the methodology reads
+	 * distraction-free. The choice persists across navigations. Mirrors the
+	 * yesid.dev detail-page "Quiet mode" switch, kept to one restrained control.
+	 */
+	readonly quiet: {
+		/** Visible button label (mono control voice). */
+		readonly label: string;
+		/** aria-label when quiet mode is OFF (the action the press performs). */
+		readonly enable: string;
+		/** aria-label when quiet mode is ON (the action the press performs). */
+		readonly disable: string;
+	};
 	/** Jump-nav (table of contents) heading. */
 	readonly tocLabel: string;
 	/** Mono prefix for the TOC "{prefix} N / total" counter (yesid uses "SEC"). */
@@ -144,6 +159,11 @@ export const metricsCopy: Record<Locale, MetricsCopy> = {
 				},
 			},
 		},
+		quiet: {
+			label: 'Lecture',
+			enable: 'Activer le mode lecture',
+			disable: 'Quitter le mode lecture',
+		},
 		tocLabel: 'Aller à une métrique',
 		tocCounterPrefix: 'SEC',
 		backToTop: 'Retour en haut',
@@ -216,6 +236,11 @@ export const metricsCopy: Record<Locale, MetricsCopy> = {
 						'A point-in-time per-vehicle census (the live vehicle snapshot), not an aggregate.',
 				},
 			},
+		},
+		quiet: {
+			label: 'Focus',
+			enable: 'Enter focus reading',
+			disable: 'Exit focus reading',
 		},
 		tocLabel: 'Jump to a metric',
 		tocCounterPrefix: 'SEC',
