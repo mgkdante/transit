@@ -665,7 +665,7 @@
 		font-family: var(--font-mono);
 		font-size: var(--text-micro);
 		font-weight: 500;
-		letter-spacing: 0.18em;
+		letter-spacing: var(--tracking-eyebrow);
 		text-transform: uppercase;
 		color: var(--accent-text);
 	}
@@ -714,7 +714,7 @@
 	}
 	.map-selection-id span {
 		font-size: var(--text-micro);
-		letter-spacing: 0.1em;
+		letter-spacing: var(--tracking-eyebrow);
 		text-transform: uppercase;
 		background: transparent;
 		border-color: transparent;
@@ -786,7 +786,7 @@
 	.map-detail-grid dt {
 		font-family: var(--font-mono);
 		font-size: var(--text-micro);
-		letter-spacing: 0.08em;
+		letter-spacing: var(--tracking-eyebrow);
 		text-transform: uppercase;
 		color: var(--muted-foreground);
 	}
@@ -951,7 +951,7 @@
 		font-family: var(--font-mono);
 		font-size: var(--text-micro);
 		font-weight: 500;
-		letter-spacing: 0.14em;
+		letter-spacing: var(--tracking-eyebrow);
 		text-transform: uppercase;
 		color: var(--accent-text);
 	}
@@ -983,7 +983,7 @@
 		margin: 0;
 		font-family: var(--font-mono);
 		font-size: var(--text-micro);
-		letter-spacing: 0.08em;
+		letter-spacing: var(--tracking-eyebrow);
 		text-transform: uppercase;
 		color: var(--muted-foreground);
 	}
@@ -1180,7 +1180,7 @@
 		font-family: var(--font-mono);
 		font-size: var(--text-micro);
 		font-weight: 500;
-		letter-spacing: 0.14em;
+		letter-spacing: var(--tracking-eyebrow);
 		text-transform: uppercase;
 		color: var(--accent-text);
 	}
@@ -1277,7 +1277,7 @@
 		font-family: var(--font-mono);
 		font-size: var(--text-micro);
 		font-weight: 500;
-		letter-spacing: 0.08em;
+		letter-spacing: var(--tracking-eyebrow);
 		text-transform: uppercase;
 		color: color-mix(in srgb, var(--alert-tone) 70%, var(--muted-foreground));
 	}

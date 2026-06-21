@@ -299,7 +299,7 @@
 		font-family: var(--font-mono);
 		font-size: var(--text-micro);
 		font-weight: 500;
-		letter-spacing: 0.08em;
+		letter-spacing: var(--tracking-eyebrow);
 		text-transform: uppercase;
 		color: color-mix(in srgb, var(--alert-tone) 70%, var(--muted-foreground));
 	}

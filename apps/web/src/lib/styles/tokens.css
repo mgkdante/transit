@@ -32,9 +32,14 @@
   --text-subheading: 1.1875rem;
   --text-body: 1.0625rem;
   --text-small: 0.9375rem;
+  --text-control: 0.9375rem;
+  --text-tag: 0.9375rem;
   --text-mono: 0.875rem;
   --text-caption: 0.8125rem;
   --text-micro: 0.75rem;
+  --tracking-tight: -0.025em;
+  --tracking-wide: 0.05em;
+  --tracking-eyebrow: 0.1em;
   --space-page-x: clamp(1.5rem, 4vw, 5rem);
   --space-section-y: clamp(3rem, 8vw, 6rem);
   --space-card-gap: clamp(1rem, 2vw, 1.5rem);

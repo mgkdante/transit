@@ -540,7 +540,7 @@
 		font-family: var(--font-mono);
 		font-size: var(--text-mono);
 		font-weight: 600;
-		letter-spacing: 0.14em;
+		letter-spacing: var(--tracking-eyebrow);
 		text-transform: uppercase;
 		color: var(--foreground);
 		overflow: hidden;
@@ -589,7 +589,7 @@
 		font-family: var(--font-mono);
 		font-size: var(--text-micro);
 		font-weight: 600;
-		letter-spacing: 0.12em;
+		letter-spacing: var(--tracking-eyebrow);
 		text-transform: uppercase;
 		color: var(--muted-foreground);
 		min-width: 0;

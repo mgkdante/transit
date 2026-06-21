@@ -85,6 +85,8 @@ select {
   --text-subheading: 1.1875rem;
   --text-body: 1.0625rem;
   --text-small: 0.9375rem;
+  --text-control: 0.9375rem;
+  --text-tag: 0.9375rem;
   --text-mono: 0.875rem;
   --text-caption: 0.8125rem;
   --text-micro: 0.75rem;
@@ -406,7 +408,7 @@ table {
 	font-family: var(--font-mono);
 	font-size: var(--text-caption);
 	text-transform: uppercase;
-	letter-spacing: 0.1em;
+	letter-spacing: var(--tracking-eyebrow);
 	color: var(--muted-foreground);
 }
 .label-station {

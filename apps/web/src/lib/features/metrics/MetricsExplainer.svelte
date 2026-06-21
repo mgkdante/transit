@@ -478,7 +478,7 @@
 		font-family: var(--font-mono);
 		font-size: var(--text-caption);
 		text-transform: uppercase;
-		letter-spacing: 0.04em;
+		letter-spacing: var(--tracking-eyebrow);
 		white-space: nowrap;
 	}
 	.metrics-chip--meta {
@@ -606,7 +606,7 @@
 		font-family: var(--font-mono);
 		font-size: var(--text-caption);
 		text-transform: uppercase;
-		letter-spacing: 0.04em;
+		letter-spacing: var(--tracking-eyebrow);
 		color: var(--primary);
 		text-decoration: none;
 		transition: opacity var(--duration-fast) var(--ease-default);

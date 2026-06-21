@@ -162,7 +162,7 @@
 		flex-shrink: 0;
 		font-family: var(--font-mono);
 		font-size: var(--text-micro);
-		letter-spacing: 0.04em;
+		letter-spacing: var(--tracking-eyebrow);
 		text-transform: uppercase;
 		padding: 0.05rem 0.4rem;
 		border-radius: var(--radius-pill);

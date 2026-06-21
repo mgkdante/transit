@@ -91,7 +91,7 @@
 		font-size: var(--text-caption);
 		font-weight: 600;
 		text-transform: uppercase;
-		letter-spacing: 0.08em;
+		letter-spacing: var(--tracking-eyebrow);
 		color: var(--muted-foreground);
 	}
 
