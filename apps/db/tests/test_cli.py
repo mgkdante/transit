@@ -33,6 +33,7 @@ def test_cli_help() -> None:
     assert "load-realtime-silver" in result.stdout
     assert "load-i3-silver" in result.stdout
     assert "build-gold-marts" in result.stdout
+    assert "replay-realtime-silver" in result.stdout
     assert "refresh-gold-realtime" in result.stdout
     assert "refresh-gold-static" in result.stdout
     assert "prune-silver-storage" in result.stdout
@@ -1106,3 +1107,151 @@ def test_download_latest_backup_command_writes_dest(monkeypatch, tmp_path) -> No
     assert payload["key"] == "backups/postgres/transit-20260611T093005Z.dump"
     assert payload["dest"] == str(dest)
     assert recorded["dest"] == dest
+
+
+class _FakeBatchLoadResult:
+    def __init__(self, *, loaded_count, skipped_existing_snapshot_ids, row_counts):  # noqa: ANN001
+        self.provider_id = "stm"
+        self.loaded_count = loaded_count
+        self.skipped_existing_snapshot_ids = skipped_existing_snapshot_ids
+        self.row_counts = row_counts
+
+    def display_dict(self) -> dict[str, object]:
+        return {
+            "provider_id": self.provider_id,
+            "loaded_count": self.loaded_count,
+            "skipped_existing_snapshot_ids": self.skipped_existing_snapshot_ids,
+            "row_counts": self.row_counts,
+            "results": [],
+        }
+
+
+class _FakeGoldResult:
+    def display_dict(self) -> dict[str, object]:
+        return {"provider_id": "stm", "row_counts": {"fact_trip_delay_snapshot": 2}}
+
+
+def _stub_replay_settings_and_registry(monkeypatch) -> None:  # noqa: ANN001
+    monkeypatch.setattr(cli_module, "get_settings", lambda: cli_module.Settings(_env_file=None))
+    monkeypatch.setattr(cli_module, "_provider_registry", lambda settings: object())
+
+
+def test_replay_realtime_silver_help() -> None:
+    result = runner.invoke(app, ["replay-realtime-silver", "--help"])
+
+    assert result.exit_code == 0
+    assert "Rebuild realtime Silver + Gold from raw Bronze" in result.stdout
+    assert "--since" in result.stdout
+    assert "--until" in result.stdout
+
+
+def test_replay_realtime_silver_requires_since() -> None:
+    result = runner.invoke(app, ["replay-realtime-silver", "stm"])
+
+    assert result.exit_code == 2
+
+
+def test_replay_realtime_silver_rejects_bad_since(monkeypatch) -> None:
+    _stub_replay_settings_and_registry(monkeypatch)
+
+    result = runner.invoke(
+        app, ["replay-realtime-silver", "stm", "--since", "not-a-datetime"]
+    )
+
+    assert result.exit_code == 2
+    assert "must be an ISO-8601 datetime" in result.output
+
+
+def test_replay_realtime_silver_rejects_until_not_after_since(monkeypatch) -> None:
+    _stub_replay_settings_and_registry(monkeypatch)
+
+    result = runner.invoke(
+        app,
+        [
+            "replay-realtime-silver",
+            "stm",
+            "--since",
+            "2026-06-20T12:00:00Z",
+            "--until",
+            "2026-06-20T11:00:00Z",
+        ],
+    )
+
+    assert result.exit_code == 2
+    assert "must be after --since" in result.output
+
+
+def test_replay_realtime_silver_rebuilds_and_reports_elapsed(monkeypatch) -> None:
+    _stub_replay_settings_and_registry(monkeypatch)
+    recorded: dict[str, object] = {}
+
+    def fake_replay(provider_id, *, start_utc, end_utc, settings, registry):  # noqa: ANN001
+        recorded["provider_id"] = provider_id
+        recorded["start_utc"] = start_utc
+        recorded["end_utc"] = end_utc
+        return _FakeBatchLoadResult(
+            loaded_count=2,
+            skipped_existing_snapshot_ids=[],
+            row_counts={"rt_feed_snapshots": 2, "rt_trip_updates": 2},
+        )
+
+    gold_called: dict[str, object] = {}
+
+    def fake_build_gold(provider_id, *, settings, registry):  # noqa: ANN001
+        gold_called["provider_id"] = provider_id
+        return _FakeGoldResult()
+
+    monkeypatch.setattr(cli_module, "replay_realtime_silver_window", fake_replay)
+    monkeypatch.setattr(cli_module, "build_gold_marts", fake_build_gold)
+
+    result = runner.invoke(
+        app,
+        [
+            "replay-realtime-silver",
+            "stm",
+            "--since",
+            "2026-06-20T12:00:00Z",
+            "--until",
+            "2026-06-20T13:00:00Z",
+        ],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload["status"] == "rebuilt"
+    assert payload["snapshots_found"] == 2
+    assert payload["gold"]["row_counts"]["fact_trip_delay_snapshot"] == 2
+    assert payload["silver"]["loaded_count"] == 2
+    assert "elapsed_seconds" in payload
+    assert recorded["provider_id"] == "stm"
+    assert recorded["start_utc"] == datetime(2026, 6, 20, 12, 0, tzinfo=UTC)
+    assert recorded["end_utc"] == datetime(2026, 6, 20, 13, 0, tzinfo=UTC)
+    assert gold_called["provider_id"] == "stm"
+
+
+def test_replay_realtime_silver_empty_window_is_clean_noop(monkeypatch) -> None:
+    _stub_replay_settings_and_registry(monkeypatch)
+
+    monkeypatch.setattr(
+        cli_module,
+        "replay_realtime_silver_window",
+        lambda provider_id, *, start_utc, end_utc, settings, registry: _FakeBatchLoadResult(
+            loaded_count=0, skipped_existing_snapshot_ids=[], row_counts={}
+        ),
+    )
+
+    def fail_build_gold(*args, **kwargs):  # noqa: ANN001, ANN002, ANN003
+        raise AssertionError("gold rebuild must not run when no snapshots are found")
+
+    monkeypatch.setattr(cli_module, "build_gold_marts", fail_build_gold)
+
+    result = runner.invoke(
+        app, ["replay-realtime-silver", "stm", "--since", "2026-06-20T12:00:00Z"]
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload["status"] == "no-snapshots-in-window"
+    assert payload["snapshots_found"] == 0
+    assert payload["gold"] is None
+    assert "elapsed_seconds" in payload

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import time
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
@@ -52,6 +53,7 @@ from transit_ops.silver import (
     load_latest_i3_to_silver,
     load_latest_realtime_to_silver,
     load_latest_static_to_silver,
+    replay_realtime_silver_window,
 )
 from transit_ops.snapshots.publish import publish_snapshot
 from transit_ops.source_factory.runner import run_source_factory_rebuild
@@ -587,6 +589,119 @@ def build_gold(provider_id: str) -> None:
     except (ValueError, FileNotFoundError) as exc:
         raise typer.BadParameter(str(exc)) from exc
     typer.echo(json.dumps(result.display_dict(), indent=2))
+
+
+def _parse_replay_instant(value: str, *, flag: str) -> datetime:
+    """Parse an ISO-8601 datetime for a replay window flag and normalize to UTC.
+
+    Accepts both naive (assumed UTC) and timezone-aware ISO strings. A bare date
+    (YYYY-MM-DD) is accepted and treated as midnight UTC.
+    """
+
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError as exc:
+        raise typer.BadParameter(
+            f"{flag} must be an ISO-8601 datetime (e.g. 2026-06-20T00:00:00Z), got: {value!r}"
+        ) from exc
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC)
+
+
+@app.command("replay-realtime-silver")
+def replay_realtime_silver_command(
+    provider_id: str,
+    since: str = typer.Option(
+        ...,
+        "--since",
+        help=(
+            "Window start (inclusive), ISO-8601 datetime. Snapshots with "
+            "captured_at_utc >= this instant are replayed (e.g. 2026-06-20T00:00:00Z)."
+        ),
+    ),
+    until: str | None = typer.Option(
+        None,
+        "--until",
+        help=(
+            "Window end (exclusive), ISO-8601 datetime. Defaults to now (UTC). "
+            "Snapshots with captured_at_utc < this instant are replayed."
+        ),
+    ),
+) -> None:
+    """Rebuild realtime Silver + Gold from raw Bronze .pb over a captured window.
+
+    The rebuild-from-raw replay (disaster-recovery / thin-silver gate): reads the
+    archived realtime .pb objects in ``[--since, --until)`` and re-derives the
+    realtime Silver tables (idempotent; already-loaded snapshots are skipped),
+    then runs the full-history Gold rebuild so Gold facts re-derive from the
+    reconstructed Silver. Additive and provider-agnostic: nothing auto-invokes
+    it and no retention setting is read or changed.
+    """
+
+    start_utc = _parse_replay_instant(since, flag="--since")
+    end_utc = (
+        _parse_replay_instant(until, flag="--until")
+        if until is not None
+        else datetime.now(UTC)
+    )
+    if end_utc <= start_utc:
+        raise typer.BadParameter(
+            f"--until ({end_utc.isoformat()}) must be after --since ({start_utc.isoformat()})."
+        )
+
+    settings = get_settings()
+    registry = _provider_registry(settings)
+    started = time.perf_counter()
+    try:
+        silver_result = replay_realtime_silver_window(
+            provider_id,
+            start_utc=start_utc,
+            end_utc=end_utc,
+            settings=settings,
+            registry=registry,
+        )
+    except KeyError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    except (ValueError, FileNotFoundError) as exc:
+        raise typer.BadParameter(str(exc)) from exc
+
+    payload: dict[str, object] = {
+        "provider_id": silver_result.provider_id,
+        "window_start_utc": start_utc.isoformat(),
+        "window_end_utc": end_utc.isoformat(),
+        "snapshots_found": (
+            silver_result.loaded_count + len(silver_result.skipped_existing_snapshot_ids)
+        ),
+        "silver": silver_result.display_dict(),
+    }
+
+    if (
+        silver_result.loaded_count == 0
+        and not silver_result.skipped_existing_snapshot_ids
+    ):
+        # Honest no-op: no archived snapshots in the window. Clean exit, not an error.
+        payload["gold"] = None
+        payload["status"] = "no-snapshots-in-window"
+        payload["elapsed_seconds"] = round(time.perf_counter() - started, 3)
+        typer.echo(json.dumps(payload, indent=2))
+        return
+
+    try:
+        gold_result = build_gold_marts(
+            provider_id,
+            settings=settings,
+            registry=registry,
+        )
+    except KeyError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    except (ValueError, FileNotFoundError) as exc:
+        raise typer.BadParameter(str(exc)) from exc
+
+    payload["gold"] = gold_result.display_dict()
+    payload["status"] = "rebuilt"
+    payload["elapsed_seconds"] = round(time.perf_counter() - started, 3)
+    typer.echo(json.dumps(payload, indent=2))
 
 
 @app.command("refresh-gold-realtime")
