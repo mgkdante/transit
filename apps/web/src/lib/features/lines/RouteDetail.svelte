@@ -430,12 +430,22 @@
 				{#snippet children(file)}
 					<div class="route-section">
 						<div class="route-departures">
-							<MetricDisplay
-								value={file.first_departure ?? '·'}
-								label={t.firstDeparture}
-								size="sm"
-							/>
-							<MetricDisplay value={file.last_departure ?? '·'} label={t.lastDeparture} size="sm" />
+							<div class="route-metric-cell">
+								<MetricDisplay
+									value={file.first_departure ?? '·'}
+									label={t.firstDeparture}
+									size="sm"
+								/>
+								{@render scheduleInfo('serviceSpan', t.firstDeparture)}
+							</div>
+							<div class="route-metric-cell">
+								<MetricDisplay
+									value={file.last_departure ?? '·'}
+									label={t.lastDeparture}
+									size="sm"
+								/>
+								{@render scheduleInfo('serviceSpan', t.lastDeparture)}
+							</div>
 						</div>
 						<div class="route-label-row">
 							<SectionLabel text={t.servicePeriods} variant="metric" />
@@ -448,10 +458,20 @@
 										<SectionLabel text={sp.shift} variant="metric" />
 										<div class="route-period-metrics">
 											{#if sp.window}
-												<MetricDisplay value={sp.window} label={t.window} size="sm" />
+												<div class="route-metric-cell">
+													<MetricDisplay value={sp.window} label={t.window} size="sm" />
+													{@render scheduleInfo('serviceSpan', t.window)}
+												</div>
 											{/if}
 											{#if sp.headway_min != null}
-												<MetricDisplay value={fmtMin(sp.headway_min)} label={t.headway} size="sm" />
+												<div class="route-metric-cell">
+													<MetricDisplay
+														value={fmtMin(sp.headway_min)}
+														label={t.headway}
+														size="sm"
+													/>
+													{@render scheduleInfo('headway', t.headway)}
+												</div>
 											{/if}
 										</div>
 									</li>
@@ -750,6 +770,12 @@
 		flex-wrap: wrap;
 		gap: 1.5rem;
 	}
+	/* A schedule metric tile + its explainer (i), kept on the tile's top edge. */
+	.route-metric-cell {
+		display: inline-flex;
+		align-items: flex-start;
+		gap: 0.35rem;
+	}
 	.route-periods {
 		list-style: none;
 		margin: 0;
@@ -760,7 +786,7 @@
 	}
 	@media (min-width: 640px) {
 		.route-periods {
-			grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+			grid-template-columns: repeat(auto-fit, minmax(min(14rem, 100%), 1fr));
 		}
 	}
 	@media (max-width: 520px) {

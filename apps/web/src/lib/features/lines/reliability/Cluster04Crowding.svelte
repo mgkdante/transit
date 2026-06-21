@@ -84,6 +84,17 @@
 			linkLabel: explainerCopy.info.link,
 		};
 	});
+	// The dominant-band tile's own (i): same occupancy tip + deep link, but a
+	// distinct aria-label naming THAT band (e.g. "About Crushed") so the trigger
+	// beside the headline never collides with the cluster-heading (i) above.
+	const dominantInfo = $derived.by(() => {
+		const i = metricInfoFor('occupancy', locale);
+		return {
+			...i,
+			label: explainerCopy.info.trigger(dominant?.label ?? copy.clusters.crowding),
+			linkLabel: explainerCopy.info.link,
+		};
+	});
 </script>
 
 <section
@@ -109,12 +120,22 @@
 		<!-- Honest empty state: no occupancy telemetry → say so, never a fake bar. -->
 		<p class="crowding-empty" data-slot="crowding-empty">{copy.strip.noDataNote}</p>
 	{:else}
-		<MetricDisplay
-			value={dominantPct ?? copy.strip.noDataNote}
-			label={dominant.label}
-			size="lg"
-			class="crowding-headline"
-		/>
+		<div class="crowding-headline-row">
+			<MetricDisplay
+				value={dominantPct ?? copy.strip.noDataNote}
+				label={dominant.label}
+				size="lg"
+				class="crowding-headline"
+			/>
+			<MetricInfo
+				class="cluster-info"
+				tip={dominantInfo.tip}
+				href={dominantInfo.href}
+				label={dominantInfo.label}
+				linkLabel={dominantInfo.linkLabel}
+				side="bottom"
+			/>
+		</div>
 		<!-- Interactive: each band's share reveals on hover/focus (#11). -->
 		<StackedBar
 			scale="occupancy"
@@ -154,5 +175,11 @@
 		font-size: var(--text-small);
 		line-height: 1.4;
 		color: var(--muted-foreground);
+	}
+	/* The dominant-band headline + its explainer (i), kept on the tile's top edge. */
+	.crowding-headline-row {
+		display: inline-flex;
+		align-items: flex-start;
+		gap: 0.35rem;
 	}
 </style>

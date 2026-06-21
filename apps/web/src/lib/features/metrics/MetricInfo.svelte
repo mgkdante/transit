@@ -50,8 +50,108 @@
 	let open = $state(false);
 	let root = $state<HTMLSpanElement | null>(null);
 	let trigger = $state<HTMLButtonElement | null>(null);
+	let pop = $state<HTMLSpanElement | null>(null);
 
 	const tipId = $props.id();
+
+	// ── Edge-aware placement ────────────────────────────────────────────────────
+	// The popover is a position:FIXED layer anchored in VIEWPORT coordinates (so it
+	// is immune to ancestor overflow/clip and to the inline wrapper's zero width).
+	// On open it measures the trigger + its own box against the viewport, FLIPS
+	// top<->bottom when the preferred side would clip, and SHIFTS the horizontal
+	// inset so the natural-width box always stays on screen. It REPOSITIONS, never
+	// shrinks. Ported from dataviz/ChartTooltip.svelte. (Kept inside `root` so the
+	// hover-group / focus-out logic below still sees pointer + focus moves onto it.)
+	const GAP = 8; // px between the box edge and the trigger
+	const EDGE = 8; // px minimum margin kept from the viewport edge
+
+	let resolvedSide = $state<'top' | 'bottom'>('top');
+	let fixedLeft = $state(0);
+	let fixedTop = $state(0);
+	// Suppresses a one-frame flash at (0,0) before the first measurement lands.
+	let placed = $state(false);
+
+	// Per-side base transform: the box is laid out at (left,top) = the trigger's
+	// horizontal centre and the chosen edge, then translated so it is centred
+	// horizontally and meets the trigger with a GAP above (top) or below (bottom).
+	const transform = $derived(
+		resolvedSide === 'top'
+			? `translate(-50%, calc(-100% - ${GAP}px))`
+			: `translate(-50%, ${GAP}px)`,
+	);
+
+	// Measure against the VIEWPORT and place the box. Re-runs on open and whenever
+	// the content (tip/link length) that drives the box size changes.
+	$effect(() => {
+		if (!open) {
+			resolvedSide = side;
+			placed = false;
+			return;
+		}
+		// Read reactive deps so the effect re-runs when content/side changes.
+		void tip;
+		void linkLabel;
+		void side;
+
+		const trig = trigger;
+		const box = pop;
+		if (!trig || !box) {
+			resolvedSide = side;
+			return;
+		}
+
+		const tr = trig.getBoundingClientRect();
+		const pb = box.getBoundingClientRect();
+		const vw = typeof window !== 'undefined' ? window.innerWidth : tr.right;
+		const vh = typeof window !== 'undefined' ? window.innerHeight : tr.bottom;
+
+		// Anchor X = the trigger's horizontal centre; anchor Y = the relevant edge.
+		const anchorX = tr.left + tr.width / 2;
+		const topEdge = tr.top; // box sits above this when side === 'top'
+		const bottomEdge = tr.bottom; // box sits below this when side === 'bottom'
+
+		// Vertical flip: if the preferred side overflows that viewport edge but the
+		// opposite side fits, flip. Otherwise keep the preferred side.
+		let next = side;
+		if (
+			side === 'top' &&
+			topEdge - pb.height - GAP < EDGE &&
+			bottomEdge + pb.height + GAP <= vh - EDGE
+		) {
+			next = 'bottom';
+		} else if (
+			side === 'bottom' &&
+			bottomEdge + pb.height + GAP > vh - EDGE &&
+			topEdge - pb.height - GAP >= EDGE
+		) {
+			next = 'top';
+		}
+		resolvedSide = next;
+
+		// Horizontal shift: the box is centred on `anchorX`; nudge it so both edges
+		// sit within [EDGE, viewport - EDGE]. When the box is wider than the
+		// viewport, centre it (min wins ≥ max). Width never changes.
+		const half = pb.width / 2;
+		const minLeft = EDGE + half;
+		const maxLeft = vw - EDGE - half;
+		fixedLeft = maxLeft >= minLeft ? Math.min(Math.max(anchorX, minLeft), maxLeft) : vw / 2;
+
+		// Vertical anchor. `transform` then offsets the box up/down by GAP from this
+		// edge, so the box's resolved top is anchor−height−GAP (top) or anchor+GAP
+		// (bottom). When BOTH sides would clip (a tall box on a short viewport), neither
+		// flip helps — clamp the resolved box-top into [EDGE, vh − height − EDGE] so the
+		// box never runs off the top OR bottom edge, then back out the anchor the
+		// transform expects. (min wins ≥ max when the box is taller than the viewport,
+		// pinning it to the top edge.)
+		const rawTop = next === 'top' ? topEdge - pb.height - GAP : bottomEdge + GAP;
+		const minTop = EDGE;
+		const maxTop = vh - pb.height - EDGE;
+		const clampedBoxTop = maxTop >= minTop ? Math.min(Math.max(rawTop, minTop), maxTop) : minTop;
+		// Re-express as the anchor `transform` translates from (it adds +GAP for bottom,
+		// −height−GAP for top), so the box's final top equals clampedBoxTop.
+		fixedTop = next === 'top' ? clampedBoxTop + pb.height + GAP : clampedBoxTop - GAP;
+		placed = true;
+	});
 
 	// The (i) trigger + the popover are ONE hover group: hovering either keeps it
 	// open; the popover only dismisses once the pointer has left BOTH for a short
@@ -145,8 +245,24 @@
 		const onDocPointer = (e: PointerEvent) => {
 			if (root && !root.contains(e.target as Node)) close();
 		};
+		// The popover is position:FIXED at viewport coords measured ONCE on open, so a
+		// scroll or a resize/rotate moves the trigger while the box stays pinned — it
+		// detaches. Dismissing on either is the clean, jank-free behaviour for a small
+		// definition popover (and matches common tooltip UX). `capture: true` on scroll
+		// catches scrolls in ANY ancestor (scroll does not bubble); all are passive
+		// (read-only, never preventDefault). Torn down with the pointerdown/Escape owner
+		// below when the popover closes.
+		const onDismiss = () => close();
 		document.addEventListener('pointerdown', onDocPointer, true);
-		return () => document.removeEventListener('pointerdown', onDocPointer, true);
+		window.addEventListener('scroll', onDismiss, { capture: true, passive: true });
+		window.addEventListener('resize', onDismiss, { passive: true });
+		window.addEventListener('orientationchange', onDismiss, { passive: true });
+		return () => {
+			document.removeEventListener('pointerdown', onDocPointer, true);
+			window.removeEventListener('scroll', onDismiss, true);
+			window.removeEventListener('resize', onDismiss);
+			window.removeEventListener('orientationchange', onDismiss);
+		};
 	});
 
 	// Clear any pending grace timer if the component is torn down mid-hover.
@@ -176,7 +292,14 @@
 	</button>
 
 	{#if open}
-		<span id={tipId} role="tooltip" class={cn('metric-info__pop', `metric-info__pop--${side}`)}>
+		<span
+			bind:this={pop}
+			id={tipId}
+			role="tooltip"
+			class={cn('metric-info__pop', `metric-info__pop--${resolvedSide}`)}
+			class:metric-info__pop--placed={placed}
+			style="left: {fixedLeft}px; top: {fixedTop}px; transform: {transform};"
+		>
 			<span class="metric-info__tip">{tip}</span>
 			<a
 				class="metric-info__link"
@@ -234,30 +357,34 @@
 		font-weight: 700;
 	}
 
-	/* Popover surface — solid --popover (no alpha, per doctrine), AA text. */
+	/* Popover surface — solid --popover (no alpha, per doctrine), AA text.
+	   position:FIXED + viewport coordinates (left/top/transform set inline by the
+	   edge-aware effect) so it never clips at a screen edge and never overflows on
+	   a narrow viewport. It REPOSITIONS, never shrinks. */
 	.metric-info__pop {
-		position: absolute;
-		inset-inline-start: 50%;
+		position: fixed;
+		left: 0;
+		top: 0;
 		z-index: var(--z-menu);
 		display: flex;
 		flex-direction: column;
 		gap: 0.5rem;
 		inline-size: max-content;
-		max-inline-size: 18rem;
+		/* Cap only so a box never exceeds a tiny viewport; the content's natural
+		   width wins on normal screens. */
+		max-inline-size: min(18rem, calc(100vw - 2 * 8px));
 		padding: 0.625rem 0.75rem;
 		border: 1px solid var(--border);
 		border-radius: var(--radius);
 		background: var(--popover);
 		color: var(--popover-foreground);
 		box-shadow: var(--shadow-card);
-		transform: translateX(-50%);
+		/* Hidden until the first measurement lands (avoids a one-frame flash at 0,0). */
+		opacity: 0;
+	}
+	.metric-info__pop--placed {
+		opacity: 1;
 		animation: metric-info-in var(--duration-fast) var(--ease-out);
-	}
-	.metric-info__pop--top {
-		inset-block-end: calc(100% + 0.5rem);
-	}
-	.metric-info__pop--bottom {
-		inset-block-start: calc(100% + 0.5rem);
 	}
 	.metric-info__tip {
 		font-size: var(--text-small);
@@ -289,21 +416,21 @@
 		border-radius: 2px;
 	}
 
+	/* Entrance is a pure opacity fade: the inline `transform` (set by the
+	   edge-aware effect) owns positioning, so the keyframe must not touch it. */
 	@keyframes metric-info-in {
 		from {
 			opacity: 0;
-			transform: translateX(-50%) translateY(0.25rem);
 		}
 		to {
 			opacity: 1;
-			transform: translateX(-50%) translateY(0);
 		}
 	}
 	@media (prefers-reduced-motion: reduce) {
 		.metric-info__trigger {
 			transition: none;
 		}
-		.metric-info__pop {
+		.metric-info__pop--placed {
 			animation: none;
 		}
 	}
