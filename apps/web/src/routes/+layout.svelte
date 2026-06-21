@@ -63,6 +63,7 @@
 	import { createResource } from '$lib/v1/resource.svelte';
 	import { dataRefresh, themeStore } from '$lib/stores';
 	import { registerServiceWorker } from '$lib/pwa/register';
+	import { startVitals } from '$lib/vitals/collect';
 	import { runViewTransition } from '$lib/motion';
 	import { AppShell } from '$lib/components/shell';
 	import { Footer } from '$lib/components/layout';
@@ -279,6 +280,11 @@
 			});
 		}
 		void registerServiceWorker({ browser, production: import.meta.env.PROD });
+
+		// Web-Vitals RUM (slice-9.7 D). INERT BY DEFAULT: a no-op unless
+		// PUBLIC_VITALS_ENABLED === 'true'. When off it registers no listeners and
+		// never imports web-vitals. Returns a disposer onMount tears down on unmount.
+		return startVitals();
 	});
 
 	// SPA View Transitions — a tasteful root cross-fade between surfaces. The

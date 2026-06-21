@@ -327,16 +327,19 @@ class ProviderManifest(BaseModel):
         )
 
     def to_feed_endpoint_seeds(self, settings: Settings) -> list[FeedEndpointSeed]:
+        # Only seed feeds the manifest actually declares. The realtime trip/vehicle
+        # feeds are optional (a schedule-only or schedule+alerts agency omits them),
+        # so guard every non-static kind by presence to avoid a KeyError below.
         ordered_feed_keys = [FeedKind.STATIC_SCHEDULE.value]
-        if FeedKind.GIS_STATIC.value in self.feeds:
-            ordered_feed_keys.append(FeedKind.GIS_STATIC.value)
-        ordered_feed_keys.extend(
-            [FeedKind.TRIP_UPDATES.value, FeedKind.VEHICLE_POSITIONS.value]
-        )
-        if FeedKind.I3_ALERTS.value in self.feeds:
-            ordered_feed_keys.append(FeedKind.I3_ALERTS.value)
-        if FeedKind.SERVICE_ALERTS.value in self.feeds:
-            ordered_feed_keys.append(FeedKind.SERVICE_ALERTS.value)
+        for optional_kind in (
+            FeedKind.GIS_STATIC,
+            FeedKind.TRIP_UPDATES,
+            FeedKind.VEHICLE_POSITIONS,
+            FeedKind.I3_ALERTS,
+            FeedKind.SERVICE_ALERTS,
+        ):
+            if optional_kind.value in self.feeds:
+                ordered_feed_keys.append(optional_kind.value)
 
         feed_seeds: list[FeedEndpointSeed] = []
         for feed_key in ordered_feed_keys:

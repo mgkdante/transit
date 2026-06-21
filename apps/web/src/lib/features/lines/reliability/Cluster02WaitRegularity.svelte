@@ -392,11 +392,19 @@
 		flex-direction: column;
 		gap: 0.75rem;
 	}
-	/* A sub-block overline + its explainer (i)s, kept on the label's baseline. */
+	/* A sub-block overline + its explainer (i)s, kept centred on the label. The
+	   label keeps a measure (min-width:0) so a long overline wraps cleanly; each
+	   (i) wrapper never shrinks (flex:none) so the glyphs stay whole beside it. */
 	.label-with-info {
 		display: inline-flex;
 		align-items: center;
 		gap: 0.35rem;
+	}
+	.label-with-info :global([data-slot='section-label']) {
+		min-width: 0;
+	}
+	.label-with-info :global(.cluster-info) {
+		flex: none;
 	}
 	.cluster-empty {
 		margin: 0;
@@ -422,11 +430,19 @@
 		flex-wrap: wrap;
 		gap: 1.25rem;
 	}
-	/* A second-tier metric tile + its explainer (i), kept on the tile's top edge. */
+	/* A second-tier metric tile + its explainer (i), kept on the tile's top edge. The
+	   tile keeps a measure (min-width:0) so a long label wraps cleanly; the (i) wrapper
+	   never shrinks (flex:none) so the glyph stays whole beside it, never colliding. */
 	.metric-with-info {
 		display: inline-flex;
 		align-items: flex-start;
 		gap: 0.35rem;
+	}
+	.metric-with-info :global([data-slot='metric-display']) {
+		min-width: 0;
+	}
+	.metric-with-info :global(.cluster-info) {
+		flex: none;
 	}
 	/* What the excess-wait magnitude encodes (0 = on schedule, not missing). */
 	.shift-caption {
@@ -436,6 +452,12 @@
 		font-size: var(--text-small);
 		line-height: 1.4;
 		color: var(--muted-foreground);
+	}
+	/* The (i) flows after the caption text; keep the glyph whole and hugging the last
+	   word so it never shrinks or breaks across the caption's wrap. */
+	.shift-caption :global(.cluster-info) {
+		flex: none;
+		white-space: nowrap;
 	}
 	/* A3: the per-direction observed-gap comparison inside the reveal. */
 	.shift-direction {

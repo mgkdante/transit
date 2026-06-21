@@ -95,6 +95,24 @@ export interface ReliabilityCopy {
 		readonly weekday: string;
 		readonly weekend: string;
 	};
+	/** Delay-by-crowding sub-block (in the 04 Crowding band) labels. */
+	readonly delayByCrowding: {
+		/** Sub-block overline. */
+		readonly heading: string;
+		/** Secondary p50 caption appended to a band's avg delay (e.g. "median 0.4 min"). */
+		readonly typical: (p50: string) => string;
+		/** Honest empty note when no per-band delay data exists at all. */
+		readonly empty: string;
+	};
+	/** By-shift-and-day-type OTP crosstab (in the 01 Punctuality band) labels. */
+	readonly crosstab: {
+		/** Section overline. */
+		readonly heading: string;
+		/** Accessible header for the (visually-blank) shift corner cell. */
+		readonly shiftHeader: string;
+		/** Honest caption under the grid (what the cells read + the no-data convention). */
+		readonly caption: string;
+	};
 	/** Plain-language microcopy for the wait-regularity terms. */
 	readonly regularityTerms: {
 		readonly scheduledGap: string;
@@ -192,6 +210,17 @@ export const reliabilityCopy: Record<Locale, ReliabilityCopy> = {
 			weekday: 'Semaine',
 			weekend: 'Fin de semaine',
 		},
+		delayByCrowding: {
+			heading: "Retard selon l'occupation",
+			typical: (p50) => `médian ${p50}`,
+			empty: 'Aucune donnée de retard par occupation',
+		},
+		crosstab: {
+			heading: 'Par période et type de jour',
+			shiftHeader: 'Période',
+			caption:
+				'Ponctualité par période de la journée et type de jour; une cellule sans observation affiche « sans données », jamais un zéro.',
+		},
 		regularityTerms: {
 			scheduledGap: 'Intervalle prévu',
 			observedGap: 'Intervalle observé',
@@ -266,6 +295,17 @@ export const reliabilityCopy: Record<Locale, ReliabilityCopy> = {
 				'Trailing-window, observation-weighted estimate, not certified on-time; small samples vary.',
 			weekday: 'Weekday',
 			weekend: 'Weekend',
+		},
+		delayByCrowding: {
+			heading: 'Delay by crowding',
+			typical: (p50) => `median ${p50}`,
+			empty: 'No delay-by-crowding data yet',
+		},
+		crosstab: {
+			heading: 'By shift and day type',
+			shiftHeader: 'Shift',
+			caption:
+				'On-time rate by time of day and day type; a cell with no observations reads "no data", never a zero.',
 		},
 		regularityTerms: {
 			scheduledGap: 'Scheduled gap',

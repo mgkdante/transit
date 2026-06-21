@@ -24,6 +24,7 @@
 		deriveRouteStopPredictions,
 		getRoute,
 		getRouteReliability,
+		getRoutesIndex,
 		getProvenance,
 		getV1Context,
 		alertsForRoute,
@@ -89,8 +90,30 @@
 
 	// detail + schedule share the static route file (reactive to `id`).
 	const route = createResource<RouteFile | null>(() => getRoute(id));
-	// reliability is the historic per-route archive (reactive to `id`).
-	const reliability = createResource<RouteReliability | null>(() => getRouteReliability(id));
+	// reliability is the historic per-route archive (reactive to `id`). We gate the
+	// fetch on the routes-index availability flag (RouteIndexEntry.reliability) so a
+	// route the pipeline KNOWS has no published reliability never probes
+	// route_reliability/{id}.json — that probe is a guaranteed 404 and was flooding
+	// the console (the loader fail-softs it to null, but the browser still logs it).
+	// getRoutesIndex is cached (the list surface already loaded it), so this adds no
+	// meaningful cost and stays reactive to `id`.
+	//   - flag === false           → known-empty: return null, NO network probe.
+	//   - flag === true | undefined → probe + fail-soft (true = published; undefined
+	//                                 = a stale/legacy index predating the flag, so we
+	//                                 must still probe or reliability data would be LOST).
+	const reliability = createResource<RouteReliability | null>(async () => {
+		// Capture `id` SYNCHRONOUSLY before the first await: createResource tracks the
+		// fetcher's reactive reads only during its synchronous portion (Svelte 5 stops
+		// $effect dependency tracking at the first await/microtask). Reading `id` after
+		// the await would drop it as a dependency, so client nav /route/A → /route/B
+		// would keep showing A's reliability under B's header. Mirrors MapHero's
+		// capture-key-first convention.
+		const routeId = id;
+		const idx = await getRoutesIndex();
+		const entry = idx.routes.find((r) => r.id === routeId);
+		if (entry?.reliability === false) return null;
+		return getRouteReliability(routeId);
+	});
 
 	// Live tier: one store for this surface (the v1 context is booted before
 	// mount in the root layout). It polls vehicles/trips on the live ttl; the

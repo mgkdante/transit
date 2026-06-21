@@ -30,6 +30,8 @@ import type {
 	RouteDayOfWeek,
 	WeakStop,
 	OccupancyMix,
+	CrowdingDelayCell,
+	CrosstabCell,
 } from '$lib/v1';
 import { SHIFT_GRAINS, DAY_TYPE_GRAINS } from '$lib/features/reliability/shiftGrains';
 
@@ -119,6 +121,14 @@ export interface PunctualityVM {
 	readonly weakStops: WeakStop[];
 	/** Peak vs off-peak comparison (shift + day-type), surfaced from the granular grains. */
 	readonly peakOffPeak: PeakOffPeakVM;
+	/**
+	 * Tier-3 shift × day_type OTP/delay crosstab — kept VERBATIM from the contract
+	 * (SPARSE: only cells with observations are present). The band lays them out on
+	 * a fixed 5-shift × 2-day-type grid; an absent (shift, day_type) cell renders an
+	 * explicit no-data message, never a fake 0. Empty array → the band omits the
+	 * crosstab (its honest-empty path), never a fabricated grid.
+	 */
+	readonly byShiftDaytype: CrosstabCell[];
 	readonly isEmpty: boolean;
 }
 
@@ -146,6 +156,15 @@ export interface ServiceDeliveredVM {
 export interface CrowdingVM {
 	/** The raw band-share record, or null when there is no occupancy telemetry. */
 	readonly mix: OccupancyMix | null;
+	/**
+	 * Per-occupancy-band avg delay over the trailing window — the "does crowding
+	 * correlate with delay?" sub-block, kept VERBATIM from the contract (SPARSE:
+	 * only bands whose dominant-day occupancy was that band are present). The band
+	 * orders these by the natural occupancy order (empty→full); a present band with
+	 * a null delay renders an explicit no-data message, never a fake 0. Empty array
+	 * → the sub-block shows one honest no-data note (or is omitted).
+	 */
+	readonly delayByCrowding: CrowdingDelayCell[];
 	/** True when `mix` is null OR every band share is zero/absent. */
 	readonly isEmpty: boolean;
 }
@@ -254,6 +273,20 @@ const skippedHasSignal = (s: SkippedStopPeriod): boolean =>
 
 const dayOfWeekHasSignal = (d: RouteDayOfWeek): boolean =>
 	d.avg_delay_min != null || d.severe_pct != null || d.observation_count != null;
+
+/** A delay×crowding cell carries a signal if any of its numeric fields is present. */
+const crowdingDelayHasSignal = (c: CrowdingDelayCell): boolean =>
+	c.avg_delay_min != null ||
+	c.p50_min != null ||
+	c.observation_count != null ||
+	c.day_count != null;
+
+/** A shift×day_type crosstab cell carries a signal if any of its numeric fields is present. */
+const crosstabHasSignal = (c: CrosstabCell): boolean =>
+	c.otp_pct != null ||
+	c.avg_delay_min != null ||
+	c.severe_pct != null ||
+	c.observation_count != null;
 
 /**
  * Pick the headline period for the selected grain.
@@ -502,13 +535,23 @@ export function toReliabilityClusters(
 		byDayType,
 		isEmpty: byShift.length === 0 && byDayType.length === 0,
 	};
+	// Tier-3 shift × day_type crosstab — kept VERBATIM (sparse), filtered to cells
+	// that carry a real signal so an all-null cell never reads as present-but-blank.
+	// The band lays them on a fixed 5×2 grid; absent cells show an honest no-data
+	// message (the per-empty-cell honesty the operator requires).
+	const byShiftDaytype = (data.by_shift_daytype ?? []).filter(crosstabHasSignal);
 	const punctuality: PunctualityVM = {
 		trend,
 		dayOfWeek,
 		weakStops,
 		peakOffPeak,
+		byShiftDaytype,
 		isEmpty:
-			trend.length === 0 && dayOfWeek.length === 0 && weakStops.length === 0 && peakOffPeak.isEmpty,
+			trend.length === 0 &&
+			dayOfWeek.length === 0 &&
+			weakStops.length === 0 &&
+			peakOffPeak.isEmpty &&
+			byShiftDaytype.length === 0,
 	};
 
 	/* 02 Wait regularity. */
@@ -539,8 +582,17 @@ export function toReliabilityClusters(
 			rawMix.few_seats > 0 ||
 			rawMix.standing > 0 ||
 			rawMix.full > 0);
+	// Per-band delay×crowding cells — kept VERBATIM (sparse), filtered to cells that
+	// carry a real signal so an all-null band never reads as present-but-blank. The
+	// band orders these by the natural occupancy order; a present band with a null
+	// delay shows an honest no-data message (never a fake 0).
+	const delayByCrowding = (data.delay_by_crowding ?? []).filter(crowdingDelayHasSignal);
 	const crowding: CrowdingVM = {
 		mix: mixHasShare ? rawMix : null,
+		delayByCrowding,
+		// The mix drives the headline + stacked bar; the delay×crowding sub-block has
+		// its OWN empty path. `isEmpty` stays mix-driven so a route WITH delay data but
+		// no occupancy mix still surfaces the delay sub-block under the band.
 		isEmpty: !mixHasShare,
 	};
 

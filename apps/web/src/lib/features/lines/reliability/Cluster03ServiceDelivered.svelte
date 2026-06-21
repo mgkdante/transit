@@ -245,11 +245,19 @@
 		border-radius: var(--radius-lg, 0.75rem);
 		box-shadow: var(--shadow-card);
 	}
-	/* A metric tile + its explainer (i), kept on the tile's top edge. */
+	/* A metric tile + its explainer (i), kept on the tile's top edge. The tile keeps
+	   a measure (min-width:0) so a long label wraps cleanly; the (i) wrapper never
+	   shrinks (flex:none) so the glyph stays whole beside it, never colliding. */
 	.metric-with-info {
 		display: inline-flex;
 		align-items: flex-start;
 		gap: 0.35rem;
+	}
+	.metric-with-info :global([data-slot='metric-display']) {
+		min-width: 0;
+	}
+	.metric-with-info :global(.cluster-info) {
+		flex: none;
 	}
 	.cluster03-metric-empty {
 		margin: 0;

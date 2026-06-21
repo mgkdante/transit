@@ -60,6 +60,34 @@ describe('MapStage', () => {
 		);
 	});
 
+	// B2 — the basemap is resolved BEFORE the Map is constructed (awaited inside
+	// onMount via `basemapLoader`) and baked into the constructor style, so the
+	// first paint is HOT. The swap baseline is seeded to that basemap so the
+	// post-mount style effect does NOT fire a setStyle wipe on first load — it only
+	// swaps on a genuine LATER theme/pointer change. A not-yet-settled basemap prop
+	// (undefined) is ignored so its later null→file settle never triggers a wipe.
+	it('resolves the basemap at construction for a hot first paint with no post-mount setStyle wipe (B2)', () => {
+		const s = source();
+
+		// A loader prop, awaited before the Map is built.
+		expect(s).toContain('basemapLoader?: () => Promise<BasemapFile | null>');
+		expect(s).toContain('basemapLoader');
+		expect(s).toContain('await basemapLoader().catch(() => null)');
+		// The resolved basemap seeds BOTH the constructor style AND the swap baseline,
+		// so the swap effect treats it as the initial style (no immediate setStyle).
+		expect(s).toContain('const initialBasemap: BasemapFile | null = basemapLoader');
+		expect(s).toContain('activeStyleKey = styleKey(initialBasemap)');
+		expect(s).toMatch(/resolveBasemapStyle\(\s*\{ basemap: initialBasemap \? '' : null \}/);
+		// The swap effect ignores `undefined` (deferred to the loader) so a transient
+		// null from a not-yet-settled resource never downgrades the painted basemap.
+		expect(s).toContain('if (b === undefined)');
+		// The baseline state is declared up top (seeded in onMount), not only beside
+		// the effect, and the effect no longer redundantly seeds on its first run for
+		// the loader path.
+		expect(s).toContain('let styleInited = false');
+		expect(s).toContain('styleInited = true;');
+	});
+
 	it('keeps mobile attribution visible in compact and expanded states', () => {
 		const s = source();
 

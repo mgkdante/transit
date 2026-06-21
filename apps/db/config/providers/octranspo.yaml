@@ -1,0 +1,85 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# OC Transpo — City of Ottawa transit (buses + O-Train light rail)
+#
+# Real provider manifest (validates against the current contract). Enrolled by the
+# non-recursive config/providers/*.yaml glob.
+#
+# Geometry ships in shapes.txt (no separate GIS bundle). One static feed covers
+# bus + O-Train — separate by route_type. Endpoints verified live against OC
+# Transpo's Azure APIM developer portal (nextrip-public-api), 2026-06.
+#
+# NO SERVICE ALERTS FEED. The portal states "Service alerts is not available at
+# this time." octranspo.com/en/alerts is a rider-facing HTML page, NOT a feed —
+# do not scrape it. service_alerts is intentionally OMITTED so the provenance
+# layer reports an honest null, not a data error. A static+RT provider is valid
+# (only static_schedule is universally required).
+#
+# Operational: re-download the static GTFS DAILY (the Azure blob rotates
+# ~midnight–2am EST) or RT trip_ids won't join stop_times.
+# License: City of Ottawa Open Government Licence (revocable — keep attribution).
+#
+# Credential (resolved by `op` at deploy time):
+#   OCTRANSPO_API_KEY  →  op://yesid-dev/n5hshc5sugkbpcb24fi4sjvxqy/credential
+# ─────────────────────────────────────────────────────────────────────────────
+
+provider:
+  provider_id: octranspo
+  display_name: OC Transpo
+  short_name: OC Transpo
+  city: Ottawa
+  timezone: America/Toronto
+  default_language: en
+  default_currency: CAD
+  bounds:
+    # City of Ottawa
+    min_latitude: 45.10
+    max_latitude: 45.55
+    min_longitude: -76.05
+    max_longitude: -75.35
+  attribution_text: Contains information licensed under the Open Government Licence – City of Ottawa.
+  website_url: https://www.octranspo.com/
+  is_active: true
+
+feeds:
+  static_schedule:
+    endpoint_key: static_schedule
+    feed_kind: static_schedule
+    source_format: gtfs_schedule_zip
+    source_url: https://oct-gtfs-emasagcnfmcgeham.z01.azurefd.net/public-access/GTFSExport.zip
+    source_url_env_var: OCTRANSPO_STATIC_GTFS_URL
+    documentation_url: https://www.octranspo.com/en/plan-your-trip/travel-tools/developers/
+    auth:
+      auth_type: none
+      notes: Keyless Azure Front Door blob (~105 MB). RE-DOWNLOAD DAILY — the blob rotates nightly. Geometry is in shapes.txt — no GIS feed.
+    refresh_interval_seconds: 86400
+    is_enabled: true
+
+  trip_updates:
+    endpoint_key: trip_updates
+    feed_kind: trip_updates
+    source_format: gtfs_rt_trip_updates
+    source_url: https://nextrip-public-api.azure-api.net/octranspo/gtfs-rt-tp/beta/v1/TripUpdates
+    source_url_env_var: OCTRANSPO_RT_TRIP_UPDATES_URL
+    documentation_url: https://nextrip-public-api.developer.azure-api.net/
+    auth:
+      auth_type: api_key
+      credential_env_var: OCTRANSPO_API_KEY
+      auth_header_name: Ocp-Apim-Subscription-Key
+      notes: Azure APIM subscription key (free registration).
+    refresh_interval_seconds: 30
+    is_enabled: true
+
+  vehicle_positions:
+    endpoint_key: vehicle_positions
+    feed_kind: vehicle_positions
+    source_format: gtfs_rt_vehicle_positions
+    source_url: https://nextrip-public-api.azure-api.net/octranspo/gtfs-rt-vp/beta/v1/VehiclePositions
+    source_url_env_var: OCTRANSPO_RT_VEHICLE_POSITIONS_URL
+    documentation_url: https://nextrip-public-api.developer.azure-api.net/
+    auth:
+      auth_type: api_key
+      credential_env_var: OCTRANSPO_API_KEY
+      auth_header_name: Ocp-Apim-Subscription-Key
+      notes: Same Azure APIM subscription key as trip_updates.
+    refresh_interval_seconds: 30
+    is_enabled: true

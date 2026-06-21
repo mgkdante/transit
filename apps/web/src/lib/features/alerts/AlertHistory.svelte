@@ -41,8 +41,14 @@
 	import { createResource } from '$lib/v1/resource.svelte';
 	import { ageSeconds as ageSecondsOf, formatUtc } from '$lib/utils/time';
 	import { sharedClock } from '$lib/stores';
-	import { ResourceBoundary, SurfaceHeader, LiveFreshness } from '$lib/components/surface';
-	import { Surface, DashboardGrid } from '$lib/components/layout';
+	import {
+		ResourceBoundary,
+		SurfaceHeader,
+		LiveFreshness,
+		GrainPicker,
+		type GrainSegment,
+	} from '$lib/components/surface';
+	import { Surface, DashboardGrid, ControlsRail } from '$lib/components/layout';
 	import { Separator } from '$lib/components/ui/separator';
 	import { RankedRow } from '$lib/components/dataviz';
 	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
@@ -123,8 +129,52 @@
 		return alerts.slice().sort((a, b) => stamp(b) - stamp(a));
 	});
 
-	const overflow = $derived(Math.max(0, sorted.length - VISIBLE_CAP));
-	const visible = $derived(expanded || overflow === 0 ? sorted : sorted.slice(0, VISIBLE_CAP));
+	// --- Client-side filters (entity type + severity) ------------------------
+	// Two clearable axes narrow the already-loaded log, no new fetch. Both ride the
+	// shared ControlsRail + GrainPicker primitives (the same radiogroup filter UI as
+	// /lines), each with an "all" segment that clears that axis. Honest: when the
+	// active filters narrow the log to ZERO, an explicit "no alerts match" note +
+	// "clear filters" action shows — never an empty void or a fabricated row.
+	//   · entity — what an alert affects: lines (routes non-empty) vs stops.
+	//   · severity — the alert's banded severity (asSeverity guards free strings).
+	type EntityFilter = 'all' | 'lines' | 'stops';
+	let entityFilter = $state<EntityFilter>('all');
+	let severityFilter = $state<string>('all');
+
+	const entitySegments = $derived<GrainSegment<EntityFilter>[]>([
+		{ key: 'all', label: t.filters.entity.all },
+		{ key: 'lines', label: t.filters.entity.lines },
+		{ key: 'stops', label: t.filters.entity.stops },
+	]);
+	// All + the three closed severity codes (banded via asSeverity), labelled with
+	// the shared severity vocabulary so the chips read like the live surfaces.
+	const severitySegments = $derived<GrainSegment<string>[]>([
+		{ key: 'all', label: t.filters.severity.all },
+		...SEVERITY_CODES.map((code) => ({ key: code, label: t.severity[code] })),
+	]);
+
+	const filtersActive = $derived(entityFilter !== 'all' || severityFilter !== 'all');
+
+	function clearFilters(): void {
+		entityFilter = 'all';
+		severityFilter = 'all';
+	}
+
+	// The filtered log (over the newest-first `sorted` list). An empty routes/stops
+	// array (or absent) means the alert does NOT affect that entity → it is excluded
+	// by that axis. Severity is banded the same way the rows render it.
+	const filtered = $derived.by<readonly AlertHistoryEntry[]>(() =>
+		sorted.filter((e) => {
+			if (entityFilter === 'lines' && (e.routes?.length ?? 0) === 0) return false;
+			if (entityFilter === 'stops' && (e.stops?.length ?? 0) === 0) return false;
+			if (severityFilter !== 'all' && asSeverity(e.severity) !== severityFilter) return false;
+			return true;
+		}),
+	);
+	const hasMatches = $derived(filtered.length > 0);
+
+	const overflow = $derived(Math.max(0, filtered.length - VISIBLE_CAP));
+	const visible = $derived(expanded || overflow === 0 ? filtered : filtered.slice(0, VISIBLE_CAP));
 
 	// Freshness off the archive's generated_utc (a daily rebuild, not live → never
 	// "stale"). A null stamp reads as the chip's own unknown state. The displayed
@@ -227,79 +277,112 @@
 			<div class="alert-history-head">
 				<SectionLabel text={t.logSection} variant="station" />
 				<span class="alert-history-count" data-slot="alert-count">
-					{t.count(visible.length, sorted.length)}
+					{t.count(visible.length, filtered.length)}
 				</span>
 			</div>
 
-			<ul id={logId} class="alert-history-log" aria-label={t.logListLabel} data-slot="alert-log">
-				{#each visible as entry (entry.id)}
-					{@const sev = asSeverity(entry.severity)}
-					{@const from = windowTime(entry.start_utc)}
-					{@const until = windowTime(entry.end_utc)}
-					{@const duration = entry.duration_min ?? null}
-					{@const routes = entry.routes ?? []}
-					{@const stops = entry.stops ?? []}
-					{@const impact = entry.impact_passages ?? null}
-					<li class="alert-history-row" data-severity={sev} data-slot="alert-row">
-						<p class="alert-history-row-head">
-							<span class="alert-history-dot" aria-hidden="true">{SEVERITY_GLYPH[sev]}</span>
-							<span class="sr-only">{t.severity[sev]}</span>
-							<span class="alert-history-title">{headline(entry)}</span>
-						</p>
-						<dl class="alert-history-meta">
-							{#if from}
-								<div>
-									<dt>{t.meta.from}</dt>
-									<dd>{from}</dd>
-								</div>
-							{/if}
-							{#if until}
-								<div>
-									<dt>{t.meta.until}</dt>
-									<dd>{until}</dd>
-								</div>
-							{/if}
-							{#if duration != null}
-								<div>
-									<dt>{t.meta.duration}</dt>
-									<dd>{t.meta.durationValue(duration)}</dd>
-								</div>
-							{/if}
-							{#if routes.length > 0}
-								<div>
-									<dt>{t.meta.routes}</dt>
-									<dd>{routes.join(' · ')}</dd>
-								</div>
-							{/if}
-							{#if stops.length > 0}
-								<div>
-									<dt>{t.meta.stops}</dt>
-									<dd>{stops.length}</dd>
-								</div>
-							{/if}
-							{#if impact != null}
-								<div>
-									<dt>{t.meta.impact}</dt>
-									<dd>{t.meta.impactValue(impact)}</dd>
-								</div>
-							{/if}
-						</dl>
-					</li>
-				{/each}
-			</ul>
+			<!-- Filter rail — two clearable axes (entity type + severity) over the
+			     already-loaded log. ONE ControlsRail (quiet infra chrome) collecting two
+			     GrainPicker radiogroups, the same filter UI as /lines; --primary lives
+			     only on the active chips, never on the rail. -->
+			<ControlsRail label={t.filters.railLabel} class="alert-history-filters">
+				<GrainPicker
+					segments={entitySegments}
+					bind:value={entityFilter}
+					label={t.filters.entity.label}
+				/>
+				<GrainPicker
+					segments={severitySegments}
+					bind:value={severityFilter}
+					label={t.filters.severity.label}
+				/>
+				{#if filtersActive}
+					<button
+						type="button"
+						class="alert-history-clear"
+						data-slot="clear-filters"
+						onclick={clearFilters}
+					>
+						{t.filters.clear}
+					</button>
+				{/if}
+			</ControlsRail>
 
-			{#if overflow > 0}
-				<!-- Honest disclosure: the overflow is one click away, never silently
+			{#if !hasMatches}
+				<!-- Honest no-match: the active filters narrowed the log to zero. Say so
+				     explicitly + offer to clear; never an empty void or a "·". -->
+				<p class="alert-history-no-match" data-slot="alert-no-match">{t.filters.noMatch}</p>
+			{:else}
+				<ul id={logId} class="alert-history-log" aria-label={t.logListLabel} data-slot="alert-log">
+					{#each visible as entry (entry.id)}
+						{@const sev = asSeverity(entry.severity)}
+						{@const from = windowTime(entry.start_utc)}
+						{@const until = windowTime(entry.end_utc)}
+						{@const duration = entry.duration_min ?? null}
+						{@const routes = entry.routes ?? []}
+						{@const stops = entry.stops ?? []}
+						{@const impact = entry.impact_passages ?? null}
+						<li class="alert-history-row" data-severity={sev} data-slot="alert-row">
+							<p class="alert-history-row-head">
+								<span class="alert-history-dot" aria-hidden="true">{SEVERITY_GLYPH[sev]}</span>
+								<span class="sr-only">{t.severity[sev]}</span>
+								<span class="alert-history-title">{headline(entry)}</span>
+							</p>
+							<dl class="alert-history-meta">
+								{#if from}
+									<div>
+										<dt>{t.meta.from}</dt>
+										<dd>{from}</dd>
+									</div>
+								{/if}
+								{#if until}
+									<div>
+										<dt>{t.meta.until}</dt>
+										<dd>{until}</dd>
+									</div>
+								{/if}
+								{#if duration != null}
+									<div>
+										<dt>{t.meta.duration}</dt>
+										<dd>{t.meta.durationValue(duration)}</dd>
+									</div>
+								{/if}
+								{#if routes.length > 0}
+									<div>
+										<dt>{t.meta.routes}</dt>
+										<dd>{routes.join(' · ')}</dd>
+									</div>
+								{/if}
+								{#if stops.length > 0}
+									<div>
+										<dt>{t.meta.stops}</dt>
+										<dd>{stops.length}</dd>
+									</div>
+								{/if}
+								{#if impact != null}
+									<div>
+										<dt>{t.meta.impact}</dt>
+										<dd>{t.meta.impactValue(impact)}</dd>
+									</div>
+								{/if}
+							</dl>
+						</li>
+					{/each}
+				</ul>
+
+				{#if overflow > 0}
+					<!-- Honest disclosure: the overflow is one click away, never silently
 				     dropped. --primary belongs here (an interaction control). -->
-				<button
-					type="button"
-					class="alert-history-more"
-					aria-expanded={expanded}
-					aria-controls={logId}
-					onclick={() => (expanded = !expanded)}
-				>
-					{expanded ? t.showLess : t.more(overflow)}
-				</button>
+					<button
+						type="button"
+						class="alert-history-more"
+						aria-expanded={expanded}
+						aria-controls={logId}
+						onclick={() => (expanded = !expanded)}
+					>
+						{expanded ? t.showLess : t.more(overflow)}
+					</button>
+				{/if}
 			{/if}
 		</div>
 
@@ -400,6 +483,37 @@
 		font-size: var(--text-small);
 		color: var(--muted-foreground);
 		font-variant-numeric: tabular-nums;
+	}
+	/* "Clear filters" — an INTERACTION control, so --primary belongs here. A quiet
+	   mono link seated in the filter rail beside the two GrainPicker radiogroups. */
+	.alert-history-clear {
+		appearance: none;
+		font-family: var(--font-mono);
+		font-size: var(--text-small);
+		line-height: 1.2;
+		color: var(--primary);
+		background: none;
+		border: none;
+		padding: 0.15rem 0;
+		cursor: pointer;
+		text-decoration: underline;
+		text-underline-offset: 0.2em;
+	}
+	.alert-history-clear:hover {
+		text-decoration-thickness: 2px;
+	}
+	.alert-history-clear:focus-visible {
+		outline: 2px solid var(--ring);
+		outline-offset: 2px;
+		border-radius: var(--radius-sm, 0.375rem);
+	}
+	/* Honest no-match note — quiet mono caption, never an empty void or a "·". */
+	.alert-history-no-match {
+		margin: 0;
+		font-family: var(--font-mono);
+		font-size: var(--text-small);
+		line-height: 1.4;
+		color: var(--muted-foreground);
 	}
 	.alert-history-log {
 		display: flex;

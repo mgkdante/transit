@@ -95,6 +95,45 @@
 			linkLabel: explainerCopy.info.link,
 		};
 	});
+
+	/* ── Delay by crowding (G1) ────────────────────────────────────────────────
+	   Does crowding correlate with delay? The contract's per-band avg delay, laid
+	   out on the FIXED occupancy axis (empty→full) so the reading is consistent and
+	   honest about gaps. SPARSE: a band the contract omits, OR a present band whose
+	   avg_delay is null, renders the explicit no-data message — NEVER a "·" or a
+	   fake 0. Honest per-band absence is the explicit requirement. */
+	const fmtMin = (v: number | null | undefined): string | null =>
+		v == null ? null : `${v.toFixed(1)} min`;
+
+	// Index the sparse contract cells by band so the fixed-axis lookup is O(1). A
+	// plain record (not a Map) keeps this a pure derived value with no reactivity.
+	const delayByBand = $derived.by(() => {
+		const index: Record<string, (typeof vm.delayByCrowding)[number]> = {};
+		for (const cell of vm.delayByCrowding) index[cell.band] = cell;
+		return index;
+	});
+
+	// The fixed occupancy axis, in natural order (empty→full). Each row resolves to
+	// its delay display or the honest no-data message; `present` distinguishes a
+	// contract-omitted band from a present-but-null one (both still honest, but the
+	// secondary p50 is only meaningful for a present cell).
+	const delayRows = $derived(
+		OCCUPANCY_CODES.map((code: OccupancyCode) => {
+			const cell = delayByBand[code];
+			const display = fmtMin(cell?.avg_delay_min);
+			return {
+				code,
+				label: bands[code],
+				present: cell != null,
+				display: display ?? copy.strip.noData,
+				hasDelay: display != null,
+				p50: fmtMin(cell?.p50_min),
+			};
+		}),
+	);
+
+	// The delay sub-block has data when ANY band carries a real avg delay.
+	const hasDelayByCrowding = $derived(delayRows.some((r) => r.hasDelay));
 </script>
 
 <section
@@ -147,6 +186,36 @@
 			class="crowding-bar"
 		/>
 	{/if}
+
+	<!-- Delay by crowding (G1): per-band avg delay on the fixed occupancy axis. Lives
+	     with the crowding cluster because it relates delay TO crowding. Rendered
+	     independently of the mix empty-state so a route with delay data but no mix
+	     still surfaces it. SPARSE: an absent band or a null delay shows the honest
+	     no-data message in that cell, never a "·" / fake 0. -->
+	<div class="crowding-delay" data-slot="delay-by-crowding">
+		<SectionLabel text={copy.delayByCrowding.heading} variant="metric" />
+		{#if hasDelayByCrowding}
+			<dl class="crowding-delay-grid" aria-label={copy.delayByCrowding.heading}>
+				{#each delayRows as row (row.code)}
+					<div class="crowding-delay-row" data-slot="delay-by-crowding-row" data-band={row.code}>
+						<dt class="crowding-delay-label">{row.label}</dt>
+						<dd
+							class="crowding-delay-value"
+							class:crowding-delay-value--empty={!row.hasDelay}
+							data-empty={!row.hasDelay}
+						>
+							{row.display}{#if row.hasDelay && row.p50}<span class="crowding-delay-p50"
+									>{copy.delayByCrowding.typical(row.p50)}</span
+								>{/if}
+						</dd>
+					</div>
+				{/each}
+			</dl>
+		{:else}
+			<!-- Entirely absent → ONE honest no-data note, never a fabricated grid. -->
+			<p class="crowding-empty" data-slot="delay-by-crowding-empty">{copy.delayByCrowding.empty}</p>
+		{/if}
+	</div>
 </section>
 
 <style>
@@ -155,11 +224,19 @@
 		flex-direction: column;
 		gap: var(--spacing-3, 0.75rem);
 	}
-	/* The cluster overline + its explainer (i), kept on the label's baseline. */
+	/* The cluster overline + its explainer (i), kept centred on the label. The label
+	   keeps a measure (min-width:0) so a long overline wraps cleanly; the (i) wrapper
+	   never shrinks (flex:none) so the glyph stays whole beside it. */
 	.label-with-info {
 		display: inline-flex;
 		align-items: center;
 		gap: 0.35rem;
+	}
+	.label-with-info :global([data-slot='section-label']) {
+		min-width: 0;
+	}
+	.label-with-info :global(.cluster-info) {
+		flex: none;
 	}
 
 	.crowding-empty {
@@ -176,10 +253,63 @@
 		line-height: 1.4;
 		color: var(--muted-foreground);
 	}
-	/* The dominant-band headline + its explainer (i), kept on the tile's top edge. */
+	/* The dominant-band headline + its explainer (i), kept on the tile's top edge.
+	   The tile keeps a measure (min-width:0) so a long band label wraps cleanly; the
+	   (i) wrapper never shrinks (flex:none) so the glyph stays whole beside it. */
 	.crowding-headline-row {
 		display: inline-flex;
 		align-items: flex-start;
 		gap: 0.35rem;
+	}
+	.crowding-headline-row :global([data-slot='metric-display']) {
+		min-width: 0;
+	}
+	.crowding-headline-row :global(.cluster-info) {
+		flex: none;
+	}
+
+	/* Delay-by-crowding sub-block: a quiet ranked-by-axis list (band label + its
+	   avg delay), seated below the occupancy bar with its own overline. */
+	.crowding-delay {
+		display: flex;
+		flex-direction: column;
+		gap: var(--spacing-2, 0.5rem);
+		margin-top: var(--spacing-3, 0.75rem);
+	}
+	.crowding-delay-grid {
+		display: flex;
+		flex-direction: column;
+		gap: 0.4rem;
+		margin: 0;
+	}
+	.crowding-delay-row {
+		display: flex;
+		align-items: baseline;
+		justify-content: space-between;
+		gap: 1rem;
+	}
+	.crowding-delay-label {
+		font-size: var(--text-small);
+		color: var(--foreground);
+		min-width: 0;
+	}
+	.crowding-delay-value {
+		display: inline-flex;
+		align-items: baseline;
+		gap: 0.5rem;
+		margin: 0;
+		flex: none;
+		font-family: var(--font-mono);
+		font-size: var(--text-small);
+		font-variant-numeric: tabular-nums;
+		color: var(--foreground);
+	}
+	/* Honest no-data reading of a band's delay: quiet muted mono (never a "·"/0). */
+	.crowding-delay-value--empty {
+		color: var(--muted-foreground);
+	}
+	.crowding-delay-p50 {
+		font-size: var(--text-caption, 0.8125rem);
+		color: var(--muted-foreground);
 	}
 </style>

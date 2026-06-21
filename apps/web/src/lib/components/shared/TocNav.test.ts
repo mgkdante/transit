@@ -36,7 +36,6 @@ describe('TocNav', () => {
 				activeId: 'overview',
 				onNavigate: () => {},
 				heading: 'On this page',
-				sectionKey: 'toc-test',
 			},
 		});
 		expect(getByText('On this page')).toBeTruthy();
@@ -55,7 +54,6 @@ describe('TocNav', () => {
 				activeId: 'reliability',
 				onNavigate: () => {},
 				heading: 'On this page',
-				sectionKey: 'toc-test',
 			},
 		});
 		const active = getByText('Reliability').closest('button');
@@ -69,7 +67,6 @@ describe('TocNav', () => {
 				activeId: 'overview',
 				onNavigate: () => {},
 				heading: 'On this page',
-				sectionKey: 'toc-test',
 				counterPrefix: 'SEC',
 			},
 		});
@@ -85,10 +82,42 @@ describe('TocNav', () => {
 				activeId: 'overview',
 				onNavigate,
 				heading: 'On this page',
-				sectionKey: 'toc-test',
 			},
 		});
 		await fireEvent.click(getByText('Reliability'));
 		expect(onNavigate).toHaveBeenCalledWith('reliability');
+	});
+
+	// slice-9.7 A2: the ToC rail is NON-hideable. It must never expose a user
+	// affordance that collapses/persists it closed (quiet/focus mode collapses the
+	// section CARDS, not the navigation). The heading renders as a plain header,
+	// NOT a disclosure trigger, so a reader can never hide the ToC and a
+	// previously-collapsed ToC has no persisted state to restore.
+	it('is non-hideable: the heading is a plain header with no disclosure trigger', () => {
+		const { container, getByText } = render(TocNav, {
+			props: {
+				entries,
+				activeId: 'overview',
+				onNavigate: () => {},
+				heading: 'On this page',
+			},
+		});
+
+		// The heading itself carries no toggle: it is not (nor inside) a collapsible
+		// disclosure trigger, and there is no chevron to flip it shut.
+		const headingEl = getByText('On this page');
+		expect(headingEl.closest('[data-slot="collapsible-trigger"]')).toBeNull();
+		expect(container.querySelector('[data-slot="collapsible-trigger"]')).toBeNull();
+
+		// The nav (and its jump buttons) is always mounted + reachable: the only
+		// buttons present are the entry jump buttons, never a header toggle.
+		const nav = container.querySelector('nav.toc-nav');
+		expect(nav).not.toBeNull();
+		const buttons = container.querySelectorAll('button');
+		// Exactly the 3 flattened non-rail jump buttons — no extra toggle button.
+		expect(buttons.length).toBe(3);
+		for (const btn of buttons) {
+			expect(btn.classList.contains('toc-item')).toBe(true);
+		}
 	});
 });

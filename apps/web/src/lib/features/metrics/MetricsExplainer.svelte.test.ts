@@ -185,7 +185,16 @@ describe('MetricsExplainer', () => {
 		expect(within(rail).getByRole('button', { name: en.lacunes.title })).toBeInTheDocument();
 	});
 
-	it('quiet-mode toggle flips aria-checked, applies the full-bleed class, and persists', async () => {
+	// Helpers: the metric section cards are the shared CollapsibleSection, whose
+	// open/closed state is reflected on the disclosure trigger's aria-expanded.
+	function metricTriggers(container: HTMLElement): HTMLElement[] {
+		const column = container.querySelector('[data-testid="metrics-sections"]') as HTMLElement;
+		return Array.from(
+			column.querySelectorAll('[data-slot="collapsible-trigger"]'),
+		) as HTMLElement[];
+	}
+
+	it('quiet/FOCUS mode COLLAPSES the metric cards while the ToC rail stays visible, and persists', async () => {
 		localStorage.removeItem('metrics-quiet');
 		const { container } = render(MetricsExplainer);
 
@@ -196,38 +205,81 @@ describe('MetricsExplainer', () => {
 		expect(toggle).toHaveAttribute('aria-checked', 'false');
 		expect(toggle).toHaveAttribute('aria-label', en.quiet.enable);
 
-		// Default (non-quiet): the body grid is NOT full-bleed and the TOC rail exists.
-		const bodyGrid = container.querySelector('.body-grid') as HTMLElement;
-		expect(bodyGrid).not.toBeNull();
-		expect(bodyGrid.classList.contains('is-quiet')).toBe(false);
+		// Default (calm): every metric card is OPEN.
+		const triggers = metricTriggers(container);
+		expect(triggers.length).toBeGreaterThan(0);
+		for (const trigger of triggers) {
+			expect(trigger).toHaveAttribute('aria-expanded', 'true');
+		}
 
-		// Press it ON → aria-checked flips, the full-bleed class lands, the label swaps
-		// to the EXIT action, and the choice persists to localStorage.
+		// The ToC rail exists and is visible in BOTH modes — grab it up front so we
+		// can assert it survives quiet mode (the operator's core complaint).
+		const rail = container.querySelector('.context-column') as HTMLElement;
+		expect(rail).not.toBeNull();
+		const railButton = within(rail).getByRole('button', { name: METRICS[0].name.en });
+		expect(railButton).toBeInTheDocument();
+
+		// Press it ON → aria-checked flips, the cards COLLAPSE, the label swaps to the
+		// EXIT action, and the choice persists to localStorage.
 		await fireEvent.click(toggle);
 		expect(toggle).toHaveAttribute('aria-checked', 'true');
 		expect(toggle).toHaveAttribute('aria-label', en.quiet.disable);
-		expect(bodyGrid.classList.contains('is-quiet')).toBe(true);
+		for (const trigger of metricTriggers(container)) {
+			expect(trigger).toHaveAttribute('aria-expanded', 'false');
+		}
 		expect(localStorage.getItem('metrics-quiet')).toBe('1');
 
-		// Press it OFF → everything reverts and the persisted flag clears to '0'.
+		// NON-NEGOTIABLE: quiet does NOT hide the ToC. The rail is still in the DOM,
+		// not display:none, and still offers its jump buttons.
+		expect(container.querySelector('.context-column')).not.toBeNull();
+		expect((container.querySelector('.context-column') as HTMLElement).style.display).not.toBe(
+			'none',
+		);
+		expect(
+			within(container.querySelector('.context-column') as HTMLElement).getByRole('button', {
+				name: METRICS[0].name.en,
+			}),
+		).toBeInTheDocument();
+		// The body grid never gains a quiet variant class (grid + gutter unchanged).
+		expect(
+			(container.querySelector('.body-grid') as HTMLElement).classList.contains('is-quiet'),
+		).toBe(false);
+
+		// Press it OFF → the cards re-open and the persisted flag clears to '0'.
 		await fireEvent.click(toggle);
 		expect(toggle).toHaveAttribute('aria-checked', 'false');
-		expect(bodyGrid.classList.contains('is-quiet')).toBe(false);
+		for (const trigger of metricTriggers(container)) {
+			expect(trigger).toHaveAttribute('aria-expanded', 'true');
+		}
 		expect(localStorage.getItem('metrics-quiet')).toBe('0');
 	});
 
-	it('restores the persisted quiet-mode preference on mount', () => {
-		// A prior session left quiet mode ON; the screen re-applies it on mount
-		// (SSR-safe: the onMount localStorage read drives the initial quiet state).
+	it('restores the persisted quiet-mode preference on mount (cards collapsed, ToC still shown)', () => {
+		// A prior session left quiet mode ON; the screen re-applies it on mount as a
+		// CARD-collapse preference (SSR-safe: the onMount localStorage read drives it).
+		// It must NEVER restore a hidden ToC.
 		localStorage.setItem('metrics-quiet', '1');
 		const { container } = render(MetricsExplainer);
 
 		const toggle = screen.getByTestId('metrics-quiet-toggle');
 		expect(toggle).toHaveAttribute('aria-checked', 'true');
-		expect(
-			(container.querySelector('.body-grid') as HTMLElement).classList.contains('is-quiet'),
-		).toBe(true);
+		for (const trigger of metricTriggers(container)) {
+			expect(trigger).toHaveAttribute('aria-expanded', 'false');
+		}
+		// The ToC rail is present and reachable even with the restored quiet pref.
+		const rail = container.querySelector('.context-column') as HTMLElement;
+		expect(rail).not.toBeNull();
+		expect(within(rail).getByRole('button', { name: METRICS[0].name.en })).toBeInTheDocument();
 
 		localStorage.removeItem('metrics-quiet');
+	});
+
+	it('the ToC rail is non-hideable: no disclosure trigger inside the rail', () => {
+		const { container } = render(MetricsExplainer);
+		const rail = container.querySelector('.context-column') as HTMLElement;
+		expect(rail).not.toBeNull();
+		// The rail heading is a plain header, NOT a collapsible disclosure trigger —
+		// there is no user affordance (and no persisted state) that hides the ToC.
+		expect(rail.querySelector('[data-slot="collapsible-trigger"]')).toBeNull();
 	});
 });

@@ -146,6 +146,13 @@
 	);
 
 	// --- historic tier: stop reliability -------------------------------------
+	// NOTE: unlike RouteDetail, this fetch is NOT gated on an availability flag.
+	// stops_index (StopIndexEntry) carries no per-stop `reliability` boolean — the
+	// route side has RouteIndexEntry.reliability, the stop side has no equivalent.
+	// Adding one would need a pipeline/contract change (out of scope here), so the
+	// stop reliability probe stays unconditional + fail-soft (404 → null → empty
+	// state). A missing-snapshot 404 here is suppressed at the edge (one-time cache
+	// purge / future stops_index flag), not in this client code.
 	const reliability = createResource(() => getStopReliability(id));
 
 	// --- HONEST ABSENCE: infer WHY the live board is empty --------------------

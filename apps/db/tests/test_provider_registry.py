@@ -233,6 +233,41 @@ def test_manifest_without_service_alerts_returns_none() -> None:
     assert manifest.service_alerts_feed() is None
 
 
+def test_static_only_feed_endpoint_seeds_no_keyerror() -> None:
+    # Regression: a schedule-only provider (no trip/vehicle feeds) must seed
+    # without KeyError. The previous implementation indexed self.feeds with the
+    # realtime kinds unconditionally and crashed for static-only manifests.
+    manifest = ProviderManifest.model_validate(_static_only_manifest_payload())
+
+    seeds = manifest.to_feed_endpoint_seeds(Settings(_env_file=None))
+
+    assert [seed.endpoint_key for seed in seeds] == ["static_schedule"]
+
+
+def test_static_plus_alerts_feed_endpoint_seeds_no_keyerror() -> None:
+    # The STS shape: schedule + GTFS-RT service alerts, no trip/vehicle feeds.
+    payload = _static_only_manifest_payload()
+    feeds = payload["feeds"]
+    assert isinstance(feeds, dict)
+    feeds["service_alerts"] = {
+        "endpoint_key": "service_alerts",
+        "feed_kind": "service_alerts",
+        "source_format": "gtfs_rt_service_alerts",
+        "source_url": "https://example.test/alerts.pb",
+        "auth": {"auth_type": "none"},
+        "refresh_interval_seconds": 300,
+        "is_enabled": True,
+    }
+    manifest = ProviderManifest.model_validate(payload)
+
+    seeds = manifest.to_feed_endpoint_seeds(Settings(_env_file=None))
+
+    assert [seed.endpoint_key for seed in seeds] == [
+        "static_schedule",
+        "service_alerts",
+    ]
+
+
 def test_manifest_loading() -> None:
     settings = Settings(_env_file=None)
     registry = ProviderRegistry.from_project_root(
@@ -244,7 +279,7 @@ def test_manifest_loading() -> None:
     static_url = provider.feeds["static_schedule"].resolved_source_url(settings)
     gis_url = provider.feeds["gis_static"].resolved_source_url(settings)
 
-    assert registry.list_provider_ids() == ["stm"]
+    assert registry.list_provider_ids() == ["octranspo", "stm", "sto"]
     assert provider.provider.provider_id == "stm"
     assert static_url is not None
     assert static_url.endswith("/gtfs_stm.zip")
@@ -399,7 +434,7 @@ def test_list_providers_command() -> None:
     result = runner.invoke(app, ["list-providers"])
 
     assert result.exit_code == 0
-    assert result.stdout.strip().splitlines() == ["stm"]
+    assert result.stdout.strip().splitlines() == ["octranspo", "stm", "sto"]
 
 
 def test_show_provider_command() -> None:

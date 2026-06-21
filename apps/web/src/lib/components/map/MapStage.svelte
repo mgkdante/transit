@@ -63,8 +63,27 @@
 		 * Resolved BasemapFile pointer for the current snapshot, or null when the
 		 * manifest ships no hosted PMTiles archive. null → self-contained minimal
 		 * dark style (no external glyphs/tiles).
+		 *
+		 * This prop drives GENUINE LATER style swaps (theme/pointer change). For the
+		 * FIRST paint, prefer `basemapLoader` so the resolved basemap is present at
+		 * construction and the map paints hot, with no post-mount `setStyle` wipe.
+		 *
+		 * `undefined` means "deferred to `basemapLoader`": the swap effect ignores it
+		 * so the transient `null` of a not-yet-settled resource never triggers a
+		 * downgrade-to-minimal `setStyle` after the loader already painted the real
+		 * basemap. Pass an explicit `BasemapFile`/`null` only to drive a real swap.
 		 */
-		basemap?: BasemapFile | null;
+		basemap?: BasemapFile | null | undefined;
+		/**
+		 * Optional async resolver for the basemap, awaited ONCE inside onMount before
+		 * the Map is constructed — so the very first paint already carries the hosted
+		 * basemap (or null) and never suffers a post-mount `setStyle` rebuild/flicker.
+		 * Its resolved value seeds the style key, so the basemap-arrival `$effect`
+		 * below treats it as the initial style and only swaps on a genuine LATER
+		 * theme/pointer change. When omitted, MapStage falls back to the `basemap`
+		 * prop value at construction (the legacy behaviour).
+		 */
+		basemapLoader?: () => Promise<BasemapFile | null>;
 		/** Active app theme. Rebuilds the MapLibre style when dark/light changes. */
 		theme?: BasemapTheme;
 		/** Bbox the initial camera FITS to, as [minLon, minLat, maxLon, maxLat]. */
@@ -98,7 +117,8 @@
 		// Default centre: STM service area (downtown Montréal).
 		center = [-73.5673, 45.5017],
 		zoom = 11,
-		basemap = null,
+		basemap = undefined,
+		basemapLoader,
 		theme = 'dark',
 		bounds,
 		maxBounds,
@@ -113,6 +133,14 @@
 	let container = $state<HTMLDivElement | null>(null);
 	/** The live Map instance (browser-only; null until mounted / after teardown). */
 	let map = $state<MapLibreMap | null>(null);
+
+	// Basemap-swap baseline. Declared up here (not beside the effect) because onMount
+	// SEEDS them at construction to the basemap it paints — so the swap effect treats
+	// the first hot paint as the initial style and only fires `setStyle` on a genuine
+	// LATER theme/pointer change (the B2 hot-load + no-flicker contract).
+	let styleInited = false;
+	let activeStyleKey: string | null = null;
+	let activeTheme: BasemapTheme | null = null;
 
 	function styleKey(file: BasemapFile | null): string {
 		return file?.url ?? 'minimal';
@@ -151,12 +179,30 @@
 			await import('maplibre-gl/dist/maplibre-gl.css');
 			await registerPmtilesProtocol(maplibregl.addProtocol);
 
+			// Resolve the basemap BEFORE constructing the Map so the first paint is
+			// hot: a hosted basemap (or null) is baked into the constructor style and
+			// no later `setStyle` has to wipe + rebuild the just-added layers. When no
+			// loader is supplied, fall back to the `basemap` prop value (legacy path).
+			// The loader is fail-soft — a rejected/absent basemap degrades to the
+			// minimal-dark style exactly like a null pointer, never blocking the mount.
+			const initialBasemap: BasemapFile | null = basemapLoader
+				? await basemapLoader().catch(() => null)
+				: (basemap ?? null);
+
 			// If the component was torn down mid-import, bail before creating a map.
 			if (disposed || !container) return;
 
+			// Seed the swap effect's baseline to the basemap we are about to PAINT, so
+			// the post-mount style effect treats this as the initial style and only
+			// fires `setStyle` on a genuine LATER theme/pointer change — never an
+			// immediate wipe of the layers the consumer adds via `onready`.
+			styleInited = true;
+			activeStyleKey = styleKey(initialBasemap);
+			activeTheme = theme;
+
 			const style: StyleSpecification = resolveBasemapStyle(
-				{ basemap: basemap ? '' : null },
-				basemap,
+				{ basemap: initialBasemap ? '' : null },
+				initialBasemap,
 				theme,
 			);
 
@@ -239,18 +285,28 @@
 	});
 
 	// Swap the basemap style ONLY when the basemap pointer or theme changes after
-	// the initial render. The constructor already applied the first style, so skip
-	// the mount run — a redundant setStyle would wipe any layers a consumer added
-	// via `onready` (e.g. the vehicle layer). Later swaps intentionally re-fire
-	// onstyleload so the consumer can re-add images/sources/layers.
-	let styleInited = false;
-	let activeStyleKey: string | null = null;
-	let activeTheme: BasemapTheme | null = null;
+	// the initial render. The constructor already applied the first style (seeding
+	// the baseline above), so skip the mount run — a redundant setStyle would wipe
+	// any layers a consumer added via `onready` (e.g. the vehicle layer). Later
+	// swaps intentionally re-fire onstyleload so the consumer can re-add layers.
 	$effect(() => {
 		const m = map;
 		const b = basemap;
 		const t = theme;
 		if (!m) return;
+		// `undefined` = deferred to the loader: never act on it for a style swap. This
+		// keeps the transient `null` of a not-yet-settled basemap resource (passed as
+		// the prop alongside the loader) from downgrading the already-painted basemap
+		// to minimal. A real pointer swap passes an explicit BasemapFile or null.
+		if (b === undefined) {
+			// Still honour a pure theme change while the basemap stays deferred.
+			if (activeTheme !== t) {
+				applyBasemapTheme(m, t);
+				activeTheme = t;
+				onstyleload?.(m);
+			}
+			return;
+		}
 		const nextStyleKey = styleKey(b);
 		if (!styleInited) {
 			styleInited = true;

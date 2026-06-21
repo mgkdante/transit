@@ -1,7 +1,10 @@
-import { render, screen, within } from '@testing-library/svelte';
+import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { AlertHistory } from '$lib/v1/schemas';
+import { alertHistoryCopy } from './alerts.copy';
 import AlertHistoryScreen from './AlertHistory.svelte';
+
+const copyEn = alertHistoryCopy.en;
 
 // One mutable AlertHistory fixture, read by reference inside the createResource
 // mock so a test can splice its `alerts` / `breakdown` in place before render.
@@ -151,6 +154,137 @@ describe('AlertHistory breakdown', () => {
 		expect(
 			screen.getByRole('list', { name: /past service alerts, newest first/i }),
 		).toBeInTheDocument();
+	});
+});
+
+describe('AlertHistory filters (C3)', () => {
+	// A spread of entity reach + severity so each axis narrows distinctly:
+	//   · L1 — critical, affects line 10 only (no stops)
+	//   · S1 — high, affects stops only (no lines)
+	//   · B1 — watch, affects both a line + a stop
+	function seedFilterFixture(): void {
+		fixture.alerts = [
+			// Branded IsoUtc dates are plain ISO strings at runtime; cast as the test
+			// fixture does at module scope.
+			{
+				id: 'L1',
+				severity: 'critical',
+				header_text: 'Ligne fermée',
+				header_text_en: 'Line closed',
+				routes: ['10'],
+				stops: [],
+				start_utc: '2026-06-20T09:00:00Z',
+				end_utc: '2026-06-20T10:00:00Z',
+				duration_min: 60,
+				impact_passages: 100,
+			},
+			{
+				id: 'S1',
+				severity: 'high',
+				header_text: 'Arrêt déplacé',
+				header_text_en: 'Stop moved',
+				routes: [],
+				stops: ['52458'],
+				start_utc: '2026-06-20T11:00:00Z',
+				end_utc: '2026-06-20T12:00:00Z',
+				duration_min: 60,
+				impact_passages: 50,
+			},
+			{
+				id: 'B1',
+				severity: 'watch',
+				header_text: 'Détour',
+				header_text_en: 'Detour',
+				routes: ['24'],
+				stops: ['99999'],
+				start_utc: '2026-06-20T13:00:00Z',
+				end_utc: '2026-06-20T14:00:00Z',
+				duration_min: 60,
+				impact_passages: 25,
+			},
+		] as AlertHistory['alerts'];
+		// No breakdown noise for the filter tests.
+		fixture.breakdown = null;
+	}
+
+	function logRows(): HTMLElement[] {
+		const list = screen.queryByRole('list', { name: /past service alerts, newest first/i });
+		return list ? within(list).getAllByRole('listitem') : [];
+	}
+
+	it('filters by entity type — "affects lines" excludes the stops-only alert', async () => {
+		seedFilterFixture();
+		render(AlertHistoryScreen);
+		// All three render before filtering.
+		expect(logRows()).toHaveLength(3);
+
+		// Pick the "Lines" entity chip (a GrainPicker radio).
+		const linesChip = screen.getByRole('radio', { name: copyEn.filters.entity.lines });
+		await fireEvent.click(linesChip);
+
+		// S1 (stops-only) drops; L1 + B1 (carry a line) remain.
+		expect(logRows()).toHaveLength(2);
+		expect(screen.getByText('Line closed')).toBeInTheDocument();
+		expect(screen.getByText('Detour')).toBeInTheDocument();
+		expect(screen.queryByText('Stop moved')).toBeNull();
+	});
+
+	it('filters by entity type — "affects stops" excludes the lines-only alert', async () => {
+		seedFilterFixture();
+		render(AlertHistoryScreen);
+		const stopsChip = screen.getByRole('radio', { name: copyEn.filters.entity.stops });
+		await fireEvent.click(stopsChip);
+
+		// L1 (lines-only) drops; S1 + B1 (carry a stop) remain.
+		expect(logRows()).toHaveLength(2);
+		expect(screen.getByText('Stop moved')).toBeInTheDocument();
+		expect(screen.getByText('Detour')).toBeInTheDocument();
+		expect(screen.queryByText('Line closed')).toBeNull();
+	});
+
+	it('filters by severity — "Critical" narrows to the single critical alert', async () => {
+		seedFilterFixture();
+		render(AlertHistoryScreen);
+		const criticalChip = screen.getByRole('radio', { name: copyEn.severity.critical });
+		await fireEvent.click(criticalChip);
+
+		const rows = logRows();
+		expect(rows).toHaveLength(1);
+		expect(screen.getByText('Line closed')).toBeInTheDocument();
+		expect(screen.queryByText('Stop moved')).toBeNull();
+		expect(screen.queryByText('Detour')).toBeNull();
+	});
+
+	it('shows the honest no-match note (never an empty void) when filters match nothing', async () => {
+		seedFilterFixture();
+		render(AlertHistoryScreen);
+		// Critical + stops-only: no alert is both critical AND affects a stop.
+		await fireEvent.click(screen.getByRole('radio', { name: copyEn.severity.critical }));
+		await fireEvent.click(screen.getByRole('radio', { name: copyEn.filters.entity.stops }));
+
+		// The log is gone; the explicit no-match message is shown.
+		expect(screen.queryByRole('list', { name: /past service alerts, newest first/i })).toBeNull();
+		const note = document.querySelector('[data-slot="alert-no-match"]');
+		expect(note).not.toBeNull();
+		expect(note).toHaveTextContent(copyEn.filters.noMatch);
+		// Honesty: never a "·" placeholder in the empty result.
+		expect(note?.textContent).not.toContain('·');
+	});
+
+	it('clears the filters and restores the full log', async () => {
+		seedFilterFixture();
+		render(AlertHistoryScreen);
+		await fireEvent.click(screen.getByRole('radio', { name: copyEn.severity.critical }));
+		expect(logRows()).toHaveLength(1);
+
+		// The "Clear filters" action appears once a filter is active.
+		const clear = document.querySelector('[data-slot="clear-filters"]') as HTMLElement;
+		expect(clear).not.toBeNull();
+		await fireEvent.click(clear);
+
+		// Back to all three rows; the clear control hides again (no active filter).
+		expect(logRows()).toHaveLength(3);
+		expect(document.querySelector('[data-slot="clear-filters"]')).toBeNull();
 	});
 });
 

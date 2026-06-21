@@ -64,11 +64,12 @@ export interface MetricsCopy extends SurfaceHeadCopy {
 		readonly levels: Record<Confidence, { readonly chip: string; readonly meaning: string }>;
 	};
 	/**
-	 * Quiet-mode (focus reading) affordance — a single header toggle that drops the
-	 * page gutter (true full-bleed prose at a comfortable measure) and quiets the
-	 * chrome (TOC rail + non-essential furniture) so the methodology reads
-	 * distraction-free. The choice persists across navigations. Mirrors the
-	 * yesid.dev detail-page "Quiet mode" switch, kept to one restrained control.
+	 * Quiet-mode (focus reading) affordance — a single header toggle that COLLAPSES
+	 * every metric section card so the page becomes a scannable stack of headings,
+	 * while leaving the ToC rail fully visible (it never hides the ToC, changes the
+	 * grid, or drops the gutter). The choice persists across navigations (the
+	 * card-collapse preference, never a hidden ToC). Mirrors the yesid.dev detail-
+	 * page "Quiet mode" switch, kept to one restrained control.
 	 */
 	readonly quiet: {
 		/** Visible button label (mono control voice). */
@@ -78,6 +79,13 @@ export interface MetricsCopy extends SurfaceHeadCopy {
 		/** aria-label when quiet mode is ON (the action the press performs). */
 		readonly disable: string;
 	};
+	/**
+	 * The giant vertical edge word for the measured-article shell (the rotated
+	 * writing-mode title in the left rail, mirroring yesid.dev's blog/projects
+	 * listing layout). A single uppercase word derived from the page subject;
+	 * the layout appends a --primary period after it.
+	 */
+	readonly edgeTitle: string;
 	/** Jump-nav (table of contents) heading. */
 	readonly tocLabel: string;
 	/** Mono prefix for the TOC "{prefix} N / total" counter (yesid uses "SEC"). */
@@ -164,6 +172,7 @@ export const metricsCopy: Record<Locale, MetricsCopy> = {
 			enable: 'Activer le mode lecture',
 			disable: 'Quitter le mode lecture',
 		},
+		edgeTitle: 'MESURE',
 		tocLabel: 'Aller à une métrique',
 		tocCounterPrefix: 'SEC',
 		backToTop: 'Retour en haut',
@@ -242,6 +251,7 @@ export const metricsCopy: Record<Locale, MetricsCopy> = {
 			enable: 'Enter focus reading',
 			disable: 'Exit focus reading',
 		},
+		edgeTitle: 'METRICS',
 		tocLabel: 'Jump to a metric',
 		tocCounterPrefix: 'SEC',
 		backToTop: 'Back to top',

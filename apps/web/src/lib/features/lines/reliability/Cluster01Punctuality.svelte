@@ -43,7 +43,10 @@
 	import type { ReliabilityCopy } from './reliability.copy';
 	import {
 		shiftLabel as shiftGrainLabel,
+		dayTypeLabel as dayTypeGrainLabel,
 		severeShareToSeverity,
+		SHIFT_GRAIN_ORDER,
+		DAY_TYPE_GRAIN_ORDER,
 	} from '$lib/features/reliability/shiftGrains';
 
 	export interface Cluster01PunctualityProps {
@@ -189,6 +192,52 @@
 	const dayTypePeakRows = $derived(rankBySevere(vm.peakOffPeak.byDayType, dayTypeLabel));
 	const hasPeak = $derived(
 		!vm.peakOffPeak.isEmpty && (shiftPeakRows.length > 0 || dayTypePeakRows.length > 0),
+	);
+
+	/* ── By shift and day type (G1) ───────────────────────────────────────────
+	   The Tier-3 OTP/delay crosstab: a FIXED 5-shift × 2-day-type grid. The contract
+	   is SPARSE (only cells WITH observations are present), so every grid cell is
+	   resolved against an index — an absent (shift, day_type) cell, OR a present cell
+	   whose otp_pct is null, renders the explicit no-data message. NEVER a "·" or a
+	   fabricated 0. This per-empty-cell honesty is the explicit requirement. */
+	const fmtPctXt = (v: number | null | undefined): string | null => (v == null ? null : `${v}%`);
+	// Index the sparse cells by "shift|day_type" for O(1) grid lookup. A plain record
+	// (not a Map) keeps this a pure derived value with no reactivity.
+	const crosstabIndex = $derived.by(() => {
+		const index: Record<string, (typeof vm.byShiftDaytype)[number]> = {};
+		for (const cell of vm.byShiftDaytype) index[`${cell.shift}|${cell.day_type}`] = cell;
+		return index;
+	});
+	// The resolved grid: one row per shift (canonical order), one column per day-type.
+	// Each cell carries the primary OTP display + secondary avg-delay/severe for the
+	// caption, plus `present` (contract had this cell) and `hasOtp` (a real OTP).
+	const crosstabRows = $derived(
+		SHIFT_GRAIN_ORDER.map((shift) => ({
+			shift,
+			label: shiftLabel(shift),
+			cells: DAY_TYPE_GRAIN_ORDER.map((dayType) => {
+				const cell = crosstabIndex[`${shift}|${dayType}`];
+				const otp = fmtPctXt(cell?.otp_pct);
+				const avgDelay = fmtMin(cell?.avg_delay_min);
+				return {
+					dayType,
+					present: cell != null,
+					hasOtp: otp != null,
+					display: otp ?? copy.strip.noData,
+					avgDelay,
+					// Secondary caption: avg delay (when present) for the cell's title.
+					title: otp != null && avgDelay != null ? `${copy.strip.avgDelayMin}: ${avgDelay}` : '',
+				};
+			}),
+		})),
+	);
+	// The crosstab section renders only when SOME cell carries a real OTP — else the
+	// whole grid would be a wall of "no data" (its honest-empty path: one note).
+	const hasCrosstab = $derived(
+		vm.byShiftDaytype.length > 0 && crosstabRows.some((r) => r.cells.some((c) => c.hasOtp)),
+	);
+	const dayTypeColLabels = $derived(
+		DAY_TYPE_GRAIN_ORDER.map((d) => ({ key: d, label: dayTypeGrainLabel(d, locale) })),
 	);
 </script>
 
@@ -365,6 +414,48 @@
 				<p class="cluster-caption" data-slot="peak-caveat">{copy.peak.caveat}</p>
 			</div>
 		{/if}
+
+		<!-- By shift and day type (G1): the Tier-3 OTP crosstab, a fixed 5×2 grid.
+		     SPARSE → an absent (shift, day_type) cell or a null OTP shows the explicit
+		     no-data message in THAT cell, never a "·"/fake 0. -->
+		{#if hasCrosstab}
+			<div class="cluster-block" data-slot="shift-daytype-crosstab">
+				<span class="label-with-info">
+					<SectionLabel text={copy.crosstab.heading} variant="metric" />
+					{@render metricInfo('otp', copy.crosstab.heading)}
+				</span>
+				<table class="cluster-crosstab" aria-label={copy.crosstab.heading}>
+					<thead>
+						<tr>
+							<th scope="col" class="cluster-crosstab__corner">
+								<span class="sr-only">{copy.crosstab.shiftHeader}</span>
+							</th>
+							{#each dayTypeColLabels as col (col.key)}
+								<th scope="col" class="cluster-crosstab__colhead">{col.label}</th>
+							{/each}
+						</tr>
+					</thead>
+					<tbody>
+						{#each crosstabRows as row (row.shift)}
+							<tr>
+								<th scope="row" class="cluster-crosstab__rowhead">{row.label}</th>
+								{#each row.cells as cell (cell.dayType)}
+									<td
+										class="cluster-crosstab__cell"
+										class:cluster-crosstab__cell--empty={!cell.hasOtp}
+										data-empty={!cell.hasOtp}
+										title={cell.title || undefined}
+									>
+										{cell.display}
+									</td>
+								{/each}
+							</tr>
+						{/each}
+					</tbody>
+				</table>
+				<p class="cluster-caption" data-slot="crosstab-caption">{copy.crosstab.caption}</p>
+			</div>
+		{/if}
 	{/if}
 </section>
 
@@ -386,17 +477,33 @@
 		gap: 1.5rem 2rem;
 	}
 	/* A metric tile + its explainer (i): the affordance rides the tile's top edge,
-	   inline so the headline row keeps wrapping naturally (no layout disruption). */
+	   inline so the headline row keeps wrapping naturally (no layout disruption). The
+	   tile keeps a measure (min-width:0) so a long label wraps cleanly; the (i) wrapper
+	   never shrinks (flex:none) so the glyph stays whole beside it, never colliding. */
 	.metric-with-info {
 		display: inline-flex;
 		align-items: flex-start;
 		gap: 0.35rem;
 	}
-	/* A block overline + its explainer (i), kept on the label's baseline. */
+	.metric-with-info :global([data-slot='metric-display']) {
+		min-width: 0;
+	}
+	.metric-with-info :global(.cluster-info) {
+		flex: none;
+	}
+	/* A block overline + its explainer (i), kept centred on the label. The label
+	   keeps a measure (min-width:0) so a long overline wraps cleanly; the (i)
+	   wrapper never shrinks (flex:none) so the glyph stays whole beside it. */
 	.label-with-info {
 		display: inline-flex;
 		align-items: center;
 		gap: 0.35rem;
+	}
+	.label-with-info :global([data-slot='section-label']) {
+		min-width: 0;
+	}
+	.label-with-info :global(.cluster-info) {
+		flex: none;
 	}
 	.cluster-block {
 		display: flex;
@@ -444,5 +551,54 @@
 		flex-direction: column;
 		gap: 0.5rem;
 		margin-top: 0.5rem;
+	}
+
+	/* By-shift-and-day-type crosstab: a compact 5×2 reading grid. Header + row labels
+	   are quiet mono; cells are tabular-num OTP readings. An empty cell rides the
+	   muted voice with the honest no-data message (never a "·"/0). */
+	.cluster-crosstab {
+		width: 100%;
+		border-collapse: collapse;
+		font-size: var(--text-small);
+	}
+	.cluster-crosstab th,
+	.cluster-crosstab td {
+		padding: 0.4rem 0.6rem;
+		text-align: right;
+		border-bottom: 1px solid var(--border);
+	}
+	.cluster-crosstab__corner {
+		border-bottom: 1px solid var(--border);
+	}
+	.cluster-crosstab__colhead {
+		font-family: var(--font-mono);
+		font-size: var(--text-small);
+		font-weight: 500;
+		color: var(--muted-foreground);
+	}
+	.cluster-crosstab__rowhead {
+		text-align: left;
+		font-weight: 500;
+		color: var(--foreground);
+	}
+	.cluster-crosstab__cell {
+		font-family: var(--font-mono);
+		font-variant-numeric: tabular-nums;
+		color: var(--foreground);
+	}
+	/* Honest no-data cell: quiet muted mono, the explicit message, never a "·"/0. */
+	.cluster-crosstab__cell--empty {
+		color: var(--muted-foreground);
+	}
+	.sr-only {
+		position: absolute;
+		width: 1px;
+		height: 1px;
+		padding: 0;
+		margin: -1px;
+		overflow: hidden;
+		clip: rect(0, 0, 0, 0);
+		white-space: nowrap;
+		border: 0;
 	}
 </style>
