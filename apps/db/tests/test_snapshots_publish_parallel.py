@@ -511,8 +511,8 @@ class _RecordingStaticConn:
             return _StaticResult([
                 {"weekday_date": _dt.date(2026, 6, 3), "weekend_date": _dt.date(2026, 6, 6)}
             ])
-        if "route_long_name FROM gold.dim_route" in s:
-            return _StaticResult([{"route_long_name": "One"}])
+        if "route_long_name, route_type FROM gold.dim_route" in s:
+            return _StaticResult([{"route_long_name": "One", "route_type": 3}])
         return _StaticResult([])
 
 

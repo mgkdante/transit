@@ -34,6 +34,11 @@ export const RouteFileSchema = z.object({
 	generated_utc: isoUtc(),
 	id: z.string(),
 	long: z.string().nullable().optional(),
+	// GTFS route_type integer (0=tram,1=metro,3=bus,...), mirroring
+	// RouteIndexEntry.type. Optional/nullable so snapshots published before this
+	// field still parse. Lets the detail surface infer "metro has no realtime"
+	// from the self-describing route file (no routes_index cross-ref needed).
+	type: z.number().int().nullable().optional(),
 	directions: z.array(RouteDirectionSchema).optional(),
 	service_periods: z.array(ServicePeriodSchema).optional(),
 	first_departure: z.string().nullable().optional(),

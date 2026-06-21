@@ -458,12 +458,18 @@ def build_route(conn: Connection, *, provider_id: str = "stm", route_id: str, ge
 
     name_row = conn.execute(
         text(
-            "SELECT route_long_name FROM gold.dim_route "
+            "SELECT route_long_name, route_type FROM gold.dim_route "
             "WHERE provider_id=:provider_id AND route_id=:route_id LIMIT 1"
         ),
         {"provider_id": provider_id, "route_id": route_id},
     ).mappings().fetchone()
     long_name = name_row["route_long_name"] if name_row else None
+    # GTFS route_type for the self-describing mode field. Mirror build_routes_index:
+    # a legitimate route_type 0 (tram) is preserved; only a NULL is left as None
+    # (the contract field is optional, so an absent type renders as no-signal).
+    route_type = (
+        int(name_row["route_type"]) if name_row and name_row["route_type"] is not None else None
+    )
 
     # --- branches: one per (direction, headsign), best (most-used) shape ---
     branches: dict[tuple, dict] = {}
@@ -531,6 +537,7 @@ def build_route(conn: Connection, *, provider_id: str = "stm", route_id: str, ge
         generated_utc=generated_utc,
         id=route_id,
         long=long_name,
+        type=route_type,
         directions=directions,
         service_periods=service_periods,
         first_departure=first_dep,

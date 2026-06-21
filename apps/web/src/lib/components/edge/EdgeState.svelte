@@ -38,6 +38,7 @@
 	import { cn } from '$lib/utils';
 	import { formatRelative } from '$lib/utils/time';
 	import type { Locale } from '$lib/i18n';
+	import type { AbsenceReason } from '$lib/site/serviceWindow';
 	import { Skeleton } from '$lib/components/ui/skeleton';
 
 	/** The edge condition this instance renders. */
@@ -73,6 +74,15 @@
 		 * (Interactive affordance, the only --primary touch in this component.)
 		 */
 		onRetry?: () => void;
+		/**
+		 * HONEST ABSENCE — an inferred, specific reason live data is absent (from
+		 * $lib/site/serviceWindow.inferAbsenceReason). When set on the `empty`
+		 * variant, it REPLACES the generic empty copy with the precise reason
+		 * ("Service closed — opens at 06:00", "metro has no realtime", …) using the
+		 * data we already hold. null/undefined ⇒ the generic empty copy stands (a
+		 * plain honest no-data message, never fabricated). Ignored by other variants.
+		 */
+		emptyReason?: AbsenceReason | null;
 		/** Optional extra classes on the root. */
 		class?: string;
 	}
@@ -83,6 +93,7 @@
 		layout = 'mobile',
 		lastUpdated,
 		onRetry,
+		emptyReason,
 		class: className,
 	}: EdgeStateProps = $props();
 
@@ -159,6 +170,66 @@
 		},
 	};
 
+	/* ── HONEST ABSENCE reason copy ──────────────────────────────────────────
+	   When the `empty` variant carries an inferred `emptyReason`, these blocks
+	   REPLACE the generic empty copy with the specific, data-supported reason.
+	   The opens-at / last-seen variants take a param (the FIRST departure HH:MM,
+	   or the vehicle's last-seen relative age) so the message names the real value
+	   — never a fabricated time. FR is the canonical voice; EN mirrors it. Glyph
+	   stays the neutral empty ○ (an honest absence is not an error). */
+	type ReasonCopyBlock = {
+		readonly glyph: string;
+		readonly title: Record<Locale, string>;
+		readonly body: (param: string, lang: Locale) => string;
+	};
+	const REASON_COPY: Record<AbsenceReason['key'], ReasonCopyBlock> = {
+		'metro-no-realtime': {
+			glyph: '○',
+			title: { fr: 'Pas de positions en direct', en: 'No live positions' },
+			body: (_p, lang) =>
+				lang === 'fr'
+					? 'Les positions en temps réel ne sont pas publiées pour le métro.'
+					: 'Live positions are not published for the metro.',
+		},
+		'closed-opens-at': {
+			glyph: '○',
+			title: { fr: 'Service terminé', en: 'Service closed' },
+			body: (first, lang) =>
+				lang === 'fr'
+					? `Service terminé. Reprise à ${first}.`
+					: `Service closed. Opens at ${first}.`,
+		},
+		'overnight-opens-at': {
+			glyph: '○',
+			title: { fr: 'Aucun service à cette heure', en: 'No service at this hour' },
+			body: (first, lang) =>
+				lang === 'fr'
+					? `Aucun service à cette heure. Reprise à ${first}.`
+					: `No service at this hour. Opens at ${first}.`,
+		},
+		'before-open': {
+			glyph: '○',
+			title: { fr: 'Service pas encore commencé', en: 'Service not started yet' },
+			body: (first, lang) =>
+				lang === 'fr'
+					? `Service pas encore commencé. Début à ${first}.`
+					: `Service hasn't started yet. Opens at ${first}.`,
+		},
+		'scheduled-silent': {
+			glyph: '○',
+			title: { fr: 'Aucun véhicule en direct', en: 'No vehicle reporting' },
+			body: (_p, lang) =>
+				lang === 'fr'
+					? "Prévu à l'horaire, mais aucun véhicule ne se signale en direct pour le moment."
+					: 'Scheduled, but no vehicle is reporting live right now.',
+		},
+		'last-seen': {
+			glyph: '○',
+			title: { fr: 'Aucune position récente', en: 'No recent position' },
+			body: (age, lang) => (lang === 'fr' ? `Dernière position ${age}.` : `Last seen ${age}.`),
+		},
+	};
+
 	/** Retry button label. */
 	const RETRY_LABEL: Record<Locale, string> = {
 		fr: 'Réessayer',
@@ -206,10 +277,33 @@
 
 	const isSkeleton = $derived(variant === 'skeleton');
 
-	/** Resolved copy for the active message variant (skeleton excluded). */
-	const copy = $derived(
-		isSkeleton ? null : COPY[variant as Exclude<EdgeVariant, 'skeleton'>][lang],
-	);
+	/**
+	 * The inferred reason, applied ONLY on the empty variant. Other variants
+	 * (error / stale / skeleton) ignore it — an error must never be mislabeled as
+	 * "closed", and a reason has no meaning on the loading skeleton.
+	 */
+	const activeReason = $derived(variant === 'empty' ? (emptyReason ?? null) : null);
+
+	/**
+	 * Resolved copy for the active message variant (skeleton excluded). When an
+	 * inferred reason is active, its specific copy REPLACES the generic empty copy.
+	 * The opens-at variants interpolate the FIRST departure; last-seen interpolates
+	 * the relative age of the vehicle's last report (never a fabricated time).
+	 */
+	const copy = $derived.by((): CopyBlock | null => {
+		if (isSkeleton) return null;
+		if (activeReason) {
+			const block = REASON_COPY[activeReason.key];
+			const param =
+				activeReason.key === 'last-seen'
+					? activeReason.lastSeenIso
+						? formatRelative(activeReason.lastSeenIso, lang)
+						: ''
+					: (activeReason.firstDeparture ?? '');
+			return { glyph: block.glyph, title: block.title[lang], body: block.body(param, lang) };
+		}
+		return COPY[variant as Exclude<EdgeVariant, 'skeleton'>][lang];
+	});
 	const accent = $derived(isSkeleton ? null : ACCENT[variant as Exclude<EdgeVariant, 'skeleton'>]);
 
 	/** Relative "MAJ il y a 4 min" string for the stale variant. */

@@ -147,6 +147,34 @@ export function formatClock(date: Date, lang: TimeLang): string {
 }
 
 /**
+ * Wall-clock minutes-since-midnight of a Date in America/Toronto.
+ *
+ * The provider publishes service-window times (first/last departure) as bare
+ * HH:MM wall-clock in its display zone. To compare "now" against that window we
+ * need the CURRENT wall-clock in the SAME zone, expressed the same way — never
+ * the browser's local zone. We read the hour/minute via the zone-forced
+ * formatter (same path as formatClock) so the zone is enforced in one place.
+ *
+ * Returns an integer 0..1439, or NaN for an invalid Date.
+ */
+export function minutesSinceMidnight(date: Date = new Date()): number {
+	if (!(date instanceof Date) || Number.isNaN(date.getTime())) return Number.NaN;
+	const parts = dateTimeFormat(localeTag('en'), {
+		hour: '2-digit',
+		minute: '2-digit',
+		hour12: false,
+		timeZone: DISPLAY_TIME_ZONE,
+	}).formatToParts(date);
+	const hourRaw = parts.find((p) => p.type === 'hour')?.value ?? '00';
+	const minuteRaw = parts.find((p) => p.type === 'minute')?.value ?? '00';
+	// Some locales emit "24" for midnight under hour12:false; fold it to 0.
+	const hour = hourRaw === '24' ? 0 : Number.parseInt(hourRaw, 10);
+	const minute = Number.parseInt(minuteRaw, 10);
+	if (Number.isNaN(hour) || Number.isNaN(minute)) return Number.NaN;
+	return hour * 60 + minute;
+}
+
+/**
  * Seconds elapsed between `iso` and `now` (defaults to current time).
  *
  * Positive when `iso` is in the past, negative when in the future. Returns NaN

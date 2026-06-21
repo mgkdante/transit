@@ -21,12 +21,29 @@
 	import type { Resource } from '$lib/v1/resource.svelte';
 	import { layout } from '$lib/nav';
 	import { EdgeState } from '$lib/components/edge';
+	import type { AbsenceReason } from '$lib/site/serviceWindow';
 
 	interface ResourceBoundaryProps {
 		/** The reactive resource to gate on. */
 		resource: Resource<T>;
 		/** UI language for the edge-state copy. */
 		lang: Locale;
+		/**
+		 * HONEST ABSENCE — an inferred, specific reason for the empty state (from
+		 * $lib/site/serviceWindow.inferAbsenceReason). Forwarded to the empty
+		 * EdgeState so a settled-but-empty load states WHY (closed / metro / silent)
+		 * instead of a generic no-data. null/undefined ⇒ the generic empty copy.
+		 * Applies only to the empty branch — an error keeps the error edge state.
+		 */
+		emptyReason?: AbsenceReason | null;
+		/**
+		 * Which EdgeState variant to render on the settled-but-empty branch.
+		 * Defaults to the neutral 'empty'. Pass 'empty-avis' for the GOOD empty —
+		 * e.g. a zero-length alert log means the network is running normally, the
+		 * green network-healthy verdict rather than a grey nothing-to-show. Ignored
+		 * when `emptyReason` is set (an inferred reason already owns the copy).
+		 */
+		emptyVariant?: 'empty' | 'empty-avis';
 		/**
 		 * Optional emptiness predicate on a loaded value — true means "treat as
 		 * empty" (e.g. an empty list), routing to the empty edge state instead of
@@ -43,7 +60,20 @@
 		class?: string;
 	}
 
-	let { resource, lang, isEmpty, children, class: className }: ResourceBoundaryProps = $props();
+	let {
+		resource,
+		lang,
+		isEmpty,
+		emptyReason,
+		emptyVariant = 'empty',
+		children,
+		class: className,
+	}: ResourceBoundaryProps = $props();
+
+	// An inferred reason only attaches to the neutral 'empty' variant; the good
+	// 'empty-avis' (network-healthy) verdict carries its own copy, so a reason
+	// would be incongruous there. Resolve the effective variant once.
+	const resolvedEmptyVariant = $derived(emptyReason ? 'empty' : emptyVariant);
 
 	// Edge density follows the shell breakpoint (desktop 3-volet vs mobile card).
 	const edgeLayout = $derived(layout.isDesktop ? 'desktop' : 'mobile');
@@ -71,5 +101,11 @@
 {:else if resource.loading || !resource.settled}
 	<EdgeState variant="skeleton" {lang} layout={edgeLayout} class={className} />
 {:else}
-	<EdgeState variant="empty" {lang} layout={edgeLayout} class={className} />
+	<EdgeState
+		variant={resolvedEmptyVariant}
+		{lang}
+		layout={edgeLayout}
+		{emptyReason}
+		class={className}
+	/>
 {/if}

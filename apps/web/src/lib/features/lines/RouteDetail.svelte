@@ -24,12 +24,23 @@
 		deriveRouteStopPredictions,
 		getRoute,
 		getRouteReliability,
+		getProvenance,
 		getV1Context,
 		alertsForRoute,
 	} from '$lib/v1';
-	import type { RouteFile, RouteReliability, StopPrediction, Vehicle, SeverityCode } from '$lib/v1';
+	import type {
+		RouteFile,
+		RouteReliability,
+		Provenance,
+		StopPrediction,
+		Vehicle,
+		SeverityCode,
+	} from '$lib/v1';
 	import { createResource } from '$lib/v1/resource.svelte';
-	import { formatUtc } from '$lib/utils/time';
+	import { formatUtc, minutesSinceMidnight } from '$lib/utils/time';
+	import { sharedClock } from '$lib/stores';
+	import { inferAbsenceReason } from '$lib/site/serviceWindow';
+	import { EdgeState } from '$lib/components/edge';
 	import {
 		EntityDetail,
 		ResourceBoundary,
@@ -105,6 +116,35 @@
 	// Empty -> the AffectedAlerts section stands down. Honest: never fabricated.
 	const routeAlerts = $derived(alertsForRoute(live.alerts?.alerts, id));
 
+	// HONEST ABSENCE — provenance carries the declared data gaps (e.g.
+	// ["metro_realtime"]); we infer the SPECIFIC reason this route has no live bus
+	// from {route_type, gaps, service-window, non-responding} rather than standing
+	// silently down. One-shot fetch (gaps change rarely); fail-soft (null gaps).
+	const provenance = createResource<Provenance>(() => getProvenance());
+
+	// Is THIS route reported scheduled-but-silent by the live network? The
+	// per-route silent-trip tally lists routes with scheduled trips but no live
+	// vehicle; a hit means "within the window yet nothing is reporting".
+	const routeNonResponding = $derived(
+		(live.network?.non_responding_by_route ?? []).some((r) => r.route_id === id),
+	);
+
+	// The inferred reason the live roster is empty, recomputed each shared tick (so
+	// a closed/overnight verdict re-evaluates as the clock crosses first/last). Only
+	// consulted when there is genuinely no live bus on the route; honest by
+	// construction (metro needs route_type 1 + the gap; closed needs a real window;
+	// silent needs the non-responding signal; else null → plain no-data).
+	const absenceReason = $derived(
+		inferAbsenceReason({
+			routeType: route.data?.type ?? null,
+			gaps: provenance.data?.gaps ?? null,
+			firstDeparture: route.data?.first_departure ?? null,
+			lastDeparture: route.data?.last_departure ?? null,
+			nowMinutes: minutesSinceMidnight(new Date(sharedClock.now)),
+			nonResponding: routeNonResponding,
+		}),
+	);
+
 	// CURRENT-BUSES ROSTER: the live vehicles running THIS route right now, read
 	// from the SAME live index (vehiclesByRoute → byVehicleId) the predictions use
 	// — NO second poll. Sorted MOST-LATE first (the honest "worst"); an early or
@@ -147,6 +187,13 @@
 	// so it stands down entirely otherwise and the directions take the full width
 	// (never an empty bordered list column).
 	const hasListColumn = $derived(roster.length > 0 || routeAlerts.length > 0);
+
+	// HONEST ABSENCE — show the inferred-reason note in the Detail pane only once the
+	// live tier has settled (a tick has landed) AND no bus is on the route. Never
+	// while the feed is still loading (that is the skeleton's job, not a "closed"
+	// claim). `absenceReason` may still be null (no derivable signal) → we render a
+	// plain honest no-data note instead of inventing a reason.
+	const showAbsenceNote = $derived(live.generatedUtc != null && roster.length === 0);
 
 	/**
 	 * A vehicle's delay banded to a dataviz STATUS tone (calm-by-default), matching
@@ -363,6 +410,21 @@
 										/>
 									{/if}
 								</div>
+								<!-- HONEST ABSENCE: when no live bus is on this route, STATE the
+								     inferred reason (metro has no realtime / service closed — opens at
+								     FIRST / scheduled-but-silent) instead of leaving the live readout
+								     to silently say "no live bus" per stop. emptyReason is null when no
+								     reason is derivable → the EdgeState shows the plain honest no-data
+								     copy, never a fabricated reason. -->
+								{#if showAbsenceNote}
+									<EdgeState
+										variant="empty"
+										lang={locale}
+										layout="mobile"
+										emptyReason={absenceReason}
+										class="route-absence-note"
+									/>
+								{/if}
 								{#if (file.directions ?? []).length > 0}
 									<ul class="route-directions">
 										{#each file.directions ?? [] as dir, di (di)}
