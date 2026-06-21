@@ -1,15 +1,19 @@
 <!--
-  TerminalChrome — mac-style terminal window chrome with a title bar and body slot.
-  Brand primitive (Set B): a framed window with three decorative traffic-light
-  dots, a mono title, an optional tag + status, a body slot and an optional
-  footer metric row.
-  Ported from yesid.dev TerminalChrome; CSS-only (no StatusDot/Separator deps,
-  no scroll action). Re-themed to transit tokens — the chrome rides on --card /
-  --border; the traffic-light dots stay fixed decorative chrome colours (they
-  are window furniture, not data marks, so --primary stays interactive-only).
+  TerminalChrome — terminal window chrome with a title bar and body slot.
+  Brand primitive (Set B): a framed window whose title bar carries a three-aspect
+  SIGNAL HEAD (proceed lit + caution/stop unlit at 25%), a mono title, an
+  optional tag + status, a body slot and an optional footer metric row.
+  Aligned to the yesid.dev TerminalChrome recipe (slice-9.7 A3) — composes the
+  brand StatusDot signal head + the hazard Separator instead of decorative
+  mac dots, and rides the dedicated terminal surface tokens (--terminal frame,
+  --terminal-chrome titlebar/footer, --accent-surface/--accent-text tag +
+  footer value, --border-rule frame). Tokens only — no hardcoded hex (the
+  hardcoded mac traffic-light hexes are gone). --primary stays interactive-only.
 -->
 <script lang="ts">
 	import type { Snippet } from 'svelte';
+	import StatusDot from './StatusDot.svelte';
+	import { Separator } from '$lib/components/ui/separator';
 	import { cn } from '$lib/utils';
 
 	export interface TerminalFooterItem {
@@ -47,13 +51,15 @@
 </script>
 
 <div class={cn('terminal', className)} data-slot="terminal-chrome" {...rest}>
-	<!-- Title bar — three decorative traffic-light dots (window furniture). -->
+	<!-- Title bar — three-aspect SIGNAL HEAD (proceed lit + pulsing; caution +
+	     stop unlit at 25%) replaces the old decorative mac traffic-light dots.
+	     Window furniture, not a data mark — aria-hidden. -->
 	<div class="terminal-titlebar">
 		<div class="terminal-titlebar-lead">
-			<span class="terminal-dots" aria-hidden="true">
-				<span class="terminal-dot terminal-dot-close"></span>
-				<span class="terminal-dot terminal-dot-min"></span>
-				<span class="terminal-dot terminal-dot-max"></span>
+			<span class="signal-head" data-slot="signal-head" aria-hidden="true">
+				<StatusDot color="green" pulse size="sm" />
+				<StatusDot color="caution" size="sm" class="opacity-25" />
+				<StatusDot color="stop" size="sm" class="opacity-25" />
 			</span>
 			<span class="terminal-title">{title}</span>
 			{#if tag}
@@ -64,6 +70,9 @@
 			<span class="terminal-status">{status}</span>
 		{/if}
 	</div>
+
+	<!-- Hazard stripe between the titlebar and the body. -->
+	<Separator variant="hazard" hazardSize="sm" />
 
 	<!-- Body -->
 	<div class="terminal-body" class:no-pad={noPadding}>
@@ -88,8 +97,8 @@
 		display: flex;
 		flex-direction: column;
 		border-radius: var(--radius-lg);
-		border: 1px solid var(--border);
-		background: var(--card);
+		border: 2px solid var(--border-rule);
+		background: var(--terminal);
 		overflow: hidden;
 	}
 
@@ -99,7 +108,7 @@
 		justify-content: space-between;
 		gap: 0.75rem;
 		padding: 0.5rem 0.75rem;
-		border-bottom: 1px solid var(--border-subtle);
+		background: var(--terminal-chrome);
 	}
 
 	.terminal-titlebar-lead {
@@ -108,28 +117,12 @@
 		gap: 0.5rem;
 	}
 
-	/* Decorative traffic-light dots — fixed chrome colours, not data marks. */
-	.terminal-dots {
+	/* Signal head — three inline aspect dots (composed StatusDots). */
+	.signal-head {
 		display: inline-flex;
 		align-items: center;
-		gap: 0.375rem;
+		gap: 0.25rem;
 		margin-right: 0.25rem;
-	}
-
-	.terminal-dot {
-		width: 0.625rem;
-		height: 0.625rem;
-		border-radius: var(--radius-pill);
-	}
-
-	.terminal-dot-close {
-		background: #ff5f56;
-	}
-	.terminal-dot-min {
-		background: #ffbd2e;
-	}
-	.terminal-dot-max {
-		background: #27c93f;
 	}
 
 	.terminal-title {
@@ -140,11 +133,11 @@
 
 	.terminal-tag {
 		border-radius: var(--radius-sm);
-		border: 1px solid var(--border-subtle);
 		padding: 0.125rem 0.375rem;
 		font-family: var(--font-mono);
 		font-size: var(--text-micro);
-		color: var(--muted-foreground);
+		background: var(--accent-surface);
+		color: var(--accent-text);
 	}
 
 	.terminal-status {
@@ -166,6 +159,7 @@
 		display: flex;
 		gap: 1.5rem;
 		padding: 0.5rem 0.75rem;
+		background: var(--terminal-chrome);
 		border-top: 1px solid var(--border-subtle);
 	}
 
@@ -183,6 +177,6 @@
 	.terminal-footer-value {
 		font-family: var(--font-mono);
 		font-size: var(--text-caption);
-		color: var(--secondary-foreground);
+		color: var(--accent-text);
 	}
 </style>
