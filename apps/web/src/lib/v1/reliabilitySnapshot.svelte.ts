@@ -32,7 +32,7 @@
 // ordering; no accessible-only filter (needs a DB field).
 
 import { SvelteMap, SvelteSet } from 'svelte/reactivity';
-import { getRouteReliability, getStopReliability } from './repositories';
+import { getRouteReliability, getRoutesIndex, getStopReliability } from './repositories';
 import type {
 	ReliabilityPeriod,
 	RouteReliability,
@@ -134,16 +134,28 @@ function summarizeStop(file: StopReliability | null): ReliabilitySnapshot {
  * The `reliability` action / `request` argument. A bare id keeps the legacy
  * probe-everything behaviour; the object form lets a caller pass the published
  * availability flag (`RouteIndexEntry.reliability`) so the loader can SKIP a
- * fetch for an id that is explicitly known to have no published file.
+ * fetch for an id that is explicitly known to have no published file. `null` is
+ * accepted and treated like `false` (no file) — a defensive sibling of an
+ * explicit `false`, so a caller threading a nullable flag straight through never
+ * accidentally probes.
  */
-export type ReliabilityTarget = string | { id: string; known?: boolean };
+export type ReliabilityTarget = string | { id: string; known?: boolean | null };
 
 function targetId(target: ReliabilityTarget): string {
 	return typeof target === 'string' ? target : target.id;
 }
 
+/**
+ * Resolve the caller-supplied availability flag to a tri-state:
+ *   - `false` — explicitly absent (`known === false` OR `known === null`); skip.
+ *   - `true`  — explicitly present; probe.
+ *   - `undefined` — unknown; the route loader's internal index lookup decides,
+ *     a bare id / pre-flag snapshot keeps the legacy probe.
+ */
 function targetKnown(target: ReliabilityTarget): boolean | undefined {
-	return typeof target === 'string' ? undefined : target.known;
+	if (typeof target === 'string') return undefined;
+	if (target.known === null) return false;
+	return target.known;
 }
 
 /** The public surface of a reliability snapshot loader instance. */
@@ -158,12 +170,15 @@ export interface ReliabilityLoader {
 	 * Register interest in a row. Fetches its id (subject to the concurrency cap)
 	 * the first time only; subsequent calls are no-ops thanks to the per-id cache.
 	 *
-	 * When passed `{ id, known: false }` the loader treats the id as explicitly
-	 * having NO published reliability file and resolves it straight to the
-	 * terminal no-data state WITHOUT a network probe (kills the 404 flood). For a
-	 * bare id, or `known` `true`/`undefined`, the legacy probe behaviour is kept —
-	 * so snapshots published before the `reliability` flag existed still surface
-	 * badges via the fail-soft 404 path.
+	 * When passed `{ id, known: false }` (or `known: null`) the loader treats the
+	 * id as explicitly having NO published reliability file and resolves it
+	 * straight to the terminal no-data state WITHOUT a network probe (kills the 404
+	 * flood). `known: true` probes immediately. For a bare id / `known: undefined`,
+	 * the ROUTE loader consults the static routes_index INTERNALLY (lazy, once,
+	 * race-safe) and still SKIPS routes the index marks `reliability === false` —
+	 * so even a stale call site that drops the flag can't re-flood the metro
+	 * routes; a route absent from the index keeps the legacy fail-soft probe. The
+	 * STOP loader has no such index and keeps the legacy immediate probe.
 	 */
 	request(target: ReliabilityTarget): void;
 	/** A Svelte action: request the row when it scrolls into view (browser). */
@@ -191,6 +206,66 @@ export function createReliabilityLoader(kind: ReliabilityKind): ReliabilityLoade
 
 	const fetcher = kind === 'route' ? getRouteReliability : getStopReliability;
 	const summarizeFor = kind === 'route' ? summarizeRoute : summarizeStop;
+
+	// ── Internal availability index (ROUTE kind only) ──────────────────────────
+	//
+	// Belt-and-suspenders for the 404 flood: even if a caller forgets to thread
+	// the published `reliability` flag (a bare id / `known: undefined`), the route
+	// loader consults the SAME static routes_index the call sites read from, and
+	// SKIPS the probe for any route the index marks `reliability === false`. So a
+	// stale/old bundle that does `request(r.id)` can never re-flood the metro
+	// routes — the loader itself knows they have no file.
+	//
+	// Loaded LAZILY and AT MOST ONCE (the promise is shared by every undecided
+	// request). RACE-SAFE: a request that arrives before the index resolves is
+	// parked (NOT probed), then decided the moment the flags land — we never
+	// probe-then-discover. The stop kind has no such index (stops_index carries no
+	// reliability flag), so it keeps the legacy probe behaviour untouched.
+	const usesIndex = kind === 'route';
+	// id → flag, populated once the index resolves. Absent id ⇒ not in the index
+	// ⇒ legacy probe (fail-soft). A `false` entry ⇒ skip. Reactivity-irrelevant
+	// (read once after load), but a SvelteMap keeps the .svelte.ts lint-clean.
+	let indexFlags: SvelteMap<string, boolean> | null = null;
+	let indexLoad: Promise<void> | null = null;
+	// Undecided ids parked while the index is in flight (raced ahead of it).
+	const pendingUndecided: string[] = [];
+
+	function loadIndexOnce(): Promise<void> {
+		if (indexLoad) return indexLoad;
+		indexLoad = getRoutesIndex()
+			.then((idx) => {
+				const flags = new SvelteMap<string, boolean>();
+				for (const r of idx.routes) {
+					if (typeof r.reliability === 'boolean') flags.set(r.id, r.reliability);
+				}
+				indexFlags = flags;
+			})
+			.catch(() => {
+				// Fail-soft: if the index can't be read, fall back to the legacy probe
+				// for every undecided id (an empty flag map ⇒ no skips, all probe).
+				indexFlags = new SvelteMap<string, boolean>();
+			})
+			.finally(() => {
+				// Drain everyone who raced ahead of the index — decide each now.
+				const parked = pendingUndecided.splice(0);
+				for (const id of parked) decideWithIndex(id);
+			});
+		return indexLoad;
+	}
+
+	// Decide an undecided id against the (now-loaded) index flags. Called only
+	// after `indexFlags` is populated.
+	function decideWithIndex(id: string): void {
+		const flag = indexFlags?.get(id);
+		if (flag === false) {
+			// Known-absent per the index — resolve to no-data WITHOUT a probe.
+			set(id, NO_DATA_SNAPSHOT);
+			return;
+		}
+		// `true` (has history) or absent from the index (pre-flag / fail-soft) ⇒ probe.
+		queue.push(id);
+		pump();
+	}
 
 	function set(id: string, snap: ReliabilitySnapshot): void {
 		cache.set(id, snap);
@@ -222,15 +297,37 @@ export function createReliabilityLoader(kind: ReliabilityKind): ReliabilityLoade
 		const id = targetId(target);
 		if (!id || started.has(id)) return;
 		started.add(id);
-		// Explicitly-absent (known === false): skip the probe and resolve straight
-		// to no-data. `undefined`/`true` keep the legacy fetch (pre-flag snapshots
-		// + routes that do have history). Does NOT touch the fail-soft 404 path.
-		if (targetKnown(target) === false) {
+		const known = targetKnown(target);
+		// Explicitly-absent (known === false, OR null normalized to false): skip the
+		// probe and resolve straight to no-data — no need to wait for the index.
+		if (known === false) {
 			set(id, NO_DATA_SNAPSHOT);
 			return;
 		}
-		queue.push(id);
-		pump();
+		// Explicitly-present (known === true): probe immediately.
+		if (known === true) {
+			queue.push(id);
+			pump();
+			return;
+		}
+		// `known === undefined` — caller didn't thread a flag. For the ROUTE kind,
+		// consult the internal index before probing so a stale call site that drops
+		// `known` still can't flood the metro routes. The STOP kind has no such
+		// index, so it keeps the legacy immediate probe.
+		if (!usesIndex) {
+			queue.push(id);
+			pump();
+			return;
+		}
+		if (indexFlags) {
+			// Index already loaded — decide synchronously, no probe-then-discover.
+			decideWithIndex(id);
+			return;
+		}
+		// Index in flight (or not yet started): park this id and kick the load. It
+		// is decided (skip-or-probe) only once the flags land — never probed first.
+		pendingUndecided.push(id);
+		void loadIndexOnce();
 	}
 
 	function get(id: string): ReliabilitySnapshot {
