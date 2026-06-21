@@ -40,7 +40,7 @@
 	import { getLocale, localizeHref, type Locale } from '$lib/i18n';
 	import { getV1Context, createLiveStore } from '$lib/v1';
 	import { openSurface, type SurfaceTarget } from '$lib/nav';
-	import { formatRelative } from '$lib/utils/time';
+	import { formatRelative, formatRelativeSeconds } from '$lib/utils/time';
 	import SectionHeading from '$lib/components/brand/SectionHeading.svelte';
 	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
 	import MetricDisplay from '$lib/components/brand/MetricDisplay.svelte';
@@ -49,6 +49,13 @@
 	import { LiveFreshness } from '$lib/components/surface';
 	import { Surface, DashboardGrid } from '$lib/components/layout';
 	import { Separator } from '$lib/components/ui/separator';
+	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
+	import {
+		metricInfoFor,
+		type MetricKey,
+		type SupplementalMetricKey,
+	} from '$lib/features/metrics/metrics.content';
+	import { metricsCopy } from '$lib/features/metrics/metrics.copy';
 
 	// The locale + booted manifest are stable for this component's lifetime (the
 	// root layout boots the v1 context once, before the page tree renders), so we
@@ -65,7 +72,6 @@
 	// Static build time is the dataset anchor; the live tier carries the pulse.
 	const generatedUtc =
 		manifest.files.live?.generated_utc ?? manifest.files.static?.generated_utc ?? null;
-	const lastBuilt = generatedUtc ? formatRelative(generatedUtc, locale) : null;
 
 	// Live tier — one store instance for this surface. The v1 context is booted by
 	// the time the page tree renders, so getV1Context() is safe here. The store is
@@ -79,13 +85,30 @@
 
 	const net = $derived(live.network);
 
-	/** Nullable percent → "82%" or the honest no-data glyph (never a fake 0). */
-	function fmtPct(v: number | null | undefined): string {
-		return v == null ? T[locale].noData : `${v}${T[locale].pct}`;
+	// "Last updated X ago" in the terminal chrome — TICKS off the live store so it
+	// advances each second in lockstep with the LiveFreshness chip below it (a frozen
+	// one-shot here read as a contradiction beside the ticking chip). Once the live
+	// tier reports we read its ticking `ageSeconds` (advanced off the shared clock);
+	// before the first tick we fall back to the one-shot static/boot build time so
+	// the chrome still shows an anchor instead of "unknown".
+	const lastBuilt = $derived(
+		live.generatedUtc != null
+			? formatRelativeSeconds(live.ageSeconds ?? 0, locale)
+			: generatedUtc != null
+				? formatRelative(generatedUtc, locale)
+				: null,
+	);
+
+	// The pulse formatters return `null` for a missing value (never a fabricated 0);
+	// the MetricDisplay then renders its muted `emptyLabel` no-data state, the
+	// honest absence reading consistent with the null-aware MetricDisplay.
+	/** Nullable percent → "82%" or null (→ MetricDisplay's no-data state). */
+	function fmtPct(v: number | null | undefined): string | null {
+		return v == null ? null : `${v}${T[locale].pct}`;
 	}
-	/** A required count → localized integer, or the no-data glyph before first tick. */
-	function fmtCount(v: number | null | undefined): string {
-		return v == null ? T[locale].noData : v.toLocaleString(locale === 'fr' ? 'fr-CA' : 'en-CA');
+	/** A required count → localized integer, or null before the first tick. */
+	function fmtCount(v: number | null | undefined): string | null {
+		return v == null ? null : v.toLocaleString(locale === 'fr' ? 'fr-CA' : 'en-CA');
 	}
 
 	type CopyKey =
@@ -169,6 +192,15 @@
 		},
 	};
 	const t = $derived(T[locale]);
+
+	// The metric-explainer (i) affordance for each pulse tile: a one-line tip + a
+	// localized deep link to /metrics#<anchor>, the SAME wiring NetworkHealth uses on
+	// its headline KPIs. Every pulse number carries its honest definition.
+	const explainerCopy = $derived(metricsCopy[locale]);
+	const info = $derived((key: MetricKey | SupplementalMetricKey, name: string) => {
+		const i = metricInfoFor(key, locale);
+		return { ...i, label: explainerCopy.info.trigger(name), linkLabel: explainerCopy.info.link };
+	});
 
 	// Whether the live tier is currently reporting (drives the pulse verdict). The
 	// store is null before the first client tick and on a missing/absent live tier.
@@ -404,21 +436,12 @@
 			gutter={false}
 			class="pulse-grid"
 			aria-label={t.pulseLabel}
+			aria-live="polite"
 		>
-			<li><MetricDisplay value={fmtPct(net?.on_time_pct)} label={t.metricOnTime} size="lg" /></li>
-			<li>
-				<MetricDisplay
-					value={fmtCount(net?.vehicles_in_service)}
-					label={t.metricVehicles}
-					size="lg"
-				/>
-			</li>
-			<li>
-				<MetricDisplay value={fmtCount(net?.non_responding)} label={t.metricSilent} size="lg" />
-			</li>
-			<li>
-				<MetricDisplay value={fmtPct(net?.coverage_pct)} label={t.metricCoverage} size="lg" />
-			</li>
+			<li>{@render pulse(fmtPct(net?.on_time_pct), t.metricOnTime, 'otp')}</li>
+			<li>{@render pulse(fmtCount(net?.vehicles_in_service), t.metricVehicles, 'vehicleCount')}</li>
+			<li>{@render pulse(fmtCount(net?.non_responding), t.metricSilent, 'silentTrip')}</li>
+			<li>{@render pulse(fmtPct(net?.coverage_pct), t.metricCoverage, 'coverage')}</li>
 		</DashboardGrid>
 	</TerminalChrome>
 
@@ -473,6 +496,17 @@
 	</nav>
 </Surface>
 
+<!-- A pulse tile = MetricDisplay + its (i) explainer, top-aligned beside the quiet
+     label (same shape as NetworkHealth's `kpi`). A null value renders the muted
+     no-data state via `emptyLabel`, never a fabricated 0. -->
+{#snippet pulse(value: string | null, label: string, key: MetricKey | SupplementalMetricKey)}
+	{@const i = info(key, label)}
+	<div class="pulse-kpi">
+		<MetricDisplay {value} {label} emptyLabel={t.noData} size="lg" />
+		<MetricInfo tip={i.tip} href={i.href} label={i.label} linkLabel={i.linkLabel} side="bottom" />
+	</div>
+{/snippet}
+
 {#snippet tileBody(glyph: string, title: string, desc: string)}
 	<span class="hub-tile-glyph" aria-hidden="true">{glyph}</span>
 	<span class="hub-tile-body">
@@ -519,6 +553,18 @@
 		padding: 0;
 	}
 	:global(.pulse-grid) > li {
+		min-width: 0;
+	}
+	/* A pulse KPI cell: the MetricDisplay (label + big value) with its (i) explainer
+	   pinned beside the quiet label, top-aligned so it never overlaps the value.
+	   Mirrors NetworkHealth's .network-kpi. */
+	.pulse-kpi {
+		display: flex;
+		align-items: flex-start;
+		gap: 0.4rem;
+		min-width: 0;
+	}
+	.pulse-kpi :global([data-slot='metric-display']) {
 		min-width: 0;
 	}
 

@@ -47,6 +47,14 @@
 		 * (--container-wide), 'none' (fill), or any CSS length.
 		 */
 		maxWidth?: 'content' | 'wide' | 'none' | (string & {});
+		/**
+		 * Vertical alignment of each tile WITHIN its grid row. Default 'stretch' —
+		 * cells fill the tallest sibling so an equal-height board reads as a clean
+		 * row of cards (the home explore/pillar boards rely on this). Pass 'start'
+		 * to let each tile take its NATURAL height (no elongation) when the tiles
+		 * carry uneven content — e.g. the /network readout board.
+		 */
+		align?: 'start' | 'stretch';
 		/** Apply the symmetric page gutter (--space-page-x). Default true. */
 		gutter?: boolean;
 		/**
@@ -65,6 +73,7 @@
 		as = 'div',
 		minTile = '240px',
 		maxWidth = 'none',
+		align = 'stretch',
 		gutter = true,
 		label,
 		class: className,
@@ -101,7 +110,7 @@
 	this={as}
 	class={cn('dashboard-grid', gutter && 'dashboard-grid--gutter', className)}
 	data-slot="dashboard-grid"
-	style="--min-tile: {minTile}; --board-max: {maxWidthValue};"
+	style="--min-tile: {minTile}; --board-max: {maxWidthValue}; --board-align: {align};"
 	role={label && !isListElement ? 'region' : undefined}
 	aria-label={label && !isListElement ? label : undefined}
 	{...restProps}
@@ -117,6 +126,10 @@
 		width: 100%;
 		max-width: var(--board-max);
 		margin: 0 auto;
+		/* Per-row vertical alignment of the cells. Defaults to `stretch` (equal-height
+		   cards) via the --board-align fallback so every existing consumer is
+		   unchanged; a caller passing align="start" lets tiles take natural height. */
+		align-items: var(--board-align, stretch);
 		/* Neutral list reset so an `as="ul"`/`"ol"` render is a clean grid container
 		   (no default bullets/indent/margin) while the caller's <li> rows ride the
 		   cells. A <div> is unaffected by these. */
