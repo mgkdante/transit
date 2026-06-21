@@ -1089,18 +1089,132 @@ export function metricName(key: MetricKey, locale: Locale): string {
 	return METRICS_BY_KEY[key].name[locale];
 }
 
+// ── Supplemental (i) tips ──────────────────────────────────────────────────────
+//
+// Some surfaces label numbers that are NOT one of the 14 reliability families that
+// drive the /metrics explainer page (rider-impact weighting, schedule coverage,
+// observation counts, and the /alerts GTFS-RT dimensions). They still deserve an
+// honest one-line (i) tip with a deep link into /metrics, but they do NOT get their
+// own explainer section, so they live here rather than in the METRICS array (which
+// the explainer page renders 1:1 and the coverage test pins exactly).
+//
+// Each entry carries the SAME honesty doctrine: feed-derived proxy, observation-
+// weighted, NULL = no data, never a fabricated count. The deep-link `anchor` points
+// at the closest existing /metrics section so the tip's "how this is measured" link
+// always lands on real, related copy.
+export type SupplementalMetricKey =
+	| 'riderImpact'
+	| 'coverage'
+	| 'vehicleCount'
+	| 'affectedCounts'
+	| 'silentTrip'
+	| 'alertCause'
+	| 'alertEffect'
+	| 'alertSeverity'
+	| 'alertDuration'
+	| 'alertReach';
+
+interface SupplementalMetricEntry {
+	/** Deep-link target — an existing /metrics section anchor (no leading '#'). */
+	readonly anchor: string;
+	/** ONE-LINE plain explanation, the (i) hover tip (FR canonical / EN mirror). */
+	readonly oneLiner: BilingualText;
+}
+
+export const SUPPLEMENTAL_METRIC_TIPS: Readonly<
+	Record<SupplementalMetricKey, SupplementalMetricEntry>
+> = {
+	riderImpact: {
+		anchor: 'cancellation',
+		oneLiner: {
+			fr: "Un score relatif qui pondère la perte de service d'une ligne par son ampleur, pas un décompte d'usagers réels ni une mesure certifiée; plus haut = plus de service manqué.",
+			en: 'A relative score that weights a route’s lost service by its size, not a count of real riders and not a certified figure; higher means more missed service.',
+		},
+	},
+	coverage: {
+		anchor: 'regularity',
+		oneLiner: {
+			fr: "La part du service prévu qu'on a réellement vue passer dans le flux en direct, un proxy de couverture, pas une garantie que chaque trajet a roulé.",
+			en: 'The share of scheduled service we actually saw in the live feed, a coverage proxy, not a guarantee that every trip ran.',
+		},
+	},
+	vehicleCount: {
+		anchor: 'headway',
+		oneLiner: {
+			fr: 'Le nombre de véhicules distincts vus rapporter dans le flux sur la période, un décompte d’observations, pas une flotte officielle ni une capacité.',
+			en: 'The count of distinct vehicles seen reporting in the feed over the period, an observation count, not an official fleet size or capacity.',
+		},
+	},
+	affectedCounts: {
+		anchor: 'metrics-provenance',
+		oneLiner: {
+			fr: 'Le nombre de lignes, arrêts, alertes et véhicules distincts touchés par les observations de la journée, des décomptes d’entités tirés du flux, pas une estimation d’usagers ni un total certifié.',
+			en: 'How many distinct routes, stops, alerts, and vehicles the day’s observations touched, entity counts derived from the feed, not a rider estimate and not a certified total.',
+		},
+	},
+	silentTrip: {
+		anchor: 'skipped-stop',
+		oneLiner: {
+			fr: "Les trajets prévus qui ne sont jamais apparus en direct dans le flux, un signal de service silencieux, pas une annulation confirmée par l'agence.",
+			en: 'Scheduled trips that never showed up live in the feed, a silent-service signal, not an agency-confirmed cancellation.',
+		},
+	},
+	alertCause: {
+		anchor: 'metrics-provenance',
+		oneLiner: {
+			fr: "La cause déclarée d'une alerte (p. ex. travaux, météo, panne), reprise telle quelle du flux GTFS-RT, pas une enquête ni une vérification indépendante.",
+			en: 'The declared cause of an alert (e.g. construction, weather, breakdown), taken as-is from the GTFS-RT feed, not an investigation or independent check.',
+		},
+	},
+	alertEffect: {
+		anchor: 'metrics-provenance',
+		oneLiner: {
+			fr: "L'effet déclaré d'une alerte sur le service (p. ex. détour, retards, arrêt déplacé), repris tel quel du flux, pas un impact mesuré.",
+			en: 'The declared effect of an alert on service (e.g. detour, delays, stop moved), taken as-is from the feed, not a measured impact.',
+		},
+	},
+	alertSeverity: {
+		anchor: 'metrics-provenance',
+		oneLiner: {
+			fr: "Le niveau de gravité que l'agence a attaché à l'alerte dans le flux, son propre étiquetage, pas un score calculé par nous.",
+			en: 'The severity level the agency attached to the alert in the feed, its own labelling, not a score we computed.',
+		},
+	},
+	alertDuration: {
+		anchor: 'metrics-provenance',
+		oneLiner: {
+			fr: "La durée annoncée d'une alerte d'après ses fenêtres actives du flux, NULL quand la fenêtre est ouverte ou incohérente, jamais un 0 inventé.",
+			en: 'An alert’s announced duration from its active windows in the feed, NULL when the window is open-ended or inconsistent, never a fabricated 0.',
+		},
+	},
+	alertReach: {
+		anchor: 'metrics-provenance',
+		oneLiner: {
+			fr: "Le nombre de lignes et d'arrêts qu'une alerte déclare toucher d'après le flux, un décompte d'entités nommées, pas une estimation d'usagers affectés.",
+			en: 'How many routes and stops an alert declares it affects per the feed, a count of named entities, not an estimate of affected riders.',
+		},
+	},
+};
+
 /**
- * The (i)-affordance payload for a metric label on the reliability surface: the
- * one-line tip + a localized deep link to the explainer at that metric's anchor.
- * `localizeHref` strips/re-adds the locale prefix; the `#anchor` is appended by
- * us (localizeHref treats the hash as caller-owned), so EN → `/metrics#otp` and
- * FR → `/fr/metrics#otp`.
+ * The (i)-affordance payload for a metric label on a data surface: the one-line
+ * tip + a localized deep link to the explainer at that metric's anchor.
+ *
+ * Resolves BOTH the 14 reliability families (MetricKey, full explainer entry) and
+ * the supplemental metrics (SupplementalMetricKey: rider-impact, coverage,
+ * vehicle/silent-trip counts, the /alerts dimensions) that carry only a tip +
+ * anchor. `localizeHref` strips/re-adds the locale prefix; the `#anchor` is
+ * appended by us (localizeHref treats the hash as caller-owned), so EN →
+ * `/metrics#otp` and FR → `/fr/metrics#otp`.
  */
 export function metricInfoFor(
-	key: MetricKey,
+	key: MetricKey | SupplementalMetricKey,
 	locale: Locale,
 ): { tip: string; href: string; anchor: string } {
-	const entry = METRICS_BY_KEY[key];
+	const entry: { oneLiner: BilingualText; anchor: string } =
+		key in METRICS_BY_KEY
+			? METRICS_BY_KEY[key as MetricKey]
+			: SUPPLEMENTAL_METRIC_TIPS[key as SupplementalMetricKey];
 	return {
 		tip: entry.oneLiner[locale],
 		href: `${localizeHref('/metrics', locale)}#${entry.anchor}`,

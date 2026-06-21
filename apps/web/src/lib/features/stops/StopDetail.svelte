@@ -77,6 +77,13 @@
 	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
 	import MetricDisplay from '$lib/components/brand/MetricDisplay.svelte';
 	import { Badge } from '$lib/components/ui/badge';
+	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
+	import {
+		metricInfoFor,
+		type MetricKey,
+		type SupplementalMetricKey,
+	} from '$lib/features/metrics/metrics.content';
+	import { metricsCopy } from '$lib/features/metrics/metrics.copy';
 	import { formatUtc } from '$lib/utils/time';
 	import { detailCopy } from './stops.copy';
 
@@ -90,6 +97,15 @@
 	const locale: Locale = getLocale();
 	const t = $derived(detailCopy[locale]);
 	const edgeLayout = $derived(layout.isDesktop ? 'desktop' : 'mobile');
+
+	// The in-app metric-explainer (i) affordance, same wiring as the reliability
+	// clusters: a one-line tip + a localized deep link to /metrics#<anchor>. An
+	// INTERACTIVE control beside each reliability section heading, never a data mark.
+	const explainerCopy = $derived(metricsCopy[locale]);
+	const info = $derived((key: MetricKey | SupplementalMetricKey, name: string) => {
+		const i = metricInfoFor(key, locale);
+		return { ...i, label: explainerCopy.info.trigger(name), linkLabel: explainerCopy.info.link };
+	});
 
 	type TabKey = 'next' | 'schedule' | 'info' | 'reliability';
 	const tabs = $derived([
@@ -553,6 +569,21 @@
 	}
 </script>
 
+<!-- The (i) metric-explainer affordance, reused beside each reliability section
+     heading. Declared at the top level so the pane snippets (passed to
+     EntityDetail) can render it; mirrors RouteDetail's scheduleInfo. -->
+{#snippet metricInfo(key: MetricKey | SupplementalMetricKey, name: string)}
+	{@const i = info(key, name)}
+	<MetricInfo
+		class="stop-metric-info"
+		tip={i.tip}
+		href={i.href}
+		label={i.label}
+		linkLabel={i.linkLabel}
+		side="bottom"
+	/>
+{/snippet}
+
 <EntityDetail
 	kicker={t.kicker}
 	back={{ href: localizeHref('/stops', locale), label: t.back }}
@@ -782,7 +813,10 @@
 							     surfaced prominently rather than buried with a placeholder. -->
 								{#if dayPercentiles != null}
 									<div class="stop-tile stop-reliability-percentiles">
-										<SectionLabel text={t.reliability.percentiles.heading} variant="station" />
+										<span class="stop-tile-heading">
+											<SectionLabel text={t.reliability.percentiles.heading} variant="station" />
+											{@render metricInfo('p50p90', t.reliability.percentiles.heading)}
+										</span>
 										<div class="stop-reliability-percentile-tiles">
 											<MetricDisplay
 												value={fmtMin(dayPercentiles.p50)}
@@ -807,6 +841,15 @@
 							     reflow past it, exactly like every sibling readout. -->
 								{#if gradedPeriods.length > 0}
 									<div class="stop-tile" data-slot="stop-reliability-pane">
+										<!-- The shared ReliabilityPane owns the OTP / delay / severe data marks;
+									     its three intrinsic metrics each get an (i) here at the section
+									     heading, never inside the primitive's internals. -->
+										<span class="stop-tile-heading stop-tile-heading--metrics">
+											<SectionLabel text={t.reliability.paneHeading} variant="station" />
+											{@render metricInfo('otp', t.reliability.metrics.otp)}
+											{@render metricInfo('avgDelay', t.reliability.metrics.avgDelay)}
+											{@render metricInfo('severe', t.reliability.metrics.severe)}
+										</span>
 										<ReliabilityPane periods={gradedPeriods} {locale} />
 									</div>
 								{/if}
@@ -818,7 +861,10 @@
 										class="stop-tile stop-tile--wide stop-reliability-habits"
 										data-slot="stop-habits"
 									>
-										<SectionLabel text={t.reliability.habits.heading} variant="station" />
+										<span class="stop-tile-heading">
+											<SectionLabel text={t.reliability.habits.heading} variant="station" />
+											{@render metricInfo('habits', t.reliability.habits.heading)}
+										</span>
 										<Heatmap
 											grid={habitsMatrix}
 											dayLabels={[...t.reliability.habits.weekdaysShort]}
@@ -850,7 +896,10 @@
 							     fabricated bar, never an even/all-empty split. -->
 								{#if hasCrowding && crowdingDominant != null}
 									<div class="stop-tile stop-reliability-crowding" data-slot="stop-crowding">
-										<SectionLabel text={t.reliability.crowding.heading} variant="station" />
+										<span class="stop-tile-heading">
+											<SectionLabel text={t.reliability.crowding.heading} variant="station" />
+											{@render metricInfo('occupancy', t.reliability.crowding.heading)}
+										</span>
 										<p class="stop-reliability-window">{t.reliability.crowding.window}</p>
 										<MetricDisplay
 											value={crowdingDominantPct ?? t.reliability.noDelay}
@@ -873,7 +922,10 @@
 								     this stop: an honest note rather than silently nothing. Keeps the
 								     "buses observed here, not a stop attribute" framing via the heading. -->
 									<div class="stop-tile stop-reliability-crowding" data-slot="stop-crowding-empty">
-										<SectionLabel text={t.reliability.crowding.heading} variant="station" />
+										<span class="stop-tile-heading">
+											<SectionLabel text={t.reliability.crowding.heading} variant="station" />
+											{@render metricInfo('occupancy', t.reliability.crowding.heading)}
+										</span>
 										<p class="stop-reliability-window">{t.reliability.crowding.noTelemetry}</p>
 									</div>
 								{/if}
@@ -885,7 +937,10 @@
 							     observations back it. Stands down when day_of_week is empty/absent. -->
 								{#if hasWeekday}
 									<div class="stop-tile stop-reliability-weekday" data-slot="stop-weekday">
-										<SectionLabel text={t.reliability.weekday.heading} variant="station" />
+										<span class="stop-tile-heading">
+											<SectionLabel text={t.reliability.weekday.heading} variant="station" />
+											{@render metricInfo('seasonality', t.reliability.weekday.heading)}
+										</span>
 										<div
 											class="stop-reliability-route-list"
 											role="list"
@@ -913,7 +968,10 @@
 							     carries no shift/day-type grain. A trailing-window proxy. -->
 								{#if hasTimeOfDay}
 									<div class="stop-tile stop-reliability-tod" data-slot="stop-time-of-day">
-										<SectionLabel text={t.reliability.timeOfDay.heading} variant="station" />
+										<span class="stop-tile-heading">
+											<SectionLabel text={t.reliability.timeOfDay.heading} variant="station" />
+											{@render metricInfo('severe', t.reliability.timeOfDay.heading)}
+										</span>
 										{#if shiftRows.length > 0}
 											<div
 												class="stop-reliability-route-list"
@@ -963,7 +1021,10 @@
 							     avg delay so the reader sees WHICH line drags this stop down. -->
 								{#if rankedRoutes.length > 0}
 									<div class="stop-tile stop-reliability-routes">
-										<SectionLabel text={t.reliability.byRoute} variant="station" />
+										<span class="stop-tile-heading">
+											<SectionLabel text={t.reliability.byRoute} variant="station" />
+											{@render metricInfo('avgDelay', t.reliability.byRoute)}
+										</span>
 										<div class="stop-reliability-route-list" role="list">
 											{#each rankedRoutes as row (row.key)}
 												<RankedRow
@@ -981,7 +1042,10 @@
 								     so the ranked list is empty. Say so rather than vanishing the
 								     section silently. -->
 									<div class="stop-tile stop-reliability-routes">
-										<SectionLabel text={t.reliability.byRoute} variant="station" />
+										<span class="stop-tile-heading">
+											<SectionLabel text={t.reliability.byRoute} variant="station" />
+											{@render metricInfo('avgDelay', t.reliability.byRoute)}
+										</span>
 										<p class="stop-reliability-window">{t.reliability.noRouteBreakdown}</p>
 									</div>
 								{/if}
@@ -1073,6 +1137,15 @@
 		border: 1px solid var(--border);
 		border-radius: var(--radius-lg);
 		background: var(--card);
+	}
+	/* A reliability tile heading + its explainer (i)s, kept on the label's baseline.
+	   Wraps so several (i)s (e.g. the OTP / delay / severe trio) never overflow a
+	   narrow tile. */
+	.stop-tile-heading {
+		display: inline-flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 0.35rem;
 	}
 	/* The 7x24 habits matrix is a wide readout — span the whole board on desktop,
 	   collapse to a single column on mobile (auto-fit reflow handles <lg). */

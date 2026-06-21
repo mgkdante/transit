@@ -31,10 +31,24 @@
 	import { Separator } from '$lib/components/ui/separator';
 	import { RankedRow } from '$lib/components/dataviz';
 	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
+	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
+	import { metricInfoFor, type MetricKey } from '$lib/features/metrics/metrics.content';
+	import { metricsCopy } from '$lib/features/metrics/metrics.copy';
 	import { copy as COPY } from './repeatOffenders.copy';
 
 	const locale: Locale = getLocale();
 	const t = $derived(COPY[locale]);
+
+	// The metric-explainer (i) affordance: a one-line tip + a localized deep link
+	// to /metrics#<anchor>, wired onto the ranked-list heading so the average-delay
+	// column has its honest definition (same wiring as RouteDetail).
+	const explainerCopy = $derived(metricsCopy[locale]);
+	function buildInfo(key: MetricKey, name: string) {
+		const i = metricInfoFor(key, locale);
+		return { ...i, label: explainerCopy.info.trigger(name), linkLabel: explainerCopy.info.link };
+	}
+	// The (i) on the ranked-list heading explains the average-delay column.
+	const headingInfo = $derived(buildInfo('avgDelay', t.listSection));
 
 	const offenders = createResource(() => getRepeatOffenders());
 
@@ -157,7 +171,16 @@
 		isEmpty={(d) => (d.offenders?.length ?? 0) === 0}
 	>
 		<div class="repeat-offenders-block">
-			<SectionLabel text={t.listSection} variant="station" />
+			<span class="repeat-offenders-section">
+				<SectionLabel text={t.listSection} variant="station" />
+				<MetricInfo
+					tip={headingInfo.tip}
+					href={headingInfo.href}
+					label={headingInfo.label}
+					linkLabel={headingInfo.linkLabel}
+					side="bottom"
+				/>
+			</span>
 			<p class="repeat-offenders-caption">{t.rowCaption}</p>
 			<!-- The ranked ledger rides the SHARED DashboardGrid auto-fit recipe as a
 			     semantic <ul> (worst-first published order honoured left-to-right then
@@ -206,6 +229,12 @@
 		display: flex;
 		flex-direction: column;
 		gap: 0.75rem;
+	}
+	/* Section heading + its (i) explainer share a baseline-aligned inline row. */
+	.repeat-offenders-section {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.4rem;
 	}
 	/* The ranked ledger rides the SHARED DashboardGrid auto-fit recipe (rendered as a
 	   semantic <ul> via `as="ul"`); the grid-track recipe + minTile live in

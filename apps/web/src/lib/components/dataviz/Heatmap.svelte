@@ -339,7 +339,7 @@
      a flat `img` when static (one summary announcement). -->
 <div
 	bind:this={ref}
-	class={cn('dv-heatmap inline-block', className)}
+	class={cn('dv-heatmap block max-w-full', className)}
 	role={interactive ? 'group' : 'img'}
 	aria-label={label ?? 'Heatmap by day and hour'}
 	data-slot="heatmap"

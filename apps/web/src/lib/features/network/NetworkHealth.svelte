@@ -77,10 +77,26 @@
 	import { EdgeState } from '$lib/components/edge';
 	import MetricDisplay from '$lib/components/brand/MetricDisplay.svelte';
 	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
+	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
+	import {
+		metricInfoFor,
+		type MetricKey,
+		type SupplementalMetricKey,
+	} from '$lib/features/metrics/metrics.content';
+	import { metricsCopy } from '$lib/features/metrics/metrics.copy';
 	import { copy as COPY, OCCUPANCY_LABELS, STATUS_LABELS } from './network.copy';
 
 	const locale: Locale = getLocale();
 	const t = $derived(COPY[locale]);
+
+	// The metric-explainer (i) affordance: a one-line tip + a localized deep link to
+	// /metrics#<anchor>, wired onto every headline KPI + section heading so each
+	// number carries its honest definition (same wiring as RouteDetail).
+	const explainerCopy = $derived(metricsCopy[locale]);
+	const info = $derived((key: MetricKey | SupplementalMetricKey, name: string) => {
+		const i = metricInfoFor(key, locale);
+		return { ...i, label: explainerCopy.info.trigger(name), linkLabel: explainerCopy.info.link };
+	});
 
 	// Live tier — one store instance for this surface; the v1 context is booted
 	// by the time the page tree renders, so getV1Context() is safe here.
@@ -573,6 +589,31 @@
 	}
 </script>
 
+<!-- A headline KPI = MetricDisplay + its (i) explainer, top-aligned beside the
+     quiet label. Declared once so every network scalar carries an honest,
+     deep-linked definition. -->
+{#snippet kpi(
+	value: string,
+	label: string,
+	key: MetricKey | SupplementalMetricKey,
+	size: 'sm' | 'md' | 'lg',
+)}
+	{@const i = info(key, label)}
+	<div class="network-kpi">
+		<MetricDisplay {value} {label} {size} />
+		<MetricInfo tip={i.tip} href={i.href} label={i.label} linkLabel={i.linkLabel} side="bottom" />
+	</div>
+{/snippet}
+
+<!-- A section heading + its (i) explainer, baseline-aligned. -->
+{#snippet sectionInfo(text: string, key: MetricKey | SupplementalMetricKey)}
+	{@const i = info(key, text)}
+	<span class="network-section">
+		<SectionLabel {text} variant="station" />
+		<MetricInfo tip={i.tip} href={i.href} label={i.label} linkLabel={i.linkLabel} side="bottom" />
+	</span>
+{/snippet}
+
 <Surface width="bleed" class="network">
 	<SurfaceHeader kicker={t.kicker} heading={t.heading} lede={t.lede}>
 		<div class="network-feed-health">
@@ -618,23 +659,15 @@
 			     the enclosing <section aria-label> already names the LIVE region, so the
 			     grid stays a plain layout container (no redundant nested landmark). -->
 			<DashboardGrid minTile="200px" gutter={false}>
-				<MetricDisplay value={fmtPct(net.on_time_pct)} label={t.metrics.onTime} size="lg" />
-				<MetricDisplay
-					value={fmtCount(net.vehicles_in_service)}
-					label={t.metrics.vehicles}
-					size="lg"
-				/>
+				{@render kpi(fmtPct(net.on_time_pct), t.metrics.onTime, 'otp', 'lg')}
+				{@render kpi(fmtCount(net.vehicles_in_service), t.metrics.vehicles, 'vehicleCount', 'lg')}
 				<!-- Silent vehicles this cycle — an honest denominator for coverage.
 				     `non_responding` is a contract-required int, so a plain count is
 				     correct here (it is never null → no no-data branch to guard). -->
-				<MetricDisplay
-					value={fmtCount(net.non_responding)}
-					label={t.metrics.notReporting}
-					size="lg"
-				/>
-				<MetricDisplay value={fmtPct(net.coverage_pct)} label={t.metrics.coverage} size="lg" />
-				<MetricDisplay value={fmtMin(net.delay_p50_min)} label={t.metrics.delayP50} size="md" />
-				<MetricDisplay value={fmtMin(net.delay_p90_min)} label={t.metrics.delayP90} size="md" />
+				{@render kpi(fmtCount(net.non_responding), t.metrics.notReporting, 'silentTrip', 'lg')}
+				{@render kpi(fmtPct(net.coverage_pct), t.metrics.coverage, 'coverage', 'lg')}
+				{@render kpi(fmtMin(net.delay_p50_min), t.metrics.delayP50, 'p50p90', 'md')}
+				{@render kpi(fmtMin(net.delay_p90_min), t.metrics.delayP90, 'p50p90', 'md')}
 			</DashboardGrid>
 
 			<!-- Distribution board — status mix · crowding mix · delay histogram ·
@@ -658,7 +691,7 @@
 				<!-- Crowding (occupancy) — only when telemetry was received this cycle -->
 				{#if hasOccupancy}
 					<div class="network-tile">
-						<SectionLabel text={t.occupancySection} variant="station" />
+						{@render sectionInfo(t.occupancySection, 'occupancy')}
 						<StackedBar
 							scale="occupancy"
 							segments={occupancySegments}
@@ -678,7 +711,7 @@
 				     the COUNT, colour reads the early/late sense off the status scale. -->
 				{#if hasDelayHistogram}
 					<div class="network-tile">
-						<SectionLabel text={t.delayHistogramSection} variant="station" />
+						{@render sectionInfo(t.delayHistogramSection, 'p50p90')}
 						<p class="network-hist-caption">{t.delayHistogram.caption}</p>
 						<ul
 							class="network-hist"
@@ -710,7 +743,7 @@
 				     interactivity + accessible name, the inner RankedRow is `bare`. -->
 				{#if hasSilentRows}
 					<div class="network-tile">
-						<SectionLabel text={t.nonRespondingSection} variant="station" />
+						{@render sectionInfo(t.nonRespondingSection, 'silentTrip')}
 						<p class="network-silent-caption">{t.nonResponding.caption}</p>
 						<ul
 							class="network-silent"
@@ -835,7 +868,7 @@
 				<!-- Primary trend: on-time % vs the chosen delay series + the vehicles
 				     context sparkline. A wide cell — the daily line needs the room. -->
 				<div class="network-tile network-tile--wide">
-					<SectionLabel text={t.trendSection} variant="station" />
+					{@render sectionInfo(t.trendSection, 'otp')}
 					<div class="network-trend">
 						<TrendLine
 							onTime={chart.onTime}
@@ -877,9 +910,9 @@
 				     series carries no cancellation data (never a flat zero line). -->
 				{#if hasCancel}
 					<div class="network-tile">
-						<SectionLabel text={t.cancelSection} variant="station" />
+						{@render sectionInfo(t.cancelSection, 'cancellation')}
 						<div class="network-trend">
-							<MetricDisplay value={fmtCancel(cancelLatest)} label={t.cancel.metric} size="md" />
+							{@render kpi(fmtCancel(cancelLatest), t.cancel.metric, 'cancellation', 'md')}
 							<!-- Single-series: only the cancellation rate is plotted. `singleSeries`
 							     suppresses the empty retard legend swatch + its y-tick gutter, so the
 							     legend renders ONE line, not a phantom second swatch. -->
@@ -904,7 +937,7 @@
 				     split); the whole tile stands down when no day carries crowding data. -->
 				{#if hasOccupancyTrend}
 					<div class="network-tile">
-						<SectionLabel text={t.occupancyTrendSection} variant="station" />
+						{@render sectionInfo(t.occupancyTrendSection, 'occupancy')}
 						<ul
 							class="network-occupancy-days"
 							aria-label={t.occupancyTrend.summary}
@@ -936,7 +969,7 @@
 				     anchor is preserved — it spans the two ranked tiles + the caveat. -->
 				{#if hasShift}
 					<div class="network-tile" data-slot="network-shift">
-						<SectionLabel text={t.shiftSection} variant="station" />
+						{@render sectionInfo(t.shiftSection, 'severe')}
 						<p class="network-shift-caption">{t.shift.rowCaption}</p>
 						<div class="network-ranked" role="list" aria-label={t.shift.shiftSummary}>
 							{#each shiftRows as row (row.key)}
@@ -967,7 +1000,7 @@
 				     and the test's `network-shift` anchor falls to THIS tile instead. -->
 				{#if hasDayType}
 					<div class="network-tile" data-slot={hasShift ? undefined : 'network-shift'}>
-						<SectionLabel text={t.dayTypeSection} variant="station" />
+						{@render sectionInfo(t.dayTypeSection, 'seasonality')}
 						<p class="network-shift-caption">{t.shift.rowCaption}</p>
 						<div class="network-ranked" role="list" aria-label={t.shift.dayTypeSummary}>
 							{#each dayTypeRows as row (row.key)}
@@ -1020,6 +1053,24 @@
 		border-radius: var(--radius-lg);
 		background: var(--card);
 	}
+	/* A headline KPI cell: the MetricDisplay (label + big value) with its (i)
+	   explainer pinned top-right beside the quiet label, never over the value. */
+	.network-kpi {
+		display: flex;
+		align-items: flex-start;
+		gap: 0.4rem;
+		min-width: 0;
+	}
+	.network-kpi :global([data-slot='metric-display']) {
+		min-width: 0;
+	}
+	/* Section heading + its (i) explainer share a baseline-aligned inline row. */
+	.network-section {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.4rem;
+	}
+
 	/* The primary TrendLine is a wide readout — span the whole board on desktop,
 	   collapse to a single column on mobile (the auto-fit reflow handles <lg). */
 	@media (min-width: 1024px) {

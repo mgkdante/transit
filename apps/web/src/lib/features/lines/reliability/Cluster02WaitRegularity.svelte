@@ -32,7 +32,11 @@
 	import MetricDisplay from '$lib/components/brand/MetricDisplay.svelte';
 	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
-	import { metricInfoFor, type MetricKey } from '$lib/features/metrics/metrics.content';
+	import {
+		metricInfoFor,
+		type MetricKey,
+		type SupplementalMetricKey,
+	} from '$lib/features/metrics/metrics.content';
 	import { metricsCopy } from '$lib/features/metrics/metrics.copy';
 	import type { WaitRegularityVM } from './clusters';
 	import type { ReliabilityCopy } from './reliability.copy';
@@ -122,7 +126,7 @@
 	// The in-app metric-explainer (i) affordance: the one-line tip + a localized
 	// deep link to /metrics#<anchor>. An INTERACTIVE control beside each label.
 	const explainerCopy = $derived(metricsCopy[locale]);
-	const info = $derived((key: MetricKey, name: string) => {
+	const info = $derived((key: MetricKey | SupplementalMetricKey, name: string) => {
 		const i = metricInfoFor(key, locale);
 		return { ...i, label: explainerCopy.info.trigger(name), linkLabel: explainerCopy.info.link };
 	});
@@ -215,7 +219,7 @@
 	const hasSpan = $derived(latestSpan != null);
 </script>
 
-{#snippet metricInfo(key: MetricKey, name: string)}
+{#snippet metricInfo(key: MetricKey | SupplementalMetricKey, name: string)}
 	{@const i = info(key, name)}
 	<MetricInfo
 		class="cluster-info"
@@ -314,22 +318,34 @@
 					</span>
 				</div>
 				<div class="shift-metrics">
-					<MetricDisplay
-						value={fmtMin(latestSpan.service_span_min)}
-						label={t.serviceSpan}
-						size="sm"
-					/>
-					<MetricDisplay
-						value={fmtMin(latestSpan.first_trip_delay_min)}
-						label={t.firstTripDelay}
-						size="sm"
-					/>
-					<MetricDisplay
-						value={fmtMin(latestSpan.last_trip_delay_min)}
-						label={t.lastTripDelay}
-						size="sm"
-					/>
-					<MetricDisplay value={fmtCount(latestSpan.trip_count)} label={t.tripCount} size="sm" />
+					<div class="metric-with-info">
+						<MetricDisplay
+							value={fmtMin(latestSpan.service_span_min)}
+							label={t.serviceSpan}
+							size="sm"
+						/>
+						{@render metricInfo('serviceSpan', t.serviceSpan)}
+					</div>
+					<div class="metric-with-info">
+						<MetricDisplay
+							value={fmtMin(latestSpan.first_trip_delay_min)}
+							label={t.firstTripDelay}
+							size="sm"
+						/>
+						{@render metricInfo('serviceSpan', t.firstTripDelay)}
+					</div>
+					<div class="metric-with-info">
+						<MetricDisplay
+							value={fmtMin(latestSpan.last_trip_delay_min)}
+							label={t.lastTripDelay}
+							size="sm"
+						/>
+						{@render metricInfo('serviceSpan', t.lastTripDelay)}
+					</div>
+					<div class="metric-with-info">
+						<MetricDisplay value={fmtCount(latestSpan.trip_count)} label={t.tripCount} size="sm" />
+						{@render metricInfo('serviceSpan', t.tripCount)}
+					</div>
 				</div>
 			</div>
 		{/if}
@@ -376,6 +392,12 @@
 		display: flex;
 		flex-wrap: wrap;
 		gap: 1.25rem;
+	}
+	/* A second-tier metric tile + its explainer (i), kept on the tile's top edge. */
+	.metric-with-info {
+		display: inline-flex;
+		align-items: flex-start;
+		gap: 0.35rem;
 	}
 	/* What the excess-wait magnitude encodes (0 = on schedule, not missing). */
 	.shift-caption {

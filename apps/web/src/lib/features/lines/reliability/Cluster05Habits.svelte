@@ -263,6 +263,13 @@
 		flex-direction: column;
 		gap: 0.75rem;
 	}
+	/* Mobile/360px hardening: keep the 7×24 heatmap inside its subsection at narrow
+	   widths; a dense matrix may scroll horizontally rather than overflow the card.
+	   `:global` reaches the Heatmap wrapper rendered via the `habits-heatmap` class. */
+	.habits-subsection :global(.habits-heatmap) {
+		max-width: 100%;
+		overflow-x: auto;
+	}
 	/* A subsection heading + its explainer (i), kept on the label's baseline. */
 	.label-with-info {
 		display: inline-flex;

@@ -38,10 +38,26 @@
 	import MetricDisplay from '$lib/components/brand/MetricDisplay.svelte';
 	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
 	import TerminalChrome from '$lib/components/brand/TerminalChrome.svelte';
+	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
+	import {
+		metricInfoFor,
+		type MetricKey,
+		type SupplementalMetricKey,
+	} from '$lib/features/metrics/metrics.content';
+	import { metricsCopy } from '$lib/features/metrics/metrics.copy';
 	import { copy as COPY } from './receipt.copy';
 
 	const locale: Locale = getLocale();
 	const t = $derived(COPY[locale]);
+
+	// The metric-explainer (i) affordance: a one-line tip + a localized deep link to
+	// /metrics#<anchor>, wired onto every headline KPI + the section headings so each
+	// number carries its honest definition (same wiring as RouteDetail).
+	const explainerCopy = $derived(metricsCopy[locale]);
+	const info = $derived((key: MetricKey | SupplementalMetricKey, name: string) => {
+		const i = metricInfoFor(key, locale);
+		return { ...i, label: explainerCopy.info.trigger(name), linkLabel: explainerCopy.info.link };
+	});
 
 	const edgeLayout = $derived(layout.isDesktop ? 'desktop' : 'mobile');
 
@@ -119,6 +135,30 @@
 	const hasWorst = $derived(hasWorstRoute || hasWorstStop);
 </script>
 
+<!-- A headline KPI = MetricDisplay + its (i) explainer, baseline-aligned. Declared
+     once so each receipt figure carries an honest, deep-linked definition. -->
+{#snippet kpi(
+	value: string,
+	label: string,
+	key: MetricKey | SupplementalMetricKey,
+	size: 'sm' | 'md' | 'lg',
+)}
+	{@const i = info(key, label)}
+	<div class="receipt-kpi">
+		<MetricDisplay {value} {label} {size} />
+		<MetricInfo tip={i.tip} href={i.href} label={i.label} linkLabel={i.linkLabel} side="bottom" />
+	</div>
+{/snippet}
+
+<!-- A section heading + its (i) explainer, baseline-aligned. -->
+{#snippet sectionInfo(text: string, key: MetricKey | SupplementalMetricKey)}
+	{@const i = info(key, text)}
+	<span class="receipt-section">
+		<SectionLabel {text} variant="station" />
+		<MetricInfo tip={i.tip} href={i.href} label={i.label} linkLabel={i.linkLabel} side="bottom" />
+	</span>
+{/snippet}
+
 <Surface width="bleed" class="receipt">
 	<SurfaceHeader kicker={t.kicker} heading={t.heading} subheading={t.subheading} lede={t.lede} />
 
@@ -182,30 +222,23 @@
 					<DashboardGrid minTile="260px" gutter={false} label={t.receiptSection}>
 						<!-- Headline figures -->
 						<div class="receipt-tile receipt-block">
-							<SectionLabel text={t.receiptSection} variant="station" />
+							{@render sectionInfo(t.receiptSection, 'otp')}
 							<div class="receipt-metrics">
-								<MetricDisplay value={fmtPct(r.otp_pct)} label={t.metrics.onTime} size="lg" />
-								<MetricDisplay
-									value={fmtMin(r.avg_delay_min)}
-									label={t.metrics.avgDelay}
-									size="lg"
-								/>
-								<MetricDisplay
-									value={fmtSeverePct(r.severe_pct)}
-									label={t.metrics.severe}
-									size="md"
-								/>
-								<MetricDisplay
-									value={fmtScore(r.rider_impact_score)}
-									label={t.metrics.riderImpact}
-									size="md"
-								/>
+								{@render kpi(fmtPct(r.otp_pct), t.metrics.onTime, 'otp', 'lg')}
+								{@render kpi(fmtMin(r.avg_delay_min), t.metrics.avgDelay, 'avgDelay', 'lg')}
+								{@render kpi(fmtSeverePct(r.severe_pct), t.metrics.severe, 'severe', 'md')}
+								{@render kpi(
+									fmtScore(r.rider_impact_score),
+									t.metrics.riderImpact,
+									'riderImpact',
+									'md',
+								)}
 							</div>
 						</div>
 
 						<!-- Affected counts on the day -->
 						<div class="receipt-tile receipt-block">
-							<SectionLabel text={t.countsSection} variant="station" />
+							{@render sectionInfo(t.countsSection, 'affectedCounts')}
 							<dl class="receipt-counts">
 								<div class="receipt-count">
 									<dt>{t.counts.routes}</dt>
@@ -236,7 +269,7 @@
 						     when the receipt carries no worst route/stop (no empty card). -->
 						{#if hasWorst}
 							<div class="receipt-tile receipt-block">
-								<SectionLabel text={t.worstSection} variant="station" />
+								{@render sectionInfo(t.worstSection, 'otp')}
 								<div class="receipt-worst">
 									{#if hasWorstRoute && worstRoute}
 										<EntityRow
@@ -304,6 +337,23 @@
 		display: grid;
 		gap: 1rem 1.5rem;
 		grid-template-columns: repeat(2, minmax(0, 1fr));
+	}
+	/* A headline KPI cell: the MetricDisplay (label + big value) with its (i)
+	   explainer pinned top-right beside the quiet label, never over the value. */
+	.receipt-kpi {
+		display: flex;
+		align-items: flex-start;
+		gap: 0.4rem;
+		min-width: 0;
+	}
+	.receipt-kpi :global([data-slot='metric-display']) {
+		min-width: 0;
+	}
+	/* Section heading + its (i) explainer share a baseline-aligned inline row. */
+	.receipt-section {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.4rem;
 	}
 	/* Affected-count grid — a quiet mono description list. */
 	.receipt-counts {

@@ -97,6 +97,18 @@ export interface StopDetailCopy {
 	readonly reliability: {
 		readonly byRoute: string;
 		readonly noRouteBreakdown: string;
+		/** Section heading over the shared ReliabilityPane (OTP / delay / severe). */
+		readonly paneHeading: string;
+		/**
+		 * Short metric NAMES the (i) explainer trigger announces beside the pane
+		 * heading (e.g. "About On-time %"). The pane primitive owns the visible data
+		 * labels; these only feed the affordance's aria-label.
+		 */
+		readonly metrics: {
+			readonly otp: string;
+			readonly avgDelay: string;
+			readonly severe: string;
+		};
 		/** Controls-rail label collecting the grain picker + window caption. */
 		readonly controlsLabel: string;
 		/** Grain (roll-up) picker affordances. */
@@ -284,6 +296,12 @@ export const detailCopy: Record<Locale, StopDetailCopy> = {
 		reliability: {
 			byRoute: 'Retard moyen par ligne',
 			noRouteBreakdown: 'Aucun détail par ligne pour cet arrêt.',
+			paneHeading: 'Ponctualité et retard',
+			metrics: {
+				otp: 'Ponctualité',
+				avgDelay: 'Retard moyen',
+				severe: 'Part des retards graves',
+			},
 			controlsLabel: 'Vue',
 			grain: {
 				label: 'Période de regroupement',
@@ -393,6 +411,12 @@ export const detailCopy: Record<Locale, StopDetailCopy> = {
 		reliability: {
 			byRoute: 'Avg delay by route',
 			noRouteBreakdown: 'No per-route breakdown for this stop.',
+			paneHeading: 'On-time and delay',
+			metrics: {
+				otp: 'On-time %',
+				avgDelay: 'Average delay',
+				severe: 'Severe-delay share',
+			},
 			controlsLabel: 'View',
 			grain: {
 				label: 'Roll-up period',
