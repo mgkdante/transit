@@ -243,7 +243,7 @@ def test_build_network_trend_fact_only_date() -> None:
 
 def _route_reliability_dispatch(*, daily=None, weekly=None, monthly=None, headway=None,
                                 habit=None, weak=None, names=None, schedule=None,
-                                route_names=None, dow=None):
+                                route_names=None, dow=None, crowding=None):
     """Assemble an ordered dispatch list for build_route_reliability.
 
     Needles are ordered most-specific-first so they never collide. The schedule
@@ -266,6 +266,9 @@ def _route_reliability_dispatch(*, daily=None, weekly=None, monthly=None, headwa
         ("extract(isodow FROM :repdate)", [("svc_wd",)]),
         # route schedule (first-stop departures) — drives scheduled headway
         ("st.stop_sequence     = 1", schedule or []),
+        # delay×crowding — MUST precede the daily-view needle (its JOIN contains
+        # 'public_route_reliability_daily'); discriminator '-- delay_by_crowding'.
+        ("-- delay_by_crowding", crowding or []),
         # daily public reliability
         ("public_route_reliability_daily", daily or []),
         # weekly / monthly
@@ -543,6 +546,77 @@ def test_build_route_reliability_weak_stops_sorted_and_capped() -> None:
     assert "S5" not in {w.id for w in out.weak_stops}
 
 
+def test_build_route_reliability_delay_by_crowding_dominant_band() -> None:
+    # Two days: day1 dominant band = many_seats (50 > others), day2 dominant
+    # band = standing (40 > others). Each day's delay is bucketed under its
+    # dominant band; avg is observation-weighted by that day's delay_obs.
+    crowding = [
+        {"d": datetime.date(2026, 6, 1), "empty": 0, "many_seats": 50,
+         "few_seats": 30, "standing": 15, "full": 5,
+         "avg_delay_sec": 120.0, "delay_obs": 10},
+        {"d": datetime.date(2026, 6, 2), "empty": 0, "many_seats": 10,
+         "few_seats": 20, "standing": 40, "full": 5,
+         "avg_delay_sec": 300.0, "delay_obs": 30},
+    ]
+    conn = FakeConn(_route_reliability_dispatch(crowding=crowding))
+
+    out = build_route_reliability(conn, route_id="51", generated_utc="t")
+
+    by_band = {c.band: c for c in out.delay_by_crowding}
+    assert set(by_band) == {"many_seats", "standing"}
+    # many_seats: single day, 120s -> 2.0 min, 10 obs, 1 day
+    assert by_band["many_seats"].avg_delay_min == 2.0
+    assert by_band["many_seats"].observation_count == 10
+    assert by_band["many_seats"].day_count == 1
+    # standing: single day, 300s -> 5.0 min, 30 obs, 1 day
+    assert by_band["standing"].avg_delay_min == 5.0
+    assert by_band["standing"].observation_count == 30
+    assert by_band["standing"].day_count == 1
+    # no daily percentile rows in this dispatch -> p50_min honest-None
+    assert by_band["many_seats"].p50_min is None
+
+
+def test_build_route_reliability_delay_by_crowding_obs_weighted() -> None:
+    # Two days share the SAME dominant band (many_seats); avg_delay_min is
+    # observation-weighted by delay_obs, not a plain mean.
+    crowding = [
+        {"d": datetime.date(2026, 6, 1), "empty": 0, "many_seats": 50,
+         "few_seats": 1, "standing": 0, "full": 0,
+         "avg_delay_sec": 60.0, "delay_obs": 10},  # 1.0 min, weight 10
+        {"d": datetime.date(2026, 6, 2), "empty": 0, "many_seats": 50,
+         "few_seats": 1, "standing": 0, "full": 0,
+         "avg_delay_sec": 240.0, "delay_obs": 30},  # 4.0 min, weight 30
+    ]
+    conn = FakeConn(_route_reliability_dispatch(crowding=crowding))
+
+    out = build_route_reliability(conn, route_id="51", generated_utc="t")
+
+    cell = {c.band: c for c in out.delay_by_crowding}["many_seats"]
+    # weighted: (60*10 + 240*30) / 40 = 195s -> 3.2 min (NOT plain mean 2.5)
+    assert cell.avg_delay_min == 3.2
+    assert cell.observation_count == 40
+    assert cell.day_count == 2
+
+
+def test_build_route_reliability_delay_by_crowding_empty_when_no_telemetry() -> None:
+    # No occupancy rows -> empty list (honest absence, never a fabricated band).
+    conn = FakeConn(_route_reliability_dispatch(crowding=[]))
+    out = build_route_reliability(conn, route_id="51", generated_utc="t")
+    assert out.delay_by_crowding == []
+
+
+def test_build_route_reliability_delay_by_crowding_skips_zero_obs_days() -> None:
+    # A day with zero band observations has no dominant band -> skipped entirely.
+    crowding = [
+        {"d": datetime.date(2026, 6, 1), "empty": 0, "many_seats": 0,
+         "few_seats": 0, "standing": 0, "full": 0,
+         "avg_delay_sec": 120.0, "delay_obs": 10},
+    ]
+    conn = FakeConn(_route_reliability_dispatch(crowding=crowding))
+    out = build_route_reliability(conn, route_id="51", generated_utc="t")
+    assert out.delay_by_crowding == []
+
+
 def test_stop_names_sql_unions_history() -> None:
     """Stop-name lookups must fall back to gold.dim_stop_history so ids retired
     by a GTFS drop keep resolving names; current dim (pri 0) wins on ties."""
@@ -608,6 +682,8 @@ def test_build_route_reliability_no_dataset_version_still_builds() -> None:
     conn = FakeConn(
         [
             ("dataset_kind = 'static_schedule'", []),  # no version
+            # delay×crowding precedes the daily-view needle (shared substring).
+            ("-- delay_by_crowding", []),
             (
                 "public_route_reliability_daily",
                 [

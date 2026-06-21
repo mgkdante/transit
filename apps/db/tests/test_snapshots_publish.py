@@ -532,6 +532,15 @@ def test_publish_historic_writes_expected_keys(tmp_path) -> None:
              "cancellation_rate_pct": 2.5, "canceled_trip_days": 3,
              "total_trip_days": 120},
         ]),
+        # build_route_reliability: per-band delay×crowding — unique discriminator
+        # "-- delay_by_crowding". MUST precede the broader "public_route_reliability
+        # _daily" / "route_occupancy_band_daily" needles (both substrings appear in
+        # its JOIN). One day: dominant band = many_seats (count 50), delay 90s.
+        ("-- delay_by_crowding", [
+            {"d": datetime.date(2026, 6, 1), "empty": 0, "many_seats": 50,
+             "few_seats": 30, "standing": 15, "full": 5,
+             "avg_delay_sec": 90, "delay_obs": 40},
+        ]),
         # build_route_reliability: trailing-window occupancy band shares —
         # unique discriminator "route_occupancy_band_daily AS rob".
         ("route_occupancy_band_daily AS rob", [

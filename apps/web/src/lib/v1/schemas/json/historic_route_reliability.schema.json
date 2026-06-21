@@ -59,6 +59,67 @@
       "title": "CancellationPeriod",
       "type": "object"
     },
+    "CrowdingDelayCell": {
+      "properties": {
+        "avg_delay_min": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Avg Delay Min"
+        },
+        "band": {
+          "title": "Band",
+          "type": "string"
+        },
+        "day_count": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Day Count"
+        },
+        "observation_count": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Observation Count"
+        },
+        "p50_min": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "P50 Min"
+        }
+      },
+      "required": [
+        "band"
+      ],
+      "title": "CrowdingDelayCell",
+      "type": "object"
+    },
     "HeadwayPeriod": {
       "properties": {
         "bunched_pct": {
@@ -522,6 +583,13 @@
         "$ref": "#/$defs/RouteDayOfWeek"
       },
       "title": "Day Of Week",
+      "type": "array"
+    },
+    "delay_by_crowding": {
+      "items": {
+        "$ref": "#/$defs/CrowdingDelayCell"
+      },
+      "title": "Delay By Crowding",
       "type": "array"
     },
     "generated_utc": {
