@@ -152,15 +152,17 @@
 	// The shared x-domain length (drives index targets + nearest-index math).
 	const n = $derived(Math.max(onTime.length, retard.length, 1));
 
-	const NO_DATA = '·';
+	// An axis tick / readout cell can't carry a sentence, so an absent value reads
+	// as an empty string (no stray "·" ever appears), never a fabricated 0.
+	const NO_DATA = '';
 
 	function fmt(series: Series, i: number): string {
 		const v = series[i];
 		return v == null || Number.isNaN(v) ? NO_DATA : String(v);
 	}
 
-	// Like fmt(), but suffixes the axis unit on a real value (never on an em-dash,
-	// so a no-data readout stays an honest dash rather than e.g. "— %").
+	// Like fmt(), but suffixes the axis unit on a real value (never on an empty
+	// no-data cell, so a no-data readout stays empty rather than e.g. " %").
 	function fmtUnit(series: Series, i: number, axis: ChartAxis | undefined): string {
 		const s = fmt(series, i);
 		return s === NO_DATA ? s : `${s}${axis?.unit ?? ''}`;

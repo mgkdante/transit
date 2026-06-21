@@ -57,6 +57,8 @@ export interface ReliabilityCopy {
 		readonly rampInNote: string;
 		/** Explicit empty-state note for a metric/band with no data yet. */
 		readonly noDataNote: string;
+		/** Short value-level no-data label for a single absent metric tile. */
+		readonly noData: string;
 		/** Plain-language reading of the headway CoV (a regular/irregular caption, not a raw number dump). */
 		readonly regularity: {
 			readonly regular: string;
@@ -167,6 +169,7 @@ export const reliabilityCopy: Record<Locale, ReliabilityCopy> = {
 			trendReadoutHint: 'Survolez ou tabulez le graphique pour lire chaque jour',
 			rampInNote: 'Nouveau, on compte depuis peu, donc le chiffre se précise avec le temps',
 			noDataNote: 'Aucune donnée',
+			noData: 'sans données',
 			regularity: {
 				regular: 'Passages réguliers',
 				irregular: 'Passages irréguliers',
@@ -242,6 +245,7 @@ export const reliabilityCopy: Record<Locale, ReliabilityCopy> = {
 			trendReadoutHint: 'Hover or tab the chart to read each day',
 			rampInNote: 'New metric, we just started counting, so this number sharpens over time',
 			noDataNote: 'No data yet',
+			noData: 'no data',
 			regularity: {
 				regular: 'Regular arrivals',
 				irregular: 'Irregular arrivals',

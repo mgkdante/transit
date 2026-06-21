@@ -62,17 +62,17 @@
 	/** Localized number formatter (FR uses fr-CA grouping/decimal). */
 	const nf = $derived(locale === 'fr' ? 'fr-CA' : 'en-CA');
 
-	/** Format a nullable integer-ish percent as "82 %"/"82%" or the honest em-dash. */
-	const fmtPct = (v: number | null): string =>
-		v == null ? '·' : `${v.toLocaleString(nf)}${locale === 'fr' ? ' %' : '%'}`;
+	/** Format a nullable integer-ish percent as "82 %"/"82%", else null (no-data). */
+	const fmtPct = (v: number | null): string | null =>
+		v == null ? null : `${v.toLocaleString(nf)}${locale === 'fr' ? ' %' : '%'}`;
 
-	/** Format a nullable minute delay as "3.2 min" or the honest em-dash. */
-	const fmtMin = (v: number | null): string =>
-		v == null ? '·' : `${v.toLocaleString(nf, { maximumFractionDigits: 1 })} min`;
+	/** Format a nullable minute delay as "3.2 min", else null (no-data). */
+	const fmtMin = (v: number | null): string | null =>
+		v == null ? null : `${v.toLocaleString(nf, { maximumFractionDigits: 1 })} min`;
 
-	/** Format the headway CoV as a 2-dp ratio, or the honest em-dash. */
-	const fmtCov = (v: number | null): string =>
-		v == null ? '·' : v.toLocaleString(nf, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+	/** Format the headway CoV as a 2-dp ratio, else null (no-data). */
+	const fmtCov = (v: number | null): string | null =>
+		v == null ? null : v.toLocaleString(nf, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 	// Plain-language reading of the CoV: a headway coefficient of variation below
 	// 0.5 reads as "regular" arrivals; at/above 0.5 the gaps swing wide enough to
@@ -118,7 +118,7 @@
 			<!-- On-time % -->
 			<article class="snapshot-tile" data-slot="otp">
 				{@render tileInfo('otp', t.otpPct)}
-				<MetricDisplay value={fmtPct(vm.otpPct)} label={t.otpPct} size="lg" />
+				<MetricDisplay value={fmtPct(vm.otpPct)} emptyLabel={t.noData} label={t.otpPct} size="lg" />
 				{#if otpEmpty}
 					<p class="snapshot-tile__note" data-slot="otp-empty">{t.noDataNote}</p>
 				{/if}
@@ -127,7 +127,12 @@
 			<!-- Avg delay -->
 			<article class="snapshot-tile" data-slot="avg-delay">
 				{@render tileInfo('avgDelay', t.avgDelayMin)}
-				<MetricDisplay value={fmtMin(vm.avgDelayMin)} label={t.avgDelayMin} size="lg" />
+				<MetricDisplay
+					value={fmtMin(vm.avgDelayMin)}
+					emptyLabel={t.noData}
+					label={t.avgDelayMin}
+					size="lg"
+				/>
 				{#if avgDelayEmpty}
 					<p class="snapshot-tile__note" data-slot="avg-delay-empty">{t.noDataNote}</p>
 				{/if}
@@ -138,6 +143,7 @@
 				{@render tileInfo('p50p90', t.p50Min)}
 				<MetricDisplay
 					value={fmtMin(vm.p50Min)}
+					emptyLabel={t.noData}
 					label={t.p50Min}
 					sublabel={t.p50Caption}
 					size="lg"
@@ -152,6 +158,7 @@
 				{@render tileInfo('p50p90', t.p90Min)}
 				<MetricDisplay
 					value={fmtMin(vm.p90Min)}
+					emptyLabel={t.noData}
 					label={t.p90Min}
 					sublabel={t.p90Caption}
 					size="lg"
@@ -166,6 +173,7 @@
 				{@render tileInfo('regularityCov', t.headwayRegularityCov)}
 				<MetricDisplay
 					value={fmtCov(vm.headwayRegularityCov)}
+					emptyLabel={t.noData}
 					label={t.headwayRegularityCov}
 					sublabel={regularityCaption ?? undefined}
 					size="lg"
@@ -180,6 +188,7 @@
 				{@render tileInfo('cancellation', t.cancellationRatePct)}
 				<MetricDisplay
 					value={fmtPct(vm.cancellationRatePct)}
+					emptyLabel={t.noData}
 					label={t.cancellationRatePct}
 					size="lg"
 				/>
@@ -196,6 +205,7 @@
 				{@render tileInfo('skippedStop', t.skippedStopRatePct)}
 				<MetricDisplay
 					value={fmtPct(vm.skippedStopRatePct)}
+					emptyLabel={t.noData}
 					label={t.skippedStopRatePct}
 					sublabel={t.skippedStopCaption}
 					size="lg"

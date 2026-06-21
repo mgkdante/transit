@@ -70,6 +70,8 @@
 		readonly trend: string;
 		/** Unit suffix for the OTP sparkline tooltip value (axis metadata). */
 		readonly unitPct: string;
+		/** Short value-level no-data label for an absent metric tile. */
+		readonly noData: string;
 	};
 	const L: Record<Locale, Labels> = {
 		fr: {
@@ -81,6 +83,7 @@
 			severe: 'Retards majeurs',
 			trend: 'Tendance ponctualité',
 			unitPct: '%',
+			noData: 'sans données',
 		},
 		en: {
 			otp: 'On-time %',
@@ -91,14 +94,16 @@
 			severe: 'Major delays',
 			trend: 'On-time trend',
 			unitPct: '%',
+			noData: 'no data',
 		},
 	};
 	const t = $derived(L[locale]);
 
 	const delayLabel = $derived(delayLabelKind === 'median' ? t.delayMedian : t.delayAvg);
 
-	const fmtPct = (v: number | null) => (v == null ? '·' : `${Math.round(v)}%`);
-	const fmtMin = (v: number | null | undefined) => (v == null ? '·' : `${v.toFixed(1)} min`);
+	const fmtPct = (v: number | null): string | null => (v == null ? null : `${Math.round(v)}%`);
+	const fmtMin = (v: number | null | undefined): string | null =>
+		v == null ? null : `${v.toFixed(1)} min`;
 
 	// OTP series across periods, drives the trend sparkline (dataviz scale).
 	const otpSeries = $derived(periods.map((p) => p.otpPct));
@@ -118,6 +123,7 @@
 						{/if}
 						<MetricDisplay
 							value={fmtMin(period.delayMin)}
+							emptyLabel={t.noData}
 							label={period.delayKind === 'median'
 								? t.delayMedian
 								: period.delayKind === 'avg'

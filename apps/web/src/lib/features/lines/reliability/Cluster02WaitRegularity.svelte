@@ -131,12 +131,17 @@
 		return { ...i, label: explainerCopy.info.trigger(name), linkLabel: explainerCopy.info.link };
 	});
 
-	/* ── formatters (pure) ─────────────────────────────────────────────────── */
-	const fmtMin = (v: number | null | undefined): string =>
-		v == null ? '·' : `${v.toFixed(1)} min`;
-	const fmtCov = (v: number | null | undefined): string => (v == null ? '·' : v.toFixed(2));
-	const fmtPct = (v: number | null | undefined): string => (v == null ? '·' : `${Math.round(v)}%`);
-	const fmtCount = (v: number | null | undefined): string => (v == null ? '·' : `${v}`);
+	/* ── formatters (pure) ───────────────────────────────────────────────────
+	   Absence → null (MetricDisplay renders the muted no-data label); inline
+	   string consumers fall back to `valueNoData`. Never a bare "·", never 0. */
+	const fmtMin = (v: number | null | undefined): string | null =>
+		v == null ? null : `${v.toFixed(1)} min`;
+	const fmtCov = (v: number | null | undefined): string | null => (v == null ? null : v.toFixed(2));
+	const fmtPct = (v: number | null | undefined): string | null =>
+		v == null ? null : `${Math.round(v)}%`;
+	const fmtCount = (v: number | null | undefined): string | null => (v == null ? null : `${v}`);
+	/** Short value-level no-data label for absent inline values + empty tiles. */
+	const valueNoData = $derived(copy.strip.noData);
 
 	/* ── headway rows → per-shift magnitude rows ───────────────────────────────
 	   Magnitude = excess wait, normalized within the band's max so the bars stay
@@ -252,19 +257,34 @@
 						title={shiftLabel(row.shift)}
 						subtitle={t.regularityReading(
 							terms.spread,
-							fmtCov(row.cov),
+							fmtCov(row.cov) ?? valueNoData,
 							terms.clumped,
-							fmtPct(row.bunched),
+							fmtPct(row.bunched) ?? valueNoData,
 						)}
 						severity={row.severity}
 						value={row.magnitude}
-						display={fmtMin(row.excessWait)}
+						display={fmtMin(row.excessWait) ?? valueNoData}
 						aria-label={t.excessWaitMagnitude(shiftLabel(row.shift))}
 					/>
 					<div class="shift-metrics">
-						<MetricDisplay value={fmtMin(row.scheduled)} label={terms.scheduledGap} size="sm" />
-						<MetricDisplay value={fmtMin(row.observed)} label={terms.observedGap} size="sm" />
-						<MetricDisplay value={fmtMin(row.excessWait)} label={terms.excessWait} size="sm" />
+						<MetricDisplay
+							value={fmtMin(row.scheduled)}
+							emptyLabel={valueNoData}
+							label={terms.scheduledGap}
+							size="sm"
+						/>
+						<MetricDisplay
+							value={fmtMin(row.observed)}
+							emptyLabel={valueNoData}
+							label={terms.observedGap}
+							size="sm"
+						/>
+						<MetricDisplay
+							value={fmtMin(row.excessWait)}
+							emptyLabel={valueNoData}
+							label={terms.excessWait}
+							size="sm"
+						/>
 					</div>
 				</li>
 			{/snippet}
@@ -292,6 +312,7 @@
 								{#each advancedRows as row, ai (row.shift + '-' + ai)}
 									<MetricDisplay
 										value={fmtMin(row.observed)}
+										emptyLabel={valueNoData}
 										label={shiftLabel(row.shift)}
 										size="sm"
 									/>
@@ -321,6 +342,7 @@
 					<div class="metric-with-info">
 						<MetricDisplay
 							value={fmtMin(latestSpan.service_span_min)}
+							emptyLabel={valueNoData}
 							label={t.serviceSpan}
 							size="sm"
 						/>
@@ -329,6 +351,7 @@
 					<div class="metric-with-info">
 						<MetricDisplay
 							value={fmtMin(latestSpan.first_trip_delay_min)}
+							emptyLabel={valueNoData}
 							label={t.firstTripDelay}
 							size="sm"
 						/>
@@ -337,13 +360,19 @@
 					<div class="metric-with-info">
 						<MetricDisplay
 							value={fmtMin(latestSpan.last_trip_delay_min)}
+							emptyLabel={valueNoData}
 							label={t.lastTripDelay}
 							size="sm"
 						/>
 						{@render metricInfo('serviceSpan', t.lastTripDelay)}
 					</div>
 					<div class="metric-with-info">
-						<MetricDisplay value={fmtCount(latestSpan.trip_count)} label={t.tripCount} size="sm" />
+						<MetricDisplay
+							value={fmtCount(latestSpan.trip_count)}
+							emptyLabel={valueNoData}
+							label={t.tripCount}
+							size="sm"
+						/>
 						{@render metricInfo('serviceSpan', t.tripCount)}
 					</div>
 				</div>

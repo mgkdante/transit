@@ -212,8 +212,8 @@
 	// schedule pane formats headway minutes; the reliability tab is now the
 	// dedicated 9.6 clustered surface (RouteReliabilityClusters) — it owns its own
 	// formatting + the snapshot strip + 5 cluster bands off the same archive.
-	const fmtMin = (v: number | null | undefined): string =>
-		v == null ? '·' : `${v.toFixed(1)} min`;
+	const fmtMin = (v: number | null | undefined): string | null =>
+		v == null ? null : `${v.toFixed(1)} min`;
 
 	const stopHref = (stopId: string): string =>
 		localizeHref(routeFor({ kind: 'stop', id: stopId }), locale);
@@ -432,7 +432,8 @@
 						<div class="route-departures">
 							<div class="route-metric-cell">
 								<MetricDisplay
-									value={file.first_departure ?? '·'}
+									value={file.first_departure ?? null}
+									emptyLabel={t.noData}
 									label={t.firstDeparture}
 									size="sm"
 								/>
@@ -440,7 +441,8 @@
 							</div>
 							<div class="route-metric-cell">
 								<MetricDisplay
-									value={file.last_departure ?? '·'}
+									value={file.last_departure ?? null}
+									emptyLabel={t.noData}
 									label={t.lastDeparture}
 									size="sm"
 								/>

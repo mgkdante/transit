@@ -201,7 +201,7 @@
 						onchange={(e) => (rangeStart = e.currentTarget.value)}
 						aria-label={`${copy.controls.dateRange} · ${copy.controls.rangeStart}`}
 					>
-						<option value="">{earliestDate || '·'}</option>
+						<option value="">{earliestDate || ''}</option>
 						{#each datedPeriods as p (p.date)}
 							<option value={p.date}>{p.date}</option>
 						{/each}
@@ -215,7 +215,7 @@
 						onchange={(e) => (rangeEnd = e.currentTarget.value)}
 						aria-label={`${copy.controls.dateRange} · ${copy.controls.rangeEnd}`}
 					>
-						<option value="">{latestDate || '·'}</option>
+						<option value="">{latestDate || ''}</option>
 						{#each datedPeriods as p (p.date)}
 							<option value={p.date}>{p.date}</option>
 						{/each}
