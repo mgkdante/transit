@@ -1046,3 +1046,72 @@ def load_latest_realtime_to_silver(
             bronze_storage=bronze_storage,
             provider_bounds=provider_bounds,
         )
+
+
+def replay_realtime_silver_window(
+    provider_id: str,
+    *,
+    start_utc: datetime,
+    end_utc: datetime,
+    settings: Settings | None = None,
+    registry: ProviderRegistry | None = None,
+    engine: Engine | None = None,
+) -> RealtimeSilverBatchLoadResult:
+    """Reconstruct realtime Silver from raw Bronze .pb over a captured window.
+
+    This is the rebuild-from-raw replay path that underwrites thin-silver
+    retention and disaster recovery: it reads the archived realtime .pb objects
+    in ``[start_utc, end_utc)`` and re-derives the realtime Silver tables for the
+    provider. Loading is idempotent (``skip_existing=True``) so a replay over a
+    window that overlaps already-loaded snapshots only fills the gaps, never
+    duplicating rows.
+
+    Gold facts are NOT rebuilt here; the caller runs ``build_gold_marts`` (the
+    full-history Gold rebuild) afterwards so Gold re-derives from the
+    reconstructed Silver. Provider-agnostic: the manifest supplies bounds and the
+    snapshot rows supply the storage backend.
+    """
+
+    settings = settings or get_settings()
+    registry = registry or ProviderRegistry.from_project_root(
+        project_root=_project_root(),
+        settings=settings,
+    )
+    manifest = registry.get_provider(provider_id)
+    provider_bounds = _manifest_provider_bounds(manifest)
+    engine = engine or make_engine(settings)
+
+    with engine.connect() as connection:
+        snapshots = find_realtime_bronze_snapshots(
+            connection,
+            provider_id=manifest.provider.provider_id,
+            start_utc=start_utc,
+            end_utc=end_utc,
+            settings=settings,
+            project_root=_project_root(),
+        )
+
+    if not snapshots:
+        return RealtimeSilverBatchLoadResult(
+            provider_id=manifest.provider.provider_id,
+            loaded_count=0,
+            skipped_existing_snapshot_ids=[],
+            row_counts={},
+            results=[],
+        )
+
+    bronze_storage = get_bronze_storage(
+        settings,
+        project_root=_project_root(),
+        storage_backend=snapshots[0].storage_backend,
+    )
+
+    with engine.begin() as connection:
+        return load_realtime_snapshots_to_silver(
+            connection,
+            provider_id=manifest.provider.provider_id,
+            snapshots=snapshots,
+            bronze_storage=bronze_storage,
+            skip_existing=True,
+            provider_bounds=provider_bounds,
+        )
