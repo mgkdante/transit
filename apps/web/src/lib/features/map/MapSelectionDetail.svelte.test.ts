@@ -278,4 +278,25 @@ describe('MapSelectionDetail', () => {
 			/@media \(max-width: 42rem\)[\s\S]*\.map-inline-action\s*\{[\s\S]*white-space:\s*normal/,
 		);
 	});
+
+	it('gives the Live arrivals a compact treatment at a narrow panel width (E4)', () => {
+		const source = readFileSync(
+			resolve(process.cwd(), 'src/lib/features/map/MapSelectionDetail.svelte'),
+			'utf-8',
+		);
+
+		// The Live list carries the data-slot hook the compact treatment + tests anchor on.
+		expect(source).toMatch(/class="map-live-list" data-slot="live-departures"/);
+
+		// A narrow PANEL-width container query (right-panel, the dock's own width)
+		// collapses the Past/Next/Live three-up into a single tidy compact list —
+		// the Past column drops and the columns stack as a flex list. The query keys
+		// off the PARENT container (right-panel), not a self-target.
+		expect(source).toMatch(
+			/@container right-panel \(max-width: 17rem\)[\s\S]*\.map-time-columns\s*\{[\s\S]*flex-direction:\s*column/,
+		);
+		expect(source).toMatch(
+			/@container right-panel \(max-width: 17rem\)[\s\S]*\.map-time-col--past\s*\{[\s\S]*display:\s*none/,
+		);
+	});
 });

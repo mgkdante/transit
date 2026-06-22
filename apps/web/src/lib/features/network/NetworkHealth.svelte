@@ -689,11 +689,12 @@
 				{@render kpi(fmtMin(net.delay_p90_min), t.metrics.delayP90, 'p50p90', 'md')}
 			</DashboardGrid>
 
-			<!-- Distribution board — status mix · crowding mix · delay histogram sit
-			     side-by-side on desktop (auto-fit ~320px) and stack on mobile. Each tile
-			     is a quiet bordered card; a tile whose condition stands down is dropped
-			     whole (never an empty card). The silent-trips-by-line list is NOT here —
-			     it reads differently, so it gets its OWN full-width row below this grid. -->
+			<!-- Distribution board — status mix · crowding mix sit side-by-side on
+			     desktop (auto-fit ~320px) and stack on mobile. Each tile is a quiet
+			     bordered card; a tile whose condition stands down is dropped whole
+			     (never an empty card). NEITHER the delay distribution NOR the
+			     silent-trips-by-line list is here — both read differently and each gets
+			     its OWN full-width row below this grid (D / C2). -->
 			<DashboardGrid minTile="320px" align="start" gutter={false}>
 				<!-- Status mix -->
 				<div class="network-tile">
@@ -722,15 +723,22 @@
 						/>
 					</div>
 				{/if}
+			</DashboardGrid>
 
-				<!-- Delay distribution — the 8 fixed signed-minute buckets of the SAME
-				     trip-level delays that power p50/p90. Stands DOWN entirely when
-				     `delay_histogram` is null (zero delay observations this cycle); when
-				     it is present the contract emits all 8 buckets (zeros included) so we
-				     draw the full shape. A token-only bar list (role=list): length encodes
-				     the COUNT, colour reads the early/late sense off the status scale. -->
-				{#if hasDelayHistogram}
-					<div class="network-tile">
+			<!-- Delay distribution — the 8 fixed signed-minute buckets of the SAME
+			     trip-level delays that power p50/p90. LIFTED OUT of the distribution
+			     grid into its OWN full-width row below it (D): the histogram reads as a
+			     wide shape and was cramped sharing an auto-fit cell with the status /
+			     crowding bars, so it gets a deliberate full-width section with room for
+			     the bars to span the page (the way C2 lifted the silent-trips tile).
+			     Stands DOWN entirely when `delay_histogram` is null (zero delay
+			     observations this cycle); when present the contract emits all 8 buckets
+			     (zeros included) so we draw the full shape. A token-only bar list
+			     (role=list): length encodes the COUNT, colour reads the early/late sense
+			     off the status scale. -->
+			{#if hasDelayHistogram}
+				<section class="network-hist-section" data-slot="delay-histogram-section">
+					<div class="network-tile network-hist-tile">
 						{@render sectionInfo(t.delayHistogramSection, 'p50p90')}
 						<p class="network-hist-caption">{t.delayHistogram.caption}</p>
 						<ul
@@ -753,8 +761,8 @@
 							{/each}
 						</ul>
 					</div>
-				{/if}
-			</DashboardGrid>
+				</section>
+			{/if}
 
 			<!-- Non-responding (silent) scheduled trips, by line — a ranked list
 			     (worst first) of lines running scheduled trips with NO live vehicle.
@@ -1247,6 +1255,17 @@
 		line-height: 1.4;
 		color: var(--muted-foreground);
 		max-width: 100%;
+	}
+
+	/* Delay distribution is its OWN full-width row beneath the distribution grid
+	   (D) — the histogram bars get the page width instead of a cramped auto-fit
+	   cell. The tile fills the row; the bar rows already span their track. */
+	.network-hist-section {
+		display: block;
+		width: 100%;
+	}
+	.network-hist-tile {
+		width: 100%;
 	}
 
 	/* Silent-trips-by-line is its OWN full-width row beneath the distribution grid

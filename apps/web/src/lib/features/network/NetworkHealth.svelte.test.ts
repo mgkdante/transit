@@ -330,9 +330,20 @@ describe('NetworkHealth non-responding by route', () => {
 		// …and crucially NOT nested inside any DashboardGrid cell (it is no longer a
 		// cramped, mis-sized cell beside the status/crowding/histogram tiles).
 		expect(list!.closest('[data-slot="dashboard-grid"]')).toBeNull();
-		// The delay histogram, by contrast, DOES still live inside a distribution grid.
+	});
+
+	it('lifts the delay distribution into its OWN full-width row, not inside the distribution grid (D)', () => {
+		render(NetworkHealth);
+		// The histogram is now its own deliberate full-width section beneath the grid,
+		// the way the silent-trips tile was lifted (C2) — no longer a cramped cell.
+		const section = document.querySelector('[data-slot="delay-histogram-section"]');
+		expect(section).not.toBeNull();
 		const hist = document.querySelector('[data-slot="delay-histogram"]');
-		if (hist) expect(hist.closest('[data-slot="dashboard-grid"]')).not.toBeNull();
+		expect(hist).not.toBeNull();
+		// The histogram lives inside the dedicated section…
+		expect(section!.contains(hist)).toBe(true);
+		// …and is NOT nested inside any DashboardGrid cell anymore.
+		expect(hist!.closest('[data-slot="dashboard-grid"]')).toBeNull();
 	});
 
 	it('stands the section down when non_responding_by_route is null', () => {

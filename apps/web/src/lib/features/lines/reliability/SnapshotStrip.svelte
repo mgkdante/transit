@@ -115,109 +115,126 @@
 		<!-- Honest empty: no wall of em-dashes, no fabricated zero. -->
 		<p class="snapshot-strip__empty" data-slot="empty-note">{t.noDataNote}</p>
 	{:else}
-		<div class="snapshot-strip__grid">
-			<!-- On-time % -->
-			<article class="snapshot-tile" data-slot="otp">
-				{@render tileInfo('otp', t.otpPct)}
-				<MetricDisplay value={fmtPct(vm.otpPct)} emptyLabel={t.noData} label={t.otpPct} size="lg" />
-				{#if otpEmpty}
-					<p class="snapshot-tile__note" data-slot="otp-empty">{t.noDataNote}</p>
-				{/if}
-			</article>
+		<!-- Redesigned snapshot strip (C): deliberate card chrome + a clear
+		     hierarchy instead of a flat 7-up number row. The two metrics a rider
+		     reads FIRST — On-time % and Avg delay — get weighted headline cards; the
+		     remaining five read as calmer secondary tiles in their own grid. Every
+		     data-slot hook + the corner-anchored (i) (C1) + the honest no-data notes
+		     are preserved tile-for-tile. -->
+		<div class="snapshot-strip__layout">
+			<!-- Headline pair — the load-bearing reads, given weight + card chrome. -->
+			<div class="snapshot-strip__headline" data-slot="snapshot-headline">
+				<!-- On-time % -->
+				<article class="snapshot-tile snapshot-tile--headline" data-slot="otp">
+					{@render tileInfo('otp', t.otpPct)}
+					<MetricDisplay
+						value={fmtPct(vm.otpPct)}
+						emptyLabel={t.noData}
+						label={t.otpPct}
+						size="lg"
+					/>
+					{#if otpEmpty}
+						<p class="snapshot-tile__note" data-slot="otp-empty">{t.noDataNote}</p>
+					{/if}
+				</article>
 
-			<!-- Avg delay -->
-			<article class="snapshot-tile" data-slot="avg-delay">
-				{@render tileInfo('avgDelay', t.avgDelayMin)}
-				<MetricDisplay
-					value={fmtMin(vm.avgDelayMin)}
-					emptyLabel={t.noData}
-					label={t.avgDelayMin}
-					size="lg"
-				/>
-				{#if avgDelayEmpty}
-					<p class="snapshot-tile__note" data-slot="avg-delay-empty">{t.noDataNote}</p>
-				{/if}
-			</article>
+				<!-- Avg delay -->
+				<article class="snapshot-tile snapshot-tile--headline" data-slot="avg-delay">
+					{@render tileInfo('avgDelay', t.avgDelayMin)}
+					<MetricDisplay
+						value={fmtMin(vm.avgDelayMin)}
+						emptyLabel={t.noData}
+						label={t.avgDelayMin}
+						size="lg"
+					/>
+					{#if avgDelayEmpty}
+						<p class="snapshot-tile__note" data-slot="avg-delay-empty">{t.noDataNote}</p>
+					{/if}
+				</article>
+			</div>
 
-			<!-- p50 typical delay, daily grain only; honest "—" on week/month. -->
-			<article class="snapshot-tile" data-slot="p50">
-				{@render tileInfo('p50p90', t.p50Min)}
-				<MetricDisplay
-					value={fmtMin(vm.p50Min)}
-					emptyLabel={t.noData}
-					label={t.p50Min}
-					sublabel={t.p50Caption}
-					size="lg"
-				/>
-				{#if p50Empty}
-					<p class="snapshot-tile__note" data-slot="p50-empty">{t.noDataNote}</p>
-				{/if}
-			</article>
+			<!-- Secondary tiles — the supporting reads, calmer chrome in their own grid. -->
+			<div class="snapshot-strip__grid" data-slot="snapshot-secondary">
+				<!-- p50 typical delay, daily grain only; honest "—" on week/month. -->
+				<article class="snapshot-tile snapshot-tile--secondary" data-slot="p50">
+					{@render tileInfo('p50p90', t.p50Min)}
+					<MetricDisplay
+						value={fmtMin(vm.p50Min)}
+						emptyLabel={t.noData}
+						label={t.p50Min}
+						sublabel={t.p50Caption}
+						size="md"
+					/>
+					{#if p50Empty}
+						<p class="snapshot-tile__note" data-slot="p50-empty">{t.noDataNote}</p>
+					{/if}
+				</article>
 
-			<!-- p90 worst-case delay -->
-			<article class="snapshot-tile" data-slot="p90">
-				{@render tileInfo('p50p90', t.p90Min)}
-				<MetricDisplay
-					value={fmtMin(vm.p90Min)}
-					emptyLabel={t.noData}
-					label={t.p90Min}
-					sublabel={t.p90Caption}
-					size="lg"
-				/>
-				{#if p90Empty}
-					<p class="snapshot-tile__note" data-slot="p90-empty">{t.noDataNote}</p>
-				{/if}
-			</article>
+				<!-- p90 worst-case delay -->
+				<article class="snapshot-tile snapshot-tile--secondary" data-slot="p90">
+					{@render tileInfo('p50p90', t.p90Min)}
+					<MetricDisplay
+						value={fmtMin(vm.p90Min)}
+						emptyLabel={t.noData}
+						label={t.p90Min}
+						sublabel={t.p90Caption}
+						size="md"
+					/>
+					{#if p90Empty}
+						<p class="snapshot-tile__note" data-slot="p90-empty">{t.noDataNote}</p>
+					{/if}
+				</article>
 
-			<!-- Headway regularity, CoV value + plain regular/irregular reading. -->
-			<article class="snapshot-tile" data-slot="regularity">
-				{@render tileInfo('regularityCov', t.headwayRegularityCov)}
-				<MetricDisplay
-					value={fmtCov(vm.headwayRegularityCov)}
-					emptyLabel={t.noData}
-					label={t.headwayRegularityCov}
-					sublabel={regularityCaption ?? undefined}
-					size="lg"
-				/>
-				{#if covEmpty}
-					<p class="snapshot-tile__note" data-slot="regularity-empty">{t.noDataNote}</p>
-				{/if}
-			</article>
+				<!-- Headway regularity, CoV value + plain regular/irregular reading. -->
+				<article class="snapshot-tile snapshot-tile--secondary" data-slot="regularity">
+					{@render tileInfo('regularityCov', t.headwayRegularityCov)}
+					<MetricDisplay
+						value={fmtCov(vm.headwayRegularityCov)}
+						emptyLabel={t.noData}
+						label={t.headwayRegularityCov}
+						sublabel={regularityCaption ?? undefined}
+						size="md"
+					/>
+					{#if covEmpty}
+						<p class="snapshot-tile__note" data-slot="regularity-empty">{t.noDataNote}</p>
+					{/if}
+				</article>
 
-			<!-- Cancellation rate (RAMP-IN) -->
-			<article class="snapshot-tile" data-slot="cancellation">
-				{@render tileInfo('cancellation', t.cancellationRatePct)}
-				<MetricDisplay
-					value={fmtPct(vm.cancellationRatePct)}
-					emptyLabel={t.noData}
-					label={t.cancellationRatePct}
-					size="lg"
-				/>
-				{#if vm.perMetric.cancellationRatePct}
-					<p class="snapshot-tile__rampin" data-slot="cancellation-rampin">{t.rampInNote}</p>
-				{/if}
-				{#if cancellationEmpty}
-					<p class="snapshot-tile__note" data-slot="cancellation-empty">{t.noDataNote}</p>
-				{/if}
-			</article>
+				<!-- Cancellation rate (RAMP-IN) -->
+				<article class="snapshot-tile snapshot-tile--secondary" data-slot="cancellation">
+					{@render tileInfo('cancellation', t.cancellationRatePct)}
+					<MetricDisplay
+						value={fmtPct(vm.cancellationRatePct)}
+						emptyLabel={t.noData}
+						label={t.cancellationRatePct}
+						size="md"
+					/>
+					{#if vm.perMetric.cancellationRatePct}
+						<p class="snapshot-tile__rampin" data-slot="cancellation-rampin">{t.rampInNote}</p>
+					{/if}
+					{#if cancellationEmpty}
+						<p class="snapshot-tile__note" data-slot="cancellation-empty">{t.noDataNote}</p>
+					{/if}
+				</article>
 
-			<!-- Skipped-stop rate (RAMP-IN) -->
-			<article class="snapshot-tile" data-slot="skipped">
-				{@render tileInfo('skippedStop', t.skippedStopRatePct)}
-				<MetricDisplay
-					value={fmtPct(vm.skippedStopRatePct)}
-					emptyLabel={t.noData}
-					label={t.skippedStopRatePct}
-					sublabel={t.skippedStopCaption}
-					size="lg"
-				/>
-				{#if vm.perMetric.skippedStopRatePct}
-					<p class="snapshot-tile__rampin" data-slot="skipped-rampin">{t.rampInNote}</p>
-				{/if}
-				{#if skippedEmpty}
-					<p class="snapshot-tile__note" data-slot="skipped-empty">{t.noDataNote}</p>
-				{/if}
-			</article>
+				<!-- Skipped-stop rate (RAMP-IN) -->
+				<article class="snapshot-tile snapshot-tile--secondary" data-slot="skipped">
+					{@render tileInfo('skippedStop', t.skippedStopRatePct)}
+					<MetricDisplay
+						value={fmtPct(vm.skippedStopRatePct)}
+						emptyLabel={t.noData}
+						label={t.skippedStopRatePct}
+						sublabel={t.skippedStopCaption}
+						size="md"
+					/>
+					{#if vm.perMetric.skippedStopRatePct}
+						<p class="snapshot-tile__rampin" data-slot="skipped-rampin">{t.rampInNote}</p>
+					{/if}
+					{#if skippedEmpty}
+						<p class="snapshot-tile__note" data-slot="skipped-empty">{t.noDataNote}</p>
+					{/if}
+				</article>
+			</div>
 		</div>
 	{/if}
 </section>
@@ -231,9 +248,30 @@
 		gap: 1rem;
 		width: 100%;
 	}
+	/* Redesigned strip layout (C): a weighted headline pair above a calmer
+	   secondary grid, instead of one flat 7-up number row. */
+	.snapshot-strip__layout {
+		display: flex;
+		flex-direction: column;
+		gap: 1.25rem;
+		width: 100%;
+	}
+	/* Headline pair — the two load-bearing reads, side-by-side from the first
+	   breakpoint up (stacked on the narrowest phones). */
+	.snapshot-strip__headline {
+		display: grid;
+		gap: 1rem;
+		grid-template-columns: 1fr;
+	}
+	@media (min-width: 30rem) {
+		.snapshot-strip__headline {
+			grid-template-columns: repeat(2, minmax(0, 1fr));
+		}
+	}
+	/* Secondary grid — the five supporting tiles, reflowing 2 → 3 → 5 up. */
 	.snapshot-strip__grid {
 		display: grid;
-		gap: 1.25rem 2rem;
+		gap: 1rem 1.25rem;
 		grid-template-columns: repeat(2, minmax(0, 1fr));
 	}
 	@media (min-width: 640px) {
@@ -243,9 +281,11 @@
 	}
 	@media (min-width: 1024px) {
 		.snapshot-strip__grid {
-			grid-template-columns: repeat(7, minmax(0, 1fr));
+			grid-template-columns: repeat(5, minmax(0, 1fr));
 		}
 	}
+	/* Base tile — corner-anchored (i) still rides this (position:relative + the
+	   __info absolute pin below). The card chrome lives on the variants. */
 	.snapshot-tile {
 		position: relative;
 		display: flex;
@@ -255,6 +295,51 @@
 		/* Reserve a top-right gutter clearing the ~1.05rem (i) glyph + its gap so a
 		   long metric label wraps to the LEFT of the badge, never under/over it. */
 		padding-inline-end: 1.4rem;
+	}
+	/* Headline cards — the yesid card aesthetic: --card surface, hairline border,
+	   the soft card shadow + a leading signage accent rail giving the two primary
+	   reads visible weight over the secondary tiles. */
+	.snapshot-tile--headline {
+		gap: 0.45rem;
+		padding: 1.1rem 1.25rem;
+		/* Keep the (i) gutter clearance on top of the card pad. */
+		padding-inline-end: 1.6rem;
+		border: 1px solid var(--border);
+		border-radius: var(--radius-lg);
+		background: var(--card);
+		box-shadow: var(--shadow-card);
+		overflow: hidden;
+	}
+	/* Leading signage rail — a brand tick down the card's leading edge (chrome, not
+	   a data mark; --primary stays interactive-only doctrine is about DATA marks,
+	   and this is static surface chrome shared with the map departure rows). */
+	.snapshot-tile--headline::before {
+		content: '';
+		position: absolute;
+		inset-block: 0;
+		inset-inline-start: 0;
+		width: 3px;
+		background: var(--primary);
+		opacity: 0.5;
+	}
+	/* The (i) on a headline card sits inside the card pad, not flush to the edge. */
+	.snapshot-tile--headline :global(.snapshot-tile__info) {
+		inset-block-start: 1.1rem;
+		inset-inline-end: 1.1rem;
+	}
+	/* Secondary tiles — calmer chrome: a quiet bordered cell on the muted surface so
+	   they read as supporting context beneath the headline pair, not competing. */
+	.snapshot-tile--secondary {
+		gap: 0.35rem;
+		padding: 0.85rem 0.95rem;
+		padding-inline-end: 1.4rem;
+		border: 1px solid var(--border-subtle, var(--border));
+		border-radius: var(--radius-md);
+		background: color-mix(in srgb, var(--muted) 45%, var(--card));
+	}
+	.snapshot-tile--secondary :global(.snapshot-tile__info) {
+		inset-block-start: 0.85rem;
+		inset-inline-end: 0.85rem;
 	}
 	/* The metric-explainer (i) affordance rides the tile's top-right CORNER, an
 	   INTERACTIVE control, never a data mark; doctrine-clean. Pinned absolutely so
