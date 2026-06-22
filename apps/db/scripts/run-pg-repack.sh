@@ -4,20 +4,32 @@
 # slice-9.1.1m: the previous DEFAULT_TABLES named silver.trip_updates /
 # silver.trip_update_stop_time_updates / silver.vehicle_positions — all DROPPED by
 # migration 0014, so every live/dry run failed with "relations do not exist"
-# (exit 21). The list below is the 10 current churn tables, mirroring the
+# (exit 21). The list below is the 8 current churn tables, mirroring the
 # canonical sets in maintenance.py (REALTIME_SILVER_TABLES minus the 29GB
-# silver.rt_trip_update_stop_times, GOLD_FACT_TABLES, the gold.latest_* live
-# tables, and the two gold.*_summary_5m warm rollups).
+# silver.rt_trip_update_stop_times, the gold.latest_* live tables, and the two
+# gold.*_summary_5m warm rollups).
 #
 # silver.rt_trip_update_stop_times (~29GB, ~252M largely-LIVE rows at 14d
 # retention) is DELIBERATELY EXCLUDED from the CI default: a weekly WAN-attached
 # full-table rewrite of it is a multi-hour, 2x-disk job whose value post-burndown
 # is low. It is repacked from inside the postgres container via the on-VM runbook,
 # or via manual dispatch with an explicit PG_REPACK_TABLES.
+#
+# 2026-06-22: gold.fact_vehicle_snapshot + gold.fact_trip_delay_snapshot are ALSO
+# excluded from the CI default. They are the highest-churn gold facts (the
+# realtime worker appends to them every ~30s), and pg_repack's brief ACCESS
+# EXCLUSIVE swap at the end of a WAN-orchestrated run repeatedly lost the lock
+# race against the live writes (--wait-timeout 60 --no-kill-backend), dying
+# mid-swap and leaving orphaned repack.log_* tables + repack_trigger triggers
+# behind — a 6.7GB disk leak + a write-tax on the two hottest tables (cleaned
+# 2026-06-22 via DROP EXTENSION pg_repack CASCADE). Repack these on-box via the
+# on-VM runbook (low lock latency, no WAN), or via manual dispatch with an
+# explicit PG_REPACK_TABLES during a quiet window. The append+daily-prune bloat
+# on these is modest and autovacuum-managed between runbook passes.
 
 set -euo pipefail
 
-DEFAULT_TABLES=$'silver.rt_trip_updates\nsilver.rt_vehicle_positions\nsilver.rt_entities\nsilver.rt_feed_snapshots\ngold.fact_vehicle_snapshot\ngold.fact_trip_delay_snapshot\ngold.latest_vehicle_snapshot\ngold.latest_trip_delay_snapshot\ngold.vehicle_summary_5m\ngold.trip_delay_summary_5m'
+DEFAULT_TABLES=$'silver.rt_trip_updates\nsilver.rt_vehicle_positions\nsilver.rt_entities\nsilver.rt_feed_snapshots\ngold.latest_vehicle_snapshot\ngold.latest_trip_delay_snapshot\ngold.vehicle_summary_5m\ngold.trip_delay_summary_5m'
 
 if [[ -z "${DATABASE_URL:-}" ]]; then
   echo "DATABASE_URL is required" >&2
