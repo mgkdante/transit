@@ -43,6 +43,7 @@ from transit_ops.maintenance import (
     vacuum_storage,
 )
 from transit_ops.orchestration import (
+    run_pruner_loop,
     run_realtime_cycle,
     run_realtime_worker_loop,
     run_static_pipeline,
@@ -1080,6 +1081,35 @@ def run_realtime_worker_command(
         )
     except KeyError as exc:
         raise typer.BadParameter(str(exc)) from exc
+    except (ValueError, FileNotFoundError) as exc:
+        raise typer.BadParameter(str(exc)) from exc
+
+
+@app.command("run-pruner-loop")
+def run_pruner_loop_command(
+    provider_id: str,
+    max_cycles: int | None = typer.Option(
+        None,
+        "--max-cycles",
+        min=1,
+        help="Stop after a fixed number of prune passes for bounded validation.",
+    ),
+) -> None:
+    """Run the dedicated retention pruner loop (silver + gold) forever.
+
+    Decoupled from the realtime worker (PR-B / slice-9.8): this is the always-on
+    `pruner` compose service's entrypoint. It never skips a prune on a gold or
+    endpoint failure (it has no capture/gold step that could throw first), so it
+    drains the silver/gold backlog independent of the realtime cycle.
+    """
+
+    settings = get_settings()
+    try:
+        run_pruner_loop(
+            provider_id,
+            settings=settings,
+            max_cycles=max_cycles,
+        )
     except (ValueError, FileNotFoundError) as exc:
         raise typer.BadParameter(str(exc)) from exc
 

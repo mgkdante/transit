@@ -511,6 +511,29 @@ def test_run_realtime_worker_passes_max_cycles(monkeypatch) -> None:
     assert recorded == {"provider_id": "stm", "max_cycles": 2}
 
 
+def test_run_pruner_loop_help() -> None:
+    result = runner.invoke(app, ["run-pruner-loop", "--help"])
+
+    assert result.exit_code == 0
+    assert "Run the dedicated retention pruner loop" in result.stdout
+    assert "--max-cycles" in result.stdout
+
+
+def test_run_pruner_loop_passes_max_cycles(monkeypatch) -> None:
+    recorded: dict[str, object] = {}
+
+    def fake_run_pruner_loop(provider_id, *, settings, max_cycles):  # noqa: ANN001
+        recorded["provider_id"] = provider_id
+        recorded["max_cycles"] = max_cycles
+
+    monkeypatch.setattr(cli_module, "run_pruner_loop", fake_run_pruner_loop)
+
+    result = runner.invoke(app, ["run-pruner-loop", "stm", "--max-cycles", "3"])
+
+    assert result.exit_code == 0
+    assert recorded == {"provider_id": "stm", "max_cycles": 3}
+
+
 def test_prune_bronze_storage_help() -> None:
     result = runner.invoke(app, ["prune-bronze-storage", "--help"])
 
@@ -1007,18 +1030,10 @@ def test_run_realtime_cycle_returns_non_zero_on_partial_failure(monkeypatch) -> 
                 "capture_vehicle_positions": 0.25,
                 "load_vehicle_positions_to_silver": None,
                 "refresh_gold_realtime": 0.25,
-                "prune_silver_storage": None,
-                "prune_gold_storage": None,
             },
             gold_build=None,
             gold_build_duration_seconds=0.25,
             gold_error_message=None,
-            silver_maintenance=None,
-            silver_maintenance_duration_seconds=None,
-            silver_maintenance_error_message=None,
-            gold_maintenance=None,
-            gold_maintenance_duration_seconds=None,
-            gold_maintenance_error_message=None,
         ),
     )
 
