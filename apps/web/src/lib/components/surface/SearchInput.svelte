@@ -12,7 +12,7 @@
   surface. Tokens, no hex; --primary stays interactive-only (focus ring).
 -->
 <script lang="ts">
-	interface SearchInputProps {
+	export interface SearchInputProps {
 		/** Bindable input value. */
 		value: string;
 		/** Visible + accessible label for the field. */

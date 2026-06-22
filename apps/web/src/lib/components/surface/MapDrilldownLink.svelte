@@ -11,7 +11,7 @@
   affordance). Reduced-motion-guarded transitions; focus-visible ring.
 -->
 <script lang="ts">
-	interface MapDrilldownLinkProps {
+	export interface MapDrilldownLinkProps {
 		/** Target href (callers pass mapHrefFor(...)). */
 		href: string;
 		/** Visible pill text. */

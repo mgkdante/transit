@@ -29,7 +29,7 @@
 		readonly available?: boolean;
 	}
 
-	interface GrainPickerProps<K extends string = string> {
+	export interface GrainPickerProps<K extends string = string> {
 		/** The offered segments, in finest→coarsest order. */
 		segments: readonly GrainSegment<K>[];
 		/** The selected grain key (bindable). */

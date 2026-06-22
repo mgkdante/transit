@@ -18,7 +18,7 @@
 	import ChevronRightIcon from '@lucide/svelte/icons/chevron-right';
 	import type { BreadcrumbTrailItem } from '$lib/seo/routeSeo';
 
-	interface BreadcrumbProps {
+	export interface BreadcrumbProps {
 		/** The trail (already-localized labels, delocalized paths). */
 		trail: readonly BreadcrumbTrailItem[];
 		/** Active locale — localizes each crumb href. */

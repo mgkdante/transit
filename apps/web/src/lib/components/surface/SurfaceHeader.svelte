@@ -14,7 +14,7 @@
 	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
 	import SectionHeading from '$lib/components/brand/SectionHeading.svelte';
 
-	interface SurfaceHeaderProps {
+	export interface SurfaceHeaderProps {
 		/** Mono station-voice overline (e.g. "NETWORK · LIVE"). */
 		kicker: string;
 		/** The display heading text. */

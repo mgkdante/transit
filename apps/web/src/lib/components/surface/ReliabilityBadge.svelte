@@ -23,7 +23,7 @@
 	import type { ReliabilitySnapshot } from '$lib/v1/reliabilitySnapshot.svelte';
 	import { StatusBadge, Sparkline, statusVar } from '$lib/components/dataviz';
 
-	interface ReliabilityBadgeProps {
+	export interface ReliabilityBadgeProps {
 		/** The reactive snapshot for this row's entity, from the lazy loader. */
 		snapshot: ReliabilitySnapshot;
 		/** Active locale for the intrinsic OTP a11y phrasing + number grouping. */

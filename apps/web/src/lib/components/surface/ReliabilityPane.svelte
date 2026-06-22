@@ -40,7 +40,7 @@
 		severePct?: number | null;
 	}
 
-	interface ReliabilityPaneProps {
+	export interface ReliabilityPaneProps {
 		/** Periods to render (one card each). Empty ⇒ renders nothing. */
 		periods: readonly ReliabilityPeriodVM[];
 		/** UI language for the intrinsic domain labels. */
