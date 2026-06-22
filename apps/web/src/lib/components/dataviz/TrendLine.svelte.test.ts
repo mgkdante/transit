@@ -68,3 +68,35 @@ describe('TrendLine — fixed readout (#4)', () => {
 		expect(container.querySelector('[data-slot="chart-tooltip-wrap"]')).not.toBeNull();
 	});
 });
+
+describe('TrendLine — true time scale (the flat-trend fix)', () => {
+	// Pull the x of each point out of the green on-time <path>'s `d`.
+	function onTimeXs(container: HTMLElement): number[] {
+		const path = container.querySelector<SVGPathElement>('path[stroke*="on-time"]');
+		const d = path?.getAttribute('d') ?? '';
+		return [...d.matchAll(/[ML]([\d.]+),/g)].map((m) => Number(m[1]));
+	}
+
+	// day0, day1, day10 — adjacent indices, very uneven calendar gaps.
+	const times = ['2026-06-01', '2026-06-02', '2026-06-11'];
+
+	it('spaces x by elapsed time when `times` is supplied (middle point hugs the left)', () => {
+		const { container } = render(TrendLine, {
+			props: { onTime, retard: [null, null, null], width: 100, times },
+		});
+		const xs = onTimeXs(container);
+		expect(xs).toHaveLength(3);
+		// day1 is 1/10 of the span → near the start, NOT the index midpoint.
+		expect(xs[1] - xs[0]).toBeLessThan(xs[2] - xs[1]);
+	});
+
+	it('falls back to index spacing (byte-identical) without `times`', () => {
+		const { container } = render(TrendLine, {
+			props: { onTime, retard: [null, null, null], width: 100 },
+		});
+		const xs = onTimeXs(container);
+		expect(xs).toHaveLength(3);
+		// even index spacing → the middle gap equals the outer gap.
+		expect(xs[1] - xs[0]).toBeCloseTo(xs[2] - xs[1], 5);
+	});
+});

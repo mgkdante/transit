@@ -17,6 +17,7 @@
 	import ChartTooltip from './ChartTooltip.svelte';
 	import ChartReadout from './ChartReadout.svelte';
 	import { createChartTooltip, type ChartAxis } from './useChartTooltip.svelte';
+	import { makeXScale } from './lineScale';
 
 	export interface SparklineProps extends WithElementRef<HTMLAttributes<HTMLDivElement>> {
 		/** The series. `null` entries render as gaps (no interpolation). */
@@ -47,6 +48,20 @@
 		 * tooltip heading (the period / date). Omit → no heading.
 		 */
 		xLabels?: string[];
+		/**
+		 * Optional real timestamp per index (epoch ms, Date, or ISO string). With >=2
+		 * distinct values the spark spaces x by elapsed calendar time instead of array
+		 * index (so a sparse coarse-grain series isn't smeared evenly). Omit → index
+		 * spacing, byte-identical to existing inline renders.
+		 */
+		times?: Array<number | Date | string>;
+		/**
+		 * Pin the y-domain `[min, max]` instead of auto-scaling to the data's own
+		 * min/max. Auto-scaling makes a flat-ish series look volatile and changes the
+		 * shape visit-to-visit; pass a fixed domain (e.g. [0, 100]) for a stable,
+		 * comparable spark. Omit → auto-scale (legacy behaviour).
+		 */
+		domain?: [number, number];
 		/**
 		 * Render min/max y endpoint tick labels in a left gutter beside the line.
 		 * Default false so the tiny 96×24 inline use stays unchanged. The ticks are
@@ -82,6 +97,8 @@
 		label,
 		yAxis,
 		xLabels,
+		times,
+		domain,
 		showYTicks = false,
 		interactive = false,
 		readout = false,
@@ -92,6 +109,11 @@
 	}: SparklineProps = $props();
 
 	const PAD = $derived(stroke + 0.5);
+
+	// Shared x-scale (true-time when `times` is supplied, else index spacing) — the
+	// forward x() and inverse indexAt() come from one object so the plotted line and
+	// the hover/keyboard hit-test can never drift.
+	const xs = $derived(makeXScale({ count: values.length, width, pad: PAD, times }));
 
 	/** Suffix a value with the y-axis unit (when one was passed). */
 	const withUnit = (v: number | string): string => `${v}${yAxis?.unit ?? ''}`;
@@ -109,16 +131,15 @@
 	const points = $derived.by<Array<Pt | null>>(() => {
 		const reals = values.filter((v): v is number => v != null && !Number.isNaN(v));
 		if (reals.length === 0) return values.map(() => null);
-		const min = Math.min(...reals);
-		const max = Math.max(...reals);
+		// Pinned domain (stable, comparable shape) or auto-scale to the data's range.
+		const [min, max] = domain ?? [Math.min(...reals), Math.max(...reals)];
 		const span = max - min || 1;
-		const n = values.length;
-		const innerW = width - PAD * 2;
 		const innerH = height - PAD * 2;
 		return values.map((v, i) => {
 			if (v == null || Number.isNaN(v)) return null;
-			const x = n === 1 ? width / 2 : PAD + (i / (n - 1)) * innerW;
-			const y = PAD + (1 - (v - min) / span) * innerH;
+			const x = xs.x(i);
+			const clamped = domain ? Math.min(max, Math.max(min, v)) : v;
+			const y = PAD + (1 - (clamped - min) / span) * innerH;
 			return { x, y };
 		});
 	});
