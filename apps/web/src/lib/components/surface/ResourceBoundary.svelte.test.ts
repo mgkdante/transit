@@ -34,7 +34,7 @@ describe('ResourceBoundary — DataState render ladder', () => {
 			props: {
 				resource: res<number[]>({ data: [] }),
 				lang: 'en',
-				isNoResults: (d: number[]) => d.length === 0,
+				isNoResults: (d) => Array.isArray(d) && d.length === 0,
 				children: okChild,
 			},
 		});
@@ -47,7 +47,7 @@ describe('ResourceBoundary — DataState render ladder', () => {
 			props: {
 				resource: res<number[]>({ data: [] }),
 				lang: 'en',
-				isEmpty: (d: number[]) => d.length === 0,
+				isEmpty: (d) => Array.isArray(d) && d.length === 0,
 				children: okChild,
 			},
 		});
