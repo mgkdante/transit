@@ -1,14 +1,17 @@
 <!--
   TocNav - the desktop table-of-contents rail. Shared across detail pages: a
-  non-hideable heading + a badge-led nav + a "section N / total" counter. Badges
-  come from TocBadge (same marks as the section cards). The page owns the active
-  id + scroll handler and passes them in.
+  badge-led nav + a "section N / total" counter, wrapped in a CollapsibleSection.
+  Badges come from TocBadge (same marks as the section cards). The page owns the
+  active id + scroll handler and passes them in.
 
-  The rail is NEVER user-collapsible: navigation must stay reachable at all times
-  (quiet/focus mode collapses the section CARDS, not the ToC). It renders the
-  heading as a plain (non-toggle, no-chevron, no-persisted-state) header so a
-  reader can never hide the ToC, and a previously-collapsed ToC self-heals — there
-  is no persisted collapsed state to restore.
+  COLLAPSE CONTRACT (slice-9.8-B): the ToC has its OWN, USER-DRIVEN collapse
+  affordance (its own chevron) — a reader can manually fold the rail and, when a
+  `sectionKey` is supplied, that collapsed choice persists across same-tab visits.
+  This is DISTINCT from FOCUS/quiet mode: FOCUS collapses the section CARDS only
+  and NEVER touches the ToC. The page MUST NOT drive this collapse from its quiet
+  state — the only thing that closes the ToC is the reader clicking the ToC's own
+  header. Pass `collapsible={false}` (the default-on `collapsible` is true) to opt
+  back into a permanently-open, non-hideable rail.
 
   Ported from yesid.dev shared/TocNav. Deviation: yesid's `.toc-counter-dot`
   glow uses `--glow` (a token transit lacks). Substituted `--primary` (transit's
@@ -26,12 +29,27 @@
 		onNavigate,
 		heading,
 		counterPrefix = 'SEC',
+		collapsible = true,
+		sectionKey = undefined,
 	}: {
 		entries: TocEntry[];
 		activeId: string;
 		onNavigate: (id: string) => void;
 		heading: string;
 		counterPrefix?: string;
+		/**
+		 * When true (default), the rail renders its OWN collapse affordance (chevron)
+		 * so a reader can fold the navigation manually. This is the ToC's own toggle —
+		 * it is NEVER driven by FOCUS/quiet mode (which collapses the section cards,
+		 * not the ToC). Pass false to render a permanently-open, non-hideable rail.
+		 */
+		collapsible?: boolean;
+		/**
+		 * Opt the user-driven collapse state into surviving a same-tab navigation.
+		 * When set, CollapsibleSection persists the open/closed choice keyed by this
+		 * stable, locale-free string. Only meaningful when `collapsible` is true.
+		 */
+		sectionKey?: string;
 	} = $props();
 
 	// Desktop TOC lists only the center-column sections; right-rail cards
@@ -48,12 +66,13 @@
 </script>
 
 <!--
-	The ToC rail is non-hideable: `collapsible={false}` renders the heading as a
-	plain header (no chevron, no toggle), and we pass NO `sectionKey`, so there is
-	no persisted collapsed state to ever hide or restore. The nav stays mounted
-	and reachable in every mode (quiet/focus collapses the section cards, not this).
+	The ToC rail carries its OWN user-driven collapse (its own chevron). When
+	`collapsible` is true (default) a reader can fold the rail, and a `sectionKey`
+	persists that choice across same-tab visits. This toggle is the ToC's alone —
+	it is never wired to FOCUS/quiet (which collapses the section cards, not this).
+	Default-open so the nav is reachable until the reader chooses to fold it.
 -->
-<CollapsibleSection title={heading} collapsible={false} open={true}>
+<CollapsibleSection title={heading} {collapsible} {sectionKey} open={true}>
 	{#snippet icon()}
 		<SectionIcon name="toc" class="h-4 w-4 shrink-0 text-primary" />
 	{/snippet}

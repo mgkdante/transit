@@ -88,12 +88,12 @@ describe('TocNav', () => {
 		expect(onNavigate).toHaveBeenCalledWith('reliability');
 	});
 
-	// slice-9.7 A2: the ToC rail is NON-hideable. It must never expose a user
-	// affordance that collapses/persists it closed (quiet/focus mode collapses the
-	// section CARDS, not the navigation). The heading renders as a plain header,
-	// NOT a disclosure trigger, so a reader can never hide the ToC and a
-	// previously-collapsed ToC has no persisted state to restore.
-	it('is non-hideable: the heading is a plain header with no disclosure trigger', () => {
+	// slice-9.8-B: the ToC rail is USER-COLLAPSIBLE by default — it owns its own
+	// collapse affordance (a header disclosure trigger / chevron). This is the
+	// reader's own toggle, DISTINCT from FOCUS/quiet (which collapses the section
+	// CARDS, never the ToC). The page must never wire this toggle to its quiet
+	// state; here we just assert the affordance exists and folds the nav.
+	it('is user-collapsible by default: the heading is a disclosure trigger that folds the nav', async () => {
 		const { container, getByText } = render(TocNav, {
 			props: {
 				entries,
@@ -103,14 +103,38 @@ describe('TocNav', () => {
 			},
 		});
 
-		// The heading itself carries no toggle: it is not (nor inside) a collapsible
-		// disclosure trigger, and there is no chevron to flip it shut.
+		// The heading IS a collapsible disclosure trigger (its own chevron toggle).
+		const headingEl = getByText('On this page');
+		const trigger = headingEl.closest('[data-slot="collapsible-trigger"]');
+		expect(trigger).not.toBeNull();
+
+		// Open by default: the nav + its jump buttons are mounted and reachable.
+		const nav = container.querySelector('nav.toc-nav');
+		expect(nav).not.toBeNull();
+		expect(container.querySelector('[data-state="open"]')).not.toBeNull();
+
+		// Clicking the trigger folds the rail (the reader's own collapse affordance).
+		await fireEvent.click(trigger as HTMLElement);
+		expect(container.querySelector('[data-state="closed"]')).not.toBeNull();
+	});
+
+	// The non-hideable variant remains available (collapsible={false}): a caller
+	// can still opt into a permanently-open rail with no disclosure trigger.
+	it('renders a permanently-open, non-hideable rail when collapsible={false}', () => {
+		const { container, getByText } = render(TocNav, {
+			props: {
+				entries,
+				activeId: 'overview',
+				onNavigate: () => {},
+				heading: 'On this page',
+				collapsible: false,
+			},
+		});
+
 		const headingEl = getByText('On this page');
 		expect(headingEl.closest('[data-slot="collapsible-trigger"]')).toBeNull();
 		expect(container.querySelector('[data-slot="collapsible-trigger"]')).toBeNull();
 
-		// The nav (and its jump buttons) is always mounted + reachable: the only
-		// buttons present are the entry jump buttons, never a header toggle.
 		const nav = container.querySelector('nav.toc-nav');
 		expect(nav).not.toBeNull();
 		const buttons = container.querySelectorAll('button');

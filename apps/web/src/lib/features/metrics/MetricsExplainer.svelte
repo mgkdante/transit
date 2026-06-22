@@ -18,14 +18,15 @@
       by an edge-to-edge `<Separator variant="hazard">` stripe — 1:1 with the blog/
       projects detail header + hazard separator.
     · The `.body-grid` below it is the yesid article grid: max-width container-wide,
-      centred, with the page gutter; at lg it becomes a THREE-column measured grid
-      `minmax(12rem,1fr) | minmax(0,46rem) | minmax(12rem,1fr)` — a TOC rail, a
-      46rem-capped reading column, and a (currently empty) right rail that holds
-      the measure. It is NOT full-bleed: the reading column stays ~46rem.
-    · DESKTOP (>=lg): a sticky, NON-hideable table-of-contents rail (shared TocNav)
-      on the left + the measured content column in the centre. The rail tracks the
-      current section (activeId) and scrolls to its target on click; it stays fully
-      visible in every mode (quiet/focus collapses the section cards, never the ToC).
+      centred, with the page gutter; at lg it becomes a TWO-column grid
+      `minmax(13rem,17rem) | minmax(0,1fr)` — a TOC rail + a wide reading column
+      (slice-9.8-B widened the column to ~60rem into the reclaimed third-rail space).
+    · DESKTOP (>=lg): a sticky table-of-contents rail (shared TocNav) on the left +
+      the measured content column on the right. The rail tracks the current section
+      (activeId) and scrolls to its target on click. The ToC carries its OWN
+      user-driven collapse (its chevron, persisted via sectionKey="metrics-toc"),
+      DISTINCT from FOCUS/quiet — FOCUS collapses only the section cards, NEVER the
+      ToC, and nothing wires the rail's collapse to the quiet state.
     · The provenance preamble + one CollapsibleSection card PER METRIC (number
       badge, `data-toc` anchor, deep-link `id` on the section block) carry the
       definition / math / SQL / "what it's NOT" / caveats.
@@ -168,46 +169,87 @@
 		},
 	]);
 
-	// ── Quiet mode (focus reading) ─────────────────────────────────────────────
-	// A single, restrained header toggle that enters a distraction-free reading
-	// state for the methodology article (mirrors the yesid.dev detail-page "Quiet
-	// mode" switch, kept to one control). Per the yesid.dev contract, quiet mode
-	// does exactly ONE thing: it COLLAPSES every metric section card so the page
-	// becomes a scannable stack of headings. It NEVER hides the table of contents,
-	// NEVER changes the grid columns, and NEVER drops the page gutter — the ToC rail
-	// stays fully visible so the reader can still navigate while the cards are shut.
-	// Default OFF leaves the cards open (today's layout).
+	// ── Quiet / FOCUS mode (focus reading) ─────────────────────────────────────
+	// A restrained header control that enters a distraction-free reading state for
+	// the methodology article (mirrors the yesid.dev detail-page "Quiet mode" switch).
+	// Per the yesid.dev contract, FOCUS does exactly ONE thing: it COLLAPSES every
+	// metric section card so the page becomes a scannable stack of headings. It NEVER
+	// hides the table of contents, NEVER changes the grid columns, and NEVER drops
+	// the page gutter — the ToC rail stays present so the reader can still navigate
+	// while the cards are shut. Default OFF leaves the cards open.
 	//
-	// The choice PERSISTS across navigations in localStorage — it remembers the
-	// CARD-collapse preference, never a hidden ToC. SSR-safe: the initial read and
-	// every write are window-guarded (no window on the server / in tests), so the
-	// page renders in the default (cards-open) layout server-side and the stored
-	// preference is re-applied on mount without a layout flash mid-paint.
+	// slice-9.8-B — SESSION-BY-DEFAULT, OPTIONALLY PINNED. Two controls now sit in
+	// the header (the yesid QuietModeButton pair):
+	//   1. the FOCUS switch — toggles the card-collapse for THIS session only.
+	//   2. the REMEMBER pin — when engaged, the FOCUS preference is remembered across
+	//      visits; when off, FOCUS resets to its default each fresh visit.
+	//
+	// Persistence model (SSR-safe; every read/write is window-guarded so the server
+	// + tests render the default layout and the stored prefs re-apply on mount with
+	// no mid-paint flash):
+	//   · metrics-focus-remembered (localStorage '1'/'0') — the PIN: does the FOCUS
+	//     preference survive across visits?
+	//   · metrics-quiet (localStorage '1'/'0') — the remembered FOCUS value, read on
+	//     mount ONLY when pinned.
+	//   · metrics-quiet (sessionStorage '1'/'0') — the unpinned, session-scoped FOCUS
+	//     value, read on mount when NOT pinned (survives same-tab nav, not a new visit).
 	const QUIET_STORAGE_KEY = 'metrics-quiet';
+	const REMEMBER_STORAGE_KEY = 'metrics-focus-remembered';
 	let quiet = $state(false);
+	let remembered = $state(false);
 
-	// Quiet mode drives the metric/lacunes cards' open state directly: open when
-	// calm, collapsed when quiet. This is the LOCAL analog of yesid.dev's shared
-	// quiet-mode collapse signal (transit has no shared quiet-mode store yet, so we
-	// keep the collapse contained to this surface rather than introducing a global
-	// store in this change). `cardsOpen` is the single source the cards bind to.
+	// FOCUS drives the metric/lacunes cards' open state directly: open when calm,
+	// collapsed when in focus. `cardsOpen` is the single source the cards bind to.
+	// (The ToC rail is NEVER bound to this — FOCUS collapses cards, never the ToC.)
 	const cardsOpen = $derived(!quiet);
 
 	onMount(() => {
 		try {
-			quiet = localStorage.getItem(QUIET_STORAGE_KEY) === '1';
+			remembered = localStorage.getItem(REMEMBER_STORAGE_KEY) === '1';
+			// Pinned → restore the remembered value from localStorage. Unpinned →
+			// FOCUS is session-scoped, so restore only a same-tab session value.
+			quiet = remembered
+				? localStorage.getItem(QUIET_STORAGE_KEY) === '1'
+				: sessionStorage.getItem(QUIET_STORAGE_KEY) === '1';
 		} catch {
-			/* private mode / disabled storage — session-only quiet mode is fine */
+			/* private mode / disabled storage — session-only FOCUS is fine */
 		}
 	});
 
-	function toggleQuiet(): void {
-		quiet = !quiet;
+	// Write the current FOCUS value to whichever store its persistence scope owns:
+	// localStorage when pinned (remembered across visits), sessionStorage otherwise
+	// (this tab only). We keep the two stores from fighting by clearing the other.
+	function persistQuiet(): void {
 		try {
-			localStorage.setItem(QUIET_STORAGE_KEY, quiet ? '1' : '0');
+			if (remembered) {
+				localStorage.setItem(QUIET_STORAGE_KEY, quiet ? '1' : '0');
+				sessionStorage.removeItem(QUIET_STORAGE_KEY);
+			} else {
+				sessionStorage.setItem(QUIET_STORAGE_KEY, quiet ? '1' : '0');
+				localStorage.removeItem(QUIET_STORAGE_KEY);
+			}
 		} catch {
 			/* private mode / disabled storage — the in-memory toggle still works */
 		}
+	}
+
+	function toggleQuiet(): void {
+		quiet = !quiet;
+		persistQuiet();
+	}
+
+	// Pin / unpin the FOCUS preference. Pinning promotes the current FOCUS value to
+	// localStorage (remembered across visits); unpinning demotes it back to a
+	// session value. Either way the current on-screen FOCUS state is unchanged —
+	// only WHERE the preference lives (and how long it survives) changes.
+	function toggleRemember(): void {
+		remembered = !remembered;
+		try {
+			localStorage.setItem(REMEMBER_STORAGE_KEY, remembered ? '1' : '0');
+		} catch {
+			/* private mode / disabled storage — the in-memory pin still works */
+		}
+		persistQuiet();
 	}
 
 	// ── Active-section tracking ────────────────────────────────────────────────
@@ -265,6 +307,26 @@
 						</svg>
 						<span>{t.quiet.label}</span>
 					</button>
+					<!-- Remember pin (slice-9.8-B): a paired switch that PINS the FOCUS
+					     preference across visits. OFF = FOCUS is session-only; ON = the
+					     current FOCUS choice is remembered next visit. The pin icon fills in
+					     --primary when engaged. Independent of the FOCUS state itself. -->
+					<button
+						type="button"
+						class="metrics-quiet-remember"
+						role="switch"
+						aria-checked={remembered}
+						aria-label={remembered ? t.quiet.forget : t.quiet.remember}
+						title={remembered ? t.quiet.forget : t.quiet.remember}
+						data-testid="metrics-quiet-remember"
+						onclick={toggleRemember}
+					>
+						<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+							<path class="r-pin" d="M12 17v4" />
+							<path class="r-pin" d="M9 3h6l-1 6 3 3v1H7v-1l3-3-1-6z" />
+						</svg>
+						<span>{t.quiet.rememberLabel}</span>
+					</button>
 				</div>
 			</SurfaceHeader>
 		</div>
@@ -275,22 +337,25 @@
 	<Separator variant="hazard" />
 
 	<!-- Body: the yesid article grid (max-width container-wide, centred, with the
-	     page gutter; at lg a measured 3-col grid → TOC rail | 46rem reading column |
-	     empty right rail holding the measure). NOT full-bleed: the reading column
-	     stays ~46rem. Single column below lg; the rail is replaced by the floating
-	     pill. The grid + gutter are IDENTICAL whether quiet mode is on or off —
-	     quiet only collapses the section cards (below); the ToC rail stays fully
-	     visible. -->
+	     page gutter; at lg a 2-col grid → TOC rail | wide reading column). Single
+	     column below lg; the rail is replaced by the floating pill. The grid +
+	     gutter are IDENTICAL whether quiet mode is on or off — quiet only collapses
+	     the section cards (below); the ToC rail stays present. -->
 	<div class="body-grid">
 		<aside class="context-column">
 			<div class="context-panel toc-scroll">
 				<div class="toc-nav-shell">
+					<!-- The ToC owns its OWN user-driven collapse (its chevron) + persists the
+					     choice across same-tab visits via `sectionKey`. This is INDEPENDENT of
+					     FOCUS/quiet: nothing here passes `quiet`/`cardsOpen` to the rail, so
+					     FOCUS can only collapse the metric cards (below), never the ToC. -->
 					<TocNav
 						entries={tocEntries}
 						{activeId}
 						onNavigate={navigate}
 						heading={t.tocLabel}
 						counterPrefix={t.tocCounterPrefix}
+						sectionKey="metrics-toc"
 					/>
 				</div>
 			</div>
@@ -428,12 +493,6 @@
 				</CollapsibleSection>
 			</div>
 		</div>
-
-		<!-- Right rail (lg+). Empty today — it exists to hold the 3-column measure so
-		     the centre reading column stays capped at ~46rem (1:1 with the yesid blog
-		     grid's entry rail column). A cluster legend / back-to-top can land here in
-		     a follow-up without disturbing the measure. -->
-		<aside class="entry-column" aria-hidden="true"></aside>
 	</div>
 </article>
 
@@ -474,9 +533,10 @@
 
 	/* ── Body grid (yesid article grid) ────────────────────────────────────────
 	   Mobile: one column, container-wide, centred, with the page gutter. At lg it
-	   becomes a measured 3-col grid → TOC rail | 46rem reading column | right rail,
-	   so the reading column stays ~46rem (NOT full-bleed). The grid + gutter are
-	   IDENTICAL whether quiet mode is on or off (quiet only collapses cards). */
+	   becomes a measured 2-col grid → TOC rail | reading column. slice-9.8-B
+	   dropped the empty right rail: the reclaimed real estate goes to a wider ToC
+	   rail and a wider reading column (the cards grow into it). The grid + gutter
+	   are IDENTICAL whether quiet mode is on or off (quiet only collapses cards). */
 	.body-grid {
 		max-width: var(--container-wide);
 		margin: 0 auto;
@@ -490,8 +550,7 @@
 	}
 
 	.context-column,
-	.sections-column,
-	.entry-column {
+	.sections-column {
 		min-width: 0;
 	}
 
@@ -507,38 +566,31 @@
 		width: 100%;
 	}
 
-	/* The right rail is desktop-only ornament that holds the measure (empty today). */
-	.entry-column {
-		display: none;
-	}
-
 	@media (min-width: 1024px) {
 		.body-grid {
 			width: 100%;
 			max-width: none;
-			grid-template-columns: minmax(12rem, 1fr) minmax(0, 46rem) minmax(12rem, 1fr);
-			gap: 2rem;
+			/* Two columns: a fixed-ish ToC rail + a fluid reading column that takes
+			   all the reclaimed width (no third measure rail). */
+			grid-template-columns: minmax(13rem, 17rem) minmax(0, 1fr);
+			gap: 2.5rem;
 			align-items: start;
 			padding-block: 2.5rem;
 		}
 
 		.context-column {
 			grid-column: 1;
-			justify-self: end;
-			width: min(18rem, 100%);
+			justify-self: stretch;
+			width: 100%;
 		}
 
 		.sections-column {
 			grid-column: 2;
-			justify-self: center;
-			max-width: 46rem;
-		}
-
-		.entry-column {
-			display: block;
-			grid-column: 3;
+			/* Grow into the reclaimed real estate: widened from 46rem and pinned to
+			   the start so the cards fill the column rather than re-centring narrow. */
 			justify-self: start;
-			width: min(18rem, 100%);
+			max-width: 60rem;
+			width: 100%;
 		}
 
 		.context-panel {
@@ -557,26 +609,6 @@
 			overflow-y: auto;
 			overscroll-behavior: contain;
 			padding-bottom: 1rem;
-		}
-	}
-
-	/* Narrow desktop (lg→xl): the 46rem centre + two 18rem rails overflow, so let
-	   the rails stretch and the centre uncap — same fallback the yesid grid uses. */
-	@media (min-width: 1024px) and (max-width: 1279px) {
-		.body-grid {
-			gap: 1.25rem;
-		}
-		.context-column {
-			width: 100%;
-			justify-self: stretch;
-		}
-		.sections-column {
-			max-width: none;
-			justify-self: stretch;
-		}
-		.entry-column {
-			width: 100%;
-			justify-self: stretch;
 		}
 	}
 
@@ -774,6 +806,8 @@
 	.metrics-quiet-controls {
 		display: inline-flex;
 		align-items: center;
+		gap: 0.5rem;
+		flex-wrap: wrap;
 		margin-block-start: 0.25rem;
 	}
 	.metrics-quiet-toggle {
@@ -833,6 +867,58 @@
 		filter: drop-shadow(0 0 4px color-mix(in srgb, var(--glow) 60%, transparent));
 	}
 
+	/* Remember pin — the paired switch. Same mono-pill chrome as the FOCUS switch
+	   but a touch quieter (it is a meta-control over the FOCUS one). Lights up in
+	   --primary when engaged (the pin fills). */
+	.metrics-quiet-remember {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		gap: 0.45rem;
+		min-height: 44px;
+		padding-inline: 0.75rem 0.875rem;
+		border: 2px solid var(--border-brand);
+		border-radius: var(--radius-md);
+		background: var(--background);
+		box-shadow: inset 0 1px 0 var(--edge-highlight);
+		color: var(--muted-foreground);
+		font-family: var(--font-mono);
+		font-size: var(--text-control);
+		letter-spacing: 0;
+		cursor: pointer;
+		transition:
+			border-color var(--duration-normal) var(--ease-default),
+			color var(--duration-normal) var(--ease-default),
+			background var(--duration-normal) var(--ease-default);
+	}
+	.metrics-quiet-remember:hover,
+	.metrics-quiet-remember:focus-visible,
+	.metrics-quiet-remember[aria-checked='true'] {
+		border-color: var(--primary);
+		color: var(--primary);
+		background: color-mix(in srgb, var(--primary) 7%, var(--background));
+	}
+	.metrics-quiet-remember:focus-visible {
+		outline: 2px solid var(--ring);
+		outline-offset: 3px;
+	}
+	.metrics-quiet-remember .r-pin {
+		fill: none;
+		stroke: currentColor;
+		stroke-width: 1.5;
+		stroke-linecap: round;
+		stroke-linejoin: round;
+		transition:
+			fill var(--duration-normal) var(--ease-default),
+			stroke var(--duration-normal) var(--ease-default),
+			filter var(--duration-normal) var(--ease-default);
+	}
+	.metrics-quiet-remember[aria-checked='true'] .r-pin {
+		fill: color-mix(in srgb, var(--primary) 22%, transparent);
+		stroke: var(--primary);
+		filter: drop-shadow(0 0 3px color-mix(in srgb, var(--glow) 50%, transparent));
+	}
+
 	.metric__top {
 		align-self: flex-start;
 		font-family: var(--font-mono);
@@ -857,7 +943,9 @@
 		.metric__top,
 		.metrics-quiet-toggle,
 		.metrics-quiet-toggle .q-wave,
-		.metrics-quiet-toggle .q-core {
+		.metrics-quiet-toggle .q-core,
+		.metrics-quiet-remember,
+		.metrics-quiet-remember .r-pin {
 			transition: none;
 		}
 	}

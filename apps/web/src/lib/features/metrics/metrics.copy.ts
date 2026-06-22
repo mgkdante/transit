@@ -78,6 +78,16 @@ export interface MetricsCopy extends SurfaceHeadCopy {
 		readonly enable: string;
 		/** aria-label when quiet mode is ON (the action the press performs). */
 		readonly disable: string;
+		/**
+		 * The paired "remember" pin (slice-9.8-B). FOCUS is session-only by default;
+		 * the pin promotes the preference to be remembered across visits.
+		 */
+		/** Visible label for the remember pin (mono control voice). */
+		readonly rememberLabel: string;
+		/** aria-label / title when the pin is OFF (the action the press performs: pin it). */
+		readonly remember: string;
+		/** aria-label / title when the pin is ON (the action the press performs: unpin it). */
+		readonly forget: string;
 	};
 	/**
 	 * The giant vertical edge word for the measured-article shell (the rotated
@@ -171,6 +181,9 @@ export const metricsCopy: Record<Locale, MetricsCopy> = {
 			label: 'Lecture',
 			enable: 'Activer le mode lecture',
 			disable: 'Quitter le mode lecture',
+			rememberLabel: 'Mémoriser',
+			remember: 'Mémoriser le mode lecture pour les prochaines visites',
+			forget: 'Oublier le mode lecture (cette session seulement)',
 		},
 		edgeTitle: 'MESURE',
 		tocLabel: 'Aller à une métrique',
@@ -250,6 +263,9 @@ export const metricsCopy: Record<Locale, MetricsCopy> = {
 			label: 'Focus',
 			enable: 'Enter focus reading',
 			disable: 'Exit focus reading',
+			rememberLabel: 'Remember',
+			remember: 'Remember focus reading on future visits',
+			forget: 'Forget focus reading (this session only)',
 		},
 		edgeTitle: 'METRICS',
 		tocLabel: 'Jump to a metric',

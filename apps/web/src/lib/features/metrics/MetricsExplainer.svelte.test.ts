@@ -50,6 +50,22 @@ describe('MetricsExplainer', () => {
 		expect(container.textContent).toContain(en.confidence.levels.medium.meaning);
 	});
 
+	it('lays the body out as a 2-column grid (ToC rail + content, no empty third measure rail)', () => {
+		const { container } = render(MetricsExplainer);
+
+		// slice-9.8-B dropped the empty right rail: the body grid is now ToC rail +
+		// reading column only. The legacy .entry-column is gone entirely.
+		expect(container.querySelector('.entry-column')).toBeNull();
+
+		// Exactly the two grid children remain: the ToC rail and the sections column.
+		const grid = container.querySelector('.body-grid') as HTMLElement;
+		expect(grid).not.toBeNull();
+		expect(grid.querySelector('.context-column')).not.toBeNull();
+		expect(grid.querySelector('.sections-column')).not.toBeNull();
+		const directChildren = Array.from(grid.children);
+		expect(directChildren).toHaveLength(2);
+	});
+
 	it('renders the desktop TOC rail with one numbered jump button per metric', () => {
 		const { container } = render(MetricsExplainer);
 
@@ -194,8 +210,20 @@ describe('MetricsExplainer', () => {
 		) as HTMLElement[];
 	}
 
-	it('quiet/FOCUS mode COLLAPSES the metric cards while the ToC rail stays visible, and persists', async () => {
+	// The desktop ToC rail's OWN collapse trigger (slice-9.8-B). It is the header
+	// disclosure trigger inside .context-column — DISTINCT from the metric-card
+	// triggers (which live in metrics-sections). Helper so the A2 guards can prove
+	// the FOCUS toggle never touches it.
+	function tocTrigger(container: HTMLElement): HTMLElement | null {
+		const rail = container.querySelector('.context-column') as HTMLElement;
+		return rail?.querySelector('[data-slot="collapsible-trigger"]') ?? null;
+	}
+
+	it('quiet/FOCUS mode COLLAPSES the metric cards while the ToC rail stays visible, and persists (session by default)', async () => {
 		localStorage.removeItem('metrics-quiet');
+		sessionStorage.removeItem('transit.persisted:metrics-toc');
+		localStorage.removeItem('metrics-focus-remembered');
+		sessionStorage.removeItem('metrics-quiet');
 		const { container } = render(MetricsExplainer);
 
 		// The header carries a single quiet/focus switch — a real <button role="switch">,
@@ -213,24 +241,32 @@ describe('MetricsExplainer', () => {
 		}
 
 		// The ToC rail exists and is visible in BOTH modes — grab it up front so we
-		// can assert it survives quiet mode (the operator's core complaint).
+		// can assert it survives quiet mode (the operator's core complaint). It is
+		// OPEN by default (its own collapse is independent of FOCUS).
 		const rail = container.querySelector('.context-column') as HTMLElement;
 		expect(rail).not.toBeNull();
 		const railButton = within(rail).getByRole('button', { name: METRICS[0].name.en });
 		expect(railButton).toBeInTheDocument();
+		const railToggle = tocTrigger(container);
+		expect(railToggle).not.toBeNull();
+		expect(railToggle).toHaveAttribute('aria-expanded', 'true');
 
-		// Press it ON → aria-checked flips, the cards COLLAPSE, the label swaps to the
-		// EXIT action, and the choice persists to localStorage.
+		// Press FOCUS ON → aria-checked flips, the cards COLLAPSE, the label swaps to
+		// the EXIT action. Unpinned (default) → the choice lives in sessionStorage,
+		// NOT localStorage.
 		await fireEvent.click(toggle);
 		expect(toggle).toHaveAttribute('aria-checked', 'true');
 		expect(toggle).toHaveAttribute('aria-label', en.quiet.disable);
 		for (const trigger of metricTriggers(container)) {
 			expect(trigger).toHaveAttribute('aria-expanded', 'false');
 		}
-		expect(localStorage.getItem('metrics-quiet')).toBe('1');
+		expect(sessionStorage.getItem('metrics-quiet')).toBe('1');
+		expect(localStorage.getItem('metrics-quiet')).toBeNull();
 
-		// NON-NEGOTIABLE: quiet does NOT hide the ToC. The rail is still in the DOM,
-		// not display:none, and still offers its jump buttons.
+		// NON-NEGOTIABLE (A2): FOCUS does NOT hide the ToC, and does NOT drive its
+		// own collapse. The rail is still in the DOM, not display:none, still offers
+		// its jump buttons, AND its own collapse toggle is STILL OPEN (FOCUS never
+		// touched it).
 		expect(container.querySelector('.context-column')).not.toBeNull();
 		expect((container.querySelector('.context-column') as HTMLElement).style.display).not.toBe(
 			'none',
@@ -240,29 +276,107 @@ describe('MetricsExplainer', () => {
 				name: METRICS[0].name.en,
 			}),
 		).toBeInTheDocument();
+		expect(tocTrigger(container)).toHaveAttribute('aria-expanded', 'true');
 		// The body grid never gains a quiet variant class (grid + gutter unchanged).
 		expect(
 			(container.querySelector('.body-grid') as HTMLElement).classList.contains('is-quiet'),
 		).toBe(false);
 
-		// Press it OFF → the cards re-open and the persisted flag clears to '0'.
+		// Press FOCUS OFF → the cards re-open; the session flag clears to '0'.
 		await fireEvent.click(toggle);
 		expect(toggle).toHaveAttribute('aria-checked', 'false');
 		for (const trigger of metricTriggers(container)) {
 			expect(trigger).toHaveAttribute('aria-expanded', 'true');
 		}
-		expect(localStorage.getItem('metrics-quiet')).toBe('0');
+		expect(sessionStorage.getItem('metrics-quiet')).toBe('0');
+
+		sessionStorage.removeItem('metrics-quiet');
 	});
 
-	it('restores the persisted quiet-mode preference on mount (cards collapsed, ToC still shown)', () => {
-		// A prior session left quiet mode ON; the screen re-applies it on mount as a
-		// CARD-collapse preference (SSR-safe: the onMount localStorage read drives it).
-		// It must NEVER restore a hidden ToC.
+	it('the ToC rail has its OWN collapse toggle that folds it, independent of FOCUS, and persists', async () => {
+		localStorage.removeItem('metrics-focus-remembered');
+		sessionStorage.removeItem('metrics-quiet');
+		sessionStorage.removeItem('transit.persisted:metrics-toc');
+		const { container } = render(MetricsExplainer);
+
+		const railToggle = tocTrigger(container);
+		expect(railToggle, 'ToC rail has its own disclosure trigger').not.toBeNull();
+		// Open by default.
+		expect(railToggle).toHaveAttribute('aria-expanded', 'true');
+
+		// The reader folds the ToC via ITS OWN toggle — the metric cards are untouched.
+		await fireEvent.click(railToggle as HTMLElement);
+		expect(tocTrigger(container)).toHaveAttribute('aria-expanded', 'false');
+		for (const trigger of metricTriggers(container)) {
+			expect(trigger).toHaveAttribute('aria-expanded', 'true');
+		}
+		// The collapsed choice persists (sectionKey="metrics-toc" → sessionStorage).
+		expect(sessionStorage.getItem('transit.persisted:metrics-toc')).toBe('false');
+
+		// FOCUS must NOT re-open or otherwise drive the manually-collapsed ToC.
+		const focus = screen.getByTestId('metrics-quiet-toggle');
+		await fireEvent.click(focus);
+		expect(tocTrigger(container)).toHaveAttribute('aria-expanded', 'false');
+
+		sessionStorage.removeItem('metrics-quiet');
+		sessionStorage.removeItem('transit.persisted:metrics-toc');
+	});
+
+	it('remember-focus PINS the FOCUS preference across visits, and unpinning demotes it to session', async () => {
+		localStorage.removeItem('metrics-quiet');
+		localStorage.removeItem('metrics-focus-remembered');
+		sessionStorage.removeItem('metrics-quiet');
+		const { container } = render(MetricsExplainer);
+
+		// A paired remember switch sits beside the FOCUS toggle, OFF by default.
+		const remember = screen.getByTestId('metrics-quiet-remember');
+		expect(remember).toHaveAttribute('role', 'switch');
+		expect(remember).toHaveAttribute('aria-checked', 'false');
+		expect(remember).toHaveAttribute('aria-label', en.quiet.remember);
+
+		const focus = screen.getByTestId('metrics-quiet-toggle');
+
+		// Turn FOCUS on (session-scoped while unpinned).
+		await fireEvent.click(focus);
+		expect(sessionStorage.getItem('metrics-quiet')).toBe('1');
+		expect(localStorage.getItem('metrics-quiet')).toBeNull();
+
+		// PIN it → the preference is promoted to localStorage (remembered across
+		// visits) and the session copy is cleared.
+		await fireEvent.click(remember);
+		expect(remember).toHaveAttribute('aria-checked', 'true');
+		expect(remember).toHaveAttribute('aria-label', en.quiet.forget);
+		expect(localStorage.getItem('metrics-focus-remembered')).toBe('1');
+		expect(localStorage.getItem('metrics-quiet')).toBe('1');
+		expect(sessionStorage.getItem('metrics-quiet')).toBeNull();
+		// FOCUS itself is unchanged by pinning (cards still collapsed).
+		for (const trigger of metricTriggers(container)) {
+			expect(trigger).toHaveAttribute('aria-expanded', 'false');
+		}
+
+		// UNPIN → the pin clears and the preference demotes back to a session value.
+		await fireEvent.click(remember);
+		expect(remember).toHaveAttribute('aria-checked', 'false');
+		expect(localStorage.getItem('metrics-focus-remembered')).toBe('0');
+		expect(localStorage.getItem('metrics-quiet')).toBeNull();
+		expect(sessionStorage.getItem('metrics-quiet')).toBe('1');
+
+		localStorage.removeItem('metrics-focus-remembered');
+		sessionStorage.removeItem('metrics-quiet');
+	});
+
+	it('restores a PINNED (remembered) FOCUS preference from localStorage on mount; ToC still shown', () => {
+		// A prior visit pinned FOCUS ON. The screen re-applies it on mount from
+		// localStorage (the remembered store) as a CARD-collapse preference. It must
+		// NEVER restore a hidden ToC.
+		localStorage.setItem('metrics-focus-remembered', '1');
 		localStorage.setItem('metrics-quiet', '1');
 		const { container } = render(MetricsExplainer);
 
 		const toggle = screen.getByTestId('metrics-quiet-toggle');
 		expect(toggle).toHaveAttribute('aria-checked', 'true');
+		const remember = screen.getByTestId('metrics-quiet-remember');
+		expect(remember).toHaveAttribute('aria-checked', 'true');
 		for (const trigger of metricTriggers(container)) {
 			expect(trigger).toHaveAttribute('aria-expanded', 'false');
 		}
@@ -271,15 +385,24 @@ describe('MetricsExplainer', () => {
 		expect(rail).not.toBeNull();
 		expect(within(rail).getByRole('button', { name: METRICS[0].name.en })).toBeInTheDocument();
 
+		localStorage.removeItem('metrics-focus-remembered');
 		localStorage.removeItem('metrics-quiet');
 	});
 
-	it('the ToC rail is non-hideable: no disclosure trigger inside the rail', () => {
+	it('does NOT restore an unpinned FOCUS value from a prior visit (session-by-default)', () => {
+		// localStorage holds a quiet value but the pin is OFF: a fresh visit must
+		// IGNORE it (FOCUS is session-only unless pinned) and render calm/cards-open.
+		localStorage.setItem('metrics-quiet', '1');
+		localStorage.removeItem('metrics-focus-remembered');
+		sessionStorage.removeItem('metrics-quiet');
 		const { container } = render(MetricsExplainer);
-		const rail = container.querySelector('.context-column') as HTMLElement;
-		expect(rail).not.toBeNull();
-		// The rail heading is a plain header, NOT a collapsible disclosure trigger —
-		// there is no user affordance (and no persisted state) that hides the ToC.
-		expect(rail.querySelector('[data-slot="collapsible-trigger"]')).toBeNull();
+
+		const toggle = screen.getByTestId('metrics-quiet-toggle');
+		expect(toggle).toHaveAttribute('aria-checked', 'false');
+		for (const trigger of metricTriggers(container)) {
+			expect(trigger).toHaveAttribute('aria-expanded', 'true');
+		}
+
+		localStorage.removeItem('metrics-quiet');
 	});
 });
