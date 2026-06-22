@@ -83,6 +83,18 @@
           ],
           "default": null
         },
+        "reported_utc": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reported Utc"
+        },
         "route": {
           "anyOf": [
             {

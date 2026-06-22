@@ -43,6 +43,12 @@ class Vehicle(BaseModel):
     occupancy: Occupancy | None = None
     next_stop: str | None = None
     updated_utc: str
+    # Each vehicle's OWN GTFS-RT report time (VehiclePosition.timestamp, surfaced as
+    # gold.position_timestamp_utc) — distinct from updated_utc, which is the UNIFORM
+    # snapshot capture time. Optional: a producer may omit the per-vehicle timestamp,
+    # and the gold left-join may be null, so consumers fall back to updated_utc. The
+    # web keys honest per-bus fix age / freeze + forward-projection off this.
+    reported_utc: str | None = None
 
 class VehiclesFile(BaseModel):
     generated_utc: str
