@@ -18,6 +18,13 @@ export const ReliabilityPeriodSchema = z.object({
 	p50_min: z.number().nullable().optional(),
 	p90_min: z.number().nullable().optional(),
 	severe_pct: z.number().nullable().optional(),
+	// Chart Doctrine honesty fields (slice-S3, additive-optional). observation_count =
+	// the OTP/avg denominator; wilson_lo/wilson_hi = 95% Wilson bounds (PERCENT) of the
+	// real on_time OTP. Rank on wilson_lo. MUST stay nullable+optional (pre-republish
+	// snapshots omit them).
+	observation_count: z.number().int().nullable().optional(),
+	wilson_lo: z.number().nullable().optional(),
+	wilson_hi: z.number().nullable().optional(),
 });
 export type ReliabilityPeriod = z.infer<typeof ReliabilityPeriodSchema>;
 

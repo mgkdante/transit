@@ -333,6 +333,58 @@ describe('tier-2 — headway cov/bunching + service_spans + alert breakdown roun
 		};
 		expect(() => parsePort('alert_history', AlertHistorySchema, fixture)).not.toThrow();
 	});
+
+	it('parses route/stop/trend carrying the slice-S3 honesty fields (observation_count + wilson_lo/hi)', () => {
+		const route = {
+			generated_utc: ISO,
+			id: '165',
+			periods: [
+				// real-OTP Wilson on a route period...
+				{
+					grain: 'day',
+					date: '2026-06-14',
+					otp_pct: 82,
+					observation_count: 240,
+					wilson_lo: 76.8,
+					wilson_hi: 86.4,
+				},
+				// ...and honest absence (fields omitted = pre-republish back-compat).
+				{ grain: 'week' },
+			],
+		};
+		const stop = {
+			generated_utc: ISO,
+			id: 's1',
+			// severe-proxy Wilson bounds the NOT-SEVERE rate, not a real OTP.
+			periods: [
+				{ grain: 'week', otp_pct: 90, observation_count: 120, wilson_lo: 83.6, wilson_hi: 94.2 },
+			],
+		};
+		const trend = {
+			generated_utc: ISO,
+			series: [
+				{
+					date: '2026-06-14',
+					otp_pct: 82,
+					observation_count: 5400,
+					wilson_lo: 81.0,
+					wilson_hi: 83.0,
+				},
+			],
+			by_shift: [
+				{
+					grain: 'am_peak',
+					otp_pct: 79,
+					observation_count: 1800,
+					wilson_lo: 77.1,
+					wilson_hi: 80.8,
+				},
+			],
+		};
+		expect(() => parsePort('route_reliability', RouteReliabilitySchema, route)).not.toThrow();
+		expect(() => parsePort('stop_reliability', StopReliabilitySchema, stop)).not.toThrow();
+		expect(() => parsePort('network_trend', NetworkTrendSchema, trend)).not.toThrow();
+	});
 });
 
 describe('network — delay_histogram + non_responding_by_route round-trip (additive optional)', () => {

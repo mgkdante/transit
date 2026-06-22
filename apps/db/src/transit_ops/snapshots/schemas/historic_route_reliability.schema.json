@@ -320,6 +320,18 @@
           "title": "Grain",
           "type": "string"
         },
+        "observation_count": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Observation Count"
+        },
         "otp_pct": {
           "anyOf": [
             {
@@ -367,6 +379,30 @@
           ],
           "default": null,
           "title": "Severe Pct"
+        },
+        "wilson_hi": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Wilson Hi"
+        },
+        "wilson_lo": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Wilson Lo"
         }
       },
       "required": [

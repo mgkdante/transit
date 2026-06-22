@@ -20,6 +20,7 @@ from enum import Enum
 
 from pydantic import BaseModel, Field
 
+
 class Status(str, Enum):
     early = "early"; on_time = "on_time"; late = "late"; severe = "severe"; unknown = "unknown"
 
@@ -367,6 +368,14 @@ class TrendPoint(BaseModel):
     # source rollups have no data for the bucket.
     cancellation_rate: float | None = None
     occupancy_mix: OccupancyMix | None = None
+    # Chart Doctrine honesty fields (slice-S3, additive-optional). observation_count
+    # is the OTP/avg denominator for THIS bucket ONLY — cancellation_rate and
+    # occupancy_mix have their own different denominators, do not reuse this n for
+    # them. wilson_lo/wilson_hi are the 95% Wilson bounds (PERCENT) of the OTP
+    # (k=on_time, n=known_obs). None on buckets without known-delay observations.
+    observation_count: int | None = None
+    wilson_lo: float | None = None
+    wilson_hi: float | None = None
 
 class NetworkShift(BaseModel):
     # Network-wide reliability for one time-of-day shift or weekday/weekend
@@ -381,6 +390,13 @@ class NetworkShift(BaseModel):
     otp_pct: int | None = None
     avg_delay_min: float | None = None
     severe_pct: float | None = None
+    # Chart Doctrine honesty fields (slice-S3, additive-optional). observation_count
+    # is the OTP/Wilson denominator (otp_known = on_time-known rows) — SMALLER than
+    # the severe/avg base, so do NOT divide severe_pct by it. wilson_lo/wilson_hi are
+    # the 95% Wilson bounds (PERCENT) of the REAL on_time OTP (k=on_time, n=otp_known).
+    observation_count: int | None = None
+    wilson_lo: float | None = None
+    wilson_hi: float | None = None
 
 class NetworkTrend(BaseModel):
     generated_utc: str
@@ -410,6 +426,15 @@ class ReliabilityPeriod(BaseModel):
     p50_min: float | None = None
     p90_min: float | None = None
     severe_pct: float | None = None
+    # Chart Doctrine honesty fields (slice-S3, additive-optional). observation_count
+    # is this period's OTP/avg denominator (known-delay observations) — the n behind
+    # otp_pct. wilson_lo/wilson_hi are the 95% Wilson score interval (z=1.96, PERCENT
+    # 0..100) of the REAL on_time OTP (k=on_time, n=known_obs); rank on wilson_lo so a
+    # tiny-n fluke can't out-rank a high-volume bad actor. None (never 0) when the
+    # denominator is absent.
+    observation_count: int | None = None
+    wilson_lo: float | None = None
+    wilson_hi: float | None = None
 
 class CancellationPeriod(BaseModel):
     # Per-route cancellation over one closed local day (or a derived grain).
@@ -545,6 +570,15 @@ class StopReliabilityPeriod(BaseModel):
     p50_min: float | None = None
     p90_min: float | None = None
     severe_pct: float | None = None
+    # Chart Doctrine honesty fields (slice-S3, additive-optional). observation_count
+    # is the stop's delay-observation denominator. CAVEAT: stop otp_pct is the
+    # SEVERE-delay proxy (_otp_pct_severe_proxy), so wilson_lo/wilson_hi bound the
+    # NOT-SEVERE proportion (k=obs-severe, n=obs) in PERCENT — NOT a real on_time OTP.
+    # Do NOT rank stops and routes on one Wilson scale. None when the denominator is
+    # absent (e.g. the day grain carries percentiles only, no observation_count).
+    observation_count: int | None = None
+    wilson_lo: float | None = None
+    wilson_hi: float | None = None
 
 class StopByRoute(BaseModel):
     route: str

@@ -20,6 +20,12 @@ export const StopReliabilityPeriodSchema = z.object({
 	p50_min: z.number().nullable().optional(),
 	p90_min: z.number().nullable().optional(),
 	severe_pct: z.number().nullable().optional(),
+	// Chart Doctrine honesty fields (slice-S3, additive-optional). CAVEAT: stop otp_pct
+	// is the SEVERE-delay proxy, so wilson_lo/wilson_hi bound the NOT-SEVERE proportion
+	// (PERCENT), NOT a real OTP — do not rank stops and routes on one Wilson scale.
+	observation_count: z.number().int().nullable().optional(),
+	wilson_lo: z.number().nullable().optional(),
+	wilson_hi: z.number().nullable().optional(),
 });
 export type StopReliabilityPeriod = z.infer<typeof StopReliabilityPeriodSchema>;
 
