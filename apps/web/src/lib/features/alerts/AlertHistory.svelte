@@ -45,6 +45,7 @@
 		SurfaceHeader,
 		FreshnessStamp,
 		GrainPicker,
+		SearchInput,
 		type GrainSegment,
 	} from '$lib/components/surface';
 	import { Surface, DashboardGrid, ControlsRail } from '$lib/components/layout';
@@ -151,24 +152,105 @@
 		...SEVERITY_CODES.map((code) => ({ key: code, label: t.severity[code] })),
 	]);
 
-	const filtersActive = $derived(entityFilter !== 'all' || severityFilter !== 'all');
+	// --- Specific-entity axis (E3) -------------------------------------------
+	// A THIRD axis: narrow to alerts touching ONE chosen route/stop. The picker is
+	// a searchable chip set built from the routes/stops PRESENT in the loaded log
+	// (no new fetch) — a SearchInput narrows the chips, clicking one selects it.
+	// The selection is a stable kind+id token so a route "24" and a stop "24" never
+	// collide. Honest: a query matching no affected entity reads the localized
+	// "no entity" note; a selection narrowing the log to zero falls through to the
+	// shared no-match note. Combines cleanly with type + severity (all clearable).
+	type EntityToken = { readonly kind: 'route' | 'stop'; readonly id: string };
+	let entityQuery = $state('');
+	// The chosen entity token, serialized as "route:24" / "stop:52458"; '' = none.
+	let selectedEntity = $state('');
+
+	function tokenKey(tok: EntityToken): string {
+		return `${tok.kind}:${tok.id}`;
+	}
+	function entityLabel(tok: EntityToken): string {
+		return tok.kind === 'route'
+			? t.filters.entityPick.route(tok.id)
+			: t.filters.entityPick.stop(tok.id);
+	}
+
+	// Distinct affected entities present in the log, honouring the entity-TYPE axis
+	// (so "Lines" hides stop chips, "Stops" hides route chips). Sorted numerically
+	// when both ids are numeric, else lexically — a stable, scannable chip order.
+	const entityTokens = $derived.by<EntityToken[]>(() => {
+		// Plain record for dedup (a mutable Set trips the svelte-reactivity lint, and
+		// this is a transient build map, never reactive state).
+		const seen: Record<string, true> = {};
+		const out: EntityToken[] = [];
+		const add = (kind: 'route' | 'stop', id: string) => {
+			const k = `${kind}:${id}`;
+			if (seen[k]) return;
+			seen[k] = true;
+			out.push({ kind, id });
+		};
+		for (const e of sorted) {
+			if (entityFilter !== 'stops') for (const r of e.routes ?? []) add('route', r);
+			if (entityFilter !== 'lines') for (const s of e.stops ?? []) add('stop', s);
+		}
+		return out.sort((a, b) => {
+			const na = Number(a.id);
+			const nb = Number(b.id);
+			if (Number.isFinite(na) && Number.isFinite(nb) && na !== nb) return na - nb;
+			return entityLabel(a).localeCompare(entityLabel(b), locale);
+		});
+	});
+
+	// The chips after the search query (case-insensitive, over the localized label
+	// AND the bare id). An empty query shows them all.
+	const entityMatches = $derived.by<EntityToken[]>(() => {
+		const q = entityQuery.trim().toLowerCase();
+		if (!q) return entityTokens;
+		return entityTokens.filter(
+			(tok) => entityLabel(tok).toLowerCase().includes(q) || tok.id.toLowerCase().includes(q),
+		);
+	});
+
+	// The active selection as a token (or null). A stale selection (the chosen
+	// entity is no longer present after a type-filter change) is treated as cleared.
+	const selectedToken = $derived.by<EntityToken | null>(() => {
+		if (!selectedEntity) return null;
+		return entityTokens.find((tok) => tokenKey(tok) === selectedEntity) ?? null;
+	});
+
+	function selectEntity(tok: EntityToken): void {
+		selectedEntity = tokenKey(tok);
+	}
+	function clearEntity(): void {
+		selectedEntity = '';
+	}
+
+	const filtersActive = $derived(
+		entityFilter !== 'all' || severityFilter !== 'all' || selectedToken != null,
+	);
 
 	function clearFilters(): void {
 		entityFilter = 'all';
 		severityFilter = 'all';
+		selectedEntity = '';
+		entityQuery = '';
 	}
 
 	// The filtered log (over the newest-first `sorted` list). An empty routes/stops
 	// array (or absent) means the alert does NOT affect that entity → it is excluded
 	// by that axis. Severity is banded the same way the rows render it.
-	const filtered = $derived.by<readonly AlertHistoryEntry[]>(() =>
-		sorted.filter((e) => {
+	const filtered = $derived.by<readonly AlertHistoryEntry[]>(() => {
+		const sel = selectedToken;
+		return sorted.filter((e) => {
 			if (entityFilter === 'lines' && (e.routes?.length ?? 0) === 0) return false;
 			if (entityFilter === 'stops' && (e.stops?.length ?? 0) === 0) return false;
 			if (severityFilter !== 'all' && asSeverity(e.severity) !== severityFilter) return false;
+			if (sel) {
+				const list = sel.kind === 'route' ? (e.routes ?? []) : (e.stops ?? []);
+				if (!list.includes(sel.id)) return false;
+			}
 			return true;
-		}),
-	);
+		});
+	});
 	const hasMatches = $derived(filtered.length > 0);
 
 	const overflow = $derived(Math.max(0, filtered.length - VISIBLE_CAP));
@@ -289,6 +371,57 @@
 					bind:value={severityFilter}
 					label={t.filters.severity.label}
 				/>
+				<!-- Specific-entity picker: a searchable chip set of the routes/stops
+				     PRESENT in the loaded log. Reuses the shared SearchInput; the chips
+				     are a single-select (the chosen entity, or none). -->
+				<div class="alert-history-entity" data-slot="entity-pick">
+					{#if selectedToken}
+						<!-- An active selection collapses the picker to a single clearable
+						     chip naming the chosen entity (honest, never a silent narrow). -->
+						<span class="alert-history-entity-active">
+							{t.filters.entityPick.active(entityLabel(selectedToken))}
+						</span>
+						<button
+							type="button"
+							class="alert-history-clear"
+							data-slot="clear-entity"
+							onclick={clearEntity}
+						>
+							{t.filters.entityPick.clear}
+						</button>
+					{:else}
+						<SearchInput
+							bind:value={entityQuery}
+							label={t.filters.entityPick.label}
+							placeholder={t.filters.entityPick.placeholder}
+							class="alert-history-entity-search"
+						/>
+						{#if entityMatches.length > 0}
+							<div
+								class="alert-history-entity-chips"
+								role="group"
+								aria-label={t.filters.entityPick.groupLabel}
+								data-slot="entity-chips"
+							>
+								{#each entityMatches as tok (tokenKey(tok))}
+									<button
+										type="button"
+										class="alert-history-entity-chip"
+										data-slot="entity-chip"
+										onclick={() => selectEntity(tok)}
+									>
+										{entityLabel(tok)}
+									</button>
+								{/each}
+							</div>
+						{:else}
+							<!-- Honest: the query matches no affected entity — say so. -->
+							<p class="alert-history-no-match" data-slot="entity-no-match">
+								{t.filters.entityPick.noEntity}
+							</p>
+						{/if}
+					{/if}
+				</div>
 				{#if filtersActive}
 					<button
 						type="button"
@@ -499,6 +632,55 @@
 		outline: 2px solid var(--ring);
 		outline-offset: 2px;
 		border-radius: var(--radius-sm, 0.375rem);
+	}
+	/* Specific-entity picker — the SearchInput + its chip set (or the active
+	   selection chip), seated in the filter rail beside the two radiogroups. */
+	.alert-history-entity {
+		display: flex;
+		flex-direction: column;
+		gap: 0.5rem;
+		min-width: 0;
+	}
+	.alert-history-entity-active {
+		font-family: var(--font-mono);
+		font-size: var(--text-small);
+		color: var(--foreground);
+	}
+	.alert-history-entity-chips {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.4rem;
+		max-width: 36rem;
+	}
+	/* A single affected-entity chip — a quiet selectable token. --primary stays
+	   interactive-only (the focus ring + hover), never a data mark. */
+	.alert-history-entity-chip {
+		appearance: none;
+		font-family: var(--font-mono);
+		font-size: var(--text-caption);
+		line-height: 1.2;
+		color: var(--foreground);
+		background: var(--card);
+		border: 1px solid var(--border);
+		border-radius: var(--radius-pill);
+		padding: 0.25rem 0.65rem;
+		cursor: pointer;
+		transition:
+			border-color 150ms ease,
+			background-color 150ms ease;
+	}
+	.alert-history-entity-chip:hover {
+		border-color: var(--primary);
+		background: var(--muted);
+	}
+	.alert-history-entity-chip:focus-visible {
+		outline: 2px solid var(--ring);
+		outline-offset: 2px;
+	}
+	@media (prefers-reduced-motion: reduce) {
+		.alert-history-entity-chip {
+			transition: none;
+		}
 	}
 	/* Honest no-match note — quiet mono caption, never an empty void or a "·". */
 	.alert-history-no-match {

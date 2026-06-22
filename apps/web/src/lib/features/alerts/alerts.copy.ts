@@ -66,6 +66,25 @@ export interface AlertHistoryCopy extends SurfaceHeadCopy {
 			/** "All" — clears the severity filter. */
 			readonly all: string;
 		};
+		/** Specific-entity axis: narrow to alerts touching ONE chosen route/stop. */
+		readonly entityPick: {
+			/** Searchable-picker field label. */
+			readonly label: string;
+			/** Placeholder in the search field. */
+			readonly placeholder: string;
+			/** Accessible group label over the chip set of affected entities. */
+			readonly groupLabel: string;
+			/** Chip prefix for a route entity (e.g. "Line 24"). */
+			readonly route: (id: string) => string;
+			/** Chip prefix for a stop entity (e.g. "Stop 52458"). */
+			readonly stop: (id: string) => string;
+			/** Active-selection caption ("Showing alerts for …"). */
+			readonly active: (label: string) => string;
+			/** "Clear" the chosen entity (returns to all entities of the type). */
+			readonly clear: string;
+			/** Shown when the search query matches no affected entity. */
+			readonly noEntity: string;
+		};
 		/** Honest no-match note shown when the active filters narrow the log to zero. */
 		readonly noMatch: string;
 		/** "Clear filters" action that restores the full log. */
@@ -131,6 +150,16 @@ export const alertHistoryCopy: Record<Locale, AlertHistoryCopy> = {
 				label: 'Gravité',
 				all: 'Toutes',
 			},
+			entityPick: {
+				label: 'Élément précis',
+				placeholder: 'Filtrer les lignes et arrêts touchés…',
+				groupLabel: 'Éléments touchés',
+				route: (id) => `Ligne ${id}`,
+				stop: (id) => `Arrêt ${id}`,
+				active: (label) => `Avis pour ${label}`,
+				clear: 'Effacer',
+				noEntity: 'Aucun élément touché ne correspond.',
+			},
 			noMatch: 'Aucun avis ne correspond aux filtres sélectionnés.',
 			clear: 'Effacer les filtres',
 		},
@@ -180,6 +209,16 @@ export const alertHistoryCopy: Record<Locale, AlertHistoryCopy> = {
 			severity: {
 				label: 'Severity',
 				all: 'All',
+			},
+			entityPick: {
+				label: 'Specific entity',
+				placeholder: 'Filter affected lines and stops…',
+				groupLabel: 'Affected entities',
+				route: (id) => `Line ${id}`,
+				stop: (id) => `Stop ${id}`,
+				active: (label) => `Alerts for ${label}`,
+				clear: 'Clear',
+				noEntity: 'No affected entity matches.',
 			},
 			noMatch: 'No alerts match the selected filters.',
 			clear: 'Clear filters',

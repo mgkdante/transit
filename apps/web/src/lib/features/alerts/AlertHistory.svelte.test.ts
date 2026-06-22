@@ -293,6 +293,169 @@ describe('AlertHistory filters (C3)', () => {
 	});
 });
 
+describe('AlertHistory specific-entity filter (E3)', () => {
+	// Reuse the C3 spread: L1 (line 10 only), S1 (stop 52458 only), B1 (line 24 +
+	// stop 99999). Picking a specific route/stop narrows to alerts touching it.
+	function seedFilterFixture(): void {
+		fixture.alerts = [
+			{
+				id: 'L1',
+				severity: 'critical',
+				header_text: 'Ligne fermée',
+				header_text_en: 'Line closed',
+				routes: ['10'],
+				stops: [],
+				start_utc: '2026-06-20T09:00:00Z',
+				end_utc: '2026-06-20T10:00:00Z',
+				duration_min: 60,
+				impact_passages: 100,
+			},
+			{
+				id: 'S1',
+				severity: 'high',
+				header_text: 'Arrêt déplacé',
+				header_text_en: 'Stop moved',
+				routes: [],
+				stops: ['52458'],
+				start_utc: '2026-06-20T11:00:00Z',
+				end_utc: '2026-06-20T12:00:00Z',
+				duration_min: 60,
+				impact_passages: 50,
+			},
+			{
+				id: 'B1',
+				severity: 'watch',
+				header_text: 'Détour',
+				header_text_en: 'Detour',
+				routes: ['24'],
+				stops: ['99999'],
+				start_utc: '2026-06-20T13:00:00Z',
+				end_utc: '2026-06-20T14:00:00Z',
+				duration_min: 60,
+				impact_passages: 25,
+			},
+		] as AlertHistory['alerts'];
+		fixture.breakdown = null;
+	}
+
+	function logRows(): HTMLElement[] {
+		const list = screen.queryByRole('list', { name: /past service alerts, newest first/i });
+		return list ? within(list).getAllByRole('listitem') : [];
+	}
+
+	it('exposes a chip per distinct affected route/stop present in the log', () => {
+		seedFilterFixture();
+		render(AlertHistoryScreen);
+		const chips = screen.getByRole('group', { name: copyEn.filters.entityPick.groupLabel });
+		// 2 routes (10, 24) + 2 stops (52458, 99999) = 4 distinct entity chips.
+		expect(within(chips).getAllByRole('button')).toHaveLength(4);
+		expect(within(chips).getByText('Line 10')).toBeInTheDocument();
+		expect(within(chips).getByText('Stop 99999')).toBeInTheDocument();
+	});
+
+	it('narrows the log to alerts touching a chosen route', async () => {
+		seedFilterFixture();
+		render(AlertHistoryScreen);
+		expect(logRows()).toHaveLength(3);
+
+		await fireEvent.click(screen.getByRole('button', { name: 'Line 24' }));
+
+		// Only B1 carries line 24.
+		expect(logRows()).toHaveLength(1);
+		expect(screen.getByText('Detour')).toBeInTheDocument();
+		expect(screen.queryByText('Line closed')).toBeNull();
+		expect(screen.queryByText('Stop moved')).toBeNull();
+		// The active selection is named (honest, never a silent narrow).
+		expect(screen.getByText(copyEn.filters.entityPick.active('Line 24'))).toBeInTheDocument();
+	});
+
+	it('narrows the log to alerts touching a chosen stop', async () => {
+		seedFilterFixture();
+		render(AlertHistoryScreen);
+		await fireEvent.click(screen.getByRole('button', { name: 'Stop 52458' }));
+		// Only S1 carries stop 52458.
+		expect(logRows()).toHaveLength(1);
+		expect(screen.getByText('Stop moved')).toBeInTheDocument();
+		expect(screen.queryByText('Detour')).toBeNull();
+	});
+
+	it('the search field narrows the chip set to the matching entities', async () => {
+		seedFilterFixture();
+		render(AlertHistoryScreen);
+		const search = screen.getByLabelText(copyEn.filters.entityPick.label);
+		await fireEvent.input(search, { target: { value: '52458' } });
+		const chips = screen.getByRole('group', { name: copyEn.filters.entityPick.groupLabel });
+		const buttons = within(chips).getAllByRole('button');
+		expect(buttons).toHaveLength(1);
+		expect(within(chips).getByText('Stop 52458')).toBeInTheDocument();
+	});
+
+	it('shows the honest no-entity note when the search matches no affected entity', async () => {
+		seedFilterFixture();
+		render(AlertHistoryScreen);
+		const search = screen.getByLabelText(copyEn.filters.entityPick.label);
+		await fireEvent.input(search, { target: { value: 'zzzz' } });
+		const note = document.querySelector('[data-slot="entity-no-match"]');
+		expect(note).not.toBeNull();
+		expect(note).toHaveTextContent(copyEn.filters.entityPick.noEntity);
+		expect(note?.textContent).not.toContain('·');
+		// No chip group when nothing matches.
+		expect(screen.queryByRole('group', { name: copyEn.filters.entityPick.groupLabel })).toBeNull();
+	});
+
+	it('combines with the type + severity axes', async () => {
+		seedFilterFixture();
+		render(AlertHistoryScreen);
+		// Pick line 24 (→ only B1, which is 'watch'). Then severity=critical → zero.
+		await fireEvent.click(screen.getByRole('button', { name: 'Line 24' }));
+		expect(logRows()).toHaveLength(1);
+		await fireEvent.click(screen.getByRole('radio', { name: copyEn.severity.critical }));
+		// B1 is 'watch', not 'critical' → the shared no-match note (never blank).
+		expect(screen.queryByRole('list', { name: /past service alerts, newest first/i })).toBeNull();
+		const note = document.querySelector('[data-slot="alert-no-match"]');
+		expect(note).toHaveTextContent(copyEn.filters.noMatch);
+	});
+
+	it('the entity-TYPE axis scopes the chip set (Lines hides stop chips)', async () => {
+		seedFilterFixture();
+		render(AlertHistoryScreen);
+		await fireEvent.click(screen.getByRole('radio', { name: copyEn.filters.entity.lines }));
+		const chips = screen.getByRole('group', { name: copyEn.filters.entityPick.groupLabel });
+		// Only route chips remain (lines 10 + 24); no stop chips.
+		expect(within(chips).getAllByRole('button')).toHaveLength(2);
+		expect(within(chips).getByText('Line 10')).toBeInTheDocument();
+		expect(within(chips).queryByText('Stop 52458')).toBeNull();
+	});
+
+	it('clears the chosen entity and restores the full log', async () => {
+		seedFilterFixture();
+		render(AlertHistoryScreen);
+		await fireEvent.click(screen.getByRole('button', { name: 'Line 24' }));
+		expect(logRows()).toHaveLength(1);
+
+		const clear = document.querySelector('[data-slot="clear-entity"]') as HTMLElement;
+		expect(clear).not.toBeNull();
+		await fireEvent.click(clear);
+
+		expect(logRows()).toHaveLength(3);
+		// The chip set is back (no active selection).
+		expect(
+			screen.getByRole('group', { name: copyEn.filters.entityPick.groupLabel }),
+		).toBeInTheDocument();
+	});
+
+	it('"Clear filters" also clears the chosen entity', async () => {
+		seedFilterFixture();
+		render(AlertHistoryScreen);
+		await fireEvent.click(screen.getByRole('button', { name: 'Line 24' }));
+		const clearAll = document.querySelector('[data-slot="clear-filters"]') as HTMLElement;
+		expect(clearAll).not.toBeNull();
+		await fireEvent.click(clearAll);
+		expect(logRows()).toHaveLength(3);
+		expect(document.querySelector('[data-slot="clear-entity"]')).toBeNull();
+	});
+});
+
 describe('AlertHistory empty state', () => {
 	it('routes to the empty edge state when the archive carries no alerts', () => {
 		fixture.alerts = [];

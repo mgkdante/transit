@@ -41,7 +41,7 @@
 		FreshnessStamp,
 	} from '$lib/components/surface';
 	import type { GrainSegment } from '$lib/components/surface';
-	import { Surface, ControlsRail, DashboardGrid } from '$lib/components/layout';
+	import { Surface, ControlsRail } from '$lib/components/layout';
 	import { Separator } from '$lib/components/ui/separator';
 	import { EdgeState } from '$lib/components/edge';
 	import EntityRow from '$lib/components/surface/EntityRow.svelte';
@@ -240,80 +240,86 @@
 					     column on mobile (auto-fit reflow handles <lg). The worst-of-day tile
 					     stands DOWN entirely when the receipt carries no worst route/stop —
 					     the grid reflows past it, never a fabricated empty card. -->
-					<DashboardGrid minTile="260px" gutter={false} label={t.receiptSection}>
-						<!-- Headline figures -->
-						<div class="receipt-tile receipt-block">
-							{@render sectionInfo(t.receiptSection, 'otp')}
-							<div class="receipt-metrics">
-								{@render kpi(fmtPct(r.otp_pct), t.metrics.onTime, 'otp', 'lg')}
-								{@render kpi(fmtMin(r.avg_delay_min), t.metrics.avgDelay, 'avgDelay', 'lg')}
-								{@render kpi(fmtSeverePct(r.severe_pct), t.metrics.severe, 'severe', 'md')}
-								{@render kpi(
-									fmtScore(r.rider_impact_score),
-									t.metrics.riderImpact,
-									'riderImpact',
-									'md',
-								)}
-							</div>
-						</div>
+					<!-- The container that the @container queries resolve against lives on
+						     this WRAPPER, not the grid itself: a query can only restyle the grid
+						     as a DESCENDANT of the element that establishes the container. -->
+					<div class="receipt-frame" data-slot="receipt-frame">
+						<div class="receipt-layout" class:no-worst={!hasWorst} data-slot="receipt-layout">
+							<!-- PRIMARY band: the day's headline reliability figures. -->
+							<section class="receipt-panel receipt-primary" data-slot="receipt-headline">
+								{@render sectionInfo(t.receiptSection, 'otp')}
+								<div class="receipt-metrics">
+									{@render kpi(fmtPct(r.otp_pct), t.metrics.onTime, 'otp', 'lg')}
+									{@render kpi(fmtMin(r.avg_delay_min), t.metrics.avgDelay, 'avgDelay', 'lg')}
+									{@render kpi(fmtSeverePct(r.severe_pct), t.metrics.severe, 'severe', 'md')}
+									{@render kpi(
+										fmtScore(r.rider_impact_score),
+										t.metrics.riderImpact,
+										'riderImpact',
+										'md',
+									)}
+								</div>
+							</section>
 
-						<!-- Affected counts on the day -->
-						<div class="receipt-tile receipt-block">
-							{@render sectionInfo(t.countsSection, 'affectedCounts')}
-							<dl class="receipt-counts">
-								<div class="receipt-count">
-									<dt>{t.counts.routes}</dt>
-									<dd>{fmtCount(r.affected_routes)}</dd>
-								</div>
-								<div class="receipt-count">
-									<dt>{t.counts.stops}</dt>
-									<dd>{fmtCount(r.affected_stops)}</dd>
-								</div>
-								<div class="receipt-count">
-									<dt>{t.counts.alerts}</dt>
-									<dd>{fmtCount(r.alerts)}</dd>
-								</div>
-								<!-- `vehicles` is structurally always-null on /v1 (the daily receipt
+							<!-- SECONDARY row, left: affected counts on the day. -->
+							<section class="receipt-panel receipt-affected" data-slot="receipt-affected">
+								{@render sectionInfo(t.countsSection, 'affectedCounts')}
+								<dl class="receipt-counts">
+									<div class="receipt-count">
+										<dt>{t.counts.routes}</dt>
+										<dd>{fmtCount(r.affected_routes)}</dd>
+									</div>
+									<div class="receipt-count">
+										<dt>{t.counts.stops}</dt>
+										<dd>{fmtCount(r.affected_stops)}</dd>
+									</div>
+									<div class="receipt-count">
+										<dt>{t.counts.alerts}</dt>
+										<dd>{fmtCount(r.alerts)}</dd>
+									</div>
+									<!-- `vehicles` is structurally always-null on /v1 (the daily receipt
 								     carries no per-vehicle count), so we OMIT the cell entirely rather
 								     than render a permanent "no data" row. A real count would surface it
 								     again. The other counts stay honest (a null reads no-data). -->
-								{#if r.vehicles != null}
-									<div class="receipt-count">
-										<dt>{t.counts.vehicles}</dt>
-										<dd>{fmtCount(r.vehicles)}</dd>
-									</div>
-								{/if}
-							</dl>
-						</div>
+									{#if r.vehicles != null}
+										<div class="receipt-count">
+											<dt>{t.counts.vehicles}</dt>
+											<dd>{fmtCount(r.vehicles)}</dd>
+										</div>
+									{/if}
+								</dl>
+							</section>
 
-						<!-- Worst of the day — linked entity rows, the whole tile stood down
-						     when the receipt carries no worst route/stop (no empty card). -->
-						{#if hasWorst}
-							<div class="receipt-tile receipt-block">
-								{@render sectionInfo(t.worstSection, 'otp')}
-								<div class="receipt-worst">
-									{#if hasWorstRoute && worstRoute}
-										<EntityRow
-											target={{ kind: 'line', id: worstRoute.id }}
-											{locale}
-											title={worstRoute.name ?? t.worst.unnamed}
-											subtitle={`${t.worst.routeLabel} · ${worstRoute.id}`}
-											meta={`${t.worst.routeDeltaLabel} ${fmtDelta(worstRoute.otp_delta_pts)}`}
-										/>
-									{/if}
-									{#if hasWorstStop && worstStop}
-										<EntityRow
-											target={{ kind: 'stop', id: worstStop.id }}
-											{locale}
-											title={worstStop.name ?? t.worst.unnamed}
-											subtitle={`${t.worst.stopLabel} · ${worstStop.id}`}
-											meta={`${t.worst.stopDelayLabel} ${fmtMin(worstStop.avg_delay_min)}`}
-										/>
-									{/if}
-								</div>
-							</div>
-						{/if}
-					</DashboardGrid>
+							<!-- SECONDARY row, right: worst of the day — linked entity rows; the
+						     whole panel stands down when the receipt carries no worst
+						     route/stop (the row collapses to the affected column). -->
+							{#if hasWorst}
+								<section class="receipt-panel receipt-worst-panel" data-slot="receipt-worst">
+									{@render sectionInfo(t.worstSection, 'otp')}
+									<div class="receipt-worst">
+										{#if hasWorstRoute && worstRoute}
+											<EntityRow
+												target={{ kind: 'line', id: worstRoute.id }}
+												{locale}
+												title={worstRoute.name ?? t.worst.unnamed}
+												subtitle={`${t.worst.routeLabel} · ${worstRoute.id}`}
+												meta={`${t.worst.routeDeltaLabel} ${fmtDelta(worstRoute.otp_delta_pts)}`}
+											/>
+										{/if}
+										{#if hasWorstStop && worstStop}
+											<EntityRow
+												target={{ kind: 'stop', id: worstStop.id }}
+												{locale}
+												title={worstStop.name ?? t.worst.unnamed}
+												subtitle={`${t.worst.stopLabel} · ${worstStop.id}`}
+												meta={`${t.worst.stopDelayLabel} ${fmtMin(worstStop.avg_delay_min)}`}
+											/>
+										{/if}
+									</div>
+								</section>
+							{/if}
+						</div>
+					</div>
 				</TerminalChrome>
 
 				<!-- Honest caveat: a daily observed summary, not a certified report. -->
@@ -333,31 +339,87 @@
 	}
 	/* TerminalChrome owns its own root element, so scope its width via the slot
 	   it stamps (a child-component root the scoped analyzer can't otherwise see).
-	   Widened to a board measure so the inner DashboardGrid can go multi-column on
-	   desktop rather than the old single-stack 34rem column. */
+	   Widened to a board measure so the inner composed layout reads as a designed
+	   receipt rather than the old single-stack 34rem column. */
 	:global(.receipt [data-slot='terminal-chrome']) {
 		max-width: var(--container-content);
 	}
-	.receipt-block {
+
+	/* The receipt is a COMPOSED document, not scattered cards. A @container drives
+	   the composition off the receipt frame's own width (not the viewport), so the
+	   layout is right whatever the page chrome around it. Default (narrow): a clean
+	   single stack — headline, then affected, then worst. */
+	.receipt-frame {
+		container-type: inline-size;
+		container-name: receipt;
+	}
+	.receipt-layout {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr);
+		grid-template-areas:
+			'headline'
+			'affected'
+			'worst';
+		gap: 1rem;
+	}
+	.receipt-primary {
+		grid-area: headline;
+	}
+	.receipt-affected {
+		grid-area: affected;
+	}
+	.receipt-worst-panel {
+		grid-area: worst;
+	}
+
+	/* Wide receipt frame: a deliberate two-row composition. The headline figures
+	   span the FULL width as a banner; the affected counts + worst-of-day sit as a
+	   balanced two-column secondary row beneath, sharing the top baseline. When the
+	   worst panel stands down (.no-worst), the secondary row is a single column and
+	   the affected panel keeps the full width — never a lopsided gap. */
+	@container receipt (min-width: 34rem) {
+		.receipt-layout {
+			grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+			grid-template-areas:
+				'headline headline'
+				'affected worst';
+			align-items: start;
+		}
+		.receipt-layout.no-worst {
+			grid-template-areas:
+				'headline headline'
+				'affected affected';
+		}
+	}
+
+	/* Each section is a quiet bordered panel (chrome only: --card bg, --border —
+	   never a data mark; the metrics bring their own dataviz colour). They share a
+	   common inner rhythm so the three panels read as one designed unit. */
+	.receipt-panel {
+		min-width: 0;
 		display: flex;
 		flex-direction: column;
-		gap: 0.75rem;
-	}
-	/* Each readout block becomes a quiet bordered tile that fills its grid cell, so
-	   the three blocks use the frame width instead of stacking. Chrome only
-	   (--card bg, --border) — never a data mark; the metrics bring their own. */
-	.receipt-tile {
-		min-width: 0;
-		padding: 1rem;
+		gap: 0.85rem;
+		padding: 1.1rem 1.2rem;
 		border: 1px solid var(--border);
 		border-radius: var(--radius-lg);
 		background: var(--card);
 	}
+	/* The headline band gets a touch more breathing room as the receipt's lead. */
+	.receipt-primary {
+		gap: 1rem;
+	}
 	.receipt-metrics {
 		margin: 0;
 		display: grid;
-		gap: 1rem 1.5rem;
+		gap: 1.1rem 1.75rem;
 		grid-template-columns: repeat(2, minmax(0, 1fr));
+	}
+	/* On a wide frame the four headline figures read as a single banner row. */
+	@container receipt (min-width: 46rem) {
+		.receipt-metrics {
+			grid-template-columns: repeat(4, minmax(0, 1fr));
+		}
 	}
 	/* A headline KPI cell: the MetricDisplay (label + big value) with its (i)
 	   explainer pinned top-right beside the quiet label, never over the value. */
@@ -376,14 +438,21 @@
 		align-items: center;
 		gap: 0.4rem;
 	}
-	/* Affected-count grid — a quiet mono description list. */
+	/* Affected-count grid — a quiet mono description list. The panel itself is a
+	   container so the counts adapt to the COLUMN they land in: 2-up in the narrow
+	   secondary column, 4-up when the affected panel spans the full width (the
+	   .no-worst case), never a cramped 4-up squeezed into half a frame. */
+	.receipt-affected {
+		container-type: inline-size;
+		container-name: receipt-affected;
+	}
 	.receipt-counts {
 		margin: 0;
 		display: grid;
-		gap: 0.75rem 1.5rem;
+		gap: 0.8rem 1.5rem;
 		grid-template-columns: repeat(2, minmax(0, 1fr));
 	}
-	@media (min-width: 480px) {
+	@container receipt-affected (min-width: 30rem) {
 		.receipt-counts {
 			grid-template-columns: repeat(4, minmax(0, 1fr));
 		}

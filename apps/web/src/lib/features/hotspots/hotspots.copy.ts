@@ -15,6 +15,19 @@ export interface HotspotsCopy extends SurfaceHeadCopy {
 	readonly listLabel: string;
 	/** Plain caption naming what the magnitude bar encodes. */
 	readonly rowCaption: string;
+	/** Honest note shown when the whole magnitude column is null: the rows are
+	 * still real (ranked by severity), but no magnitude was published, so no bar
+	 * is drawn rather than a broken row of empty tracks. */
+	readonly magnitudeUnavailable: string;
+	/** Accessible label for the severity-band hint shown in place of the bar when
+	 * the magnitude is unavailable (severity is real). */
+	readonly severityHint: (band: string) => string;
+	/** Severity-band words (the real, ranked signal) for the no-magnitude hint. */
+	readonly bands: {
+		readonly critical: string;
+		readonly high: string;
+		readonly watch: string;
+	};
 	/** Honest empty state: the roll-up published no hotspots. */
 	readonly empty: string;
 	/** Per-row delta: on-time points lost vs the network baseline. A null delta
@@ -46,6 +59,9 @@ export const copy: Record<Locale, HotspotsCopy> = {
 		lede: 'Les arrêts et les lignes qui tirent le réseau vers le bas, classés du pire au moins pire. On n’invente jamais de données.',
 		listLabel: 'Points chauds classés du pire au moins pire',
 		rowCaption: 'La barre indique l’ampleur du problème par rapport au pire cas.',
+		magnitudeUnavailable: 'Ampleur non disponible, classement par gravité.',
+		severityHint: (band) => `Gravité : ${band}`,
+		bands: { critical: 'Critique', high: 'Élevée', watch: 'À surveiller' },
 		empty: 'Aucun point chaud publié pour le moment.',
 		deltaLost: (pts) => `${pts} pts de ponctualité perdus`,
 		type: {
@@ -65,6 +81,9 @@ export const copy: Record<Locale, HotspotsCopy> = {
 		lede: 'The stops and lines dragging the network down, ranked worst first. We never invent data.',
 		listLabel: 'Hotspots ranked worst first',
 		rowCaption: 'The bar shows the problem size relative to the worst case.',
+		magnitudeUnavailable: 'Magnitude unavailable, ranked by severity.',
+		severityHint: (band) => `Severity: ${band}`,
+		bands: { critical: 'Critical', high: 'High', watch: 'Watch' },
 		empty: 'No hotspots published right now.',
 		deltaLost: (pts) => `${pts} on-time points lost`,
 		type: {

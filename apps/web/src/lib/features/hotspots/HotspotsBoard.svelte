@@ -110,6 +110,12 @@
 		return t.deltaLost(`${mag.toFixed(1)}`);
 	}
 
+	// Localized severity-band word for the no-magnitude hint (the ranked, REAL
+	// signal). Mirrors the closed dataviz SeverityCode scale bandSeverity bands to.
+	function bandWord(code: SeverityCode): string {
+		return t.bands[code];
+	}
+
 	type HotspotRow = {
 		readonly key: string;
 		readonly rank: number;
@@ -120,6 +126,9 @@
 		readonly display: string | undefined;
 		readonly href: string | null;
 		readonly ariaLabel: string;
+		/** The localized severity-band word, shown in place of the bar when a row
+		 * carries no magnitude (severity is the real, ranked signal). */
+		readonly band: string;
 	};
 
 	// The view-model: keep the pipeline's published rank ORDER (worst-first is the
@@ -142,21 +151,62 @@
 			const title = h.name ?? t.unnamed(h.id);
 			const tag = typeTag(h.type);
 			const delta = h.otp_delta_pts ?? null;
+			const band = bandSeverity(h.severity);
 			return {
 				key: `${h.rank}-${h.type}-${h.id}`,
 				rank: h.rank,
 				title,
 				// Subtitle names the cell kind + its id (a stable secondary line).
 				subtitle: tag ? `${tag} · ${h.id}` : h.id,
-				severity: bandSeverity(h.severity),
+				severity: band,
 				value: delta != null && worst > 0 ? Math.min(1, Math.abs(delta) / worst) : null,
 				display: fmtDelta(delta),
 				href: target ? localizeHref(routeFor(target), locale) : null,
 				ariaLabel: t.viewDetail(title),
+				band: bandWord(band),
 			};
 		});
 	});
+
+	// HONESTY: when the WHOLE magnitude column is null (the live state the operator
+	// flagged — every otp_delta_pts is absent, so every bar would render an empty
+	// track and the board reads broken), we don't paint a single magnitude bar.
+	// Instead the heading carries the localized "magnitude unavailable" note and
+	// each row falls back to its REAL severity-band hint. A per-cell null in a
+	// MIXED list (some magnitudes present) likewise drops just that row's bar. The
+	// rank + name + severity + worst-first order stay fully rendered either way.
+	const anyMagnitude = $derived(rows.some((r) => r.value != null));
+	const caption = $derived(anyMagnitude ? t.rowCaption : t.magnitudeUnavailable);
 </script>
+
+<!-- One ranked entry. A row WITH a magnitude rides the dataviz RankedRow (its
+     severity-banded bar). A row with NO magnitude (null delta) drops the bar
+     entirely — an empty track reads as broken — and shows its REAL severity-band
+     hint instead, keeping rank + name + the worst-first order intact (honesty). -->
+{#snippet rowContent(row: HotspotRow)}
+	{#if row.value != null}
+		<RankedRow
+			bare
+			rank={row.rank}
+			title={row.title}
+			subtitle={row.subtitle}
+			severity={row.severity}
+			value={row.value}
+			display={row.display}
+		/>
+	{:else}
+		<div class="hotspots-band-row" data-slot="hotspot-band-row" data-severity={row.severity}>
+			<span class="hotspots-band-rank" aria-hidden="true">{row.rank}</span>
+			<div class="hotspots-band-body">
+				<span class="hotspots-band-title">{row.title}</span>
+				<span class="hotspots-band-subtitle">{row.subtitle}</span>
+			</div>
+			<span class="hotspots-band-chip" data-slot="hotspot-band-chip"
+				>{t.severityHint(row.band)}</span
+			>
+		</div>
+	{/if}
+{/snippet}
 
 <Surface width="bleed" class="hotspots">
 	<SurfaceHeader kicker={t.kicker} heading={t.heading} subheading={t.subheading} lede={t.lede}>
@@ -184,7 +234,7 @@
 						side="bottom"
 					/>
 				</span>
-				<p class="hotspots-caption">{t.rowCaption}</p>
+				<p class="hotspots-caption" data-slot="hotspots-caption">{caption}</p>
 				<!-- The ranked list rides the SHARED DashboardGrid auto-fit recipe as a
 				     semantic <ul> (worst-first published order honoured left-to-right then
 				     down by the grid), so the list>listitem>link a11y survives and the
@@ -210,26 +260,10 @@
 									aria-label={row.ariaLabel}
 									data-testid="hotspot-link"
 								>
-									<RankedRow
-										bare
-										rank={row.rank}
-										title={row.title}
-										subtitle={row.subtitle}
-										severity={row.severity}
-										value={row.value}
-										display={row.display}
-									/>
+									{@render rowContent(row)}
 								</a>
 							{:else}
-								<RankedRow
-									bare
-									rank={row.rank}
-									title={row.title}
-									subtitle={row.subtitle}
-									severity={row.severity}
-									value={row.value}
-									display={row.display}
-								/>
+								{@render rowContent(row)}
 							{/if}
 						</li>
 					{/each}
@@ -290,5 +324,77 @@
 	.hotspots-note {
 		padding: 0.5rem 0.875rem;
 		line-height: 1.5;
+	}
+	/* No-magnitude row: the RankedRow card shape WITHOUT the bar (an empty track
+	   reads broken). The leading severity rail + the band chip carry the REAL,
+	   ranked signal; chrome only on the dataviz severity scale, never --primary. */
+	.hotspots-band-row {
+		--band-tone: var(--dataviz-severity-watch);
+		display: grid;
+		grid-template-columns: auto 1fr auto;
+		align-items: center;
+		gap: 0.75rem;
+		position: relative;
+		overflow: hidden;
+		padding: 0.55rem 0.75rem 0.55rem 0.9rem;
+		border: 1px solid color-mix(in srgb, var(--band-tone) 28%, var(--border) 72%);
+		border-radius: var(--radius-lg);
+		background: color-mix(in srgb, var(--band-tone) 7%, var(--card));
+	}
+	.hotspots-band-row::before {
+		content: '';
+		position: absolute;
+		inset-block: 0;
+		inset-inline-start: 0;
+		width: 3px;
+		background: var(--band-tone);
+	}
+	.hotspots-band-row[data-severity='critical'] {
+		--band-tone: var(--dataviz-severity-critical);
+	}
+	.hotspots-band-row[data-severity='high'] {
+		--band-tone: var(--dataviz-severity-high);
+	}
+	.hotspots-band-row[data-severity='watch'] {
+		--band-tone: var(--dataviz-severity-watch);
+	}
+	.hotspots-band-rank {
+		width: 1.5rem;
+		text-align: right;
+		font-family: var(--font-mono);
+		font-size: var(--text-small);
+		font-variant-numeric: tabular-nums;
+		color: var(--muted-foreground);
+	}
+	.hotspots-band-body {
+		min-width: 0;
+		display: flex;
+		flex-direction: column;
+		gap: 0.1rem;
+	}
+	.hotspots-band-title {
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		font-weight: 500;
+		color: var(--foreground);
+	}
+	.hotspots-band-subtitle {
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		font-size: var(--text-caption);
+		color: var(--muted-foreground);
+	}
+	.hotspots-band-chip {
+		flex: none;
+		font-family: var(--font-mono);
+		font-size: var(--text-caption);
+		font-weight: 500;
+		letter-spacing: var(--tracking-eyebrow);
+		text-transform: uppercase;
+		color: color-mix(in srgb, var(--band-tone) 75%, var(--foreground));
 	}
 </style>

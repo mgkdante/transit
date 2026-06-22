@@ -163,6 +163,63 @@ describe('AccountabilityReceipt honesty', () => {
 	});
 });
 
+describe('AccountabilityReceipt composed layout (E2)', () => {
+	it('renders the composed receipt as deliberate sections (headline / affected / worst)', async () => {
+		render(AccountabilityReceipt);
+		await screen.findByText('82%');
+		const layout = document.querySelector('[data-slot="receipt-layout"]');
+		expect(layout).not.toBeNull();
+		// The three designed slots, each present and in document order.
+		const headline = document.querySelector('[data-slot="receipt-headline"]');
+		const affected = document.querySelector('[data-slot="receipt-affected"]');
+		const worst = document.querySelector('[data-slot="receipt-worst"]');
+		expect(headline).not.toBeNull();
+		expect(affected).not.toBeNull();
+		expect(worst).not.toBeNull();
+		// DOM order is headline -> affected -> worst (the stack order on mobile and
+		// the source order the desktop grid-areas re-compose; reading order is sacred).
+		const order = Array.from(layout!.children);
+		expect(order.indexOf(headline as Element)).toBeLessThan(order.indexOf(affected as Element));
+		expect(order.indexOf(affected as Element)).toBeLessThan(order.indexOf(worst as Element));
+	});
+
+	it('stands the worst-of-day panel down and marks the layout no-worst when absent', async () => {
+		const v1 = await import('$lib/v1');
+		receiptData = {
+			generated_utc: '2026-06-17T07:00:00Z' as IsoUtc,
+			date: '2026-06-17',
+			otp_pct: 82,
+			avg_delay_min: 3.4,
+			severe_pct: null,
+			affected_routes: 12,
+			affected_stops: 340,
+			alerts: 5,
+			vehicles: null,
+			rider_impact_score: 7.2,
+			// No worst route/stop on the day.
+			worst_route: null,
+			worst_stop: null,
+		};
+		vi.mocked(v1.getReceipt).mockImplementation(() => receiptData as never);
+		render(AccountabilityReceipt);
+		await screen.findByText('82%');
+		// The worst panel is gone; the layout flags no-worst (the secondary row
+		// collapses to the affected column — never a fabricated empty card).
+		expect(document.querySelector('[data-slot="receipt-worst"]')).toBeNull();
+		expect(document.querySelector('[data-slot="receipt-layout"]')).toHaveClass('no-worst');
+		// Headline + affected sections still compose.
+		expect(document.querySelector('[data-slot="receipt-headline"]')).not.toBeNull();
+		expect(document.querySelector('[data-slot="receipt-affected"]')).not.toBeNull();
+	});
+
+	it('preserves honesty in the composed layout (null severe-share reads no-data, never 0)', async () => {
+		render(AccountabilityReceipt);
+		const noData = await screen.findAllByText('no data');
+		expect(noData.length).toBeGreaterThanOrEqual(1);
+		expect(screen.queryByText('0%')).not.toBeInTheDocument();
+	});
+});
+
 describe('AccountabilityReceipt date switching', () => {
 	it('re-fetches the chosen day and renders its figures when a non-default chip is picked', async () => {
 		const v1 = await import('$lib/v1');
