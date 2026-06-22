@@ -19,6 +19,7 @@
 	import type { Snippet } from 'svelte';
 	import type { Locale } from '$lib/i18n';
 	import type { Resource } from '$lib/v1/resource.svelte';
+	import { asDataState } from '$lib/v1/data-state';
 	import { layout } from '$lib/nav';
 	import { EdgeState } from '$lib/components/edge';
 	import type { AbsenceReason } from '$lib/site/serviceWindow';
@@ -51,6 +52,13 @@
 		 */
 		isEmpty?: (data: NonNullable<T>) => boolean;
 		/**
+		 * Optional predicate: a loaded value is empty BECAUSE the user's filter/search
+		 * excluded everything — a recoverable `no_results` (its own EdgeState variant
+		 * with "widen your search" copy), distinct from the world having no data.
+		 * Checked before `isEmpty`. Omitted ⇒ an empty load reads as plain `empty`.
+		 */
+		isNoResults?: (data: NonNullable<T>) => boolean;
+		/**
 		 * Rendered with the loaded data once it is present (and not empty). The
 		 * snippet receives `NonNullable<T>` — the boundary only renders it past the
 		 * non-null/non-empty guard, so consumers never null-check inside it.
@@ -64,6 +72,7 @@
 		resource,
 		lang,
 		isEmpty,
+		isNoResults,
 		emptyReason,
 		emptyVariant = 'empty',
 		children,
@@ -78,19 +87,16 @@
 	// Edge density follows the shell breakpoint (desktop 3-volet vs mobile card).
 	const edgeLayout = $derived(layout.isDesktop ? 'desktop' : 'mobile');
 
-	// The single non-null/non-empty narrowing — null otherwise. Consumers get a
-	// guaranteed-present value in `children`, so no surface re-checks for null.
-	const loaded = $derived.by((): NonNullable<T> | null => {
-		const value = resource.data;
-		if (value == null) return null;
-		const present = value as NonNullable<T>;
-		return isEmpty?.(present) ? null : present;
-	});
+	// Resolve the reactive resource into ONE reason-typed DataState (the no-data
+	// spine — $lib/v1/data-state). The template branches on `state.kind`; the `ok`
+	// branch carries a guaranteed NonNullable<T>, so consumers never null-check in
+	// the children snippet.
+	const state = $derived(asDataState(resource, { isEmpty, isNoResults, emptyReason }));
 </script>
 
-{#if loaded !== null}
-	{@render children(loaded)}
-{:else if resource.error}
+{#if state.kind === 'ok'}
+	{@render children(state.data)}
+{:else if state.kind === 'error'}
 	<EdgeState
 		variant="error-v1"
 		{lang}
@@ -98,9 +104,13 @@
 		onRetry={() => resource.reload()}
 		class={className}
 	/>
-{:else if resource.loading || !resource.settled}
+{:else if state.kind === 'loading'}
 	<EdgeState variant="skeleton" {lang} layout={edgeLayout} class={className} />
+{:else if state.kind === 'no_results'}
+	<!-- A filter/search excluded everything (recoverable) — distinct from no data. -->
+	<EdgeState variant="no-results" {lang} layout={edgeLayout} class={className} />
 {:else}
+	<!-- state.kind === 'empty' — a genuine honest absence (with its reason). -->
 	<EdgeState
 		variant={resolvedEmptyVariant}
 		{lang}
