@@ -4,17 +4,16 @@ import type { FilterState } from '$lib/filters';
 import { VehicleSchema } from '$lib/v1/schemas';
 import {
 	addVehicleLayers,
+	ICON_SIZE_Z11_DEFAULT,
+	ICON_SIZE_Z11_HOVER,
 	VEHICLE_BODY_LAYER,
 	VEHICLE_HEADING_LAYER,
+	VEHICLE_SILENT_LAYER,
 	VEHICLE_SOURCE,
 	toVehicleFeatures,
 } from './vehicleLayer';
-import { HEADING_ICON } from './vehicleSprites';
-import {
-	SILENCE_FLOOR_OPACITY,
-	FRESH_TTL_MULTIPLIER,
-	SILENT_TTL_MULTIPLIER,
-} from './vehicleSilence';
+import { HEADING_ICON, SILENT_ICON } from './vehicleSprites';
+import { AGING_FLOOR_OPACITY, FRESH_TTL_MULTIPLIER, SILENT_TTL_MULTIPLIER } from './vehicleSilence';
 
 function usesTopLevelZoomExpression(value: unknown): boolean {
 	return (
@@ -110,6 +109,61 @@ describe('toVehicleFeatures entity filtering', () => {
 		const bodyIndex = layers.findIndex((l) => l.id === VEHICLE_BODY_LAYER);
 		const headingIndex = layers.findIndex((l) => l.id === VEHICLE_HEADING_LAYER);
 		expect(headingIndex).toBeGreaterThan(bodyIndex);
+	});
+
+	it('branches icon-opacity on hover/selected on both vehicle layers (S5: fix hover-only)', () => {
+		const layers: LayerSpecification[] = [];
+		const map = {
+			getLayer: () => undefined,
+			addLayer: (nextLayer: LayerSpecification) => {
+				layers.push(nextLayer);
+			},
+		} as unknown as MapLibreMap;
+
+		addVehicleLayers(map);
+
+		for (const id of [VEHICLE_BODY_LAYER, VEHICLE_HEADING_LAYER]) {
+			const paint = (layers.find((l) => l.id === id)?.paint ?? {}) as Record<string, unknown>;
+			const opacity = JSON.stringify(paint['icon-opacity']);
+			expect(opacity).toContain('hovered');
+			expect(opacity).toContain('selected');
+			// The default leg is still the per-vehicle silence fade (opacity prop).
+			expect(opacity).toContain('opacity');
+		}
+	});
+
+	it('rests buses at a solid base size; hover is a modest accent (S5: solid by default)', () => {
+		// The "only solid on hover" cause was a small base size jumping ~1.9× on hover.
+		expect(ICON_SIZE_Z11_DEFAULT).toBeGreaterThanOrEqual(0.7);
+		expect(ICON_SIZE_Z11_HOVER / ICON_SIZE_Z11_DEFAULT).toBeLessThan(1.5);
+	});
+
+	it('adds a silent ! layer above the heading, filtered to matched + silent (S5)', () => {
+		const layers: LayerSpecification[] = [];
+		const map = {
+			getLayer: () => undefined,
+			addLayer: (nextLayer: LayerSpecification) => {
+				layers.push(nextLayer);
+			},
+		} as unknown as MapLibreMap;
+
+		addVehicleLayers(map);
+
+		const found = layers.find((l) => l.id === VEHICLE_SILENT_LAYER);
+		expect(found).toBeDefined();
+		if (!found) throw new Error('expected silent layer');
+		const silent = found as LayerSpecification & {
+			layout: Record<string, unknown>;
+			filter: unknown;
+		};
+		const filterJson = JSON.stringify(silent.filter);
+		expect(filterJson).toContain('matched');
+		expect(filterJson).toContain('silent');
+		expect((silent.layout as Record<string, unknown>)['icon-image']).toBe(SILENT_ICON);
+		// Drawn ABOVE the heading so the badge is never occluded.
+		const silentIndex = layers.findIndex((l) => l.id === VEHICLE_SILENT_LAYER);
+		const headingIndex = layers.findIndex((l) => l.id === VEHICLE_HEADING_LAYER);
+		expect(silentIndex).toBeGreaterThan(headingIndex);
 	});
 
 	it('flags whether each bus reports a heading so the chevron layer can hide for headingless buses', () => {
@@ -253,19 +307,34 @@ describe('toVehicleFeatures per-vehicle silence fade', () => {
 		expect(features.map((f) => f.properties.opacity)).toEqual([1, 1]);
 	});
 
-	it('carries updated_utc into the feature opacity: fresh = full, long-silent = floor', () => {
+	it('carries updated_utc into the feature opacity: fresh = full, long-silent = full (flagged, not dimmed)', () => {
 		const now = Date.parse('2026-06-21T12:00:00Z');
 		const fresh = '2026-06-21T12:00:00Z'; // age 0 → full
-		const silent = '2026-06-21T11:55:00Z'; // age 300s >> 3×ttl=90 → floor
+		const silent = '2026-06-21T11:55:00Z'; // age 300s >> 3×ttl=90 → silent (full opacity)
 		const features = toVehicleFeatures(fleet(fresh, silent), EMPTY_FILTER, new Set(), null, null, {
 			serverNow: now,
 			ttlS: TTL,
 		}).features;
 		const byId = Object.fromEntries(features.map((f) => [f.properties.id, f.properties]));
 		expect(byId.fresh.opacity).toBe(1);
-		expect(byId.silent.opacity).toBe(SILENCE_FLOOR_OPACITY);
+		// Silence is carried by the marker now, not a dim — the bus is full opacity.
+		expect(byId.silent.opacity).toBe(1);
 		// silenceAgeS is carried (rounded seconds) for hover / debug.
 		expect(byId.silent.silenceAgeS).toBe(300);
+	});
+
+	it('flags a long-silent bus with properties.silent=1 at full opacity, fresh stays silent=0', () => {
+		const now = Date.parse('2026-06-21T12:00:00Z');
+		const fresh = '2026-06-21T12:00:00Z'; // age 0 → fresh
+		const silent = '2026-06-21T11:55:00Z'; // age 300s → past silent threshold
+		const features = toVehicleFeatures(fleet(fresh, silent), EMPTY_FILTER, new Set(), null, null, {
+			serverNow: now,
+			ttlS: TTL,
+		}).features;
+		const byId = Object.fromEntries(features.map((f) => [f.properties.id, f.properties]));
+		expect(byId.silent.silent).toBe(1);
+		expect(byId.silent.opacity).toBe(1);
+		expect(byId.fresh.silent).toBe(0);
 	});
 
 	it('fades a bus that is mid-window to a partial (visible) opacity', () => {
@@ -283,7 +352,7 @@ describe('toVehicleFeatures per-vehicle silence fade', () => {
 			{ serverNow: now, ttlS: TTL },
 		).features;
 		const o = features[0].properties.opacity;
-		expect(o).toBeGreaterThan(SILENCE_FLOOR_OPACITY);
+		expect(o).toBeGreaterThan(AGING_FLOOR_OPACITY);
 		expect(o).toBeLessThan(1);
 	});
 
@@ -299,8 +368,8 @@ describe('toVehicleFeatures per-vehicle silence fade', () => {
 			null,
 			{ serverNow: now, ttlS: TTL, reduceMotion: true },
 		).features;
-		// Discrete: the single mid step, exactly halfway between full and floor.
-		expect(features[0].properties.opacity).toBe((1 + SILENCE_FLOOR_OPACITY) / 2);
+		// Discrete: the single mid step, exactly halfway between full and the aging floor.
+		expect(features[0].properties.opacity).toBe((1 + AGING_FLOOR_OPACITY) / 2);
 	});
 
 	it('drives a data-driven icon-opacity from the opacity property on both layers', () => {

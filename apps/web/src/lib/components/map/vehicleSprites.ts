@@ -35,6 +35,8 @@ export const BUS_ICON = 'veh-bus';
 export const HEADING_ICON = 'veh-heading';
 /** The stop map-pin icon id. */
 export const STOP_ICON = 'veh-stop';
+/** The silent-vehicle "!" badge icon id — drawn ABOVE a frozen bus. */
+export const SILENT_ICON = 'veh-silent';
 
 export const BUS_FILL_TOKEN = 'var(--primary)';
 export const BUS_FILL_FALLBACK = 'rgb(224, 120, 0)';
@@ -49,6 +51,12 @@ export const HEADING_FILL_TOKEN = 'var(--foreground)';
 export const HEADING_FILL_FALLBACK = '#f5f5f5';
 export const HEADING_HALO_TOKEN = BUS_HALO_TOKEN;
 export const HEADING_HALO_FALLBACK = BUS_HALO_FALLBACK;
+/** The silent badge disc is a high-contrast foreground dot; the "!" is cut in the
+ *  background colour so it reads on any bus fill. */
+export const SILENT_FILL_TOKEN = 'var(--foreground)';
+export const SILENT_FILL_FALLBACK = '#f5f5f5';
+export const SILENT_HALO_TOKEN = 'var(--background)';
+export const SILENT_HALO_FALLBACK = '#141414';
 
 /** Resolve a `var(--token)` expression to its computed `rgb(...)` string. */
 export function resolveColor(varExpr: string, fallback: string): string {
@@ -201,6 +209,47 @@ function chevronImage(fill: string, halo: string): ImageData {
 	return ctx.getImageData(0, 0, px, px);
 }
 
+/**
+ * Bake the SILENT "!" badge — a filled DISC (`fill`, ringed by a 2px `halo`
+ * stroke) in the UPPER portion of the box, with a "!" CUT in the halo colour (a
+ * short rounded vertical bar + a dot beneath it) centred in the disc. Drawn as a
+ * SEPARATE layer ABOVE a frozen bus so a no-longer-reporting vehicle is flagged,
+ * not hidden.
+ */
+function silentBadgeImage(fill: string, halo: string): ImageData {
+	const { ctx, px } = newCtx();
+	ctx.lineJoin = 'round';
+	ctx.lineCap = 'round';
+
+	// Disc — centred horizontally, sitting in the upper portion of the box.
+	const cx = SIZE / 2;
+	const cy = SIZE * 0.32;
+	const r = 5.4;
+	ctx.beginPath();
+	ctx.arc(cx, cy, r, 0, Math.PI * 2);
+	ctx.fillStyle = fill;
+	ctx.fill();
+	ctx.lineWidth = 2;
+	ctx.strokeStyle = halo;
+	ctx.stroke();
+
+	// "!" cut in the halo colour — a short rounded vertical bar…
+	ctx.strokeStyle = halo;
+	ctx.lineWidth = 1.7;
+	ctx.beginPath();
+	ctx.moveTo(cx, cy - 2.5);
+	ctx.lineTo(cx, cy + 0.9);
+	ctx.stroke();
+
+	// …and a dot beneath it.
+	ctx.beginPath();
+	ctx.arc(cx, cy + 3.1, 0.95, 0, Math.PI * 2);
+	ctx.fillStyle = halo;
+	ctx.fill();
+
+	return ctx.getImageData(0, 0, px, px);
+}
+
 /** Icon id the vehicle layer references per feature (see toVehicleFeatures). */
 export const bodyIconId = (mode: 'status' | 'occupancy', code: string): string =>
 	`veh-${mode === 'status' ? 's' : 'o'}-${code}`;
@@ -237,6 +286,16 @@ export function bakeVehicleSprites(map: MapLibreMap): void {
 		chevronImage(
 			resolveColor(HEADING_FILL_TOKEN, HEADING_FILL_FALLBACK),
 			resolveColor(HEADING_HALO_TOKEN, HEADING_HALO_FALLBACK),
+		),
+	);
+
+	// The silent "!" badge — a neutral high-contrast disc with a cut "!", drawn
+	// ABOVE a frozen, no-longer-reporting bus by VEHICLE_SILENT_LAYER.
+	add(
+		SILENT_ICON,
+		silentBadgeImage(
+			resolveColor(SILENT_FILL_TOKEN, SILENT_FILL_FALLBACK),
+			resolveColor(SILENT_HALO_TOKEN, SILENT_HALO_FALLBACK),
 		),
 	);
 

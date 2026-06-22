@@ -15,9 +15,10 @@
 import type { Map as MapLibreMap, GeoJSONSource, LayerSpecification } from 'maplibre-gl';
 import type { Vehicle } from '$lib/v1/schemas';
 import type { EntityKind, FilterState } from '$lib/filters';
-import { bodyIconId, BUS_ICON, HEADING_ICON } from './vehicleSprites';
+import { bodyIconId, BUS_ICON, HEADING_ICON, SILENT_ICON } from './vehicleSprites';
 import {
 	DEFAULT_LIVE_TTL_S,
+	isSilent,
 	silenceAgeS,
 	silenceOpacity,
 	silenceOpacityDiscrete,
@@ -27,6 +28,8 @@ export const VEHICLE_SOURCE = 'vehicles';
 export const VEHICLE_BODY_LAYER = 'vehicle-body';
 /** The rotated chevron overlay; same source, filtered to vehicles with a heading. */
 export const VEHICLE_HEADING_LAYER = 'vehicle-heading';
+/** The "!" not-reporting badge overlay; same source, filtered to matched + silent. */
+export const VEHICLE_SILENT_LAYER = 'vehicle-silent';
 
 export interface VehicleFeature {
 	type: 'Feature';
@@ -42,11 +45,13 @@ export interface VehicleFeature {
 		hovered: number;
 		// 1 = visible (matches the filter, or no narrowing filter); 0 = hidden.
 		matched: number;
-		// Per-vehicle silence fade in [SILENCE_FLOOR_OPACITY, 1]: full when the bus
-		// just reported, fading toward the floor the longer ITS OWN last fix is.
-		// Driven data-driven into icon-opacity so one quiet bus dims independently
-		// of the global stale-dim. NEVER 0 (the feed still lists it = "last seen N").
+		// Per-vehicle opacity in [AGING_FLOOR_OPACITY, 1]: full when fresh, a gentle
+		// "going stale" fade through the aging window, then back to full once silent
+		// (silence is carried by the marker, not a dim). Driven data-driven into
+		// icon-opacity so one bus's aging cue is independent of the global stale-dim.
 		opacity: number;
+		// 1 = past the silent threshold → frozen, gets the "!" marker, full opacity.
+		silent: number;
 		// Seconds since the vehicle's own last report (server clock). Carried for
 		// debugging / a future "last seen" hover; the fade reads `opacity`.
 		silenceAgeS: number;
@@ -161,6 +166,7 @@ export function toVehicleFeatures(
 				: silence.reduceMotion
 					? silenceOpacityDiscrete(ageS, ttlS)
 					: silenceOpacity(ageS, ttlS);
+			const silent = silence ? (isSilent(ageS, ttlS) ? 1 : 0) : 0;
 			return {
 				type: 'Feature',
 				geometry: { type: 'Point', coordinates: [v.lon, v.lat] },
@@ -176,6 +182,7 @@ export function toVehicleFeatures(
 					hovered: hoveredVehicleId === v.id ? 1 : 0,
 					matched,
 					opacity,
+					silent,
 					silenceAgeS: Number.isFinite(ageS) ? Math.round(ageS) : -1,
 				},
 			};
@@ -189,14 +196,30 @@ export function addVehicleSource(map: MapLibreMap): void {
 	map.addSource(VEHICLE_SOURCE, { type: 'geojson', data: EMPTY_FC, promoteId: 'id' });
 }
 
+// Resting (default) z11 size is raised so an UNHOVERED bus reads SOLID on its own
+// — hover is now a modest ACCENT over a solid base, not the thing that first makes
+// a bus appear (the old 0.55→1.05 jump was the real "only solid on hover" cause).
+// Exported so the test asserts the resting size + accent ratio without parsing the
+// expression. Tune live in the GL eyeball loop.
+export const ICON_SIZE_Z11_DEFAULT = 0.78;
+export const ICON_SIZE_Z11_SELECTED = 0.88;
+export const ICON_SIZE_Z11_HOVER = 1.0;
+
 const ICON_SIZE = [
 	'interpolate',
 	['linear'],
 	['zoom'],
 	11,
-	['case', ['==', ['get', 'hovered'], 1], 1.05, ['==', ['get', 'selected'], 1], 0.78, 0.55],
+	[
+		'case',
+		['==', ['get', 'hovered'], 1],
+		ICON_SIZE_Z11_HOVER,
+		['==', ['get', 'selected'], 1],
+		ICON_SIZE_Z11_SELECTED,
+		ICON_SIZE_Z11_DEFAULT,
+	],
 	15,
-	['case', ['==', ['get', 'hovered'], 1], 1.95, ['==', ['get', 'selected'], 1], 1.42, 1],
+	['case', ['==', ['get', 'hovered'], 1], 1.75, ['==', ['get', 'selected'], 1], 1.5, 1.3],
 ];
 
 // Per-vehicle silence fade, read from the feature's `opacity` property (computed
@@ -217,13 +240,32 @@ const GLOBAL_STALE_OPACITY = 0.45;
  * The per-vehicle fade is the primary signal (one quiet bus dims on its own);
  * the global stale-dim is a layer-wide multiplier on top. We MULTIPLY rather
  * than `min` so the two honest signals stack continuously — but because the
- * silence floor is already ~0.25 and the stale factor 0.45, the deepest a bus
- * can go is ~0.11, still faintly visible (never erased). When NOT globally stale
+ * aging floor is already ~0.6 and the stale factor 0.45, the deepest a bus
+ * can go is ~0.27, still faintly visible (never erased). When NOT globally stale
  * the multiplier is 1, so silence is shown exactly as computed.
  */
 function composedOpacity(globalStale: boolean): unknown {
 	const factor = globalStale ? GLOBAL_STALE_OPACITY : 1;
 	return factor === 1 ? SILENCE_OPACITY : ['*', SILENCE_OPACITY, factor];
+}
+
+/**
+ * icon-opacity with a hover/selected branch (mirrors stopsLayer): a HOVERED bus
+ * pops to full strength and a SELECTED one to 0.95, otherwise the composed
+ * silence × global-stale fade. This is the core "only solid on hover" fix — the
+ * default leg already renders a fresh bus solid (silence=1), and hover now
+ * overrides the aging fade so a going-stale bus brightens when you point at it,
+ * instead of hover being the ONLY thing that made a bus read as alive.
+ */
+function iconOpacityExpr(globalStale: boolean): unknown {
+	return [
+		'case',
+		['==', ['get', 'hovered'], 1],
+		1,
+		['==', ['get', 'selected'], 1],
+		0.95,
+		composedOpacity(globalStale),
+	];
 }
 
 /** Add the vehicle body + heading symbol layers. Non-matched features are
@@ -249,7 +291,7 @@ export function addVehicleLayers(map: MapLibreMap): void {
 		},
 		// Per-vehicle silence fade (data-driven); setStale multiplies the global
 		// stale-dim on top.
-		paint: { 'icon-opacity': composedOpacity(false) },
+		paint: { 'icon-opacity': iconOpacityExpr(false) },
 		// maplibre's expression types are invariant + mutable; the literal is
 		// structurally correct, so cast through unknown.
 	} as unknown as LayerSpecification);
@@ -270,7 +312,27 @@ export function addVehicleLayers(map: MapLibreMap): void {
 			'icon-ignore-placement': true,
 			'icon-size': ICON_SIZE,
 		},
-		paint: { 'icon-opacity': composedOpacity(false) },
+		paint: { 'icon-opacity': iconOpacityExpr(false) },
+	} as unknown as LayerSpecification);
+
+	if (map.getLayer(VEHICLE_SILENT_LAYER)) return;
+	// The "!" not-reporting badge — drawn ABOVE the body + heading so a frozen,
+	// no-longer-reporting bus is FLAGGED (full opacity), never hidden. Shown only
+	// for matched + silent vehicles; silence is carried by this marker, not a dim.
+	map.addLayer({
+		id: VEHICLE_SILENT_LAYER,
+		type: 'symbol',
+		source: VEHICLE_SOURCE,
+		filter: ['all', ['==', ['get', 'matched'], 1], ['==', ['get', 'silent'], 1]],
+		layout: {
+			'icon-image': SILENT_ICON,
+			// Float the badge just above the bus glyph.
+			'icon-offset': [0, -15],
+			'icon-size': 0.62,
+			'icon-allow-overlap': true,
+			'icon-ignore-placement': true,
+		},
+		paint: { 'icon-opacity': 1 },
 	} as unknown as LayerSpecification);
 }
 
@@ -303,7 +365,7 @@ export function setVehicles(
  * honest signals compose (see composedOpacity). Never extrapolate — this only
  * dims, it never moves a bus. */
 export function setStale(map: MapLibreMap, stale: boolean): void {
-	const opacity = composedOpacity(stale) as Parameters<MapLibreMap['setPaintProperty']>[2];
+	const opacity = iconOpacityExpr(stale) as Parameters<MapLibreMap['setPaintProperty']>[2];
 	if (map.getLayer(VEHICLE_BODY_LAYER)) {
 		map.setPaintProperty(VEHICLE_BODY_LAYER, 'icon-opacity', opacity);
 	}

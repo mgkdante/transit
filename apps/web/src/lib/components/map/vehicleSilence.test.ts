@@ -1,17 +1,18 @@
 import { describe, expect, it } from 'vitest';
 import {
+	AGING_FLOOR_OPACITY,
 	DEFAULT_LIVE_TTL_S,
 	FRESH_TTL_MULTIPLIER,
 	isSilent,
 	liveTtlS,
-	SILENCE_FLOOR_OPACITY,
+	SILENT_RECOVER_S,
 	SILENT_TTL_MULTIPLIER,
 	silenceAgeS,
 	silenceOpacity,
 	silenceOpacityDiscrete,
 } from './vehicleSilence';
 
-const TTL = 30;
+const TTL = 30; // fresh window 45, fade end / silent threshold 90
 const NOW = Date.parse('2026-06-21T12:00:00Z');
 
 describe('silenceAgeS — server-anchored per-vehicle report age', () => {
@@ -34,57 +35,49 @@ describe('silenceAgeS — server-anchored per-vehicle report age', () => {
 	});
 });
 
-describe('silenceOpacity — fresh / fading / floor', () => {
+describe('silenceOpacity — 3-state fresh / aging / silent', () => {
 	it('is full opacity for a fresh vehicle (within the fresh window)', () => {
+		expect(silenceOpacity(10, TTL)).toBe(1);
 		expect(silenceOpacity(0, TTL)).toBe(1);
 		expect(silenceOpacity(FRESH_TTL_MULTIPLIER * TTL, TTL)).toBe(1);
-		// Just inside the fresh window (1×ttl, a normal missed publish) stays full.
-		expect(silenceOpacity(TTL, TTL)).toBe(1);
 	});
 
-	it('fades to a partial value in the middle of the fade window', () => {
-		const fadeStart = FRESH_TTL_MULTIPLIER * TTL; // 45
-		const fadeEnd = SILENT_TTL_MULTIPLIER * TTL; // 90
-		const mid = (fadeStart + fadeEnd) / 2; // 67.5
+	it('fades to a partial value (between the aging floor and full) mid-window', () => {
+		const mid = 67.5; // (45 + 90) / 2
 		const o = silenceOpacity(mid, TTL);
-		expect(o).toBeGreaterThan(SILENCE_FLOOR_OPACITY);
+		expect(o).toBeGreaterThan(AGING_FLOOR_OPACITY);
 		expect(o).toBeLessThan(1);
-		// Halfway through → halfway between 1 and the floor.
-		expect(o).toBeCloseTo((1 + SILENCE_FLOOR_OPACITY) / 2, 6);
+		// Halfway through the aging fade → halfway between 1 and the floor.
+		expect(o).toBeCloseTo((1 + AGING_FLOOR_OPACITY) / 2, 6);
 	});
 
-	it('floors a long-silent vehicle at the visible floor (never 0 / hidden)', () => {
-		expect(silenceOpacity(SILENT_TTL_MULTIPLIER * TTL, TTL)).toBe(SILENCE_FLOOR_OPACITY);
-		expect(silenceOpacity(10_000, TTL)).toBe(SILENCE_FLOOR_OPACITY);
-		expect(silenceOpacity(Number.POSITIVE_INFINITY, TTL)).toBe(SILENCE_FLOOR_OPACITY);
-		expect(SILENCE_FLOOR_OPACITY).toBeGreaterThan(0);
+	it('reaches the aging floor just before the silent threshold', () => {
+		expect(silenceOpacity(89.99, TTL)).toBeCloseTo(AGING_FLOOR_OPACITY, 2);
 	});
 
-	it('is monotonic non-increasing in age (never brightens a stale bus)', () => {
-		let prev = Infinity;
-		for (let age = 0; age <= SILENT_TTL_MULTIPLIER * TTL + 30; age += 5) {
-			const o = silenceOpacity(age, TTL);
-			expect(o).toBeLessThanOrEqual(prev + 1e-9);
-			prev = o;
-		}
+	it('is continuous at the silent threshold (≈ aging floor, no snap)', () => {
+		expect(silenceOpacity(90, TTL)).toBeCloseTo(AGING_FLOOR_OPACITY, 6);
 	});
 
-	it('scales the windows with the ttl', () => {
-		// ttl 10 → fade window 15..30. At age 20 (mid-ish), partial fade.
-		const o = silenceOpacity(22.5, 10);
-		expect(o).toBeCloseTo((1 + SILENCE_FLOOR_OPACITY) / 2, 6);
-		// Same absolute age at ttl 30 is still fresh.
-		expect(silenceOpacity(22.5, 30)).toBe(1);
+	it('recovers to full opacity after the short recover ramp (silent = full)', () => {
+		expect(silenceOpacity(90 + SILENT_RECOVER_S, TTL)).toBeCloseTo(1, 6);
+	});
+
+	it('keeps a long-silent vehicle at full opacity (flagged by the marker, not dimmed)', () => {
+		expect(silenceOpacity(300, TTL)).toBe(1);
+		expect(silenceOpacity(Number.POSITIVE_INFINITY, TTL)).toBe(1);
 	});
 });
 
 describe('silenceOpacityDiscrete — reduced motion (stepped, not ramped)', () => {
-	it('is full / a single mid step / floor — no continuous ramp', () => {
+	it('is full / a single mid step / full — no continuous ramp', () => {
 		expect(silenceOpacityDiscrete(0, TTL)).toBe(1);
 		expect(silenceOpacityDiscrete(FRESH_TTL_MULTIPLIER * TTL, TTL)).toBe(1);
 		const mid = silenceOpacityDiscrete((FRESH_TTL_MULTIPLIER + 0.5) * TTL, TTL);
-		expect(mid).toBe((1 + SILENCE_FLOOR_OPACITY) / 2);
-		expect(silenceOpacityDiscrete(SILENT_TTL_MULTIPLIER * TTL, TTL)).toBe(SILENCE_FLOOR_OPACITY);
+		expect(mid).toBe((1 + AGING_FLOOR_OPACITY) / 2);
+		// Once silent, back to full opacity (the marker carries the silent state).
+		expect(silenceOpacityDiscrete(300, TTL)).toBe(1);
+		expect(silenceOpacityDiscrete(SILENT_TTL_MULTIPLIER * TTL, TTL)).toBe(1);
 	});
 
 	it('takes only three distinct values across the whole age range', () => {
@@ -96,11 +89,11 @@ describe('silenceOpacityDiscrete — reduced motion (stepped, not ramped)', () =
 	});
 });
 
-describe('isSilent — past the fade window → snap, do not glide', () => {
-	it('is false while fresh or fading, true past the silent threshold', () => {
+describe('isSilent — past the fade window → flagged + frozen', () => {
+	it('is false while fresh or aging, true past the silent threshold', () => {
+		expect(isSilent(89, TTL)).toBe(false);
+		expect(isSilent(90, TTL)).toBe(true);
 		expect(isSilent(0, TTL)).toBe(false);
-		expect(isSilent(SILENT_TTL_MULTIPLIER * TTL - 1, TTL)).toBe(false);
-		expect(isSilent(SILENT_TTL_MULTIPLIER * TTL, TTL)).toBe(true);
 		expect(isSilent(Number.POSITIVE_INFINITY, TTL)).toBe(true);
 	});
 });

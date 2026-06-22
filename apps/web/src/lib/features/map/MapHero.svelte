@@ -82,6 +82,7 @@
 		type RouteShapes,
 	} from '$lib/components/map/vehicleShapes';
 	import {
+		isSilent,
 		liveTtlS,
 		silenceAgeS,
 		silenceOpacity,
@@ -101,7 +102,11 @@
 	import { shouldAnimate } from '$lib/motion/policy';
 	import { buildAlertEntitySets, vehicleHasAlert } from './mapAlerts';
 	import { PICKABLE_MAP_LAYERS, pickMapSelection } from './mapPicking';
-	import { resolveMapSelection, type MapSelection } from './mapSelection';
+	import {
+		resolveMapSelection,
+		type MapSelection,
+		type MapSelectionDetail as MapSelectionDetailData,
+	} from './mapSelection';
 	import type { GeocodedLocation, GeocodePrecision, GeocodeSuggestion } from '$lib/geocode/types';
 	import { hasCoordinates } from '$lib/geocode/types';
 	import type { StopIndexEntry } from '$lib/v1/schemas';
@@ -394,11 +399,9 @@
 	// reason via $lib/site/serviceWindow.inferAbsenceReason. The map spans the WHOLE
 	// network (mixed modes + every route), so there is no single first/last window
 	// to claim "closed" against here — a network-wide overnight verdict needs a
-	// network service-span signal we do not yet publish. ALSO: a selected-but-silent
-	// vehicle should read "last seen N ago" via the 'last-seen' reason key
-	// (inferAbsenceReason carries lastSeenIso through) — wire it into the selected-
-	// detail panel when the chosen vehicle has gone quiet. Deferred to keep this PR
-	// scoped to /route + /stop (the well-defined per-entity windows).
+	// network service-span signal we do not yet publish. (The selected-but-silent
+	// "last seen N ago" half is now DONE in S5 — see vehicleAbsence + the map detail
+	// card's not-reporting note, fed by isSilent off the shared clock.)
 	const liveEdgeState = $derived.by<'unavailable' | 'no-vehicles' | null>(() => {
 		if (live.error != null && live.generatedUtc == null) return 'unavailable';
 		if (live.vehicles != null && !live.isStale && (live.vehicles.vehicles?.length ?? 0) === 0) {
@@ -464,6 +467,17 @@
 			alerts: alertList,
 		}),
 	);
+	// A focused vehicle that has gone SILENT (past the silent threshold) → surface
+	// an honest "last seen N ago" note in its detail card, the companion text to the
+	// on-map "!" marker. Reads the skew-free shared clock + the live ttl, exactly
+	// like the map's per-vehicle silence fade, so the two stay in lockstep.
+	function vehicleAbsence(d: MapSelectionDetailData | null): { ageS: number } | null {
+		if (!d || d.kind !== 'vehicle') return null;
+		const ageS = silenceAgeS(d.vehicle.updated_utc, sharedClock.serverNow);
+		return isSilent(ageS, liveTtl) ? { ageS } : null;
+	}
+	const selectedVehicleAbsence = $derived(vehicleAbsence(selectedDetail));
+	const hoverVehicleAbsence = $derived(vehicleAbsence(hoverDetail));
 	const detailSurfaceKey = $derived(
 		selectedDetail ? `${selectedDetail.kind}:${selectedDetail.id}` : 'empty',
 	);
@@ -1264,6 +1278,7 @@
 				<MapSelectionDetail
 					detail={selectedDetail}
 					{locale}
+					notReporting={selectedVehicleAbsence}
 					onselect={selectFromDetail}
 					onfilter={applyDetailFilter}
 					onalertselect={selectAlertRelated}
@@ -1391,6 +1406,7 @@
 				detail={hoverDetail}
 				{locale}
 				compact
+				notReporting={hoverVehicleAbsence}
 				onselect={selectFromDetail}
 				onfilter={applyDetailFilter}
 				onalertselect={selectAlertRelated}
@@ -1413,6 +1429,7 @@
 				<MapSelectionDetail
 					detail={selectedDetail}
 					{locale}
+					notReporting={selectedVehicleAbsence}
 					onselect={selectFromDetail}
 					onfilter={applyDetailFilter}
 					onalertselect={selectAlertRelated}
