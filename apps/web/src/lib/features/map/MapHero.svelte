@@ -73,7 +73,14 @@
 		type MapFitPadding,
 		type WithDistance,
 		type VehicleMotionController,
+		type ShapeResolver,
+		type Coord,
 	} from '$lib/components/map';
+	import {
+		bestShapeForPoint,
+		routeShapes,
+		type RouteShapes,
+	} from '$lib/components/map/vehicleShapes';
 	import {
 		liveTtlS,
 		silenceAgeS,
@@ -237,6 +244,35 @@
 	let map = $state<MapLibreMap | null>(null);
 	let vehicleMotion = $state<VehicleMotionController | null>(null);
 	let vehicleMotionMap: MapLibreMap | null = null;
+
+	// --- L1 path-follow shape supply ------------------------------------------
+	// Per-route direction-variant polylines, fetched on-demand for the routes that
+	// currently have live buses (deduped by route id — far fewer than the ~600
+	// vehicles). Loaded through the same getRoute() path as the selected-route
+	// linework, then cached so a route is fetched at most once. The tween reads
+	// this to walk a bus ALONG its street; until a shape resolves the bus glides
+	// the straight chord (progressive enhancement — never blocks, always correct).
+	// Intentionally a PLAIN (non-reactive) Map: mutating the cache must NOT trigger
+	// rerenders — reactivity is carried explicitly by `routeShapeRevision` so a
+	// resolved shape re-feeds exactly once. A SvelteMap would make every .set()
+	// reactive and thrash the feed effect.
+	// eslint-disable-next-line svelte/prefer-svelte-reactivity
+	const routeShapeCache = new Map<string, RouteShapes>();
+	// Routes already fetched (or null/empty result cached) so we never re-request.
+	// Plain Set for the same reason — a dedupe ledger, not reactive state.
+	// eslint-disable-next-line svelte/prefer-svelte-reactivity
+	const routeShapeRequested = new Set<string>();
+	// Bumped when a shape resolves so the feed effect re-runs and the next tween
+	// upgrades to path-follow. A plain $state counter (cheap reactive signal).
+	let routeShapeRevision = $state(0);
+	// Cap distinct cached routes to bound memory over a long session; the visible
+	// set is small, so eviction is rare. LRU-ish: oldest insertion dropped first.
+	const MAX_CACHED_ROUTE_SHAPES = 200;
+
+	// Previous vehicles-file generated_utc + its parsed epoch ms, so the next
+	// re-target can size the tween to the REAL inter-file interval (L2 no-idle).
+	let prevVehiclesGeneratedUtc: string | null = null;
+	let prevVehiclesGeneratedMs: number | null = null;
 	// Signature of the per-vehicle silence-opacity buckets at the last clock-tick
 	// re-feed. The tick effect skips re-feeding the vehicle layer when this is
 	// unchanged (no bus crossed/moved within the fade window since last tick) so a
@@ -974,14 +1010,94 @@
 		installMapLayers(m);
 	}
 
+	// L1 — lazily fetch route shapes for the routes that currently have live buses
+	// (deduped). Runs off the vehicles poll only (other reads untracked) so a
+	// filter/hover does not re-trigger fetches. Each route is requested at most
+	// once; a resolved shape bumps `routeShapeRevision`, re-running the feed effect
+	// so the NEXT tween upgrades that route's buses to path-follow. Fetches are
+	// fire-and-forget + fail-soft (a failed/absent shape simply leaves the bus on
+	// the chord — never blocks motion). We do NOT bulk-fetch all routes: only the
+	// distinct routes in the current vehicle set, which is small.
+	$effect(() => {
+		const vehicles = live.vehicles?.vehicles ?? [];
+		if (vehicles.length === 0) return;
+		untrack(() => {
+			for (const v of vehicles) {
+				const id = v.route;
+				if (id == null || id === '') continue;
+				if (routeShapeRequested.has(id)) continue;
+				routeShapeRequested.add(id);
+				void getRoute(id)
+					.then((route) => {
+						if (!route) return;
+						const shapes = routeShapes(route);
+						if (shapes.length === 0) return;
+						// Bound the cache (drop oldest) so a long session can't grow it
+						// unbounded; the visible route set is small so this rarely fires.
+						if (routeShapeCache.size >= MAX_CACHED_ROUTE_SHAPES) {
+							const oldest = routeShapeCache.keys().next().value;
+							if (oldest != null) routeShapeCache.delete(oldest);
+						}
+						routeShapeCache.set(id, shapes);
+						routeShapeRevision += 1;
+					})
+					.catch(() => {
+						// Fail-soft: leave the route un-cached → chord fallback. Allow a
+						// later retry by clearing the requested flag.
+						routeShapeRequested.delete(id);
+					});
+			}
+		});
+	});
+
+	// L1 resolver passed into the motion controller: for a vehicle feature, return
+	// the cached route-shape variant its CURRENT point sits on (least projection
+	// error), or null → straight-chord fallback. Called once per vehicle at
+	// re-target (not per frame), so the per-tween projection cost is paid once.
+	const shapeFor: ShapeResolver = (feature) => {
+		const routeId = feature.properties.route;
+		if (!routeId) return null;
+		const shapes = routeShapeCache.get(routeId);
+		if (!shapes || shapes.length === 0) return null;
+		return bestShapeForPoint(shapes, feature.geometry.coordinates as Coord);
+	};
+
+	// L2 — duration of the next position tween = the REAL server-time gap between
+	// this vehicles file and the previous one, so the bus is still easing toward
+	// its last known fix right up to the next poll (no 2s idle freeze). Falls back
+	// to undefined (the controller's default) for the first file or an unparseable
+	// stamp; the controller clamps the value into a sane band and NEVER extends
+	// motion past the last fix (silence-fade owns a genuinely late bus).
+	function nextTweenDurationSec(generatedUtc: string | null | undefined): number | undefined {
+		if (generatedUtc == null) return undefined;
+		const ms = Date.parse(generatedUtc);
+		if (Number.isNaN(ms)) return undefined;
+		let duration: number | undefined;
+		if (
+			prevVehiclesGeneratedUtc != null &&
+			prevVehiclesGeneratedUtc !== generatedUtc &&
+			prevVehiclesGeneratedMs != null
+		) {
+			const deltaS = (ms - prevVehiclesGeneratedMs) / 1000;
+			if (deltaS > 0) duration = deltaS;
+		}
+		prevVehiclesGeneratedUtc = generatedUtc;
+		prevVehiclesGeneratedMs = ms;
+		return duration;
+	}
+
 	// Feed the layers: vehicles coloured/dimmed under the active filter + the stop
 	// catalogue; dim on stale. Reactive to filters.state so a chip toggle re-paints.
 	$effect(() => {
 		const m = map;
 		// Reading `layerRevision` registers the post-style-swap layer install as an
 		// effect dependency, so data is re-fed after MapLibre clears custom sources.
+		// Reading `routeShapeRevision` re-runs the feed when a route shape resolves,
+		// so the next tween upgrades those buses from chord to path-follow (L1).
 		// eslint-disable-next-line @typescript-eslint/no-unused-expressions
 		layerRevision;
+		// eslint-disable-next-line @typescript-eslint/no-unused-expressions
+		routeShapeRevision;
 		if (!m) return;
 		const reduceMotion = isPrefersReducedMotion();
 		setRouteLines(m, routeLineRoutes, selectedRouteLine);
@@ -989,6 +1105,7 @@
 		// re-run by the per-second clock tick (that is the dedicated silence effect's
 		// job below). This pass only needs a current opacity baseline.
 		const serverNow = untrack(() => sharedClock.serverNow);
+		const tickKey = live.vehicles?.generated_utc ?? live.generatedUtc;
 		vehicleMotion?.set(
 			toVehicleFeatures(
 				live.vehicles?.vehicles ?? [],
@@ -999,8 +1116,17 @@
 				{ serverNow, ttlS: liveTtl, reduceMotion },
 			),
 			{
-				tickKey: live.vehicles?.generated_utc ?? live.generatedUtc,
+				tickKey,
 				stale: live.isStale,
+				// L2: span the real inter-file interval so the bus eases right up to the
+				// next poll (no idle freeze). Computed only on a genuinely new file; a
+				// same-tickKey filter/hover re-feed does not restart the tween, so the
+				// duration is ignored there.
+				durationSec: untrack(() => nextTweenDurationSec(tickKey)),
+				// L1: per-vehicle route-shape resolver → walk the street; chord when no
+				// shape is cached yet. Reduced motion skips animation entirely (the
+				// controller snaps), so the resolver is inert there.
+				shapeFor: reduceMotion ? undefined : shapeFor,
 				// Per-frame continuous fade while the position tween runs — but NOT
 				// under reduced motion (then opacity is set discretely at poll/tick
 				// time, no per-frame ramp). Reads the live clock each frame so a bus
