@@ -86,6 +86,44 @@ describe('SnapshotStrip', () => {
 		}
 	});
 
+	it('groups the headline pair + secondary tiles in the redesigned strip, keeping every data-slot (C)', () => {
+		const { strip } = toReliabilityClusters(POPULATED, { grain: 'day' });
+		const { container } = render(SnapshotStrip, {
+			props: { vm: strip, locale: 'en', copy: copyEn },
+		});
+
+		// The redesign splits the flat 7-up row into a weighted headline pair + a
+		// calmer secondary grid (deliberate hierarchy, not a flat number row).
+		const headline = container.querySelector('[data-slot="snapshot-headline"]');
+		const secondary = container.querySelector('[data-slot="snapshot-secondary"]');
+		expect(headline).not.toBeNull();
+		expect(secondary).not.toBeNull();
+
+		// On-time % + Avg delay are the weighted headline cards.
+		expect(headline!.querySelector('[data-slot="otp"]')).not.toBeNull();
+		expect(headline!.querySelector('[data-slot="avg-delay"]')).not.toBeNull();
+		expect(headline!.querySelectorAll('.snapshot-tile--headline')).toHaveLength(2);
+
+		// The remaining five read as secondary tiles.
+		for (const slot of ['p50', 'p90', 'regularity', 'cancellation', 'skipped']) {
+			expect(secondary!.querySelector(`[data-slot="${slot}"]`)).not.toBeNull();
+		}
+		expect(secondary!.querySelectorAll('.snapshot-tile--secondary')).toHaveLength(5);
+
+		// Every metric data-slot survives the regroup (no tile silently dropped).
+		for (const slot of [
+			'otp',
+			'avg-delay',
+			'p50',
+			'p90',
+			'regularity',
+			'cancellation',
+			'skipped',
+		]) {
+			expect(container.querySelector(`[data-slot="${slot}"]`)).not.toBeNull();
+		}
+	});
+
 	it('renders the honest empty state for an all-null VM without crashing', () => {
 		// An empty contract → every strip headline is null → vm.isEmpty.
 		const { strip } = toReliabilityClusters({} as RouteReliability);

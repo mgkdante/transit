@@ -546,8 +546,13 @@
 									<span>{route.headsign}</span>
 								{/if}
 							</header>
-							<div class="map-time-columns">
-								<div>
+							<!-- Past / Next / Live arrival columns. data-slot lets the CSS (and the
+							     E4 narrow-panel test) target the column block; at a narrow PANEL
+							     width the @container rule collapses this to a tidy single compact
+							     list — the Past column drops (least-essential) and Live/Next stack
+							     as a clean list, each keeping its delay tag. -->
+							<div class="map-time-columns" data-slot="route-time-columns">
+								<div class="map-time-col map-time-col--past">
 									<h4>{t.pastTimes}</h4>
 									<ul>
 										{#each route.pastTimes.slice(-4) as time (`past-${route.route}-${time}`)}
@@ -557,7 +562,7 @@
 										{/each}
 									</ul>
 								</div>
-								<div>
+								<div class="map-time-col map-time-col--next">
 									<h4>{t.nextTimes}</h4>
 									<ul>
 										{#each route.futureTimes.slice(0, 4) as time (`future-${route.route}-${time}`)}
@@ -568,9 +573,9 @@
 									</ul>
 								</div>
 								{#if route.liveDepartures.length > 0}
-									<div>
+									<div class="map-time-col map-time-col--live">
 										<h4>{t.live}</h4>
-										<ul>
+										<ul class="map-live-list" data-slot="live-departures">
 											{#each route.liveDepartures.slice(0, 3) as departure (`live-${route.route}-${departure.trip ?? departure.eta_utc}`)}
 												<li>
 													<time>{timeLabel(departure.eta_utc)}</time>
@@ -1371,6 +1376,38 @@
 		.map-time-columns {
 			grid-template-columns: minmax(0, 1fr);
 			gap: 0.4rem;
+		}
+	}
+	/* E4 — cuter, compact arrivals when the dock is dragged NARROW. The Past/Next/
+	   Live three-up is unreadable in a thin rail, so below ~17rem of the PANEL'S OWN
+	   width (the `right-panel` container the dock declares) we collapse to a single
+	   tidy compact list: the Past column drops (the least-essential — riders watch
+	   what's COMING), and the Next + Live columns stack as a clean list, each row
+	   still carrying its coloured delay tag so the honest state survives. The honest
+	   empty states (the "No data" <li> and the no-live-departures stand-down) are
+	   untouched. The query targets DESCENDANTS of .right-panel (the parent declares
+	   the container) — never a self-target. */
+	@container right-panel (max-width: 17rem) {
+		.map-time-columns {
+			display: flex;
+			flex-direction: column;
+			gap: 0.5rem;
+		}
+		/* Drop the least-essential Past-times column; Next + Live carry the reading. */
+		.map-time-col--past {
+			display: none;
+		}
+		/* Compact each remaining column into a quiet stacked list with a tight gap. */
+		.map-time-col h4 {
+			margin-bottom: 0.1rem;
+		}
+		.map-time-columns li {
+			padding-block: 0.12rem;
+		}
+		/* The Live list reads as the cuter primary block: a touch more breathing room
+		   between its dated rows so the delay tags do not crowd at the narrow width. */
+		.map-live-list li {
+			gap: 0.3rem;
 		}
 	}
 	@media (prefers-reduced-motion: reduce) {

@@ -1,4 +1,6 @@
 import { render, screen, within } from '@testing-library/svelte';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { RouteFile, StopPrediction, Vehicle } from '$lib/v1';
 import RouteDetail from './RouteDetail.svelte';
@@ -262,6 +264,50 @@ describe('RouteDetail reliability fetch gating (404-flood fix)', () => {
 		await gatedReliability('161');
 
 		expect(getRouteReliabilitySpy).toHaveBeenCalledWith('161');
+	});
+});
+
+describe('RouteDetail 2-column-when-it-fits (@container, C)', () => {
+	// Container queries cannot be evaluated in jsdom, so we assert the STRUCTURE +
+	// the CSS contract from source: the container-type rides a PARENT wrapper and
+	// the two-column grid targets a DESCENDANT (never the same element — the
+	// self-target trap the slice-9.8 E lesson calls out).
+	const source = readFileSync(
+		resolve(process.cwd(), 'src/lib/features/lines/RouteDetail.svelte'),
+		'utf-8',
+	);
+
+	it('wraps the schedule pane in a container parent that is NOT the grid it targets', () => {
+		// container-type is declared on .route-schedule-cq (the wrapper)…
+		expect(source).toMatch(/\.route-schedule-cq\s*\{[^}]*container-type:\s*inline-size/);
+		// …and the 2-col layout targets the DESCENDANT .route-schedule-grid, not the
+		// container element itself (self-target bug guard).
+		expect(source).toMatch(
+			/@container route-schedule \(min-width: 40rem\)\s*\{[\s\S]*?\.route-schedule-grid\s*\{[\s\S]*?grid-template-columns/,
+		);
+		// The schedule grid is a wrapper's CHILD (descendant of the container), never
+		// the element carrying container-type.
+		expect(source).not.toMatch(/\.route-schedule-grid\s*\{[^}]*container-type/);
+	});
+
+	it('lays both directions side-by-side via a container on the parent detail pane', () => {
+		// container-type rides .route-directions-pane (the PARENT)…
+		expect(source).toMatch(/\.route-directions-pane\s*\{[^}]*container-type:\s*inline-size/);
+		// …and the side-by-side layout targets the DESCENDANT .route-directions list.
+		expect(source).toMatch(
+			/@container route-directions \(min-width: 44rem\)\s*\{[\s\S]*?\.route-directions\s*\{[\s\S]*?grid-template-columns/,
+		);
+		// The .route-directions list is NOT the element declaring the container.
+		expect(source).not.toMatch(/\.route-directions\s*\{[^}]*container-type/);
+	});
+
+	it('keeps the schedule split into a span block + a periods block in the markup', () => {
+		// The schedule pane markup carries the two-column wrapper + its split
+		// children (the grid only activates under a wide container, but the structure
+		// is always authored so the layout has something to lay out).
+		expect(source).toMatch(/data-slot="route-schedule"/);
+		expect(source).toMatch(/class="route-schedule-span"/);
+		expect(source).toMatch(/class="route-schedule-periods"/);
 	});
 });
 

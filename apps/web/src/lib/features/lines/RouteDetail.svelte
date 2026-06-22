@@ -517,58 +517,69 @@
 		{:else if key === 'schedule'}
 			<ResourceBoundary resource={route} lang={locale}>
 				{#snippet children(file)}
-					<div class="route-section">
-						<div class="route-departures">
-							<div class="route-metric-cell">
-								<MetricDisplay
-									value={file.first_departure ?? null}
-									emptyLabel={t.noData}
-									label={t.firstDeparture}
-									size="sm"
-								/>
-								{@render scheduleInfo('serviceSpan', t.firstDeparture)}
+					<!-- @container: container-type rides this PARENT wrapper; the two-column
+					     layout below targets its DESCENDANT .route-schedule-grid (never the
+					     wrapper itself — the self-target trap). When the schedule pane is
+					     wide (≥40rem) the service-span block + the periods grid sit side by
+					     side; below that they stack. -->
+					<div class="route-schedule-cq">
+						<div class="route-section route-schedule-grid" data-slot="route-schedule">
+							<div class="route-schedule-span">
+								<div class="route-departures">
+									<div class="route-metric-cell">
+										<MetricDisplay
+											value={file.first_departure ?? null}
+											emptyLabel={t.noData}
+											label={t.firstDeparture}
+											size="sm"
+										/>
+										{@render scheduleInfo('serviceSpan', t.firstDeparture)}
+									</div>
+									<div class="route-metric-cell">
+										<MetricDisplay
+											value={file.last_departure ?? null}
+											emptyLabel={t.noData}
+											label={t.lastDeparture}
+											size="sm"
+										/>
+										{@render scheduleInfo('serviceSpan', t.lastDeparture)}
+									</div>
+								</div>
 							</div>
-							<div class="route-metric-cell">
-								<MetricDisplay
-									value={file.last_departure ?? null}
-									emptyLabel={t.noData}
-									label={t.lastDeparture}
-									size="sm"
-								/>
-								{@render scheduleInfo('serviceSpan', t.lastDeparture)}
+							<div class="route-schedule-periods">
+								<div class="route-label-row">
+									<SectionLabel text={t.servicePeriods} variant="metric" />
+									{@render scheduleInfo('headway', t.servicePeriods)}
+								</div>
+								{#if (file.service_periods ?? []).length > 0}
+									<ul class="route-periods">
+										{#each file.service_periods ?? [] as sp, spi (sp.shift + '-' + spi)}
+											<li class="route-period">
+												<SectionLabel text={sp.shift} variant="metric" />
+												<div class="route-period-metrics">
+													{#if sp.window}
+														<div class="route-metric-cell">
+															<MetricDisplay value={sp.window} label={t.window} size="sm" />
+															{@render scheduleInfo('serviceSpan', t.window)}
+														</div>
+													{/if}
+													{#if sp.headway_min != null}
+														<div class="route-metric-cell">
+															<MetricDisplay
+																value={fmtMin(sp.headway_min)}
+																label={t.headway}
+																size="sm"
+															/>
+															{@render scheduleInfo('headway', t.headway)}
+														</div>
+													{/if}
+												</div>
+											</li>
+										{/each}
+									</ul>
+								{/if}
 							</div>
 						</div>
-						<div class="route-label-row">
-							<SectionLabel text={t.servicePeriods} variant="metric" />
-							{@render scheduleInfo('headway', t.servicePeriods)}
-						</div>
-						{#if (file.service_periods ?? []).length > 0}
-							<ul class="route-periods">
-								{#each file.service_periods ?? [] as sp, spi (sp.shift + '-' + spi)}
-									<li class="route-period">
-										<SectionLabel text={sp.shift} variant="metric" />
-										<div class="route-period-metrics">
-											{#if sp.window}
-												<div class="route-metric-cell">
-													<MetricDisplay value={sp.window} label={t.window} size="sm" />
-													{@render scheduleInfo('serviceSpan', t.window)}
-												</div>
-											{/if}
-											{#if sp.headway_min != null}
-												<div class="route-metric-cell">
-													<MetricDisplay
-														value={fmtMin(sp.headway_min)}
-														label={t.headway}
-														size="sm"
-													/>
-													{@render scheduleInfo('headway', t.headway)}
-												</div>
-											{/if}
-										</div>
-									</li>
-								{/each}
-							</ul>
-						{/if}
 					</div>
 				{/snippet}
 			</ResourceBoundary>
@@ -878,6 +889,55 @@
 	@media (min-width: 640px) {
 		.route-periods {
 			grid-template-columns: repeat(auto-fit, minmax(min(14rem, 100%), 1fr));
+		}
+	}
+
+	/* ── SCHEDULE pane: 2-column-when-it-fits (@container) ──────────────────────
+	   container-type rides this PARENT wrapper; the grid below targets its
+	   DESCENDANT .route-schedule-grid — NEVER this same element (the self-target
+	   trap). Below the threshold the grid stays a single stacked column; at ≥40rem
+	   of CONTAINER width it splits into LEFT (service-span / first-last) + RIGHT
+	   (the .route-periods grid), using the inset pane's own width, not the
+	   viewport. */
+	.route-schedule-cq {
+		container-type: inline-size;
+		container-name: route-schedule;
+	}
+	.route-schedule-span {
+		display: flex;
+		flex-direction: column;
+		gap: 1.25rem;
+	}
+	.route-schedule-periods {
+		display: flex;
+		flex-direction: column;
+		gap: 1.25rem;
+	}
+	@container route-schedule (min-width: 40rem) {
+		.route-schedule-grid {
+			display: grid;
+			grid-template-columns: minmax(0, 18rem) minmax(0, 1fr);
+			gap: 1.5rem 2rem;
+			align-items: start;
+		}
+	}
+
+	/* ── DETAIL pane: both directions side-by-side when the inset pane is wide ──
+	   container-type rides .route-directions-pane (the PARENT); the grid targets
+	   its DESCENDANT .route-directions list. At ≥44rem of CONTAINER width the two
+	   directions lay side-by-side (auto-fit collapses to a single column when only
+	   one direction exists, so a single-direction route never gets a lonely half
+	   column). Drives off the inset detail pane's width, not the viewport. */
+	.route-directions-pane {
+		container-type: inline-size;
+		container-name: route-directions;
+	}
+	@container route-directions (min-width: 44rem) {
+		.route-directions {
+			display: grid;
+			grid-template-columns: repeat(auto-fit, minmax(min(20rem, 100%), 1fr));
+			gap: 1.5rem 2rem;
+			align-items: start;
 		}
 	}
 	@media (max-width: 520px) {
