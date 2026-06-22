@@ -17,6 +17,7 @@
   (detailCopy[locale].occupancyBands) so the vocabulary stays DRY across surfaces.
 -->
 <script lang="ts">
+	import { fmtDelayMin as sharedFmtDelayMin } from '$lib/utils';
 	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
 	import MetricDisplay from '$lib/components/brand/MetricDisplay.svelte';
 	import { StackedBar, type StackedSegment } from '$lib/components/dataviz';
@@ -103,7 +104,7 @@
 	   avg_delay is null, renders the explicit no-data message — NEVER a "·" or a
 	   fake 0. Honest per-band absence is the explicit requirement. */
 	const fmtMin = (v: number | null | undefined): string | null =>
-		v == null ? null : `${v.toFixed(1)} min`;
+		sharedFmtDelayMin(v, { rounding: 'fixed1' });
 
 	// Index the sparse contract cells by band so the fixed-axis lookup is O(1). A
 	// plain record (not a Map) keeps this a pure derived value with no reactivity.

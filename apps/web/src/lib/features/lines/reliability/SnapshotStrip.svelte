@@ -30,6 +30,7 @@
 -->
 <script lang="ts">
 	import type { Locale } from '$lib/i18n';
+	import { fmtDelayMin as sharedFmtDelayMin, fmtPct as sharedFmtPct } from '$lib/utils';
 	import { MetricDisplay } from '$lib/components/brand';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
 	import { metricInfoFor, type MetricKey } from '$lib/features/metrics/metrics.content';
@@ -64,11 +65,11 @@
 
 	/** Format a nullable integer-ish percent as "82 %"/"82%", else null (no-data). */
 	const fmtPct = (v: number | null): string | null =>
-		v == null ? null : `${v.toLocaleString(nf)}${locale === 'fr' ? ' %' : '%'}`;
+		sharedFmtPct(v, { locale, suffix: locale === 'fr' ? ' %' : '%' });
 
 	/** Format a nullable minute delay as "3.2 min", else null (no-data). */
 	const fmtMin = (v: number | null): string | null =>
-		v == null ? null : `${v.toLocaleString(nf, { maximumFractionDigits: 1 })} min`;
+		sharedFmtDelayMin(v, { rounding: 'auto', locale });
 
 	/** Format the headway CoV as a 2-dp ratio, else null (no-data). */
 	const fmtCov = (v: number | null): string | null =>

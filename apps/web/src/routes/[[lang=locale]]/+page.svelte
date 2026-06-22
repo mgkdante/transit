@@ -41,6 +41,7 @@
 	import { getV1Context, createLiveStore } from '$lib/v1';
 	import { openSurface, type SurfaceTarget } from '$lib/nav';
 	import { ageSeconds, formatRelativeSeconds } from '$lib/utils/time';
+	import { fmtCount as sharedFmtCount, fmtPct as sharedFmtPct } from '$lib/utils';
 	import { sharedClock } from '$lib/stores';
 	import SectionHeading from '$lib/components/brand/SectionHeading.svelte';
 	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
@@ -116,11 +117,11 @@
 	// honest absence reading consistent with the null-aware MetricDisplay.
 	/** Nullable percent → "82%" or null (→ MetricDisplay's no-data state). */
 	function fmtPct(v: number | null | undefined): string | null {
-		return v == null ? null : `${v}${T[locale].pct}`;
+		return sharedFmtPct(v, { suffix: T[locale].pct });
 	}
 	/** A required count → localized integer, or null before the first tick. */
 	function fmtCount(v: number | null | undefined): string | null {
-		return v == null ? null : v.toLocaleString(locale === 'fr' ? 'fr-CA' : 'en-CA');
+		return sharedFmtCount(v, { locale });
 	}
 
 	type CopyKey =

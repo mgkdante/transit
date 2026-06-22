@@ -18,6 +18,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { getLocale, localizeHref } from '$lib/i18n';
+	import { fmtDelayMin as sharedFmtDelayMin } from '$lib/utils';
 	import { mapHrefFor, routeFor } from '$lib/nav';
 	import {
 		createLiveStore,
@@ -285,7 +286,7 @@
 	// dedicated 9.6 clustered surface (RouteReliabilityClusters) — it owns its own
 	// formatting + the snapshot strip + 5 cluster bands off the same archive.
 	const fmtMin = (v: number | null | undefined): string | null =>
-		v == null ? null : `${v.toFixed(1)} min`;
+		sharedFmtDelayMin(v, { rounding: 'fixed1' });
 
 	const stopHref = (stopId: string): string =>
 		localizeHref(routeFor({ kind: 'stop', id: stopId }), locale);

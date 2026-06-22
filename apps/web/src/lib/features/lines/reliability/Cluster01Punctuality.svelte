@@ -31,6 +31,7 @@
 -->
 <script lang="ts">
 	import type { Locale } from '$lib/i18n';
+	import { fmtDelayMin, fmtPct } from '$lib/utils';
 	import type { ReliabilityPeriod } from '$lib/v1';
 	import type { SeverityCode } from '$lib/v1/schemas';
 	import MetricDisplay from '$lib/components/brand/MetricDisplay.svelte';
@@ -84,9 +85,9 @@
 
 	// Honest absence → null (MetricDisplay renders the muted no-data label); a real
 	// value speaks the amber metric voice. Never a bare "·", never a fabricated 0.
-	const fmtPct = (v: number | null | undefined): string | null => (v == null ? null : `${v}%`);
-	const fmtMin = (v: number | null | undefined): string | null =>
-		v == null ? null : `${v.toFixed(1)} min`;
+	const pct = (v: number | null | undefined): string | null => fmtPct(v);
+	const min = (v: number | null | undefined): string | null =>
+		fmtDelayMin(v, { rounding: 'fixed1' });
 
 	// OTP trend SHAPE across the dated day series (chronological ascending): green
 	// OTP %, amber avg-delay retard. The x-axis carries real ISO dates, never the
@@ -129,7 +130,7 @@
 				title: w.name ?? w.id,
 				severity: sev,
 				value: worst > 0 ? Math.min(1, Math.max(0, delay / worst)) : null,
-				display: fmtMin(w.avg_delay_min) ?? copy.strip.noData,
+				display: min(w.avg_delay_min) ?? copy.strip.noData,
 			};
 		});
 	});
@@ -183,7 +184,7 @@
 					title: label(r.grain),
 					severity: severeShareToSeverity(r.severePct),
 					value: worst > 0 ? Math.min(1, Math.max(0, sev / worst)) : null,
-					display: fmtPct(r.severePct) ?? copy.strip.noData,
+					display: pct(r.severePct) ?? copy.strip.noData,
 				};
 			});
 	}
@@ -200,7 +201,6 @@
 	   resolved against an index — an absent (shift, day_type) cell, OR a present cell
 	   whose otp_pct is null, renders the explicit no-data message. NEVER a "·" or a
 	   fabricated 0. This per-empty-cell honesty is the explicit requirement. */
-	const fmtPctXt = (v: number | null | undefined): string | null => (v == null ? null : `${v}%`);
 	// Index the sparse cells by "shift|day_type" for O(1) grid lookup. A plain record
 	// (not a Map) keeps this a pure derived value with no reactivity.
 	const crosstabIndex = $derived.by(() => {
@@ -217,8 +217,8 @@
 			label: shiftLabel(shift),
 			cells: DAY_TYPE_GRAIN_ORDER.map((dayType) => {
 				const cell = crosstabIndex[`${shift}|${dayType}`];
-				const otp = fmtPctXt(cell?.otp_pct);
-				const avgDelay = fmtMin(cell?.avg_delay_min);
+				const otp = pct(cell?.otp_pct);
+				const avgDelay = min(cell?.avg_delay_min);
 				return {
 					dayType,
 					present: cell != null,
@@ -264,7 +264,7 @@
 		<div class="cluster-headline">
 			<div class="metric-with-info">
 				<MetricDisplay
-					value={fmtPct(headline?.otp_pct)}
+					value={pct(headline?.otp_pct)}
 					emptyLabel={copy.strip.noData}
 					label={copy.strip.otpPct}
 					size="lg"
@@ -273,7 +273,7 @@
 			</div>
 			<div class="metric-with-info">
 				<MetricDisplay
-					value={fmtMin(headline?.avg_delay_min)}
+					value={min(headline?.avg_delay_min)}
 					emptyLabel={copy.strip.noData}
 					label={copy.strip.avgDelayMin}
 					size="md"
@@ -282,7 +282,7 @@
 			</div>
 			<div class="metric-with-info">
 				<MetricDisplay
-					value={fmtMin(headline?.p50_min)}
+					value={min(headline?.p50_min)}
 					emptyLabel={copy.strip.noData}
 					label={copy.strip.p50Min}
 					sublabel={copy.strip.p50Caption}
@@ -292,7 +292,7 @@
 			</div>
 			<div class="metric-with-info">
 				<MetricDisplay
-					value={fmtMin(headline?.p90_min)}
+					value={min(headline?.p90_min)}
 					emptyLabel={copy.strip.noData}
 					label={copy.strip.p90Min}
 					sublabel={copy.strip.p90Caption}
@@ -336,7 +336,7 @@
 					{@render metricInfo('severe', copy.strip.severePct)}
 				</span>
 				<span class="cluster-block-value" class:cluster-block-value--empty={severePct == null}
-					>{fmtPct(severePct) ?? copy.strip.noData}</span
+					>{pct(severePct) ?? copy.strip.noData}</span
 				>
 			</div>
 			<SeverityBar
