@@ -43,6 +43,16 @@ export type { KpiCardProps } from './KpiCard.svelte';
 export { default as BulletKpi } from './BulletKpi.svelte';
 export type { BulletKpiProps } from './BulletKpi.svelte';
 
+// Distribution / deviation / discrete-outcome marks (slice-S3).
+export { default as StripPlot } from './StripPlot.svelte';
+export type { StripPlotProps } from './StripPlot.svelte';
+
+export { default as DivergingBar } from './DivergingBar.svelte';
+export type { DivergingBarProps } from './DivergingBar.svelte';
+
+export { default as IconArray } from './IconArray.svelte';
+export type { IconArrayProps, IconArraySegment } from './IconArray.svelte';
+
 export { default as ChartTooltip } from './ChartTooltip.svelte';
 export type { ChartTooltipProps } from './ChartTooltip.svelte';
 
