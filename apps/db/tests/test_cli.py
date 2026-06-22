@@ -267,6 +267,7 @@ def test_retention_proof_report_passes_provider_and_writes_report(
         "build_retention_proof_report",
         fake_build_retention_proof_report,
     )
+    monkeypatch.setattr(cli_module, "_skip_if_unseeded", lambda *a, **k: False)
 
     result = runner.invoke(
         app,
@@ -296,6 +297,7 @@ def test_retention_proof_report_bad_report_path_exits_before_build(
         "build_retention_proof_report",
         fake_build_retention_proof_report,
     )
+    monkeypatch.setattr(cli_module, "_skip_if_unseeded", lambda *a, **k: False)
 
     result = runner.invoke(
         app,
@@ -548,6 +550,7 @@ def test_prune_i3_storage_dry_run_flag(monkeypatch) -> None:
         )
 
     monkeypatch.setattr(cli_module, "prune_i3_storage", fake_prune_i3_storage)
+    monkeypatch.setattr(cli_module, "_skip_if_unseeded", lambda *a, **k: False)
 
     result = runner.invoke(app, ["prune-i3-storage", "stm", "--dry-run"])
 
@@ -670,6 +673,7 @@ def test_prune_bronze_storage_dry_run_flag(monkeypatch) -> None:
         return _bronze_prune_cli_result(provider_id, dry_run)
 
     monkeypatch.setattr(cli_module, "prune_bronze_storage", fake_prune_bronze_storage)
+    monkeypatch.setattr(cli_module, "_skip_if_unseeded", lambda *a, **k: False)
 
     result = runner.invoke(app, ["prune-bronze-storage", "stm", "--dry-run"])
 
@@ -690,6 +694,7 @@ def test_prune_bronze_storage_passes_max_objects_and_max_batches(monkeypatch) ->
         return _bronze_prune_cli_result(provider_id, dry_run)
 
     monkeypatch.setattr(cli_module, "prune_bronze_storage", fake_prune_bronze_storage)
+    monkeypatch.setattr(cli_module, "_skip_if_unseeded", lambda *a, **k: False)
 
     result = runner.invoke(
         app,
@@ -714,6 +719,7 @@ def test_prune_bronze_storage_exits_nonzero_when_r2_deletes_failed(monkeypatch) 
         )
 
     monkeypatch.setattr(cli_module, "prune_bronze_storage", fake_prune_bronze_storage)
+    monkeypatch.setattr(cli_module, "_skip_if_unseeded", lambda *a, **k: False)
 
     live_result = runner.invoke(app, ["prune-bronze-storage", "stm"])
     assert live_result.exit_code == 1
@@ -948,6 +954,7 @@ def test_prune_warm_rollup_storage_dry_run_flag(monkeypatch) -> None:
         )
 
     monkeypatch.setattr(cli_module, "prune_warm_rollup_storage", fake_prune_warm_rollup_storage)
+    monkeypatch.setattr(cli_module, "_skip_if_unseeded", lambda *a, **k: False)
 
     result = runner.invoke(app, ["prune-warm-rollup-storage", "stm", "--dry-run"])
 
@@ -1315,3 +1322,126 @@ def test_replay_realtime_silver_empty_window_is_clean_noop(monkeypatch) -> None:
     assert payload["snapshots_found"] == 0
     assert payload["gold"] is None
     assert "elapsed_seconds" in payload
+
+
+# ---------------------------------------------------------------------------
+# Unseeded-provider seed guard — every per-provider Daily Warm Rollups entry
+# point must SKIP an enrolled-but-unseeded provider (no gold.dim_provider row)
+# cleanly (exit 0) instead of crashing the all-providers run.
+# ---------------------------------------------------------------------------
+
+
+class _FakeConnCtx:
+    def __enter__(self):
+        return SimpleNamespace()
+
+    def __exit__(self, *exc):  # noqa: ANN002
+        return False
+
+
+class _FakeEngine:
+    def connect(self):
+        return _FakeConnCtx()
+
+
+def _stub_unseeded(monkeypatch, *, seeded: bool) -> None:
+    """Force the seed probe without touching a real database.
+
+    make_engine is stubbed so no DATABASE_URL is required; provider_is_seeded
+    is stubbed to the desired verdict.
+    """
+    monkeypatch.setattr(cli_module, "make_engine", lambda settings: _FakeEngine())
+    monkeypatch.setattr(cli_module, "provider_is_seeded", lambda conn, provider_id: seeded)
+
+
+def test_prune_i3_storage_skips_unseeded_provider(monkeypatch) -> None:
+    _stub_unseeded(monkeypatch, seeded=False)
+
+    def fail(*args, **kwargs):  # noqa: ANN002, ANN003
+        raise AssertionError("prune_i3_storage must not run for an unseeded provider")
+
+    monkeypatch.setattr(cli_module, "prune_i3_storage", fail)
+
+    result = runner.invoke(app, ["prune-i3-storage", "octranspo"])
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload["skipped_not_seeded"] is True
+    assert payload["provider_id"] == "octranspo"
+    assert payload["step"] == "prune-i3-storage"
+
+
+def test_prune_bronze_storage_skips_unseeded_provider(monkeypatch) -> None:
+    _stub_unseeded(monkeypatch, seeded=False)
+
+    def fail(*args, **kwargs):  # noqa: ANN002, ANN003
+        raise AssertionError("prune_bronze_storage must not run for an unseeded provider")
+
+    monkeypatch.setattr(cli_module, "prune_bronze_storage", fail)
+
+    result = runner.invoke(app, ["prune-bronze-storage", "octranspo"])
+
+    assert result.exit_code == 0
+    assert json.loads(result.stdout)["skipped_not_seeded"] is True
+
+
+def test_prune_warm_rollup_storage_skips_unseeded_provider(monkeypatch) -> None:
+    _stub_unseeded(monkeypatch, seeded=False)
+
+    def fail(*args, **kwargs):  # noqa: ANN002, ANN003
+        raise AssertionError("prune_warm_rollup_storage must not run for an unseeded provider")
+
+    monkeypatch.setattr(cli_module, "prune_warm_rollup_storage", fail)
+
+    result = runner.invoke(app, ["prune-warm-rollup-storage", "octranspo"])
+
+    assert result.exit_code == 0
+    assert json.loads(result.stdout)["skipped_not_seeded"] is True
+
+
+def test_retention_proof_report_skips_unseeded_provider(monkeypatch) -> None:
+    _stub_unseeded(monkeypatch, seeded=False)
+
+    def fail(*args, **kwargs):  # noqa: ANN002, ANN003
+        raise AssertionError("build_retention_proof_report must not run for an unseeded provider")
+
+    monkeypatch.setattr(cli_module, "build_retention_proof_report", fail)
+
+    result = runner.invoke(app, ["retention-proof-report", "octranspo"])
+
+    assert result.exit_code == 0
+    assert json.loads(result.stdout)["skipped_not_seeded"] is True
+
+
+def test_publish_all_skips_unseeded_and_publishes_seeded(monkeypatch) -> None:
+    """publish-all must skip unseeded providers and still publish seeded ones,
+    so the all-providers historic publish never fails on an unseeded provider."""
+    seeded_set = {"stm"}
+    published: list[str] = []
+
+    monkeypatch.setattr(cli_module, "make_engine", lambda settings: _FakeEngine())
+    monkeypatch.setattr(
+        cli_module,
+        "provider_is_seeded",
+        lambda conn, provider_id: provider_id in seeded_set,
+    )
+    monkeypatch.setattr(
+        cli_module,
+        "_provider_registry",
+        lambda settings: SimpleNamespace(list_provider_ids=lambda: ["octranspo", "stm"]),
+    )
+
+    def fake_publish_snapshot(provider_id, *, tier, settings, registry):  # noqa: ANN001
+        published.append(provider_id)
+        return SimpleNamespace(display_dict=lambda: {"provider_id": provider_id, "tier": tier})
+
+    monkeypatch.setattr(cli_module, "publish_snapshot", fake_publish_snapshot)
+
+    result = runner.invoke(app, ["publish-all", "--tier", "historic"])
+
+    assert result.exit_code == 0
+    # Unseeded octranspo skipped; seeded stm published.
+    assert published == ["stm"]
+    assert "publish-all skipped unseeded providers: octranspo" in result.stderr
+    payload = json.loads(result.stdout)
+    assert [r["provider_id"] for r in payload] == ["stm"]

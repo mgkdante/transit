@@ -65,6 +65,20 @@ class ScalarResult:
         return self.value
 
 
+class ScalarOrNoneResult:
+    """Result for the cheap provider_is_seeded EXISTS probe.
+
+    scalar_one_or_none() returns 1 when the provider has a gold.dim_provider
+    row, None when it does not (the enrolled-but-unseeded case).
+    """
+
+    def __init__(self, value: int | None) -> None:
+        self.value = value
+
+    def scalar_one_or_none(self) -> int | None:
+        return self.value
+
+
 class IterableResult:
     def __init__(self, rows: list) -> None:
         self.rows = rows
@@ -85,15 +99,25 @@ class FakeConnection:
         vehicle_periods: list[datetime] | None = None,
         trip_delay_periods: list[datetime] | None = None,
         occupancy_periods: list[datetime] | None = None,
+        seeded: bool = True,
     ) -> None:
         self.vehicle_periods = vehicle_periods or []
         self.trip_delay_periods = trip_delay_periods or []
         self.occupancy_periods = occupancy_periods or []
+        # Default seeded=True so every pre-existing test exercises the normal
+        # (gold.dim_provider row present) path EXACTLY as before.
+        self.seeded = seeded
         self.executed: list[str] = []
 
     def execute(self, statement, params=None):  # noqa: ANN001
         sql = str(statement)
         self.executed.append(sql)
+
+        # Cheap provider_is_seeded EXISTS probe (SELECT 1 ... LIMIT 1). Shares
+        # the gold.dim_provider table but, unlike the calendar read below, has no
+        # "AT TIME ZONE" — match it FIRST so it never falls through to that branch.
+        if "gold.dim_provider" in sql and "AT TIME ZONE" not in sql and "LIMIT 1" in sql:
+            return ScalarOrNoneResult(1 if self.seeded else None)
 
         # Provider-local "today" read that anchors the append-only daily-builder
         # snapshot_date_key window.
@@ -352,6 +376,73 @@ def test_build_warm_rollups_empty_facts_is_noop() -> None:
     assert result.built_route_service_span_days == 0
     assert result.built_route_skipped_stop_days == 0
     assert isinstance(result.completed_at_utc, datetime)
+
+
+def test_provider_is_seeded_true_when_dim_provider_row_present() -> None:
+    """The EXISTS probe returns True when scalar_one_or_none yields a row."""
+    conn = FakeConnection(seeded=True)
+
+    assert rollups.provider_is_seeded(conn, "stm") is True
+    probe = conn.executed[-1]
+    assert "gold.dim_provider" in probe
+    assert "LIMIT 1" in probe
+    # Never the crash-prone scalar_one calendar read.
+    assert "AT TIME ZONE" not in probe
+
+
+def test_provider_is_seeded_false_when_dim_provider_row_absent() -> None:
+    """An enrolled-but-unseeded provider (no dim_provider row) probes False —
+    WITHOUT raising (scalar_one_or_none, never scalar_one)."""
+    conn = FakeConnection(seeded=False)
+
+    assert rollups.provider_is_seeded(conn, "octranspo") is False
+
+
+def test_build_warm_rollups_skips_unseeded_provider_cleanly() -> None:
+    """The crash-site guard: an enrolled-but-unseeded provider must return a
+    skipped result (NOT raise NoResultFound on the dp.timezone calendar read)
+    so the all-providers Daily Warm Rollups run never aborts on it."""
+    conn = FakeConnection(
+        vehicle_periods=[datetime(2026, 3, 25, 12, 0, tzinfo=UTC)],
+        seeded=False,
+    )
+    engine = FakeEngine(conn)
+
+    result = build_warm_rollups("octranspo", engine=engine)
+
+    assert isinstance(result, WarmRollupBuildResult)
+    assert result.provider_id == "octranspo"
+    assert result.skipped_not_seeded is True
+    assert result.display_dict()["skipped_not_seeded"] is True
+    # Nothing was built or rebuilt.
+    assert result.built_vehicle_periods == 0
+    assert result.built_trip_delay_periods == 0
+    assert result.reporting_aggregate_row_counts == {}
+
+    # The function short-circuited after the seed probe: it never ran the
+    # calendar read, any 5m upsert, or any reporting-aggregate DELETE/INSERT.
+    assert all("AT TIME ZONE" not in s for s in conn.executed)
+    assert all("INSERT INTO gold.vehicle_summary_5m" not in s for s in conn.executed)
+    assert all("DELETE FROM gold." not in s for s in conn.executed)
+
+
+def test_build_warm_rollups_seeded_provider_unchanged_regression() -> None:
+    """Regression guard: a SEEDED provider builds EXACTLY as before — the seed
+    probe is a transparent pass-through, never a skip."""
+    periods = [
+        datetime(2026, 3, 25, 12, 0, tzinfo=UTC),
+        datetime(2026, 3, 25, 12, 5, tzinfo=UTC),
+    ]
+    conn = FakeConnection(vehicle_periods=periods, seeded=True)
+    engine = FakeEngine(conn)
+
+    result = build_warm_rollups("stm", engine=engine)
+
+    assert result.skipped_not_seeded is False
+    assert result.built_vehicle_periods == 2
+    # Seeded path still runs the calendar read and the reporting-aggregate rebuild.
+    assert any("AT TIME ZONE" in s for s in conn.executed)
+    assert result.reporting_aggregate_row_counts == dict(BUILD_REPORTING_AGGREGATE_ROWCOUNTS)
 
 
 def test_build_warm_rollups_rebuilds_reporting_aggregate_marts() -> None:
