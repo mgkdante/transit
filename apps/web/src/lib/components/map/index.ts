@@ -47,7 +47,9 @@ export {
 	createVehicleMotionController,
 	interpolateVehicleFeatures,
 	type VehicleMotionController,
+	type ShapeResolver,
 } from './vehicleMotion';
+export type { Coord } from './polyline';
 
 export { addStopsSource, addStopsLayer, setStops, STOPS_SOURCE, STOPS_LAYER } from './stopsLayer';
 export {

@@ -28,8 +28,15 @@ vi.mock('$lib/motion/utils/gsap', () => ({
 }));
 
 import type { Map as MapLibreMap } from 'maplibre-gl';
-import { createVehicleMotionController, interpolateVehicleFeatures } from './vehicleMotion';
+import {
+	buildMotionPlans,
+	clampDurationSec,
+	createVehicleMotionController,
+	interpolateVehicleFeatures,
+	type ShapeResolver,
+} from './vehicleMotion';
 import { VEHICLE_SOURCE, type VehicleFC } from './vehicleLayer';
+import type { Coord } from './polyline';
 
 const from = {
 	type: 'FeatureCollection',
@@ -271,5 +278,153 @@ describe('createVehicleMotionController', () => {
 
 		c.destroy();
 		expect(tween?.killed).toBe(true);
+	});
+
+	it('(L2) tween duration spans the supplied inter-fix interval (clamped)', () => {
+		const { map } = stubMap();
+		const c = createVehicleMotionController(map);
+		c.set(fc(-73.6, 45.5), { tickKey: 't1', animate: true }); // snap baseline
+		c.set(fc(-73.5, 45.6), { tickKey: 't2', animate: true, durationSec: 31 });
+		expect(lastTween?.duration).toBe(31);
+	});
+
+	it('(L2) does NOT extrapolate past t=1 — onComplete snaps EXACTLY to the real target', () => {
+		const { map, setData } = stubMap();
+		let nowMs = 1000;
+		vi.spyOn(performance, 'now').mockImplementation(() => nowMs);
+		const c = createVehicleMotionController(map);
+		c.set(fc(-73.6, 45.5), { tickKey: 't1', animate: true });
+		c.set(fc(-73.5, 45.6), { tickKey: 't2', animate: true, durationSec: 30 });
+		const tween = lastTween!;
+		setData.mockClear();
+
+		// Even if a frame overshoots progress (>1), interpolation clamps to t=1:
+		// the bus lands on the real target, never beyond it.
+		tween.progress.value = 1.4;
+		nowMs += 100;
+		tween.onUpdate?.();
+		expect(lastSetLon(setData)).toBe(-73.5); // clamped to the real fix, not past it
+
+		tween.progress.value = 1;
+		tween.onComplete?.();
+		expect(lastSetLon(setData)).toBe(-73.5);
+	});
+});
+
+describe('clampDurationSec', () => {
+	it('passes a sane interval through unchanged', () => {
+		expect(clampDurationSec(30)).toBe(30);
+	});
+	it('floors a too-short interval and ceils a too-long one', () => {
+		expect(clampDurationSec(0.5)).toBe(4);
+		expect(clampDurationSec(120)).toBe(45);
+	});
+	it('falls back to the default for missing / non-finite input', () => {
+		expect(clampDurationSec(undefined)).toBe(28);
+		expect(clampDurationSec(Number.NaN)).toBe(28);
+	});
+});
+
+// --- L1 path-follow + L3 travel-direction heading ----------------------------
+
+/** A one-bus FC at lon/lat on route '161' with an explicit feed bearing. */
+function fcRoute(lon: number, lat: number, bearing: number): VehicleFC {
+	return {
+		type: 'FeatureCollection',
+		features: [
+			{
+				type: 'Feature',
+				geometry: { type: 'Point', coordinates: [lon, lat] },
+				properties: {
+					id: '40061',
+					body: 'bus',
+					bearing,
+					hasHeading: 1,
+					route: '161',
+					selected: 0,
+					hovered: 0,
+					matched: 1,
+					opacity: 1,
+					silenceAgeS: 0,
+				},
+			},
+		],
+	};
+}
+
+// A right-angle route shape: east leg then north leg (same as polyline tests).
+const ROUTE_SHAPE: Coord[] = [
+	[-73.6, 45.5],
+	[-73.58, 45.5],
+	[-73.58, 45.52],
+];
+const shapeResolver: ShapeResolver = () => ROUTE_SHAPE;
+
+describe('path-follow + travel-direction heading (L1/L3)', () => {
+	it('(L1) walks ALONG the shape, not the straight chord, at the midpoint', () => {
+		const fromFc = fcRoute(-73.599, 45.5, 999); // near the start of the east leg
+		const toFc = fcRoute(-73.58, 45.519, 999); // near the top of the north leg
+		const plans = buildMotionPlans(fromFc, toFc, shapeResolver);
+		const mid = interpolateVehicleFeatures(fromFc, toFc, 0.5, plans);
+		const lon = mid.features[0].geometry.coordinates[0];
+		// The straight chord midpoint lon would be ~-73.5895; the path hugs the L
+		// corner, so its lon is EAST of that — provably following the shape.
+		expect(lon).toBeGreaterThan(-73.5895);
+	});
+
+	it('(L3) heading comes from the path TANGENT, not the noisy feed bearing', () => {
+		// On the north leg the bus travels north (~0°), even though the feed claims
+		// a bogus 999 bearing. Sample near t=1 (well into the north leg).
+		const fromFc = fcRoute(-73.58, 45.505, 999);
+		const toFc = fcRoute(-73.58, 45.519, 999);
+		const plans = buildMotionPlans(fromFc, toFc, shapeResolver);
+		const sample = interpolateVehicleFeatures(fromFc, toFc, 0.9, plans);
+		const b = sample.features[0].properties.bearing;
+		expect(b < 5 || b > 355).toBe(true); // due north, from travel direction
+	});
+
+	it('(L3) chord-only heading (no shape) uses the direction of travel', () => {
+		// No resolver → no path; the bus moves due east, so heading ≈ 90° even
+		// though the feed bearing is a bogus 250.
+		const fromFc = fcRoute(-73.6, 45.5, 250);
+		const toFc = fcRoute(-73.58, 45.5, 250);
+		const plans = buildMotionPlans(fromFc, toFc); // no shapeResolver
+		const sample = interpolateVehicleFeatures(fromFc, toFc, 0.5, plans);
+		expect(sample.features[0].properties.bearing).toBeCloseTo(90, 0);
+	});
+
+	it('(L3) falls back to the FEED bearing at zero motion (stationary bus)', () => {
+		// from === to → no travel direction; keep the honest feed bearing.
+		const stillFc = fcRoute(-73.6, 45.5, 137);
+		const plans = buildMotionPlans(stillFc, stillFc, shapeResolver);
+		const sample = interpolateVehicleFeatures(stillFc, stillFc, 0.5, plans);
+		expect(sample.features[0].properties.bearing).toBe(137);
+		// And it does not drift.
+		expect(sample.features[0].geometry.coordinates).toEqual([-73.6, 45.5]);
+	});
+
+	it('(L1) falls back to the chord when the bus is far off every shape', () => {
+		// `to` is ~5 km north of the route → buildPathBetween returns null → chord.
+		const fromFc = fcRoute(-73.599, 45.5, 250);
+		const toFc = fcRoute(-73.58, 45.6, 250);
+		const plans = buildMotionPlans(fromFc, toFc, shapeResolver);
+		const mid = interpolateVehicleFeatures(fromFc, toFc, 0.5, plans);
+		// Straight-chord midpoint (lerp of the two fixes), NOT a shape point.
+		expect(mid.features[0].geometry.coordinates).toEqual([-73.5895, 45.55]);
+	});
+
+	it('reduced-motion path is inert: animate=false snaps to the exact target (no tween, no path)', () => {
+		lastTween = null;
+		const { map, setData } = stubMap();
+		const c = createVehicleMotionController(map);
+		c.set(fcRoute(-73.6, 45.5, 10), {
+			tickKey: 't1',
+			animate: false,
+			shapeFor: shapeResolver,
+			durationSec: 30,
+		});
+		expect(lastTween).toBeNull(); // no tween under reduced motion
+		expect(setData).toHaveBeenCalledTimes(1);
+		expect(lastSetLon(setData)).toBe(-73.6); // exact target, no path sampling
 	});
 });
