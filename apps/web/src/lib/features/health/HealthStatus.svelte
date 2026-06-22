@@ -32,10 +32,9 @@
 -->
 <script lang="ts">
 	import { getLocale, type Locale } from '$lib/i18n';
-	import { getProvenance, type Provenance } from '$lib/v1';
+	import { getProvenance, freshnessRelative, type Provenance } from '$lib/v1';
 	import { createResource } from '$lib/v1/resource.svelte';
-	import { sharedClock } from '$lib/stores';
-	import { formatRelativeSeconds, ageSeconds as ageSecondsOf } from '$lib/utils/time';
+	import { formatRelativeSeconds } from '$lib/utils/time';
 	import { METHODOLOGY_METRIC_KEY } from '$lib/features/metrics/metrics.content';
 	import { Surface } from '$lib/components/layout';
 	import {
@@ -43,6 +42,7 @@
 		ConformanceBadge,
 		ResourceBoundary,
 		EntityList,
+		FreshnessStamp,
 	} from '$lib/components/surface';
 	import { Separator } from '$lib/components/ui/separator';
 	import { CollapsibleSection } from '$lib/components/shared';
@@ -57,28 +57,11 @@
 	// The honesty manifest. The WHOLE surface is this one document, so unlike the
 	// supplementary ConformanceBadge elsewhere, here the fetch IS the surface — we
 	// gate it behind ResourceBoundary (skeleton/error/empty) rather than rendering
-	// nothing on failure.
-	const provenance = createResource(() => getProvenance());
-
-	// Keep the shared clock ticking while this surface is on screen so the "as of"
-	// stamp + every relative age advance in lockstep with the rest of the chrome.
-	$effect(() => sharedClock.subscribe());
-
-	// --- neutral "Updated N ago" stamp from generated_utc --------------------
-	// provenance.json is a ONCE-DAILY document, NOT a live feed: we deliberately
-	// do NOT reuse the live-tier LiveFreshness chip (its hardcoded "LIVE" label +
-	// pulsing green dot would falsely imply this page is live). Instead a calm
-	// "Updated {age}" relative stamp off generated_utc — a non-pulsing neutral dot
-	// + the humanized age, never "LIVE"/"stale". generated_utc is contract-required
-	// (the resource only renders past the boundary); a NaN age falls back to the
-	// localized no-age note rather than a fabricated value.
-	function updatedStamp(generatedUtc: string): string {
-		// serverNow: generated_utc is server time, so anchor the age to the
-		// server-corrected clock — a skewed client clock must not mis-stamp it.
-		const s = ageSecondsOf(generatedUtc, sharedClock.serverNow);
-		const age = Number.isNaN(s) ? t.freshness.noAge : formatRelativeSeconds(s, locale);
-		return t.updated(age);
-	}
+	// nothing on failure. `freshness: true` contributes provenance.generated_utc to
+	// the shared site-wide newest-data timestamp AND, via dataRefresh.epoch, this
+	// resource RE-RUNS on a new publish (dataPulse bumps the epoch) — so /status
+	// AUTO-REFRESHES to the upmost-latest data with no per-page polling.
+	const provenance = createResource(() => getProvenance(), { freshness: true });
 
 	// --- per-feed freshness verdict ------------------------------------------
 	// freshness[].status is the LAST INGESTION-RUN status (succeeded/failed/
@@ -105,12 +88,13 @@
 		return ageS == null ? t.freshness.noAge : formatRelativeSeconds(ageS, locale);
 	}
 
-	/** Relative last-loaded stamp from an ISO string, or the localized fallback. */
+	/**
+	 * Relative last-loaded stamp from an ISO string, or the localized fallback.
+	 * Routed through the ONE centralized server-anchored, shared-tick derivation
+	 * (freshnessRelative) so this per-source age uses the same math as every stamp.
+	 */
 	function lastLoaded(iso: string | null | undefined): string {
-		if (!iso) return t.sources.neverLoaded;
-		// serverNow: last_loaded_utc is a server timestamp — server-anchor the age.
-		const s = ageSecondsOf(iso, sharedClock.serverNow);
-		return Number.isNaN(s) ? t.sources.neverLoaded : formatRelativeSeconds(s, locale);
+		return freshnessRelative(iso, locale) ?? t.sources.neverLoaded;
 	}
 
 	// --- section presence guards ---------------------------------------------
@@ -192,17 +176,14 @@
 			{@const pipelineNotes = pipelineNotesOf(prov)}
 			{@const hasRetention = retention.detail != null || retention.aggregate != null}
 
-			<!-- Neutral "Updated N ago" stamp — a non-pulsing dot + relative age of the
-			     once-daily generated_utc. Deliberately NOT the live-tier LiveFreshness
-			     chip (no "LIVE"/"EN DIRECT", no pulse): this document is daily, not live. -->
+			<!-- UPMOST-LATEST stamp — the shared FreshnessStamp (variant="updated"): a
+			     calm non-pulsing neutral "Updated N ago" off this daily document's
+			     generated_utc. Deliberately NOT the live chip (no "LIVE"/pulse). The
+			     surface AUTO-REFRESHES: dataPulse bumps the epoch on a new publish, the
+			     provenance resource re-runs, and this stamp advances with it. -->
 			<div class="health-asof" data-slot="health-asof">
 				<span class="health-asof-label">{t.asOf}</span>
-				<span class="health-asof-stamp">
-					<StatusDot color="unknown" aria-hidden="true" />
-					<time class="health-asof-age" datetime={prov.generated_utc}>
-						{updatedStamp(prov.generated_utc)}
-					</time>
-				</span>
+				<FreshnessStamp variant="updated" generatedUtc={prov.generated_utc} {locale} />
 			</div>
 
 			<!-- ── Per-feed freshness ─────────────────────────────────────────── -->
@@ -398,16 +379,6 @@
 		letter-spacing: 1px;
 		text-transform: uppercase;
 		color: var(--muted-foreground);
-	}
-	.health-asof-stamp {
-		display: inline-flex;
-		align-items: center;
-		gap: 0.5rem;
-		font-family: var(--font-mono);
-		font-size: var(--text-small);
-	}
-	.health-asof-age {
-		color: var(--foreground);
 	}
 
 	.health-block {

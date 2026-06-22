@@ -41,7 +41,7 @@
 		ResourceBoundary,
 		ReliabilityPane,
 		GrainPicker,
-		LiveFreshness,
+		FreshnessStamp,
 		MapDrilldownLink,
 		AffectedAlerts,
 		type ReliabilityPeriodVM,
@@ -660,7 +660,8 @@
 				<div class="stop-next">
 					<div class="stop-next-head">
 						<SectionLabel text={t.next.heading} variant="station" />
-						<LiveFreshness
+						<FreshnessStamp
+							variant="live"
 							generatedUtc={live.generatedUtc}
 							ageSeconds={live.ageSeconds}
 							isStale={live.isStale}

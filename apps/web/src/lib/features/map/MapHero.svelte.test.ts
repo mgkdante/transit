@@ -45,12 +45,15 @@ describe('MapHero mobile chrome', () => {
 
 		expect(s).toContain('class="map-kicker-row"');
 		expect(s).toContain('class="map-title-row"');
-		expect(s).toContain("import MapLiveFreshness from './MapLiveFreshness.svelte'");
+		expect(s).toContain("import MapFreshness from './MapFreshness.svelte'");
 		expect(s).toContain('placement="head"');
 		expect(s).toContain('placement="floating"');
 		expect(s).not.toContain('class="map-head-fresh"');
 		expect(s).not.toContain('class="map-overlay map-fresh"');
 		expect(s).not.toContain("import { LiveFreshness } from '$lib/components/surface'");
+		// The map shares the site-wide chip via the positioning wrapper, never the
+		// old MapLiveFreshness/LiveFreshness primitives.
+		expect(s).not.toContain('MapLiveFreshness');
 	});
 
 	it('wires near-me to browser location, the internal geocoder, and stop filters', () => {

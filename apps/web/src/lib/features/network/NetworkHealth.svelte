@@ -4,7 +4,7 @@
   Composes the surface spine + dataviz kit into the network-wide health readout:
     · live tier  — createLiveStore polls network.json; we render the headline
       MetricDisplay grid (on-time %, vehicles in service, not-reporting count,
-      coverage %, p50/p90 delay), a worker-feed-age chip beside LiveFreshness, a
+      coverage %, p50/p90 delay), a worker-feed-age chip beside the FreshnessStamp, a
       status-mix StackedBar (5 StatusCodes by count) and an occupancy-mix
       StackedBar (5 OccupancyCodes by fraction, null-guarded).
     · historic   — createResource(getNetworkTrend) feeds, over a 7/30/90-day
@@ -59,7 +59,7 @@
 	} from '$lib/features/reliability/shiftGrains';
 	import {
 		SurfaceHeader,
-		LiveFreshness,
+		FreshnessStamp,
 		ConformanceBadge,
 		ResourceBoundary,
 		GrainPicker,
@@ -130,13 +130,13 @@
 		return v.toLocaleString(locale === 'fr' ? 'fr-CA' : 'en-CA');
 	}
 
-	// Worker-cycle feed staleness, distinct from the snapshot-publish age that
-	// LiveFreshness shows. `feed_freshness_s` is the seconds since the worker last
+	// Worker-cycle feed staleness, distinct from the snapshot-publish age the
+	// FreshnessStamp shows. `feed_freshness_s` is the seconds since the worker last
 	// refreshed the realtime feed AS OF the snapshot's generation; null → no signal
 	// → the honest "no data". We add `live.ageSeconds` (the seconds elapsed since the
 	// snapshot was generated, advanced off the SHARED clock) so the feed age TICKS
-	// between the 30s polls in lockstep with LiveFreshness instead of freezing at the
-	// snapshot value. live.ageSeconds is null before the first build → treat as 0.
+	// between the 30s polls in lockstep with the FreshnessStamp instead of freezing at
+	// the snapshot value. live.ageSeconds is null before the first build → treat as 0.
 	const feedAge = $derived.by<string | null>(() => {
 		const s = live.network?.feed_freshness_s ?? null;
 		if (s == null) return null;
@@ -623,14 +623,15 @@
 <Surface width="bleed" class="network">
 	<SurfaceHeader kicker={t.kicker} heading={t.heading} lede={t.lede}>
 		<div class="network-feed-health">
-			<LiveFreshness
+			<FreshnessStamp
+				variant="live"
 				generatedUtc={live.generatedUtc}
 				ageSeconds={live.ageSeconds}
 				isStale={live.isStale}
 				{locale}
 			/>
 			<!-- Worker-cycle feed age — a SECOND freshness signal, distinct from the
-			     snapshot-publish age in LiveFreshness. Null → honest no-data. -->
+			     snapshot-publish age in the FreshnessStamp. Null → honest no-data. -->
 			{#if feedAge != null}
 				<span
 					class="network-feed-age"

@@ -29,7 +29,12 @@
 	import { formatDateKey } from '$lib/utils/time';
 	import { getReceiptsIndex, getReceipt, type Receipt } from '$lib/v1';
 	import { createResource } from '$lib/v1/resource.svelte';
-	import { SurfaceHeader, ResourceBoundary, GrainPicker } from '$lib/components/surface';
+	import {
+		SurfaceHeader,
+		ResourceBoundary,
+		GrainPicker,
+		FreshnessStamp,
+	} from '$lib/components/surface';
 	import type { GrainSegment } from '$lib/components/surface';
 	import { Surface, ControlsRail, DashboardGrid } from '$lib/components/layout';
 	import { Separator } from '$lib/components/ui/separator';
@@ -88,9 +93,20 @@
 	// so changing the day re-runs the fetch. Guard the empty seed: an empty date
 	// would 404, so we hold off until a real date is chosen (getReceipt('') is never
 	// issued). Returns null on a 404 → the localized empty state, not an error.
-	const receipt = createResource<Receipt | null>(() =>
-		selectedDate ? getReceipt(selectedDate) : Promise.resolve(null),
+	// `freshness: true` feeds the chosen receipt's generated_utc into the shared
+	// site-wide newest-data timestamp (latest-wins/monotonic). The null seed (before
+	// a date is chosen / on a 404) carries no stamp, so it never poisons the value.
+	const receipt = createResource<Receipt | null>(
+		() => (selectedDate ? getReceipt(selectedDate) : Promise.resolve(null)),
+		{ freshness: true },
 	);
+
+	// Freshness off the CHOSEN receipt's generated_utc — a per-day rebuilt document,
+	// not a live feed (variant="updated"). The stamp computes its server-anchored,
+	// shared-tick age centrally; null before a date is chosen / on a 404 reads the
+	// honest "unknown", never a fabricated time. The visible stamp matches the
+	// generated_utc this surface already feeds into the shared freshness authority.
+	const generatedUtc = $derived(receipt.data?.generated_utc ?? null);
 
 	// Date selector segments — one chip per published day, labelled as a localized
 	// short date. The GrainPicker is string-keyed; the ISO date IS the key.
@@ -160,7 +176,9 @@
 {/snippet}
 
 <Surface width="bleed" class="receipt">
-	<SurfaceHeader kicker={t.kicker} heading={t.heading} subheading={t.subheading} lede={t.lede} />
+	<SurfaceHeader kicker={t.kicker} heading={t.heading} subheading={t.subheading} lede={t.lede}>
+		<FreshnessStamp variant="updated" {generatedUtc} {locale} />
+	</SurfaceHeader>
 
 	<Separator variant="hazard" />
 

@@ -52,22 +52,25 @@ vi.mock('$lib/v1/resource.svelte', () => ({
 }));
 
 // Mock the shared clock with a FIXED, skewed `serverNow` so the freshness age the
-// LiveFreshness chip renders is anchored to the SERVER clock (PR-6), not the raw
+// FreshnessStamp renders is anchored to the SERVER clock (PR-6), not the raw
 // client `Date.now()`. serverNow = the file's generated_utc + exactly 5 minutes →
 // the chip must read "5 minutes ago" regardless of the machine's real clock. A
 // drift-bugged readout (off Date.now()) would NOT land on that controlled value.
-const SERVER_NOW_MS = Date.parse('2026-06-15T12:05:00Z'); // generated_utc + 5 min
-vi.mock('$lib/stores', () => ({
-	sharedClock: {
-		get now() {
-			return SERVER_NOW_MS;
-		},
-		get serverNow() {
-			return SERVER_NOW_MS;
-		},
-		subscribe: () => () => {},
+// serverNow = generated_utc (12:00:00Z) + 5 min → the stamp must read "5 minutes ago".
+// Hoisted so the mock factories (also hoisted) can reference it. FreshnessStamp
+// derives the age via $lib/v1/freshness → $lib/stores/clock.svelte, so mock the
+// clock module too (not just the barrel) to pin the readout deterministically.
+const clockStub = vi.hoisted(() => ({
+	get now() {
+		return Date.parse('2026-06-15T12:05:00Z');
 	},
+	get serverNow() {
+		return Date.parse('2026-06-15T12:05:00Z');
+	},
+	subscribe: () => () => {},
 }));
+vi.mock('$lib/stores/clock.svelte', () => ({ sharedClock: clockStub }));
+vi.mock('$lib/stores', () => ({ sharedClock: clockStub }));
 
 beforeEach(() => {
 	tripsData = TRIPS_FILE;
@@ -89,14 +92,14 @@ describe('TripDetail: a broadcasting trip', () => {
 		expect(screen.getAllByText('4 min late').length).toBeGreaterThanOrEqual(1);
 	});
 
-	it('anchors the LiveFreshness age to the SERVER clock (serverNow), not Date.now()', () => {
+	it('anchors the FreshnessStamp age to the SERVER clock (serverNow), not Date.now()', () => {
 		render(TripDetail, { props: { id: 't161' } });
 
 		// The chip's age derives from generated_utc (12:00:00Z) vs the mocked
 		// sharedClock.serverNow (12:05:00Z) → exactly "5 minutes ago". This only
 		// holds if the surface reads serverNow; an age off the raw client clock
 		// would render whatever the wall clock minus 12:00Z happens to be.
-		const chip = document.querySelector('[data-slot="live-freshness"]') as HTMLElement;
+		const chip = document.querySelector('[data-slot="freshness-stamp"]') as HTMLElement;
 		expect(chip).not.toBeNull();
 		expect(within(chip).getByText('5 minutes ago')).toBeInTheDocument();
 		// The machine-readable build stamp rides the <time datetime>, unchanged.

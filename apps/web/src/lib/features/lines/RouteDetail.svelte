@@ -46,7 +46,7 @@
 		EntityDetail,
 		ResourceBoundary,
 		MapDrilldownLink,
-		LiveFreshness,
+		FreshnessStamp,
 		AffectedAlerts,
 	} from '$lib/components/surface';
 	import { RankedRow } from '$lib/components/dataviz';
@@ -427,7 +427,8 @@
 								<div class="route-section-head">
 									<SectionLabel text={t.directions} variant="station" />
 									{#if live.generatedUtc != null || live.ageSeconds != null}
-										<LiveFreshness
+										<FreshnessStamp
+											variant="live"
 											generatedUtc={live.generatedUtc}
 											ageSeconds={live.ageSeconds}
 											isStale={live.isStale}

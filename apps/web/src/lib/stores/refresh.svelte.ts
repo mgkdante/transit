@@ -98,13 +98,26 @@ export const dataRefresh = {
 		return ageSecondsValue;
 	},
 	/**
-	 * AUTHORITATIVE write of the snapshot's own DATA timestamp. The live store
-	 * calls this on every successful poll; it is the single owner of this value.
-	 * Always overwrites (the freshest poll wins). No-op on the server / for falsy
-	 * input. Chrome and live surfaces then share this one timestamp.
+	 * AUTHORITATIVE write of the snapshot's own DATA timestamp — the single
+	 * site-wide "newest data" value every freshness readout shares. Multiple
+	 * writers now contribute: the live store on every poll, AND every
+	 * freshness-bearing createResource surface (static/historic) on every fetch.
+	 *
+	 * LATEST-WINS / MONOTONIC: the value only advances. A write is accepted iff the
+	 * incoming timestamp is strictly NEWER than the one held, so an older static
+	 * build can never clobber a fresher live build regardless of write order (and a
+	 * re-fetch of the same build never thrashes the readout). The first valid value
+	 * always lands. No-op on the server / for falsy / unparseable input.
 	 */
 	noteDataGeneratedUtc(generatedUtc: string | null | undefined): void {
 		if (!browser || !generatedUtc) return;
+		const incoming = Date.parse(generatedUtc);
+		if (Number.isNaN(incoming)) return;
+		if (dataGeneratedUtc != null) {
+			const current = Date.parse(dataGeneratedUtc);
+			// Keep the newer of the two; ignore equal/older (no thrash, monotonic).
+			if (!Number.isNaN(current) && incoming <= current) return;
+		}
 		dataGeneratedUtc = generatedUtc;
 	},
 	/**
@@ -125,6 +138,19 @@ export const dataRefresh = {
 	 * the server and after the first refresh. */
 	seedNow(): void {
 		if (browser && lastRefreshedMs == null) lastRefreshedMs = Date.now();
+	},
+	/**
+	 * Bump `epoch` WITHOUT running load functions — the lightweight auto-refresh
+	 * path used by dataPulse when it detects a new publish. A bump alone re-runs
+	 * every createResource surface AND re-polls the live store (both watch `epoch`),
+	 * which is exactly what a new snapshot needs; it deliberately skips the heavier
+	 * `invalidateAll` (full /v1 re-boot) that the manual `run()` press performs.
+	 * Browser-only. Updates the load anchor so a freshness fallback stays current.
+	 */
+	bumpEpoch(): void {
+		if (!browser) return;
+		epoch += 1;
+		lastRefreshedMs = Date.now();
 	},
 	/**
 	 * Refresh ALL data on the current page: bump `epoch` (createResource + live

@@ -136,7 +136,7 @@ function buildIndex(vehicles: Vehicle[]) {
 let liveIndex: ReturnType<typeof buildIndex> = buildIndex(VEHICLES);
 
 // The live store the Detail tab boots: a minimal stub exposing the index + the
-// freshness fields LiveFreshness reads + the loaded alerts. start()/stop() no-op.
+// freshness fields FreshnessStamp reads + the loaded alerts. start()/stop() no-op.
 const liveStore = {
 	get index() {
 		return liveIndex as never;
@@ -307,7 +307,7 @@ describe('RouteDetail Detail tab: clickable stops + live readout', () => {
 	it('renders the live freshness chip when a live build is present', () => {
 		const { container } = render(RouteDetail, { props: { id: '161' } });
 
-		expect(container.querySelector('[data-slot="live-freshness"]')).not.toBeNull();
+		expect(container.querySelector('[data-slot="freshness-stamp"]')).not.toBeNull();
 	});
 });
 

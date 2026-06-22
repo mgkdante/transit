@@ -2,12 +2,17 @@
   LiveClock — the live wall-clock, ticking once per second, rendered in
   America/Toronto (the transit display-time rule) via the shared time util.
   Decorative signage (aria-hidden); the datetime attribute carries the machine
-  value. Browser-only ticking (SSR renders a single static frame, no interval).
+  value.
+
+  Ticks off the ONE sharedClock (no private setInterval): every relative-time
+  readout in the chrome advances on the same interval, so this clock can never
+  drift a fraction of a second from the freshness stamps beside it. Subscribing
+  keeps that single interval alive while the clock is on screen; SSR renders a
+  static frame (subscribe no-ops without a browser).
 -->
 <script lang="ts">
-	import { onMount } from 'svelte';
-	import { browser } from '$app/environment';
 	import { cn, formatClock } from '$lib/utils';
+	import { sharedClock } from '$lib/stores';
 	import type { Locale } from '$lib/i18n';
 
 	interface Props {
@@ -17,13 +22,10 @@
 
 	let { locale, class: className }: Props = $props();
 
-	let now = $state(new Date());
-	onMount(() => {
-		if (!browser) return;
-		const id = setInterval(() => (now = new Date()), 1000);
-		return () => clearInterval(id);
-	});
+	// Keep the shared tick alive while the clock is mounted; read `now` reactively.
+	$effect(() => sharedClock.subscribe());
 
+	const now = $derived(new Date(sharedClock.now));
 	const clock = $derived(formatClock(now, locale));
 </script>
 

@@ -18,8 +18,31 @@
 // It also honors the global `dataRefresh` epoch: a chrome "refresh data" press
 // bumps it, which re-runs the fetch here (createResource surfaces don't use load
 // functions, so invalidateAll alone would never reach them).
+//
+// FRESHNESS-BEARING (slice-9.8 A): a resource whose payload carries a server
+// `generated_utc` can OPT IN (`{ freshness: true }`) to feed that timestamp into
+// the shared `dataRefresh.noteDataGeneratedUtc` authority. This is how the
+// static/historic surfaces (/status, /alerts, /hotspots, /receipt,
+// /repeat-offenders, /trip) contribute the ONE site-wide newest-data timestamp
+// with ZERO per-page age math — the live store remains the live-tier writer, and
+// `noteDataGeneratedUtc` is latest-wins/monotonic so whichever tier published most
+// recently owns the readout.
 
 import { dataRefresh } from '$lib/stores';
+
+/** A payload that may carry the server's build timestamp (latest-data anchor). */
+type MaybeFreshPayload = { readonly generated_utc?: string | null } | null | undefined;
+
+/** Options for {@link createResource}. */
+export interface ResourceOptions {
+	/**
+	 * Opt in to contributing the payload's `generated_utc` to the shared
+	 * newest-data timestamp (`dataRefresh.noteDataGeneratedUtc`). Only set this for
+	 * surfaces whose fetched file carries a server build stamp; the write is
+	 * latest-wins/monotonic, so it is safe alongside the live-tier writer.
+	 */
+	readonly freshness?: boolean;
+}
 
 /** The reactive surface a resource exposes. `data` is null until the first success. */
 export interface Resource<T> {
@@ -44,7 +67,11 @@ export interface Resource<T> {
  * const reliability = createResource(() => getRouteReliability(data.id));
  * // <ResourceBoundary resource={reliability} {lang}>{#snippet children(r)}…{/snippet}</ResourceBoundary>
  */
-export function createResource<T>(fetcher: () => Promise<T>): Resource<T> {
+export function createResource<T>(
+	fetcher: () => Promise<T>,
+	options: ResourceOptions = {},
+): Resource<T> {
+	const wantsFreshness = options.freshness === true;
 	let data = $state<T | null>(null);
 	let error = $state<Error | null>(null);
 	let loading = $state(false);
@@ -85,6 +112,12 @@ export function createResource<T>(fetcher: () => Promise<T>): Resource<T> {
 			.then((value) => {
 				if (token !== seq) return;
 				data = value;
+				// Freshness-bearing surfaces feed the shared newest-data timestamp from
+				// the payload's own server stamp (latest-wins/monotonic). One line, no
+				// per-page age math — the spine derives the relative age centrally.
+				if (wantsFreshness) {
+					dataRefresh.noteDataGeneratedUtc((value as MaybeFreshPayload)?.generated_utc);
+				}
 			})
 			.catch((e) => {
 				if (token !== seq) return;

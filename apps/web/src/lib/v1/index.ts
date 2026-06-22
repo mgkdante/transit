@@ -19,6 +19,7 @@
 export {
 	repositories,
 	getManifest,
+	getManifestFresh,
 	getLabels,
 	getVehicles,
 	getTrips,
@@ -46,7 +47,7 @@ export { bootV1, loadManifest, resolveLabel, getV1Context, setV1Context } from '
 export type { V1Context } from './boot';
 
 // --- freshness ---------------------------------------------------------------
-export { tierFreshness } from './freshness';
+export { tierFreshness, freshnessAgeSeconds, freshnessRelative } from './freshness';
 export type {
 	Freshness,
 	FreshnessTier,

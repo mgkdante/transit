@@ -14,11 +14,50 @@
 // may have a null generated_utc — that means the tier was NEVER published, which
 // is reported as { published: false } (an empty-state signal, not staleness).
 
-import { ageSeconds } from '$lib/utils/time';
+import { ageSeconds, formatRelativeSeconds, type TimeLang } from '$lib/utils/time';
+// Import sharedClock from its module directly, NOT the $lib/stores barrel: the
+// barrel pulls themeStore (reads `document` at module load) + dataPulse, which
+// would break this module's pure-node ($lib/v1) consumers and tests. The clock
+// module is SSR/node-safe (all window access is typeof-guarded).
+import { sharedClock } from '$lib/stores/clock.svelte';
 import type { Manifest } from '$lib/v1/schemas';
 
 /** Which snapshot tier to evaluate. */
 export type FreshnessTier = 'live' | 'static' | 'historic';
+
+/**
+ * THE single server-anchored age derivation. Every freshness readout in the app
+ * (the live store, FreshnessStamp, /status, the chrome chip) computes "how old is
+ * this build" through THIS one function so the math is identical everywhere and
+ * never re-implemented per surface.
+ *
+ * `generatedUtc` is a SERVER timestamp, so the age is anchored to the
+ * server-corrected clock (`sharedClock.serverNow`) — NOT the raw client clock — so
+ * a skewed client can never mis-report it. Read inside a reactive context, it
+ * re-derives every shared tick (subscribe via `sharedClock.subscribe()` to keep
+ * the tick alive). Returns null for a null/invalid stamp (the honest "no age"),
+ * clamped to >= 0 so a build stamped slightly in the future reads as 0, not
+ * negative.
+ */
+export function freshnessAgeSeconds(generatedUtc: string | null | undefined): number | null {
+	if (!generatedUtc) return null;
+	const age = ageSeconds(generatedUtc, sharedClock.serverNow);
+	return Number.isNaN(age) ? null : Math.max(0, age);
+}
+
+/**
+ * Localized "N ago" text for a server-stamped build timestamp, off the SAME
+ * server-anchored, shared-tick age as `freshnessAgeSeconds`. Returns null for a
+ * null/invalid stamp so callers render their own honest "no data" rather than a
+ * fabricated value.
+ */
+export function freshnessRelative(
+	generatedUtc: string | null | undefined,
+	lang: TimeLang,
+): string | null {
+	const age = freshnessAgeSeconds(generatedUtc);
+	return age == null ? null : formatRelativeSeconds(age, lang);
+}
 
 /** A tier that has published at least once: full freshness verdict. */
 export interface PublishedFreshness {

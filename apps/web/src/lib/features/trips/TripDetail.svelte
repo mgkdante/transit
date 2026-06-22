@@ -23,14 +23,13 @@
 	import type { TripsFile, Trip, StatusCode } from '$lib/v1';
 	import { createResource } from '$lib/v1/resource.svelte';
 	import { Surface } from '$lib/components/layout';
-	import { ResourceBoundary, SurfaceHeader, LiveFreshness } from '$lib/components/surface';
+	import { ResourceBoundary, SurfaceHeader, FreshnessStamp } from '$lib/components/surface';
 	import { Separator } from '$lib/components/ui/separator';
 	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
 	import StatusDot from '$lib/components/brand/StatusDot.svelte';
 	import MapDrilldownLink from '$lib/components/surface/MapDrilldownLink.svelte';
 	import ChevronRightIcon from '@lucide/svelte/icons/chevron-right';
-	import { formatUtc, ageSeconds } from '$lib/utils/time';
-	import { sharedClock } from '$lib/stores';
+	import { formatUtc } from '$lib/utils/time';
 	import { tripCopy } from './trips.copy';
 
 	interface TripDetailProps {
@@ -43,13 +42,12 @@
 	const locale: Locale = getLocale();
 	const t = $derived(tripCopy[locale]);
 
-	// Keep the ONE shared clock alive while this surface is on screen so the live
-	// freshness chip's age ticks in lockstep with the rest of the chrome.
-	$effect(() => sharedClock.subscribe());
-
 	// The whole live trips map (trip-keyed). One read, reactive to `id`. We look up
 	// THIS trip below; an absent entry is the honest "not broadcasting" signal.
-	const trips = createResource<TripsFile | null>(() => getTrips());
+	// `freshness: true` contributes the live build's generated_utc to the shared
+	// site-wide newest-data timestamp (the live store still owns it authoritatively;
+	// this surface doesn't mount the store, so it pitches in monotonically).
+	const trips = createResource<TripsFile | null>(() => getTrips(), { freshness: true });
 
 	/** This trip, or null when the broadcast carries no entry for it (stand-down). */
 	const trip = $derived<Trip | null>(trips.data?.trips?.[id] ?? null);
@@ -63,17 +61,9 @@
 	const timeLabel = (iso: string): string =>
 		formatUtc(iso, locale, { hour: '2-digit', minute: '2-digit', hour12: false });
 
-	/**
-	 * Freshness off the file's build timestamp. Age is anchored to the SHARED
-	 * SERVER clock (sharedClock.serverNow), not the raw client clock, so a skewed
-	 * client can't mis-report the LIVE chip's "N ago" — both the build stamp and
-	 * the "now" it is subtracted from live on the server's timeline. Re-derives off
-	 * the shared tick (subscribed above), so the chip advances while on screen.
-	 */
+	// Freshness off the live file's build timestamp. The FreshnessStamp computes its
+	// server-anchored, shared-tick age centrally — no per-page age math here.
 	const generatedUtc = $derived(trips.data?.generated_utc ?? null);
-	const freshnessAge = $derived<number | null>(
-		generatedUtc ? Math.max(0, ageSeconds(generatedUtc, sharedClock.serverNow)) : null,
-	);
 
 	/** Localized status-band label for the v1 StatusCode. */
 	function statusLabel(status: StatusCode): string {
@@ -149,7 +139,7 @@
 				>
 					<div class="trip-head-actions">
 						{#if generatedUtc != null}
-							<LiveFreshness {generatedUtc} ageSeconds={freshnessAge} isStale={false} {locale} />
+							<FreshnessStamp variant="live" {generatedUtc} isStale={false} {locale} />
 						{/if}
 						<MapDrilldownLink
 							href={mapHrefFor({ trip: id }, locale)}

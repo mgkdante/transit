@@ -202,7 +202,7 @@ describe('NetworkHealth live tiles', () => {
 		expect(within(tile as HTMLElement).getByText('3')).toBeInTheDocument();
 	});
 
-	it('surfaces the worker-feed-age chip near LiveFreshness', () => {
+	it('surfaces the worker-feed-age chip near the FreshnessStamp', () => {
 		render(NetworkHealth);
 		const chip = screen.getByText('FEED').closest('[data-slot="feed-age"]');
 		expect(chip).not.toBeNull();

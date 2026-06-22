@@ -11,7 +11,7 @@
        createLiveStore (on-time %, vehicles in service, not-reporting count,
        coverage %). HONESTY: before the first client tick (and during SSR) the
        store is null, so every headline stands down to the localized "no data"
-       glyph — never a fabricated 0. The LiveFreshness chip + a pulsing StatusDot
+       glyph — never a fabricated 0. The FreshnessStamp chip + a pulsing StatusDot
        carry the "right now" verdict on the dataviz status scale (not --primary).
 
     2. WHAT THIS IS — one tight bilingual paragraph + three honesty pillars
@@ -47,7 +47,7 @@
 	import MetricDisplay from '$lib/components/brand/MetricDisplay.svelte';
 	import StatusDot from '$lib/components/brand/StatusDot.svelte';
 	import TerminalChrome from '$lib/components/brand/TerminalChrome.svelte';
-	import { LiveFreshness } from '$lib/components/surface';
+	import { FreshnessStamp } from '$lib/components/surface';
 	import { Surface, DashboardGrid } from '$lib/components/layout';
 	import { Separator } from '$lib/components/ui/separator';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
@@ -92,7 +92,7 @@
 	const net = $derived(live.network);
 
 	// "Last updated X ago" in the terminal chrome — TICKS off the live store so it
-	// advances each second in lockstep with the LiveFreshness chip below it (a frozen
+	// advances each second in lockstep with the FreshnessStamp chip below it (a frozen
 	// one-shot here read as a contradiction beside the ticking chip). Once the live
 	// tier reports we read its ticking `ageSeconds` (advanced off the shared clock);
 	// before the first tick we fall back to the one-shot static/boot build time so
@@ -433,7 +433,8 @@
 				/>
 				<SectionLabel text={t.pulseLabel} variant="metric" />
 			</span>
-			<LiveFreshness
+			<FreshnessStamp
+				variant="live"
 				generatedUtc={live.generatedUtc}
 				ageSeconds={live.ageSeconds}
 				isStale={live.isStale}
