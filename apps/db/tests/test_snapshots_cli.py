@@ -1,9 +1,31 @@
 """Tests for the publish-snapshot CLI command."""
 
+from types import SimpleNamespace
+
 from typer.testing import CliRunner
 
 from transit_ops import cli
 from transit_ops.snapshots.publish import PublishResult
+
+
+class _FakeConnCtx:
+    def __enter__(self):
+        return SimpleNamespace()
+
+    def __exit__(self, *exc):  # noqa: ANN002
+        return False
+
+
+class _FakeEngine:
+    def connect(self):
+        return _FakeConnCtx()
+
+
+def _stub_all_seeded(monkeypatch) -> None:
+    """publish-all probes gold.dim_provider per provider; stub it so the loop
+    runs without a real database and treats every enrolled provider as seeded."""
+    monkeypatch.setattr(cli, "make_engine", lambda settings: _FakeEngine())
+    monkeypatch.setattr(cli, "provider_is_seeded", lambda conn, provider_id: True)
 
 
 def test_publish_snapshot_cmd(monkeypatch):
@@ -38,10 +60,11 @@ def test_publish_all_cmd_loops_every_provider(monkeypatch):
         )
 
     monkeypatch.setattr(cli, "publish_snapshot", fake)
+    _stub_all_seeded(monkeypatch)
     result = CliRunner().invoke(cli.app, ["publish-all", "--tier", "static"])
 
     assert result.exit_code == 0, result.output
-    assert calls == ["octranspo", "stm", "sto"]  # every enrolled provider
+    assert calls == ["octranspo", "stm", "sto"]  # every enrolled (seeded) provider
     assert "manifest.json" in result.output
 
 

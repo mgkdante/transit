@@ -12,6 +12,7 @@ from transit_ops.gold import GoldBuildResult, GoldRealtimeRefreshResult, GoldSta
 from transit_ops.ingestion import I3IngestionResult, RealtimeIngestionResult, StaticIngestionResult
 from transit_ops.ingestion.gis import GisIngestionResult
 from transit_ops.orchestration import (
+    run_pruner_loop,
     run_realtime_cycle,
     run_realtime_worker_loop,
     run_static_pipeline,
@@ -365,25 +366,17 @@ def test_run_realtime_cycle_reports_partial_failure_and_continues(monkeypatch) -
             _gold_refresh_result(),
         )[1],
     )
+    # PR-B / slice-9.8: pruning is DECOUPLED from the cycle. The cycle must NOT
+    # call prune_silver_storage / prune_gold_storage — fail loudly if it does.
     monkeypatch.setattr(
         orchestration,
         "prune_silver_storage",
-        lambda provider_id, settings, engine: (
-            call_order.append("prune-silver-storage"),
-            SimpleNamespace(
-                display_dict=lambda: {"deleted_row_counts": {"silver.trip_updates": 3}}
-            ),
-        )[1],
+        lambda *a, **k: pytest.fail("run_realtime_cycle must not prune silver in-cycle"),
     )
     monkeypatch.setattr(
         orchestration,
         "prune_gold_storage",
-        lambda provider_id, settings, engine: (
-            call_order.append("prune-gold-storage"),
-            SimpleNamespace(
-                display_dict=lambda: {"deleted_row_counts": {"gold.fact_trip_delay_snapshot": 0}}
-            ),
-        )[1],
+        lambda *a, **k: pytest.fail("run_realtime_cycle must not prune gold in-cycle"),
     )
 
     result = run_realtime_cycle(
@@ -393,6 +386,7 @@ def test_run_realtime_cycle_reports_partial_failure_and_continues(monkeypatch) -
         engine=object(),
     )
 
+    # Decoupled cycle: capture -> silver-load -> refresh-gold -> (publish). No prune.
     assert call_order == [
         "capture:trip_updates",
         "load:trip_updates",
@@ -400,8 +394,6 @@ def test_run_realtime_cycle_reports_partial_failure_and_continues(monkeypatch) -
         "capture:i3_alerts",
         "load:i3_alerts",
         "refresh-gold-realtime",
-        "prune-silver-storage",
-        "prune-gold-storage",
     ]
     assert result.status == "partial_failure"
     assert result.successful_endpoint_count == 2
@@ -409,8 +401,6 @@ def test_run_realtime_cycle_reports_partial_failure_and_continues(monkeypatch) -
     assert result.total_duration_seconds >= 0
     assert result.gold_build is not None
     assert result.gold_build_duration_seconds is not None
-    assert result.silver_maintenance is not None
-    assert result.silver_maintenance_duration_seconds is not None
     assert result.step_timings_seconds["capture_trip_updates"] is not None
     assert result.step_timings_seconds["load_trip_updates_to_silver"] is not None
     assert result.step_timings_seconds["capture_vehicle_positions"] is not None
@@ -418,10 +408,11 @@ def test_run_realtime_cycle_reports_partial_failure_and_continues(monkeypatch) -
     assert result.step_timings_seconds["capture_i3_alerts"] is not None
     assert result.step_timings_seconds["load_i3_alerts_to_silver"] is not None
     assert result.step_timings_seconds["refresh_gold_realtime"] is not None
-    assert result.step_timings_seconds["prune_silver_storage"] is not None
-    assert result.step_timings_seconds["prune_gold_storage"] is not None
-    assert result.gold_maintenance is not None
-    assert result.gold_maintenance_duration_seconds is not None
+    # Prune timings are gone from the cycle — the pruner service owns them now.
+    assert "prune_silver_storage" not in result.step_timings_seconds
+    assert "prune_gold_storage" not in result.step_timings_seconds
+    assert not hasattr(result, "silver_maintenance")
+    assert not hasattr(result, "gold_maintenance")
     assert result.endpoint_results[0].capture_duration_seconds is not None
     assert result.endpoint_results[0].silver_load_duration_seconds is not None
     assert result.endpoint_results[0].total_endpoint_duration_seconds >= 0
@@ -482,18 +473,10 @@ def test_run_realtime_worker_loop_targets_start_to_start_cadence(
                     "capture_vehicle_positions": 0.25,
                     "load_vehicle_positions_to_silver": 0.5,
                     "refresh_gold_realtime": 0.25,
-                    "prune_silver_storage": 0.1,
-                    "prune_gold_storage": 0.1,
                 },
                 gold_build=None,
                 gold_build_duration_seconds=0.25,
                 gold_error_message=None,
-                silver_maintenance=None,
-                silver_maintenance_duration_seconds=0.1,
-                silver_maintenance_error_message=None,
-                gold_maintenance=None,
-                gold_maintenance_duration_seconds=0.1,
-                gold_maintenance_error_message=None,
             ),
         )[1],
     )
@@ -564,18 +547,10 @@ def test_run_realtime_worker_loop_warns_on_cycle_overrun(
                 "capture_vehicle_positions": 0.25,
                 "load_vehicle_positions_to_silver": 0.5,
                 "refresh_gold_realtime": 0.25,
-                "prune_silver_storage": 0.1,
-                "prune_gold_storage": 0.1,
             },
             gold_build=None,
             gold_build_duration_seconds=0.25,
             gold_error_message=None,
-            silver_maintenance=None,
-            silver_maintenance_duration_seconds=0.1,
-            silver_maintenance_error_message=None,
-            gold_maintenance=None,
-            gold_maintenance_duration_seconds=0.1,
-            gold_maintenance_error_message=None,
         )
 
     monkeypatch.setattr(orchestration, "run_realtime_cycle", _fake_overrun_cycle)
@@ -645,12 +620,6 @@ def _worker_loop_cycle_result(provider_id: str):
         gold_build=None,
         gold_build_duration_seconds=0.25,
         gold_error_message=None,
-        silver_maintenance=None,
-        silver_maintenance_duration_seconds=0.1,
-        silver_maintenance_error_message=None,
-        gold_maintenance=None,
-        gold_maintenance_duration_seconds=0.1,
-        gold_maintenance_error_message=None,
     )
 
 
@@ -741,6 +710,160 @@ def test_run_realtime_worker_loop_breaks_on_shutdown_flag(
 
     # Exactly one cycle drained, then the flag broke the loop.
     assert cycle_calls == ["stm"]
+
+
+# --- PR-B / slice-9.8: dedicated pruner loop (decoupled retention) -------------
+
+
+def _pruner_settings(**overrides) -> Settings:
+    base = {
+        "_env_file": None,
+        "DATABASE_URL": "postgresql://user:pass@example.com/transit",
+        "PRUNER_SLEEP_SECONDS": 15,
+    }
+    base.update(overrides)
+    return Settings(**base)
+
+
+def test_run_pruner_loop_runs_both_prunes_each_pass(monkeypatch) -> None:
+    """One pass runs prune_silver_storage THEN prune_gold_storage."""
+    call_order: list[str] = []
+    monkeypatch.setattr(
+        orchestration,
+        "prune_silver_storage",
+        lambda provider_id, *, settings, engine: (
+            call_order.append("silver"),
+            SimpleNamespace(display_dict=lambda: {"deleted_row_counts": {}}),
+        )[1],
+    )
+    monkeypatch.setattr(
+        orchestration,
+        "prune_gold_storage",
+        lambda provider_id, *, settings, engine: (
+            call_order.append("gold"),
+            SimpleNamespace(display_dict=lambda: {"deleted_row_counts": {}}),
+        )[1],
+    )
+
+    run_pruner_loop(
+        "stm",
+        settings=_pruner_settings(),
+        engine=object(),
+        sleep_fn=lambda _seconds: None,
+        max_cycles=1,
+        should_shutdown=lambda: False,
+    )
+
+    assert call_order == ["silver", "gold"]
+
+
+def test_run_pruner_loop_runs_gold_even_when_silver_prune_raises(monkeypatch) -> None:
+    """0034 invariant: a silver-prune failure must NOT skip the gold prune nor the
+    loop, and vice versa — each prune is independent and best-effort."""
+    call_order: list[str] = []
+
+    def _failing_silver(provider_id, *, settings, engine):  # noqa: ANN001
+        call_order.append("silver")
+        raise RuntimeError("silver prune blew up")
+
+    monkeypatch.setattr(orchestration, "prune_silver_storage", _failing_silver)
+    monkeypatch.setattr(
+        orchestration,
+        "prune_gold_storage",
+        lambda provider_id, *, settings, engine: (
+            call_order.append("gold"),
+            SimpleNamespace(display_dict=lambda: {"deleted_row_counts": {}}),
+        )[1],
+    )
+
+    # Must not raise — the loop swallows the per-prune failure and continues.
+    run_pruner_loop(
+        "stm",
+        settings=_pruner_settings(),
+        engine=object(),
+        sleep_fn=lambda _seconds: None,
+        max_cycles=1,
+        should_shutdown=lambda: False,
+    )
+
+    # Gold still ran despite silver raising.
+    assert call_order == ["silver", "gold"]
+
+
+def test_run_pruner_loop_is_interruptible_via_shutdown(monkeypatch) -> None:
+    """A shutdown predicate that flips true after one pass stops the loop cleanly."""
+    passes = {"silver": 0}
+    shutdown = {"requested": False}
+
+    def _silver(provider_id, *, settings, engine):  # noqa: ANN001
+        passes["silver"] += 1
+        shutdown["requested"] = True
+        return SimpleNamespace(display_dict=lambda: {"deleted_row_counts": {}})
+
+    monkeypatch.setattr(orchestration, "prune_silver_storage", _silver)
+    monkeypatch.setattr(
+        orchestration,
+        "prune_gold_storage",
+        lambda provider_id, *, settings, engine: SimpleNamespace(
+            display_dict=lambda: {"deleted_row_counts": {}}
+        ),
+    )
+
+    run_pruner_loop(
+        "stm",
+        settings=_pruner_settings(),
+        engine=object(),
+        sleep_fn=lambda _seconds: None,
+        max_cycles=None,  # only the shutdown flag can stop it
+        should_shutdown=lambda: shutdown["requested"],
+    )
+
+    # Exactly one pass ran, then the flag broke the loop on the next iteration.
+    assert passes["silver"] == 1
+
+
+def test_run_pruner_loop_honors_pipeline_paused(monkeypatch) -> None:
+    """PIPELINE_PAUSED=true sleeps and skips pruning (mirrors the worker loop)."""
+    monkeypatch.setattr(
+        orchestration,
+        "prune_silver_storage",
+        lambda *a, **k: pytest.fail("paused pruner must not prune"),
+    )
+    monkeypatch.setattr(
+        orchestration,
+        "prune_gold_storage",
+        lambda *a, **k: pytest.fail("paused pruner must not prune"),
+    )
+    sleep_calls: list[float] = []
+    stop = {"after": 0}
+
+    def _should_shutdown() -> bool:
+        # Let the paused branch sleep once, then stop the loop.
+        stop["after"] += 1
+        return stop["after"] > 2
+
+    run_pruner_loop(
+        "stm",
+        settings=_pruner_settings(PIPELINE_PAUSED=True),
+        engine=object(),
+        sleep_fn=sleep_calls.append,
+        max_cycles=None,
+        should_shutdown=_should_shutdown,
+    )
+
+    # It slept on the paused branch rather than pruning.
+    assert sleep_calls == [15.0, 15.0]
+
+
+def test_run_pruner_loop_rejects_non_positive_sleep() -> None:
+    with pytest.raises(ValueError, match="PRUNER_SLEEP_SECONDS"):
+        run_pruner_loop(
+            "stm",
+            settings=_pruner_settings(PRUNER_SLEEP_SECONDS=0),
+            engine=object(),
+            sleep_fn=lambda _seconds: None,
+            should_shutdown=lambda: False,
+        )
 
 
 def test_run_static_pipeline_skips_silver_and_gold_when_ingestion_skips_unchanged(
@@ -1240,21 +1363,17 @@ def _install_realtime_cycle_stubs(monkeypatch, call_order: list[str]) -> None:
             _gold_refresh_result(),
         )[1],
     )
+    # PR-B / slice-9.8: the cycle is decoupled from pruning. These guards fail the
+    # test if run_realtime_cycle ever calls a prune again.
     monkeypatch.setattr(
         orchestration,
         "prune_silver_storage",
-        lambda provider_id, settings, engine: (
-            call_order.append("prune-silver-storage"),
-            SimpleNamespace(display_dict=lambda: {"deleted_row_counts": {}}),
-        )[1],
+        lambda *a, **k: pytest.fail("run_realtime_cycle must not prune silver in-cycle"),
     )
     monkeypatch.setattr(
         orchestration,
         "prune_gold_storage",
-        lambda provider_id, settings, engine: (
-            call_order.append("prune-gold-storage"),
-            SimpleNamespace(display_dict=lambda: {"deleted_row_counts": {}}),
-        )[1],
+        lambda *a, **k: pytest.fail("run_realtime_cycle must not prune gold in-cycle"),
     )
 
 
@@ -1425,13 +1544,15 @@ def test_run_realtime_cycle_first_endpoint_call_runs_without_gating(monkeypatch)
     assert last_captures["vehicle_positions"] == frozen_now
 
 
-def test_run_realtime_cycle_prunes_even_when_gold_refresh_fails(monkeypatch) -> None:
-    """Retention pruning is best-effort and runs even when gold-refresh fails.
+def test_run_realtime_cycle_does_not_prune_even_when_gold_refresh_fails(monkeypatch) -> None:
+    """PR-B / slice-9.8: pruning is DECOUPLED — the cycle never prunes.
 
-    Pruning previously lived inside the gold-refresh success else-branch, so a
-    persistent gold-build outage (the 0034-backfill stall class) skipped
-    retention every cycle — the silver/gold backlog never drained from the
-    worker, compounding the very stall (ops-core#5). It must now run regardless.
+    The `prune_silver_storage`/`prune_gold_storage` guards installed by
+    `_install_realtime_cycle_stubs` fail the test if the cycle calls a prune. A
+    gold-refresh failure no longer marks the cycle "failed" via a prune error and
+    no longer drags retention into the cycle. Retention now lives in the dedicated
+    always-on pruner service (run_pruner_loop), which never skips on a gold
+    failure — the 0034 "prune must run regardless" invariant, satisfied elsewhere.
     """
     call_order: list[str] = []
     _install_realtime_cycle_stubs(monkeypatch, call_order)
@@ -1449,24 +1570,18 @@ def test_run_realtime_cycle_prunes_even_when_gold_refresh_fails(monkeypatch) -> 
         engine=object(),
     )
 
-    # Gold refresh failed, yet BOTH prunes still ran this cycle.
+    # Gold refresh failed, but NO prune ran this cycle (the guards would have
+    # failed the test) and the result no longer carries maintenance fields.
     assert result.gold_error_message is not None
     assert "refresh-gold-realtime" in call_order
-    assert "prune-silver-storage" in call_order
-    assert "prune-gold-storage" in call_order
-    assert result.silver_maintenance is not None
-    assert result.gold_maintenance is not None
-    assert result.silver_maintenance_error_message is None
-    assert result.gold_maintenance_error_message is None
+    assert "prune-silver-storage" not in call_order
+    assert "prune-gold-storage" not in call_order
+    assert not hasattr(result, "silver_maintenance")
+    assert not hasattr(result, "gold_maintenance")
 
 
-def test_run_realtime_cycle_prunes_when_all_endpoints_fail(monkeypatch) -> None:
-    """Even with zero successful endpoints (no gold refresh attempted), pruning runs.
-
-    A busy/failing cycle must not skip retention — that backlog buildup is the
-    wave-2 stall class (ops-core#5). Gold refresh is correctly skipped (no
-    successful endpoint), but the best-effort prunes run unconditionally.
-    """
+def test_run_realtime_cycle_does_not_prune_when_all_endpoints_fail(monkeypatch) -> None:
+    """A busy/failing cycle no longer touches retention (decoupled pruner)."""
     call_order: list[str] = []
     _install_realtime_cycle_stubs(monkeypatch, call_order)
 
@@ -1492,13 +1607,10 @@ def test_run_realtime_cycle_prunes_when_all_endpoints_fail(monkeypatch) -> None:
     )
 
     assert result.successful_endpoint_count == 0
-    # Gold refresh is NOT attempted with zero successful endpoints...
     assert "refresh-gold-realtime" not in call_order
-    # ...but retention pruning still runs every cycle.
-    assert "prune-silver-storage" in call_order
-    assert "prune-gold-storage" in call_order
-    assert result.silver_maintenance is not None
-    assert result.gold_maintenance is not None
+    # Pruning is decoupled — the cycle never prunes (the guards would have failed).
+    assert "prune-silver-storage" not in call_order
+    assert "prune-gold-storage" not in call_order
 
 
 # --- slice-9.1.1o: silver-load failure persistence ----------------------------
