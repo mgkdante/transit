@@ -144,6 +144,14 @@ class Settings(BaseSettings):
     PIPELINE_PAUSED: bool = False
     REALTIME_POLL_SECONDS: int = 30
     REALTIME_STARTUP_DELAY_SECONDS: int = 0
+    # Sleep between passes of the dedicated pruner service (run-pruner-loop /
+    # docker-compose `pruner`). Retention pruning is DECOUPLED from the realtime
+    # cycle (PR-B / slice-9.8): with the index-driven rt_feed_snapshot_id-range
+    # deletes a pass is sub-second in steady state, so a short sleep drains a
+    # backlog at index speed without spinning. Kept independent of
+    # REALTIME_POLL_SECONDS so the pruner cadence can be tuned without touching
+    # the capture cadence.
+    PRUNER_SLEEP_SECONDS: int = 15
     HEALTH_DATABASE_TIMEOUT_SECONDS: float = 5.0
     HEALTH_FEED_TIMEOUT_SECONDS: float = 10.0
     HEALTH_MAX_PIPELINE_AGE_SECONDS: int = 900
@@ -275,6 +283,7 @@ class Settings(BaseSettings):
             "PIPELINE_PAUSED": self.PIPELINE_PAUSED,
             "REALTIME_POLL_SECONDS": self.REALTIME_POLL_SECONDS,
             "REALTIME_STARTUP_DELAY_SECONDS": self.REALTIME_STARTUP_DELAY_SECONDS,
+            "PRUNER_SLEEP_SECONDS": self.PRUNER_SLEEP_SECONDS,
             "HEALTH_DATABASE_TIMEOUT_SECONDS": self.HEALTH_DATABASE_TIMEOUT_SECONDS,
             "HEALTH_FEED_TIMEOUT_SECONDS": self.HEALTH_FEED_TIMEOUT_SECONDS,
             "HEALTH_MAX_PIPELINE_AGE_SECONDS": self.HEALTH_MAX_PIPELINE_AGE_SECONDS,

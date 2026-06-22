@@ -110,6 +110,9 @@ class IterableResult:
     def __iter__(self):
         return iter(self.rows)
 
+    def all(self) -> list[tuple]:
+        return list(self.rows)
+
 
 class RowcountResult:
     def __init__(self, rowcount: int) -> None:
@@ -147,6 +150,11 @@ class RecordingConnection:
         sql_text = str(statement)
         self.calls.append(sql_text)
         self.executed.append((sql_text, params))
+        # PR-B / slice-9.8: per-endpoint keep_from_id resolution (the tiny snapshot
+        # table read that drives the id-range silver prune). Returns a non-NULL
+        # keep_from_id per endpoint so the downstream child id-range deletes run.
+        if "keep_from_id" in sql_text and "GROUP BY endpoint_key" in sql_text:
+            return IterableResult([("trip_updates", 1000), ("vehicle_positions", 1000)])
         # Gold-reference lookup (UNION over gold.dim_route/stop/date/route_pattern)
         # MUST be routed before the generic 'SELECT dataset_version_id' branch.
         if "gold.dim_route" in sql_text and "SELECT DISTINCT dataset_version_id" in sql_text:
@@ -641,18 +649,61 @@ REALTIME_HISTORY_DELETE_STATEMENTS = (
 def test_realtime_history_delete_is_bounded_per_cycle(table_name, statement) -> None:  # noqa: ANN001
     """Each realtime-history DELETE must cap rows/cycle via ctid IN (... LIMIT :batch).
 
-    The prune runs on every ~57s worker cycle; an unbounded single-transaction
-    DELETE of the accumulated backlog (e.g. ~252M-row rt_trip_update_stop_times
-    after a redeploy) is the unbounded-heavy-op hang class. The bounded ctid form
-    drains the one-time backlog over many cycles instead.
+    The prune runs on the always-on pruner service; an unbounded single-transaction
+    DELETE of the accumulated backlog (e.g. the ~748M-row rt_trip_update_stop_times)
+    is the 0034 unbounded-heavy-op hang class. The bounded ctid form drains the
+    one-time backlog over many passes instead.
     """
     sql = str(statement)
 
     assert "DELETE" in sql
     assert ".ctid IN (" in sql, f"{table_name} DELETE must be batched via ctid IN (...)"
     assert "LIMIT :batch" in sql, f"{table_name} DELETE must cap rows with LIMIT :batch"
-    # Retention predicate is preserved exactly — same cutoff + latest exclusion.
-    assert "captured_at_utc < :cutoff_utc" in sql
+
+
+@pytest.mark.parametrize(
+    "table_name,statement",
+    [
+        ("silver.rt_trip_update_stop_times", DELETE_OLD_RT_TRIP_UPDATE_STOP_TIMES),
+        ("silver.rt_trip_updates", DELETE_OLD_RT_TRIP_UPDATES),
+        ("silver.rt_vehicle_positions", DELETE_OLD_RT_VEHICLE_POSITIONS),
+    ],
+)
+def test_realtime_history_child_delete_is_id_range_scoped(table_name, statement) -> None:  # noqa: ANN001
+    """PR-B / slice-9.8: child deletes prune by a PK-leading rt_feed_snapshot_id
+    range (no captured_at JOIN onto the 99GB child) and stay provider-scoped.
+    """
+    sql = str(statement)
+
+    assert "rt_feed_snapshot_id < :keep_from_" in sql, (
+        f"{table_name} must delete by an rt_feed_snapshot_id range"
+    )
+    # Provider scoping preserved (multi-tenant safety; the old JOIN filtered it).
+    assert "provider_id = :provider_id" in sql
+    # The fast path must NOT re-introduce the slow captured_at JOIN on the child.
+    assert "captured_at_utc" not in sql
+    assert "JOIN silver.rt_feed_snapshots" not in sql
+
+
+@pytest.mark.parametrize(
+    "table_name,statement",
+    [
+        ("silver.rt_entities", DELETE_OLD_RT_ENTITIES),
+        ("silver.rt_feed_snapshots", DELETE_OLD_RT_FEED_SNAPSHOTS),
+    ],
+)
+def test_realtime_history_endpoint_spanning_delete_uses_per_endpoint_keep_map(  # noqa: ANN001
+    table_name, statement
+) -> None:
+    """rt_entities / rt_feed_snapshots span all endpoints, so they apply each
+    endpoint_key's OWN keep_from_id via the rendered per-endpoint keep map — the
+    prior per-(provider, endpoint) latest-exclusion preserved exactly.
+    """
+    sql = str(statement)
+
+    assert "{keep_map}" in sql
+    assert "km.endpoint_key" in sql
+    assert "rt_feed_snapshot_id < km.keep_from_id" in sql
     assert "provider_id = :provider_id" in sql
 
 
@@ -673,6 +724,20 @@ def test_realtime_history_count_statements_report_unbounded_backlog(statement) -
     assert "SELECT COUNT(*)" in sql
     assert "LIMIT" not in sql
     assert ":batch" not in sql
+
+
+def test_select_keep_from_ids_resolves_per_endpoint_oldest_to_keep() -> None:
+    """The cutoff resolver computes, per endpoint_key, the oldest id to KEEP:
+    COALESCE(min(id) WHERE captured_at>=cutoff, max(id)) — the dead-feed fallback.
+    """
+    from transit_ops.maintenance.silver import SELECT_KEEP_FROM_IDS
+
+    sql = str(SELECT_KEEP_FROM_IDS)
+
+    assert "GROUP BY endpoint_key" in sql
+    assert "min(rt_feed_snapshot_id) FILTER (WHERE captured_at_utc >= :cutoff_utc)" in sql
+    assert "max(rt_feed_snapshot_id)" in sql
+    assert "provider_id = :provider_id" in sql
 
 
 def test_rt_feed_snapshots_delete_guards_on_surviving_children() -> None:
