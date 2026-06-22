@@ -34,7 +34,7 @@ from transit_ops.snapshots.builders import (
     build_route_reliability,
     build_stop_reliability,
 )
-from transit_ops.snapshots.builders.historic import _STOP_REL_BY_ROUTE_SQL
+from transit_ops.snapshots.builders.historic import _HOTSPOTS_SQL, _STOP_REL_BY_ROUTE_SQL
 from transit_ops.snapshots.contract import (
     AlertHistory,
     Hotspots,
@@ -914,13 +914,25 @@ def test_build_route_reliability_dow_severe_pct_uses_delay_observation_count() -
 
 def test_build_hotspots_ranks_and_top_20() -> None:
     """Top-20 cap, rank assigned 1..N, week-period selected."""
-    # 25 rows — only first 20 should appear (SQL LIMIT enforced by fake order)
+    # 25 rows — only first 20 should appear (SQL LIMIT enforced by fake order).
+    # Every cell carries the network baseline (net_*) on each row, mirroring the
+    # CROSS JOIN net in the real query; the first cell also carries its severe
+    # proxy counts so its otp_delta_pts computes (the rest stay honest-None).
     rows = [
         {
             "entity_kind": "stop",
             "entity_id": f"S{i}",
             "issue_count": 100 - i,
             "severity_label": "high",
+            # route on-time baseline (unused by stop cells, carried on every row)
+            "net_on_time": 90,
+            "net_known": 100,
+            # STOP severe-proxy network baseline: (100-10)/100 -> 90% on every row
+            "net_stop_obs": 100,
+            "net_stop_severe": 10,
+            # first cell only: severe proxy 70/100 -> 30 severe -> OTP 70%
+            "stop_obs": 100 if i == 0 else None,
+            "stop_severe": 30 if i == 0 else None,
         }
         for i in range(25)
     ]
@@ -937,7 +949,10 @@ def test_build_hotspots_ranks_and_top_20() -> None:
     assert first.type == "stop"
     assert first.id == "S0"
     assert first.severity == "high"
-    assert first.otp_delta_pts is None  # v1 deferral
+    # stop severe-proxy OTP 70 minus network baseline 90 -> -20.0 pts (worse)
+    assert first.otp_delta_pts == -20.0
+    # a cell whose own OTP is unknown stays honest-None (never 0)
+    assert out.hotspots[1].otp_delta_pts is None
 
 
 def test_build_hotspots_empty_returns_empty() -> None:
@@ -1013,6 +1028,181 @@ def test_build_hotspots_resolves_names() -> None:
     assert out.hotspots[0].name == "Saint-Laurent"
     assert out.hotspots[1].name == "Ancien arret"
     assert out.hotspots[2].name is None
+
+
+def test_build_hotspots_otp_delta_route_real_otp_signed_1dp() -> None:
+    """A route cell's otp_delta_pts = its REAL OTP (route_reliability_weekly
+    on_time/known) minus the network baseline OTP, signed and rounded to 1 dp."""
+    rows = [
+        {
+            "entity_kind": "route",
+            "entity_id": "51",
+            "issue_count": 9,
+            "severity_label": "high",
+            # route real OTP: 75 on-time / 100 known -> 75%
+            "route_on_time": 75,
+            "route_known": 100,
+            # stop columns are NULL for a route cell (per-kind JOIN)
+            "stop_obs": None,
+            "stop_severe": None,
+            # network baseline: 825 / 1000 -> 82.5 -> round 82 (int via _otp_pct)
+            "net_on_time": 825,
+            "net_known": 1000,
+        },
+    ]
+    conn = FakeConn([("repeated_problem_route_stop", rows)])
+    out = build_hotspots(conn, generated_utc="t")
+    # _otp_pct(825,1000)=round(82.5)=82 ; 75 - 82 = -7.0 pts (worse than network)
+    assert out.hotspots[0].otp_delta_pts == -7.0
+
+
+def test_build_hotspots_otp_delta_stop_uses_severe_proxy() -> None:
+    """A stop cell's otp_delta_pts uses the severe(>300s) proxy ((obs-severe)/obs)
+    — NOT a route OTP — minus a STOP-grain severe-proxy network baseline (same
+    metric on both sides). Stop has no on_time column."""
+    rows = [
+        {
+            "entity_kind": "stop",
+            "entity_id": "3456",
+            "issue_count": 8,
+            "severity_label": "high",
+            # route columns NULL for a stop cell (no cross-contamination)
+            "route_on_time": None,
+            "route_known": None,
+            # severe proxy: (200 - 40) / 200 -> 80%
+            "stop_obs": 200,
+            "stop_severe": 40,
+            # route on-time baseline is carried but MUST be ignored for stop cells
+            "net_on_time": 90,
+            "net_known": 100,
+            # stop severe-proxy network baseline: (1000 - 100) / 1000 -> 90%
+            "net_stop_obs": 1000,
+            "net_stop_severe": 100,
+        },
+    ]
+    conn = FakeConn([("repeated_problem_route_stop", rows)])
+    out = build_hotspots(conn, generated_utc="t")
+    # 80 - 90 = -10.0 pts (severe-proxy cell vs severe-proxy network)
+    assert out.hotspots[0].otp_delta_pts == -10.0
+
+
+def test_build_hotspots_otp_delta_stop_problem_is_negative_vs_severe_baseline() -> None:
+    """Regression: a real problem stop (severe rate ABOVE the network's severe rate)
+    must surface a NEGATIVE delta (worse than network), not a fabricated positive.
+
+    The old code subtracted the route ON-TIME net (~82%) from the stop severe-proxy
+    (~95-99%), biasing every stop POSITIVE. With a stop-grain severe-proxy baseline
+    the comparison is same-metric: a stop with a 5% severe rate vs the network's 2%
+    severe rate reads -3.0 pts, the truthful 'worse than network'."""
+    rows = [
+        {
+            "entity_kind": "stop",
+            "entity_id": "9999",
+            "issue_count": 12,
+            "severity_label": "high",
+            # realistic problem stop: 5% severe -> proxy OTP 95%
+            "stop_obs": 1000,
+            "stop_severe": 50,
+            # route on-time net ~82% — the OLD baseline; would give +13 (WRONG sign)
+            "net_on_time": 8200,
+            "net_known": 10000,
+            # network severe rate 2% -> severe-proxy baseline 98%
+            "net_stop_obs": 100000,
+            "net_stop_severe": 2000,
+        },
+    ]
+    conn = FakeConn([("repeated_problem_route_stop", rows)])
+    out = build_hotspots(conn, generated_utc="t")
+    # 95 - 98 = -3.0 pts: the problem stop reads WORSE than the network (truthful).
+    # Under the old route-on-time baseline this was 95 - 82 = +13.0 (the bug).
+    assert out.hotspots[0].otp_delta_pts == -3.0
+
+
+def test_build_hotspots_otp_delta_stop_none_when_severe_baseline_missing() -> None:
+    """Honest-None: a stop cell whose stop-grain network severe-proxy baseline is
+    unknown yields None — never falls back to the route on-time net baseline."""
+    rows = [
+        {
+            "entity_kind": "stop",
+            "entity_id": "3456",
+            "issue_count": 8,
+            "severity_label": "high",
+            "stop_obs": 200,
+            "stop_severe": 40,  # cell proxy known (80%)
+            # route on-time net is known but MUST NOT be used as the stop baseline
+            "net_on_time": 90,
+            "net_known": 100,
+            # stop severe-proxy baseline unknown -> delta None
+            "net_stop_obs": None,
+            "net_stop_severe": None,
+        },
+    ]
+    conn = FakeConn([("repeated_problem_route_stop", rows)])
+    out = build_hotspots(conn, generated_utc="t")
+    assert out.hotspots[0].otp_delta_pts is None  # honest-None, not 80-90=-10
+
+
+def test_build_hotspots_otp_delta_cell_otp_unknown_is_none() -> None:
+    """Honest-None: a cell whose own OTP cannot be computed (no obs) yields None,
+    never 0 — even though the network baseline is known."""
+    rows = [
+        {
+            "entity_kind": "route",
+            "entity_id": "99",
+            "issue_count": 5,
+            "severity_label": "watch",
+            "route_on_time": None,  # OTP unknown
+            "route_known": None,
+            "stop_obs": None,
+            "stop_severe": None,
+            "net_on_time": 90,  # baseline known
+            "net_known": 100,
+        },
+    ]
+    conn = FakeConn([("repeated_problem_route_stop", rows)])
+    out = build_hotspots(conn, generated_utc="t")
+    assert out.hotspots[0].otp_delta_pts is None
+
+
+def test_build_hotspots_otp_delta_network_baseline_null_is_none() -> None:
+    """Honest-None: when the network baseline OTP is unknown for the period, the
+    delta is None for every cell — a known cell OTP alone is not comparable."""
+    rows = [
+        {
+            "entity_kind": "route",
+            "entity_id": "51",
+            "issue_count": 9,
+            "severity_label": "high",
+            "route_on_time": 75,  # cell OTP known
+            "route_known": 100,
+            "stop_obs": None,
+            "stop_severe": None,
+            "net_on_time": None,  # baseline unknown
+            "net_known": None,
+        },
+    ]
+    conn = FakeConn([("repeated_problem_route_stop", rows)])
+    out = build_hotspots(conn, generated_utc="t")
+    assert out.hotspots[0].otp_delta_pts is None
+
+
+def test_hotspots_sql_per_kind_otp_join_keys() -> None:
+    """SQL guards against route/stop OTP cross-contamination: the route join is
+    scoped to entity_kind='route' on route_id, the stop join to entity_kind='stop'
+    on stop_id, and the network baseline reads route_reliability_weekly."""
+    sql = str(_HOTSPOTS_SQL)
+    assert "rp.entity_kind = 'route'" in sql
+    assert "rrw.route_id = rp.entity_id" in sql
+    assert "rp.entity_kind = 'stop'" in sql
+    assert "so.stop_id = rp.entity_id" in sql
+    # route network baseline aggregates real OTP over route_reliability_weekly
+    assert "net_on_time" in sql and "net_known" in sql
+    assert "gold.route_reliability_weekly" in sql
+    assert "gold.stop_delay_weekly" in sql
+    # stop network baseline aggregates the severe-proxy over ALL stops (same
+    # metric a stop cell uses), so stop deltas are not lenient-vs-strict
+    assert "net_stop_obs" in sql and "net_stop_severe" in sql
+    assert "net_stop AS" in sql
 
 
 # --------------------------------------------------------------------------
@@ -1358,10 +1548,33 @@ def test_build_receipts_worst_route_and_stop_by_max_delay() -> None:
                     "rider_impact_score": None,
                 }
             ],
-            # rows ordered DESC by avg_delay_seconds in SQL; first = worst
+            # network daily OTP for d: 80 on-time / 100 known -> 80%
+            net=[
+                {
+                    "local_date": d,
+                    "known_obs": 100,
+                    "on_time": 80,
+                    "severe": 5,
+                    "weighted_delay_sec": 6000.0,
+                }
+            ],
+            # rows ordered DESC by avg_delay_seconds in SQL; first = worst.
+            # The worst route (105) carries its own daily OTP 55/100 -> 55%.
             worst_route=[
-                {"d": d, "route_id": "105", "avg_delay_seconds": 300.0},
-                {"d": d, "route_id": "51", "avg_delay_seconds": 120.0},
+                {
+                    "d": d,
+                    "route_id": "105",
+                    "avg_delay_seconds": 300.0,
+                    "on_time": 55,
+                    "known_obs": 100,
+                },
+                {
+                    "d": d,
+                    "route_id": "51",
+                    "avg_delay_seconds": 120.0,
+                    "on_time": 90,
+                    "known_obs": 100,
+                },
             ],
             worst_stop=[
                 {"d": d, "stop_id": "9999", "avg_delay_seconds": 420.0, "max_delay_seconds": 600.0},
@@ -1373,7 +1586,8 @@ def test_build_receipts_worst_route_and_stop_by_max_delay() -> None:
     r = out["2026-05-15"]
     assert r.worst_route is not None
     assert r.worst_route.id == "105"
-    assert r.worst_route.otp_delta_pts is None  # v1 deferral
+    # worst route OTP 55 minus network baseline 80 -> -25.0 pts (worse than network)
+    assert r.worst_route.otp_delta_pts == -25.0
     assert r.worst_stop is not None
     assert r.worst_stop.id == "9999"
     assert r.worst_stop.avg_delay_min == 7.0  # 420s / 60
@@ -1407,6 +1621,37 @@ def test_build_receipts_skips_sentinel_worst_entities() -> None:
     r = out["2026-05-15"]
     assert r.worst_route is not None and r.worst_route.id == "105"
     assert r.worst_stop is not None and r.worst_stop.id == "9999"
+
+
+def test_build_receipts_worst_route_otp_delta_none_when_baseline_missing() -> None:
+    """Honest-None: when the day's network baseline OTP is unknown (no network
+    row), worst_route.otp_delta_pts is None even though the route OTP is known."""
+    d = datetime.date(2026, 5, 16)
+    conn = FakeConn(
+        _receipts_dispatch(
+            acct=[
+                {
+                    "provider_local_date": d, "affected_route_count": 1,
+                    "affected_stop_count": 1, "delayed_trip_count": 0,
+                    "severe_delay_count": 0, "alert_count": 0, "rider_impact_score": None,
+                }
+            ],
+            # no net row for d -> network baseline OTP unknown
+            worst_route=[
+                {
+                    "d": d,
+                    "route_id": "105",
+                    "avg_delay_seconds": 300.0,
+                    "on_time": 55,
+                    "known_obs": 100,
+                },
+            ],
+        )
+    )
+    r = build_receipts(conn, generated_utc="t")["2026-05-16"]
+    assert r.otp_pct is None  # no network telemetry that day
+    assert r.worst_route is not None and r.worst_route.id == "105"
+    assert r.worst_route.otp_delta_pts is None  # honest-None, not 0
 
 
 def test_receipts_worst_entity_order_has_deterministic_tiebreaker() -> None:
