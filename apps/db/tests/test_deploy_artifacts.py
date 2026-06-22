@@ -74,12 +74,47 @@ def _active_lines(text: str) -> list[str]:
 
 def test_compose_defines_oracle_ready_runtime_services() -> None:
     services = _compose()["services"]
-    assert set(services) == {"postgres", "worker", "health", "caddy"}
+    # PR-B / slice-9.8: the dedicated `pruner` service joins the runtime set.
+    assert set(services) == {"postgres", "worker", "pruner", "health", "caddy"}
     assert services["postgres"]["build"]["dockerfile"] == "Dockerfile.postgis"
     assert services["postgres"]["image"] == "transit-postgres-postgis:16"
     assert services["worker"]["build"]["dockerfile"] == "Dockerfile"
+    assert services["pruner"]["build"]["dockerfile"] == "Dockerfile"
     assert services["health"]["build"]["dockerfile"] == "Dockerfile.health"
     assert services["caddy"]["image"].startswith("caddy:2")
+
+
+def test_compose_pruner_service_runs_decoupled_prune_loop() -> None:
+    services = _compose()["services"]
+    pruner = services["pruner"]
+    # Same image as the worker, with a command override to the pruner loop.
+    assert pruner["build"]["dockerfile"] == "Dockerfile"
+    assert pruner["command"] == ["run-pruner-loop", "stm"]
+    assert pruner["restart"] == "unless-stopped"
+    assert pruner["depends_on"] == {"postgres": {"condition": "service_healthy"}}
+    # DB-only worker: NO bronze volume, NO STM_API_KEY / R2 / snapshot secrets.
+    assert "volumes" not in pruner
+    pruner_keys = _environment_keys(pruner)
+    assert "STM_API_KEY" not in pruner_keys
+    assert not any(key.startswith("BRONZE_S3") for key in pruner_keys)
+    assert not any(key.startswith("SNAPSHOT_") for key in pruner_keys)
+    # It DOES get the DB url, the retention knobs, the pruner cadence, and pause.
+    assert pruner["environment"]["DATABASE_URL"] == (
+        "postgresql://${POSTGRES_USER:-transit}:"
+        "${POSTGRES_PASSWORD:-transit-local-password}@postgres:5432/"
+        "${POSTGRES_DB:-transit}"
+    )
+    assert {
+        "PRUNER_SLEEP_SECONDS",
+        "SILVER_REALTIME_RETENTION_DAYS",
+        "SILVER_REALTIME_PRUNE_BATCH",
+        "GOLD_FACT_RETENTION_DAYS",
+        "GOLD_FACT_PRUNE_BATCH",
+        "STATIC_DATASET_RETENTION_COUNT",
+        "PIPELINE_PAUSED",
+    } <= pruner_keys
+    # The pruner env is a strict subset of the worker's (no new knobs introduced).
+    assert pruner_keys <= _environment_keys(services["worker"])
 
 
 def test_compose_waits_for_postgres_health_before_app_services() -> None:

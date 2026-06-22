@@ -63,6 +63,7 @@ services:
       PIPELINE_PAUSED: ${PIPELINE_PAUSED:-false}
       REALTIME_POLL_SECONDS: ${REALTIME_POLL_SECONDS:-30}
       REALTIME_STARTUP_DELAY_SECONDS: ${REALTIME_STARTUP_DELAY_SECONDS:-0}
+      PRUNER_SLEEP_SECONDS: ${PRUNER_SLEEP_SECONDS:-15}
       STATIC_DATASET_RETENTION_COUNT: ${STATIC_DATASET_RETENTION_COUNT:-1}
       STRICT_GTFS: ${STRICT_GTFS:-true}
       SILVER_REALTIME_RETENTION_DAYS: ${SILVER_REALTIME_RETENTION_DAYS:-14}
@@ -87,6 +88,40 @@ services:
         condition: service_healthy
     volumes:
       - bronze_data:/app/data/bronze
+
+  pruner:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    # Dedicated retention pruner (PR-B / slice-9.8). Same image as worker, with a
+    # command override to run-pruner-loop. Retention pruning is DECOUPLED from the
+    # realtime cycle: the worker no longer prunes in-cycle (which delayed every
+    # live publish and could mark a healthy cycle "failed"); this always-on service
+    # drains silver + gold independent of gold/endpoint success (the 0034 invariant).
+    command: ["run-pruner-loop", "stm"]
+    # Strict SUBSET of the worker env: the pruner ONLY deletes DB rows
+    # (prune_silver_storage / prune_gold_storage touch Postgres only), so it gets
+    # DATABASE_URL + the provider id + the retention knobs + PIPELINE_PAUSED +
+    # PRUNER_SLEEP_SECONDS. NO STM_API_KEY, NO R2/bronze/snapshot secrets, NO
+    # bronze volume. STATIC_DATASET_RETENTION_COUNT is included because
+    # prune_silver_storage also runs the static-dataset prune (DB-only) in its
+    # second transaction.
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-transit}:${POSTGRES_PASSWORD:-transit-local-password}@postgres:5432/${POSTGRES_DB:-transit}
+      APP_ENV: ${APP_ENV:-local}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      STM_PROVIDER_ID: ${STM_PROVIDER_ID:-stm}
+      PIPELINE_PAUSED: ${PIPELINE_PAUSED:-false}
+      PRUNER_SLEEP_SECONDS: ${PRUNER_SLEEP_SECONDS:-15}
+      STATIC_DATASET_RETENTION_COUNT: ${STATIC_DATASET_RETENTION_COUNT:-1}
+      SILVER_REALTIME_RETENTION_DAYS: ${SILVER_REALTIME_RETENTION_DAYS:-14}
+      SILVER_REALTIME_PRUNE_BATCH: ${SILVER_REALTIME_PRUNE_BATCH:-100000}
+      GOLD_FACT_RETENTION_DAYS: ${GOLD_FACT_RETENTION_DAYS:-14}
+      GOLD_FACT_PRUNE_BATCH: ${GOLD_FACT_PRUNE_BATCH:-100000}
+    depends_on:
+      postgres:
+        condition: service_healthy
 
   health:
     build:

@@ -36,8 +36,6 @@ from transit_ops.ingestion.common import (
     utc_now,
 )
 from transit_ops.maintenance import (
-    GoldStoragePruneResult,
-    SilverStoragePruneResult,
     prune_gold_storage,
     prune_silver_storage,
 )
@@ -139,12 +137,6 @@ class RealtimeCycleResult:
     gold_build: dict[str, object] | None
     gold_build_duration_seconds: float | None
     gold_error_message: str | None
-    silver_maintenance: dict[str, object] | None
-    silver_maintenance_duration_seconds: float | None
-    silver_maintenance_error_message: str | None
-    gold_maintenance: dict[str, object] | None
-    gold_maintenance_duration_seconds: float | None
-    gold_maintenance_error_message: str | None
     live_publish_failures: int = 0
 
     @property
@@ -168,12 +160,6 @@ class RealtimeCycleResult:
             "gold_build": self.gold_build,
             "gold_build_duration_seconds": self.gold_build_duration_seconds,
             "gold_error_message": self.gold_error_message,
-            "silver_maintenance": self.silver_maintenance,
-            "silver_maintenance_duration_seconds": self.silver_maintenance_duration_seconds,
-            "silver_maintenance_error_message": self.silver_maintenance_error_message,
-            "gold_maintenance": self.gold_maintenance,
-            "gold_maintenance_duration_seconds": self.gold_maintenance_duration_seconds,
-            "gold_maintenance_error_message": self.gold_maintenance_error_message,
             "live_publish_failures": self.live_publish_failures,
         }
 
@@ -988,12 +974,6 @@ def run_realtime_cycle(
     gold_build_result: GoldBuildResult | GoldRealtimeRefreshResult | None = None
     gold_build_duration_seconds: float | None = None
     gold_error_message: str | None = None
-    silver_maintenance_result: SilverStoragePruneResult | None = None
-    silver_maintenance_duration_seconds: float | None = None
-    silver_maintenance_error_message: str | None = None
-    gold_maintenance_result: GoldStoragePruneResult | None = None
-    gold_maintenance_duration_seconds: float | None = None
-    gold_maintenance_error_message: str | None = None
     if successful_endpoint_count:
         logger.info("Running refresh-gold-realtime after realtime cycle for '%s'.", provider_id)
         try:
@@ -1014,56 +994,15 @@ def run_realtime_cycle(
             )
             gold_error_message = str(exc)
 
-    # Retention pruning is BEST-EFFORT and runs on EVERY cycle, independent of
-    # endpoint success and of the gold-refresh outcome above. It previously ran
-    # only inside the gold-refresh success branch (gated on
-    # successful_endpoint_count AND a clean refresh), so a persistent gold-build
-    # outage (the 0034-backfill stall class) or a busy/failing cycle skipped
-    # retention every cycle — the silver/gold backlog never drained from the
-    # worker, compounding the very stall. Each prune is bounded per cycle (ctid
-    # LIMIT batching) so draining a backlog never hangs a cycle.
-    logger.info("Running prune-silver-storage after realtime cycle for '%s'.", provider_id)
-    try:
-        silver_maintenance_result, silver_maintenance_duration_seconds = (
-            _run_timed_realtime_step(
-                "prune-silver-storage",
-                lambda: prune_silver_storage(
-                    provider_id,
-                    settings=settings,
-                    engine=engine,
-                ),
-            )
-        )
-    except Exception as exc:
-        logger.error(
-            "Realtime cycle Silver maintenance failed for provider '%s': %s",
-            provider_id,
-            exc,
-        )
-        silver_maintenance_error_message = str(exc)
-
-    logger.info("Running prune-gold-storage after realtime cycle for '%s'.", provider_id)
-    try:
-        gold_maintenance_result, gold_maintenance_duration_seconds = (
-            _run_timed_realtime_step(
-                "prune-gold-storage",
-                lambda: prune_gold_storage(
-                    provider_id,
-                    settings=settings,
-                    engine=engine,
-                ),
-            )
-        )
-    except Exception as exc:
-        logger.error(
-            "Realtime cycle Gold maintenance failed for provider '%s': %s",
-            provider_id,
-            exc,
-        )
-        gold_maintenance_error_message = str(exc)
+    # Retention pruning is DECOUPLED from the realtime cycle (PR-B /
+    # slice-9.8-pruner-service). It now runs in a dedicated always-on pruner
+    # service (run_pruner_loop) so the live publish below is never delayed by a
+    # multi-minute prune sitting between gold-refresh and publish, and so a prune
+    # outage can never mark a healthy capture cycle "failed". The pruner never
+    # skips on a gold/endpoint failure, which satisfies the 0034 "prune must run
+    # regardless" invariant MORE strongly than the old in-cycle prune (which was
+    # skipped whenever a cycle threw before reaching the prune block).
     step_timings_seconds["refresh_gold_realtime"] = gold_build_duration_seconds
-    step_timings_seconds["prune_silver_storage"] = silver_maintenance_duration_seconds
-    step_timings_seconds["prune_gold_storage"] = gold_maintenance_duration_seconds
 
     # Best-effort: publish the live /v1 snapshot after Gold refresh succeeds.
     # Never fails the cycle — an R2/publish error is logged and counted only.
@@ -1078,11 +1017,7 @@ def run_realtime_cycle(
 
     completed_at_utc = utc_now()
     total_duration_seconds = round(time.perf_counter() - started_at, 3)
-    if (
-        gold_error_message
-        or silver_maintenance_error_message
-        or gold_maintenance_error_message
-    ):
+    if gold_error_message:
         status = "failed"
     elif failed_endpoint_count == 0:
         status = "succeeded"
@@ -1104,16 +1039,6 @@ def run_realtime_cycle(
         gold_build=gold_build_result.display_dict() if gold_build_result else None,
         gold_build_duration_seconds=gold_build_duration_seconds,
         gold_error_message=gold_error_message,
-        silver_maintenance=(
-            silver_maintenance_result.display_dict() if silver_maintenance_result else None
-        ),
-        silver_maintenance_duration_seconds=silver_maintenance_duration_seconds,
-        silver_maintenance_error_message=silver_maintenance_error_message,
-        gold_maintenance=(
-            gold_maintenance_result.display_dict() if gold_maintenance_result else None
-        ),
-        gold_maintenance_duration_seconds=gold_maintenance_duration_seconds,
-        gold_maintenance_error_message=gold_maintenance_error_message,
         live_publish_failures=live_publish_failures,
     )
 
@@ -1367,3 +1292,108 @@ def run_realtime_worker_loop(
         )
         if computed_sleep_seconds:
             sleep_fn(computed_sleep_seconds)
+
+
+def run_pruner_loop(
+    provider_id: str,
+    *,
+    settings: Settings | None = None,
+    engine: Engine | None = None,
+    sleep_fn: Callable[[float], None] = time.sleep,
+    max_cycles: int | None = None,
+    should_shutdown: Callable[[], bool] | None = None,
+) -> None:
+    """Run the dedicated retention pruner loop for a provider (PR-B / slice-9.8).
+
+    Retention pruning is DECOUPLED from the realtime cycle and runs here, in an
+    always-on service. Each pass runs ``prune_silver_storage`` then
+    ``prune_gold_storage``, each in its OWN try/except so one prune failing never
+    kills the loop and never skips the other — the 0034 "prune must run regardless
+    of gold/endpoint success" invariant, satisfied unconditionally because this
+    loop has no capture/gold step that could throw first and skip it.
+
+    Mirrors ``run_realtime_worker_loop``: SIGTERM/SIGINT -> drain-then-exit-0 via
+    ``_install_worker_shutdown_handlers``; ``PIPELINE_PAUSED`` honored (sleep +
+    continue); ``max_cycles`` / ``sleep_fn`` / ``should_shutdown`` injection for
+    tests. Sleeps ``PRUNER_SLEEP_SECONDS`` between passes — with the index-driven
+    rt_feed_snapshot_id-range deletes a steady-state pass is sub-second, so a short
+    sleep drains a backlog at index speed without spinning.
+    """
+    settings = settings or get_settings()
+    engine = _engine(settings, engine)
+    require_database_url(settings)
+    if settings.PRUNER_SLEEP_SECONDS <= 0:
+        raise ValueError("PRUNER_SLEEP_SECONDS must be greater than 0.")
+    if max_cycles is not None and max_cycles <= 0:
+        raise ValueError("max_cycles must be greater than 0 when provided.")
+
+    if should_shutdown is None:
+        should_shutdown = _install_worker_shutdown_handlers()
+
+    sleep_seconds = settings.PRUNER_SLEEP_SECONDS
+    logger.info(
+        "Starting retention pruner loop for provider '%s' with sleep interval %s seconds.",
+        provider_id,
+        sleep_seconds,
+    )
+
+    cycle_number = 0
+    while max_cycles is None or cycle_number < max_cycles:
+        if should_shutdown():
+            logger.info(
+                "Shutdown requested — pruner loop is stopping cleanly for provider "
+                "'%s' after %s completed pass(es).",
+                provider_id,
+                cycle_number,
+            )
+            break
+        if settings.PIPELINE_PAUSED:
+            logger.warning(
+                "PIPELINE_PAUSED=true — pruner loop is paused for provider '%s'. "
+                "Sleeping %s seconds. Set PIPELINE_PAUSED=false to resume.",
+                provider_id,
+                sleep_seconds,
+            )
+            sleep_fn(sleep_seconds)
+            continue
+        cycle_number += 1
+        logger.info("Starting pruner pass %s for provider '%s'.", cycle_number, provider_id)
+
+        # Each prune is independent: a silver-prune failure must not skip the gold
+        # prune (and vice versa), and neither must kill the loop.
+        try:
+            silver_result = prune_silver_storage(provider_id, settings=settings, engine=engine)
+            logger.info(
+                "prune-silver-storage pass %s succeeded: %s",
+                cycle_number,
+                json.dumps(silver_result.display_dict(), sort_keys=True, default=str),
+            )
+        except Exception as exc:  # noqa: BLE001 — one bad prune must not kill the loop
+            logger.exception(
+                "prune-silver-storage pass %s for provider '%s' failed; the pruner "
+                "loop continues: %s",
+                cycle_number,
+                provider_id,
+                exc,
+            )
+
+        try:
+            gold_result = prune_gold_storage(provider_id, settings=settings, engine=engine)
+            logger.info(
+                "prune-gold-storage pass %s succeeded: %s",
+                cycle_number,
+                json.dumps(gold_result.display_dict(), sort_keys=True, default=str),
+            )
+        except Exception as exc:  # noqa: BLE001 — one bad prune must not kill the loop
+            logger.exception(
+                "prune-gold-storage pass %s for provider '%s' failed; the pruner "
+                "loop continues: %s",
+                cycle_number,
+                provider_id,
+                exc,
+            )
+
+        if max_cycles is not None and cycle_number >= max_cycles:
+            break
+
+        sleep_fn(sleep_seconds)
