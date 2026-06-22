@@ -26,6 +26,23 @@ export { default as SearchInput } from './SearchInput.svelte';
 export { default as MapDrilldownLink } from './MapDrilldownLink.svelte';
 export { default as AffectedAlerts } from './AffectedAlerts.svelte';
 
+// Props interfaces, paired with their component (brand/ + dataviz/ convention:
+// every cross-surface primitive re-exports its Props so consumers can type props).
+// NOTE: the generic components (ResourceBoundary<T>, EntityList<T>, EntityDetail<K>)
+// can't export their Props from a `generics=` instance script (Svelte limitation),
+// and the interface references the type param anyway — so they stay unexported.
+export type { SurfaceHeaderProps } from './SurfaceHeader.svelte';
+export type { EntityRowProps } from './EntityRow.svelte';
+export type { BreadcrumbProps } from './Breadcrumb.svelte';
+export type { ReliabilityPaneProps } from './ReliabilityPane.svelte';
+export type { GrainPickerProps } from './GrainPicker.svelte';
+export type { FreshnessStampProps } from './FreshnessStamp.svelte';
+export type { ConformanceBadgeProps } from './ConformanceBadge.svelte';
+export type { ReliabilityBadgeProps } from './ReliabilityBadge.svelte';
+export type { SearchInputProps } from './SearchInput.svelte';
+export type { MapDrilldownLinkProps } from './MapDrilldownLink.svelte';
+
+// Auxiliary view-model / copy types.
 export type { ReliabilityPeriodVM } from './ReliabilityPane.svelte';
 export type { GrainSegment } from './GrainPicker.svelte';
 export type { AffectedAlertsCopy } from './AffectedAlerts.svelte';

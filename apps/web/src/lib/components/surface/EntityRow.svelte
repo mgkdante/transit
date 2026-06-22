@@ -16,7 +16,7 @@
 	import { localizeHref, type Locale } from '$lib/i18n';
 	import { routeFor, type SurfaceTarget } from '$lib/nav';
 
-	interface EntityRowProps {
+	export interface EntityRowProps {
 		/** The navigation intent this row resolves to. */
 		target: SurfaceTarget;
 		/** Active locale — localizes the href. */

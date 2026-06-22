@@ -23,7 +23,7 @@
 	import type { ProvenanceConformance } from '$lib/v1/schemas';
 	import StatusDot from '$lib/components/brand/StatusDot.svelte';
 
-	interface ConformanceBadgeProps {
+	export interface ConformanceBadgeProps {
 		/** The provenance conformance verdict, or null/undefined when unchecked. */
 		conformance: ProvenanceConformance | null | undefined;
 		/** UI language for the intrinsic labels. */

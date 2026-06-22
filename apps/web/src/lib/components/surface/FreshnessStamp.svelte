@@ -37,7 +37,7 @@
 
 	type Variant = 'live' | 'updated';
 
-	interface FreshnessStampProps {
+	export interface FreshnessStampProps {
 		/** ISO 8601 (UTC) build timestamp, or null when unknown (→ "unknown"). */
 		generatedUtc: string | null;
 		/**
