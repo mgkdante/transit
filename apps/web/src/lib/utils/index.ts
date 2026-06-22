@@ -15,3 +15,6 @@ export {
 	formatUtc,
 } from './time';
 export type { TimeLang } from './time';
+
+export { fmtCount, fmtDelayMin, fmtPct } from './format';
+export type { FormatLang } from './format';

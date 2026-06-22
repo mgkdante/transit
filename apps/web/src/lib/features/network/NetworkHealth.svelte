@@ -38,6 +38,11 @@
 	import { mapSearchFor } from '$lib/filters';
 	import { formatDateKey, formatRelativeSeconds } from '$lib/utils/time';
 	import {
+		fmtCount as sharedFmtCount,
+		fmtDelayMin as sharedFmtDelayMin,
+		fmtPct as sharedFmtPct,
+	} from '$lib/utils';
+	import {
 		createLiveStore,
 		getNetworkTrend,
 		getProvenance,
@@ -119,15 +124,15 @@
 
 	/** Format a nullable integer percent as "82%" or the honest "no data". */
 	function fmtPct(v: number | null): string {
-		return v == null ? t.noData : `${v}${t.units.pct}`;
+		return sharedFmtPct(v, { suffix: t.units.pct, noData: t.noData });
 	}
 	/** Format a nullable integer-minute delay as "3 min" or "no data". */
 	function fmtMin(v: number | null): string {
-		return v == null ? t.noData : `${v}${t.units.min}`;
+		return sharedFmtDelayMin(v, { suffix: t.units.min, noData: t.noData });
 	}
 	/** A required count → plain integer (localized thousands separators). */
 	function fmtCount(v: number): string {
-		return v.toLocaleString(locale === 'fr' ? 'fr-CA' : 'en-CA');
+		return sharedFmtCount(v, { locale, noData: '' });
 	}
 
 	// Worker-cycle feed staleness, distinct from the snapshot-publish age the
@@ -469,7 +474,7 @@
 	const cancelEmpty = $derived(cancelSeries.map(() => null) as Array<number | null>);
 	/** Format a fractional/percent cancellation value as "2.6%" or "no data". */
 	function fmtCancel(v: number | null): string {
-		return v == null ? t.noData : `${v.toFixed(1)}${t.units.pct}`;
+		return sharedFmtPct(v, { rounding: 'fixed1', suffix: t.units.pct, noData: t.noData });
 	}
 
 	// --- Per-day crowding small-multiple -------------------------------------
@@ -527,7 +532,7 @@
 	/** Subtitle: avg delay + severe share, each honest no-data when null. */
 	function shiftSubtitle(avg: number | null, severe: number | null): string {
 		const avgText = `${t.shift.avgLabel} ${fmtMin(avg)}`;
-		const sevText = `${t.shift.severeLabel} ${severe == null ? t.noData : `${severe.toFixed(1)}${t.units.pct}`}`;
+		const sevText = `${t.shift.severeLabel} ${sharedFmtPct(severe, { rounding: 'fixed1', suffix: t.units.pct, noData: t.noData })}`;
 		return `${avgText} · ${sevText}`;
 	}
 

@@ -27,6 +27,7 @@
 -->
 <script lang="ts">
 	import type { Locale } from '$lib/i18n';
+	import { fmtPct } from '$lib/utils';
 	import { MetricDisplay, SectionLabel } from '$lib/components/brand';
 	import { Sparkline } from '$lib/components/dataviz';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
@@ -50,7 +51,7 @@
 	const RATE_VAR = 'var(--dataviz-status-late)';
 
 	/** Format a rate as a percentage, else null (the muted no-data label). */
-	const fmtPct = (v: number | null): string | null => (v == null ? null : `${v.toFixed(1)}%`);
+	const pct = (v: number | null): string | null => fmtPct(v, { rounding: 'fixed1' });
 
 	/**
 	 * Most-recent (tail-scan) non-null value of `pick`. The contract arrays run
@@ -135,7 +136,7 @@
 			<article class="cluster03-metric" data-slot="cancellations">
 				<div class="metric-with-info">
 					<MetricDisplay
-						value={fmtPct(cancellationRatePct)}
+						value={pct(cancellationRatePct)}
 						emptyLabel={t.noData}
 						label={t.cancellationRatePct}
 						size="md"
@@ -164,7 +165,7 @@
 			<article class="cluster03-metric" data-slot="skipped-stops">
 				<div class="metric-with-info">
 					<MetricDisplay
-						value={fmtPct(skippedStopRatePct)}
+						value={pct(skippedStopRatePct)}
 						emptyLabel={t.noData}
 						label={t.skippedStopRatePct}
 						size="md"

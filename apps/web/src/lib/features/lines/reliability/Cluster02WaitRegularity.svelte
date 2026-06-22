@@ -27,6 +27,7 @@
 -->
 <script lang="ts">
 	import type { Locale } from '$lib/i18n';
+	import { fmtCount, fmtDelayMin, fmtPct } from '$lib/utils';
 	import type { SeverityCode, ServiceSpanPeriod } from '$lib/v1';
 	import { RankedRow } from '$lib/components/dataviz';
 	import MetricDisplay from '$lib/components/brand/MetricDisplay.svelte';
@@ -134,12 +135,11 @@
 	/* ── formatters (pure) ───────────────────────────────────────────────────
 	   Absence → null (MetricDisplay renders the muted no-data label); inline
 	   string consumers fall back to `valueNoData`. Never a bare "·", never 0. */
-	const fmtMin = (v: number | null | undefined): string | null =>
-		v == null ? null : `${v.toFixed(1)} min`;
+	const min = (v: number | null | undefined): string | null =>
+		fmtDelayMin(v, { rounding: 'fixed1' });
 	const fmtCov = (v: number | null | undefined): string | null => (v == null ? null : v.toFixed(2));
-	const fmtPct = (v: number | null | undefined): string | null =>
-		v == null ? null : `${Math.round(v)}%`;
-	const fmtCount = (v: number | null | undefined): string | null => (v == null ? null : `${v}`);
+	const pct = (v: number | null | undefined): string | null => fmtPct(v, { rounding: 'round' });
+	const count = (v: number | null | undefined): string | null => fmtCount(v);
 	/** Short value-level no-data label for absent inline values + empty tiles. */
 	const valueNoData = $derived(copy.strip.noData);
 
@@ -259,28 +259,28 @@
 							terms.spread,
 							fmtCov(row.cov) ?? valueNoData,
 							terms.clumped,
-							fmtPct(row.bunched) ?? valueNoData,
+							pct(row.bunched) ?? valueNoData,
 						)}
 						severity={row.severity}
 						value={row.magnitude}
-						display={fmtMin(row.excessWait) ?? valueNoData}
+						display={min(row.excessWait) ?? valueNoData}
 						aria-label={t.excessWaitMagnitude(shiftLabel(row.shift))}
 					/>
 					<div class="shift-metrics">
 						<MetricDisplay
-							value={fmtMin(row.scheduled)}
+							value={min(row.scheduled)}
 							emptyLabel={valueNoData}
 							label={terms.scheduledGap}
 							size="sm"
 						/>
 						<MetricDisplay
-							value={fmtMin(row.observed)}
+							value={min(row.observed)}
 							emptyLabel={valueNoData}
 							label={terms.observedGap}
 							size="sm"
 						/>
 						<MetricDisplay
-							value={fmtMin(row.excessWait)}
+							value={min(row.excessWait)}
 							emptyLabel={valueNoData}
 							label={terms.excessWait}
 							size="sm"
@@ -311,7 +311,7 @@
 							<div class="shift-metrics shift-metrics--direction">
 								{#each advancedRows as row, ai (row.shift + '-' + ai)}
 									<MetricDisplay
-										value={fmtMin(row.observed)}
+										value={min(row.observed)}
 										emptyLabel={valueNoData}
 										label={shiftLabel(row.shift)}
 										size="sm"
@@ -341,7 +341,7 @@
 				<div class="shift-metrics">
 					<div class="metric-with-info">
 						<MetricDisplay
-							value={fmtMin(latestSpan.service_span_min)}
+							value={min(latestSpan.service_span_min)}
 							emptyLabel={valueNoData}
 							label={t.serviceSpan}
 							size="sm"
@@ -350,7 +350,7 @@
 					</div>
 					<div class="metric-with-info">
 						<MetricDisplay
-							value={fmtMin(latestSpan.first_trip_delay_min)}
+							value={min(latestSpan.first_trip_delay_min)}
 							emptyLabel={valueNoData}
 							label={t.firstTripDelay}
 							size="sm"
@@ -359,7 +359,7 @@
 					</div>
 					<div class="metric-with-info">
 						<MetricDisplay
-							value={fmtMin(latestSpan.last_trip_delay_min)}
+							value={min(latestSpan.last_trip_delay_min)}
 							emptyLabel={valueNoData}
 							label={t.lastTripDelay}
 							size="sm"
@@ -368,7 +368,7 @@
 					</div>
 					<div class="metric-with-info">
 						<MetricDisplay
-							value={fmtCount(latestSpan.trip_count)}
+							value={count(latestSpan.trip_count)}
 							emptyLabel={valueNoData}
 							label={t.tripCount}
 							size="sm"

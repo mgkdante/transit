@@ -21,6 +21,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { SvelteSet } from 'svelte/reactivity';
+	import { fmtDelayMin as sharedFmtDelayMin } from '$lib/utils';
 	import { getLocale, localizeHref, type Locale } from '$lib/i18n';
 	import {
 		getStop,
@@ -274,7 +275,7 @@
 	});
 
 	const fmtMin = (v: number | null): string =>
-		v == null ? t.reliability.noDelay : `${v.toFixed(1)} min`;
+		sharedFmtDelayMin(v, { rounding: 'fixed1', noData: t.reliability.noDelay });
 
 	/* ── Reliability: per-route ranked severity bars ──────────────────────────
 	   Rank the by_route breakdown worst-delay first, each bar banded off its

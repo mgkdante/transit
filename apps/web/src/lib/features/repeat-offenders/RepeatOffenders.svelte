@@ -22,6 +22,7 @@
 -->
 <script lang="ts">
 	import { getLocale, localizeHref, type Locale } from '$lib/i18n';
+	import { fmtDelayMin as sharedFmtDelayMin } from '$lib/utils';
 	import { routeFor, type SurfaceTarget } from '$lib/nav';
 	import { getRepeatOffenders, type Offender } from '$lib/v1';
 	import type { SeverityCode } from '$lib/v1/schemas';
@@ -74,7 +75,7 @@
 
 	/** Format a nullable minute-delay as "12.4 min" or the honest "no data". */
 	function fmtMin(v: number | null): string {
-		return v == null ? t.noData : `${v.toFixed(1)}${t.units.min}`;
+		return sharedFmtDelayMin(v, { rounding: 'fixed1', suffix: t.units.min, noData: t.noData });
 	}
 
 	// One row view-model per offender. The pipeline already ranks the feed

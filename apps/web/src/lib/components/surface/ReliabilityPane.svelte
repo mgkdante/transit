@@ -14,7 +14,7 @@
   ResourceBoundary, which owns the empty/loading/error states).
 -->
 <script lang="ts">
-	import { cn } from '$lib/utils';
+	import { cn, fmtDelayMin, fmtPct } from '$lib/utils';
 	import type { Locale } from '$lib/i18n';
 	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
 	import MetricDisplay from '$lib/components/brand/MetricDisplay.svelte';
@@ -101,9 +101,9 @@
 
 	const delayLabel = $derived(delayLabelKind === 'median' ? t.delayMedian : t.delayAvg);
 
-	const fmtPct = (v: number | null): string | null => (v == null ? null : `${Math.round(v)}%`);
-	const fmtMin = (v: number | null | undefined): string | null =>
-		v == null ? null : `${v.toFixed(1)} min`;
+	const pct = (v: number | null): string | null => fmtPct(v, { rounding: 'round' });
+	const min = (v: number | null | undefined): string | null =>
+		fmtDelayMin(v, { rounding: 'fixed1' });
 
 	// OTP series across periods, drives the trend sparkline (dataviz scale).
 	const otpSeries = $derived(periods.map((p) => p.otpPct));
@@ -119,10 +119,10 @@
 						<!-- A null OTP is genuinely unmeasured (e.g. the day grain emits only
 						     p50/p90) — render nothing rather than a bare "·" placeholder. -->
 						{#if period.otpPct != null}
-							<MetricDisplay value={fmtPct(period.otpPct)} label={t.otp} size="sm" />
+							<MetricDisplay value={pct(period.otpPct)} label={t.otp} size="sm" />
 						{/if}
 						<MetricDisplay
-							value={fmtMin(period.delayMin)}
+							value={min(period.delayMin)}
 							emptyLabel={t.noData}
 							label={period.delayKind === 'median'
 								? t.delayMedian
@@ -133,7 +133,7 @@
 						/>
 						{#if period.p90Min != null}
 							<MetricDisplay
-								value={fmtMin(period.p90Min)}
+								value={min(period.p90Min)}
 								label={t.p90}
 								sublabel={t.p90Caption}
 								size="sm"

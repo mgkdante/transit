@@ -27,6 +27,11 @@
 	import { getLocale, type Locale } from '$lib/i18n';
 	import { layout } from '$lib/nav';
 	import { formatDateKey } from '$lib/utils/time';
+	import {
+		fmtCount as sharedFmtCount,
+		fmtDelayMin as sharedFmtDelayMin,
+		fmtPct as sharedFmtPct,
+	} from '$lib/utils';
 	import { getReceiptsIndex, getReceipt, type Receipt } from '$lib/v1';
 	import { createResource } from '$lib/v1/resource.svelte';
 	import {
@@ -116,25 +121,23 @@
 
 	/** Format a nullable integer percent as "82%" or the honest no-data. */
 	function fmtPct(v: number | null | undefined): string {
-		return v == null ? t.noData : `${v}${t.units.pct}`;
+		return sharedFmtPct(v, { suffix: t.units.pct, noData: t.noData });
 	}
 	/** Format a nullable minute value as "3 min" / "3.4 min" or no-data. */
 	function fmtMin(v: number | null | undefined): string {
-		if (v == null) return t.noData;
-		const n = Number.isInteger(v) ? String(v) : v.toFixed(1);
-		return `${n}${t.units.min}`;
+		return sharedFmtDelayMin(v, { rounding: 'auto', suffix: t.units.min, noData: t.noData });
 	}
 	/** Format a nullable fractional severe-share percent as "4.2%" or no-data. */
 	function fmtSeverePct(v: number | null | undefined): string {
-		return v == null ? t.noData : `${v.toFixed(1)}${t.units.pct}`;
+		return sharedFmtPct(v, { rounding: 'fixed1', suffix: t.units.pct, noData: t.noData });
 	}
 	/** Format a nullable rider-impact score (1 decimal) or no-data. */
 	function fmtScore(v: number | null | undefined): string {
-		return v == null ? t.noData : v.toFixed(1);
+		return sharedFmtCount(v, { rounding: 'fixed1', noData: t.noData });
 	}
 	/** Format a nullable integer count (localized thousands) or no-data. */
 	function fmtCount(v: number | null | undefined): string {
-		return v == null ? t.noData : v.toLocaleString(locale === 'fr' ? 'fr-CA' : 'en-CA');
+		return sharedFmtCount(v, { locale, noData: t.noData });
 	}
 	/** Signed OTP delta in points, e.g. "-8 pts" / "+2 pts", or no-data. */
 	function fmtDelta(v: number | null | undefined): string {
