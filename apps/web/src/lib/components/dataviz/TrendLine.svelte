@@ -25,6 +25,7 @@
 	import ChartReadout from './ChartReadout.svelte';
 	import ChartLegend from './ChartLegend.svelte';
 	import { createChartTooltip, type ChartAxis } from './useChartTooltip.svelte';
+	import { makeXScale } from './lineScale';
 
 	type Series = Array<number | null>;
 
@@ -65,6 +66,15 @@
 		interactive?: boolean;
 		/** Optional x-axis category labels (one per index) for the tooltip heading. */
 		xLabels?: string[];
+		/**
+		 * Optional real timestamp per index (epoch ms, Date, or ISO string) — the
+		 * bucket date of each point. When supplied with >=2 distinct values the chart
+		 * spaces x by ELAPSED CALENDAR TIME instead of array index, so coarse grains
+		 * (week/month) that collapse to a few points show their true spacing rather
+		 * than a flattened even smear. Omit for categorical series — x falls back to
+		 * index spacing and the render stays byte-identical.
+		 */
+		times?: Array<number | Date | string>;
 		/**
 		 * Left y-axis metadata for the ON-TIME series, a unit suffix for the
 		 * tooltip value (e.g. "%") + an optional label/domain for the endpoint
@@ -127,6 +137,7 @@
 		label,
 		interactive = false,
 		xLabels,
+		times,
 		yAxis,
 		retardAxis,
 		showYTicks = false,
@@ -152,6 +163,12 @@
 	// The shared x-domain length (drives index targets + nearest-index math).
 	const n = $derived(Math.max(onTime.length, retard.length, 1));
 
+	// Shared x-scale: true-time spacing when `times` is supplied (>=2 distinct),
+	// else index spacing (byte-identical for categorical callers). The forward x()
+	// and the inverse indexAt() come from ONE scale object so the plotted points and
+	// the hover/keyboard hit-test can never disagree.
+	const xs = $derived(makeXScale({ count: n, width, pad: PAD, times }));
+
 	// An axis tick / readout cell can't carry a sentence, so an absent value reads
 	// as an empty string (no stray "·" ever appears), never a fabricated 0.
 	const NO_DATA = '';
@@ -172,10 +189,10 @@
 	const onTimeRowLabel = $derived(yAxis?.label ?? onTimeLabel);
 	const retardRowLabel = $derived(retardAxis?.label ?? retardLabel);
 
-	// viewBox x for an index (mirrors scale()): single point centres.
+	// viewBox x for an index — delegates to the shared scale (time-based when
+	// `times` is supplied, else index spacing; single point centres).
 	function indexX(i: number): number {
-		const innerW = width - PAD * 2;
-		return n === 1 ? width / 2 : PAD + (i / (n - 1)) * innerW;
+		return xs.x(i);
 	}
 
 	// Place + fill the tooltip for index `i`. The guide x is in viewBox units;
@@ -208,12 +225,9 @@
 		const r = el.getBoundingClientRect();
 		if (r.width === 0) return -1;
 		const frac = Math.min(1, Math.max(0, (clientX - r.left) / r.width));
-		// Pointer fraction → viewBox x → nearest index.
-		const vbX = frac * width;
-		if (n === 1) return 0;
-		const innerW = width - PAD * 2;
-		const raw = ((vbX - PAD) / innerW) * (n - 1);
-		return Math.min(n - 1, Math.max(0, Math.round(raw)));
+		// Invert via the SAME shared scale the plot uses (time-based or index), so
+		// the hover/keyboard target always lands on the point under the pointer.
+		return xs.indexAt(frac);
 	}
 
 	function onPointerMove(e: PointerEvent): void {
@@ -269,12 +283,10 @@
 	function scale(series: Series, dom: [number, number]): Array<Pt | null> {
 		const [min, max] = dom;
 		const span = max - min || 1;
-		const n = Math.max(series.length, 1);
-		const innerW = width - PAD * 2;
 		const innerH = height - PAD * 2;
 		return series.map((v, i) => {
 			if (v == null || Number.isNaN(v)) return null;
-			const x = n === 1 ? width / 2 : PAD + (i / (n - 1)) * innerW;
+			const x = xs.x(i);
 			const clamped = Math.min(max, Math.max(min, v));
 			const y = PAD + (1 - (clamped - min) / span) * innerH;
 			return { x, y };
