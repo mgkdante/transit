@@ -87,3 +87,31 @@ describe('FreshnessStamp — honesty (no timestamp)', () => {
 		expect(within(chip).getByText('inconnu')).toBeInTheDocument();
 	});
 });
+
+describe('FreshnessStamp — ≥24h absolute switch + aria-live (doctrine §3.5)', () => {
+	it('shows an absolute America/Toronto timestamp at/above 24h, not "ago"', () => {
+		// ageSeconds ≥ 86400 → absolute (GEN 12:00Z = 08:00 EDT on Jun 20).
+		render(FreshnessStamp, {
+			props: { variant: 'updated', generatedUtc: GEN, ageSeconds: 90_000, locale: 'en' },
+		});
+		const time = document.querySelector('[data-slot="freshness-stamp"] time') as HTMLElement;
+		const text = time.textContent ?? '';
+		expect(text).not.toMatch(/ago/);
+		expect(text).toMatch(/Jun/); // the real month, not a vague "2 days ago"
+		expect(text).toMatch(/\d{1,2}:\d{2}/); // a wall-clock time
+	});
+
+	it('still shows a relative age under 24h', () => {
+		render(FreshnessStamp, {
+			props: { variant: 'updated', generatedUtc: GEN, ageSeconds: 3600, locale: 'en' },
+		});
+		const time = document.querySelector('[data-slot="freshness-stamp"] time') as HTMLElement;
+		expect(time.textContent ?? '').toMatch(/ago/);
+	});
+
+	it('the calm updated stamp is an aria-live polite region', () => {
+		render(FreshnessStamp, { props: { variant: 'updated', generatedUtc: GEN, locale: 'en' } });
+		const chip = document.querySelector('[data-slot="freshness-stamp"]') as HTMLElement;
+		expect(chip.getAttribute('aria-live')).toBe('polite');
+	});
+});
