@@ -93,7 +93,16 @@
 	<Tabs bind:value={active}>
 		<TabsList variant="line" class="w-full justify-start">
 			{#each tabs as t (t.key)}
-				<TabsTrigger value={t.key}>{t.label}</TabsTrigger>
+				<!-- Signage-active tab look (the yesid StationTabs pattern): bits-ui owns
+				     behavior / ARIA / roving-tabindex via {...props}; the child <button> owns
+				     the markup + the theme-invariant metro-signage active chip (--signage-*),
+				     replacing the bare underline. -->
+				<TabsTrigger value={t.key}>
+					{#snippet child({ props })}
+						<button {...props} class="station-tab" class:active={t.key === active}>{t.label}</button
+						>
+					{/snippet}
+				</TabsTrigger>
 			{/each}
 		</TabsList>
 
@@ -109,6 +118,49 @@
 		flex-direction: column;
 		gap: 0.75rem;
 	}
+
+	/* Signage-active tab (yesid StationTabs parity). The child <button> replaces the
+	   bare line-variant trigger: a quiet mono tab that, when active, becomes a
+	   theme-invariant metro-signage chip (--signage-bg/--signage-text — the same
+	   amber-on-dark sign in both themes; real signs don't reskin when the lights
+	   change). The active VISUAL only — behavior/ARIA stay on the bits-ui trigger. */
+	.station-tab {
+		min-width: max-content;
+		display: inline-flex;
+		align-items: center;
+		gap: 0.5rem;
+		cursor: pointer;
+		padding: 0.5rem 1rem;
+		font-family: var(--font-mono);
+		font-size: var(--text-small);
+		color: var(--muted-foreground);
+		background: transparent;
+		border: none;
+		border-bottom: 3px solid transparent;
+		transition:
+			color var(--duration-fast) var(--ease-out),
+			background var(--duration-fast) var(--ease-out);
+	}
+	.station-tab:hover {
+		color: var(--foreground);
+	}
+	.station-tab.active {
+		background: var(--signage-bg);
+		color: var(--signage-text);
+		border-bottom-color: var(--signage-text);
+		font-weight: 700;
+	}
+	.station-tab:focus-visible {
+		outline: 2px solid var(--ring);
+		outline-offset: -2px;
+		border-radius: var(--radius-sm);
+	}
+	@media (prefers-reduced-motion: reduce) {
+		.station-tab {
+			transition: none;
+		}
+	}
+
 	/* Back affordance — a mono, muted link above the kicker; the chevron nudges
 	   left on hover. INTERACTIVE, so --primary is doctrine-clean on hover. */
 	.surface-back {
