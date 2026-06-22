@@ -9,7 +9,11 @@ from transit_ops.gold.marts import (
     refresh_gold_realtime,
     refresh_gold_static,
 )
-from transit_ops.gold.rollups import WarmRollupBuildResult, build_warm_rollups
+from transit_ops.gold.rollups import (
+    WarmRollupBuildResult,
+    build_warm_rollups,
+    provider_is_seeded,
+)
 
 __all__ = [
     "DimHistoryBackfillResult",
@@ -20,6 +24,7 @@ __all__ = [
     "backfill_dim_name_history",
     "build_gold_marts",
     "build_warm_rollups",
+    "provider_is_seeded",
     "refresh_gold_realtime",
     "refresh_gold_static",
 ]

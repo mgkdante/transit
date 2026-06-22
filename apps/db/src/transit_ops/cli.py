@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import time
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
@@ -22,6 +23,7 @@ from transit_ops.gold import (
     backfill_dim_name_history,
     build_gold_marts,
     build_warm_rollups,
+    provider_is_seeded,
     refresh_gold_realtime,
     refresh_gold_static,
 )
@@ -60,6 +62,8 @@ from transit_ops.source_factory.runner import run_source_factory_rebuild
 from transit_ops.validation.proof import build_retention_proof_report
 from transit_ops.validation.static_feeds import validate_static_feeds
 
+logger = logging.getLogger(__name__)
+
 app = typer.Typer(
     help=(
         "Transit Ops CLI for repository bootstrap, provider registry, "
@@ -85,6 +89,36 @@ def _alembic_config(settings: Settings) -> Config:
 
 def _provider_registry(settings: Settings) -> ProviderRegistry:
     return ProviderRegistry.from_project_root(project_root=_project_root(), settings=settings)
+
+
+def _skip_if_unseeded(settings: Settings, provider_id: str, *, step: str) -> bool:
+    """Return True (and emit a skip marker) when the provider has no gold data.
+
+    An enrolled-but-unseeded provider (no gold.dim_provider row — its static
+    pipeline has never run) has nothing for the per-provider warm-rollup /
+    prune / retention steps to act on. The Daily Warm Rollups workflow loops
+    these over EVERY registered provider under ``set -e``, so each must skip
+    cleanly (logged no-op, exit 0) rather than crash the all-providers run.
+
+    The prune/retention bodies already filter on ``provider_id`` and no-op on
+    empty result sets, so this guard is a cheap, explicit short-circuit that
+    also avoids spending an R2 / DB round-trip on a provider with zero data.
+    """
+    with make_engine(settings).connect() as conn:
+        if provider_is_seeded(conn, provider_id):
+            return False
+    logger.info(
+        "provider %r not seeded (no gold.dim_provider row) — skipping %s",
+        provider_id,
+        step,
+    )
+    typer.echo(
+        json.dumps(
+            {"provider_id": provider_id, "skipped_not_seeded": True, "step": step},
+            indent=2,
+        )
+    )
+    return True
 
 
 def _preflight_report_path(report_path: Path | None) -> None:
@@ -432,6 +466,9 @@ def retention_proof_report_command(
         registry.get_provider(provider_id)
     except KeyError as exc:
         raise typer.BadParameter(str(exc)) from exc
+
+    if _skip_if_unseeded(settings, provider_id, step="retention-proof-report"):
+        return
 
     _preflight_report_path(report_path)
     try:
@@ -826,6 +863,8 @@ def prune_i3_storage_command(
     """Prune closed i3 silver history and old raw i3 snapshots + their R2 JSON."""
 
     settings = get_settings()
+    if _skip_if_unseeded(settings, provider_id, step="prune-i3-storage"):
+        return
     try:
         result = prune_i3_storage(provider_id, settings=settings, dry_run=dry_run)
     except (ValueError, FileNotFoundError) as exc:
@@ -885,6 +924,8 @@ def prune_bronze_storage_command(
     """Prune old Bronze R2 objects and raw metadata after downstream Silver data is gone."""
 
     settings = get_settings()
+    if _skip_if_unseeded(settings, provider_id, step="prune-bronze-storage"):
+        return
     try:
         result = prune_bronze_storage(
             provider_id,
@@ -986,9 +1027,21 @@ def publish_all_command(
     """
     settings = get_settings()
     registry = _provider_registry(settings)
+    engine = make_engine(settings)
     results: list[dict[str, object]] = []
     failures: list[str] = []
+    skipped: list[str] = []
     for provider_id in registry.list_provider_ids():
+        # Enrolled-but-unseeded providers have no gold.dim_provider row and thus
+        # no gold data to build/publish; skip cleanly so the all-providers run
+        # never fails on a provider whose static pipeline has not run yet.
+        if not provider_is_seeded(engine, provider_id):
+            logger.info(
+                "provider %r not seeded (no gold.dim_provider row) — skipping publish-all",
+                provider_id,
+            )
+            skipped.append(provider_id)
+            continue
         try:
             result = publish_snapshot(
                 provider_id, tier=tier, settings=settings, registry=registry
@@ -996,6 +1049,8 @@ def publish_all_command(
             results.append(result.display_dict())
         except (KeyError, ValueError, FileNotFoundError) as exc:
             failures.append(f"{provider_id}: {exc}")
+    if skipped:
+        typer.echo(f"publish-all skipped unseeded providers: {', '.join(skipped)}", err=True)
     typer.echo(json.dumps(results, indent=2))
     if failures:
         for failure in failures:
@@ -1140,6 +1195,8 @@ def prune_warm_rollup_storage_command(
     """Prune warm rollup rows older than GOLD_WARM_ROLLUP_RETENTION_DAYS (default 730 days)."""
 
     settings = get_settings()
+    if _skip_if_unseeded(settings, provider_id, step="prune-warm-rollup-storage"):
+        return
     result = prune_warm_rollup_storage(provider_id, settings=settings, dry_run=dry_run)
     typer.echo(json.dumps(result.display_dict(), indent=2))
 

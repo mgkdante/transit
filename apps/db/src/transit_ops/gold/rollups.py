@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 
@@ -9,6 +10,32 @@ from sqlalchemy.engine import Engine
 from transit_ops.db.connection import make_engine
 from transit_ops.ingestion.common import utc_now
 from transit_ops.settings import Settings, get_settings
+
+logger = logging.getLogger(__name__)
+
+
+def provider_is_seeded(conn, provider_id: str) -> bool:  # noqa: ANN001
+    """Return True if the provider has a ``gold.dim_provider`` row.
+
+    Multi-provider: a provider can be *enrolled* (registered in the provider
+    registry / has a YAML manifest, so ``list-providers`` returns it) yet never
+    *seeded* (its static pipeline has never run, so there is no
+    ``gold.dim_provider`` row). Per-provider gold steps that look up the provider
+    calendar (e.g. ``build_warm_rollups`` via ``dp.timezone``) crash with
+    ``NoResultFound`` on such a provider. This cheap EXISTS probe lets each
+    entry point skip an unseeded provider gracefully instead of aborting the
+    whole all-providers run.
+
+    Accepts either a live Connection or an Engine; a bare Engine is opened in a
+    short-lived ``connect()`` block.
+    """
+    sql = text("SELECT 1 FROM gold.dim_provider WHERE provider_id = :provider_id LIMIT 1")
+    params = {"provider_id": provider_id}
+    if isinstance(conn, Engine):
+        with conn.connect() as connection:
+            return connection.execute(sql, params).scalar_one_or_none() is not None
+    return conn.execute(sql, params).scalar_one_or_none() is not None
+
 
 SEVERE_DELAY_SECONDS = 300
 GHOST_DELAY_ABS_SECONDS = 3600
@@ -1798,10 +1825,14 @@ class WarmRollupBuildResult:
     built_stop_occupancy_days: int = 0
     built_route_service_span_days: int = 0
     built_route_skipped_stop_days: int = 0
+    # True when the provider is enrolled but not yet seeded (no gold.dim_provider
+    # row): the build is a logged no-op rather than a crash.
+    skipped_not_seeded: bool = False
 
     def display_dict(self) -> dict[str, object]:
         return {
             "provider_id": self.provider_id,
+            "skipped_not_seeded": self.skipped_not_seeded,
             "since_utc": self.since_utc.isoformat() if self.since_utc else None,
             "built_vehicle_periods": self.built_vehicle_periods,
             "built_trip_delay_periods": self.built_trip_delay_periods,
@@ -1917,6 +1948,25 @@ def build_warm_rollups(
         )
     if engine is None:
         engine = make_engine(settings)
+
+    # Enrolled-but-unseeded providers have no gold.dim_provider row, so the
+    # dp.timezone calendar lookup below would raise NoResultFound and abort the
+    # all-providers Daily Warm Rollups run. Skip cleanly instead (exit 0).
+    with engine.begin() as conn:
+        seeded = provider_is_seeded(conn, provider_id)
+    if not seeded:
+        logger.info(
+            "provider %r not seeded (no gold.dim_provider row) — skipping build-warm-rollups",
+            provider_id,
+        )
+        return WarmRollupBuildResult(
+            provider_id=provider_id,
+            since_utc=since_utc,
+            built_vehicle_periods=0,
+            built_trip_delay_periods=0,
+            completed_at_utc=utc_now(),
+            skipped_not_seeded=True,
+        )
 
     built_vehicle = 0
     built_trip_delay = 0
