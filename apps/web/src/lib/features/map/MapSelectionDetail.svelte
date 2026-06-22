@@ -1,6 +1,5 @@
 <script lang="ts">
 	import ChevronRightIcon from '@lucide/svelte/icons/chevron-right';
-	import TriangleAlertIcon from '@lucide/svelte/icons/triangle-alert';
 	import type { Locale } from '$lib/i18n';
 	import type { Chip } from '$lib/filters';
 	import type { Alert, OccupancyCode, StatusCode, StopDeparture, Vehicle } from '$lib/v1/schemas';
@@ -17,20 +16,9 @@
 		onselect?: (selection: MapSelection) => void;
 		onfilter?: (chip: Chip) => void;
 		onalertselect?: (alert: Alert) => void;
-		/** Set when this detail is a vehicle that has gone silent → renders an honest
-		 * "Not reporting · last seen N ago" note. `ageS` = seconds since its last fix. */
-		notReporting?: { ageS: number } | null;
 	}
 
-	let {
-		detail,
-		locale,
-		compact = false,
-		onselect,
-		onfilter,
-		onalertselect,
-		notReporting = null,
-	}: Props = $props();
+	let { detail, locale, compact = false, onselect, onfilter, onalertselect }: Props = $props();
 
 	const labels = {
 		en: {
@@ -74,8 +62,6 @@
 			filterCrowding: (crowding: string) => `Filter crowding ${crowding}`,
 			filterTrip: (trip: string) => `Filter trip ${trip}`,
 			liveBuses: 'Live buses',
-			notReporting: 'Not reporting',
-			lastSeenAgo: (age: string) => 'last seen ' + age + ' ago',
 		},
 		fr: {
 			bus: 'Bus',
@@ -118,8 +104,6 @@
 			filterCrowding: (crowding: string) => `Filtrer l’achalandage ${crowding}`,
 			filterTrip: (trip: string) => `Filtrer le trajet ${trip}`,
 			liveBuses: 'Bus en direct',
-			notReporting: 'Sans signal',
-			lastSeenAgo: (age: string) => 'vu il y a ' + age,
 		},
 	} as const;
 
@@ -145,11 +129,6 @@
 
 	function timeLabel(iso: string | null | undefined): string {
 		return iso ? formatUtc(iso, locale, { hour: '2-digit', minute: '2-digit', hour12: false }) : '';
-	}
-
-	// Short relative age for the not-reporting note: seconds under ~1.5 min, else minutes.
-	function formatAge(seconds: number): string {
-		return seconds < 90 ? `${Math.round(seconds)} s` : `${Math.round(seconds / 60)} min`;
 	}
 
 	function selectRoute(
@@ -231,12 +210,6 @@
 					<ChevronRightIcon size={14} strokeWidth={2.4} aria-hidden="true" />
 				</button>
 			</div>
-			{#if notReporting}
-				<p class="map-not-reporting" role="status">
-					<TriangleAlertIcon size={14} strokeWidth={2.4} aria-hidden="true" />
-					<span>{t.notReporting} · {t.lastSeenAgo(formatAge(notReporting.ageS))}</span>
-				</p>
-			{/if}
 			<dl class="map-detail-grid">
 				<div>
 					<dt>{t.route}</dt>
@@ -796,37 +769,6 @@
 		opacity: 1;
 		transform: translateX(2px);
 	}
-	/* ── Not-reporting note (a silent / frozen bus) ───────────── */
-	.map-not-reporting {
-		position: relative;
-		display: flex;
-		align-items: center;
-		gap: 0.45rem;
-		margin: 0;
-		padding: 0.4rem 0.6rem 0.4rem 0.75rem;
-		border: 1px solid var(--border-subtle);
-		border-radius: var(--radius-md);
-		background: var(--muted);
-		font-family: var(--font-mono);
-		font-size: var(--text-caption);
-		color: var(--muted-foreground);
-		overflow: hidden;
-	}
-	.map-not-reporting :global(svg) {
-		flex: none;
-		opacity: 0.75;
-	}
-	/* Leading signage rail — calm + honest, not alarmist. */
-	.map-not-reporting::before {
-		content: '';
-		position: absolute;
-		inset-block: 0;
-		inset-inline-start: 0;
-		width: 3px;
-		background: var(--muted-foreground);
-		opacity: 0.5;
-	}
-
 	/* ── Attribute grid (status / crowding / delay …) ─────────── */
 	.map-detail-grid {
 		display: grid;

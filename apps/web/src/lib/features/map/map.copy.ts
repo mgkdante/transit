@@ -66,6 +66,15 @@ export interface MapCopy {
 	 */
 	readonly liveUnavailable: string;
 	readonly liveNoVehicles: string;
+	/**
+	 * Top-of-map banner shown ONLY when the WHOLE live feed has genuinely stalled
+	 * (live.isStale — age past the 3x-ttl budget). The per-vehicle updated_utc is
+	 * the uniform snapshot capture time, so this can only express a global feed
+	 * stall, never one stuck bus. Calm caution, not alarm: it states a fact and
+	 * the rest of the map (basemap, stops, near-me) stays usable. The relative
+	 * last-update age slots in per-locale. Em-dash-free (repo doctrine).
+	 */
+	readonly feedNotResponding: (age: string) => string;
 }
 
 export const copy: Record<Locale, MapCopy> = {
@@ -112,6 +121,7 @@ export const copy: Record<Locale, MapCopy> = {
 		alertHasAria: 'Show markers with alerts',
 		liveUnavailable: 'Live data unavailable right now. The map and stops still work.',
 		liveNoVehicles: 'No vehicles to show right now.',
+		feedNotResponding: (age) => `Live feed not responding. Last update ${age}.`,
 	},
 	fr: {
 		kicker: 'RÉSEAU · EN DIRECT',
@@ -157,6 +167,7 @@ export const copy: Record<Locale, MapCopy> = {
 		liveUnavailable:
 			'Données en direct indisponibles pour l’instant. La carte et les arrêts fonctionnent toujours.',
 		liveNoVehicles: 'Aucun véhicule à afficher pour l’instant.',
+		feedNotResponding: (age) => `Le flux en direct ne répond pas. Dernière mise à jour ${age}.`,
 	},
 };
 

@@ -82,7 +82,6 @@
 		type RouteShapes,
 	} from '$lib/components/map/vehicleShapes';
 	import {
-		isSilent,
 		liveTtlS,
 		silenceAgeS,
 		silenceOpacity,
@@ -94,6 +93,7 @@
 	import { mapRailSizing } from './mapRailSizing';
 	import MapFilterPill from './MapFilterPill.svelte';
 	import MapFreshness from './MapFreshness.svelte';
+	import MapFeedStallBanner from './MapFeedStallBanner.svelte';
 	import MapNearMeControl from './MapNearMeControl.svelte';
 	import MapSelectionDetail from './MapSelectionDetail.svelte';
 	import { routeBoundsFromFile, zoomForNearMePrecision } from './mapGeo';
@@ -102,11 +102,7 @@
 	import { shouldAnimate } from '$lib/motion/policy';
 	import { buildAlertEntitySets, vehicleHasAlert } from './mapAlerts';
 	import { PICKABLE_MAP_LAYERS, pickMapSelection } from './mapPicking';
-	import {
-		resolveMapSelection,
-		type MapSelection,
-		type MapSelectionDetail as MapSelectionDetailData,
-	} from './mapSelection';
+	import { resolveMapSelection, type MapSelection } from './mapSelection';
 	import type { GeocodedLocation, GeocodePrecision, GeocodeSuggestion } from '$lib/geocode/types';
 	import { hasCoordinates } from '$lib/geocode/types';
 	import type { StopIndexEntry } from '$lib/v1/schemas';
@@ -229,9 +225,10 @@
 		return () => live.stop();
 	});
 
-	// Keep the shared clock ticking while the map is mounted: the per-vehicle
-	// silence fade re-evaluates off `sharedClock.serverNow`, so a bus can fade
-	// BETWEEN polls (the clock cadence honors prefers-reduced-motion).
+	// Keep the shared clock ticking while the map is mounted: every relative-time
+	// label (the freshness chip, the feed-stall banner age) re-derives off
+	// `sharedClock.serverNow`, so it must keep advancing between polls. (This once
+	// also drove the per-vehicle silence fade, now removed — buses are solid.)
 	$effect(() => sharedClock.subscribe());
 
 	// Tear the motion controller down on component unmount: it owns a running gsap
@@ -244,8 +241,10 @@
 	// destroy (destroy() just kills an already-killed tween, which is a no-op).
 	$effect(() => () => untrack(() => vehicleMotion)?.destroy());
 
-	// Live tier ttl (seconds) → derives the silence fade windows so they track the
-	// publisher's cadence, not a magic number. Default 30s if the manifest omits it.
+	// Live tier ttl (seconds) → drives the stale/banner windows (isStale fires at
+	// 3x ttl = 90s) so they track the publisher's cadence, not a magic number.
+	// Default 30s if the manifest omits it. (The per-vehicle silence fade this once
+	// also sized is gone; liveTtl is still threaded through the now no-op refresher.)
 	const liveTtl = liveTtlS(manifest.files?.live?.ttl_s);
 
 	let map = $state<MapLibreMap | null>(null);
@@ -399,9 +398,11 @@
 	// reason via $lib/site/serviceWindow.inferAbsenceReason. The map spans the WHOLE
 	// network (mixed modes + every route), so there is no single first/last window
 	// to claim "closed" against here — a network-wide overnight verdict needs a
-	// network service-span signal we do not yet publish. (The selected-but-silent
-	// "last seen N ago" half is now DONE in S5 — see vehicleAbsence + the map detail
-	// card's not-reporting note, fed by isSilent off the shared clock.)
+	// network service-span signal we do not yet publish. The selected-but-silent
+	// "last seen N ago" half is also DEFERRED: it needs a per-vehicle report
+	// timestamp in /v1, but updated_utc is currently the uniform snapshot capture
+	// time (every vehicle shares it), so it can only express global staleness, not
+	// one stuck bus.
 	const liveEdgeState = $derived.by<'unavailable' | 'no-vehicles' | null>(() => {
 		if (live.error != null && live.generatedUtc == null) return 'unavailable';
 		if (live.vehicles != null && !live.isStale && (live.vehicles.vehicles?.length ?? 0) === 0) {
@@ -467,17 +468,6 @@
 			alerts: alertList,
 		}),
 	);
-	// A focused vehicle that has gone SILENT (past the silent threshold) → surface
-	// an honest "last seen N ago" note in its detail card, the companion text to the
-	// on-map "!" marker. Reads the skew-free shared clock + the live ttl, exactly
-	// like the map's per-vehicle silence fade, so the two stay in lockstep.
-	function vehicleAbsence(d: MapSelectionDetailData | null): { ageS: number } | null {
-		if (!d || d.kind !== 'vehicle') return null;
-		const ageS = silenceAgeS(d.vehicle.updated_utc, sharedClock.serverNow);
-		return isSilent(ageS, liveTtl) ? { ageS } : null;
-	}
-	const selectedVehicleAbsence = $derived(vehicleAbsence(selectedDetail));
-	const hoverVehicleAbsence = $derived(vehicleAbsence(hoverDetail));
 	const detailSurfaceKey = $derived(
 		selectedDetail ? `${selectedDetail.kind}:${selectedDetail.id}` : 'empty',
 	);
@@ -1088,10 +1078,10 @@
 				// shape is cached yet. Reduced motion skips animation entirely (the
 				// controller snaps), so the resolver is inert there.
 				shapeFor: reduceMotion ? undefined : shapeFor,
-				// Per-frame continuous fade while the position tween runs — but NOT
-				// under reduced motion (then opacity is set discretely at poll/tick
-				// time, no per-frame ramp). Reads the live clock each frame so a bus
-				// that goes silent mid-interval fades in place.
+				// Once a per-frame continuous fade while the position tween ran; the
+				// per-vehicle fade was removed so the refresher is a no-op (always
+				// re-stamps 1). Still wired (skipped under reduced motion) to keep the
+				// motion controller's per-frame opacity plumbing intact.
 				refreshOpacity: reduceMotion ? undefined : refreshSilenceOpacity,
 			},
 		);
@@ -1110,10 +1100,11 @@
 		setStale(m, live.isStale);
 	});
 
-	// Per-frame silence-fade refresher: recompute a bus's opacity from its frozen
-	// last-report time and the LIVE skew-free clock. Passed to the motion
-	// controller so the running position tween re-stamps opacity every frame — a
-	// bus going quiet mid-interval fades in place without waiting for a poll.
+	// Per-frame opacity refresher — now a HARMLESS NO-OP kept for structure. It once
+	// re-stamped a bus's opacity from its last-report time + the live clock so a bus
+	// going quiet mid-interval faded in place; the per-vehicle fade was removed, so
+	// `silenceOpacity` always returns 1 and this just re-stamps 1. Still passed to the
+	// motion controller so the per-frame plumbing stays wired (zero visual effect).
 	function refreshSilenceOpacity(feature: { properties: { id: string; opacity: number } }): number {
 		const updatedUtc = live.index.byVehicleId.get(feature.properties.id)?.updated_utc;
 		return updatedUtc == null
@@ -1121,15 +1112,14 @@
 			: silenceOpacity(silenceAgeS(updatedUtc, sharedClock.serverNow), liveTtl);
 	}
 
-	// Cheap signature of the per-vehicle silence-opacity buckets at a given clock
-	// reading. Two ticks with the SAME signature would feed byte-identical opacity,
-	// so the tick effect can skip the rebuild + setData. Opacity is quantised to
-	// 3 decimals (~0.001 step) so a bus actively fading still changes the signature
-	// every tick (it MUST keep updating), while an all-fresh / all-floored feed —
-	// where opacity is pinned at 1 or the floor — yields a stable signature and is
-	// skipped. Uses the same discrete/continuous branch as the feed so the
-	// signature tracks exactly what would be drawn. Cost is one pass over the live
-	// vehicles (no FeatureCollection rebuild, no GL call).
+	// Cheap signature of the per-vehicle opacity buckets at a given clock reading.
+	// Two ticks with the SAME signature would feed byte-identical opacity, so the
+	// tick effect can skip the rebuild + setData. With the per-vehicle fade removed
+	// `silenceOpacity` always returns 1, so this signature only changes with the
+	// vehicle set — every steady-state tick is skipped, which is exactly what we
+	// want. Quantised to 3 decimals and reading the same branch as the feed so it
+	// still tracks what would be drawn if a per-vehicle signal ever returns. Cost is
+	// one pass over the live vehicles (no FeatureCollection rebuild, no GL call).
 	function silenceSignature(serverNow: number, reduceMotion: boolean): string {
 		const vehicles = live.vehicles?.vehicles ?? [];
 		let sig = `${vehicles.length}`;
@@ -1144,10 +1134,11 @@
 	}
 
 	// SECOND, lightweight tick effect: re-target ONLY the vehicle layer on the
-	// shared clock so the silence fade advances between polls. Under reduced
-	// motion the clock ticks calmly (~30s) and we re-feed discrete opacity — no
-	// per-frame ramp. Re-targets via the SAME tickKey so the in-flight position
-	// tween is preserved (no motion restart), only opacity is refreshed.
+	// shared clock. This once advanced the per-vehicle silence fade between polls;
+	// that fade is gone (opacity is constant 1), so in steady state the signature
+	// guard skips it — it is kept as harmless structure (and to re-feed on a vehicle-
+	// set change). Re-targets via the SAME tickKey so the in-flight position tween is
+	// preserved (no motion restart), only opacity is refreshed.
 	$effect(() => {
 		// ONLY serverNow (+ the layer-install revision) is a tracked dependency, so
 		// this effect fires on the clock tick and after a style swap — NOT on every
@@ -1278,7 +1269,6 @@
 				<MapSelectionDetail
 					detail={selectedDetail}
 					{locale}
-					notReporting={selectedVehicleAbsence}
 					onselect={selectFromDetail}
 					onfilter={applyDetailFilter}
 					onalertselect={selectAlertRelated}
@@ -1385,6 +1375,19 @@
 		{locale}
 	/>
 
+	<!-- Feed-stall banner: a calm top-of-map caution shown ONLY when the WHOLE live
+	     feed has genuinely stalled (live.isStale — age past the 3x-ttl budget). The
+	     pipeline stamps every vehicle's updated_utc with the uniform snapshot capture
+	     time, so staleness is a GLOBAL feed signal, never one stuck bus — which is why
+	     the per-vehicle silence fade + per-bus marker were dropped. Informational (a
+	     polite status), non-blocking, and absent in normal operation. -->
+	<MapFeedStallBanner
+		generatedUtc={live.generatedUtc}
+		ageSeconds={live.ageSeconds}
+		isStale={live.isStale}
+		{locale}
+	/>
+
 	<!-- Live-feed edge notice: a small, non-blocking pill centred near the top of
 	     the canvas when the live feed is unreachable or currently has no vehicles.
 	     It floats OVER the map (pointer-events: none) so the basemap, stops, and
@@ -1406,7 +1409,6 @@
 				detail={hoverDetail}
 				{locale}
 				compact
-				notReporting={hoverVehicleAbsence}
 				onselect={selectFromDetail}
 				onfilter={applyDetailFilter}
 				onalertselect={selectAlertRelated}
@@ -1429,7 +1431,6 @@
 				<MapSelectionDetail
 					detail={selectedDetail}
 					{locale}
-					notReporting={selectedVehicleAbsence}
 					onselect={selectFromDetail}
 					onfilter={applyDetailFilter}
 					onalertselect={selectAlertRelated}

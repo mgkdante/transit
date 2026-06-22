@@ -1,69 +1,49 @@
-// map/vehicleSilence.ts — the HONESTY half of the kinetic map: per-vehicle
-// "going stale" aging cue + a 3-state silence model.
+// map/vehicleSilence.ts — per-vehicle report-age helpers for the kinetic map.
 //
-// The position TWEEN (vehicleMotion.ts) already animates a bus ONLY between two
-// real reported positions and clamps to [0,1] (never extrapolates past the last
-// real fix). What it cannot express is the OTHER honest signal: a single bus can
-// go quiet while the rest of the feed stays fresh. The global stale-dim
-// (vehicleLayer.setStale) only fires when the WHOLE live tier is behind; it says
-// nothing about one bus that stopped reporting.
+// HISTORY / WHY THESE NO LONGER FADE:
+// S5 originally shipped a per-vehicle "going stale" aging fade here: a single bus
+// would dim toward a floor as its own `updated_utc` aged, on the theory that one
+// bus can go quiet while the rest of the feed stays fresh. That theory does not
+// hold for this feed. The pipeline (apps/db .../builders/live.py) stamps EVERY
+// vehicle with `updated_utc = captured_at_utc` — the single feed-snapshot capture
+// time. So all buses share ONE identical age: the per-vehicle fade can never
+// distinguish a stuck bus from its neighbours (they all fade together), and at
+// the old fade-start (~45s) it merely flickered on and off with normal 30s-poll
+// jitter. It was honesty theatre, not honesty.
 //
-// The model is THREE states, not "dim toward a floor":
-//   · FRESH    — a normal report gap → FULL opacity.
-//   · AGING    — getting stale → a gentle fade toward AGING_FLOOR_OPACITY. This
-//                fade is ONLY the "going stale" cue; it is NOT how silence reads.
-//   · SILENT   — past the silent threshold → the bus is FULL opacity again and is
-//                flagged by an on-map marker (the "!" badge), NOT dimmed to a
-//                floor. A long-silent bus is honestly "last seen N ago", surfaced
-//                by a marker the eye can find, not erased into a faint ghost.
-// To avoid a hard SNAP from the aging floor back up to full at the threshold, the
-// opacity RAMPS back up across a short SILENT_RECOVER_S window — a continuous
-// hand-off from the aging cue to the flagged-silent state.
+// Decision: buses stay SOLID in normal operation. Staleness is now a GLOBAL
+// signal only:
+//   · the feed-not-responding banner appears when the whole live feed genuinely
+//     stalls, and
+//   · the global stale-dim (vehicleLayer.setStale, driven by live.isStale at the
+//     90s = 3×ttl threshold) dims the whole tier together.
+// Both reflect the truth of a uniform-capture-time feed; a per-vehicle gradient
+// does not. So `silenceOpacity` / `silenceOpacityDiscrete` now ALWAYS return 1.
 //
-// Thresholds are derived from the live tier's ttl (manifest live ttl, default
-// 30s) so they track the publisher's cadence rather than a magic number:
-//   · below FRESH_TTL_MULTIPLIER × ttl                 → full opacity (FRESH).
-//   · between FRESH and SILENT windows                 → fade toward the aging
-//                                                        floor (AGING).
-//   · across the next SILENT_RECOVER_S after SILENT    → ramp back up to full.
-//   · beyond that                                      → full opacity (SILENT,
-//                                                        carries the marker).
-// Rationale for the multipliers: one whole missed publish window (~1×ttl) is
-// normal jitter and must NOT dim. We give it a little more headroom (1.5×) before
-// the aging fade starts, then fade across another ~1.5 windows, reaching the
-// aging floor at 3×ttl — the same "two missed windows = behind" spirit as the
-// global stale threshold (2×ttl), just softened into a gradient and pushed out
-// slightly so a merely-late bus is not punished alongside a truly silent one.
-
-/** Fade starts once a vehicle's own report is older than this × ttl. */
-export const FRESH_TTL_MULTIPLIER = 1.5;
-/** The aging fade reaches its floor / the silent threshold at this × ttl. */
-export const SILENT_TTL_MULTIPLIER = 3;
-/**
- * Lowest opacity the AGING fade reaches (the bottom of the "going stale" cue,
- * just before the silent threshold). NOT a resting floor — once a bus crosses
- * into SILENT it ramps back to full opacity and is flagged by the on-map marker.
- */
-export const AGING_FLOOR_OPACITY = 0.6;
-/**
- * Seconds over which a freshly-silent bus ramps from the aging floor back up to
- * full opacity, so the hand-off from the aging fade to the flagged-silent state
- * is continuous (no snap).
- */
-export const SILENT_RECOVER_S = 0.4;
+// What remains here is the still-useful, still-honest machinery: `silenceAgeS`
+// (seconds since the shared snapshot capture time, on the server clock) and
+// `liveTtlS` / `DEFAULT_LIVE_TTL_S` (the publisher's cadence). The opacity
+// functions are kept as no-op (always-1) shims so callers and the per-frame
+// refresher need not be rewired — they now compute a constant, which folds into a
+// stable signature and harmlessly produces no re-feeds.
 
 /** Default live ttl (seconds) when the manifest omits it — mirrors the schema. */
 export const DEFAULT_LIVE_TTL_S = 30;
 
 /**
- * Seconds since a vehicle's OWN last report, on the server's timeline.
+ * Seconds since a vehicle's report timestamp, on the server's timeline.
+ *
+ * NOTE: for this feed `updated_utc` is the SHARED snapshot capture time
+ * (`captured_at_utc`), identical across every vehicle — so this age is really the
+ * feed's age, not one bus's age. Still useful for a "last seen" hover and for the
+ * global staleness logic.
  *
  * `serverNow` MUST be `sharedClock.serverNow` (skew-corrected) so the age is
  * immune to a wrong client clock — both operands then sit on the server's
  * timeline, exactly like the freshness badge. Clamped to >= 0 (a report stamped
  * slightly in the future from skew reads as "0s ago", never negative). A missing
  * or unparseable `updated_utc` is treated as maximally silent (returns
- * Infinity), so it flags as silent rather than masquerading as fresh.
+ * Infinity).
  */
 export function silenceAgeS(updatedUtc: string | null | undefined, serverNow: number): number {
 	if (updatedUtc == null) return Number.POSITIVE_INFINITY;
@@ -73,60 +53,30 @@ export function silenceAgeS(updatedUtc: string | null | undefined, serverNow: nu
 }
 
 /**
- * Per-vehicle icon opacity from its silence age — the 3-state model.
+ * Per-vehicle icon opacity — now ALWAYS 1 (buses are solid in normal operation).
  *
- * FRESH (≤ fresh window) → full. AGING (fade window) → a linear ramp DOWN to
- * AGING_FLOOR_OPACITY: the "going stale" cue. SILENT (past the threshold) → the
- * bus is FULL opacity again (it is flagged by the on-map marker, not dimmed),
- * with a short SILENT_RECOVER_S ramp UP from the aging floor so the hand-off is
- * continuous instead of a snap. `ttlS` is clamped to a sane minimum so a
- * degenerate manifest can't collapse the windows.
+ * It used to fade a single aging bus toward a floor, but `updated_utc` is the
+ * uniform snapshot capture time, so every bus shares one age: a per-vehicle fade
+ * cannot single out a stuck bus, and at the old start point it only flickered on
+ * normal poll jitter. Staleness is signalled globally instead — by the
+ * feed-not-responding banner and the global stale-dim (live.isStale at 90s). This
+ * shim keeps the call site and the per-frame refresher intact; they now compute a
+ * constant, which yields a stable signature and no re-feeds.
+ *
+ * `ageS` / `ttlS` are accepted (and ignored) so existing callers need no change.
  */
-export function silenceOpacity(ageS: number, ttlS: number = DEFAULT_LIVE_TTL_S): number {
-	const ttl = Math.max(1, ttlS);
-	const fadeStart = FRESH_TTL_MULTIPLIER * ttl;
-	const fadeEnd = SILENT_TTL_MULTIPLIER * ttl;
-	if (ageS <= fadeStart) return 1;
-	if (ageS < fadeEnd) {
-		const progress = (ageS - fadeStart) / (fadeEnd - fadeStart);
-		return 1 - progress * (1 - AGING_FLOOR_OPACITY);
-	}
-	if (ageS < fadeEnd + SILENT_RECOVER_S) {
-		return AGING_FLOOR_OPACITY + ((ageS - fadeEnd) / SILENT_RECOVER_S) * (1 - AGING_FLOOR_OPACITY);
-	}
+export function silenceOpacity(_ageS: number, _ttlS: number = DEFAULT_LIVE_TTL_S): number {
 	return 1;
 }
 
 /**
- * Helper predicate: true once a vehicle is past the fade window
- * (>= SILENT_TTL_MULTIPLIER × ttl), i.e. fully silent — it gets the on-map "!"
- * marker and is shown at full opacity.
- *
- * This does NOT drive the in-place "stop gliding" guarantee — that already
- * follows mechanically from interpolation: a non-reporting bus repeats its last
- * fix, so `from === to` yields zero motion, and `interpolateVehicleFeatures`
- * clamps progress to [0,1] so a bus never extrapolates past its last real
- * position. `isSilent` is a classification predicate for callers/tests that want
- * to branch on "is this bus fully silent" (e.g. to attach the marker); it is
- * intentionally side-effect-free.
+ * Discrete (reduced-motion) counterpart to `silenceOpacity` — also ALWAYS 1, for
+ * the same reason: there is no honest per-vehicle staleness gradient to step
+ * through when every bus shares the snapshot capture time. Kept as a no-op shim so
+ * the reduced-motion branch in callers need not be rewired.
  */
-export function isSilent(ageS: number, ttlS: number = DEFAULT_LIVE_TTL_S): boolean {
-	return ageS >= SILENT_TTL_MULTIPLIER * Math.max(1, ttlS);
-}
-
-/**
- * Discrete (non-animated) opacity for `prefers-reduced-motion`. Still HONEST —
- * an aging bus is dimmed — but stepped, not a per-frame ramp: full while fresh,
- * a single mid step while aging, then full again once silent (the marker, not a
- * floor, carries the silent state). No gradient = no per-frame fade.
- */
-export function silenceOpacityDiscrete(ageS: number, ttlS: number = DEFAULT_LIVE_TTL_S): number {
-	const ttl = Math.max(1, ttlS);
-	if (ageS <= FRESH_TTL_MULTIPLIER * ttl) return 1;
-	if (ageS >= SILENT_TTL_MULTIPLIER * ttl) return 1;
-	// One honest middle step (halfway between full and the aging floor) for the
-	// fade window.
-	return (1 + AGING_FLOOR_OPACITY) / 2;
+export function silenceOpacityDiscrete(_ageS: number, _ttlS: number = DEFAULT_LIVE_TTL_S): number {
+	return 1;
 }
 
 /**

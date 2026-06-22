@@ -236,9 +236,11 @@ function setVehicleSourceData(map: MapLibreMap, features: VehicleFC): void {
 	source?.setData(features as unknown as Parameters<GeoJSONSource['setData']>[0]);
 }
 
-/** Re-stamp each feature's `opacity` from the live clock (silence fade). Returns
- * a NEW collection (does not mutate the input) so the source data is replaced
- * cleanly. A no-op when no refresher is supplied. */
+/** Re-stamp each feature's `opacity` via the supplied refresher. (This once drove
+ * the per-vehicle silence fade; that fade was removed, so the refresher now always
+ * returns 1 — this stays as harmless plumbing.) Returns a NEW collection (does not
+ * mutate the input) so the source data is replaced cleanly. A no-op when no
+ * refresher is supplied. */
 function refreshFeatureOpacity(fc: VehicleFC, refresh?: OpacityRefresher): VehicleFC {
 	if (!refresh) return fc;
 	return {

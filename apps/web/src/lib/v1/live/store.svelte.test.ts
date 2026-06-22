@@ -84,7 +84,7 @@ describe('createLiveStore — server-anchored ageSeconds (skew-immune)', () => {
 		try {
 			await vi.waitFor(() => {
 				flushSync();
-				// 30s server age (NOT 570s) and NOT stale (30 < 2*30).
+				// 30s server age (NOT 570s) and NOT stale (30 < 3*30).
 				expect(store.ageSeconds).toBe(30);
 			});
 			expect(store.isStale).toBe(false);

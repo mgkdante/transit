@@ -176,25 +176,6 @@ describe('MapSelectionDetail', () => {
 		expect(onalertselect).toHaveBeenCalledWith(alerts[0]);
 	});
 
-	it('renders the not-reporting note for a silent vehicle, and omits it otherwise (S5)', () => {
-		const detail = resolveMapSelection(
-			{ kind: 'vehicle', id: 'veh-1' },
-			{ index, stops, alerts, routes },
-		);
-
-		const silent = render(MapSelectionDetail, {
-			props: { detail, locale: 'en' as const, notReporting: { ageS: 120 } },
-		});
-		expect(silent.getByText(/Not reporting/)).toBeInTheDocument();
-		expect(silent.getByText(/2 min/)).toBeInTheDocument();
-		silent.unmount();
-
-		const reporting = render(MapSelectionDetail, {
-			props: { detail, locale: 'en' as const, notReporting: null },
-		});
-		expect(reporting.queryByText(/Not reporting/)).toBeNull();
-	});
-
 	it('renders a stop detail with code, departures, inbound vehicles, and alerts', async () => {
 		const detail = resolveMapSelection(
 			{ kind: 'stop', id: 'stop-1' },
