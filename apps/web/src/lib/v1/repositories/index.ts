@@ -66,7 +66,7 @@ export const repositories = {
 } as const;
 
 // Flat named exports — direct-import path for callers that want one function.
-export { getManifest } from './manifest';
+export { getManifest, getManifestFresh } from './manifest';
 export { getLabels } from './labels';
 export { getAlerts, getNetwork, getStopDepartures, getTrips, getVehicles } from './live';
 export { getRoute, getRoutesIndex, getStop, getStopsIndex } from './static';

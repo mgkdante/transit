@@ -28,7 +28,7 @@
 	import { getHotspots } from '$lib/v1';
 	import type { Hotspot, SeverityCode } from '$lib/v1/schemas';
 	import { createResource } from '$lib/v1/resource.svelte';
-	import { ResourceBoundary, SurfaceHeader } from '$lib/components/surface';
+	import { ResourceBoundary, SurfaceHeader, FreshnessStamp } from '$lib/components/surface';
 	import { Surface, DashboardGrid } from '$lib/components/layout';
 	import { Separator } from '$lib/components/ui/separator';
 	import { RankedRow } from '$lib/components/dataviz';
@@ -52,7 +52,14 @@
 	// The (i) on the ranked-list heading explains the OTP-points delta column.
 	const headingInfo = $derived(buildInfo('otp', t.heading));
 
-	const hotspots = createResource(() => getHotspots());
+	// `freshness: true` feeds the payload's generated_utc into the shared site-wide
+	// newest-data timestamp (latest-wins/monotonic), with no per-page age math.
+	const hotspots = createResource(() => getHotspots(), { freshness: true });
+
+	// Freshness off the roll-up's generated_utc (a daily rebuild, not live). The
+	// "Updated N ago" stamp computes its server-anchored, shared-tick age centrally
+	// (FreshnessStamp variant="updated") — no per-page age math here.
+	const generatedUtc = $derived(hotspots.data?.generated_utc ?? null);
 
 	// The pipeline owns the `type` discriminator as a free string. We map the two
 	// known cell kinds to their nav SurfaceKind so a row can deep-link to its
@@ -152,7 +159,9 @@
 </script>
 
 <Surface width="bleed" class="hotspots">
-	<SurfaceHeader kicker={t.kicker} heading={t.heading} subheading={t.subheading} lede={t.lede} />
+	<SurfaceHeader kicker={t.kicker} heading={t.heading} subheading={t.subheading} lede={t.lede}>
+		<FreshnessStamp variant="updated" {generatedUtc} {locale} />
+	</SurfaceHeader>
 
 	<Separator variant="hazard" />
 

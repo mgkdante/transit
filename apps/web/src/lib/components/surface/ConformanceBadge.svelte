@@ -12,7 +12,7 @@
   NOTHING in that case — never a broken or alarming empty chip. An unknown
   future status string falls back to a neutral verdict, never an error.
 
-  DOCTRINE (shared with LiveFreshness): the dot encodes a DATA verdict on the
+  DOCTRINE (shared with FreshnessStamp): the dot encodes a DATA verdict on the
   dataviz status scale (on_time = conformant, caution = out-of-norm), never
   --primary. a11y: the dot carries an sr-only label and the verdict is also
   text + an explanatory title. Intrinsic bilingual vocabulary lives local.

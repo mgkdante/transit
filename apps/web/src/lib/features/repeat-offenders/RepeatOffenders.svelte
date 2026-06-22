@@ -26,7 +26,7 @@
 	import { getRepeatOffenders, type Offender } from '$lib/v1';
 	import type { SeverityCode } from '$lib/v1/schemas';
 	import { createResource } from '$lib/v1/resource.svelte';
-	import { ResourceBoundary, SurfaceHeader } from '$lib/components/surface';
+	import { ResourceBoundary, SurfaceHeader, FreshnessStamp } from '$lib/components/surface';
 	import { Surface, DashboardGrid } from '$lib/components/layout';
 	import { Separator } from '$lib/components/ui/separator';
 	import { RankedRow } from '$lib/components/dataviz';
@@ -50,7 +50,14 @@
 	// The (i) on the ranked-list heading explains the average-delay column.
 	const headingInfo = $derived(buildInfo('avgDelay', t.listSection));
 
-	const offenders = createResource(() => getRepeatOffenders());
+	// `freshness: true` feeds the payload's generated_utc into the shared site-wide
+	// newest-data timestamp (latest-wins/monotonic), with no per-page age math.
+	const offenders = createResource(() => getRepeatOffenders(), { freshness: true });
+
+	// Freshness off the ledger's generated_utc (a daily rebuild, not live). The
+	// "Updated N ago" stamp computes its server-anchored, shared-tick age centrally
+	// (FreshnessStamp variant="updated") — no per-page age math here.
+	const generatedUtc = $derived(offenders.data?.generated_utc ?? null);
 
 	// Severity thresholds (avg delay, minutes) for banding the magnitude bar onto
 	// the dataviz SeverityCode scale: >=10 min critical, >=5 min high, else watch.
@@ -161,7 +168,9 @@
 </script>
 
 <Surface width="bleed" class="repeat-offenders">
-	<SurfaceHeader kicker={t.kicker} heading={t.heading} subheading={t.subheading} lede={t.lede} />
+	<SurfaceHeader kicker={t.kicker} heading={t.heading} subheading={t.subheading} lede={t.lede}>
+		<FreshnessStamp variant="updated" {generatedUtc} {locale} />
+	</SurfaceHeader>
 
 	<Separator variant="hazard" />
 

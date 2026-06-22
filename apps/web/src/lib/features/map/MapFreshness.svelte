@@ -1,6 +1,18 @@
+<!--
+  MapFreshness — the map's positioning shell around the shared FreshnessStamp.
+
+  The map is a full-bleed live surface, so its freshness readout floats over the
+  canvas (desktop) or tucks into the kicker row (mobile) — positioning the chip
+  can't do itself. This wrapper owns ONLY that placement chrome (the floating pill
+  background, the right-offset that tracks the detail panel, the responsive
+  head/floating swap); the readout itself is the site-wide FreshnessStamp
+  (variant="live"), so the map shares the exact same chip as every other surface.
+
+  Replaces the former MapLiveFreshness (which wrapped the now-removed LiveFreshness).
+-->
 <script lang="ts">
 	import type { Locale } from '$lib/i18n';
-	import { LiveFreshness } from '$lib/components/surface';
+	import { FreshnessStamp } from '$lib/components/surface';
 
 	interface Props {
 		generatedUtc: string | null;
@@ -16,17 +28,17 @@
 </script>
 
 {#if hasFreshness}
-	<div class="map-live-freshness" data-placement={placement} data-stale={isStale}>
-		<LiveFreshness {generatedUtc} {ageSeconds} {isStale} {locale} />
+	<div class="map-freshness" data-placement={placement} data-stale={isStale}>
+		<FreshnessStamp variant="live" {generatedUtc} {ageSeconds} {isStale} {locale} />
 	</div>
 {/if}
 
 <style>
-	.map-live-freshness[data-placement='head'] {
+	.map-freshness[data-placement='head'] {
 		display: none;
 	}
 
-	.map-live-freshness[data-placement='floating'] {
+	.map-freshness[data-placement='floating'] {
 		position: absolute;
 		z-index: 10;
 		top: 1rem;
@@ -47,37 +59,37 @@
 
 	/* Stale feed: warm the chrome with the caution hue so the at-rest border
 	   echoes the dot's verdict — the inner dot/text still carry the meaning. */
-	.map-live-freshness[data-placement='floating'][data-stale='true'] {
+	.map-freshness[data-placement='floating'][data-stale='true'] {
 		border-color: color-mix(in srgb, var(--dataviz-status-late) 38%, var(--border) 62%);
 		background: color-mix(in srgb, var(--dataviz-status-late) 7%, var(--card) 86%);
 	}
 
-	.map-live-freshness[data-placement='floating']:hover {
+	.map-freshness[data-placement='floating']:hover {
 		border-color: color-mix(in srgb, var(--primary) 32%, var(--border) 68%);
 	}
 
-	.map-live-freshness[data-placement='floating'][data-stale='true']:hover {
+	.map-freshness[data-placement='floating'][data-stale='true']:hover {
 		border-color: color-mix(in srgb, var(--dataviz-status-late) 52%, var(--border) 48%);
 	}
 
-	.map-live-freshness[data-placement='floating'] :global(.live-freshness) {
+	.map-freshness[data-placement='floating'] :global(.freshness-stamp) {
 		gap: 0.45rem;
 		font-size: var(--text-caption);
 		line-height: 1;
 	}
 
 	@media (prefers-reduced-motion: reduce) {
-		.map-live-freshness[data-placement='floating'] {
+		.map-freshness[data-placement='floating'] {
 			transition: none;
 		}
 	}
 
 	@media (max-width: 760px) {
-		.map-live-freshness[data-placement='floating'] {
+		.map-freshness[data-placement='floating'] {
 			display: none;
 		}
 
-		.map-live-freshness[data-placement='head'] {
+		.map-freshness[data-placement='head'] {
 			display: inline-flex;
 			align-items: center;
 			flex: none;
@@ -94,18 +106,18 @@
 			backdrop-filter: blur(8px) saturate(1.1);
 		}
 
-		.map-live-freshness[data-placement='head'][data-stale='true'] {
+		.map-freshness[data-placement='head'][data-stale='true'] {
 			border-color: color-mix(in srgb, var(--dataviz-status-late) 40%, var(--border) 60%);
 			background: color-mix(in srgb, var(--dataviz-status-late) 8%, var(--card) 90%);
 		}
 
-		.map-live-freshness[data-placement='head'] :global(.live-freshness) {
+		.map-freshness[data-placement='head'] :global(.freshness-stamp) {
 			gap: 0.3rem;
 			font-size: var(--text-micro);
 			line-height: 1;
 		}
 
-		.map-live-freshness[data-placement='head'] :global(.live-freshness-label) {
+		.map-freshness[data-placement='head'] :global(.freshness-stamp-label) {
 			letter-spacing: var(--tracking-eyebrow);
 		}
 	}

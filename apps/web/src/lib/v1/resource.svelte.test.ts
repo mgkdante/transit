@@ -1,5 +1,22 @@
 import { describe, expect, it, vi } from 'vitest';
 import { flushSync } from 'svelte';
+
+// Capture the shared newest-data writer so the freshness-bearing tests can assert
+// exactly what createResource feeds it. Mock $lib/stores BEFORE importing the
+// resource (which imports dataRefresh from it).
+const mocks = vi.hoisted(() => ({
+	noteDataGeneratedUtc: vi.fn<(v: string | null | undefined) => void>(),
+}));
+vi.mock('$lib/stores', () => ({
+	dataRefresh: {
+		// `epoch` must be a reactive-looking getter so the resource's effect tracks it.
+		get epoch() {
+			return 0;
+		},
+		noteDataGeneratedUtc: mocks.noteDataGeneratedUtc,
+	},
+}));
+
 import { createResource } from './resource.svelte';
 
 // A deferred so a test can hold a fetch open and assert in-flight ordering if needed.
@@ -118,6 +135,60 @@ describe('createResource — reactivity to inputs read inside the fetcher', () =
 			expect(resource.loading).toBe(false);
 			expect(resource.settled).toBe(true);
 			expect(resource.error).toBeNull();
+		} finally {
+			cleanup();
+		}
+	});
+
+	it('feeds noteDataGeneratedUtc when the payload has generated_utc AND the freshness flag', async () => {
+		mocks.noteDataGeneratedUtc.mockClear();
+		const cleanup = $effect.root(() => {
+			createResource(async () => ({ generated_utc: '2026-06-20T00:00:00Z', x: 1 }), {
+				freshness: true,
+			});
+			flushSync();
+		});
+		try {
+			await vi.waitFor(() => {
+				flushSync();
+				expect(mocks.noteDataGeneratedUtc).toHaveBeenCalledWith('2026-06-20T00:00:00Z');
+			});
+		} finally {
+			cleanup();
+		}
+	});
+
+	it('does NOT feed the shared timestamp without the freshness flag', async () => {
+		mocks.noteDataGeneratedUtc.mockClear();
+		const cleanup = $effect.root(() => {
+			createResource(async () => ({ generated_utc: '2026-06-20T00:00:00Z' }));
+			flushSync();
+		});
+		try {
+			await vi.waitFor(() => {
+				flushSync();
+				expect(true).toBe(true);
+			});
+			// One microtask settle, then assert it was never called.
+			await Promise.resolve();
+			flushSync();
+			expect(mocks.noteDataGeneratedUtc).not.toHaveBeenCalled();
+		} finally {
+			cleanup();
+		}
+	});
+
+	it('feeds nothing (no crash) when a freshness-bearing payload is null', async () => {
+		mocks.noteDataGeneratedUtc.mockClear();
+		const cleanup = $effect.root(() => {
+			createResource(async () => null, { freshness: true });
+			flushSync();
+		});
+		try {
+			await vi.waitFor(() => {
+				flushSync();
+				expect(mocks.noteDataGeneratedUtc).toHaveBeenCalledWith(undefined);
+			});
 		} finally {
 			cleanup();
 		}

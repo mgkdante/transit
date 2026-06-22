@@ -61,7 +61,7 @@
 		type V1Context,
 	} from '$lib/v1';
 	import { createResource } from '$lib/v1/resource.svelte';
-	import { dataRefresh, themeStore } from '$lib/stores';
+	import { dataRefresh, dataPulse, themeStore } from '$lib/stores';
 	import { registerServiceWorker } from '$lib/pwa/register';
 	import { startVitals } from '$lib/vitals/collect';
 	import { runViewTransition } from '$lib/motion';
@@ -191,6 +191,14 @@
 			v1?.manifest.files.live.generated_utc ?? v1?.manifest.files.static?.generated_utc,
 		);
 	});
+
+	// AUTO-REFRESH-ON-NEW-PUBLISH (slice-9.8 A): subscribe the dataPulse engine ONCE
+	// here at the app root. It re-reads the manifest on the min-tier-ttl cadence and
+	// bumps dataRefresh.epoch on a strictly-newer publish, which re-runs every
+	// createResource surface AND re-polls the live store — so the whole site swaps to
+	// the latest data on its own, no per-page wiring. Browser-only + ref-counted +
+	// tab-visibility aware inside the store; the effect cleanup disposes it.
+	$effect(() => dataPulse.subscribe());
 
 	// True while a client-side (re-)boot is in flight — lets the edge state show a
 	// "retrying" affordance rather than a dead button.

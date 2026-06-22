@@ -74,7 +74,13 @@ let fixture: Provenance = rich;
 
 vi.mock('$lib/nav', async () => ({ layout: { isDesktop: true } }));
 
-vi.mock('$lib/v1', async () => ({ getProvenance: vi.fn() }));
+// The barrel mock must also export the freshness helpers HealthStatus imports
+// (freshnessRelative powers the per-source "last loaded" age). Delegate to the
+// real freshness module so the relative-age math stays honest in the DOM gate.
+vi.mock('$lib/v1', async () => {
+	const freshness = await import('$lib/v1/freshness');
+	return { getProvenance: vi.fn(), freshnessRelative: freshness.freshnessRelative };
+});
 
 vi.mock('$lib/v1/resource.svelte', () => ({
 	createResource: () => ({
@@ -95,13 +101,35 @@ describe('HealthStatus — full manifest render', () => {
 		render(HealthStatus);
 		expect(screen.getByRole('heading', { level: 1, name: en.heading })).toBeInTheDocument();
 		expect(screen.getByText(en.asOf)).toBeInTheDocument();
-		// The neutral stamp reads "Updated …" (relative age), NOT the live-tier chip.
+		// The shared FreshnessStamp renders here in its calm "updated" variant — a
+		// neutral "Updated" label + a relative age, NOT the live-tier "LIVE" chip.
 		const stamp = document.querySelector('[data-slot="health-asof"]') as HTMLElement;
 		expect(stamp).not.toBeNull();
-		expect(within(stamp).getByText(/^Updated /)).toBeInTheDocument();
+		const fresh = stamp.querySelector('[data-slot="freshness-stamp"]');
+		expect(fresh).not.toBeNull();
+		expect((fresh as HTMLElement).getAttribute('data-variant')).toBe('updated');
+		// The "Updated" label is present; the relative age rides the <time> beside it.
+		expect(within(fresh as HTMLElement).getByText('Updated')).toBeInTheDocument();
+		expect((fresh as HTMLElement).querySelector('time')).not.toBeNull();
 		// No live chip / no "LIVE" label leaks onto this daily document.
-		expect(document.querySelector('[data-slot="live-freshness"]')).toBeNull();
-		expect(within(stamp).queryByText('LIVE')).toBeNull();
+		expect(within(fresh as HTMLElement).queryByText('LIVE')).toBeNull();
+	});
+
+	it('AUTO-REFRESHES via the shared epoch: the provenance resource re-runs on a bump', async () => {
+		// dataPulse bumps dataRefresh.epoch on a new publish; createResource surfaces
+		// (incl. this provenance read) read `epoch` in their effect and re-fetch. We
+		// assert /status opts into that by passing `{ freshness: true }` — the SAME
+		// flag wires both the shared newest-data contribution AND the epoch re-run.
+		const src = (await import('node:fs')).readFileSync(
+			(await import('node:path')).resolve(
+				process.cwd(),
+				'src/lib/features/health/HealthStatus.svelte',
+			),
+			'utf-8',
+		);
+		expect(src).toMatch(
+			/createResource\(\(\) => getProvenance\(\),\s*\{\s*freshness:\s*true\s*\}\)/,
+		);
 	});
 
 	it('renders one per-feed freshness row with a humanized age + verdict', () => {

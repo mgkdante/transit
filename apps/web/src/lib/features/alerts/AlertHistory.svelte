@@ -8,7 +8,7 @@
 
   Composes the surface spine:
     · createResource(getAlertHistory) → ResourceBoundary for skeleton/error/empty
-    · SurfaceHeader for the head + a LiveFreshness chip off the archive's
+    · SurfaceHeader for the head + a FreshnessStamp (variant="updated") off the archive's
       generated_utc (a daily rebuild, never "live")
     · a chronological alert list whose ROWS match the LIVE-alert presentation —
       the SAME alertDisplayText() headline the map + AffectedAlerts use, the SAME
@@ -39,12 +39,11 @@
 	} from '$lib/v1/schemas';
 	import { SEVERITY_CODES } from '$lib/v1/schemas';
 	import { createResource } from '$lib/v1/resource.svelte';
-	import { ageSeconds as ageSecondsOf, formatUtc } from '$lib/utils/time';
-	import { sharedClock } from '$lib/stores';
+	import { formatUtc } from '$lib/utils/time';
 	import {
 		ResourceBoundary,
 		SurfaceHeader,
-		LiveFreshness,
+		FreshnessStamp,
 		GrainPicker,
 		type GrainSegment,
 	} from '$lib/components/surface';
@@ -62,12 +61,11 @@
 	const locale: Locale = getLocale();
 	const t = $derived(alertHistoryCopy[locale]);
 
-	// Keep the ONE shared clock alive while this surface is on screen so the
-	// freshness chip's age re-derives off the shared tick (and stays advancing).
-	$effect(() => sharedClock.subscribe());
-
 	// Historic tier — the daily-rebuilt alert archive (createResource, browser-only).
-	const history = createResource(() => getAlertHistory());
+	// `freshness: true` feeds the payload's generated_utc into the shared site-wide
+	// newest-data timestamp (latest-wins/monotonic) with ZERO per-page age math —
+	// the FreshnessStamp below derives the relative "Updated N ago" off the spine.
+	const history = createResource(() => getAlertHistory(), { freshness: true });
 
 	/** Max rows rendered before the "+N more" disclosure. */
 	const VISIBLE_CAP = 25;
@@ -176,15 +174,10 @@
 	const overflow = $derived(Math.max(0, filtered.length - VISIBLE_CAP));
 	const visible = $derived(expanded || overflow === 0 ? filtered : filtered.slice(0, VISIBLE_CAP));
 
-	// Freshness off the archive's generated_utc (a daily rebuild, not live → never
-	// "stale"). A null stamp reads as the chip's own unknown state. The displayed
-	// age is anchored to the SHARED SERVER clock (sharedClock.serverNow), not the
-	// raw client clock, so a skewed client can't mis-report it — generated_utc is a
-	// server stamp, so both operands live on the server's timeline.
+	// Freshness off the archive's generated_utc (a daily rebuild, not live). The
+	// "Updated N ago" stamp computes its server-anchored, shared-tick age centrally
+	// (FreshnessStamp variant="updated") — no per-page age math here.
 	const generatedUtc = $derived(history.data?.generated_utc ?? null);
-	const ageSeconds = $derived(
-		generatedUtc != null ? ageSecondsOf(generatedUtc, sharedClock.serverNow) : null,
-	);
 
 	// --- Tier-2 breakdown (by_cause / by_effect / by_severity) ---------------
 	// Distinct-alert distribution; null/absent when no alerts in the window. Each
@@ -259,7 +252,7 @@
 
 <Surface width="bleed" class="alert-history">
 	<SurfaceHeader kicker={t.kicker} heading={t.heading} subheading={t.subheading} lede={t.lede}>
-		<LiveFreshness {generatedUtc} {ageSeconds} isStale={false} {locale} />
+		<FreshnessStamp variant="updated" {generatedUtc} {locale} />
 	</SurfaceHeader>
 
 	<Separator variant="hazard" />

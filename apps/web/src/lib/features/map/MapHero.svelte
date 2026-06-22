@@ -85,7 +85,7 @@
 	import MapFilters from './MapFilters.svelte';
 	import { mapRailSizing } from './mapRailSizing';
 	import MapFilterPill from './MapFilterPill.svelte';
-	import MapLiveFreshness from './MapLiveFreshness.svelte';
+	import MapFreshness from './MapFreshness.svelte';
 	import MapNearMeControl from './MapNearMeControl.svelte';
 	import MapSelectionDetail from './MapSelectionDetail.svelte';
 	import { copy as MAP_COPY } from './map.copy';
@@ -1242,7 +1242,7 @@
 	<div class="map-overlay map-head">
 		<div class="map-kicker-row">
 			<p class="map-kicker">{t.kicker}</p>
-			<MapLiveFreshness
+			<MapFreshness
 				placement="head"
 				generatedUtc={live.generatedUtc}
 				ageSeconds={live.ageSeconds}
@@ -1289,7 +1289,7 @@
 		hidden={detailOpen}
 	/>
 
-	<MapLiveFreshness
+	<MapFreshness
 		placement="floating"
 		generatedUtc={live.generatedUtc}
 		ageSeconds={live.ageSeconds}
