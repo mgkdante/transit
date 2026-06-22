@@ -95,13 +95,15 @@
 	import MapFreshness from './MapFreshness.svelte';
 	import MapNearMeControl from './MapNearMeControl.svelte';
 	import MapSelectionDetail from './MapSelectionDetail.svelte';
+	import { routeBoundsFromFile, zoomForNearMePrecision } from './mapGeo';
+	import { parseCoordinateQuery, nearTargetKey } from './mapNearMe';
 	import { copy as MAP_COPY } from './map.copy';
 	import { shouldAnimate } from '$lib/motion/policy';
 	import { buildAlertEntitySets, vehicleHasAlert } from './mapAlerts';
 	import { PICKABLE_MAP_LAYERS, pickMapSelection } from './mapPicking';
 	import { resolveMapSelection, type MapSelection } from './mapSelection';
 	import type { GeocodedLocation, GeocodePrecision, GeocodeSuggestion } from '$lib/geocode/types';
-	import { hasCoordinates, isInsideMontrealBounds } from '$lib/geocode/types';
+	import { hasCoordinates } from '$lib/geocode/types';
 	import type { StopIndexEntry } from '$lib/v1/schemas';
 
 	const locale: Locale = getLocale();
@@ -749,32 +751,6 @@
 		return true;
 	}
 
-	function routeBoundsFromFile(route: RouteFile): [[number, number], [number, number]] | null {
-		let minLon = Infinity;
-		let minLat = Infinity;
-		let maxLon = -Infinity;
-		let maxLat = -Infinity;
-		for (const direction of route.directions ?? []) {
-			const coords = (direction.shape as { coordinates?: unknown })?.coordinates;
-			if (!Array.isArray(coords)) continue;
-			for (const pair of coords) {
-				if (!Array.isArray(pair) || pair.length < 2) continue;
-				const lon = Number(pair[0]);
-				const lat = Number(pair[1]);
-				if (!Number.isFinite(lon) || !Number.isFinite(lat)) continue;
-				if (lon < minLon) minLon = lon;
-				if (lat < minLat) minLat = lat;
-				if (lon > maxLon) maxLon = lon;
-				if (lat > maxLat) maxLat = lat;
-			}
-		}
-		if (minLon === Infinity) return null;
-		return [
-			[minLon, minLat],
-			[maxLon, maxLat],
-		];
-	}
-
 	// Resolve the pending focus once the map AND the entity's data are available;
 	// reads the kind's reactive source so it re-runs when that data loads, then
 	// pans/fits and strips the param so it fires exactly once.
@@ -806,25 +782,6 @@
 			[origin.lon, origin.lat],
 			Math.max(map.getZoom(), zoomForNearMePrecision(origin.precision)),
 		);
-	}
-
-	function zoomForNearMePrecision(precision?: GeocodePrecision): number {
-		switch (precision) {
-			case 'address':
-				return 17;
-			case 'street':
-				return 15;
-			case 'postal':
-				return 14;
-			case 'neighbourhood':
-				return 13;
-			default:
-				return 14;
-		}
-	}
-
-	function nearTargetKey(origin: NearMeOrigin): string {
-		return `${origin.lat.toFixed(6)},${origin.lon.toFixed(6)}:${origin.label}`;
 	}
 
 	function useNearMeLocation(): void {
@@ -943,16 +900,6 @@
 		selected = { kind: 'stop', id: stop.id };
 		detailOpen = true;
 		if (map) panTo([stop.lon, stop.lat], Math.max(map.getZoom(), 15));
-	}
-
-	function parseCoordinateQuery(query: string): LatLon | null {
-		const match = query.match(/^\s*(-?\d+(?:\.\d+)?)\s*[, ]\s*(-?\d+(?:\.\d+)?)\s*$/);
-		if (!match) return null;
-		const lat = Number(match[1]);
-		const lon = Number(match[2]);
-		if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
-		if (!isInsideMontrealBounds(lat, lon)) return null;
-		return { lat, lon };
 	}
 
 	function waitingForSelectedDetail(): boolean {

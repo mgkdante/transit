@@ -136,17 +136,23 @@ describe('MapHero mobile chrome', () => {
 	});
 
 	it('zooms exact near-me addresses to block scale and vague places wider', () => {
-		const s = source();
+		// The zoom-by-precision logic was extracted to the co-located pure module
+		// mapGeo.ts (unit-tested directly in mapGeo.test.ts); MapHero now imports it
+		// and calls it at the near-me fly-to. Assert the body in the module, the wiring
+		// in MapHero.
+		const geo = optionalSource('src/lib/features/map/mapGeo.ts');
+		expect(geo).toContain('function zoomForNearMePrecision');
+		expect(geo).toContain("case 'address'");
+		expect(geo).toContain('return 17');
+		expect(geo).toContain("case 'street'");
+		expect(geo).toContain('return 15');
+		expect(geo).toContain("case 'postal'");
+		expect(geo).toContain('return 14');
+		expect(geo).toContain("case 'neighbourhood'");
+		expect(geo).toContain('return 13');
 
-		expect(s).toContain('function zoomForNearMePrecision');
-		expect(s).toContain("case 'address'");
-		expect(s).toContain('return 17');
-		expect(s).toContain("case 'street'");
-		expect(s).toContain('return 15');
-		expect(s).toContain("case 'postal'");
-		expect(s).toContain('return 14');
-		expect(s).toContain("case 'neighbourhood'");
-		expect(s).toContain('return 13');
+		const s = source();
+		expect(s).toContain('zoomForNearMePrecision } from');
 		expect(s).toContain('zoomForNearMePrecision(origin.precision)');
 	});
 
