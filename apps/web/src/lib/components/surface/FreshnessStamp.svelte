@@ -30,7 +30,7 @@
 <script lang="ts">
 	import { cn } from '$lib/utils';
 	import { type Locale } from '$lib/i18n';
-	import { formatRelativeSeconds } from '$lib/utils/time';
+	import { formatRelativeSeconds, formatUtc } from '$lib/utils/time';
 	import { freshnessAgeSeconds } from '$lib/v1/freshness';
 	import { sharedClock } from '$lib/stores';
 	import StatusDot from '$lib/components/brand/StatusDot.svelte';
@@ -91,10 +91,24 @@
 		ageSeconds !== undefined ? ageSeconds : freshnessAgeSeconds(generatedUtc),
 	);
 
-	// Relative age text off the ticking age, or the honest "unknown" with no anchor.
-	const relative = $derived(
-		effectiveAge != null ? formatRelativeSeconds(effectiveAge, locale) : t.unknown,
-	);
+	// Doctrine §3.5 freshness display: a RELATIVE age under 24h ("4 minutes ago"),
+	// switching to an ABSOLUTE America/Toronto timestamp at/above 24h ("Jun 21,
+	// 14:32 EDT") — a day-plus-old reading is more useful as the real moment than a
+	// vague "2 days ago". Honest "unknown" when there is no resolvable anchor.
+	const ABSOLUTE_AFTER_S = 86_400; // 24h
+	const relative = $derived.by(() => {
+		if (effectiveAge == null) return t.unknown;
+		if (effectiveAge >= ABSOLUTE_AFTER_S && generatedUtc) {
+			return formatUtc(generatedUtc, locale, {
+				month: 'short',
+				day: 'numeric',
+				hour: '2-digit',
+				minute: '2-digit',
+				timeZoneName: 'short',
+			});
+		}
+		return formatRelativeSeconds(effectiveAge, locale);
+	});
 </script>
 
 {#if variant === 'live'}
@@ -115,11 +129,16 @@
 		{/if}
 	</span>
 {:else}
+	<!-- Calm, minute-granular stamp → aria-live=polite announces each refresh. The
+	     live variant deliberately omits it: it ticks per-second and the pulsing dot
+	     + sr-only LIVE label already convey liveness, so per-second announcements
+	     would spam assistive tech. -->
 	<span
 		class={cn('freshness-stamp freshness-stamp--updated', className)}
 		data-slot="freshness-stamp"
 		data-variant="updated"
 		data-age-seconds={effectiveAge ?? undefined}
+		aria-live="polite"
 	>
 		<!-- Decorative neutral dot — the "Updated …" text already carries the meaning,
 		     so the dot adds no sr-only label (no pulse: this is not a live feed). -->

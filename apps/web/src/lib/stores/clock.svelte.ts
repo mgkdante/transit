@@ -73,6 +73,8 @@ let timer: ReturnType<typeof setInterval> | null = null;
 let timerIntervalMs = 0;
 /** Wired once: re-pick cadence when the OS reduced-motion preference flips. */
 let motionListenerWired = false;
+/** Wired once: pause the tick while the tab is hidden, resume + catch up on return. */
+let visibilityListenerWired = false;
 
 /** Tick cadence for the current motion preference. */
 function currentIntervalMs(): number {
@@ -111,6 +113,27 @@ function wireMotionListener(): void {
 	motionListenerWired = true;
 	window.matchMedia('(prefers-reduced-motion: reduce)').addEventListener('change', () => {
 		if (timer && currentIntervalMs() !== timerIntervalMs) startTimer();
+	});
+}
+
+/**
+ * Wire a one-time visibility listener (browser-only): PAUSE the interval while the
+ * tab is hidden — a backgrounded tab has nothing on screen reading the tick, so
+ * burning a per-second timer (and waking the CPU) is waste — and RESUME it the
+ * instant the tab is visible again. startTimer() re-stamps `nowMs` immediately, so
+ * a refocused tab jumps straight to the true age instead of showing a frozen
+ * "12s ago" stuck at the moment it was hidden. The subscriber count is untouched,
+ * so this only ever pauses/resumes a clock something is already reading.
+ */
+function wireVisibilityListener(): void {
+	if (visibilityListenerWired || typeof document === 'undefined') return;
+	visibilityListenerWired = true;
+	document.addEventListener('visibilitychange', () => {
+		if (document.hidden) {
+			stopTimer();
+		} else if (subscribers > 0 && !timer) {
+			startTimer();
+		}
 	});
 }
 
@@ -162,6 +185,7 @@ export const sharedClock = {
 	subscribe(): () => void {
 		if (!browser) return () => {};
 		wireMotionListener();
+		wireVisibilityListener();
 		subscribers += 1;
 		if (subscribers === 1) startTimer();
 		let disposed = false;
