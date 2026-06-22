@@ -32,6 +32,17 @@ export type { SeverityBarProps } from './SeverityBar.svelte';
 export { default as StackedBar } from './StackedBar.svelte';
 export type { StackedBarProps, StackedSegment } from './StackedBar.svelte';
 
+// KPI-card family (slice-S3): headline metric cards on the doctrine's KPI spine —
+// value = wayfinding voice (via brand/MetricDisplay), signage on the delta only.
+export { default as DeltaStat } from './DeltaStat.svelte';
+export type { DeltaStatProps } from './DeltaStat.svelte';
+
+export { default as KpiCard } from './KpiCard.svelte';
+export type { KpiCardProps } from './KpiCard.svelte';
+
+export { default as BulletKpi } from './BulletKpi.svelte';
+export type { BulletKpiProps } from './BulletKpi.svelte';
+
 export { default as ChartTooltip } from './ChartTooltip.svelte';
 export type { ChartTooltipProps } from './ChartTooltip.svelte';
 
