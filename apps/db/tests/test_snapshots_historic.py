@@ -34,6 +34,13 @@ from transit_ops.snapshots.builders import (
     build_route_reliability,
     build_stop_reliability,
 )
+from transit_ops.snapshots.builders._helpers import (
+    MIN_N_RATE,
+    WILSON_Z,
+    _wilson_bounds,
+    _wilson_hi,
+    _wilson_lo,
+)
 from transit_ops.snapshots.builders.historic import _HOTSPOTS_SQL, _STOP_REL_BY_ROUTE_SQL
 from transit_ops.snapshots.contract import (
     AlertHistory,
@@ -127,6 +134,51 @@ def test_otp_pct_all_known_on_time_is_100() -> None:
 def test_otp_severe_proxy_for_stops() -> None:
     assert _otp_pct_severe_proxy(80, 8) == 90
     assert "per-stop delay observations" in (_otp_pct_severe_proxy.__doc__ or "")
+
+
+# _wilson_bounds / _wilson_lo / _wilson_hi: 95% Wilson score interval in PERCENT,
+# honest-NULL on missing/zero denominator, ranking on the lower bound (slice-S3).
+def test_wilson_constants() -> None:
+    assert MIN_N_RATE == 30
+    assert WILSON_Z == 1.96
+
+
+def test_wilson_bounds_known_value() -> None:
+    # 50/100 at 95% -> [40.4, 59.6] (textbook Wilson score interval).
+    assert _wilson_bounds(50, 100) == (40.4, 59.6)
+
+
+def test_wilson_bounds_none_numerator_is_none() -> None:
+    assert _wilson_bounds(None, 100) is None
+
+
+def test_wilson_bounds_zero_or_missing_denominator_is_none() -> None:
+    assert _wilson_bounds(5, 0) is None
+    assert _wilson_bounds(5, None) is None
+
+
+def test_wilson_bounds_stay_within_0_100() -> None:
+    lo, hi = _wilson_bounds(900, 1000)
+    assert 0.0 <= lo <= hi <= 100.0
+
+
+def test_wilson_bounds_clamp_successes_above_n() -> None:
+    # defensive: k > n clamps to n (p=1) — never a >100% or negative bound.
+    lo, hi = _wilson_bounds(150, 100)
+    assert 0.0 <= lo <= hi <= 100.0
+
+
+def test_wilson_lower_bound_suppresses_tiny_n_fluke() -> None:
+    # The whole point: a 1-of-1 "100%" must rank BELOW a 900-of-1000 "90%".
+    assert _wilson_lo(1, 1) < _wilson_lo(900, 1000)
+    assert _wilson_lo(1, 1) < 50.0
+
+
+def test_wilson_lo_hi_extract_bounds_and_guard_none() -> None:
+    assert _wilson_lo(50, 100) == 40.4
+    assert _wilson_hi(50, 100) == 59.6
+    assert _wilson_lo(None, 0) is None
+    assert _wilson_hi(5, 0) is None
 
 
 # --------------------------------------------------------------------------
@@ -338,6 +390,10 @@ def test_build_route_reliability_periods_and_otp() -> None:
     assert day.avg_delay_min == 1.5
     assert day.severe_pct == 10.0
     assert day.p50_min is None and day.p90_min is None  # deferred
+    # slice-S3 honesty fields: real-OTP Wilson 95% bounds over known_obs (90/100).
+    assert day.observation_count == 100
+    assert day.wilson_lo == 82.6
+    assert day.wilson_hi == 94.5
 
     week = by_grain["week"]
     assert week.otp_pct == 47
@@ -348,6 +404,9 @@ def test_build_route_reliability_periods_and_otp() -> None:
     assert month.otp_pct is None
     assert month.avg_delay_min == 2.5
     assert month.severe_pct == 5.0
+    # count present but rate honestly null (on_time is None) -> Wilson is None too.
+    assert month.observation_count == 1000
+    assert month.wilson_lo is None and month.wilson_hi is None
 
 
 def test_route_reliability_sql_uses_real_otp_columns() -> None:
@@ -1739,8 +1798,8 @@ def test_build_alert_history_aggregation() -> None:
 
     from transit_ops.snapshots.builders import _severity_code
 
-    start = _dt.datetime(2026, 5, 1, 8, 0, 0, tzinfo=_dt.timezone.utc)
-    end = _dt.datetime(2026, 5, 1, 10, 30, 0, tzinfo=_dt.timezone.utc)  # 150 min
+    start = _dt.datetime(2026, 5, 1, 8, 0, 0, tzinfo=_dt.UTC)
+    end = _dt.datetime(2026, 5, 1, 10, 30, 0, tzinfo=_dt.UTC)  # 150 min
 
     conn = FakeConn(
         [
@@ -1795,7 +1854,7 @@ def test_build_alert_history_breakdown_buckets_by_cause_effect_severity() -> Non
             "routes": [], "stops": [], "start_utc": start, "end_utc": end,
         }
 
-    s = _dt.datetime(2026, 5, 1, 8, 0, 0, tzinfo=_dt.timezone.utc)
+    s = _dt.datetime(2026, 5, 1, 8, 0, 0, tzinfo=_dt.UTC)
     conn = FakeConn(
         [
             (
@@ -1859,8 +1918,8 @@ def test_build_alert_history_negative_window_yields_none_duration() -> None:
     through; only the derived duration is nulled."""
     import datetime as _dt
 
-    start = _dt.datetime(2026, 5, 1, 10, 30, 0, tzinfo=_dt.timezone.utc)
-    end = _dt.datetime(2026, 5, 1, 8, 0, 0, tzinfo=_dt.timezone.utc)  # end BEFORE start
+    start = _dt.datetime(2026, 5, 1, 10, 30, 0, tzinfo=_dt.UTC)
+    end = _dt.datetime(2026, 5, 1, 8, 0, 0, tzinfo=_dt.UTC)  # end BEFORE start
     conn = FakeConn(
         [
             (
@@ -1891,7 +1950,7 @@ def test_build_alert_history_200_cap() -> None:
     """SQL LIMIT 200 enforced — fake returns exactly 200 rows."""
     import datetime as _dt
 
-    start = _dt.datetime(2026, 5, 1, tzinfo=_dt.timezone.utc)
+    start = _dt.datetime(2026, 5, 1, tzinfo=_dt.UTC)
     rows = [
         {
             "alert_header_text": f"H{i}",
@@ -1924,7 +1983,7 @@ def test_build_alert_history_empty() -> None:
 def test_build_provenance_sources_and_freshness() -> None:
     import datetime as _dt
 
-    loaded = _dt.datetime(2026, 6, 1, 12, 0, 0, tzinfo=_dt.timezone.utc)
+    loaded = _dt.datetime(2026, 6, 1, 12, 0, 0, tzinfo=_dt.UTC)
     conn = FakeConn(
         [
             (

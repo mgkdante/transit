@@ -21,6 +21,12 @@ export const NetworkShiftSchema = z.object({
 	otp_pct: z.number().int().nullable().optional(),
 	avg_delay_min: z.number().nullable().optional(),
 	severe_pct: z.number().nullable().optional(),
+	// Chart Doctrine honesty fields (slice-S3). observation_count = OTP/Wilson n
+	// (otp_known, smaller than the severe/avg base); wilson_lo/hi = 95% bounds (PERCENT)
+	// of the real on_time OTP.
+	observation_count: z.number().int().nullable().optional(),
+	wilson_lo: z.number().nullable().optional(),
+	wilson_hi: z.number().nullable().optional(),
 });
 export type NetworkShift = z.infer<typeof NetworkShiftSchema>;
 
@@ -35,6 +41,12 @@ export const TrendPointSchema = z.object({
 	cancellation_rate: z.number().nullable().optional(),
 	// network-wide crowding band-shares; null when no occupancy telemetry.
 	occupancy_mix: OccupancyMixSchema.nullable().optional(),
+	// Chart Doctrine honesty fields (slice-S3). observation_count = the OTP/avg
+	// denominator for THIS bucket only (cancellation_rate/occupancy_mix have their own);
+	// wilson_lo/hi = 95% bounds (PERCENT) of the OTP.
+	observation_count: z.number().int().nullable().optional(),
+	wilson_lo: z.number().nullable().optional(),
+	wilson_hi: z.number().nullable().optional(),
 });
 export type TrendPoint = z.infer<typeof TrendPointSchema>;
 

@@ -293,6 +293,56 @@ def _otp_pct_severe_proxy(observation_count: object, severe: object) -> int | No
     return round(100.0 * (obs - float(severe or 0)) / obs)
 
 
+# --- Chart Doctrine honesty spine (slice-S3) ---------------------------------
+# The single server-authoritative definitions of "reliable enough" and the
+# confidence channel. MIN_N_RATE is DISPLAY-ONLY: the builders always emit the
+# raw observation_count + honest rate + Wilson bounds and NEVER null a rate below
+# it (so the web keeps the n it needs for data-depth gating, and the threshold
+# stays tunable without a republish). Surfaced in Provenance.methodology so the
+# web reads ONE value. See the Transit Chart Doctrine, section 4.0 (Constants
+# Registry). The pre-existing metric-specific floors (headway COV n>=2, repeat-
+# offender recurrence_days>=3) are unrelated and stay as-is.
+MIN_N_RATE = 30  # proportion reliability floor (OTP / cancellation / silent / on-time-band)
+WILSON_Z = 1.96  # 95% two-sided Wilson score interval
+
+
+def _wilson_bounds(
+    successes: object, n: object, *, z: float = WILSON_Z
+) -> tuple[float, float] | None:
+    """95% Wilson score interval (lo, hi) in PERCENT (0..100) for successes/n.
+
+    The Chart Doctrine honesty channel for proportions: ranking on the LOWER
+    bound stops a tiny-n fluke (1-of-1 = 100%) from out-ranking a high-volume
+    bad actor. Pure Python, no scipy. Returns None when the numerator is unknown
+    or the denominator is falsy/<=0 — mirrors the _otp_pct honest-NULL guard so a
+    missing rate never gets a fabricated band. successes is clamped into [0, n].
+    """
+    if successes is None or not n:
+        return None
+    total = float(n)  # type: ignore[arg-type]
+    if total <= 0:
+        return None
+    k = min(max(float(successes), 0.0), total)  # type: ignore[arg-type]
+    p = k / total
+    z2 = z * z
+    denom = 1.0 + z2 / total
+    center = (p + z2 / (2.0 * total)) / denom
+    margin = z * ((p * (1.0 - p) / total + z2 / (4.0 * total * total)) ** 0.5) / denom
+    lo = max(0.0, (center - margin) * 100.0)
+    hi = min(100.0, (center + margin) * 100.0)
+    return (round(lo, 1), round(hi, 1))
+
+
+def _wilson_lo(successes: object, n: object, *, z: float = WILSON_Z) -> float | None:
+    b = _wilson_bounds(successes, n, z=z)
+    return None if b is None else b[0]
+
+
+def _wilson_hi(successes: object, n: object, *, z: float = WILSON_Z) -> float | None:
+    b = _wilson_bounds(successes, n, z=z)
+    return None if b is None else b[1]
+
+
 def _avg_delay_min(avg_delay_seconds: object) -> float | None:
     if avg_delay_seconds is None:
         return None
@@ -502,8 +552,8 @@ def _entity_name_maps(
 
 
 def _build_habits_matrix(
-    rows: "Iterable[Mapping[str, object]]", *, scale: str = "repeat_problem_relative"
-) -> "RouteHabits":
+    rows: Iterable[Mapping[str, object]], *, scale: str = "repeat_problem_relative"
+) -> RouteHabits:
     """7x24 per-route problem heatmap (rows isodow 1..7, cols hour 0..23).
 
     Each observed (dow, hour) cell is normalized to its fraction of the route's
