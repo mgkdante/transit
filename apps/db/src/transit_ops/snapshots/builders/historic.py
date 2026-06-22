@@ -16,11 +16,14 @@ from typing import TYPE_CHECKING
 
 from sqlalchemy import text
 
+from transit_ops.settings import get_settings
 from transit_ops.snapshots.builders._helpers import (
     _ROUTE_NAMES_SQL,
     _ROUTE_SCHEDULE_SQL,  # noqa: F401 - re-exported via package __init__ for parity
     _SHIFT_ORDER,
     _STOP_NAMES_SQL,
+    MIN_N_RATE,
+    WILSON_Z,
     _avg_delay_min,
     _build_habits_matrix,
     _entity_name_maps,
@@ -32,12 +35,13 @@ from transit_ops.snapshots.builders._helpers import (
     _otp_pct_severe_proxy,
     _public_impact_score,
     _route_sort_key,
-    _scheduled_headway_by_shift,
     _sane_en,
+    _scheduled_headway_by_shift,
     _severe_pct,
     _severity_code,
+    _wilson_hi,
+    _wilson_lo,
 )
-from transit_ops.settings import get_settings
 from transit_ops.snapshots.contract import (
     AlertBreakdown,
     AlertBreakdownBucket,
@@ -421,6 +425,11 @@ def _network_shift_rows(
             otp_pct=_otp_pct(r["on_time"], otp_known),
             avg_delay_min=_avg_delay_min(avg_sec),
             severe_pct=_severe_pct(known, r["severe"]),
+            # observation_count is the OTP/Wilson denominator (otp_known), NOT the
+            # severe/avg base (known) — see NetworkShift docstring.
+            observation_count=_opt_int(otp_known),
+            wilson_lo=_wilson_lo(r["on_time"], otp_known),
+            wilson_hi=_wilson_hi(r["on_time"], otp_known),
         )
     ordered = [by_grain[g] for g in order if g in by_grain]
     ordered.extend(by_grain[g] for g in sorted(set(by_grain) - set(order)))
@@ -435,6 +444,9 @@ def _blank_trend_point() -> dict:
         "vehicles": None,
         "cancellation_rate": None,
         "occupancy_mix": None,
+        "observation_count": None,
+        "wilson_lo": None,
+        "wilson_hi": None,
     }
 
 
@@ -470,6 +482,11 @@ def _trend_points(
         entry = _blank_trend_point()
         entry["otp_pct"] = _otp_pct(r["on_time"], known_obs)
         entry["avg_delay_min"] = _avg_delay_min(avg_delay_sec)
+        # observation_count + Wilson are the OTP/avg denominator for THIS bucket
+        # only — cancellation/occupancy below keep their own denominators.
+        entry["observation_count"] = _opt_int(known_obs)
+        entry["wilson_lo"] = _wilson_lo(r["on_time"], known_obs)
+        entry["wilson_hi"] = _wilson_hi(r["on_time"], known_obs)
         points[_iso_date(r["local_date"])] = entry
 
     if fact_sql is not None:
@@ -503,12 +520,15 @@ def _trend_points(
             vehicles=v["vehicles"],
             cancellation_rate=v["cancellation_rate"],
             occupancy_mix=v["occupancy_mix"],
+            observation_count=v["observation_count"],
+            wilson_lo=v["wilson_lo"],
+            wilson_hi=v["wilson_hi"],
         )
         for d, v in sorted(points.items())
     ]
 
 
-def build_network_trend(conn: Connection, *, provider_id: str = "stm", generated_utc: str) -> "NetworkTrend":
+def build_network_trend(conn: Connection, *, provider_id: str = "stm", generated_utc: str) -> NetworkTrend:
     """Build historic/network_trend.json — daily + weekly + monthly trend points.
 
     Daily `series`: OTP + weighted-avg delay from the hourly rollup (~90 days)
@@ -810,7 +830,7 @@ _ROUTE_CROWDING_DELAY_SQL = text(
 
 def build_route_reliability(
     conn: Connection, *, provider_id: str = "stm", route_id: str, generated_utc: str
-) -> "RouteReliability":
+) -> RouteReliability:
     """Build historic/route_reliability/{route_id}.json.
 
     periods: daily (last 30) + weekly + monthly, all using observation-based OTP.
@@ -845,6 +865,9 @@ def build_route_reliability(
                 p50_min=p50_min,
                 p90_min=p90_min,
                 severe_pct=_severe_pct(r["known_obs"], r["severe"]),
+                observation_count=_opt_int(r["known_obs"]),
+                wilson_lo=_wilson_lo(r["on_time"], r["known_obs"]),
+                wilson_hi=_wilson_hi(r["on_time"], r["known_obs"]),
             )
         )
     for grain, sql in (("week", _ROUTE_REL_WEEKLY_SQL), ("month", _ROUTE_REL_MONTHLY_SQL)):
@@ -858,6 +881,9 @@ def build_route_reliability(
                     p50_min=None,
                     p90_min=None,
                     severe_pct=_severe_pct(r["known_obs"], r["severe"]),
+                    observation_count=_opt_int(r["known_obs"]),
+                    wilson_lo=_wilson_lo(r["on_time"], r["known_obs"]),
+                    wilson_hi=_wilson_hi(r["on_time"], r["known_obs"]),
                 )
             )
 
@@ -875,6 +901,9 @@ def build_route_reliability(
                     p50_min=None,
                     p90_min=None,
                     severe_pct=_severe_pct(r["known_obs"], r["severe"]),
+                    observation_count=_opt_int(r["known_obs"]),
+                    wilson_lo=_wilson_lo(r["on_time"], r["known_obs"]),
+                    wilson_hi=_wilson_hi(r["on_time"], r["known_obs"]),
                 )
             )
 
@@ -1262,7 +1291,7 @@ _STOP_DOW_SQL = text(
 
 def build_stop_reliability(
     conn: Connection, *, provider_id: str = "stm", generated_utc: str
-) -> "dict[str, StopReliability]":
+) -> dict[str, StopReliability]:
     """Build all historic/stop_reliability/{stop_id}.json in a batched pass.
 
     For every stop in gold.stop_delay_weekly/monthly: weekly+monthly periods
@@ -1280,11 +1309,17 @@ def build_stop_reliability(
         for r in conn.execute(sql, params).mappings():
             sid = str(r["stop_id"])
             avg_sec = _weighted_avg_sec(r["obs"], r["weighted_delay_sec"])
+            # severe-proxy Wilson success = not-severe count (obs - severe); bounds
+            # the NOT-SEVERE proportion, NOT a real OTP (see StopReliabilityPeriod).
+            severe_k = (r["obs"] - (r["severe"] or 0)) if r["obs"] else None
             periods.setdefault(sid, {})[grain] = StopReliabilityPeriod(
                 grain=grain,
                 otp_pct=_otp_pct_severe_proxy(r["obs"], r["severe"]),
                 avg_delay_min=(round(avg_sec / 60.0, 1) if avg_sec is not None else None),
                 severe_pct=_severe_pct(r["obs"], r["severe"]),
+                observation_count=_opt_int(r["obs"]),
+                wilson_lo=_wilson_lo(severe_k, r["obs"]),
+                wilson_hi=_wilson_hi(severe_k, r["obs"]),
             )
 
     # Granularity grains (additive, free-string grain): time-of-day shift +
@@ -1295,11 +1330,15 @@ def build_stop_reliability(
         sid = str(r["stop_id"])
         grain = str(r["grain"])
         avg_sec = _weighted_avg_sec(r["obs"], r["weighted_delay_sec"])
+        severe_k = (r["obs"] - (r["severe"] or 0)) if r["obs"] else None
         periods.setdefault(sid, {})[grain] = StopReliabilityPeriod(
             grain=grain,
             otp_pct=_otp_pct_severe_proxy(r["obs"], r["severe"]),
             avg_delay_min=(round(avg_sec / 60.0, 1) if avg_sec is not None else None),
             severe_pct=_severe_pct(r["obs"], r["severe"]),
+            observation_count=_opt_int(r["obs"]),
+            wilson_lo=_wilson_lo(severe_k, r["obs"]),
+            wilson_hi=_wilson_hi(severe_k, r["obs"]),
         )
 
     # by_route breakdown keyed stop_id -> list[StopByRoute]
@@ -1545,7 +1584,7 @@ _HOTSPOTS_SQL = text(
 )
 
 
-def build_hotspots(conn: "Connection", provider_id: str = "stm", *, generated_utc: str) -> "Hotspots":
+def build_hotspots(conn: Connection, provider_id: str = "stm", *, generated_utc: str) -> Hotspots:
     """Build historic/hotspots.json — top 20 problem entities in the most recent week.
 
     Source: gold.repeated_problem_route_stop. Uses the most-recent week-grain period;
@@ -1615,8 +1654,8 @@ _REPEAT_OFFENDERS_SQL = text(
 
 
 def build_repeat_offenders(
-    conn: "Connection", provider_id: str = "stm", *, generated_utc: str
-) -> "RepeatOffenders":
+    conn: Connection, provider_id: str = "stm", *, generated_utc: str
+) -> RepeatOffenders:
     """Build historic/repeat_offenders.json — top 50 most-persistent problem entities.
 
     Source: gold.repeat_offender_daily (P3 mart).
@@ -1723,8 +1762,8 @@ _RECEIPTS_WORST_STOP_SQL = text(
 
 
 def build_receipts(
-    conn: "Connection", provider_id: str = "stm", *, generated_utc: str
-) -> "dict[str, Receipt]":
+    conn: Connection, provider_id: str = "stm", *, generated_utc: str
+) -> dict[str, Receipt]:
     """Build historic/receipts/{date}.json for each date in the last 30 days.
 
     The citizen_accountability_daily table is the driver — one Receipt per date
@@ -1892,8 +1931,8 @@ def _alert_breakdown(
 
 
 def build_alert_history(
-    conn: "Connection", provider_id: str = "stm", *, generated_utc: str
-) -> "AlertHistory":
+    conn: Connection, provider_id: str = "stm", *, generated_utc: str
+) -> AlertHistory:
     """Build historic/alert_history.json — last 30 days, capped at 200 alerts.
 
     Source: gold.i3_alert_history_reporting (8M rows — always filter first).
@@ -2033,8 +2072,8 @@ _PROVIDER_GAPS: dict[str, list[str]] = {"stm": ["metro_realtime"]}
 
 
 def build_provenance(
-    conn: "Connection", provider_id: str = "stm", *, generated_utc: str
-) -> "Provenance":
+    conn: Connection, provider_id: str = "stm", *, generated_utc: str
+) -> Provenance:
     """Build provenance.json — feed lineage, freshness, retention policy, methodology.
 
     Sources from gold.source_lineage_reporting (is_current=true only).
@@ -2099,6 +2138,18 @@ def build_provenance(
                 "per-stop delay observations, a severe-delay proxy rather "
                 "than true on-time-band OTP"
             ),
+            "reliability_floor": (
+                f"reliable-enough = {MIN_N_RATE} known-delay observations "
+                "(Chart Doctrine MIN_N_RATE). Rates below it are shown with their "
+                "raw observation_count but flagged low-confidence, never suppressed. "
+                "Each reliability period carries observation_count plus the 95% "
+                "Wilson score bounds (wilson_lo / wilson_hi) so the UI gates display "
+                "by depth and ranks on the lower bound, not the raw rate."
+            ),
+            # Machine-readable so the web reads ONE authoritative value (methodology
+            # is additionalProperties:true / z.unknown() — no schema or Zod change).
+            "min_n_rate": MIN_N_RATE,
+            "wilson_z": WILSON_Z,
             "delay_unit": (
                 "seconds from schedule; delay statistics exclude observations "
                 "with |delay| > 1 hour (ghost-trip guard); severe = >300s and <=3600s"
@@ -2186,8 +2237,8 @@ def build_provenance(
 
 
 def _build_provenance_conformance(
-    conn: "Connection", params: dict
-) -> "ProvenanceConformance | None":
+    conn: Connection, params: dict
+) -> ProvenanceConformance | None:
     """Feed conformance for the provider's current static load, or None when the
     provider has no current static dataset (nothing to describe)."""
     rows = list(conn.execute(_PROVENANCE_CONFORMANCE_SQL, params).mappings())
