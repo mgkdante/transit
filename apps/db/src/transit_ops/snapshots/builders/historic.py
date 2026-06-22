@@ -1415,6 +1415,45 @@ def build_stop_reliability(
 _SENTINEL_ENTITY_IDS = frozenset({"__unrouted__", "__unknown_stop__"})
 
 
+def _otp_delta_pts(cell_otp: int | None, network_otp: int | None) -> float | None:
+    """entity OTP minus the network baseline OTP, in percentage POINTS (1 dp).
+
+    Negative = the entity is worse than the network (that's why it's a hotspot).
+    Honest-None: the delta is None (NEVER 0) when EITHER the cell's own OTP or
+    the network baseline OTP is unknown for the period — a missing magnitude must
+    read as "no data", never as "exactly on par". Both inputs already carry the
+    upstream honest-None convention (_otp_pct / _otp_pct_severe_proxy).
+    """
+    if cell_otp is None or network_otp is None:
+        return None
+    return round(float(cell_otp) - float(network_otp), 1)
+
+
+# Selects the top-20 problem cells for the target period AND, per cell, the raw
+# OTP counts needed to compute otp_delta_pts honestly at read time:
+#   * route cells  -> real OTP counts from gold.route_reliability_weekly
+#                     (on_time_observation_count / delay_observation_count), joined
+#                     ONLY when entity_kind = 'route' so a stop never picks up a
+#                     route's counts.
+#   * stop cells   -> per-stop obs + severe from gold.stop_delay_weekly (summed
+#                     across the stop's routes for the target week), joined ONLY
+#                     when entity_kind = 'stop'. Stops have no on_time column, so
+#                     their OTP stays the documented severe(>300s) proxy.
+#   * net_on_time / net_known -> the ROUTE network baseline = real on-time OTP
+#                     aggregated across ALL routes for the SAME target week
+#                     (scalar). Used ONLY for route cells.
+#   * net_stop_obs / net_stop_severe -> the STOP network baseline = the SAME
+#                     severe(>300s) proxy aggregated across ALL stops for the
+#                     target week (scalar). Used ONLY for stop cells, so a stop's
+#                     delta is severe-proxy-vs-severe-proxy (same metric, no
+#                     lenient-vs-strict offset). Both baselines identical on
+#                     every row.
+# The per-kind JOIN keys (route_id vs stop_id) keep route and stop OTP from ever
+# cross-contaminating, and each kind subtracts its OWN-metric network baseline.
+# The OTP math + honest-None live in Python (_otp_pct / _otp_pct_severe_proxy /
+# _otp_delta_pts) so the convention matches the rest of the historic surface
+# byte-for-byte. Network baselines are week-grain only; on a non-week fallback
+# target the route/stop weekly joins miss and the delta is None.
 _HOTSPOTS_SQL = text(
     """
     WITH week_max AS (
@@ -1441,9 +1480,60 @@ _HOTSPOTS_SQL = text(
                AND period_start_local = (SELECT max_any_start FROM any_max)
              LIMIT 1)
         ) AS target_grain
+    ),
+    -- Network baseline OTP for the target week: real on_time/known aggregated
+    -- over ALL routes, numerator and denominator scoped together to on-time-known
+    -- rows so the gold NULL-guard does not bias OTP low (mirrors network_trend).
+    net AS (
+        SELECT SUM(rrw.on_time_observation_count) AS net_on_time,
+               SUM(rrw.delay_observation_count) FILTER (
+                   WHERE rrw.on_time_observation_count IS NOT NULL) AS net_known
+        FROM gold.route_reliability_weekly AS rrw, target
+        WHERE rrw.provider_id = :provider_id
+          AND rrw.week_start_local = target.target_start
+    ),
+    -- Stop-grain network baseline for the target week: the SAME severe(>300s)
+    -- proxy a stop cell uses ((obs - severe)/obs), aggregated across ALL stops.
+    -- A stop cell's delta must be same-metric-vs-same-metric, so its baseline is
+    -- this stop-grain severe-proxy network OTP, NOT the route on-time net above.
+    net_stop AS (
+        SELECT SUM(sdw.observation_count)  AS net_stop_obs,
+               SUM(sdw.severe_delay_count) AS net_stop_severe
+        FROM gold.stop_delay_weekly AS sdw, target
+        WHERE sdw.provider_id = :provider_id
+          AND sdw.week_start_local = target.target_start
+    ),
+    -- Per-stop obs + severe summed across the stop's routes for the target week.
+    stop_otp AS (
+        SELECT sdw.stop_id,
+               SUM(sdw.observation_count)  AS stop_obs,
+               SUM(sdw.severe_delay_count) AS stop_severe
+        FROM gold.stop_delay_weekly AS sdw, target
+        WHERE sdw.provider_id = :provider_id
+          AND sdw.week_start_local = target.target_start
+        GROUP BY sdw.stop_id
     )
-    SELECT rp.entity_kind, rp.entity_id, rp.issue_count, rp.severity_label
-    FROM gold.repeated_problem_route_stop AS rp, target
+    SELECT rp.entity_kind, rp.entity_id, rp.issue_count, rp.severity_label,
+           rrw.on_time_observation_count AS route_on_time,
+           rrw.delay_observation_count   AS route_known,
+           so.stop_obs                   AS stop_obs,
+           so.stop_severe                AS stop_severe,
+           net.net_on_time               AS net_on_time,
+           net.net_known                 AS net_known,
+           net_stop.net_stop_obs         AS net_stop_obs,
+           net_stop.net_stop_severe      AS net_stop_severe
+    FROM gold.repeated_problem_route_stop AS rp
+    CROSS JOIN target
+    CROSS JOIN net
+    CROSS JOIN net_stop
+    LEFT JOIN gold.route_reliability_weekly AS rrw
+           ON rp.entity_kind = 'route'
+          AND rrw.provider_id = :provider_id
+          AND rrw.route_id = rp.entity_id
+          AND rrw.week_start_local = target.target_start
+    LEFT JOIN stop_otp AS so
+           ON rp.entity_kind = 'stop'
+          AND so.stop_id = rp.entity_id
     WHERE rp.provider_id = :provider_id
       AND rp.period_start_local = target.target_start
       AND rp.period_grain = target.target_grain
@@ -1460,29 +1550,50 @@ def build_hotspots(conn: "Connection", provider_id: str = "stm", *, generated_ut
 
     Source: gold.repeated_problem_route_stop. Uses the most-recent week-grain period;
     falls back to the most-recent period of any grain if no week rows are present.
-    otp_delta_pts is None in v1 (not stored in gold).
+
+    otp_delta_pts = the cell's own OTP minus a SAME-METRIC network baseline OTP
+    for the same target week, in percentage points (negative = worse than the
+    network). Route cells use the real OTP from gold.route_reliability_weekly vs
+    the route on-time network baseline; stop cells use the documented severe-delay
+    proxy (no on_time column at stop grain) vs a stop-grain severe-proxy network
+    baseline, so the delta is never lenient-metric-minus-strict-metric. Honest-None
+    when either side is unknown (_otp_delta_pts).
     """
     rows = list(conn.execute(_HOTSPOTS_SQL, {"provider_id": provider_id}).mappings())
     route_names, stop_names = _entity_name_maps(conn, provider_id=provider_id)
     # Defense-in-depth: never publish a sentinel-bucket entity even if a query path
     # ever forgets the SQL filter (re-ranks over the surviving rows).
     kept = [r for r in rows if str(r["entity_id"]) not in _SENTINEL_ENTITY_IDS]
-    hotspots = [
-        Hotspot(
-            rank=i + 1,
-            type=str(r["entity_kind"]),
-            id=str(r["entity_id"]),
-            # kinds verified 'route'/'stop' in the mart — per-kind name lookup
-            name=(
-                route_names.get(str(r["entity_id"]))
-                if str(r["entity_kind"]) == "route"
-                else stop_names.get(str(r["entity_id"]))
-            ),
-            severity=r["severity_label"],
-            otp_delta_pts=None,  # v1 deferral: not stored in gold.repeated_problem_route_stop
+    hotspots = []
+    for i, r in enumerate(kept):
+        kind = str(r["entity_kind"])
+        # Per-kind OTP, with a MATCHING-metric baseline so the delta is
+        # same-definition-vs-same-definition (never lenient-vs-strict):
+        #   route -> real on_time/known   vs route on-time network baseline
+        #   stop  -> severe(>300s) proxy  vs stop severe-proxy network baseline
+        # The SQL only populates the matching kind's columns, so cross-kind
+        # contamination is impossible, but key the Python branch on kind too.
+        if kind == "route":
+            cell_otp = _otp_pct(r.get("route_on_time"), r.get("route_known"))
+            network_otp = _otp_pct(r.get("net_on_time"), r.get("net_known"))
+        else:
+            cell_otp = _otp_pct_severe_proxy(r.get("stop_obs"), r.get("stop_severe"))
+            network_otp = _otp_pct_severe_proxy(r.get("net_stop_obs"), r.get("net_stop_severe"))
+        hotspots.append(
+            Hotspot(
+                rank=i + 1,
+                type=kind,
+                id=str(r["entity_id"]),
+                # kinds verified 'route'/'stop' in the mart — per-kind name lookup
+                name=(
+                    route_names.get(str(r["entity_id"]))
+                    if kind == "route"
+                    else stop_names.get(str(r["entity_id"]))
+                ),
+                severity=r["severity_label"],
+                otp_delta_pts=_otp_delta_pts(cell_otp, network_otp),
+            )
         )
-        for i, r in enumerate(kept)
-    ]
     return Hotspots(generated_utc=generated_utc, hotspots=hotspots)
 
 
@@ -1576,11 +1687,15 @@ _RECEIPTS_NETWORK_DAILY_SQL = text(
 )
 
 # Worst route per date: max avg_delay_seconds from the public reliability view.
+# on_time / known carry the worst route's own daily OTP so the receipt can show
+# its on-time-vs-network gap (otp_delta_pts) against the day's network baseline.
 _RECEIPTS_WORST_ROUTE_SQL = text(
     """
     SELECT provider_local_date AS d,
            route_id,
-           avg_delay_seconds
+           avg_delay_seconds,
+           on_time_observation_count AS on_time,
+           delay_observation_count   AS known_obs
     FROM gold.public_route_reliability_daily
     WHERE provider_id = :provider_id
       AND provider_local_date >= current_date - 30
@@ -1618,7 +1733,8 @@ def build_receipts(
     views (max avg_delay_seconds per date).
 
     vehicles is None in v1 (not stored in the receipt source mart).
-    worst_route.otp_delta_pts is None in v1 (not stored in gold).
+    worst_route.otp_delta_pts = the worst route's daily OTP minus the day's network
+    baseline OTP, in percentage points (honest-None when either side is unknown).
     """
     params = {"provider_id": provider_id}
     route_names, stop_names = _entity_name_maps(conn, provider_id=provider_id)
@@ -1657,10 +1773,15 @@ def build_receipts(
             continue  # defense-in-depth: never crown the routeless sentinel as worst
         ds = _iso_date(r["d"])
         if ds not in worst_route:  # first = max avg_delay (ordered DESC)
+            # On-time-vs-network gap: the worst route's own daily OTP minus the
+            # day's network baseline OTP (already computed in net[ds]). Honest-None
+            # when either side is unknown (_otp_delta_pts) — never a fabricated 0.
+            route_otp = _otp_pct(r.get("on_time"), r.get("known_obs"))
+            network_otp = net.get(ds, {}).get("otp_pct")
             worst_route[ds] = ReceiptWorstRoute(
                 id=str(r["route_id"]),
                 name=route_names.get(str(r["route_id"])),
-                otp_delta_pts=None,  # v1 deferral: not stored in gold
+                otp_delta_pts=_otp_delta_pts(route_otp, network_otp),
             )
 
     # 4. worst stop per date: first row after ORDER BY avg_delay_seconds DESC
