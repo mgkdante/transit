@@ -59,3 +59,43 @@ export function resolveGrain(tier: DataTier, requested: string | undefined): Gra
 	if (requested !== undefined && isGrainAvailable(tier, requested)) return requested;
 	return defaultGrain(tier);
 }
+
+/**
+ * Minimum trustworthy buckets a grain needs before its control is enabled. The
+ * Chart Doctrine data-depth floor (§4.0 MIN_POINTS_FOR_LINE): a coarse grain that
+ * collapses to 1-2 points can't show a trend, so its pill is DISABLED (never
+ * hidden) until it has enough buckets. This is a points-count proxy, distinct
+ * from the event-count MIN_N_RATE reliability floor in `$lib/v1/stats`.
+ */
+export const MIN_POINTS_PER_GRAIN = 7;
+
+/**
+ * The grains a surface can usefully OFFER given how much data each grain has,
+ * finest→coarsest. `bucketCounts` maps a grain to its count of trustworthy
+ * (non-null) buckets; a grain is usable when it is offered by the tier AND has
+ * `>= minPoints` buckets. Pair with {@link availableGrains}: render every
+ * available grain, but DISABLE (don't hide) the ones not in this set — so a thin
+ * route shows a greyed `month` pill with a reason instead of a flat 1-point line.
+ *
+ * Data-depth gating is the fix for the "week/month trend goes flat" bug: never
+ * draw a coarse-grain line that has too few points to mean anything.
+ */
+export function usableGrains(
+	tier: DataTier,
+	bucketCounts: Partial<Record<Grain, number>>,
+	minPoints: number = MIN_POINTS_PER_GRAIN,
+): Grain[] {
+	return availableGrains(tier).filter((g) => (bucketCounts[g] ?? 0) >= minPoints);
+}
+
+/** True when `grain` is offered by the tier AND has enough data-depth to enable. */
+export function isGrainUsable(
+	tier: DataTier,
+	grain: string,
+	bucketCounts: Partial<Record<Grain, number>>,
+	minPoints: number = MIN_POINTS_PER_GRAIN,
+): grain is Grain {
+	return (
+		isGrainAvailable(tier, grain) && usableGrains(tier, bucketCounts, minPoints).includes(grain)
+	);
+}
