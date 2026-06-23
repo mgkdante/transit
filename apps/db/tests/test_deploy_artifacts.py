@@ -183,30 +183,32 @@ def test_worker_dockerfile_ships_pg_dump_16_client() -> None:
     assert "postgresql-client-16" in dockerfile
 
 
-def test_weekly_pg_repack_workflow_executes_on_schedule() -> None:
+def test_weekly_pg_repack_workflow_is_dry_run_monitor() -> None:
     workflow = (REPO_ROOT / ".github/workflows/weekly-pg-repack.yml").read_text(
         encoding="utf-8"
     )
 
-    # slice-9.1.1m: the scheduled Sunday run now EXECUTES a table-scoped repack.
     assert 'cron: "0 8 * * 0"' in workflow
-    # The dry-run pin is gone: a hard 'PG_REPACK_DRY_RUN: "true"' at job level
-    # overrode GITHUB_ENV, so manual dry_run=false ALSO never executed. The flag
-    # is now an expression — schedule executes, dispatch defaults to dry-run.
-    assert 'PG_REPACK_DRY_RUN: "true"' not in workflow
-    assert "github.event_name == 'schedule' && 'false'" in workflow
-    assert "inputs.dry_run" in workflow
-    # The dead 'Select manual mode' GITHUB_ENV step is removed (job-level env wins
-    # over GITHUB_ENV — that was the original silent-no-execute bug).
+    # 2026-06-22: the workflow is now a dry-run bloat MONITOR. pg_repack's execute
+    # path runs over the WAN (GitHub runner to the OCI Postgres); the long ACCESS
+    # EXCLUSIVE swap dropped the SSL connection and orphaned repack objects, so
+    # the scheduled run must NEVER execute. The flag is hardcoded true, and the
+    # schedule-executes expression + the dry_run dispatch input are both gone.
+    # Actual repack is done on-box via the on-VM runbook.
+    assert 'PG_REPACK_DRY_RUN: "true"' in workflow
+    assert "github.event_name == 'schedule'" not in workflow
+    assert "&& 'false'" not in workflow
+    assert "inputs.dry_run" not in workflow
+    # No dead GITHUB_ENV mode step (job-level env wins over GITHUB_ENV).
     assert "GITHUB_ENV" not in workflow
-    # psql is needed for the before/after size report + leftover-object check.
+    # psql is needed for the size report + the (execute-only) leftover-object check.
     assert "postgresql-16-repack" in workflow
     assert "postgresql-client-16" in workflow
-    # Size-report artifact gives an execute run an auditable receipt.
+    # The size-report artifact is the bloat signal a dry-run leaves behind.
     assert "actions/upload-artifact@v4" in workflow
     assert "pg-repack-size-report" in workflow
-    # First execute weeks rewrite live rows over WAN copies — give it headroom.
-    assert "timeout-minutes: 180" in workflow
+    # Dry-run is fast; no multi-hour WAN-rewrite headroom needed.
+    assert "timeout-minutes: 30" in workflow
     assert "bash scripts/run-pg-repack.sh" in workflow
 
 
