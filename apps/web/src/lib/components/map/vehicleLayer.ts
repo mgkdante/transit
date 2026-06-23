@@ -12,16 +12,11 @@
 //     DISAPPEAR (a real layer filter, not a dim).
 // Status × crowding × routes combine (AND). No clustering — ~600 GPU symbols.
 
-import type { Map as MapLibreMap, GeoJSONSource, LayerSpecification } from 'maplibre-gl';
+import type { Map as MapLibreMap, LayerSpecification } from 'maplibre-gl';
 import type { Vehicle } from '$lib/v1/schemas';
 import type { EntityKind, FilterState } from '$lib/filters';
 import { bodyIconId, BUS_ICON, HEADING_ICON, SILENT_ICON } from './vehicleSprites';
-import {
-	DEFAULT_LIVE_TTL_S,
-	silenceAgeS,
-	silenceOpacity,
-	silenceOpacityDiscrete,
-} from './vehicleSilence';
+import { silenceAgeS } from './vehicleSilence';
 import { fixAgeS, isVehicleStale } from './vehicleProjection';
 
 export const VEHICLE_SOURCE = 'vehicles';
@@ -50,7 +45,7 @@ export interface VehicleFeature {
 		// snapshot capture time, so a per-vehicle fade could never single out a stuck
 		// bus and only flickered on poll jitter. Staleness is a global signal now
 		// (feed-not-responding banner + the global stale-dim). Still driven
-		// data-driven into icon-opacity; `silenceOpacity` just resolves to 1.
+		// data-driven into icon-opacity; this is now a constant 1.
 		opacity: number;
 		// Seconds since the snapshot capture time (`updated_utc`, uniform across
 		// every vehicle on this feed), on the server clock. Carried for debugging /
@@ -139,22 +134,16 @@ export interface VehicleSilenceContext {
 	serverNow: number;
 	/** Live tier ttl (seconds) from the manifest; default 30s. */
 	ttlS?: number;
-	/**
-	 * Prefers-reduced-motion flag. It once chose the discrete vs continuous silence
-	 * ramp; both now resolve to a constant 1, so it no longer changes opacity. Kept
-	 * so the call site's reduced-motion branch need not be rewired.
-	 */
-	reduceMotion?: boolean;
 }
 
 /** Build the GeoJSON FeatureCollection for the current vehicles under the filter.
  *
  * `silence` (optional) carries the skew-free clock + live ttl, but the per-vehicle
- * fade it once drove was REMOVED: `silenceOpacity` now always returns 1, so every
- * bus's `opacity` is a constant 1 whether or not `silence` is supplied (see
- * vehicleSilence.ts for why — uniform snapshot capture time). `silence` is kept so
- * the per-frame refresher + `silenceAgeS` ("last seen" data) stay wired; it no
- * longer changes what's drawn. Staleness is signalled globally instead. */
+ * fade it once drove was REMOVED: every bus's `opacity` is now a constant 1 whether
+ * or not `silence` is supplied (see vehicleSilence.ts for why — uniform snapshot
+ * capture time). `silence` is kept so the per-frame refresher + `silenceAgeS`
+ * ("last seen" data) stay wired; it no longer changes what's drawn. Staleness is
+ * signalled globally instead. */
 export function toVehicleFeatures(
 	vehicles: readonly Vehicle[],
 	filter: FilterState,
@@ -164,7 +153,6 @@ export function toVehicleFeatures(
 	silence?: VehicleSilenceContext,
 ): VehicleFC {
 	const dim = colourDimension(filter);
-	const ttlS = silence?.ttlS ?? DEFAULT_LIVE_TTL_S;
 	return {
 		type: 'FeatureCollection',
 		features: vehicles.map((v) => {
@@ -172,11 +160,12 @@ export function toVehicleFeatures(
 			// Snapshot capture age (uniform across vehicles); 0 when no clock is
 			// supplied. Carried as `silenceAgeS` for debugging — opacity is constant 1.
 			const ageS = silence ? silenceAgeS(v.updated_utc, silence.serverNow) : 0;
-			const opacity = !silence
-				? 1
-				: silence.reduceMotion
-					? silenceOpacityDiscrete(ageS, ttlS)
-					: silenceOpacity(ageS, ttlS);
+			// Per-vehicle opacity is a constant 1: the old "going stale" fade was
+			// removed (uniform snapshot capture time made it honesty theatre).
+			// Staleness is a GLOBAL signal now (feed-stall banner + the global
+			// stale-dim via setStale); the per-bus "!" flag below carries per-bus
+			// silence. See vehicleSilence.ts for the full rationale.
+			const opacity = 1;
 			// Per-bus staleness off this bus's OWN fix time (reported_utc, falling
 			// back to updated_utc) — NOT the uniform snapshot age above. When a
 			// clock is supplied and the fix is past the cutoff, the bus is frozen +
@@ -383,29 +372,6 @@ export function addVehicleLayers(map: MapLibreMap): void {
 		},
 		paint: { 'icon-opacity': 1 },
 	} as unknown as LayerSpecification);
-}
-
-/** Replace the rendered vehicles, repainted/filtered under the active filter. */
-export function setVehicles(
-	map: MapLibreMap,
-	vehicles: readonly Vehicle[],
-	filter: FilterState,
-	alertVehicleIds?: ReadonlySet<string>,
-	selectedVehicleId?: string | null,
-	hoveredVehicleId?: string | null,
-	silence?: VehicleSilenceContext,
-): void {
-	const src = map.getSource(VEHICLE_SOURCE) as GeoJSONSource | undefined;
-	src?.setData(
-		toVehicleFeatures(
-			vehicles,
-			filter,
-			alertVehicleIds,
-			selectedVehicleId,
-			hoveredVehicleId,
-			silence,
-		) as unknown as Parameters<GeoJSONSource['setData']>[0],
-	);
 }
 
 /** Apply the GLOBAL stale-dim (whole live tier behind). When stale, every bus is

@@ -18,14 +18,13 @@
 //   · the global stale-dim (vehicleLayer.setStale, driven by live.isStale at the
 //     90s = 3×ttl threshold) dims the whole tier together.
 // Both reflect the truth of a uniform-capture-time feed; a per-vehicle gradient
-// does not. So `silenceOpacity` / `silenceOpacityDiscrete` now ALWAYS return 1.
+// does not. The per-vehicle opacity fade (and its no-op `silenceOpacity` /
+// `silenceOpacityDiscrete` shims) is gone: `vehicleLayer.toVehicleFeatures` now
+// emits a constant opacity of 1.
 //
 // What remains here is the still-useful, still-honest machinery: `silenceAgeS`
 // (seconds since the shared snapshot capture time, on the server clock) and
-// `liveTtlS` / `DEFAULT_LIVE_TTL_S` (the publisher's cadence). The opacity
-// functions are kept as no-op (always-1) shims so callers and the per-frame
-// refresher need not be rewired — they now compute a constant, which folds into a
-// stable signature and harmlessly produces no re-feeds.
+// `liveTtlS` / `DEFAULT_LIVE_TTL_S` (the publisher's cadence).
 
 /** Default live ttl (seconds) when the manifest omits it — mirrors the schema. */
 export const DEFAULT_LIVE_TTL_S = 30;
@@ -50,33 +49,6 @@ export function silenceAgeS(updatedUtc: string | null | undefined, serverNow: nu
 	const reportedMs = Date.parse(updatedUtc);
 	if (Number.isNaN(reportedMs)) return Number.POSITIVE_INFINITY;
 	return Math.max(0, (serverNow - reportedMs) / 1000);
-}
-
-/**
- * Per-vehicle icon opacity — now ALWAYS 1 (buses are solid in normal operation).
- *
- * It used to fade a single aging bus toward a floor, but `updated_utc` is the
- * uniform snapshot capture time, so every bus shares one age: a per-vehicle fade
- * cannot single out a stuck bus, and at the old start point it only flickered on
- * normal poll jitter. Staleness is signalled globally instead — by the
- * feed-not-responding banner and the global stale-dim (live.isStale at 90s). This
- * shim keeps the call site and the per-frame refresher intact; they now compute a
- * constant, which yields a stable signature and no re-feeds.
- *
- * `ageS` / `ttlS` are accepted (and ignored) so existing callers need no change.
- */
-export function silenceOpacity(_ageS: number, _ttlS: number = DEFAULT_LIVE_TTL_S): number {
-	return 1;
-}
-
-/**
- * Discrete (reduced-motion) counterpart to `silenceOpacity` — also ALWAYS 1, for
- * the same reason: there is no honest per-vehicle staleness gradient to step
- * through when every bus shares the snapshot capture time. Kept as a no-op shim so
- * the reduced-motion branch in callers need not be rewired.
- */
-export function silenceOpacityDiscrete(_ageS: number, _ttlS: number = DEFAULT_LIVE_TTL_S): number {
-	return 1;
 }
 
 /**

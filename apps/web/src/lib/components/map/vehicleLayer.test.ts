@@ -314,7 +314,7 @@ describe('toVehicleFeatures per-vehicle silence fade', () => {
 		expect(features[0].properties.opacity).toBe(1);
 	});
 
-	it('keeps a mid-window bus at full opacity under reduced motion too', () => {
+	it('keeps a mid-window bus at full opacity (formerly the reduced-motion path)', () => {
 		const now = Date.parse('2026-06-21T12:00:00Z');
 		const midAge = 60; // formerly inside the fade window
 		const reportedAt = new Date(now - midAge * 1000).toISOString();
@@ -324,7 +324,7 @@ describe('toVehicleFeatures per-vehicle silence fade', () => {
 			new Set(),
 			null,
 			null,
-			{ serverNow: now, ttlS: TTL, reduceMotion: true },
+			{ serverNow: now, ttlS: TTL },
 		).features;
 		expect(features[0].properties.opacity).toBe(1);
 	});

@@ -1,13 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import {
-	DEFAULT_LIVE_TTL_S,
-	liveTtlS,
-	silenceAgeS,
-	silenceOpacity,
-	silenceOpacityDiscrete,
-} from './vehicleSilence';
+import { DEFAULT_LIVE_TTL_S, liveTtlS, silenceAgeS } from './vehicleSilence';
 
-const TTL = 30;
 const NOW = Date.parse('2026-06-21T12:00:00Z');
 
 describe('silenceAgeS — server-anchored report age', () => {
@@ -27,29 +20,6 @@ describe('silenceAgeS — server-anchored report age', () => {
 		expect(silenceAgeS(null, NOW)).toBe(Number.POSITIVE_INFINITY);
 		expect(silenceAgeS(undefined, NOW)).toBe(Number.POSITIVE_INFINITY);
 		expect(silenceAgeS('not-a-date', NOW)).toBe(Number.POSITIVE_INFINITY);
-	});
-});
-
-describe('silenceOpacity — always full (buses are solid in normal operation)', () => {
-	it('returns 1 for any age and any ttl', () => {
-		expect(silenceOpacity(0, TTL)).toBe(1);
-		expect(silenceOpacity(67.5, TTL)).toBe(1);
-		expect(silenceOpacity(300, TTL)).toBe(1);
-		expect(silenceOpacity(Number.POSITIVE_INFINITY, TTL)).toBe(1);
-		// ttl is irrelevant now — the fade is gone.
-		expect(silenceOpacity(67.5, 5)).toBe(1);
-		expect(silenceOpacity(67.5)).toBe(1);
-	});
-});
-
-describe('silenceOpacityDiscrete — always full (reduced motion)', () => {
-	it('returns 1 for any age and any ttl', () => {
-		expect(silenceOpacityDiscrete(0, TTL)).toBe(1);
-		expect(silenceOpacityDiscrete(67.5, TTL)).toBe(1);
-		expect(silenceOpacityDiscrete(300, TTL)).toBe(1);
-		expect(silenceOpacityDiscrete(Number.POSITIVE_INFINITY, TTL)).toBe(1);
-		expect(silenceOpacityDiscrete(67.5, 5)).toBe(1);
-		expect(silenceOpacityDiscrete(67.5)).toBe(1);
 	});
 });
 

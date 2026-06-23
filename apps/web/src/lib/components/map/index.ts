@@ -36,7 +36,6 @@ export {
 export {
 	addVehicleSource,
 	addVehicleLayers,
-	setVehicles,
 	setStale,
 	toVehicleFeatures,
 	VEHICLE_SOURCE,

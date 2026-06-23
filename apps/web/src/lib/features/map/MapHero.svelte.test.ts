@@ -187,10 +187,14 @@ describe('MapHero mobile chrome', () => {
 
 	it('clears the address pin without clearing URL-backed map filters', () => {
 		const s = source();
-
-		expect(s).toContain('clearNearTargetSearchParams');
+		// The URLSearchParams assembly was extracted to the pure mapUrlSync module
+		// (clearNearTargetSearch, unit-tested in mapUrlSync.test.ts); MapHero keeps the
+		// goto() shell that calls it + drops the local near-me state.
+		const urlSync = optionalSource('src/lib/features/map/mapUrlSync.ts');
+		expect(urlSync).toContain('clearNearTargetSearch');
+		expect(urlSync).toContain('clearNearTargetSearchParams(nextSearchParams)');
 		expect(s).toContain('function clearNearMeOrigin()');
-		expect(s).toContain('clearNearTargetSearchParams(nextSearchParams)');
+		expect(s).toContain('clearNearTargetSearch($page.url.searchParams, $page.url.pathname)');
 		expect(s).toContain('nearMeOrigin = null');
 		expect(s).toContain('nearMeQuery =');
 		expect(s).toContain('onclear={clearNearMeOrigin}');
@@ -198,10 +202,16 @@ describe('MapHero mobile chrome', () => {
 
 	it('writes chosen near-me locations into the URL without clearing map filters', () => {
 		const s = source();
-
-		expect(s).toContain('setNearTargetSearchParams');
+		// The URLSearchParams assembly was extracted to the pure mapUrlSync module
+		// (buildNearTargetSearch, unit-tested in mapUrlSync.test.ts); MapHero keeps the
+		// goto() shell that calls it.
+		const urlSync = optionalSource('src/lib/features/map/mapUrlSync.ts');
+		expect(urlSync).toContain('setNearTargetSearchParams');
+		expect(urlSync).toContain('setNearTargetSearchParams(nextSearchParams, target)');
 		expect(s).toContain('function syncNearTargetToUrl(origin: NearMeOrigin)');
-		expect(s).toContain('setNearTargetSearchParams(nextSearchParams, origin)');
+		expect(s).toContain(
+			'buildNearTargetSearch($page.url.searchParams, $page.url.pathname, origin)',
+		);
 		expect(s).toContain('syncNearTargetToUrl(origin)');
 	});
 

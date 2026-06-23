@@ -40,13 +40,9 @@
 	import type { Alert } from '$lib/v1/schemas';
 	import { createResource } from '$lib/v1/resource.svelte';
 	import { createFilterStore, fromSearchParams, type Chip } from '$lib/filters';
-	import {
-		clearNearTargetSearchParams,
-		copyNearTargetSearchParams,
-		setNearTargetSearchParams,
-	} from '$lib/search/mapNear';
+	import { copyNearTargetSearchParams } from '$lib/search/mapNear';
 	import { nearTargetFromSearchParams } from '$lib/search/mapNear';
-	import { clearMapFocusSearchParams, parseMapFocus, type MapFocus } from '$lib/search/mapFocus';
+	import { parseMapFocus, type MapFocus } from '$lib/search/mapFocus';
 	import { BottomSheet, RightPanel } from '$lib/components/shell';
 	import {
 		MapStage,
@@ -72,17 +68,11 @@
 		type MapFitPadding,
 		type WithDistance,
 		type VehicleMotionController,
-		type ShapeResolver,
 		type FixResolver,
-		type Coord,
 	} from '$lib/components/map';
-	import {
-		bestShapeForPoint,
-		routeShapes,
-		type RouteShapes,
-	} from '$lib/components/map/vehicleShapes';
 	import { liveTtlS } from '$lib/components/map/vehicleSilence';
-	import { fixAgeS, isVehicleStale } from '$lib/components/map/vehicleProjection';
+	import { createShapeCacheManager } from './mapShapeCache';
+	import { vehicleAbsence } from './vehicleAbsence';
 	import { sharedClock, motionMode } from '$lib/stores';
 	import { isPrefersReducedMotion } from '$lib/motion/reduced-motion.svelte';
 	import MapFilters from './MapFilters.svelte';
@@ -92,7 +82,13 @@
 	import MapNearMeControl from './MapNearMeControl.svelte';
 	import MapMotionControl from './MapMotionControl.svelte';
 	import MapSelectionDetail from './MapSelectionDetail.svelte';
-	import { routeBoundsFromFile, zoomForNearMePrecision } from './mapGeo';
+	import { zoomForNearMePrecision } from './mapGeo';
+	import { focusCoordinate, fitRouteBounds } from './mapCamera';
+	import {
+		buildNearTargetSearch,
+		clearNearTargetSearch,
+		buildFocusClearSearch,
+	} from './mapUrlSync';
 	import { motionFeedAnimate } from './motionFeed';
 	import { parseCoordinateQuery, nearTargetKey } from './mapNearMe';
 	import { copy as MAP_COPY } from './map.copy';
@@ -103,14 +99,9 @@
 		MIN_DETAIL_PANEL_WIDTH,
 		MAX_DETAIL_PANEL_WIDTH,
 	} from './mapDetailPanes';
-	import { shouldAnimate } from '$lib/motion/policy';
 	import { buildAlertEntitySets, vehicleHasAlert } from './mapAlerts';
 	import { PICKABLE_MAP_LAYERS, pickMapSelection } from './mapPicking';
-	import {
-		resolveMapSelection,
-		type MapSelection,
-		type MapSelectionDetail as MapSelectionDetailValue,
-	} from './mapSelection';
+	import { resolveMapSelection, type MapSelection } from './mapSelection';
 	import type { GeocodedLocation, GeocodePrecision, GeocodeSuggestion } from '$lib/geocode/types';
 	import { hasCoordinates } from '$lib/geocode/types';
 	import type { StopIndexEntry } from '$lib/v1/schemas';
@@ -300,21 +291,11 @@
 	// Per-route direction-variant polylines, fetched on-demand for the routes that
 	// currently have live buses (deduped by route id — far fewer than the ~600
 	// vehicles). Loaded through the same getRoute() path as the selected-route
-	// linework, then cached so a route is fetched at most once. The controller's
-	// per-frame `shapeFor` reads this to project a bus FORWARD along its street;
-	// until a shape resolves the bus FREEZES at its fix (we never dead-reckon on the
-	// raw bearing). A newly-cached shape is therefore picked up on the very next
-	// rAF frame — no re-feed needed, so this stays a PLAIN (non-reactive) Map. A
-	// SvelteMap would make every .set() reactive and thrash the feed effect.
-	// eslint-disable-next-line svelte/prefer-svelte-reactivity
-	const routeShapeCache = new Map<string, RouteShapes>();
-	// Routes already fetched (or null/empty result cached) so we never re-request.
-	// Plain Set for the same reason — a dedupe ledger, not reactive state.
-	// eslint-disable-next-line svelte/prefer-svelte-reactivity
-	const routeShapeRequested = new Set<string>();
-	// Cap distinct cached routes to bound memory over a long session; the visible
-	// set is small, so eviction is rare. LRU-ish: oldest insertion dropped first.
-	const MAX_CACHED_ROUTE_SHAPES = 200;
+	// linework, then cached so a route is fetched at most once. The manager owns the
+	// (non-reactive) caches + the prefetch + the per-frame `shapeFor` resolver the
+	// controller reads to project a bus FORWARD along its street; until a shape
+	// resolves the bus FREEZES at its fix (we never dead-reckon on the raw bearing).
+	const shapeCache = createShapeCacheManager(getRoute);
 
 	let layerRevision = $state(0);
 	let interactionsMap: MapLibreMap | null = null;
@@ -495,20 +476,9 @@
 			alerts: alertList,
 		}),
 	);
-	// Per-bus stale-GPS note. PR-A gives each vehicle its OWN fix time (reported_utc,
-	// nullable → updated_utc fallback), so we can now honestly flag ONE silent bus
-	// (its fix older than STALE_CUTOFF_S) without the old global-snapshot caveat. For
-	// a focused VEHICLE detail, age it on its own fix vs the shared clock; return
-	// { ageS } only when stale, else null (no note). Reads sharedClock.serverNow so
-	// the note appears/refreshes as a bus crosses the cutoff between polls.
-	function vehicleAbsence(
-		detail: MapSelectionDetailValue | null,
-		serverNow: number,
-	): { ageS: number } | null {
-		if (detail?.kind !== 'vehicle') return null;
-		const ageS = fixAgeS(detail.vehicle.reported_utc, detail.vehicle.updated_utc, serverNow);
-		return isVehicleStale(ageS) ? { ageS } : null;
-	}
+	// Per-bus stale-GPS note (pure module): { ageS } when a focused VEHICLE detail's
+	// OWN fix is past the cutoff, else null. Reads sharedClock.serverNow so the note
+	// appears/refreshes as a bus crosses the cutoff between polls.
 	const selectedVehicleAbsence = $derived(vehicleAbsence(selectedDetail, sharedClock.serverNow));
 	const hoverVehicleAbsence = $derived(vehicleAbsence(hoverDetail, sharedClock.serverNow));
 	const detailSurfaceKey = $derived(
@@ -682,11 +652,8 @@
 	}
 
 	function syncNearTargetToUrl(origin: NearMeOrigin): void {
-		const nextSearchParams = new URLSearchParams($page.url.searchParams);
-		setNearTargetSearchParams(nextSearchParams, origin);
-		const nextSearch = nextSearchParams.toString();
 		nearUrlKey = nearTargetKey(origin);
-		void goto(nextSearch ? `?${nextSearch}` : $page.url.pathname, {
+		void goto(buildNearTargetSearch($page.url.searchParams, $page.url.pathname, origin), {
 			replaceState: true,
 			keepFocus: true,
 			noScroll: true,
@@ -715,11 +682,7 @@
 		nearMeQuery = '';
 		nearMeError = null;
 		nearUrlKey = '';
-
-		const nextSearchParams = new URLSearchParams($page.url.searchParams);
-		clearNearTargetSearchParams(nextSearchParams);
-		const nextSearch = nextSearchParams.toString();
-		void goto(nextSearch ? `?${nextSearch}` : $page.url.pathname, {
+		void goto(clearNearTargetSearch($page.url.searchParams, $page.url.pathname), {
 			replaceState: true,
 			keepFocus: true,
 			noScroll: true,
@@ -733,10 +696,7 @@
 	}
 
 	function clearFocusFromUrl(): void {
-		const nextSearchParams = new URLSearchParams($page.url.searchParams);
-		clearMapFocusSearchParams(nextSearchParams);
-		const nextSearch = nextSearchParams.toString();
-		void goto(nextSearch ? `?${nextSearch}` : $page.url.pathname, {
+		void goto(buildFocusClearSearch($page.url.searchParams, $page.url.pathname), {
 			replaceState: true,
 			keepFocus: true,
 			noScroll: true,
@@ -754,29 +714,19 @@
 	function focusStop(id: string): boolean {
 		const stop = stopList.find((s) => s.id === id);
 		if (!stop) return false;
-		panTo([stop.lon, stop.lat], Math.max(map?.getZoom() ?? 0, 16));
-		return true;
+		return focusCoordinate(map, [stop.lon, stop.lat], 16);
 	}
 
 	function focusVehicle(id: string): boolean {
 		const vehicle = (live.vehicles?.vehicles ?? []).find((v) => v.id === id);
 		if (!vehicle) return false;
-		panTo([vehicle.lon, vehicle.lat], Math.max(map?.getZoom() ?? 0, 16));
-		return true;
+		return focusCoordinate(map, [vehicle.lon, vehicle.lat], 16);
 	}
 
 	function focusRoute(id: string): boolean {
 		const route = routeList.find((r) => r.id === id);
 		if (!route) return false;
-		const bounds = routeBoundsFromFile(route);
-		if (!bounds) return false;
-		if (!map) return false;
-		map.fitBounds(bounds, {
-			padding: 64,
-			maxZoom: 15,
-			duration: shouldAnimate('motion-gated') ? 600 : 0,
-		});
-		return true;
+		return fitRouteBounds(map, route);
 	}
 
 	// Resolve the pending focus once the map AND the entity's data are available;
@@ -796,20 +746,8 @@
 		clearFocusFromUrl();
 	});
 
-	/** Camera move that honours prefers-reduced-motion: jumpTo (no flight) under
-	 * reduce, flyTo otherwise. `essential` alone does NOT respect reduced motion. */
-	function panTo(center: [number, number], zoom: number): void {
-		if (!map) return;
-		if (shouldAnimate('motion-gated')) map.flyTo({ center, zoom, essential: true });
-		else map.jumpTo({ center, zoom });
-	}
-
 	function flyToNearMeOrigin(origin: NearMeOrigin): void {
-		if (!map) return;
-		panTo(
-			[origin.lon, origin.lat],
-			Math.max(map.getZoom(), zoomForNearMePrecision(origin.precision)),
-		);
+		focusCoordinate(map, [origin.lon, origin.lat], zoomForNearMePrecision(origin.precision));
 	}
 
 	function useNearMeLocation(): void {
@@ -929,7 +867,7 @@
 		detailOpen = true;
 		// A fresh pick always shows its detail: expand the panel if it was collapsed.
 		detailCollapsed = false;
-		if (map) panTo([stop.lon, stop.lat], Math.max(map.getZoom(), 15));
+		focusCoordinate(map, [stop.lon, stop.lat], 15);
 	}
 
 	function waitingForSelectedDetail(): boolean {
@@ -987,57 +925,21 @@
 
 	// Lazily fetch route shapes for the routes that currently have live buses
 	// (deduped). Runs off the vehicles poll only (other reads untracked) so a
-	// filter/hover does not re-trigger fetches. Each route is requested at most
-	// once; a resolved shape is dropped into `routeShapeCache`, which the
-	// controller's per-frame `shapeFor` reads — so that route's buses upgrade from
-	// frozen to FORWARD projection on the next rAF frame, no re-feed needed. Fetches
-	// are fire-and-forget + fail-soft (a failed/absent shape simply leaves the bus
-	// frozen at its fix — never blocks). We do NOT bulk-fetch all routes: only the
-	// distinct routes in the current vehicle set, which is small.
+	// filter/hover does not re-trigger fetches. The shape-cache manager owns the
+	// fetch/dedupe/evict + the per-frame resolver; a resolved shape is picked up by
+	// the controller's `shapeCache.shapeFor` on the next rAF frame, no re-feed needed.
 	$effect(() => {
 		const vehicles = live.vehicles?.vehicles ?? [];
 		if (vehicles.length === 0) return;
-		untrack(() => {
-			for (const v of vehicles) {
-				const id = v.route;
-				if (id == null || id === '') continue;
-				if (routeShapeRequested.has(id)) continue;
-				routeShapeRequested.add(id);
-				void getRoute(id)
-					.then((route) => {
-						if (!route) return;
-						const shapes = routeShapes(route);
-						if (shapes.length === 0) return;
-						// Bound the cache (drop oldest) so a long session can't grow it
-						// unbounded; the visible route set is small so this rarely fires.
-						if (routeShapeCache.size >= MAX_CACHED_ROUTE_SHAPES) {
-							const oldest = routeShapeCache.keys().next().value;
-							if (oldest != null) routeShapeCache.delete(oldest);
-						}
-						routeShapeCache.set(id, shapes);
-					})
-					.catch(() => {
-						// Fail-soft: leave the route un-cached → chord fallback. Allow a
-						// later retry by clearing the requested flag.
-						routeShapeRequested.delete(id);
-					});
-			}
-		});
+		untrack(() => shapeCache.prefetch(vehicles));
 	});
 
-	// Per-vehicle route-shape resolver passed into the motion controller. For a
-	// vehicle feature, return the cached route-shape variant its CURRENT point sits
-	// on (least projection error), or null → FREEZE (no shape ⇒ no forward dead-
-	// reckoning; we never project on the raw GTFS-RT bearing). Read EACH FRAME by
-	// the controller (a cheap cache lookup), so a route shape that resolves mid-
-	// flight upgrades the bus from frozen to projected without waiting for a re-feed.
-	const shapeFor: ShapeResolver = (feature) => {
-		const routeId = feature.properties.route;
-		if (!routeId) return null;
-		const shapes = routeShapeCache.get(routeId);
-		if (!shapes || shapes.length === 0) return null;
-		return bestShapeForPoint(shapes, feature.geometry.coordinates as Coord);
-	};
+	// Per-vehicle route-shape resolver passed into the motion controller. Returns the
+	// cached route-shape variant a vehicle's CURRENT point sits on (least projection
+	// error), or null → FREEZE (no shape ⇒ no forward dead-reckoning). Read EACH FRAME
+	// by the controller (a cheap cache lookup), so a route shape that resolves
+	// mid-flight upgrades the bus from frozen to projected without waiting for a re-feed.
+	const shapeFor = shapeCache.shapeFor;
 
 	// Per-vehicle FORWARD-projection inputs the painted feature does not carry: the
 	// bus's OWN fix time (reported_utc, nullable → updated_utc fallback) and its
@@ -1088,7 +990,7 @@
 				alertVehicleIds,
 				selectedVehicleId,
 				hoveredVehicleId,
-				{ serverNow, ttlS: liveTtl, reduceMotion },
+				{ serverNow, ttlS: liveTtl },
 			),
 			{
 				tickKey: live.vehicles?.generated_utc ?? live.generatedUtc,
