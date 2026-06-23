@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { buildLiveIndex } from '$lib/v1/live';
 import type { Alert, IsoUtc, RouteFile, StopFile, StopIndexEntry, Vehicle } from '$lib/v1/schemas';
-import { resolveMapSelection } from './mapSelection';
+import { resolveMapSelection, sameNullableSelection, sameSelection } from './mapSelection';
 
 const utc = (value: string) => value as IsoUtc;
 
@@ -383,5 +383,44 @@ describe('resolveMapSelection', () => {
 			['North', 'North'],
 			['South', 'South'],
 		]);
+	});
+});
+
+describe('sameSelection / sameNullableSelection', () => {
+	it('same kind+id are equal (point entities)', () => {
+		expect(sameSelection({ kind: 'vehicle', id: 'a' }, { kind: 'vehicle', id: 'a' })).toBe(true);
+		expect(sameSelection({ kind: 'stop', id: 's1' }, { kind: 'stop', id: 's1' })).toBe(true);
+	});
+	it('different kind or id are not equal', () => {
+		expect(sameSelection({ kind: 'vehicle', id: 'a' }, { kind: 'stop', id: 'a' })).toBe(false);
+		expect(sameSelection({ kind: 'vehicle', id: 'a' }, { kind: 'vehicle', id: 'b' })).toBe(false);
+	});
+	it('routes compare direction + variant', () => {
+		expect(sameSelection({ kind: 'route', id: '24' }, { kind: 'route', id: '24' })).toBe(true);
+		expect(
+			sameSelection(
+				{ kind: 'route', id: '24', direction: 0 },
+				{ kind: 'route', id: '24', direction: 1 },
+			),
+		).toBe(false);
+		expect(
+			sameSelection(
+				{ kind: 'route', id: '24', variantKey: 'a' },
+				{ kind: 'route', id: '24', variantKey: 'b' },
+			),
+		).toBe(false);
+	});
+	it('treats missing direction/variant as null (equal)', () => {
+		expect(
+			sameSelection({ kind: 'route', id: '24', direction: null }, { kind: 'route', id: '24' }),
+		).toBe(true);
+	});
+	it('sameNullableSelection: two nulls equal, one null not', () => {
+		expect(sameNullableSelection(null, null)).toBe(true);
+		expect(sameNullableSelection({ kind: 'vehicle', id: 'a' }, null)).toBe(false);
+		expect(sameNullableSelection(null, { kind: 'vehicle', id: 'a' })).toBe(false);
+		expect(
+			sameNullableSelection({ kind: 'vehicle', id: 'a' }, { kind: 'vehicle', id: 'a' }),
+		).toBe(true);
 	});
 });
