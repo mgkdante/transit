@@ -8,10 +8,12 @@ import {
 	ICON_SIZE_Z11_HOVER,
 	VEHICLE_BODY_LAYER,
 	VEHICLE_HEADING_LAYER,
+	VEHICLE_SILENT_LAYER,
 	VEHICLE_SOURCE,
 	toVehicleFeatures,
 } from './vehicleLayer';
-import { HEADING_ICON } from './vehicleSprites';
+import { HEADING_ICON, SILENT_ICON } from './vehicleSprites';
+import { STALE_CUTOFF_S } from './vehicleProjection';
 
 function usesTopLevelZoomExpression(value: unknown): boolean {
 	return (
@@ -339,5 +341,95 @@ describe('toVehicleFeatures per-vehicle silence fade', () => {
 			const paint = (layer?.paint ?? {}) as Record<string, unknown>;
 			expect(JSON.stringify(paint['icon-opacity'])).toContain('opacity');
 		}
+	});
+});
+
+describe('toVehicleFeatures per-bus staleness flag (S5.1: off reported_utc)', () => {
+	const now = Date.parse('2026-06-21T12:00:00Z');
+	// Same snapshot capture time for both buses (uniform updated_utc); they differ
+	// ONLY in their OWN fix time (reported_utc) — exactly the case the old global
+	// silence could not distinguish but per-bus staleness must.
+	const SNAPSHOT_UTC = '2026-06-21T12:00:00Z';
+
+	function fleet(freshReported: string, staleReported: string) {
+		return [
+			{
+				id: 'fresh',
+				lat: 45.5,
+				lon: -73.6,
+				status: 'on_time',
+				updated_utc: SNAPSHOT_UTC,
+				reported_utc: freshReported,
+				bearing: 90,
+			},
+			{
+				id: 'stale',
+				lat: 45.51,
+				lon: -73.61,
+				status: 'on_time',
+				updated_utc: SNAPSHOT_UTC,
+				reported_utc: staleReported,
+				bearing: 90,
+			},
+		].map((v) => VehicleSchema.parse(v));
+	}
+
+	it('flags a bus whose OWN reported_utc is past the cutoff as stale:1, a fresh one stale:0', () => {
+		const fresh = new Date(now - 5 * 1000).toISOString(); // 5s old → fresh
+		const stale = new Date(now - (STALE_CUTOFF_S + 30) * 1000).toISOString(); // well past cutoff
+		const features = toVehicleFeatures(fleet(fresh, stale), EMPTY_FILTER, new Set(), null, null, {
+			serverNow: now,
+		}).features;
+		const byId = Object.fromEntries(features.map((f) => [f.properties.id, f.properties]));
+		expect(byId.fresh.stale).toBe(0);
+		expect(byId.stale.stale).toBe(1);
+	});
+
+	it('falls back to updated_utc for staleness when reported_utc is absent', () => {
+		const oldSnapshot = new Date(now - (STALE_CUTOFF_S + 30) * 1000).toISOString();
+		const [v] = [
+			{ id: 'fallback', lat: 45.5, lon: -73.6, status: 'on_time', updated_utc: oldSnapshot },
+		].map((x) => VehicleSchema.parse(x));
+		const features = toVehicleFeatures([v], EMPTY_FILTER, new Set(), null, null, {
+			serverNow: now,
+		}).features;
+		expect(features[0].properties.stale).toBe(1);
+	});
+
+	it('reports stale:0 for every bus when no silence context (no clock to measure against)', () => {
+		const fresh = new Date(now - 5 * 1000).toISOString();
+		const stale = new Date(now - (STALE_CUTOFF_S + 30) * 1000).toISOString();
+		const features = toVehicleFeatures(fleet(fresh, stale), EMPTY_FILTER).features;
+		expect(features.map((f) => f.properties.stale)).toEqual([0, 0]);
+	});
+
+	it('adds a VEHICLE_SILENT_LAYER filtered on matched + stale, using the "!" badge sprite', () => {
+		const layers: LayerSpecification[] = [];
+		const map = {
+			getLayer: () => undefined,
+			addLayer: (nextLayer: LayerSpecification) => {
+				layers.push(nextLayer);
+			},
+		} as unknown as MapLibreMap;
+		addVehicleLayers(map);
+
+		const silent = layers.find((l) => l.id === VEHICLE_SILENT_LAYER);
+		expect(silent).toBeDefined();
+		if (!silent) throw new Error('expected silent layer');
+		expect(silent).toMatchObject({ type: 'symbol', source: VEHICLE_SOURCE });
+		const rendered = silent as LayerSpecification & {
+			layout: Record<string, unknown>;
+			filter: unknown;
+		};
+		expect((rendered.layout ?? {})['icon-image']).toBe(SILENT_ICON);
+		// Shows only matched buses that are per-bus stale.
+		expect(JSON.stringify(rendered.filter)).toContain('matched');
+		expect(JSON.stringify(rendered.filter)).toContain('stale');
+		// Drawn ABOVE the body + heading so the flag is never occluded.
+		const bodyIndex = layers.findIndex((l) => l.id === VEHICLE_BODY_LAYER);
+		const headingIndex = layers.findIndex((l) => l.id === VEHICLE_HEADING_LAYER);
+		const silentIndex = layers.findIndex((l) => l.id === VEHICLE_SILENT_LAYER);
+		expect(silentIndex).toBeGreaterThan(bodyIndex);
+		expect(silentIndex).toBeGreaterThan(headingIndex);
 	});
 });

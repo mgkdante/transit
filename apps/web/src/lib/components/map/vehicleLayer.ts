@@ -15,18 +15,21 @@
 import type { Map as MapLibreMap, GeoJSONSource, LayerSpecification } from 'maplibre-gl';
 import type { Vehicle } from '$lib/v1/schemas';
 import type { EntityKind, FilterState } from '$lib/filters';
-import { bodyIconId, BUS_ICON, HEADING_ICON } from './vehicleSprites';
+import { bodyIconId, BUS_ICON, HEADING_ICON, SILENT_ICON } from './vehicleSprites';
 import {
 	DEFAULT_LIVE_TTL_S,
 	silenceAgeS,
 	silenceOpacity,
 	silenceOpacityDiscrete,
 } from './vehicleSilence';
+import { fixAgeS, isVehicleStale } from './vehicleProjection';
 
 export const VEHICLE_SOURCE = 'vehicles';
 export const VEHICLE_BODY_LAYER = 'vehicle-body';
 /** The rotated chevron overlay; same source, filtered to vehicles with a heading. */
 export const VEHICLE_HEADING_LAYER = 'vehicle-heading';
+/** The per-bus "!" not-reporting badge overlay; same source, filtered to matched + stale. */
+export const VEHICLE_SILENT_LAYER = 'vehicle-silent';
 
 export interface VehicleFeature {
 	type: 'Feature';
@@ -53,6 +56,11 @@ export interface VehicleFeature {
 		// every vehicle on this feed), on the server clock. Carried for debugging /
 		// a future "last seen" hover; no longer drives opacity (the fade is gone).
 		silenceAgeS: number;
+		// 1 = this bus's OWN fix (reported_utc, fallback updated_utc) is past the
+		// staleness cutoff → it gets the per-bus "!" flag and is frozen (the S5
+		// reshape dropped this; it is back, now correctly per-bus). 0 = fresh, or
+		// no silence context to measure against.
+		stale: number;
 	};
 }
 export interface VehicleFC {
@@ -169,6 +177,14 @@ export function toVehicleFeatures(
 				: silence.reduceMotion
 					? silenceOpacityDiscrete(ageS, ttlS)
 					: silenceOpacity(ageS, ttlS);
+			// Per-bus staleness off this bus's OWN fix time (reported_utc, falling
+			// back to updated_utc) — NOT the uniform snapshot age above. When a
+			// clock is supplied and the fix is past the cutoff, the bus is frozen +
+			// flagged with the "!" badge (VEHICLE_SILENT_LAYER). 0 with no clock.
+			const stale =
+				silence && isVehicleStale(fixAgeS(v.reported_utc, v.updated_utc, silence.serverNow))
+					? 1
+					: 0;
 			return {
 				type: 'Feature',
 				geometry: { type: 'Point', coordinates: [v.lon, v.lat] },
@@ -185,6 +201,7 @@ export function toVehicleFeatures(
 					matched,
 					opacity,
 					silenceAgeS: Number.isFinite(ageS) ? Math.round(ageS) : -1,
+					stale,
 				},
 			};
 		}),
@@ -265,11 +282,12 @@ function iconOpacityExpr(globalStale: boolean): unknown {
 	];
 }
 
-/** Add the vehicle body + heading symbol layers. Non-matched features are
- * filtered OUT (they disappear); opacity carries only the stale dim. The bus
- * body is UPRIGHT (it reads at every bearing); the chevron is a SEPARATE layer
- * that rotates by bearing and shows ONLY for vehicles reporting a heading.
- * Idempotent. */
+/** Add the vehicle body + heading + per-bus silent-flag symbol layers. Non-matched
+ * features are filtered OUT (they disappear); opacity carries only the stale dim.
+ * The bus body is UPRIGHT (it reads at every bearing); the chevron is a SEPARATE
+ * layer that rotates by bearing and shows ONLY for vehicles reporting a heading;
+ * the silent "!" badge shows ONLY for matched + per-bus-stale vehicles (frozen
+ * buses whose own fix is past the cutoff). Idempotent. */
 export function addVehicleLayers(map: MapLibreMap): void {
 	if (map.getLayer(VEHICLE_BODY_LAYER)) return;
 	map.addLayer({
@@ -310,6 +328,27 @@ export function addVehicleLayers(map: MapLibreMap): void {
 			'icon-size': ICON_SIZE,
 		},
 		paint: { 'icon-opacity': iconOpacityExpr(false) },
+	} as unknown as LayerSpecification);
+
+	if (map.getLayer(VEHICLE_SILENT_LAYER)) return;
+	// The per-bus "!" not-reporting badge — drawn ABOVE the body + heading so a
+	// frozen, no-longer-reporting bus is FLAGGED (full opacity), never hidden.
+	// Shown only for matched + stale vehicles; staleness is per-bus now (each
+	// bus's own reported_utc age, set in toVehicleFeatures), not a global signal.
+	map.addLayer({
+		id: VEHICLE_SILENT_LAYER,
+		type: 'symbol',
+		source: VEHICLE_SOURCE,
+		filter: ['all', ['==', ['get', 'matched'], 1], ['==', ['get', 'stale'], 1]],
+		layout: {
+			'icon-image': SILENT_ICON,
+			// Float the badge just above the bus glyph.
+			'icon-offset': [0, -15],
+			'icon-size': 0.62,
+			'icon-allow-overlap': true,
+			'icon-ignore-placement': true,
+		},
+		paint: { 'icon-opacity': 1 },
 	} as unknown as LayerSpecification);
 }
 

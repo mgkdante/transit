@@ -35,6 +35,25 @@ describe('cumulativeLengths', () => {
 		expect(cum[1]).toBeGreaterThan(1500);
 		expect(cum[1]).toBeLessThan(1620);
 	});
+
+	it('MEMOIZES by array reference: same array → identical cached array, new array → recomputes', () => {
+		// Two distinct arrays with identical contents. The per-frame projection
+		// (~700 buses × ~30fps) relies on this WeakMap memo to compute each route's
+		// prefix sum ONCE per tween, not every frame.
+		const shapeA: Coord[] = [EAST, CORNER, NORTH];
+		const shapeB: Coord[] = [EAST, CORNER, NORTH];
+
+		const firstA = cumulativeLengths(shapeA);
+		const secondA = cumulativeLengths(shapeA);
+		// Same array reference → the SAME cached array instance back (no recompute).
+		expect(secondA).toBe(firstA);
+
+		const firstB = cumulativeLengths(shapeB);
+		// A DIFFERENT array (distinct reference) recomputes into its own array...
+		expect(firstB).not.toBe(firstA);
+		// ...but the math/result is unchanged — equal values, just not the same ref.
+		expect(firstB).toEqual(firstA);
+	});
 });
 
 describe('projectToPolyline', () => {
@@ -167,5 +186,39 @@ describe('chordBearing', () => {
 
 	it('returns null when the two points coincide (no direction)', () => {
 		expect(chordBearing(EAST, EAST)).toBeNull();
+	});
+});
+
+// The forward-projection module (vehicleProjection) leans on a project→advance→
+// sample round-trip: project the bus position to an arc length s, walk to s+d,
+// read the position + tangent there. These guard that composition directly.
+describe('project + walk round-trip (forward-projection helpers)', () => {
+	const cum = cumulativeLengths(L_PATH);
+
+	it('advancing from a projected point by d lands d metres further along the arc', () => {
+		// Project a point onto the east leg, then walk +400 m: the new projection
+		// should be ~400 m further along (within sampling tolerance).
+		const start = projectToPolyline(L_PATH, [-73.595, 45.5005])!;
+		const advanced = walkAlong(L_PATH, start.s + 400)!;
+		const back = projectToPolyline(L_PATH, advanced.coord)!;
+		expect(back.s).toBeCloseTo(start.s + 400, 0);
+	});
+
+	it('advancing past the shape end pins at the final vertex (no extrapolation)', () => {
+		const start = projectToPolyline(L_PATH, EAST)!;
+		const advanced = walkAlong(L_PATH, start.s + cum[cum.length - 1] + 9999)!;
+		expect(advanced.coord[0]).toBeCloseTo(NORTH[0], 6);
+		expect(advanced.coord[1]).toBeCloseTo(NORTH[1], 6);
+	});
+
+	it('the sampled tangent at the advanced point is the local travel direction', () => {
+		// Start on the east leg and advance only a little → still on the east leg,
+		// tangent ~due east (90°). Advance well past the corner → tangent ~north.
+		const start = projectToPolyline(L_PATH, EAST)!;
+		const stillEast = walkAlong(L_PATH, start.s + 200)!;
+		expect(stillEast.bearing).toBeCloseTo(90, 0);
+
+		const onNorth = walkAlong(L_PATH, cum[1] + (cum[2] - cum[1]) * 0.5)!;
+		expect(onNorth.bearing < 5 || onNorth.bearing > 355).toBe(true);
 	});
 });

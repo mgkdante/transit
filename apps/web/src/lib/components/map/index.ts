@@ -45,9 +45,10 @@ export {
 export type { VehicleFC, VehicleFeature } from './vehicleLayer';
 export {
 	createVehicleMotionController,
-	interpolateVehicleFeatures,
 	type VehicleMotionController,
 	type ShapeResolver,
+	type FixResolver,
+	type VehicleFix,
 } from './vehicleMotion';
 export type { Coord } from './polyline';
 

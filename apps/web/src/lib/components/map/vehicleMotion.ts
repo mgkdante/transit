@@ -1,48 +1,57 @@
 import type { GeoJSONSource, Map as MapLibreMap } from 'maplibre-gl';
 import { shouldAnimate } from '$lib/motion/policy';
-import { gsap } from '$lib/motion/utils/gsap';
 import { VEHICLE_SOURCE, type VehicleFC, type VehicleFeature } from './vehicleLayer';
-import { buildPathBetween, chordBearing, type Coord, type PathInterpolator } from './polyline';
+import type { Coord } from './polyline';
+import { fixAgeS, projectVehicle, type ProjectVehicleResult } from './vehicleProjection';
 
 /**
- * Per-frame silence-opacity refresher. Given a feature, returns its CURRENT fade
- * (read off the live skew-free clock) so a bus that goes quiet BETWEEN polls
- * visibly fades without waiting for the next poll. Returning the feature's own
- * `opacity` (a no-op) leaves the poll-time value untouched. Wired by MapHero off
- * `sharedClock.serverNow`; omitted under reduced motion (no per-frame fade).
+ * Per-vehicle inputs the FORWARD projection needs that are NOT carried on the GL
+ * feature itself: the bus's OWN fix time (`reported_utc`, nullable → fall back to
+ * the uniform snapshot `updated_utc`) and its speed in metres/second. Supplied by
+ * MapHero alongside the feature collection so the controller can dead-reckon each
+ * bus off its own latest fix without polluting the painted feature's typed props.
  */
-export type OpacityRefresher = (feature: VehicleFeature) => number;
+export interface VehicleFix {
+	/** The bus's OWN GTFS-RT fix time (ISO 8601), or null/undefined. */
+	reportedUtc: string | null | undefined;
+	/** The uniform snapshot capture time (ISO 8601) — the fallback for age. */
+	updatedUtc: string;
+	/** Reported speed in metres/second (≤ 0 or null → freeze, no dead-reckon). */
+	speedMps: number | null;
+}
+
+/** Look up a vehicle's projection inputs by id. Returns null when unknown (the
+ *  controller then freezes that bus at its reported position — never projects on
+ *  guessed data). */
+export type FixResolver = (id: string) => VehicleFix | null;
 
 /**
- * Resolve a vehicle's route SHAPE (an ordered lon/lat polyline) so the tween can
- * walk ALONG the street instead of cutting a straight chord. Returns null when no
- * shape is loaded for that vehicle's route — the tween then falls back to the
- * chord, so every bus stays correct whether or not its geometry has resolved.
- *
- * Keyed by the VehicleFeature (it carries `route` + `id`) so the caller can pick
- * the right direction-variant per vehicle. Called ONCE per vehicle at re-target
- * (when the tween is built), never per frame — the resulting per-vehicle
- * `PathInterpolator` is cached for the life of the tween (perf).
+ * Resolve a vehicle's route SHAPE (an ordered lon/lat polyline) so the projection
+ * can advance ALONG the street it is on. Returns null when no shape is loaded for
+ * that vehicle's route — the bus then FREEZES at its fix (we never dead-reckon on
+ * the raw GTFS-RT bearing, which is not guaranteed route-aligned). Keyed by the
+ * VehicleFeature (it carries `route` + `id`). Read EACH FRAME (cheap: a cache
+ * lookup) so a route shape that resolves mid-flight upgrades the bus to projection
+ * without a re-feed.
  */
 export type ShapeResolver = (feature: VehicleFeature) => readonly Coord[] | null;
 
 export interface VehicleMotionOptions {
 	tickKey?: string | null;
+	/** Global stale gate: snap + do not animate (whole feed behind). */
 	stale?: boolean;
-	durationSec?: number;
 	animate?: boolean;
-	/**
-	 * Recompute each vehicle's silence opacity per animation frame from the live
-	 * clock. Only used while a tween is running (continuous fade); poll-time
-	 * opacity is already baked into the features otherwise.
-	 */
-	refreshOpacity?: OpacityRefresher;
-	/**
-	 * Optional per-vehicle route-shape supplier for path-following motion (L1).
-	 * Resolved ONCE per re-target into a precomputed sampler; missing shapes fall
-	 * back to the straight chord. Omit to keep pure chord motion.
-	 */
+	/** Per-vehicle projection inputs (speed + fix times) keyed by vehicle id. */
+	fixFor?: FixResolver;
+	/** Per-vehicle route-shape supplier for forward path projection. */
 	shapeFor?: ShapeResolver;
+	/**
+	 * Live skew-free clock supplier (`() => sharedClock.serverNow`, epoch ms). Read
+	 * EACH FRAME so the displayed position is each bus projected from its own latest
+	 * fix to estimated-NOW — clock-driven, not interpolated toward an old target.
+	 * Falls back to `Date.now` when omitted (still functional, just client-clocked).
+	 */
+	serverNowFn?: () => number;
 }
 
 export interface VehicleMotionController {
@@ -50,43 +59,21 @@ export interface VehicleMotionController {
 	destroy(): void;
 }
 
-type Progress = { value: number };
-
-const DEFAULT_DURATION_SEC = 28;
 /**
- * Clamp the per-re-target tween duration into a sane band. The duration is the
- * real inter-fix interval (server-time gap between consecutive vehicles files),
- * so the bus is still easing toward its last known fix right up until the next
- * one arrives — no idle freeze. Floored so a burst of files doesn't produce a
- * jittery sub-second tween; ceilinged so an abnormally long gap doesn't crawl
- * (silence-fade takes over for a genuinely stale bus, which is the honest signal
- * — we never extend motion to fake continued travel).
+ * Ease-correct window (ms): when a bus gets a NEW fix, its displayed dot blends
+ * from where it currently sits to the fresh projection over this window (rather
+ * than snapping), so a corrected position glides in — no rubber-band. Short enough
+ * that the correction reads as "settling", long enough to hide the snap.
  */
-const MIN_DURATION_SEC = 4;
-const MAX_DURATION_SEC = 45;
-
-export function clampDurationSec(durationSec: number | undefined): number {
-	if (durationSec == null || !Number.isFinite(durationSec)) return DEFAULT_DURATION_SEC;
-	if (durationSec < MIN_DURATION_SEC) return MIN_DURATION_SEC;
-	if (durationSec > MAX_DURATION_SEC) return MAX_DURATION_SEC;
-	return durationSec;
-}
+const BLEND_MS = 900;
 
 /**
- * Minimum gap between source.setData calls while a tween runs (~30fps). A multi-
- * second position lerp does not need 60fps: each render() rebuilds the whole
- * vehicle FeatureCollection (interpolate over N features) and calls setData, so
- * at hundreds of buses 60fps is wasteful. We coalesce intermediate frames to
- * ~30fps but NEVER skip the terminal frame (onComplete/snap renders
- * unconditionally), so the bus still lands exactly on the real target at t=1.
+ * Minimum gap between source.setData calls (~30fps). The per-frame projection
+ * rebuilds the whole vehicle FeatureCollection and calls setData; at hundreds of
+ * buses 60fps is wasteful, so intermediate frames coalesce to ~30fps. A re-feed
+ * (`set`) renders unthrottled so a new fix lands immediately.
  */
 const MIN_RENDER_INTERVAL_MS = 1000 / 30;
-
-function clamp01(value: number): number {
-	if (value <= 0) return 0;
-	if (value >= 1) return 1;
-	return value;
-}
 
 function roundCoordinate(value: number): number {
 	return Number(value.toFixed(6));
@@ -96,138 +83,97 @@ function normalizeBearing(value: number): number {
 	return ((value % 360) + 360) % 360;
 }
 
-function interpolateBearing(from: number, to: number, t: number): number {
+/** Shortest-arc bearing blend (degrees), matching the old slerp. */
+function blendBearing(from: number, to: number, t: number): number {
 	const delta = ((to - from + 540) % 360) - 180;
 	return Math.round(normalizeBearing(from + delta * t));
 }
 
 /**
- * A vehicle's precomputed per-tween motion plan. Built ONCE at re-target so the
- * per-frame render is cheap: either a path-follow sampler (walk the route shape
- * between the two real fixes) or the straight chord (the honest fallback).
- *
- * `path` is non-null only when a shape resolved AND both fixes projected onto it
- * safely; otherwise the chord is used. `chordHeading` is the travel direction of
- * the straight from→to (null when the bus did not move).
+ * gsap's `power1.out` easing curve, as pure math so the per-frame blend is
+ * deterministic (no tween scheduler): `out` quad = `1 − (1−t)²`. Same shape the
+ * backward tween used to settle a bus onto its fix; reused here so the ease-correct
+ * decelerates into the corrected position. `t` is clamped to [0,1].
  */
-interface MotionPlan {
-	path: PathInterpolator | null;
-	chordHeading: number | null;
+export function power1Out(t: number): number {
+	const u = t <= 0 ? 0 : t >= 1 ? 1 : t;
+	return 1 - (1 - u) * (1 - u);
 }
 
 /**
- * Compute the per-vehicle motion plan for the current re-target. Pure given the
- * inputs; the result is reused across every frame of the tween.
+ * Per-vehicle ease-correct state captured when a fresh fix arrives: the displayed
+ * position/heading at that instant (the blend ORIGIN) + the wall-clock start. The
+ * blend runs from this origin to the live projection over BLEND_MS.
  */
-function planFor(
-	from: VehicleFeature | undefined,
-	to: VehicleFeature,
-	shapeFor?: ShapeResolver,
-): MotionPlan {
-	if (!from) return { path: null, chordHeading: null };
-	const fromPoint = from.geometry.coordinates as Coord;
-	const toPoint = to.geometry.coordinates as Coord;
-	const chordHeading = chordBearing(fromPoint, toPoint);
-	const shape = shapeFor?.(to) ?? null;
-	const path = shape ? buildPathBetween(shape, fromPoint, toPoint) : null;
-	return { path, chordHeading };
+interface BlendState {
+	fromCoord: Coord;
+	fromBearing: number;
+	startMs: number;
 }
 
 /**
- * Interpolate ONE vehicle at progress `t` — strictly an ESTIMATE of where the
- * bus is BETWEEN its two real reported fixes (never an extrapolation past the
- * last one; `t` is clamped by the caller and the path walk is arc-bounded).
- *
- * Position: walk the route shape when a `plan.path` is available (follows the
- * street), else straight-line lerp the chord. Heading (L3): prefer the DIRECTION
- * OF TRAVEL — the path tangent or, chord-only, the chord bearing — because that
- * is where the bus is actually going; fall back to the feed `bearing` (slerped)
- * when the bus is effectively stationary (no travel direction to report), and to
- * no chevron at all when the feed never gave a heading (hasHeading handled by the
- * layer).
+ * A latest fix for one vehicle: the painted feature (display props + last reported
+ * coord/bearing) plus the projection inputs. The feature's geometry is the bus's
+ * REPORTED position; the displayed position is computed each frame by projecting
+ * forward from it.
  */
-function interpolateFeature(
-	from: VehicleFeature | undefined,
-	to: VehicleFeature,
-	t: number,
-	plan?: MotionPlan,
-): VehicleFeature {
-	if (!from) return to;
-	const [fromLon, fromLat] = from.geometry.coordinates;
-	const [toLon, toLat] = to.geometry.coordinates;
+interface VehicleEntry {
+	feature: VehicleFeature;
+	fix: VehicleFix | null;
+}
 
-	// Default: straight chord + feed-bearing slerp (the honest baseline).
-	let lon = fromLon + (toLon - fromLon) * t;
-	let lat = fromLat + (toLat - fromLat) * t;
-	let bearing = interpolateBearing(from.properties.bearing, to.properties.bearing, t);
+/**
+ * Project ONE vehicle to its displayed position+heading at `serverNow`, blended
+ * from its ease-correct origin if a correction is in flight. Pure given its inputs.
+ *
+ * The projection is FORWARD dead-reckoning (vehicleProjection.projectVehicle): from
+ * the bus's reported coord, advance along the route shape by the decaying-speed
+ * distance for its fix age. Frozen (stale / no shape / no speed) → the reported
+ * coord + reported bearing. The blend (`e = power1Out(elapsed/BLEND_MS)`) lerps the
+ * displayed dot from where it was when the fix landed to this projection, so a
+ * corrected position eases in rather than snapping.
+ */
+export function projectEntry(
+	entry: VehicleEntry,
+	serverNow: number,
+	nowMs: number,
+	shapeFor: ShapeResolver | undefined,
+	blend: BlendState | undefined,
+): { feature: VehicleFeature; result: ProjectVehicleResult } {
+	const { feature, fix } = entry;
+	const coord = feature.geometry.coordinates as Coord;
+	const shape = shapeFor?.(feature) ?? null;
+	const ageS = fix ? fixAgeS(fix.reportedUtc, fix.updatedUtc, serverNow) : Infinity;
 
-	if (plan?.path) {
-		// L1 path-follow: position + travel-direction tangent along the route shape.
-		const sample = plan.path(t);
-		lon = sample.coord[0];
-		lat = sample.coord[1];
-		bearing = Math.round(normalizeBearing(sample.bearing));
-	} else if (plan && plan.chordHeading != null) {
-		// L3 chord-only: heading is the direction of travel of the straight chord.
-		bearing = Math.round(normalizeBearing(plan.chordHeading));
+	const result = projectVehicle({
+		coord,
+		shape,
+		speedMps: fix?.speedMps ?? null,
+		ageS,
+		bearing: feature.properties.bearing,
+	});
+
+	let lon = result.coord[0];
+	let lat = result.coord[1];
+	let bearing = Math.round(normalizeBearing(result.bearing));
+
+	if (blend) {
+		const e = power1Out((nowMs - blend.startMs) / BLEND_MS);
+		lon = blend.fromCoord[0] + (lon - blend.fromCoord[0]) * e;
+		lat = blend.fromCoord[1] + (lat - blend.fromCoord[1]) * e;
+		bearing = blendBearing(blend.fromBearing, bearing, e);
 	}
-	// else: bus did not move (chordHeading null) → keep the feed-bearing slerp.
 
 	return {
-		...to,
-		geometry: {
-			type: 'Point',
-			coordinates: [roundCoordinate(lon), roundCoordinate(lat)],
+		feature: {
+			...feature,
+			geometry: { type: 'Point', coordinates: [roundCoordinate(lon), roundCoordinate(lat)] },
+			// Re-stamp the per-bus stale flag from the LIVE projection so a bus that
+			// crosses the cutoff between polls gets its "!" the moment it goes stale —
+			// the controller owns the freeze flag off the live clock, no re-feed needed.
+			properties: { ...feature.properties, bearing, stale: result.stale ? 1 : 0 },
 		},
-		properties: {
-			...to.properties,
-			bearing,
-		},
-	};
-}
-
-/**
- * Per-vehicle precomputed motion plans, keyed by vehicle id. Built once per
- * re-target and threaded through every frame so path-projection (the costly part)
- * runs once, not 30×/s × N buses.
- */
-export type MotionPlanMap = ReadonlyMap<string, MotionPlan>;
-
-export function buildMotionPlans(
-	from: VehicleFC,
-	to: VehicleFC,
-	shapeFor?: ShapeResolver,
-): MotionPlanMap {
-	const previousById = new Map(from.features.map((feature) => [feature.properties.id, feature]));
-	const plans = new Map<string, MotionPlan>();
-	for (const feature of to.features) {
-		plans.set(
-			feature.properties.id,
-			planFor(previousById.get(feature.properties.id), feature, shapeFor),
-		);
-	}
-	return plans;
-}
-
-export function interpolateVehicleFeatures(
-	from: VehicleFC,
-	to: VehicleFC,
-	progress: number,
-	plans?: MotionPlanMap,
-): VehicleFC {
-	const t = clamp01(progress);
-	const previousById = new Map(from.features.map((feature) => [feature.properties.id, feature]));
-
-	return {
-		type: 'FeatureCollection',
-		features: to.features.map((feature) =>
-			interpolateFeature(
-				previousById.get(feature.properties.id),
-				feature,
-				t,
-				plans?.get(feature.properties.id),
-			),
-		),
+		result,
 	};
 }
 
@@ -236,134 +182,185 @@ function setVehicleSourceData(map: MapLibreMap, features: VehicleFC): void {
 	source?.setData(features as unknown as Parameters<GeoJSONSource['setData']>[0]);
 }
 
-/** Re-stamp each feature's `opacity` via the supplied refresher. (This once drove
- * the per-vehicle silence fade; that fade was removed, so the refresher now always
- * returns 1 — this stays as harmless plumbing.) Returns a NEW collection (does not
- * mutate the input) so the source data is replaced cleanly. A no-op when no
- * refresher is supplied. */
-function refreshFeatureOpacity(fc: VehicleFC, refresh?: OpacityRefresher): VehicleFC {
-	if (!refresh) return fc;
-	return {
-		type: 'FeatureCollection',
-		features: fc.features.map((feature) => {
-			const opacity = refresh(feature);
-			if (opacity === feature.properties.opacity) return feature;
-			return { ...feature, properties: { ...feature.properties, opacity } };
-		}),
-	};
+/**
+ * Allow injecting the frame scheduler (deterministic tests drive frames by hand).
+ * Defaults to requestAnimationFrame in the browser, a no-op server-side.
+ */
+export interface MotionRuntime {
+	requestFrame?: (cb: () => void) => number;
+	cancelFrame?: (handle: number) => void;
+	now?: () => number;
 }
 
-export function createVehicleMotionController(map: MapLibreMap): VehicleMotionController {
-	let current: VehicleFC | null = null;
-	let from: VehicleFC | null = null;
-	let target: VehicleFC | null = null;
+export function createVehicleMotionController(
+	map: MapLibreMap,
+	runtime: MotionRuntime = {},
+): VehicleMotionController {
+	const requestFrame =
+		runtime.requestFrame ??
+		(typeof requestAnimationFrame === 'function'
+			? (cb: () => void) => requestAnimationFrame(cb)
+			: () => 0);
+	const cancelFrame =
+		runtime.cancelFrame ??
+		(typeof cancelAnimationFrame === 'function'
+			? (h: number) => cancelAnimationFrame(h)
+			: () => {});
+	const now =
+		runtime.now ??
+		(typeof performance !== 'undefined' && typeof performance.now === 'function'
+			? () => performance.now()
+			: () => Date.now());
+
+	// Latest fix per vehicle, in feed order so output is stable. Rebuilt on each
+	// `set`; read every frame for projection.
+	let entries: VehicleEntry[] = [];
 	let tickKey: string | null = null;
-	let tween: gsap.core.Tween | null = null;
-	let refreshOpacity: OpacityRefresher | undefined;
-	// Per-tween precomputed motion plans (path sampler / chord heading per
-	// vehicle). Rebuilt at each re-target, consumed by every render() frame.
-	let plans: MotionPlanMap | undefined;
-	// Timestamp (performance.now) of the last setData, used to coalesce the
-	// per-frame tween render down to ~30fps. NOT Date.now() — a monotonic clock
-	// so a wall-clock adjustment cannot stall or burst the throttle.
+	let shapeFor: ShapeResolver | undefined;
+	let serverNowFn: () => number = () => Date.now();
+	let animating = false;
+	let frameHandle: number | null = null;
+	// Per-vehicle ease-correct blends (keyed by id), seeded on a new fix.
+	const blends = new Map<string, BlendState>();
+	// Blend ORIGINS captured at `set` time for a NEW tick, awaiting the render that
+	// actually paints them. We seed the blend `startMs` from THAT render's `nowMs`
+	// (not `set`'s clock) so the blend's elapsed-time is measured from when
+	// rendering begins — the unthrottled `render(false)` runs on the same turn as
+	// `set`, but in production its `now()` has advanced, so capturing startMs in
+	// `set` would mistime the blend window. null when no new-tick seed is pending.
+	let pendingBlendOrigins: Map<string, { coord: Coord; bearing: number }> | null = null;
+	// Last displayed coord/bearing per vehicle (the blend origin when the next fix
+	// arrives) so a correction starts from exactly where the dot sits, never snaps.
+	const displayed = new Map<string, { coord: Coord; bearing: number }>();
+	// Monotonic timestamp of the last setData, to coalesce frames to ~30fps.
 	let lastSetDataMs = Number.NEGATIVE_INFINITY;
-	const progress: Progress = { value: 0 };
 
-	function now(): number {
-		return typeof performance !== 'undefined' && typeof performance.now === 'function'
-			? performance.now()
-			: Date.now();
+	function stopLoop(): void {
+		if (frameHandle != null) cancelFrame(frameHandle);
+		frameHandle = null;
+		animating = false;
 	}
 
-	function stopTween(): void {
-		tween?.kill();
-		tween = null;
-	}
-
-	function snap(next: VehicleFC, nextTickKey: string | null): void {
-		stopTween();
-		current = next;
-		from = next;
-		target = next;
-		tickKey = nextTickKey;
-		plans = undefined;
-		progress.value = 1;
-		lastSetDataMs = now();
-		setVehicleSourceData(map, next);
+	function scheduleFrame(): void {
+		if (!animating || frameHandle != null) return;
+		frameHandle = requestFrame(() => {
+			frameHandle = null;
+			render(true);
+			if (animating) scheduleFrame();
+		});
 	}
 
 	/**
-	 * Rebuild the interpolated FeatureCollection and push it to the source.
-	 *
-	 * `throttled` is true for the tween's per-frame `onUpdate`: such a frame is
-	 * SKIPPED if less than ~33ms has elapsed since the last setData (caps GL cost
-	 * at ~30fps). The terminal frame (onComplete → snap) and re-targets call this
-	 * unthrottled, so the bus always lands exactly on the real target at t=1 — the
-	 * throttle only ever drops cheap intermediate frames, never the final one.
+	 * Rebuild the projected FeatureCollection off the LIVE clock and push it to the
+	 * source. Throttled frames (the rAF loop) coalesce to ~30fps; a re-feed renders
+	 * unthrottled so a fresh fix lands at once. Records each bus's displayed
+	 * coord/bearing so the next fix's ease-correct can originate from it.
 	 */
-	function render(throttled = false): void {
-		if (!from || !target) return;
+	function render(throttled: boolean): void {
+		if (entries.length === 0) {
+			if (!throttled) setVehicleSourceData(map, { type: 'FeatureCollection', features: [] });
+			return;
+		}
 		if (throttled && now() - lastSetDataMs < MIN_RENDER_INTERVAL_MS) return;
-		// Interpolate POSITION as an ESTIMATE between two real fixes (path-follow
-		// when a shape resolved, else the straight chord), then re-stamp OPACITY off
-		// the live clock so a bus going silent mid-tween fades within the same window
-		// (position is clamped [0,1] so a silent bus, reporting from==to, sits
-		// still — it fades in place rather than drifting). Plans are precomputed, so
-		// this frame only samples them.
-		current = refreshFeatureOpacity(
-			interpolateVehicleFeatures(from, target, progress.value, plans),
-			refreshOpacity,
-		);
+		const serverNow = serverNowFn();
+		const nowMs = now();
+		// Seed any new-tick ease-correct blends NOW, off THIS render's clock, so the
+		// blend's elapsed-time (`nowMs - startMs` in projectEntry) starts at zero on
+		// the frame that first paints the new fix — never pre-aged by the gap between
+		// `set` and this render. The origin is each bus's CURRENT displayed position
+		// (captured at `set`); a bus with no prior display gets no blend (it appears
+		// at its projection directly).
+		if (pendingBlendOrigins) {
+			for (const [id, origin] of pendingBlendOrigins) {
+				blends.set(id, { fromCoord: origin.coord, fromBearing: origin.bearing, startMs: nowMs });
+			}
+			pendingBlendOrigins = null;
+		}
+		const features = entries.map((entry) => {
+			const id = entry.feature.properties.id;
+			const blend = blends.get(id);
+			const { feature } = projectEntry(entry, serverNow, nowMs, shapeFor, blend);
+			const coord = feature.geometry.coordinates as Coord;
+			displayed.set(id, { coord, bearing: feature.properties.bearing });
+			// A finished blend is dropped so steady-state frames skip the lerp.
+			if (blend && nowMs - blend.startMs >= BLEND_MS) blends.delete(id);
+			return feature;
+		});
 		lastSetDataMs = now();
-		setVehicleSourceData(map, current);
+		setVehicleSourceData(map, { type: 'FeatureCollection', features });
+	}
+
+	/** Push the reported positions verbatim (no projection) — the reduced-motion /
+	 *  global-stale path. Stops the loop and clears in-flight blends. */
+	function snap(features: VehicleFC): void {
+		stopLoop();
+		blends.clear();
+		pendingBlendOrigins = null;
+		displayed.clear();
+		for (const f of features.features) {
+			const coord = f.geometry.coordinates as Coord;
+			displayed.set(f.properties.id, { coord, bearing: f.properties.bearing });
+		}
+		lastSetDataMs = now();
+		setVehicleSourceData(map, features);
+	}
+
+	function adoptEntries(features: VehicleFC, fixFor: FixResolver | undefined): void {
+		entries = features.features.map((feature) => ({
+			feature,
+			fix: fixFor?.(feature.properties.id) ?? null,
+		}));
 	}
 
 	return {
 		set(next: VehicleFC, options: VehicleMotionOptions = {}) {
 			const nextTickKey = options.tickKey ?? null;
 			const animate = options.animate ?? shouldAnimate('motion-gated');
-			// Latest refresher wins; used by the running tween's per-frame render.
-			refreshOpacity = options.refreshOpacity;
+			shapeFor = options.shapeFor;
+			if (options.serverNowFn) serverNowFn = options.serverNowFn;
 
-			if (options.stale || !animate || !current) {
-				snap(next, nextTickKey);
+			// Global stale or reduced-motion: show the reported positions, no
+			// projection, no animation loop. (Per-BUS staleness still freezes inside
+			// projectVehicle on the animated path; this is the WHOLE-feed gate.)
+			if (options.stale || !animate) {
+				tickKey = nextTickKey;
+				adoptEntries(next, options.fixFor);
+				snap(next);
 				return;
 			}
 
-			if (nextTickKey === tickKey) {
-				target = next;
-				// Same poll: keep the in-flight tween + its precomputed plans (a
-				// filter/hover re-feed must not restart motion or re-project paths).
-				if (tween) render();
-				else snap(next, nextTickKey);
-				return;
-			}
-
-			stopTween();
-			from = current;
-			target = next;
+			const sameTick = nextTickKey === tickKey && tickKey !== null;
+			adoptEntries(next, options.fixFor);
 			tickKey = nextTickKey;
-			progress.value = 0;
-			// Precompute the per-vehicle path samplers ONCE for this interval (perf:
-			// projection is the costly part; the per-frame render only samples them).
-			plans = buildMotionPlans(from, next, options.shapeFor);
 
-			tween = gsap.to(progress, {
-				value: 1,
-				duration: clampDurationSec(options.durationSec),
-				// Ease OUT near t=1 so the bus SETTLES onto its last known fix rather
-				// than hard-stopping — and then HOLDS there (silence-fade dims it if no
-				// fresh fix arrives). We never extrapolate past t=1: the tween clamps at
-				// the real target, honouring the no-faked-motion doctrine.
-				ease: 'power1.out',
-				// Per-frame updates are throttled to ~30fps; the terminal frame lands
-				// via onComplete → snap (unthrottled), so t=1 is never dropped.
-				onUpdate: () => render(true),
-				onComplete: () => snap(next, nextTickKey),
-			});
+			if (!sameTick) {
+				// A genuinely NEW file (new fix for every bus): record an ease-correct
+				// blend ORIGIN from each bus's CURRENT displayed position so the
+				// correction glides in instead of snapping. The blend `startMs` is set
+				// when the render that paints this fix runs (see `render`), NOT here, so
+				// the blend window is timed from when rendering actually begins. A bus we
+				// have never displayed (first frame ever, or a brand-new vehicle) has no
+				// origin → no blend (it appears at its projection directly).
+				const origins = new Map<string, { coord: Coord; bearing: number }>();
+				for (const entry of entries) {
+					const id = entry.feature.properties.id;
+					const prior = displayed.get(id);
+					if (prior) origins.set(id, { coord: prior.coord, bearing: prior.bearing });
+					else blends.delete(id);
+				}
+				pendingBlendOrigins = origins;
+			}
+			// Same tick (filter/hover re-feed): keep any in-flight blends untouched so
+			// the correction continues without restart.
+
+			animating = true;
+			// Render immediately (unthrottled) so the new fix lands this frame, then the
+			// rAF loop keeps projecting forward off the live clock.
+			render(false);
+			scheduleFrame();
 		},
 		destroy() {
-			stopTween();
+			stopLoop();
 		},
 	};
 }

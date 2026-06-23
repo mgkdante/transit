@@ -74,6 +74,7 @@
 		type WithDistance,
 		type VehicleMotionController,
 		type ShapeResolver,
+		type FixResolver,
 		type Coord,
 	} from '$lib/components/map';
 	import {
@@ -81,12 +82,7 @@
 		routeShapes,
 		type RouteShapes,
 	} from '$lib/components/map/vehicleShapes';
-	import {
-		liveTtlS,
-		silenceAgeS,
-		silenceOpacity,
-		silenceOpacityDiscrete,
-	} from '$lib/components/map/vehicleSilence';
+	import { liveTtlS } from '$lib/components/map/vehicleSilence';
 	import { sharedClock } from '$lib/stores';
 	import { isPrefersReducedMotion } from '$lib/motion/reduced-motion.svelte';
 	import MapFilters from './MapFilters.svelte';
@@ -231,14 +227,14 @@
 	// also drove the per-vehicle silence fade, now removed — buses are solid.)
 	$effect(() => sharedClock.subscribe());
 
-	// Tear the motion controller down on component unmount: it owns a running gsap
-	// tween (the position lerp), which is otherwise only killed inside
-	// installMapLayers when the MAP instance changes — so navigating away from /map
-	// would leak a live tween. This effect has no tracked reads, so it runs once and
-	// its cleanup fires only on unmount; it reads vehicleMotion lazily there to kill
-	// whatever controller is current. The map-instance-change path is unaffected: it
-	// destroys the OLD controller before creating a new one, so there is no double
-	// destroy (destroy() just kills an already-killed tween, which is a no-op).
+	// Tear the motion controller down on component unmount: it owns a running rAF
+	// projection loop, which is otherwise only stopped inside installMapLayers when
+	// the MAP instance changes — so navigating away from /map would leak a live
+	// loop. This effect has no tracked reads, so it runs once and its cleanup fires
+	// only on unmount; it reads vehicleMotion lazily there to stop whatever
+	// controller is current. The map-instance-change path is unaffected: it destroys
+	// the OLD controller before creating a new one, so there is no double destroy
+	// (destroy() just cancels an already-cancelled loop, which is a no-op).
 	$effect(() => () => untrack(() => vehicleMotion)?.destroy());
 
 	// Live tier ttl (seconds) → drives the stale/banner windows (isStale fires at
@@ -251,40 +247,26 @@
 	let vehicleMotion = $state<VehicleMotionController | null>(null);
 	let vehicleMotionMap: MapLibreMap | null = null;
 
-	// --- L1 path-follow shape supply ------------------------------------------
+	// --- forward-projection shape supply --------------------------------------
 	// Per-route direction-variant polylines, fetched on-demand for the routes that
 	// currently have live buses (deduped by route id — far fewer than the ~600
 	// vehicles). Loaded through the same getRoute() path as the selected-route
-	// linework, then cached so a route is fetched at most once. The tween reads
-	// this to walk a bus ALONG its street; until a shape resolves the bus glides
-	// the straight chord (progressive enhancement — never blocks, always correct).
-	// Intentionally a PLAIN (non-reactive) Map: mutating the cache must NOT trigger
-	// rerenders — reactivity is carried explicitly by `routeShapeRevision` so a
-	// resolved shape re-feeds exactly once. A SvelteMap would make every .set()
-	// reactive and thrash the feed effect.
+	// linework, then cached so a route is fetched at most once. The controller's
+	// per-frame `shapeFor` reads this to project a bus FORWARD along its street;
+	// until a shape resolves the bus FREEZES at its fix (we never dead-reckon on the
+	// raw bearing). A newly-cached shape is therefore picked up on the very next
+	// rAF frame — no re-feed needed, so this stays a PLAIN (non-reactive) Map. A
+	// SvelteMap would make every .set() reactive and thrash the feed effect.
 	// eslint-disable-next-line svelte/prefer-svelte-reactivity
 	const routeShapeCache = new Map<string, RouteShapes>();
 	// Routes already fetched (or null/empty result cached) so we never re-request.
 	// Plain Set for the same reason — a dedupe ledger, not reactive state.
 	// eslint-disable-next-line svelte/prefer-svelte-reactivity
 	const routeShapeRequested = new Set<string>();
-	// Bumped when a shape resolves so the feed effect re-runs and the next tween
-	// upgrades to path-follow. A plain $state counter (cheap reactive signal).
-	let routeShapeRevision = $state(0);
 	// Cap distinct cached routes to bound memory over a long session; the visible
 	// set is small, so eviction is rare. LRU-ish: oldest insertion dropped first.
 	const MAX_CACHED_ROUTE_SHAPES = 200;
 
-	// Previous vehicles-file generated_utc + its parsed epoch ms, so the next
-	// re-target can size the tween to the REAL inter-file interval (L2 no-idle).
-	let prevVehiclesGeneratedUtc: string | null = null;
-	let prevVehiclesGeneratedMs: number | null = null;
-	// Signature of the per-vehicle silence-opacity buckets at the last clock-tick
-	// re-feed. The tick effect skips re-feeding the vehicle layer when this is
-	// unchanged (no bus crossed/moved within the fade window since last tick) so a
-	// feed of buses all-fresh or all-floored doesn't rebuild + setData every second
-	// for nothing. Reset to '' so the first tick after a (re)install always feeds.
-	let lastSilenceSignature = '';
 	let layerRevision = $state(0);
 	let interactionsMap: MapLibreMap | null = null;
 	let selected = $state<MapSelection | null>(null);
@@ -944,10 +926,8 @@
 		addNearTargetSource(m);
 		addNearTargetLayer(m);
 		installMapInteractions(m);
-		// Force the next clock-tick re-feed: MapLibre cleared the custom source on a
-		// style swap, so the tick effect's short-circuit must not skip the first
-		// post-install feed even if the opacity buckets are unchanged.
-		lastSilenceSignature = '';
+		// Bump so the feed effect re-runs and re-pushes the vehicle/stop/route data
+		// MapLibre cleared from its custom sources on the style swap.
 		layerRevision += 1;
 	}
 
@@ -961,13 +941,14 @@
 		installMapLayers(m);
 	}
 
-	// L1 — lazily fetch route shapes for the routes that currently have live buses
+	// Lazily fetch route shapes for the routes that currently have live buses
 	// (deduped). Runs off the vehicles poll only (other reads untracked) so a
 	// filter/hover does not re-trigger fetches. Each route is requested at most
-	// once; a resolved shape bumps `routeShapeRevision`, re-running the feed effect
-	// so the NEXT tween upgrades that route's buses to path-follow. Fetches are
-	// fire-and-forget + fail-soft (a failed/absent shape simply leaves the bus on
-	// the chord — never blocks motion). We do NOT bulk-fetch all routes: only the
+	// once; a resolved shape is dropped into `routeShapeCache`, which the
+	// controller's per-frame `shapeFor` reads — so that route's buses upgrade from
+	// frozen to FORWARD projection on the next rAF frame, no re-feed needed. Fetches
+	// are fire-and-forget + fail-soft (a failed/absent shape simply leaves the bus
+	// frozen at its fix — never blocks). We do NOT bulk-fetch all routes: only the
 	// distinct routes in the current vehicle set, which is small.
 	$effect(() => {
 		const vehicles = live.vehicles?.vehicles ?? [];
@@ -990,7 +971,6 @@
 							if (oldest != null) routeShapeCache.delete(oldest);
 						}
 						routeShapeCache.set(id, shapes);
-						routeShapeRevision += 1;
 					})
 					.catch(() => {
 						// Fail-soft: leave the route un-cached → chord fallback. Allow a
@@ -1001,10 +981,12 @@
 		});
 	});
 
-	// L1 resolver passed into the motion controller: for a vehicle feature, return
-	// the cached route-shape variant its CURRENT point sits on (least projection
-	// error), or null → straight-chord fallback. Called once per vehicle at
-	// re-target (not per frame), so the per-tween projection cost is paid once.
+	// Per-vehicle route-shape resolver passed into the motion controller. For a
+	// vehicle feature, return the cached route-shape variant its CURRENT point sits
+	// on (least projection error), or null → FREEZE (no shape ⇒ no forward dead-
+	// reckoning; we never project on the raw GTFS-RT bearing). Read EACH FRAME by
+	// the controller (a cheap cache lookup), so a route shape that resolves mid-
+	// flight upgrades the bus from frozen to projected without waiting for a re-feed.
 	const shapeFor: ShapeResolver = (feature) => {
 		const routeId = feature.properties.route;
 		if (!routeId) return null;
@@ -1013,50 +995,42 @@
 		return bestShapeForPoint(shapes, feature.geometry.coordinates as Coord);
 	};
 
-	// L2 — duration of the next position tween = the REAL server-time gap between
-	// this vehicles file and the previous one, so the bus is still easing toward
-	// its last known fix right up to the next poll (no 2s idle freeze). Falls back
-	// to undefined (the controller's default) for the first file or an unparseable
-	// stamp; the controller clamps the value into a sane band and NEVER extends
-	// motion past the last fix (silence-fade owns a genuinely late bus).
-	function nextTweenDurationSec(generatedUtc: string | null | undefined): number | undefined {
-		if (generatedUtc == null) return undefined;
-		const ms = Date.parse(generatedUtc);
-		if (Number.isNaN(ms)) return undefined;
-		let duration: number | undefined;
-		if (
-			prevVehiclesGeneratedUtc != null &&
-			prevVehiclesGeneratedUtc !== generatedUtc &&
-			prevVehiclesGeneratedMs != null
-		) {
-			const deltaS = (ms - prevVehiclesGeneratedMs) / 1000;
-			if (deltaS > 0) duration = deltaS;
-		}
-		prevVehiclesGeneratedUtc = generatedUtc;
-		prevVehiclesGeneratedMs = ms;
-		return duration;
-	}
+	// Per-vehicle FORWARD-projection inputs the painted feature does not carry: the
+	// bus's OWN fix time (reported_utc, nullable → updated_utc fallback) and its
+	// speed in m/s (speed_kmh ÷ 3.6). Looked up from the live index by id; null for
+	// an unknown bus → the controller freezes it (never dead-reckons on guessed
+	// data).
+	const fixFor: FixResolver = (id) => {
+		const v = live.index.byVehicleId.get(id);
+		if (!v) return null;
+		return {
+			reportedUtc: v.reported_utc,
+			updatedUtc: v.updated_utc,
+			speedMps: v.speed_kmh != null ? v.speed_kmh / 3.6 : null,
+		};
+	};
 
 	// Feed the layers: vehicles coloured/dimmed under the active filter + the stop
 	// catalogue; dim on stale. Reactive to filters.state so a chip toggle re-paints.
+	// Forward projection is now CLOCK-DRIVEN inside the controller's rAF loop (it
+	// reads serverNowFn each frame and projects each bus from its own latest fix to
+	// estimated-now), so this effect only re-feeds the latest FILES + filter/
+	// selection — it does NOT need to fire on the per-second clock tick.
 	$effect(() => {
 		const m = map;
 		// Reading `layerRevision` registers the post-style-swap layer install as an
 		// effect dependency, so data is re-fed after MapLibre clears custom sources.
-		// Reading `routeShapeRevision` re-runs the feed when a route shape resolves,
-		// so the next tween upgrades those buses from chord to path-follow (L1).
+		// (A resolved route shape needs NO re-feed: the controller's per-frame
+		// shapeFor reads routeShapeCache directly and upgrades buses on the next frame.)
 		// eslint-disable-next-line @typescript-eslint/no-unused-expressions
 		layerRevision;
-		// eslint-disable-next-line @typescript-eslint/no-unused-expressions
-		routeShapeRevision;
 		if (!m) return;
 		const reduceMotion = isPrefersReducedMotion();
 		setRouteLines(m, routeLineRoutes, selectedRouteLine);
 		// serverNow read UNTRACKED here so this poll/filter/selection effect is NOT
-		// re-run by the per-second clock tick (that is the dedicated silence effect's
-		// job below). This pass only needs a current opacity baseline.
+		// re-run by the per-second clock tick (the controller's rAF loop advances
+		// projection between polls). Used only to bake the feed-time silenceAgeS prop.
 		const serverNow = untrack(() => sharedClock.serverNow);
-		const tickKey = live.vehicles?.generated_utc ?? live.generatedUtc;
 		vehicleMotion?.set(
 			toVehicleFeatures(
 				live.vehicles?.vehicles ?? [],
@@ -1067,27 +1041,18 @@
 				{ serverNow, ttlS: liveTtl, reduceMotion },
 			),
 			{
-				tickKey,
+				tickKey: live.vehicles?.generated_utc ?? live.generatedUtc,
 				stale: live.isStale,
-				// L2: span the real inter-file interval so the bus eases right up to the
-				// next poll (no idle freeze). Computed only on a genuinely new file; a
-				// same-tickKey filter/hover re-feed does not restart the tween, so the
-				// duration is ignored there.
-				durationSec: untrack(() => nextTweenDurationSec(tickKey)),
-				// L1: per-vehicle route-shape resolver → walk the street; chord when no
-				// shape is cached yet. Reduced motion skips animation entirely (the
-				// controller snaps), so the resolver is inert there.
+				// FORWARD projection: speed + fix-time per bus, the route shape to walk,
+				// and the LIVE skew-free clock read each frame so the dot tracks
+				// estimated-NOW. Reduced motion / global stale snap to reported positions
+				// (animate=false inside the controller), so these are inert there.
+				fixFor,
 				shapeFor: reduceMotion ? undefined : shapeFor,
-				// Once a per-frame continuous fade while the position tween ran; the
-				// per-vehicle fade was removed so the refresher is a no-op (always
-				// re-stamps 1). Still wired (skipped under reduced motion) to keep the
-				// motion controller's per-frame opacity plumbing intact.
-				refreshOpacity: reduceMotion ? undefined : refreshSilenceOpacity,
+				serverNowFn: () => sharedClock.serverNow,
+				animate: !reduceMotion,
 			},
 		);
-		// Sync the tick effect's baseline to what we just fed, so the next clock tick
-		// does not redundantly re-feed an identical opacity set right after this poll.
-		lastSilenceSignature = untrack(() => silenceSignature(serverNow, reduceMotion));
 		setStops(
 			m,
 			stops.data?.stops ?? [],
@@ -1098,86 +1063,6 @@
 		);
 		setNearTarget(m, nearMeOrigin);
 		setStale(m, live.isStale);
-	});
-
-	// Per-frame opacity refresher — now a HARMLESS NO-OP kept for structure. It once
-	// re-stamped a bus's opacity from its last-report time + the live clock so a bus
-	// going quiet mid-interval faded in place; the per-vehicle fade was removed, so
-	// `silenceOpacity` always returns 1 and this just re-stamps 1. Still passed to the
-	// motion controller so the per-frame plumbing stays wired (zero visual effect).
-	function refreshSilenceOpacity(feature: { properties: { id: string; opacity: number } }): number {
-		const updatedUtc = live.index.byVehicleId.get(feature.properties.id)?.updated_utc;
-		return updatedUtc == null
-			? feature.properties.opacity
-			: silenceOpacity(silenceAgeS(updatedUtc, sharedClock.serverNow), liveTtl);
-	}
-
-	// Cheap signature of the per-vehicle opacity buckets at a given clock reading.
-	// Two ticks with the SAME signature would feed byte-identical opacity, so the
-	// tick effect can skip the rebuild + setData. With the per-vehicle fade removed
-	// `silenceOpacity` always returns 1, so this signature only changes with the
-	// vehicle set — every steady-state tick is skipped, which is exactly what we
-	// want. Quantised to 3 decimals and reading the same branch as the feed so it
-	// still tracks what would be drawn if a per-vehicle signal ever returns. Cost is
-	// one pass over the live vehicles (no FeatureCollection rebuild, no GL call).
-	function silenceSignature(serverNow: number, reduceMotion: boolean): string {
-		const vehicles = live.vehicles?.vehicles ?? [];
-		let sig = `${vehicles.length}`;
-		for (const v of vehicles) {
-			const ageS = silenceAgeS(v.updated_utc, serverNow);
-			const opacity = reduceMotion
-				? silenceOpacityDiscrete(ageS, liveTtl)
-				: silenceOpacity(ageS, liveTtl);
-			sig += `|${v.id}:${opacity.toFixed(3)}`;
-		}
-		return sig;
-	}
-
-	// SECOND, lightweight tick effect: re-target ONLY the vehicle layer on the
-	// shared clock. This once advanced the per-vehicle silence fade between polls;
-	// that fade is gone (opacity is constant 1), so in steady state the signature
-	// guard skips it — it is kept as harmless structure (and to re-feed on a vehicle-
-	// set change). Re-targets via the SAME tickKey so the in-flight position tween is
-	// preserved (no motion restart), only opacity is refreshed.
-	$effect(() => {
-		// ONLY serverNow (+ the layer-install revision) is a tracked dependency, so
-		// this effect fires on the clock tick and after a style swap — NOT on every
-		// filter/selection change (the main effect above already handles those). All
-		// other reads are untracked.
-		const serverNow = sharedClock.serverNow;
-		// eslint-disable-next-line @typescript-eslint/no-unused-expressions
-		layerRevision;
-		untrack(() => {
-			const m = map;
-			if (!m || !vehicleMotion) return;
-			const reduceMotion = isPrefersReducedMotion();
-			// Short-circuit: if no vehicle's opacity bucket changed since the last
-			// re-feed (every bus still fresh or still floored), the rebuilt
-			// FeatureCollection would be byte-identical — skip the rebuild + setData.
-			// A bus crossing into / fading within the silence window changes the
-			// signature (opacity is quantised finely enough to move every tick mid-
-			// fade), so correctness is preserved: that bus still updates. The
-			// lastSilenceSignature reset on (re)install guarantees the first
-			// post-style-swap tick always feeds.
-			const signature = silenceSignature(serverNow, reduceMotion);
-			if (signature === lastSilenceSignature) return;
-			lastSilenceSignature = signature;
-			vehicleMotion.set(
-				toVehicleFeatures(
-					live.vehicles?.vehicles ?? [],
-					filters.state,
-					alertVehicleIds,
-					selectedVehicleId,
-					hoveredVehicleId,
-					{ serverNow, ttlS: liveTtl, reduceMotion },
-				),
-				{
-					tickKey: live.vehicles?.generated_utc ?? live.generatedUtc,
-					stale: live.isStale,
-					refreshOpacity: reduceMotion ? undefined : refreshSilenceOpacity,
-				},
-			);
-		});
 	});
 
 	$effect(() => {

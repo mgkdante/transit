@@ -43,13 +43,37 @@ function bearingFromDelta(dLon: number, dLat: number): number {
 }
 
 /**
+ * Per-shape-array memo of the cumulative-length prefix sum. Keyed on the shape
+ * ARRAY REFERENCE: the kinetic map holds each route shape as a stable cached
+ * array (MapHero's routeShapeCache) for the life of the tween, so the same array
+ * is passed every frame for every bus on that route. A WeakMap keyed on the array
+ * lets the per-frame projection (projectToPolyline + walkAlong, called for ~700
+ * buses at ~30fps) reuse one prefix sum instead of recomputing the whole polyline
+ * each frame. Entries are freed automatically when a shape array is dropped from
+ * the cache (no manual eviction). Keyed on identity, so a fresh array (a new shape
+ * object) correctly recomputes.
+ */
+const _lengthsCache = new WeakMap<readonly Coord[], number[]>();
+
+/**
  * Prefix-sum of segment lengths (metres). `lengths[i]` is the cumulative arc
  * length from coords[0] to coords[i]; `lengths[0] === 0`. The final entry is the
  * total polyline length. Returns `[0]` for a single point and `[]` for empty.
+ *
+ * MEMOIZED by the `coords` array reference (see `_lengthsCache`): calling this
+ * twice with the SAME array returns the identical cached array; a different array
+ * recomputes. The math/result is unchanged — this only avoids recompute. Do NOT
+ * mutate the returned array: it is shared with every other caller for that shape.
  */
 export function cumulativeLengths(coords: readonly Coord[]): number[] {
+	const cached = _lengthsCache.get(coords);
+	if (cached !== undefined) return cached;
 	const out: number[] = [];
-	if (coords.length === 0) return out;
+	if (coords.length === 0) {
+		// Don't cache the empty case: WeakMap keys must be objects and an empty
+		// `[]` arg is a fresh array each call anyway, so there is nothing to reuse.
+		return out;
+	}
 	out.push(0);
 	for (let i = 1; i < coords.length; i++) {
 		const [aLon, aLat] = coords[i - 1];
@@ -57,6 +81,7 @@ export function cumulativeLengths(coords: readonly Coord[]): number[] {
 		const { x, y } = toMetres(bLon - aLon, bLat - aLat);
 		out.push(out[i - 1] + Math.hypot(x, y));
 	}
+	_lengthsCache.set(coords, out);
 	return out;
 }
 

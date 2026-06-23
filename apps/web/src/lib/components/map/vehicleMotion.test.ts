@@ -1,146 +1,32 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-
-// Deterministic gsap stub: capture each tween's progress object + callbacks so a
-// test can drive frames by hand (set progress.value, fire onUpdate/onComplete)
-// instead of waiting on a real timeline. `to` records the LATEST tween.
-interface FakeTween {
-	progress: { value: number };
-	onUpdate?: () => void;
-	onComplete?: () => void;
-	killed: boolean;
-	duration: number;
-}
-let lastTween: FakeTween | null = null;
-vi.mock('$lib/motion/utils/gsap', () => ({
-	gsap: {
-		to(progress: { value: number }, vars: Record<string, unknown>) {
-			const tween: FakeTween = {
-				progress,
-				onUpdate: vars.onUpdate as (() => void) | undefined,
-				onComplete: vars.onComplete as (() => void) | undefined,
-				killed: false,
-				duration: (vars.duration as number) ?? 0,
-			};
-			lastTween = tween;
-			return { kill: () => (tween.killed = true) };
-		},
-	},
-}));
+import { describe, expect, it, vi } from 'vitest';
 
 import type { Map as MapLibreMap } from 'maplibre-gl';
 import {
-	buildMotionPlans,
-	clampDurationSec,
 	createVehicleMotionController,
-	interpolateVehicleFeatures,
+	power1Out,
+	projectEntry,
+	type FixResolver,
+	type MotionRuntime,
 	type ShapeResolver,
+	type VehicleFix,
 } from './vehicleMotion';
-import { VEHICLE_SOURCE, type VehicleFC } from './vehicleLayer';
-import type { Coord } from './polyline';
+import { VEHICLE_SOURCE, type VehicleFC, type VehicleFeature } from './vehicleLayer';
+import { STALE_CUTOFF_S } from './vehicleProjection';
+import { cumulativeLengths, projectToPolyline, type Coord } from './polyline';
 
-const from = {
-	type: 'FeatureCollection',
-	features: [
-		{
-			type: 'Feature',
-			geometry: { type: 'Point', coordinates: [-73.6, 45.5] },
-			properties: {
-				id: '40061',
-				body: 'old-body',
-				bearing: 350,
-				hasHeading: 1,
-				route: '161',
-				selected: 0,
-				hovered: 0,
-				matched: 1,
-				opacity: 1,
-				silenceAgeS: 0,
-			},
-		},
-	],
-} as const;
+// A long, due-east straight shape near Montréal so an advanced point stays on it
+// for any plausible projection distance (km of headroom). East leg → tangent ~90°.
+const W = [-73.7, 45.5] as Coord;
+const E = [-73.4, 45.5] as Coord; // ~23 km east of W
+const STRAIGHT: Coord[] = [W, E];
 
-const to = {
-	type: 'FeatureCollection',
-	features: [
-		{
-			type: 'Feature',
-			geometry: { type: 'Point', coordinates: [-73.58, 45.52] },
-			properties: {
-				id: '40061',
-				body: 'new-body',
-				bearing: 10,
-				hasHeading: 1,
-				route: '161',
-				selected: 1,
-				hovered: 1,
-				matched: 1,
-				opacity: 1,
-				silenceAgeS: 0,
-			},
-		},
-		{
-			type: 'Feature',
-			geometry: { type: 'Point', coordinates: [-73.7, 45.6] },
-			properties: {
-				id: 'new-bus',
-				body: 'new-body',
-				bearing: 90,
-				hasHeading: 1,
-				route: '80',
-				selected: 0,
-				hovered: 0,
-				matched: 1,
-				opacity: 1,
-				silenceAgeS: 0,
-			},
-		},
-	],
-} as const;
+const NOW_MS = Date.parse('2026-06-22T12:00:00Z');
+function isoAgo(seconds: number): string {
+	return new Date(NOW_MS - seconds * 1000).toISOString();
+}
 
-describe('interpolateVehicleFeatures', () => {
-	it('interpolates coordinates and shortest-arc bearing while preserving target styling', () => {
-		const mid = interpolateVehicleFeatures(from, to, 0.5);
-
-		expect(mid.features[0].geometry.coordinates).toEqual([-73.59, 45.51]);
-		expect(mid.features[0].properties.bearing).toBe(0);
-		expect(mid.features[0].properties.body).toBe('new-body');
-		expect(mid.features[0].properties.selected).toBe(1);
-		expect(mid.features[0].properties.hovered).toBe(1);
-	});
-
-	it('snaps new vehicles directly to their target point', () => {
-		const mid = interpolateVehicleFeatures(from, to, 0.5);
-
-		expect(mid.features[1].properties.id).toBe('new-bus');
-		expect(mid.features[1].geometry.coordinates).toEqual([-73.7, 45.6]);
-	});
-
-	it('carries the target silence opacity through interpolation (a silent bus keeps its fade)', () => {
-		const fadedTarget = {
-			type: 'FeatureCollection',
-			features: [
-				{
-					...to.features[0],
-					properties: { ...to.features[0].properties, opacity: 0.25 },
-				},
-			],
-		} as const;
-		const mid = interpolateVehicleFeatures(from, fadedTarget, 0.5);
-		expect(mid.features[0].properties.opacity).toBe(0.25);
-	});
-
-	it('does NOT move a silent bus reporting the same position (from === to → no drift)', () => {
-		// A non-reporting bus repeats its last fix, so from and to coincide.
-		const still = interpolateVehicleFeatures(from, from, 0.5);
-		expect(still.features[0].geometry.coordinates).toEqual(from.features[0].geometry.coordinates);
-	});
-});
-
-// --- Controller-level tests with a stubbed map + fake gsap tween --------------
-
-/** A feature collection of one bus at a given lon/lat. */
-function fc(lon: number, lat: number): VehicleFC {
+/** A one-bus FC at lon/lat on route '161' with an explicit feed bearing. */
+function fcAt(lon: number, lat: number, bearing = 0, id = '40061'): VehicleFC {
 	return {
 		type: 'FeatureCollection',
 		features: [
@@ -148,9 +34,9 @@ function fc(lon: number, lat: number): VehicleFC {
 				type: 'Feature',
 				geometry: { type: 'Point', coordinates: [lon, lat] },
 				properties: {
-					id: '40061',
+					id,
 					body: 'bus',
-					bearing: 0,
+					bearing,
 					hasHeading: 1,
 					route: '161',
 					selected: 0,
@@ -158,10 +44,28 @@ function fc(lon: number, lat: number): VehicleFC {
 					matched: 1,
 					opacity: 1,
 					silenceAgeS: 0,
+					stale: 0,
 				},
 			},
 		],
 	};
+}
+
+function feature(lon: number, lat: number, bearing = 0): VehicleFeature {
+	return fcAt(lon, lat, bearing).features[0];
+}
+
+const straightShape: ShapeResolver = () => STRAIGHT;
+const noShape: ShapeResolver = () => null;
+
+/** Fix resolver: every bus reported `ageS` ago, moving at `speedMps`. */
+function fixFor(ageS: number, speedMps: number | null): FixResolver {
+	const fix: VehicleFix = {
+		reportedUtc: isoAgo(ageS),
+		updatedUtc: isoAgo(ageS),
+		speedMps,
+	};
+	return () => fix;
 }
 
 /** Stub MapLibre map: only getSource('vehicles').setData is exercised. */
@@ -173,258 +77,382 @@ function stubMap() {
 	return { map, setData };
 }
 
-/** Lon of the bus pushed by the most recent setData call. */
-function lastSetLon(setData: ReturnType<typeof vi.fn>): number {
-	const fcArg = setData.mock.calls.at(-1)?.[0] as VehicleFC;
-	return fcArg.features[0].geometry.coordinates[0];
+function lastLon(setData: ReturnType<typeof vi.fn>): number {
+	const fc = setData.mock.calls.at(-1)?.[0] as VehicleFC;
+	return fc.features[0].geometry.coordinates[0];
+}
+function lastFeature(setData: ReturnType<typeof vi.fn>): VehicleFeature {
+	const fc = setData.mock.calls.at(-1)?.[0] as VehicleFC;
+	return fc.features[0];
 }
 
-describe('createVehicleMotionController', () => {
-	beforeEach(() => {
-		lastTween = null;
-	});
-	afterEach(() => {
-		vi.restoreAllMocks();
-	});
-
-	it('(a) animate=false → snaps immediately (single setData, lands at target)', () => {
-		const { map, setData } = stubMap();
-		const c = createVehicleMotionController(map);
-
-		c.set(fc(-73.58, 45.52), { tickKey: 't1', animate: false });
-
-		expect(setData).toHaveBeenCalledTimes(1);
-		expect(lastSetLon(setData)).toBe(-73.58); // exact target, no interpolation
-		expect(lastTween).toBeNull(); // no tween started
-	});
-
-	it('(b) stale → snaps even when animate is true', () => {
-		const { map, setData } = stubMap();
-		const c = createVehicleMotionController(map);
-
-		// First fix establishes `current` so a subsequent set could animate.
-		c.set(fc(-73.6, 45.5), { tickKey: 't1', animate: true });
-		setData.mockClear();
-
-		c.set(fc(-73.58, 45.52), { tickKey: 't2', stale: true, animate: true });
-
-		expect(setData).toHaveBeenCalledTimes(1);
-		expect(lastSetLon(setData)).toBe(-73.58);
-	});
-
-	it('(c) same tickKey → re-targets without restarting the tween', () => {
-		const { map } = stubMap();
-		const c = createVehicleMotionController(map);
-
-		c.set(fc(-73.6, 45.5), { tickKey: 't1', animate: true }); // snap (no current yet)
-		c.set(fc(-73.58, 45.52), { tickKey: 't2', animate: true }); // starts a tween
-		const startedTween = lastTween;
-		expect(startedTween).not.toBeNull();
-
-		// Same tickKey: should re-target the SAME tween, not create a new one.
-		c.set(fc(-73.5, 45.55), { tickKey: 't2', animate: true });
-
-		expect(lastTween).toBe(startedTween); // no new tween created
-		expect(startedTween?.killed).toBe(false); // existing tween not killed/restarted
-	});
-
-	it('(d) rapid tween frames coalesce (~30fps) but the terminal frame lands exactly on target', () => {
-		const { map, setData } = stubMap();
-		// Drive a monotonic performance.now() so the throttle is deterministic.
-		let nowMs = 1000;
-		vi.spyOn(performance, 'now').mockImplementation(() => nowMs);
-
-		const c = createVehicleMotionController(map);
-		c.set(fc(-73.6, 45.5), { tickKey: 't1', animate: true }); // snap baseline
-		c.set(fc(-73.5, 45.6), { tickKey: 't2', animate: true, durationSec: 28 }); // tween
-		const tween = lastTween;
-		expect(tween).not.toBeNull();
-		setData.mockClear();
-
-		// Three 60fps onUpdate frames (~16ms apart): the first clears the ~33ms gate
-		// (>33ms since the snap that seeded the throttle), the next two coalesce.
-		tween!.progress.value = 0.1;
-		nowMs += 40;
-		tween!.onUpdate?.();
-		tween!.progress.value = 0.2;
-		nowMs += 16;
-		tween!.onUpdate?.();
-		tween!.progress.value = 0.3;
-		nowMs += 16;
-		tween!.onUpdate?.();
-		expect(setData).toHaveBeenCalledTimes(1); // 2 of 3 coalesced at the ~30fps cap
-
-		// A frame >33ms after the last setData passes the gate.
-		tween!.progress.value = 0.4;
-		nowMs += 40;
-		tween!.onUpdate?.();
-		expect(setData).toHaveBeenCalledTimes(2);
-
-		// The terminal frame (onComplete → snap) is NEVER throttled, even back-to-back.
-		tween!.progress.value = 1;
-		nowMs += 1; // <33ms since last setData — would be skipped if throttled
-		tween!.onComplete?.();
-		expect(setData).toHaveBeenCalledTimes(3);
-		expect(lastSetLon(setData)).toBe(-73.5); // lands EXACTLY on the real target
-	});
-
-	it('destroy() kills the running tween', () => {
-		const { map } = stubMap();
-		const c = createVehicleMotionController(map);
-		c.set(fc(-73.6, 45.5), { tickKey: 't1', animate: true });
-		c.set(fc(-73.5, 45.6), { tickKey: 't2', animate: true });
-		const tween = lastTween;
-		expect(tween?.killed).toBe(false);
-
-		c.destroy();
-		expect(tween?.killed).toBe(true);
-	});
-
-	it('(L2) tween duration spans the supplied inter-fix interval (clamped)', () => {
-		const { map } = stubMap();
-		const c = createVehicleMotionController(map);
-		c.set(fc(-73.6, 45.5), { tickKey: 't1', animate: true }); // snap baseline
-		c.set(fc(-73.5, 45.6), { tickKey: 't2', animate: true, durationSec: 31 });
-		expect(lastTween?.duration).toBe(31);
-	});
-
-	it('(L2) does NOT extrapolate past t=1 — onComplete snaps EXACTLY to the real target', () => {
-		const { map, setData } = stubMap();
-		let nowMs = 1000;
-		vi.spyOn(performance, 'now').mockImplementation(() => nowMs);
-		const c = createVehicleMotionController(map);
-		c.set(fc(-73.6, 45.5), { tickKey: 't1', animate: true });
-		c.set(fc(-73.5, 45.6), { tickKey: 't2', animate: true, durationSec: 30 });
-		const tween = lastTween!;
-		setData.mockClear();
-
-		// Even if a frame overshoots progress (>1), interpolation clamps to t=1:
-		// the bus lands on the real target, never beyond it.
-		tween.progress.value = 1.4;
-		nowMs += 100;
-		tween.onUpdate?.();
-		expect(lastSetLon(setData)).toBe(-73.5); // clamped to the real fix, not past it
-
-		tween.progress.value = 1;
-		tween.onComplete?.();
-		expect(lastSetLon(setData)).toBe(-73.5);
-	});
-});
-
-describe('clampDurationSec', () => {
-	it('passes a sane interval through unchanged', () => {
-		expect(clampDurationSec(30)).toBe(30);
-	});
-	it('floors a too-short interval and ceils a too-long one', () => {
-		expect(clampDurationSec(0.5)).toBe(4);
-		expect(clampDurationSec(120)).toBe(45);
-	});
-	it('falls back to the default for missing / non-finite input', () => {
-		expect(clampDurationSec(undefined)).toBe(28);
-		expect(clampDurationSec(Number.NaN)).toBe(28);
-	});
-});
-
-// --- L1 path-follow + L3 travel-direction heading ----------------------------
-
-/** A one-bus FC at lon/lat on route '161' with an explicit feed bearing. */
-function fcRoute(lon: number, lat: number, bearing: number): VehicleFC {
-	return {
-		type: 'FeatureCollection',
-		features: [
-			{
-				type: 'Feature',
-				geometry: { type: 'Point', coordinates: [lon, lat] },
-				properties: {
-					id: '40061',
-					body: 'bus',
-					bearing,
-					hasHeading: 1,
-					route: '161',
-					selected: 0,
-					hovered: 0,
-					matched: 1,
-					opacity: 1,
-					silenceAgeS: 0,
-				},
-			},
-		],
+/**
+ * Controlled runtime: the test owns the frame scheduler + the monotonic + server
+ * clocks, so projection is fully deterministic. `tick(ms, serverDeltaMs?)` advances
+ * both clocks and fires exactly one queued frame.
+ */
+function controlledRuntime() {
+	let nowMs = 1000;
+	let serverNow = NOW_MS;
+	let pending: (() => void) | null = null;
+	let handle = 0;
+	const runtime: MotionRuntime = {
+		now: () => nowMs,
+		requestFrame: (cb) => {
+			pending = cb;
+			return ++handle;
+		},
+		cancelFrame: () => {
+			pending = null;
+		},
 	};
+	const serverNowFn = () => serverNow;
+	function frame(advanceMonotonicMs: number, advanceServerMs = advanceMonotonicMs): void {
+		nowMs += advanceMonotonicMs;
+		serverNow += advanceServerMs;
+		const cb = pending;
+		pending = null;
+		cb?.();
+	}
+	return { runtime, serverNowFn, frame, hasPending: () => pending != null };
 }
 
-// A right-angle route shape: east leg then north leg (same as polyline tests).
-const ROUTE_SHAPE: Coord[] = [
-	[-73.6, 45.5],
-	[-73.58, 45.5],
-	[-73.58, 45.52],
-];
-const shapeResolver: ShapeResolver = () => ROUTE_SHAPE;
+describe('power1Out', () => {
+	it('is the out-quad curve 1−(1−t)², clamped to [0,1]', () => {
+		expect(power1Out(0)).toBe(0);
+		expect(power1Out(1)).toBe(1);
+		expect(power1Out(0.5)).toBeCloseTo(0.75, 6); // decelerating: past the midpoint
+		expect(power1Out(-1)).toBe(0);
+		expect(power1Out(2)).toBe(1);
+	});
+});
 
-describe('path-follow + travel-direction heading (L1/L3)', () => {
-	it('(L1) walks ALONG the shape, not the straight chord, at the midpoint', () => {
-		const fromFc = fcRoute(-73.599, 45.5, 999); // near the start of the east leg
-		const toFc = fcRoute(-73.58, 45.519, 999); // near the top of the north leg
-		const plans = buildMotionPlans(fromFc, toFc, shapeResolver);
-		const mid = interpolateVehicleFeatures(fromFc, toFc, 0.5, plans);
-		const lon = mid.features[0].geometry.coordinates[0];
-		// The straight chord midpoint lon would be ~-73.5895; the path hugs the L
-		// corner, so its lon is EAST of that — provably following the shape.
-		expect(lon).toBeGreaterThan(-73.5895);
+describe('projectEntry (pure)', () => {
+	it('projects FORWARD along the shape and reports the tangent heading', () => {
+		const entry = {
+			feature: feature(W[0], W[1], 17),
+			fix: { reportedUtc: isoAgo(5), updatedUtc: isoAgo(5), speedMps: 10 },
+		};
+		const { feature: out, result } = projectEntry(entry, NOW_MS, 0, straightShape, undefined);
+		expect(result.frozen).toBe(false);
+		expect(out.geometry.coordinates[0]).toBeGreaterThan(W[0]); // advanced east
+		expect(out.geometry.coordinates[1]).toBeCloseTo(45.5, 5);
+		expect(out.properties.bearing).toBeCloseTo(90, 0); // shape tangent, not 17
+		expect(out.properties.stale).toBe(0);
 	});
 
-	it('(L3) heading comes from the path TANGENT, not the noisy feed bearing', () => {
-		// On the north leg the bus travels north (~0°), even though the feed claims
-		// a bogus 999 bearing. Sample near t=1 (well into the north leg).
-		const fromFc = fcRoute(-73.58, 45.505, 999);
-		const toFc = fcRoute(-73.58, 45.519, 999);
-		const plans = buildMotionPlans(fromFc, toFc, shapeResolver);
-		const sample = interpolateVehicleFeatures(fromFc, toFc, 0.9, plans);
-		const b = sample.features[0].properties.bearing;
-		expect(b < 5 || b > 355).toBe(true); // due north, from travel direction
+	it('FREEZES (no shape) at the reported coord + bearing and flags nothing', () => {
+		const entry = {
+			feature: feature(W[0], W[1], 123),
+			fix: { reportedUtc: isoAgo(5), updatedUtc: isoAgo(5), speedMps: 10 },
+		};
+		const { feature: out, result } = projectEntry(entry, NOW_MS, 0, noShape, undefined);
+		expect(result.frozen).toBe(true);
+		expect(out.geometry.coordinates).toEqual([W[0], W[1]]);
+		expect(out.properties.bearing).toBe(123);
+		expect(out.properties.stale).toBe(0);
 	});
 
-	it('(L3) chord-only heading (no shape) uses the direction of travel', () => {
-		// No resolver → no path; the bus moves due east, so heading ≈ 90° even
-		// though the feed bearing is a bogus 250.
-		const fromFc = fcRoute(-73.6, 45.5, 250);
-		const toFc = fcRoute(-73.58, 45.5, 250);
-		const plans = buildMotionPlans(fromFc, toFc); // no shapeResolver
-		const sample = interpolateVehicleFeatures(fromFc, toFc, 0.5, plans);
-		expect(sample.features[0].properties.bearing).toBeCloseTo(90, 0);
+	it('FREEZES + flags stale past the cutoff', () => {
+		const entry = {
+			feature: feature(W[0], W[1], 200),
+			fix: {
+				reportedUtc: isoAgo(STALE_CUTOFF_S),
+				updatedUtc: isoAgo(STALE_CUTOFF_S),
+				speedMps: 10,
+			},
+		};
+		const { feature: out, result } = projectEntry(entry, NOW_MS, 0, straightShape, undefined);
+		expect(result.frozen).toBe(true);
+		expect(result.stale).toBe(true);
+		expect(out.properties.stale).toBe(1); // the per-bus "!" flag
+		expect(out.geometry.coordinates).toEqual([W[0], W[1]]);
 	});
 
-	it('(L3) falls back to the FEED bearing at zero motion (stationary bus)', () => {
-		// from === to → no travel direction; keep the honest feed bearing.
-		const stillFc = fcRoute(-73.6, 45.5, 137);
-		const plans = buildMotionPlans(stillFc, stillFc, shapeResolver);
-		const sample = interpolateVehicleFeatures(stillFc, stillFc, 0.5, plans);
-		expect(sample.features[0].properties.bearing).toBe(137);
-		// And it does not drift.
-		expect(sample.features[0].geometry.coordinates).toEqual([-73.6, 45.5]);
+	it('FREEZES when the fix is unknown (null) — never dead-reckons on guessed data', () => {
+		const entry = { feature: feature(W[0], W[1], 5), fix: null };
+		const { result } = projectEntry(entry, NOW_MS, 0, straightShape, undefined);
+		expect(result.frozen).toBe(true);
+		expect(result.stale).toBe(true); // null fix ⇒ Infinity age ⇒ stale
 	});
 
-	it('(L1) falls back to the chord when the bus is far off every shape', () => {
-		// `to` is ~5 km north of the route → buildPathBetween returns null → chord.
-		const fromFc = fcRoute(-73.599, 45.5, 250);
-		const toFc = fcRoute(-73.58, 45.6, 250);
-		const plans = buildMotionPlans(fromFc, toFc, shapeResolver);
-		const mid = interpolateVehicleFeatures(fromFc, toFc, 0.5, plans);
-		// Straight-chord midpoint (lerp of the two fixes), NOT a shape point.
-		expect(mid.features[0].geometry.coordinates).toEqual([-73.5895, 45.55]);
+	it('blends from the ease-correct origin toward the projection (continuous, no snap)', () => {
+		const entry = {
+			feature: feature(W[0], W[1], 90),
+			fix: { reportedUtc: isoAgo(5), updatedUtc: isoAgo(5), speedMps: 10 },
+		};
+		// Projection target (no blend) — the destination of the ease.
+		const target = projectEntry(entry, NOW_MS, 0, straightShape, undefined).feature.geometry
+			.coordinates[0];
+		const origin = -73.71; // clearly WEST of the projection (target ≈ -73.6994)
+		// At blend start (e=0) the dot sits at the origin; partway it is between; at
+		// the end it reaches the projection — monotone, never overshooting.
+		const at0 = projectEntry(entry, NOW_MS, 1000, straightShape, {
+			fromCoord: [origin, 45.5],
+			fromBearing: 90,
+			startMs: 1000,
+		}).feature.geometry.coordinates[0];
+		const atMid = projectEntry(entry, NOW_MS, 1450, straightShape, {
+			fromCoord: [origin, 45.5],
+			fromBearing: 90,
+			startMs: 1000,
+		}).feature.geometry.coordinates[0];
+		const atEnd = projectEntry(entry, NOW_MS, 1900, straightShape, {
+			fromCoord: [origin, 45.5],
+			fromBearing: 90,
+			startMs: 1000,
+		}).feature.geometry.coordinates[0];
+		expect(at0).toBeCloseTo(origin, 5);
+		expect(atMid).toBeGreaterThan(at0);
+		expect(atMid).toBeLessThan(atEnd);
+		expect(atEnd).toBeCloseTo(target, 5);
 	});
+});
 
-	it('reduced-motion path is inert: animate=false snaps to the exact target (no tween, no path)', () => {
-		lastTween = null;
+describe('createVehicleMotionController — forward projection', () => {
+	it('animate=false → snaps to the reported position, no rAF loop', () => {
 		const { map, setData } = stubMap();
-		const c = createVehicleMotionController(map);
-		c.set(fcRoute(-73.6, 45.5, 10), {
+		const { runtime, serverNowFn, hasPending } = controlledRuntime();
+		const c = createVehicleMotionController(map, runtime);
+
+		c.set(fcAt(-73.58, 45.52), {
 			tickKey: 't1',
 			animate: false,
-			shapeFor: shapeResolver,
-			durationSec: 30,
+			fixFor: fixFor(5, 10),
+			shapeFor: straightShape,
+			serverNowFn,
 		});
-		expect(lastTween).toBeNull(); // no tween under reduced motion
+
 		expect(setData).toHaveBeenCalledTimes(1);
-		expect(lastSetLon(setData)).toBe(-73.6); // exact target, no path sampling
+		expect(lastLon(setData)).toBe(-73.58); // exact reported position, no projection
+		expect(hasPending()).toBe(false); // no loop scheduled
+		c.destroy();
+	});
+
+	it('global stale → snaps to reported positions (whole feed behind)', () => {
+		const { map, setData } = stubMap();
+		const { runtime, serverNowFn } = controlledRuntime();
+		const c = createVehicleMotionController(map, runtime);
+		c.set(fcAt(-73.58, 45.52), {
+			tickKey: 't1',
+			animate: true,
+			stale: true,
+			fixFor: fixFor(5, 10),
+			shapeFor: straightShape,
+			serverNowFn,
+		});
+		expect(lastLon(setData)).toBe(-73.58);
+		c.destroy();
+	});
+
+	it('projects a fresh fix FORWARD along the shape over wall-clock', () => {
+		const { map, setData } = stubMap();
+		const { runtime, serverNowFn, frame } = controlledRuntime();
+		const c = createVehicleMotionController(map, runtime);
+
+		// Bus at W, moving east at 10 m/s, fixed 5s ago. First feed renders at once.
+		c.set(fcAt(W[0], W[1]), {
+			tickKey: 't1',
+			animate: true,
+			fixFor: fixFor(5, 10),
+			shapeFor: straightShape,
+			serverNowFn,
+		});
+		const afterFeed = lastLon(setData);
+		expect(afterFeed).toBeGreaterThan(W[0]); // already projected forward from the fix
+
+		// Advance the server clock 10s and fire a frame: the bus advances FURTHER east
+		// (the fix ages → more distance under the decaying-speed model).
+		frame(40, 10_000); // >33ms monotonic clears the throttle
+		expect(lastLon(setData)).toBeGreaterThan(afterFeed);
+		c.destroy();
+	});
+
+	it('a stale fix FREEZES the bus and flags it (no forward drift)', () => {
+		const { map, setData } = stubMap();
+		const { runtime, serverNowFn, frame } = controlledRuntime();
+		const c = createVehicleMotionController(map, runtime);
+
+		c.set(fcAt(W[0], W[1], 200), {
+			tickKey: 't1',
+			animate: true,
+			fixFor: fixFor(STALE_CUTOFF_S, 10), // already past the cutoff
+			shapeFor: straightShape,
+			serverNowFn,
+		});
+		expect(lastLon(setData)).toBe(W[0]); // frozen at the reported coord
+		expect(lastFeature(setData).properties.stale).toBe(1); // the "!" flag
+
+		frame(40, 20_000); // even more time passes → still frozen
+		expect(lastLon(setData)).toBe(W[0]);
+		expect(lastFeature(setData).properties.stale).toBe(1);
+		c.destroy();
+	});
+
+	it('a bus that crosses the cutoff between polls gets the "!" without a re-feed', () => {
+		const { map, setData } = stubMap();
+		const { runtime, serverNowFn, frame } = controlledRuntime();
+		const c = createVehicleMotionController(map, runtime);
+
+		// Fresh at first feed (5s old, well under the 150s cutoff).
+		c.set(fcAt(W[0], W[1]), {
+			tickKey: 't1',
+			animate: true,
+			fixFor: fixFor(5, 10),
+			shapeFor: straightShape,
+			serverNowFn,
+		});
+		expect(lastFeature(setData).properties.stale).toBe(0);
+
+		// Jump the server clock past the cutoff WITHOUT a new poll → the rAF loop
+		// re-stamps the per-bus stale flag off the live projection.
+		frame(40, STALE_CUTOFF_S * 1000);
+		expect(lastFeature(setData).properties.stale).toBe(1);
+		c.destroy();
+	});
+
+	it('ease-corrects on a NEW fix: continuous from the displayed dot to the new projection', () => {
+		const { map, setData } = stubMap();
+		const { runtime, serverNowFn, frame } = controlledRuntime();
+		const c = createVehicleMotionController(map, runtime);
+
+		// Poll 1: bus at W. Let it project forward a little.
+		c.set(fcAt(W[0], W[1]), {
+			tickKey: 't1',
+			animate: true,
+			fixFor: fixFor(5, 10),
+			shapeFor: straightShape,
+			serverNowFn,
+		});
+		frame(40, 5_000);
+		const displayedBeforeJump = lastLon(setData);
+
+		// Poll 2: a NEW fix that has the bus much further EAST (a correction). The
+		// re-feed must NOT snap there — the first rendered lon stays near where the
+		// dot was, then eases toward the new projection over the blend window.
+		c.set(fcAt(-73.55, 45.5), {
+			tickKey: 't2',
+			animate: true,
+			fixFor: fixFor(2, 10),
+			shapeFor: straightShape,
+			serverNowFn,
+		});
+		const justAfterRefeed = lastLon(setData);
+		// The blend ORIGIN is the prior displayed dot, so the first frame after the
+		// new fix is close to it — not jumped onto the far new projection.
+		expect(justAfterRefeed).toBeCloseTo(displayedBeforeJump, 3);
+
+		// Step through the blend window: the dot eases EAST toward the new projection,
+		// monotonically (no rubber-band back-and-forth).
+		frame(450, 450);
+		const mid = lastLon(setData);
+		frame(450, 450);
+		const end = lastLon(setData);
+		expect(mid).toBeGreaterThan(justAfterRefeed);
+		expect(end).toBeGreaterThan(mid);
+		c.destroy();
+	});
+
+	it('same tickKey re-feed (filter/hover) does not restart an in-flight blend', () => {
+		const { map, setData } = stubMap();
+		const { runtime, serverNowFn, frame } = controlledRuntime();
+		const c = createVehicleMotionController(map, runtime);
+
+		c.set(fcAt(W[0], W[1]), {
+			tickKey: 't1',
+			animate: true,
+			fixFor: fixFor(5, 10),
+			shapeFor: straightShape,
+			serverNowFn,
+		});
+		frame(40, 5_000);
+		const before = lastLon(setData);
+		// New fix → blend begins.
+		c.set(fcAt(-73.55, 45.5), {
+			tickKey: 't2',
+			animate: true,
+			fixFor: fixFor(2, 10),
+			shapeFor: straightShape,
+			serverNowFn,
+		});
+		const afterNew = lastLon(setData);
+		expect(afterNew).toBeCloseTo(before, 3); // eased from the displayed dot
+
+		// Same tickKey re-feed midway (e.g. a hover): blend continues, no reset to the
+		// origin. The re-feed renders at the blend's current point, further east.
+		frame(450, 0);
+		const midBlend = lastLon(setData);
+		c.set(fcAt(-73.55, 45.5, 0, '40061'), {
+			tickKey: 't2',
+			animate: true,
+			fixFor: fixFor(2, 10),
+			shapeFor: straightShape,
+			serverNowFn,
+		});
+		const afterSameTick = lastLon(setData);
+		// Continues forward from the blend (>= the mid-blend point), not reset west.
+		expect(afterSameTick).toBeGreaterThanOrEqual(midBlend - 1e-6);
+		c.destroy();
+	});
+
+	it('throttles the rAF loop to ~30fps but never drops the re-feed frame', () => {
+		const { map, setData } = stubMap();
+		const { runtime, serverNowFn, frame } = controlledRuntime();
+		const c = createVehicleMotionController(map, runtime);
+
+		c.set(fcAt(W[0], W[1]), {
+			tickKey: 't1',
+			animate: true,
+			fixFor: fixFor(5, 10),
+			shapeFor: straightShape,
+			serverNowFn,
+		});
+		expect(setData).toHaveBeenCalledTimes(1); // the re-feed renders unthrottled
+		setData.mockClear();
+
+		// Two sub-33ms frames coalesce; the loop keeps rescheduling but only the one
+		// past the gate pushes setData.
+		frame(16, 1000);
+		frame(16, 1000);
+		expect(setData).toHaveBeenCalledTimes(0); // both inside the ~33ms gate
+		frame(40, 1000);
+		expect(setData).toHaveBeenCalledTimes(1); // cleared the gate
+		c.destroy();
+	});
+
+	it('destroy() stops the rAF loop (no further frames scheduled)', () => {
+		const { map } = stubMap();
+		const { runtime, serverNowFn, hasPending } = controlledRuntime();
+		const c = createVehicleMotionController(map, runtime);
+		c.set(fcAt(W[0], W[1]), {
+			tickKey: 't1',
+			animate: true,
+			fixFor: fixFor(5, 10),
+			shapeFor: straightShape,
+			serverNowFn,
+		});
+		expect(hasPending()).toBe(true);
+		c.destroy();
+		expect(hasPending()).toBe(false);
+	});
+
+	it('projected position lands on the shape (arc-length matches the model)', () => {
+		const { map, setData } = stubMap();
+		const { runtime, serverNowFn } = controlledRuntime();
+		const c = createVehicleMotionController(map, runtime);
+		c.set(fcAt(W[0], W[1]), {
+			tickKey: 't1',
+			animate: true,
+			fixFor: fixFor(5, 10),
+			shapeFor: straightShape,
+			serverNowFn,
+		});
+		const out = lastFeature(setData).geometry.coordinates as Coord;
+		// Projecting the displayed point back onto the shape gives a positive arc.
+		const lengths = cumulativeLengths(STRAIGHT);
+		const back = projectToPolyline(STRAIGHT, out, lengths)!;
+		expect(back.s).toBeGreaterThan(0);
+		expect(back.distance).toBeLessThan(1); // sits ON the shape
+		c.destroy();
 	});
 });
