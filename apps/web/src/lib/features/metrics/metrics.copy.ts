@@ -56,6 +56,23 @@ export interface MetricsCopy extends SurfaceHeadCopy {
 		/** The three named gaps; each a heading + plain-language body. */
 		readonly gaps: ReadonlyArray<{ readonly heading: string; readonly body: string }>;
 	};
+	/**
+	 * The "Live vehicle positions — almost real-time, not real-time" card. A clear,
+	 * detailed, honest explainer of how the live map DRAWS moving buses: the ~20-60s
+	 * GTFS-RT reporting cadence, what "Almost real-time" (smooth forward-projection)
+	 * means as a bounded, decaying ESTIMATE between reports, how a stale bus FREEZES
+	 * with a big "!" instead of being faked into motion, what "Raw" (measured only)
+	 * shows, and why both modes exist (honest-by-design; a proper prediction engine
+	 * is planned). Renders on the same collapsible-card spine as the metric sections.
+	 */
+	readonly livePositions: {
+		/** ToC + card title. */
+		readonly title: string;
+		/** Lede paragraph framing the whole card. */
+		readonly lede: string;
+		/** The named sub-points; each a heading + plain-language body. */
+		readonly points: ReadonlyArray<{ readonly heading: string; readonly body: string }>;
+	};
 	/** Confidence-legend strings (chip + one line each). */
 	readonly confidence: {
 		/** Overline above the legend. */
@@ -162,6 +179,32 @@ export const metricsCopy: Record<Locale, MetricsCopy> = {
 				},
 			],
 		},
+		livePositions: {
+			title: 'Positions des véhicules en direct, presque en temps réel, pas en temps réel',
+			lede: 'Sur la carte en direct, chaque bus est dessiné à partir du flux GTFS temps réel en direct. Mais ce flux n’est pas continu : voici, honnêtement, comment la carte décide où dessiner un bus entre deux relevés, et le choix que vous contrôlez avec le bouton « Mouvement ».',
+			points: [
+				{
+					heading: 'Un relevé de position arrive seulement toutes les ~20 à 60 secondes',
+					body: 'La position GPS d’un bus n’arrive pas en continu : le flux publie un nouveau relevé seulement toutes les ~20 à 60 secondes, pas à chaque instant. Entre deux relevés, nous n’avons AUCUNE mesure réelle de l’endroit où se trouve le bus. Tout ce qui s’affiche entre les relevés est donc soit l’ancienne position figée, soit une estimation. Jamais une nouvelle mesure.',
+				},
+				{
+					heading: '« Presque en temps réel » = on estime la position entre les relevés',
+					body: 'En mode « Presque en temps réel », entre deux relevés nous ESTIMONS où le bus se trouve le plus probablement en le projetant VERS L’AVANT le long de sa ligne, à la dernière vitesse qu’il a signalée. C’est une estimation bornée et décroissante : on fait confiance à un relevé frais brièvement, puis on arrête d’inventer du déplacement, et le prochain relevé réel corrige la position. C’est une APPROXIMATION, pas une mesure. Admettons-le franchement : c’est plus fluide à regarder, mais ce n’est pas la vérité GPS.',
+				},
+				{
+					heading: 'Un bus qui ne répond plus FIGE et porte un grand « ! »',
+					body: 'Si un bus n’a pas signalé sa position depuis un moment, on ne fait JAMAIS semblant qu’il bouge encore. Il FIGE à son dernier emplacement connu et reçoit un grand « ! » bien visible, pour que vous sachiez d’un coup d’œil que sa position n’est plus fraîche. On préfère un bus immobile honnête à un bus inventé en mouvement.',
+				},
+				{
+					heading: '« Brut » = uniquement les positions mesurées',
+					body: 'En mode « Brut » (le mode par défaut), on n’affiche QUE les positions réellement mesurées : à chaque mise à jour du flux (~30 s), chaque bus saute directement à son dernier emplacement signalé, sans aucune estimation entre les deux. C’est plus saccadé, mais c’est la vérité non embellie, chaque point est une vraie mesure, jamais une supposition.',
+				},
+				{
+					heading: 'Pourquoi les deux modes',
+					body: 'Le mode fluide est plus agréable à regarder, mais c’est une estimation; le mode brut est la vérité brute, à vous de choisir. C’est honnête par conception : on ne vous cache pas l’approximation, on vous laisse la voir ou l’éteindre. Le mouvement reste un peu en retard pour l’instant; un véritable moteur de prédiction est prévu pour la suite.',
+				},
+			],
+		},
 		confidence: {
 			label: 'Niveaux de confiance',
 			levels: {
@@ -241,6 +284,32 @@ export const metricsCopy: Record<Locale, MetricsCopy> = {
 				{
 					heading: 'Stop-level and route-level, NOT journey (origin to destination)',
 					body: 'We measure reliability per stop and per route, never the reliability of a full journey from origin to destination. Transfers, end-to-end trip time, and the risk of missing a connection are not measured. We have no origin-destination matrix and no journey-level data, so a trip that looks reliable stop by stop can still go wrong once the connections are chained together.',
+				},
+			],
+		},
+		livePositions: {
+			title: 'Live vehicle positions, almost real-time, not real-time',
+			lede: 'On the live map, every bus is drawn from the live GTFS-realtime feed. But that feed is not continuous: here, honestly, is how the map decides where to draw a bus between reports, and the choice you control with the “Motion” switch.',
+			points: [
+				{
+					heading: 'Each bus reports its position only every ~20-60 seconds',
+					body: 'A bus’s GPS position does not arrive continuously: the feed publishes a fresh report only every ~20-60 seconds, not every moment. Between reports we have NO real measurement of where the bus is. So anything shown between reports is either the old position held still, or an estimate, never a new measurement.',
+				},
+				{
+					heading: '“Almost real-time” = we estimate the position between reports',
+					body: 'In “Almost real-time” mode, between reports we ESTIMATE where a bus most likely is by projecting it FORWARD along its route at its last reported speed. It is a bounded, decaying estimate: we trust a fresh fix briefly, then stop inventing travel, and the next real report corrects it. It is an APPROXIMATION, not a measurement. Said plainly: it is smoother to watch, but it is not GPS truth.',
+				},
+				{
+					heading: 'A bus that has not reported in a while FREEZES and gets a big “!”',
+					body: 'If a bus has not reported its position in a while, we NEVER pretend it is still moving. It FREEZES at its last known spot and gets a big, visible “!” so you can tell at a glance that its position is no longer fresh. We would rather show an honest stationary bus than a faked moving one.',
+				},
+				{
+					heading: '“Raw” = measured positions only',
+					body: 'In “Raw” mode (the default), we show ONLY positions that were actually measured: on every ~30s feed update each bus jumps straight to its last reported location, with no estimation in between. It is choppier, but it is the unembellished truth, every dot is a real measurement, never a guess.',
+				},
+				{
+					heading: 'Why both modes',
+					body: 'Smooth is easier to watch but is an estimate; raw is the unembellished truth, you choose. This is honest by design: we do not hide the approximation from you, we let you see it or switch it off. The motion is still a touch laggy for now; a proper prediction engine is planned next.',
 				},
 			],
 		},

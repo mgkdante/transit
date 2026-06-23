@@ -223,6 +223,11 @@ export const ICON_SIZE_Z11_DEFAULT = 0.78;
 export const ICON_SIZE_Z11_SELECTED = 0.88;
 export const ICON_SIZE_Z11_HOVER = 1.0;
 
+// Bus body zoom legs (the DEFAULT, unhovered/unselected size at each zoom stop).
+// The silent "!" badge is sized as a fixed FRACTION of these so it scales with the
+// bus and stays ~75% of the bus icon at every zoom. Exported for the test.
+const ICON_SIZE_Z15_DEFAULT = 1.3;
+
 const ICON_SIZE = [
 	'interpolate',
 	['linear'],
@@ -237,7 +242,33 @@ const ICON_SIZE = [
 		ICON_SIZE_Z11_DEFAULT,
 	],
 	15,
-	['case', ['==', ['get', 'hovered'], 1], 1.75, ['==', ['get', 'selected'], 1], 1.5, 1.3],
+	[
+		'case',
+		['==', ['get', 'hovered'], 1],
+		1.75,
+		['==', ['get', 'selected'], 1],
+		1.5,
+		ICON_SIZE_Z15_DEFAULT,
+	],
+];
+
+// The silent "!" badge is ~75% of the bus icon — big and prominent (it FILLS most
+// of its sprite box, see silentBadgeImage), yet still reads as an overlay flag on
+// the bus, not a replacement for it. Sized off the bus DEFAULT legs × 0.75 and
+// interpolated over the same zoom range so it tracks the bus at every zoom.
+// Exported (z11) so the test asserts the ~75% ratio without parsing the expression.
+export const SILENT_BADGE_SCALE = 0.75;
+export const SILENT_ICON_SIZE_Z11 = ICON_SIZE_Z11_DEFAULT * SILENT_BADGE_SCALE;
+export const SILENT_ICON_SIZE_Z15 = ICON_SIZE_Z15_DEFAULT * SILENT_BADGE_SCALE;
+
+const SILENT_ICON_SIZE = [
+	'interpolate',
+	['linear'],
+	['zoom'],
+	11,
+	SILENT_ICON_SIZE_Z11,
+	15,
+	SILENT_ICON_SIZE_Z15,
 ];
 
 // The feature's `opacity` property, read data-driven. The per-vehicle silence fade
@@ -342,9 +373,11 @@ export function addVehicleLayers(map: MapLibreMap): void {
 		filter: ['all', ['==', ['get', 'matched'], 1], ['==', ['get', 'stale'], 1]],
 		layout: {
 			'icon-image': SILENT_ICON,
-			// Float the badge just above the bus glyph.
-			'icon-offset': [0, -15],
-			'icon-size': 0.62,
+			// Float the big "!" just above the bus glyph (icon-offset is in icon px,
+			// applied before icon-size, so it tracks the glyph as it scales).
+			'icon-offset': [0, -16],
+			// ~75% of the bus icon — a prominent alert flag, scaling with zoom.
+			'icon-size': SILENT_ICON_SIZE,
 			'icon-allow-overlap': true,
 			'icon-ignore-placement': true,
 		},

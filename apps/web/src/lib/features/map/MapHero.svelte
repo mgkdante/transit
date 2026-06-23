@@ -83,7 +83,7 @@
 		type RouteShapes,
 	} from '$lib/components/map/vehicleShapes';
 	import { liveTtlS } from '$lib/components/map/vehicleSilence';
-	import { sharedClock } from '$lib/stores';
+	import { sharedClock, motionMode } from '$lib/stores';
 	import { isPrefersReducedMotion } from '$lib/motion/reduced-motion.svelte';
 	import MapFilters from './MapFilters.svelte';
 	import { mapRailSizing } from './mapRailSizing';
@@ -91,8 +91,10 @@
 	import MapFreshness from './MapFreshness.svelte';
 	import MapFeedStallBanner from './MapFeedStallBanner.svelte';
 	import MapNearMeControl from './MapNearMeControl.svelte';
+	import MapMotionControl from './MapMotionControl.svelte';
 	import MapSelectionDetail from './MapSelectionDetail.svelte';
 	import { routeBoundsFromFile, zoomForNearMePrecision } from './mapGeo';
+	import { motionFeedAnimate } from './motionFeed';
 	import { parseCoordinateQuery, nearTargetKey } from './mapNearMe';
 	import { copy as MAP_COPY } from './map.copy';
 	import { shouldAnimate } from '$lib/motion/policy';
@@ -1026,6 +1028,12 @@
 		layerRevision;
 		if (!m) return;
 		const reduceMotion = isPrefersReducedMotion();
+		// Smooth = forward-projection ("almost real-time"); raw = ping-on-load (snap
+		// every feed, no estimation), the honest default. Reading motionMode.current
+		// here registers it as an effect dependency so flipping the toggle re-feeds
+		// and the controller switches between project and snap without a poll.
+		const smoothMotion = motionMode.current === 'smooth';
+		const animate = motionFeedAnimate({ smoothMotion, reduceMotion });
 		setRouteLines(m, routeLineRoutes, selectedRouteLine);
 		// serverNow read UNTRACKED here so this poll/filter/selection effect is NOT
 		// re-run by the per-second clock tick (the controller's rAF loop advances
@@ -1045,12 +1053,14 @@
 				stale: live.isStale,
 				// FORWARD projection: speed + fix-time per bus, the route shape to walk,
 				// and the LIVE skew-free clock read each frame so the dot tracks
-				// estimated-NOW. Reduced motion / global stale snap to reported positions
-				// (animate=false inside the controller), so these are inert there.
+				// estimated-NOW. Reduced motion / global stale / RAW mode snap to reported
+				// positions (animate=false inside the controller), so these are inert there.
 				fixFor,
-				shapeFor: reduceMotion ? undefined : shapeFor,
+				shapeFor: animate ? shapeFor : undefined,
 				serverNowFn: () => sharedClock.serverNow,
-				animate: !reduceMotion,
+				// animate = smooth mode AND motion-gated allowed (reduced-motion off). In
+				// raw mode the controller SNAPS each ~30s feed (ping-on-load, no estimate).
+				animate,
 			},
 		);
 		setStops(
@@ -1233,6 +1243,11 @@
 		onstopselect={selectNearbyStop}
 		onclear={clearNearMeOrigin}
 	/>
+
+	<!-- Bottom-left: the honest motion-mode switch (raw vs almost-real-time),
+	     bound to the motionMode store. Floats clear of the bottom-right near-me
+	     control; deep-links into the /metrics live-positions explainer. -->
+	<MapMotionControl {locale} copy={t} />
 
 	<!-- Left: the combinable state filter (URL-driven). -->
 	<div class="map-overlay map-filter-panel">

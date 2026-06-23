@@ -3,3 +3,4 @@ export { dataRefresh } from './refresh.svelte';
 export { sharedClock } from './clock.svelte';
 export { dataPulse } from './dataPulse.svelte';
 export { persisted, type Persisted, type LocaleFree } from './persisted.svelte';
+export { motionMode, type MotionMode, MOTION_MODE_STORAGE_KEY } from './motionMode.svelte';

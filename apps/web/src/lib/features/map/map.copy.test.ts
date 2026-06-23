@@ -48,4 +48,25 @@ describe('map copy', () => {
 		expect(all).not.toContain('—'); // em dash
 		expect(all).not.toContain('–'); // en dash
 	});
+
+	it('carries the bilingual motion-mode switch copy (raw default + almost real-time)', () => {
+		for (const c of [copy.en, copy.fr]) {
+			for (const key of [
+				'label',
+				'smooth',
+				'raw',
+				'toRaw',
+				'toSmooth',
+				'hintSmooth',
+				'hintRaw',
+				'explain',
+			] as const) {
+				expect(c.motion[key].trim()).toBeTruthy();
+			}
+		}
+		expect(copy.en.motion.smooth).toBe('Almost real-time');
+		expect(copy.en.motion.raw).toBe('Raw');
+		expect(copy.fr.motion.smooth).toBe('Presque en temps réel');
+		expect(copy.fr.motion.raw).toBe('Brut');
+	});
 });

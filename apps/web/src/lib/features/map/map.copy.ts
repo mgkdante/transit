@@ -75,6 +75,33 @@ export interface MapCopy {
 	 * last-update age slots in per-locale. Em-dash-free (repo doctrine).
 	 */
 	readonly feedNotResponding: (age: string) => string;
+	/**
+	 * Motion-mode control — the honest "how do we draw moving buses?" switch bound
+	 * to the motionMode store. A real role="switch": OFF = RAW (the default, buses
+	 * snap to their last reported position on every ~30s feed, no estimation), ON =
+	 * SMOOTH ("almost real-time", buses glide forward along their route at their
+	 * last reported speed between feeds — an approximation, not a measurement). The
+	 * inline hint names which truth you are looking at; the link deep-dives into the
+	 * /metrics explainer.
+	 */
+	readonly motion: {
+		/** Visible control label (mono control voice). */
+		readonly label: string;
+		/** ON-state name — the smooth/estimated mode. */
+		readonly smooth: string;
+		/** OFF-state name — the raw/measured mode. */
+		readonly raw: string;
+		/** aria-label when SMOOTH is active (the action a press performs: go to raw). */
+		readonly toRaw: string;
+		/** aria-label when RAW is active (the action a press performs: go to smooth). */
+		readonly toSmooth: string;
+		/** Inline hint shown under the label while SMOOTH is active. */
+		readonly hintSmooth: string;
+		/** Inline hint shown under the label while RAW is active. */
+		readonly hintRaw: string;
+		/** "How this works" deep-link text → the /metrics live-positions explainer. */
+		readonly explain: string;
+	};
 }
 
 export const copy: Record<Locale, MapCopy> = {
@@ -122,6 +149,16 @@ export const copy: Record<Locale, MapCopy> = {
 		liveUnavailable: 'Live data unavailable right now. The map and stops still work.',
 		liveNoVehicles: 'No vehicles to show right now.',
 		feedNotResponding: (age) => `Live feed not responding. Last update ${age}.`,
+		motion: {
+			label: 'Motion',
+			smooth: 'Almost real-time',
+			raw: 'Raw',
+			toRaw: 'Switch to raw positions (measured only, no estimation)',
+			toSmooth: 'Switch to almost real-time (estimated motion between reports)',
+			hintSmooth: 'Estimated motion between reports',
+			hintRaw: 'Measured positions only',
+			explain: 'How this works',
+		},
 	},
 	fr: {
 		kicker: 'RÉSEAU · EN DIRECT',
@@ -168,6 +205,16 @@ export const copy: Record<Locale, MapCopy> = {
 			'Données en direct indisponibles pour l’instant. La carte et les arrêts fonctionnent toujours.',
 		liveNoVehicles: 'Aucun véhicule à afficher pour l’instant.',
 		feedNotResponding: (age) => `Le flux en direct ne répond pas. Dernière mise à jour ${age}.`,
+		motion: {
+			label: 'Mouvement',
+			smooth: 'Presque en temps réel',
+			raw: 'Brut',
+			toRaw: 'Passer aux positions brutes (mesurées seulement, sans estimation)',
+			toSmooth: 'Passer au presque en temps réel (mouvement estimé entre les relevés)',
+			hintSmooth: 'Mouvement estimé entre les relevés',
+			hintRaw: 'Positions mesurées seulement',
+			explain: 'Comment ça marche',
+		},
 	},
 };
 

@@ -201,6 +201,53 @@ describe('MetricsExplainer', () => {
 		expect(within(rail).getByRole('button', { name: en.lacunes.title })).toBeInTheDocument();
 	});
 
+	it('renders the live-positions ("almost real-time, not real-time") explainer card with every named point', () => {
+		const { container } = render(MetricsExplainer);
+
+		// The on-map "How this works" link deep-links to /metrics#live-positions, so
+		// this anchored section block MUST exist as an in-page element id.
+		const block = container.querySelector('#live-positions');
+		expect(block, 'live-positions section block').not.toBeNull();
+		expect(
+			block?.querySelector('[data-toc="live-positions"]'),
+			'live-positions card [data-toc]',
+		).not.toBeNull();
+
+		// Title + lede + every honest sub-point heading + body survive into the DOM
+		// (content is force-mounted by the shared collapsible, present while collapsed).
+		const text = block?.textContent ?? '';
+		expect(text).toContain(en.livePositions.title);
+		expect(text).toContain(en.livePositions.lede);
+		for (const point of en.livePositions.points) {
+			expect(text).toContain(point.heading);
+			expect(text).toContain(point.body);
+		}
+		// Each point renders as a list <li> + an <h3> heading (a11y structure).
+		const count = en.livePositions.points.length;
+		expect(block?.querySelectorAll('.metrics-live__list li')).toHaveLength(count);
+		expect(block?.querySelectorAll('.metrics-live__heading')).toHaveLength(count);
+	});
+
+	it('registers the live-positions section in the desktop TOC rail', () => {
+		const { container } = render(MetricsExplainer);
+		const rail = container.querySelector('.context-column') as HTMLElement;
+		expect(within(rail).getByRole('button', { name: en.livePositions.title })).toBeInTheDocument();
+	});
+
+	it('keeps the live-positions explainer honest (names estimate vs measured, no fabricated certainty)', () => {
+		// The whole point is honest framing: the EN copy must say it is an estimate /
+		// approximation between reports, that a stale bus freezes with a "!", and that
+		// raw shows measured-only. Guard the load-bearing honesty words.
+		const joined = [en.livePositions.lede, ...en.livePositions.points.map((p) => p.body)]
+			.join(' ')
+			.toLowerCase();
+		expect(joined).toContain('estimate');
+		expect(joined).toContain('approximation');
+		expect(joined).toContain('measured');
+		expect(joined).toContain('freezes');
+		expect(joined).toContain('~20-60 seconds');
+	});
+
 	// Helpers: the metric section cards are the shared CollapsibleSection, whose
 	// open/closed state is reflected on the disclosure trigger's aria-expanded.
 	function metricTriggers(container: HTMLElement): HTMLElement[] {

@@ -6,6 +6,9 @@ import {
 	addVehicleLayers,
 	ICON_SIZE_Z11_DEFAULT,
 	ICON_SIZE_Z11_HOVER,
+	SILENT_BADGE_SCALE,
+	SILENT_ICON_SIZE_Z11,
+	SILENT_ICON_SIZE_Z15,
 	VEHICLE_BODY_LAYER,
 	VEHICLE_HEADING_LAYER,
 	VEHICLE_SILENT_LAYER,
@@ -421,15 +424,50 @@ describe('toVehicleFeatures per-bus staleness flag (S5.1: off reported_utc)', ()
 			layout: Record<string, unknown>;
 			filter: unknown;
 		};
-		expect((rendered.layout ?? {})['icon-image']).toBe(SILENT_ICON);
+		const layout = (rendered.layout ?? {}) as Record<string, unknown>;
+		expect(layout['icon-image']).toBe(SILENT_ICON);
 		// Shows only matched buses that are per-bus stale.
 		expect(JSON.stringify(rendered.filter)).toContain('matched');
 		expect(JSON.stringify(rendered.filter)).toContain('stale');
+		// The big "!" flag stays put over the bus and on top of every neighbour.
+		expect(layout['icon-allow-overlap']).toBe(true);
+		expect(layout['icon-ignore-placement']).toBe(true);
 		// Drawn ABOVE the body + heading so the flag is never occluded.
 		const bodyIndex = layers.findIndex((l) => l.id === VEHICLE_BODY_LAYER);
 		const headingIndex = layers.findIndex((l) => l.id === VEHICLE_HEADING_LAYER);
 		const silentIndex = layers.findIndex((l) => l.id === VEHICLE_SILENT_LAYER);
 		expect(silentIndex).toBeGreaterThan(bodyIndex);
 		expect(silentIndex).toBeGreaterThan(headingIndex);
+	});
+
+	it('sizes the big "!" badge at ~75% of the bus icon, scaling with zoom (S5.1: prominent flag)', () => {
+		const layers: LayerSpecification[] = [];
+		const map = {
+			getLayer: () => undefined,
+			addLayer: (nextLayer: LayerSpecification) => {
+				layers.push(nextLayer);
+			},
+		} as unknown as MapLibreMap;
+		addVehicleLayers(map);
+
+		// The exported consts ARE the bus DEFAULT legs × 0.75.
+		expect(SILENT_BADGE_SCALE).toBe(0.75);
+		expect(SILENT_ICON_SIZE_Z11).toBeCloseTo(ICON_SIZE_Z11_DEFAULT * 0.75, 6);
+		expect(SILENT_ICON_SIZE_Z11 / ICON_SIZE_Z11_DEFAULT).toBeCloseTo(0.75, 6);
+		// z11 ≈ 0.585, z15 ≈ 0.975 (0.75 × the bus 0.78 / 1.3 default legs).
+		expect(SILENT_ICON_SIZE_Z11).toBeCloseTo(0.585, 3);
+		expect(SILENT_ICON_SIZE_Z15).toBeCloseTo(0.975, 3);
+		// It grows with zoom (z15 leg larger than z11) — tracks the bus, not fixed.
+		expect(SILENT_ICON_SIZE_Z15).toBeGreaterThan(SILENT_ICON_SIZE_Z11);
+
+		// The layer wires those legs into a top-level zoom-interpolate icon-size.
+		const silent = layers.find((l) => l.id === VEHICLE_SILENT_LAYER);
+		if (!silent) throw new Error('expected silent layer');
+		const layout = (silent.layout ?? {}) as Record<string, unknown>;
+		const size = layout['icon-size'];
+		expect(usesTopLevelZoomExpression(size)).toBe(true);
+		const sizeJson = JSON.stringify(size);
+		expect(sizeJson).toContain(String(SILENT_ICON_SIZE_Z11));
+		expect(sizeJson).toContain(String(SILENT_ICON_SIZE_Z15));
 	});
 });

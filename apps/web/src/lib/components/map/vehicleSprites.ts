@@ -210,41 +210,46 @@ function chevronImage(fill: string, halo: string): ImageData {
 }
 
 /**
- * Bake the SILENT "!" badge — a filled DISC (`fill`, ringed by a 2px `halo`
- * stroke) in the UPPER portion of the box, with a "!" CUT in the halo colour (a
- * short rounded vertical bar + a dot beneath it) centred in the disc. Drawn as a
- * SEPARATE layer ABOVE a frozen/stale bus so a no-longer-reporting vehicle is
- * FLAGGED, not hidden. The flag is now per-bus (each bus's own reported_utc age),
- * not the old global silence.
+ * Bake the SILENT "!" badge — a BIG, bold alert mark that FILLS most of its
+ * sprite box (it reads at a glance as a real alert flag, not a tiny corner dot).
+ * A high-contrast rounded-square badge (`fill`, ringed by a `halo` stroke) holds
+ * a FAT rounded vertical bar + a fat dot, both cut in the halo colour, centred so
+ * the "!" dominates the glyph. Drawn as a SEPARATE layer ABOVE a frozen/stale bus
+ * so a no-longer-reporting vehicle is FLAGGED, not hidden. The flag is per-bus
+ * (each bus's own reported_utc age), not the old global silence.
  */
 function silentBadgeImage(fill: string, halo: string): ImageData {
 	const { ctx, px } = newCtx();
 	ctx.lineJoin = 'round';
 	ctx.lineCap = 'round';
 
-	// Disc — centred horizontally, sitting in the upper portion of the box.
 	const cx = SIZE / 2;
-	const cy = SIZE * 0.32;
-	const r = 5.4;
-	ctx.beginPath();
-	ctx.arc(cx, cy, r, 0, Math.PI * 2);
+	const cy = SIZE / 2;
+
+	// Badge background — a rounded square filling most of the box (small margin so
+	// the halo ring stays inside the sprite). This is the prominent alert plate the
+	// fat "!" sits on, high-contrast against any bus colour beneath it.
+	const margin = 2.4;
+	const side = SIZE - margin * 2;
+	roundedRect(ctx, margin, margin, side, side, side * 0.28);
 	ctx.fillStyle = fill;
 	ctx.fill();
 	ctx.lineWidth = 2;
 	ctx.strokeStyle = halo;
 	ctx.stroke();
 
-	// "!" cut in the halo colour — a short rounded vertical bar…
+	// "!" — a FAT rounded vertical bar cut in the halo colour, spanning most of the
+	// badge height so the glyph dominates. Drawn as a thick round-capped stroke.
 	ctx.strokeStyle = halo;
-	ctx.lineWidth = 1.7;
+	ctx.lineWidth = SIZE * 0.16;
 	ctx.beginPath();
-	ctx.moveTo(cx, cy - 2.5);
-	ctx.lineTo(cx, cy + 0.9);
+	ctx.moveTo(cx, cy - side * 0.3);
+	ctx.lineTo(cx, cy + side * 0.07);
 	ctx.stroke();
 
-	// …and a dot beneath it.
+	// …and a FAT dot beneath the bar.
 	ctx.beginPath();
-	ctx.arc(cx, cy + 3.1, 0.95, 0, Math.PI * 2);
+	ctx.arc(cx, cy + side * 0.28, SIZE * 0.085, 0, Math.PI * 2);
 	ctx.fillStyle = halo;
 	ctx.fill();
 

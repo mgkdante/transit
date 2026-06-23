@@ -86,6 +86,13 @@
 	// its data-toc hook, and its ToC entry id.
 	const LACUNES_ANCHOR = 'structural-gaps';
 
+	// Stable, locale-free anchor for the live-positions explainer card. The on-map
+	// "How this works" link (MapMotionControl) deep-links to /metrics#live-positions,
+	// so this id is load-bearing and must not change. It is a non-metric section, so
+	// it carries an icon badge (not the continuous metric number) and sits just
+	// before the structural-gaps close.
+	const LIVE_POSITIONS_ANCHOR = 'live-positions';
+
 	// Honesty layer — the active provider's feed-conformance verdict. Supplementary
 	// (the badge renders nothing when conformance is null / the fetch fails), so it
 	// never blocks the static methodology article.
@@ -157,6 +164,16 @@
 			badge: { kind: 'number' as const, value: i + 1 },
 			children: [],
 		})),
+		// The live-positions explainer — a non-metric section (the on-map "How this
+		// works" link deep-links here), carrying the same 'chart' icon mark its card
+		// shows so the TOC entry and the card badge stay in lock-step.
+		{
+			id: LIVE_POSITIONS_ANCHOR,
+			title: t.livePositions.title,
+			level: 2,
+			badge: { kind: 'icon' as const, name: 'chart' },
+			children: [],
+		},
 		// The structural-gaps card closes the page — a non-metric section, so it
 		// carries the same 'eye' icon mark its card shows (not the metric number run),
 		// keeping the TOC entry and the card badge in lock-step.
@@ -468,6 +485,35 @@
 					{/each}
 				</div>
 			{/each}
+
+			<!-- Live vehicle positions: the honest "almost real-time, not real-time"
+			     explainer for how the live map DRAWS moving buses. Same collapsible-card
+			     spine as the methodology sections, with an icon badge (not a metric
+			     number); carries the deep-link target id + data-toc anchor the on-map
+			     "How this works" link points at (/metrics#live-positions). -->
+			<div class="section-block metrics-live" id={LIVE_POSITIONS_ANCHOR}>
+				<CollapsibleSection
+					title={t.livePositions.title}
+					anchor={LIVE_POSITIONS_ANCHOR}
+					open={cardsOpen}
+				>
+					{#snippet icon()}
+						<SectionIcon name="chart" class="h-4 w-4 shrink-0 text-primary" />
+					{/snippet}
+					<div class="metric__body">
+						<p class="metric__prose metrics-live__lede">{t.livePositions.lede}</p>
+						<ul class="metrics-live__list">
+							{#each t.livePositions.points as point (point.heading)}
+								<li class="metrics-live__point">
+									<h3 class="metrics-live__heading">{point.heading}</h3>
+									<p class="metric__prose">{point.body}</p>
+								</li>
+							{/each}
+						</ul>
+						<a class="metric__top" href="#metrics-provenance">{t.backToTop}</a>
+					</div>
+				</CollapsibleSection>
+			</div>
 
 			<!-- Structural gaps ("Lacunes"): the honest close — what these metrics
 			     CANNOT tell the rider. Same collapsible-card spine as the methodology
@@ -790,6 +836,41 @@
 		border-block-start: none;
 	}
 	.metrics-lacunes__heading {
+		margin: 0;
+		font-family: var(--font-heading);
+		font-size: var(--text-small);
+		font-weight: 600;
+		line-height: 1.4;
+		color: var(--foreground);
+	}
+
+	/* ── Live-positions card ──────────────────────────────────────────────────
+	   Same card spine as the structural-gaps card: the points read as discrete
+	   named blocks (heading + plain body), separated by a hairline rule so each is
+	   a clear, self-contained admission. No data marks, no --primary. */
+	.metrics-live__lede {
+		color: var(--muted-foreground);
+	}
+	.metrics-live__list {
+		display: flex;
+		flex-direction: column;
+		gap: 1.25rem;
+		margin: 0;
+		padding: 0;
+		list-style: none;
+	}
+	.metrics-live__point {
+		display: flex;
+		flex-direction: column;
+		gap: 0.4rem;
+		padding-block-start: 1.25rem;
+		border-block-start: 1px solid var(--border-hairline, var(--border));
+	}
+	.metrics-live__point:first-child {
+		padding-block-start: 0;
+		border-block-start: none;
+	}
+	.metrics-live__heading {
 		margin: 0;
 		font-family: var(--font-heading);
 		font-size: var(--text-small);
