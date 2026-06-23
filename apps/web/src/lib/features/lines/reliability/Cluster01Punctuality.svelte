@@ -31,6 +31,7 @@
 -->
 <script lang="ts">
 	import type { Locale } from '$lib/i18n';
+	import { stopNameFallback } from '$lib/site/absence';
 	import { fmtDelayMin, fmtPct } from '$lib/utils';
 	import type { ReliabilityPeriod } from '$lib/v1';
 	import type { SeverityCode } from '$lib/v1/schemas';
@@ -127,7 +128,7 @@
 			return {
 				key: w.id,
 				rank: i + 1,
-				title: w.name ?? w.id,
+				title: w.name ?? stopNameFallback(w.id, locale),
 				severity: sev,
 				value: worst > 0 ? Math.min(1, Math.max(0, delay / worst)) : null,
 				display: min(w.avg_delay_min) ?? copy.strip.noData,

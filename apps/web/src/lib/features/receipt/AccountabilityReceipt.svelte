@@ -25,6 +25,7 @@
 -->
 <script lang="ts">
 	import { getLocale, type Locale } from '$lib/i18n';
+	import { routeNameFallback, stopNameFallback } from '$lib/site/absence';
 	import { layout } from '$lib/nav';
 	import { formatDateKey } from '$lib/utils/time';
 	import {
@@ -301,7 +302,7 @@
 											<EntityRow
 												target={{ kind: 'line', id: worstRoute.id }}
 												{locale}
-												title={worstRoute.name ?? t.worst.unnamed}
+												title={worstRoute.name ?? routeNameFallback(worstRoute.id, locale)}
 												subtitle={`${t.worst.routeLabel} · ${worstRoute.id}`}
 												meta={`${t.worst.routeDeltaLabel} ${fmtDelta(worstRoute.otp_delta_pts)}`}
 											/>
@@ -310,7 +311,7 @@
 											<EntityRow
 												target={{ kind: 'stop', id: worstStop.id }}
 												{locale}
-												title={worstStop.name ?? t.worst.unnamed}
+												title={worstStop.name ?? stopNameFallback(worstStop.id, locale)}
 												subtitle={`${t.worst.stopLabel} · ${worstStop.id}`}
 												meta={`${t.worst.stopDelayLabel} ${fmtMin(worstStop.avg_delay_min)}`}
 											/>
