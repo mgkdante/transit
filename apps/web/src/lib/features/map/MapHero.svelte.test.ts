@@ -109,6 +109,20 @@ describe('MapHero mobile chrome', () => {
 		expect(s).toContain('function focusSelection(selection: MapSelection)');
 	});
 
+	it('uncollapses the detail panel when a map marker is selected', () => {
+		const s = source();
+		// A direct map pick must always reveal its detail: if the panel was collapsed
+		// in the icon strip, expand it (detailCollapsed = false) alongside detailOpen.
+		const selectPickedFeature = s.match(/function selectPickedFeature[\s\S]*?\n\t}/)?.[0] ?? '';
+		expect(selectPickedFeature).toContain('detailOpen = true');
+		expect(selectPickedFeature).toContain('detailCollapsed = false');
+
+		// The near-me stop pick is a marker selection too, so it expands as well.
+		const selectNearbyStop = s.match(/function selectNearbyStop[\s\S]*?\n\t}/)?.[0] ?? '';
+		expect(selectNearbyStop).toContain('detailOpen = true');
+		expect(selectNearbyStop).toContain('detailCollapsed = false');
+	});
+
 	it('maps geolocation failure codes to distinct, secure-context-aware copy', () => {
 		const s = source();
 

@@ -117,7 +117,7 @@ describe('MapMotionControl', () => {
 		expect(rows[3]).toBe(screen.getByRole('link', { name: copy.en.motion.explain }));
 	});
 
-	it('COLLAPSED renders a single compact square switch (no hint, no link) that still toggles', async () => {
+	it('COLLAPSED renders a single compact ROUND switch carrying the motion icon (no hint, no link) that still toggles', async () => {
 		const { rerender } = render(MapMotionControl, {
 			locale: 'en',
 			copy: copy.en,
@@ -125,19 +125,34 @@ describe('MapMotionControl', () => {
 		});
 		const stack = screen.getByTestId('map-motion');
 		expect(stack).toHaveAttribute('data-collapsed', 'true');
-		// Exactly one control — the square switch; no hint text and no explain link.
+		// Exactly one control — the round switch; no hint text and no explain link.
 		expect(stack.children).toHaveLength(1);
 		const sw = screen.getByTestId('map-motion-switch');
 		expect(sw).toHaveAttribute('role', 'switch');
-		// Outline (non-filled) square = RAW/OFF by default.
+		// The round collapsed form is the round class, not the old square.
+		expect(sw).toHaveClass('map-motion-round');
+		// It carries a recognizable motion icon (a Lucide svg glyph) so the collapsed
+		// rail still reads as the motion control.
+		expect(sw.querySelector('svg')).not.toBeNull();
+		// Outline (non-filled) = RAW/OFF by default.
 		expect(sw).toHaveAttribute('aria-checked', 'false');
 		expect(sw).toHaveAttribute('aria-label', copy.en.motion.toSmooth);
 		expect(screen.queryByText(copy.en.motion.hintRaw)).not.toBeInTheDocument();
 		expect(screen.queryByRole('link', { name: copy.en.motion.explain })).not.toBeInTheDocument();
-		// Clicking the square still toggles the store; re-render shows the filled state.
+		// Clicking the round switch still toggles the store; re-render shows the filled state.
 		sw.click();
 		expect(motionMode.current).toBe('smooth');
 		await rerender({ locale: 'en', copy: copy.en, collapsed: true });
 		expect(screen.getByTestId('map-motion-switch')).toHaveAttribute('aria-checked', 'true');
+	});
+
+	it('EXPANDED label row carries the motion badge icon next to the overline', () => {
+		render(MapMotionControl, { locale: 'en', copy: copy.en });
+		const label = document.getElementById('map-motion-label');
+		expect(label).not.toBeNull();
+		// The overline keeps its text AND gains a small badge glyph (a Lucide svg),
+		// mirroring how the filter sections badge their section labels.
+		expect(label).toHaveTextContent(copy.en.motion.label);
+		expect(label?.querySelector('svg')).not.toBeNull();
 	});
 });

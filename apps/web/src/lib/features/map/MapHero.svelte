@@ -532,6 +532,9 @@
 		selectionStack = [];
 		selected = next;
 		detailOpen = true;
+		// A fresh pick always shows its detail: if the panel was sitting collapsed in
+		// the icon strip, expand it so the new selection is visible, never stranded.
+		detailCollapsed = false;
 		// Zoom to whatever was clicked, same as a search pick (data is already
 		// loaded — it's on the map). Point entities centre + zoom in; a route frames
 		// its linework.
@@ -924,6 +927,8 @@
 		selectionStack = [];
 		selected = { kind: 'stop', id: stop.id };
 		detailOpen = true;
+		// A fresh pick always shows its detail: expand the panel if it was collapsed.
+		detailCollapsed = false;
 		if (map) panTo([stop.lon, stop.lat], Math.max(map.getZoom(), 15));
 	}
 

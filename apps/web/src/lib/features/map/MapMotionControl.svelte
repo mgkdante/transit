@@ -16,13 +16,17 @@
   same panel on desktop and mobile), borrowing that panel's card surface.
 
   When the desktop Controls panel is COLLAPSED (the narrow icon-only rail), the
-  control shrinks to a SINGLE compact square button (filled = Smooth/ON, outline =
-  Raw/OFF) sized + centred to match the collapsed filter chips. The parent passes
-  `collapsed` down (MapFilters → motionHeader → here); the drawer never collapses,
-  so mobile always shows the 4-row stack. a11y: a real <button role="switch"> with
-  aria-checked + a bilingual aria-label in both forms.
+  control shrinks to a SINGLE compact ROUND button carrying the motion (Waves) icon
+  (filled --primary = Smooth/ON, outline = Raw/OFF) sized + centred to match the
+  collapsed filter chips, the round shape pairing with the floating pill. The parent
+  passes `collapsed` down (MapFilters → motionHeader → here); the drawer never
+  collapses, so mobile always shows the 4-row stack. The expanded label row carries
+  the same Waves badge next to its overline, mirroring the filter section badges.
+  a11y: a real <button role="switch"> with aria-checked + a bilingual aria-label in
+  both forms.
 -->
 <script lang="ts">
+	import WavesIcon from '@lucide/svelte/icons/waves';
 	import { motionMode } from '$lib/stores';
 	import { localizeHref, type Locale } from '$lib/i18n';
 	import type { MapCopy } from './map.copy';
@@ -49,22 +53,32 @@
 
 <div class="map-motion" data-testid="map-motion" data-collapsed={collapsed}>
 	{#if collapsed}
-		<!-- Collapsed rail: ONE compact square that still toggles. Filled = Smooth/ON,
-		     outline = Raw/OFF — the same affordance as the icon-only filter chips. -->
+		<!-- Collapsed rail: ONE compact ROUND toggle that still toggles, carrying the
+		     motion (Waves) icon so the rail stays recognizable. FILLED (--primary) =
+		     Smooth/ON, OUTLINE (hairline border) = Raw/OFF — the round form pairs with
+		     the floating pill better than a square. -->
 		<button
 			type="button"
-			class="map-motion-square"
+			class="map-motion-round"
 			role="switch"
 			aria-checked={smooth}
 			aria-label={smooth ? t.motion.toRaw : t.motion.toSmooth}
 			data-testid="map-motion-switch"
 			onclick={() => motionMode.toggle()}
 		>
-			<span class="map-motion-square-fill" aria-hidden="true"></span>
+			<span class="map-motion-round-icon" aria-hidden="true">
+				<WavesIcon size={15} strokeWidth={2.2} />
+			</span>
 		</button>
 	{:else}
-		<!-- Row 1: the label. -->
-		<span class="map-motion-label" id="map-motion-label">{t.motion.label}</span>
+		<!-- Row 1: the label, prefixed by a small motion (Waves) badge mirroring how the
+		     filter sections badge their overline label. -->
+		<span class="map-motion-label" id="map-motion-label">
+			<span class="map-motion-badge" aria-hidden="true">
+				<WavesIcon size={13} strokeWidth={2.35} />
+			</span>
+			<span class="map-motion-label-text">{t.motion.label}</span>
+		</span>
 		<!-- Row 2: the toggle switch (track/thumb + state name). -->
 		<button
 			type="button"
@@ -112,11 +126,34 @@
 		justify-items: center;
 	}
 	.map-motion-label {
+		display: flex;
+		align-items: center;
+		gap: 0.45rem;
 		font-family: var(--font-mono);
 		font-size: var(--text-micro);
 		letter-spacing: var(--tracking-eyebrow);
 		text-transform: uppercase;
 		color: var(--muted-foreground);
+	}
+	/* Small motion badge next to the overline label — mirrors the filter sections'
+	   badge-icon-by-label treatment so the MOTION row reads as part of the family. */
+	.map-motion-badge {
+		display: inline-grid;
+		place-items: center;
+		width: 1.4rem;
+		height: 1.4rem;
+		flex: none;
+		color: var(--primary);
+		background: color-mix(in srgb, var(--primary) 14%, transparent);
+		border: 1px solid color-mix(in srgb, var(--primary) 32%, transparent);
+		border-radius: var(--radius-sm);
+	}
+	.map-motion-badge :global(svg) {
+		width: 0.82rem;
+		height: 0.82rem;
+	}
+	.map-motion-label-text {
+		min-width: 0;
 	}
 	/* The switch itself — a real role="switch" button: a sliding track/thumb pair
 	   (the on/off affordance) plus the current state name. Calm at rest; lights to
@@ -214,59 +251,51 @@
 		border-radius: 2px;
 	}
 
-	/* Collapsed square — a single ~2rem toggle that matches the collapsed filter
-	   chips' size + centred placement. OUTLINE (non-filled) = Raw/OFF, the calm
-	   default; FILLED with --primary = Smooth/ON, the opted-in estimate. */
-	.map-motion-square {
+	/* Collapsed rail — a single ~2rem ROUND toggle carrying the motion (Waves) icon,
+	   centred to match the collapsed filter chips and pairing with the floating pill.
+	   OUTLINE (transparent fill, hairline border, muted icon) = Raw/OFF, the calm
+	   default; FILLED with --primary (icon in --primary-foreground) = Smooth/ON, the
+	   opted-in estimate. */
+	.map-motion-round {
 		display: inline-grid;
 		place-items: center;
 		width: 2rem;
 		height: 2rem;
 		padding: 0;
-		background: color-mix(in srgb, var(--muted) 70%, transparent);
+		background: transparent;
 		border: 1px solid var(--border-subtle);
-		border-radius: var(--radius-sm);
+		border-radius: 50%;
+		color: var(--muted-foreground);
 		cursor: pointer;
 		transition:
+			color var(--duration-fast, 150ms) var(--ease-default, ease),
 			background-color var(--duration-fast, 150ms) var(--ease-default, ease),
 			border-color var(--duration-fast, 150ms) var(--ease-default, ease);
 	}
-	.map-motion-square:hover,
-	.map-motion-square:focus-visible {
+	.map-motion-round:hover,
+	.map-motion-round:focus-visible {
 		border-color: color-mix(in srgb, var(--primary) 48%, var(--border) 52%);
 		outline: none;
 	}
-	.map-motion-square:focus-visible {
+	.map-motion-round:focus-visible {
 		outline: 2px solid var(--ring);
 		outline-offset: 2px;
 	}
-	.map-motion-square[aria-checked='true'] {
-		background: color-mix(in srgb, var(--primary) 16%, var(--muted) 84%);
-		border-color: color-mix(in srgb, var(--primary) 55%, var(--border) 45%);
-	}
-	/* The inner glyph: an outline square when OFF (Raw), a FILLED --primary square
-	   when ON (Smooth) — the literal "filled vs non-filled square" affordance. */
-	.map-motion-square-fill {
-		width: 0.85rem;
-		height: 0.85rem;
-		border-radius: 2px;
-		background: transparent;
-		border: 1.5px solid var(--muted-foreground);
-		transition:
-			background-color var(--duration-fast, 150ms) var(--ease-default, ease),
-			border-color var(--duration-fast, 150ms) var(--ease-default, ease);
-	}
-	.map-motion-square[aria-checked='true'] .map-motion-square-fill {
+	.map-motion-round[aria-checked='true'] {
+		color: var(--primary-foreground);
 		background: var(--primary);
 		border-color: var(--primary);
+	}
+	.map-motion-round-icon {
+		display: inline-grid;
+		place-items: center;
 	}
 
 	@media (prefers-reduced-motion: reduce) {
 		.map-motion-track,
 		.map-motion-thumb,
 		.map-motion-switch,
-		.map-motion-square,
-		.map-motion-square-fill,
+		.map-motion-round,
 		.map-motion-explain {
 			transition: none;
 		}
