@@ -48,6 +48,11 @@ export interface MapCopy {
 	readonly entityFilterTitle: string;
 	/** Filter panel. */
 	readonly filterTitle: string;
+	/**
+	 * Filter-panel title when the panel doubles as the mobile controls sheet
+	 * (motion toggle pinned to the top alongside the filters).
+	 */
+	readonly controlsTitle: string;
 	readonly filterClear: string;
 	readonly filterClose: string;
 	readonly routeRemove: string;
@@ -138,6 +143,7 @@ export const copy: Record<Locale, MapCopy> = {
 		legendTitle: 'Markers',
 		entityFilterTitle: 'Filter map markers',
 		filterTitle: 'Filter',
+		controlsTitle: 'Controls',
 		filterClear: 'Clear',
 		filterClose: 'Close filters',
 		routeRemove: 'Remove route',
@@ -194,6 +200,7 @@ export const copy: Record<Locale, MapCopy> = {
 		legendTitle: 'Marqueurs',
 		entityFilterTitle: 'Filtrer les marqueurs de la carte',
 		filterTitle: 'Filtrer',
+		controlsTitle: 'Contrôles',
 		filterClear: 'Effacer',
 		filterClose: 'Fermer les filtres',
 		routeRemove: 'Retirer la ligne',

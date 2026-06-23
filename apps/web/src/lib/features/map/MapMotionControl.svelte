@@ -23,9 +23,16 @@
 	interface Props {
 		locale: Locale;
 		copy: MapCopy;
+		/**
+		 * "floating" (default) = the absolute-positioned `.map-overlay` chip on the
+		 * canvas, with a STABLE fixed width sized to the wider state so toggling
+		 * raw⇄smooth never reflows. "inline" = the same row+switch+hint content laid
+		 * out statically at full container width (for the mobile filter sheet).
+		 */
+		variant?: 'floating' | 'inline';
 	}
 
-	let { locale, copy: t }: Props = $props();
+	let { locale, copy: t, variant = 'floating' }: Props = $props();
 
 	const smooth = $derived(motionMode.isSmooth);
 	// Deep-link straight to the live-positions explainer section on /metrics,
@@ -33,7 +40,7 @@
 	const explainHref = $derived(`${localizeHref('/metrics', locale)}#live-positions`);
 </script>
 
-<div class="map-motion">
+<div class="map-motion" data-variant={variant} data-testid="map-motion">
 	<div class="map-motion-row">
 		<span class="map-motion-label" id="map-motion-label">{t.motion.label}</span>
 		<button
@@ -59,24 +66,45 @@
 </div>
 
 <style>
-	/* Floating chip, bottom-left of the canvas — clear of the bottom-right near-me
-	   control and the right detail panel (whose width the offset tracks). Same card
-	   surface + hairline + blur language as the rest of the map chrome. */
+	/* Shared inner layout for both variants — the row+switch+hint stack. Geometry
+	   (position / width / card chrome) is gated per-variant below. */
 	.map-motion {
+		display: grid;
+		gap: 0.3rem;
+	}
+
+	/* FLOATING chip, bottom-left of the canvas — clear of the bottom-right near-me
+	   control and the right detail panel (whose width the offset tracks). Same card
+	   surface + hairline + blur language as the rest of the map chrome.
+
+	   STABLE GEOMETRY: a FIXED width sized to the WIDER state so toggling raw⇄smooth
+	   ("Raw"/"Brut" vs "Almost real-time"/"Presque en temps réel") never jumps the
+	   footprint. The width fits the longest EN + FR state in the switch row AND the
+	   longest hint line ("Mouvement estimé entre les relevés" + "Comment ça marche")
+	   on a single hint line; the hint reserves its space via min-height so only the
+	   text/active-state swaps, never the geometry. */
+	.map-motion[data-variant='floating'] {
 		position: absolute;
 		z-index: 10;
 		left: calc(var(--app-left-rail-offset, 0rem) + 1rem);
 		bottom: 1.15rem;
-		display: grid;
-		gap: 0.3rem;
-		width: max-content;
-		max-width: min(20rem, calc(100% - var(--app-left-rail-offset, 0rem) - 2rem));
+		width: 20rem;
+		max-width: calc(100% - var(--app-left-rail-offset, 0rem) - 2rem);
 		padding: 0.5rem 0.7rem 0.55rem;
 		background: color-mix(in srgb, var(--card) 88%, transparent);
 		border: 1px solid color-mix(in srgb, var(--border) 82%, var(--primary) 18%);
 		border-radius: var(--radius-lg);
 		box-shadow: var(--shadow-card);
 		backdrop-filter: blur(10px) saturate(1.1);
+	}
+
+	/* INLINE variant — same content, NOT absolute-positioned. Sits statically in
+	   normal flow at full container width (the mobile filter sheet). No card chrome,
+	   no fixed width, no offsets: it borrows the surrounding container's surface. */
+	.map-motion[data-variant='inline'] {
+		position: static;
+		width: 100%;
+		max-width: none;
 	}
 	.map-motion-row {
 		display: flex;
@@ -170,6 +198,12 @@
 		line-height: 1.4;
 		color: var(--muted-foreground);
 	}
+	/* Reserve the hint's vertical space in the floating chip so swapping the shorter
+	   raw hint for the longer smooth one (or EN⇄FR) never changes the card height —
+	   only the text content swaps, never the geometry. */
+	.map-motion[data-variant='floating'] .map-motion-hint {
+		min-height: 1.4em;
+	}
 	.map-motion-explain {
 		color: var(--primary);
 		text-decoration: none;
@@ -195,7 +229,7 @@
 	}
 
 	@media (max-width: 760px) {
-		.map-motion {
+		.map-motion[data-variant='floating'] {
 			left: 0.75rem;
 			right: 0.75rem;
 			bottom: calc(3.35rem + env(safe-area-inset-bottom, 0px));

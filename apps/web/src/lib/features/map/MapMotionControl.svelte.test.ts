@@ -89,4 +89,39 @@ describe('MapMotionControl', () => {
 		expect(screen.getByText(copy.fr.motion.label)).toBeInTheDocument();
 		expect(screen.getByText(copy.fr.motion.raw)).toBeInTheDocument();
 	});
+
+	it('defaults to the floating variant (the absolute-positioned overlay chip)', () => {
+		render(MapMotionControl, { locale: 'en', copy: copy.en });
+		// The default carries data-variant="floating"; CSS gates the absolute
+		// positioning + fixed stable width off this attribute. (jsdom does not apply
+		// Svelte scoped <style>, so we assert the geometry contract via the attribute
+		// the CSS keys off — not computed style.)
+		expect(screen.getByTestId('map-motion')).toHaveAttribute('data-variant', 'floating');
+	});
+
+	it('inline variant carries data-variant="inline" (static, full-width, no chip chrome)', () => {
+		render(MapMotionControl, { locale: 'en', copy: copy.en, variant: 'inline' });
+		// variant="inline" → NOT absolute-positioned, width:100%, fits its container
+		// (the mobile filter sheet). CSS gates position:static + width:100% off this
+		// attribute, so carrying it is the contract the inline layout depends on.
+		expect(screen.getByTestId('map-motion')).toHaveAttribute('data-variant', 'inline');
+	});
+
+	it('the switch still works (flips + tracks the store) in the inline variant', async () => {
+		const { rerender } = render(MapMotionControl, {
+			locale: 'en',
+			copy: copy.en,
+			variant: 'inline',
+		});
+		const sw = screen.getByTestId('map-motion-switch');
+		expect(sw).toHaveAttribute('aria-checked', 'false');
+
+		sw.click();
+		expect(motionMode.current).toBe('smooth');
+
+		await rerender({ locale: 'en', copy: copy.en, variant: 'inline' });
+		const checked = screen.getByTestId('map-motion-switch');
+		expect(checked).toHaveAttribute('aria-checked', 'true');
+		expect(checked).toHaveTextContent(copy.en.motion.smooth);
+	});
 });

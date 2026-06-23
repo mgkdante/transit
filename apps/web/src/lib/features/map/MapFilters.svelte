@@ -36,6 +36,18 @@
 		routes?: readonly RouteIndexEntry[];
 		stops?: readonly StopIndexEntry[];
 		collapsible?: boolean;
+		/**
+		 * When true the panel doubles as the mobile controls sheet: the title reads
+		 * `t.controlsTitle` ("Controls") instead of `t.filterTitle` ("Filter"),
+		 * reflecting that the motion toggle (passed via `header`) sits inside it.
+		 */
+		controlsMode?: boolean;
+		/**
+		 * Optional snippet rendered at the very TOP of the panel (above the
+		 * controls header). Used on mobile to pin the inline motion toggle to the
+		 * top of the filter sheet.
+		 */
+		header?: import('svelte').Snippet;
 		onselect?: () => void;
 		class?: string;
 	}
@@ -45,11 +57,14 @@
 		routes = [],
 		stops = [],
 		collapsible = true,
+		controlsMode = false,
+		header,
 		onselect,
 		class: className = '',
 	}: Props = $props();
 	let filterOpen = $state(true);
 	const t = $derived(MAP_COPY[locale]);
+	const panelTitle = $derived(controlsMode ? t.controlsTitle : t.filterTitle);
 	const panelOpen = $derived(!collapsible || filterOpen);
 	const collator = $derived(new Intl.Collator(locale, { numeric: true, sensitivity: 'base' }));
 	const routeById = $derived(new Map(routes.map((route) => [route.id, route])));
@@ -149,9 +164,14 @@
 	class="map-filters {className}"
 	data-open={panelOpen}
 	data-collapsible={collapsible}
+	data-controls={controlsMode}
 	role="group"
-	aria-label={t.filterTitle}
+	aria-label={panelTitle}
 >
+	{#if header}
+		<div class="mf-header" data-testid="map-filter-header">{@render header()}</div>
+	{/if}
+
 	<div class="mf-controls">
 		<div class="mf-head">
 			{#if collapsible}
@@ -159,7 +179,7 @@
 					type="button"
 					class="mf-toggle"
 					aria-expanded={filterOpen}
-					aria-label={t.filterTitle}
+					aria-label={panelTitle}
 					onclick={() => (filterOpen = !filterOpen)}
 				>
 					<span class="mf-toggle-icon" aria-hidden="true">
@@ -170,11 +190,11 @@
 						{/if}
 					</span>
 					{#if filterOpen}
-						<span class="mf-title">{t.filterTitle}</span>
+						<span class="mf-title">{panelTitle}</span>
 					{/if}
 				</button>
 			{:else}
-				<span class="mf-title">{t.filterTitle}</span>
+				<span class="mf-title">{panelTitle}</span>
 			{/if}
 		</div>
 		<div class="mf-clear-row">
@@ -475,6 +495,15 @@
 	}
 	.map-filters[data-open='false'] {
 		width: 4.95rem;
+	}
+	/* Header slot — pins the inline motion toggle to the very top of the sheet on
+	   mobile, divided from the controls header below by the same hairline. */
+	.mf-header {
+		display: flex;
+		flex-direction: column;
+		min-width: 0;
+		padding-bottom: 0.6rem;
+		border-bottom: 1px solid color-mix(in srgb, var(--mf-edge) 70%, transparent);
 	}
 	.mf-controls {
 		display: flex;

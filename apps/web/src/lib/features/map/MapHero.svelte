@@ -1201,17 +1201,28 @@
 	/>
 
 	<!-- Bottom-left: the honest motion-mode switch (raw vs almost-real-time),
-	     bound to the motionMode store. Floats clear of the bottom-right near-me
-	     control; deep-links into the /metrics live-positions explainer. -->
-	<MapMotionControl {locale} copy={t} />
+	     bound to the motionMode store. DESKTOP ONLY — it floats clear of the
+	     bottom-right near-me control and deep-links into the /metrics
+	     live-positions explainer. On mobile the same switch rides at the top of
+	     the filter sheet (the header snippet below), so the canvas stays clear. -->
+	{#if layout.isDesktop}
+		<MapMotionControl variant="floating" {locale} copy={t} />
+	{/if}
 
-	<!-- Left: the combinable state filter (URL-driven). -->
+	<!-- Left: the combinable state filter (URL-driven). On mobile the panel
+	     doubles as the controls sheet (controlsMode) with the inline motion toggle
+	     pinned to its top via the header snippet. -->
 	<div class="map-overlay map-filter-panel">
+		{#snippet motionHeader()}
+			<MapMotionControl variant="inline" {locale} copy={t} />
+		{/snippet}
 		<MapFilters
 			store={filters}
 			{locale}
 			routes={routesIndex.data?.routes ?? []}
 			stops={stops.data?.stops ?? []}
+			controlsMode={!layout.isDesktop}
+			header={layout.isDesktop ? undefined : motionHeader}
 		/>
 	</div>
 
