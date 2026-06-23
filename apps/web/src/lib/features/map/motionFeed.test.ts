@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { motionFeedAnimate } from './motionFeed';
 
 // The raw/smooth wiring MapHero feeds into vehicleMotion.set. Proven here because
-// the GL canvas can't be screenshotted from CI (same rationale as mapRailSizing).
+// the GL canvas can't be screenshotted from CI (same rationale as mapGeo).
 //
 // CONTRACT: animate (forward-projection) iff the user chose SMOOTH and OS
 // reduced-motion is off. Raw mode OR reduced motion => false => the controller

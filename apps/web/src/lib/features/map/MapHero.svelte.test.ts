@@ -227,12 +227,18 @@ describe('MapHero mobile chrome', () => {
 		expect(s).toMatch(/@media \(max-width: 760px\)[\s\S]*\.map-head\s*\{[\s\S]*left:\s*0\.75rem/);
 	});
 
-	it('offsets desktop floating chrome when the right pane is open or collapsed', () => {
+	it('offsets desktop floating chrome by the fixed floating-panel width when the detail is open', () => {
 		const s = source();
 		const nearMe = optionalSource('src/lib/features/map/MapNearMeControl.svelte');
 
 		expect(s).toContain('style={`--map-detail-offset: ${mapDetailOffset}`}');
-		expect(s).toContain('ResizeObserver');
+		// The offset is the FIXED floating-panel width while open (no ResizeObserver,
+		// no per-frame measurement of a resizable pane), and 0rem while closed.
+		expect(s).toContain('const MAP_DETAIL_PANEL_WIDTH_PX = 360');
+		expect(s).toContain(
+			"detailOpen && layout.isDesktop ? `${MAP_DETAIL_PANEL_WIDTH_PX}px` : '0rem'",
+		);
+		expect(s).not.toContain('new ResizeObserver');
 		expect(s).toContain('placement="floating"');
 		expect(nearMe).toMatch(
 			/\.map-near\s*\{[\s\S]*right:\s*calc\(var\(--map-detail-offset, 0rem\) \+ 1rem\)/,
@@ -438,103 +444,111 @@ describe('MapHero mobile chrome', () => {
 			s.match(/\{#if detailOpen && !layout\.isDesktop\}[\s\S]*?<\/BottomSheet>/)?.[0] ?? '';
 
 		expect(s).not.toContain('{#if detailOpen && selectedDetail}');
-		// The desktop detail pane mounts on `detailOpen` (not on resolved data), so the
-		// surface stays mounted while a back target resolves. The pane now gates on
-		// `layout.isDesktop && detailOpen` since the pane group is always rendered.
+		// The desktop floating detail overlay mounts on `detailOpen` (not on resolved
+		// data), so the surface stays mounted while a back target resolves. It gates on
+		// `layout.isDesktop && detailOpen`.
 		expect(s).toContain('{#if layout.isDesktop && detailOpen}');
 		expect(mobileSheetBlock).toContain('title={selectedDetail?.title}');
 		expect(mobileSheetBlock).toContain('{#if selectedDetail}');
 		expect(mobileSheetBlock).toContain('detail={selectedDetail}');
 	});
 
-	it('unifies the map and the detail rail into one root-level draggable split (desktop)', () => {
+	it('renders the map FULL-BLEED with the detail FLOATING over its right slice (desktop)', () => {
 		const s = source();
-		const paneGroupBlock =
+		const detailOverlayBlock =
 			s.match(
-				/<ResizablePaneGroup direction="horizontal" class="map-pane-group"[\s\S]*?<\/ResizablePaneGroup>/,
+				/\{#if layout\.isDesktop && detailOpen\}[\s\S]*?class="map-overlay map-detail-overlay"[\s\S]*?\{\/if\}/,
 			)?.[0] ?? '';
 
-		expect(s).toContain(
-			"import { ResizablePaneGroup, ResizablePane, ResizableHandle } from '$lib/components/ui/resizable'",
+		// STAGE 2 — the map is no longer a resizable pane. The resizable primitives and
+		// their CSS are gone so opening a selection never shrinks the canvas (no
+		// MapLibre resize, no jump/zoom-break). The mapRailSizing helper is dead too.
+		expect(s).not.toContain('ResizablePaneGroup');
+		expect(s).not.toContain('ResizablePane');
+		expect(s).not.toContain('ResizableHandle');
+		expect(s).not.toContain('$lib/components/ui/resizable');
+		expect(s).not.toContain('mapRailSizing');
+		expect(s).not.toContain('railSizing');
+		expect(s).not.toContain('map-detail-resize-handle');
+		expect(s).not.toContain('map-detail-pane');
+		expect(s).not.toContain('map-stage-pane');
+		expect(s).not.toContain('map-pane-group');
+		expect(s).not.toContain('map-detail-dock');
+
+		// The map body is rendered DIRECTLY in the hero (full-bleed base layer), always
+		// mounted (one stable GL context across the 1024px breakpoint), not gated on
+		// isDesktop.
+		expect(s).toMatch(/<!--[\s\S]*FULL-BLEED[\s\S]*-->\s*\{@render mapBody\(\)\}/);
+		expect(s).toMatch(
+			/:global\(\.map-hero-stage\)\s*\{[\s\S]*position:\s*absolute[\s\S]*inset:\s*0/,
 		);
-		// The pane group (and the map stage pane inside it) is ALWAYS rendered, never
-		// gated on isDesktop — so crossing the 1024px breakpoint keeps MapStage in one
-		// DOM position and never tears down/recreates the GL context.
-		expect(s).not.toContain('{#if layout.isDesktop}\n\t\t<!-- Desktop');
-		expect(paneGroupBlock).not.toContain('{:else}');
-		// The map IS the left pane (so the handle resizes it); the detail IS the right
-		// pane, mounted only when a selection is open on desktop. The map pane carries
-		// its order + a ref binding (the live width drives the fit padding fractions).
-		expect(paneGroupBlock).toMatch(
-			/<ResizablePane class="map-stage-pane"[\s\S]*?>[\s\S]*\{@render mapBody\(\)\}/,
-		);
-		expect(paneGroupBlock).toContain('{#if layout.isDesktop && detailOpen}');
-		expect(paneGroupBlock).toMatch(
-			/<ResizableHandle[\s\S]*withHandle[\s\S]*class="map-detail-resize-handle"[\s\S]*\/>/,
-		);
-		expect(paneGroupBlock).toContain('bind:this={rightPanelPane}');
-		// B1 — the rail pane sizes from the responsive helper (percents derived from
-		// the live hero width so a constant-rem rail reads the same at every desktop
-		// width), not the old fixed too-wide percents.
-		expect(paneGroupBlock).toContain('defaultSize={railSizing.defaultSize}');
-		expect(paneGroupBlock).toContain('minSize={railSizing.minSize}');
-		expect(paneGroupBlock).toContain('maxSize={railSizing.maxSize}');
-		expect(paneGroupBlock).toContain('collapsible');
-		expect(paneGroupBlock).toContain('collapsedSize={railSizing.collapsedSize}');
-		expect(paneGroupBlock).toContain('{@render detailPanel()}');
-		// The detail panel snippet keeps the resizable RightPanel + collapse wiring.
+
+		// The detail rides a fixed-width FLOATING overlay (mirroring the left
+		// .map-overlay controls) that only mounts when a selection is open on desktop;
+		// it carries the close + back control and is a labelled dialog region.
+		expect(detailOverlayBlock).toContain('class="map-overlay map-detail-overlay"');
+		expect(detailOverlayBlock).toContain('role="dialog"');
+		expect(detailOverlayBlock).toContain('aria-label=');
+		expect(detailOverlayBlock).toContain('{@render detailPanel()}');
+
+		// The detail panel snippet drops the resizable/collapse wiring (no paneforge);
+		// it is a plain RightPanel with close + back.
 		const detailPanelBlock =
 			s.match(/\{#snippet detailPanel\(\)\}[\s\S]*?\{\/snippet\}/)?.[0] ?? '';
-		expect(detailPanelBlock).toContain('resizable');
-		expect(detailPanelBlock).toContain('collapsed={rightPanelCollapsed}');
-		expect(detailPanelBlock).toContain('ontogglecollapse={toggleRightPanelCollapsed}');
-		// The map stage pane fills the canvas as the base layer; the old absolute dock
-		// is gone and the resize handle styling is preserved.
-		expect(s).toContain('class="map-stage-pane"');
-		expect(s).not.toContain('class="map-detail-dock"');
-		expect(s).toMatch(/:global\(\.map-detail-resize-handle\)[\s\S]*width:\s*8px/);
+		expect(detailPanelBlock).toContain('<RightPanel');
+		expect(detailPanelBlock).toContain('onclose={closeDetail}');
+		expect(detailPanelBlock).toContain('onback={goBackDetail}');
+		expect(detailPanelBlock).not.toContain('resizable');
+		expect(detailPanelBlock).not.toContain('collapsed=');
+		expect(detailPanelBlock).not.toContain('ontogglecollapse');
+
+		// The floating overlay owns a comfortable fixed width and its own internal
+		// scroll (RightPanel's body), so the map never resizes underneath it.
+		expect(s).toMatch(/\.map-detail-overlay\s*\{[\s\S]*width:\s*360px/);
 	});
 
-	it('keeps mobile detail on the bottom sheet (no right pane) while the map shares one stable pane group', () => {
+	it('keeps mobile detail on the bottom sheet (no floating overlay) while the map stays full-bleed on every breakpoint', () => {
 		const s = source();
 		const mobileSheetBlock =
 			s.match(/\{#if detailOpen && !layout\.isDesktop\}[\s\S]*?<\/BottomSheet>/)?.[0] ?? '';
 
 		expect(mobileSheetBlock).toContain('<BottomSheet');
 		expect(mobileSheetBlock).toContain('bind:open={detailOpen}');
-		// The map renders through the SAME pane group on every breakpoint (one MapStage,
-		// one GL context). On mobile the group is just the single full-width map pane —
-		// the handle + right detail pane only mount on `layout.isDesktop && detailOpen`,
-		// so no right pane appears on mobile; the detail rides the BottomSheet instead.
+		// The map renders FULL-BLEED on every breakpoint (one MapStage, one GL context),
+		// always mounted. The floating desktop detail overlay only mounts on
+		// `layout.isDesktop && detailOpen`, so no overlay appears on mobile; the detail
+		// rides the BottomSheet instead.
 		expect(s).toContain('{@render mapBody()}');
 		expect(s).toContain('{#if layout.isDesktop && detailOpen}');
 		expect(s).not.toContain('{:else}\n\t\t{@render mapBody()}');
 	});
 
-	// B1 — the right rail is sized off a CONSTANT-rem target re-expressed as a
-	// responsive percent (mapRailSizing), and clamped in px on the pane itself so it
-	// is genuinely narrow + can't eat the map at any desktop width.
-	it('sizes the right rail responsively from the live hero width (B1)', () => {
+	// STAGE 2 — the resizable rail (and its B1 responsive-percent sizing machinery)
+	// is GONE: the detail floats over the map at a fixed width, so there is no pane to
+	// size, no ResizeObserver to measure it, and no collapse/expand wiring.
+	it('drops the resizable-rail machinery now that the detail floats at a fixed width (Stage 2)', () => {
 		const s = source();
 
-		expect(s).toContain("import { mapRailSizing } from './mapRailSizing'");
-		expect(s).toContain('const railSizing = $derived(mapRailSizing(mapWidthPx))');
-		// The pane consumes the derived percents, not the old fixed too-wide ones.
-		expect(s).not.toContain('defaultSize={51}');
-		expect(s).not.toContain('minSize={32}');
-		expect(s).not.toContain('collapsedSize={9}');
-	});
+		// The mapRailSizing helper, its derived percents, and the right-panel resizable
+		// state are all removed.
+		expect(s).not.toContain("from './mapRailSizing'");
+		expect(s).not.toContain('railSizing');
+		expect(s).not.toContain('rightPanelPane');
+		expect(s).not.toContain('rightPanelEl');
+		expect(s).not.toContain('rightPanelWidthPx');
+		expect(s).not.toContain('rightPanelCollapsed');
+		expect(s).not.toContain('toggleRightPanelCollapsed');
+		expect(s).not.toContain('mapStagePaneEl');
+		expect(s).not.toContain('mapStageWidthPx');
+		// No paneforge sizing props or collapse callbacks survive.
+		expect(s).not.toContain('defaultSize=');
+		expect(s).not.toContain('collapsedSize=');
+		expect(s).not.toContain('onCollapse');
+		expect(s).not.toContain('onExpand');
 
-	it('hard-clamps the expanded rail to a rem floor/ceiling and drops it when collapsed (B1)', () => {
-		const s = source();
-		const paneClampBlock =
-			s.match(/:global\(\.map-detail-pane:not\(\[data-collapsed\]\)\)\s*\{[\s\S]*?\}/)?.[0] ?? '';
-
-		expect(s).toContain('class="map-detail-pane"');
-		// The clamp is scoped to NOT collapsed so the 3.7rem icon strip is not forced
-		// back to the 22rem floor when paneforge sets data-collapsed.
-		expect(paneClampBlock).toContain('min-width: 22rem');
-		expect(paneClampBlock).toContain('max-width: 34rem');
+		// The fit padding now runs straight off the (window-reactive) hero width since
+		// the map never shrinks.
+		expect(s).toContain('const fitWidthPx = $derived(mapWidthPx)');
 	});
 
 	// B3 — clicking a bus promotes its route to the filter spine (route= param + a

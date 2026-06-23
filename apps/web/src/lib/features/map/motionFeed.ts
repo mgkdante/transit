@@ -11,8 +11,7 @@
 // animate = smooth AND motion allowed. In raw mode (or under reduced motion) the
 // controller SNAPS to the reported positions — it never invents a position the
 // feed did not report. Pulled out of the .svelte effect so the wiring is proven
-// in a unit test (the GL canvas can't be screenshotted from CI), mirroring
-// mapRailSizing / mapGeo.
+// in a unit test (the GL canvas can't be screenshotted from CI), mirroring mapGeo.
 
 export interface MotionFeedInputs {
 	/** User chose smooth (forward-projection) over raw (ping-on-load). */

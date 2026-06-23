@@ -48,7 +48,6 @@
 	import { nearTargetFromSearchParams } from '$lib/search/mapNear';
 	import { clearMapFocusSearchParams, parseMapFocus, type MapFocus } from '$lib/search/mapFocus';
 	import { BottomSheet, RightPanel } from '$lib/components/shell';
-	import { ResizablePaneGroup, ResizablePane, ResizableHandle } from '$lib/components/ui/resizable';
 	import {
 		MapStage,
 		bakeVehicleSprites,
@@ -83,10 +82,10 @@
 		type RouteShapes,
 	} from '$lib/components/map/vehicleShapes';
 	import { liveTtlS } from '$lib/components/map/vehicleSilence';
+	import { fixAgeS, isVehicleStale } from '$lib/components/map/vehicleProjection';
 	import { sharedClock, motionMode } from '$lib/stores';
 	import { isPrefersReducedMotion } from '$lib/motion/reduced-motion.svelte';
 	import MapFilters from './MapFilters.svelte';
-	import { mapRailSizing } from './mapRailSizing';
 	import MapFilterPill from './MapFilterPill.svelte';
 	import MapFreshness from './MapFreshness.svelte';
 	import MapFeedStallBanner from './MapFeedStallBanner.svelte';
@@ -100,7 +99,11 @@
 	import { shouldAnimate } from '$lib/motion/policy';
 	import { buildAlertEntitySets, vehicleHasAlert } from './mapAlerts';
 	import { PICKABLE_MAP_LAYERS, pickMapSelection } from './mapPicking';
-	import { resolveMapSelection, type MapSelection } from './mapSelection';
+	import {
+		resolveMapSelection,
+		type MapSelection,
+		type MapSelectionDetail as MapSelectionDetailValue,
+	} from './mapSelection';
 	import type { GeocodedLocation, GeocodePrecision, GeocodeSuggestion } from '$lib/geocode/types';
 	import { hasCoordinates } from '$lib/geocode/types';
 	import type { StopIndexEntry } from '$lib/v1/schemas';
@@ -132,21 +135,13 @@
 	// edge made the right band vanish while the left one worked.
 	const MAP_MAX_BOUNDS = [-74.32, 45.3, -73.2, 45.82] as const;
 
-	// Hero width — window-reactive ONLY (not panel state). Kept as the seed/fallback
-	// for the fit-padding fraction math before the map stage element measures.
-	// Seeded with a desktop default so the fraction padding applies even before the
-	// first clientWidth measurement (a 0 here would fall back to the wide fit).
+	// Hero width — window-reactive ONLY (not panel state). The map is now full-bleed
+	// and never resizes when the detail panel opens (the panel FLOATS over it), so the
+	// fit-padding fraction math runs straight off the hero clientWidth. Seeded with a
+	// desktop default so the fraction padding applies even before the first
+	// clientWidth measurement (a 0 here would fall back to the wide fit).
 	let mapWidthPx = $state(1280);
-	// The LIVE width of the actual map container (the left pane), which physically
-	// shrinks when the detail pane opens/resizes. The fit padding (left/right
-	// fractions) must be computed off THIS, not the full hero: a refit fired while
-	// the panel is open (theme/basemap swap, bounds/maxBounds tweak) would otherwise
-	// size its padding to ~80% of the FULL hero — exceeding the shrunk pane width →
-	// MapLibre treats it as degenerate padding → off-centre fit. Falls back to the
-	// hero width until the pane measures (initial load = panel closed = pane IS hero).
-	let mapStagePaneEl = $state<HTMLElement | null>(null);
-	let mapStageWidthPx = $state(0);
-	const fitWidthPx = $derived(mapStageWidthPx > 0 ? mapStageWidthPx : mapWidthPx);
+	const fitWidthPx = $derived(mapWidthPx);
 
 	// Desktop frames the island into a roughly SQUARE central gap with generous
 	// left/right BUFFERS sized as a fraction of the width. The buffers (a) crop the
@@ -158,6 +153,11 @@
 	const DESKTOP_LEFT_PAD_FRAC = 0.37; // clears rail + filter panel, with band
 	const DESKTOP_RIGHT_PAD_FRAC = 0.43; // buffer for the right detail panel + band
 	const DESKTOP_VERT_PAD_PX = 56; // small top/bottom → island fills the height (bigger)
+	// Fixed width of the floating right detail panel (desktop). The panel OVERLAYS the
+	// map (like the left .map-overlay controls) instead of being a resizable pane, so
+	// the map never resizes when it opens. Right-anchored chrome (near-me, freshness
+	// chip, hover peek) shifts clear of it via the --map-detail-offset variable below.
+	const MAP_DETAIL_PANEL_WIDTH_PX = 360;
 	const mapFitPadding = $derived<MapFitPadding>(
 		layout.isDesktop && fitWidthPx > 0
 			? {
@@ -284,10 +284,6 @@
 	// One-shot "zoom to this picked entity" hint from the URL `focus` param. The
 	// resolver effect pans/fits once data is available, then strips the param.
 	let pendingFocus = $state<MapFocus | null>(null);
-	let rightPanelCollapsed = $state(false);
-	let rightPanelPane = $state<{ collapse: () => void; expand: () => void } | undefined>();
-	let rightPanelEl = $state<HTMLElement | undefined>();
-	let rightPanelWidthPx = $state(360);
 
 	const stopList = $derived(stops.data?.stops ?? []);
 	const nearbyStops = $derived<WithDistance<StopIndexEntry>[]>(
@@ -452,22 +448,32 @@
 			alerts: alertList,
 		}),
 	);
+	// Per-bus stale-GPS note. PR-A gives each vehicle its OWN fix time (reported_utc,
+	// nullable → updated_utc fallback), so we can now honestly flag ONE silent bus
+	// (its fix older than STALE_CUTOFF_S) without the old global-snapshot caveat. For
+	// a focused VEHICLE detail, age it on its own fix vs the shared clock; return
+	// { ageS } only when stale, else null (no note). Reads sharedClock.serverNow so
+	// the note appears/refreshes as a bus crosses the cutoff between polls.
+	function vehicleAbsence(
+		detail: MapSelectionDetailValue | null,
+		serverNow: number,
+	): { ageS: number } | null {
+		if (detail?.kind !== 'vehicle') return null;
+		const ageS = fixAgeS(detail.vehicle.reported_utc, detail.vehicle.updated_utc, serverNow);
+		return isVehicleStale(ageS) ? { ageS } : null;
+	}
+	const selectedVehicleAbsence = $derived(vehicleAbsence(selectedDetail, sharedClock.serverNow));
+	const hoverVehicleAbsence = $derived(vehicleAbsence(hoverDetail, sharedClock.serverNow));
 	const detailSurfaceKey = $derived(
 		selectedDetail ? `${selectedDetail.kind}:${selectedDetail.id}` : 'empty',
 	);
+	// Right-anchored chrome (near-me control, floating freshness chip, hover peek)
+	// shifts clear of the floating detail panel via this offset. The panel is a FIXED
+	// width that OVERLAYS the map (it never resizes the canvas), so this is a constant
+	// while open and 0 while closed — no ResizeObserver, no per-frame measurement.
 	const mapDetailOffset = $derived(
-		detailOpen && layout.isDesktop ? `${Math.round(rightPanelWidthPx)}px` : '0rem',
+		detailOpen && layout.isDesktop ? `${MAP_DETAIL_PANEL_WIDTH_PX}px` : '0rem',
 	);
-
-	// Right-rail paneforge percents derived from the LIVE hero width (B1). paneforge
-	// sizes in percent, so a constant-rem rail (narrow floor + ceiling + thin
-	// collapsed strip) must be re-expressed as a percent of the current hero width —
-	// otherwise the same percent renders too wide at every desktop width. mapWidthPx
-	// tracks the hero clientWidth (window resize only, NOT pane drag), so these stay
-	// stable while dragging yet responsive across 1024/1280/1600. The CSS min/max-
-	// width clamp on the pane agrees with these (both derive from the same rems), so
-	// the percent floor and the px clamp never fight.
-	const railSizing = $derived(mapRailSizing(mapWidthPx));
 
 	function clearHover(m: MapLibreMap): void {
 		hovered = null;
@@ -530,17 +536,6 @@
 		detailOpen = false;
 		selected = null;
 		selectionStack = [];
-		rightPanelCollapsed = false;
-	}
-
-	function toggleRightPanelCollapsed(): void {
-		if (rightPanelCollapsed) {
-			rightPanelPane?.expand();
-			rightPanelCollapsed = false;
-		} else {
-			rightPanelPane?.collapse();
-			rightPanelCollapsed = true;
-		}
 	}
 
 	function selectFromDetail(next: MapSelection): void {
@@ -1079,7 +1074,6 @@
 		if (!detailOpen) {
 			selected = null;
 			selectionStack = [];
-			rightPanelCollapsed = false;
 			return;
 		}
 		if (selected && !selectedDetail) {
@@ -1087,39 +1081,15 @@
 			closeDetail();
 		}
 	});
-
-	$effect(() => {
-		const node = rightPanelEl;
-		if (!node || typeof ResizeObserver === 'undefined') return;
-
-		const observer = new ResizeObserver(([entry]) => {
-			rightPanelWidthPx = entry.contentRect.width;
-		});
-		observer.observe(node);
-
-		return () => observer.disconnect();
-	});
-
-	// Track the live width of the map stage pane (the left pane) so the fit padding
-	// fractions follow the actual — shrinking — map container, not the full hero.
-	$effect(() => {
-		const node = mapStagePaneEl;
-		if (!node || typeof ResizeObserver === 'undefined') return;
-
-		const observer = new ResizeObserver(([entry]) => {
-			mapStageWidthPx = entry.contentRect.width;
-		});
-		observer.observe(node);
-
-		return () => observer.disconnect();
-	});
 </script>
 
-<!-- The map canvas + its framing vignette. Shared by the desktop pane layout and
-     the mobile full-bleed layout so there is exactly ONE MapStage (one GL
-     context, one onready). On desktop it lives in the LEFT resizable pane so it
-     physically shrinks when the right detail pane opens/resizes; MapStage's own
-     ResizeObserver then re-fits the GL viewport to the narrower width. -->
+<!-- The map canvas + its framing vignette. Rendered FULL-BLEED directly in the
+     hero (not inside a resizable pane) so there is exactly ONE MapStage (one GL
+     context, one onready) and the map NEVER resizes when the detail panel opens —
+     the panel FLOATS over the right slice (like the left .map-overlay controls),
+     so MapLibre's ResizeObserver never fires and the camera never jumps. The same
+     mapBody renders on every breakpoint, keeping the GL context stable across the
+     1024px line. -->
 {#snippet mapBody()}
 	<!-- HOT FIRST PAINT (B2): MapStage awaits the basemap via `basemapLoader` INSIDE
 	     its own onMount and bakes the resolved basemap into the constructor style, so
@@ -1148,29 +1118,25 @@
 {/snippet}
 
 {#snippet detailPanel()}
-	<div class="map-detail-panel-frame" bind:this={rightPanelEl}>
-		<RightPanel
-			{locale}
-			title={selectedDetail?.title}
-			surfaceKey={detailSurfaceKey}
-			canGoBack={selectionStack.length > 0}
-			onback={goBackDetail}
-			onclose={closeDetail}
-			resizable
-			collapsed={rightPanelCollapsed}
-			ontogglecollapse={toggleRightPanelCollapsed}
-		>
-			{#if selectedDetail}
-				<MapSelectionDetail
-					detail={selectedDetail}
-					{locale}
-					onselect={selectFromDetail}
-					onfilter={applyDetailFilter}
-					onalertselect={selectAlertRelated}
-				/>
-			{/if}
-		</RightPanel>
-	</div>
+	<RightPanel
+		{locale}
+		title={selectedDetail?.title}
+		surfaceKey={detailSurfaceKey}
+		canGoBack={selectionStack.length > 0}
+		onback={goBackDetail}
+		onclose={closeDetail}
+	>
+		{#if selectedDetail}
+			<MapSelectionDetail
+				detail={selectedDetail}
+				{locale}
+				notReporting={selectedVehicleAbsence}
+				onselect={selectFromDetail}
+				onfilter={applyDetailFilter}
+				onalertselect={selectAlertRelated}
+			/>
+		{/if}
+	</RightPanel>
 {/snippet}
 
 <div
@@ -1178,37 +1144,27 @@
 	bind:clientWidth={mapWidthPx}
 	style={`--map-detail-offset: ${mapDetailOffset}`}
 >
-	<!-- ONE cohesive horizontal split, ALWAYS rendered — the map IS the single left
-	     pane so dragging the handle resizes it. The pane group is NOT gated on
-	     isDesktop: that kept MapStage in exactly one DOM position across the 1024px
-	     breakpoint, so crossing it never tears down + recreates the GL context
-	     (which would re-fire onready, re-bake sprites, and reload the basemap). On
-	     mobile the group is just the single full-width map pane (no handle); the
-	     detail rides the BottomSheet below. On desktop, opening a selection mounts
-	     the handle + right detail pane (paneforge re-layouts the added pane). Same
-	     ui/resizable primitives as AppShell. -->
-	<ResizablePaneGroup direction="horizontal" class="map-pane-group">
-		<ResizablePane class="map-stage-pane" order={1} bind:ref={mapStagePaneEl}>
-			{@render mapBody()}
-		</ResizablePane>
-		{#if layout.isDesktop && detailOpen}
-			<ResizableHandle withHandle class="map-detail-resize-handle" />
-			<ResizablePane
-				bind:this={rightPanelPane}
-				class="map-detail-pane"
-				order={2}
-				defaultSize={railSizing.defaultSize}
-				minSize={railSizing.minSize}
-				maxSize={railSizing.maxSize}
-				collapsible
-				collapsedSize={railSizing.collapsedSize}
-				onCollapse={() => (rightPanelCollapsed = true)}
-				onExpand={() => (rightPanelCollapsed = false)}
-			>
-				{@render detailPanel()}
-			</ResizablePane>
-		{/if}
-	</ResizablePaneGroup>
+	<!-- The map is FULL-BLEED: rendered directly in the hero (not inside a resizable
+	     pane) and ALWAYS mounted, never gated on isDesktop — so crossing the 1024px
+	     breakpoint keeps MapStage in exactly ONE DOM position and never tears down +
+	     recreates the GL context (which would re-fire onready, re-bake sprites, and
+	     reload the basemap). The detail panel FLOATS over the right slice (below) so
+	     the canvas never resizes when a selection opens — no jump, no zoom-break. -->
+	{@render mapBody()}
+
+	<!-- Desktop: the detail FLOATS over the map's right slice as a fixed-width
+	     overlay (mirroring the left .map-overlay controls), so opening it never
+	     resizes the canvas. A labelled dialog region with a close + back control. On
+	     mobile the detail rides the BottomSheet below instead. -->
+	{#if layout.isDesktop && detailOpen}
+		<div
+			class="map-overlay map-detail-overlay"
+			role="dialog"
+			aria-label={selectedDetail?.title ?? t.detailPanelLabel}
+		>
+			{@render detailPanel()}
+		</div>
+	{/if}
 
 	<!-- Top-left: map title. A mono kicker overline + live freshness ride above a
 	     confident heading; a hairline accent rule anchors the block to the edge. -->
@@ -1309,6 +1265,7 @@
 				detail={hoverDetail}
 				{locale}
 				compact
+				notReporting={hoverVehicleAbsence}
 				onselect={selectFromDetail}
 				onfilter={applyDetailFilter}
 				onalertselect={selectAlertRelated}
@@ -1331,6 +1288,7 @@
 				<MapSelectionDetail
 					detail={selectedDetail}
 					{locale}
+					notReporting={selectedVehicleAbsence}
 					onselect={selectFromDetail}
 					onfilter={applyDetailFilter}
 					onalertselect={selectAlertRelated}
@@ -1348,36 +1306,22 @@
 		overflow: hidden;
 		background: var(--background);
 		/* The live offset is driven by the inline `style` binding above
-		   (mapDetailOffset = the measured rail width on desktop, else 0rem); the
-		   fallback keeps left/right chrome anchored before the first measure. */
+		   (mapDetailOffset = the fixed floating-panel width on desktop when open,
+		   else 0rem) so right-anchored chrome shifts clear of the panel; the fallback
+		   keeps left/right chrome anchored when the panel is closed. */
 		--map-detail-offset: 0rem;
 	}
-	.map-hero :global(.map-stage) {
-		border-radius: 0;
-	}
 
-	/* The map+detail split is the BASE layer of the hero: it fills the canvas and
-	   sits beneath every floating overlay (vignette z-5, overlays z-10+). The left
-	   pane holds the map (so it shrinks with the handle); the right pane holds the
-	   detail. paneforge gives each pane height; the stage pane just needs to fill it. */
-	.map-hero :global(.map-pane-group) {
+	/* The map is the BASE layer of the hero: it fills the canvas FULL-BLEED and sits
+	   beneath every floating overlay (vignette z-5, overlays z-10+). It never resizes
+	   when the detail panel opens — the panel floats over the right slice. The inline
+	   --map-detail-offset inherits in, so MapStage's bottom-right attribution shifts
+	   clear of the floating panel instead of hiding beneath it. */
+	.map-hero :global(.map-hero-stage) {
 		position: absolute;
 		inset: 0;
 		z-index: 1;
-	}
-	.map-hero :global(.map-stage-pane) {
-		position: relative;
-		height: 100%;
-		min-width: 0;
-		overflow: hidden;
-		/* The left pane already PHYSICALLY shrinks away from the right detail pane,
-		   so MapStage (rendered inside it) must NOT re-offset its bottom-right
-		   attribution by the detail width — that double-counts and floats the credit
-		   a panel-width off the map's own right edge while over-constraining its
-		   max-width. Resetting the inherited offset to 0 here pins the credit flush
-		   to the map's bottom-right (right: 1rem, max-width: 100vw - 1.5rem) whether
-		   the detail pane is open, collapsed, or closed. */
-		--map-detail-offset: 0rem;
+		border-radius: 0;
 	}
 
 	/* Full-bleed framing: an inset vignette grounds the floating panes against the
@@ -1511,61 +1455,25 @@
 		border-top-color: color-mix(in srgb, var(--dataviz-status-late) 48%, var(--border-rule) 52%);
 	}
 
-	/* B1 — the right rail pane carries a HARD rem clamp so the EXPANDED rail has a
-	   genuinely narrow floor (22rem) and a real ceiling (34rem), independent of the
-	   percent paneforge layouts it with. The percent minSize/maxSize (derived from
-	   these exact rems at the live hero width) stop the drag at the same pixel, so
-	   the clamp and the percent never fight; the clamp only has to bite during the
-	   brief pre-measure frame. It is REMOVED while collapsed (paneforge sets
-	   data-collapsed) so the thin 3.7rem icon strip is not forced back to 22rem. */
-	:global(.map-detail-pane:not([data-collapsed])) {
-		min-width: 22rem;
-		max-width: 34rem;
-	}
-
-	.map-detail-panel-frame {
-		height: 100%;
-		min-width: 0;
-		/* Casts the panel against the map edge so the split reads as a layer over
-		   the canvas, not a seam in it. */
+	/* The detail FLOATS over the map's right slice as a fixed-width overlay (mirroring
+	   the left .map-overlay controls), so opening it never resizes the canvas. It owns
+	   a comfortable fixed width and its OWN full-height internal scroll (RightPanel's
+	   ScrollArea body), pinned to the top-right under the freshness chip. A token-
+	   driven section shadow lifts it off the live canvas; pointer-events stay on so the
+	   panel is interactive while the map underneath keeps repainting. */
+	.map-detail-overlay {
+		top: 0;
+		right: 0;
+		bottom: 0;
+		width: 360px;
+		max-width: calc(100% - var(--app-left-rail-offset, 0rem) - 1rem);
+		z-index: 26;
+		display: flex;
 		box-shadow: var(--shadow-section);
-	}
-	/* The resize grip: a calm rail at rest that warms to brand on
-	   hover/focus/drag. The rail is a hairline; the withHandle child becomes a
-	   slim centred pill (not a chunky bar). */
-	:global(.map-detail-resize-handle) {
-		width: 8px;
-		pointer-events: auto;
-		background: var(--border-hairline);
-		transition: background var(--duration-fast, 150ms) var(--ease-default, ease);
-	}
-	:global(.map-detail-resize-handle > div) {
-		height: 2.25rem;
-		width: 2px;
-		border-radius: var(--radius-pill);
-		background: var(--border-strong);
-		transition:
-			background var(--duration-fast, 150ms) var(--ease-default, ease),
-			height var(--duration-fast, 150ms) var(--ease-default, ease);
-	}
-	:global(.map-detail-resize-handle:hover),
-	:global(.map-detail-resize-handle:focus-visible),
-	:global(.map-detail-resize-handle[data-active='pointer']) {
-		background: color-mix(in srgb, var(--primary) 16%, transparent);
-	}
-	:global(.map-detail-resize-handle:hover > div),
-	:global(.map-detail-resize-handle:focus-visible > div),
-	:global(.map-detail-resize-handle[data-active='pointer'] > div) {
-		height: 3rem;
-		background: var(--primary);
 	}
 
 	@media (prefers-reduced-motion: reduce) {
 		:global(.mf-chip) {
-			transition: none;
-		}
-		:global(.map-detail-resize-handle),
-		:global(.map-detail-resize-handle > div) {
 			transition: none;
 		}
 	}

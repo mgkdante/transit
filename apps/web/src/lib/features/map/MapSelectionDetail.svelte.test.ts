@@ -176,6 +176,63 @@ describe('MapSelectionDetail', () => {
 		expect(onalertselect).toHaveBeenCalledWith(alerts[0]);
 	});
 
+	it('renders a per-bus not-reporting GPS note when the vehicle fix is stale', () => {
+		const detail = resolveMapSelection(
+			{ kind: 'vehicle', id: 'veh-1' },
+			{ index, stops, alerts, routes },
+		);
+		const { getByText, getByRole } = render(MapSelectionDetail, {
+			props: { detail, locale: 'en', notReporting: { ageS: 180 } },
+		});
+
+		// The honest caution note shows, carries a relative age, and is role=status.
+		const note = getByRole('status');
+		expect(note).toHaveTextContent('Not reporting GPS');
+		expect(note).toHaveTextContent('3 min');
+		// No em-dash in the copy (brand rule) — a middot separates the two halves.
+		expect(note.textContent).not.toContain('—');
+		expect(getByText(/last updated position 3 min ago/)).toBeInTheDocument();
+	});
+
+	it('renders the not-reporting age in seconds for a recently-silent bus', () => {
+		const detail = resolveMapSelection(
+			{ kind: 'vehicle', id: 'veh-1' },
+			{ index, stops, alerts, routes },
+		);
+		const { getByText } = render(MapSelectionDetail, {
+			props: { detail, locale: 'en', notReporting: { ageS: 45 } },
+		});
+
+		expect(getByText(/last updated position 45 s ago/)).toBeInTheDocument();
+	});
+
+	it('renders the not-reporting note in French', () => {
+		const detail = resolveMapSelection(
+			{ kind: 'vehicle', id: 'veh-1' },
+			{ index, stops, alerts, routes },
+		);
+		const { getByRole } = render(MapSelectionDetail, {
+			props: { detail, locale: 'fr', notReporting: { ageS: 180 } },
+		});
+
+		const note = getByRole('status');
+		expect(note).toHaveTextContent('Pas de signal GPS');
+		expect(note).toHaveTextContent('dernière position il y a 3 min');
+	});
+
+	it('hides the not-reporting note when notReporting is null', () => {
+		const detail = resolveMapSelection(
+			{ kind: 'vehicle', id: 'veh-1' },
+			{ index, stops, alerts, routes },
+		);
+		const { queryByText, queryByRole } = render(MapSelectionDetail, {
+			props: { detail, locale: 'en', notReporting: null },
+		});
+
+		expect(queryByText(/Not reporting GPS/)).not.toBeInTheDocument();
+		expect(queryByRole('status')).not.toBeInTheDocument();
+	});
+
 	it('renders a stop detail with code, departures, inbound vehicles, and alerts', async () => {
 		const detail = resolveMapSelection(
 			{ kind: 'stop', id: 'stop-1' },
