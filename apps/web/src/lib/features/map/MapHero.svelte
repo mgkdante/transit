@@ -95,7 +95,12 @@
 	import { readStoredDetailPanelWidth } from './mapDetailPanes';
 	import { buildAlertEntitySets, vehicleHasAlert } from './mapAlerts';
 	import { PICKABLE_MAP_LAYERS, pickMapSelection } from './mapPicking';
-	import { resolveMapSelection, type MapSelection } from './mapSelection';
+	import {
+		resolveMapSelection,
+		sameNullableSelection,
+		sameSelection,
+		type MapSelection,
+	} from './mapSelection';
 	import type { GeocodedLocation, GeocodePrecision, GeocodeSuggestion } from '$lib/geocode/types';
 	import { hasCoordinates } from '$lib/geocode/types';
 	import type { StopIndexEntry } from '$lib/v1/schemas';
@@ -559,29 +564,6 @@
 		selectionStack = selectionStack.slice(0, -1);
 		selected = previous;
 		detailOpen = true;
-	}
-
-	function sameSelection(a: MapSelection, b: MapSelection): boolean {
-		return (
-			a.kind === b.kind &&
-			a.id === b.id &&
-			selectionDirection(a) === selectionDirection(b) &&
-			selectionVariantKey(a) === selectionVariantKey(b)
-		);
-	}
-
-	function sameNullableSelection(a: MapSelection | null, b: MapSelection | null): boolean {
-		if (!a && !b) return true;
-		if (!a || !b) return false;
-		return sameSelection(a, b);
-	}
-
-	function selectionDirection(selection: MapSelection): number | null {
-		return selection.kind === 'route' ? (selection.direction ?? null) : null;
-	}
-
-	function selectionVariantKey(selection: MapSelection): string | null {
-		return selection.kind === 'route' ? (selection.variantKey ?? null) : null;
 	}
 
 	function applyDetailFilter(chip: Chip): void {

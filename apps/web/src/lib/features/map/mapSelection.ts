@@ -28,6 +28,36 @@ export type MapSelection =
 			readonly variantKey?: string | null;
 	  };
 
+// A route selection's direction / variant only — null for point entities. Used by
+// the identity check so picking the SAME route in a different direction reads as a
+// different selection (the line re-highlights), while a bus/stop ignores both.
+function selectionDirection(selection: MapSelection): number | null {
+	return selection.kind === 'route' ? (selection.direction ?? null) : null;
+}
+
+function selectionVariantKey(selection: MapSelection): string | null {
+	return selection.kind === 'route' ? (selection.variantKey ?? null) : null;
+}
+
+/** Two selections refer to the SAME entity: kind + id match, and (for a route) the
+ *  same picked direction + variant. The map orchestrator uses it to dedupe hover
+ *  churn and to decide whether a detail pick pushes onto the back-stack. */
+export function sameSelection(a: MapSelection, b: MapSelection): boolean {
+	return (
+		a.kind === b.kind &&
+		a.id === b.id &&
+		selectionDirection(a) === selectionDirection(b) &&
+		selectionVariantKey(a) === selectionVariantKey(b)
+	);
+}
+
+/** Null-tolerant {@link sameSelection}: two nulls are equal; one null is not. */
+export function sameNullableSelection(a: MapSelection | null, b: MapSelection | null): boolean {
+	if (!a && !b) return true;
+	if (!a || !b) return false;
+	return sameSelection(a, b);
+}
+
 interface ResolveContext {
 	readonly index: LiveIndex;
 	readonly stops: readonly StopIndexEntry[];
