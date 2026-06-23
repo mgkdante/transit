@@ -100,16 +100,16 @@ def test_pg_repack_guardrail_requires_pg_repack_binary(tmp_path: Path) -> None:
     assert command_log.read_text(encoding="utf-8") == ""
 
 
-# The 10 current churn tables the guardrail must repack — mirrors maintenance.py
-# (REALTIME_SILVER_TABLES minus the 29GB stop_times, GOLD_FACT_TABLES, the
-# gold.latest_* live tables, the two gold.*_summary_5m warm rollups).
+# The 8 current churn tables the guardrail must repack — mirrors maintenance.py
+# (REALTIME_SILVER_TABLES minus the 29GB stop_times, the gold.latest_* live
+# tables, the two gold.*_summary_5m warm rollups). The two gold.fact_* tables
+# were carved out of the CI default 2026-06-22 (see FORBIDDEN_DEFAULT_TABLES)
+# after their hot-table WAN lock-swap repeatedly orphaned repack objects.
 CURRENT_DEFAULT_TABLES = (
     "silver.rt_trip_updates",
     "silver.rt_vehicle_positions",
     "silver.rt_entities",
     "silver.rt_feed_snapshots",
-    "gold.fact_vehicle_snapshot",
-    "gold.fact_trip_delay_snapshot",
     "gold.latest_vehicle_snapshot",
     "gold.latest_trip_delay_snapshot",
     "gold.vehicle_summary_5m",
@@ -117,14 +117,19 @@ CURRENT_DEFAULT_TABLES = (
 )
 
 # Names dropped by migration 0014 (or deliberately excluded) — the guardrail must
-# NEVER target these. The first three are the exact relations the broken default
-# named (gh run 27088244828: exit 21). The last is the 29GB table carved out of
-# the CI default. None is a substring of any CURRENT_DEFAULT_TABLES entry.
+# NEVER target these BY DEFAULT. The first three are the exact relations the
+# broken default named (gh run 27088244828: exit 21). Then the 29GB stop_times
+# table, and the two hot gold.fact_* tables carved out 2026-06-22 (their WAN
+# lock-swap orphaned repack objects — repack on-box instead). The carved-out
+# tables remain reachable via an explicit PG_REPACK_TABLES override. None is a
+# substring of any CURRENT_DEFAULT_TABLES entry.
 FORBIDDEN_DEFAULT_TABLES = (
     "--table silver.trip_updates",
     "--table silver.trip_update_stop_time_updates",
     "--table silver.vehicle_positions",
     "--table silver.rt_trip_update_stop_times",
+    "--table gold.fact_vehicle_snapshot",
+    "--table gold.fact_trip_delay_snapshot",
 )
 
 
