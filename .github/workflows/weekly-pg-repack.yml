@@ -1,21 +1,30 @@
-name: Weekly pg_repack Maintenance
+name: Weekly pg_repack Bloat Check (dry-run)
+
+# Dry-run bloat MONITOR. This workflow never executes a repack.
+#
+# pg_repack's actual table rewrite takes a brief ACCESS EXCLUSIVE lock. Running
+# that over the public-internet WAN from a GitHub runner against the OCI Postgres
+# proved unreliable for the hot tables: the long exclusive-lock op stalled until
+# the SSL connection dropped ("SSL error: unexpected eof while reading", gh run
+# 27989930577), and earlier interrupted swaps orphaned repack.log_* tables +
+# repack_trigger triggers (a 6.7GB write-tax + disk leak, cleaned 2026-06-22).
+#
+# So this workflow now ONLY dry-runs: it captures the per-table size report (the
+# bloat signal) and validates the tables are repack-eligible, and it alerts if
+# that check fails. The ACTUAL repack is done ON-BOX via the on-VM runbook
+# (loopback connection, no WAN), which is also where the 29GB
+# silver.rt_trip_update_stop_times and the two hot gold.fact_* tables are handled.
 
 on:
   workflow_dispatch:
     inputs:
-      dry_run:
-        description: Run pg_repack in dry-run mode (manual default; the schedule executes).
-        required: true
-        type: boolean
-        default: true
       tables:
-        description: Optional whitespace-separated table list (empty uses the default churn set).
+        description: Optional whitespace-separated table list to dry-run (empty uses the default churn set).
         required: false
         type: string
         default: ""
   schedule:
-    # GitHub Actions cron is UTC-based. Runs after the daily pipeline windows.
-    # 08:00 UTC Sunday = 04:00 Montreal, off-peak.
+    # GitHub Actions cron is UTC-based. 08:00 UTC Sunday = 04:00 Montreal, off-peak.
     - cron: "0 8 * * 0"
 
 permissions:
@@ -29,21 +38,20 @@ concurrency:
 jobs:
   pg-repack-maintenance:
     runs-on: ubuntu-latest
-    # First execute weeks repack live rows over WAN-orchestrated server-side copies;
-    # GH hard cap is 360. 180 leaves headroom for the medium churn tables.
-    timeout-minutes: 180
+    # Dry-run only: a fast eligibility + size-report pass (no table rewrite, no
+    # long lock). Mostly the apt install; the dry-run itself is ~1-2 min.
+    timeout-minutes: 30
     defaults:
       run:
         working-directory: apps/db
     env:
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
-      # Scheduled Sunday run EXECUTES; manual dispatch defaults to dry-run. A
-      # job-level env here overrides any per-step env-file export, which is
-      # exactly why the old 'Select manual mode' step never took effect — so the
-      # flag is set declaratively as an expression instead.
-      PG_REPACK_DRY_RUN: ${{ github.event_name == 'schedule' && 'false' || format('{0}', inputs.dry_run) }}
-      # Empty on schedule => run-pg-repack.sh ':-' default kicks in (the 10-table
-      # churn set, excluding the 29GB silver.rt_trip_update_stop_times).
+      # ALWAYS dry-run. This workflow is a monitor and must never execute a
+      # repack over the WAN (see the header comment). Real repack is on-box.
+      PG_REPACK_DRY_RUN: "true"
+      # Empty => run-pg-repack.sh ':-' default kicks in (the 8-table churn set,
+      # excluding the 29GB silver.rt_trip_update_stop_times and the two hot
+      # gold.fact_* tables, all of which are repacked on-box).
       PG_REPACK_TABLES: ${{ inputs.tables }}
       PG_REPACK_SIZE_REPORT: pg-repack-size-report.txt
     steps:
@@ -63,7 +71,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y postgresql-16-repack postgresql-client-16
 
-      - name: Run pg_repack maintenance
+      - name: Run pg_repack dry-run bloat check
         run: bash scripts/run-pg-repack.sh
 
       - name: Upload pg_repack size report
@@ -77,7 +85,7 @@ jobs:
       # working-directory is db; the shared alert script lives at the repo root.
       - name: Alert on failure
         if: failure()
-        run: '../../.github/scripts/alert-issue.sh fire weekly-pg-repack "[alert] Weekly pg_repack Maintenance failed" "failed run ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"'
+        run: '../../.github/scripts/alert-issue.sh fire weekly-pg-repack "[alert] Weekly pg_repack dry-run check failed" "failed run ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"'
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
