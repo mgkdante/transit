@@ -383,7 +383,7 @@
 	.app-shell-row {
 		position: relative;
 		--app-rail-width-expanded: 16rem;
-		--app-rail-width-collapsed: 4.25rem;
+		--app-rail-width-collapsed: 4.85rem;
 		--app-left-rail-offset: 0px;
 	}
 

@@ -53,10 +53,12 @@
 
 <div class="map-motion" data-testid="map-motion" data-collapsed={collapsed}>
 	{#if collapsed}
-		<!-- Collapsed rail: ONE compact ROUND toggle that still toggles, carrying the
-		     motion (Waves) icon so the rail stays recognizable. FILLED (--primary) =
-		     Smooth/ON, OUTLINE (hairline border) = Raw/OFF — the round form pairs with
-		     the floating pill better than a square. -->
+		<!-- Collapsed rail: the motion (Waves) icon as a HEADER badge (matching the filter
+		     section badges below it), with the round toggle button BELOW it. FILLED
+		     (--primary) = Smooth/ON, OUTLINE (hairline) = Raw/OFF. -->
+		<span class="map-motion-badge" aria-hidden="true">
+			<WavesIcon size={13} strokeWidth={2.35} />
+		</span>
 		<button
 			type="button"
 			class="map-motion-round"
@@ -65,11 +67,7 @@
 			aria-label={smooth ? t.motion.toRaw : t.motion.toSmooth}
 			data-testid="map-motion-switch"
 			onclick={() => motionMode.toggle()}
-		>
-			<span class="map-motion-round-icon" aria-hidden="true">
-				<WavesIcon size={15} strokeWidth={2.2} />
-			</span>
-		</button>
+		></button>
 	{:else}
 		<!-- Row 1: the label, prefixed by a small motion (Waves) badge mirroring how the
 		     filter sections badge their overline label. -->
@@ -122,7 +120,7 @@
 	/* Collapsed rail: center the single square in the narrow rail, matching the
 	   collapsed filter chips' centred alignment. */
 	.map-motion[data-collapsed='true'] {
-		gap: 0;
+		gap: 0.45rem;
 		justify-items: center;
 	}
 	.map-motion-label {
@@ -285,10 +283,6 @@
 		color: var(--primary-foreground);
 		background: var(--primary);
 		border-color: var(--primary);
-	}
-	.map-motion-round-icon {
-		display: inline-grid;
-		place-items: center;
 	}
 
 	@media (prefers-reduced-motion: reduce) {

@@ -117,7 +117,7 @@ describe('MapMotionControl', () => {
 		expect(rows[3]).toBe(screen.getByRole('link', { name: copy.en.motion.explain }));
 	});
 
-	it('COLLAPSED renders a single compact ROUND switch carrying the motion icon (no hint, no link) that still toggles', async () => {
+	it('COLLAPSED renders the motion icon badge above a round toggle (no hint, no link) that still toggles', async () => {
 		const { rerender } = render(MapMotionControl, {
 			locale: 'en',
 			copy: copy.en,
@@ -125,15 +125,16 @@ describe('MapMotionControl', () => {
 		});
 		const stack = screen.getByTestId('map-motion');
 		expect(stack).toHaveAttribute('data-collapsed', 'true');
-		// Exactly one control — the round switch; no hint text and no explain link.
-		expect(stack.children).toHaveLength(1);
+		// Two children: the motion icon BADGE (header) + the round toggle BELOW it.
+		expect(stack.children).toHaveLength(2);
+		// The icon badge (header) carries the motion glyph, matching the section badges.
+		const badge = stack.querySelector('.map-motion-badge');
+		expect(badge).not.toBeNull();
+		expect(badge!.querySelector('svg')).not.toBeNull();
 		const sw = screen.getByTestId('map-motion-switch');
 		expect(sw).toHaveAttribute('role', 'switch');
 		// The round collapsed form is the round class, not the old square.
 		expect(sw).toHaveClass('map-motion-round');
-		// It carries a recognizable motion icon (a Lucide svg glyph) so the collapsed
-		// rail still reads as the motion control.
-		expect(sw.querySelector('svg')).not.toBeNull();
 		// Outline (non-filled) = RAW/OFF by default.
 		expect(sw).toHaveAttribute('aria-checked', 'false');
 		expect(sw).toHaveAttribute('aria-label', copy.en.motion.toSmooth);
