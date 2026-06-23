@@ -87,7 +87,7 @@
 							{locale}
 							glyph={hint.glyph}
 							title={stop.name}
-							subtitle={stop.code ?? stop.id}
+							subtitle={stop.code ?? undefined}
 							meta={hint.label ?? undefined}
 							routes={stop.routes}
 							class="stop-result-main"
@@ -95,7 +95,7 @@
 						<MapDrilldownLink
 							href={mapHrefFor({ stop: stop.id }, locale)}
 							label={t.mapAction}
-							ariaLabel={t.viewStopOnMap(stop.code ?? stop.id)}
+							ariaLabel={t.viewStopOnMap(stop.code ?? stop.name)}
 						/>
 					</div>
 				{/snippet}

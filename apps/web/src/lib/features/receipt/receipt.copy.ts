@@ -51,8 +51,6 @@ export interface ReceiptCopy extends SurfaceHeadCopy {
 		readonly routeDeltaLabel: string;
 		/** Prefix read before a stop's average delay. */
 		readonly stopDelayLabel: string;
-		/** Honest fallback when a route/stop carries no name (id only). */
-		readonly unnamed: string;
 	};
 	/** Honest caveat under the receipt: what this measure is and is not. */
 	readonly caveat: string;
@@ -101,7 +99,6 @@ export const copy: Record<Locale, ReceiptCopy> = {
 			stopLabel: 'Worst stop',
 			routeDeltaLabel: 'On-time vs network',
 			stopDelayLabel: 'Average delay',
-			unnamed: 'Unnamed',
 		},
 		caveat:
 			'A daily summary of observed reliability, not a certified service report. Counts cover entities with a reading on the day; a blank figure means no data, never zero.',
@@ -144,7 +141,6 @@ export const copy: Record<Locale, ReceiptCopy> = {
 			stopLabel: 'Pire arrêt',
 			routeDeltaLabel: 'Ponctualité c. réseau',
 			stopDelayLabel: 'Retard moyen',
-			unnamed: 'Sans nom',
 		},
 		caveat:
 			'Un résumé quotidien de la fiabilité observée, et non un rapport de service certifié. Les décomptes portent sur les entités ayant une mesure ce jour-là; une valeur vide signifie aucune donnée, jamais zéro.',

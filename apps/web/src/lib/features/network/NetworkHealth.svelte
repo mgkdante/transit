@@ -34,6 +34,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { getLocale, localizeHref, type Locale } from '$lib/i18n';
+	import { routeNameFallback } from '$lib/site/absence';
 	import { layout, openSurface, routeFor } from '$lib/nav';
 	import { mapSearchFor } from '$lib/filters';
 	import { formatDateKey, formatRelativeSeconds } from '$lib/utils/time';
@@ -248,7 +249,9 @@
 		return rows.map((r, i) => ({
 			key: r.route_id,
 			rank: i + 1,
-			title: r.route_id,
+			// The id IS the rider-facing route number; label it ("Route 24") through the
+			// unknown-data layer so a bare unlabelled id never reads as the row's name.
+			title: routeNameFallback(r.route_id, locale),
 			subtitle: t.nonResponding.rowLabel,
 			// A silent scheduled trip is a service gap → the bar reads on the
 			// critical severity band (never --primary); length encodes the count.

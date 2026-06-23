@@ -18,6 +18,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { getLocale, localizeHref } from '$lib/i18n';
+	import { stopNameFallback } from '$lib/site/absence';
 	import { fmtDelayMin as sharedFmtDelayMin } from '$lib/utils';
 	import { mapHrefFor, routeFor } from '$lib/nav';
 	import {
@@ -472,10 +473,14 @@
 																<a
 																	class="route-stop-link"
 																	href={stopHref(stop.id)}
-																	aria-label={t.viewStop(stop.name ?? stop.id)}
+																	aria-label={t.viewStop(
+																		stop.name ?? stopNameFallback(stop.id, locale),
+																	)}
 																>
 																	<span class="route-stop-seq">{stop.seq}</span>
-																	<span class="route-stop-name">{stop.name ?? stop.id}</span>
+																	<span class="route-stop-name"
+																		>{stop.name ?? stopNameFallback(stop.id, locale)}</span
+																	>
 																	<span class="route-stop-live">
 																		{#if prediction}
 																			{#if prediction.etaUtc}
