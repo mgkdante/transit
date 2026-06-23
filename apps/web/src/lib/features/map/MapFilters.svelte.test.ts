@@ -181,7 +181,7 @@ describe('MapFilters', () => {
 		expect(container.querySelector('.map-filters')).toHaveAttribute('data-controls', 'true');
 	});
 
-	it('renders the header snippet at the very top of the panel, above the controls', () => {
+	it('renders the collapse icon + title above the motion header inside the controls panel', () => {
 		const store = createFilterStore(emptyFilterState(), () => {});
 		const header = createRawSnippet(() => ({
 			render: () => `<div data-testid="motion-slot">motion</div>`,
@@ -194,15 +194,13 @@ describe('MapFilters', () => {
 		const slot = getByTestId('motion-slot');
 		expect(slot).toBeInTheDocument();
 
-		const panel = container.querySelector('.map-filters')!;
+		const head = container.querySelector('.mf-head')!;
 		const headerWrap = container.querySelector('[data-testid="map-filter-header"]')!;
-		const controls = container.querySelector('.mf-controls')!;
-		// Header is the panel's first element child and precedes the controls block.
-		expect(panel.firstElementChild).toBe(headerWrap);
-		expect(headerWrap.contains(slot)).toBe(true);
+		// The collapse icon + title (.mf-head) sit at the TOP, ABOVE the motion header.
 		expect(
-			headerWrap.compareDocumentPosition(controls) & Node.DOCUMENT_POSITION_FOLLOWING,
+			head.compareDocumentPosition(headerWrap) & Node.DOCUMENT_POSITION_FOLLOWING,
 		).toBeTruthy();
+		expect(headerWrap.contains(slot)).toBe(true);
 	});
 
 	it('keeps the Filter title and omits the header when controlsMode is off', () => {

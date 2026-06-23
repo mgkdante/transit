@@ -1,19 +1,26 @@
 <!--
   MapMotionControl — the on-map "how do we draw moving buses?" switch.
 
-  An honest, tasteful floating control bound to the motionMode store. A real
+  An honest, tasteful control bound to the motionMode store. A real
   role="switch": OFF = RAW (the default — buses snap to their last reported
   position on every ~30s feed, NO estimation between reports), ON = SMOOTH
   ("almost real-time" — between reports each bus glides FORWARD along its route
   at its last reported speed, a bounded, decaying estimate). The switch reflects
   the store (raw by default); pressing it flips + persists the choice. A short
-  inline hint names which truth you are looking at, and a "How this works" link
+  hint names which truth you are looking at, and a "How this works" link
   deep-links into the /metrics live-positions explainer.
 
-  Placement + styling mirror MapNearMeControl / MapFreshness as a `.map-overlay`
-  floating chip (card surface + hairline + blur, right-offset that tracks the
-  detail panel). a11y: a real <button role="switch"> with aria-checked + a
-  bilingual aria-label, plus a visible text label.
+  Layout: the EXPANDED form is a 4-ROW VERTICAL STACK (label, switch, hint, link),
+  each on its own full-width row — a display:grid single column that can never
+  reflow horizontally. It lives at the TOP of the unified Controls panel (the
+  same panel on desktop and mobile), borrowing that panel's card surface.
+
+  When the desktop Controls panel is COLLAPSED (the narrow icon-only rail), the
+  control shrinks to a SINGLE compact square button (filled = Smooth/ON, outline =
+  Raw/OFF) sized + centred to match the collapsed filter chips. The parent passes
+  `collapsed` down (MapFilters → motionHeader → here); the drawer never collapses,
+  so mobile always shows the 4-row stack. a11y: a real <button role="switch"> with
+  aria-checked + a bilingual aria-label in both forms.
 -->
 <script lang="ts">
 	import { motionMode } from '$lib/stores';
@@ -24,15 +31,15 @@
 		locale: Locale;
 		copy: MapCopy;
 		/**
-		 * "floating" (default) = the absolute-positioned `.map-overlay` chip on the
-		 * canvas, with a STABLE fixed width sized to the wider state so toggling
-		 * raw⇄smooth never reflows. "inline" = the same row+switch+hint content laid
-		 * out statically at full container width (for the mobile filter sheet).
+		 * When true the control renders its COLLAPSED form: a single compact square
+		 * toggle (filled = Smooth, outline = Raw), sized to the collapsed rail's chips.
+		 * Passed down from MapFilters' `panelOpen === false` rail. Defaults to the full
+		 * 4-row stack (the drawer + the expanded desktop panel never collapse).
 		 */
-		variant?: 'floating' | 'inline';
+		collapsed?: boolean;
 	}
 
-	let { locale, copy: t, variant = 'floating' }: Props = $props();
+	let { locale, copy: t, collapsed = false }: Props = $props();
 
 	const smooth = $derived(motionMode.isSmooth);
 	// Deep-link straight to the live-positions explainer section on /metrics,
@@ -40,9 +47,25 @@
 	const explainHref = $derived(`${localizeHref('/metrics', locale)}#live-positions`);
 </script>
 
-<div class="map-motion" data-variant={variant} data-testid="map-motion">
-	<div class="map-motion-row">
+<div class="map-motion" data-testid="map-motion" data-collapsed={collapsed}>
+	{#if collapsed}
+		<!-- Collapsed rail: ONE compact square that still toggles. Filled = Smooth/ON,
+		     outline = Raw/OFF — the same affordance as the icon-only filter chips. -->
+		<button
+			type="button"
+			class="map-motion-square"
+			role="switch"
+			aria-checked={smooth}
+			aria-label={smooth ? t.motion.toRaw : t.motion.toSmooth}
+			data-testid="map-motion-switch"
+			onclick={() => motionMode.toggle()}
+		>
+			<span class="map-motion-square-fill" aria-hidden="true"></span>
+		</button>
+	{:else}
+		<!-- Row 1: the label. -->
 		<span class="map-motion-label" id="map-motion-label">{t.motion.label}</span>
+		<!-- Row 2: the toggle switch (track/thumb + state name). -->
 		<button
 			type="button"
 			class="map-motion-switch"
@@ -58,58 +81,35 @@
 			</span>
 			<span class="map-motion-state">{smooth ? t.motion.smooth : t.motion.raw}</span>
 		</button>
-	</div>
-	<p class="map-motion-hint">
-		<span>{smooth ? t.motion.hintSmooth : t.motion.hintRaw}</span>
+		<!-- Row 3: the hint. -->
+		<span class="map-motion-hint">{smooth ? t.motion.hintSmooth : t.motion.hintRaw}</span>
+		<!-- Row 4: the "How this works" deep link. -->
 		<a class="map-motion-explain" href={explainHref}>{t.motion.explain}</a>
-	</p>
+	{/if}
 </div>
 
 <style>
-	/* Shared inner layout for both variants — the row+switch+hint stack. Geometry
-	   (position / width / card chrome) is gated per-variant below. */
+	/* The 4-row vertical stack: label / switch / hint / link, each on its OWN row at
+	   full container width. A single-column grid — it sits statically in normal flow
+	   inside the unified Controls panel (the same panel on desktop and mobile). No
+	   card chrome, no fixed width: it borrows the surrounding panel's surface, and
+	   the single column means it can never reflow horizontally. */
 	.map-motion {
 		display: grid;
-		gap: 0.3rem;
+		grid-template-columns: minmax(0, 1fr);
+		gap: 0.4rem;
+		/* LAW: the motion toggle is sized to its CONTENT, wide enough for the FR
+		   "Presque en temps réel" on one line, NOT 100% of the parent panel. The cap
+		   keeps the longest hint from stretching the control to an awkward width. */
+		width: max-content;
+		max-width: 13.5rem;
+		justify-self: start;
 	}
-
-	/* FLOATING chip, bottom-left of the canvas — clear of the bottom-right near-me
-	   control and the right detail panel (whose width the offset tracks). Same card
-	   surface + hairline + blur language as the rest of the map chrome.
-
-	   STABLE GEOMETRY: a FIXED width sized to the WIDER state so toggling raw⇄smooth
-	   ("Raw"/"Brut" vs "Almost real-time"/"Presque en temps réel") never jumps the
-	   footprint. The width fits the longest EN + FR state in the switch row AND the
-	   longest hint line ("Mouvement estimé entre les relevés" + "Comment ça marche")
-	   on a single hint line; the hint reserves its space via min-height so only the
-	   text/active-state swaps, never the geometry. */
-	.map-motion[data-variant='floating'] {
-		position: absolute;
-		z-index: 10;
-		left: calc(var(--app-left-rail-offset, 0rem) + 1rem);
-		bottom: 1.15rem;
-		width: 20rem;
-		max-width: calc(100% - var(--app-left-rail-offset, 0rem) - 2rem);
-		padding: 0.5rem 0.7rem 0.55rem;
-		background: color-mix(in srgb, var(--card) 88%, transparent);
-		border: 1px solid color-mix(in srgb, var(--border) 82%, var(--primary) 18%);
-		border-radius: var(--radius-lg);
-		box-shadow: var(--shadow-card);
-		backdrop-filter: blur(10px) saturate(1.1);
-	}
-
-	/* INLINE variant — same content, NOT absolute-positioned. Sits statically in
-	   normal flow at full container width (the mobile filter sheet). No card chrome,
-	   no fixed width, no offsets: it borrows the surrounding container's surface. */
-	.map-motion[data-variant='inline'] {
-		position: static;
-		width: 100%;
-		max-width: none;
-	}
-	.map-motion-row {
-		display: flex;
-		align-items: center;
-		gap: 0.55rem;
+	/* Collapsed rail: center the single square in the narrow rail, matching the
+	   collapsed filter chips' centred alignment. */
+	.map-motion[data-collapsed='true'] {
+		gap: 0;
+		justify-items: center;
 	}
 	.map-motion-label {
 		font-family: var(--font-mono);
@@ -121,9 +121,11 @@
 	/* The switch itself — a real role="switch" button: a sliding track/thumb pair
 	   (the on/off affordance) plus the current state name. Calm at rest; lights to
 	   --primary when SMOOTH (estimated) is engaged so the estimate reads as a clear,
-	   opted-in state and RAW reads as the calm default. */
+	   opted-in state and RAW reads as the calm default. Justified to the row start so
+	   it owns its own full-width row without stretching the pill. */
 	.map-motion-switch {
 		display: inline-flex;
+		justify-self: start;
 		align-items: center;
 		gap: 0.45rem;
 		min-height: 2rem;
@@ -188,23 +190,16 @@
 		white-space: nowrap;
 	}
 	.map-motion-hint {
-		display: flex;
-		flex-wrap: wrap;
-		align-items: baseline;
-		gap: 0.1rem 0.45rem;
 		margin: 0;
 		font-family: var(--font-mono);
 		font-size: var(--text-micro);
 		line-height: 1.4;
 		color: var(--muted-foreground);
 	}
-	/* Reserve the hint's vertical space in the floating chip so swapping the shorter
-	   raw hint for the longer smooth one (or EN⇄FR) never changes the card height —
-	   only the text content swaps, never the geometry. */
-	.map-motion[data-variant='floating'] .map-motion-hint {
-		min-height: 1.4em;
-	}
 	.map-motion-explain {
+		justify-self: start;
+		font-family: var(--font-mono);
+		font-size: var(--text-micro);
 		color: var(--primary);
 		text-decoration: none;
 		transition: opacity var(--duration-fast, 150ms) var(--ease-default, ease);
@@ -219,26 +214,61 @@
 		border-radius: 2px;
 	}
 
+	/* Collapsed square — a single ~2rem toggle that matches the collapsed filter
+	   chips' size + centred placement. OUTLINE (non-filled) = Raw/OFF, the calm
+	   default; FILLED with --primary = Smooth/ON, the opted-in estimate. */
+	.map-motion-square {
+		display: inline-grid;
+		place-items: center;
+		width: 2rem;
+		height: 2rem;
+		padding: 0;
+		background: color-mix(in srgb, var(--muted) 70%, transparent);
+		border: 1px solid var(--border-subtle);
+		border-radius: var(--radius-sm);
+		cursor: pointer;
+		transition:
+			background-color var(--duration-fast, 150ms) var(--ease-default, ease),
+			border-color var(--duration-fast, 150ms) var(--ease-default, ease);
+	}
+	.map-motion-square:hover,
+	.map-motion-square:focus-visible {
+		border-color: color-mix(in srgb, var(--primary) 48%, var(--border) 52%);
+		outline: none;
+	}
+	.map-motion-square:focus-visible {
+		outline: 2px solid var(--ring);
+		outline-offset: 2px;
+	}
+	.map-motion-square[aria-checked='true'] {
+		background: color-mix(in srgb, var(--primary) 16%, var(--muted) 84%);
+		border-color: color-mix(in srgb, var(--primary) 55%, var(--border) 45%);
+	}
+	/* The inner glyph: an outline square when OFF (Raw), a FILLED --primary square
+	   when ON (Smooth) — the literal "filled vs non-filled square" affordance. */
+	.map-motion-square-fill {
+		width: 0.85rem;
+		height: 0.85rem;
+		border-radius: 2px;
+		background: transparent;
+		border: 1.5px solid var(--muted-foreground);
+		transition:
+			background-color var(--duration-fast, 150ms) var(--ease-default, ease),
+			border-color var(--duration-fast, 150ms) var(--ease-default, ease);
+	}
+	.map-motion-square[aria-checked='true'] .map-motion-square-fill {
+		background: var(--primary);
+		border-color: var(--primary);
+	}
+
 	@media (prefers-reduced-motion: reduce) {
 		.map-motion-track,
 		.map-motion-thumb,
 		.map-motion-switch,
+		.map-motion-square,
+		.map-motion-square-fill,
 		.map-motion-explain {
 			transition: none;
-		}
-	}
-
-	/* Match the layout.isDesktop breakpoint (1024px): below it the floating chip is
-	   never rendered (MapHero swaps to the inline variant inside the filter sheet),
-	   so this query only needs to cover up to 1023px — the old 760px ceiling left a
-	   dead 760-1023px band that no longer matched anything. */
-	@media (max-width: 1023px) {
-		.map-motion[data-variant='floating'] {
-			left: 0.75rem;
-			right: 0.75rem;
-			bottom: calc(3.35rem + env(safe-area-inset-bottom, 0px));
-			width: auto;
-			max-width: calc(100% - 1.5rem);
 		}
 	}
 </style>

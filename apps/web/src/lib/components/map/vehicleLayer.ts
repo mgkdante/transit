@@ -411,7 +411,10 @@ export function setVehicles(
 /** Apply the GLOBAL stale-dim (whole live tier behind). When stale, every bus is
  * multiplied by 45% together (the per-vehicle `opacity` property is a constant 1
  * now that the silence fade is gone, so this is the only signal that dims a bus).
- * Never extrapolate — this only dims, it never moves a bus. */
+ * Never extrapolate — this only dims, it never moves a bus.
+ * BY DESIGN: VEHICLE_SILENT_LAYER is intentionally NOT dimmed here — it stays at
+ * opacity 1 through a global stale so the per-bus not-reporting "!" flags remain
+ * legible on top of the dimmed fleet. This is deliberate, NOT a missed layer. */
 export function setStale(map: MapLibreMap, stale: boolean): void {
 	const opacity = iconOpacityExpr(stale) as Parameters<MapLibreMap['setPaintProperty']>[2];
 	if (map.getLayer(VEHICLE_BODY_LAYER)) {

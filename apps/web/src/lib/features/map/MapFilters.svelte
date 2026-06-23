@@ -44,10 +44,12 @@
 		controlsMode?: boolean;
 		/**
 		 * Optional snippet rendered at the very TOP of the panel (above the
-		 * controls header). Used on mobile to pin the inline motion toggle to the
-		 * top of the filter sheet.
+		 * controls header). Used to pin the motion toggle to the top of the sheet.
+		 * Receives `collapsed` (true when the panel is the narrow icon-only rail,
+		 * i.e. `panelOpen === false`) so the toggle can shrink to its square form on
+		 * the collapsed desktop rail while staying full on the drawer.
 		 */
-		header?: import('svelte').Snippet;
+		header?: import('svelte').Snippet<[boolean]>;
 		onselect?: () => void;
 		class?: string;
 	}
@@ -168,10 +170,6 @@
 	role="group"
 	aria-label={panelTitle}
 >
-	{#if header}
-		<div class="mf-header" data-testid="map-filter-header">{@render header()}</div>
-	{/if}
-
 	<div class="mf-controls">
 		<div class="mf-head">
 			{#if collapsible}
@@ -197,6 +195,9 @@
 				<span class="mf-title">{panelTitle}</span>
 			{/if}
 		</div>
+		{#if header}
+			<div class="mf-header" data-testid="map-filter-header">{@render header(!panelOpen)}</div>
+		{/if}
 		<div class="mf-clear-row">
 			<button
 				type="button"

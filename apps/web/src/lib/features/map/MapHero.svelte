@@ -25,7 +25,7 @@
 	import type { Map as MapLibreMap, MapMouseEvent } from 'maplibre-gl';
 	import { getLocale, type Locale } from '$lib/i18n';
 	import { themeStore } from '$lib/stores';
-	import { layout } from '$lib/nav';
+	import { layout, isDesktopViewport } from '$lib/nav';
 	import {
 		createLiveStore,
 		getV1Context,
@@ -96,6 +96,13 @@
 	import { motionFeedAnimate } from './motionFeed';
 	import { parseCoordinateQuery, nearTargetKey } from './mapNearMe';
 	import { copy as MAP_COPY } from './map.copy';
+	import {
+		readStoredDetailPanelWidth,
+		writeStoredDetailPanelWidth,
+		clampDetailPanelWidth,
+		MIN_DETAIL_PANEL_WIDTH,
+		MAX_DETAIL_PANEL_WIDTH,
+	} from './mapDetailPanes';
 	import { shouldAnimate } from '$lib/motion/policy';
 	import { buildAlertEntitySets, vehicleHasAlert } from './mapAlerts';
 	import { PICKABLE_MAP_LAYERS, pickMapSelection } from './mapPicking';
@@ -135,31 +142,71 @@
 	// edge made the right band vanish while the left one worked.
 	const MAP_MAX_BOUNDS = [-74.32, 45.3, -73.2, 45.82] as const;
 
-	// Hero width — window-reactive ONLY (not panel state). The map is now full-bleed
-	// and never resizes when the detail panel opens (the panel FLOATS over it), so the
-	// fit-padding fraction math runs straight off the hero clientWidth. Seeded with a
+	// Hero width — window-reactive ONLY. The fit-padding fraction math runs off the
+	// WHOLE-HERO clientWidth. The map is full-bleed (it fills the hero), and every
+	// panel OVERLAYS it (absolute), so dragging or collapsing a panel never changes
+	// the hero width — the fit padding stays STABLE and MapStage's fitPadding effect
+	// never re-fits. Only a genuine viewport resize changes mapWidthPx. Seeded with a
 	// desktop default so the fraction padding applies even before the first
 	// clientWidth measurement (a 0 here would fall back to the wide fit).
 	let mapWidthPx = $state(1280);
 	const fitWidthPx = $derived(mapWidthPx);
 
+	// Layout snapshot for the CAMERA-AFFECTING derivation (mapFitPadding). Resolved
+	// ONCE up front from matchMedia (`isDesktopViewport()`, SSR-safe → false on the
+	// server) and refreshed only on a GENUINE viewport resize in onMount — NOT off the
+	// shared `layout.isDesktop` store. The store flips false→true during hydration (it
+	// reads `false` on the server), and the map's fitPadding effect re-runs fitBounds on
+	// any padding change, so deriving the padding off that store would re-fit and SHIFT
+	// the camera on the first paint. A matchMedia read at init is already the real value
+	// client-side, so the very first padding is correct and the camera fits once. The
+	// store still drives the non-camera chrome branches below (hover peek, the detail
+	// pane gate, motion control).
+	let isDesktopLayout = $state(isDesktopViewport());
+	onMount(() => {
+		if (typeof window === 'undefined') return;
+		const mql = window.matchMedia('(min-width: 1024px)');
+		// Confirm the layout post-mount (covers any SSR/init skew) and keep it live for
+		// real resizes across the breakpoint. A `change` only fires on an actual
+		// viewport crossing, never on the hydration pass, so the camera is not re-fit
+		// during load.
+		isDesktopLayout = mql.matches;
+		const onChange = (e: MediaQueryListEvent) => {
+			isDesktopLayout = e.matches;
+		};
+		mql.addEventListener('change', onChange);
+		return () => mql.removeEventListener('change', onChange);
+	});
+
 	// Desktop frames the island into a roughly SQUARE central gap with generous
 	// left/right BUFFERS sized as a fraction of the width. The buffers (a) crop the
 	// off-island east (south-shore sprawl), (b) keep the whole island visible past
 	// the left filter panel and the right detail panel at their furthest, and
-	// (c) — being static — never shift the map when a panel toggles. The island
+	// (c), being static, never shift the map when a panel toggles. The island
 	// sits centred in the visible gap: human-centred, not math-centred on the full
 	// canvas. Tunable knobs:
 	const DESKTOP_LEFT_PAD_FRAC = 0.37; // clears rail + filter panel, with band
 	const DESKTOP_RIGHT_PAD_FRAC = 0.43; // buffer for the right detail panel + band
 	const DESKTOP_VERT_PAD_PX = 56; // small top/bottom → island fills the height (bigger)
-	// Fixed width of the floating right detail panel (desktop). The panel OVERLAYS the
-	// map (like the left .map-overlay controls) instead of being a resizable pane, so
-	// the map never resizes when it opens. Right-anchored chrome (near-me, freshness
-	// chip, hover peek) shifts clear of it via the --map-detail-offset variable below.
-	const MAP_DETAIL_PANEL_WIDTH_PX = 360;
+	// Right DETAIL panel — an absolute OVERLAY anchored flush to the map's right edge
+	// (NOT a paneforge pane). Its WIDTH is the `--app-right-detail-offset` CSS var on
+	// .map-hero; dragging the panel's left-edge handle writes a live clamped px width
+	// into that var and we persist the chosen width (transit:detail-panel-width), so
+	// the layout sticks across reloads. COLLAPSING slides the overlay OFF the right
+	// edge (data-detail-collapsed on .map-hero). Because the panel is absolute, none
+	// of this touches the map canvas — the map sizes off its own container, never the
+	// panel width, so dragging/collapsing the detail can NEVER resize the map.
+	let detailWidthPx = $state(readStoredDetailPanelWidth());
+	let detailCollapsed = $state(false);
+	let heroEl = $state<HTMLDivElement | null>(null);
+	let detailDragging = $state(false);
+	let detailDragStartX = 0;
+	let detailDragStartWidth = 0;
+	const detailResizeAria = $derived(t.detailResizeLabel);
+	// Reads the one-shot `isDesktopLayout` snapshot (not the hydration-flipping store)
+	// so the FIRST padding is already correct and the camera fits exactly once.
 	const mapFitPadding = $derived<MapFitPadding>(
-		layout.isDesktop && fitWidthPx > 0
+		isDesktopLayout && fitWidthPx > 0
 			? {
 					top: DESKTOP_VERT_PAD_PX,
 					bottom: DESKTOP_VERT_PAD_PX,
@@ -239,10 +286,10 @@
 	// (destroy() just cancels an already-cancelled loop, which is a no-op).
 	$effect(() => () => untrack(() => vehicleMotion)?.destroy());
 
-	// Live tier ttl (seconds) → drives the stale/banner windows (isStale fires at
-	// 3x ttl = 90s) so they track the publisher's cadence, not a magic number.
-	// Default 30s if the manifest omits it. (The per-vehicle silence fade this once
-	// also sized is gone; liveTtl is still threaded through the now no-op refresher.)
+	// Live tier ttl (seconds) → drives the global stale/banner windows (isStale fires
+	// at 3x ttl = 90s) AND sizes the per-bus not-reporting cutoff (threaded as `ttlS`
+	// into toVehicleFeatures, where a bus whose own reported_utc fix is past the window
+	// freezes + earns the "!" badge). Default 30s if the manifest omits it.
 	const liveTtl = liveTtlS(manifest.files?.live?.ttl_s);
 
 	let map = $state<MapLibreMap | null>(null);
@@ -467,14 +514,6 @@
 	const detailSurfaceKey = $derived(
 		selectedDetail ? `${selectedDetail.kind}:${selectedDetail.id}` : 'empty',
 	);
-	// Right-anchored chrome (near-me control, floating freshness chip, hover peek)
-	// shifts clear of the floating detail panel via this offset. The panel is a FIXED
-	// width that OVERLAYS the map (it never resizes the canvas), so this is a constant
-	// while open and 0 while closed — no ResizeObserver, no per-frame measurement.
-	const mapDetailOffset = $derived(
-		detailOpen && layout.isDesktop ? `${MAP_DETAIL_PANEL_WIDTH_PX}px` : '0rem',
-	);
-
 	function clearHover(m: MapLibreMap): void {
 		hovered = null;
 		m.getCanvas().style.cursor = '';
@@ -536,6 +575,9 @@
 		detailOpen = false;
 		selected = null;
 		selectionStack = [];
+		// Re-open the panel expanded next time: a closed panel should not remember a
+		// collapsed strip (that would re-open as an empty rail with no obvious content).
+		detailCollapsed = false;
 	}
 
 	function selectFromDetail(next: MapSelection): void {
@@ -1081,15 +1123,97 @@
 			closeDetail();
 		}
 	});
+
+	// Seed the live CSS vars from the panel state once mounted so the dragged width is
+	// restored on a reload. SSR paints the 360px CSS default (no JS), so there is no
+	// flash: we only overwrite client-side. The map canvas never reads either var, so
+	// writing them can NEVER resize the map.
+	//   · --app-right-detail-offset = the overlay's own width (the panel box).
+	//   · --map-detail-offset = how far the FLOATING CHROME (near-me, peek, freshness,
+	//     attribution) must shift left to clear the open panel: the live width while
+	//     open + expanded, the 3.7rem strip while collapsed, 0 while closed (the chrome
+	//     sits flush to the map's own right edge again).
+	$effect(() => {
+		const el = heroEl;
+		if (!el) return;
+		el.style.setProperty('--app-right-detail-offset', `${detailWidthPx}px`);
+		const chromeOffset =
+			layout.isDesktop && detailOpen ? (detailCollapsed ? '3.7rem' : `${detailWidthPx}px`) : '0rem';
+		el.style.setProperty('--map-detail-offset', chromeOffset);
+	});
+
+	// Collapse/expand the right detail panel. A pure local toggle: it flips
+	// `data-detail-collapsed` on .map-hero, which the CSS reads to slide the overlay
+	// OFF the right edge (collapses to the RIGHT, never to the left / mid-air). The
+	// selection stays alive so expanding restores the same detail.
+	function toggleDetailCollapsed(): void {
+		detailCollapsed = !detailCollapsed;
+	}
+
+	// Pointer-drag the detail panel's LEFT edge to resize its width. Capturing the
+	// pointer keeps the drag tracking even if the cursor leaves the handle; each move
+	// writes a CLAMPED width into the CSS var (so the overlay follows live), and we
+	// persist on release. Dragging the LEFT edge GROWS the panel as the pointer moves
+	// left, so the delta is negated. The map canvas is untouched throughout — it never
+	// reads the panel width. Mirrors the AppShell left-rail drag exactly.
+	function onDetailHandlePointerDown(event: PointerEvent): void {
+		if (event.button !== 0) return;
+		detailDragging = true;
+		detailDragStartX = event.clientX;
+		detailDragStartWidth = detailWidthPx;
+		(event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
+		event.preventDefault();
+	}
+
+	function onDetailHandlePointerMove(event: PointerEvent): void {
+		if (!detailDragging) return;
+		// Left-edge handle: moving the pointer left (negative delta) widens the panel.
+		detailWidthPx = clampDetailPanelWidth(
+			detailDragStartWidth - (event.clientX - detailDragStartX),
+		);
+	}
+
+	function onDetailHandlePointerUp(event: PointerEvent): void {
+		if (!detailDragging) return;
+		detailDragging = false;
+		(event.currentTarget as HTMLElement).releasePointerCapture?.(event.pointerId);
+		writeStoredDetailPanelWidth(detailWidthPx);
+	}
+
+	// Keyboard resize for the separator (a11y parity with the left-rail handle): arrows
+	// nudge the width, Home/End jump to the floor/ceiling. Left-edge handle, so Left
+	// grows and Right shrinks. Persists on each commit.
+	function onDetailHandleKeyDown(event: KeyboardEvent): void {
+		const STEP = 16;
+		let next: number;
+		switch (event.key) {
+			case 'ArrowLeft':
+				next = detailWidthPx + STEP;
+				break;
+			case 'ArrowRight':
+				next = detailWidthPx - STEP;
+				break;
+			case 'Home':
+				next = MAX_DETAIL_PANEL_WIDTH;
+				break;
+			case 'End':
+				next = MIN_DETAIL_PANEL_WIDTH;
+				break;
+			default:
+				return;
+		}
+		event.preventDefault();
+		detailWidthPx = clampDetailPanelWidth(next);
+		writeStoredDetailPanelWidth(detailWidthPx);
+	}
 </script>
 
-<!-- The map canvas + its framing vignette. Rendered FULL-BLEED directly in the
-     hero (not inside a resizable pane) so there is exactly ONE MapStage (one GL
-     context, one onready) and the map NEVER resizes when the detail panel opens —
-     the panel FLOATS over the right slice (like the left .map-overlay controls),
-     so MapLibre's ResizeObserver never fires and the camera never jumps. The same
-     mapBody renders on every breakpoint, keeping the GL context stable across the
-     1024px line. -->
+<!-- The map canvas + its framing vignette. The hero renders exactly ONE MapStage
+     (one GL context, one onready). Because the detail/filter/rail panels all OVERLAY
+     the map (absolute) rather than sit in its flow, opening/closing/dragging any of
+     them never remounts the GL context and never changes the map's size — the canvas
+     is full-bleed and fixed, resized only by MapStage's own container ResizeObserver
+     on a genuine viewport change. -->
 {#snippet mapBody()}
 	<!-- HOT FIRST PAINT (B2): MapStage awaits the basemap via `basemapLoader` INSIDE
 	     its own onMount and bakes the resolved basemap into the constructor style, so
@@ -1125,6 +1249,9 @@
 		canGoBack={selectionStack.length > 0}
 		onback={goBackDetail}
 		onclose={closeDetail}
+		collapsed={detailCollapsed}
+		ontogglecollapse={toggleDetailCollapsed}
+		resizable
 	>
 		{#if selectedDetail}
 			<MapSelectionDetail
@@ -1139,156 +1266,191 @@
 	</RightPanel>
 {/snippet}
 
-<div
-	class="map-hero"
-	bind:clientWidth={mapWidthPx}
-	style={`--map-detail-offset: ${mapDetailOffset}`}
->
-	<!-- The map is FULL-BLEED: rendered directly in the hero (not inside a resizable
-	     pane) and ALWAYS mounted, never gated on isDesktop — so crossing the 1024px
-	     breakpoint keeps MapStage in exactly ONE DOM position and never tears down +
-	     recreates the GL context (which would re-fire onready, re-bake sprites, and
-	     reload the basemap). The detail panel FLOATS over the right slice (below) so
-	     the canvas never resizes when a selection opens — no jump, no zoom-break. -->
-	{@render mapBody()}
-
-	<!-- Desktop: the detail FLOATS over the map's right slice as a fixed-width
-	     overlay (mirroring the left .map-overlay controls), so opening it never
-	     resizes the canvas. ANCHORED FLUSH to the right edge (right: 0) and, when it
-	     collapses or narrows, the panel stays pinned right (justify-content: flex-end)
-	     instead of drifting to the left of the overlay box — it retracts TO the right
-	     edge, never mid-canvas. A labelled dialog region with a close + back control.
-	     On mobile the detail rides the BottomSheet below instead. -->
-	{#if layout.isDesktop && detailOpen}
-		<div
-			class="map-overlay map-detail-overlay"
-			role="dialog"
-			aria-label={selectedDetail?.title ?? t.detailPanelLabel}
-		>
-			{@render detailPanel()}
-		</div>
-	{/if}
-
-	<!-- Top-left: map title. A mono kicker overline + live freshness ride above a
-	     confident heading; a hairline accent rule anchors the block to the edge. -->
-	<div class="map-overlay map-head">
-		<div class="map-kicker-row">
-			<p class="map-kicker">{t.kicker}</p>
-			<MapFreshness
-				placement="head"
-				generatedUtc={live.generatedUtc}
-				ageSeconds={live.ageSeconds}
-				isStale={live.isStale}
-				{locale}
-			/>
-		</div>
-		<div class="map-title-row">
-			<h1 class="map-heading">{t.heading}<span class="map-dot">.</span></h1>
-		</div>
-	</div>
-
-	<MapNearMeControl
-		bind:open={nearMeOpen}
-		bind:query={nearMeQuery}
-		{locale}
-		copy={t}
-		loading={nearMeLoading}
-		error={nearMeError}
-		origin={nearMeOrigin}
-		stops={nearbyStops}
-		onuselocation={useNearMeLocation}
-		onsearch={searchNearMe}
-		onsuggestion={selectNearMeSuggestion}
-		onstopselect={selectNearbyStop}
-		onclear={clearNearMeOrigin}
-	/>
-
-	<!-- Bottom-left: the honest motion-mode switch (raw vs almost-real-time),
-	     bound to the motionMode store. DESKTOP ONLY — it floats clear of the
-	     bottom-right near-me control and deep-links into the /metrics
-	     live-positions explainer. On mobile the same switch rides at the top of
-	     the filter sheet (the header snippet below), so the canvas stays clear. -->
-	{#if layout.isDesktop}
-		<MapMotionControl variant="floating" {locale} copy={t} />
-	{/if}
-
-	<!-- Left: the combinable state filter (URL-driven). On mobile the panel
-	     doubles as the controls sheet (controlsMode) with the inline motion toggle
-	     pinned to its top via the header snippet. -->
-	<div class="map-overlay map-filter-panel">
-		{#snippet motionHeader()}
-			<MapMotionControl variant="inline" {locale} copy={t} />
-		{/snippet}
-		<MapFilters
-			store={filters}
-			{locale}
-			routes={routesIndex.data?.routes ?? []}
-			stops={stops.data?.stops ?? []}
-			controlsMode={!layout.isDesktop}
-			header={layout.isDesktop ? undefined : motionHeader}
-		/>
-	</div>
-
-	<MapFilterPill
+<!-- The unified Controls panel — ONE source of truth shared by the desktop
+     overlay AND the mobile drawer (MapFilterPill). It is MapFilters in
+     controlsMode (titled "Controls") with the inline motion toggle pinned to its
+     top via the `motionHeader` snippet. Rendering the SAME snippet on both
+     breakpoints keeps the desktop panel and the mobile drawer identical — no
+     divergent call sites. -->
+{#snippet motionHeader(collapsed: boolean)}
+	<MapMotionControl {locale} copy={t} {collapsed} />
+{/snippet}
+{#snippet mapControls(opts?: { collapsible?: boolean; onselect?: () => void })}
+	<MapFilters
 		store={filters}
 		{locale}
 		routes={routesIndex.data?.routes ?? []}
 		stops={stops.data?.stops ?? []}
-		hidden={detailOpen}
+		collapsible={opts?.collapsible ?? true}
+		controlsMode={true}
+		header={motionHeader}
+		onselect={opts?.onselect}
 	/>
+{/snippet}
 
-	<MapFreshness
-		placement="floating"
-		generatedUtc={live.generatedUtc}
-		ageSeconds={live.ageSeconds}
-		isStale={live.isStale}
-		{locale}
-	/>
+<!-- The map SURFACE — the full-bleed canvas plus every floating overlay (title,
+     near-me, Controls panel, freshness, feed-stall, live-edge, hover peek). It fills
+     the whole hero (inset:0). The right-edge chrome (near-me, peek, freshness) reads
+     --map-detail-offset so it shifts clear of the open detail overlay. Rendered ONCE,
+     so the GL context is stable. -->
+{#snippet mapSurface()}
+	<div class="map-surface">
+		{@render mapBody()}
 
-	<!-- Feed-stall banner: a calm top-of-map caution shown ONLY when the WHOLE live
-	     feed has genuinely stalled (live.isStale — age past the 3x-ttl budget). The
-	     pipeline stamps every vehicle's updated_utc with the uniform snapshot capture
-	     time, so staleness is a GLOBAL feed signal, never one stuck bus — which is why
-	     the per-vehicle silence fade + per-bus marker were dropped. Informational (a
-	     polite status), non-blocking, and absent in normal operation. -->
-	<MapFeedStallBanner
-		generatedUtc={live.generatedUtc}
-		ageSeconds={live.ageSeconds}
-		isStale={live.isStale}
-		{locale}
-	/>
-
-	<!-- Live-feed edge notice: a small, non-blocking pill centred near the top of
-	     the canvas when the live feed is unreachable or currently has no vehicles.
-	     It floats OVER the map (pointer-events: none) so the basemap, stops, and
-	     near-me stay fully usable; it is not a boundary and never blanks the canvas. -->
-	{#if liveEdgeMessage}
-		<div
-			class="map-overlay map-live-edge"
-			data-state={liveEdgeState}
-			role="status"
-			aria-live="polite"
-		>
-			{liveEdgeMessage}
+		<!-- Top-left: map title. A mono kicker overline + live freshness ride above a
+		     confident heading; a hairline accent rule anchors the block to the edge. -->
+		<div class="map-overlay map-head">
+			<div class="map-kicker-row">
+				<p class="map-kicker">{t.kicker}</p>
+				<MapFreshness
+					placement="head"
+					generatedUtc={live.generatedUtc}
+					ageSeconds={live.ageSeconds}
+					isStale={live.isStale}
+					{locale}
+				/>
+			</div>
+			<div class="map-title-row">
+				<h1 class="map-heading">{t.heading}<span class="map-dot">.</span></h1>
+			</div>
 		</div>
-	{/if}
 
-	{#if hoverDetail && layout.isDesktop}
-		<div class="map-overlay map-peek" aria-live="polite">
-			<MapSelectionDetail
-				detail={hoverDetail}
-				{locale}
-				compact
-				notReporting={hoverVehicleAbsence}
-				onselect={selectFromDetail}
-				onfilter={applyDetailFilter}
-				onalertselect={selectAlertRelated}
-			/>
+		<MapNearMeControl
+			bind:open={nearMeOpen}
+			bind:query={nearMeQuery}
+			{locale}
+			copy={t}
+			loading={nearMeLoading}
+			error={nearMeError}
+			origin={nearMeOrigin}
+			stops={nearbyStops}
+			onuselocation={useNearMeLocation}
+			onsearch={searchNearMe}
+			onsuggestion={selectNearMeSuggestion}
+			onstopselect={selectNearbyStop}
+			onclear={clearNearMeOrigin}
+		/>
+
+		<!-- Left: the unified Controls panel (URL-driven filters + the motion toggle).
+		     The motion-mode switch (raw vs almost-real-time, bound to the motionMode
+		     store) is pinned to the TOP of the panel via the shared `mapControls`
+		     snippet; the combinable state filters sit below. Desktop renders it here;
+		     mobile renders the SAME snippet inside MapFilterPill's drawer (one source
+		     of truth, no divergent call sites). There is no separate floating chip,
+		     so nothing reflows when the toggle swaps raw⇄smooth. -->
+		<div class="map-overlay map-filter-panel">
+			{@render mapControls()}
+		</div>
+
+		<MapFilterPill store={filters} {locale} hidden={detailOpen} controls={mapControls} />
+
+		<MapFreshness
+			placement="floating"
+			generatedUtc={live.generatedUtc}
+			ageSeconds={live.ageSeconds}
+			isStale={live.isStale}
+			{locale}
+		/>
+
+		<!-- Feed-stall banner: a calm top-of-map caution shown ONLY when the WHOLE live
+		     feed has genuinely stalled (live.isStale — age past the 3x-ttl budget). The
+		     pipeline stamps every vehicle's updated_utc with the uniform snapshot capture
+		     time, so THIS banner is a GLOBAL feed signal, never one stuck bus — which is why
+		     the per-vehicle silence FADE (that keyed off the uniform updated_utc) was
+		     dropped. A per-bus not-reporting "!" badge was RE-ADDED, but off each bus's OWN
+		     reported_utc (its GTFS-RT GPS fix time), which IS per-vehicle — see liveTtl /
+		     toVehicleFeatures. Informational (a polite status), non-blocking, absent in
+		     normal operation. -->
+		<MapFeedStallBanner
+			generatedUtc={live.generatedUtc}
+			ageSeconds={live.ageSeconds}
+			isStale={live.isStale}
+			{locale}
+		/>
+
+		<!-- Live-feed edge notice: a small, non-blocking pill centred near the top of
+		     the canvas when the live feed is unreachable or currently has no vehicles.
+		     It floats OVER the map (pointer-events: none) so the basemap, stops, and
+		     near-me stay fully usable; it is not a boundary and never blanks the canvas. -->
+		{#if liveEdgeMessage}
+			<div
+				class="map-overlay map-live-edge"
+				data-state={liveEdgeState}
+				role="status"
+				aria-live="polite"
+			>
+				{liveEdgeMessage}
+			</div>
+		{/if}
+
+		{#if hoverDetail && layout.isDesktop}
+			<div class="map-overlay map-peek" aria-live="polite">
+				<MapSelectionDetail
+					detail={hoverDetail}
+					{locale}
+					compact
+					notReporting={hoverVehicleAbsence}
+					onselect={selectFromDetail}
+					onfilter={applyDetailFilter}
+					onalertselect={selectAlertRelated}
+				/>
+			</div>
+		{/if}
+	</div>
+{/snippet}
+
+<div class="map-hero" bind:this={heroEl} bind:clientWidth={mapWidthPx}>
+	<!-- The map canvas is FULL-BLEED and FIXED: mapSurface (the .map-surface inset:0)
+	     fills the whole hero, and EVERY panel OVERLAYS it (absolute). The map sizes off
+	     its own container (MapStage's ResizeObserver) and never reads a panel width, so
+	     dragging or collapsing any panel can never resize the map. There is no paneforge
+	     pane redistributing width here — the violation the operator hit. -->
+	{@render mapSurface()}
+
+	<!-- RIGHT DETAIL panel — an absolute OVERLAY anchored flush to the map's right edge
+	     (NOT a pane). It is DRAGGABLE on its left edge (writes the clamped --app-right-
+	     detail-offset CSS var) and COLLAPSIBLE (data-detail-collapsed slides it OFF the
+	     right edge, never to the left). Only the overlay itself takes pointer events, so
+	     the map stays interactive underneath. Desktop only; mobile uses the BottomSheet
+	     below. Rendered on `detailOpen` (not on resolved data) so the surface stays
+	     mounted while a back target resolves. -->
+	{#if layout.isDesktop && detailOpen}
+		<div
+			class="map-detail-overlay"
+			data-slot="map-detail-overlay"
+			data-detail-collapsed={detailCollapsed ? 'true' : undefined}
+			data-detail-dragging={detailDragging ? 'true' : undefined}
+		>
+			<!-- Left-edge resize handle — a thin col-resize strip that DRAGS the panel's
+			     width into the CSS var (overlay follows; the map canvas never reads it, so
+			     it is never resized). role="separator" + keyboard nudges match the left-rail
+			     handle's a11y. Absent while collapsed (the icon strip is fixed-width). -->
+			{#if !detailCollapsed}
+				<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+				<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+				<div
+					class="map-detail-handle"
+					data-slot="map-detail-handle"
+					role="separator"
+					aria-orientation="vertical"
+					aria-label={detailResizeAria}
+					aria-valuemin={MIN_DETAIL_PANEL_WIDTH}
+					aria-valuemax={MAX_DETAIL_PANEL_WIDTH}
+					aria-valuenow={detailWidthPx}
+					tabindex="0"
+					onpointerdown={onDetailHandlePointerDown}
+					onpointermove={onDetailHandlePointerMove}
+					onpointerup={onDetailHandlePointerUp}
+					onpointercancel={onDetailHandlePointerUp}
+					onkeydown={onDetailHandleKeyDown}
+				></div>
+			{/if}
+			{@render detailPanel()}
 		</div>
 	{/if}
 
 	<!-- Mobile: the detail rides a bottom sheet (the desktop detail lives in the
-	     right resizable pane above). -->
+	     right overlay above). -->
 	{#if detailOpen && !layout.isDesktop}
 		<BottomSheet
 			bind:open={detailOpen}
@@ -1319,23 +1481,93 @@
 		height: 100%;
 		overflow: hidden;
 		background: var(--background);
-		/* The live offset is driven by the inline `style` binding above
-		   (mapDetailOffset = the fixed floating-panel width on desktop when open,
-		   else 0rem) so right-anchored chrome shifts clear of the panel; the fallback
-		   keeps left/right chrome anchored when the panel is closed. */
+		/* The width of the RIGHT DETAIL overlay, written live by the drag handle into
+		   --app-right-detail-offset. The floating map chrome (near-me, peek, freshness,
+		   attribution) reads --map-detail-offset to shift clear of the open panel; it
+		   resolves to 0 when the detail is closed or collapsed (the overlay is gone /
+		   off the edge), so chrome sits flush to the map's own right edge again. The
+		   MAP CANVAS never reads either var, so resizing the panel can not resize it. */
+		--app-right-detail-offset: 360px;
 		--map-detail-offset: 0rem;
 	}
 
-	/* The map is the BASE layer of the hero: it fills the canvas FULL-BLEED and sits
-	   beneath every floating overlay (vignette z-5, overlays z-10+). It never resizes
-	   when the detail panel opens — the panel floats over the right slice. The inline
-	   --map-detail-offset inherits in, so MapStage's bottom-right attribution shifts
-	   clear of the floating panel instead of hiding beneath it. */
-	.map-hero :global(.map-hero-stage) {
+	/* The map surface is FULL-BLEED: it fills the whole hero (inset:0) and is the BASE
+	   layer beneath every floating overlay (vignette z-5, overlays z-10+). It is the
+	   ONLY size driver for the GL canvas (via MapStage's own ResizeObserver), so no
+	   panel ever sits in its flow — collapsing/dragging a panel leaves it untouched. */
+	.map-surface {
+		position: absolute;
+		inset: 0;
+		overflow: hidden;
+	}
+	.map-surface :global(.map-hero-stage) {
 		position: absolute;
 		inset: 0;
 		z-index: 1;
 		border-radius: 0;
+	}
+
+	/* RIGHT DETAIL overlay — absolutely positioned, anchored FLUSH to the map's right
+	   edge, its width the live --app-right-detail-offset CSS var. It floats OVER the
+	   map; only the overlay itself takes pointer events, so the map underneath stays
+	   interactive. Its box-shadow lives here so the lift vanishes WITH the overlay when
+	   the detail closes (the overlay only exists while detailOpen). COLLAPSED slides it
+	   OFF the right edge by translating the leftover strip beyond 100% width. */
+	.map-detail-overlay {
+		position: absolute;
+		inset-block: 0;
+		right: 0;
+		z-index: 32;
+		width: var(--app-right-detail-offset);
+		max-width: 100%;
+		box-shadow: var(--shadow-section);
+		pointer-events: auto;
+		transition: width var(--duration-normal, 180ms) var(--ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+	}
+	/* Suppress the width transition WHILE dragging so the panel tracks the pointer 1:1;
+	   it re-applies for the collapse/expand snap. */
+	.map-detail-overlay[data-detail-dragging='true'] {
+		transition: none;
+	}
+	/* COLLAPSED to the RIGHT: the RightPanel inside shrinks to its 3.7rem icon strip
+	   (data-open='false'), so the overlay box narrows to that strip flush at the right
+	   edge — collapsed to the right edge, never to the left / mid-air. The strip stays
+	   on-screen so the expand toggle is reachable. */
+	.map-detail-overlay[data-detail-collapsed='true'] {
+		width: 3.7rem;
+	}
+
+	/* The detail panel's left-edge resize handle — a thin col-resize strip flush to the
+	   overlay's leading edge, matching the left-rail handle tone (idle --border,
+	   hover/active --primary). Mirrors .app-shell-rail-handle. */
+	.map-detail-handle {
+		position: absolute;
+		inset-block: 0;
+		left: 0;
+		width: 6px;
+		z-index: 1;
+		cursor: col-resize;
+		background: var(--border);
+		opacity: 0;
+		transition:
+			opacity var(--duration-fast, 140ms) var(--ease-default, ease),
+			background var(--duration-fast, 140ms) var(--ease-default, ease);
+		touch-action: none;
+	}
+	.map-detail-overlay:hover .map-detail-handle,
+	.map-detail-handle:hover,
+	.map-detail-handle:focus-visible,
+	.map-detail-overlay[data-detail-dragging='true'] .map-detail-handle {
+		opacity: 1;
+	}
+	.map-detail-handle:hover,
+	.map-detail-handle:focus-visible,
+	.map-detail-overlay[data-detail-dragging='true'] .map-detail-handle {
+		background: var(--primary);
+	}
+	.map-detail-handle:focus-visible {
+		outline: 2px solid var(--ring);
+		outline-offset: -2px;
 	}
 
 	/* Full-bleed framing: an inset vignette grounds the floating panes against the
@@ -1469,56 +1701,25 @@
 		border-top-color: color-mix(in srgb, var(--dataviz-status-late) 48%, var(--border-rule) 52%);
 	}
 
-	/* The detail FLOATS over the map's right slice as a fixed-width overlay (mirroring
-	   the left .map-overlay controls), so opening it never resizes the canvas. It owns
-	   a comfortable fixed width and its OWN full-height internal scroll (RightPanel's
-	   ScrollArea body). ANCHORED FLUSH to the right edge (right: 0, full map height)
-	   and `justify-content: flex-end` keeps the RightPanel pinned to that right edge
-	   even when it COLLAPSES (360px → the 3.7rem rail): the narrow strip retracts TO
-	   the right edge instead of drifting to the left of the overlay box and hanging
-	   mid-canvas "in the air". It slides IN/OUT from the right edge (translateX),
-	   never leftward; reduced motion gets the resolved state with no slide. A token-
-	   driven section shadow lifts it off the live canvas; pointer-events stay on so the
-	   panel is interactive while the map underneath keeps repainting. */
-	.map-detail-overlay {
-		top: 0;
-		right: 0;
-		bottom: 0;
-		width: 360px;
-		max-width: calc(100% - var(--app-left-rail-offset, 0rem) - 1rem);
-		z-index: 26;
-		display: flex;
-		justify-content: flex-end;
-		box-shadow: var(--shadow-section);
-		animation: map-detail-in 220ms var(--ease-out, cubic-bezier(0.16, 1, 0.3, 1)) both;
-	}
-
-	/* Slide IN from the RIGHT edge (off-canvas right → flush right), never mid-canvas
-	   or leftward. The translateX origin is the panel's own width so it tucks fully
-	   off the right edge before settling. */
-	@keyframes map-detail-in {
-		from {
-			opacity: 0;
-			transform: translateX(100%);
-		}
-		to {
-			opacity: 1;
-			transform: translateX(0);
-		}
-	}
-
 	@media (prefers-reduced-motion: reduce) {
 		:global(.mf-chip) {
 			transition: none;
 		}
-		/* No slide for the detail overlay under reduced motion: it appears in its
-		   resolved flush-right state. */
-		.map-detail-overlay {
-			animation: none;
+		.map-detail-overlay,
+		.map-detail-handle {
+			transition: none;
 		}
 	}
 
-	@media (max-width: 760px) {
+	/* Below the single map breakpoint (1024px = layout.isDesktop) the unified
+	   Controls panel hides and the floating Controls pill takes over (it gates
+	   itself to < 1024px). Keeping the panel-hide on the SAME 1024 line as the
+	   pill-hide and the JS `layout.isDesktop` snapshot means all three agree — no
+	   dead 760px band where the panel and pill could both show or both vanish.
+	   The compact phone-style head (smaller heading, edge-anchored) also rides this
+	   line so narrower viewports get the mobile chrome wholesale. .map-peek is
+	   already `layout.isDesktop`-gated in markup; the hide here is belt-and-braces. */
+	@media (max-width: 1023px) {
 		.map-head {
 			top: 0.75rem;
 			left: 0.75rem;

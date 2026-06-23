@@ -9,6 +9,11 @@ describe('map copy', () => {
 		expect(copy.fr.entityBus).toBe('Bus');
 	});
 
+	it('carries a bilingual accessible label for the detail-panel resize handle', () => {
+		expect(copy.en.detailResizeLabel).toBe('Resize details panel');
+		expect(copy.fr.detailResizeLabel).toBe('Redimensionner le panneau de détails');
+	});
+
 	it('invites precise near-me address searches', () => {
 		expect(copy.en.nearMeSearchPlaceholder).toBe('Address, postal code, or coordinates');
 		expect(copy.fr.nearMeSearchPlaceholder).toBe('Adresse, code postal ou coordonnées');

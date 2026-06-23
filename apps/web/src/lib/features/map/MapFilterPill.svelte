@@ -1,21 +1,29 @@
-<!-- Mobile floating filter pill, patterned after yesid.dev TocPill. -->
+<!-- Mobile floating Controls pill, patterned after yesid.dev TocPill. Opens the
+     unified Controls drawer (the SAME controls snippet the desktop overlay
+     renders): the motion toggle pinned to the top, the filters below. -->
 <script lang="ts">
+	import type { Snippet } from 'svelte';
 	import { ChevronToggle } from '$lib/components/brand';
 	import type { FilterStore } from '$lib/filters';
 	import type { Locale } from '$lib/i18n';
-	import type { RouteIndexEntry, StopIndexEntry } from '$lib/v1';
-	import MapFilters from './MapFilters.svelte';
 	import { copy as MAP_COPY } from './map.copy';
 
 	interface Props {
 		store: FilterStore;
 		locale: Locale;
-		routes?: readonly RouteIndexEntry[];
-		stops?: readonly StopIndexEntry[];
 		hidden?: boolean;
+		/**
+		 * The unified Controls panel snippet (MapFilters in controlsMode + the
+		 * inline motion toggle as its header), shared with the desktop overlay so
+		 * there is ONE source of truth. Rendered inside the drawer with
+		 * `collapsible: false` (a drawer is always expanded) and an `onselect` that
+		 * closes the drawer on a pick. MapHero owns the store/routes/stops wiring,
+		 * so the pill stays a thin shell.
+		 */
+		controls: Snippet<[{ collapsible?: boolean; onselect?: () => void } | undefined]>;
 	}
 
-	let { store, locale, routes = [], stops = [], hidden = false }: Props = $props();
+	let { store, locale, hidden = false, controls }: Props = $props();
 	const t = $derived(MAP_COPY[locale]);
 	const activeCount = $derived(store.chips.length);
 
@@ -56,10 +64,10 @@
 			class="tap-press map-filter-pill"
 			onclick={() => (drawerOpen = !drawerOpen)}
 			aria-expanded={drawerOpen}
-			aria-label={`${t.filterTitle} ${activeCount} · ${t.filterTitle}`}
+			aria-label={`${t.controlsTitle} ${activeCount} · ${t.controlsTitle}`}
 		>
 			<div class="map-filter-pill-dot" data-active={activeCount > 0}></div>
-			<span class="map-filter-pill-name">{t.filterTitle}</span>
+			<span class="map-filter-pill-name">{t.controlsTitle}</span>
 			<span class="map-filter-pill-counter" data-empty={activeCount === 0}>{activeCount}</span>
 			<ChevronToggle open={drawerOpen} size="sm" direction="down" />
 		</button>
@@ -73,16 +81,12 @@
 				aria-label={t.filterClose}
 			></button>
 
-			<div class="map-filter-drawer" data-testid="map-filter-drawer" bind:this={drawerEl}>
-				<MapFilters
-					{store}
-					{locale}
-					{routes}
-					{stops}
-					collapsible={false}
-					onselect={() => closeDrawer(true)}
-					class="map-filter-drawer-panel"
-				/>
+			<div
+				class="map-filter-drawer map-filter-drawer-panel"
+				data-testid="map-filter-drawer"
+				bind:this={drawerEl}
+			>
+				{@render controls({ collapsible: false, onselect: () => closeDrawer(true) })}
 			</div>
 		{/if}
 	</div>
@@ -189,6 +193,9 @@
 		cursor: default;
 	}
 
+	/* The drawer wrapper carries the card chrome (surface + hairline + blur); the
+	   padding belongs here too so the inner Controls panel can strip its own chrome
+	   and fill the drawer flush. */
 	.map-filter-drawer {
 		position: absolute;
 		bottom: calc(100% + 10px);
@@ -196,20 +203,23 @@
 		width: min(21rem, calc(100vw - 2rem));
 		max-height: min(72dvh, calc(100dvh - 7rem));
 		overflow-y: auto;
+		padding: 1rem;
 		background: color-mix(in srgb, var(--card) 95%, transparent);
 		border: 1px solid color-mix(in srgb, var(--border) 78%, var(--primary) 22%);
 		border-radius: var(--radius-lg);
 		box-shadow: var(--shadow-sheet);
 		backdrop-filter: blur(12px) saturate(1.1);
 		transform: none;
-		padding-bottom: env(safe-area-inset-bottom, 0px);
+		padding-bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
 		overscroll-behavior: contain;
 	}
 
-	.map-filter-drawer :global(.map-filter-drawer-panel) {
+	/* Strip the inner Controls panel's own card chrome: it borrows the drawer's
+	   surface (the wrapper above) and fills its full width. */
+	.map-filter-drawer :global(.map-filters) {
 		width: 100%;
 		max-width: none;
-		padding: 1rem;
+		padding: 0;
 		background: transparent;
 		border: none;
 		box-shadow: none;
@@ -221,7 +231,12 @@
 		outline-offset: 2px;
 	}
 
-	@media (min-width: 761px) {
+	/* Unified map breakpoint: at the desktop layout (>= 1024px) the pill is gone —
+	   the unified Controls panel renders as the left overlay instead. Below it the
+	   pill is the only controls affordance. Matches layout.isDesktop and the
+	   .map-filter-panel hide rule in MapHero, so panel-hide, pill-hide, and the JS
+	   layout snapshot all agree on the single 1024 line. */
+	@media (min-width: 1024px) {
 		.map-filter-pill-container {
 			display: none;
 		}

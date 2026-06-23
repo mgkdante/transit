@@ -182,62 +182,106 @@ describe('LeftRail', () => {
 		);
 	});
 
-	it('uses the yesid.dev contact resizable split for the desktop chrome rail', () => {
+	it('keeps the persistent chrome rail in ONE stable DOM, switched by CSS not a JS isDesktop branch', () => {
 		const source = readFileSync(
 			resolve(process.cwd(), 'src/lib/components/shell/AppShell.svelte'),
 			'utf-8',
 		);
 
-		expect(source).toContain(
-			"import { ResizablePaneGroup, ResizablePane, ResizableHandle } from '$lib/components/ui/resizable'",
-		);
-		expect(source).toMatch(/<ResizablePaneGroup[\s\S]*direction="horizontal"/);
-		expect(source).toContain('class="app-shell-resize-handle app-shell-rail-resize-handle"');
-		expect(source).toMatch(
-			/<ResizableHandle[\s\S]*withHandle[\s\S]*class="app-shell-resize-handle app-shell-rail-resize-handle"[\s\S]*\/>/,
-		);
-		expect(source).toContain('const LEFT_RAIL_COLLAPSED_SIZE = 5');
-		expect(source).toContain('const LEFT_RAIL_MIN_SIZE = 7');
-		expect(source).toContain('const LEFT_RAIL_DEFAULT_SIZE = 16');
-		expect(source).toContain('const LEFT_RAIL_COMPACT_THRESHOLD = 9');
-		expect(source).toContain('function syncLeftRailVisualState(size: number): void');
-		expect(source).toContain('collapsible');
-		expect(source).toContain('collapsedSize={LEFT_RAIL_COLLAPSED_SIZE}');
-		expect(source).toContain('minSize={LEFT_RAIL_MIN_SIZE}');
-		expect(source).toContain('defaultSize={LEFT_RAIL_DEFAULT_SIZE}');
-		expect(source).toContain('onResize={(size) => syncLeftRailVisualState(size)}');
-		expect(source).toContain('leftRailPane?.resize(LEFT_RAIL_DEFAULT_SIZE)');
-		expect(source).toContain('function onLeftRailCollapse(): void');
-		expect(source).toContain('onCollapse={onLeftRailCollapse}');
-		expect(source).toContain('function onLeftRailExpand(): void');
-		expect(source).toContain('onExpand={onLeftRailExpand}');
+		// The flash-causing structural re-branch is GONE: no `{#if layout.isDesktop}`
+		// (or `{#if isDesktop}`) wraps the chrome, and the resizable-pane machinery the
+		// old desktop branch built is removed wholesale. The rail's EXISTENCE is no
+		// longer gated on the (SSR-false, hydration-flipping) layout store.
+		expect(source).not.toContain('$lib/components/ui/resizable');
+		expect(source).not.toContain('ResizablePaneGroup');
+		expect(source).not.toContain('ResizablePane');
+		expect(source).not.toContain('ResizableHandle');
+		expect(source).not.toContain("from 'paneforge'");
+		expect(source).not.toContain('{#if isDesktop}');
+		expect(source).not.toContain('const isDesktop = $derived(layout.isDesktop)');
+		// No percent-sized pane state survives.
+		expect(source).not.toContain('leftRailSize');
+		expect(source).not.toContain('leftRailPane');
+		expect(source).not.toContain('LEFT_RAIL_DEFAULT_SIZE');
+		expect(source).not.toContain('syncLeftRailVisualState');
+		expect(source).not.toContain('onLeftRailCollapse');
+		expect(source).not.toContain('onLeftRailExpand');
+
+		// The rail rides ONE overlay column, ALWAYS rendered (no isDesktop gate on its
+		// markup), and its collapse is a pure local toggle that flips a data attribute.
+		expect(source).toContain('class="app-shell-rail-overlay"');
+		expect(source).toContain("data-rail-collapsed={leftRailCollapsed ? 'true' : 'false'}");
+		expect(source).toContain('function toggleLeftRailCollapsed(): void');
+		expect(source).toContain('leftRailCollapsed = !leftRailCollapsed');
 	});
 
-	it('keeps the desktop map stage fixed while the left rail resizes above it', () => {
+	it('drives the desktop-rail vs mobile-burger presentation purely by @media, correct on first paint', () => {
 		const source = readFileSync(
 			resolve(process.cwd(), 'src/lib/components/shell/AppShell.svelte'),
 			'utf-8',
 		);
 
-		expect(source).toContain('let leftRailSize = $state(LEFT_RAIL_DEFAULT_SIZE)');
-		expect(source).toContain('const leftRailOffset = $derived(`${leftRailSize}%`)');
-		expect(source).toContain('style={`--app-left-rail-offset: ${leftRailOffset};`}');
+		// The map stage is the stable full-bleed base; the rail overlay floats over it.
 		expect(source).toContain(
 			'class="app-shell-main relative min-w-0 flex-1 overflow-hidden bg-surface-0"',
 		);
-		expect(source).toContain('class="app-shell-rail-overlay"');
-		expect(source).toContain('class="app-shell-left-rail-pane"');
-		expect(source).toContain('class="app-shell-map-hit-through-pane"');
 		expect(source).toMatch(/\.app-shell-row\s*\{[\s\S]*position:\s*relative;/);
 		expect(source).toMatch(/\.app-shell-main\s*\{[\s\S]*position:\s*absolute;[\s\S]*inset:\s*0;/);
+
+		// The rail offset the map chrome reads is a CSS variable (NOT a JS percent), so
+		// it is correct in the FIRST paint. Default 0px (rail hidden below the
+		// breakpoint), then the rail width at >=1024px, narrowing under data-rail-collapsed.
+		expect(source).not.toContain('--app-left-rail-offset: ${');
+		expect(source).toMatch(/\.app-shell-row\s*\{[\s\S]*--app-left-rail-offset:\s*0px;/);
 		expect(source).toMatch(
 			/\.app-shell-main:not\(:has\(:global\(\.map-hero\)\)\)\s*\{[\s\S]*padding-left:\s*var\(--app-left-rail-offset, 0px\);/,
 		);
+
+		// The rail overlay is in the DOM but display:none below the breakpoint, revealed
+		// purely by @media (min-width:1024px) — never a {#if isDesktop} flip.
+		expect(source).toMatch(/\.app-shell-rail-overlay\s*\{[\s\S]*display:\s*none;/);
 		expect(source).toMatch(
-			/:global\(\.app-shell-rail-overlay\)\s*\{[\s\S]*position:\s*absolute;[\s\S]*pointer-events:\s*none;/,
+			/@media \(min-width: 1024px\)\s*\{[\s\S]*\.app-shell-rail-overlay\s*\{[\s\S]*display:\s*block;/,
 		);
 		expect(source).toMatch(
-			/:global\(\.app-shell-left-rail-pane\),[\s\S]*:global\(\.app-shell-rail-resize-handle\)\s*\{[\s\S]*pointer-events:\s*auto;/,
+			/@media \(min-width: 1024px\)\s*\{[\s\S]*--app-left-rail-offset:\s*var\(--app-rail-width-expanded\);/,
 		);
+		expect(source).toMatch(
+			/\.app-shell-row\[data-rail-collapsed='true'\]\s*\{[\s\S]*--app-left-rail-offset:\s*var\(--app-rail-width-collapsed\);/,
+		);
+	});
+
+	it('makes the expanded rail DRAGGABLE via an overlay handle that resizes only the CSS var, never the map', () => {
+		const source = readFileSync(
+			resolve(process.cwd(), 'src/lib/components/shell/AppShell.svelte'),
+			'utf-8',
+		);
+
+		// The drag is a thin right-edge separator handle INSIDE the rail overlay (not a
+		// paneforge pane — the rail never takes map layout). It is absent when collapsed
+		// (the icon strip is fixed-width), and carries separator a11y + keyboard resize.
+		expect(source).not.toContain('ResizableHandle');
+		expect(source).toContain('class="app-shell-rail-handle"');
+		expect(source).toMatch(/\{#if !leftRailCollapsed\}[\s\S]*app-shell-rail-handle/);
+		expect(source).toContain('role="separator"');
+		expect(source).toContain('onpointerdown={onRailHandlePointerDown}');
+		expect(source).toContain('onkeydown={onRailHandleKeyDown}');
+
+		// Dragging writes a CLAMPED px width into --app-rail-width-expanded on the row
+		// element — the SAME var the desktop offset + overlay width read — so the rail
+		// and the map chrome offset follow, but the map CANVAS (which sizes off its own
+		// container, never the rail width) is mathematically untouched. The chosen width
+		// persists across reloads.
+		expect(source).toContain("rowEl?.style.setProperty('--app-rail-width-expanded'");
+		expect(source).toContain('clampLeftRailWidth(');
+		expect(source).toContain('readStoredLeftRailWidth()');
+		expect(source).toContain('writeStoredLeftRailWidth(railWidthPx)');
+		// The drag suppresses the width transition so the rail tracks the pointer 1:1.
+		expect(source).toMatch(
+			/\.app-shell-row\[data-rail-dragging='true'\]\s*\.app-shell-rail-overlay\s*\{[\s\S]*transition:\s*none;/,
+		);
+		// The handle is the map-detail-handle tone: idle --border, active --primary.
+		expect(source).toMatch(/\.app-shell-rail-handle\s*\{[\s\S]*cursor:\s*col-resize;/);
+		expect(source).toMatch(/\.app-shell-rail-handle\s*\{[\s\S]*background:\s*var\(--border\);/);
 	});
 });

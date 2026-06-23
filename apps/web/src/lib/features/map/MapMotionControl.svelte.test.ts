@@ -90,38 +90,54 @@ describe('MapMotionControl', () => {
 		expect(screen.getByText(copy.fr.motion.raw)).toBeInTheDocument();
 	});
 
-	it('defaults to the floating variant (the absolute-positioned overlay chip)', () => {
+	it('renders a single inline layout (no variant prop, no floating chip)', () => {
+		// The control is now a single inline layout that lives at the top of the
+		// unified Controls panel (the same panel on desktop and mobile). There is no
+		// `variant` prop and no data-variant attribute — the floating chip is gone, so
+		// nothing reflows when the toggle swaps raw/smooth.
 		render(MapMotionControl, { locale: 'en', copy: copy.en });
-		// The default carries data-variant="floating"; CSS gates the absolute
-		// positioning + fixed stable width off this attribute. (jsdom does not apply
-		// Svelte scoped <style>, so we assert the geometry contract via the attribute
-		// the CSS keys off — not computed style.)
-		expect(screen.getByTestId('map-motion')).toHaveAttribute('data-variant', 'floating');
+		expect(screen.getByTestId('map-motion')).not.toHaveAttribute('data-variant');
 	});
 
-	it('inline variant carries data-variant="inline" (static, full-width, no chip chrome)', () => {
-		render(MapMotionControl, { locale: 'en', copy: copy.en, variant: 'inline' });
-		// variant="inline" → NOT absolute-positioned, width:100%, fits its container
-		// (the mobile filter sheet). CSS gates position:static + width:100% off this
-		// attribute, so carrying it is the contract the inline layout depends on.
-		expect(screen.getByTestId('map-motion')).toHaveAttribute('data-variant', 'inline');
+	it('EXPANDED is a 4-row vertical stack in order: label, switch, hint, link', () => {
+		render(MapMotionControl, { locale: 'en', copy: copy.en });
+		const stack = screen.getByTestId('map-motion');
+		expect(stack).toHaveAttribute('data-collapsed', 'false');
+		// The four rows are the direct children of the grid, in this exact order.
+		const rows = Array.from(stack.children);
+		expect(rows).toHaveLength(4);
+		// Row 1 — the "Motion" label.
+		expect(rows[0]).toHaveTextContent(copy.en.motion.label);
+		// Row 2 — the role="switch" toggle.
+		expect(rows[1]).toBe(screen.getByTestId('map-motion-switch'));
+		expect(rows[1]).toHaveAttribute('role', 'switch');
+		// Row 3 — the active-truth hint (RAW default).
+		expect(rows[2]).toHaveTextContent(copy.en.motion.hintRaw);
+		// Row 4 — the "How this works" deep link.
+		expect(rows[3]).toBe(screen.getByRole('link', { name: copy.en.motion.explain }));
 	});
 
-	it('the switch still works (flips + tracks the store) in the inline variant', async () => {
+	it('COLLAPSED renders a single compact square switch (no hint, no link) that still toggles', async () => {
 		const { rerender } = render(MapMotionControl, {
 			locale: 'en',
 			copy: copy.en,
-			variant: 'inline',
+			collapsed: true,
 		});
+		const stack = screen.getByTestId('map-motion');
+		expect(stack).toHaveAttribute('data-collapsed', 'true');
+		// Exactly one control — the square switch; no hint text and no explain link.
+		expect(stack.children).toHaveLength(1);
 		const sw = screen.getByTestId('map-motion-switch');
+		expect(sw).toHaveAttribute('role', 'switch');
+		// Outline (non-filled) square = RAW/OFF by default.
 		expect(sw).toHaveAttribute('aria-checked', 'false');
-
+		expect(sw).toHaveAttribute('aria-label', copy.en.motion.toSmooth);
+		expect(screen.queryByText(copy.en.motion.hintRaw)).not.toBeInTheDocument();
+		expect(screen.queryByRole('link', { name: copy.en.motion.explain })).not.toBeInTheDocument();
+		// Clicking the square still toggles the store; re-render shows the filled state.
 		sw.click();
 		expect(motionMode.current).toBe('smooth');
-
-		await rerender({ locale: 'en', copy: copy.en, variant: 'inline' });
-		const checked = screen.getByTestId('map-motion-switch');
-		expect(checked).toHaveAttribute('aria-checked', 'true');
-		expect(checked).toHaveTextContent(copy.en.motion.smooth);
+		await rerender({ locale: 'en', copy: copy.en, collapsed: true });
+		expect(screen.getByTestId('map-motion-switch')).toHaveAttribute('aria-checked', 'true');
 	});
 });

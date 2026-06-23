@@ -1,28 +1,34 @@
 <!--
-  AppShell — the responsive 3-zone application chrome.
+  AppShell — the application chrome, ONE STABLE DOM correct on the first (SSR)
+  paint. The persistent chrome (TopBar + LeftRail) is rendered UNCONDITIONALLY,
+  so it is in the very first server-rendered frame and never flashes in, re-mounts
+  on navigation, or repaints mobile→desktop after hydration.
 
-  DESKTOP (≥1024px, `layout.isDesktop`):
     ┌──────────────────────── TopBar (h60) ────────────────────────┐
-    │           MapStage (fixed row, full bleed under chrome)       │
-    │ LeftRail overlays left; detail panels overlay right.          │
+    │           <main> map stage (full bleed under the chrome)      │
+    │ LeftRail overlays left; the detail surface overlays right.    │
     └──────────────────────────────────────────────────────────────┘
-    Rails do not resize the MapStage, so MapLibre does not visually drift when
-    a rail is dragged, collapsed, or expanded.
 
-  MOBILE (<1024px):
-    TopBar + a full-bleed <main> (the map fills the viewport) + a BottomSheet
-    that slides up for the selected surface. The rail/detail snippets feed the
-    sheet on mobile (rail content is folded into the sheet's body in 9.2, which
-    carries no Family data — the page decides what to render).
+  DESKTOP vs MOBILE is a CSS-ONLY distinction driven by `@media (min-width:1024px)`
+  — NOT a `{#if layout.isDesktop}` structural re-branch. The same DOM serves both
+  form factors:
+    · the LeftRail rides a fixed-width overlay column that the media query reveals
+      at ≥1024px and folds to the TopBar burger below it (the rail content stays in
+      the DOM, presentation is CSS);
+    · the detail surface floats over the map's right slice on desktop and rides the
+      BottomSheet on mobile, both gated only on `detailOpen` (a JS open/close
+      decision, never the breakpoint).
 
-  Consumes `$lib/nav`'s `layout` runes store (boolean `isDesktop`, the
-  (min-width:1024px) media match) to pick the layout — never a local matchMedia,
-  so every shell zone agrees on the breakpoint with the rest of the app.
+  WHY no JS-isDesktop gating for chrome EXISTENCE: SSR has no `window`/`matchMedia`,
+  so `layout.isDesktop` is `false` on the server. Gating the rail's existence on it
+  emitted the mobile layout server-side, then repainted to desktop after hydration
+  — the load-time flash. The media query resolves the layout in the FIRST paint
+  with no JS, so the rail is present and correct before hydration. `layout.isDesktop`
+  survives only for the genuine route-vs-panel JS decision in `$lib/nav` (openSurface).
 
-  Named snippet props: `rail` (LeftRail body), `main` (MapStage), `detail`
-  (RightPanel / BottomSheet body), plus optional `detailFooter`. No Family data
-  is wired in 9.2 — the zones render whatever the page passes, with quiet empty
-  states from the child components.
+  Named snippet props: `rail` (LeftRail body), `main` (map stage), `detail`
+  (RightPanel / BottomSheet body), plus optional `detailFooter`. The zones render
+  whatever the page passes, with quiet empty states from the child components.
 
   Adapted from the yesid.dev +layout.svelte chrome composition — re-themed to
   the transit board, gsap/lenis/seo/marketing stripped. Tokens only; surfaces
@@ -31,17 +37,26 @@
 -->
 <script lang="ts">
 	import type { Snippet } from 'svelte';
-	import type { PaneAPI } from 'paneforge';
 	import { cn } from '$lib/utils';
 	import { type Locale, DEFAULT_LOCALE, getLocale } from '$lib/i18n';
 	import type { ChromeSearchResult, ChromeSearchScope } from '$lib/search/chromeSearch';
 	import type { BilingualLabel } from '$lib/content/nav';
+	// `layout.isDesktop` is consulted ONLY for the detail surface's desktop-overlay
+	// vs mobile-sheet presentation — the genuine route-vs-panel intent decision. The
+	// PERSISTENT chrome (rail/header/footer) is CSS-responsive and never reads it, so
+	// the first paint is correct without JS. See the detail block + `$lib/nav`.
 	import { layout } from '$lib/nav';
-	import { ResizablePaneGroup, ResizablePane, ResizableHandle } from '$lib/components/ui/resizable';
 	import TopBar from './TopBar.svelte';
 	import LeftRail from './LeftRail.svelte';
 	import RightPanel from './RightPanel.svelte';
 	import BottomSheet from './BottomSheet.svelte';
+	import {
+		readStoredLeftRailWidth,
+		writeStoredLeftRailWidth,
+		clampLeftRailWidth,
+		MIN_LEFT_RAIL_WIDTH,
+		MAX_LEFT_RAIL_WIDTH,
+	} from './leftRailWidth';
 
 	interface AppShellProps {
 		/** Active locale, threaded to every chrome zone (prop wins over context). */
@@ -133,62 +148,100 @@
 				: 'Network map',
 	);
 
-	const LEFT_RAIL_COLLAPSED_SIZE = 5;
-	const LEFT_RAIL_MIN_SIZE = 7;
-	const LEFT_RAIL_DEFAULT_SIZE = 16;
-	// Compact (icon-only) content engages BEFORE the min-size clamp so a narrowing
-	// rail switches to icons while it is still draggable — never a band where the
-	// pane is expanded but the labels are clipped. With the clamp at MIN (7) and
-	// this threshold at 9, the only compact-while-expanded sizes are 7..9, the
-	// approach to collapse; a real collapse snaps the pane to COLLAPSED (5).
-	const LEFT_RAIL_COMPACT_THRESHOLD = 9;
-
-	// The single source of truth for the layout breakpoint (shared app-wide).
-	const isDesktop = $derived(layout.isDesktop);
+	// The expanded vs icon-only rail width. CSS picks the live `--app-left-rail-offset`
+	// off `data-rail-collapsed` so the value is correct in the FIRST paint (no JS
+	// flip): the rail renders at its expanded width server-side and only narrows when
+	// the user collapses it. The map chrome offsets off the SAME variable.
 	let leftRailCollapsed = $state(false);
-	let leftRailSize = $state(LEFT_RAIL_DEFAULT_SIZE);
-	let leftRailPane = $state<PaneAPI | undefined>();
-	const leftRailOffset = $derived(`${leftRailSize}%`);
+
+	// The expanded rail width is DRAGGABLE: a thin right-edge handle resizes the
+	// overlay (and the map chrome offset, which follows `--app-left-rail-offset`)
+	// WITHOUT ever touching the map canvas — the map sizes off its own container,
+	// never the rail width. The chosen width persists across reloads (px scalar in
+	// localStorage). The row element owns the `--app-rail-width-expanded` CSS var the
+	// drag writes; CSS swaps to the collapsed strip width on `data-rail-collapsed`,
+	// so collapse still snaps to the icon column regardless of the dragged width.
+	let rowEl = $state<HTMLDivElement | null>(null);
+	let railWidthPx = $state(readStoredLeftRailWidth());
+	let railDragging = $state(false);
+	let railDragStartX = 0;
+	let railDragStartWidth = 0;
+
+	const railResizeAria = $derived(
+		locale === 'fr' ? 'Redimensionner la navigation' : 'Resize navigation',
+	);
 
 	function closeDetail() {
 		detailOpen = false;
 		ondetailclose?.();
 	}
 
-	function syncLeftRailVisualState(size: number): void {
-		leftRailSize = size;
-		// Use a STRICT compare so the boundary size itself (== threshold) reads as
-		// expanded: dragging the rail back out to the threshold un-compacts it in
-		// the same gesture, instead of staying stuck icon-only until well past it
-		// (the old `<=` left a dead band right at the hand-off).
-		leftRailCollapsed = size < LEFT_RAIL_COMPACT_THRESHOLD;
-	}
-
-	function onLeftRailCollapse(): void {
-		leftRailSize = LEFT_RAIL_COLLAPSED_SIZE;
-		leftRailCollapsed = true;
-	}
-
-	function onLeftRailExpand(): void {
-		// paneforge fires onExpand when the pane leaves the collapsed state — that
-		// is an explicit "show me content" intent, so clear compact even though the
-		// transient expand size (≈ MIN) is below the threshold. Without this the rail
-		// would snap back to icon-only the instant it expanded out of collapse (the
-		// dead band): a too-wide rail you couldn't un-compact by dragging.
-		leftRailSize = leftRailPane?.getSize() ?? LEFT_RAIL_DEFAULT_SIZE;
-		leftRailCollapsed = false;
-	}
-
+	// Collapse/expand is a pure local toggle now (no paneforge pane to drive): it
+	// flips `data-rail-collapsed`, which the CSS reads to swap the rail width + its
+	// icon-only treatment. The map chrome follows via `--app-left-rail-offset`.
 	function toggleLeftRailCollapsed(): void {
-		if (leftRailCollapsed) {
-			leftRailSize = LEFT_RAIL_DEFAULT_SIZE;
-			leftRailPane?.resize(LEFT_RAIL_DEFAULT_SIZE);
-			leftRailCollapsed = false;
-		} else {
-			leftRailSize = LEFT_RAIL_COLLAPSED_SIZE;
-			leftRailPane?.collapse();
-			leftRailCollapsed = true;
+		leftRailCollapsed = !leftRailCollapsed;
+	}
+
+	// Seed the live CSS var from the persisted width once mounted, so the dragged
+	// width is restored on a reload. SSR paints the 16rem CSS default (no JS), so
+	// there is no flash: we only overwrite the var client-side when a stored value
+	// exists. Kept in a derived setter so the var tracks `railWidthPx` after a drag.
+	$effect(() => {
+		rowEl?.style.setProperty('--app-rail-width-expanded', `${railWidthPx}px`);
+	});
+
+	// Pointer-drag the rail's right edge. Capturing pointer events on the handle keeps
+	// the drag tracking even if the cursor leaves it; each move writes a CLAMPED width
+	// straight into the CSS var (so the overlay + map offset follow live), and we
+	// persist on release. The map canvas is untouched throughout — it never reads the
+	// rail width. Collapsed → the handle is not rendered, so this only runs expanded.
+	function onRailHandlePointerDown(event: PointerEvent): void {
+		if (event.button !== 0) return;
+		railDragging = true;
+		railDragStartX = event.clientX;
+		railDragStartWidth = railWidthPx;
+		(event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
+		event.preventDefault();
+	}
+
+	function onRailHandlePointerMove(event: PointerEvent): void {
+		if (!railDragging) return;
+		const next = clampLeftRailWidth(railDragStartWidth + (event.clientX - railDragStartX));
+		railWidthPx = next;
+	}
+
+	function onRailHandlePointerUp(event: PointerEvent): void {
+		if (!railDragging) return;
+		railDragging = false;
+		(event.currentTarget as HTMLElement).releasePointerCapture?.(event.pointerId);
+		writeStoredLeftRailWidth(railWidthPx);
+	}
+
+	// Keyboard resize for the separator (a11y parity with paneforge handles): arrows
+	// nudge the width, Home/End jump to the floor/ceiling. Persists on each commit.
+	function onRailHandleKeyDown(event: KeyboardEvent): void {
+		const STEP = 16;
+		let next: number;
+		switch (event.key) {
+			case 'ArrowLeft':
+				next = railWidthPx - STEP;
+				break;
+			case 'ArrowRight':
+				next = railWidthPx + STEP;
+				break;
+			case 'Home':
+				next = MIN_LEFT_RAIL_WIDTH;
+				break;
+			case 'End':
+				next = MAX_LEFT_RAIL_WIDTH;
+				break;
+			default:
+				return;
 		}
+		event.preventDefault();
+		railWidthPx = clampLeftRailWidth(next);
+		writeStoredLeftRailWidth(railWidthPx);
 	}
 </script>
 
@@ -211,61 +264,92 @@
 		{onalerts}
 	/>
 
-	{#if isDesktop}
-		<!-- DESKTOP: stable map stage; rails overlay it so MapLibre never shifts. -->
-		<div class="app-shell-row min-h-0 flex-1 overflow-hidden" data-slot="app-shell-row">
-			<main
-				class="app-shell-main relative min-w-0 flex-1 overflow-hidden bg-surface-0"
-				style={`--app-left-rail-offset: ${leftRailOffset};`}
-				aria-label={mainAriaLabel}
-				data-slot="map-stage"
-			>
-				{#if main}{@render main()}{/if}
-			</main>
+	<!-- ONE stable row, server-rendered, correct on first paint. The map stage,
+	     the LeftRail overlay, and the detail surface are ALWAYS in the DOM; the
+	     @media query (NOT a JS isDesktop structural branch) decides desktop-rail vs
+	     mobile-burger presentation, so the rail never flashes in or re-mounts. -->
+	<div
+		bind:this={rowEl}
+		class="app-shell-row min-h-0 flex-1 overflow-hidden"
+		data-slot="app-shell-row"
+		data-rail-collapsed={leftRailCollapsed ? 'true' : 'false'}
+		data-rail-dragging={railDragging ? 'true' : undefined}
+	>
+		<main
+			class="app-shell-main relative min-w-0 flex-1 overflow-hidden bg-surface-0"
+			aria-label={mainAriaLabel}
+			data-slot="map-stage"
+		>
+			{#if main}{@render main()}{/if}
+		</main>
 
-			<ResizablePaneGroup direction="horizontal" class="app-shell-rail-overlay">
-				<ResizablePane
-					bind:this={leftRailPane}
-					class="app-shell-left-rail-pane"
-					defaultSize={LEFT_RAIL_DEFAULT_SIZE}
-					minSize={LEFT_RAIL_MIN_SIZE}
-					maxSize={24}
-					collapsible
-					collapsedSize={LEFT_RAIL_COLLAPSED_SIZE}
-					onResize={(size) => syncLeftRailVisualState(size)}
-					onCollapse={onLeftRailCollapse}
-					onExpand={onLeftRailExpand}
+		<!-- LeftRail — ALWAYS rendered (server-side, in the first paint). The overlay
+		     column is hidden below 1024px (the TopBar burger owns mobile nav) and
+		     revealed at ≥1024px purely by CSS — never by a JS isDesktop flip, so the
+		     rail is present + correct before hydration. pointer-events are confined to
+		     the rail itself so the map stays interactive through the overlay. -->
+		<div class="app-shell-rail-overlay" data-slot="app-shell-rail-overlay">
+			{#if rail}
+				<LeftRail
+					{locale}
+					{url}
+					heading={railHeading}
+					collapsed={leftRailCollapsed}
+					ontogglecollapse={toggleLeftRailCollapsed}
 				>
-					{#if rail}
-						<LeftRail
-							{locale}
-							{url}
-							heading={railHeading}
-							collapsed={leftRailCollapsed}
-							ontogglecollapse={toggleLeftRailCollapsed}
-						>
-							{@render rail()}
-						</LeftRail>
-					{:else}
-						<LeftRail
-							{locale}
-							{url}
-							heading={railHeading}
-							collapsed={leftRailCollapsed}
-							ontogglecollapse={toggleLeftRailCollapsed}
-						/>
-					{/if}
-				</ResizablePane>
+					{@render rail()}
+				</LeftRail>
+			{:else}
+				<LeftRail
+					{locale}
+					{url}
+					heading={railHeading}
+					collapsed={leftRailCollapsed}
+					ontogglecollapse={toggleLeftRailCollapsed}
+				/>
+			{/if}
 
-				<ResizableHandle withHandle class="app-shell-resize-handle app-shell-rail-resize-handle" />
+			<!-- Right-edge resize handle — a thin separator that DRAGS the rail's
+			     expanded width into the `--app-rail-width-expanded` CSS var (overlay +
+			     map offset follow; the map canvas never reads it, so it is never
+			     resized). role="separator" + aria-orientation + keyboard nudges match
+			     a paneforge handle's a11y. Absent while collapsed (the icon strip is
+			     fixed-width, not draggable). -->
+			{#if !leftRailCollapsed}
+				<!-- WAI-ARIA window-splitter: a focusable separator with pointer + keyboard
+				     resize. svelte's a11y lint does not model `separator` as interactive, so
+				     the focusable/handler warnings are suppressed for this intentional widget. -->
+				<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+				<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+				<div
+					class="app-shell-rail-handle"
+					data-slot="app-shell-rail-handle"
+					role="separator"
+					aria-orientation="vertical"
+					aria-label={railResizeAria}
+					aria-valuemin={MIN_LEFT_RAIL_WIDTH}
+					aria-valuemax={MAX_LEFT_RAIL_WIDTH}
+					aria-valuenow={railWidthPx}
+					tabindex="0"
+					onpointerdown={onRailHandlePointerDown}
+					onpointermove={onRailHandlePointerMove}
+					onpointerup={onRailHandlePointerUp}
+					onpointercancel={onRailHandlePointerUp}
+					onkeydown={onRailHandleKeyDown}
+				></div>
+			{/if}
+		</div>
 
-				<ResizablePane defaultSize={84} minSize={0} class="app-shell-map-hit-through-pane">
-					<div class="app-shell-map-hit-through" aria-hidden="true"></div>
-				</ResizablePane>
-			</ResizablePaneGroup>
-
+		<!-- Detail surface — selected-entity content, never first-paint chrome. It is
+		     absent until a selection opens it (`detailOpen`), so branching its
+		     PRESENTATION (desktop floating overlay vs mobile bottom sheet) on
+		     `layout.isDesktop` causes no load-time flash: nothing is selected at first
+		     paint. This is the genuine route-vs-panel intent decision the layout store
+		     is reserved for — distinct from the persistent rail/header/footer chrome,
+		     which is CSS-responsive above. -->
+		{#if layout.isDesktop}
 			{#if detailOpen}
-				<div class="app-shell-detail-overlay">
+				<div class="app-shell-detail-overlay" data-slot="app-shell-detail-overlay">
 					<RightPanel
 						{locale}
 						title={detailTitle}
@@ -277,32 +361,30 @@
 					</RightPanel>
 				</div>
 			{/if}
-		</div>
-	{:else}
-		<!-- MOBILE: full-bleed map + bottom sheet for the selected surface. -->
-		<main
-			class="relative min-h-0 flex-1 overflow-hidden bg-surface-0"
-			aria-label={mainAriaLabel}
-			data-slot="map-stage"
-		>
-			{#if main}{@render main()}{/if}
-		</main>
-
-		<BottomSheet
-			bind:open={detailOpen}
-			{locale}
-			title={detailTitle}
-			{surfaceKey}
-			footer={detailFooter}
-		>
-			{#if detail}{@render detail()}{/if}
-		</BottomSheet>
-	{/if}
+		{:else}
+			<BottomSheet
+				bind:open={detailOpen}
+				{locale}
+				title={detailTitle}
+				{surfaceKey}
+				footer={detailFooter}
+			>
+				{#if detail}{@render detail()}{/if}
+			</BottomSheet>
+		{/if}
+	</div>
 </div>
 
 <style>
+	/* The rail width the map chrome offsets against. CSS owns it (not a JS-driven
+	   percent) so it is correct in the FIRST paint and follows the collapse toggle
+	   without a reactive flip. MOBILE default 0px: the rail overlay is hidden below
+	   1024px (the TopBar burger owns nav there), so the map chrome sits flush left. */
 	.app-shell-row {
 		position: relative;
+		--app-rail-width-expanded: 16rem;
+		--app-rail-width-collapsed: 3.7rem;
+		--app-left-rail-offset: 0px;
 	}
 
 	.app-shell-main {
@@ -310,30 +392,88 @@
 		inset: 0;
 	}
 
+	/* Non-map surfaces pad their content clear of the rail; the map hero offsets its
+	   floating chrome instead (it owns the full bleed under the overlay rail). */
 	.app-shell-main:not(:has(:global(.map-hero))) {
 		padding-left: var(--app-left-rail-offset, 0px);
 	}
 
-	:global(.app-shell-rail-overlay) {
+	/* Rail overlay — ALWAYS in the DOM, hidden below the desktop breakpoint by CSS
+	   (never a JS isDesktop flip). It floats over the left of the map stage; only the
+	   rail itself takes pointer events, so the map underneath stays interactive. */
+	.app-shell-rail-overlay {
 		position: absolute;
-		inset: 0;
+		inset-block: 0;
+		left: 0;
 		z-index: 30;
-		pointer-events: none;
-	}
-
-	:global(.app-shell-left-rail-pane),
-	:global(.app-shell-rail-resize-handle) {
+		display: none;
+		width: var(--app-rail-width-expanded);
+		max-width: 100%;
 		pointer-events: auto;
+		transition: width var(--duration-normal, 180ms) var(--ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 	}
 
-	:global(.app-shell-map-hit-through-pane) {
-		pointer-events: none;
+	/* Suppress the width transition WHILE dragging so the rail tracks the pointer
+	   1:1 (the 180ms ease would otherwise lag the handle); it re-applies for the
+	   collapse/expand snap. */
+	.app-shell-row[data-rail-dragging='true'] .app-shell-rail-overlay {
+		transition: none;
 	}
 
-	.app-shell-map-hit-through {
-		width: 100%;
-		height: 100%;
-		pointer-events: none;
+	/* The drag handle — a thin col-resize strip flush to the rail's right edge,
+	   matching the map detail handle tone (idle --border, hover/active --primary).
+	   The hit target is wider than the 1px visible line via padding-free 6px width
+	   so it is easy to grab without a fat seam. */
+	.app-shell-rail-handle {
+		position: absolute;
+		inset-block: 0;
+		right: 0;
+		width: 6px;
+		z-index: 1;
+		cursor: col-resize;
+		background: var(--border);
+		opacity: 0;
+		transition:
+			opacity var(--duration-fast, 140ms) var(--ease-default, ease),
+			background var(--duration-fast, 140ms) var(--ease-default, ease);
+		touch-action: none;
+	}
+
+	.app-shell-rail-overlay:hover .app-shell-rail-handle,
+	.app-shell-rail-handle:hover,
+	.app-shell-rail-handle:focus-visible,
+	.app-shell-row[data-rail-dragging='true'] .app-shell-rail-handle {
+		opacity: 1;
+	}
+
+	.app-shell-rail-handle:hover,
+	.app-shell-rail-handle:focus-visible,
+	.app-shell-row[data-rail-dragging='true'] .app-shell-rail-handle {
+		background: var(--primary);
+	}
+
+	.app-shell-rail-handle:focus-visible {
+		outline: 2px solid var(--ring);
+		outline-offset: -2px;
+	}
+
+	/* DESKTOP (≥1024px): reveal the rail and feed its live width to the map chrome via
+	   --app-left-rail-offset. The collapsed icon-strip width is selected by the
+	   data-rail-collapsed attribute the toggle flips — resolved in CSS, so the rail is
+	   present + correct on the first paint and the map chrome tracks it with no reflow. */
+	@media (min-width: 1024px) {
+		.app-shell-row {
+			--app-left-rail-offset: var(--app-rail-width-expanded);
+		}
+
+		.app-shell-row[data-rail-collapsed='true'] {
+			--app-left-rail-offset: var(--app-rail-width-collapsed);
+		}
+
+		.app-shell-rail-overlay {
+			display: block;
+			width: var(--app-left-rail-offset);
+		}
 	}
 
 	.app-shell-detail-overlay {
@@ -344,21 +484,9 @@
 		pointer-events: auto;
 	}
 
-	:global(.app-shell-resize-handle) {
-		width: 8px;
-		background: var(--border);
-		border-radius: var(--radius-sm);
-		transition: background var(--duration-fast, 120ms) var(--ease-default, ease);
-	}
-
-	:global(.app-shell-resize-handle:hover),
-	:global(.app-shell-resize-handle:focus-visible),
-	:global(.app-shell-resize-handle[data-active='pointer']) {
-		background: var(--primary);
-	}
-
 	@media (prefers-reduced-motion: reduce) {
-		:global(.app-shell-resize-handle) {
+		.app-shell-rail-overlay,
+		.app-shell-rail-handle {
 			transition: none;
 		}
 	}

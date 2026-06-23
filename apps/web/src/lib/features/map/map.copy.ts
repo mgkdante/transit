@@ -15,6 +15,8 @@ export interface MapCopy {
 	readonly mapLabel: string;
 	/** Accessible name for the floating selection-detail panel (dialog region). */
 	readonly detailPanelLabel: string;
+	/** Accessible name for the detail panel's drag-to-resize handle (separator). */
+	readonly detailResizeLabel: string;
 	/** Statut|Crowding toggle. */
 	readonly modeStatus: string;
 	readonly modeOccupancy: string;
@@ -117,6 +119,7 @@ export const copy: Record<Locale, MapCopy> = {
 		heading: 'Live map',
 		mapLabel: 'Live transit map of Montréal, buses coloured by status',
 		detailPanelLabel: 'Selection details',
+		detailResizeLabel: 'Resize details panel',
 		modeStatus: 'Status',
 		modeOccupancy: 'Crowding',
 		modeAlerts: 'Alerts',
@@ -174,6 +177,7 @@ export const copy: Record<Locale, MapCopy> = {
 		heading: 'Carte en direct',
 		mapLabel: 'Carte en direct du réseau de Montréal, bus colorés par statut',
 		detailPanelLabel: 'Détails de la sélection',
+		detailResizeLabel: 'Redimensionner le panneau de détails',
 		modeStatus: 'Statut',
 		modeOccupancy: 'Achalandage',
 		modeAlerts: 'Alertes',

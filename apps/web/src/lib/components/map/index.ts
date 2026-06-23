@@ -30,6 +30,7 @@ export {
 	BUS_ICON,
 	HEADING_ICON,
 	STOP_ICON,
+	SILENT_ICON,
 } from './vehicleSprites';
 
 export {
@@ -41,6 +42,7 @@ export {
 	VEHICLE_SOURCE,
 	VEHICLE_BODY_LAYER,
 	VEHICLE_HEADING_LAYER,
+	VEHICLE_SILENT_LAYER,
 } from './vehicleLayer';
 export type { VehicleFC, VehicleFeature } from './vehicleLayer';
 export {

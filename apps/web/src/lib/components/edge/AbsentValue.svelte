@@ -89,12 +89,24 @@
 		font-family: var(--font-body);
 	}
 
-	/* Inline: a single muted in-row value, label · why. */
+	/* Inline: a single muted in-row value, label · why. WRAPS gracefully — at a
+	   narrow container (e.g. a draggable-narrow detail panel) the label and why
+	   flow onto multiple lines instead of clipping or overflowing. The glyph and
+	   separator ride along as their own flex items, so a wrap breaks cleanly
+	   between the parts (and long unbroken tokens break mid-word as a last resort). */
 	.absent-value--inline {
 		display: inline-flex;
+		flex-wrap: wrap;
 		align-items: baseline;
 		gap: 0.35rem;
+		max-width: 100%;
 		font-size: var(--text-small);
+	}
+	.absent-value--inline .absent-value-label,
+	.absent-value--inline .absent-value-why {
+		min-width: 0;
+		overflow-wrap: anywhere;
+		word-break: break-word;
 	}
 	.absent-value--inline .absent-value-label {
 		font-weight: 600;
