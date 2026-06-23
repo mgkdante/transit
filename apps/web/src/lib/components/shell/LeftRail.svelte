@@ -201,6 +201,13 @@
 		scrollbar-gutter: stable;
 	}
 
+	/* Collapsed icon-only rail: drop the right-only gutter (which would push the
+	   centred tiles leftward into uneven padding) so the tiles sit with EQUAL space
+	   on both sides. The ScrollArea's own overlay scrollbar handles any overflow. */
+	.left-rail[data-open='false'] .left-rail-body-inner {
+		scrollbar-gutter: auto;
+	}
+
 	.left-rail[data-open='true'] .left-rail-head {
 		gap: 0.5rem;
 	}

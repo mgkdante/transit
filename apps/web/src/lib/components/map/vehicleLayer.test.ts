@@ -4,17 +4,19 @@ import type { FilterState } from '$lib/filters';
 import { VehicleSchema } from '$lib/v1/schemas';
 import {
 	addVehicleLayers,
+	ICON_SIZE_Z11_DEFAULT,
+	ICON_SIZE_Z11_HOVER,
+	SILENT_BADGE_SCALE,
+	SILENT_ICON_SIZE_Z11,
+	SILENT_ICON_SIZE_Z15,
 	VEHICLE_BODY_LAYER,
 	VEHICLE_HEADING_LAYER,
+	VEHICLE_SILENT_LAYER,
 	VEHICLE_SOURCE,
 	toVehicleFeatures,
 } from './vehicleLayer';
-import { HEADING_ICON } from './vehicleSprites';
-import {
-	SILENCE_FLOOR_OPACITY,
-	FRESH_TTL_MULTIPLIER,
-	SILENT_TTL_MULTIPLIER,
-} from './vehicleSilence';
+import { HEADING_ICON, SILENT_ICON } from './vehicleSprites';
+import { STALE_CUTOFF_S } from './vehicleProjection';
 
 function usesTopLevelZoomExpression(value: unknown): boolean {
 	return (
@@ -110,6 +112,34 @@ describe('toVehicleFeatures entity filtering', () => {
 		const bodyIndex = layers.findIndex((l) => l.id === VEHICLE_BODY_LAYER);
 		const headingIndex = layers.findIndex((l) => l.id === VEHICLE_HEADING_LAYER);
 		expect(headingIndex).toBeGreaterThan(bodyIndex);
+	});
+
+	it('branches icon-opacity on hover/selected on both vehicle layers (S5: fix hover-only)', () => {
+		const layers: LayerSpecification[] = [];
+		const map = {
+			getLayer: () => undefined,
+			addLayer: (nextLayer: LayerSpecification) => {
+				layers.push(nextLayer);
+			},
+		} as unknown as MapLibreMap;
+
+		addVehicleLayers(map);
+
+		for (const id of [VEHICLE_BODY_LAYER, VEHICLE_HEADING_LAYER]) {
+			const paint = (layers.find((l) => l.id === id)?.paint ?? {}) as Record<string, unknown>;
+			const opacity = JSON.stringify(paint['icon-opacity']);
+			expect(opacity).toContain('hovered');
+			expect(opacity).toContain('selected');
+			// The default leg reads the `opacity` prop (constant 1 now the fade is gone)
+			// times the global stale-dim — not a static literal.
+			expect(opacity).toContain('opacity');
+		}
+	});
+
+	it('rests buses at a solid base size; hover is a modest accent (S5: solid by default)', () => {
+		// The "only solid on hover" cause was a small base size jumping ~1.9× on hover.
+		expect(ICON_SIZE_Z11_DEFAULT).toBeGreaterThanOrEqual(0.7);
+		expect(ICON_SIZE_Z11_HOVER / ICON_SIZE_Z11_DEFAULT).toBeLessThan(1.5);
 	});
 
 	it('flags whether each bus reports a heading so the chevron layer can hide for headingless buses', () => {
@@ -253,26 +283,25 @@ describe('toVehicleFeatures per-vehicle silence fade', () => {
 		expect(features.map((f) => f.properties.opacity)).toEqual([1, 1]);
 	});
 
-	it('carries updated_utc into the feature opacity: fresh = full, long-silent = floor', () => {
+	it('carries updated_utc into the feature opacity: fresh = full, long-silent = full (solid, no fade)', () => {
 		const now = Date.parse('2026-06-21T12:00:00Z');
 		const fresh = '2026-06-21T12:00:00Z'; // age 0 → full
-		const silent = '2026-06-21T11:55:00Z'; // age 300s >> 3×ttl=90 → floor
+		const silent = '2026-06-21T11:55:00Z'; // age 300s — still full (the fade is gone)
 		const features = toVehicleFeatures(fleet(fresh, silent), EMPTY_FILTER, new Set(), null, null, {
 			serverNow: now,
 			ttlS: TTL,
 		}).features;
 		const byId = Object.fromEntries(features.map((f) => [f.properties.id, f.properties]));
 		expect(byId.fresh.opacity).toBe(1);
-		expect(byId.silent.opacity).toBe(SILENCE_FLOOR_OPACITY);
-		// silenceAgeS is carried (rounded seconds) for hover / debug.
+		// Buses are solid in normal operation — staleness is a global signal now.
+		expect(byId.silent.opacity).toBe(1);
+		// silenceAgeS is still carried (rounded seconds) for hover / debug.
 		expect(byId.silent.silenceAgeS).toBe(300);
 	});
 
-	it('fades a bus that is mid-window to a partial (visible) opacity', () => {
+	it('keeps a mid-window bus at full opacity (no per-vehicle fade)', () => {
 		const now = Date.parse('2026-06-21T12:00:00Z');
-		const fadeStart = FRESH_TTL_MULTIPLIER * TTL; // 45
-		const fadeEnd = SILENT_TTL_MULTIPLIER * TTL; // 90
-		const midAge = (fadeStart + fadeEnd) / 2; // 67.5s
+		const midAge = 67.5; // formerly inside the fade window
 		const reportedAt = new Date(now - midAge * 1000).toISOString();
 		const features = toVehicleFeatures(
 			fleet(reportedAt, reportedAt),
@@ -282,14 +311,12 @@ describe('toVehicleFeatures per-vehicle silence fade', () => {
 			null,
 			{ serverNow: now, ttlS: TTL },
 		).features;
-		const o = features[0].properties.opacity;
-		expect(o).toBeGreaterThan(SILENCE_FLOOR_OPACITY);
-		expect(o).toBeLessThan(1);
+		expect(features[0].properties.opacity).toBe(1);
 	});
 
-	it('under reduced motion sets the silence opacity DISCRETELY (stepped, not a ramp)', () => {
+	it('keeps a mid-window bus at full opacity (formerly the reduced-motion path)', () => {
 		const now = Date.parse('2026-06-21T12:00:00Z');
-		const midAge = (FRESH_TTL_MULTIPLIER + 0.5) * TTL; // inside fade window
+		const midAge = 60; // formerly inside the fade window
 		const reportedAt = new Date(now - midAge * 1000).toISOString();
 		const features = toVehicleFeatures(
 			fleet(reportedAt, reportedAt),
@@ -297,10 +324,9 @@ describe('toVehicleFeatures per-vehicle silence fade', () => {
 			new Set(),
 			null,
 			null,
-			{ serverNow: now, ttlS: TTL, reduceMotion: true },
+			{ serverNow: now, ttlS: TTL },
 		).features;
-		// Discrete: the single mid step, exactly halfway between full and floor.
-		expect(features[0].properties.opacity).toBe((1 + SILENCE_FLOOR_OPACITY) / 2);
+		expect(features[0].properties.opacity).toBe(1);
 	});
 
 	it('drives a data-driven icon-opacity from the opacity property on both layers', () => {
@@ -318,5 +344,130 @@ describe('toVehicleFeatures per-vehicle silence fade', () => {
 			const paint = (layer?.paint ?? {}) as Record<string, unknown>;
 			expect(JSON.stringify(paint['icon-opacity'])).toContain('opacity');
 		}
+	});
+});
+
+describe('toVehicleFeatures per-bus staleness flag (S5.1: off reported_utc)', () => {
+	const now = Date.parse('2026-06-21T12:00:00Z');
+	// Same snapshot capture time for both buses (uniform updated_utc); they differ
+	// ONLY in their OWN fix time (reported_utc) — exactly the case the old global
+	// silence could not distinguish but per-bus staleness must.
+	const SNAPSHOT_UTC = '2026-06-21T12:00:00Z';
+
+	function fleet(freshReported: string, staleReported: string) {
+		return [
+			{
+				id: 'fresh',
+				lat: 45.5,
+				lon: -73.6,
+				status: 'on_time',
+				updated_utc: SNAPSHOT_UTC,
+				reported_utc: freshReported,
+				bearing: 90,
+			},
+			{
+				id: 'stale',
+				lat: 45.51,
+				lon: -73.61,
+				status: 'on_time',
+				updated_utc: SNAPSHOT_UTC,
+				reported_utc: staleReported,
+				bearing: 90,
+			},
+		].map((v) => VehicleSchema.parse(v));
+	}
+
+	it('flags a bus whose OWN reported_utc is past the cutoff as stale:1, a fresh one stale:0', () => {
+		const fresh = new Date(now - 5 * 1000).toISOString(); // 5s old → fresh
+		const stale = new Date(now - (STALE_CUTOFF_S + 30) * 1000).toISOString(); // well past cutoff
+		const features = toVehicleFeatures(fleet(fresh, stale), EMPTY_FILTER, new Set(), null, null, {
+			serverNow: now,
+		}).features;
+		const byId = Object.fromEntries(features.map((f) => [f.properties.id, f.properties]));
+		expect(byId.fresh.stale).toBe(0);
+		expect(byId.stale.stale).toBe(1);
+	});
+
+	it('falls back to updated_utc for staleness when reported_utc is absent', () => {
+		const oldSnapshot = new Date(now - (STALE_CUTOFF_S + 30) * 1000).toISOString();
+		const [v] = [
+			{ id: 'fallback', lat: 45.5, lon: -73.6, status: 'on_time', updated_utc: oldSnapshot },
+		].map((x) => VehicleSchema.parse(x));
+		const features = toVehicleFeatures([v], EMPTY_FILTER, new Set(), null, null, {
+			serverNow: now,
+		}).features;
+		expect(features[0].properties.stale).toBe(1);
+	});
+
+	it('reports stale:0 for every bus when no silence context (no clock to measure against)', () => {
+		const fresh = new Date(now - 5 * 1000).toISOString();
+		const stale = new Date(now - (STALE_CUTOFF_S + 30) * 1000).toISOString();
+		const features = toVehicleFeatures(fleet(fresh, stale), EMPTY_FILTER).features;
+		expect(features.map((f) => f.properties.stale)).toEqual([0, 0]);
+	});
+
+	it('adds a VEHICLE_SILENT_LAYER filtered on matched + stale, using the "!" badge sprite', () => {
+		const layers: LayerSpecification[] = [];
+		const map = {
+			getLayer: () => undefined,
+			addLayer: (nextLayer: LayerSpecification) => {
+				layers.push(nextLayer);
+			},
+		} as unknown as MapLibreMap;
+		addVehicleLayers(map);
+
+		const silent = layers.find((l) => l.id === VEHICLE_SILENT_LAYER);
+		expect(silent).toBeDefined();
+		if (!silent) throw new Error('expected silent layer');
+		expect(silent).toMatchObject({ type: 'symbol', source: VEHICLE_SOURCE });
+		const rendered = silent as LayerSpecification & {
+			layout: Record<string, unknown>;
+			filter: unknown;
+		};
+		const layout = (rendered.layout ?? {}) as Record<string, unknown>;
+		expect(layout['icon-image']).toBe(SILENT_ICON);
+		// Shows only matched buses that are per-bus stale.
+		expect(JSON.stringify(rendered.filter)).toContain('matched');
+		expect(JSON.stringify(rendered.filter)).toContain('stale');
+		// The big "!" flag stays put over the bus and on top of every neighbour.
+		expect(layout['icon-allow-overlap']).toBe(true);
+		expect(layout['icon-ignore-placement']).toBe(true);
+		// Drawn ABOVE the body + heading so the flag is never occluded.
+		const bodyIndex = layers.findIndex((l) => l.id === VEHICLE_BODY_LAYER);
+		const headingIndex = layers.findIndex((l) => l.id === VEHICLE_HEADING_LAYER);
+		const silentIndex = layers.findIndex((l) => l.id === VEHICLE_SILENT_LAYER);
+		expect(silentIndex).toBeGreaterThan(bodyIndex);
+		expect(silentIndex).toBeGreaterThan(headingIndex);
+	});
+
+	it('sizes the big "!" badge at ~75% of the bus icon, scaling with zoom (S5.1: prominent flag)', () => {
+		const layers: LayerSpecification[] = [];
+		const map = {
+			getLayer: () => undefined,
+			addLayer: (nextLayer: LayerSpecification) => {
+				layers.push(nextLayer);
+			},
+		} as unknown as MapLibreMap;
+		addVehicleLayers(map);
+
+		// The exported consts ARE the bus DEFAULT legs × 0.75.
+		expect(SILENT_BADGE_SCALE).toBe(0.75);
+		expect(SILENT_ICON_SIZE_Z11).toBeCloseTo(ICON_SIZE_Z11_DEFAULT * 0.75, 6);
+		expect(SILENT_ICON_SIZE_Z11 / ICON_SIZE_Z11_DEFAULT).toBeCloseTo(0.75, 6);
+		// z11 ≈ 0.585, z15 ≈ 0.975 (0.75 × the bus 0.78 / 1.3 default legs).
+		expect(SILENT_ICON_SIZE_Z11).toBeCloseTo(0.585, 3);
+		expect(SILENT_ICON_SIZE_Z15).toBeCloseTo(0.975, 3);
+		// It grows with zoom (z15 leg larger than z11) — tracks the bus, not fixed.
+		expect(SILENT_ICON_SIZE_Z15).toBeGreaterThan(SILENT_ICON_SIZE_Z11);
+
+		// The layer wires those legs into a top-level zoom-interpolate icon-size.
+		const silent = layers.find((l) => l.id === VEHICLE_SILENT_LAYER);
+		if (!silent) throw new Error('expected silent layer');
+		const layout = (silent.layout ?? {}) as Record<string, unknown>;
+		const size = layout['icon-size'];
+		expect(usesTopLevelZoomExpression(size)).toBe(true);
+		const sizeJson = JSON.stringify(size);
+		expect(sizeJson).toContain(String(SILENT_ICON_SIZE_Z11));
+		expect(sizeJson).toContain(String(SILENT_ICON_SIZE_Z15));
 	});
 });

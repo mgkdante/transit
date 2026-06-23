@@ -25,7 +25,7 @@
 	import type { Map as MapLibreMap, MapMouseEvent } from 'maplibre-gl';
 	import { getLocale, type Locale } from '$lib/i18n';
 	import { themeStore } from '$lib/stores';
-	import { layout } from '$lib/nav';
+	import { layout, isDesktopViewport } from '$lib/nav';
 	import {
 		createLiveStore,
 		getV1Context,
@@ -40,15 +40,10 @@
 	import type { Alert } from '$lib/v1/schemas';
 	import { createResource } from '$lib/v1/resource.svelte';
 	import { createFilterStore, fromSearchParams, type Chip } from '$lib/filters';
-	import {
-		clearNearTargetSearchParams,
-		copyNearTargetSearchParams,
-		setNearTargetSearchParams,
-	} from '$lib/search/mapNear';
+	import { copyNearTargetSearchParams } from '$lib/search/mapNear';
 	import { nearTargetFromSearchParams } from '$lib/search/mapNear';
-	import { clearMapFocusSearchParams, parseMapFocus, type MapFocus } from '$lib/search/mapFocus';
-	import { BottomSheet, RightPanel } from '$lib/components/shell';
-	import { ResizablePaneGroup, ResizablePane, ResizableHandle } from '$lib/components/ui/resizable';
+	import { parseMapFocus, type MapFocus } from '$lib/search/mapFocus';
+	import { RightPanel } from '$lib/components/shell';
 	import {
 		MapStage,
 		bakeVehicleSprites,
@@ -73,32 +68,31 @@
 		type MapFitPadding,
 		type WithDistance,
 		type VehicleMotionController,
-		type ShapeResolver,
-		type Coord,
+		type FixResolver,
 	} from '$lib/components/map';
-	import {
-		bestShapeForPoint,
-		routeShapes,
-		type RouteShapes,
-	} from '$lib/components/map/vehicleShapes';
-	import {
-		liveTtlS,
-		silenceAgeS,
-		silenceOpacity,
-		silenceOpacityDiscrete,
-	} from '$lib/components/map/vehicleSilence';
-	import { sharedClock } from '$lib/stores';
+	import { liveTtlS } from '$lib/components/map/vehicleSilence';
+	import { createShapeCacheManager } from './mapShapeCache';
+	import { vehicleAbsence } from './vehicleAbsence';
+	import { sharedClock, motionMode } from '$lib/stores';
 	import { isPrefersReducedMotion } from '$lib/motion/reduced-motion.svelte';
 	import MapFilters from './MapFilters.svelte';
-	import { mapRailSizing } from './mapRailSizing';
-	import MapFilterPill from './MapFilterPill.svelte';
-	import MapFreshness from './MapFreshness.svelte';
-	import MapNearMeControl from './MapNearMeControl.svelte';
+	import MapMotionControl from './MapMotionControl.svelte';
 	import MapSelectionDetail from './MapSelectionDetail.svelte';
-	import { routeBoundsFromFile, zoomForNearMePrecision } from './mapGeo';
+	import MapSurfaceCanvasLayer from './MapSurfaceCanvasLayer.svelte';
+	import MapOverlayChrome from './MapOverlayChrome.svelte';
+	import MapDetailOverlay from './MapDetailOverlay.svelte';
+	import MapMobileDetailSheet from './MapMobileDetailSheet.svelte';
+	import { zoomForNearMePrecision } from './mapGeo';
+	import { focusCoordinate, fitRouteBounds } from './mapCamera';
+	import {
+		buildNearTargetSearch,
+		clearNearTargetSearch,
+		buildFocusClearSearch,
+	} from './mapUrlSync';
+	import { motionFeedAnimate } from './motionFeed';
 	import { parseCoordinateQuery, nearTargetKey } from './mapNearMe';
 	import { copy as MAP_COPY } from './map.copy';
-	import { shouldAnimate } from '$lib/motion/policy';
+	import { readStoredDetailPanelWidth } from './mapDetailPanes';
 	import { buildAlertEntitySets, vehicleHasAlert } from './mapAlerts';
 	import { PICKABLE_MAP_LAYERS, pickMapSelection } from './mapPicking';
 	import { resolveMapSelection, type MapSelection } from './mapSelection';
@@ -133,34 +127,69 @@
 	// edge made the right band vanish while the left one worked.
 	const MAP_MAX_BOUNDS = [-74.32, 45.3, -73.2, 45.82] as const;
 
-	// Hero width — window-reactive ONLY (not panel state). Kept as the seed/fallback
-	// for the fit-padding fraction math before the map stage element measures.
-	// Seeded with a desktop default so the fraction padding applies even before the
-	// first clientWidth measurement (a 0 here would fall back to the wide fit).
+	// Hero width — window-reactive ONLY. The fit-padding fraction math runs off the
+	// WHOLE-HERO clientWidth. The map is full-bleed (it fills the hero), and every
+	// panel OVERLAYS it (absolute), so dragging or collapsing a panel never changes
+	// the hero width — the fit padding stays STABLE and MapStage's fitPadding effect
+	// never re-fits. Only a genuine viewport resize changes mapWidthPx. Seeded with a
+	// desktop default so the fraction padding applies even before the first
+	// clientWidth measurement (a 0 here would fall back to the wide fit).
 	let mapWidthPx = $state(1280);
-	// The LIVE width of the actual map container (the left pane), which physically
-	// shrinks when the detail pane opens/resizes. The fit padding (left/right
-	// fractions) must be computed off THIS, not the full hero: a refit fired while
-	// the panel is open (theme/basemap swap, bounds/maxBounds tweak) would otherwise
-	// size its padding to ~80% of the FULL hero — exceeding the shrunk pane width →
-	// MapLibre treats it as degenerate padding → off-centre fit. Falls back to the
-	// hero width until the pane measures (initial load = panel closed = pane IS hero).
-	let mapStagePaneEl = $state<HTMLElement | null>(null);
-	let mapStageWidthPx = $state(0);
-	const fitWidthPx = $derived(mapStageWidthPx > 0 ? mapStageWidthPx : mapWidthPx);
+	const fitWidthPx = $derived(mapWidthPx);
+
+	// Layout snapshot for the CAMERA-AFFECTING derivation (mapFitPadding). Resolved
+	// ONCE up front from matchMedia (`isDesktopViewport()`, SSR-safe → false on the
+	// server) and refreshed only on a GENUINE viewport resize in onMount — NOT off the
+	// shared `layout.isDesktop` store. The store flips false→true during hydration (it
+	// reads `false` on the server), and the map's fitPadding effect re-runs fitBounds on
+	// any padding change, so deriving the padding off that store would re-fit and SHIFT
+	// the camera on the first paint. A matchMedia read at init is already the real value
+	// client-side, so the very first padding is correct and the camera fits once. The
+	// store still drives the non-camera chrome branches below (hover peek, the detail
+	// pane gate, motion control).
+	let isDesktopLayout = $state(isDesktopViewport());
+	onMount(() => {
+		if (typeof window === 'undefined') return;
+		const mql = window.matchMedia('(min-width: 1024px)');
+		// Confirm the layout post-mount (covers any SSR/init skew) and keep it live for
+		// real resizes across the breakpoint. A `change` only fires on an actual
+		// viewport crossing, never on the hydration pass, so the camera is not re-fit
+		// during load.
+		isDesktopLayout = mql.matches;
+		const onChange = (e: MediaQueryListEvent) => {
+			isDesktopLayout = e.matches;
+		};
+		mql.addEventListener('change', onChange);
+		return () => mql.removeEventListener('change', onChange);
+	});
 
 	// Desktop frames the island into a roughly SQUARE central gap with generous
 	// left/right BUFFERS sized as a fraction of the width. The buffers (a) crop the
 	// off-island east (south-shore sprawl), (b) keep the whole island visible past
 	// the left filter panel and the right detail panel at their furthest, and
-	// (c) — being static — never shift the map when a panel toggles. The island
+	// (c), being static, never shift the map when a panel toggles. The island
 	// sits centred in the visible gap: human-centred, not math-centred on the full
 	// canvas. Tunable knobs:
 	const DESKTOP_LEFT_PAD_FRAC = 0.37; // clears rail + filter panel, with band
 	const DESKTOP_RIGHT_PAD_FRAC = 0.43; // buffer for the right detail panel + band
 	const DESKTOP_VERT_PAD_PX = 56; // small top/bottom → island fills the height (bigger)
+	// Right DETAIL panel — an absolute OVERLAY anchored flush to the map's right edge
+	// (NOT a paneforge pane). Its WIDTH is the `--app-right-detail-offset` CSS var on
+	// .map-hero; dragging the panel's left-edge handle writes a live clamped px width
+	// into that var and we persist the chosen width (transit:detail-panel-width), so
+	// the layout sticks across reloads. COLLAPSING slides the overlay OFF the right
+	// edge (data-detail-collapsed on .map-hero). Because the panel is absolute, none
+	// of this touches the map canvas — the map sizes off its own container, never the
+	// panel width, so dragging/collapsing the detail can NEVER resize the map.
+	let detailWidthPx = $state(readStoredDetailPanelWidth());
+	let detailCollapsed = $state(false);
+	let heroEl = $state<HTMLDivElement | null>(null);
+	let detailDragging = $state(false);
+	const detailResizeAria = $derived(t.detailResizeLabel);
+	// Reads the one-shot `isDesktopLayout` snapshot (not the hydration-flipping store)
+	// so the FIRST padding is already correct and the camera fits exactly once.
 	const mapFitPadding = $derived<MapFitPadding>(
-		layout.isDesktop && fitWidthPx > 0
+		isDesktopLayout && fitWidthPx > 0
 			? {
 					top: DESKTOP_VERT_PAD_PX,
 					bottom: DESKTOP_VERT_PAD_PX,
@@ -224,63 +253,42 @@
 		return () => live.stop();
 	});
 
-	// Keep the shared clock ticking while the map is mounted: the per-vehicle
-	// silence fade re-evaluates off `sharedClock.serverNow`, so a bus can fade
-	// BETWEEN polls (the clock cadence honors prefers-reduced-motion).
+	// Keep the shared clock ticking while the map is mounted: every relative-time
+	// label (the freshness chip, the feed-stall banner age) re-derives off
+	// `sharedClock.serverNow`, so it must keep advancing between polls. (This once
+	// also drove the per-vehicle silence fade, now removed — buses are solid.)
 	$effect(() => sharedClock.subscribe());
 
-	// Tear the motion controller down on component unmount: it owns a running gsap
-	// tween (the position lerp), which is otherwise only killed inside
-	// installMapLayers when the MAP instance changes — so navigating away from /map
-	// would leak a live tween. This effect has no tracked reads, so it runs once and
-	// its cleanup fires only on unmount; it reads vehicleMotion lazily there to kill
-	// whatever controller is current. The map-instance-change path is unaffected: it
-	// destroys the OLD controller before creating a new one, so there is no double
-	// destroy (destroy() just kills an already-killed tween, which is a no-op).
+	// Tear the motion controller down on component unmount: it owns a running rAF
+	// projection loop, which is otherwise only stopped inside installMapLayers when
+	// the MAP instance changes — so navigating away from /map would leak a live
+	// loop. This effect has no tracked reads, so it runs once and its cleanup fires
+	// only on unmount; it reads vehicleMotion lazily there to stop whatever
+	// controller is current. The map-instance-change path is unaffected: it destroys
+	// the OLD controller before creating a new one, so there is no double destroy
+	// (destroy() just cancels an already-cancelled loop, which is a no-op).
 	$effect(() => () => untrack(() => vehicleMotion)?.destroy());
 
-	// Live tier ttl (seconds) → derives the silence fade windows so they track the
-	// publisher's cadence, not a magic number. Default 30s if the manifest omits it.
+	// Live tier ttl (seconds) → drives the global stale/banner windows (isStale fires
+	// at 3x ttl = 90s) AND sizes the per-bus not-reporting cutoff (threaded as `ttlS`
+	// into toVehicleFeatures, where a bus whose own reported_utc fix is past the window
+	// freezes + earns the "!" badge). Default 30s if the manifest omits it.
 	const liveTtl = liveTtlS(manifest.files?.live?.ttl_s);
 
 	let map = $state<MapLibreMap | null>(null);
 	let vehicleMotion = $state<VehicleMotionController | null>(null);
 	let vehicleMotionMap: MapLibreMap | null = null;
 
-	// --- L1 path-follow shape supply ------------------------------------------
+	// --- forward-projection shape supply --------------------------------------
 	// Per-route direction-variant polylines, fetched on-demand for the routes that
 	// currently have live buses (deduped by route id — far fewer than the ~600
 	// vehicles). Loaded through the same getRoute() path as the selected-route
-	// linework, then cached so a route is fetched at most once. The tween reads
-	// this to walk a bus ALONG its street; until a shape resolves the bus glides
-	// the straight chord (progressive enhancement — never blocks, always correct).
-	// Intentionally a PLAIN (non-reactive) Map: mutating the cache must NOT trigger
-	// rerenders — reactivity is carried explicitly by `routeShapeRevision` so a
-	// resolved shape re-feeds exactly once. A SvelteMap would make every .set()
-	// reactive and thrash the feed effect.
-	// eslint-disable-next-line svelte/prefer-svelte-reactivity
-	const routeShapeCache = new Map<string, RouteShapes>();
-	// Routes already fetched (or null/empty result cached) so we never re-request.
-	// Plain Set for the same reason — a dedupe ledger, not reactive state.
-	// eslint-disable-next-line svelte/prefer-svelte-reactivity
-	const routeShapeRequested = new Set<string>();
-	// Bumped when a shape resolves so the feed effect re-runs and the next tween
-	// upgrades to path-follow. A plain $state counter (cheap reactive signal).
-	let routeShapeRevision = $state(0);
-	// Cap distinct cached routes to bound memory over a long session; the visible
-	// set is small, so eviction is rare. LRU-ish: oldest insertion dropped first.
-	const MAX_CACHED_ROUTE_SHAPES = 200;
+	// linework, then cached so a route is fetched at most once. The manager owns the
+	// (non-reactive) caches + the prefetch + the per-frame `shapeFor` resolver the
+	// controller reads to project a bus FORWARD along its street; until a shape
+	// resolves the bus FREEZES at its fix (we never dead-reckon on the raw bearing).
+	const shapeCache = createShapeCacheManager(getRoute);
 
-	// Previous vehicles-file generated_utc + its parsed epoch ms, so the next
-	// re-target can size the tween to the REAL inter-file interval (L2 no-idle).
-	let prevVehiclesGeneratedUtc: string | null = null;
-	let prevVehiclesGeneratedMs: number | null = null;
-	// Signature of the per-vehicle silence-opacity buckets at the last clock-tick
-	// re-feed. The tick effect skips re-feeding the vehicle layer when this is
-	// unchanged (no bus crossed/moved within the fade window since last tick) so a
-	// feed of buses all-fresh or all-floored doesn't rebuild + setData every second
-	// for nothing. Reset to '' so the first tick after a (re)install always feeds.
-	let lastSilenceSignature = '';
 	let layerRevision = $state(0);
 	let interactionsMap: MapLibreMap | null = null;
 	let selected = $state<MapSelection | null>(null);
@@ -296,10 +304,6 @@
 	// One-shot "zoom to this picked entity" hint from the URL `focus` param. The
 	// resolver effect pans/fits once data is available, then strips the param.
 	let pendingFocus = $state<MapFocus | null>(null);
-	let rightPanelCollapsed = $state(false);
-	let rightPanelPane = $state<{ collapse: () => void; expand: () => void } | undefined>();
-	let rightPanelEl = $state<HTMLElement | undefined>();
-	let rightPanelWidthPx = $state(360);
 
 	const stopList = $derived(stops.data?.stops ?? []);
 	const nearbyStops = $derived<WithDistance<StopIndexEntry>[]>(
@@ -394,11 +398,11 @@
 	// reason via $lib/site/serviceWindow.inferAbsenceReason. The map spans the WHOLE
 	// network (mixed modes + every route), so there is no single first/last window
 	// to claim "closed" against here — a network-wide overnight verdict needs a
-	// network service-span signal we do not yet publish. ALSO: a selected-but-silent
-	// vehicle should read "last seen N ago" via the 'last-seen' reason key
-	// (inferAbsenceReason carries lastSeenIso through) — wire it into the selected-
-	// detail panel when the chosen vehicle has gone quiet. Deferred to keep this PR
-	// scoped to /route + /stop (the well-defined per-entity windows).
+	// network service-span signal we do not yet publish. The selected-but-silent
+	// "last seen N ago" half is also DEFERRED: it needs a per-vehicle report
+	// timestamp in /v1, but updated_utc is currently the uniform snapshot capture
+	// time (every vehicle shares it), so it can only express global staleness, not
+	// one stuck bus.
 	const liveEdgeState = $derived.by<'unavailable' | 'no-vehicles' | null>(() => {
 		if (live.error != null && live.generatedUtc == null) return 'unavailable';
 		if (live.vehicles != null && !live.isStale && (live.vehicles.vehicles?.length ?? 0) === 0) {
@@ -464,23 +468,14 @@
 			alerts: alertList,
 		}),
 	);
+	// Per-bus stale-GPS note (pure module): { ageS } when a focused VEHICLE detail's
+	// OWN fix is past the cutoff, else null. Reads sharedClock.serverNow so the note
+	// appears/refreshes as a bus crosses the cutoff between polls.
+	const selectedVehicleAbsence = $derived(vehicleAbsence(selectedDetail, sharedClock.serverNow));
+	const hoverVehicleAbsence = $derived(vehicleAbsence(hoverDetail, sharedClock.serverNow));
 	const detailSurfaceKey = $derived(
 		selectedDetail ? `${selectedDetail.kind}:${selectedDetail.id}` : 'empty',
 	);
-	const mapDetailOffset = $derived(
-		detailOpen && layout.isDesktop ? `${Math.round(rightPanelWidthPx)}px` : '0rem',
-	);
-
-	// Right-rail paneforge percents derived from the LIVE hero width (B1). paneforge
-	// sizes in percent, so a constant-rem rail (narrow floor + ceiling + thin
-	// collapsed strip) must be re-expressed as a percent of the current hero width —
-	// otherwise the same percent renders too wide at every desktop width. mapWidthPx
-	// tracks the hero clientWidth (window resize only, NOT pane drag), so these stay
-	// stable while dragging yet responsive across 1024/1280/1600. The CSS min/max-
-	// width clamp on the pane agrees with these (both derive from the same rems), so
-	// the percent floor and the px clamp never fight.
-	const railSizing = $derived(mapRailSizing(mapWidthPx));
-
 	function clearHover(m: MapLibreMap): void {
 		hovered = null;
 		m.getCanvas().style.cursor = '';
@@ -499,6 +494,9 @@
 		selectionStack = [];
 		selected = next;
 		detailOpen = true;
+		// A fresh pick always shows its detail: if the panel was sitting collapsed in
+		// the icon strip, expand it so the new selection is visible, never stranded.
+		detailCollapsed = false;
 		// Zoom to whatever was clicked, same as a search pick (data is already
 		// loaded — it's on the map). Point entities centre + zoom in; a route frames
 		// its linework.
@@ -542,17 +540,9 @@
 		detailOpen = false;
 		selected = null;
 		selectionStack = [];
-		rightPanelCollapsed = false;
-	}
-
-	function toggleRightPanelCollapsed(): void {
-		if (rightPanelCollapsed) {
-			rightPanelPane?.expand();
-			rightPanelCollapsed = false;
-		} else {
-			rightPanelPane?.collapse();
-			rightPanelCollapsed = true;
-		}
+		// Re-open the panel expanded next time: a closed panel should not remember a
+		// collapsed strip (that would re-open as an empty rail with no obvious content).
+		detailCollapsed = false;
 	}
 
 	function selectFromDetail(next: MapSelection): void {
@@ -654,11 +644,8 @@
 	}
 
 	function syncNearTargetToUrl(origin: NearMeOrigin): void {
-		const nextSearchParams = new URLSearchParams($page.url.searchParams);
-		setNearTargetSearchParams(nextSearchParams, origin);
-		const nextSearch = nextSearchParams.toString();
 		nearUrlKey = nearTargetKey(origin);
-		void goto(nextSearch ? `?${nextSearch}` : $page.url.pathname, {
+		void goto(buildNearTargetSearch($page.url.searchParams, $page.url.pathname, origin), {
 			replaceState: true,
 			keepFocus: true,
 			noScroll: true,
@@ -687,11 +674,7 @@
 		nearMeQuery = '';
 		nearMeError = null;
 		nearUrlKey = '';
-
-		const nextSearchParams = new URLSearchParams($page.url.searchParams);
-		clearNearTargetSearchParams(nextSearchParams);
-		const nextSearch = nextSearchParams.toString();
-		void goto(nextSearch ? `?${nextSearch}` : $page.url.pathname, {
+		void goto(clearNearTargetSearch($page.url.searchParams, $page.url.pathname), {
 			replaceState: true,
 			keepFocus: true,
 			noScroll: true,
@@ -705,10 +688,7 @@
 	}
 
 	function clearFocusFromUrl(): void {
-		const nextSearchParams = new URLSearchParams($page.url.searchParams);
-		clearMapFocusSearchParams(nextSearchParams);
-		const nextSearch = nextSearchParams.toString();
-		void goto(nextSearch ? `?${nextSearch}` : $page.url.pathname, {
+		void goto(buildFocusClearSearch($page.url.searchParams, $page.url.pathname), {
 			replaceState: true,
 			keepFocus: true,
 			noScroll: true,
@@ -726,29 +706,19 @@
 	function focusStop(id: string): boolean {
 		const stop = stopList.find((s) => s.id === id);
 		if (!stop) return false;
-		panTo([stop.lon, stop.lat], Math.max(map?.getZoom() ?? 0, 16));
-		return true;
+		return focusCoordinate(map, [stop.lon, stop.lat], 16);
 	}
 
 	function focusVehicle(id: string): boolean {
 		const vehicle = (live.vehicles?.vehicles ?? []).find((v) => v.id === id);
 		if (!vehicle) return false;
-		panTo([vehicle.lon, vehicle.lat], Math.max(map?.getZoom() ?? 0, 16));
-		return true;
+		return focusCoordinate(map, [vehicle.lon, vehicle.lat], 16);
 	}
 
 	function focusRoute(id: string): boolean {
 		const route = routeList.find((r) => r.id === id);
 		if (!route) return false;
-		const bounds = routeBoundsFromFile(route);
-		if (!bounds) return false;
-		if (!map) return false;
-		map.fitBounds(bounds, {
-			padding: 64,
-			maxZoom: 15,
-			duration: shouldAnimate('motion-gated') ? 600 : 0,
-		});
-		return true;
+		return fitRouteBounds(map, route);
 	}
 
 	// Resolve the pending focus once the map AND the entity's data are available;
@@ -768,20 +738,8 @@
 		clearFocusFromUrl();
 	});
 
-	/** Camera move that honours prefers-reduced-motion: jumpTo (no flight) under
-	 * reduce, flyTo otherwise. `essential` alone does NOT respect reduced motion. */
-	function panTo(center: [number, number], zoom: number): void {
-		if (!map) return;
-		if (shouldAnimate('motion-gated')) map.flyTo({ center, zoom, essential: true });
-		else map.jumpTo({ center, zoom });
-	}
-
 	function flyToNearMeOrigin(origin: NearMeOrigin): void {
-		if (!map) return;
-		panTo(
-			[origin.lon, origin.lat],
-			Math.max(map.getZoom(), zoomForNearMePrecision(origin.precision)),
-		);
+		focusCoordinate(map, [origin.lon, origin.lat], zoomForNearMePrecision(origin.precision));
 	}
 
 	function useNearMeLocation(): void {
@@ -899,7 +857,9 @@
 		selectionStack = [];
 		selected = { kind: 'stop', id: stop.id };
 		detailOpen = true;
-		if (map) panTo([stop.lon, stop.lat], Math.max(map.getZoom(), 15));
+		// A fresh pick always shows its detail: expand the panel if it was collapsed.
+		detailCollapsed = false;
+		focusCoordinate(map, [stop.lon, stop.lat], 15);
 	}
 
 	function waitingForSelectedDetail(): boolean {
@@ -940,10 +900,8 @@
 		addNearTargetSource(m);
 		addNearTargetLayer(m);
 		installMapInteractions(m);
-		// Force the next clock-tick re-feed: MapLibre cleared the custom source on a
-		// style swap, so the tick effect's short-circuit must not skip the first
-		// post-install feed even if the opacity buckets are unchanged.
-		lastSilenceSignature = '';
+		// Bump so the feed effect re-runs and re-pushes the vehicle/stop/route data
+		// MapLibre cleared from its custom sources on the style swap.
 		layerRevision += 1;
 	}
 
@@ -957,102 +915,66 @@
 		installMapLayers(m);
 	}
 
-	// L1 — lazily fetch route shapes for the routes that currently have live buses
+	// Lazily fetch route shapes for the routes that currently have live buses
 	// (deduped). Runs off the vehicles poll only (other reads untracked) so a
-	// filter/hover does not re-trigger fetches. Each route is requested at most
-	// once; a resolved shape bumps `routeShapeRevision`, re-running the feed effect
-	// so the NEXT tween upgrades that route's buses to path-follow. Fetches are
-	// fire-and-forget + fail-soft (a failed/absent shape simply leaves the bus on
-	// the chord — never blocks motion). We do NOT bulk-fetch all routes: only the
-	// distinct routes in the current vehicle set, which is small.
+	// filter/hover does not re-trigger fetches. The shape-cache manager owns the
+	// fetch/dedupe/evict + the per-frame resolver; a resolved shape is picked up by
+	// the controller's `shapeCache.shapeFor` on the next rAF frame, no re-feed needed.
 	$effect(() => {
 		const vehicles = live.vehicles?.vehicles ?? [];
 		if (vehicles.length === 0) return;
-		untrack(() => {
-			for (const v of vehicles) {
-				const id = v.route;
-				if (id == null || id === '') continue;
-				if (routeShapeRequested.has(id)) continue;
-				routeShapeRequested.add(id);
-				void getRoute(id)
-					.then((route) => {
-						if (!route) return;
-						const shapes = routeShapes(route);
-						if (shapes.length === 0) return;
-						// Bound the cache (drop oldest) so a long session can't grow it
-						// unbounded; the visible route set is small so this rarely fires.
-						if (routeShapeCache.size >= MAX_CACHED_ROUTE_SHAPES) {
-							const oldest = routeShapeCache.keys().next().value;
-							if (oldest != null) routeShapeCache.delete(oldest);
-						}
-						routeShapeCache.set(id, shapes);
-						routeShapeRevision += 1;
-					})
-					.catch(() => {
-						// Fail-soft: leave the route un-cached → chord fallback. Allow a
-						// later retry by clearing the requested flag.
-						routeShapeRequested.delete(id);
-					});
-			}
-		});
+		untrack(() => shapeCache.prefetch(vehicles));
 	});
 
-	// L1 resolver passed into the motion controller: for a vehicle feature, return
-	// the cached route-shape variant its CURRENT point sits on (least projection
-	// error), or null → straight-chord fallback. Called once per vehicle at
-	// re-target (not per frame), so the per-tween projection cost is paid once.
-	const shapeFor: ShapeResolver = (feature) => {
-		const routeId = feature.properties.route;
-		if (!routeId) return null;
-		const shapes = routeShapeCache.get(routeId);
-		if (!shapes || shapes.length === 0) return null;
-		return bestShapeForPoint(shapes, feature.geometry.coordinates as Coord);
-	};
+	// Per-vehicle route-shape resolver passed into the motion controller. Returns the
+	// cached route-shape variant a vehicle's CURRENT point sits on (least projection
+	// error), or null → FREEZE (no shape ⇒ no forward dead-reckoning). Read EACH FRAME
+	// by the controller (a cheap cache lookup), so a route shape that resolves
+	// mid-flight upgrades the bus from frozen to projected without waiting for a re-feed.
+	const shapeFor = shapeCache.shapeFor;
 
-	// L2 — duration of the next position tween = the REAL server-time gap between
-	// this vehicles file and the previous one, so the bus is still easing toward
-	// its last known fix right up to the next poll (no 2s idle freeze). Falls back
-	// to undefined (the controller's default) for the first file or an unparseable
-	// stamp; the controller clamps the value into a sane band and NEVER extends
-	// motion past the last fix (silence-fade owns a genuinely late bus).
-	function nextTweenDurationSec(generatedUtc: string | null | undefined): number | undefined {
-		if (generatedUtc == null) return undefined;
-		const ms = Date.parse(generatedUtc);
-		if (Number.isNaN(ms)) return undefined;
-		let duration: number | undefined;
-		if (
-			prevVehiclesGeneratedUtc != null &&
-			prevVehiclesGeneratedUtc !== generatedUtc &&
-			prevVehiclesGeneratedMs != null
-		) {
-			const deltaS = (ms - prevVehiclesGeneratedMs) / 1000;
-			if (deltaS > 0) duration = deltaS;
-		}
-		prevVehiclesGeneratedUtc = generatedUtc;
-		prevVehiclesGeneratedMs = ms;
-		return duration;
-	}
+	// Per-vehicle FORWARD-projection inputs the painted feature does not carry: the
+	// bus's OWN fix time (reported_utc, nullable → updated_utc fallback) and its
+	// speed in m/s (speed_kmh ÷ 3.6). Looked up from the live index by id; null for
+	// an unknown bus → the controller freezes it (never dead-reckons on guessed
+	// data).
+	const fixFor: FixResolver = (id) => {
+		const v = live.index.byVehicleId.get(id);
+		if (!v) return null;
+		return {
+			reportedUtc: v.reported_utc,
+			updatedUtc: v.updated_utc,
+			speedMps: v.speed_kmh != null ? v.speed_kmh / 3.6 : null,
+		};
+	};
 
 	// Feed the layers: vehicles coloured/dimmed under the active filter + the stop
 	// catalogue; dim on stale. Reactive to filters.state so a chip toggle re-paints.
+	// Forward projection is now CLOCK-DRIVEN inside the controller's rAF loop (it
+	// reads serverNowFn each frame and projects each bus from its own latest fix to
+	// estimated-now), so this effect only re-feeds the latest FILES + filter/
+	// selection — it does NOT need to fire on the per-second clock tick.
 	$effect(() => {
 		const m = map;
 		// Reading `layerRevision` registers the post-style-swap layer install as an
 		// effect dependency, so data is re-fed after MapLibre clears custom sources.
-		// Reading `routeShapeRevision` re-runs the feed when a route shape resolves,
-		// so the next tween upgrades those buses from chord to path-follow (L1).
+		// (A resolved route shape needs NO re-feed: the controller's per-frame
+		// shapeFor reads routeShapeCache directly and upgrades buses on the next frame.)
 		// eslint-disable-next-line @typescript-eslint/no-unused-expressions
 		layerRevision;
-		// eslint-disable-next-line @typescript-eslint/no-unused-expressions
-		routeShapeRevision;
 		if (!m) return;
 		const reduceMotion = isPrefersReducedMotion();
+		// Smooth = forward-projection ("almost real-time"); raw = ping-on-load (snap
+		// every feed, no estimation), the honest default. Reading motionMode.current
+		// here registers it as an effect dependency so flipping the toggle re-feeds
+		// and the controller switches between project and snap without a poll.
+		const smoothMotion = motionMode.current === 'smooth';
+		const animate = motionFeedAnimate({ smoothMotion, reduceMotion });
 		setRouteLines(m, routeLineRoutes, selectedRouteLine);
 		// serverNow read UNTRACKED here so this poll/filter/selection effect is NOT
-		// re-run by the per-second clock tick (that is the dedicated silence effect's
-		// job below). This pass only needs a current opacity baseline.
+		// re-run by the per-second clock tick (the controller's rAF loop advances
+		// projection between polls). Used only to bake the feed-time silenceAgeS prop.
 		const serverNow = untrack(() => sharedClock.serverNow);
-		const tickKey = live.vehicles?.generated_utc ?? live.generatedUtc;
 		vehicleMotion?.set(
 			toVehicleFeatures(
 				live.vehicles?.vehicles ?? [],
@@ -1060,30 +982,23 @@
 				alertVehicleIds,
 				selectedVehicleId,
 				hoveredVehicleId,
-				{ serverNow, ttlS: liveTtl, reduceMotion },
+				{ serverNow, ttlS: liveTtl },
 			),
 			{
-				tickKey,
+				tickKey: live.vehicles?.generated_utc ?? live.generatedUtc,
 				stale: live.isStale,
-				// L2: span the real inter-file interval so the bus eases right up to the
-				// next poll (no idle freeze). Computed only on a genuinely new file; a
-				// same-tickKey filter/hover re-feed does not restart the tween, so the
-				// duration is ignored there.
-				durationSec: untrack(() => nextTweenDurationSec(tickKey)),
-				// L1: per-vehicle route-shape resolver → walk the street; chord when no
-				// shape is cached yet. Reduced motion skips animation entirely (the
-				// controller snaps), so the resolver is inert there.
-				shapeFor: reduceMotion ? undefined : shapeFor,
-				// Per-frame continuous fade while the position tween runs — but NOT
-				// under reduced motion (then opacity is set discretely at poll/tick
-				// time, no per-frame ramp). Reads the live clock each frame so a bus
-				// that goes silent mid-interval fades in place.
-				refreshOpacity: reduceMotion ? undefined : refreshSilenceOpacity,
+				// FORWARD projection: speed + fix-time per bus, the route shape to walk,
+				// and the LIVE skew-free clock read each frame so the dot tracks
+				// estimated-NOW. Reduced motion / global stale / RAW mode snap to reported
+				// positions (animate=false inside the controller), so these are inert there.
+				fixFor,
+				shapeFor: animate ? shapeFor : undefined,
+				serverNowFn: () => sharedClock.serverNow,
+				// animate = smooth mode AND motion-gated allowed (reduced-motion off). In
+				// raw mode the controller SNAPS each ~30s feed (ping-on-load, no estimate).
+				animate,
 			},
 		);
-		// Sync the tick effect's baseline to what we just fed, so the next clock tick
-		// does not redundantly re-feed an identical opacity set right after this poll.
-		lastSilenceSignature = untrack(() => silenceSignature(serverNow, reduceMotion));
 		setStops(
 			m,
 			stops.data?.stops ?? [],
@@ -1096,90 +1011,10 @@
 		setStale(m, live.isStale);
 	});
 
-	// Per-frame silence-fade refresher: recompute a bus's opacity from its frozen
-	// last-report time and the LIVE skew-free clock. Passed to the motion
-	// controller so the running position tween re-stamps opacity every frame — a
-	// bus going quiet mid-interval fades in place without waiting for a poll.
-	function refreshSilenceOpacity(feature: { properties: { id: string; opacity: number } }): number {
-		const updatedUtc = live.index.byVehicleId.get(feature.properties.id)?.updated_utc;
-		return updatedUtc == null
-			? feature.properties.opacity
-			: silenceOpacity(silenceAgeS(updatedUtc, sharedClock.serverNow), liveTtl);
-	}
-
-	// Cheap signature of the per-vehicle silence-opacity buckets at a given clock
-	// reading. Two ticks with the SAME signature would feed byte-identical opacity,
-	// so the tick effect can skip the rebuild + setData. Opacity is quantised to
-	// 3 decimals (~0.001 step) so a bus actively fading still changes the signature
-	// every tick (it MUST keep updating), while an all-fresh / all-floored feed —
-	// where opacity is pinned at 1 or the floor — yields a stable signature and is
-	// skipped. Uses the same discrete/continuous branch as the feed so the
-	// signature tracks exactly what would be drawn. Cost is one pass over the live
-	// vehicles (no FeatureCollection rebuild, no GL call).
-	function silenceSignature(serverNow: number, reduceMotion: boolean): string {
-		const vehicles = live.vehicles?.vehicles ?? [];
-		let sig = `${vehicles.length}`;
-		for (const v of vehicles) {
-			const ageS = silenceAgeS(v.updated_utc, serverNow);
-			const opacity = reduceMotion
-				? silenceOpacityDiscrete(ageS, liveTtl)
-				: silenceOpacity(ageS, liveTtl);
-			sig += `|${v.id}:${opacity.toFixed(3)}`;
-		}
-		return sig;
-	}
-
-	// SECOND, lightweight tick effect: re-target ONLY the vehicle layer on the
-	// shared clock so the silence fade advances between polls. Under reduced
-	// motion the clock ticks calmly (~30s) and we re-feed discrete opacity — no
-	// per-frame ramp. Re-targets via the SAME tickKey so the in-flight position
-	// tween is preserved (no motion restart), only opacity is refreshed.
-	$effect(() => {
-		// ONLY serverNow (+ the layer-install revision) is a tracked dependency, so
-		// this effect fires on the clock tick and after a style swap — NOT on every
-		// filter/selection change (the main effect above already handles those). All
-		// other reads are untracked.
-		const serverNow = sharedClock.serverNow;
-		// eslint-disable-next-line @typescript-eslint/no-unused-expressions
-		layerRevision;
-		untrack(() => {
-			const m = map;
-			if (!m || !vehicleMotion) return;
-			const reduceMotion = isPrefersReducedMotion();
-			// Short-circuit: if no vehicle's opacity bucket changed since the last
-			// re-feed (every bus still fresh or still floored), the rebuilt
-			// FeatureCollection would be byte-identical — skip the rebuild + setData.
-			// A bus crossing into / fading within the silence window changes the
-			// signature (opacity is quantised finely enough to move every tick mid-
-			// fade), so correctness is preserved: that bus still updates. The
-			// lastSilenceSignature reset on (re)install guarantees the first
-			// post-style-swap tick always feeds.
-			const signature = silenceSignature(serverNow, reduceMotion);
-			if (signature === lastSilenceSignature) return;
-			lastSilenceSignature = signature;
-			vehicleMotion.set(
-				toVehicleFeatures(
-					live.vehicles?.vehicles ?? [],
-					filters.state,
-					alertVehicleIds,
-					selectedVehicleId,
-					hoveredVehicleId,
-					{ serverNow, ttlS: liveTtl, reduceMotion },
-				),
-				{
-					tickKey: live.vehicles?.generated_utc ?? live.generatedUtc,
-					stale: live.isStale,
-					refreshOpacity: reduceMotion ? undefined : refreshSilenceOpacity,
-				},
-			);
-		});
-	});
-
 	$effect(() => {
 		if (!detailOpen) {
 			selected = null;
 			selectionStack = [];
-			rightPanelCollapsed = false;
 			return;
 		}
 		if (selected && !selectedDetail) {
@@ -1188,38 +1023,41 @@
 		}
 	});
 
+	// Seed the live CSS vars from the panel state once mounted so the dragged width is
+	// restored on a reload. SSR paints the 360px CSS default (no JS), so there is no
+	// flash: we only overwrite client-side. The map canvas never reads either var, so
+	// writing them can NEVER resize the map.
+	//   · --app-right-detail-offset = the overlay's own width (the panel box).
+	//   · --map-detail-offset = how far the FLOATING CHROME (near-me, peek, freshness,
+	//     attribution) must shift left to clear the open panel: the live width while
+	//     open + expanded, the 3.7rem strip while collapsed, 0 while closed (the chrome
+	//     sits flush to the map's own right edge again).
 	$effect(() => {
-		const node = rightPanelEl;
-		if (!node || typeof ResizeObserver === 'undefined') return;
-
-		const observer = new ResizeObserver(([entry]) => {
-			rightPanelWidthPx = entry.contentRect.width;
-		});
-		observer.observe(node);
-
-		return () => observer.disconnect();
+		const el = heroEl;
+		if (!el) return;
+		el.style.setProperty('--app-right-detail-offset', `${detailWidthPx}px`);
+		const chromeOffset =
+			layout.isDesktop && detailOpen ? (detailCollapsed ? '3.7rem' : `${detailWidthPx}px`) : '0rem';
+		el.style.setProperty('--map-detail-offset', chromeOffset);
 	});
 
-	// Track the live width of the map stage pane (the left pane) so the fit padding
-	// fractions follow the actual — shrinking — map container, not the full hero.
-	$effect(() => {
-		const node = mapStagePaneEl;
-		if (!node || typeof ResizeObserver === 'undefined') return;
-
-		const observer = new ResizeObserver(([entry]) => {
-			mapStageWidthPx = entry.contentRect.width;
-		});
-		observer.observe(node);
-
-		return () => observer.disconnect();
-	});
+	// Collapse/expand the right detail panel. A pure local toggle: it flips
+	// `data-detail-collapsed` on .map-hero, which the CSS reads to slide the overlay
+	// OFF the right edge (collapses to the RIGHT, never to the left / mid-air). The
+	// selection stays alive so expanding restores the same detail. The drag/keyboard
+	// resize handlers live in MapDetailOverlay (the only logic-bearing child) — they
+	// touch nothing but the width var + localStorage, never the map.
+	function toggleDetailCollapsed(): void {
+		detailCollapsed = !detailCollapsed;
+	}
 </script>
 
-<!-- The map canvas + its framing vignette. Shared by the desktop pane layout and
-     the mobile full-bleed layout so there is exactly ONE MapStage (one GL
-     context, one onready). On desktop it lives in the LEFT resizable pane so it
-     physically shrinks when the right detail pane opens/resizes; MapStage's own
-     ResizeObserver then re-fits the GL viewport to the narrower width. -->
+<!-- The map canvas + its framing vignette. The hero renders exactly ONE MapStage
+     (one GL context, one onready). Because the detail/filter/rail panels all OVERLAY
+     the map (absolute) rather than sit in its flow, opening/closing/dragging any of
+     them never remounts the GL context and never changes the map's size — the canvas
+     is full-bleed and fixed, resized only by MapStage's own container ResizeObserver
+     on a genuine viewport change. -->
 {#snippet mapBody()}
 	<!-- HOT FIRST PAINT (B2): MapStage awaits the basemap via `basemapLoader` INSIDE
 	     its own onMount and bakes the resolved basemap into the constructor style, so
@@ -1248,177 +1086,143 @@
 {/snippet}
 
 {#snippet detailPanel()}
-	<div class="map-detail-panel-frame" bind:this={rightPanelEl}>
-		<RightPanel
-			{locale}
-			title={selectedDetail?.title}
-			surfaceKey={detailSurfaceKey}
-			canGoBack={selectionStack.length > 0}
-			onback={goBackDetail}
-			onclose={closeDetail}
-			resizable
-			collapsed={rightPanelCollapsed}
-			ontogglecollapse={toggleRightPanelCollapsed}
-		>
-			{#if selectedDetail}
-				<MapSelectionDetail
-					detail={selectedDetail}
-					{locale}
-					onselect={selectFromDetail}
-					onfilter={applyDetailFilter}
-					onalertselect={selectAlertRelated}
-				/>
-			{/if}
-		</RightPanel>
-	</div>
-{/snippet}
-
-<div
-	class="map-hero"
-	bind:clientWidth={mapWidthPx}
-	style={`--map-detail-offset: ${mapDetailOffset}`}
->
-	<!-- ONE cohesive horizontal split, ALWAYS rendered — the map IS the single left
-	     pane so dragging the handle resizes it. The pane group is NOT gated on
-	     isDesktop: that kept MapStage in exactly one DOM position across the 1024px
-	     breakpoint, so crossing it never tears down + recreates the GL context
-	     (which would re-fire onready, re-bake sprites, and reload the basemap). On
-	     mobile the group is just the single full-width map pane (no handle); the
-	     detail rides the BottomSheet below. On desktop, opening a selection mounts
-	     the handle + right detail pane (paneforge re-layouts the added pane). Same
-	     ui/resizable primitives as AppShell. -->
-	<ResizablePaneGroup direction="horizontal" class="map-pane-group">
-		<ResizablePane class="map-stage-pane" order={1} bind:ref={mapStagePaneEl}>
-			{@render mapBody()}
-		</ResizablePane>
-		{#if layout.isDesktop && detailOpen}
-			<ResizableHandle withHandle class="map-detail-resize-handle" />
-			<ResizablePane
-				bind:this={rightPanelPane}
-				class="map-detail-pane"
-				order={2}
-				defaultSize={railSizing.defaultSize}
-				minSize={railSizing.minSize}
-				maxSize={railSizing.maxSize}
-				collapsible
-				collapsedSize={railSizing.collapsedSize}
-				onCollapse={() => (rightPanelCollapsed = true)}
-				onExpand={() => (rightPanelCollapsed = false)}
-			>
-				{@render detailPanel()}
-			</ResizablePane>
-		{/if}
-	</ResizablePaneGroup>
-
-	<!-- Top-left: map title. A mono kicker overline + live freshness ride above a
-	     confident heading; a hairline accent rule anchors the block to the edge. -->
-	<div class="map-overlay map-head">
-		<div class="map-kicker-row">
-			<p class="map-kicker">{t.kicker}</p>
-			<MapFreshness
-				placement="head"
-				generatedUtc={live.generatedUtc}
-				ageSeconds={live.ageSeconds}
-				isStale={live.isStale}
-				{locale}
-			/>
-		</div>
-		<div class="map-title-row">
-			<h1 class="map-heading">{t.heading}<span class="map-dot">.</span></h1>
-		</div>
-	</div>
-
-	<MapNearMeControl
-		bind:open={nearMeOpen}
-		bind:query={nearMeQuery}
+	<RightPanel
 		{locale}
-		copy={t}
-		loading={nearMeLoading}
-		error={nearMeError}
-		origin={nearMeOrigin}
-		stops={nearbyStops}
-		onuselocation={useNearMeLocation}
-		onsearch={searchNearMe}
-		onsuggestion={selectNearMeSuggestion}
-		onstopselect={selectNearbyStop}
-		onclear={clearNearMeOrigin}
-	/>
-
-	<!-- Left: the combinable state filter (URL-driven). -->
-	<div class="map-overlay map-filter-panel">
-		<MapFilters
-			store={filters}
-			{locale}
-			routes={routesIndex.data?.routes ?? []}
-			stops={stops.data?.stops ?? []}
-		/>
-	</div>
-
-	<MapFilterPill
-		store={filters}
-		{locale}
-		routes={routesIndex.data?.routes ?? []}
-		stops={stops.data?.stops ?? []}
-		hidden={detailOpen}
-	/>
-
-	<MapFreshness
-		placement="floating"
-		generatedUtc={live.generatedUtc}
-		ageSeconds={live.ageSeconds}
-		isStale={live.isStale}
-		{locale}
-	/>
-
-	<!-- Live-feed edge notice: a small, non-blocking pill centred near the top of
-	     the canvas when the live feed is unreachable or currently has no vehicles.
-	     It floats OVER the map (pointer-events: none) so the basemap, stops, and
-	     near-me stay fully usable; it is not a boundary and never blanks the canvas. -->
-	{#if liveEdgeMessage}
-		<div
-			class="map-overlay map-live-edge"
-			data-state={liveEdgeState}
-			role="status"
-			aria-live="polite"
-		>
-			{liveEdgeMessage}
-		</div>
-	{/if}
-
-	{#if hoverDetail && layout.isDesktop}
-		<div class="map-overlay map-peek" aria-live="polite">
+		title={selectedDetail?.title}
+		surfaceKey={detailSurfaceKey}
+		canGoBack={selectionStack.length > 0}
+		onback={goBackDetail}
+		onclose={closeDetail}
+		collapsed={detailCollapsed}
+		ontogglecollapse={toggleDetailCollapsed}
+		resizable
+	>
+		{#if selectedDetail}
 			<MapSelectionDetail
-				detail={hoverDetail}
+				detail={selectedDetail}
 				{locale}
-				compact
+				notReporting={selectedVehicleAbsence}
 				onselect={selectFromDetail}
 				onfilter={applyDetailFilter}
 				onalertselect={selectAlertRelated}
 			/>
-		</div>
+		{/if}
+	</RightPanel>
+{/snippet}
+
+<!-- The unified Controls panel — ONE source of truth shared by the desktop
+     overlay AND the mobile drawer (MapFilterPill). It is MapFilters in
+     controlsMode (titled "Controls") with the inline motion toggle pinned to its
+     top via the `motionHeader` snippet. Rendering the SAME snippet on both
+     breakpoints keeps the desktop panel and the mobile drawer identical — no
+     divergent call sites. -->
+{#snippet motionHeader(collapsed: boolean)}
+	<MapMotionControl {locale} copy={t} {collapsed} />
+{/snippet}
+{#snippet mapControls(opts?: { collapsible?: boolean; onselect?: () => void })}
+	<MapFilters
+		store={filters}
+		{locale}
+		routes={routesIndex.data?.routes ?? []}
+		stops={stops.data?.stops ?? []}
+		collapsible={opts?.collapsible ?? true}
+		controlsMode={true}
+		header={motionHeader}
+		onselect={opts?.onselect}
+	/>
+{/snippet}
+
+<!-- The map SURFACE — the full-bleed canvas plus every floating overlay (title,
+     near-me, Controls panel, freshness, feed-stall, live-edge, hover peek). It fills
+     the whole hero (inset:0). The right-edge chrome (near-me, peek, freshness) reads
+     --map-detail-offset so it shifts clear of the open detail overlay. Rendered ONCE,
+     so the GL context is stable. -->
+{#snippet mapSurface()}
+	<div class="map-surface">
+		<!-- The full-bleed GL canvas base layer + framing vignette. The orchestrator's
+		     mapBody snippet (the single <MapStage .../> mount) is handed down so the GL
+		     context + camera wiring stay owned here, never fragmented into the child. -->
+		<MapSurfaceCanvasLayer {mapBody} />
+
+		<!-- The desktop floating chrome layer — title, near-me, Controls panel,
+		     freshness, feed-stall, live-edge, and the desktop hover peek. ZERO state
+		     mutation: every value + handler + the shared `controls` snippet is passed
+		     down from this orchestrator. -->
+		<MapOverlayChrome
+			{locale}
+			{t}
+			generatedUtc={live.generatedUtc}
+			ageSeconds={live.ageSeconds}
+			isStale={live.isStale}
+			bind:nearMeOpen
+			bind:nearMeQuery
+			{nearMeLoading}
+			{nearMeError}
+			{nearMeOrigin}
+			{nearbyStops}
+			onuselocation={useNearMeLocation}
+			onsearch={searchNearMe}
+			onsuggestion={selectNearMeSuggestion}
+			onstopselect={selectNearbyStop}
+			onclear={clearNearMeOrigin}
+			isDesktop={layout.isDesktop}
+			filtersStore={filters}
+			{detailOpen}
+			{liveEdgeState}
+			{liveEdgeMessage}
+			{hoverDetail}
+			{hoverVehicleAbsence}
+			onselect={selectFromDetail}
+			onfilter={applyDetailFilter}
+			onalertselect={selectAlertRelated}
+			controls={mapControls}
+		/>
+	</div>
+{/snippet}
+
+<div class="map-hero" bind:this={heroEl} bind:clientWidth={mapWidthPx}>
+	<!-- The map canvas is FULL-BLEED and FIXED: mapSurface (the .map-surface inset:0)
+	     fills the whole hero, and EVERY panel OVERLAYS it (absolute). The map sizes off
+	     its own container (MapStage's ResizeObserver) and never reads a panel width, so
+	     dragging or collapsing any panel can never resize the map. There is no paneforge
+	     pane redistributing width here — the violation the operator hit. -->
+	{@render mapSurface()}
+
+	<!-- RIGHT DETAIL panel — an absolute OVERLAY anchored flush to the map's right edge
+	     (NOT a pane). It is DRAGGABLE on its left edge (writes the clamped --app-right-
+	     detail-offset CSS var) and COLLAPSIBLE (data-detail-collapsed slides it OFF the
+	     right edge, never to the left). Only the overlay itself takes pointer events, so
+	     the map stays interactive underneath. Desktop only; mobile uses the BottomSheet
+	     below. Rendered on `detailOpen` (not on resolved data) so the surface stays
+	     mounted while a back target resolves. The orchestrator owns the open/desktop gate
+	     + the CSS-var seeding; MapDetailOverlay is the BODY (with the drag/keyboard logic). -->
+	{#if layout.isDesktop && detailOpen}
+		<MapDetailOverlay
+			bind:widthPx={detailWidthPx}
+			bind:collapsed={detailCollapsed}
+			bind:dragging={detailDragging}
+			resizeAria={detailResizeAria}
+			{detailPanel}
+		/>
 	{/if}
 
 	<!-- Mobile: the detail rides a bottom sheet (the desktop detail lives in the
-	     right resizable pane above). -->
+	     right overlay above). A SIBLING of the desktop overlay; the orchestrator owns
+	     the open/mobile gate. -->
 	{#if detailOpen && !layout.isDesktop}
-		<BottomSheet
+		<MapMobileDetailSheet
 			bind:open={detailOpen}
 			{locale}
 			title={selectedDetail?.title}
 			surfaceKey={detailSurfaceKey}
 			canGoBack={selectionStack.length > 0}
 			onback={goBackDetail}
-		>
-			{#if selectedDetail}
-				<MapSelectionDetail
-					detail={selectedDetail}
-					{locale}
-					onselect={selectFromDetail}
-					onfilter={applyDetailFilter}
-					onalertselect={selectAlertRelated}
-				/>
-			{/if}
-		</BottomSheet>
+			{selectedDetail}
+			notReporting={selectedVehicleAbsence}
+			onselect={selectFromDetail}
+			onfilter={applyDetailFilter}
+			onalertselect={selectAlertRelated}
+		/>
 	{/if}
 </div>
 
@@ -1429,245 +1233,23 @@
 		height: 100%;
 		overflow: hidden;
 		background: var(--background);
-		/* The live offset is driven by the inline `style` binding above
-		   (mapDetailOffset = the measured rail width on desktop, else 0rem); the
-		   fallback keeps left/right chrome anchored before the first measure. */
+		/* The width of the RIGHT DETAIL overlay, written live by the drag handle into
+		   --app-right-detail-offset. The floating map chrome (near-me, peek, freshness,
+		   attribution) reads --map-detail-offset to shift clear of the open panel; it
+		   resolves to 0 when the detail is closed or collapsed (the overlay is gone /
+		   off the edge), so chrome sits flush to the map's own right edge again. The
+		   MAP CANVAS never reads either var, so resizing the panel can not resize it. */
+		--app-right-detail-offset: 360px;
 		--map-detail-offset: 0rem;
 	}
-	.map-hero :global(.map-stage) {
-		border-radius: 0;
-	}
 
-	/* The map+detail split is the BASE layer of the hero: it fills the canvas and
-	   sits beneath every floating overlay (vignette z-5, overlays z-10+). The left
-	   pane holds the map (so it shrinks with the handle); the right pane holds the
-	   detail. paneforge gives each pane height; the stage pane just needs to fill it. */
-	.map-hero :global(.map-pane-group) {
+	/* The map surface is FULL-BLEED: it fills the whole hero (inset:0) and is the BASE
+	   layer beneath every floating overlay (vignette z-5, overlays z-10+). It is the
+	   ONLY size driver for the GL canvas (via MapStage's own ResizeObserver), so no
+	   panel ever sits in its flow — collapsing/dragging a panel leaves it untouched. */
+	.map-surface {
 		position: absolute;
 		inset: 0;
-		z-index: 1;
-	}
-	.map-hero :global(.map-stage-pane) {
-		position: relative;
-		height: 100%;
-		min-width: 0;
 		overflow: hidden;
-		/* The left pane already PHYSICALLY shrinks away from the right detail pane,
-		   so MapStage (rendered inside it) must NOT re-offset its bottom-right
-		   attribution by the detail width — that double-counts and floats the credit
-		   a panel-width off the map's own right edge while over-constraining its
-		   max-width. Resetting the inherited offset to 0 here pins the credit flush
-		   to the map's bottom-right (right: 1rem, max-width: 100vw - 1.5rem) whether
-		   the detail pane is open, collapsed, or closed. */
-		--map-detail-offset: 0rem;
-	}
-
-	/* Full-bleed framing: an inset vignette grounds the floating panes against the
-	   live canvas and feathers the top/edges so overlay text stays legible over
-	   busy basemap tiles, without recolouring the map. Tuned per theme via the
-	   --foreground token so it darkens on dark and lightly mutes on cool-slate. */
-	.map-vignette {
-		position: absolute;
-		inset: 0;
-		z-index: 5;
-		pointer-events: none;
-		background:
-			linear-gradient(
-				to bottom,
-				color-mix(in srgb, var(--background) 34%, transparent) 0%,
-				transparent 18%,
-				transparent 86%,
-				color-mix(in srgb, var(--background) 24%, transparent) 100%
-			),
-			radial-gradient(
-				120% 90% at 50% 42%,
-				transparent 58%,
-				color-mix(in srgb, var(--foreground) 7%, transparent) 100%
-			);
-	}
-
-	.map-overlay {
-		position: absolute;
-		z-index: 10;
-	}
-	.map-head {
-		top: 1.15rem;
-		left: calc(var(--app-left-rail-offset, 0rem) + 1rem);
-		display: flex;
-		flex-direction: column;
-		gap: 0.4rem;
-		padding-left: 0.85rem;
-		/* Hairline accent rule anchors the title to the canvas edge — font as
-		   architecture: a single vertical brand stroke instead of a chrome box. */
-		border-left: 2px solid var(--border-rule);
-		max-width: calc(
-			100% - var(--app-left-rail-offset, 0rem) - var(--map-detail-offset, 0rem) - 2rem
-		);
-	}
-	.map-kicker-row {
-		display: flex;
-		align-items: center;
-		gap: 0.6rem;
-		min-width: 0;
-	}
-	.map-kicker {
-		margin: 0;
-		font-family: var(--font-mono);
-		font-size: var(--text-micro);
-		letter-spacing: var(--tracking-eyebrow);
-		text-transform: uppercase;
-		color: var(--accent-text);
-	}
-	.map-title-row {
-		display: flex;
-		align-items: center;
-		gap: 0.55rem;
-		min-width: 0;
-	}
-	.map-heading {
-		margin: 0;
-		font-family: var(--font-heading);
-		font-weight: 700;
-		font-size: var(--text-heading);
-		letter-spacing: -0.01em;
-		line-height: 0.95;
-		color: var(--foreground);
-		/* Faint legibility lift so the heading survives over busy basemap tiles;
-		   the colour-mix keeps it theme-correct (dark halo on dark, light on light). */
-		text-shadow: 0 1px 16px color-mix(in srgb, var(--background) 70%, transparent);
-	}
-	.map-dot {
-		color: var(--primary);
-	}
-	.map-filter-panel {
-		top: 5.25rem;
-		left: calc(var(--app-left-rail-offset, 0rem) + 1rem);
-	}
-
-	.map-peek {
-		right: calc(var(--map-detail-offset, 0rem) + 1rem);
-		bottom: 1.15rem;
-		z-index: 24;
-		max-width: min(20rem, calc(100% - 2rem));
-		padding: 0.85rem 0.9rem;
-		background: color-mix(in srgb, var(--card) 92%, transparent);
-		border: 1px solid var(--border-hairline);
-		border-top: 2px solid var(--border-rule);
-		border-radius: var(--radius-md);
-		box-shadow: var(--shadow-card);
-		/* The card is already ~92% opaque, so the blur barely shows through; keep
-		   it modest (10px, in line with the rest of the chrome) since this peek
-		   floats over the constantly-repainting live canvas — a heavier blur is
-		   pure compositing cost on the busiest overlay for no visible gain. */
-		backdrop-filter: blur(10px) saturate(1.05);
-		pointer-events: none;
-	}
-	/* Live-feed edge notice: a calm, centred pill near the top of the canvas. Token-
-	   driven (card surface + hairline + blur, like the rest of the floating chrome),
-	   non-interactive (it states a fact; it does not block the map). Centred between
-	   the left rail and the right detail offset so it never hides behind a pane. */
-	.map-live-edge {
-		top: 1.15rem;
-		left: calc(var(--app-left-rail-offset, 0rem) / 2 + var(--map-detail-offset, 0rem) / 2);
-		right: 0;
-		margin-inline: auto;
-		z-index: 12;
-		width: max-content;
-		max-width: min(26rem, calc(100% - 2rem));
-		padding: 0.45rem 0.85rem;
-		text-align: center;
-		font-size: var(--text-caption);
-		line-height: 1.4;
-		color: var(--muted-foreground);
-		background: color-mix(in srgb, var(--card) 88%, transparent);
-		border: 1px solid var(--border-hairline);
-		border-top: 2px solid var(--border-rule);
-		border-radius: var(--radius-pill);
-		box-shadow: var(--shadow-card);
-		backdrop-filter: blur(10px) saturate(1.05);
-		pointer-events: none;
-	}
-	/* The feed-down state warms the border with the caution hue (a data verdict),
-	   echoing the stale-freshness chrome; the text still carries the meaning. */
-	.map-live-edge[data-state='unavailable'] {
-		border-top-color: color-mix(in srgb, var(--dataviz-status-late) 48%, var(--border-rule) 52%);
-	}
-
-	/* B1 — the right rail pane carries a HARD rem clamp so the EXPANDED rail has a
-	   genuinely narrow floor (22rem) and a real ceiling (34rem), independent of the
-	   percent paneforge layouts it with. The percent minSize/maxSize (derived from
-	   these exact rems at the live hero width) stop the drag at the same pixel, so
-	   the clamp and the percent never fight; the clamp only has to bite during the
-	   brief pre-measure frame. It is REMOVED while collapsed (paneforge sets
-	   data-collapsed) so the thin 3.7rem icon strip is not forced back to 22rem. */
-	:global(.map-detail-pane:not([data-collapsed])) {
-		min-width: 22rem;
-		max-width: 34rem;
-	}
-
-	.map-detail-panel-frame {
-		height: 100%;
-		min-width: 0;
-		/* Casts the panel against the map edge so the split reads as a layer over
-		   the canvas, not a seam in it. */
-		box-shadow: var(--shadow-section);
-	}
-	/* The resize grip: a calm rail at rest that warms to brand on
-	   hover/focus/drag. The rail is a hairline; the withHandle child becomes a
-	   slim centred pill (not a chunky bar). */
-	:global(.map-detail-resize-handle) {
-		width: 8px;
-		pointer-events: auto;
-		background: var(--border-hairline);
-		transition: background var(--duration-fast, 150ms) var(--ease-default, ease);
-	}
-	:global(.map-detail-resize-handle > div) {
-		height: 2.25rem;
-		width: 2px;
-		border-radius: var(--radius-pill);
-		background: var(--border-strong);
-		transition:
-			background var(--duration-fast, 150ms) var(--ease-default, ease),
-			height var(--duration-fast, 150ms) var(--ease-default, ease);
-	}
-	:global(.map-detail-resize-handle:hover),
-	:global(.map-detail-resize-handle:focus-visible),
-	:global(.map-detail-resize-handle[data-active='pointer']) {
-		background: color-mix(in srgb, var(--primary) 16%, transparent);
-	}
-	:global(.map-detail-resize-handle:hover > div),
-	:global(.map-detail-resize-handle:focus-visible > div),
-	:global(.map-detail-resize-handle[data-active='pointer'] > div) {
-		height: 3rem;
-		background: var(--primary);
-	}
-
-	@media (prefers-reduced-motion: reduce) {
-		:global(.mf-chip) {
-			transition: none;
-		}
-		:global(.map-detail-resize-handle),
-		:global(.map-detail-resize-handle > div) {
-			transition: none;
-		}
-	}
-
-	@media (max-width: 760px) {
-		.map-head {
-			top: 0.75rem;
-			left: 0.75rem;
-			right: 0.75rem;
-			padding-left: 0.7rem;
-			max-width: calc(100% - 1.5rem);
-		}
-		.map-heading {
-			font-size: var(--text-subheading);
-		}
-		.map-filter-panel {
-			display: none;
-		}
-		.map-peek {
-			display: none;
-		}
 	}
 </style>

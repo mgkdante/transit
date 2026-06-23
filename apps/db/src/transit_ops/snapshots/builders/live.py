@@ -85,6 +85,7 @@ _VEHICLES_SQL = text(
            lvs.occupancy_status          AS occupancy_status,
            cvm.stop_id                   AS next_stop,
            cvm.captured_at_utc           AS updated_utc,
+           lvs.position_timestamp_utc    AS reported_utc,
            cvm.trip_avg_delay_seconds    AS delay_seconds
     FROM gold.current_vehicle_map_with_status AS cvm
     LEFT JOIN gold.latest_vehicle_snapshot AS lvs
@@ -119,6 +120,7 @@ def build_vehicles(
                 occupancy=(_OCCUPANCY_MAP.get(int(occ_raw)) if occ_raw is not None else None),
                 next_stop=r["next_stop"],
                 updated_utc=_iso(r["updated_utc"]),
+                reported_utc=_opt_iso(r["reported_utc"]),
                 delay_min=_delay_min(r["delay_seconds"]),
             )
         )

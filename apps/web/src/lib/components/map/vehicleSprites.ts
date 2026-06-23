@@ -33,6 +33,8 @@ const RATIO =
 export const BUS_ICON = 'veh-bus';
 /** The directional chevron icon id — ONE neutral sprite, rotated by the layer. */
 export const HEADING_ICON = 'veh-heading';
+/** The per-bus "!" not-reporting badge icon id — drawn ABOVE a frozen/stale bus. */
+export const SILENT_ICON = 'veh-silent';
 /** The stop map-pin icon id. */
 export const STOP_ICON = 'veh-stop';
 
@@ -49,6 +51,12 @@ export const HEADING_FILL_TOKEN = 'var(--foreground)';
 export const HEADING_FILL_FALLBACK = '#f5f5f5';
 export const HEADING_HALO_TOKEN = BUS_HALO_TOKEN;
 export const HEADING_HALO_FALLBACK = BUS_HALO_FALLBACK;
+/** The silent "!" badge disc is a high-contrast foreground dot; the "!" is cut in
+ *  the halo colour so it reads on ANY bus colour beneath it. */
+export const SILENT_FILL_TOKEN = 'var(--foreground)';
+export const SILENT_FILL_FALLBACK = '#f5f5f5';
+export const SILENT_HALO_TOKEN = 'var(--background)';
+export const SILENT_HALO_FALLBACK = '#141414';
 
 /** Resolve a `var(--token)` expression to its computed `rgb(...)` string. */
 export function resolveColor(varExpr: string, fallback: string): string {
@@ -201,6 +209,53 @@ function chevronImage(fill: string, halo: string): ImageData {
 	return ctx.getImageData(0, 0, px, px);
 }
 
+/**
+ * Bake the SILENT "!" badge — a BIG, bold alert mark that FILLS most of its
+ * sprite box (it reads at a glance as a real alert flag, not a tiny corner dot).
+ * A high-contrast rounded-square badge (`fill`, ringed by a `halo` stroke) holds
+ * a FAT rounded vertical bar + a fat dot, both cut in the halo colour, centred so
+ * the "!" dominates the glyph. Drawn as a SEPARATE layer ABOVE a frozen/stale bus
+ * so a no-longer-reporting vehicle is FLAGGED, not hidden. The flag is per-bus
+ * (each bus's own reported_utc age), not the old global silence.
+ */
+function silentBadgeImage(fill: string, halo: string): ImageData {
+	const { ctx, px } = newCtx();
+	ctx.lineJoin = 'round';
+	ctx.lineCap = 'round';
+
+	const cx = SIZE / 2;
+	const cy = SIZE / 2;
+
+	// Badge background — a rounded square filling most of the box (small margin so
+	// the halo ring stays inside the sprite). This is the prominent alert plate the
+	// fat "!" sits on, high-contrast against any bus colour beneath it.
+	const margin = 2.4;
+	const side = SIZE - margin * 2;
+	roundedRect(ctx, margin, margin, side, side, side * 0.28);
+	ctx.fillStyle = fill;
+	ctx.fill();
+	ctx.lineWidth = 2;
+	ctx.strokeStyle = halo;
+	ctx.stroke();
+
+	// "!" — a FAT rounded vertical bar cut in the halo colour, spanning most of the
+	// badge height so the glyph dominates. Drawn as a thick round-capped stroke.
+	ctx.strokeStyle = halo;
+	ctx.lineWidth = SIZE * 0.16;
+	ctx.beginPath();
+	ctx.moveTo(cx, cy - side * 0.3);
+	ctx.lineTo(cx, cy + side * 0.07);
+	ctx.stroke();
+
+	// …and a FAT dot beneath the bar.
+	ctx.beginPath();
+	ctx.arc(cx, cy + side * 0.28, SIZE * 0.085, 0, Math.PI * 2);
+	ctx.fillStyle = halo;
+	ctx.fill();
+
+	return ctx.getImageData(0, 0, px, px);
+}
+
 /** Icon id the vehicle layer references per feature (see toVehicleFeatures). */
 export const bodyIconId = (mode: 'status' | 'occupancy', code: string): string =>
 	`veh-${mode === 'status' ? 's' : 'o'}-${code}`;
@@ -208,8 +263,9 @@ export const bodyIconId = (mode: 'status' | 'occupancy', code: string): string =
 /**
  * Bake + register every vehicle icon: the default orange bus, plus one painted
  * bus per status code and per occupancy code (the "repaint" palette the filter
- * swaps in), the single directional chevron, and the stop map-pin. Idempotent
- * (re-removes before adding, so it re-bakes on a theme change). Browser-only.
+ * swaps in), the single directional chevron, the per-bus silent "!" badge, and
+ * the stop map-pin. Idempotent (re-removes before adding, so it re-bakes on a
+ * theme change). Browser-only.
  */
 export function bakeVehicleSprites(map: MapLibreMap): void {
 	const busHalo = resolveColor(BUS_HALO_TOKEN, BUS_HALO_FALLBACK);
@@ -237,6 +293,16 @@ export function bakeVehicleSprites(map: MapLibreMap): void {
 		chevronImage(
 			resolveColor(HEADING_FILL_TOKEN, HEADING_FILL_FALLBACK),
 			resolveColor(HEADING_HALO_TOKEN, HEADING_HALO_FALLBACK),
+		),
+	);
+
+	// The silent "!" badge — a neutral high-contrast disc with a cut "!", drawn
+	// ABOVE a frozen/stale bus by VEHICLE_SILENT_LAYER (per-bus reported_utc age).
+	add(
+		SILENT_ICON,
+		silentBadgeImage(
+			resolveColor(SILENT_FILL_TOKEN, SILENT_FILL_FALLBACK),
+			resolveColor(SILENT_HALO_TOKEN, SILENT_HALO_FALLBACK),
 		),
 	);
 

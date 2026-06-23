@@ -119,6 +119,7 @@ def test_build_vehicles_maps_status_occupancy_and_rounds_coords() -> None:
                     "occupancy_status": 2,  # GTFS-RT FEW_SEATS_AVAILABLE
                     "next_stop": "S-900",
                     "updated_utc": "2026-05-31T12:00:00Z",
+                    "reported_utc": "2026-05-31T11:59:30Z",  # own fix time, 30s pre-snapshot
                     "delay_seconds": 120,  # 2 minutes -> delay_min == 2
                 }
             ]
@@ -141,6 +142,7 @@ def test_build_vehicles_maps_status_occupancy_and_rounds_coords() -> None:
     assert v.speed_kmh == 36  # 10 m/s * 3.6 = 36 km/h
     assert v.next_stop == "S-900"
     assert v.updated_utc == "2026-05-31T12:00:00Z"
+    assert v.reported_utc == "2026-05-31T11:59:30Z"  # the bus's own time, not the snapshot
     assert v.delay_min == 2  # 120s -> 2 min
 
 
@@ -160,6 +162,7 @@ def test_build_vehicles_unknown_status_and_null_occupancy() -> None:
                     "occupancy_status": None,
                     "next_stop": None,
                     "updated_utc": "2026-05-31T12:00:00Z",
+                    "reported_utc": None,  # producer omitted the per-vehicle fix -> None (web falls back to updated_utc)
                     "delay_seconds": None,
                 }
             ]
@@ -173,6 +176,7 @@ def test_build_vehicles_unknown_status_and_null_occupancy() -> None:
     assert v.occupancy is None
     assert v.bearing is None
     assert v.speed_kmh is None
+    assert v.reported_utc is None  # absent per-vehicle fix time -> None
 
 
 def test_build_vehicles_all_status_bands_map() -> None:
@@ -197,6 +201,7 @@ def test_build_vehicles_all_status_bands_map() -> None:
             "occupancy_status": None,
             "next_stop": None,
             "updated_utc": "2026-05-31T12:00:00Z",
+            "reported_utc": "2026-05-31T11:59:00Z",
             "delay_seconds": None,
         }
         for i, band in enumerate(bands)

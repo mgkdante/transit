@@ -13,6 +13,9 @@ export const VehicleSchema = z.object({
 	lon: z.number(),
 	status: StatusCodeSchema,
 	updated_utc: isoUtc(),
+	// Each vehicle's OWN report time (gold position_timestamp_utc) — distinct from
+	// updated_utc (uniform snapshot capture time). Optional; fall back to updated_utc.
+	reported_utc: isoUtc().nullable().optional(),
 	route: z.string().nullable().optional(),
 	trip: z.string().nullable().optional(),
 	next_stop: z.string().nullable().optional(),

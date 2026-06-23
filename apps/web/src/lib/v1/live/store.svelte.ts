@@ -11,7 +11,10 @@
 //
 // Freshness (generatedUtc / ageSeconds / isStale) is derived from the live
 // network.json's generated_utc against the manifest's live ttl (stale once age
-// >= 2x ttl) — NEVER a literal 30s, so it tracks the publisher's cadence.
+// >= 3x ttl = 90s at the 30s live ttl) — NEVER a literal 90s, so it tracks the
+// publisher's cadence. 3x (not 2x) clears the band where a healthy snapshot's
+// age legitimately oscillates on normal poll/publish jitter, so only a genuine
+// feed stall trips it.
 //
 // The age advances off the SHARED clock (`$lib/stores` sharedClock), not a
 // private interval, so the freshness here ticks in lockstep with every other
@@ -43,8 +46,12 @@ import { buildLiveIndex, type LiveIndex } from './index';
 /** Default live ttl (seconds) when the manifest omits it — mirrors the schema. */
 const DEFAULT_LIVE_TTL_S = 30;
 
-/** A tier is stale once it has missed TWO publish windows. */
-const STALE_TTL_MULTIPLIER = 2;
+/** A tier is stale once it has missed THREE publish windows (90s at the 30s live
+ * ttl). Three, not two: the client polls at the live ttl and the publisher emits
+ * at the live ttl, so a healthy snapshot's age legitimately oscillates up to
+ * ~2 windows between fetches — staling at 2× flips "· stale" on normal jitter.
+ * 3× clears that band so only a genuine feed stall trips it. */
+const STALE_TTL_MULTIPLIER = 3;
 
 /** The public reactive surface of a live store instance. */
 export interface LiveStore {
@@ -64,7 +71,8 @@ export interface LiveStore {
 	readonly generatedUtc: string | null;
 	/** Seconds since `generatedUtc`, or null when no build is loaded. */
 	readonly ageSeconds: number | null;
-	/** True once the live feed is >= 2x its ttl behind. */
+	/** True once the live feed is >= 3x its ttl behind (90s at the 30s live ttl) —
+	 * 3x, not 2x, so normal poll/publish jitter never falsely flips it stale. */
 	readonly isStale: boolean;
 	/** True while a poll is in flight. */
 	readonly loading: boolean;
@@ -123,7 +131,7 @@ export function createLiveStore(manifest: Manifest): LiveStore {
 		// age (and the staleness verdict below) advances between polls in lockstep
 		// with the rest of the chrome instead of off a private interval. `serverNow`
 		// (not `now`) anchors the age to server time so a skewed client clock can't
-		// mis-report it or falsely trip the 2x-ttl stale threshold.
+		// mis-report it or falsely trip the 3x-ttl (90s) stale threshold.
 		const age = ageSeconds(generatedUtc, sharedClock.serverNow);
 		return Number.isNaN(age) ? null : Math.max(0, age);
 	});

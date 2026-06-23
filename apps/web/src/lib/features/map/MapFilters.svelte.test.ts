@@ -1,6 +1,7 @@
 import { fireEvent, render } from '@testing-library/svelte';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { createRawSnippet } from 'svelte';
 import { describe, expect, it } from 'vitest';
 import { createFilterStore, emptyFilterState } from '$lib/filters';
 import MapFilters from './MapFilters.svelte';
@@ -162,6 +163,56 @@ describe('MapFilters', () => {
 
 		expect(pushed).toBe('route=24');
 		expect([...store.routes]).toEqual(['24']);
+	});
+
+	it('renames the panel title to Controls in controlsMode and keeps the aria-labels in sync', () => {
+		const store = createFilterStore(emptyFilterState(), () => {});
+
+		const { container, getByRole, queryByRole } = render(MapFilters, {
+			props: { store, locale: 'en', controlsMode: true },
+		});
+
+		// The collapsible toggle button now reads "Controls", not "Filter".
+		expect(getByRole('button', { name: 'Controls' })).toBeInTheDocument();
+		expect(queryByRole('button', { name: 'Filter' })).not.toBeInTheDocument();
+		expect(container.querySelector('.mf-title')).toHaveTextContent('Controls');
+		// The panel group's accessible name follows the same swap.
+		expect(container.querySelector('.map-filters')).toHaveAttribute('aria-label', 'Controls');
+		expect(container.querySelector('.map-filters')).toHaveAttribute('data-controls', 'true');
+	});
+
+	it('renders the collapse icon + title above the motion header inside the controls panel', () => {
+		const store = createFilterStore(emptyFilterState(), () => {});
+		const header = createRawSnippet(() => ({
+			render: () => `<div data-testid="motion-slot">motion</div>`,
+		}));
+
+		const { container, getByTestId } = render(MapFilters, {
+			props: { store, locale: 'en', controlsMode: true, header },
+		});
+
+		const slot = getByTestId('motion-slot');
+		expect(slot).toBeInTheDocument();
+
+		const head = container.querySelector('.mf-head')!;
+		const headerWrap = container.querySelector('[data-testid="map-filter-header"]')!;
+		// The collapse icon + title (.mf-head) sit at the TOP, ABOVE the motion header.
+		expect(
+			head.compareDocumentPosition(headerWrap) & Node.DOCUMENT_POSITION_FOLLOWING,
+		).toBeTruthy();
+		expect(headerWrap.contains(slot)).toBe(true);
+	});
+
+	it('keeps the Filter title and omits the header when controlsMode is off', () => {
+		const store = createFilterStore(emptyFilterState(), () => {});
+
+		const { container, getByRole } = render(MapFilters, {
+			props: { store, locale: 'en' },
+		});
+
+		expect(getByRole('button', { name: 'Filter' })).toBeInTheDocument();
+		expect(container.querySelector('.map-filters')).toHaveAttribute('data-controls', 'false');
+		expect(container.querySelector('[data-testid="map-filter-header"]')).not.toBeInTheDocument();
 	});
 
 	it('collapses by removing text without changing the panel spacing model', () => {

@@ -132,6 +132,19 @@ describe('metrics.content — EN/FR parity', () => {
 		expect(allGapText).not.toContain('stm');
 	});
 
+	it('keeps the live-positions explainer provider-agnostic (no hardcoded provider name)', () => {
+		// The map is multi-tenant (STM/STO/OC/STS): the "almost real-time" explainer
+		// must NEVER name a specific agency; it describes the live feed generically.
+		const text = [metricsCopy.en.livePositions, metricsCopy.fr.livePositions]
+			.flatMap((s) => [s.title, s.lede, ...s.points.flatMap((p) => [p.heading, p.body])])
+			.join(' ')
+			.toLowerCase();
+		// Word-boundary match so common words (e.g. "stop" -> "sto") do not false-positive.
+		for (const re of [/\bstm\b/, /\bsto\b/, /\bsts\b/, /\boc[\s-]?transpo\b/]) {
+			expect(text).not.toMatch(re);
+		}
+	});
+
 	it('every cluster used by an entry has an overline in both locales', () => {
 		const usedClusters = new Set(METRICS.map((m) => m.cluster));
 		for (const cluster of usedClusters) {

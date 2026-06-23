@@ -1,13 +1,24 @@
 <script lang="ts">
 	import ChevronRightIcon from '@lucide/svelte/icons/chevron-right';
+	import TriangleAlertIcon from '@lucide/svelte/icons/triangle-alert';
 	import type { Locale } from '$lib/i18n';
 	import type { Chip } from '$lib/filters';
 	import type { Alert, OccupancyCode, StatusCode, StopDeparture, Vehicle } from '$lib/v1/schemas';
 	import { formatUtc } from '$lib/utils/time';
+	import { AbsentValue } from '$lib/components/edge';
+	import {
+		absent,
+		known,
+		routeNameFallback,
+		stopNameFallback,
+		type AbsenceReasonKey,
+		type Maybe,
+	} from '$lib/site/absence';
+	import { ROUTE_TYPE_METRO } from '$lib/site/serviceWindow';
 	import { OCCUPANCY_LABELS, STATUS_LABELS } from './map.copy';
 	import { alertDisplayText } from './mapAlerts';
 	import { causeLabel, effectLabel } from './gtfsAlertLabels';
-	import type { MapSelection, MapSelectionDetail } from './mapSelection';
+	import type { MapSelection, MapSelectionDetail, MapStopRef } from './mapSelection';
 
 	interface Props {
 		detail: MapSelectionDetail | null;
@@ -16,9 +27,21 @@
 		onselect?: (selection: MapSelection) => void;
 		onfilter?: (chip: Chip) => void;
 		onalertselect?: (alert: Alert) => void;
+		/** Set when this detail is a VEHICLE whose fix has gone stale (silent GPS) →
+		 * renders an honest, calm "Not reporting GPS · last updated position N ago"
+		 * caution note. `ageS` = seconds since the bus's OWN last fix. Null hides it. */
+		notReporting?: { ageS: number } | null;
 	}
 
-	let { detail, locale, compact = false, onselect, onfilter, onalertselect }: Props = $props();
+	let {
+		detail,
+		locale,
+		compact = false,
+		onselect,
+		onfilter,
+		onalertselect,
+		notReporting = null,
+	}: Props = $props();
 
 	const labels = {
 		en: {
@@ -37,8 +60,6 @@
 			noAlerts: 'No alerts attached',
 			noData: 'No data',
 			noTrip: 'No trip linked',
-			noNextStop: 'No next stop',
-			noDelay: 'No delay',
 			early: (minutes: number) => `${Math.abs(minutes)} min early`,
 			late: (minutes: number) => `${minutes} min late`,
 			onTime: 'On time',
@@ -62,6 +83,8 @@
 			filterCrowding: (crowding: string) => `Filter crowding ${crowding}`,
 			filterTrip: (trip: string) => `Filter trip ${trip}`,
 			liveBuses: 'Live buses',
+			notReporting: 'Not reporting GPS',
+			lastPosition: (age: string) => `last updated position ${age} ago`,
 		},
 		fr: {
 			bus: 'Bus',
@@ -79,8 +102,6 @@
 			noAlerts: 'Aucune alerte liée',
 			noData: 'Aucune donnée',
 			noTrip: 'Aucun trajet lié',
-			noNextStop: 'Aucun prochain arrêt',
-			noDelay: 'Aucun retard',
 			early: (minutes: number) => `${Math.abs(minutes)} min en avance`,
 			late: (minutes: number) => `${minutes} min en retard`,
 			onTime: "À l'heure",
@@ -104,23 +125,55 @@
 			filterCrowding: (crowding: string) => `Filtrer l’achalandage ${crowding}`,
 			filterTrip: (trip: string) => `Filtrer le trajet ${trip}`,
 			liveBuses: 'Bus en direct',
+			notReporting: 'Pas de signal GPS',
+			lastPosition: (age: string) => `dernière position il y a ${age}`,
 		},
 	} as const;
 
 	const t = $derived(labels[locale]);
 
-	function delayLabel(delay: number | null | undefined): string {
-		if (delay == null) return t.noDelay;
+	// True when the FOCUSED detail is a metro route (route_type 1). Metro carries no
+	// live realtime in this feed, so a missing delay on a metro row is honestly
+	// "no live data" (metro-no-realtime), never "not reported" or on-time.
+	const detailIsMetro = $derived(
+		detail?.kind === 'vehicle'
+			? detail.routeType === ROUTE_TYPE_METRO
+			: detail?.kind === 'route'
+				? (detail.route.type ?? null) === ROUTE_TYPE_METRO
+				: false,
+	);
+
+	/**
+	 * A delay is a Maybe<number>: KNOWN (render the tag) or ABSENT with the honest
+	 * reason. delay==null must NEVER read as on-time. The reason is, in precedence:
+	 *   metro-no-realtime — a metro row (route_type 1): the feed never carries it;
+	 *   not-reporting     — the FOCUSED vehicle's own fix has gone stale (GPS quiet);
+	 *   not-reported      — otherwise: the live feed simply omitted this delay.
+	 * "On time" is reserved for delay===0 only (handled on the KNOWN branch).
+	 */
+	function delayMaybe(
+		delay: number | null | undefined,
+		ctx: { stale?: boolean; metro?: boolean } = {},
+	): Maybe<number> {
+		if (delay != null) return known(delay);
+		const reason: AbsenceReasonKey = ctx.metro
+			? 'metro-no-realtime'
+			: ctx.stale
+				? 'not-reporting'
+				: 'not-reported';
+		return absent<number>(reason);
+	}
+
+	function delayKnownLabel(delay: number): string {
 		if (delay < 0) return t.early(delay);
 		if (delay > 0) return t.late(delay);
 		return t.onTime;
 	}
 
-	// Presentation-only tone for a delay reading — maps a delay value to a
-	// dataviz status band so on-time / early / late punch in colour. No data
-	// wiring change: derived purely from the same value delayLabel() formats.
-	function delayTone(delay: number | null | undefined): string {
-		if (delay == null) return 'none';
+	// Presentation-only tone for a KNOWN delay reading — maps the value to a dataviz
+	// status band so on-time / early / late punch in colour. The absent path renders
+	// AbsentValue (its own calm "unknown" tone), so this only handles known numbers.
+	function delayTone(delay: number): string {
 		if (delay < 0) return 'early';
 		if (delay >= 5) return 'severe';
 		if (delay > 0) return 'late';
@@ -130,6 +183,22 @@
 	function timeLabel(iso: string | null | undefined): string {
 		return iso ? formatUtc(iso, locale, { hour: '2-digit', minute: '2-digit', hour12: false }) : '';
 	}
+
+	// Short relative age for the not-reporting note: seconds under ~90, else minutes.
+	function formatAge(seconds: number): string {
+		return seconds < 90 ? `${Math.round(seconds)} s` : `${Math.round(seconds / 60)} min`;
+	}
+
+	// The display name for a stop ref — the resolved name, or the honest labelled
+	// fallback ("Stop {id} (name unavailable)") when the static index did not name
+	// it. Used for the click aria so AT never hears a bare id read as a name.
+	function stopDisplayName(ref: MapStopRef): string {
+		return ref.nameAbsent ? stopNameFallback(ref.id, locale) : ref.name;
+	}
+
+	// Per-locale "sequence unknown" aria for a stop with no order index (seq null),
+	// so the position is honestly announced instead of an empty cell.
+	const seqUnknownAria = $derived(locale === 'fr' ? 'Séquence inconnue' : 'Sequence unknown');
 
 	function selectRoute(
 		route: string | null | undefined,
@@ -188,6 +257,35 @@
 	}
 </script>
 
+<!-- One delay cell, reused at every site (vehicle, next stops, live buses, buses to
+     a stop, departures, route-times). KNOWN → the coloured delay tag (on-time only
+     for 0); ABSENT → the honest absence routed through the layer (AbsentValue),
+     never "No delay" and never reading as on-time. -->
+{#snippet delayCell(
+	delay: number | null | undefined,
+	ctx: { stale?: boolean; metro?: boolean } = {},
+)}
+	{@const m = delayMaybe(delay, ctx)}
+	{#if m.known}
+		<span class="map-delay-tag" data-tone={delayTone(m.value)}>
+			{delayKnownLabel(m.value)}
+		</span>
+	{:else}
+		<AbsentValue reason={m.reason} {locale} params={m.params} />
+	{/if}
+{/snippet}
+
+<!-- A stop name that NEVER leaks a bare id: when the static index did not name the
+     stop, render the honest labelled fallback ("Stop {id} (name unavailable)") via
+     the absence layer instead of the id alone. -->
+{#snippet stopRefName(ref: MapStopRef)}
+	{#if ref.nameAbsent}
+		<span class="map-inline-label">{stopNameFallback(ref.id, locale)}</span>
+	{:else}
+		<span class="map-inline-label">{ref.name}</span>
+	{/if}
+{/snippet}
+
 {#if detail}
 	<article class:compact class="map-selection-detail" data-kind={detail.kind}>
 		<header class="map-selection-head">
@@ -210,6 +308,12 @@
 					<ChevronRightIcon size={14} strokeWidth={2.4} aria-hidden="true" />
 				</button>
 			</div>
+			{#if notReporting}
+				<p class="map-not-reporting" role="status">
+					<TriangleAlertIcon size={14} strokeWidth={2.4} aria-hidden="true" />
+					<span>{t.notReporting} · {t.lastPosition(formatAge(notReporting.ageS))}</span>
+				</p>
+			{/if}
 			<dl class="map-detail-grid">
 				<div>
 					<dt>{t.route}</dt>
@@ -269,9 +373,10 @@
 				<div>
 					<dt>{t.delay}</dt>
 					<dd>
-						<span class="map-delay-tag" data-tone={delayTone(detail.vehicle.delay_min)}>
-							{delayLabel(detail.vehicle.delay_min)}
-						</span>
+						{@render delayCell(detail.vehicle.delay_min, {
+							stale: notReporting != null,
+							metro: detail.routeType === ROUTE_TYPE_METRO,
+						})}
 					</dd>
 				</div>
 				<div>
@@ -289,7 +394,9 @@
 								<ChevronRightIcon size={13} strokeWidth={2.4} aria-hidden="true" />
 							</button>
 						{:else}
-							{detail.vehicle.next_stop ?? t.noNextStop}
+							<!-- No RESOLVED next stop: render the honest reason (unknown vs end of
+							     route) via the layer, never the raw next_stop id. -->
+							<AbsentValue reason={detail.nextStopAbsence} {locale} />
 						{/if}
 					</dd>
 				</div>
@@ -322,11 +429,19 @@
 									<button
 										type="button"
 										class="map-stop-action"
-										aria-label={t.selectStop(stop.name)}
+										aria-label={t.selectStop(stopDisplayName(stop))}
 										onclick={() => selectStop(stop.id)}
 									>
-										<span>{stop.seq ?? ''}</span>
-										<strong>{stop.name}</strong>
+										<span aria-label={stop.seq == null ? seqUnknownAria : undefined}>
+											{stop.seq ?? ''}
+										</span>
+										<strong>
+											{#if stop.nameAbsent}
+												{@render stopRefName(stop)}
+											{:else}
+												{stop.name}
+											{/if}
+										</strong>
 										<ChevronRightIcon size={13} strokeWidth={2.4} aria-hidden="true" />
 									</button>
 								</li>
@@ -343,18 +458,30 @@
 									<button
 										type="button"
 										class="map-stop-action"
-										aria-label={t.selectStop(stop.name)}
+										aria-label={t.selectStop(stopDisplayName(stop))}
 										onclick={() => selectStop(stop.id)}
 									>
-										<span>{stop.seq ?? ''}</span>
-										<strong>{stop.name}</strong>
+										<span aria-label={stop.seq == null ? seqUnknownAria : undefined}>
+											{stop.seq ?? ''}
+										</span>
+										<strong>
+											{#if stop.nameAbsent}
+												{@render stopRefName(stop)}
+											{:else}
+												{stop.name}
+											{/if}
+										</strong>
 										<ChevronRightIcon size={13} strokeWidth={2.4} aria-hidden="true" />
 										{#if stop.etaUtc}
 											<small>
 												<time>{timeLabel(stop.etaUtc)}</time>
-												<span class="map-delay-tag" data-tone={delayTone(stop.delayMin)}>
-													{delayLabel(stop.delayMin)}
-												</span>
+												{@render delayCell(stop.delayMin, { metro: detailIsMetro })}
+											</small>
+										{:else}
+											<!-- ETA absent for a known next stop: render an explicit "ETA
+											     unavailable" marker (no prediction) instead of dropping the row. -->
+											<small>
+												<AbsentValue reason="no-prediction" {locale} />
 											</small>
 										{/if}
 									</button>
@@ -372,7 +499,9 @@
 			<dl class="map-detail-grid">
 				<div>
 					<dt>{t.route}</dt>
-					<dd>{detail.route.long ?? detail.id}</dd>
+					<!-- No published long name: say "Route {id}" explicitly (the id IS the
+						     rider-facing route number), never a bare unlabelled id. -->
+					<dd>{detail.route.long ?? routeNameFallback(detail.id, locale)}</dd>
 				</div>
 				<div>
 					<dt>{t.direction}</dt>
@@ -398,9 +527,7 @@
 									<span>{vehicle.route ? `${t.route} ${vehicle.route}` : t.bus}</span>
 									<small>
 										<span class="map-status-label">{STATUS_LABELS[locale][vehicle.status]}</span>
-										<span class="map-delay-tag" data-tone={delayTone(vehicle.delay_min)}>
-											{delayLabel(vehicle.delay_min)}
-										</span>
+										{@render delayCell(vehicle.delay_min, { metro: detailIsMetro })}
 									</small>
 									<ChevronRightIcon size={13} strokeWidth={2.4} aria-hidden="true" />
 								</button>
@@ -415,7 +542,14 @@
 					{#each detail.directions as direction (direction.variantKey)}
 						<div class="map-direction-block">
 							<h4>
-								<span>{direction.label}</span>
+								<span class="map-direction-name">
+									{direction.label}
+									{#if direction.labelInferred}
+										<!-- Synthesized "Direction {dir}" placeholder (no terminal/headsign):
+										     mark it inferred through the layer so it never reads as published. -->
+										<AbsentValue reason="inferred" {locale} />
+									{/if}
+								</span>
 								{#if direction.headsign && direction.headsign !== direction.label}
 									<small>{direction.headsign}</small>
 								{/if}
@@ -426,11 +560,19 @@
 										<button
 											type="button"
 											class="map-stop-action"
-											aria-label={t.selectStop(stop.name)}
+											aria-label={t.selectStop(stopDisplayName(stop))}
 											onclick={() => selectStop(stop.id)}
 										>
-											<span>{stop.seq ?? ''}</span>
-											<strong>{stop.name}</strong>
+											<span aria-label={stop.seq == null ? seqUnknownAria : undefined}>
+												{stop.seq ?? ''}
+											</span>
+											<strong>
+												{#if stop.nameAbsent}
+													{@render stopRefName(stop)}
+												{:else}
+													{stop.name}
+												{/if}
+											</strong>
 											<ChevronRightIcon size={13} strokeWidth={2.4} aria-hidden="true" />
 										</button>
 									</li>
@@ -465,9 +607,7 @@
 									<span>{vehicle.route ? `${t.route} ${vehicle.route}` : t.bus}</span>
 									<small>
 										<span class="map-status-label">{STATUS_LABELS[locale][vehicle.status]}</span>
-										<span class="map-delay-tag" data-tone={delayTone(vehicle.delay_min)}>
-											{delayLabel(vehicle.delay_min)}
-										</span>
+										{@render delayCell(vehicle.delay_min)}
 									</small>
 									<ChevronRightIcon size={13} strokeWidth={2.4} aria-hidden="true" />
 								</button>
@@ -519,9 +659,7 @@
 									<ChevronRightIcon size={13} strokeWidth={2.4} aria-hidden="true" />
 								</button>
 							{/if}
-							<span class="map-delay-tag" data-tone={delayTone(departure.delay_min)}>
-								{delayLabel(departure.delay_min)}
-							</span>
+							{@render delayCell(departure.delay_min)}
 						</li>
 					{/each}
 				</ol>
@@ -572,21 +710,23 @@
 										{/each}
 									</ul>
 								</div>
-								{#if route.liveDepartures.length > 0}
-									<div class="map-time-col map-time-col--live">
-										<h4>{t.live}</h4>
-										<ul class="map-live-list" data-slot="live-departures">
-											{#each route.liveDepartures.slice(0, 3) as departure (`live-${route.route}-${departure.trip ?? departure.eta_utc}`)}
-												<li>
-													<time>{timeLabel(departure.eta_utc)}</time>
-													<span class="map-delay-tag" data-tone={delayTone(departure.delay_min)}>
-														{delayLabel(departure.delay_min)}
-													</span>
-												</li>
-											{/each}
-										</ul>
-									</div>
-								{/if}
+								<div class="map-time-col map-time-col--live">
+									<h4>{t.live}</h4>
+									<ul class="map-live-list" data-slot="live-departures">
+										{#each route.liveDepartures.slice(0, 3) as departure (`live-${route.route}-${departure.trip ?? departure.eta_utc}`)}
+											<li>
+												<time>{timeLabel(departure.eta_utc)}</time>
+												{@render delayCell(departure.delay_min)}
+											</li>
+										{:else}
+											<!-- No live departure right now: render an honest "no live data" row
+											     (no prediction) rather than dropping the whole Live column. -->
+											<li class="map-live-empty">
+												<AbsentValue reason="no-prediction" {locale} />
+											</li>
+										{/each}
+									</ul>
+								</div>
 							</div>
 						</article>
 					{/each}
@@ -769,6 +909,37 @@
 		opacity: 1;
 		transform: translateX(2px);
 	}
+	/* ── Not-reporting note — calm, honest per-bus stale-GPS caution ──── */
+	.map-not-reporting {
+		position: relative;
+		display: flex;
+		align-items: center;
+		gap: 0.45rem;
+		margin: 0;
+		padding: 0.4rem 0.6rem 0.4rem 0.75rem;
+		border: 1px solid var(--border-subtle);
+		border-radius: var(--radius-md);
+		background: var(--muted);
+		font-family: var(--font-mono);
+		font-size: var(--text-caption);
+		color: var(--muted-foreground);
+		overflow: hidden;
+	}
+	.map-not-reporting :global(svg) {
+		flex: none;
+		opacity: 0.75;
+	}
+	/* Leading signage rail — calm + honest, not alarmist. */
+	.map-not-reporting::before {
+		content: '';
+		position: absolute;
+		inset-block: 0;
+		inset-inline-start: 0;
+		width: 3px;
+		background: var(--muted-foreground);
+		opacity: 0.5;
+	}
+
 	/* ── Attribute grid (status / crowding / delay …) ─────────── */
 	.map-detail-grid {
 		display: grid;
@@ -1002,6 +1173,21 @@
 	.map-direction-block h4 small {
 		text-transform: none;
 		letter-spacing: 0;
+		color: var(--muted-foreground);
+	}
+	/* The direction name + its inline inferred marker share a baseline row; the
+	   marker reads back its normal-case absence copy, not the uppercase eyebrow. */
+	.map-direction-name {
+		display: inline-flex;
+		flex-wrap: wrap;
+		align-items: baseline;
+		gap: 0.4rem;
+		text-transform: none;
+		letter-spacing: 0;
+	}
+	/* The no-live-data row in the Live arrivals column reads as a quiet absence,
+	   not an arrival; it carries no time, just the honest "no prediction" value. */
+	.map-live-empty {
 		color: var(--muted-foreground);
 	}
 

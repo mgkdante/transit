@@ -33,7 +33,8 @@
 
 	import { onMount } from 'svelte';
 	import { page } from '$app/stores';
-	import { goto, onNavigate } from '$app/navigation';
+	import { updated } from '$app/state';
+	import { goto, onNavigate, beforeNavigate } from '$app/navigation';
 	import { browser } from '$app/environment';
 
 	import {
@@ -63,6 +64,7 @@
 	import { createResource } from '$lib/v1/resource.svelte';
 	import { dataRefresh, dataPulse, themeStore } from '$lib/stores';
 	import { registerServiceWorker } from '$lib/pwa/register';
+	import { decideFreshnessReload } from '$lib/pwa/appVersion';
 	import { startVitals } from '$lib/vitals/collect';
 	import { runViewTransition } from '$lib/motion';
 	import { AppShell } from '$lib/components/shell';
@@ -304,6 +306,24 @@
 	// (@view-transition + the ::view-transition-*(root) cross-fade, reduced-motion
 	// guarded). Canonical SvelteKit + View Transitions recipe.
 	onNavigate((navigation) => runViewTransition(navigation));
+
+	// Freshness upgrade for long-lived sessions. SvelteKit's version poll
+	// (kit.version.pollInterval in svelte.config.js) flips `updated.current` true
+	// once a new deploy is live; we then replace the NEXT in-app navigation with a
+	// full-page load of its target, so a tab left open / resumed standalone PWA
+	// lands on the fresh build with at most one reload. No-op until a deploy is
+	// detected, so steady-state SPA navigation (and View Transitions) is unchanged.
+	// Cold loads are already kept fresh by the network-first service worker.
+	beforeNavigate((navigation) => {
+		const decision = decideFreshnessReload({
+			hasNewVersion: updated.current,
+			willUnload: navigation.willUnload,
+			toHref: navigation.to?.url.href ?? null,
+		});
+		if (decision.reload && decision.href) {
+			location.href = decision.href;
+		}
+	});
 
 	// Retry from the error edge state: re-boot client-side (a full reload would
 	// just re-run the same failing SSR boot). Browser-only via clientBoot's guard.
