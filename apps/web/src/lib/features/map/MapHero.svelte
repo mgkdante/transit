@@ -1154,8 +1154,11 @@
 
 	<!-- Desktop: the detail FLOATS over the map's right slice as a fixed-width
 	     overlay (mirroring the left .map-overlay controls), so opening it never
-	     resizes the canvas. A labelled dialog region with a close + back control. On
-	     mobile the detail rides the BottomSheet below instead. -->
+	     resizes the canvas. ANCHORED FLUSH to the right edge (right: 0) and, when it
+	     collapses or narrows, the panel stays pinned right (justify-content: flex-end)
+	     instead of drifting to the left of the overlay box — it retracts TO the right
+	     edge, never mid-canvas. A labelled dialog region with a close + back control.
+	     On mobile the detail rides the BottomSheet below instead. -->
 	{#if layout.isDesktop && detailOpen}
 		<div
 			class="map-overlay map-detail-overlay"
@@ -1469,7 +1472,12 @@
 	/* The detail FLOATS over the map's right slice as a fixed-width overlay (mirroring
 	   the left .map-overlay controls), so opening it never resizes the canvas. It owns
 	   a comfortable fixed width and its OWN full-height internal scroll (RightPanel's
-	   ScrollArea body), pinned to the top-right under the freshness chip. A token-
+	   ScrollArea body). ANCHORED FLUSH to the right edge (right: 0, full map height)
+	   and `justify-content: flex-end` keeps the RightPanel pinned to that right edge
+	   even when it COLLAPSES (360px → the 3.7rem rail): the narrow strip retracts TO
+	   the right edge instead of drifting to the left of the overlay box and hanging
+	   mid-canvas "in the air". It slides IN/OUT from the right edge (translateX),
+	   never leftward; reduced motion gets the resolved state with no slide. A token-
 	   driven section shadow lifts it off the live canvas; pointer-events stay on so the
 	   panel is interactive while the map underneath keeps repainting. */
 	.map-detail-overlay {
@@ -1480,12 +1488,33 @@
 		max-width: calc(100% - var(--app-left-rail-offset, 0rem) - 1rem);
 		z-index: 26;
 		display: flex;
+		justify-content: flex-end;
 		box-shadow: var(--shadow-section);
+		animation: map-detail-in 220ms var(--ease-out, cubic-bezier(0.16, 1, 0.3, 1)) both;
+	}
+
+	/* Slide IN from the RIGHT edge (off-canvas right → flush right), never mid-canvas
+	   or leftward. The translateX origin is the panel's own width so it tucks fully
+	   off the right edge before settling. */
+	@keyframes map-detail-in {
+		from {
+			opacity: 0;
+			transform: translateX(100%);
+		}
+		to {
+			opacity: 1;
+			transform: translateX(0);
+		}
 	}
 
 	@media (prefers-reduced-motion: reduce) {
 		:global(.mf-chip) {
 			transition: none;
+		}
+		/* No slide for the detail overlay under reduced motion: it appears in its
+		   resolved flush-right state. */
+		.map-detail-overlay {
+			animation: none;
 		}
 	}
 

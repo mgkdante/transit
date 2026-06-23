@@ -319,6 +319,211 @@ describe('MapSelectionDetail', () => {
 		expect(onselect).toHaveBeenCalledWith({ kind: 'vehicle', id: 'veh-1' });
 	});
 
+	it('renders a null delay as the honest absence (unknown + why), never "No delay" or "On time"', () => {
+		// A vehicle the feed reports with a null delay — must NOT read as on-time.
+		const nullDelayIndex = buildLiveIndex({
+			vehicles: {
+				generated_utc: utc('2026-06-15T00:00:00Z'),
+				vehicles: [
+					{
+						id: 'veh-nd',
+						lat: 45.5,
+						lon: -73.6,
+						status: 'unknown',
+						updated_utc: utc('2026-06-15T00:00:00Z'),
+						route: '24',
+						trip: null,
+						next_stop: 'stop-2',
+						bearing: null,
+						delay_min: null,
+						occupancy: null,
+					},
+				],
+			},
+			trips: { generated_utc: utc('2026-06-15T00:00:00Z'), trips: {} },
+			stopDepartures: { generated_utc: utc('2026-06-15T00:00:00Z'), stops: {} },
+		});
+		const detail = resolveMapSelection(
+			{ kind: 'vehicle', id: 'veh-nd' },
+			{ index: nullDelayIndex, stops, alerts, routes },
+		);
+		const { container, queryByText } = render(MapSelectionDetail, {
+			props: { detail, locale: 'en' },
+		});
+
+		// The delay cell is the honest absence primitive (calm "unknown" tone), not a tag.
+		const absent = container.querySelector('[data-slot="absent-value"][data-tone="unknown"]');
+		expect(absent).not.toBeNull();
+		// The reason: the feed simply omitted it (not-reported), not on-time, not "No delay".
+		expect(absent!.textContent).toContain('not reported in the live feed');
+		expect(queryByText('On time')).not.toBeInTheDocument();
+		expect(queryByText('No delay')).not.toBeInTheDocument();
+	});
+
+	it('explains a GPS-stale focused vehicle delay as not-reporting (stale), not on-time', () => {
+		const nullDelayIndex = buildLiveIndex({
+			vehicles: {
+				generated_utc: utc('2026-06-15T00:00:00Z'),
+				vehicles: [
+					{
+						id: 'veh-stale',
+						lat: 45.5,
+						lon: -73.6,
+						status: 'unknown',
+						updated_utc: utc('2026-06-15T00:00:00Z'),
+						route: '24',
+						trip: null,
+						next_stop: 'stop-2',
+						bearing: null,
+						delay_min: null,
+						occupancy: null,
+					},
+				],
+			},
+			trips: { generated_utc: utc('2026-06-15T00:00:00Z'), trips: {} },
+			stopDepartures: { generated_utc: utc('2026-06-15T00:00:00Z'), stops: {} },
+		});
+		const detail = resolveMapSelection(
+			{ kind: 'vehicle', id: 'veh-stale' },
+			{ index: nullDelayIndex, stops, alerts, routes },
+		);
+		const { container } = render(MapSelectionDetail, {
+			props: { detail, locale: 'en', notReporting: { ageS: 200 } },
+		});
+
+		// The delay-grid cell (first absent-value in the detail grid) reads stale.
+		const absent = container.querySelector('.map-detail-grid [data-slot="absent-value"]');
+		expect(absent).not.toBeNull();
+		expect(absent!.textContent).toContain('this vehicle is not reporting');
+	});
+
+	it('explains a metro vehicle null delay as metro-no-realtime ("No live data"), never not-reported or on-time', () => {
+		// A metro route (route_type 1) carries NO realtime in the feed by design, so a
+		// null delay is honestly "no live data" (metro-no-realtime), not "not reported".
+		const metroIndex = buildLiveIndex({
+			vehicles: {
+				generated_utc: utc('2026-06-15T00:00:00Z'),
+				vehicles: [
+					{
+						id: 'veh-metro',
+						lat: 45.5,
+						lon: -73.6,
+						status: 'unknown',
+						updated_utc: utc('2026-06-15T00:00:00Z'),
+						route: 'metro-1',
+						trip: null,
+						next_stop: null,
+						bearing: null,
+						delay_min: null,
+						occupancy: null,
+					},
+				],
+			},
+			trips: { generated_utc: utc('2026-06-15T00:00:00Z'), trips: {} },
+			stopDepartures: { generated_utc: utc('2026-06-15T00:00:00Z'), stops: {} },
+		});
+		const metroRoutes: RouteFile[] = [
+			{
+				generated_utc: utc('2026-06-15T00:00:00Z'),
+				id: 'metro-1',
+				long: 'Green Line',
+				type: 1,
+				directions: [],
+			},
+		];
+		const detail = resolveMapSelection(
+			{ kind: 'vehicle', id: 'veh-metro' },
+			{ index: metroIndex, stops, alerts, routes: metroRoutes },
+		);
+		const { container, queryByText } = render(MapSelectionDetail, {
+			props: { detail, locale: 'en' },
+		});
+
+		// The delay-grid cell (first absent-value in the detail grid) reads metro-no-realtime.
+		const absent = container.querySelector('.map-detail-grid [data-slot="absent-value"]');
+		expect(absent).not.toBeNull();
+		expect(absent!.textContent).toContain('live positions are not published here');
+		expect(absent!.textContent).not.toContain('not reported');
+		expect(queryByText('On time')).not.toBeInTheDocument();
+	});
+
+	it('renders an unresolved next_stop as the honest reason, never the raw stop id', () => {
+		const unresolvedIndex = buildLiveIndex({
+			vehicles: {
+				generated_utc: utc('2026-06-15T00:00:00Z'),
+				vehicles: [
+					{
+						id: 'veh-unres',
+						lat: 45.5,
+						lon: -73.6,
+						status: 'late',
+						updated_utc: utc('2026-06-15T00:00:00Z'),
+						route: '24',
+						trip: null,
+						// A next-stop id that is NOT in the static stop index.
+						next_stop: 'ghost-stop-999',
+						bearing: null,
+						delay_min: 2,
+						occupancy: null,
+					},
+				],
+			},
+			trips: { generated_utc: utc('2026-06-15T00:00:00Z'), trips: {} },
+			stopDepartures: { generated_utc: utc('2026-06-15T00:00:00Z'), stops: {} },
+		});
+		const detail = resolveMapSelection(
+			{ kind: 'vehicle', id: 'veh-unres' },
+			{ index: unresolvedIndex, stops, alerts, routes },
+		);
+		const { container, queryByText } = render(MapSelectionDetail, {
+			props: { detail, locale: 'en' },
+		});
+
+		// The raw id never leaks; the layer says the next stop is unknown.
+		expect(queryByText('ghost-stop-999')).not.toBeInTheDocument();
+		const absent = container.querySelector('[data-slot="absent-value"][data-tone="unknown"]');
+		expect(absent).not.toBeNull();
+		expect(container.textContent).toContain('not in the schedule');
+	});
+
+	it('renders a null stop name as the labelled fallback, never the bare id', () => {
+		// stop-2 (the next stop) is present but UNNAMED in this index — its name must
+		// render the honest "Stop {id} (name unavailable)" fallback, never the id alone.
+		const unnamedStops: StopIndexEntry[] = [
+			{ id: 'stop-1', name: 'Sherbrooke / Saint-Denis', code: '52618', lat: 45.51, lon: -73.57 },
+			{ id: 'stop-3', name: 'Van Horne / Rockland', code: '57191', lat: 45.53, lon: -73.59 },
+		];
+		const routesNoName: RouteFile[] = [
+			{
+				generated_utc: utc('2026-06-15T00:00:00Z'),
+				id: '24',
+				long: 'Sherbrooke',
+				directions: [
+					{
+						dir: 0,
+						headsign: 'East',
+						shape: null,
+						stops: [
+							{ id: 'stop-1', seq: 1, name: 'Sherbrooke / Saint-Denis' },
+							{ id: 'stop-2', seq: 2, name: null },
+							{ id: 'stop-3', seq: 3, name: 'Van Horne / Rockland' },
+						],
+					},
+				],
+			},
+		];
+		const detail = resolveMapSelection(
+			{ kind: 'vehicle', id: 'veh-1' },
+			{ index, stops: unnamedStops, alerts, routes: routesNoName },
+		);
+		const { getByText } = render(MapSelectionDetail, {
+			props: { detail, locale: 'en' },
+		});
+
+		// The honest labelled fallback shows; the bare id alone is never rendered.
+		expect(getByText('Stop stop-2 (name unavailable)')).toBeInTheDocument();
+	});
+
 	it('uses phone-first wrapping for dense detail rows and action buttons', () => {
 		const source = readFileSync(
 			resolve(process.cwd(), 'src/lib/features/map/MapSelectionDetail.svelte'),

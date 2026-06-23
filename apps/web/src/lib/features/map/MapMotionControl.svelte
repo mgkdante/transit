@@ -228,7 +228,11 @@
 		}
 	}
 
-	@media (max-width: 760px) {
+	/* Match the layout.isDesktop breakpoint (1024px): below it the floating chip is
+	   never rendered (MapHero swaps to the inline variant inside the filter sheet),
+	   so this query only needs to cover up to 1023px — the old 760px ceiling left a
+	   dead 760-1023px band that no longer matched anything. */
+	@media (max-width: 1023px) {
 		.map-motion[data-variant='floating'] {
 			left: 0.75rem;
 			right: 0.75rem;

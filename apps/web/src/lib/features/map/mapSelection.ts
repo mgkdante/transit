@@ -16,6 +16,7 @@ import type {
 	Vehicle,
 } from '$lib/v1/schemas';
 import { formatClock } from '$lib/utils/time';
+import type { AbsenceReasonKey } from '$lib/site/absence';
 
 export type MapSelection =
 	| { readonly kind: 'vehicle'; readonly id: string }
@@ -42,6 +43,13 @@ export interface MapStopRef {
 	readonly seq: number | null;
 	readonly etaUtc?: string | null;
 	readonly delayMin?: number | null;
+	/**
+	 * True when no name resolved from the static index — `name` then carries the
+	 * bare id only as a stable handle, and the surface renders the honest labelled
+	 * fallback ("Stop {id} (name unavailable)") through the absence layer instead of
+	 * leaking the id as if it were a name.
+	 */
+	readonly nameAbsent: boolean;
 }
 
 export interface StopRouteTimes {
@@ -59,6 +67,12 @@ export interface RouteDirectionStops {
 	readonly label: string;
 	readonly terminalLabel: string | null;
 	readonly stops: readonly MapStopRef[];
+	/**
+	 * True when `label` is the SYNTHESIZED "Direction {dir}" placeholder (no
+	 * terminal, no headsign). The surface marks it "(inferred)" via the absence
+	 * layer so a computed direction never reads as a published headsign.
+	 */
+	readonly labelInferred: boolean;
 }
 
 export interface VehicleMapDetail {
@@ -71,9 +85,22 @@ export interface VehicleMapDetail {
 	readonly routeDirection: RouteDirection | null;
 	readonly routeDirectionVariant: RouteDirectionVariant | null;
 	readonly nextStop: StopIndexEntry | null;
+	/**
+	 * The honest reason there is no RESOLVED next stop (only meaningful when
+	 * `nextStop` is null). `not-in-schedule` when the feed named a next stop we
+	 * could not resolve to a real stop (render "Next stop unknown", never the raw
+	 * id); `end-of-route` when the feed named no next stop at all (the trip ended).
+	 */
+	readonly nextStopAbsence: AbsenceReasonKey;
 	readonly pastStops: readonly MapStopRef[];
 	readonly nextStops: readonly MapStopRef[];
 	readonly alerts: readonly Alert[];
+	/**
+	 * GTFS route_type of this vehicle's route (null when unknown). The surface uses
+	 * route_type 1 (metro) plus the metro realtime gap to explain a missing delay
+	 * as "no live data" rather than "not reported".
+	 */
+	readonly routeType: number | null;
 }
 
 export interface StopMapDetail {
@@ -164,12 +191,14 @@ function orderedRouteStops(direction: RouteDirection | null | undefined): RouteS
 	return [...(direction?.stops ?? [])].sort((a, b) => a.seq - b.seq);
 }
 
-function stopName(
+/** Resolve a stop's display name, or null when neither the route stop nor the
+ *  static index names it (the caller then marks the ref name-absent). */
+function resolveStopName(
 	stopId: string,
 	stops: readonly StopIndexEntry[],
 	routeStop?: Pick<RouteStop, 'name'> | null,
-): string {
-	return routeStop?.name ?? findStop(stops, stopId)?.name ?? stopId;
+): string | null {
+	return routeStop?.name ?? findStop(stops, stopId)?.name ?? null;
 }
 
 function toStopRef(
@@ -178,9 +207,13 @@ function toStopRef(
 	routeStop?: RouteStop | null,
 	eta?: StopEta | null,
 ): MapStopRef {
+	const resolved = resolveStopName(stopId, stops, routeStop);
 	return {
 		id: stopId,
-		name: stopName(stopId, stops, routeStop),
+		// Keep the bare id as the stable handle when unresolved; the surface renders
+		// the honest "Stop {id} (name unavailable)" fallback from `nameAbsent`.
+		name: resolved ?? stopId,
+		nameAbsent: resolved == null,
 		seq: routeStop?.seq ?? null,
 		...(eta ? { etaUtc: eta.eta_utc, delayMin: eta.delay_min ?? null } : {}),
 	};
@@ -347,9 +380,13 @@ function routeDirectionStops(
 		headsign: variant.headsign,
 		label: variant.label,
 		terminalLabel: variant.terminalLabel,
+		labelInferred: variant.labelInferred,
 		stops: variant.stops.map((stop) => ({
 			id: stop.id,
+			// Keep the id as a stable handle when the route stop has no name; the
+			// surface renders the honest labelled fallback from `nameAbsent`.
 			name: stop.name ?? stop.id,
+			nameAbsent: stop.name == null,
 			seq: stop.seq,
 		})),
 	}));
@@ -375,6 +412,13 @@ export function resolveMapSelection(
 			context.stops,
 		);
 
+		const nextStop = findStop(context.stops, vehicle.next_stop);
+		// When there is no RESOLVED next stop, say WHY honestly: the feed named one we
+		// could not resolve (not-in-schedule → "Next stop unknown") vs the feed named
+		// none at all (end-of-route → the trip has ended). Never leak the raw id.
+		const hasNamedNextStop = vehicle.next_stop != null && vehicle.next_stop !== '';
+		const nextStopAbsence: AbsenceReasonKey = hasNamedNextStop ? 'not-in-schedule' : 'end-of-route';
+
 		return {
 			kind: 'vehicle',
 			id: vehicle.id,
@@ -384,10 +428,12 @@ export function resolveMapSelection(
 			route,
 			routeDirection,
 			routeDirectionVariant,
-			nextStop: findStop(context.stops, vehicle.next_stop),
+			nextStop,
+			nextStopAbsence,
 			pastStops,
 			nextStops,
 			alerts: (context.alerts ?? []).filter((alert) => alertMatchesVehicle(alert, vehicle)),
+			routeType: route?.type ?? null,
 		};
 	}
 
