@@ -293,7 +293,12 @@
 										{#if stop.etaUtc}
 											<small>
 												<time>{timeLabel(stop.etaUtc, locale)}</time>
-												<MapDelayTag delay={stop.delayMin} {locale} {t} ctx={{ metro: detailIsMetro }} />
+												<MapDelayTag
+													delay={stop.delayMin}
+													{locale}
+													{t}
+													ctx={{ metro: detailIsMetro }}
+												/>
 											</small>
 										{:else}
 											<!-- ETA absent for a known next stop: render an explicit "ETA
@@ -345,7 +350,12 @@
 									<span>{vehicle.route ? `${t.route} ${vehicle.route}` : t.bus}</span>
 									<small>
 										<span class="map-status-label">{STATUS_LABELS[locale][vehicle.status]}</span>
-										<MapDelayTag delay={vehicle.delay_min} {locale} {t} ctx={{ metro: detailIsMetro }} />
+										<MapDelayTag
+											delay={vehicle.delay_min}
+											{locale}
+											{t}
+											ctx={{ metro: detailIsMetro }}
+										/>
 									</small>
 									<ChevronRightIcon size={13} strokeWidth={2.4} aria-hidden="true" />
 								</button>

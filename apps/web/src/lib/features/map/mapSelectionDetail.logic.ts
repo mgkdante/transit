@@ -4,7 +4,13 @@
 // is unit-testable without a render harness. The null-honesty core (delayMaybe) routes
 // a missing delay through the unknown-data layer — delay==null is NEVER "on time".
 
-import { absent, known, stopNameFallback, type AbsenceReasonKey, type Maybe } from '$lib/site/absence';
+import {
+	absent,
+	known,
+	stopNameFallback,
+	type AbsenceReasonKey,
+	type Maybe,
+} from '$lib/site/absence';
 import { ROUTE_TYPE_METRO } from '$lib/site/serviceWindow';
 import { formatUtc } from '$lib/utils/time';
 import type { Locale } from '$lib/i18n';

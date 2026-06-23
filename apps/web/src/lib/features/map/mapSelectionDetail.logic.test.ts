@@ -26,7 +26,9 @@ describe('isDetailMetro', () => {
 	});
 	it('reads a metro route by route.type 1', () => {
 		expect(isDetailMetro({ kind: 'route', route: { type: 1 } } as MapSelectionDetail)).toBe(true);
-		expect(isDetailMetro({ kind: 'route', route: { type: null } } as MapSelectionDetail)).toBe(false);
+		expect(isDetailMetro({ kind: 'route', route: { type: null } } as MapSelectionDetail)).toBe(
+			false,
+		);
 	});
 	it('is false for a stop', () => {
 		expect(isDetailMetro({ kind: 'stop' } as MapSelectionDetail)).toBe(false);
@@ -101,7 +103,10 @@ describe('stopDisplayName — never leaks a bare id', () => {
 });
 
 describe('vehicleForDeparture', () => {
-	const vehicles = [{ id: 'a', trip: 't1' }, { id: 'b', trip: 't2' }] as unknown as Vehicle[];
+	const vehicles = [
+		{ id: 'a', trip: 't1' },
+		{ id: 'b', trip: 't2' },
+	] as unknown as Vehicle[];
 	it('matches by trip', () => {
 		expect(vehicleForDeparture(vehicles, { trip: 't2' } as StopDeparture)?.id).toBe('b');
 	});
@@ -119,7 +124,9 @@ describe('directionLabel', () => {
 		expect(directionLabel(item, en)).toBe('East');
 	});
 	it('multiple directions → joined with a slash', () => {
-		const item = { directions: [{ label: 'East' }, { label: 'West' }] } as unknown as RouteMapDetail;
+		const item = {
+			directions: [{ label: 'East' }, { label: 'West' }],
+		} as unknown as RouteMapDetail;
 		expect(directionLabel(item, en)).toBe('East / West');
 	});
 	it('no directions → noData', () => {

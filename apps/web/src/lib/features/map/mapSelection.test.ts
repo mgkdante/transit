@@ -419,8 +419,8 @@ describe('sameSelection / sameNullableSelection', () => {
 		expect(sameNullableSelection(null, null)).toBe(true);
 		expect(sameNullableSelection({ kind: 'vehicle', id: 'a' }, null)).toBe(false);
 		expect(sameNullableSelection(null, { kind: 'vehicle', id: 'a' })).toBe(false);
-		expect(
-			sameNullableSelection({ kind: 'vehicle', id: 'a' }, { kind: 'vehicle', id: 'a' }),
-		).toBe(true);
+		expect(sameNullableSelection({ kind: 'vehicle', id: 'a' }, { kind: 'vehicle', id: 'a' })).toBe(
+			true,
+		);
 	});
 });
