@@ -8,14 +8,9 @@
 	import { routeNameFallback, stopNameFallback } from '$lib/site/absence';
 	import { ROUTE_TYPE_METRO } from '$lib/site/serviceWindow';
 	import { OCCUPANCY_LABELS, STATUS_LABELS } from './map.copy';
-	import { alertDisplayText } from './mapAlerts';
-	import { causeLabel, effectLabel } from './gtfsAlertLabels';
 	import type { MapSelection, MapSelectionDetail, MapStopRef } from './mapSelection';
 	import { MAP_SELECTION_DETAIL_COPY } from './mapSelectionDetail.copy';
 	import {
-		delayKnownLabel,
-		delayMaybe,
-		delayTone,
 		directionLabel,
 		formatAge,
 		isDetailMetro,
@@ -23,6 +18,8 @@
 		timeLabel,
 		vehicleForDeparture,
 	} from './mapSelectionDetail.logic';
+	import MapDelayTag from './MapDelayTag.svelte';
+	import MapDetailAlerts from './MapDetailAlerts.svelte';
 
 	interface Props {
 		detail: MapSelectionDetail | null;
@@ -92,29 +89,7 @@
 		if (!trip) return;
 		onfilter?.({ kind: 'trip', value: trip });
 	}
-
-	function displayAlert(alert: Alert): string {
-		return alertDisplayText(alert, locale);
-	}
 </script>
-
-<!-- One delay cell, reused at every site (vehicle, next stops, live buses, buses to
-     a stop, departures, route-times). KNOWN → the coloured delay tag (on-time only
-     for 0); ABSENT → the honest absence routed through the layer (AbsentValue),
-     never "No delay" and never reading as on-time. -->
-{#snippet delayCell(
-	delay: number | null | undefined,
-	ctx: { stale?: boolean; metro?: boolean } = {},
-)}
-	{@const m = delayMaybe(delay, ctx)}
-	{#if m.known}
-		<span class="map-delay-tag" data-tone={delayTone(m.value)}>
-			{delayKnownLabel(m.value, t)}
-		</span>
-	{:else}
-		<AbsentValue reason={m.reason} {locale} params={m.params} />
-	{/if}
-{/snippet}
 
 <!-- A stop name that NEVER leaks a bare id: when the static index did not name the
      stop, render the honest labelled fallback ("Stop {id} (name unavailable)") via
@@ -214,10 +189,12 @@
 				<div>
 					<dt>{t.delay}</dt>
 					<dd>
-						{@render delayCell(detail.vehicle.delay_min, {
-							stale: notReporting != null,
-							metro: detail.routeType === ROUTE_TYPE_METRO,
-						})}
+						<MapDelayTag
+							delay={detail.vehicle.delay_min}
+							{locale}
+							{t}
+							ctx={{ stale: notReporting != null, metro: detail.routeType === ROUTE_TYPE_METRO }}
+						/>
 					</dd>
 				</div>
 				<div>
@@ -316,7 +293,7 @@
 										{#if stop.etaUtc}
 											<small>
 												<time>{timeLabel(stop.etaUtc, locale)}</time>
-												{@render delayCell(stop.delayMin, { metro: detailIsMetro })}
+												<MapDelayTag delay={stop.delayMin} {locale} {t} ctx={{ metro: detailIsMetro }} />
 											</small>
 										{:else}
 											<!-- ETA absent for a known next stop: render an explicit "ETA
@@ -368,7 +345,7 @@
 									<span>{vehicle.route ? `${t.route} ${vehicle.route}` : t.bus}</span>
 									<small>
 										<span class="map-status-label">{STATUS_LABELS[locale][vehicle.status]}</span>
-										{@render delayCell(vehicle.delay_min, { metro: detailIsMetro })}
+										<MapDelayTag delay={vehicle.delay_min} {locale} {t} ctx={{ metro: detailIsMetro }} />
 									</small>
 									<ChevronRightIcon size={13} strokeWidth={2.4} aria-hidden="true" />
 								</button>
@@ -448,7 +425,7 @@
 									<span>{vehicle.route ? `${t.route} ${vehicle.route}` : t.bus}</span>
 									<small>
 										<span class="map-status-label">{STATUS_LABELS[locale][vehicle.status]}</span>
-										{@render delayCell(vehicle.delay_min)}
+										<MapDelayTag delay={vehicle.delay_min} {locale} {t} />
 									</small>
 									<ChevronRightIcon size={13} strokeWidth={2.4} aria-hidden="true" />
 								</button>
@@ -500,7 +477,7 @@
 									<ChevronRightIcon size={13} strokeWidth={2.4} aria-hidden="true" />
 								</button>
 							{/if}
-							{@render delayCell(departure.delay_min)}
+							<MapDelayTag delay={departure.delay_min} {locale} {t} />
 						</li>
 					{/each}
 				</ol>
@@ -557,7 +534,7 @@
 										{#each route.liveDepartures.slice(0, 3) as departure (`live-${route.route}-${departure.trip ?? departure.eta_utc}`)}
 											<li>
 												<time>{timeLabel(departure.eta_utc, locale)}</time>
-												{@render delayCell(departure.delay_min)}
+												<MapDelayTag delay={departure.delay_min} {locale} {t} />
 											</li>
 										{:else}
 											<!-- No live departure right now: render an honest "no live data" row
@@ -575,46 +552,7 @@
 			{/if}
 		{/if}
 
-		<section class="map-alerts" aria-label={t.alerts}>
-			<h3>{t.alerts}</h3>
-			{#if detail.alerts.length > 0}
-				<ul>
-					{#each detail.alerts.slice(0, compact ? 2 : 4) as alert (alert.id)}
-						{@const cause = causeLabel(alert.cause, locale)}
-						{@const effect = effectLabel(alert.effect, locale)}
-						<li data-severity={alert.severity}>
-							<button
-								type="button"
-								class="map-alert-button"
-								aria-label={t.selectAlert(displayAlert(alert))}
-								onclick={() => onalertselect?.(alert)}
-							>
-								{displayAlert(alert)}
-								<ChevronRightIcon size={13} strokeWidth={2.4} aria-hidden="true" />
-							</button>
-							{#if cause || effect}
-								<dl class="map-alert-meta">
-									{#if cause}
-										<div>
-											<dt>{t.cause}</dt>
-											<dd>{cause}</dd>
-										</div>
-									{/if}
-									{#if effect}
-										<div>
-											<dt>{t.effect}</dt>
-											<dd>{effect}</dd>
-										</div>
-									{/if}
-								</dl>
-							{/if}
-						</li>
-					{/each}
-				</ul>
-			{:else}
-				<p>{t.noAlerts}</p>
-			{/if}
-		</section>
+		<MapDetailAlerts alerts={detail.alerts} {locale} {t} {compact} {onalertselect} />
 	</article>
 {/if}
 
@@ -866,52 +804,13 @@
 		transform: translateX(2px);
 	}
 
-	/* ── Delay tone tag — colour-codes early / on-time / late ─── */
-	.map-delay-tag {
-		display: inline-flex;
-		align-items: center;
-		gap: 0.3rem;
-		font-family: var(--font-mono);
-		font-size: inherit;
-		font-weight: 600;
-		letter-spacing: 0.01em;
-		color: var(--muted-foreground);
-		white-space: nowrap;
-	}
-	.map-delay-tag::before {
-		content: '';
-		width: 0.45rem;
-		height: 0.45rem;
-		border-radius: var(--radius-pill);
-		background: currentcolor;
-		flex: none;
-	}
-	.map-delay-tag[data-tone='none'] {
-		color: var(--muted-foreground);
-	}
-	.map-delay-tag[data-tone='none']::before {
-		display: none;
-	}
-	.map-delay-tag[data-tone='early'] {
-		color: var(--dataviz-status-early);
-	}
-	.map-delay-tag[data-tone='on-time'] {
-		color: var(--dataviz-status-on-time);
-	}
-	.map-delay-tag[data-tone='late'] {
-		color: var(--dataviz-status-late);
-	}
-	.map-delay-tag[data-tone='severe'] {
-		color: var(--dataviz-status-severe);
-	}
 	.map-status-label {
 		color: var(--muted-foreground);
 	}
 	.map-inline-action:focus-visible,
 	.map-id-action:focus-visible,
 	.map-stop-action:focus-visible,
-	.map-vehicle-action:focus-visible,
-	.map-alert-button:focus-visible {
+	.map-vehicle-action:focus-visible {
 		outline: 2px solid var(--ring);
 		outline-offset: 2px;
 	}
@@ -1198,138 +1097,6 @@
 	.map-time-columns li time {
 		font-weight: 600;
 	}
-	/* ── Alerts — severity-coded signage rail ─────────────────── */
-	.map-alerts {
-		display: flex;
-		flex-direction: column;
-		gap: 0.55rem;
-	}
-	.map-alerts h3 {
-		display: flex;
-		align-items: center;
-		gap: 0.55rem;
-		margin: 0;
-		font-family: var(--font-mono);
-		font-size: var(--text-micro);
-		font-weight: 500;
-		letter-spacing: var(--tracking-eyebrow);
-		text-transform: uppercase;
-		color: var(--accent-text);
-	}
-	.map-alerts h3::after {
-		content: '';
-		flex: 1;
-		height: 1px;
-		background: var(--border-subtle);
-	}
-	.map-alerts ul {
-		display: flex;
-		flex-direction: column;
-		gap: 0.4rem;
-		margin: 0;
-		padding: 0;
-		list-style: none;
-	}
-	.map-alerts li {
-		--alert-tone: var(--dataviz-severity-high);
-		position: relative;
-		margin: 0;
-		border: 1px solid color-mix(in srgb, var(--alert-tone) 32%, var(--border) 68%);
-		border-radius: var(--radius-md);
-		background: color-mix(in srgb, var(--alert-tone) 9%, var(--card));
-		padding: 0.5rem 0.6rem 0.5rem 0.85rem;
-		font-size: var(--text-small);
-		color: var(--foreground);
-		overflow: hidden;
-	}
-	/* Severity rail down the leading edge. */
-	.map-alerts li::before {
-		content: '';
-		position: absolute;
-		inset-block: 0;
-		inset-inline-start: 0;
-		width: 3px;
-		background: var(--alert-tone);
-	}
-	.map-alerts li[data-severity='critical'] {
-		--alert-tone: var(--dataviz-severity-critical);
-	}
-	.map-alerts li[data-severity='high'] {
-		--alert-tone: var(--dataviz-severity-high);
-	}
-	.map-alerts li[data-severity='watch'] {
-		--alert-tone: var(--dataviz-severity-watch);
-	}
-	.map-alert-button {
-		display: flex;
-		gap: 0.5rem;
-		align-items: center;
-		justify-content: space-between;
-		width: 100%;
-		padding: 0;
-		color: inherit;
-		font: inherit;
-		line-height: 1.35;
-		text-align: left;
-		background: transparent;
-		border: 0;
-		cursor: pointer;
-		transition: color var(--duration-fast) var(--ease-out);
-	}
-	.map-alert-button :global(svg) {
-		flex: none;
-		opacity: 0.55;
-		transition:
-			opacity var(--duration-fast) var(--ease-out),
-			transform var(--duration-fast) var(--ease-out);
-	}
-	.map-alert-button:hover {
-		color: var(--primary);
-	}
-	.map-alert-button:hover :global(svg) {
-		opacity: 1;
-		transform: translateX(2px);
-	}
-	/* Cause / effect metadata — a labeled mono caption line under the headline.
-	   Each entry is a small uppercase caption + value pill, tinted by the alert's
-	   own severity tone so it reads as part of the same signage block. */
-	.map-alert-meta {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 0.35rem 0.6rem;
-		margin: 0.5rem 0 0;
-	}
-	.map-alert-meta div {
-		display: inline-flex;
-		align-items: baseline;
-		gap: 0.35rem;
-		min-width: 0;
-	}
-	.map-alert-meta dt {
-		font-family: var(--font-mono);
-		font-size: var(--text-micro);
-		font-weight: 500;
-		letter-spacing: var(--tracking-eyebrow);
-		text-transform: uppercase;
-		color: color-mix(in srgb, var(--alert-tone) 70%, var(--muted-foreground));
-	}
-	.map-alert-meta dd {
-		margin: 0;
-		min-width: 0;
-		font-size: var(--text-caption);
-		font-weight: 500;
-		color: var(--foreground);
-	}
-	/* Empty state — quiet, distinct from an active alert. */
-	.map-alerts p {
-		margin: 0;
-		border: 1px dashed var(--border-subtle);
-		border-radius: var(--radius-md);
-		background: var(--muted);
-		padding: 0.55rem 0.7rem;
-		font-size: var(--text-small);
-		color: var(--muted-foreground);
-	}
 	@media (max-width: 42rem) {
 		.map-detail-grid div {
 			grid-template-columns: minmax(0, 1fr);
@@ -1442,19 +1209,16 @@
 		.map-id-action,
 		.map-stop-action,
 		.map-vehicle-action,
-		.map-alert-button,
 		.map-inline-action :global(svg),
 		.map-id-action :global(svg),
 		.map-stop-action :global(svg),
-		.map-vehicle-action :global(svg),
-		.map-alert-button :global(svg) {
+		.map-vehicle-action :global(svg) {
 			transition: none;
 		}
 		.map-inline-action:hover :global(svg),
 		.map-id-action:hover :global(svg),
 		.map-stop-action:hover :global(svg),
-		.map-vehicle-action:hover :global(svg),
-		.map-alert-button:hover :global(svg) {
+		.map-vehicle-action:hover :global(svg) {
 			transform: none;
 		}
 	}
