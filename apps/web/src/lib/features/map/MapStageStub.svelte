@@ -8,6 +8,7 @@
 -->
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { SvelteMap } from 'svelte/reactivity';
 	import { STOPS_LAYER } from '$lib/components/map';
 
 	interface Props {
@@ -21,7 +22,7 @@
 	let { onready, class: className }: Props = $props();
 
 	type Handler = (e: unknown) => void;
-	const handlers = new Map<string, Handler[]>();
+	const handlers = new SvelteMap<string, Handler[]>();
 
 	// A minimal fake MapLibre map: enough surface for installMapLayers /
 	// installMapInteractions / pickSelectionAt to run without WebGL.

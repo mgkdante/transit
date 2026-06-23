@@ -12,7 +12,7 @@
 	import type { RouteIndexEntry, StopIndexEntry } from '$lib/v1';
 	import type { Alert } from '$lib/v1/schemas';
 	import type { LatLon, WithDistance } from '$lib/components/map';
-	import type { GeocodePrecision, GeocodeSuggestion } from '$lib/geocode/types';
+	import type { GeocodePrecision } from '$lib/geocode/types';
 	import type { MapSelection, MapSelectionDetail } from './mapSelection';
 	import MapFilters from './MapFilters.svelte';
 	import MapMotionControl from './MapMotionControl.svelte';
