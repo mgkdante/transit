@@ -36,7 +36,11 @@
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
 	import { metricInfoFor, type MetricKey } from '$lib/features/metrics/metrics.content';
 	import { metricsCopy } from '$lib/features/metrics/metrics.copy';
-	import { weekdayLabel } from '$lib/features/reliability/shiftGrains';
+	import {
+		weekdayLabel,
+		delayMinToSeverity,
+		DELAY_DOW_DOMAIN,
+	} from '$lib/features/reliability/shiftGrains';
 	import type { HabitsVM } from './clusters';
 	import type { ReliabilityCopy } from './reliability.copy';
 	import { habitsBandCopy } from './Cluster05Habits.copy';
@@ -97,16 +101,16 @@
 			})),
 	);
 
-	// Worst day (highest mean delay) first → rank 1.
-	const rankedWeekdays = $derived.by(() => {
-		const max = weekdayRows.reduce((m, r) => Math.max(m, r.delay), 0);
-		return weekdayRows
+	// S7 (B9 cycle): weekdays in FIXED Mon→Sun cycle order — NOT sorted by delay (the
+	// cycle order IS the meaning). value = the ABSOLUTE mean delay (min), scaled by the
+	// fixed DELAY_DOW_DOMAIN at the bar (never delay/max, so the same delay reads the
+	// same length every visit); severity from the absolute delayMinToSeverity, decoupled
+	// from the other days. The rank ordinal is dropped at the render (showRank=false).
+	const rankedWeekdays = $derived.by(() =>
+		weekdayRows
 			.slice()
-			.sort((a, b) => b.delay - a.delay)
+			.sort((a, b) => a.iso - b.iso)
 			.map((r, i) => {
-				// Normalize against the busiest weekday so the bar reads relative.
-				const norm = max > 0 ? r.delay / max : 0;
-				const severity: SeverityCode = norm >= 0.66 ? 'critical' : norm >= 0.33 ? 'high' : 'watch';
 				// Severe share is shown only when enough observations back it.
 				const severeTrusted =
 					r.severePct != null &&
@@ -115,16 +119,16 @@
 				return {
 					rank: i + 1,
 					title: r.name,
-					value: norm,
+					value: r.delay,
 					display: `${r.delay.toFixed(1)} min`,
 					subtitle: severeTrusted
 						? `${copy.peak.dayOfWeekSevere} ${r.severePct!.toFixed(1)}%`
 						: band.avgDelay,
-					severity,
+					severity: delayMinToSeverity(r.delay),
 					key: r.iso,
 				};
-			});
-	});
+			}),
+	);
 
 	const hasHeatmap = $derived(!habits.isEmpty);
 	const hasWeekday = $derived(weekdayRows.length > 0);
@@ -240,6 +244,9 @@
 									subtitle={row.subtitle}
 									severity={row.severity}
 									value={row.value}
+									domain={DELAY_DOW_DOMAIN}
+									unit=" min"
+									showRank={false}
 									display={row.display}
 								/>
 							</li>
