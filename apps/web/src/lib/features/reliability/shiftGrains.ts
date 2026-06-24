@@ -43,6 +43,25 @@ export function severeShareToSeverity(pct: number | null): SeverityCode {
 	return 'watch';
 }
 
+/** Threshold (avg-delay minutes) at or above which a stop bands to 'critical'. */
+const DELAY_CRITICAL_MIN = 10;
+/** Threshold (avg-delay minutes) at or above which a stop bands to 'high'. */
+const DELAY_HIGH_MIN = 5;
+
+/**
+ * Band an avg-delay reading (minutes) onto the SeverityCode scale: >=10 min
+ * critical, >=5 min high, else watch. A SEPARATE semantic table from the
+ * severe-share cutoffs (which take a %, not minutes) — they coincide numerically at
+ * 10/5 but mean different things. null (no data) bands to the quietest 'watch' so an
+ * absent reading never paints hot. (DRY: was inlined in §01's weak-stops list.)
+ */
+export function delayMinToSeverity(min: number | null): SeverityCode {
+	if (min == null) return 'watch';
+	if (min >= DELAY_CRITICAL_MIN) return 'critical';
+	if (min >= DELAY_HIGH_MIN) return 'high';
+	return 'watch';
+}
+
 /** The time-of-day shift grains, in canonical chronological order (AM → night). */
 export const SHIFT_GRAIN_ORDER = ['am_peak', 'midday', 'pm_peak', 'evening', 'night'] as const;
 export type ShiftGrain = (typeof SHIFT_GRAIN_ORDER)[number];

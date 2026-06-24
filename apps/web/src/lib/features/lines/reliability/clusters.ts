@@ -642,10 +642,14 @@ export function toReliabilityClusters(
 		occByDow.length > 0
 			? {
 					weekday: meanMix(
-						occByDow.filter((d) => d.day_of_week_iso >= 1 && d.day_of_week_iso <= 5).map((d) => d.mix ?? null),
+						occByDow
+							.filter((d) => d.day_of_week_iso >= 1 && d.day_of_week_iso <= 5)
+							.map((d) => d.mix ?? null),
 					),
 					weekend: meanMix(
-						occByDow.filter((d) => d.day_of_week_iso >= 6 && d.day_of_week_iso <= 7).map((d) => d.mix ?? null),
+						occByDow
+							.filter((d) => d.day_of_week_iso >= 6 && d.day_of_week_iso <= 7)
+							.map((d) => d.mix ?? null),
 					),
 				}
 			: null;

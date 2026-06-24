@@ -523,19 +523,34 @@ describe('toReliabilityClusters — occupancy_by_grain / occupancy_by_dow (S7)',
 			{ grain: 'month', mix: null },
 		],
 		occupancy_by_dow: [
-			{ day_of_week_iso: 1, mix: { empty: 0, many_seats: 0.8, few_seats: 0.2, standing: 0, full: 0 } },
-			{ day_of_week_iso: 5, mix: { empty: 0, many_seats: 0.6, few_seats: 0.4, standing: 0, full: 0 } },
-			{ day_of_week_iso: 6, mix: { empty: 0.5, many_seats: 0.5, few_seats: 0, standing: 0, full: 0 } },
+			{
+				day_of_week_iso: 1,
+				mix: { empty: 0, many_seats: 0.8, few_seats: 0.2, standing: 0, full: 0 },
+			},
+			{
+				day_of_week_iso: 5,
+				mix: { empty: 0, many_seats: 0.6, few_seats: 0.4, standing: 0, full: 0 },
+			},
+			{
+				day_of_week_iso: 6,
+				mix: { empty: 0.5, many_seats: 0.5, few_seats: 0, standing: 0, full: 0 },
+			},
 		],
 	};
 
 	it('selects the grain-scoped mix for the requested grain', () => {
-		expect(toReliabilityClusters(crowdingGrains, { grain: 'day' }).crowding.mixByGrain?.many_seats).toBe(1);
-		expect(toReliabilityClusters(crowdingGrains, { grain: 'week' }).crowding.mixByGrain?.many_seats).toBe(0.4);
+		expect(
+			toReliabilityClusters(crowdingGrains, { grain: 'day' }).crowding.mixByGrain?.many_seats,
+		).toBe(1);
+		expect(
+			toReliabilityClusters(crowdingGrains, { grain: 'week' }).crowding.mixByGrain?.many_seats,
+		).toBe(0.4);
 	});
 
 	it('honest-null mixByGrain when the selected grain has no telemetry', () => {
-		expect(toReliabilityClusters(crowdingGrains, { grain: 'month' }).crowding.mixByGrain).toBeNull();
+		expect(
+			toReliabilityClusters(crowdingGrains, { grain: 'month' }).crowding.mixByGrain,
+		).toBeNull();
 	});
 
 	it('aggregates weekday (ISO 1-5) and weekend (ISO 6-7) from occupancy_by_dow', () => {

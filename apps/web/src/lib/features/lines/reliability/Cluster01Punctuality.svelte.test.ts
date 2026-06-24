@@ -53,6 +53,16 @@ const populated: PunctualityVM = {
 	isEmpty: false,
 };
 
+// S7: a route with many weak stops, worst-first (12, 11, … 1 min).
+const manyStops: PunctualityVM = {
+	...populated,
+	weakStops: Array.from({ length: 12 }, (_, i) => ({
+		id: `S${i}`,
+		name: `Stop ${i}`,
+		avg_delay_min: 12 - i,
+	})),
+};
+
 const emptyVM: PunctualityVM = {
 	trend: [],
 	dayOfWeek: [],
@@ -61,6 +71,26 @@ const emptyVM: PunctualityVM = {
 	byShiftDaytype: [],
 	isEmpty: true,
 };
+
+describe('Cluster01Punctuality — worst-N selector (S7)', () => {
+	it('defaults to the 10 worst stops and offers a worst-N selector', () => {
+		const { container, getByRole } = render(Cluster01Punctuality, {
+			props: { vm: manyStops, locale: 'en', copy },
+		});
+		const list = container.querySelector('[data-slot="weak-stops-list"]') as HTMLElement;
+		expect(list.querySelectorAll('[data-slot="ranked-row"]').length).toBe(10);
+		expect(getByRole('radiogroup', { name: copy.strip.worstNLabel })).toBeInTheDocument();
+	});
+
+	it('truncates the ranked list when a smaller N is picked', async () => {
+		const { container, getByRole } = render(Cluster01Punctuality, {
+			props: { vm: manyStops, locale: 'en', copy },
+		});
+		await fireEvent.click(getByRole('radio', { name: '5' }));
+		const list = container.querySelector('[data-slot="weak-stops-list"]') as HTMLElement;
+		expect(list.querySelectorAll('[data-slot="ranked-row"]').length).toBe(5);
+	});
+});
 
 describe('Cluster01Punctuality — populated', () => {
 	it('renders the selected-grain headline (default day) and no empty note', () => {

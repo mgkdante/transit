@@ -39,6 +39,7 @@
 	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
 	import { AbsentValue, MaybeValue } from '$lib/components/edge';
 	import { TrendLine, SeverityBar, RankedRow } from '$lib/components/dataviz';
+	import { GrainPicker, type GrainSegment } from '$lib/components/surface';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
 	import { metricInfoFor, type MetricKey } from '$lib/features/metrics/metrics.content';
 	import { metricsCopy } from '$lib/features/metrics/metrics.copy';
@@ -48,6 +49,7 @@
 		shiftLabel as shiftGrainLabel,
 		dayTypeLabel as dayTypeGrainLabel,
 		severeShareToSeverity,
+		delayMinToSeverity,
 		SHIFT_GRAIN_ORDER,
 		DAY_TYPE_GRAIN_ORDER,
 	} from '$lib/features/reliability/shiftGrains';
@@ -115,31 +117,57 @@
 	// (shared thresholds — see severeShareToSeverity; null bands to 'watch').
 	const severeSeverity = $derived<SeverityCode>(severeShareToSeverity(severePct));
 
-	// Weakest stops, worst mean-delay first, the accountability list. Normalize
-	// each bar against the worst stop so the ranking reads as relative magnitude.
-	const rankedStops = $derived.by(() => {
-		const rows = vm.weakStops
+	// Worst-N selector (S7): a selectable how-many-stops control (5/10/20/30/50/100,
+	// default 10) reusing GrainPicker over a numeric-string union — the active chip is
+	// --primary (an interactive control), never a data mark. Local state; the slice is
+	// applied below so the data is always present, just truncated to the chosen N.
+	const WORST_N_SEGMENTS: GrainSegment<string>[] = [
+		{ key: '5', label: '5' },
+		{ key: '10', label: '10' },
+		{ key: '20', label: '20' },
+		{ key: '30', label: '30' },
+		{ key: '50', label: '50' },
+		{ key: '100', label: '100' },
+	];
+	let worstN = $state('10');
+	const worstNCount = $derived(Number(worstN));
+
+	// The FULL ranked set (worst mean-delay first) BEFORE the worst-N truncation. The
+	// bar baseline `worst` is taken from this full set so the bar scale stays stable as
+	// N changes (a smaller N never rescales the remaining bars).
+	const rankedAll = $derived(
+		vm.weakStops
 			.filter((w) => w.avg_delay_min != null)
 			.slice()
-			.sort((a, b) => (b.avg_delay_min ?? 0) - (a.avg_delay_min ?? 0));
-		const worst = rows.length ? (rows[0].avg_delay_min ?? 0) : 0;
-		return rows.map((w, i) => {
+			.sort((a, b) => (b.avg_delay_min ?? 0) - (a.avg_delay_min ?? 0)),
+	);
+	const weakStopsTotal = $derived(rankedAll.length);
+
+	// The accountability list, truncated to the selected worst-N. Normalize each bar
+	// against the worst stop (relative magnitude); severity is DRY via
+	// delayMinToSeverity (the shared minutes→severity table, was inlined 10/5 magic).
+	const rankedStops = $derived.by(() => {
+		const worst = rankedAll.length ? (rankedAll[0].avg_delay_min ?? 0) : 0;
+		return rankedAll.slice(0, worstNCount).map((w, i) => {
 			const delay = w.avg_delay_min ?? 0;
-			const sev: SeverityCode = delay >= 10 ? 'critical' : delay >= 5 ? 'high' : 'watch';
 			return {
 				key: w.id,
 				rank: i + 1,
 				title: w.name ?? stopNameFallback(w.id, locale),
-				severity: sev,
+				severity: delayMinToSeverity(w.avg_delay_min ?? null),
 				value: worst > 0 ? Math.min(1, Math.max(0, delay / worst)) : null,
 				display: min(w.avg_delay_min) ?? copy.strip.noData,
 			};
 		});
 	});
 
-	// Weak-stops heading carries the honest count, when fewer than 5 stops carry
-	// a delay the heading still reads truthfully (it doesn't promise a fixed 5).
-	const weakStopsHeading = $derived(`${copy.strip.weakStopsHeading} · ${rankedStops.length}`);
+	// Weak-stops heading carries the honest count. When the worst-N truncates the set,
+	// it reads "shown/total" so the reader knows more exist; otherwise just the count.
+	const weakStopsHeading = $derived(
+		weakStopsTotal > rankedStops.length
+			? `${copy.strip.weakStopsHeading} · ${rankedStops.length}/${weakStopsTotal}`
+			: `${copy.strip.weakStopsHeading} · ${rankedStops.length}`,
+	);
 
 	/* ── By time of day (A1/A2) ──────────────────────────────────────────────
 	   The granular shift + day-type buckets the contract already carries, ranked
@@ -363,12 +391,21 @@
 		<!-- Weakest stops, the accountability list, worst delay first + count. -->
 		{#if rankedStops.length > 0}
 			<div class="cluster-block">
-				<span class="label-with-info">
-					<SectionLabel text={weakStopsHeading} variant="metric" />
-					{@render metricInfo('weakStops', copy.strip.weakStopsHeading)}
-				</span>
+				<div class="weak-stops-head">
+					<span class="label-with-info">
+						<SectionLabel text={weakStopsHeading} variant="metric" />
+						{@render metricInfo('weakStops', copy.strip.weakStopsHeading)}
+					</span>
+					{#if weakStopsTotal > 5}
+						<GrainPicker
+							segments={WORST_N_SEGMENTS}
+							bind:value={worstN}
+							label={copy.strip.worstNLabel}
+						/>
+					{/if}
+				</div>
 				<p class="cluster-caption" data-slot="weak-stops-window">{copy.windows.weakStops}</p>
-				<div class="cluster-ranked" role="list">
+				<div class="cluster-ranked" data-slot="weak-stops-list" role="list">
 					{#each rankedStops as row (row.key)}
 						<RankedRow
 							rank={row.rank}
@@ -515,6 +552,16 @@
 		display: flex;
 		flex-direction: column;
 		gap: 0.6rem;
+	}
+	/* Weak-stops heading row: the label + (i) on the left, the worst-N selector on
+	   the right; wraps to its own row on narrow/mobile so the selector never crowds
+	   the heading. */
+	.weak-stops-head {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		justify-content: space-between;
+		gap: 0.5rem 1rem;
 	}
 	.cluster-block-head {
 		display: flex;

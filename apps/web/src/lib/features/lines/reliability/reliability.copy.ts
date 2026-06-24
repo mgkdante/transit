@@ -49,6 +49,8 @@ export interface ReliabilityCopy {
 		readonly severeCaption: string;
 		/** Heading for the weakest-stops accountability list. */
 		readonly weakStopsHeading: string;
+		/** a11y label for the worst-N (how-many-stops) selector. */
+		readonly worstNLabel: string;
 		/** Caption under the excess-wait magnitude (what 0 means). */
 		readonly excessWaitCaption: string;
 		/** Plain caption under the skipped-stop tile (what it counts). */
@@ -184,7 +186,8 @@ export const reliabilityCopy: Record<Locale, ReliabilityCopy> = {
 			p90Caption: '9 trajets sur 10 sont plus rapides que ça',
 			severePct: 'Part des retards graves',
 			severeCaption: 'Proportion de passages en retard grave',
-			weakStopsHeading: 'Les 5 arrêts les plus en retard',
+			weakStopsHeading: 'Les arrêts les plus en retard',
+			worstNLabel: 'Arrêts affichés',
 			excessWaitCaption: '0 = le service respecte (ou dépasse) sa fréquence prévue',
 			skippedStopCaption: 'Arrêts non desservis',
 			trendReadoutHint: 'Survolez ou tabulez le graphique pour lire chaque jour',
@@ -272,7 +275,8 @@ export const reliabilityCopy: Record<Locale, ReliabilityCopy> = {
 			p90Caption: '9 in 10 trips are better than this',
 			severePct: 'Severe-delay share',
 			severeCaption: 'Share of arrivals that ran severely late',
-			weakStopsHeading: 'The 5 stops with the most delay',
+			weakStopsHeading: 'The stops with the most delay',
+			worstNLabel: 'Stops shown',
 			excessWaitCaption: '0 = runs on schedule (met or beat its planned frequency)',
 			skippedStopCaption: "Stops the bus didn't serve",
 			trendReadoutHint: 'Hover or tab the chart to read each day',
