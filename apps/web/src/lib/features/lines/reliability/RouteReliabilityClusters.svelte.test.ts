@@ -284,3 +284,24 @@ const multiDay: RouteReliability = {
 		},
 	],
 };
+
+describe('RouteReliabilityClusters — mobile control collapse (S7)', () => {
+	it('renders a summary toggle that flips aria-expanded + the open class', async () => {
+		const { container } = render(RouteReliabilityClusters, {
+			props: { data: populated, locale: 'en' },
+		});
+		const toggle = container.querySelector('[data-slot="controls-toggle"]') as HTMLButtonElement;
+		const body = container.querySelector('[data-slot="controls-body"]') as HTMLElement;
+		expect(toggle).not.toBeNull();
+		expect(body).not.toBeNull();
+		// Collapsed by default (the mobile media query hides the body until opened).
+		expect(toggle.getAttribute('aria-expanded')).toBe('false');
+		expect(body.classList.contains('reliability-control-body--open')).toBe(false);
+		// The summary names the active window so a collapsed mobile rail still shows it.
+		expect(toggle.textContent).toContain(copy.controls.today);
+
+		await fireEvent.click(toggle);
+		expect(toggle.getAttribute('aria-expanded')).toBe('true');
+		expect(body.classList.contains('reliability-control-body--open')).toBe(true);
+	});
+});
