@@ -28,6 +28,8 @@ export interface ReliabilityCopy {
 	readonly clusters: Record<ReliabilityClusterKey, string>;
 	/** Snapshot-strip metric labels + the shared honest-state notes. */
 	readonly strip: {
+		/** Accessible name for the snapshot section landmark (band 00). */
+		readonly snapshotLabel: string;
 		readonly otpPct: string;
 		readonly avgDelayMin: string;
 		/** Typical (median / p50) delay label — plain, not jargon. */
@@ -170,6 +172,7 @@ export const reliabilityCopy: Record<Locale, ReliabilityCopy> = {
 			habits: '05 Habitudes horaires',
 		},
 		strip: {
+			snapshotLabel: 'Aperçu de la fiabilité',
 			otpPct: 'Ponctualité',
 			avgDelayMin: 'Retard moyen',
 			p50Min: 'Retard médian',
@@ -257,6 +260,7 @@ export const reliabilityCopy: Record<Locale, ReliabilityCopy> = {
 			habits: '05 Time-of-day habits',
 		},
 		strip: {
+			snapshotLabel: 'Reliability snapshot',
 			otpPct: 'On-time',
 			avgDelayMin: 'Avg delay',
 			p50Min: 'Typical delay',

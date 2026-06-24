@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { GET } from './+server';
+import { GET, HEAD } from './+server';
 
 // The legacy /route/[id] -> /lines/[id] redirect (S6 consolidation). SvelteKit 2
 // `redirect()` throws an internal Redirect ({ status, location }); we catch it and
@@ -42,5 +42,11 @@ describe('legacy /route/[id] -> /lines/[id] redirect', () => {
 	it('percent-encodes an id with a space, matching routeFor()', () => {
 		const r = caughtRedirect(() => GET(event({ id: '10 A' })));
 		expect(r.location).toBe('/lines/10%20A');
+	});
+
+	it('also 301-redirects HEAD (endpoint routes do not synthesize HEAD from GET)', () => {
+		const r = caughtRedirect(() => HEAD(event({ id: '161' })));
+		expect(r.status).toBe(301);
+		expect(r.location).toBe('/lines/161');
 	});
 });

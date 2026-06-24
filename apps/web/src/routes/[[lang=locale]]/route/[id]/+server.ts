@@ -16,3 +16,9 @@ export const GET: RequestHandler = ({ params, url }) => {
 	const localePrefix = params.lang ? `/${params.lang}` : '';
 	redirect(301, `${localePrefix}/lines/${encodeURIComponent(params.id)}${url.search}`);
 };
+
+// HEAD parity: a +server.ts endpoint does NOT synthesize HEAD from GET (unlike a
+// +page route, which the old /route/[id] was), so without this a HEAD on a legacy
+// URL would 405 instead of 301. Crawlers/monitors that HEAD the old path get the
+// same permanent redirect.
+export const HEAD: RequestHandler = GET;

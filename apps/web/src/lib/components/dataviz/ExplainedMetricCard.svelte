@@ -82,11 +82,12 @@
 
 <article class={cn('explained-metric-card', className)} data-slot="explained-metric-card">
 	<div class="emc-grid">
-		<!-- col1 — the (i) + label + metric (+ optional caveat note). -->
+		<!-- col1 — the label + metric, then the (i) affordance (+ optional caveat note).
+		     MetricDisplay comes FIRST in the DOM so the a11y/tab reading order is
+		     label → value → (i) → note (the explainer is reached AFTER the figure it
+		     annotates); the (i) is pinned to the visual top-right corner via CSS, so
+		     DOM order does not change where it appears. -->
 		<div class="emc-figure" data-slot="explained-metric-figure">
-			{#if info}
-				<span class="emc-info" data-slot="explained-metric-info">{@render info()}</span>
-			{/if}
 			<MetricDisplay
 				{label}
 				{value}
@@ -97,6 +98,9 @@
 				{locale}
 				{size}
 			/>
+			{#if info}
+				<span class="emc-info" data-slot="explained-metric-info">{@render info()}</span>
+			{/if}
 			{#if note}
 				<p class="emc-note" data-slot="explained-metric-note">{note}</p>
 			{/if}

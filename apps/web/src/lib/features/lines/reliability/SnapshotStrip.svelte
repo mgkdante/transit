@@ -106,7 +106,7 @@
 {#snippet p90Info()}{@render cardInfo('p50p90', t.p90Min)}{/snippet}
 {#snippet p50Info()}{@render cardInfo('p50p90', t.p50Min)}{/snippet}
 
-<section class="snapshot-strip" data-slot="snapshot-strip">
+<section class="snapshot-strip" data-slot="snapshot-strip" aria-label={t.snapshotLabel}>
 	{#if vm.isEmpty}
 		<!-- Honest empty: the styled honest-absence chip (says WHY), never a wall of
 		     empties / fabricated zero. -->
