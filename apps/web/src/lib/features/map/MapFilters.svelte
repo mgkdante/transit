@@ -545,22 +545,21 @@
 		width: 1.6rem;
 		height: 1.6rem;
 		flex: none;
-		color: var(--primary);
-		background: color-mix(in srgb, var(--primary) 12%, transparent);
-		border: 1px solid color-mix(in srgb, var(--primary) 30%, transparent);
+		/* Neutral collapse affordance, matching the other overlay panels (left rail +
+		   right detail): muted by default, foreground + muted bg on hover. NOT the
+		   brand orange — --primary stays the active-chip affordance, not chrome. */
+		color: var(--muted-foreground);
 		border-radius: var(--radius-sm);
 		transition:
 			color var(--duration-fast) var(--ease-default),
-			background-color var(--duration-fast) var(--ease-default),
-			border-color var(--duration-fast) var(--ease-default);
+			background-color var(--duration-fast) var(--ease-default);
 	}
 	.mf-toggle:hover {
 		color: var(--foreground);
 	}
 	.mf-toggle:hover .mf-toggle-icon {
-		color: var(--primary-hover);
-		background: color-mix(in srgb, var(--primary) 18%, transparent);
-		border-color: color-mix(in srgb, var(--primary) 45%, transparent);
+		color: var(--foreground);
+		background: var(--muted);
 	}
 	.mf-toggle:focus-visible {
 		outline: 2px solid var(--ring);
