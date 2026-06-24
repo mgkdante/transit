@@ -42,8 +42,8 @@ describe('VehicleResultRow', () => {
 		expect(arrow?.getAttribute('style')).toContain('rotate(90deg)');
 	});
 
-	it('shows an honest no-data crowding mark when occupancy telemetry is absent', () => {
-		render(VehicleResultRow, {
+	it('shows the styled honest-absence chip for crowding AND delay when both are absent', () => {
+		const { container } = render(VehicleResultRow, {
 			props: {
 				vehicle: vehicle({ occupancy: null, delay_min: null }),
 				locale: 'en',
@@ -53,10 +53,17 @@ describe('VehicleResultRow', () => {
 				occupancyLabel: null,
 			},
 		});
-		// No crowding telemetry → the honest label, never a fabricated band.
-		expect(screen.getByText('No crowding data')).toBeInTheDocument();
-		// No delay → the honest "No delay", never a fabricated 0.
-		expect(screen.getByText('No delay')).toBeInTheDocument();
+		// No crowding telemetry + no delay reading + no next stop → three styled
+		// honest-absence chips ("Unknown · not reported"), never a fabricated band /
+		// "No delay" / 0, and never a plain easy-to-miss "no data".
+		const chips = container.querySelectorAll('[data-slot="absent-value"]');
+		expect(chips.length).toBe(3);
+		// Each chip says it is unknown AND why (the live feed omitted it).
+		expect(screen.getAllByText('Unknown').length).toBe(3);
+		expect(screen.getAllByText('not reported in the live feed').length).toBe(3);
+		// The fabricated plain strings are gone.
+		expect(screen.queryByText('No crowding data')).toBeNull();
+		expect(screen.queryByText('No delay')).toBeNull();
 	});
 
 	it('omits the heading arrow when the bearing is absent (no fabricated heading)', () => {
@@ -71,13 +78,16 @@ describe('VehicleResultRow', () => {
 			},
 		});
 		expect(container.querySelector('.vehicle-row-arrow')).toBeNull();
-		// Falls back to the static bus glyph + the honest "no next stop".
+		// Falls back to the static bus glyph + the styled honest-absence chip for the
+		// next stop (the next-stop subtitle carries an "absent-value" chip).
 		expect(container.querySelector('.vehicle-row-glyph')).not.toBeNull();
-		expect(screen.getByText('No next stop')).toBeInTheDocument();
+		const sub = container.querySelector('.vehicle-row-sub') as HTMLElement;
+		expect(sub.querySelector('[data-slot="absent-value"]')).not.toBeNull();
+		expect(screen.queryByText('No next stop')).toBeNull();
 	});
 
-	it('omits the raw next_stop id when the name is unresolved — shows the honest "no next stop"', () => {
-		render(VehicleResultRow, {
+	it('omits the raw next_stop id when the name is unresolved — shows the styled honest-absence chip', () => {
+		const { container } = render(VehicleResultRow, {
 			props: {
 				vehicle: vehicle({ next_stop: '99999' }),
 				locale: 'en',
@@ -89,7 +99,9 @@ describe('VehicleResultRow', () => {
 		});
 		// The meaningless raw GTFS id is never surfaced to a rider…
 		expect(screen.queryByText('Next: 99999')).toBeNull();
-		// …the row falls to the localized "no next stop" copy instead.
-		expect(screen.getByText('No next stop')).toBeInTheDocument();
+		// …the next-stop subtitle falls to the styled honest-absence chip instead.
+		const sub = container.querySelector('.vehicle-row-sub') as HTMLElement;
+		expect(sub.querySelector('[data-slot="absent-value"]')).not.toBeNull();
+		expect(screen.queryByText('No next stop')).toBeNull();
 	});
 });

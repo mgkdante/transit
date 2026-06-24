@@ -126,11 +126,12 @@ describe('AccountabilityReceipt headline + counts', () => {
 });
 
 describe('AccountabilityReceipt honesty', () => {
-	it('shows the localized no-data string for a null severe-share, never a fabricated 0', async () => {
+	it('shows the styled honest-absence chip for a null severe-share, never a fabricated 0', async () => {
 		render(AccountabilityReceipt);
-		// severe % is null → an honest no-data mark; never "0".
-		const noData = await screen.findAllByText('no data');
-		expect(noData.length).toBeGreaterThanOrEqual(1);
+		await screen.findByText('82%');
+		// severe % is null → the styled honest-absence chip (AbsentValue), never "0".
+		const absent = document.querySelectorAll('[data-slot="absent-value"]');
+		expect(absent.length).toBeGreaterThanOrEqual(1);
 		expect(screen.queryByText('0%')).not.toBeInTheDocument();
 	});
 
@@ -212,10 +213,11 @@ describe('AccountabilityReceipt composed layout (E2)', () => {
 		expect(document.querySelector('[data-slot="receipt-affected"]')).not.toBeNull();
 	});
 
-	it('preserves honesty in the composed layout (null severe-share reads no-data, never 0)', async () => {
+	it('preserves honesty in the composed layout (null severe-share reads the styled chip, never 0)', async () => {
 		render(AccountabilityReceipt);
-		const noData = await screen.findAllByText('no data');
-		expect(noData.length).toBeGreaterThanOrEqual(1);
+		await screen.findByText('82%');
+		const absent = document.querySelectorAll('[data-slot="absent-value"]');
+		expect(absent.length).toBeGreaterThanOrEqual(1);
 		expect(screen.queryByText('0%')).not.toBeInTheDocument();
 	});
 });

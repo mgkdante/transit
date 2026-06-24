@@ -37,7 +37,11 @@
 <script lang="ts">
 	import { cn } from '$lib/utils';
 	import { formatRelative } from '$lib/utils/time';
-	import { sharedClock } from '$lib/stores';
+	// Import the leaf store directly, NOT via the `$lib/stores` barrel: the barrel
+	// re-exports theme.svelte (which reads `document` at module load), so pulling it
+	// would drag a browser-only read into pure-node consumers of the edge barrel
+	// (e.g. dataviz → MetricDisplay in node tests). EdgeState only needs the clock.
+	import { sharedClock } from '$lib/stores/clock.svelte';
 	import type { Locale } from '$lib/i18n';
 	import type { AbsenceReason } from '$lib/site/serviceWindow';
 	import { Skeleton } from '$lib/components/ui/skeleton';

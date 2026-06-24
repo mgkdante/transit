@@ -153,9 +153,13 @@
 		return { detail, aggregate };
 	}
 
-	/** Format a retention day-count as "14 days", or the localized no-data. */
-	function fmtDays(v: number | null): string {
-		return v == null ? t.noData : `${v}${t.retention.daysUnit}`;
+	/**
+	 * Format a retention day-count as "14 days", or NULL on no-data so the
+	 * MetricDisplay empty branch renders the styled honest-absence chip (a retention
+	 * window the provenance doc omitted → "not-reported") rather than plain text.
+	 */
+	function fmtDays(v: number | null): string | null {
+		return v == null ? null : `${v}${t.retention.daysUnit}`;
 	}
 </script>
 
@@ -296,21 +300,27 @@
 				<section class="health-block" aria-labelledby="health-retention">
 					<SectionLabel id="health-retention" text={t.retention.section} variant="station" />
 					<p class="health-note">{t.retention.note}</p>
+					<!-- Both windows render whenever the section is up (hasRetention): a present
+					     window shows its day-count, a missing one shows the styled honest-absence
+					     chip via MetricDisplay rather than silently vanishing. The section as a
+					     whole still stands DOWN when BOTH are absent. -->
 					<div class="health-retention">
-						{#if retention.detail != null}
-							<MetricDisplay
-								value={fmtDays(retention.detail)}
-								label={t.retention.detailLabel}
-								size="md"
-							/>
-						{/if}
-						{#if retention.aggregate != null}
-							<MetricDisplay
-								value={fmtDays(retention.aggregate)}
-								label={t.retention.aggregateLabel}
-								size="md"
-							/>
-						{/if}
+						<MetricDisplay
+							value={fmtDays(retention.detail)}
+							emptyLabel={t.noData}
+							absentReason="not-reported"
+							{locale}
+							label={t.retention.detailLabel}
+							size="md"
+						/>
+						<MetricDisplay
+							value={fmtDays(retention.aggregate)}
+							emptyLabel={t.noData}
+							absentReason="not-reported"
+							{locale}
+							label={t.retention.aggregateLabel}
+							size="md"
+						/>
 					</div>
 				</section>
 			{/if}
@@ -336,13 +346,18 @@
 							>
 								<div class="health-conformance-detail">
 									<!-- Honest extra-row count: a real number renders localized; a
-									     null/absent count shows the no-data string, never a fabricated 0. -->
+									     null/absent count stands the value null so MetricDisplay renders the
+									     styled honest-absence chip (the provenance object is present but
+									     omitted this field → "not-reported"), never a fabricated 0. -->
 									<MetricDisplay
 										value={typeof conformance.extra_row_count === 'number'
 											? conformance.extra_row_count.toLocaleString(
 													locale === 'fr' ? 'fr-CA' : 'en-CA',
 												)
-											: t.noData}
+											: null}
+										emptyLabel={t.noData}
+										absentReason="not-reported"
+										{locale}
 										label={t.conformance.extraRowsLabel}
 										size="md"
 									/>

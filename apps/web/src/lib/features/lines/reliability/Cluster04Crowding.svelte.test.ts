@@ -57,13 +57,15 @@ describe('Cluster04Crowding', () => {
 	});
 
 	it('renders the honest empty state with an empty VM (no fake bar, no crash)', () => {
-		render(Cluster04Crowding, { props: { vm: empty, locale: 'en', copy } });
+		const { container } = render(Cluster04Crowding, { props: { vm: empty, locale: 'en', copy } });
 
 		// The overline still anchors the band.
 		expect(screen.getByText(copy.clusters.crowding)).toBeInTheDocument();
 
-		// Explicit no-data note, NOT a fabricated occupancy bar.
-		expect(screen.getByText(copy.strip.noDataNote)).toBeInTheDocument();
+		// The styled honest-absence chip (says WHY), NOT a fabricated occupancy bar.
+		expect(
+			container.querySelector('[data-slot="crowding-empty"] [data-slot="absent-value"]'),
+		).not.toBeNull();
 		expect(screen.queryByRole('img', { name: /Standing/i })).not.toBeInTheDocument();
 	});
 
@@ -171,8 +173,10 @@ describe('Cluster04Crowding — delay by crowding (G1)', () => {
 		const { container } = render(Cluster04Crowding, {
 			props: { vm: mixEmptyWithDelay, locale: 'en', copy },
 		});
-		// The mix block shows its own no-data note...
-		expect(screen.getByText(copy.strip.noDataNote)).toBeInTheDocument();
+		// The mix block shows its own styled honest-absence chip...
+		expect(
+			container.querySelector('[data-slot="crowding-empty"] [data-slot="absent-value"]'),
+		).not.toBeNull();
 		// ...but the delay-by-crowding sub-block still renders its data.
 		const sub = container.querySelector('[data-slot="delay-by-crowding"]') as HTMLElement;
 		expect(within(sub).getByText('3.3 min')).toBeInTheDocument();

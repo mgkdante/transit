@@ -28,6 +28,7 @@
 	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
 	import StatusDot from '$lib/components/brand/StatusDot.svelte';
 	import MapDrilldownLink from '$lib/components/surface/MapDrilldownLink.svelte';
+	import { MaybeValue } from '$lib/components/edge';
 	import ChevronRightIcon from '@lucide/svelte/icons/chevron-right';
 	import { formatUtc } from '$lib/utils/time';
 	import { tripCopy } from './trips.copy';
@@ -71,8 +72,10 @@
 	}
 
 	/**
-	 * Plain-language delay reading: early / on time / N min late, or an honest
-	 * "no data" when the feed omits the value. Never rendered as a fabricated 0.
+	 * Plain-language delay reading for a KNOWN value: early / on time / N min late.
+	 * A null/absent delay is handled at the call site by the styled honest-absence
+	 * chip (AbsentValue, reason 'not-reported'), never by this label; the guard here
+	 * stays only as a defensive fallback. Never rendered as a fabricated 0.
 	 */
 	function delayLabel(delay: number | null | undefined): string {
 		if (delay == null) return t.noDelay;
@@ -156,18 +159,18 @@
 					<div class="trip-summary">
 						<div class="trip-summary-cell">
 							<SectionLabel text={t.route} variant="metric" />
-							{#if trip.route != null}
+							<!-- Broadcasting trip: render the route link, else the styled honest-absence
+							     chip (the live feed omitted the route), never a plain grey note. -->
+							<MaybeValue present={trip.route != null} reason="not-reported" {locale}>
 								<a
 									class="trip-route-link"
-									href={routeHref(trip.route)}
-									aria-label={t.viewRoute(trip.route)}
+									href={routeHref(trip.route!)}
+									aria-label={t.viewRoute(trip.route!)}
 								>
 									<span class="trip-route-code">{trip.route}</span>
 									<ChevronRightIcon size={14} strokeWidth={2.4} aria-hidden="true" />
 								</a>
-							{:else}
-								<span class="trip-novalue">{t.noRoute}</span>
-							{/if}
+							</MaybeValue>
 						</div>
 
 						<div class="trip-summary-cell">
@@ -183,9 +186,14 @@
 
 						<div class="trip-summary-cell">
 							<SectionLabel text={t.delayLabel} variant="metric" />
-							<span class="trip-delay" data-tone={chipTone(trip.status, trip.delay_min)}>
-								{delayLabel(trip.delay_min)}
-							</span>
+							<!-- Broadcasting trip: render the delay reading, else the styled honest-
+							     absence chip ("Unknown · not reported in the live feed") when the live
+							     feed omitted delay_min, never an easy-to-miss plain note, never a 0. -->
+							<MaybeValue present={trip.delay_min != null} reason="not-reported" {locale}>
+								<span class="trip-delay" data-tone={chipTone(trip.status, trip.delay_min)}>
+									{delayLabel(trip.delay_min)}
+								</span>
+							</MaybeValue>
 						</div>
 					</div>
 
@@ -207,9 +215,14 @@
 													{timeLabel(stop.eta_utc)}
 												</time>
 												<span class="trip-stop-prediction">{t.predictionLabel}</span>
-												<span class="trip-stop-delay" data-tone={delayTone(stop.delay_min)}>
-													{delayLabel(stop.delay_min)}
-												</span>
+												<!-- Live prediction: render the delay basis, else the styled honest-
+												     absence chip when no basis, never a plain "no data" that reads
+												     like a real value. -->
+												<MaybeValue present={stop.delay_min != null} reason="not-reported" {locale}>
+													<span class="trip-stop-delay" data-tone={delayTone(stop.delay_min)}>
+														{delayLabel(stop.delay_min)}
+													</span>
+												</MaybeValue>
 											</span>
 											<ChevronRightIcon size={14} strokeWidth={2.4} aria-hidden="true" />
 										</a>

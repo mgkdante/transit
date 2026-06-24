@@ -73,7 +73,7 @@
 		weekdayLabel,
 		severeShareToSeverity,
 	} from '$lib/features/reliability/shiftGrains';
-	import { EdgeState } from '$lib/components/edge';
+	import { EdgeState, AbsentValue } from '$lib/components/edge';
 	import { ControlsRail, DashboardGrid } from '$lib/components/layout';
 	import { Separator } from '$lib/components/ui/separator';
 	import { layout, mapHrefFor } from '$lib/nav';
@@ -276,6 +276,13 @@
 
 	const fmtMin = (v: number | null): string =>
 		sharedFmtDelayMin(v, { rounding: 'fixed1', noData: t.reliability.noDelay });
+
+	// A NULL-returning sibling of fmtMin for the percentile MetricDisplays: a no-data
+	// percentile must surface the styled honest-absence chip (the empty branch reads
+	// absentReason), NOT the plain "No data" string. Kept separate so fmtMin (used as
+	// inline RankedRow display text, which can never render a raw null) is untouched.
+	const fmtMinOrNull = (v: number | null): string | null =>
+		sharedFmtDelayMin(v, { rounding: 'fixed1' });
 
 	/* ── Reliability: per-route ranked severity bars ──────────────────────────
 	   Rank the by_route breakdown worst-delay first, each bar banded off its
@@ -881,13 +888,19 @@
 										</span>
 										<div class="stop-reliability-percentile-tiles">
 											<MetricDisplay
-												value={fmtMin(dayPercentiles.p50)}
+												value={fmtMinOrNull(dayPercentiles.p50)}
+												emptyLabel={t.reliability.noDelay}
+												absentReason="no-observations"
+												{locale}
 												label={t.reliability.percentiles.typical}
 												sublabel={t.reliability.percentiles.typicalCaption}
 												size="md"
 											/>
 											<MetricDisplay
-												value={fmtMin(dayPercentiles.p90)}
+												value={fmtMinOrNull(dayPercentiles.p90)}
+												emptyLabel={t.reliability.noDelay}
+												absentReason="no-observations"
+												{locale}
 												label={t.reliability.percentiles.worstCase}
 												sublabel={t.reliability.percentiles.worstCaseCaption}
 												size="md"
@@ -988,7 +1001,10 @@
 											<SectionLabel text={t.reliability.crowding.heading} variant="station" />
 											{@render metricInfo('occupancy', t.reliability.crowding.heading)}
 										</span>
-										<p class="stop-reliability-window">{t.reliability.crowding.noTelemetry}</p>
+										<!-- Aggregate occupancy telemetry was absent for this stop (no buses with
+									     a reported load were observed here over the window): the styled honest
+									     no-data chip rather than a plain easy-to-miss note. -->
+										<AbsentValue variant="block" reason="no-observations" {locale} />
 									</div>
 								{/if}
 
@@ -1108,7 +1124,9 @@
 											<SectionLabel text={t.reliability.byRoute} variant="station" />
 											{@render metricInfo('avgDelay', t.reliability.byRoute)}
 										</span>
-										<p class="stop-reliability-window">{t.reliability.noRouteBreakdown}</p>
+										<!-- Every by-route association carries a null avg delay (too few readings
+									     to rank): say it with the styled honest no-data chip, not a plain note. -->
+										<AbsentValue variant="block" reason="no-observations" {locale} />
 									</div>
 								{/if}
 							</DashboardGrid>

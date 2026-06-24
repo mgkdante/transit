@@ -257,13 +257,21 @@ describe('HotspotsBoard ranked list', () => {
 		expect(document.querySelectorAll('[data-slot="hotspot-band-row"]')).toHaveLength(0);
 	});
 
-	it('shows the honest empty state when the published list carries no hotspots', () => {
+	it('shows the styled honest-absence empty state when the published list carries no hotspots', () => {
 		payload.current = {
 			generated_utc: '2026-06-18T07:00:00Z' as IsoUtc,
 			hotspots: [],
 		} satisfies Hotspots as Hotspots;
 		render(HotspotsBoard);
-		expect(screen.getByText('No hotspots published right now.')).toBeInTheDocument();
+		// An empty aggregate roll-up reads the ONE styled honest-absence chip (block
+		// variant: "No data · not enough readings yet"), never a plain easy-to-miss note.
+		const empty = document.querySelector('[data-slot="hotspots-empty"]');
+		expect(empty).not.toBeNull();
+		const chip = empty?.querySelector('[data-slot="absent-value"]');
+		expect(chip).not.toBeNull();
+		expect(chip?.getAttribute('data-variant')).toBe('block');
+		expect(within(empty as HTMLElement).getByText('No data')).toBeInTheDocument();
+		expect(within(empty as HTMLElement).getByText('not enough readings yet')).toBeInTheDocument();
 		expect(screen.queryByRole('list', { name: 'Hotspots ranked worst first' })).toBeNull();
 	});
 });

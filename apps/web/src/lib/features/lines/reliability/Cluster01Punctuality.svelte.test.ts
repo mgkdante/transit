@@ -262,12 +262,16 @@ describe('Cluster01Punctuality — by shift and day type crosstab (G1)', () => {
 });
 
 describe('Cluster01Punctuality — honest empty', () => {
-	it('renders the no-data note and no headline when the VM is empty', () => {
-		render(Cluster01Punctuality, { props: { vm: emptyVM, locale: 'en', copy } });
+	it('renders the styled honest-absence chip and no headline when the VM is empty', () => {
+		const { container } = render(Cluster01Punctuality, {
+			props: { vm: emptyVM, locale: 'en', copy },
+		});
 
 		const note = screen.getByTestId('punctuality-empty');
 		expect(note).toBeInTheDocument();
-		expect(note).toHaveTextContent(copy.strip.noDataNote);
+		// The styled honest-absence chip (says WHY data is missing), not a plain note.
+		expect(note.querySelector('[data-slot="absent-value"]')).not.toBeNull();
+		expect(container.querySelector('[data-slot="absent-value"]')).not.toBeNull();
 		// Cluster overline still present; the section is labelled, not dropped.
 		const section = screen.getByRole('region', { name: copy.clusters.punctuality });
 		expect(within(section).queryByText('82%')).not.toBeInTheDocument();

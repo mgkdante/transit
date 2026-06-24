@@ -32,6 +32,7 @@
 		HEATMAP_NODATA,
 	} from '$lib/components/dataviz';
 	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
+	import { AbsentValue } from '$lib/components/edge';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
 	import { metricInfoFor, type MetricKey } from '$lib/features/metrics/metrics.content';
 	import { metricsCopy } from '$lib/features/metrics/metrics.copy';
@@ -190,7 +191,10 @@
 	{/snippet}
 
 	{#if isEmpty}
-		<p class="habits-empty" data-slot="habits-empty">{copy.strip.noDataNote}</p>
+		<!-- Honest empty: the styled honest-absence chip (says WHY), never a fabricated zero / dropped band. -->
+		<div data-slot="habits-empty">
+			<AbsentValue variant="block" reason="no-observations" {locale} />
+		</div>
 	{:else}
 		<div class="habits-body">
 			{#if hasHeatmap}
@@ -283,12 +287,6 @@
 	}
 	.label-with-info :global(.cluster-info) {
 		flex: none;
-	}
-	.habits-empty {
-		margin: 0;
-		font-family: var(--font-mono);
-		font-size: var(--text-small);
-		color: var(--muted-foreground);
 	}
 	/* Window caption: quiet mono, AA both themes. */
 	.habits-window {

@@ -24,6 +24,7 @@
 	import { routeFor } from '$lib/nav';
 	import type { Vehicle } from '$lib/v1/schemas';
 	import { StatusBadge, occupancyGlyph, occupancyVar } from '$lib/components/dataviz';
+	import { MaybeValue } from '$lib/components/edge';
 	import type { VehicleResultCopy } from './search.copy';
 
 	interface Props {
@@ -44,17 +45,24 @@
 	const href = $derived(localizeHref(routeFor({ kind: 'vehicle', id: vehicle.id }), locale));
 
 	// Signed delay reading, reusing the map's early / on-time / late vocabulary.
+	// A null delay is HONEST ABSENCE (the live feed omitted it), not a fabricated
+	// "no delay" — the template renders the styled chip on the absent branch.
+	const delayKnown = $derived(vehicle.delay_min != null);
 	const delayText = $derived.by(() => {
 		const d = vehicle.delay_min;
-		if (d == null) return copy.noDelay;
+		if (d == null) return '';
 		if (d < 0) return copy.early(d);
 		if (d > 0) return copy.late(d);
 		return copy.onTime;
 	});
 
-	// Next-stop subtitle: the RESOLVED stop name only. An unresolved id falls
-	// straight to the honest "no next stop" — we never surface the raw GTFS id
-	// ("Next: 99999"), which is meaningless to a rider.
+	// Live-tier absence reason for every omitted bus field on this row: the feed
+	// carried the vehicle but left this value out → "Unknown · not reported".
+	const NOT_REPORTED = 'not-reported' as const;
+
+	// Next-stop subtitle: the RESOLVED stop name only. An unresolved/omitted id
+	// falls to the styled honest-absence chip ("Unknown · not reported") — we never
+	// surface the raw GTFS id ("Next: 99999"), which is meaningless to a rider.
 	const nextStop = $derived(nextStopName);
 
 	// Heading arrow: a north-up glyph rotated by the GTFS bearing (0°=N). Absent
@@ -97,26 +105,24 @@
 			{/if}
 		</span>
 		<span class="vehicle-row-sub">
-			{#if nextStop}
-				{copy.next(nextStop)}
-			{:else}
-				{copy.noNextStop}
-			{/if}
+			<MaybeValue present={nextStop != null} reason={NOT_REPORTED} {locale}>
+				{copy.next(nextStop ?? '')}
+			</MaybeValue>
 		</span>
 		<span class="vehicle-row-marks">
 			<StatusBadge status={vehicle.status} mode="pill" size="sm" label={statusLabel} />
-			<span
-				class="vehicle-row-crowd"
-				style="--occ:{occColor};"
-				title={occupancyLabel ?? copy.noCrowding}
-			>
-				<span class="vehicle-row-crowd-glyph" aria-hidden="true">{occGlyph}</span>
-				<span class="vehicle-row-crowd-label">{occupancyLabel ?? copy.noCrowding}</span>
-			</span>
+			<MaybeValue present={occupancyLabel != null} reason={NOT_REPORTED} {locale}>
+				<span class="vehicle-row-crowd" style="--occ:{occColor};" title={occupancyLabel}>
+					<span class="vehicle-row-crowd-glyph" aria-hidden="true">{occGlyph}</span>
+					<span class="vehicle-row-crowd-label">{occupancyLabel}</span>
+				</span>
+			</MaybeValue>
 		</span>
 	</span>
 
-	<span class="vehicle-row-meta">{delayText}</span>
+	<span class="vehicle-row-meta">
+		<MaybeValue present={delayKnown} value={delayText} reason={NOT_REPORTED} {locale} />
+	</span>
 </a>
 
 <style>

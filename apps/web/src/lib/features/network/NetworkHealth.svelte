@@ -34,7 +34,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { getLocale, localizeHref, type Locale } from '$lib/i18n';
-	import { routeNameFallback } from '$lib/site/absence';
+	import { routeNameFallback, type AbsenceReasonKey } from '$lib/site/absence';
 	import { layout, openSurface, routeFor } from '$lib/nav';
 	import { mapSearchFor } from '$lib/filters';
 	import { formatDateKey, formatRelativeSeconds } from '$lib/utils/time';
@@ -123,10 +123,6 @@
 
 	const edgeLayout = $derived(layout.isDesktop ? 'desktop' : 'mobile');
 
-	/** Format a nullable integer percent as "82%" or the honest "no data". */
-	function fmtPct(v: number | null): string {
-		return sharedFmtPct(v, { suffix: t.units.pct, noData: t.noData });
-	}
 	/** Format a nullable integer-minute delay as "3 min" or "no data". */
 	function fmtMin(v: number | null): string {
 		return sharedFmtDelayMin(v, { suffix: t.units.min, noData: t.noData });
@@ -134,6 +130,19 @@
 	/** A required count → plain integer (localized thousands separators). */
 	function fmtCount(v: number): string {
 		return sharedFmtCount(v, { locale, noData: '' });
+	}
+	// MetricDisplay-fed variants: these return NULL (not the noData string) on
+	// no-data so the headline KPI tile renders the STYLED honest-absence chip
+	// (AbsentValue) instead of a plain easy-to-miss "no data". pctOrNull also feeds
+	// the shift / day-type RankedRow `display` props, whose absent slot renders the
+	// same styled chip ('no-observations') from the null.
+	/** Nullable percent → "82%" or NULL (the kpi tile renders the styled chip). */
+	function pctOrNull(v: number | null): string | null {
+		return sharedFmtPct(v, { suffix: t.units.pct });
+	}
+	/** Nullable minute delay → "3 min" or NULL (the kpi tile renders the styled chip). */
+	function minOrNull(v: number | null): string | null {
+		return sharedFmtDelayMin(v, { suffix: t.units.min });
 	}
 
 	// Worker-cycle feed staleness, distinct from the snapshot-publish age the
@@ -475,9 +484,13 @@
 	});
 	const cancelXLabels = $derived(windowedSeries.map((p) => p.date));
 	const cancelEmpty = $derived(cancelSeries.map(() => null) as Array<number | null>);
-	/** Format a fractional/percent cancellation value as "2.6%" or "no data". */
-	function fmtCancel(v: number | null): string {
-		return sharedFmtPct(v, { rounding: 'fixed1', suffix: t.units.pct, noData: t.noData });
+	/**
+	 * Format a fractional/percent cancellation value as "2.6%" or NULL on no-data,
+	 * so the cancellation KPI tile renders the STYLED honest-absence chip (it is a
+	 * historic rollup → the 'no-observations' reason). Used only by that tile.
+	 */
+	function fmtCancel(v: number | null): string | null {
+		return sharedFmtPct(v, { rounding: 'fixed1', suffix: t.units.pct });
 	}
 
 	// --- Per-day crowding small-multiple -------------------------------------
@@ -528,7 +541,10 @@
 		readonly title: string;
 		readonly severity: SeverityCode;
 		readonly value: number | null;
-		readonly display: string;
+		// null when no OTP reading → the RankedRow renders the styled honest-absence
+		// chip ('no-observations': a historic shift aggregate with too few readings),
+		// never a fabricated 0%.
+		readonly display: string | null;
 		readonly subtitle: string;
 	};
 
@@ -573,8 +589,9 @@
 					severity: severeShareToSeverity(sev),
 					value:
 						sev != null && worstSevere > 0 ? Math.min(1, Math.max(0, sev / worstSevere)) : null,
-					// HEADLINE: the real OTP % (or honest no-data when null).
-					display: fmtPct(r.otp_pct ?? null),
+					// HEADLINE: the real OTP %, or NULL → the RankedRow renders the styled
+					// honest-absence chip (the 'no-observations' reason), never a fake 0%.
+					display: pctOrNull(r.otp_pct ?? null),
 					subtitle: shiftSubtitle(r.avg_delay_min ?? null, sev),
 				};
 			});
@@ -605,16 +622,21 @@
 
 <!-- A headline KPI = MetricDisplay + its (i) explainer, top-aligned beside the
      quiet label. Declared once so every network scalar carries an honest,
-     deep-linked definition. -->
+     deep-linked definition. A NULL value with an `absentReason` renders the
+     STYLED honest-absence chip (label · why) instead of a plain "no data" — the
+     reason says whether the gap is the live feed ('not-reported') or a historic
+     rollup with too few readings ('no-observations'). A required-int tile passes
+     no reason (it is never null). -->
 {#snippet kpi(
-	value: string,
+	value: string | null,
 	label: string,
 	key: MetricKey | SupplementalMetricKey,
 	size: 'sm' | 'md' | 'lg',
+	absentReason?: AbsenceReasonKey,
 )}
 	{@const i = info(key, label)}
 	<div class="network-kpi">
-		<MetricDisplay {value} {label} {size} />
+		<MetricDisplay {value} {label} {size} {absentReason} {locale} emptyLabel={t.noData} />
 		<MetricInfo tip={i.tip} href={i.href} label={i.label} linkLabel={i.linkLabel} side="bottom" />
 	</div>
 {/snippet}
@@ -681,15 +703,36 @@
 			     the enclosing <section aria-label> already names the LIVE region, so the
 			     grid stays a plain layout container (no redundant nested landmark). -->
 			<DashboardGrid minTile="200px" align="start" gutter={false}>
-				{@render kpi(fmtPct(net.on_time_pct), t.metrics.onTime, 'otp', 'lg')}
+				<!-- Live-tier scalars: a null reads through the styled honest-absence chip
+				     with the 'not-reported' reason (the live feed omitted this field this
+				     cycle), never a plain "no data" and never a fabricated 0. -->
+				{@render kpi(pctOrNull(net.on_time_pct), t.metrics.onTime, 'otp', 'lg', 'not-reported')}
 				{@render kpi(fmtCount(net.vehicles_in_service), t.metrics.vehicles, 'vehicleCount', 'lg')}
 				<!-- Silent vehicles this cycle — an honest denominator for coverage.
 				     `non_responding` is a contract-required int, so a plain count is
 				     correct here (it is never null → no no-data branch to guard). -->
 				{@render kpi(fmtCount(net.non_responding), t.metrics.notReporting, 'silentTrip', 'lg')}
-				{@render kpi(fmtPct(net.coverage_pct), t.metrics.coverage, 'coverage', 'lg')}
-				{@render kpi(fmtMin(net.delay_p50_min), t.metrics.delayP50, 'p50p90', 'md')}
-				{@render kpi(fmtMin(net.delay_p90_min), t.metrics.delayP90, 'p50p90', 'md')}
+				{@render kpi(
+					pctOrNull(net.coverage_pct),
+					t.metrics.coverage,
+					'coverage',
+					'lg',
+					'not-reported',
+				)}
+				{@render kpi(
+					minOrNull(net.delay_p50_min),
+					t.metrics.delayP50,
+					'p50p90',
+					'md',
+					'not-reported',
+				)}
+				{@render kpi(
+					minOrNull(net.delay_p90_min),
+					t.metrics.delayP90,
+					'p50p90',
+					'md',
+					'not-reported',
+				)}
 			</DashboardGrid>
 
 			<!-- Distribution board — status mix · crowding mix sit side-by-side on
@@ -954,7 +997,16 @@
 					<div class="network-tile">
 						{@render sectionInfo(t.cancelSection, 'cancellation')}
 						<div class="network-trend">
-							{@render kpi(fmtCancel(cancelLatest), t.cancel.metric, 'cancellation', 'md')}
+							<!-- Historic rollup → a null latest-day reads through the styled
+							     honest-absence chip with the 'no-observations' reason (too few
+							     readings), never a plain "no data". -->
+							{@render kpi(
+								fmtCancel(cancelLatest),
+								t.cancel.metric,
+								'cancellation',
+								'md',
+								'no-observations',
+							)}
 							<!-- Single-series: only the cancellation rate is plotted. `singleSeries`
 							     suppresses the empty retard legend swatch + its y-tick gutter, so the
 							     legend renders ONE line, not a phantom second swatch. -->
@@ -1023,6 +1075,8 @@
 									severity={row.severity}
 									value={row.value}
 									display={row.display}
+									absentReason="no-observations"
+									{locale}
 								/>
 							{/each}
 						</div>
@@ -1054,6 +1108,8 @@
 									severity={row.severity}
 									value={row.value}
 									display={row.display}
+									absentReason="no-observations"
+									{locale}
 								/>
 							{/each}
 						</div>

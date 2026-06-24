@@ -151,10 +151,19 @@ describe('AlertHistory breakdown', () => {
 		expect(within(effectList).queryByText('unknown')).toBeNull();
 	});
 
-	it('stands the whole breakdown block down when no distribution was published', () => {
+	it('shows the styled honest-absence chip when alerts exist but no distribution was published', () => {
 		fixture.breakdown = null;
 		render(AlertHistoryScreen);
-		expect(document.querySelector('[data-slot="alert-breakdown"]')).toBeNull();
+		// The breakdown section stays present (alerts exist) but its body is the ONE
+		// styled honest-absence chip ("No data · not enough readings yet"), never a
+		// silent vanish or a blank.
+		const block = document.querySelector('[data-slot="alert-breakdown"]');
+		expect(block).not.toBeNull();
+		const chip = block?.querySelector('[data-slot="absent-value"]');
+		expect(chip).not.toBeNull();
+		expect(chip?.getAttribute('data-tone')).toBe('unknown');
+		// No fabricated distribution tiles render in the empty-breakdown state.
+		expect(block?.querySelector('[role="list"]')).toBeNull();
 		// The log itself still renders.
 		expect(
 			screen.getByRole('list', { name: /past service alerts, newest first/i }),
