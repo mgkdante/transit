@@ -45,6 +45,7 @@
 	import {
 		shiftLabel as baseShiftLabel,
 		bunchingToSeverity,
+		HEADWAY_DOMAIN,
 	} from '$lib/features/reliability/shiftGrains';
 
 	export interface Cluster02WaitRegularityProps {
@@ -153,13 +154,10 @@
 	const valueNoData = $derived(copy.strip.noData);
 
 	/* ── headway rows → per-shift magnitude rows ───────────────────────────────
-	   Magnitude = excess wait, normalized within the band's max so the bars stay
-	   comparable across shifts (a relative read, not a fabricated absolute). The
-	   severity band is derived from bunching: heavier bunching = a worse rider
-	   experience. All purely from present fields; nulls stay null → empty bar. */
-	const maxExcess = $derived(
-		Math.max(0, ...wait.headway.map((h) => (h.excess_wait_min == null ? 0 : h.excess_wait_min))),
-	);
+	   S7: magnitude = the ABSOLUTE excess wait (min), scaled by the fixed HEADWAY_DOMAIN
+	   at the bar — identical across routes/grains/refreshes (no more excess/maxExcess
+	   in-view normalization). The severity band is derived from bunching: heavier
+	   bunching = a worse rider experience. Nulls stay null → empty bar. */
 
 	interface ShiftRow {
 		readonly shift: string;
@@ -172,7 +170,7 @@
 		readonly excessWait: number | null;
 		readonly cov: number | null;
 		readonly bunched: number | null;
-		/** [0,1] normalized excess wait, or null when no excess signal. */
+		/** ABSOLUTE excess wait (min), scaled by HEADWAY_DOMAIN at the bar; null = no signal. */
 		readonly magnitude: number | null;
 		readonly severity: SeverityCode;
 	}
@@ -210,10 +208,7 @@
 			excessWait: h.excess_wait_min ?? null,
 			cov: h.cov ?? null,
 			bunched: h.bunched_pct ?? null,
-			magnitude:
-				h.excess_wait_min == null || maxExcess <= 0
-					? null
-					: Math.min(1, Math.max(0, h.excess_wait_min / maxExcess)),
+			magnitude: h.excess_wait_min ?? null,
 			severity: bunchingToSeverity(h.bunched_pct),
 		})),
 	);
@@ -318,6 +313,9 @@
 						)}
 						severity={row.severity}
 						value={row.magnitude}
+						domain={HEADWAY_DOMAIN}
+						unit=" min"
+						showRank={false}
 						display={min(row.excessWait) ?? valueNoData}
 						aria-label={t.excessWaitMagnitude(shiftLabel(row))}
 					/>
