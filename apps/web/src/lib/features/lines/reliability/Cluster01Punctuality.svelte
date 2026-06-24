@@ -355,6 +355,13 @@
 		readonly avgDelay: string | null;
 		/** The cell fill — a fixed-domain ramp token, or the no-data swatch. */
 		readonly fill: string;
+		/**
+		 * Data-bar length (0–100%): the OTP's POSITION on a fixed, threshold-tuned scale
+		 * ([60,100]%, so the 80% target sits at the midpoint). The research's #1 finding —
+		 * position/length out-reads colour — so the bar is the primary value channel, the
+		 * number the exact read, and the diverging colour a redundant fast-scan layer.
+		 */
+		readonly barPct: number;
 		/** The bucket glyph (paired with colour) — or the no-data glyph. */
 		readonly glyph: string;
 		/** The visible cell label: the OTP %, or the no-data text. */
@@ -391,6 +398,13 @@
 		const idx = Math.min(OTP_BUCKET_GLYPH.length - 1, Math.floor(pos * OTP_BUCKET_GLYPH.length));
 		return OTP_BUCKET_GLYPH[idx];
 	}
+	// The data-bar length: the OTP's POSITION on the threshold-tuned [60,100] scale (60 =
+	// empty, the 80% target = midpoint, 100 = full). Non-zero-anchored ON PURPOSE so the
+	// clustered 80-95% range still differentiates by length; the exact % is always printed
+	// beside it (the research's "label every cell" rule), so the bar never misleads.
+	function otpBarPct(otp: number): number {
+		return Math.min(100, Math.max(0, ((otp - 60) / (OTP_HI - 60)) * 100));
+	}
 
 	// The resolved grid: one ROW per shift (canonical clock order), one COLUMN per
 	// day-type (weekday→weekend). Cells with no observations / null OTP / too few obs
@@ -414,6 +428,7 @@
 					obs,
 					avgDelay: min(cell?.avg_delay_min),
 					fill: trusted ? otpCellColor(rawOtp) : HEATMAP_NODATA,
+					barPct: trusted ? otpBarPct(rawOtp) : 0,
 					glyph: trusted ? otpBucketGlyph(rawOtp) : NODATA_GLYPH,
 					display: trusted ? (pct(rawOtp) ?? copy.strip.noData) : copy.strip.noData,
 				};
@@ -753,18 +768,23 @@
 										data-hottest={isHottest || undefined}
 									>
 										<span
-											class="cluster-heatmap__swatch"
-											style="--cell-fill: {cell.fill};"
+											class="cluster-heatmap__databar"
+											style="--bar-len: {cell.barPct}%; --cell-fill: {cell.fill};"
 											role="img"
 											aria-label={heatCellTitle(row, cell)}
 											title={heatCellTitle(row, cell)}
 										>
-											<span class="cluster-heatmap__glyph" aria-hidden="true">{cell.glyph}</span>
-											<span class="cluster-heatmap__value">{cell.display}</span>
-											{#if isHottest}
-												<span class="cluster-heatmap__star" aria-hidden="true">★</span>
-												<span class="sr-only">{copy.crosstab.hottest}</span>
-											{/if}
+											<!-- The bar LENGTH is the primary value channel (research #1);
+											     the diverging colour is a redundant fast-scan layer. -->
+											<span class="cluster-heatmap__fill" aria-hidden="true"></span>
+											<span class="cluster-heatmap__label">
+												<span class="cluster-heatmap__glyph" aria-hidden="true">{cell.glyph}</span>
+												<span class="cluster-heatmap__value">{cell.display}</span>
+												{#if isHottest}
+													<span class="cluster-heatmap__star" aria-hidden="true">★</span>
+													<span class="sr-only">{copy.crosstab.hottest}</span>
+												{/if}
+											</span>
 										</span>
 									</td>
 								{/each}
@@ -923,20 +943,35 @@
 	.cluster-heatmap__cell {
 		padding: 0;
 	}
-	/* The swatch: a fixed-domain ramp fill (data mark), the value + glyph stacked. The
-	   glyph + value sit on a translucent scrim so they stay AA-legible on any ramp stop. */
-	.cluster-heatmap__swatch {
+	/* The data bar: a neutral track with a LEFT-ANCHORED fill whose width is the OTP's
+	   position on the [60,100] scale — the primary value channel (position/length out-
+	   reads colour). The label (glyph + % + star) rides on top, left-aligned, on a subtle
+	   scrim so it stays AA-legible over any fill stop. The diverging colour is now a
+	   redundant fast-scan layer, not the value. */
+	.cluster-heatmap__databar {
+		position: relative;
 		display: flex;
-		flex-direction: column;
 		align-items: center;
-		justify-content: center;
-		gap: 0.1rem;
-		min-height: 3rem;
-		padding: 0.35rem 0.5rem;
+		min-height: 2.5rem;
+		padding: 0.3rem 0.5rem;
 		border-radius: 3px;
-		background: var(--cell-fill);
+		background: var(--muted);
 		color: var(--foreground);
-		text-align: center;
+		overflow: hidden;
+	}
+	.cluster-heatmap__fill {
+		position: absolute;
+		inset-block: 0;
+		inset-inline-start: 0;
+		width: var(--bar-len, 0%);
+		background: var(--cell-fill);
+	}
+	.cluster-heatmap__label {
+		position: relative;
+		z-index: 1;
+		display: inline-flex;
+		align-items: center;
+		gap: 0.3rem;
 	}
 	.cluster-heatmap__glyph {
 		font-size: var(--text-small);
@@ -947,14 +982,16 @@
 		font-family: var(--font-mono);
 		font-variant-numeric: tabular-nums;
 		font-weight: 600;
-		/* A subtle scrim chip keeps the value AA-legible across the ramp. */
+		/* A subtle scrim chip keeps the value AA-legible over the fill OR the track. */
 		padding: 0.05rem 0.3rem;
 		border-radius: 2px;
 		background: color-mix(in srgb, var(--background) 70%, transparent);
 	}
-	/* Honest no-data swatch: quiet muted reading, the explicit message, never a "·"/0. */
+	/* Honest no-data cell: a flat muted track, no fill, the explicit message (never 0). */
+	.cluster-heatmap__cell--empty .cluster-heatmap__databar {
+		background: color-mix(in oklab, var(--muted) 55%, var(--signage-bg));
+	}
 	.cluster-heatmap__cell--empty .cluster-heatmap__value {
-		font-family: var(--font-mono);
 		font-weight: 500;
 		color: var(--muted-foreground);
 		background: transparent;
@@ -962,7 +999,7 @@
 	}
 	/* The standout: the highest-OTP trusted cell gets a calm ring + a star marker. The
 	   ring is a neutral focus affordance, NOT a data colour (the fill carries the data). */
-	.cluster-heatmap__cell--hottest .cluster-heatmap__swatch {
+	.cluster-heatmap__cell--hottest .cluster-heatmap__databar {
 		outline: 2px solid var(--foreground);
 		outline-offset: -2px;
 	}
