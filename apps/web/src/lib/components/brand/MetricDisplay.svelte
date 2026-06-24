@@ -10,7 +10,10 @@
 <script lang="ts">
 	import { cn } from '$lib/utils';
 	import type { HTMLAttributes } from 'svelte/elements';
-	import { AbsentValue } from '$lib/components/edge';
+	// Direct import (NOT the edge barrel): the barrel also pulls EdgeState, which
+	// imports the browser-coupled $lib/stores — that would drag the SvelteKit client
+	// runtime into pure-node consumers (e.g. dataviz → MetricDisplay in node tests).
+	import AbsentValue from '$lib/components/edge/AbsentValue.svelte';
 	import type { AbsenceReasonKey } from '$lib/site/absence';
 	import type { Locale } from '$lib/i18n';
 

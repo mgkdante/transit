@@ -20,7 +20,7 @@
 	import { fmtDelayMin as sharedFmtDelayMin } from '$lib/utils';
 	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
 	import MetricDisplay from '$lib/components/brand/MetricDisplay.svelte';
-	import { AbsentValue } from '$lib/components/edge';
+	import AbsentValue from '$lib/components/edge/AbsentValue.svelte';
 	import { StackedBar, type StackedSegment } from '$lib/components/dataviz';
 	import { OCCUPANCY_CODES, type OccupancyCode } from '$lib/v1/schemas';
 	import type { Locale } from '$lib/i18n';
