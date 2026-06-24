@@ -172,4 +172,19 @@ describe('Cluster03ServiceDelivered — metric explainer (i)', () => {
 			'/metrics#skipped-stop',
 		);
 	});
+
+	it('does not leak the i18n locale into a chart accessible name (S7 aria fix)', () => {
+		const vm = {
+			serviceSpans: [],
+			cancellations: [{ grain: 'day', date: '2026-06-18', cancellation_rate_pct: 2.5 }],
+			skippedStops: [],
+			isRampIn: true,
+			isEmpty: false,
+		};
+		const { container } = render(Cluster03ServiceDelivered, {
+			props: { vm, locale: 'en', copy },
+		});
+		// The Sparkline accessible name must describe the metric, never "… · en".
+		expect(container.querySelector('[aria-label*="· en"]')).toBeNull();
+	});
 });

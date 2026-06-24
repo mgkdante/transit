@@ -86,8 +86,10 @@
 	const hasSkippedHistory = $derived(skippedSeries.some((v) => v != null));
 
 	const t = $derived(copy.strip);
-	const cancellationHistoryLabel = $derived(`${t.cancellationRatePct} · ${locale}`);
-	const skippedHistoryLabel = $derived(`${t.skippedStopRatePct} · ${locale}`);
+	// The Sparkline's accessible NAME describes the metric — NOT the i18n locale key.
+	// (Was `… · ${locale}`, which leaked "Cancellation rate · en" into the a11y tree.)
+	const cancellationHistoryLabel = $derived(t.cancellationRatePct);
+	const skippedHistoryLabel = $derived(t.skippedStopRatePct);
 
 	// The in-app metric-explainer (i) affordance: the one-line tip + a localized
 	// deep link to /metrics#<anchor>. An INTERACTIVE control beside each label.
@@ -152,8 +154,9 @@
 					<Sparkline
 						values={cancellationSeries}
 						colorVar={RATE_VAR}
-						width={160}
-						height={36}
+						width={220}
+						height={40}
+						class="cluster03-spark"
 						label={cancellationHistoryLabel}
 						yAxis={{ label: t.cancellationRatePct, unit: copy.units.pct }}
 						xLabels={cancellationXLabels}
@@ -185,8 +188,9 @@
 					<Sparkline
 						values={skippedSeries}
 						colorVar={RATE_VAR}
-						width={160}
-						height={36}
+						width={220}
+						height={40}
+						class="cluster03-spark"
 						label={skippedHistoryLabel}
 						yAxis={{ label: t.skippedStopRatePct, unit: copy.units.pct }}
 						xLabels={skippedXLabels}
@@ -231,15 +235,16 @@
 		line-height: 1.4;
 		color: var(--muted-foreground);
 	}
+	/* S7: each metric gets its OWN full-width row (single column at every width) so the
+	   rate-history charts have room — no longer two cramped cards squeezed per row. */
 	.cluster03-metrics {
 		display: grid;
 		gap: 1.5rem;
 		grid-template-columns: 1fr;
 	}
-	@media (min-width: 520px) {
-		.cluster03-metrics {
-			grid-template-columns: repeat(auto-fit, minmax(min(13rem, 100%), 1fr));
-		}
+	/* The rate-history Sparkline fills the row but never overflows a narrow card. */
+	.cluster03-metric :global(.cluster03-spark svg) {
+		max-width: 100%;
 	}
 	.cluster03-metric {
 		display: flex;
