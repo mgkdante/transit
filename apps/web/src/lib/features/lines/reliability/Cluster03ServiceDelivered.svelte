@@ -6,20 +6,22 @@
   reliability metrics the route accrues forward (no historical backfill):
 
     - cancellations[] → most-recent cancellation_rate_pct (MetricDisplay) + a
-      Sparkline of the rate history.
-    - skipped_stops[] → most-recent skipped_stop_rate_pct (MetricDisplay) + a
-      Sparkline of the rate history.
+      COMPLETENESS bar: the canceled SHARE over the window on a FIXED domain +
+      the honest "X of Y trip-days canceled" raw counts.
+    - skipped_stops[] → most-recent skipped_stop_rate_pct (MetricDisplay) + the
+      same completeness read over skipped / total stop-time updates.
 
   DOCTRINE upheld here:
-    - Every data mark rides the dataviz scale, the rate history Sparklines use
-      the "late" amber token (a problem-rate reads as the late/amber voice),
-      NEVER --primary.
+    - S7: a flat sparkline of a ~0% rate conveyed nothing (and auto-scaled to the
+      in-view max). The completeness bar uses a STABLE absolute domain — the same
+      share renders the same length every visit — plus the raw "X of Y" counts the
+      bare rate never showed.
+    - Every data mark rides the dataviz scale; the share bar uses the "late" amber
+      token (a problem-rate reads as the late/amber voice), NEVER --primary.
     - RAMP-IN is shown PROMINENTLY (copy.strip.rampInNote) so an early low number
       is not misread as "good": history accrues forward, no backfill.
-    - Honest empty: when the band has nothing to draw it says so explicitly
-      (copy.strip.noDataNote), never a fabricated 0 and never a dropped section.
-      A metric whose rate history is all-null still renders its label with the
-      no-data note (the Sparkline draws a baseline gap, not a fake zero line).
+    - Honest empty: when a metric has no count totals it says so explicitly
+      (the styled AbsentValue chip), never a fabricated 0 and never a dropped section.
     - number | null guarded everywhere; null means "no data", never 0.
 
   Self-contained: copy + locale are passed in (no module-scope i18n lookup), so
@@ -27,10 +29,11 @@
 -->
 <script lang="ts">
 	import type { Locale } from '$lib/i18n';
-	import { fmtPct } from '$lib/utils';
+	import type { SeverityCode } from '$lib/v1/schemas';
+	import { fmtPct, fmtCount } from '$lib/utils';
 	import { MetricDisplay, SectionLabel } from '$lib/components/brand';
 	import { AbsentValue } from '$lib/components/edge';
-	import { Sparkline } from '$lib/components/dataviz';
+	import { SeverityBar } from '$lib/components/dataviz';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
 	import { metricInfoFor, type MetricKey } from '$lib/features/metrics/metrics.content';
 	import { metricsCopy } from '$lib/features/metrics/metrics.copy';
@@ -69,27 +72,59 @@
 		return null;
 	}
 
-	// Cancellations, most-recent rate + full rate history (null = gap, never 0).
+	// S7: a flat sparkline of a ~0% rate conveys nothing (the operator's complaint).
+	// Replace it with an honest COMPLETENESS read — the canceled/skipped SHARE over the
+	// window on a FIXED absolute domain (0% reads as an empty bar = good news), PLUS the
+	// raw "X of Y" counts the rate alone never showed. Stable across routes/refreshes.
+	const CANCEL_RATE_DOMAIN = [0, 5] as const; // cancellations rarely exceed ~5%
+	const SKIPPED_RATE_DOMAIN = [0, 10] as const; // skipped stops rarely exceed ~10%
+	const RATE_SEVERITY: SeverityCode = 'watch';
+
+	// Headline = the most-recent closed-day rate (the contract arrays run oldest→newest).
 	const cancellationRatePct = $derived(
 		mostRecent(vm.cancellations, (c) => c.cancellation_rate_pct),
 	);
-	const cancellationSeries = $derived<Array<number | null>>(
-		vm.cancellations.map((c) => c.cancellation_rate_pct ?? null),
-	);
-	const hasCancellationHistory = $derived(cancellationSeries.some((v) => v != null));
-
-	// Skipped stops, most-recent rate + full rate history (null = gap, never 0).
 	const skippedStopRatePct = $derived(mostRecent(vm.skippedStops, (s) => s.skipped_stop_rate_pct));
-	const skippedSeries = $derived<Array<number | null>>(
-		vm.skippedStops.map((s) => s.skipped_stop_rate_pct ?? null),
+
+	/** Sum a count pair over the window → {part, total, sharePct}; null when none observed. */
+	function completeness<T>(
+		rows: readonly T[],
+		part: (r: T) => number | null | undefined,
+		whole: (r: T) => number | null | undefined,
+	): { part: number; total: number; sharePct: number } | null {
+		let partSum = 0,
+			total = 0,
+			any = false;
+		for (const r of rows) {
+			const w = whole(r);
+			if (w != null) {
+				total += w;
+				partSum += part(r) ?? 0;
+				any = true;
+			}
+		}
+		return any && total > 0 ? { part: partSum, total, sharePct: (partSum / total) * 100 } : null;
+	}
+
+	const cancellation = $derived(
+		completeness(
+			vm.cancellations,
+			(c) => c.canceled_trip_days,
+			(c) => c.total_trip_days,
+		),
 	);
-	const hasSkippedHistory = $derived(skippedSeries.some((v) => v != null));
+	const skipped = $derived(
+		completeness(
+			vm.skippedStops,
+			(s) => s.skipped_stop_count,
+			(s) => s.stop_time_update_count,
+		),
+	);
 
 	const t = $derived(copy.strip);
-	// The Sparkline's accessible NAME describes the metric — NOT the i18n locale key.
-	// (Was `… · ${locale}`, which leaked "Cancellation rate · en" into the a11y tree.)
-	const cancellationHistoryLabel = $derived(t.cancellationRatePct);
-	const skippedHistoryLabel = $derived(t.skippedStopRatePct);
+	// Grouped thousands separators (locale-aware: "3,975" en / "3 975" fr) so the
+	// raw "X of Y" counts read cleanly instead of "3975" / "20189695".
+	const num = (v: number): string => fmtCount(v, { locale }) ?? `${v}`;
 
 	// The in-app metric-explainer (i) affordance: the one-line tip + a localized
 	// deep link to /metrics#<anchor>. An INTERACTIVE control beside each label.
@@ -98,11 +133,6 @@
 		const i = metricInfoFor(key, locale);
 		return { ...i, label: explainerCopy.info.trigger(name), linkLabel: explainerCopy.info.link };
 	});
-
-	// Sparkline axis metadata: a % unit on the value + per-index x-labels (date,
-	// else the pipeline grain) for the tooltip heading.
-	const cancellationXLabels = $derived(vm.cancellations.map((c) => c.date ?? c.grain ?? ''));
-	const skippedXLabels = $derived(vm.skippedStops.map((s) => s.date ?? ''));
 </script>
 
 <section
@@ -150,20 +180,21 @@
 					/>
 					{@render metricInfo('cancellation', t.cancellationRatePct)}
 				</div>
-				{#if hasCancellationHistory}
-					<Sparkline
-						values={cancellationSeries}
-						colorVar={RATE_VAR}
-						width={220}
-						height={40}
-						class="cluster03-spark"
-						label={cancellationHistoryLabel}
-						yAxis={{ label: t.cancellationRatePct, unit: copy.units.pct }}
-						xLabels={cancellationXLabels}
-						interactive
-						readout
-						readoutHint={t.trendReadoutHint}
-					/>
+				{#if cancellation}
+					<div class="cluster03-completeness" data-slot="cancellations-completeness">
+						<SeverityBar
+							severity={RATE_SEVERITY}
+							value={cancellation.sharePct}
+							domain={CANCEL_RATE_DOMAIN}
+							unit="%"
+							colorVar={RATE_VAR}
+							label={t.cancellationRatePct}
+							interactive
+						/>
+						<p class="cluster03-fraction">
+							{t.cancellationFraction(num(cancellation.part), num(cancellation.total))}
+						</p>
+					</div>
 				{:else}
 					<div data-slot="cancellations-empty">
 						<AbsentValue variant="block" reason="no-observations" {locale} />
@@ -184,20 +215,21 @@
 					/>
 					{@render metricInfo('skippedStop', t.skippedStopRatePct)}
 				</div>
-				{#if hasSkippedHistory}
-					<Sparkline
-						values={skippedSeries}
-						colorVar={RATE_VAR}
-						width={220}
-						height={40}
-						class="cluster03-spark"
-						label={skippedHistoryLabel}
-						yAxis={{ label: t.skippedStopRatePct, unit: copy.units.pct }}
-						xLabels={skippedXLabels}
-						interactive
-						readout
-						readoutHint={t.trendReadoutHint}
-					/>
+				{#if skipped}
+					<div class="cluster03-completeness" data-slot="skipped-stops-completeness">
+						<SeverityBar
+							severity={RATE_SEVERITY}
+							value={skipped.sharePct}
+							domain={SKIPPED_RATE_DOMAIN}
+							unit="%"
+							colorVar={RATE_VAR}
+							label={t.skippedStopRatePct}
+							interactive
+						/>
+						<p class="cluster03-fraction">
+							{t.skippedFraction(num(skipped.part), num(skipped.total))}
+						</p>
+					</div>
 				{:else}
 					<div data-slot="skipped-stops-empty">
 						<AbsentValue variant="block" reason="no-observations" {locale} />
@@ -242,9 +274,17 @@
 		gap: 1.5rem;
 		grid-template-columns: 1fr;
 	}
-	/* The rate-history Sparkline fills the row but never overflows a narrow card. */
-	.cluster03-metric :global(.cluster03-spark svg) {
-		max-width: 100%;
+	/* Completeness read: the share bar over the honest "X of Y" raw-count fraction. */
+	.cluster03-completeness {
+		display: flex;
+		flex-direction: column;
+		gap: 0.4rem;
+	}
+	.cluster03-fraction {
+		margin: 0;
+		font-size: var(--text-caption, 0.8125rem);
+		color: var(--muted-foreground);
+		font-variant-numeric: tabular-nums;
 	}
 	.cluster03-metric {
 		display: flex;

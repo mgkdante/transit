@@ -2,8 +2,8 @@
 //
 // Two non-negotiables the doctrine demands of this RAMP-IN band:
 //   1. Populated VM → most-recent rates render (cancellations + skipped stops),
-//      both history Sparklines paint on the dataviz scale (NEVER --primary), and
-//      the ramp-in caveat is shown prominently.
+//      both completeness bars paint on the dataviz scale (NEVER --primary) with the
+//      honest "X of Y" raw-count fraction, and the ramp-in caveat is shown prominently.
 //   2. Empty VM → no crash; the honest empty note AND the ramp-in note are both
 //      present (we never fabricate a 0 or silently drop the section).
 
@@ -19,15 +19,37 @@ const copy = reliabilityCopy.en;
 const info = metricsCopy.en.info;
 
 const cancellations: CancellationPeriod[] = [
-	{ grain: 'day', date: '2026-06-16', cancellation_rate_pct: 1.5, canceled_trip_days: 3 },
-	{ grain: 'day', date: '2026-06-17', cancellation_rate_pct: 2.4, canceled_trip_days: 6 },
+	{
+		grain: 'day',
+		date: '2026-06-16',
+		cancellation_rate_pct: 1.5,
+		canceled_trip_days: 3,
+		total_trip_days: 200,
+	},
+	{
+		grain: 'day',
+		date: '2026-06-17',
+		cancellation_rate_pct: 2.4,
+		canceled_trip_days: 6,
+		total_trip_days: 250,
+	},
 	// most-recent row carries no rate → headline falls back to the prior row.
 	{ grain: 'day', date: '2026-06-18', canceled_trip_days: 0, total_trip_days: 240 },
 ];
 
 const skippedStops: SkippedStopPeriod[] = [
-	{ date: '2026-06-17', skipped_stop_rate_pct: 0.8, skipped_stop_count: 12 },
-	{ date: '2026-06-18', skipped_stop_rate_pct: 1.1, skipped_stop_count: 17 },
+	{
+		date: '2026-06-17',
+		skipped_stop_rate_pct: 0.8,
+		skipped_stop_count: 12,
+		stop_time_update_count: 1500,
+	},
+	{
+		date: '2026-06-18',
+		skipped_stop_rate_pct: 1.1,
+		skipped_stop_count: 17,
+		stop_time_update_count: 1600,
+	},
 ];
 
 const populated: ServiceDeliveredVM = {
@@ -65,18 +87,29 @@ describe('Cluster03ServiceDelivered — populated VM', () => {
 		expect(container.querySelector('[data-slot="ramp-in-note"]')).not.toBeNull();
 	});
 
-	it('paints both history Sparklines on the dataviz scale (never --primary)', () => {
+	it('paints both completeness bars on the dataviz scale (never --primary) + the raw fraction', () => {
 		const { container } = render(Cluster03ServiceDelivered, {
 			props: { vm: populated, locale: 'en', copy },
 		});
-		const sparklines = container.querySelectorAll('[data-slot="sparkline"]');
-		expect(sparklines).toHaveLength(2);
-		// Each sparkline stroke must be a dataviz token, not the interactive orange.
-		for (const path of container.querySelectorAll('[data-slot="sparkline"] path')) {
-			const stroke = path.getAttribute('stroke') ?? '';
-			expect(stroke).toContain('var(--dataviz-status-late)');
-			expect(stroke).not.toContain('--primary');
+		// The rate-history Sparklines are gone — S7 replaced them with a stable
+		// completeness read: a fixed-domain share bar + the honest "X of Y" counts.
+		expect(container.querySelector('[data-slot="sparkline"]')).toBeNull();
+		const wraps = container.querySelectorAll('[data-slot$="-completeness"]');
+		expect(wraps).toHaveLength(2);
+		// Each bar fills on the late/amber dataviz token, never the interactive orange.
+		const fills = container.querySelectorAll('[data-slot$="-completeness"] .dv-severity-fill');
+		expect(fills).toHaveLength(2);
+		for (const fill of fills) {
+			const style = fill.getAttribute('style') ?? '';
+			expect(style).toContain('var(--dataviz-status-late)');
+			expect(style).not.toContain('--primary');
 		}
+		// The honest raw-count fraction the bare rate never showed.
+		const fractions = [...container.querySelectorAll('.cluster03-fraction')].map(
+			(n) => n.textContent ?? '',
+		);
+		expect(fractions.some((f) => /trip-days canceled/.test(f))).toBe(true);
+		expect(fractions.some((f) => /stop updates skipped/.test(f))).toBe(true);
 	});
 
 	it('renders both metric sections (no dropped section)', () => {
@@ -107,9 +140,9 @@ describe('Cluster03ServiceDelivered — honest empty VM', () => {
 		expect(emptyNote?.querySelector('[data-slot="absent-value"]')).not.toBeNull();
 		// Ramp-in caveat still shown so the reader knows WHY it is empty.
 		expect(getByText(copy.strip.rampInNote)).toBeInTheDocument();
-		// No fabricated metric sections / sparklines.
+		// No fabricated metric sections / completeness bars.
 		expect(container.querySelector('[data-slot="cancellations"]')).toBeNull();
-		expect(container.querySelector('[data-slot="sparkline"]')).toBeNull();
+		expect(container.querySelector('[data-slot$="-completeness"]')).toBeNull();
 	});
 
 	it('renders the FR canonical copy when locale is fr', () => {
@@ -126,10 +159,10 @@ describe('Cluster03ServiceDelivered — honest empty VM', () => {
 });
 
 describe('Cluster03ServiceDelivered — per-metric no-data branch', () => {
-	it('shows a no-data note for a metric whose rate history is all-null', () => {
+	it('shows a no-data note for a metric whose count totals are absent', () => {
 		const oneSided: ServiceDeliveredVM = {
 			serviceSpans: [],
-			// cancellations carries a rate; skipped-stop rows exist but carry NO rate.
+			// cancellations carry totals → completeness bar; skipped rows carry NO update-count total.
 			cancellations,
 			skippedStops: [{ date: '2026-06-18', skipped_stop_count: 5 }],
 			isRampIn: true,
@@ -138,13 +171,17 @@ describe('Cluster03ServiceDelivered — per-metric no-data branch', () => {
 		const { container } = render(Cluster03ServiceDelivered, {
 			props: { vm: oneSided, locale: 'en', copy },
 		});
-		// cancellations draws its sparkline; skipped stops shows its no-data note.
+		// cancellations draws its completeness bar; skipped stops shows its no-data note.
 		expect(
-			container.querySelector('[data-slot="cancellations"] [data-slot="sparkline"]'),
+			container.querySelector(
+				'[data-slot="cancellations"] [data-slot="cancellations-completeness"]',
+			),
 		).not.toBeNull();
 		expect(container.querySelector('[data-slot="skipped-stops-empty"]')).not.toBeNull();
 		expect(
-			container.querySelector('[data-slot="skipped-stops"] [data-slot="sparkline"]'),
+			container.querySelector(
+				'[data-slot="skipped-stops"] [data-slot="skipped-stops-completeness"]',
+			),
 		).toBeNull();
 	});
 });
@@ -176,7 +213,15 @@ describe('Cluster03ServiceDelivered — metric explainer (i)', () => {
 	it('does not leak the i18n locale into a chart accessible name (S7 aria fix)', () => {
 		const vm = {
 			serviceSpans: [],
-			cancellations: [{ grain: 'day', date: '2026-06-18', cancellation_rate_pct: 2.5 }],
+			cancellations: [
+				{
+					grain: 'day',
+					date: '2026-06-18',
+					cancellation_rate_pct: 2.5,
+					canceled_trip_days: 1,
+					total_trip_days: 100,
+				},
+			],
 			skippedStops: [],
 			isRampIn: true,
 			isEmpty: false,
@@ -184,7 +229,7 @@ describe('Cluster03ServiceDelivered — metric explainer (i)', () => {
 		const { container } = render(Cluster03ServiceDelivered, {
 			props: { vm, locale: 'en', copy },
 		});
-		// The Sparkline accessible name must describe the metric, never "… · en".
+		// The completeness bar's accessible name must describe the metric, never "… · en".
 		expect(container.querySelector('[aria-label*="· en"]')).toBeNull();
 	});
 });

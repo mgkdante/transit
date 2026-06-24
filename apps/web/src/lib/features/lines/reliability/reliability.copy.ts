@@ -39,6 +39,10 @@ export interface ReliabilityCopy {
 		readonly headwayRegularityCov: string;
 		readonly cancellationRatePct: string;
 		readonly skippedStopRatePct: string;
+		/** Honest completeness fraction: "{canceled} of {total} trip-days canceled". */
+		readonly cancellationFraction: (canceled: string, total: string) => string;
+		/** Honest completeness fraction: "{skipped} of {total} stop updates skipped". */
+		readonly skippedFraction: (skipped: string, total: string) => string;
 		/** Plain caption under the typical-delay (p50) tile. */
 		readonly p50Caption: string;
 		/** Plain caption under the worst-case (p90) tile. */
@@ -182,6 +186,8 @@ export const reliabilityCopy: Record<Locale, ReliabilityCopy> = {
 			headwayRegularityCov: 'Régularité (CV)',
 			cancellationRatePct: "Taux d'annulation",
 			skippedStopRatePct: "Taux d'arrêts ignorés",
+			cancellationFraction: (c, total) => `${c} annulés sur ${total} jours-trajets`,
+			skippedFraction: (s, total) => `${s} ignorés sur ${total} mises à jour d'arrêt`,
 			p50Caption: 'La moitié des trajets font mieux, la moitié font pire',
 			p90Caption: '9 trajets sur 10 sont plus rapides que ça',
 			severePct: 'Part des retards graves',
@@ -271,6 +277,8 @@ export const reliabilityCopy: Record<Locale, ReliabilityCopy> = {
 			headwayRegularityCov: 'Regularity (CoV)',
 			cancellationRatePct: 'Cancellation rate',
 			skippedStopRatePct: 'Skipped-stop rate',
+			cancellationFraction: (c, total) => `${c} of ${total} trip-days canceled`,
+			skippedFraction: (s, total) => `${s} of ${total} stop updates skipped`,
 			p50Caption: 'Half of trips do better, half do worse',
 			p90Caption: '9 in 10 trips are better than this',
 			severePct: 'Severe-delay share',
