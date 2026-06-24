@@ -295,7 +295,8 @@ def test_build_network_trend_fact_only_date() -> None:
 
 def _route_reliability_dispatch(*, daily=None, weekly=None, monthly=None, headway=None,
                                 habit=None, weak=None, names=None, schedule=None,
-                                route_names=None, dow=None, crowding=None, crosstab=None):
+                                route_names=None, dow=None, crowding=None, crosstab=None,
+                                occ_dow=None, occ_grain=None):
     """Assemble an ordered dispatch list for build_route_reliability.
 
     Needles are ordered most-specific-first so they never collide. The schedule
@@ -324,6 +325,10 @@ def _route_reliability_dispatch(*, daily=None, weekly=None, monthly=None, headwa
         # delay×crowding — MUST precede the daily-view needle (its JOIN contains
         # 'public_route_reliability_daily'); discriminator '-- delay_by_crowding'.
         ("-- delay_by_crowding", crowding or []),
+        # S7 crowding rollups — unique comment discriminators ('-- occupancy_by_dow'
+        # / '-- occupancy_by_grain'); both read gold.route_occupancy_band_daily.
+        ("-- occupancy_by_dow", occ_dow or []),
+        ("-- occupancy_by_grain", occ_grain or []),
         # daily public reliability
         ("public_route_reliability_daily", daily or []),
         # weekly / monthly
@@ -751,6 +756,89 @@ def test_build_route_reliability_by_shift_daytype_honest_null_metrics() -> None:
     assert cell.otp_pct is None
     assert cell.avg_delay_min is None
     assert cell.severe_pct is None
+
+
+def test_build_route_reliability_occupancy_by_dow_cells() -> None:
+    # S7 §04: per-ISO-weekday crowding mix; one OccupancyByDow per weekday with
+    # band telemetry, shares computed from the summed band counts.
+    occ_dow = [
+        {"day_of_week_iso": 1, "empty": 0, "many_seats": 5,
+         "few_seats": 3, "standing": 2, "full": 0},
+        {"day_of_week_iso": 6, "empty": 8, "many_seats": 2,
+         "few_seats": 0, "standing": 0, "full": 0},
+    ]
+    conn = FakeConn(_route_reliability_dispatch(occ_dow=occ_dow))
+    out = build_route_reliability(conn, route_id="51", generated_utc="t")
+    by = {c.day_of_week_iso: c for c in out.occupancy_by_dow}
+    assert set(by) == {1, 6}
+    assert by[1].mix is not None
+    assert by[1].mix.many_seats == 0.5  # 5/10
+    assert by[1].mix.standing == 0.2  # 2/10
+    assert by[6].mix.empty == 0.8  # 8/10
+
+
+def test_build_route_reliability_occupancy_by_dow_honest_none_when_no_bands() -> None:
+    # A weekday with data-days but all-zero band counts -> mix is None (honest
+    # absence, never a fabricated all-empty mix); the cell is still emitted.
+    occ_dow = [
+        {"day_of_week_iso": 3, "empty": 0, "many_seats": 0,
+         "few_seats": 0, "standing": 0, "full": 0},
+    ]
+    conn = FakeConn(_route_reliability_dispatch(occ_dow=occ_dow))
+    out = build_route_reliability(conn, route_id="51", generated_utc="t")
+    assert len(out.occupancy_by_dow) == 1
+    assert out.occupancy_by_dow[0].day_of_week_iso == 3
+    assert out.occupancy_by_dow[0].mix is None
+
+
+def test_build_route_reliability_occupancy_by_dow_empty_when_absent() -> None:
+    conn = FakeConn(_route_reliability_dispatch(occ_dow=[]))
+    out = build_route_reliability(conn, route_id="51", generated_utc="t")
+    assert out.occupancy_by_dow == []
+
+
+def test_build_route_reliability_occupancy_by_grain_windows() -> None:
+    # S7 §04: grain-aware crowding mix bucketed in Python from trailing-30d daily
+    # band rows. day = most recent closed day; week = trailing 7d; month = all 30d.
+    occ_grain = [
+        {"d": datetime.date(2026, 6, 20), "empty": 0, "many_seats": 10,
+         "few_seats": 0, "standing": 0, "full": 0},
+        {"d": datetime.date(2026, 6, 15), "empty": 0, "many_seats": 0,
+         "few_seats": 10, "standing": 0, "full": 0},
+        {"d": datetime.date(2026, 5, 25), "empty": 10, "many_seats": 0,
+         "few_seats": 0, "standing": 0, "full": 0},
+    ]
+    conn = FakeConn(_route_reliability_dispatch(occ_grain=occ_grain))
+    out = build_route_reliability(conn, route_id="51", generated_utc="t")
+    g = {c.grain: c for c in out.occupancy_by_grain}
+    assert set(g) == {"day", "week", "month"}
+    # day = only the most recent day (06-20) -> 100% many_seats
+    assert g["day"].mix.many_seats == 1.0
+    # week = 06-20 + 06-15 (5 days apart) -> 10 many + 10 few over 20 -> 0.5 each
+    assert g["week"].mix.many_seats == 0.5
+    assert g["week"].mix.few_seats == 0.5
+    # month = all three days -> 10 each over 30 -> ~0.333 empty
+    assert round(g["month"].mix.empty, 3) == 0.333
+
+
+def test_build_route_reliability_occupancy_by_grain_honest_none_when_no_bands() -> None:
+    # Data-days exist but carry no band telemetry -> every grain emitted with
+    # mix None (honest), never a fabricated mix.
+    occ_grain = [
+        {"d": datetime.date(2026, 6, 20), "empty": 0, "many_seats": 0,
+         "few_seats": 0, "standing": 0, "full": 0},
+    ]
+    conn = FakeConn(_route_reliability_dispatch(occ_grain=occ_grain))
+    out = build_route_reliability(conn, route_id="51", generated_utc="t")
+    g = {c.grain: c for c in out.occupancy_by_grain}
+    assert set(g) == {"day", "week", "month"}
+    assert all(c.mix is None for c in out.occupancy_by_grain)
+
+
+def test_build_route_reliability_occupancy_by_grain_empty_when_absent() -> None:
+    conn = FakeConn(_route_reliability_dispatch(occ_grain=[]))
+    out = build_route_reliability(conn, route_id="51", generated_utc="t")
+    assert out.occupancy_by_grain == []
 
 
 def test_stop_names_sql_unions_history() -> None:

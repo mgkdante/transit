@@ -55,6 +55,8 @@ from transit_ops.snapshots.contract import (
     Hotspots,
     NetworkShift,
     NetworkTrend,
+    OccupancyByDow,
+    OccupancyByGrain,
     OccupancyMix,
     Offender,
     Provenance,
@@ -770,6 +772,52 @@ _ROUTE_OCCUPANCY_BAND_WINDOW_SQL = text(
     """
 )
 
+# S7 §04: crowding band-shares grouped by ISO weekday (1=Mon..7=Sun) over the same
+# trailing-30d window as occupancy_mix, for the weekday/weekend split. Reuses the
+# route_occupancy_band_daily source; honest-None per weekday with no band telemetry
+# (handled by _occupancy_mix_from_bands). provider_local_date is ALREADY provider-
+# local, so ISODOW needs NO timezone cast (unlike route_delay_day_of_week, which
+# extracts from a UTC timestamp). Unique discriminator for test dispatch:
+# "-- occupancy_by_dow".
+_ROUTE_OCCUPANCY_BY_DOW_SQL = text(
+    """
+    -- occupancy_by_dow
+    SELECT EXTRACT(ISODOW FROM rob.provider_local_date)::int AS day_of_week_iso,
+           SUM(rob.empty_count)       AS empty,
+           SUM(rob.many_seats_count)  AS many_seats,
+           SUM(rob.few_seats_count)   AS few_seats,
+           SUM(rob.standing_count)    AS standing,
+           SUM(rob.full_count)        AS full
+    FROM gold.route_occupancy_band_daily AS rob
+    JOIN gold.dim_provider AS dp ON dp.provider_id = rob.provider_id
+    WHERE rob.provider_id = :provider_id AND rob.route_id = :route_id
+      AND rob.provider_local_date >= (now() AT TIME ZONE dp.timezone)::date - 30
+    GROUP BY EXTRACT(ISODOW FROM rob.provider_local_date)
+    ORDER BY day_of_week_iso
+    """
+)
+
+# S7 §04: per-day band counts over the trailing-30d window, bucketed in Python into
+# grain-aware crowding mixes (day = most recent closed local day, week = trailing
+# 7d, month = full 30d — month reconciles with the scalar occupancy_mix). Unique
+# discriminator for test dispatch: "-- occupancy_by_grain".
+_ROUTE_OCCUPANCY_BY_GRAIN_SQL = text(
+    """
+    -- occupancy_by_grain
+    SELECT rob.provider_local_date AS d,
+           rob.empty_count       AS empty,
+           rob.many_seats_count  AS many_seats,
+           rob.few_seats_count   AS few_seats,
+           rob.standing_count    AS standing,
+           rob.full_count        AS full
+    FROM gold.route_occupancy_band_daily AS rob
+    JOIN gold.dim_provider AS dp ON dp.provider_id = rob.provider_id
+    WHERE rob.provider_id = :provider_id AND rob.route_id = :route_id
+      AND rob.provider_local_date >= (now() AT TIME ZONE dp.timezone)::date - 30
+    ORDER BY rob.provider_local_date DESC
+    """
+)
+
 # Per-route service-span / first-last punctuality from the append-only daily
 # rollup (last 30 closed local days). Unique discriminator for test dispatch:
 # "first_trip_start_utc". (Ends with the shared ORDER BY provider_local_date DESC.)
@@ -1044,6 +1092,39 @@ def build_route_reliability(
         conn.execute(_ROUTE_OCCUPANCY_BAND_WINDOW_SQL, params).mappings().fetchone()
     )
 
+    # --- occupancy_by_dow: crowding mix per ISO weekday (S7 §04 weekday/weekend
+    #     split; honest-None per weekday with no band telemetry; sparse) ---
+    occupancy_by_dow = [
+        OccupancyByDow(
+            day_of_week_iso=int(r["day_of_week_iso"]),
+            mix=_occupancy_mix_from_bands(r),
+        )
+        for r in conn.execute(_ROUTE_OCCUPANCY_BY_DOW_SQL, params).mappings()
+    ]
+
+    # --- occupancy_by_grain: grain-aware crowding mix (S7 §04). day = most recent
+    #     closed local day, week = trailing 7d, month = full 30d window (month
+    #     reconciles with occupancy_mix). Bucketed in Python; honest-None per grain
+    #     with no band telemetry; empty list when there is no occupancy telemetry. ---
+    occ_grain_rows = list(conn.execute(_ROUTE_OCCUPANCY_BY_GRAIN_SQL, params).mappings())
+    occupancy_by_grain: list[OccupancyByGrain] = []
+    if occ_grain_rows:
+        most_recent = max(r["d"] for r in occ_grain_rows)
+        grain_windows = {
+            "day": [r for r in occ_grain_rows if r["d"] == most_recent],
+            "week": [r for r in occ_grain_rows if (most_recent - r["d"]).days <= 6],
+            "month": occ_grain_rows,
+        }
+        occupancy_by_grain = [
+            OccupancyByGrain(
+                grain=grain,
+                mix=_occupancy_mix_from_bands(
+                    {band: sum(int(r[band] or 0) for r in rows) for band in _OCCUPANCY_BANDS}
+                ),
+            )
+            for grain, rows in grain_windows.items()
+        ]
+
     # --- service spans: per-day first/last + span history (30 closed days, ASC) ---
     service_spans = [
         ServiceSpanPeriod(
@@ -1115,6 +1196,8 @@ def build_route_reliability(
         skipped_stops=skipped_stops,
         delay_by_crowding=delay_by_crowding,
         by_shift_daytype=by_shift_daytype,
+        occupancy_by_grain=occupancy_by_grain,
+        occupancy_by_dow=occupancy_by_dow,
     )
 
 
