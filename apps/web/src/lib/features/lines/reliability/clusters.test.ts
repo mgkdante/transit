@@ -177,11 +177,33 @@ describe('toReliabilityClusters — populated fixture', () => {
 	});
 
 	it('keeps only signal-carrying headway / span / cancellation / skipped rows', () => {
-		const c = toReliabilityClusters(populated);
+		// grain='week' windows §03 to the last 7 days, which spans the whole 06-16..06-18
+		// fixture — so this isolates the SIGNAL filtering from the grain windowing below.
+		const c = toReliabilityClusters(populated, { grain: 'week' });
 		expect(c.waitRegularity.headway).toHaveLength(2);
 		expect(c.serviceDelivered.serviceSpans).toHaveLength(2);
 		expect(c.serviceDelivered.cancellations).toHaveLength(3);
 		expect(c.serviceDelivered.skippedStops).toHaveLength(2);
+	});
+
+	it('windows §03 service-delivered to the grain the rail selects (S7 backbone)', () => {
+		// day grain → only the LATEST dated row of each ramp-in history survives, so the
+		// section RESPONDS to the filter (was: always the full ~30-day history).
+		const day = toReliabilityClusters(populated, { grain: 'day' });
+		expect(day.serviceDelivered.cancellations).toHaveLength(1);
+		expect(day.serviceDelivered.cancellations[0].date).toBe('2026-06-18');
+		expect(day.serviceDelivered.skippedStops).toHaveLength(1);
+		expect(day.serviceDelivered.serviceSpans).toHaveLength(1);
+		// week grain → the last 7 days spans the whole 3-day fixture → all rows return.
+		expect(
+			toReliabilityClusters(populated, { grain: 'week' }).serviceDelivered.cancellations,
+		).toHaveLength(3);
+		// an explicit date range narrows it to the rows inside [start, end].
+		const ranged = toReliabilityClusters(populated, {
+			grain: 'day',
+			dateRange: { start: '2026-06-17', end: '2026-06-18' },
+		});
+		expect(ranged.serviceDelivered.cancellations).toHaveLength(2);
 	});
 });
 

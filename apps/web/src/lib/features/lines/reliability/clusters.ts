@@ -411,6 +411,43 @@ function daysInRange(
 	return dayTrendAsc.filter((p) => p.date != null && p.date >= lo && p.date <= hi);
 }
 
+/** ISO date (YYYY-MM-DD) minus `n` days, in UTC. */
+function isoMinusDays(iso: string, n: number): string {
+	const d = new Date(`${iso}T00:00:00Z`);
+	d.setUTCDate(d.getUTCDate() - n);
+	return d.toISOString().slice(0, 10);
+}
+
+/**
+ * Filter a dated ramp-in history (cancellations / skipped / spans) to the window the
+ * grain rail selects, so §03 Service-delivered RESPONDS to the filter like §01 does:
+ *   - explicit dateRange → rows inside [start, end];
+ *   - day (+ selectedDate) → that one day; day (no date) → the latest dated row;
+ *   - week / month → the last 7 / 30 days ending at the latest dated row.
+ * Undated rows (no `date`) pass through unchanged — there is nothing to window them by.
+ */
+function windowByGrain<T extends { date?: string | null }>(
+	rows: readonly T[],
+	grain: string,
+	selectedDate: string | undefined,
+	dateRange: { readonly start: string; readonly end: string } | undefined,
+): readonly T[] {
+	const dated = rows.filter((r): r is T & { date: string } => r.date != null);
+	if (dated.length === 0) return rows;
+	if (dateRange) {
+		const lo = dateRange.start <= dateRange.end ? dateRange.start : dateRange.end;
+		const hi = dateRange.start <= dateRange.end ? dateRange.end : dateRange.start;
+		return dated.filter((r) => r.date >= lo && r.date <= hi);
+	}
+	const latest = dated.reduce((m, r) => (r.date > m ? r.date : m), dated[0].date);
+	if (grain === 'day') {
+		const target = selectedDate ?? latest;
+		return dated.filter((r) => r.date === target);
+	}
+	const cutoff = isoMinusDays(latest, (grain === 'week' ? 7 : 30) - 1);
+	return dated.filter((r) => r.date >= cutoff);
+}
+
 /** Arithmetic mean of the non-null values `pick` returns, rounded to `dp`. null when none. */
 function meanOf<T>(
 	rows: readonly T[],
@@ -622,10 +659,17 @@ export function toReliabilityClusters(
 		isEmpty: headway.length === 0,
 	};
 
-	/* 03 Service delivered. */
-	const serviceSpans = allSpans.filter(spanHasSignal);
-	const cancellations = allCancellations.filter(cancellationHasSignal);
-	const skippedStops = allSkipped.filter(skippedHasSignal);
+	/* 03 Service delivered — windowed to the grain the rail selects (the §03 completeness
+	   read then aggregates over that window, so the section RESPONDS to the filter). */
+	const serviceSpans = windowByGrain(allSpans, grain, selectedDate, dateRange).filter(
+		spanHasSignal,
+	);
+	const cancellations = windowByGrain(allCancellations, grain, selectedDate, dateRange).filter(
+		cancellationHasSignal,
+	);
+	const skippedStops = windowByGrain(allSkipped, grain, selectedDate, dateRange).filter(
+		skippedHasSignal,
+	);
 	const serviceDelivered: ServiceDeliveredVM = {
 		serviceSpans,
 		cancellations,

@@ -43,9 +43,16 @@
 		locale: Locale;
 		/** The slice-9.6 reliability copy (cluster overline + honest-state notes). */
 		copy: ReliabilityCopy;
+		/**
+		 * The grain rail's active-window label (Today / This week / This month / Date
+		 * range). The headline occupancy mix follows the selected grain (mixByGrain), so
+		 * this caption names the window instead of a fixed "last 30 days". Falls back to
+		 * the fixed crowding-window copy when not threaded (isolated render).
+		 */
+		windowLabel?: string;
 	}
 
-	let { vm, locale, copy }: Props = $props();
+	let { vm, locale, copy, windowLabel }: Props = $props();
 
 	/** Canonical occupancy band labels (legend + a11y), keyed by OccupancyCode. */
 	const bands = $derived(detailCopy[locale].occupancyBands);
@@ -210,7 +217,7 @@
 		/>
 	</span>
 	<!-- Window caption: the occupancy mix is a fixed trailing window. -->
-	<p class="crowding-window" data-slot="crowding-window">{copy.windows.crowding}</p>
+	<p class="crowding-window" data-slot="crowding-window">{windowLabel ?? copy.windows.crowding}</p>
 
 	{#if dominant == null}
 		<!-- Honest empty state: the styled honest-absence chip (says WHY, no telemetry), never a fake bar. -->

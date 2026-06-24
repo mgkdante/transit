@@ -131,8 +131,9 @@ describe('RouteReliabilityClusters', () => {
 		// 'day' grain OTP (82%) is the headline.
 		expect(screen.getAllByText('82%').length).toBeGreaterThan(0);
 
-		// The control spine offers the three discrete grains.
-		expect(screen.getByText(copy.controls.today)).toBeInTheDocument();
+		// The control spine offers the three discrete grains. (The active-window word
+		// also appears in the §03/§04 grain-aware captions now, so allow >1 match.)
+		expect(screen.getAllByText(copy.controls.today).length).toBeGreaterThan(0);
 		expect(screen.getByText(copy.controls.thisWeek)).toBeInTheDocument();
 		expect(screen.getByText(copy.controls.thisMonth)).toBeInTheDocument();
 	});
@@ -187,7 +188,8 @@ describe('RouteReliabilityClusters', () => {
 
 		expect(screen.getByText(reliabilityCopy.fr.clusters.punctuality)).toBeInTheDocument();
 		expect(screen.getByText(reliabilityCopy.fr.clusters.crowding)).toBeInTheDocument();
-		expect(screen.getByText(reliabilityCopy.fr.controls.today)).toBeInTheDocument();
+		// "Aujourd'hui" appears in both the grain picker and the §03/§04 captions now.
+		expect(screen.getAllByText(reliabilityCopy.fr.controls.today).length).toBeGreaterThan(0);
 	});
 
 	it('offers a Date range segment when the contract carries dated day-periods', () => {

@@ -308,14 +308,19 @@
 		/>
 	</div>
 
-	<!-- 03 Service delivered (ramp-in: cancellations + skipped stops). -->
+	<!-- 03 Service delivered (ramp-in: cancellations + skipped stops). Grain-windowed. -->
 	<div class="reliability-band surface-bleed" data-band="service-delivered">
-		<Cluster03ServiceDelivered vm={clusters.serviceDelivered} {locale} {copy} />
+		<Cluster03ServiceDelivered
+			vm={clusters.serviceDelivered}
+			{locale}
+			{copy}
+			windowLabel={controlsSummary}
+		/>
 	</div>
 
-	<!-- 04 Crowding. -->
+	<!-- 04 Crowding. Headline mix follows the selected grain. -->
 	<div class="reliability-band surface-bleed" data-band="crowding">
-		<Cluster04Crowding vm={clusters.crowding} {locale} {copy} />
+		<Cluster04Crowding vm={clusters.crowding} {locale} {copy} windowLabel={controlsSummary} />
 	</div>
 
 	<!-- 05 Time-of-day habits (weekday seasonality rides alongside the heatmap). -->

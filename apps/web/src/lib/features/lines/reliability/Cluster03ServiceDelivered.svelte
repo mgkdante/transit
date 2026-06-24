@@ -47,9 +47,16 @@
 		locale: Locale;
 		/** Co-located reliability copy for the active locale. */
 		copy: ReliabilityCopy;
+		/**
+		 * The grain rail's active-window label (Today / This week / This month / Date
+		 * range). §03 is windowed to the selected grain in the mapper, so this caption
+		 * tells the reader WHICH window the completeness reflects. Falls back to the
+		 * fixed trend-window copy when not threaded (isolated render).
+		 */
+		windowLabel?: string;
 	}
 
-	let { vm, locale, copy }: Cluster03ServiceDeliveredProps = $props();
+	let { vm, locale, copy, windowLabel }: Cluster03ServiceDeliveredProps = $props();
 
 	// A problem-rate is the late/amber voice on the dataviz scale (never --primary).
 	const RATE_VAR = 'var(--dataviz-status-late)';
@@ -143,7 +150,7 @@
 	<header class="cluster03-head">
 		<SectionLabel text={copy.clusters.serviceDelivered} variant="station" />
 		<!-- Window caption: the rate histories cover the most-recent closed days. -->
-		<p class="cluster03-window" data-slot="service-window">{copy.windows.trend}</p>
+		<p class="cluster03-window" data-slot="service-window">{windowLabel ?? copy.windows.trend}</p>
 		<!-- RAMP-IN is the band's defining caveat → surfaced prominently at the top. -->
 		<p class="cluster03-rampin" data-slot="ramp-in-note">{t.rampInNote}</p>
 	</header>
