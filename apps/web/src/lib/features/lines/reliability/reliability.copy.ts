@@ -114,14 +114,31 @@ export interface ReliabilityCopy {
 		/** Honest empty note when no per-band delay data exists at all. */
 		readonly empty: string;
 	};
-	/** By-shift-and-day-type OTP crosstab (in the 01 Punctuality band) labels. */
+	/** By-shift-and-day-type OTP crosstab — now a stepped heatmap (01 Punctuality). */
 	readonly crosstab: {
 		/** Section overline. */
 		readonly heading: string;
 		/** Accessible header for the (visually-blank) shift corner cell. */
 		readonly shiftHeader: string;
+		/** Accessible header for the day-type column axis. */
+		readonly dayTypeHeader: string;
 		/** Honest caption under the grid (what the cells read + the no-data convention). */
 		readonly caption: string;
+		/** Whole-grid accessible summary (role=img label). */
+		readonly heatmapLabel: string;
+		/** The colour-scale legend buckets (sequential low→high OTP) + the no-data swatch. */
+		readonly legend: {
+			readonly low: string;
+			readonly mid: string;
+			readonly high: string;
+			readonly noData: string;
+		};
+		/** Annotation for the strongest (highest-OTP) trusted cell. */
+		readonly hottest: string;
+		/** Tooltip observation-count prefix, e.g. "n=420". */
+		readonly obs: (n: number) => string;
+		/** Honest reason a cell is greyed: too few observations to trust (n<30). */
+		readonly lowSample: string;
 	};
 	/** Plain-language microcopy for the wait-regularity terms. */
 	readonly regularityTerms: {
@@ -234,8 +251,19 @@ export const reliabilityCopy: Record<Locale, ReliabilityCopy> = {
 		crosstab: {
 			heading: 'Par période et type de jour',
 			shiftHeader: 'Période',
+			dayTypeHeader: 'Type de jour',
 			caption:
-				'Ponctualité par période de la journée et type de jour; une cellule sans observation affiche « sans données », jamais un zéro.',
+				'Ponctualité (% à l’heure) par période de la journée et type de jour, sur une échelle fixe de 0 à 100 %. Une cellule avec moins de 30 observations est grisée; jamais un zéro inventé.',
+			heatmapLabel: 'Ponctualité par période et type de jour',
+			legend: {
+				low: 'Faible (0–40 %)',
+				mid: 'Moyenne (40–80 %)',
+				high: 'Élevée (80–100 %)',
+				noData: 'Sans données',
+			},
+			hottest: 'Meilleure ponctualité',
+			obs: (n) => `n=${n}`,
+			lowSample: 'moins de 30 observations',
 		},
 		regularityTerms: {
 			scheduledGap: 'Intervalle prévu',
@@ -326,8 +354,19 @@ export const reliabilityCopy: Record<Locale, ReliabilityCopy> = {
 		crosstab: {
 			heading: 'By shift and day type',
 			shiftHeader: 'Shift',
+			dayTypeHeader: 'Day type',
 			caption:
-				'On-time rate by time of day and day type; a cell with no observations reads "no data", never a zero.',
+				'On-time rate (%) by time of day and day type, on a fixed 0–100% scale. A cell with fewer than 30 observations is greyed out — never a fabricated zero.',
+			heatmapLabel: 'On-time rate by shift and day type',
+			legend: {
+				low: 'Low (0–40%)',
+				mid: 'Medium (40–80%)',
+				high: 'High (80–100%)',
+				noData: 'No data',
+			},
+			hottest: 'Best on-time rate',
+			obs: (n) => `n=${n}`,
+			lowSample: 'fewer than 30 observations',
 		},
 		regularityTerms: {
 			scheduledGap: 'Scheduled gap',
