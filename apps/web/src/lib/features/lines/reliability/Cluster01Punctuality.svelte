@@ -35,7 +35,6 @@
 	import type { Locale } from '$lib/i18n';
 	import { stopNameFallback } from '$lib/site/absence';
 	import { fmtDelayMin, fmtPct } from '$lib/utils';
-	import type { ReliabilityPeriod } from '$lib/v1';
 	import type { SeverityCode } from '$lib/v1/schemas';
 	import MetricDisplay from '$lib/components/brand/MetricDisplay.svelte';
 	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
@@ -100,9 +99,11 @@
 	// The headline period: the most-recent dated day in the trend (the foundation
 	// trend is day-only, ascending). The strip remains the canonical grain-aware
 	// headline; this band's tiles answer for the latest closed day.
-	const headline = $derived<ReliabilityPeriod | null>(
-		vm.trend.length > 0 ? vm.trend[vm.trend.length - 1] : null,
-	);
+	// §01's headline tiles + the typical→worst-case Distribution + the severe-share bar
+	// read the GRAIN-AWARE aggregate (today / this week / this month / range — the same
+	// values the strip shows), so they answer for the picked window. The trend below
+	// carries the daily detail. One aggregate, never the trend tail (systematic).
+	const headline = $derived(vm.headline);
 
 	// Honest absence → null (MetricDisplay renders the muted no-data label); a real
 	// value speaks the amber metric voice. Never a bare "·", never a fabricated 0.
@@ -137,8 +138,8 @@
 	// lone carve-out); the whisker runs median→tail so both magnitudes read as one
 	// shape. Honest absence: when BOTH p50 and p90 are null the mark is dropped and the
 	// AbsentValue chip (says WHY) renders instead — never a fabricated 0.
-	const p50 = $derived<number | null>(headline?.p50_min ?? null);
-	const p90 = $derived<number | null>(headline?.p90_min ?? null);
+	const p50 = $derived<number | null>(headline.p50Min);
+	const p90 = $derived<number | null>(headline.p90Min);
 	const hasDist = $derived(p50 != null || p90 != null);
 	// min == median is truthful here (the median is the lower bound of the shown
 	// p50→p90 range); p25/p75 stay null → an empty box track, never a fake quartile.
@@ -154,7 +155,7 @@
 
 	// Severe-share magnitude of the headline period — the ABSOLUTE %, scaled by the
 	// fixed SEVERE_DOMAIN at the bar (not /100, not /max). null = no data.
-	const severePct = $derived(headline?.severe_pct ?? null);
+	const severePct = $derived(headline.severePct);
 	const severeValue = $derived<number | null>(severePct);
 	// Severe share is itself a severity reading: band it so the bar colour is honest
 	// (shared thresholds — see severeShareToSeverity; null bands to 'watch').
@@ -527,7 +528,7 @@
 		<div class="cluster-headline">
 			<div class="metric-with-info">
 				<MetricDisplay
-					value={pct(headline?.otp_pct)}
+					value={pct(headline.otpPct)}
 					emptyLabel={copy.strip.noData}
 					absentReason="no-observations"
 					{locale}
@@ -538,7 +539,7 @@
 			</div>
 			<div class="metric-with-info">
 				<MetricDisplay
-					value={min(headline?.avg_delay_min)}
+					value={min(headline.avgDelayMin)}
 					emptyLabel={copy.strip.noData}
 					absentReason="no-observations"
 					{locale}

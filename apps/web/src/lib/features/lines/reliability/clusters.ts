@@ -110,9 +110,23 @@ export interface PeakOffPeakVM {
 /** 01 Punctuality — OTP / delay / percentiles per grain period + weekday seasonality + weak stops. */
 export interface PunctualityVM {
 	/**
-	 * The dated DAY-grain series ONLY, chronological ascending (oldest→newest),
-	 * each row carrying its ISO `date`. This is the trend source — a true time
-	 * axis, never the mixed-grain bag. Week/month/shift/daytype live elsewhere.
+	 * The GRAIN-AWARE headline aggregate for the selected window (today / this week /
+	 * this month / range) — the SAME values the snapshot strip shows. §01's headline
+	 * tiles, the typical→worst-case Distribution, and the severe-share bar read this so
+	 * they answer for the picked grain; the trend (below) carries the daily detail.
+	 */
+	readonly headline: {
+		readonly otpPct: number | null;
+		readonly avgDelayMin: number | null;
+		readonly p50Min: number | null;
+		readonly p90Min: number | null;
+		readonly severePct: number | null;
+	};
+	/**
+	 * The dated DAY-grain series, WINDOWED to the selected grain (day → full, week → last
+	 * 7 days, month → last 30, range → the range), chronological ascending. The trend
+	 * keeps daily detail at every grain (a true time axis), never the coarse weekly/
+	 * monthly aggregate dots.
 	 */
 	readonly trend: ReliabilityPeriod[];
 	/** Weekday seasonality rows, sorted Mon→Sun (ISO 1..7). Carries severe_pct + observation_count. */
@@ -544,14 +558,16 @@ export function toReliabilityClusters(
 	const dayTrendAsc = dayTrend(partition.calendar.day);
 	const rangeDays = grain === 'day' && dateRange ? daysInRange(dayTrendAsc, dateRange) : [];
 	const hasRange = rangeDays.length > 0;
-	// S7: the §01 trend follows the SELECTED calendar grain (day/week/month).
-	// dayTrend() dedupes-by-date + sorts ASC, so it works for any dated grain; range
-	// mode still zooms the DAY series (range is day-grain only, handled below).
+	// S7 (systematic grain): the §01 trend ALWAYS shows the DAILY series; week/month just
+	// WINDOW it (the last 7 / 30 days) via the SAME windowByGrain helper §03 uses — they
+	// no longer switch to the coarse weekly/monthly aggregate periods, which collapsed the
+	// month to two dots and made "this week" span a whole month on the x-axis. So every
+	// grain keeps daily detail folded in, on a window that matches the picked grain.
 	const grainTrendAsc =
 		grain === 'week'
-			? dayTrend(partition.calendar.week)
+			? [...windowByGrain(dayTrendAsc, 'week', undefined, undefined)]
 			: grain === 'month'
-				? dayTrend(partition.calendar.month)
+				? [...windowByGrain(dayTrendAsc, 'month', undefined, undefined)]
 				: dayTrendAsc;
 
 	/* 01-strip — the selected-grain headline (F1: most-recent week/month). When a
@@ -566,6 +582,7 @@ export function toReliabilityClusters(
 	let avgDelayMin: number | null;
 	let p50Min: number | null;
 	let p90Min: number | null;
+	let severePct: number | null;
 	let rangeAggregate: SnapshotStripVM['rangeAggregate'] = null;
 
 	if (hasRange) {
@@ -578,6 +595,10 @@ export function toReliabilityClusters(
 		// carries them; a multi-day range shows the honest no-data mark.
 		p50Min = singleDay ? num(rangeDays[0].p50_min) : null;
 		p90Min = singleDay ? num(rangeDays[0].p90_min) : null;
+		// Severe share is averageable across the in-range days (a share, not a percentile).
+		severePct = singleDay
+			? num(rangeDays[0].severe_pct)
+			: meanOf(rangeDays, (p) => p.severe_pct, 1);
 		// A single in-range day reads as an exact day (no "average" caption); a
 		// multi-day range carries the aggregate metadata for an honest caption.
 		rangeAggregate = singleDay
@@ -593,6 +614,7 @@ export function toReliabilityClusters(
 		avgDelayMin = stripPeriod ? num(stripPeriod.avg_delay_min) : null;
 		p50Min = stripPeriod ? num(stripPeriod.p50_min) : null;
 		p90Min = stripPeriod ? num(stripPeriod.p90_min) : null;
+		severePct = stripPeriod ? num(stripPeriod.severe_pct) : null;
 	}
 
 	const strip: SnapshotStripVM = {
@@ -639,6 +661,12 @@ export function toReliabilityClusters(
 	// message (the per-empty-cell honesty the operator requires).
 	const byShiftDaytype = (data.by_shift_daytype ?? []).filter(crosstabHasSignal);
 	const punctuality: PunctualityVM = {
+		// The GRAIN-AWARE headline aggregate (the same selected-grain values the strip
+		// computes): §01's headline tiles + the typical→worst-case Distribution + the
+		// severe-share bar read THIS, so they answer for the picked window (today / this
+		// week / this month / range), while the trend shows the daily detail. Systematic:
+		// one aggregate, not the trend tail.
+		headline: { otpPct, avgDelayMin, p50Min, p90Min, severePct },
 		trend,
 		dayOfWeek,
 		weakStops,

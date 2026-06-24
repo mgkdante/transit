@@ -508,16 +508,46 @@ describe('toReliabilityClusters — grain-aware trend (S7)', () => {
 		expect(c.punctuality.trend.every((p) => p.grain === 'day')).toBe(true);
 	});
 
-	it('grain=week → trend is the dated WEEK series, ASC', () => {
+	it('grain=week → the DAILY series WINDOWED to the last 7 days (folded daily detail, S7)', () => {
 		const c = toReliabilityClusters(granular, { grain: 'week' });
-		expect(c.punctuality.trend.map((p) => p.date)).toEqual(['2026-05-25', '2026-06-15']);
-		expect(c.punctuality.trend.every((p) => p.grain === 'week')).toBe(true);
+		// The daily span (06-16..06-18) is inside the last 7 days → the trend keeps the
+		// DAILY points, NOT the coarse weekly aggregate (which was 2 dots spanning a month).
+		expect(c.punctuality.trend.map((p) => p.date)).toEqual([
+			'2026-06-16',
+			'2026-06-17',
+			'2026-06-18',
+		]);
+		expect(c.punctuality.trend.every((p) => p.grain === 'day')).toBe(true);
 	});
 
-	it('grain=month → trend is the dated MONTH series, ASC', () => {
+	it('grain=month → the DAILY series WINDOWED to the last 30 days (not 2 monthly dots, S7)', () => {
 		const c = toReliabilityClusters(granular, { grain: 'month' });
-		expect(c.punctuality.trend.map((p) => p.date)).toEqual(['2026-05-01', '2026-06-01']);
-		expect(c.punctuality.trend.every((p) => p.grain === 'month')).toBe(true);
+		expect(c.punctuality.trend.map((p) => p.date)).toEqual([
+			'2026-06-16',
+			'2026-06-17',
+			'2026-06-18',
+		]);
+		expect(c.punctuality.trend.every((p) => p.grain === 'day')).toBe(true);
+	});
+
+	it('week vs month window the daily series differently (last 7 vs last 30 days, S7)', () => {
+		// 10 consecutive daily points (06-09..06-18) → week keeps the last 7, month keeps all.
+		const days = Array.from({ length: 10 }, (_, i) => ({
+			grain: 'day' as const,
+			date: `2026-06-${String(9 + i).padStart(2, '0')}`,
+			otp_pct: 80 + i,
+		}));
+		const data: RouteReliability = {
+			generated_utc: utc('2026-06-19T02:00:00Z'),
+			id: '99',
+			periods: days,
+		};
+		const week = toReliabilityClusters(data, { grain: 'week' });
+		const month = toReliabilityClusters(data, { grain: 'month' });
+		expect(week.punctuality.trend).toHaveLength(7);
+		expect(month.punctuality.trend).toHaveLength(10);
+		expect(week.punctuality.trend[0].date).toBe('2026-06-12'); // 7 days back from 06-18
+		expect(month.punctuality.trend[0].date).toBe('2026-06-09'); // all of them
 	});
 
 	it('a date range still zooms the DAY series regardless of grain', () => {

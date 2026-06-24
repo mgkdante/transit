@@ -14,11 +14,13 @@ import type { PunctualityVM } from './clusters';
 const copy = reliabilityCopy.en;
 const info = metricsCopy.en.info;
 
-// SPEC CHANGE (foundation): PunctualityVM.periods was split into `trend` (the
-// dated DAY-grain series, chronological ascending) + `peakOffPeak`. The band's
-// headline now reads the MOST-RECENT trend day (the array tail), so the 82% /
-// 2.1 min headline lives on the latest dated day.
+// S7 (systematic grain): the band's headline tiles + Distribution + severe-share bar
+// read the GRAIN-AWARE aggregate `vm.headline` (today / this week / this month / range),
+// NOT the trend tail — so they answer for the picked window. Here the aggregate mirrors
+// the latest day (82% / 2.1 min) so the headline assertions hold; the trend carries the
+// daily detail.
 const populated: PunctualityVM = {
+	headline: { otpPct: 82, avgDelayMin: 2.1, p50Min: 0.5, p90Min: 6.0, severePct: 3 },
 	trend: [
 		{
 			grain: 'day',
@@ -64,6 +66,7 @@ const manyStops: PunctualityVM = {
 };
 
 const emptyVM: PunctualityVM = {
+	headline: { otpPct: null, avgDelayMin: null, p50Min: null, p90Min: null, severePct: null },
 	trend: [],
 	dayOfWeek: [],
 	weakStops: [],
@@ -144,6 +147,8 @@ describe('Cluster01Punctuality — populated', () => {
 	it('drops the distribution for a styled no-data chip (never "·"/0) when p50/p90 are null', () => {
 		const nullPercentiles: PunctualityVM = {
 			...populated,
+			// The Distribution reads the grain aggregate now → null its percentiles here.
+			headline: { otpPct: 82, avgDelayMin: 2.1, p50Min: null, p90Min: null, severePct: null },
 			trend: [
 				{
 					grain: 'day',
