@@ -49,8 +49,6 @@
 		Distribution,
 		statusVar,
 		severityVar,
-		heatmapColor,
-		HEATMAP_RAMP,
 		HEATMAP_NODATA,
 	} from '$lib/components/dataviz';
 	import type { DistributionStats, StripPlotRow } from '$lib/components/dataviz';
@@ -368,14 +366,28 @@
 	const OTP_BUCKET_GLYPH = ['░', '▒', '▓', '▔', '█'] as const;
 	const NODATA_GLYPH = '◌';
 
-	// Map an OTP % through the FIXED zero-based OTP_DOMAIN → a [0,1] ramp position. This
-	// is an ABSOLUTE domain literal, NOT the in-view best cell, so colour is stable.
+	// OTP hugs a threshold (real values cluster ~80-95%), so a sequential ramp over the
+	// fixed [0,100] domain crushes every cell into ONE step (all the same colour) AND
+	// paints a great 94% alarm-red. Use a DIVERGING scale around the 80% target instead
+	// (the spec's call for OTP-near-threshold): at/above target leans to the on-time
+	// GREEN (intensity by how far above), below leans to the late RED — a FIXED centre +
+	// endpoints (target + OTP_DOMAIN), so colour is stable across routes, never the in-
+	// view best cell. Solid pre-mixed token (color-mix to the signage bg, never alpha).
 	const [OTP_LO, OTP_HI] = OTP_DOMAIN;
-	function otpRampPos(otp: number): number {
-		return (otp - OTP_LO) / (OTP_HI - OTP_LO);
+	const OTP_TARGET = 80;
+	function otpCellColor(otp: number): string {
+		if (otp >= OTP_TARGET) {
+			const t = Math.min(1, (otp - OTP_TARGET) / (OTP_HI - OTP_TARGET));
+			return `color-mix(in oklab, var(--dataviz-status-on-time) ${Math.round(28 + t * 60)}%, var(--signage-bg))`;
+		}
+		const t = Math.min(1, (OTP_TARGET - otp) / (OTP_TARGET - OTP_LO));
+		return `color-mix(in oklab, var(--dataviz-status-late) ${Math.round(28 + t * 60)}%, var(--signage-bg))`;
 	}
+	// The glyph spreads over a MEANINGFUL OTP span (60-100%) so it differentiates the
+	// clustered-high range too (colour is never the sole channel). A fuller glyph = a
+	// higher OTP, agreeing with the green direction.
 	function otpBucketGlyph(otp: number): string {
-		const pos = Math.min(1, Math.max(0, otpRampPos(otp)));
+		const pos = Math.min(1, Math.max(0, (otp - 60) / (OTP_HI - 60)));
 		const idx = Math.min(OTP_BUCKET_GLYPH.length - 1, Math.floor(pos * OTP_BUCKET_GLYPH.length));
 		return OTP_BUCKET_GLYPH[idx];
 	}
@@ -401,7 +413,7 @@
 					trusted,
 					obs,
 					avgDelay: min(cell?.avg_delay_min),
-					fill: trusted ? heatmapColor(otpRampPos(rawOtp)) : HEATMAP_NODATA,
+					fill: trusted ? otpCellColor(rawOtp) : HEATMAP_NODATA,
 					glyph: trusted ? otpBucketGlyph(rawOtp) : NODATA_GLYPH,
 					display: trusted ? (pct(rawOtp) ?? copy.strip.noData) : copy.strip.noData,
 				};
@@ -438,10 +450,18 @@
 	// no-data swatch, so the legend reads as an ordered fixed-domain scale. Swatches are
 	// data marks (--dataviz-heatmap-*); the caption is the a11y source of truth.
 	const crosstabLegend = $derived([
-		{ colorVar: HEATMAP_RAMP[0], label: copy.crosstab.legend.low, swatch: 'square' as const },
-		{ colorVar: HEATMAP_RAMP[2], label: copy.crosstab.legend.mid, swatch: 'square' as const },
 		{
-			colorVar: HEATMAP_RAMP[HEATMAP_RAMP.length - 1],
+			colorVar: 'color-mix(in oklab, var(--dataviz-status-late) 80%, var(--signage-bg))',
+			label: copy.crosstab.legend.low,
+			swatch: 'square' as const,
+		},
+		{
+			colorVar: 'color-mix(in oklab, var(--dataviz-status-on-time) 28%, var(--signage-bg))',
+			label: copy.crosstab.legend.mid,
+			swatch: 'square' as const,
+		},
+		{
+			colorVar: 'color-mix(in oklab, var(--dataviz-status-on-time) 85%, var(--signage-bg))',
 			label: copy.crosstab.legend.high,
 			swatch: 'square' as const,
 		},
