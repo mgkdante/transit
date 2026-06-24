@@ -79,6 +79,45 @@ export function bunchingToSeverity(bunchedPct: number | null | undefined): Sever
 	return 'watch';
 }
 
+/* ── S7 chart domains — STABLE, ABSOLUTE, ZERO-BASED (real units) ─────────────
+   The single source of the fixed [min,max] domains every reliability magnitude
+   chart scales against. They are LITERALS — identical across routes, grains, and
+   the 30s refresh — so the same value always renders the same length (the audit's
+   law #1). NEVER derive a chart domain from Math.max(...inView) / the in-view worst.
+   Tuned to the real STM distributions (the audit rejected the crushing [0,10]). */
+/** Signed per-stop avg delay (min); early stops render LEFT of the zero baseline. */
+export const DELAY_STOP_DOMAIN = [-2, 8] as const;
+/** Positive delay aggregates (min) — e.g. the OTP-trend retard (amber) axis. */
+export const DELAY_POS_DOMAIN = [0, 8] as const;
+/** Day-of-week + delay-by-crowding avg delay (min). */
+export const DELAY_DOW_DOMAIN = [0, 6] as const;
+/** Severe-delay share (%) — shift / day-type / snapshot. */
+export const SEVERE_DOMAIN = [0, 35] as const;
+/** On-time % / Wilson bounds. */
+export const OTP_DOMAIN = [0, 100] as const;
+/** Scheduled / observed / excess headway (min). */
+export const HEADWAY_DOMAIN = [0, 35] as const;
+/** Bunched share (%). */
+export const BUNCHED_DOMAIN = [0, 30] as const;
+/** Headway coefficient-of-variation ratio; 1.0 = random arrivals reference. */
+export const COV_DOMAIN = [0, 1.2] as const;
+
+/** CoV (gap stddev / mean) at or above which regularity bands to critical. */
+const COV_CRITICAL = 0.5;
+/** CoV at or above which it bands to high. */
+const COV_HIGH = 0.3;
+
+/**
+ * Band a headway coefficient-of-variation onto the SeverityCode scale: >=0.5
+ * critical, >=0.3 high, else watch. null (no data) bands to the quietest 'watch'.
+ */
+export function covToSeverity(cov: number | null | undefined): SeverityCode {
+	if (cov == null) return 'watch';
+	if (cov >= COV_CRITICAL) return 'critical';
+	if (cov >= COV_HIGH) return 'high';
+	return 'watch';
+}
+
 /** The time-of-day shift grains, in canonical chronological order (AM → night). */
 export const SHIFT_GRAIN_ORDER = ['am_peak', 'midday', 'pm_peak', 'evening', 'night'] as const;
 export type ShiftGrain = (typeof SHIFT_GRAIN_ORDER)[number];
