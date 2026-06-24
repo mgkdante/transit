@@ -232,9 +232,9 @@ export const reliabilityCopy: Record<Locale, ReliabilityCopy> = {
 	fr: {
 		clusters: {
 			punctuality: '01 Ponctualité',
-			waitRegularity: '02 Régularité des attentes',
-			serviceDelivered: '03 Service assuré',
-			crowding: '04 Encombrement',
+			serviceDelivered: '02 Service assuré',
+			crowding: '03 Encombrement',
+			waitRegularity: '04 Régularité des attentes',
 			habits: '05 Habitudes horaires',
 		},
 		strip: {
@@ -362,9 +362,9 @@ export const reliabilityCopy: Record<Locale, ReliabilityCopy> = {
 	en: {
 		clusters: {
 			punctuality: '01 Punctuality',
-			waitRegularity: '02 Wait regularity',
-			serviceDelivered: '03 Service delivered',
-			crowding: '04 Crowding',
+			serviceDelivered: '02 Service delivered',
+			crowding: '03 Crowding',
+			waitRegularity: '04 Wait regularity',
 			habits: '05 Time-of-day habits',
 		},
 		strip: {

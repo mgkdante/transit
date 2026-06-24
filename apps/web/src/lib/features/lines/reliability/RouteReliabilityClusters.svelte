@@ -195,7 +195,11 @@
 </script>
 
 <div class={cn('reliability-clusters', className)} data-slot="reliability-clusters">
-	<!-- Control panel: the grain/date controls collected into ONE ControlsRail (quiet
+	<!-- GRAIN-AFFECTED block: the rail sticks over these sections (which respond to the
+	     filter) and scrolls away at the block's end — so the rail's presence IS the
+	     "this section uses granularity" signal. -->
+	<div class="reliability-grain-block" data-slot="reliability-grain-block">
+		<!-- Control panel: the grain/date controls collected into ONE ControlsRail (quiet
 	     infra chrome, mono "View" overline) so the control reads identically to /stop
 	     and /network. ONE shared GrainPicker owns the whole radiogroup —
 	     day|week|month PLUS the lines-only "range" segment — so EXACTLY ONE chip is
@@ -205,132 +209,138 @@
 	     chip, never on the rail chrome. STICKY (S6): the grain control is the main
 	     control of the surface, so the rail stays pinned (desktop) while the metric
 	     cards + bands scroll under it. -->
-	<ControlsRail label={copy.controls.viewLabel} sticky>
-		<!-- Mobile-only summary toggle: collapses the controls to spare phone vertical
+		<ControlsRail label={copy.controls.viewLabel} sticky>
+			<!-- Mobile-only summary toggle: collapses the controls to spare phone vertical
 		     space. Hidden on desktop (the rail stays fully visible). -->
-		<button
-			type="button"
-			class="reliability-control-toggle"
-			aria-expanded={controlsOpen}
-			aria-controls="reliability-control-body"
-			onclick={() => (controlsOpen = !controlsOpen)}
-			data-slot="controls-toggle"
-		>
-			<span>{copy.controls.viewLabel}: {controlsSummary}</span>
-			<svg
-				class="reliability-control-chevron"
-				viewBox="0 0 16 16"
-				width="14"
-				height="14"
-				aria-hidden="true"
+			<button
+				type="button"
+				class="reliability-control-toggle"
+				aria-expanded={controlsOpen}
+				aria-controls="reliability-control-body"
+				onclick={() => (controlsOpen = !controlsOpen)}
+				data-slot="controls-toggle"
 			>
-				<path
-					d="M4 6l4 4 4-4"
-					fill="none"
-					stroke="currentColor"
-					stroke-width="1.6"
-					stroke-linecap="round"
-					stroke-linejoin="round"
-				/>
-			</svg>
-		</button>
-		<div
-			id="reliability-control-body"
-			class={cn('reliability-control-body', controlsOpen && 'reliability-control-body--open')}
-			data-slot="controls-body"
-		>
-			<GrainPicker {segments} bind:value={viewKey} label={copy.controls.grainLabel} />
+				<span>{copy.controls.viewLabel}: {controlsSummary}</span>
+				<svg
+					class="reliability-control-chevron"
+					viewBox="0 0 16 16"
+					width="14"
+					height="14"
+					aria-hidden="true"
+				>
+					<path
+						d="M4 6l4 4 4-4"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="1.6"
+						stroke-linecap="round"
+						stroke-linejoin="round"
+					/>
+				</svg>
+			</button>
+			<div
+				id="reliability-control-body"
+				class={cn('reliability-control-body', controlsOpen && 'reliability-control-body--open')}
+				data-slot="controls-body"
+			>
+				<GrainPicker {segments} bind:value={viewKey} label={copy.controls.grainLabel} />
 
-			{#if mode === 'range'}
-				<!-- Start + end pair over the dated day-periods. start == end = one day
+				{#if mode === 'range'}
+					<!-- Start + end pair over the dated day-periods. start == end = one day
 			     (exact); a wider span aggregates the in-range days (mean) + zooms the
 			     trend. Bounds are real dates only, so no out-of-window pick is possible. -->
-				<div class="reliability-range" data-slot="date-range">
-					<label class="reliability-date">
-						<span class="reliability-date__label">{copy.controls.rangeStart}</span>
-						<select
-							class="reliability-date__select"
-							value={rangeStart}
-							onchange={(e) => (rangeStart = e.currentTarget.value)}
-							aria-label={`${copy.controls.dateRange} · ${copy.controls.rangeStart}`}
-						>
-							<option value="">{earliestDate || ''}</option>
-							{#each datedPeriods as p (p.date)}
-								<option value={p.date}>{p.date}</option>
-							{/each}
-						</select>
-					</label>
-					<label class="reliability-date">
-						<span class="reliability-date__label">{copy.controls.rangeEnd}</span>
-						<select
-							class="reliability-date__select"
-							value={rangeEnd}
-							onchange={(e) => (rangeEnd = e.currentTarget.value)}
-							aria-label={`${copy.controls.dateRange} · ${copy.controls.rangeEnd}`}
-						>
-							<option value="">{latestDate || ''}</option>
-							{#each datedPeriods as p (p.date)}
-								<option value={p.date}>{p.date}</option>
-							{/each}
-						</select>
-					</label>
-				</div>
-			{/if}
+					<div class="reliability-range" data-slot="date-range">
+						<label class="reliability-date">
+							<span class="reliability-date__label">{copy.controls.rangeStart}</span>
+							<select
+								class="reliability-date__select"
+								value={rangeStart}
+								onchange={(e) => (rangeStart = e.currentTarget.value)}
+								aria-label={`${copy.controls.dateRange} · ${copy.controls.rangeStart}`}
+							>
+								<option value="">{earliestDate || ''}</option>
+								{#each datedPeriods as p (p.date)}
+									<option value={p.date}>{p.date}</option>
+								{/each}
+							</select>
+						</label>
+						<label class="reliability-date">
+							<span class="reliability-date__label">{copy.controls.rangeEnd}</span>
+							<select
+								class="reliability-date__select"
+								value={rangeEnd}
+								onchange={(e) => (rangeEnd = e.currentTarget.value)}
+								aria-label={`${copy.controls.dateRange} · ${copy.controls.rangeEnd}`}
+							>
+								<option value="">{latestDate || ''}</option>
+								{#each datedPeriods as p (p.date)}
+									<option value={p.date}>{p.date}</option>
+								{/each}
+							</select>
+						</label>
+					</div>
+				{/if}
 
-			<!-- Active-window caption: names the window the selection resolves to so the
+				<!-- Active-window caption: names the window the selection resolves to so the
 		     reader is never unsure what "Today / This week / {date}" actually covers. -->
-			<p class="reliability-window" data-slot="active-window" aria-live="polite">
-				{activeWindowCaption}
-			</p>
+				<p class="reliability-window" data-slot="active-window" aria-live="polite">
+					{activeWindowCaption}
+				</p>
+			</div>
+		</ControlsRail>
+
+		<!-- Hazard tape discerns the controls zone from the data canvas. -->
+		<Separator variant="hazard" hazardSize="sm" />
+
+		<!-- 00 — the full-bleed snapshot strip (single-glance, zero-interaction). -->
+		<div class="reliability-band reliability-band--strip surface-bleed" data-band="snapshot">
+			<SnapshotStrip vm={clusters.strip} {locale} {copy} />
 		</div>
-	</ControlsRail>
 
-	<!-- Hazard tape discerns the controls zone from the data canvas. -->
-	<Separator variant="hazard" hazardSize="sm" />
+		<!-- 01 Punctuality. -->
+		<div class="reliability-band surface-bleed" data-band="punctuality">
+			<Cluster01Punctuality vm={clusters.punctuality} {locale} {copy} grain={selectedGrain} />
+		</div>
 
-	<!-- 00 — the full-bleed snapshot strip (single-glance, zero-interaction). -->
-	<div class="reliability-band reliability-band--strip surface-bleed" data-band="snapshot">
-		<SnapshotStrip vm={clusters.strip} {locale} {copy} />
+		<!-- 02 Service delivered (ramp-in: cancellations + skipped stops). Grain-windowed. -->
+		<div class="reliability-band surface-bleed" data-band="service-delivered">
+			<Cluster03ServiceDelivered
+				vm={clusters.serviceDelivered}
+				{locale}
+				{copy}
+				windowLabel={controlsSummary}
+			/>
+		</div>
+
+		<!-- 03 Crowding. Headline mix follows the selected grain. -->
+		<div class="reliability-band surface-bleed" data-band="crowding">
+			<Cluster04Crowding vm={clusters.crowding} {locale} {copy} windowLabel={controlsSummary} />
+		</div>
 	</div>
+	<!-- end grain-affected block; the rail has released by here. -->
 
-	<!-- 01 Punctuality. -->
-	<div class="reliability-band surface-bleed" data-band="punctuality">
-		<Cluster01Punctuality vm={clusters.punctuality} {locale} {copy} grain={selectedGrain} />
-	</div>
+	<!-- GRAIN-FREE block: Wait regularity (by-shift, not a calendar grain) + Habits (a
+	     whole-window pattern) don't use the rail, so it is gone by the time you reach them. -->
+	<div class="reliability-free-block" data-slot="reliability-free-block">
+		<!-- 04 Wait regularity: scheduled-vs-observed headway + the service-span timeline. -->
+		<div class="reliability-band surface-bleed" data-band="wait-regularity">
+			<Cluster02WaitRegularity
+				wait={clusters.waitRegularity}
+				serviceSpans={clusters.serviceDelivered.serviceSpans}
+				{locale}
+				{copy}
+			/>
+		</div>
 
-	<!-- 02 Wait regularity (service spans ride alongside the headway sub-block). -->
-	<div class="reliability-band surface-bleed" data-band="wait-regularity">
-		<Cluster02WaitRegularity
-			wait={clusters.waitRegularity}
-			serviceSpans={clusters.serviceDelivered.serviceSpans}
-			{locale}
-			{copy}
-		/>
-	</div>
-
-	<!-- 03 Service delivered (ramp-in: cancellations + skipped stops). Grain-windowed. -->
-	<div class="reliability-band surface-bleed" data-band="service-delivered">
-		<Cluster03ServiceDelivered
-			vm={clusters.serviceDelivered}
-			{locale}
-			{copy}
-			windowLabel={controlsSummary}
-		/>
-	</div>
-
-	<!-- 04 Crowding. Headline mix follows the selected grain. -->
-	<div class="reliability-band surface-bleed" data-band="crowding">
-		<Cluster04Crowding vm={clusters.crowding} {locale} {copy} windowLabel={controlsSummary} />
-	</div>
-
-	<!-- 05 Time-of-day habits (weekday seasonality rides alongside the heatmap). -->
-	<div class="reliability-band surface-bleed" data-band="habits">
-		<Cluster05Habits
-			habits={clusters.habits}
-			dayOfWeek={clusters.punctuality.dayOfWeek}
-			{locale}
-			{copy}
-		/>
+		<!-- 05 Time-of-day habits (weekday seasonality rides alongside the heatmap). -->
+		<div class="reliability-band surface-bleed" data-band="habits">
+			<Cluster05Habits
+				habits={clusters.habits}
+				dayOfWeek={clusters.punctuality.dayOfWeek}
+				{locale}
+				{copy}
+			/>
+		</div>
 	</div>
 </div>
 
@@ -349,6 +359,18 @@
 		   5.5rem window-scroll default that floated it ~88px down with content showing
 		   through. The hazard-tape separator below the rail gives the visual break. */
 		--rail-sticky-top: 0px;
+	}
+
+	/* The two sub-blocks carry the same section rhythm as the page, and — crucially —
+	   each is the STICKY CONTAINING BLOCK boundary for its contents. The rail lives in
+	   the grain block, so it sticks only while the grain-affected sections are on screen
+	   and scrolls away once the grain-free block (Wait regularity + Habits) begins. */
+	.reliability-grain-block,
+	.reliability-free-block {
+		display: flex;
+		flex-direction: column;
+		gap: clamp(3rem, 7vw, 5rem);
+		width: 100%;
 	}
 
 	/* The grain + range control is now ONE shared GrainPicker (day|week|month|range),
