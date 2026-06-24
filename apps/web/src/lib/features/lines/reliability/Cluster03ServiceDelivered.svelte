@@ -138,6 +138,8 @@
 					<MetricDisplay
 						value={pct(cancellationRatePct)}
 						emptyLabel={t.noData}
+						absentReason="no-observations"
+						{locale}
 						label={t.cancellationRatePct}
 						size="md"
 					/>
@@ -167,6 +169,8 @@
 					<MetricDisplay
 						value={pct(skippedStopRatePct)}
 						emptyLabel={t.noData}
+						absentReason="no-observations"
+						{locale}
 						label={t.skippedStopRatePct}
 						size="md"
 					/>

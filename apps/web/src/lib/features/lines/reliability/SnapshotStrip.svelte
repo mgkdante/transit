@@ -87,15 +87,6 @@
 				? t.regularity.regular
 				: t.regularity.irregular,
 	);
-
-	// Per-tile honest-empty flags (null = no data for this metric → "—" + note).
-	const otpEmpty = $derived(vm.otpPct == null);
-	const avgDelayEmpty = $derived(vm.avgDelayMin == null);
-	const p50Empty = $derived(vm.p50Min == null);
-	const p90Empty = $derived(vm.p90Min == null);
-	const covEmpty = $derived(vm.headwayRegularityCov == null);
-	const cancellationEmpty = $derived(vm.cancellationRatePct == null);
-	const skippedEmpty = $derived(vm.skippedStopRatePct == null);
 </script>
 
 {#snippet tileInfo(key: MetricKey, name: string)}
@@ -130,12 +121,11 @@
 					<MetricDisplay
 						value={fmtPct(vm.otpPct)}
 						emptyLabel={t.noData}
+						absentReason="no-observations"
+						{locale}
 						label={t.otpPct}
 						size="lg"
 					/>
-					{#if otpEmpty}
-						<p class="snapshot-tile__note" data-slot="otp-empty">{t.noDataNote}</p>
-					{/if}
 				</article>
 
 				<!-- Avg delay -->
@@ -144,12 +134,11 @@
 					<MetricDisplay
 						value={fmtMin(vm.avgDelayMin)}
 						emptyLabel={t.noData}
+						absentReason="no-observations"
+						{locale}
 						label={t.avgDelayMin}
 						size="lg"
 					/>
-					{#if avgDelayEmpty}
-						<p class="snapshot-tile__note" data-slot="avg-delay-empty">{t.noDataNote}</p>
-					{/if}
 				</article>
 			</div>
 
@@ -161,13 +150,12 @@
 					<MetricDisplay
 						value={fmtMin(vm.p50Min)}
 						emptyLabel={t.noData}
+						absentReason="no-observations"
+						{locale}
 						label={t.p50Min}
 						sublabel={t.p50Caption}
 						size="md"
 					/>
-					{#if p50Empty}
-						<p class="snapshot-tile__note" data-slot="p50-empty">{t.noDataNote}</p>
-					{/if}
 				</article>
 
 				<!-- p90 worst-case delay -->
@@ -176,13 +164,12 @@
 					<MetricDisplay
 						value={fmtMin(vm.p90Min)}
 						emptyLabel={t.noData}
+						absentReason="no-observations"
+						{locale}
 						label={t.p90Min}
 						sublabel={t.p90Caption}
 						size="md"
 					/>
-					{#if p90Empty}
-						<p class="snapshot-tile__note" data-slot="p90-empty">{t.noDataNote}</p>
-					{/if}
 				</article>
 
 				<!-- Headway regularity, CoV value + plain regular/irregular reading. -->
@@ -191,13 +178,12 @@
 					<MetricDisplay
 						value={fmtCov(vm.headwayRegularityCov)}
 						emptyLabel={t.noData}
+						absentReason="no-observations"
+						{locale}
 						label={t.headwayRegularityCov}
 						sublabel={regularityCaption ?? undefined}
 						size="md"
 					/>
-					{#if covEmpty}
-						<p class="snapshot-tile__note" data-slot="regularity-empty">{t.noDataNote}</p>
-					{/if}
 				</article>
 
 				<!-- Cancellation rate (RAMP-IN) -->
@@ -206,14 +192,13 @@
 					<MetricDisplay
 						value={fmtPct(vm.cancellationRatePct)}
 						emptyLabel={t.noData}
+						absentReason="no-observations"
+						{locale}
 						label={t.cancellationRatePct}
 						size="md"
 					/>
 					{#if vm.perMetric.cancellationRatePct}
 						<p class="snapshot-tile__rampin" data-slot="cancellation-rampin">{t.rampInNote}</p>
-					{/if}
-					{#if cancellationEmpty}
-						<p class="snapshot-tile__note" data-slot="cancellation-empty">{t.noDataNote}</p>
 					{/if}
 				</article>
 
@@ -223,15 +208,14 @@
 					<MetricDisplay
 						value={fmtPct(vm.skippedStopRatePct)}
 						emptyLabel={t.noData}
+						absentReason="no-observations"
+						{locale}
 						label={t.skippedStopRatePct}
 						sublabel={t.skippedStopCaption}
 						size="md"
 					/>
 					{#if vm.perMetric.skippedStopRatePct}
 						<p class="snapshot-tile__rampin" data-slot="skipped-rampin">{t.rampInNote}</p>
-					{/if}
-					{#if skippedEmpty}
-						<p class="snapshot-tile__note" data-slot="skipped-empty">{t.noDataNote}</p>
 					{/if}
 				</article>
 			</div>
@@ -355,14 +339,6 @@
 	.snapshot-tile :global([data-slot='metric-display'] .label-metric) {
 		min-width: 0;
 		padding-inline-end: 1.4rem;
-	}
-	/* Honest no-data caption: quiet mono, always legible (AA both themes). */
-	.snapshot-tile__note {
-		margin: 0;
-		font-family: var(--font-mono);
-		font-size: var(--text-small);
-		line-height: 1.4;
-		color: var(--muted-foreground);
 	}
 	/* Ramp-in affordance: a small, always-present caveat under the ramp-in tiles. */
 	.snapshot-tile__rampin {

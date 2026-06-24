@@ -115,11 +115,9 @@ describe('Cluster01Punctuality — populated', () => {
 			props: { vm: nullPercentiles, locale: 'en', copy },
 		});
 
-		// The two percentile tiles + the inline severe value render the no-data label.
-		const emptyLabels = screen.getAllByText(copy.strip.noData);
-		expect(emptyLabels.length).toBeGreaterThanOrEqual(2);
-		// Those no-data tiles ride the muted .metric-empty voice, never the amber value.
-		expect(container.querySelectorAll('[data-slot="metric-empty"]').length).toBeGreaterThanOrEqual(
+		// The two percentile tiles render the styled honest-absence (AbsentValue chip:
+		// reason-typed "No data · why"), never the amber value, never a plain label.
+		expect(container.querySelectorAll('[data-slot="absent-value"]').length).toBeGreaterThanOrEqual(
 			2,
 		);
 		// The real value still speaks the amber voice (not blanked out).

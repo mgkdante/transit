@@ -270,18 +270,24 @@
 						<MetricDisplay
 							value={min(row.scheduled)}
 							emptyLabel={valueNoData}
+							absentReason="no-observations"
+							{locale}
 							label={terms.scheduledGap}
 							size="sm"
 						/>
 						<MetricDisplay
 							value={min(row.observed)}
 							emptyLabel={valueNoData}
+							absentReason="no-observations"
+							{locale}
 							label={terms.observedGap}
 							size="sm"
 						/>
 						<MetricDisplay
 							value={min(row.excessWait)}
 							emptyLabel={valueNoData}
+							absentReason="no-observations"
+							{locale}
 							label={terms.excessWait}
 							size="sm"
 						/>
@@ -313,6 +319,8 @@
 									<MetricDisplay
 										value={min(row.observed)}
 										emptyLabel={valueNoData}
+										absentReason="no-observations"
+										{locale}
 										label={shiftLabel(row.shift)}
 										size="sm"
 									/>
@@ -343,6 +351,8 @@
 						<MetricDisplay
 							value={min(latestSpan.service_span_min)}
 							emptyLabel={valueNoData}
+							absentReason="no-observations"
+							{locale}
 							label={t.serviceSpan}
 							size="sm"
 						/>
@@ -352,6 +362,8 @@
 						<MetricDisplay
 							value={min(latestSpan.first_trip_delay_min)}
 							emptyLabel={valueNoData}
+							absentReason="no-observations"
+							{locale}
 							label={t.firstTripDelay}
 							size="sm"
 						/>
@@ -361,6 +373,8 @@
 						<MetricDisplay
 							value={min(latestSpan.last_trip_delay_min)}
 							emptyLabel={valueNoData}
+							absentReason="no-observations"
+							{locale}
 							label={t.lastTripDelay}
 							size="sm"
 						/>
@@ -370,6 +384,8 @@
 						<MetricDisplay
 							value={count(latestSpan.trip_count)}
 							emptyLabel={valueNoData}
+							absentReason="no-observations"
+							{locale}
 							label={t.tripCount}
 							size="sm"
 						/>

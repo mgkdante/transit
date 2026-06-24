@@ -10,6 +10,12 @@
 <script lang="ts">
 	import { cn } from '$lib/utils';
 	import type { HTMLAttributes } from 'svelte/elements';
+	// Direct import (NOT the edge barrel): the barrel also pulls EdgeState, which
+	// imports the browser-coupled $lib/stores — that would drag the SvelteKit client
+	// runtime into pure-node consumers (e.g. dataviz → MetricDisplay in node tests).
+	import AbsentValue from '$lib/components/edge/AbsentValue.svelte';
+	import type { AbsenceReasonKey } from '$lib/site/absence';
+	import type { Locale } from '$lib/i18n';
 
 	export interface MetricDisplayProps extends HTMLAttributes<HTMLDivElement> {
 		/**
@@ -23,6 +29,17 @@
 		 * When this is also empty, nothing is rendered rather than an empty amber span.
 		 */
 		emptyLabel?: string;
+		/**
+		 * Optional typed absence reason. When set (with `locale`), the empty state
+		 * renders the styled honest-absence (AbsentValue: calm "unknown" tone + glyph
+		 * + the WHY) instead of the plain `emptyLabel` text — the site-wide upgrade.
+		 * Falls back to `emptyLabel` when no reason/locale is supplied.
+		 */
+		absentReason?: AbsenceReasonKey;
+		/** Locale for the styled absence copy (required for `absentReason` to render). */
+		locale?: Locale;
+		/** Copy params interpolated into the absence WHY (e.g. { first: '06:00' }). */
+		absentParams?: Readonly<Record<string, string | number>>;
 		/** Primary label. */
 		label: string;
 		/** Optional secondary description. */
@@ -37,6 +54,9 @@
 	let {
 		value,
 		emptyLabel,
+		absentReason,
+		locale,
+		absentParams,
 		label,
 		sublabel,
 		size = 'md',
@@ -62,7 +82,9 @@
 		<span class="label-metric">{label}</span>
 	{/if}
 	{#if isEmpty}
-		{#if emptyLabel}
+		{#if absentReason && locale}
+			<AbsentValue variant="inline" reason={absentReason} {locale} params={absentParams} />
+		{:else if emptyLabel}
 			<span class="metric-empty" data-slot="metric-empty">{emptyLabel}</span>
 		{/if}
 	{:else}

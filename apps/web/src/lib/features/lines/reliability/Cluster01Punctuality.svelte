@@ -267,6 +267,8 @@
 				<MetricDisplay
 					value={pct(headline?.otp_pct)}
 					emptyLabel={copy.strip.noData}
+					absentReason="no-observations"
+					{locale}
 					label={copy.strip.otpPct}
 					size="lg"
 				/>
@@ -276,6 +278,8 @@
 				<MetricDisplay
 					value={min(headline?.avg_delay_min)}
 					emptyLabel={copy.strip.noData}
+					absentReason="no-observations"
+					{locale}
 					label={copy.strip.avgDelayMin}
 					size="md"
 				/>
@@ -285,6 +289,8 @@
 				<MetricDisplay
 					value={min(headline?.p50_min)}
 					emptyLabel={copy.strip.noData}
+					absentReason="no-observations"
+					{locale}
 					label={copy.strip.p50Min}
 					sublabel={copy.strip.p50Caption}
 					size="md"
@@ -295,6 +301,8 @@
 				<MetricDisplay
 					value={min(headline?.p90_min)}
 					emptyLabel={copy.strip.noData}
+					absentReason="no-observations"
+					{locale}
 					label={copy.strip.p90Min}
 					sublabel={copy.strip.p90Caption}
 					size="md"

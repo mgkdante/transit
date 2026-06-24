@@ -97,10 +97,15 @@
 	.absent-value--inline {
 		display: inline-flex;
 		flex-wrap: wrap;
-		align-items: baseline;
-		gap: 0.35rem;
+		align-items: center;
+		gap: 0.3rem;
 		max-width: 100%;
+		padding: 0.18rem 0.55rem;
+		border: 1px solid color-mix(in srgb, var(--absent-accent) 38%, var(--border) 62%);
+		border-radius: var(--radius-pill);
+		background: color-mix(in srgb, var(--absent-accent) 12%, transparent);
 		font-size: var(--text-small);
+		line-height: 1.3;
 	}
 	.absent-value--inline .absent-value-label,
 	.absent-value--inline .absent-value-why {
