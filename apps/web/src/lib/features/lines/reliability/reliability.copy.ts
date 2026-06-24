@@ -47,6 +47,12 @@ export interface ReliabilityCopy {
 		readonly p50Caption: string;
 		/** Plain caption under the worst-case (p90) tile. */
 		readonly p90Caption: string;
+		/** Heading for the typical→worst-case (p50→p90) delay distribution mark. */
+		readonly delayDistHeading: string;
+		/** Accessible / axis label for the delay distribution mark. */
+		readonly delayDistLabel: string;
+		/** Plain caption under the distribution (what the median line + tail mean). */
+		readonly delayDistCaption: string;
 		/** Dedicated severe-delay-share label (NOT p90 — its own metric). */
 		readonly severePct: string;
 		/** Caption for the severe-share block (what the share counts). */
@@ -209,6 +215,10 @@ export const reliabilityCopy: Record<Locale, ReliabilityCopy> = {
 			skippedFraction: (s, total) => `${s} ignorés sur ${total} mises à jour d'arrêt`,
 			p50Caption: 'La moitié des trajets font mieux, la moitié font pire',
 			p90Caption: '9 trajets sur 10 sont plus rapides que ça',
+			delayDistHeading: 'Du retard médian au pire des cas',
+			delayDistLabel: 'Retard, du médian (p50) au pire des cas (p90)',
+			delayDistCaption:
+				'Le repère marque le retard médian; la barre s’étire jusqu’au pire des cas (9 trajets sur 10 font mieux). Échelle fixe de 0 à 15 min.',
 			severePct: 'Part des retards graves',
 			severeCaption: 'Proportion de passages en retard grave',
 			weakStopsHeading: 'Les arrêts les plus en retard',
@@ -313,6 +323,10 @@ export const reliabilityCopy: Record<Locale, ReliabilityCopy> = {
 			skippedFraction: (s, total) => `${s} of ${total} stop updates skipped`,
 			p50Caption: 'Half of trips do better, half do worse',
 			p90Caption: '9 in 10 trips are better than this',
+			delayDistHeading: 'From typical to worst-case delay',
+			delayDistLabel: 'Delay, from typical (p50) to worst-case (p90)',
+			delayDistCaption:
+				'The marker is the typical (median) delay; the bar stretches to the worst case (9 in 10 trips do better). Fixed 0–15 min scale.',
 			severePct: 'Severe-delay share',
 			severeCaption: 'Share of arrivals that ran severely late',
 			weakStopsHeading: 'The stops with the most delay',

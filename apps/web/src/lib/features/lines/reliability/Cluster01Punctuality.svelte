@@ -5,8 +5,10 @@
   Reads a `PunctualityVM` (the pure mapper's per-band view-model) + locale +
   the co-located reliability copy. It answers, for the route's punctuality:
 
-    - the headline, OTP %, avg delay, typical (p50) + worst-case (p90) delay
-      (MetricDisplay) for the latest closed day;
+    - the headline, OTP % + avg delay (MetricDisplay) for the latest closed day,
+      then the typical→worst-case spread (p50→p90) as ONE Distribution quantile
+      mark on the fixed [0,15] min DELAY_DIST_DOMAIN (median = the --primary
+      affordance marker, the bar runs median→tail);
     - the OTP trend SHAPE across the dated day series (TrendLine: OTP green vs
       the avg-delay/retard amber series, dual y-domains since the units differ),
       captioned with its window (last 30 days) and real dated x-ticks;
@@ -43,10 +45,13 @@
 		SeverityBar,
 		RankedRow,
 		ChartLegend,
+		Distribution,
+		statusVar,
 		heatmapColor,
 		HEATMAP_RAMP,
 		HEATMAP_NODATA,
 	} from '$lib/components/dataviz';
+	import type { DistributionStats } from '$lib/components/dataviz';
 	import { GrainPicker, type GrainSegment } from '$lib/components/surface';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
 	import { metricInfoFor, type MetricKey } from '$lib/features/metrics/metrics.content';
@@ -61,6 +66,7 @@
 		SHIFT_GRAIN_ORDER,
 		DAY_TYPE_GRAIN_ORDER,
 		DELAY_POS_DOMAIN,
+		DELAY_DIST_DOMAIN,
 		SEVERE_DOMAIN,
 		OTP_DOMAIN,
 	} from '$lib/features/reliability/shiftGrains';
@@ -123,6 +129,28 @@
 	// S7: FIXED retard y-domain (min), identical across routes/grains/refreshes — the
 	// amber delay axis no longer auto-scales to the in-view max (the stability fix).
 	const retardDomain: [number, number] = [...DELAY_POS_DOMAIN];
+
+	// Typical→worst-case delay as ONE quantile shape (S7 P9). The two formerly-
+	// disconnected p50 / p90 number tiles become a single Distribution mark on the
+	// FIXED, zero-based DELAY_DIST_DOMAIN ([0,15] min — wide enough that the p90 tail
+	// is never clamped). The median (p50) is the --primary affordance marker (the kit's
+	// lone carve-out); the whisker runs median→tail so both magnitudes read as one
+	// shape. Honest absence: when BOTH p50 and p90 are null the mark is dropped and the
+	// AbsentValue chip (says WHY) renders instead — never a fabricated 0.
+	const p50 = $derived<number | null>(headline?.p50_min ?? null);
+	const p90 = $derived<number | null>(headline?.p90_min ?? null);
+	const hasDist = $derived(p50 != null || p90 != null);
+	// min == median is truthful here (the median is the lower bound of the shown
+	// p50→p90 range); p25/p75 stay null → an empty box track, never a fake quartile.
+	const distStats = $derived<DistributionStats>({
+		min: p50,
+		p25: null,
+		p50,
+		p75: null,
+		max: p90,
+	});
+	// Distribution.domain is a mutable [number, number]; spread the readonly const.
+	const delayDistDomain: [number, number] = [...DELAY_DIST_DOMAIN];
 
 	// Severe-share magnitude of the headline period — the ABSOLUTE %, scaled by the
 	// fixed SEVERE_DOMAIN at the bar (not /100, not /max). null = no data.
@@ -415,7 +443,8 @@
 			<AbsentValue variant="block" reason="no-observations" {locale} />
 		</div>
 	{:else}
-		<!-- Latest-day headline: OTP %, avg delay, typical (p50) + worst-case (p90). -->
+		<!-- Latest-day headline: OTP %, avg delay (the typical→worst-case spread moves
+		     into its own Distribution mark below). -->
 		<div class="cluster-headline">
 			<div class="metric-with-info">
 				<MetricDisplay
@@ -439,30 +468,45 @@
 				/>
 				{@render metricInfo('avgDelay', copy.strip.avgDelayMin)}
 			</div>
-			<div class="metric-with-info">
-				<MetricDisplay
-					value={min(headline?.p50_min)}
-					emptyLabel={copy.strip.noData}
-					absentReason="no-observations"
-					{locale}
-					label={copy.strip.p50Min}
-					sublabel={copy.strip.p50Caption}
-					size="md"
-				/>
-				{@render metricInfo('p50p90', copy.strip.p50Min)}
+		</div>
+
+		<!-- Typical → worst-case delay as ONE quantile shape: the median (p50) is the
+		     --primary affordance marker, the bar runs median→tail (p90) on the FIXED
+		     [0,15] min DELAY_DIST_DOMAIN. Honest absence: when both are null the
+		     AbsentValue chip (says WHY) renders, never a fabricated 0 / collapsed box. -->
+		<div class="cluster-block" data-slot="delay-distribution">
+			<div class="cluster-block-head">
+				<span class="label-with-info">
+					<SectionLabel text={copy.strip.delayDistHeading} variant="metric" />
+					{@render metricInfo('p50p90', copy.strip.delayDistHeading)}
+				</span>
+				<span class="cluster-block-value" class:cluster-block-value--empty={!hasDist}>
+					{#if hasDist}
+						<span data-slot="delay-dist-readout">
+							{copy.strip.p50Min}
+							<MaybeValue value={min(p50)} reason="no-observations" {locale} />
+							·
+							{copy.strip.p90Min}
+							<MaybeValue value={min(p90)} reason="no-observations" {locale} />
+						</span>
+					{:else}
+						<MaybeValue value={null} reason="no-observations" {locale} />
+					{/if}
+				</span>
 			</div>
-			<div class="metric-with-info">
-				<MetricDisplay
-					value={min(headline?.p90_min)}
-					emptyLabel={copy.strip.noData}
-					absentReason="no-observations"
-					{locale}
-					label={copy.strip.p90Min}
-					sublabel={copy.strip.p90Caption}
-					size="md"
+			{#if hasDist}
+				<Distribution
+					stats={distStats}
+					domain={delayDistDomain}
+					unit=" min"
+					fillVar={statusVar('late')}
+					label={copy.strip.delayDistLabel}
+					axisLabel={copy.strip.delayDistLabel}
+					showAxis
+					interactive
 				/>
-				{@render metricInfo('p50p90', copy.strip.p90Min)}
-			</div>
+				<p class="cluster-caption" data-slot="delay-dist-caption">{copy.strip.delayDistCaption}</p>
+			{/if}
 		</div>
 
 		<!-- OTP trend across the dated day series (green) vs avg-delay retard (amber). -->

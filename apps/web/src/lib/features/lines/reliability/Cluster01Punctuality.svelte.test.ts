@@ -115,17 +115,33 @@ describe('Cluster01Punctuality — populated', () => {
 		expect(worst.compareDocumentPosition(milder) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 	});
 
-	it('renders the typical (p50) delay tile alongside the headline (A4)', () => {
-		render(Cluster01Punctuality, { props: { vm: populated, locale: 'en', copy } });
-		// The latest day's p50 = 0.5 min, labelled "Typical delay" (not jargon).
-		expect(screen.getByText(copy.strip.p50Min)).toBeInTheDocument();
-		expect(screen.getByText('0.5 min')).toBeInTheDocument();
+	// S7 P9: the typical (p50) + worst-case (p90) numbers are now ONE Distribution
+	// quantile mark, not two separate tiles. The shape carries the values in its
+	// readout (p50 + p90) and its a11y five-number summary; the median is the
+	// --primary affordance marker, the bar runs median→tail.
+	it('renders the typical→worst-case delay distribution mark (A4 / P9)', () => {
+		const { container } = render(Cluster01Punctuality, {
+			props: { vm: populated, locale: 'en', copy },
+		});
+		const block = container.querySelector('[data-slot="delay-distribution"]') as HTMLElement;
+		expect(block).not.toBeNull();
+		// The Distribution figure renders (one shape, fixed [0,15] min domain).
+		expect(block.querySelector('[data-slot="distribution"]')).not.toBeNull();
+		// The readout carries the latest day's p50 (0.5 min) + p90 (6.0 min) as text.
+		const readout = block.querySelector('[data-slot="delay-dist-readout"]') as HTMLElement;
+		expect(readout.textContent).toContain('0.5 min');
+		expect(readout.textContent).toContain('6.0 min');
+		// Colour is never the sole channel: the figure spells the five-number summary
+		// (including the worst-case max) into its accessible label.
+		const fig = block.querySelector('[data-slot="distribution"]') as HTMLElement;
+		expect(fig.getAttribute('aria-label')).toContain('6 min');
 	});
 
 	// HONESTY (#6/#6b): the headline-day percentiles are null network-wide today —
-	// this is the most visible "·" leak the operator flagged. The p50/p90 tiles must
-	// show the explicit muted "no data" message, never a bare middot, never a 0.
-	it('shows the muted "no data" message (never "·") when p50/p90 are null', () => {
+	// this is the most visible "·" leak the operator flagged. With BOTH percentiles
+	// null the distribution is dropped whole and the AbsentValue chip (says WHY)
+	// renders instead — never a fabricated 0, never a collapsed-to-zero box.
+	it('drops the distribution for a styled no-data chip (never "·"/0) when p50/p90 are null', () => {
 		const nullPercentiles: PunctualityVM = {
 			...populated,
 			trend: [
@@ -145,15 +161,17 @@ describe('Cluster01Punctuality — populated', () => {
 			props: { vm: nullPercentiles, locale: 'en', copy },
 		});
 
-		// The two percentile tiles render the styled honest-absence (AbsentValue chip:
-		// reason-typed "No data · why"), never the amber value, never a plain label.
-		expect(container.querySelectorAll('[data-slot="absent-value"]').length).toBeGreaterThanOrEqual(
-			2,
-		);
+		const block = container.querySelector('[data-slot="delay-distribution"]') as HTMLElement;
+		// The Distribution mark is omitted entirely (no fabricated zero box)…
+		expect(block.querySelector('[data-slot="distribution"]')).toBeNull();
+		// …and the styled honest-absence chip (reason-typed "No data · why") renders.
+		expect(block.querySelector('[data-slot="absent-value"]')).not.toBeNull();
 		// The real value still speaks the amber voice (not blanked out).
 		expect(screen.getByText('82%')).toBeInTheDocument();
-		// Doctrine: the no-data tiles do NOT fall back to a bare middot value.
-		expect(screen.queryByText('·', { selector: '.metric-value' })).not.toBeInTheDocument();
+		// Doctrine: there is NO p50/p90 value readout to leak a bare middot — the
+		// only "·" present is the AbsentValue chip's own "No data · why" separator.
+		expect(block.querySelector('[data-slot="delay-dist-readout"]')).toBeNull();
+		expect(block.querySelector('[data-slot="delay-dist-caption"]')).toBeNull();
 	});
 
 	it('labels the severe-share block with its OWN label, never the p90 label (BUG-1/F3)', () => {

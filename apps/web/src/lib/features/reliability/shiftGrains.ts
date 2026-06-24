@@ -89,6 +89,13 @@ export function bunchingToSeverity(bunchedPct: number | null | undefined): Sever
 export const DELAY_STOP_DOMAIN = [-2, 8] as const;
 /** Positive delay aggregates (min) — e.g. the OTP-trend retard (amber) axis. */
 export const DELAY_POS_DOMAIN = [0, 8] as const;
+/**
+ * Delay-DISTRIBUTION axis (min) for the typical→worst-case (p50→p90) quantile mark.
+ * Wider than DELAY_POS_DOMAIN because the p90 tail routinely runs past 8 min (real
+ * STM days reach ~12) — clamping the tail to 8 would hide it. Zero-based + fixed so
+ * the same percentile always renders at the same x on every route/grain/refresh.
+ */
+export const DELAY_DIST_DOMAIN = [0, 15] as const;
 /** Day-of-week + delay-by-crowding avg delay (min). */
 export const DELAY_DOW_DOMAIN = [0, 6] as const;
 /** Severe-delay share (%) — shift / day-type / snapshot. */
