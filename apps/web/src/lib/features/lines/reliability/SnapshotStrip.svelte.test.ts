@@ -4,8 +4,8 @@
 // the seven metrics as wide two-column "explained" cards (ExplainedMetricCard),
 // grouped into two rows. These tests pin the behaviours the doctrine demands:
 //   1. POPULATED — the seven cards render across the two rows with their values,
-//      the CoV as a plain regular/irregular reading, the always-visible
-//      explanation column, the (i) affordance, and ramp-in on the two ramp-in
+//      the CoV as a plain regular/irregular reading, NO inline explanation column
+//      (context is hover-only), the (i) affordance, and ramp-in on the two ramp-in
 //      cards (and nowhere else).
 //   2. HONEST EMPTY — an all-null VM renders the styled honest-absence note and
 //      does NOT crash (no fabricated 0, no wall of empties).
@@ -71,8 +71,9 @@ describe('SnapshotStrip', () => {
 		expect(screen.getByText(copyEn.strip.regularity.regular)).toBeInTheDocument();
 		expect(screen.queryByText(copyEn.strip.regularity.irregular)).not.toBeInTheDocument();
 
-		// Every card carries its always-visible explanation column (col2).
-		expect(container.querySelectorAll('[data-slot="explained-metric-text"]')).toHaveLength(7);
+		// Hero tiles drop the inline explanation column (col2) — the per-metric context
+		// lives in the (i) hover ONLY (the operator's "just hover context" call).
+		expect(container.querySelectorAll('[data-slot="explained-metric-text"]')).toHaveLength(0);
 
 		// Ramp-in note present on BOTH ramp-in cards, and nowhere else.
 		expect(screen.getAllByText(copyEn.strip.rampInNote)).toHaveLength(2);

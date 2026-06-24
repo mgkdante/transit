@@ -2,11 +2,10 @@
   SnapshotStrip, the TOP METRIC CARDS (band 00) of the historic Reliability
   surface: the single-glance, ZERO-INTERACTION headline for one line.
 
-  Redesigned in slice-S6 from a compact tile strip into the operator's wide
-  two-column "explained" cards (ExplainedMetricCard): each card pairs col1 — the
-  (i) explainer + the label + the big value — with col2, an always-visible
-  plain-language explanation (the metric's one-liner), so the reading is never
-  hidden behind a hover. The seven metrics group into two rows:
+  The seven headline metrics are single-glance tiles (ExplainedMetricCard with NO
+  inline explanation): col1 — the label + big value + the (i) hover explainer + any
+  caveat note. The plain-language reading lives ONLY in the (i) hover, not duplicated
+  inline (the operator's "just hover context" call). The metrics group into two rows:
 
     Row 1 (headline rates)   · On-time %   · Avg delay
                              · Cancellation %  · Skipped-stop %   (RAMP-IN ×2)
@@ -51,10 +50,10 @@
 	const t = $derived(copy.strip);
 
 	// The in-app metric-explainer (i) affordance for one card: the one-line tip + a
-	// localized deep link to /metrics#<anchor>. The SAME one-liner (`tip`) is what
-	// each card shows inline in col2 (the visible explanation), with the (i) adding
-	// the deep link to the full methodology. The card labels here ARE the
-	// explainer's metric set (parity is gated in metrics.content.test).
+	// localized deep link to /metrics#<anchor>. This is now the SOLE home of the
+	// per-metric context — the cards drop the inline col2 explanation, so the reading
+	// lives in the hover only. The card labels here ARE the explainer's metric set
+	// (parity is gated in metrics.content.test).
 	const explainerCopy = $derived(metricsCopy[locale]);
 	const info = $derived((key: MetricKey, name: string) => {
 		const i = metricInfoFor(key, locale);
@@ -114,15 +113,14 @@
 			<AbsentValue variant="block" reason="no-observations" {locale} />
 		</div>
 	{:else}
-		<!-- Top metric cards (S6): wide two-column cards, grouped into two rows.
-		     col1 = (i) + label + value; col2 = the always-visible explanation. -->
+		<!-- Top metric cards: single-glance tiles (label + value + (i) hover + note),
+		     grouped into two rows. No inline explanation — context is hover-only. -->
 		<div class="snapshot-cards">
 			<!-- Row 1 — the headline rates. -->
 			<div class="snapshot-cards__row" data-slot="snapshot-row-1">
 				<ExplainedMetricCard
 					label={t.otpPct}
 					value={fmtPct(vm.otpPct)}
-					explanation={info('otp', t.otpPct).tip}
 					info={otpInfo}
 					emptyLabel={t.noData}
 					absentReason="no-observations"
@@ -131,7 +129,6 @@
 				<ExplainedMetricCard
 					label={t.avgDelayMin}
 					value={fmtMin(vm.avgDelayMin)}
-					explanation={info('avgDelay', t.avgDelayMin).tip}
 					info={avgInfo}
 					emptyLabel={t.noData}
 					absentReason="no-observations"
@@ -140,7 +137,6 @@
 				<ExplainedMetricCard
 					label={t.cancellationRatePct}
 					value={fmtPct(vm.cancellationRatePct)}
-					explanation={info('cancellation', t.cancellationRatePct).tip}
 					info={cancellationInfo}
 					note={vm.perMetric.cancellationRatePct ? t.rampInNote : undefined}
 					emptyLabel={t.noData}
@@ -150,7 +146,6 @@
 				<ExplainedMetricCard
 					label={t.skippedStopRatePct}
 					value={fmtPct(vm.skippedStopRatePct)}
-					explanation={info('skippedStop', t.skippedStopRatePct).tip}
 					info={skippedInfo}
 					sublabel={t.skippedStopCaption}
 					note={vm.perMetric.skippedStopRatePct ? t.rampInNote : undefined}
@@ -165,7 +160,6 @@
 				<ExplainedMetricCard
 					label={t.headwayRegularityCov}
 					value={fmtCov(vm.headwayRegularityCov)}
-					explanation={info('regularityCov', t.headwayRegularityCov).tip}
 					info={regularityInfo}
 					sublabel={regularityCaption ?? undefined}
 					emptyLabel={t.noData}
@@ -175,7 +169,6 @@
 				<ExplainedMetricCard
 					label={t.p90Min}
 					value={fmtMin(vm.p90Min)}
-					explanation={info('p50p90', t.p90Min).tip}
 					info={p90Info}
 					sublabel={t.p90Caption}
 					emptyLabel={t.noData}
@@ -185,7 +178,6 @@
 				<ExplainedMetricCard
 					label={t.p50Min}
 					value={fmtMin(vm.p50Min)}
-					explanation={info('p50p90', t.p50Min).tip}
 					info={p50Info}
 					sublabel={t.p50Caption}
 					emptyLabel={t.noData}
@@ -213,14 +205,14 @@
 		gap: 1rem 1.25rem;
 		width: 100%;
 	}
-	/* Each row is an auto-fit grid of WIDE cards: cards stay wide enough for their
-	   internal col1 | col2 layout and wrap as space runs out (4-up / 3-up on a wide
-	   desktop, fewer on a laptop, 1-up on a phone). Each card flips its OWN internal
-	   layout off its container width (see ExplainedMetricCard). */
+	/* Each row is an auto-fit grid of compact single-glance tiles that wrap as space
+	   runs out (4-up on a wide desktop, fewer on a laptop, 1-up on a phone). The tiles
+	   are figure-only now (no inline explanation), so they pack tighter than the old
+	   wide two-column cards. */
 	.snapshot-cards__row {
 		display: grid;
 		gap: 1rem 1.25rem;
-		grid-template-columns: repeat(auto-fit, minmax(min(27rem, 100%), 1fr));
+		grid-template-columns: repeat(auto-fit, minmax(min(15rem, 100%), 1fr));
 		align-items: stretch;
 	}
 

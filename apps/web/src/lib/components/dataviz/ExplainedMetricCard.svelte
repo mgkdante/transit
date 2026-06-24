@@ -34,8 +34,13 @@
 		label: string;
 		/** Formatted value, or null/"" for the honest no-data state. */
 		value: string | null | undefined;
-		/** The long, always-visible plain-language explanation (col2). */
-		explanation: string;
+		/**
+		 * The long, always-visible plain-language explanation (col2). OPTIONAL: omit it
+		 * for a clean single-glance tile (label + value + sublabel + (i) hover only). The
+		 * hero snapshot strip drops it so the context lives ONLY in the (i) hover, not
+		 * duplicated inline; deep-dive cards (§02) pass it to keep the reading visible.
+		 */
+		explanation?: string;
 		/** The (i) explainer affordance for col1 — passed in by the caller. */
 		info?: Snippet;
 		/** Optional secondary caption under the value (e.g. a p50/regular reading). */
@@ -80,7 +85,11 @@
 	}: ExplainedMetricCardProps = $props();
 </script>
 
-<article class={cn('explained-metric-card', className)} data-slot="explained-metric-card">
+<article
+	class={cn('explained-metric-card', className)}
+	data-slot="explained-metric-card"
+	data-explained={explanation ? 'true' : 'false'}
+>
 	<div class="emc-grid">
 		<!-- col1 — the label + metric, then the (i) affordance (+ optional caveat note).
 		     MetricDisplay comes FIRST in the DOM so the a11y/tab reading order is
@@ -137,8 +146,11 @@
 		gap: 0.75rem;
 		min-width: 0;
 	}
+	/* The 2-up figure | explanation engages ONLY for explained cards. A bare card
+	   (no explanation — the hero strip) stays single-column so the figure isn't
+	   stranded in a narrow 12rem track beside dead space. */
 	@container (min-width: 23rem) {
-		.emc-grid {
+		.explained-metric-card[data-explained='true'] .emc-grid {
 			grid-template-columns: minmax(7rem, 12rem) minmax(0, 1fr);
 			gap: 1.25rem 1.75rem;
 			align-items: start;
