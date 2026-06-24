@@ -46,6 +46,19 @@
 		 * squashed/clamped against the on-time percentage axis.
 		 */
 		retardDomain?: [number, number];
+		/**
+		 * Optional confidence band for the ON-TIME series (e.g. Wilson 95% bounds, on the
+		 * same % domain). Drawn as a shaded area BEHIND the on-time line so the interval
+		 * recedes and the central estimate leads — the honest "point estimate → interval"
+		 * upgrade. `null` points break the band (a gap, never interpolated). A fat band is
+		 * itself the honest low-sample signal.
+		 */
+		band?: { lo: Series; hi: Series };
+		/**
+		 * Optional horizontal reference value on the on-time domain (e.g. 80 = the 80% OTP
+		 * target). Drawn as a dashed hairline rule; label it in the caller's caption.
+		 */
+		target?: number;
 		/** Drawn width (viewBox units). */
 		width?: number;
 		/** Drawn height (viewBox units). */
@@ -129,6 +142,8 @@
 		retard,
 		domain = [0, 100],
 		retardDomain,
+		band,
+		target,
 		width = 320,
 		height = 120,
 		stroke = 2,
@@ -319,6 +334,50 @@
 		return null;
 	}
 
+	// Confidence-band polygons: a closed area between the hi and lo edges, broken into
+	// runs wherever EITHER edge is null (a gap, never bridged). Each run goes forward
+	// along the hi edge then back along the lo edge and closes. A 1-point run is a
+	// zero-area path (invisible) — a band needs at least two points to read.
+	function toBandSegments(loPts: Array<Pt | null>, hiPts: Array<Pt | null>): string[] {
+		const segs: string[] = [];
+		let run: Array<{ hi: Pt; lo: Pt }> = [];
+		const flush = () => {
+			if (run.length < 2) return;
+			const top = run.map(
+				(p, i) => `${i === 0 ? 'M' : 'L'}${p.hi.x.toFixed(2)},${p.hi.y.toFixed(2)}`,
+			);
+			const bottom = run
+				.slice()
+				.reverse()
+				.map((p) => `L${p.lo.x.toFixed(2)},${p.lo.y.toFixed(2)}`);
+			segs.push(`${top.join(' ')} ${bottom.join(' ')} Z`);
+		};
+		for (let i = 0; i < hiPts.length; i++) {
+			const hi = hiPts[i];
+			const lo = loPts[i];
+			if (hi && lo) run.push({ hi, lo });
+			else {
+				flush();
+				run = [];
+			}
+		}
+		flush();
+		return segs;
+	}
+
+	// Confidence band (e.g. Wilson) scaled to the ON-TIME domain, behind the line.
+	const bandSegs = $derived(
+		band ? toBandSegments(scale(band.lo, domain), scale(band.hi, domain)) : [],
+	);
+	// Target reference y (viewBox units) on the on-time domain, e.g. the 80% OTP line.
+	const targetY = $derived.by(() => {
+		if (target == null) return null;
+		const [min, max] = domain;
+		const span = max - min || 1;
+		const c = Math.min(max, Math.max(min, target));
+		return PAD + (1 - (c - min) / span) * (height - PAD * 2);
+	});
+
 	const onTimePts = $derived(scale(onTime, domain));
 	// Retard scales to its OWN domain when given (different unit, e.g. minutes);
 	// otherwise it shares the on-time domain (same unit).
@@ -384,6 +443,26 @@
 			stroke-width="0.75"
 			stroke-dasharray="3 4"
 		/>
+
+		<!-- Confidence band (e.g. Wilson 95%) BEHIND the on-time line: a solid pre-mixed
+		     muted green (color-mix to the signage bg, NOT runtime alpha on a surface), so
+		     the interval recedes and the central line leads. -->
+		{#each bandSegs as d, i (i)}
+			<path {d} class="dv-trend-band" />
+		{/each}
+
+		<!-- Target reference rule (e.g. 80% OTP), labelled in the caller's caption. -->
+		{#if targetY != null}
+			<line
+				x1={PAD}
+				y1={targetY}
+				x2={width - PAD}
+				y2={targetY}
+				stroke="var(--border-strong, var(--border))"
+				stroke-width="0.75"
+				stroke-dasharray="4 3"
+			/>
+		{/if}
 
 		<!-- Vertical guide tracking the active x-index (interactive only). -->
 		{#if guideX != null}
@@ -564,6 +643,14 @@
 </figure>
 
 <style>
+	/* Confidence-band fill: a SOLID pre-mixed muted on-time green (the dataviz token
+	   mixed toward the signage bg) — never runtime alpha on a surface, so the
+	   circuit-grid never bleeds through. The band recedes; the 2px line leads. */
+	.dv-trend-band {
+		fill: color-mix(in oklab, var(--dataviz-status-on-time) 20%, var(--signage-bg));
+		stroke: none;
+	}
+
 	.dv-trendline-plot {
 		position: relative;
 	}

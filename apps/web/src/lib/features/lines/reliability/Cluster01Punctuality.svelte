@@ -102,6 +102,15 @@
 	const retardSeries = $derived(vm.trend.map((p) => p.avg_delay_min ?? null));
 	const xLabels = $derived(vm.trend.map((p) => p.date ?? ''));
 	const hasTrend = $derived(vm.trend.length > 1);
+
+	// S7 P1: the 95% Wilson confidence band (PERCENT) shipped on every period but drawn
+	// nowhere until now. A fat band IS the honest low-sample signal; we rank on wilson_lo
+	// elsewhere. Only render the band when at least one period carries both bounds.
+	const wilsonLoSeries = $derived(vm.trend.map((p) => p.wilson_lo ?? null));
+	const wilsonHiSeries = $derived(vm.trend.map((p) => p.wilson_hi ?? null));
+	const hasWilsonBand = $derived(
+		wilsonLoSeries.some((v) => v != null) && wilsonHiSeries.some((v) => v != null),
+	);
 	// S7: FIXED retard y-domain (min), identical across routes/grains/refreshes — the
 	// amber delay axis no longer auto-scales to the in-view max (the stability fix).
 	const retardDomain: [number, number] = [...DELAY_POS_DOMAIN];
@@ -356,6 +365,8 @@
 					retard={retardSeries}
 					domain={[0, 100]}
 					{retardDomain}
+					band={hasWilsonBand ? { lo: wilsonLoSeries, hi: wilsonHiSeries } : undefined}
+					target={80}
 					{xLabels}
 					onTimeLabel={copy.strip.otpPct}
 					retardLabel={copy.strip.avgDelayMin}
@@ -367,6 +378,11 @@
 					readout
 					readoutHint={copy.strip.trendReadoutHint}
 				/>
+				{#if hasWilsonBand}
+					<p class="cluster-band-caption" data-slot="wilson-band-caption">
+						{copy.strip.wilsonBandCaption}
+					</p>
+				{/if}
 			</div>
 		{/if}
 
@@ -605,6 +621,14 @@
 	}
 	.cluster-block-window {
 		font-variant-numeric: tabular-nums;
+	}
+	/* Plain-language legend for the Wilson band + 80% target rule, under the trend. */
+	.cluster-band-caption {
+		margin: 0.5rem 0 0;
+		font-size: var(--text-caption);
+		line-height: 1.5;
+		color: var(--muted-foreground);
+		text-wrap: pretty;
 	}
 	.cluster-ranked {
 		display: flex;

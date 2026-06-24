@@ -61,6 +61,8 @@ export interface ReliabilityCopy {
 		readonly skippedStopCaption: string;
 		/** Hint shown in the fixed chart readout before anything is hovered/focused. */
 		readonly trendReadoutHint: string;
+		/** Plain-language legend for the OTP Wilson confidence band + the 80% target rule. */
+		readonly wilsonBandCaption: string;
 		/** Ramp-in caveat shown on no-backfill metrics/sections. */
 		readonly rampInNote: string;
 		/** Explicit empty-state note for a metric/band with no data yet. */
@@ -197,6 +199,8 @@ export const reliabilityCopy: Record<Locale, ReliabilityCopy> = {
 			excessWaitCaption: '0 = le service respecte (ou dépasse) sa fréquence prévue',
 			skippedStopCaption: 'Arrêts non desservis',
 			trendReadoutHint: 'Survolez ou tabulez le graphique pour lire chaque jour',
+			wilsonBandCaption:
+				'La bande ombrée : on est sûr à 95 % que le vrai taux de ponctualité s’y trouve (plus la bande est large, moins l’échantillon est grand). Ligne pointillée : cible de 80 %.',
 			rampInNote: 'Nouveau, on compte depuis peu, donc le chiffre se précise avec le temps',
 			noDataNote: 'Aucune donnée',
 			noData: 'sans données',
@@ -288,6 +292,8 @@ export const reliabilityCopy: Record<Locale, ReliabilityCopy> = {
 			excessWaitCaption: '0 = runs on schedule (met or beat its planned frequency)',
 			skippedStopCaption: "Stops the bus didn't serve",
 			trendReadoutHint: 'Hover or tab the chart to read each day',
+			wilsonBandCaption:
+				'Shaded band: we’re 95% sure the true on-time rate sits inside it (a wider band = a smaller sample). Dashed line: the 80% target.',
 			rampInNote: 'New metric, we just started counting, so this number sharpens over time',
 			noDataNote: 'No data yet',
 			noData: 'no data',
