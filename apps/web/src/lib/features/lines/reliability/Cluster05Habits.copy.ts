@@ -16,6 +16,26 @@ export interface HabitsBandCopy {
 	readonly weekdayHeading: string;
 	/** Caption for a weekday row's mean-delay value. */
 	readonly avgDelay: string;
+	/** The weekday cycle plot — seven Mon→Sun panels of mean delay across weeks. */
+	readonly cycle: {
+		/** Whole-figure accessible summary (role=img label). */
+		readonly ariaLabel: string;
+		/** Per-panel mean-delay label, interpolated with the formatted mean. */
+		readonly mean: (value: string) => string;
+		/** Severe-delay-share label, interpolated with the formatted share. */
+		readonly severe: (value: string) => string;
+		/** Observation-count prefix, e.g. "n=420". */
+		readonly obs: (n: number) => string;
+		/** Steepest-trend annotation, given the weekday name + the signed delta. */
+		readonly steepest: (day: string, delta: string) => string;
+		/**
+		 * Plain caption beneath the cycle plot. `series` reads when the contract carries
+		 * an across-weeks series per weekday (true cycle plot); `single` reads when it
+		 * carries one value per weekday (the honest fixed-axis bar degrade).
+		 */
+		readonly captionSeries: string;
+		readonly captionSingle: string;
+	};
 	/** X-axis caption (hours run left→right). */
 	readonly hourAxisLabel: string;
 	/** Y-axis caption (days run top→bottom). */
@@ -52,6 +72,17 @@ export const habitsBandCopy: Record<Locale, HabitsBandCopy> = {
 		heatmapLabel: 'Carte thermique des problèmes par jour et par heure',
 		weekdayHeading: 'Par jour de la semaine',
 		avgDelay: 'Retard moyen',
+		cycle: {
+			ariaLabel: 'Graphique cyclique du retard moyen par jour de la semaine, du lundi au dimanche',
+			mean: (value) => `Moyenne ${value}`,
+			severe: (value) => `Graves ${value}`,
+			obs: (n) => `n=${n}`,
+			steepest: (day, delta) => `Plus forte variation : ${day} (${delta})`,
+			captionSeries:
+				'Un panneau par jour, du lundi au dimanche, sur une échelle de retard fixe et partagée. La ligne pointillée marque la moyenne du jour; le losange indique la part des retards graves (n ≥ 5).',
+			captionSingle:
+				'Un panneau par jour, du lundi au dimanche, sur une échelle de retard fixe et partagée. La barre indique le retard moyen du jour; le losange indique la part des retards graves (n ≥ 5). Aucune série hebdomadaire dans les données actuelles — jamais inventée.',
+		},
 		hourAxisLabel: 'Heure de la journée',
 		dayAxisLabel: 'Jour de la semaine',
 		cellValueLabel: 'Intensité',
@@ -70,6 +101,17 @@ export const habitsBandCopy: Record<Locale, HabitsBandCopy> = {
 		heatmapLabel: 'Repeat-problem heatmap by day and hour',
 		weekdayHeading: 'By day of week',
 		avgDelay: 'Avg delay',
+		cycle: {
+			ariaLabel: 'Cycle plot of mean delay by day of week, Monday through Sunday',
+			mean: (value) => `Mean ${value}`,
+			severe: (value) => `Severe ${value}`,
+			obs: (n) => `n=${n}`,
+			steepest: (day, delta) => `Steepest swing: ${day} (${delta})`,
+			captionSeries:
+				'One panel per weekday, Monday→Sunday, on a shared fixed delay scale. The dashed line marks the day’s mean; the diamond shows the severe-delay share (n ≥ 5).',
+			captionSingle:
+				'One panel per weekday, Monday→Sunday, on a shared fixed delay scale. The bar shows the day’s mean delay; the diamond shows the severe-delay share (n ≥ 5). No across-weeks series in the current data — never fabricated.',
+		},
 		hourAxisLabel: 'Hour of day',
 		dayAxisLabel: 'Day of week',
 		cellValueLabel: 'Intensity',

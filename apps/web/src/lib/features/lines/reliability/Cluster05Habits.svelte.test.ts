@@ -2,7 +2,9 @@
 //
 // Two cases per the slice contract:
 //   1. POPULATED — a habit matrix + weekday rows render the heatmap (role=img /
-//      role=group) and the weekday ranked list, without crashing.
+//      role=group) and the weekday CYCLE PLOT (P7: seven Mon→Sun panels on a fixed
+//      shared delay axis, degraded to one bar per weekday since the contract carries
+//      one value per weekday), without crashing.
 //   2. HONEST EMPTY — an empty VM + no weekday rows render the explicit no-data
 //      note and NEITHER data sub-section (no fabricated zero, no dropped band).
 
@@ -45,7 +47,7 @@ const POPULATED_DOW: RouteDayOfWeek[] = [
 const EMPTY_HABITS: HabitsVM = { scale: null, matrix: [], isEmpty: true };
 
 describe('Cluster05Habits — populated', () => {
-	it('renders the cluster overline, the heatmap, and the weekday ranked list', () => {
+	it('renders the cluster overline, the heatmap, and the weekday cycle plot', () => {
 		const { container } = render(Cluster05Habits, {
 			props: {
 				habits: POPULATED_HABITS,
@@ -62,12 +64,13 @@ describe('Cluster05Habits — populated', () => {
 		expect(container.querySelector('[data-slot="habits-heatmap"]')).toBeInTheDocument();
 		expect(screen.getByRole('group', { name: enBand.heatmapLabel })).toBeInTheDocument();
 
-		// Weekday ranked list present, worst day (Friday, 8.4 min) ranked first.
+		// Weekday cycle plot present (P7), Friday's mean (8.4 min) read on its panel.
 		expect(container.querySelector('[data-slot="habits-weekday"]')).toBeInTheDocument();
-		const rows = screen.getByRole('list', { name: enBand.weekdayHeading });
-		expect(rows).toBeInTheDocument();
-		expect(screen.getByText('Friday')).toBeInTheDocument();
-		expect(screen.getByText('8.4 min')).toBeInTheDocument();
+		const cycle = container.querySelector('[data-slot="cycle-plot"]')!;
+		expect(cycle).toBeInTheDocument();
+		// One value per weekday → the honest single-bar degrade (not a fabricated series).
+		expect(cycle.getAttribute('data-mode')).toBe('bars');
+		expect(screen.getByText('Mean 8.4 min')).toBeInTheDocument();
 
 		// No fabricated empty note when data is present.
 		expect(container.querySelector('[data-slot="habits-empty"]')).toBeNull();
@@ -130,15 +133,15 @@ describe('Cluster05Habits — populated', () => {
 		expect(screen.getByText(enCopy.windows.habits)).toBeInTheDocument();
 	});
 
-	it('surfaces day-of-week severe share as a second value gated by observation_count (A2)', () => {
-		render(Cluster05Habits, {
+	it('surfaces day-of-week severe share as a second cycle-plot mark gated by observation_count (A2)', () => {
+		const { container } = render(Cluster05Habits, {
 			props: {
 				habits: POPULATED_HABITS,
 				dayOfWeek: [
-					// well-sampled weekday → severe share is shown as the second reading.
+					// well-sampled weekday → severe share is shown as the second mark.
 					{ day_of_week_iso: 4, avg_delay_min: 6.1, severe_pct: 14.9, observation_count: 120 },
-					// under-sampled weekday → severe share is WITHHELD (no fabricated number),
-					// the row still ranks on its mean delay with the plain avg-delay caption.
+					// under-sampled weekday → severe share is WITHHELD (no fabricated number);
+					// the panel still draws its mean-delay bar, just without the severe mark.
 					{ day_of_week_iso: 7, avg_delay_min: 9.2, severe_pct: 16.2, observation_count: 2 },
 				],
 				locale: 'en',
@@ -146,11 +149,14 @@ describe('Cluster05Habits — populated', () => {
 			},
 		});
 
-		// Well-sampled Thursday shows its severe share with the dedicated label.
-		expect(screen.getByText(`${enCopy.peak.dayOfWeekSevere} 14.9%`)).toBeInTheDocument();
-		// Under-sampled Sunday keeps the plain avg-delay caption (severe withheld).
-		expect(screen.queryByText(`${enCopy.peak.dayOfWeekSevere} 16.2%`)).not.toBeInTheDocument();
-		expect(screen.getByText(enBand.avgDelay)).toBeInTheDocument();
+		// Well-sampled Thursday shows its severe share via the cycle severe mark.
+		const thu = container.querySelector('[data-day="Thu"]')!;
+		expect(thu.querySelector('[data-slot="cycle-plot-severe"]')?.textContent).toContain('14.9');
+		// Under-sampled Sunday withholds the severe mark (no fabricated number).
+		const sun = container.querySelector('[data-day="Sun"]')!;
+		expect(sun.querySelector('[data-slot="cycle-plot-severe"]')).toBeNull();
+		// Sunday still draws its mean-delay bar (it has a real mean), never dropped.
+		expect(sun.querySelector('[data-slot="cycle-plot-bar"]')).not.toBeNull();
 	});
 
 	it('renders the FR canonical scale caption', () => {
@@ -176,7 +182,7 @@ describe('Cluster05Habits — populated', () => {
 		expect(container.querySelector('[data-slot="habits-empty"]')).toBeNull();
 	});
 
-	it('drops weekday rows that carry no mean delay (no fabricated zero row)', () => {
+	it('draws a bar only for a weekday with a real mean; an empty weekday routes to the honest-absence chip (no fabricated zero bar)', () => {
 		const { container } = render(Cluster05Habits, {
 			props: {
 				habits: EMPTY_HABITS,
@@ -188,9 +194,13 @@ describe('Cluster05Habits — populated', () => {
 				copy: enCopy,
 			},
 		});
-		// Only the one real row renders.
-		expect(screen.getByText('Tuesday')).toBeInTheDocument();
-		expect(screen.queryByText('Saturday')).toBeNull();
+		// Tuesday (real mean) draws its bar; Saturday (no mean) renders the absence chip,
+		// NOT a fabricated 0 bar (and is never silently dropped — the cycle keeps the panel).
+		const tue = container.querySelector('[data-day="Tue"]')!;
+		expect(tue.querySelector('[data-slot="cycle-plot-bar"]')).not.toBeNull();
+		const sat = container.querySelector('[data-day="Sat"]')!;
+		expect(sat.querySelector('[data-slot="cycle-plot-bar"]')).toBeNull();
+		expect(sat.querySelector('[data-slot="absent-value"]')).not.toBeNull();
 		expect(container.querySelector('[data-slot="habits-heatmap"]')).toBeNull();
 	});
 });

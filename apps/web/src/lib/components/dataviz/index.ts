@@ -66,6 +66,14 @@ export type { ServiceSpanTimelineProps } from './ServiceSpanTimeline.svelte';
 export { default as Dumbbell } from './Dumbbell.svelte';
 export type { DumbbellProps } from './Dumbbell.svelte';
 
+// Weekday-seasonality cycle plot (slice-S7 P7): seven Mon→Sun panels on ONE fixed
+// y-axis, each a mini across-weeks time-series with a per-panel horizontal MEAN line.
+// Degrades to a single fixed-domain magnitude bar per weekday when the contract carries
+// one value per weekday (no across-weeks series). Severe-share second mark (gated n≥5) +
+// a visible n=; calm dataviz tokens + glyph + aria; honest absence when empty.
+export { default as CyclePlot } from './CyclePlot.svelte';
+export type { CyclePlotProps, CyclePlotPanel } from './CyclePlot.svelte';
+
 export { default as IconArray } from './IconArray.svelte';
 export type { IconArrayProps, IconArraySegment } from './IconArray.svelte';
 

@@ -25,10 +25,11 @@
 	import type { RouteDayOfWeek } from '$lib/v1';
 	import {
 		Heatmap,
-		RankedRow,
+		CyclePlot,
 		ChartLegend,
 		HEATMAP_RAMP,
 		HEATMAP_NODATA,
+		type CyclePlotPanel,
 	} from '$lib/components/dataviz';
 	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
 	import { AbsentValue } from '$lib/components/edge';
@@ -39,6 +40,7 @@
 		weekdayLabel,
 		delayMinToSeverity,
 		DELAY_DOW_DOMAIN,
+		SEVERE_DOMAIN,
 	} from '$lib/features/reliability/shiftGrains';
 	import type { HabitsVM } from './clusters';
 	import type { ReliabilityCopy } from './reliability.copy';
@@ -100,33 +102,42 @@
 			})),
 	);
 
-	// S7 (B9 cycle): weekdays in FIXED Mon→Sun cycle order — NOT sorted by delay (the
-	// cycle order IS the meaning). value = the ABSOLUTE mean delay (min), scaled by the
-	// fixed DELAY_DOW_DOMAIN at the bar (never delay/max, so the same delay reads the
-	// same length every visit); severity from the absolute delayMinToSeverity, decoupled
-	// from the other days. The rank ordinal is dropped at the render (showRank=false).
-	const rankedWeekdays = $derived.by(() =>
-		weekdayRows
-			.slice()
-			.sort((a, b) => a.iso - b.iso)
-			.map((r, i) => {
-				// Severe share is shown only when enough observations back it.
-				const severeTrusted =
-					r.severePct != null &&
-					r.observationCount != null &&
-					r.observationCount >= MIN_SEVERE_OBSERVATIONS;
-				return {
-					rank: i + 1,
-					title: r.name,
-					value: r.delay,
-					display: `${r.delay.toFixed(1)} min`,
-					subtitle: severeTrusted
-						? `${copy.peak.dayOfWeekSevere} ${r.severePct!.toFixed(1)}%`
-						: band.avgDelay,
-					severity: delayMinToSeverity(r.delay),
-					key: r.iso,
-				};
-			}),
+	// S7 (P7 cycle): weekdays in a FIXED Mon→Sun cycle frame (iso 1..7) — NOT sorted by
+	// delay (the cycle order IS the meaning). The CyclePlot reads ONE point per weekday
+	// (the contract's current shape, no across-weeks series), so it renders its honest
+	// fixed-axis BAR degrade: each bar = the ABSOLUTE mean delay (min) scaled by the
+	// shared DELAY_DOW_DOMAIN (never delay/max), severity from the absolute
+	// delayMinToSeverity, decoupled per day. A weekday the contract omits resolves to an
+	// empty panel (the honest no-data chip), never a fabricated 0 bar. The severe-share
+	// second mark (SEVERE_DOMAIN) is gated to weekdays whose sample is large enough.
+	const cyclePanels = $derived.by<CyclePlotPanel[]>(() => {
+		const byIso = new Map(weekdayRows.map((r) => [r.iso, r]));
+		return [1, 2, 3, 4, 5, 6, 7].map((iso) => {
+			const r = byIso.get(iso);
+			// Severe share is shown only when enough observations back it (else withheld).
+			const severeTrusted =
+				r != null &&
+				r.severePct != null &&
+				r.observationCount != null &&
+				r.observationCount >= MIN_SEVERE_OBSERVATIONS;
+			return {
+				label: band.weekdaysShort[iso - 1],
+				fullLabel: weekdayLabel(iso, locale),
+				// One value per weekday → the CyclePlot picks its single-bar mode. An absent
+				// weekday carries no point (empty panel → honest-absence chip), never a fake 0.
+				points: r ? [r.delay] : [],
+				severePct: severeTrusted ? r!.severePct : null,
+				severity: delayMinToSeverity(r?.delay ?? null),
+				observationCount: r?.observationCount ?? null,
+			};
+		});
+	});
+
+	// 'series' vs 'single' caption — driven by whether ANY weekday carries an across-weeks
+	// series (≥2 points). The contract is single-value today, so this resolves to 'single';
+	// it flips automatically the day a real series lands (no UI change needed).
+	const cycleHasSeries = $derived(
+		cyclePanels.some((p) => p.points.filter((v) => v != null).length >= 2),
 	);
 
 	const hasHeatmap = $derived(!habits.isEmpty);
@@ -234,23 +245,22 @@
 						<SectionLabel text={band.weekdayHeading} variant="metric" />
 						{@render metricInfo('seasonality', band.weekdayHeading)}
 					</span>
-					<ul class="habits-weekday-list" aria-label={band.weekdayHeading}>
-						{#each rankedWeekdays as row (row.key)}
-							<li class="habits-weekday-row">
-								<RankedRow
-									rank={row.rank}
-									title={row.title}
-									subtitle={row.subtitle}
-									severity={row.severity}
-									value={row.value}
-									domain={DELAY_DOW_DOMAIN}
-									unit=" min"
-									showRank={false}
-									display={row.display}
-								/>
-							</li>
-						{/each}
-					</ul>
+					<CyclePlot
+						panels={cyclePanels}
+						domain={DELAY_DOW_DOMAIN}
+						severeDomain={SEVERE_DOMAIN}
+						{locale}
+						ariaLabel={band.cycle.ariaLabel}
+						meanLabel={band.cycle.mean}
+						severeLabel={band.cycle.severe}
+						obsLabel={band.cycle.obs}
+						steepestLabel={band.cycle.steepest}
+						unit=" min"
+						absentReason="no-observations"
+					/>
+					<p class="habits-scale-caption" data-slot="habits-cycle-caption">
+						{cycleHasSeries ? band.cycle.captionSeries : band.cycle.captionSingle}
+					</p>
 				</div>
 			{/if}
 		</div>
@@ -308,16 +318,5 @@
 		font-family: var(--font-mono);
 		font-size: var(--text-micro);
 		color: var(--muted-foreground);
-	}
-	.habits-weekday-list {
-		list-style: none;
-		margin: 0;
-		padding: 0;
-		display: flex;
-		flex-direction: column;
-		gap: 0.5rem;
-	}
-	.habits-weekday-row {
-		display: block;
 	}
 </style>
