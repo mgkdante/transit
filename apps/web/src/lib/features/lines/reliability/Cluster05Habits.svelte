@@ -290,6 +290,12 @@
 		max-width: 100%;
 		overflow-x: auto;
 	}
+	/* The inner SVG is width:100%, so without a floor it squishes 24 hour-columns into a
+	   ~380px phone (≈13px cells, colliding ticks, sub-target taps). Give it an intrinsic
+	   min width so it OVERFLOWS the scroller above instead — legible cells, swipe to read. */
+	.habits-subsection :global(.habits-heatmap svg) {
+		min-width: 30rem;
+	}
 	/* A subsection heading + its explainer (i), kept centred on the label. The label
 	   keeps a measure (min-width:0) so a long heading wraps cleanly; the (i) wrapper
 	   never shrinks (flex:none) so the glyph stays whole beside it. */

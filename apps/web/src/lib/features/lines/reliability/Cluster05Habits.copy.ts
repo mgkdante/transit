@@ -85,14 +85,16 @@ export const habitsBandCopy: Record<Locale, HabitsBandCopy> = {
 		},
 		hourAxisLabel: 'Heure de la journée',
 		dayAxisLabel: 'Jour de la semaine',
-		cellValueLabel: 'Intensité',
+		cellValueLabel: 'Problèmes récurrents',
 		scaleCaption:
-			'La couleur indique la fréquence des problèmes, comparée heure par heure au sein de chaque journée. Plus c’est chaud, plus le problème revient souvent.',
+			'La couleur indique à quelle fréquence les problèmes reviennent, comparée heure par heure au sein de chaque journée. Bleu = rarement un problème à cette heure-là; rouge = souvent. La comparaison se fait au sein de chaque jour, pas entre les jours.',
 		scaleLegend: {
 			repeat_problem_relative: 'Problèmes récurrents (relatif par jour)',
 			severe_relative: 'Retards graves (relatif par jour)',
 		},
-		legend: { low: 'Faible', medium: 'Moyen', high: 'Élevé', noData: 'Aucune donnée' },
+		// Frequency words, not abstract "low/high" — they say what the colour MEANS to a
+		// rider (how often a problem comes back at that hour) and double as the cell readout.
+		legend: { low: 'Rarement', medium: 'Parfois', high: 'Souvent', noData: 'Aucune donnée' },
 		weekdays: ['', 'Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dimanche'],
 		weekdaysShort: ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'],
 	},
@@ -114,14 +116,16 @@ export const habitsBandCopy: Record<Locale, HabitsBandCopy> = {
 		},
 		hourAxisLabel: 'Hour of day',
 		dayAxisLabel: 'Day of week',
-		cellValueLabel: 'Intensity',
+		cellValueLabel: 'Repeat problems',
 		scaleCaption:
-			'Colour shows how often problems repeat, compared hour-by-hour within each day. Hotter = the problem comes back more often.',
+			'Colour shows how often problems come back, compared hour-by-hour within each day. Blue = rarely a problem at that hour; red = often. The comparison is within each day, not between days.',
 		scaleLegend: {
 			repeat_problem_relative: 'Repeat problems (relative per day)',
 			severe_relative: 'Severe delays (relative per day)',
 		},
-		legend: { low: 'Low', medium: 'Medium', high: 'High', noData: 'No data' },
+		// Frequency words, not abstract "low/high" — they say what the colour MEANS to a
+		// rider (how often a problem comes back at that hour) and double as the cell readout.
+		legend: { low: 'Rarely', medium: 'Sometimes', high: 'Often', noData: 'No data' },
 		weekdays: ['', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'],
 		weekdaysShort: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
 	},
