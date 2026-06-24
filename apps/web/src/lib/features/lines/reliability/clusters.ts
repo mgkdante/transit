@@ -183,6 +183,21 @@ export interface CrowdingVM {
 		readonly weekday: OccupancyMix | null;
 		readonly weekend: OccupancyMix | null;
 	} | null;
+	/**
+	 * P11: the RAW per-ISO-weekday occupancy mix kept VERBATIM from occupancy_by_dow,
+	 * for the Mon→Sun small-multiple. Always the full 7-day frame (iso 1..7), ASC, so
+	 * the band can render one strip per weekday with a fixed Mon→Sun axis: a weekday
+	 * the contract omits, OR a present weekday with mix:null, both carry `mix: null`
+	 * (honest absence — that day renders the no-telemetry chip, never a fabricated bar
+	 * or a silently dropped strip). null only when occupancy_by_dow is absent/empty
+	 * (then the small-multiple is omitted, same gate as weekdayWeekend).
+	 */
+	readonly byWeekday:
+		| readonly {
+				readonly iso: number;
+				readonly mix: OccupancyMix | null;
+		  }[]
+		| null;
 	/** True when `mix` is null OR every band share is zero/absent. */
 	readonly isEmpty: boolean;
 }
@@ -653,11 +668,25 @@ export function toReliabilityClusters(
 					),
 				}
 			: null;
+	// P11: the RAW per-ISO-weekday mix on a FIXED Mon→Sun frame (iso 1..7). Index the
+	// sparse contract rows by their ISO weekday (last write wins for a dup), then walk
+	// the full 1..7 frame so every weekday gets a strip — a missing weekday OR a
+	// present-but-null mix both resolve to `mix: null` (honest absence). Gated on the
+	// same occByDow presence as weekdayWeekend so the small-multiple omits cleanly.
+	const byWeekday =
+		occByDow.length > 0
+			? (() => {
+					const byIso = new Map<number, OccupancyMix | null>();
+					for (const d of occByDow) byIso.set(d.day_of_week_iso, d.mix ?? null);
+					return [1, 2, 3, 4, 5, 6, 7].map((iso) => ({ iso, mix: byIso.get(iso) ?? null }));
+				})()
+			: null;
 	const crowding: CrowdingVM = {
 		mix: mixHasShare ? rawMix : null,
 		delayByCrowding,
 		mixByGrain,
 		weekdayWeekend,
+		byWeekday,
 		// The mix drives the headline + stacked bar; the delay×crowding sub-block has
 		// its OWN empty path. `isEmpty` stays mix-driven so a route WITH delay data but
 		// no occupancy mix still surfaces the delay sub-block under the band.

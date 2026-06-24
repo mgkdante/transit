@@ -118,6 +118,13 @@ export interface ReliabilityCopy {
 			readonly mean: (value: string) => string;
 		};
 	};
+	/** Per-ISO-weekday occupancy small-multiple (P11) — in the 04 Crowding band. */
+	readonly byDow: {
+		/** Sub-block overline. */
+		readonly heading: string;
+		/** Plain caption under the Mon→Sun strips (what each strip reads). */
+		readonly caption: string;
+	};
 	/** Delay-by-crowding sub-block (in the 04 Crowding band) labels. */
 	readonly delayByCrowding: {
 		/** Sub-block overline. */
@@ -264,6 +271,11 @@ export const reliabilityCopy: Record<Locale, ReliabilityCopy> = {
 				mean: (value) => `Moyenne journée : ${value}`,
 			},
 		},
+		byDow: {
+			heading: 'Encombrement par jour de la semaine',
+			caption:
+				"Répartition de l'occupation pour chaque jour, du lundi au dimanche. Un jour sans télémétrie le dit clairement plutôt que d'inventer une barre.",
+		},
 		delayByCrowding: {
 			heading: "Retard selon l'occupation",
 			typical: (p50) => `médian ${p50}`,
@@ -374,6 +386,11 @@ export const reliabilityCopy: Record<Locale, ReliabilityCopy> = {
 				ariaLabel: 'Severe-delay share by time of day',
 				mean: (value) => `All-day mean: ${value}`,
 			},
+		},
+		byDow: {
+			heading: 'Crowding by day of week',
+			caption:
+				'How occupancy splits on each day, Monday through Sunday. A day with no telemetry says so plainly instead of fabricating a bar.',
 		},
 		delayByCrowding: {
 			heading: 'Delay by crowding',

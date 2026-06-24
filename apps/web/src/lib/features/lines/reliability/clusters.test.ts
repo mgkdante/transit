@@ -568,6 +568,36 @@ describe('toReliabilityClusters — occupancy_by_grain / occupancy_by_dow (S7)',
 		expect(c.crowding.mixByGrain).toBeNull();
 		expect(c.crowding.weekdayWeekend).toBeNull();
 	});
+
+	it('exposes the RAW per-ISO-weekday mix on a fixed Mon→Sun (1..7) frame (P11)', () => {
+		const bw = toReliabilityClusters(crowdingGrains).crowding.byWeekday;
+		expect(bw).not.toBeNull();
+		// Always the full 7-day frame, ISO ascending, regardless of contract sparsity.
+		expect(bw?.map((d) => d.iso)).toEqual([1, 2, 3, 4, 5, 6, 7]);
+		// Present weekdays keep their mix VERBATIM (not the weekday/weekend mean).
+		expect(bw?.find((d) => d.iso === 1)?.mix?.many_seats).toBe(0.8);
+		expect(bw?.find((d) => d.iso === 5)?.mix?.few_seats).toBe(0.4);
+		expect(bw?.find((d) => d.iso === 6)?.mix?.empty).toBe(0.5);
+		// A weekday the contract omits → honest mix:null (not a fabricated zero mix).
+		expect(bw?.find((d) => d.iso === 2)?.mix).toBeNull();
+		expect(bw?.find((d) => d.iso === 7)?.mix).toBeNull();
+	});
+
+	it('keeps a present-but-null weekday mix as honest null on the frame (P11)', () => {
+		const data: RouteReliability = {
+			generated_utc: utc('2026-06-19T02:00:00Z'),
+			id: '12',
+			occupancy_by_dow: [{ day_of_week_iso: 3, mix: null }],
+		};
+		const bw = toReliabilityClusters(data).crowding.byWeekday;
+		expect(bw?.length).toBe(7);
+		expect(bw?.find((d) => d.iso === 3)?.mix).toBeNull();
+	});
+
+	it('null byWeekday when occupancy_by_dow is absent (P11)', () => {
+		const c = toReliabilityClusters({ generated_utc: utc('2026-06-19T02:00:00Z'), id: '11' });
+		expect(c.crowding.byWeekday).toBeNull();
+	});
 });
 
 describe('toReliabilityClusters — by_shift_daytype crosstab (G1)', () => {

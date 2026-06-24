@@ -14,6 +14,7 @@ const populated: CrowdingVM = {
 	delayByCrowding: [],
 	mixByGrain: null,
 	weekdayWeekend: null,
+	byWeekday: null,
 	isEmpty: false,
 };
 
@@ -23,6 +24,7 @@ const empty: CrowdingVM = {
 	delayByCrowding: [],
 	mixByGrain: null,
 	weekdayWeekend: null,
+	byWeekday: null,
 	isEmpty: true,
 };
 
@@ -125,6 +127,7 @@ describe('Cluster04Crowding — delay by crowding (G1)', () => {
 		],
 		mixByGrain: null,
 		weekdayWeekend: null,
+		byWeekday: null,
 		isEmpty: false,
 	};
 
@@ -181,6 +184,7 @@ describe('Cluster04Crowding — delay by crowding (G1)', () => {
 			delayByCrowding: [{ band: 'standing', avg_delay_min: 3.3 }],
 			mixByGrain: null,
 			weekdayWeekend: null,
+			byWeekday: null,
 			isEmpty: true,
 		};
 		const { container } = render(Cluster04Crowding, {
@@ -203,6 +207,7 @@ describe('Cluster04Crowding — delay by crowding (G1)', () => {
 			delayByCrowding: [],
 			mixByGrain: { empty: 0, many_seats: 0.9, few_seats: 0.1, standing: 0, full: 0 },
 			weekdayWeekend: null,
+			byWeekday: null,
 			isEmpty: false,
 		};
 		const { container } = render(Cluster04Crowding, {
@@ -222,6 +227,7 @@ describe('Cluster04Crowding — delay by crowding (G1)', () => {
 				weekday: { empty: 0, many_seats: 1, few_seats: 0, standing: 0, full: 0 },
 				weekend: { empty: 0.6, many_seats: 0.4, few_seats: 0, standing: 0, full: 0 },
 			},
+			byWeekday: null,
 			isEmpty: false,
 		};
 		const { container } = render(Cluster04Crowding, { props: { vm: split, locale: 'en', copy } });
@@ -239,5 +245,83 @@ describe('Cluster04Crowding — delay by crowding (G1)', () => {
 			props: { vm: populated, locale: 'en', copy },
 		});
 		expect(container.querySelector('[data-slot="crowding-weekday-weekend"]')).toBeNull();
+	});
+});
+
+describe('Cluster04Crowding — per-ISO-weekday small multiple (P11)', () => {
+	// A 7-day frame: Mon (iso 1) + Wed (iso 3) carry telemetry; the rest are honest-null.
+	const byDow: CrowdingVM = {
+		mix: { empty: 0.1, many_seats: 0.2, few_seats: 0.15, standing: 0.45, full: 0.1 },
+		delayByCrowding: [],
+		mixByGrain: null,
+		weekdayWeekend: null,
+		byWeekday: [
+			{ iso: 1, mix: { empty: 0, many_seats: 1, few_seats: 0, standing: 0, full: 0 } },
+			{ iso: 2, mix: null },
+			{ iso: 3, mix: { empty: 0.2, many_seats: 0, few_seats: 0, standing: 0.8, full: 0 } },
+			{ iso: 4, mix: null },
+			{ iso: 5, mix: null },
+			{ iso: 6, mix: null },
+			{ iso: 7, mix: null },
+		],
+		isEmpty: false,
+	};
+
+	it('renders one strip per weekday (Mon→Sun) under the byDow heading', () => {
+		const { container } = render(Cluster04Crowding, { props: { vm: byDow, locale: 'en', copy } });
+		const block = container.querySelector('[data-slot="crowding-by-dow"]') as HTMLElement;
+		expect(block).not.toBeNull();
+		expect(within(block).getByText(copy.byDow.heading)).toBeInTheDocument();
+		// Exactly 7 strips, in ISO order 1..7.
+		const cells = block.querySelectorAll('[data-slot="crowding-dow-cell"]');
+		expect(cells.length).toBe(7);
+		expect([...cells].map((c) => c.getAttribute('data-iso'))).toEqual([
+			'1',
+			'2',
+			'3',
+			'4',
+			'5',
+			'6',
+			'7',
+		]);
+		// Each strip is labelled by its full weekday name (Monday … Sunday).
+		expect(within(block).getByText('Monday')).toBeInTheDocument();
+		expect(within(block).getByText('Sunday')).toBeInTheDocument();
+	});
+
+	it('draws an occupancy bar for a weekday WITH telemetry (Monday = many_seats 100%)', () => {
+		const { container } = render(Cluster04Crowding, { props: { vm: byDow, locale: 'en', copy } });
+		const mon = container.querySelector(
+			'[data-slot="crowding-dow-cell"][data-iso="1"]',
+		) as HTMLElement;
+		// A real StackedBar (not a no-data chip): the slice reads its share.
+		expect(within(mon).getByRole('img', { name: 'Many seats: 100%' })).toBeInTheDocument();
+		expect(mon.querySelector('[data-slot="absent-value"]')).toBeNull();
+	});
+
+	it('shows the honest no-data chip (no fabricated bar) for a weekday with mix:null', () => {
+		const { container } = render(Cluster04Crowding, { props: { vm: byDow, locale: 'en', copy } });
+		// Tuesday (iso 2) has mix:null → the styled honest-absence chip, never a bar.
+		const tue = container.querySelector(
+			'[data-slot="crowding-dow-cell"][data-iso="2"]',
+		) as HTMLElement;
+		expect(tue.querySelector('[data-slot="absent-value"]')).not.toBeNull();
+		expect(within(tue).queryByRole('img', { name: /:/ })).not.toBeInTheDocument();
+	});
+
+	it('omits the small multiple entirely when byWeekday is absent', () => {
+		const { container } = render(Cluster04Crowding, {
+			props: { vm: populated, locale: 'en', copy },
+		});
+		expect(container.querySelector('[data-slot="crowding-by-dow"]')).toBeNull();
+	});
+
+	it('uses the FR weekday vocabulary (Lundi … Dimanche)', () => {
+		const { container } = render(Cluster04Crowding, {
+			props: { vm: byDow, locale: 'fr', copy: reliabilityCopy.fr },
+		});
+		const block = container.querySelector('[data-slot="crowding-by-dow"]') as HTMLElement;
+		expect(within(block).getByText('Lundi')).toBeInTheDocument();
+		expect(within(block).getByText('Dimanche')).toBeInTheDocument();
 	});
 });

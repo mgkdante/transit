@@ -22,7 +22,11 @@
 	import MetricDisplay from '$lib/components/brand/MetricDisplay.svelte';
 	import { AbsentValue } from '$lib/components/edge';
 	import { StackedBar, RankedRow, type StackedSegment } from '$lib/components/dataviz';
-	import { DELAY_POS_DOMAIN, delayMinToSeverity } from '$lib/features/reliability/shiftGrains';
+	import {
+		DELAY_POS_DOMAIN,
+		delayMinToSeverity,
+		weekdayLabel,
+	} from '$lib/features/reliability/shiftGrains';
 	import { OCCUPANCY_CODES, type OccupancyCode } from '$lib/v1/schemas';
 	import type { Locale } from '$lib/i18n';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
@@ -75,6 +79,23 @@
 			weekday: { segs: toSegments(ww.weekday), has: mixHasShare(ww.weekday) },
 			weekend: { segs: toSegments(ww.weekend), has: mixHasShare(ww.weekend) },
 		};
+	});
+
+	// P11 §04: the per-ISO-weekday occupancy SMALL MULTIPLE — up to 7 stacked strips,
+	// Mon→Sun, each its own occupancy StackedBar (the same primitive + scale as the
+	// headline mix). The mapper hands a FIXED 1..7 frame; a weekday with no telemetry
+	// (mix:null OR all-zero shares) carries `has: false` so its cell renders the honest
+	// AbsentValue chip in the SAME box, never a fabricated bar or a dropped strip. null
+	// when occupancy_by_dow is absent → the small-multiple is omitted entirely.
+	const weekdayStrips = $derived.by(() => {
+		const rows = vm.byWeekday;
+		if (!rows) return null;
+		return rows.map((d) => ({
+			iso: d.iso,
+			label: weekdayLabel(d.iso, locale),
+			segs: toSegments(d.mix),
+			has: mixHasShare(d.mix),
+		}));
 	});
 
 	/** Total band share (guards the dominant-band headline + share math). */
@@ -301,6 +322,35 @@
 			</div>
 		</div>
 	{/if}
+
+	{#if weekdayStrips}
+		<!-- P11 §04: per-ISO-weekday occupancy small multiple — up to 7 stacked strips,
+		     Mon→Sun, on the SAME occupancy scale as the headline mix. A weekday with no
+		     telemetry renders the honest no-data chip in the same box height, never a
+		     fabricated bar. Reflows to fewer columns on narrow viewports. -->
+		<div class="crowding-dow" data-slot="crowding-by-dow">
+			<SectionLabel text={copy.byDow.heading} variant="metric" />
+			<p class="crowding-dow-caption">{copy.byDow.caption}</p>
+			<ul class="crowding-dow-grid" aria-label={copy.byDow.heading}>
+				{#each weekdayStrips as day (day.iso)}
+					<li class="crowding-dow-cell" data-slot="crowding-dow-cell" data-iso={day.iso}>
+						<span class="crowding-dow-label">{day.label}</span>
+						{#if day.has}
+							<StackedBar
+								scale="occupancy"
+								segments={day.segs}
+								label={day.label}
+								size="sm"
+								interactive
+							/>
+						{:else}
+							<AbsentValue variant="block" reason="no-observations" {locale} />
+						{/if}
+					</li>
+				{/each}
+			</ul>
+		</div>
+	{/if}
 </section>
 
 <style>
@@ -388,5 +438,41 @@
 		margin: 0;
 		padding: 0;
 		list-style: none;
+	}
+
+	/* P11 per-ISO-weekday small multiple: a Mon→Sun grid of occupancy strips. auto-fit
+	   so it packs as many ~9rem strips per row as fit (≈7 on a wide cluster, fewer on
+	   narrow), each cell its own label + bar (or honest no-data chip). 8px-grid gaps. */
+	.crowding-dow {
+		display: flex;
+		flex-direction: column;
+		gap: 0.5rem;
+		margin-top: var(--spacing-3, 0.75rem);
+	}
+	.crowding-dow-caption {
+		margin: 0;
+		font-family: var(--font-mono);
+		font-size: var(--text-small);
+		line-height: 1.4;
+		color: var(--muted-foreground);
+	}
+	.crowding-dow-grid {
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(min(9rem, 100%), 1fr));
+		gap: 1rem;
+		margin: 0;
+		padding: 0;
+		list-style: none;
+	}
+	.crowding-dow-cell {
+		display: flex;
+		flex-direction: column;
+		gap: 0.4rem;
+		min-width: 0;
+	}
+	.crowding-dow-label {
+		font-family: var(--font-mono);
+		font-size: var(--text-small);
+		color: var(--muted-foreground);
 	}
 </style>
