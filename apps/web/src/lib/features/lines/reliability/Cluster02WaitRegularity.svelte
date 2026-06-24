@@ -94,6 +94,12 @@
 		readonly moreDetail: string;
 		/** Heading for the per-direction observed-gap comparison inside the reveal. */
 		readonly directionGap: string;
+		/** Direction-table column header for the shift/row axis. */
+		readonly directionShiftCol: string;
+		/** Direction-table column header, 1-indexed (Direction 1 / Direction 2). */
+		readonly directionCol: (n: number) => string;
+		/** Direction-table row-label suffix for the weekend variant. */
+		readonly weekendSuffix: string;
 		/** Always-visible explanation of excess wait — the "over WHAT" baseline. */
 		readonly excessWaitExplain: string;
 		/** Whole-dumbbell accessible summary, given the scheduled + observed readings. */
@@ -117,6 +123,9 @@
 			excessWaitMagnitude: (shift) => `Attente excédentaire, ${shift}`,
 			moreDetail: 'Plus de détail · intervalle observé par direction',
 			directionGap: 'Intervalle observé par direction',
+			directionShiftCol: 'Période',
+			directionCol: (n) => `Direction ${n}`,
+			weekendSuffix: 'fin de sem.',
 			excessWaitExplain:
 				"Le temps d'attente en plus de l'intervalle prévu entre les bus. 0 signifie que la ligne respecte (ou dépasse) sa fréquence prévue.",
 			dumbbellAria: (scheduled, observed) =>
@@ -135,6 +144,9 @@
 			excessWaitMagnitude: (shift) => `Excess wait, ${shift}`,
 			moreDetail: 'More detail · observed gap by direction',
 			directionGap: 'Observed gap by direction',
+			directionShiftCol: 'Shift',
+			directionCol: (n) => `Direction ${n}`,
+			weekendSuffix: 'weekend',
 			excessWaitExplain:
 				'The extra time riders wait beyond the scheduled gap between buses. 0 means the line met (or beat) its planned frequency.',
 			dumbbellAria: (scheduled, observed) =>
@@ -272,12 +284,66 @@
 	const mainRows = $derived(primaryRows.length > 0 ? primaryRows : advancedRows);
 	const hasAdvancedReveal = $derived(primaryRows.length > 0 && advancedRows.length > 0);
 
-	// The headline excess-wait read (the busiest/first shift that carries a value) —
-	// lifted to a prominent ExplainedMetricCard so the "extra wait over WHAT" baseline
-	// is ALWAYS visible beside the number (the operator's "1.8 min over what" fix),
-	// not buried in a far caption or a hover popover. The per-shift list stays below.
+	// The "observed gap by direction" disclosure as a real TABLE, not a tile cloud (operator
+	// ask). The advanced rows are a clean cube — shift × direction(0/1) × day-type(week/wknd)
+	// — so we PIVOT to one row per (shift, day-type) with the two directions as columns. A
+	// missing cell routes through the honest no-data chip, never a bare/zero tile.
+	const SHIFT_ORDER = ['am_peak', 'midday', 'pm_peak', 'evening', 'night'];
+	interface DirectionRow {
+		readonly key: string;
+		readonly label: string;
+		readonly dir0: number | null;
+		readonly dir1: number | null;
+		readonly order: number;
+	}
+	const directionRows = $derived.by<DirectionRow[]>(() => {
+		// Plain object (not a Map) — this is throwaway computation inside the derivation,
+		// not reactive state, so SvelteMap would be the wrong tool (and the lint rule agrees).
+		const groups: Record<
+			string,
+			{ base: string; weekend: boolean; dir0: number | null; dir1: number | null }
+		> = {};
+		for (const r of advancedRows) {
+			const weekend = r.shift.includes('_weekend');
+			const dir = r.shift.match(/_dir(\d)/)?.[1] ?? null;
+			const base = r.shift.replace(/_dir\d/, '').replace(/_weekend/, '');
+			const key = `${base}__${weekend ? 'wknd' : 'week'}`;
+			let g = groups[key];
+			if (!g) {
+				g = { base, weekend, dir0: null, dir1: null };
+				groups[key] = g;
+			}
+			if (dir === '0') g.dir0 = r.observed;
+			else if (dir === '1') g.dir1 = r.observed;
+		}
+		return Object.entries(groups)
+			.map(([key, g]) => {
+				const si = SHIFT_ORDER.indexOf(g.base);
+				return {
+					key,
+					label: g.weekend
+						? `${baseShiftLabel(g.base, locale)} · ${t.weekendSuffix}`
+						: baseShiftLabel(g.base, locale),
+					dir0: g.dir0,
+					dir1: g.dir1,
+					// canonical shift order; weekday before its weekend twin.
+					order: (si < 0 ? 99 : si) * 2 + (g.weekend ? 1 : 0),
+				};
+			})
+			.sort((a, b) => a.order - b.order);
+	});
+
+	// The headline excess-wait read, lifted to a prominent ExplainedMetricCard so the
+	// "extra wait over WHAT" baseline is ALWAYS visible beside the number (the operator's
+	// "1.8 min over what" fix). PEAK-AWARE (operator: make the AM-peak excess wait clear):
+	// prefer the AM peak, then the PM peak, then any shift that carries a value — the rush
+	// hours are when excess wait bites a rider hardest, never the alphabetical/contract head.
 	const headlineRow = $derived<ShiftRow | null>(
-		mainRows.find((r) => r.excessWait != null) ?? mainRows[0] ?? null,
+		mainRows.find((r) => r.shift.startsWith('am_peak') && r.excessWait != null) ??
+			mainRows.find((r) => r.shift.startsWith('pm_peak') && r.excessWait != null) ??
+			mainRows.find((r) => r.excessWait != null) ??
+			mainRows[0] ??
+			null,
 	);
 
 	/* ── service span, the most-recent row carrying a signal ──────────────────
@@ -338,17 +404,7 @@
 				<li class="shift-row">
 					<RankedRow
 						rank={i + 1}
-<<<<<<< HEAD
 						title={shiftLabel(row)}
-						subtitle={t.regularityReading(
-							terms.spread,
-							fmtCov(row.cov) ?? valueNoData,
-							terms.clumped,
-							pct(row.bunched) ?? valueNoData,
-						)}
-=======
-						title={shiftLabel(row.shift)}
->>>>>>> a830b6e (feat(web): P8 scheduled-vs-observed dumbbell + dedicated CoV/bunched bars in §02 Wait regularity)
 						severity={row.severity}
 						value={row.magnitude}
 						domain={HEADWAY_DOMAIN}
@@ -433,18 +489,39 @@
 						<summary class="shift-more-summary">{t.moreDetail}</summary>
 						<div class="shift-direction" data-slot="direction-gaps">
 							<SectionLabel text={t.directionGap} variant="metric" />
-							<div class="shift-metrics shift-metrics--direction">
-								{#each advancedRows as row, ai (row.shift + '-' + ai)}
-									<MetricDisplay
-										value={min(row.observed)}
-										emptyLabel={valueNoData}
-										absentReason="no-observations"
-										{locale}
-										label={shiftLabel(row)}
-										size="sm"
-									/>
-								{/each}
-							</div>
+							<!-- Semantic table (operator: a real table, desktop + mobile). Rows = shift ×
+							     day-type; columns = the two directions; a missing cell shows the honest
+							     no-data chip. The table reflows to stacked rows under ~28rem via CSS. -->
+							<table class="direction-table" data-slot="direction-table">
+								<thead>
+									<tr>
+										<th scope="col">{t.directionShiftCol}</th>
+										<th scope="col">{t.directionCol(1)}</th>
+										<th scope="col">{t.directionCol(2)}</th>
+									</tr>
+								</thead>
+								<tbody>
+									{#each directionRows as row (row.key)}
+										<tr>
+											<th scope="row">{row.label}</th>
+											<td data-col={t.directionCol(1)}>
+												{#if row.dir0 != null}{min(row.dir0)}{:else}<AbsentValue
+														variant="inline"
+														reason="no-observations"
+														{locale}
+													/>{/if}
+											</td>
+											<td data-col={t.directionCol(2)}>
+												{#if row.dir1 != null}{min(row.dir1)}{:else}<AbsentValue
+														variant="inline"
+														reason="no-observations"
+														{locale}
+													/>{/if}
+											</td>
+										</tr>
+									{/each}
+								</tbody>
+							</table>
 						</div>
 					</details>
 				{/if}
@@ -573,12 +650,19 @@
 		padding: 0;
 		display: flex;
 		flex-direction: column;
-		gap: 1rem;
+		gap: 0.85rem;
 	}
+	/* Each shift is its OWN card (operator: clear separation between shifts). A bordered,
+	   padded surface makes the inter-shift boundary unmistakable — previously the 0.6rem
+	   intra-row gap ≈ the 1rem inter-row gap, so the shifts blurred into one stack. */
 	.shift-row {
 		display: flex;
 		flex-direction: column;
 		gap: 0.6rem;
+		padding: 0.85rem 1rem;
+		border: 1px solid var(--border);
+		border-radius: 0.6rem;
+		background: color-mix(in oklab, var(--card) 55%, transparent);
 	}
 	.shift-metrics {
 		display: flex;
@@ -654,8 +738,80 @@
 		flex-direction: column;
 		gap: 0.6rem;
 	}
-	.shift-metrics--direction {
-		gap: 1.5rem 1.25rem;
+	/* The observed-gap-by-direction TABLE. Tabular numbers, zebra rows, sticky-ish row
+	   headers; the two direction columns are right-aligned numerics. */
+	.direction-table {
+		width: 100%;
+		border-collapse: collapse;
+		font-variant-numeric: tabular-nums;
+		font-size: var(--text-small);
+	}
+	.direction-table th,
+	.direction-table td {
+		padding: 0.4rem 0.6rem;
+		text-align: right;
+		white-space: nowrap;
+	}
+	.direction-table thead th {
+		font-family: var(--font-mono);
+		font-size: var(--text-micro);
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
+		color: var(--muted-foreground);
+		border-bottom: 1px solid var(--border);
+	}
+	.direction-table th[scope='col']:first-child,
+	.direction-table th[scope='row'] {
+		text-align: left;
+		font-weight: 500;
+		color: var(--foreground);
+	}
+	.direction-table tbody tr + tr th[scope='row'],
+	.direction-table tbody tr + tr td {
+		border-top: 1px solid color-mix(in oklab, var(--border) 60%, transparent);
+	}
+	/* Mobile: under ~28rem the table reflows to stacked label/value rows so the two
+	   direction columns never clip — each cell announces its column via its data-col. */
+	@media (max-width: 28rem) {
+		.direction-table,
+		.direction-table thead,
+		.direction-table tbody,
+		.direction-table tr,
+		.direction-table th,
+		.direction-table td {
+			display: block;
+			text-align: left;
+			white-space: normal;
+		}
+		.direction-table thead {
+			position: absolute;
+			width: 1px;
+			height: 1px;
+			overflow: hidden;
+			clip: rect(0 0 0 0);
+		}
+		.direction-table tbody tr {
+			padding: 0.5rem 0;
+			border-top: 1px solid color-mix(in oklab, var(--border) 60%, transparent);
+		}
+		.direction-table th[scope='row'] {
+			margin-bottom: 0.2rem;
+		}
+		.direction-table td {
+			display: flex;
+			justify-content: space-between;
+			gap: 1rem;
+			padding: 0.15rem 0;
+			border: 0;
+		}
+		.direction-table td::before {
+			content: attr(data-col);
+			font-family: var(--font-mono);
+			font-size: var(--text-micro);
+			text-transform: uppercase;
+			letter-spacing: 0.04em;
+			color: var(--muted-foreground);
+		}
 	}
 	/* Service-span sub-block heading + its window label. */
 	.span-head {
