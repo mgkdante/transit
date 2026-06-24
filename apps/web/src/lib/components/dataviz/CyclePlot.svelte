@@ -234,7 +234,7 @@
 	// ride the dataviz severity scale (per panel). Glyph + aria carry meaning too.
 	const DELAY_VAR = 'var(--dataviz-status-late)';
 	const SEVERE_GLYPH = '◆'; // the shared severe glyph (tokens.ts STATUS_GLYPH.severe)
-	const MEAN_GLYPH = '—';
+	const MEAN_GLYPH = '─'; // box-drawing horizontal line (reads as the mean rule; never an em dash)
 
 	// Y-axis ticks (leftmost panel only): the fixed domain endpoints + midpoint.
 	const yTicks = $derived.by(() => {

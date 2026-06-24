@@ -436,7 +436,7 @@ export const reliabilityCopy: Record<Locale, ReliabilityCopy> = {
 			shiftHeader: 'Shift',
 			dayTypeHeader: 'Day type',
 			caption:
-				'On-time rate (%) by time of day and day type, on a fixed 0–100% scale. A cell with fewer than 30 observations is greyed out — never a fabricated zero.',
+				'On-time rate (%) by time of day and day type, on a fixed 0–100% scale. A cell with fewer than 30 observations is greyed out, never a fabricated zero.',
 			heatmapLabel: 'On-time rate by shift and day type',
 			legend: {
 				low: 'Low (0–40%)',

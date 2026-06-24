@@ -81,7 +81,7 @@ export const habitsBandCopy: Record<Locale, HabitsBandCopy> = {
 			captionSeries:
 				'Un panneau par jour, du lundi au dimanche, sur une échelle de retard fixe et partagée. La ligne pointillée marque la moyenne du jour; le losange indique la part des retards graves (n ≥ 5).',
 			captionSingle:
-				'Un panneau par jour, du lundi au dimanche, sur une échelle de retard fixe et partagée. La barre indique le retard moyen du jour; le losange indique la part des retards graves (n ≥ 5). Aucune série hebdomadaire dans les données actuelles — jamais inventée.',
+				'Un panneau par jour, du lundi au dimanche, sur une échelle de retard fixe et partagée. La barre indique le retard moyen du jour; le losange indique la part des retards graves (n ≥ 5). Aucune série hebdomadaire dans les données actuelles, jamais inventée.',
 		},
 		hourAxisLabel: 'Heure de la journée',
 		dayAxisLabel: 'Jour de la semaine',
@@ -110,7 +110,7 @@ export const habitsBandCopy: Record<Locale, HabitsBandCopy> = {
 			captionSeries:
 				'One panel per weekday, Monday→Sunday, on a shared fixed delay scale. The dashed line marks the day’s mean; the diamond shows the severe-delay share (n ≥ 5).',
 			captionSingle:
-				'One panel per weekday, Monday→Sunday, on a shared fixed delay scale. The bar shows the day’s mean delay; the diamond shows the severe-delay share (n ≥ 5). No across-weeks series in the current data — never fabricated.',
+				'One panel per weekday, Monday→Sunday, on a shared fixed delay scale. The bar shows the day’s mean delay; the diamond shows the severe-delay share (n ≥ 5). No across-weeks series in the current data, never fabricated.',
 		},
 		hourAxisLabel: 'Hour of day',
 		dayAxisLabel: 'Day of week',
