@@ -85,6 +85,10 @@ export interface ReliabilityCopy {
 	readonly windows: {
 		/** Punctuality trend window. */
 		readonly trend: string;
+		/** Trend caption when the x-axis is the daily series (week / month / range grain). */
+		readonly trendByDay: string;
+		/** Trend caption when the x-axis is the 5 time-of-day shifts (day grain). */
+		readonly trendByTimeOfDay: string;
 		/** Crowding (occupancy mix) window. */
 		readonly crowding: string;
 		/** Weak-stops aggregate window. */
@@ -273,6 +277,8 @@ export const reliabilityCopy: Record<Locale, ReliabilityCopy> = {
 		},
 		windows: {
 			trend: '30 derniers jours',
+			trendByDay: 'Par jour',
+			trendByTimeOfDay: 'Par moment de la journée',
 			crowding: '30 derniers jours',
 			weakStops: 'Cumul hebdomadaire',
 			habits: 'Toutes les données accumulées',
@@ -403,6 +409,8 @@ export const reliabilityCopy: Record<Locale, ReliabilityCopy> = {
 		},
 		windows: {
 			trend: 'Last 30 days',
+			trendByDay: 'By day',
+			trendByTimeOfDay: 'By time of day',
 			crowding: 'Last 30 days',
 			weakStops: 'Weekly aggregate',
 			habits: 'All accrued data',

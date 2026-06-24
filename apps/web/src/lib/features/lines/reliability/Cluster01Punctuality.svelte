@@ -85,7 +85,7 @@
 		grain?: string;
 	}
 
-	let { vm, locale, copy }: Cluster01PunctualityProps = $props();
+	let { vm, locale, copy, grain = 'day' }: Cluster01PunctualityProps = $props();
 
 	// The in-app metric-explainer (i) affordance: the one-line tip + a localized
 	// deep link to /metrics#<anchor>. An INTERACTIVE control beside each label,
@@ -111,21 +111,41 @@
 	const min = (v: number | null | undefined): string | null =>
 		fmtDelayMin(v, { rounding: 'fixed1' });
 
-	// OTP trend SHAPE across the dated day series (chronological ascending): green
-	// OTP %, amber avg-delay retard. The x-axis carries real ISO dates, never the
-	// repeated grain word. Each series scales to its OWN y-domain (% vs minutes).
-	const otpSeries = $derived(vm.trend.map((p) => p.otp_pct ?? null));
-	const retardSeries = $derived(vm.trend.map((p) => p.avg_delay_min ?? null));
-	const xLabels = $derived(vm.trend.map((p) => p.date ?? ''));
-	const hasTrend = $derived(vm.trend.length > 1);
+	// S7 (granularity MATRIX): the trend shows the SUB-GRAIN of the picked window, not a
+	// preset daily line — at DAY grain the intra-day pattern (OTP across the 5 time-of-day
+	// shifts, AM peak → night); at week / month / range the daily series. So "a day" reads
+	// by time of day, "a week"/"a month" by day. (The shift breakdown is the TYPICAL
+	// pattern — the feed aggregates the 5 shifts over the window, not per-date; today's
+	// literal hourly OTP would need a pipeline rollup.)
+	const isDayGrain = $derived(grain === 'day');
+	const trendShifts = $derived(
+		vm.peakOffPeak.byShift
+			.slice()
+			.sort(
+				(a, b) =>
+					(SHIFT_GRAIN_ORDER as readonly string[]).indexOf(a.grain) -
+					(SHIFT_GRAIN_ORDER as readonly string[]).indexOf(b.grain),
+			),
+	);
+	const otpSeries = $derived(
+		isDayGrain ? trendShifts.map((r) => r.otpPct) : vm.trend.map((p) => p.otp_pct ?? null),
+	);
+	const retardSeries = $derived(
+		isDayGrain
+			? trendShifts.map((r) => r.avgDelayMin)
+			: vm.trend.map((p) => p.avg_delay_min ?? null),
+	);
+	const xLabels = $derived(
+		isDayGrain ? trendShifts.map((r) => shiftLabel(r.grain)) : vm.trend.map((p) => p.date ?? ''),
+	);
+	const hasTrend = $derived((isDayGrain ? trendShifts.length : vm.trend.length) > 1);
 
-	// S7 P1: the 95% Wilson confidence band (PERCENT) shipped on every period but drawn
-	// nowhere until now. A fat band IS the honest low-sample signal; we rank on wilson_lo
-	// elsewhere. Only render the band when at least one period carries both bounds.
-	const wilsonLoSeries = $derived(vm.trend.map((p) => p.wilson_lo ?? null));
-	const wilsonHiSeries = $derived(vm.trend.map((p) => p.wilson_hi ?? null));
+	// The 95% Wilson confidence band rides the DAILY periods only (the 5 shifts carry no
+	// bounds), so it shows for week / month / range — never the day-grain shift view.
+	const wilsonLoSeries = $derived(isDayGrain ? [] : vm.trend.map((p) => p.wilson_lo ?? null));
+	const wilsonHiSeries = $derived(isDayGrain ? [] : vm.trend.map((p) => p.wilson_hi ?? null));
 	const hasWilsonBand = $derived(
-		wilsonLoSeries.some((v) => v != null) && wilsonHiSeries.some((v) => v != null),
+		!isDayGrain && wilsonLoSeries.some((v) => v != null) && wilsonHiSeries.some((v) => v != null),
 	);
 	// S7: FIXED retard y-domain (min), identical across routes/grains/refreshes — the
 	// amber delay axis no longer auto-scales to the in-view max (the stability fix).
@@ -594,7 +614,9 @@
 			<div class="cluster-block">
 				<div class="cluster-block-head">
 					<SectionLabel text={copy.strip.otpPct} variant="metric" />
-					<span class="cluster-block-window" data-slot="trend-window">{copy.windows.trend}</span>
+					<span class="cluster-block-window" data-slot="trend-window"
+						>{isDayGrain ? copy.windows.trendByTimeOfDay : copy.windows.trendByDay}</span
+					>
 				</div>
 				<TrendLine
 					onTime={otpSeries}
