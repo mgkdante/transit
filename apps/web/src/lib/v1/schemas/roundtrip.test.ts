@@ -220,6 +220,37 @@ describe('tier-1 — cancellations + occupancy_mix round-trip (additive optional
 		expect(() => parsePort('route_reliability', RouteReliabilitySchema, fixture)).not.toThrow();
 	});
 
+	it('parses route_reliability carrying S7 occupancy_by_grain + occupancy_by_dow', () => {
+		const fixture = {
+			generated_utc: ISO,
+			id: '51',
+			// grain-aware crowding mix (day/week/month) + per-ISO-weekday split.
+			occupancy_by_grain: [
+				{ grain: 'day', mix: { empty: 0, many_seats: 1, few_seats: 0, standing: 0, full: 0 } },
+				{
+					grain: 'week',
+					mix: { empty: 0.1, many_seats: 0.4, few_seats: 0.3, standing: 0.15, full: 0.05 },
+				},
+				// honest-absence: a window with no band telemetry carries mix: null.
+				{ grain: 'month', mix: null },
+			],
+			occupancy_by_dow: [
+				{
+					day_of_week_iso: 1,
+					mix: { empty: 0, many_seats: 0.5, few_seats: 0.3, standing: 0.2, full: 0 },
+				},
+				// weekday with data-days but no band telemetry -> mix null; still parses.
+				{ day_of_week_iso: 7, mix: null },
+			],
+		};
+		expect(() => parsePort('route_reliability', RouteReliabilitySchema, fixture)).not.toThrow();
+	});
+
+	it('parses route_reliability with occupancy_by_grain/dow absent (additive optional)', () => {
+		const fixture = { generated_utc: ISO, id: '51' };
+		expect(() => parsePort('route_reliability', RouteReliabilitySchema, fixture)).not.toThrow();
+	});
+
 	it('parses network_trend carrying cancellation_rate + occupancy_mix per point', () => {
 		const fixture = {
 			generated_utc: ISO,

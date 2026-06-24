@@ -124,6 +124,22 @@ export const CrosstabCellSchema = z.object({
 });
 export type CrosstabCell = z.infer<typeof CrosstabCellSchema>;
 
+export const OccupancyByGrainSchema = z.object({
+	// 'day' (last closed day) | 'week' (trailing 7d) | 'month' (trailing 30d, which
+	// reconciles with the scalar occupancy_mix). Free-string the pipeline owns.
+	grain: z.string(),
+	// band-shares for the window; null when no occupancy telemetry (honest absence).
+	mix: OccupancyMixSchema.nullable().optional(),
+});
+export type OccupancyByGrain = z.infer<typeof OccupancyByGrainSchema>;
+
+export const OccupancyByDowSchema = z.object({
+	day_of_week_iso: z.number().int(),
+	// band-shares for the weekday; null when the weekday has no occupancy telemetry.
+	mix: OccupancyMixSchema.nullable().optional(),
+});
+export type OccupancyByDow = z.infer<typeof OccupancyByDowSchema>;
+
 export const RouteReliabilitySchema = z.object({
 	generated_utc: isoUtc(),
 	id: z.string(),
@@ -149,5 +165,11 @@ export const RouteReliabilitySchema = z.object({
 	// Tier-3 2D shift × day_type delay crosstab; SPARSE (only cells with
 	// observations). Additive-optional (back-compat with older artifacts).
 	by_shift_daytype: z.array(CrosstabCellSchema).optional(),
+	// S7: crowding band-shares re-grouped for the grain-aware §04 surface.
+	// occupancy_by_grain = mix at day/week/month windows (month reconciles with
+	// occupancy_mix); occupancy_by_dow = mix per ISO weekday (weekday/weekend
+	// split). Additive-optional (older artifacts omit these keys).
+	occupancy_by_grain: z.array(OccupancyByGrainSchema).optional(),
+	occupancy_by_dow: z.array(OccupancyByDowSchema).optional(),
 });
 export type RouteReliability = z.infer<typeof RouteReliabilitySchema>;
