@@ -123,10 +123,10 @@ export interface PunctualityVM {
 		readonly severePct: number | null;
 	};
 	/**
-	 * The dated DAY-grain series, WINDOWED to the selected grain (day → full, week → last
-	 * 7 days, month → last 30, range → the range), chronological ascending. The trend
-	 * keeps daily detail at every grain (a true time axis), never the coarse weekly/
-	 * monthly aggregate dots.
+	 * The dated DAY-grain series, WINDOWED to a DISTINCT recent window per grain (day →
+	 * last 14 days of context, week → last 7, month → last 30, range → the range),
+	 * chronological ascending. Daily detail at every grain (a true time axis), never the
+	 * coarse weekly/monthly aggregate dots — and the windows differ so day ≠ month.
 	 */
 	readonly trend: ReliabilityPeriod[];
 	/** Weekday seasonality rows, sorted Mon→Sun (ISO 1..7). Carries severe_pct + observation_count. */
@@ -462,6 +462,23 @@ function windowByGrain<T extends { date?: string | null }>(
 	return dated.filter((r) => r.date >= cutoff);
 }
 
+/**
+ * The dated rows within the last `n` days (ending at the latest dated row). The TREND
+ * window primitive: each grain maps to a DISTINCT recent window so the day / week / month
+ * trends never look identical (the bug where day = the full ~30-day history collided with
+ * month = the last 30 days). Undated rows pass through.
+ */
+function lastNDays<T extends { date?: string | null }>(
+	rows: readonly T[],
+	n: number,
+): readonly T[] {
+	const dated = rows.filter((r): r is T & { date: string } => r.date != null);
+	if (dated.length === 0) return rows;
+	const latest = dated.reduce((m, r) => (r.date > m ? r.date : m), dated[0].date);
+	const cutoff = isoMinusDays(latest, n - 1);
+	return dated.filter((r) => r.date >= cutoff);
+}
+
 /** Arithmetic mean of the non-null values `pick` returns, rounded to `dp`. null when none. */
 function meanOf<T>(
 	rows: readonly T[],
@@ -563,12 +580,20 @@ export function toReliabilityClusters(
 	// no longer switch to the coarse weekly/monthly aggregate periods, which collapsed the
 	// month to two dots and made "this week" span a whole month on the x-axis. So every
 	// grain keeps daily detail folded in, on a window that matches the picked grain.
+	// Each grain maps to a DISTINCT recent daily window so day / week / month never render
+	// the same trend: Today shows the recent 2-week context (14d — a single day is not a
+	// trend), This week the last 7d, This month the last 30d. (Was: day = the FULL history,
+	// which equalled month on a route with only ~a month of data — the "broken" the
+	// operator saw.) §03's "day" stays the single latest day — a count, not a time series.
+	const TREND_DAYS_DAY = 14;
+	const TREND_DAYS_WEEK = 7;
+	const TREND_DAYS_MONTH = 30;
 	const grainTrendAsc =
 		grain === 'week'
-			? [...windowByGrain(dayTrendAsc, 'week', undefined, undefined)]
+			? [...lastNDays(dayTrendAsc, TREND_DAYS_WEEK)]
 			: grain === 'month'
-				? [...windowByGrain(dayTrendAsc, 'month', undefined, undefined)]
-				: dayTrendAsc;
+				? [...lastNDays(dayTrendAsc, TREND_DAYS_MONTH)]
+				: [...lastNDays(dayTrendAsc, TREND_DAYS_DAY)];
 
 	/* 01-strip — the selected-grain headline (F1: most-recent week/month). When a
 	   date range is active the strip AGGREGATES the in-range days: on-time % + avg
