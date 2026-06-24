@@ -335,6 +335,11 @@
 		flex-direction: column;
 		gap: clamp(2rem, 5vw, 3.25rem);
 		width: 100%;
+		/* This surface scrolls inside a nested container that already begins BELOW the
+		   app nav, so the rail's sticky offset is 0 (flush at the container top) — not the
+		   5.5rem window-scroll default that floated it ~88px down with content showing
+		   through. The hazard-tape separator below the rail gives the visual break. */
+		--rail-sticky-top: 0px;
 	}
 
 	/* The grain + range control is now ONE shared GrainPicker (day|week|month|range),

@@ -114,7 +114,12 @@
 		   content but below the chrome (--z-nav) and menus/popovers (--z-menu). */
 		.controls-rail--sticky {
 			position: sticky;
-			top: 5.5rem;
+			/* Sticky offset = the chrome height ABOVE the rail inside its SCROLL CONTAINER.
+			   Caller-tunable via --rail-sticky-top (default 5.5rem, the window-scrolled
+			   assumption). A surface whose scroll container already begins below the app
+			   nav (the reliability dashboard) sets it to 0 so the rail pins FLUSH under the
+			   header — not floating ~88px below it with scrolling content showing through. */
+			top: var(--rail-sticky-top, 5.5rem);
 			z-index: var(--z-rail);
 		}
 	}
