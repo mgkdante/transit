@@ -29,7 +29,7 @@
 	import type { Locale } from '$lib/i18n';
 	import { fmtCount, fmtDelayMin, fmtPct } from '$lib/utils';
 	import type { HeadwayPeriod, SeverityCode, ServiceSpanPeriod } from '$lib/v1';
-	import { RankedRow, ExplainedMetricCard } from '$lib/components/dataviz';
+	import { RankedRow, ExplainedMetricCard, ServiceSpanTimeline } from '$lib/components/dataviz';
 	import MetricDisplay from '$lib/components/brand/MetricDisplay.svelte';
 	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
 	import { AbsentValue } from '$lib/components/edge';
@@ -152,6 +152,20 @@
 	const count = (v: number | null | undefined): string | null => fmtCount(v);
 	/** Short value-level no-data label for absent inline values + empty tiles. */
 	const valueNoData = $derived(copy.strip.noData);
+
+	/* ── service-span timeline copy + formatters ──────────────────────────────
+	   The first/last-trip clock times resolve inside ServiceSpanTimeline (it owns the
+	   UTC→wall-clock + the fixed 24h axis); here we only shape the two TEXT annotations
+	   it renders (span length + trip count), both honest-null when absent. */
+	const spanCopy = $derived(copy.serviceSpanTimeline);
+	/** A whole-minute span → a compact "{H}h {MM}m" / "{M}m" duration. null when absent. */
+	const spanDuration = (v: number | null | undefined): string | null => {
+		if (v == null || Number.isNaN(v)) return null;
+		const total = Math.max(0, Math.round(v));
+		const h = Math.floor(total / 60);
+		const m = total % 60;
+		return h > 0 ? `${h}h ${String(m).padStart(2, '0')}m` : `${m}m`;
+	};
 
 	/* ── headway rows → per-shift magnitude rows ───────────────────────────────
 	   S7: magnitude = the ABSOLUTE excess wait (min), scaled by the fixed HEADWAY_DOMAIN
@@ -399,6 +413,32 @@
 						{copy.windows.serviceSpan(latestSpan.date ?? null)}
 					</span>
 				</div>
+
+				<!-- P3: the first→last service-span TIMELINE on a fixed 24h axis, with signed
+				     first/last-trip punctuality markers (DELAY_STOP_DOMAIN). The numeric tiles
+				     below remain the exact reading; this is the at-a-glance shape. Honest
+				     absence (no resolvable first/last departure) lives inside the primitive. -->
+				<ServiceSpanTimeline
+					firstTripUtc={latestSpan.first_trip_utc ?? null}
+					lastTripUtc={latestSpan.last_trip_utc ?? null}
+					firstDelayMin={latestSpan.first_trip_delay_min ?? null}
+					lastDelayMin={latestSpan.last_trip_delay_min ?? null}
+					spanLabel={spanDuration(latestSpan.service_span_min) != null
+						? spanCopy.span(spanDuration(latestSpan.service_span_min)!)
+						: null}
+					tripsLabel={count(latestSpan.trip_count) != null
+						? spanCopy.trips(count(latestSpan.trip_count)!)
+						: null}
+					firstLabel={spanCopy.firstTrip}
+					lastLabel={spanCopy.lastTrip}
+					firstDelayLabel={spanCopy.firstDelay}
+					lastDelayLabel={spanCopy.lastDelay}
+					ariaLabel={spanCopy.ariaLabel}
+					{locale}
+					absentReason="no-observations"
+				/>
+				<p class="span-caption" data-slot="service-span-caption">{spanCopy.caption}</p>
+
 				<div class="shift-metrics">
 					<div class="metric-with-info">
 						<MetricDisplay
@@ -542,6 +582,15 @@
 		font-family: var(--font-mono);
 		font-size: var(--text-small);
 		font-variant-numeric: tabular-nums;
+		color: var(--muted-foreground);
+	}
+	/* What the first/last-trip endpoint markers encode (early ▼ / late ▲). */
+	.span-caption {
+		margin: 0;
+		max-width: 52ch;
+		font-family: var(--font-mono);
+		font-size: var(--text-small);
+		line-height: 1.4;
 		color: var(--muted-foreground);
 	}
 	/* "More detail" reveal, the per-direction / weekend shifts, calm by default

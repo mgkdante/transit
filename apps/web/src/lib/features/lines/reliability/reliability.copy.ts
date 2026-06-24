@@ -168,6 +168,27 @@ export interface ReliabilityCopy {
 		readonly spread: string;
 		readonly clumped: string;
 	};
+	/** Service-span first→last timeline (in the 02 Wait & regularity band). */
+	readonly serviceSpanTimeline: {
+		/** Sub-block / chart heading. */
+		readonly heading: string;
+		/** Accessible summary for the whole timeline figure. */
+		readonly ariaLabel: (first: string, last: string) => string;
+		/** Label for the first-departure endpoint. */
+		readonly firstTrip: string;
+		/** Label for the last-departure endpoint. */
+		readonly lastTrip: string;
+		/** Span-length annotation (e.g. "Span 18h 30m"); `len` is the formatted duration. */
+		readonly span: (len: string) => string;
+		/** Trip-count annotation (e.g. "142 trips"); `n` is the formatted count. */
+		readonly trips: (n: string) => string;
+		/** a11y prefix for the first-trip punctuality marker. */
+		readonly firstDelay: string;
+		/** a11y prefix for the last-trip punctuality marker. */
+		readonly lastDelay: string;
+		/** Plain caption under the timeline (what early/late at each end means). */
+		readonly caption: string;
+	};
 	/** Unit suffixes appended to chart tick + tooltip values (axis metadata). */
 	readonly units: {
 		readonly pct: string;
@@ -305,6 +326,19 @@ export const reliabilityCopy: Record<Locale, ReliabilityCopy> = {
 			spread: 'Régularité (CV)',
 			clumped: 'Bus collés',
 		},
+		serviceSpanTimeline: {
+			heading: 'Plage de service',
+			ariaLabel: (first, last) =>
+				`Plage de service, du premier départ à ${first} au dernier à ${last}`,
+			firstTrip: 'Premier départ',
+			lastTrip: 'Dernier départ',
+			span: (len) => `Durée ${len}`,
+			trips: (n) => `${n} voyages`,
+			firstDelay: 'Retard du premier départ',
+			lastDelay: 'Retard du dernier départ',
+			caption:
+				"De l'heure du premier départ à celle du dernier sur une journée de 24 h. Le repère à chaque extrémité indique l'avance (▼) ou le retard (▲) du départ; ▲ signale un retard, jamais une absence de donnée.",
+		},
 		units: { pct: '%', min: ' min' },
 		controls: {
 			viewLabel: 'Vue',
@@ -420,6 +454,19 @@ export const reliabilityCopy: Record<Locale, ReliabilityCopy> = {
 			excessWait: 'Excess wait',
 			spread: 'Spread (CoV)',
 			clumped: 'Clumped (bunched)',
+		},
+		serviceSpanTimeline: {
+			heading: 'Service span',
+			ariaLabel: (first, last) =>
+				`Service span, from the first trip at ${first} to the last at ${last}`,
+			firstTrip: 'First trip',
+			lastTrip: 'Last trip',
+			span: (len) => `Span ${len}`,
+			trips: (n) => `${n} trips`,
+			firstDelay: 'First-trip delay',
+			lastDelay: 'Last-trip delay',
+			caption:
+				'From the first departure clock time to the last across a 24-hour day. The marker at each end shows that departure running early (▼) or late (▲); ▲ is a real delay, never missing data.',
 		},
 		units: { pct: '%', min: ' min' },
 		controls: {

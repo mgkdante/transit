@@ -55,6 +55,11 @@ export type { StripPlotProps, StripPlotRow } from './StripPlot.svelte';
 export { default as DivergingBar } from './DivergingBar.svelte';
 export type { DivergingBarProps } from './DivergingBar.svelte';
 
+// Service-span first→last departure timeline (slice-S7 P3): a horizontal bar on a
+// FIXED 24h domain + signed first/last-trip punctuality markers on DELAY_STOP_DOMAIN.
+export { default as ServiceSpanTimeline } from './ServiceSpanTimeline.svelte';
+export type { ServiceSpanTimelineProps } from './ServiceSpanTimeline.svelte';
+
 export { default as IconArray } from './IconArray.svelte';
 export type { IconArrayProps, IconArraySegment } from './IconArray.svelte';
 
