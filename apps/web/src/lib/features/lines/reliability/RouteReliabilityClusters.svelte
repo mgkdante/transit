@@ -333,7 +333,11 @@
 	.reliability-clusters {
 		display: flex;
 		flex-direction: column;
-		gap: clamp(2rem, 5vw, 3.25rem);
+		/* §1.3 spacing rhythm: the BETWEEN-section gap must read clearly larger than any
+		   within-section gap (the "cramped" fix). 48→80px of whitespace groups each band
+		   as one unit by proximity (the spec's --space-section-y), well above the ~8–24px
+		   intra-section gaps — so sections never run together. */
+		gap: clamp(3rem, 7vw, 5rem);
 		width: 100%;
 		/* This surface scrolls inside a nested container that already begins BELOW the
 		   app nav, so the rail's sticky offset is 0 (flush at the container top) — not the
