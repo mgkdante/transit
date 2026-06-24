@@ -412,6 +412,7 @@
 						showRank={false}
 						display={min(row.excessWait) ?? valueNoData}
 						aria-label={t.excessWaitMagnitude(shiftLabel(row))}
+						barInteractive
 					/>
 
 					<!-- P8: the scheduled-vs-observed DUMBBELL — two ticks (plan / real-world)
@@ -450,6 +451,7 @@
 								unit=""
 								size="sm"
 								label={t.covMagnitude(shiftLabel(row.shift))}
+								interactive
 							/>
 						</div>
 						<div class="regularity-metric" data-metric="bunched">
@@ -464,6 +466,7 @@
 								unit="%"
 								size="sm"
 								label={t.bunchedMagnitude(shiftLabel(row.shift))}
+								interactive
 							/>
 						</div>
 					</div>

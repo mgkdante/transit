@@ -279,6 +279,7 @@
 							display={row.hasDelay ? row.display : null}
 							absentReason="no-observations"
 							{locale}
+							barInteractive
 						/>
 					</li>
 				{/each}

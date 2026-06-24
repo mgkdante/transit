@@ -693,6 +693,7 @@
 							domain={DELAY_POS_DOMAIN}
 							unit=" min"
 							display={row.display}
+							barInteractive
 						/>
 					{/each}
 				</div>
@@ -743,6 +744,7 @@
 									unit="%"
 									showRank={false}
 									display={row.display}
+									barInteractive
 								/>
 							{/each}
 						</div>

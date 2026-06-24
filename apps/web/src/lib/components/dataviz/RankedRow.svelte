@@ -103,6 +103,13 @@
 		tooltip?: boolean;
 		/** Breakdown rows shown when `tooltip` is set (swatch + label + value). */
 		tooltipRows?: ChartLegendItem[];
+		/**
+		 * Make the embedded magnitude SeverityBar hoverable (its own one-row value/severity
+		 * readout) WITHOUT the richer row breakdown — for fixed-category rows whose detail is
+		 * already on screen. Ignored when `tooltip` is set (the row breakdown wins). Default
+		 * off so existing call sites are unchanged.
+		 */
+		barInteractive?: boolean;
 		class?: string;
 	}
 
@@ -127,6 +134,7 @@
 		bare = false,
 		tooltip = false,
 		tooltipRows,
+		barInteractive = false,
 		class: className,
 		ref = $bindable(null),
 		...restProps
@@ -243,7 +251,7 @@
 				{unit}
 				label={`Rank ${rank}: ${title}`}
 				size="sm"
-				interactive={false}
+				interactive={barInteractive && !tooltip}
 			/>
 		</div>
 	</div>
