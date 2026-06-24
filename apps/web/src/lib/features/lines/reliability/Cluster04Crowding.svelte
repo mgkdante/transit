@@ -45,14 +45,36 @@
 	/** Canonical occupancy band labels (legend + a11y), keyed by OccupancyCode. */
 	const bands = $derived(detailCopy[locale].occupancyBands);
 
-	/** The five occupancy bands as StackedBar segments (fractions 0..1). */
-	const segments = $derived.by<StackedSegment[]>(() =>
+	// S7: the GRAIN-AWARE mix — the occupancy_by_grain entry the mapper already
+	// resolved for the selected grain, falling back to the scalar trailing-window mix
+	// (older snapshots / a grain with no telemetry). The headline + bar follow the
+	// rail's grain through this single derived.
+	const activeMix = $derived(vm.mixByGrain ?? vm.mix);
+
+	/** Build the five occupancy bands as StackedBar segments (fractions 0..1). */
+	const toSegments = (mix: typeof vm.mix): StackedSegment[] =>
 		OCCUPANCY_CODES.map((code: OccupancyCode) => ({
 			code,
-			value: vm.mix ? vm.mix[code] : null,
+			value: mix ? mix[code] : null,
 			label: bands[code],
-		})),
-	);
+		}));
+	const mixHasShare = (mix: typeof vm.mix): boolean =>
+		mix != null && OCCUPANCY_CODES.some((code) => (mix[code] ?? 0) > 0);
+
+	/** The (grain-aware) headline occupancy bar segments. */
+	const segments = $derived<StackedSegment[]>(toSegments(activeMix));
+
+	// S7 §04: weekday (ISO 1-5) vs weekend (ISO 6-7) occupancy split, a 2-col small
+	// multiple. The mapper folds the per-ISO-weekday shares into one weekday + one
+	// weekend mix; null when occupancy_by_dow is absent (then the sub-block is omitted).
+	const weekdayWeekendCols = $derived.by(() => {
+		const ww = vm.weekdayWeekend;
+		if (!ww) return null;
+		return {
+			weekday: { segs: toSegments(ww.weekday), has: mixHasShare(ww.weekday) },
+			weekend: { segs: toSegments(ww.weekend), has: mixHasShare(ww.weekend) },
+		};
+	});
 
 	/** Total band share (guards the dominant-band headline + share math). */
 	const total = $derived(
@@ -61,10 +83,10 @@
 
 	/** The largest band — lifted to a MetricDisplay as the single-glance read. */
 	const dominant = $derived.by(() => {
-		if (vm.isEmpty || total <= 0) return null;
+		if (total <= 0) return null;
 		let best: { code: OccupancyCode; label: string; share: number } | null = null;
 		for (const code of OCCUPANCY_CODES) {
-			const v = vm.mix ? vm.mix[code] : null;
+			const v = activeMix ? activeMix[code] : null;
 			if (v == null || v <= 0) continue;
 			if (best == null || v > best.share) best = { code, label: bands[code], share: v };
 		}
@@ -157,7 +179,7 @@
 	<!-- Window caption: the occupancy mix is a fixed trailing window. -->
 	<p class="crowding-window" data-slot="crowding-window">{copy.windows.crowding}</p>
 
-	{#if vm.isEmpty || dominant == null}
+	{#if dominant == null}
 		<!-- Honest empty state: the styled honest-absence chip (says WHY, no telemetry), never a fake bar. -->
 		<div data-slot="crowding-empty">
 			<AbsentValue variant="block" reason="no-observations" {locale} />
@@ -221,10 +243,51 @@
 				{/each}
 			</dl>
 		{:else}
-			<!-- Entirely absent → ONE honest no-data note, never a fabricated grid. -->
-			<p class="crowding-empty" data-slot="delay-by-crowding-empty">{copy.delayByCrowding.empty}</p>
+			<!-- Entirely absent → ONE honest no-data chip (says WHY), never a raw line / fake grid. -->
+			<div data-slot="delay-by-crowding-empty">
+				<AbsentValue variant="block" reason="no-observations" {locale} />
+			</div>
 		{/if}
 	</div>
+
+	{#if weekdayWeekendCols}
+		<!-- S7 §04: weekday vs weekend occupancy split — a 2-col small multiple that
+		     reflows to a single column on mobile. Each side is its own occupancy
+		     StackedBar, or an honest no-data chip when that side has no telemetry. -->
+		<div class="crowding-2col" data-slot="crowding-weekday-weekend">
+			<SectionLabel text={copy.peak.dayType} variant="metric" />
+			<div class="crowding-2col-grid">
+				<div class="crowding-2col-cell" data-slot="crowding-weekday">
+					<span class="crowding-2col-label">{copy.peak.weekday}</span>
+					{#if weekdayWeekendCols.weekday.has}
+						<StackedBar
+							scale="occupancy"
+							segments={weekdayWeekendCols.weekday.segs}
+							label={copy.peak.weekday}
+							size="sm"
+							interactive
+						/>
+					{:else}
+						<AbsentValue variant="block" reason="no-observations" {locale} />
+					{/if}
+				</div>
+				<div class="crowding-2col-cell" data-slot="crowding-weekend">
+					<span class="crowding-2col-label">{copy.peak.weekend}</span>
+					{#if weekdayWeekendCols.weekend.has}
+						<StackedBar
+							scale="occupancy"
+							segments={weekdayWeekendCols.weekend.segs}
+							label={copy.peak.weekend}
+							size="sm"
+							interactive
+						/>
+					{:else}
+						<AbsentValue variant="block" reason="no-observations" {locale} />
+					{/if}
+				</div>
+			</div>
+		</div>
+	{/if}
 </section>
 
 <style>
@@ -248,10 +311,28 @@
 		flex: none;
 	}
 
-	.crowding-empty {
-		margin: 0;
+	/* S7 weekday/weekend 2-col: auto-fit so it's two columns on desktop and reflows
+	   to a single column on mobile (each cell needs ~14rem before it shares a row). */
+	.crowding-2col {
+		display: flex;
+		flex-direction: column;
+		gap: 0.5rem;
+		margin-top: var(--spacing-3, 0.75rem);
+	}
+	.crowding-2col-grid {
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(min(14rem, 100%), 1fr));
+		gap: 1rem 1.5rem;
+	}
+	.crowding-2col-cell {
+		display: flex;
+		flex-direction: column;
+		gap: 0.4rem;
+		min-width: 0;
+	}
+	.crowding-2col-label {
 		font-family: var(--font-mono);
-		font-size: var(--text-caption, 0.8125rem);
+		font-size: var(--text-small);
 		color: var(--muted-foreground);
 	}
 	/* Window caption: quiet mono, AA both themes. */

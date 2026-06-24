@@ -169,8 +169,10 @@ describe('Cluster04Crowding — delay by crowding (G1)', () => {
 			props: { vm: populated, locale: 'en', copy },
 		});
 		const sub = container.querySelector('[data-slot="delay-by-crowding"]') as HTMLElement;
-		expect(within(sub).getByText(copy.delayByCrowding.empty)).toBeInTheDocument();
-		// Not a fabricated per-band grid.
+		// The styled honest-absence chip (says WHY), never a raw line / fabricated grid.
+		expect(
+			sub.querySelector('[data-slot="delay-by-crowding-empty"] [data-slot="absent-value"]'),
+		).not.toBeNull();
 		expect(sub.querySelector('[data-slot="delay-by-crowding-row"]')).toBeNull();
 	});
 
@@ -192,5 +194,51 @@ describe('Cluster04Crowding — delay by crowding (G1)', () => {
 		// ...but the delay-by-crowding sub-block still renders its data.
 		const sub = container.querySelector('[data-slot="delay-by-crowding"]') as HTMLElement;
 		expect(within(sub).getByText('3.3 min')).toBeInTheDocument();
+	});
+
+	it('drives the headline off the GRAIN-AWARE mix (mixByGrain) when present', () => {
+		// scalar mix → standing/full 50/50; grain mix → many_seats 90%. The headline
+		// must follow mixByGrain (90%), proving §04 responds to the rail's grain.
+		const grainAware: CrowdingVM = {
+			mix: { empty: 0, many_seats: 0, few_seats: 0, standing: 0.5, full: 0.5 },
+			delayByCrowding: [],
+			mixByGrain: { empty: 0, many_seats: 0.9, few_seats: 0.1, standing: 0, full: 0 },
+			weekdayWeekend: null,
+			isEmpty: false,
+		};
+		const { container } = render(Cluster04Crowding, {
+			props: { vm: grainAware, locale: 'en', copy },
+		});
+		// Scope to the dominant-band headline (the bar also echoes the 90% share).
+		const head = container.querySelector('.crowding-headline-row') as HTMLElement;
+		expect(within(head).getByText('90%')).toBeInTheDocument();
+	});
+
+	it('renders the weekday vs weekend 2-col split from weekdayWeekend', () => {
+		const split: CrowdingVM = {
+			mix: { empty: 0.1, many_seats: 0.4, few_seats: 0.3, standing: 0.15, full: 0.05 },
+			delayByCrowding: [],
+			mixByGrain: null,
+			weekdayWeekend: {
+				weekday: { empty: 0, many_seats: 1, few_seats: 0, standing: 0, full: 0 },
+				weekend: { empty: 0.6, many_seats: 0.4, few_seats: 0, standing: 0, full: 0 },
+			},
+			isEmpty: false,
+		};
+		const { container } = render(Cluster04Crowding, { props: { vm: split, locale: 'en', copy } });
+		const block = container.querySelector('[data-slot="crowding-weekday-weekend"]') as HTMLElement;
+		expect(block).not.toBeNull();
+		// Both sides render their own occupancy bar (not an honest-absence chip).
+		expect(block.querySelector('[data-slot="crowding-weekday"]')).not.toBeNull();
+		expect(block.querySelector('[data-slot="crowding-weekend"]')).not.toBeNull();
+		expect(within(block).getByText(copy.peak.weekday)).toBeInTheDocument();
+		expect(within(block).getByText(copy.peak.weekend)).toBeInTheDocument();
+	});
+
+	it('omits the weekday/weekend split when weekdayWeekend is absent', () => {
+		const { container } = render(Cluster04Crowding, {
+			props: { vm: populated, locale: 'en', copy },
+		});
+		expect(container.querySelector('[data-slot="crowding-weekday-weekend"]')).toBeNull();
 	});
 });
