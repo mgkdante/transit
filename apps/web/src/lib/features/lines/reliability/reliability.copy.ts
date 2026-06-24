@@ -110,6 +110,13 @@ export interface ReliabilityCopy {
 		/** Day-type raw-grain → readable label. */
 		readonly weekday: string;
 		readonly weekend: string;
+		/** Cleveland strip-plot labels for the per-shift severe-share dot plot. */
+		readonly strip: {
+			/** Whole-strip accessible summary (figure aria-label). */
+			readonly ariaLabel: string;
+			/** All-day mean reference rule label, interpolated with the formatted mean. */
+			readonly mean: (value: string) => string;
+		};
 	};
 	/** Delay-by-crowding sub-block (in the 04 Crowding band) labels. */
 	readonly delayByCrowding: {
@@ -252,6 +259,10 @@ export const reliabilityCopy: Record<Locale, ReliabilityCopy> = {
 				'Estimation sur fenêtre glissante, pondérée par les observations, pas une ponctualité certifiée; les petits échantillons varient.',
 			weekday: 'Semaine',
 			weekend: 'Fin de semaine',
+			strip: {
+				ariaLabel: 'Part des retards graves par période de la journée',
+				mean: (value) => `Moyenne journée : ${value}`,
+			},
 		},
 		delayByCrowding: {
 			heading: "Retard selon l'occupation",
@@ -359,6 +370,10 @@ export const reliabilityCopy: Record<Locale, ReliabilityCopy> = {
 				'Trailing-window, observation-weighted estimate, not certified on-time; small samples vary.',
 			weekday: 'Weekday',
 			weekend: 'Weekend',
+			strip: {
+				ariaLabel: 'Severe-delay share by time of day',
+				mean: (value) => `All-day mean: ${value}`,
+			},
 		},
 		delayByCrowding: {
 			heading: 'Delay by crowding',

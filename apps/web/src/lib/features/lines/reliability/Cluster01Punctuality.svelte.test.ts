@@ -199,10 +199,29 @@ describe('Cluster01Punctuality — populated', () => {
 		expect(screen.getByText(copy.peak.heading)).toBeInTheDocument();
 		expect(screen.getByText(copy.peak.dayType)).toBeInTheDocument();
 		expect(screen.getByText(copy.peak.caveat)).toBeInTheDocument();
-		// The am_peak shift bucket renders (ranked by severe share).
+		// The am_peak shift bucket renders (now a Cleveland strip-plot row label).
 		expect(screen.getByText('AM peak')).toBeInTheDocument();
 		// The weekday day-type bucket renders.
 		expect(screen.getByText(copy.peak.weekday)).toBeInTheDocument();
+	});
+
+	it('P10: the per-shift severe share is a Cleveland STRIP plot on the shared axis (not bars)', () => {
+		const { container } = render(Cluster01Punctuality, {
+			props: { vm: populated, locale: 'en', copy },
+		});
+		// The shift block is now the strip plot, in chronological am→night order.
+		const strip = container.querySelector('[data-slot="shift-severe-strip"]') as HTMLElement;
+		expect(strip).not.toBeNull();
+		const fig = strip.querySelector('[data-slot="strip-plot"]') as HTMLElement;
+		expect(fig.getAttribute('data-layout')).toBe('categorical');
+		// One dot for the lone am_peak shift; its dot rides the dataviz SEVERITY scale.
+		const dots = strip.querySelectorAll<HTMLElement>('.dv-strip-plot__dot');
+		expect(dots.length).toBe(1);
+		expect(dots[0].style.getPropertyValue('--dot-fill')).toBe('var(--dataviz-severity-watch)');
+		// The shared axis is the FIXED SEVERE_DOMAIN [0,35]: 4.7% → 4.7/35 of the width.
+		expect(dots[0].style.left).toBe(`${(4.7 / 35) * 100}%`);
+		// The all-day mean reference rule renders (the lone shift's mean = itself).
+		expect(strip.querySelector('.dv-strip-plot__mean')).not.toBeNull();
 	});
 });
 

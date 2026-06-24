@@ -50,7 +50,7 @@ export type { ExplainedMetricCardProps } from './ExplainedMetricCard.svelte';
 
 // Distribution / deviation / discrete-outcome marks (slice-S3).
 export { default as StripPlot } from './StripPlot.svelte';
-export type { StripPlotProps } from './StripPlot.svelte';
+export type { StripPlotProps, StripPlotRow } from './StripPlot.svelte';
 
 export { default as DivergingBar } from './DivergingBar.svelte';
 export type { DivergingBarProps } from './DivergingBar.svelte';

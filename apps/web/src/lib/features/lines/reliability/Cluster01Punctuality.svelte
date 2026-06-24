@@ -44,14 +44,16 @@
 		TrendLine,
 		SeverityBar,
 		RankedRow,
+		StripPlot,
 		ChartLegend,
 		Distribution,
 		statusVar,
+		severityVar,
 		heatmapColor,
 		HEATMAP_RAMP,
 		HEATMAP_NODATA,
 	} from '$lib/components/dataviz';
-	import type { DistributionStats } from '$lib/components/dataviz';
+	import type { DistributionStats, StripPlotRow } from '$lib/components/dataviz';
 	import { GrainPicker, type GrainSegment } from '$lib/components/surface';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
 	import { metricInfoFor, type MetricKey } from '$lib/features/metrics/metrics.content';
@@ -263,14 +265,56 @@
 	): PeriodComparisonRow[] =>
 		rows.slice().sort((a, b) => order.indexOf(a.grain) - order.indexOf(b.grain));
 
-	const shiftPeakRows = $derived(
-		toPeakRows(orderByGrain(vm.peakOffPeak.byShift, SHIFT_GRAIN_ORDER), shiftLabel),
+	// P10: the per-shift severe share renders as a Cleveland DOT/STRIP plot over the
+	// 5 shifts on ONE shared severe-share axis (the fixed SEVERE_DOMAIN [0,35]) — no
+	// more 5 disconnected bars. order='given' keeps the am→night chronological order
+	// (re-sorting a fixed axis is a doctrine violation); the dots are NOT connected.
+	// Each row's dot is coloured on the dataviz SEVERITY scale (banded by the SAME
+	// severe-share thresholds as the bars), paired with an escalating glyph so colour
+	// is never the sole channel. A null-severe shift routes through honest absence (no
+	// dot, the WHY) — never a fabricated 0. The byShift rows ALWAYS carry every shift
+	// the contract returned; the strip shows the fixed axis with honest gaps.
+	const SEVERITY_GLYPH: Record<SeverityCode, string> = {
+		watch: '●',
+		high: '▲',
+		critical: '◆',
+	};
+	const shiftStripRows = $derived<StripPlotRow[]>(
+		orderByGrain(vm.peakOffPeak.byShift, SHIFT_GRAIN_ORDER).map((r) => {
+			const severity = severeShareToSeverity(r.severePct);
+			return {
+				key: r.grain,
+				label: shiftLabel(r.grain),
+				value: r.severePct,
+				colorVar: severityVar(severity),
+				glyph: SEVERITY_GLYPH[severity],
+				display: pct(r.severePct) ?? copy.strip.noData,
+				emptyLabel: copy.strip.noData,
+			};
+		}),
 	);
+	// At least one shift must carry a real severe share for the strip to draw.
+	const hasShiftStrip = $derived(shiftStripRows.some((r) => r.value != null));
+
+	// The all-day mean reference rule: the simple mean of the shifts' real severe
+	// shares (a flat sum/length reduce, NOT Math.max over a spread — doctrine-clean).
+	// It is a REFERENCE line in value units on the same fixed axis, never a domain.
+	const shiftSevereMean = $derived.by<number | null>(() => {
+		const vals = shiftStripRows.map((r) => r.value).filter((v): v is number => v != null);
+		if (vals.length === 0) return null;
+		let sum = 0;
+		for (const v of vals) sum += v;
+		return sum / vals.length;
+	});
+	const shiftMeanLabel = $derived(
+		shiftSevereMean != null ? copy.peak.strip.mean(pct(shiftSevereMean) ?? copy.strip.noData) : '',
+	);
+
 	const dayTypePeakRows = $derived(
 		toPeakRows(orderByGrain(vm.peakOffPeak.byDayType, DAY_TYPE_GRAIN_ORDER), dayTypeLabel),
 	);
 	const hasPeak = $derived(
-		!vm.peakOffPeak.isEmpty && (shiftPeakRows.length > 0 || dayTypePeakRows.length > 0),
+		!vm.peakOffPeak.isEmpty && (hasShiftStrip || dayTypePeakRows.length > 0),
 	);
 
 	/* ── By shift and day type (G1) — STEPPED HEATMAP ─────────────────────────
@@ -604,21 +648,25 @@
 					<SectionLabel text={copy.peak.heading} variant="metric" />
 					{@render metricInfo('severe', copy.peak.heading)}
 				</span>
-				{#if shiftPeakRows.length > 0}
-					<div class="cluster-ranked" role="list" aria-label={copy.peak.heading}>
-						{#each shiftPeakRows as row (row.key)}
-							<RankedRow
-								rank={row.rank}
-								title={row.title}
-								subtitle={copy.peak.dayOfWeekSevere}
-								severity={row.severity}
-								value={row.value}
-								domain={SEVERE_DOMAIN}
-								unit="%"
-								showRank={false}
-								display={row.display}
-							/>
-						{/each}
+				{#if hasShiftStrip}
+					<!-- P10: a Cleveland DOT/STRIP plot — one dot per shift on ONE shared
+					     severe-share axis (fixed SEVERE_DOMAIN [0,35]), am→night order, dots
+					     NOT connected. The all-day mean is a vertical reference rule; only the
+					     extremes are direct-labelled. Dots ride the dataviz severity scale +
+					     a glyph; a null-severe shift is an honest gap (no fake 0). -->
+					<div class="cluster-strip" data-slot="shift-severe-strip">
+						<StripPlot
+							rows={shiftStripRows}
+							order="given"
+							domain={SEVERE_DOMAIN}
+							mean={shiftSevereMean}
+							meanLabel={shiftMeanLabel}
+							label={copy.peak.strip.ariaLabel}
+						/>
+						<p class="cluster-caption" data-slot="shift-strip-axis">
+							{copy.peak.dayOfWeekSevere}{#if shiftMeanLabel}
+								· {shiftMeanLabel}{/if}
+						</p>
 					</div>
 				{/if}
 
@@ -815,6 +863,12 @@
 		flex-direction: column;
 		gap: 0.5rem;
 		margin-top: 0.5rem;
+	}
+	/* The per-shift severe-share Cleveland strip + its axis caption. */
+	.cluster-strip {
+		display: flex;
+		flex-direction: column;
+		gap: 0.5rem;
 	}
 
 	/* By-shift-and-day-type STEPPED HEATMAP: a fixed 5×2 grid of OTP swatches. Header +
