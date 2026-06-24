@@ -119,7 +119,7 @@ describe('AccountabilityReceipt headline + counts', () => {
 		render(AccountabilityReceipt);
 		expect(await screen.findByRole('link', { name: /Van Horne/i })).toHaveAttribute(
 			'href',
-			'/route/161',
+			'/lines/161',
 		);
 		expect(screen.getByRole('link', { name: /Rockland/i })).toHaveAttribute('href', '/stop/57191');
 	});

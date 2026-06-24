@@ -35,7 +35,7 @@ describe('createResource — reactivity to inputs read inside the fetcher', () =
 	// outside the tracking window → NOT a dependency → the resource never refetches
 	// when that input changes. This is the exact trap the RouteDetail reliability
 	// gate fell into (slice-9.7 C4): it read `id` only after `await getRoutesIndex()`,
-	// so /route/A → /route/B kept showing A's reliability. These tests pin BOTH the
+	// so /lines/A → /lines/B kept showing A's reliability. These tests pin BOTH the
 	// correct (sync-read) and the broken (post-await-read) shapes so the regression
 	// can never silently come back.
 

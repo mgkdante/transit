@@ -15,7 +15,7 @@ describe('EntityRow base', () => {
 			},
 		});
 		const link = screen.getByRole('link', { name: /161 Van Horne/i });
-		expect(link).toHaveAttribute('href', '/route/161');
+		expect(link).toHaveAttribute('href', '/lines/161');
 	});
 });
 

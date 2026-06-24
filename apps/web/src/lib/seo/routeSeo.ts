@@ -256,7 +256,7 @@ const TRIP_DETAIL: BilingualSeo = {
 function entryFor(path: string): BilingualSeo {
 	if (path === '/') return HOME;
 	if (SURFACES[path]) return SURFACES[path];
-	if (path.startsWith('/route/')) return LINE_DETAIL;
+	if (path.startsWith('/lines/')) return LINE_DETAIL;
 	if (path.startsWith('/stop/')) return STOP_DETAIL;
 	if (path.startsWith('/trip/')) return TRIP_DETAIL;
 	return HOME;
@@ -267,7 +267,7 @@ function entryFor(path: string): BilingualSeo {
  * be indexed even when the site is indexable. A trip id rotates with each run of
  * the GTFS-rt feed, so /trip/[id] deep links go stale within minutes — indexing
  * them would fill search results with dead pages. Detail surfaces over STABLE
- * ids (/route, /stop) stay indexable; only /trip is ephemeral today.
+ * ids (/lines, /stop) stay indexable; only /trip is ephemeral today.
  */
 export function isEphemeralPath(pathname: string): boolean {
 	return delocalizePath(pathname).startsWith('/trip/');
@@ -303,7 +303,7 @@ export function resolveRouteSeo(
 
 /**
  * Resolve the breadcrumb trail for a (possibly locale-prefixed) pathname. Only
- * the STABLE detail surfaces get a trail today: /route/[id] → Home > Lines >
+ * the STABLE detail surfaces get a trail today: /lines/[id] → Home > Lines >
  * <id> and /stop/[id] → Home > Stops > <id>. The leaf label is the URL id
  * segment (route number / stop code) — crawler-visible at SSR with no client
  * data. Every other surface returns an empty trail (the caller omits the node).
@@ -320,8 +320,8 @@ export function resolveBreadcrumbTrail(pathname: string, locale: Locale): Breadc
 	const path = delocalizePath(pathname);
 	const home: BreadcrumbTrailItem = { name: CRUMB_LABELS.home[locale], path: '/' };
 
-	if (path.startsWith('/route/')) {
-		const id = decodeURIComponent(path.slice('/route/'.length));
+	if (path.startsWith('/lines/')) {
+		const id = decodeURIComponent(path.slice('/lines/'.length));
 		if (!id) return [];
 		return [home, { name: CRUMB_LABELS.lines[locale], path: '/lines' }, { name: id, path }];
 	}

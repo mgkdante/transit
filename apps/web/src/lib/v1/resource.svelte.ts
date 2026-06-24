@@ -8,8 +8,8 @@
 // no data (the boundary renders a skeleton), then the effect fetches on mount.
 //
 // Reactive by design: the fetcher reads its inputs (e.g. an entity id) when it is
-// INVOKED inside the effect, so changing those inputs (client nav /route/A →
-// /route/B) re-runs the fetch. A monotonic token drops out-of-order responses.
+// INVOKED inside the effect, so changing those inputs (client nav /lines/A →
+// /lines/B) re-runs the fetch. A monotonic token drops out-of-order responses.
 //
 // Pair it with <ResourceBoundary> ($lib/components/surface) for skeleton / error /
 // empty / loaded rendering — no surface re-implements that. Live-tier data uses

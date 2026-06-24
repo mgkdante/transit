@@ -18,7 +18,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { getLocale, localizeHref } from '$lib/i18n';
-	import { stopNameFallback } from '$lib/site/absence';
 	import { fmtDelayMin as sharedFmtDelayMin } from '$lib/utils';
 	import { mapHrefFor, routeFor } from '$lib/nav';
 	import {
@@ -31,16 +30,9 @@
 		getV1Context,
 		alertsForRoute,
 	} from '$lib/v1';
-	import type {
-		RouteFile,
-		RouteReliability,
-		Provenance,
-		StopPrediction,
-		Vehicle,
-		SeverityCode,
-	} from '$lib/v1';
+	import type { RouteFile, RouteReliability, Provenance, StopPrediction, Vehicle } from '$lib/v1';
 	import { createResource } from '$lib/v1/resource.svelte';
-	import { formatUtc, minutesSinceMidnight } from '$lib/utils/time';
+	import { minutesSinceMidnight } from '$lib/utils/time';
 	import { sharedClock } from '$lib/stores';
 	import { inferAbsenceReason } from '$lib/site/serviceWindow';
 	import { EdgeState } from '$lib/components/edge';
@@ -63,6 +55,8 @@
 	import { metricInfoFor, type MetricKey } from '$lib/features/metrics/metrics.content';
 	import { metricsCopy } from '$lib/features/metrics/metrics.copy';
 	import { detailCopy } from './lines.copy';
+	import LineDirections from './LineDirections.svelte';
+	import { delayColorVar, delaySeverity, delayLabel } from '$lib/site/delayPresentation';
 
 	interface RouteDetailProps {
 		/** The route id this surface details. */
@@ -107,7 +101,7 @@
 		// Capture `id` SYNCHRONOUSLY before the first await: createResource tracks the
 		// fetcher's reactive reads only during its synchronous portion (Svelte 5 stops
 		// $effect dependency tracking at the first await/microtask). Reading `id` after
-		// the await would drop it as a dependency, so client nav /route/A → /route/B
+		// the await would drop it as a dependency, so client nav /lines/A → /lines/B
 		// would keep showing A's reliability under B's header. Mirrors MapHero's
 		// capture-key-first convention.
 		const routeId = id;
@@ -223,45 +217,6 @@
 	const showAbsenceNote = $derived(live.generatedUtc != null && roster.length === 0);
 
 	/**
-	 * A vehicle's delay banded to a dataviz STATUS tone (calm-by-default), matching
-	 * TripDetail.delayTone and the map's selection detail: early / on-time read
-	 * calm, late / severe escalate. Drives the bar's COLOUR (status scale), NOT the
-	 * problem-severity scale — an early bus is honest blue, never RED.
-	 */
-	function delayTone(delay: number | null | undefined): string {
-		if (delay == null) return 'none';
-		if (delay < 0) return 'early';
-		if (delay >= 5) return 'severe';
-		if (delay > 0) return 'late';
-		return 'on-time';
-	}
-
-	// Map a delay-tone to the `var(--dataviz-status-*)` fill colour for the bar.
-	const TONE_VAR: Record<string, string | undefined> = {
-		early: 'var(--dataviz-status-early)',
-		'on-time': 'var(--dataviz-status-on-time)',
-		late: 'var(--dataviz-status-late)',
-		severe: 'var(--dataviz-status-severe)',
-		none: undefined,
-	};
-
-	/** Status-band fill colour for a vehicle's delay (undefined → no-data track). */
-	function delayColorVar(delay: number | null | undefined): string | undefined {
-		return TONE_VAR[delayTone(delay)];
-	}
-
-	/**
-	 * The a11y band SeverityBar announces. Keyed off LATENESS only so an early /
-	 * on-time bus is announced calm ('watch', the lowest band), never 'critical' /
-	 * 'high'. A null delay is also calm — the visible "no data" text carries the
-	 * honesty. Visible colour comes from delayColorVar (status scale), not this.
-	 */
-	function delaySeverity(delay: number | null | undefined): SeverityCode {
-		if (delay == null || delay <= 0) return 'watch';
-		return delay >= 10 ? 'critical' : delay >= 5 ? 'high' : 'watch';
-	}
-
-	/**
 	 * Normalized [0,1] bar LENGTH = how LATE (only positive delay). Early / on-time
 	 * read near-zero length (calm); a null delay → null (no-data track, never 0).
 	 */
@@ -277,7 +232,7 @@
 	// on-time), and is NEVER rendered as a fabricated 0.
 	function rosterDelayLabel(delay: number | null | undefined): string {
 		if (delay == null) return t.roster.noData;
-		return delayLabel(delay);
+		return delayLabel(delay, t);
 	}
 
 	const tripHref = (tripId: string): string =>
@@ -288,21 +243,6 @@
 	// formatting + the snapshot strip + 5 cluster bands off the same archive.
 	const fmtMin = (v: number | null | undefined): string | null =>
 		sharedFmtDelayMin(v, { rounding: 'fixed1' });
-
-	const stopHref = (stopId: string): string =>
-		localizeHref(routeFor({ kind: 'stop', id: stopId }), locale);
-
-	const timeLabel = (iso: string): string =>
-		formatUtc(iso, locale, { hour: '2-digit', minute: '2-digit', hour12: false });
-
-	// Plain-language delay reading for the approaching bus, reused from the live
-	// vocabulary: early / on time / N min late, or "no delay" when the feed omits it.
-	function delayLabel(delay: number | null | undefined): string {
-		if (delay == null) return t.noDelay;
-		if (delay < 0) return t.early(delay);
-		if (delay > 0) return t.late(delay);
-		return t.onTime;
-	}
 </script>
 
 <!-- The (i) metric-explainer affordance, reused inside the Schedule pane. Declared
@@ -453,67 +393,10 @@
 										class="route-absence-note"
 									/>
 								{/if}
-								{#if (file.directions ?? []).length > 0}
-									<ul class="route-directions">
-										{#each file.directions ?? [] as dir, di (di)}
-											<li class="route-direction">
-												<span class="route-direction-head">
-													<span class="route-direction-name">
-														{dir.headsign ?? t.direction(dir.dir)}
-													</span>
-													<span class="route-direction-meta">
-														{t.stopsCount((dir.stops ?? []).length)}
-													</span>
-												</span>
-												{#if (dir.stops ?? []).length > 0}
-													<ol class="route-stops">
-														{#each dir.stops ?? [] as stop, si (stop.id + '-' + si)}
-															{@const prediction = predictions.get(stop.id) ?? null}
-															<li class="route-stop">
-																<a
-																	class="route-stop-link"
-																	href={stopHref(stop.id)}
-																	aria-label={t.viewStop(
-																		stop.name ?? stopNameFallback(stop.id, locale),
-																	)}
-																>
-																	<span class="route-stop-seq">{stop.seq}</span>
-																	<span class="route-stop-name"
-																		>{stop.name ?? stopNameFallback(stop.id, locale)}</span
-																	>
-																	<span class="route-stop-live">
-																		{#if prediction}
-																			{#if prediction.etaUtc}
-																				<time class="route-stop-eta" datetime={prediction.etaUtc}>
-																					{timeLabel(prediction.etaUtc)}
-																				</time>
-																			{:else}
-																				<span class="route-stop-eta">{t.approaching}</span>
-																			{/if}
-																			<span
-																				class="route-stop-delay"
-																				data-tone={delayTone(prediction.delayMin)}
-																			>
-																				{delayLabel(prediction.delayMin)}
-																			</span>
-																		{:else}
-																			<span class="route-stop-nolive">{t.noLiveBus}</span>
-																		{/if}
-																	</span>
-																	<ChevronRightIcon
-																		size={14}
-																		strokeWidth={2.4}
-																		aria-hidden="true"
-																	/>
-																</a>
-															</li>
-														{/each}
-													</ol>
-												{/if}
-											</li>
-										{/each}
-									</ul>
-								{/if}
+								<!-- The loved bidirectional layout, now its own reusable component
+									     (LineDirections) — both directions side-by-side when the pane is
+									     wide, each a column of its ordered stops + the live readout. -->
+								<LineDirections directions={file.directions} {predictions} {locale} copy={t} />
 							</div>
 						{/snippet}
 					</ListDetailGrid>
@@ -731,151 +614,6 @@
 		outline: 2px solid var(--ring);
 		outline-offset: 2px;
 	}
-	.route-directions {
-		list-style: none;
-		margin: 0;
-		padding: 0;
-		display: flex;
-		flex-direction: column;
-		gap: 1.25rem;
-	}
-	.route-direction {
-		display: flex;
-		flex-direction: column;
-		gap: 0.6rem;
-	}
-	.route-direction-head {
-		display: flex;
-		align-items: baseline;
-		justify-content: space-between;
-		gap: 1rem;
-	}
-	.route-direction-name {
-		font-family: var(--font-heading);
-		font-weight: 600;
-		font-size: var(--text-subheading);
-		color: var(--foreground);
-	}
-	.route-direction-meta {
-		flex-shrink: 0;
-		font-family: var(--font-mono);
-		font-size: var(--text-small);
-		color: var(--muted-foreground);
-	}
-	.route-stops {
-		list-style: none;
-		margin: 0;
-		padding: 0;
-		display: flex;
-		flex-direction: column;
-	}
-	.route-stop {
-		border-bottom: 1px solid var(--border-subtle, var(--border));
-	}
-	.route-stop:last-child {
-		border-bottom: none;
-	}
-	/* Each stop is a link into its detail page: seq · name + live readout · chevron. */
-	.route-stop-link {
-		display: grid;
-		grid-template-columns: 2ch minmax(0, 1fr) auto;
-		align-items: center;
-		gap: 0.875rem;
-		width: calc(100% + 1rem);
-		margin-inline: -0.5rem;
-		padding: 0.5rem;
-		border-radius: var(--radius-sm, 0.375rem);
-		color: var(--foreground);
-		text-decoration: none;
-		transition: background-color var(--duration-fast) var(--ease-out);
-	}
-	.route-stop-seq {
-		min-width: 2ch;
-		font-family: var(--font-mono);
-		font-size: var(--text-small);
-		color: var(--muted-foreground);
-		text-align: right;
-	}
-	.route-stop-name {
-		font-size: var(--text-body);
-		color: var(--foreground);
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
-		transition: color var(--duration-fast) var(--ease-out);
-	}
-	/* Live readout: soonest predicted arrival + the approaching bus's status, or
-	   an honest "no live bus" placeholder when nothing is currently predicting. */
-	.route-stop-live {
-		grid-column: 2;
-		display: inline-flex;
-		align-items: center;
-		gap: 0.5rem;
-		font-family: var(--font-mono);
-		font-size: var(--text-micro);
-	}
-	.route-stop-eta {
-		font-weight: 600;
-		color: var(--foreground);
-	}
-	.route-stop-delay {
-		display: inline-flex;
-		align-items: center;
-		gap: 0.3rem;
-		font-weight: 600;
-		letter-spacing: 0.01em;
-		white-space: nowrap;
-		color: var(--muted-foreground);
-	}
-	.route-stop-delay::before {
-		content: '';
-		width: 0.4rem;
-		height: 0.4rem;
-		border-radius: var(--radius-pill);
-		background: currentcolor;
-		flex: none;
-	}
-	.route-stop-delay[data-tone='none'] {
-		color: var(--muted-foreground);
-	}
-	.route-stop-delay[data-tone='none']::before {
-		display: none;
-	}
-	.route-stop-delay[data-tone='early'] {
-		color: var(--dataviz-status-early);
-	}
-	.route-stop-delay[data-tone='on-time'] {
-		color: var(--dataviz-status-on-time);
-	}
-	.route-stop-delay[data-tone='late'] {
-		color: var(--dataviz-status-late);
-	}
-	.route-stop-delay[data-tone='severe'] {
-		color: var(--dataviz-status-severe);
-	}
-	.route-stop-nolive {
-		color: var(--muted-foreground);
-	}
-	.route-stop-link :global(svg) {
-		opacity: 0.45;
-		transition:
-			opacity var(--duration-fast) var(--ease-out),
-			transform var(--duration-fast) var(--ease-out);
-	}
-	.route-stop-link:hover {
-		background: color-mix(in srgb, var(--primary) 7%, transparent);
-	}
-	.route-stop-link:hover .route-stop-name {
-		color: var(--primary);
-	}
-	.route-stop-link:hover :global(svg) {
-		opacity: 1;
-		transform: translateX(2px);
-	}
-	.route-stop-link:focus-visible {
-		outline: 2px solid var(--ring);
-		outline-offset: 2px;
-	}
 	.route-departures {
 		display: flex;
 		flex-wrap: wrap;
@@ -931,24 +669,6 @@
 		}
 	}
 
-	/* ── DETAIL pane: both directions side-by-side when the inset pane is wide ──
-	   container-type rides .route-directions-pane (the PARENT); the grid targets
-	   its DESCENDANT .route-directions list. At ≥44rem of CONTAINER width the two
-	   directions lay side-by-side (auto-fit collapses to a single column when only
-	   one direction exists, so a single-direction route never gets a lonely half
-	   column). Drives off the inset detail pane's width, not the viewport. */
-	.route-directions-pane {
-		container-type: inline-size;
-		container-name: route-directions;
-	}
-	@container route-directions (min-width: 44rem) {
-		.route-directions {
-			display: grid;
-			grid-template-columns: repeat(auto-fit, minmax(min(20rem, 100%), 1fr));
-			gap: 1.5rem 2rem;
-			align-items: start;
-		}
-	}
 	@media (max-width: 520px) {
 		.route-detail-head {
 			align-items: start;
@@ -971,15 +691,11 @@
 		gap: 1.25rem;
 	}
 	@media (prefers-reduced-motion: reduce) {
-		.route-stop-link,
-		.route-stop-name,
-		.route-stop-link :global(svg),
 		.route-roster-link,
 		.route-roster-link :global(svg),
 		.route-roster-map {
 			transition: none;
 		}
-		.route-stop-link:hover :global(svg),
 		a.route-roster-link:hover :global(svg) {
 			transform: none;
 		}

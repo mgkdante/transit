@@ -68,14 +68,17 @@ const SURFACE_ROOT: Record<SurfaceKind, string> = {
 };
 
 /**
- * Per-entity DETAIL route roots. These DELIBERATELY differ from the plural index
- * roots above: the line index is `/lines` but a single line's detail page is
- * `/route/[id]`; the stop index is `/stops` but a stop's detail is `/stop/[id]`.
+ * Per-entity DETAIL route roots. The stop detail root DELIBERATELY differs from
+ * its plural index (`/stops` index, `/stop/[id]` detail). The line surface was
+ * CONSOLIDATED in S6 so both its index AND its detail live under `/lines`
+ * (`/lines` index, `/lines/[id]` detail; the old `/route/[id]` 301-redirects).
  * A kind absent here has no detail route yet (vehicle) and falls back to its
- * index root.
+ * index root — so `line` MUST stay listed even though it now equals the index
+ * root: drop the entry and an id-bearing line target falls through to the bare
+ * `/lines` index, silently losing the id.
  */
 const ENTITY_DETAIL_ROOT: Partial<Record<SurfaceKind, string>> = {
-	line: '/route',
+	line: '/lines',
 	stop: '/stop',
 	trip: '/trip',
 };
@@ -89,9 +92,10 @@ function isEntityKind(kind: SurfaceKind): boolean {
  * The canonical, UNLOCALIZED page route for a target — the single map both the
  * mobile (route-push) and desktop (panel deep-link) halves agree on. An entity
  * kind WITH an `id` resolves to its DETAIL route `/{detailRoot}/{id}` (id
- * URI-encoded) — note the detail root differs from the plural index root
- * (`/route/[id]`, not `/lines/[id]`). Without an id, or for singleton kinds, it
- * resolves to the surface (index) root.
+ * URI-encoded). A stop's detail root differs from its plural index
+ * (`/stop/[id]` under the `/stops` index); the line surface was consolidated in
+ * S6 so its detail SHARES the index root (`/lines/[id]`). Without an id, or for
+ * singleton kinds, it resolves to the surface (index) root.
  *
  * Localize at the navigation boundary with `localizeHref(routeFor(t), locale)` —
  * this function deliberately stays locale-agnostic so it is reusable for

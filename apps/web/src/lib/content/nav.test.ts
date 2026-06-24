@@ -125,13 +125,13 @@ describe('isSurfaceActive', () => {
 
 	it('keeps Lines active on a route-detail page, Stops on a stop-detail page', () => {
 		expect(isSurfaceActive(surface('lines'), '/lines')).toBe(true);
-		expect(isSurfaceActive(surface('lines'), '/route/1')).toBe(true);
+		expect(isSurfaceActive(surface('lines'), '/lines/1')).toBe(true);
 		expect(isSurfaceActive(surface('stops'), '/stop/5')).toBe(true);
 	});
 
 	it('does not cross-match surfaces or the home hub', () => {
 		expect(isSurfaceActive(surface('map'), '/network')).toBe(false);
-		expect(isSurfaceActive(surface('stops'), '/route/1')).toBe(false);
+		expect(isSurfaceActive(surface('stops'), '/lines/1')).toBe(false);
 		expect(isSurfaceActive(surface('map'), '/')).toBe(false);
 	});
 });
@@ -139,7 +139,7 @@ describe('isSurfaceActive', () => {
 describe('mainLandmarkLabel', () => {
 	it('names the active primary surface (not a stale "Network map" everywhere)', () => {
 		expect(mainLandmarkLabel('/lines')).toEqual({ en: 'Lines', fr: 'Lignes' });
-		expect(mainLandmarkLabel('/route/1')).toEqual({ en: 'Lines', fr: 'Lignes' });
+		expect(mainLandmarkLabel('/lines/1')).toEqual({ en: 'Lines', fr: 'Lignes' });
 		expect(mainLandmarkLabel('/stop/5')).toEqual({ en: 'Stops', fr: 'Arrêts' });
 		expect(mainLandmarkLabel('/network')).toEqual({ en: 'Network', fr: 'Réseau' });
 	});

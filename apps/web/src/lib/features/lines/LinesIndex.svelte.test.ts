@@ -65,7 +65,7 @@ describe('LinesIndex map drilldown', () => {
 
 		expect(screen.getByRole('link', { name: /161 Van Horne/i })).toHaveAttribute(
 			'href',
-			'/route/161',
+			'/lines/161',
 		);
 		expect(screen.getByRole('link', { name: 'View route 161 on map' })).toHaveAttribute(
 			'href',

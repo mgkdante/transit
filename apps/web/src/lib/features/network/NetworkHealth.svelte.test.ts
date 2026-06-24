@@ -115,11 +115,11 @@ vi.mock('$lib/nav', async () => {
 	return {
 		layout: { isDesktop: true },
 		openSurface,
-		// The non-responding-by-route rows deep-link to /route/[id]; mirror the real
-		// routeFor's line-detail mapping (kind:'line' → /route/{id}) so the link href
+		// The non-responding-by-route rows deep-link to /lines/[id]; mirror the real
+		// routeFor's line-detail mapping (kind:'line' → /lines/{id}) so the link href
 		// assertions exercise the same canonical shape the surface uses in prod.
 		routeFor: (t: { kind: string; id?: string }) =>
-			t.kind === 'line' && t.id ? `/route/${encodeURIComponent(t.id)}` : '/lines',
+			t.kind === 'line' && t.id ? `/lines/${encodeURIComponent(t.id)}` : '/lines',
 	};
 });
 
@@ -328,7 +328,7 @@ describe('NetworkHealth delay distribution', () => {
 });
 
 describe('NetworkHealth non-responding by route', () => {
-	it('renders a ranked list of silent lines, each deep-linking to /route/[id]', () => {
+	it('renders a ranked list of silent lines, each deep-linking to /lines/[id]', () => {
 		render(NetworkHealth);
 		const list = screen.getByRole('list', {
 			name: /scheduled trips currently running with no live vehicle/i,
@@ -336,9 +336,9 @@ describe('NetworkHealth non-responding by route', () => {
 		// Two routes, worst (count DESC) first → 51 (2) before 105 (1).
 		const links = within(list).getAllByRole('link');
 		expect(links).toHaveLength(2);
-		expect(links[0]).toHaveAttribute('href', '/route/51');
+		expect(links[0]).toHaveAttribute('href', '/lines/51');
 		expect(links[0]).toHaveAttribute('aria-label', 'View line 51');
-		expect(links[1]).toHaveAttribute('href', '/route/105');
+		expect(links[1]).toHaveAttribute('href', '/lines/105');
 		// The per-route silent-trip count reads in the row display.
 		expect(within(list).getByText('2 trips')).toBeInTheDocument();
 		expect(within(list).getByText('1 trip')).toBeInTheDocument();

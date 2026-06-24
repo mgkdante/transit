@@ -31,7 +31,7 @@ describe('isDataRequest — live data NEVER cached', () => {
 		expect(isDataRequest(u('/_app/immutable/chunk.abc123.js'))).toBe(false);
 		expect(isDataRequest(u('/fonts/inter.woff2'))).toBe(false);
 		expect(isDataRequest(u('/'))).toBe(false);
-		expect(isDataRequest(u('/route/97'))).toBe(false);
+		expect(isDataRequest(u('/lines/97'))).toBe(false);
 	});
 
 	it('exposes the canonical data prefix constant', () => {
@@ -67,7 +67,7 @@ describe('isShellAsset — cache-first only for hashed/static shell', () => {
 	});
 
 	it('does not treat arbitrary paths as shell assets', () => {
-		expect(isShellAsset(u('/route/97'), precache)).toBe(false);
+		expect(isShellAsset(u('/lines/97'), precache)).toBe(false);
 		expect(isShellAsset(u('/some-random.js'), precache)).toBe(false);
 	});
 });
@@ -102,11 +102,11 @@ describe('shouldHandle — scope guard', () => {
 	});
 
 	it('handles same-origin GET non-range non-data', () => {
-		expect(shouldHandle({ method: 'GET', headers: headers() }, u('/route/97'), ORIGIN)).toBe(true);
+		expect(shouldHandle({ method: 'GET', headers: headers() }, u('/lines/97'), ORIGIN)).toBe(true);
 	});
 
 	it('skips non-GET', () => {
-		expect(shouldHandle({ method: 'POST', headers: headers() }, u('/route/97'), ORIGIN)).toBe(
+		expect(shouldHandle({ method: 'POST', headers: headers() }, u('/lines/97'), ORIGIN)).toBe(
 			false,
 		);
 	});

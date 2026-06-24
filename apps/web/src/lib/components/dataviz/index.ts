@@ -43,6 +43,11 @@ export type { KpiCardProps } from './KpiCard.svelte';
 export { default as BulletKpi } from './BulletKpi.svelte';
 export type { BulletKpiProps } from './BulletKpi.svelte';
 
+// Wide two-column "explained" metric card (slice-S6): col1 = (i) + label + value
+// (via brand/MetricDisplay), col2 = an always-visible plain-language explanation.
+export { default as ExplainedMetricCard } from './ExplainedMetricCard.svelte';
+export type { ExplainedMetricCardProps } from './ExplainedMetricCard.svelte';
+
 // Distribution / deviation / discrete-outcome marks (slice-S3).
 export { default as StripPlot } from './StripPlot.svelte';
 export type { StripPlotProps } from './StripPlot.svelte';

@@ -290,16 +290,9 @@ describe('RouteDetail 2-column-when-it-fits (@container, C)', () => {
 		expect(source).not.toMatch(/\.route-schedule-grid\s*\{[^}]*container-type/);
 	});
 
-	it('lays both directions side-by-side via a container on the parent detail pane', () => {
-		// container-type rides .route-directions-pane (the PARENT)…
-		expect(source).toMatch(/\.route-directions-pane\s*\{[^}]*container-type:\s*inline-size/);
-		// …and the side-by-side layout targets the DESCENDANT .route-directions list.
-		expect(source).toMatch(
-			/@container route-directions \(min-width: 44rem\)\s*\{[\s\S]*?\.route-directions\s*\{[\s\S]*?grid-template-columns/,
-		);
-		// The .route-directions list is NOT the element declaring the container.
-		expect(source).not.toMatch(/\.route-directions\s*\{[^}]*container-type/);
-	});
+	// NOTE: the bidirectional directions layout (its @container split) moved to the
+	// LineDirections component in the S6 de-monolith — that contract is now gated in
+	// LineDirections.svelte.test.ts. RouteDetail just mounts <LineDirections>.
 
 	it('keeps the schedule split into a span block + a periods block in the markup', () => {
 		// The schedule pane markup carries the two-column wrapper + its split

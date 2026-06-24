@@ -6,7 +6,7 @@ import { getRoutesIndex, getStopsIndex } from '$lib/v1';
 import type { AdapterCtx } from '$lib/v1/adapter';
 
 // sitemap.xml — DYNAMIC (request-time), not prerendered. It enumerates EVERY
-// per-entity URL: the 8 static surfaces PLUS one /route/<id> and /stop/<id> per
+// per-entity URL: the 8 static surfaces PLUS one /lines/<id> and /stop/<id> per
 // snapshot entity, in BOTH locales (EN + /fr), with hreflang alternates.
 //
 // WHY dynamic: the route/stop ids only exist in the published snapshot indexes,

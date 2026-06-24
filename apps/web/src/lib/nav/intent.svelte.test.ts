@@ -13,7 +13,7 @@ describe('routeFor', () => {
 	});
 
 	it('keeps existing route targets byte-identical when no search is provided', () => {
-		expect(routeFor({ kind: 'line', id: '161' })).toBe('/route/161');
+		expect(routeFor({ kind: 'line', id: '161' })).toBe('/lines/161');
 		expect(routeFor({ kind: 'stop', id: 'ABC 1' })).toBe('/stop/ABC%201');
 		expect(routeFor({ kind: 'network-health' })).toBe('/network');
 	});

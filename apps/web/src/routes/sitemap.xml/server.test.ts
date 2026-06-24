@@ -71,9 +71,9 @@ describe('sitemap.xml handler', () => {
 
 		// Static surfaces survive AND the entity URLs appear in both locales.
 		expect(xml).toContain(`<loc>${ORIGIN}/</loc>`);
-		expect(xml).toContain(`<loc>${ORIGIN}/route/11</loc>`);
-		expect(xml).toContain(`<loc>${ORIGIN}/fr/route/11</loc>`);
-		expect(xml).toContain(`<loc>${ORIGIN}/route/747</loc>`);
+		expect(xml).toContain(`<loc>${ORIGIN}/lines/11</loc>`);
+		expect(xml).toContain(`<loc>${ORIGIN}/fr/lines/11</loc>`);
+		expect(xml).toContain(`<loc>${ORIGIN}/lines/747</loc>`);
 		expect(xml).toContain(`<loc>${ORIGIN}/stop/10001</loc>`);
 		// lastmod sourced from the index generated_utc (never fabricated).
 		expect(xml).toContain(`<lastmod>${new Date('2026-06-20T07:00:00Z').toISOString()}</lastmod>`);
@@ -92,7 +92,7 @@ describe('sitemap.xml handler', () => {
 
 		// Static URLs survive; entity URLs are absent (fail-soft never invents them).
 		expect(xml).toContain(`<loc>${ORIGIN}/</loc>`);
-		expect(xml).not.toContain('/route/');
+		expect(xml).not.toContain('/lines/');
 		expect(xml).not.toContain('/stop/');
 	});
 
@@ -102,7 +102,7 @@ describe('sitemap.xml handler', () => {
 		const xml = await bodyOf(res);
 
 		expect(xml).toContain(`<loc>${ORIGIN}/</loc>`);
-		expect(xml).not.toContain('/route/');
+		expect(xml).not.toContain('/lines/');
 		expect(xml).not.toContain('/stop/');
 		expect(getRoutesIndex).not.toHaveBeenCalled();
 		expect(getStopsIndex).not.toHaveBeenCalled();

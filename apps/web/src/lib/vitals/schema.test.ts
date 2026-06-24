@@ -12,7 +12,7 @@ const valid: VitalsSample = {
 	id: 'v3-1718900000000-1234567890123',
 	rating: 'good',
 	navType: 'navigate',
-	path: '/route/11',
+	path: '/lines/11',
 	conn: '4g',
 };
 

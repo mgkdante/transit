@@ -8,6 +8,8 @@
 // it carries any --primary cue (that belongs to the caller's active chips).
 
 import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { render } from '@testing-library/svelte';
 import { createRawSnippet } from 'svelte';
 import ControlsRail from './ControlsRail.svelte';
@@ -70,6 +72,17 @@ describe('ControlsRail', () => {
 				.querySelector('[data-slot="controls-rail"]')
 				?.classList.contains('controls-rail--sticky'),
 		).toBe(true);
+	});
+
+	it('lifts the sticky rail above scrolling content with z-index (the sticky/z-index trap)', () => {
+		// jsdom does not compute Svelte-scoped <style> z-index, so we assert the CSS
+		// contract from source: the sticky rule must carry z-index: var(--z-rail) so
+		// POSITIONED data-mark cards scrolling under the stuck rail can't paint over it.
+		const source = readFileSync(
+			resolve(process.cwd(), 'src/lib/components/layout/ControlsRail.svelte'),
+			'utf-8',
+		);
+		expect(source).toMatch(/\.controls-rail--sticky\s*\{[^}]*z-index:\s*var\(--z-rail\)/);
 	});
 
 	it('is a non-landmark group (not a <section>) and forwards a custom class', () => {

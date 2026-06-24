@@ -271,7 +271,7 @@ describe('chromeSearchHref', () => {
 describe('scopeForPath', () => {
 	it('maps the line catalogue and route detail to route scope', () => {
 		expect(scopeForPath('/lines')).toBe('route');
-		expect(scopeForPath('/route/161')).toBe('route');
+		expect(scopeForPath('/lines/161')).toBe('route');
 	});
 
 	it('maps the stop catalogue and stop detail to stop scope', () => {
@@ -366,7 +366,7 @@ describe('chromeSearchResultHref', () => {
 	};
 
 	it('deep-links a route pick to its detail page in route scope', () => {
-		expect(chromeSearchResultHref(routeResult, 'route')).toBe('/route/161');
+		expect(chromeSearchResultHref(routeResult, 'route')).toBe('/lines/161');
 	});
 
 	it('deep-links a stop pick to its detail page in stop scope', () => {
@@ -394,6 +394,6 @@ describe('chromeSearchResultHref', () => {
 	});
 
 	it('URI-encodes the entity id through routeFor', () => {
-		expect(chromeSearchResultHref({ ...routeResult, id: '10 A' }, 'route')).toBe('/route/10%20A');
+		expect(chromeSearchResultHref({ ...routeResult, id: '10 A' }, 'route')).toBe('/lines/10%20A');
 	});
 });

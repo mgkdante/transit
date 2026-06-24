@@ -184,8 +184,10 @@
 	     active at a time (picking range deselects the grain and vice-versa; no dual
 	     highlight). The headline shows with ZERO interaction at the default 'day'
 	     grain — the controls only refine. --primary lives only on the active control
-	     chip, never on the rail chrome. -->
-	<ControlsRail label={copy.controls.viewLabel}>
+	     chip, never on the rail chrome. STICKY (S6): the grain control is the main
+	     control of the surface, so the rail stays pinned (desktop) while the metric
+	     cards + bands scroll under it. -->
+	<ControlsRail label={copy.controls.viewLabel} sticky>
 		<GrainPicker {segments} bind:value={viewKey} label={copy.controls.grainLabel} />
 
 		{#if mode === 'range'}

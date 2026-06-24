@@ -1,7 +1,7 @@
 import type { PublicSiteConfig } from './config';
 
 // Static surfaces — the always-present, data-independent pages. Per-entity URLs
-// (/route/[id], /stop/[id]) are NOT listed here; they are enumerated at request
+// (/lines/[id], /stop/[id]) are NOT listed here; they are enumerated at request
 // time by the dynamic sitemap handler (routes/sitemap.xml/+server.ts), which
 // fetches the routes_index / stops_index over the DATA binding and passes the id
 // lists into buildSitemapXml(). This module stays PURE — no fetch inside the lib.
@@ -30,7 +30,7 @@ export const SITEMAP_URL_CAP = 50_000;
 
 // Entity URL prefixes the app routes serve. Provider-agnostic — the id lists are
 // supplied by the caller from the snapshot indexes, never hardcoded here.
-const ROUTE_PREFIX = '/route/';
+const ROUTE_PREFIX = '/lines/';
 const STOP_PREFIX = '/stop/';
 
 // Percent-encode an entity id into a single path segment, EXACTLY matching how
@@ -51,7 +51,7 @@ function entityPath(prefix: string, id: string): string {
  * binding / fetch failed) the sitemap degrades to STATIC-only.
  */
 export interface SitemapEntities {
-	/** Route ids (RouteIndexEntry.id) → /route/<id> + /fr/route/<id>. */
+	/** Route ids (RouteIndexEntry.id) → /lines/<id> + /fr/lines/<id>. */
 	readonly routeIds?: readonly string[];
 	/** Stop ids (StopIndexEntry.id) → /stop/<id> + /fr/stop/<id>. */
 	readonly stopIds?: readonly string[];
@@ -155,7 +155,7 @@ export function _sitemapEntries(siteOrigin: string, staticLastmod: string | null
 
 /**
  * Exposed for testing: one <url> block per ENTITY per locale (EN + /fr) under
- * `prefix` (e.g. '/route/'), each with the alternate cluster and optional
+ * `prefix` (e.g. '/lines/'), each with the alternate cluster and optional
  * lastmod. The id is percent-encoded into the path segment (so the <loc> matches
  * the app's real link, e.g. a space → `%20`), THEN the assembled URL is
  * XML-escaped in both the <loc> and every alternate href.

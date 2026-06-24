@@ -28,8 +28,8 @@ export interface SurfaceNavItem {
 	readonly description: BilingualLabel;
 	/**
 	 * Delocalized path prefixes that mark this surface active. A prefix matches
-	 * when the current path equals it OR is nested beneath it — e.g. `/route/`
-	 * keeps Lines active on a route-detail page.
+	 * when the current path equals it OR is nested beneath it — e.g. `/lines`
+	 * keeps Lines active on a line-detail page (`/lines/[id]`).
 	 */
 	readonly activePrefixes: readonly string[];
 }
@@ -88,7 +88,7 @@ export const SURFACE_NAV: readonly SurfaceNavItem[] = [
 		href: '/lines',
 		label: { en: 'Lines', fr: 'Lignes' },
 		description: { en: 'routes and directions', fr: 'itinéraires et directions' },
-		activePrefixes: ['/lines', '/route/'],
+		activePrefixes: ['/lines'],
 	},
 	{
 		key: 'stops',
@@ -171,7 +171,7 @@ export const SECONDARY_NAV: readonly SecondaryNavLink[] = AUDIT_NAV.map((item) =
 }));
 
 /**
- * True when `currentPath` (a DELOCALIZED pathname, e.g. `/route/1`) falls under
+ * True when `currentPath` (a DELOCALIZED pathname, e.g. `/lines/1`) falls under
  * one of the item's active prefixes. Pure — callers delocalize first. Structural
  * over `activePrefixes`, so it serves both SURFACE_NAV and AUDIT_NAV items.
  */

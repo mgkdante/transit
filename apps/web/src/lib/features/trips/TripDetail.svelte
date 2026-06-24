@@ -31,6 +31,7 @@
 	import { MaybeValue } from '$lib/components/edge';
 	import ChevronRightIcon from '@lucide/svelte/icons/chevron-right';
 	import { formatUtc } from '$lib/utils/time';
+	import { delayTone, delayLabel } from '$lib/site/delayPresentation';
 	import { tripCopy } from './trips.copy';
 
 	interface TripDetailProps {
@@ -71,27 +72,10 @@
 		return t.status[status] ?? t.status.unknown;
 	}
 
-	/**
-	 * Plain-language delay reading for a KNOWN value: early / on time / N min late.
-	 * A null/absent delay is handled at the call site by the styled honest-absence
-	 * chip (AbsentValue, reason 'not-reported'), never by this label; the guard here
-	 * stays only as a defensive fallback. Never rendered as a fabricated 0.
-	 */
-	function delayLabel(delay: number | null | undefined): string {
-		if (delay == null) return t.noDelay;
-		if (delay < 0) return t.early(delay);
-		if (delay > 0) return t.late(delay);
-		return t.onTime;
-	}
-
-	/** Presentation-only tone mapping a delay to a dataviz status band. */
-	function delayTone(delay: number | null | undefined): string {
-		if (delay == null) return 'none';
-		if (delay < 0) return 'early';
-		if (delay >= 5) return 'severe';
-		if (delay > 0) return 'late';
-		return 'on-time';
-	}
+	// delayTone + delayLabel are the site-wide shared helpers ($lib/site/
+	// delayPresentation); a null/absent delay is handled at the call site by the
+	// styled honest-absence chip (AbsentValue), so delayLabel's null branch falls
+	// back to the trip copy's noDelay only as a defensive guard.
 
 	/**
 	 * The CHIP's tone. Derived from the server StatusCode (the SAME source the
@@ -191,7 +175,7 @@
 							     feed omitted delay_min, never an easy-to-miss plain note, never a 0. -->
 							<MaybeValue present={trip.delay_min != null} reason="not-reported" {locale}>
 								<span class="trip-delay" data-tone={chipTone(trip.status, trip.delay_min)}>
-									{delayLabel(trip.delay_min)}
+									{delayLabel(trip.delay_min, t)}
 								</span>
 							</MaybeValue>
 						</div>
@@ -220,7 +204,7 @@
 												     like a real value. -->
 												<MaybeValue present={stop.delay_min != null} reason="not-reported" {locale}>
 													<span class="trip-stop-delay" data-tone={delayTone(stop.delay_min)}>
-														{delayLabel(stop.delay_min)}
+														{delayLabel(stop.delay_min, t)}
 													</span>
 												</MaybeValue>
 											</span>

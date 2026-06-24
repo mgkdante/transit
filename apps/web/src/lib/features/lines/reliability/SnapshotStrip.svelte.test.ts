@@ -1,15 +1,17 @@
-// SnapshotStrip.svelte.test.ts — DOM gate for the slice-9.6 snapshot strip.
+// SnapshotStrip.svelte.test.ts — DOM gate for the slice-S6 top metric cards.
 //
-// The strip is the zero-interaction headline row. These tests pin the two
-// load-bearing behaviours the doctrine demands:
-//   1. POPULATED — renders the six metric values for the selected grain, with
-//      the CoV expressed as a plain regular/irregular reading (not a raw dump)
-//      and the ramp-in affordance present on the two ramp-in tiles.
-//   2. HONEST EMPTY — an all-null VM renders the explicit no-data note and does
-//      NOT crash (no fabricated 0, no wall of em-dashes).
+// The strip is the zero-interaction headline. After the S6 redesign it renders
+// the seven metrics as wide two-column "explained" cards (ExplainedMetricCard),
+// grouped into two rows. These tests pin the behaviours the doctrine demands:
+//   1. POPULATED — the seven cards render across the two rows with their values,
+//      the CoV as a plain regular/irregular reading, the always-visible
+//      explanation column, the (i) affordance, and ramp-in on the two ramp-in
+//      cards (and nowhere else).
+//   2. HONEST EMPTY — an all-null VM renders the styled honest-absence note and
+//      does NOT crash (no fabricated 0, no wall of empties).
 
 import { describe, it, expect } from 'vitest';
-import { render, screen } from '@testing-library/svelte';
+import { render, screen, within } from '@testing-library/svelte';
 import SnapshotStrip from './SnapshotStrip.svelte';
 import { reliabilityCopy } from './reliability.copy';
 import { toReliabilityClusters } from './clusters';
@@ -32,24 +34,35 @@ const POPULATED: RouteReliability = {
 } as RouteReliability;
 
 describe('SnapshotStrip', () => {
-	it('renders the six metric tiles, the CoV regular/irregular reading, and ramp-in affordances', () => {
+	it('renders the seven metric cards across two rows with values + the CoV reading', () => {
 		const { strip } = toReliabilityClusters(POPULATED, { grain: 'day' });
-		render(SnapshotStrip, { props: { vm: strip, locale: 'en', copy: copyEn } });
+		const { container } = render(SnapshotStrip, {
+			props: { vm: strip, locale: 'en', copy: copyEn },
+		});
 
-		// Every metric label is present (the seven headline tiles rendered — p50 was
-		// added alongside p90 per A4).
-		expect(screen.getByText(copyEn.strip.otpPct)).toBeInTheDocument();
-		expect(screen.getByText(copyEn.strip.avgDelayMin)).toBeInTheDocument();
-		expect(screen.getByText(copyEn.strip.p50Min)).toBeInTheDocument();
-		expect(screen.getByText(copyEn.strip.p90Min)).toBeInTheDocument();
-		expect(screen.getByText(copyEn.strip.headwayRegularityCov)).toBeInTheDocument();
-		expect(screen.getByText(copyEn.strip.cancellationRatePct)).toBeInTheDocument();
-		expect(screen.getByText(copyEn.strip.skippedStopRatePct)).toBeInTheDocument();
+		// Seven wide cards in total (no metric silently dropped).
+		expect(container.querySelectorAll('[data-slot="explained-metric-card"]')).toHaveLength(7);
 
-		// Headline values are the real numbers (not fabricated zeros).
+		// Row 1 — the four headline rates.
+		const row1 = container.querySelector('[data-slot="snapshot-row-1"]') as HTMLElement;
+		expect(row1).not.toBeNull();
+		expect(row1.querySelectorAll('[data-slot="explained-metric-card"]')).toHaveLength(4);
+		expect(within(row1).getByText(copyEn.strip.otpPct)).toBeInTheDocument();
+		expect(within(row1).getByText(copyEn.strip.avgDelayMin)).toBeInTheDocument();
+		expect(within(row1).getByText(copyEn.strip.cancellationRatePct)).toBeInTheDocument();
+		expect(within(row1).getByText(copyEn.strip.skippedStopRatePct)).toBeInTheDocument();
+
+		// Row 2 — the three delay-distribution reads.
+		const row2 = container.querySelector('[data-slot="snapshot-row-2"]') as HTMLElement;
+		expect(row2).not.toBeNull();
+		expect(row2.querySelectorAll('[data-slot="explained-metric-card"]')).toHaveLength(3);
+		expect(within(row2).getByText(copyEn.strip.headwayRegularityCov)).toBeInTheDocument();
+		expect(within(row2).getByText(copyEn.strip.p90Min)).toBeInTheDocument();
+		expect(within(row2).getByText(copyEn.strip.p50Min)).toBeInTheDocument();
+
+		// Real values render (never fabricated zeros).
 		expect(screen.getByText('82%')).toBeInTheDocument();
 		expect(screen.getByText('3.2 min')).toBeInTheDocument();
-		// p50 = 2 min (typical delay) and p90 = 8.5 min (worst-case) both render.
 		expect(screen.getByText('2 min')).toBeInTheDocument();
 		expect(screen.getByText('8.5 min')).toBeInTheDocument();
 
@@ -58,69 +71,30 @@ describe('SnapshotStrip', () => {
 		expect(screen.getByText(copyEn.strip.regularity.regular)).toBeInTheDocument();
 		expect(screen.queryByText(copyEn.strip.regularity.irregular)).not.toBeInTheDocument();
 
-		// Ramp-in affordance present on BOTH ramp-in tiles, and nowhere else.
+		// Every card carries its always-visible explanation column (col2).
+		expect(container.querySelectorAll('[data-slot="explained-metric-text"]')).toHaveLength(7);
+
+		// Ramp-in note present on BOTH ramp-in cards, and nowhere else.
 		expect(screen.getAllByText(copyEn.strip.rampInNote)).toHaveLength(2);
 
 		// No honest-empty note when data is present.
 		expect(screen.queryByText(copyEn.strip.noDataNote)).not.toBeInTheDocument();
 	});
 
-	it('anchors each tile (i) badge in the corner with the label as a sibling that can wrap (C1)', () => {
+	it('renders the (i) explainer affordance inside every card (col1)', () => {
 		const { strip } = toReliabilityClusters(POPULATED, { grain: 'day' });
 		const { container } = render(SnapshotStrip, {
 			props: { vm: strip, locale: 'en', copy: copyEn },
 		});
 
-		// Every tile owns a corner-anchored (i) badge (the .snapshot-tile__info hook
-		// the CSS pins to inset-block-start/inset-inline-end), seated INSIDE the tile
-		// — not in a header bar above the label, so the label can wrap to its left.
-		const tiles = container.querySelectorAll('.snapshot-tile');
-		expect(tiles.length).toBeGreaterThan(0);
-		for (const tile of tiles) {
-			const badge = tile.querySelector('.snapshot-tile__info');
-			expect(badge).not.toBeNull();
-			// The badge is a direct child of the tile (corner-anchored sibling of the
-			// metric label), and the tile carries a metric-display whose label wraps.
-			expect(badge!.parentElement).toBe(tile);
-			expect(tile.querySelector('[data-slot="metric-display"] .label-metric')).not.toBeNull();
-		}
-	});
-
-	it('groups the headline pair + secondary tiles in the redesigned strip, keeping every data-slot (C)', () => {
-		const { strip } = toReliabilityClusters(POPULATED, { grain: 'day' });
-		const { container } = render(SnapshotStrip, {
-			props: { vm: strip, locale: 'en', copy: copyEn },
-		});
-
-		// The redesign splits the flat 7-up row into a weighted headline pair + a
-		// calmer secondary grid (deliberate hierarchy, not a flat number row).
-		const headline = container.querySelector('[data-slot="snapshot-headline"]');
-		const secondary = container.querySelector('[data-slot="snapshot-secondary"]');
-		expect(headline).not.toBeNull();
-		expect(secondary).not.toBeNull();
-
-		// On-time % + Avg delay are the weighted headline cards.
-		expect(headline!.querySelector('[data-slot="otp"]')).not.toBeNull();
-		expect(headline!.querySelector('[data-slot="avg-delay"]')).not.toBeNull();
-		expect(headline!.querySelectorAll('.snapshot-tile--headline')).toHaveLength(2);
-
-		// The remaining five read as secondary tiles.
-		for (const slot of ['p50', 'p90', 'regularity', 'cancellation', 'skipped']) {
-			expect(secondary!.querySelector(`[data-slot="${slot}"]`)).not.toBeNull();
-		}
-		expect(secondary!.querySelectorAll('.snapshot-tile--secondary')).toHaveLength(5);
-
-		// Every metric data-slot survives the regroup (no tile silently dropped).
-		for (const slot of [
-			'otp',
-			'avg-delay',
-			'p50',
-			'p90',
-			'regularity',
-			'cancellation',
-			'skipped',
-		]) {
-			expect(container.querySelector(`[data-slot="${slot}"]`)).not.toBeNull();
+		// One (i) affordance per card, seated in col1 (the figure), so the deep link
+		// to /metrics is always one interaction away from each metric.
+		const badges = container.querySelectorAll(
+			'[data-slot="explained-metric-figure"] [data-slot="explained-metric-info"]',
+		);
+		expect(badges).toHaveLength(7);
+		for (const badge of badges) {
+			expect(badge.querySelector('.metric-info__trigger')).not.toBeNull();
 		}
 	});
 
@@ -139,7 +113,8 @@ describe('SnapshotStrip', () => {
 		).not.toBeNull();
 		expect(screen.queryByText('0%')).not.toBeInTheDocument();
 
-		// And the tiles are not rendered (collapsed to the single note).
+		// And the cards are not rendered (collapsed to the single note).
+		expect(container.querySelector('[data-slot="explained-metric-card"]')).toBeNull();
 		expect(screen.queryByText(copyEn.strip.otpPct)).not.toBeInTheDocument();
 	});
 });

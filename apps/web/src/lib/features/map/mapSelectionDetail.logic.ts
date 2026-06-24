@@ -12,7 +12,14 @@ import {
 	type Maybe,
 } from '$lib/site/absence';
 import { ROUTE_TYPE_METRO } from '$lib/site/serviceWindow';
+import { delayLabel } from '$lib/site/delayPresentation';
 import { formatUtc } from '$lib/utils/time';
+
+// The dataviz status tone for a KNOWN delay is the site-wide shared helper — the
+// map's known-only callers (delayMaybe routes the absent case to AbsentValue, so
+// delayTone only ever sees a real number) reuse it rather than re-deriving the
+// thresholds.
+export { delayTone } from '$lib/site/delayPresentation';
 import type { Locale } from '$lib/i18n';
 import type { StopDeparture, Vehicle } from '$lib/v1/schemas';
 import type { MapSelectionDetail, MapStopRef, RouteMapDetail } from './mapSelection';
@@ -60,20 +67,11 @@ export function delayMaybe(
 	return absent<number>(vehicleFieldAbsence(ctx));
 }
 
+// Known-delay label via the site-wide shared delayLabel. `delay` is non-null here
+// (the absent case is handled by delayMaybe → AbsentValue), and MapSelectionDetailCopy
+// supplies early/late/onTime (no `noDelay`), so the null branch is never reached.
 export function delayKnownLabel(delay: number, t: MapSelectionDetailCopy): string {
-	if (delay < 0) return t.early(delay);
-	if (delay > 0) return t.late(delay);
-	return t.onTime;
-}
-
-// Presentation-only tone for a KNOWN delay reading — maps the value to a dataviz
-// status band so on-time / early / late punch in colour. The absent path renders
-// AbsentValue (its own calm "unknown" tone), so this only handles known numbers.
-export function delayTone(delay: number): string {
-	if (delay < 0) return 'early';
-	if (delay >= 5) return 'severe';
-	if (delay > 0) return 'late';
-	return 'on-time';
+	return delayLabel(delay, t);
 }
 
 export function timeLabel(iso: string | null | undefined, locale: Locale): string {

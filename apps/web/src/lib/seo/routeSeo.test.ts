@@ -22,7 +22,7 @@ const PATHS = [
 	'/receipt',
 	'/repeat-offenders',
 	'/alerts',
-	'/route/1',
+	'/lines/1',
 	'/stop/5',
 ];
 
@@ -64,7 +64,7 @@ describe('resolveRouteSeo', () => {
 	});
 
 	it('falls detail routes back to section-level SEO', () => {
-		expect(resolveRouteSeo('/route/1', 'en').title).toBe('Line detail');
+		expect(resolveRouteSeo('/lines/1', 'en').title).toBe('Line detail');
 		expect(resolveRouteSeo('/stop/5', 'en').title).toBe('Stop detail');
 	});
 
@@ -113,7 +113,7 @@ describe('isEphemeralPath', () => {
 	});
 
 	it('keeps stable detail surfaces indexable', () => {
-		expect(isEphemeralPath('/route/1')).toBe(false);
+		expect(isEphemeralPath('/lines/1')).toBe(false);
 		expect(isEphemeralPath('/stop/5')).toBe(false);
 	});
 });
@@ -143,9 +143,9 @@ describe('resolveRouteSeo — neutral copy fallback', () => {
 
 describe('resolveBreadcrumbTrail', () => {
 	it('builds Home > Lines > <id> for a route detail path', () => {
-		const trail = resolveBreadcrumbTrail('/route/165', 'en');
+		const trail = resolveBreadcrumbTrail('/lines/165', 'en');
 		expect(trail.map((c) => c.name)).toEqual(['Home', 'Lines', '165']);
-		expect(trail.map((c) => c.path)).toEqual(['/', '/lines', '/route/165']);
+		expect(trail.map((c) => c.path)).toEqual(['/', '/lines', '/lines/165']);
 	});
 
 	it('builds Home > Stops > <id> for a stop detail path, localized', () => {
@@ -157,22 +157,22 @@ describe('resolveBreadcrumbTrail', () => {
 	it('returns an empty trail for non-detail surfaces and bare detail paths', () => {
 		expect(resolveBreadcrumbTrail('/', 'en')).toEqual([]);
 		expect(resolveBreadcrumbTrail('/lines', 'en')).toEqual([]);
-		expect(resolveBreadcrumbTrail('/route/', 'en')).toEqual([]);
+		expect(resolveBreadcrumbTrail('/lines/', 'en')).toEqual([]);
 	});
 });
 
 describe('breadcrumbItemsForHead', () => {
 	it('localizes crumb paths against the origin (fr gets the /fr prefix)', () => {
-		const items = breadcrumbItemsForHead('/fr/route/165', 'fr', ORIGIN);
+		const items = breadcrumbItemsForHead('/fr/lines/165', 'fr', ORIGIN);
 		expect(items.map((i) => i.url)).toEqual([
 			`${ORIGIN}/fr`,
 			`${ORIGIN}/fr/lines`,
-			`${ORIGIN}/fr/route/165`,
+			`${ORIGIN}/fr/lines/165`,
 		]);
 	});
 
 	it('emits unprefixed EN URLs and an empty array off-detail', () => {
-		expect(breadcrumbItemsForHead('/route/1', 'en', ORIGIN)[1].url).toBe(`${ORIGIN}/lines`);
+		expect(breadcrumbItemsForHead('/lines/1', 'en', ORIGIN)[1].url).toBe(`${ORIGIN}/lines`);
 		expect(breadcrumbItemsForHead('/network', 'en', ORIGIN)).toEqual([]);
 	});
 });
