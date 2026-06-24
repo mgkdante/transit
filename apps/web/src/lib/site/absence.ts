@@ -39,6 +39,7 @@ export { inferAbsenceReason } from './serviceWindow';
  *   no-prediction   — no ETA/delay was predicted for this item.
  *   end-of-route    — no next item because the trip ended.
  *   inferred        — value synthesized (computed/estimated), not published as-is.
+ *   no-observations — a historic/aggregate metric had too few readings to report.
  */
 export type ValueAbsenceKey =
 	| 'not-reported'
@@ -46,7 +47,8 @@ export type ValueAbsenceKey =
 	| 'not-in-schedule'
 	| 'no-prediction'
 	| 'end-of-route'
-	| 'inferred';
+	| 'inferred'
+	| 'no-observations';
 
 /**
  * The canonical, unified absence vocabulary: every service-window reason key plus
@@ -108,6 +110,7 @@ export const ABSENCE_COPY: Record<Locale, Record<AbsenceReasonKey, ReasonCopy>> 
 		'no-prediction': { short: 'No estimate', why: 'no prediction available' },
 		'end-of-route': { short: 'End of line', why: 'no next stop, the trip has ended' },
 		inferred: { short: 'Estimated', why: 'estimated, not published directly' },
+		'no-observations': { short: 'No data', why: 'not enough readings yet' },
 	},
 	fr: {
 		// service-window keys (block-level)
@@ -133,6 +136,7 @@ export const ABSENCE_COPY: Record<Locale, Record<AbsenceReasonKey, ReasonCopy>> 
 		'no-prediction': { short: 'Aucune estimation', why: 'aucune prévision disponible' },
 		'end-of-route': { short: 'Terminus', why: 'aucun arrêt suivant, le trajet est terminé' },
 		inferred: { short: 'Estimé', why: 'estimé, non publié directement' },
+		'no-observations': { short: 'Aucune donnée', why: 'pas assez de mesures' },
 	},
 };
 

@@ -124,6 +124,8 @@
 						<MetricDisplay
 							value={min(period.delayMin)}
 							emptyLabel={t.noData}
+							absentReason="no-observations"
+							{locale}
 							label={period.delayKind === 'median'
 								? t.delayMedian
 								: period.delayKind === 'avg'

@@ -20,6 +20,7 @@
 	import { fmtDelayMin as sharedFmtDelayMin } from '$lib/utils';
 	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
 	import MetricDisplay from '$lib/components/brand/MetricDisplay.svelte';
+	import { AbsentValue } from '$lib/components/edge';
 	import { StackedBar, type StackedSegment } from '$lib/components/dataviz';
 	import { OCCUPANCY_CODES, type OccupancyCode } from '$lib/v1/schemas';
 	import type { Locale } from '$lib/i18n';
@@ -162,7 +163,10 @@
 	{:else}
 		<div class="crowding-headline-row">
 			<MetricDisplay
-				value={dominantPct ?? copy.strip.noDataNote}
+				value={dominantPct}
+				emptyLabel={copy.strip.noData}
+				absentReason="no-observations"
+				{locale}
 				label={dominant.label}
 				size="lg"
 				class="crowding-headline"
@@ -205,9 +209,13 @@
 							class:crowding-delay-value--empty={!row.hasDelay}
 							data-empty={!row.hasDelay}
 						>
-							{row.display}{#if row.hasDelay && row.p50}<span class="crowding-delay-p50"
-									>{copy.delayByCrowding.typical(row.p50)}</span
-								>{/if}
+							{#if row.hasDelay}
+								{row.display}{#if row.p50}<span class="crowding-delay-p50"
+										>{copy.delayByCrowding.typical(row.p50)}</span
+									>{/if}
+							{:else}
+								<AbsentValue reason="no-observations" {locale} />
+							{/if}
 						</dd>
 					</div>
 				{/each}
