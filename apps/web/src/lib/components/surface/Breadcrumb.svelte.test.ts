@@ -3,12 +3,12 @@ import { describe, expect, it } from 'vitest';
 import Breadcrumb from './Breadcrumb.svelte';
 import type { BreadcrumbTrailItem } from '$lib/seo/routeSeo';
 
-// A representative /route/161 trail (delocalized paths — the contract of
+// A representative /lines/161 trail (delocalized paths — the contract of
 // resolveBreadcrumbTrail; the component localizes each href).
 const trail: BreadcrumbTrailItem[] = [
 	{ name: 'Home', path: '/' },
 	{ name: 'Lines', path: '/lines' },
-	{ name: '161', path: '/route/161' },
+	{ name: '161', path: '/lines/161' },
 ];
 
 describe('Breadcrumb', () => {

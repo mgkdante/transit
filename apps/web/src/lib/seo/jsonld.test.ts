@@ -52,7 +52,7 @@ describe('breadcrumbJsonLd', () => {
 		const node = breadcrumbJsonLd([
 			{ name: 'Home', url: `${ORIGIN}/` },
 			{ name: 'Lines', url: `${ORIGIN}/lines` },
-			{ name: '165', url: `${ORIGIN}/route/165` },
+			{ name: '165', url: `${ORIGIN}/lines/165` },
 		]);
 		expect(node?.['@type']).toBe('BreadcrumbList');
 		const items = node?.itemListElement as Array<{
@@ -63,7 +63,7 @@ describe('breadcrumbJsonLd', () => {
 		}>;
 		expect(items).toHaveLength(3);
 		expect(items[0]).toMatchObject({ position: 1, name: 'Home', item: `${ORIGIN}/` });
-		expect(items[2]).toMatchObject({ position: 3, name: '165', item: `${ORIGIN}/route/165` });
+		expect(items[2]).toMatchObject({ position: 3, name: '165', item: `${ORIGIN}/lines/165` });
 	});
 });
 

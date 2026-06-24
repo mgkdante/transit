@@ -71,7 +71,7 @@ describe('RepeatOffenders ranked ledger', () => {
 		// Worst-first order preserved from the feed: route 11 (12.4) then stop (6.2).
 		expect(links[0]).toHaveTextContent('Montagne / Sommet');
 		expect(links[0]).toHaveTextContent('12.4 min');
-		expect(links[0]).toHaveAttribute('href', '/route/11');
+		expect(links[0]).toHaveAttribute('href', '/lines/11');
 		// The anchor carries the concise "View detail for …" accessible name.
 		expect(links[0]).toHaveAccessibleName('View detail for Montagne / Sommet');
 
@@ -167,8 +167,8 @@ describe('RepeatOffenders ranked ledger', () => {
 		// Both rows survive and link to their respective offending routes.
 		const links = within(list).getAllByRole('link');
 		expect(links).toHaveLength(2);
-		expect(links[0]).toHaveAttribute('href', '/route/49');
-		expect(links[1]).toHaveAttribute('href', '/route/55');
+		expect(links[0]).toHaveAttribute('href', '/lines/49');
+		expect(links[1]).toHaveAttribute('href', '/lines/55');
 	});
 
 	it('routes an empty offenders list to the boundary empty state, never an invented row', () => {

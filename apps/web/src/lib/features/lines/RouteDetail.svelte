@@ -107,7 +107,7 @@
 		// Capture `id` SYNCHRONOUSLY before the first await: createResource tracks the
 		// fetcher's reactive reads only during its synchronous portion (Svelte 5 stops
 		// $effect dependency tracking at the first await/microtask). Reading `id` after
-		// the await would drop it as a dependency, so client nav /route/A → /route/B
+		// the await would drop it as a dependency, so client nav /lines/A → /lines/B
 		// would keep showing A's reliability under B's header. Mirrors MapHero's
 		// capture-key-first convention.
 		const routeId = id;

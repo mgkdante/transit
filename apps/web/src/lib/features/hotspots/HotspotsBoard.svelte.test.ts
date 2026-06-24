@@ -6,7 +6,7 @@ import HotspotsBoard from './HotspotsBoard.svelte';
 // A mutable hoisted payload so each test can seed the resource (worst-first list
 // vs an empty array) before rendering. `getLocale()` is left unmocked → it
 // returns DEFAULT_LOCALE ('en'), and $lib/i18n + $lib/nav stay REAL so the deep
-// links resolve to genuine /route/<id> and /stop/<id> hrefs.
+// links resolve to genuine /lines/<id> and /stop/<id> hrefs.
 const { payload } = vi.hoisted(() => ({
 	payload: {
 		current: {
@@ -102,7 +102,7 @@ describe('HotspotsBoard ranked list', () => {
 		render(HotspotsBoard);
 		expect(screen.getByRole('link', { name: 'View detail for Van Horne' })).toHaveAttribute(
 			'href',
-			'/route/161',
+			'/lines/161',
 		);
 		expect(screen.getByRole('link', { name: 'View detail for Berri / Fleury' })).toHaveAttribute(
 			'href',

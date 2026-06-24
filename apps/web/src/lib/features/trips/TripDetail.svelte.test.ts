@@ -92,7 +92,7 @@ describe('TripDetail: a broadcasting trip', () => {
 		// Route links to the line detail page.
 		expect(screen.getByRole('link', { name: 'View line 161' })).toHaveAttribute(
 			'href',
-			'/route/161',
+			'/lines/161',
 		);
 		// Trip-level status reads honestly (the visible text channel, not colour-only).
 		expect(screen.getByText('Late')).toBeInTheDocument();

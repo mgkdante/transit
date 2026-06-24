@@ -112,7 +112,7 @@
 	const isFullBleed = $derived(seoPath === '/map');
 
 	// Context-aware chrome search: the active surface RESTRICTS the result blend
-	// and steers selection — /lines + /route/* search only lines (→ /route/<id>),
+	// and steers selection — /lines + /lines/* search only lines (→ /lines/<id>),
 	// /stops + /stop/* only stops (→ /stop/<id>), /map keeps the full blend, and
 	// the hub/network/search default to today's blend. Derived from the same
 	// delocalized path the nav highlight uses, so the two never disagree.

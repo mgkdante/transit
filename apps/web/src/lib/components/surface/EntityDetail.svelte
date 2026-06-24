@@ -52,7 +52,7 @@
 		class: className,
 	}: EntityDetailProps = $props();
 
-	// Visible breadcrumb on the stable detail surfaces (/route/[id], /stop/[id]).
+	// Visible breadcrumb on the stable detail surfaces (/lines/[id], /stop/[id]).
 	// Locale via context (siblings read getLocale()); the path from $app/state so
 	// the trail follows client navigations. resolveBreadcrumbTrail returns [] for
 	// every other surface, so the Breadcrumb (which itself guards on >1 crumb) is

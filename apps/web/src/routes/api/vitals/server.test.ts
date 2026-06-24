@@ -9,7 +9,7 @@ const sample = {
 	id: 'v3-1718900000000-1',
 	rating: 'good',
 	navType: 'navigate',
-	path: '/route/11',
+	path: '/lines/11',
 	conn: '4g',
 };
 
@@ -56,7 +56,7 @@ describe('/api/vitals POST handler', () => {
 
 		const firstArg = writeDataPoint.mock.calls[0][0];
 		expect(firstArg.indexes).toEqual(['LCP']);
-		expect(firstArg.blobs).toEqual(['LCP', 'good', '/route/11', 'navigate', '4g']);
+		expect(firstArg.blobs).toEqual(['LCP', 'good', '/lines/11', 'navigate', '4g']);
 		expect(firstArg.doubles).toEqual([1200]);
 	});
 

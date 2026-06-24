@@ -18,7 +18,7 @@
 	interface SurfaceNavListProps {
 		/** Active UI locale. */
 		locale: Locale;
-		/** DELOCALIZED current path (e.g. `/route/1`) for active detection. */
+		/** DELOCALIZED current path (e.g. `/lines/1`) for active detection. */
 		currentPath: string;
 		/** Class applied to each rendered link row. */
 		linkClass: string;

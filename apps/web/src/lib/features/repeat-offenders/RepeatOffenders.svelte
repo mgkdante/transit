@@ -9,7 +9,7 @@
       contract publishes no offenders).
     · SurfaceHeader for the head; a single ranked list of RankedRows, worst-first
       (the pipeline already orders the feed), each row severity-banded by its
-      average delay and linking to the offending route (/route/{route}) or stop
+      average delay and linking to the offending route (/lines/{route}) or stop
       (/stop/{id}) where the id maps.
 
   DOCTRINE: the magnitude bar rides the dataviz SEVERITY scale (banded via the
@@ -126,7 +126,7 @@
 	}
 
 	// Resolve each offender to the offending entity's detail route. A 'stop' links
-	// to /stop/{id}; anything carrying a route id links to /route/{route}; failing
+	// to /stop/{id}; anything carrying a route id links to /lines/{route}; failing
 	// both, the row falls back to a non-navigating self target (its own id) so the
 	// link is never broken — routeFor encodes the id and never throws.
 	function offenderTarget(o: Offender): SurfaceTarget {

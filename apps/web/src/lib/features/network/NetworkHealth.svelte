@@ -239,7 +239,7 @@
 	// builder). Honest: silent trips have no vehicle id, so this is a per-line
 	// silent-trip tally, NOT vehicle ids. null/empty → the section stands down
 	// (the scalar `non_responding` tile still carries the total). Each row is a
-	// ranked link to /route/[id] via the shared routeFor → localizeHref pattern.
+	// ranked link to /lines/[id] via the shared routeFor → localizeHref pattern.
 	type SilentRow = {
 		readonly key: string;
 		readonly rank: number;

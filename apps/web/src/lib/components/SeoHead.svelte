@@ -31,7 +31,7 @@
 		title: string;
 		/** Meta description (already localized). Aim for ~150–160 chars. */
 		description: string;
-		/** Canonical PAGE path, locale-less (e.g. '/route/165'). Defaults to '/'. */
+		/** Canonical PAGE path, locale-less (e.g. '/lines/165'). Defaults to '/'. */
 		path?: string;
 		/** Active request locale. Drives canonical prefix + og:image selection. */
 		locale: Locale;

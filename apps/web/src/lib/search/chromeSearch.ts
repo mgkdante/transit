@@ -16,7 +16,7 @@ export type ChromeSearchKind = 'route' | 'stop' | 'vehicle' | 'address';
 /**
  * The surface context the chrome search runs in — derived from the active
  * (delocalized) path. It RESTRICTS the result blend and steers selection:
- *   `route` (/lines, /route/*) → only lines, deep-link to /route/<id>
+ *   `route` (/lines, /lines/*) → only lines, deep-link to /lines/<id>
  *   `stop`  (/stops, /stop/*)  → only stops, deep-link to /stop/<id>
  *   `map`   (/map)             → the full blend, every pick filters the map
  *   `all`   (hub/network/search/else) → today's blend, map deep-links
@@ -149,10 +149,10 @@ export function chromeSearchResults(
 
 /**
  * Scope for the active (DELOCALIZED) path. Mirrors `nav.ts` `activePrefixes`
- * (`/route/`, `/stop/`) EXACTLY so search scope and nav highlight never disagree.
+ * (`/lines/`, `/stop/`) EXACTLY so search scope and nav highlight never disagree.
  */
 export function scopeForPath(delocalizedPath: string): ChromeSearchScope {
-	if (delocalizedPath === '/lines' || delocalizedPath.startsWith('/route/')) return 'route';
+	if (delocalizedPath === '/lines' || delocalizedPath.startsWith('/lines/')) return 'route';
 	if (delocalizedPath === '/stops' || delocalizedPath.startsWith('/stop/')) return 'stop';
 	if (delocalizedPath === '/map') return 'map';
 	return 'all';
@@ -160,7 +160,7 @@ export function scopeForPath(delocalizedPath: string): ChromeSearchScope {
 
 /**
  * Context-aware destination for a picked result. In `route`/`stop` scope a
- * matching entity deep-links to its DETAIL page (`/route/<id>`, `/stop/<id>`)
+ * matching entity deep-links to its DETAIL page (`/lines/<id>`, `/stop/<id>`)
  * via the shared `routeFor` canonical map; everything else — `map`/`all` scope,
  * addresses, or a kind that does not match its scope — falls through to the
  * EXISTING `chromeSearchHref` map-filter behavior (unchanged). Returns an

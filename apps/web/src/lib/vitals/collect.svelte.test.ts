@@ -89,7 +89,7 @@ describe('startVitals — active when the flag is on', () => {
 		vi.stubGlobal('navigator', { sendBeacon, connection: { effectiveType: '4g' } });
 		// Strip query/hash to prove path-only.
 		Object.defineProperty(window, 'location', {
-			value: { pathname: '/route/11' },
+			value: { pathname: '/lines/11' },
 			writable: true,
 		});
 
@@ -128,7 +128,7 @@ describe('startVitals — active when the flag is on', () => {
 		const body = JSON.parse(await blob.text());
 		expect(body.samples).toHaveLength(2);
 		const lcp = body.samples.find((s: { name: string }) => s.name === 'LCP');
-		expect(lcp).toMatchObject({ name: 'LCP', value: 1500, path: '/route/11', conn: '4g' });
+		expect(lcp).toMatchObject({ name: 'LCP', value: 1500, path: '/lines/11', conn: '4g' });
 		// No PII / no full URL: only the schema fields, path has no query string.
 		expect(JSON.stringify(body)).not.toContain('?');
 		expect(Object.keys(lcp).sort()).toEqual(

@@ -9,7 +9,7 @@
       rider-impact score (each honest no-data when null);
     · affected counts    — routes / stops / alerts / vehicles touched on the day
       (a count is shown only when present; a null count reads as no-data);
-    · worst of the day    — the single worst route (linked to /route/[id]) and
+    · worst of the day    — the single worst route (linked to /lines/[id]) and
       worst stop (linked to /stop/[id]), each with its delta/avg-delay, stood
       down when the receipt carries none.
 
