@@ -12,11 +12,19 @@ const info = metricsCopy.en.info;
 const populated: CrowdingVM = {
 	mix: { empty: 0.1, many_seats: 0.2, few_seats: 0.15, standing: 0.45, full: 0.1 },
 	delayByCrowding: [],
+	mixByGrain: null,
+	weekdayWeekend: null,
 	isEmpty: false,
 };
 
 // The honest empty state: no telemetry → the VM is empty (no mix to draw).
-const empty: CrowdingVM = { mix: null, delayByCrowding: [], isEmpty: true };
+const empty: CrowdingVM = {
+	mix: null,
+	delayByCrowding: [],
+	mixByGrain: null,
+	weekdayWeekend: null,
+	isEmpty: true,
+};
 
 describe('Cluster04Crowding', () => {
 	it('renders the cluster overline + occupancy bar with a populated VM', () => {
@@ -115,6 +123,8 @@ describe('Cluster04Crowding — delay by crowding (G1)', () => {
 			{ band: 'standing', avg_delay_min: 4.5 },
 			{ band: 'full', avg_delay_min: null, day_count: 3 },
 		],
+		mixByGrain: null,
+		weekdayWeekend: null,
 		isEmpty: false,
 	};
 
@@ -168,6 +178,8 @@ describe('Cluster04Crowding — delay by crowding (G1)', () => {
 		const mixEmptyWithDelay: CrowdingVM = {
 			mix: null,
 			delayByCrowding: [{ band: 'standing', avg_delay_min: 3.3 }],
+			mixByGrain: null,
+			weekdayWeekend: null,
 			isEmpty: true,
 		};
 		const { container } = render(Cluster04Crowding, {

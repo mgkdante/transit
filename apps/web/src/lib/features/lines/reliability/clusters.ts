@@ -165,6 +165,24 @@ export interface CrowdingVM {
 	 * → the sub-block shows one honest no-data note (or is omitted).
 	 */
 	readonly delayByCrowding: CrowdingDelayCell[];
+	/**
+	 * S7: the occupancy mix at the SELECTED grain (day/week/month) from
+	 * occupancy_by_grain, or null when that grain has no telemetry / the field is
+	 * absent. The band prefers this over `mix` when present (grain-aware crowding),
+	 * falling back to the scalar trailing-window `mix`.
+	 */
+	readonly mixByGrain: OccupancyMix | null;
+	/**
+	 * S7: weekday (ISO 1-5) vs weekend (ISO 6-7) occupancy mix for the 2-col split,
+	 * each the unweighted mean of the per-weekday shares from occupancy_by_dow. null
+	 * when occupancy_by_dow is absent/empty; each side null when that side has no
+	 * telemetry. (Mean-of-shares is an approximation — the contract carries per-day
+	 * shares, not raw counts — honest for a "typical weekday/weekend" display.)
+	 */
+	readonly weekdayWeekend: {
+		readonly weekday: OccupancyMix | null;
+		readonly weekend: OccupancyMix | null;
+	} | null;
 	/** True when `mix` is null OR every band share is zero/absent. */
 	readonly isEmpty: boolean;
 }
@@ -398,6 +416,25 @@ function meanOf<T>(
 	return Math.round((sum / n) * factor) / factor;
 }
 
+/**
+ * Unweighted mean of the present band-share mixes (each share vector sums to ~1, so
+ * the mean also sums to ~1 — no re-normalization). null when no present mix. Used to
+ * fold the per-ISO-weekday occupancy_by_dow shares into a typical weekday/weekend mix.
+ */
+function meanMix(mixes: readonly (OccupancyMix | null)[]): OccupancyMix | null {
+	const present = mixes.filter((m): m is OccupancyMix => m != null);
+	if (present.length === 0) return null;
+	const avg = (pick: (m: OccupancyMix) => number): number =>
+		present.reduce((acc, m) => acc + pick(m), 0) / present.length;
+	return {
+		empty: avg((m) => m.empty),
+		many_seats: avg((m) => m.many_seats),
+		few_seats: avg((m) => m.few_seats),
+		standing: avg((m) => m.standing),
+		full: avg((m) => m.full),
+	};
+}
+
 /** First headway row carrying a CoV (the busiest-direction regularity row). */
 function selectHeadwayCov(headway: readonly HeadwayPeriod[]): number | null {
 	const row = headway.find((h) => h.cov != null);
@@ -455,6 +492,15 @@ export function toReliabilityClusters(
 	const dayTrendAsc = dayTrend(partition.calendar.day);
 	const rangeDays = grain === 'day' && dateRange ? daysInRange(dayTrendAsc, dateRange) : [];
 	const hasRange = rangeDays.length > 0;
+	// S7: the §01 trend follows the SELECTED calendar grain (day/week/month).
+	// dayTrend() dedupes-by-date + sorts ASC, so it works for any dated grain; range
+	// mode still zooms the DAY series (range is day-grain only, handled below).
+	const grainTrendAsc =
+		grain === 'week'
+			? dayTrend(partition.calendar.week)
+			: grain === 'month'
+				? dayTrend(partition.calendar.month)
+				: dayTrendAsc;
 
 	/* 01-strip — the selected-grain headline (F1: most-recent week/month). When a
 	   date range is active the strip AGGREGATES the in-range days: on-time % + avg
@@ -521,7 +567,7 @@ export function toReliabilityClusters(
 	/* 01 Punctuality. */
 	// Trend source = ONLY the dated day-grain series, chronological ascending (F1/F4).
 	// A date range ZOOMS the trend to the in-range days (otherwise the full series).
-	const trend = hasRange ? rangeDays : dayTrendAsc;
+	const trend = hasRange ? rangeDays : grainTrendAsc;
 	const dayOfWeek = allDayOfWeek
 		.filter(dayOfWeekHasSignal)
 		.slice()
@@ -587,9 +633,27 @@ export function toReliabilityClusters(
 	// band orders these by the natural occupancy order; a present band with a null
 	// delay shows an honest no-data message (never a fake 0).
 	const delayByCrowding = (data.delay_by_crowding ?? []).filter(crowdingDelayHasSignal);
+	// S7: grain-aware mix (the occupancy_by_grain entry for the selected grain) +
+	// weekday/weekend split (means of the per-ISO-weekday occupancy_by_dow shares).
+	const occByGrain = data.occupancy_by_grain ?? [];
+	const occByDow = data.occupancy_by_dow ?? [];
+	const mixByGrain = occByGrain.find((g) => g.grain === grain)?.mix ?? null;
+	const weekdayWeekend =
+		occByDow.length > 0
+			? {
+					weekday: meanMix(
+						occByDow.filter((d) => d.day_of_week_iso >= 1 && d.day_of_week_iso <= 5).map((d) => d.mix ?? null),
+					),
+					weekend: meanMix(
+						occByDow.filter((d) => d.day_of_week_iso >= 6 && d.day_of_week_iso <= 7).map((d) => d.mix ?? null),
+					),
+				}
+			: null;
 	const crowding: CrowdingVM = {
 		mix: mixHasShare ? rawMix : null,
 		delayByCrowding,
+		mixByGrain,
+		weekdayWeekend,
 		// The mix drives the headline + stacked bar; the delay×crowding sub-block has
 		// its OWN empty path. `isEmpty` stays mix-driven so a route WITH delay data but
 		// no occupancy mix still surfaces the delay sub-block under the band.
