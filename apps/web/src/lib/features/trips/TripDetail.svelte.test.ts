@@ -25,6 +25,14 @@ const TRIPS_FILE = {
 			delay_min: 0,
 			stops: [],
 		},
+		// A broadcasting trip whose live row OMITS route + delay_min → the styled
+		// honest-absence chip at both the route cell and the trip-level delay cell.
+		tBlank: {
+			status: 'unknown',
+			route: null,
+			delay_min: null,
+			stops: [],
+		},
 	},
 } as unknown as TripsFile;
 
@@ -119,14 +127,33 @@ describe('TripDetail: a broadcasting trip', () => {
 		expect(within(stops).getAllByText('Live prediction').length).toBe(2);
 	});
 
-	it('shows the delay basis when present and an honest "no data" when null, never 0', () => {
+	it('shows the delay basis when present and the styled honest-absence chip when null, never 0', () => {
 		render(TripDetail, { props: { id: 't161' } });
 
 		const stops = screen.getByRole('list', { name: 'Remaining stops on this trip' });
-		// sA has a 4 min late delay basis; sB has a null delay → "No data", never "0".
+		// sA has a 4 min late delay basis; sB has a null delay → the styled
+		// honest-absence chip ("Unknown · not reported in the live feed"), never "0".
 		expect(within(stops).getAllByText('4 min late').length).toBeGreaterThanOrEqual(1);
-		expect(within(stops).getByText('No data')).toBeInTheDocument();
+		const absent = within(stops).getByText('not reported in the live feed');
+		expect(absent.closest('[data-slot="absent-value"]')).not.toBeNull();
 		expect(within(stops).queryByText('0 min late')).not.toBeInTheDocument();
+	});
+
+	it('renders the styled honest-absence chip when a broadcasting trip omits route + delay', () => {
+		render(TripDetail, { props: { id: 'tBlank' } });
+
+		// The surface still renders (trip is broadcasting), with the route cell and the
+		// trip-level delay cell both showing the styled honest-absence chip instead of
+		// a plain easy-to-miss note. Both read 'not reported in the live feed'.
+		expect(screen.getByRole('heading', { name: 'Trip tBlank' })).toBeInTheDocument();
+		const chips = screen.getAllByText('not reported in the live feed');
+		// Route cell + delay cell.
+		expect(chips.length).toBe(2);
+		for (const chip of chips) {
+			expect(chip.closest('[data-slot="absent-value"]')).not.toBeNull();
+		}
+		// The old plain notes are gone (no bare grey text where the chip now lives).
+		expect(screen.queryByText('No line reported')).not.toBeInTheDocument();
 	});
 
 	it('renders an honest note when a broadcasting trip reports no remaining stops', () => {

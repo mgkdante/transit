@@ -52,6 +52,7 @@
 	import { Separator } from '$lib/components/ui/separator';
 	import { RankedRow } from '$lib/components/dataviz';
 	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
+	import { AbsentValue } from '$lib/components/edge';
 	// Reuse the SAME alert presentation the map + AffectedAlerts use: the
 	// locale-aware headline resolver (HTML scrub + generic-header guard) and the
 	// bilingual GTFS-RT cause/effect labels. All pure + provider-agnostic.
@@ -512,14 +513,21 @@
 			{/if}
 		</div>
 
-		<!-- Tier-2 cause / effect / severity distribution — stands down entirely
-		     when no distribution was published. Each section stands down when its
-		     bucket list is empty. The magnitude bar rides the dataviz severity
-		     scale (RankedRow owns it). -->
-		{#if hasBreakdown}
-			<Separator variant="hazard" />
-			<div class="alert-history-block" data-slot="alert-breakdown">
-				<SectionLabel text={t.breakdown.section} variant="station" />
+		<!-- Tier-2 cause / effect / severity distribution. The section stays present
+		     (alerts exist in this branch), but its BODY is honest: when no distribution
+		     was published, it renders the ONE styled honest-absence chip ("No data ·
+		     not enough readings yet") instead of silently vanishing. Each distribution
+		     stands down on its own {#if} when its bucket list is empty; the magnitude
+		     bar rides the dataviz severity scale (RankedRow owns it). -->
+		<Separator variant="hazard" />
+		<div class="alert-history-block" data-slot="alert-breakdown">
+			<SectionLabel text={t.breakdown.section} variant="station" />
+			{#if !hasBreakdown}
+				<!-- HONEST ABSENCE: the archive carries alerts but no published
+				     cause/effect/severity distribution (a historic rollup with too few
+				     readings to break down). Say so with the styled chip, never a blank. -->
+				<AbsentValue variant="block" reason="no-observations" {locale} />
+			{:else}
 				<!-- The three distributions tile into a fluid board: 3-up on a wide
 				     desktop, 2-up mid, one column on a phone (auto-fit reflow, no
 				     breakpoint bookkeeping). Each distribution stands DOWN on its own
@@ -585,8 +593,8 @@
 						</div>
 					{/if}
 				</DashboardGrid>
-			</div>
-		{/if}
+			{/if}
+		</div>
 	</ResourceBoundary>
 </Surface>
 

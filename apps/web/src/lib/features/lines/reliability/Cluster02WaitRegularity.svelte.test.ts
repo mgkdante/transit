@@ -123,7 +123,7 @@ describe('Cluster02WaitRegularity', () => {
 
 		expect(clusters.waitRegularity.isEmpty).toBe(true);
 
-		render(Cluster02WaitRegularity, {
+		const { container } = render(Cluster02WaitRegularity, {
 			props: {
 				wait: clusters.waitRegularity,
 				serviceSpans: clusters.serviceDelivered.serviceSpans,
@@ -132,9 +132,9 @@ describe('Cluster02WaitRegularity', () => {
 			},
 		});
 
-		// The cluster overline still renders; the no-data note replaces the marks.
+		// The cluster overline still renders; the styled honest-absence chip replaces the marks.
 		expect(screen.getByText(copy.clusters.waitRegularity)).toBeInTheDocument();
-		expect(screen.getByText(copy.strip.noDataNote)).toBeInTheDocument();
+		expect(container.querySelector('[data-slot="absent-value"]')).not.toBeNull();
 
 		// No fabricated shift rows / span block.
 		expect(screen.queryByText('Wait by shift')).not.toBeInTheDocument();

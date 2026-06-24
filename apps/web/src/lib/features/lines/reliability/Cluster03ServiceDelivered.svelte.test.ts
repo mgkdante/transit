@@ -101,9 +101,10 @@ describe('Cluster03ServiceDelivered — honest empty VM', () => {
 		const { container, getByText } = render(Cluster03ServiceDelivered, {
 			props: { vm: empty, locale: 'en', copy },
 		});
-		// Honest empty note present.
-		expect(container.querySelector('[data-slot="empty-note"]')).not.toBeNull();
-		expect(getByText(copy.strip.noDataNote)).toBeInTheDocument();
+		// Honest empty: the styled honest-absence chip (says WHY) under its data-slot hook.
+		const emptyNote = container.querySelector('[data-slot="empty-note"]');
+		expect(emptyNote).not.toBeNull();
+		expect(emptyNote?.querySelector('[data-slot="absent-value"]')).not.toBeNull();
 		// Ramp-in caveat still shown so the reader knows WHY it is empty.
 		expect(getByText(copy.strip.rampInNote)).toBeInTheDocument();
 		// No fabricated metric sections / sparklines.
@@ -113,11 +114,14 @@ describe('Cluster03ServiceDelivered — honest empty VM', () => {
 
 	it('renders the FR canonical copy when locale is fr', () => {
 		const fr = reliabilityCopy.fr;
-		const { getByText } = render(Cluster03ServiceDelivered, {
+		const { container, getByText } = render(Cluster03ServiceDelivered, {
 			props: { vm: empty, locale: 'fr', copy: fr },
 		});
 		expect(getByText(fr.strip.rampInNote)).toBeInTheDocument();
-		expect(getByText(fr.strip.noDataNote)).toBeInTheDocument();
+		// The styled honest-absence chip renders its own FR copy in place of the plain note.
+		expect(
+			container.querySelector('[data-slot="empty-note"] [data-slot="absent-value"]'),
+		).not.toBeNull();
 	});
 });
 

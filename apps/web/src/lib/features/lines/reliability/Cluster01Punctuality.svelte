@@ -37,6 +37,7 @@
 	import type { SeverityCode } from '$lib/v1/schemas';
 	import MetricDisplay from '$lib/components/brand/MetricDisplay.svelte';
 	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
+	import { AbsentValue, MaybeValue } from '$lib/components/edge';
 	import { TrendLine, SeverityBar, RankedRow } from '$lib/components/dataviz';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
 	import { metricInfoFor, type MetricKey } from '$lib/features/metrics/metrics.content';
@@ -258,8 +259,10 @@
 	<SectionLabel text={copy.clusters.punctuality} variant="station" />
 
 	{#if vm.isEmpty}
-		<!-- Honest empty: explicit no-data note, never a fake 0 / dropped band. -->
-		<p class="cluster-empty" data-testid="punctuality-empty">{copy.strip.noDataNote}</p>
+		<!-- Honest empty: the styled honest-absence chip (says WHY), never a fake 0 / dropped band. -->
+		<div data-testid="punctuality-empty">
+			<AbsentValue variant="block" reason="no-observations" {locale} />
+		</div>
 	{:else}
 		<!-- Latest-day headline: OTP %, avg delay, typical (p50) + worst-case (p90). -->
 		<div class="cluster-headline">
@@ -344,9 +347,9 @@
 					<SectionLabel text={copy.strip.severePct} variant="metric" />
 					{@render metricInfo('severe', copy.strip.severePct)}
 				</span>
-				<span class="cluster-block-value" class:cluster-block-value--empty={severePct == null}
-					>{pct(severePct) ?? copy.strip.noData}</span
-				>
+				<span class="cluster-block-value" class:cluster-block-value--empty={severePct == null}>
+					<MaybeValue value={pct(severePct)} reason="no-observations" {locale} />
+				</span>
 			</div>
 			<SeverityBar
 				severity={severeSeverity}
@@ -473,12 +476,6 @@
 		display: flex;
 		flex-direction: column;
 		gap: 1.25rem;
-	}
-	.cluster-empty {
-		margin: 0;
-		font-family: var(--font-mono);
-		font-size: var(--text-small);
-		color: var(--muted-foreground);
 	}
 	.cluster-headline {
 		display: flex;

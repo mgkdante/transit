@@ -44,7 +44,7 @@
 	import type { GrainSegment } from '$lib/components/surface';
 	import { Surface, ControlsRail } from '$lib/components/layout';
 	import { Separator } from '$lib/components/ui/separator';
-	import { EdgeState } from '$lib/components/edge';
+	import { EdgeState, MaybeValue } from '$lib/components/edge';
 	import EntityRow from '$lib/components/surface/EntityRow.svelte';
 	import MetricDisplay from '$lib/components/brand/MetricDisplay.svelte';
 	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
@@ -120,25 +120,36 @@
 		dates.map((d) => ({ key: d, label: formatDateKey(d, locale) })),
 	);
 
-	/** Format a nullable integer percent as "82%" or the honest no-data. */
-	function fmtPct(v: number | null | undefined): string {
-		return sharedFmtPct(v, { suffix: t.units.pct, noData: t.noData });
+	// Headline-tile formatters return NULL on no-data (no `noData:` string): the tile
+	// is a MetricDisplay, whose empty branch renders the styled honest-absence chip
+	// (AbsentValue, reason 'no-observations' — a historic daily rollup with too few
+	// readings) rather than a plain "no data". A real measured 0 stays a real 0.
+	/** Format a nullable integer percent as "82%", or null on no-data. */
+	function fmtPct(v: number | null | undefined): string | null {
+		return sharedFmtPct(v, { suffix: t.units.pct });
 	}
-	/** Format a nullable minute value as "3 min" / "3.4 min" or no-data. */
+	/** Format a nullable minute value as "3 min" / "3.4 min", or null on no-data. */
+	function fmtMinTile(v: number | null | undefined): string | null {
+		return sharedFmtDelayMin(v, { rounding: 'auto', suffix: t.units.min });
+	}
+	/** Format a nullable fractional severe-share percent as "4.2%", or null on no-data. */
+	function fmtSeverePct(v: number | null | undefined): string | null {
+		return sharedFmtPct(v, { rounding: 'fixed1', suffix: t.units.pct });
+	}
+	/** Format a nullable rider-impact score (1 decimal), or null on no-data. */
+	function fmtScore(v: number | null | undefined): string | null {
+		return sharedFmtCount(v, { rounding: 'fixed1' });
+	}
+	/**
+	 * Inline minute value (worst-stop meta string) — keeps the localized no-data
+	 * STRING since it is concatenated into a row's meta text, not a MetricDisplay.
+	 */
 	function fmtMin(v: number | null | undefined): string {
 		return sharedFmtDelayMin(v, { rounding: 'auto', suffix: t.units.min, noData: t.noData });
 	}
-	/** Format a nullable fractional severe-share percent as "4.2%" or no-data. */
-	function fmtSeverePct(v: number | null | undefined): string {
-		return sharedFmtPct(v, { rounding: 'fixed1', suffix: t.units.pct, noData: t.noData });
-	}
-	/** Format a nullable rider-impact score (1 decimal) or no-data. */
-	function fmtScore(v: number | null | undefined): string {
-		return sharedFmtCount(v, { rounding: 'fixed1', noData: t.noData });
-	}
-	/** Format a nullable integer count (localized thousands) or no-data. */
-	function fmtCount(v: number | null | undefined): string {
-		return sharedFmtCount(v, { locale, noData: t.noData });
+	/** Format a nullable integer count (localized thousands), or null on no-data. */
+	function fmtCount(v: number | null | undefined): string | null {
+		return sharedFmtCount(v, { locale });
 	}
 	/** Signed OTP delta in points, e.g. "-8 pts" / "+2 pts", or no-data. */
 	function fmtDelta(v: number | null | undefined): string {
@@ -158,14 +169,23 @@
 <!-- A headline KPI = MetricDisplay + its (i) explainer, baseline-aligned. Declared
      once so each receipt figure carries an honest, deep-linked definition. -->
 {#snippet kpi(
-	value: string,
+	value: string | null,
 	label: string,
 	key: MetricKey | SupplementalMetricKey,
 	size: 'sm' | 'md' | 'lg',
 )}
 	{@const i = info(key, label)}
 	<div class="receipt-kpi">
-		<MetricDisplay {value} {label} {size} />
+		<!-- A null value is the day's metric having too few readings: a historic daily
+		     rollup → the styled honest-absence chip ('no-observations'), not a 0. -->
+		<MetricDisplay
+			{value}
+			{label}
+			{size}
+			absentReason="no-observations"
+			{locale}
+			emptyLabel={t.noData}
+		/>
 		<MetricInfo tip={i.tip} href={i.href} label={i.label} linkLabel={i.linkLabel} side="bottom" />
 	</div>
 {/snippet}
@@ -177,6 +197,18 @@
 		<SectionLabel {text} variant="station" />
 		<MetricInfo tip={i.tip} href={i.href} label={i.label} linkLabel={i.linkLabel} side="bottom" />
 	</span>
+{/snippet}
+
+<!-- An affected-count cell: the mono label + the count, or the styled honest-absence
+     chip when the day carries no count. A daily rollup with too few readings →
+     'no-observations'. A genuine measured 0 stays a real 0, never the chip. -->
+{#snippet countCell(label: string, value: string | null)}
+	<div class="receipt-count">
+		<dt>{label}</dt>
+		<dd>
+			<MaybeValue {value} reason="no-observations" {locale} />
+		</dd>
+	</div>
 {/snippet}
 
 <Surface width="bleed" class="receipt">
@@ -251,7 +283,7 @@
 								{@render sectionInfo(t.receiptSection, 'otp')}
 								<div class="receipt-metrics">
 									{@render kpi(fmtPct(r.otp_pct), t.metrics.onTime, 'otp', 'lg')}
-									{@render kpi(fmtMin(r.avg_delay_min), t.metrics.avgDelay, 'avgDelay', 'lg')}
+									{@render kpi(fmtMinTile(r.avg_delay_min), t.metrics.avgDelay, 'avgDelay', 'lg')}
 									{@render kpi(fmtSeverePct(r.severe_pct), t.metrics.severe, 'severe', 'md')}
 									{@render kpi(
 										fmtScore(r.rider_impact_score),
@@ -266,27 +298,15 @@
 							<section class="receipt-panel receipt-affected" data-slot="receipt-affected">
 								{@render sectionInfo(t.countsSection, 'affectedCounts')}
 								<dl class="receipt-counts">
-									<div class="receipt-count">
-										<dt>{t.counts.routes}</dt>
-										<dd>{fmtCount(r.affected_routes)}</dd>
-									</div>
-									<div class="receipt-count">
-										<dt>{t.counts.stops}</dt>
-										<dd>{fmtCount(r.affected_stops)}</dd>
-									</div>
-									<div class="receipt-count">
-										<dt>{t.counts.alerts}</dt>
-										<dd>{fmtCount(r.alerts)}</dd>
-									</div>
+									{@render countCell(t.counts.routes, fmtCount(r.affected_routes))}
+									{@render countCell(t.counts.stops, fmtCount(r.affected_stops))}
+									{@render countCell(t.counts.alerts, fmtCount(r.alerts))}
 									<!-- `vehicles` is structurally always-null on /v1 (the daily receipt
 								     carries no per-vehicle count), so we OMIT the cell entirely rather
-								     than render a permanent "no data" row. A real count would surface it
-								     again. The other counts stay honest (a null reads no-data). -->
+								     than render a permanent honest-absence row. A real count would surface
+								     it again. The other counts stay honest (a null reads the styled chip). -->
 									{#if r.vehicles != null}
-										<div class="receipt-count">
-											<dt>{t.counts.vehicles}</dt>
-											<dd>{fmtCount(r.vehicles)}</dd>
-										</div>
+										{@render countCell(t.counts.vehicles, fmtCount(r.vehicles))}
 									{/if}
 								</dl>
 							</section>

@@ -32,6 +32,7 @@
 	import type { Locale } from '$lib/i18n';
 	import { fmtDelayMin as sharedFmtDelayMin, fmtPct as sharedFmtPct } from '$lib/utils';
 	import { MetricDisplay } from '$lib/components/brand';
+	import { AbsentValue } from '$lib/components/edge';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
 	import { metricInfoFor, type MetricKey } from '$lib/features/metrics/metrics.content';
 	import { metricsCopy } from '$lib/features/metrics/metrics.copy';
@@ -103,8 +104,10 @@
 
 <section class="snapshot-strip" data-slot="snapshot-strip" aria-label={t.otpPct}>
 	{#if vm.isEmpty}
-		<!-- Honest empty: no wall of em-dashes, no fabricated zero. -->
-		<p class="snapshot-strip__empty" data-slot="empty-note">{t.noDataNote}</p>
+		<!-- Honest empty: the styled honest-absence chip (says WHY), no wall of em-dashes / fabricated zero. -->
+		<div class="snapshot-strip__empty" data-slot="empty-note">
+			<AbsentValue variant="block" reason="no-observations" {locale} />
+		</div>
 	{:else}
 		<!-- Redesigned snapshot strip (C): deliberate card chrome + a clear
 		     hierarchy instead of a flat 7-up number row. The two metrics a rider

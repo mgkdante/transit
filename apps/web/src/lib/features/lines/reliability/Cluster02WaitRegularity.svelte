@@ -32,6 +32,7 @@
 	import { RankedRow } from '$lib/components/dataviz';
 	import MetricDisplay from '$lib/components/brand/MetricDisplay.svelte';
 	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
+	import { AbsentValue } from '$lib/components/edge';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
 	import {
 		metricInfoFor,
@@ -122,7 +123,6 @@
 	/** Plain-language term microcopy (shared, FR canonical). */
 	const terms = $derived(copy.regularityTerms);
 	const overline = $derived(copy.clusters.waitRegularity);
-	const noData = $derived(copy.strip.noDataNote);
 
 	// The in-app metric-explainer (i) affordance: the one-line tip + a localized
 	// deep link to /metrics#<anchor>. An INTERACTIVE control beside each label.
@@ -240,8 +240,8 @@
 	<SectionLabel text={overline} variant="station" />
 
 	{#if wait.isEmpty && !hasSpan}
-		<!-- Honest empty: nothing to draw in either sub-block. -->
-		<p class="cluster-empty">{noData}</p>
+		<!-- Honest empty: the styled honest-absence chip (says WHY), nothing to draw in either sub-block. -->
+		<AbsentValue variant="block" reason="no-observations" {locale} />
 	{:else}
 		<!-- Headway-by-shift sub-block. -->
 		<div class="cluster-sub" data-sub="headway">
@@ -330,7 +330,7 @@
 					</details>
 				{/if}
 			{:else}
-				<p class="cluster-empty">{noData}</p>
+				<AbsentValue variant="block" reason="no-observations" {locale} />
 			{/if}
 		</div>
 
@@ -421,12 +421,6 @@
 	}
 	.label-with-info :global(.cluster-info) {
 		flex: none;
-	}
-	.cluster-empty {
-		margin: 0;
-		font-family: var(--font-mono);
-		font-size: var(--text-small);
-		color: var(--muted-foreground);
 	}
 	.shift-list {
 		list-style: none;

@@ -20,7 +20,7 @@
 	import { fmtDelayMin as sharedFmtDelayMin } from '$lib/utils';
 	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
 	import MetricDisplay from '$lib/components/brand/MetricDisplay.svelte';
-	import AbsentValue from '$lib/components/edge/AbsentValue.svelte';
+	import { AbsentValue, MaybeValue } from '$lib/components/edge';
 	import { StackedBar, type StackedSegment } from '$lib/components/dataviz';
 	import { OCCUPANCY_CODES, type OccupancyCode } from '$lib/v1/schemas';
 	import type { Locale } from '$lib/i18n';
@@ -158,8 +158,10 @@
 	<p class="crowding-window" data-slot="crowding-window">{copy.windows.crowding}</p>
 
 	{#if vm.isEmpty || dominant == null}
-		<!-- Honest empty state: no occupancy telemetry → say so, never a fake bar. -->
-		<p class="crowding-empty" data-slot="crowding-empty">{copy.strip.noDataNote}</p>
+		<!-- Honest empty state: the styled honest-absence chip (says WHY, no telemetry), never a fake bar. -->
+		<div data-slot="crowding-empty">
+			<AbsentValue variant="block" reason="no-observations" {locale} />
+		</div>
 	{:else}
 		<div class="crowding-headline-row">
 			<MetricDisplay
@@ -209,13 +211,11 @@
 							class:crowding-delay-value--empty={!row.hasDelay}
 							data-empty={!row.hasDelay}
 						>
-							{#if row.hasDelay}
+							<MaybeValue present={row.hasDelay} reason="no-observations" {locale}>
 								{row.display}{#if row.p50}<span class="crowding-delay-p50"
 										>{copy.delayByCrowding.typical(row.p50)}</span
 									>{/if}
-							{:else}
-								<AbsentValue reason="no-observations" {locale} />
-							{/if}
+							</MaybeValue>
 						</dd>
 					</div>
 				{/each}

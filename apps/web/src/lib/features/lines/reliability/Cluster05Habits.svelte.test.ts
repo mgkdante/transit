@@ -196,27 +196,29 @@ describe('Cluster05Habits — populated', () => {
 });
 
 describe('Cluster05Habits — honest empty', () => {
-	it('renders the no-data note and no data sub-sections when the VM is empty', () => {
+	it('renders the styled honest-absence chip and no data sub-sections when the VM is empty', () => {
 		const { container } = render(Cluster05Habits, {
 			props: { habits: EMPTY_HABITS, dayOfWeek: [], locale: 'en', copy: enCopy },
 		});
 
 		const empty = container.querySelector('[data-slot="habits-empty"]');
 		expect(empty).toBeInTheDocument();
-		expect(empty?.textContent).toBe(enCopy.strip.noDataNote);
+		// The styled honest-absence chip (says WHY data is missing), not a plain note.
+		expect(empty?.querySelector('[data-slot="absent-value"]')).not.toBeNull();
 
 		// Neither data sub-section rendered.
 		expect(container.querySelector('[data-slot="habits-heatmap"]')).toBeNull();
 		expect(container.querySelector('[data-slot="habits-weekday"]')).toBeNull();
 	});
 
-	it('honours the French no-data note (FR is the canonical product voice)', () => {
+	it('honours the French canonical voice (FR is the canonical product voice)', () => {
 		const { container } = render(Cluster05Habits, {
 			props: { habits: EMPTY_HABITS, dayOfWeek: [], locale: 'fr', copy: reliabilityCopy.fr },
 		});
-		expect(container.querySelector('[data-slot="habits-empty"]')?.textContent).toBe(
-			reliabilityCopy.fr.strip.noDataNote,
-		);
+		// The styled honest-absence chip renders its own FR copy in place of the plain note.
+		expect(
+			container.querySelector('[data-slot="habits-empty"] [data-slot="absent-value"]'),
+		).not.toBeNull();
 	});
 });
 

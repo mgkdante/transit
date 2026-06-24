@@ -4,7 +4,7 @@
 	import type { Locale } from '$lib/i18n';
 	import type { Chip } from '$lib/filters';
 	import type { Alert, OccupancyCode, StatusCode } from '$lib/v1/schemas';
-	import { AbsentValue } from '$lib/components/edge';
+	import { AbsentValue, MaybeValue } from '$lib/components/edge';
 	import { routeNameFallback, stopNameFallback } from '$lib/site/absence';
 	import { ROUTE_TYPE_METRO } from '$lib/site/serviceWindow';
 	import { OCCUPANCY_LABELS, STATUS_LABELS } from './map.copy';
@@ -16,6 +16,7 @@
 		isDetailMetro,
 		stopDisplayName,
 		timeLabel,
+		vehicleFieldAbsence,
 		vehicleForDeparture,
 	} from './mapSelectionDetail.logic';
 	import MapDelayTag from './MapDelayTag.svelte';
@@ -112,6 +113,13 @@
 		</header>
 
 		{#if detail.kind === 'vehicle'}
+			<!-- One honest absence reason for every absent live field in this panel
+			     (route / crowding / trip / delay): metro → "no live data here",
+			     stale → "this vehicle is not reporting", else → "not reported". -->
+			{@const vehicleAbsence = vehicleFieldAbsence({
+				stale: notReporting != null,
+				metro: detail.routeType === ROUTE_TYPE_METRO,
+			})}
 			<div class="map-selection-id">
 				<span>{t.bus}</span>
 				<button
@@ -134,24 +142,23 @@
 				<div>
 					<dt>{t.route}</dt>
 					<dd>
-						{#if detail.vehicle.route}
+						<MaybeValue present={detail.vehicle.route != null} reason={vehicleAbsence} {locale}>
+							{@const route = detail.vehicle.route!}
 							<button
 								type="button"
 								class="map-inline-action"
-								aria-label={t.selectRoute(detail.vehicle.route)}
+								aria-label={t.selectRoute(route)}
 								onclick={() =>
 									selectRoute(
-										detail.vehicle.route,
+										route,
 										detail.routeDirection?.dir ?? null,
 										detail.routeDirectionVariant?.key ?? null,
 									)}
 							>
-								{detail.vehicle.route}
+								{route}
 								<ChevronRightIcon size={13} strokeWidth={2.4} aria-hidden="true" />
 							</button>
-						{:else}
-							{t.noData}
-						{/if}
+						</MaybeValue>
 					</dd>
 				</div>
 				<div>
@@ -171,19 +178,18 @@
 				<div>
 					<dt>{t.crowding}</dt>
 					<dd>
-						{#if detail.vehicle.occupancy}
+						<MaybeValue present={detail.vehicle.occupancy != null} reason={vehicleAbsence} {locale}>
+							{@const occupancy = detail.vehicle.occupancy!}
 							<button
 								type="button"
 								class="map-inline-action"
-								aria-label={t.filterCrowding(OCCUPANCY_LABELS[locale][detail.vehicle.occupancy])}
-								onclick={() => filterOccupancy(detail.vehicle.occupancy)}
+								aria-label={t.filterCrowding(OCCUPANCY_LABELS[locale][occupancy])}
+								onclick={() => filterOccupancy(occupancy)}
 							>
-								{OCCUPANCY_LABELS[locale][detail.vehicle.occupancy]}
+								{OCCUPANCY_LABELS[locale][occupancy]}
 								<ChevronRightIcon size={13} strokeWidth={2.4} aria-hidden="true" />
 							</button>
-						{:else}
-							{t.noData}
-						{/if}
+						</MaybeValue>
 					</dd>
 				</div>
 				<div>
@@ -200,8 +206,10 @@
 				<div>
 					<dt>{t.nextStop}</dt>
 					<dd>
-						{#if detail.nextStop}
-							{@const nextStop = detail.nextStop}
+						<!-- No RESOLVED next stop: render the honest reason (unknown vs end of
+						     route) via the layer, never the raw next_stop id. -->
+						<MaybeValue present={detail.nextStop != null} reason={detail.nextStopAbsence} {locale}>
+							{@const nextStop = detail.nextStop!}
 							<button
 								type="button"
 								class="map-inline-action"
@@ -211,29 +219,24 @@
 								<span class="map-inline-label">{nextStop.name}</span>
 								<ChevronRightIcon size={13} strokeWidth={2.4} aria-hidden="true" />
 							</button>
-						{:else}
-							<!-- No RESOLVED next stop: render the honest reason (unknown vs end of
-							     route) via the layer, never the raw next_stop id. -->
-							<AbsentValue reason={detail.nextStopAbsence} {locale} />
-						{/if}
+						</MaybeValue>
 					</dd>
 				</div>
 				<div>
 					<dt>{t.trip}</dt>
 					<dd>
-						{#if detail.vehicle.trip}
+						<MaybeValue present={detail.vehicle.trip != null} reason={vehicleAbsence} {locale}>
+							{@const trip = detail.vehicle.trip!}
 							<button
 								type="button"
 								class="map-inline-action"
-								aria-label={t.filterTrip(detail.vehicle.trip)}
-								onclick={() => filterTrip(detail.vehicle.trip)}
+								aria-label={t.filterTrip(trip)}
+								onclick={() => filterTrip(trip)}
 							>
-								{detail.vehicle.trip}
+								{trip}
 								<ChevronRightIcon size={13} strokeWidth={2.4} aria-hidden="true" />
 							</button>
-						{:else}
-							{t.noTrip}
-						{/if}
+						</MaybeValue>
 					</dd>
 				</div>
 			</dl>
@@ -290,8 +293,10 @@
 											{/if}
 										</strong>
 										<ChevronRightIcon size={13} strokeWidth={2.4} aria-hidden="true" />
-										{#if stop.etaUtc}
-											<small>
+										<!-- ETA absent for a known next stop: render an explicit "ETA
+										     unavailable" marker (no prediction) instead of dropping the row. -->
+										<small>
+											<MaybeValue present={stop.etaUtc != null} reason="no-prediction" {locale}>
 												<time>{timeLabel(stop.etaUtc, locale)}</time>
 												<MapDelayTag
 													delay={stop.delayMin}
@@ -299,14 +304,8 @@
 													{t}
 													ctx={{ metro: detailIsMetro }}
 												/>
-											</small>
-										{:else}
-											<!-- ETA absent for a known next stop: render an explicit "ETA
-											     unavailable" marker (no prediction) instead of dropping the row. -->
-											<small>
-												<AbsentValue reason="no-prediction" {locale} />
-											</small>
-										{/if}
+											</MaybeValue>
+										</small>
 									</button>
 								</li>
 							{/each}

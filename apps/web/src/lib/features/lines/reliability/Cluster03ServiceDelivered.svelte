@@ -29,6 +29,7 @@
 	import type { Locale } from '$lib/i18n';
 	import { fmtPct } from '$lib/utils';
 	import { MetricDisplay, SectionLabel } from '$lib/components/brand';
+	import { AbsentValue } from '$lib/components/edge';
 	import { Sparkline } from '$lib/components/dataviz';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
 	import { metricInfoFor, type MetricKey } from '$lib/features/metrics/metrics.content';
@@ -128,8 +129,10 @@
 	{/snippet}
 
 	{#if vm.isEmpty}
-		<!-- Honest empty: no fabricated zero, no dropped section. -->
-		<p class="cluster03-empty" data-slot="empty-note">{t.noDataNote}</p>
+		<!-- Honest empty: the styled honest-absence chip (says WHY), no fabricated zero / dropped section. -->
+		<div data-slot="empty-note">
+			<AbsentValue variant="block" reason="no-observations" {locale} />
+		</div>
 	{:else}
 		<div class="cluster03-metrics">
 			<!-- Cancellations -->
@@ -159,7 +162,9 @@
 						readoutHint={t.trendReadoutHint}
 					/>
 				{:else}
-					<p class="cluster03-metric-empty" data-slot="cancellations-empty">{t.noDataNote}</p>
+					<div data-slot="cancellations-empty">
+						<AbsentValue variant="block" reason="no-observations" {locale} />
+					</div>
 				{/if}
 			</article>
 
@@ -190,7 +195,9 @@
 						readoutHint={t.trendReadoutHint}
 					/>
 				{:else}
-					<p class="cluster03-metric-empty" data-slot="skipped-stops-empty">{t.noDataNote}</p>
+					<div data-slot="skipped-stops-empty">
+						<AbsentValue variant="block" reason="no-observations" {locale} />
+					</div>
 				{/if}
 			</article>
 		</div>
@@ -222,12 +229,6 @@
 		font-family: var(--font-mono);
 		font-size: var(--text-small);
 		line-height: 1.4;
-		color: var(--muted-foreground);
-	}
-	.cluster03-empty {
-		margin: 0;
-		font-family: var(--font-mono);
-		font-size: var(--text-body);
 		color: var(--muted-foreground);
 	}
 	.cluster03-metrics {
@@ -263,11 +264,5 @@
 	}
 	.metric-with-info :global(.cluster-info) {
 		flex: none;
-	}
-	.cluster03-metric-empty {
-		margin: 0;
-		font-family: var(--font-mono);
-		font-size: var(--text-small);
-		color: var(--muted-foreground);
 	}
 </style>

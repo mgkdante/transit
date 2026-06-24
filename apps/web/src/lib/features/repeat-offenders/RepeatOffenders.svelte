@@ -14,8 +14,10 @@
 
   DOCTRINE: the magnitude bar rides the dataviz SEVERITY scale (banded via the
   shared severeShareToSeverity-style helper below); --primary stays
-  interactive-only. Honesty rule — a null avg delay shows the localized "no data"
-  string, never a fabricated 0; a row with no recurrence string reads the honest
+  interactive-only. Honesty rule — a null avg delay renders the ONE styled
+  honest-absence chip (AbsentValue, "no-observations": "No data · not enough
+  readings yet") via RankedRow's absentReason, never a plain "no data" string and
+  never a fabricated 0; a row with no recurrence string reads the honest
   "recurrence not recorded"; an empty / absent offenders list shows the localized
   empty state, never an invented row. Tokens only, no hex. All prose is co-located
   in ./repeatOffenders.copy.
@@ -73,9 +75,11 @@
 		return 'watch';
 	}
 
-	/** Format a nullable minute-delay as "12.4 min" or the honest "no data". */
-	function fmtMin(v: number | null): string {
-		return sharedFmtDelayMin(v, { rounding: 'fixed1', suffix: t.units.min, noData: t.noData });
+	// Format a present minute-delay as "12.4 min". Returns NULL on no-data (no
+	// `noData:` option) so the absent reading flows to the styled honest-absence
+	// chip via RankedRow's `absentReason`, never a plain "no data" string.
+	function fmtMin(v: number | null): string | null {
+		return sharedFmtDelayMin(v, { rounding: 'fixed1', suffix: t.units.min });
 	}
 
 	// One row view-model per offender. The pipeline already ranks the feed
@@ -92,7 +96,7 @@
 		readonly subtitle: string;
 		readonly severity: SeverityCode;
 		readonly value: number | null;
-		readonly display: string;
+		readonly display: string | null;
 		readonly target: SurfaceTarget;
 		readonly href: string;
 		readonly ariaLabel: string;
@@ -223,6 +227,8 @@
 								severity={row.severity}
 								value={row.value}
 								display={row.display}
+								absentReason="no-observations"
+								{locale}
 							/>
 						</a>
 					</li>

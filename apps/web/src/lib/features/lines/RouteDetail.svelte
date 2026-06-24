@@ -535,6 +535,8 @@
 										<MetricDisplay
 											value={file.first_departure ?? null}
 											emptyLabel={t.noData}
+											absentReason="not-in-schedule"
+											{locale}
 											label={t.firstDeparture}
 											size="sm"
 										/>
@@ -544,6 +546,8 @@
 										<MetricDisplay
 											value={file.last_departure ?? null}
 											emptyLabel={t.noData}
+											absentReason="not-in-schedule"
+											{locale}
 											label={t.lastDeparture}
 											size="sm"
 										/>

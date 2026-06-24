@@ -19,6 +19,9 @@
 	import ChartTooltip from './ChartTooltip.svelte';
 	import { createChartTooltip, type ChartTooltipRow } from './useChartTooltip.svelte';
 	import type { ChartLegendItem } from './ChartLegend.svelte';
+	import { AbsentValue } from '$lib/components/edge';
+	import type { AbsenceReasonKey } from '$lib/site/absence';
+	import type { Locale } from '$lib/i18n';
 
 	export interface RankedRowProps extends WithElementRef<HTMLAttributes<HTMLDivElement>> {
 		/** 1-based rank. */
@@ -39,8 +42,21 @@
 		colorVar?: string;
 		/** Normalized magnitude in [0,1] for the bar. `null` -> no-data bar. */
 		value: number | null;
-		/** Display value text (e.g. "12.4 min", "84%"). */
-		display?: string;
+		/** Display value text (e.g. "12.4 min", "84%"). `null` = absent (no value). */
+		display?: string | null;
+		/**
+		 * Optional typed absence reason for the DISPLAY value. When set (with
+		 * `locale`) AND `value` is null, the display slot renders the styled
+		 * honest-absence chip (AbsentValue: calm "unknown" tone + glyph + the WHY)
+		 * instead of a plain no-data `display` string — the site-wide upgrade,
+		 * mirroring MetricDisplay. Falls back to `display` when no reason/locale is
+		 * supplied or when `value` is present. No business logic lives here.
+		 */
+		absentReason?: AbsenceReasonKey;
+		/** Locale for the styled absence copy (required for `absentReason` to render). */
+		locale?: Locale;
+		/** Copy params interpolated into the absence WHY (e.g. { first: '06:00' }). */
+		absentParams?: Readonly<Record<string, string | number>>;
 		/**
 		 * Delta vs prior period. Sign drives the glyph + colour. `null` = no
 		 * comparison available (renders an em-dash, neutral).
@@ -84,6 +100,9 @@
 		colorVar,
 		value,
 		display,
+		absentReason,
+		locale,
+		absentParams,
 		delta = null,
 		deltaDisplay,
 		higherIsBetter = false,
@@ -97,6 +116,15 @@
 	}: RankedRowProps = $props();
 
 	const hasDelta = $derived(delta != null && !Number.isNaN(delta));
+
+	// Honest absence in the display slot: only when the DISPLAY value is genuinely
+	// absent (display == null/"") AND a typed reason + locale are supplied. Keyed
+	// off the display value (like MetricDisplay's empty branch), not the bar
+	// magnitude, so a real measured value (including a true "0 min") always renders
+	// its `display` string and never the absence chip.
+	const showAbsent = $derived(
+		(display == null || display === '') && absentReason != null && locale != null,
+	);
 
 	// Direction glyph, never colour-only.
 	const deltaGlyph = $derived(!hasDelta ? '·' : delta! > 0 ? '▲' : delta! < 0 ? '▼' : '·');
@@ -168,7 +196,16 @@
 	<div class="min-w-0">
 		<div class="flex items-baseline justify-between gap-2">
 			<span class="truncate font-medium text-foreground">{title}</span>
-			{#if display}
+			{#if showAbsent}
+				<span class="shrink-0">
+					<AbsentValue
+						variant="inline"
+						reason={absentReason!}
+						locale={locale!}
+						params={absentParams}
+					/>
+				</span>
+			{:else if display}
 				<span class="shrink-0 font-mono text-small tabular-nums text-foreground">{display}</span>
 			{/if}
 		</div>

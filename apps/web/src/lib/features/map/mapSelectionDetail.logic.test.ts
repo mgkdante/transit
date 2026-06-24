@@ -8,6 +8,7 @@ import {
 	isDetailMetro,
 	stopDisplayName,
 	timeLabel,
+	vehicleFieldAbsence,
 	vehicleForDeparture,
 } from './mapSelectionDetail.logic';
 import { MAP_SELECTION_DETAIL_COPY } from './mapSelectionDetail.copy';
@@ -55,6 +56,20 @@ describe('delayMaybe — null is never on-time', () => {
 		const m = delayMaybe(null);
 		expect(m.known).toBe(false);
 		if (!m.known) expect(m.reason).toBe('not-reported');
+	});
+});
+
+describe('vehicleFieldAbsence — one honest reason for every absent vehicle field', () => {
+	it('metro-no-realtime wins (even when also stale)', () => {
+		expect(vehicleFieldAbsence({ metro: true })).toBe('metro-no-realtime');
+		expect(vehicleFieldAbsence({ metro: true, stale: true })).toBe('metro-no-realtime');
+	});
+	it('not-reporting for a stale (GPS-quiet) vehicle', () => {
+		expect(vehicleFieldAbsence({ stale: true })).toBe('not-reporting');
+	});
+	it('not-reported otherwise (and with no context)', () => {
+		expect(vehicleFieldAbsence({})).toBe('not-reported');
+		expect(vehicleFieldAbsence()).toBe('not-reported');
 	});
 });
 

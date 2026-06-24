@@ -399,13 +399,16 @@ describe('StopDetail reliability — crowding (occupancy_mix)', () => {
 		// No fabricated bar…
 		expect(document.querySelector('[data-slot="stop-crowding"]')).toBeNull();
 		// …but the reliability resource HAS loaded with no crowding telemetry, so the
-		// explicit bilingual note renders in its place (keeps the heading framing).
+		// styled honest-absence chip renders in its place (keeps the heading framing).
 		const empty = document.querySelector('[data-slot="stop-crowding-empty"]') as HTMLElement;
 		expect(empty).not.toBeNull();
 		expect(within(empty).getByText('Crowding on buses seen here')).toBeInTheDocument();
-		expect(
-			within(empty).getByText('No occupancy telemetry attributed to this stop.'),
-		).toBeInTheDocument();
+		// The ONE styled honest-absence chip (calm "no data, not enough readings yet"),
+		// not a plain easy-to-miss note.
+		const chip = within(empty)
+			.getByText('not enough readings yet')
+			.closest('[data-slot="absent-value"]');
+		expect(chip).not.toBeNull();
 	});
 
 	it('stands the crowding section down when occupancy_mix is absent (undefined)', () => {
@@ -440,9 +443,11 @@ describe('StopDetail reliability — crowding (occupancy_mix)', () => {
 
 		const empty = document.querySelector('[data-slot="stop-crowding-empty"]') as HTMLElement;
 		expect(empty).not.toBeNull();
-		expect(
-			within(empty).getByText('Aucune donnée d’occupation rattachée à cet arrêt.'),
-		).toBeInTheDocument();
+		// FR styled honest-absence chip: "Aucune donnée · pas assez de mesures".
+		const chip = within(empty)
+			.getByText('pas assez de mesures')
+			.closest('[data-slot="absent-value"]');
+		expect(chip).not.toBeNull();
 	});
 });
 

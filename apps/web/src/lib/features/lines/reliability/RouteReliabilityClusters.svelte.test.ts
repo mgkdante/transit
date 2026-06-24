@@ -141,7 +141,9 @@ describe('RouteReliabilityClusters', () => {
 		// A minimal valid contract: only the two required identity fields, no data
 		// arrays — every cluster must fall to its honest empty state.
 		const empty: RouteReliability = { id: '141', generated_utc: utc('2026-06-19T02:00:00Z') };
-		render(RouteReliabilityClusters, { props: { data: empty, locale: 'en' } });
+		const { container } = render(RouteReliabilityClusters, {
+			props: { data: empty, locale: 'en' },
+		});
 
 		// Bands are NEVER silently dropped: all five overlines still anchor their bands.
 		expect(screen.getByText(copy.clusters.punctuality)).toBeInTheDocument();
@@ -150,9 +152,9 @@ describe('RouteReliabilityClusters', () => {
 		expect(screen.getByText(copy.clusters.crowding)).toBeInTheDocument();
 		expect(screen.getByText(copy.clusters.habits)).toBeInTheDocument();
 
-		// The honest no-data note appears (strip + bands all fall to it), never a
-		// fabricated value.
-		expect(screen.getAllByText(copy.strip.noDataNote).length).toBeGreaterThan(0);
+		// The styled honest-absence chip appears (strip + bands all fall to it, each
+		// saying WHY data is missing), never a fabricated value.
+		expect(container.querySelectorAll('[data-slot="absent-value"]').length).toBeGreaterThan(0);
 	});
 
 	it('refines the snapshot strip when the grain control changes', async () => {

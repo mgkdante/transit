@@ -80,7 +80,7 @@ describe('RepeatOffenders ranked ledger', () => {
 		expect(links[1]).toHaveTextContent('6.2 min');
 	});
 
-	it('shows the honest no-data string for a null average delay, never a fabricated 0', () => {
+	it('shows the styled honest-absence chip for a null average delay, never a fabricated 0', () => {
 		mockData = {
 			generated_utc: GENERATED,
 			offenders: [
@@ -95,9 +95,16 @@ describe('RepeatOffenders ranked ledger', () => {
 			],
 		};
 
-		render(RepeatOffenders);
+		const { container } = render(RepeatOffenders);
 
-		expect(screen.getByText('no data')).toBeInTheDocument();
+		// A null avg delay renders the ONE styled honest-absence chip (calm
+		// "unknown" tone) with the aggregate "no-observations" reason copy, never a
+		// plain "no data" string and never a fabricated 0.
+		const chip = container.querySelector('[data-slot="absent-value"]');
+		expect(chip).not.toBeNull();
+		expect(chip?.getAttribute('data-tone')).toBe('unknown');
+		expect(chip).toHaveTextContent(/No data/i);
+		expect(chip).toHaveTextContent(/not enough readings yet/i);
 		// A null delay must NOT render as "0 min" / "0.0 min".
 		expect(screen.queryByText(/0\.0 min/)).not.toBeInTheDocument();
 	});

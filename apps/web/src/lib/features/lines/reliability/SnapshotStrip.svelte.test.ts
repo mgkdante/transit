@@ -129,10 +129,14 @@ describe('SnapshotStrip', () => {
 		const { strip } = toReliabilityClusters({} as RouteReliability);
 		expect(strip.isEmpty).toBe(true);
 
-		render(SnapshotStrip, { props: { vm: strip, locale: 'en', copy: copyEn } });
+		const { container } = render(SnapshotStrip, {
+			props: { vm: strip, locale: 'en', copy: copyEn },
+		});
 
-		// The explicit no-data note is shown — never a fabricated 0.
-		expect(screen.getByText(copyEn.strip.noDataNote)).toBeInTheDocument();
+		// The styled honest-absence chip (says WHY) is shown — never a fabricated 0.
+		expect(
+			container.querySelector('[data-slot="empty-note"] [data-slot="absent-value"]'),
+		).not.toBeNull();
 		expect(screen.queryByText('0%')).not.toBeInTheDocument();
 
 		// And the tiles are not rendered (collapsed to the single note).

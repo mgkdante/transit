@@ -32,6 +32,7 @@
 	import { Surface, DashboardGrid } from '$lib/components/layout';
 	import { Separator } from '$lib/components/ui/separator';
 	import { RankedRow } from '$lib/components/dataviz';
+	import { AbsentValue } from '$lib/components/edge';
 	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
 	import { metricInfoFor, type MetricKey } from '$lib/features/metrics/metrics.content';
@@ -221,7 +222,13 @@
 	     children rather than the generic edge-empty (mirrors StopsIndex). -->
 	<ResourceBoundary resource={hotspots} lang={locale}>
 		{#if rows.length === 0}
-			<p class="hotspots-note" data-slot="hotspots-empty">{t.empty}</p>
+			<!-- A published file with an empty hotspots array is a legitimate "nothing
+			     is a hotspot right now" reading of an aggregate roll-up. The styled
+			     honest-absence block says it clearly (No data · not enough readings yet)
+			     rather than a plain, easy-to-miss note. -->
+			<div class="hotspots-note" data-slot="hotspots-empty">
+				<AbsentValue variant="block" reason="no-observations" {locale} />
+			</div>
 		{:else}
 			<div class="hotspots-body">
 				<span class="hotspots-section">
@@ -310,8 +317,7 @@
 		outline-offset: 2px;
 	}
 	.hotspots-caption,
-	.hotspots-caveat,
-	.hotspots-note {
+	.hotspots-caveat {
 		margin: 0;
 		font-family: var(--font-mono);
 		font-size: var(--text-small);
@@ -321,9 +327,12 @@
 	.hotspots-caveat {
 		max-width: 52ch;
 	}
+	/* The honest empty state wraps the styled AbsentValue block (which carries its
+	   own centered chrome); the container only centers it within the surface. */
 	.hotspots-note {
-		padding: 0.5rem 0.875rem;
-		line-height: 1.5;
+		display: flex;
+		justify-content: center;
+		padding: 0.5rem 0;
 	}
 	/* No-magnitude row: the RankedRow card shape WITHOUT the bar (an empty track
 	   reads broken). The leading severity rail + the band chip carry the REAL,

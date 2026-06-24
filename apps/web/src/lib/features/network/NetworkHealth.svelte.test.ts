@@ -202,6 +202,42 @@ describe('NetworkHealth live tiles', () => {
 		expect(within(tile as HTMLElement).getByText('3')).toBeInTheDocument();
 	});
 
+	it('renders the styled honest-absence chip (not a plain "no data") for a null live tile', () => {
+		// A live-tier scalar the feed omitted this cycle reads through the styled
+		// AbsentValue chip with the 'not-reported' reason ("Unknown · not reported
+		// in the live feed"), never a plain easy-to-miss "no data" and never a 0.
+		// "Median delay" is a unique metric label (unlike "On-time", which also names
+		// a status band), so it scopes us to the tile unambiguously.
+		network.delay_p50_min = null;
+		render(NetworkHealth);
+		const tile = screen
+			.getByText('Median delay')
+			.closest('[data-slot="metric-display"]') as HTMLElement;
+		expect(tile).not.toBeNull();
+		const chip = tile.querySelector('[data-slot="absent-value"]');
+		expect(chip).not.toBeNull();
+		// The chip says WHY it is missing (the honest live-feed reason), bilingual EN.
+		expect((chip as HTMLElement).getAttribute('aria-label')).toMatch(
+			/not reported in the live feed/i,
+		);
+		// The plain "no data" emptyLabel fallback is NOT what rendered.
+		expect(within(tile).queryByText('no data')).toBeNull();
+		network.delay_p50_min = 1;
+	});
+
+	it('keeps a real measured 0% as a real value (never an absence chip)', () => {
+		// Honesty rule: a genuine 0 stays a real 0, never converted to the absence
+		// chip. Coverage of 0% is a real (if grim) reading, not missing data.
+		network.coverage_pct = 0;
+		render(NetworkHealth);
+		const tile = screen
+			.getByText('Coverage')
+			.closest('[data-slot="metric-display"]') as HTMLElement;
+		expect(within(tile).getByText('0%')).toBeInTheDocument();
+		expect(tile.querySelector('[data-slot="absent-value"]')).toBeNull();
+		network.coverage_pct = 95;
+	});
+
 	it('surfaces the worker-feed-age chip near the FreshnessStamp', () => {
 		render(NetworkHealth);
 		const chip = screen.getByText('FEED').closest('[data-slot="feed-age"]');
@@ -589,9 +625,11 @@ describe('NetworkHealth by time of day + weekday/weekend', () => {
 		expect(within(list).queryByText('Night')).toBeNull();
 	});
 
-	it('keeps a null-OTP grain (with a real severe share) and shows honest no-data, never a fake 0%', () => {
+	it('keeps a null-OTP grain (with a real severe share) and shows the styled honest-absence chip, never a fake 0%', () => {
 		// midday has NO otp but a real severe share → it stays (ordered after the
-		// OTP-known grains) and its headline reads the localized no-data string.
+		// OTP-known grains) and its headline renders the styled honest-absence chip
+		// ('no-observations': a historic shift aggregate with too few readings),
+		// never a plain string and never a fabricated 0%.
 		byShift.splice(
 			0,
 			byShift.length,
@@ -600,11 +638,16 @@ describe('NetworkHealth by time of day + weekday/weekend', () => {
 		);
 		render(NetworkHealth);
 		const list = screen.getByRole('list', { name: /ranked by time of day/i });
-		const midday = within(list).getByText('Midday').closest('[data-slot="ranked-row"]');
+		const midday = within(list)
+			.getByText('Midday')
+			.closest('[data-slot="ranked-row"]') as HTMLElement;
 		expect(midday).not.toBeNull();
-		// Honest no-data headline (never "0%") for the OTP-unknown grain.
-		expect(within(midday as HTMLElement).getByText('no data')).toBeInTheDocument();
-		expect(within(midday as HTMLElement).queryByText('0%')).toBeNull();
+		// The OTP-unknown grain's headline is the styled AbsentValue chip, whose
+		// aria-label states the 'no-observations' WHY (bilingual EN). Never "0%".
+		const chip = midday.querySelector('[data-slot="absent-value"]');
+		expect(chip).not.toBeNull();
+		expect((chip as HTMLElement).getAttribute('aria-label')).toMatch(/not enough readings/i);
+		expect(within(midday).queryByText('0%')).toBeNull();
 		// The OTP-known am_peak grain sorts BEFORE the OTP-unknown midday grain.
 		const am = within(list).getByText('AM peak');
 		expect(

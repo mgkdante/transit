@@ -32,11 +32,24 @@ export function isDetailMetro(detail: MapSelectionDetail | null): boolean {
 }
 
 /**
- * A delay is a Maybe<number>: KNOWN (render the tag) or ABSENT with the honest
- * reason. delay==null must NEVER read as on-time. The reason is, in precedence:
+ * The honest absence reason for ANY per-vehicle live field (delay, route,
+ * crowding, trip) given its context, in precedence:
  *   metro-no-realtime — a metro row (route_type 1): the feed never carries it;
  *   not-reporting     — the FOCUSED vehicle's own fix has gone stale (GPS quiet);
- *   not-reported      — otherwise: the live feed simply omitted this delay.
+ *   not-reported      — otherwise: the live feed simply omitted this field.
+ * The single source of truth so EVERY absent cell in the vehicle panel reads the
+ * same honest reason — a metro vehicle's missing crowding says "no live data
+ * here", never "not reported in the live feed".
+ */
+export function vehicleFieldAbsence(
+	ctx: { stale?: boolean; metro?: boolean } = {},
+): AbsenceReasonKey {
+	return ctx.metro ? 'metro-no-realtime' : ctx.stale ? 'not-reporting' : 'not-reported';
+}
+
+/**
+ * A delay is a Maybe<number>: KNOWN (render the tag) or ABSENT with the honest
+ * reason (see vehicleFieldAbsence). delay==null must NEVER read as on-time;
  * "On time" is reserved for delay===0 only (handled on the KNOWN branch).
  */
 export function delayMaybe(
@@ -44,12 +57,7 @@ export function delayMaybe(
 	ctx: { stale?: boolean; metro?: boolean } = {},
 ): Maybe<number> {
 	if (delay != null) return known(delay);
-	const reason: AbsenceReasonKey = ctx.metro
-		? 'metro-no-realtime'
-		: ctx.stale
-			? 'not-reporting'
-			: 'not-reported';
-	return absent<number>(reason);
+	return absent<number>(vehicleFieldAbsence(ctx));
 }
 
 export function delayKnownLabel(delay: number, t: MapSelectionDetailCopy): string {

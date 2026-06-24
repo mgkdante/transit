@@ -262,7 +262,7 @@ describe('HealthStatus — honesty (sections stand down when absent)', () => {
 		expect(screen.queryByText(en.conformance.detailsTitle)).toBeNull();
 	});
 
-	it('renders the localized no-data string (never a fabricated 0) when extra_row_count is null', () => {
+	it('renders the styled honest-absence chip (never a fabricated 0) when extra_row_count is null', () => {
 		fixture = {
 			generated_utc: iso('2026-06-19T12:00:00Z'),
 			freshness: [],
@@ -270,14 +270,18 @@ describe('HealthStatus — honesty (sections stand down when absent)', () => {
 			gaps: [],
 			retention: {},
 			// A named unknown member (so the disclosure mounts) but NO extra-row count
-			// (absent/null in the payload — the honest path must show no-data, not 0).
+			// (absent/null in the payload — the honest path must show the styled absence
+			// chip that says WHY the value is missing, not a fabricated 0).
 			conformance: { status: 'out_of_norm', unknown_members: ['zone_id'] },
 		};
 		render(HealthStatus);
 		const extra = screen
 			.getByText(en.conformance.extraRowsLabel)
 			.closest('[data-slot="metric-display"]') as HTMLElement;
-		expect(within(extra).getByText(en.noData)).toBeInTheDocument();
+		// The styled honest-absence chip renders (calm "unknown" tone), not plain text.
+		const chip = extra.querySelector('[data-slot="absent-value"]');
+		expect(chip).not.toBeNull();
+		expect((chip as HTMLElement).getAttribute('data-tone')).toBe('unknown');
 		// No fabricated zero leaks in for the absent count.
 		expect(within(extra).queryByText('0')).toBeNull();
 	});
