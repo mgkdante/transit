@@ -52,6 +52,8 @@
 		delayMinToSeverity,
 		SHIFT_GRAIN_ORDER,
 		DAY_TYPE_GRAIN_ORDER,
+		DELAY_POS_DOMAIN,
+		SEVERE_DOMAIN,
 	} from '$lib/features/reliability/shiftGrains';
 
 	export interface Cluster01PunctualityProps {
@@ -100,19 +102,14 @@
 	const retardSeries = $derived(vm.trend.map((p) => p.avg_delay_min ?? null));
 	const xLabels = $derived(vm.trend.map((p) => p.date ?? ''));
 	const hasTrend = $derived(vm.trend.length > 1);
-	// Retard y-domain padded to the observed max so the line is never clamped flat.
-	const retardMax = $derived.by(() => {
-		const reals = retardSeries.filter((v): v is number => v != null && !Number.isNaN(v));
-		return reals.length ? Math.max(...reals) : 0;
-	});
-	const retardDomain = $derived<[number, number]>([0, Math.max(1, Math.ceil(retardMax))]);
+	// S7: FIXED retard y-domain (min), identical across routes/grains/refreshes — the
+	// amber delay axis no longer auto-scales to the in-view max (the stability fix).
+	const retardDomain: [number, number] = [...DELAY_POS_DOMAIN];
 
-	// Severe-share magnitude of the headline period, as a [0,1] data mark. The
-	// contract carries severe_pct as a percentage (0..100); null = no data.
+	// Severe-share magnitude of the headline period — the ABSOLUTE %, scaled by the
+	// fixed SEVERE_DOMAIN at the bar (not /100, not /max). null = no data.
 	const severePct = $derived(headline?.severe_pct ?? null);
-	const severeValue = $derived<number | null>(
-		severePct == null ? null : Math.min(1, Math.max(0, severePct / 100)),
-	);
+	const severeValue = $derived<number | null>(severePct);
 	// Severe share is itself a severity reading: band it so the bar colour is honest
 	// (shared thresholds — see severeShareToSeverity; null bands to 'watch').
 	const severeSeverity = $derived<SeverityCode>(severeShareToSeverity(severePct));
@@ -143,23 +140,20 @@
 	);
 	const weakStopsTotal = $derived(rankedAll.length);
 
-	// The accountability list, truncated to the selected worst-N. Normalize each bar
-	// against the worst stop (relative magnitude); severity is DRY via
-	// delayMinToSeverity (the shared minutes→severity table, was inlined 10/5 magic).
-	const rankedStops = $derived.by(() => {
-		const worst = rankedAll.length ? (rankedAll[0].avg_delay_min ?? 0) : 0;
-		return rankedAll.slice(0, worstNCount).map((w, i) => {
-			const delay = w.avg_delay_min ?? 0;
-			return {
-				key: w.id,
-				rank: i + 1,
-				title: w.name ?? stopNameFallback(w.id, locale),
-				severity: delayMinToSeverity(w.avg_delay_min ?? null),
-				value: worst > 0 ? Math.min(1, Math.max(0, delay / worst)) : null,
-				display: min(w.avg_delay_min) ?? copy.strip.noData,
-			};
-		});
-	});
+	// The accountability list, truncated to the selected worst-N, worst-on-top. S7:
+	// the bar is the ABSOLUTE avg delay (min) scaled by the fixed DELAY_POS_DOMAIN at
+	// the row — the same delay renders the same length on every route/grain/refresh
+	// (no more delay/worst). Severity via the shared absolute delayMinToSeverity.
+	const rankedStops = $derived.by(() =>
+		rankedAll.slice(0, worstNCount).map((w, i) => ({
+			key: w.id,
+			rank: i + 1,
+			title: w.name ?? stopNameFallback(w.id, locale),
+			severity: delayMinToSeverity(w.avg_delay_min ?? null),
+			value: w.avg_delay_min ?? null,
+			display: min(w.avg_delay_min) ?? copy.strip.noData,
+		})),
+	);
 
 	// Weak-stops heading carries the honest count. When the worst-N truncates the set,
 	// it reads "shown/total" so the reader knows more exist; otherwise just the count.
@@ -195,32 +189,40 @@
 		readonly display: string;
 	};
 
-	// Rank comparison rows by severe share, worst first; normalize each bar against
-	// the worst severe share in the SAME group so the magnitudes read relative.
-	function rankBySevere(
+	// S7: fixed-category rows in their natural CLOCK / weekday→weekend order — NOT
+	// sorted by severe share (re-sorting a fixed axis is itself a doctrine violation).
+	// value = the ABSOLUTE severe %, scaled by the fixed SEVERE_DOMAIN at the bar (never
+	// the in-view max); the rank ordinal is dropped at the render (showRank=false).
+	function toPeakRows(
 		rows: readonly PeriodComparisonRow[],
 		label: (g: string) => string,
 	): PeakRow[] {
-		const real = rows.filter((r) => r.severePct != null);
-		const worst = real.reduce((m, r) => Math.max(m, r.severePct ?? 0), 0);
-		return real
-			.slice()
-			.sort((a, b) => (b.severePct ?? 0) - (a.severePct ?? 0))
-			.map((r, i) => {
-				const sev = r.severePct ?? 0;
-				return {
-					key: r.grain,
-					rank: i + 1,
-					title: label(r.grain),
-					severity: severeShareToSeverity(r.severePct),
-					value: worst > 0 ? Math.min(1, Math.max(0, sev / worst)) : null,
-					display: pct(r.severePct) ?? copy.strip.noData,
-				};
-			});
+		return rows
+			.filter((r) => r.severePct != null)
+			.map((r, i) => ({
+				key: r.grain,
+				rank: i + 1,
+				title: label(r.grain),
+				severity: severeShareToSeverity(r.severePct),
+				value: r.severePct,
+				display: pct(r.severePct) ?? copy.strip.noData,
+			}));
 	}
 
-	const shiftPeakRows = $derived(rankBySevere(vm.peakOffPeak.byShift, shiftLabel));
-	const dayTypePeakRows = $derived(rankBySevere(vm.peakOffPeak.byDayType, dayTypeLabel));
+	// Order the fixed buckets by their canonical sequence (clock order for shifts,
+	// weekday→weekend for day-type) so the strip reads in a stable order every visit.
+	const orderByGrain = (
+		rows: readonly PeriodComparisonRow[],
+		order: readonly string[],
+	): PeriodComparisonRow[] =>
+		rows.slice().sort((a, b) => order.indexOf(a.grain) - order.indexOf(b.grain));
+
+	const shiftPeakRows = $derived(
+		toPeakRows(orderByGrain(vm.peakOffPeak.byShift, SHIFT_GRAIN_ORDER), shiftLabel),
+	);
+	const dayTypePeakRows = $derived(
+		toPeakRows(orderByGrain(vm.peakOffPeak.byDayType, DAY_TYPE_GRAIN_ORDER), dayTypeLabel),
+	);
 	const hasPeak = $derived(
 		!vm.peakOffPeak.isEmpty && (shiftPeakRows.length > 0 || dayTypePeakRows.length > 0),
 	);
@@ -382,6 +384,8 @@
 			<SeverityBar
 				severity={severeSeverity}
 				value={severeValue}
+				domain={SEVERE_DOMAIN}
+				unit="%"
 				label={copy.strip.severePct}
 				interactive
 			/>
@@ -412,6 +416,8 @@
 							title={row.title}
 							severity={row.severity}
 							value={row.value}
+							domain={DELAY_POS_DOMAIN}
+							unit=" min"
 							display={row.display}
 						/>
 					{/each}
@@ -435,6 +441,9 @@
 								subtitle={copy.peak.dayOfWeekSevere}
 								severity={row.severity}
 								value={row.value}
+								domain={SEVERE_DOMAIN}
+								unit="%"
+								showRank={false}
 								display={row.display}
 							/>
 						{/each}
@@ -452,6 +461,9 @@
 									subtitle={copy.peak.dayOfWeekSevere}
 									severity={row.severity}
 									value={row.value}
+									domain={SEVERE_DOMAIN}
+									unit="%"
+									showRank={false}
 									display={row.display}
 								/>
 							{/each}
