@@ -148,18 +148,17 @@ describe('Cluster04Crowding — delay by crowding (G1)', () => {
 		expect(order).toEqual(['empty', 'many_seats', 'few_seats', 'standing', 'full']);
 	});
 
-	it('shows the no-data message (never "·"/0) for a band with a null delay', () => {
+	it('shows the styled honest-absence chip (never "·"/0) for a band with a null delay', () => {
 		const { container } = render(Cluster04Crowding, {
 			props: { vm: withDelay, locale: 'en', copy },
 		});
 		const sub = container.querySelector('[data-slot="delay-by-crowding"]') as HTMLElement;
-		// `full` is present with a null delay → its cell renders the styled honest-absence.
-		const fullCell = sub.querySelector('[data-band="full"] [data-empty="true"]');
-		expect(fullCell?.querySelector('[data-slot="absent-value"]')).not.toBeNull();
+		// P6: each band is a RankedRow bar; a present-but-null or contract-omitted band
+		// renders the styled honest-absence chip in its display slot, never a fabricated 0.
+		// `full` is present with a null delay → absence chip.
+		expect(sub.querySelector('[data-band="full"] [data-slot="absent-value"]')).not.toBeNull();
 		// `empty` + `few_seats` are absent from the contract → also the styled absence chip.
-		expect(
-			sub.querySelector('[data-band="empty"] [data-empty="true"] [data-slot="absent-value"]'),
-		).not.toBeNull();
+		expect(sub.querySelector('[data-band="empty"] [data-slot="absent-value"]')).not.toBeNull();
 		// Every absent band carries the reason-typed chip, never a fabricated 0.
 		expect(sub.querySelectorAll('[data-slot="absent-value"]').length).toBeGreaterThanOrEqual(2);
 	});

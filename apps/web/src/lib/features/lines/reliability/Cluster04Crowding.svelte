@@ -20,8 +20,9 @@
 	import { fmtDelayMin as sharedFmtDelayMin } from '$lib/utils';
 	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
 	import MetricDisplay from '$lib/components/brand/MetricDisplay.svelte';
-	import { AbsentValue, MaybeValue } from '$lib/components/edge';
-	import { StackedBar, type StackedSegment } from '$lib/components/dataviz';
+	import { AbsentValue } from '$lib/components/edge';
+	import { StackedBar, RankedRow, type StackedSegment } from '$lib/components/dataviz';
+	import { DELAY_POS_DOMAIN, delayMinToSeverity } from '$lib/features/reliability/shiftGrains';
 	import { OCCUPANCY_CODES, type OccupancyCode } from '$lib/v1/schemas';
 	import type { Locale } from '$lib/i18n';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
@@ -145,13 +146,24 @@
 		OCCUPANCY_CODES.map((code: OccupancyCode) => {
 			const cell = delayByBand[code];
 			const display = fmtMin(cell?.avg_delay_min);
+			// S7 P6: the avg delay is now a MAGNITUDE BAR on the fixed DELAY_POS_DOMAIN —
+			// same delay reads the same length here as on the worst-stops list — sorted by
+			// the fixed crowding axis so "more crowded → more delay" reads as a slope. The
+			// p50 typical + the sample n (observation_count, day_count: computed-but-
+			// unrendered until now) ride the subtitle as the honesty denominator.
+			const p50 = fmtMin(cell?.p50_min);
+			const n = cell?.observation_count ?? null;
+			const typical = p50 ? copy.delayByCrowding.typical(p50) : null;
+			const nNote = n != null ? `n=${n}` : null;
 			return {
 				code,
 				label: bands[code],
 				present: cell != null,
 				display: display ?? copy.strip.noData,
 				hasDelay: display != null,
-				p50: fmtMin(cell?.p50_min),
+				value: cell?.avg_delay_min ?? null,
+				severity: delayMinToSeverity(cell?.avg_delay_min ?? null),
+				subtitle: [typical, nNote].filter(Boolean).join(' · ') || undefined,
 			};
 		}),
 	);
@@ -224,24 +236,25 @@
 	<div class="crowding-delay" data-slot="delay-by-crowding">
 		<SectionLabel text={copy.delayByCrowding.heading} variant="metric" />
 		{#if hasDelayByCrowding}
-			<dl class="crowding-delay-grid" aria-label={copy.delayByCrowding.heading}>
+			<ul class="crowding-delay-list" aria-label={copy.delayByCrowding.heading}>
 				{#each delayRows as row (row.code)}
-					<div class="crowding-delay-row" data-slot="delay-by-crowding-row" data-band={row.code}>
-						<dt class="crowding-delay-label">{row.label}</dt>
-						<dd
-							class="crowding-delay-value"
-							class:crowding-delay-value--empty={!row.hasDelay}
-							data-empty={!row.hasDelay}
-						>
-							<MaybeValue present={row.hasDelay} reason="no-observations" {locale}>
-								{row.display}{#if row.p50}<span class="crowding-delay-p50"
-										>{copy.delayByCrowding.typical(row.p50)}</span
-									>{/if}
-							</MaybeValue>
-						</dd>
-					</div>
+					<li data-slot="delay-by-crowding-row" data-band={row.code}>
+						<RankedRow
+							rank={0}
+							title={row.label}
+							subtitle={row.subtitle}
+							severity={row.severity}
+							value={row.value}
+							domain={DELAY_POS_DOMAIN}
+							unit=" min"
+							showRank={false}
+							display={row.hasDelay ? row.display : null}
+							absentReason="no-observations"
+							{locale}
+						/>
+					</li>
 				{/each}
-			</dl>
+			</ul>
 		{:else}
 			<!-- Entirely absent → ONE honest no-data chip (says WHY), never a raw line / fake grid. -->
 			<div data-slot="delay-by-crowding-empty">
@@ -366,40 +379,14 @@
 		gap: var(--spacing-2, 0.5rem);
 		margin-top: var(--spacing-3, 0.75rem);
 	}
-	.crowding-delay-grid {
+	/* The delay-by-crowding bars (P6): RankedRow magnitude bars stacked in the fixed
+	   occupancy order, so "more crowded → more delay" reads as a slope down the list. */
+	.crowding-delay-list {
 		display: flex;
 		flex-direction: column;
 		gap: 0.4rem;
 		margin: 0;
-	}
-	.crowding-delay-row {
-		display: flex;
-		align-items: baseline;
-		justify-content: space-between;
-		gap: 1rem;
-	}
-	.crowding-delay-label {
-		font-size: var(--text-small);
-		color: var(--foreground);
-		min-width: 0;
-	}
-	.crowding-delay-value {
-		display: inline-flex;
-		align-items: baseline;
-		gap: 0.5rem;
-		margin: 0;
-		flex: none;
-		font-family: var(--font-mono);
-		font-size: var(--text-small);
-		font-variant-numeric: tabular-nums;
-		color: var(--foreground);
-	}
-	/* Honest no-data reading of a band's delay: quiet muted mono (never a "·"/0). */
-	.crowding-delay-value--empty {
-		color: var(--muted-foreground);
-	}
-	.crowding-delay-p50 {
-		font-size: var(--text-caption, 0.8125rem);
-		color: var(--muted-foreground);
+		padding: 0;
+		list-style: none;
 	}
 </style>
