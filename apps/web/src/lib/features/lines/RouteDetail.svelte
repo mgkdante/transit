@@ -56,7 +56,7 @@
 	import { metricsCopy } from '$lib/features/metrics/metrics.copy';
 	import { detailCopy } from './lines.copy';
 	import LineDirections from './LineDirections.svelte';
-	import { delayColorVar, delaySeverity, delayLabel } from './delayPresentation';
+	import { delayColorVar, delaySeverity, delayLabel } from '$lib/site/delayPresentation';
 
 	interface RouteDetailProps {
 		/** The route id this surface details. */

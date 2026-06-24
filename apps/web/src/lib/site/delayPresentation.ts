@@ -1,9 +1,10 @@
-// delayPresentation.ts — shared delay-reading helpers for the Lines surface
-// (slice-S6 de-monolith). The current-buses roster (RouteDetail) and the
-// directions live readout (LineDirections) both band a vehicle/stop delay to a
-// calm-by-default dataviz STATUS tone + a plain-language reading; centralising
-// them here keeps the two consumers honest and identical instead of each
-// hand-rolling the same thresholds (the prior in-component duplication).
+// delayPresentation.ts — the SITE-WIDE shared delay-reading helpers (promoted out
+// of features/lines in S6). Every surface that bands a vehicle/stop delay to a
+// dataviz STATUS tone + a plain-language reading reuses these instead of
+// hand-rolling the same thresholds: the lines roster (RouteDetail) + directions
+// (LineDirections), TripDetail, StopDetail, and the map selection detail
+// (mapSelectionDetail.logic). One source of truth for the thresholds + the
+// five-value data-tone contract (none/early/on-time/late/severe).
 //
 // DOCTRINE (calm-by-default, honesty): early / on-time read CALM (a blue/green
 // STATUS tone, never the problem-severity scale); a null delay is "no data",
@@ -51,21 +52,29 @@ export function delaySeverity(delay: number | null | undefined): SeverityCode {
 	return delay >= 10 ? 'critical' : delay >= 5 ? 'high' : 'watch';
 }
 
-/** Locale copy fns the plain-language delay reading needs. */
+/**
+ * Locale copy fns the plain-language delay reading needs. `early`/`late` receive
+ * the RAW signed delay (so each copy abs-es internally for the "early" wording).
+ * `noDelay` is OPTIONAL: surfaces that treat an absent delay as "no data" supply
+ * it (the live roster / trip view); surfaces that treat absent as "on time" (a
+ * scheduled departure board with no realtime delta) OMIT it and fall back to
+ * `onTime`. Known-only callers (the map, where absence renders AbsentValue
+ * instead) never hit the null branch, so they too can omit it.
+ */
 export interface DelayLabelCopy {
 	readonly early: (minutes: number) => string;
 	readonly late: (minutes: number) => string;
 	readonly onTime: string;
-	readonly noDelay: string;
+	readonly noDelay?: string;
 }
 
 /**
- * Plain-language reading of a delay: early / on time / N min late, or the copy's
- * "no delay" phrase when the feed omits it. NEVER a fabricated 0 — a null delay
- * reads the explicit no-delay copy, not "0 min".
+ * Plain-language reading of a delay: early / on time / N min late. A null/absent
+ * delay reads `noDelay` when supplied, else falls back to `onTime` — NEVER a
+ * fabricated 0 / "0 min".
  */
 export function delayLabel(delay: number | null | undefined, copy: DelayLabelCopy): string {
-	if (delay == null) return copy.noDelay;
+	if (delay == null) return copy.noDelay ?? copy.onTime;
 	if (delay < 0) return copy.early(delay);
 	if (delay > 0) return copy.late(delay);
 	return copy.onTime;

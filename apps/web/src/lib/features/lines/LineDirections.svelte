@@ -38,7 +38,7 @@
 	import { routeFor } from '$lib/nav';
 	import { stopNameFallback } from '$lib/site/absence';
 	import { formatUtc } from '$lib/utils/time';
-	import { delayLabel, delayTone } from './delayPresentation';
+	import { delayLabel, delayTone } from '$lib/site/delayPresentation';
 	import ChevronRightIcon from '@lucide/svelte/icons/chevron-right';
 
 	let { directions, predictions, locale, copy }: LineDirectionsProps = $props();

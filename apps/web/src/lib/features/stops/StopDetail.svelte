@@ -37,6 +37,7 @@
 	import { sharedClock } from '$lib/stores';
 	import { minutesSinceMidnight } from '$lib/utils/time';
 	import { inferAbsenceReason, stopServiceWindow } from '$lib/site/serviceWindow';
+	import { delayLabel } from '$lib/site/delayPresentation';
 	import {
 		EntityDetail,
 		ResourceBoundary,
@@ -620,11 +621,10 @@
 		});
 	});
 
-	/** A departure's delay caption — fail-soft when delay is absent. */
-	function delayLabel(delayMin: number | null | undefined): string {
-		if (delayMin == null || delayMin === 0) return t.next.onTime;
-		return delayMin > 0 ? t.next.late(delayMin) : t.next.early(Math.abs(delayMin));
-	}
+	// A departure's delay caption via the site-wide shared delayLabel. `t.next` omits
+	// a `noDelay` string, so an absent delay falls back to "on time" — the scheduled
+	// departure board reads no-realtime-delta as on time (NOT "no data"), preserving
+	// this surface's prior null/0 → on-time semantics.
 </script>
 
 <!-- The (i) metric-explainer affordance, reused beside each reliability section
@@ -754,7 +754,7 @@
 									<li class="stop-departure">
 										<span class="stop-departure-route">{d.route ?? t.next.route}</span>
 										<span class="stop-departure-eta">{formatUtc(d.eta_utc, locale)}</span>
-										<span class="stop-departure-delay">{delayLabel(d.delay_min)}</span>
+										<span class="stop-departure-delay">{delayLabel(d.delay_min, t.next)}</span>
 									</li>
 								{/each}
 							</ul>
