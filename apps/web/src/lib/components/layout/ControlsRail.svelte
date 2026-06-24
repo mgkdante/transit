@@ -107,10 +107,15 @@
 
 	@media (min-width: 1024px) {
 		/* Desktop sticky: park the panel under the sticky chrome (same 5.5rem inset
-		   as RailLayout's rail), so it holds its place while the data canvas scrolls. */
+		   as RailLayout's rail), so it holds its place while the data canvas scrolls.
+		   z-index lifts the (positioned) sticky rail above any POSITIONED data marks
+		   that scroll under it — without it, position:relative cards later in the DOM
+		   paint over the stuck rail (the sticky/z-index trap). --z-rail sits above
+		   content but below the chrome (--z-nav) and menus/popovers (--z-menu). */
 		.controls-rail--sticky {
 			position: sticky;
 			top: 5.5rem;
+			z-index: var(--z-rail);
 		}
 	}
 </style>
