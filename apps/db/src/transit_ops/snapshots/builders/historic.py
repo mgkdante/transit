@@ -829,7 +829,12 @@ _ROUTE_CROWDING_DELAY_SQL = text(
 
 
 def build_route_reliability(
-    conn: Connection, *, provider_id: str = "stm", route_id: str, generated_utc: str
+    conn: Connection,
+    *,
+    provider_id: str = "stm",
+    route_id: str,
+    generated_utc: str,
+    weak_stops_limit: int = 100,
 ) -> RouteReliability:
     """Build historic/route_reliability/{route_id}.json.
 
@@ -839,7 +844,10 @@ def build_route_reliability(
              from the busiest direction, with non-negative excess_wait per shift.
     habits:  7x24 per-route relative-problem matrix (isodow 1..7 x hour 0..23;
              each cell a fraction of the route's worst hour, null = no data).
-    weak_stops: top 5 stops on the route by average delay.
+    weak_stops: the worst N stops on the route by average delay (N =
+                weak_stops_limit, default 100; the web exposes a selectable
+                worst-N over what is served). Honest: a route with fewer stops
+                than the limit returns only what exists, never padded.
     """
     params = {"provider_id": provider_id, "route_id": route_id}
 
@@ -974,7 +982,7 @@ def build_route_reliability(
     # --- habits: 7x24 per-route relative-problem matrix (isodow 1..7 x hour 0..23) ---
     habits = _build_habits_matrix(conn.execute(_ROUTE_HABIT_SQL, params).mappings())
 
-    # --- weak_stops: top 5 by average delay seconds ---
+    # --- weak_stops: worst N (weak_stops_limit) by average delay seconds ---
     names = {
         str(r["stop_id"]): r["stop_name"]
         for r in conn.execute(_STOP_NAMES_SQL, params).mappings()
@@ -990,7 +998,7 @@ def build_route_reliability(
     weak_rows.sort(key=lambda t: t[1], reverse=True)
     weak_stops = [
         WeakStop(id=sid, name=names.get(sid), avg_delay_min=round(avg_sec / 60.0, 1))
-        for sid, avg_sec in weak_rows[:5]
+        for sid, avg_sec in weak_rows[:weak_stops_limit]
     ]
 
     # --- route display name: current dim first, dim_route_history fallback ---

@@ -587,8 +587,9 @@ def test_build_route_reliability_habits_empty_is_all_null() -> None:
     assert all(cell is None for row in out.habits.matrix for cell in row)
 
 
-def test_build_route_reliability_weak_stops_sorted_and_capped() -> None:
-    # 6 stops with descending delays; expect top 5 by avg delay, sorted desc.
+def test_build_route_reliability_weak_stops_sorted_desc_default_serves_all() -> None:
+    # S7: the top-5 cap is raised to a selectable worst-N (default 100), so the
+    # default now serves ALL valid stops, sorted desc by avg delay.
     weak = [
         {"stop_id": f"S{i}", "obs": 10, "weighted_delay_sec": delay_sec * 10, "severe": 0}
         for i, delay_sec in enumerate([60, 600, 300, 120, 420, 30])
@@ -597,15 +598,36 @@ def test_build_route_reliability_weak_stops_sorted_and_capped() -> None:
     conn = FakeConn(_route_reliability_dispatch(weak=weak, names=names))
 
     out = build_route_reliability(conn, route_id="51", generated_utc="t")
-    assert len(out.weak_stops) == 5  # capped at 5
+    assert len(out.weak_stops) == 6  # default no longer caps at 5
     delays = [w.avg_delay_min for w in out.weak_stops]
     assert delays == sorted(delays, reverse=True)  # descending
     # worst is S1 (600s -> 10.0 min); name resolved from dim_stop
     assert out.weak_stops[0].id == "S1"
     assert out.weak_stops[0].name == "Stop 1"
     assert out.weak_stops[0].avg_delay_min == 10.0
-    # the smallest (S5 = 30s -> 0.5 min) is dropped
-    assert "S5" not in {w.id for w in out.weak_stops}
+    # the smallest (S5 = 30s -> 0.5 min) is now INCLUDED, not dropped
+    assert out.weak_stops[-1].id == "S5"
+    assert out.weak_stops[-1].avg_delay_min == 0.5
+
+
+def test_build_route_reliability_weak_stops_respects_explicit_limit() -> None:
+    # The new weak_stops_limit param caps the served list; a route with fewer
+    # stops than the limit returns only what exists (honest, never padded).
+    weak = [
+        {"stop_id": f"S{i}", "obs": 10, "weighted_delay_sec": delay_sec * 10, "severe": 0}
+        for i, delay_sec in enumerate([60, 600, 300, 120, 420, 30])
+    ]
+    names = [{"stop_id": f"S{i}", "stop_name": f"Stop {i}"} for i in range(6)]
+
+    conn = FakeConn(_route_reliability_dispatch(weak=weak, names=names))
+    out = build_route_reliability(conn, route_id="51", generated_utc="t", weak_stops_limit=3)
+    assert [w.id for w in out.weak_stops] == ["S1", "S4", "S2"]  # top 3 by delay
+
+    conn2 = FakeConn(_route_reliability_dispatch(weak=weak, names=names))
+    out_all = build_route_reliability(
+        conn2, route_id="51", generated_utc="t", weak_stops_limit=100
+    )
+    assert len(out_all.weak_stops) == 6  # limit beyond available returns only what exists
 
 
 def test_build_route_reliability_delay_by_crowding_dominant_band() -> None:
