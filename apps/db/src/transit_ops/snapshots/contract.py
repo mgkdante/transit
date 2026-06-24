@@ -541,6 +541,23 @@ class RouteDayOfWeek(BaseModel):
     severe_pct: float | None = None
     observation_count: int | None = None
 
+class OccupancyByGrain(BaseModel):
+    # S7: grain-aware crowding band-shares for the §04 surface. grain is one of
+    # 'day' (most recent closed local day), 'week' (trailing 7d), 'month' (trailing
+    # 30d — reconciles with the scalar occupancy_mix). mix is None when the window
+    # has no band-bearing telemetry (honest absence, never a fabricated all-zero
+    # mix), the same rule as occupancy_mix.
+    grain: str
+    mix: OccupancyMix | None = None
+
+class OccupancyByDow(BaseModel):
+    # S7: crowding band-shares grouped by ISO weekday (1=Mon..7=Sun) over the same
+    # trailing-30d window as occupancy_mix, for the §04 weekday/weekend split. mix
+    # is None when a weekday has data-days but no band telemetry. Only weekdays with
+    # data-days are emitted (sparse).
+    day_of_week_iso: int
+    mix: OccupancyMix | None = None
+
 class RouteReliability(BaseModel):
     generated_utc: str
     id: str
@@ -568,6 +585,14 @@ class RouteReliability(BaseModel):
     # MESSAGE per absent cell. Defaults empty so already-published snapshots
     # lacking this key still validate. Purely additive.
     by_shift_daytype: list[CrosstabCell] = Field(default_factory=list)
+    # S7 additive: crowding band-shares re-grouped for the grain-aware §04 surface.
+    # occupancy_by_grain = the mix at day/week/month windows (month reconciles with
+    # occupancy_mix); occupancy_by_dow = the mix per ISO weekday (weekday/weekend
+    # split). Both reuse the same route_occupancy_band_daily source as occupancy_mix;
+    # honest-None per bucket with no band telemetry. Default empty so already-
+    # published snapshots lacking these keys still validate.
+    occupancy_by_grain: list[OccupancyByGrain] = Field(default_factory=list)
+    occupancy_by_dow: list[OccupancyByDow] = Field(default_factory=list)
 
 class StopReliabilityPeriod(BaseModel):
     grain: str

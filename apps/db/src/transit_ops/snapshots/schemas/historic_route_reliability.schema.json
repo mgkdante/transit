@@ -259,6 +259,54 @@
       "title": "HeadwayPeriod",
       "type": "object"
     },
+    "OccupancyByDow": {
+      "properties": {
+        "day_of_week_iso": {
+          "title": "Day Of Week Iso",
+          "type": "integer"
+        },
+        "mix": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/OccupancyMix"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "day_of_week_iso"
+      ],
+      "title": "OccupancyByDow",
+      "type": "object"
+    },
+    "OccupancyByGrain": {
+      "properties": {
+        "grain": {
+          "title": "Grain",
+          "type": "string"
+        },
+        "mix": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/OccupancyMix"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "grain"
+      ],
+      "title": "OccupancyByGrain",
+      "type": "object"
+    },
     "OccupancyMix": {
       "properties": {
         "empty": {
@@ -738,6 +786,20 @@
       ],
       "default": null,
       "title": "Name"
+    },
+    "occupancy_by_dow": {
+      "items": {
+        "$ref": "#/$defs/OccupancyByDow"
+      },
+      "title": "Occupancy By Dow",
+      "type": "array"
+    },
+    "occupancy_by_grain": {
+      "items": {
+        "$ref": "#/$defs/OccupancyByGrain"
+      },
+      "title": "Occupancy By Grain",
+      "type": "array"
     },
     "occupancy_mix": {
       "anyOf": [

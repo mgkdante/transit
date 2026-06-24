@@ -548,6 +548,20 @@ def test_publish_historic_writes_expected_keys(tmp_path) -> None:
              "few_seats": 30, "standing": 15, "full": 5,
              "avg_delay_sec": 90, "delay_obs": 40},
         ]),
+        # build_route_reliability: S7 grain-aware + per-DOW crowding rollups —
+        # unique discriminators "-- occupancy_by_dow" / "-- occupancy_by_grain".
+        # MUST precede the generic "route_occupancy_band_daily AS rob" needle below
+        # (both new SQLs share that table alias in their JOIN).
+        ("-- occupancy_by_dow", [
+            {"day_of_week_iso": 1, "empty": 0, "many_seats": 50,
+             "few_seats": 30, "standing": 15, "full": 5},
+            {"day_of_week_iso": 6, "empty": 40, "many_seats": 30,
+             "few_seats": 20, "standing": 10, "full": 0},
+        ]),
+        ("-- occupancy_by_grain", [
+            {"d": datetime.date(2026, 6, 1), "empty": 0, "many_seats": 50,
+             "few_seats": 30, "standing": 15, "full": 5},
+        ]),
         # build_route_reliability: trailing-window occupancy band shares —
         # unique discriminator "route_occupancy_band_daily AS rob".
         ("route_occupancy_band_daily AS rob", [
