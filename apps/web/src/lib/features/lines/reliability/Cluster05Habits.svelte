@@ -22,7 +22,6 @@
 -->
 <script lang="ts">
 	import type { Locale } from '$lib/i18n';
-	import type { SeverityCode } from '$lib/v1/schemas';
 	import type { RouteDayOfWeek } from '$lib/v1';
 	import {
 		Heatmap,
