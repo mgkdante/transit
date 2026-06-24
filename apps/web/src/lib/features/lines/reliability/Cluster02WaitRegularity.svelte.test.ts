@@ -64,8 +64,24 @@ describe('Cluster02WaitRegularity', () => {
 		// Both shifts render with their excess-wait display.
 		expect(screen.getByText('AM peak')).toBeInTheDocument();
 		expect(screen.getByText('Midday')).toBeInTheDocument();
-		// Excess wait shows in both the RankedRow display + the MetricDisplay.
+		// Excess wait shows in the RankedRow display.
 		expect(screen.getAllByText('2.4 min').length).toBeGreaterThanOrEqual(1);
+
+		// P8: each shift renders a scheduled-vs-observed dumbbell with both endpoints
+		// + the excess-wait span (AM-peak scheduled 6, observed 8.4).
+		const dumbbells = document.querySelectorAll('[data-slot="dumbbell"]');
+		expect(dumbbells.length).toBeGreaterThanOrEqual(2);
+		const amDumbbell = dumbbells[0];
+		expect(amDumbbell.querySelector('circle[data-end="scheduled"]')).not.toBeNull();
+		expect(amDumbbell.querySelector('circle[data-end="observed"]')).not.toBeNull();
+		expect(amDumbbell.querySelector('[data-slot="dumbbell-span"]')).not.toBeNull();
+
+		// P8: the dedicated CoV + bunched magnitude bars render (formerly subtitle text).
+		const regBars = document.querySelectorAll('[data-slot="regularity-bars"]');
+		expect(regBars.length).toBeGreaterThanOrEqual(2);
+		// The AM-peak regularity readings render as numeric heads beside their bars.
+		expect(screen.getByText('0.42')).toBeInTheDocument(); // CoV
+		expect(screen.getByText('18%')).toBeInTheDocument(); // bunched share
 
 		// Service-span metrics render (span minutes shown, not fabricated).
 		expect(screen.getByText('1140.0 min')).toBeInTheDocument();

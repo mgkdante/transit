@@ -60,6 +60,12 @@ export type { DivergingBarProps } from './DivergingBar.svelte';
 export { default as ServiceSpanTimeline } from './ServiceSpanTimeline.svelte';
 export type { ServiceSpanTimelineProps } from './ServiceSpanTimeline.svelte';
 
+// Scheduled-vs-observed headway dumbbell (slice-S7 P8): two value ticks joined by an
+// excess-wait span on a FIXED headway-minute domain (e.g. HEADWAY_DOMAIN). Calm dataviz
+// tokens (scheduled blue / observed amber) + glyph + aria; honest absence when empty.
+export { default as Dumbbell } from './Dumbbell.svelte';
+export type { DumbbellProps } from './Dumbbell.svelte';
+
 export { default as IconArray } from './IconArray.svelte';
 export type { IconArrayProps, IconArraySegment } from './IconArray.svelte';
 

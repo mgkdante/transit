@@ -29,7 +29,13 @@
 	import type { Locale } from '$lib/i18n';
 	import { fmtCount, fmtDelayMin, fmtPct } from '$lib/utils';
 	import type { HeadwayPeriod, SeverityCode, ServiceSpanPeriod } from '$lib/v1';
-	import { RankedRow, ExplainedMetricCard, ServiceSpanTimeline } from '$lib/components/dataviz';
+	import {
+		RankedRow,
+		ExplainedMetricCard,
+		ServiceSpanTimeline,
+		Dumbbell,
+		SeverityBar,
+	} from '$lib/components/dataviz';
 	import MetricDisplay from '$lib/components/brand/MetricDisplay.svelte';
 	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
 	import { AbsentValue } from '$lib/components/edge';
@@ -45,7 +51,10 @@
 	import {
 		shiftLabel as baseShiftLabel,
 		bunchingToSeverity,
+		covToSeverity,
 		HEADWAY_DOMAIN,
+		COV_DOMAIN,
+		BUNCHED_DOMAIN,
 	} from '$lib/features/reliability/shiftGrains';
 
 	export interface Cluster02WaitRegularityProps {
@@ -74,13 +83,6 @@
 	   truth for those. */
 	interface BandCopy {
 		readonly headwaySection: string;
-		/** Composes the per-shift CoV/bunching reading from the shared term words. */
-		readonly regularityReading: (
-			spread: string,
-			cov: string,
-			clumped: string,
-			bunched: string,
-		) => string;
 		readonly spanSection: string;
 		readonly serviceSpan: string;
 		readonly firstTripDelay: string;
@@ -94,13 +96,19 @@
 		readonly directionGap: string;
 		/** Always-visible explanation of excess wait — the "over WHAT" baseline. */
 		readonly excessWaitExplain: string;
+		/** Whole-dumbbell accessible summary, given the scheduled + observed readings. */
+		readonly dumbbellAria: (scheduled: string, observed: string) => string;
+		/** Excess-wait annotation prefix beside the dumbbell, given the formatted value. */
+		readonly dumbbellExcess: (value: string) => string;
+		/** a11y prefix for the per-shift CoV (regularity) magnitude bar. */
+		readonly covMagnitude: (shift: string) => string;
+		/** a11y prefix for the per-shift bunched-share magnitude bar. */
+		readonly bunchedMagnitude: (shift: string) => string;
 	}
 
 	const BAND_COPY: Record<Locale, BandCopy> = {
 		fr: {
 			headwaySection: 'Attente par période',
-			regularityReading: (spread, cov, clumped, bunched) =>
-				`${spread} ${cov} · ${clumped} ${bunched}`,
 			spanSection: 'Plage de service',
 			serviceSpan: 'Durée de service',
 			firstTripDelay: 'Retard 1er départ',
@@ -111,11 +119,14 @@
 			directionGap: 'Intervalle observé par direction',
 			excessWaitExplain:
 				"Le temps d'attente en plus de l'intervalle prévu entre les bus. 0 signifie que la ligne respecte (ou dépasse) sa fréquence prévue.",
+			dumbbellAria: (scheduled, observed) =>
+				`Intervalle prévu ${scheduled} min, intervalle observé ${observed} min`,
+			dumbbellExcess: (value) => `Attente excédentaire ${value} min`,
+			covMagnitude: (shift) => `Régularité (CV), ${shift}`,
+			bunchedMagnitude: (shift) => `Part de bus collés, ${shift}`,
 		},
 		en: {
 			headwaySection: 'Wait by shift',
-			regularityReading: (spread, cov, clumped, bunched) =>
-				`${spread} ${cov} · ${clumped} ${bunched}`,
 			spanSection: 'Service span',
 			serviceSpan: 'Span',
 			firstTripDelay: 'First-trip delay',
@@ -126,6 +137,11 @@
 			directionGap: 'Observed gap by direction',
 			excessWaitExplain:
 				'The extra time riders wait beyond the scheduled gap between buses. 0 means the line met (or beat) its planned frequency.',
+			dumbbellAria: (scheduled, observed) =>
+				`Scheduled gap ${scheduled} min, observed gap ${observed} min`,
+			dumbbellExcess: (value) => `Excess wait ${value} min`,
+			covMagnitude: (shift) => `Regularity (CoV), ${shift}`,
+			bunchedMagnitude: (shift) => `Bunched share, ${shift}`,
 		},
 	};
 
@@ -186,7 +202,10 @@
 		readonly bunched: number | null;
 		/** ABSOLUTE excess wait (min), scaled by HEADWAY_DOMAIN at the bar; null = no signal. */
 		readonly magnitude: number | null;
+		/** Severity from BUNCHING — drives the excess-wait row + the bunched-share bar. */
 		readonly severity: SeverityCode;
+		/** Severity from the headway CoV — drives the dedicated regularity bar. */
+		readonly covSeverity: SeverityCode;
 	}
 
 	/* S7-B Pattern A: read the TYPED direction_id / day_type fields. Fall back to the
@@ -224,6 +243,7 @@
 			bunched: h.bunched_pct ?? null,
 			magnitude: h.excess_wait_min ?? null,
 			severity: bunchingToSeverity(h.bunched_pct),
+			covSeverity: covToSeverity(h.cov),
 		})),
 	);
 
@@ -318,6 +338,7 @@
 				<li class="shift-row">
 					<RankedRow
 						rank={i + 1}
+<<<<<<< HEAD
 						title={shiftLabel(row)}
 						subtitle={t.regularityReading(
 							terms.spread,
@@ -325,6 +346,9 @@
 							terms.clumped,
 							pct(row.bunched) ?? valueNoData,
 						)}
+=======
+						title={shiftLabel(row.shift)}
+>>>>>>> a830b6e (feat(web): P8 scheduled-vs-observed dumbbell + dedicated CoV/bunched bars in §02 Wait regularity)
 						severity={row.severity}
 						value={row.magnitude}
 						domain={HEADWAY_DOMAIN}
@@ -333,31 +357,59 @@
 						display={min(row.excessWait) ?? valueNoData}
 						aria-label={t.excessWaitMagnitude(shiftLabel(row))}
 					/>
-					<div class="shift-metrics">
-						<MetricDisplay
-							value={min(row.scheduled)}
-							emptyLabel={valueNoData}
-							absentReason="no-observations"
-							{locale}
-							label={terms.scheduledGap}
-							size="sm"
-						/>
-						<MetricDisplay
-							value={min(row.observed)}
-							emptyLabel={valueNoData}
-							absentReason="no-observations"
-							{locale}
-							label={terms.observedGap}
-							size="sm"
-						/>
-						<MetricDisplay
-							value={min(row.excessWait)}
-							emptyLabel={valueNoData}
-							absentReason="no-observations"
-							{locale}
-							label={terms.excessWait}
-							size="sm"
-						/>
+
+					<!-- P8: the scheduled-vs-observed DUMBBELL — two ticks (plan / real-world)
+					     joined by the excess-wait span on the FIXED HEADWAY_DOMAIN, so the same
+					     gap always renders at the same x. Replaces the isolated scheduled/observed/
+					     excess MetricDisplay tiles with their relationship in one glance. -->
+					<Dumbbell
+						scheduledMin={row.scheduled}
+						observedMin={row.observed}
+						excessMin={row.excessWait}
+						domain={HEADWAY_DOMAIN}
+						scheduledLabel={terms.scheduledGap}
+						observedLabel={terms.observedGap}
+						excessLabel={t.dumbbellExcess}
+						ariaLabel={t.dumbbellAria}
+						noDataLabel={valueNoData}
+						{locale}
+						absentReason="no-observations"
+					/>
+
+					<!-- P8: dedicated magnitude bars for the two regularity readings — CoV on
+					     COV_DOMAIN, bunched share on BUNCHED_DOMAIN — both formerly subtitle TEXT
+					     only. Each rides its own FIXED domain (stable across routes/grains), with a
+					     severity band (covToSeverity / bunchingToSeverity), a glyph-free numeric
+					     readout, and an a11y label so colour is never the sole channel. -->
+					<div class="shift-regularity" data-slot="regularity-bars">
+						<div class="regularity-metric" data-metric="cov">
+							<div class="regularity-head">
+								<span class="regularity-label">{terms.spread}</span>
+								<span class="regularity-value">{fmtCov(row.cov) ?? valueNoData}</span>
+							</div>
+							<SeverityBar
+								severity={row.covSeverity}
+								value={row.cov}
+								domain={COV_DOMAIN}
+								unit=""
+								size="sm"
+								label={t.covMagnitude(shiftLabel(row.shift))}
+							/>
+						</div>
+						<div class="regularity-metric" data-metric="bunched">
+							<div class="regularity-head">
+								<span class="regularity-label">{terms.clumped}</span>
+								<span class="regularity-value">{pct(row.bunched) ?? valueNoData}</span>
+							</div>
+							<SeverityBar
+								severity={row.severity}
+								value={row.bunched}
+								domain={BUNCHED_DOMAIN}
+								unit="%"
+								size="sm"
+								label={t.bunchedMagnitude(shiftLabel(row.shift))}
+							/>
+						</div>
 					</div>
 				</li>
 			{/snippet}
@@ -532,6 +584,40 @@
 		display: flex;
 		flex-wrap: wrap;
 		gap: 1.25rem;
+	}
+	/* P8: the two dedicated regularity magnitude bars (CoV + bunched share), each a
+	   label/value head over a fixed-domain SeverityBar. Two columns on wide rows,
+	   stacking on narrow ones; the bars never share an axis (different domains). */
+	.shift-regularity {
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+		gap: 0.75rem 1.25rem;
+	}
+	.regularity-metric {
+		display: flex;
+		flex-direction: column;
+		gap: 0.35rem;
+		min-width: 0;
+	}
+	.regularity-head {
+		display: flex;
+		align-items: baseline;
+		justify-content: space-between;
+		gap: 0.5rem;
+	}
+	.regularity-label {
+		font-family: var(--font-mono);
+		font-size: var(--text-micro);
+		letter-spacing: 0.04em;
+		text-transform: uppercase;
+		color: var(--muted-foreground);
+	}
+	/* The metric VALUE rides the wayfinding (yellow) accent, per the four-color doctrine. */
+	.regularity-value {
+		font-family: var(--font-mono);
+		font-size: var(--text-small);
+		font-variant-numeric: tabular-nums;
+		color: var(--accent-text);
 	}
 	/* A second-tier metric tile + its explainer (i), kept on the tile's top edge. The
 	   tile keeps a measure (min-width:0) so a long label wraps cleanly; the (i) wrapper
