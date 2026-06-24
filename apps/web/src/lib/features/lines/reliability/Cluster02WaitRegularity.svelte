@@ -29,7 +29,7 @@
 	import type { Locale } from '$lib/i18n';
 	import { fmtCount, fmtDelayMin, fmtPct } from '$lib/utils';
 	import type { HeadwayPeriod, SeverityCode, ServiceSpanPeriod } from '$lib/v1';
-	import { RankedRow } from '$lib/components/dataviz';
+	import { RankedRow, ExplainedMetricCard } from '$lib/components/dataviz';
 	import MetricDisplay from '$lib/components/brand/MetricDisplay.svelte';
 	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
 	import { AbsentValue } from '$lib/components/edge';
@@ -42,7 +42,10 @@
 	import { metricsCopy } from '$lib/features/metrics/metrics.copy';
 	import type { WaitRegularityVM } from './clusters';
 	import type { ReliabilityCopy } from './reliability.copy';
-	import { shiftLabel as baseShiftLabel } from '$lib/features/reliability/shiftGrains';
+	import {
+		shiftLabel as baseShiftLabel,
+		bunchingToSeverity,
+	} from '$lib/features/reliability/shiftGrains';
 
 	export interface Cluster02WaitRegularityProps {
 		/** The wait-regularity VM (headway rows carrying a signal, contract order). */
@@ -88,6 +91,8 @@
 		readonly moreDetail: string;
 		/** Heading for the per-direction observed-gap comparison inside the reveal. */
 		readonly directionGap: string;
+		/** Always-visible explanation of excess wait — the "over WHAT" baseline. */
+		readonly excessWaitExplain: string;
 	}
 
 	const BAND_COPY: Record<Locale, BandCopy> = {
@@ -103,6 +108,8 @@
 			excessWaitMagnitude: (shift) => `Attente excédentaire, ${shift}`,
 			moreDetail: 'Plus de détail · intervalle observé par direction',
 			directionGap: 'Intervalle observé par direction',
+			excessWaitExplain:
+				"Le temps d'attente en plus de l'intervalle prévu entre les bus. 0 signifie que la ligne respecte (ou dépasse) sa fréquence prévue.",
 		},
 		en: {
 			headwaySection: 'Wait by shift',
@@ -116,6 +123,8 @@
 			excessWaitMagnitude: (shift) => `Excess wait, ${shift}`,
 			moreDetail: 'More detail · observed gap by direction',
 			directionGap: 'Observed gap by direction',
+			excessWaitExplain:
+				'The extra time riders wait beyond the scheduled gap between buses. 0 means the line met (or beat) its planned frequency.',
 		},
 	};
 
@@ -151,14 +160,6 @@
 	const maxExcess = $derived(
 		Math.max(0, ...wait.headway.map((h) => (h.excess_wait_min == null ? 0 : h.excess_wait_min))),
 	);
-
-	/** Bunching → severity band (glyph+colour via SeverityBar); null bunching = watch. */
-	function severityFor(bunchedPct: number | null | undefined): SeverityCode {
-		if (bunchedPct == null) return 'watch';
-		if (bunchedPct >= 30) return 'critical';
-		if (bunchedPct >= 15) return 'high';
-		return 'watch';
-	}
 
 	interface ShiftRow {
 		readonly shift: string;
@@ -213,7 +214,7 @@
 				h.excess_wait_min == null || maxExcess <= 0
 					? null
 					: Math.min(1, Math.max(0, h.excess_wait_min / maxExcess)),
-			severity: severityFor(h.bunched_pct),
+			severity: bunchingToSeverity(h.bunched_pct),
 		})),
 	);
 
@@ -241,6 +242,14 @@
 	// in the open list rather than hiding everything behind the reveal.
 	const mainRows = $derived(primaryRows.length > 0 ? primaryRows : advancedRows);
 	const hasAdvancedReveal = $derived(primaryRows.length > 0 && advancedRows.length > 0);
+
+	// The headline excess-wait read (the busiest/first shift that carries a value) —
+	// lifted to a prominent ExplainedMetricCard so the "extra wait over WHAT" baseline
+	// is ALWAYS visible beside the number (the operator's "1.8 min over what" fix),
+	// not buried in a far caption or a hover popover. The per-shift list stays below.
+	const headlineRow = $derived<ShiftRow | null>(
+		mainRows.find((r) => r.excessWait != null) ?? mainRows[0] ?? null,
+	);
 
 	/* ── service span, the most-recent row carrying a signal ──────────────────
 	   serviceSpans arrives in contract order (chronological); the foundation VM
@@ -277,6 +286,25 @@
 				{@render metricInfo('headway', t.headwaySection)}
 				{@render metricInfo('regularityCov', copy.strip.headwayRegularityCov)}
 			</span>
+
+			<!-- S7: the headline excess-wait read, lifted to a prominent 2-col card whose
+			     always-visible explanation states the baseline ("over the scheduled gap")
+			     beside the number — the operator's "1.8 min over what" fix. -->
+			{#if headlineRow}
+				<ExplainedMetricCard
+					label={`${terms.excessWait} · ${shiftLabel(headlineRow.shift)}`}
+					value={min(headlineRow.excessWait)}
+					explanation={t.excessWaitExplain}
+					emptyLabel={valueNoData}
+					absentReason="no-observations"
+					{locale}
+					size="lg"
+					class="excess-wait-headline"
+				>
+					{#snippet info()}{@render metricInfo('excessWait', terms.excessWait)}{/snippet}
+				</ExplainedMetricCard>
+			{/if}
+
 			{#snippet shiftItem(row: ShiftRow, i: number)}
 				<li class="shift-row">
 					<RankedRow

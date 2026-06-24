@@ -240,4 +240,30 @@ describe('Cluster02WaitRegularity — metric explainer (i)', () => {
 			await fireEvent.click(trigger); // close before the next assertion
 		}
 	});
+
+	it('lifts excess wait to a headline card with the always-visible "over what" baseline (S7)', () => {
+		const data: RouteReliability = {
+			id: '51',
+			generated_utc: utc('2026-06-19T02:00:00Z'),
+			headway: [
+				{
+					shift: 'am_peak',
+					scheduled_min: 6,
+					observed_min: 7.8,
+					excess_wait_min: 1.8,
+					cov: 0.4,
+					bunched_pct: 12,
+				},
+			],
+		};
+		const clusters = toReliabilityClusters(data);
+		const { container } = render(Cluster02WaitRegularity, {
+			props: { wait: clusters.waitRegularity, serviceSpans: [], locale: 'en', copy },
+		});
+		const card = container.querySelector('[data-slot="explained-metric-card"]') as HTMLElement;
+		expect(card).not.toBeNull();
+		// The headline value renders + its baseline is explained ADJACENT (not in a popover).
+		expect(card.textContent).toContain('1.8');
+		expect(card.textContent).toContain('scheduled gap');
+	});
 });

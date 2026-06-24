@@ -62,6 +62,23 @@ export function delayMinToSeverity(min: number | null): SeverityCode {
 	return 'watch';
 }
 
+/** Threshold (bunched %) at or above which a shift's regularity bands to 'critical'. */
+const BUNCHED_CRITICAL_PCT = 30;
+/** Threshold (bunched %) at or above which it bands to 'high'. */
+const BUNCHED_HIGH_PCT = 15;
+
+/**
+ * Band a bunching share (percentage, 0..100) onto the SeverityCode scale: >=30%
+ * critical, >=15% high, else watch. null (no data) bands to the quietest 'watch'.
+ * (DRY: was §02 Wait/Regularity's inline severityFor.)
+ */
+export function bunchingToSeverity(bunchedPct: number | null | undefined): SeverityCode {
+	if (bunchedPct == null) return 'watch';
+	if (bunchedPct >= BUNCHED_CRITICAL_PCT) return 'critical';
+	if (bunchedPct >= BUNCHED_HIGH_PCT) return 'high';
+	return 'watch';
+}
+
 /** The time-of-day shift grains, in canonical chronological order (AM → night). */
 export const SHIFT_GRAIN_ORDER = ['am_peak', 'midday', 'pm_peak', 'evening', 'night'] as const;
 export type ShiftGrain = (typeof SHIFT_GRAIN_ORDER)[number];
