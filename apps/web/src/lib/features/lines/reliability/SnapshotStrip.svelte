@@ -205,15 +205,34 @@
 		gap: 1rem 1.25rem;
 		width: 100%;
 	}
-	/* Each row is an auto-fit grid of compact single-glance tiles that wrap as space
-	   runs out (4-up on a wide desktop, fewer on a laptop, 1-up on a phone). The tiles
-	   are figure-only now (no inline explanation), so they pack tighter than the old
-	   wide two-column cards. */
+	/* Explicit per-row column counts so a row NEVER strands a lone card. Auto-fit
+	   passed through a 3-up step that split row 1's 4 cards into 3+1 and left the
+	   "3, 1, 3" the operator caught on smaller desktops. Row 1 (4 cards) steps
+	   4→2→1 (skipping 3, which orphans the 4th); row 2 (3 cards) steps 3→1
+	   (skipping 2, which orphans the 3rd). Every step divides its row evenly. */
 	.snapshot-cards__row {
 		display: grid;
 		gap: 1rem 1.25rem;
-		grid-template-columns: repeat(auto-fit, minmax(min(15rem, 100%), 1fr));
 		align-items: stretch;
+	}
+	.snapshot-cards__row[data-slot='snapshot-row-1'] {
+		grid-template-columns: repeat(4, minmax(0, 1fr));
+	}
+	.snapshot-cards__row[data-slot='snapshot-row-2'] {
+		grid-template-columns: repeat(3, minmax(0, 1fr));
+	}
+	/* Smaller desktop / laptop: row 1 halves to 2+2 (never 3+1); row 2 holds 3-up. */
+	@media (max-width: 64rem) {
+		.snapshot-cards__row[data-slot='snapshot-row-1'] {
+			grid-template-columns: repeat(2, minmax(0, 1fr));
+		}
+	}
+	/* Phone: both rows stack to a single column. */
+	@media (max-width: 42rem) {
+		.snapshot-cards__row[data-slot='snapshot-row-1'],
+		.snapshot-cards__row[data-slot='snapshot-row-2'] {
+			grid-template-columns: 1fr;
+		}
 	}
 
 	/* When the strip is bled (.surface-bleed on its band wrapper), the honest
