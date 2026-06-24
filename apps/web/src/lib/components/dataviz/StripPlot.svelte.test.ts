@@ -149,3 +149,77 @@ describe('StripPlot — categorical Cleveland dot plot (one dot per shift)', () 
 		expect(empty?.textContent).toBe('no observations');
 	});
 });
+
+describe('StripPlot — opt-in interactive hover/focus (default off)', () => {
+	const domain: [number, number] = [0, 35];
+	const ROWS: StripPlotRow[] = [
+		shiftRow({ key: 'am_peak', value: 8, n: 120 }),
+		shiftRow({ key: 'midday', value: 3, n: 90 }),
+		shiftRow({ key: 'pm_peak', value: 14, n: 140 }),
+	];
+
+	it('NON-interactive by default — dots are not focus targets (zero diff for call sites)', () => {
+		const { container } = render(StripPlot, { props: { rows: ROWS, domain } });
+		for (const dot of dots(container)) {
+			expect(dot.getAttribute('tabindex')).toBeNull();
+		}
+	});
+
+	it('interactive categorical dots become focusable targets with a full aria-label', () => {
+		const { container } = render(StripPlot, { props: { rows: ROWS, domain, interactive: true } });
+		const ds = dots(container);
+		expect(ds.length).toBe(3);
+		for (const dot of ds) {
+			expect(dot.getAttribute('tabindex')).toBe('0');
+			// the aria-label carries the reading so colour/position is never the sole channel
+			expect(dot.getAttribute('aria-label')).toMatch(/.+: .+/);
+		}
+		expect(ds[0].getAttribute('aria-label')).toContain('am_peak');
+	});
+
+	it('1-D interactive circles become focusable targets with an aria-label', () => {
+		const { container } = render(StripPlot, {
+			props: { values: [2, 5], label: 'per-trip delay', interactive: true },
+		});
+		const cs = circles(container);
+		expect(cs.length).toBe(2);
+		for (const c of cs) {
+			expect(c.getAttribute('tabindex')).toBe('0');
+			expect(c.getAttribute('aria-label')).toContain('per-trip delay');
+		}
+	});
+
+	it('1-D circles are NOT focusable when interactive is off', () => {
+		const { container } = render(StripPlot, { props: { values: [2, 5] } });
+		for (const c of circles(container)) {
+			expect(c.getAttribute('tabindex')).toBeNull();
+		}
+	});
+
+	it('a null-value row stays honest absence with no interactive dot when interactive', () => {
+		const { container } = render(StripPlot, {
+			props: {
+				rows: [
+					shiftRow({ key: 'am_peak', value: 8, n: 120 }),
+					shiftRow({ key: 'night', value: null, emptyLabel: 'no observations' }),
+				],
+				domain,
+				interactive: true,
+			},
+		});
+		// only the real row gets a (focusable) dot; the absent mark is never a target
+		expect(dots(container).length).toBe(1);
+		expect(dots(container)[0].getAttribute('tabindex')).toBe('0');
+		expect(container.querySelector('.dv-strip-plot__empty')?.textContent).toBe('no observations');
+	});
+
+	it('the optional n is tooltip-only — it never changes the dot count or position', () => {
+		const withN = render(StripPlot, {
+			props: { rows: [shiftRow({ key: 'pm_peak', value: 14, n: 140 })], domain, interactive: true },
+		});
+		const withoutN = render(StripPlot, {
+			props: { rows: [shiftRow({ key: 'pm_peak', value: 14 })], domain, interactive: true },
+		});
+		expect(dots(withN.container)[0].style.left).toBe(dots(withoutN.container)[0].style.left);
+	});
+});

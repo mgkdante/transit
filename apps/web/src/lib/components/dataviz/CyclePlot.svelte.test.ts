@@ -166,3 +166,67 @@ describe('CyclePlot — weekday cycle plot on a shared fixed y-axis', () => {
 		expect(absent?.getAttribute('data-tone')).toBe('unknown');
 	});
 });
+
+describe('CyclePlot — opt-in interactive hover (mirrors SeverityBar)', () => {
+	it('is non-interactive by default: panels carry NO focus target / aria-label / tooltip', () => {
+		const panels = frame((iso) => ({ points: [iso * 0.5], observationCount: 40 }));
+		const { container } = render(CyclePlot, { props: { ...base, panels } });
+		const f = fig(container)!;
+		const targets = f.querySelectorAll('[data-slot="cycle-plot-panel"][tabindex]');
+		expect(targets.length).toBe(0);
+		// No focusable target, no panel aria-label when not interactive.
+		expect(f.querySelector('[data-slot="cycle-plot-panel"][aria-label]')).toBeNull();
+	});
+
+	it('makes every non-empty weekday panel a focusable target with a full aria-label when interactive', () => {
+		const panels = frame((iso) => ({
+			points: [iso * 0.5],
+			severePct: 8,
+			severity: 'high',
+			observationCount: 60,
+		}));
+		const { container } = render(CyclePlot, {
+			props: { ...base, panels, interactive: true },
+		});
+		const f = fig(container)!;
+		const targets = f.querySelectorAll<HTMLElement>('[data-slot="cycle-plot-panel"][tabindex="0"]');
+		expect(targets.length).toBe(7);
+		// The aria-label carries the full weekday + mean + severe share + n (never colour-only).
+		const mon = f.querySelector<HTMLElement>('[data-day="Mon"]')!;
+		expect(mon.getAttribute('tabindex')).toBe('0');
+		const label = mon.getAttribute('aria-label') ?? '';
+		expect(label).toContain('Monday');
+		expect(label).toContain('Mean');
+		expect(label).toContain('Severe');
+		expect(label).toContain('n=60');
+	});
+
+	it('never makes an empty weekday a target — the honest no-data chip keeps NO tooltip affordance', () => {
+		const panels = frame((iso) => (iso === 7 ? {} : { points: [iso * 0.5], observationCount: 40 }));
+		const { container } = render(CyclePlot, {
+			props: { ...base, panels, interactive: true },
+		});
+		const f = fig(container)!;
+		// Six non-empty panels are focusable targets; the empty Sunday is not.
+		expect(f.querySelectorAll('[data-slot="cycle-plot-panel"][tabindex="0"]').length).toBe(6);
+		const sun = f.querySelector<HTMLElement>('[data-day="Sun"]')!;
+		expect(sun.getAttribute('tabindex')).toBeNull();
+		expect(sun.getAttribute('aria-label')).toBeNull();
+		expect(sun.querySelector('[data-slot="absent-value"]')).not.toBeNull();
+	});
+
+	it('omits the severe row from the aria-label when the share is withheld (severePct=null)', () => {
+		const panels = frame((iso) => ({
+			points: [iso * 0.5],
+			severePct: null,
+			observationCount: 40,
+		}));
+		const { container } = render(CyclePlot, {
+			props: { ...base, panels, interactive: true },
+		});
+		const mon = fig(container)!.querySelector<HTMLElement>('[data-day="Mon"]')!;
+		const label = mon.getAttribute('aria-label') ?? '';
+		expect(label).toContain('Monday');
+		expect(label).not.toContain('Severe');
+	});
+});

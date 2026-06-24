@@ -83,4 +83,46 @@ describe('Dumbbell — scheduled-vs-observed headway dumbbell on a fixed domain'
 		expect(absent).not.toBeNull();
 		expect(absent?.getAttribute('data-tone')).toBe('unknown');
 	});
+
+	describe('opt-in interactive hover/focus affordance', () => {
+		it('renders NO focus targets by default (interactive off → byte-identical)', () => {
+			const { container } = render(Dumbbell, { props: { ...base } });
+			const f = fig(container)!;
+			expect(f.querySelectorAll('[data-hit]').length).toBe(0);
+			// The SVG keeps its own aria-label and is not aria-hidden when non-interactive.
+			const svg = f.querySelector('svg')!;
+			expect(svg.getAttribute('aria-hidden')).toBeNull();
+		});
+
+		it('exposes a focusable, aria-labelled target for each present mark when interactive', () => {
+			const { container } = render(Dumbbell, { props: { ...base, interactive: true } });
+			const f = fig(container)!;
+			const sched = f.querySelector<HTMLElement>('[data-hit="scheduled"]')!;
+			const obs = f.querySelector<HTMLElement>('[data-hit="observed"]')!;
+			const span = f.querySelector<HTMLElement>('[data-hit="span"]')!;
+			// All three marks are keyboard-reachable.
+			expect(sched.getAttribute('tabindex')).toBe('0');
+			expect(obs.getAttribute('tabindex')).toBe('0');
+			expect(span.getAttribute('tabindex')).toBe('0');
+			// Each carries a full aria-label so colour/position is never the sole channel.
+			expect(sched.getAttribute('aria-label')).toContain('Scheduled gap');
+			expect(sched.getAttribute('aria-label')).toContain('6');
+			expect(obs.getAttribute('aria-label')).toContain('Observed gap');
+			expect(obs.getAttribute('aria-label')).toContain('8.4');
+			expect(span.getAttribute('aria-label')).toContain('Excess wait');
+			expect(span.getAttribute('aria-label')).toContain('2.4');
+			// The decorative SVG defers its label to the hit targets.
+			expect(f.querySelector('svg')!.getAttribute('aria-hidden')).toBe('true');
+		});
+
+		it('omits the span hit target (no tooltip on an absent span) when only one endpoint resolves', () => {
+			const { container } = render(Dumbbell, {
+				props: { ...base, interactive: true, observedMin: null, excessMin: null },
+			});
+			const f = fig(container)!;
+			expect(f.querySelector('[data-hit="scheduled"]')).not.toBeNull();
+			expect(f.querySelector('[data-hit="observed"]')).toBeNull();
+			expect(f.querySelector('[data-hit="span"]')).toBeNull();
+		});
+	});
 });

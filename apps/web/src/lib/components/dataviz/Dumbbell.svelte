@@ -21,6 +21,8 @@
 	import type { Locale } from '$lib/i18n';
 	import type { AbsenceReasonKey } from '$lib/site/absence';
 	import { AbsentValue } from '$lib/components/edge';
+	import ChartTooltip from './ChartTooltip.svelte';
+	import { createChartTooltip, type ChartTooltipRow } from './useChartTooltip.svelte';
 
 	export interface DumbbellProps extends WithElementRef<HTMLAttributes<HTMLElement>> {
 		/** Scheduled headway (min). null → that tick is omitted (no fake 0). */
@@ -48,6 +50,13 @@
 		width?: number;
 		/** Drawn height (viewBox units). */
 		height?: number;
+		/**
+		 * Opt-in hover/focus interactivity: the scheduled tick, the observed tick, and
+		 * the connecting span each become a focus/pointer target that reveals a one-row
+		 * <ChartTooltip> (the endpoint's min value, or the excess-wait for the span).
+		 * Default off so existing call sites stay byte-identical.
+		 */
+		interactive?: boolean;
 		class?: string;
 	}
 
@@ -65,6 +74,7 @@
 		noDataLabel,
 		width = 320,
 		height = 44,
+		interactive = false,
 		class: className,
 		ref = $bindable(null),
 		...restProps
@@ -76,6 +86,8 @@
 	const trackY = $derived(height * 0.5);
 	const TICK_H = 12; // tick height (viewBox units)
 	const DOT_R = 4; // endpoint dot radius
+	const HIT_HALF = 10; // half-width of an endpoint focus/pointer hit target (viewBox units)
+	const HIT_SPAN_H = 16; // height of the span focus/pointer hit target (viewBox units)
 
 	// Calm dataviz tokens (never --primary): scheduled = the plan/blue, observed =
 	// the real-world amber. Glyph + aria carry meaning so colour is never sole.
@@ -105,7 +117,177 @@
 		has(v) ? `${Math.round(v * 10) / 10}` : noDataLabel;
 	const summary = $derived(ariaLabel(fmt1(scheduledMin), fmt1(observedMin)));
 	const excessText = $derived(has(excessMin) ? excessLabel(fmt1(excessMin)) : null);
+
+	// ── opt-in hover/focus tooltip (only wired when `interactive`) ───────────────
+	const tip = createChartTooltip();
+
+	// Half-track widths (viewBox units → % of the stretched viewBox) so each hit
+	// target is wide enough to grab without overlapping its neighbour. The span hit
+	// target sits between the two endpoint targets.
+	function showSchedTip() {
+		if (!interactive || schedX == null) return;
+		tip.show({
+			xPct: (schedX / width) * 100,
+			yPct: 0,
+			heading: scheduledLabel,
+			rows: [
+				{ colorVar: SCHEDULED_VAR, label: scheduledLabel, value: fmt1(scheduledMin) },
+			] as ChartTooltipRow[],
+			side: 'top',
+		});
+	}
+	function showObsTip() {
+		if (!interactive || obsX == null) return;
+		tip.show({
+			xPct: (obsX / width) * 100,
+			yPct: 0,
+			heading: observedLabel,
+			rows: [
+				{ colorVar: OBSERVED_VAR, label: observedLabel, value: fmt1(observedMin) },
+			] as ChartTooltipRow[],
+			side: 'top',
+		});
+	}
+	function showSpanTip() {
+		// The span readout exists only when both endpoints resolve AND the excess is present.
+		if (!interactive || !hasSpan || excessText == null) return;
+		tip.show({
+			xPct: ((Math.min(schedX!, obsX!) + Math.max(schedX!, obsX!)) / 2 / width) * 100,
+			yPct: 0,
+			heading: excessText,
+			rows: [
+				{ colorVar: OBSERVED_VAR, label: excessText, value: fmt1(excessMin) },
+			] as ChartTooltipRow[],
+			side: 'top',
+		});
+	}
+	function hideTip() {
+		tip.hide();
+	}
 </script>
+
+{#snippet svgBody()}
+	<!-- The full-domain baseline track (neutral; the unused range reads as absent). -->
+	<line x1={PAD} y1={trackY} x2={width - PAD} y2={trackY} stroke="var(--border)" stroke-width="1" />
+
+	<!-- The excess-wait span (scheduled→observed) — a data mark on the amber token. -->
+	{#if hasSpan}
+		<line
+			x1={Math.min(schedX!, obsX!)}
+			y1={trackY}
+			x2={Math.max(schedX!, obsX!)}
+			y2={trackY}
+			stroke={OBSERVED_VAR}
+			stroke-width="3"
+			data-slot="dumbbell-span"
+		/>
+	{/if}
+
+	<!-- Scheduled tick (the plan) — calm blue, a vertical rule + endpoint dot. -->
+	{#if schedX != null}
+		<line
+			x1={schedX}
+			y1={trackY - TICK_H / 2}
+			x2={schedX}
+			y2={trackY + TICK_H / 2}
+			stroke={SCHEDULED_VAR}
+			stroke-width="2"
+		/>
+		<circle cx={schedX} cy={trackY} r={DOT_R} fill={SCHEDULED_VAR} data-end="scheduled" />
+	{/if}
+
+	<!-- Observed tick (the real world) — amber, a vertical rule + endpoint dot. -->
+	{#if obsX != null}
+		<line
+			x1={obsX}
+			y1={trackY - TICK_H / 2}
+			x2={obsX}
+			y2={trackY + TICK_H / 2}
+			stroke={OBSERVED_VAR}
+			stroke-width="2"
+		/>
+		<circle cx={obsX} cy={trackY} r={DOT_R} fill={OBSERVED_VAR} data-end="observed" />
+	{/if}
+{/snippet}
+
+{#snippet chart()}
+	<svg
+		viewBox="0 0 {width} {height}"
+		width="100%"
+		{height}
+		preserveAspectRatio="none"
+		role="img"
+		aria-label={summary}
+		aria-hidden={interactive ? true : undefined}
+		focusable="false"
+	>
+		{@render svgBody()}
+
+		{#if interactive}
+			<!-- Transparent focus/pointer hit targets on TOP of the marks: each named
+			     mark (scheduled tick, observed tick, span) is its own keyboard-reachable
+			     target carrying a full aria-label, so colour/position is never the sole
+			     channel. An absent mark draws no target (no tooltip on absent data). -->
+			{#if schedX != null}
+				<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+				<rect
+					x={Math.max(0, schedX - HIT_HALF)}
+					y="0"
+					width={HIT_HALF * 2}
+					{height}
+					fill="transparent"
+					tabindex={0}
+					role="img"
+					data-hit="scheduled"
+					aria-label={`${scheduledLabel}, ${fmt1(scheduledMin)}`}
+					aria-describedby={tip.open ? tip.id : undefined}
+					onpointerenter={showSchedTip}
+					onpointerleave={hideTip}
+					onfocus={showSchedTip}
+					onblur={hideTip}
+				/>
+			{/if}
+			{#if hasSpan && excessText != null}
+				<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+				<rect
+					x={Math.min(schedX!, obsX!)}
+					y={trackY - HIT_SPAN_H / 2}
+					width={Math.max(1, Math.abs(obsX! - schedX!))}
+					height={HIT_SPAN_H}
+					fill="transparent"
+					tabindex={0}
+					role="img"
+					data-hit="span"
+					aria-label={`${excessText}, ${fmt1(excessMin)}`}
+					aria-describedby={tip.open ? tip.id : undefined}
+					onpointerenter={showSpanTip}
+					onpointerleave={hideTip}
+					onfocus={showSpanTip}
+					onblur={hideTip}
+				/>
+			{/if}
+			{#if obsX != null}
+				<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+				<rect
+					x={Math.max(0, obsX - HIT_HALF)}
+					y="0"
+					width={HIT_HALF * 2}
+					{height}
+					fill="transparent"
+					tabindex={0}
+					role="img"
+					data-hit="observed"
+					aria-label={`${observedLabel}, ${fmt1(observedMin)}`}
+					aria-describedby={tip.open ? tip.id : undefined}
+					onpointerenter={showObsTip}
+					onpointerleave={hideTip}
+					onfocus={showObsTip}
+					onblur={hideTip}
+				/>
+			{/if}
+		{/if}
+	</svg>
+{/snippet}
 
 {#if hasAny}
 	<figure
@@ -114,63 +296,21 @@
 		data-slot="dumbbell"
 		{...restProps}
 	>
-		<svg
-			viewBox="0 0 {width} {height}"
-			width="100%"
-			{height}
-			preserveAspectRatio="none"
-			role="img"
-			aria-label={summary}
-		>
-			<!-- The full-domain baseline track (neutral; the unused range reads as absent). -->
-			<line
-				x1={PAD}
-				y1={trackY}
-				x2={width - PAD}
-				y2={trackY}
-				stroke="var(--border)"
-				stroke-width="1"
-			/>
-
-			<!-- The excess-wait span (scheduled→observed) — a data mark on the amber token. -->
-			{#if hasSpan}
-				<line
-					x1={Math.min(schedX!, obsX!)}
-					y1={trackY}
-					x2={Math.max(schedX!, obsX!)}
-					y2={trackY}
-					stroke={OBSERVED_VAR}
-					stroke-width="3"
-					data-slot="dumbbell-span"
-				/>
-			{/if}
-
-			<!-- Scheduled tick (the plan) — calm blue, a vertical rule + endpoint dot. -->
-			{#if schedX != null}
-				<line
-					x1={schedX}
-					y1={trackY - TICK_H / 2}
-					x2={schedX}
-					y2={trackY + TICK_H / 2}
-					stroke={SCHEDULED_VAR}
-					stroke-width="2"
-				/>
-				<circle cx={schedX} cy={trackY} r={DOT_R} fill={SCHEDULED_VAR} data-end="scheduled" />
-			{/if}
-
-			<!-- Observed tick (the real world) — amber, a vertical rule + endpoint dot. -->
-			{#if obsX != null}
-				<line
-					x1={obsX}
-					y1={trackY - TICK_H / 2}
-					x2={obsX}
-					y2={trackY + TICK_H / 2}
-					stroke={OBSERVED_VAR}
-					stroke-width="2"
-				/>
-				<circle cx={obsX} cy={trackY} r={DOT_R} fill={OBSERVED_VAR} data-end="observed" />
-			{/if}
-		</svg>
+		{#if interactive}
+			<ChartTooltip
+				open={tip.open}
+				xPct={tip.xPct}
+				yPct={tip.yPct}
+				heading={tip.heading}
+				rows={tip.rows}
+				side={tip.side}
+				id={tip.id}
+			>
+				{@render chart()}
+			</ChartTooltip>
+		{:else}
+			{@render chart()}
+		{/if}
 
 		<!-- Endpoint legend: glyph + colour + value, so the two ticks are never colour-only. -->
 		<figcaption class="dv-dumbbell-legend">

@@ -28,6 +28,8 @@
 	import { cn, type WithElementRef } from '$lib/utils';
 	import type { HTMLAttributes } from 'svelte/elements';
 	import { hashJitter } from '$lib/utils/hash';
+	import ChartTooltip from './ChartTooltip.svelte';
+	import { createChartTooltip, type ChartTooltipRow } from './useChartTooltip.svelte';
 
 	/**
 	 * One category in the Cleveland dot-plot layout: a label, a single value on
@@ -41,6 +43,12 @@
 		readonly label: string;
 		/** The value on the shared axis (real units). `null` = honest absence. */
 		readonly value: number | null;
+		/**
+		 * Optional sample size (n) shown ONLY in the interactive tooltip count line.
+		 * Absent n simply omits the count. Never affects the dot position or the
+		 * direct label.
+		 */
+		readonly n?: number;
 		/** Dot fill — a `var(--dataviz-*)` token (never --primary). */
 		readonly colorVar: string;
 		/** Glyph paired with the fill (colour is never the sole channel). */
@@ -89,6 +97,13 @@
 		height?: number;
 		/** Dot radius (viewBox units). */
 		dotR?: number;
+		/**
+		 * Opt-in hover/focus interactivity: every dot (the categorical Cleveland dots
+		 * AND the 1-D dots) becomes a focus/pointer target that reveals a one-row
+		 * <ChartTooltip> with the row label, its value display, and its sample size n.
+		 * Default off so existing call sites stay byte-identical.
+		 */
+		interactive?: boolean;
 		class?: string;
 	}
 
@@ -107,6 +122,7 @@
 		width = 240,
 		height = 48,
 		dotR = 3,
+		interactive = false,
 		class: className,
 		ref = $bindable(null),
 		...restProps
@@ -137,12 +153,12 @@
 	const scalePct = (v: number): number => ((Math.min(dMax, Math.max(dMin, v)) - dMin) / span) * 100;
 
 	// ── 1-D dot cloud ──────────────────────────────────────────────────────────
-	type Dot = { x: number; y: number };
+	type Dot = { x: number; y: number; v: number };
 	const dots = $derived<Dot[]>(
 		values
 			.map((v, i) => ({ v, seed: ids?.[i] ?? String(i) }))
 			.filter((d) => d.v != null && !Number.isNaN(d.v))
-			.map((d) => ({ x: scaleX(d.v), y: midY + hashJitter(d.seed, jitterBand) })),
+			.map((d) => ({ x: scaleX(d.v), y: midY + hashJitter(d.seed, jitterBand), v: d.v })),
 	);
 
 	const summary = $derived(label ?? `${reals.length} values`);
@@ -184,7 +200,106 @@
 	function rowAria(r: StripPlotRow): string {
 		return r.value != null ? `${r.label}: ${r.display}` : `${r.label}: ${r.emptyLabel}`;
 	}
+
+	// ── Interactive tooltip ─────────────────────────────────────────────────────
+	// Opt-in: each dot (categorical AND 1-D) becomes a focus/pointer target that
+	// reveals a one-row tooltip with the label, the value display, and the sample
+	// size n (omitted when absent). Mirrors SeverityBar's controller usage.
+	const tip = createChartTooltip();
+
+	// A null/absent mark stays honest absence and never gets a tooltip.
+	function showRowTip(r: StripPlotRow): void {
+		if (!interactive || r.value == null) return;
+		const rows: ChartTooltipRow[] = [{ colorVar: r.colorVar, label: r.label, value: r.display }];
+		if (r.n != null) rows.push({ label: 'n', value: String(r.n) });
+		tip.show({ xPct: scalePct(r.value), yPct: 0, heading: r.label, rows, side: 'top' });
+	}
+
+	// 1-D dot: the value carries the readout; there is no per-observation n.
+	function dotAria(d: Dot): string {
+		return label ? `${label}: ${d.v}` : String(d.v);
+	}
+	function showDotTip(d: Dot): void {
+		if (!interactive) return;
+		tip.show({
+			xPct: (d.x / width) * 100,
+			yPct: 0,
+			heading: label,
+			rows: [{ colorVar, label: label ?? summary, value: String(d.v) }],
+			side: 'top',
+		});
+	}
+	function hideTip(): void {
+		tip.hide();
+	}
 </script>
+
+{#snippet catGrid()}
+	<!-- The plot grid: a label column + a SINGLE shared-axis plot column. Every dot
+	     AND the all-day mean rule are percent-positioned against the same relative
+	     plot column, so the axis is genuinely shared across rows. The per-row
+	     title + the dot's aria-label are the a11y source of truth. -->
+	<div class="dv-strip-plot__grid" role="presentation">
+		<div class="dv-strip-plot__labels">
+			{#each orderedRows as r (r.key)}
+				<div class="dv-strip-plot__label" title={rowAria(r)}>{r.label}</div>
+			{/each}
+		</div>
+		<div class="dv-strip-plot__plot">
+			{#each orderedRows as r (r.key)}
+				{@const labelled = extremeKeys.has(r.key)}
+				<div class="dv-strip-plot__track">
+					{#if r.value != null}
+						<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+						<!-- The dot is a non-interactive img mark; when `interactive` it also
+						     becomes a deliberate focus/pointer target so keyboard + hover users
+						     reveal the tooltip (label + value + n). The aria-label carries the
+						     full reading either way, so colour/position is never the sole channel. -->
+						<span
+							class="dv-strip-plot__dot"
+							class:dv-strip-plot__dot--interactive={interactive}
+							style="left: {scalePct(r.value)}%; --dot-fill: {r.colorVar};"
+							role="img"
+							aria-label={rowAria(r)}
+							title={rowAria(r)}
+							aria-describedby={interactive && tip.open ? tip.id : undefined}
+							tabindex={interactive ? 0 : undefined}
+							onpointerenter={interactive ? () => showRowTip(r) : undefined}
+							onpointerleave={interactive ? hideTip : undefined}
+							onfocus={interactive ? () => showRowTip(r) : undefined}
+							onblur={interactive ? hideTip : undefined}
+						>
+							<span class="dv-strip-plot__glyph" aria-hidden="true">{r.glyph}</span>
+						</span>
+						{#if labelled}
+							<span
+								class="dv-strip-plot__value"
+								class:dv-strip-plot__value--right={scalePct(r.value) < 50}
+								class:dv-strip-plot__value--left={scalePct(r.value) >= 50}
+								style="left: {scalePct(r.value)}%;"
+								aria-hidden="true"
+							>
+								{r.display}
+							</span>
+						{/if}
+					{:else}
+						<span class="dv-strip-plot__empty" title={rowAria(r)}>{r.emptyLabel}</span>
+					{/if}
+				</div>
+			{/each}
+			<!-- The all-day mean reference rule, spanning the plot column (NOT a data mark). -->
+			{#if hasMean}
+				<span
+					class="dv-strip-plot__mean"
+					style="left: {meanPct}%;"
+					role="img"
+					aria-label={meanLabel}
+					title={meanLabel}
+				></span>
+			{/if}
+		</div>
+	</div>
+{/snippet}
 
 {#if categorical}
 	<figure
@@ -195,74 +310,32 @@
 		aria-label={summary}
 		{...restProps}
 	>
-		<!-- The plot grid: a label column + a SINGLE shared-axis plot column. Every dot
-		     AND the all-day mean rule are percent-positioned against the same relative
-		     plot column, so the axis is genuinely shared across rows. The per-row
-		     title + the dot's aria-label are the a11y source of truth. -->
-		<div class="dv-strip-plot__grid" role="presentation">
-			<div class="dv-strip-plot__labels">
-				{#each orderedRows as r (r.key)}
-					<div class="dv-strip-plot__label" title={rowAria(r)}>{r.label}</div>
-				{/each}
-			</div>
-			<div class="dv-strip-plot__plot">
-				{#each orderedRows as r (r.key)}
-					{@const labelled = extremeKeys.has(r.key)}
-					<div class="dv-strip-plot__track">
-						{#if r.value != null}
-							<span
-								class="dv-strip-plot__dot"
-								style="left: {scalePct(r.value)}%; --dot-fill: {r.colorVar};"
-								role="img"
-								aria-label={rowAria(r)}
-								title={rowAria(r)}
-							>
-								<span class="dv-strip-plot__glyph" aria-hidden="true">{r.glyph}</span>
-							</span>
-							{#if labelled}
-								<span
-									class="dv-strip-plot__value"
-									class:dv-strip-plot__value--right={scalePct(r.value) < 50}
-									class:dv-strip-plot__value--left={scalePct(r.value) >= 50}
-									style="left: {scalePct(r.value)}%;"
-									aria-hidden="true"
-								>
-									{r.display}
-								</span>
-							{/if}
-						{:else}
-							<span class="dv-strip-plot__empty" title={rowAria(r)}>{r.emptyLabel}</span>
-						{/if}
-					</div>
-				{/each}
-				<!-- The all-day mean reference rule, spanning the plot column (NOT a data mark). -->
-				{#if hasMean}
-					<span
-						class="dv-strip-plot__mean"
-						style="left: {meanPct}%;"
-						role="img"
-						aria-label={meanLabel}
-						title={meanLabel}
-					></span>
-				{/if}
-			</div>
-		</div>
+		{#if interactive}
+			<ChartTooltip
+				open={tip.open}
+				xPct={tip.xPct}
+				yPct={tip.yPct}
+				heading={tip.heading}
+				rows={tip.rows}
+				side={tip.side}
+				id={tip.id}
+			>
+				{@render catGrid()}
+			</ChartTooltip>
+		{:else}
+			{@render catGrid()}
+		{/if}
 	</figure>
 {:else}
-	<figure
-		bind:this={ref}
-		class={cn('dv-strip-plot m-0', className)}
-		data-slot="strip-plot"
-		aria-label={summary}
-		{...restProps}
-	>
+	{#snippet dotCloud()}
 		<svg
 			viewBox="0 0 {width} {height}"
 			width="100%"
 			{height}
 			preserveAspectRatio="none"
 			role="img"
-			aria-hidden="true"
+			aria-hidden={!interactive}
+			focusable="false"
 		>
 			<!-- Reference band (e.g. the on-time window) — structural tint, not a data mark. -->
 			{#if bandX}
@@ -296,11 +369,58 @@
 					stroke-dasharray="3 3"
 				/>
 			{/if}
-			<!-- One dot per observation; x = the true value, deterministic y jitter. -->
+			<!-- One dot per observation; x = the true value, deterministic y jitter. When
+			     `interactive` each circle is also a focus/pointer target carrying its own
+			     aria-label, so the value is reachable by keyboard + hover, not by sight. -->
 			{#each dots as d, i (i)}
-				<circle cx={d.x} cy={d.y} r={dotR} fill={colorVar} opacity="0.8" />
+				{#if interactive}
+					<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+					<!-- the circle is a non-interactive img mark made a deliberate focus target
+					     so keyboard users can reveal the tooltip (mirrors Distribution). -->
+					<circle
+						cx={d.x}
+						cy={d.y}
+						r={dotR}
+						fill={colorVar}
+						opacity="0.8"
+						role="img"
+						aria-label={dotAria(d)}
+						aria-describedby={tip.open ? tip.id : undefined}
+						tabindex={0}
+						onpointerenter={() => showDotTip(d)}
+						onpointerleave={hideTip}
+						onfocus={() => showDotTip(d)}
+						onblur={hideTip}
+					/>
+				{:else}
+					<circle cx={d.x} cy={d.y} r={dotR} fill={colorVar} opacity="0.8" />
+				{/if}
 			{/each}
 		</svg>
+	{/snippet}
+
+	<figure
+		bind:this={ref}
+		class={cn('dv-strip-plot m-0', className)}
+		data-slot="strip-plot"
+		aria-label={summary}
+		{...restProps}
+	>
+		{#if interactive}
+			<ChartTooltip
+				open={tip.open}
+				xPct={tip.xPct}
+				yPct={tip.yPct}
+				heading={tip.heading}
+				rows={tip.rows}
+				side={tip.side}
+				id={tip.id}
+			>
+				{@render dotCloud()}
+			</ChartTooltip>
+		{:else}
+			{@render dotCloud()}
+		{/if}
 	</figure>
 {/if}
 
@@ -362,6 +482,16 @@
 		/* A thin ring keeps the dot legible where it overlaps the mean rule / guide. */
 		box-shadow: 0 0 0 1.5px var(--background);
 		transform: translate(-50%, -50%);
+	}
+	/* Interactive dot affordance: a pointer cursor + a visible focus ring so the
+	   tooltip target reads as reachable. --primary is interaction-only here (the
+	   focus ring), never a data fill — the dot fill stays the dataviz token. */
+	.dv-strip-plot__dot--interactive {
+		cursor: pointer;
+	}
+	.dv-strip-plot__dot--interactive:focus-visible {
+		outline: 2px solid var(--primary);
+		outline-offset: 2px;
 	}
 	.dv-strip-plot__glyph {
 		font-size: 0.6rem;

@@ -42,6 +42,8 @@
 	import type { AbsenceReasonKey } from '$lib/site/absence';
 	import { AbsentValue } from '$lib/components/edge';
 	import { severityVar } from './tokens';
+	import ChartTooltip from './ChartTooltip.svelte';
+	import { createChartTooltip, type ChartTooltipRow } from './useChartTooltip.svelte';
 
 	/** One weekday panel: its label, the across-weeks series, derived stats, the
 	 *  trusted severe-share, and the observation count. `points` may be empty (no
@@ -84,6 +86,14 @@
 		unit?: string;
 		/** Absence reason for an empty weekday's chip + the whole-figure empty. */
 		absentReason?: AbsenceReasonKey;
+		/**
+		 * Opt-in hover/focus interactivity: each non-empty weekday panel becomes a
+		 * focus/pointer target that reveals a one-panel <ChartTooltip> (full weekday
+		 * label + mean delay + severe share when present + the observation count).
+		 * Default off so existing call sites stay byte-identical. An empty weekday
+		 * keeps its honest no-data chip and gets NO target / tooltip.
+		 */
+		interactive?: boolean;
 		/** Drawn panel height (viewBox units). */
 		panelHeight?: number;
 		class?: string;
@@ -101,6 +111,7 @@
 		steepestLabel,
 		unit = '',
 		absentReason = 'no-observations',
+		interactive = false,
 		panelHeight = 72,
 		class: className,
 		ref = $bindable(null),
@@ -242,7 +253,198 @@
 		const mid = (lo + hi) / 2;
 		return [hi, mid, lo].map((v) => ({ v, y: yOf(v), text: `${fmt1(v)}${unit}` }));
 	});
+
+	// ── opt-in hover/focus (only wired when `interactive`) ───────────────────────
+	// ONE tooltip controller drives every panel; the active panel's view supplies
+	// its content. An empty weekday never becomes a target, so it never opens.
+	const tip = createChartTooltip();
+
+	// The accessible label spoken for a non-empty panel's focus target: the full
+	// weekday, the mean, the severe share when present, and the observation count,
+	// so colour/position is never the sole channel (a11y parity with SeverityBar).
+	function panelAriaLabel(v: PanelView): string {
+		const parts: string[] = [v.panel.fullLabel];
+		if (v.mean != null) parts.push(meanLabel(`${fmt1(v.mean)}${unit}`));
+		if (v.panel.severePct != null) parts.push(severeLabel(`${fmt1(v.panel.severePct)}%`));
+		if (v.panel.observationCount != null) parts.push(obsLabel(v.panel.observationCount));
+		return parts.join(', ');
+	}
+
+	// The tooltip rows for a panel: the mean on the calm amber delay token, the
+	// severe share on the per-panel severity scale (only when present), then the
+	// quiet observation count (no swatch). NEVER --primary as a data swatch.
+	function panelRows(v: PanelView): ChartTooltipRow[] {
+		const rows: ChartTooltipRow[] = [];
+		if (v.mean != null) {
+			rows.push({ colorVar: DELAY_VAR, label: meanLabel(''), value: `${fmt1(v.mean)}${unit}` });
+		}
+		if (v.panel.severePct != null) {
+			rows.push({
+				colorVar: severityVar(v.panel.severity),
+				label: severeLabel(''),
+				value: `${fmt1(v.panel.severePct)}%`,
+			});
+		}
+		if (v.panel.observationCount != null) {
+			rows.push({ label: obsLabel(v.panel.observationCount), value: '' });
+		}
+		return rows;
+	}
+
+	function showTip(v: PanelView) {
+		if (!interactive || v.empty) return;
+		tip.show({
+			xPct: 50,
+			yPct: 0,
+			heading: v.panel.fullLabel,
+			rows: panelRows(v),
+			side: 'top',
+		});
+	}
+	function hideTip() {
+		tip.hide();
+	}
 </script>
+
+{#snippet panelsGrid()}
+	<!-- The seven Mon→Sun panels, 1px channel gaps between them. -->
+	<div class="dv-cycleplot-panels">
+		{#each views as v, i (v.panel.label)}
+			<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+			<!-- A non-empty panel is a deliberate focus/pointer target when `interactive`
+			     so keyboard + hover users reveal the shared tooltip; an empty weekday is
+			     never a target (no tooltip on a fabricated absence). -->
+			<div
+				class="dv-cycleplot-panel"
+				class:dv-cycleplot-panel--steepest={i === steepestIdx}
+				class:dv-cycleplot-panel--interactive={interactive && !v.empty}
+				data-slot="cycle-plot-panel"
+				data-day={v.panel.label}
+				role={interactive && !v.empty ? 'img' : undefined}
+				aria-label={interactive && !v.empty ? panelAriaLabel(v) : undefined}
+				aria-describedby={interactive && !v.empty && tip.open ? tip.id : undefined}
+				tabindex={interactive && !v.empty ? 0 : undefined}
+				onpointerenter={interactive && !v.empty ? () => showTip(v) : undefined}
+				onpointerleave={interactive && !v.empty ? hideTip : undefined}
+				onfocus={interactive && !v.empty ? () => showTip(v) : undefined}
+				onblur={interactive && !v.empty ? hideTip : undefined}
+			>
+				{#if v.empty}
+					<!-- Honest absence for one weekday: say WHY, never a fabricated 0 mark. -->
+					<div class="dv-cycleplot-empty">
+						<AbsentValue variant="inline" reason={absentReason} {locale} />
+					</div>
+				{:else}
+					<svg
+						class="dv-cycleplot-svg"
+						viewBox="0 0 {PANEL_W} {panelHeight}"
+						width="100%"
+						height={panelHeight}
+						preserveAspectRatio="none"
+						role="presentation"
+						aria-hidden="true"
+					>
+						<!-- Neutral panel baseline (NOT a data mark). -->
+						<line
+							x1={PAD}
+							y1={panelHeight - PAD}
+							x2={PANEL_W - PAD}
+							y2={panelHeight - PAD}
+							stroke="var(--border)"
+							stroke-width="0.75"
+						/>
+
+						{#if mode === 'cycle'}
+							<!-- The across-weeks series (amber) — null breaks the line. -->
+							{#if v.seg}
+								<path
+									d={v.seg}
+									fill="none"
+									stroke={DELAY_VAR}
+									stroke-width="1.5"
+									stroke-linecap="round"
+									stroke-linejoin="round"
+									opacity="0.85"
+								/>
+							{/if}
+							{#each v.dots as dot, di (di)}
+								<circle cx={dot.x} cy={dot.y} r={DOT_R} fill={DELAY_VAR} />
+							{/each}
+							<!-- The DEFINING per-panel horizontal MEAN line (dashed, amber). -->
+							{#if v.meanY != null}
+								<line
+									x1={PAD}
+									y1={v.meanY}
+									x2={PANEL_W - PAD}
+									y2={v.meanY}
+									stroke={DELAY_VAR}
+									stroke-width="1.25"
+									stroke-dasharray="3 2"
+									data-slot="cycle-plot-mean"
+								/>
+							{/if}
+						{:else}
+							<!-- Bars mode: ONE magnitude bar per weekday on the SAME fixed domain,
+									     coloured on the severity scale (severity prop). The bar runs from the
+									     panel baseline up to the single value's y — no fabricated series. -->
+							{#if v.barY != null}
+								<rect
+									x={PAD}
+									y={v.barY}
+									width={PANEL_W - PAD * 2}
+									height={Math.max(0, panelHeight - PAD - v.barY)}
+									rx="1.5"
+									fill={severityVar(v.panel.severity)}
+									data-slot="cycle-plot-bar"
+								/>
+							{/if}
+						{/if}
+					</svg>
+				{/if}
+
+				<!-- Direct label + readouts under each panel. The mean value carries the
+						     metric (yellow/accent) voice; the severe + n= are quiet. -->
+				<div class="dv-cycleplot-foot">
+					<span class="dv-cycleplot-day">{v.panel.label}</span>
+					{#if v.mean != null}
+						<span class="dv-cycleplot-mean" data-slot="cycle-plot-mean-readout">
+							<span class="dv-cycleplot-mean-glyph" style="color: {DELAY_VAR};" aria-hidden="true"
+								>{MEAN_GLYPH}</span
+							>
+							{meanLabel(`${fmt1(v.mean)}${unit}`)}
+						</span>
+					{/if}
+					{#if v.panel.severePct != null}
+						<!-- Severe second mark: glyph + severity swatch + the share (never colour-only). -->
+						<span class="dv-cycleplot-severe" data-slot="cycle-plot-severe">
+							<span
+								class="dv-cycleplot-severe-glyph"
+								style="color: {severityVar(v.panel.severity)};"
+								aria-hidden="true">{SEVERE_GLYPH}</span
+							>
+							<span class="dv-cycleplot-severe-track" aria-hidden="true">
+								{#if v.severeBarW != null}
+									<span
+										class="dv-cycleplot-severe-fill"
+										style="width: {v.severeBarW}px; background: {severityVar(v.panel.severity)};"
+									></span>
+								{/if}
+							</span>
+							<span class="dv-cycleplot-severe-val"
+								>{severeLabel(`${fmt1(v.panel.severePct)}%`)}</span
+							>
+						</span>
+					{/if}
+					{#if v.panel.observationCount != null}
+						<span class="dv-cycleplot-n" data-slot="cycle-plot-n"
+							>{obsLabel(v.panel.observationCount)}</span
+						>
+					{/if}
+				</div>
+			</div>
+		{/each}
+	</div>
+{/snippet}
 
 {#if hasAny}
 	<figure
@@ -260,134 +462,24 @@
 				{/each}
 			</div>
 
-			<!-- The seven Mon→Sun panels, 1px channel gaps between them. -->
-			<div class="dv-cycleplot-panels">
-				{#each views as v, i (v.panel.label)}
-					<div
-						class="dv-cycleplot-panel"
-						class:dv-cycleplot-panel--steepest={i === steepestIdx}
-						data-slot="cycle-plot-panel"
-						data-day={v.panel.label}
-					>
-						{#if v.empty}
-							<!-- Honest absence for one weekday: say WHY, never a fabricated 0 mark. -->
-							<div class="dv-cycleplot-empty">
-								<AbsentValue variant="inline" reason={absentReason} {locale} />
-							</div>
-						{:else}
-							<svg
-								class="dv-cycleplot-svg"
-								viewBox="0 0 {PANEL_W} {panelHeight}"
-								width="100%"
-								height={panelHeight}
-								preserveAspectRatio="none"
-								role="presentation"
-								aria-hidden="true"
-							>
-								<!-- Neutral panel baseline (NOT a data mark). -->
-								<line
-									x1={PAD}
-									y1={panelHeight - PAD}
-									x2={PANEL_W - PAD}
-									y2={panelHeight - PAD}
-									stroke="var(--border)"
-									stroke-width="0.75"
-								/>
-
-								{#if mode === 'cycle'}
-									<!-- The across-weeks series (amber) — null breaks the line. -->
-									{#if v.seg}
-										<path
-											d={v.seg}
-											fill="none"
-											stroke={DELAY_VAR}
-											stroke-width="1.5"
-											stroke-linecap="round"
-											stroke-linejoin="round"
-											opacity="0.85"
-										/>
-									{/if}
-									{#each v.dots as dot, di (di)}
-										<circle cx={dot.x} cy={dot.y} r={DOT_R} fill={DELAY_VAR} />
-									{/each}
-									<!-- The DEFINING per-panel horizontal MEAN line (dashed, amber). -->
-									{#if v.meanY != null}
-										<line
-											x1={PAD}
-											y1={v.meanY}
-											x2={PANEL_W - PAD}
-											y2={v.meanY}
-											stroke={DELAY_VAR}
-											stroke-width="1.25"
-											stroke-dasharray="3 2"
-											data-slot="cycle-plot-mean"
-										/>
-									{/if}
-								{:else}
-									<!-- Bars mode: ONE magnitude bar per weekday on the SAME fixed domain,
-									     coloured on the severity scale (severity prop). The bar runs from the
-									     panel baseline up to the single value's y — no fabricated series. -->
-									{#if v.barY != null}
-										<rect
-											x={PAD}
-											y={v.barY}
-											width={PANEL_W - PAD * 2}
-											height={Math.max(0, panelHeight - PAD - v.barY)}
-											rx="1.5"
-											fill={severityVar(v.panel.severity)}
-											data-slot="cycle-plot-bar"
-										/>
-									{/if}
-								{/if}
-							</svg>
-						{/if}
-
-						<!-- Direct label + readouts under each panel. The mean value carries the
-						     metric (yellow/accent) voice; the severe + n= are quiet. -->
-						<div class="dv-cycleplot-foot">
-							<span class="dv-cycleplot-day">{v.panel.label}</span>
-							{#if v.mean != null}
-								<span class="dv-cycleplot-mean" data-slot="cycle-plot-mean-readout">
-									<span
-										class="dv-cycleplot-mean-glyph"
-										style="color: {DELAY_VAR};"
-										aria-hidden="true">{MEAN_GLYPH}</span
-									>
-									{meanLabel(`${fmt1(v.mean)}${unit}`)}
-								</span>
-							{/if}
-							{#if v.panel.severePct != null}
-								<!-- Severe second mark: glyph + severity swatch + the share (never colour-only). -->
-								<span class="dv-cycleplot-severe" data-slot="cycle-plot-severe">
-									<span
-										class="dv-cycleplot-severe-glyph"
-										style="color: {severityVar(v.panel.severity)};"
-										aria-hidden="true">{SEVERE_GLYPH}</span
-									>
-									<span class="dv-cycleplot-severe-track" aria-hidden="true">
-										{#if v.severeBarW != null}
-											<span
-												class="dv-cycleplot-severe-fill"
-												style="width: {v.severeBarW}px; background: {severityVar(
-													v.panel.severity,
-												)};"
-											></span>
-										{/if}
-									</span>
-									<span class="dv-cycleplot-severe-val"
-										>{severeLabel(`${fmt1(v.panel.severePct)}%`)}</span
-									>
-								</span>
-							{/if}
-							{#if v.panel.observationCount != null}
-								<span class="dv-cycleplot-n" data-slot="cycle-plot-n"
-									>{obsLabel(v.panel.observationCount)}</span
-								>
-							{/if}
-						</div>
-					</div>
-				{/each}
-			</div>
+			{#if interactive}
+				<!-- One shared <ChartTooltip> hosts the relative wrapper; the active panel
+				     supplies its content. The grid is the tooltip's children. -->
+				<ChartTooltip
+					open={tip.open}
+					xPct={tip.xPct}
+					yPct={tip.yPct}
+					heading={tip.heading}
+					rows={tip.rows}
+					side={tip.side}
+					id={tip.id}
+					class="dv-cycleplot-tipwrap"
+				>
+					{@render panelsGrid()}
+				</ChartTooltip>
+			{:else}
+				{@render panelsGrid()}
+			{/if}
 		</div>
 
 		<!-- Steepest-trend annotation (cycle mode only) — calls out the largest drift. -->
@@ -430,6 +522,12 @@
 		color: var(--muted-foreground);
 		white-space: nowrap;
 	}
+	/* When interactive, the <ChartTooltip> relative wrapper takes the grid's flex
+	   slot in the frame so the panels still fill the row (zero visual diff). */
+	.dv-cycleplot-tipwrap {
+		flex: 1 1 auto;
+		min-width: 0;
+	}
 	/* The seven panels — 1px channel gaps between them. */
 	.dv-cycleplot-panels {
 		flex: 1 1 auto;
@@ -449,6 +547,16 @@
 		outline: 1px solid var(--border-strong, var(--border));
 		outline-offset: 1px;
 		border-radius: var(--radius-sm);
+	}
+	/* Interactive panels are focus/pointer targets; the keyboard focus ring rides
+	   --primary (interaction-only, never a data fill). */
+	.dv-cycleplot-panel--interactive {
+		cursor: pointer;
+		border-radius: var(--radius-sm);
+	}
+	.dv-cycleplot-panel--interactive:focus-visible {
+		outline: 2px solid var(--primary);
+		outline-offset: 2px;
 	}
 	.dv-cycleplot-svg {
 		display: block;

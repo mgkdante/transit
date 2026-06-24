@@ -431,6 +431,7 @@
 						noDataLabel={valueNoData}
 						{locale}
 						absentReason="no-observations"
+						interactive
 					/>
 
 					<!-- P8: dedicated magnitude bars for the two regularity readings — CoV on
@@ -568,6 +569,7 @@
 					ariaLabel={spanCopy.ariaLabel}
 					{locale}
 					absentReason="no-observations"
+					interactive
 				/>
 				<p class="span-caption" data-slot="service-span-caption">{spanCopy.caption}</p>
 

@@ -721,6 +721,7 @@
 							mean={shiftSevereMean}
 							meanLabel={shiftMeanLabel}
 							label={copy.peak.strip.ariaLabel}
+							interactive
 						/>
 						<p class="cluster-caption" data-slot="shift-strip-axis">
 							{copy.peak.dayOfWeekSevere}{#if shiftMeanLabel}

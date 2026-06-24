@@ -99,4 +99,55 @@ describe('ServiceSpanTimeline — first→last service-span timeline on a fixed 
 		expect(absent).not.toBeNull();
 		expect(absent?.getAttribute('data-tone')).toBe('unknown');
 	});
+
+	it('ALWAYS labels the fixed 24h frame: 00h / 06h / 12h / 18h / 24h hour ticks (interactive off)', () => {
+		const { container } = render(ServiceSpanTimeline, { props: { ...base } });
+		const hours = Array.from(container.querySelectorAll('.dv-span-hour')).map(
+			(el) => el.textContent,
+		);
+		expect(hours).toEqual(['00h', '06h', '12h', '18h', '24h']);
+	});
+
+	it('interactive OFF (default): no focusable span-bar / delay hover targets exist', () => {
+		const { container } = render(ServiceSpanTimeline, { props: { ...base } });
+		// No transparent span-bar hit target.
+		expect(container.querySelector('[data-slot="span-bar-hit"]')).toBeNull();
+		// The delay pips are not focus targets.
+		const first = delayEl(container, 'first');
+		expect(first.getAttribute('tabindex')).toBeNull();
+		expect(first.getAttribute('role')).toBeNull();
+	});
+
+	it('interactive ON: the span bar is a keyboard-reachable, aria-labelled hover target', () => {
+		const { container } = render(ServiceSpanTimeline, {
+			props: { ...base, interactive: true },
+		});
+		const hit = container.querySelector('[data-slot="span-bar-hit"]');
+		expect(hit).not.toBeNull();
+		expect(hit?.getAttribute('tabindex')).toBe('0');
+		// Carries the whole-figure summary (both clocks) so it is not colour/position-only.
+		expect(hit?.getAttribute('aria-label')).toContain('06:05');
+		expect(hit?.getAttribute('aria-label')).toContain('21:50');
+	});
+
+	it('interactive ON: each delay pip is focusable and keeps its signed aria-label', () => {
+		const { container } = render(ServiceSpanTimeline, {
+			props: { ...base, interactive: true },
+		});
+		const first = delayEl(container, 'first');
+		const last = delayEl(container, 'last');
+		expect(first.getAttribute('tabindex')).toBe('0');
+		expect(first.getAttribute('aria-label')).toBe('First-trip delay: -1.2 min');
+		expect(last.getAttribute('tabindex')).toBe('0');
+		expect(last.getAttribute('aria-label')).toBe('Last-trip delay: +3.4 min');
+	});
+
+	it('interactive ON: an absent delay pip is NOT a focus target (honest, no tooltip on no-data)', () => {
+		const { container } = render(ServiceSpanTimeline, {
+			props: { ...base, interactive: true, firstDelayMin: null },
+		});
+		const first = delayEl(container, 'first');
+		expect(first.getAttribute('tabindex')).toBeNull();
+		expect(first.getAttribute('aria-label')).toBe('First-trip delay: no data');
+	});
 });

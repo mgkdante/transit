@@ -257,6 +257,7 @@
 						steepestLabel={band.cycle.steepest}
 						unit=" min"
 						absentReason="no-observations"
+						interactive
 					/>
 					<p class="habits-scale-caption" data-slot="habits-cycle-caption">
 						{cycleHasSeries ? band.cycle.captionSeries : band.cycle.captionSingle}
