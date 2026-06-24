@@ -64,21 +64,6 @@
 	/** Format a rate as a percentage, else null (the muted no-data label). */
 	const pct = (v: number | null): string | null => fmtPct(v, { rounding: 'fixed1' });
 
-	/**
-	 * Most-recent (tail-scan) non-null value of `pick`. The contract arrays run
-	 * oldest → newest, so the headline is the last row that actually carries one.
-	 */
-	function mostRecent<T>(
-		rows: readonly T[],
-		pick: (row: T) => number | null | undefined,
-	): number | null {
-		for (let i = rows.length - 1; i >= 0; i--) {
-			const v = pick(rows[i]);
-			if (v != null) return v;
-		}
-		return null;
-	}
-
 	// S7: a flat sparkline of a ~0% rate conveys nothing (the operator's complaint).
 	// Replace it with an honest COMPLETENESS read — the canceled/skipped SHARE over the
 	// window on a FIXED absolute domain (0% reads as an empty bar = good news), PLUS the
@@ -87,11 +72,11 @@
 	const SKIPPED_RATE_DOMAIN = [0, 10] as const; // skipped stops rarely exceed ~10%
 	const RATE_SEVERITY: SeverityCode = 'watch';
 
-	// Headline = the most-recent closed-day rate (the contract arrays run oldest→newest).
-	const cancellationRatePct = $derived(
-		mostRecent(vm.cancellations, (c) => c.cancellation_rate_pct),
-	);
-	const skippedStopRatePct = $derived(mostRecent(vm.skippedStops, (s) => s.skipped_stop_rate_pct));
+	// Headline rate = the grain-windowed rate the mapper already computed (the SAME number
+	// the snapshot strip shows), so picking Today / week / month moves this tile in lockstep
+	// with the strip — never the stuck latest-day rate that used to contradict it.
+	const cancellationRatePct = $derived(vm.cancellationRatePct);
+	const skippedStopRatePct = $derived(vm.skippedStopRatePct);
 
 	/** Sum a count pair over the window → {part, total, sharePct}; null when none observed. */
 	function completeness<T>(

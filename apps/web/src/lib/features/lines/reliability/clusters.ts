@@ -161,6 +161,13 @@ export interface ServiceDeliveredVM {
 	readonly cancellations: CancellationPeriod[];
 	/** Per-day skipped-stop history (ramp-in), in contract order. */
 	readonly skippedStops: SkippedStopPeriod[];
+	/**
+	 * The grain-windowed cancellation / skipped rate (MEAN over the picked window, with a
+	 * most-recent fallback when the latest day lags) — the SAME values the snapshot strip
+	 * shows, so the §03 headline rate tile and the strip never disagree across grains.
+	 */
+	readonly cancellationRatePct: number | null;
+	readonly skippedStopRatePct: number | null;
 	/** True for the cancellations + skipped-stop slices (no historical backfill). */
 	readonly isRampIn: boolean;
 	readonly isEmpty: boolean;
@@ -599,8 +606,25 @@ export function toReliabilityClusters(
 	   date range is active the strip AGGREGATES the in-range days: on-time % + avg
 	   delay are the MEAN across them; percentiles are NOT averageable, so a multi-
 	   day range nulls them while a single in-range day keeps that day's exact ones. */
-	const cancellationRatePct = mostRecentRate(allCancellations, (c) => c.cancellation_rate_pct);
-	const skippedStopRatePct = mostRecentRate(allSkipped, (s) => s.skipped_stop_rate_pct);
+	// MATRIX: the strip's cancellation/skipped rate follows the picked window like §03's
+	// completeness does (Today = the day's rate, week = the 7-day mean, month = the 30-day
+	// mean, range = in-range mean) via the SAME windowByGrain helper — so the strip no
+	// longer contradicts the §03 section below it. These are RAMP-IN metrics whose latest
+	// day often lags (not yet computed); when the picked window carries no rate, fall back
+	// to the most-recent KNOWN rate so the tile shows the last real reading, never a false
+	// blank. (Was: unconditionally most-recent over the full archive — ignored the grain.)
+	const cancellationRatePct =
+		meanOf(
+			windowByGrain(allCancellations, grain, selectedDate, dateRange),
+			(c) => c.cancellation_rate_pct,
+			1,
+		) ?? mostRecentRate(allCancellations, (c) => c.cancellation_rate_pct);
+	const skippedStopRatePct =
+		meanOf(
+			windowByGrain(allSkipped, grain, selectedDate, dateRange),
+			(s) => s.skipped_stop_rate_pct,
+			1,
+		) ?? mostRecentRate(allSkipped, (s) => s.skipped_stop_rate_pct);
 	const headwayRegularityCov = selectHeadwayCov(allHeadway);
 
 	let otpPct: number | null;
@@ -727,6 +751,8 @@ export function toReliabilityClusters(
 		serviceSpans,
 		cancellations,
 		skippedStops,
+		cancellationRatePct,
+		skippedStopRatePct,
 		isRampIn: true,
 		isEmpty: serviceSpans.length === 0 && cancellations.length === 0 && skippedStops.length === 0,
 	};

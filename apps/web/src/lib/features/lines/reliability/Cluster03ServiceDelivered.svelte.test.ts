@@ -56,6 +56,9 @@ const populated: ServiceDeliveredVM = {
 	serviceSpans: [],
 	cancellations,
 	skippedStops,
+	// The mapper supplies the grain-windowed rate (matching the snapshot strip); §03 renders it.
+	cancellationRatePct: 2.4,
+	skippedStopRatePct: 1.1,
 	isRampIn: true,
 	isEmpty: false,
 };
@@ -64,18 +67,20 @@ const empty: ServiceDeliveredVM = {
 	serviceSpans: [],
 	cancellations: [],
 	skippedStops: [],
+	cancellationRatePct: null,
+	skippedStopRatePct: null,
 	isRampIn: true,
 	isEmpty: true,
 };
 
 describe('Cluster03ServiceDelivered — populated VM', () => {
-	it('renders the most-recent ramp-in rates (skipping a null-rate tail row)', () => {
+	it('renders the grain-windowed ramp-in rates the mapper supplies (matches the strip)', () => {
 		const { getByText } = render(Cluster03ServiceDelivered, {
 			props: { vm: populated, locale: 'en', copy },
 		});
-		// cancellations: 06-18 had no rate → most-recent is 06-17's 2.4%.
+		// §03 renders vm.cancellationRatePct / vm.skippedStopRatePct verbatim — the same
+		// windowed values the snapshot strip shows, so the two tiles never disagree.
 		expect(getByText('2.4%')).toBeInTheDocument();
-		// skipped stops: most-recent is 1.1%.
 		expect(getByText('1.1%')).toBeInTheDocument();
 	});
 
@@ -165,6 +170,8 @@ describe('Cluster03ServiceDelivered — per-metric no-data branch', () => {
 			// cancellations carry totals → completeness bar; skipped rows carry NO update-count total.
 			cancellations,
 			skippedStops: [{ date: '2026-06-18', skipped_stop_count: 5 }],
+			cancellationRatePct: 2.4,
+			skippedStopRatePct: null,
 			isRampIn: true,
 			isEmpty: false,
 		};
@@ -223,6 +230,8 @@ describe('Cluster03ServiceDelivered — metric explainer (i)', () => {
 				},
 			],
 			skippedStops: [],
+			cancellationRatePct: 2.5,
+			skippedStopRatePct: null,
 			isRampIn: true,
 			isEmpty: false,
 		};
