@@ -141,15 +141,15 @@ describe('Cluster04Crowding — delay by crowding (G1)', () => {
 			props: { vm: withDelay, locale: 'en', copy },
 		});
 		const sub = container.querySelector('[data-slot="delay-by-crowding"]') as HTMLElement;
-		// `full` is present with a null delay → its cell reads the no-data message.
+		// `full` is present with a null delay → its cell renders the styled honest-absence.
 		const fullCell = sub.querySelector('[data-band="full"] [data-empty="true"]');
-		expect(fullCell?.textContent?.trim()).toBe(copy.strip.noData);
-		// `empty` + `few_seats` are absent from the contract → also no-data, not "·".
-		expect(sub.querySelector('[data-band="empty"] [data-empty="true"]')?.textContent?.trim()).toBe(
-			copy.strip.noData,
-		);
-		// No middot leak anywhere in the sub-block.
-		expect(sub.textContent).not.toContain('·');
+		expect(fullCell?.querySelector('[data-slot="absent-value"]')).not.toBeNull();
+		// `empty` + `few_seats` are absent from the contract → also the styled absence chip.
+		expect(
+			sub.querySelector('[data-band="empty"] [data-empty="true"] [data-slot="absent-value"]'),
+		).not.toBeNull();
+		// Every absent band carries the reason-typed chip, never a fabricated 0.
+		expect(sub.querySelectorAll('[data-slot="absent-value"]').length).toBeGreaterThanOrEqual(2);
 	});
 
 	it('shows ONE honest no-data note when there is no delay-by-crowding data at all', () => {

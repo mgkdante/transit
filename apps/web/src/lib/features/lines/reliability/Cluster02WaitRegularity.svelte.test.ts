@@ -162,15 +162,14 @@ describe('Cluster02WaitRegularity', () => {
 		expect(screen.getByText('Evening')).toBeInTheDocument();
 		// FR cluster overline (canonical voice).
 		expect(screen.getByText(reliabilityCopy.fr.clusters.waitRegularity)).toBeInTheDocument();
-		// The absent scheduled/observed/excess tiles read the explicit muted "no
-		// data" label — never a bare "·", never a fabricated 0.
-		expect(screen.getAllByText(reliabilityCopy.fr.strip.noData).length).toBeGreaterThan(0);
-		// Those empty tiles ride the muted .metric-empty voice (not the amber value).
-		expect(container.querySelectorAll('[data-slot="metric-empty"]').length).toBeGreaterThan(0);
+		// The absent scheduled/observed/excess tiles render the styled honest-absence
+		// (AbsentValue chip), never a bare "·", never a fabricated 0.
+		expect(container.querySelectorAll('[data-slot="absent-value"]').length).toBeGreaterThan(0);
 		// Honesty: no metric tile falls back to a bare middot value.
 		expect(screen.queryByText('·', { selector: '.metric-value' })).not.toBeInTheDocument();
-		// Service-span sub-block is omitted (no rows).
-		expect(screen.queryByText(reliabilityCopy.fr.strip.noDataNote)).not.toBeInTheDocument();
+		// Service-span sub-block is omitted (no rows) — assert via its own data-sub
+		// marker, not the no-data text (which now also reads on the AbsentValue chip).
+		expect(container.querySelector('[data-sub="service-span"]')).toBeNull();
 	});
 });
 

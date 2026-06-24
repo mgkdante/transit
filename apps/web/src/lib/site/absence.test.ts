@@ -35,6 +35,7 @@ const ALL_KEYS: AbsenceReasonKey[] = [
 	'no-prediction',
 	'end-of-route',
 	'inferred',
+	'no-observations',
 ];
 
 // Provider literals copy must NEVER contain (provider-agnostic invariant).
