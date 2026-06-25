@@ -1075,16 +1075,17 @@ def build_route_reliability(
             )
         )
 
-    # --- per-direction + weekday/weekend headway (additive HeadwayPeriod rows;
-    #     direction encoded in the free shift string). The live strip filters out
-    #     '_dir' shifts; the 9.6 surface renders them grouped.
+    # --- per-direction + weekday/weekend headway (additive HeadwayPeriod rows).
+    #     S7-B Pattern A: the shift is the BARE time-of-day token; direction + day-type
+    #     are typed fields (no more {shift}_dir{N}_weekend packed string). The live
+    #     strip filters direction_id-bearing rows out; the surface renders them grouped.
     for r in conn.execute(_ROUTE_HEADWAY_DIRECTION_SQL, params).mappings():
         dir_obs = r["observed_headway_min"]
-        kind = str(r["service_day_kind"])
-        suffix = "" if kind == "weekday" else "_weekend"
         headway.append(
             HeadwayPeriod(
-                shift=f'{r["shift"]}_dir{int(r["direction_id"])}{suffix}',
+                shift=str(r["shift"]),
+                direction_id=int(r["direction_id"]),
+                day_type=str(r["service_day_kind"]),
                 scheduled_min=None,
                 observed_min=round(float(dir_obs), 1) if dir_obs is not None else None,
                 excess_wait_min=None,

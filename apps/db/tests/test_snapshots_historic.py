@@ -374,6 +374,7 @@ def test_build_network_trend_fact_only_date() -> None:
 
 
 def _route_reliability_dispatch(*, daily=None, weekly=None, monthly=None, headway=None,
+                                headway_direction=None,
                                 habit=None, weak=None, names=None, schedule=None,
                                 route_names=None, dow=None, crowding=None, crosstab=None,
                                 occ_dow=None, occ_grain=None):
@@ -414,7 +415,10 @@ def _route_reliability_dispatch(*, daily=None, weekly=None, monthly=None, headwa
         # weekly / monthly
         ("route_reliability_weekly", weekly or []),
         ("route_reliability_monthly", monthly or []),
-        # observed headway
+        # per-direction + weekday/weekend headway — MUST precede the broader
+        # "route_headway_by_shift" needle (it contains "route_headway_by_direction_shift").
+        ("route_headway_by_direction_shift", headway_direction or []),
+        # observed headway (busiest direction)
         ("route_headway_by_shift", headway or []),
         # habits
         ("route_habit_score", habit or []),
@@ -489,6 +493,32 @@ def test_build_route_reliability_excess_clamped_at_zero() -> None:
     assert am.scheduled_min == 10.0
     assert am.observed_min == 6.0
     assert am.excess_wait_min == 0.0  # max(0, 6-10)
+
+
+def test_build_route_reliability_directional_headway_is_typed_not_encoded() -> None:
+    # S7-B Pattern A: directional headway rows carry a BARE shift token + typed
+    # direction_id / day_type (no {shift}_dir{N}_weekend packed string). Finding H
+    # value-preservation: the base token stays in the canonical shift vocabulary and
+    # every direction + day-type the source carried survives as a typed field.
+    conn = FakeConn(
+        _route_reliability_dispatch(
+            headway_direction=[
+                {"shift": "am_peak", "direction_id": 0, "service_day_kind": "weekday",
+                 "observed_headway_min": 7.9},
+                {"shift": "am_peak", "direction_id": 1, "service_day_kind": "weekend",
+                 "observed_headway_min": 9.1},
+            ],
+        )
+    )
+    out = build_route_reliability(conn, route_id="51", generated_utc="t")
+    directional = [h for h in out.headway if h.direction_id is not None]
+    assert len(directional) == 2
+    for h in directional:
+        assert h.shift in {"am_peak", "midday", "pm_peak", "evening", "night"}
+        assert "_dir" not in h.shift and "_weekend" not in h.shift
+    by_key = {(h.direction_id, h.day_type): h for h in directional}
+    assert by_key[(0, "weekday")].shift == "am_peak" and by_key[(0, "weekday")].observed_min == 7.9
+    assert by_key[(1, "weekend")].shift == "am_peak" and by_key[(1, "weekend")].observed_min == 9.1
 
 
 def test_build_route_reliability_habits_matrix_is_7x24() -> None:

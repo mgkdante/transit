@@ -455,7 +455,15 @@ class CancellationPeriod(BaseModel):
     total_trip_days: int | None = None
 
 class HeadwayPeriod(BaseModel):
+    # shift is the BARE time-of-day token (am_peak|midday|pm_peak|evening|night) —
+    # the S7-B Pattern-A cleanup of the old packed `{shift}_dir{N}_weekend` string.
     shift: str
+    # Per-direction / weekday-weekend sibling rows carry these typed fields instead
+    # of encoding them in `shift`: direction_id is the GTFS direction (0/1, None on
+    # the busiest-direction headline rows); day_type is weekday|weekend (None on the
+    # headline rows). Both default None so already-published snapshots still validate.
+    direction_id: int | None = None
+    day_type: str | None = None
     scheduled_min: float | None = None
     observed_min: float | None = None
     excess_wait_min: float | None = None

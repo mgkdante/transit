@@ -97,9 +97,9 @@ describe('Cluster02WaitRegularity', () => {
 					cov: 0.42,
 					bunched_pct: 18,
 				},
-				// per-direction variant: only observed_min present.
-				{ shift: 'am_peak_dir0', observed_min: 7.9 },
-				{ shift: 'am_peak_dir1', observed_min: 9.1 },
+				// per-direction variant (S7-B typed fields): only observed_min present.
+				{ shift: 'am_peak', direction_id: 0, day_type: 'weekday', observed_min: 7.9 },
+				{ shift: 'am_peak', direction_id: 1, day_type: 'weekend', observed_min: 9.1 },
 			],
 		};
 
@@ -109,6 +109,29 @@ describe('Cluster02WaitRegularity', () => {
 		});
 
 		// The reveal carries the observed-gap-by-direction heading + both gaps.
+		const reveal = document.querySelector('[data-slot="direction-gaps"]');
+		expect(reveal).not.toBeNull();
+		expect(screen.getByText('7.9 min')).toBeInTheDocument();
+		expect(screen.getByText('9.1 min')).toBeInTheDocument();
+	});
+
+	it('decodes legacy {shift}_dir{N}_weekend rows for pre-cutover snapshots (fallback)', () => {
+		// Backward-compat for the deploy window: snapshots published before Pattern A
+		// carry the packed string; decodeShift falls back to parsing it so the band
+		// renders the directional reveal identically to the typed-field path.
+		const data: RouteReliability = {
+			generated_utc: utc('2026-06-19T00:00:00Z'),
+			id: '10',
+			headway: [
+				{ shift: 'am_peak', scheduled_min: 6, observed_min: 8.4, cov: 0.42, bunched_pct: 18 },
+				{ shift: 'am_peak_dir0', observed_min: 7.9 },
+				{ shift: 'am_peak_dir1_weekend', observed_min: 9.1 },
+			],
+		};
+		const clusters = toReliabilityClusters(data);
+		render(Cluster02WaitRegularity, {
+			props: { wait: clusters.waitRegularity, serviceSpans: [], locale: 'en', copy },
+		});
 		const reveal = document.querySelector('[data-slot="direction-gaps"]');
 		expect(reveal).not.toBeNull();
 		expect(screen.getByText('7.9 min')).toBeInTheDocument();

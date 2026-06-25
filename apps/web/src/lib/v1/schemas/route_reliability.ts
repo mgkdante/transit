@@ -29,7 +29,13 @@ export const ReliabilityPeriodSchema = z.object({
 export type ReliabilityPeriod = z.infer<typeof ReliabilityPeriodSchema>;
 
 export const HeadwayPeriodSchema = z.object({
+	// shift is the BARE time-of-day token; per-direction / weekday-weekend sibling
+	// rows carry direction_id (0/1, null on busiest-direction rows) + day_type
+	// (weekday|weekend, null on those rows) as TYPED fields (S7-B Pattern A) instead
+	// of the old packed `{shift}_dir{N}_weekend` string.
 	shift: z.string(),
+	direction_id: z.number().nullable().optional(),
+	day_type: z.string().nullable().optional(),
 	scheduled_min: z.number().nullable().optional(),
 	observed_min: z.number().nullable().optional(),
 	excess_wait_min: z.number().nullable().optional(),

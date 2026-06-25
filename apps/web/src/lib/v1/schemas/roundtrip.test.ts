@@ -176,8 +176,8 @@ describe('reliability — new optional fields (day_of_week / habits / p50,p90) r
 				{ day_of_week_iso: 1, avg_delay_min: 2.1, severe_pct: 4.0, observation_count: 1200 },
 			],
 			habits: { scale: 'repeat_problem_relative', matrix: [[0.0, null]] },
-			// direction encoded in the free shift string
-			headway: [{ shift: 'am_peak_dir0_weekend', observed_min: 7.5 }],
+			// S7-B Pattern A: bare shift + typed direction_id / day_type
+			headway: [{ shift: 'am_peak', direction_id: 0, day_type: 'weekend', observed_min: 7.5 }],
 		};
 		expect(() => parsePort('route_reliability', RouteReliabilitySchema, fixture)).not.toThrow();
 	});

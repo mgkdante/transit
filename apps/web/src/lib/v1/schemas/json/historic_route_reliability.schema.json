@@ -212,6 +212,30 @@
           "default": null,
           "title": "Cov"
         },
+        "day_type": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Day Type"
+        },
+        "direction_id": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Direction Id"
+        },
         "excess_wait_min": {
           "anyOf": [
             {
