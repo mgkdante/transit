@@ -13,22 +13,12 @@ from transit_ops.settings import Settings
 # each run and are NOT time-window pruned, so they are intentionally absent here.
 REPORTING_AGGREGATE_TABLES = (
     "route_delay_hourly",
-    "route_delay_day_of_week",
     "stop_delay_hourly",
-    "route_reliability_weekly",
-    "route_reliability_monthly",
     "stop_delay_weekly",
     "stop_delay_monthly",
     "route_habit_score",
     "repeated_problem_route_stop",
     "citizen_accountability_daily",
-    # NOTE: route_delay_by_shift_daytype is listed BEFORE route_delay_by_shift so
-    # the FakeConnection substring dispatch matches the longer (_daytype) INSERT/
-    # DELETE/COUNT to its OWN entry rather than shadowing it under the shorter
-    # "route_delay_by_shift" needle.
-    "route_delay_by_shift_daytype",
-    "route_delay_by_shift",
-    "route_delay_by_daytype",
 )
 
 # Tables rebuilt by build_warm_rollups (rollups.py REPORTING_AGGREGATE_TABLES).
@@ -568,21 +558,6 @@ def test_trip_delay_summary_5m_severe_excludes_outliers() -> None:
     assert "delay_seconds > 300 AND ABS(delay_seconds) <= 3600" in sql
 
 
-def test_route_delay_day_of_week_uses_durable_capped_hourly_inputs() -> None:
-    sql = str(rollups.UPSERT_ROUTE_DELAY_DAY_OF_WEEK)
-
-    assert "FROM gold.route_delay_hourly" in sql
-    assert "fact_trip_delay_snapshot" not in sql
-    assert "SUM(rd.severe_delay_count)" in sql
-    assert (
-        "Hourly-distinct-trip sum: upper-bound proxy, "
-        "not distinct trips per weekday."
-    ) in sql
-    assert "rd.avg_delay_seconds * NULLIF(rd.delay_observation_count, 0)" in sql
-    assert "NULLIF(SUM(rd.delay_observation_count), 0)" in sql
-    assert "rd.avg_delay_seconds * NULLIF(rd.observation_count, 0)" not in sql
-
-
 def test_stop_delay_hourly_aggregates_real_per_stop_delays() -> None:
     sql = str(rollups.REPORTING_AGGREGATE_UPSERTS["stop_delay_hourly"])
     compact = " ".join(sql.split())
@@ -631,7 +606,7 @@ def test_windowed_history_inserts_have_no_on_conflict() -> None:
         assert "ON CONFLICT" not in str(rollups.REPORTING_AGGREGATE_UPSERTS[table_name])
 
     assert "ON CONFLICT" in str(rollups.UPSERT_TRIP_DELAY_SUMMARY_5M)
-    assert "ON CONFLICT" in str(rollups.UPSERT_ROUTE_RELIABILITY_WEEKLY)
+    assert "ON CONFLICT" in str(rollups.UPSERT_REPEATED_PROBLEM_ROUTE_STOP)
 
 
 def test_stop_delay_hourly_scoped_to_open_window() -> None:
@@ -699,22 +674,6 @@ def test_repeat_offender_obs_excludes_outlier_delays() -> None:
 
     assert "AND ABS(f.delay_seconds) <= 3600" in sql
     assert sql.index("AND ABS(f.delay_seconds) <= 3600") < sql.index("agg AS")
-
-
-def test_route_reliability_weekly_monthly_carry_otp_counts_and_weights() -> None:
-    for sql in (
-        str(rollups.UPSERT_ROUTE_RELIABILITY_WEEKLY),
-        str(rollups.UPSERT_ROUTE_RELIABILITY_MONTHLY),
-    ):
-        compact = " ".join(sql.split())
-        assert "SUM(rd.delay_observation_count)::integer" in sql
-        assert (
-            "CASE WHEN COUNT(*) = COUNT(rd.on_time_observation_count) "
-            "THEN SUM(rd.on_time_observation_count)::integer END"
-        ) in compact
-        assert "rd.avg_delay_seconds * NULLIF(rd.delay_observation_count, 0)" in sql
-        assert "delay_observation_count = EXCLUDED.delay_observation_count" in sql
-        assert "on_time_observation_count = EXCLUDED.on_time_observation_count" in sql
 
 
 def test_route_cancellation_daily_upsert_dedups_and_keeps_scheduled_in_denominator() -> None:
@@ -1017,10 +976,9 @@ def test_prune_warm_rollup_storage_dry_run_counts_without_deletes() -> None:
     assert result.deleted_row_counts["gold.route_delay_spine"] == 16
 
     count_queries = [s for s in conn.executed if "SELECT COUNT(*)" in s or "SELECT count(*)" in s]
-    # 24 prior MINUS the 2 dead 5m sinks (dropped in 0061), PLUS route_delay_spine (added in
-    # 0063 + GOLD_AGGREGATE_RETENTION_COLUMNS); each retention-registered table emits one
-    # dry-run COUNT.
-    assert len(count_queries) == 23
+    # 23 prior MINUS the 6 route delay-cube fold tables (dropped in 0064 — every reader now
+    # derives from route_delay_spine); each retention-registered table emits one dry-run COUNT.
+    assert len(count_queries) == 17
 
 
 def test_prune_warm_rollup_storage_display_dict_includes_dry_run() -> None:

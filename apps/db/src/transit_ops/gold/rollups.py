@@ -613,24 +613,16 @@ UPSERT_ROUTE_DELAY_SPINE = text(
 
 REPORTING_AGGREGATE_TABLES = (
     "route_delay_hourly",
-    "route_delay_day_of_week",
     "stop_delay_hourly",
-    "route_reliability_weekly",
-    "route_reliability_monthly",
     "stop_delay_weekly",
     "stop_delay_monthly",
     "route_habit_score",
+    # repeated_problem_route_stop derives route-grain recurrence from the route
+    # delay spine (built earlier, in the append-only section) + stop_delay_weekly.
     "repeated_problem_route_stop",
     "citizen_accountability_daily",
     "route_headway_by_shift",
     "repeat_offender",
-    # Granularity tier — registered AFTER route_delay_hourly (index 0) so the
-    # shift/daytype regroups rebuild from the freshly-built hourly spine.
-    "route_delay_by_shift",
-    "route_delay_by_daytype",
-    # Tier-3 2D crosstab — also AFTER route_delay_hourly so it rebuilds from the
-    # fresh hourly spine; consistent with the 1D shift/daytype marginals above.
-    "route_delay_by_shift_daytype",
     "route_headway_by_direction_shift",
 )
 
@@ -641,16 +633,10 @@ WINDOWED_HISTORY_TABLES = (
 )
 
 DERIVED_REBUILD_TABLES = (
-    "route_delay_day_of_week",
-    "route_reliability_weekly",
-    "route_reliability_monthly",
     "stop_delay_weekly",
     "stop_delay_monthly",
     "route_habit_score",
     "repeated_problem_route_stop",
-    "route_delay_by_shift",
-    "route_delay_by_daytype",
-    "route_delay_by_shift_daytype",
 )
 
 ROLLING_WINDOW_TABLES = (
@@ -750,51 +736,6 @@ UPSERT_ROUTE_DELAY_HOURLY = text(
     """
 )
 
-UPSERT_ROUTE_DELAY_DAY_OF_WEEK = text(
-    """
-    INSERT INTO gold.route_delay_day_of_week (
-        provider_id,
-        day_of_week_iso,
-        route_id,
-        trip_count,
-        observation_count,
-        delay_observation_count,
-        avg_delay_seconds,
-        severe_delay_count,
-        built_at_utc
-    )
-    SELECT
-        rd.provider_id,
-        EXTRACT(ISODOW FROM timezone(dp.timezone, rd.period_start_utc))::integer,
-        rd.route_id,
-        -- Hourly-distinct-trip sum: upper-bound proxy, not distinct trips per weekday.
-        SUM(rd.trip_count)::integer,
-        SUM(rd.observation_count)::integer,
-        -- severe_pct denominator: observations with a known delay (matches every
-        -- other grain), persisted so the publisher doesn't fall back to COUNT(*).
-        SUM(rd.delay_observation_count)::integer,
-        ROUND(
-            SUM(rd.avg_delay_seconds * NULLIF(rd.delay_observation_count, 0))
-            / NULLIF(SUM(rd.delay_observation_count), 0),
-            2
-        ),
-        SUM(rd.severe_delay_count)::integer,
-        :built_at_utc
-    FROM gold.route_delay_hourly AS rd
-    INNER JOIN gold.dim_provider AS dp
-        ON dp.provider_id = rd.provider_id
-    WHERE rd.provider_id = :provider_id
-    GROUP BY 1, 2, 3
-    ON CONFLICT (provider_id, day_of_week_iso, route_id) DO UPDATE SET
-        trip_count = EXCLUDED.trip_count,
-        observation_count = EXCLUDED.observation_count,
-        delay_observation_count = EXCLUDED.delay_observation_count,
-        avg_delay_seconds = EXCLUDED.avg_delay_seconds,
-        severe_delay_count = EXCLUDED.severe_delay_count,
-        built_at_utc = EXCLUDED.built_at_utc
-    """
-)
-
 UPSERT_STOP_DELAY_HOURLY = text(
     f"""
     INSERT INTO gold.stop_delay_hourly (
@@ -830,102 +771,6 @@ UPSERT_STOP_DELAY_HOURLY = text(
       AND ABS(f.delay_seconds) <= {GHOST_DELAY_ABS_SECONDS}
       AND f.captured_at_utc >= {OPEN_WINDOW_HOURLY_CUTOFF_SQL}
     GROUP BY 1, 2, 3, 4
-    """
-)
-
-UPSERT_ROUTE_RELIABILITY_WEEKLY = text(
-    """
-    INSERT INTO gold.route_reliability_weekly (
-        provider_id,
-        week_start_local,
-        route_id,
-        observation_count,
-        delay_observation_count,
-        on_time_observation_count,
-        avg_delay_seconds,
-        delayed_trip_count,
-        severe_delay_count,
-        built_at_utc
-    )
-    SELECT
-        rd.provider_id,
-        date_trunc('week', timezone(dp.timezone, rd.period_start_utc))::date,
-        rd.route_id,
-        SUM(rd.observation_count)::integer,
-        SUM(rd.delay_observation_count)::integer,
-        -- A NULL in any contributing hour means pre-fix history is unknowable.
-        CASE WHEN COUNT(*) = COUNT(rd.on_time_observation_count)
-            THEN SUM(rd.on_time_observation_count)::integer
-        END,
-        ROUND(
-            SUM(rd.avg_delay_seconds * NULLIF(rd.delay_observation_count, 0))
-            / NULLIF(SUM(rd.delay_observation_count), 0),
-            2
-        ),
-        SUM(rd.delayed_trip_count)::integer,
-        SUM(rd.severe_delay_count)::integer,
-        :built_at_utc
-    FROM gold.route_delay_hourly AS rd
-    INNER JOIN gold.dim_provider AS dp
-        ON dp.provider_id = rd.provider_id
-    WHERE rd.provider_id = :provider_id
-    GROUP BY 1, 2, 3
-    ON CONFLICT (provider_id, week_start_local, route_id) DO UPDATE SET
-        observation_count = EXCLUDED.observation_count,
-        delay_observation_count = EXCLUDED.delay_observation_count,
-        on_time_observation_count = EXCLUDED.on_time_observation_count,
-        avg_delay_seconds = EXCLUDED.avg_delay_seconds,
-        delayed_trip_count = EXCLUDED.delayed_trip_count,
-        severe_delay_count = EXCLUDED.severe_delay_count,
-        built_at_utc = EXCLUDED.built_at_utc
-    """
-)
-
-UPSERT_ROUTE_RELIABILITY_MONTHLY = text(
-    """
-    INSERT INTO gold.route_reliability_monthly (
-        provider_id,
-        month_start_local,
-        route_id,
-        observation_count,
-        delay_observation_count,
-        on_time_observation_count,
-        avg_delay_seconds,
-        delayed_trip_count,
-        severe_delay_count,
-        built_at_utc
-    )
-    SELECT
-        rd.provider_id,
-        date_trunc('month', timezone(dp.timezone, rd.period_start_utc))::date,
-        rd.route_id,
-        SUM(rd.observation_count)::integer,
-        SUM(rd.delay_observation_count)::integer,
-        -- A NULL in any contributing hour means pre-fix history is unknowable.
-        CASE WHEN COUNT(*) = COUNT(rd.on_time_observation_count)
-            THEN SUM(rd.on_time_observation_count)::integer
-        END,
-        ROUND(
-            SUM(rd.avg_delay_seconds * NULLIF(rd.delay_observation_count, 0))
-            / NULLIF(SUM(rd.delay_observation_count), 0),
-            2
-        ),
-        SUM(rd.delayed_trip_count)::integer,
-        SUM(rd.severe_delay_count)::integer,
-        :built_at_utc
-    FROM gold.route_delay_hourly AS rd
-    INNER JOIN gold.dim_provider AS dp
-        ON dp.provider_id = rd.provider_id
-    WHERE rd.provider_id = :provider_id
-    GROUP BY 1, 2, 3
-    ON CONFLICT (provider_id, month_start_local, route_id) DO UPDATE SET
-        observation_count = EXCLUDED.observation_count,
-        delay_observation_count = EXCLUDED.delay_observation_count,
-        on_time_observation_count = EXCLUDED.on_time_observation_count,
-        avg_delay_seconds = EXCLUDED.avg_delay_seconds,
-        delayed_trip_count = EXCLUDED.delayed_trip_count,
-        severe_delay_count = EXCLUDED.severe_delay_count,
-        built_at_utc = EXCLUDED.built_at_utc
     """
 )
 
@@ -1448,158 +1293,6 @@ UPSERT_ROUTE_HEADWAY_DAILY = text(
     """
 )
 
-# Granularity tier: regroup the route_delay_hourly spine by time-of-day band and
-# by weekday/weekend. Same observation-weighted avg + on-time NULL-guard as the
-# weekly/monthly rollups, so OTP/avg/severe are consistent across grains.
-UPSERT_ROUTE_DELAY_BY_SHIFT = text(
-    """
-    INSERT INTO gold.route_delay_by_shift (
-        provider_id, shift, route_id, observation_count, delay_observation_count,
-        on_time_observation_count, avg_delay_seconds, severe_delay_count, built_at_utc
-    )
-    SELECT
-        rd.provider_id,
-        CASE
-            WHEN EXTRACT(HOUR FROM timezone(dp.timezone, rd.period_start_utc))
-                BETWEEN 6 AND 8 THEN 'am_peak'
-            WHEN EXTRACT(HOUR FROM timezone(dp.timezone, rd.period_start_utc))
-                BETWEEN 9 AND 14 THEN 'midday'
-            WHEN EXTRACT(HOUR FROM timezone(dp.timezone, rd.period_start_utc))
-                BETWEEN 15 AND 18 THEN 'pm_peak'
-            WHEN EXTRACT(HOUR FROM timezone(dp.timezone, rd.period_start_utc))
-                BETWEEN 19 AND 22 THEN 'evening'
-            ELSE 'night'
-        END AS shift,
-        rd.route_id,
-        SUM(rd.observation_count)::integer,
-        SUM(rd.delay_observation_count)::integer,
-        CASE WHEN COUNT(*) = COUNT(rd.on_time_observation_count)
-            THEN SUM(rd.on_time_observation_count)::integer
-        END,
-        ROUND(
-            SUM(rd.avg_delay_seconds * NULLIF(rd.delay_observation_count, 0))
-            / NULLIF(SUM(rd.delay_observation_count), 0),
-            2
-        ),
-        SUM(rd.severe_delay_count)::integer,
-        :built_at_utc
-    FROM gold.route_delay_hourly AS rd
-    INNER JOIN gold.dim_provider AS dp
-        ON dp.provider_id = rd.provider_id
-    WHERE rd.provider_id = :provider_id
-    GROUP BY 1, 2, 3
-    ON CONFLICT (provider_id, shift, route_id) DO UPDATE SET
-        observation_count = EXCLUDED.observation_count,
-        delay_observation_count = EXCLUDED.delay_observation_count,
-        on_time_observation_count = EXCLUDED.on_time_observation_count,
-        avg_delay_seconds = EXCLUDED.avg_delay_seconds,
-        severe_delay_count = EXCLUDED.severe_delay_count,
-        built_at_utc = EXCLUDED.built_at_utc
-    """
-)
-
-UPSERT_ROUTE_DELAY_BY_DAYTYPE = text(
-    """
-    INSERT INTO gold.route_delay_by_daytype (
-        provider_id, day_type, route_id, observation_count, delay_observation_count,
-        on_time_observation_count, avg_delay_seconds, severe_delay_count, built_at_utc
-    )
-    SELECT
-        rd.provider_id,
-        CASE
-            WHEN EXTRACT(ISODOW FROM timezone(dp.timezone, rd.period_start_utc))
-                BETWEEN 1 AND 5 THEN 'weekday'
-            ELSE 'weekend'
-        END AS day_type,
-        rd.route_id,
-        SUM(rd.observation_count)::integer,
-        SUM(rd.delay_observation_count)::integer,
-        CASE WHEN COUNT(*) = COUNT(rd.on_time_observation_count)
-            THEN SUM(rd.on_time_observation_count)::integer
-        END,
-        ROUND(
-            SUM(rd.avg_delay_seconds * NULLIF(rd.delay_observation_count, 0))
-            / NULLIF(SUM(rd.delay_observation_count), 0),
-            2
-        ),
-        SUM(rd.severe_delay_count)::integer,
-        :built_at_utc
-    FROM gold.route_delay_hourly AS rd
-    INNER JOIN gold.dim_provider AS dp
-        ON dp.provider_id = rd.provider_id
-    WHERE rd.provider_id = :provider_id
-    GROUP BY 1, 2, 3
-    ON CONFLICT (provider_id, day_type, route_id) DO UPDATE SET
-        observation_count = EXCLUDED.observation_count,
-        delay_observation_count = EXCLUDED.delay_observation_count,
-        on_time_observation_count = EXCLUDED.on_time_observation_count,
-        avg_delay_seconds = EXCLUDED.avg_delay_seconds,
-        severe_delay_count = EXCLUDED.severe_delay_count,
-        built_at_utc = EXCLUDED.built_at_utc
-    """
-)
-
-# Tier-3: 2D crosstab regroup of the route_delay_hourly spine by route + shift +
-# day_type. The shift CASE and day_type CASE are byte-identical to the 1D
-# route_delay_by_shift / route_delay_by_daytype upserts above, so each 2D cell is
-# consistent with the 1D marginals. Same observation-weighted avg + on-time
-# NULL-guard. The "-- route_delay_by_shift_daytype" needle is a unique test
-# discriminator and MUST precede the broader "route_delay_hourly" /
-# "route_delay_by_shift" substrings (both appear below) in any substring dispatch.
-UPSERT_ROUTE_DELAY_BY_SHIFT_DAYTYPE = text(
-    """
-    -- route_delay_by_shift_daytype: 2D shift x day_type crosstab regroup
-    INSERT INTO gold.route_delay_by_shift_daytype (
-        provider_id, shift, day_type, route_id, observation_count,
-        delay_observation_count, on_time_observation_count, avg_delay_seconds,
-        severe_delay_count, built_at_utc
-    )
-    SELECT
-        rd.provider_id,
-        CASE
-            WHEN EXTRACT(HOUR FROM timezone(dp.timezone, rd.period_start_utc))
-                BETWEEN 6 AND 8 THEN 'am_peak'
-            WHEN EXTRACT(HOUR FROM timezone(dp.timezone, rd.period_start_utc))
-                BETWEEN 9 AND 14 THEN 'midday'
-            WHEN EXTRACT(HOUR FROM timezone(dp.timezone, rd.period_start_utc))
-                BETWEEN 15 AND 18 THEN 'pm_peak'
-            WHEN EXTRACT(HOUR FROM timezone(dp.timezone, rd.period_start_utc))
-                BETWEEN 19 AND 22 THEN 'evening'
-            ELSE 'night'
-        END AS shift,
-        CASE
-            WHEN EXTRACT(ISODOW FROM timezone(dp.timezone, rd.period_start_utc))
-                BETWEEN 1 AND 5 THEN 'weekday'
-            ELSE 'weekend'
-        END AS day_type,
-        rd.route_id,
-        SUM(rd.observation_count)::integer,
-        SUM(rd.delay_observation_count)::integer,
-        CASE WHEN COUNT(*) = COUNT(rd.on_time_observation_count)
-            THEN SUM(rd.on_time_observation_count)::integer
-        END,
-        ROUND(
-            SUM(rd.avg_delay_seconds * NULLIF(rd.delay_observation_count, 0))
-            / NULLIF(SUM(rd.delay_observation_count), 0),
-            2
-        ),
-        SUM(rd.severe_delay_count)::integer,
-        :built_at_utc
-    FROM gold.route_delay_hourly AS rd
-    INNER JOIN gold.dim_provider AS dp
-        ON dp.provider_id = rd.provider_id
-    WHERE rd.provider_id = :provider_id
-    GROUP BY 1, 2, 3, 4
-    ON CONFLICT (provider_id, shift, day_type, route_id) DO UPDATE SET
-        observation_count = EXCLUDED.observation_count,
-        delay_observation_count = EXCLUDED.delay_observation_count,
-        on_time_observation_count = EXCLUDED.on_time_observation_count,
-        avg_delay_seconds = EXCLUDED.avg_delay_seconds,
-        severe_delay_count = EXCLUDED.severe_delay_count,
-        built_at_utc = EXCLUDED.built_at_utc
-    """
-)
-
 # Per-direction + weekday/weekend headway. Sibling of route_headway_by_shift (which
 # is left untouched): the busiest_direction collapse is dropped so EVERY
 # direction survives, and weekend service days are kept (tagged) instead of
@@ -1780,10 +1473,7 @@ UPSERT_REPEAT_OFFENDER_DAILY = text(
 
 REPORTING_AGGREGATE_UPSERTS = {
     "route_delay_hourly": UPSERT_ROUTE_DELAY_HOURLY,
-    "route_delay_day_of_week": UPSERT_ROUTE_DELAY_DAY_OF_WEEK,
     "stop_delay_hourly": UPSERT_STOP_DELAY_HOURLY,
-    "route_reliability_weekly": UPSERT_ROUTE_RELIABILITY_WEEKLY,
-    "route_reliability_monthly": UPSERT_ROUTE_RELIABILITY_MONTHLY,
     "stop_delay_weekly": UPSERT_STOP_DELAY_WEEKLY,
     "stop_delay_monthly": UPSERT_STOP_DELAY_MONTHLY,
     "route_habit_score": UPSERT_ROUTE_HABIT_SCORE,
@@ -1791,9 +1481,6 @@ REPORTING_AGGREGATE_UPSERTS = {
     "citizen_accountability_daily": UPSERT_CITIZEN_ACCOUNTABILITY_DAILY,
     "route_headway_by_shift": UPSERT_ROUTE_HEADWAY_DAILY,
     "repeat_offender": UPSERT_REPEAT_OFFENDER_DAILY,
-    "route_delay_by_shift": UPSERT_ROUTE_DELAY_BY_SHIFT,
-    "route_delay_by_daytype": UPSERT_ROUTE_DELAY_BY_DAYTYPE,
-    "route_delay_by_shift_daytype": UPSERT_ROUTE_DELAY_BY_SHIFT_DAYTYPE,
     "route_headway_by_direction_shift": UPSERT_ROUTE_HEADWAY_DIRECTION_DAILY,
 }
 

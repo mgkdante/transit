@@ -389,94 +389,12 @@ _TREND_OCCUPANCY_MONTHLY_SQL = text(
     """
 )
 
-# Network-wide reliability by time-of-day shift, aggregated across ALL routes
-# from the per-route shift rollup. on_time/otp_known give a REAL OTP (not the
-# severe proxy); avg delay is observation-weighted via SUM(avg*known)/SUM(known).
-# OTP NULL-guard: gold stores on_time_observation_count as NULL for routes whose
-# on-time count could not be computed (the rollup's COUNT(*)=COUNT(on_time)
-# guard). A bare SUM(on_time) over SUM(delay_observation_count) would keep those
-# routes in the denominator but drop them from the numerator, biasing OTP low. We
-# scope the OTP numerator and denominator together: otp_known sums delay obs only
-# from rows where on_time_observation_count IS NOT NULL, so both share scope.
-# severe + the weighted-avg denominator stay over the FULL known_obs (every
-# delay-observed route counts toward severe-share and avg, regardless of the
-# on-time guard). Unique discriminator for test dispatch: "GROUP BY shift".
-_NETWORK_BY_SHIFT_SQL = text(
-    """
-    SELECT shift AS grain,
-           SUM(on_time_observation_count)                     AS on_time,
-           SUM(delay_observation_count) FILTER (
-               WHERE on_time_observation_count IS NOT NULL)   AS otp_known,
-           SUM(delay_observation_count)                       AS known_obs,
-           SUM(severe_delay_count)                            AS severe,
-           SUM(avg_delay_seconds * delay_observation_count)   AS weighted_delay_sec
-    FROM gold.route_delay_by_shift
-    WHERE provider_id = :provider_id
-    GROUP BY shift
-    """
-)
-
-# Network-wide reliability by weekday/weekend day-type — identical aggregation
-# over the per-route day-type rollup, including the same OTP NULL-guard
-# (otp_known = delay obs scoped to on-time-known rows; severe/avg over full
-# known_obs). Unique discriminator for test dispatch: "GROUP BY day_type".
-_NETWORK_BY_DAYTYPE_SQL = text(
-    """
-    SELECT day_type AS grain,
-           SUM(on_time_observation_count)                     AS on_time,
-           SUM(delay_observation_count) FILTER (
-               WHERE on_time_observation_count IS NOT NULL)   AS otp_known,
-           SUM(delay_observation_count)                       AS known_obs,
-           SUM(severe_delay_count)                            AS severe,
-           SUM(avg_delay_seconds * delay_observation_count)   AS weighted_delay_sec
-    FROM gold.route_delay_by_daytype
-    WHERE provider_id = :provider_id
-    GROUP BY day_type
-    """
-)
-
 # Canonical emit order for the network grains (mirrors the route/stop surface).
+# The network by_shift / by_daytype grains derive from the route delay spine across
+# all routes (see _NETWORK_SPINE_BY_* + _network_spine_rows below); the old
+# per-route fold tables were dropped in migration 0064.
 _NETWORK_SHIFT_ORDER = ("am_peak", "midday", "pm_peak", "evening", "night")
 _NETWORK_DAYTYPE_ORDER = ("weekday", "weekend")
-
-
-def _network_shift_rows(
-    conn: Connection, sql, params: dict, order: tuple[str, ...]
-) -> list[NetworkShift]:
-    """Aggregate a network grain query into ordered NetworkShift rows.
-
-    REAL OTP = on_time/otp_known (numerator and denominator share scope: both come
-    only from routes whose on_time_observation_count is known, so the gold NULL-
-    guard does not bias OTP low). avg is observation-weighted over the FULL
-    known_obs; severe_pct is severe over the full known_obs. Honest-NULL: every
-    metric is None (never 0) on a grain with no known-delay observations. Grains
-    are emitted in the canonical order; any unexpected token sorts last by name so
-    the contract never silently drops it.
-    """
-    by_grain: dict[str, NetworkShift] = {}
-    for r in conn.execute(sql, params).mappings():
-        known = r["known_obs"]
-        otp_known = r["otp_known"]
-        weighted = r["weighted_delay_sec"]
-        grain = str(r["grain"])
-        if known and weighted is not None:
-            avg_sec = float(weighted) / float(known)
-        else:
-            avg_sec = None
-        by_grain[grain] = NetworkShift(
-            grain=grain,
-            otp_pct=_otp_pct(r["on_time"], otp_known),
-            avg_delay_min=_avg_delay_min(avg_sec),
-            severe_pct=_severe_pct(known, r["severe"]),
-            # observation_count is the OTP/Wilson denominator (otp_known), NOT the
-            # severe/avg base (known) — see NetworkShift docstring.
-            observation_count=_opt_int(otp_known),
-            wilson_lo=_wilson_lo(r["on_time"], otp_known),
-            wilson_hi=_wilson_hi(r["on_time"], otp_known),
-        )
-    ordered = [by_grain[g] for g in order if g in by_grain]
-    ordered.extend(by_grain[g] for g in sorted(set(by_grain) - set(order)))
-    return ordered
 
 
 def _blank_trend_point() -> dict:
@@ -571,9 +489,7 @@ def _trend_points(
     ]
 
 
-def build_network_trend(
-    conn: Connection, *, provider_id: str = "stm", generated_utc: str, source: str = "fact"
-) -> NetworkTrend:
+def build_network_trend(conn: Connection, *, provider_id: str = "stm", generated_utc: str) -> NetworkTrend:
     """Build historic/network_trend.json — daily + weekly + monthly trend points.
 
     Daily `series`: OTP + weighted-avg delay from the hourly rollup (~90 days)
@@ -582,13 +498,8 @@ def build_network_trend(
     table still covers. `weekly`/`monthly` re-aggregate the SAME daily sources
     (hourly OTP/avg, cancellation, occupancy) into ISO-week / calendar-month
     buckets, observation-weighted identically; p90_min/vehicles stay None on
-    those grains (the ~14d fact window is not additively composable).
-
-    source: "fact" (default) reads the by_shift/by_daytype network grains from the
-    stored route_delay_by_shift / route_delay_by_daytype folds; "spine" derives them
-    at read time from gold.route_delay_spine across all routes (byte-identical
-    otp_pct/severe_pct, rebaselined avg). Only those two grains depend on source;
-    series/weekly/monthly read kept tables (hourly/cancellation/occupancy).
+    those grains (the ~14d fact window is not additively composable). The
+    by_shift/by_daytype grains derive from gold.route_delay_spine across all routes.
     """
     # fact_retention_days binds the ~14d fact window into _TREND_FACT_SQL so it
     # tracks GOLD_FACT_RETENTION_DAYS instead of a drift-prone literal. The bind
@@ -622,20 +533,14 @@ def build_network_trend(
     )
 
     # Network-wide reliability by time-of-day shift + weekday/weekend day-type,
-    # aggregated across all routes (REAL on_time/known OTP, observation-weighted
-    # avg delay, honest-NULL on zero-obs grains).
-    if source == "spine":
-        by_shift = _network_spine_rows(
-            conn, _NETWORK_SPINE_BY_SHIFT_SQL, params, _NETWORK_SHIFT_ORDER
-        )
-        by_daytype = _network_spine_rows(
-            conn, _NETWORK_SPINE_BY_DAYTYPE_SQL, params, _NETWORK_DAYTYPE_ORDER
-        )
-    else:
-        by_shift = _network_shift_rows(conn, _NETWORK_BY_SHIFT_SQL, params, _NETWORK_SHIFT_ORDER)
-        by_daytype = _network_shift_rows(
-            conn, _NETWORK_BY_DAYTYPE_SQL, params, _NETWORK_DAYTYPE_ORDER
-        )
+    # derived from the route delay spine across all routes (REAL on_time/known OTP,
+    # observation-weighted avg delay, honest-NULL on zero-obs grains).
+    by_shift = _network_spine_rows(
+        conn, _NETWORK_SPINE_BY_SHIFT_SQL, params, _NETWORK_SHIFT_ORDER
+    )
+    by_daytype = _network_spine_rows(
+        conn, _NETWORK_SPINE_BY_DAYTYPE_SQL, params, _NETWORK_DAYTYPE_ORDER
+    )
 
     return NetworkTrend(
         generated_utc=generated_utc,
@@ -662,32 +567,6 @@ _ROUTE_REL_DAILY_SQL = text(
     WHERE provider_id = :provider_id AND route_id = :route_id
     ORDER BY provider_local_date DESC
     LIMIT 30
-    """
-)
-
-_ROUTE_REL_WEEKLY_SQL = text(
-    """
-    SELECT week_start_local      AS d,
-           delay_observation_count AS known_obs,
-           on_time_observation_count AS on_time,
-           avg_delay_seconds     AS avg_delay_sec,
-           severe_delay_count    AS severe
-    FROM gold.route_reliability_weekly
-    WHERE provider_id = :provider_id AND route_id = :route_id
-    ORDER BY week_start_local
-    """
-)
-
-_ROUTE_REL_MONTHLY_SQL = text(
-    """
-    SELECT month_start_local     AS d,
-           delay_observation_count AS known_obs,
-           on_time_observation_count AS on_time,
-           avg_delay_seconds     AS avg_delay_sec,
-           severe_delay_count    AS severe
-    FROM gold.route_reliability_monthly
-    WHERE provider_id = :provider_id AND route_id = :route_id
-    ORDER BY month_start_local
     """
 )
 
@@ -731,63 +610,9 @@ _ROUTE_PERCENTILE_DAILY_SQL = text(
     """
 )
 
-# Per-route weekday seasonality (ISO 1=Mon..7=Sun) from the latent daily mart.
-_ROUTE_DOW_SQL = text(
-    """
-    SELECT day_of_week_iso, observation_count, delay_observation_count,
-           avg_delay_seconds, severe_delay_count
-    FROM gold.route_delay_day_of_week
-    WHERE provider_id = :provider_id AND route_id = :route_id
-    ORDER BY day_of_week_iso
-    """
-)
-
-
-# Granularity grains (time-of-day shift + weekday/weekend day-type), regrouped from
-# the hourly spine; published as additive free-string-grain ReliabilityPeriod rows.
-_ROUTE_BY_SHIFT_SQL = text(
-    """
-    SELECT shift AS grain,
-           delay_observation_count AS known_obs,
-           on_time_observation_count AS on_time,
-           avg_delay_seconds AS avg_delay_sec,
-           severe_delay_count AS severe
-    FROM gold.route_delay_by_shift
-    WHERE provider_id = :provider_id AND route_id = :route_id
-    """
-)
-
-_ROUTE_BY_DAYTYPE_SQL = text(
-    """
-    SELECT day_type AS grain,
-           delay_observation_count AS known_obs,
-           on_time_observation_count AS on_time,
-           avg_delay_seconds AS avg_delay_sec,
-           severe_delay_count AS severe
-    FROM gold.route_delay_by_daytype
-    WHERE provider_id = :provider_id AND route_id = :route_id
-    """
-)
-
-# Tier-3 2D crosstab: per-route delay by (shift, day_type) intersection, from the
-# gold.route_delay_by_shift_daytype crosstab table. SPARSE — only stored cells are
-# returned; the builder emits one CrosstabCell per row, honest-None per metric.
-# Unique discriminator for the FakeConn substring dispatch: "-- by_shift_daytype",
-# which MUST precede the broader "route_delay_by_shift" needle below.
-_ROUTE_BY_SHIFT_DAYTYPE_SQL = text(
-    """
-    -- by_shift_daytype: 2D shift x day_type delay crosstab cells
-    SELECT shift,
-           day_type,
-           delay_observation_count AS known_obs,
-           on_time_observation_count AS on_time,
-           avg_delay_seconds AS avg_delay_sec,
-           severe_delay_count AS severe,
-           observation_count AS obs
-    FROM gold.route_delay_by_shift_daytype
-    WHERE provider_id = :provider_id AND route_id = :route_id
-    """
-)
+# The per-route day_of_week / by_shift / by_daytype / by_shift_daytype breakdowns now
+# derive at read time from gold.route_delay_spine (see _ROUTE_SPINE_* + the spine
+# consumer helpers below); the stored fold tables were dropped in migration 0064.
 
 # Per-direction + weekday/weekend observed headway (sibling table; the busiest-direction
 # route_headway_by_shift is left untouched). Direction is encoded into the free shift string.
@@ -1147,7 +972,6 @@ def build_route_reliability(
     route_id: str,
     generated_utc: str,
     weak_stops_limit: int = 100,
-    source: str = "fact",
 ) -> RouteReliability:
     """Build historic/route_reliability/{route_id}.json.
 
@@ -1162,15 +986,11 @@ def build_route_reliability(
                 worst-N over what is served). Honest: a route with fewer stops
                 than the limit returns only what exists, never padded.
 
-    source: "fact" (default) reads the stored delay-cube fold tables
-        (route_delay_by_shift/by_daytype/by_shift_daytype/day_of_week,
-        route_reliability_weekly/monthly) unchanged. "spine" derives the SAME
-        breakdowns at read time from gold.route_delay_spine via the parameterized
-        projector above — byte-identical otp_pct/severe_pct/observation_count, with
-        avg_delay_min + p50/p90 rebaselined (pooled sum/obs + CDF interpolation).
-        The daily grain, headway, weak_stops, habits, cancellations, occupancy,
-        service spans, skipped stops and crowding are source-independent (their
-        sources are kept / are carve-outs).
+    The delay-cube breakdowns (weekly/monthly/by_shift/by_daytype/day_of_week +
+    the shift×day_type crosstab) derive at read time from gold.route_delay_spine
+    via the parameterized projector above. The daily grain, headway, weak_stops,
+    habits, cancellations, occupancy, service spans, skipped stops and crowding
+    read kept tables / carve-outs.
     """
     params = {"provider_id": provider_id, "route_id": route_id}
 
@@ -1202,47 +1022,10 @@ def build_route_reliability(
             )
         )
     # weekly + monthly + the granularity grains (time-of-day shift, weekday/weekend
-    # day-type) — the route delay cube. source="spine" derives all four from
-    # route_delay_spine (byte-identical counts/shares, rebaselined avg + p50/p90);
-    # source="fact" reads the stored fold tables unchanged. The daily grain above
-    # is source-independent (public_route_reliability_daily is a carve-out).
-    if source == "spine":
-        periods.extend(_spine_route_periods(conn, params))
-    else:
-        for grain, sql in (("week", _ROUTE_REL_WEEKLY_SQL), ("month", _ROUTE_REL_MONTHLY_SQL)):
-            for r in conn.execute(sql, params).mappings():
-                periods.append(
-                    ReliabilityPeriod(
-                        grain=grain,
-                        date=_iso_date(r["d"]),
-                        otp_pct=_otp_pct(r["on_time"], r["known_obs"]),
-                        avg_delay_min=_avg_delay_min(r["avg_delay_sec"]),
-                        p50_min=None,
-                        p90_min=None,
-                        severe_pct=_severe_pct(r["known_obs"], r["severe"]),
-                        observation_count=_opt_int(r["known_obs"]),
-                        wilson_lo=_wilson_lo(r["on_time"], r["known_obs"]),
-                        wilson_hi=_wilson_hi(r["on_time"], r["known_obs"]),
-                    )
-                )
-        # The live web strip filters to day/week/month; these free-string grains
-        # feed the dedicated grouped sections in the 9.6 reliability surface.
-        for grain_sql in (_ROUTE_BY_SHIFT_SQL, _ROUTE_BY_DAYTYPE_SQL):
-            for r in conn.execute(grain_sql, params).mappings():
-                periods.append(
-                    ReliabilityPeriod(
-                        grain=str(r["grain"]),
-                        date=None,
-                        otp_pct=_otp_pct(r["on_time"], r["known_obs"]),
-                        avg_delay_min=_avg_delay_min(r["avg_delay_sec"]),
-                        p50_min=None,
-                        p90_min=None,
-                        severe_pct=_severe_pct(r["known_obs"], r["severe"]),
-                        observation_count=_opt_int(r["known_obs"]),
-                        wilson_lo=_wilson_lo(r["on_time"], r["known_obs"]),
-                        wilson_hi=_wilson_hi(r["on_time"], r["known_obs"]),
-                    )
-                )
+    # day-type) — the route delay cube, all derived from gold.route_delay_spine
+    # (byte-identical counts/shares, rebaselined avg + p50/p90). The daily grain
+    # above is source-independent (public_route_reliability_daily is a carve-out).
+    periods.extend(_spine_route_periods(conn, params))
 
     # --- headway: observed and scheduled both use weekday busiest-direction semantics ---
     observed: dict[str, float] = {}
@@ -1336,21 +1119,8 @@ def build_route_reliability(
         for r in conn.execute(_ROUTE_NAMES_SQL, {"provider_id": provider_id}).mappings()
     }
 
-    # --- day_of_week: per-route weekday seasonality (latent daily mart) ---
-    if source == "spine":
-        route_dow = _spine_route_dow(conn, params)
-    else:
-        route_dow = [
-            RouteDayOfWeek(
-                day_of_week_iso=int(r["day_of_week_iso"]),
-                avg_delay_min=_avg_delay_min(r["avg_delay_seconds"]),
-                # severe_pct over observations with a KNOWN delay (matches every other
-                # grain); COUNT(*) observation_count would understate it (honesty-fix 3/3).
-                severe_pct=_severe_pct(r["delay_observation_count"], r["severe_delay_count"]),
-                observation_count=_opt_int(r["observation_count"]),
-            )
-            for r in conn.execute(_ROUTE_DOW_SQL, params).mappings()
-        ]
+    # --- day_of_week: per-route weekday seasonality (spine GROUP BY ISO dow) ---
+    route_dow = _spine_route_dow(conn, params)
 
     # --- cancellations: per-day rate history (most recent 30 closed days, ASC) ---
     cancellations = [
@@ -1451,22 +1221,9 @@ def build_route_reliability(
     )
 
     # --- by_shift_daytype: tier-3 2D shift x day_type delay crosstab (SPARSE —
-    #     only stored cells; honest-None per metric). Read new cols defensively via
-    #     r.get(...) so fixtures lacking a column yield None rather than KeyError. ---
-    if source == "spine":
-        by_shift_daytype = _spine_route_crosstab(conn, params)
-    else:
-        by_shift_daytype = [
-            CrosstabCell(
-                shift=str(r["shift"]),
-                day_type=str(r["day_type"]),
-                otp_pct=_otp_pct(r.get("on_time"), r.get("known_obs")),
-                avg_delay_min=_avg_delay_min(r.get("avg_delay_sec")),
-                severe_pct=_severe_pct(r.get("known_obs"), r.get("severe")),
-                observation_count=_opt_int(r.get("obs")),
-            )
-            for r in conn.execute(_ROUTE_BY_SHIFT_DAYTYPE_SQL, params).mappings()
-        ]
+    #     only grains with observations; honest-None per metric), derived from the
+    #     spine GROUP BY (shift, day_type). ---
+    by_shift_daytype = _spine_route_crosstab(conn, params)
 
     return RouteReliability(
         generated_utc=generated_utc,
@@ -1848,10 +1605,10 @@ def _otp_delta_pts(cell_otp: int | None, network_otp: int | None) -> float | Non
 
 # Selects the top-20 problem cells for the target period AND, per cell, the raw
 # OTP counts needed to compute otp_delta_pts honestly at read time:
-#   * route cells  -> real OTP counts from gold.route_reliability_weekly
-#                     (on_time_observation_count / delay_observation_count), joined
-#                     ONLY when entity_kind = 'route' so a stop never picks up a
-#                     route's counts.
+#   * route cells  -> real OTP counts from the route_spine_weekly CTE (the per-
+#                     (route, ISO-week) SUM of on_time/delay observation counts off
+#                     gold.route_delay_spine), joined ONLY when entity_kind = 'route'
+#                     so a stop never picks up a route's counts.
 #   * stop cells   -> per-stop obs + severe from gold.stop_delay_weekly (summed
 #                     across the stop's routes for the target week), joined ONLY
 #                     when entity_kind = 'stop'. Stops have no on_time column, so
@@ -1982,7 +1739,7 @@ def build_hotspots(conn: Connection, provider_id: str = "stm", *, generated_utc:
 
     otp_delta_pts = the cell's own OTP minus a SAME-METRIC network baseline OTP
     for the same target week, in percentage points (negative = worse than the
-    network). Route cells use the real OTP from gold.route_reliability_weekly vs
+    network). Route cells use the real OTP from the spine-derived weekly CTE vs
     the route on-time network baseline; stop cells use the documented severe-delay
     proxy (no on_time column at stop grain) vs a stop-grain severe-proxy network
     baseline, so the delta is never lenient-metric-minus-strict-metric. Honest-None

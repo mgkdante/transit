@@ -65,10 +65,7 @@ EXPECTED_GOLD_AGGREGATE_TABLE_COUNTS = {
     "gold.trip_delay_summary_5m": 3,
     "gold.warm_rollup_periods": 8,
     "gold.route_delay_hourly": 11,
-    "gold.route_delay_day_of_week": 12,
     "gold.stop_delay_hourly": 13,
-    "gold.route_reliability_weekly": 14,
-    "gold.route_reliability_monthly": 15,
     "gold.stop_delay_weekly": 16,
     "gold.stop_delay_monthly": 17,
     "gold.route_habit_score": 18,
@@ -82,13 +79,6 @@ EXPECTED_GOLD_AGGREGATE_TABLE_COUNTS = {
     "gold.route_service_span_daily": 28,
     "gold.route_skipped_stop_daily": 29,
     "gold.route_delay_spine": 32,
-    # NOTE: route_delay_by_shift_daytype is listed BEFORE route_delay_by_shift so
-    # the RecordingConnection substring dispatch matches the longer (_daytype)
-    # DELETE/COUNT to its OWN entry rather than shadowing it under the shorter
-    # "gold.route_delay_by_shift" needle.
-    "gold.route_delay_by_shift_daytype": 31,
-    "gold.route_delay_by_shift": 23,
-    "gold.route_delay_by_daytype": 24,
 }
 
 

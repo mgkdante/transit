@@ -386,9 +386,9 @@ class TrendPoint(BaseModel):
 class NetworkShift(BaseModel):
     # Network-wide reliability for one time-of-day shift or weekday/weekend
     # day-type grain, aggregated across ALL of the provider's routes from
-    # gold.route_delay_by_shift / gold.route_delay_by_daytype (which carry an
-    # on_time_observation_count, so otp_pct is a REAL on_time/known OTP — NOT the
-    # severe-delay proxy used for stops). grain is the canonical shift token
+    # gold.route_delay_spine (a REAL on_time/known OTP from the stored on-time
+    # counts — NOT the severe-delay proxy used for stops). grain is the canonical
+    # shift token
     # (am_peak|midday|pm_peak|evening|night) or day-type token (weekday|weekend).
     # Honest-NULL: every metric is None (never a fabricated 0) when the grain has
     # no known-delay observations across the network for the window.
@@ -503,9 +503,9 @@ class CrowdingDelayCell(BaseModel):
     day_count: int | None = None
 
 class CrosstabCell(BaseModel):
-    # Tier-3 2D delay crosstab cell from gold.route_delay_by_shift_daytype: the
+    # Tier-3 2D delay crosstab cell derived from gold.route_delay_spine: the
     # per-route reliability for ONE (shift, day_type) intersection, regrouped from
-    # the same hourly spine as the 1D by_shift / by_daytype grains (so the cells
+    # the same spine rows as the 1D by_shift / by_daytype grains (so the cells
     # reconcile with those marginals). shift uses the canonical time-of-day token
     # (am_peak|midday|pm_peak|evening|night); day_type is weekday|weekend. The web
     # reshapes a 5-shift x 2-day_type grid and shows a no-data MESSAGE per absent
@@ -533,9 +533,9 @@ class WeakStop(BaseModel):
     avg_delay_min: float | None = None
 
 class RouteDayOfWeek(BaseModel):
-    # Per-route weekday seasonality from gold.route_delay_day_of_week (ISO 1=Mon..7=Sun).
-    # trip_count is intentionally omitted — the gold column is an hourly-distinct-sum
-    # upper-bound proxy, not distinct trips per weekday.
+    # Per-route weekday seasonality from gold.route_delay_spine, GROUP BY ISO dow
+    # (1=Mon..7=Sun). trip_count is intentionally omitted (no additive distinct-trip
+    # count at the spine's hour grain).
     day_of_week_iso: int
     avg_delay_min: float | None = None
     severe_pct: float | None = None
@@ -579,8 +579,8 @@ class RouteReliability(BaseModel):
     # window (each route×day attributed to its dominant occupancy band). Empty
     # when the route has no occupancy telemetry in the window.
     delay_by_crowding: list[CrowdingDelayCell] = Field(default_factory=list)
-    # Tier-3 additive: 2D shift x day_type delay crosstab from
-    # gold.route_delay_by_shift_daytype. SPARSE — only (shift, day_type) cells with
+    # Tier-3 additive: 2D shift x day_type delay crosstab derived from
+    # gold.route_delay_spine. SPARSE — only (shift, day_type) cells with
     # observations are emitted; the web reshapes a 5x2 grid and shows a no-data
     # MESSAGE per absent cell. Defaults empty so already-published snapshots
     # lacking this key still validate. Purely additive.

@@ -146,27 +146,3 @@ def test_reliability_flag_true_only_for_routes_with_history(conn) -> None:
     assert by_id[ROUTE_WITHOUT].reliability is False
 
 
-def test_unrouted_sentinel_never_flags_a_real_route(conn) -> None:
-    # build_routes_index now enumerates from gold.route_delay_spine, which filters
-    # route_id IS NOT NULL at build (no COALESCE -> no '__unrouted__'). A sentinel
-    # row in the OLD route_reliability_monthly mart must therefore have zero effect.
-    conn.execute(
-        text(
-            """
-            INSERT INTO gold.route_reliability_monthly
-                (provider_id, month_start_local, route_id, observation_count,
-                 delayed_trip_count, severe_delay_count, delay_observation_count)
-            VALUES (:p, :mo, '__unrouted__', 5, 1, 0, 5)
-            """
-        ),
-        {"p": PROVIDER, "mo": date(2026, 5, 1)},
-    )
-
-    idx = build_routes_index(conn, provider_id=PROVIDER, generated_utc="t")
-    by_id = {r.id: r for r in idx.routes}
-
-    # The sentinel row in the legacy mart is ignored — it never appears in the index…
-    assert "__unrouted__" not in by_id
-    # …ROUTE_WITH (real spine history) is still flagged, ROUTE_WITHOUT is not.
-    assert by_id[ROUTE_WITH].reliability is True
-    assert by_id[ROUTE_WITHOUT].reliability is False

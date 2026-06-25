@@ -235,10 +235,9 @@ def _anchor_today(connection) -> date:  # noqa: ANN001
     ).scalar_one()
 
 
-def _render(connection, source: str):  # noqa: ANN001
+def _render(connection):  # noqa: ANN001
     return build_route_reliability(
-        connection, provider_id=PROVIDER, route_id=ROUTE,
-        generated_utc=GENERATED_UTC, source=source,
+        connection, provider_id=PROVIDER, route_id=ROUTE, generated_utc=GENERATED_UTC,
     ).model_dump(mode="json")
 
 
@@ -366,12 +365,15 @@ def _seeded_conn():
     reason="set SPINE_GOLDEN_REGEN=1 to regenerate the frozen golden",
 )
 def test_regenerate_golden() -> None:
+    # Post-drop the source="fact" path is gone, so the golden re-baselines from the
+    # spine. (Byte-identity to the fact output was proven at cutover, when both
+    # existed; the committed golden remains that frozen fact oracle.)
     with _seeded_conn() as connection:
         anchor = _anchor_today(connection)
-        canon_fact = _canonicalize(_render(connection, "fact"), anchor)
-    assert _has_delay_subtree(canon_fact), "refusing to freeze an empty delay subtree (Finding E)"
+        canon = _canonicalize(_render(connection), anchor)
+    assert _has_delay_subtree(canon), "refusing to freeze an empty delay subtree (Finding E)"
     GOLDEN_PATH.parent.mkdir(parents=True, exist_ok=True)
-    GOLDEN_PATH.write_text(json.dumps(canon_fact, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    GOLDEN_PATH.write_text(json.dumps(canon, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
 def test_spine_matches_frozen_golden_on_count_and_share_fields() -> None:
@@ -382,48 +384,28 @@ def test_spine_matches_frozen_golden_on_count_and_share_fields() -> None:
     assert _has_delay_subtree(golden), "frozen golden has an empty delay subtree (Finding E)"
     with _seeded_conn() as connection:
         anchor = _anchor_today(connection)
-        canon_spine = _canonicalize(_render(connection, "spine"), anchor)
-        canon_fact = _canonicalize(_render(connection, "fact"), anchor)
-    # The committed golden is the fact render; today's fact render must still match it
-    # (guards against the golden going stale vs an unrelated fact-path change).
-    _assert_frozen_match(golden, canon_fact)
-    # The licensing assertion: spine reproduces every frozen field of the golden.
+        canon_spine = _canonicalize(_render(connection), anchor)
+    # The committed golden is the source="fact" render frozen at cutover; the spine
+    # reproduces every frozen field, only {avg/p50/p90} rebaselined (allow-move).
     _assert_frozen_match(golden, canon_spine)
     # Byte backstop: with the allow-move leaves zeroed, the bodies are identical.
     assert _zero_allow_move(golden) == _zero_allow_move(canon_spine)
 
 
-def test_spine_equals_fact_live_full_object() -> None:
-    """Calendar-stable live proof (same now for both renders): the full canonical
-    object matches on every frozen field, only allow-move differs."""
+def test_network_by_shift_daytype_renders_from_spine() -> None:
+    """The network_trend by_shift/by_daytype grains derive from the spine across BOTH
+    seeded routes (byte-identity to the dropped folds was proven at cutover); here we
+    assert they render with in-range shares + full grain coverage."""
     with _seeded_conn() as connection:
-        anchor = _anchor_today(connection)
-        canon_fact = _canonicalize(_render(connection, "fact"), anchor)
-        canon_spine = _canonicalize(_render(connection, "spine"), anchor)
-    assert _has_delay_subtree(canon_fact)
-    _assert_frozen_match(canon_fact, canon_spine)
-
-
-def test_network_by_shift_daytype_spine_equals_fact() -> None:
-    """The network_trend by_shift/by_daytype grains, aggregated across BOTH seeded
-    routes, are byte-identical fact-vs-spine on otp_pct/severe_pct (avg rebaselines)."""
-    with _seeded_conn() as connection:
-        fact = build_network_trend(
-            connection, provider_id=PROVIDER, generated_utc=GENERATED_UTC, source="fact"
-        ).model_dump(mode="json")
         spine = build_network_trend(
-            connection, provider_id=PROVIDER, generated_utc=GENERATED_UTC, source="spine"
+            connection, provider_id=PROVIDER, generated_utc=GENERATED_UTC
         ).model_dump(mode="json")
     for grain_key in ("by_shift", "by_daytype"):
-        f = {row["grain"]: row for row in fact[grain_key]}
-        s = {row["grain"]: row for row in spine[grain_key]}
-        assert set(f) == set(s) and f, (grain_key, set(f) ^ set(s))
-        for grain, frow in f.items():
-            assert frow["otp_pct"] == s[grain]["otp_pct"], (grain_key, grain, "otp")
-            assert frow["severe_pct"] == s[grain]["severe_pct"], (grain_key, grain, "severe")
-            srow = s[grain]
-            assert srow["avg_delay_min"] is None or isinstance(srow["avg_delay_min"], (int, float))
-    # Non-trivial: multiple shifts present, and weekday+weekend day-types.
+        rows = {row["grain"]: row for row in spine[grain_key]}
+        assert rows, grain_key
+        for row in rows.values():
+            assert row["otp_pct"] is None or 0 <= row["otp_pct"] <= 100
+            assert row["severe_pct"] is None or row["severe_pct"] >= 0
     assert len({row["grain"] for row in spine["by_shift"]}) >= 3
     assert {row["grain"] for row in spine["by_daytype"]} == {"weekday", "weekend"}
 
@@ -467,13 +449,12 @@ def test_repeated_problem_route_issue_count_matches_spine_weekly_severe() -> Non
     assert hot is not None  # renders off the spine-weekly OTP join
 
 
-def test_ghost_only_hour_otp_byte_identical() -> None:
-    """Finding F: the night ghost-only hour (|delay|>3600) -> otp_pct identical
-    (delay_obs counts ghosts, on_time excludes them -> 0% on both paths)."""
+def test_ghost_only_hour_otp_is_zero() -> None:
+    """Finding F: the night ghost-only hour (|delay|>3600) -> delay_obs counts the
+    ghosts but on_time/severe exclude them, so otp_pct is 0 (a real 0%, not None)."""
     with _seeded_conn() as connection:
-        fact = {(p["grain"], p["date"]): p for p in _render(connection, "fact")["periods"]}
-        spine = {(p["grain"], p["date"]): p for p in _render(connection, "spine")["periods"]}
-    night_keys = [k for k in fact if k[0] == "night"]
+        spine = {(p["grain"], p["date"]): p for p in _render(connection)["periods"]}
+    night_keys = [k for k in spine if k[0] == "night"]
     assert night_keys, "expected a night grain from the ghost-only hour"
     for k in night_keys:
-        assert fact[k]["otp_pct"] == spine[k]["otp_pct"] == 0
+        assert spine[k]["otp_pct"] == 0

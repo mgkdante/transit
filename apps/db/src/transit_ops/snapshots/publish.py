@@ -268,7 +268,7 @@ def _publish_historic(
     flat_items = [
         (
             "historic/network_trend.json",
-            builders.build_network_trend(conn, provider_id=provider_id, generated_utc=stamp, source=getattr(settings, "SPINE_ROUTE_SOURCE", "fact")),  # type: ignore[arg-type]
+            builders.build_network_trend(conn, provider_id=provider_id, generated_utc=stamp),  # type: ignore[arg-type]
             "historic",
         ),
         (
@@ -303,7 +303,7 @@ def _publish_historic(
     route_items = [
         (
             f"historic/route_reliability/{route_id}.json",
-            builders.build_route_reliability(conn, provider_id=provider_id, route_id=str(route_id), generated_utc=stamp, source=getattr(settings, "SPINE_ROUTE_SOURCE", "fact")),  # type: ignore[arg-type]
+            builders.build_route_reliability(conn, provider_id=provider_id, route_id=str(route_id), generated_utc=stamp),  # type: ignore[arg-type]
             "historic",
         )
         for (route_id,) in route_rows

@@ -18,8 +18,6 @@ from transit_ops.snapshots.builders import (
     _RECEIPTS_WORST_STOP_SQL,
     _ROUTE_NAMES_SQL,
     _ROUTE_REL_DAILY_SQL,
-    _ROUTE_REL_MONTHLY_SQL,
-    _ROUTE_REL_WEEKLY_SQL,
     _STOP_NAMES_SQL,
     _TREND_DAILY_SQL,
     _TREND_FACT_SQL,
@@ -48,7 +46,6 @@ from transit_ops.snapshots.contract import (
     NetworkTrend,
     Provenance,
     RepeatOffenders,
-    RouteReliability,
     StopReliability,
 )
 
@@ -224,6 +221,46 @@ def test_pctile_from_hist_bin_zero_safe_and_negative() -> None:
     assert _pctile_from_hist(hist, 0.9) == -10.5
 
 
+def _spine_row(*, known_obs, on_time, severe, sum_delay_sec, hist):  # noqa: ANN001, ANN202
+    row = {"obs": known_obs, "known_obs": known_obs, "on_time": on_time,
+           "severe": severe, "sum_delay_sec": sum_delay_sec}
+    for k in range(1, 22):
+        row[f"h{k}"] = hist[k - 1]
+    return row
+
+
+def test_spine_reliability_period_maps_otp_severe_and_rebaselined_avg() -> None:
+    from transit_ops.snapshots.builders.historic import _spine_reliability_period
+
+    # 6 in-clamp delays summing to 1100s; otp 4/8=50, severe 2/8=25.0,
+    # avg 1100/6/60 = 3.06 -> rounds to 3.1.
+    hist = [0] * 8 + [6] + [0] * 12   # all 6 in bin 8 = [30,60)
+    p = _spine_reliability_period(
+        _spine_row(known_obs=8, on_time=4, severe=2, sum_delay_sec=1100, hist=hist),
+        grain="week", date="2026-06-01",
+    )
+    assert p.grain == "week" and p.date == "2026-06-01"
+    assert p.otp_pct == 50
+    assert p.severe_pct == 25.0
+    assert p.avg_delay_min == 3.1
+    assert p.p50_min is not None and p.p90_min is not None  # D3 upgrade: populated
+
+
+def test_spine_reliability_period_honest_null_when_no_delays() -> None:
+    from transit_ops.snapshots.builders.historic import _spine_reliability_period
+
+    # No usable delays: on_time NULL, known_obs 0, empty histogram -> every derived
+    # metric is honest-None (never a fabricated 0.0).
+    p = _spine_reliability_period(
+        _spine_row(known_obs=0, on_time=None, severe=0, sum_delay_sec=0, hist=[0] * 21),
+        grain="am_peak", date=None,
+    )
+    assert p.otp_pct is None
+    assert p.severe_pct is None
+    assert p.avg_delay_min is None
+    assert p.p50_min is None and p.p90_min is None
+
+
 # --------------------------------------------------------------------------
 # build_network_trend — merge two daily series; p90/vehicles only where the
 # fact table covers the date.
@@ -392,78 +429,11 @@ def _route_reliability_dispatch(*, daily=None, weekly=None, monthly=None, headwa
     ]
 
 
-def test_build_route_reliability_periods_and_otp() -> None:
-    conn = FakeConn(
-        _route_reliability_dispatch(
-            daily=[
-                {
-                    "d": datetime.date(2026, 6, 1),
-                    "known_obs": 100,
-                    "on_time": 90,
-                    "avg_delay_sec": 90.0,  # -> 1.5 min
-                    "severe": 10,
-                },
-            ],
-            weekly=[
-                {
-                    "d": datetime.date(2026, 5, 25),
-                    "known_obs": 100,
-                    "on_time": 47,
-                    "avg_delay_sec": 120.0,  # -> 2.0 min
-                    "severe": 5,
-                },
-            ],
-            monthly=[
-                {
-                    "d": datetime.date(2026, 5, 1),
-                    "known_obs": 1000,
-                    "on_time": None,
-                    "avg_delay_sec": 150.0,  # -> 2.5 min
-                    "severe": 50,  # -> 5.0%
-                },
-            ],
-        )
-    )
-
-    out = build_route_reliability(conn, provider_id="stm", route_id="51", generated_utc="t")
-
-    assert isinstance(out, RouteReliability)
-    assert out.id == "51"
-    by_grain = {p.grain: p for p in out.periods}
-    assert set(by_grain) == {"day", "week", "month"}
-
-    day = by_grain["day"]
-    assert day.date == "2026-06-01"
-    assert day.otp_pct == 90
-    assert day.avg_delay_min == 1.5
-    assert day.severe_pct == 10.0
-    assert day.p50_min is None and day.p90_min is None  # deferred
-    # slice-S3 honesty fields: real-OTP Wilson 95% bounds over known_obs (90/100).
-    assert day.observation_count == 100
-    assert day.wilson_lo == 82.6
-    assert day.wilson_hi == 94.5
-
-    week = by_grain["week"]
-    assert week.otp_pct == 47
-    assert week.avg_delay_min == 2.0
-    assert week.severe_pct == 5.0
-
-    month = by_grain["month"]
-    assert month.otp_pct is None
-    assert month.avg_delay_min == 2.5
-    assert month.severe_pct == 5.0
-    # count present but rate honestly null (on_time is None) -> Wilson is None too.
-    assert month.observation_count == 1000
-    assert month.wilson_lo is None and month.wilson_hi is None
-
-
 def test_route_reliability_sql_uses_real_otp_columns() -> None:
+    # The daily grain reads public_route_reliability_daily (a carve-out, kept);
+    # weekly/monthly/by_shift/by_daytype now derive from the spine projector.
     assert "delay_observation_count AS known_obs" in str(_ROUTE_REL_DAILY_SQL)
     assert "on_time_observation_count AS on_time" in str(_ROUTE_REL_DAILY_SQL)
-    for sql in (str(_ROUTE_REL_WEEKLY_SQL), str(_ROUTE_REL_MONTHLY_SQL)):
-        assert "delay_observation_count AS known_obs" in sql
-        assert "on_time_observation_count AS on_time" in sql
-        assert "delayed_trip_count" not in sql
 
 
 def test_build_route_reliability_headway_excess() -> None:
@@ -747,35 +717,6 @@ def test_build_route_reliability_delay_by_crowding_skips_zero_obs_days() -> None
     conn = FakeConn(_route_reliability_dispatch(crowding=crowding))
     out = build_route_reliability(conn, route_id="51", generated_utc="t")
     assert out.delay_by_crowding == []
-
-
-def test_build_route_reliability_by_shift_daytype_cells() -> None:
-    # Tier-3 2D crosstab: each (shift, day_type) row becomes one CrosstabCell with
-    # a REAL on_time/known OTP, weighted avg (sec->min), severe% over known obs.
-    crosstab = [
-        {"shift": "am_peak", "day_type": "weekday", "known_obs": 100,
-         "on_time": 90, "avg_delay_sec": 120.0, "severe": 10, "obs": 150},
-        {"shift": "am_peak", "day_type": "weekend", "known_obs": 40,
-         "on_time": 20, "avg_delay_sec": 300.0, "severe": 8, "obs": 50},
-    ]
-    conn = FakeConn(_route_reliability_dispatch(crosstab=crosstab))
-
-    out = build_route_reliability(conn, route_id="51", generated_utc="t")
-
-    by_cell = {(c.shift, c.day_type): c for c in out.by_shift_daytype}
-    assert set(by_cell) == {("am_peak", "weekday"), ("am_peak", "weekend")}
-
-    wd = by_cell[("am_peak", "weekday")]
-    assert wd.otp_pct == 90  # 90/100
-    assert wd.avg_delay_min == 2.0  # 120s
-    assert wd.severe_pct == 10.0  # 10/100
-    assert wd.observation_count == 150
-
-    we = by_cell[("am_peak", "weekend")]
-    assert we.otp_pct == 50  # 20/40
-    assert we.avg_delay_min == 5.0  # 300s
-    assert we.severe_pct == 20.0  # 8/40
-    assert we.observation_count == 50
 
 
 def test_build_route_reliability_by_shift_daytype_empty_when_absent() -> None:
@@ -1093,35 +1034,6 @@ def test_build_stop_reliability_carries_name() -> None:
 
     assert out["S1"].name == "Station Berri"
     assert out["S_UNNAMED"].name is None
-
-
-def test_build_route_reliability_dow_severe_pct_uses_delay_observation_count() -> None:
-    """Honesty-fix 3/3: per-weekday severe_pct denominates on delay_observation_count
-    (observations with a known delay), matching every other grain — NOT COUNT(*)
-    observation_count, which would understate it."""
-    conn = FakeConn(
-        _route_reliability_dispatch(
-            dow=[
-                {
-                    "day_of_week_iso": 1, "observation_count": 100,
-                    "delay_observation_count": 40, "avg_delay_seconds": 120.0,
-                    "severe_delay_count": 8,
-                }
-            ],
-        )
-    )
-    out = build_route_reliability(conn, provider_id="stm", route_id="51", generated_utc="t")
-    assert len(out.day_of_week) == 1
-    dow = out.day_of_week[0]
-    assert dow.day_of_week_iso == 1
-    # 8 severe / 40 known-delay obs = 20.0%, NOT 8 / 100 = 8.0%.
-    assert dow.severe_pct == 20.0
-    assert dow.observation_count == 100
-
-
-# --------------------------------------------------------------------------
-# build_hotspots
-# --------------------------------------------------------------------------
 
 
 def test_build_hotspots_ranks_and_top_20() -> None:
