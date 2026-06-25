@@ -1105,11 +1105,11 @@ def test_build_routes_index():
 
     class FC:
         # build_routes_index issues TWO queries: the reliability-availability set
-        # (route_reliability_weekly ...) then the routes index. Dispatch by needle
-        # so the flag is set deterministically: 165 has history, 999 does not.
+        # (DISTINCT route_id FROM the delay spine) then the routes index. Dispatch by
+        # needle so the flag is set deterministically: 165 has history, 999 does not.
         def execute(self, statement, params=None):  # noqa: ANN001, ARG002
             s = str(statement)
-            if "route_reliability_weekly" in s:
+            if "DISTINCT route_id FROM gold.route_delay_spine" in s:
                 return _Result([{"route_id": "165"}])
             return _Result([
                 {"route_id": "165", "route_short_name": "165", "route_long_name": "Côte-Vertu",

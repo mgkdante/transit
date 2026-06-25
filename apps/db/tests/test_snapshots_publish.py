@@ -267,7 +267,7 @@ def test_publish_static_writes_expected_keys() -> None:
         # reliability-availability set for build_routes_index. MUST precede the
         # broader needles (it shares the generic "route_id" column); 165 has
         # reliability history so its routes_index entry gets reliability=True.
-        ("route_reliability_weekly", [{"route_id": "165"}]),
+        ("DISTINCT route_id FROM gold.route_delay_spine", [{"route_id": "165"}]),
         # routes index
         ("route_sort_order", [
             {"route_id": "165", "route_short_name": "165", "route_long_name": "Côte-Vertu",
@@ -519,8 +519,8 @@ def test_publish_historic_writes_expected_keys(tmp_path) -> None:
             {"stop_id": "51234", "day_of_week_iso": 7, "dow_obs": 0, "severe": 0,
              "weighted_delay_sec": None},
         ]),
-        # route IDs with history: UNION query
-        ("UNION", [
+        # route IDs with history: SELECT DISTINCT route_id FROM the delay spine
+        ("DISTINCT route_id FROM gold.route_delay_spine", [
             ("101",), ("202",),
         ]),
         # build_route_reliability: cancellation history — unique discriminator
@@ -914,12 +914,12 @@ def test_publish_static_writes_basemap_when_configured() -> None:
 def test_historic_route_enumeration_excludes_unrouted_sentinel() -> None:
     """Per-route reliability files must not be emitted for '__unrouted__'.
 
-    route_id is COALESCE'd to '__unrouted__' in the hourly spine, so it exists
-    in route_reliability_weekly/monthly; the enumeration that decides which
-    routes get a historic/route_reliability/{id}.json must exclude it so the
-    internal sentinel is never published as if it were a real route.
+    The enumeration is sourced from gold.route_delay_spine (S7-B), which filters
+    route_id IS NOT NULL at build, so the '__unrouted__' sentinel never appears —
+    the exclusion is a build-time invariant, not a SQL-level filter.
     """
     sql = _DISTINCT_HISTORIC_ROUTE_IDS_SQL
-    assert sql.count("route_id <> '__unrouted__'") == 2  # both UNION halves
-    assert "route_reliability_weekly" in sql
-    assert "route_reliability_monthly" in sql
+    assert "DISTINCT route_id FROM gold.route_delay_spine" in sql
+    assert "__unrouted__" not in sql
+    assert "route_reliability_weekly" not in sql
+    assert "route_reliability_monthly" not in sql

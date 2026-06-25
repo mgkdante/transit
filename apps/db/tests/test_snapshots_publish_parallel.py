@@ -495,7 +495,7 @@ class _RecordingStaticConn:
         # reliability-availability set for build_routes_index — MUST precede the
         # broader route_id needles below (shares the generic "route_id" column).
         # Only R1 has history, so its routes_index entry gets reliability=True.
-        if "route_reliability_weekly" in s:
+        if "DISTINCT route_id FROM gold.route_delay_spine" in s:
             return _StaticResult([{"route_id": "R1"}])
         if "SELECT route_id FROM gold.dim_route WHERE provider_id" in s:
             return _StaticResult([{"route_id": "R1"}, {"route_id": "R2"}, {"route_id": "R3"}])

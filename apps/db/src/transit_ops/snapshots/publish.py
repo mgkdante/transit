@@ -149,16 +149,14 @@ _STATIC_STAMP_SQL = (
     "AND is_current = true ORDER BY loaded_at_utc DESC LIMIT 1"
 )
 
-# Routes that get a per-route reliability file. route_id is COALESCE'd to
-# '__unrouted__' in the hourly spine, so the sentinel exists in the reliability
-# marts — exclude it here so historic/route_reliability/__unrouted__.json is
-# never published as if it were a real route.
+# Routes that get a per-route reliability file. Sourced from the route delay spine
+# (S7-B): the spine filters route_id IS NOT NULL at build, so the '__unrouted__'
+# sentinel never appears and no historic/route_reliability/__unrouted__.json is
+# published. Same route set as the (now-dropped) route_reliability_weekly/monthly
+# marts, which derived from the same facts.
 _DISTINCT_HISTORIC_ROUTE_IDS_SQL = (
-    "SELECT DISTINCT route_id FROM gold.route_reliability_weekly"
-    " WHERE provider_id = :provider_id AND route_id <> '__unrouted__'"
-    " UNION"
-    " SELECT DISTINCT route_id FROM gold.route_reliability_monthly"
-    " WHERE provider_id = :provider_id AND route_id <> '__unrouted__'"
+    "SELECT DISTINCT route_id FROM gold.route_delay_spine"
+    " WHERE provider_id = :provider_id"
 )
 
 

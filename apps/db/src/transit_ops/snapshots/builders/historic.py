@@ -1898,6 +1898,20 @@ _HOTSPOTS_SQL = text(
              LIMIT 1)
         ) AS target_grain
     ),
+    -- Per-route weekly OTP counts derived from the route delay spine (S7-B): the
+    -- ISO-week SUMs of on_time/delay observation counts are byte-identical to the
+    -- (dropped) route_reliability_weekly columns, so the route OTP + the network
+    -- baseline below are unchanged. The spine has no '__unrouted__' (route_id NOT
+    -- NULL at build); week_start_local is the feed-local ISO-week Monday.
+    route_spine_weekly AS (
+        SELECT route_id,
+               date_trunc('week', service_local_date)::date AS week_start_local,
+               SUM(on_time_observation_count) AS on_time_observation_count,
+               SUM(delay_observation_count)   AS delay_observation_count
+        FROM gold.route_delay_spine
+        WHERE provider_id = :provider_id
+        GROUP BY route_id, date_trunc('week', service_local_date)::date
+    ),
     -- Network baseline OTP for the target week: real on_time/known aggregated
     -- over ALL routes, numerator and denominator scoped together to on-time-known
     -- rows so the gold NULL-guard does not bias OTP low (mirrors network_trend).
@@ -1905,9 +1919,8 @@ _HOTSPOTS_SQL = text(
         SELECT SUM(rrw.on_time_observation_count) AS net_on_time,
                SUM(rrw.delay_observation_count) FILTER (
                    WHERE rrw.on_time_observation_count IS NOT NULL) AS net_known
-        FROM gold.route_reliability_weekly AS rrw, target
-        WHERE rrw.provider_id = :provider_id
-          AND rrw.week_start_local = target.target_start
+        FROM route_spine_weekly AS rrw, target
+        WHERE rrw.week_start_local = target.target_start
     ),
     -- Stop-grain network baseline for the target week: the SAME severe(>300s)
     -- proxy a stop cell uses ((obs - severe)/obs), aggregated across ALL stops.
@@ -1943,9 +1956,8 @@ _HOTSPOTS_SQL = text(
     CROSS JOIN target
     CROSS JOIN net
     CROSS JOIN net_stop
-    LEFT JOIN gold.route_reliability_weekly AS rrw
+    LEFT JOIN route_spine_weekly AS rrw
            ON rp.entity_kind = 'route'
-          AND rrw.provider_id = :provider_id
           AND rrw.route_id = rp.entity_id
           AND rrw.week_start_local = target.target_start
     LEFT JOIN stop_otp AS so

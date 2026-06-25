@@ -42,7 +42,11 @@ from sqlalchemy import create_engine, text
 
 from transit_ops.gold import rollups
 from transit_ops.settings import Settings
-from transit_ops.snapshots.builders.historic import build_network_trend, build_route_reliability
+from transit_ops.snapshots.builders.historic import (
+    build_hotspots,
+    build_network_trend,
+    build_route_reliability,
+)
 
 DB_URL = os.environ.get("TRANSIT_TEST_DATABASE_URL")
 
@@ -422,6 +426,45 @@ def test_network_by_shift_daytype_spine_equals_fact() -> None:
     # Non-trivial: multiple shifts present, and weekday+weekend day-types.
     assert len({row["grain"] for row in spine["by_shift"]}) >= 3
     assert {row["grain"] for row in spine["by_daytype"]} == {"weekday", "weekend"}
+
+
+def test_repeated_problem_route_issue_count_matches_spine_weekly_severe() -> None:
+    """Task 5 full-drop: the repeated_problem_route_stop builder now derives its
+    route-grain recurrence from gold.route_delay_spine. issue_count must equal the
+    spine's per-(route, ISO-week) SUM(severe) — byte-identical to the (about-to-be-
+    dropped) route_reliability_weekly.severe_delay_count it used to read."""
+    with _seeded_conn() as connection:
+        rp = {
+            (r["entity_id"], r["period_start_local"]): r["issue_count"]
+            for r in connection.execute(
+                text(
+                    "SELECT entity_id, period_start_local, issue_count "
+                    "FROM gold.repeated_problem_route_stop "
+                    "WHERE provider_id = :p AND entity_kind = 'route' AND period_grain = 'week'"
+                ),
+                {"p": PROVIDER},
+            ).mappings()
+        }
+        spine = {
+            (r["route_id"], r["wk"]): r["severe"]
+            for r in connection.execute(
+                text(
+                    "SELECT route_id, date_trunc('week', service_local_date)::date AS wk, "
+                    "       SUM(severe_delay_count)::int AS severe "
+                    "FROM gold.route_delay_spine WHERE provider_id = :p "
+                    "GROUP BY route_id, date_trunc('week', service_local_date)::date "
+                    "HAVING SUM(severe_delay_count) > 0"
+                ),
+                {"p": PROVIDER},
+            ).mappings()
+        }
+        # build_hotspots must execute its spine-derived weekly join without error.
+        hot = build_hotspots(connection, provider_id=PROVIDER, generated_utc=GENERATED_UTC)
+    assert rp, "expected route-grain repeated-problem rows from the seeded severe delays"
+    assert spine, "expected severe delays in the spine"
+    for key, severe in spine.items():
+        assert rp.get(key) == severe, (key, rp.get(key), severe)
+    assert hot is not None  # renders off the spine-weekly OTP join
 
 
 def test_ghost_only_hour_otp_byte_identical() -> None:

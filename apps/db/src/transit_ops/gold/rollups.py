@@ -1072,18 +1072,29 @@ UPSERT_ROUTE_HABIT_SCORE = text(
 
 UPSERT_REPEATED_PROBLEM_ROUTE_STOP = text(
     """
+    -- Route-grain weekly recurrence derived from the route delay spine (S7-B): the
+    -- ISO-week SUM of severe_delay_count is byte-identical to the (dropped)
+    -- route_reliability_weekly.severe_delay_count, so issue_count and the
+    -- issue_count-driven severity are unchanged. avg_delay_seconds rebaselines to the
+    -- ghost-excluded pooled mean (sum_delay_seconds / Σ histogram bins) — it only
+    -- influences severity at the 300/600s thresholds for low-severe rows. The spine
+    -- filters route_id IS NOT NULL, so the '__unrouted__' sentinel never appears.
     WITH route_week AS (
         SELECT
-            r.provider_id,
+            sp.provider_id,
             'route'::text AS entity_kind,
-            COALESCE(r.route_id, '__unrouted__') AS entity_id,
-            COALESCE(r.route_id, '__unrouted__') AS route_id,
+            sp.route_id AS entity_id,
+            sp.route_id AS route_id,
             'week'::text AS period_grain,
-            r.week_start_local AS period_start_local,
-            SUM(r.severe_delay_count)::integer AS issue_count,
-            ROUND(AVG(r.avg_delay_seconds)::numeric, 2) AS avg_delay_seconds
-        FROM gold.route_reliability_weekly AS r
-        WHERE r.provider_id = :provider_id
+            date_trunc('week', sp.service_local_date)::date AS period_start_local,
+            SUM(sp.severe_delay_count)::integer AS issue_count,
+            ROUND(
+                SUM(sp.sum_delay_seconds)::numeric
+                / NULLIF(SUM((SELECT COALESCE(SUM(x), 0) FROM unnest(sp.delay_histogram) AS x)), 0),
+                2
+            ) AS avg_delay_seconds
+        FROM gold.route_delay_spine AS sp
+        WHERE sp.provider_id = :provider_id
         GROUP BY 1, 2, 3, 4, 5, 6
     ),
     stop_week AS (

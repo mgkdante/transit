@@ -1401,15 +1401,16 @@ def test_build_hotspots_otp_delta_network_baseline_null_is_none() -> None:
 def test_hotspots_sql_per_kind_otp_join_keys() -> None:
     """SQL guards against route/stop OTP cross-contamination: the route join is
     scoped to entity_kind='route' on route_id, the stop join to entity_kind='stop'
-    on stop_id, and the network baseline reads route_reliability_weekly."""
+    on stop_id, and the route network baseline reads the route delay spine (S7-B)."""
     sql = str(_HOTSPOTS_SQL)
     assert "rp.entity_kind = 'route'" in sql
     assert "rrw.route_id = rp.entity_id" in sql
     assert "rp.entity_kind = 'stop'" in sql
     assert "so.stop_id = rp.entity_id" in sql
-    # route network baseline aggregates real OTP over route_reliability_weekly
+    # route network baseline aggregates real OTP over a spine-derived weekly CTE
     assert "net_on_time" in sql and "net_known" in sql
-    assert "gold.route_reliability_weekly" in sql
+    assert "route_spine_weekly AS" in sql
+    assert "gold.route_delay_spine" in sql
     assert "gold.stop_delay_weekly" in sql
     # stop network baseline aggregates the severe-proxy over ALL stops (same
     # metric a stop cell uses), so stop deltas are not lenient-vs-strict

@@ -271,15 +271,13 @@ _ROUTES_INDEX_SQL = text(
 
 # Routes that get a per-route historic/route_reliability/{id}.json file. MUST
 # mirror publish._DISTINCT_HISTORIC_ROUTE_IDS_SQL exactly so the published
-# `reliability` flag matches the set of files actually written (route_id is
-# COALESCE'd to '__unrouted__' in the hourly spine, so exclude the sentinel).
+# `reliability` flag matches the set of files actually written. Sourced from the
+# route delay spine (S7-B), which filters route_id IS NOT NULL at build, so the
+# '__unrouted__' sentinel never appears.
 _RELIABILITY_ROUTE_IDS_SQL = text(
     """
-    SELECT DISTINCT route_id FROM gold.route_reliability_weekly
-     WHERE provider_id = :provider_id AND route_id <> '__unrouted__'
-     UNION
-    SELECT DISTINCT route_id FROM gold.route_reliability_monthly
-     WHERE provider_id = :provider_id AND route_id <> '__unrouted__'
+    SELECT DISTINCT route_id FROM gold.route_delay_spine
+     WHERE provider_id = :provider_id
     """
 )
 
