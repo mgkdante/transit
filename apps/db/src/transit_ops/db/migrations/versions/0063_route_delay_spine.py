@@ -18,8 +18,10 @@ delayed_trip_count (= COUNT(DISTINCT trip_id)) is intentionally ABSENT: it is no
 across the hour grain (a trip spans hours), so the publisher reads it from route_delay_hourly
 (kept transitionally) instead of summing per-hour distinct counts.
 
-The fact's route_id + direction_id are nullable; every spine PK column is NOT NULL, so the
-builder filters to attributable rows. NOT in REPORTING_AGGREGATE_TABLES — accrued history is
+The fact's route_id + direction_id are nullable; every spine PK column is NOT NULL. The builder
+filters to rows with a non-null route_id (the route grain) and COALESCEs an unknown direction to
+0 — matching the existing directional builder (route_headway_by_direction_shift) so the
+sum-across-direction folds stay byte-identical. NOT in REPORTING_AGGREGATE_TABLES — accrued history is
 never DELETE+UPSERT wiped; pruned at 365d via the append-only retention lists in
 maintenance/gold.py. Clones the append-only lifecycle of 0046 (percentile) + 0048 (band rollup).
 

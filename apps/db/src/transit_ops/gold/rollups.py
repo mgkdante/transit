@@ -503,6 +503,114 @@ UPSERT_ROUTE_SKIPPED_STOP_DAILY = text(
 )
 
 
+# --- S7-B route_delay_spine: finest-grain additive DELAY metric family ---
+# Single source for the 21 histogram edges (sec, left-closed/right-open). The
+# headline SHARES come from the EXACT delay_seconds-predicate count columns below
+# (NOT bins) — a left-closed edge at 300 cannot represent the strict >300 severe
+# band — so the histogram is used only for p50/p90 (CDF interpolation) + the chart.
+DELAY_HISTOGRAM_EDGES = (
+    -3600, -300, -180, -120, -90, -60, -30, 0, 30, 60, 90, 120, 150, 180,
+    240, 300, 420, 600, 900, 1800, 3600,
+)
+
+_SPINE_HIST_EDGES_SQL = (
+    "ARRAY[-3600,-300,-180,-120,-90,-60,-30,0,30,60,90,120,150,180,"
+    "240,300,420,600,900,1800,3600]"
+)
+
+# Append-only / closed-day builder for gold.route_delay_spine (rollup_kind=
+# "route_delay_spine"). Reads one CLOSED provider-local day of the trip-delay fact,
+# groups to (route, hour-of-day-local, direction), and stores EXACT additive counts
+# computed with the SAME predicates as UPSERT_TRIP_DELAY_SUMMARY_5M (so otp_pct /
+# severe_pct are byte-identical ratios), plus a SEPARATE 21-bin histogram + the
+# pooled sum_delay_seconds. Binds {provider_id, local_date, date_key, built_at_utc}
+# so it drops straight into _build_percentile_days. Unknown direction COALESCEs to 0
+# (matching the directional headway builder); delayed_trip_count is intentionally
+# absent (non-additive distinct-trip count -> read from route_delay_hourly).
+UPSERT_ROUTE_DELAY_SPINE = text(
+    f"""
+    WITH binned AS (
+        SELECT
+            f.provider_id,
+            f.route_id,
+            EXTRACT(HOUR FROM timezone(dp.timezone, f.captured_at_utc))::smallint
+                AS hour_of_day_local,
+            COALESCE(f.direction_id, 0) AS direction_id,
+            f.delay_seconds AS delay_seconds,
+            CASE
+                WHEN f.delay_seconds IS NULL
+                     OR ABS(f.delay_seconds) > {GHOST_DELAY_ABS_SECONDS}
+                THEN NULL
+                ELSE LEAST(
+                    GREATEST(width_bucket(f.delay_seconds, {_SPINE_HIST_EDGES_SQL}), 1),
+                    21
+                ) - 1
+            END AS bin_idx
+        FROM gold.fact_trip_delay_snapshot AS f
+        INNER JOIN gold.dim_provider AS dp ON dp.provider_id = f.provider_id
+        WHERE f.provider_id = :provider_id
+          AND f.route_id IS NOT NULL
+          AND f.snapshot_date_key = :date_key
+    )
+    INSERT INTO gold.route_delay_spine (
+        provider_id, route_id, service_local_date, hour_of_day_local, direction_id,
+        observation_count, delay_observation_count, on_time_observation_count,
+        severe_delay_count, sum_delay_seconds, delay_histogram, built_at_utc
+    )
+    SELECT
+        provider_id,
+        route_id,
+        :local_date,
+        hour_of_day_local,
+        direction_id,
+        -- observation_count: every fact row in the grain (delay may be NULL).
+        COUNT(*)::integer,
+        -- delay_observation_count: every non-null delay (ghost-INCLUSIVE), matching the 5m.
+        COUNT(delay_seconds)::integer,
+        -- on-time = delay in [-60, 300) via the EXACT live predicate (NOT bins).
+        -- NULL-guarded: no usable delay -> on-time unknowable -> NULL (honest absence).
+        CASE
+            WHEN COUNT(delay_seconds) = 0 THEN NULL
+            ELSE COUNT(*) FILTER (
+                WHERE delay_seconds >= -60 AND delay_seconds < 300
+            )::integer
+        END,
+        -- severe = delay > 300s via the EXACT live predicate (byte-identical to the 5m).
+        COUNT(*) FILTER (
+            WHERE delay_seconds > {SEVERE_DELAY_SECONDS}
+              AND ABS(delay_seconds) <= {GHOST_DELAY_ABS_SECONDS}
+        )::integer,
+        -- pooled numerator for the rebaselined avg (ghost-excluded = in-clamp delays).
+        COALESCE(SUM(delay_seconds) FILTER (WHERE bin_idx IS NOT NULL), 0)::bigint,
+        ARRAY[
+            COUNT(*) FILTER (WHERE bin_idx = 0),  COUNT(*) FILTER (WHERE bin_idx = 1),
+            COUNT(*) FILTER (WHERE bin_idx = 2),  COUNT(*) FILTER (WHERE bin_idx = 3),
+            COUNT(*) FILTER (WHERE bin_idx = 4),  COUNT(*) FILTER (WHERE bin_idx = 5),
+            COUNT(*) FILTER (WHERE bin_idx = 6),  COUNT(*) FILTER (WHERE bin_idx = 7),
+            COUNT(*) FILTER (WHERE bin_idx = 8),  COUNT(*) FILTER (WHERE bin_idx = 9),
+            COUNT(*) FILTER (WHERE bin_idx = 10), COUNT(*) FILTER (WHERE bin_idx = 11),
+            COUNT(*) FILTER (WHERE bin_idx = 12), COUNT(*) FILTER (WHERE bin_idx = 13),
+            COUNT(*) FILTER (WHERE bin_idx = 14), COUNT(*) FILTER (WHERE bin_idx = 15),
+            COUNT(*) FILTER (WHERE bin_idx = 16), COUNT(*) FILTER (WHERE bin_idx = 17),
+            COUNT(*) FILTER (WHERE bin_idx = 18), COUNT(*) FILTER (WHERE bin_idx = 19),
+            COUNT(*) FILTER (WHERE bin_idx = 20)
+        ]::smallint[],
+        :built_at_utc
+    FROM binned
+    GROUP BY provider_id, route_id, hour_of_day_local, direction_id
+    ON CONFLICT (provider_id, route_id, service_local_date, hour_of_day_local, direction_id)
+    DO UPDATE SET
+        observation_count        = EXCLUDED.observation_count,
+        delay_observation_count  = EXCLUDED.delay_observation_count,
+        on_time_observation_count = EXCLUDED.on_time_observation_count,
+        severe_delay_count       = EXCLUDED.severe_delay_count,
+        sum_delay_seconds        = EXCLUDED.sum_delay_seconds,
+        delay_histogram          = EXCLUDED.delay_histogram,
+        built_at_utc             = EXCLUDED.built_at_utc
+    """
+)
+
+
 REPORTING_AGGREGATE_TABLES = (
     "route_delay_hourly",
     "route_delay_day_of_week",
@@ -1697,6 +1805,7 @@ class WarmRollupBuildResult:
     built_stop_occupancy_days: int = 0
     built_route_service_span_days: int = 0
     built_route_skipped_stop_days: int = 0
+    built_route_delay_spine_days: int = 0
     # True when the provider is enrolled but not yet seeded (no gold.dim_provider
     # row): the build is a logged no-op rather than a crash.
     skipped_not_seeded: bool = False
@@ -1714,6 +1823,7 @@ class WarmRollupBuildResult:
             "built_stop_occupancy_days": self.built_stop_occupancy_days,
             "built_route_service_span_days": self.built_route_service_span_days,
             "built_route_skipped_stop_days": self.built_route_skipped_stop_days,
+            "built_route_delay_spine_days": self.built_route_delay_spine_days,
             "reporting_aggregate_row_counts": self.reporting_aggregate_row_counts,
             "completed_at_utc": self.completed_at_utc.isoformat(),
         }
@@ -1962,6 +2072,18 @@ def build_warm_rollups(
         floor_key=floor_key,
         now=now,
     )
+    # Route delay spine — finest-grain additive delay metric family (hour x direction).
+    # Reads fact_trip_delay_snapshot -> default trip-delay missing-day calendar.
+    # APPEND-ONLY (NOT in REPORTING_AGGREGATE_TABLES); accrued history is never wiped.
+    built_route_delay_spine = _build_percentile_days(
+        engine,
+        provider_id=provider_id,
+        rollup_kind="route_delay_spine",
+        upsert=UPSERT_ROUTE_DELAY_SPINE,
+        today_key=today_key,
+        floor_key=floor_key,
+        now=now,
+    )
 
     # Reporting aggregates (full DELETE+UPSERT refresh) in their own transaction,
     # so a failure here never rolls back the committed 5m + daily-builder work.
@@ -2010,4 +2132,5 @@ def build_warm_rollups(
         built_stop_occupancy_days=built_stop_occupancy,
         built_route_service_span_days=built_route_service_span,
         built_route_skipped_stop_days=built_route_skipped_stop,
+        built_route_delay_spine_days=built_route_delay_spine,
     )

@@ -196,6 +196,9 @@ class FakeConnection:
         if "INSERT INTO gold.route_skipped_stop_daily" in sql:
             return RowcountResult(1)
 
+        if "INSERT INTO gold.route_delay_spine" in sql:
+            return RowcountResult(1)
+
         if "INSERT INTO gold.warm_rollup_periods" in sql:
             return RowcountResult(1)
 
@@ -1035,3 +1038,65 @@ def test_prune_warm_rollup_storage_display_dict_includes_dry_run() -> None:
     )
 
     assert result.display_dict()["dry_run"] is True
+
+
+# --- S7-B route_delay_spine builder (PR1 Task 2) ---
+
+
+def test_route_delay_spine_edges_are_the_21_contract_edges() -> None:
+    from transit_ops.gold import rollups
+
+    assert rollups.DELAY_HISTOGRAM_EDGES == (
+        -3600, -300, -180, -120, -90, -60, -30, 0, 30, 60, 90, 120, 150, 180,
+        240, 300, 420, 600, 900, 1800, 3600,
+    )
+    assert len(rollups.DELAY_HISTOGRAM_EDGES) == 21
+
+
+def test_route_delay_spine_upsert_shape() -> None:
+    from transit_ops.gold import rollups
+
+    sql = str(rollups.UPSERT_ROUTE_DELAY_SPINE)
+    compact = " ".join(sql.split())
+
+    assert "INSERT INTO gold.route_delay_spine" in sql
+    assert "FROM gold.fact_trip_delay_snapshot" in sql
+    assert "f.route_id IS NOT NULL" in sql
+    assert "f.snapshot_date_key = :date_key" in compact
+    # Finest-grain GROUP BY (hour x direction); service_local_date = :local_date.
+    assert ":local_date" in compact
+    assert (
+        "GROUP BY provider_id, route_id, hour_of_day_local, direction_id" in compact
+    )
+    assert (
+        "ON CONFLICT (provider_id, route_id, service_local_date, "
+        "hour_of_day_local, direction_id)" in compact
+    )
+    # Finding D: unknown direction COALESCEs to 0 (matching the existing directional builder).
+    assert "COALESCE(f.direction_id, 0)" in compact
+    # Correction #1 / Finding A: the headline-share counts come from the EXACT live
+    # delay_seconds predicates, NOT from histogram bins.
+    assert "delay_seconds >= -60 AND delay_seconds < 300" in compact
+    assert "delay_seconds > 300" in compact
+    assert "ABS(delay_seconds) <= 3600" in compact
+    # The histogram is a SEPARATE 21-bin array via width_bucket (p50/p90 + the chart only).
+    assert "width_bucket" in compact
+    assert "::smallint[]" in compact
+    # Correction #2: delayed_trip_count is non-additive -> never a spine column.
+    assert "delayed_trip_count" not in sql
+
+
+def test_build_warm_rollups_wires_route_delay_spine_and_counts_it() -> None:
+    conn = FakeConnection()
+    engine = FakeEngine(conn)
+
+    result = build_warm_rollups("stm", engine=engine)
+
+    assert result.built_route_delay_spine_days == 0
+    assert "built_route_delay_spine_days" in result.display_dict()
+
+
+def test_route_delay_spine_is_append_only_not_in_reporting_registry() -> None:
+    from transit_ops.gold import rollups
+
+    assert "route_delay_spine" not in rollups.REPORTING_AGGREGATE_TABLES
