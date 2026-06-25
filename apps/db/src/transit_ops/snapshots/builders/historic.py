@@ -638,7 +638,7 @@ _ROUTE_REL_MONTHLY_SQL = text(
 _ROUTE_HEADWAY_OBSERVED_SQL = text(
     """
     SELECT shift, observed_headway_min, sample_count, headway_cov, bunched_count
-    FROM gold.route_headway_daily
+    FROM gold.route_headway_by_shift
     WHERE provider_id = :provider_id AND route_id = :route_id
     """
 )
@@ -733,11 +733,11 @@ _ROUTE_BY_SHIFT_DAYTYPE_SQL = text(
 )
 
 # Per-direction + weekday/weekend observed headway (sibling table; the busiest-direction
-# route_headway_daily is left untouched). Direction is encoded into the free shift string.
+# route_headway_by_shift is left untouched). Direction is encoded into the free shift string.
 _ROUTE_HEADWAY_DIRECTION_SQL = text(
     """
     SELECT shift, direction_id, service_day_kind, observed_headway_min
-    FROM gold.route_headway_direction_daily
+    FROM gold.route_headway_by_direction_shift
     WHERE provider_id = :provider_id AND route_id = :route_id
     ORDER BY direction_id, service_day_kind, shift
     """
@@ -1731,12 +1731,12 @@ def build_hotspots(conn: Connection, provider_id: str = "stm", *, generated_utc:
 # build_repeat_offenders
 # --------------------------------------------------------------------------
 
-# P3 mart: gold.repeat_offender_daily — persistent problem entities.
+# P3 mart: gold.repeat_offender — persistent problem entities.
 _REPEAT_OFFENDERS_SQL = text(
     """
     SELECT entity_kind, entity_id, route_id,
            recurrence_days, window_days, avg_delay_seconds, severity_label
-    FROM gold.repeat_offender_daily
+    FROM gold.repeat_offender
     WHERE provider_id = :provider_id
     ORDER BY recurrence_days DESC, avg_delay_seconds DESC
     LIMIT 50
@@ -1749,7 +1749,7 @@ def build_repeat_offenders(
 ) -> RepeatOffenders:
     """Build historic/repeat_offenders.json — top 50 most-persistent problem entities.
 
-    Source: gold.repeat_offender_daily (P3 mart).
+    Source: gold.repeat_offender (P3 mart).
     Ordered by recurrence_days desc, avg_delay_seconds desc.
     """
     rows = list(

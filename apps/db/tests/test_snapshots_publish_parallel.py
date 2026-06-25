@@ -350,7 +350,7 @@ def _historic_dispatch_conn():
              "few_seats": 30, "standing": 15, "full": 5},
         ]),
         ("repeated_problem_route_stop", []),
-        ("repeat_offender_daily", []),
+        ("repeat_offender", []),
         ("i3_alert_history_reporting", []),
         ("source_lineage_reporting", []),
         ("feed_freshness_current", []),
@@ -396,7 +396,7 @@ def _historic_dispatch_conn():
         ]),
         ("week_start_local", []),
         ("month_start_local", []),
-        ("route_headway_daily", []),
+        ("route_headway_by_shift", []),
         ("dataset_kind = 'static_schedule'", [{"dataset_version_id": 1}]),
         ("generate_series", [
             {"weekday_date": datetime.date(2026, 6, 3), "weekend_date": datetime.date(2026, 6, 6)},

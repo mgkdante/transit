@@ -9,7 +9,7 @@ from transit_ops.maintenance import WarmRollupStoragePruneResult, prune_warm_rol
 from transit_ops.settings import Settings
 
 # Tables pruned by prune_warm_rollup_storage (maintenance.py retention registry).
-# These daily marts (route_headway_daily, repeat_offender_daily) are full-rebuilt
+# These daily marts (route_headway_by_shift, repeat_offender) are full-rebuilt
 # each run and are NOT time-window pruned, so they are intentionally absent here.
 REPORTING_AGGREGATE_TABLES = (
     "route_delay_hourly",
@@ -36,9 +36,9 @@ REPORTING_AGGREGATE_TABLES = (
 # per-direction headway) that are full-rebuilt each cycle but not time-pruned.
 BUILD_REPORTING_AGGREGATE_TABLES = (
     *REPORTING_AGGREGATE_TABLES,
-    "route_headway_daily",
-    "repeat_offender_daily",
-    "route_headway_direction_daily",
+    "route_headway_by_shift",
+    "repeat_offender",
+    "route_headway_by_direction_shift",
 )
 
 REPORTING_AGGREGATE_ROWCOUNTS = {
@@ -818,7 +818,7 @@ def test_historic_daily_marts_registered_in_registry() -> None:
     """P2/P3 HISTORIC marts are wired into all three rollups registries."""
     from transit_ops.gold import rollups
 
-    for table_name in ("route_headway_daily", "repeat_offender_daily"):
+    for table_name in ("route_headway_by_shift", "repeat_offender"):
         assert table_name in rollups.REPORTING_AGGREGATE_TABLES
         assert table_name in rollups.REPORTING_AGGREGATE_UPSERTS
         assert table_name in rollups.DELETE_REPORTING_AGGREGATES
@@ -828,13 +828,13 @@ def test_historic_daily_marts_registered_in_registry() -> None:
         assert "provider_id = :provider_id" in delete_sql
 
 
-def test_route_headway_daily_upsert_shape() -> None:
+def test_route_headway_by_shift_upsert_shape() -> None:
     """P2 observed-headway mart: per-direction trip-start gaps over weekdays."""
     from transit_ops.gold import rollups
 
-    sql = str(rollups.REPORTING_AGGREGATE_UPSERTS["route_headway_daily"])
+    sql = str(rollups.REPORTING_AGGREGATE_UPSERTS["route_headway_by_shift"])
 
-    assert "INSERT INTO gold.route_headway_daily" in sql
+    assert "INSERT INTO gold.route_headway_by_shift" in sql
     assert "FROM gold.fact_trip_delay_snapshot" in sql
     assert "gold.dim_provider" in sql
     assert "percentile_cont(0.5)" in sql
@@ -909,13 +909,13 @@ def test_route_skipped_stop_daily_upsert_shape() -> None:
     assert "ON CONFLICT (provider_id, provider_local_date, route_id)" in sql
 
 
-def test_repeat_offender_daily_upsert_shape() -> None:
+def test_repeat_offender_upsert_shape() -> None:
     """P3 repeat-offender mart: trips + vehicles with >=3 severe-delay days in 14d."""
     from transit_ops.gold import rollups
 
-    sql = str(rollups.REPORTING_AGGREGATE_UPSERTS["repeat_offender_daily"])
+    sql = str(rollups.REPORTING_AGGREGATE_UPSERTS["repeat_offender"])
 
-    assert "INSERT INTO gold.repeat_offender_daily" in sql
+    assert "INSERT INTO gold.repeat_offender" in sql
     assert "FROM gold.fact_trip_delay_snapshot" in sql
     assert "gold.dim_provider" in sql
     # Fact window is now a bind (:fact_retention_days) so it tracks

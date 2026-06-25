@@ -335,7 +335,7 @@ def _route_reliability_dispatch(*, daily=None, weekly=None, monthly=None, headwa
         ("route_reliability_weekly", weekly or []),
         ("route_reliability_monthly", monthly or []),
         # observed headway
-        ("route_headway_daily", headway or []),
+        ("route_headway_by_shift", headway or []),
         # habits
         ("route_habit_score", habit or []),
         # weak stops
@@ -921,7 +921,7 @@ def test_build_route_reliability_no_dataset_version_still_builds() -> None:
                 ],
             ),
             (
-                "route_headway_daily",
+                "route_headway_by_shift",
                 [{"shift": "am_peak", "observed_headway_min": 7.0, "sample_count": 9}],
             ),
         ]
@@ -1382,7 +1382,7 @@ def test_hotspots_sql_per_kind_otp_join_keys() -> None:
 def test_build_repeat_offenders_recurrence_string() -> None:
     """recurrence field is formatted as '{recurrence_days}/{window_days}d'.
 
-    gold.repeat_offender_daily only ever contains 'trip' and 'vehicle' kinds
+    gold.repeat_offender only ever contains 'trip' and 'vehicle' kinds
     (rollups aggregate by trip_id/vehicle_id) — fixtures use the real kinds.
     """
     rows = [
@@ -1396,7 +1396,7 @@ def test_build_repeat_offenders_recurrence_string() -> None:
             "severity_label": "high",
         },
     ]
-    conn = FakeConn([("repeat_offender_daily", rows)])
+    conn = FakeConn([("repeat_offender", rows)])
     out = build_repeat_offenders(conn, generated_utc="t")
     assert isinstance(out, RepeatOffenders)
     assert len(out.offenders) == 1
@@ -1431,7 +1431,7 @@ def test_build_repeat_offenders_ordering() -> None:
             "severity_label": "critical",
         },
     ]
-    conn = FakeConn([("repeat_offender_daily", rows)])
+    conn = FakeConn([("repeat_offender", rows)])
     out = build_repeat_offenders(conn, generated_utc="t")
     assert out.offenders[0].id == "T9"  # higher recurrence_days comes first
     assert out.offenders[1].id == "V2"
@@ -1451,7 +1451,7 @@ def test_build_repeat_offenders_top_50_cap() -> None:
         }
         for i in range(50)
     ]
-    conn = FakeConn([("repeat_offender_daily", rows)])
+    conn = FakeConn([("repeat_offender", rows)])
     out = build_repeat_offenders(conn, generated_utc="t")
     assert len(out.offenders) == 50
 
@@ -1491,7 +1491,7 @@ def test_build_repeat_offenders_resolves_route_name() -> None:
     ]
     conn = FakeConn(
         [
-            ("repeat_offender_daily", rows),
+            ("repeat_offender", rows),
             (
                 "DISTINCT ON (u.route_id)",
                 [

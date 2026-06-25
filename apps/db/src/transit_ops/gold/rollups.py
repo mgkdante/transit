@@ -514,8 +514,8 @@ REPORTING_AGGREGATE_TABLES = (
     "route_habit_score",
     "repeated_problem_route_stop",
     "citizen_accountability_daily",
-    "route_headway_daily",
-    "repeat_offender_daily",
+    "route_headway_by_shift",
+    "repeat_offender",
     # Granularity tier — registered AFTER route_delay_hourly (index 0) so the
     # shift/daytype regroups rebuild from the freshly-built hourly spine.
     "route_delay_by_shift",
@@ -523,7 +523,7 @@ REPORTING_AGGREGATE_TABLES = (
     # Tier-3 2D crosstab — also AFTER route_delay_hourly so it rebuilds from the
     # fresh hourly spine; consistent with the 1D shift/daytype marginals above.
     "route_delay_by_shift_daytype",
-    "route_headway_direction_daily",
+    "route_headway_by_direction_shift",
 )
 
 WINDOWED_HISTORY_TABLES = (
@@ -546,9 +546,9 @@ DERIVED_REBUILD_TABLES = (
 )
 
 ROLLING_WINDOW_TABLES = (
-    "route_headway_daily",
-    "repeat_offender_daily",
-    "route_headway_direction_daily",
+    "route_headway_by_shift",
+    "repeat_offender",
+    "route_headway_by_direction_shift",
 )
 
 DELETE_REPORTING_AGGREGATES = {
@@ -1296,7 +1296,7 @@ UPSERT_ROUTE_HEADWAY_DAILY = text(
         JOIN agg AS a USING (provider_id, route_id, shift)
         GROUP BY f.provider_id, f.route_id, f.shift
     )
-    INSERT INTO gold.route_headway_daily (
+    INSERT INTO gold.route_headway_by_shift (
         provider_id,
         route_id,
         shift,
@@ -1481,7 +1481,7 @@ UPSERT_ROUTE_DELAY_BY_SHIFT_DAYTYPE = text(
     """
 )
 
-# Per-direction + weekday/weekend headway. Sibling of route_headway_daily (which
+# Per-direction + weekday/weekend headway. Sibling of route_headway_by_shift (which
 # is left untouched): the busiest_direction collapse is dropped so EVERY
 # direction survives, and weekend service days are kept (tagged) instead of
 # filtered out. Same 14d rolling reconstruction + median-gap method.
@@ -1555,7 +1555,7 @@ UPSERT_ROUTE_HEADWAY_DIRECTION_DAILY = text(
             ) / 60.0 AS gap_min
         FROM shifted
     )
-    INSERT INTO gold.route_headway_direction_daily (
+    INSERT INTO gold.route_headway_by_direction_shift (
         provider_id, route_id, direction_id, shift, service_day_kind,
         observed_headway_min, sample_count, built_at_utc
     )
@@ -1623,7 +1623,7 @@ UPSERT_REPEAT_OFFENDER_DAILY = text(
         WHERE vehicle_id IS NOT NULL
         GROUP BY provider_id, route_id, vehicle_id
     )
-    INSERT INTO gold.repeat_offender_daily (
+    INSERT INTO gold.repeat_offender (
         provider_id,
         entity_kind,
         entity_id,
@@ -1670,12 +1670,12 @@ REPORTING_AGGREGATE_UPSERTS = {
     "route_habit_score": UPSERT_ROUTE_HABIT_SCORE,
     "repeated_problem_route_stop": UPSERT_REPEATED_PROBLEM_ROUTE_STOP,
     "citizen_accountability_daily": UPSERT_CITIZEN_ACCOUNTABILITY_DAILY,
-    "route_headway_daily": UPSERT_ROUTE_HEADWAY_DAILY,
-    "repeat_offender_daily": UPSERT_REPEAT_OFFENDER_DAILY,
+    "route_headway_by_shift": UPSERT_ROUTE_HEADWAY_DAILY,
+    "repeat_offender": UPSERT_REPEAT_OFFENDER_DAILY,
     "route_delay_by_shift": UPSERT_ROUTE_DELAY_BY_SHIFT,
     "route_delay_by_daytype": UPSERT_ROUTE_DELAY_BY_DAYTYPE,
     "route_delay_by_shift_daytype": UPSERT_ROUTE_DELAY_BY_SHIFT_DAYTYPE,
-    "route_headway_direction_daily": UPSERT_ROUTE_HEADWAY_DIRECTION_DAILY,
+    "route_headway_by_direction_shift": UPSERT_ROUTE_HEADWAY_DIRECTION_DAILY,
 }
 
 # ---------------------------------------------------------------------------

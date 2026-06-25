@@ -468,7 +468,7 @@ def test_publish_historic_writes_expected_keys(tmp_path) -> None:
              "severity_label": "high"},
         ]),
         # build_repeat_offenders
-        ("repeat_offender_daily", [
+        ("repeat_offender", [
             {"entity_kind": "route", "entity_id": "165", "route_id": "165",
              "recurrence_days": 7, "window_days": 30, "avg_delay_seconds": 180,
              "severity_label": "high"},
@@ -609,7 +609,7 @@ def test_publish_historic_writes_expected_keys(tmp_path) -> None:
              "avg_delay_sec": 100, "severe": 60},
         ]),
         # build_route_reliability: observed headway
-        ("route_headway_daily", [
+        ("route_headway_by_shift", [
             {"shift": "am_peak", "observed_headway_min": 8.0, "sample_count": 20},
         ]),
         # _scheduled_headway_by_shift -> dataset version

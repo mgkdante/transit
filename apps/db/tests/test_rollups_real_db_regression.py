@@ -394,7 +394,7 @@ def test_ghost_trip_excluded_from_day_of_week_and_repeat_offender(conn) -> None:
         connection,
         """
         SELECT COUNT(*)
-        FROM gold.repeat_offender_daily
+        FROM gold.repeat_offender
         WHERE provider_id = :provider_id
           AND entity_kind = 'trip'
           AND entity_id = 'G1'
@@ -407,7 +407,7 @@ def test_ghost_trip_excluded_from_day_of_week_and_repeat_offender(conn) -> None:
         connection,
         """
         SELECT recurrence_days, window_days, avg_delay_seconds
-        FROM gold.repeat_offender_daily
+        FROM gold.repeat_offender
         WHERE provider_id = :provider_id
           AND entity_kind = 'trip'
           AND entity_id = 'L1'
