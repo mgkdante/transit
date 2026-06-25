@@ -16,6 +16,7 @@
 -->
 <script lang="ts">
 	import AbsentValue from '$lib/components/edge/AbsentValue.svelte';
+	import TrendMark from './marks/TrendMark.svelte';
 	import type { ChartSpec } from './ChartSpec';
 
 	export interface ChartProps {
@@ -35,6 +36,8 @@
 		variant={spec.variant ?? 'block'}
 		class={className}
 	/>
+{:else if spec.kind === 'trend'}
+	<TrendMark {spec} class={className} />
 {:else}
 	<!--
 		Pending branches (added as each family migrates, each gate-green + browser-verified):

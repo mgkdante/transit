@@ -40,7 +40,6 @@
 	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
 	import { AbsentValue, MaybeValue } from '$lib/components/edge';
 	import {
-		TrendLine,
 		SeverityBar,
 		RankedRow,
 		StripPlot,
@@ -51,6 +50,8 @@
 		HEATMAP_NODATA,
 	} from '$lib/components/dataviz';
 	import type { DistributionStats, StripPlotRow } from '$lib/components/dataviz';
+	import { Chart } from '$lib/components/dataviz/chart';
+	import { selectPunctualityTrend } from './selectors/punctualityTrend';
 	import { GrainPicker, type GrainSegment } from '$lib/components/surface';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
 	import { metricInfoFor, type MetricKey } from '$lib/features/metrics/metrics.content';
@@ -111,48 +112,26 @@
 	const min = (v: number | null | undefined): string | null =>
 		fmtDelayMin(v, { rounding: 'fixed1' });
 
-	// S7 (granularity MATRIX): the trend shows the SUB-GRAIN of the picked window, not a
-	// preset daily line — at DAY grain the intra-day pattern (OTP across the 5 time-of-day
-	// shifts, AM peak → night); at week / month / range the daily series. So "a day" reads
-	// by time of day, "a week"/"a month" by day. (The shift breakdown is the TYPICAL
-	// pattern — the feed aggregates the 5 shifts over the window, not per-date; today's
-	// literal hourly OTP would need a pipeline rollup.)
+	// S7 (granularity MATRIX): the trend shows the SUB-GRAIN of the picked window — at DAY
+	// grain the intra-day pattern (OTP across the time-of-day shifts), at week / month /
+	// range the dated daily series. selectPunctualityTrend owns that shaping + the Wilson
+	// band + the absolute domains (OTP [0,100], retard [0,8]); this band just renders the
+	// returned spec through the one <Chart> (the first LayerChart-backed mark, S7 P1.4).
 	const isDayGrain = $derived(grain === 'day');
-	const trendShifts = $derived(
-		vm.peakOffPeak.byShift
-			.slice()
-			.sort(
-				(a, b) =>
-					(SHIFT_GRAIN_ORDER as readonly string[]).indexOf(a.grain) -
-					(SHIFT_GRAIN_ORDER as readonly string[]).indexOf(b.grain),
-			),
+	const trendSpec = $derived(
+		selectPunctualityTrend(vm, grain, locale, {
+			title: `${copy.strip.otpPct} · ${
+				isDayGrain ? copy.windows.trendByTimeOfDay : copy.windows.trendByDay
+			}`,
+			otpLabel: copy.strip.otpPct,
+			retardLabel: copy.strip.avgDelayMin,
+			pctUnit: copy.units.pct,
+			minUnit: copy.units.min,
+			shiftLabel,
+		}),
 	);
-	const otpSeries = $derived(
-		isDayGrain ? trendShifts.map((r) => r.otpPct) : vm.trend.map((p) => p.otp_pct ?? null),
-	);
-	const retardSeries = $derived(
-		isDayGrain
-			? trendShifts.map((r) => r.avgDelayMin)
-			: vm.trend.map((p) => p.avg_delay_min ?? null),
-	);
-	const xLabels = $derived(
-		isDayGrain ? trendShifts.map((r) => shiftLabel(r.grain)) : vm.trend.map((p) => p.date ?? ''),
-	);
-	const hasTrend = $derived((isDayGrain ? trendShifts.length : vm.trend.length) > 1);
-
-	// The 95% Wilson confidence band rides the DAILY periods only (the 5 shifts carry no
-	// bounds), so it shows for week / month / range — never the day-grain shift view.
-	const wilsonLoSeries = $derived(isDayGrain ? [] : vm.trend.map((p) => p.wilson_lo ?? null));
-	const wilsonHiSeries = $derived(isDayGrain ? [] : vm.trend.map((p) => p.wilson_hi ?? null));
-	const hasWilsonBand = $derived(
-		!isDayGrain && wilsonLoSeries.some((v) => v != null) && wilsonHiSeries.some((v) => v != null),
-	);
-	// S7: FIXED retard y-domain (min), identical across routes/grains/refreshes — the
-	// amber delay axis no longer auto-scales to the in-view max (the stability fix).
-	const retardDomain: [number, number] = [...DELAY_POS_DOMAIN];
-	// The OTP axis on the shared structural [0,100] domain (mutable copy — the chart props
-	// take a mutable tuple); no inline literal so the scale lives in exactly one place.
-	const otpDomain: [number, number] = [...OTP_DOMAIN];
+	const hasTrend = $derived(trendSpec.kind === 'trend');
+	const hasWilsonBand = $derived(trendSpec.kind === 'trend' && trendSpec.hasBand);
 
 	// Typical→worst-case delay as ONE quantile shape (S7 P9). The two formerly-
 	// disconnected p50 / p90 number tiles become a single Distribution mark on the
@@ -621,24 +600,7 @@
 						>{isDayGrain ? copy.windows.trendByTimeOfDay : copy.windows.trendByDay}</span
 					>
 				</div>
-				<TrendLine
-					onTime={otpSeries}
-					retard={retardSeries}
-					domain={otpDomain}
-					{retardDomain}
-					band={hasWilsonBand ? { lo: wilsonLoSeries, hi: wilsonHiSeries } : undefined}
-					target={80}
-					{xLabels}
-					onTimeLabel={copy.strip.otpPct}
-					retardLabel={copy.strip.avgDelayMin}
-					yAxis={{ label: copy.strip.otpPct, unit: copy.units.pct, domain: otpDomain }}
-					retardAxis={{ label: copy.strip.avgDelayMin, unit: copy.units.min, domain: retardDomain }}
-					showYTicks
-					showXTicks
-					interactive
-					readout
-					readoutHint={copy.strip.trendReadoutHint}
-				/>
+				<Chart spec={trendSpec} />
 				{#if hasWilsonBand}
 					<p class="cluster-band-caption" data-slot="wilson-band-caption">
 						{copy.strip.wilsonBandCaption}

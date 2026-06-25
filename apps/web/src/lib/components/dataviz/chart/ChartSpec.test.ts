@@ -56,6 +56,7 @@ describe('checkAbsoluteDomain — magnitude kinds must carry a zero-based domain
 			xScale: 'time',
 			domain: [100, 0],
 			unit: '%',
+			label: 'On-time',
 			points: [],
 			hasBand: false,
 			minPointsForLine: 7,

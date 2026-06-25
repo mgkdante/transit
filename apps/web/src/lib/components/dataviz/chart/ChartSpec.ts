@@ -133,6 +133,8 @@ export interface DotStripSpec extends ChartSpecBase {
 /** One point on the trend line. `x` is epoch-ms (time scale) or a band label. */
 export interface TrendDatum {
 	readonly x: number | string;
+	/** Display label for this point (tooltip heading / x-tick) — e.g. a date or shift name. */
+	readonly xLabel: string;
 	/** Primary series value (e.g. OTP %). null ⇒ the line BREAKS here (never bridged). */
 	readonly y: number | null;
 	/** Secondary series value (e.g. retard min) when `secondary` is set. */
@@ -155,8 +157,12 @@ export interface TrendSpec extends ChartSpecBase {
 	readonly xScale: 'time' | 'band';
 	readonly domain: AbsoluteDomain;
 	readonly unit: string;
+	/** Accessible label for the primary series (e.g. "On-time %"). */
+	readonly label: string;
 	readonly points: readonly TrendDatum[];
 	readonly hasBand: boolean;
+	/** Optional horizontal reference on the primary domain (e.g. 80 = the 80% OTP target). */
+	readonly target?: number | null;
 	readonly secondary?: {
 		readonly domain: AbsoluteDomain;
 		readonly unit: string;

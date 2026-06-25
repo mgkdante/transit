@@ -8,6 +8,9 @@
 export { default as Chart } from './Chart.svelte';
 export type { ChartProps } from './Chart.svelte';
 
+export { default as ChartFrame } from './ChartFrame.svelte';
+export type { ChartFrameProps } from './ChartFrame.svelte';
+
 export { MAGNITUDE_KINDS, isMagnitudeKind, checkAbsoluteDomain } from './ChartSpec';
 export type {
 	AbsoluteDomain,
