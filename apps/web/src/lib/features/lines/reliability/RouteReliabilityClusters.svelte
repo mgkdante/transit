@@ -47,11 +47,22 @@
 		data: RouteReliability;
 		/** Active locale (FR canonical) — threaded to every band, not looked up here. */
 		locale: Locale;
+		/**
+		 * dir (GTFS direction_id) → real destination headsign, from the static route file.
+		 * Lets the direction-keyed bands name directions the way a rider reads them ("Est"),
+		 * not "Direction 0/1". Empty record → bands fall back to a neutral "Direction N".
+		 */
+		directionHeadsigns?: Record<number, string>;
 		/** Optional extra class for the surface column. */
 		class?: string;
 	}
 
-	let { data, locale, class: className }: RouteReliabilityClustersProps = $props();
+	let {
+		data,
+		locale,
+		directionHeadsigns = {},
+		class: className,
+	}: RouteReliabilityClustersProps = $props();
 
 	const copy = $derived(reliabilityCopy[locale]);
 
@@ -329,6 +340,7 @@
 				serviceSpans={clusters.serviceDelivered.serviceSpans}
 				{locale}
 				{copy}
+				{directionHeadsigns}
 			/>
 		</div>
 

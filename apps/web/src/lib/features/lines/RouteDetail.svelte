@@ -51,6 +51,7 @@
 	import ChevronRightIcon from '@lucide/svelte/icons/chevron-right';
 	import MapPinIcon from '@lucide/svelte/icons/map-pin';
 	import RouteReliabilityClusters from './reliability/RouteReliabilityClusters.svelte';
+	import { directionHeadsigns } from './directions';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
 	import { metricInfoFor, type MetricKey } from '$lib/features/metrics/metrics.content';
 	import { metricsCopy } from '$lib/features/metrics/metrics.copy';
@@ -152,6 +153,11 @@
 	// a closed/overnight verdict re-evaluates as the clock crosses first/last). Only
 	// consulted when there is genuinely no live bus on the route; honest by
 	// construction (metro needs route_type 1 + the gap; closed needs a real window;
+	// dir → real headsign (the bus's destination sign), so the reliability section labels
+	// directions the way a rider reads them, not "direction 0/1". Empty until the route file
+	// settles; the consumers fall back to a neutral "Direction N" per missing dir.
+	const dirHeadsigns = $derived(directionHeadsigns(route.data?.directions));
+
 	// silent needs the non-responding signal; else null → plain no-data).
 	const absenceReason = $derived(
 		inferAbsenceReason({
@@ -478,7 +484,7 @@
 		{:else}
 			<ResourceBoundary resource={reliability} lang={locale}>
 				{#snippet children(rel)}
-					<RouteReliabilityClusters data={rel} {locale} />
+					<RouteReliabilityClusters data={rel} {locale} directionHeadsigns={dirHeadsigns} />
 				{/snippet}
 			</ResourceBoundary>
 		{/if}

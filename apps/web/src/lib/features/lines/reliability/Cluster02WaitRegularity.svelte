@@ -70,9 +70,21 @@
 		locale: Locale;
 		/** The shared reliability copy, cluster overline + honest-state notes. */
 		copy: ReliabilityCopy;
+		/**
+		 * dir (direction_id) → real destination headsign, from the route file. The
+		 * observed-gap-by-direction table labels its columns with these ("Est"/"Ouest")
+		 * instead of "Direction 1/2"; a dir with no headsign falls back to "Direction N".
+		 */
+		directionHeadsigns?: Record<number, string>;
 	}
 
-	let { wait, serviceSpans = [], locale, copy }: Cluster02WaitRegularityProps = $props();
+	let {
+		wait,
+		serviceSpans = [],
+		locale,
+		copy,
+		directionHeadsigns = {},
+	}: Cluster02WaitRegularityProps = $props();
 
 	/* ── band-local copy ──────────────────────────────────────────────────────
 	   Labels this band needs that are NOT in the shared copy live here, co-located
@@ -162,6 +174,12 @@
 	};
 
 	const t = $derived(BAND_COPY[locale]);
+
+	// Column labels for the direction table: the real headsign when the route publishes one
+	// (dir0 → "Direction 1" position, dir1 → "Direction 2"), else the neutral fallback. A
+	// rider reads "Est / Ouest", never "direction 0/1".
+	const dir0Label = $derived(directionHeadsigns[0] ?? t.directionCol(1));
+	const dir1Label = $derived(directionHeadsigns[1] ?? t.directionCol(2));
 	/** Plain-language term microcopy (shared, FR canonical). */
 	const terms = $derived(copy.regularityTerms);
 	const overline = $derived(copy.clusters.waitRegularity);
@@ -507,22 +525,22 @@
 								<thead>
 									<tr>
 										<th scope="col">{t.directionShiftCol}</th>
-										<th scope="col">{t.directionCol(1)}</th>
-										<th scope="col">{t.directionCol(2)}</th>
+										<th scope="col">{dir0Label}</th>
+										<th scope="col">{dir1Label}</th>
 									</tr>
 								</thead>
 								<tbody>
 									{#each directionRows as row (row.key)}
 										<tr>
 											<th scope="row">{row.label}</th>
-											<td data-col={t.directionCol(1)}>
+											<td data-col={dir0Label}>
 												{#if row.dir0 != null}{min(row.dir0)}{:else}<AbsentValue
 														variant="inline"
 														reason="no-observations"
 														{locale}
 													/>{/if}
 											</td>
-											<td data-col={t.directionCol(2)}>
+											<td data-col={dir1Label}>
 												{#if row.dir1 != null}{min(row.dir1)}{:else}<AbsentValue
 														variant="inline"
 														reason="no-observations"
