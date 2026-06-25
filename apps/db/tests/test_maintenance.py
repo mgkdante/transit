@@ -81,6 +81,7 @@ EXPECTED_GOLD_AGGREGATE_TABLE_COUNTS = {
     "gold.stop_occupancy_band_daily": 30,
     "gold.route_service_span_daily": 28,
     "gold.route_skipped_stop_daily": 29,
+    "gold.route_delay_spine": 32,
     # NOTE: route_delay_by_shift_daytype is listed BEFORE route_delay_by_shift so
     # the RecordingConnection substring dispatch matches the longer (_daytype)
     # DELETE/COUNT to its OWN entry rather than shadowing it under the shorter

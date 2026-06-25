@@ -256,6 +256,12 @@ class FakeConnection:
         if "SELECT COUNT(*)" in sql and "FROM gold.route_skipped_stop_daily" in sql:
             return ScalarResult(14)
 
+        if "SELECT COUNT(*)" in sql and "FROM gold.route_delay_spine" in sql:
+            return ScalarResult(16)
+
+        if "DELETE FROM gold.route_delay_spine" in sql:
+            return RowcountResult(16)
+
         return RowcountResult(0)
 
 
@@ -1004,12 +1010,14 @@ def test_prune_warm_rollup_storage_dry_run_counts_without_deletes() -> None:
     # Tier-2 append-only tables.
     assert result.deleted_row_counts["gold.route_service_span_daily"] == 12
     assert result.deleted_row_counts["gold.route_skipped_stop_daily"] == 14
+    # route_delay_spine — the S7-B append-only delay rollup, registered for 365d pruning.
+    assert result.deleted_row_counts["gold.route_delay_spine"] == 16
 
     count_queries = [s for s in conn.executed if "SELECT COUNT(*)" in s or "SELECT count(*)" in s]
-    # 24 prior MINUS the 2 dead 5m sinks (vehicle_summary_5m + occupancy_summary_5m, dropped
-    # in migration 0061 + removed from GOLD_AGGREGATE_RETENTION_COLUMNS); each remaining
-    # retention-registered table emits one dry-run COUNT.
-    assert len(count_queries) == 22
+    # 24 prior MINUS the 2 dead 5m sinks (dropped in 0061), PLUS route_delay_spine (added in
+    # 0063 + GOLD_AGGREGATE_RETENTION_COLUMNS); each retention-registered table emits one
+    # dry-run COUNT.
+    assert len(count_queries) == 23
 
 
 def test_prune_warm_rollup_storage_display_dict_includes_dry_run() -> None:
