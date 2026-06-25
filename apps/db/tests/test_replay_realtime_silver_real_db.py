@@ -168,7 +168,6 @@ def _cleanup(eng) -> None:  # noqa: ANN001
             "gold.dim_stop_history",
             "gold.dim_route_history",
             "gold.dim_stop",
-            "gold.dim_direction",
             "gold.dim_route_pattern",
             "gold.dim_route",
             "silver.rt_trip_update_stop_times",
