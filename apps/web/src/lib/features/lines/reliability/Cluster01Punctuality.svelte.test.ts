@@ -223,8 +223,8 @@ describe('Cluster01Punctuality — populated', () => {
 		const dots = strip.querySelectorAll<HTMLElement>('.dv-strip-plot__dot');
 		expect(dots.length).toBe(1);
 		expect(dots[0].style.getPropertyValue('--dot-fill')).toBe('var(--dataviz-severity-watch)');
-		// The shared axis is the FIXED SEVERE_DOMAIN [0,35]: 4.7% → 4.7/35 of the width.
-		expect(dots[0].style.left).toBe(`${(4.7 / 35) * 100}%`);
+		// The shared axis is the FIXED SEVERE_DOMAIN [0,100] (full % scale): 4.7% → 4.7% across.
+		expect(dots[0].style.left).toBe(`${(4.7 / 100) * 100}%`);
 		// The all-day mean reference rule renders (the lone shift's mean = itself).
 		expect(strip.querySelector('.dv-strip-plot__mean')).not.toBeNull();
 	});

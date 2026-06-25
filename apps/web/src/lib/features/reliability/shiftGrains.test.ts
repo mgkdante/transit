@@ -40,7 +40,9 @@ describe('S7 reliability chart domains — fixed, absolute, stable', () => {
 		expect(DELAY_STOP_DOMAIN).toEqual([-2, 8]); // signed: early stops left of zero
 		expect(DELAY_POS_DOMAIN).toEqual([0, 8]);
 		expect(DELAY_DOW_DOMAIN).toEqual([0, 6]);
-		expect(SEVERE_DOMAIN).toEqual([0, 35]);
+		// Severe share is a % of ALL arrivals → the FULL [0,100] scale (like OTP), so a 7%
+		// share reads as 7%, not the ~20% a zoomed [0,35] domain exaggerated it to.
+		expect(SEVERE_DOMAIN).toEqual([0, 100]);
 		expect(OTP_DOMAIN).toEqual([0, 100]);
 		expect(HEADWAY_DOMAIN).toEqual([0, 35]);
 		expect(BUNCHED_DOMAIN).toEqual([0, 30]);

@@ -98,8 +98,13 @@ export const DELAY_POS_DOMAIN = [0, 8] as const;
 export const DELAY_DIST_DOMAIN = [0, 15] as const;
 /** Day-of-week + delay-by-crowding avg delay (min). */
 export const DELAY_DOW_DOMAIN = [0, 6] as const;
-/** Severe-delay share (%) — shift / day-type / snapshot. */
-export const SEVERE_DOMAIN = [0, 35] as const;
+/**
+ * Severe-delay share (%) — shift / day-type / snapshot. FULL percentage scale [0,100], the
+ * same absolute domain as OTP: a severe share is a fraction of ALL arrivals, so a 7% share
+ * must read as 7% of the bar, never the ~20% a zoomed [0,35] domain exaggerated it to. The
+ * honest message is that severe delays are uncommon; the scale should show that, not hide it.
+ */
+export const SEVERE_DOMAIN = [0, 100] as const;
 /** On-time % / Wilson bounds. */
 export const OTP_DOMAIN = [0, 100] as const;
 /** Scheduled / observed / excess headway (min). */
