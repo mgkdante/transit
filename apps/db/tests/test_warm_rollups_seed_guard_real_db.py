@@ -116,7 +116,6 @@ def test_build_warm_rollups_skips_unseeded_provider_without_noresultfound(conn) 
 
     assert result.skipped_not_seeded is True
     assert result.provider_id == UNSEEDED_PROVIDER
-    assert result.built_vehicle_periods == 0
     assert result.built_trip_delay_periods == 0
     assert result.reporting_aggregate_row_counts == {}
 

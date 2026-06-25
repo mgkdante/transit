@@ -4,7 +4,7 @@ from contextlib import contextmanager
 from datetime import UTC, datetime
 
 from transit_ops.gold import rollups
-from transit_ops.gold.rollups import build_warm_rollups
+from transit_ops.gold.rollups import WarmRollupBuildResult, build_warm_rollups
 from transit_ops.maintenance import WarmRollupStoragePruneResult, prune_warm_rollup_storage
 from transit_ops.settings import Settings
 
@@ -350,14 +350,13 @@ def test_build_warm_rollups_skips_unseeded_provider_cleanly() -> None:
     assert result.skipped_not_seeded is True
     assert result.display_dict()["skipped_not_seeded"] is True
     # Nothing was built or rebuilt.
-    assert result.built_vehicle_periods == 0
     assert result.built_trip_delay_periods == 0
     assert result.reporting_aggregate_row_counts == {}
 
     # The function short-circuited after the seed probe: it never ran the
     # calendar read, any 5m upsert, or any reporting-aggregate DELETE/INSERT.
     assert all("AT TIME ZONE" not in s for s in conn.executed)
-    assert all("INSERT INTO gold.vehicle_summary_5m" not in s for s in conn.executed)
+    assert all("INSERT INTO gold.trip_delay_summary_5m" not in s for s in conn.executed)
     assert all("DELETE FROM gold." not in s for s in conn.executed)
 
 
@@ -374,7 +373,6 @@ def test_build_warm_rollups_seeded_provider_unchanged_regression() -> None:
     result = build_warm_rollups("stm", engine=engine)
 
     assert result.skipped_not_seeded is False
-    assert result.built_vehicle_periods == 2
     # Seeded path still runs the calendar read and the reporting-aggregate rebuild.
     assert any("AT TIME ZONE" in s for s in conn.executed)
     assert result.reporting_aggregate_row_counts == dict(BUILD_REPORTING_AGGREGATE_ROWCOUNTS)
