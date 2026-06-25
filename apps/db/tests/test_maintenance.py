@@ -62,9 +62,7 @@ EXPECTED_NORMALIZED_REALTIME_SILVER_TABLES = (
 )
 
 EXPECTED_GOLD_AGGREGATE_TABLE_COUNTS = {
-    "gold.vehicle_summary_5m": 5,
     "gold.trip_delay_summary_5m": 3,
-    "gold.occupancy_summary_5m": 25,
     "gold.warm_rollup_periods": 8,
     "gold.route_delay_hourly": 11,
     "gold.route_delay_day_of_week": 12,

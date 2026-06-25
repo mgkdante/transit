@@ -969,7 +969,6 @@ def test_prune_warm_rollup_storage_dry_run_flag(monkeypatch) -> None:
             retention_days=90,
             cutoff_utc=None,
             deleted_row_counts={
-                "gold.vehicle_summary_5m": 0,
                 "gold.trip_delay_summary_5m": 0,
                 "gold.warm_rollup_periods": 0,
             },
@@ -996,7 +995,6 @@ def test_build_warm_rollups_calls_build_warm_rollups(monkeypatch) -> None:
         return WarmRollupBuildResult(
             provider_id=provider_id,
             since_utc=since_utc,
-            built_vehicle_periods=3,
             built_trip_delay_periods=3,
             completed_at_utc=datetime(2026, 3, 27, 7, 0, 0, tzinfo=UTC),
         )
@@ -1008,7 +1006,7 @@ def test_build_warm_rollups_calls_build_warm_rollups(monkeypatch) -> None:
     assert result.exit_code == 0
     assert recorded["provider_id"] == "stm"
     assert recorded["since_utc"] is None
-    assert '"built_vehicle_periods": 3' in result.stdout
+    assert '"built_trip_delay_periods": 3' in result.stdout
 
 
 def test_run_realtime_cycle_returns_non_zero_on_partial_failure(monkeypatch) -> None:

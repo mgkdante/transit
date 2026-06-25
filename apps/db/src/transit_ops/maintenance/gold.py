@@ -20,9 +20,7 @@ GOLD_FACT_TABLES = (
 )
 
 GOLD_WARM_ROLLUP_TABLES = (
-    "gold.vehicle_summary_5m",
     "gold.trip_delay_summary_5m",
-    "gold.occupancy_summary_5m",
     "gold.warm_rollup_periods",
 )
 
@@ -61,9 +59,7 @@ GOLD_AGGREGATE_TABLES = (
 )
 
 GOLD_AGGREGATE_RETENTION_COLUMNS = (
-    ("gold.vehicle_summary_5m", "period_start_utc", False),
     ("gold.trip_delay_summary_5m", "period_start_utc", False),
-    ("gold.occupancy_summary_5m", "period_start_utc", False),
     ("gold.warm_rollup_periods", "period_start_utc", False),
     ("gold.route_delay_hourly", "period_start_utc", False),
     ("gold.route_delay_day_of_week", "built_at_utc", False),

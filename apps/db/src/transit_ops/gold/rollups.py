@@ -48,26 +48,6 @@ OPEN_WINDOW_HOURLY_CUTOFF_SQL = (
 # SQL — missing period detection
 # ---------------------------------------------------------------------------
 
-SELECT_MISSING_VEHICLE_PERIODS = text(
-    """
-    SELECT DISTINCT
-        DATE_BIN('5 minutes', captured_at_utc, TIMESTAMPTZ '2000-01-01') AS period_start_utc
-    FROM gold.fact_vehicle_snapshot
-    WHERE provider_id = :provider_id
-      AND (
-          CAST(:since_utc AS timestamptz) IS NULL
-          OR captured_at_utc >= CAST(:since_utc AS timestamptz)
-      )
-      AND DATE_BIN('5 minutes', captured_at_utc, TIMESTAMPTZ '2000-01-01') NOT IN (
-          SELECT period_start_utc
-          FROM gold.warm_rollup_periods
-          WHERE provider_id = :provider_id
-            AND rollup_kind = 'vehicle_summary_5m'
-      )
-    ORDER BY 1
-    """
-)
-
 SELECT_MISSING_TRIP_DELAY_PERIODS = text(
     """
     SELECT DISTINCT
@@ -88,115 +68,9 @@ SELECT_MISSING_TRIP_DELAY_PERIODS = text(
     """
 )
 
-SELECT_MISSING_OCCUPANCY_PERIODS = text(
-    """
-    SELECT DISTINCT
-        DATE_BIN('5 minutes', captured_at_utc, TIMESTAMPTZ '2000-01-01') AS period_start_utc
-    FROM gold.fact_vehicle_snapshot
-    WHERE provider_id = :provider_id
-      AND (
-          CAST(:since_utc AS timestamptz) IS NULL
-          OR captured_at_utc >= CAST(:since_utc AS timestamptz)
-      )
-      AND DATE_BIN('5 minutes', captured_at_utc, TIMESTAMPTZ '2000-01-01') NOT IN (
-          SELECT period_start_utc
-          FROM gold.warm_rollup_periods
-          WHERE provider_id = :provider_id
-            AND rollup_kind = 'occupancy_summary_5m'
-      )
-    ORDER BY 1
-    """
-)
-
 # ---------------------------------------------------------------------------
 # SQL — upserts
 # ---------------------------------------------------------------------------
-
-UPSERT_VEHICLE_SUMMARY_5M = text(
-    """
-    INSERT INTO gold.vehicle_summary_5m (
-        provider_id,
-        period_start_utc,
-        route_id,
-        vehicle_count,
-        observation_count,
-        snapshot_count,
-        built_at_utc
-    )
-    SELECT
-        provider_id,
-        DATE_BIN('5 minutes', captured_at_utc, TIMESTAMPTZ '2000-01-01'),
-        COALESCE(route_id, '__unrouted__'),
-        COUNT(DISTINCT vehicle_id)::integer,
-        COUNT(*)::integer,
-        COUNT(DISTINCT realtime_snapshot_id)::integer,
-        :built_at_utc
-    FROM gold.fact_vehicle_snapshot
-    WHERE provider_id = :provider_id
-      -- Sargable range bound (logically identical to the DATE_BIN bin, but
-      -- index-usable on (provider_id, captured_at_utc)) so a per-period upsert is
-      -- an index range scan of one 5-min slice, NOT a full seq scan of the fact.
-      AND captured_at_utc >= :period_start_utc
-      AND captured_at_utc < :period_start_utc + INTERVAL '5 minutes'
-      AND DATE_BIN('5 minutes', captured_at_utc, TIMESTAMPTZ '2000-01-01') = :period_start_utc
-    GROUP BY 1, 2, 3
-    ON CONFLICT (provider_id, period_start_utc, route_id) DO UPDATE SET
-        vehicle_count    = EXCLUDED.vehicle_count,
-        observation_count = EXCLUDED.observation_count,
-        snapshot_count   = EXCLUDED.snapshot_count,
-        built_at_utc     = EXCLUDED.built_at_utc
-    """
-)
-
-# 5-minute occupancy band-COUNT mirror of vehicle_summary_5m. observation_count
-# is the band-bearing denominator (codes 0-5 only); NULL and codes 6/7/8 are
-# excluded so the five band counts sum to observation_count, matching the live
-# build_network honest-band semantics. Code 4 folds into standing per
-# _OCCUPANCY_MAP. Append-only (idempotent ON CONFLICT), watermarked separately.
-UPSERT_OCCUPANCY_SUMMARY_5M = text(
-    """
-    INSERT INTO gold.occupancy_summary_5m (
-        provider_id,
-        period_start_utc,
-        route_id,
-        observation_count,
-        empty_count,
-        many_seats_count,
-        few_seats_count,
-        standing_count,
-        full_count,
-        built_at_utc
-    )
-    SELECT
-        provider_id,
-        DATE_BIN('5 minutes', captured_at_utc, TIMESTAMPTZ '2000-01-01'),
-        COALESCE(route_id, '__unrouted__'),
-        COUNT(*) FILTER (WHERE occupancy_status IN (0, 1, 2, 3, 4, 5))::integer,
-        COUNT(*) FILTER (WHERE occupancy_status = 0)::integer,
-        COUNT(*) FILTER (WHERE occupancy_status = 1)::integer,
-        COUNT(*) FILTER (WHERE occupancy_status = 2)::integer,
-        COUNT(*) FILTER (WHERE occupancy_status IN (3, 4))::integer,
-        COUNT(*) FILTER (WHERE occupancy_status = 5)::integer,
-        :built_at_utc
-    FROM gold.fact_vehicle_snapshot
-    WHERE provider_id = :provider_id
-      -- Sargable range bound (logically identical to the DATE_BIN bin, but
-      -- index-usable on (provider_id, captured_at_utc)) so a per-period upsert is
-      -- an index range scan of one 5-min slice, NOT a full seq scan of the fact.
-      AND captured_at_utc >= :period_start_utc
-      AND captured_at_utc < :period_start_utc + INTERVAL '5 minutes'
-      AND DATE_BIN('5 minutes', captured_at_utc, TIMESTAMPTZ '2000-01-01') = :period_start_utc
-    GROUP BY 1, 2, 3
-    ON CONFLICT (provider_id, period_start_utc, route_id) DO UPDATE SET
-        observation_count = EXCLUDED.observation_count,
-        empty_count       = EXCLUDED.empty_count,
-        many_seats_count  = EXCLUDED.many_seats_count,
-        few_seats_count   = EXCLUDED.few_seats_count,
-        standing_count    = EXCLUDED.standing_count,
-        full_count        = EXCLUDED.full_count,
-        built_at_utc      = EXCLUDED.built_at_utc
-    """
-)
 
 UPSERT_TRIP_DELAY_SUMMARY_5M = text(
     f"""
@@ -1813,13 +1687,11 @@ REPORTING_AGGREGATE_UPSERTS = {
 class WarmRollupBuildResult:
     provider_id: str
     since_utc: datetime | None
-    built_vehicle_periods: int
     built_trip_delay_periods: int
     completed_at_utc: datetime
     reporting_aggregate_row_counts: dict[str, int] = field(default_factory=dict)
     built_route_percentile_days: int = 0
     built_stop_percentile_days: int = 0
-    built_occupancy_periods: int = 0
     built_route_cancellation_days: int = 0
     built_route_occupancy_days: int = 0
     built_stop_occupancy_days: int = 0
@@ -1834,9 +1706,7 @@ class WarmRollupBuildResult:
             "provider_id": self.provider_id,
             "skipped_not_seeded": self.skipped_not_seeded,
             "since_utc": self.since_utc.isoformat() if self.since_utc else None,
-            "built_vehicle_periods": self.built_vehicle_periods,
             "built_trip_delay_periods": self.built_trip_delay_periods,
-            "built_occupancy_periods": self.built_occupancy_periods,
             "built_route_percentile_days": self.built_route_percentile_days,
             "built_stop_percentile_days": self.built_stop_percentile_days,
             "built_route_cancellation_days": self.built_route_cancellation_days,
@@ -1962,15 +1832,11 @@ def build_warm_rollups(
         return WarmRollupBuildResult(
             provider_id=provider_id,
             since_utc=since_utc,
-            built_vehicle_periods=0,
             built_trip_delay_periods=0,
             completed_at_utc=utc_now(),
             skipped_not_seeded=True,
         )
-
-    built_vehicle = 0
     built_trip_delay = 0
-    built_occupancy = 0
     reporting_aggregate_row_counts: dict[str, int] = {}
     now = utc_now()
 
@@ -1992,32 +1858,6 @@ def build_warm_rollups(
     floor_key = int((today_local - timedelta(days=percentile_lookback_days)).strftime("%Y%m%d"))
 
     with engine.begin() as conn:
-        # Vehicle summary
-        rows = conn.execute(
-            SELECT_MISSING_VEHICLE_PERIODS,
-            {"provider_id": provider_id, "since_utc": since_utc},
-        ).fetchall()
-        for row in rows:
-            period = row.period_start_utc
-            conn.execute(
-                UPSERT_VEHICLE_SUMMARY_5M,
-                {
-                    "provider_id": provider_id,
-                    "period_start_utc": period,
-                    "built_at_utc": now,
-                },
-            )
-            conn.execute(
-                UPSERT_WARM_ROLLUP_PERIOD,
-                {
-                    "provider_id": provider_id,
-                    "rollup_kind": "vehicle_summary_5m",
-                    "period_start_utc": period,
-                    "built_at_utc": now,
-                },
-            )
-            built_vehicle += 1
-
         # Trip delay summary
         rows = conn.execute(
             SELECT_MISSING_TRIP_DELAY_PERIODS,
@@ -2043,32 +1883,6 @@ def build_warm_rollups(
                 },
             )
             built_trip_delay += 1
-
-        # Occupancy summary 5m (band-count mirror of vehicle_summary_5m).
-        rows = conn.execute(
-            SELECT_MISSING_OCCUPANCY_PERIODS,
-            {"provider_id": provider_id, "since_utc": since_utc},
-        ).fetchall()
-        for row in rows:
-            period = row.period_start_utc
-            conn.execute(
-                UPSERT_OCCUPANCY_SUMMARY_5M,
-                {
-                    "provider_id": provider_id,
-                    "period_start_utc": period,
-                    "built_at_utc": now,
-                },
-            )
-            conn.execute(
-                UPSERT_WARM_ROLLUP_PERIOD,
-                {
-                    "provider_id": provider_id,
-                    "rollup_kind": "occupancy_summary_5m",
-                    "period_start_utc": period,
-                    "built_at_utc": now,
-                },
-            )
-            built_occupancy += 1
 
     # Append-only daily rollups (route/stop percentiles + cancellation + occupancy
     # band + service span + skipped stop). Built AFTER the 5m section commits and
@@ -2186,13 +2000,11 @@ def build_warm_rollups(
     return WarmRollupBuildResult(
         provider_id=provider_id,
         since_utc=since_utc,
-        built_vehicle_periods=built_vehicle,
         built_trip_delay_periods=built_trip_delay,
         reporting_aggregate_row_counts=reporting_aggregate_row_counts,
         completed_at_utc=now,
         built_route_percentile_days=built_route_percentile,
         built_stop_percentile_days=built_stop_percentile,
-        built_occupancy_periods=built_occupancy,
         built_route_cancellation_days=built_route_cancellation,
         built_route_occupancy_days=built_route_occupancy,
         built_stop_occupancy_days=built_stop_occupancy,

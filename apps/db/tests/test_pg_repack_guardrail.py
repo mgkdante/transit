@@ -100,11 +100,12 @@ def test_pg_repack_guardrail_requires_pg_repack_binary(tmp_path: Path) -> None:
     assert command_log.read_text(encoding="utf-8") == ""
 
 
-# The 8 current churn tables the guardrail must repack — mirrors maintenance.py
-# (REALTIME_SILVER_TABLES minus the 29GB stop_times, the gold.latest_* live
-# tables, the two gold.*_summary_5m warm rollups). The two gold.fact_* tables
-# were carved out of the CI default 2026-06-22 (see FORBIDDEN_DEFAULT_TABLES)
-# after their hot-table WAN lock-swap repeatedly orphaned repack objects.
+# The 7 current churn tables the guardrail must repack — mirrors maintenance.py +
+# run-pg-repack.sh (REALTIME_SILVER_TABLES minus the 29GB stop_times, plus the
+# gold.latest_* live tables and gold.trip_delay_summary_5m). The two hot gold.fact_*
+# tables were carved out of the CI default 2026-06-22 (see FORBIDDEN_DEFAULT_TABLES)
+# after their hot-table WAN lock-swap repeatedly orphaned repack objects; the dead
+# gold.vehicle/occupancy_summary_5m sinks were dropped in migration 0061.
 CURRENT_DEFAULT_TABLES = (
     "silver.rt_trip_updates",
     "silver.rt_vehicle_positions",
@@ -112,7 +113,6 @@ CURRENT_DEFAULT_TABLES = (
     "silver.rt_feed_snapshots",
     "gold.latest_vehicle_snapshot",
     "gold.latest_trip_delay_snapshot",
-    "gold.vehicle_summary_5m",
     "gold.trip_delay_summary_5m",
 )
 

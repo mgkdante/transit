@@ -73,11 +73,11 @@ def test_restored_core_schema_has_providers(conn) -> None:
 
 def test_restored_long_horizon_marts_nonempty(conn) -> None:
     rollups = conn.execute(
-        text("SELECT count(*) FROM gold.vehicle_summary_5m")
+        text("SELECT count(*) FROM gold.trip_delay_summary_5m")
     ).scalar_one()
     alerts = conn.execute(text("SELECT count(*) FROM silver.i3_alerts")).scalar_one()
 
-    assert rollups > 0, "365d warm rollups must survive the restore"
+    assert rollups > 0, "warm rollups must survive the restore"
     assert alerts > 0, "i3 SCD-2 history must survive the restore"
 
 

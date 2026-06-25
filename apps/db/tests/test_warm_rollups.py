@@ -4,7 +4,7 @@ from contextlib import contextmanager
 from datetime import UTC, datetime
 
 from transit_ops.gold import rollups
-from transit_ops.gold.rollups import WarmRollupBuildResult, build_warm_rollups
+from transit_ops.gold.rollups import build_warm_rollups
 from transit_ops.maintenance import WarmRollupStoragePruneResult, prune_warm_rollup_storage
 from transit_ops.settings import Settings
 
@@ -279,42 +279,6 @@ def _fake_settings(**kwargs) -> Settings:
     return Settings.model_construct(**defaults)
 
 
-def test_build_vehicle_rollup_inserts_new_periods() -> None:
-    periods = [
-        datetime(2026, 3, 25, 12, 0, tzinfo=UTC),
-        datetime(2026, 3, 25, 12, 5, tzinfo=UTC),
-    ]
-    conn = FakeConnection(vehicle_periods=periods)
-    engine = FakeEngine(conn)
-
-    result = build_warm_rollups("stm", engine=engine)
-
-    assert isinstance(result, WarmRollupBuildResult)
-    assert result.provider_id == "stm"
-    assert result.built_vehicle_periods == 2
-    assert result.built_trip_delay_periods == 0
-
-    vehicle_upserts = [s for s in conn.executed if "INSERT INTO gold.vehicle_summary_5m" in s]
-    assert len(vehicle_upserts) == 2
-
-    period_upserts = [s for s in conn.executed if "INSERT INTO gold.warm_rollup_periods" in s]
-    assert len(period_upserts) == 2
-
-
-def test_build_vehicle_rollup_skips_already_built_periods() -> None:
-    """Idempotency: no missing periods → 0 built."""
-    conn = FakeConnection(vehicle_periods=[], trip_delay_periods=[])
-    engine = FakeEngine(conn)
-
-    result = build_warm_rollups("stm", engine=engine)
-
-    assert result.built_vehicle_periods == 0
-    assert result.built_trip_delay_periods == 0
-
-    vehicle_upserts = [s for s in conn.executed if "INSERT INTO gold.vehicle_summary_5m" in s]
-    assert len(vehicle_upserts) == 0
-
-
 def test_build_trip_delay_rollup_inserts_new_periods() -> None:
     periods = [
         datetime(2026, 3, 25, 8, 0, tzinfo=UTC),
@@ -326,7 +290,6 @@ def test_build_trip_delay_rollup_inserts_new_periods() -> None:
 
     result = build_warm_rollups("stm", engine=engine)
 
-    assert result.built_vehicle_periods == 0
     assert result.built_trip_delay_periods == 3
 
     delay_upserts = [s for s in conn.executed if "INSERT INTO gold.trip_delay_summary_5m" in s]
@@ -336,40 +299,13 @@ def test_build_trip_delay_rollup_inserts_new_periods() -> None:
     assert len(period_upserts) == 3
 
 
-def test_build_occupancy_rollup_inserts_new_periods() -> None:
-    """The occupancy 5m loop mirrors the vehicle loop: one band-count upsert +
-    one watermark per missing period, disjoint from the vehicle_summary stream."""
-    periods = [
-        datetime(2026, 3, 25, 9, 0, tzinfo=UTC),
-        datetime(2026, 3, 25, 9, 5, tzinfo=UTC),
-    ]
-    conn = FakeConnection(occupancy_periods=periods)
-    engine = FakeEngine(conn)
-
-    result = build_warm_rollups("stm", engine=engine)
-
-    assert result.built_occupancy_periods == 2
-    assert result.built_vehicle_periods == 0
-    assert result.built_trip_delay_periods == 0
-
-    occ_upserts = [s for s in conn.executed if "INSERT INTO gold.occupancy_summary_5m" in s]
-    assert len(occ_upserts) == 2
-
-    # The band-count mirror folds CRUSHED_STANDING (code 4) into standing and
-    # excludes NOT_ACCEPTING/NO_DATA/NOT_BOARDABLE from observation_count.
-    assert "occupancy_status IN (3, 4)" in occ_upserts[0]
-    assert "occupancy_status IN (0, 1, 2, 3, 4, 5)" in occ_upserts[0]
-
-
 def test_build_warm_rollups_empty_facts_is_noop() -> None:
     conn = FakeConnection()
     engine = FakeEngine(conn)
 
     result = build_warm_rollups("stm", engine=engine)
 
-    assert result.built_vehicle_periods == 0
     assert result.built_trip_delay_periods == 0
-    assert result.built_occupancy_periods == 0
     assert result.built_route_cancellation_days == 0
     assert result.built_route_occupancy_days == 0
     assert result.built_stop_occupancy_days == 0
@@ -1003,14 +939,14 @@ def test_repeat_offender_daily_upsert_shape() -> None:
 
 
 def test_build_warm_rollups_result_display_dict() -> None:
-    conn = FakeConnection(vehicle_periods=[datetime(2026, 3, 25, 12, 0, tzinfo=UTC)])
+    conn = FakeConnection(trip_delay_periods=[datetime(2026, 3, 25, 12, 0, tzinfo=UTC)])
     engine = FakeEngine(conn)
 
     result = build_warm_rollups("stm", engine=engine)
     d = result.display_dict()
 
     assert d["provider_id"] == "stm"
-    assert d["built_vehicle_periods"] == 1
+    assert d["built_trip_delay_periods"] == 1
     assert d["since_utc"] is None
     assert d["reporting_aggregate_row_counts"] == {
         table_name: rowcount
@@ -1031,16 +967,12 @@ def test_prune_warm_rollup_storage_deletes_old_periods() -> None:
     assert result.retention_days == 90
     assert result.cutoff_utc is not None
 
-    vehicle_deletes = [s for s in conn.executed if "DELETE FROM gold.vehicle_summary_5m" in s]
-    assert len(vehicle_deletes) == 1
-
     delay_deletes = [s for s in conn.executed if "DELETE FROM gold.trip_delay_summary_5m" in s]
     assert len(delay_deletes) == 1
 
     period_deletes = [s for s in conn.executed if "DELETE FROM gold.warm_rollup_periods" in s]
     assert len(period_deletes) == 1
 
-    assert result.deleted_row_counts["gold.vehicle_summary_5m"] == 5
     assert result.deleted_row_counts["gold.trip_delay_summary_5m"] == 3
     assert result.deleted_row_counts["gold.warm_rollup_periods"] == 8
 
@@ -1053,7 +985,6 @@ def test_prune_warm_rollup_storage_dry_run_counts_without_deletes() -> None:
     result = prune_warm_rollup_storage("stm", settings=settings, engine=engine, dry_run=True)
 
     assert result.dry_run is True
-    assert result.deleted_row_counts["gold.vehicle_summary_5m"] == 5
     assert result.deleted_row_counts["gold.trip_delay_summary_5m"] == 3
     assert result.deleted_row_counts["gold.warm_rollup_periods"] == 8
     for table_name, expected_count in REPORTING_AGGREGATE_ROWCOUNTS.items():
@@ -1065,7 +996,6 @@ def test_prune_warm_rollup_storage_dry_run_counts_without_deletes() -> None:
     assert result.deleted_row_counts["gold.route_delay_percentile_daily"] == 7
     assert result.deleted_row_counts["gold.stop_delay_percentile_daily"] == 11
     # Tier-1 append-only tables prune at the same 730d boundary.
-    assert result.deleted_row_counts["gold.occupancy_summary_5m"] == 6
     assert result.deleted_row_counts["gold.route_cancellation_daily"] == 9
     assert result.deleted_row_counts["gold.route_occupancy_band_daily"] == 10
     # The per-STOP occupancy-band twin is now registered for retention pruning too
@@ -1076,11 +1006,10 @@ def test_prune_warm_rollup_storage_dry_run_counts_without_deletes() -> None:
     assert result.deleted_row_counts["gold.route_skipped_stop_daily"] == 14
 
     count_queries = [s for s in conn.executed if "SELECT COUNT(*)" in s or "SELECT count(*)" in s]
-    # 20 prior + 2 Tier-2 aggregate-retention tables (service-span + skipped-stop) +
-    # the per-stop occupancy-band twin + the Tier-3 route_delay_by_shift_daytype
-    # crosstab (newly registered); each sits in GOLD_AGGREGATE_RETENTION_COLUMNS so
-    # each emits one dry-run COUNT.
-    assert len(count_queries) == 24
+    # 24 prior MINUS the 2 dead 5m sinks (vehicle_summary_5m + occupancy_summary_5m, dropped
+    # in migration 0061 + removed from GOLD_AGGREGATE_RETENTION_COLUMNS); each remaining
+    # retention-registered table emits one dry-run COUNT.
+    assert len(count_queries) == 22
 
 
 def test_prune_warm_rollup_storage_display_dict_includes_dry_run() -> None:
