@@ -42,7 +42,7 @@ from sqlalchemy import create_engine, text
 
 from transit_ops.gold import rollups
 from transit_ops.settings import Settings
-from transit_ops.snapshots.builders.historic import build_route_reliability
+from transit_ops.snapshots.builders.historic import build_network_trend, build_route_reliability
 
 DB_URL = os.environ.get("TRANSIT_TEST_DATABASE_URL")
 
@@ -54,7 +54,9 @@ pytestmark = pytest.mark.skipif(
 PROVIDER = "stm_gate_test"
 TU_ENDPOINT_ID = 995001
 VP_ENDPOINT_ID = 995002
-ROUTE = "99G"
+ROUTE = "99G"        # the per-route golden subject
+ROUTE2 = "99H"       # a second route so the network aggregation spans >1 route
+_SEED_ROUTES = (ROUTE, ROUTE2)
 TORONTO = ZoneInfo("America/Toronto")
 GENERATED_UTC = "2026-06-25T00:00:00Z"  # fixed -> stable across runs
 
@@ -136,12 +138,13 @@ def _seed(connection) -> None:  # noqa: ANN001
         by_hour: dict[int, list[tuple[int, object, object]]] = {}
         for direction, hour, delay, sched in _PER_DAY_DELAYS:
             by_hour.setdefault(hour, []).append((direction, delay, sched))
-        for hour, rows in by_hour.items():
-            _insert_trip_snapshot(connection, ids, local_date, hour, rows)
-        _insert_vehicle_snapshot(connection, ids, local_date, 12, _PER_DAY_OCCUPANCY)
+        for route in _SEED_ROUTES:
+            for hour, rows in by_hour.items():
+                _insert_trip_snapshot(connection, ids, route, local_date, hour, rows)
+            _insert_vehicle_snapshot(connection, ids, route, local_date, 12, _PER_DAY_OCCUPANCY)
 
 
-def _insert_trip_snapshot(connection, ids, local_date, hour, rows) -> None:  # noqa: ANN001
+def _insert_trip_snapshot(connection, ids, route, local_date, hour, rows) -> None:  # noqa: ANN001
     captured_at = datetime.combine(local_date, time(hour, 0), tzinfo=TORONTO).astimezone(UTC)
     sid, run_id = ids.next(), ids.next()
     _snapshot_header(connection, sid, run_id, TU_ENDPOINT_ID, captured_at, len(rows))
@@ -162,11 +165,11 @@ def _insert_trip_snapshot(connection, ids, local_date, hour, rows) -> None:  # n
             ),
             {"p": PROVIDER, "s": sid, "ei": idx, "dk": date_key, "sld": local_date,
              "ts": captured_at, "entity": f"e{sid}-{idx}", "trip": f"t{sid}-{idx}",
-             "route": ROUTE, "dir": direction, "sched": sched, "delay": delay},
+             "route": route, "dir": direction, "sched": sched, "delay": delay},
         )
 
 
-def _insert_vehicle_snapshot(connection, ids, local_date, hour, codes) -> None:  # noqa: ANN001
+def _insert_vehicle_snapshot(connection, ids, route, local_date, hour, codes) -> None:  # noqa: ANN001
     captured_at = datetime.combine(local_date, time(hour, 0), tzinfo=TORONTO).astimezone(UTC)
     sid, run_id = ids.next(), ids.next()
     _snapshot_header(connection, sid, run_id, VP_ENDPOINT_ID, captured_at, len(codes))
@@ -186,7 +189,7 @@ def _insert_vehicle_snapshot(connection, ids, local_date, hour, codes) -> None: 
             ),
             {"p": PROVIDER, "s": sid, "ei": idx, "dk": date_key, "sld": local_date,
              "ts": captured_at, "entity": f"v{sid}-{idx}", "veh": f"V{sid}-{idx}",
-             "route": ROUTE, "occ": code},
+             "route": route, "occ": code},
         )
 
 
@@ -395,6 +398,30 @@ def test_spine_equals_fact_live_full_object() -> None:
         canon_spine = _canonicalize(_render(connection, "spine"), anchor)
     assert _has_delay_subtree(canon_fact)
     _assert_frozen_match(canon_fact, canon_spine)
+
+
+def test_network_by_shift_daytype_spine_equals_fact() -> None:
+    """The network_trend by_shift/by_daytype grains, aggregated across BOTH seeded
+    routes, are byte-identical fact-vs-spine on otp_pct/severe_pct (avg rebaselines)."""
+    with _seeded_conn() as connection:
+        fact = build_network_trend(
+            connection, provider_id=PROVIDER, generated_utc=GENERATED_UTC, source="fact"
+        ).model_dump(mode="json")
+        spine = build_network_trend(
+            connection, provider_id=PROVIDER, generated_utc=GENERATED_UTC, source="spine"
+        ).model_dump(mode="json")
+    for grain_key in ("by_shift", "by_daytype"):
+        f = {row["grain"]: row for row in fact[grain_key]}
+        s = {row["grain"]: row for row in spine[grain_key]}
+        assert set(f) == set(s) and f, (grain_key, set(f) ^ set(s))
+        for grain, frow in f.items():
+            assert frow["otp_pct"] == s[grain]["otp_pct"], (grain_key, grain, "otp")
+            assert frow["severe_pct"] == s[grain]["severe_pct"], (grain_key, grain, "severe")
+            srow = s[grain]
+            assert srow["avg_delay_min"] is None or isinstance(srow["avg_delay_min"], (int, float))
+    # Non-trivial: multiple shifts present, and weekday+weekend day-types.
+    assert len({row["grain"] for row in spine["by_shift"]}) >= 3
+    assert {row["grain"] for row in spine["by_daytype"]} == {"weekday", "weekend"}
 
 
 def test_ghost_only_hour_otp_byte_identical() -> None:

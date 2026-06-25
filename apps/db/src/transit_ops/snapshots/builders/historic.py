@@ -571,7 +571,9 @@ def _trend_points(
     ]
 
 
-def build_network_trend(conn: Connection, *, provider_id: str = "stm", generated_utc: str) -> NetworkTrend:
+def build_network_trend(
+    conn: Connection, *, provider_id: str = "stm", generated_utc: str, source: str = "fact"
+) -> NetworkTrend:
     """Build historic/network_trend.json — daily + weekly + monthly trend points.
 
     Daily `series`: OTP + weighted-avg delay from the hourly rollup (~90 days)
@@ -581,6 +583,12 @@ def build_network_trend(conn: Connection, *, provider_id: str = "stm", generated
     (hourly OTP/avg, cancellation, occupancy) into ISO-week / calendar-month
     buckets, observation-weighted identically; p90_min/vehicles stay None on
     those grains (the ~14d fact window is not additively composable).
+
+    source: "fact" (default) reads the by_shift/by_daytype network grains from the
+    stored route_delay_by_shift / route_delay_by_daytype folds; "spine" derives them
+    at read time from gold.route_delay_spine across all routes (byte-identical
+    otp_pct/severe_pct, rebaselined avg). Only those two grains depend on source;
+    series/weekly/monthly read kept tables (hourly/cancellation/occupancy).
     """
     # fact_retention_days binds the ~14d fact window into _TREND_FACT_SQL so it
     # tracks GOLD_FACT_RETENTION_DAYS instead of a drift-prone literal. The bind
@@ -616,10 +624,18 @@ def build_network_trend(conn: Connection, *, provider_id: str = "stm", generated
     # Network-wide reliability by time-of-day shift + weekday/weekend day-type,
     # aggregated across all routes (REAL on_time/known OTP, observation-weighted
     # avg delay, honest-NULL on zero-obs grains).
-    by_shift = _network_shift_rows(conn, _NETWORK_BY_SHIFT_SQL, params, _NETWORK_SHIFT_ORDER)
-    by_daytype = _network_shift_rows(
-        conn, _NETWORK_BY_DAYTYPE_SQL, params, _NETWORK_DAYTYPE_ORDER
-    )
+    if source == "spine":
+        by_shift = _network_spine_rows(
+            conn, _NETWORK_SPINE_BY_SHIFT_SQL, params, _NETWORK_SHIFT_ORDER
+        )
+        by_daytype = _network_spine_rows(
+            conn, _NETWORK_SPINE_BY_DAYTYPE_SQL, params, _NETWORK_DAYTYPE_ORDER
+        )
+    else:
+        by_shift = _network_shift_rows(conn, _NETWORK_BY_SHIFT_SQL, params, _NETWORK_SHIFT_ORDER)
+        by_daytype = _network_shift_rows(
+            conn, _NETWORK_BY_DAYTYPE_SQL, params, _NETWORK_DAYTYPE_ORDER
+        )
 
     return NetworkTrend(
         generated_utc=generated_utc,
@@ -966,6 +982,8 @@ _SPINE_HIST_COLS = ",\n        ".join(
 # clause: the spine accrues forward and every breakdown reads the full accrual —
 # the deliberate fix for the "monthly can't hold a month" bug; the cutover gate
 # seeds closed days inside the shared window so both paths cover identical days.
+# {entity_clause} = " AND route_id = :route_id" for the per-route reads; "" for the
+# network reads (aggregate the spine across ALL routes by shift / day_type).
 _ROUTE_SPINE_PROJECT_TEMPLATE = """
     SELECT
         {dims}
@@ -976,19 +994,25 @@ _ROUTE_SPINE_PROJECT_TEMPLATE = """
         SUM(sum_delay_seconds)::bigint          AS sum_delay_sec,
         {hist_cols}
     FROM gold.route_delay_spine
-    WHERE provider_id = :provider_id AND route_id = :route_id
+    WHERE provider_id = :provider_id{entity_clause}
     GROUP BY {group_by}
     ORDER BY {group_by}
 """
 
+_ROUTE_ENTITY_CLAUSE = " AND route_id = :route_id"
 
-def _route_spine_sql(dims: str, group_by: str):  # noqa: ANN202
+
+def _spine_project_sql(dims: str, group_by: str, entity_clause: str = _ROUTE_ENTITY_CLAUSE):  # noqa: ANN202
     """Format the ONE projector template for a fold (dims carry their trailing comma)."""
     return text(
         _ROUTE_SPINE_PROJECT_TEMPLATE.format(
-            dims=dims, hist_cols=_SPINE_HIST_COLS, group_by=group_by
+            dims=dims, hist_cols=_SPINE_HIST_COLS, group_by=group_by, entity_clause=entity_clause
         )
     )
+
+
+def _route_spine_sql(dims: str, group_by: str):  # noqa: ANN202
+    return _spine_project_sql(dims, group_by, _ROUTE_ENTITY_CLAUSE)
 
 
 _ROUTE_SPINE_BY_SHIFT_SQL = _route_spine_sql(f"{_SPINE_SHIFT_CASE} AS grain,", "1")
@@ -1005,6 +1029,13 @@ _ROUTE_SPINE_DOW_SQL = _route_spine_sql(
 _ROUTE_SPINE_CROSSTAB_SQL = _route_spine_sql(
     f"{_SPINE_SHIFT_CASE} AS shift,\n        {_SPINE_DAYTYPE_CASE} AS day_type,", "1, 2"
 )
+
+# Network-wide reads: the SAME projector with NO route filter -> aggregate the spine
+# across ALL routes by shift / day_type. otp_known == known_obs here because a spine
+# cell's on_time is NULL iff delay_obs=0 (so SUM(delay_obs) FILTER(on_time NOT NULL)
+# equals SUM(delay_obs)), reproducing the fact network's scoped-OTP denominator.
+_NETWORK_SPINE_BY_SHIFT_SQL = _spine_project_sql(f"{_SPINE_SHIFT_CASE} AS grain,", "1", "")
+_NETWORK_SPINE_BY_DAYTYPE_SQL = _spine_project_sql(f"{_SPINE_DAYTYPE_CASE} AS grain,", "1", "")
 
 
 def _spine_hist_and_avg(r):  # noqa: ANN001, ANN202
@@ -1083,6 +1114,30 @@ def _spine_route_crosstab(conn, params) -> "list[CrosstabCell]":  # noqa: ANN001
             )
         )
     return out
+
+
+def _network_spine_rows(conn, sql, params, order) -> "list[NetworkShift]":  # noqa: ANN001
+    """Network NetworkShift rows from the spine projector (all routes, no filter).
+
+    otp_pct = on_time/known_obs (== fact's on_time/otp_known: the spine's
+    on_time-NULL-iff-delay_obs=0 invariant makes the FILTER a no-op); severe_pct over
+    the full known_obs; avg = ghost-excluded pooled mean (rebaseline, allow-move).
+    Honest-None when the grain has no known-delay observations.
+    """
+    by_grain: dict[str, NetworkShift] = {}
+    for r in conn.execute(sql, params).mappings():
+        known = r["known_obs"]
+        _hist, avg_sec = _spine_hist_and_avg(r)
+        grain = str(r["grain"])
+        by_grain[grain] = NetworkShift(
+            grain=grain,
+            otp_pct=_otp_pct(r["on_time"], known),
+            avg_delay_min=_avg_delay_min(avg_sec),
+            severe_pct=_severe_pct(known, r["severe"]),
+        )
+    ordered = [by_grain[g] for g in order if g in by_grain]
+    ordered.extend(by_grain[g] for g in sorted(set(by_grain) - set(order)))
+    return ordered
 
 
 def build_route_reliability(

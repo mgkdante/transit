@@ -270,7 +270,7 @@ def _publish_historic(
     flat_items = [
         (
             "historic/network_trend.json",
-            builders.build_network_trend(conn, provider_id=provider_id, generated_utc=stamp),  # type: ignore[arg-type]
+            builders.build_network_trend(conn, provider_id=provider_id, generated_utc=stamp, source=getattr(settings, "SPINE_ROUTE_SOURCE", "fact")),  # type: ignore[arg-type]
             "historic",
         ),
         (
