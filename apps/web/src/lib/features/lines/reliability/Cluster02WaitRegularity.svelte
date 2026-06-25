@@ -326,9 +326,13 @@
 			{ base: string; weekend: boolean; dir0: number | null; dir1: number | null }
 		> = {};
 		for (const r of advancedRows) {
-			const weekend = r.shift.includes('_weekend');
-			const dir = r.shift.match(/_dir(\d)/)?.[1] ?? null;
-			const base = r.shift.replace(/_dir\d/, '').replace(/_weekend/, '');
+			// Read the decoded TYPED fields (decodeShift already applied the legacy
+			// fallback) — NOT the raw shift token: post-cutover r.shift is the bare
+			// base token with no _dir/_weekend suffix to parse, so the old string
+			// regex would silently yield an empty table on fresh snapshots.
+			const weekend = r.dayType === 'weekend';
+			const dir = r.directionId != null ? String(r.directionId) : null;
+			const base = r.baseShift;
 			const key = `${base}__${weekend ? 'wknd' : 'week'}`;
 			let g = groups[key];
 			if (!g) {
@@ -476,7 +480,7 @@
 								domain={COV_DOMAIN}
 								unit=""
 								size="sm"
-								label={t.covMagnitude(shiftLabel(row.shift))}
+								label={t.covMagnitude(shiftLabel(row))}
 								interactive
 							/>
 						</div>
@@ -491,7 +495,7 @@
 								domain={BUNCHED_DOMAIN}
 								unit="%"
 								size="sm"
-								label={t.bunchedMagnitude(shiftLabel(row.shift))}
+								label={t.bunchedMagnitude(shiftLabel(row))}
 								interactive
 							/>
 						</div>
