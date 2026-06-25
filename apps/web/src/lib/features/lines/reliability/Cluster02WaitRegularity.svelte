@@ -100,6 +100,8 @@
 		readonly directionCol: (n: number) => string;
 		/** Direction-table row-label suffix for the weekend variant. */
 		readonly weekendSuffix: string;
+		/** Suffix for the whole-day excess-wait headline (mean across the shifts). */
+		readonly allDay: string;
 		/** Always-visible explanation of excess wait — the "over WHAT" baseline. */
 		readonly excessWaitExplain: string;
 		/** Whole-dumbbell accessible summary, given the scheduled + observed readings. */
@@ -126,6 +128,7 @@
 			directionShiftCol: 'Période',
 			directionCol: (n) => `Direction ${n}`,
 			weekendSuffix: 'fin de sem.',
+			allDay: 'sur la journée',
 			excessWaitExplain:
 				"Le temps d'attente en plus de l'intervalle prévu entre les bus. 0 signifie que la ligne respecte (ou dépasse) sa fréquence prévue.",
 			dumbbellAria: (scheduled, observed) =>
@@ -147,6 +150,7 @@
 			directionShiftCol: 'Shift',
 			directionCol: (n) => `Direction ${n}`,
 			weekendSuffix: 'weekend',
+			allDay: 'across the day',
 			excessWaitExplain:
 				'The extra time riders wait beyond the scheduled gap between buses. 0 means the line met (or beat) its planned frequency.',
 			dumbbellAria: (scheduled, observed) =>
@@ -335,16 +339,19 @@
 
 	// The headline excess-wait read, lifted to a prominent ExplainedMetricCard so the
 	// "extra wait over WHAT" baseline is ALWAYS visible beside the number (the operator's
-	// "1.8 min over what" fix). PEAK-AWARE (operator: make the AM-peak excess wait clear):
-	// prefer the AM peak, then the PM peak, then any shift that carries a value — the rush
-	// hours are when excess wait bites a rider hardest, never the alphabetical/contract head.
-	const headlineRow = $derived<ShiftRow | null>(
-		mainRows.find((r) => r.shift.startsWith('am_peak') && r.excessWait != null) ??
-			mainRows.find((r) => r.shift.startsWith('pm_peak') && r.excessWait != null) ??
-			mainRows.find((r) => r.excessWait != null) ??
-			mainRows[0] ??
-			null,
+	// "1.8 min over what" fix). It represents the WHOLE DAY — the mean excess wait across the
+	// shifts that carry a value — NOT a cherry-picked shift (a single time-of-day in the
+	// headline reads as arbitrary "why morning?"). The per-shift breakdown below shows the
+	// variation, so the bad shifts stay visible; the headline is just the at-a-glance typical.
+	const excessWaitValues = $derived(
+		mainRows.map((r) => r.excessWait).filter((v): v is number => v != null),
 	);
+	const allDayExcessWait = $derived<number | null>(
+		excessWaitValues.length > 0
+			? excessWaitValues.reduce((sum, v) => sum + v, 0) / excessWaitValues.length
+			: null,
+	);
+	const hasExcessHeadline = $derived(allDayExcessWait != null);
 
 	/* ── service span, the most-recent row carrying a signal ──────────────────
 	   serviceSpans arrives in contract order (chronological); the foundation VM
@@ -385,10 +392,10 @@
 			<!-- S7: the headline excess-wait read, lifted to a prominent 2-col card whose
 			     always-visible explanation states the baseline ("over the scheduled gap")
 			     beside the number — the operator's "1.8 min over what" fix. -->
-			{#if headlineRow}
+			{#if hasExcessHeadline}
 				<ExplainedMetricCard
-					label={`${terms.excessWait} · ${shiftLabel(headlineRow.shift)}`}
-					value={min(headlineRow.excessWait)}
+					label={`${terms.excessWait} · ${t.allDay}`}
+					value={min(allDayExcessWait)}
 					explanation={t.excessWaitExplain}
 					emptyLabel={valueNoData}
 					absentReason="no-observations"
