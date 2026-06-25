@@ -10,7 +10,6 @@ from transit_ops.gold.marts import (
     ANALYZE_REALTIME_SILVER_TABLES,
     CLOSE_DIM_ROUTE_HISTORY,
     CLOSE_DIM_STOP_HISTORY,
-    INSERT_DIM_DIRECTION,
     INSERT_DIM_ROUTE,
     INSERT_DIM_ROUTE_PATTERN,
     INSERT_FACT_TRIP_DELAY_SNAPSHOT,
@@ -254,7 +253,6 @@ def test_build_gold_marts_rebuilds_dimensions_and_facts() -> None:
         "dim_route": 216,
         "dim_stop": 8897,
         "dim_date": 99,
-        "dim_direction": 0,
         "dim_route_pattern": 578,
         "dim_route_history": 231,
         "dim_stop_history": 9203,
@@ -387,14 +385,6 @@ def test_trip_delay_scheduled_time_uses_noon_minus_12h_anchor() -> None:
         assert "- interval '12 hours'" in sql
         assert "AT TIME ZONE" not in sql
         assert "hours => split_part(" in sql
-
-
-def test_dim_direction_uses_beta_directions_source() -> None:
-    sql = str(INSERT_DIM_DIRECTION)
-
-    assert "FROM silver.directions" in sql
-    assert "trip_headsign" not in sql
-    assert "direction AS direction_label" in sql
 
 
 def test_dim_route_exposes_beta_route_description_detail() -> None:
@@ -651,7 +641,6 @@ def test_refresh_gold_static_refreshes_only_dimensions() -> None:
     assert result.provider_timezone == "America/Toronto"
     assert result.dataset_version_id == 2
     assert result.row_counts == {
-        "dim_direction": 0,
         "dim_route": 216,
         "dim_route_pattern": 578,
         "dim_stop": 8897,
@@ -663,7 +652,6 @@ def test_refresh_gold_static_refreshes_only_dimensions() -> None:
     # Advisory lock acquired — serializes with realtime refresh
     assert any("pg_advisory_xact_lock" in sql for sql in sql_calls)
     # Dimension tables are refreshed
-    assert any("DELETE FROM gold.dim_direction" in sql for sql in sql_calls)
     assert any("DELETE FROM gold.dim_route" in sql for sql in sql_calls)
     assert any("DELETE FROM gold.dim_route_pattern" in sql for sql in sql_calls)
     assert any("INSERT INTO gold.dim_route" in sql for sql in sql_calls)

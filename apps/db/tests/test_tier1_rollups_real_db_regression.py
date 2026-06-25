@@ -351,22 +351,6 @@ def test_occupancy_band_counts_fold_code4_and_exclude_no_data(conn) -> None:  # 
     )
     assert band_sum == daily["observation_count"]
 
-    # The 5m mirror carries the same partition for the seeded bin.
-    five_min = connection.execute(
-        text(
-            """
-            SELECT observation_count, standing_count, full_count
-            FROM gold.occupancy_summary_5m
-            WHERE provider_id = :p AND route_id = '99C'
-            ORDER BY observation_count DESC
-            LIMIT 1
-            """
-        ),
-        {"p": PROVIDER},
-    ).mappings().one()
-    assert five_min["observation_count"] == 6
-    assert five_min["standing_count"] == 2
-
 
 def test_tier1_daily_rollups_are_append_only_idempotent(conn) -> None:  # noqa: ANN001
     connection, _seed = conn
@@ -397,6 +381,5 @@ def test_tier1_daily_rollups_are_append_only_idempotent(conn) -> None:  # noqa: 
     expected_kinds = {
         "route_cancellation_daily",
         "route_occupancy_band_daily",
-        "occupancy_summary_5m",
     }
     assert expected_kinds <= kinds

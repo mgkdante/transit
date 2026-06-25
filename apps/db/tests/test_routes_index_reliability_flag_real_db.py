@@ -119,17 +119,19 @@ def _seed(connection) -> None:
             ),
             {"p": PROVIDER, "v": VERSION_ID, "route": route_id, "sort": sort_order},
         )
-    # Weekly reliability for ROUTE_WITH only — this is what flips its flag True.
+    # Spine rows for ROUTE_WITH only — this is what flips its flag True (S7-B:
+    # build_routes_index enumerates routes from gold.route_delay_spine).
     connection.execute(
         text(
             """
-            INSERT INTO gold.route_reliability_weekly
-                (provider_id, week_start_local, route_id, observation_count,
-                 delayed_trip_count, severe_delay_count, delay_observation_count)
-            VALUES (:p, :wk, :route, 10, 2, 0, 10)
+            INSERT INTO gold.route_delay_spine
+                (provider_id, route_id, service_local_date, hour_of_day_local,
+                 direction_id, observation_count, delay_observation_count,
+                 severe_delay_count, sum_delay_seconds)
+            VALUES (:p, :route, :d, 8, 0, 10, 10, 0, 1200)
             """
         ),
-        {"p": PROVIDER, "wk": date(2026, 5, 25), "route": ROUTE_WITH},
+        {"p": PROVIDER, "d": date(2026, 5, 25), "route": ROUTE_WITH},
     )
 
 
@@ -144,26 +146,3 @@ def test_reliability_flag_true_only_for_routes_with_history(conn) -> None:
     assert by_id[ROUTE_WITHOUT].reliability is False
 
 
-def test_unrouted_sentinel_never_flags_a_real_route(conn) -> None:
-    # The hourly spine COALESCEs route_id to '__unrouted__'; a sentinel row in the
-    # mart must NOT spill the flag onto any real route. (The builder SQL excludes
-    # it, mirroring publish.py.)
-    conn.execute(
-        text(
-            """
-            INSERT INTO gold.route_reliability_monthly
-                (provider_id, month_start_local, route_id, observation_count,
-                 delayed_trip_count, severe_delay_count, delay_observation_count)
-            VALUES (:p, :mo, '__unrouted__', 5, 1, 0, 5)
-            """
-        ),
-        {"p": PROVIDER, "mo": date(2026, 5, 1)},
-    )
-
-    idx = build_routes_index(conn, provider_id=PROVIDER, generated_utc="t")
-    by_id = {r.id: r for r in idx.routes}
-
-    # '__unrouted__' is not a published route, so it never appears in the index…
-    assert "__unrouted__" not in by_id
-    # …and ROUTE_WITHOUT (no real history) stays False despite the sentinel row.
-    assert by_id[ROUTE_WITHOUT].reliability is False

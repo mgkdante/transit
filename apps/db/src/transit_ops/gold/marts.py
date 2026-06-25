@@ -112,27 +112,6 @@ DELETE_DIM_STOP = text(
     """
 )
 
-DELETE_DIM_DIRECTION = text(
-    """
-    DELETE FROM gold.dim_direction
-    WHERE provider_id = :provider_id
-    """
-)
-
-INSERT_DIM_DIRECTION = text(
-    """
-    INSERT INTO gold.dim_direction (provider_id, route_id, direction_id, direction_label)
-    SELECT
-        provider_id,
-        route_id,
-        direction_id,
-        direction AS direction_label
-    FROM silver.directions
-    WHERE provider_id = :provider_id
-      AND dataset_version_id = :dataset_version_id
-    """
-)
-
 DELETE_DIM_ROUTE_PATTERN = text(
     """
     DELETE FROM gold.dim_route_pattern
@@ -177,7 +156,6 @@ SELECT_CURRENT_VERSION_HAS_SILVER_ROUTES = text(
 LOCK_GOLD_TABLES = text(
     """
     LOCK TABLE
-        gold.dim_direction,
         gold.dim_route_pattern,
         gold.dim_route,
         gold.dim_stop,
@@ -929,7 +907,6 @@ class GoldStaticRefreshResult:
 
 def _table_name(table_name: str) -> str:
     allowed_names = {
-        "dim_direction",
         "dim_route",
         "dim_route_pattern",
         "dim_stop",
@@ -1021,7 +998,6 @@ def _delete_existing_provider_rows(connection: Connection, *, provider_id: str) 
     connection.execute(DELETE_LATEST_VEHICLE_SNAPSHOT, params)
     connection.execute(DELETE_DIM_DATE, params)
     connection.execute(DELETE_DIM_STOP, params)
-    connection.execute(DELETE_DIM_DIRECTION, params)
     connection.execute(DELETE_DIM_ROUTE_PATTERN, params)
     connection.execute(DELETE_DIM_ROUTE, params)
 
@@ -1054,11 +1030,9 @@ def _refresh_gold_dimensions(connection: Connection, *, context: GoldBuildContex
     }
     connection.execute(DELETE_DIM_DATE, {"provider_id": context.provider_id})
     connection.execute(DELETE_DIM_STOP, {"provider_id": context.provider_id})
-    connection.execute(DELETE_DIM_DIRECTION, {"provider_id": context.provider_id})
     connection.execute(DELETE_DIM_ROUTE_PATTERN, {"provider_id": context.provider_id})
     connection.execute(DELETE_DIM_ROUTE, {"provider_id": context.provider_id})
     connection.execute(INSERT_DIM_ROUTE, params)
-    connection.execute(INSERT_DIM_DIRECTION, params)
     connection.execute(INSERT_DIM_ROUTE_PATTERN, params)
     connection.execute(INSERT_DIM_STOP, params)
     connection.execute(INSERT_DIM_DATE, params)
@@ -1137,7 +1111,6 @@ def _refresh_gold_tables(
     connection.execute(LOCK_GOLD_TABLES)
     _delete_existing_provider_rows(connection, provider_id=context.provider_id)
     connection.execute(INSERT_DIM_ROUTE, params)
-    connection.execute(INSERT_DIM_DIRECTION, params)
     connection.execute(INSERT_DIM_ROUTE_PATTERN, params)
     connection.execute(INSERT_DIM_STOP, params)
     connection.execute(INSERT_DIM_DATE, params)
@@ -1147,11 +1120,6 @@ def _refresh_gold_tables(
     latest_row_counts = _refresh_latest_gold_tables(connection, context=context)
 
     return {
-        "dim_direction": _count_gold_rows(
-            connection,
-            provider_id=context.provider_id,
-            table_name="dim_direction",
-        ),
         "dim_route": _count_gold_rows(
             connection,
             provider_id=context.provider_id,
@@ -1334,11 +1302,6 @@ def refresh_gold_static(
         connection.execute(ACQUIRE_GOLD_BUILD_LOCK, {"provider_id": context.provider_id})
         _refresh_gold_dimensions(connection, context=context)
         row_counts = {
-            "dim_direction": _count_gold_rows(
-                connection,
-                provider_id=context.provider_id,
-                table_name="dim_direction",
-            ),
             "dim_route": _count_gold_rows(
                 connection,
                 provider_id=context.provider_id,

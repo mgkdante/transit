@@ -9,26 +9,16 @@ from transit_ops.maintenance import WarmRollupStoragePruneResult, prune_warm_rol
 from transit_ops.settings import Settings
 
 # Tables pruned by prune_warm_rollup_storage (maintenance.py retention registry).
-# These daily marts (route_headway_daily, repeat_offender_daily) are full-rebuilt
+# These daily marts (route_headway_by_shift, repeat_offender) are full-rebuilt
 # each run and are NOT time-window pruned, so they are intentionally absent here.
 REPORTING_AGGREGATE_TABLES = (
     "route_delay_hourly",
-    "route_delay_day_of_week",
     "stop_delay_hourly",
-    "route_reliability_weekly",
-    "route_reliability_monthly",
     "stop_delay_weekly",
     "stop_delay_monthly",
     "route_habit_score",
     "repeated_problem_route_stop",
     "citizen_accountability_daily",
-    # NOTE: route_delay_by_shift_daytype is listed BEFORE route_delay_by_shift so
-    # the FakeConnection substring dispatch matches the longer (_daytype) INSERT/
-    # DELETE/COUNT to its OWN entry rather than shadowing it under the shorter
-    # "route_delay_by_shift" needle.
-    "route_delay_by_shift_daytype",
-    "route_delay_by_shift",
-    "route_delay_by_daytype",
 )
 
 # Tables rebuilt by build_warm_rollups (rollups.py REPORTING_AGGREGATE_TABLES).
@@ -36,9 +26,9 @@ REPORTING_AGGREGATE_TABLES = (
 # per-direction headway) that are full-rebuilt each cycle but not time-pruned.
 BUILD_REPORTING_AGGREGATE_TABLES = (
     *REPORTING_AGGREGATE_TABLES,
-    "route_headway_daily",
-    "repeat_offender_daily",
-    "route_headway_direction_daily",
+    "route_headway_by_shift",
+    "repeat_offender",
+    "route_headway_by_direction_shift",
 )
 
 REPORTING_AGGREGATE_ROWCOUNTS = {
@@ -196,6 +186,9 @@ class FakeConnection:
         if "INSERT INTO gold.route_skipped_stop_daily" in sql:
             return RowcountResult(1)
 
+        if "INSERT INTO gold.route_delay_spine" in sql:
+            return RowcountResult(1)
+
         if "INSERT INTO gold.warm_rollup_periods" in sql:
             return RowcountResult(1)
 
@@ -256,6 +249,12 @@ class FakeConnection:
         if "SELECT COUNT(*)" in sql and "FROM gold.route_skipped_stop_daily" in sql:
             return ScalarResult(14)
 
+        if "SELECT COUNT(*)" in sql and "FROM gold.route_delay_spine" in sql:
+            return ScalarResult(16)
+
+        if "DELETE FROM gold.route_delay_spine" in sql:
+            return RowcountResult(16)
+
         return RowcountResult(0)
 
 
@@ -279,42 +278,6 @@ def _fake_settings(**kwargs) -> Settings:
     return Settings.model_construct(**defaults)
 
 
-def test_build_vehicle_rollup_inserts_new_periods() -> None:
-    periods = [
-        datetime(2026, 3, 25, 12, 0, tzinfo=UTC),
-        datetime(2026, 3, 25, 12, 5, tzinfo=UTC),
-    ]
-    conn = FakeConnection(vehicle_periods=periods)
-    engine = FakeEngine(conn)
-
-    result = build_warm_rollups("stm", engine=engine)
-
-    assert isinstance(result, WarmRollupBuildResult)
-    assert result.provider_id == "stm"
-    assert result.built_vehicle_periods == 2
-    assert result.built_trip_delay_periods == 0
-
-    vehicle_upserts = [s for s in conn.executed if "INSERT INTO gold.vehicle_summary_5m" in s]
-    assert len(vehicle_upserts) == 2
-
-    period_upserts = [s for s in conn.executed if "INSERT INTO gold.warm_rollup_periods" in s]
-    assert len(period_upserts) == 2
-
-
-def test_build_vehicle_rollup_skips_already_built_periods() -> None:
-    """Idempotency: no missing periods → 0 built."""
-    conn = FakeConnection(vehicle_periods=[], trip_delay_periods=[])
-    engine = FakeEngine(conn)
-
-    result = build_warm_rollups("stm", engine=engine)
-
-    assert result.built_vehicle_periods == 0
-    assert result.built_trip_delay_periods == 0
-
-    vehicle_upserts = [s for s in conn.executed if "INSERT INTO gold.vehicle_summary_5m" in s]
-    assert len(vehicle_upserts) == 0
-
-
 def test_build_trip_delay_rollup_inserts_new_periods() -> None:
     periods = [
         datetime(2026, 3, 25, 8, 0, tzinfo=UTC),
@@ -326,7 +289,6 @@ def test_build_trip_delay_rollup_inserts_new_periods() -> None:
 
     result = build_warm_rollups("stm", engine=engine)
 
-    assert result.built_vehicle_periods == 0
     assert result.built_trip_delay_periods == 3
 
     delay_upserts = [s for s in conn.executed if "INSERT INTO gold.trip_delay_summary_5m" in s]
@@ -336,40 +298,13 @@ def test_build_trip_delay_rollup_inserts_new_periods() -> None:
     assert len(period_upserts) == 3
 
 
-def test_build_occupancy_rollup_inserts_new_periods() -> None:
-    """The occupancy 5m loop mirrors the vehicle loop: one band-count upsert +
-    one watermark per missing period, disjoint from the vehicle_summary stream."""
-    periods = [
-        datetime(2026, 3, 25, 9, 0, tzinfo=UTC),
-        datetime(2026, 3, 25, 9, 5, tzinfo=UTC),
-    ]
-    conn = FakeConnection(occupancy_periods=periods)
-    engine = FakeEngine(conn)
-
-    result = build_warm_rollups("stm", engine=engine)
-
-    assert result.built_occupancy_periods == 2
-    assert result.built_vehicle_periods == 0
-    assert result.built_trip_delay_periods == 0
-
-    occ_upserts = [s for s in conn.executed if "INSERT INTO gold.occupancy_summary_5m" in s]
-    assert len(occ_upserts) == 2
-
-    # The band-count mirror folds CRUSHED_STANDING (code 4) into standing and
-    # excludes NOT_ACCEPTING/NO_DATA/NOT_BOARDABLE from observation_count.
-    assert "occupancy_status IN (3, 4)" in occ_upserts[0]
-    assert "occupancy_status IN (0, 1, 2, 3, 4, 5)" in occ_upserts[0]
-
-
 def test_build_warm_rollups_empty_facts_is_noop() -> None:
     conn = FakeConnection()
     engine = FakeEngine(conn)
 
     result = build_warm_rollups("stm", engine=engine)
 
-    assert result.built_vehicle_periods == 0
     assert result.built_trip_delay_periods == 0
-    assert result.built_occupancy_periods == 0
     assert result.built_route_cancellation_days == 0
     assert result.built_route_occupancy_days == 0
     assert result.built_stop_occupancy_days == 0
@@ -415,14 +350,13 @@ def test_build_warm_rollups_skips_unseeded_provider_cleanly() -> None:
     assert result.skipped_not_seeded is True
     assert result.display_dict()["skipped_not_seeded"] is True
     # Nothing was built or rebuilt.
-    assert result.built_vehicle_periods == 0
     assert result.built_trip_delay_periods == 0
     assert result.reporting_aggregate_row_counts == {}
 
     # The function short-circuited after the seed probe: it never ran the
     # calendar read, any 5m upsert, or any reporting-aggregate DELETE/INSERT.
     assert all("AT TIME ZONE" not in s for s in conn.executed)
-    assert all("INSERT INTO gold.vehicle_summary_5m" not in s for s in conn.executed)
+    assert all("INSERT INTO gold.trip_delay_summary_5m" not in s for s in conn.executed)
     assert all("DELETE FROM gold." not in s for s in conn.executed)
 
 
@@ -439,7 +373,6 @@ def test_build_warm_rollups_seeded_provider_unchanged_regression() -> None:
     result = build_warm_rollups("stm", engine=engine)
 
     assert result.skipped_not_seeded is False
-    assert result.built_vehicle_periods == 2
     # Seeded path still runs the calendar read and the reporting-aggregate rebuild.
     assert any("AT TIME ZONE" in s for s in conn.executed)
     assert result.reporting_aggregate_row_counts == dict(BUILD_REPORTING_AGGREGATE_ROWCOUNTS)
@@ -623,21 +556,6 @@ def test_trip_delay_summary_5m_severe_excludes_outliers() -> None:
     assert "delay_seconds > 300 AND ABS(delay_seconds) <= 3600" in sql
 
 
-def test_route_delay_day_of_week_uses_durable_capped_hourly_inputs() -> None:
-    sql = str(rollups.UPSERT_ROUTE_DELAY_DAY_OF_WEEK)
-
-    assert "FROM gold.route_delay_hourly" in sql
-    assert "fact_trip_delay_snapshot" not in sql
-    assert "SUM(rd.severe_delay_count)" in sql
-    assert (
-        "Hourly-distinct-trip sum: upper-bound proxy, "
-        "not distinct trips per weekday."
-    ) in sql
-    assert "rd.avg_delay_seconds * NULLIF(rd.delay_observation_count, 0)" in sql
-    assert "NULLIF(SUM(rd.delay_observation_count), 0)" in sql
-    assert "rd.avg_delay_seconds * NULLIF(rd.observation_count, 0)" not in sql
-
-
 def test_stop_delay_hourly_aggregates_real_per_stop_delays() -> None:
     sql = str(rollups.REPORTING_AGGREGATE_UPSERTS["stop_delay_hourly"])
     compact = " ".join(sql.split())
@@ -686,7 +604,7 @@ def test_windowed_history_inserts_have_no_on_conflict() -> None:
         assert "ON CONFLICT" not in str(rollups.REPORTING_AGGREGATE_UPSERTS[table_name])
 
     assert "ON CONFLICT" in str(rollups.UPSERT_TRIP_DELAY_SUMMARY_5M)
-    assert "ON CONFLICT" in str(rollups.UPSERT_ROUTE_RELIABILITY_WEEKLY)
+    assert "ON CONFLICT" in str(rollups.UPSERT_REPEATED_PROBLEM_ROUTE_STOP)
 
 
 def test_stop_delay_hourly_scoped_to_open_window() -> None:
@@ -754,22 +672,6 @@ def test_repeat_offender_obs_excludes_outlier_delays() -> None:
 
     assert "AND ABS(f.delay_seconds) <= 3600" in sql
     assert sql.index("AND ABS(f.delay_seconds) <= 3600") < sql.index("agg AS")
-
-
-def test_route_reliability_weekly_monthly_carry_otp_counts_and_weights() -> None:
-    for sql in (
-        str(rollups.UPSERT_ROUTE_RELIABILITY_WEEKLY),
-        str(rollups.UPSERT_ROUTE_RELIABILITY_MONTHLY),
-    ):
-        compact = " ".join(sql.split())
-        assert "SUM(rd.delay_observation_count)::integer" in sql
-        assert (
-            "CASE WHEN COUNT(*) = COUNT(rd.on_time_observation_count) "
-            "THEN SUM(rd.on_time_observation_count)::integer END"
-        ) in compact
-        assert "rd.avg_delay_seconds * NULLIF(rd.delay_observation_count, 0)" in sql
-        assert "delay_observation_count = EXCLUDED.delay_observation_count" in sql
-        assert "on_time_observation_count = EXCLUDED.on_time_observation_count" in sql
 
 
 def test_route_cancellation_daily_upsert_dedups_and_keeps_scheduled_in_denominator() -> None:
@@ -882,7 +784,7 @@ def test_historic_daily_marts_registered_in_registry() -> None:
     """P2/P3 HISTORIC marts are wired into all three rollups registries."""
     from transit_ops.gold import rollups
 
-    for table_name in ("route_headway_daily", "repeat_offender_daily"):
+    for table_name in ("route_headway_by_shift", "repeat_offender"):
         assert table_name in rollups.REPORTING_AGGREGATE_TABLES
         assert table_name in rollups.REPORTING_AGGREGATE_UPSERTS
         assert table_name in rollups.DELETE_REPORTING_AGGREGATES
@@ -892,13 +794,13 @@ def test_historic_daily_marts_registered_in_registry() -> None:
         assert "provider_id = :provider_id" in delete_sql
 
 
-def test_route_headway_daily_upsert_shape() -> None:
+def test_route_headway_by_shift_upsert_shape() -> None:
     """P2 observed-headway mart: per-direction trip-start gaps over weekdays."""
     from transit_ops.gold import rollups
 
-    sql = str(rollups.REPORTING_AGGREGATE_UPSERTS["route_headway_daily"])
+    sql = str(rollups.REPORTING_AGGREGATE_UPSERTS["route_headway_by_shift"])
 
-    assert "INSERT INTO gold.route_headway_daily" in sql
+    assert "INSERT INTO gold.route_headway_by_shift" in sql
     assert "FROM gold.fact_trip_delay_snapshot" in sql
     assert "gold.dim_provider" in sql
     assert "percentile_cont(0.5)" in sql
@@ -973,13 +875,13 @@ def test_route_skipped_stop_daily_upsert_shape() -> None:
     assert "ON CONFLICT (provider_id, provider_local_date, route_id)" in sql
 
 
-def test_repeat_offender_daily_upsert_shape() -> None:
+def test_repeat_offender_upsert_shape() -> None:
     """P3 repeat-offender mart: trips + vehicles with >=3 severe-delay days in 14d."""
     from transit_ops.gold import rollups
 
-    sql = str(rollups.REPORTING_AGGREGATE_UPSERTS["repeat_offender_daily"])
+    sql = str(rollups.REPORTING_AGGREGATE_UPSERTS["repeat_offender"])
 
-    assert "INSERT INTO gold.repeat_offender_daily" in sql
+    assert "INSERT INTO gold.repeat_offender" in sql
     assert "FROM gold.fact_trip_delay_snapshot" in sql
     assert "gold.dim_provider" in sql
     # Fact window is now a bind (:fact_retention_days) so it tracks
@@ -1003,14 +905,14 @@ def test_repeat_offender_daily_upsert_shape() -> None:
 
 
 def test_build_warm_rollups_result_display_dict() -> None:
-    conn = FakeConnection(vehicle_periods=[datetime(2026, 3, 25, 12, 0, tzinfo=UTC)])
+    conn = FakeConnection(trip_delay_periods=[datetime(2026, 3, 25, 12, 0, tzinfo=UTC)])
     engine = FakeEngine(conn)
 
     result = build_warm_rollups("stm", engine=engine)
     d = result.display_dict()
 
     assert d["provider_id"] == "stm"
-    assert d["built_vehicle_periods"] == 1
+    assert d["built_trip_delay_periods"] == 1
     assert d["since_utc"] is None
     assert d["reporting_aggregate_row_counts"] == {
         table_name: rowcount
@@ -1031,16 +933,12 @@ def test_prune_warm_rollup_storage_deletes_old_periods() -> None:
     assert result.retention_days == 90
     assert result.cutoff_utc is not None
 
-    vehicle_deletes = [s for s in conn.executed if "DELETE FROM gold.vehicle_summary_5m" in s]
-    assert len(vehicle_deletes) == 1
-
     delay_deletes = [s for s in conn.executed if "DELETE FROM gold.trip_delay_summary_5m" in s]
     assert len(delay_deletes) == 1
 
     period_deletes = [s for s in conn.executed if "DELETE FROM gold.warm_rollup_periods" in s]
     assert len(period_deletes) == 1
 
-    assert result.deleted_row_counts["gold.vehicle_summary_5m"] == 5
     assert result.deleted_row_counts["gold.trip_delay_summary_5m"] == 3
     assert result.deleted_row_counts["gold.warm_rollup_periods"] == 8
 
@@ -1053,7 +951,6 @@ def test_prune_warm_rollup_storage_dry_run_counts_without_deletes() -> None:
     result = prune_warm_rollup_storage("stm", settings=settings, engine=engine, dry_run=True)
 
     assert result.dry_run is True
-    assert result.deleted_row_counts["gold.vehicle_summary_5m"] == 5
     assert result.deleted_row_counts["gold.trip_delay_summary_5m"] == 3
     assert result.deleted_row_counts["gold.warm_rollup_periods"] == 8
     for table_name, expected_count in REPORTING_AGGREGATE_ROWCOUNTS.items():
@@ -1065,7 +962,6 @@ def test_prune_warm_rollup_storage_dry_run_counts_without_deletes() -> None:
     assert result.deleted_row_counts["gold.route_delay_percentile_daily"] == 7
     assert result.deleted_row_counts["gold.stop_delay_percentile_daily"] == 11
     # Tier-1 append-only tables prune at the same 730d boundary.
-    assert result.deleted_row_counts["gold.occupancy_summary_5m"] == 6
     assert result.deleted_row_counts["gold.route_cancellation_daily"] == 9
     assert result.deleted_row_counts["gold.route_occupancy_band_daily"] == 10
     # The per-STOP occupancy-band twin is now registered for retention pruning too
@@ -1074,13 +970,13 @@ def test_prune_warm_rollup_storage_dry_run_counts_without_deletes() -> None:
     # Tier-2 append-only tables.
     assert result.deleted_row_counts["gold.route_service_span_daily"] == 12
     assert result.deleted_row_counts["gold.route_skipped_stop_daily"] == 14
+    # route_delay_spine — the S7-B append-only delay rollup, registered for 365d pruning.
+    assert result.deleted_row_counts["gold.route_delay_spine"] == 16
 
     count_queries = [s for s in conn.executed if "SELECT COUNT(*)" in s or "SELECT count(*)" in s]
-    # 20 prior + 2 Tier-2 aggregate-retention tables (service-span + skipped-stop) +
-    # the per-stop occupancy-band twin + the Tier-3 route_delay_by_shift_daytype
-    # crosstab (newly registered); each sits in GOLD_AGGREGATE_RETENTION_COLUMNS so
-    # each emits one dry-run COUNT.
-    assert len(count_queries) == 24
+    # 23 prior MINUS the 6 route delay-cube fold tables (dropped in 0064 — every reader now
+    # derives from route_delay_spine); each retention-registered table emits one dry-run COUNT.
+    assert len(count_queries) == 17
 
 
 def test_prune_warm_rollup_storage_display_dict_includes_dry_run() -> None:
@@ -1098,3 +994,65 @@ def test_prune_warm_rollup_storage_display_dict_includes_dry_run() -> None:
     )
 
     assert result.display_dict()["dry_run"] is True
+
+
+# --- S7-B route_delay_spine builder (PR1 Task 2) ---
+
+
+def test_route_delay_spine_edges_are_the_21_contract_edges() -> None:
+    from transit_ops.gold import rollups
+
+    assert rollups.DELAY_HISTOGRAM_EDGES == (
+        -3600, -300, -180, -120, -90, -60, -30, 0, 30, 60, 90, 120, 150, 180,
+        240, 300, 420, 600, 900, 1800, 3600,
+    )
+    assert len(rollups.DELAY_HISTOGRAM_EDGES) == 21
+
+
+def test_route_delay_spine_upsert_shape() -> None:
+    from transit_ops.gold import rollups
+
+    sql = str(rollups.UPSERT_ROUTE_DELAY_SPINE)
+    compact = " ".join(sql.split())
+
+    assert "INSERT INTO gold.route_delay_spine" in sql
+    assert "FROM gold.fact_trip_delay_snapshot" in sql
+    assert "f.route_id IS NOT NULL" in sql
+    assert "f.snapshot_date_key = :date_key" in compact
+    # Finest-grain GROUP BY (hour x direction); service_local_date = :local_date.
+    assert ":local_date" in compact
+    assert (
+        "GROUP BY provider_id, route_id, hour_of_day_local, direction_id" in compact
+    )
+    assert (
+        "ON CONFLICT (provider_id, route_id, service_local_date, "
+        "hour_of_day_local, direction_id)" in compact
+    )
+    # Finding D: unknown direction COALESCEs to 0 (matching the existing directional builder).
+    assert "COALESCE(f.direction_id, 0)" in compact
+    # Correction #1 / Finding A: the headline-share counts come from the EXACT live
+    # delay_seconds predicates, NOT from histogram bins.
+    assert "delay_seconds >= -60 AND delay_seconds < 300" in compact
+    assert "delay_seconds > 300" in compact
+    assert "ABS(delay_seconds) <= 3600" in compact
+    # The histogram is a SEPARATE 21-bin array via width_bucket (p50/p90 + the chart only).
+    assert "width_bucket" in compact
+    assert "::smallint[]" in compact
+    # Correction #2: delayed_trip_count is non-additive -> never a spine column.
+    assert "delayed_trip_count" not in sql
+
+
+def test_build_warm_rollups_wires_route_delay_spine_and_counts_it() -> None:
+    conn = FakeConnection()
+    engine = FakeEngine(conn)
+
+    result = build_warm_rollups("stm", engine=engine)
+
+    assert result.built_route_delay_spine_days == 0
+    assert "built_route_delay_spine_days" in result.display_dict()
+
+
+def test_route_delay_spine_is_append_only_not_in_reporting_registry() -> None:
+    from transit_ops.gold import rollups
+
+    assert "route_delay_spine" not in rollups.REPORTING_AGGREGATE_TABLES

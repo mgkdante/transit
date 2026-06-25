@@ -20,26 +20,18 @@ GOLD_FACT_TABLES = (
 )
 
 GOLD_WARM_ROLLUP_TABLES = (
-    "gold.vehicle_summary_5m",
     "gold.trip_delay_summary_5m",
-    "gold.occupancy_summary_5m",
     "gold.warm_rollup_periods",
 )
 
 GOLD_REPORTING_AGGREGATE_TABLES = (
     "gold.route_delay_hourly",
-    "gold.route_delay_day_of_week",
     "gold.stop_delay_hourly",
-    "gold.route_reliability_weekly",
-    "gold.route_reliability_monthly",
     "gold.stop_delay_weekly",
     "gold.stop_delay_monthly",
     "gold.route_habit_score",
     "gold.repeated_problem_route_stop",
     "gold.citizen_accountability_daily",
-    "gold.route_delay_by_shift",
-    "gold.route_delay_by_daytype",
-    "gold.route_delay_by_shift_daytype",
 )
 
 # Append-only daily rollups — NOT in the DELETE+UPSERT reporting registry; they
@@ -52,6 +44,7 @@ GOLD_APPEND_ONLY_DAILY_TABLES = (
     "gold.stop_occupancy_band_daily",
     "gold.route_service_span_daily",
     "gold.route_skipped_stop_daily",
+    "gold.route_delay_spine",
 )
 
 GOLD_AGGREGATE_TABLES = (
@@ -61,15 +54,10 @@ GOLD_AGGREGATE_TABLES = (
 )
 
 GOLD_AGGREGATE_RETENTION_COLUMNS = (
-    ("gold.vehicle_summary_5m", "period_start_utc", False),
     ("gold.trip_delay_summary_5m", "period_start_utc", False),
-    ("gold.occupancy_summary_5m", "period_start_utc", False),
     ("gold.warm_rollup_periods", "period_start_utc", False),
     ("gold.route_delay_hourly", "period_start_utc", False),
-    ("gold.route_delay_day_of_week", "built_at_utc", False),
     ("gold.stop_delay_hourly", "period_start_utc", False),
-    ("gold.route_reliability_weekly", "week_start_local", True),
-    ("gold.route_reliability_monthly", "month_start_local", True),
     ("gold.stop_delay_weekly", "week_start_local", True),
     ("gold.stop_delay_monthly", "month_start_local", True),
     ("gold.route_habit_score", "built_at_utc", False),
@@ -82,9 +70,7 @@ GOLD_AGGREGATE_RETENTION_COLUMNS = (
     ("gold.stop_occupancy_band_daily", "provider_local_date", True),
     ("gold.route_service_span_daily", "provider_local_date", True),
     ("gold.route_skipped_stop_daily", "provider_local_date", True),
-    ("gold.route_delay_by_shift", "built_at_utc", False),
-    ("gold.route_delay_by_daytype", "built_at_utc", False),
-    ("gold.route_delay_by_shift_daytype", "built_at_utc", False),
+    ("gold.route_delay_spine", "service_local_date", True),
 )
 
 VALID_GOLD_AGGREGATE_RETENTION_TARGETS = frozenset(GOLD_AGGREGATE_RETENTION_COLUMNS)

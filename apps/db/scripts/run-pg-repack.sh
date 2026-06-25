@@ -4,10 +4,12 @@
 # slice-9.1.1m: the previous DEFAULT_TABLES named silver.trip_updates /
 # silver.trip_update_stop_time_updates / silver.vehicle_positions — all DROPPED by
 # migration 0014, so every live/dry run failed with "relations do not exist"
-# (exit 21). The list below is the 8 current churn tables, mirroring the
-# canonical sets in maintenance.py (REALTIME_SILVER_TABLES minus the 29GB
-# silver.rt_trip_update_stop_times, the gold.latest_* live tables, and the two
-# gold.*_summary_5m warm rollups).
+# (exit 21). The list below is the 7 current churn tables, mirroring the
+# canonical sets in maintenance.py: REALTIME_SILVER_TABLES minus the 29GB
+# silver.rt_trip_update_stop_times, plus the gold.latest_* live tables and
+# gold.trip_delay_summary_5m (the only live warm rollup). The two hot gold.fact_*
+# tables are carved out of the CI default (see below); the dead
+# gold.vehicle/occupancy_summary_5m sinks were dropped in migration 0061.
 #
 # silver.rt_trip_update_stop_times (~29GB, ~252M largely-LIVE rows at 14d
 # retention) is DELIBERATELY EXCLUDED from the CI default: a weekly WAN-attached
@@ -29,7 +31,7 @@
 
 set -euo pipefail
 
-DEFAULT_TABLES=$'silver.rt_trip_updates\nsilver.rt_vehicle_positions\nsilver.rt_entities\nsilver.rt_feed_snapshots\ngold.latest_vehicle_snapshot\ngold.latest_trip_delay_snapshot\ngold.vehicle_summary_5m\ngold.trip_delay_summary_5m'
+DEFAULT_TABLES=$'silver.rt_trip_updates\nsilver.rt_vehicle_positions\nsilver.rt_entities\nsilver.rt_feed_snapshots\ngold.latest_vehicle_snapshot\ngold.latest_trip_delay_snapshot\ngold.trip_delay_summary_5m'
 
 if [[ -z "${DATABASE_URL:-}" ]]; then
   echo "DATABASE_URL is required" >&2

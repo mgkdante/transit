@@ -1,0 +1,1326 @@
+{
+  "by_shift_daytype": [
+    {
+      "avg_delay_min": null,
+      "day_type": "weekday",
+      "observation_count": 10,
+      "otp_pct": 0.0,
+      "severe_pct": 0.0,
+      "shift": "night"
+    },
+    {
+      "avg_delay_min": 3.4,
+      "day_type": "weekday",
+      "observation_count": 20,
+      "otp_pct": 50.0,
+      "severe_pct": 50.0,
+      "shift": "midday"
+    },
+    {
+      "avg_delay_min": 3.2,
+      "day_type": "weekday",
+      "observation_count": 25,
+      "otp_pct": 67.0,
+      "severe_pct": 33.3,
+      "shift": "am_peak"
+    },
+    {
+      "avg_delay_min": 2.0,
+      "day_type": "weekday",
+      "observation_count": 5,
+      "otp_pct": 100.0,
+      "severe_pct": 0.0,
+      "shift": "pm_peak"
+    },
+    {
+      "avg_delay_min": 3.2,
+      "day_type": "weekend",
+      "observation_count": 10,
+      "otp_pct": 67.0,
+      "severe_pct": 33.3,
+      "shift": "am_peak"
+    },
+    {
+      "avg_delay_min": 2.0,
+      "day_type": "weekend",
+      "observation_count": 2,
+      "otp_pct": 100.0,
+      "severe_pct": 0.0,
+      "shift": "pm_peak"
+    },
+    {
+      "avg_delay_min": null,
+      "day_type": "weekend",
+      "observation_count": 4,
+      "otp_pct": 0.0,
+      "severe_pct": 0.0,
+      "shift": "night"
+    },
+    {
+      "avg_delay_min": 3.4,
+      "day_type": "weekend",
+      "observation_count": 8,
+      "otp_pct": 50.0,
+      "severe_pct": 50.0,
+      "shift": "midday"
+    }
+  ],
+  "cancellations": [
+    {
+      "canceled_trip_days": 1,
+      "cancellation_rate_pct": 8.33,
+      "date": "D1",
+      "grain": "day",
+      "total_trip_days": 12
+    },
+    {
+      "canceled_trip_days": 1,
+      "cancellation_rate_pct": 8.33,
+      "date": "D2",
+      "grain": "day",
+      "total_trip_days": 12
+    },
+    {
+      "canceled_trip_days": 1,
+      "cancellation_rate_pct": 8.33,
+      "date": "D3",
+      "grain": "day",
+      "total_trip_days": 12
+    },
+    {
+      "canceled_trip_days": 1,
+      "cancellation_rate_pct": 8.33,
+      "date": "D4",
+      "grain": "day",
+      "total_trip_days": 12
+    },
+    {
+      "canceled_trip_days": 1,
+      "cancellation_rate_pct": 8.33,
+      "date": "D5",
+      "grain": "day",
+      "total_trip_days": 12
+    },
+    {
+      "canceled_trip_days": 1,
+      "cancellation_rate_pct": 8.33,
+      "date": "D6",
+      "grain": "day",
+      "total_trip_days": 12
+    },
+    {
+      "canceled_trip_days": 1,
+      "cancellation_rate_pct": 8.33,
+      "date": "D7",
+      "grain": "day",
+      "total_trip_days": 12
+    }
+  ],
+  "day_of_week": [
+    {
+      "avg_delay_min": 3.1,
+      "day_of_week_iso": 1,
+      "observation_count": 12,
+      "severe_pct": 25.0
+    },
+    {
+      "avg_delay_min": 3.1,
+      "day_of_week_iso": 2,
+      "observation_count": 12,
+      "severe_pct": 25.0
+    },
+    {
+      "avg_delay_min": 3.1,
+      "day_of_week_iso": 3,
+      "observation_count": 12,
+      "severe_pct": 25.0
+    },
+    {
+      "avg_delay_min": 3.1,
+      "day_of_week_iso": 4,
+      "observation_count": 12,
+      "severe_pct": 25.0
+    },
+    {
+      "avg_delay_min": 3.1,
+      "day_of_week_iso": 5,
+      "observation_count": 12,
+      "severe_pct": 25.0
+    },
+    {
+      "avg_delay_min": 3.1,
+      "day_of_week_iso": 6,
+      "observation_count": 12,
+      "severe_pct": 25.0
+    },
+    {
+      "avg_delay_min": 3.1,
+      "day_of_week_iso": 7,
+      "observation_count": 12,
+      "severe_pct": 25.0
+    }
+  ],
+  "delay_by_crowding": [
+    {
+      "avg_delay_min": 2.3,
+      "band": "many_seats",
+      "day_count": 7,
+      "observation_count": 56,
+      "p50_min": 2.7
+    }
+  ],
+  "generated_utc": "2026-06-25T00:00:00Z",
+  "habits": {
+    "matrix": [
+      [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        0.9814,
+        null,
+        null,
+        1.0,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        0.1491,
+        null,
+        null,
+        null,
+        null,
+        null,
+        0.0
+      ],
+      [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        0.9814,
+        null,
+        null,
+        1.0,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        0.1491,
+        null,
+        null,
+        null,
+        null,
+        null,
+        0.0
+      ],
+      [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        0.9814,
+        null,
+        null,
+        1.0,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        0.1491,
+        null,
+        null,
+        null,
+        null,
+        null,
+        0.0
+      ],
+      [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        0.9814,
+        null,
+        null,
+        1.0,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        0.1491,
+        null,
+        null,
+        null,
+        null,
+        null,
+        0.0
+      ],
+      [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        0.9814,
+        null,
+        null,
+        1.0,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        0.1491,
+        null,
+        null,
+        null,
+        null,
+        null,
+        0.0
+      ],
+      [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        0.9814,
+        null,
+        null,
+        1.0,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        0.1491,
+        null,
+        null,
+        null,
+        null,
+        null,
+        0.0
+      ],
+      [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        0.9814,
+        null,
+        null,
+        1.0,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        0.1491,
+        null,
+        null,
+        null,
+        null,
+        null,
+        0.0
+      ]
+    ],
+    "scale": "repeat_problem_relative"
+  },
+  "headway": [],
+  "id": "99G",
+  "name": null,
+  "occupancy_by_dow": [
+    {
+      "day_of_week_iso": 1,
+      "mix": {
+        "empty": 0.0,
+        "few_seats": 0.2,
+        "full": 0.2,
+        "many_seats": 0.4,
+        "standing": 0.2
+      }
+    },
+    {
+      "day_of_week_iso": 2,
+      "mix": {
+        "empty": 0.0,
+        "few_seats": 0.2,
+        "full": 0.2,
+        "many_seats": 0.4,
+        "standing": 0.2
+      }
+    },
+    {
+      "day_of_week_iso": 3,
+      "mix": {
+        "empty": 0.0,
+        "few_seats": 0.2,
+        "full": 0.2,
+        "many_seats": 0.4,
+        "standing": 0.2
+      }
+    },
+    {
+      "day_of_week_iso": 4,
+      "mix": {
+        "empty": 0.0,
+        "few_seats": 0.2,
+        "full": 0.2,
+        "many_seats": 0.4,
+        "standing": 0.2
+      }
+    },
+    {
+      "day_of_week_iso": 5,
+      "mix": {
+        "empty": 0.0,
+        "few_seats": 0.2,
+        "full": 0.2,
+        "many_seats": 0.4,
+        "standing": 0.2
+      }
+    },
+    {
+      "day_of_week_iso": 6,
+      "mix": {
+        "empty": 0.0,
+        "few_seats": 0.2,
+        "full": 0.2,
+        "many_seats": 0.4,
+        "standing": 0.2
+      }
+    },
+    {
+      "day_of_week_iso": 7,
+      "mix": {
+        "empty": 0.0,
+        "few_seats": 0.2,
+        "full": 0.2,
+        "many_seats": 0.4,
+        "standing": 0.2
+      }
+    }
+  ],
+  "occupancy_by_grain": [
+    {
+      "grain": "day",
+      "mix": {
+        "empty": 0.0,
+        "few_seats": 0.2,
+        "full": 0.2,
+        "many_seats": 0.4,
+        "standing": 0.2
+      }
+    },
+    {
+      "grain": "month",
+      "mix": {
+        "empty": 0.0,
+        "few_seats": 0.2,
+        "full": 0.2,
+        "many_seats": 0.4,
+        "standing": 0.2
+      }
+    },
+    {
+      "grain": "week",
+      "mix": {
+        "empty": 0.0,
+        "few_seats": 0.2,
+        "full": 0.2,
+        "many_seats": 0.4,
+        "standing": 0.2
+      }
+    }
+  ],
+  "occupancy_mix": {
+    "empty": 0.0,
+    "few_seats": 0.2,
+    "full": 0.2,
+    "many_seats": 0.4,
+    "standing": 0.2
+  },
+  "periods": [
+    {
+      "avg_delay_min": 2.3,
+      "date": "D1",
+      "delay_histogram": null,
+      "grain": "day",
+      "observation_count": 8,
+      "on_time": 4,
+      "otp_pct": 50,
+      "p50_min": 2.7,
+      "p90_min": 6.2,
+      "severe_pct": 25.0,
+      "wilson_hi": 78.5,
+      "wilson_lo": 21.5
+    },
+    {
+      "avg_delay_min": 2.3,
+      "date": "D2",
+      "delay_histogram": null,
+      "grain": "day",
+      "observation_count": 8,
+      "on_time": 4,
+      "otp_pct": 50,
+      "p50_min": 2.7,
+      "p90_min": 6.2,
+      "severe_pct": 25.0,
+      "wilson_hi": 78.5,
+      "wilson_lo": 21.5
+    },
+    {
+      "avg_delay_min": 2.3,
+      "date": "D3",
+      "delay_histogram": null,
+      "grain": "day",
+      "observation_count": 8,
+      "on_time": 4,
+      "otp_pct": 50,
+      "p50_min": 2.7,
+      "p90_min": 6.2,
+      "severe_pct": 25.0,
+      "wilson_hi": 78.5,
+      "wilson_lo": 21.5
+    },
+    {
+      "avg_delay_min": 2.3,
+      "date": "D4",
+      "delay_histogram": null,
+      "grain": "day",
+      "observation_count": 8,
+      "on_time": 4,
+      "otp_pct": 50,
+      "p50_min": 2.7,
+      "p90_min": 6.2,
+      "severe_pct": 25.0,
+      "wilson_hi": 78.5,
+      "wilson_lo": 21.5
+    },
+    {
+      "avg_delay_min": 2.3,
+      "date": "D5",
+      "delay_histogram": null,
+      "grain": "day",
+      "observation_count": 8,
+      "on_time": 4,
+      "otp_pct": 50,
+      "p50_min": 2.7,
+      "p90_min": 6.2,
+      "severe_pct": 25.0,
+      "wilson_hi": 78.5,
+      "wilson_lo": 21.5
+    },
+    {
+      "avg_delay_min": 2.3,
+      "date": "D6",
+      "delay_histogram": null,
+      "grain": "day",
+      "observation_count": 8,
+      "on_time": 4,
+      "otp_pct": 50,
+      "p50_min": 2.7,
+      "p90_min": 6.2,
+      "severe_pct": 25.0,
+      "wilson_hi": 78.5,
+      "wilson_lo": 21.5
+    },
+    {
+      "avg_delay_min": 2.3,
+      "date": "D7",
+      "delay_histogram": null,
+      "grain": "day",
+      "observation_count": 8,
+      "on_time": 4,
+      "otp_pct": 50,
+      "p50_min": 2.7,
+      "p90_min": 6.2,
+      "severe_pct": 25.0,
+      "wilson_hi": 78.5,
+      "wilson_lo": 21.5
+    },
+    {
+      "avg_delay_min": 2.0,
+      "date": null,
+      "delay_histogram": [
+        {
+          "count": 0,
+          "hi_sec": -300,
+          "lo_sec": -3600
+        },
+        {
+          "count": 0,
+          "hi_sec": -180,
+          "lo_sec": -300
+        },
+        {
+          "count": 0,
+          "hi_sec": -120,
+          "lo_sec": -180
+        },
+        {
+          "count": 0,
+          "hi_sec": -90,
+          "lo_sec": -120
+        },
+        {
+          "count": 0,
+          "hi_sec": -60,
+          "lo_sec": -90
+        },
+        {
+          "count": 0,
+          "hi_sec": -30,
+          "lo_sec": -60
+        },
+        {
+          "count": 0,
+          "hi_sec": 0,
+          "lo_sec": -30
+        },
+        {
+          "count": 0,
+          "hi_sec": 30,
+          "lo_sec": 0
+        },
+        {
+          "count": 0,
+          "hi_sec": 60,
+          "lo_sec": 30
+        },
+        {
+          "count": 0,
+          "hi_sec": 90,
+          "lo_sec": 60
+        },
+        {
+          "count": 0,
+          "hi_sec": 120,
+          "lo_sec": 90
+        },
+        {
+          "count": 7,
+          "hi_sec": 150,
+          "lo_sec": 120
+        },
+        {
+          "count": 0,
+          "hi_sec": 180,
+          "lo_sec": 150
+        },
+        {
+          "count": 0,
+          "hi_sec": 240,
+          "lo_sec": 180
+        },
+        {
+          "count": 0,
+          "hi_sec": 300,
+          "lo_sec": 240
+        },
+        {
+          "count": 0,
+          "hi_sec": 420,
+          "lo_sec": 300
+        },
+        {
+          "count": 0,
+          "hi_sec": 600,
+          "lo_sec": 420
+        },
+        {
+          "count": 0,
+          "hi_sec": 900,
+          "lo_sec": 600
+        },
+        {
+          "count": 0,
+          "hi_sec": 1800,
+          "lo_sec": 900
+        },
+        {
+          "count": 0,
+          "hi_sec": 3600,
+          "lo_sec": 1800
+        },
+        {
+          "count": 0,
+          "hi_sec": null,
+          "lo_sec": 3600
+        }
+      ],
+      "grain": "pm_peak",
+      "observation_count": 7,
+      "on_time": 7,
+      "otp_pct": 100,
+      "p50_min": 2.2,
+      "p90_min": 2.5,
+      "severe_pct": 0.0,
+      "wilson_hi": 100.0,
+      "wilson_lo": 64.6
+    },
+    {
+      "avg_delay_min": 3.4,
+      "date": null,
+      "delay_histogram": [
+        {
+          "count": 0,
+          "hi_sec": -300,
+          "lo_sec": -3600
+        },
+        {
+          "count": 0,
+          "hi_sec": -180,
+          "lo_sec": -300
+        },
+        {
+          "count": 0,
+          "hi_sec": -120,
+          "lo_sec": -180
+        },
+        {
+          "count": 0,
+          "hi_sec": -90,
+          "lo_sec": -120
+        },
+        {
+          "count": 0,
+          "hi_sec": -60,
+          "lo_sec": -90
+        },
+        {
+          "count": 0,
+          "hi_sec": -30,
+          "lo_sec": -60
+        },
+        {
+          "count": 0,
+          "hi_sec": 0,
+          "lo_sec": -30
+        },
+        {
+          "count": 0,
+          "hi_sec": 30,
+          "lo_sec": 0
+        },
+        {
+          "count": 0,
+          "hi_sec": 60,
+          "lo_sec": 30
+        },
+        {
+          "count": 7,
+          "hi_sec": 90,
+          "lo_sec": 60
+        },
+        {
+          "count": 0,
+          "hi_sec": 120,
+          "lo_sec": 90
+        },
+        {
+          "count": 0,
+          "hi_sec": 150,
+          "lo_sec": 120
+        },
+        {
+          "count": 0,
+          "hi_sec": 180,
+          "lo_sec": 150
+        },
+        {
+          "count": 0,
+          "hi_sec": 240,
+          "lo_sec": 180
+        },
+        {
+          "count": 0,
+          "hi_sec": 300,
+          "lo_sec": 240
+        },
+        {
+          "count": 7,
+          "hi_sec": 420,
+          "lo_sec": 300
+        },
+        {
+          "count": 0,
+          "hi_sec": 600,
+          "lo_sec": 420
+        },
+        {
+          "count": 0,
+          "hi_sec": 900,
+          "lo_sec": 600
+        },
+        {
+          "count": 0,
+          "hi_sec": 1800,
+          "lo_sec": 900
+        },
+        {
+          "count": 0,
+          "hi_sec": 3600,
+          "lo_sec": 1800
+        },
+        {
+          "count": 0,
+          "hi_sec": null,
+          "lo_sec": 3600
+        }
+      ],
+      "grain": "midday",
+      "observation_count": 14,
+      "on_time": 7,
+      "otp_pct": 50,
+      "p50_min": 1.5,
+      "p90_min": 6.6,
+      "severe_pct": 50.0,
+      "wilson_hi": 73.2,
+      "wilson_lo": 26.8
+    },
+    {
+      "avg_delay_min": 3.1,
+      "date": null,
+      "delay_histogram": [
+        {
+          "count": 0,
+          "hi_sec": -300,
+          "lo_sec": -3600
+        },
+        {
+          "count": 0,
+          "hi_sec": -180,
+          "lo_sec": -300
+        },
+        {
+          "count": 0,
+          "hi_sec": -120,
+          "lo_sec": -180
+        },
+        {
+          "count": 0,
+          "hi_sec": -90,
+          "lo_sec": -120
+        },
+        {
+          "count": 0,
+          "hi_sec": -60,
+          "lo_sec": -90
+        },
+        {
+          "count": 0,
+          "hi_sec": -30,
+          "lo_sec": -60
+        },
+        {
+          "count": 2,
+          "hi_sec": 0,
+          "lo_sec": -30
+        },
+        {
+          "count": 0,
+          "hi_sec": 30,
+          "lo_sec": 0
+        },
+        {
+          "count": 0,
+          "hi_sec": 60,
+          "lo_sec": 30
+        },
+        {
+          "count": 2,
+          "hi_sec": 90,
+          "lo_sec": 60
+        },
+        {
+          "count": 0,
+          "hi_sec": 120,
+          "lo_sec": 90
+        },
+        {
+          "count": 2,
+          "hi_sec": 150,
+          "lo_sec": 120
+        },
+        {
+          "count": 0,
+          "hi_sec": 180,
+          "lo_sec": 150
+        },
+        {
+          "count": 2,
+          "hi_sec": 240,
+          "lo_sec": 180
+        },
+        {
+          "count": 0,
+          "hi_sec": 300,
+          "lo_sec": 240
+        },
+        {
+          "count": 4,
+          "hi_sec": 420,
+          "lo_sec": 300
+        },
+        {
+          "count": 0,
+          "hi_sec": 600,
+          "lo_sec": 420
+        },
+        {
+          "count": 0,
+          "hi_sec": 900,
+          "lo_sec": 600
+        },
+        {
+          "count": 0,
+          "hi_sec": 1800,
+          "lo_sec": 900
+        },
+        {
+          "count": 0,
+          "hi_sec": 3600,
+          "lo_sec": 1800
+        },
+        {
+          "count": 0,
+          "hi_sec": null,
+          "lo_sec": 3600
+        }
+      ],
+      "grain": "weekend",
+      "observation_count": 16,
+      "on_time": 8,
+      "otp_pct": 50,
+      "p50_min": 2.5,
+      "p90_min": 6.4,
+      "severe_pct": 25.0,
+      "wilson_hi": 72.0,
+      "wilson_lo": 28.0
+    },
+    {
+      "avg_delay_min": 3.1,
+      "date": null,
+      "delay_histogram": [
+        {
+          "count": 0,
+          "hi_sec": -300,
+          "lo_sec": -3600
+        },
+        {
+          "count": 0,
+          "hi_sec": -180,
+          "lo_sec": -300
+        },
+        {
+          "count": 0,
+          "hi_sec": -120,
+          "lo_sec": -180
+        },
+        {
+          "count": 0,
+          "hi_sec": -90,
+          "lo_sec": -120
+        },
+        {
+          "count": 0,
+          "hi_sec": -60,
+          "lo_sec": -90
+        },
+        {
+          "count": 0,
+          "hi_sec": -30,
+          "lo_sec": -60
+        },
+        {
+          "count": 5,
+          "hi_sec": 0,
+          "lo_sec": -30
+        },
+        {
+          "count": 0,
+          "hi_sec": 30,
+          "lo_sec": 0
+        },
+        {
+          "count": 0,
+          "hi_sec": 60,
+          "lo_sec": 30
+        },
+        {
+          "count": 5,
+          "hi_sec": 90,
+          "lo_sec": 60
+        },
+        {
+          "count": 0,
+          "hi_sec": 120,
+          "lo_sec": 90
+        },
+        {
+          "count": 5,
+          "hi_sec": 150,
+          "lo_sec": 120
+        },
+        {
+          "count": 0,
+          "hi_sec": 180,
+          "lo_sec": 150
+        },
+        {
+          "count": 5,
+          "hi_sec": 240,
+          "lo_sec": 180
+        },
+        {
+          "count": 0,
+          "hi_sec": 300,
+          "lo_sec": 240
+        },
+        {
+          "count": 10,
+          "hi_sec": 420,
+          "lo_sec": 300
+        },
+        {
+          "count": 0,
+          "hi_sec": 600,
+          "lo_sec": 420
+        },
+        {
+          "count": 0,
+          "hi_sec": 900,
+          "lo_sec": 600
+        },
+        {
+          "count": 0,
+          "hi_sec": 1800,
+          "lo_sec": 900
+        },
+        {
+          "count": 0,
+          "hi_sec": 3600,
+          "lo_sec": 1800
+        },
+        {
+          "count": 0,
+          "hi_sec": null,
+          "lo_sec": 3600
+        }
+      ],
+      "grain": "weekday",
+      "observation_count": 40,
+      "on_time": 20,
+      "otp_pct": 50,
+      "p50_min": 2.5,
+      "p90_min": 6.4,
+      "severe_pct": 25.0,
+      "wilson_hi": 64.8,
+      "wilson_lo": 35.2
+    },
+    {
+      "avg_delay_min": 3.2,
+      "date": null,
+      "delay_histogram": [
+        {
+          "count": 0,
+          "hi_sec": -300,
+          "lo_sec": -3600
+        },
+        {
+          "count": 0,
+          "hi_sec": -180,
+          "lo_sec": -300
+        },
+        {
+          "count": 0,
+          "hi_sec": -120,
+          "lo_sec": -180
+        },
+        {
+          "count": 0,
+          "hi_sec": -90,
+          "lo_sec": -120
+        },
+        {
+          "count": 0,
+          "hi_sec": -60,
+          "lo_sec": -90
+        },
+        {
+          "count": 0,
+          "hi_sec": -30,
+          "lo_sec": -60
+        },
+        {
+          "count": 7,
+          "hi_sec": 0,
+          "lo_sec": -30
+        },
+        {
+          "count": 0,
+          "hi_sec": 30,
+          "lo_sec": 0
+        },
+        {
+          "count": 0,
+          "hi_sec": 60,
+          "lo_sec": 30
+        },
+        {
+          "count": 0,
+          "hi_sec": 90,
+          "lo_sec": 60
+        },
+        {
+          "count": 0,
+          "hi_sec": 120,
+          "lo_sec": 90
+        },
+        {
+          "count": 0,
+          "hi_sec": 150,
+          "lo_sec": 120
+        },
+        {
+          "count": 0,
+          "hi_sec": 180,
+          "lo_sec": 150
+        },
+        {
+          "count": 7,
+          "hi_sec": 240,
+          "lo_sec": 180
+        },
+        {
+          "count": 0,
+          "hi_sec": 300,
+          "lo_sec": 240
+        },
+        {
+          "count": 7,
+          "hi_sec": 420,
+          "lo_sec": 300
+        },
+        {
+          "count": 0,
+          "hi_sec": 600,
+          "lo_sec": 420
+        },
+        {
+          "count": 0,
+          "hi_sec": 900,
+          "lo_sec": 600
+        },
+        {
+          "count": 0,
+          "hi_sec": 1800,
+          "lo_sec": 900
+        },
+        {
+          "count": 0,
+          "hi_sec": 3600,
+          "lo_sec": 1800
+        },
+        {
+          "count": 0,
+          "hi_sec": null,
+          "lo_sec": 3600
+        }
+      ],
+      "grain": "am_peak",
+      "observation_count": 21,
+      "on_time": 14,
+      "otp_pct": 67,
+      "p50_min": 3.5,
+      "p90_min": 6.4,
+      "severe_pct": 33.3,
+      "wilson_hi": 82.8,
+      "wilson_lo": 45.4
+    },
+    {
+      "avg_delay_min": 3.1,
+      "date": null,
+      "delay_histogram": null,
+      "grain": "month",
+      "observation_count": null,
+      "on_time": null,
+      "otp_pct": 50,
+      "p50_min": 2.5,
+      "p90_min": 6.4,
+      "severe_pct": 25.0,
+      "wilson_hi": null,
+      "wilson_lo": null
+    },
+    {
+      "avg_delay_min": null,
+      "date": null,
+      "delay_histogram": null,
+      "grain": "night",
+      "observation_count": 14,
+      "on_time": 0,
+      "otp_pct": 0,
+      "p50_min": null,
+      "p90_min": null,
+      "severe_pct": 0.0,
+      "wilson_hi": 21.5,
+      "wilson_lo": 0.0
+    },
+    {
+      "avg_delay_min": 3.1,
+      "date": null,
+      "delay_histogram": null,
+      "grain": "week",
+      "observation_count": null,
+      "on_time": null,
+      "otp_pct": 50,
+      "p50_min": 2.5,
+      "p90_min": 6.4,
+      "severe_pct": 25.0,
+      "wilson_hi": null,
+      "wilson_lo": null
+    }
+  ],
+  "service_spans": [
+    {
+      "date": "D1",
+      "first_trip_delay_min": -0.5,
+      "first_trip_utc": "D1T11:00:00",
+      "last_trip_delay_min": 83.3,
+      "last_trip_utc": "D0T03:00:00",
+      "service_span_min": 960,
+      "trip_count": 12
+    },
+    {
+      "date": "D2",
+      "first_trip_delay_min": -0.5,
+      "first_trip_utc": "D2T11:00:00",
+      "last_trip_delay_min": 83.3,
+      "last_trip_utc": "D1T03:00:00",
+      "service_span_min": 960,
+      "trip_count": 12
+    },
+    {
+      "date": "D3",
+      "first_trip_delay_min": -0.5,
+      "first_trip_utc": "D3T11:00:00",
+      "last_trip_delay_min": 83.3,
+      "last_trip_utc": "D2T03:00:00",
+      "service_span_min": 960,
+      "trip_count": 12
+    },
+    {
+      "date": "D4",
+      "first_trip_delay_min": -0.5,
+      "first_trip_utc": "D4T11:00:00",
+      "last_trip_delay_min": 83.3,
+      "last_trip_utc": "D3T03:00:00",
+      "service_span_min": 960,
+      "trip_count": 12
+    },
+    {
+      "date": "D5",
+      "first_trip_delay_min": -0.5,
+      "first_trip_utc": "D5T11:00:00",
+      "last_trip_delay_min": 83.3,
+      "last_trip_utc": "D4T03:00:00",
+      "service_span_min": 960,
+      "trip_count": 12
+    },
+    {
+      "date": "D6",
+      "first_trip_delay_min": -0.5,
+      "first_trip_utc": "D6T11:00:00",
+      "last_trip_delay_min": 83.3,
+      "last_trip_utc": "D5T03:00:00",
+      "service_span_min": 960,
+      "trip_count": 12
+    },
+    {
+      "date": "D7",
+      "first_trip_delay_min": -0.5,
+      "first_trip_utc": "D7T11:00:00",
+      "last_trip_delay_min": 83.3,
+      "last_trip_utc": "D6T03:00:00",
+      "service_span_min": 960,
+      "trip_count": 12
+    }
+  ],
+  "skipped_stops": [
+    {
+      "date": "D1",
+      "skipped_stop_count": 0,
+      "skipped_stop_rate_pct": null,
+      "stop_time_update_count": 0
+    },
+    {
+      "date": "D2",
+      "skipped_stop_count": 0,
+      "skipped_stop_rate_pct": null,
+      "stop_time_update_count": 0
+    },
+    {
+      "date": "D3",
+      "skipped_stop_count": 0,
+      "skipped_stop_rate_pct": null,
+      "stop_time_update_count": 0
+    },
+    {
+      "date": "D4",
+      "skipped_stop_count": 0,
+      "skipped_stop_rate_pct": null,
+      "stop_time_update_count": 0
+    },
+    {
+      "date": "D5",
+      "skipped_stop_count": 0,
+      "skipped_stop_rate_pct": null,
+      "stop_time_update_count": 0
+    },
+    {
+      "date": "D6",
+      "skipped_stop_count": 0,
+      "skipped_stop_rate_pct": null,
+      "stop_time_update_count": 0
+    },
+    {
+      "date": "D7",
+      "skipped_stop_count": 0,
+      "skipped_stop_rate_pct": null,
+      "stop_time_update_count": 0
+    }
+  ],
+  "weak_stops": []
+}

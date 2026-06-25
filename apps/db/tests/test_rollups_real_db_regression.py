@@ -372,29 +372,16 @@ def test_ghost_trip_excluded_from_5m_hourly_and_stop_severe(conn) -> None:  # no
     assert daily["affected_stop_count"] == 1
 
 
-def test_ghost_trip_excluded_from_day_of_week_and_repeat_offender(conn) -> None:  # noqa: ANN001
-    connection, seed = conn
-    day_of_week = seed.base_utc.astimezone(TORONTO).isoweekday()
-
-    dow = _one(
-        connection,
-        """
-        SELECT avg_delay_seconds, severe_delay_count
-        FROM gold.route_delay_day_of_week
-        WHERE provider_id = :provider_id
-          AND route_id = '51T'
-          AND day_of_week_iso = :day_of_week
-        """,
-        {"provider_id": PROVIDER, "day_of_week": day_of_week},
-    )
-    assert _decimal(dow["avg_delay_seconds"]) == Decimal("260.00")
-    assert dow["severe_delay_count"] == 12
+def test_ghost_trip_excluded_from_repeat_offender(conn) -> None:  # noqa: ANN001
+    # (The route_delay_day_of_week half was dropped in 0064 — the spine's read-time
+    # ISO-dow projection + ghost handling is covered by the cutover gate.)
+    connection, _seed = conn
 
     ghost_count = _scalar(
         connection,
         """
         SELECT COUNT(*)
-        FROM gold.repeat_offender_daily
+        FROM gold.repeat_offender
         WHERE provider_id = :provider_id
           AND entity_kind = 'trip'
           AND entity_id = 'G1'
@@ -407,7 +394,7 @@ def test_ghost_trip_excluded_from_day_of_week_and_repeat_offender(conn) -> None:
         connection,
         """
         SELECT recurrence_days, window_days, avg_delay_seconds
-        FROM gold.repeat_offender_daily
+        FROM gold.repeat_offender
         WHERE provider_id = :provider_id
           AND entity_kind = 'trip'
           AND entity_id = 'L1'
@@ -495,87 +482,3 @@ def test_percentile_rollup_is_idempotent_on_rebuild(conn) -> None:  # noqa: ANN0
     assert after == before
 
 
-def test_granularity_shift_daytype_conserve_observations(conn) -> None:  # noqa: ANN001
-    connection, _seed = conn
-    hourly_obs = connection.execute(
-        text(
-            "SELECT COALESCE(SUM(observation_count), 0) FROM gold.route_delay_hourly "
-            "WHERE provider_id = :p AND route_id = '51T'"
-        ),
-        {"p": PROVIDER},
-    ).scalar_one()
-    assert hourly_obs > 0
-
-    for table, grain_col, vocab in (
-        ("route_delay_by_shift", "shift", {"am_peak", "midday", "pm_peak", "evening", "night"}),
-        ("route_delay_by_daytype", "day_type", {"weekday", "weekend"}),
-    ):
-        rows = connection.execute(
-            text(
-                f"SELECT {grain_col} AS grain, observation_count "
-                f"FROM gold.{table} WHERE provider_id = :p AND route_id = '51T'"
-            ),
-            {"p": PROVIDER},
-        ).mappings().all()
-        assert rows, f"{table} should have rows for 51T"
-        assert all(r["grain"] in vocab for r in rows), f"{table} grain out of vocabulary"
-        # Regrouping the hourly spine conserves total observations.
-        assert sum(r["observation_count"] for r in rows) == hourly_obs
-
-
-def test_crosstab_shift_daytype_conserves_and_reconciles(conn) -> None:  # noqa: ANN001
-    """Tier-3 2D crosstab: total obs == hourly spine, and each cell reconciles
-    with the 1D by_shift marginal (summing the crosstab over day_type)."""
-    connection, _seed = conn
-    hourly_obs = connection.execute(
-        text(
-            "SELECT COALESCE(SUM(observation_count), 0) FROM gold.route_delay_hourly "
-            "WHERE provider_id = :p AND route_id = '51T'"
-        ),
-        {"p": PROVIDER},
-    ).scalar_one()
-    assert hourly_obs > 0
-
-    cells = connection.execute(
-        text(
-            "SELECT shift, day_type, observation_count "
-            "FROM gold.route_delay_by_shift_daytype "
-            "WHERE provider_id = :p AND route_id = '51T'"
-        ),
-        {"p": PROVIDER},
-    ).mappings().all()
-    assert cells, "crosstab should have rows for 51T"
-    shift_vocab = {"am_peak", "midday", "pm_peak", "evening", "night"}
-    daytype_vocab = {"weekday", "weekend"}
-    assert all(c["shift"] in shift_vocab for c in cells), "shift out of vocabulary"
-    assert all(c["day_type"] in daytype_vocab for c in cells), "day_type out of vocabulary"
-    # PK uniqueness: at most one cell per (shift, day_type).
-    assert len({(c["shift"], c["day_type"]) for c in cells}) == len(cells)
-    # Regrouping the hourly spine conserves total observations.
-    assert sum(c["observation_count"] for c in cells) == hourly_obs
-
-    # Marginal reconciliation: summing the crosstab over day_type == the 1D
-    # by_shift observation_count for that shift (same hourly spine, same CASE).
-    by_shift = {
-        r["shift"]: r["observation_count"]
-        for r in connection.execute(
-            text(
-                "SELECT shift, observation_count FROM gold.route_delay_by_shift "
-                "WHERE provider_id = :p AND route_id = '51T'"
-            ),
-            {"p": PROVIDER},
-        ).mappings()
-    }
-    crosstab_by_shift: dict[str, int] = {}
-    for c in cells:
-        crosstab_by_shift[c["shift"]] = (
-            crosstab_by_shift.get(c["shift"], 0) + c["observation_count"]
-        )
-    assert crosstab_by_shift == by_shift
-
-
-# NOTE: per-direction headway is exercised in test_route_headway_real_db_regression.py
-# (test_direction_headway_keeps_both_directions_and_weekends), which seeds trips at
-# distinct times so real inter-trip gaps exist — the ghost-trip fixture here inserts
-# every trip in every snapshot, so MIN(captured_at) per trip coincides (gap 0) and no
-# headway rows are produced.

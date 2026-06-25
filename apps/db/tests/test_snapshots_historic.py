@@ -18,8 +18,6 @@ from transit_ops.snapshots.builders import (
     _RECEIPTS_WORST_STOP_SQL,
     _ROUTE_NAMES_SQL,
     _ROUTE_REL_DAILY_SQL,
-    _ROUTE_REL_MONTHLY_SQL,
-    _ROUTE_REL_WEEKLY_SQL,
     _STOP_NAMES_SQL,
     _TREND_DAILY_SQL,
     _TREND_FACT_SQL,
@@ -48,7 +46,6 @@ from transit_ops.snapshots.contract import (
     NetworkTrend,
     Provenance,
     RepeatOffenders,
-    RouteReliability,
     StopReliability,
 )
 
@@ -182,6 +179,103 @@ def test_wilson_lo_hi_extract_bounds_and_guard_none() -> None:
 
 
 # --------------------------------------------------------------------------
+# _pctile_from_hist — CDF interpolation over the 21-bin spine histogram
+# (S7-B PR1 Task 3). Bins map to DELAY_HISTOGRAM_EDGES[i]..[i+1]; bin 20 is the
+# >=3600s overflow with no upper edge (Finding B terminal floor).
+# --------------------------------------------------------------------------
+
+
+def test_pctile_from_hist_empty_is_none() -> None:
+    from transit_ops.snapshots.builders.historic import _pctile_from_hist
+
+    assert _pctile_from_hist([], 0.5) is None
+    assert _pctile_from_hist([0] * 21, 0.5) is None  # all-zero == no observations
+
+
+def test_pctile_from_hist_interpolates_within_bin() -> None:
+    from transit_ops.snapshots.builders.historic import _pctile_from_hist
+
+    # All mass in bin 15 = [300, 420) sec. p50 -> 300 + 120*0.5 = 360s = 6.0 min;
+    # p90 -> 300 + 120*0.9 = 408s = 6.8 min.
+    hist = [0] * 15 + [10] + [0] * 5
+    assert _pctile_from_hist(hist, 0.5) == 6.0
+    assert _pctile_from_hist(hist, 0.9) == 6.8
+
+
+def test_pctile_from_hist_terminal_bin_floor() -> None:
+    from transit_ops.snapshots.builders.historic import _pctile_from_hist
+
+    # Mass only in the overflow bin 20 ([3600, +inf)); no edges[21] to index.
+    # Finding B: pin at the last edge 3600s = 60.0 min (documented tail floor).
+    hist = [0] * 20 + [5]
+    assert _pctile_from_hist(hist, 0.9) == 60.0
+    assert _pctile_from_hist(hist, 0.5) == 60.0  # no IndexError on terminal mass
+
+
+def test_pctile_from_hist_bin_zero_safe_and_negative() -> None:
+    from transit_ops.snapshots.builders.historic import _pctile_from_hist
+
+    # Mass in bin 0 = [-3600, -300) sec (very early). p90 -> -3600 + 3300*0.9 =
+    # -630s = -10.5 min. Lower edge exists; never indexes out of range.
+    hist = [5] + [0] * 20
+    assert _pctile_from_hist(hist, 0.9) == -10.5
+
+
+def _spine_row(*, known_obs, on_time, severe, sum_delay_sec, hist):  # noqa: ANN001, ANN202
+    row = {"obs": known_obs, "known_obs": known_obs, "on_time": on_time,
+           "severe": severe, "sum_delay_sec": sum_delay_sec}
+    for k in range(1, 22):
+        row[f"h{k}"] = hist[k - 1]
+    return row
+
+
+def test_spine_reliability_period_maps_otp_severe_and_rebaselined_avg() -> None:
+    from transit_ops.snapshots.builders.historic import _spine_reliability_period
+
+    # 6 in-clamp delays summing to 1100s; otp 4/8=50, severe 2/8=25.0,
+    # avg 1100/6/60 = 3.06 -> rounds to 3.1.
+    hist = [0] * 8 + [6] + [0] * 12   # all 6 in bin 8 = [30,60)
+    p = _spine_reliability_period(
+        _spine_row(known_obs=8, on_time=4, severe=2, sum_delay_sec=1100, hist=hist),
+        grain="week", date="2026-06-01",
+    )
+    assert p.grain == "week" and p.date == "2026-06-01"
+    assert p.otp_pct == 50
+    assert p.severe_pct == 25.0
+    assert p.avg_delay_min == 3.1
+    assert p.p50_min is not None and p.p90_min is not None  # D3 upgrade: populated
+    # S7-B evidence: numerator/denominator + Wilson + the signed-delay distribution.
+    assert p.observation_count == 8
+    assert p.on_time == 4
+    assert p.wilson_lo is not None and p.wilson_hi is not None
+    assert p.delay_histogram is not None and len(p.delay_histogram) == 21
+    assert sum(b.count for b in p.delay_histogram) == 6
+    # bin 8 (0-based) = [30, 60)s carries all 6; the overflow bin has no upper edge.
+    assert p.delay_histogram[8].lo_sec == 30 and p.delay_histogram[8].hi_sec == 60
+    assert p.delay_histogram[8].count == 6
+    assert p.delay_histogram[20].lo_sec == 3600 and p.delay_histogram[20].hi_sec is None
+
+
+def test_spine_reliability_period_honest_null_when_no_delays() -> None:
+    from transit_ops.snapshots.builders.historic import _spine_reliability_period
+
+    # No usable delays: on_time NULL, known_obs 0, empty histogram -> every derived
+    # metric is honest-None (never a fabricated 0.0).
+    p = _spine_reliability_period(
+        _spine_row(known_obs=0, on_time=None, severe=0, sum_delay_sec=0, hist=[0] * 21),
+        grain="am_peak", date=None,
+    )
+    assert p.otp_pct is None
+    assert p.severe_pct is None
+    assert p.avg_delay_min is None
+    assert p.p50_min is None and p.p90_min is None
+    # S7-B evidence stays honest under no-data: numerator + distribution are None.
+    assert p.on_time is None
+    assert p.wilson_lo is None and p.wilson_hi is None
+    assert p.delay_histogram is None  # empty histogram -> honest absence, never []
+
+
+# --------------------------------------------------------------------------
 # build_network_trend — merge two daily series; p90/vehicles only where the
 # fact table covers the date.
 # --------------------------------------------------------------------------
@@ -294,6 +388,7 @@ def test_build_network_trend_fact_only_date() -> None:
 
 
 def _route_reliability_dispatch(*, daily=None, weekly=None, monthly=None, headway=None,
+                                headway_direction=None,
                                 habit=None, weak=None, names=None, schedule=None,
                                 route_names=None, dow=None, crowding=None, crosstab=None,
                                 occ_dow=None, occ_grain=None):
@@ -334,8 +429,11 @@ def _route_reliability_dispatch(*, daily=None, weekly=None, monthly=None, headwa
         # weekly / monthly
         ("route_reliability_weekly", weekly or []),
         ("route_reliability_monthly", monthly or []),
-        # observed headway
-        ("route_headway_daily", headway or []),
+        # per-direction + weekday/weekend headway — MUST precede the broader
+        # "route_headway_by_shift" needle (it contains "route_headway_by_direction_shift").
+        ("route_headway_by_direction_shift", headway_direction or []),
+        # observed headway (busiest direction)
+        ("route_headway_by_shift", headway or []),
         # habits
         ("route_habit_score", habit or []),
         # weak stops
@@ -349,78 +447,11 @@ def _route_reliability_dispatch(*, daily=None, weekly=None, monthly=None, headwa
     ]
 
 
-def test_build_route_reliability_periods_and_otp() -> None:
-    conn = FakeConn(
-        _route_reliability_dispatch(
-            daily=[
-                {
-                    "d": datetime.date(2026, 6, 1),
-                    "known_obs": 100,
-                    "on_time": 90,
-                    "avg_delay_sec": 90.0,  # -> 1.5 min
-                    "severe": 10,
-                },
-            ],
-            weekly=[
-                {
-                    "d": datetime.date(2026, 5, 25),
-                    "known_obs": 100,
-                    "on_time": 47,
-                    "avg_delay_sec": 120.0,  # -> 2.0 min
-                    "severe": 5,
-                },
-            ],
-            monthly=[
-                {
-                    "d": datetime.date(2026, 5, 1),
-                    "known_obs": 1000,
-                    "on_time": None,
-                    "avg_delay_sec": 150.0,  # -> 2.5 min
-                    "severe": 50,  # -> 5.0%
-                },
-            ],
-        )
-    )
-
-    out = build_route_reliability(conn, provider_id="stm", route_id="51", generated_utc="t")
-
-    assert isinstance(out, RouteReliability)
-    assert out.id == "51"
-    by_grain = {p.grain: p for p in out.periods}
-    assert set(by_grain) == {"day", "week", "month"}
-
-    day = by_grain["day"]
-    assert day.date == "2026-06-01"
-    assert day.otp_pct == 90
-    assert day.avg_delay_min == 1.5
-    assert day.severe_pct == 10.0
-    assert day.p50_min is None and day.p90_min is None  # deferred
-    # slice-S3 honesty fields: real-OTP Wilson 95% bounds over known_obs (90/100).
-    assert day.observation_count == 100
-    assert day.wilson_lo == 82.6
-    assert day.wilson_hi == 94.5
-
-    week = by_grain["week"]
-    assert week.otp_pct == 47
-    assert week.avg_delay_min == 2.0
-    assert week.severe_pct == 5.0
-
-    month = by_grain["month"]
-    assert month.otp_pct is None
-    assert month.avg_delay_min == 2.5
-    assert month.severe_pct == 5.0
-    # count present but rate honestly null (on_time is None) -> Wilson is None too.
-    assert month.observation_count == 1000
-    assert month.wilson_lo is None and month.wilson_hi is None
-
-
 def test_route_reliability_sql_uses_real_otp_columns() -> None:
+    # The daily grain reads public_route_reliability_daily (a carve-out, kept);
+    # weekly/monthly/by_shift/by_daytype now derive from the spine projector.
     assert "delay_observation_count AS known_obs" in str(_ROUTE_REL_DAILY_SQL)
     assert "on_time_observation_count AS on_time" in str(_ROUTE_REL_DAILY_SQL)
-    for sql in (str(_ROUTE_REL_WEEKLY_SQL), str(_ROUTE_REL_MONTHLY_SQL)):
-        assert "delay_observation_count AS known_obs" in sql
-        assert "on_time_observation_count AS on_time" in sql
-        assert "delayed_trip_count" not in sql
 
 
 def test_build_route_reliability_headway_excess() -> None:
@@ -476,6 +507,32 @@ def test_build_route_reliability_excess_clamped_at_zero() -> None:
     assert am.scheduled_min == 10.0
     assert am.observed_min == 6.0
     assert am.excess_wait_min == 0.0  # max(0, 6-10)
+
+
+def test_build_route_reliability_directional_headway_is_typed_not_encoded() -> None:
+    # S7-B Pattern A: directional headway rows carry a BARE shift token + typed
+    # direction_id / day_type (no {shift}_dir{N}_weekend packed string). Finding H
+    # value-preservation: the base token stays in the canonical shift vocabulary and
+    # every direction + day-type the source carried survives as a typed field.
+    conn = FakeConn(
+        _route_reliability_dispatch(
+            headway_direction=[
+                {"shift": "am_peak", "direction_id": 0, "service_day_kind": "weekday",
+                 "observed_headway_min": 7.9},
+                {"shift": "am_peak", "direction_id": 1, "service_day_kind": "weekend",
+                 "observed_headway_min": 9.1},
+            ],
+        )
+    )
+    out = build_route_reliability(conn, route_id="51", generated_utc="t")
+    directional = [h for h in out.headway if h.direction_id is not None]
+    assert len(directional) == 2
+    for h in directional:
+        assert h.shift in {"am_peak", "midday", "pm_peak", "evening", "night"}
+        assert "_dir" not in h.shift and "_weekend" not in h.shift
+    by_key = {(h.direction_id, h.day_type): h for h in directional}
+    assert by_key[(0, "weekday")].shift == "am_peak" and by_key[(0, "weekday")].observed_min == 7.9
+    assert by_key[(1, "weekend")].shift == "am_peak" and by_key[(1, "weekend")].observed_min == 9.1
 
 
 def test_build_route_reliability_habits_matrix_is_7x24() -> None:
@@ -706,35 +763,6 @@ def test_build_route_reliability_delay_by_crowding_skips_zero_obs_days() -> None
     assert out.delay_by_crowding == []
 
 
-def test_build_route_reliability_by_shift_daytype_cells() -> None:
-    # Tier-3 2D crosstab: each (shift, day_type) row becomes one CrosstabCell with
-    # a REAL on_time/known OTP, weighted avg (sec->min), severe% over known obs.
-    crosstab = [
-        {"shift": "am_peak", "day_type": "weekday", "known_obs": 100,
-         "on_time": 90, "avg_delay_sec": 120.0, "severe": 10, "obs": 150},
-        {"shift": "am_peak", "day_type": "weekend", "known_obs": 40,
-         "on_time": 20, "avg_delay_sec": 300.0, "severe": 8, "obs": 50},
-    ]
-    conn = FakeConn(_route_reliability_dispatch(crosstab=crosstab))
-
-    out = build_route_reliability(conn, route_id="51", generated_utc="t")
-
-    by_cell = {(c.shift, c.day_type): c for c in out.by_shift_daytype}
-    assert set(by_cell) == {("am_peak", "weekday"), ("am_peak", "weekend")}
-
-    wd = by_cell[("am_peak", "weekday")]
-    assert wd.otp_pct == 90  # 90/100
-    assert wd.avg_delay_min == 2.0  # 120s
-    assert wd.severe_pct == 10.0  # 10/100
-    assert wd.observation_count == 150
-
-    we = by_cell[("am_peak", "weekend")]
-    assert we.otp_pct == 50  # 20/40
-    assert we.avg_delay_min == 5.0  # 300s
-    assert we.severe_pct == 20.0  # 8/40
-    assert we.observation_count == 50
-
-
 def test_build_route_reliability_by_shift_daytype_empty_when_absent() -> None:
     # No crosstab rows -> empty list (SPARSE / honest absence, never fabricated).
     conn = FakeConn(_route_reliability_dispatch(crosstab=[]))
@@ -743,19 +771,24 @@ def test_build_route_reliability_by_shift_daytype_empty_when_absent() -> None:
 
 
 def test_build_route_reliability_by_shift_daytype_honest_null_metrics() -> None:
-    # A cell with no known-delay observations -> honest-None per metric, but the
-    # cell is still emitted (it has a shift/day_type identity + observation_count).
-    crosstab = [
-        {"shift": "night", "day_type": "weekend", "known_obs": 0,
-         "on_time": None, "avg_delay_sec": None, "severe": 0, "obs": 0},
-    ]
-    conn = FakeConn(_route_reliability_dispatch(crosstab=crosstab))
-    out = build_route_reliability(conn, route_id="51", generated_utc="t")
-    cell = out.by_shift_daytype[0]
+    # A spine crosstab cell with no known-delay observations -> honest-None per metric,
+    # but the cell is still emitted (it keeps its shift/day_type identity + obs count).
+    # Post-cutover by_shift_daytype derives from _spine_route_crosstab, so feed a
+    # SPINE-shaped zero row (needle "AS day_type" is unique to the crosstab SQL).
+    from transit_ops.snapshots.builders.historic import _spine_route_crosstab
+
+    row = {"shift": "night", "day_type": "weekend", "known_obs": 0, "obs": 0,
+           "on_time": None, "severe": 0, "sum_delay_sec": 0}
+    for k in range(1, 22):
+        row[f"h{k}"] = 0
+    conn = FakeConn([("AS day_type", [row])])
+    cells = _spine_route_crosstab(conn, {"provider_id": "stm", "route_id": "51"})
+    cell = cells[0]
     assert cell.shift == "night" and cell.day_type == "weekend"
     assert cell.otp_pct is None
     assert cell.avg_delay_min is None
     assert cell.severe_pct is None
+    assert cell.observation_count == 0
 
 
 def test_build_route_reliability_occupancy_by_dow_cells() -> None:
@@ -921,7 +954,7 @@ def test_build_route_reliability_no_dataset_version_still_builds() -> None:
                 ],
             ),
             (
-                "route_headway_daily",
+                "route_headway_by_shift",
                 [{"shift": "am_peak", "observed_headway_min": 7.0, "sample_count": 9}],
             ),
         ]
@@ -1050,35 +1083,6 @@ def test_build_stop_reliability_carries_name() -> None:
 
     assert out["S1"].name == "Station Berri"
     assert out["S_UNNAMED"].name is None
-
-
-def test_build_route_reliability_dow_severe_pct_uses_delay_observation_count() -> None:
-    """Honesty-fix 3/3: per-weekday severe_pct denominates on delay_observation_count
-    (observations with a known delay), matching every other grain — NOT COUNT(*)
-    observation_count, which would understate it."""
-    conn = FakeConn(
-        _route_reliability_dispatch(
-            dow=[
-                {
-                    "day_of_week_iso": 1, "observation_count": 100,
-                    "delay_observation_count": 40, "avg_delay_seconds": 120.0,
-                    "severe_delay_count": 8,
-                }
-            ],
-        )
-    )
-    out = build_route_reliability(conn, provider_id="stm", route_id="51", generated_utc="t")
-    assert len(out.day_of_week) == 1
-    dow = out.day_of_week[0]
-    assert dow.day_of_week_iso == 1
-    # 8 severe / 40 known-delay obs = 20.0%, NOT 8 / 100 = 8.0%.
-    assert dow.severe_pct == 20.0
-    assert dow.observation_count == 100
-
-
-# --------------------------------------------------------------------------
-# build_hotspots
-# --------------------------------------------------------------------------
 
 
 def test_build_hotspots_ranks_and_top_20() -> None:
@@ -1358,15 +1362,16 @@ def test_build_hotspots_otp_delta_network_baseline_null_is_none() -> None:
 def test_hotspots_sql_per_kind_otp_join_keys() -> None:
     """SQL guards against route/stop OTP cross-contamination: the route join is
     scoped to entity_kind='route' on route_id, the stop join to entity_kind='stop'
-    on stop_id, and the network baseline reads route_reliability_weekly."""
+    on stop_id, and the route network baseline reads the route delay spine (S7-B)."""
     sql = str(_HOTSPOTS_SQL)
     assert "rp.entity_kind = 'route'" in sql
     assert "rrw.route_id = rp.entity_id" in sql
     assert "rp.entity_kind = 'stop'" in sql
     assert "so.stop_id = rp.entity_id" in sql
-    # route network baseline aggregates real OTP over route_reliability_weekly
+    # route network baseline aggregates real OTP over a spine-derived weekly CTE
     assert "net_on_time" in sql and "net_known" in sql
-    assert "gold.route_reliability_weekly" in sql
+    assert "route_spine_weekly AS" in sql
+    assert "gold.route_delay_spine" in sql
     assert "gold.stop_delay_weekly" in sql
     # stop network baseline aggregates the severe-proxy over ALL stops (same
     # metric a stop cell uses), so stop deltas are not lenient-vs-strict
@@ -1382,7 +1387,7 @@ def test_hotspots_sql_per_kind_otp_join_keys() -> None:
 def test_build_repeat_offenders_recurrence_string() -> None:
     """recurrence field is formatted as '{recurrence_days}/{window_days}d'.
 
-    gold.repeat_offender_daily only ever contains 'trip' and 'vehicle' kinds
+    gold.repeat_offender only ever contains 'trip' and 'vehicle' kinds
     (rollups aggregate by trip_id/vehicle_id) — fixtures use the real kinds.
     """
     rows = [
@@ -1396,7 +1401,7 @@ def test_build_repeat_offenders_recurrence_string() -> None:
             "severity_label": "high",
         },
     ]
-    conn = FakeConn([("repeat_offender_daily", rows)])
+    conn = FakeConn([("repeat_offender", rows)])
     out = build_repeat_offenders(conn, generated_utc="t")
     assert isinstance(out, RepeatOffenders)
     assert len(out.offenders) == 1
@@ -1431,7 +1436,7 @@ def test_build_repeat_offenders_ordering() -> None:
             "severity_label": "critical",
         },
     ]
-    conn = FakeConn([("repeat_offender_daily", rows)])
+    conn = FakeConn([("repeat_offender", rows)])
     out = build_repeat_offenders(conn, generated_utc="t")
     assert out.offenders[0].id == "T9"  # higher recurrence_days comes first
     assert out.offenders[1].id == "V2"
@@ -1451,7 +1456,7 @@ def test_build_repeat_offenders_top_50_cap() -> None:
         }
         for i in range(50)
     ]
-    conn = FakeConn([("repeat_offender_daily", rows)])
+    conn = FakeConn([("repeat_offender", rows)])
     out = build_repeat_offenders(conn, generated_utc="t")
     assert len(out.offenders) == 50
 
@@ -1491,7 +1496,7 @@ def test_build_repeat_offenders_resolves_route_name() -> None:
     ]
     conn = FakeConn(
         [
-            ("repeat_offender_daily", rows),
+            ("repeat_offender", rows),
             (
                 "DISTINCT ON (u.route_id)",
                 [

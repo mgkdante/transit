@@ -61,7 +61,15 @@ const populated: RouteReliability = {
 	headway: [
 		// First row has no CoV; the busiest-direction regularity row carries it.
 		{ shift: 'am_peak', scheduled_min: 6, observed_min: 7.2, excess_wait_min: 1.1 },
-		{ shift: 'am_peak_dir0', scheduled_min: 6, observed_min: 7.4, cov: 0.42, bunched_pct: 12 },
+		{
+			shift: 'am_peak',
+			direction_id: 0,
+			day_type: 'weekday',
+			scheduled_min: 6,
+			observed_min: 7.4,
+			cov: 0.42,
+			bunched_pct: 12,
+		},
 	],
 	service_spans: [
 		{ date: '2026-06-17', service_span_min: 1180, first_trip_delay_min: 0.4, trip_count: 240 },

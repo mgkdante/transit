@@ -212,6 +212,30 @@
           "default": null,
           "title": "Cov"
         },
+        "day_type": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Day Type"
+        },
+        "direction_id": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Direction Id"
+        },
         "excess_wait_min": {
           "anyOf": [
             {
@@ -364,6 +388,21 @@
           "default": null,
           "title": "Date"
         },
+        "delay_histogram": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/RouteDelayHistogramBin"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Delay Histogram"
+        },
         "grain": {
           "title": "Grain",
           "type": "string"
@@ -379,6 +418,18 @@
           ],
           "default": null,
           "title": "Observation Count"
+        },
+        "on_time": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "On Time"
         },
         "otp_pct": {
           "anyOf": [
@@ -506,6 +557,41 @@
         "day_of_week_iso"
       ],
       "title": "RouteDayOfWeek",
+      "type": "object"
+    },
+    "RouteDelayHistogramBin": {
+      "properties": {
+        "count": {
+          "default": 0,
+          "title": "Count",
+          "type": "integer"
+        },
+        "hi_sec": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Hi Sec"
+        },
+        "lo_sec": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Lo Sec"
+        }
+      },
+      "title": "RouteDelayHistogramBin",
       "type": "object"
     },
     "RouteHabits": {

@@ -28,7 +28,7 @@
 <script lang="ts">
 	import type { Locale } from '$lib/i18n';
 	import { fmtCount, fmtDelayMin, fmtPct } from '$lib/utils';
-	import type { SeverityCode, ServiceSpanPeriod } from '$lib/v1';
+	import type { HeadwayPeriod, SeverityCode, ServiceSpanPeriod } from '$lib/v1';
 	import { RankedRow } from '$lib/components/dataviz';
 	import MetricDisplay from '$lib/components/brand/MetricDisplay.svelte';
 	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
@@ -162,6 +162,10 @@
 
 	interface ShiftRow {
 		readonly shift: string;
+		/** Bare time-of-day token (am_peak/…) for label + primary/advanced split. */
+		readonly baseShift: string;
+		readonly directionId: number | null;
+		readonly dayType: string | null;
 		readonly scheduled: number | null;
 		readonly observed: number | null;
 		readonly excessWait: number | null;
@@ -172,9 +176,34 @@
 		readonly severity: SeverityCode;
 	}
 
+	/* S7-B Pattern A: read the TYPED direction_id / day_type fields. Fall back to the
+	   legacy packed `{shift}_dir{N}_weekend` string for snapshots published before the
+	   cutover, so the band renders correctly across the deploy window. */
+	function decodeShift(h: HeadwayPeriod): {
+		baseShift: string;
+		directionId: number | null;
+		dayType: string | null;
+	} {
+		if (h.direction_id != null || h.day_type != null) {
+			return {
+				baseShift: h.shift,
+				directionId: h.direction_id ?? null,
+				dayType: h.day_type ?? null,
+			};
+		}
+		const dirMatch = h.shift.match(/_dir(\d)/)?.[1];
+		const weekend = h.shift.includes('_weekend');
+		return {
+			baseShift: h.shift.replace(/_dir\d/, '').replace(/_weekend/, ''),
+			directionId: dirMatch != null ? Number(dirMatch) : null,
+			dayType: dirMatch != null ? (weekend ? 'weekend' : 'weekday') : null,
+		};
+	}
+
 	const shiftRows = $derived<ShiftRow[]>(
 		wait.headway.map((h) => ({
 			shift: h.shift,
+			...decodeShift(h),
 			scheduled: h.scheduled_min ?? null,
 			observed: h.observed_min ?? null,
 			excessWait: h.excess_wait_min ?? null,
@@ -196,20 +225,18 @@
 	   readable, bilingual labels: the base am_peak/midday/… token resolves through
 	   the SHARED shift vocabulary (so every surface speaks one language), and this
 	   band keeps its own per-direction / weekend suffix decoration on top. */
-	function shiftLabel(shift: string): string {
-		const weekend = shift.includes('_weekend');
-		const dir = shift.match(/_dir(\d)/)?.[1] ?? null;
-		const base = shift.replace(/_dir\d/, '').replace(/_weekend/, '');
-		const baseLabel = baseShiftLabel(base, locale);
+	function shiftLabel(row: ShiftRow): string {
+		const baseLabel = baseShiftLabel(row.baseShift, locale);
 		const extras: string[] = [];
-		if (dir != null) extras.push(`dir ${dir}`);
-		if (weekend) extras.push(locale === 'fr' ? 'fin de sem.' : 'weekend');
+		if (row.directionId != null) extras.push(`dir ${row.directionId}`);
+		if (row.dayType === 'weekend') extras.push(locale === 'fr' ? 'fin de sem.' : 'weekend');
 		return extras.length > 0 ? `${baseLabel} · ${extras.join(' · ')}` : baseLabel;
 	}
-	const isPrimaryShift = (shift: string): boolean =>
-		!shift.includes('_dir') && !shift.includes('_weekend');
-	const primaryRows = $derived(shiftRows.filter((r) => isPrimaryShift(r.shift)));
-	const advancedRows = $derived(shiftRows.filter((r) => !isPrimaryShift(r.shift)));
+	// Primary = the headline busiest-direction rows (no direction / day-type); the
+	// per-direction + weekend siblings are the advanced grain.
+	const isPrimaryShift = (row: ShiftRow): boolean => row.directionId == null && row.dayType == null;
+	const primaryRows = $derived(shiftRows.filter((r) => isPrimaryShift(r)));
+	const advancedRows = $derived(shiftRows.filter((r) => !isPrimaryShift(r)));
 	// Show primary by default; if a route only has advanced rows, surface those
 	// in the open list rather than hiding everything behind the reveal.
 	const mainRows = $derived(primaryRows.length > 0 ? primaryRows : advancedRows);
@@ -254,7 +281,7 @@
 				<li class="shift-row">
 					<RankedRow
 						rank={i + 1}
-						title={shiftLabel(row.shift)}
+						title={shiftLabel(row)}
 						subtitle={t.regularityReading(
 							terms.spread,
 							fmtCov(row.cov) ?? valueNoData,
@@ -264,7 +291,7 @@
 						severity={row.severity}
 						value={row.magnitude}
 						display={min(row.excessWait) ?? valueNoData}
-						aria-label={t.excessWaitMagnitude(shiftLabel(row.shift))}
+						aria-label={t.excessWaitMagnitude(shiftLabel(row))}
 					/>
 					<div class="shift-metrics">
 						<MetricDisplay
@@ -321,7 +348,7 @@
 										emptyLabel={valueNoData}
 										absentReason="no-observations"
 										{locale}
-										label={shiftLabel(row.shift)}
+										label={shiftLabel(row)}
 										size="sm"
 									/>
 								{/each}

@@ -211,8 +211,8 @@ def _run_headway_rollup(connection) -> None:
         # The upsert now binds the fact window (was a hardcoded 14-day literal).
         "fact_retention_days": 14,
     }
-    connection.execute(rollups.DELETE_REPORTING_AGGREGATES["route_headway_daily"], params)
-    connection.execute(rollups.REPORTING_AGGREGATE_UPSERTS["route_headway_daily"], params)
+    connection.execute(rollups.DELETE_REPORTING_AGGREGATES["route_headway_by_shift"], params)
+    connection.execute(rollups.REPORTING_AGGREGATE_UPSERTS["route_headway_by_shift"], params)
 
 
 def _headway_rows(connection, route_id: str) -> dict[str, dict]:
@@ -220,7 +220,7 @@ def _headway_rows(connection, route_id: str) -> dict[str, dict]:
         text(
             """
             SELECT shift, observed_headway_min, sample_count, headway_cov, bunched_count
-            FROM gold.route_headway_daily
+            FROM gold.route_headway_by_shift
             WHERE provider_id = :p
               AND route_id = :route_id
             ORDER BY shift
@@ -393,8 +393,8 @@ def _run_direction_headway_rollup(connection) -> None:
         # The upsert now binds the fact window (was a hardcoded 14-day literal).
         "fact_retention_days": 14,
     }
-    connection.execute(rollups.DELETE_REPORTING_AGGREGATES["route_headway_direction_daily"], params)
-    connection.execute(rollups.REPORTING_AGGREGATE_UPSERTS["route_headway_direction_daily"], params)
+    connection.execute(rollups.DELETE_REPORTING_AGGREGATES["route_headway_by_direction_shift"], params)
+    connection.execute(rollups.REPORTING_AGGREGATE_UPSERTS["route_headway_by_direction_shift"], params)
 
 
 def _direction_headway_rows(connection, route_id: str) -> list[dict]:
@@ -402,7 +402,7 @@ def _direction_headway_rows(connection, route_id: str) -> list[dict]:
         text(
             """
             SELECT direction_id, service_day_kind, shift, observed_headway_min, sample_count
-            FROM gold.route_headway_direction_daily
+            FROM gold.route_headway_by_direction_shift
             WHERE provider_id = :p AND route_id = :route_id
             ORDER BY direction_id, service_day_kind, shift
             """
@@ -445,10 +445,10 @@ def test_direction_headway_keeps_both_directions_and_weekends(conn) -> None:
     rows = _direction_headway_rows(conn, "61")
 
     # Both directions survive on the weekday — NOT collapsed to one busiest direction
-    # (the legacy route_headway_daily keeps only the busiest direction).
+    # (the legacy route_headway_by_shift keeps only the busiest direction).
     weekday_dirs = {r["direction_id"] for r in rows if r["service_day_kind"] == "weekday"}
     assert weekday_dirs == {0, 1}
-    # Weekend service days are KEPT and tagged (route_headway_daily excludes them).
+    # Weekend service days are KEPT and tagged (route_headway_by_shift excludes them).
     weekend_rows = [r for r in rows if r["service_day_kind"] == "weekend"]
     assert weekend_rows
     assert all(r["direction_id"] == 0 for r in weekend_rows)

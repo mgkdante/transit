@@ -8,6 +8,17 @@ import { z } from 'zod';
 import { isoUtc } from './types';
 import { OccupancyMixSchema } from './network';
 
+// One bin of the per-route signed-delay distribution (the §01 distribution chart).
+// Edges are SECONDS (the spine's native 21-edge resolution, sub-minute near 0),
+// left-closed / right-open; the final bin has hi_sec=null ([3600s, +inf) overflow).
+// count is ABSOLUTE so the distribution bar takes an absolute zero-based domain.
+export const RouteDelayHistogramBinSchema = z.object({
+	lo_sec: z.number().int().nullable().optional(),
+	hi_sec: z.number().int().nullable().optional(),
+	count: z.number().int().default(0),
+});
+export type RouteDelayHistogramBin = z.infer<typeof RouteDelayHistogramBinSchema>;
+
 export const ReliabilityPeriodSchema = z.object({
 	// NOTE: free-string grain the pipeline owns (e.g. 'day'/'week'/'month'/
 	// '2026-06'); NOT validated against the web filter Grain enum.
@@ -25,11 +36,23 @@ export const ReliabilityPeriodSchema = z.object({
 	observation_count: z.number().int().nullable().optional(),
 	wilson_lo: z.number().nullable().optional(),
 	wilson_hi: z.number().nullable().optional(),
+	// S7-B evidence (additive-optional). on_time = the OTP numerator behind otp_pct
+	// (the InsightCard verdict's "<on_time> of <observation_count> known arrivals on
+	// time"); delay_histogram = this period's signed-delay distribution (null when no
+	// in-window observations, else all 21 bins incl. zeros). Both null on daily grain.
+	on_time: z.number().int().nullable().optional(),
+	delay_histogram: z.array(RouteDelayHistogramBinSchema).nullable().optional(),
 });
 export type ReliabilityPeriod = z.infer<typeof ReliabilityPeriodSchema>;
 
 export const HeadwayPeriodSchema = z.object({
+	// shift is the BARE time-of-day token; per-direction / weekday-weekend sibling
+	// rows carry direction_id (0/1, null on busiest-direction rows) + day_type
+	// (weekday|weekend, null on those rows) as TYPED fields (S7-B Pattern A) instead
+	// of the old packed `{shift}_dir{N}_weekend` string.
 	shift: z.string(),
+	direction_id: z.number().nullable().optional(),
+	day_type: z.string().nullable().optional(),
 	scheduled_min: z.number().nullable().optional(),
 	observed_min: z.number().nullable().optional(),
 	excess_wait_min: z.number().nullable().optional(),

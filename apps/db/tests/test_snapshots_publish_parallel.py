@@ -350,7 +350,7 @@ def _historic_dispatch_conn():
              "few_seats": 30, "standing": 15, "full": 5},
         ]),
         ("repeated_problem_route_stop", []),
-        ("repeat_offender_daily", []),
+        ("repeat_offender", []),
         ("i3_alert_history_reporting", []),
         ("source_lineage_reporting", []),
         ("feed_freshness_current", []),
@@ -396,7 +396,7 @@ def _historic_dispatch_conn():
         ]),
         ("week_start_local", []),
         ("month_start_local", []),
-        ("route_headway_daily", []),
+        ("route_headway_by_shift", []),
         ("dataset_kind = 'static_schedule'", [{"dataset_version_id": 1}]),
         ("generate_series", [
             {"weekday_date": datetime.date(2026, 6, 3), "weekend_date": datetime.date(2026, 6, 6)},
@@ -495,7 +495,7 @@ class _RecordingStaticConn:
         # reliability-availability set for build_routes_index — MUST precede the
         # broader route_id needles below (shares the generic "route_id" column).
         # Only R1 has history, so its routes_index entry gets reliability=True.
-        if "route_reliability_weekly" in s:
+        if "DISTINCT route_id FROM gold.route_delay_spine" in s:
             return _StaticResult([{"route_id": "R1"}])
         if "SELECT route_id FROM gold.dim_route WHERE provider_id" in s:
             return _StaticResult([{"route_id": "R1"}, {"route_id": "R2"}, {"route_id": "R3"}])
