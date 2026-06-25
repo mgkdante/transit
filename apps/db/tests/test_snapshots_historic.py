@@ -182,6 +182,49 @@ def test_wilson_lo_hi_extract_bounds_and_guard_none() -> None:
 
 
 # --------------------------------------------------------------------------
+# _pctile_from_hist — CDF interpolation over the 21-bin spine histogram
+# (S7-B PR1 Task 3). Bins map to DELAY_HISTOGRAM_EDGES[i]..[i+1]; bin 20 is the
+# >=3600s overflow with no upper edge (Finding B terminal floor).
+# --------------------------------------------------------------------------
+
+
+def test_pctile_from_hist_empty_is_none() -> None:
+    from transit_ops.snapshots.builders.historic import _pctile_from_hist
+
+    assert _pctile_from_hist([], 0.5) is None
+    assert _pctile_from_hist([0] * 21, 0.5) is None  # all-zero == no observations
+
+
+def test_pctile_from_hist_interpolates_within_bin() -> None:
+    from transit_ops.snapshots.builders.historic import _pctile_from_hist
+
+    # All mass in bin 15 = [300, 420) sec. p50 -> 300 + 120*0.5 = 360s = 6.0 min;
+    # p90 -> 300 + 120*0.9 = 408s = 6.8 min.
+    hist = [0] * 15 + [10] + [0] * 5
+    assert _pctile_from_hist(hist, 0.5) == 6.0
+    assert _pctile_from_hist(hist, 0.9) == 6.8
+
+
+def test_pctile_from_hist_terminal_bin_floor() -> None:
+    from transit_ops.snapshots.builders.historic import _pctile_from_hist
+
+    # Mass only in the overflow bin 20 ([3600, +inf)); no edges[21] to index.
+    # Finding B: pin at the last edge 3600s = 60.0 min (documented tail floor).
+    hist = [0] * 20 + [5]
+    assert _pctile_from_hist(hist, 0.9) == 60.0
+    assert _pctile_from_hist(hist, 0.5) == 60.0  # no IndexError on terminal mass
+
+
+def test_pctile_from_hist_bin_zero_safe_and_negative() -> None:
+    from transit_ops.snapshots.builders.historic import _pctile_from_hist
+
+    # Mass in bin 0 = [-3600, -300) sec (very early). p90 -> -3600 + 3300*0.9 =
+    # -630s = -10.5 min. Lower edge exists; never indexes out of range.
+    hist = [5] + [0] * 20
+    assert _pctile_from_hist(hist, 0.9) == -10.5
+
+
+# --------------------------------------------------------------------------
 # build_network_trend — merge two daily series; p90/vehicles only where the
 # fact table covers the date.
 # --------------------------------------------------------------------------

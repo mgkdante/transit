@@ -194,6 +194,13 @@ class Settings(BaseSettings):
     # autovacuum/autoanalyze between runs). 0 disables the throttle (always run).
     GOLD_REALTIME_ANALYZE_MIN_INTERVAL_SECONDS: int = 3600
     GOLD_REPORTING_OPEN_WINDOW_DAYS: int = 10
+    # S7-B route delay-cube source for build_route_reliability: "fact" (default)
+    # reads the stored fold tables (route_delay_by_shift/by_daytype/by_shift_daytype/
+    # day_of_week, route_reliability_weekly/monthly); "spine" derives the same
+    # breakdowns at read time from gold.route_delay_spine. Flipped to "spine" only
+    # after the cutover gate proves the count/share fields byte-identical; the fold
+    # tables are dropped only after that flip ships.
+    SPINE_ROUTE_SOURCE: str = "fact"
     # Bronze raw is the replay-from-raw safety net for ephemeral silver (#106):
     # 90 days extends the window over which silver can be rebuilt from raw .pb.
     # Raw NEVER moves onto the VM — it lives only in Bronze R2.
