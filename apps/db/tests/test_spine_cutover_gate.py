@@ -69,9 +69,22 @@ GOLDEN_PATH = Path(__file__).parent / "fixtures" / "spine_golden" / "route_relia
 # The only leaves allowed to differ between fact and spine (the rebaseline).
 ALLOW_MOVE = {"avg_delay_min", "p50_min", "p90_min"}
 # Grains whose per-entry date is calendar-unstable (which ISO week / month a day
-# lands in drifts with "today"); identical-per-day data makes every entry equal, so
-# the canonicalizer dedups them to one representative.
+# lands in drifts with "today"). The identical-per-day seed makes the RATIO fields
+# (otp_pct, severe_pct) equal across every entry, so the canonicalizer dedups them to
+# one representative. The COUNT/CI fields (observation_count, on_time, wilson, the
+# delay histogram) instead scale with how many of the 7 seeded days fall in each
+# partial week/month — that split also drifts with "today" — so they are nulled for
+# these grains before dedup. Counts stay frozen at the calendar-stable day / shift /
+# day-type grains, whose whole-window sums are run-day-independent.
 _COLLAPSE_GRAINS = {"week", "month"}
+_COLLAPSE_NULL_FIELDS = (
+    "date",
+    "observation_count",
+    "on_time",
+    "wilson_lo",
+    "wilson_hi",
+    "delay_histogram",
+)
 
 _DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 _DATETIME_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T")
@@ -284,7 +297,7 @@ def _canonicalize(rel: dict, anchor: date) -> dict:
     seen_collapsed: dict[str, str] = {}
     for p in norm.get("periods", []):
         if p.get("grain") in _COLLAPSE_GRAINS:
-            p = {**p, "date": None}
+            p = {**p, **dict.fromkeys(_COLLAPSE_NULL_FIELDS)}
             key = _sort_key(p)
             if seen_collapsed.get(p["grain"]) == key:
                 continue

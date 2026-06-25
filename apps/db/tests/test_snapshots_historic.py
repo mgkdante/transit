@@ -244,6 +244,16 @@ def test_spine_reliability_period_maps_otp_severe_and_rebaselined_avg() -> None:
     assert p.severe_pct == 25.0
     assert p.avg_delay_min == 3.1
     assert p.p50_min is not None and p.p90_min is not None  # D3 upgrade: populated
+    # S7-B evidence: numerator/denominator + Wilson + the signed-delay distribution.
+    assert p.observation_count == 8
+    assert p.on_time == 4
+    assert p.wilson_lo is not None and p.wilson_hi is not None
+    assert p.delay_histogram is not None and len(p.delay_histogram) == 21
+    assert sum(b.count for b in p.delay_histogram) == 6
+    # bin 8 (0-based) = [30, 60)s carries all 6; the overflow bin has no upper edge.
+    assert p.delay_histogram[8].lo_sec == 30 and p.delay_histogram[8].hi_sec == 60
+    assert p.delay_histogram[8].count == 6
+    assert p.delay_histogram[20].lo_sec == 3600 and p.delay_histogram[20].hi_sec is None
 
 
 def test_spine_reliability_period_honest_null_when_no_delays() -> None:
@@ -259,6 +269,10 @@ def test_spine_reliability_period_honest_null_when_no_delays() -> None:
     assert p.severe_pct is None
     assert p.avg_delay_min is None
     assert p.p50_min is None and p.p90_min is None
+    # S7-B evidence stays honest under no-data: numerator + distribution are None.
+    assert p.on_time is None
+    assert p.wilson_lo is None and p.wilson_hi is None
+    assert p.delay_histogram is None  # empty histogram -> honest absence, never []
 
 
 # --------------------------------------------------------------------------
@@ -757,19 +771,24 @@ def test_build_route_reliability_by_shift_daytype_empty_when_absent() -> None:
 
 
 def test_build_route_reliability_by_shift_daytype_honest_null_metrics() -> None:
-    # A cell with no known-delay observations -> honest-None per metric, but the
-    # cell is still emitted (it has a shift/day_type identity + observation_count).
-    crosstab = [
-        {"shift": "night", "day_type": "weekend", "known_obs": 0,
-         "on_time": None, "avg_delay_sec": None, "severe": 0, "obs": 0},
-    ]
-    conn = FakeConn(_route_reliability_dispatch(crosstab=crosstab))
-    out = build_route_reliability(conn, route_id="51", generated_utc="t")
-    cell = out.by_shift_daytype[0]
+    # A spine crosstab cell with no known-delay observations -> honest-None per metric,
+    # but the cell is still emitted (it keeps its shift/day_type identity + obs count).
+    # Post-cutover by_shift_daytype derives from _spine_route_crosstab, so feed a
+    # SPINE-shaped zero row (needle "AS day_type" is unique to the crosstab SQL).
+    from transit_ops.snapshots.builders.historic import _spine_route_crosstab
+
+    row = {"shift": "night", "day_type": "weekend", "known_obs": 0, "obs": 0,
+           "on_time": None, "severe": 0, "sum_delay_sec": 0}
+    for k in range(1, 22):
+        row[f"h{k}"] = 0
+    conn = FakeConn([("AS day_type", [row])])
+    cells = _spine_route_crosstab(conn, {"provider_id": "stm", "route_id": "51"})
+    cell = cells[0]
     assert cell.shift == "night" and cell.day_type == "weekend"
     assert cell.otp_pct is None
     assert cell.avg_delay_min is None
     assert cell.severe_pct is None
+    assert cell.observation_count == 0
 
 
 def test_build_route_reliability_occupancy_by_dow_cells() -> None:

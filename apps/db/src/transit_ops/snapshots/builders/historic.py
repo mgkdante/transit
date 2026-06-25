@@ -70,6 +70,7 @@ from transit_ops.snapshots.contract import (
     ReliabilityPeriod,
     RepeatOffenders,
     RouteDayOfWeek,
+    RouteDelayHistogramBin,
     RouteReliability,
     ServiceSpanPeriod,
     SkippedStopPeriod,
@@ -761,7 +762,7 @@ _ROUTE_CROWDING_DELAY_SQL = text(
 # --------------------------------------------------------------------------
 # S7-B PR1 Task 3 — route delay-cube reads via ONE spine projector
 # --------------------------------------------------------------------------
-# Under source="spine", build_route_reliability derives every route delay-cube
+# build_route_reliability derives every route delay-cube
 # breakdown (by_shift / by_daytype / weekly / monthly / day_of_week / crosstab)
 # at READ time from gold.route_delay_spine through this one parameterized
 # projector, instead of one stored fold table per breakdown. The count/share
@@ -876,6 +877,23 @@ def _spine_hist_and_avg(r):  # noqa: ANN001, ANN202
     return hist, avg_sec
 
 
+def _spine_delay_histogram(hist: list[int]) -> "list[RouteDelayHistogramBin] | None":
+    """Signed-delay distribution bins from the 21-bin spine histogram (honest-None).
+
+    bin i = [_SPINE_EDGES[i], _SPINE_EDGES[i + 1]) seconds for i in 0..19; bin 20 is
+    the [3600s, +inf) overflow (hi_sec=None). None when there are no in-window
+    observations; otherwise ALL 21 bins are emitted (zeros included) so the UI draws
+    the full shape. Edges are the same DELAY_HISTOGRAM_EDGES that power p50/p90.
+    """
+    if not hist or sum(hist) <= 0:
+        return None
+    bins: list[RouteDelayHistogramBin] = []
+    for i, count in enumerate(hist):
+        hi = _SPINE_EDGES[i + 1] if i + 1 < len(_SPINE_EDGES) else None
+        bins.append(RouteDelayHistogramBin(lo_sec=_SPINE_EDGES[i], hi_sec=hi, count=int(count)))
+    return bins
+
+
 def _spine_reliability_period(r, *, grain: str, date) -> "ReliabilityPeriod":  # noqa: ANN001
     hist, avg_sec = _spine_hist_and_avg(r)
     return ReliabilityPeriod(
@@ -886,6 +904,11 @@ def _spine_reliability_period(r, *, grain: str, date) -> "ReliabilityPeriod":  #
         p50_min=_pctile_from_hist(hist, 0.5),
         p90_min=_pctile_from_hist(hist, 0.9),
         severe_pct=_severe_pct(r["known_obs"], r["severe"]),
+        observation_count=_opt_int(r["known_obs"]),
+        on_time=_opt_int(r["on_time"]),
+        wilson_lo=_wilson_lo(r["on_time"], r["known_obs"]),
+        wilson_hi=_wilson_hi(r["on_time"], r["known_obs"]),
+        delay_histogram=_spine_delay_histogram(hist),
     )
 
 
@@ -959,6 +982,9 @@ def _network_spine_rows(conn, sql, params, order) -> "list[NetworkShift]":  # no
             otp_pct=_otp_pct(r["on_time"], known),
             avg_delay_min=_avg_delay_min(avg_sec),
             severe_pct=_severe_pct(known, r["severe"]),
+            observation_count=_opt_int(known),
+            wilson_lo=_wilson_lo(r["on_time"], known),
+            wilson_hi=_wilson_hi(r["on_time"], known),
         )
     ordered = [by_grain[g] for g in order if g in by_grain]
     ordered.extend(by_grain[g] for g in sorted(set(by_grain) - set(order)))
@@ -1017,6 +1043,7 @@ def build_route_reliability(
                 p90_min=p90_min,
                 severe_pct=_severe_pct(r["known_obs"], r["severe"]),
                 observation_count=_opt_int(r["known_obs"]),
+                on_time=_opt_int(r["on_time"]),
                 wilson_lo=_wilson_lo(r["on_time"], r["known_obs"]),
                 wilson_hi=_wilson_hi(r["on_time"], r["known_obs"]),
             )

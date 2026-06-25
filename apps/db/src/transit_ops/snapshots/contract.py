@@ -424,6 +424,17 @@ class NetworkTrend(BaseModel):
     by_shift: list[NetworkShift] = Field(default_factory=list)
     by_daytype: list[NetworkShift] = Field(default_factory=list)
 
+class RouteDelayHistogramBin(BaseModel):
+    # One bin of the per-route signed-delay distribution (the §01 distribution chart).
+    # Edges are in SECONDS — the spine's native 21-edge resolution, sub-minute near 0
+    # — left-closed / right-open: a delay d lands here when
+    # (lo_sec is None or lo_sec <= d) and (hi_sec is None or d < hi_sec). The final bin
+    # has hi_sec=None (the [3600s, +inf) overflow). count is ABSOLUTE (never a share) so
+    # the distribution bar takes an absolute zero-based domain per the Chart Doctrine.
+    lo_sec: int | None = None
+    hi_sec: int | None = None
+    count: int = 0
+
 class ReliabilityPeriod(BaseModel):
     grain: str
     date: str | None = None
@@ -441,6 +452,15 @@ class ReliabilityPeriod(BaseModel):
     observation_count: int | None = None
     wilson_lo: float | None = None
     wilson_hi: float | None = None
+    # S7-B evidence (additive-optional, from gold.route_delay_spine). on_time is the OTP
+    # numerator (known on-time observations) behind otp_pct — the InsightCard verdict's
+    # "<on_time> of <observation_count> known arrivals on time". delay_histogram is this
+    # period's signed-delay distribution (the §01 distribution chart): None when there
+    # are no in-window delay observations (honest absence), else all 21 bins (zeros
+    # included) so the UI draws the full shape. Both None on the daily grain (the
+    # public_route_reliability_daily carve-out carries neither).
+    on_time: int | None = None
+    delay_histogram: list[RouteDelayHistogramBin] | None = None
 
 class CancellationPeriod(BaseModel):
     # Per-route cancellation over one closed local day (or a derived grain).
