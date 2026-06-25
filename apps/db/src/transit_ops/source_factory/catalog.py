@@ -164,7 +164,6 @@ def build_source_factory_catalog(
                     "gold.dim_route_pattern",
                     "gold.dim_direction",
                     "gold.dim_date",
-                    "gold.map_stops",
                     "gold.map_route_lines",
                     "gold.fact_stop_time_delay_observation",
                     "gold.current_trip_delay_computed",
@@ -246,11 +245,7 @@ def build_source_factory_catalog(
                     "silver.gis_line_features",
                     "silver.gis_gtfs_matches",
                 ),
-                gold_outputs=(
-                    "gold.map_gis_line_features",
-                    "gold.map_route_lines",
-                    "gold.map_stops",
-                ),
+                gold_outputs=("gold.map_route_lines",),
                 backfill_strategy="where_available",
             ),
             SourceFactorySource(
@@ -266,7 +261,6 @@ def build_source_factory_catalog(
                 gold_outputs=(
                     "gold.current_i3_alerts",
                     "gold.i3_alert_history_reporting",
-                    "gold.public_alert_impact_daily",
                     "gold.citizen_accountability_daily",
                 ),
                 backfill_strategy="where_available",

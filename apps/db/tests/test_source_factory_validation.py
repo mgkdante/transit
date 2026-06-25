@@ -203,13 +203,11 @@ def test_validation_sql_covers_map_marts_timezone_buckets_health_retention_and_r
     sql_by_id = _sql_by_check_id()
 
     map_sql = sql_by_id["postgis_map_marts"]
-    for relation in (
-        "gold.map_stops",
-        "gold.map_route_lines",
-        "gold.current_vehicle_map",
-        "gold.map_gis_line_features",
-    ):
+    for relation in ("gold.map_route_lines", "gold.current_vehicle_map"):
         assert relation in map_sql
+    # map_stops + map_gis_line_features were dropped (migration 0059 — probe-only views).
+    assert "gold.map_stops" not in map_sql
+    assert "gold.map_gis_line_features" not in map_sql
     assert "geom_wgs84 IS NOT NULL" in map_sql
     assert "geojson IS NOT NULL" in map_sql
 
@@ -219,7 +217,8 @@ def test_validation_sql_covers_map_marts_timezone_buckets_health_retention_and_r
     assert "provider_local_date" in timezone_sql
     assert "gold.public_route_reliability_daily" in timezone_sql
     assert "gold.public_stop_delay_daily" in timezone_sql
-    assert "gold.public_alert_impact_daily" in timezone_sql
+    # public_alert_impact_daily dropped (0059); the alert timezone bucket now reads the source.
+    assert "gold.public_alert_impact_daily" not in timezone_sql
     assert "gold.i3_alert_history_reporting" in timezone_sql
 
     health_sql = sql_by_id["source_lineage_freshness_health"]

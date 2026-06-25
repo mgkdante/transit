@@ -477,17 +477,10 @@ LEFT JOIN sibling_join AS sj
         statement=text(
             """
 WITH mart_counts AS (
-    SELECT 'gold.map_stops' AS relation_name,
+    SELECT 'gold.map_route_lines' AS relation_name,
            count(*)::integer AS row_count,
            count(*) FILTER (WHERE geom_wgs84 IS NOT NULL)::integer AS geom_non_null_count,
            count(*) FILTER (WHERE geojson IS NOT NULL)::integer AS geojson_non_null_count
-    FROM gold.map_stops
-    WHERE provider_id = :provider_id
-    UNION ALL
-    SELECT 'gold.map_route_lines',
-           count(*)::integer,
-           count(*) FILTER (WHERE geom_wgs84 IS NOT NULL)::integer,
-           count(*) FILTER (WHERE geojson IS NOT NULL)::integer
     FROM gold.map_route_lines
     WHERE provider_id = :provider_id
     UNION ALL
@@ -496,13 +489,6 @@ WITH mart_counts AS (
            count(*) FILTER (WHERE geom_wgs84 IS NOT NULL)::integer,
            count(*) FILTER (WHERE geojson IS NOT NULL)::integer
     FROM gold.current_vehicle_map
-    WHERE provider_id = :provider_id
-    UNION ALL
-    SELECT 'gold.map_gis_line_features',
-           count(*)::integer,
-           count(*) FILTER (WHERE geom_wgs84 IS NOT NULL)::integer,
-           count(*) FILTER (WHERE geojson IS NOT NULL)::integer
-    FROM gold.map_gis_line_features
     WHERE provider_id = :provider_id
 )
 SELECT *
@@ -541,8 +527,10 @@ stop_daily AS (
     GROUP BY provider_id
 ),
 alert_daily AS (
+    -- Canonical alert-history source (public_alert_impact_daily was a probe-only view, dropped
+    -- in migration 0059); same provider-local-date timezone bucket, read from the real source.
     SELECT provider_id, count(DISTINCT provider_local_date)::integer AS alert_daily_dates
-    FROM gold.public_alert_impact_daily
+    FROM gold.i3_alert_history_reporting
     WHERE provider_id = :provider_id
     GROUP BY provider_id
 ),

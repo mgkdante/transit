@@ -1,7 +1,7 @@
 """Static-tier builders: gold/silver -> /v1 static snapshot pydantic models.
 
-STATIC sources: ``gold.dim_route``/``dim_stop``/``map_stops``, ``gold.map_route_lines``
-(``geojson`` is jsonb), ``silver.trips``/``stop_times``/``calendar``, ``gold.report_labels``.
+STATIC sources: ``gold.dim_route``/``dim_stop``, ``gold.map_route_lines`` (``geojson`` is
+jsonb), ``silver.trips``/``stop_times``/``calendar``, ``gold.report_labels``.
 Static schedules are computed for a deterministic *representative service date*
 (busiest weekday / weekend in the dataset's current window) so headways and stop
 times reflect one coherent day rather than the union of all 144 service calendars.

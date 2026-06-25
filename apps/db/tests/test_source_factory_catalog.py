@@ -207,7 +207,8 @@ def test_catalog_declares_source_table_contract_by_family() -> None:
         "silver.gis_line_features",
         "silver.gis_gtfs_matches",
     )
-    assert "gold.map_gis_line_features" in by_family["gis_static"].gold_outputs
+    # map_gis_line_features + map_stops were dropped (migration 0059 — probe-only, no reader).
+    assert by_family["gis_static"].gold_outputs == ("gold.map_route_lines",)
 
     assert by_family["i3_alerts"].endpoint_key == "i3_alerts"
     assert by_family["i3_alerts"].raw_tables == ("raw.i3_alert_snapshots",)
@@ -218,7 +219,6 @@ def test_catalog_declares_source_table_contract_by_family() -> None:
     assert by_family["i3_alerts"].gold_outputs == (
         "gold.current_i3_alerts",
         "gold.i3_alert_history_reporting",
-        "gold.public_alert_impact_daily",
         "gold.citizen_accountability_daily",
     )
 
