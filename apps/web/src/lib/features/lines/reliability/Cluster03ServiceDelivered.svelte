@@ -37,6 +37,7 @@
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
 	import { metricInfoFor, type MetricKey } from '$lib/features/metrics/metrics.content';
 	import { metricsCopy } from '$lib/features/metrics/metrics.copy';
+	import { CANCEL_RATE_DOMAIN, SKIPPED_RATE_DOMAIN } from '$lib/features/reliability/shiftGrains';
 	import type { ServiceDeliveredVM } from './clusters';
 	import type { ReliabilityCopy } from './reliability.copy';
 
@@ -66,10 +67,9 @@
 
 	// S7: a flat sparkline of a ~0% rate conveys nothing (the operator's complaint).
 	// Replace it with an honest COMPLETENESS read — the canceled/skipped SHARE over the
-	// window on a FIXED absolute domain (0% reads as an empty bar = good news), PLUS the
-	// raw "X of Y" counts the rate alone never showed. Stable across routes/refreshes.
-	const CANCEL_RATE_DOMAIN = [0, 5] as const; // cancellations rarely exceed ~5%
-	const SKIPPED_RATE_DOMAIN = [0, 10] as const; // skipped stops rarely exceed ~10%
+	// window on the FIXED absolute % domain (0% reads as an empty bar = good news), PLUS the
+	// raw "X of Y" counts the rate alone never showed. The domains are the STRUCTURAL [0,100]
+	// percentage scale from the shared module — never an inline per-chart zoom.
 	const RATE_SEVERITY: SeverityCode = 'watch';
 
 	// Headline rate = the grain-windowed rate the mapper already computed (the SAME number

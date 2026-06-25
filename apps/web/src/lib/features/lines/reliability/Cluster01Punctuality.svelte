@@ -150,6 +150,9 @@
 	// S7: FIXED retard y-domain (min), identical across routes/grains/refreshes — the
 	// amber delay axis no longer auto-scales to the in-view max (the stability fix).
 	const retardDomain: [number, number] = [...DELAY_POS_DOMAIN];
+	// The OTP axis on the shared structural [0,100] domain (mutable copy — the chart props
+	// take a mutable tuple); no inline literal so the scale lives in exactly one place.
+	const otpDomain: [number, number] = [...OTP_DOMAIN];
 
 	// Typical→worst-case delay as ONE quantile shape (S7 P9). The two formerly-
 	// disconnected p50 / p90 number tiles become a single Distribution mark on the
@@ -621,14 +624,14 @@
 				<TrendLine
 					onTime={otpSeries}
 					retard={retardSeries}
-					domain={[0, 100]}
+					domain={otpDomain}
 					{retardDomain}
 					band={hasWilsonBand ? { lo: wilsonLoSeries, hi: wilsonHiSeries } : undefined}
 					target={80}
 					{xLabels}
 					onTimeLabel={copy.strip.otpPct}
 					retardLabel={copy.strip.avgDelayMin}
-					yAxis={{ label: copy.strip.otpPct, unit: copy.units.pct, domain: [0, 100] }}
+					yAxis={{ label: copy.strip.otpPct, unit: copy.units.pct, domain: otpDomain }}
 					retardAxis={{ label: copy.strip.avgDelayMin, unit: copy.units.min, domain: retardDomain }}
 					showYTicks
 					showXTicks

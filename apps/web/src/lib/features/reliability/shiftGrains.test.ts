@@ -16,6 +16,8 @@ import {
 	OTP_DOMAIN,
 	HEADWAY_DOMAIN,
 	BUNCHED_DOMAIN,
+	CANCEL_RATE_DOMAIN,
+	SKIPPED_RATE_DOMAIN,
 	COV_DOMAIN,
 } from './shiftGrains';
 
@@ -28,6 +30,8 @@ describe('S7 reliability chart domains — fixed, absolute, stable', () => {
 		OTP_DOMAIN,
 		HEADWAY_DOMAIN,
 		BUNCHED_DOMAIN,
+		CANCEL_RATE_DOMAIN,
+		SKIPPED_RATE_DOMAIN,
 		COV_DOMAIN,
 	];
 	it('are [min,max] literals with min < max', () => {
@@ -45,7 +49,11 @@ describe('S7 reliability chart domains — fixed, absolute, stable', () => {
 		expect(SEVERE_DOMAIN).toEqual([0, 100]);
 		expect(OTP_DOMAIN).toEqual([0, 100]);
 		expect(HEADWAY_DOMAIN).toEqual([0, 35]);
-		expect(BUNCHED_DOMAIN).toEqual([0, 30]);
+		// ALL percentages share the full [0,100] scale (operator decision) — a share of a
+		// whole reads as that fraction, never an exaggerated slice of a zoomed max.
+		expect(BUNCHED_DOMAIN).toEqual([0, 100]);
+		expect(CANCEL_RATE_DOMAIN).toEqual([0, 100]);
+		expect(SKIPPED_RATE_DOMAIN).toEqual([0, 100]);
 		expect(COV_DOMAIN).toEqual([0, 1.2]);
 	});
 });

@@ -79,40 +79,23 @@ export function bunchingToSeverity(bunchedPct: number | null | undefined): Sever
 	return 'watch';
 }
 
-/* ── S7 chart domains — STABLE, ABSOLUTE, ZERO-BASED (real units) ─────────────
-   The single source of the fixed [min,max] domains every reliability magnitude
-   chart scales against. They are LITERALS — identical across routes, grains, and
-   the 30s refresh — so the same value always renders the same length (the audit's
-   law #1). NEVER derive a chart domain from Math.max(...inView) / the in-view worst.
-   Tuned to the real STM distributions (the audit rejected the crushing [0,10]). */
-/** Signed per-stop avg delay (min); early stops render LEFT of the zero baseline. */
-export const DELAY_STOP_DOMAIN = [-2, 8] as const;
-/** Positive delay aggregates (min) — e.g. the OTP-trend retard (amber) axis. */
-export const DELAY_POS_DOMAIN = [0, 8] as const;
-/**
- * Delay-DISTRIBUTION axis (min) for the typical→worst-case (p50→p90) quantile mark.
- * Wider than DELAY_POS_DOMAIN because the p90 tail routinely runs past 8 min (real
- * STM days reach ~12) — clamping the tail to 8 would hide it. Zero-based + fixed so
- * the same percentile always renders at the same x on every route/grain/refresh.
- */
-export const DELAY_DIST_DOMAIN = [0, 15] as const;
-/** Day-of-week + delay-by-crowding avg delay (min). */
-export const DELAY_DOW_DOMAIN = [0, 6] as const;
-/**
- * Severe-delay share (%) — shift / day-type / snapshot. FULL percentage scale [0,100], the
- * same absolute domain as OTP: a severe share is a fraction of ALL arrivals, so a 7% share
- * must read as 7% of the bar, never the ~20% a zoomed [0,35] domain exaggerated it to. The
- * honest message is that severe delays are uncommon; the scale should show that, not hide it.
- */
-export const SEVERE_DOMAIN = [0, 100] as const;
-/** On-time % / Wilson bounds. */
-export const OTP_DOMAIN = [0, 100] as const;
-/** Scheduled / observed / excess headway (min). */
-export const HEADWAY_DOMAIN = [0, 35] as const;
-/** Bunched share (%). */
-export const BUNCHED_DOMAIN = [0, 30] as const;
-/** Headway coefficient-of-variation ratio; 1.0 = random arrivals reference. */
-export const COV_DOMAIN = [0, 1.2] as const;
+// The fixed, absolute chart domains now live in their own structural module (grouped by unit,
+// each justified) — see ./domains. Re-exported here so the existing reliability-vocabulary
+// import path (`from '$lib/features/reliability/shiftGrains'`) keeps resolving them; ./domains
+// is the single source of truth. Percentages are ALL [0,100]; no per-chart inline scales.
+export {
+	DELAY_STOP_DOMAIN,
+	DELAY_POS_DOMAIN,
+	DELAY_DIST_DOMAIN,
+	DELAY_DOW_DOMAIN,
+	SEVERE_DOMAIN,
+	OTP_DOMAIN,
+	HEADWAY_DOMAIN,
+	BUNCHED_DOMAIN,
+	CANCEL_RATE_DOMAIN,
+	SKIPPED_RATE_DOMAIN,
+	COV_DOMAIN,
+} from './domains';
 
 /** CoV (gap stddev / mean) at or above which regularity bands to critical. */
 const COV_CRITICAL = 0.5;
