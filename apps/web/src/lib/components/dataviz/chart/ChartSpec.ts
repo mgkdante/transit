@@ -83,10 +83,13 @@ export interface MagnitudeDatum {
 	readonly value: number | null;
 	/** Sample size, surfaced as `n=` and used by the MIN_N degradation ladder. */
 	readonly n?: number | null;
-	/** Wilson 95% lower bound (PERCENT) — the rank key when `sort: 'wilson-lower'`. */
+	/** Wilson 95% bounds — the lower bound is the rank key when `sort: 'wilson-lower'`. */
 	readonly wilsonLo?: number | null;
+	readonly wilsonHi?: number | null;
 	readonly severity?: SeverityCode;
 	readonly status?: StatusCode;
+	/** Optional drill link — clicking the row navigates here (e.g. the stop's page). */
+	readonly href?: string;
 	/** Reason for an absent datum, shown on hover / in the no-data slot. */
 	readonly absentReason?: AbsenceReasonKey;
 }
@@ -100,6 +103,8 @@ export interface MagnitudeBarsSpec extends ChartSpecBase {
 	readonly mark: 'bar' | 'lollipop';
 	readonly domain: AbsoluteDomain;
 	readonly unit: string;
+	/** Localized value-axis (x) title. */
+	readonly xLabel?: string;
 	readonly rows: readonly MagnitudeDatum[];
 	readonly sort: 'wilson-lower' | 'given';
 	/** Colour family for the fill — always a dataviz scale, never an affordance token. */

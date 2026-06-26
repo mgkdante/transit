@@ -33,7 +33,6 @@
 -->
 <script lang="ts">
 	import type { Locale } from '$lib/i18n';
-	import { stopNameFallback } from '$lib/site/absence';
 	import { fmtDelayMin, fmtPct } from '$lib/utils';
 	import type { SeverityCode } from '$lib/v1/schemas';
 	import MetricDisplay from '$lib/components/brand/MetricDisplay.svelte';
@@ -44,6 +43,7 @@
 	import { selectPunctualityTrend } from './selectors/punctualityTrend';
 	import { selectPunctualityDistribution } from './selectors/punctualityDistribution';
 	import { selectPunctualityTimeOfDay } from './selectors/punctualityTimeOfDay';
+	import { selectWeakStops } from './selectors/weakStops';
 	import { GrainPicker, type GrainSegment } from '$lib/components/surface';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
 	import { metricInfoFor, type MetricKey } from '$lib/features/metrics/metrics.content';
@@ -54,10 +54,8 @@
 		shiftLabel as shiftGrainLabel,
 		dayTypeLabel as dayTypeGrainLabel,
 		severeShareToSeverity,
-		delayMinToSeverity,
 		SHIFT_GRAIN_ORDER,
 		DAY_TYPE_GRAIN_ORDER,
-		DELAY_POS_DOMAIN,
 		SEVERE_DOMAIN,
 		OTP_DOMAIN,
 	} from '$lib/features/reliability/shiftGrains';
@@ -164,38 +162,24 @@
 	let worstN = $state('10');
 	const worstNCount = $derived(Number(worstN));
 
-	// The FULL ranked set (worst mean-delay first) BEFORE the worst-N truncation. The
-	// bar baseline `worst` is taken from this full set so the bar scale stays stable as
-	// N changes (a smaller N never rescales the remaining bars).
-	const rankedAll = $derived(
-		vm.weakStops
-			.filter((w) => w.avg_delay_min != null)
-			.slice()
-			.sort((a, b) => (b.avg_delay_min ?? 0) - (a.avg_delay_min ?? 0)),
+	// Worst-N accountability LOLLIPOP (A13) — selectWeakStops owns the rank + the worst-N
+	// slice + the spec; rendered via the one <Chart> on the fixed DELAY_POS_DOMAIN (the same
+	// delay renders the same length on every route/grain/refresh). Click a row → the stop
+	// page. The heading carries the honest shown/total count. (Ranking is by avg delay today
+	// — the contract WeakStop carries no Wilson/n; the Wilson-lower rank + whisker is a small
+	// pipeline-rollup follow-up.)
+	const weakStops = $derived(
+		selectWeakStops(vm.weakStops, worstNCount, locale, {
+			title: copy.strip.weakStopsHeading,
+			xLabel: copy.strip.avgDelayMin,
+			unit: copy.units.min,
+			stopHref: (id) => `/stop/${id}`,
+		}),
 	);
-	const weakStopsTotal = $derived(rankedAll.length);
-
-	// The accountability list, truncated to the selected worst-N, worst-on-top. S7:
-	// the bar is the ABSOLUTE avg delay (min) scaled by the fixed DELAY_POS_DOMAIN at
-	// the row — the same delay renders the same length on every route/grain/refresh
-	// (no more delay/worst). Severity via the shared absolute delayMinToSeverity.
-	const rankedStops = $derived.by(() =>
-		rankedAll.slice(0, worstNCount).map((w, i) => ({
-			key: w.id,
-			rank: i + 1,
-			title: w.name ?? stopNameFallback(w.id, locale),
-			severity: delayMinToSeverity(w.avg_delay_min ?? null),
-			value: w.avg_delay_min ?? null,
-			display: min(w.avg_delay_min) ?? copy.strip.noData,
-		})),
-	);
-
-	// Weak-stops heading carries the honest count. When the worst-N truncates the set,
-	// it reads "shown/total" so the reader knows more exist; otherwise just the count.
 	const weakStopsHeading = $derived(
-		weakStopsTotal > rankedStops.length
-			? `${copy.strip.weakStopsHeading} · ${rankedStops.length}/${weakStopsTotal}`
-			: `${copy.strip.weakStopsHeading} · ${rankedStops.length}`,
+		weakStops.total > weakStops.shown
+			? `${copy.strip.weakStopsHeading} · ${weakStops.shown}/${weakStops.total}`
+			: `${copy.strip.weakStopsHeading} · ${weakStops.shown}`,
 	);
 
 	/* ── By time of day (A1/A2) ──────────────────────────────────────────────
@@ -591,14 +575,14 @@
 		</div>
 
 		<!-- Weakest stops, the accountability list, worst delay first + count. -->
-		{#if rankedStops.length > 0}
+		{#if weakStops.shown > 0}
 			<div class="cluster-block">
 				<div class="weak-stops-head">
 					<span class="label-with-info">
 						<SectionLabel text={weakStopsHeading} variant="metric" />
 						{@render metricInfo('weakStops', copy.strip.weakStopsHeading)}
 					</span>
-					{#if weakStopsTotal > 5}
+					{#if weakStops.total > 5}
 						<GrainPicker
 							segments={WORST_N_SEGMENTS}
 							bind:value={worstN}
@@ -607,19 +591,8 @@
 					{/if}
 				</div>
 				<p class="cluster-caption" data-slot="weak-stops-window">{copy.windows.weakStops}</p>
-				<div class="cluster-ranked" data-slot="weak-stops-list" role="list">
-					{#each rankedStops as row (row.key)}
-						<RankedRow
-							rank={row.rank}
-							title={row.title}
-							severity={row.severity}
-							value={row.value}
-							domain={DELAY_POS_DOMAIN}
-							unit=" min"
-							display={row.display}
-							barInteractive
-						/>
-					{/each}
+				<div data-slot="weak-stops-list">
+					<Chart spec={weakStops.spec} />
 				</div>
 			</div>
 		{/if}

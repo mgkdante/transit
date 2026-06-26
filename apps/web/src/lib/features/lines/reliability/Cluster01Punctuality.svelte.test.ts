@@ -102,7 +102,12 @@ describe('Cluster01Punctuality — worst-N selector (S7)', () => {
 			props: { vm: manyStops, locale: 'en', copy },
 		});
 		const list = container.querySelector('[data-slot="weak-stops-list"]') as HTMLElement;
-		expect(list.querySelectorAll('[data-slot="ranked-row"]').length).toBe(10);
+		// The worst-N lollipop (LayerChart bars mount behind ChartFrame's measured-size gate,
+		// verified in headless; here we assert the mark + its AT-fallback table row count).
+		expect(list.querySelector('[data-slot="magnitude-bars-mark"]')).not.toBeNull();
+		expect(list.querySelectorAll('[data-slot="magnitude-bars-mark"] table tbody tr').length).toBe(
+			10,
+		);
 		expect(getByRole('radiogroup', { name: copy.strip.worstNLabel })).toBeInTheDocument();
 	});
 
@@ -112,7 +117,9 @@ describe('Cluster01Punctuality — worst-N selector (S7)', () => {
 		});
 		await fireEvent.click(getByRole('radio', { name: '5' }));
 		const list = container.querySelector('[data-slot="weak-stops-list"]') as HTMLElement;
-		expect(list.querySelectorAll('[data-slot="ranked-row"]').length).toBe(5);
+		expect(list.querySelectorAll('[data-slot="magnitude-bars-mark"] table tbody tr').length).toBe(
+			5,
+		);
 	});
 });
 
