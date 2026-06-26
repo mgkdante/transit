@@ -36,6 +36,7 @@ import type { Hotspots } from '$lib/v1/schemas/hotspots';
 import type { RepeatOffenders } from '$lib/v1/schemas/repeat_offenders';
 import type { AlertHistory } from '$lib/v1/schemas/alert_history';
 import type { ReceiptsIndex } from '$lib/v1/schemas/receipts_index';
+import type { RouteReliabilityIndex } from '$lib/v1/schemas/route_reliability_index';
 import type { Receipt } from '$lib/v1/schemas/receipts';
 import type { RouteReliability } from '$lib/v1/schemas/route_reliability';
 import type { StopReliability } from '$lib/v1/schemas/stop_reliability';
@@ -89,6 +90,7 @@ export interface HistoricPort {
 	repeatOffenders(ctx?: AdapterCtx): Promise<RepeatOffenders>;
 	alertHistory(ctx?: AdapterCtx): Promise<AlertHistory>;
 	receiptsIndex(ctx?: AdapterCtx): Promise<ReceiptsIndex>;
+	routeReliabilityIndex(ctx?: AdapterCtx): Promise<RouteReliabilityIndex | null>;
 	receipt(date: string, ctx?: AdapterCtx): Promise<Receipt | null>;
 	routeReliability(routeId: string, ctx?: AdapterCtx): Promise<RouteReliability | null>;
 	stopReliability(stopId: string, ctx?: AdapterCtx): Promise<StopReliability | null>;

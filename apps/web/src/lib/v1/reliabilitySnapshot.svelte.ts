@@ -32,7 +32,12 @@
 // ordering; no accessible-only filter (needs a DB field).
 
 import { SvelteMap, SvelteSet } from 'svelte/reactivity';
-import { getRouteReliability, getRoutesIndex, getStopReliability } from './repositories';
+import {
+	getRouteReliability,
+	getRouteReliabilityIndex,
+	getRoutesIndex,
+	getStopReliability,
+} from './repositories';
 import type {
 	ReliabilityPeriod,
 	RouteReliability,
@@ -227,23 +232,41 @@ export function createReliabilityLoader(kind: ReliabilityKind): ReliabilityLoade
 	// (read once after load), but a SvelteMap keeps the .svelte.ts lint-clean.
 	let indexFlags: SvelteMap<string, boolean> | null = null;
 	let indexLoad: Promise<void> | null = null;
+	// Which source populated `indexFlags`: the always-current route_reliability discovery
+	// index (membership — present ⇒ probe, absent ⇒ no-data) vs. the legacy routes_index
+	// `reliability` flag fallback (false ⇒ no-data, else probe). The discovery index is the
+	// source of truth; the flag is only the rollout-window fallback when it 404s.
+	let indexIsMembership = false;
 	// Undecided ids parked while the index is in flight (raced ahead of it).
 	const pendingUndecided: string[] = [];
 
 	function loadIndexOnce(): Promise<void> {
 		if (indexLoad) return indexLoad;
-		indexLoad = getRoutesIndex()
-			.then((idx) => {
+		indexLoad = getRouteReliabilityIndex()
+			.then(async (ids) => {
+				if (ids) {
+					// The daily route_reliability discovery index (always current, file-matched):
+					// membership = a published per-route file ⇒ probe; absent ⇒ honest no-data.
+					const flags = new SvelteMap<string, boolean>();
+					for (const id of ids) flags.set(id, true);
+					indexFlags = flags;
+					indexIsMembership = true;
+					return;
+				}
+				// The discovery index is not published yet (404) — fall back to the legacy
+				// routes_index `reliability` flag so the rollout window never breaks.
+				const idx = await getRoutesIndex();
 				const flags = new SvelteMap<string, boolean>();
 				for (const r of idx.routes) {
 					if (typeof r.reliability === 'boolean') flags.set(r.id, r.reliability);
 				}
 				indexFlags = flags;
+				indexIsMembership = false;
 			})
 			.catch(() => {
-				// Fail-soft: if the index can't be read, fall back to the legacy probe
-				// for every undecided id (an empty flag map ⇒ no skips, all probe).
+				// Fail-soft: neither index readable → empty map in legacy mode ⇒ probe all.
 				indexFlags = new SvelteMap<string, boolean>();
+				indexIsMembership = false;
 			})
 			.finally(() => {
 				// Drain everyone who raced ahead of the index — decide each now.
@@ -253,16 +276,25 @@ export function createReliabilityLoader(kind: ReliabilityKind): ReliabilityLoade
 		return indexLoad;
 	}
 
-	// Decide an undecided id against the (now-loaded) index flags. Called only
-	// after `indexFlags` is populated.
+	// Decide an undecided id against the (now-loaded) index. Called only after
+	// `indexFlags` is populated.
 	function decideWithIndex(id: string): void {
 		const flag = indexFlags?.get(id);
+		if (indexIsMembership) {
+			// Discovery-index membership: a published file exists iff the id is present.
+			if (flag === true) {
+				queue.push(id);
+				pump();
+			} else {
+				set(id, NO_DATA_SNAPSHOT);
+			}
+			return;
+		}
+		// Legacy routes_index-flag fallback: skip on an explicit false; true / absent ⇒ probe.
 		if (flag === false) {
-			// Known-absent per the index — resolve to no-data WITHOUT a probe.
 			set(id, NO_DATA_SNAPSHOT);
 			return;
 		}
-		// `true` (has history) or absent from the index (pre-flag / fail-soft) ⇒ probe.
 		queue.push(id);
 		pump();
 	}

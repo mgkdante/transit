@@ -181,7 +181,10 @@
 		     action per row) stay intact and the grid track lives ONLY in DashboardGrid. -->
 		<EntityList items={visible} key={(r) => r.id} grid minTile="360px">
 			{#snippet row(r)}
-				<div class="line-result" use:observeReliability={{ id: r.id, known: r.reliability }}>
+				<!-- Bare id (no `known` flag): availability is decided by the always-current
+			     route_reliability discovery index in the loader, NOT the lag-prone
+			     routes_index `reliability` flag — so a stale flag never drops a badge. -->
+				<div class="line-result" use:observeReliability={r.id}>
 					<EntityRow
 						target={{ kind: 'line', id: r.id }}
 						{locale}

@@ -37,6 +37,7 @@ export * from './basemap';
 
 // --- historic tier -----------------------------------------------------------
 export * from './route_reliability';
+export * from './route_reliability_index';
 export * from './stop_reliability';
 export * from './receipts';
 export * from './receipts_index';

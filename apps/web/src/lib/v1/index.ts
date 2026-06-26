@@ -37,6 +37,7 @@ export {
 	getReceiptsIndex,
 	getReceipt,
 	getRouteReliability,
+	getRouteReliabilityIndex,
 	getStopReliability,
 	getProvenance,
 	getBasemap,

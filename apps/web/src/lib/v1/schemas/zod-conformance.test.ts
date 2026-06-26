@@ -47,6 +47,7 @@ import {
 	StopReliabilitySchema,
 	ReceiptSchema,
 	ReceiptsIndexSchema,
+	RouteReliabilityIndexSchema,
 	RepeatOffendersSchema,
 	HotspotsSchema,
 	NetworkTrendSchema,
@@ -102,6 +103,11 @@ const FAMILIES: Family[] = [
 		label: 'receipts_index',
 		mirror: 'historic_receipts_index.schema.json',
 		schema: ReceiptsIndexSchema,
+	},
+	{
+		label: 'route_reliability_index',
+		mirror: 'historic_route_reliability_index.schema.json',
+		schema: RouteReliabilityIndexSchema,
 	},
 	{
 		label: 'repeat_offenders',
@@ -365,9 +371,9 @@ describe('Gate B — Zod ⇔ canonical JSON-Schema conformance', () => {
 			missingFiles,
 			`FAMILIES references a mirror file that is not on disk: ${missingFiles.join(', ')}`,
 		).toEqual([]);
-		// 21 canonical surfaces (live 5 + static 6 + historic 8 + manifest + provenance).
-		expect(onDisk.size).toBe(21);
-		expect(FAMILIES.length).toBe(21);
+		// 22 canonical surfaces (live 5 + static 6 + historic 9 + manifest + provenance).
+		expect(onDisk.size).toBe(22);
+		expect(FAMILIES.length).toBe(22);
 	});
 
 	for (const family of FAMILIES) {

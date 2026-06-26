@@ -38,6 +38,7 @@ export const ManifestHistoricFilesSchema = z.object({
 	// DATA time of the current historic build; null = historic tier never published.
 	generated_utc: isoUtc().nullable().optional(),
 	route_reliability_prefix: z.string().optional(),
+	route_reliability_index: z.string().optional(),
 	stop_reliability_prefix: z.string().optional(),
 	// HTTP 404 on a per-entity fetch means "no data for this entity" → render
 	// empty state, not an error (see prefix field descriptions in the schema).

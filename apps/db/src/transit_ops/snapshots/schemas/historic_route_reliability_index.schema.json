@@ -1,0 +1,21 @@
+{
+  "properties": {
+    "generated_utc": {
+      "title": "Generated Utc",
+      "type": "string"
+    },
+    "route_ids": {
+      "description": "Route ids with a published per-route reliability file in THIS run, ascending; fetch {route_reliability_prefix}{route_id}.json. The always-current daily set (the static routes_index `reliability` flag can lag this); a route absent here has no published reliability file.",
+      "items": {
+        "type": "string"
+      },
+      "title": "Route Ids",
+      "type": "array"
+    }
+  },
+  "required": [
+    "generated_utc"
+  ],
+  "title": "RouteReliabilityIndex",
+  "type": "object"
+}

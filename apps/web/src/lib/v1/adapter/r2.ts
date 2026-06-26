@@ -38,6 +38,7 @@ import { HotspotsSchema } from '$lib/v1/schemas/hotspots';
 import { RepeatOffendersSchema } from '$lib/v1/schemas/repeat_offenders';
 import { AlertHistorySchema } from '$lib/v1/schemas/alert_history';
 import { ReceiptsIndexSchema } from '$lib/v1/schemas/receipts_index';
+import { RouteReliabilityIndexSchema } from '$lib/v1/schemas/route_reliability_index';
 import { ReceiptSchema } from '$lib/v1/schemas/receipts';
 import { RouteReliabilitySchema } from '$lib/v1/schemas/route_reliability';
 import { StopReliabilitySchema } from '$lib/v1/schemas/stop_reliability';
@@ -76,6 +77,7 @@ const DEFAULTS = {
 		alert_history: 'historic/alert_history.json',
 		receipts_index: 'historic/receipts/index.json',
 		route_reliability_prefix: 'historic/route_reliability/',
+		route_reliability_index: 'historic/route_reliability/index.json',
 		stop_reliability_prefix: 'historic/stop_reliability/',
 		receipts_prefix: 'historic/receipts/',
 	},
@@ -328,6 +330,22 @@ export const r2Adapter: ContentAdapter = {
 				SLOW_CACHE,
 				ctx,
 			);
+		},
+		routeReliabilityIndex: async (ctx) => {
+			const m = await loadManifest(ctx);
+			const url = resolveUrl(
+				m.files.historic?.route_reliability_index ?? DEFAULTS.historic.route_reliability_index,
+			);
+			// 404 -> null (the index is not published yet): the list loader falls back to the
+			// legacy routes_index `reliability` flag, so the rollout window never breaks.
+			const value = await getEntityJson(
+				url,
+				RouteReliabilityIndexSchema,
+				'historic.routeReliabilityIndex',
+				fetchOf(ctx),
+				{ cache: SLOW_CACHE, signal: ctx?.signal },
+			);
+			return value ?? null;
 		},
 		receipt: async (date, ctx) => {
 			const m = await loadManifest(ctx);
