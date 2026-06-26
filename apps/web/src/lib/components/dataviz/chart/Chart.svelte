@@ -20,6 +20,7 @@
 	import HistogramMark from './marks/HistogramMark.svelte';
 	import DotStripMark from './marks/DotStripMark.svelte';
 	import MagnitudeBarsMark from './marks/MagnitudeBarsMark.svelte';
+	import DumbbellMark from './marks/DumbbellMark.svelte';
 	import type { ChartSpec } from './ChartSpec';
 
 	export interface ChartProps {
@@ -47,6 +48,8 @@
 	<DotStripMark {spec} class={className} />
 {:else if spec.kind === 'magnitude-bars'}
 	<MagnitudeBarsMark {spec} class={className} />
+{:else if spec.kind === 'dumbbell'}
+	<DumbbellMark {spec} class={className} />
 {:else}
 	<!--
 		Pending branches (added as each family migrates, each gate-green + browser-verified):

@@ -21,6 +21,8 @@ export type {
 	MagnitudeDatum,
 	DotStripSpec,
 	DotStripDatum,
+	DumbbellSpec,
+	DumbbellDatum,
 	TrendSpec,
 	TrendDatum,
 	CycleSpec,

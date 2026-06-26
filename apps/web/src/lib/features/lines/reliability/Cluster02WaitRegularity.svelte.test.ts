@@ -58,23 +58,29 @@ describe('Cluster02WaitRegularity', () => {
 
 		// Cluster overline + both sub-section labels present.
 		expect(screen.getByText(copy.clusters.waitRegularity)).toBeInTheDocument();
-		expect(screen.getByText('Wait by shift')).toBeInTheDocument();
+		// "Wait by shift" + the shift labels now appear in BOTH the per-shift detail rows and
+		// the consolidated dumbbell's sr-table, so allow multiple matches.
+		expect(screen.getAllByText('Wait by shift').length).toBeGreaterThan(0);
 		expect(screen.getByText('Service span')).toBeInTheDocument();
 
 		// Both shifts render with their excess-wait display.
-		expect(screen.getByText('AM peak')).toBeInTheDocument();
-		expect(screen.getByText('Midday')).toBeInTheDocument();
+		expect(screen.getAllByText('AM peak').length).toBeGreaterThan(0);
+		expect(screen.getAllByText('Midday').length).toBeGreaterThan(0);
 		// Excess wait shows in the RankedRow display.
 		expect(screen.getAllByText('2.4 min').length).toBeGreaterThanOrEqual(1);
 
-		// P8: each shift renders a scheduled-vs-observed dumbbell with both endpoints
-		// + the excess-wait span (AM-peak scheduled 6, observed 8.4).
-		const dumbbells = document.querySelectorAll('[data-slot="dumbbell"]');
-		expect(dumbbells.length).toBeGreaterThanOrEqual(2);
-		const amDumbbell = dumbbells[0];
-		expect(amDumbbell.querySelector('circle[data-end="scheduled"]')).not.toBeNull();
-		expect(amDumbbell.querySelector('circle[data-end="observed"]')).not.toBeNull();
-		expect(amDumbbell.querySelector('[data-slot="dumbbell-span"]')).not.toBeNull();
+		// S7 A8: all shifts render in ONE consolidated scheduled-vs-observed dumbbell mark.
+		// LayerChart marks mount behind ChartFrame's measured-size gate (not in the no-layout
+		// env), so assert the mark + its AT-fallback table (each row carries scheduled +
+		// observed). AM-peak scheduled 6, observed 8.4. Geometry verified in headless Chrome.
+		const dumbbell = document.querySelector('[data-slot="dumbbell-mark"]');
+		expect(dumbbell).not.toBeNull();
+		const dumbbellRows = dumbbell!.querySelectorAll('tbody tr');
+		expect(dumbbellRows.length).toBeGreaterThanOrEqual(2);
+		const amRow = [...dumbbellRows].find((r) => /AM peak/.test(r.textContent || ''));
+		const amCells = amRow!.querySelectorAll('td');
+		expect(amCells[0]?.textContent).toBe('6'); // scheduled
+		expect(amCells[1]?.textContent).toBe('8.4'); // observed
 
 		// P8: the dedicated CoV + bunched magnitude bars render (formerly subtitle text).
 		const regBars = document.querySelectorAll('[data-slot="regularity-bars"]');

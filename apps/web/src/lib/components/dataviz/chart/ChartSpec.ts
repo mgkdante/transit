@@ -40,6 +40,7 @@ export type AbsoluteDomain = readonly [number, number];
 export type ChartKind =
 	| 'magnitude-bars'
 	| 'dot-strip'
+	| 'dumbbell'
 	| 'trend'
 	| 'cycle'
 	| 'histogram'
@@ -58,6 +59,7 @@ export type ChartKind =
 export const MAGNITUDE_KINDS = [
 	'magnitude-bars',
 	'dot-strip',
+	'dumbbell',
 	'trend',
 	'cycle',
 	'histogram',
@@ -327,10 +329,48 @@ export interface AbsenceSpec extends ChartSpecBase {
 	readonly variant?: 'inline' | 'block';
 }
 
+/** One row of a dumbbell — two values (scheduled vs observed) sharing a label. */
+export interface DumbbellDatum {
+	readonly key: string;
+	readonly label: string;
+	/** Reference endpoint (e.g. scheduled headway, min). */
+	readonly scheduled: number | null;
+	/** Actual endpoint (e.g. observed headway, min) — the severity-coloured dot. */
+	readonly observed: number | null;
+	/** The gap (e.g. excess wait, min) — for the tooltip. */
+	readonly excess?: number | null;
+	/** Severity of the OBSERVED endpoint (drives its dot colour). */
+	readonly severity?: SeverityCode;
+	/** Optional secondary tooltip line (e.g. "CoV 0.4 · 28% bunched"). */
+	readonly note?: string;
+	readonly absentReason?: AbsenceReasonKey;
+}
+
+/**
+ * A dumbbell / connected-dot plot (A8): one row per category, two endpoints joined by a
+ * connector so the GAP reads at a glance (scheduled ●——● observed headway). A magnitude
+ * kind — the value axis is the same fixed zero-based domain for both endpoints.
+ */
+export interface DumbbellSpec extends ChartSpecBase {
+	readonly kind: 'dumbbell';
+	readonly domain: AbsoluteDomain;
+	readonly unit: string;
+	/** Localized value-axis (x) title. */
+	readonly xLabel?: string;
+	readonly rows: readonly DumbbellDatum[];
+	/** Colour family for the observed dot — always a dataviz scale. */
+	readonly scale: 'status' | 'severity' | 'occupancy';
+	/** Legend / tooltip label for the reference (scheduled) endpoint. */
+	readonly scheduledLabel: string;
+	/** Legend / tooltip label for the actual (observed) endpoint. */
+	readonly observedLabel: string;
+}
+
 /** The fat discriminated union — every reliability visual is one of these. */
 export type ChartSpec =
 	| MagnitudeBarsSpec
 	| DotStripSpec
+	| DumbbellSpec
 	| TrendSpec
 	| CycleSpec
 	| HistogramSpec

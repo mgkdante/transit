@@ -13,7 +13,7 @@ const base = { title: 't', locale: 'en' } as const;
 describe('isMagnitudeKind', () => {
 	it('flags exactly the cross-view magnitude kinds', () => {
 		expect([...MAGNITUDE_KINDS].sort()).toEqual(
-			['bullet', 'cycle', 'dot-strip', 'histogram', 'magnitude-bars', 'trend'].sort(),
+			['bullet', 'cycle', 'dot-strip', 'dumbbell', 'histogram', 'magnitude-bars', 'trend'].sort(),
 		);
 		for (const k of MAGNITUDE_KINDS) expect(isMagnitudeKind(k)).toBe(true);
 		for (const k of ['stacked-share', 'heatmap', 'metric', 'absence'] as const) {

@@ -33,9 +33,10 @@
 		RankedRow,
 		ExplainedMetricCard,
 		ServiceSpanTimeline,
-		Dumbbell,
 		SeverityBar,
 	} from '$lib/components/dataviz';
+	import { Chart } from '$lib/components/dataviz/chart';
+	import { selectHeadwayDumbbell } from './selectors/headwayDumbbell';
 	import MetricDisplay from '$lib/components/brand/MetricDisplay.svelte';
 	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
 	import { AbsentValue } from '$lib/components/edge';
@@ -124,6 +125,8 @@
 		readonly covMagnitude: (shift: string) => string;
 		/** a11y prefix for the per-shift bunched-share magnitude bar. */
 		readonly bunchedMagnitude: (shift: string) => string;
+		/** Value-axis title for the scheduled-vs-observed headway dumbbell. */
+		readonly headwayAxis: string;
 	}
 
 	const BAND_COPY: Record<Locale, BandCopy> = {
@@ -148,6 +151,7 @@
 			dumbbellExcess: (value) => `Attente excédentaire ${value} min`,
 			covMagnitude: (shift) => `Régularité (CV), ${shift}`,
 			bunchedMagnitude: (shift) => `Part de bus collés, ${shift}`,
+			headwayAxis: 'Intervalle (min)',
 		},
 		en: {
 			headwaySection: 'Wait by shift',
@@ -170,6 +174,7 @@
 			dumbbellExcess: (value) => `Excess wait ${value} min`,
 			covMagnitude: (shift) => `Regularity (CoV), ${shift}`,
 			bunchedMagnitude: (shift) => `Bunched share, ${shift}`,
+			headwayAxis: 'Headway (min)',
 		},
 	};
 
@@ -306,6 +311,40 @@
 	const mainRows = $derived(primaryRows.length > 0 ? primaryRows : advancedRows);
 	const hasAdvancedReveal = $derived(primaryRows.length > 0 && advancedRows.length > 0);
 
+	// §02 headway DUMBBELL (A8): ALL primary shifts in ONE comparable chart on the fixed
+	// HEADWAY_DOMAIN — scheduled ● —— ● observed, the connector span = the excess wait, so
+	// the gap reads at a glance AND across shifts. Severity (bunching) colours the observed
+	// dot; CoV + bunched ride the hover tooltip. Replaces the N isolated per-row dumbbells
+	// with one cross-shift comparison (the per-shift detail rows stay below for the drill).
+	const headwayDumbbell = $derived(
+		selectHeadwayDumbbell(
+			mainRows.map((r, i) => ({
+				key: `${r.shift}-${i}`,
+				label: shiftLabel(r),
+				scheduled: r.scheduled,
+				observed: r.observed,
+				excess: r.excessWait,
+				severity: r.severity,
+				note:
+					[
+						r.cov != null ? `${terms.spread} ${fmtCov(r.cov)}` : null,
+						r.bunched != null ? `${terms.clumped} ${pct(r.bunched)}` : null,
+					]
+						.filter(Boolean)
+						.join(' · ') || undefined,
+			})),
+			locale,
+			{
+				title: t.headwaySection,
+				xLabel: t.headwayAxis,
+				unit: ' min',
+				scheduledLabel: terms.scheduledGap,
+				observedLabel: terms.observedGap,
+				noDataMarker: copy.strip.noData,
+			},
+		),
+	);
+
 	// The "observed gap by direction" disclosure as a real TABLE, not a tile cloud (operator
 	// ask). The advanced rows are a clean cube — shift × direction(0/1) × day-type(week/wknd)
 	// — so we PIVOT to one row per (shift, day-type) with the two directions as columns. A
@@ -429,6 +468,13 @@
 				</ExplainedMetricCard>
 			{/if}
 
+			<!-- A8: the consolidated scheduled-vs-observed DUMBBELL — ALL shifts in ONE chart on
+			     the fixed HEADWAY_DOMAIN, so the gap reads at a glance AND across the day. The
+			     <Chart> renders the honest-absence chip itself when no shift has both endpoints. -->
+			<div class="headway-dumbbell" data-slot="headway-dumbbell">
+				<Chart spec={headwayDumbbell.spec} />
+			</div>
+
 			{#snippet shiftItem(row: ShiftRow, i: number)}
 				<li class="shift-row">
 					<RankedRow
@@ -442,25 +488,6 @@
 						display={min(row.excessWait) ?? valueNoData}
 						aria-label={t.excessWaitMagnitude(shiftLabel(row))}
 						barInteractive
-					/>
-
-					<!-- P8: the scheduled-vs-observed DUMBBELL — two ticks (plan / real-world)
-					     joined by the excess-wait span on the FIXED HEADWAY_DOMAIN, so the same
-					     gap always renders at the same x. Replaces the isolated scheduled/observed/
-					     excess MetricDisplay tiles with their relationship in one glance. -->
-					<Dumbbell
-						scheduledMin={row.scheduled}
-						observedMin={row.observed}
-						excessMin={row.excessWait}
-						domain={HEADWAY_DOMAIN}
-						scheduledLabel={terms.scheduledGap}
-						observedLabel={terms.observedGap}
-						excessLabel={t.dumbbellExcess}
-						ariaLabel={t.dumbbellAria}
-						noDataLabel={valueNoData}
-						{locale}
-						absentReason="no-observations"
-						interactive
 					/>
 
 					<!-- P8: dedicated magnitude bars for the two regularity readings — CoV on
