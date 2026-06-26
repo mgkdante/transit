@@ -22,6 +22,7 @@
 	import MagnitudeBarsMark from './marks/MagnitudeBarsMark.svelte';
 	import DumbbellMark from './marks/DumbbellMark.svelte';
 	import LineMark from './marks/LineMark.svelte';
+	import BulletMark from './marks/BulletMark.svelte';
 	import type { ChartSpec } from './ChartSpec';
 
 	export interface ChartProps {
@@ -53,17 +54,14 @@
 	<DumbbellMark {spec} class={className} />
 {:else if spec.kind === 'line'}
 	<LineMark {spec} class={className} />
+{:else if spec.kind === 'bullet'}
+	<BulletMark {spec} class={className} />
 {:else}
 	<!--
 		Pending branches (added as each family migrates, each gate-green + browser-verified):
-		  P1.4 · trend          → LayerChart Spline + Area Wilson band (2 overlaid contexts for dual y)
-		  P1.5 · magnitude-bars → LayerChart Bars/Points (Wilson-lower rank, absolute domain)
-		         dot-strip      → LayerChart Points (hashJitter, never connected)
+		  P2.2 · metric         → a scalar tile (no data mark) — the number IS the value voice
+		         stacked-share  → LayerChart floating Bars (per-segment hover)
+		         heatmap        → LayerChart Cell grid (classed tiers, 2D per-cell hover)
 		         cycle          → LayerChart weekday small-multiples (shared y + mean rule)
-		         histogram      → LayerChart Bars (signed, diverging at 0; median + p90 ref)
-		         bullet         → delegate BulletKpi
-		         metric         → delegate MetricDisplay / ExplainedMetricCard
-		         stacked-share  → delegate StackedBar
-		         heatmap        → delegate Heatmap
 	-->
 {/if}

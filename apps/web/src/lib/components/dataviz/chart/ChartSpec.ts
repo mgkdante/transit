@@ -244,8 +244,8 @@ export interface HistogramSpec extends ChartSpecBase {
 }
 
 /**
- * A2 — bullet graph: a single measured value on a zero-based bar with qualitative bands
- * behind and a target tick. Delegated to BulletKpi.
+ * A2 — bullet graph: a single measured value on a zero-based bar with a target tick,
+ * showing where a KPI sits on its fixed domain. Rendered by BulletMark (LayerChart).
  */
 export interface BulletSpec extends ChartSpecBase {
 	readonly kind: 'bullet';
@@ -256,6 +256,12 @@ export interface BulletSpec extends ChartSpecBase {
 	readonly bands?: readonly number[];
 	readonly n?: number | null;
 	readonly absentReason?: AbsenceReasonKey;
+	/** Qualitative tone of the value bar — the dataviz STATUS scale (never --primary). */
+	readonly tone?: 'good' | 'warn' | 'bad' | 'neutral';
+	/** Axis / aria label for the measured value (e.g. "On-time %"). */
+	readonly xLabel?: string;
+	/** Plain-language label for the target tick in the tooltip (e.g. "target"). */
+	readonly targetLabel?: string;
 }
 
 /**

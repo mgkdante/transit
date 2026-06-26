@@ -24,11 +24,12 @@
 	import { fmtDelayMin, fmtPct } from '$lib/utils';
 	import type { SeverityCode } from '$lib/v1/schemas';
 	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
-	import { ExplainedMetricCard, SeverityBar } from '$lib/components/dataviz';
+	import { SeverityBar } from '$lib/components/dataviz';
 	import { Chart } from '$lib/components/dataviz/chart';
 	import { MaybeValue } from '$lib/components/edge';
 	import Detail from '$lib/components/shared/Detail.svelte';
 	import VerdictBanner from './VerdictBanner.svelte';
+	import MetricBullet from './MetricBullet.svelte';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
 	import { metricInfoFor, type MetricKey } from '$lib/features/metrics/metrics.content';
 	import { metricsCopy } from '$lib/features/metrics/metrics.copy';
@@ -36,10 +37,14 @@
 		shiftLabel as shiftGrainLabel,
 		severeShareToSeverity,
 		SEVERE_DOMAIN,
+		OTP_DOMAIN,
+		DELAY_POS_DOMAIN,
+		DELAY_DIST_DOMAIN,
 	} from '$lib/features/reliability/shiftGrains';
 	import { selectPunctualityTrend } from '../selectors/punctualityTrend';
 	import { selectPunctualityDistribution } from '../selectors/punctualityDistribution';
 	import { selectVerdict } from '../selectors/verdict';
+	import { selectBullet, otpTone } from '../selectors/bullet';
 	import type { PunctualityVM } from '../clusters';
 	import type { ReliabilityCopy } from '../reliability.copy';
 
@@ -70,6 +75,45 @@
 		return { ...i, label: explainerCopy.info.trigger(name), linkLabel: explainerCopy.info.link };
 	});
 	const shiftLabel = (g: string): string => shiftGrainLabel(g, locale);
+
+	// KPI bullets — each headline number gets a scale-context bullet beneath it (the
+	// "every KPI is a LayerChart mark" mandate). On-time carries the 80% SLA target tick +
+	// the band tone; the delay metrics ride a fixed delay domain with a neutral tone.
+	const otpBullet = $derived(
+		selectBullet(headline.otpPct, locale, {
+			title: copy.strip.otpPct,
+			xLabel: copy.strip.otpPct,
+			unit: copy.units.pct,
+			domain: OTP_DOMAIN,
+			target: 80,
+			tone: otpTone(headline.otpPct),
+			n: headline.observationCount,
+		}),
+	);
+	const avgBullet = $derived(
+		selectBullet(headline.avgDelayMin, locale, {
+			title: copy.strip.avgDelayMin,
+			xLabel: copy.strip.avgDelayMin,
+			unit: copy.units.min,
+			domain: DELAY_POS_DOMAIN,
+		}),
+	);
+	const p50Bullet = $derived(
+		selectBullet(headline.p50Min, locale, {
+			title: copy.strip.p50Min,
+			xLabel: copy.strip.p50Min,
+			unit: copy.units.min,
+			domain: DELAY_POS_DOMAIN,
+		}),
+	);
+	const p90Bullet = $derived(
+		selectBullet(headline.p90Min, locale, {
+			title: copy.strip.p90Min,
+			xLabel: copy.strip.p90Min,
+			unit: copy.units.min,
+			domain: DELAY_DIST_DOMAIN,
+		}),
+	);
 
 	// PRIMARY — OTP/avg-delay trend (grain-aware: day → 5 shifts, else dated series).
 	const isDayGrain = $derived(grain === 'day');
@@ -143,42 +187,39 @@
 	<VerdictBanner result={verdict} />
 
 	{#if !sectionEmpty}
-		<!-- KPI tiles — the verdict-backing metrics (each self-handles honest absence). -->
+		<!-- KPI tiles — each a text-led number + a LayerChart bullet (scale context). The
+		     bullet handles honest absence (no bar) + on-time carries the 80% target tick. -->
 		<div class="verdict-kpis" data-slot="verdict-kpis">
-			<ExplainedMetricCard
+			<MetricBullet
 				label={copy.strip.otpPct}
-				value={pct(headline.otpPct)}
-				info={otpInfo}
-				emptyLabel={copy.strip.noData}
-				absentReason="no-observations"
+				valueText={pct(headline.otpPct)}
+				spec={otpBullet}
 				{locale}
 				size="lg"
+				info={otpInfo}
 			/>
-			<ExplainedMetricCard
+			<MetricBullet
 				label={copy.strip.avgDelayMin}
-				value={min(headline.avgDelayMin)}
+				valueText={min(headline.avgDelayMin)}
+				spec={avgBullet}
+				{locale}
 				info={avgInfo}
-				emptyLabel={copy.strip.noData}
-				absentReason="no-observations"
-				{locale}
 			/>
-			<ExplainedMetricCard
+			<MetricBullet
 				label={copy.strip.p50Min}
-				value={min(headline.p50Min)}
+				valueText={min(headline.p50Min)}
+				spec={p50Bullet}
+				{locale}
 				info={p50Info}
-				sublabel={copy.strip.p50Caption}
-				emptyLabel={copy.strip.noData}
-				absentReason="no-observations"
-				{locale}
+				caption={copy.strip.p50Caption}
 			/>
-			<ExplainedMetricCard
+			<MetricBullet
 				label={copy.strip.p90Min}
-				value={min(headline.p90Min)}
-				info={p90Info}
-				sublabel={copy.strip.p90Caption}
-				emptyLabel={copy.strip.noData}
-				absentReason="no-observations"
+				valueText={min(headline.p90Min)}
+				spec={p90Bullet}
 				{locale}
+				info={p90Info}
+				caption={copy.strip.p90Caption}
 			/>
 		</div>
 
