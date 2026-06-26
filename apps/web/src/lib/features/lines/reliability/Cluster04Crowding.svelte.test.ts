@@ -131,51 +131,51 @@ describe('Cluster04Crowding — delay by crowding (G1)', () => {
 		isEmpty: false,
 	};
 
+	// S7 P1.5: the delay-by-crowding rows are now the A12 magnitude-bars mark on the fixed
+	// occupancy axis. The LayerChart bars mount only behind ChartFrame's measured-size gate
+	// (not in the no-layout test env), so we assert the mark + its AT-fallback table (rows
+	// keyed by occupancy code); the bar geometry + tooltip are verified in headless Chrome.
 	it('renders the present bands with their avg delay, ordered empty→full', () => {
 		const { container } = render(Cluster04Crowding, {
 			props: { vm: withDelay, locale: 'en', copy },
 		});
 		const sub = container.querySelector('[data-slot="delay-by-crowding"]');
 		expect(sub).not.toBeNull();
-		expect(within(sub as HTMLElement).getByText(copy.delayByCrowding.heading)).toBeInTheDocument();
-		// Present bands read their delay.
-		expect(within(sub as HTMLElement).getByText('1.2 min')).toBeInTheDocument();
-		expect(within(sub as HTMLElement).getByText('4.5 min')).toBeInTheDocument();
-		// Secondary p50 caption rides the many_seats band.
+		// The heading appears as the SectionLabel + the mark's sr-table caption.
 		expect(
-			within(sub as HTMLElement).getByText(copy.delayByCrowding.typical('0.4 min')),
-		).toBeInTheDocument();
-		// Natural occupancy order (empty→full): standing precedes full in the DOM.
-		const rows = sub!.querySelectorAll('[data-slot="delay-by-crowding-row"]');
-		const order = [...rows].map((r) => r.getAttribute('data-band'));
+			within(sub as HTMLElement).getAllByText(copy.delayByCrowding.heading).length,
+		).toBeGreaterThan(0);
+		const mark = sub!.querySelector('[data-slot="magnitude-bars-mark"]') as HTMLElement;
+		expect(mark).not.toBeNull();
+		// Fixed occupancy order (empty→full).
+		const order = [...mark.querySelectorAll('tbody tr')].map((r) => r.getAttribute('data-key'));
 		expect(order).toEqual(['empty', 'many_seats', 'few_seats', 'standing', 'full']);
+		// Present bands carry their delay value in the AT table.
+		expect(mark.querySelector('tr[data-key="many_seats"] td')?.textContent).toContain('1.2');
+		expect(mark.querySelector('tr[data-key="standing"] td')?.textContent).toContain('4.5');
 	});
 
-	it('shows the styled honest-absence chip (never "·"/0) for a band with a null delay', () => {
+	it('marks an absent band "no data" (never "·"/0) instead of a fabricated bar', () => {
 		const { container } = render(Cluster04Crowding, {
 			props: { vm: withDelay, locale: 'en', copy },
 		});
-		const sub = container.querySelector('[data-slot="delay-by-crowding"]') as HTMLElement;
-		// P6: each band is a RankedRow bar; a present-but-null or contract-omitted band
-		// renders the styled honest-absence chip in its display slot, never a fabricated 0.
-		// `full` is present with a null delay → absence chip.
-		expect(sub.querySelector('[data-band="full"] [data-slot="absent-value"]')).not.toBeNull();
-		// `empty` + `few_seats` are absent from the contract → also the styled absence chip.
-		expect(sub.querySelector('[data-band="empty"] [data-slot="absent-value"]')).not.toBeNull();
-		// Every absent band carries the reason-typed chip, never a fabricated 0.
-		expect(sub.querySelectorAll('[data-slot="absent-value"]').length).toBeGreaterThanOrEqual(2);
+		const mark = container.querySelector('[data-slot="magnitude-bars-mark"]') as HTMLElement;
+		// `full` is present with a null delay → its row label reads "no data", value cell empty.
+		const full = mark.querySelector('tr[data-key="full"]') as HTMLElement;
+		expect(full.querySelector('th')?.textContent).toContain(copy.strip.noData);
+		expect(full.querySelector('td')?.textContent?.trim()).toBe('');
+		// `empty` is contract-omitted → also the "no data" marker, never a fabricated 0.
+		expect(mark.querySelector('tr[data-key="empty"] th')?.textContent).toContain(copy.strip.noData);
 	});
 
-	it('shows ONE honest no-data note when there is no delay-by-crowding data at all', () => {
+	it('shows ONE honest no-data chip when there is no delay-by-crowding data at all', () => {
 		const { container } = render(Cluster04Crowding, {
 			props: { vm: populated, locale: 'en', copy },
 		});
 		const sub = container.querySelector('[data-slot="delay-by-crowding"]') as HTMLElement;
-		// The styled honest-absence chip (says WHY), never a raw line / fabricated grid.
-		expect(
-			sub.querySelector('[data-slot="delay-by-crowding-empty"] [data-slot="absent-value"]'),
-		).not.toBeNull();
-		expect(sub.querySelector('[data-slot="delay-by-crowding-row"]')).toBeNull();
+		// The <Chart> renders the styled honest-absence chip itself (says WHY), no bars mark.
+		expect(sub.querySelector('[data-slot="absent-value"]')).not.toBeNull();
+		expect(sub.querySelector('[data-slot="magnitude-bars-mark"]')).toBeNull();
 	});
 
 	it('surfaces delay-by-crowding even when the occupancy mix is empty (no telemetry)', () => {
@@ -195,8 +195,8 @@ describe('Cluster04Crowding — delay by crowding (G1)', () => {
 			container.querySelector('[data-slot="crowding-empty"] [data-slot="absent-value"]'),
 		).not.toBeNull();
 		// ...but the delay-by-crowding sub-block still renders its data.
-		const sub = container.querySelector('[data-slot="delay-by-crowding"]') as HTMLElement;
-		expect(within(sub).getByText('3.3 min')).toBeInTheDocument();
+		const mark = container.querySelector('[data-slot="magnitude-bars-mark"]') as HTMLElement;
+		expect(mark.querySelector('tr[data-key="standing"] td')?.textContent).toContain('3.3');
 	});
 
 	it('drives the headline off the GRAIN-AWARE mix (mixByGrain) when present', () => {

@@ -90,6 +90,8 @@ export interface MagnitudeDatum {
 	readonly status?: StatusCode;
 	/** Optional drill link — clicking the row navigates here (e.g. the stop's page). */
 	readonly href?: string;
+	/** Optional secondary tooltip line (e.g. "median 0.4 min · n=120"). */
+	readonly note?: string;
 	/** Reason for an absent datum, shown on hover / in the no-data slot. */
 	readonly absentReason?: AbsenceReasonKey;
 }

@@ -21,12 +21,10 @@
 	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
 	import MetricDisplay from '$lib/components/brand/MetricDisplay.svelte';
 	import { AbsentValue } from '$lib/components/edge';
-	import { StackedBar, RankedRow, type StackedSegment } from '$lib/components/dataviz';
-	import {
-		DELAY_POS_DOMAIN,
-		delayMinToSeverity,
-		weekdayLabel,
-	} from '$lib/features/reliability/shiftGrains';
+	import { StackedBar, type StackedSegment } from '$lib/components/dataviz';
+	import { Chart } from '$lib/components/dataviz/chart';
+	import { selectCrowdingDelay } from './selectors/crowdingDelay';
+	import { weekdayLabel } from '$lib/features/reliability/shiftGrains';
 	import { OCCUPANCY_CODES, type OccupancyCode } from '$lib/v1/schemas';
 	import type { Locale } from '$lib/i18n';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
@@ -158,46 +156,29 @@
 	const fmtMin = (v: number | null | undefined): string | null =>
 		sharedFmtDelayMin(v, { rounding: 'fixed1' });
 
-	// Index the sparse contract cells by band so the fixed-axis lookup is O(1). A
-	// plain record (not a Map) keeps this a pure derived value with no reactivity.
-	const delayByBand = $derived.by(() => {
-		const index: Record<string, (typeof vm.delayByCrowding)[number]> = {};
-		for (const cell of vm.delayByCrowding) index[cell.band] = cell;
-		return index;
-	});
-
-	// The fixed occupancy axis, in natural order (empty→full). Each row resolves to
-	// its delay display or the honest no-data message; `present` distinguishes a
-	// contract-omitted band from a present-but-null one (both still honest, but the
-	// secondary p50 is only meaningful for a present cell).
-	const delayRows = $derived(
-		OCCUPANCY_CODES.map((code: OccupancyCode) => {
-			const cell = delayByBand[code];
-			const display = fmtMin(cell?.avg_delay_min);
-			// S7 P6: the avg delay is now a MAGNITUDE BAR on the fixed DELAY_POS_DOMAIN —
-			// same delay reads the same length here as on the worst-stops list — sorted by
-			// the fixed crowding axis so "more crowded → more delay" reads as a slope. The
-			// p50 typical + the sample n (observation_count, day_count: computed-but-
-			// unrendered until now) ride the subtitle as the honesty denominator.
-			const p50 = fmtMin(cell?.p50_min);
-			const n = cell?.observation_count ?? null;
-			const typical = p50 ? copy.delayByCrowding.typical(p50) : null;
-			const nNote = n != null ? `n=${n}` : null;
-			return {
-				code,
-				label: bands[code],
-				present: cell != null,
-				display: display ?? copy.strip.noData,
-				hasDelay: display != null,
-				value: cell?.avg_delay_min ?? null,
-				severity: delayMinToSeverity(cell?.avg_delay_min ?? null),
-				subtitle: [typical, nNote].filter(Boolean).join(' · ') || undefined,
-			};
+	// §04 delay-by-crowding MAGNITUDE BARS (A12) — selectCrowdingDelay owns the fixed
+	// empty→full occupancy axis, the abs DELAY_POS_DOMAIN, and the honest per-band absence
+	// (an omitted/null band keeps its labelled row but reads "no data", never a fake-0 bar).
+	// "More crowded → more delay" reads as a downward slope, and the same delay renders the
+	// same length as the worst-stops list. The p50-typical + sample n ride the hover tooltip
+	// via `note`. Rendered through the ONE <Chart> (it shows the honest-absence chip itself
+	// when no band has a measured delay).
+	const crowdingDelay = $derived(
+		selectCrowdingDelay(vm.delayByCrowding, locale, {
+			title: copy.delayByCrowding.heading,
+			xLabel: copy.strip.avgDelayMin,
+			unit: copy.units.min,
+			bandLabel: (code) => bands[code],
+			noDataMarker: copy.strip.noData,
+			noteFor: (cell) => {
+				const p50 = fmtMin(cell.p50_min);
+				const n = cell.observation_count ?? null;
+				const typical = p50 ? copy.delayByCrowding.typical(p50) : null;
+				const nNote = n != null ? `n=${n}` : null;
+				return [typical, nNote].filter(Boolean).join(' · ') || undefined;
+			},
 		}),
 	);
-
-	// The delay sub-block has data when ANY band carries a real avg delay.
-	const hasDelayByCrowding = $derived(delayRows.some((r) => r.hasDelay));
 </script>
 
 <section
@@ -263,33 +244,9 @@
 	     no-data message in that cell, never a "·" / fake 0. -->
 	<div class="crowding-delay" data-slot="delay-by-crowding">
 		<SectionLabel text={copy.delayByCrowding.heading} variant="metric" />
-		{#if hasDelayByCrowding}
-			<ul class="crowding-delay-list" aria-label={copy.delayByCrowding.heading}>
-				{#each delayRows as row (row.code)}
-					<li data-slot="delay-by-crowding-row" data-band={row.code}>
-						<RankedRow
-							rank={0}
-							title={row.label}
-							subtitle={row.subtitle}
-							severity={row.severity}
-							value={row.value}
-							domain={DELAY_POS_DOMAIN}
-							unit=" min"
-							showRank={false}
-							display={row.hasDelay ? row.display : null}
-							absentReason="no-observations"
-							{locale}
-							barInteractive
-						/>
-					</li>
-				{/each}
-			</ul>
-		{:else}
-			<!-- Entirely absent → ONE honest no-data chip (says WHY), never a raw line / fake grid. -->
-			<div data-slot="delay-by-crowding-empty">
-				<AbsentValue variant="block" reason="no-observations" {locale} />
-			</div>
-		{/if}
+		<!-- A12 magnitude bars on the fixed occupancy axis; the <Chart> renders the
+		     honest-absence chip itself when no band carries a measured delay. -->
+		<Chart spec={crowdingDelay.spec} />
 	</div>
 
 	{#if weekdayWeekendCols}
@@ -437,17 +394,6 @@
 		gap: var(--spacing-2, 0.5rem);
 		margin-top: var(--spacing-3, 0.75rem);
 	}
-	/* The delay-by-crowding bars (P6): RankedRow magnitude bars stacked in the fixed
-	   occupancy order, so "more crowded → more delay" reads as a slope down the list. */
-	.crowding-delay-list {
-		display: flex;
-		flex-direction: column;
-		gap: 0.4rem;
-		margin: 0;
-		padding: 0;
-		list-style: none;
-	}
-
 	/* P11 per-ISO-weekday small multiple: a Mon→Sun grid of occupancy strips. auto-fit
 	   so it packs as many ~9rem strips per row as fit (≈7 on a wide cluster, fewer on
 	   narrow), each cell its own label + bar (or honest no-data chip). 8px-grid gaps. */

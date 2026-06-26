@@ -89,6 +89,7 @@
 							label={spec.xLabel ?? spec.title}
 							value={`${fmt(data.value)}${spec.unit}`}
 						/>
+						{#if data.note}<Tooltip.Item label="" value={data.note} />{/if}
 						{#if data.href}<Tooltip.Item label="" value="↦ open stop" />{/if}
 					</Tooltip.List>
 				{/snippet}
@@ -104,7 +105,7 @@
 		</thead>
 		<tbody>
 			{#each spec.rows as r (r.key)}
-				<tr>
+				<tr data-key={r.key}>
 					<th scope="row">
 						{#if r.href}<a href={r.href}>{r.label}</a>{:else}{r.label}{/if}
 					</th>
