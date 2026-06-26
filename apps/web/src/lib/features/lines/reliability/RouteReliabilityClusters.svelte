@@ -513,6 +513,14 @@
 	}
 	.reliability-band--strip {
 		padding-bottom: clamp(1.5rem, 4vw, 2.25rem);
-		border-bottom: 1px solid var(--border);
+	}
+	/* Section DIFFERENTIATION (S7 UX pass 1): each numbered band (01→05) opens with a
+	   quiet full-width hairline + extra top breathing room, so the sections read as
+	   distinct units rather than one long scroll. The hairline sits in the inter-band
+	   whitespace (the flex gap above + this padding below it), giving a clear "new
+	   section" break without a heavy divider. The strip (00) leads with no rule above. */
+	.reliability-band:not(.reliability-band--strip) {
+		border-top: 1px solid var(--border);
+		padding-top: clamp(1.75rem, 4vw, 2.75rem);
 	}
 </style>
