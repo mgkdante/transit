@@ -38,12 +38,13 @@
 	import MetricDisplay from '$lib/components/brand/MetricDisplay.svelte';
 	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
 	import { AbsentValue, MaybeValue } from '$lib/components/edge';
-	import { SeverityBar, RankedRow, ChartLegend, HEATMAP_NODATA } from '$lib/components/dataviz';
+	import { SeverityBar, RankedRow } from '$lib/components/dataviz';
 	import { Chart } from '$lib/components/dataviz/chart';
 	import { selectPunctualityTrend } from './selectors/punctualityTrend';
 	import { selectPunctualityDistribution } from './selectors/punctualityDistribution';
 	import { selectPunctualityTimeOfDay } from './selectors/punctualityTimeOfDay';
 	import { selectWeakStops } from './selectors/weakStops';
+	import { selectPunctualityCrosstab } from './selectors/punctualityCrosstab';
 	import { GrainPicker, type GrainSegment } from '$lib/components/surface';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
 	import { metricInfoFor, type MetricKey } from '$lib/features/metrics/metrics.content';
@@ -52,12 +53,9 @@
 	import type { ReliabilityCopy } from './reliability.copy';
 	import {
 		shiftLabel as shiftGrainLabel,
-		dayTypeLabel as dayTypeGrainLabel,
 		severeShareToSeverity,
-		SHIFT_GRAIN_ORDER,
 		DAY_TYPE_GRAIN_ORDER,
 		SEVERE_DOMAIN,
-		OTP_DOMAIN,
 	} from '$lib/features/reliability/shiftGrains';
 
 	export interface Cluster01PunctualityProps {
@@ -270,190 +268,21 @@
 		!vm.peakOffPeak.isEmpty && (hasShiftStrip || dayTypePeakRows.length > 0),
 	);
 
-	/* ── By shift and day type (G1) — STEPPED HEATMAP ─────────────────────────
-	   The Tier-3 OTP crosstab as a fixed 5-shift × 2-day-type stepped heatmap. The
-	   contract is SPARSE (only cells WITH observations are present), so every grid
-	   cell is resolved against an index. Each cell's fill is the cell's REAL OTP %
-	   mapped through the FIXED, zero-based OTP_DOMAIN ([0,100]) onto the shared
-	   --dataviz-heatmap-* ramp — NEVER normalized to the in-view best cell, so the
-	   same OTP paints the same colour on every route/grain/refresh.
-
-	   Honesty rules (the repeat_problem_score lesson):
-	     - A cell with no observations, a null OTP, OR fewer than MIN_TRUSTED_OBS
-	       observations is GREYED to the dedicated no-data swatch — never coloured
-	       like a real low value, never a fabricated 0 / "·" / em-dash.
-	     - Colour is never the sole channel: every trusted cell prints its OTP value
-	       + a bucket glyph; no-data cells carry the no-data glyph; the SVG cell is a
-	       labelled role=img and the table caption stays the a11y source of truth. */
-	// A cell needs at least this many observations before its OTP is trusted enough to
-	// paint as a real value. Below it → the honest no-data swatch (n<30 lesson).
-	const MIN_TRUSTED_OBS = 30;
-
-	// Index the sparse cells by "shift|day_type" for O(1) grid lookup. A plain record
-	// (not a Map) keeps this a pure derived value with no reactivity.
-	const crosstabIndex = $derived.by(() => {
-		const index: Record<string, (typeof vm.byShiftDaytype)[number]> = {};
-		for (const cell of vm.byShiftDaytype) index[`${cell.shift}|${cell.day_type}`] = cell;
-		return index;
-	});
-
-	type HeatCell = {
-		readonly shift: string;
-		readonly dayType: string;
-		/** Real OTP % when trusted (cell present, OTP non-null, obs >= MIN_TRUSTED_OBS). */
-		readonly otp: number | null;
-		/** Whether this cell paints a real value (vs the no-data swatch). */
-		readonly trusted: boolean;
-		/** Observation count when the contract carried it (for the tooltip). */
-		readonly obs: number | null;
-		/** Avg delay for the tooltip secondary reading (when present). */
-		readonly avgDelay: string | null;
-		/** The cell fill — a fixed-domain ramp token, or the no-data swatch. */
-		readonly fill: string;
-		/**
-		 * Data-bar length (0–100%): the OTP's POSITION on a fixed, threshold-tuned scale
-		 * ([60,100]%, so the 80% target sits at the midpoint). The research's #1 finding —
-		 * position/length out-reads colour — so the bar is the primary value channel, the
-		 * number the exact read, and the diverging colour a redundant fast-scan layer.
-		 */
-		readonly barPct: number;
-		/** The bucket glyph (paired with colour) — or the no-data glyph. */
-		readonly glyph: string;
-		/** The visible cell label: the OTP %, or the no-data text. */
-		readonly display: string;
-	};
-
-	// 5 sequential OTP bucket glyphs (low→high fill) paired with the heatmap ramp so
-	// colour is never the sole channel; the no-data glyph is distinct (the honesty mark).
-	const OTP_BUCKET_GLYPH = ['░', '▒', '▓', '▔', '█'] as const;
-	const NODATA_GLYPH = '◌';
-
-	// OTP hugs a threshold (real values cluster ~80-95%), so a sequential ramp over the
-	// fixed [0,100] domain crushes every cell into ONE step (all the same colour) AND
-	// paints a great 94% alarm-red. Use a DIVERGING scale around the 80% target instead
-	// (the spec's call for OTP-near-threshold): at/above target leans to the on-time
-	// GREEN (intensity by how far above), below leans to the late RED — a FIXED centre +
-	// endpoints (target + OTP_DOMAIN), so colour is stable across routes, never the in-
-	// view best cell. Solid pre-mixed token (color-mix to the signage bg, never alpha).
-	const [OTP_LO, OTP_HI] = OTP_DOMAIN;
-	const OTP_TARGET = 80;
-	function otpCellColor(otp: number): string {
-		if (otp >= OTP_TARGET) {
-			const t = Math.min(1, (otp - OTP_TARGET) / (OTP_HI - OTP_TARGET));
-			return `color-mix(in oklab, var(--dataviz-status-on-time) ${Math.round(28 + t * 60)}%, var(--signage-bg))`;
-		}
-		const t = Math.min(1, (OTP_TARGET - otp) / (OTP_TARGET - OTP_LO));
-		return `color-mix(in oklab, var(--dataviz-status-late) ${Math.round(28 + t * 60)}%, var(--signage-bg))`;
-	}
-	// The glyph spreads over a MEANINGFUL OTP span (60-100%) so it differentiates the
-	// clustered-high range too (colour is never the sole channel). A fuller glyph = a
-	// higher OTP, agreeing with the green direction.
-	function otpBucketGlyph(otp: number): string {
-		const pos = Math.min(1, Math.max(0, (otp - 60) / (OTP_HI - 60)));
-		const idx = Math.min(OTP_BUCKET_GLYPH.length - 1, Math.floor(pos * OTP_BUCKET_GLYPH.length));
-		return OTP_BUCKET_GLYPH[idx];
-	}
-	// The data-bar length: the OTP's POSITION on the threshold-tuned [60,100] scale (60 =
-	// empty, the 80% target = midpoint, 100 = full). Non-zero-anchored ON PURPOSE so the
-	// clustered 80-95% range still differentiates by length; the exact % is always printed
-	// beside it (the research's "label every cell" rule), so the bar never misleads.
-	function otpBarPct(otp: number): number {
-		return Math.min(100, Math.max(0, ((otp - 60) / (OTP_HI - 60)) * 100));
-	}
-
-	// The resolved grid: one ROW per shift (canonical clock order), one COLUMN per
-	// day-type (weekday→weekend). Cells with no observations / null OTP / too few obs
-	// are greyed honestly, not coloured.
-	const heatRows = $derived(
-		SHIFT_GRAIN_ORDER.map((shift) => ({
-			shift,
-			label: shiftLabel(shift),
-			cells: DAY_TYPE_GRAIN_ORDER.map((dayType): HeatCell => {
-				const cell = crosstabIndex[`${shift}|${dayType}`];
-				const rawOtp = cell?.otp_pct ?? null;
-				const obs = cell?.observation_count ?? null;
-				// Trust requires a real OTP AND enough observations to back it.
-				const trusted = rawOtp != null && obs != null && obs >= MIN_TRUSTED_OBS;
-				const otp = trusted ? rawOtp : null;
-				return {
-					shift,
-					dayType,
-					otp,
-					trusted,
-					obs,
-					avgDelay: min(cell?.avg_delay_min),
-					fill: trusted ? otpCellColor(rawOtp) : HEATMAP_NODATA,
-					barPct: trusted ? otpBarPct(rawOtp) : 0,
-					glyph: trusted ? otpBucketGlyph(rawOtp) : NODATA_GLYPH,
-					display: trusted ? (pct(rawOtp) ?? copy.strip.noData) : copy.strip.noData,
-				};
-			}),
-		})),
+	/* ── By shift and day type (G1) — TWO LINES (S7 line-chart convergence) ───────
+	   The Tier-3 OTP crosstab is now the cohesive line language: weekday vs weekend
+	   on-time % across the day's shifts on the fixed OTP_DOMAIN. A cell below
+	   MIN_TRUSTED_OBS (or null OTP) is an honest GAP in its line, never a fake point.
+	   selectPunctualityCrosstab owns the trust filter + the spec; rendered via <Chart>. */
+	const crosstabLines = $derived(
+		selectPunctualityCrosstab(vm.byShiftDaytype, locale, {
+			title: copy.crosstab.heading,
+			xLabel: copy.crosstab.shiftHeader,
+			yLabel: copy.crosstab.heading,
+			shiftLabel: (s) => shiftGrainLabel(s, locale),
+			weekdayLabel: copy.peak.weekday,
+			weekendLabel: copy.peak.weekend,
+		}),
 	);
-
-	// The single strongest (highest-OTP) trusted cell, annotated as the standout. A flat
-	// reduce over the fixed grid — no Math.max over a spread set (doctrine-clean).
-	const hottestKey = $derived.by<string | null>(() => {
-		let bestKey: string | null = null;
-		let bestOtp = -Infinity;
-		for (const row of heatRows) {
-			for (const cell of row.cells) {
-				if (cell.otp != null && cell.otp > bestOtp) {
-					bestOtp = cell.otp;
-					bestKey = `${cell.shift}|${cell.dayType}`;
-				}
-			}
-		}
-		return bestKey;
-	});
-
-	// The heatmap renders only when SOME cell is trusted — else the whole grid would be
-	// a wall of no-data (its honest-empty path: the section is omitted entirely).
-	const hasCrosstab = $derived(
-		vm.byShiftDaytype.length > 0 && heatRows.some((r) => r.cells.some((c) => c.trusted)),
-	);
-	const dayTypeColLabels = $derived(
-		DAY_TYPE_GRAIN_ORDER.map((d) => ({ key: d, label: dayTypeGrainLabel(d, locale) })),
-	);
-
-	// Heatmap scale legend — three sequential OTP buckets (low→high) + the dedicated
-	// no-data swatch, so the legend reads as an ordered fixed-domain scale. Swatches are
-	// data marks (--dataviz-heatmap-*); the caption is the a11y source of truth.
-	const crosstabLegend = $derived([
-		{
-			colorVar: 'color-mix(in oklab, var(--dataviz-status-late) 80%, var(--signage-bg))',
-			label: copy.crosstab.legend.low,
-			swatch: 'square' as const,
-		},
-		{
-			colorVar: 'color-mix(in oklab, var(--dataviz-status-on-time) 28%, var(--signage-bg))',
-			label: copy.crosstab.legend.mid,
-			swatch: 'square' as const,
-		},
-		{
-			colorVar: 'color-mix(in oklab, var(--dataviz-status-on-time) 85%, var(--signage-bg))',
-			label: copy.crosstab.legend.high,
-			swatch: 'square' as const,
-		},
-		{ colorVar: HEATMAP_NODATA, label: copy.crosstab.legend.noData, swatch: 'square' as const },
-	]);
-
-	// A cell's full tooltip / SR text: the (shift, day-type) heading + the OTP reading
-	// or the honest no-data reason, plus the observation count + avg delay when present.
-	function heatCellTitle(row: { label: string }, cell: HeatCell): string {
-		const where = `${row.label} · ${dayTypeGrainLabel(cell.dayType, locale)}`;
-		if (!cell.trusted) {
-			// Distinguish "no observations at all" from "too few to trust" (n<30).
-			const reason =
-				cell.obs != null && cell.obs > 0 ? copy.crosstab.lowSample : copy.crosstab.legend.noData;
-			const obsPart = cell.obs != null ? ` (${copy.crosstab.obs(cell.obs)})` : '';
-			return `${where}: ${reason}${obsPart}`;
-		}
-		const parts = [`${copy.strip.otpPct} ${cell.display}`];
-		if (cell.obs != null) parts.push(copy.crosstab.obs(cell.obs));
-		if (cell.avgDelay != null) parts.push(`${copy.strip.avgDelayMin}: ${cell.avgDelay}`);
-		return `${where}: ${parts.join(', ')}`;
-	}
 </script>
 
 {#snippet metricInfo(key: MetricKey, name: string)}
@@ -652,62 +481,15 @@
 		     best). A cell with no obs / null OTP / n<30 is greyed honestly, never a
 		     coloured fake 0. Colour is never the sole channel: each cell carries its
 		     value + a bucket glyph; the hottest trusted cell is annotated. -->
-		{#if hasCrosstab}
+		{#if crosstabLines.hasData}
 			<div class="cluster-block" data-slot="shift-daytype-crosstab">
 				<span class="label-with-info">
 					<SectionLabel text={copy.crosstab.heading} variant="metric" />
 					{@render metricInfo('otp', copy.crosstab.heading)}
 				</span>
-				<table class="cluster-heatmap" aria-label={copy.crosstab.heatmapLabel}>
-					<thead>
-						<tr>
-							<th scope="col" class="cluster-heatmap__corner">
-								<span class="sr-only">{copy.crosstab.shiftHeader}</span>
-							</th>
-							{#each dayTypeColLabels as col (col.key)}
-								<th scope="col" class="cluster-heatmap__colhead">{col.label}</th>
-							{/each}
-						</tr>
-					</thead>
-					<tbody>
-						{#each heatRows as row (row.shift)}
-							<tr>
-								<th scope="row" class="cluster-heatmap__rowhead">{row.label}</th>
-								{#each row.cells as cell (cell.dayType)}
-									{@const isHottest = `${cell.shift}|${cell.dayType}` === hottestKey}
-									<td
-										class="cluster-heatmap__cell"
-										class:cluster-heatmap__cell--empty={!cell.trusted}
-										class:cluster-heatmap__cell--hottest={isHottest}
-										data-empty={!cell.trusted}
-										data-hottest={isHottest || undefined}
-									>
-										<span
-											class="cluster-heatmap__databar"
-											style="--bar-len: {cell.barPct}%; --cell-fill: {cell.fill};"
-											role="img"
-											aria-label={heatCellTitle(row, cell)}
-											title={heatCellTitle(row, cell)}
-										>
-											<!-- The bar LENGTH is the primary value channel (research #1);
-											     the diverging colour is a redundant fast-scan layer. -->
-											<span class="cluster-heatmap__fill" aria-hidden="true"></span>
-											<span class="cluster-heatmap__label">
-												<span class="cluster-heatmap__glyph" aria-hidden="true">{cell.glyph}</span>
-												<span class="cluster-heatmap__value">{cell.display}</span>
-												{#if isHottest}
-													<span class="cluster-heatmap__star" aria-hidden="true">★</span>
-													<span class="sr-only">{copy.crosstab.hottest}</span>
-												{/if}
-											</span>
-										</span>
-									</td>
-								{/each}
-							</tr>
-						{/each}
-					</tbody>
-				</table>
-				<ChartLegend items={crosstabLegend} />
+				<!-- S7: weekday vs weekend OTP across shifts as TWO lines (was a stepped
+				     heatmap grid) — the cohesive line language; untrusted cells gap honestly. -->
+				<Chart spec={crosstabLines.spec} />
 				<p class="cluster-caption" data-slot="crosstab-caption">{copy.crosstab.caption}</p>
 			</div>
 		{/if}
@@ -830,108 +612,4 @@
 	   row labels are descriptive (no rotated text); each cell is a coloured swatch on
 	   the fixed-domain heatmap ramp + its OTP value + a bucket glyph. 1px channel gaps
 	   between swatches (border-spacing). A greyed cell rides the no-data swatch. */
-	.cluster-heatmap {
-		width: 100%;
-		border-collapse: separate;
-		/* 1px channel gaps between cells (the heatmap reads as a tiled grid). */
-		border-spacing: 1px;
-		font-size: var(--text-small);
-	}
-	.cluster-heatmap__corner {
-		width: 1%;
-	}
-	.cluster-heatmap__colhead {
-		padding: 0 0 0.4rem;
-		text-align: center;
-		font-family: var(--font-mono);
-		font-size: var(--text-small);
-		font-weight: 500;
-		color: var(--muted-foreground);
-	}
-	.cluster-heatmap__rowhead {
-		padding: 0 0.6rem 0 0;
-		text-align: right;
-		white-space: nowrap;
-		font-weight: 500;
-		color: var(--foreground);
-	}
-	.cluster-heatmap__cell {
-		padding: 0;
-	}
-	/* The data bar: a neutral track with a LEFT-ANCHORED fill whose width is the OTP's
-	   position on the [60,100] scale — the primary value channel (position/length out-
-	   reads colour). The label (glyph + % + star) rides on top, left-aligned, on a subtle
-	   scrim so it stays AA-legible over any fill stop. The diverging colour is now a
-	   redundant fast-scan layer, not the value. */
-	.cluster-heatmap__databar {
-		position: relative;
-		display: flex;
-		align-items: center;
-		min-height: 2.5rem;
-		padding: 0.3rem 0.5rem;
-		border-radius: 3px;
-		background: var(--muted);
-		color: var(--foreground);
-		overflow: hidden;
-	}
-	.cluster-heatmap__fill {
-		position: absolute;
-		inset-block: 0;
-		inset-inline-start: 0;
-		width: var(--bar-len, 0%);
-		background: var(--cell-fill);
-	}
-	.cluster-heatmap__label {
-		position: relative;
-		z-index: 1;
-		display: inline-flex;
-		align-items: center;
-		gap: 0.3rem;
-	}
-	.cluster-heatmap__glyph {
-		font-size: var(--text-small);
-		line-height: 1;
-		opacity: 0.85;
-	}
-	.cluster-heatmap__value {
-		font-family: var(--font-mono);
-		font-variant-numeric: tabular-nums;
-		font-weight: 600;
-		/* A subtle scrim chip keeps the value AA-legible over the fill OR the track. */
-		padding: 0.05rem 0.3rem;
-		border-radius: 2px;
-		background: color-mix(in srgb, var(--background) 70%, transparent);
-	}
-	/* Honest no-data cell: a flat muted track, no fill, the explicit message (never 0). */
-	.cluster-heatmap__cell--empty .cluster-heatmap__databar {
-		background: color-mix(in oklab, var(--muted) 55%, var(--signage-bg));
-	}
-	.cluster-heatmap__cell--empty .cluster-heatmap__value {
-		font-weight: 500;
-		color: var(--muted-foreground);
-		background: transparent;
-		padding: 0;
-	}
-	/* The standout: the highest-OTP trusted cell gets a calm ring + a star marker. The
-	   ring is a neutral focus affordance, NOT a data colour (the fill carries the data). */
-	.cluster-heatmap__cell--hottest .cluster-heatmap__databar {
-		outline: 2px solid var(--foreground);
-		outline-offset: -2px;
-	}
-	.cluster-heatmap__star {
-		font-size: var(--text-micro);
-		line-height: 1;
-		color: var(--foreground);
-	}
-	.sr-only {
-		position: absolute;
-		width: 1px;
-		height: 1px;
-		padding: 0;
-		margin: -1px;
-		overflow: hidden;
-		clip: rect(0, 0, 0, 0);
-		white-space: nowrap;
-		border: 0;
-	}
 </style>

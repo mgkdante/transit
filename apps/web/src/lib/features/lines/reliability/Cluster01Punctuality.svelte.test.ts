@@ -310,11 +310,9 @@ describe('Cluster01Punctuality — (i) label resilience (C1)', () => {
 	});
 });
 
-describe('Cluster01Punctuality — by shift and day type STEPPED HEATMAP (G1)', () => {
-	// A SPARSE crosstab → stepped heatmap: am_peak/weekday + pm_peak/weekday are
-	// TRUSTED (real OTP, obs >= 30); am_peak/weekend is present-but-null; pm_peak/weekday
-	// also carries a tiny sample at weekend to prove the n<30 grey-out. The other cells
-	// are absent → every untrusted cell must read the no-data message, never a "·"/0.
+describe('Cluster01Punctuality — shift × day-type as TWO LINES (S7)', () => {
+	// Sparse crosstab: am_peak/weekday (88, trusted) + pm_peak/weekday (74, trusted);
+	// am_peak/weekend present-but-null; pm_peak/weekend a REAL 95% but n<30 → honest gap.
 	const withCrosstab: PunctualityVM = {
 		...populated,
 		byShiftDaytype: [
@@ -325,7 +323,6 @@ describe('Cluster01Punctuality — by shift and day type STEPPED HEATMAP (G1)', 
 				avg_delay_min: 1.1,
 				observation_count: 420,
 			},
-			// A present cell whose OTP is null → still no-data in that cell.
 			{
 				shift: 'am_peak',
 				day_type: 'weekend',
@@ -334,101 +331,48 @@ describe('Cluster01Punctuality — by shift and day type STEPPED HEATMAP (G1)', 
 				observation_count: 50,
 			},
 			{ shift: 'pm_peak', day_type: 'weekday', otp_pct: 74, severe_pct: 9, observation_count: 310 },
-			// A REAL OTP but too few observations (n<30) → greyed honestly, NOT coloured.
 			{ shift: 'pm_peak', day_type: 'weekend', otp_pct: 95, observation_count: 12 },
 		],
 	};
 
-	it('renders the 5×2 heatmap with trusted OTP cells and the section heading', () => {
+	// S7 line-chart convergence: the stepped-heatmap GRID is now TWO LINES (weekday vs
+	// weekend OTP across shifts). LayerChart lines mount behind ChartFrame's measured-size
+	// gate (not in the no-layout env), so assert the mark + its AT table; the line geometry
+	// + crosshair tooltip are verified in headless Chrome.
+	it('renders the crosstab as the line mark — weekday + weekend OTP over shifts', () => {
 		const { container } = render(Cluster01Punctuality, {
 			props: { vm: withCrosstab, locale: 'en', copy },
 		});
-		const grid = container.querySelector('[data-slot="shift-daytype-crosstab"]') as HTMLElement;
-		expect(grid).not.toBeNull();
-		expect(within(grid).getByText(copy.crosstab.heading)).toBeInTheDocument();
-		// Trusted OTP cells read their value.
-		expect(within(grid).getByText('88%')).toBeInTheDocument();
-		expect(within(grid).getByText('74%')).toBeInTheDocument();
-		// All five canonical shift rows render (fixed axis, not just present ones).
-		expect(within(grid).getByText('AM peak')).toBeInTheDocument();
-		expect(within(grid).getByText('Midday')).toBeInTheDocument();
-		expect(within(grid).getByText('Night')).toBeInTheDocument();
-		// Both day-type columns render.
-		expect(within(grid).getByText(copy.peak.weekday)).toBeInTheDocument();
-		expect(within(grid).getByText(copy.peak.weekend)).toBeInTheDocument();
+		const block = container.querySelector('[data-slot="shift-daytype-crosstab"]') as HTMLElement;
+		expect(block).not.toBeNull();
+		expect(within(block).getAllByText(copy.crosstab.heading).length).toBeGreaterThan(0);
+		const mark = block.querySelector('[data-slot="line-mark"]') as HTMLElement;
+		expect(mark).not.toBeNull();
+		// One AT-table row per canonical shift (fixed axis).
+		expect(mark.querySelectorAll('tbody tr').length).toBe(5);
+		// Trusted cells carry their OTP; the n<30 95% cell is an honest GAP (never shown).
+		expect(within(mark).getByText('88')).toBeInTheDocument();
+		expect(within(mark).getByText('74')).toBeInTheDocument();
+		expect(within(mark).queryByText('95')).toBeNull();
 	});
 
-	it('annotates the single hottest (highest-OTP) trusted cell', () => {
-		const { container } = render(Cluster01Punctuality, {
-			props: { vm: withCrosstab, locale: 'en', copy },
-		});
-		const grid = container.querySelector('[data-slot="shift-daytype-crosstab"]') as HTMLElement;
-		// 88% (am_peak/weekday) is the best TRUSTED cell — 95% is n<30 so it does NOT win.
-		const hottest = grid.querySelectorAll('td[data-hottest="true"]');
-		expect(hottest.length).toBe(1);
-		expect(hottest[0].textContent).toContain('88%');
-		// The accessible "best on-time rate" annotation is present once.
-		expect(within(grid).getByText(copy.crosstab.hottest)).toBeInTheDocument();
-	});
-
-	it('greys n<30 cells to the no-data swatch (never a coloured fake value)', () => {
-		const { container } = render(Cluster01Punctuality, {
-			props: { vm: withCrosstab, locale: 'en', copy },
-		});
-		const grid = container.querySelector('[data-slot="shift-daytype-crosstab"]') as HTMLElement;
-		// pm_peak/weekend has a REAL 95% OTP but only 12 obs → it must NOT render "95%".
-		expect(within(grid).queryByText('95%')).toBeNull();
-	});
-
-	it('shows the no-data message (never "·"/0) in absent, null-OTP, and low-sample cells', () => {
-		const { container } = render(Cluster01Punctuality, {
-			props: { vm: withCrosstab, locale: 'en', copy },
-		});
-		const grid = container.querySelector('[data-slot="shift-daytype-crosstab"]') as HTMLElement;
-		// 8 of 10 cells are untrusted (am_peak/weekend null; pm_peak/weekend n<30; midday,
-		// evening, night all absent) → each cell value reads the honest no-data text.
-		const emptyCells = grid.querySelectorAll('td[data-empty="true"]');
-		expect(emptyCells.length).toBe(8);
-		for (const cell of emptyCells) {
-			expect(cell.textContent).toContain(copy.strip.noData);
-			// Doctrine: an empty cell never paints a middot / em-dash / fake 0 as its value.
-			expect(cell.textContent).not.toContain('·');
-			expect(cell.textContent).not.toContain('—');
-		}
-	});
-
-	it('exposes the observation count + low-sample reason in a cell title', () => {
-		const { container } = render(Cluster01Punctuality, {
-			props: { vm: withCrosstab, locale: 'en', copy },
-		});
-		const grid = container.querySelector('[data-slot="shift-daytype-crosstab"]') as HTMLElement;
-		const titles = Array.from(grid.querySelectorAll('[title]')).map((el) =>
-			el.getAttribute('title'),
-		);
-		// The trusted cell's title carries n=420.
-		expect(titles.some((t) => t?.includes('n=420'))).toBe(true);
-		// The n<30 cell's title says WHY it is greyed (the low-sample reason + its count).
-		expect(titles.some((t) => t?.includes(copy.crosstab.lowSample) && t?.includes('n=12'))).toBe(
-			true,
-		);
-	});
-
-	it('omits the heatmap section entirely when no cell is trusted', () => {
-		const { container } = render(Cluster01Punctuality, {
-			props: { vm: populated, locale: 'en', copy },
-		});
-		expect(container.querySelector('[data-slot="shift-daytype-crosstab"]')).toBeNull();
-		// A grid with ONLY low-sample cells (n<30) is likewise omitted (honest empty).
+	it('omits the section entirely when no cell is trusted (honest empty)', () => {
+		expect(
+			render(Cluster01Punctuality, {
+				props: { vm: populated, locale: 'en', copy },
+			}).container.querySelector('[data-slot="shift-daytype-crosstab"]'),
+		).toBeNull();
 		const lowSampleOnly: PunctualityVM = {
 			...populated,
 			byShiftDaytype: [
 				{ shift: 'am_peak', day_type: 'weekday', otp_pct: 90, observation_count: 5 },
 			],
 		};
-		const { container: c2 } = render(Cluster01Punctuality, {
-			props: { vm: lowSampleOnly, locale: 'en', copy },
-		});
-		expect(c2.querySelector('[data-slot="shift-daytype-crosstab"]')).toBeNull();
+		expect(
+			render(Cluster01Punctuality, {
+				props: { vm: lowSampleOnly, locale: 'en', copy },
+			}).container.querySelector('[data-slot="shift-daytype-crosstab"]'),
+		).toBeNull();
 	});
 });
 

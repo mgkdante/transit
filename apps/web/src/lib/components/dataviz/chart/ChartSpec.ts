@@ -41,6 +41,7 @@ export type ChartKind =
 	| 'magnitude-bars'
 	| 'dot-strip'
 	| 'dumbbell'
+	| 'line'
 	| 'trend'
 	| 'cycle'
 	| 'histogram'
@@ -60,6 +61,7 @@ export const MAGNITUDE_KINDS = [
 	'magnitude-bars',
 	'dot-strip',
 	'dumbbell',
+	'line',
 	'trend',
 	'cycle',
 	'histogram',
@@ -366,11 +368,47 @@ export interface DumbbellSpec extends ChartSpecBase {
 	readonly observedLabel: string;
 }
 
+/** One series of a multi-line/area chart — y-values index-aligned to LineSpec.xLabels. */
+export interface LineSeries {
+	readonly key: string;
+	readonly label: string;
+	/** y per x; null = an honest GAP (the line breaks, never connects across no-data). */
+	readonly points: readonly (number | null)[];
+	/** Line colour (a dataviz var / token). Defaults to the value voice. */
+	readonly colorVar?: string;
+	/** Dashed stroke — distinguishes a series by PATTERN, not colour alone (a11y). */
+	readonly dashed?: boolean;
+	/** Fill the area under the line (area chart). */
+	readonly area?: boolean;
+}
+
+/**
+ * The UNIVERSAL line/area chart (S7 "one chart paradigm"): N series over a shared ordered
+ * categorical x (shifts / weekdays / hours), on ONE fixed zero-based y domain. Series are
+ * distinguished by solid/dashed + markers + a legend (colour is never the sole channel).
+ * This is the cohesive mark most reliability data converges onto; the dated dual-axis OTP
+ * trend keeps its own `trend` spec (already a line).
+ */
+export interface LineSpec extends ChartSpecBase {
+	readonly kind: 'line';
+	/** The ordered x labels (categories / formatted x), index-aligned to series.points. */
+	readonly xLabels: readonly string[];
+	/** Zero-based y value domain (never /max). */
+	readonly domain: AbsoluteDomain;
+	readonly unit: string;
+	readonly xLabel?: string;
+	readonly yLabel?: string;
+	readonly series: readonly LineSeries[];
+	/** Optional reference rule (e.g. a target / all-series mean). */
+	readonly target?: number | null;
+}
+
 /** The fat discriminated union — every reliability visual is one of these. */
 export type ChartSpec =
 	| MagnitudeBarsSpec
 	| DotStripSpec
 	| DumbbellSpec
+	| LineSpec
 	| TrendSpec
 	| CycleSpec
 	| HistogramSpec

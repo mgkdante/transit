@@ -23,6 +23,8 @@ export type {
 	DotStripDatum,
 	DumbbellSpec,
 	DumbbellDatum,
+	LineSpec,
+	LineSeries,
 	TrendSpec,
 	TrendDatum,
 	CycleSpec,
