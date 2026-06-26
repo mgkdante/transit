@@ -26,7 +26,14 @@ const populated: PunctualityVM = {
 		p50Min: 0.5,
 		p90Min: 6.0,
 		severePct: 3,
-		delayHistogram: null,
+		// The grain-aggregate signed-delay distribution (#158) — drives the A1 histogram.
+		delayHistogram: [
+			{ lo_sec: -60, hi_sec: -30, count: 2 },
+			{ lo_sec: -30, hi_sec: 0, count: 10 },
+			{ lo_sec: 0, hi_sec: 30, count: 18 },
+			{ lo_sec: 30, hi_sec: 60, count: 6 },
+			{ lo_sec: 300, hi_sec: 420, count: 1 },
+		],
 	},
 	trend: [
 		{
@@ -132,26 +139,26 @@ describe('Cluster01Punctuality — populated', () => {
 		expect(worst.compareDocumentPosition(milder) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 	});
 
-	// S7 P9: the typical (p50) + worst-case (p90) numbers are now ONE Distribution
-	// quantile mark, not two separate tiles. The shape carries the values in its
-	// readout (p50 + p90) and its a11y five-number summary; the median is the
-	// --primary affordance marker, the bar runs median→tail.
-	it('renders the typical→worst-case delay distribution mark (A4 / P9)', () => {
+	// S7 P1.5: the distribution SHAPE is now the true A1 signed-delay HISTOGRAM from the
+	// contract's delay_histogram (the D4 payoff). The p50/p90 quantile NUMBERS stay above
+	// it as the per-grain readout. (The LayerChart bars mount only behind ChartFrame's
+	// measured-size gate — not exercised in the no-layout test env — so we assert the mark
+	// + its AT-fallback table here; the bar geometry is verified in headless Chrome.)
+	it('renders the A1 signed-delay histogram + keeps the p50/p90 readout', () => {
 		const { container } = render(Cluster01Punctuality, {
 			props: { vm: populated, locale: 'en', copy },
 		});
 		const block = container.querySelector('[data-slot="delay-distribution"]') as HTMLElement;
 		expect(block).not.toBeNull();
-		// The Distribution figure renders (one shape, fixed [0,15] min domain).
-		expect(block.querySelector('[data-slot="distribution"]')).not.toBeNull();
-		// The readout carries the latest day's p50 (0.5 min) + p90 (6.0 min) as text.
+		// The A1 histogram mark renders (the contract's delay_histogram).
+		const hist = block.querySelector('[data-slot="histogram-mark"]') as HTMLElement;
+		expect(hist).not.toBeNull();
+		// Its AT-fallback table carries every bin (a row per histogram bin).
+		expect(hist.querySelectorAll('table tbody tr').length).toBe(5);
+		// The p50 (0.5 min) + p90 (6.0 min) quantile numbers stay above the shape.
 		const readout = block.querySelector('[data-slot="delay-dist-readout"]') as HTMLElement;
 		expect(readout.textContent).toContain('0.5 min');
 		expect(readout.textContent).toContain('6.0 min');
-		// Colour is never the sole channel: the figure spells the five-number summary
-		// (including the worst-case max) into its accessible label.
-		const fig = block.querySelector('[data-slot="distribution"]') as HTMLElement;
-		expect(fig.getAttribute('aria-label')).toContain('6 min');
 	});
 
 	// HONESTY (#6/#6b): the headline-day percentiles are null network-wide today —

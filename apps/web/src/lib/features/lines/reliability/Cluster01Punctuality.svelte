@@ -44,14 +44,13 @@
 		RankedRow,
 		StripPlot,
 		ChartLegend,
-		Distribution,
-		statusVar,
 		severityVar,
 		HEATMAP_NODATA,
 	} from '$lib/components/dataviz';
-	import type { DistributionStats, StripPlotRow } from '$lib/components/dataviz';
+	import type { StripPlotRow } from '$lib/components/dataviz';
 	import { Chart } from '$lib/components/dataviz/chart';
 	import { selectPunctualityTrend } from './selectors/punctualityTrend';
+	import { selectPunctualityDistribution } from './selectors/punctualityDistribution';
 	import { GrainPicker, type GrainSegment } from '$lib/components/surface';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
 	import { metricInfoFor, type MetricKey } from '$lib/features/metrics/metrics.content';
@@ -66,7 +65,6 @@
 		SHIFT_GRAIN_ORDER,
 		DAY_TYPE_GRAIN_ORDER,
 		DELAY_POS_DOMAIN,
-		DELAY_DIST_DOMAIN,
 		SEVERE_DOMAIN,
 		OTP_DOMAIN,
 	} from '$lib/features/reliability/shiftGrains';
@@ -133,27 +131,18 @@
 	const hasTrend = $derived(trendSpec.kind === 'trend');
 	const hasWilsonBand = $derived(trendSpec.kind === 'trend' && trendSpec.hasBand);
 
-	// Typical→worst-case delay as ONE quantile shape (S7 P9). The two formerly-
-	// disconnected p50 / p90 number tiles become a single Distribution mark on the
-	// FIXED, zero-based DELAY_DIST_DOMAIN ([0,15] min — wide enough that the p90 tail
-	// is never clamped). The median (p50) is the --primary affordance marker (the kit's
-	// lone carve-out); the whisker runs median→tail so both magnitudes read as one
-	// shape. Honest absence: when BOTH p50 and p90 are null the mark is dropped and the
-	// AbsentValue chip (says WHY) renders instead — never a fabricated 0.
+	// Typical→worst-case: the p50/p90 quantile NUMBERS (available per-grain) sit above the
+	// true A1 signed-delay distribution SHAPE — now the real histogram from the contract's
+	// delay_histogram (the D4 payoff), rendered via the one <Chart>. The histogram is null
+	// on the day grain + any date range (per contract), where selectPunctualityDistribution
+	// returns honest absence; the quantile numbers stay. NO mean (skew lies); median + p90
+	// are the histogram's own reference rules.
 	const p50 = $derived<number | null>(headline.p50Min);
 	const p90 = $derived<number | null>(headline.p90Min);
 	const hasDist = $derived(p50 != null || p90 != null);
-	// min == median is truthful here (the median is the lower bound of the shown
-	// p50→p90 range); p25/p75 stay null → an empty box track, never a fake quartile.
-	const distStats = $derived<DistributionStats>({
-		min: p50,
-		p25: null,
-		p50,
-		p75: null,
-		max: p90,
-	});
-	// Distribution.domain is a mutable [number, number]; spread the readonly const.
-	const delayDistDomain: [number, number] = [...DELAY_DIST_DOMAIN];
+	const distSpec = $derived(
+		selectPunctualityDistribution(vm, locale, { title: copy.strip.delayDistHeading, unit: ' s' }),
+	);
 
 	// Severe-share magnitude of the headline period — the ABSOLUTE %, scaled by the
 	// fixed SEVERE_DOMAIN at the bar (not /100, not /max). null = no data.
@@ -576,17 +565,8 @@
 					{/if}
 				</span>
 			</div>
-			{#if hasDist}
-				<Distribution
-					stats={distStats}
-					domain={delayDistDomain}
-					unit=" min"
-					fillVar={statusVar('late')}
-					label={copy.strip.delayDistLabel}
-					axisLabel={copy.strip.delayDistLabel}
-					showAxis
-					interactive
-				/>
+			<Chart spec={distSpec} />
+			{#if distSpec.kind === 'histogram'}
 				<p class="cluster-caption" data-slot="delay-dist-caption">{copy.strip.delayDistCaption}</p>
 			{/if}
 		</div>
