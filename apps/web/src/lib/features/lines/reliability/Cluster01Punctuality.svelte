@@ -277,7 +277,7 @@
 		selectPunctualityCrosstab(vm.byShiftDaytype, locale, {
 			title: copy.crosstab.heading,
 			xLabel: copy.crosstab.shiftHeader,
-			yLabel: copy.crosstab.heading,
+			yLabel: copy.strip.otpPct,
 			shiftLabel: (s) => shiftGrainLabel(s, locale),
 			weekdayLabel: copy.peak.weekday,
 			weekendLabel: copy.peak.weekend,
