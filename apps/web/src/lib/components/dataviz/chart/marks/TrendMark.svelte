@@ -261,6 +261,10 @@
 	.dv-trendmark-overlay {
 		position: absolute;
 		inset: 0;
+		/* The secondary (right-axis) chart is purely visual + aria-hidden — let pointer
+		   events pass THROUGH to the primary chart underneath, or it eats the hover and the
+		   trend reads as "not hoverable". The primary tooltip already lists the y2 series. */
+		pointer-events: none;
 	}
 
 	/* Mark fills/strokes reach the LayerChart-emitted SVG via :global. */

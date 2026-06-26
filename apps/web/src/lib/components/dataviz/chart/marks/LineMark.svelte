@@ -50,6 +50,9 @@
 	);
 	const xDomain = $derived(spec.xLabels.slice());
 	const yDomain = $derived<[number, number]>([spec.domain[0], spec.domain[1]]);
+	// LayerChart needs a Chart-level y accessor (not only on the marks) or the band-mode
+	// Highlight/tooltip bisect throws "accessor2 is not a function". Use the first series' y.
+	const primaryKey = $derived(spec.series[0]?.key ?? '');
 
 	const legendItems = $derived(
 		spec.series.map((s, i) => ({
@@ -70,12 +73,13 @@
 		<LcChart
 			data={rows}
 			x={(d: Row) => d.x}
+			y={(d: Row) => (primaryKey ? yVal(d, primaryKey) : 0)}
 			xScale={scalePoint()}
 			{xDomain}
 			yScale={scaleLinear()}
 			{yDomain}
 			{padding}
-			tooltipContext={{ mode: 'bisect-x' }}
+			tooltipContext={{ mode: 'band' }}
 		>
 			<Svg>
 				<Grid y class="dv-line-grid" />
