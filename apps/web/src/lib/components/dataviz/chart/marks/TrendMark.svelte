@@ -18,6 +18,7 @@
 		Chart as LcChart,
 		Svg,
 		Spline,
+		Points,
 		Area,
 		Rule,
 		Axis,
@@ -71,6 +72,16 @@
 		d.bandLo != null && d.bandHi != null && !Number.isNaN(d.bandLo) && !Number.isNaN(d.bandHi);
 
 	const num = (v: number | null | undefined): string => (v == null ? '' : String(v));
+
+	// Confidence Comet: the OTP dot SIZE encodes the sample size (3 fixed-radius buckets —
+	// LayerChart's per-point r-scale is unreliable, but the Points `r` prop is a stable
+	// fixed override), so a small dot + a fat Wilson band BOTH read as "low confidence" at a
+	// glance. Only DEFINED points get a dot — a null-y gap never dots at 0.
+	const otpReals = $derived(data.filter((p) => p.y != null));
+	const dotsLowN = $derived(otpReals.filter((p) => (p.n ?? 0) < 30));
+	const dotsMidN = $derived(otpReals.filter((p) => (p.n ?? 0) >= 30 && (p.n ?? 0) < 100));
+	const dotsHighN = $derived(otpReals.filter((p) => (p.n ?? 0) >= 100));
+
 	// Label a time-x tick (epoch ms) compactly; band-x ticks are the labels themselves.
 	const xTickFormat = $derived(
 		isTime
@@ -141,6 +152,10 @@
 					defined={yDefined}
 					class="dv-trendmark-otp"
 				/>
+				<!-- Confidence Comet: a dot per real point, radius bucketed by observation_count. -->
+				<Points data={dotsLowN} r={2.5} class="dv-trendmark-otp-dot" />
+				<Points data={dotsMidN} r={4} class="dv-trendmark-otp-dot" />
+				<Points data={dotsHighN} r={6} class="dv-trendmark-otp-dot" />
 				<Highlight points lines />
 			</Svg>
 			<Tooltip.Root>
@@ -244,6 +259,10 @@
 		stroke-width: 2;
 		stroke-linecap: round;
 		stroke-linejoin: round;
+	}
+	/* Confidence Comet dots — radius (set via the Chart r accessor) encodes sample size. */
+	:global(circle.dv-trendmark-otp-dot) {
+		fill: var(--dataviz-status-on-time);
 	}
 	:global(.dv-trendmark-retard) {
 		fill: none;
