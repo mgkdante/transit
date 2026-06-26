@@ -25,7 +25,6 @@
 		deriveRouteStopPredictions,
 		getRoute,
 		getRouteReliability,
-		getRoutesIndex,
 		getProvenance,
 		getV1Context,
 		alertsForRoute,
@@ -87,28 +86,24 @@
 
 	// detail + schedule share the static route file (reactive to `id`).
 	const route = createResource<RouteFile | null>(() => getRoute(id));
-	// reliability is the historic per-route archive (reactive to `id`). We gate the
-	// fetch on the routes-index availability flag (RouteIndexEntry.reliability) so a
-	// route the pipeline KNOWS has no published reliability never probes
-	// route_reliability/{id}.json — that probe is a guaranteed 404 and was flooding
-	// the console (the loader fail-softs it to null, but the browser still logs it).
-	// getRoutesIndex is cached (the list surface already loaded it), so this adds no
-	// meaningful cost and stays reactive to `id`.
-	//   - flag === false           → known-empty: return null, NO network probe.
-	//   - flag === true | undefined → probe + fail-soft (true = published; undefined
-	//                                 = a stale/legacy index predating the flag, so we
-	//                                 must still probe or reliability data would be LOST).
-	const reliability = createResource<RouteReliability | null>(async () => {
-		// Capture `id` SYNCHRONOUSLY before the first await: createResource tracks the
-		// fetcher's reactive reads only during its synchronous portion (Svelte 5 stops
-		// $effect dependency tracking at the first await/microtask). Reading `id` after
-		// the await would drop it as a dependency, so client nav /lines/A → /lines/B
-		// would keep showing A's reliability under B's header. Mirrors MapHero's
-		// capture-key-first convention.
+	// reliability is the historic per-route archive (reactive to `id`). The route PAGE
+	// always probes route_reliability/{id}.json and TRUSTS the file as the source of
+	// truth — it does NOT gate on the routes-index `reliability` flag. That flag is a
+	// daily-changing truth (which routes have accrued history) baked into the long-cached
+	// STATIC index, so it lags: a route that just entered the spine, or a stale
+	// pre-deploy / edge-cached index, can read `false` while the file EXISTS — and a
+	// stale `false` must NEVER hide a published reliability surface (the bug this fixes).
+	// One probe per route page is cheap (a route a rider opened, usually a bus WITH
+	// history); a route with genuinely no file fail-softs to null → the surface shows its
+	// honest empty. (The LIST loader keeps the flag-skip — there it avoids N guaranteed
+	// 404s across every row; here it is a single request.)
+	const reliability = createResource<RouteReliability | null>(() => {
+		// Capture `id` SYNCHRONOUSLY: createResource tracks the fetcher's reactive reads
+		// only during its synchronous portion (Svelte 5 stops $effect dependency tracking
+		// at the first await/microtask). Reading `id` after an await would drop it as a
+		// dependency, so client nav /lines/A → /lines/B would keep showing A's reliability
+		// under B's header. Mirrors MapHero's capture-key-first convention.
 		const routeId = id;
-		const idx = await getRoutesIndex();
-		const entry = idx.routes.find((r) => r.id === routeId);
-		if (entry?.reliability === false) return null;
 		return getRouteReliability(routeId);
 	});
 
