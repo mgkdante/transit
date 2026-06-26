@@ -20,7 +20,14 @@ const labels: PunctualityTrendLabels = {
 
 function vmWith(over: Partial<PunctualityVM>): PunctualityVM {
 	return {
-		headline: { otpPct: null, avgDelayMin: null, p50Min: null, p90Min: null, severePct: null },
+		headline: {
+			otpPct: null,
+			avgDelayMin: null,
+			p50Min: null,
+			p90Min: null,
+			severePct: null,
+			delayHistogram: null,
+		},
 		trend: [],
 		dayOfWeek: [],
 		weakStops: [],

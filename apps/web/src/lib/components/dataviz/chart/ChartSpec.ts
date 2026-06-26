@@ -214,6 +214,14 @@ export interface HistogramSpec extends ChartSpecBase {
 	readonly kind: 'histogram';
 	/** Signed domain straddling 0 (e.g. [-300, 1800] sec or [-5, 30] min). */
 	readonly domain: AbsoluteDomain;
+	/**
+	 * The COUNT y-axis domain `[0, maxCount]`. A histogram is read by SHAPE within ONE
+	 * distribution — it is NOT a cross-view magnitude comparison (you never compare this
+	 * route's "30-60s bin" height to another's), so the Lie-Factor law (scoped to cross-view
+	 * length) does not bind it; the selector supplies the distribution's own max so the
+	 * shape is readable. Still zero-based, still explicit — the renderer never derives it.
+	 */
+	readonly countDomain: AbsoluteDomain;
 	readonly unit: string;
 	readonly bins: readonly HistogramBin[];
 	readonly medianRef?: number | null;

@@ -39,3 +39,13 @@ export const HEADWAY_DOMAIN = [0, 35] as const;
 // ── Ratio ───────────────────────────────────────────────────────────────────────────────────
 /** Headway coefficient-of-variation (gap stddev / mean); 1.0 = random-arrivals reference. */
 export const COV_DOMAIN = [0, 1.2] as const;
+
+// ── Signed distribution (seconds) ─────────────────────────────────────────────────────────────
+/**
+ * Signed delay-distribution histogram axis (SECONDS), the visible window that STRADDLES 0
+ * (early left of 0, on-time at 0, late right). The contract's 21 bins reach [-3600, 3600);
+ * the rare extreme-early / extreme-late bins clamp at these edges. This is the X domain of
+ * the A1 histogram — its diverging colour anchors at exactly 0. (-300s = -5 min early →
+ * +1800s = +30 min late.)
+ */
+export const DELAY_HISTOGRAM_DOMAIN = [-300, 1800] as const;

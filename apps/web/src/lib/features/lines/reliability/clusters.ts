@@ -32,6 +32,7 @@ import type {
 	OccupancyMix,
 	CrowdingDelayCell,
 	CrosstabCell,
+	RouteDelayHistogramBin,
 } from '$lib/v1';
 import { SHIFT_GRAINS, DAY_TYPE_GRAINS } from '$lib/features/reliability/shiftGrains';
 
@@ -121,6 +122,8 @@ export interface PunctualityVM {
 		readonly p50Min: number | null;
 		readonly p90Min: number | null;
 		readonly severePct: number | null;
+		/** Signed-delay distribution (#158) for the A1 histogram; null on day grain / range. */
+		readonly delayHistogram: RouteDelayHistogramBin[] | null;
 	};
 	/**
 	 * The dated DAY-grain series, WINDOWED to a DISTINCT recent window per grain (day →
@@ -632,6 +635,10 @@ export function toReliabilityClusters(
 	let p50Min: number | null;
 	let p90Min: number | null;
 	let severePct: number | null;
+	// The grain-aggregate signed-delay distribution (#158) for the §01 A1 histogram. Null
+	// on the day grain + any date range (only the week/month/shift aggregate periods carry
+	// it) → the histogram renders honest absence there.
+	let delayHistogram: RouteDelayHistogramBin[] | null = null;
 	let rangeAggregate: SnapshotStripVM['rangeAggregate'] = null;
 
 	if (hasRange) {
@@ -664,6 +671,7 @@ export function toReliabilityClusters(
 		p50Min = stripPeriod ? num(stripPeriod.p50_min) : null;
 		p90Min = stripPeriod ? num(stripPeriod.p90_min) : null;
 		severePct = stripPeriod ? num(stripPeriod.severe_pct) : null;
+		delayHistogram = stripPeriod?.delay_histogram ?? null;
 	}
 
 	const strip: SnapshotStripVM = {
@@ -715,7 +723,7 @@ export function toReliabilityClusters(
 		// severe-share bar read THIS, so they answer for the picked window (today / this
 		// week / this month / range), while the trend shows the daily detail. Systematic:
 		// one aggregate, not the trend tail.
-		headline: { otpPct, avgDelayMin, p50Min, p90Min, severePct },
+		headline: { otpPct, avgDelayMin, p50Min, p90Min, severePct, delayHistogram },
 		trend,
 		dayOfWeek,
 		weakStops,

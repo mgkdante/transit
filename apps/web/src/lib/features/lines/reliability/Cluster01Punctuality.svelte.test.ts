@@ -20,7 +20,14 @@ const info = metricsCopy.en.info;
 // the latest day (82% / 2.1 min) so the headline assertions hold; the trend carries the
 // daily detail.
 const populated: PunctualityVM = {
-	headline: { otpPct: 82, avgDelayMin: 2.1, p50Min: 0.5, p90Min: 6.0, severePct: 3 },
+	headline: {
+		otpPct: 82,
+		avgDelayMin: 2.1,
+		p50Min: 0.5,
+		p90Min: 6.0,
+		severePct: 3,
+		delayHistogram: null,
+	},
 	trend: [
 		{
 			grain: 'day',
@@ -66,7 +73,14 @@ const manyStops: PunctualityVM = {
 };
 
 const emptyVM: PunctualityVM = {
-	headline: { otpPct: null, avgDelayMin: null, p50Min: null, p90Min: null, severePct: null },
+	headline: {
+		otpPct: null,
+		avgDelayMin: null,
+		p50Min: null,
+		p90Min: null,
+		severePct: null,
+		delayHistogram: null,
+	},
 	trend: [],
 	dayOfWeek: [],
 	weakStops: [],
@@ -148,7 +162,14 @@ describe('Cluster01Punctuality — populated', () => {
 		const nullPercentiles: PunctualityVM = {
 			...populated,
 			// The Distribution reads the grain aggregate now → null its percentiles here.
-			headline: { otpPct: 82, avgDelayMin: 2.1, p50Min: null, p90Min: null, severePct: null },
+			headline: {
+				otpPct: 82,
+				avgDelayMin: 2.1,
+				p50Min: null,
+				p90Min: null,
+				severePct: null,
+				delayHistogram: null,
+			},
 			trend: [
 				{
 					grain: 'day',

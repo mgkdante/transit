@@ -78,6 +78,7 @@ describe('checkAbsoluteDomain — histogram must straddle zero (signed)', () => 
 			...base,
 			kind: 'histogram',
 			domain: [-300, 1800],
+			countDomain: [0, 20],
 			unit: 'sec',
 			bins: [],
 		};
@@ -89,6 +90,7 @@ describe('checkAbsoluteDomain — histogram must straddle zero (signed)', () => 
 			...base,
 			kind: 'histogram',
 			domain: [0, 1800],
+			countDomain: [0, 20],
 			unit: 'sec',
 			bins: [],
 		};
