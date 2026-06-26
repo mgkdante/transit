@@ -124,6 +124,11 @@ export interface PunctualityVM {
 		readonly severePct: number | null;
 		/** Signed-delay distribution (#158) for the A1 histogram; null on day grain / range. */
 		readonly delayHistogram: RouteDelayHistogramBin[] | null;
+		/** OTP denominator (#158) — tracked arrivals behind otpPct; null pre-republish. Powers
+		 *  the §0 verdict's natural-frequency + n-aware confidence (Wilson). */
+		readonly observationCount: number | null;
+		/** OTP numerator (#158) — on-time arrivals behind otpPct; null pre-republish. */
+		readonly onTime: number | null;
 	};
 	/**
 	 * The dated DAY-grain series, WINDOWED to a DISTINCT recent window per grain (day →
@@ -640,6 +645,10 @@ export function toReliabilityClusters(
 	// it) → the histogram renders honest absence there.
 	let delayHistogram: RouteDelayHistogramBin[] | null = null;
 	let rangeAggregate: SnapshotStripVM['rangeAggregate'] = null;
+	// OTP numerator/denominator behind the headline % — drive the §0 verdict's natural
+	// frequency + n-aware (Wilson) confidence. Additive across a range; null pre-republish.
+	let observationCount: number | null = null;
+	let onTime: number | null = null;
 
 	if (hasRange) {
 		const singleDay = rangeDays.length === 1;
@@ -664,6 +673,15 @@ export function toReliabilityClusters(
 					start: rangeDays[0].date!,
 					end: rangeDays[rangeDays.length - 1].date!,
 				};
+		// OTP numerator/denominator are additive across the in-range days (sum, not mean).
+		observationCount = rangeDays.reduce<number | null>(
+			(s, p) => (p.observation_count != null ? (s ?? 0) + p.observation_count : s),
+			null,
+		);
+		onTime = rangeDays.reduce<number | null>(
+			(s, p) => (p.on_time != null ? (s ?? 0) + p.on_time : s),
+			null,
+		);
 	} else {
 		const stripPeriod = selectStripPeriod(calendarPeriods, grain, selectedDate);
 		otpPct = stripPeriod ? num(stripPeriod.otp_pct) : null;
@@ -672,6 +690,8 @@ export function toReliabilityClusters(
 		p90Min = stripPeriod ? num(stripPeriod.p90_min) : null;
 		severePct = stripPeriod ? num(stripPeriod.severe_pct) : null;
 		delayHistogram = stripPeriod?.delay_histogram ?? null;
+		observationCount = stripPeriod ? num(stripPeriod.observation_count) : null;
+		onTime = stripPeriod ? num(stripPeriod.on_time) : null;
 	}
 
 	const strip: SnapshotStripVM = {
@@ -723,7 +743,16 @@ export function toReliabilityClusters(
 		// severe-share bar read THIS, so they answer for the picked window (today / this
 		// week / this month / range), while the trend shows the daily detail. Systematic:
 		// one aggregate, not the trend tail.
-		headline: { otpPct, avgDelayMin, p50Min, p90Min, severePct, delayHistogram },
+		headline: {
+			otpPct,
+			avgDelayMin,
+			p50Min,
+			p90Min,
+			severePct,
+			delayHistogram,
+			observationCount,
+			onTime,
+		},
 		trend,
 		dayOfWeek,
 		weakStops,

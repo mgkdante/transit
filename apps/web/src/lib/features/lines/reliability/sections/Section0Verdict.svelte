@@ -26,8 +26,9 @@
 	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
 	import { ExplainedMetricCard, SeverityBar } from '$lib/components/dataviz';
 	import { Chart } from '$lib/components/dataviz/chart';
-	import { AbsentValue, MaybeValue } from '$lib/components/edge';
+	import { MaybeValue } from '$lib/components/edge';
 	import Detail from '$lib/components/shared/Detail.svelte';
+	import VerdictBanner from './VerdictBanner.svelte';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
 	import { metricInfoFor, type MetricKey } from '$lib/features/metrics/metrics.content';
 	import { metricsCopy } from '$lib/features/metrics/metrics.copy';
@@ -38,6 +39,7 @@
 	} from '$lib/features/reliability/shiftGrains';
 	import { selectPunctualityTrend } from '../selectors/punctualityTrend';
 	import { selectPunctualityDistribution } from '../selectors/punctualityDistribution';
+	import { selectVerdict } from '../selectors/verdict';
 	import type { PunctualityVM } from '../clusters';
 	import type { ReliabilityCopy } from '../reliability.copy';
 
@@ -48,12 +50,15 @@
 		locale: Locale;
 		/** The co-located reliability copy bundle for this locale. */
 		copy: ReliabilityCopy;
-		/** Which grain the trend answers for; only the trend re-shapes on grain. */
-		grain?: string;
+		/** Active window (day|week|month|range) — names the verdict window + drives the trend. */
+		mode?: 'day' | 'week' | 'month' | 'range';
 	}
-	let { vm, locale, copy, grain = 'day' }: Section0VerdictProps = $props();
+	let { vm, locale, copy, mode = 'day' }: Section0VerdictProps = $props();
 
+	// The trend re-shapes on the calendar grain; a date range zooms the day series.
+	const grain = $derived(mode === 'range' ? 'day' : mode);
 	const headline = $derived(vm.headline);
+	const verdict = $derived(selectVerdict(headline, mode, locale, copy));
 	const pct = (v: number | null | undefined): string | null => fmtPct(v);
 	const min = (v: number | null | undefined): string | null =>
 		fmtDelayMin(v, { rounding: 'fixed1' });
@@ -133,11 +138,11 @@
 		<p class="section-question" data-slot="section-question">{copy.sections.verdict.question}</p>
 	</header>
 
-	{#if sectionEmpty}
-		<div data-slot="verdict-empty">
-			<AbsentValue variant="block" reason="no-observations" {locale} />
-		</div>
-	{:else}
+	<!-- The at-a-glance verdict: the BAN + the plain-language two-sided sentence. It owns
+	     §0's honest absence ("still measuring") when there's no percentage to read. -->
+	<VerdictBanner result={verdict} />
+
+	{#if !sectionEmpty}
 		<!-- KPI tiles — the verdict-backing metrics (each self-handles honest absence). -->
 		<div class="verdict-kpis" data-slot="verdict-kpis">
 			<ExplainedMetricCard

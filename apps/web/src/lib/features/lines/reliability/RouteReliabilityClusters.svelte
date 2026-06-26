@@ -304,7 +304,7 @@
 
 		<!-- §0 Verdict — "Can you count on this line?" The grain rail re-shapes only the trend. -->
 		<div class="reliability-band surface-bleed" data-band="verdict">
-			<Section0Verdict vm={clusters.punctuality} {locale} {copy} grain={selectedGrain} />
+			<Section0Verdict vm={clusters.punctuality} {locale} {copy} {mode} />
 		</div>
 
 		<!-- §1 When to ride — the 7×24 heatmap hero + the time-of-day / weekday detail. -->
