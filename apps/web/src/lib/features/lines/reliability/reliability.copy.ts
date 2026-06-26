@@ -230,6 +230,21 @@ export interface ReliabilityCopy {
 			readonly rangePrompt: string;
 		};
 	};
+	/**
+	 * Rider-question section framing (the 5-section rider-first IA): each section's
+	 * short overline `label` + the plain-language `question` it answers, plus the
+	 * progressive-disclosure expander labels.
+	 */
+	readonly sections: {
+		readonly verdict: { readonly label: string; readonly question: string };
+		readonly whenToRide: { readonly label: string; readonly question: string };
+		readonly theWait: { readonly label: string; readonly question: string };
+		readonly runAndFit: { readonly label: string; readonly question: string };
+		readonly worstStops: { readonly label: string; readonly question: string };
+		/** Progressive-disclosure expander labels (the analyst "Show the detail" layer). */
+		readonly detailShow: string;
+		readonly detailHide: string;
+	};
 }
 
 export const reliabilityCopy: Record<Locale, ReliabilityCopy> = {
@@ -364,6 +379,24 @@ export const reliabilityCopy: Record<Locale, ReliabilityCopy> = {
 				rangePrompt: 'Fenêtre : choisissez une date de début et de fin',
 			},
 		},
+		sections: {
+			verdict: { label: 'Fiabilité', question: 'Peut-on compter sur cette ligne ?' },
+			whenToRide: {
+				label: 'Quand voyager',
+				question: 'Quand est-ce fiable, et quand ça se gâte ?',
+			},
+			theWait: {
+				label: "L'attente",
+				question: 'Combien de temps faut-il attendre, et les bus sont-ils collés ?',
+			},
+			runAndFit: {
+				label: 'Service et place',
+				question: 'Le bus passe-t-il, et y aura-t-il de la place ?',
+			},
+			worstStops: { label: 'Les pires arrêts', question: 'Où le retard s’accumule-t-il ?' },
+			detailShow: 'Voir le détail',
+			detailHide: 'Masquer le détail',
+		},
 	},
 	en: {
 		clusters: {
@@ -494,6 +527,18 @@ export const reliabilityCopy: Record<Locale, ReliabilityCopy> = {
 				range: (n, start, end) => `Average across ${n} days, ${start} to ${end}`,
 				rangePrompt: 'Window: pick a start and end date',
 			},
+		},
+		sections: {
+			verdict: { label: 'Reliability', question: 'Can you count on this line?' },
+			whenToRide: {
+				label: 'When to ride',
+				question: 'When is it good, and when does it fall apart?',
+			},
+			theWait: { label: 'The wait', question: 'How long will you wait, and do buses bunch?' },
+			runAndFit: { label: 'Service & space', question: 'Will the bus run, and will you fit?' },
+			worstStops: { label: "Where it's worst", question: 'Where does the delay pile up?' },
+			detailShow: 'Show the detail',
+			detailHide: 'Hide the detail',
 		},
 	},
 };
