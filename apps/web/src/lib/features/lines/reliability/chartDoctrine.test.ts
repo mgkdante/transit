@@ -19,7 +19,7 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { dirname, join } from 'node:path';
+import { dirname, join, relative } from 'node:path';
 
 const dir = dirname(fileURLToPath(import.meta.url));
 /** The LayerChart renderer lives in the shared dataviz kit (lib/components/dataviz/chart). */
@@ -57,10 +57,19 @@ const BANNED: { re: RegExp; why: string }[] = [
 
 type ScanFile = { label: string; path: string };
 
-function filesIn(root: string, match: (f: string) => boolean): ScanFile[] {
-	return readdirSync(root)
-		.filter(match)
-		.map((f) => ({ label: f, path: join(root, f) }));
+/** Walk `root` RECURSIVELY so the gate sees the `sections/` + `marks/` subdirs, not
+ *  just the top level — a chart mounted one folder down must still obey the doctrine. */
+function filesIn(root: string, match: (basename: string) => boolean): ScanFile[] {
+	const out: ScanFile[] = [];
+	const walk = (d: string): void => {
+		for (const ent of readdirSync(d, { withFileTypes: true })) {
+			const full = join(d, ent.name);
+			if (ent.isDirectory()) walk(full);
+			else if (match(ent.name)) out.push({ label: relative(root, full), path: full });
+		}
+	};
+	walk(root);
+	return out;
 }
 
 const RELIABILITY_FILES = filesIn(

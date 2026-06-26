@@ -10,9 +10,9 @@ const copy = reliabilityCopy.en;
 /** Brand a plain string as IsoUtc for fixture literals (mirrors clusters.test.ts). */
 const utc = (value: string): IsoUtc => value as IsoUtc;
 
-// A fully-populated archive: every cluster has a signal, so all five bands and
-// the snapshot strip render their data (not their empty state). The 'day' and
-// 'week' periods carry DIFFERENT OTP so a grain switch is observable in the strip.
+// A fully-populated archive: every section has a signal, so all five rider-question
+// sections render their data (not their empty state). The 'day' and 'week' periods
+// carry DIFFERENT OTP so a grain switch is observable.
 const populated: RouteReliability = {
 	id: '141',
 	generated_utc: utc('2026-06-19T02:00:00Z'),
@@ -116,79 +116,71 @@ const populated: RouteReliability = {
 	],
 };
 
+/** The active-window caption text, the structure-independent grain/range readout. */
+const activeWindowText = (container: HTMLElement): string =>
+	container.querySelector('[data-slot="active-window"]')?.textContent?.trim() ?? '';
+
 describe('RouteReliabilityClusters', () => {
-	it('renders all five numbered cluster overlines + the snapshot strip with populated data', () => {
+	it('renders all five rider-question section overlines + the §0 headline with populated data', () => {
 		render(RouteReliabilityClusters, { props: { data: populated, locale: 'en' } });
 
-		// All five numbered cluster overlines present, in surface order.
-		expect(screen.getByText(copy.clusters.punctuality)).toBeInTheDocument();
-		expect(screen.getByText(copy.clusters.waitRegularity)).toBeInTheDocument();
-		expect(screen.getByText(copy.clusters.serviceDelivered)).toBeInTheDocument();
-		expect(screen.getByText(copy.clusters.crowding)).toBeInTheDocument();
-		expect(screen.getByText(copy.clusters.habits)).toBeInTheDocument();
+		// All five rider-question section overlines present, in surface order.
+		expect(screen.getByText(copy.sections.verdict.label)).toBeInTheDocument();
+		expect(screen.getByText(copy.sections.whenToRide.label)).toBeInTheDocument();
+		expect(screen.getByText(copy.sections.theWait.label)).toBeInTheDocument();
+		expect(screen.getByText(copy.sections.runAndFit.label)).toBeInTheDocument();
+		expect(screen.getByText(copy.sections.worstStops.label)).toBeInTheDocument();
 
-		// Snapshot strip rendered its grid (not the single empty note): the default
-		// 'day' grain OTP (82%) is the headline.
+		// §0 Verdict rendered its KPI tiles: the default 'day' grain OTP (82%) headline.
 		expect(screen.getAllByText('82%').length).toBeGreaterThan(0);
 
-		// The control spine offers the three discrete grains. (The active-window word
-		// also appears in the §03/§04 grain-aware captions now, so allow >1 match.)
+		// The control spine offers the three discrete grains.
 		expect(screen.getAllByText(copy.controls.today).length).toBeGreaterThan(0);
 		expect(screen.getByText(copy.controls.thisWeek)).toBeInTheDocument();
 		expect(screen.getByText(copy.controls.thisMonth)).toBeInTheDocument();
 	});
 
-	it('renders every band honestly empty (no crash, no dropped section) with an empty contract', () => {
+	it('renders every section honestly empty (no crash, no dropped section) with an empty contract', () => {
 		// A minimal valid contract: only the two required identity fields, no data
-		// arrays — every cluster must fall to its honest empty state.
+		// arrays — every section must fall to its honest empty state.
 		const empty: RouteReliability = { id: '141', generated_utc: utc('2026-06-19T02:00:00Z') };
 		const { container } = render(RouteReliabilityClusters, {
 			props: { data: empty, locale: 'en' },
 		});
 
-		// Bands are NEVER silently dropped: all five overlines still anchor their bands.
-		expect(screen.getByText(copy.clusters.punctuality)).toBeInTheDocument();
-		expect(screen.getByText(copy.clusters.waitRegularity)).toBeInTheDocument();
-		expect(screen.getByText(copy.clusters.serviceDelivered)).toBeInTheDocument();
-		expect(screen.getByText(copy.clusters.crowding)).toBeInTheDocument();
-		expect(screen.getByText(copy.clusters.habits)).toBeInTheDocument();
+		// Sections are NEVER silently dropped: all five overlines still anchor their sections.
+		expect(screen.getByText(copy.sections.verdict.label)).toBeInTheDocument();
+		expect(screen.getByText(copy.sections.whenToRide.label)).toBeInTheDocument();
+		expect(screen.getByText(copy.sections.theWait.label)).toBeInTheDocument();
+		expect(screen.getByText(copy.sections.runAndFit.label)).toBeInTheDocument();
+		expect(screen.getByText(copy.sections.worstStops.label)).toBeInTheDocument();
 
-		// The styled honest-absence chip appears (strip + bands all fall to it, each
-		// saying WHY data is missing), never a fabricated value.
+		// The styled honest-absence chip appears (sections fall to it, each saying WHY
+		// data is missing), never a fabricated value.
 		expect(container.querySelectorAll('[data-slot="absent-value"]').length).toBeGreaterThan(0);
 	});
 
-	it('refines the snapshot strip when the grain control changes', async () => {
-		// SPEC CHANGE (foundation): the grain control drives the SNAPSHOT STRIP (the
-		// canonical grain-aware headline). Cluster01's three tiles are day-scoped
-		// (latest closed day), so they keep showing the day value in any grain — we
-		// therefore scope the grain-switch assertions to the strip, not the page.
+	it('refines the active window when the grain control changes', async () => {
 		const { container } = render(RouteReliabilityClusters, {
 			props: { data: populated, locale: 'en' },
 		});
-		const strip = () => {
-			const el = container.querySelector('[data-slot="snapshot-strip"]');
-			if (!el) throw new Error('snapshot strip not found');
-			return within(el as HTMLElement);
-		};
 
-		// Default grain ('day') → strip OTP 82%; the week OTP (77%) is not yet shown.
-		expect(strip().getAllByText('82%').length).toBeGreaterThan(0);
-		expect(strip().queryByText('77%')).not.toBeInTheDocument();
+		// Default grain ('day') → the active-window caption names today.
+		expect(activeWindowText(container)).toBe(copy.controls.activeWindow.day);
 
-		// Switch to "This week" → the strip re-answers for the week period (77%).
+		// Switch to "This week" → the caption re-answers for the week window.
 		await fireEvent.click(screen.getByRole('radio', { name: copy.controls.thisWeek }));
-
-		expect(strip().getAllByText('77%').length).toBeGreaterThan(0);
-		expect(strip().queryByText('82%')).not.toBeInTheDocument();
+		await tick();
+		expect(activeWindowText(container)).toBe(copy.controls.activeWindow.week);
 	});
 
-	it('honours the FR canonical voice for the cluster overlines', () => {
+	it('honours the FR canonical voice for the section overlines', () => {
 		render(RouteReliabilityClusters, { props: { data: populated, locale: 'fr' } });
 
-		expect(screen.getByText(reliabilityCopy.fr.clusters.punctuality)).toBeInTheDocument();
-		expect(screen.getByText(reliabilityCopy.fr.clusters.crowding)).toBeInTheDocument();
-		// "Aujourd'hui" appears in both the grain picker and the §03/§04 captions now.
+		expect(screen.getByText(reliabilityCopy.fr.sections.verdict.label)).toBeInTheDocument();
+		expect(screen.getByText(reliabilityCopy.fr.sections.whenToRide.label)).toBeInTheDocument();
+		expect(screen.getByText(reliabilityCopy.fr.sections.worstStops.label)).toBeInTheDocument();
+		// "Aujourd'hui" appears in both the grain picker and the active-window caption.
 		expect(screen.getAllByText(reliabilityCopy.fr.controls.today).length).toBeGreaterThan(0);
 	});
 
@@ -197,7 +189,7 @@ describe('RouteReliabilityClusters', () => {
 		expect(screen.getByRole('radio', { name: copy.controls.dateRange })).toBeInTheDocument();
 	});
 
-	it('aggregates a multi-day range into a mean headline + an honest caption', async () => {
+	it('aggregates a multi-day range into an honest caption', async () => {
 		const { container } = render(RouteReliabilityClusters, {
 			props: { data: multiDay, locale: 'en' },
 		});
@@ -212,19 +204,13 @@ describe('RouteReliabilityClusters', () => {
 			`${copy.controls.dateRange} · ${copy.controls.rangeEnd}`,
 		);
 
-		// Pick the full 3-day window: mean OTP = round((80+82+84)/3) = 82.
+		// Pick the full 3-day window → the caption reflects the aggregate (no em dash; "to" joins).
 		await fireEvent.change(startSelect, { target: { value: '2026-06-16' } });
 		await fireEvent.change(endSelect, { target: { value: '2026-06-18' } });
 		await tick();
-
-		// The active-window caption reflects the aggregate (no em dash; "to" joins).
-		expect(
-			screen.getByText(copy.controls.activeWindow.range(3, '2026-06-16', '2026-06-18')),
-		).toBeInTheDocument();
-
-		// The strip's mean OTP headline (82%) shows; percentiles fall to "—" (multi-day).
-		const strip = container.querySelector('[data-slot="snapshot-strip"]') as HTMLElement;
-		expect(within(strip).getAllByText('82%').length).toBeGreaterThan(0);
+		expect(activeWindowText(container)).toBe(
+			copy.controls.activeWindow.range(3, '2026-06-16', '2026-06-18'),
+		);
 	});
 
 	it('keeps a single-day range exact (start == end shows that day, not an average)', async () => {
@@ -241,16 +227,11 @@ describe('RouteReliabilityClusters', () => {
 			`${copy.controls.dateRange} · ${copy.controls.rangeEnd}`,
 		);
 
-		// A single day (06-16, OTP 80%) reads exact + uses the single-day caption.
+		// A single day (06-16) reads exact + uses the single-day caption.
 		await fireEvent.change(startSelect, { target: { value: '2026-06-16' } });
 		await fireEvent.change(endSelect, { target: { value: '2026-06-16' } });
 		await tick();
-
-		expect(
-			screen.getByText(copy.controls.activeWindow.singleDay('2026-06-16')),
-		).toBeInTheDocument();
-		const strip = container.querySelector('[data-slot="snapshot-strip"]') as HTMLElement;
-		expect(within(strip).getAllByText('80%').length).toBeGreaterThan(0);
+		expect(activeWindowText(container)).toBe(copy.controls.activeWindow.singleDay('2026-06-16'));
 	});
 });
 

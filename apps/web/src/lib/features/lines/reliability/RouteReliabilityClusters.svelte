@@ -35,12 +35,11 @@
 	import { Separator } from '$lib/components/ui/separator';
 	import { toReliabilityClusters } from './clusters';
 	import { reliabilityCopy } from './reliability.copy';
-	import SnapshotStrip from './SnapshotStrip.svelte';
-	import Cluster01Punctuality from './Cluster01Punctuality.svelte';
-	import Cluster02WaitRegularity from './Cluster02WaitRegularity.svelte';
-	import Cluster03ServiceDelivered from './Cluster03ServiceDelivered.svelte';
-	import Cluster04Crowding from './Cluster04Crowding.svelte';
-	import Cluster05Habits from './Cluster05Habits.svelte';
+	import Section0Verdict from './sections/Section0Verdict.svelte';
+	import Section1WhenToRide from './sections/Section1WhenToRide.svelte';
+	import Section2TheWait from './sections/Section2TheWait.svelte';
+	import Section3RunAndFit from './sections/Section3RunAndFit.svelte';
+	import Section4WorstStops from './sections/Section4WorstStops.svelte';
 
 	interface RouteReliabilityClustersProps {
 		/** The raw historic reliability archive for this route. */
@@ -206,10 +205,10 @@
 </script>
 
 <div class={cn('reliability-clusters', className)} data-slot="reliability-clusters">
-	<!-- GRAIN-AFFECTED block: the rail sticks over these sections (which respond to the
-	     filter) and scrolls away at the block's end — so the rail's presence IS the
-	     "this section uses granularity" signal. -->
-	<div class="reliability-grain-block" data-slot="reliability-grain-block">
+	<!-- The page-level grain rail (sticky) sits above the five rider-question sections.
+	     The grain refines §0's trend + §3's windowed rates/mix; §1/§2/§4 are
+	     whole-window reads. One column, the rail pinned over it. -->
+	<div class="reliability-grain-block" data-slot="reliability-sections">
 		<!-- Control panel: the grain/date controls collected into ONE ControlsRail (quiet
 	     infra chrome, mono "View" overline) so the control reads identically to /stop
 	     and /network. ONE shared GrainPicker owns the whole radiogroup —
@@ -303,39 +302,24 @@
 		<!-- Hazard tape discerns the controls zone from the data canvas. -->
 		<Separator variant="hazard" hazardSize="sm" />
 
-		<!-- 00 — the full-bleed snapshot strip (single-glance, zero-interaction). -->
-		<div class="reliability-band reliability-band--strip surface-bleed" data-band="snapshot">
-			<SnapshotStrip vm={clusters.strip} {locale} {copy} />
+		<!-- §0 Verdict — "Can you count on this line?" The grain rail re-shapes only the trend. -->
+		<div class="reliability-band surface-bleed" data-band="verdict">
+			<Section0Verdict vm={clusters.punctuality} {locale} {copy} grain={selectedGrain} />
 		</div>
 
-		<!-- 01 Punctuality. -->
-		<div class="reliability-band surface-bleed" data-band="punctuality">
-			<Cluster01Punctuality vm={clusters.punctuality} {locale} {copy} grain={selectedGrain} />
-		</div>
-
-		<!-- 02 Service delivered (ramp-in: cancellations + skipped stops). Grain-windowed. -->
-		<div class="reliability-band surface-bleed" data-band="service-delivered">
-			<Cluster03ServiceDelivered
-				vm={clusters.serviceDelivered}
+		<!-- §1 When to ride — the 7×24 heatmap hero + the time-of-day / weekday detail. -->
+		<div class="reliability-band surface-bleed" data-band="when-to-ride">
+			<Section1WhenToRide
+				punctuality={clusters.punctuality}
+				habits={clusters.habits}
 				{locale}
 				{copy}
-				windowLabel={controlsSummary}
 			/>
 		</div>
 
-		<!-- 03 Crowding. Headline mix follows the selected grain. -->
-		<div class="reliability-band surface-bleed" data-band="crowding">
-			<Cluster04Crowding vm={clusters.crowding} {locale} {copy} windowLabel={controlsSummary} />
-		</div>
-	</div>
-	<!-- end grain-affected block; the rail has released by here. -->
-
-	<!-- GRAIN-FREE block: Wait regularity (by-shift, not a calendar grain) + Habits (a
-	     whole-window pattern) don't use the rail, so it is gone by the time you reach them. -->
-	<div class="reliability-free-block" data-slot="reliability-free-block">
-		<!-- 04 Wait regularity: scheduled-vs-observed headway + the service-span timeline. -->
-		<div class="reliability-band surface-bleed" data-band="wait-regularity">
-			<Cluster02WaitRegularity
+		<!-- §2 The wait — scheduled-vs-observed headway + (detail) regularity + service span. -->
+		<div class="reliability-band surface-bleed" data-band="the-wait">
+			<Section2TheWait
 				wait={clusters.waitRegularity}
 				serviceSpans={clusters.serviceDelivered.serviceSpans}
 				{locale}
@@ -344,14 +328,20 @@
 			/>
 		</div>
 
-		<!-- 05 Time-of-day habits (weekday seasonality rides alongside the heatmap). -->
-		<div class="reliability-band surface-bleed" data-band="habits">
-			<Cluster05Habits
-				habits={clusters.habits}
-				dayOfWeek={clusters.punctuality.dayOfWeek}
+		<!-- §3 Will it run & will you fit — cancellations/skips + crowding (grain-windowed). -->
+		<div class="reliability-band surface-bleed" data-band="run-and-fit">
+			<Section3RunAndFit
+				service={clusters.serviceDelivered}
+				crowding={clusters.crowding}
 				{locale}
 				{copy}
+				windowLabel={controlsSummary}
 			/>
+		</div>
+
+		<!-- §4 Where it's worst — the worst-N stops accountability lollipop. -->
+		<div class="reliability-band surface-bleed" data-band="worst-stops">
+			<Section4WorstStops punctuality={clusters.punctuality} {locale} {copy} />
 		</div>
 	</div>
 </div>
@@ -373,12 +363,10 @@
 		--rail-sticky-top: 0px;
 	}
 
-	/* The two sub-blocks carry the same section rhythm as the page, and — crucially —
-	   each is the STICKY CONTAINING BLOCK boundary for its contents. The rail lives in
-	   the grain block, so it sticks only while the grain-affected sections are on screen
-	   and scrolls away once the grain-free block (Wait regularity + Habits) begins. */
-	.reliability-grain-block,
-	.reliability-free-block {
+	/* The single sections column: the sticky grain rail + the five rider-question
+	   sections, carrying the same section rhythm as the page. This is the rail's
+	   sticky CONTAINING BLOCK, so the rail stays pinned over the whole surface. */
+	.reliability-grain-block {
 		display: flex;
 		flex-direction: column;
 		gap: clamp(3rem, 7vw, 5rem);
@@ -511,15 +499,12 @@
 		width: 100%;
 		padding-inline: var(--space-page-x);
 	}
-	.reliability-band--strip {
-		padding-bottom: clamp(1.5rem, 4vw, 2.25rem);
-	}
-	/* Section DIFFERENTIATION (S7 UX pass 1): each numbered band (01→05) opens with a
-	   quiet full-width hairline + extra top breathing room, so the sections read as
-	   distinct units rather than one long scroll. The hairline sits in the inter-band
-	   whitespace (the flex gap above + this padding below it), giving a clear "new
-	   section" break without a heavy divider. The strip (00) leads with no rule above. */
-	.reliability-band:not(.reliability-band--strip) {
+	/* Section DIFFERENTIATION: each section AFTER the first opens with a quiet
+	   full-width hairline + extra top breathing room, so the sections read as
+	   distinct units rather than one long scroll. The adjacent-sibling selector
+	   leaves the first band (§0 Verdict) ruleless — the hazard separator already
+	   divides it from the control rail. */
+	.reliability-band + .reliability-band {
 		border-top: 1px solid var(--border);
 		padding-top: clamp(1.75rem, 4vw, 2.75rem);
 	}

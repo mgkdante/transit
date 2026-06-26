@@ -1,6 +1,13 @@
 <!--
-  Cluster02WaitRegularity, the "02 Wait & regularity" band of the slice-9.6
-  historic Reliability surface.
+  §2 The wait — "How long until the next bus, and is it steady?"
+
+  The wait-and-regularity rider-question section. Leads with the ONE always-visible
+  PRIMARY chart — the scheduled-vs-observed headway DUMBBELL, all shifts in one
+  comparable chart on the fixed HEADWAY_DOMAIN, the connector span = the excess wait
+  — then tucks the analyst detail behind the progressive-disclosure `<Detail>`:
+  the whole-day excess-wait headline, the per-shift breakdown (excess-wait RankedRow
+  + CoV/bunched SeverityBars), the observed-gap-by-direction table, and the
+  service-span timeline + its four numeric tiles.
 
   Reads two contract slices, both guarded by the foundation VM mapper:
     · headway[]       (WaitRegularityVM), scheduled-vs-observed headway +
@@ -8,22 +15,15 @@
     · service_spans[] (ServiceSpanPeriod[]), the most-recent service-span day:
       first/last trip span (min) + first/last-trip punctuality.
 
-  Per shift we render a RankedRow whose SeverityBar encodes EXCESS WAIT
-  (normalized within the band) as the magnitude, the rider-felt penalty over
-  the scheduled gap. The bar colour is a SeverityCode (the dataviz severity
-  scale only), never --primary. Scheduled / observed / excess-wait sit beside it
-  as MetricDisplays; CoV + bunched % are the regularity caption.
-
   DOCTRINE upheld here:
     · every data mark rides the dataviz scale (SeverityBar owns that); --primary
       stays interactive-only.
-    · honest empties, when headway is empty we render the band's no-data note,
+    · honest empties, when headway is empty we render the section's no-data note,
       not a zeroed bar; same for the service-span sub-block. A null metric shows
       "—", never a fabricated 0.
-  Bilingual: FR is canonical; band-local labels are co-located below and the
-  shared honest-state notes + cluster overline come from the passed copy.
-  Reduced-motion is honoured by the primitives (SeverityBar guards its own
-  transition).
+  Bilingual: FR is canonical; band-local labels are co-located below (BAND_COPY) and
+  the shared honest-state notes + section overline/question come from the passed copy.
+  Reduced-motion is honoured by the primitives (SeverityBar guards its own transition).
 -->
 <script lang="ts">
 	import type { Locale } from '$lib/i18n';
@@ -36,10 +36,11 @@
 		SeverityBar,
 	} from '$lib/components/dataviz';
 	import { Chart } from '$lib/components/dataviz/chart';
-	import { selectHeadwayDumbbell } from './selectors/headwayDumbbell';
+	import { selectHeadwayDumbbell } from '../selectors/headwayDumbbell';
 	import MetricDisplay from '$lib/components/brand/MetricDisplay.svelte';
 	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
 	import { AbsentValue } from '$lib/components/edge';
+	import Detail from '$lib/components/shared/Detail.svelte';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
 	import {
 		metricInfoFor,
@@ -47,8 +48,8 @@
 		type SupplementalMetricKey,
 	} from '$lib/features/metrics/metrics.content';
 	import { metricsCopy } from '$lib/features/metrics/metrics.copy';
-	import type { WaitRegularityVM } from './clusters';
-	import type { ReliabilityCopy } from './reliability.copy';
+	import type { WaitRegularityVM } from '../clusters';
+	import type { ReliabilityCopy } from '../reliability.copy';
 	import {
 		shiftLabel as baseShiftLabel,
 		bunchingToSeverity,
@@ -58,18 +59,18 @@
 		BUNCHED_DOMAIN,
 	} from '$lib/features/reliability/shiftGrains';
 
-	export interface Cluster02WaitRegularityProps {
+	interface Section2TheWaitProps {
 		/** The wait-regularity VM (headway rows carrying a signal, contract order). */
 		wait: WaitRegularityVM;
 		/**
 		 * Service-span history (foundation VM: only rows carrying a signal). The
-		 * band reads the most-recent row for the span + first/last punctuality
+		 * section reads the most-recent row for the span + first/last punctuality
 		 * block. Empty array → the sub-block is omitted with no fabrication.
 		 */
 		serviceSpans?: ServiceSpanPeriod[];
 		/** Active locale (FR canonical). */
 		locale: Locale;
-		/** The shared reliability copy, cluster overline + honest-state notes. */
+		/** The shared reliability copy, section overline/question + honest-state notes. */
 		copy: ReliabilityCopy;
 		/**
 		 * dir (direction_id) → real destination headsign, from the route file. The
@@ -85,15 +86,15 @@
 		locale,
 		copy,
 		directionHeadsigns = {},
-	}: Cluster02WaitRegularityProps = $props();
+	}: Section2TheWaitProps = $props();
 
 	/* ── band-local copy ──────────────────────────────────────────────────────
-	   Labels this band needs that are NOT in the shared copy live here, co-located
+	   Labels this section needs that are NOT in the shared copy live here, co-located
 	   and bilingual (FR canonical). The plain wait-regularity term microcopy
 	   (scheduled gap / observed gap / excess wait / spread / clumped) lives in the
-	   shared `copy.regularityTerms`; the cluster overline + the ramp-in / no-data
-	   notes are read from the passed `copy` so the surface stays the one source of
-	   truth for those. */
+	   shared `copy.regularityTerms`; the section overline/question + the ramp-in /
+	   no-data notes are read from the passed `copy` so the surface stays the one
+	   source of truth for those. */
 	interface BandCopy {
 		readonly headwaySection: string;
 		readonly spanSection: string;
@@ -187,7 +188,6 @@
 	const dir1Label = $derived(directionHeadsigns[1] ?? t.directionCol(2));
 	/** Plain-language term microcopy (shared, FR canonical). */
 	const terms = $derived(copy.regularityTerms);
-	const overline = $derived(copy.clusters.waitRegularity);
 
 	// The in-app metric-explainer (i) affordance: the one-line tip + a localized
 	// deep link to /metrics#<anchor>. An INTERACTIVE control beside each label.
@@ -249,7 +249,7 @@
 
 	/* S7-B Pattern A: read the TYPED direction_id / day_type fields. Fall back to the
 	   legacy packed `{shift}_dir{N}_weekend` string for snapshots published before the
-	   cutover, so the band renders correctly across the deploy window. */
+	   cutover, so the section renders correctly across the deploy window. */
 	function decodeShift(h: HeadwayPeriod): {
 		baseShift: string;
 		directionId: number | null;
@@ -293,7 +293,7 @@
 	   (advanced grains never crowd the headline). Raw shift keys decode to
 	   readable, bilingual labels: the base am_peak/midday/… token resolves through
 	   the SHARED shift vocabulary (so every surface speaks one language), and this
-	   band keeps its own per-direction / weekend suffix decoration on top. */
+	   section keeps its own per-direction / weekend suffix decoration on top. */
 	function shiftLabel(row: ShiftRow): string {
 		const baseLabel = baseShiftLabel(row.baseShift, locale);
 		const extras: string[] = [];
@@ -435,118 +435,123 @@
 	/>
 {/snippet}
 
-<section class="cluster" data-cluster="wait-regularity" aria-label={overline}>
-	<SectionLabel text={overline} variant="station" />
+<section class="section" data-section="the-wait" aria-label={copy.sections.theWait.label}>
+	<header class="section-head">
+		<SectionLabel text={copy.sections.theWait.label} variant="station" />
+		<p class="section-question" data-slot="section-question">{copy.sections.theWait.question}</p>
+	</header>
 
 	{#if wait.isEmpty && !hasSpan}
 		<!-- Honest empty: the styled honest-absence chip (says WHY), nothing to draw in either sub-block. -->
-		<AbsentValue variant="block" reason="no-observations" {locale} />
+		<div data-slot="the-wait-empty">
+			<AbsentValue variant="block" reason="no-observations" {locale} />
+		</div>
 	{:else}
-		<!-- Headway-by-shift sub-block. -->
-		<div class="cluster-sub" data-sub="headway">
+		<!-- PRIMARY — the consolidated scheduled-vs-observed DUMBBELL (A8): ALL shifts in ONE chart
+		     on the fixed HEADWAY_DOMAIN, so the gap reads at a glance AND across the day. The
+		     <Chart> renders the honest-absence chip itself when no shift has both endpoints. -->
+		<div class="section-primary" data-slot="headway-dumbbell">
 			<span class="label-with-info">
 				<SectionLabel text={t.headwaySection} variant="metric" />
 				{@render metricInfo('headway', t.headwaySection)}
 				{@render metricInfo('regularityCov', copy.strip.headwayRegularityCov)}
 			</span>
+			<Chart spec={headwayDumbbell.spec} />
+		</div>
 
-			<!-- S7: the headline excess-wait read, lifted to a prominent 2-col card whose
-			     always-visible explanation states the baseline ("over the scheduled gap")
-			     beside the number — the operator's "1.8 min over what" fix. -->
-			{#if hasExcessHeadline}
-				<ExplainedMetricCard
-					label={`${terms.excessWait} · ${t.allDay}`}
-					value={min(allDayExcessWait)}
-					explanation={t.excessWaitExplain}
-					emptyLabel={valueNoData}
-					absentReason="no-observations"
-					{locale}
-					size="lg"
-					class="excess-wait-headline"
-				>
-					{#snippet info()}{@render metricInfo('excessWait', terms.excessWait)}{/snippet}
-				</ExplainedMetricCard>
-			{/if}
+		<!-- DETAIL — excess-wait headline + per-shift breakdown + direction table + service span. -->
+		<Detail label={copy.sections.detailShow} labelOpen={copy.sections.detailHide}>
+			<!-- Headway-by-shift sub-block. -->
+			<div class="cluster-sub" data-sub="headway">
+				<!-- S7: the headline excess-wait read, lifted to a prominent 2-col card whose
+				     always-visible explanation states the baseline ("over the scheduled gap")
+				     beside the number — the operator's "1.8 min over what" fix. -->
+				{#if hasExcessHeadline}
+					<ExplainedMetricCard
+						label={`${terms.excessWait} · ${t.allDay}`}
+						value={min(allDayExcessWait)}
+						explanation={t.excessWaitExplain}
+						emptyLabel={valueNoData}
+						absentReason="no-observations"
+						{locale}
+						size="lg"
+						class="excess-wait-headline"
+					>
+						{#snippet info()}{@render metricInfo('excessWait', terms.excessWait)}{/snippet}
+					</ExplainedMetricCard>
+				{/if}
 
-			<!-- A8: the consolidated scheduled-vs-observed DUMBBELL — ALL shifts in ONE chart on
-			     the fixed HEADWAY_DOMAIN, so the gap reads at a glance AND across the day. The
-			     <Chart> renders the honest-absence chip itself when no shift has both endpoints. -->
-			<div class="headway-dumbbell" data-slot="headway-dumbbell">
-				<Chart spec={headwayDumbbell.spec} />
-			</div>
+				{#snippet shiftItem(row: ShiftRow, i: number)}
+					<li class="shift-row">
+						<RankedRow
+							rank={i + 1}
+							title={shiftLabel(row)}
+							severity={row.severity}
+							value={row.magnitude}
+							domain={HEADWAY_DOMAIN}
+							unit=" min"
+							showRank={false}
+							display={min(row.excessWait) ?? valueNoData}
+							aria-label={t.excessWaitMagnitude(shiftLabel(row))}
+							barInteractive
+						/>
 
-			{#snippet shiftItem(row: ShiftRow, i: number)}
-				<li class="shift-row">
-					<RankedRow
-						rank={i + 1}
-						title={shiftLabel(row)}
-						severity={row.severity}
-						value={row.magnitude}
-						domain={HEADWAY_DOMAIN}
-						unit=" min"
-						showRank={false}
-						display={min(row.excessWait) ?? valueNoData}
-						aria-label={t.excessWaitMagnitude(shiftLabel(row))}
-						barInteractive
-					/>
-
-					<!-- P8: dedicated magnitude bars for the two regularity readings — CoV on
-					     COV_DOMAIN, bunched share on BUNCHED_DOMAIN — both formerly subtitle TEXT
-					     only. Each rides its own FIXED domain (stable across routes/grains), with a
-					     severity band (covToSeverity / bunchingToSeverity), a glyph-free numeric
-					     readout, and an a11y label so colour is never the sole channel. -->
-					<div class="shift-regularity" data-slot="regularity-bars">
-						<div class="regularity-metric" data-metric="cov">
-							<div class="regularity-head">
-								<span class="regularity-label">{terms.spread}</span>
-								<span class="regularity-value">{fmtCov(row.cov) ?? valueNoData}</span>
+						<!-- P8: dedicated magnitude bars for the two regularity readings — CoV on
+						     COV_DOMAIN, bunched share on BUNCHED_DOMAIN — both formerly subtitle TEXT
+						     only. Each rides its own FIXED domain (stable across routes/grains), with a
+						     severity band (covToSeverity / bunchingToSeverity), a glyph-free numeric
+						     readout, and an a11y label so colour is never the sole channel. -->
+						<div class="shift-regularity" data-slot="regularity-bars">
+							<div class="regularity-metric" data-metric="cov">
+								<div class="regularity-head">
+									<span class="regularity-label">{terms.spread}</span>
+									<span class="regularity-value">{fmtCov(row.cov) ?? valueNoData}</span>
+								</div>
+								<SeverityBar
+									severity={row.covSeverity}
+									value={row.cov}
+									domain={COV_DOMAIN}
+									unit=""
+									size="sm"
+									label={t.covMagnitude(shiftLabel(row))}
+									interactive
+								/>
 							</div>
-							<SeverityBar
-								severity={row.covSeverity}
-								value={row.cov}
-								domain={COV_DOMAIN}
-								unit=""
-								size="sm"
-								label={t.covMagnitude(shiftLabel(row))}
-								interactive
-							/>
-						</div>
-						<div class="regularity-metric" data-metric="bunched">
-							<div class="regularity-head">
-								<span class="regularity-label">{terms.clumped}</span>
-								<span class="regularity-value">{pct(row.bunched) ?? valueNoData}</span>
+							<div class="regularity-metric" data-metric="bunched">
+								<div class="regularity-head">
+									<span class="regularity-label">{terms.clumped}</span>
+									<span class="regularity-value">{pct(row.bunched) ?? valueNoData}</span>
+								</div>
+								<SeverityBar
+									severity={row.severity}
+									value={row.bunched}
+									domain={BUNCHED_DOMAIN}
+									unit="%"
+									size="sm"
+									label={t.bunchedMagnitude(shiftLabel(row))}
+									interactive
+								/>
 							</div>
-							<SeverityBar
-								severity={row.severity}
-								value={row.bunched}
-								domain={BUNCHED_DOMAIN}
-								unit="%"
-								size="sm"
-								label={t.bunchedMagnitude(shiftLabel(row))}
-								interactive
-							/>
 						</div>
-					</div>
-				</li>
-			{/snippet}
-			{#if shiftRows.length > 0}
-				<ul class="shift-list" role="list">
-					{#each mainRows as row, i (row.shift + '-' + i)}
-						{@render shiftItem(row, i)}
-					{/each}
-				</ul>
-				<!-- What the excess-wait magnitude encodes: 0 is the GOOD case, not missing. -->
-				<p class="shift-caption" data-slot="excess-wait-caption">
-					{copy.strip.excessWaitCaption}
-					{@render metricInfo('excessWait', terms.excessWait)}
-				</p>
-				<!-- A3: per-direction rows carry ONLY observed_min (scheduled/excess/cov
-				     null), so the SeverityBar + scheduled/excess tiles are empty for them.
-				     Present them as a compact observed-gap-by-direction comparison instead
-				     of an empty RankedRow, their only real signal. -->
-				{#if hasAdvancedReveal}
-					<details class="shift-more">
-						<summary class="shift-more-summary">{t.moreDetail}</summary>
+					</li>
+				{/snippet}
+				{#if shiftRows.length > 0}
+					<ul class="shift-list" role="list">
+						{#each mainRows as row, i (row.shift + '-' + i)}
+							{@render shiftItem(row, i)}
+						{/each}
+					</ul>
+					<!-- What the excess-wait magnitude encodes: 0 is the GOOD case, not missing. -->
+					<p class="shift-caption" data-slot="excess-wait-caption">
+						{copy.strip.excessWaitCaption}
+						{@render metricInfo('excessWait', terms.excessWait)}
+					</p>
+					<!-- A3: per-direction rows carry ONLY observed_min (scheduled/excess/cov
+					     null), so the SeverityBar + scheduled/excess tiles are empty for them.
+					     Present them as a compact observed-gap-by-direction comparison instead
+					     of an empty RankedRow, their only real signal. The whole block already
+					     lives inside <Detail>, so it shows inline (no nested <details> reveal). -->
+					{#if hasAdvancedReveal}
 						<div class="shift-direction" data-slot="direction-gaps">
 							<SectionLabel text={t.directionGap} variant="metric" />
 							<!-- Semantic table (operator: a real table, desktop + mobile). Rows = shift ×
@@ -583,109 +588,136 @@
 								</tbody>
 							</table>
 						</div>
-					</details>
+					{/if}
+				{:else}
+					<AbsentValue variant="block" reason="no-observations" {locale} />
 				{/if}
-			{:else}
-				<AbsentValue variant="block" reason="no-observations" {locale} />
-			{/if}
-		</div>
-
-		<!-- Service-span sub-block, only when a signal-carrying day exists. -->
-		{#if hasSpan && latestSpan}
-			<div class="cluster-sub" data-sub="service-span">
-				<div class="span-head">
-					<span class="label-with-info">
-						<SectionLabel text={t.spanSection} variant="metric" />
-						{@render metricInfo('serviceSpan', t.spanSection)}
-					</span>
-					<span class="span-window" data-slot="service-span-window">
-						{copy.windows.serviceSpan(latestSpan.date ?? null)}
-					</span>
-				</div>
-
-				<!-- P3: the first→last service-span TIMELINE on a fixed 24h axis, with signed
-				     first/last-trip punctuality markers (DELAY_STOP_DOMAIN). The numeric tiles
-				     below remain the exact reading; this is the at-a-glance shape. Honest
-				     absence (no resolvable first/last departure) lives inside the primitive. -->
-				<ServiceSpanTimeline
-					firstTripUtc={latestSpan.first_trip_utc ?? null}
-					lastTripUtc={latestSpan.last_trip_utc ?? null}
-					firstDelayMin={latestSpan.first_trip_delay_min ?? null}
-					lastDelayMin={latestSpan.last_trip_delay_min ?? null}
-					spanLabel={spanDuration(latestSpan.service_span_min) != null
-						? spanCopy.span(spanDuration(latestSpan.service_span_min)!)
-						: null}
-					tripsLabel={count(latestSpan.trip_count) != null
-						? spanCopy.trips(count(latestSpan.trip_count)!)
-						: null}
-					firstLabel={spanCopy.firstTrip}
-					lastLabel={spanCopy.lastTrip}
-					firstDelayLabel={spanCopy.firstDelay}
-					lastDelayLabel={spanCopy.lastDelay}
-					ariaLabel={spanCopy.ariaLabel}
-					{locale}
-					absentReason="no-observations"
-					interactive
-				/>
-				<p class="span-caption" data-slot="service-span-caption">{spanCopy.caption}</p>
-
-				<div class="shift-metrics">
-					<div class="metric-with-info">
-						<MetricDisplay
-							value={min(latestSpan.service_span_min)}
-							emptyLabel={valueNoData}
-							absentReason="no-observations"
-							{locale}
-							label={t.serviceSpan}
-							size="sm"
-						/>
-						{@render metricInfo('serviceSpan', t.serviceSpan)}
-					</div>
-					<div class="metric-with-info">
-						<MetricDisplay
-							value={min(latestSpan.first_trip_delay_min)}
-							emptyLabel={valueNoData}
-							absentReason="no-observations"
-							{locale}
-							label={t.firstTripDelay}
-							size="sm"
-						/>
-						{@render metricInfo('serviceSpan', t.firstTripDelay)}
-					</div>
-					<div class="metric-with-info">
-						<MetricDisplay
-							value={min(latestSpan.last_trip_delay_min)}
-							emptyLabel={valueNoData}
-							absentReason="no-observations"
-							{locale}
-							label={t.lastTripDelay}
-							size="sm"
-						/>
-						{@render metricInfo('serviceSpan', t.lastTripDelay)}
-					</div>
-					<div class="metric-with-info">
-						<MetricDisplay
-							value={count(latestSpan.trip_count)}
-							emptyLabel={valueNoData}
-							absentReason="no-observations"
-							{locale}
-							label={t.tripCount}
-							size="sm"
-						/>
-						{@render metricInfo('serviceSpan', t.tripCount)}
-					</div>
-				</div>
 			</div>
-		{/if}
+
+			<!-- Service-span sub-block, only when a signal-carrying day exists. -->
+			{#if hasSpan && latestSpan}
+				<div class="cluster-sub" data-sub="service-span">
+					<div class="span-head">
+						<span class="label-with-info">
+							<SectionLabel text={t.spanSection} variant="metric" />
+							{@render metricInfo('serviceSpan', t.spanSection)}
+						</span>
+						<span class="span-window" data-slot="service-span-window">
+							{copy.windows.serviceSpan(latestSpan.date ?? null)}
+						</span>
+					</div>
+
+					<!-- P3: the first→last service-span TIMELINE on a fixed 24h axis, with signed
+					     first/last-trip punctuality markers (DELAY_STOP_DOMAIN). The numeric tiles
+					     below remain the exact reading; this is the at-a-glance shape. Honest
+					     absence (no resolvable first/last departure) lives inside the primitive. -->
+					<ServiceSpanTimeline
+						firstTripUtc={latestSpan.first_trip_utc ?? null}
+						lastTripUtc={latestSpan.last_trip_utc ?? null}
+						firstDelayMin={latestSpan.first_trip_delay_min ?? null}
+						lastDelayMin={latestSpan.last_trip_delay_min ?? null}
+						spanLabel={spanDuration(latestSpan.service_span_min) != null
+							? spanCopy.span(spanDuration(latestSpan.service_span_min)!)
+							: null}
+						tripsLabel={count(latestSpan.trip_count) != null
+							? spanCopy.trips(count(latestSpan.trip_count)!)
+							: null}
+						firstLabel={spanCopy.firstTrip}
+						lastLabel={spanCopy.lastTrip}
+						firstDelayLabel={spanCopy.firstDelay}
+						lastDelayLabel={spanCopy.lastDelay}
+						ariaLabel={spanCopy.ariaLabel}
+						{locale}
+						absentReason="no-observations"
+						interactive
+					/>
+					<p class="span-caption" data-slot="service-span-caption">{spanCopy.caption}</p>
+
+					<div class="shift-metrics">
+						<div class="metric-with-info">
+							<MetricDisplay
+								value={min(latestSpan.service_span_min)}
+								emptyLabel={valueNoData}
+								absentReason="no-observations"
+								{locale}
+								label={t.serviceSpan}
+								size="sm"
+							/>
+							{@render metricInfo('serviceSpan', t.serviceSpan)}
+						</div>
+						<div class="metric-with-info">
+							<MetricDisplay
+								value={min(latestSpan.first_trip_delay_min)}
+								emptyLabel={valueNoData}
+								absentReason="no-observations"
+								{locale}
+								label={t.firstTripDelay}
+								size="sm"
+							/>
+							{@render metricInfo('serviceSpan', t.firstTripDelay)}
+						</div>
+						<div class="metric-with-info">
+							<MetricDisplay
+								value={min(latestSpan.last_trip_delay_min)}
+								emptyLabel={valueNoData}
+								absentReason="no-observations"
+								{locale}
+								label={t.lastTripDelay}
+								size="sm"
+							/>
+							{@render metricInfo('serviceSpan', t.lastTripDelay)}
+						</div>
+						<div class="metric-with-info">
+							<MetricDisplay
+								value={count(latestSpan.trip_count)}
+								emptyLabel={valueNoData}
+								absentReason="no-observations"
+								{locale}
+								label={t.tripCount}
+								size="sm"
+							/>
+							{@render metricInfo('serviceSpan', t.tripCount)}
+						</div>
+					</div>
+				</div>
+			{/if}
+		</Detail>
 	{/if}
 </section>
 
 <style>
-	.cluster {
+	/* Section rhythm: generous BETWEEN-block air (research: within ≤ between), all on
+	   the 8px grid. The section owns its inner stack; the orchestrator owns the
+	   between-section gap. */
+	.section {
 		display: flex;
 		flex-direction: column;
-		gap: 1.25rem;
+		gap: clamp(1.25rem, 3vw, 2rem);
+		width: 100%;
 	}
+	.section-head {
+		display: flex;
+		flex-direction: column;
+		gap: 0.5rem;
+	}
+	/* The rider question — the section's plain-language frame, quiet under the overline. */
+	.section-question {
+		margin: 0;
+		font-family: var(--font-heading);
+		font-size: var(--text-subheading);
+		font-weight: 600;
+		line-height: 1.3;
+		color: var(--foreground);
+		max-inline-size: 42ch;
+	}
+
+	/* The always-visible PRIMARY dumbbell block + its label/info head. */
+	.section-primary {
+		display: flex;
+		flex-direction: column;
+		gap: 0.625rem;
+	}
+
 	.cluster-sub {
 		display: flex;
 		flex-direction: column;
@@ -793,11 +825,12 @@
 		flex: none;
 		white-space: nowrap;
 	}
-	/* A3: the per-direction observed-gap comparison inside the reveal. */
+	/* A3: the per-direction observed-gap comparison. */
 	.shift-direction {
 		display: flex;
 		flex-direction: column;
 		gap: 0.6rem;
+		margin-top: 0.85rem;
 	}
 	/* The observed-gap-by-direction TABLE. Tabular numbers, zebra rows, sticky-ish row
 	   headers; the two direction columns are right-aligned numerics. */
@@ -895,51 +928,5 @@
 		font-size: var(--text-small);
 		line-height: 1.4;
 		color: var(--muted-foreground);
-	}
-	/* "More detail" reveal, the per-direction / weekend shifts, calm by default
-	   so the headline shifts never get crowded. The +/− marker is an INTERACTION
-	   accent (--primary belongs here, never on a data mark). */
-	.shift-more {
-		margin-top: 0.25rem;
-	}
-	.shift-more-summary {
-		display: inline-flex;
-		align-items: center;
-		gap: 0.45rem;
-		cursor: pointer;
-		font-family: var(--font-mono);
-		font-size: var(--text-small);
-		letter-spacing: 0.04em;
-		color: var(--muted-foreground);
-		list-style: none;
-		padding: 0.35rem 0;
-	}
-	.shift-more-summary::-webkit-details-marker {
-		display: none;
-	}
-	.shift-more-summary::before {
-		content: '+';
-		display: inline-grid;
-		place-items: center;
-		width: 1.15rem;
-		height: 1.15rem;
-		border: 1px solid var(--border);
-		border-radius: var(--radius-sm, 0.25rem);
-		color: var(--primary);
-		font-weight: 600;
-		line-height: 1;
-	}
-	.shift-more[open] .shift-more-summary::before {
-		content: '−';
-	}
-	.shift-more-summary:hover {
-		color: var(--foreground);
-	}
-	.shift-more-summary:focus-visible {
-		outline: 2px solid var(--ring);
-		outline-offset: 2px;
-	}
-	.shift-more[open] .shift-direction {
-		margin-top: 0.85rem;
 	}
 </style>

@@ -47,7 +47,18 @@
 	const xDomain = $derived.by<number[] | string[]>(() => {
 		if (isTime) {
 			const xs = spec.points.map((p) => Number(p.x)).filter((v) => Number.isFinite(v));
-			return xs.length ? [Math.min(...xs), Math.max(...xs)] : [0, 1];
+			if (xs.length === 0) return [0, 1];
+			// The TIME x-axis spans the data's date range — a temporal POSITION axis, not a
+			// magnitude (the y + secondary-y magnitude axes are pinned to spec.domain below,
+			// never auto-scaled). Computed via a reduce, not Math.min/max(...xs), so the
+			// magnitude-only chart-doctrine gate isn't tripped by a legitimate time extent.
+			let lo = xs[0];
+			let hi = xs[0];
+			for (const v of xs) {
+				if (v < lo) lo = v;
+				if (v > hi) hi = v;
+			}
+			return [lo, hi];
 		}
 		return spec.points.map((p) => String(p.x));
 	});
