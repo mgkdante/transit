@@ -233,6 +233,24 @@ table {
 	color: var(--accent-foreground);
 }
 
+/* ── LayerChart "same face": every chart speaks the brand fonts (S7) ──────────────
+   LayerChart sets no font-family of its own — its SVG axis text + the body-portaled
+   HTML tooltip would otherwise inherit --font-body. Pin them to the brand MONO voice
+   (the numeric data register) so EVERY chart on the surface reads identically. Global
+   (incl. the portaled tooltip) → covers every current + future LayerChart mark. */
+.lc-axis-tick-label,
+.lc-axis-label,
+.lc-axis text,
+.lc-labels text,
+.lc-tooltip-root,
+.lc-tooltip-container,
+.lc-tooltip-content,
+.lc-tooltip-header,
+.lc-tooltip-item-root,
+.lc-tooltip-item-label {
+	font-family: var(--font-mono);
+}
+
 /* Keyboard-focus polish — engineered, on-brand ring everywhere.
    @layer base so component focus utilities still win; :where() keeps specificity low. */
 @layer base {
