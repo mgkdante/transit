@@ -23,25 +23,15 @@
 <script lang="ts">
 	import type { Locale } from '$lib/i18n';
 	import type { RouteDayOfWeek } from '$lib/v1';
-	import {
-		Heatmap,
-		CyclePlot,
-		ChartLegend,
-		HEATMAP_RAMP,
-		HEATMAP_NODATA,
-		type CyclePlotPanel,
-	} from '$lib/components/dataviz';
+	import { Heatmap, ChartLegend, HEATMAP_RAMP, HEATMAP_NODATA } from '$lib/components/dataviz';
+	import { Chart } from '$lib/components/dataviz/chart';
+	import { selectWeekdayCycle } from './selectors/weekdayCycle';
 	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
 	import { AbsentValue } from '$lib/components/edge';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
 	import { metricInfoFor, type MetricKey } from '$lib/features/metrics/metrics.content';
 	import { metricsCopy } from '$lib/features/metrics/metrics.copy';
-	import {
-		weekdayLabel,
-		delayMinToSeverity,
-		DELAY_DOW_DOMAIN,
-		SEVERE_DOMAIN,
-	} from '$lib/features/reliability/shiftGrains';
+	import { weekdayLabel } from '$lib/features/reliability/shiftGrains';
 	import type { HabitsVM } from './clusters';
 	import type { ReliabilityCopy } from './reliability.copy';
 	import { habitsBandCopy } from './Cluster05Habits.copy';
@@ -84,10 +74,6 @@
 		readonly observationCount: number | null;
 	};
 
-	// A weekday severe share rests on too few observations below this floor → we
-	// keep the row (its mean delay still ranks) but withhold the severe reading.
-	const MIN_SEVERE_OBSERVATIONS = 5;
-
 	const weekdayRows = $derived.by<WeekdayRow[]>(() =>
 		dayOfWeek
 			.filter((d): d is RouteDayOfWeek & { avg_delay_min: number } => d.avg_delay_min != null)
@@ -102,42 +88,17 @@
 			})),
 	);
 
-	// S7 (P7 cycle): weekdays in a FIXED Mon→Sun cycle frame (iso 1..7) — NOT sorted by
-	// delay (the cycle order IS the meaning). The CyclePlot reads ONE point per weekday
-	// (the contract's current shape, no across-weeks series), so it renders its honest
-	// fixed-axis BAR degrade: each bar = the ABSOLUTE mean delay (min) scaled by the
-	// shared DELAY_DOW_DOMAIN (never delay/max), severity from the absolute
-	// delayMinToSeverity, decoupled per day. A weekday the contract omits resolves to an
-	// empty panel (the honest no-data chip), never a fabricated 0 bar. The severe-share
-	// second mark (SEVERE_DOMAIN) is gated to weekdays whose sample is large enough.
-	const cyclePanels = $derived.by<CyclePlotPanel[]>(() => {
-		const byIso = new Map(weekdayRows.map((r) => [r.iso, r]));
-		return [1, 2, 3, 4, 5, 6, 7].map((iso) => {
-			const r = byIso.get(iso);
-			// Severe share is shown only when enough observations back it (else withheld).
-			const severeTrusted =
-				r != null &&
-				r.severePct != null &&
-				r.observationCount != null &&
-				r.observationCount >= MIN_SEVERE_OBSERVATIONS;
-			return {
-				label: band.weekdaysShort[iso - 1],
-				fullLabel: weekdayLabel(iso, locale),
-				// One value per weekday → the CyclePlot picks its single-bar mode. An absent
-				// weekday carries no point (empty panel → honest-absence chip), never a fake 0.
-				points: r ? [r.delay] : [],
-				severePct: severeTrusted ? r!.severePct : null,
-				severity: delayMinToSeverity(r?.delay ?? null),
-				observationCount: r?.observationCount ?? null,
-			};
-		});
-	});
-
-	// 'series' vs 'single' caption — driven by whether ANY weekday carries an across-weeks
-	// series (≥2 points). The contract is single-value today, so this resolves to 'single';
-	// it flips automatically the day a real series lands (no UI change needed).
-	const cycleHasSeries = $derived(
-		cyclePanels.some((p) => p.points.filter((v) => v != null).length >= 2),
+	// S7 (line-chart convergence): the weekday seasonality is now ONE LINE — mean delay per
+	// weekday in the FIXED Mon→Sun cycle on DELAY_DOW_DOMAIN (the cycle order IS the meaning,
+	// never sorted by value). selectWeekdayCycle owns the spec; rendered via the one <Chart>.
+	// A weekday the contract omits is an honest GAP in the line, never a fabricated 0.
+	const weekdayCycle = $derived(
+		selectWeekdayCycle(dayOfWeek, locale, {
+			title: band.weekdayHeading,
+			yLabel: copy.strip.avgDelayMin,
+			unit: ' min',
+			weekdayShort: (iso) => band.weekdaysShort[iso - 1],
+		}),
 	);
 
 	const hasHeatmap = $derived(!habits.isEmpty);
@@ -245,22 +206,10 @@
 						<SectionLabel text={band.weekdayHeading} variant="metric" />
 						{@render metricInfo('seasonality', band.weekdayHeading)}
 					</span>
-					<CyclePlot
-						panels={cyclePanels}
-						domain={DELAY_DOW_DOMAIN}
-						severeDomain={SEVERE_DOMAIN}
-						{locale}
-						ariaLabel={band.cycle.ariaLabel}
-						meanLabel={band.cycle.mean}
-						severeLabel={band.cycle.severe}
-						obsLabel={band.cycle.obs}
-						steepestLabel={band.cycle.steepest}
-						unit=" min"
-						absentReason="no-observations"
-						interactive
-					/>
+					<!-- S7: mean delay per weekday (Mon→Sun) as ONE line; was a custom CyclePlot. -->
+					<Chart spec={weekdayCycle.spec} />
 					<p class="habits-scale-caption" data-slot="habits-cycle-caption">
-						{cycleHasSeries ? band.cycle.captionSeries : band.cycle.captionSingle}
+						{band.cycle.captionSingle}
 					</p>
 				</div>
 			{/if}

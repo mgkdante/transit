@@ -64,13 +64,15 @@ describe('Cluster05Habits — populated', () => {
 		expect(container.querySelector('[data-slot="habits-heatmap"]')).toBeInTheDocument();
 		expect(screen.getByRole('group', { name: enBand.heatmapLabel })).toBeInTheDocument();
 
-		// Weekday cycle plot present (P7), Friday's mean (8.4 min) read on its panel.
-		expect(container.querySelector('[data-slot="habits-weekday"]')).toBeInTheDocument();
-		const cycle = container.querySelector('[data-slot="cycle-plot"]')!;
-		expect(cycle).toBeInTheDocument();
-		// One value per weekday → the honest single-bar degrade (not a fabricated series).
-		expect(cycle.getAttribute('data-mode')).toBe('bars');
-		expect(screen.getByText('Mean 8.4 min')).toBeInTheDocument();
+		// Weekday seasonality is now ONE line (was a CyclePlot); Friday's mean (8.4) reads in
+		// the AT table (the LayerChart line mounts behind ChartFrame's measured-size gate).
+		const weekday = container.querySelector('[data-slot="habits-weekday"]')!;
+		expect(weekday).toBeInTheDocument();
+		const mark = weekday.querySelector('[data-slot="line-mark"]')!;
+		expect(mark).not.toBeNull();
+		expect([...mark.querySelectorAll('tbody td')].some((td) => td.textContent === '8.4')).toBe(
+			true,
+		);
 
 		// No fabricated empty note when data is present.
 		expect(container.querySelector('[data-slot="habits-empty"]')).toBeNull();
@@ -133,32 +135,6 @@ describe('Cluster05Habits — populated', () => {
 		expect(screen.getByText(enCopy.windows.habits)).toBeInTheDocument();
 	});
 
-	it('surfaces day-of-week severe share as a second cycle-plot mark gated by observation_count (A2)', () => {
-		const { container } = render(Cluster05Habits, {
-			props: {
-				habits: POPULATED_HABITS,
-				dayOfWeek: [
-					// well-sampled weekday → severe share is shown as the second mark.
-					{ day_of_week_iso: 4, avg_delay_min: 6.1, severe_pct: 14.9, observation_count: 120 },
-					// under-sampled weekday → severe share is WITHHELD (no fabricated number);
-					// the panel still draws its mean-delay bar, just without the severe mark.
-					{ day_of_week_iso: 7, avg_delay_min: 9.2, severe_pct: 16.2, observation_count: 2 },
-				],
-				locale: 'en',
-				copy: enCopy,
-			},
-		});
-
-		// Well-sampled Thursday shows its severe share via the cycle severe mark.
-		const thu = container.querySelector('[data-day="Thu"]')!;
-		expect(thu.querySelector('[data-slot="cycle-plot-severe"]')?.textContent).toContain('14.9');
-		// Under-sampled Sunday withholds the severe mark (no fabricated number).
-		const sun = container.querySelector('[data-day="Sun"]')!;
-		expect(sun.querySelector('[data-slot="cycle-plot-severe"]')).toBeNull();
-		// Sunday still draws its mean-delay bar (it has a real mean), never dropped.
-		expect(sun.querySelector('[data-slot="cycle-plot-bar"]')).not.toBeNull();
-	});
-
 	it('renders the FR canonical scale caption', () => {
 		const { container } = render(Cluster05Habits, {
 			props: {
@@ -182,7 +158,7 @@ describe('Cluster05Habits — populated', () => {
 		expect(container.querySelector('[data-slot="habits-empty"]')).toBeNull();
 	});
 
-	it('draws a bar only for a weekday with a real mean; an empty weekday routes to the honest-absence chip (no fabricated zero bar)', () => {
+	it('gaps a weekday with no mean in the line (honest no-data, never a fabricated 0)', () => {
 		const { container } = render(Cluster05Habits, {
 			props: {
 				habits: EMPTY_HABITS,
@@ -194,13 +170,15 @@ describe('Cluster05Habits — populated', () => {
 				copy: enCopy,
 			},
 		});
-		// Tuesday (real mean) draws its bar; Saturday (no mean) renders the absence chip,
-		// NOT a fabricated 0 bar (and is never silently dropped — the cycle keeps the panel).
-		const tue = container.querySelector('[data-day="Tue"]')!;
-		expect(tue.querySelector('[data-slot="cycle-plot-bar"]')).not.toBeNull();
-		const sat = container.querySelector('[data-day="Sat"]')!;
-		expect(sat.querySelector('[data-slot="cycle-plot-bar"]')).toBeNull();
-		expect(sat.querySelector('[data-slot="absent-value"]')).not.toBeNull();
+		const mark = container.querySelector('[data-slot="habits-weekday"] [data-slot="line-mark"]')!;
+		expect(mark).not.toBeNull();
+		const rows = [...mark.querySelectorAll('tbody tr')];
+		const td = (day: string) =>
+			rows.find((r) => r.querySelector('th')?.textContent === day)?.querySelector('td')
+				?.textContent;
+		// Tuesday (real mean) carries 3.3; Saturday (no mean) is an honest GAP (·), not a 0.
+		expect(td('Tue')).toContain('3.3');
+		expect(td('Sat')).toBe('·');
 		expect(container.querySelector('[data-slot="habits-heatmap"]')).toBeNull();
 	});
 });
