@@ -223,6 +223,10 @@ export interface HistogramSpec extends ChartSpecBase {
 	 */
 	readonly countDomain: AbsoluteDomain;
 	readonly unit: string;
+	/** Localized x-axis title (e.g. "Delay (min)"). */
+	readonly xLabel?: string;
+	/** Localized y-axis title (e.g. "Trips"). */
+	readonly yLabel?: string;
 	readonly bins: readonly HistogramBin[];
 	readonly medianRef?: number | null;
 	readonly p90Ref?: number | null;

@@ -1,29 +1,35 @@
 <!--
-  TrendMark — the LayerChart renderer for a `kind: 'trend'` ChartSpec (S7).
+  TrendMark — the LayerChart renderer for a `kind: 'trend'` ChartSpec (A3, S7).
 
-  Two series over a shared x-scale: a primary line (e.g. on-time %) on its own pinned
-  absolute domain, and an optional secondary line (e.g. retard min) on a SECOND pinned
-  domain. LayerChart marks only read the primary y-scale, so the two domains are kept
-  honest by rendering TWO overlaid `<LcChart>` contexts that share x-scale + padding +
-  width — each owns its `yDomain`, so neither squashes the other (the alternative,
-  plotting minutes on the 0–100 % axis, flattens the delay line against the floor).
+  Two series over a shared x-scale: a primary line (on-time %) on its own pinned absolute
+  domain, and an optional secondary line (avg delay, min) on a SECOND pinned domain.
+  LayerChart marks only read the primary y-scale, so the two domains are kept honest by
+  TWO overlaid `<LcChart>` contexts that share x-scale + padding + width — each owns its
+  `yDomain`, so neither squashes the other.
 
-  Domains come from the SPEC (the selector supplies the `domains.ts` literal); this mark
-  never derives an extent. `defined` breaks the line/band over `null` (a gap, never
-  bridged). Colours ride the dataviz scale (status-on-time / status-late); the Wilson
-  band is a solid pre-mixed muted green (not runtime alpha, so the page texture never
-  bleeds through); the target rule is neutral chrome. A visually-hidden data table is the
-  AT fallback every chart ships (Chart Doctrine).
-
-  LayerChart renders its marks inside its OWN components, so this component's scoped
-  styles can't reach the emitted SVG — the mark classes are namespaced `:global`.
+  CLEAR AXES + MAX DATA: a labelled bottom x-axis (dates / time-of-day), a labelled LEFT
+  y-axis (On-time %) on the primary context, a labelled RIGHT y-axis (Avg delay, min) on
+  the secondary context, a y-grid, a legend, and a hover tooltip that reads the FULL datum
+  (OTP %, avg delay, the Wilson interval, the sample n). `defined` breaks the line/band
+  over null (a gap). Domains from the spec; ChartFrame-gated; sr-table fallback.
 -->
 <script lang="ts">
-	import { Chart as LcChart, Svg, Spline, Area, Rule } from 'layerchart';
+	import {
+		Chart as LcChart,
+		Svg,
+		Spline,
+		Area,
+		Rule,
+		Axis,
+		Grid,
+		Highlight,
+		Tooltip,
+	} from 'layerchart';
 	import { scaleLinear, scalePoint, scaleTime } from 'd3-scale';
 	import { curveMonotoneX } from 'd3-shape';
 	import { cn } from '$lib/utils';
 	import ChartFrame from '../ChartFrame.svelte';
+	import ChartLegend from '../../ChartLegend.svelte';
 	import type { TrendDatum, TrendSpec } from '../ChartSpec';
 
 	export interface TrendMarkProps {
@@ -35,12 +41,8 @@
 
 	const data = $derived(spec.points.map((p) => ({ ...p })));
 	const isTime = $derived(spec.xScale === 'time');
-
-	// x accessor: epoch-number (time) or label (band). One accessor, switched by scale.
 	const xOf = $derived((d: TrendDatum) => (isTime ? Number(d.x) : String(d.x)));
 
-	// Explicit x-domain — never inferred-from-extent in a way the renderer controls:
-	// time → [minEpoch, maxEpoch]; band → the ordered point labels (scalePoint domain).
 	const xDomain = $derived.by<number[] | string[]>(() => {
 		if (isTime) {
 			const xs = spec.points.map((p) => Number(p.x)).filter((v) => Number.isFinite(v));
@@ -59,7 +61,9 @@
 	);
 	const hasSecondary = $derived(!!spec.secondary && spec.points.some((p) => p.y2 != null));
 
-	const padding = { top: 8, right: 10, bottom: 8, left: 10 };
+	// Both overlaid contexts share IDENTICAL padding so their plot areas align (left axis
+	// on the primary, right axis on the secondary, shared bottom axis).
+	const padding = { top: 8, right: 46, bottom: 30, left: 44 };
 
 	const yDefined = (d: TrendDatum) => d.y != null && !Number.isNaN(d.y);
 	const y2Defined = (d: TrendDatum) => d.y2 != null && !Number.isNaN(d.y2);
@@ -67,21 +71,58 @@
 		d.bandLo != null && d.bandHi != null && !Number.isNaN(d.bandLo) && !Number.isNaN(d.bandHi);
 
 	const num = (v: number | null | undefined): string => (v == null ? '' : String(v));
+	// Label a time-x tick (epoch ms) compactly; band-x ticks are the labels themselves.
+	const xTickFormat = $derived(
+		isTime
+			? (v: number) =>
+					new Date(v).toLocaleDateString(spec.locale, { month: 'short', day: 'numeric' })
+			: (v: string) => v,
+	);
+
+	const legendItems = $derived([
+		{ colorVar: 'var(--dataviz-status-on-time)', label: spec.label, swatch: 'dot' as const },
+		...(spec.secondary
+			? [
+					{
+						colorVar: 'var(--dataviz-status-late)',
+						label: spec.secondary.label,
+						swatch: 'dot' as const,
+					},
+				]
+			: []),
+	]);
 </script>
 
 <figure class={cn('dv-trendmark m-0', className)} aria-label={spec.title} data-slot="trend-mark">
-	<ChartFrame height="7.5rem" class="dv-trendmark-plot">
-		<!-- Primary context: the on-time line on its pinned domain + Wilson band + target. -->
+	<ChartFrame height="9rem" class="dv-trendmark-plot">
+		<!-- Primary context: on-time line + Wilson band + target, with the LEFT y-axis. -->
 		<LcChart
 			{data}
 			x={xOf}
+			y={(d: TrendDatum) => d.y ?? 0}
 			xScale={isTime ? scaleTime() : scalePoint()}
 			{xDomain}
 			yScale={scaleLinear()}
 			{yDomain}
 			{padding}
+			tooltipContext={{ mode: isTime ? 'bisect-x' : 'band' }}
 		>
 			<Svg>
+				<Grid y class="dv-trendmark-grid" />
+				<Axis
+					placement="left"
+					label={spec.label}
+					labelPlacement="middle"
+					ticks={5}
+					format={(v) => `${v}`}
+					class="dv-trendmark-axis"
+				/>
+				<Axis
+					placement="bottom"
+					ticks={isTime ? 5 : undefined}
+					format={xTickFormat}
+					class="dv-trendmark-axis"
+				/>
 				{#if hasBand}
 					<Area
 						y0={(d: TrendDatum) => d.bandLo ?? 0}
@@ -100,15 +141,45 @@
 					defined={yDefined}
 					class="dv-trendmark-otp"
 				/>
+				<Highlight points lines />
 			</Svg>
+			<Tooltip.Root>
+				{#snippet children({ data: d }: { data: TrendDatum })}
+					<Tooltip.Header>{d.xLabel}</Tooltip.Header>
+					<Tooltip.List>
+						<Tooltip.Item
+							label={spec.label}
+							value={`${num(d.y)}${spec.unit}`}
+							color="var(--dataviz-status-on-time)"
+						/>
+						{#if spec.secondary}
+							<Tooltip.Item
+								label={spec.secondary.label}
+								value={`${num(d.y2)}${spec.secondary.unit}`}
+								color="var(--dataviz-status-late)"
+							/>
+						{/if}
+						{#if d.bandLo != null && d.bandHi != null}
+							<Tooltip.Item
+								label="95% CI"
+								value={`${num(d.bandLo)}-${num(d.bandHi)}${spec.unit}`}
+							/>
+						{/if}
+						{#if d.n != null}
+							<Tooltip.Item label="n" value={num(d.n)} />
+						{/if}
+					</Tooltip.List>
+				{/snippet}
+			</Tooltip.Root>
 		</LcChart>
 
-		{#if hasSecondary && secYDomain}
-			<!-- Secondary context overlaid (same x-scale + padding + box) on its OWN domain. -->
+		{#if spec.secondary && hasSecondary && secYDomain}
+			<!-- Secondary context overlaid (same x + padding + box) on its OWN domain + RIGHT axis. -->
 			<div class="dv-trendmark-overlay" aria-hidden="true">
 				<LcChart
 					{data}
 					x={xOf}
+					y={(d: TrendDatum) => d.y2 ?? 0}
 					xScale={isTime ? scaleTime() : scalePoint()}
 					{xDomain}
 					yScale={scaleLinear()}
@@ -116,6 +187,14 @@
 					{padding}
 				>
 					<Svg>
+						<Axis
+							placement="right"
+							label={spec.secondary.label}
+							labelPlacement="middle"
+							ticks={4}
+							format={(v) => `${v}`}
+							class="dv-trendmark-axis dv-trendmark-axis--retard"
+						/>
 						<Spline
 							y={(d: TrendDatum) => d.y2 ?? 0}
 							curve={curveMonotoneX}
@@ -128,7 +207,9 @@
 		{/if}
 	</ChartFrame>
 
-	<!-- AT fallback: the chart as a table (Chart Doctrine — every chart ships one). -->
+	<ChartLegend class="mt-1.5" items={legendItems} />
+
+	<!-- AT fallback: the chart as a table. -->
 	<table class="sr-only">
 		<caption>{spec.title}</caption>
 		<thead>
@@ -151,14 +232,12 @@
 </figure>
 
 <style>
-	/* The plot box (height + position:relative) is owned by ChartFrame. */
 	.dv-trendmark-overlay {
 		position: absolute;
 		inset: 0;
 	}
 
-	/* LayerChart renders the marks in its own components, so these reach the emitted
-	   SVG via :global. Namespaced to this mark so they don't leak as utilities. */
+	/* Mark fills/strokes reach the LayerChart-emitted SVG via :global. */
 	:global(.dv-trendmark-otp) {
 		fill: none;
 		stroke: var(--dataviz-status-on-time);
@@ -175,16 +254,28 @@
 		stroke-dasharray: 4 3;
 		opacity: 0.95;
 	}
-	/* Wilson band: a SOLID pre-mixed muted on-time green (mixed toward the signage bg,
-	   never runtime alpha on a surface) so the page grid never bleeds through. */
 	:global(.dv-trendmark-band) {
 		fill: color-mix(in oklab, var(--dataviz-status-on-time) 20%, var(--signage-bg));
 		stroke: none;
 	}
-	/* Target rule (e.g. 80% OTP): neutral chrome, never a data/affordance token. */
 	:global(.dv-trendmark-target) {
 		stroke: var(--border-strong, var(--border));
 		stroke-width: 0.75;
 		stroke-dasharray: 4 3;
+	}
+	/* Axes: muted mono tick labels + titles; faint grid. */
+	:global(.dv-trendmark-axis .tick text) {
+		fill: var(--muted-foreground);
+		font-family: var(--font-mono);
+		font-size: var(--text-micro);
+	}
+	:global(.dv-trendmark-axis .axis-label),
+	:global(.dv-trendmark-axis text.label) {
+		fill: var(--muted-foreground);
+		font-size: var(--text-micro);
+	}
+	:global(.dv-trendmark-grid line) {
+		stroke: var(--border);
+		opacity: 0.5;
 	}
 </style>

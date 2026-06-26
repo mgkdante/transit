@@ -18,6 +18,7 @@
 	import AbsentValue from '$lib/components/edge/AbsentValue.svelte';
 	import TrendMark from './marks/TrendMark.svelte';
 	import HistogramMark from './marks/HistogramMark.svelte';
+	import DotStripMark from './marks/DotStripMark.svelte';
 	import type { ChartSpec } from './ChartSpec';
 
 	export interface ChartProps {
@@ -41,6 +42,8 @@
 	<TrendMark {spec} class={className} />
 {:else if spec.kind === 'histogram'}
 	<HistogramMark {spec} class={className} />
+{:else if spec.kind === 'dot-strip'}
+	<DotStripMark {spec} class={className} />
 {:else}
 	<!--
 		Pending branches (added as each family migrates, each gate-green + browser-verified):

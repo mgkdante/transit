@@ -39,18 +39,11 @@
 	import MetricDisplay from '$lib/components/brand/MetricDisplay.svelte';
 	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
 	import { AbsentValue, MaybeValue } from '$lib/components/edge';
-	import {
-		SeverityBar,
-		RankedRow,
-		StripPlot,
-		ChartLegend,
-		severityVar,
-		HEATMAP_NODATA,
-	} from '$lib/components/dataviz';
-	import type { StripPlotRow } from '$lib/components/dataviz';
+	import { SeverityBar, RankedRow, ChartLegend, HEATMAP_NODATA } from '$lib/components/dataviz';
 	import { Chart } from '$lib/components/dataviz/chart';
 	import { selectPunctualityTrend } from './selectors/punctualityTrend';
 	import { selectPunctualityDistribution } from './selectors/punctualityDistribution';
+	import { selectPunctualityTimeOfDay } from './selectors/punctualityTimeOfDay';
 	import { GrainPicker, type GrainSegment } from '$lib/components/surface';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
 	import { metricInfoFor, type MetricKey } from '$lib/features/metrics/metrics.content';
@@ -141,7 +134,11 @@
 	const p90 = $derived<number | null>(headline.p90Min);
 	const hasDist = $derived(p50 != null || p90 != null);
 	const distSpec = $derived(
-		selectPunctualityDistribution(vm, locale, { title: copy.strip.delayDistHeading, unit: ' s' }),
+		selectPunctualityDistribution(vm, locale, {
+			title: copy.strip.delayDistHeading,
+			unit: ' s',
+			xLabel: copy.strip.delayDistLabel,
+		}),
 	);
 
 	// Severe-share magnitude of the headline period — the ABSOLUTE %, scaled by the
@@ -264,40 +261,22 @@
 	// is never the sole channel. A null-severe shift routes through honest absence (no
 	// dot, the WHY) — never a fabricated 0. The byShift rows ALWAYS carry every shift
 	// the contract returned; the strip shows the fixed axis with honest gaps.
-	const SEVERITY_GLYPH: Record<SeverityCode, string> = {
-		watch: '●',
-		high: '▲',
-		critical: '◆',
-	};
-	const shiftStripRows = $derived<StripPlotRow[]>(
-		orderByGrain(vm.peakOffPeak.byShift, SHIFT_GRAIN_ORDER).map((r) => {
-			const severity = severeShareToSeverity(r.severePct);
-			return {
-				key: r.grain,
-				label: shiftLabel(r.grain),
-				value: r.severePct,
-				colorVar: severityVar(severity),
-				glyph: SEVERITY_GLYPH[severity],
-				display: pct(r.severePct) ?? copy.strip.noData,
-				emptyLabel: copy.strip.noData,
-			};
+	// P10/S7 P1.5: the per-shift severe share is a Cleveland DOT-STRIP — one dot per shift
+	// on the fixed SEVERE_DOMAIN, dots NOT connected, the all-day mean a reference rule —
+	// now rendered via the one <Chart>. selectPunctualityTimeOfDay owns the shift order +
+	// severity banding + the mean; honest absence when no shift carries a real severe share.
+	const timeOfDaySpec = $derived(
+		selectPunctualityTimeOfDay(vm, locale, {
+			title: copy.peak.strip.ariaLabel,
+			unit: copy.units.pct,
+			shiftLabel,
 		}),
 	);
-	// At least one shift must carry a real severe share for the strip to draw.
-	const hasShiftStrip = $derived(shiftStripRows.some((r) => r.value != null));
-
-	// The all-day mean reference rule: the simple mean of the shifts' real severe
-	// shares (a flat sum/length reduce, NOT Math.max over a spread — doctrine-clean).
-	// It is a REFERENCE line in value units on the same fixed axis, never a domain.
-	const shiftSevereMean = $derived.by<number | null>(() => {
-		const vals = shiftStripRows.map((r) => r.value).filter((v): v is number => v != null);
-		if (vals.length === 0) return null;
-		let sum = 0;
-		for (const v of vals) sum += v;
-		return sum / vals.length;
-	});
+	const hasShiftStrip = $derived(timeOfDaySpec.kind === 'dot-strip');
 	const shiftMeanLabel = $derived(
-		shiftSevereMean != null ? copy.peak.strip.mean(pct(shiftSevereMean) ?? copy.strip.noData) : '',
+		timeOfDaySpec.kind === 'dot-strip' && timeOfDaySpec.medianRef != null
+			? copy.peak.strip.mean(pct(timeOfDaySpec.medianRef) ?? copy.strip.noData)
+			: '',
 	);
 
 	const dayTypePeakRows = $derived(
@@ -659,15 +638,7 @@
 					     extremes are direct-labelled. Dots ride the dataviz severity scale +
 					     a glyph; a null-severe shift is an honest gap (no fake 0). -->
 					<div class="cluster-strip" data-slot="shift-severe-strip">
-						<StripPlot
-							rows={shiftStripRows}
-							order="given"
-							domain={SEVERE_DOMAIN}
-							mean={shiftSevereMean}
-							meanLabel={shiftMeanLabel}
-							label={copy.peak.strip.ariaLabel}
-							interactive
-						/>
+						<Chart spec={timeOfDaySpec} />
 						<p class="cluster-caption" data-slot="shift-strip-axis">
 							{copy.peak.dayOfWeekSevere}{#if shiftMeanLabel}
 								· {shiftMeanLabel}{/if}

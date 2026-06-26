@@ -238,23 +238,22 @@ describe('Cluster01Punctuality — populated', () => {
 		expect(screen.getByText(copy.peak.weekday)).toBeInTheDocument();
 	});
 
-	it('P10: the per-shift severe share is a Cleveland STRIP plot on the shared axis (not bars)', () => {
+	it('P10: the per-shift severe share is a Cleveland dot-strip on the fixed axis', () => {
 		const { container } = render(Cluster01Punctuality, {
 			props: { vm: populated, locale: 'en', copy },
 		});
-		// The shift block is now the strip plot, in chronological am→night order.
 		const strip = container.querySelector('[data-slot="shift-severe-strip"]') as HTMLElement;
 		expect(strip).not.toBeNull();
-		const fig = strip.querySelector('[data-slot="strip-plot"]') as HTMLElement;
-		expect(fig.getAttribute('data-layout')).toBe('categorical');
-		// One dot for the lone am_peak shift; its dot rides the dataviz SEVERITY scale.
-		const dots = strip.querySelectorAll<HTMLElement>('.dv-strip-plot__dot');
-		expect(dots.length).toBe(1);
-		expect(dots[0].style.getPropertyValue('--dot-fill')).toBe('var(--dataviz-severity-watch)');
-		// The shared axis is the FIXED SEVERE_DOMAIN [0,100] (full % scale): 4.7% → 4.7% across.
-		expect(dots[0].style.left).toBe(`${(4.7 / 100) * 100}%`);
-		// The all-day mean reference rule renders (the lone shift's mean = itself).
-		expect(strip.querySelector('.dv-strip-plot__mean')).not.toBeNull();
+		// Rendered via the one <Chart> → the dot-strip mark (LayerChart dots mount behind
+		// ChartFrame's measured-size gate, verified in headless; here we assert the mark +
+		// its AT-fallback table).
+		const mark = strip.querySelector('[data-slot="dot-strip-mark"]') as HTMLElement;
+		expect(mark).not.toBeNull();
+		// The AT-fallback table carries the am_peak shift + its 4.7% severe share.
+		const rows = mark.querySelectorAll('table tbody tr');
+		expect(rows.length).toBe(1);
+		expect(rows[0].textContent).toContain('AM peak');
+		expect(rows[0].textContent).toContain('4.7');
 	});
 });
 

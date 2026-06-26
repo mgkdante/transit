@@ -24,6 +24,10 @@ export interface PunctualityDistributionLabels {
 	title: string;
 	/** Value unit suffix for the bins / refs (seconds, e.g. " s"). */
 	unit: string;
+	/** Localized x-axis title (the delay axis). */
+	xLabel?: string;
+	/** Localized y-axis title (the count axis). */
+	yLabel?: string;
 }
 
 export function selectPunctualityDistribution(
@@ -63,6 +67,8 @@ export function selectPunctualityDistribution(
 		domain: DELAY_HISTOGRAM_DOMAIN,
 		countDomain,
 		unit: labels.unit,
+		xLabel: labels.xLabel,
+		yLabel: labels.yLabel,
 		bins,
 		// p50/p90 are MINUTES on the headline; the bins are SECONDS → convert the refs.
 		medianRef: p50 != null ? Math.round(p50 * 60) : null,
