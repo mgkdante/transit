@@ -11,6 +11,7 @@ and monthly grains stay None because percentiles are not additively composable.
 
 from __future__ import annotations
 
+from datetime import timedelta
 import hashlib
 from typing import TYPE_CHECKING
 
@@ -67,10 +68,12 @@ from transit_ops.snapshots.contract import (
     Receipt,
     ReceiptWorstRoute,
     ReceiptWorstStop,
+    ReliabilityByGrain,
     ReliabilityPeriod,
     RepeatOffenders,
     RouteDayOfWeek,
     RouteDelayHistogramBin,
+    RouteHabitsByGrain,
     RouteReliability,
     ServiceSpanPeriod,
     SkippedStopPeriod,
@@ -820,7 +823,7 @@ _ROUTE_SPINE_PROJECT_TEMPLATE = """
         SUM(sum_delay_seconds)::bigint          AS sum_delay_sec,
         {hist_cols}
     FROM gold.route_delay_spine
-    WHERE provider_id = :provider_id{entity_clause}
+    WHERE provider_id = :provider_id{entity_clause}{window_clause}
     GROUP BY {group_by}
     ORDER BY {group_by}
 """
@@ -828,17 +831,31 @@ _ROUTE_SPINE_PROJECT_TEMPLATE = """
 _ROUTE_ENTITY_CLAUSE = " AND route_id = :route_id"
 
 
-def _spine_project_sql(dims: str, group_by: str, entity_clause: str = _ROUTE_ENTITY_CLAUSE):  # noqa: ANN202
-    """Format the ONE projector template for a fold (dims carry their trailing comma)."""
+def _spine_project_sql(  # noqa: ANN202
+    dims: str,
+    group_by: str,
+    entity_clause: str = _ROUTE_ENTITY_CLAUSE,
+    window_clause: str = "",
+):
+    """Format the ONE projector template for a fold (dims carry their trailing comma).
+
+    window_clause defaults to "" so every pre-baked constant formats to text BYTE-IDENTICAL
+    to before this change; a windowed read passes _SPINE_WINDOW_CLAUSE (bounded :win_start/
+    :win_end). NOTE: the template MUST carry the {window_clause} slot or .format() KeyErrors.
+    """
     return text(
         _ROUTE_SPINE_PROJECT_TEMPLATE.format(
-            dims=dims, hist_cols=_SPINE_HIST_COLS, group_by=group_by, entity_clause=entity_clause
+            dims=dims,
+            hist_cols=_SPINE_HIST_COLS,
+            group_by=group_by,
+            entity_clause=entity_clause,
+            window_clause=window_clause,
         )
     )
 
 
-def _route_spine_sql(dims: str, group_by: str):  # noqa: ANN202
-    return _spine_project_sql(dims, group_by, _ROUTE_ENTITY_CLAUSE)
+def _route_spine_sql(dims: str, group_by: str, window_clause: str = ""):  # noqa: ANN202
+    return _spine_project_sql(dims, group_by, _ROUTE_ENTITY_CLAUSE, window_clause)
 
 
 _ROUTE_SPINE_BY_SHIFT_SQL = _route_spine_sql(f"{_SPINE_SHIFT_CASE} AS grain,", "1")
@@ -862,6 +879,73 @@ _ROUTE_SPINE_CROSSTAB_SQL = _route_spine_sql(
 # equals SUM(delay_obs)), reproducing the fact network's scoped-OTP denominator.
 _NETWORK_SPINE_BY_SHIFT_SQL = _spine_project_sql(f"{_SPINE_SHIFT_CASE} AS grain,", "1", "")
 _NETWORK_SPINE_BY_DAYTYPE_SQL = _spine_project_sql(f"{_SPINE_DAYTYPE_CASE} AS grain,", "1", "")
+
+# --- S7-B windowable §1 ("When to ride" follows the grain rail) ---------------
+# The breakdowns + heatmap recomputed per TIME WINDOW off the spine, so §1 answers
+# Today / This week / This month (the scalar reads above stay whole-history). Windows
+# are trailing-N-days anchored on the route's newest CLOSED day, matching the web's
+# windowByGrain so the windowed arrays need no client re-trim.
+_MIN_N_HABIT_CELL = 30  # per-(dow,hour)-cell known-delay floor for the windowed heatmap
+_SPINE_WINDOW_CLAUSE = " AND service_local_date >= :win_start AND service_local_date <= :win_end"
+
+_SPINE_ANCHOR_SQL = text(
+    "SELECT MAX(service_local_date) AS anchor FROM gold.route_delay_spine "
+    "WHERE provider_id = :provider_id AND route_id = :route_id"
+)
+
+# Windowed twins of the whole-history breakdown projectors (only :win_start/:win_end vary).
+_W_BY_SHIFT = _route_spine_sql(f"{_SPINE_SHIFT_CASE} AS grain,", "1", _SPINE_WINDOW_CLAUSE)
+_W_BY_DAYTYPE = _route_spine_sql(f"{_SPINE_DAYTYPE_CASE} AS grain,", "1", _SPINE_WINDOW_CLAUSE)
+_W_DOW = _route_spine_sql(
+    "EXTRACT(ISODOW FROM service_local_date)::integer AS day_of_week_iso,",
+    "1",
+    _SPINE_WINDOW_CLAUSE,
+)
+_W_CROSSTAB = _route_spine_sql(
+    f"{_SPINE_SHIFT_CASE} AS shift,\n        {_SPINE_DAYTYPE_CASE} AS day_type,",
+    "1, 2",
+    _SPINE_WINDOW_CLAUSE,
+)
+
+# Windowed habits recomposition (B1). The composite repeat_problem_score is rebuilt from the
+# spine windowed by date — a DOCUMENTED REBASELINE vs the whole-history route_habit_score mart:
+# the severe*10 base is byte-identical; the avg/60 term diverges (the spine's in-clamp pooled
+# mean vs the mart's obs-weighted avg-of-averages). Computed in SQL numeric (Postgres half-away-
+# from-zero rounding — never Python round(), which is banker's). LEAST(..., 9999.9999) clamps
+# exactly as the mart; _build_habits_matrix then normalizes to [0,1] per the window's own worst
+# cell so the cap never leaks (slice-9.1.1x sentinel guard). dow = EXTRACT(ISODOW FROM
+# service_local_date) + the stored hour_of_day_local — both already provider-local (DST-safe; no
+# timestamp reconstruction). Mirrors UPSERT_REPEATED_PROBLEM_ROUTE_STOP (gold/rollups.py).
+_ROUTE_HABIT_SPINE_SQL = text(
+    """
+    SELECT
+        EXTRACT(ISODOW FROM service_local_date)::integer AS day_of_week_iso,
+        hour_of_day_local,
+        SUM(delay_observation_count)::bigint AS known_obs,
+        LEAST(
+            ROUND(
+                SUM(severe_delay_count)::numeric * 10
+                + GREATEST(COALESCE(ROUND(
+                    SUM(sum_delay_seconds)::numeric
+                    / NULLIF(SUM((SELECT COALESCE(SUM(x), 0) FROM unnest(delay_histogram) AS x)), 0),
+                    2), 0), 0) / 60,
+                4),
+            9999.9999) AS repeat_problem_score
+    FROM gold.route_delay_spine
+    WHERE provider_id = :provider_id AND route_id = :route_id
+      AND service_local_date >= :win_start AND service_local_date <= :win_end
+    GROUP BY 1, 2
+"""
+)
+
+
+def _grain_windows(anchor):  # noqa: ANN001, ANN202
+    """Trailing-N-day [start, end] windows anchored on the route's latest closed day."""
+    return {
+        "day": (anchor, anchor),
+        "week": (anchor - timedelta(days=6), anchor),
+        "month": (anchor - timedelta(days=29), anchor),
+    }
 
 
 def _spine_hist_and_avg(r):  # noqa: ANN001, ANN202
@@ -894,7 +978,12 @@ def _spine_delay_histogram(hist: list[int]) -> "list[RouteDelayHistogramBin] | N
     return bins
 
 
-def _spine_reliability_period(r, *, grain: str, date) -> "ReliabilityPeriod":  # noqa: ANN001
+def _spine_reliability_period(  # noqa: ANN001
+    r, *, grain: str, date, with_histogram: bool = True
+) -> "ReliabilityPeriod":
+    # with_histogram=False suppresses the bulky 21-bin array on windowed by_shift/by_daytype
+    # periods (the scalar percentiles p50/p90 are still computed from the same hist) — the §1
+    # distribution chart reads the whole-window/daily series, not per-window-per-shift bins.
     hist, avg_sec = _spine_hist_and_avg(r)
     return ReliabilityPeriod(
         grain=grain,
@@ -908,7 +997,7 @@ def _spine_reliability_period(r, *, grain: str, date) -> "ReliabilityPeriod":  #
         on_time=_opt_int(r["on_time"]),
         wilson_lo=_wilson_lo(r["on_time"], r["known_obs"]),
         wilson_hi=_wilson_hi(r["on_time"], r["known_obs"]),
-        delay_histogram=_spine_delay_histogram(hist),
+        delay_histogram=_spine_delay_histogram(hist) if with_histogram else None,
     )
 
 
@@ -932,9 +1021,10 @@ def _spine_route_periods(conn, params) -> "list[ReliabilityPeriod]":  # noqa: AN
     return periods
 
 
-def _spine_route_dow(conn, params) -> "list[RouteDayOfWeek]":  # noqa: ANN001
+def _spine_route_dow(conn, params, sql=_ROUTE_SPINE_DOW_SQL) -> "list[RouteDayOfWeek]":  # noqa: ANN001
+    # sql defaults to the whole-history projector; pass _W_DOW for a windowed read.
     out: list[RouteDayOfWeek] = []
-    for r in conn.execute(_ROUTE_SPINE_DOW_SQL, params).mappings():
+    for r in conn.execute(sql, params).mappings():
         _hist, avg_sec = _spine_hist_and_avg(r)
         out.append(
             RouteDayOfWeek(
@@ -947,9 +1037,10 @@ def _spine_route_dow(conn, params) -> "list[RouteDayOfWeek]":  # noqa: ANN001
     return out
 
 
-def _spine_route_crosstab(conn, params) -> "list[CrosstabCell]":  # noqa: ANN001
+def _spine_route_crosstab(conn, params, sql=_ROUTE_SPINE_CROSSTAB_SQL) -> "list[CrosstabCell]":  # noqa: ANN001
+    # sql defaults to the whole-history projector; pass _W_CROSSTAB for a windowed read.
     out: list[CrosstabCell] = []
-    for r in conn.execute(_ROUTE_SPINE_CROSSTAB_SQL, params).mappings():
+    for r in conn.execute(sql, params).mappings():
         _hist, avg_sec = _spine_hist_and_avg(r)
         out.append(
             CrosstabCell(
@@ -989,6 +1080,119 @@ def _network_spine_rows(conn, sql, params, order) -> "list[NetworkShift]":  # no
     ordered = [by_grain[g] for g in order if g in by_grain]
     ordered.extend(by_grain[g] for g in sorted(set(by_grain) - set(order)))
     return ordered
+
+
+def _windowed_periods(conn, sql, params, *, with_histogram=False):  # noqa: ANN001, ANN202
+    """ReliabilityPeriod rows from a windowed by_shift/by_daytype projector (grain = the
+    bucket label). Histograms suppressed by default (payload)."""
+    return [
+        _spine_reliability_period(
+            r, grain=str(r["grain"]), date=None, with_histogram=with_histogram
+        )
+        for r in conn.execute(sql, params).mappings()
+    ]
+
+
+def _windowed_otp_index(conn, sql, params):  # noqa: ANN001, ANN202
+    """bucket label -> (on_time, known_obs) for the PRIOR window, for the period-over-period
+    delta. Keyed by the same grain label the current periods carry."""
+    return {
+        str(r["grain"]): (r["on_time"], r["known_obs"]) for r in conn.execute(sql, params).mappings()
+    }
+
+
+def _attach_prior(periods, prior_index):  # noqa: ANN001, ANN202
+    """Set prior_observation_count (= prior KNOWN_obs, matching observation_count) + the prior
+    real OTP on each current period, so a two-proportion delta is valid. No prior -> left None."""
+    for p in periods:
+        pri = prior_index.get(p.grain)
+        if pri is None:
+            continue
+        on_time, known = pri
+        p.prior_observation_count = _opt_int(known)
+        p.prior_otp_pct = _otp_pct(on_time, known)
+
+
+def _spine_anchor(conn, params):  # noqa: ANN001, ANN202
+    """The route's newest CLOSED day in the spine (MAX(service_local_date)), or None when the
+    route has no spine rows. Read ONCE per route and threaded into both windowed builders."""
+    row = conn.execute(_SPINE_ANCHOR_SQL, params).mappings().fetchone()
+    return row["anchor"] if row else None
+
+
+def _spine_periods_by_grain(conn, params, anchor=None) -> "list[ReliabilityByGrain]":  # noqa: ANN001
+    """The §1 breakdowns (by_shift / by_daytype / day_of_week / crosstab) per trailing window,
+    each by_shift/by_daytype period carrying its prior-window n + OTP for a delta."""
+    if anchor is None:
+        anchor = _spine_anchor(conn, params)
+    if anchor is None:
+        return []
+    out: list[ReliabilityByGrain] = []
+    for grain, (win_start, win_end) in _grain_windows(anchor).items():
+        win_len = (win_end - win_start).days + 1
+        cur = {**params, "win_start": win_start, "win_end": win_end}
+        pri = {
+            **params,
+            "win_start": win_start - timedelta(days=win_len),
+            "win_end": win_start - timedelta(days=1),
+        }
+        by_shift = _windowed_periods(conn, _W_BY_SHIFT, cur)
+        by_daytype = _windowed_periods(conn, _W_BY_DAYTYPE, cur)
+        _attach_prior(by_shift, _windowed_otp_index(conn, _W_BY_SHIFT, pri))
+        _attach_prior(by_daytype, _windowed_otp_index(conn, _W_BY_DAYTYPE, pri))
+        dow = _spine_route_dow(conn, cur, sql=_W_DOW)
+        crosstab = _spine_route_crosstab(conn, cur, sql=_W_CROSSTAB)
+        if by_shift or by_daytype or dow or crosstab:
+            out.append(
+                ReliabilityByGrain(
+                    grain=grain,
+                    date=_iso_date(win_start),
+                    by_shift=by_shift,
+                    by_daytype=by_daytype,
+                    day_of_week=dow,
+                    by_shift_daytype=crosstab,
+                )
+            )
+    return out
+
+
+def _spine_habits_by_grain(conn, params, anchor=None) -> "list[RouteHabitsByGrain]":  # noqa: ANN001
+    """The §1 7x24 repeat-problem heatmap recomposed per trailing window (B1)."""
+    if anchor is None:
+        anchor = _spine_anchor(conn, params)
+    if anchor is None:
+        return []
+    out: list[RouteHabitsByGrain] = []
+    for grain, (win_start, win_end) in _grain_windows(anchor).items():
+        rows = conn.execute(
+            _ROUTE_HABIT_SPINE_SQL, {**params, "win_start": win_start, "win_end": win_end}
+        ).mappings()
+        cells: list[dict] = []
+        suppressed = 0
+        for r in rows:
+            if int(r["known_obs"] or 0) < _MIN_N_HABIT_CELL:
+                suppressed += 1
+                continue
+            cells.append(
+                {
+                    "day_of_week_iso": r["day_of_week_iso"],
+                    "hour_of_day_local": r["hour_of_day_local"],
+                    "repeat_problem_score": float(r["repeat_problem_score"]),
+                }
+            )
+        # Explicit guard: _build_habits_matrix([]) returns an all-None 7x24 (route_max=0) —
+        # the forbidden "sea of grey cells". An empty/too-sparse window -> honest habits=None.
+        habits = _build_habits_matrix(cells) if cells else None
+        out.append(
+            RouteHabitsByGrain(
+                grain=grain,
+                date=_iso_date(win_start),
+                habits=habits,
+                cells_observed=len(cells),
+                cells_suppressed=suppressed,
+            )
+        )
+    return out
 
 
 def build_route_reliability(
@@ -1121,6 +1325,13 @@ def build_route_reliability(
 
     # --- habits: 7x24 per-route relative-problem matrix (isodow 1..7 x hour 0..23) ---
     habits = _build_habits_matrix(conn.execute(_ROUTE_HABIT_SQL, params).mappings())
+
+    # --- S7-B windowable §1: the When-to-ride breakdowns + heatmap per time window
+    #     (day/week/month) off gold.route_delay_spine. The scalar habits / periods /
+    #     day_of_week / by_shift_daytype above stay the whole-history representation. ---
+    spine_anchor = _spine_anchor(conn, params)  # read once (S6); thread into both windowed builders
+    periods_by_grain = _spine_periods_by_grain(conn, params, spine_anchor)
+    habits_by_grain = _spine_habits_by_grain(conn, params, spine_anchor)
 
     # --- weak_stops: worst N (weak_stops_limit) by average delay seconds ---
     names = {
@@ -1270,6 +1481,8 @@ def build_route_reliability(
         by_shift_daytype=by_shift_daytype,
         occupancy_by_grain=occupancy_by_grain,
         occupancy_by_dow=occupancy_by_dow,
+        periods_by_grain=periods_by_grain,
+        habits_by_grain=habits_by_grain,
     )
 
 
