@@ -79,6 +79,7 @@ EXPECTED_GOLD_AGGREGATE_TABLE_COUNTS = {
     "gold.route_service_span_daily": 28,
     "gold.route_skipped_stop_daily": 29,
     "gold.route_delay_spine": 32,
+    "gold.route_headway_shift_daily": 33,
 }
 
 

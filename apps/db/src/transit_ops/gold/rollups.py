@@ -518,6 +518,22 @@ _SPINE_HIST_EDGES_SQL = (
     "240,300,420,600,900,1800,3600]"
 )
 
+# --- S7-B route_headway_shift_daily: finest-grain additive HEADWAY family ---
+# Fixed gap-histogram edges (MINUTES, left-closed/right-open). 21 edges -> 20 finite bins,
+# mirroring the 21-bin spine so the read helper is a 21-entry walk. Edges START AT 0 (D6)
+# so sub-1-min gaps bin honestly (an edges[0]=1 would fold (0,1) into bin 0 and poison the
+# 0.5*median bunched threshold for high-frequency routes). The clamp is 0 < gap_min < 240,
+# so 240 is the finite domain ceiling — NO +inf overflow bin (the read helper's terminal
+# branch is dead code here, unlike the delay spine's Finding B). Fine at the low end so the
+# median CDF-interp + the 0.5*median bunched threshold reconstruct accurately.
+HEADWAY_GAP_HISTOGRAM_EDGES = (
+    0.0, 0.5, 1, 2, 3, 4, 5, 6, 8, 10, 12, 15, 20, 25, 30, 40, 60, 90, 120, 180, 240,
+)  # 21 edges -> 20 bins; width_bucket -> [1,20], LEAST(.,20)-1 -> bin_idx [0,19]
+
+_HEADWAY_GAP_HIST_EDGES_SQL = (
+    "ARRAY[0.0,0.5,1,2,3,4,5,6,8,10,12,15,20,25,30,40,60,90,120,180,240]"
+)
+
 # Append-only / closed-day builder for gold.route_delay_spine (rollup_kind=
 # "route_delay_spine"). Reads one CLOSED provider-local day of the trip-delay fact,
 # groups to (route, hour-of-day-local, direction), and stores EXACT additive counts
@@ -1392,6 +1408,131 @@ UPSERT_ROUTE_HEADWAY_DIRECTION_DAILY = text(
     """
 )
 
+# S7-B finest-grain additive HEADWAY family. Distinct from UPSERT_ROUTE_HEADWAY_DAILY (above,
+# writes the 14-day-rolling route_headway_by_shift) — this is an APPEND-ONLY closed-day rollup
+# keyed by (provider, route, service_local_date, shift, direction) storing a gap histogram +
+# moment sums so a windowed read recomposes the median (CDF-interp), CoV (Bessel n-1 pooled SD)
+# + %bunched. EVERY direction stored (busiest-direction argmax is read-time, per window). The
+# clamp (0 < gap_min < 240) + n>=2 guard are byte-identical to route_headway_by_shift. Binds
+# {provider_id, local_date, date_key, built_at_utc} -> drops into _build_percentile_days.
+UPSERT_ROUTE_HEADWAY_SHIFT_DAILY = text(
+    f"""
+    WITH trip_starts AS (
+        -- trip start = first in-service realtime observation per trip/service day.
+        SELECT
+            f.provider_id,
+            f.route_id,
+            COALESCE(f.direction_id, 0) AS direction_id,
+            COALESCE(f.start_date, f.snapshot_local_date) AS service_date,
+            f.trip_id,
+            MIN(f.captured_at_utc) AS trip_start_utc
+        FROM gold.fact_trip_delay_snapshot AS f
+        WHERE f.provider_id = :provider_id
+          AND f.snapshot_date_key = :date_key          -- sargable closed day (NOT now()-interval)
+          AND f.route_id IS NOT NULL
+          AND f.trip_id IS NOT NULL
+          AND f.delay_seconds IS NOT NULL
+          AND ABS(f.delay_seconds) <= 3600
+        GROUP BY
+            f.provider_id, f.route_id, COALESCE(f.direction_id, 0),
+            COALESCE(f.start_date, f.snapshot_local_date), f.trip_id
+    ),
+    shifted AS (
+        SELECT
+            ts.provider_id, ts.route_id, ts.direction_id, ts.service_date, ts.trip_start_utc,
+            CASE
+                WHEN EXTRACT(HOUR FROM timezone(dp.timezone, ts.trip_start_utc)) BETWEEN 6 AND 8 THEN 'am_peak'
+                WHEN EXTRACT(HOUR FROM timezone(dp.timezone, ts.trip_start_utc)) BETWEEN 9 AND 14 THEN 'midday'
+                WHEN EXTRACT(HOUR FROM timezone(dp.timezone, ts.trip_start_utc)) BETWEEN 15 AND 18 THEN 'pm_peak'
+                WHEN EXTRACT(HOUR FROM timezone(dp.timezone, ts.trip_start_utc)) BETWEEN 19 AND 22 THEN 'evening'
+                ELSE 'night'
+            END AS shift
+        FROM trip_starts AS ts
+        INNER JOIN gold.dim_provider AS dp ON dp.provider_id = ts.provider_id
+    ),
+    gaps AS (
+        SELECT
+            provider_id, route_id, direction_id, shift,
+            EXTRACT(EPOCH FROM (
+                trip_start_utc - LAG(trip_start_utc) OVER (
+                    PARTITION BY provider_id, route_id, direction_id, service_date, shift
+                    ORDER BY trip_start_utc)
+            )) / 60.0 AS gap_min
+        FROM shifted
+    ),
+    -- ONE shared clamp feeds histogram + moments + bunching (no num/denom drift),
+    -- byte-identical to the legacy filtered CTE.
+    filtered AS (
+        SELECT
+            provider_id, route_id, direction_id, shift, gap_min,
+            LEAST(GREATEST(width_bucket(gap_min, {_HEADWAY_GAP_HIST_EDGES_SQL}), 1), 20) - 1 AS bin_idx
+        FROM gaps
+        WHERE gap_min IS NOT NULL AND gap_min > 0 AND gap_min < 240
+    ),
+    agg AS (
+        SELECT
+            provider_id, route_id, direction_id, shift,
+            percentile_cont(0.5) WITHIN GROUP (ORDER BY gap_min) AS med_gap
+        FROM filtered
+        GROUP BY provider_id, route_id, direction_id, shift
+    ),
+    -- per-DAY bunched, against the per-day-per-group median (NOT summed across a window).
+    bunch AS (
+        SELECT
+            f.provider_id, f.route_id, f.direction_id, f.shift,
+            COUNT(*) FILTER (WHERE f.gap_min < 0.5 * a.med_gap) AS bunched_count
+        FROM filtered AS f
+        JOIN agg AS a USING (provider_id, route_id, direction_id, shift)
+        GROUP BY f.provider_id, f.route_id, f.direction_id, f.shift
+    ),
+    -- raw trip-instance count per grain (pre-gap): the read-time argmax basis (D5).
+    trips AS (
+        SELECT provider_id, route_id, direction_id, shift, COUNT(*) AS trip_n
+        FROM shifted
+        GROUP BY provider_id, route_id, direction_id, shift
+    )
+    INSERT INTO gold.route_headway_shift_daily (
+        provider_id, route_id, service_local_date, shift, direction_id,
+        gap_count, sum_gap_min, sum_gap_sq_min, bunched_gap_count, trip_count,
+        gap_histogram, built_at_utc
+    )
+    SELECT
+        f.provider_id, f.route_id, :local_date, f.shift, f.direction_id,
+        COUNT(*)::integer                                AS gap_count,
+        COALESCE(SUM(f.gap_min), 0)::numeric             AS sum_gap_min,
+        COALESCE(SUM(f.gap_min * f.gap_min), 0)::numeric AS sum_gap_sq_min,
+        COALESCE(MAX(b.bunched_count), 0)::integer       AS bunched_gap_count,
+        COALESCE(MAX(t.trip_n), 0)::integer              AS trip_count,
+        ARRAY[
+            COUNT(*) FILTER (WHERE f.bin_idx = 0),  COUNT(*) FILTER (WHERE f.bin_idx = 1),
+            COUNT(*) FILTER (WHERE f.bin_idx = 2),  COUNT(*) FILTER (WHERE f.bin_idx = 3),
+            COUNT(*) FILTER (WHERE f.bin_idx = 4),  COUNT(*) FILTER (WHERE f.bin_idx = 5),
+            COUNT(*) FILTER (WHERE f.bin_idx = 6),  COUNT(*) FILTER (WHERE f.bin_idx = 7),
+            COUNT(*) FILTER (WHERE f.bin_idx = 8),  COUNT(*) FILTER (WHERE f.bin_idx = 9),
+            COUNT(*) FILTER (WHERE f.bin_idx = 10), COUNT(*) FILTER (WHERE f.bin_idx = 11),
+            COUNT(*) FILTER (WHERE f.bin_idx = 12), COUNT(*) FILTER (WHERE f.bin_idx = 13),
+            COUNT(*) FILTER (WHERE f.bin_idx = 14), COUNT(*) FILTER (WHERE f.bin_idx = 15),
+            COUNT(*) FILTER (WHERE f.bin_idx = 16), COUNT(*) FILTER (WHERE f.bin_idx = 17),
+            COUNT(*) FILTER (WHERE f.bin_idx = 18), COUNT(*) FILTER (WHERE f.bin_idx = 19)
+        ]::smallint[]                                    AS gap_histogram,
+        :built_at_utc
+    FROM filtered AS f
+    LEFT JOIN bunch  AS b USING (provider_id, route_id, direction_id, shift)
+    LEFT JOIN trips  AS t USING (provider_id, route_id, direction_id, shift)
+    -- D7 weekend-leak guard: only attribute to a WEEKDAY :local_date.
+    WHERE EXTRACT(ISODOW FROM CAST(:local_date AS date)) BETWEEN 1 AND 5
+    GROUP BY f.provider_id, f.route_id, f.shift, f.direction_id
+    ON CONFLICT (provider_id, route_id, service_local_date, shift, direction_id) DO UPDATE SET
+        gap_count         = EXCLUDED.gap_count,
+        sum_gap_min       = EXCLUDED.sum_gap_min,
+        sum_gap_sq_min    = EXCLUDED.sum_gap_sq_min,
+        bunched_gap_count = EXCLUDED.bunched_gap_count,
+        trip_count        = EXCLUDED.trip_count,
+        gap_histogram     = EXCLUDED.gap_histogram,
+        built_at_utc      = EXCLUDED.built_at_utc
+    """
+)
+
 UPSERT_REPEAT_OFFENDER_DAILY = text(
     """
     WITH obs AS (
@@ -1504,6 +1645,7 @@ class WarmRollupBuildResult:
     built_route_service_span_days: int = 0
     built_route_skipped_stop_days: int = 0
     built_route_delay_spine_days: int = 0
+    built_route_headway_shift_daily_days: int = 0
     # True when the provider is enrolled but not yet seeded (no gold.dim_provider
     # row): the build is a logged no-op rather than a crash.
     skipped_not_seeded: bool = False
@@ -1522,6 +1664,7 @@ class WarmRollupBuildResult:
             "built_route_service_span_days": self.built_route_service_span_days,
             "built_route_skipped_stop_days": self.built_route_skipped_stop_days,
             "built_route_delay_spine_days": self.built_route_delay_spine_days,
+            "built_route_headway_shift_daily_days": self.built_route_headway_shift_daily_days,
             "reporting_aggregate_row_counts": self.reporting_aggregate_row_counts,
             "completed_at_utc": self.completed_at_utc.isoformat(),
         }
@@ -1783,6 +1926,19 @@ def build_warm_rollups(
         now=now,
     )
 
+    # Headway shift-daily spine — finest-grain additive HEADWAY family (shift x direction).
+    # Reads fact_trip_delay_snapshot -> default trip-delay missing-day calendar.
+    # APPEND-ONLY (NOT in REPORTING_AGGREGATE_TABLES); accrued history is never wiped.
+    built_route_headway_shift_daily = _build_percentile_days(
+        engine,
+        provider_id=provider_id,
+        rollup_kind="route_headway_shift_daily",
+        upsert=UPSERT_ROUTE_HEADWAY_SHIFT_DAILY,
+        today_key=today_key,
+        floor_key=floor_key,
+        now=now,
+    )
+
     # Reporting aggregates (full DELETE+UPSERT refresh) in their own transaction,
     # so a failure here never rolls back the committed 5m + daily-builder work.
     with engine.begin() as conn:
@@ -1831,4 +1987,5 @@ def build_warm_rollups(
         built_route_service_span_days=built_route_service_span,
         built_route_skipped_stop_days=built_route_skipped_stop,
         built_route_delay_spine_days=built_route_delay_spine,
+        built_route_headway_shift_daily_days=built_route_headway_shift_daily,
     )
