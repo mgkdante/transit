@@ -83,6 +83,7 @@
 			unit: copy.units.pct,
 			domain: OTP_DOMAIN,
 			target: 80,
+			targetLabel: copy.strip.target,
 			tone: otpTone(headline.otpPct),
 			n: headline.observationCount,
 		}),

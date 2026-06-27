@@ -32,7 +32,6 @@
 	function delayMark(v: number | null): Mark {
 		const has = v != null && !Number.isNaN(v);
 		const late = has && (v as number) > 0;
-		const early = has && (v as number) < 0;
 		return {
 			has,
 			glyph: !has || v === 0 ? '·' : late ? '▲' : '▼',
@@ -91,7 +90,7 @@
 				data-end="first"
 				aria-label={firstMark.has
 					? `${spec.firstDelayLabel}: ${firstMark.text}`
-					: `${spec.firstDelayLabel}: no data`}
+					: `${spec.firstDelayLabel}: ${spec.noDataLabel}`}
 			>
 				<span class="dv-span-glyph" aria-hidden="true">{firstMark.glyph}</span>
 				<span class="dv-span-delay-text">{firstMark.text}</span>
@@ -106,7 +105,7 @@
 				data-end="last"
 				aria-label={lastMark.has
 					? `${spec.lastDelayLabel}: ${lastMark.text}`
-					: `${spec.lastDelayLabel}: no data`}
+					: `${spec.lastDelayLabel}: ${spec.noDataLabel}`}
 			>
 				<span class="dv-span-glyph" aria-hidden="true">{lastMark.glyph}</span>
 				<span class="dv-span-delay-text">{lastMark.text}</span>

@@ -40,6 +40,8 @@ export interface ReliabilityCopy {
 		/** Accessible name for the snapshot section landmark (band 00). */
 		readonly snapshotLabel: string;
 		readonly otpPct: string;
+		/** Tooltip label for a chart's target/goal tick (e.g. the 80% on-time target). */
+		readonly target: string;
 		readonly avgDelayMin: string;
 		/** Typical (median / p50) delay label — plain, not jargon. */
 		readonly p50Min: string;
@@ -291,6 +293,7 @@ export const reliabilityCopy: Record<Locale, ReliabilityCopy> = {
 		strip: {
 			snapshotLabel: 'Aperçu de la fiabilité',
 			otpPct: 'Ponctualité',
+			target: 'Cible',
 			avgDelayMin: 'Retard moyen',
 			p50Min: 'Retard médian',
 			p90Min: 'Pire des cas',
@@ -463,6 +466,7 @@ export const reliabilityCopy: Record<Locale, ReliabilityCopy> = {
 		strip: {
 			snapshotLabel: 'Reliability snapshot',
 			otpPct: 'On-time',
+			target: 'Target',
 			avgDelayMin: 'Avg delay',
 			p50Min: 'Typical delay',
 			p90Min: 'Worst-case delay',

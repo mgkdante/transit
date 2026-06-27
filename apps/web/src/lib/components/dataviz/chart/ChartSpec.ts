@@ -401,6 +401,8 @@ export interface ServiceSpanSpec extends ChartSpecBase {
 	readonly lastLabel: string;
 	readonly firstDelayLabel: string;
 	readonly lastDelayLabel: string;
+	/** Localized "no data" text for an absent delay reading (a11y). */
+	readonly noDataLabel: string;
 	/** Sparse axis ticks (e.g. 00h / 06 / 12 / 18 / 24h). */
 	readonly hourTicks: readonly ServiceSpanTick[];
 }

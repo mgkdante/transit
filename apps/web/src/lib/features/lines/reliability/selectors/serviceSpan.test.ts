@@ -11,6 +11,7 @@ const opts = {
 	hourLabel: (h: number) => `${String(h).padStart(2, '0')}h`,
 	ariaLabel: (a: string, b: string) => `Service from ${a} to ${b}`,
 	absentTitle: 'Service span',
+	noDataLabel: 'no data',
 };
 
 describe('selectServiceSpan', () => {

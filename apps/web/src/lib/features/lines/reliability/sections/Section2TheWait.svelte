@@ -532,6 +532,7 @@
 						hourLabel: (h) => `${String(h).padStart(2, '0')}h`,
 						ariaLabel: spanCopy.ariaLabel,
 						absentTitle: t.spanSection,
+						noDataLabel: copy.strip.noData,
 					},
 				)
 			: null,

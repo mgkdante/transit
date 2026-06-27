@@ -34,6 +34,8 @@ export interface ServiceSpanOpts {
 	readonly ariaLabel: (first: string, last: string) => string;
 	/** Fallback accessible name for the absent state. */
 	readonly absentTitle: string;
+	/** Localized "no data" text for an absent delay reading (a11y). */
+	readonly noDataLabel: string;
 }
 
 function clockMinutes(iso: string | null): number | null {
@@ -88,6 +90,7 @@ export function selectServiceSpan(
 		lastLabel: opts.lastLabel,
 		firstDelayLabel: opts.firstDelayLabel,
 		lastDelayLabel: opts.lastDelayLabel,
+		noDataLabel: opts.noDataLabel,
 		hourTicks,
 	};
 }

@@ -94,12 +94,15 @@
 		line-height: 1;
 		font-variant-numeric: tabular-nums;
 		color: var(--foreground);
-		font-size: var(--text-title);
+		/* md KPI: prominent but a clear step below the lg headline + the verdict BAN. */
+		font-size: var(--text-heading);
 		/* Keep the number + its unit on one line (no "87" / "%" wrap). */
 		white-space: nowrap;
 	}
+	/* lg KPI: a headline number, ONE step under the verdict BAN (--text-display) so the
+	   two never compete — the page hero stays the plain-language verdict. */
 	.metric-bullet[data-size='lg'] .metric-bullet__value {
-		font-size: var(--text-display);
+		font-size: var(--text-title);
 	}
 	.metric-bullet__value--empty {
 		font-size: var(--text-subheading);
