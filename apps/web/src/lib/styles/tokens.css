@@ -146,12 +146,6 @@
   --dataviz-heatmap-3: #e07a2f;
   --dataviz-heatmap-4: #d23f33;
   --dataviz-heatmap-nodata: #36322e;
-  /* Classed-tier heatmap ramp (S7 P4): a CVD-safe single-hue BLUE luminance scale,
-     calmest→worst. Dark theme = dark recedes, worst pops bright (good contrast on dark). */
-  --dataviz-heatmap-tier-0: #1d3148;
-  --dataviz-heatmap-tier-1: #2f6087;
-  --dataviz-heatmap-tier-2: #4d9bc4;
-  --dataviz-heatmap-tier-3: #86d3ef;
 
   /* Paired tokens (shadcn-compatible) */
   --card-foreground: var(--foreground);
@@ -215,12 +209,6 @@
   --dataviz-heatmap-3: #dd9347;
   --dataviz-heatmap-4: #c2402f;
   --dataviz-heatmap-nodata: #d6d0c4;
-  /* Classed-tier heatmap ramp (S7 P4): the CVD-safe BLUE scale, luminance-INVERTED for
-     light theme — pale recedes, worst pops dark (good contrast on the light surface). */
-  --dataviz-heatmap-tier-0: #d4e4f2;
-  --dataviz-heatmap-tier-1: #8fbdda;
-  --dataviz-heatmap-tier-2: #4985ab;
-  --dataviz-heatmap-tier-3: #1a4d6e;
   --map-stop-fill: #E8540E;
   --border-brand: color-mix(in srgb, var(--primary) 60%, transparent);
   --shadow-glow-sm: 0 0 6px color-mix(in srgb, var(--primary) 18%, transparent);
@@ -292,11 +280,6 @@
     --dataviz-heatmap-3: #e07a2f;
     --dataviz-heatmap-4: #d23f33;
     --dataviz-heatmap-nodata: #36322e;
-    /* Classed-tier heatmap ramp (S7 P4): CVD-safe BLUE, dark recedes / worst pops bright. */
-    --dataviz-heatmap-tier-0: #1d3148;
-    --dataviz-heatmap-tier-1: #2f6087;
-    --dataviz-heatmap-tier-2: #4d9bc4;
-    --dataviz-heatmap-tier-3: #86d3ef;
 
     /* Paired tokens (shadcn-compatible) */
     --card-foreground: var(--foreground);
@@ -362,11 +345,6 @@
     --dataviz-heatmap-3: #dd9347;
     --dataviz-heatmap-4: #c2402f;
     --dataviz-heatmap-nodata: #d6d0c4;
-    /* Classed-tier heatmap ramp (S7 P4): CVD-safe BLUE, luminance-inverted for light. */
-    --dataviz-heatmap-tier-0: #d4e4f2;
-    --dataviz-heatmap-tier-1: #8fbdda;
-    --dataviz-heatmap-tier-2: #4985ab;
-    --dataviz-heatmap-tier-3: #1a4d6e;
     --map-stop-fill: #E8540E;
     --border-brand: color-mix(in srgb, var(--primary) 60%, transparent);
     --shadow-glow-sm: 0 0 6px color-mix(in srgb, var(--primary) 18%, transparent);
