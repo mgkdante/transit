@@ -1073,3 +1073,73 @@ def test_route_delay_spine_is_append_only_not_in_reporting_registry() -> None:
     from transit_ops.gold import rollups
 
     assert "route_delay_spine" not in rollups.REPORTING_AGGREGATE_TABLES
+
+
+def test_build_percentile_days_elevates_workmem_and_disables_nestloop() -> None:
+    """Every finest-grain day-build must run under elevated work_mem + enable_nestloop=off.
+
+    Regression gate for the S7-B prod hang: at the 4MB cluster default the per-trip dedup
+    sort spilled to disk (external merge), and the un-sargable EXTRACT(isodow ...) / ABS(delay)
+    filters' ~600x post-filter row underestimate drove O(n^2) nested-loop joins over the
+    materialized CTEs -> route_headway_shift_daily hung ~45 min/day (the deploy blocker).
+    The fix issues both GUCs (SET LOCAL, transaction-scoped) before each day's upsert; on prod
+    EXPLAIN ANALYZE the headway day-build then runs ~9 s in-memory. Asserting the statements
+    are issued -- in order, before the upsert, inside the per-day transaction -- guards the fix
+    from silent removal. Mirrors migration 0034's heavy-build session tuning.
+    """
+    from datetime import date
+
+    from sqlalchemy import text as _text
+
+    from transit_ops.gold import rollups
+
+    class _Row:
+        local_date = date(2026, 6, 26)
+        date_key = 20260626
+
+    class _Conn:
+        def __init__(self) -> None:
+            self.executed: list[str] = []
+
+        def execute(self, statement, params=None):  # noqa: ANN001, ANN206
+            self.executed.append(str(statement))
+
+            class _Result:
+                @staticmethod
+                def fetchall() -> list:
+                    return [_Row()]
+
+            return _Result()
+
+    class _Engine:
+        def __init__(self) -> None:
+            self.conn = _Conn()
+
+        @contextmanager
+        def begin(self):  # noqa: ANN202
+            yield self.conn
+
+    engine = _Engine()
+    sentinel = _text("INSERT INTO gold.route_headway_shift_daily /* sentinel-upsert */ SELECT 1")
+
+    built = rollups._build_percentile_days(
+        engine,
+        provider_id="stm",
+        rollup_kind="route_headway_shift_daily",
+        upsert=sentinel,
+        today_key=20260627,
+        floor_key=20260613,
+        now=datetime(2026, 6, 27, tzinfo=UTC),
+    )
+    assert built == 1
+
+    ex = engine.conn.executed
+    workmem_idx = next(i for i, s in enumerate(ex) if "SET LOCAL work_mem" in s)
+    nestloop_idx = next(i for i, s in enumerate(ex) if "SET LOCAL enable_nestloop = off" in s)
+    upsert_idx = next(i for i, s in enumerate(ex) if "sentinel-upsert" in s)
+
+    # work_mem is lifted off the 4MB cluster default that spilled the dedup sort.
+    assert "4MB" not in ex[workmem_idx]
+    # Both planner overrides precede the heavy upsert (they only bind inside its transaction).
+    assert workmem_idx < upsert_idx
+    assert nestloop_idx < upsert_idx
