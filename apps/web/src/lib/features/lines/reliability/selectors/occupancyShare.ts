@@ -8,7 +8,6 @@
 import type { Locale } from '$lib/i18n';
 import type { StackedShareSpec, ShareSegment } from '$lib/components/dataviz/chart/ChartSpec';
 import { OCCUPANCY_CODES, type OccupancyCode } from '$lib/v1/schemas';
-import { OCCUPANCY_GLYPH } from '$lib/components/dataviz/tokens';
 
 export interface OccupancyShareOpts {
 	/** Accessible name describing the mix (e.g. "Route 51 crowding mix"). */
@@ -46,7 +45,6 @@ export function selectOccupancyShare(
 			label: opts.label(code),
 			share: (v / total) * 100,
 			occupancy: code,
-			glyph: OCCUPANCY_GLYPH[code],
 		});
 	}
 	return { kind: 'stacked-share', title: opts.title, locale, scale: 'occupancy', segments };

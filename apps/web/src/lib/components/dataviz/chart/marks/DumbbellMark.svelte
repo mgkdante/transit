@@ -38,7 +38,7 @@
 	const yOf = (d: DumbbellDatum) => d.label;
 
 	const frameHeight = $derived(`${Math.max(3, spec.rows.length) * 1.5 + 4}rem`);
-	const padding = { top: 8, right: 16, bottom: 36, left: 120 };
+	const padding = { top: 12, right: 18, bottom: 42, left: 124 };
 
 	const fmt = (v: number | null | undefined): string => (v == null ? '' : String(v));
 </script>

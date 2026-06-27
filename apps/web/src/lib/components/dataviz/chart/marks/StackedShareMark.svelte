@@ -42,7 +42,6 @@
 				start,
 				end: offset,
 				fill: fillFor(s),
-				glyph: s.glyph ?? '',
 			};
 		});
 	});
@@ -85,17 +84,10 @@
 </figure>
 
 <style>
+	/* Crisp 1px segment dividers so adjacent bands read apart by colour alone (no glyph) —
+	   the labelled legend + the hover readout carry the meaning. */
 	:global(rect.dv-share-seg) {
 		stroke: var(--card);
-		stroke-width: 0.5;
-	}
-	/* The fill glyph (occupancy ▁▃▅▇█) on a wide segment — a second channel beside hue.
-	   Quiet, paired with the labelled legend the caller renders. */
-	.dv-share-glyph {
-		fill: var(--background);
-		font-family: var(--font-mono);
-		font-size: var(--text-mono);
-		opacity: 0.7;
-		pointer-events: none;
+		stroke-width: 1;
 	}
 </style>

@@ -75,7 +75,7 @@
 
 	// Both overlaid contexts share IDENTICAL padding so their plot areas align (left axis
 	// on the primary, right axis on the secondary, shared bottom axis).
-	const padding = { top: 8, right: 46, bottom: 30, left: 44 };
+	const padding = { top: 12, right: 48, bottom: 40, left: 48 };
 
 	const yDefined = (d: TrendDatum) => d.y != null && !Number.isNaN(d.y);
 	const y2Defined = (d: TrendDatum) => d.y2 != null && !Number.isNaN(d.y2);

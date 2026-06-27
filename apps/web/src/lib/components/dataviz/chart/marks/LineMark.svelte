@@ -62,7 +62,7 @@
 		})),
 	);
 
-	const padding = { top: 10, right: 18, bottom: 40, left: 54 };
+	const padding = { top: 12, right: 20, bottom: 44, left: 56 };
 	// Null → the brand no-data glyph (never an em-dash, never a fabricated 0).
 	const num = (v: unknown): string => (v == null ? '·' : String(v));
 </script>

@@ -106,8 +106,13 @@
 		}
 	}
 
-	/* Breathing room between the toggle and the revealed analyst charts. */
+	/* Generous breathing room: the toggle-to-content gap PLUS a large gap BETWEEN every
+	   revealed analyst block, in EVERY section (operator: opened details felt too plump).
+	   A flex column with a clamp gap so the blocks read as distinct, uncrowded units. */
 	.detail__body {
-		padding-top: 0.75rem;
+		display: flex;
+		flex-direction: column;
+		gap: clamp(1.75rem, 4vw, 2.75rem);
+		padding-top: 1.5rem;
 	}
 </style>

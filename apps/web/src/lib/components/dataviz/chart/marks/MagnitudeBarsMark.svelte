@@ -36,7 +36,7 @@
 
 	// Grow with the row count (worst-N up to 100) so bars never crowd; the page scrolls.
 	const frameHeight = $derived(`${Math.max(3, spec.rows.length) * 1.35 + 3}rem`);
-	const padding = { top: 8, right: 14, bottom: 36, left: 160 };
+	const padding = { top: 12, right: 16, bottom: 42, left: 160 };
 
 	// The drill fires on the tooltip's band overlay (which sits ON TOP of the bars, so the
 	// bars' own onclick never reaches the pointer) — LayerChart's tooltipContext.onclick

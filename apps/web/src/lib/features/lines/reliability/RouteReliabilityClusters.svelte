@@ -259,84 +259,89 @@
 					/>
 				</svg>
 			</button>
-			<div
-				id="reliability-control-body"
-				class={cn('reliability-control-body', controlsOpen && 'reliability-control-body--open')}
-				data-slot="controls-body"
-			>
-				<GrainPicker {segments} bind:value={viewKey} label={copy.controls.grainLabel} />
+			<!-- Desktop: the grain controls (left) sit BESIDE the section TOC (right) in a
+			     2-column grid so the sticky rail stays compact (operator: "not too thick").
+			     Mobile: stacks to one column (the controls collapse behind the toggle above). -->
+			<div class="reliability-rail-grid">
+				<div
+					id="reliability-control-body"
+					class={cn('reliability-control-body', controlsOpen && 'reliability-control-body--open')}
+					data-slot="controls-body"
+				>
+					<GrainPicker {segments} bind:value={viewKey} label={copy.controls.grainLabel} />
 
-				{#if mode === 'range'}
-					<!-- Start + end pair over the dated day-periods. start == end = one day
+					{#if mode === 'range'}
+						<!-- Start + end pair over the dated day-periods. start == end = one day
 			     (exact); a wider span aggregates the in-range days (mean) + zooms the
 			     trend. Bounds are real dates only, so no out-of-window pick is possible. -->
-					<div class="reliability-range" data-slot="date-range">
-						<label class="reliability-date">
-							<span class="reliability-date__label">{copy.controls.rangeStart}</span>
-							<select
-								class="reliability-date__select"
-								value={rangeStart}
-								onchange={(e) => (rangeStart = e.currentTarget.value)}
-								aria-label={`${copy.controls.dateRange} · ${copy.controls.rangeStart}`}
-							>
-								<option value="">{earliestDate || ''}</option>
-								{#each datedPeriods as p (p.date)}
-									<option value={p.date}>{p.date}</option>
-								{/each}
-							</select>
-						</label>
-						<label class="reliability-date">
-							<span class="reliability-date__label">{copy.controls.rangeEnd}</span>
-							<select
-								class="reliability-date__select"
-								value={rangeEnd}
-								onchange={(e) => (rangeEnd = e.currentTarget.value)}
-								aria-label={`${copy.controls.dateRange} · ${copy.controls.rangeEnd}`}
-							>
-								<option value="">{latestDate || ''}</option>
-								{#each datedPeriods as p (p.date)}
-									<option value={p.date}>{p.date}</option>
-								{/each}
-							</select>
-						</label>
-					</div>
-				{/if}
+						<div class="reliability-range" data-slot="date-range">
+							<label class="reliability-date">
+								<span class="reliability-date__label">{copy.controls.rangeStart}</span>
+								<select
+									class="reliability-date__select"
+									value={rangeStart}
+									onchange={(e) => (rangeStart = e.currentTarget.value)}
+									aria-label={`${copy.controls.dateRange} · ${copy.controls.rangeStart}`}
+								>
+									<option value="">{earliestDate || ''}</option>
+									{#each datedPeriods as p (p.date)}
+										<option value={p.date}>{p.date}</option>
+									{/each}
+								</select>
+							</label>
+							<label class="reliability-date">
+								<span class="reliability-date__label">{copy.controls.rangeEnd}</span>
+								<select
+									class="reliability-date__select"
+									value={rangeEnd}
+									onchange={(e) => (rangeEnd = e.currentTarget.value)}
+									aria-label={`${copy.controls.dateRange} · ${copy.controls.rangeEnd}`}
+								>
+									<option value="">{latestDate || ''}</option>
+									{#each datedPeriods as p (p.date)}
+										<option value={p.date}>{p.date}</option>
+									{/each}
+								</select>
+							</label>
+						</div>
+					{/if}
 
-				<!-- Active-window caption: names the window the selection resolves to so the
+					<!-- Active-window caption: names the window the selection resolves to so the
 		     reader is never unsure what "Today / This week / {date}" actually covers. -->
-				<p class="reliability-window" data-slot="active-window" aria-live="polite">
-					{activeWindowCaption}
-				</p>
-				<!-- Scope note (filter clarity): which sections the window above actually drives. -->
-				<p class="reliability-scope-note" data-slot="scope-note">{copy.controls.scopeNote}</p>
-			</div>
+					<p class="reliability-window" data-slot="active-window" aria-live="polite">
+						{activeWindowCaption}
+					</p>
+					<!-- Scope note (filter clarity): which sections the window above actually drives. -->
+					<p class="reliability-scope-note" data-slot="scope-note">{copy.controls.scopeNote}</p>
+				</div>
 
-			<!-- Section TOC (wayfinding) — always visible (outside the mobile collapse). Each
+				<!-- Section TOC (wayfinding) — always visible (outside the mobile collapse). Each
 			     entry jumps to its section AND shows its filter scope: ↻ follows the window
 			     above, ∞ full history. The sticky bar answers "where am I / what does the
 			     window change" in one place. -->
-			<nav class="reliability-toc" data-slot="section-toc" aria-label={copy.controls.toc}>
-				<span class="reliability-toc__label">{copy.controls.toc}</span>
-				<ul class="reliability-toc__list">
-					{#each sectionNav as s (s.id)}
-						<li>
-							<a
-								class="reliability-toc__link"
-								href={`#${s.id}`}
-								data-scope={s.windowed ? 'windowed' : 'whole'}
-							>
-								<span class="reliability-toc__text">{s.label}</span>
-								<span
-									class="reliability-toc__scope"
-									title={s.windowed ? copy.controls.scopeWindowed : copy.controls.scopeWhole}
-									aria-label={s.windowed ? copy.controls.scopeWindowed : copy.controls.scopeWhole}
-									>{s.windowed ? '↻' : '∞'}</span
+				<nav class="reliability-toc" data-slot="section-toc" aria-label={copy.controls.toc}>
+					<span class="reliability-toc__label">{copy.controls.toc}</span>
+					<ul class="reliability-toc__list">
+						{#each sectionNav as s (s.id)}
+							<li>
+								<a
+									class="reliability-toc__link"
+									href={`#${s.id}`}
+									data-scope={s.windowed ? 'windowed' : 'whole'}
 								>
-							</a>
-						</li>
-					{/each}
-				</ul>
-			</nav>
+									<span class="reliability-toc__text">{s.label}</span>
+									<span
+										class="reliability-toc__scope"
+										title={s.windowed ? copy.controls.scopeWindowed : copy.controls.scopeWhole}
+										aria-label={s.windowed ? copy.controls.scopeWindowed : copy.controls.scopeWhole}
+										>{s.windowed ? '↻' : '∞'}</span
+									>
+								</a>
+							</li>
+						{/each}
+					</ul>
+				</nav>
+			</div>
 		</ControlsRail>
 
 		<!-- Hazard tape discerns the controls zone from the data canvas. -->
@@ -458,7 +463,6 @@
 	   stays inside the ControlsRail body alongside the grain control. Full-width so it
 	   drops onto its own row beneath the chips. */
 	.reliability-window {
-		flex-basis: 100%;
 		margin: 0;
 		font-family: var(--font-mono);
 		font-size: var(--text-small);
@@ -466,7 +470,6 @@
 		color: var(--muted-foreground);
 	}
 	.reliability-scope-note {
-		flex-basis: 100%;
 		margin: 0.15rem 0 0;
 		font-family: var(--font-mono);
 		font-size: var(--text-caption);
@@ -546,8 +549,35 @@
 	.reliability-control-toggle {
 		display: none;
 	}
+	/* 2-column rail (operator: "not too thick"): the grain controls sit BESIDE the section
+	   TOC so the sticky bar is half as tall. Mobile collapses to one column below. */
+	.reliability-rail-grid {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr);
+		gap: 0.75rem;
+		width: 100%;
+	}
 	.reliability-control-body {
-		display: contents;
+		display: flex;
+		flex-direction: column;
+		gap: 0.5rem;
+		min-width: 0;
+	}
+	@media (min-width: 768px) {
+		.reliability-rail-grid {
+			grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr);
+			gap: 0.75rem 2rem;
+			align-items: start;
+		}
+		/* In 2-col the TOC's divider becomes a left rule (not a top rule). */
+		.reliability-toc {
+			margin-top: 0;
+			padding-top: 0;
+			padding-left: 1.5rem;
+			border-top: none;
+			border-left: 1px solid var(--border-subtle, var(--border));
+			align-content: start;
+		}
 	}
 	@media (max-width: 767px) {
 		.reliability-control-toggle {

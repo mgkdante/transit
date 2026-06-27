@@ -2,7 +2,9 @@
   StackedShareBar — the segment layer for StackedShareMark, rendered INSIDE the LayerChart
   <Svg> so it can scale each segment's [start,end] share through the chart context's linear
   x-scale (LayerChart geometry treats a numeric x as a raw pixel, so we scale here). One
-  rect per band on the dataviz scale fill; a native <title> carries the per-segment readout.
+  rect per band on the dataviz occupancy scale; a native <title> carries the per-segment
+  readout on hover. Operator: colour + hover only — no on-bar glyph (the dark glyph read as
+  an ugly black mark on the purple strip). The labelled legend + the hover carry the meaning.
 -->
 <script lang="ts">
 	import { getChartContext } from 'layerchart';
@@ -14,7 +16,6 @@
 		start: number;
 		end: number;
 		fill: string;
-		glyph: string;
 	}
 	let { segments }: { segments: readonly ShareSeg[] } = $props();
 
@@ -38,14 +39,4 @@
 	>
 		<title>{s.label}: {round(s.share)}%</title>
 	</rect>
-	{#if s.glyph && x1 - x0 > 14}
-		<text
-			class="dv-share-glyph"
-			x={(x0 + x1) / 2}
-			y={h / 2}
-			text-anchor="middle"
-			dominant-baseline="central"
-			aria-hidden="true">{s.glyph}</text
-		>
-	{/if}
 {/each}

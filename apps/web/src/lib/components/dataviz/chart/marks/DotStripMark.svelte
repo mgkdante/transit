@@ -37,7 +37,7 @@
 	const yOf = (d: DotStripDatum) => d.group;
 
 	const frameHeight = $derived(`${Math.max(3, groups.length) * 1.5 + 3.25}rem`);
-	const padding = { top: 8, right: 16, bottom: 40, left: 80 };
+	const padding = { top: 12, right: 18, bottom: 44, left: 84 };
 
 	const fmtVal = (v: number | null): string => (v == null ? '' : String(v));
 </script>
