@@ -177,12 +177,16 @@ def _insert_trip_snapshot(connection, ids, route, local_date, hour, rows) -> Non
                      trip_schedule_relationship, delay_seconds, stop_time_update_count,
                      delay_stop_id, delay_stop_sequence)
                 VALUES (:p, :s, :ei, :dk, :sld, :ts, :ts, :entity, :trip, :route, :dir,
-                        :sld, NULL, :sched, :delay, 0, NULL, NULL)
+                        :sld, NULL, :sched, :delay, 0, :stop, NULL)
                 """
             ),
             {"p": PROVIDER, "s": sid, "ei": idx, "dk": date_key, "sld": local_date,
              "ts": captured_at, "entity": f"e{sid}-{idx}", "trip": f"t{sid}-{idx}",
-             "route": route, "dir": direction, "sched": sched, "delay": delay},
+             # delay_stop_id from a small FIXED pool (deterministic per row position -> identical
+             # every seeded day -> calendar-stable): feeds the legacy stop_delay_hourly/weekly path
+             # (scalar weak_stops[]) AND the new gold.stop_delay_spine (weak_stops_by_grain). 3 stops.
+             "route": route, "dir": direction, "sched": sched, "delay": delay,
+             "stop": f"stop{idx % 3}"},
         )
 
 
@@ -359,6 +363,15 @@ def _has_delay_subtree(canon: dict) -> bool:
     return bool(cube) and bool(canon.get("day_of_week")) and bool(canon.get("by_shift_daytype"))
 
 
+def _has_weak_stops(canon: dict) -> bool:
+    """DB-PR-3 vacuity guard: refuse to freeze an empty scalar weak_stops[] subtree — the cutover
+    gate's job is to LICENSE the future stop_delay_weekly/monthly drop (id+name frozen, avg
+    allow-move), which is vacuous if no stop rendered. (weak_stops_by_grain is net-new + MIN_N=30
+    gated, so it may legitimately be [] on this light seed; the scalar is the drop-license subject.)"""
+    ws = canon.get("weak_stops") or []
+    return bool(ws) and all(s.get("id") for s in ws)
+
+
 @contextmanager
 def _seeded_conn():
     engine = create_engine(DB_URL)
@@ -385,6 +398,7 @@ def test_regenerate_golden() -> None:
         anchor = _anchor_today(connection)
         canon = _canonicalize(_render(connection), anchor)
     assert _has_delay_subtree(canon), "refusing to freeze an empty delay subtree (Finding E)"
+    assert _has_weak_stops(canon), "refusing to freeze an empty weak_stops subtree (DB-PR-3)"
     GOLDEN_PATH.parent.mkdir(parents=True, exist_ok=True)
     GOLDEN_PATH.write_text(json.dumps(canon, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
@@ -395,6 +409,7 @@ def test_spine_matches_frozen_golden_on_count_and_share_fields() -> None:
     )
     golden = json.loads(GOLDEN_PATH.read_text(encoding="utf-8"))
     assert _has_delay_subtree(golden), "frozen golden has an empty delay subtree (Finding E)"
+    assert _has_weak_stops(golden), "frozen golden has an empty weak_stops subtree (DB-PR-3)"
     with _seeded_conn() as connection:
         anchor = _anchor_today(connection)
         canon_spine = _canonicalize(_render(connection), anchor)

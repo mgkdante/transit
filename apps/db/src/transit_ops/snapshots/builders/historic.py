@@ -85,6 +85,7 @@ from transit_ops.snapshots.contract import (
     StopReliabilityPeriod,
     TrendPoint,
     WeakStop,
+    WeakStopGrain,
 )
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
@@ -1379,6 +1380,91 @@ def _headway_by_grain(conn, params, scheduled, anchor=None) -> "list[HeadwayByGr
     return out
 
 
+# ── S7-B §4 windowable weak-stops: read-time recompose off gold.stop_delay_spine ──
+# MIN_N is the LOAD-BEARING window floor (NEW path only): the Wilson lower bound does NOT
+# demote an extreme tiny-n fluke — a 4-of-4-severe stop pins the not-severe LB at exactly
+# 0.0% (n-independent), so a hard exclude is the only rail. Non-removable.
+_MIN_N_WEAK_STOP = MIN_N_RATE      # 30
+_WEAK_STOPS_BY_GRAIN_CAP = 15      # stored per-grain cap (byte budget; web "All" = all 15 stored)
+
+# Own anchor (NEVER reuse the delay-spine / headway anchors — a different builder + a different
+# newest-closed-day front means the stop spine's anchor differs).
+_STOP_DELAY_ANCHOR_SQL = text(
+    "SELECT MAX(service_local_date) AS anchor FROM gold.stop_delay_spine "
+    "WHERE provider_id = :provider_id AND route_id = :route_id"
+)
+
+# Windowed projector: additive per-stop counts over a trailing window for ONE route. A real
+# route_id never matches '__unrouted__', so NULL-route obs are correctly excluded (mirrors the
+# legacy per-route _ROUTE_WEAK_STOPS_SQL). avg = pooled raw sum/n (a documented rebaseline vs the
+# legacy triple-ROUND weekly avg); severe_k = obs - severe; ranked on _wilson_lo(severe_k, obs) ASC.
+_STOP_WEAK_WINDOW_SQL = text(
+    """
+    SELECT
+        stop_id,
+        SUM(observation_count)::bigint  AS obs,
+        SUM(severe_delay_count)::bigint AS severe,
+        SUM(sum_delay_seconds)::bigint  AS sum_delay_sec
+    FROM gold.stop_delay_spine
+    WHERE provider_id = :provider_id AND route_id = :route_id
+      AND service_local_date >= :win_start AND service_local_date <= :win_end
+    GROUP BY stop_id
+    """
+)
+
+
+def _stop_delay_anchor(conn, params):  # noqa: ANN001, ANN202
+    row = conn.execute(_STOP_DELAY_ANCHOR_SQL, params).mappings().fetchone()
+    return row["anchor"] if row else None
+
+
+def _weak_stops_by_grain(conn, params, names, anchor=None) -> "list[WeakStopGrain]":  # noqa: ANN001
+    """§4 worst-N stops recomposed per trailing window, ranked by the Wilson LOWER bound of the
+    NOT-severe rate ASC (a low LB = chronically severe = worst), MIN_N=30 hard EXCLUDE floor,
+    honest-absence omit. `names` is the _STOP_NAMES_SQL dict built ONCE in build_route_reliability.
+    """
+    if anchor is None:
+        anchor = _stop_delay_anchor(conn, params)
+    if anchor is None:
+        return []
+    out: list[WeakStopGrain] = []
+    for grain, (win_start, win_end) in _grain_windows(anchor).items():
+        cur = {**params, "win_start": win_start, "win_end": win_end}
+        ranked: list[tuple] = []  # (wilson_lo, -avg_min, stop_id, WeakStop)
+        for r in conn.execute(_STOP_WEAK_WINDOW_SQL, cur).mappings():
+            obs = int(r["obs"] or 0)
+            if obs < _MIN_N_WEAK_STOP:  # D-C: hard floor — EXCLUDE (never a fabricated avg=0)
+                continue
+            severe = int(r["severe"] or 0)
+            severe_k = obs - severe  # not-severe successes (design S, the build_stop_reliability shape)
+            w_lo = _wilson_lo(severe_k, obs)  # [0,100] PERCENT; lower band of the NOT-severe rate
+            w_hi = _wilson_hi(severe_k, obs)
+            if w_lo is None:  # defensive: obs>=30 guarantees non-None
+                continue
+            sum_sec = r["sum_delay_sec"]
+            avg_min = _avg_delay_min(float(sum_sec) / obs) if sum_sec is not None else None
+            sid = str(r["stop_id"])
+            stop = WeakStop(
+                id=sid,
+                name=names.get(sid),
+                avg_delay_min=avg_min,  # displayed lollipop magnitude (honest-null)
+                observation_count=_opt_int(obs),
+                severe_pct=_severe_pct(obs, severe),  # the severe-delay rate %
+                wilson_lo=w_lo,  # rank key + whisker floor (not-severe lower bound)
+                wilson_hi=w_hi,
+            )
+            # rank: LOW not-severe wilson_lo = worst (ASC). Tie-break: HIGHER avg worst, then id ASC
+            # (stable, deterministic). Rank the FULL set, THEN truncate — a smaller display-N never
+            # rescales (mirrors the scalar weak_stops + the web selectWeakStops invariant).
+            ranked.append((w_lo, -(avg_min or 0.0), sid, stop))
+        if not ranked:
+            continue  # honest absence: no stop clears MIN_N in this window -> omit the grain
+        ranked.sort(key=lambda t: (t[0], t[1], t[2]))
+        stops = [t[3] for t in ranked[:_WEAK_STOPS_BY_GRAIN_CAP]]
+        out.append(WeakStopGrain(grain=grain, date=_iso_date(win_start), stops=stops))
+    return out
+
+
 def build_route_reliability(
     conn: Connection,
     *,
@@ -1538,6 +1624,12 @@ def build_route_reliability(
         for sid, avg_sec in weak_rows[:weak_stops_limit]
     ]
 
+    # --- S7-B windowable §4: worst-N stops recomposed per time window off gold.stop_delay_spine,
+    #     ranked by the not-severe Wilson lower bound (the build_stop_reliability house pattern).
+    #     The scalar weak_stops[] above STAYS whole-history (reads stop_delay_weekly until 0067)
+    #     and MIN_N-free; the windowed companion applies the MIN_N=30 hard floor. names reused. ---
+    weak_stops_by_grain = _weak_stops_by_grain(conn, params, names)
+
     # --- route display name: current dim first, dim_route_history fallback ---
     route_names = {
         str(r["route_id"]): r["route_name"]
@@ -1670,6 +1762,7 @@ def build_route_reliability(
         periods_by_grain=periods_by_grain,
         habits_by_grain=habits_by_grain,
         headway_by_grain=headway_by_grain,
+        weak_stops_by_grain=weak_stops_by_grain,
     )
 
 

@@ -80,6 +80,7 @@ EXPECTED_GOLD_AGGREGATE_TABLE_COUNTS = {
     "gold.route_skipped_stop_daily": 29,
     "gold.route_delay_spine": 32,
     "gold.route_headway_shift_daily": 33,
+    "gold.stop_delay_spine": 34,
 }
 
 
@@ -1358,6 +1359,21 @@ def test_prune_warm_rollup_storage_applies_aggregate_retention_to_reporting_mart
     for table_name in EXPECTED_GOLD_AGGREGATE_TABLE_COUNTS:
         assert any(f"FROM {table_name}" in sql for sql in connection.calls)
     assert all("DELETE" not in sql for sql in connection.calls)
+
+
+def test_stop_delay_spine_is_append_only_with_retention() -> None:
+    """DB-PR-3: gold.stop_delay_spine is append-only (pruned by date, never DELETE+UPSERT wiped) —
+    it must be in the append-only + retention registries and NOT in the reporting-aggregate registry."""
+    from transit_ops.gold.rollups import REPORTING_AGGREGATE_TABLES
+    from transit_ops.maintenance.gold import (
+        GOLD_AGGREGATE_RETENTION_COLUMNS,
+        GOLD_APPEND_ONLY_DAILY_TABLES,
+    )
+
+    assert "gold.stop_delay_spine" in GOLD_APPEND_ONLY_DAILY_TABLES
+    assert ("gold.stop_delay_spine", "service_local_date", True) in GOLD_AGGREGATE_RETENTION_COLUMNS
+    # the reporting registry is unqualified table names (DELETE+UPSERT rebuild); the spine is neither.
+    assert "stop_delay_spine" not in REPORTING_AGGREGATE_TABLES
 
 
 def test_gold_aggregate_retention_statement_rejects_unlisted_table_or_column() -> None:

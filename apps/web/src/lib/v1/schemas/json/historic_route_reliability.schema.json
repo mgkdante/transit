@@ -988,12 +988,92 @@
           ],
           "default": null,
           "title": "Name"
+        },
+        "observation_count": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Observation Count"
+        },
+        "severe_pct": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Severe Pct"
+        },
+        "wilson_hi": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Wilson Hi"
+        },
+        "wilson_lo": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Wilson Lo"
         }
       },
       "required": [
         "id"
       ],
       "title": "WeakStop",
+      "type": "object"
+    },
+    "WeakStopGrain": {
+      "properties": {
+        "date": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Date"
+        },
+        "grain": {
+          "title": "Grain",
+          "type": "string"
+        },
+        "stops": {
+          "items": {
+            "$ref": "#/$defs/WeakStop"
+          },
+          "title": "Stops",
+          "type": "array"
+        }
+      },
+      "required": [
+        "grain"
+      ],
+      "title": "WeakStopGrain",
       "type": "object"
     }
   },
@@ -1136,6 +1216,13 @@
         "$ref": "#/$defs/WeakStop"
       },
       "title": "Weak Stops",
+      "type": "array"
+    },
+    "weak_stops_by_grain": {
+      "items": {
+        "$ref": "#/$defs/WeakStopGrain"
+      },
+      "title": "Weak Stops By Grain",
       "type": "array"
     }
   },

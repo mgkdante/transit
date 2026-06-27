@@ -46,6 +46,7 @@ GOLD_APPEND_ONLY_DAILY_TABLES = (
     "gold.route_skipped_stop_daily",
     "gold.route_delay_spine",
     "gold.route_headway_shift_daily",
+    "gold.stop_delay_spine",
 )
 
 GOLD_AGGREGATE_TABLES = (
@@ -73,6 +74,7 @@ GOLD_AGGREGATE_RETENTION_COLUMNS = (
     ("gold.route_skipped_stop_daily", "provider_local_date", True),
     ("gold.route_delay_spine", "service_local_date", True),
     ("gold.route_headway_shift_daily", "service_local_date", True),
+    ("gold.stop_delay_spine", "service_local_date", True),
 )
 
 VALID_GOLD_AGGREGATE_RETENTION_TARGETS = frozenset(GOLD_AGGREGATE_RETENTION_COLUMNS)

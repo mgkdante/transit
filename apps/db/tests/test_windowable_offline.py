@@ -14,8 +14,8 @@ from __future__ import annotations
 from datetime import date
 
 from transit_ops.snapshots import builders
-from transit_ops.snapshots.builders.historic import _grain_windows
 from transit_ops.snapshots.builders import historic as H
+from transit_ops.snapshots.builders.historic import _grain_windows
 from transit_ops.snapshots.contract import (
     ROUTE_RELIABILITY_BYTE_CEILING,
     CancellationPeriod,
@@ -36,6 +36,7 @@ from transit_ops.snapshots.contract import (
     ServiceSpanPeriod,
     SkippedStopPeriod,
     WeakStop,
+    WeakStopGrain,
 )
 from transit_ops.snapshots.storage import _body
 
@@ -124,7 +125,8 @@ def _full_payload(*, windowed_histograms: bool) -> RouteReliability:
         habits=_full_habits(),
         day_of_week=dow,
         weak_stops=[WeakStop(id=f"stop-{i}", name=f"Stop number {i} / Cross Street {i}",
-                             avg_delay_min=8.2) for i in range(100)],
+                             avg_delay_min=8.2, observation_count=1234, severe_pct=42.0,
+                             wilson_lo=39.1, wilson_hi=45.2) for i in range(100)],
         cancellations=[CancellationPeriod(grain="day", date=f"2026-06-{d:02d}",
                                           cancellation_rate_pct=1.4, canceled_trip_days=3,
                                           total_trip_days=214) for d in range(1, 31)],
@@ -167,6 +169,25 @@ def _full_payload(*, windowed_histograms: bool) -> RouteReliability:
             )
             for g in ("day", "week", "month")
         ],
+        weak_stops_by_grain=[
+            WeakStopGrain(
+                grain=g,
+                date="2026-06-20",
+                stops=[
+                    WeakStop(
+                        id=f"ws-{g}-{i}",
+                        name="Boulevard de Maisonneuve Ouest / Rue de la Montagne",
+                        avg_delay_min=12.4,
+                        observation_count=987,
+                        severe_pct=55.0,
+                        wilson_lo=33.1,
+                        wilson_hi=47.9,
+                    )
+                    for i in range(15)
+                ],
+            )
+            for g in ("day", "week", "month")
+        ],
     )
 
 
@@ -199,7 +220,23 @@ def test_old_fixture_without_windowable_keys_validates() -> None:
     rr = RouteReliability.model_validate(legacy)
     assert rr.periods_by_grain == []
     assert rr.habits_by_grain == []
+    assert rr.headway_by_grain == []
+    assert rr.weak_stops_by_grain == []
     assert rr.periods[0].prior_observation_count is None
+
+
+def test_weak_stops_by_grain_roundtrips() -> None:
+    # A weak_stops_by_grain payload survives model_validate(dump) with its windowed §4 fields,
+    # and the scalar weak_stops[] leaves the new fields None (additive-optional).
+    rr = _full_payload(windowed_histograms=False)
+    again = RouteReliability.model_validate(rr.model_dump(mode="json"))
+    wsg = {g.grain: g for g in again.weak_stops_by_grain}
+    assert set(wsg) == {"day", "week", "month"}
+    stop = wsg["week"].stops[0]
+    assert stop.wilson_lo == 33.1 and stop.observation_count == 987 and stop.severe_pct == 55.0
+    assert len(wsg["month"].stops) == 15
+    # the scalar weak_stops carry the (here non-null) fields too — the shape is shared
+    assert again.weak_stops[0].wilson_lo == 39.1
 
 
 def test_grain_windows_are_trailing_and_priors_dont_overlap() -> None:
