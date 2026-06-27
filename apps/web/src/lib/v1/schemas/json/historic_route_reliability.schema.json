@@ -362,6 +362,59 @@
       "title": "OccupancyMix",
       "type": "object"
     },
+    "ReliabilityByGrain": {
+      "properties": {
+        "by_daytype": {
+          "items": {
+            "$ref": "#/$defs/ReliabilityPeriod"
+          },
+          "title": "By Daytype",
+          "type": "array"
+        },
+        "by_shift": {
+          "items": {
+            "$ref": "#/$defs/ReliabilityPeriod"
+          },
+          "title": "By Shift",
+          "type": "array"
+        },
+        "by_shift_daytype": {
+          "items": {
+            "$ref": "#/$defs/CrosstabCell"
+          },
+          "title": "By Shift Daytype",
+          "type": "array"
+        },
+        "date": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Date"
+        },
+        "day_of_week": {
+          "items": {
+            "$ref": "#/$defs/RouteDayOfWeek"
+          },
+          "title": "Day Of Week",
+          "type": "array"
+        },
+        "grain": {
+          "title": "Grain",
+          "type": "string"
+        }
+      },
+      "required": [
+        "grain"
+      ],
+      "title": "ReliabilityByGrain",
+      "type": "object"
+    },
     "ReliabilityPeriod": {
       "properties": {
         "avg_delay_min": {
@@ -466,6 +519,30 @@
           ],
           "default": null,
           "title": "P90 Min"
+        },
+        "prior_observation_count": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Prior Observation Count"
+        },
+        "prior_otp_pct": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Prior Otp Pct"
         },
         "severe_pct": {
           "anyOf": [
@@ -622,6 +699,52 @@
         "scale"
       ],
       "title": "RouteHabits",
+      "type": "object"
+    },
+    "RouteHabitsByGrain": {
+      "properties": {
+        "cells_observed": {
+          "default": 0,
+          "title": "Cells Observed",
+          "type": "integer"
+        },
+        "cells_suppressed": {
+          "default": 0,
+          "title": "Cells Suppressed",
+          "type": "integer"
+        },
+        "date": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Date"
+        },
+        "grain": {
+          "title": "Grain",
+          "type": "string"
+        },
+        "habits": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RouteHabits"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "grain"
+      ],
+      "title": "RouteHabitsByGrain",
       "type": "object"
     },
     "ServiceSpanPeriod": {
@@ -850,6 +973,13 @@
       ],
       "default": null
     },
+    "habits_by_grain": {
+      "items": {
+        "$ref": "#/$defs/RouteHabitsByGrain"
+      },
+      "title": "Habits By Grain",
+      "type": "array"
+    },
     "headway": {
       "items": {
         "$ref": "#/$defs/HeadwayPeriod"
@@ -903,6 +1033,13 @@
         "$ref": "#/$defs/ReliabilityPeriod"
       },
       "title": "Periods",
+      "type": "array"
+    },
+    "periods_by_grain": {
+      "items": {
+        "$ref": "#/$defs/ReliabilityByGrain"
+      },
+      "title": "Periods By Grain",
       "type": "array"
     },
     "service_spans": {

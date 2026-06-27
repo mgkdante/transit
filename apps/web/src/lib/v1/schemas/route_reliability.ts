@@ -42,6 +42,13 @@ export const ReliabilityPeriodSchema = z.object({
 	// in-window observations, else all 21 bins incl. zeros). Both null on daily grain.
 	on_time: z.number().int().nullable().optional(),
 	delay_histogram: z.array(RouteDelayHistogramBinSchema).nullable().optional(),
+	// S7-B windowable (additive-optional): the SAME metric over the prior comparable
+	// window, for a period-over-period delta. prior_observation_count is the prior
+	// window's KNOWN-delay denominator (matches observation_count, so a two-proportion
+	// significance test is valid); prior_otp_pct is the prior window's real OTP. Both
+	// null on the first window or on the scalar whole-history periods.
+	prior_observation_count: z.number().int().nullable().optional(),
+	prior_otp_pct: z.number().int().nullable().optional(),
 });
 export type ReliabilityPeriod = z.infer<typeof ReliabilityPeriodSchema>;
 
@@ -163,6 +170,33 @@ export const OccupancyByDowSchema = z.object({
 });
 export type OccupancyByDow = z.infer<typeof OccupancyByDowSchema>;
 
+export const ReliabilityByGrainSchema = z.object({
+	// S7-B windowable §1: the When-to-ride breakdowns recomputed over ONE trailing
+	// window. grain = 'day' | 'week' | 'month'; date = window start. Element types are
+	// preserved (RouteDayOfWeek / CrosstabCell). Additive-optional.
+	grain: z.string(),
+	date: z.string().nullable().optional(),
+	by_shift: z.array(ReliabilityPeriodSchema).optional(),
+	by_daytype: z.array(ReliabilityPeriodSchema).optional(),
+	day_of_week: z.array(RouteDayOfWeekSchema).optional(),
+	by_shift_daytype: z.array(CrosstabCellSchema).optional(),
+});
+export type ReliabilityByGrain = z.infer<typeof ReliabilityByGrainSchema>;
+
+export const RouteHabitsByGrainSchema = z.object({
+	// S7-B windowable §1 heatmap: the 7×24 repeat-problem matrix recomposed per trailing
+	// window. Normalized to its OWN window-max (a 1.0 in 'day' vs 'month' are different
+	// absolute magnitudes). habits is null when no (dow,hour) cell clears the per-cell
+	// MIN_N floor (the web shows one "not enough observations" chip). cells_observed /
+	// cells_suppressed report the MIN_N split. Additive-optional.
+	grain: z.string(),
+	date: z.string().nullable().optional(),
+	habits: RouteHabitsSchema.nullable().optional(),
+	cells_observed: z.number().int().optional(),
+	cells_suppressed: z.number().int().optional(),
+});
+export type RouteHabitsByGrain = z.infer<typeof RouteHabitsByGrainSchema>;
+
 export const RouteReliabilitySchema = z.object({
 	generated_utc: isoUtc(),
 	id: z.string(),
@@ -194,5 +228,11 @@ export const RouteReliabilitySchema = z.object({
 	// split). Additive-optional (older artifacts omit these keys).
 	occupancy_by_grain: z.array(OccupancyByGrainSchema).optional(),
 	occupancy_by_dow: z.array(OccupancyByDowSchema).optional(),
+	// S7-B windowable §1: the When-to-ride breakdowns + heatmap recomputed per time
+	// window (day/week/month). The scalar periods/habits/day_of_week/by_shift_daytype
+	// above stay the whole-history representation; these are the windowed companions.
+	// Additive-optional (older artifacts omit these keys).
+	periods_by_grain: z.array(ReliabilityByGrainSchema).optional(),
+	habits_by_grain: z.array(RouteHabitsByGrainSchema).optional(),
 });
 export type RouteReliability = z.infer<typeof RouteReliabilitySchema>;

@@ -465,6 +465,15 @@ class ReliabilityPeriod(BaseModel):
     # public_route_reliability_daily carve-out carries neither).
     on_time: int | None = None
     delay_histogram: list[RouteDelayHistogramBin] | None = None
+    # S7-B windowable (additive-optional): the SAME metric over the immediately PRIOR
+    # comparable window (e.g. the week before this week), so the web can render a
+    # period-over-period delta + gate its significance. prior_observation_count is the
+    # prior window's KNOWN-delay denominator (matching observation_count, NOT total obs)
+    # so a two-proportion z-test (this vs prior) is valid; prior_otp_pct is the prior
+    # window's REAL on_time/known OTP. Both None on the first window (no prior) or when
+    # the period is not windowed (the scalar whole-history periods never carry them).
+    prior_observation_count: int | None = None
+    prior_otp_pct: int | None = None
 
 class CancellationPeriod(BaseModel):
     # Per-route cancellation over one closed local day (or a derived grain).
@@ -590,6 +599,51 @@ class OccupancyByDow(BaseModel):
     day_of_week_iso: int
     mix: OccupancyMix | None = None
 
+class ReliabilityByGrain(BaseModel):
+    # S7-B windowable §1: the per-route delay breakdowns (by_shift / by_daytype /
+    # day_of_week / 2D crosstab) recomputed over ONE time window, so the "When to ride"
+    # section answers Today / This week / This month (not just whole-history). grain is
+    # 'day' | 'week' | 'month'; the window is TRAILING-N-days anchored on the route's
+    # newest closed day (day = anchor; week = anchor-6..anchor; month = anchor-29..anchor),
+    # matching the web's windowByGrain so the mapper is a pure .find(grain) pass-through.
+    # An arbitrary date-range is NOT emitted here (it stays a §0/§3 daily-array feature).
+    # date is the window START (ISO). Element types are PRESERVED (RouteDayOfWeek /
+    # CrosstabCell), not coerced to ReliabilityPeriod. Honest absence: a grain with no
+    # spine rows in its window is omitted from the list, never a fabricated empty bucket.
+    grain: str
+    date: str | None = None
+    by_shift: list[ReliabilityPeriod] = Field(default_factory=list)
+    by_daytype: list[ReliabilityPeriod] = Field(default_factory=list)
+    day_of_week: list[RouteDayOfWeek] = Field(default_factory=list)
+    by_shift_daytype: list[CrosstabCell] = Field(default_factory=list)
+
+class RouteHabitsByGrain(BaseModel):
+    # S7-B windowable §1 heatmap: the 7x24 repeat-problem matrix recomposed from
+    # gold.route_delay_spine over ONE trailing window (same grains/windows as
+    # ReliabilityByGrain). DISTINCT lineage from the scalar `habits` (which reads the
+    # whole-history route_habit_score mart): this recomposes the composite score from the
+    # spine windowed by date, with a documented rebaseline on the avg term (the spine's
+    # in-clamp pooled mean vs the mart's obs-weighted avg-of-averages) — the severe base
+    # is byte-identical. Each window NORMALIZES to its OWN worst cell, so a 1.0 in 'day'
+    # and a 1.0 in 'month' are different absolute magnitudes (relative-to-route scale, per
+    # the Chart Doctrine). Per-cell MIN_N: a (dow,hour) cell with < 30 known-delay
+    # observations in the window is dropped (counted in cells_suppressed); when NO cell
+    # clears the floor, habits is None (the web shows one "not enough observations" chip,
+    # never a sea of grey cells). date is the window START (ISO).
+    grain: str
+    date: str | None = None
+    habits: RouteHabits | None = None
+    cells_observed: int = 0
+    cells_suppressed: int = 0
+
+# S7-B payload guard: the published route_reliability/{id}.json must stay under this
+# many bytes (model_dump_json, UTF-8 — the exact bytes the publisher writes). 64 KiB is
+# tight enough to CATCH a regression (e.g. windowed per-shift histograms left on, which
+# lands ~67 KB) while clearing the measured worst case (~49-54 KB suppressed). A CI test
+# asserts a worst-case synthetic payload stays under it; re-anchor on a real busiest-route
+# measurement before relying on the exact number. Exported so the web can share it.
+ROUTE_RELIABILITY_BYTE_CEILING = 65536
+
 class RouteReliability(BaseModel):
     generated_utc: str
     id: str
@@ -625,6 +679,13 @@ class RouteReliability(BaseModel):
     # published snapshots lacking these keys still validate.
     occupancy_by_grain: list[OccupancyByGrain] = Field(default_factory=list)
     occupancy_by_dow: list[OccupancyByDow] = Field(default_factory=list)
+    # S7-B windowable §1 (additive-optional): the When-to-ride breakdowns + heatmap
+    # recomputed per time window (day/week/month) off gold.route_delay_spine, so §1
+    # follows the grain rail like §0/§3. The scalar `periods`/`habits`/`day_of_week`/
+    # `by_shift_daytype` above STAY the whole-history representation (back-compat); these
+    # are the windowed companions. Default empty so already-published snapshots validate.
+    periods_by_grain: list[ReliabilityByGrain] = Field(default_factory=list)
+    habits_by_grain: list[RouteHabitsByGrain] = Field(default_factory=list)
 
 class StopReliabilityPeriod(BaseModel):
     grain: str
