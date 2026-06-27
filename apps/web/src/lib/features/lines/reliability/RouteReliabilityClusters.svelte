@@ -659,4 +659,23 @@
 		border-top: 1px solid var(--border);
 		padding-top: clamp(1.75rem, 4vw, 2.75rem);
 	}
+
+	/* The rider-question section TITLE. Operator: "titles need to be HUGE, like yesid.dev
+	   treats titles" — yesid.dev frames each section with a small mono EYEBROW (our
+	   SectionLabel) above a DISPLAY-SCALE title. This is the big plain-language frame, sized
+	   one full step up (--text-title, ~1.75–2.5rem) from the old timid --text-subheading.
+	   ONE definition for all five sections (was duplicated per-section, identical) — declared
+	   :global so the orchestrator owns the section heading scale in a single place. The §0
+	   VerdictBanner (--text-display) stays the apex; the title sits just under it. */
+	:global(.reliability-band .section-question) {
+		margin: 0;
+		font-family: var(--font-heading);
+		font-size: var(--text-title);
+		font-weight: 700;
+		line-height: 1.12;
+		letter-spacing: var(--tracking-tight);
+		color: var(--foreground);
+		max-inline-size: 28ch;
+		text-wrap: balance;
+	}
 </style>

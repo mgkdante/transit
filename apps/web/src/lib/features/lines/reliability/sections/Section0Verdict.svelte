@@ -314,16 +314,6 @@
 		flex-direction: column;
 		gap: 0.5rem;
 	}
-	/* The rider question — the section's plain-language frame, quiet under the overline. */
-	.section-question {
-		margin: 0;
-		font-family: var(--font-heading);
-		font-size: var(--text-subheading);
-		font-weight: 600;
-		line-height: 1.3;
-		color: var(--foreground);
-		max-inline-size: 42ch;
-	}
 
 	/* KPI tiles: a responsive RAM grid, never below one column on a phone. */
 	.verdict-kpis {
