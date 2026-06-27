@@ -66,31 +66,39 @@
 </div>
 
 <style>
-	/* Quiet control, not a link: mono caption voice, muted → foreground on hover.
-	   No --primary in the resting state (orange is interactive-affordance, applied
-	   via the focus ring only). The chevron rotates ▶→▼ via ChevronToggle. */
+	/* A PROMINENT, colourful affordance (operator: "very big and colourful" — the detail
+	   toggle is doing a lot, it lets a rider acknowledge the intent before opening). It IS
+	   an interactive control, so the brand ORANGE is doctrine-correct here (affordance, not
+	   a data mark): a tinted orange pill with a bold label + the rotating chevron. */
 	.detail__toggle {
 		display: inline-flex;
 		align-items: center;
-		gap: 0.4rem;
-		/* WCAG 2.2 2.5.8 Target Size (Minimum): ≥24×24 CSS px. */
-		min-height: 24px;
-		padding-block: 0.25rem;
+		gap: 0.55rem;
+		/* Generous, comfortably above the WCAG 2.2 2.5.8 24px floor. */
+		min-height: 48px;
+		padding: 0.6rem 1.15rem;
 		font-family: var(--font-mono);
-		font-size: var(--text-small);
-		color: var(--muted-foreground);
-		background: none;
-		border: none;
+		font-size: var(--text-body);
+		font-weight: 600;
+		letter-spacing: var(--tracking-wide);
+		color: var(--primary);
+		background: color-mix(in srgb, var(--primary) 9%, transparent);
+		border: 1.5px solid var(--border-brand);
+		border-radius: var(--radius-pill);
 		cursor: pointer;
-		transition: color var(--duration-fast) var(--ease-default);
+		transition:
+			background var(--duration-fast) var(--ease-default),
+			border-color var(--duration-fast) var(--ease-default),
+			color var(--duration-fast) var(--ease-default);
 	}
 	.detail__toggle:hover {
-		color: var(--foreground);
+		background: color-mix(in srgb, var(--primary) 18%, transparent);
+		border-color: var(--primary);
+		color: var(--primary-hover);
 	}
 	.detail__toggle:focus-visible {
 		outline: 2px solid var(--ring);
 		outline-offset: 2px;
-		border-radius: var(--radius-sm);
 	}
 	@media (prefers-reduced-motion: reduce) {
 		.detail__toggle {

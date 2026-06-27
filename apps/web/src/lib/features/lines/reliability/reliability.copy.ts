@@ -240,6 +240,14 @@ export interface ReliabilityCopy {
 			/** Prompt before a complete range is picked. */
 			readonly rangePrompt: string;
 		};
+		/** Section-TOC heading (wayfinding) in the sticky rail. */
+		readonly toc: string;
+		/** Scope tooltip: this section re-shapes on the time window. */
+		readonly scopeWindowed: string;
+		/** Scope tooltip: this section ignores the time window (full history). */
+		readonly scopeWhole: string;
+		/** One-line scope note under the grain picker (which sections the window drives). */
+		readonly scopeNote: string;
 	};
 	/**
 	 * Rider-question section framing (the 5-section rider-first IA): each section's
@@ -413,6 +421,11 @@ export const reliabilityCopy: Record<Locale, ReliabilityCopy> = {
 				range: (n, start, end) => `Moyenne sur ${n} jours, du ${start} au ${end}`,
 				rangePrompt: 'Fenêtre : choisissez une date de début et de fin',
 			},
+			toc: 'Aller à',
+			scopeWindowed: 'Suit la fenêtre choisie ci-dessus',
+			scopeWhole: 'Historique complet : la fenêtre ci-dessus ne change pas cette section',
+			scopeNote:
+				'La fenêtre ci-dessus remodèle les sections marquées ↻ ; les sections ∞ montrent tout l’historique.',
 		},
 		sections: {
 			verdict: { label: 'Fiabilité', question: 'Peut-on compter sur cette ligne ?' },
@@ -585,6 +598,10 @@ export const reliabilityCopy: Record<Locale, ReliabilityCopy> = {
 				range: (n, start, end) => `Average across ${n} days, ${start} to ${end}`,
 				rangePrompt: 'Window: pick a start and end date',
 			},
+			toc: 'Jump to',
+			scopeWindowed: 'Follows the time window above',
+			scopeWhole: 'Full history — the window above doesn’t change this section',
+			scopeNote: 'The window above re-shapes the ↻ sections; the ∞ sections show the full history.',
 		},
 		sections: {
 			verdict: { label: 'Reliability', question: 'Can you count on this line?' },
