@@ -272,6 +272,11 @@
 					</span>
 				</div>
 				<Chart spec={distSpec} />
+				{#if isDayGrain && !hasDist}
+					<!-- Day-grain periods carry no percentile distribution (only week/month do) —
+					     nudge to a wider window rather than leaving a bare "no data". -->
+					<p class="caption" data-slot="percentile-nudge">{copy.strip.percentileNudge}</p>
+				{/if}
 				{#if distSpec.kind === 'histogram'}
 					<p class="caption" data-slot="delay-dist-caption">{copy.strip.delayDistCaption}</p>
 				{/if}

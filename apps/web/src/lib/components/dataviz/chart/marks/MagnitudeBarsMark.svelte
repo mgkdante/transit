@@ -36,7 +36,7 @@
 
 	// Grow with the row count (worst-N up to 100) so bars never crowd; the page scrolls.
 	const frameHeight = $derived(`${Math.max(3, spec.rows.length) * 1.35 + 3}rem`);
-	const padding = { top: 8, right: 14, bottom: 36, left: 120 };
+	const padding = { top: 8, right: 14, bottom: 36, left: 160 };
 
 	// The drill fires on the tooltip's band overlay (which sits ON TOP of the bars, so the
 	// bars' own onclick never reaches the pointer) — LayerChart's tooltipContext.onclick
@@ -47,6 +47,11 @@
 	}
 
 	const fmt = (v: number | null): string => (v == null ? '' : String(v));
+	// Long category labels (e.g. a 30-char "X / Y" stop name) overflow the y-gutter + clip
+	// on BOTH edges at the bigger 14px tick size. Truncate the AXIS tick to what the gutter
+	// fits — the full name still rides the tooltip header + the sr-only table + the drill.
+	const truncateY = (label: string): string =>
+		typeof label === 'string' && label.length > 16 ? `${label.slice(0, 15)}…` : label;
 </script>
 
 <figure
@@ -76,7 +81,12 @@
 					format={(v) => `${v}`}
 					class="dv-barmark-axis"
 				/>
-				<Axis placement="left" rule={false} class="dv-barmark-axis" />
+				<Axis
+					placement="left"
+					rule={false}
+					format={(l: string) => truncateY(l)}
+					class="dv-barmark-axis"
+				/>
 				<Bars data={bySeverity('watch')} radius={3} class="dv-barmark-watch" />
 				<Bars data={bySeverity('high')} radius={3} class="dv-barmark-high" />
 				<Bars data={bySeverity('critical')} radius={3} class="dv-barmark-critical" />
