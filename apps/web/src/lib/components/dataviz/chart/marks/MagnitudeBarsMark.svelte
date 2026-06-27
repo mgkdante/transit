@@ -127,7 +127,7 @@
 					</th>
 					<td>
 						{fmt(r.value)}{#if spec.ciLabel && r.wilsonLo != null && r.wilsonHi != null}
-							({spec.ciLabel} {fmt(r.wilsonLo)}–{fmt(r.wilsonHi)}){/if}
+							{' '}({spec.ciLabel} {fmt(r.wilsonLo)}–{fmt(r.wilsonHi)}){/if}
 					</td>
 				</tr>
 			{/each}
