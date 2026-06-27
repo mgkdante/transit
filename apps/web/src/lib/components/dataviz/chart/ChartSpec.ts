@@ -308,13 +308,40 @@ export interface HeatmapCell {
 }
 
 /**
+ * The CLASSED-TIER legend for a heatmap (B10, S7 P4). The mark bins each cell's value
+ * onto N DISCRETE tiers (NOT a continuous ramp) on a perceptually-uniform, CVD-safe
+ * sequential scale, and labels each tier in plain language so the read never rests on
+ * hue alone (the worst tier ALSO carries a glyph). `tierLabels[0]` is the calmest tier,
+ * the last index the worst.
+ */
+export interface HeatmapTiers {
+	/** Plain-language label per tier, calmest → worst (length === the tier count). */
+	readonly tierLabels: readonly string[];
+	/** Label for a no-data cell (the honest absence swatch). */
+	readonly noDataLabel: string;
+	/** Glyph stamped on the WORST tier — colour is never the sole channel (a11y). */
+	readonly worstGlyph?: string;
+}
+
+/** A sparse column-axis tick (e.g. clock hours) — its band index + the formatted label. */
+export interface HeatmapColTick {
+	readonly index: number;
+	readonly label: string;
+}
+
+/**
  * B10 — heatmap. EXEMPT from the absolute zero-based length law: magnitude rides
  * sequential luminance, not length. Two honest scaling modes:
  *  - `absolute`: a fixed quantile/linear domain across all cells (e.g. the §01 shift ×
- *    day-type OTP crosstab pinned to [0,100]).
+ *    day-type OTP crosstab pinned to [0,100], or §05 habits on the route-normalised [0,1]).
  *  - `row-relative`: each row normalised within itself, BY DESIGN, because the underlying
- *    metric is already a within-row relative score (e.g. §05 habits `repeat_problem_relative`).
+ *    metric is already a within-row relative score.
  * The mode is explicit so a row-relative read can never be mistaken for an absolute one.
+ *
+ * The classed-tier mark (P4) consumes the OPTIONAL presentation fields below; older
+ * heatmap call sites omit them and fall back to a raw read. A magnitude value is binned
+ * onto `tiers.tierLabels` over `domain` (so the same value reads the same tier on every
+ * route/refresh — never `/max`, never a per-view quantile).
  */
 export interface HeatmapSpec extends ChartSpecBase {
 	readonly kind: 'heatmap';
@@ -324,6 +351,18 @@ export interface HeatmapSpec extends ChartSpecBase {
 	readonly rowLabels: readonly string[];
 	readonly colLabels: readonly string[];
 	readonly cells: readonly (readonly HeatmapCell[])[];
+	/** Classed-tier legend (plain-language labels + worst-tier glyph). */
+	readonly tiers?: HeatmapTiers;
+	/** What a single cell value encodes, for the tooltip + SR table (e.g. "Repeat problems"). */
+	readonly valueLabel?: string;
+	/** Row (y) axis caption (e.g. "Day of week"). */
+	readonly rowAxisLabel?: string;
+	/** Column (x) axis caption (e.g. "Hour of day"). */
+	readonly colAxisLabel?: string;
+	/** Full row names for the tooltip heading + SR table (defaults to `rowLabels`). */
+	readonly fullRowLabels?: readonly string[];
+	/** Sparse column ticks (a subset of columns), so a 24-hour axis stays legible. */
+	readonly colTicks?: readonly HeatmapColTick[];
 }
 
 /**

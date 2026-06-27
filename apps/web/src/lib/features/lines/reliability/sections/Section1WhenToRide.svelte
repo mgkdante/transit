@@ -32,13 +32,7 @@
 	import { fmtPct } from '$lib/utils';
 	import type { SeverityCode } from '$lib/v1/schemas';
 	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
-	import {
-		Heatmap,
-		ChartLegend,
-		HEATMAP_RAMP,
-		HEATMAP_NODATA,
-		RankedRow,
-	} from '$lib/components/dataviz';
+	import { ChartLegend, RankedRow } from '$lib/components/dataviz';
 	import { Chart } from '$lib/components/dataviz/chart';
 	import { AbsentValue } from '$lib/components/edge';
 	import Detail from '$lib/components/shared/Detail.svelte';
@@ -54,6 +48,7 @@
 	import { selectPunctualityTimeOfDay } from '../selectors/punctualityTimeOfDay';
 	import { selectPunctualityCrosstab } from '../selectors/punctualityCrosstab';
 	import { selectWeekdayCycle } from '../selectors/weekdayCycle';
+	import { selectHabitsHeatmap } from '../selectors/habitsHeatmap';
 	import type { PunctualityVM, HabitsVM, PeriodComparisonRow } from '../clusters';
 	import type { ReliabilityCopy } from '../reliability.copy';
 	import { habitsBandCopy } from '../Cluster05Habits.copy';
@@ -89,45 +84,63 @@
 	};
 
 	/* ── PRIMARY — the 7×24 repeat-problems heatmap (grain-invariant) ─────────
-	   habits.matrix (7 days × 24 hours, cells number|null). A `null` cell is
-	   "no data" (the primitive paints the dedicated --dataviz-heatmap-nodata
-	   token), distinct from a low real value — the honesty rule the doctrine
-	   demands. Carried VERBATIM from Cluster05Habits. */
+	   habits.matrix (7 days × 24 hours, cells number|null in [0,1], normalised to
+	   THIS route's worst hour). Now a CLASSED-tier LayerChart mark (S7 P4): a fixed
+	   [0,1] domain binned onto 4 plain-language tiers on a CVD-safe ramp, so the same
+	   value reads the same tier on every route — and weekends that genuinely see fewer
+	   severe delays read calmer (the legacy per-row re-normalisation hid that). A null
+	   cell is the honest no-data swatch; the worst tier carries an outline + the ◆ glyph. */
 	const hasHeatmap = $derived(!habits.isEmpty);
 
-	// Full day names in heatmap ROW order (Mon..Sun) for the tooltip heading +
-	// cell aria-label — the axis itself keeps the short labels.
+	// Full day names in heatmap ROW order (Mon..Sun) for the tooltip heading + table.
 	const fullDayLabels = $derived(band.weekdays.slice(1));
 
-	// Heatmap scale legend — three ramp buckets (low→high) + the dedicated no-data
-	// swatch, so the legend reads as an ordered scale. The ramp colours are data
-	// marks (--dataviz-heatmap-*); the legend is decorative (the Heatmap's own
-	// role=img summary + the plain-language caption are the a11y source of truth).
+	const heatmapSpec = $derived(
+		selectHabitsHeatmap(habits, locale, {
+			title: band.heatmapLabel,
+			valueLabel: band.cellValueLabel,
+			rowAxisLabel: band.dayAxisLabel,
+			colAxisLabel: band.hourAxisLabel,
+			rowLabels: band.weekdaysShort,
+			fullRowLabels: fullDayLabels,
+			tierLabels: band.tiers.labels,
+			noDataLabel: band.tiers.noData,
+			worstGlyph: band.tiers.worstGlyph,
+			hourLabel: (h) => `${String(h).padStart(2, '0')}:00`,
+			hourTicks: [0, 3, 6, 9, 12, 15, 18, 21],
+		}),
+	);
+
+	// Classed-tier legend — four plain-language swatches calmest→worst (the worst label
+	// carries the ◆ glyph) + the dedicated no-data swatch, in tier order. The colours are
+	// data marks (--dataviz-heatmap-tier-*); the mark's tooltip + sr-table carry a11y.
 	const legendItems = $derived([
-		{ colorVar: HEATMAP_RAMP[0], label: band.legend.low, swatch: 'square' as const },
-		{ colorVar: HEATMAP_RAMP[2], label: band.legend.medium, swatch: 'square' as const },
 		{
-			colorVar: HEATMAP_RAMP[HEATMAP_RAMP.length - 1],
-			label: band.legend.high,
+			colorVar: 'var(--dataviz-heatmap-tier-0)',
+			label: band.tiers.labels[0],
 			swatch: 'square' as const,
 		},
-		{ colorVar: HEATMAP_NODATA, label: band.legend.noData, swatch: 'square' as const },
+		{
+			colorVar: 'var(--dataviz-heatmap-tier-1)',
+			label: band.tiers.labels[1],
+			swatch: 'square' as const,
+		},
+		{
+			colorVar: 'var(--dataviz-heatmap-tier-2)',
+			label: band.tiers.labels[2],
+			swatch: 'square' as const,
+		},
+		{
+			colorVar: 'var(--dataviz-heatmap-tier-3)',
+			label: `${band.tiers.labels[3]} ${band.tiers.worstGlyph}`,
+			swatch: 'square' as const,
+		},
+		{
+			colorVar: 'var(--dataviz-heatmap-nodata)',
+			label: band.tiers.noData,
+			swatch: 'square' as const,
+		},
 	]);
-
-	// Plain-language word for a cell's row-normalized intensity, bucketed on the
-	// SAME 5-stop ramp the colour uses, so the readout word matches the colour.
-	// `null` → the honest no-data text (never a fabricated Low).
-	function heatmapCellText(value: number | null, norm: number | null): string {
-		if (value == null || norm == null) return band.legend.noData;
-		const bucket = Math.min(4, Math.floor(Math.min(1, Math.max(0, norm)) * 5));
-		return [
-			band.legend.low,
-			band.legend.low,
-			band.legend.medium,
-			band.legend.high,
-			band.legend.high,
-		][bucket];
-	}
 
 	// Plain-language caption: the resolved scale phrase (never the raw snake_case
 	// `scale`) + the how-to-read sentence. Null/unmapped scale → heading fallback.
@@ -269,21 +282,9 @@
 					<SectionLabel text={band.heatmapHeading} variant="metric" />
 					{@render metricInfo('habits', band.heatmapHeading)}
 				</span>
-				<Heatmap
-					grid={habits.matrix}
-					dayLabels={[...band.weekdaysShort]}
-					fullDayLabels={[...fullDayLabels]}
-					label={band.heatmapLabel}
-					hourAxisLabel={band.hourAxisLabel}
-					dayAxisLabel={band.dayAxisLabel}
-					valueLabel={band.cellValueLabel}
-					noDataText={band.legend.noData}
-					hourTicks={[0, 3, 6, 9, 12, 15, 18, 21]}
-					clockTicks
-					valueFormat={heatmapCellText}
-					interactive
-					class="habits-heatmap"
-				/>
+				<div class="habits-heatmap">
+					<Chart spec={heatmapSpec} />
+				</div>
 				<ChartLegend items={legendItems} />
 				<p class="caption" data-slot="habits-scale-caption">{scaleCaptionText}</p>
 			</div>

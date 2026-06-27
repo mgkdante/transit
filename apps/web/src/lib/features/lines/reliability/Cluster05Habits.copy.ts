@@ -43,8 +43,8 @@ export interface HabitsBandCopy {
 	/** Tooltip/SR row label — what a single cell encodes. */
 	readonly cellValueLabel: string;
 	/**
-	 * Plain-language caption beneath the heatmap explaining the relative scale +
-	 * how to read the colour. Pairs with the resolved `scaleLegend` phrase.
+	 * Plain-language caption beneath the heatmap explaining the scale + how to read the
+	 * colour. Pairs with the resolved `scaleLegend` phrase.
 	 */
 	readonly scaleCaption: string;
 	/**
@@ -53,12 +53,14 @@ export interface HabitsBandCopy {
 	 * unmapped/null scale falls back to `heatmapHeading`.
 	 */
 	readonly scaleLegend: Readonly<Record<string, string>>;
-	/** Legend ramp buckets (low→high) + the dedicated no-data swatch. */
-	readonly legend: {
-		readonly low: string;
-		readonly medium: string;
-		readonly high: string;
+	/**
+	 * The CLASSED tiers (S7 P4): four plain-language labels calmest→worst, the no-data
+	 * label, and the glyph stamped on the worst tier (colour is never the sole channel).
+	 */
+	readonly tiers: {
+		readonly labels: readonly [string, string, string, string];
 		readonly noData: string;
+		readonly worstGlyph: string;
 	};
 	/** Full weekday names, ISO-indexed (index 0 unused; 1=Mon..7=Sun). */
 	readonly weekdays: readonly [string, string, string, string, string, string, string, string];
@@ -87,14 +89,18 @@ export const habitsBandCopy: Record<Locale, HabitsBandCopy> = {
 		dayAxisLabel: 'Jour de la semaine',
 		cellValueLabel: 'Problèmes récurrents',
 		scaleCaption:
-			'La couleur indique à quelle fréquence les problèmes reviennent, comparée heure par heure au sein de chaque journée. Bleu = rarement un problème à cette heure-là; rouge = souvent. La comparaison se fait au sein de chaque jour, pas entre les jours.',
+			'Chaque case indique à quelle fréquence les retards graves reviennent à cette heure-là, sur toute la semaine et sur une seule échelle. Les cases encadrées et marquées d’un ◆ sont les pires heures de cette ligne; les cases pâles voient rarement un retard grave. Les fins de semaine plus calmes paraissent donc plus pâles, ce qui est honnête.',
 		scaleLegend: {
-			repeat_problem_relative: 'Problèmes récurrents (relatif par jour)',
-			severe_relative: 'Retards graves (relatif par jour)',
+			repeat_problem_relative: 'Problèmes récurrents (par rapport à la pire heure de la ligne)',
+			severe_relative: 'Retards graves (par rapport à la pire heure de la ligne)',
 		},
-		// Frequency words, not abstract "low/high" — they say what the colour MEANS to a
-		// rider (how often a problem comes back at that hour) and double as the cell readout.
-		legend: { low: 'Rarement', medium: 'Parfois', high: 'Souvent', noData: 'Aucune donnée' },
+		// Plain-language reliability tiers, calmest → worst — they say what the colour MEANS
+		// to a rider (how unreliable that hour is) and double as the cell + tooltip readout.
+		tiers: {
+			labels: ['Rarement en retard', 'Parfois en retard', 'Souvent en retard', 'Très peu fiable'],
+			noData: 'Aucune donnée',
+			worstGlyph: '◆',
+		},
 		weekdays: ['', 'Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dimanche'],
 		weekdaysShort: ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'],
 	},
@@ -118,14 +124,18 @@ export const habitsBandCopy: Record<Locale, HabitsBandCopy> = {
 		dayAxisLabel: 'Day of week',
 		cellValueLabel: 'Repeat problems',
 		scaleCaption:
-			'Colour shows how often problems come back, compared hour-by-hour within each day. Blue = rarely a problem at that hour; red = often. The comparison is within each day, not between days.',
+			'Each cell shows how often severe delays come back at that hour, across the whole week on one fixed scale. The outlined cells marked ◆ are this line’s worst hours; pale cells rarely see a severe delay. Calmer weekends therefore read paler, which is honest.',
 		scaleLegend: {
-			repeat_problem_relative: 'Repeat problems (relative per day)',
-			severe_relative: 'Severe delays (relative per day)',
+			repeat_problem_relative: 'Repeat problems (vs this line’s worst hour)',
+			severe_relative: 'Severe delays (vs this line’s worst hour)',
 		},
-		// Frequency words, not abstract "low/high" — they say what the colour MEANS to a
-		// rider (how often a problem comes back at that hour) and double as the cell readout.
-		legend: { low: 'Rarely', medium: 'Sometimes', high: 'Often', noData: 'No data' },
+		// Plain-language reliability tiers, calmest → worst — they say what the colour MEANS
+		// to a rider (how unreliable that hour is) and double as the cell + tooltip readout.
+		tiers: {
+			labels: ['Rarely late', 'Sometimes late', 'Often late', 'Very unreliable'],
+			noData: 'No data',
+			worstGlyph: '◆',
+		},
 		weekdays: ['', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'],
 		weekdaysShort: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
 	},

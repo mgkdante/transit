@@ -41,6 +41,15 @@ export const HEADWAY_DOMAIN = [0, 35] as const;
 /** Headway coefficient-of-variation (gap stddev / mean); 1.0 = random-arrivals reference. */
 export const COV_DOMAIN = [0, 1.2] as const;
 
+// ── Normalised score (0..1) ───────────────────────────────────────────────────────────────────
+/**
+ * The §1 habits heatmap score (`repeat_problem_relative`): each day×hour cell normalised to
+ * THIS route's worst cell, so 1.0 = the route's single worst hour and 0.0 = no repeat problem.
+ * A FIXED [0,1] domain — the classed-tier mark bins every cell on it (so weekends that really
+ * are calmer read calmer), never a per-row / in-view re-normalisation.
+ */
+export const HABITS_DOMAIN = [0, 1] as const;
+
 // ── Signed distribution (seconds) ─────────────────────────────────────────────────────────────
 /**
  * Signed delay-distribution histogram axis (SECONDS), the visible window that STRADDLES 0

@@ -23,6 +23,7 @@
 	import DumbbellMark from './marks/DumbbellMark.svelte';
 	import LineMark from './marks/LineMark.svelte';
 	import BulletMark from './marks/BulletMark.svelte';
+	import HeatmapMark from './marks/HeatmapMark.svelte';
 	import type { ChartSpec } from './ChartSpec';
 
 	export interface ChartProps {
@@ -56,12 +57,13 @@
 	<LineMark {spec} class={className} />
 {:else if spec.kind === 'bullet'}
 	<BulletMark {spec} class={className} />
+{:else if spec.kind === 'heatmap'}
+	<HeatmapMark {spec} class={className} />
 {:else}
 	<!--
 		Pending branches (added as each family migrates, each gate-green + browser-verified):
 		  P2.2 · metric         → a scalar tile (no data mark) — the number IS the value voice
 		         stacked-share  → LayerChart floating Bars (per-segment hover)
-		         heatmap        → LayerChart Cell grid (classed tiers, 2D per-cell hover)
 		         cycle          → LayerChart weekday small-multiples (shared y + mean rule)
 	-->
 {/if}
