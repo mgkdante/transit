@@ -74,6 +74,16 @@ export interface ReliabilityCopy {
 		readonly weakStopsHeading: string;
 		/** a11y label for the worst-N (how-many-stops) selector. */
 		readonly worstNLabel: string;
+		/** §4 windowed value-axis title: the severe-delay rate the bar encodes (a share, [0,100]). */
+		readonly severeRateLabel: string;
+		/** Worst-N selector "All" segment (all served, <= the stored cap of 15). */
+		readonly worstNAll: string;
+		/** Per-row tooltip-note label words for the windowed §4 evidence (severe rate / avg / n). */
+		readonly weakStopNote: {
+			readonly severe: string;
+			readonly avg: string;
+			readonly samples: string;
+		};
 		/** Caption under the excess-wait magnitude (what 0 means). */
 		readonly excessWaitCaption: string;
 		/** Plain caption under the skipped-stop tile (what it counts). */
@@ -326,6 +336,9 @@ export const reliabilityCopy: Record<Locale, ReliabilityCopy> = {
 			severeCaption: 'Proportion de passages en retard grave',
 			weakStopsHeading: 'Les arrêts les plus en retard',
 			worstNLabel: 'Arrêts affichés',
+			severeRateLabel: 'Taux de retard grave',
+			worstNAll: 'Tous',
+			weakStopNote: { severe: 'grave', avg: 'moy.', samples: 'n' },
 			excessWaitCaption: '0 = le service respecte (ou dépasse) sa fréquence prévue',
 			skippedStopCaption: 'Arrêts non desservis',
 			trendReadoutHint: 'Survolez ou tabulez le graphique pour lire chaque jour',
@@ -508,6 +521,9 @@ export const reliabilityCopy: Record<Locale, ReliabilityCopy> = {
 			severeCaption: 'Share of arrivals that ran severely late',
 			weakStopsHeading: 'The stops with the most delay',
 			worstNLabel: 'Stops shown',
+			severeRateLabel: 'Severe-delay rate',
+			worstNAll: 'All',
+			weakStopNote: { severe: 'severe', avg: 'avg', samples: 'n' },
 			excessWaitCaption: '0 = runs on schedule (met or beat its planned frequency)',
 			skippedStopCaption: "Stops the bus didn't serve",
 			trendReadoutHint: 'Hover or tab the chart to read each day',

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { selectWeakStops, type WeakStopsLabels } from './weakStops';
-import { DELAY_POS_DOMAIN } from '$lib/features/reliability/domains';
+import { DELAY_POS_DOMAIN, SEVERE_DOMAIN } from '$lib/features/reliability/domains';
 import type { WeakStop } from '$lib/v1';
 
 const labels: WeakStopsLabels = {
@@ -17,7 +17,7 @@ const stops: WeakStop[] = [
 	{ id: 'd', name: null, avg_delay_min: null }, // no measured delay → filtered out
 ];
 
-describe('selectWeakStops', () => {
+describe('selectWeakStops — scalar/fallback (avg-delay magnitude)', () => {
 	it('ranks worst mean-delay first and truncates to N', () => {
 		const { spec, total, shown } = selectWeakStops(stops, 2, 'en', labels);
 		expect(total).toBe(3); // the null-delay stop is excluded from the ranking
@@ -60,5 +60,90 @@ describe('selectWeakStops', () => {
 		expect(total).toBe(0);
 		expect(shown).toBe(0);
 		expect(spec.kind).toBe('absence');
+	});
+});
+
+describe('selectWeakStops — windowed/preRanked (severe-rate magnitude, S7-B)', () => {
+	const winLabels: WeakStopsLabels = {
+		...labels,
+		severeXLabel: 'Severe-delay rate',
+		severeUnit: '%',
+		note: (w) => `severe ${w.severe_pct}% n=${w.observation_count}`,
+	};
+	// DB-ranked worst-first by the not-severe Wilson LB (NOT avg). The first stop's pooled avg is
+	// <= 0 — a worst-by-rate stop — and MUST still draw a non-zero bar (severe-rate magnitude).
+	const winStops: WeakStop[] = [
+		{
+			id: 'w1',
+			name: 'Worst',
+			avg_delay_min: -1,
+			severe_pct: 42,
+			observation_count: 987,
+			wilson_lo: 33,
+			wilson_hi: 47,
+		},
+		{
+			id: 'w2',
+			name: 'Second',
+			avg_delay_min: 6,
+			severe_pct: 30,
+			observation_count: 400,
+			wilson_lo: 24,
+			wilson_hi: 36,
+		},
+		{
+			id: 'w3',
+			name: 'Third',
+			avg_delay_min: 4,
+			severe_pct: 18,
+			observation_count: 200,
+			wilson_lo: 12,
+			wilson_hi: 24,
+		},
+	];
+
+	it('encodes severe_pct on SEVERE_DOMAIN and PRESERVES the DB order (no re-sort by avg)', () => {
+		const { spec } = selectWeakStops(winStops, 10, 'en', winLabels, { preRanked: true });
+		if (spec.kind !== 'magnitude-bars') throw new Error('expected magnitude-bars');
+		expect(spec.domain).toEqual(SEVERE_DOMAIN);
+		expect(spec.domain[0]).toBe(0);
+		expect(spec.xLabel).toBe('Severe-delay rate');
+		expect(spec.unit).toBe('%');
+		// order is the contract order, NOT avg-DESC (which would put w2 first).
+		expect(spec.rows.map((r) => r.key)).toEqual(['w1', 'w2', 'w3']);
+		expect(spec.rows[0].value).toBe(42); // severe rate, not the -1 avg
+	});
+
+	it('a worst stop with avg <= 0 draws a NON-ZERO bar (the dishonest-empty-bar fix)', () => {
+		const { spec } = selectWeakStops(winStops, 10, 'en', winLabels, { preRanked: true });
+		if (spec.kind !== 'magnitude-bars') throw new Error('expected magnitude-bars');
+		expect(spec.rows[0].value).toBe(42); // > 0, the severe rate — never an empty bar
+	});
+
+	it('surfaces n / wilson bounds / the evidence note on each row', () => {
+		const { spec } = selectWeakStops(winStops, 10, 'en', winLabels, { preRanked: true });
+		if (spec.kind !== 'magnitude-bars') throw new Error('expected magnitude-bars');
+		expect(spec.rows[0].n).toBe(987);
+		expect(spec.rows[0].wilsonLo).toBe(33);
+		expect(spec.rows[0].wilsonHi).toBe(47);
+		expect(spec.rows[0].note).toBe('severe 42% n=987');
+	});
+
+	it('truncates to N honestly (total = full served set, shown <= N)', () => {
+		const { total, shown } = selectWeakStops(winStops, 2, 'en', winLabels, { preRanked: true });
+		expect(total).toBe(3);
+		expect(shown).toBe(2);
+	});
+
+	it('a null severe_pct renders the honest no-data swatch (value null, never 0)', () => {
+		const { spec } = selectWeakStops(
+			[{ id: 'z', name: 'Z', avg_delay_min: 2, severe_pct: null, observation_count: 40 }],
+			5,
+			'en',
+			winLabels,
+			{ preRanked: true },
+		);
+		if (spec.kind !== 'magnitude-bars') throw new Error('expected magnitude-bars');
+		expect(spec.rows[0].value).toBeNull();
 	});
 });
