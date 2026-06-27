@@ -361,6 +361,40 @@ describe('S7-B §2 — windowable headway_by_grain round-trip', () => {
 	});
 });
 
+describe('S7-B §4 — windowable weak_stops_by_grain round-trip', () => {
+	it('parses route_reliability carrying weak_stops_by_grain (Wilson-ranked, + the new WeakStop fields)', () => {
+		const fixture = {
+			generated_utc: ISO,
+			id: '165',
+			weak_stops: [{ id: '51234', name: 'Côte-Vertu / Décarie', avg_delay_min: 8.2 }],
+			weak_stops_by_grain: [
+				{
+					grain: 'month',
+					date: '2026-06-01',
+					stops: [
+						{
+							id: '9001',
+							name: 'Worst / Stop',
+							avg_delay_min: 12.4,
+							observation_count: 987,
+							severe_pct: 55,
+							wilson_lo: 33.1,
+							wilson_hi: 47.9,
+						},
+					],
+				},
+			],
+		};
+		expect(() => parsePort('route_reliability', RouteReliabilitySchema, fixture)).not.toThrow();
+	});
+
+	it('parses route_reliability with weak_stops_by_grain absent (additive optional)', () => {
+		const fixture = { generated_utc: ISO, id: '51' };
+		const parsed = parsePort('route_reliability', RouteReliabilitySchema, fixture);
+		expect(parsed.weak_stops_by_grain ?? []).toEqual([]);
+	});
+});
+
 describe('S7-B — windowable §1 (periods_by_grain + habits_by_grain + prior_*) round-trip', () => {
 	it('parses route_reliability carrying periods_by_grain + habits_by_grain + prior fields', () => {
 		const fixture = {

@@ -627,6 +627,50 @@ UPSERT_ROUTE_DELAY_SPINE = text(
 )
 
 
+# --- S7-B stop_delay_spine: finest-grain additive STOP-DELAY family (rollup_kind=
+#     "stop_delay_spine"). Closed-day, sargable on (provider_id, snapshot_date_key),
+#     ALL-DAYS (no ISODOW filter — the stop lineage is dow-agnostic, unlike the headway
+#     builder), no dim_provider join (the lean grain has no hour). The GHOST clamp lives
+#     in the WHERE so observation_count = COUNT(*) IS the in-clamp delay count (= the
+#     severe-rate denominator AND the pooled-avg n, over ONE row set — no contamination).
+#     Byte-identical denominator to the legacy stop_delay_hourly (which also clamps in its
+#     WHERE then COUNT(*)s). route_id COALESCEs to '__unrouted__'; a real per-route read
+#     never matches the sentinel. Drops straight into _build_percentile_days. ---
+UPSERT_STOP_DELAY_SPINE = text(
+    f"""
+    INSERT INTO gold.stop_delay_spine (
+        provider_id, stop_id, route_id, service_local_date,
+        observation_count, severe_delay_count, sum_delay_seconds, built_at_utc
+    )
+    SELECT
+        f.provider_id,
+        f.delay_stop_id AS stop_id,
+        COALESCE(f.route_id, '__unrouted__') AS route_id,
+        :local_date,
+        -- in-clamp delay count: the WHERE already filters delay non-null + |delay|<=3600.
+        COUNT(*)::integer,
+        -- severe = delay > 300 (and <= 3600, already guaranteed by the WHERE clamp).
+        COUNT(*) FILTER (WHERE f.delay_seconds > {SEVERE_DELAY_SECONDS})::integer,
+        -- pooled in-clamp numerator for the rebaselined avg.
+        COALESCE(SUM(f.delay_seconds), 0)::bigint,
+        :built_at_utc
+    FROM gold.fact_trip_delay_snapshot AS f
+    WHERE f.provider_id = :provider_id
+      AND f.snapshot_date_key = :date_key                     -- SARGABLE (ix_..._provider_date_key)
+      AND f.delay_stop_id IS NOT NULL
+      AND f.delay_seconds IS NOT NULL
+      AND ABS(f.delay_seconds) <= {GHOST_DELAY_ABS_SECONDS}    -- GHOST clamp (ghosts + nulls out)
+    GROUP BY f.provider_id, f.delay_stop_id, COALESCE(f.route_id, '__unrouted__')
+    ON CONFLICT (provider_id, stop_id, route_id, service_local_date)
+    DO UPDATE SET
+        observation_count  = EXCLUDED.observation_count,
+        severe_delay_count = EXCLUDED.severe_delay_count,
+        sum_delay_seconds  = EXCLUDED.sum_delay_seconds,
+        built_at_utc       = EXCLUDED.built_at_utc
+    """
+)
+
+
 REPORTING_AGGREGATE_TABLES = (
     "route_delay_hourly",
     "stop_delay_hourly",
@@ -1652,6 +1696,7 @@ class WarmRollupBuildResult:
     built_route_skipped_stop_days: int = 0
     built_route_delay_spine_days: int = 0
     built_route_headway_shift_daily_days: int = 0
+    built_stop_delay_spine_days: int = 0
     # True when the provider is enrolled but not yet seeded (no gold.dim_provider
     # row): the build is a logged no-op rather than a crash.
     skipped_not_seeded: bool = False
@@ -1671,6 +1716,7 @@ class WarmRollupBuildResult:
             "built_route_skipped_stop_days": self.built_route_skipped_stop_days,
             "built_route_delay_spine_days": self.built_route_delay_spine_days,
             "built_route_headway_shift_daily_days": self.built_route_headway_shift_daily_days,
+            "built_stop_delay_spine_days": self.built_stop_delay_spine_days,
             "reporting_aggregate_row_counts": self.reporting_aggregate_row_counts,
             "completed_at_utc": self.completed_at_utc.isoformat(),
         }
@@ -1945,6 +1991,19 @@ def build_warm_rollups(
         now=now,
     )
 
+    # Stop delay spine — finest-grain additive STOP-DELAY family (windowed worst-N ranking).
+    # Reads fact_trip_delay_snapshot -> default trip-delay missing-day calendar. ALL-DAYS.
+    # APPEND-ONLY (NOT in REPORTING_AGGREGATE_TABLES); accrued history is never wiped.
+    built_stop_delay_spine = _build_percentile_days(
+        engine,
+        provider_id=provider_id,
+        rollup_kind="stop_delay_spine",
+        upsert=UPSERT_STOP_DELAY_SPINE,
+        today_key=today_key,
+        floor_key=floor_key,
+        now=now,
+    )
+
     # Reporting aggregates (full DELETE+UPSERT refresh) in their own transaction,
     # so a failure here never rolls back the committed 5m + daily-builder work.
     with engine.begin() as conn:
@@ -1994,4 +2053,5 @@ def build_warm_rollups(
         built_route_skipped_stop_days=built_route_skipped_stop,
         built_route_delay_spine_days=built_route_delay_spine,
         built_route_headway_shift_daily_days=built_route_headway_shift_daily,
+        built_stop_delay_spine_days=built_stop_delay_spine,
     )

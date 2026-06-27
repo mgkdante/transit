@@ -1,10 +1,22 @@
 import pytest
 from pydantic import ValidationError
-from transit_ops.snapshots.contract import Vehicle, TripsFile, Trip, StopEta, Status
+
 from transit_ops.snapshots.contract import (
-    RouteFile, RouteDirection, RouteStop, StopFile, ScheduledRoute,
-    RoutesIndex, StopsIndex, LabelsFile,
+    LabelsFile,
+    RouteDirection,
+    RouteFile,
+    RoutesIndex,
+    RouteStop,
+    ScheduledRoute,
+    Status,
+    StopEta,
+    StopFile,
+    StopsIndex,
+    Trip,
+    TripsFile,
+    Vehicle,
 )
+
 
 def test_vehicle_valid():
     v = Vehicle(id="29051", route="165", trip="t1", lat=45.49, lon=-73.66, bearing=312,
@@ -63,7 +75,13 @@ def test_labels_file_valid():
 
 def test_historic_models_valid():
     from transit_ops.snapshots.contract import (
-        NetworkTrend, RouteReliability, HeadwayPeriod, RepeatOffenders, Offender, Receipt, Provenance,
+        HeadwayPeriod,
+        NetworkTrend,
+        Offender,
+        Provenance,
+        Receipt,
+        RepeatOffenders,
+        RouteReliability,
     )
     nt = NetworkTrend(generated_utc="t", series=[{"date": "2026-05-30", "otp_pct": 39, "avg_delay_min": 3.4, "p90_min": 11, "vehicles": 612}])
     assert nt.series[0].otp_pct == 39
@@ -81,7 +99,9 @@ def test_historic_models_valid():
 def test_artifact_models_require_generated_utc():
     """Every published artifact model now requires a generated_utc stamp."""
     from transit_ops.snapshots.contract import (
-        NetworkTrend, AlertsFile, NetworkFile,
+        AlertsFile,
+        NetworkFile,
+        NetworkTrend,
     )
 
     with pytest.raises(ValidationError):
@@ -104,7 +124,11 @@ def test_manifest_tier_inventories_and_nullable_basemap():
     """Manifest.basemap is nullable; files gains static/historic inventories
     with per-tier generated_utc defaulting to None (never published)."""
     from transit_ops.snapshots.contract import (
-        Manifest, ManifestFiles, ManifestLiveFiles, ManifestStaticFiles, ManifestHistoricFiles,
+        Manifest,
+        ManifestFiles,
+        ManifestHistoricFiles,
+        ManifestLiveFiles,
+        ManifestStaticFiles,
     )
 
     m = Manifest(
@@ -408,6 +432,45 @@ def test_tier2_headway_servicespan_alertbreakdown_fields_are_additive():
     assert HeadwayPeriod.model_json_schema()["required"] == ["shift"]
     assert AlertHistory.model_json_schema()["required"] == ["generated_utc"]
     assert AlertBreakdownBucket.model_json_schema()["required"] == ["key"]
+
+
+def test_weak_stops_by_grain_fields_are_additive():
+    """DB-PR-3 windowable §4: WeakStop.observation_count/severe_pct/wilson_lo/wilson_hi and
+    RouteReliability.weak_stops_by_grain are optional-with-default, so already-published
+    route_reliability artifacts still validate and the frozen required sets stay unchanged."""
+    from transit_ops.snapshots.contract import RouteReliability, WeakStop, WeakStopGrain
+
+    # The scalar WeakStop shape gains 4 optional fields, defaulting None.
+    w = WeakStop(id="51234", name="Côte-Vertu / Décarie", avg_delay_min=8.2)
+    assert w.observation_count is None and w.severe_pct is None
+    assert w.wilson_lo is None and w.wilson_hi is None
+
+    # RouteReliability.weak_stops_by_grain defaults []; a populated payload roundtrips.
+    rr = RouteReliability(generated_utc="t", id="165")
+    assert rr.weak_stops_by_grain == []
+    full = RouteReliability(
+        generated_utc="t",
+        id="165",
+        weak_stops_by_grain=[
+            WeakStopGrain(
+                grain="month",
+                date="2026-06-01",
+                stops=[
+                    WeakStop(id="9001", name="Worst / Stop", avg_delay_min=12.4,
+                             observation_count=987, severe_pct=55.0, wilson_lo=33.1, wilson_hi=47.9)
+                ],
+            )
+        ],
+    )
+    assert full.weak_stops_by_grain[0].stops[0].wilson_lo == 33.1
+    # Survives a JSON roundtrip (the exact bytes the publisher writes + the web validates).
+    again = RouteReliability.model_validate(full.model_dump(mode="json"))
+    assert again.weak_stops_by_grain[0].stops[0].observation_count == 987
+
+    # Freeze-compat: required sets unchanged by the additive fields.
+    assert RouteReliability.model_json_schema()["required"] == ["generated_utc", "id"]
+    assert WeakStop.model_json_schema()["required"] == ["id"]
+    assert WeakStopGrain.model_json_schema()["required"] == ["grain"]
 
 
 def test_stop_index_mode_routes_are_additive():

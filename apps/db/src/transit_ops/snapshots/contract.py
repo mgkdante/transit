@@ -580,6 +580,18 @@ class WeakStop(BaseModel):
     id: str
     name: str | None = None
     avg_delay_min: float | None = None
+    # S7-B windowable §4 (DB-PR-3) — additive-optional, populated ONLY in weak_stops_by_grain;
+    # the scalar whole-history weak_stops[] leaves them None (a Pydantic null, within budget at
+    # the N=15 cap). observation_count = in-clamp delay n in the window. severe_pct = the severe-
+    # delay (>300s) share. wilson_lo/wilson_hi = the 95% Wilson interval of the NOT-SEVERE rate
+    # (k = obs - severe), PERCENT [0,100] — the SAME confidence channel build_stop_reliability
+    # already uses for stops (historic.py:1884/1903). A LOW wilson_lo = chronically severe =
+    # "worst"; a tiny-n fluke is gated out by the MIN_N=30 floor in the recompose, NOT by Wilson
+    # alone (a 4-of-4-severe stop pins the not-severe lower bound at 0.0%, n-independent).
+    observation_count: int | None = None
+    severe_pct: float | None = None
+    wilson_lo: float | None = None
+    wilson_hi: float | None = None
 
 class RouteDayOfWeek(BaseModel):
     # Per-route weekday seasonality from gold.route_delay_spine, GROUP BY ISO dow
@@ -665,13 +677,31 @@ class HeadwayByGrain(BaseModel):
     date: str | None = None
     headway: list[HeadwayPeriod] = Field(default_factory=list)
 
+class WeakStopGrain(BaseModel):
+    # S7-B windowable §4 ("Where it's worst" follows the grain rail): the worst-N stops on this
+    # route recomposed over ONE trailing window off gold.stop_delay_spine. grain='day'|'week'|'month';
+    # window anchored on the route's newest closed STOP-DELAY day (its OWN anchor, distinct from the
+    # delay-spine + headway anchors) — day=anchor; week=anchor-6..anchor; month=anchor-29..anchor.
+    # date = window START (ISO). stops are RANKED by the not-severe Wilson LOWER bound ASC (a low LB
+    # = chronically severe; a tiny-n fluke can't out-rank a high-n chronic offender), MIN_N=30 hard
+    # floor (a stop with < 30 in-window obs is OMITTED, never avg=0), truncated to the stored cap
+    # (15). avg_delay_min is the displayed lollipop magnitude (a documented rebaseline vs the legacy
+    # triple-rounded weekly avg). A grain with no qualifying stop is OMITTED entirely (honest
+    # absence). The web's selectable Top-10/25/All re-truncates over what is served; "All" = all 15
+    # stored, never all stops in the window.
+    grain: str
+    date: str | None = None
+    stops: list[WeakStop] = Field(default_factory=list)
+
 # S7-B payload guard: the published route_reliability/{id}.json must stay under this
-# many bytes (model_dump_json, UTF-8 — the exact bytes the publisher writes). 64 KiB is
-# tight enough to CATCH a regression (e.g. windowed per-shift histograms left on, which
-# lands ~67 KB) while clearing the measured worst case (~49-54 KB suppressed). A CI test
-# asserts a worst-case synthetic payload stays under it; re-anchor on a real busiest-route
-# measurement before relying on the exact number. Exported so the web can share it.
-ROUTE_RELIABILITY_BYTE_CEILING = 65536
+# many bytes (model_dump_json, UTF-8 — the exact bytes the publisher writes). 80 KiB
+# clears the measured worst case (clean ~79.2 KB with weak_stops_by_grain at the N=15
+# cap, ~2.7 KB margin) while still CATCHING a windowed-histogram regression (the F1
+# variant lands ~96.9 KB). A CI test asserts BOTH (clean fits, F1 breaches). Bumped
+# 65536 -> 81920 in DB-PR-3 (pre-PR-3 clean ~63.4 KB, F1 ~81.0 KB — within 1 KB of the
+# old ceiling). The ~2.7 KB clean margin is thin: re-anchor on a real busiest-route
+# measurement before adding to the §4 payload. Exported so the web can share it.
+ROUTE_RELIABILITY_BYTE_CEILING = 81920
 
 class RouteReliability(BaseModel):
     generated_utc: str
@@ -720,6 +750,12 @@ class RouteReliability(BaseModel):
     # scalar `headway` above STAYS whole-history (back-compat — still reads route_headway_by_shift
     # until the 0066 fast-follow re-points it). Default empty so already-published snapshots validate.
     headway_by_grain: list[HeadwayByGrain] = Field(default_factory=list)
+    # S7-B windowable §4 (additive-optional): worst-N stops per day/week/month off
+    # gold.stop_delay_spine, ranked by the not-severe Wilson lower bound (the
+    # build_stop_reliability house pattern). The scalar `weak_stops` above STAYS
+    # whole-history (back-compat — reads stop_delay_weekly until the 0067 fast-follow).
+    # Default empty so already-published snapshots validate.
+    weak_stops_by_grain: list[WeakStopGrain] = Field(default_factory=list)
 
 class StopReliabilityPeriod(BaseModel):
     grain: str

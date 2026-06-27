@@ -108,6 +108,13 @@ export const WeakStopSchema = z.object({
 	id: z.string(),
 	name: z.string().nullable().optional(),
 	avg_delay_min: z.number().nullable().optional(),
+	// S7-B windowable §4 — populated ONLY in weak_stops_by_grain (the scalar weak_stops[]
+	// leaves them null). wilson_lo/wilson_hi = the 95% Wilson interval of the NOT-severe rate
+	// (PERCENT); a LOW wilson_lo = chronically severe = the §4 rank key (asc).
+	observation_count: z.number().int().nullable().optional(),
+	severe_pct: z.number().nullable().optional(),
+	wilson_lo: z.number().nullable().optional(),
+	wilson_hi: z.number().nullable().optional(),
 });
 export type WeakStop = z.infer<typeof WeakStopSchema>;
 
@@ -213,6 +220,16 @@ export const HeadwayByGrainSchema = z.object({
 });
 export type HeadwayByGrain = z.infer<typeof HeadwayByGrainSchema>;
 
+export const WeakStopGrainSchema = z.object({
+	// S7-B windowable §4: worst-N stops recomputed over ONE trailing window off the stop spine,
+	// ranked by the not-severe Wilson lower bound (asc), MIN_N=30 floor, stored cap 15.
+	// grain='day'|'week'|'month'; date=window start. Element preserved (WeakStop). Additive-optional.
+	grain: z.string(),
+	date: z.string().nullable().optional(),
+	stops: z.array(WeakStopSchema).optional(),
+});
+export type WeakStopGrain = z.infer<typeof WeakStopGrainSchema>;
+
 export const RouteReliabilitySchema = z.object({
 	generated_utc: isoUtc(),
 	id: z.string(),
@@ -252,5 +269,6 @@ export const RouteReliabilitySchema = z.object({
 	habits_by_grain: z.array(RouteHabitsByGrainSchema).optional(),
 	// S7-B windowable §2: per-shift headway recomputed per time window (busiest direction).
 	headway_by_grain: z.array(HeadwayByGrainSchema).optional(),
+	weak_stops_by_grain: z.array(WeakStopGrainSchema).optional(),
 });
 export type RouteReliability = z.infer<typeof RouteReliabilitySchema>;

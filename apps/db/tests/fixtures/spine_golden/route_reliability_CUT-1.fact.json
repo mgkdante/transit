@@ -1936,5 +1936,34 @@
       "stop_time_update_count": 0
     }
   ],
-  "weak_stops": []
+  "weak_stops": [
+    {
+      "avg_delay_min": 0.8,
+      "id": "stop0",
+      "name": null,
+      "observation_count": null,
+      "severe_pct": null,
+      "wilson_hi": null,
+      "wilson_lo": null
+    },
+    {
+      "avg_delay_min": 4.6,
+      "id": "stop1",
+      "name": null,
+      "observation_count": null,
+      "severe_pct": null,
+      "wilson_hi": null,
+      "wilson_lo": null
+    },
+    {
+      "avg_delay_min": 6.7,
+      "id": "stop2",
+      "name": null,
+      "observation_count": null,
+      "severe_pct": null,
+      "wilson_hi": null,
+      "wilson_lo": null
+    }
+  ],
+  "weak_stops_by_grain": []
 }
