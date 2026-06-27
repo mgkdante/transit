@@ -323,6 +323,76 @@ describe('tier-1 — cancellations + occupancy_mix round-trip (additive optional
 	});
 });
 
+describe('S7-B — windowable §1 (periods_by_grain + habits_by_grain + prior_*) round-trip', () => {
+	it('parses route_reliability carrying periods_by_grain + habits_by_grain + prior fields', () => {
+		const fixture = {
+			generated_utc: ISO,
+			id: '165',
+			periods: [
+				{
+					grain: 'day',
+					otp_pct: 82,
+					observation_count: 12345,
+					prior_observation_count: 11987,
+					prior_otp_pct: 79,
+				},
+			],
+			periods_by_grain: [
+				{
+					grain: 'week',
+					date: '2026-06-20',
+					by_shift: [
+						{
+							grain: 'am_peak',
+							otp_pct: 80,
+							observation_count: 2000,
+							prior_observation_count: 1900,
+							prior_otp_pct: 78,
+						},
+					],
+					by_daytype: [{ grain: 'weekday', otp_pct: 81, observation_count: 9000 }],
+					day_of_week: [
+						{ day_of_week_iso: 1, avg_delay_min: 3.1, severe_pct: 4, observation_count: 4000 },
+					],
+					by_shift_daytype: [
+						{ shift: 'am_peak', day_type: 'weekday', otp_pct: 80, observation_count: 2000 },
+					],
+				},
+			],
+			habits_by_grain: [
+				{
+					grain: 'month',
+					date: '2026-06-20',
+					habits: { scale: 'repeat_problem_relative', matrix: [[0.1, null]] },
+					cells_observed: 1,
+					cells_suppressed: 167,
+				},
+				// honest absence: a too-sparse window carries habits=null + a suppressed count
+				{ grain: 'day', date: '2026-06-20', habits: null, cells_observed: 0, cells_suppressed: 12 },
+			],
+		};
+		expect(() => parsePort('route_reliability', RouteReliabilitySchema, fixture)).not.toThrow();
+	});
+
+	it('parses route_reliability with the S7-B keys absent (additive optional back-compat)', () => {
+		const fixture = { generated_utc: ISO, id: '51', periods: [{ grain: 'day', otp_pct: 80 }] };
+		const parsed = parsePort('route_reliability', RouteReliabilitySchema, fixture);
+		expect(parsed.periods_by_grain ?? []).toEqual([]);
+		expect(parsed.habits_by_grain ?? []).toEqual([]);
+	});
+
+	it('rejects a wrong-typed grain inside periods_by_grain (names the port)', () => {
+		const bad = {
+			generated_utc: ISO,
+			id: '51',
+			periods_by_grain: [{ grain: 123, by_shift: [] }],
+		};
+		expect(() => parsePort('route_reliability', RouteReliabilitySchema, bad)).toThrowError(
+			/route_reliability/,
+		);
+	});
+});
+
 describe('tier-2 — headway cov/bunching + service_spans + alert breakdown round-trip', () => {
 	it('parses route_reliability carrying headway cov/bunched_pct + service_spans', () => {
 		const fixture = {

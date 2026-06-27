@@ -1113,11 +1113,18 @@ def _attach_prior(periods, prior_index):  # noqa: ANN001, ANN202
         p.prior_otp_pct = _otp_pct(on_time, known)
 
 
-def _spine_periods_by_grain(conn, params) -> "list[ReliabilityByGrain]":  # noqa: ANN001
+def _spine_anchor(conn, params):  # noqa: ANN001, ANN202
+    """The route's newest CLOSED day in the spine (MAX(service_local_date)), or None when the
+    route has no spine rows. Read ONCE per route and threaded into both windowed builders."""
+    row = conn.execute(_SPINE_ANCHOR_SQL, params).mappings().fetchone()
+    return row["anchor"] if row else None
+
+
+def _spine_periods_by_grain(conn, params, anchor=None) -> "list[ReliabilityByGrain]":  # noqa: ANN001
     """The §1 breakdowns (by_shift / by_daytype / day_of_week / crosstab) per trailing window,
     each by_shift/by_daytype period carrying its prior-window n + OTP for a delta."""
-    anchor_row = conn.execute(_SPINE_ANCHOR_SQL, params).mappings().fetchone()
-    anchor = anchor_row["anchor"] if anchor_row else None
+    if anchor is None:
+        anchor = _spine_anchor(conn, params)
     if anchor is None:
         return []
     out: list[ReliabilityByGrain] = []
@@ -1149,10 +1156,10 @@ def _spine_periods_by_grain(conn, params) -> "list[ReliabilityByGrain]":  # noqa
     return out
 
 
-def _spine_habits_by_grain(conn, params) -> "list[RouteHabitsByGrain]":  # noqa: ANN001
+def _spine_habits_by_grain(conn, params, anchor=None) -> "list[RouteHabitsByGrain]":  # noqa: ANN001
     """The §1 7x24 repeat-problem heatmap recomposed per trailing window (B1)."""
-    anchor_row = conn.execute(_SPINE_ANCHOR_SQL, params).mappings().fetchone()
-    anchor = anchor_row["anchor"] if anchor_row else None
+    if anchor is None:
+        anchor = _spine_anchor(conn, params)
     if anchor is None:
         return []
     out: list[RouteHabitsByGrain] = []
@@ -1322,8 +1329,9 @@ def build_route_reliability(
     # --- S7-B windowable §1: the When-to-ride breakdowns + heatmap per time window
     #     (day/week/month) off gold.route_delay_spine. The scalar habits / periods /
     #     day_of_week / by_shift_daytype above stay the whole-history representation. ---
-    periods_by_grain = _spine_periods_by_grain(conn, params)
-    habits_by_grain = _spine_habits_by_grain(conn, params)
+    spine_anchor = _spine_anchor(conn, params)  # read once (S6); thread into both windowed builders
+    periods_by_grain = _spine_periods_by_grain(conn, params, spine_anchor)
+    habits_by_grain = _spine_habits_by_grain(conn, params, spine_anchor)
 
     # --- weak_stops: worst N (weak_stops_limit) by average delay seconds ---
     names = {

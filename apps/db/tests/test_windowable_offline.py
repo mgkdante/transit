@@ -18,13 +18,22 @@ from transit_ops.snapshots.builders.historic import _grain_windows
 from transit_ops.snapshots.builders import historic as H
 from transit_ops.snapshots.contract import (
     ROUTE_RELIABILITY_BYTE_CEILING,
+    CancellationPeriod,
     CrosstabCell,
+    CrowdingDelayCell,
+    HeadwayPeriod,
+    OccupancyByDow,
+    OccupancyByGrain,
+    OccupancyMix,
     ReliabilityByGrain,
     ReliabilityPeriod,
     RouteDayOfWeek,
+    RouteDelayHistogramBin,
     RouteHabits,
     RouteHabitsByGrain,
     RouteReliability,
+    ServiceSpanPeriod,
+    SkippedStopPeriod,
     WeakStop,
 )
 from transit_ops.snapshots.storage import _body
@@ -32,9 +41,15 @@ from transit_ops.snapshots.storage import _body
 _SHIFTS = ["am_peak", "midday", "pm_peak", "evening", "night"]
 
 
-def _heavy_period(grain: str, with_hist: bool) -> ReliabilityPeriod:
+def _hist() -> list[RouteDelayHistogramBin]:
+    # A full 21-bin signed-delay distribution (the prod shape on histogram-bearing periods).
+    return [RouteDelayHistogramBin(lo_sec=i * 60, hi_sec=(i + 1) * 60, count=100 + i) for i in range(21)]
+
+
+def _period(grain: str, *, with_hist: bool, with_prior: bool = True) -> ReliabilityPeriod:
     return ReliabilityPeriod(
         grain=grain,
+        date="2026-06-20",
         otp_pct=82,
         avg_delay_min=3.2,
         p50_min=2.0,
@@ -44,10 +59,9 @@ def _heavy_period(grain: str, with_hist: bool) -> ReliabilityPeriod:
         on_time=10123,
         wilson_lo=80.1,
         wilson_hi=83.9,
-        prior_observation_count=11987,
-        prior_otp_pct=79,
-        # the windowed periods set delay_histogram=None (F1); model the suppressed prod path
-        delay_histogram=None,
+        prior_observation_count=11987 if with_prior else None,
+        prior_otp_pct=79 if with_prior else None,
+        delay_histogram=_hist() if with_hist else None,
     )
 
 
@@ -58,65 +72,97 @@ def _full_habits() -> RouteHabits:
     )
 
 
-def _worst_case_payload() -> RouteReliability:
+def _full_payload(*, windowed_histograms: bool) -> RouteReliability:
+    """A REALISTIC worst case modelling ALL 18 RouteReliability families at their prod caps.
+
+    windowed_histograms toggles the F1 regression: when True the windowed periods_by_grain
+    by_shift/by_daytype carry the 21-bin array (which the builder suppresses) — the test
+    asserts that variant BREACHES the ceiling, so a real F1 regression trips offline.
+    """
+    # Scalar `periods`: 30 daily (histogram None per the daily carve-out) + week + month + the
+    # 5 by_shift + 2 by_daytype spine reads (all histogram-ON in prod, no prior on the scalars).
+    scalar_periods = [_period(f"2026-06-{d:02d}", with_hist=False, with_prior=False) for d in range(1, 31)]
+    scalar_periods += [_period(g, with_hist=True, with_prior=False) for g in ("week", "month")]
+    scalar_periods += [_period(s, with_hist=True, with_prior=False) for s in _SHIFTS]
+    scalar_periods += [_period(d, with_hist=True, with_prior=False) for d in ("weekday", "weekend")]
+
+    crosstab = [
+        CrosstabCell(shift=s, day_type=dt, otp_pct=80.0, avg_delay_min=3.0, severe_pct=4.0,
+                     observation_count=2000)
+        for s in _SHIFTS for dt in ("weekday", "weekend")
+    ]
+    dow = [RouteDayOfWeek(day_of_week_iso=i, avg_delay_min=3.1, severe_pct=4.0, observation_count=9000)
+           for i in range(1, 8)]
     by_grain = [
         ReliabilityByGrain(
             grain=g,
             date="2026-06-20",
-            by_shift=[_heavy_period(s, False) for s in _SHIFTS],
-            by_daytype=[_heavy_period(d, False) for d in ("weekday", "weekend")],
-            day_of_week=[
-                RouteDayOfWeek(
-                    day_of_week_iso=i, avg_delay_min=3.1, severe_pct=4.0, observation_count=4000
-                )
-                for i in range(1, 8)
-            ],
-            by_shift_daytype=[
-                CrosstabCell(
-                    shift=s,
-                    day_type=dt,
-                    otp_pct=80.0,
-                    avg_delay_min=3.0,
-                    severe_pct=4.0,
-                    observation_count=2000,
-                )
-                for s in _SHIFTS
-                for dt in ("weekday", "weekend")
-            ],
+            by_shift=[_period(s, with_hist=windowed_histograms) for s in _SHIFTS],
+            by_daytype=[_period(d, with_hist=windowed_histograms) for d in ("weekday", "weekend")],
+            day_of_week=dow,
+            by_shift_daytype=crosstab,
         )
         for g in ("day", "week", "month")
     ]
     habits_by_grain = [
-        RouteHabitsByGrain(
-            grain=g, date="2026-06-20", habits=_full_habits(), cells_observed=168, cells_suppressed=0
-        )
+        RouteHabitsByGrain(grain=g, date="2026-06-20", habits=_full_habits(),
+                           cells_observed=168, cells_suppressed=0)
         for g in ("day", "week", "month")
     ]
+    mix = OccupancyMix(empty=0.1, many_seats=0.3, few_seats=0.25, standing=0.25, full=0.1)
     return RouteReliability(
         generated_utc="2026-06-21T02:00:00Z",
         id="165",
         name="165 Côte-des-Neiges / Boulevard Décarie",
-        periods=[_heavy_period(f"2026-06-{d:02d}", True) for d in range(1, 31)],
+        periods=scalar_periods,
+        headway=[
+            HeadwayPeriod(shift=s, direction_id=d, day_type=dt, scheduled_min=6.0, observed_min=7.5,
+                          excess_wait_min=1.5, cov=0.42, bunched_pct=18.0)
+            for s in _SHIFTS for d in (0, 1) for dt in ("weekday", "weekend")
+        ][:15],
         habits=_full_habits(),
-        day_of_week=[
-            RouteDayOfWeek(day_of_week_iso=i, avg_delay_min=3.1, severe_pct=4.0, observation_count=9000)
-            for i in range(1, 8)
-        ],
-        weak_stops=[
-            WeakStop(id=f"stop-{i}", name=f"Stop number {i} / Cross Street {i}", avg_delay_min=8.2)
-            for i in range(100)
-        ],
+        day_of_week=dow,
+        weak_stops=[WeakStop(id=f"stop-{i}", name=f"Stop number {i} / Cross Street {i}",
+                             avg_delay_min=8.2) for i in range(100)],
+        cancellations=[CancellationPeriod(grain="day", date=f"2026-06-{d:02d}",
+                                          cancellation_rate_pct=1.4, canceled_trip_days=3,
+                                          total_trip_days=214) for d in range(1, 31)],
+        occupancy_mix=mix,
+        service_spans=[ServiceSpanPeriod(date=f"2026-06-{d:02d}",
+                                         first_trip_utc="2026-06-20T09:30:00Z",
+                                         last_trip_utc="2026-06-21T04:10:00Z",
+                                         service_span_min=1120, first_trip_delay_min=0.5,
+                                         last_trip_delay_min=1.2, trip_count=214)
+                       for d in range(1, 31)],
+        skipped_stops=[SkippedStopPeriod(date=f"2026-06-{d:02d}", skipped_stop_rate_pct=0.8,
+                                         skipped_stop_count=12, stop_time_update_count=1500)
+                       for d in range(1, 31)],
+        delay_by_crowding=[CrowdingDelayCell(band=b, avg_delay_min=3.0, p50_min=2.0,
+                                             observation_count=2000, day_count=20)
+                           for b in ("empty", "many_seats", "few_seats", "standing", "full")],
+        by_shift_daytype=crosstab,
+        occupancy_by_grain=[OccupancyByGrain(grain=g, mix=mix) for g in ("day", "week", "month")],
+        occupancy_by_dow=[OccupancyByDow(day_of_week_iso=i, mix=mix) for i in range(1, 8)],
         periods_by_grain=by_grain,
         habits_by_grain=habits_by_grain,
     )
 
 
-def test_worst_case_payload_under_byte_ceiling() -> None:
-    payload = _worst_case_payload()
-    size = len(_body(payload))
+def test_realistic_full_payload_under_byte_ceiling() -> None:
+    size = len(_body(_full_payload(windowed_histograms=False)))
     assert size <= ROUTE_RELIABILITY_BYTE_CEILING, (
-        f"route_reliability payload {size}B exceeds ceiling {ROUTE_RELIABILITY_BYTE_CEILING}B "
-        "— check the windowed periods kept delay_histogram=None (F1) + MIN_N pruning"
+        f"realistic route_reliability payload {size}B exceeds ceiling "
+        f"{ROUTE_RELIABILITY_BYTE_CEILING}B"
+    )
+
+
+def test_windowed_histogram_regression_breaches_ceiling() -> None:
+    # The F1 guard's reason for existing: if the windowed periods ever carry the 21-bin
+    # histogram, the payload must trip the ceiling so the regression is caught offline.
+    size = len(_body(_full_payload(windowed_histograms=True)))
+    assert size > ROUTE_RELIABILITY_BYTE_CEILING, (
+        "a windowed-histogram regression did NOT breach the ceiling — the ceiling is too loose "
+        f"({size}B vs {ROUTE_RELIABILITY_BYTE_CEILING}B)"
     )
 
 
