@@ -151,6 +151,17 @@ export interface PunctualityVM {
 	 * crosstab (its honest-empty path), never a fabricated grid.
 	 */
 	readonly byShiftDaytype: CrosstabCell[];
+	/**
+	 * S7-B windowable §1: true only when periods_by_grain carries an entry for the selected
+	 * grain (drives the §1 ∞→↻ badge). False on pre-deploy snapshots (the §1 breakdowns then
+	 * read the scalar whole-history fields — honest degradation, never a fake ↻).
+	 */
+	readonly windowed: boolean;
+	/**
+	 * S7-B windowable §4: true only when weak_stops_by_grain carries an entry for the selected
+	 * grain (drives the §4 ∞→↻ badge AND the severe-rate magnitude switch). False pre-deploy.
+	 */
+	readonly weakStopsWindowed: boolean;
 	readonly isEmpty: boolean;
 }
 
@@ -158,6 +169,11 @@ export interface PunctualityVM {
 export interface WaitRegularityVM {
 	/** Headway rows carrying at least one signal, in contract order. */
 	readonly headway: HeadwayPeriod[];
+	/**
+	 * S7-B windowable §2: true only when headway_by_grain carries an entry for the selected
+	 * grain (drives the §2 ∞→↻ badge). False pre-deploy (reads scalar whole-history headway).
+	 */
+	readonly windowed: boolean;
 	readonly isEmpty: boolean;
 }
 
@@ -574,6 +590,15 @@ export function toReliabilityClusters(
 	const allDayOfWeek = data.day_of_week ?? [];
 	const allWeakStops = data.weak_stops ?? [];
 
+	// S7-B windowable §1/§2/§4: the per-grain companions to the scalar whole-history fields
+	// above. find() returns undefined pre-deploy (the *_by_grain arrays are additive-optional
+	// and absent until the DB deploys + republishes) OR for a grain the DB didn't compute -> each
+	// VM feed falls back to its scalar source + the section badge stays ∞ (honest degradation).
+	const periodsGrain = (data.periods_by_grain ?? []).find((g) => g.grain === grain) ?? null;
+	const habitsGrain = (data.habits_by_grain ?? []).find((g) => g.grain === grain) ?? null;
+	const headwayGrain = (data.headway_by_grain ?? []).find((g) => g.grain === grain) ?? null;
+	const weakStopsGrain = (data.weak_stops_by_grain ?? []).find((g) => g.grain === grain) ?? null;
+
 	// Split the mixed-grain bag ONCE so every consumer reads a clean grain (F4).
 	const partition = partitionPeriods(allPeriods);
 	// The strip selects only against the calendar (dated headline) grains.
@@ -720,14 +745,27 @@ export function toReliabilityClusters(
 	// Trend source = ONLY the dated day-grain series, chronological ascending (F1/F4).
 	// A date range ZOOMS the trend to the in-range days (otherwise the full series).
 	const trend = hasRange ? rangeDays : grainTrendAsc;
-	const dayOfWeek = allDayOfWeek
+	// S7-B §1 windowable: weekday seasonality from the per-grain slice (scalar fallback pre-deploy).
+	const dayOfWeek = (periodsGrain?.day_of_week ?? allDayOfWeek)
 		.filter(dayOfWeekHasSignal)
 		.slice()
 		.sort((a, b) => a.day_of_week_iso - b.day_of_week_iso);
-	const weakStops = allWeakStops.filter((w) => w.avg_delay_min != null);
-	// Peak vs off-peak: surface the granular shift + day-type grains (A1/A2).
-	const byShift = partition.byShift.filter(periodHasSignal).map(toComparisonRow);
-	const byDayType = partition.byDayType.filter(periodHasSignal).map(toComparisonRow);
+	// S7-B §4 windowable: the windowed slice arrives DB-ranked worst-first (not-severe Wilson LB)
+	// and is gated on observation_count (NOT avg_delay_min) so a genuinely-worst stop whose pooled
+	// avg is null/<=0 is NOT dropped; the selector renders its severe-rate magnitude. The scalar
+	// fallback keeps today's avg_delay_min gate (ranked by avg in the selector).
+	const weakStops = weakStopsGrain
+		? (weakStopsGrain.stops ?? []).filter((w) => w.observation_count != null)
+		: allWeakStops.filter((w) => w.avg_delay_min != null);
+	// Peak vs off-peak: the windowed by_shift/by_daytype are raw ReliabilityPeriod[] already scoped
+	// to this grain (NOT pre-partitioned) -> feed the SAME filter+map. Scalar fallback = the
+	// whole-history shift/day-type grains partitioned out of `periods`.
+	const byShift = (periodsGrain?.by_shift ?? partition.byShift)
+		.filter(periodHasSignal)
+		.map(toComparisonRow);
+	const byDayType = (periodsGrain?.by_daytype ?? partition.byDayType)
+		.filter(periodHasSignal)
+		.map(toComparisonRow);
 	const peakOffPeak: PeakOffPeakVM = {
 		byShift,
 		byDayType,
@@ -737,7 +775,9 @@ export function toReliabilityClusters(
 	// that carry a real signal so an all-null cell never reads as present-but-blank.
 	// The band lays them on a fixed 5×2 grid; absent cells show an honest no-data
 	// message (the per-empty-cell honesty the operator requires).
-	const byShiftDaytype = (data.by_shift_daytype ?? []).filter(crosstabHasSignal);
+	const byShiftDaytype = (periodsGrain?.by_shift_daytype ?? data.by_shift_daytype ?? []).filter(
+		crosstabHasSignal,
+	);
 	const punctuality: PunctualityVM = {
 		// The GRAIN-AWARE headline aggregate (the same selected-grain values the strip
 		// computes): §01's headline tiles + the typical→worst-case Distribution + the
@@ -759,6 +799,10 @@ export function toReliabilityClusters(
 		weakStops,
 		peakOffPeak,
 		byShiftDaytype,
+		// S7-B: the §1 breakdowns follow the grain rail when periods_by_grain is published; the §4
+		// worst-stops follow it when weak_stops_by_grain is. Both gate the section's ∞→↻ badge.
+		windowed: periodsGrain != null,
+		weakStopsWindowed: weakStopsGrain != null,
 		isEmpty:
 			trend.length === 0 &&
 			dayOfWeek.length === 0 &&
@@ -768,9 +812,12 @@ export function toReliabilityClusters(
 	};
 
 	/* 02 Wait regularity. */
-	const headway = allHeadway.filter(headwayHasSignal);
+	// S7-B §2 windowable: the busiest-direction headway recomposed for the selected grain
+	// (scalar fallback to the whole-history headway pre-deploy).
+	const headway = (headwayGrain?.headway ?? allHeadway).filter(headwayHasSignal);
 	const waitRegularity: WaitRegularityVM = {
 		headway,
+		windowed: headwayGrain != null,
 		isEmpty: headway.length === 0,
 	};
 
@@ -855,7 +902,10 @@ export function toReliabilityClusters(
 	};
 
 	/* 05 Time-of-day habits. */
-	const rawHabits = data.habits ?? null;
+	// S7-B §1 windowable heatmap: branch on the windowed ENTRY first so a present-but-null windowed
+	// entry reads honest-empty (no cell cleared MIN_N in the window) and does NOT silently fall back
+	// to the scalar whole-history matrix; only an ABSENT entry (pre-deploy) uses the scalar habits.
+	const rawHabits = habitsGrain ? (habitsGrain.habits ?? null) : (data.habits ?? null);
 	const matrix = rawHabits?.matrix ?? [];
 	const matrixHasCell = matrix.some((row) => row.some((cell) => cell != null));
 	const habits: HabitsVM = {

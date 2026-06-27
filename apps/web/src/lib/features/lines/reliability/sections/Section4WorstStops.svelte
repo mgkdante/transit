@@ -1,19 +1,24 @@
 <!--
   §4 Where it's worst — "Where does the delay pile up?"
 
-  The accountability section: the worst-N stops ranked worst-delay first as ONE
-  always-visible lollipop (A13) on the FIXED DELAY_POS_DOMAIN (the same delay
-  renders the same length on every route / grain / refresh). Click a row → that
-  stop's page. The honest heading carries the shown/total count.
+  The accountability section: the worst-N stops as ONE always-visible lollipop (A13)
+  on a FIXED absolute domain (the same value renders the same length on every route /
+  grain / refresh). S7-B has two magnitude semantics, picked by the VM's
+  weakStopsWindowed flag: WINDOWED reads weak_stops_by_grain (DB-ranked worst-first by
+  the not-severe Wilson lower bound) and the bar is the SEVERE-DELAY RATE on
+  SEVERE_DOMAIN [0,100] — the rank variable, always >= 0, so a worst-by-rate stop whose
+  pooled avg delay is <= 0 still draws an honest bar; FALLBACK (pre-deploy scalar) keeps
+  the avg-delay bar on DELAY_POS_DOMAIN. Click a row → that stop's page; the heading
+  carries the honest shown/total count.
 
   This section has NO <Detail> layer: the worst-N selector IS the disclosure — a
-  GrainPicker that appears once there's more than a screenful (total > 5) and lets
-  the rider widen the lens (5 → 100). The window caption keeps it honest about the
+  GrainPicker that appears once there's more than a screenful (total > 5) with a 5 / 10 /
+  All cap (the windowed slice stores <= 15). The window caption keeps it honest about the
   trailing aggregate the ranking reads.
 
-  Reads ONLY the PunctualityVM's `weakStops`. Honest absence throughout: when the
-  selector returns no measured stop (`weakStops.shown === 0`) the section degrades
-  to its header + the styled AbsentValue chip (says WHY), never a fabricated 0.
+  Reads ONLY the PunctualityVM's `weakStops` + `weakStopsWindowed`. Honest absence
+  throughout: when the selector returns no measured stop (`weakStops.shown === 0`) the
+  section degrades to its header + the styled AbsentValue chip (says WHY), never a fake 0.
 -->
 <script lang="ts">
 	import type { Locale } from '$lib/i18n';
@@ -45,34 +50,59 @@
 		return { ...i, label: explainerCopy.info.trigger(name), linkLabel: explainerCopy.info.link };
 	});
 
-	// Worst-N selector (S7): a selectable how-many-stops control (5/10/20/30/50/100,
-	// default 10) reusing GrainPicker over a numeric-string union — the active chip is
-	// --primary (an interactive control), never a data mark. Local state; the slice is
-	// applied below so the data is always present, just truncated to the chosen N.
-	const WORST_N_SEGMENTS: GrainSegment<string>[] = [
+	// Worst-N selector (S7): a selectable how-many-stops control reusing GrainPicker over a
+	// numeric-string union — the active chip is --primary (an interactive control), never a data
+	// mark. The windowed weak_stops_by_grain stores <= 15, so the cap is 5 / 10 / All(=15); the
+	// scalar fallback can carry more but the heading's shown/total stays honest at the cap.
+	const WORST_N_SEGMENTS = $derived<GrainSegment<string>[]>([
 		{ key: '5', label: '5' },
 		{ key: '10', label: '10' },
-		{ key: '20', label: '20' },
-		{ key: '30', label: '30' },
-		{ key: '50', label: '50' },
-		{ key: '100', label: '100' },
-	];
+		{ key: '15', label: copy.strip.worstNAll },
+	]);
 	let worstN = $state('10');
 	const worstNCount = $derived(Number(worstN));
 
-	// Worst-N accountability LOLLIPOP (A13) — selectWeakStops owns the rank + the worst-N
-	// slice + the spec; rendered via the one <Chart> on the fixed DELAY_POS_DOMAIN (the same
-	// delay renders the same length on every route/grain/refresh). Click a row → the stop
-	// page. The heading carries the honest shown/total count. (Ranking is by avg delay today
-	// — the contract WeakStop carries no Wilson/n; the Wilson-lower rank + whisker is a small
-	// pipeline-rollup follow-up.)
+	// S7-B §4: when the windowed weak_stops_by_grain slice is present, each row carries the
+	// severe-rate evidence — a compact, null-guarded tooltip note (severe% · avg min · n). A plain
+	// closure (NOT $derived): it is invoked inside the $derived `weakStops` below, which re-runs on
+	// copy/locale change, so it always reads the current copy.
+	const weakStopNote = (w: {
+		severe_pct?: number | null;
+		avg_delay_min?: number | null;
+		observation_count?: number | null;
+	}): string => {
+		const n = copy.strip.weakStopNote;
+		const parts: string[] = [];
+		if (w.severe_pct != null)
+			parts.push(`${n.severe} ${Math.round(w.severe_pct)}${copy.units.pct}`);
+		if (w.avg_delay_min != null)
+			parts.push(`${n.avg} ${Math.round(w.avg_delay_min * 10) / 10}${copy.units.min}`);
+		if (w.observation_count != null) parts.push(`${n.samples}=${w.observation_count}`);
+		return parts.join(' · ');
+	};
+
+	// Worst-N accountability LOLLIPOP (A13) — selectWeakStops owns the rank + the worst-N slice +
+	// the spec; rendered via the one <Chart>. WINDOWED: the bar is the severe-delay rate on
+	// SEVERE_DOMAIN [0,100] (the rank variable, always >= 0), DB-ranked worst-first by the
+	// not-severe Wilson lower bound (preRanked → no re-sort), avg+Wilson+n in the row note.
+	// FALLBACK (pre-deploy scalar): avg delay on DELAY_POS_DOMAIN, ranked by avg. Click a row →
+	// the stop page; the heading carries the honest shown/total count.
 	const weakStops = $derived(
-		selectWeakStops(punctuality.weakStops, worstNCount, locale, {
-			title: copy.strip.weakStopsHeading,
-			xLabel: copy.strip.avgDelayMin,
-			unit: copy.units.min,
-			stopHref: (id) => `/stop/${id}`,
-		}),
+		selectWeakStops(
+			punctuality.weakStops,
+			worstNCount,
+			locale,
+			{
+				title: copy.strip.weakStopsHeading,
+				xLabel: copy.strip.avgDelayMin,
+				unit: copy.units.min,
+				severeXLabel: copy.strip.severeRateLabel,
+				severeUnit: copy.units.pct,
+				note: weakStopNote,
+				stopHref: (id) => `/stop/${id}`,
+			},
+			{ preRanked: punctuality.weakStopsWindowed },
+		),
 	);
 	const weakStopsHeading = $derived(
 		weakStops.total > weakStops.shown

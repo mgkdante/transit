@@ -202,23 +202,38 @@
 					: copy.controls.today,
 	);
 
-	// Section TOC (wayfinding — operator) doubling as the filter-SCOPE map (research): each
-	// rider-question section + whether the time window above re-shapes it (↻ windowed) or it
-	// reads the full history regardless (∞). §0 trend + §3 rates/mix follow the window; §1/§2/§4
-	// carry their own dimension (hour-of-day / shift / worst-N) and are window-invariant.
+	// Section TOC (wayfinding) doubling as the filter-SCOPE map (research): each rider-question
+	// section + whether the time window above re-shapes it (↻ windowed) or it reads the full
+	// history regardless (∞). §0 trend + §3 rates/mix ALWAYS follow the window. S7-B: §1/§2/§4
+	// follow it ONCE the DB publishes their *_by_grain companion (periods/headway/weak_stops
+	// by grain) and degrade to the scalar whole-history read until then, so the badge is DATA-
+	// DRIVEN off the mapper (honest: ∞ until the windowed data exists, never a fake ↻).
 	const sectionNav = $derived([
 		{ id: 'rel-verdict', label: copy.sections.verdict.label, windowed: true },
-		{ id: 'rel-when-to-ride', label: copy.sections.whenToRide.label, windowed: false },
-		{ id: 'rel-the-wait', label: copy.sections.theWait.label, windowed: false },
+		{
+			id: 'rel-when-to-ride',
+			label: copy.sections.whenToRide.label,
+			windowed: clusters.punctuality.windowed,
+		},
+		{
+			id: 'rel-the-wait',
+			label: copy.sections.theWait.label,
+			windowed: clusters.waitRegularity.windowed,
+		},
 		{ id: 'rel-run-and-fit', label: copy.sections.runAndFit.label, windowed: true },
-		{ id: 'rel-worst-stops', label: copy.sections.worstStops.label, windowed: false },
+		{
+			id: 'rel-worst-stops',
+			label: copy.sections.worstStops.label,
+			windowed: clusters.punctuality.weakStopsWindowed,
+		},
 	]);
 </script>
 
 <div class={cn('reliability-clusters', className)} data-slot="reliability-clusters">
 	<!-- The page-level grain rail (sticky) sits above the five rider-question sections.
-	     The grain refines §0's trend + §3's windowed rates/mix; §1/§2/§4 are
-	     whole-window reads. One column, the rail pinned over it. -->
+	     The grain refines §0's trend + §3's windowed rates/mix; §1/§2/§4 follow it once their
+	     *_by_grain companion is published (else they read the scalar whole history). One column,
+	     the rail pinned over it. -->
 	<div class="reliability-grain-block" data-slot="reliability-sections">
 		<!-- Control panel: the grain/date controls collected into ONE ControlsRail (quiet
 	     infra chrome, mono "View" overline) so the control reads identically to /stop
