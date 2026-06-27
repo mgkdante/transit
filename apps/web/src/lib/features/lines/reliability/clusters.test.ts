@@ -716,20 +716,24 @@ describe('toReliabilityClusters — *_by_grain windowable §1/§2/§4 (S7-B)', (
 			{
 				grain: 'week',
 				stops: [
-					// a genuinely-worst stop (ranked first by the DB) whose pooled avg is <= 0 — MUST survive.
+					// the genuinely-worst stop (ranked first by the DB) carries a NULL pooled avg —
+					// it MUST survive (the feed gates on observation_count, NOT avg_delay_min). This
+					// makes the gate discriminating: a wrong `avg_delay_min != null` gate drops it.
 					{
 						id: 'win-worst',
 						name: 'Worst',
-						avg_delay_min: -1,
+						avg_delay_min: null,
 						severe_pct: 40,
 						observation_count: 50,
 						wilson_lo: 30,
 						wilson_hi: 50,
 					},
+					// a second worst stop whose pooled avg is <= 0 — also MUST survive (never dropped
+					// for a non-positive avg).
 					{
 						id: 'win-2',
 						name: 'Second',
-						avg_delay_min: 3,
+						avg_delay_min: -2,
 						severe_pct: 20,
 						observation_count: 80,
 						wilson_lo: 15,
@@ -758,12 +762,15 @@ describe('toReliabilityClusters — *_by_grain windowable §1/§2/§4 (S7-B)', (
 		expect(c.habits.matrix).toEqual([[0.3]]);
 	});
 
-	it('preserves the DB worst-first order AND keeps a worst stop whose avg is <= 0 (§4)', () => {
+	it('keeps a null-avg AND a <=0-avg worst stop, gated on observation_count not avg (§4)', () => {
 		const c = toReliabilityClusters(windowed, { grain: 'week' });
+		// both worst-by-rate stops survive in DB order — the NULL-avg one proves the feed gates on
+		// observation_count (a wrong `avg_delay_min != null` gate would drop it); the -2 one proves a
+		// non-positive avg is never dropped.
 		expect(c.punctuality.weakStops.map((w) => w.id)).toEqual(['win-worst', 'win-2']);
-		// the avg=-1 worst-by-rate stop is NOT dropped (gated on observation_count, not avg).
-		expect(c.punctuality.weakStops[0]?.avg_delay_min).toBe(-1);
+		expect(c.punctuality.weakStops[0]?.avg_delay_min).toBeNull();
 		expect(c.punctuality.weakStops[0]?.severe_pct).toBe(40);
+		expect(c.punctuality.weakStops[1]?.avg_delay_min).toBe(-2);
 	});
 
 	it('falls back to scalar + flags windowed=false when the grain has no windowed entry', () => {
@@ -793,6 +800,54 @@ describe('toReliabilityClusters — *_by_grain windowable §1/§2/§4 (S7-B)', (
 		const c = toReliabilityClusters(populated, { grain: 'week' });
 		expect(c.punctuality.windowed).toBe(false);
 		expect(c.punctuality.weakStopsWindowed).toBe(false);
+		expect(c.waitRegularity.windowed).toBe(false);
+	});
+
+	// Each flag is wired 1:1 to its OWN array — asymmetric presence (one companion published, the
+	// others not) pins the wiring against a cross-wire (e.g. punctuality.windowed reading headwayGrain).
+	it('flags each section independently — only periods_by_grain present', () => {
+		const c = toReliabilityClusters(
+			{
+				generated_utc: utc('2026-06-19T02:00:00Z'),
+				id: '51',
+				periods_by_grain: [
+					{ grain: 'week', by_shift: [{ grain: 'am_peak', otp_pct: 80, observation_count: 200 }] },
+				],
+			},
+			{ grain: 'week' },
+		);
+		expect(c.punctuality.windowed).toBe(true);
+		expect(c.waitRegularity.windowed).toBe(false);
+		expect(c.punctuality.weakStopsWindowed).toBe(false);
+	});
+
+	it('flags each section independently — only headway_by_grain present', () => {
+		const c = toReliabilityClusters(
+			{
+				generated_utc: utc('2026-06-19T02:00:00Z'),
+				id: '51',
+				headway_by_grain: [{ grain: 'week', headway: [{ shift: 'am_peak', observed_min: 7 }] }],
+			},
+			{ grain: 'week' },
+		);
+		expect(c.waitRegularity.windowed).toBe(true);
+		expect(c.punctuality.windowed).toBe(false);
+		expect(c.punctuality.weakStopsWindowed).toBe(false);
+	});
+
+	it('flags each section independently — only weak_stops_by_grain present', () => {
+		const c = toReliabilityClusters(
+			{
+				generated_utc: utc('2026-06-19T02:00:00Z'),
+				id: '51',
+				weak_stops_by_grain: [
+					{ grain: 'week', stops: [{ id: 's', severe_pct: 30, observation_count: 50 }] },
+				],
+			},
+			{ grain: 'week' },
+		);
+		expect(c.punctuality.weakStopsWindowed).toBe(true);
+		expect(c.punctuality.windowed).toBe(false);
 		expect(c.waitRegularity.windowed).toBe(false);
 	});
 });

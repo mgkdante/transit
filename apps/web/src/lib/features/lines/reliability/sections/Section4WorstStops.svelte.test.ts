@@ -108,6 +108,41 @@ describe('Section4WorstStops — windowed severe-rate path (S7-B)', () => {
 		expect(segments).toEqual(['5', '10', 'All']);
 	});
 
+	it('threads preRanked: windowed bar = severe_pct (%), NOT avg, for a <=0-avg worst stop', () => {
+		// the sr-only table is the AT mirror of the chart: <th>{unit}</th> + <td>{value}</td> in
+		// spec (worst-first) order. Windowed → unit '%', value = severe_pct; a preRanked:false
+		// regression would show ' min' + the avg (-1) for the worst stop. Pins the threading.
+		const { container } = render(Section4WorstStops, {
+			props: {
+				punctuality: vm(
+					[
+						{
+							id: 'w',
+							name: 'W',
+							avg_delay_min: -1,
+							severe_pct: 40,
+							observation_count: 99,
+							wilson_lo: 30,
+							wilson_hi: 50,
+						},
+					],
+					true,
+				),
+				locale: 'en',
+				copy: reliabilityCopy.en,
+			},
+		});
+		const unitHeader = container
+			.querySelector('table.sr-only thead th:nth-child(2)')
+			?.textContent?.trim();
+		expect(unitHeader).toBe('%'); // severe-rate unit, not ' min'
+		const firstRow = container.querySelector('table.sr-only tbody tr');
+		expect(firstRow?.getAttribute('data-key')).toBe('w'); // DB worst-first order preserved
+		const valueCell = firstRow?.querySelector('td')?.textContent ?? '';
+		expect(valueCell).toContain('40'); // the severe rate, NOT the -1 avg
+		expect(valueCell).not.toContain('-1');
+	});
+
 	it('degrades to the honest empty state when no stop is served', () => {
 		const { container } = render(Section4WorstStops, {
 			props: { punctuality: vm([], true), locale: 'en', copy: reliabilityCopy.en },
