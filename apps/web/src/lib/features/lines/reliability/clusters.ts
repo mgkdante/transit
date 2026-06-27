@@ -647,8 +647,9 @@ export function toReliabilityClusters(
 	let rangeAggregate: SnapshotStripVM['rangeAggregate'] = null;
 	// OTP numerator/denominator behind the headline % — drive the §0 verdict's natural
 	// frequency + n-aware (Wilson) confidence. Additive across a range; null pre-republish.
-	let observationCount: number | null = null;
-	let onTime: number | null = null;
+	// (Assigned in both the range + strip branches below, so no dead initialiser.)
+	let observationCount: number | null;
+	let onTime: number | null;
 
 	if (hasRange) {
 		const singleDay = rangeDays.length === 1;

@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, within } from '@testing-library/svelte';
+import { render, screen, fireEvent } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { describe, expect, it } from 'vitest';
 import RouteReliabilityClusters from './RouteReliabilityClusters.svelte';

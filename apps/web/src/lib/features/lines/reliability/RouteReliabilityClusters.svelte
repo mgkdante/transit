@@ -149,7 +149,6 @@
 	const mapperOpts = $derived<{ grain: string; dateRange?: { start: string; end: string } }>(
 		mode === 'range' ? { grain: 'day', dateRange: normalizedRange } : { grain: mode },
 	);
-	const selectedGrain = $derived(mapperOpts.grain);
 
 	// One mapping pass — every band reads its slice of this.
 	const clusters = $derived(toReliabilityClusters(data, mapperOpts));

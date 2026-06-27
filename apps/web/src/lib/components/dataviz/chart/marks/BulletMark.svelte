@@ -68,24 +68,22 @@
 				{/if}
 			</Svg>
 			<Tooltip.Root>
-				{#snippet children()}
-					<Tooltip.Header>{spec.title}</Tooltip.Header>
-					<Tooltip.List>
-						{#if hasValue}
-							<Tooltip.Item
-								label={spec.xLabel ?? spec.title}
-								value={`${fmt(spec.value)}${spec.unit}`}
-							/>
-						{/if}
-						{#if spec.target != null}
-							<Tooltip.Item
-								label={spec.targetLabel ?? 'target'}
-								value={`${spec.target}${spec.unit}`}
-							/>
-						{/if}
-						{#if spec.n != null}<Tooltip.Item label="n" value={String(spec.n)} />{/if}
-					</Tooltip.List>
-				{/snippet}
+				<Tooltip.Header>{spec.title}</Tooltip.Header>
+				<Tooltip.List>
+					{#if hasValue}
+						<Tooltip.Item
+							label={spec.xLabel ?? spec.title}
+							value={`${fmt(spec.value)}${spec.unit}`}
+						/>
+					{/if}
+					{#if spec.target != null}
+						<Tooltip.Item
+							label={spec.targetLabel ?? 'target'}
+							value={`${spec.target}${spec.unit}`}
+						/>
+					{/if}
+					{#if spec.n != null}<Tooltip.Item label="n" value={String(spec.n)} />{/if}
+				</Tooltip.List>
 			</Tooltip.Root>
 		</LcChart>
 	</ChartFrame>
