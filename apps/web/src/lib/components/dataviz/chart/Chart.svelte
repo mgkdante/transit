@@ -24,6 +24,7 @@
 	import LineMark from './marks/LineMark.svelte';
 	import BulletMark from './marks/BulletMark.svelte';
 	import HeatmapMark from './marks/HeatmapMark.svelte';
+	import StackedShareMark from './marks/StackedShareMark.svelte';
 	import type { ChartSpec } from './ChartSpec';
 
 	export interface ChartProps {
@@ -59,11 +60,12 @@
 	<BulletMark {spec} class={className} />
 {:else if spec.kind === 'heatmap'}
 	<HeatmapMark {spec} class={className} />
+{:else if spec.kind === 'stacked-share'}
+	<StackedShareMark {spec} class={className} />
 {:else}
 	<!--
 		Pending branches (added as each family migrates, each gate-green + browser-verified):
-		  P2.2 · metric         → a scalar tile (no data mark) — the number IS the value voice
-		         stacked-share  → LayerChart floating Bars (per-segment hover)
-		         cycle          → LayerChart weekday small-multiples (shared y + mean rule)
+		  metric → a scalar tile (no data mark) — the number IS the value voice
+		  cycle  → LayerChart weekday small-multiples (shared y + mean rule)
 	-->
 {/if}

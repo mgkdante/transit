@@ -43,7 +43,8 @@
 	import { fmtPct, fmtCount, fmtDelayMin as sharedFmtDelayMin } from '$lib/utils';
 	import { SectionLabel } from '$lib/components/brand';
 	import { AbsentValue } from '$lib/components/edge';
-	import { StackedBar, type StackedSegment } from '$lib/components/dataviz';
+	import { ChartLegend } from '$lib/components/dataviz';
+	import { occupancyVar } from '$lib/components/dataviz/tokens';
 	import { Chart } from '$lib/components/dataviz/chart';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
 	import { metricInfoFor, type MetricKey } from '$lib/features/metrics/metrics.content';
@@ -57,6 +58,7 @@
 	import { OCCUPANCY_CODES, type OccupancyCode } from '$lib/v1/schemas';
 	import { selectCrowdingDelay } from '../selectors/crowdingDelay';
 	import { selectBullet } from '../selectors/bullet';
+	import { selectOccupancyShare } from '../selectors/occupancyShare';
 	import { detailCopy } from '../../lines.copy';
 	import type { ServiceDeliveredVM, CrowdingVM } from '../clusters';
 	import type { ReliabilityCopy } from '../reliability.copy';
@@ -158,51 +160,62 @@
 	// rail's grain through this single derived.
 	const activeMix = $derived(crowding.mixByGrain ?? crowding.mix);
 
-	/** Build the five occupancy bands as StackedBar segments (fractions 0..1). */
-	const toSegments = (mix: typeof crowding.mix): StackedSegment[] =>
-		OCCUPANCY_CODES.map((code: OccupancyCode) => ({
-			code,
-			value: mix ? mix[code] : null,
-			label: bands[code],
-		}));
-	const mixHasShare = (mix: typeof crowding.mix): boolean =>
-		mix != null && OCCUPANCY_CODES.some((code) => (mix[code] ?? 0) > 0);
+	/** Resolve a band's human label for the share strip + legend. */
+	const bandLabel = (code: OccupancyCode): string => bands[code];
+	/** Sum the positive band shares of a mix (guards the dominant math). */
+	const mixTotal = (mix: typeof crowding.mix): number =>
+		mix ? OCCUPANCY_CODES.reduce((s, c) => s + ((mix[c] ?? 0) > 0 ? (mix[c] as number) : 0), 0) : 0;
 
-	/** The (grain-aware) headline occupancy bar segments. */
-	const segments = $derived<StackedSegment[]>(toSegments(activeMix));
+	/** The (grain-aware) headline occupancy mix as a 100%-stacked LayerChart share strip.
+	    selectOccupancyShare returns null on no telemetry / all-zero mix (→ honest absence). */
+	const mixShareSpec = $derived(
+		selectOccupancyShare(activeMix, locale, { title: copy.clusters.crowding, label: bandLabel }),
+	);
 
-	// S7 §04: weekday (ISO 1-5) vs weekend (ISO 6-7) occupancy split, a 2-col small
-	// multiple. The mapper folds the per-ISO-weekday shares into one weekday + one
-	// weekend mix; null when occupancy_by_dow is absent (then the sub-block is omitted).
+	// S7 §04: weekday (ISO 1-5) vs weekend (ISO 6-7) occupancy split, a 2-col small multiple.
+	// Each side is its own share strip (or null → the honest no-data chip in the cell).
 	const weekdayWeekendCols = $derived.by(() => {
 		const ww = crowding.weekdayWeekend;
 		if (!ww) return null;
 		return {
-			weekday: { segs: toSegments(ww.weekday), has: mixHasShare(ww.weekday) },
-			weekend: { segs: toSegments(ww.weekend), has: mixHasShare(ww.weekend) },
+			weekday: selectOccupancyShare(ww.weekday, locale, {
+				title: copy.peak.weekday,
+				label: bandLabel,
+			}),
+			weekend: selectOccupancyShare(ww.weekend, locale, {
+				title: copy.peak.weekend,
+				label: bandLabel,
+			}),
 		};
 	});
 
-	// P11 §04: the per-ISO-weekday occupancy SMALL MULTIPLE — up to 7 stacked strips,
-	// Mon→Sun, each its own occupancy StackedBar (the same primitive + scale as the
-	// headline mix). The mapper hands a FIXED 1..7 frame; a weekday with no telemetry
-	// (mix:null OR all-zero shares) carries `has: false` so its cell renders the honest
-	// AbsentValue chip in the SAME box, never a fabricated bar or a dropped strip. null
-	// when occupancy_by_dow is absent → the small-multiple is omitted entirely.
+	// P11 §04: the per-ISO-weekday occupancy SMALL MULTIPLE — up to 7 share strips, Mon→Sun,
+	// the same mark + scale as the headline mix. The mapper hands a FIXED 1..7 frame; a weekday
+	// with no telemetry resolves to a null spec → its cell renders the honest AbsentValue chip
+	// in the SAME box, never a fabricated bar or a dropped strip.
 	const weekdayStrips = $derived.by(() => {
 		const rows = crowding.byWeekday;
 		if (!rows) return null;
 		return rows.map((d) => ({
 			iso: d.iso,
 			label: weekdayLabel(d.iso, locale),
-			segs: toSegments(d.mix),
-			has: mixHasShare(d.mix),
+			spec: selectOccupancyShare(d.mix, locale, {
+				title: weekdayLabel(d.iso, locale),
+				label: bandLabel,
+			}),
 		}));
 	});
 
 	/** Total band share (guards the dominant-band headline + share math). */
-	const total = $derived(
-		segments.reduce((sum, s) => sum + (s.value != null && s.value > 0 ? s.value : 0), 0),
+	const total = $derived(mixTotal(activeMix));
+
+	/** Headline-mix legend — band swatch + share %, paired with the colour (a11y). */
+	const mixLegend = $derived(
+		(mixShareSpec?.segments ?? []).map((s) => ({
+			colorVar: occupancyVar((s.occupancy ?? 'empty') as OccupancyCode),
+			label: `${s.label} ${Math.round(s.share)}%`,
+			swatch: 'square' as const,
+		})),
 	);
 
 	/** The largest band — lifted to a MetricDisplay as the single-glance read. */
@@ -445,16 +458,14 @@
 					info={dominantBandInfo}
 					data-slot="dominant-band"
 				/>
-				<!-- Interactive: each band's share reveals on hover/focus (#11). -->
-				<StackedBar
-					scale="occupancy"
-					{segments}
-					label={copy.clusters.crowding}
-					size="sm"
-					legend
-					interactive
-					class="crowding-bar"
-				/>
+				<!-- The mix as a 100%-stacked LayerChart share strip + a labelled legend (the
+				     colour is paired with each band's name + share, never hue alone). -->
+				{#if mixShareSpec}
+					<div class="crowding-bar" data-slot="crowding-mix">
+						<Chart spec={mixShareSpec} />
+						<ChartLegend items={mixLegend} />
+					</div>
+				{/if}
 			{/if}
 		</div>
 
@@ -481,28 +492,16 @@
 					<div class="crowding-2col-grid">
 						<div class="crowding-2col-cell" data-slot="crowding-weekday">
 							<span class="crowding-2col-label">{copy.peak.weekday}</span>
-							{#if weekdayWeekendCols.weekday.has}
-								<StackedBar
-									scale="occupancy"
-									segments={weekdayWeekendCols.weekday.segs}
-									label={copy.peak.weekday}
-									size="sm"
-									interactive
-								/>
+							{#if weekdayWeekendCols.weekday}
+								<Chart spec={weekdayWeekendCols.weekday} />
 							{:else}
 								<AbsentValue variant="block" reason="no-observations" {locale} />
 							{/if}
 						</div>
 						<div class="crowding-2col-cell" data-slot="crowding-weekend">
 							<span class="crowding-2col-label">{copy.peak.weekend}</span>
-							{#if weekdayWeekendCols.weekend.has}
-								<StackedBar
-									scale="occupancy"
-									segments={weekdayWeekendCols.weekend.segs}
-									label={copy.peak.weekend}
-									size="sm"
-									interactive
-								/>
+							{#if weekdayWeekendCols.weekend}
+								<Chart spec={weekdayWeekendCols.weekend} />
 							{:else}
 								<AbsentValue variant="block" reason="no-observations" {locale} />
 							{/if}
@@ -523,14 +522,8 @@
 						{#each weekdayStrips as day (day.iso)}
 							<li class="crowding-dow-cell" data-slot="crowding-dow-cell" data-iso={day.iso}>
 								<span class="crowding-dow-label">{day.label}</span>
-								{#if day.has}
-									<StackedBar
-										scale="occupancy"
-										segments={day.segs}
-										label={day.label}
-										size="sm"
-										interactive
-									/>
+								{#if day.spec}
+									<Chart spec={day.spec} />
 								{:else}
 									<AbsentValue variant="block" reason="no-observations" {locale} />
 								{/if}
