@@ -116,6 +116,13 @@ export interface MagnitudeBarsSpec extends ChartSpecBase {
 	readonly sort: 'wilson-lower' | 'given';
 	/** Colour family for the fill — always a dataviz scale, never an affordance token. */
 	readonly scale: 'status' | 'severity' | 'occupancy';
+	/**
+	 * Localized label for the per-row Wilson 95% interval (e.g. "95% CI"). When set AND a row
+	 * carries wilsonLo/wilsonHi, the interval is surfaced in the hover/focus tooltip + the sr-only
+	 * table (the AT mirror) so the uncertainty is honest, not just the point estimate. i18n stays
+	 * out of the mark. Omit on the scalar/fallback path (no Wilson bounds there).
+	 */
+	readonly ciLabel?: string;
 }
 
 /** One observation in a dot-strip. */

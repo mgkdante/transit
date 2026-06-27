@@ -141,6 +141,10 @@ describe('Section4WorstStops — windowed severe-rate path (S7-B)', () => {
 		const valueCell = firstRow?.querySelector('td')?.textContent ?? '';
 		expect(valueCell).toContain('40'); // the severe rate, NOT the -1 avg
 		expect(valueCell).not.toContain('-1');
+		// the Wilson 95% interval is surfaced honestly in the AT mirror (Feature B)
+		expect(valueCell).toContain('95% CI');
+		expect(valueCell).toContain('30');
+		expect(valueCell).toContain('50');
 	});
 
 	it('degrades to the honest empty state when no stop is served', () => {

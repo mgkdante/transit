@@ -69,6 +69,7 @@ describe('selectWeakStops — windowed/preRanked (severe-rate magnitude, S7-B)',
 		severeXLabel: 'Severe-delay rate',
 		severeUnit: '%',
 		note: (w) => `severe ${w.severe_pct}% n=${w.observation_count}`,
+		ciLabel: '95% CI',
 	};
 	// DB-ranked worst-first by the not-severe Wilson LB (NOT avg). The first stop's pooled avg is
 	// <= 0 — a worst-by-rate stop — and MUST still draw a non-zero bar (severe-rate magnitude).
@@ -120,13 +121,20 @@ describe('selectWeakStops — windowed/preRanked (severe-rate magnitude, S7-B)',
 		expect(spec.rows[0].value).toBe(42); // > 0, the severe rate — never an empty bar
 	});
 
-	it('surfaces n / wilson bounds / the evidence note on each row', () => {
+	it('surfaces n / wilson bounds / the evidence note + ciLabel on the windowed path', () => {
 		const { spec } = selectWeakStops(winStops, 10, 'en', winLabels, { preRanked: true });
 		if (spec.kind !== 'magnitude-bars') throw new Error('expected magnitude-bars');
 		expect(spec.rows[0].n).toBe(987);
 		expect(spec.rows[0].wilsonLo).toBe(33);
 		expect(spec.rows[0].wilsonHi).toBe(47);
 		expect(spec.rows[0].note).toBe('severe 42% n=987');
+		expect(spec.ciLabel).toBe('95% CI'); // the Wilson interval is surfaced (tooltip + sr-only)
+	});
+
+	it('omits ciLabel on the scalar/fallback path (no Wilson bounds there)', () => {
+		const { spec } = selectWeakStops(stops, 10, 'en', winLabels);
+		if (spec.kind !== 'magnitude-bars') throw new Error('expected magnitude-bars');
+		expect(spec.ciLabel).toBeUndefined();
 	});
 
 	it('truncates to N honestly (total = full served set, shown <= N)', () => {

@@ -99,6 +99,12 @@
 							label={spec.xLabel ?? spec.title}
 							value={`${fmt(data.value)}${spec.unit}`}
 						/>
+						{#if spec.ciLabel && data.wilsonLo != null && data.wilsonHi != null}
+							<Tooltip.Item
+								label={spec.ciLabel}
+								value={`${fmt(data.wilsonLo)}–${fmt(data.wilsonHi)}${spec.unit}`}
+							/>
+						{/if}
 						{#if data.note}<Tooltip.Item label="" value={data.note} />{/if}
 						{#if data.href}<Tooltip.Item label="" value="↦ open stop" />{/if}
 					</Tooltip.List>
@@ -119,7 +125,12 @@
 					<th scope="row">
 						{#if r.href}<a href={r.href}>{r.label}</a>{:else}{r.label}{/if}
 					</th>
-					<td>{fmt(r.value)}</td>
+					<td>
+						{fmt(
+							r.value,
+						)}{#if spec.ciLabel && r.wilsonLo != null && r.wilsonHi != null}&nbsp;({spec.ciLabel}
+							{fmt(r.wilsonLo)}–{fmt(r.wilsonHi)}){/if}
+					</td>
 				</tr>
 			{/each}
 		</tbody>

@@ -17,6 +17,8 @@
 -->
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { page } from '$app/state';
+	import { mirrorSearchParam } from '$lib/site/urlMirror';
 	import { getLocale, localizeHref } from '$lib/i18n';
 	import { fmtDelayMin as sharedFmtDelayMin } from '$lib/utils';
 	import { mapHrefFor, routeFor } from '$lib/nav';
@@ -82,7 +84,18 @@
 		{ key: 'schedule', label: t.tabs.schedule },
 		{ key: 'reliability', label: t.tabs.reliability },
 	]);
-	let active = $state<TabKey>('detail');
+	// Deep-linkable tab: seed from ?tab on load (an unknown value falls to the default — the URL is a
+	// hint, never a data source), then mirror the active tab to ?tab so a view is shareable. We use
+	// replaceState (not pushState) so switching tabs never spams the history stack; the default tab is
+	// OMITTED from the URL for a clean canonical /lines/<id>.
+	const TAB_KEYS: readonly TabKey[] = ['detail', 'schedule', 'reliability'];
+	const readTab = (): TabKey => {
+		const p = page.url.searchParams.get('tab');
+		return TAB_KEYS.includes(p as TabKey) ? (p as TabKey) : 'detail';
+	};
+	let active = $state<TabKey>(readTab());
+	// Mirror the active tab to ?tab (omit the 'detail' default for a clean canonical URL).
+	$effect(() => mirrorSearchParam('tab', active === 'detail' ? null : active));
 
 	// detail + schedule share the static route file (reactive to `id`).
 	const route = createResource<RouteFile | null>(() => getRoute(id));
