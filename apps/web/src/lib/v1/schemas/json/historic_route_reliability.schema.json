@@ -186,6 +186,38 @@
       "title": "CrowdingDelayCell",
       "type": "object"
     },
+    "HeadwayByGrain": {
+      "properties": {
+        "date": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Date"
+        },
+        "grain": {
+          "title": "Grain",
+          "type": "string"
+        },
+        "headway": {
+          "items": {
+            "$ref": "#/$defs/HeadwayPeriod"
+          },
+          "title": "Headway",
+          "type": "array"
+        }
+      },
+      "required": [
+        "grain"
+      ],
+      "title": "HeadwayByGrain",
+      "type": "object"
+    },
     "HeadwayPeriod": {
       "properties": {
         "bunched_pct": {
@@ -248,6 +280,18 @@
           "default": null,
           "title": "Excess Wait Min"
         },
+        "observation_count": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Observation Count"
+        },
         "observed_min": {
           "anyOf": [
             {
@@ -259,6 +303,30 @@
           ],
           "default": null,
           "title": "Observed Min"
+        },
+        "prior_observation_count": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Prior Observation Count"
+        },
+        "prior_observed_min": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Prior Observed Min"
         },
         "scheduled_min": {
           "anyOf": [
@@ -985,6 +1053,13 @@
         "$ref": "#/$defs/HeadwayPeriod"
       },
       "title": "Headway",
+      "type": "array"
+    },
+    "headway_by_grain": {
+      "items": {
+        "$ref": "#/$defs/HeadwayByGrain"
+      },
+      "title": "Headway By Grain",
       "type": "array"
     },
     "id": {

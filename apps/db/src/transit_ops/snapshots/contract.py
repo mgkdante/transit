@@ -505,6 +505,14 @@ class HeadwayPeriod(BaseModel):
     # gaps under half the shift median headway (None when no gaps).
     cov: float | None = None
     bunched_pct: float | None = None
+    # S7-B windowable §2 (additive-optional; None on scalar whole-history rows + the first
+    # window with no prior). observation_count = the window's in-clamp gap sample n (the
+    # CoV/median denominator, so a delta is interpretable); prior_observation_count +
+    # prior_observed_min are the SAME shift over the immediately-prior equal-length window,
+    # so the web renders a period-over-period delta on the wait + gates its significance by n.
+    observation_count: int | None = None
+    prior_observation_count: int | None = None
+    prior_observed_min: float | None = None
 
 class ServiceSpanPeriod(BaseModel):
     # Per-route service span over one closed local day. "trip start" = first
@@ -636,6 +644,27 @@ class RouteHabitsByGrain(BaseModel):
     cells_observed: int = 0
     cells_suppressed: int = 0
 
+class HeadwayByGrain(BaseModel):
+    # S7-B windowable §2 ("The wait" follows the grain rail): per-shift scheduled-vs-observed
+    # headway + excess wait + CoV/%bunched recomposed over ONE trailing window off
+    # gold.route_headway_shift_daily. grain = 'day'|'week'|'month'; the window is TRAILING-N-days
+    # anchored on the route's newest closed HEADWAY day (its OWN anchor, distinct from the
+    # delay-spine anchor) — day=anchor; week=anchor-6..anchor; month=anchor-29..anchor — matching
+    # the web windowByGrain so the mapper is a pure .find(grain) pass-through. date = window START.
+    # Element type PRESERVED (HeadwayPeriod). Honest absence: a grain with no in-clamp gap rows is
+    # OMITTED; cov/bunched_pct stay None under the n>=2 / no-gaps guards. Each window publishes the
+    # BUSIEST DIRECTION ONLY (~5 shift rows) via the per-window argmax (SUM(trip_count) DESC,
+    # direction_id ASC) — DELIBERATELY replacing the legacy global-14d argmax, so the headline
+    # direction can differ per grain for near-balanced routes (correct windowed semantics).
+    # scheduled_min is the STATIC timetable constant (does NOT window); observed_min is CDF-interp
+    # over the summed gap histogram (a documented rebaseline vs the legacy percentile_cont median);
+    # cov is recomposed SAMPLE sd (Bessel n-1, byte-identical to the legacy stddev_samp) from pooled
+    # moments; bunched_pct is the summed-histogram mass below 0.5*windowed_median. The clamp
+    # 0<gap<240 + the n>=2 guard are byte-identical to route_headway_by_shift.
+    grain: str
+    date: str | None = None
+    headway: list[HeadwayPeriod] = Field(default_factory=list)
+
 # S7-B payload guard: the published route_reliability/{id}.json must stay under this
 # many bytes (model_dump_json, UTF-8 — the exact bytes the publisher writes). 64 KiB is
 # tight enough to CATCH a regression (e.g. windowed per-shift histograms left on, which
@@ -686,6 +715,11 @@ class RouteReliability(BaseModel):
     # are the windowed companions. Default empty so already-published snapshots validate.
     periods_by_grain: list[ReliabilityByGrain] = Field(default_factory=list)
     habits_by_grain: list[RouteHabitsByGrain] = Field(default_factory=list)
+    # S7-B windowable §2 (additive-optional): per-shift headway recomputed per time window
+    # (day/week/month) off gold.route_headway_shift_daily, so §2 follows the grain rail. The
+    # scalar `headway` above STAYS whole-history (back-compat — still reads route_headway_by_shift
+    # until the 0066 fast-follow re-points it). Default empty so already-published snapshots validate.
+    headway_by_grain: list[HeadwayByGrain] = Field(default_factory=list)
 
 class StopReliabilityPeriod(BaseModel):
     grain: str

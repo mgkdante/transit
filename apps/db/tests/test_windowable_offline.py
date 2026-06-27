@@ -21,6 +21,7 @@ from transit_ops.snapshots.contract import (
     CancellationPeriod,
     CrosstabCell,
     CrowdingDelayCell,
+    HeadwayByGrain,
     HeadwayPeriod,
     OccupancyByDow,
     OccupancyByGrain,
@@ -145,6 +146,27 @@ def _full_payload(*, windowed_histograms: bool) -> RouteReliability:
         occupancy_by_dow=[OccupancyByDow(day_of_week_iso=i, mix=mix) for i in range(1, 8)],
         periods_by_grain=by_grain,
         habits_by_grain=habits_by_grain,
+        headway_by_grain=[
+            HeadwayByGrain(
+                grain=g,
+                date="2026-06-20",
+                headway=[
+                    HeadwayPeriod(
+                        shift=s,
+                        scheduled_min=6.0,
+                        observed_min=7.5,
+                        excess_wait_min=1.5,
+                        cov=0.63,
+                        bunched_pct=18.0,
+                        observation_count=240,
+                        prior_observation_count=228,
+                        prior_observed_min=7.1,
+                    )
+                    for s in _SHIFTS
+                ],
+            )
+            for g in ("day", "week", "month")
+        ],
     )
 
 
@@ -217,3 +239,37 @@ def test_whole_history_projectors_byte_identical_windowed_twins_bound() -> None:
 def test_builders_reexport_is_importable() -> None:
     # guard the package surface (the windowed builders live under historic)
     assert hasattr(builders, "build_route_reliability")
+
+
+# --- §2 headway recompose helpers (pure, offline) ---------------------------
+
+
+def test_round_half_away_matches_sql_round_semantics() -> None:
+    # Postgres ROUND(::numeric, n) is half-away-from-zero; Python's builtin round() is banker's.
+    assert float(H._round_half_away(2.5, 0)) == 3.0  # banker's would give 2.0
+    assert float(H._round_half_away(0.625, 2)) == 0.63
+    assert float(H._round_half_away(7.45, 1)) == 7.5
+
+
+def test_headway_median_cdf_interp_and_honest_absence() -> None:
+    nbins = len(H._GAP_EDGES) - 1
+    hist = [0] * nbins
+    hist[7] = 4  # all gaps in [6,8) -> CDF-interp median = 7.0
+    assert H._headway_pctile_from_hist(hist, 0.5, H._GAP_EDGES) == 7.0
+    assert H._headway_pctile_from_hist([], 0.5, H._GAP_EDGES) is None
+    assert H._headway_pctile_from_hist([0] * nbins, 0.5, H._GAP_EDGES) is None
+
+
+def test_bunched_pct_from_pooled_hist() -> None:
+    nbins = len(H._GAP_EDGES) - 1
+    hist = [0] * nbins
+    hist[0] = 2  # [0,0.5) — well below 0.5*median
+    hist[7] = 2  # [6,8) — above
+    assert H._bunched_pct_from_hist(hist, H._GAP_EDGES, 7.0) == 50.0  # 2 of 4 below 3.5
+    assert H._bunched_pct_from_hist([0] * nbins, H._GAP_EDGES, 7.0) is None
+    assert H._bunched_pct_from_hist(hist, H._GAP_EDGES, None) is None  # no median -> None
+    # straddling bin: median 7.0 -> thresh 3.5 falls INSIDE bin [3,4); linear-interp half of it.
+    straddle = [0] * nbins
+    straddle[4] = 2  # [3,4) straddles 3.5
+    straddle[7] = 2  # [6,8) above
+    assert H._bunched_pct_from_hist(straddle, H._GAP_EDGES, 7.0) == 25.0  # 2*0.5 of 4

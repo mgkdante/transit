@@ -12,6 +12,7 @@ and monthly grains stay None because percentiles are not additively composable.
 from __future__ import annotations
 
 from datetime import timedelta
+from decimal import ROUND_HALF_UP, Decimal
 import hashlib
 from typing import TYPE_CHECKING
 
@@ -44,6 +45,7 @@ from transit_ops.snapshots.builders._helpers import (
     _wilson_lo,
 )
 from transit_ops.gold.rollups import DELAY_HISTOGRAM_EDGES as _SPINE_EDGES
+from transit_ops.gold.rollups import HEADWAY_GAP_HISTOGRAM_EDGES as _GAP_EDGES
 from transit_ops.snapshots.contract import (
     AlertBreakdown,
     AlertBreakdownBucket,
@@ -52,6 +54,7 @@ from transit_ops.snapshots.contract import (
     CancellationPeriod,
     CrosstabCell,
     CrowdingDelayCell,
+    HeadwayByGrain,
     HeadwayPeriod,
     Hotspot,
     Hotspots,
@@ -1195,6 +1198,187 @@ def _spine_habits_by_grain(conn, params, anchor=None) -> "list[RouteHabitsByGrai
     return out
 
 
+# ── S7-B §2 windowable headway: read-time recompose off gold.route_headway_shift_daily ──
+_GAP_NBINS = len(_GAP_EDGES) - 1  # 20 finite bins (no overflow — the clamp is finite 0<gap<240)
+
+
+def _round_half_away(x, ndigits):  # noqa: ANN001, ANN202
+    """Half-away-from-zero round (Python's builtin round() is banker's). Gaps/bunched/excess are
+    non-negative, so ROUND_HALF_UP == half-away — matching Postgres ROUND(::numeric, n)."""
+    return Decimal(str(x)).quantize(Decimal(10) ** -ndigits, rounding=ROUND_HALF_UP)
+
+
+def _shift_key(s: str) -> tuple[int, str]:
+    """Canonical time-of-day order for shift buckets (am_peak<midday<...); unknown labels last."""
+    return (_SHIFT_ORDER.index(s), "") if s in _SHIFT_ORDER else (len(_SHIFT_ORDER), s)
+
+
+def _headway_pctile_from_hist(hist, q, edges):  # noqa: ANN001, ANN202
+    """q-th percentile (MINUTES) via CDF interpolation over the gap histogram. Mirrors
+    _pctile_from_hist but in the minutes domain over `edges`. Honest-None on empty/all-zero.
+    The final round is done by the caller in half-away (D3); this returns the raw float."""
+    if not hist:
+        return None
+    total = sum(hist)
+    if total <= 0:
+        return None
+    target = q * total
+    cumulative = 0
+    for bin_idx, count in enumerate(hist):
+        if count <= 0:
+            continue
+        if cumulative + count >= target:
+            lo = edges[bin_idx]
+            hi = edges[bin_idx + 1] if bin_idx + 1 < len(edges) else edges[-1]
+            frac = (target - cumulative) / count
+            return lo + (hi - lo) * frac
+        cumulative += count
+    return float(edges[-1])
+
+
+def _bunched_pct_from_hist(hist, edges, median_min):  # noqa: ANN001, ANN202
+    """Windowed %bunched: pooled-histogram mass below 0.5*median (straddling-bin linear interp)
+    / total. NEVER a sum of daily bunched counts (D4). None on empty / None median."""
+    if not hist or median_min is None:
+        return None
+    total = sum(hist)
+    if total <= 0:
+        return None
+    thresh = 0.5 * median_min
+    below = 0.0
+    for i, c in enumerate(hist):
+        lo, hi = edges[i], edges[i + 1]
+        if hi <= thresh:
+            below += c
+        elif lo >= thresh:
+            break
+        else:
+            below += c * (thresh - lo) / (hi - lo)
+    return 100.0 * below / total
+
+
+# Own anchor (NEVER reuse the delay-spine anchor — the headway table's newest closed day differs).
+_HEADWAY_SHIFT_ANCHOR_SQL = text(
+    "SELECT MAX(service_local_date) AS anchor FROM gold.route_headway_shift_daily "
+    "WHERE provider_id = :provider_id AND route_id = :route_id"
+)
+
+_GAP_HIST_COLS = ",\n        ".join(
+    f"SUM(gap_histogram[{k}])::bigint AS g{k}" for k in range(1, _GAP_NBINS + 1)
+)
+
+# Windowed projector. CoV recomposed in SQL (D2): Bessel n-1 sample SD / mean, guarded
+# n>=2 AND mean>0, ROUND(::numeric,4) (half-away) — byte-identical to the legacy stddev_samp.
+# Median / %bunched are recomposed in Python from the element-wise-summed gap histogram.
+_HEADWAY_WINDOW_SQL = text(
+    f"""
+    SELECT
+        direction_id,
+        shift,
+        SUM(gap_count)::bigint     AS n,
+        SUM(trip_count)::bigint    AS trips,
+        CASE
+            WHEN SUM(gap_count) >= 2 AND SUM(sum_gap_min) > 0
+            THEN ROUND(
+                (
+                    sqrt(
+                        GREATEST(
+                            (SUM(sum_gap_sq_min) - power(SUM(sum_gap_min), 2) / SUM(gap_count))
+                            / (SUM(gap_count) - 1),
+                            0
+                        )
+                    )
+                    / (SUM(sum_gap_min) / SUM(gap_count))
+                )::numeric, 4)
+        END AS cov,
+        {_GAP_HIST_COLS}
+    FROM gold.route_headway_shift_daily
+    WHERE provider_id = :provider_id AND route_id = :route_id
+      AND service_local_date >= :win_start AND service_local_date <= :win_end
+    GROUP BY direction_id, shift
+    """
+)
+
+
+def _headway_shift_anchor(conn, params):  # noqa: ANN001, ANN202
+    row = conn.execute(_HEADWAY_SHIFT_ANCHOR_SQL, params).mappings().fetchone()
+    return row["anchor"] if row else None
+
+
+def _headway_period_from_summed(rows, scheduled):  # noqa: ANN001, ANN202
+    """{shift: HeadwayPeriod} for the WINDOW's busiest direction. cov comes from SQL (frozen);
+    median / %bunched are recomposed in Python (median ALLOW_MOVE). Honest-None throughout."""
+    by_dir: dict[int, list] = {}
+    for r in rows:
+        by_dir.setdefault(int(r["direction_id"]), []).append(r)
+    if not by_dir:
+        return {}
+    # D5: argmax SUM(trip_count) (legacy trip-COUNT basis), tie-break direction_id ASC.
+    busiest = min(by_dir, key=lambda d: (-sum(int(x["trips"] or 0) for x in by_dir[d]), d))
+    out: dict[str, HeadwayPeriod] = {}
+    for r in by_dir[busiest]:
+        shift = str(r["shift"])
+        n = int(r["n"] or 0)
+        hist = [int(r[f"g{k}"] or 0) for k in range(1, _GAP_NBINS + 1)]
+        raw_med = _headway_pctile_from_hist(hist, 0.5, _GAP_EDGES)
+        median = float(_round_half_away(raw_med, 1)) if raw_med is not None else None
+        cov = float(r["cov"]) if r["cov"] is not None else None  # frozen, from SQL (D2)
+        raw_b = _bunched_pct_from_hist(hist, _GAP_EDGES, median)
+        bunched_pct = float(_round_half_away(raw_b, 1)) if raw_b is not None else None
+        sched = scheduled.get(shift)
+        excess = (
+            float(_round_half_away(max(0.0, median - sched), 1))
+            if (median is not None and sched is not None)
+            else None
+        )
+        out[shift] = HeadwayPeriod(
+            shift=shift,
+            scheduled_min=sched,
+            observed_min=median,
+            excess_wait_min=excess,
+            cov=cov,
+            bunched_pct=bunched_pct,
+            observation_count=_opt_int(n),
+        )
+    return out
+
+
+def _headway_by_grain(conn, params, scheduled, anchor=None) -> "list[HeadwayByGrain]":  # noqa: ANN001
+    """§2 per-shift headway recomposed per trailing window (busiest direction), with the prior
+    window's n + observed median attached for a period-over-period delta."""
+    if anchor is None:
+        anchor = _headway_shift_anchor(conn, params)
+    if anchor is None:
+        return []
+    out: list[HeadwayByGrain] = []
+    for grain, (win_start, win_end) in _grain_windows(anchor).items():
+        win_len = (win_end - win_start).days + 1
+        cur = {**params, "win_start": win_start, "win_end": win_end}
+        pri = {
+            **params,
+            "win_start": win_start - timedelta(days=win_len),
+            "win_end": win_start - timedelta(days=1),
+        }
+        cur_by_shift = _headway_period_from_summed(
+            list(conn.execute(_HEADWAY_WINDOW_SQL, cur).mappings()), scheduled
+        )
+        if not cur_by_shift:
+            continue  # honest absence: no in-clamp gaps in the window -> omit the grain
+        prior_by_shift = _headway_period_from_summed(
+            list(conn.execute(_HEADWAY_WINDOW_SQL, pri).mappings()), scheduled
+        )
+        headway: list[HeadwayPeriod] = []
+        for shift in sorted(cur_by_shift, key=_shift_key):
+            p = cur_by_shift[shift]
+            prv = prior_by_shift.get(shift)
+            if prv is not None:
+                p.prior_observation_count = prv.observation_count
+                p.prior_observed_min = prv.observed_min
+            headway.append(p)
+        out.append(HeadwayByGrain(grain=grain, date=_iso_date(win_start), headway=headway))
+    return out
+
+
 def build_route_reliability(
     conn: Connection,
     *,
@@ -1281,11 +1465,8 @@ def build_route_reliability(
 
     scheduled = _scheduled_headway_by_shift(conn, provider_id=provider_id, route_id=route_id)
 
-    # Order shift buckets by the canonical time-of-day sequence (mirrors
-    # build_route's _SHIFT_ORDER); any unknown shift label sorts last by name.
-    def _shift_key(s: str) -> tuple[int, str]:
-        return (_SHIFT_ORDER.index(s), "") if s in _SHIFT_ORDER else (len(_SHIFT_ORDER), s)
-
+    # Shift buckets ordered by the canonical time-of-day sequence (module-level _shift_key,
+    # shared with the windowed _headway_by_grain reader).
     headway: list[HeadwayPeriod] = []
     for shift in sorted(set(scheduled) | set(observed), key=_shift_key):
         sched = scheduled.get(shift)
@@ -1332,6 +1513,11 @@ def build_route_reliability(
     spine_anchor = _spine_anchor(conn, params)  # read once (S6); thread into both windowed builders
     periods_by_grain = _spine_periods_by_grain(conn, params, spine_anchor)
     habits_by_grain = _spine_habits_by_grain(conn, params, spine_anchor)
+
+    # --- S7-B windowable §2: per-shift headway recomposed per time window off
+    #     gold.route_headway_shift_daily (busiest direction per window). The scalar `headway`
+    #     above stays whole-history (route_headway_by_shift) until the 0066 fast-follow. ---
+    headway_by_grain = _headway_by_grain(conn, params, scheduled)
 
     # --- weak_stops: worst N (weak_stops_limit) by average delay seconds ---
     names = {
@@ -1483,6 +1669,7 @@ def build_route_reliability(
         occupancy_by_dow=occupancy_by_dow,
         periods_by_grain=periods_by_grain,
         habits_by_grain=habits_by_grain,
+        headway_by_grain=headway_by_grain,
     )
 
 
