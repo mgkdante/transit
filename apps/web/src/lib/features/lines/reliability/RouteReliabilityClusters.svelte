@@ -35,23 +35,33 @@
 	import { Separator } from '$lib/components/ui/separator';
 	import { toReliabilityClusters } from './clusters';
 	import { reliabilityCopy } from './reliability.copy';
-	import SnapshotStrip from './SnapshotStrip.svelte';
-	import Cluster01Punctuality from './Cluster01Punctuality.svelte';
-	import Cluster02WaitRegularity from './Cluster02WaitRegularity.svelte';
-	import Cluster03ServiceDelivered from './Cluster03ServiceDelivered.svelte';
-	import Cluster04Crowding from './Cluster04Crowding.svelte';
-	import Cluster05Habits from './Cluster05Habits.svelte';
+	import Section0Verdict from './sections/Section0Verdict.svelte';
+	import Section1WhenToRide from './sections/Section1WhenToRide.svelte';
+	import Section2TheWait from './sections/Section2TheWait.svelte';
+	import Section3RunAndFit from './sections/Section3RunAndFit.svelte';
+	import Section4WorstStops from './sections/Section4WorstStops.svelte';
 
 	interface RouteReliabilityClustersProps {
 		/** The raw historic reliability archive for this route. */
 		data: RouteReliability;
 		/** Active locale (FR canonical) — threaded to every band, not looked up here. */
 		locale: Locale;
+		/**
+		 * dir (GTFS direction_id) → real destination headsign, from the static route file.
+		 * Lets the direction-keyed bands name directions the way a rider reads them ("Est"),
+		 * not "Direction 0/1". Empty record → bands fall back to a neutral "Direction N".
+		 */
+		directionHeadsigns?: Record<number, string>;
 		/** Optional extra class for the surface column. */
 		class?: string;
 	}
 
-	let { data, locale, class: className }: RouteReliabilityClustersProps = $props();
+	let {
+		data,
+		locale,
+		directionHeadsigns = {},
+		class: className,
+	}: RouteReliabilityClustersProps = $props();
 
 	const copy = $derived(reliabilityCopy[locale]);
 
@@ -139,7 +149,6 @@
 	const mapperOpts = $derived<{ grain: string; dateRange?: { start: string; end: string } }>(
 		mode === 'range' ? { grain: 'day', dateRange: normalizedRange } : { grain: mode },
 	);
-	const selectedGrain = $derived(mapperOpts.grain);
 
 	// One mapping pass — every band reads its slice of this.
 	const clusters = $derived(toReliabilityClusters(data, mapperOpts));
@@ -174,10 +183,32 @@
 		if (mode === 'month') return aw.month;
 		return aw.day;
 	});
+
+	/* ── mobile control collapse ────────────────────────────────────────────────
+	   On a phone the dense reliability surface can't spare the vertical space the
+	   full control rail eats, so the controls collapse behind a one-line summary
+	   toggle (the active window). Desktop is UNCHANGED — the body is display:contents
+	   so its children hoist into the ControlsRail flex exactly as before, and the
+	   toggle is hidden. Instant-apply everywhere: a grain switch only re-derives the
+	   client-side mapper (no reload), so mobile needs no batch-apply. */
+	let controlsOpen = $state(false);
+	const controlsSummary = $derived(
+		mode === 'range'
+			? copy.controls.dateRange
+			: mode === 'week'
+				? copy.controls.thisWeek
+				: mode === 'month'
+					? copy.controls.thisMonth
+					: copy.controls.today,
+	);
 </script>
 
 <div class={cn('reliability-clusters', className)} data-slot="reliability-clusters">
-	<!-- Control panel: the grain/date controls collected into ONE ControlsRail (quiet
+	<!-- The page-level grain rail (sticky) sits above the five rider-question sections.
+	     The grain refines §0's trend + §3's windowed rates/mix; §1/§2/§4 are
+	     whole-window reads. One column, the rail pinned over it. -->
+	<div class="reliability-grain-block" data-slot="reliability-sections">
+		<!-- Control panel: the grain/date controls collected into ONE ControlsRail (quiet
 	     infra chrome, mono "View" overline) so the control reads identically to /stop
 	     and /network. ONE shared GrainPicker owns the whole radiogroup —
 	     day|week|month PLUS the lines-only "range" segment — so EXACTLY ONE chip is
@@ -187,93 +218,130 @@
 	     chip, never on the rail chrome. STICKY (S6): the grain control is the main
 	     control of the surface, so the rail stays pinned (desktop) while the metric
 	     cards + bands scroll under it. -->
-	<ControlsRail label={copy.controls.viewLabel} sticky>
-		<GrainPicker {segments} bind:value={viewKey} label={copy.controls.grainLabel} />
+		<ControlsRail label={copy.controls.viewLabel} sticky>
+			<!-- Mobile-only summary toggle: collapses the controls to spare phone vertical
+		     space. Hidden on desktop (the rail stays fully visible). -->
+			<button
+				type="button"
+				class="reliability-control-toggle"
+				aria-expanded={controlsOpen}
+				aria-controls="reliability-control-body"
+				onclick={() => (controlsOpen = !controlsOpen)}
+				data-slot="controls-toggle"
+			>
+				<span>{copy.controls.viewLabel}: {controlsSummary}</span>
+				<svg
+					class="reliability-control-chevron"
+					viewBox="0 0 16 16"
+					width="14"
+					height="14"
+					aria-hidden="true"
+				>
+					<path
+						d="M4 6l4 4 4-4"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="1.6"
+						stroke-linecap="round"
+						stroke-linejoin="round"
+					/>
+				</svg>
+			</button>
+			<div
+				id="reliability-control-body"
+				class={cn('reliability-control-body', controlsOpen && 'reliability-control-body--open')}
+				data-slot="controls-body"
+			>
+				<GrainPicker {segments} bind:value={viewKey} label={copy.controls.grainLabel} />
 
-		{#if mode === 'range'}
-			<!-- Start + end pair over the dated day-periods. start == end = one day
+				{#if mode === 'range'}
+					<!-- Start + end pair over the dated day-periods. start == end = one day
 			     (exact); a wider span aggregates the in-range days (mean) + zooms the
 			     trend. Bounds are real dates only, so no out-of-window pick is possible. -->
-			<div class="reliability-range" data-slot="date-range">
-				<label class="reliability-date">
-					<span class="reliability-date__label">{copy.controls.rangeStart}</span>
-					<select
-						class="reliability-date__select"
-						value={rangeStart}
-						onchange={(e) => (rangeStart = e.currentTarget.value)}
-						aria-label={`${copy.controls.dateRange} · ${copy.controls.rangeStart}`}
-					>
-						<option value="">{earliestDate || ''}</option>
-						{#each datedPeriods as p (p.date)}
-							<option value={p.date}>{p.date}</option>
-						{/each}
-					</select>
-				</label>
-				<label class="reliability-date">
-					<span class="reliability-date__label">{copy.controls.rangeEnd}</span>
-					<select
-						class="reliability-date__select"
-						value={rangeEnd}
-						onchange={(e) => (rangeEnd = e.currentTarget.value)}
-						aria-label={`${copy.controls.dateRange} · ${copy.controls.rangeEnd}`}
-					>
-						<option value="">{latestDate || ''}</option>
-						{#each datedPeriods as p (p.date)}
-							<option value={p.date}>{p.date}</option>
-						{/each}
-					</select>
-				</label>
-			</div>
-		{/if}
+					<div class="reliability-range" data-slot="date-range">
+						<label class="reliability-date">
+							<span class="reliability-date__label">{copy.controls.rangeStart}</span>
+							<select
+								class="reliability-date__select"
+								value={rangeStart}
+								onchange={(e) => (rangeStart = e.currentTarget.value)}
+								aria-label={`${copy.controls.dateRange} · ${copy.controls.rangeStart}`}
+							>
+								<option value="">{earliestDate || ''}</option>
+								{#each datedPeriods as p (p.date)}
+									<option value={p.date}>{p.date}</option>
+								{/each}
+							</select>
+						</label>
+						<label class="reliability-date">
+							<span class="reliability-date__label">{copy.controls.rangeEnd}</span>
+							<select
+								class="reliability-date__select"
+								value={rangeEnd}
+								onchange={(e) => (rangeEnd = e.currentTarget.value)}
+								aria-label={`${copy.controls.dateRange} · ${copy.controls.rangeEnd}`}
+							>
+								<option value="">{latestDate || ''}</option>
+								{#each datedPeriods as p (p.date)}
+									<option value={p.date}>{p.date}</option>
+								{/each}
+							</select>
+						</label>
+					</div>
+				{/if}
 
-		<!-- Active-window caption: names the window the selection resolves to so the
+				<!-- Active-window caption: names the window the selection resolves to so the
 		     reader is never unsure what "Today / This week / {date}" actually covers. -->
-		<p class="reliability-window" data-slot="active-window" aria-live="polite">
-			{activeWindowCaption}
-		</p>
-	</ControlsRail>
+				<p class="reliability-window" data-slot="active-window" aria-live="polite">
+					{activeWindowCaption}
+				</p>
+			</div>
+		</ControlsRail>
 
-	<!-- Hazard tape discerns the controls zone from the data canvas. -->
-	<Separator variant="hazard" hazardSize="sm" />
+		<!-- Hazard tape discerns the controls zone from the data canvas. -->
+		<Separator variant="hazard" hazardSize="sm" />
 
-	<!-- 00 — the full-bleed snapshot strip (single-glance, zero-interaction). -->
-	<div class="reliability-band reliability-band--strip surface-bleed" data-band="snapshot">
-		<SnapshotStrip vm={clusters.strip} {locale} {copy} />
-	</div>
+		<!-- §0 Verdict — "Can you count on this line?" The grain rail re-shapes only the trend. -->
+		<div class="reliability-band surface-bleed" data-band="verdict">
+			<Section0Verdict vm={clusters.punctuality} {locale} {copy} {mode} />
+		</div>
 
-	<!-- 01 Punctuality. -->
-	<div class="reliability-band surface-bleed" data-band="punctuality">
-		<Cluster01Punctuality vm={clusters.punctuality} {locale} {copy} grain={selectedGrain} />
-	</div>
+		<!-- §1 When to ride — the 7×24 heatmap hero + the time-of-day / weekday detail. -->
+		<div class="reliability-band surface-bleed" data-band="when-to-ride">
+			<Section1WhenToRide
+				punctuality={clusters.punctuality}
+				habits={clusters.habits}
+				{locale}
+				{copy}
+			/>
+		</div>
 
-	<!-- 02 Wait regularity (service spans ride alongside the headway sub-block). -->
-	<div class="reliability-band surface-bleed" data-band="wait-regularity">
-		<Cluster02WaitRegularity
-			wait={clusters.waitRegularity}
-			serviceSpans={clusters.serviceDelivered.serviceSpans}
-			{locale}
-			{copy}
-		/>
-	</div>
+		<!-- §2 The wait — scheduled-vs-observed headway + (detail) regularity + service span. -->
+		<div class="reliability-band surface-bleed" data-band="the-wait">
+			<Section2TheWait
+				wait={clusters.waitRegularity}
+				serviceSpans={clusters.serviceDelivered.serviceSpans}
+				{locale}
+				{copy}
+				{directionHeadsigns}
+			/>
+		</div>
 
-	<!-- 03 Service delivered (ramp-in: cancellations + skipped stops). -->
-	<div class="reliability-band surface-bleed" data-band="service-delivered">
-		<Cluster03ServiceDelivered vm={clusters.serviceDelivered} {locale} {copy} />
-	</div>
+		<!-- §3 Will it run & will you fit — cancellations/skips + crowding (grain-windowed). -->
+		<div class="reliability-band surface-bleed" data-band="run-and-fit">
+			<Section3RunAndFit
+				service={clusters.serviceDelivered}
+				crowding={clusters.crowding}
+				{locale}
+				{copy}
+				windowLabel={controlsSummary}
+			/>
+		</div>
 
-	<!-- 04 Crowding. -->
-	<div class="reliability-band surface-bleed" data-band="crowding">
-		<Cluster04Crowding vm={clusters.crowding} {locale} {copy} />
-	</div>
-
-	<!-- 05 Time-of-day habits (weekday seasonality rides alongside the heatmap). -->
-	<div class="reliability-band surface-bleed" data-band="habits">
-		<Cluster05Habits
-			habits={clusters.habits}
-			dayOfWeek={clusters.punctuality.dayOfWeek}
-			{locale}
-			{copy}
-		/>
+		<!-- §4 Where it's worst — the worst-N stops accountability lollipop. -->
+		<div class="reliability-band surface-bleed" data-band="worst-stops">
+			<Section4WorstStops punctuality={clusters.punctuality} {locale} {copy} />
+		</div>
 	</div>
 </div>
 
@@ -281,7 +349,26 @@
 	.reliability-clusters {
 		display: flex;
 		flex-direction: column;
-		gap: clamp(2rem, 5vw, 3.25rem);
+		/* §1.3 spacing rhythm: the BETWEEN-section gap must read clearly larger than any
+		   within-section gap (the "cramped" fix). 48→80px of whitespace groups each band
+		   as one unit by proximity (the spec's --space-section-y), well above the ~8–24px
+		   intra-section gaps — so sections never run together. */
+		gap: clamp(3rem, 7vw, 5rem);
+		width: 100%;
+		/* This surface scrolls inside a nested container that already begins BELOW the
+		   app nav, so the rail's sticky offset is 0 (flush at the container top) — not the
+		   5.5rem window-scroll default that floated it ~88px down with content showing
+		   through. The hazard-tape separator below the rail gives the visual break. */
+		--rail-sticky-top: 0px;
+	}
+
+	/* The single sections column: the sticky grain rail + the five rider-question
+	   sections, carrying the same section rhythm as the page. This is the rail's
+	   sticky CONTAINING BLOCK, so the rail stays pinned over the whole surface. */
+	.reliability-grain-block {
+		display: flex;
+		flex-direction: column;
+		gap: clamp(3rem, 7vw, 5rem);
 		width: 100%;
 	}
 
@@ -338,6 +425,61 @@
 		color: var(--muted-foreground);
 	}
 
+	/* Mobile control-collapse (S7): on a phone the controls collapse behind a one-line
+	   summary toggle to spare the dense surface's vertical space. Desktop is UNCHANGED —
+	   the body is display:contents (its children hoist into the ControlsRail flex) and
+	   the toggle is hidden. Only the ≤767px query collapses it. Quiet chrome: the toggle
+	   is neutral-bordered (no --primary; that lives on the active grain chip inside). */
+	.reliability-control-toggle {
+		display: none;
+	}
+	.reliability-control-body {
+		display: contents;
+	}
+	@media (max-width: 767px) {
+		.reliability-control-toggle {
+			display: inline-flex;
+			align-items: center;
+			justify-content: space-between;
+			gap: 0.5rem;
+			width: 100%;
+			padding: 0.5rem 0.75rem;
+			font-family: var(--font-mono);
+			font-size: var(--text-small);
+			color: var(--foreground);
+			background: var(--card);
+			border: 1px solid var(--border);
+			border-radius: var(--radius-md, 0.5rem);
+			cursor: pointer;
+		}
+		.reliability-control-toggle:focus-visible {
+			outline: 2px solid var(--ring);
+			outline-offset: 2px;
+		}
+		.reliability-control-chevron {
+			flex: none;
+			transition: transform 0.15s ease;
+		}
+		.reliability-control-toggle[aria-expanded='true'] .reliability-control-chevron {
+			transform: rotate(180deg);
+		}
+		.reliability-control-body {
+			display: none;
+			flex-basis: 100%;
+		}
+		.reliability-control-body--open {
+			display: flex;
+			flex-wrap: wrap;
+			align-items: center;
+			gap: 0.625rem;
+		}
+	}
+	@media (prefers-reduced-motion: reduce) {
+		.reliability-control-chevron {
+			transition: none;
+		}
+	}
+
 	/* Each band is its own edge-to-edge block; the strip carries a quiet rule so
 	   the single-glance headline reads as its own register above the clusters.
 	   Bands opt into full-bleed at the wrapper (.surface-bleed, see Surface.svelte)
@@ -356,8 +498,13 @@
 		width: 100%;
 		padding-inline: var(--space-page-x);
 	}
-	.reliability-band--strip {
-		padding-bottom: clamp(1.5rem, 4vw, 2.25rem);
-		border-bottom: 1px solid var(--border);
+	/* Section DIFFERENTIATION: each section AFTER the first opens with a quiet
+	   full-width hairline + extra top breathing room, so the sections read as
+	   distinct units rather than one long scroll. The adjacent-sibling selector
+	   leaves the first band (§0 Verdict) ruleless — the hazard separator already
+	   divides it from the control rail. */
+	.reliability-band + .reliability-band {
+		border-top: 1px solid var(--border);
+		padding-top: clamp(1.75rem, 4vw, 2.75rem);
 	}
 </style>

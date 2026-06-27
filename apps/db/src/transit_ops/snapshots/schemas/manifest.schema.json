@@ -70,6 +70,12 @@
           "title": "Repeat Offenders",
           "type": "string"
         },
+        "route_reliability_index": {
+          "default": "historic/route_reliability/index.json",
+          "description": "discovery index of routes with a published reliability file; HTTP 404 means no data for this entity \u2014 render empty state, not an error",
+          "title": "Route Reliability Index",
+          "type": "string"
+        },
         "route_reliability_prefix": {
           "default": "historic/route_reliability/",
           "description": "fetch {route_reliability_prefix}{route_id}.json; HTTP 404 means no data for this entity \u2014 render empty state, not an error",

@@ -21,6 +21,7 @@ import {
 	getReceiptsIndex,
 	getRepeatOffenders,
 	getRouteReliability,
+	getRouteReliabilityIndex,
 	getStopReliability,
 } from './historic';
 import { getProvenance } from './provenance';
@@ -55,6 +56,7 @@ export const repositories = {
 		receiptsIndex: getReceiptsIndex,
 		receipt: getReceipt,
 		routeReliability: getRouteReliability,
+		routeReliabilityIndex: getRouteReliabilityIndex,
 		stopReliability: getStopReliability,
 	},
 	provenance: {
@@ -78,6 +80,7 @@ export {
 	getReceiptsIndex,
 	getRepeatOffenders,
 	getRouteReliability,
+	getRouteReliabilityIndex,
 	getStopReliability,
 } from './historic';
 export { getProvenance } from './provenance';

@@ -23,7 +23,7 @@ from transit_ops.db.connection import make_engine
 from transit_ops.ingestion.common import utc_now
 from transit_ops.settings import get_settings
 from transit_ops.snapshots import builders
-from transit_ops.snapshots.contract import ReceiptsIndex
+from transit_ops.snapshots.contract import ReceiptsIndex, RouteReliabilityIndex
 from transit_ops.snapshots.storage import (
     HashGatedStorage,
     build_snapshot_storage,
@@ -310,6 +310,20 @@ def _publish_historic(
         if route_id is not None
     ]
     written.extend(_parallel_put(storage, route_items, concurrency=concurrency))
+
+    # --- route-reliability discovery index (exact set published this run) ---
+    # The always-current daily set of routes WITH a published reliability file —
+    # uploaded AFTER the per-route files land (pointer-last) so it never advertises a
+    # route whose file is still in flight. The web reads THIS (not the lag-prone static
+    # routes_index `reliability` flag) to gate the list's reliability badges.
+    written.append(storage.put_json(  # type: ignore[attr-defined]
+        "historic/route_reliability/index.json",
+        RouteReliabilityIndex(
+            route_ids=sorted(str(route_id) for (route_id,) in route_rows if route_id is not None),
+            generated_utc=stamp,
+        ),
+        tier="historic",
+    ))
 
     # --- per-stop reliability files (batched build, parallel upload) ---
     all_stops_rel = builders.build_stop_reliability(conn, provider_id=provider_id, generated_utc=stamp)  # type: ignore[arg-type]

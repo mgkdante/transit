@@ -40,8 +40,22 @@
 		 * worst-offenders severity colours.
 		 */
 		colorVar?: string;
-		/** Normalized magnitude in [0,1] for the bar. `null` -> no-data bar. */
+		/**
+		 * Bar magnitude. WITHOUT `domain`: a normalized [0,1] fraction (legacy).
+		 * WITH `domain`: the ABSOLUTE value in real units — forwarded to SeverityBar so
+		 * the bar scales against a FIXED domain, never the in-view max. `null` = no-data.
+		 */
 		value: number | null;
+		/** Fixed absolute [min,max] domain (real units), forwarded to SeverityBar. */
+		domain?: readonly [number, number];
+		/** Unit for the SeverityBar hover readout when domain-scaled (e.g. ' min'). */
+		unit?: string;
+		/**
+		 * Show the 1-based rank ordinal (default true). Set false for FIXED-category
+		 * lists (time-of-day, weekday/weekend) where the row order is the meaning, not a
+		 * ranking — a 1..N ordinal on a fixed axis is itself a doctrine violation.
+		 */
+		showRank?: boolean;
 		/** Display value text (e.g. "12.4 min", "84%"). `null` = absent (no value). */
 		display?: string | null;
 		/**
@@ -89,6 +103,13 @@
 		tooltip?: boolean;
 		/** Breakdown rows shown when `tooltip` is set (swatch + label + value). */
 		tooltipRows?: ChartLegendItem[];
+		/**
+		 * Make the embedded magnitude SeverityBar hoverable (its own one-row value/severity
+		 * readout) WITHOUT the richer row breakdown — for fixed-category rows whose detail is
+		 * already on screen. Ignored when `tooltip` is set (the row breakdown wins). Default
+		 * off so existing call sites are unchanged.
+		 */
+		barInteractive?: boolean;
 		class?: string;
 	}
 
@@ -99,6 +120,9 @@
 		severity,
 		colorVar,
 		value,
+		domain,
+		unit,
+		showRank = true,
 		display,
 		absentReason,
 		locale,
@@ -110,6 +134,7 @@
 		bare = false,
 		tooltip = false,
 		tooltipRows,
+		barInteractive = false,
 		class: className,
 		ref = $bindable(null),
 		...restProps
@@ -185,13 +210,18 @@
 </script>
 
 {#snippet rowBody()}
-	<!-- Rank, monospace ordinal, neutral. -->
-	<span
-		class="dv-rank w-6 text-right font-mono text-small tabular-nums text-muted-foreground"
-		aria-hidden="true"
-	>
-		{rank}
-	</span>
+	<!-- Rank, monospace ordinal, neutral. Hidden for fixed-category lists (showRank
+	     false) where the row order is the meaning, not a ranking. -->
+	{#if showRank}
+		<span
+			class="dv-rank w-6 text-right font-mono text-small tabular-nums text-muted-foreground"
+			aria-hidden="true"
+		>
+			{rank}
+		</span>
+	{:else}
+		<span aria-hidden="true"></span>
+	{/if}
 
 	<div class="min-w-0">
 		<div class="flex items-baseline justify-between gap-2">
@@ -217,9 +247,11 @@
 				{severity}
 				{colorVar}
 				{value}
+				{domain}
+				{unit}
 				label={`Rank ${rank}: ${title}`}
 				size="sm"
-				interactive={false}
+				interactive={barInteractive && !tooltip}
 			/>
 		</div>
 	</div>

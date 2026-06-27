@@ -100,3 +100,44 @@ describe('TrendLine — true time scale (the flat-trend fix)', () => {
 		expect(xs[1] - xs[0]).toBeCloseTo(xs[2] - xs[1], 5);
 	});
 });
+
+describe('TrendLine — confidence band + target rule (S7 P1: Wilson)', () => {
+	it('draws a closed band polygon between lo/hi and a dashed target rule', () => {
+		const { container } = render(TrendLine, {
+			props: {
+				onTime,
+				retard: [null, null, null],
+				band: { lo: [74, 77, 79], hi: [86, 87, 89] },
+				target: 80,
+			},
+		});
+		const band = container.querySelector('.dv-trend-band');
+		expect(band).not.toBeNull();
+		const d = band!.getAttribute('d') ?? '';
+		expect(d).toContain('Z'); // closed polygon (hi forward → lo back → close)
+		expect(d.split('L').length).toBeGreaterThan(3);
+		// the 80% target rule is the dashed reference line.
+		const target = [...container.querySelectorAll('line')].find(
+			(l) => l.getAttribute('stroke-dasharray') === '4 3',
+		);
+		expect(target).toBeTruthy();
+	});
+
+	it('breaks the band at a null edge (a gap, never bridged)', () => {
+		const { container } = render(TrendLine, {
+			props: {
+				onTime,
+				retard: [null, null, null],
+				// middle hi is null → two separate runs, but each run needs >=2 pts;
+				// here each side is a single point, so NO polygon survives (zero-area).
+				band: { lo: [74, 77, 79], hi: [86, null, 89] },
+			},
+		});
+		expect(container.querySelector('.dv-trend-band')).toBeNull();
+	});
+
+	it('renders no band when none is supplied (byte-identical legacy path)', () => {
+		const { container } = render(TrendLine, { props: { onTime, retard } });
+		expect(container.querySelector('.dv-trend-band')).toBeNull();
+	});
+});

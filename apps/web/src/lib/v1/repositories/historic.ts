@@ -52,6 +52,17 @@ export async function getReceiptsIndex(): Promise<ReceiptsIndex> {
 }
 
 /**
+ * Fetch the route-reliability discovery index as a Set of route ids WITH a published
+ * reliability file — the always-current daily availability set (the static routes_index
+ * `reliability` flag can lag it). `null` = the index is not published yet (HTTP 404), so
+ * callers fall back to the legacy flag and the rollout window never breaks.
+ */
+export async function getRouteReliabilityIndex(): Promise<Set<string> | null> {
+	const idx = await adapter.historic.routeReliabilityIndex();
+	return idx ? new Set(idx.route_ids ?? []) : null;
+}
+
+/**
  * Fetch + validate one day's network receipt.
  * `null` = HTTP 404 (no receipt for this date) — render empty state, not error.
  */

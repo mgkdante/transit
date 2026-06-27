@@ -32,6 +32,7 @@ import type {
 	OccupancyMix,
 	CrowdingDelayCell,
 	CrosstabCell,
+	RouteDelayHistogramBin,
 } from '$lib/v1';
 import { SHIFT_GRAINS, DAY_TYPE_GRAINS } from '$lib/features/reliability/shiftGrains';
 
@@ -110,9 +111,30 @@ export interface PeakOffPeakVM {
 /** 01 Punctuality — OTP / delay / percentiles per grain period + weekday seasonality + weak stops. */
 export interface PunctualityVM {
 	/**
-	 * The dated DAY-grain series ONLY, chronological ascending (oldest→newest),
-	 * each row carrying its ISO `date`. This is the trend source — a true time
-	 * axis, never the mixed-grain bag. Week/month/shift/daytype live elsewhere.
+	 * The GRAIN-AWARE headline aggregate for the selected window (today / this week /
+	 * this month / range) — the SAME values the snapshot strip shows. §01's headline
+	 * tiles, the typical→worst-case Distribution, and the severe-share bar read this so
+	 * they answer for the picked grain; the trend (below) carries the daily detail.
+	 */
+	readonly headline: {
+		readonly otpPct: number | null;
+		readonly avgDelayMin: number | null;
+		readonly p50Min: number | null;
+		readonly p90Min: number | null;
+		readonly severePct: number | null;
+		/** Signed-delay distribution (#158) for the A1 histogram; null on day grain / range. */
+		readonly delayHistogram: RouteDelayHistogramBin[] | null;
+		/** OTP denominator (#158) — tracked arrivals behind otpPct; null pre-republish. Powers
+		 *  the §0 verdict's natural-frequency + n-aware confidence (Wilson). */
+		readonly observationCount: number | null;
+		/** OTP numerator (#158) — on-time arrivals behind otpPct; null pre-republish. */
+		readonly onTime: number | null;
+	};
+	/**
+	 * The dated DAY-grain series, WINDOWED to a DISTINCT recent window per grain (day →
+	 * last 14 days of context, week → last 7, month → last 30, range → the range),
+	 * chronological ascending. Daily detail at every grain (a true time axis), never the
+	 * coarse weekly/monthly aggregate dots — and the windows differ so day ≠ month.
 	 */
 	readonly trend: ReliabilityPeriod[];
 	/** Weekday seasonality rows, sorted Mon→Sun (ISO 1..7). Carries severe_pct + observation_count. */
@@ -147,6 +169,13 @@ export interface ServiceDeliveredVM {
 	readonly cancellations: CancellationPeriod[];
 	/** Per-day skipped-stop history (ramp-in), in contract order. */
 	readonly skippedStops: SkippedStopPeriod[];
+	/**
+	 * The grain-windowed cancellation / skipped rate (MEAN over the picked window, with a
+	 * most-recent fallback when the latest day lags) — the SAME values the snapshot strip
+	 * shows, so the §03 headline rate tile and the strip never disagree across grains.
+	 */
+	readonly cancellationRatePct: number | null;
+	readonly skippedStopRatePct: number | null;
 	/** True for the cancellations + skipped-stop slices (no historical backfill). */
 	readonly isRampIn: boolean;
 	readonly isEmpty: boolean;
@@ -165,6 +194,39 @@ export interface CrowdingVM {
 	 * → the sub-block shows one honest no-data note (or is omitted).
 	 */
 	readonly delayByCrowding: CrowdingDelayCell[];
+	/**
+	 * S7: the occupancy mix at the SELECTED grain (day/week/month) from
+	 * occupancy_by_grain, or null when that grain has no telemetry / the field is
+	 * absent. The band prefers this over `mix` when present (grain-aware crowding),
+	 * falling back to the scalar trailing-window `mix`.
+	 */
+	readonly mixByGrain: OccupancyMix | null;
+	/**
+	 * S7: weekday (ISO 1-5) vs weekend (ISO 6-7) occupancy mix for the 2-col split,
+	 * each the unweighted mean of the per-weekday shares from occupancy_by_dow. null
+	 * when occupancy_by_dow is absent/empty; each side null when that side has no
+	 * telemetry. (Mean-of-shares is an approximation — the contract carries per-day
+	 * shares, not raw counts — honest for a "typical weekday/weekend" display.)
+	 */
+	readonly weekdayWeekend: {
+		readonly weekday: OccupancyMix | null;
+		readonly weekend: OccupancyMix | null;
+	} | null;
+	/**
+	 * P11: the RAW per-ISO-weekday occupancy mix kept VERBATIM from occupancy_by_dow,
+	 * for the Mon→Sun small-multiple. Always the full 7-day frame (iso 1..7), ASC, so
+	 * the band can render one strip per weekday with a fixed Mon→Sun axis: a weekday
+	 * the contract omits, OR a present weekday with mix:null, both carry `mix: null`
+	 * (honest absence — that day renders the no-telemetry chip, never a fabricated bar
+	 * or a silently dropped strip). null only when occupancy_by_dow is absent/empty
+	 * (then the small-multiple is omitted, same gate as weekdayWeekend).
+	 */
+	readonly byWeekday:
+		| readonly {
+				readonly iso: number;
+				readonly mix: OccupancyMix | null;
+		  }[]
+		| null;
 	/** True when `mix` is null OR every band share is zero/absent. */
 	readonly isEmpty: boolean;
 }
@@ -378,6 +440,60 @@ function daysInRange(
 	return dayTrendAsc.filter((p) => p.date != null && p.date >= lo && p.date <= hi);
 }
 
+/** ISO date (YYYY-MM-DD) minus `n` days, in UTC. */
+function isoMinusDays(iso: string, n: number): string {
+	const d = new Date(`${iso}T00:00:00Z`);
+	d.setUTCDate(d.getUTCDate() - n);
+	return d.toISOString().slice(0, 10);
+}
+
+/**
+ * Filter a dated ramp-in history (cancellations / skipped / spans) to the window the
+ * grain rail selects, so §03 Service-delivered RESPONDS to the filter like §01 does:
+ *   - explicit dateRange → rows inside [start, end];
+ *   - day (+ selectedDate) → that one day; day (no date) → the latest dated row;
+ *   - week / month → the last 7 / 30 days ending at the latest dated row.
+ * Undated rows (no `date`) pass through unchanged — there is nothing to window them by.
+ */
+function windowByGrain<T extends { date?: string | null }>(
+	rows: readonly T[],
+	grain: string,
+	selectedDate: string | undefined,
+	dateRange: { readonly start: string; readonly end: string } | undefined,
+): readonly T[] {
+	const dated = rows.filter((r): r is T & { date: string } => r.date != null);
+	if (dated.length === 0) return rows;
+	if (dateRange) {
+		const lo = dateRange.start <= dateRange.end ? dateRange.start : dateRange.end;
+		const hi = dateRange.start <= dateRange.end ? dateRange.end : dateRange.start;
+		return dated.filter((r) => r.date >= lo && r.date <= hi);
+	}
+	const latest = dated.reduce((m, r) => (r.date > m ? r.date : m), dated[0].date);
+	if (grain === 'day') {
+		const target = selectedDate ?? latest;
+		return dated.filter((r) => r.date === target);
+	}
+	const cutoff = isoMinusDays(latest, (grain === 'week' ? 7 : 30) - 1);
+	return dated.filter((r) => r.date >= cutoff);
+}
+
+/**
+ * The dated rows within the last `n` days (ending at the latest dated row). The TREND
+ * window primitive: each grain maps to a DISTINCT recent window so the day / week / month
+ * trends never look identical (the bug where day = the full ~30-day history collided with
+ * month = the last 30 days). Undated rows pass through.
+ */
+function lastNDays<T extends { date?: string | null }>(
+	rows: readonly T[],
+	n: number,
+): readonly T[] {
+	const dated = rows.filter((r): r is T & { date: string } => r.date != null);
+	if (dated.length === 0) return rows;
+	const latest = dated.reduce((m, r) => (r.date > m ? r.date : m), dated[0].date);
+	const cutoff = isoMinusDays(latest, n - 1);
+	return dated.filter((r) => r.date >= cutoff);
+}
+
 /** Arithmetic mean of the non-null values `pick` returns, rounded to `dp`. null when none. */
 function meanOf<T>(
 	rows: readonly T[],
@@ -396,6 +512,25 @@ function meanOf<T>(
 	if (n === 0) return null;
 	const factor = 10 ** dp;
 	return Math.round((sum / n) * factor) / factor;
+}
+
+/**
+ * Unweighted mean of the present band-share mixes (each share vector sums to ~1, so
+ * the mean also sums to ~1 — no re-normalization). null when no present mix. Used to
+ * fold the per-ISO-weekday occupancy_by_dow shares into a typical weekday/weekend mix.
+ */
+function meanMix(mixes: readonly (OccupancyMix | null)[]): OccupancyMix | null {
+	const present = mixes.filter((m): m is OccupancyMix => m != null);
+	if (present.length === 0) return null;
+	const avg = (pick: (m: OccupancyMix) => number): number =>
+		present.reduce((acc, m) => acc + pick(m), 0) / present.length;
+	return {
+		empty: avg((m) => m.empty),
+		many_seats: avg((m) => m.many_seats),
+		few_seats: avg((m) => m.few_seats),
+		standing: avg((m) => m.standing),
+		full: avg((m) => m.full),
+	};
 }
 
 /** First headway row carrying a CoV (the busiest-direction regularity row). */
@@ -455,20 +590,66 @@ export function toReliabilityClusters(
 	const dayTrendAsc = dayTrend(partition.calendar.day);
 	const rangeDays = grain === 'day' && dateRange ? daysInRange(dayTrendAsc, dateRange) : [];
 	const hasRange = rangeDays.length > 0;
+	// S7 (systematic grain): the §01 trend ALWAYS shows the DAILY series; week/month just
+	// WINDOW it (the last 7 / 30 days) via the SAME windowByGrain helper §03 uses — they
+	// no longer switch to the coarse weekly/monthly aggregate periods, which collapsed the
+	// month to two dots and made "this week" span a whole month on the x-axis. So every
+	// grain keeps daily detail folded in, on a window that matches the picked grain.
+	// Each grain maps to a DISTINCT recent daily window so day / week / month never render
+	// the same trend: Today shows the recent 2-week context (14d — a single day is not a
+	// trend), This week the last 7d, This month the last 30d. (Was: day = the FULL history,
+	// which equalled month on a route with only ~a month of data — the "broken" the
+	// operator saw.) §03's "day" stays the single latest day — a count, not a time series.
+	const TREND_DAYS_DAY = 14;
+	const TREND_DAYS_WEEK = 7;
+	const TREND_DAYS_MONTH = 30;
+	const grainTrendAsc =
+		grain === 'week'
+			? [...lastNDays(dayTrendAsc, TREND_DAYS_WEEK)]
+			: grain === 'month'
+				? [...lastNDays(dayTrendAsc, TREND_DAYS_MONTH)]
+				: [...lastNDays(dayTrendAsc, TREND_DAYS_DAY)];
 
 	/* 01-strip — the selected-grain headline (F1: most-recent week/month). When a
 	   date range is active the strip AGGREGATES the in-range days: on-time % + avg
 	   delay are the MEAN across them; percentiles are NOT averageable, so a multi-
 	   day range nulls them while a single in-range day keeps that day's exact ones. */
-	const cancellationRatePct = mostRecentRate(allCancellations, (c) => c.cancellation_rate_pct);
-	const skippedStopRatePct = mostRecentRate(allSkipped, (s) => s.skipped_stop_rate_pct);
+	// MATRIX: the strip's cancellation/skipped rate follows the picked window like §03's
+	// completeness does (Today = the day's rate, week = the 7-day mean, month = the 30-day
+	// mean, range = in-range mean) via the SAME windowByGrain helper — so the strip no
+	// longer contradicts the §03 section below it. These are RAMP-IN metrics whose latest
+	// day often lags (not yet computed); when the picked window carries no rate, fall back
+	// to the most-recent KNOWN rate so the tile shows the last real reading, never a false
+	// blank. (Was: unconditionally most-recent over the full archive — ignored the grain.)
+	const cancellationRatePct =
+		meanOf(
+			windowByGrain(allCancellations, grain, selectedDate, dateRange),
+			(c) => c.cancellation_rate_pct,
+			1,
+		) ?? mostRecentRate(allCancellations, (c) => c.cancellation_rate_pct);
+	const skippedStopRatePct =
+		meanOf(
+			windowByGrain(allSkipped, grain, selectedDate, dateRange),
+			(s) => s.skipped_stop_rate_pct,
+			1,
+		) ?? mostRecentRate(allSkipped, (s) => s.skipped_stop_rate_pct);
 	const headwayRegularityCov = selectHeadwayCov(allHeadway);
 
 	let otpPct: number | null;
 	let avgDelayMin: number | null;
 	let p50Min: number | null;
 	let p90Min: number | null;
+	let severePct: number | null;
+	// The grain-aggregate signed-delay distribution (#158) for the §01 A1 histogram. Null
+	// on the day grain + any date range (only the week/month/shift aggregate periods carry
+	// it) → the histogram renders honest absence there.
+	let delayHistogram: RouteDelayHistogramBin[] | null = null;
 	let rangeAggregate: SnapshotStripVM['rangeAggregate'] = null;
+	// OTP numerator/denominator behind the headline % — drive the §0 verdict's natural
+	// frequency + n-aware (Wilson) confidence. Additive across a range; null pre-republish.
+	// (Assigned in both the range + strip branches below, so no dead initialiser.)
+	let observationCount: number | null;
+	let onTime: number | null;
 
 	if (hasRange) {
 		const singleDay = rangeDays.length === 1;
@@ -480,6 +661,10 @@ export function toReliabilityClusters(
 		// carries them; a multi-day range shows the honest no-data mark.
 		p50Min = singleDay ? num(rangeDays[0].p50_min) : null;
 		p90Min = singleDay ? num(rangeDays[0].p90_min) : null;
+		// Severe share is averageable across the in-range days (a share, not a percentile).
+		severePct = singleDay
+			? num(rangeDays[0].severe_pct)
+			: meanOf(rangeDays, (p) => p.severe_pct, 1);
 		// A single in-range day reads as an exact day (no "average" caption); a
 		// multi-day range carries the aggregate metadata for an honest caption.
 		rangeAggregate = singleDay
@@ -489,12 +674,25 @@ export function toReliabilityClusters(
 					start: rangeDays[0].date!,
 					end: rangeDays[rangeDays.length - 1].date!,
 				};
+		// OTP numerator/denominator are additive across the in-range days (sum, not mean).
+		observationCount = rangeDays.reduce<number | null>(
+			(s, p) => (p.observation_count != null ? (s ?? 0) + p.observation_count : s),
+			null,
+		);
+		onTime = rangeDays.reduce<number | null>(
+			(s, p) => (p.on_time != null ? (s ?? 0) + p.on_time : s),
+			null,
+		);
 	} else {
 		const stripPeriod = selectStripPeriod(calendarPeriods, grain, selectedDate);
 		otpPct = stripPeriod ? num(stripPeriod.otp_pct) : null;
 		avgDelayMin = stripPeriod ? num(stripPeriod.avg_delay_min) : null;
 		p50Min = stripPeriod ? num(stripPeriod.p50_min) : null;
 		p90Min = stripPeriod ? num(stripPeriod.p90_min) : null;
+		severePct = stripPeriod ? num(stripPeriod.severe_pct) : null;
+		delayHistogram = stripPeriod?.delay_histogram ?? null;
+		observationCount = stripPeriod ? num(stripPeriod.observation_count) : null;
+		onTime = stripPeriod ? num(stripPeriod.on_time) : null;
 	}
 
 	const strip: SnapshotStripVM = {
@@ -521,7 +719,7 @@ export function toReliabilityClusters(
 	/* 01 Punctuality. */
 	// Trend source = ONLY the dated day-grain series, chronological ascending (F1/F4).
 	// A date range ZOOMS the trend to the in-range days (otherwise the full series).
-	const trend = hasRange ? rangeDays : dayTrendAsc;
+	const trend = hasRange ? rangeDays : grainTrendAsc;
 	const dayOfWeek = allDayOfWeek
 		.filter(dayOfWeekHasSignal)
 		.slice()
@@ -541,6 +739,21 @@ export function toReliabilityClusters(
 	// message (the per-empty-cell honesty the operator requires).
 	const byShiftDaytype = (data.by_shift_daytype ?? []).filter(crosstabHasSignal);
 	const punctuality: PunctualityVM = {
+		// The GRAIN-AWARE headline aggregate (the same selected-grain values the strip
+		// computes): §01's headline tiles + the typical→worst-case Distribution + the
+		// severe-share bar read THIS, so they answer for the picked window (today / this
+		// week / this month / range), while the trend shows the daily detail. Systematic:
+		// one aggregate, not the trend tail.
+		headline: {
+			otpPct,
+			avgDelayMin,
+			p50Min,
+			p90Min,
+			severePct,
+			delayHistogram,
+			observationCount,
+			onTime,
+		},
 		trend,
 		dayOfWeek,
 		weakStops,
@@ -561,14 +774,23 @@ export function toReliabilityClusters(
 		isEmpty: headway.length === 0,
 	};
 
-	/* 03 Service delivered. */
-	const serviceSpans = allSpans.filter(spanHasSignal);
-	const cancellations = allCancellations.filter(cancellationHasSignal);
-	const skippedStops = allSkipped.filter(skippedHasSignal);
+	/* 03 Service delivered — windowed to the grain the rail selects (the §03 completeness
+	   read then aggregates over that window, so the section RESPONDS to the filter). */
+	const serviceSpans = windowByGrain(allSpans, grain, selectedDate, dateRange).filter(
+		spanHasSignal,
+	);
+	const cancellations = windowByGrain(allCancellations, grain, selectedDate, dateRange).filter(
+		cancellationHasSignal,
+	);
+	const skippedStops = windowByGrain(allSkipped, grain, selectedDate, dateRange).filter(
+		skippedHasSignal,
+	);
 	const serviceDelivered: ServiceDeliveredVM = {
 		serviceSpans,
 		cancellations,
 		skippedStops,
+		cancellationRatePct,
+		skippedStopRatePct,
 		isRampIn: true,
 		isEmpty: serviceSpans.length === 0 && cancellations.length === 0 && skippedStops.length === 0,
 	};
@@ -587,9 +809,45 @@ export function toReliabilityClusters(
 	// band orders these by the natural occupancy order; a present band with a null
 	// delay shows an honest no-data message (never a fake 0).
 	const delayByCrowding = (data.delay_by_crowding ?? []).filter(crowdingDelayHasSignal);
+	// S7: grain-aware mix (the occupancy_by_grain entry for the selected grain) +
+	// weekday/weekend split (means of the per-ISO-weekday occupancy_by_dow shares).
+	const occByGrain = data.occupancy_by_grain ?? [];
+	const occByDow = data.occupancy_by_dow ?? [];
+	const mixByGrain = occByGrain.find((g) => g.grain === grain)?.mix ?? null;
+	const weekdayWeekend =
+		occByDow.length > 0
+			? {
+					weekday: meanMix(
+						occByDow
+							.filter((d) => d.day_of_week_iso >= 1 && d.day_of_week_iso <= 5)
+							.map((d) => d.mix ?? null),
+					),
+					weekend: meanMix(
+						occByDow
+							.filter((d) => d.day_of_week_iso >= 6 && d.day_of_week_iso <= 7)
+							.map((d) => d.mix ?? null),
+					),
+				}
+			: null;
+	// P11: the RAW per-ISO-weekday mix on a FIXED Mon→Sun frame (iso 1..7). Index the
+	// sparse contract rows by their ISO weekday (last write wins for a dup), then walk
+	// the full 1..7 frame so every weekday gets a strip — a missing weekday OR a
+	// present-but-null mix both resolve to `mix: null` (honest absence). Gated on the
+	// same occByDow presence as weekdayWeekend so the small-multiple omits cleanly.
+	const byWeekday =
+		occByDow.length > 0
+			? (() => {
+					const byIso = new Map<number, OccupancyMix | null>();
+					for (const d of occByDow) byIso.set(d.day_of_week_iso, d.mix ?? null);
+					return [1, 2, 3, 4, 5, 6, 7].map((iso) => ({ iso, mix: byIso.get(iso) ?? null }));
+				})()
+			: null;
 	const crowding: CrowdingVM = {
 		mix: mixHasShare ? rawMix : null,
 		delayByCrowding,
+		mixByGrain,
+		weekdayWeekend,
+		byWeekday,
 		// The mix drives the headline + stacked bar; the delay×crowding sub-block has
 		// its OWN empty path. `isEmpty` stays mix-driven so a route WITH delay data but
 		// no occupancy mix still surfaces the delay sub-block under the band.

@@ -23,6 +23,15 @@ export type ReliabilityClusterKey =
 	| 'crowding'
 	| 'habits';
 
+/** The computed numbers a §0 verdict band sentence interpolates (two-sided natural frequency). */
+export interface VerdictSentenceArgs {
+	readonly window: string;
+	readonly onTen: number;
+	readonly lateTen: number;
+	/** The numeric hedge clause, e.g. " (78%, 95% sure between 71 and 84%)" or " (78%)". */
+	readonly hedge: string;
+}
+
 export interface ReliabilityCopy {
 	/** Numbered cluster overlines ('01 Punctuality' / '01 Ponctualité' …). */
 	readonly clusters: Record<ReliabilityClusterKey, string>;
@@ -31,6 +40,8 @@ export interface ReliabilityCopy {
 		/** Accessible name for the snapshot section landmark (band 00). */
 		readonly snapshotLabel: string;
 		readonly otpPct: string;
+		/** Tooltip label for a chart's target/goal tick (e.g. the 80% on-time target). */
+		readonly target: string;
 		readonly avgDelayMin: string;
 		/** Typical (median / p50) delay label — plain, not jargon. */
 		readonly p50Min: string;
@@ -39,22 +50,36 @@ export interface ReliabilityCopy {
 		readonly headwayRegularityCov: string;
 		readonly cancellationRatePct: string;
 		readonly skippedStopRatePct: string;
+		/** Honest completeness fraction: "{canceled} of {total} trip-days canceled". */
+		readonly cancellationFraction: (canceled: string, total: string) => string;
+		/** Honest completeness fraction: "{skipped} of {total} stop updates skipped". */
+		readonly skippedFraction: (skipped: string, total: string) => string;
 		/** Plain caption under the typical-delay (p50) tile. */
 		readonly p50Caption: string;
 		/** Plain caption under the worst-case (p90) tile. */
 		readonly p90Caption: string;
+		/** Heading for the typical→worst-case (p50→p90) delay distribution mark. */
+		readonly delayDistHeading: string;
+		/** Accessible / axis label for the delay distribution mark. */
+		readonly delayDistLabel: string;
+		/** Plain caption under the distribution (what the median line + tail mean). */
+		readonly delayDistCaption: string;
 		/** Dedicated severe-delay-share label (NOT p90 — its own metric). */
 		readonly severePct: string;
 		/** Caption for the severe-share block (what the share counts). */
 		readonly severeCaption: string;
 		/** Heading for the weakest-stops accountability list. */
 		readonly weakStopsHeading: string;
+		/** a11y label for the worst-N (how-many-stops) selector. */
+		readonly worstNLabel: string;
 		/** Caption under the excess-wait magnitude (what 0 means). */
 		readonly excessWaitCaption: string;
 		/** Plain caption under the skipped-stop tile (what it counts). */
 		readonly skippedStopCaption: string;
 		/** Hint shown in the fixed chart readout before anything is hovered/focused. */
 		readonly trendReadoutHint: string;
+		/** Plain-language legend for the OTP Wilson confidence band + the 80% target rule. */
+		readonly wilsonBandCaption: string;
 		/** Ramp-in caveat shown on no-backfill metrics/sections. */
 		readonly rampInNote: string;
 		/** Explicit empty-state note for a metric/band with no data yet. */
@@ -71,6 +96,10 @@ export interface ReliabilityCopy {
 	readonly windows: {
 		/** Punctuality trend window. */
 		readonly trend: string;
+		/** Trend caption when the x-axis is the daily series (week / month / range grain). */
+		readonly trendByDay: string;
+		/** Trend caption when the x-axis is the 5 time-of-day shifts (day grain). */
+		readonly trendByTimeOfDay: string;
 		/** Crowding (occupancy mix) window. */
 		readonly crowding: string;
 		/** Weak-stops aggregate window. */
@@ -96,6 +125,20 @@ export interface ReliabilityCopy {
 		/** Day-type raw-grain → readable label. */
 		readonly weekday: string;
 		readonly weekend: string;
+		/** Cleveland strip-plot labels for the per-shift severe-share dot plot. */
+		readonly strip: {
+			/** Whole-strip accessible summary (figure aria-label). */
+			readonly ariaLabel: string;
+			/** All-day mean reference rule label, interpolated with the formatted mean. */
+			readonly mean: (value: string) => string;
+		};
+	};
+	/** Per-ISO-weekday occupancy small-multiple (P11) — in the 04 Crowding band. */
+	readonly byDow: {
+		/** Sub-block overline. */
+		readonly heading: string;
+		/** Plain caption under the Mon→Sun strips (what each strip reads). */
+		readonly caption: string;
 	};
 	/** Delay-by-crowding sub-block (in the 04 Crowding band) labels. */
 	readonly delayByCrowding: {
@@ -106,14 +149,31 @@ export interface ReliabilityCopy {
 		/** Honest empty note when no per-band delay data exists at all. */
 		readonly empty: string;
 	};
-	/** By-shift-and-day-type OTP crosstab (in the 01 Punctuality band) labels. */
+	/** By-shift-and-day-type OTP crosstab — now a stepped heatmap (01 Punctuality). */
 	readonly crosstab: {
 		/** Section overline. */
 		readonly heading: string;
 		/** Accessible header for the (visually-blank) shift corner cell. */
 		readonly shiftHeader: string;
+		/** Accessible header for the day-type column axis. */
+		readonly dayTypeHeader: string;
 		/** Honest caption under the grid (what the cells read + the no-data convention). */
 		readonly caption: string;
+		/** Whole-grid accessible summary (role=img label). */
+		readonly heatmapLabel: string;
+		/** The colour-scale legend buckets (sequential low→high OTP) + the no-data swatch. */
+		readonly legend: {
+			readonly low: string;
+			readonly mid: string;
+			readonly high: string;
+			readonly noData: string;
+		};
+		/** Annotation for the strongest (highest-OTP) trusted cell. */
+		readonly hottest: string;
+		/** Tooltip observation-count prefix, e.g. "n=420". */
+		readonly obs: (n: number) => string;
+		/** Honest reason a cell is greyed: too few observations to trust (n<30). */
+		readonly lowSample: string;
 	};
 	/** Plain-language microcopy for the wait-regularity terms. */
 	readonly regularityTerms: {
@@ -122,6 +182,27 @@ export interface ReliabilityCopy {
 		readonly excessWait: string;
 		readonly spread: string;
 		readonly clumped: string;
+	};
+	/** Service-span first→last timeline (in the 02 Wait & regularity band). */
+	readonly serviceSpanTimeline: {
+		/** Sub-block / chart heading. */
+		readonly heading: string;
+		/** Accessible summary for the whole timeline figure. */
+		readonly ariaLabel: (first: string, last: string) => string;
+		/** Label for the first-departure endpoint. */
+		readonly firstTrip: string;
+		/** Label for the last-departure endpoint. */
+		readonly lastTrip: string;
+		/** Span-length annotation (e.g. "Span 18h 30m"); `len` is the formatted duration. */
+		readonly span: (len: string) => string;
+		/** Trip-count annotation (e.g. "142 trips"); `n` is the formatted count. */
+		readonly trips: (n: string) => string;
+		/** a11y prefix for the first-trip punctuality marker. */
+		readonly firstDelay: string;
+		/** a11y prefix for the last-trip punctuality marker. */
+		readonly lastDelay: string;
+		/** Plain caption under the timeline (what early/late at each end means). */
+		readonly caption: string;
 	};
 	/** Unit suffixes appended to chart tick + tooltip values (axis metadata). */
 	readonly units: {
@@ -160,34 +241,82 @@ export interface ReliabilityCopy {
 			readonly rangePrompt: string;
 		};
 	};
+	/**
+	 * Rider-question section framing (the 5-section rider-first IA): each section's
+	 * short overline `label` + the plain-language `question` it answers, plus the
+	 * progressive-disclosure expander labels.
+	 */
+	readonly sections: {
+		readonly verdict: { readonly label: string; readonly question: string };
+		readonly whenToRide: { readonly label: string; readonly question: string };
+		readonly theWait: { readonly label: string; readonly question: string };
+		readonly runAndFit: { readonly label: string; readonly question: string };
+		readonly worstStops: { readonly label: string; readonly question: string };
+		/** Progressive-disclosure expander labels (the analyst "Show the detail" layer). */
+		readonly detailShow: string;
+		readonly detailHide: string;
+	};
+	/** §0 plain-language reliability verdict (text-led, two-sided, numerically hedged). */
+	readonly verdict: {
+		readonly windowPhrase: {
+			readonly day: string;
+			readonly week: string;
+			readonly month: string;
+			readonly range: string;
+		};
+		readonly reliable: (a: VerdictSentenceArgs) => string;
+		readonly patchy: (a: VerdictSentenceArgs) => string;
+		readonly unreliable: (a: VerdictSentenceArgs) => string;
+		readonly tentative: (a: {
+			readonly window: string;
+			readonly otp: number;
+			readonly n: number;
+			readonly lo: number;
+			readonly hi: number;
+		}) => string;
+		readonly tooFew: (window: string, n: number) => string;
+		readonly absent: string;
+		readonly hedgeSimple: (otp: number) => string;
+		readonly hedgeCI: (otp: number, lo: number, hi: number) => string;
+	};
 }
 
 export const reliabilityCopy: Record<Locale, ReliabilityCopy> = {
 	fr: {
 		clusters: {
 			punctuality: '01 Ponctualité',
-			waitRegularity: '02 Régularité des attentes',
-			serviceDelivered: '03 Service assuré',
-			crowding: '04 Encombrement',
+			serviceDelivered: '02 Service assuré',
+			crowding: '03 Encombrement',
+			waitRegularity: '04 Régularité des attentes',
 			habits: '05 Habitudes horaires',
 		},
 		strip: {
 			snapshotLabel: 'Aperçu de la fiabilité',
 			otpPct: 'Ponctualité',
+			target: 'Cible',
 			avgDelayMin: 'Retard moyen',
 			p50Min: 'Retard médian',
 			p90Min: 'Pire des cas',
 			headwayRegularityCov: 'Régularité (CV)',
 			cancellationRatePct: "Taux d'annulation",
 			skippedStopRatePct: "Taux d'arrêts ignorés",
+			cancellationFraction: (c, total) => `${c} annulés sur ${total} jours-trajets`,
+			skippedFraction: (s, total) => `${s} ignorés sur ${total} mises à jour d'arrêt`,
 			p50Caption: 'La moitié des trajets font mieux, la moitié font pire',
 			p90Caption: '9 trajets sur 10 sont plus rapides que ça',
+			delayDistHeading: 'Du retard médian au pire des cas',
+			delayDistLabel: 'Retard, du médian (p50) au pire des cas (p90)',
+			delayDistCaption:
+				'Le repère marque le retard médian; la barre s’étire jusqu’au pire des cas (9 trajets sur 10 font mieux). Échelle fixe de 0 à 15 min.',
 			severePct: 'Part des retards graves',
 			severeCaption: 'Proportion de passages en retard grave',
-			weakStopsHeading: 'Les 5 arrêts les plus en retard',
+			weakStopsHeading: 'Les arrêts les plus en retard',
+			worstNLabel: 'Arrêts affichés',
 			excessWaitCaption: '0 = le service respecte (ou dépasse) sa fréquence prévue',
 			skippedStopCaption: 'Arrêts non desservis',
 			trendReadoutHint: 'Survolez ou tabulez le graphique pour lire chaque jour',
+			wilsonBandCaption:
+				'La bande ombrée : on est sûr à 95 % que le vrai taux de ponctualité s’y trouve (plus la bande est large, moins l’échantillon est grand). Ligne pointillée : cible de 80 %.',
 			rampInNote: 'Nouveau, on compte depuis peu, donc le chiffre se précise avec le temps',
 			noDataNote: 'Aucune donnée',
 			noData: 'sans données',
@@ -198,6 +327,8 @@ export const reliabilityCopy: Record<Locale, ReliabilityCopy> = {
 		},
 		windows: {
 			trend: '30 derniers jours',
+			trendByDay: 'Par jour',
+			trendByTimeOfDay: 'Par moment de la journée',
 			crowding: '30 derniers jours',
 			weakStops: 'Cumul hebdomadaire',
 			habits: 'Toutes les données accumulées',
@@ -212,6 +343,15 @@ export const reliabilityCopy: Record<Locale, ReliabilityCopy> = {
 				'Estimation sur fenêtre glissante, pondérée par les observations, pas une ponctualité certifiée; les petits échantillons varient.',
 			weekday: 'Semaine',
 			weekend: 'Fin de semaine',
+			strip: {
+				ariaLabel: 'Part des retards graves par période de la journée',
+				mean: (value) => `Moyenne journée : ${value}`,
+			},
+		},
+		byDow: {
+			heading: 'Encombrement par jour de la semaine',
+			caption:
+				"Répartition de l'occupation pour chaque jour, du lundi au dimanche. Un jour sans télémétrie le dit clairement plutôt que d'inventer une barre.",
 		},
 		delayByCrowding: {
 			heading: "Retard selon l'occupation",
@@ -221,8 +361,19 @@ export const reliabilityCopy: Record<Locale, ReliabilityCopy> = {
 		crosstab: {
 			heading: 'Par période et type de jour',
 			shiftHeader: 'Période',
+			dayTypeHeader: 'Type de jour',
 			caption:
-				'Ponctualité par période de la journée et type de jour; une cellule sans observation affiche « sans données », jamais un zéro.',
+				'Ponctualité (% à l’heure) par période de la journée et type de jour, sur une échelle fixe de 0 à 100 %. Une cellule avec moins de 30 observations est grisée; jamais un zéro inventé.',
+			heatmapLabel: 'Ponctualité par période et type de jour',
+			legend: {
+				low: 'Faible (0–40 %)',
+				mid: 'Moyenne (40–80 %)',
+				high: 'Élevée (80–100 %)',
+				noData: 'Sans données',
+			},
+			hottest: 'Meilleure ponctualité',
+			obs: (n) => `n=${n}`,
+			lowSample: 'moins de 30 observations',
 		},
 		regularityTerms: {
 			scheduledGap: 'Intervalle prévu',
@@ -230,6 +381,19 @@ export const reliabilityCopy: Record<Locale, ReliabilityCopy> = {
 			excessWait: 'Attente excédentaire',
 			spread: 'Régularité (CV)',
 			clumped: 'Bus collés',
+		},
+		serviceSpanTimeline: {
+			heading: 'Plage de service',
+			ariaLabel: (first, last) =>
+				`Plage de service, du premier départ à ${first} au dernier à ${last}`,
+			firstTrip: 'Premier départ',
+			lastTrip: 'Dernier départ',
+			span: (len) => `Durée ${len}`,
+			trips: (n) => `${n} voyages`,
+			firstDelay: 'Retard du premier départ',
+			lastDelay: 'Retard du dernier départ',
+			caption:
+				"De l'heure du premier départ à celle du dernier sur une journée de 24 h. Le repère à chaque extrémité indique l'avance (▼) ou le retard (▲) du départ; ▲ signale un retard, jamais une absence de donnée.",
 		},
 		units: { pct: '%', min: ' min' },
 		controls: {
@@ -250,32 +414,82 @@ export const reliabilityCopy: Record<Locale, ReliabilityCopy> = {
 				rangePrompt: 'Fenêtre : choisissez une date de début et de fin',
 			},
 		},
+		sections: {
+			verdict: { label: 'Fiabilité', question: 'Peut-on compter sur cette ligne ?' },
+			whenToRide: {
+				label: 'Quand voyager',
+				question: 'Quand est-ce fiable, et quand ça se gâte ?',
+			},
+			theWait: {
+				label: "L'attente",
+				question: 'Combien de temps faut-il attendre, et les bus sont-ils collés ?',
+			},
+			runAndFit: {
+				label: 'Service et place',
+				question: 'Le bus passe-t-il, et y aura-t-il de la place ?',
+			},
+			worstStops: { label: 'Les pires arrêts', question: 'Où le retard s’accumule-t-il ?' },
+			detailShow: 'Voir le détail',
+			detailHide: 'Masquer le détail',
+		},
+		verdict: {
+			windowPhrase: {
+				day: "aujourd'hui",
+				week: 'cette semaine',
+				month: 'ce mois-ci',
+				range: 'sur les jours choisis',
+			},
+			reliable: ({ window, onTen, lateTen, hedge }) =>
+				`Service fiable ${window}, environ ${onTen} trajets sur 10 à l'heure${hedge}; ${lateTen} sur 10 en retard.`,
+			patchy: ({ window, onTen, lateTen, hedge }) =>
+				`Service inégal ${window}, environ ${onTen} trajets sur 10 à l'heure${hedge}; ${lateTen} sur 10 en retard.`,
+			unreliable: ({ window, onTen, lateTen, hedge }) =>
+				`Service peu fiable ${window}, seulement ${onTen} trajets sur 10 à l'heure${hedge}; ${lateTen} sur 10 en retard.`,
+			tentative: ({ window, otp, n, lo, hi }) =>
+				`Trop peu de trajets ${window} pour être certain, ${otp} % de ${n} trajets suivis à l'heure (probablement ${lo}–${hi} %).`,
+			tooFew: (window, n) =>
+				`Mesure en cours ${window}, seulement ${n} trajets suivis jusqu'ici, pas assez pour juger la fiabilité.`,
+			absent:
+				"Mesure en cours, aucun trajet suivi pour l'instant, impossible de juger la fiabilité.",
+			hedgeSimple: (otp) => ` (${otp} %)`,
+			hedgeCI: (otp, lo, hi) => ` (${otp} %, sûr à 95 % entre ${lo} et ${hi} %)`,
+		},
 	},
 	en: {
 		clusters: {
 			punctuality: '01 Punctuality',
-			waitRegularity: '02 Wait regularity',
-			serviceDelivered: '03 Service delivered',
-			crowding: '04 Crowding',
+			serviceDelivered: '02 Service delivered',
+			crowding: '03 Crowding',
+			waitRegularity: '04 Wait regularity',
 			habits: '05 Time-of-day habits',
 		},
 		strip: {
 			snapshotLabel: 'Reliability snapshot',
 			otpPct: 'On-time',
+			target: 'Target',
 			avgDelayMin: 'Avg delay',
 			p50Min: 'Typical delay',
 			p90Min: 'Worst-case delay',
 			headwayRegularityCov: 'Regularity (CoV)',
 			cancellationRatePct: 'Cancellation rate',
 			skippedStopRatePct: 'Skipped-stop rate',
+			cancellationFraction: (c, total) => `${c} of ${total} trip-days canceled`,
+			skippedFraction: (s, total) => `${s} of ${total} stop updates skipped`,
 			p50Caption: 'Half of trips do better, half do worse',
 			p90Caption: '9 in 10 trips are better than this',
+			delayDistHeading: 'From typical to worst-case delay',
+			delayDistLabel: 'Delay, from typical (p50) to worst-case (p90)',
+			delayDistCaption:
+				'The marker is the typical (median) delay; the bar stretches to the worst case (9 in 10 trips do better). Fixed 0–15 min scale.',
 			severePct: 'Severe-delay share',
 			severeCaption: 'Share of arrivals that ran severely late',
-			weakStopsHeading: 'The 5 stops with the most delay',
+			weakStopsHeading: 'The stops with the most delay',
+			worstNLabel: 'Stops shown',
 			excessWaitCaption: '0 = runs on schedule (met or beat its planned frequency)',
 			skippedStopCaption: "Stops the bus didn't serve",
 			trendReadoutHint: 'Hover or tab the chart to read each day',
+			wilsonBandCaption:
+				'Shaded band: we’re 95% sure the true on-time rate sits inside it (a wider band = a smaller sample). Dashed line: the 80% target.',
 			rampInNote: 'New metric, we just started counting, so this number sharpens over time',
 			noDataNote: 'No data yet',
 			noData: 'no data',
@@ -286,6 +500,8 @@ export const reliabilityCopy: Record<Locale, ReliabilityCopy> = {
 		},
 		windows: {
 			trend: 'Last 30 days',
+			trendByDay: 'By day',
+			trendByTimeOfDay: 'By time of day',
 			crowding: 'Last 30 days',
 			weakStops: 'Weekly aggregate',
 			habits: 'All accrued data',
@@ -299,6 +515,15 @@ export const reliabilityCopy: Record<Locale, ReliabilityCopy> = {
 				'Trailing-window, observation-weighted estimate, not certified on-time; small samples vary.',
 			weekday: 'Weekday',
 			weekend: 'Weekend',
+			strip: {
+				ariaLabel: 'Severe-delay share by time of day',
+				mean: (value) => `All-day mean: ${value}`,
+			},
+		},
+		byDow: {
+			heading: 'Crowding by day of week',
+			caption:
+				'How occupancy splits on each day, Monday through Sunday. A day with no telemetry says so plainly instead of fabricating a bar.',
 		},
 		delayByCrowding: {
 			heading: 'Delay by crowding',
@@ -308,8 +533,19 @@ export const reliabilityCopy: Record<Locale, ReliabilityCopy> = {
 		crosstab: {
 			heading: 'By shift and day type',
 			shiftHeader: 'Shift',
+			dayTypeHeader: 'Day type',
 			caption:
-				'On-time rate by time of day and day type; a cell with no observations reads "no data", never a zero.',
+				'On-time rate (%) by time of day and day type, on a fixed 0–100% scale. A cell with fewer than 30 observations is greyed out, never a fabricated zero.',
+			heatmapLabel: 'On-time rate by shift and day type',
+			legend: {
+				low: 'Low (0–40%)',
+				mid: 'Medium (40–80%)',
+				high: 'High (80–100%)',
+				noData: 'No data',
+			},
+			hottest: 'Best on-time rate',
+			obs: (n) => `n=${n}`,
+			lowSample: 'fewer than 30 observations',
 		},
 		regularityTerms: {
 			scheduledGap: 'Scheduled gap',
@@ -317,6 +553,19 @@ export const reliabilityCopy: Record<Locale, ReliabilityCopy> = {
 			excessWait: 'Excess wait',
 			spread: 'Spread (CoV)',
 			clumped: 'Clumped (bunched)',
+		},
+		serviceSpanTimeline: {
+			heading: 'Service span',
+			ariaLabel: (first, last) =>
+				`Service span, from the first trip at ${first} to the last at ${last}`,
+			firstTrip: 'First trip',
+			lastTrip: 'Last trip',
+			span: (len) => `Span ${len}`,
+			trips: (n) => `${n} trips`,
+			firstDelay: 'First-trip delay',
+			lastDelay: 'Last-trip delay',
+			caption:
+				'From the first departure clock time to the last across a 24-hour day. The marker at each end shows that departure running early (▼) or late (▲); ▲ is a real delay, never missing data.',
 		},
 		units: { pct: '%', min: ' min' },
 		controls: {
@@ -336,6 +585,39 @@ export const reliabilityCopy: Record<Locale, ReliabilityCopy> = {
 				range: (n, start, end) => `Average across ${n} days, ${start} to ${end}`,
 				rangePrompt: 'Window: pick a start and end date',
 			},
+		},
+		sections: {
+			verdict: { label: 'Reliability', question: 'Can you count on this line?' },
+			whenToRide: {
+				label: 'When to ride',
+				question: 'When is it good, and when does it fall apart?',
+			},
+			theWait: { label: 'The wait', question: 'How long will you wait, and do buses bunch?' },
+			runAndFit: { label: 'Service & space', question: 'Will the bus run, and will you fit?' },
+			worstStops: { label: "Where it's worst", question: 'Where does the delay pile up?' },
+			detailShow: 'Show the detail',
+			detailHide: 'Hide the detail',
+		},
+		verdict: {
+			windowPhrase: {
+				day: 'today',
+				week: 'this week',
+				month: 'this month',
+				range: 'over the selected days',
+			},
+			reliable: ({ window, onTen, lateTen, hedge }) =>
+				`Ran reliably ${window}, about ${onTen} in 10 trips on time${hedge}; ${lateTen} in 10 ran late.`,
+			patchy: ({ window, onTen, lateTen, hedge }) =>
+				`Ran unevenly ${window}, about ${onTen} in 10 trips on time${hedge}; ${lateTen} in 10 ran late.`,
+			unreliable: ({ window, onTen, lateTen, hedge }) =>
+				`Ran unreliably ${window}, only about ${onTen} in 10 trips on time${hedge}; ${lateTen} in 10 ran late.`,
+			tentative: ({ window, otp, n, lo, hi }) =>
+				`Too few trips ${window} to call it with confidence, ${otp}% of ${n} tracked trips on time (likely ${lo}–${hi}%).`,
+			tooFew: (window, n) =>
+				`Still measuring ${window}, only ${n} tracked trips so far, not enough to say how reliable this line is.`,
+			absent: 'Still measuring, no tracked trips yet to say how reliable this line is.',
+			hedgeSimple: (otp) => ` (${otp}%)`,
+			hedgeCI: (otp, lo, hi) => ` (${otp}%, 95% sure between ${lo} and ${hi}%)`,
 		},
 	},
 };

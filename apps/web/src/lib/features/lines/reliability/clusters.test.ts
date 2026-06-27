@@ -177,11 +177,33 @@ describe('toReliabilityClusters — populated fixture', () => {
 	});
 
 	it('keeps only signal-carrying headway / span / cancellation / skipped rows', () => {
-		const c = toReliabilityClusters(populated);
+		// grain='week' windows §03 to the last 7 days, which spans the whole 06-16..06-18
+		// fixture — so this isolates the SIGNAL filtering from the grain windowing below.
+		const c = toReliabilityClusters(populated, { grain: 'week' });
 		expect(c.waitRegularity.headway).toHaveLength(2);
 		expect(c.serviceDelivered.serviceSpans).toHaveLength(2);
 		expect(c.serviceDelivered.cancellations).toHaveLength(3);
 		expect(c.serviceDelivered.skippedStops).toHaveLength(2);
+	});
+
+	it('windows §03 service-delivered to the grain the rail selects (S7 backbone)', () => {
+		// day grain → only the LATEST dated row of each ramp-in history survives, so the
+		// section RESPONDS to the filter (was: always the full ~30-day history).
+		const day = toReliabilityClusters(populated, { grain: 'day' });
+		expect(day.serviceDelivered.cancellations).toHaveLength(1);
+		expect(day.serviceDelivered.cancellations[0].date).toBe('2026-06-18');
+		expect(day.serviceDelivered.skippedStops).toHaveLength(1);
+		expect(day.serviceDelivered.serviceSpans).toHaveLength(1);
+		// week grain → the last 7 days spans the whole 3-day fixture → all rows return.
+		expect(
+			toReliabilityClusters(populated, { grain: 'week' }).serviceDelivered.cancellations,
+		).toHaveLength(3);
+		// an explicit date range narrows it to the rows inside [start, end].
+		const ranged = toReliabilityClusters(populated, {
+			grain: 'day',
+			dateRange: { start: '2026-06-17', end: '2026-06-18' },
+		});
+		expect(ranged.serviceDelivered.cancellations).toHaveLength(2);
 	});
 });
 
@@ -470,6 +492,163 @@ describe('toReliabilityClusters — delay_by_crowding (G1)', () => {
 	it('resolves to an empty delayByCrowding when the contract omits it', () => {
 		const c = toReliabilityClusters({ generated_utc: utc('2026-06-19T02:00:00Z'), id: '11' });
 		expect(c.crowding.delayByCrowding).toEqual([]);
+	});
+});
+
+/* S7 — the §01 trend follows the SELECTED calendar grain (day/week/month), not
+   always day. dayTrend dedupes-by-date + sorts ASC, so it works for any dated grain. */
+describe('toReliabilityClusters — grain-aware trend (S7)', () => {
+	it('default (day) trend = the dated day series, ASC', () => {
+		const c = toReliabilityClusters(granular);
+		expect(c.punctuality.trend.map((p) => p.date)).toEqual([
+			'2026-06-16',
+			'2026-06-17',
+			'2026-06-18',
+		]);
+		expect(c.punctuality.trend.every((p) => p.grain === 'day')).toBe(true);
+	});
+
+	it('grain=week → the DAILY series WINDOWED to the last 7 days (folded daily detail, S7)', () => {
+		const c = toReliabilityClusters(granular, { grain: 'week' });
+		// The daily span (06-16..06-18) is inside the last 7 days → the trend keeps the
+		// DAILY points, NOT the coarse weekly aggregate (which was 2 dots spanning a month).
+		expect(c.punctuality.trend.map((p) => p.date)).toEqual([
+			'2026-06-16',
+			'2026-06-17',
+			'2026-06-18',
+		]);
+		expect(c.punctuality.trend.every((p) => p.grain === 'day')).toBe(true);
+	});
+
+	it('grain=month → the DAILY series WINDOWED to the last 30 days (not 2 monthly dots, S7)', () => {
+		const c = toReliabilityClusters(granular, { grain: 'month' });
+		expect(c.punctuality.trend.map((p) => p.date)).toEqual([
+			'2026-06-16',
+			'2026-06-17',
+			'2026-06-18',
+		]);
+		expect(c.punctuality.trend.every((p) => p.grain === 'day')).toBe(true);
+	});
+
+	it('week vs month window the daily series differently (last 7 vs last 30 days, S7)', () => {
+		// 10 consecutive daily points (06-09..06-18) → week keeps the last 7, month keeps all.
+		const days = Array.from({ length: 10 }, (_, i) => ({
+			grain: 'day' as const,
+			date: `2026-06-${String(9 + i).padStart(2, '0')}`,
+			otp_pct: 80 + i,
+		}));
+		const data: RouteReliability = {
+			generated_utc: utc('2026-06-19T02:00:00Z'),
+			id: '99',
+			periods: days,
+		};
+		const week = toReliabilityClusters(data, { grain: 'week' });
+		const month = toReliabilityClusters(data, { grain: 'month' });
+		expect(week.punctuality.trend).toHaveLength(7);
+		expect(month.punctuality.trend).toHaveLength(10);
+		expect(week.punctuality.trend[0].date).toBe('2026-06-12'); // 7 days back from 06-18
+		expect(month.punctuality.trend[0].date).toBe('2026-06-09'); // all of them
+	});
+
+	it('a date range still zooms the DAY series regardless of grain', () => {
+		const c = toReliabilityClusters(granular, {
+			grain: 'day',
+			dateRange: { start: '2026-06-16', end: '2026-06-17' },
+		});
+		expect(c.punctuality.trend.map((p) => p.date)).toEqual(['2026-06-16', '2026-06-17']);
+	});
+});
+
+/* S7 §04 — grain-aware crowding mix + weekday/weekend split from the new
+   occupancy_by_grain / occupancy_by_dow contract fields (PR-DB). */
+describe('toReliabilityClusters — occupancy_by_grain / occupancy_by_dow (S7)', () => {
+	const crowdingGrains: RouteReliability = {
+		generated_utc: utc('2026-06-19T02:00:00Z'),
+		id: '12',
+		occupancy_by_grain: [
+			{ grain: 'day', mix: { empty: 0, many_seats: 1, few_seats: 0, standing: 0, full: 0 } },
+			{
+				grain: 'week',
+				mix: { empty: 0.1, many_seats: 0.4, few_seats: 0.3, standing: 0.15, full: 0.05 },
+			},
+			// honest absence — a window with no band telemetry carries mix: null.
+			{ grain: 'month', mix: null },
+		],
+		occupancy_by_dow: [
+			{
+				day_of_week_iso: 1,
+				mix: { empty: 0, many_seats: 0.8, few_seats: 0.2, standing: 0, full: 0 },
+			},
+			{
+				day_of_week_iso: 5,
+				mix: { empty: 0, many_seats: 0.6, few_seats: 0.4, standing: 0, full: 0 },
+			},
+			{
+				day_of_week_iso: 6,
+				mix: { empty: 0.5, many_seats: 0.5, few_seats: 0, standing: 0, full: 0 },
+			},
+		],
+	};
+
+	it('selects the grain-scoped mix for the requested grain', () => {
+		expect(
+			toReliabilityClusters(crowdingGrains, { grain: 'day' }).crowding.mixByGrain?.many_seats,
+		).toBe(1);
+		expect(
+			toReliabilityClusters(crowdingGrains, { grain: 'week' }).crowding.mixByGrain?.many_seats,
+		).toBe(0.4);
+	});
+
+	it('honest-null mixByGrain when the selected grain has no telemetry', () => {
+		expect(
+			toReliabilityClusters(crowdingGrains, { grain: 'month' }).crowding.mixByGrain,
+		).toBeNull();
+	});
+
+	it('aggregates weekday (ISO 1-5) and weekend (ISO 6-7) from occupancy_by_dow', () => {
+		const ww = toReliabilityClusters(crowdingGrains).crowding.weekdayWeekend;
+		expect(ww).not.toBeNull();
+		// weekday = unweighted mean of ISO 1 + ISO 5: many_seats (0.8+0.6)/2 = 0.7, few_seats (0.2+0.4)/2 = 0.3
+		expect(ww?.weekday?.many_seats).toBeCloseTo(0.7, 5);
+		expect(ww?.weekday?.few_seats).toBeCloseTo(0.3, 5);
+		// weekend = ISO 6 only
+		expect(ww?.weekend?.empty).toBe(0.5);
+	});
+
+	it('null mixByGrain + weekdayWeekend when the fields are absent', () => {
+		const c = toReliabilityClusters({ generated_utc: utc('2026-06-19T02:00:00Z'), id: '11' });
+		expect(c.crowding.mixByGrain).toBeNull();
+		expect(c.crowding.weekdayWeekend).toBeNull();
+	});
+
+	it('exposes the RAW per-ISO-weekday mix on a fixed Mon→Sun (1..7) frame (P11)', () => {
+		const bw = toReliabilityClusters(crowdingGrains).crowding.byWeekday;
+		expect(bw).not.toBeNull();
+		// Always the full 7-day frame, ISO ascending, regardless of contract sparsity.
+		expect(bw?.map((d) => d.iso)).toEqual([1, 2, 3, 4, 5, 6, 7]);
+		// Present weekdays keep their mix VERBATIM (not the weekday/weekend mean).
+		expect(bw?.find((d) => d.iso === 1)?.mix?.many_seats).toBe(0.8);
+		expect(bw?.find((d) => d.iso === 5)?.mix?.few_seats).toBe(0.4);
+		expect(bw?.find((d) => d.iso === 6)?.mix?.empty).toBe(0.5);
+		// A weekday the contract omits → honest mix:null (not a fabricated zero mix).
+		expect(bw?.find((d) => d.iso === 2)?.mix).toBeNull();
+		expect(bw?.find((d) => d.iso === 7)?.mix).toBeNull();
+	});
+
+	it('keeps a present-but-null weekday mix as honest null on the frame (P11)', () => {
+		const data: RouteReliability = {
+			generated_utc: utc('2026-06-19T02:00:00Z'),
+			id: '12',
+			occupancy_by_dow: [{ day_of_week_iso: 3, mix: null }],
+		};
+		const bw = toReliabilityClusters(data).crowding.byWeekday;
+		expect(bw?.length).toBe(7);
+		expect(bw?.find((d) => d.iso === 3)?.mix).toBeNull();
+	});
+
+	it('null byWeekday when occupancy_by_dow is absent (P11)', () => {
+		const c = toReliabilityClusters({ generated_utc: utc('2026-06-19T02:00:00Z'), id: '11' });
+		expect(c.crowding.byWeekday).toBeNull();
 	});
 });
 

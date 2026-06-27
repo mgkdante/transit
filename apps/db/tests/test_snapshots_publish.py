@@ -710,11 +710,18 @@ def test_publish_historic_writes_expected_keys(tmp_path) -> None:
     assert any("historic/receipts/2026-06-01.json" in k for k in key_set)
 
     # --- receipts discovery index (T7): exact set of receipt dates written ---
-    from transit_ops.snapshots.contract import ReceiptsIndex
+    from transit_ops.snapshots.contract import ReceiptsIndex, RouteReliabilityIndex
     import pathlib
     index_path = next(k for k in keys if "historic/receipts/index.json" in k)
     ri = ReceiptsIndex.model_validate_json(pathlib.Path(index_path).read_bytes())
     assert ri.dates == ["2026-06-01"]
+
+    # --- route-reliability discovery index: the EXACT set of routes published this
+    # run (so the web list-badge gate never lags the published files like the static
+    # routes_index flag does). The spine returns routes 101 + 202 (see the FakeConn). ---
+    rr_index_path = next(k for k in keys if "historic/route_reliability/index.json" in k)
+    rri = RouteReliabilityIndex.model_validate_json(pathlib.Path(rr_index_path).read_bytes())
+    assert rri.route_ids == ["101", "202"]
 
     # --- round-trip parse: network_trend.json through its contract model ---
     network_trend_path = next(k for k in keys if "historic/network_trend.json" in k)

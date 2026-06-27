@@ -208,60 +208,56 @@ beforeEach(() => {
 	getRouteReliabilitySpy.mockClear();
 });
 
-describe('RouteDetail reliability fetch gating (404-flood fix)', () => {
-	// The fix lives in the reliability resource thunk: it consults the routes-index
-	// availability flag BEFORE probing route_reliability/{id}.json. We exercise the
-	// thunk directly (not via the synchronous createResource mock above) so we can
-	// assert whether the underlying fetcher was hit. The thunk mirrors the component:
-	//   flag === false → null, no probe; flag === true | undefined → probe + fail-soft.
-	async function gatedReliability(id: string): Promise<unknown> {
+describe('RouteDetail reliability fetch — the route page trusts the FILE', () => {
+	// The route page ALWAYS probes route_reliability/{id}.json and trusts it as the
+	// source of truth — it does NOT gate on the routes-index `reliability` flag. That
+	// flag is a daily-truth baked into the long-cached STATIC index, so it lags, and a
+	// stale `false` must NEVER hide a published reliability surface. We mirror the
+	// component's thunk (probe unconditionally) and assert the fetcher is always hit +
+	// that a present file flows through even when the flag says false.
+	async function routePageReliability(id: string): Promise<unknown> {
 		const v1 = (await import('$lib/v1')) as unknown as {
-			getRoutesIndex: () => Promise<typeof routesIndexData>;
 			getRouteReliability: (id: string) => Promise<unknown>;
 		};
-		const idx = await v1.getRoutesIndex();
-		const entry = idx.routes.find((r) => r.id === id);
-		if (entry?.reliability === false) return null;
 		return v1.getRouteReliability(id);
 	}
 
-	it('does NOT probe route_reliability when the index flag is explicitly false', async () => {
+	it('probes the file even when the index flag is false — a stale false must not hide data', async () => {
 		routesIndexData = {
 			generated_utc: '2026-06-15T12:00:00Z',
 			routes: [{ id: '161', reliability: false }],
 		};
-		const result = await gatedReliability('161');
+		const file = { id: '161', generated_utc: '2026-06-15T12:00:00Z' };
+		getRouteReliabilitySpy.mockResolvedValueOnce(file as unknown as null);
+		const result = await routePageReliability('161');
 
-		expect(result).toBeNull();
-		expect(getRouteReliabilitySpy).not.toHaveBeenCalled();
+		// The published file is fetched + flows through — NOT suppressed by the false flag.
+		expect(getRouteReliabilitySpy).toHaveBeenCalledWith('161');
+		expect(result).toBe(file);
 	});
 
-	it('DOES probe (+ fail-soft) when the index flag is true', async () => {
+	it('probes the file when the index flag is true', async () => {
 		routesIndexData = {
 			generated_utc: '2026-06-15T12:00:00Z',
 			routes: [{ id: '161', reliability: true }],
 		};
-		const result = await gatedReliability('161');
+		const result = await routePageReliability('161');
 
-		// fetcher resolves null (no published file) → fail-soft, but it WAS called.
+		// default spy → no published file → fail-soft null, but it WAS called.
 		expect(result).toBeNull();
 		expect(getRouteReliabilitySpy).toHaveBeenCalledWith('161');
 	});
 
-	it('DOES probe when the flag is absent (stale/legacy index) so data is never lost', async () => {
-		// An index predating the flag: entry has no `reliability` → undefined. We must
-		// still probe, or a route WITH a published file would lose its reliability data.
+	it('probes the file when the flag is absent (stale/legacy index)', async () => {
 		routesIndexData = { generated_utc: '2026-06-15T12:00:00Z', routes: [{ id: '161' }] };
-		await gatedReliability('161');
+		await routePageReliability('161');
 
 		expect(getRouteReliabilitySpy).toHaveBeenCalledWith('161');
 	});
 
-	it('DOES probe when the route is missing from the index entirely', async () => {
-		// No entry at all (entry === undefined) is treated like an absent flag: probe +
-		// fail-soft, never silently suppress a route that might have data.
+	it('probes the file when the route is missing from the index entirely', async () => {
 		routesIndexData = { generated_utc: '2026-06-15T12:00:00Z', routes: [{ id: 'other' }] };
-		await gatedReliability('161');
+		await routePageReliability('161');
 
 		expect(getRouteReliabilitySpy).toHaveBeenCalledWith('161');
 	});

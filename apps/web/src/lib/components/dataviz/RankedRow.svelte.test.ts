@@ -66,4 +66,20 @@ describe('RankedRow — the dataviz-row template contract', () => {
 		const { container: b } = render(RankedRow, { props: { ...base, bare: true } });
 		expect(b.querySelector('[data-slot="ranked-row"]')!.getAttribute('role')).toBeNull();
 	});
+
+	it('hides the rank ordinal when showRank=false (fixed-category lists, S7)', () => {
+		const withRank = render(RankedRow, { props: { ...base, display: '4 min' } });
+		expect(withRank.container.querySelector('.dv-rank')).not.toBeNull();
+		const noRank = render(RankedRow, { props: { ...base, display: '4 min', showRank: false } });
+		expect(noRank.container.querySelector('.dv-rank')).toBeNull();
+	});
+
+	it('forwards a fixed absolute domain to the bar (stable, not relative-to-max, S7)', () => {
+		// 4 min on [-2,8] -> 60% fill, independent of any in-view max.
+		const { container } = render(RankedRow, {
+			props: { ...base, value: 4, domain: [-2, 8] as const, display: '4.0 min' },
+		});
+		const fill = container.querySelector('.dv-severity-fill') as HTMLElement;
+		expect(parseFloat(fill.style.width)).toBeCloseTo(60, 1);
+	});
 });

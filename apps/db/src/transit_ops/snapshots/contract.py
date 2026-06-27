@@ -212,6 +212,10 @@ class ManifestHistoricFiles(BaseModel):
         default="historic/route_reliability/",
         description="fetch {route_reliability_prefix}{route_id}.json" + _404_EMPTY,
     )
+    route_reliability_index: str = Field(
+        default="historic/route_reliability/index.json",
+        description="discovery index of routes with a published reliability file" + _404_EMPTY,
+    )
     stop_reliability_prefix: str = Field(
         default="historic/stop_reliability/",
         description="fetch {stop_reliability_prefix}{stop_id}.json" + _404_EMPTY,
@@ -811,6 +815,18 @@ class ReceiptsIndex(BaseModel):
     )
     generated_utc: str
 
+class RouteReliabilityIndex(BaseModel):
+    route_ids: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Route ids with a published per-route reliability file in THIS run, "
+            "ascending; fetch {route_reliability_prefix}{route_id}.json. The "
+            "always-current daily set (the static routes_index `reliability` flag "
+            "can lag this); a route absent here has no published reliability file."
+        ),
+    )
+    generated_utc: str
+
 
 TOP_LEVEL_MODELS: dict[str, type[BaseModel]] = {
     "manifest": Manifest,
@@ -832,6 +848,7 @@ TOP_LEVEL_MODELS: dict[str, type[BaseModel]] = {
     "historic_repeat_offenders": RepeatOffenders,
     "historic_receipt": Receipt,
     "historic_receipts_index": ReceiptsIndex,
+    "historic_route_reliability_index": RouteReliabilityIndex,
     "historic_alert_history": AlertHistory,
     "provenance": Provenance,
 }

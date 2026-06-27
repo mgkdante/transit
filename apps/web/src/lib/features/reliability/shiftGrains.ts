@@ -43,6 +43,77 @@ export function severeShareToSeverity(pct: number | null): SeverityCode {
 	return 'watch';
 }
 
+/** Threshold (avg-delay minutes) at or above which a stop bands to 'critical'. */
+const DELAY_CRITICAL_MIN = 10;
+/** Threshold (avg-delay minutes) at or above which a stop bands to 'high'. */
+const DELAY_HIGH_MIN = 5;
+
+/**
+ * Band an avg-delay reading (minutes) onto the SeverityCode scale: >=10 min
+ * critical, >=5 min high, else watch. A SEPARATE semantic table from the
+ * severe-share cutoffs (which take a %, not minutes) — they coincide numerically at
+ * 10/5 but mean different things. null (no data) bands to the quietest 'watch' so an
+ * absent reading never paints hot. (DRY: was inlined in §01's weak-stops list.)
+ */
+export function delayMinToSeverity(min: number | null): SeverityCode {
+	if (min == null) return 'watch';
+	if (min >= DELAY_CRITICAL_MIN) return 'critical';
+	if (min >= DELAY_HIGH_MIN) return 'high';
+	return 'watch';
+}
+
+/** Threshold (bunched %) at or above which a shift's regularity bands to 'critical'. */
+const BUNCHED_CRITICAL_PCT = 30;
+/** Threshold (bunched %) at or above which it bands to 'high'. */
+const BUNCHED_HIGH_PCT = 15;
+
+/**
+ * Band a bunching share (percentage, 0..100) onto the SeverityCode scale: >=30%
+ * critical, >=15% high, else watch. null (no data) bands to the quietest 'watch'.
+ * (DRY: was §02 Wait/Regularity's inline severityFor.)
+ */
+export function bunchingToSeverity(bunchedPct: number | null | undefined): SeverityCode {
+	if (bunchedPct == null) return 'watch';
+	if (bunchedPct >= BUNCHED_CRITICAL_PCT) return 'critical';
+	if (bunchedPct >= BUNCHED_HIGH_PCT) return 'high';
+	return 'watch';
+}
+
+// The fixed, absolute chart domains now live in their own structural module (grouped by unit,
+// each justified) — see ./domains. Re-exported here so the existing reliability-vocabulary
+// import path (`from '$lib/features/reliability/shiftGrains'`) keeps resolving them; ./domains
+// is the single source of truth. Percentages are ALL [0,100]; no per-chart inline scales.
+export {
+	DELAY_STOP_DOMAIN,
+	DELAY_POS_DOMAIN,
+	DELAY_DIST_DOMAIN,
+	DELAY_DOW_DOMAIN,
+	SEVERE_DOMAIN,
+	OTP_DOMAIN,
+	HEADWAY_DOMAIN,
+	BUNCHED_DOMAIN,
+	CANCEL_RATE_DOMAIN,
+	SKIPPED_RATE_DOMAIN,
+	SHARE_DOMAIN,
+	COV_DOMAIN,
+} from './domains';
+
+/** CoV (gap stddev / mean) at or above which regularity bands to critical. */
+const COV_CRITICAL = 0.5;
+/** CoV at or above which it bands to high. */
+const COV_HIGH = 0.3;
+
+/**
+ * Band a headway coefficient-of-variation onto the SeverityCode scale: >=0.5
+ * critical, >=0.3 high, else watch. null (no data) bands to the quietest 'watch'.
+ */
+export function covToSeverity(cov: number | null | undefined): SeverityCode {
+	if (cov == null) return 'watch';
+	if (cov >= COV_CRITICAL) return 'critical';
+	if (cov >= COV_HIGH) return 'high';
+	return 'watch';
+}
+
 /** The time-of-day shift grains, in canonical chronological order (AM → night). */
 export const SHIFT_GRAIN_ORDER = ['am_peak', 'midday', 'pm_peak', 'evening', 'night'] as const;
 export type ShiftGrain = (typeof SHIFT_GRAIN_ORDER)[number];
