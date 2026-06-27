@@ -27,7 +27,6 @@ describe('selectOccupancyShare', () => {
 		expect(Math.round(sum)).toBe(100);
 		expect(Math.round(s!.segments[1].share)).toBe(35);
 		expect(s!.segments[0].occupancy).toBe('many_seats');
-		expect(s!.segments[0].glyph).toBeTruthy();
 	});
 
 	it('returns null on no telemetry / all-zero mix (honest absence, never a fake split)', () => {

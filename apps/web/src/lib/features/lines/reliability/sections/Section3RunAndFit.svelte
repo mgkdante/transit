@@ -551,16 +551,6 @@
 		flex-direction: column;
 		gap: 0.5rem;
 	}
-	/* The rider question — the section's plain-language frame, quiet under the overline. */
-	.section-question {
-		margin: 0;
-		font-family: var(--font-heading);
-		font-size: var(--text-subheading);
-		font-weight: 600;
-		line-height: 1.3;
-		color: var(--foreground);
-		max-inline-size: 42ch;
-	}
 
 	/* Each rider-answer sub-block (run / fit) owns its own inner stack. */
 	.sub-block {
@@ -662,23 +652,28 @@
 		line-height: 1.4;
 		color: var(--muted-foreground);
 	}
+	/* S7 polish (operator: crowding strips read as an ugly vertical wall): one full-width
+	   HORIZONTAL row per day, Mon→Sun stacked, so the occupancy strips are directly
+	   comparable + the week reads as a timeline (not a grid of narrow columns). */
 	.crowding-dow-grid {
-		display: grid;
-		grid-template-columns: repeat(auto-fit, minmax(min(9rem, 100%), 1fr));
-		gap: 1rem;
+		display: flex;
+		flex-direction: column;
+		gap: 0.6rem;
 		margin: 0;
 		padding: 0;
 		list-style: none;
 	}
 	.crowding-dow-cell {
-		display: flex;
-		flex-direction: column;
-		gap: 0.4rem;
+		display: grid;
+		grid-template-columns: 6.5rem 1fr;
+		align-items: center;
+		gap: 0.85rem;
 		min-width: 0;
 	}
 	.crowding-dow-label {
 		font-family: var(--font-mono);
 		font-size: var(--text-small);
 		color: var(--muted-foreground);
+		white-space: nowrap;
 	}
 </style>

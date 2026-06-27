@@ -64,6 +64,8 @@ export interface ReliabilityCopy {
 		readonly delayDistLabel: string;
 		/** Plain caption under the distribution (what the median line + tail mean). */
 		readonly delayDistCaption: string;
+		/** Nudge when the day grain has no percentile distribution (only week/month do). */
+		readonly percentileNudge: string;
 		/** Dedicated severe-delay-share label (NOT p90 — its own metric). */
 		readonly severePct: string;
 		/** Caption for the severe-share block (what the share counts). */
@@ -182,6 +184,8 @@ export interface ReliabilityCopy {
 		readonly excessWait: string;
 		readonly spread: string;
 		readonly clumped: string;
+		/** Plain-language "what is bunching + how to read this" explainer for §2. */
+		readonly bunchingHelp: string;
 	};
 	/** Service-span first→last timeline (in the 02 Wait & regularity band). */
 	readonly serviceSpanTimeline: {
@@ -240,6 +244,14 @@ export interface ReliabilityCopy {
 			/** Prompt before a complete range is picked. */
 			readonly rangePrompt: string;
 		};
+		/** Section-TOC heading (wayfinding) in the sticky rail. */
+		readonly toc: string;
+		/** Scope tooltip: this section re-shapes on the time window. */
+		readonly scopeWindowed: string;
+		/** Scope tooltip: this section ignores the time window (full history). */
+		readonly scopeWhole: string;
+		/** One-line scope note under the grain picker (which sections the window drives). */
+		readonly scopeNote: string;
 	};
 	/**
 	 * Rider-question section framing (the 5-section rider-first IA): each section's
@@ -308,6 +320,8 @@ export const reliabilityCopy: Record<Locale, ReliabilityCopy> = {
 			delayDistLabel: 'Retard, du médian (p50) au pire des cas (p90)',
 			delayDistCaption:
 				'Le repère marque le retard médian; la barre s’étire jusqu’au pire des cas (9 trajets sur 10 font mieux). Échelle fixe de 0 à 15 min.',
+			percentileNudge:
+				'Pas assez de trajets aujourd’hui pour l’écart typique → pire cas. Choisissez « Cette semaine » ou « Ce mois-ci » ci-dessus pour le voir.',
 			severePct: 'Part des retards graves',
 			severeCaption: 'Proportion de passages en retard grave',
 			weakStopsHeading: 'Les arrêts les plus en retard',
@@ -381,6 +395,8 @@ export const reliabilityCopy: Record<Locale, ReliabilityCopy> = {
 			excessWait: 'Attente excédentaire',
 			spread: 'Régularité (CV)',
 			clumped: 'Bus collés',
+			bunchingHelp:
+				'Les bus devraient être espacés régulièrement. « Bus collés » = deux arrivent presque ensemble, puis un long trou : votre attente réelle dépasse alors l’horaire. Chaque ligne va de l’intervalle prévu (●) à l’intervalle observé (●) ; plus l’écart est grand, plus l’attente est longue.',
 		},
 		serviceSpanTimeline: {
 			heading: 'Plage de service',
@@ -413,6 +429,11 @@ export const reliabilityCopy: Record<Locale, ReliabilityCopy> = {
 				range: (n, start, end) => `Moyenne sur ${n} jours, du ${start} au ${end}`,
 				rangePrompt: 'Fenêtre : choisissez une date de début et de fin',
 			},
+			toc: 'Aller à',
+			scopeWindowed: 'Suit la fenêtre choisie ci-dessus',
+			scopeWhole: 'Historique complet : la fenêtre ci-dessus ne change pas cette section',
+			scopeNote:
+				'La fenêtre ci-dessus remodèle les sections marquées ↻ ; les sections ∞ montrent tout l’historique.',
 		},
 		sections: {
 			verdict: { label: 'Fiabilité', question: 'Peut-on compter sur cette ligne ?' },
@@ -481,6 +502,8 @@ export const reliabilityCopy: Record<Locale, ReliabilityCopy> = {
 			delayDistLabel: 'Delay, from typical (p50) to worst-case (p90)',
 			delayDistCaption:
 				'The marker is the typical (median) delay; the bar stretches to the worst case (9 in 10 trips do better). Fixed 0–15 min scale.',
+			percentileNudge:
+				'Not enough trips today for the typical→worst-case spread. Pick “This week” or “This month” above to see it.',
 			severePct: 'Severe-delay share',
 			severeCaption: 'Share of arrivals that ran severely late',
 			weakStopsHeading: 'The stops with the most delay',
@@ -553,6 +576,8 @@ export const reliabilityCopy: Record<Locale, ReliabilityCopy> = {
 			excessWait: 'Excess wait',
 			spread: 'Spread (CoV)',
 			clumped: 'Clumped (bunched)',
+			bunchingHelp:
+				'Buses should be evenly spaced. “Bunching” = two arrive nose-to-tail, then a long gap, so your real wait runs longer than the schedule implies. Each row runs from the scheduled gap (●) to the observed gap (●); the wider that span, the longer the wait.',
 		},
 		serviceSpanTimeline: {
 			heading: 'Service span',
@@ -585,6 +610,10 @@ export const reliabilityCopy: Record<Locale, ReliabilityCopy> = {
 				range: (n, start, end) => `Average across ${n} days, ${start} to ${end}`,
 				rangePrompt: 'Window: pick a start and end date',
 			},
+			toc: 'Jump to',
+			scopeWindowed: 'Follows the time window above',
+			scopeWhole: 'Full history: the window above doesn’t change this section',
+			scopeNote: 'The window above re-shapes the ↻ sections; the ∞ sections show the full history.',
 		},
 		sections: {
 			verdict: { label: 'Reliability', question: 'Can you count on this line?' },

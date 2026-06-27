@@ -73,7 +73,7 @@
 	const medianIdx = $derived(binIndexFor(spec.medianRef));
 	const p90Idx = $derived(binIndexFor(spec.p90Ref));
 
-	const padding = { top: 8, right: 12, bottom: 30, left: 40 };
+	const padding = { top: 12, right: 14, bottom: 40, left: 44 };
 	const xOf = (d: Row) => d.idx;
 	const yOf = (d: Row) => d.count;
 
@@ -177,12 +177,12 @@
 	:global(.dv-histmark-axis .tick text) {
 		fill: var(--muted-foreground);
 		font-family: var(--font-mono);
-		font-size: var(--text-micro);
+		font-size: var(--text-mono);
 	}
 	:global(.dv-histmark-axis .axis-label),
 	:global(.dv-histmark-axis text.label) {
 		fill: var(--muted-foreground);
-		font-size: var(--text-micro);
+		font-size: var(--text-mono);
 	}
 	:global(.dv-histmark-grid line) {
 		stroke: var(--border);

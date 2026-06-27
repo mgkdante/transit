@@ -37,7 +37,7 @@
 	const yOf = (d: DotStripDatum) => d.group;
 
 	const frameHeight = $derived(`${Math.max(3, groups.length) * 1.5 + 3.25}rem`);
-	const padding = { top: 8, right: 16, bottom: 40, left: 80 };
+	const padding = { top: 12, right: 18, bottom: 44, left: 84 };
 
 	const fmtVal = (v: number | null): string => (v == null ? '' : String(v));
 </script>
@@ -126,12 +126,12 @@
 	:global(.dv-stripmark-axis .tick text) {
 		fill: var(--muted-foreground);
 		font-family: var(--font-mono);
-		font-size: var(--text-micro);
+		font-size: var(--text-mono);
 	}
 	:global(.dv-stripmark-axis .axis-label),
 	:global(.dv-stripmark-axis text.label) {
 		fill: var(--muted-foreground);
-		font-size: var(--text-micro);
+		font-size: var(--text-mono);
 	}
 	:global(.dv-stripmark-grid line) {
 		stroke: var(--border);

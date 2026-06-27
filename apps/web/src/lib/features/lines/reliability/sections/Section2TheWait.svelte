@@ -576,6 +576,9 @@
 				{@render metricInfo('regularityCov', copy.strip.headwayRegularityCov)}
 			</span>
 			<Chart spec={headwayDumbbell.spec} />
+			<!-- Plain-language "what is bunching + how to read this" (operator ask): the least
+			     intuitive concept on the page, taught in rider language right under the chart. -->
+			<p class="bunching-help" data-slot="bunching-help">{terms.bunchingHelp}</p>
 		</div>
 
 		<!-- DETAIL — excess-wait headline + per-shift breakdown + direction table + service span. -->
@@ -772,16 +775,6 @@
 		flex-direction: column;
 		gap: 0.5rem;
 	}
-	/* The rider question — the section's plain-language frame, quiet under the overline. */
-	.section-question {
-		margin: 0;
-		font-family: var(--font-heading);
-		font-size: var(--text-subheading);
-		font-weight: 600;
-		line-height: 1.3;
-		color: var(--foreground);
-		max-inline-size: 42ch;
-	}
 
 	/* The always-visible PRIMARY dumbbell block + its label/info head. */
 	.section-primary {
@@ -958,5 +951,15 @@
 		font-size: var(--text-small);
 		line-height: 1.4;
 		color: var(--muted-foreground);
+	}
+	/* Bunching explainer: plain-language "how to read this", slightly stronger than a
+	   quiet caption (it teaches the page's least-intuitive concept). */
+	.bunching-help {
+		margin: 0.25rem 0 0;
+		max-width: 60ch;
+		font-family: var(--font-mono);
+		font-size: var(--text-small);
+		line-height: 1.5;
+		color: var(--foreground);
 	}
 </style>

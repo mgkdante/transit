@@ -249,6 +249,29 @@ table {
 .lc-tooltip-item-root,
 .lc-tooltip-item-label {
 	font-family: var(--font-mono);
+	font-variant-numeric: tabular-nums;
+	font-feature-settings: 'tnum' 1;
+}
+/* Legibility floor (S7 P8, operator: "make them BIG and legible"): chart text never
+   sits below the per-mark default — axis text at 14px, tooltips a tier above so the
+   read-at-attention number is largest. rem so WCAG 1.4.4 200% resize actually scales. */
+.lc-axis-tick-label,
+.lc-axis-label,
+.lc-axis text,
+.lc-labels text {
+	font-size: var(--text-mono);
+}
+.lc-labels text {
+	font-weight: 600;
+}
+.lc-tooltip-content,
+.lc-tooltip-item-root,
+.lc-tooltip-item-label {
+	font-size: var(--text-small);
+}
+.lc-tooltip-header {
+	font-size: var(--text-caption);
+	font-weight: 600;
 }
 
 /* Keyboard-focus polish — engineered, on-brand ring everywhere.

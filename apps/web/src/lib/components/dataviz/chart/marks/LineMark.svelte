@@ -62,7 +62,7 @@
 		})),
 	);
 
-	const padding = { top: 10, right: 18, bottom: 40, left: 54 };
+	const padding = { top: 12, right: 20, bottom: 44, left: 56 };
 	// Null → the brand no-data glyph (never an em-dash, never a fabricated 0).
 	const num = (v: unknown): string => (v == null ? '·' : String(v));
 </script>
@@ -176,11 +176,11 @@
 	:global(.dv-line-axis .tick text) {
 		fill: var(--muted-foreground);
 		font-family: var(--font-mono);
-		font-size: var(--text-micro);
+		font-size: var(--text-mono);
 	}
 	:global(.dv-line-axis .axis-label),
 	:global(.dv-line-axis text.label) {
 		fill: var(--muted-foreground);
-		font-size: var(--text-micro);
+		font-size: var(--text-mono);
 	}
 </style>

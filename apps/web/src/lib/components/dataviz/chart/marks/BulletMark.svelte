@@ -117,11 +117,11 @@
 	:global(.dv-bullet-axis .tick text) {
 		fill: var(--muted-foreground);
 		font-family: var(--font-mono);
-		font-size: var(--text-micro);
+		font-size: var(--text-mono);
 	}
 	:global(.dv-bullet-axis .axis-label),
 	:global(.dv-bullet-axis text.label) {
 		fill: var(--muted-foreground);
-		font-size: var(--text-micro);
+		font-size: var(--text-mono);
 	}
 </style>

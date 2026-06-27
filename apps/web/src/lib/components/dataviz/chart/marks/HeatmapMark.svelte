@@ -83,7 +83,7 @@
 	// A tier band's height grows the frame so cells stay tappable; the section scroller
 	// gives the 24-hour width room (min-width) so columns never squash on a phone.
 	const frameHeight = $derived(`${Math.max(3, rows) * 1.6 + 2.5}rem`);
-	const padding = { top: 6, right: 10, bottom: 26, left: 40 };
+	const padding = { top: 10, right: 12, bottom: 34, left: 44 };
 </script>
 
 <figure
@@ -208,11 +208,11 @@
 	:global(.dv-heatmap-axis .tick text) {
 		fill: var(--muted-foreground);
 		font-family: var(--font-mono);
-		font-size: var(--text-micro);
+		font-size: var(--text-mono);
 	}
 	:global(.dv-heatmap-axis .axis-label),
 	:global(.dv-heatmap-axis text.label) {
 		fill: var(--muted-foreground);
-		font-size: var(--text-micro);
+		font-size: var(--text-mono);
 	}
 </style>

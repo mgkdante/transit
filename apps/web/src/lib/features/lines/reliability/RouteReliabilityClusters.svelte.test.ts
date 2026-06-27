@@ -125,11 +125,11 @@ describe('RouteReliabilityClusters', () => {
 		render(RouteReliabilityClusters, { props: { data: populated, locale: 'en' } });
 
 		// All five rider-question section overlines present, in surface order.
-		expect(screen.getByText(copy.sections.verdict.label)).toBeInTheDocument();
-		expect(screen.getByText(copy.sections.whenToRide.label)).toBeInTheDocument();
-		expect(screen.getByText(copy.sections.theWait.label)).toBeInTheDocument();
-		expect(screen.getByText(copy.sections.runAndFit.label)).toBeInTheDocument();
-		expect(screen.getByText(copy.sections.worstStops.label)).toBeInTheDocument();
+		expect(screen.getAllByText(copy.sections.verdict.label)[0]).toBeInTheDocument();
+		expect(screen.getAllByText(copy.sections.whenToRide.label)[0]).toBeInTheDocument();
+		expect(screen.getAllByText(copy.sections.theWait.label)[0]).toBeInTheDocument();
+		expect(screen.getAllByText(copy.sections.runAndFit.label)[0]).toBeInTheDocument();
+		expect(screen.getAllByText(copy.sections.worstStops.label)[0]).toBeInTheDocument();
 
 		// §0 Verdict rendered its KPI tiles: the default 'day' grain OTP (82%) headline.
 		expect(screen.getAllByText('82%').length).toBeGreaterThan(0);
@@ -149,11 +149,11 @@ describe('RouteReliabilityClusters', () => {
 		});
 
 		// Sections are NEVER silently dropped: all five overlines still anchor their sections.
-		expect(screen.getByText(copy.sections.verdict.label)).toBeInTheDocument();
-		expect(screen.getByText(copy.sections.whenToRide.label)).toBeInTheDocument();
-		expect(screen.getByText(copy.sections.theWait.label)).toBeInTheDocument();
-		expect(screen.getByText(copy.sections.runAndFit.label)).toBeInTheDocument();
-		expect(screen.getByText(copy.sections.worstStops.label)).toBeInTheDocument();
+		expect(screen.getAllByText(copy.sections.verdict.label)[0]).toBeInTheDocument();
+		expect(screen.getAllByText(copy.sections.whenToRide.label)[0]).toBeInTheDocument();
+		expect(screen.getAllByText(copy.sections.theWait.label)[0]).toBeInTheDocument();
+		expect(screen.getAllByText(copy.sections.runAndFit.label)[0]).toBeInTheDocument();
+		expect(screen.getAllByText(copy.sections.worstStops.label)[0]).toBeInTheDocument();
 
 		// The styled honest-absence chip appears (sections fall to it, each saying WHY
 		// data is missing), never a fabricated value.
@@ -177,9 +177,13 @@ describe('RouteReliabilityClusters', () => {
 	it('honours the FR canonical voice for the section overlines', () => {
 		render(RouteReliabilityClusters, { props: { data: populated, locale: 'fr' } });
 
-		expect(screen.getByText(reliabilityCopy.fr.sections.verdict.label)).toBeInTheDocument();
-		expect(screen.getByText(reliabilityCopy.fr.sections.whenToRide.label)).toBeInTheDocument();
-		expect(screen.getByText(reliabilityCopy.fr.sections.worstStops.label)).toBeInTheDocument();
+		expect(screen.getAllByText(reliabilityCopy.fr.sections.verdict.label)[0]).toBeInTheDocument();
+		expect(
+			screen.getAllByText(reliabilityCopy.fr.sections.whenToRide.label)[0],
+		).toBeInTheDocument();
+		expect(
+			screen.getAllByText(reliabilityCopy.fr.sections.worstStops.label)[0],
+		).toBeInTheDocument();
 		// "Aujourd'hui" appears in both the grain picker and the active-window caption.
 		expect(screen.getAllByText(reliabilityCopy.fr.controls.today).length).toBeGreaterThan(0);
 	});

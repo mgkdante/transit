@@ -150,7 +150,7 @@
 	:global(.dv-span-axis .tick text) {
 		fill: var(--muted-foreground);
 		font-family: var(--font-mono);
-		font-size: var(--text-micro);
+		font-size: var(--text-mono);
 	}
 	.dv-span-ends {
 		display: flex;
@@ -169,7 +169,7 @@
 	}
 	.dv-span-end-label {
 		font-family: var(--font-mono);
-		font-size: var(--text-micro);
+		font-size: var(--text-mono);
 		letter-spacing: 0.04em;
 		text-transform: uppercase;
 		color: var(--muted-foreground);
