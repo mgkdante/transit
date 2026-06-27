@@ -695,12 +695,12 @@ class WeakStopGrain(BaseModel):
 
 # S7-B payload guard: the published route_reliability/{id}.json must stay under this
 # many bytes (model_dump_json, UTF-8 — the exact bytes the publisher writes). 80 KiB
-# clears the measured worst case (clean ~77.9 KB with weak_stops_by_grain at the N=15
-# cap) while still CATCHING a windowed-histogram regression (the F1 variant lands ~95.5
-# KB). A CI test asserts BOTH (clean fits, F1 breaches). Bumped 65536 -> 81920 in DB-PR-3
-# (was tight: pre-PR-3 clean ~63.4 KB, F1 ~81.0 KB — within 1 KB of the old ceiling).
-# Re-anchor on a real busiest-route measurement before relying on the exact number.
-# Exported so the web can share it.
+# clears the measured worst case (clean ~79.2 KB with weak_stops_by_grain at the N=15
+# cap, ~2.7 KB margin) while still CATCHING a windowed-histogram regression (the F1
+# variant lands ~96.9 KB). A CI test asserts BOTH (clean fits, F1 breaches). Bumped
+# 65536 -> 81920 in DB-PR-3 (pre-PR-3 clean ~63.4 KB, F1 ~81.0 KB — within 1 KB of the
+# old ceiling). The ~2.7 KB clean margin is thin: re-anchor on a real busiest-route
+# measurement before adding to the §4 payload. Exported so the web can share it.
 ROUTE_RELIABILITY_BYTE_CEILING = 81920
 
 class RouteReliability(BaseModel):

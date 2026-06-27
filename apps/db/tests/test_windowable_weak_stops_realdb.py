@@ -10,7 +10,7 @@ must flip it red (a 4-of-4-severe fluke pins the not-severe Wilson LB at 0.0% an
 from __future__ import annotations
 
 from contextlib import contextmanager
-from datetime import date
+from datetime import date, timedelta
 
 import pytest
 from sqlalchemy import create_engine, text
@@ -29,16 +29,22 @@ _D = date(2026, 6, 1)  # one date inside every grain window (anchor = max(date) 
 
 
 @contextmanager
-def _seeded(rows):  # noqa: ANN001
-    """rows = list of (stop_id, observation_count, severe_delay_count, sum_delay_seconds). One date (_D)."""
+def _seeded_dated(rows):  # noqa: ANN001
+    """rows = list of (stop_id, service_local_date, observation_count, severe_delay_count,
+    sum_delay_seconds). Rollback-isolated; ALSO clears any leftover committed rows for this
+    provider/route at entry so a stale row can never silently inflate a window past MIN_N (the
+    review's pollution-defeat finding) — the DELETE is in-tx, so it only scopes THIS test's read."""
     engine = create_engine(DB_URL)
     with engine.connect() as conn:
         tx = conn.begin()
         try:
+            conn.execute(text("DELETE FROM gold.stop_delay_spine WHERE provider_id = :p"),
+                         {"p": _PROVIDER})
             conn.execute(
                 text(
                     "INSERT INTO core.providers (provider_id, display_name, timezone, provider_key) "
-                    "VALUES (:p, 'dense weak-stops seed', 'America/Toronto', :p)"
+                    "VALUES (:p, 'dense weak-stops seed', 'America/Toronto', :p) "
+                    "ON CONFLICT (provider_id) DO NOTHING"
                 ),
                 {"p": _PROVIDER},
             )
@@ -47,16 +53,23 @@ def _seeded(rows):  # noqa: ANN001
                 "service_local_date, observation_count, severe_delay_count, sum_delay_seconds) "
                 "VALUES (:p, :s, :r, :d, :n, :sev, :sum)"
             )
-            for stop_id, obs, severe, sum_sec in rows:
+            for stop_id, day, obs, severe, sum_sec in rows:
                 conn.execute(
                     ins,
-                    {"p": _PROVIDER, "s": stop_id, "r": _ROUTE, "d": _D,
+                    {"p": _PROVIDER, "s": stop_id, "r": _ROUTE, "d": day,
                      "n": obs, "sev": severe, "sum": sum_sec},
                 )
             yield conn
         finally:
             tx.rollback()
     engine.dispose()
+
+
+@contextmanager
+def _seeded(rows):  # noqa: ANN001
+    """rows = list of (stop_id, observation_count, severe_delay_count, sum_delay_seconds). One date (_D)."""
+    with _seeded_dated([(s, _D, n, sev, sm) for (s, n, sev, sm) in rows]) as conn:
+        yield conn
 
 
 def _params() -> dict:
@@ -80,6 +93,24 @@ def test_rank_ascending_by_not_severe_wilson_lower_bound() -> None:
     stops = _month(grains).stops
     assert [s.id for s in stops] == ["chronic", "occasional"], "chronic high-n stop must rank worst"
     assert stops[0].wilson_lo < stops[1].wilson_lo  # ASC: worst (lowest LB) first
+
+
+def test_rank_is_the_lower_bound_not_the_point_estimate() -> None:
+    """B1 (diff-review): the rank MUST be the Wilson LOWER bound, not the not-severe POINT estimate.
+    Two MIN_N-clearing stops with the SAME not-severe point estimate (50%) but different n: under the
+    lower bound the smaller-n stop ranks WORSE (wider interval -> lower LB); under the point estimate
+    they tie and fall back to the (equal-avg) id tie-break, flipping the order. This reds a
+    `rank on (100*severe_k/obs)` mutation that the other recompose tests do NOT catch."""
+    # small: 40 obs / 20 severe -> not-severe 50%, wilson_lo 35.2 ; big: 400/200 -> 50%, wilson_lo 45.1
+    assert _wilson_lo(20, 40) < _wilson_lo(200, 400), "precondition: equal p, smaller n -> lower LB"
+    with _seeded([
+        ("small", 40, 20, 40 * 180),    # avg 180s = 3.0 min (same as big -> avg tie-break is neutral)
+        ("big", 400, 200, 400 * 180),
+    ]) as conn:
+        stops = _month(_weak_stops_by_grain(conn, _params(), {})).stops
+    # lower bound: small (35.2) ranks worse than big (45.1). A point-estimate rank would tie at 50%
+    # and break by id ASC -> ["big", "small"], which this assertion rejects.
+    assert [s.id for s in stops] == ["small", "big"], "rank must use the LOWER bound, not the point estimate"
 
 
 def test_min_n_floor_excludes_tiny_fluke_not_merely_outranks_it() -> None:
@@ -125,13 +156,38 @@ def test_stored_cap_truncates_full_ranked_set_to_15() -> None:
     (lowest wilson_lo) are kept, in ascending order."""
     # stop i: obs=200, severe = 200 - 10*(i+1)  -> not-severe count rises with i -> wilson_lo rises;
     # so stop 0 (fewest not-severe) is worst. Keep the 15 lowest-LB -> ids ws00..ws14.
-    rows = [(f"ws{i:02d}", 200, 200 - 10 * (i + 1), 200 * 150) for i in range(20)]
+    # SEED BEST-FIRST (ws19..ws00) so the rows' insert/physical order is ANTI-correlated with rank:
+    # a truncate-BEFORE-rank bug would keep the first-returned (the BEST) stops; only rank-then-
+    # truncate yields the worst 15 (ws00..ws14). (review SF3)
+    rows = [(f"ws{i:02d}", 200, 200 - 10 * (i + 1), 200 * 150) for i in range(19, -1, -1)]
     with _seeded(rows) as conn:
         stops = _month(_weak_stops_by_grain(conn, _params(), {})).stops
     assert len(stops) == 15
     assert [s.id for s in stops] == [f"ws{i:02d}" for i in range(15)]
     los = [s.wilson_lo for s in stops]
     assert los == sorted(los), "stored worst-N must be ascending by not-severe wilson_lo"
+
+
+def test_window_boundaries_day_week_month_inclusive_edges() -> None:
+    """SF5 (diff-review): the trailing windows are date-INCLUSIVE on the right edges. anchor =
+    MAX(service_local_date); day=[anchor,anchor], week=[anchor-6,anchor], month=[anchor-29,anchor].
+    Each boundary stop (>=MIN_N obs on ONE date) must land in exactly the grains whose window covers
+    its date — pinning the `service_local_date BETWEEN win_start AND win_end` edges (off-by-one bait)."""
+    anchor = date(2026, 6, 30)
+    rows = [
+        ("at_anchor", anchor, 40, 8, 40 * 120),                       # day, week, month
+        ("wk_edge", anchor - timedelta(days=6), 40, 8, 40 * 120),     # week, month (NOT day)
+        ("before_wk", anchor - timedelta(days=7), 40, 8, 40 * 120),   # month (NOT week, NOT day)
+        ("mo_edge", anchor - timedelta(days=29), 40, 8, 40 * 120),    # month (NOT week, NOT day)
+        ("before_mo", anchor - timedelta(days=30), 40, 8, 40 * 120),  # NONE (outside the month window)
+    ]
+    with _seeded_dated(rows) as conn:
+        grains = {g.grain: {s.id for s in g.stops} for g in _weak_stops_by_grain(conn, _params(), {})}
+    assert grains.get("day") == {"at_anchor"}
+    assert grains.get("week") == {"at_anchor", "wk_edge"}
+    assert grains.get("month") == {"at_anchor", "wk_edge", "before_wk", "mo_edge"}
+    # before_mo (anchor-30) is outside every window -> appears in NO grain (honest exclusion).
+    assert all("before_mo" not in ids for ids in grains.values())
 
 
 def test_end_to_end_build_route_reliability_emits_weak_stops_by_grain() -> None:

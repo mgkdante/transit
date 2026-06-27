@@ -172,6 +172,25 @@ def test_builder_null_route_lands_under_unrouted_sentinel() -> None:
     assert int(unrouted["sum_delay_seconds"]) == 100
 
 
+def test_builder_excludes_null_delay_stop_id() -> None:
+    """SF1 (diff-review): the `delay_stop_id IS NOT NULL` WHERE filter is load-bearing — the fact's
+    delay_stop_id is nullable, but the spine PK stop_id is NOT NULL. A NULL-stop fact must be EXCLUDED
+    (no row), never grouped into a NULL-keyed spine row (which would crash the build). Seeds one
+    NULL-stop fact + one real stop; asserts the real stop builds and no NULL-stop row exists."""
+    cld = _recent_weekday()
+    with _conn() as conn:
+        _provider_and_endpoint(conn)
+        _seed_rows(conn, cld, [(None, "R1", 100), ("S1", "R1", 200)])
+        _build(conn)
+        null_rows = conn.execute(
+            text("SELECT count(*) FROM gold.stop_delay_spine WHERE provider_id=:p AND stop_id IS NULL"),
+            {"p": PROVIDER},
+        ).scalar_one()
+        s1 = _spine_row(conn)
+    assert null_rows == 0, "a NULL delay_stop_id fact must NOT produce a spine row"
+    assert s1 is not None and s1["observation_count"] == 1
+
+
 def test_builder_is_all_days_weekend_produces_a_row() -> None:
     """ALL-DAYS: a WEEKEND service day produces a stop-spine row (the stop lineage is dow-agnostic,
     unlike the weekday-only headway builder). Guards against an accidental ISODOW filter."""
