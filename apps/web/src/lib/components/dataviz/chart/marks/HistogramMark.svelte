@@ -177,12 +177,12 @@
 	:global(.dv-histmark-axis .tick text) {
 		fill: var(--muted-foreground);
 		font-family: var(--font-mono);
-		font-size: var(--text-micro);
+		font-size: var(--text-mono);
 	}
 	:global(.dv-histmark-axis .axis-label),
 	:global(.dv-histmark-axis text.label) {
 		fill: var(--muted-foreground);
-		font-size: var(--text-micro);
+		font-size: var(--text-mono);
 	}
 	:global(.dv-histmark-grid line) {
 		stroke: var(--border);

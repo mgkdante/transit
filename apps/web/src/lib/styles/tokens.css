@@ -146,6 +146,10 @@
   --dataviz-heatmap-3: #e07a2f;
   --dataviz-heatmap-4: #d23f33;
   --dataviz-heatmap-nodata: #36322e;
+  --dataviz-heatmap-tier-0: #FFD8A0;
+  --dataviz-heatmap-tier-1: #F59E3D;
+  --dataviz-heatmap-tier-2: #E2540A;
+  --dataviz-heatmap-tier-3: #9A2A02;
 
   /* Paired tokens (shadcn-compatible) */
   --card-foreground: var(--foreground);
@@ -209,6 +213,10 @@
   --dataviz-heatmap-3: #dd9347;
   --dataviz-heatmap-4: #c2402f;
   --dataviz-heatmap-nodata: #d6d0c4;
+  --dataviz-heatmap-tier-0: #F4AA4A;
+  --dataviz-heatmap-tier-1: #E06A12;
+  --dataviz-heatmap-tier-2: #B83C04;
+  --dataviz-heatmap-tier-3: #7E2503;
   --map-stop-fill: #E8540E;
   --border-brand: color-mix(in srgb, var(--primary) 60%, transparent);
   --shadow-glow-sm: 0 0 6px color-mix(in srgb, var(--primary) 18%, transparent);
@@ -280,6 +288,10 @@
     --dataviz-heatmap-3: #e07a2f;
     --dataviz-heatmap-4: #d23f33;
     --dataviz-heatmap-nodata: #36322e;
+    --dataviz-heatmap-tier-0: #FFD8A0;
+    --dataviz-heatmap-tier-1: #F59E3D;
+    --dataviz-heatmap-tier-2: #E2540A;
+    --dataviz-heatmap-tier-3: #9A2A02;
 
     /* Paired tokens (shadcn-compatible) */
     --card-foreground: var(--foreground);
@@ -345,6 +357,10 @@
     --dataviz-heatmap-3: #dd9347;
     --dataviz-heatmap-4: #c2402f;
     --dataviz-heatmap-nodata: #d6d0c4;
+    --dataviz-heatmap-tier-0: #F4AA4A;
+    --dataviz-heatmap-tier-1: #E06A12;
+    --dataviz-heatmap-tier-2: #B83C04;
+    --dataviz-heatmap-tier-3: #7E2503;
     --map-stop-fill: #E8540E;
     --border-brand: color-mix(in srgb, var(--primary) 60%, transparent);
     --shadow-glow-sm: 0 0 6px color-mix(in srgb, var(--primary) 18%, transparent);

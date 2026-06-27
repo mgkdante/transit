@@ -135,12 +135,12 @@
 	:global(.dv-barmark-axis .tick text) {
 		fill: var(--muted-foreground);
 		font-family: var(--font-mono);
-		font-size: var(--text-micro);
+		font-size: var(--text-mono);
 	}
 	:global(.dv-barmark-axis .axis-label),
 	:global(.dv-barmark-axis text.label) {
 		fill: var(--muted-foreground);
-		font-size: var(--text-micro);
+		font-size: var(--text-mono);
 	}
 	:global(.dv-barmark-grid line) {
 		stroke: var(--border);

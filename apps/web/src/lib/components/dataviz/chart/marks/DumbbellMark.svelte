@@ -133,7 +133,7 @@
 		display: flex;
 		gap: var(--spacing-4, 1rem);
 		margin-bottom: var(--spacing-1, 0.25rem);
-		font-size: var(--text-micro);
+		font-size: var(--text-mono);
 		color: var(--muted-foreground);
 	}
 	.dv-dumbbell-key {
@@ -172,12 +172,12 @@
 	:global(.dv-dumbbell-axis .tick text) {
 		fill: var(--muted-foreground);
 		font-family: var(--font-mono);
-		font-size: var(--text-micro);
+		font-size: var(--text-mono);
 	}
 	:global(.dv-dumbbell-axis .axis-label),
 	:global(.dv-dumbbell-axis text.label) {
 		fill: var(--muted-foreground);
-		font-size: var(--text-micro);
+		font-size: var(--text-mono);
 	}
 	:global(.dv-dumbbell-grid line) {
 		stroke: var(--border);

@@ -126,12 +126,12 @@
 	:global(.dv-stripmark-axis .tick text) {
 		fill: var(--muted-foreground);
 		font-family: var(--font-mono);
-		font-size: var(--text-micro);
+		font-size: var(--text-mono);
 	}
 	:global(.dv-stripmark-axis .axis-label),
 	:global(.dv-stripmark-axis text.label) {
 		fill: var(--muted-foreground);
-		font-size: var(--text-micro);
+		font-size: var(--text-mono);
 	}
 	:global(.dv-stripmark-grid line) {
 		stroke: var(--border);

@@ -94,7 +94,7 @@
 	.dv-share-glyph {
 		fill: var(--background);
 		font-family: var(--font-mono);
-		font-size: var(--text-micro);
+		font-size: var(--text-mono);
 		opacity: 0.7;
 		pointer-events: none;
 	}
