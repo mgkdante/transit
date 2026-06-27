@@ -24,6 +24,7 @@
 		info,
 		caption,
 		class: className,
+		...restProps
 	}: {
 		label: string;
 		/** The formatted big number; null → the honest absence chip. */
@@ -35,10 +36,17 @@
 		info?: Snippet;
 		caption?: string;
 		class?: string;
+		/** Forwarded attributes (e.g. a per-tile `data-slot` for tests/verification). */
+		[key: `data-${string}`]: string | undefined;
 	} = $props();
 </script>
 
-<div class={cn('metric-bullet', className)} data-slot="metric-bullet" data-size={size}>
+<div
+	class={cn('metric-bullet', className)}
+	data-slot="metric-bullet"
+	data-size={size}
+	{...restProps}
+>
 	<div class="metric-bullet__head">
 		<span class="metric-bullet__label">{label}</span>
 		{#if info}{@render info()}{/if}

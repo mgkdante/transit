@@ -40,11 +40,10 @@
 -->
 <script lang="ts">
 	import type { Locale } from '$lib/i18n';
-	import type { SeverityCode } from '$lib/v1/schemas';
 	import { fmtPct, fmtCount, fmtDelayMin as sharedFmtDelayMin } from '$lib/utils';
-	import { MetricDisplay, SectionLabel } from '$lib/components/brand';
+	import { SectionLabel } from '$lib/components/brand';
 	import { AbsentValue } from '$lib/components/edge';
-	import { SeverityBar, StackedBar, type StackedSegment } from '$lib/components/dataviz';
+	import { StackedBar, type StackedSegment } from '$lib/components/dataviz';
 	import { Chart } from '$lib/components/dataviz/chart';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
 	import { metricInfoFor, type MetricKey } from '$lib/features/metrics/metrics.content';
@@ -52,14 +51,17 @@
 	import {
 		CANCEL_RATE_DOMAIN,
 		SKIPPED_RATE_DOMAIN,
+		SHARE_DOMAIN,
 		weekdayLabel,
 	} from '$lib/features/reliability/shiftGrains';
 	import { OCCUPANCY_CODES, type OccupancyCode } from '$lib/v1/schemas';
 	import { selectCrowdingDelay } from '../selectors/crowdingDelay';
+	import { selectBullet } from '../selectors/bullet';
 	import { detailCopy } from '../../lines.copy';
 	import type { ServiceDeliveredVM, CrowdingVM } from '../clusters';
 	import type { ReliabilityCopy } from '../reliability.copy';
 	import Detail from '$lib/components/shared/Detail.svelte';
+	import MetricBullet from './MetricBullet.svelte';
 
 	interface Section3RunAndFitProps {
 		/** The 03 Service-delivered slice of the cluster view-model (the "will it run?" half). */
@@ -92,12 +94,10 @@
 
 	// ── "Will it run?" half (Cluster03 — service delivered) ─────────────────────
 	// A problem-rate is the late/amber voice on the dataviz scale (never --primary).
-	const RATE_VAR = 'var(--dataviz-status-late)';
-	// S7: a flat sparkline of a ~0% rate conveys nothing. The completeness bar uses a
-	// STABLE absolute % domain (0% reads as an empty bar = good news) plus the raw
-	// "X of Y" counts. The domains are the STRUCTURAL [0,100] percentage scale from
-	// the shared module — never an inline per-chart zoom.
-	const RATE_SEVERITY: SeverityCode = 'watch';
+	// S7: a flat sparkline of a ~0% rate conveys nothing. The KPI bullet rides a STABLE
+	// absolute [0,100] % domain (0% reads as an empty bar = good news) plus the raw
+	// "X of Y" counts in its caption. The domains are the STRUCTURAL percentage scale
+	// from the shared module — never an inline per-chart zoom.
 
 	/** Format a rate as a percentage, else null (the muted no-data label). */
 	const pct = (v: number | null): string | null => fmtPct(v, { rounding: 'fixed1' });
@@ -217,8 +217,47 @@
 		return best;
 	});
 
-	/** Dominant-band share as a whole-percent string (e.g. "62%"). */
-	const dominantPct = $derived(dominant ? `${Math.round((dominant.share / total) * 100)}%` : null);
+	/** Dominant-band share as a whole-percent number + string (e.g. 62 / "62%"). */
+	const dominantSharePct = $derived(dominant ? (dominant.share / total) * 100 : null);
+	const dominantPct = $derived(
+		dominantSharePct != null ? `${Math.round(dominantSharePct)}%` : null,
+	);
+
+	// ── KPI bullets — each headline rate gets a scale-context bullet beneath its number
+	// (the "every KPI is a LayerChart mark" mandate, reusing §0's MetricBullet). Both
+	// problem-rates ride the amber "late" voice (tone='warn', matching the old RATE_VAR)
+	// on the fixed [0,100] percentage scale, so a near-empty bar honestly reads "rare".
+	// A null rate renders the styled absence chip + NO bar (never a fabricated 0-length).
+	const cancellationBullet = $derived(
+		selectBullet(cancellationRatePct, locale, {
+			title: t.cancellationRatePct,
+			xLabel: t.cancellationRatePct,
+			unit: copy.units.pct,
+			domain: CANCEL_RATE_DOMAIN,
+			tone: 'warn',
+		}),
+	);
+	const skippedBullet = $derived(
+		selectBullet(skippedStopRatePct, locale, {
+			title: t.skippedStopRatePct,
+			xLabel: t.skippedStopRatePct,
+			unit: copy.units.pct,
+			domain: SKIPPED_RATE_DOMAIN,
+			tone: 'warn',
+		}),
+	);
+	// The dominant occupancy band: how much of the mix that single band owns, on the fixed
+	// [0,100] share scale. Neutral tone — crowding is not "good/bad", the band label carries
+	// the identity. Null when there's no telemetry (the tile shows the honest absence chip).
+	const dominantBullet = $derived(
+		selectBullet(dominantSharePct, locale, {
+			title: dominant?.label ?? copy.clusters.crowding,
+			xLabel: dominant?.label ?? copy.clusters.crowding,
+			unit: copy.units.pct,
+			domain: SHARE_DOMAIN,
+			tone: 'neutral',
+		}),
+	);
 
 	// The in-app metric-explainer (i) for the occupancy band: the one-line tip + a
 	// localized deep link to /metrics#occupancy. An INTERACTIVE control beside the
@@ -295,6 +334,20 @@
 	/>
 {/snippet}
 
+<!-- Per-KPI explainer snippets — the (i) trigger MetricBullet renders beside each tile label. -->
+{#snippet cancellationInfo()}{@render metricInfo('cancellation', t.cancellationRatePct)}{/snippet}
+{#snippet skippedInfo()}{@render metricInfo('skippedStop', t.skippedStopRatePct)}{/snippet}
+{#snippet dominantBandInfo()}
+	<MetricInfo
+		class="cluster-info"
+		tip={dominantInfo.tip}
+		href={dominantInfo.href}
+		label={dominantInfo.label}
+		linkLabel={dominantInfo.linkLabel}
+		side="bottom"
+	/>
+{/snippet}
+
 <section class="section" data-section="run-and-fit" aria-label={copy.sections.runAndFit.label}>
 	<header class="section-head">
 		<SectionLabel text={copy.sections.runAndFit.label} variant="station" />
@@ -323,75 +376,30 @@
 				</div>
 			{:else}
 				<div class="run-metrics">
-					<!-- Cancellations -->
-					<article class="run-metric" data-slot="cancellations">
-						<div class="metric-with-info">
-							<MetricDisplay
-								value={pct(cancellationRatePct)}
-								emptyLabel={t.noData}
-								absentReason="no-observations"
-								{locale}
-								label={t.cancellationRatePct}
-								size="md"
-							/>
-							{@render metricInfo('cancellation', t.cancellationRatePct)}
-						</div>
-						{#if cancellation}
-							<div class="run-completeness" data-slot="cancellations-completeness">
-								<SeverityBar
-									severity={RATE_SEVERITY}
-									value={cancellation.sharePct}
-									domain={CANCEL_RATE_DOMAIN}
-									unit="%"
-									colorVar={RATE_VAR}
-									label={t.cancellationRatePct}
-									interactive
-								/>
-								<p class="run-fraction">
-									{t.cancellationFraction(num(cancellation.part), num(cancellation.total))}
-								</p>
-							</div>
-						{:else}
-							<div data-slot="cancellations-empty">
-								<AbsentValue variant="block" reason="no-observations" {locale} />
-							</div>
-						{/if}
-					</article>
+					<!-- Cancellations — text-led rate number + a LayerChart bullet on the fixed
+					     [0,100] scale; the honest "X of Y" raw count rides the caption. -->
+					<MetricBullet
+						label={t.cancellationRatePct}
+						valueText={pct(cancellationRatePct)}
+						spec={cancellationBullet}
+						{locale}
+						info={cancellationInfo}
+						caption={cancellation
+							? t.cancellationFraction(num(cancellation.part), num(cancellation.total))
+							: undefined}
+						data-slot="cancellations"
+					/>
 
 					<!-- Skipped stops -->
-					<article class="run-metric" data-slot="skipped-stops">
-						<div class="metric-with-info">
-							<MetricDisplay
-								value={pct(skippedStopRatePct)}
-								emptyLabel={t.noData}
-								absentReason="no-observations"
-								{locale}
-								label={t.skippedStopRatePct}
-								size="md"
-							/>
-							{@render metricInfo('skippedStop', t.skippedStopRatePct)}
-						</div>
-						{#if skipped}
-							<div class="run-completeness" data-slot="skipped-stops-completeness">
-								<SeverityBar
-									severity={RATE_SEVERITY}
-									value={skipped.sharePct}
-									domain={SKIPPED_RATE_DOMAIN}
-									unit="%"
-									colorVar={RATE_VAR}
-									label={t.skippedStopRatePct}
-									interactive
-								/>
-								<p class="run-fraction">
-									{t.skippedFraction(num(skipped.part), num(skipped.total))}
-								</p>
-							</div>
-						{:else}
-							<div data-slot="skipped-stops-empty">
-								<AbsentValue variant="block" reason="no-observations" {locale} />
-							</div>
-						{/if}
-					</article>
+					<MetricBullet
+						label={t.skippedStopRatePct}
+						valueText={pct(skippedStopRatePct)}
+						spec={skippedBullet}
+						{locale}
+						info={skippedInfo}
+						caption={skipped ? t.skippedFraction(num(skipped.part), num(skipped.total)) : undefined}
+						data-slot="skipped-stops"
+					/>
 				</div>
 			{/if}
 		</div>
@@ -426,25 +434,17 @@
 					<AbsentValue variant="block" reason="no-observations" {locale} />
 				</div>
 			{:else}
-				<div class="crowding-headline-row">
-					<MetricDisplay
-						value={dominantPct}
-						emptyLabel={copy.strip.noData}
-						absentReason="no-observations"
-						{locale}
-						label={dominant.label}
-						size="lg"
-						class="crowding-headline"
-					/>
-					<MetricInfo
-						class="cluster-info"
-						tip={dominantInfo.tip}
-						href={dominantInfo.href}
-						label={dominantInfo.label}
-						linkLabel={dominantInfo.linkLabel}
-						side="bottom"
-					/>
-				</div>
+				<!-- Dominant band — text-led share number + a LayerChart bullet on the fixed
+				     [0,100] share scale (neutral tone; the band label carries the identity). -->
+				<MetricBullet
+					label={dominant.label}
+					valueText={dominantPct}
+					spec={dominantBullet}
+					{locale}
+					size="lg"
+					info={dominantBandInfo}
+					data-slot="dominant-band"
+				/>
 				<!-- Interactive: each band's share reveals on hover/focus (#11). -->
 				<StackedBar
 					scale="occupancy"
@@ -597,48 +597,12 @@
 		color: var(--muted-foreground);
 	}
 
-	/* S7: each rate metric gets its OWN full-width row (single column at every width)
-	   so the completeness reads have room — no longer two cramped cards per row. */
+	/* KPI tiles: a responsive RAM grid (the same rhythm as §0's verdict KPIs), never
+	   below one column on a phone. Each tile is a MetricBullet (number + scale bullet). */
 	.run-metrics {
 		display: grid;
-		gap: 1.5rem;
-		grid-template-columns: 1fr;
-	}
-	/* Completeness read: the share bar over the honest "X of Y" raw-count fraction. */
-	.run-completeness {
-		display: flex;
-		flex-direction: column;
-		gap: 0.4rem;
-	}
-	.run-fraction {
-		margin: 0;
-		font-size: var(--text-caption, 0.8125rem);
-		color: var(--muted-foreground);
-		font-variant-numeric: tabular-nums;
-	}
-	.run-metric {
-		display: flex;
-		flex-direction: column;
-		gap: 0.75rem;
-		padding: 1rem 1.25rem;
-		background-color: var(--card);
-		border: 1px solid var(--border);
-		border-radius: var(--radius-lg, 0.75rem);
-		box-shadow: var(--shadow-card);
-	}
-	/* A metric tile + its explainer (i), kept on the tile's top edge. The tile keeps
-	   a measure (min-width:0) so a long label wraps cleanly; the (i) wrapper never
-	   shrinks (flex:none) so the glyph stays whole beside it, never colliding. */
-	.metric-with-info {
-		display: inline-flex;
-		align-items: flex-start;
-		gap: 0.35rem;
-	}
-	.metric-with-info :global([data-slot='metric-display']) {
-		min-width: 0;
-	}
-	.metric-with-info :global(.cluster-info) {
-		flex: none;
+		gap: var(--space-card-gap, 1rem);
+		grid-template-columns: repeat(auto-fit, minmax(min(13rem, 100%), 1fr));
 	}
 
 	/* The fit sub-block's heading + its explainer (i), kept centred on the label. The
@@ -653,21 +617,6 @@
 		min-width: 0;
 	}
 	.label-with-info :global(.cluster-info) {
-		flex: none;
-	}
-
-	/* The dominant-band headline + its explainer (i), kept on the tile's top edge.
-	   The tile keeps a measure (min-width:0) so a long band label wraps cleanly; the
-	   (i) wrapper never shrinks (flex:none) so the glyph stays whole beside it. */
-	.crowding-headline-row {
-		display: inline-flex;
-		align-items: flex-start;
-		gap: 0.35rem;
-	}
-	.crowding-headline-row :global([data-slot='metric-display']) {
-		min-width: 0;
-	}
-	.crowding-headline-row :global(.cluster-info) {
 		flex: none;
 	}
 

@@ -16,6 +16,7 @@ export const SEVERE_DOMAIN = [0, 100] as const; // severe-delay share
 export const BUNCHED_DOMAIN = [0, 100] as const; // bunched-bus share
 export const CANCEL_RATE_DOMAIN = [0, 100] as const; // cancellation rate
 export const SKIPPED_RATE_DOMAIN = [0, 100] as const; // skipped-stop rate
+export const SHARE_DOMAIN = [0, 100] as const; // a band's share of a part-to-whole mix (e.g. the dominant occupancy band)
 
 // ── Delay / time (minutes) — metric-specific honest ranges ──────────────────────────────────
 // Delays genuinely cluster in small minute ranges, and each constant measures a DIFFERENT
