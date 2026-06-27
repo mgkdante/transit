@@ -66,6 +66,12 @@ export const HeadwayPeriodSchema = z.object({
 	// Tier-2 regularity (busiest-direction rows): stddev/mean of gaps + bunching %.
 	cov: z.number().nullable().optional(),
 	bunched_pct: z.number().nullable().optional(),
+	// S7-B windowable §2 (additive-optional): observation_count = the window's in-clamp gap
+	// sample n; prior_observation_count + prior_observed_min = the same shift over the prior
+	// equal-length window, for a period-over-period delta on the wait. Null on scalar rows.
+	observation_count: z.number().int().nullable().optional(),
+	prior_observation_count: z.number().int().nullable().optional(),
+	prior_observed_min: z.number().nullable().optional(),
 });
 export type HeadwayPeriod = z.infer<typeof HeadwayPeriodSchema>;
 
@@ -197,6 +203,16 @@ export const RouteHabitsByGrainSchema = z.object({
 });
 export type RouteHabitsByGrain = z.infer<typeof RouteHabitsByGrainSchema>;
 
+export const HeadwayByGrainSchema = z.object({
+	// S7-B windowable §2: per-shift scheduled-vs-observed headway recomputed over ONE trailing
+	// window (busiest direction only). grain='day'|'week'|'month'; date=window start. Element
+	// preserved (HeadwayPeriod). Additive-optional.
+	grain: z.string(),
+	date: z.string().nullable().optional(),
+	headway: z.array(HeadwayPeriodSchema).optional(),
+});
+export type HeadwayByGrain = z.infer<typeof HeadwayByGrainSchema>;
+
 export const RouteReliabilitySchema = z.object({
 	generated_utc: isoUtc(),
 	id: z.string(),
@@ -234,5 +250,7 @@ export const RouteReliabilitySchema = z.object({
 	// Additive-optional (older artifacts omit these keys).
 	periods_by_grain: z.array(ReliabilityByGrainSchema).optional(),
 	habits_by_grain: z.array(RouteHabitsByGrainSchema).optional(),
+	// S7-B windowable §2: per-shift headway recomputed per time window (busiest direction).
+	headway_by_grain: z.array(HeadwayByGrainSchema).optional(),
 });
 export type RouteReliability = z.infer<typeof RouteReliabilitySchema>;

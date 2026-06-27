@@ -323,6 +323,44 @@ describe('tier-1 — cancellations + occupancy_mix round-trip (additive optional
 	});
 });
 
+describe('S7-B §2 — windowable headway_by_grain round-trip', () => {
+	it('parses route_reliability carrying headway_by_grain (busiest-dir, recomposed + prior)', () => {
+		const fixture = {
+			generated_utc: ISO,
+			id: '165',
+			headway: [
+				{ shift: 'am_peak', scheduled_min: 6, observed_min: 7.5, cov: 0.42, bunched_pct: 18 },
+			],
+			headway_by_grain: [
+				{
+					grain: 'week',
+					date: '2026-06-20',
+					headway: [
+						{
+							shift: 'am_peak',
+							scheduled_min: 6,
+							observed_min: 7.5,
+							excess_wait_min: 1.5,
+							cov: 0.63,
+							bunched_pct: 18,
+							observation_count: 240,
+							prior_observation_count: 228,
+							prior_observed_min: 7.1,
+						},
+					],
+				},
+			],
+		};
+		expect(() => parsePort('route_reliability', RouteReliabilitySchema, fixture)).not.toThrow();
+	});
+
+	it('parses route_reliability with headway_by_grain absent (additive optional)', () => {
+		const fixture = { generated_utc: ISO, id: '51' };
+		const parsed = parsePort('route_reliability', RouteReliabilitySchema, fixture);
+		expect(parsed.headway_by_grain ?? []).toEqual([]);
+	});
+});
+
 describe('S7-B — windowable §1 (periods_by_grain + habits_by_grain + prior_*) round-trip', () => {
 	it('parses route_reliability carrying periods_by_grain + habits_by_grain + prior fields', () => {
 		const fixture = {
