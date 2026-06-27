@@ -96,16 +96,18 @@ def test_cov_recompose_byte_identical_to_sample_sd_over_mean() -> None:
     assert am.observation_count == 5
 
 
-def test_busiest_direction_argmax_on_trip_count() -> None:
-    """D5: the published shift comes from the direction with the larger SUM(trip_count), NOT the
-    one with more gaps — tie-break direction_id ASC."""
-    busy = [4.0, 5.0, 6.0, 7.0, 8.0]  # dir 0: n=5, trip_count=10 (BUSIEST)
-    quiet = [9.0, 11.0]  # dir 1: n=2, trip_count=3
-    with _seeded([("am_peak", 0, 10, busy), ("am_peak", 1, 3, quiet)]) as conn:
+def test_busiest_direction_argmax_on_trip_count_not_gap_count() -> None:
+    """D5 (discriminating): the published shift comes from the direction with the larger
+    SUM(trip_count), even when that direction has FEWER gaps. dir 0 has n=2 gaps but
+    trip_count=20 (busiest); dir 1 has n=5 gaps but trip_count=3. A gap_count-based argmax
+    would pick dir 1 (n=5) -> we'd see observation_count=5; the correct trip_count argmax
+    picks dir 0 -> observation_count=2."""
+    few_gaps_busy = [5.0, 5.0]  # dir 0: n=2, trip_count=20 (BUSIEST by trips)
+    many_gaps_quiet = [4.0, 5.0, 6.0, 7.0, 8.0]  # dir 1: n=5, trip_count=3
+    with _seeded([("am_peak", 0, 20, few_gaps_busy), ("am_peak", 1, 3, many_gaps_quiet)]) as conn:
         out = {g.grain: g for g in _headway_by_grain(conn, _params(), {"am_peak": 5.0})}
     am = next(p for p in out["month"].headway if p.shift == "am_peak")
-    # dir 0 won (n=5); had dir 1 won we'd see n=2.
-    assert am.observation_count == 5, "argmax must pick the higher-trip_count direction"
+    assert am.observation_count == 2, "argmax must rank trip_count, NOT gap_count"
 
 
 def test_median_is_cdf_interp_rebaseline_and_excess() -> None:
@@ -117,6 +119,42 @@ def test_median_is_cdf_interp_rebaseline_and_excess() -> None:
     am = next(p for p in out["month"].headway if p.shift == "am_peak")
     assert am.observed_min is not None and 4.0 <= am.observed_min <= 8.0
     assert am.excess_wait_min == round(max(0.0, am.observed_min - 5.0), 1)
+
+
+def test_cross_day_week_grain_pools_moments() -> None:
+    """S3: the week grain SUMS moments across distinct days (not 'newest day only'). Two days in
+    the week window with different gaps -> week CoV + n == the pooled cross-check over both days."""
+    d1, d2 = date(2026, 6, 1), date(2026, 6, 2)  # anchor = max = d2; week window covers both
+    day1, day2 = [4.0, 6.0], [5.0, 5.0]
+    engine = create_engine(DB_URL)
+    with engine.connect() as conn:
+        tx = conn.begin()
+        try:
+            conn.execute(
+                text(
+                    "INSERT INTO core.providers (provider_id, display_name, timezone, provider_key) "
+                    "VALUES (:p, 'dense headway xday', 'America/Toronto', :p)"
+                ),
+                {"p": _PROVIDER},
+            )
+            ins = text(
+                "INSERT INTO gold.route_headway_shift_daily (provider_id, route_id, "
+                "service_local_date, shift, direction_id, gap_count, sum_gap_min, sum_gap_sq_min, "
+                "bunched_gap_count, trip_count, gap_histogram) "
+                "VALUES (:p, :r, :d, 'am_peak', 0, :n, :sg, :sq, 0, 10, CAST(:h AS smallint[]))"
+            )
+            for d, gaps in ((d1, day1), (d2, day2)):
+                n, sg, sq = _moments(gaps)
+                conn.execute(ins, {"p": _PROVIDER, "r": _ROUTE, "d": d, "n": n, "sg": sg, "sq": sq,
+                                   "h": "{" + ",".join(str(x) for x in _hist(gaps)) + "}"})
+            out = {g.grain: g for g in _headway_by_grain(conn, _params(), {"am_peak": 5.0})}
+        finally:
+            tx.rollback()
+    engine.dispose()
+    am = next(p for p in out["week"].headway if p.shift == "am_peak")
+    pooled = day1 + day2
+    assert am.observation_count == 4, "week grain must POOL both days' gaps, not use one day"
+    assert am.cov == round(statistics.stdev(pooled) / statistics.mean(pooled), 4)
 
 
 def test_honest_absence_empty_window_omits_grain() -> None:

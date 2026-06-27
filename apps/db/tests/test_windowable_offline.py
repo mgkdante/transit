@@ -268,3 +268,8 @@ def test_bunched_pct_from_pooled_hist() -> None:
     assert H._bunched_pct_from_hist(hist, H._GAP_EDGES, 7.0) == 50.0  # 2 of 4 below 3.5
     assert H._bunched_pct_from_hist([0] * nbins, H._GAP_EDGES, 7.0) is None
     assert H._bunched_pct_from_hist(hist, H._GAP_EDGES, None) is None  # no median -> None
+    # straddling bin: median 7.0 -> thresh 3.5 falls INSIDE bin [3,4); linear-interp half of it.
+    straddle = [0] * nbins
+    straddle[4] = 2  # [3,4) straddles 3.5
+    straddle[7] = 2  # [6,8) above
+    assert H._bunched_pct_from_hist(straddle, H._GAP_EDGES, 7.0) == 25.0  # 2*0.5 of 4

@@ -1433,6 +1433,12 @@ UPSERT_ROUTE_HEADWAY_SHIFT_DAILY = text(
           AND f.trip_id IS NOT NULL
           AND f.delay_seconds IS NOT NULL
           AND ABS(f.delay_seconds) <= 3600
+          -- Inner weekday filter on each trip's GTFS SERVICE day (byte-identical to the legacy
+          -- route_headway_by_shift builder). Distinct from the outer :local_date guard below:
+          -- this drops a weekend-service trip whose facts spilled into a weekday snapshot day
+          -- (cross-midnight night service / feed lag), so weekend gaps never pool into a
+          -- weekday night-shift row.
+          AND EXTRACT(ISODOW FROM COALESCE(f.start_date, f.snapshot_local_date)) BETWEEN 1 AND 5
         GROUP BY
             f.provider_id, f.route_id, COALESCE(f.direction_id, 0),
             COALESCE(f.start_date, f.snapshot_local_date), f.trip_id
