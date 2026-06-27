@@ -29,11 +29,11 @@
 	import type { Locale } from '$lib/i18n';
 	import { fmtCount, fmtDelayMin, fmtPct } from '$lib/utils';
 	import type { HeadwayPeriod, SeverityCode, ServiceSpanPeriod } from '$lib/v1';
-	import { ServiceSpanTimeline } from '$lib/components/dataviz';
 	import { Chart } from '$lib/components/dataviz/chart';
 	import { selectHeadwayDumbbell } from '../selectors/headwayDumbbell';
 	import { selectShiftBars } from '../selectors/shiftBars';
 	import { selectBullet } from '../selectors/bullet';
+	import { selectServiceSpan } from '../selectors/serviceSpan';
 	import MetricDisplay from '$lib/components/brand/MetricDisplay.svelte';
 	import MetricBullet from './MetricBullet.svelte';
 	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
@@ -501,6 +501,41 @@
 		serviceSpans.length > 0 ? serviceSpans[serviceSpans.length - 1] : null,
 	);
 	const hasSpan = $derived(latestSpan != null);
+
+	// S7 P5: the first→last service-span TIMELINE as a LayerChart mark (24h axis + a floating
+	// bar) — the same face as every other chart. The selector resolves the ISO endpoints to
+	// wall-clock minutes + builds the signed-delay readings; honest absence (an unresolvable
+	// endpoint) returns an absence spec the <Chart> renders as the no-data chip.
+	const serviceSpanSpec = $derived(
+		latestSpan
+			? selectServiceSpan(
+					{
+						firstTripUtc: latestSpan.first_trip_utc ?? null,
+						lastTripUtc: latestSpan.last_trip_utc ?? null,
+						firstDelayMin: latestSpan.first_trip_delay_min ?? null,
+						lastDelayMin: latestSpan.last_trip_delay_min ?? null,
+					},
+					locale,
+					{
+						firstLabel: spanCopy.firstTrip,
+						lastLabel: spanCopy.lastTrip,
+						firstDelayLabel: spanCopy.firstDelay,
+						lastDelayLabel: spanCopy.lastDelay,
+						spanLabel:
+							spanDuration(latestSpan.service_span_min) != null
+								? spanCopy.span(spanDuration(latestSpan.service_span_min)!)
+								: null,
+						tripsLabel:
+							count(latestSpan.trip_count) != null
+								? spanCopy.trips(count(latestSpan.trip_count)!)
+								: null,
+						hourLabel: (h) => `${String(h).padStart(2, '0')}h`,
+						ariaLabel: spanCopy.ariaLabel,
+						absentTitle: t.spanSection,
+					},
+				)
+			: null,
+	);
 </script>
 
 {#snippet metricInfo(key: MetricKey | SupplementalMetricKey, name: string)}
@@ -660,30 +695,13 @@
 						</span>
 					</div>
 
-					<!-- P3: the first→last service-span TIMELINE on a fixed 24h axis, with signed
-					     first/last-trip punctuality markers (DELAY_STOP_DOMAIN). The numeric tiles
-					     below remain the exact reading; this is the at-a-glance shape. Honest
-					     absence (no resolvable first/last departure) lives inside the primitive. -->
-					<ServiceSpanTimeline
-						firstTripUtc={latestSpan.first_trip_utc ?? null}
-						lastTripUtc={latestSpan.last_trip_utc ?? null}
-						firstDelayMin={latestSpan.first_trip_delay_min ?? null}
-						lastDelayMin={latestSpan.last_trip_delay_min ?? null}
-						spanLabel={spanDuration(latestSpan.service_span_min) != null
-							? spanCopy.span(spanDuration(latestSpan.service_span_min)!)
-							: null}
-						tripsLabel={count(latestSpan.trip_count) != null
-							? spanCopy.trips(count(latestSpan.trip_count)!)
-							: null}
-						firstLabel={spanCopy.firstTrip}
-						lastLabel={spanCopy.lastTrip}
-						firstDelayLabel={spanCopy.firstDelay}
-						lastDelayLabel={spanCopy.lastDelay}
-						ariaLabel={spanCopy.ariaLabel}
-						{locale}
-						absentReason="no-observations"
-						interactive
-					/>
+					<!-- P3: the first→last service-span TIMELINE as a LayerChart mark (24h axis + a
+					     floating bar), with signed first/last-trip punctuality readings beside it. The
+					     numeric tiles below remain the exact reading; this is the at-a-glance shape.
+					     Honest absence (no resolvable first/last departure) lives in the selector. -->
+					{#if serviceSpanSpec}
+						<Chart spec={serviceSpanSpec} />
+					{/if}
 					<p class="span-caption" data-slot="service-span-caption">{spanCopy.caption}</p>
 
 					<div class="shift-metrics">

@@ -37,5 +37,9 @@ export type {
 	ShareSegment,
 	HeatmapSpec,
 	HeatmapCell,
+	HeatmapTiers,
+	HeatmapColTick,
+	ServiceSpanSpec,
+	ServiceSpanTick,
 	AbsenceSpec,
 } from './ChartSpec';

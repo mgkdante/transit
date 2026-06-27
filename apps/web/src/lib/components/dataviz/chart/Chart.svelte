@@ -25,6 +25,7 @@
 	import BulletMark from './marks/BulletMark.svelte';
 	import HeatmapMark from './marks/HeatmapMark.svelte';
 	import StackedShareMark from './marks/StackedShareMark.svelte';
+	import ServiceSpanMark from './marks/ServiceSpanMark.svelte';
 	import type { ChartSpec } from './ChartSpec';
 
 	export interface ChartProps {
@@ -62,6 +63,8 @@
 	<HeatmapMark {spec} class={className} />
 {:else if spec.kind === 'stacked-share'}
 	<StackedShareMark {spec} class={className} />
+{:else if spec.kind === 'service-span'}
+	<ServiceSpanMark {spec} class={className} />
 {:else}
 	<!--
 		Pending branches (added as each family migrates, each gate-green + browser-verified):

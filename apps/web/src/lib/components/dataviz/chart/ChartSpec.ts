@@ -49,6 +49,7 @@ export type ChartKind =
 	| 'metric'
 	| 'stacked-share'
 	| 'heatmap'
+	| 'service-span'
 	| 'absence';
 
 /**
@@ -365,6 +366,45 @@ export interface HeatmapSpec extends ChartSpecBase {
 	readonly colTicks?: readonly HeatmapColTick[];
 }
 
+/** One sparse hour tick on the service-span 24h axis — its minute position + label. */
+export interface ServiceSpanTick {
+	readonly min: number;
+	readonly label: string;
+}
+
+/**
+ * P3 — the service-span timeline: the day's first→last departure window as a floating bar
+ * on a FIXED 24h domain [0, 1440] minutes (the same literal axis on every route/refresh,
+ * never normalised to the data). EXEMPT from the zero-based magnitude law: the bar is a
+ * floating [first,last] RANGE, not a zero-anchored length. Each endpoint carries a signed
+ * punctuality reading (early / late). Honest absence: when neither endpoint resolves, the
+ * whole mark is absent. Rendered by ServiceSpanMark (LayerChart axis + a floating bar).
+ */
+export interface ServiceSpanSpec extends ChartSpecBase {
+	readonly kind: 'service-span';
+	/** Fixed 24h domain in minutes — [0, 1440]. */
+	readonly domain: AbsoluteDomain;
+	/** First / last departure as wall-clock minutes (0..1440); null ⇒ unresolved endpoint. */
+	readonly firstMin: number | null;
+	readonly lastMin: number | null;
+	/** Formatted clock strings for the two endpoints (e.g. "05:12"). */
+	readonly firstClock: string;
+	readonly lastClock: string;
+	/** Signed first / last-trip delay (min; <0 early, >0 late); null ⇒ no marker. */
+	readonly firstDelayMin: number | null;
+	readonly lastDelayMin: number | null;
+	/** Pre-formatted span-length + trip-count annotations; null ⇒ omitted. */
+	readonly spanLabel: string | null;
+	readonly tripsLabel: string | null;
+	/** Endpoint + delay labels (localized). */
+	readonly firstLabel: string;
+	readonly lastLabel: string;
+	readonly firstDelayLabel: string;
+	readonly lastDelayLabel: string;
+	/** Sparse axis ticks (e.g. 00h / 06 / 12 / 18 / 24h). */
+	readonly hourTicks: readonly ServiceSpanTick[];
+}
+
 /**
  * A whole-mark stand-down: there is no data to draw, and we say WHY via the unknown-data
  * layer (renders AbsentValue). Never an empty axis, never a zeroed mark.
@@ -461,6 +501,7 @@ export type ChartSpec =
 	| MetricSpec
 	| StackedShareSpec
 	| HeatmapSpec
+	| ServiceSpanSpec
 	| AbsenceSpec;
 
 /** Type guard: is this a magnitude kind (must carry an absolute domain)? */

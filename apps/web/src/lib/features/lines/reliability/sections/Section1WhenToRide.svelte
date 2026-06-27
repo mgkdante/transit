@@ -32,7 +32,7 @@
 	import { fmtPct } from '$lib/utils';
 	import type { SeverityCode } from '$lib/v1/schemas';
 	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
-	import { ChartLegend, RankedRow } from '$lib/components/dataviz';
+	import { ChartLegend } from '$lib/components/dataviz';
 	import { Chart } from '$lib/components/dataviz/chart';
 	import { AbsentValue } from '$lib/components/edge';
 	import Detail from '$lib/components/shared/Detail.svelte';
@@ -49,6 +49,7 @@
 	import { selectPunctualityCrosstab } from '../selectors/punctualityCrosstab';
 	import { selectWeekdayCycle } from '../selectors/weekdayCycle';
 	import { selectHabitsHeatmap } from '../selectors/habitsHeatmap';
+	import { selectShiftBars } from '../selectors/shiftBars';
 	import type { PunctualityVM, HabitsVM, PeriodComparisonRow } from '../clusters';
 	import type { ReliabilityCopy } from '../reliability.copy';
 	import { habitsBandCopy } from '../Cluster05Habits.copy';
@@ -210,6 +211,27 @@
 	const dayTypePeakRows = $derived(
 		toPeakRows(orderByGrain(punctuality.peakOffPeak.byDayType, DAY_TYPE_GRAIN_ORDER), dayTypeLabel),
 	);
+	// S7 P5: the weekday/weekend severe-share as a LayerChart magnitude-bars chart on the
+	// fixed SEVERE_DOMAIN (weekday→weekend order, never re-sorted), replacing the RankedRow
+	// pair so the day-type read wears the same face as every other mark.
+	const dayTypeBars = $derived(
+		selectShiftBars(
+			dayTypePeakRows.map((r) => ({
+				key: r.key,
+				label: r.title,
+				value: r.value,
+				severity: r.severity,
+			})),
+			locale,
+			{
+				title: copy.peak.dayType,
+				xLabel: copy.strip.severePct,
+				unit: '%',
+				domain: SEVERE_DOMAIN,
+				noDataMarker: copy.strip.noData,
+			},
+		),
+	);
 	const hasPeak = $derived(
 		!punctuality.peakOffPeak.isEmpty && (hasShiftStrip || dayTypePeakRows.length > 0),
 	);
@@ -317,22 +339,7 @@
 					{#if dayTypePeakRows.length > 0}
 						<div class="peak-daytype" data-slot="peak-day-type">
 							<SectionLabel text={copy.peak.dayType} variant="metric" />
-							<div class="ranked" role="list" aria-label={copy.peak.dayType}>
-								{#each dayTypePeakRows as row (row.key)}
-									<RankedRow
-										rank={row.rank}
-										title={row.title}
-										subtitle={copy.peak.dayOfWeekSevere}
-										severity={row.severity}
-										value={row.value}
-										domain={SEVERE_DOMAIN}
-										unit="%"
-										showRank={false}
-										display={row.display}
-										barInteractive
-									/>
-								{/each}
-							</div>
+							<Chart spec={dayTypeBars} />
 						</div>
 					{/if}
 
@@ -435,11 +442,6 @@
 		font-size: var(--text-small);
 		line-height: 1.4;
 		color: var(--muted-foreground);
-	}
-	.ranked {
-		display: flex;
-		flex-direction: column;
-		gap: 0.5rem;
 	}
 	.peak-daytype {
 		display: flex;
