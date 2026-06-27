@@ -99,6 +99,7 @@
 				severeXLabel: copy.strip.severeRateLabel,
 				severeUnit: copy.units.pct,
 				note: weakStopNote,
+				ciLabel: copy.strip.weakStopCi,
 				stopHref: (id) => `/stop/${id}`,
 			},
 			{ preRanked: punctuality.weakStopsWindowed },

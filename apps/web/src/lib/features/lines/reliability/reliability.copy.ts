@@ -84,6 +84,8 @@ export interface ReliabilityCopy {
 			readonly avg: string;
 			readonly samples: string;
 		};
+		/** Label for the per-stop Wilson 95% interval surfaced in the §4 tooltip + sr-only table. */
+		readonly weakStopCi: string;
 		/** Caption under the excess-wait magnitude (what 0 means). */
 		readonly excessWaitCaption: string;
 		/** Plain caption under the skipped-stop tile (what it counts). */
@@ -339,6 +341,7 @@ export const reliabilityCopy: Record<Locale, ReliabilityCopy> = {
 			severeRateLabel: 'Taux de retard grave',
 			worstNAll: 'Tous',
 			weakStopNote: { severe: 'grave', avg: 'moy.', samples: 'n' },
+			weakStopCi: 'IC 95 %',
 			excessWaitCaption: '0 = le service respecte (ou dépasse) sa fréquence prévue',
 			skippedStopCaption: 'Arrêts non desservis',
 			trendReadoutHint: 'Survolez ou tabulez le graphique pour lire chaque jour',
@@ -524,6 +527,7 @@ export const reliabilityCopy: Record<Locale, ReliabilityCopy> = {
 			severeRateLabel: 'Severe-delay rate',
 			worstNAll: 'All',
 			weakStopNote: { severe: 'severe', avg: 'avg', samples: 'n' },
+			weakStopCi: '95% CI',
 			excessWaitCaption: '0 = runs on schedule (met or beat its planned frequency)',
 			skippedStopCaption: "Stops the bus didn't serve",
 			trendReadoutHint: 'Hover or tab the chart to read each day',

@@ -31,6 +31,9 @@ export interface WeakStopsLabels {
 	severeUnit?: string;
 	/** WINDOWED per-row evidence note builder (e.g. "severe 42% · avg 3.1 min · n=987"). */
 	note?: (w: WeakStop) => string;
+	/** WINDOWED Wilson-interval label (e.g. "95% CI") — surfaces the per-row uncertainty in the
+	 *  tooltip + sr-only table. Only meaningful on the preRanked (severe-rate) path. */
+	ciLabel?: string;
 	/** Build the drill link for a stop id. */
 	stopHref: (id: string) => string;
 }
@@ -119,6 +122,8 @@ export function selectWeakStops(
 			domain: preRanked ? SEVERE_DOMAIN : DELAY_POS_DOMAIN,
 			unit: preRanked ? (labels.severeUnit ?? labels.unit) : labels.unit,
 			xLabel: preRanked ? (labels.severeXLabel ?? labels.xLabel) : labels.xLabel,
+			// the Wilson interval is meaningful only on the severe-rate (preRanked) path.
+			ciLabel: preRanked ? labels.ciLabel : undefined,
 			rows,
 			sort: 'given',
 			scale: 'severity',
