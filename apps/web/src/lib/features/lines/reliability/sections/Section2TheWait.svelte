@@ -29,15 +29,13 @@
 	import type { Locale } from '$lib/i18n';
 	import { fmtCount, fmtDelayMin, fmtPct } from '$lib/utils';
 	import type { HeadwayPeriod, SeverityCode, ServiceSpanPeriod } from '$lib/v1';
-	import {
-		RankedRow,
-		ExplainedMetricCard,
-		ServiceSpanTimeline,
-		SeverityBar,
-	} from '$lib/components/dataviz';
+	import { ServiceSpanTimeline } from '$lib/components/dataviz';
 	import { Chart } from '$lib/components/dataviz/chart';
 	import { selectHeadwayDumbbell } from '../selectors/headwayDumbbell';
+	import { selectShiftBars } from '../selectors/shiftBars';
+	import { selectBullet } from '../selectors/bullet';
 	import MetricDisplay from '$lib/components/brand/MetricDisplay.svelte';
+	import MetricBullet from './MetricBullet.svelte';
 	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
 	import { AbsentValue } from '$lib/components/edge';
 	import Detail from '$lib/components/shared/Detail.svelte';
@@ -414,6 +412,88 @@
 	);
 	const hasExcessHeadline = $derived(allDayExcessWait != null);
 
+	// S7 P5: the all-day excess-wait headline as a LayerChart bullet on the headway scale
+	// (the SAME fixed HEADWAY_DOMAIN the dumbbell uses, so the excess reads the same length).
+	// The always-visible "over the scheduled gap" baseline rides the caption (the "1.8 min
+	// over WHAT" fix); the amber tone is the extra-wait voice.
+	const excessBullet = $derived(
+		selectBullet(allDayExcessWait, locale, {
+			title: terms.excessWait,
+			xLabel: terms.excessWait,
+			unit: ' min',
+			domain: HEADWAY_DOMAIN,
+			tone: 'warn',
+		}),
+	);
+
+	// S7 P5: the per-shift regularity breakdown becomes THREE clean cross-shift magnitude-bars
+	// charts (excess wait / spread (CoV) / bunching by shift), each on its own fixed domain in
+	// am→night order — replacing the cramped per-shift row stack (a RankedRow + two SeverityBars
+	// per shift). "Which shift is worst?" now reads at a glance per metric; honest no-data per
+	// shift (a null reading keeps its labelled row, never a fake-0 bar).
+	const shiftBarRows = $derived(mainRows.map((r, i) => ({ row: r, key: `${r.shift}-${i}` })));
+	const excessBars = $derived(
+		selectShiftBars(
+			shiftBarRows.map(({ row, key }) => ({
+				key,
+				label: shiftLabel(row),
+				value: row.excessWait,
+				severity: row.severity,
+				note:
+					[
+						row.cov != null ? `${terms.spread} ${fmtCov(row.cov)}` : null,
+						row.bunched != null ? `${terms.clumped} ${pct(row.bunched)}` : null,
+					]
+						.filter(Boolean)
+						.join(' · ') || undefined,
+			})),
+			locale,
+			{
+				title: terms.excessWait,
+				xLabel: terms.excessWait,
+				unit: ' min',
+				domain: HEADWAY_DOMAIN,
+				noDataMarker: copy.strip.noData,
+			},
+		),
+	);
+	const covBars = $derived(
+		selectShiftBars(
+			shiftBarRows.map(({ row, key }) => ({
+				key,
+				label: shiftLabel(row),
+				value: row.cov,
+				severity: row.covSeverity,
+			})),
+			locale,
+			{
+				title: terms.spread,
+				xLabel: terms.spread,
+				unit: '',
+				domain: COV_DOMAIN,
+				noDataMarker: copy.strip.noData,
+			},
+		),
+	);
+	const bunchedBars = $derived(
+		selectShiftBars(
+			shiftBarRows.map(({ row, key }) => ({
+				key,
+				label: shiftLabel(row),
+				value: row.bunched,
+				severity: row.severity,
+			})),
+			locale,
+			{
+				title: terms.clumped,
+				xLabel: terms.clumped,
+				unit: '%',
+				domain: BUNCHED_DOMAIN,
+				noDataMarker: copy.strip.noData,
+			},
+		),
+	);
+
 	/* ── service span, the most-recent row carrying a signal ──────────────────
 	   serviceSpans arrives in contract order (chronological); the foundation VM
 	   has already dropped signal-less rows, so the tail is the latest day. */
@@ -434,6 +514,9 @@
 		side="bottom"
 	/>
 {/snippet}
+
+<!-- The (i) trigger MetricBullet renders beside the excess-wait headline label. -->
+{#snippet excessInfo()}{@render metricInfo('excessWait', terms.excessWait)}{/snippet}
 
 <section class="section" data-section="the-wait" aria-label={copy.sections.theWait.label}>
 	<header class="section-head">
@@ -467,80 +550,50 @@
 				     always-visible explanation states the baseline ("over the scheduled gap")
 				     beside the number — the operator's "1.8 min over what" fix. -->
 				{#if hasExcessHeadline}
-					<ExplainedMetricCard
+					<!-- S7 P5: the all-day excess-wait headline as a MetricBullet — the number is the
+					     value voice, the bullet its scale context on the headway domain; the always-
+					     visible "over the scheduled gap" baseline rides the caption (the "over what" fix). -->
+					<MetricBullet
 						label={`${terms.excessWait} · ${t.allDay}`}
-						value={min(allDayExcessWait)}
-						explanation={t.excessWaitExplain}
-						emptyLabel={valueNoData}
-						absentReason="no-observations"
+						valueText={min(allDayExcessWait)}
+						spec={excessBullet}
 						{locale}
 						size="lg"
+						info={excessInfo}
+						caption={t.excessWaitExplain}
 						class="excess-wait-headline"
-					>
-						{#snippet info()}{@render metricInfo('excessWait', terms.excessWait)}{/snippet}
-					</ExplainedMetricCard>
+						data-slot="excess-wait-headline"
+					/>
 				{/if}
 
-				{#snippet shiftItem(row: ShiftRow, i: number)}
-					<li class="shift-row">
-						<RankedRow
-							rank={i + 1}
-							title={shiftLabel(row)}
-							severity={row.severity}
-							value={row.magnitude}
-							domain={HEADWAY_DOMAIN}
-							unit=" min"
-							showRank={false}
-							display={min(row.excessWait) ?? valueNoData}
-							aria-label={t.excessWaitMagnitude(shiftLabel(row))}
-							barInteractive
-						/>
-
-						<!-- P8: dedicated magnitude bars for the two regularity readings — CoV on
-						     COV_DOMAIN, bunched share on BUNCHED_DOMAIN — both formerly subtitle TEXT
-						     only. Each rides its own FIXED domain (stable across routes/grains), with a
-						     severity band (covToSeverity / bunchingToSeverity), a glyph-free numeric
-						     readout, and an a11y label so colour is never the sole channel. -->
-						<div class="shift-regularity" data-slot="regularity-bars">
-							<div class="regularity-metric" data-metric="cov">
-								<div class="regularity-head">
-									<span class="regularity-label">{terms.spread}</span>
-									<span class="regularity-value">{fmtCov(row.cov) ?? valueNoData}</span>
-								</div>
-								<SeverityBar
-									severity={row.covSeverity}
-									value={row.cov}
-									domain={COV_DOMAIN}
-									unit=""
-									size="sm"
-									label={t.covMagnitude(shiftLabel(row))}
-									interactive
-								/>
-							</div>
-							<div class="regularity-metric" data-metric="bunched">
-								<div class="regularity-head">
-									<span class="regularity-label">{terms.clumped}</span>
-									<span class="regularity-value">{pct(row.bunched) ?? valueNoData}</span>
-								</div>
-								<SeverityBar
-									severity={row.severity}
-									value={row.bunched}
-									domain={BUNCHED_DOMAIN}
-									unit="%"
-									size="sm"
-									label={t.bunchedMagnitude(shiftLabel(row))}
-									interactive
-								/>
-							</div>
-						</div>
-					</li>
-				{/snippet}
 				{#if shiftRows.length > 0}
-					<ul class="shift-list" role="list">
-						{#each mainRows as row, i (row.shift + '-' + i)}
-							{@render shiftItem(row, i)}
-						{/each}
-					</ul>
+					<!-- S7 P5: the per-shift regularity breakdown as THREE cross-shift magnitude-bars
+					     charts (excess wait / spread (CoV) / bunching by shift) in am→night order — one
+					     clean comparison per metric, replacing the cramped per-shift row stack. Each
+					     <Chart> renders its own honest-absence chip when no shift carries that reading. -->
+					<div class="shift-charts" data-slot="shift-regularity-charts">
+						<div class="shift-chart" data-metric="excess">
+							<span class="label-with-info">
+								<SectionLabel text={terms.excessWait} variant="metric" />
+								{@render metricInfo('excessWait', terms.excessWait)}
+							</span>
+							<Chart spec={excessBars} />
+						</div>
+						<div class="shift-chart" data-metric="cov">
+							<span class="label-with-info">
+								<SectionLabel text={terms.spread} variant="metric" />
+								{@render metricInfo('regularityCov', terms.spread)}
+							</span>
+							<Chart spec={covBars} />
+						</div>
+						<div class="shift-chart" data-metric="bunched">
+							<span class="label-with-info">
+								<SectionLabel text={terms.clumped} variant="metric" />
+								{@render metricInfo('regularityCov', terms.clumped)}
+							</span>
+							<Chart spec={bunchedBars} />
+						</div>
+					</div>
 					<!-- What the excess-wait magnitude encodes: 0 is the GOOD case, not missing. -->
 					<p class="shift-caption" data-slot="excess-wait-caption">
 						{copy.strip.excessWaitCaption}
@@ -737,64 +790,22 @@
 	.label-with-info :global(.cluster-info) {
 		flex: none;
 	}
-	.shift-list {
-		list-style: none;
-		margin: 0;
-		padding: 0;
+	/* S7 P5: the three per-shift regularity charts (excess / spread / bunching by shift),
+	   each its own labelled LayerChart magnitude-bars block, generous BETWEEN-chart air. */
+	.shift-charts {
 		display: flex;
 		flex-direction: column;
-		gap: 0.85rem;
+		gap: clamp(1rem, 2.5vw, 1.75rem);
 	}
-	/* Each shift is its OWN card (operator: clear separation between shifts). A bordered,
-	   padded surface makes the inter-shift boundary unmistakable — previously the 0.6rem
-	   intra-row gap ≈ the 1rem inter-row gap, so the shifts blurred into one stack. */
-	.shift-row {
+	.shift-chart {
 		display: flex;
 		flex-direction: column;
-		gap: 0.6rem;
-		padding: 0.85rem 1rem;
-		border: 1px solid var(--border);
-		border-radius: 0.6rem;
-		background: color-mix(in oklab, var(--card) 55%, transparent);
+		gap: 0.5rem;
 	}
 	.shift-metrics {
 		display: flex;
 		flex-wrap: wrap;
 		gap: 1.25rem;
-	}
-	/* P8: the two dedicated regularity magnitude bars (CoV + bunched share), each a
-	   label/value head over a fixed-domain SeverityBar. Two columns on wide rows,
-	   stacking on narrow ones; the bars never share an axis (different domains). */
-	.shift-regularity {
-		display: grid;
-		grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
-		gap: 0.75rem 1.25rem;
-	}
-	.regularity-metric {
-		display: flex;
-		flex-direction: column;
-		gap: 0.35rem;
-		min-width: 0;
-	}
-	.regularity-head {
-		display: flex;
-		align-items: baseline;
-		justify-content: space-between;
-		gap: 0.5rem;
-	}
-	.regularity-label {
-		font-family: var(--font-mono);
-		font-size: var(--text-micro);
-		letter-spacing: 0.04em;
-		text-transform: uppercase;
-		color: var(--muted-foreground);
-	}
-	/* The metric VALUE rides the wayfinding (yellow) accent, per the four-color doctrine. */
-	.regularity-value {
-		font-family: var(--font-mono);
-		font-size: var(--text-small);
-		font-variant-numeric: tabular-nums;
-		color: var(--accent-text);
 	}
 	/* A second-tier metric tile + its explainer (i), kept on the tile's top edge. The
 	   tile keeps a measure (min-width:0) so a long label wraps cleanly; the (i) wrapper

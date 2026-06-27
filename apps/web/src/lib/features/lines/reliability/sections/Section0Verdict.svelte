@@ -22,9 +22,7 @@
 <script lang="ts">
 	import type { Locale } from '$lib/i18n';
 	import { fmtDelayMin, fmtPct } from '$lib/utils';
-	import type { SeverityCode } from '$lib/v1/schemas';
 	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
-	import { SeverityBar } from '$lib/components/dataviz';
 	import { Chart } from '$lib/components/dataviz/chart';
 	import { MaybeValue } from '$lib/components/edge';
 	import Detail from '$lib/components/shared/Detail.svelte';
@@ -35,7 +33,6 @@
 	import { metricsCopy } from '$lib/features/metrics/metrics.copy';
 	import {
 		shiftLabel as shiftGrainLabel,
-		severeShareToSeverity,
 		SEVERE_DOMAIN,
 		OTP_DOMAIN,
 		DELAY_POS_DOMAIN,
@@ -144,9 +141,21 @@
 	const p90 = $derived<number | null>(headline.p90Min);
 	const hasDist = $derived(p50 != null || p90 != null);
 
-	// DETAIL — severe-delay share (its own metric, not the p90).
+	// DETAIL — severe-delay share (its own metric, not the p90), now a LayerChart bullet
+	// on the fixed SEVERE_DOMAIN [0,100]. Tone tracks the severe-share bands (>=10% bad,
+	// >=5% warn) so the bar colour matches the severity read; null → no bar (honest absence).
 	const severePct = $derived<number | null>(headline.severePct);
-	const severeSeverity = $derived<SeverityCode>(severeShareToSeverity(severePct));
+	const severeTone = (v: number | null): 'bad' | 'warn' | 'neutral' =>
+		v == null ? 'neutral' : v >= 10 ? 'bad' : v >= 5 ? 'warn' : 'neutral';
+	const severeBullet = $derived(
+		selectBullet(severePct, locale, {
+			title: copy.strip.severePct,
+			xLabel: copy.strip.severePct,
+			unit: copy.units.pct,
+			domain: SEVERE_DOMAIN,
+			tone: severeTone(severePct),
+		}),
+	);
 
 	// Whole-section honest empty: nothing punctuality-shaped to show at all.
 	const sectionEmpty = $derived(
@@ -277,14 +286,7 @@
 						<MaybeValue value={pct(severePct)} reason="no-observations" {locale} />
 					</span>
 				</div>
-				<SeverityBar
-					severity={severeSeverity}
-					value={severePct}
-					domain={SEVERE_DOMAIN}
-					unit="%"
-					label={copy.strip.severePct}
-					interactive
-				/>
+				<Chart spec={severeBullet} />
 				<p class="caption" data-slot="severe-caption">{copy.strip.severeCaption}</p>
 			</div>
 		</Detail>
