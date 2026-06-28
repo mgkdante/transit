@@ -5,9 +5,9 @@
   controls move into a thumb-reachable floating pill that opens a drawer holding the SAME controls
   the desktop rail renders (one source of truth — the `controls` snippet).
 
-  Positioned bottom-CENTER, stacked just ABOVE the shared TocPill (which owns bottom-center at
-  20px), so the two pills never collide on a 375px screen: filter on top, jump-to below. Hidden at
-  the desktop layout (>=1024px) where the full rail returns.
+  Positioned TOP-CENTRE (operator), just below the app nav; the shared TocPill keeps the bottom
+  for jump-to, so the two never collide (filter at the top, jump-to at the bottom). Hidden at the
+  desktop layout (>=1024px) where the full rail returns.
 -->
 <script lang="ts">
 	import type { Snippet } from 'svelte';
@@ -89,10 +89,11 @@
 </div>
 
 <style>
-	/* Bottom-CENTER, stacked just above the shared TocPill (bottom 20px) so they never collide. */
+	/* TOP-CENTRE (operator): the grain filter pill floats just below the app nav; the shared
+	   TocPill keeps the bottom for jump-to, so the two never collide (filter top, nav bottom). */
 	.rel-filter-pill-container {
 		position: fixed;
-		bottom: calc(74px + env(safe-area-inset-bottom, 0px));
+		top: calc(var(--nav-height, 64px) + 0.6rem + env(safe-area-inset-top, 0px));
 		left: 50%;
 		transform: translateX(-50%);
 		z-index: var(--z-sheet);
@@ -162,10 +163,10 @@
 		cursor: default;
 	}
 
-	/* The drawer carries the card chrome; it opens UPWARD (the pill sits near the bottom). */
+	/* The drawer carries the card chrome; it opens DOWNWARD (the pill sits at the top). */
 	.rel-filter-drawer {
 		position: absolute;
-		bottom: calc(100% + 10px);
+		top: calc(100% + 10px);
 		left: 50%;
 		transform: translateX(-50%);
 		width: min(22rem, calc(100vw - 1.5rem));
