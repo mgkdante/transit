@@ -176,19 +176,6 @@
 		else if (viewKey === 'range' && !hasDatedPeriods) viewKey = 'day';
 	});
 
-	// Mirror this rail's view state — ?grain + the custom range ?from/?to — in ONE batched write so a
-	// windowed OR date-range view is shareable/deep-linkable. Must be a SINGLE mirrorSearchParams call,
-	// NOT three: replaceState updates page.url async, so back-to-back single writes clobber each other
-	// (the bug that left ?grain=range&from=… stuck on a switch to 'day'). 'day' + non-range null out
-	// their params for a clean canonical URL. Disjoint from RouteDetail's ?tab writer.
-	$effect(() =>
-		mirrorSearchParams({
-			grain: mode === 'day' ? null : mode,
-			from: mode === 'range' && rangeStart ? rangeStart : null,
-			to: mode === 'range' && rangeEnd ? rangeEnd : null,
-		}),
-	);
-
 	// A complete range needs both bounds; we normalise start ≤ end so the user can
 	// pick the two dates in any order without inverting the window.
 	const hasRangePick = $derived(mode === 'range' && !!rangeStart && !!rangeEnd);
@@ -198,6 +185,21 @@
 				? { start: rangeStart, end: rangeEnd }
 				: { start: rangeEnd, end: rangeStart }
 			: undefined,
+	);
+
+	// Mirror this rail's view state — ?grain + the custom range ?from/?to — in ONE batched write so a
+	// windowed OR date-range view is shareable/deep-linkable. Must be a SINGLE mirrorSearchParams call,
+	// NOT three: replaceState updates page.url async, so back-to-back single writes clobber each other
+	// (the bug that left ?grain=range&from=… stuck on a switch to 'day'). ?from/?to mirror the
+	// NORMALIZED range and ONLY when it is COMPLETE (normalizedRange != null) — so a half-picked or
+	// inverted range never leaks an incomplete/backwards bound into a shared URL; 'day' + non-range
+	// null their params for a clean canonical URL. Disjoint from RouteDetail's ?tab writer.
+	$effect(() =>
+		mirrorSearchParams({
+			grain: mode === 'day' ? null : mode,
+			from: normalizedRange?.start ?? null,
+			to: normalizedRange?.end ?? null,
+		}),
 	);
 
 	// What the mapper resolves for. In range mode we thread the picked window to

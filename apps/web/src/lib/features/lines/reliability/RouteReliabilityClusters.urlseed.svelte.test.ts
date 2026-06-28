@@ -169,4 +169,26 @@ describe('RouteReliabilityClusters — ?from/?to range deep-link (S7-B PR-WEB-4)
 		expect(mockUrl.searchParams.get('to')).toBeNull();
 		expect(mockUrl.searchParams.get('grain')).toBeNull(); // day default omitted too
 	});
+
+	it('does NOT leak a half-picked bound: a lone ?from is dropped from the URL', () => {
+		mockUrl = new URL('http://localhost/lines/51?grain=range&from=2026-06-16');
+		const { container } = render(RouteReliabilityClusters, {
+			props: { data: rangeData, locale: 'en' },
+		});
+		// an INCOMPLETE range (no `to`) never reaches the canonical URL — only a complete pair mirrors.
+		expect(mockUrl.searchParams.get('from')).toBeNull();
+		expect(mockUrl.searchParams.get('to')).toBeNull();
+		expect(caption(container).toLowerCase()).toContain('pick a start and end date');
+	});
+
+	it('normalizes an inverted from>to in BOTH the URL and the caption', () => {
+		mockUrl = new URL('http://localhost/lines/51?grain=range&from=2026-06-18&to=2026-06-16');
+		const { container } = render(RouteReliabilityClusters, {
+			props: { data: rangeData, locale: 'en' },
+		});
+		// the mirror writes the sorted bounds so a shared link never reads backwards.
+		expect(mockUrl.searchParams.get('from')).toBe('2026-06-16');
+		expect(mockUrl.searchParams.get('to')).toBe('2026-06-18');
+		expect(caption(container)).toContain('2026-06-16 to 2026-06-18');
+	});
 });
