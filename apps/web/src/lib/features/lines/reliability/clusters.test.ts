@@ -775,9 +775,11 @@ describe('toReliabilityClusters — *_by_grain windowable §1/§2/§4 (S7-B)', (
 		expect(c.punctuality.peakOffPeak.byShift[0]?.otpPct).toBe(80);
 		expect(c.punctuality.peakOffPeak.byDayType[0]?.otpPct).toBe(81);
 		expect(c.punctuality.byShiftDaytype[0]?.otp_pct).toBe(82);
-		// §2 reads the windowed headway; §1 heatmap the windowed habits
+		// §2 reads the windowed headway; the §1 heatmap is GRAIN-INVARIANT (operator decision) — it
+		// ALWAYS reads the whole-history habits, NEVER the windowed slice, so the windowed [[0.3]] is
+		// ignored and the scalar [[0.9]] is used even at grain='week'.
 		expect(c.waitRegularity.headway[0]?.observed_min).toBe(7);
-		expect(c.habits.matrix).toEqual([[0.3]]);
+		expect(c.habits.matrix).toEqual([[0.9]]);
 	});
 
 	it('threads the prior-window comparison fields through to peakOffPeak (PR-WEB-3)', () => {
@@ -813,23 +815,29 @@ describe('toReliabilityClusters — *_by_grain windowable §1/§2/§4 (S7-B)', (
 		expect(c.waitRegularity.windowed).toBe(false);
 		expect(c.punctuality.dayOfWeek[0]?.avg_delay_min).toBe(9); // scalar
 		expect(c.waitRegularity.headway[0]?.observed_min).toBe(9); // scalar
-		// The heatmap is the one exception: a day-of-week × hour grid can't be filled by one day, so
-		// the 'day' grain FLOORS to the 'week' windowed matrix ([[0.3]]) rather than the scalar
-		// whole-history one ([[0.9]]). (The §1/§2/§4 reads above still scalar-fall-back at day grain.)
-		expect(c.habits.matrix).toEqual([[0.3]]);
+		// The heatmap is GRAIN-INVARIANT (operator decision): it always reads the whole-history scalar
+		// matrix ([[0.9]]) at every grain, never a windowed slice — so day grain reads scalar too.
+		expect(c.habits.matrix).toEqual([[0.9]]);
 		expect(c.punctuality.weakStops.map((w) => w.id)).toEqual(['scalar-stop']); // scalar (avg-gated)
 	});
 
-	it('a present-but-null windowed habits entry reads honest-empty, NOT the scalar matrix', () => {
-		const nullHabits: RouteReliability = {
+	it('ignores habits_by_grain entirely — the heatmap is grain-invariant (always the scalar matrix)', () => {
+		const gi: RouteReliability = {
 			generated_utc: utc('2026-06-19T02:00:00Z'),
 			id: '51',
-			habits: { scale: 'repeat_problem_relative', matrix: [[0.9]] }, // scalar non-null
-			habits_by_grain: [{ grain: 'week', habits: null }], // windowed: no cell cleared MIN_N
+			habits: { scale: 'repeat_problem_relative', matrix: [[0.9]] }, // whole-history scalar
+			// A DISTINCT windowed 'week' matrix that must be IGNORED (grain-invariance), plus a null
+			// 'month' entry that must NOT zero the heatmap (it reads the scalar regardless).
+			habits_by_grain: [
+				{ grain: 'week', habits: { scale: 'repeat_problem_relative', matrix: [[0.3]] } },
+				{ grain: 'month', habits: null },
+			],
 		};
-		const c = toReliabilityClusters(nullHabits, { grain: 'week' });
-		expect(c.habits.isEmpty).toBe(true);
-		expect(c.habits.matrix).toEqual([]); // NOT the scalar [[0.9]]
+		for (const grain of ['day', 'week', 'month'] as const) {
+			const c = toReliabilityClusters(gi, { grain });
+			expect(c.habits.matrix).toEqual([[0.9]]); // the scalar, never the windowed [[0.3]] / null
+			expect(c.habits.isEmpty).toBe(false);
+		}
 	});
 
 	it('absent *_by_grain (pre-deploy) → all windowed flags false (regression guard)', () => {

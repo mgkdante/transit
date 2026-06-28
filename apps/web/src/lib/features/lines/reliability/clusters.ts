@@ -611,13 +611,12 @@ export function toReliabilityClusters(
 	// and absent until the DB deploys + republishes) OR for a grain the DB didn't compute -> each
 	// VM feed falls back to its scalar source + the section badge stays ∞ (honest degradation).
 	const periodsGrain = (data.periods_by_grain ?? []).find((g) => g.grain === grain) ?? null;
-	// The repeat-problems heatmap is a day-of-week × hour PATTERN — a single day can't fill its 7
-	// rows, so windowing it to the 'day' grain collapses it to ONE weekday row (confusing: "today"
-	// shows only Friday). Floor the heatmap window at 'week' (the smallest window that spans all 7
-	// weekdays); week/month pass through unchanged, so the recent-vs-historic windowing the rider
-	// values is kept, only the degenerate single-day case is avoided.
-	const habitsGrainKey = grain === 'day' ? 'week' : grain;
-	const habitsGrain = (data.habits_by_grain ?? []).find((g) => g.grain === habitsGrainKey) ?? null;
+	// Heatmap is GRAIN-INVARIANT (operator decision): the 7x24 day-of-week x hour repeat-problems
+	// PATTERN needs the whole record to read reliably, and windowing it produced confusing,
+	// near-imperceptible changes (a single day cannot fill 7 rows, and week vs month differ by only
+	// a few cells). So habits_by_grain is intentionally NOT consulted; the heatmap always reads the
+	// whole-history data.habits (see the 05 block). The grain rail still reshapes the trend, the
+	// rates, and the on-time comparisons.
 	const headwayGrain = (data.headway_by_grain ?? []).find((g) => g.grain === grain) ?? null;
 	const weakStopsGrain = (data.weak_stops_by_grain ?? []).find((g) => g.grain === grain) ?? null;
 
@@ -923,11 +922,13 @@ export function toReliabilityClusters(
 		isEmpty: !mixHasShare,
 	};
 
-	/* 05 Time-of-day habits. */
-	// S7-B §1 windowable heatmap: branch on the windowed ENTRY first so a present-but-null windowed
-	// entry reads honest-empty (no cell cleared MIN_N in the window) and does NOT silently fall back
-	// to the scalar whole-history matrix; only an ABSENT entry (pre-deploy) uses the scalar habits.
-	const rawHabits = habitsGrain ? (habitsGrain.habits ?? null) : (data.habits ?? null);
+	/* 05 Time-of-day habits — GRAIN-INVARIANT (operator decision). */
+	// The repeat-problems heatmap is a 7x24 day-of-week x hour PATTERN; it reads the WHOLE-history
+	// `data.habits` regardless of the picked grain. Windowing it (habits_by_grain) produced confusing,
+	// near-imperceptible changes (Today floored to the week matrix; week vs month differ by only a few
+	// cells), so the rail no longer reshapes it — the §1 note states this plainly. The grain still
+	// drives the trend, the rates, and the on-time comparisons; this pattern just is not windowed.
+	const rawHabits = data.habits ?? null;
 	const matrix = rawHabits?.matrix ?? [];
 	const matrixHasCell = matrix.some((row) => row.some((cell) => cell != null));
 	const habits: HabitsVM = {
