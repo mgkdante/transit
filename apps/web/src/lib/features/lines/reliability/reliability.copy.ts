@@ -277,8 +277,13 @@ export interface ReliabilityCopy {
 			/** Prompt before a complete range is picked. */
 			readonly rangePrompt: string;
 		};
-		/** Section-TOC heading (wayfinding) in the sticky rail. */
+		/** Section-TOC heading (wayfinding) in the sticky rail + the mobile TOC pill. */
 		readonly toc: string;
+		/** a11y: open/close the mobile grain filter pill drawer. */
+		readonly filterPillOpen: string;
+		readonly filterPillClose: string;
+		/** a11y: close the mobile section-jump (TOC) pill drawer. */
+		readonly tocPillClose: string;
 		/** Scope tooltip: this section re-shapes on the time window. */
 		readonly scopeWindowed: string;
 		/** Scope tooltip: this section ignores the time window (full history). */
@@ -488,6 +493,9 @@ export const reliabilityCopy: Record<Locale, ReliabilityCopy> = {
 				rangePrompt: 'Fenêtre : choisissez une date de début et de fin',
 			},
 			toc: 'Aller à',
+			filterPillOpen: 'Ouvrir les commandes de vue',
+			filterPillClose: 'Fermer les commandes de vue',
+			tocPillClose: 'Fermer la liste des sections',
 			scopeWindowed: 'Suit la fenêtre choisie ci-dessus',
 			scopeWhole: 'Historique complet : la fenêtre ci-dessus ne change pas cette section',
 			scopeNote:
@@ -694,6 +702,9 @@ export const reliabilityCopy: Record<Locale, ReliabilityCopy> = {
 				rangePrompt: 'Window: pick a start and end date',
 			},
 			toc: 'Jump to',
+			filterPillOpen: 'Open view controls',
+			filterPillClose: 'Close view controls',
+			tocPillClose: 'Close section list',
 			scopeWindowed: 'Follows the time window above',
 			scopeWhole: 'Full history: the window above doesn’t change this section',
 			scopeNote: 'The window above re-shapes the ↻ sections; the ∞ sections show the full history.',

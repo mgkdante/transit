@@ -33,9 +33,12 @@
 	import type { Locale } from '$lib/i18n';
 	import type { RouteReliability } from '$lib/v1';
 	import { SvelteSet } from 'svelte/reactivity';
+	import { onMount } from 'svelte';
 	import { ControlsRail } from '$lib/components/layout';
 	import { GrainPicker, type GrainSegment } from '$lib/components/surface';
 	import { Separator } from '$lib/components/ui/separator';
+	import { TocPill, observeActiveToc, type TocEntry } from '$lib/components/shared';
+	import ReliabilityFilterPill from './ReliabilityFilterPill.svelte';
 	import { toReliabilityClusters } from './clusters';
 	import { reliabilityCopy } from './reliability.copy';
 	import Section0Verdict from './sections/Section0Verdict.svelte';
@@ -243,14 +246,13 @@
 		return aw.day;
 	});
 
-	/* ── mobile control collapse ────────────────────────────────────────────────
-	   On a phone the dense reliability surface can't spare the vertical space the
-	   full control rail eats, so the controls collapse behind a one-line summary
-	   toggle (the active window). Desktop is UNCHANGED — the body is display:contents
-	   so its children hoist into the ControlsRail flex exactly as before, and the
-	   toggle is hidden. Instant-apply everywhere: a grain switch only re-derives the
-	   client-side mapper (no reload), so mobile needs no batch-apply. */
-	let controlsOpen = $state(false);
+	/* ── mobile floating pills ──────────────────────────────────────────────────
+	   On a phone the sticky ControlsRail is the wrong shape (it eats the top + still
+	   wraps), so the grain controls move into a floating filter PILL and the section
+	   jump-to into the shared TocPill — both <lg only; the full desktop rail returns
+	   at >=lg. The grain controls render from ONE snippet (grainControls) shared by
+	   the rail AND the pill drawer, so there is a single source of truth.
+	   `controlsSummary` labels the filter pill with the active window. */
 	const controlsSummary = $derived(
 		mode === 'range'
 			? copy.controls.dateRange
@@ -286,6 +288,15 @@
 			windowed: clusters.punctuality.weakStopsWindowed,
 		},
 	]);
+
+	// The mobile TocPill reads the SAME sections as the desktop jump-to nav (one source).
+	const tocEntries = $derived<TocEntry[]>(
+		sectionNav.map((s) => ({ id: s.id, title: s.label, level: 1, children: [] })),
+	);
+	// One IntersectionObserver over the bands' [data-toc] anchors owns the active section the
+	// TocPill highlights (client-only; each band carries data-toc below).
+	let activeId = $state('');
+	onMount(() => observeActiveToc((id) => (activeId = id)));
 </script>
 
 <div class={cn('reliability-clusters', className)} data-slot="reliability-clusters">
@@ -304,84 +315,16 @@
 	     chip, never on the rail chrome. STICKY (S6): the grain control is the main
 	     control of the surface, so the rail stays pinned (desktop) while the metric
 	     cards + bands scroll under it. -->
-		<ControlsRail sticky role="group" aria-label={copy.controls.viewLabel}>
-			<!-- Mobile-only summary toggle: collapses the grain controls to spare phone
-		     vertical space. Hidden on desktop (the rail stays fully visible). -->
-			<button
-				type="button"
-				class="reliability-control-toggle"
-				aria-expanded={controlsOpen}
-				aria-controls="reliability-control-body"
-				onclick={() => (controlsOpen = !controlsOpen)}
-				data-slot="controls-toggle"
-			>
-				<span>{copy.controls.viewLabel}: {controlsSummary}</span>
-				<svg
-					class="reliability-control-chevron"
-					viewBox="0 0 16 16"
-					width="14"
-					height="14"
-					aria-hidden="true"
-				>
-					<path
-						d="M4 6l4 4 4-4"
-						fill="none"
-						stroke="currentColor"
-						stroke-width="1.6"
-						stroke-linecap="round"
-						stroke-linejoin="round"
-					/>
-				</svg>
-			</button>
-
-			<!-- ROW 1 (operator): the "View" overline + the "Jump to" nav share ONE row, so the
-			     destinations no longer cost a second row and the sticky rail reads as thin as
-			     possible. The nav holds ALL destinations on ONE line on desktop (it scrolls
-			     rather than wraps if a locale ever runs long). The grain chips drop to row 2. -->
-			<div class="reliability-rail-top">
-				<span class="reliability-rail-view" data-slot="controls-rail-label"
-					>{copy.controls.viewLabel}</span
-				>
-				<!-- Section TOC (wayfinding) — always visible (outside the mobile collapse). Each
-				     entry jumps to its section AND shows its filter scope: ↻ follows the window
-				     above, ∞ full history. -->
-				<nav class="reliability-toc" data-slot="section-toc" aria-label={copy.controls.toc}>
-					<span class="reliability-toc__label">{copy.controls.toc}</span>
-					<ul class="reliability-toc__list">
-						{#each sectionNav as s (s.id)}
-							<li>
-								<a
-									class="reliability-toc__link"
-									href={`#${s.id}`}
-									data-scope={s.windowed ? 'windowed' : 'whole'}
-								>
-									<span class="reliability-toc__text">{s.label}</span>
-									<span
-										class="reliability-toc__scope"
-										title={s.windowed ? copy.controls.scopeWindowed : copy.controls.scopeWhole}
-										aria-label={s.windowed ? copy.controls.scopeWindowed : copy.controls.scopeWhole}
-										>{s.windowed ? '↻' : '∞'}</span
-									>
-								</a>
-							</li>
-						{/each}
-					</ul>
-				</nav>
-			</div>
-
-			<!-- ROW 2: the grain controls now ride their own row (lifted up since "Jump to" left
-			     this row). They collapse behind the mobile toggle above. -->
-			<div
-				id="reliability-control-body"
-				class={cn('reliability-control-body', controlsOpen && 'reliability-control-body--open')}
-				data-slot="controls-body"
-			>
+		<!-- The grain controls (GrainPicker + range pair + active-window caption). ONE definition,
+		     rendered in BOTH the desktop rail AND the mobile filter pill's drawer (single source). -->
+		{#snippet grainControls()}
+			<div class="reliability-control-body" data-slot="controls-body">
 				<GrainPicker {segments} bind:value={viewKey} label={copy.controls.grainLabel} />
 
 				{#if mode === 'range'}
-					<!-- Start + end pair over the dated day-periods. start == end = one day
-			     (exact); a wider span aggregates the in-range days (mean) + zooms the
-			     trend. Bounds are real dates only, so no out-of-window pick is possible. -->
+					<!-- Start + end pair over the dated day-periods. start == end = one day (exact);
+					     a wider span aggregates the in-range days (mean) + zooms the trend. Bounds are
+					     real dates only, so no out-of-window pick is possible. -->
 					<div class="reliability-range" data-slot="date-range">
 						<label class="reliability-date">
 							<span class="reliability-date__label">{copy.controls.rangeStart}</span>
@@ -414,24 +357,91 @@
 					</div>
 				{/if}
 
-				<!-- Active-window caption: names the window the selection resolves to so the
-		     reader is never unsure what "Today / This week / {date}" actually covers. -->
+				<!-- Active-window caption: names the window the selection resolves to. -->
 				<p class="reliability-window" data-slot="active-window" aria-live="polite">
 					{activeWindowCaption}
 				</p>
 			</div>
+		{/snippet}
+
+		<!-- DESKTOP (>=lg): the full sticky rail — "View" overline + "Jump to" nav (row 1) + the
+		     grain controls (row 2). Hidden below lg, where the floating pills below take over. -->
+		<ControlsRail
+			sticky
+			class="reliability-rail-desktop"
+			role="group"
+			aria-label={copy.controls.viewLabel}
+		>
+			<div class="reliability-rail-top">
+				<span class="reliability-rail-view" data-slot="controls-rail-label"
+					>{copy.controls.viewLabel}</span
+				>
+				<!-- Section TOC (wayfinding): each entry jumps to its section AND shows its filter
+				     scope (↻ follows the window above, ∞ full history). -->
+				<nav class="reliability-toc" data-slot="section-toc" aria-label={copy.controls.toc}>
+					<span class="reliability-toc__label">{copy.controls.toc}</span>
+					<ul class="reliability-toc__list">
+						{#each sectionNav as s (s.id)}
+							<li>
+								<a
+									class="reliability-toc__link"
+									href={`#${s.id}`}
+									data-scope={s.windowed ? 'windowed' : 'whole'}
+								>
+									<span class="reliability-toc__text">{s.label}</span>
+									<span
+										class="reliability-toc__scope"
+										title={s.windowed ? copy.controls.scopeWindowed : copy.controls.scopeWhole}
+										aria-label={s.windowed ? copy.controls.scopeWindowed : copy.controls.scopeWhole}
+										>{s.windowed ? '↻' : '∞'}</span
+									>
+								</a>
+							</li>
+						{/each}
+					</ul>
+				</nav>
+			</div>
+
+			{@render grainControls()}
 		</ControlsRail>
+
+		<!-- MOBILE (<lg): two floating pills replace the rail — the grain FILTER pill opens a drawer
+		     with the SAME grain controls; the section JUMP-TO rides the shared TocPill below it,
+		     tracking the active section as you scroll. Both hide at >=lg. -->
+		<ReliabilityFilterPill
+			title={copy.controls.viewLabel}
+			label={controlsSummary}
+			controls={grainControls}
+			openAria={copy.controls.filterPillOpen}
+			closeAria={copy.controls.filterPillClose}
+		/>
+		<TocPill
+			entries={tocEntries}
+			{activeId}
+			openAria={copy.controls.toc}
+			closeAria={copy.controls.tocPillClose}
+		/>
 
 		<!-- Hazard tape discerns the controls zone from the data canvas. -->
 		<Separator variant="hazard" hazardSize="sm" />
 
 		<!-- §0 Verdict — "Can you count on this line?" The grain rail re-shapes only the trend. -->
-		<div class="reliability-band surface-bleed" id="rel-verdict" data-band="verdict">
+		<div
+			class="reliability-band surface-bleed"
+			id="rel-verdict"
+			data-toc="rel-verdict"
+			data-band="verdict"
+		>
 			<Section0Verdict vm={clusters.punctuality} {locale} {copy} {mode} />
 		</div>
 
 		<!-- §1 When to ride — the 7×24 heatmap hero + the time-of-day / weekday detail. -->
-		<div class="reliability-band surface-bleed" id="rel-when-to-ride" data-band="when-to-ride">
+		<div
+			class="reliability-band surface-bleed"
+			id="rel-when-to-ride"
+			data-toc="rel-when-to-ride"
+			data-band="when-to-ride"
+		>
 			<Section1WhenToRide
 				punctuality={clusters.punctuality}
 				habits={clusters.habits}
@@ -442,7 +452,12 @@
 		</div>
 
 		<!-- §2 The wait — scheduled-vs-observed headway + (detail) regularity + service span. -->
-		<div class="reliability-band surface-bleed" id="rel-the-wait" data-band="the-wait">
+		<div
+			class="reliability-band surface-bleed"
+			id="rel-the-wait"
+			data-toc="rel-the-wait"
+			data-band="the-wait"
+		>
 			<Section2TheWait
 				wait={clusters.waitRegularity}
 				serviceSpans={clusters.serviceDelivered.serviceSpans}
@@ -454,7 +469,12 @@
 		</div>
 
 		<!-- §3 Will it run & will you fit — cancellations/skips + crowding (grain-windowed). -->
-		<div class="reliability-band surface-bleed" id="rel-run-and-fit" data-band="run-and-fit">
+		<div
+			class="reliability-band surface-bleed"
+			id="rel-run-and-fit"
+			data-toc="rel-run-and-fit"
+			data-band="run-and-fit"
+		>
 			<Section3RunAndFit
 				service={clusters.serviceDelivered}
 				crowding={clusters.crowding}
@@ -465,7 +485,12 @@
 		</div>
 
 		<!-- §4 Where it's worst — the worst-N stops accountability lollipop. -->
-		<div class="reliability-band surface-bleed" id="rel-worst-stops" data-band="worst-stops">
+		<div
+			class="reliability-band surface-bleed"
+			id="rel-worst-stops"
+			data-toc="rel-worst-stops"
+			data-band="worst-stops"
+		>
 			<Section4WorstStops punctuality={clusters.punctuality} {locale} {copy} />
 		</div>
 	</div>
@@ -625,14 +650,6 @@
 		color: var(--accent-text);
 	}
 
-	/* Mobile control-collapse (S7): on a phone the controls collapse behind a one-line
-	   summary toggle to spare the dense surface's vertical space. Desktop is UNCHANGED —
-	   the body is display:contents (its children hoist into the ControlsRail flex) and
-	   the toggle is hidden. Only the ≤767px query collapses it. Quiet chrome: the toggle
-	   is neutral-bordered (no --primary; that lives on the active grain chip inside). */
-	.reliability-control-toggle {
-		display: none;
-	}
 	/* ROW 1 (operator): the "View" overline + the "Jump to" nav on ONE row, so the
 	   destinations cost no extra height and the sticky rail stays thin. justify-between
 	   pushes the nav to the right of the overline; both wrap as a unit on a narrow rail. */
@@ -656,6 +673,8 @@
 		letter-spacing: var(--tracking-eyebrow);
 		color: var(--muted-foreground);
 	}
+	/* The grain controls (GrainPicker + range + caption). ONE block, rendered by the
+	   grainControls snippet in BOTH the desktop rail and the mobile filter pill's drawer. */
 	.reliability-control-body {
 		display: flex;
 		flex-wrap: wrap;
@@ -672,54 +691,12 @@
 			scrollbar-width: thin;
 		}
 	}
-	@media (max-width: 767px) {
-		/* Mobile: the toggle already shows "View: {window}", so the inline overline is
-		   redundant — drop it and let "Jump to" hold row 1 on its own. */
-		.reliability-rail-view {
+	/* MOBILE (<lg): the floating pills (ReliabilityFilterPill + TocPill) replace the rail, so
+	   hide the sticky rail entirely below the desktop breakpoint. The pills are lg:hidden, so
+	   EXACTLY ONE controls affordance shows at every width (no overlap at the 1024 line). */
+	@media (max-width: 1023.98px) {
+		.reliability-clusters :global(.reliability-rail-desktop) {
 			display: none;
-		}
-	}
-	@media (max-width: 767px) {
-		.reliability-control-toggle {
-			display: inline-flex;
-			align-items: center;
-			justify-content: space-between;
-			gap: 0.5rem;
-			width: 100%;
-			padding: 0.5rem 0.75rem;
-			font-family: var(--font-mono);
-			font-size: var(--text-small);
-			color: var(--foreground);
-			background: var(--card);
-			border: 1px solid var(--border);
-			border-radius: var(--radius-md, 0.5rem);
-			cursor: pointer;
-		}
-		.reliability-control-toggle:focus-visible {
-			outline: 2px solid var(--ring);
-			outline-offset: 2px;
-		}
-		.reliability-control-chevron {
-			flex: none;
-			transition: transform 0.15s ease;
-		}
-		.reliability-control-toggle[aria-expanded='true'] .reliability-control-chevron {
-			transform: rotate(180deg);
-		}
-		.reliability-control-body {
-			display: none;
-			flex-basis: 100%;
-		}
-		.reliability-control-body--open {
-			display: flex;
-			flex-wrap: wrap;
-			align-items: center;
-			gap: 0.625rem;
-		}
-	}
-	@media (prefers-reduced-motion: reduce) {
-		.reliability-control-chevron {
-			transition: none;
 		}
 	}
 
