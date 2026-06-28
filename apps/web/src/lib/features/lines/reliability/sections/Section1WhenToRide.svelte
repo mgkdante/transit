@@ -384,6 +384,13 @@
 					<SectionLabel text={band.heatmapHeading} variant="metric" />
 					{@render metricInfo('habits', band.heatmapHeading)}
 				</span>
+				<!-- Operator: "today and this week look the same — explain why." The heatmap reads the
+					     FULL history (grain-invariant), so it is identical whichever window the rail is on.
+					     State it plainly right under the title (∞ ties back to the section's scope glyph). -->
+				<p class="heatmap-window-note" data-slot="heatmap-window-note">
+					<span class="heatmap-window-note__glyph" aria-hidden="true">∞</span>
+					{band.heatmapWindowNote}
+				</p>
 				<div class="habits-heatmap">
 					<Chart spec={heatmapSpec} />
 				</div>
@@ -508,6 +515,26 @@
 		font-size: var(--text-small);
 		line-height: 1.4;
 		color: var(--muted-foreground);
+	}
+	/* "Why does Today look like This week?" note (operator). Reads at FOREGROUND weight (not
+	   a quiet caption) so it is actually noticed — it answers a real confusion. The ∞ glyph
+	   ties it to the section TOC's full-history scope mark. */
+	.heatmap-window-note {
+		display: flex;
+		align-items: baseline;
+		gap: 0.4rem;
+		margin: 0;
+		max-width: 60ch;
+		font-family: var(--font-mono);
+		font-size: var(--text-small);
+		line-height: 1.4;
+		color: var(--foreground);
+	}
+	.heatmap-window-note__glyph {
+		flex: none;
+		font-size: var(--text-body);
+		line-height: 1;
+		color: var(--accent-text);
 	}
 	.peak-daytype {
 		display: flex;

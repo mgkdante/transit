@@ -304,9 +304,9 @@
 	     chip, never on the rail chrome. STICKY (S6): the grain control is the main
 	     control of the surface, so the rail stays pinned (desktop) while the metric
 	     cards + bands scroll under it. -->
-		<ControlsRail label={copy.controls.viewLabel} sticky>
-			<!-- Mobile-only summary toggle: collapses the controls to spare phone vertical
-		     space. Hidden on desktop (the rail stays fully visible). -->
+		<ControlsRail sticky role="group" aria-label={copy.controls.viewLabel}>
+			<!-- Mobile-only summary toggle: collapses the grain controls to spare phone
+		     vertical space. Hidden on desktop (the rail stays fully visible). -->
 			<button
 				type="button"
 				class="reliability-control-toggle"
@@ -333,64 +333,18 @@
 					/>
 				</svg>
 			</button>
-			<!-- Desktop: the grain controls (left) sit BESIDE the section TOC (right) in a
-			     2-column grid so the sticky rail stays compact (operator: "not too thick").
-			     Mobile: stacks to one column (the controls collapse behind the toggle above). -->
-			<div class="reliability-rail-grid">
-				<div
-					id="reliability-control-body"
-					class={cn('reliability-control-body', controlsOpen && 'reliability-control-body--open')}
-					data-slot="controls-body"
+
+			<!-- ROW 1 (operator): the "View" overline + the "Jump to" nav share ONE row, so the
+			     destinations no longer cost a second row and the sticky rail reads as thin as
+			     possible. The nav holds ALL destinations on ONE line on desktop (it scrolls
+			     rather than wraps if a locale ever runs long). The grain chips drop to row 2. -->
+			<div class="reliability-rail-top">
+				<span class="reliability-rail-view" data-slot="controls-rail-label"
+					>{copy.controls.viewLabel}</span
 				>
-					<GrainPicker {segments} bind:value={viewKey} label={copy.controls.grainLabel} />
-
-					{#if mode === 'range'}
-						<!-- Start + end pair over the dated day-periods. start == end = one day
-			     (exact); a wider span aggregates the in-range days (mean) + zooms the
-			     trend. Bounds are real dates only, so no out-of-window pick is possible. -->
-						<div class="reliability-range" data-slot="date-range">
-							<label class="reliability-date">
-								<span class="reliability-date__label">{copy.controls.rangeStart}</span>
-								<select
-									class="reliability-date__select"
-									value={rangeStart}
-									onchange={(e) => (rangeStart = e.currentTarget.value)}
-									aria-label={`${copy.controls.dateRange} · ${copy.controls.rangeStart}`}
-								>
-									<option value="">{earliestDate || ''}</option>
-									{#each datedPeriods as p (p.date)}
-										<option value={p.date}>{p.date}</option>
-									{/each}
-								</select>
-							</label>
-							<label class="reliability-date">
-								<span class="reliability-date__label">{copy.controls.rangeEnd}</span>
-								<select
-									class="reliability-date__select"
-									value={rangeEnd}
-									onchange={(e) => (rangeEnd = e.currentTarget.value)}
-									aria-label={`${copy.controls.dateRange} · ${copy.controls.rangeEnd}`}
-								>
-									<option value="">{latestDate || ''}</option>
-									{#each datedPeriods as p (p.date)}
-										<option value={p.date}>{p.date}</option>
-									{/each}
-								</select>
-							</label>
-						</div>
-					{/if}
-
-					<!-- Active-window caption: names the window the selection resolves to so the
-		     reader is never unsure what "Today / This week / {date}" actually covers. -->
-					<p class="reliability-window" data-slot="active-window" aria-live="polite">
-						{activeWindowCaption}
-					</p>
-				</div>
-
 				<!-- Section TOC (wayfinding) — always visible (outside the mobile collapse). Each
-			     entry jumps to its section AND shows its filter scope: ↻ follows the window
-			     above, ∞ full history. The sticky bar answers "where am I / what does the
-			     window change" in one place. -->
+				     entry jumps to its section AND shows its filter scope: ↻ follows the window
+				     above, ∞ full history. -->
 				<nav class="reliability-toc" data-slot="section-toc" aria-label={copy.controls.toc}>
 					<span class="reliability-toc__label">{copy.controls.toc}</span>
 					<ul class="reliability-toc__list">
@@ -413,6 +367,58 @@
 						{/each}
 					</ul>
 				</nav>
+			</div>
+
+			<!-- ROW 2: the grain controls now ride their own row (lifted up since "Jump to" left
+			     this row). They collapse behind the mobile toggle above. -->
+			<div
+				id="reliability-control-body"
+				class={cn('reliability-control-body', controlsOpen && 'reliability-control-body--open')}
+				data-slot="controls-body"
+			>
+				<GrainPicker {segments} bind:value={viewKey} label={copy.controls.grainLabel} />
+
+				{#if mode === 'range'}
+					<!-- Start + end pair over the dated day-periods. start == end = one day
+			     (exact); a wider span aggregates the in-range days (mean) + zooms the
+			     trend. Bounds are real dates only, so no out-of-window pick is possible. -->
+					<div class="reliability-range" data-slot="date-range">
+						<label class="reliability-date">
+							<span class="reliability-date__label">{copy.controls.rangeStart}</span>
+							<select
+								class="reliability-date__select"
+								value={rangeStart}
+								onchange={(e) => (rangeStart = e.currentTarget.value)}
+								aria-label={`${copy.controls.dateRange} · ${copy.controls.rangeStart}`}
+							>
+								<option value="">{earliestDate || ''}</option>
+								{#each datedPeriods as p (p.date)}
+									<option value={p.date}>{p.date}</option>
+								{/each}
+							</select>
+						</label>
+						<label class="reliability-date">
+							<span class="reliability-date__label">{copy.controls.rangeEnd}</span>
+							<select
+								class="reliability-date__select"
+								value={rangeEnd}
+								onchange={(e) => (rangeEnd = e.currentTarget.value)}
+								aria-label={`${copy.controls.dateRange} · ${copy.controls.rangeEnd}`}
+							>
+								<option value="">{latestDate || ''}</option>
+								{#each datedPeriods as p (p.date)}
+									<option value={p.date}>{p.date}</option>
+								{/each}
+							</select>
+						</label>
+					</div>
+				{/if}
+
+				<!-- Active-window caption: names the window the selection resolves to so the
+		     reader is never unsure what "Today / This week / {date}" actually covers. -->
+				<p class="reliability-window" data-slot="active-window" aria-live="polite">
+					{activeWindowCaption}
+				</p>
 			</div>
 		</ControlsRail>
 
@@ -548,6 +554,9 @@
 	   drops onto its own row beneath the chips. */
 	.reliability-window {
 		margin: 0;
+		/* The grain chips sit on one row; this caption always drops onto its own line
+		   beneath them (it names the resolved window — it is a note, not a chip). */
+		flex-basis: 100%;
 		font-family: var(--font-mono);
 		font-size: var(--text-caption);
 		line-height: 1.3;
@@ -555,17 +564,15 @@
 	}
 
 	/* Section TOC (wayfinding + filter-scope map): a horizontal nav of the 5 sections,
-	   each a jump link + a scope glyph (↻ follows the window / ∞ full history). Always
-	   visible (a sibling of the collapsible control body); wraps on narrow widths. */
+	   each a jump link + a scope glyph (↻ follows the window / ∞ full history). It now
+	   shares ROW 1 with the "View" overline (operator: "Jump to on the same row as View"),
+	   so it carries no divider of its own — it sits inline, right of the overline. The
+	   list keeps the destinations on ONE row on desktop (see below). */
 	.reliability-toc {
 		display: flex;
 		align-items: baseline;
-		flex-wrap: wrap;
 		gap: 0.3rem 0.6rem;
-		width: 100%;
-		margin-top: 0.3rem;
-		padding-top: 0.35rem;
-		border-top: 1px solid var(--border-subtle, var(--border));
+		min-width: 0;
 	}
 	.reliability-toc__label {
 		font-family: var(--font-mono);
@@ -626,34 +633,50 @@
 	.reliability-control-toggle {
 		display: none;
 	}
-	/* 2-column rail (operator: "not too thick"): the grain controls sit BESIDE the section
-	   TOC so the sticky bar is half as tall. Mobile collapses to one column below. */
-	.reliability-rail-grid {
-		display: grid;
-		grid-template-columns: minmax(0, 1fr);
-		gap: 0.75rem;
+	/* ROW 1 (operator): the "View" overline + the "Jump to" nav on ONE row, so the
+	   destinations cost no extra height and the sticky rail stays thin. justify-between
+	   pushes the nav to the right of the overline; both wrap as a unit on a narrow rail. */
+	.reliability-rail-top {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: baseline;
+		justify-content: space-between;
+		gap: 0.3rem 1.25rem;
 		width: 100%;
+		min-width: 0;
+	}
+	/* The "View" overline — same quiet mono voice as the shared ControlsRail label (we
+	   render it ourselves here so it can share the row with the nav). */
+	.reliability-rail-view {
+		flex: none;
+		font-family: var(--font-mono);
+		font-size: var(--text-caption);
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: var(--tracking-eyebrow);
+		color: var(--muted-foreground);
 	}
 	.reliability-control-body {
 		display: flex;
-		flex-direction: column;
-		gap: 0.35rem;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 0.45rem 0.75rem;
 		min-width: 0;
 	}
 	@media (min-width: 768px) {
-		.reliability-rail-grid {
-			grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr);
-			gap: 0.75rem 2rem;
-			align-items: start;
+		/* Desktop: keep ALL destinations on ONE line (operator). If a long locale ever
+		   overflows, the row scrolls horizontally rather than wrapping to a second line. */
+		.reliability-toc__list {
+			flex-wrap: nowrap;
+			overflow-x: auto;
+			scrollbar-width: thin;
 		}
-		/* In 2-col the TOC's divider becomes a left rule (not a top rule). */
-		.reliability-toc {
-			margin-top: 0;
-			padding-top: 0;
-			padding-left: 1.5rem;
-			border-top: none;
-			border-left: 1px solid var(--border-subtle, var(--border));
-			align-content: start;
+	}
+	@media (max-width: 767px) {
+		/* Mobile: the toggle already shows "View: {window}", so the inline overline is
+		   redundant — drop it and let "Jump to" hold row 1 on its own. */
+		.reliability-rail-view {
+			display: none;
 		}
 	}
 	@media (max-width: 767px) {
@@ -749,6 +772,16 @@
 	}
 	:global(.reliability-band [data-card='primary']) {
 		border-inline-start: 3px solid var(--primary);
+	}
+	/* Operator: "yellow titles for each card so they tell what the graph is." Every graph
+	   card's title (its SectionLabel) wears the yellow wayfinding voice (--accent-text, AA
+	   on --card in both themes), so each chart reads as its OWN unit at a glance and a title
+	   can never be mistaken for a neighbour's note. ONE rule owns this for ALL sections, so
+	   the styling stays identical across every graph (the consistency mandate). The (i)
+	   explainer, captions, KPI tiles, and table cells are untouched — only chart titles. */
+	:global(.reliability-band [data-card] [data-slot='section-label']) {
+		color: var(--accent-text);
+		font-weight: 600;
 	}
 
 	/* The rider-question section TITLE. Operator: "titles need to be HUGE, like yesid.dev

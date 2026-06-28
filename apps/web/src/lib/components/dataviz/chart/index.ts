@@ -14,6 +14,9 @@ export type { ChartFrameProps } from './ChartFrame.svelte';
 export { default as ScrollFrame } from './ScrollFrame.svelte';
 export type { ScrollFrameProps } from './ScrollFrame.svelte';
 
+export { categoryGutter } from './axisGutter';
+export type { CategoryGutter, CategoryGutterOpts } from './axisGutter';
+
 export { MAGNITUDE_KINDS, isMagnitudeKind, checkAbsoluteDomain } from './ChartSpec';
 export type {
 	AbsoluteDomain,

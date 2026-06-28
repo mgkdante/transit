@@ -476,7 +476,7 @@
 			     Rendered independently of the mix empty-state so a route with delay data
 			     but no mix still surfaces it. SPARSE: an absent band or a null delay shows
 			     the honest no-data message in that cell, never a "·" / fake 0. -->
-			<div class="crowding-delay" data-slot="delay-by-crowding">
+			<div class="crowding-delay" data-slot="delay-by-crowding" data-card>
 				<SectionLabel text={copy.delayByCrowding.heading} variant="metric" />
 				<!-- A12 magnitude bars on the fixed occupancy axis; the <Chart> renders the
 				     honest-absence chip itself when no band carries a measured delay. -->
@@ -487,7 +487,7 @@
 				<!-- S7 §04: weekday vs weekend occupancy split — a 2-col small multiple that
 				     reflows to a single column on mobile. Each side is its own occupancy
 				     StackedBar, or an honest no-data chip when that side has no telemetry. -->
-				<div class="crowding-2col" data-slot="crowding-weekday-weekend">
+				<div class="crowding-2col" data-slot="crowding-weekday-weekend" data-card>
 					<SectionLabel text={copy.peak.dayType} variant="metric" />
 					<div class="crowding-2col-grid">
 						<div class="crowding-2col-cell" data-slot="crowding-weekday">
@@ -515,7 +515,7 @@
 				     Mon→Sun, on the SAME occupancy scale as the headline mix. A weekday with no
 				     telemetry renders the honest no-data chip in the same box height, never a
 				     fabricated bar. Reflows to fewer columns on narrow viewports. -->
-				<div class="crowding-dow" data-slot="crowding-by-dow">
+				<div class="crowding-dow" data-slot="crowding-by-dow" data-card>
 					<SectionLabel text={copy.byDow.heading} variant="metric" />
 					<p class="crowding-dow-caption">{copy.byDow.caption}</p>
 					<ul class="crowding-dow-grid" aria-label={copy.byDow.heading}>

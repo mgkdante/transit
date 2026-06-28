@@ -48,6 +48,13 @@ export interface HabitsBandCopy {
 	 */
 	readonly scaleCaption: string;
 	/**
+	 * Operator ("today and this week look the same — explain why, stupid-easy"): the heatmap
+	 * is GRAIN-INVARIANT — it reads the line's FULL service history, so it is identical
+	 * whichever window the rail above is set to. This one-liner states that plainly so the
+	 * same-looking heatmap is never mistaken for a bug.
+	 */
+	readonly heatmapWindowNote: string;
+	/**
 	 * RAW scale string (RouteHabits.scale) → a plain-language phrase for the
 	 * caption. The snake_case scale value is NEVER shown to a layperson; an
 	 * unmapped/null scale falls back to `heatmapHeading`.
@@ -90,6 +97,8 @@ export const habitsBandCopy: Record<Locale, HabitsBandCopy> = {
 		cellValueLabel: 'Problèmes récurrents',
 		scaleCaption:
 			'Chaque case indique à quelle fréquence les retards graves reviennent à cette heure-là, sur toute la semaine et sur une seule échelle. Les cases encadrées et marquées d’un ◆ sont les pires heures de cette ligne; les cases pâles voient rarement un retard grave. Les fins de semaine plus calmes paraissent donc plus pâles, ce qui est honnête.',
+		heatmapWindowNote:
+			'Ce portrait utilise tout l’historique de la ligne : il reste le même quelle que soit la fenêtre choisie en haut (Aujourd’hui, Cette semaine…). C’est pourquoi « Aujourd’hui » et « Cette semaine » se ressemblent ici.',
 		scaleLegend: {
 			repeat_problem_relative: 'Problèmes récurrents (par rapport à la pire heure de la ligne)',
 			severe_relative: 'Retards graves (par rapport à la pire heure de la ligne)',
@@ -125,6 +134,8 @@ export const habitsBandCopy: Record<Locale, HabitsBandCopy> = {
 		cellValueLabel: 'Repeat problems',
 		scaleCaption:
 			'Each cell shows how often severe delays come back at that hour, across the whole week on one fixed scale. The outlined cells marked ◆ are this line’s worst hours; pale cells rarely see a severe delay. Calmer weekends therefore read paler, which is honest.',
+		heatmapWindowNote:
+			'This pattern uses the line’s full history, so it stays the same whichever time window you pick above (Today, This week…). That is why “Today” and “This week” look identical here.',
 		scaleLegend: {
 			repeat_problem_relative: 'Repeat problems (vs this line’s worst hour)',
 			severe_relative: 'Severe delays (vs this line’s worst hour)',

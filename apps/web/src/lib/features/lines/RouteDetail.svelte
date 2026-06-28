@@ -425,6 +425,9 @@
 					     wide (≥40rem) the service-span block + the periods grid sit side by
 					     side; below that they stack. -->
 					<div class="route-schedule-cq">
+						<!-- Operator: "some text to explain to people what everything is." A plain-language
+						     intro frames the planned schedule + points to the Reliability tab for real OTP. -->
+						<p class="route-schedule-intro" data-slot="schedule-intro">{t.scheduleIntro}</p>
 						<div class="route-section route-schedule-grid" data-slot="route-schedule">
 							<div class="route-schedule-span">
 								<div class="route-departures">
@@ -663,6 +666,16 @@
 	.route-schedule-cq {
 		container-type: inline-size;
 		container-name: route-schedule;
+	}
+	/* Plain-language schedule intro (operator): explains what the schedule shows + sends the
+	   reader to the Reliability tab for real-world punctuality. Reads at foreground weight so
+	   it is actually noticed, with a measure so it stays comfortable to read. */
+	.route-schedule-intro {
+		margin: 0 0 1.25rem;
+		max-width: 64ch;
+		font-size: var(--text-small);
+		line-height: 1.5;
+		color: var(--foreground);
 	}
 	.route-schedule-span {
 		display: flex;

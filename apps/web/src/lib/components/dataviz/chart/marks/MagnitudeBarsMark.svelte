@@ -13,6 +13,7 @@
 	import { goto } from '$app/navigation';
 	import { cn } from '$lib/utils';
 	import ChartFrame from '../ChartFrame.svelte';
+	import { categoryGutter } from '../axisGutter';
 	import MagnitudeCiWhiskers from './MagnitudeCiWhiskers.svelte';
 	import type { MagnitudeBarsSpec, MagnitudeDatum } from '../ChartSpec';
 	import type { SeverityCode } from '$lib/v1/schemas';
@@ -37,9 +38,13 @@
 
 	// Grow with the row count (worst-N up to 100) so bars never crowd; the page scrolls.
 	const frameHeight = $derived(`${Math.max(3, spec.rows.length) * 1.35 + 3}rem`);
-	// right:28 leaves room for the LAST x-axis tick label (e.g. "15" / "100") to sit fully inside
-	// the plot instead of clipping at the edge (operator: the delay-by-crowding axis end was unreadable).
-	const padding = { top: 12, right: 28, bottom: 42, left: 160 };
+	// Operator: the y-gutter is sized FROM the labels (char count × mono glyph advance), clamped —
+	// long stop / street names get the room they need (up to a cap) and a plain-number axis no
+	// longer wastes it. The truncation below is matched to THIS gutter, so a label is only cut where
+	// it genuinely stops fitting (never a blanket 16-char cut). right:28 keeps the LAST x-tick
+	// ("15" / "100") fully inside the plot instead of clipping at the edge.
+	const gutter = $derived(categoryGutter(labels, { min: 96, max: 216 }));
+	const padding = $derived({ top: 12, right: 28, bottom: 42, left: gutter.left });
 
 	// The drill fires on the tooltip's band overlay (which sits ON TOP of the bars, so the
 	// bars' own onclick never reaches the pointer) — LayerChart's tooltipContext.onclick
@@ -50,11 +55,8 @@
 	}
 
 	const fmt = (v: number | null): string => (v == null ? '' : String(v));
-	// Long category labels (e.g. a 30-char "X / Y" stop name) overflow the y-gutter + clip
-	// on BOTH edges at the bigger 14px tick size. Truncate the AXIS tick to what the gutter
-	// fits — the full name still rides the tooltip header + the sr-only table + the drill.
-	const truncateY = (label: string): string =>
-		typeof label === 'string' && label.length > 16 ? `${label.slice(0, 15)}…` : label;
+	// The full name still rides the tooltip header + the sr-only table + the drill, so a
+	// truncated tick is never a loss of information — only the axis label is shortened.
 </script>
 
 <figure
@@ -87,7 +89,7 @@
 				<Axis
 					placement="left"
 					rule={false}
-					format={(l: string) => truncateY(l)}
+					format={(l: string) => gutter.truncate(l)}
 					class="dv-barmark-axis"
 				/>
 				<Bars data={bySeverity('watch')} radius={3} class="dv-barmark-watch" />

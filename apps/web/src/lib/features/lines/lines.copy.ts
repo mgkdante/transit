@@ -56,6 +56,8 @@ export interface RouteDetailCopy {
 	readonly servicePeriods: string;
 	readonly headways: string;
 	readonly weakStops: string;
+	/** Plain-language intro atop the Schedule tab — says what the schedule shows + where to find reliability. */
+	readonly scheduleIntro: string;
 	/** Direction-row helpers. */
 	readonly direction: (dir: number) => string;
 	readonly stopsCount: (n: number) => string;
@@ -185,6 +187,8 @@ export const detailCopy: Record<Locale, RouteDetailCopy> = {
 		directions: 'Directions',
 		servicePeriods: 'Périodes de service',
 		headways: 'Intervalles',
+		scheduleIntro:
+			'Les horaires prévus de cette ligne : le premier et le dernier départ, puis l’intervalle prévu entre les bus pour chaque période de la journée. C’est l’offre PLANIFIÉE — pour la ponctualité réelle, voyez l’onglet « Fiabilité ».',
 		weakStops: 'Arrêts les plus faibles',
 		direction: (dir) => `Direction ${dir}`,
 		stopsCount: (n) => (n === 1 ? '1 arrêt' : `${n} arrêts`),
@@ -255,6 +259,8 @@ export const detailCopy: Record<Locale, RouteDetailCopy> = {
 		directions: 'Directions',
 		servicePeriods: 'Service periods',
 		headways: 'Headways',
+		scheduleIntro:
+			'This line’s planned schedule: the first and last departure, then the planned time between buses for each period of the day. This is the PLANNED service — for real-world punctuality, see the “Reliability” tab.',
 		weakStops: 'Weakest stops',
 		direction: (dir) => `Direction ${dir}`,
 		stopsCount: (n) => (n === 1 ? '1 stop' : `${n} stops`),
