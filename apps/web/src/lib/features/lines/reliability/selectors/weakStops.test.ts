@@ -73,6 +73,9 @@ describe('selectWeakStops — windowed/preRanked (severe-rate magnitude, S7-B)',
 	};
 	// DB-ranked worst-first by the not-severe Wilson LB (NOT avg). The first stop's pooled avg is
 	// <= 0 — a worst-by-rate stop — and MUST still draw a non-zero bar (severe-rate magnitude).
+	// wilson_lo/hi are the contract's NOT-severe-rate CI (real semantics: not_severe = 100 − severe,
+	// e.g. severe 42 → not_severe 58 ∈ [53, 67]); the selector flips them onto the severe scale so
+	// the rendered CI brackets the bar — [100 − hi, 100 − lo] = [33, 47] for w1.
 	const winStops: WeakStop[] = [
 		{
 			id: 'w1',
@@ -80,8 +83,8 @@ describe('selectWeakStops — windowed/preRanked (severe-rate magnitude, S7-B)',
 			avg_delay_min: -1,
 			severe_pct: 42,
 			observation_count: 987,
-			wilson_lo: 33,
-			wilson_hi: 47,
+			wilson_lo: 53,
+			wilson_hi: 67,
 		},
 		{
 			id: 'w2',
@@ -89,8 +92,8 @@ describe('selectWeakStops — windowed/preRanked (severe-rate magnitude, S7-B)',
 			avg_delay_min: 6,
 			severe_pct: 30,
 			observation_count: 400,
-			wilson_lo: 24,
-			wilson_hi: 36,
+			wilson_lo: 64,
+			wilson_hi: 76,
 		},
 		{
 			id: 'w3',
@@ -98,8 +101,8 @@ describe('selectWeakStops — windowed/preRanked (severe-rate magnitude, S7-B)',
 			avg_delay_min: 4,
 			severe_pct: 18,
 			observation_count: 200,
-			wilson_lo: 12,
-			wilson_hi: 24,
+			wilson_lo: 76,
+			wilson_hi: 88,
 		},
 	];
 
@@ -121,14 +124,18 @@ describe('selectWeakStops — windowed/preRanked (severe-rate magnitude, S7-B)',
 		expect(spec.rows[0].value).toBe(42); // > 0, the severe rate — never an empty bar
 	});
 
-	it('surfaces n / wilson bounds / the evidence note + ciLabel on the windowed path', () => {
+	it('surfaces n / severe-scale wilson bounds / the evidence note + ciLabel on the windowed path', () => {
 		const { spec } = selectWeakStops(winStops, 10, 'en', winLabels, { preRanked: true });
 		if (spec.kind !== 'magnitude-bars') throw new Error('expected magnitude-bars');
 		expect(spec.rows[0].n).toBe(987);
+		// the CI is FLIPPED onto the severe scale ([100 − 67, 100 − 53] = [33, 47]) so it brackets
+		// the bar's value (42), instead of the raw not-severe interval [53, 67] far up the axis.
 		expect(spec.rows[0].wilsonLo).toBe(33);
 		expect(spec.rows[0].wilsonHi).toBe(47);
+		expect(spec.rows[0].wilsonLo!).toBeLessThanOrEqual(spec.rows[0].value!);
+		expect(spec.rows[0].value!).toBeLessThanOrEqual(spec.rows[0].wilsonHi!);
 		expect(spec.rows[0].note).toBe('severe 42% n=987');
-		expect(spec.ciLabel).toBe('95% CI'); // the Wilson interval is surfaced (tooltip + sr-only)
+		expect(spec.ciLabel).toBe('95% CI'); // the Wilson interval is surfaced (whisker + tooltip + sr-only)
 	});
 
 	it('omits ciLabel on the scalar/fallback path (no Wilson bounds there)', () => {

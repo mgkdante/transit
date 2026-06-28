@@ -122,8 +122,10 @@ describe('Section4WorstStops — windowed severe-rate path (S7-B)', () => {
 							avg_delay_min: -1,
 							severe_pct: 40,
 							observation_count: 99,
-							wilson_lo: 30,
-							wilson_hi: 50,
+							// the contract's NOT-severe CI (not_severe = 60 ∈ [50, 70]); the selector flips it
+							// onto the severe scale → [100 − 70, 100 − 50] = [30, 50], which brackets severe 40.
+							wilson_lo: 50,
+							wilson_hi: 70,
 						},
 					],
 					true,

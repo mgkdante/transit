@@ -13,6 +13,7 @@
 	import { goto } from '$app/navigation';
 	import { cn } from '$lib/utils';
 	import ChartFrame from '../ChartFrame.svelte';
+	import MagnitudeCiWhiskers from './MagnitudeCiWhiskers.svelte';
 	import type { MagnitudeBarsSpec, MagnitudeDatum } from '../ChartSpec';
 	import type { SeverityCode } from '$lib/v1/schemas';
 
@@ -90,6 +91,12 @@
 				<Bars data={bySeverity('watch')} radius={3} class="dv-barmark-watch" />
 				<Bars data={bySeverity('high')} radius={3} class="dv-barmark-high" />
 				<Bars data={bySeverity('critical')} radius={3} class="dv-barmark-critical" />
+				<!-- PR-WEB-5: the 95% Wilson CI whisker per row (only the windowed severe-rate path
+				     carries a meaningful, bar-scale CI). Drawn ON TOP so the line + caps read over the
+				     bar; the CI was flipped onto the severe scale in the selector so it brackets the bar. -->
+				{#if spec.ciLabel}
+					<MagnitudeCiWhiskers rows={reals} />
+				{/if}
 			</Svg>
 			<Tooltip.Root>
 				{#snippet children({ data }: { data: MagnitudeDatum })}
