@@ -397,18 +397,12 @@
 		flex-direction: column;
 		gap: 0.75rem;
 	}
-	/* Mobile/360px hardening: keep the 7×24 heatmap inside its subsection at narrow
-	   widths; a dense matrix may scroll horizontally rather than overflow the card.
-	   `:global` reaches the Heatmap wrapper rendered via the `habits-heatmap` class. */
+	/* Mobile/360px hardening: keep the 7×24 heatmap inside its subsection at narrow widths.
+	   The HORIZONTAL scroll + the FROZEN day-label gutter now live INSIDE the mark (ScrollFrame),
+	   so the wrapper only bounds the width — it must NOT add its own overflow-x (that would double-
+	   scroll) nor force `svg { min-width }` (that would stretch the frozen gutter SVG too). */
 	.section-primary :global(.habits-heatmap) {
 		max-width: 100%;
-		overflow-x: auto;
-	}
-	/* The inner SVG is width:100%, so without a floor it squishes 24 hour-columns into a
-	   ~380px phone (≈13px cells, colliding ticks, sub-target taps). Give it an intrinsic
-	   min width so it OVERFLOWS the scroller above instead — legible cells, swipe to read. */
-	.section-primary :global(.habits-heatmap svg) {
-		min-width: 30rem;
 	}
 	/* A heading + its explainer (i), kept centred on the label. The label keeps a
 	   measure (min-width:0) so a long heading wraps cleanly; the (i) wrapper never
