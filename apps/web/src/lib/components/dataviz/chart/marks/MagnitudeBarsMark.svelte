@@ -37,7 +37,9 @@
 
 	// Grow with the row count (worst-N up to 100) so bars never crowd; the page scrolls.
 	const frameHeight = $derived(`${Math.max(3, spec.rows.length) * 1.35 + 3}rem`);
-	const padding = { top: 12, right: 16, bottom: 42, left: 160 };
+	// right:28 leaves room for the LAST x-axis tick label (e.g. "15" / "100") to sit fully inside
+	// the plot instead of clipping at the edge (operator: the delay-by-crowding axis end was unreadable).
+	const padding = { top: 12, right: 28, bottom: 42, left: 160 };
 
 	// The drill fires on the tooltip's band overlay (which sits ON TOP of the bars, so the
 	// bars' own onclick never reaches the pointer) — LayerChart's tooltipContext.onclick

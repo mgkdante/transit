@@ -10,7 +10,7 @@
   (the selector returns an absence spec when an endpoint can't resolve).
 -->
 <script lang="ts">
-	import { Chart as LcChart, Svg, Axis } from 'layerchart';
+	import { Chart as LcChart, Svg, Axis, Tooltip } from 'layerchart';
 	import { scaleLinear, scaleBand } from 'd3-scale';
 	import { cn } from '$lib/utils';
 	import ChartFrame from '../ChartFrame.svelte';
@@ -60,6 +60,7 @@
 			yScale={scaleBand()}
 			yDomain={['']}
 			{padding}
+			tooltipContext={{ mode: 'band' }}
 		>
 			<Svg>
 				<Axis
@@ -76,6 +77,25 @@
 					title={spec.title}
 				/>
 			</Svg>
+			<!-- The timeline bar is hoverable like every other mark: the first→last window, its
+			     length / trip count, and each endpoint's punctuality. -->
+			<Tooltip.Root>
+				<Tooltip.Header>{spec.title}</Tooltip.Header>
+				<Tooltip.List>
+					<Tooltip.Item label={spec.firstLabel} value={spec.firstClock} />
+					<Tooltip.Item label={spec.lastLabel} value={spec.lastClock} />
+					{#if spec.spanLabel}<Tooltip.Item label="" value={spec.spanLabel} />{/if}
+					{#if spec.tripsLabel}<Tooltip.Item label="" value={spec.tripsLabel} />{/if}
+					<Tooltip.Item
+						label={spec.firstDelayLabel}
+						value={firstMark.has ? firstMark.text : spec.noDataLabel}
+					/>
+					<Tooltip.Item
+						label={spec.lastDelayLabel}
+						value={lastMark.has ? lastMark.text : spec.noDataLabel}
+					/>
+				</Tooltip.List>
+			</Tooltip.Root>
 		</LcChart>
 	</ChartFrame>
 

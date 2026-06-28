@@ -385,8 +385,6 @@
 					<p class="reliability-window" data-slot="active-window" aria-live="polite">
 						{activeWindowCaption}
 					</p>
-					<!-- Scope note (filter clarity): which sections the window above actually drives. -->
-					<p class="reliability-scope-note" data-slot="scope-note">{copy.controls.scopeNote}</p>
 				</div>
 
 				<!-- Section TOC (wayfinding) — always visible (outside the mobile collapse). Each
@@ -502,6 +500,16 @@
 		min-width: 0;
 		flex-wrap: wrap;
 	}
+	/* Operator: make the control rail as THIN as possible (reliability surface ONLY — the shared
+	   ControlsRail keeps its comfortable padding on /stop + /network). Trim the panel padding + the
+	   inter-control gaps so the sticky bar eats minimal vertical space. */
+	.reliability-clusters :global(.controls-rail) {
+		padding: 0.5rem 0.8rem;
+		gap: 0.35rem;
+	}
+	.reliability-clusters :global(.controls-rail__body) {
+		gap: 0.35rem;
+	}
 
 	/* The start + end date pair sits inline, wrapping on narrow viewports. */
 	.reliability-range {
@@ -541,15 +549,8 @@
 	.reliability-window {
 		margin: 0;
 		font-family: var(--font-mono);
-		font-size: var(--text-small);
-		line-height: 1.4;
-		color: var(--muted-foreground);
-	}
-	.reliability-scope-note {
-		margin: 0.15rem 0 0;
-		font-family: var(--font-mono);
 		font-size: var(--text-caption);
-		line-height: 1.4;
+		line-height: 1.3;
 		color: var(--muted-foreground);
 	}
 
@@ -560,10 +561,10 @@
 		display: flex;
 		align-items: baseline;
 		flex-wrap: wrap;
-		gap: 0.4rem 0.75rem;
+		gap: 0.3rem 0.6rem;
 		width: 100%;
-		margin-top: 0.5rem;
-		padding-top: 0.6rem;
+		margin-top: 0.3rem;
+		padding-top: 0.35rem;
 		border-top: 1px solid var(--border-subtle, var(--border));
 	}
 	.reliability-toc__label {
@@ -584,9 +585,9 @@
 	.reliability-toc__link {
 		display: inline-flex;
 		align-items: center;
-		gap: 0.4rem;
-		min-height: 34px;
-		padding: 0.3rem 0.7rem;
+		gap: 0.35rem;
+		min-height: 28px;
+		padding: 0.2rem 0.6rem;
 		font-family: var(--font-mono);
 		font-size: var(--text-small);
 		color: var(--foreground);
@@ -636,7 +637,7 @@
 	.reliability-control-body {
 		display: flex;
 		flex-direction: column;
-		gap: 0.5rem;
+		gap: 0.35rem;
 		min-width: 0;
 	}
 	@media (min-width: 768px) {

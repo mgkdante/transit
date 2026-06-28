@@ -11,7 +11,7 @@
 	import { scaleLinear, scaleBand } from 'd3-scale';
 	import { cn } from '$lib/utils';
 	import ChartFrame from '../ChartFrame.svelte';
-	import StackedShareBar, { type ShareSeg } from './StackedShareBar.svelte';
+	import StackedShareBar, { type ShareSeg, type ShareHover } from './StackedShareBar.svelte';
 	import { occupancyVar, statusVar } from '$lib/components/dataviz/tokens';
 	import type { StackedShareSpec } from '../ChartSpec';
 	import type { OccupancyCode, StatusCode } from '$lib/v1/schemas';
@@ -48,6 +48,9 @@
 
 	const round = (v: number): number => Math.round(v);
 	const summary = $derived(spec.segments.map((s) => `${s.label} ${round(s.share)}%`).join(', '));
+
+	// The segment under the pointer (band + share + pixel centre), driving the styled hover readout.
+	let hovered = $state<ShareHover | null>(null);
 </script>
 
 <figure
@@ -55,22 +58,30 @@
 	aria-label={`${spec.title}: ${summary}`}
 	data-slot="stacked-share-mark"
 >
-	<ChartFrame height="0.875rem" class="dv-share-plot">
-		<LcChart
-			data={segs}
-			x={(d: ShareSeg) => d.start}
-			xScale={scaleLinear()}
-			xDomain={[0, 100]}
-			y={() => ''}
-			yScale={scaleBand()}
-			yDomain={['']}
-			padding={{ top: 0, right: 0, bottom: 0, left: 0 }}
-		>
-			<Svg>
-				<StackedShareBar segments={segs} />
-			</Svg>
-		</LcChart>
-	</ChartFrame>
+	<!-- svelte-ignore a11y_no_static_element_interactions -->
+	<div class="dv-share-track" onpointerleave={() => (hovered = null)}>
+		<ChartFrame height="0.875rem" class="dv-share-plot">
+			<LcChart
+				data={segs}
+				x={(d: ShareSeg) => d.start}
+				xScale={scaleLinear()}
+				xDomain={[0, 100]}
+				y={() => ''}
+				yScale={scaleBand()}
+				yDomain={['']}
+				padding={{ top: 0, right: 0, bottom: 0, left: 0 }}
+			>
+				<Svg>
+					<StackedShareBar segments={segs} onhover={(h) => (hovered = h)} />
+				</Svg>
+			</LcChart>
+		</ChartFrame>
+		{#if hovered}
+			<div class="dv-share-tip" data-slot="share-tip" role="status" style="left: {hovered.cx}px;">
+				{hovered.label} · {round(hovered.share)}%
+			</div>
+		{/if}
+	</div>
 
 	<!-- AT fallback: each band's share as a row (the colour read in words). -->
 	<table class="sr-only">
@@ -89,5 +100,29 @@
 	:global(rect.dv-share-seg) {
 		stroke: var(--card);
 		stroke-width: 1;
+	}
+	/* The positioning context for the styled hover readout (cx is a plot-pixel offset; the
+	   plot has zero padding so it maps straight onto this track). */
+	.dv-share-track {
+		position: relative;
+	}
+	/* The styled per-segment tooltip — the same hover face as every other chart, centred over
+	   the hovered band and floated just above the strip. */
+	.dv-share-tip {
+		position: absolute;
+		bottom: calc(100% + 4px);
+		transform: translateX(-50%);
+		white-space: nowrap;
+		pointer-events: none;
+		z-index: 2;
+		padding: 0.2rem 0.45rem;
+		font-family: var(--font-mono);
+		font-size: var(--text-caption);
+		font-variant-numeric: tabular-nums;
+		color: var(--popover-foreground, var(--foreground));
+		background: var(--popover, var(--card));
+		border: 1px solid var(--border);
+		border-radius: var(--radius-md, 0.4rem);
+		box-shadow: var(--shadow-sm, 0 1px 3px rgb(0 0 0 / 0.2));
 	}
 </style>

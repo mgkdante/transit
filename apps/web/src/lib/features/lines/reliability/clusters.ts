@@ -611,7 +611,13 @@ export function toReliabilityClusters(
 	// and absent until the DB deploys + republishes) OR for a grain the DB didn't compute -> each
 	// VM feed falls back to its scalar source + the section badge stays ∞ (honest degradation).
 	const periodsGrain = (data.periods_by_grain ?? []).find((g) => g.grain === grain) ?? null;
-	const habitsGrain = (data.habits_by_grain ?? []).find((g) => g.grain === grain) ?? null;
+	// The repeat-problems heatmap is a day-of-week × hour PATTERN — a single day can't fill its 7
+	// rows, so windowing it to the 'day' grain collapses it to ONE weekday row (confusing: "today"
+	// shows only Friday). Floor the heatmap window at 'week' (the smallest window that spans all 7
+	// weekdays); week/month pass through unchanged, so the recent-vs-historic windowing the rider
+	// values is kept, only the degenerate single-day case is avoided.
+	const habitsGrainKey = grain === 'day' ? 'week' : grain;
+	const habitsGrain = (data.habits_by_grain ?? []).find((g) => g.grain === habitsGrainKey) ?? null;
 	const headwayGrain = (data.headway_by_grain ?? []).find((g) => g.grain === grain) ?? null;
 	const weakStopsGrain = (data.weak_stops_by_grain ?? []).find((g) => g.grain === grain) ?? null;
 

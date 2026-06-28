@@ -813,7 +813,10 @@ describe('toReliabilityClusters — *_by_grain windowable §1/§2/§4 (S7-B)', (
 		expect(c.waitRegularity.windowed).toBe(false);
 		expect(c.punctuality.dayOfWeek[0]?.avg_delay_min).toBe(9); // scalar
 		expect(c.waitRegularity.headway[0]?.observed_min).toBe(9); // scalar
-		expect(c.habits.matrix).toEqual([[0.9]]); // scalar
+		// The heatmap is the one exception: a day-of-week × hour grid can't be filled by one day, so
+		// the 'day' grain FLOORS to the 'week' windowed matrix ([[0.3]]) rather than the scalar
+		// whole-history one ([[0.9]]). (The §1/§2/§4 reads above still scalar-fall-back at day grain.)
+		expect(c.habits.matrix).toEqual([[0.3]]);
 		expect(c.punctuality.weakStops.map((w) => w.id)).toEqual(['scalar-stop']); // scalar (avg-gated)
 	});
 
