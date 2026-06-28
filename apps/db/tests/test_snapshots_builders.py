@@ -45,6 +45,10 @@ class FakeResult:
     def __iter__(self):
         return iter(self._rows)
 
+    def fetchone(self):  # noqa: ANN201
+        # SQLAlchemy .mappings().fetchone() — first row mapping or None.
+        return self._rows[0] if self._rows else None
+
     def scalar_one(self):  # noqa: ANN201
         # First column of the first row, mirroring SQLAlchemy semantics.
         first = self._rows[0]
@@ -1568,20 +1572,20 @@ def test_build_stop_reliability_emits_shift_and_daytype_grains() -> None:
          "weighted_delay_sec": None},
     ]
 
+    import datetime as _dt
+    _anchor = _dt.date(2026, 6, 30)
+    # DB-0067 Phase 1: weekly/monthly/by_route read gold.stop_delay_spine. by_route
+    # keeps the '__unrouted__' filter; weekly+monthly share identical SQL, told apart
+    # by win_start (anchor-6 vs anchor-29). The anchor query is answered first.
     dispatch = [
-        # by-route breakdown reads stop_delay_weekly too — match its unique
-        # sentinel-filter clause first so it doesn't shadow the weekly period query.
+        # by-route breakdown — unique sentinel-filter clause, matched first so it
+        # doesn't shadow the weekly/monthly spine period query.
         ("'__unrouted__'", []),
         # grain SQL (shift + day-type union) — unique discriminator "AS banded".
         ("AS banded", grain_rows),
         # day-of-week seasonality — unique discriminator "AS dow_obs" (must match
         # before the bare stop_delay_hourly habits needle below).
         ("AS dow_obs", dow_rows),
-        # weekly period rows (one stop) so the stop survives into output.
-        ("FROM gold.stop_delay_weekly", [
-            {"stop_id": "51234", "obs": 50, "weighted_delay_sec": 3000.0, "severe": 2},
-        ]),
-        ("FROM gold.stop_delay_monthly", []),
         ("FROM gold.stop_delay_hourly", []),  # habits matrix: empty
         ("stop_delay_percentile_daily", []),  # day p50/p90: none
         # Trailing-30d crowding band counts for the stop — unique discriminator
@@ -1593,13 +1597,22 @@ def test_build_stop_reliability_emits_shift_and_daytype_grains() -> None:
         ]),
         ("stop_name", [{"stop_id": "51234", "stop_name": "Berri-UQAM"}]),
     ]
+    # weekly period rows (one stop) so the stop survives into output; month empty.
+    _weekly = [{"stop_id": "51234", "obs": 50, "weighted_delay_sec": 3000.0, "severe": 2}]
 
     class FC:
-        def execute(self, statement, params=None):  # noqa: ANN001, ANN201, ARG002
+        def execute(self, statement, params=None):  # noqa: ANN001, ANN201
             s = str(statement)
+            params = params or {}
+            if "MAX(service_local_date)" in s and "stop_delay_spine" in s:
+                return FakeResult([{"anchor": _anchor}])
             for needle, rows in dispatch:
                 if needle in s:
                     return FakeResult(rows)
+            if "FROM gold.stop_delay_spine" in s:
+                if params.get("win_start") == _anchor - _dt.timedelta(days=6):
+                    return FakeResult(_weekly)
+                return FakeResult([])  # month (anchor-29) + any other window: empty
             return FakeResult([])
 
     out = build_stop_reliability(FC(), provider_id="stm", generated_utc="t")
@@ -1667,28 +1680,34 @@ def test_build_stop_reliability_occupancy_mix_none_when_no_telemetry() -> None:
     the route occupancy honesty path."""
     from transit_ops.snapshots.builders.historic import build_stop_reliability
 
+    import datetime as _dt
+    _anchor = _dt.date(2026, 6, 30)
     dispatch = [
         ("'__unrouted__'", []),
         ("AS banded", []),
         ("AS dow_obs", []),
-        # The stop survives into output purely on its weekly period row.
-        ("FROM gold.stop_delay_weekly", [
-            {"stop_id": "51234", "obs": 50, "weighted_delay_sec": 3000.0, "severe": 2},
-        ]),
-        ("FROM gold.stop_delay_monthly", []),
         ("FROM gold.stop_delay_hourly", []),
         ("stop_delay_percentile_daily", []),
         # No occupancy rows attributed to this stop -> honest-None occupancy_mix.
         ("stop_occupancy_band_daily AS sob", []),
         ("stop_name", [{"stop_id": "51234", "stop_name": "Berri-UQAM"}]),
     ]
+    # The stop survives into output purely on its weekly spine period row (DB-0067).
+    _weekly = [{"stop_id": "51234", "obs": 50, "weighted_delay_sec": 3000.0, "severe": 2}]
 
     class FC:
-        def execute(self, statement, params=None):  # noqa: ANN001, ANN201, ARG002
+        def execute(self, statement, params=None):  # noqa: ANN001, ANN201
             s = str(statement)
+            params = params or {}
+            if "MAX(service_local_date)" in s and "stop_delay_spine" in s:
+                return FakeResult([{"anchor": _anchor}])
             for needle, rows in dispatch:
                 if needle in s:
                     return FakeResult(rows)
+            if "FROM gold.stop_delay_spine" in s:
+                if params.get("win_start") == _anchor - _dt.timedelta(days=6):
+                    return FakeResult(_weekly)
+                return FakeResult([])
             return FakeResult([])
 
     out = build_stop_reliability(FC(), provider_id="stm", generated_utc="t")

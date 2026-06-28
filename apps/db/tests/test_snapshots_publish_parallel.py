@@ -404,11 +404,15 @@ def _historic_dispatch_conn():
         ("extract(isodow FROM :repdate)", [("svc_wd",)]),
         ("st.stop_sequence     = 1", []),
         ("route_habit_score", []),
-        ("stop_id, route_id", []),
-        ("stop_delay_weekly", [
-            {"stop_id": "S1", "obs": 100, "weighted_delay_sec": 9000, "severe": 10},
-        ]),
-        ("stop_delay_monthly", []),
+        # DB-0067 Phase 1: stop reliability + weak_stops_by_grain read the stop spine.
+        # Scoped anchor (does not shadow route_delay_spine / headway anchors).
+        ("AS anchor FROM gold.stop_delay_spine", [{"anchor": datetime.date(2026, 6, 30)}]),
+        ("stop_id, route_id", []),  # by_route: empty
+        # NOTE: the remaining gold.stop_delay_spine reads (build_stop_reliability
+        # weekly/monthly + the route weak_stops_by_grain windowed read) are handled
+        # explicitly in _Conn.execute below (the route-filtered weak-stops read
+        # shares the ubiquitous 'AND route_id = :route_id' clause, so a needle entry
+        # here would shadow many route SQLs and crash).
         ("citizen_accountability_daily", [
             {"provider_local_date": datetime.date(2026, 6, 1),
              "affected_route_count": 3, "affected_stop_count": 12,
@@ -426,6 +430,20 @@ def _historic_dispatch_conn():
     class _Conn:
         def execute(self, statement, params=None):
             s = str(statement)
+            # DB-0067 Phase 1 spine reads (see the dispatch NOTE above): the
+            # route-filtered weak_stops_by_grain read (sum_delay_sec) vs the
+            # build_stop_reliability weekly/monthly reads (weighted_delay_sec).
+            # by_route ('stop_id, route_id') + the anchor ('AS anchor') stay in
+            # the needle list, so they are excluded here.
+            if (
+                "gold.stop_delay_spine" in s
+                and "stop_id, route_id" not in s
+                and "AS anchor" not in s
+                and "repeated_problem_route_stop" not in s  # not the hotspots query
+            ):
+                if "route_id = :route_id" in s:
+                    return _R([{"stop_id": "S1", "obs": 10, "severe": 1, "sum_delay_sec": 900}])
+                return _R([{"stop_id": "S1", "obs": 100, "weighted_delay_sec": 9000, "severe": 10}])
             for needle, rows in dispatch:
                 if needle in s:
                     return _R(rows)

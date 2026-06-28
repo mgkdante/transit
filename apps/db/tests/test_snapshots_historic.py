@@ -103,6 +103,46 @@ class FakeConn:
         return _FakeResult([])
 
 
+class _StopSpineFakeConn:
+    """Params-aware mock for build_stop_reliability (DB-0067 Phase 1).
+
+    The re-pointed weekly + monthly reads share IDENTICAL SQL (group by stop_id
+    over gold.stop_delay_spine with a :win_start/:win_end window), so they can only
+    be told apart by the window param: week win_start = anchor-6, month = anchor-29.
+    The anchor query (MAX(service_local_date)) is answered first; by_route is keyed
+    on its 'GROUP BY stop_id, route_id'. Everything else returns empty.
+    """
+
+    def __init__(self, *, anchor, by_route=None, weekly=None, monthly=None, extra=None):  # noqa: ANN001
+        self._anchor = anchor
+        self._by_route = by_route or []
+        self._weekly = weekly or []
+        self._monthly = monthly or []
+        self._extra = extra or []  # ordered (needle, rows) for names/etc.
+        self.executed: list[str] = []
+
+    def execute(self, statement, params=None):  # noqa: ANN001
+        sql = str(statement)
+        self.executed.append(sql)
+        params = params or {}
+        if "MAX(service_local_date)" in sql and "stop_delay_spine" in sql:
+            return _FakeResult([{"anchor": self._anchor}])
+        for needle, rows in self._extra:
+            if needle in sql:
+                return _FakeResult(rows)
+        if "GROUP BY stop_id, route_id" in sql:
+            return _FakeResult(self._by_route)
+        if "stop_delay_spine" in sql:
+            # week vs month by the trailing-window start (anchor-6 vs anchor-29).
+            win_start = params.get("win_start")
+            if win_start == self._anchor - datetime.timedelta(days=6):
+                return _FakeResult(self._weekly)
+            if win_start == self._anchor - datetime.timedelta(days=29):
+                return _FakeResult(self._monthly)
+            return _FakeResult([])
+        return _FakeResult([])
+
+
 # --------------------------------------------------------------------------
 # _otp_pct convention (on_time=47, known=100 -> 47)
 # --------------------------------------------------------------------------
@@ -975,34 +1015,21 @@ def test_build_route_reliability_no_dataset_version_still_builds() -> None:
 
 
 def test_build_stop_reliability_batch() -> None:
-    conn = FakeConn(
-        [
-            # by_route must be matched BEFORE the weekly aggregate, because both
-            # SQLs contain 'stop_delay_weekly'; the by-route SQL is uniquely
-            # identified by selecting route_id (GROUP BY stop_id, route_id).
-            (
-                "GROUP BY stop_id, route_id",
-                [
-                    {"stop_id": "S1", "route_id": "51", "obs": 100, "weighted_delay_sec": 6000.0},
-                    {"stop_id": "S1", "route_id": "9", "obs": 50, "weighted_delay_sec": 9000.0},
-                ],
-            ),
-            (
-                "stop_delay_weekly",
-                [
-                    # S1: obs=150, severe=15 -> OTP 90; weighted 150*... avg
-                    # weighted_delay_sec total 12000 over obs 150 -> 80s -> 1.3 min
-                    {"stop_id": "S1", "obs": 150, "weighted_delay_sec": 12000.0, "severe": 15},
-                ],
-            ),
-            (
-                "stop_delay_monthly",
-                [
-                    # S1 monthly: obs=600, sev=30 -> OTP 95; 90000/600 = 150s -> 2.5
-                    {"stop_id": "S1", "obs": 600, "weighted_delay_sec": 90000.0, "severe": 30},
-                ],
-            ),
-        ]
+    # DB-0067 Phase 1: weekly + monthly + by_route all read gold.stop_delay_spine
+    # over a trailing window. The weekly/monthly SQL is now identical text (group by
+    # stop_id over the spine), so they are distinguished by the window param
+    # win_start: week = anchor-6, month = anchor-29 (see _grain_windows). The
+    # provider-wide MAX(service_local_date) anchor query is dispatched first.
+    conn = _StopSpineFakeConn(
+        anchor=datetime.date(2026, 6, 30),
+        by_route=[
+            {"stop_id": "S1", "route_id": "51", "obs": 100, "weighted_delay_sec": 6000.0},
+            {"stop_id": "S1", "route_id": "9", "obs": 50, "weighted_delay_sec": 9000.0},
+        ],
+        # S1: obs=150, severe=15 -> OTP 90; weighted 12000 over obs 150 -> 80s -> 1.3 min
+        weekly=[{"stop_id": "S1", "obs": 150, "weighted_delay_sec": 12000.0, "severe": 15}],
+        # S1 monthly: obs=600, sev=30 -> OTP 95; 90000/600 = 150s -> 2.5
+        monthly=[{"stop_id": "S1", "obs": 600, "weighted_delay_sec": 90000.0, "severe": 30}],
     )
 
     out = build_stop_reliability(conn, provider_id="stm", generated_utc="t")
@@ -1043,15 +1070,10 @@ def test_stop_by_route_sql_excludes_unrouted_sentinel() -> None:
 
 def test_build_stop_reliability_weekly_only_stop() -> None:
     """A stop present only in the weekly view still produces a model (month absent)."""
-    conn = FakeConn(
-        [
-            ("GROUP BY stop_id, route_id", []),
-            (
-                "stop_delay_weekly",
-                [{"stop_id": "S2", "obs": 80, "weighted_delay_sec": 4800.0, "severe": 8}],
-            ),
-            ("stop_delay_monthly", []),
-        ]
+    conn = _StopSpineFakeConn(
+        anchor=datetime.date(2026, 6, 30),
+        weekly=[{"stop_id": "S2", "obs": 80, "weighted_delay_sec": 4800.0, "severe": 8}],
+        monthly=[],
     )
     out = build_stop_reliability(conn, generated_utc="t")
     assert "S2" in out
@@ -1064,19 +1086,14 @@ def test_build_stop_reliability_weekly_only_stop() -> None:
 def test_build_stop_reliability_carries_name() -> None:
     """Per-stop files self-describe: name resolved current-dim-first with the
     history fallback; ids with no name anywhere stay None."""
-    conn = FakeConn(
-        [
-            ("GROUP BY stop_id, route_id", []),
-            (
-                "stop_delay_weekly",
-                [
-                    {"stop_id": "S1", "obs": 150, "weighted_delay_sec": 12000.0, "severe": 15},
-                    {"stop_id": "S_UNNAMED", "obs": 10, "weighted_delay_sec": 600.0, "severe": 0},
-                ],
-            ),
-            ("stop_delay_monthly", []),
-            ("DISTINCT ON (u.stop_id)", [{"stop_id": "S1", "stop_name": "Station Berri"}]),
-        ]
+    conn = _StopSpineFakeConn(
+        anchor=datetime.date(2026, 6, 30),
+        weekly=[
+            {"stop_id": "S1", "obs": 150, "weighted_delay_sec": 12000.0, "severe": 15},
+            {"stop_id": "S_UNNAMED", "obs": 10, "weighted_delay_sec": 600.0, "severe": 0},
+        ],
+        monthly=[],
+        extra=[("DISTINCT ON (u.stop_id)", [{"stop_id": "S1", "stop_name": "Station Berri"}])],
     )
 
     out = build_stop_reliability(conn, provider_id="stm", generated_utc="t")
@@ -1372,7 +1389,11 @@ def test_hotspots_sql_per_kind_otp_join_keys() -> None:
     assert "net_on_time" in sql and "net_known" in sql
     assert "route_spine_weekly AS" in sql
     assert "gold.route_delay_spine" in sql
-    assert "gold.stop_delay_weekly" in sql
+    # stop weekly OTP now ALSO derives from a spine-derived weekly CTE (DB-0067
+    # Phase 1) — the dropped stop_delay_weekly mart is no longer read here.
+    assert "stop_spine_weekly AS" in sql
+    assert "gold.stop_delay_spine" in sql
+    assert "gold.stop_delay_weekly" not in sql
     # stop network baseline aggregates the severe-proxy over ALL stops (same
     # metric a stop cell uses), so stop deltas are not lenient-vs-strict
     assert "net_stop_obs" in sql and "net_stop_severe" in sql
