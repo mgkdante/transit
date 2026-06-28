@@ -33,8 +33,10 @@ export interface PunctualityTrendLabels {
 	pctUnit: string;
 	/** Minutes unit suffix (e.g. " min"). */
 	minUnit: string;
-	/** Localized shift label for a shift-grain key (day-grain x-labels). */
+	/** Full localized shift label (day-grain TOOLTIP header). */
 	shiftLabel: (grain: string) => string;
+	/** SHORT localized shift label (day-grain x-axis TICK — keeps 5 shifts from overlapping on a phone). */
+	shiftShort: (grain: string) => string;
 }
 
 export function selectPunctualityTrend(
@@ -51,7 +53,9 @@ export function selectPunctualityTrend(
 				.slice()
 				.sort((a, b) => order.indexOf(a.grain) - order.indexOf(b.grain))
 				.map((r) => ({
-					x: r.grain,
+					// x is the band-scale key AND the tick label — use the SHORT shift label so the 5
+					// shifts don't overlap on a narrow plot; the FULL label rides the tooltip (xLabel).
+					x: labels.shiftShort(r.grain),
 					xLabel: labels.shiftLabel(r.grain),
 					y: r.otpPct,
 					y2: r.avgDelayMin,

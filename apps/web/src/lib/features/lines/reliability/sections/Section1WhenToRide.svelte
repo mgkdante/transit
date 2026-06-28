@@ -42,6 +42,7 @@
 	import { metricsCopy } from '$lib/features/metrics/metrics.copy';
 	import {
 		shiftLabel as shiftGrainLabel,
+		shiftLabelShort as shiftGrainLabelShort,
 		severeShareToSeverity,
 		DAY_TYPE_GRAIN_ORDER,
 		SHIFT_GRAIN_ORDER,
@@ -321,7 +322,9 @@
 			title: copy.crosstab.heading,
 			xLabel: copy.crosstab.shiftHeader,
 			yLabel: copy.strip.otpPct,
-			shiftLabel: (s) => shiftGrainLabel(s, locale),
+			// SHORT shift labels on the crosstab x-axis (5 shifts across a narrow plot overlap on a
+			// phone with the full "AM peak"/… labels); the lines' series carry the day-type identity.
+			shiftLabel: (s) => shiftGrainLabelShort(s, locale),
 			weekdayLabel: copy.peak.weekday,
 			weekendLabel: copy.peak.weekend,
 		}),

@@ -34,6 +34,7 @@
 	import { metricsCopy } from '$lib/features/metrics/metrics.copy';
 	import {
 		shiftLabel as shiftGrainLabel,
+		shiftLabelShort as shiftGrainLabelShort,
 		SEVERE_DOMAIN,
 		OTP_DOMAIN,
 		DELAY_POS_DOMAIN,
@@ -73,6 +74,7 @@
 		return { ...i, label: explainerCopy.info.trigger(name), linkLabel: explainerCopy.info.link };
 	});
 	const shiftLabel = (g: string): string => shiftGrainLabel(g, locale);
+	const shiftShort = (g: string): string => shiftGrainLabelShort(g, locale);
 
 	// KPI bullets — each headline number gets a scale-context bullet beneath it (the
 	// "every KPI is a LayerChart mark" mandate). On-time carries the 80% SLA target tick +
@@ -126,6 +128,7 @@
 			pctUnit: copy.units.pct,
 			minUnit: copy.units.min,
 			shiftLabel,
+			shiftShort,
 		}),
 	);
 	const hasTrend = $derived(trendSpec.kind === 'trend');
