@@ -628,21 +628,25 @@ def test_publish_historic_writes_expected_keys(tmp_path) -> None:
             {"day_of_week_iso": 1, "hour_of_day_local": 8, "repeat_problem_score": 0.7},
         ]),
         # (stop names are served by the "DISTINCT ON (u.stop_id)" entry above)
-        # build_stop_reliability: by_route — "stop_id, route_id" in SELECT
-        # (must precede the generic stop_delay_weekly entry)
+        # DB-0067 Phase 1: stop reliability weekly/monthly/by_route + the route
+        # weak_stops_by_grain all read gold.stop_delay_spine. Newest-closed-day
+        # anchor (MAX(service_local_date) FROM gold.stop_delay_spine) — matched
+        # first so the windowed reads below are reachable. Scoped to the stop spine
+        # so it does NOT shadow the route_delay_spine / route_headway anchors. Used
+        # by BOTH the provider-wide (build_stop_reliability) and route-filtered
+        # (weak_stops_by_grain) anchors.
+        ("AS anchor FROM gold.stop_delay_spine", [{"anchor": datetime.date(2026, 6, 30)}]),
+        # build_stop_reliability: by_route — "stop_id, route_id" in SELECT (must
+        # precede the generic stop_delay_spine reads handled in execute()).
         ("stop_id, route_id", [
             {"stop_id": "51234", "route_id": "101", "obs": 100,
              "weighted_delay_sec": 9000},
         ]),
-        # weak stops for route_reliability AND stop_reliability weekly share stop_delay_weekly
-        # Both queries want (stop_id, obs, weighted_delay_sec, severe) rows
-        ("stop_delay_weekly", [
-            {"stop_id": "51234", "obs": 100, "weighted_delay_sec": 9000, "severe": 10},
-        ]),
-        # build_stop_reliability: monthly
-        ("stop_delay_monthly", [
-            {"stop_id": "51234", "obs": 400, "weighted_delay_sec": 36000, "severe": 40},
-        ]),
+        # NOTE: the remaining gold.stop_delay_spine reads (build_stop_reliability
+        # weekly/monthly + the route weak_stops_by_grain windowed read) are handled
+        # explicitly in FakeConnHistoric.execute — the route-filtered weak-stops read
+        # shares the ubiquitous 'AND route_id = :route_id' clause with many route
+        # SQLs, so a needle-substring entry here would shadow them and crash.
         # build_receipts: accountability
         ("citizen_accountability_daily", [
             {"provider_local_date": datetime.date(2026, 6, 1),
@@ -666,6 +670,27 @@ def test_publish_historic_writes_expected_keys(tmp_path) -> None:
     class FakeConnHistoric:
         def execute(self, statement, params=None):
             s = str(statement)
+            # DB-0067 Phase 1 spine reads, handled before the needle list:
+            # the route-filtered weak_stops_by_grain windowed read (carries
+            # sum_delay_sec) vs build_stop_reliability weekly/monthly (carry
+            # weighted_delay_sec). The 'stop_id, route_id' by_route read is matched
+            # in the needle list above (precedes this generic spine branch).
+            if (
+                "gold.stop_delay_spine" in s
+                and "stop_id, route_id" not in s
+                and "AS anchor" not in s  # let the MAX(...) anchor reach the needle list
+                and "repeated_problem_route_stop" not in s  # not the hotspots query
+            ):
+                if "route_id = :route_id" in s:
+                    # weak_stops_by_grain: obs<30 -> below MIN_N -> stays [] (not asserted).
+                    return _FakeResult(
+                        [{"stop_id": "51234", "obs": 10, "severe": 1, "sum_delay_sec": 900}]
+                    )
+                # build_stop_reliability weekly/monthly (GROUP BY stop_id) -> the
+                # surviving stop, so 51234.json is written.
+                return _FakeResult(
+                    [{"stop_id": "51234", "obs": 100, "weighted_delay_sec": 9000, "severe": 10}]
+                )
             for needle, rows in dispatch:
                 if needle in s:
                     return _FakeResult(rows)

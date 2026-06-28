@@ -1770,15 +1770,26 @@ def build_route_reliability(
 # build_stop_reliability (BATCH — mirrors build_all_stops_data)
 # --------------------------------------------------------------------------
 
-# Per-stop weekly/monthly delay, aggregated across the stop's routes.
+# Per-stop weekly/monthly delay, aggregated across the stop's routes — recomposed
+# from the daily gold.stop_delay_spine (DB-0067 Phase 1) over a trailing window.
+# MIRRORS THE ROUTE PRECEDENT (_spine_route_periods): week = trailing-7d,
+# month = trailing-30d via _grain_windows(anchor); the (dropped) marts were the
+# whole open window, so this makes stops grain-consistent with routes. The spine
+# stores route_id COALESCE'd to '__unrouted__', so SUM-across-all-routes (the
+# whole-stop view) includes the unrouted obs exactly as the marts did (which also
+# carried an '__unrouted__' route partition per stop). weighted_delay_sec is the
+# spine's pooled in-clamp SUM(sum_delay_seconds) directly (the rebaselined avg
+# numerator), NOT the marts' SUM(avg*obs) approximation. avg = weighted/obs is the
+# deliberate, accepted pooled rebaseline. :win_start/:win_end bound the window.
 _STOP_REL_WEEKLY_SQL = text(
     """
     SELECT stop_id,
-           SUM(observation_count)                      AS obs,
-           SUM(avg_delay_seconds * observation_count)  AS weighted_delay_sec,
-           SUM(severe_delay_count)                     AS severe
-    FROM gold.stop_delay_weekly
+           SUM(observation_count)  AS obs,
+           SUM(sum_delay_seconds)  AS weighted_delay_sec,
+           SUM(severe_delay_count) AS severe
+    FROM gold.stop_delay_spine
     WHERE provider_id = :provider_id
+      AND service_local_date >= :win_start AND service_local_date <= :win_end
     GROUP BY stop_id
     """
 )
@@ -1786,28 +1797,38 @@ _STOP_REL_WEEKLY_SQL = text(
 _STOP_REL_MONTHLY_SQL = text(
     """
     SELECT stop_id,
-           SUM(observation_count)                      AS obs,
-           SUM(avg_delay_seconds * observation_count)  AS weighted_delay_sec,
-           SUM(severe_delay_count)                     AS severe
-    FROM gold.stop_delay_monthly
+           SUM(observation_count)  AS obs,
+           SUM(sum_delay_seconds)  AS weighted_delay_sec,
+           SUM(severe_delay_count) AS severe
+    FROM gold.stop_delay_spine
     WHERE provider_id = :provider_id
+      AND service_local_date >= :win_start AND service_local_date <= :win_end
     GROUP BY stop_id
     """
 )
 
-# Per-(stop, route) average delay across the retained weekly window.
+# Per-(stop, route) average delay across the trailing weekly window, recomposed
+# from the spine. route_id is COALESCE'd to '__unrouted__' in the spine; drop it
+# so a stop's per-route breakdown never lists the internal sentinel (parity with
+# the dropped mart read). weighted_delay_sec = pooled SUM(sum_delay_seconds).
 _STOP_REL_BY_ROUTE_SQL = text(
     """
     SELECT stop_id, route_id,
-           SUM(observation_count)                      AS obs,
-           SUM(avg_delay_seconds * observation_count)  AS weighted_delay_sec
-    FROM gold.stop_delay_weekly
+           SUM(observation_count) AS obs,
+           SUM(sum_delay_seconds) AS weighted_delay_sec
+    FROM gold.stop_delay_spine
     WHERE provider_id = :provider_id
-      -- route_id is COALESCE'd to '__unrouted__' in the stop_delay feeder; drop
-      -- it so a stop's per-route breakdown never lists the internal sentinel.
       AND route_id <> '__unrouted__'
+      AND service_local_date >= :win_start AND service_local_date <= :win_end
     GROUP BY stop_id, route_id
     """
+)
+
+# Provider-wide newest-closed-day anchor for the stop reliability windows (no
+# route filter — build_stop_reliability is a cross-route batch over ALL stops).
+_STOP_REL_ANCHOR_SQL = text(
+    "SELECT MAX(service_local_date) AS anchor FROM gold.stop_delay_spine "
+    "WHERE provider_id = :provider_id"
 )
 
 
@@ -1950,19 +1971,33 @@ def build_stop_reliability(
 ) -> dict[str, StopReliability]:
     """Build all historic/stop_reliability/{stop_id}.json in a batched pass.
 
-    For every stop in gold.stop_delay_weekly/monthly: weekly+monthly periods
-    aggregated across the stop's routes. Stop OTP remains a severe(>300s)-only
-    proxy, now over per-stop delay observations. Returns stop_id -> model.
+    For every stop in gold.stop_delay_spine: weekly (trailing-7d) + monthly
+    (trailing-30d) periods recomposed across the stop's routes (DB-0067 Phase 1),
+    consistent with the route reliability grain windows. Stop OTP remains a
+    severe(>300s)-only proxy, now over per-stop delay observations. Returns
+    stop_id -> model.
     """
     params = {"provider_id": provider_id}
 
     def _weighted_avg_sec(obs: object, weighted: object) -> float | None:
         return (float(weighted) / float(obs)) if obs and weighted is not None else None
 
+    # Trailing windows for the spine recompose (DB-0067 Phase 1): week = trailing-7d,
+    # month = trailing-30d, anchored on the newest closed day in the spine for this
+    # provider (mirrors the route precedent _spine_route_periods). When the spine is
+    # empty the anchor is None -> the windowed reads are skipped (no rows, honest absence).
+    anchor_row = conn.execute(_STOP_REL_ANCHOR_SQL, params).mappings().fetchone()
+    anchor = anchor_row["anchor"] if anchor_row else None
+    windows = _grain_windows(anchor) if anchor is not None else {}
+
     # period rows keyed stop_id -> {grain: StopReliabilityPeriod}
     periods: dict[str, dict[str, StopReliabilityPeriod]] = {}
     for grain, sql in (("week", _STOP_REL_WEEKLY_SQL), ("month", _STOP_REL_MONTHLY_SQL)):
-        for r in conn.execute(sql, params).mappings():
+        if grain not in windows:
+            continue
+        win_start, win_end = windows[grain]
+        win_params = {**params, "win_start": win_start, "win_end": win_end}
+        for r in conn.execute(sql, win_params).mappings():
             sid = str(r["stop_id"])
             avg_sec = _weighted_avg_sec(r["obs"], r["weighted_delay_sec"])
             # severe-proxy Wilson success = not-severe count (obs - severe); bounds
@@ -1997,9 +2032,15 @@ def build_stop_reliability(
             wilson_hi=_wilson_hi(severe_k, r["obs"]),
         )
 
-    # by_route breakdown keyed stop_id -> list[StopByRoute]
+    # by_route breakdown keyed stop_id -> list[StopByRoute] (trailing-7d week window).
     by_route: dict[str, list[StopByRoute]] = {}
-    for r in conn.execute(_STOP_REL_BY_ROUTE_SQL, params).mappings():
+    if "week" in windows:
+        win_start, win_end = windows["week"]
+        by_route_params = {**params, "win_start": win_start, "win_end": win_end}
+        by_route_rows = conn.execute(_STOP_REL_BY_ROUTE_SQL, by_route_params).mappings()
+    else:
+        by_route_rows = []
+    for r in by_route_rows:
         sid = str(r["stop_id"])
         avg_sec = _weighted_avg_sec(r["obs"], r["weighted_delay_sec"])
         by_route.setdefault(sid, []).append(
@@ -2130,7 +2171,8 @@ def _otp_delta_pts(cell_otp: int | None, network_otp: int | None) -> float | Non
 #                     (route, ISO-week) SUM of on_time/delay observation counts off
 #                     gold.route_delay_spine), joined ONLY when entity_kind = 'route'
 #                     so a stop never picks up a route's counts.
-#   * stop cells   -> per-stop obs + severe from gold.stop_delay_weekly (summed
+#   * stop cells   -> per-stop obs + severe from the stop_spine_weekly CTE (the
+#                     per-(stop, ISO-week) SUM off gold.stop_delay_spine, summed
 #                     across the stop's routes for the target week), joined ONLY
 #                     when entity_kind = 'stop'. Stops have no on_time column, so
 #                     their OTP stays the documented severe(>300s) proxy.
@@ -2200,26 +2242,40 @@ _HOTSPOTS_SQL = text(
         FROM route_spine_weekly AS rrw, target
         WHERE rrw.week_start_local = target.target_start
     ),
+    -- Per-stop weekly obs + severe derived from the stop delay spine (DB-0067
+    -- Phase 1): the ISO-week SUMs are byte-identical to the (dropped)
+    -- stop_delay_weekly columns, so the stop OTP proxy + the stop-grain network
+    -- baseline below are unchanged. week_start_local is the feed-local ISO-week
+    -- Monday (same date_trunc the mart used). The spine COALESCEs route_id to
+    -- '__unrouted__', so SUM-across-all-routes per stop matches the mart's
+    -- per-stop total (which also carried the unrouted partition).
+    stop_spine_weekly AS (
+        SELECT stop_id,
+               date_trunc('week', service_local_date)::date AS week_start_local,
+               SUM(observation_count)  AS observation_count,
+               SUM(severe_delay_count) AS severe_delay_count
+        FROM gold.stop_delay_spine
+        WHERE provider_id = :provider_id
+        GROUP BY stop_id, date_trunc('week', service_local_date)::date
+    ),
     -- Stop-grain network baseline for the target week: the SAME severe(>300s)
     -- proxy a stop cell uses ((obs - severe)/obs), aggregated across ALL stops.
     -- A stop cell's delta must be same-metric-vs-same-metric, so its baseline is
     -- this stop-grain severe-proxy network OTP, NOT the route on-time net above.
     net_stop AS (
-        SELECT SUM(sdw.observation_count)  AS net_stop_obs,
-               SUM(sdw.severe_delay_count) AS net_stop_severe
-        FROM gold.stop_delay_weekly AS sdw, target
-        WHERE sdw.provider_id = :provider_id
-          AND sdw.week_start_local = target.target_start
+        SELECT SUM(ssw.observation_count)  AS net_stop_obs,
+               SUM(ssw.severe_delay_count) AS net_stop_severe
+        FROM stop_spine_weekly AS ssw, target
+        WHERE ssw.week_start_local = target.target_start
     ),
     -- Per-stop obs + severe summed across the stop's routes for the target week.
     stop_otp AS (
-        SELECT sdw.stop_id,
-               SUM(sdw.observation_count)  AS stop_obs,
-               SUM(sdw.severe_delay_count) AS stop_severe
-        FROM gold.stop_delay_weekly AS sdw, target
-        WHERE sdw.provider_id = :provider_id
-          AND sdw.week_start_local = target.target_start
-        GROUP BY sdw.stop_id
+        SELECT ssw.stop_id,
+               SUM(ssw.observation_count)  AS stop_obs,
+               SUM(ssw.severe_delay_count) AS stop_severe
+        FROM stop_spine_weekly AS ssw, target
+        WHERE ssw.week_start_local = target.target_start
+        GROUP BY ssw.stop_id
     )
     SELECT rp.entity_kind, rp.entity_id, rp.issue_count, rp.severity_label,
            rrw.on_time_observation_count AS route_on_time,

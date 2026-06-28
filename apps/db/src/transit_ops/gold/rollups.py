@@ -677,8 +677,9 @@ REPORTING_AGGREGATE_TABLES = (
     "stop_delay_weekly",
     "stop_delay_monthly",
     "route_habit_score",
-    # repeated_problem_route_stop derives route-grain recurrence from the route
-    # delay spine (built earlier, in the append-only section) + stop_delay_weekly.
+    # repeated_problem_route_stop derives route-grain AND stop-grain recurrence
+    # from the route + stop delay spines (built earlier, in the append-only
+    # section). DB-0067 Phase 1 re-pointed the stop grain off stop_delay_weekly.
     "repeated_problem_route_stop",
     "citizen_accountability_daily",
     "route_headway_by_shift",
@@ -1002,6 +1003,16 @@ UPSERT_REPEATED_PROBLEM_ROUTE_STOP = text(
         WHERE sp.provider_id = :provider_id
         GROUP BY 1, 2, 3, 4, 5, 6
     ),
+    -- Stop-grain weekly recurrence derived from the stop delay spine (DB-0067
+    -- Phase 1), mirroring route_week above: the ISO-week SUM(severe_delay_count)
+    -- per (stop, route, week) is byte-identical to the (dropped) stop_delay_weekly
+    -- column, so issue_count + the issue_count-driven severity are unchanged.
+    -- avg_delay_seconds rebaselines to the ghost-excluded pooled mean
+    -- (SUM(sum_delay_seconds) / SUM(observation_count), where observation_count IS
+    -- the in-clamp count) vs the mart's AVG-of-stored-weekly-averages — it only
+    -- influences severity at the 300/600s thresholds for low-severe rows. The
+    -- spine PK keeps stop_id NOT NULL and COALESCEs route_id to '__unrouted__';
+    -- the defensive COALESCEs preserve the sentinel grain byte-for-byte.
     stop_week AS (
         SELECT
             s.provider_id,
@@ -1009,10 +1020,14 @@ UPSERT_REPEATED_PROBLEM_ROUTE_STOP = text(
             COALESCE(s.stop_id, '__unknown_stop__') AS entity_id,
             COALESCE(s.route_id, '__unrouted__') AS route_id,
             'week'::text AS period_grain,
-            s.week_start_local AS period_start_local,
+            date_trunc('week', s.service_local_date)::date AS period_start_local,
             SUM(s.severe_delay_count)::integer AS issue_count,
-            ROUND(AVG(s.avg_delay_seconds)::numeric, 2) AS avg_delay_seconds
-        FROM gold.stop_delay_weekly AS s
+            ROUND(
+                SUM(s.sum_delay_seconds)::numeric
+                / NULLIF(SUM(s.observation_count), 0),
+                2
+            ) AS avg_delay_seconds
+        FROM gold.stop_delay_spine AS s
         WHERE s.provider_id = :provider_id
         GROUP BY 1, 2, 3, 4, 5, 6
     ),
