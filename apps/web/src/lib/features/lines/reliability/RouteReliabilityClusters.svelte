@@ -28,7 +28,8 @@
 <script lang="ts">
 	import { cn } from '$lib/utils';
 	import { page } from '$app/state';
-	import { mirrorSearchParam } from '$lib/site/urlMirror';
+	import { mirrorSearchParams } from '$lib/site/urlMirror';
+	import { resolveRangeSeed, isIsoDate } from './rangeSeed';
 	import type { Locale } from '$lib/i18n';
 	import type { RouteReliability } from '$lib/v1';
 	import { SvelteSet } from 'svelte/reactivity';
@@ -88,10 +89,12 @@
 	   effective window `mode` IS `viewKey`. The "range" segment is offered only when
 	   the contract carries dated day-periods (else there is nothing to range over).
 
-	   The reliability surface OWNS ?grain (the rail lives here): seed the selection from ?grain on
-	   load + mirror it back, so a windowed view is shareable/deep-linkable. The URL is a HINT, never
-	   a data source — an unknown or unavailable grain is clamped to 'day' (the availability clamp
-	   below), and replaceState (not pushState) keeps grain switches out of the history stack. */
+	   The reliability surface OWNS ?grain + ?from/?to (the rail lives here): seed the selection from
+	   ?grain (and the custom range from ?from/?to) on load + mirror them back, so a windowed OR
+	   date-range view is shareable/deep-linkable. The URL is a HINT, never a data source — an unknown
+	   or unavailable grain is clamped to 'day', a ?from/?to bound the contract has no day for is
+	   dropped, and a complete valid from+to implies range intent (the availability clamp below).
+	   replaceState (not pushState) keeps view switches out of the history stack. */
 	type GrainMode = 'day' | 'week' | 'month' | 'range';
 	const GRAIN_MODES: readonly GrainMode[] = ['day', 'week', 'month', 'range'];
 	const readGrain = (): GrainMode => {
@@ -104,8 +107,14 @@
 	// otherwise the calendar grain). Kept as a named derived so the mapper/caption
 	// logic below reads unchanged from the prior single-select model.
 	const mode = $derived<GrainMode>(viewKey);
-	let rangeStart = $state<string>('');
-	let rangeEnd = $state<string>('');
+	// PR-WEB-4: seed the custom range from ?from/?to (shape-checked here; availability-validated in
+	// the clamp below, where the dated window is known). A malformed value seeds as '' (no range).
+	const readDateParam = (key: string): string => {
+		const v = page.url.searchParams.get(key);
+		return isIsoDate(v) ? v : '';
+	};
+	let rangeStart = $state<string>(readDateParam('from'));
+	let rangeEnd = $state<string>(readDateParam('to'));
 
 	// Dated DAY-grain periods the contract carries (for the range picker), sorted
 	// ascending so the start/end dropdowns read oldest→newest. A day-grain period
@@ -144,19 +153,28 @@
 	// needs `data` (a $derived) — so clamp once after first render. A URL-seeded grain the contract
 	// can't serve (week/month absent, or range with no dated days) falls back to 'day' so the control
 	// never resolves to an empty grain.
-	let grainClamped = false;
+	let settled = false;
 	$effect(() => {
-		if (grainClamped) return;
-		grainClamped = true;
+		if (settled) return;
+		settled = true;
+		// PR-WEB-4: validate the URL-seeded ?from/?to bounds against the real dated window (drop an
+		// out-of-window / non-existent bound — the URL is a hint, never fabricates a window) and let a
+		// COMPLETE from+to imply range intent even without ?grain=range. resolveRangeSeed is pure.
+		const seed = resolveRangeSeed(
+			rangeStart,
+			rangeEnd,
+			viewKey,
+			new Set(datedPeriods.map((p) => p.date)),
+		);
+		rangeStart = seed.from;
+		rangeEnd = seed.to;
+		if (seed.activateRange) viewKey = 'range';
+		// Grain availability clamp: a grain the contract can't serve falls back to 'day' so the
+		// control never resolves to an empty grain.
 		if ((viewKey === 'week' || viewKey === 'month') && !availableGrains.has(viewKey))
 			viewKey = 'day';
 		else if (viewKey === 'range' && !hasDatedPeriods) viewKey = 'day';
 	});
-
-	// Mirror the effective grain to ?grain (shareable/deep-linkable), omitting the 'day' default for a
-	// clean canonical URL. Disjoint from RouteDetail's ?tab writer (a different param), so they compose
-	// without racing.
-	$effect(() => mirrorSearchParam('grain', mode === 'day' ? null : mode));
 
 	// A complete range needs both bounds; we normalise start ≤ end so the user can
 	// pick the two dates in any order without inverting the window.
@@ -167,6 +185,21 @@
 				? { start: rangeStart, end: rangeEnd }
 				: { start: rangeEnd, end: rangeStart }
 			: undefined,
+	);
+
+	// Mirror this rail's view state — ?grain + the custom range ?from/?to — in ONE batched write so a
+	// windowed OR date-range view is shareable/deep-linkable. Must be a SINGLE mirrorSearchParams call,
+	// NOT three: replaceState updates page.url async, so back-to-back single writes clobber each other
+	// (the bug that left ?grain=range&from=… stuck on a switch to 'day'). ?from/?to mirror the
+	// NORMALIZED range and ONLY when it is COMPLETE (normalizedRange != null) — so a half-picked or
+	// inverted range never leaks an incomplete/backwards bound into a shared URL; 'day' + non-range
+	// null their params for a clean canonical URL. Disjoint from RouteDetail's ?tab writer.
+	$effect(() =>
+		mirrorSearchParams({
+			grain: mode === 'day' ? null : mode,
+			from: normalizedRange?.start ?? null,
+			to: normalizedRange?.end ?? null,
+		}),
 	);
 
 	// What the mapper resolves for. In range mode we thread the picked window to
