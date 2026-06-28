@@ -738,7 +738,12 @@
 	   content edges land back on the page-padding line — centred at every width,
 	   aligned with the control spine + the /stop DashboardGrid. */
 	.reliability-band {
-		width: 100%;
+		/* NO width:100% here. With width:100% the band is pinned to the parent's width, so the
+		   .surface-bleed negative margins only shift it LEFT (they cannot widen it on the right) —
+		   that was the mobile "everything biased to the left" bug (band bled to x=0 but its right
+		   edge stopped a full gutter short). As a STRETCH flex child of .reliability-grain-block,
+		   leaving width auto lets the negative inline margins widen the band symmetrically to both
+		   page edges, so the re-padded content sits centred. */
 		padding-inline: var(--space-page-x);
 		/* TOC jump-to: clear the sticky control rail so a jumped-to section header isn't
 		   hidden under it. */
