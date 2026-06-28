@@ -736,6 +736,20 @@
 		border-top: 1px solid var(--border);
 		padding-top: clamp(1.75rem, 4vw, 2.75rem);
 	}
+	/* #8 Blueprint frame: each GRAPH block carries a hairline card so its title (top) + chart +
+	   caption (bottom) read as ONE unit — a title can never be mistaken for the previous graph's
+	   footnote. The section's PRIMARY chart gets an orange left-rule (the yesid hero motif). Scoped
+	   global so it reaches the chart blocks the Section components render. The inner stack keeps the
+	   blocks' own gap; the frame just bounds it. */
+	:global(.reliability-band [data-card]) {
+		border: 1px solid var(--border);
+		background: color-mix(in oklab, var(--card) 70%, transparent);
+		border-radius: var(--radius-lg, 0.75rem);
+		padding: clamp(0.9rem, 2.2vw, 1.35rem);
+	}
+	:global(.reliability-band [data-card='primary']) {
+		border-inline-start: 3px solid var(--primary);
+	}
 
 	/* The rider-question section TITLE. Operator: "titles need to be HUGE, like yesid.dev
 	   treats titles" — yesid.dev frames each section with a small mono EYEBROW (our

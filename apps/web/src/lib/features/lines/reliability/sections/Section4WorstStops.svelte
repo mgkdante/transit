@@ -132,7 +132,7 @@
 >
 	{#if weakStops.shown > 0}
 		<!-- PRIMARY — the worst-N stops lollipop + the worst-N selector (the disclosure). -->
-		<div class="section-primary" data-slot="weak-stops">
+		<div class="section-primary" data-slot="weak-stops" data-card="primary">
 			<div class="weak-stops-head">
 				<span class="label-with-info">
 					<SectionLabel text={weakStopsHeading} variant="metric" />

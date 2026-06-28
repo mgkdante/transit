@@ -373,7 +373,7 @@
 		</div>
 	{:else}
 		<!-- ── "Will it run?" sub-block (service delivered) ───────────────────── -->
-		<div class="sub-block" data-slot="run-sub-block">
+		<div class="sub-block" data-slot="run-sub-block" data-card>
 			<div class="sub-head">
 				<SectionLabel text={copy.clusters.serviceDelivered} variant="metric" />
 				<!-- Window caption: the rate histories cover the most-recent closed days. -->
@@ -418,7 +418,7 @@
 		</div>
 
 		<!-- ── "Will you fit?" sub-block (crowding) ───────────────────────────── -->
-		<div class="sub-block" data-slot="fit-sub-block">
+		<div class="sub-block" data-slot="fit-sub-block" data-card>
 			<div class="sub-head">
 				<span class="label-with-info">
 					<SectionLabel

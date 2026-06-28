@@ -379,7 +379,7 @@
 	{:else}
 		<!-- PRIMARY — the 7×24 repeat-problems heatmap (always visible). -->
 		{#if hasHeatmap}
-			<div class="section-primary" data-slot="habits-heatmap">
+			<div class="section-primary" data-slot="habits-heatmap" data-card="primary">
 				<span class="label-with-info">
 					<SectionLabel text={band.heatmapHeading} variant="metric" />
 					{@render metricInfo('habits', band.heatmapHeading)}
@@ -398,7 +398,7 @@
 			     on-time rate with a significance-gated Δ-vs-prior badge. Shown only when the
 			     breakdowns are windowed (else there is no prior to compare against). -->
 			{#if hasOnTimeCompare}
-				<div class="block" data-slot="on-time-vs-prior">
+				<div class="block" data-slot="on-time-vs-prior" data-card>
 					<span class="label-with-info">
 						<SectionLabel text={copy.priorDelta.onTimeHeading} variant="metric" />
 						{@render metricInfo('otp', copy.priorDelta.onTimeHeading)}
@@ -413,7 +413,7 @@
 
 			<!-- By time of day (A1): the per-shift severe-share dot-strip + weekday/weekend split. -->
 			{#if hasPeak}
-				<div class="block" data-slot="peak-off-peak">
+				<div class="block" data-slot="peak-off-peak" data-card>
 					<span class="label-with-info">
 						<SectionLabel text={copy.peak.heading} variant="metric" />
 						{@render metricInfo('severe', copy.peak.heading)}
@@ -447,7 +447,7 @@
 
 			<!-- By shift and day type (G1): weekday vs weekend OTP across shifts as TWO lines. -->
 			{#if crosstabLines.hasData}
-				<div class="block" data-slot="shift-daytype-crosstab">
+				<div class="block" data-slot="shift-daytype-crosstab" data-card>
 					<span class="label-with-info">
 						<SectionLabel text={copy.crosstab.heading} variant="metric" />
 						{@render metricInfo('otp', copy.crosstab.heading)}
@@ -459,7 +459,7 @@
 
 			<!-- Weekday seasonality: mean delay per weekday (Mon→Sun) as ONE line. -->
 			{#if hasWeekday}
-				<div class="block" data-slot="habits-weekday">
+				<div class="block" data-slot="habits-weekday" data-card>
 					<span class="label-with-info">
 						<SectionLabel text={band.weekdayHeading} variant="metric" />
 						{@render metricInfo('seasonality', band.weekdayHeading)}

@@ -235,7 +235,7 @@
 
 		<!-- PRIMARY — the on-time / avg-delay trend. -->
 		{#if hasTrend}
-			<div class="section-primary" data-slot="otp-trend">
+			<div class="section-primary" data-slot="otp-trend" data-card="primary">
 				<div class="block-head">
 					<SectionLabel text={copy.strip.otpPct} variant="metric" />
 					<span class="block-window" data-slot="trend-window"
@@ -251,7 +251,7 @@
 
 		<!-- DETAIL — distribution + severe-delay share, one disclosure level deep. -->
 		<Detail label={copy.sections.detailShow} labelOpen={copy.sections.detailHide}>
-			<div class="block" data-slot="delay-distribution">
+			<div class="block" data-slot="delay-distribution" data-card>
 				<div class="block-head">
 					<span class="label-with-info">
 						<SectionLabel text={copy.strip.delayDistHeading} variant="metric" />
@@ -282,7 +282,7 @@
 				{/if}
 			</div>
 
-			<div class="block" data-slot="severe-share">
+			<div class="block" data-slot="severe-share" data-card>
 				<div class="block-head">
 					<span class="label-with-info">
 						<SectionLabel text={copy.strip.severePct} variant="metric" />

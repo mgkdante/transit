@@ -651,7 +651,7 @@
 		<!-- PRIMARY — the consolidated scheduled-vs-observed DUMBBELL (A8): ALL shifts in ONE chart
 		     on the fixed HEADWAY_DOMAIN, so the gap reads at a glance AND across the day. The
 		     <Chart> renders the honest-absence chip itself when no shift has both endpoints. -->
-		<div class="section-primary" data-slot="headway-dumbbell">
+		<div class="section-primary" data-slot="headway-dumbbell" data-card="primary">
 			<span class="label-with-info">
 				<SectionLabel text={t.headwaySection} variant="metric" />
 				{@render metricInfo('headway', t.headwaySection)}
@@ -691,7 +691,7 @@
 				     wait per shift with a significance-gated Δ-vs-prior badge. Windowed-only (the
 				     scalar whole-history headway carries no prior to compare). -->
 				{#if hasWaitCompare}
-					<div class="block" data-slot="wait-vs-prior">
+					<div class="block" data-slot="wait-vs-prior" data-card>
 						<span class="label-with-info">
 							<SectionLabel text={copy.priorDelta.waitHeading} variant="metric" />
 							{@render metricInfo('headway', copy.priorDelta.waitHeading)}
@@ -711,21 +711,21 @@
 					     clean comparison per metric, replacing the cramped per-shift row stack. Each
 					     <Chart> renders its own honest-absence chip when no shift carries that reading. -->
 					<div class="shift-charts" data-slot="shift-regularity-charts">
-						<div class="shift-chart" data-metric="excess">
+						<div class="shift-chart" data-metric="excess" data-card>
 							<span class="label-with-info">
 								<SectionLabel text={terms.excessWait} variant="metric" />
 								{@render metricInfo('excessWait', terms.excessWait)}
 							</span>
 							<Chart spec={excessBars} />
 						</div>
-						<div class="shift-chart" data-metric="cov">
+						<div class="shift-chart" data-metric="cov" data-card>
 							<span class="label-with-info">
 								<SectionLabel text={terms.spread} variant="metric" />
 								{@render metricInfo('regularityCov', terms.spread)}
 							</span>
 							<Chart spec={covBars} />
 						</div>
-						<div class="shift-chart" data-metric="bunched">
+						<div class="shift-chart" data-metric="bunched" data-card>
 							<span class="label-with-info">
 								<SectionLabel text={terms.clumped} variant="metric" />
 								{@render metricInfo('regularityCov', terms.clumped)}
@@ -788,7 +788,7 @@
 
 			<!-- Service-span sub-block, only when a signal-carrying day exists. -->
 			{#if hasSpan && latestSpan}
-				<div class="cluster-sub" data-sub="service-span">
+				<div class="cluster-sub" data-sub="service-span" data-card>
 					<div class="span-head">
 						<span class="label-with-info">
 							<SectionLabel text={t.spanSection} variant="metric" />
