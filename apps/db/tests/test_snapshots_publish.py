@@ -962,3 +962,109 @@ def test_historic_route_enumeration_excludes_unrouted_sentinel() -> None:
     assert "__unrouted__" not in sql
     assert "route_reliability_weekly" not in sql
     assert "route_reliability_monthly" not in sql
+
+
+def test_static_publish_dataset_gate_skips_unchanged_but_rebuilds_on_change(monkeypatch) -> None:
+    """The static dataset-level gate (DB-perf fix) skips the whole ~9k-file rebuild ONLY
+    when the dataset stamp is unchanged AND the hash-state fingerprint still matches; a new
+    GTFS edition (stamp differs) or a format/cache change (fingerprint differs) forces the
+    full rebuild so a real schedule change never stalls."""
+    import datetime as _dt
+    from contextlib import contextmanager
+
+    from transit_ops.snapshots import publish as _pub
+    from transit_ops.snapshots.storage import state_fingerprint
+
+    _STAMP = _dt.datetime(2026, 6, 10, 19, 47, 28, tzinfo=_dt.timezone.utc)
+
+    class _Res:
+        def __init__(self, rows):
+            self._rows = list(rows)
+
+        def mappings(self):
+            outer = self
+
+            class _M:
+                def fetchone(self_m):
+                    return outer._rows[0] if outer._rows else None
+
+            return _M()
+
+        def fetchone(self):
+            return self._rows[0] if self._rows else None
+
+    class _Conn:
+        def __init__(self, *, skip_row: bool) -> None:
+            self._skip_row = skip_row
+            self.executed: list[str] = []
+
+        def execute(self, statement, params=None):
+            s = str(statement)
+            self.executed.append(s)
+            if "loaded_at_utc FROM core.dataset_versions" in s:
+                return _Res([{"loaded_at_utc": _STAMP}])
+            # the dataset-skip probe: the ONLY query that CASTs the stamp against the state row.
+            # Returns a positional Row (tuple) like real SQLAlchemy, so match[0] = files_total.
+            if "core.snapshot_publish_state" in s and "CAST" in s:
+                return _Res([(9222,)] if self._skip_row else [])
+            return _Res([])
+
+    class _Engine:
+        def __init__(self, conn) -> None:
+            self._conn = conn
+
+        def begin(self):
+            @contextmanager
+            def _cm():
+                yield self._conn
+
+            return _cm()
+
+    class _Store:
+        def __init__(self, *, fp_doc) -> None:
+            self._fp_doc = fp_doc
+
+        def get_json(self, rel_key):
+            return self._fp_doc
+
+        def put_bytes(self, rel_key, body, *, tier):
+            return rel_key
+
+        def put_json(self, rel_key, payload, *, tier):
+            return rel_key
+
+        def full_key(self, rel_key):
+            return rel_key
+
+    calls: list[str] = []
+
+    def _spy(conn, storage, *, provider_id, settings, stamp):
+        calls.append(stamp)
+        return []
+
+    monkeypatch.setattr(_pub, "_publish_static", _spy)
+
+    good_fp = {"fingerprint": state_fingerprint("static"), "hashes": {"a": "b"}}
+    stale_fp = {"fingerprint": "v0|cc:stale", "hashes": {"a": "b"}}
+
+    def _run(*, skip_row, fp_doc):
+        return _pub.publish_snapshot(
+            "stm", tier="static", settings=FakeSettings(),
+            engine=_Engine(_Conn(skip_row=skip_row)), storage=_Store(fp_doc=fp_doc),
+        )
+
+    # 1) unchanged dataset + matching fingerprint -> SKIP (publisher never runs).
+    calls.clear()
+    res = _run(skip_row=True, fp_doc=good_fp)
+    assert calls == [], "rebuild should be skipped when the dataset is unchanged"
+    assert res.keys_written == [] and res.keys_skipped == []
+
+    # 2) new GTFS edition (no matching state row) -> FULL REBUILD (never stalls a real change).
+    calls.clear()
+    _run(skip_row=False, fp_doc=good_fp)
+    assert len(calls) == 1, "a new dataset edition must trigger the full rebuild"
+
+    # 3) format/cache change (fingerprint mismatch) -> FULL REBUILD even though a state row exists.
+    calls.clear()
+    _run(skip_row=True, fp_doc=stale_fp)
+    assert len(calls) == 1, "a fingerprint change must force a full re-stamp rebuild"

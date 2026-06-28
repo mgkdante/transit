@@ -16,6 +16,7 @@ callers.
 
 from __future__ import annotations
 
+import logging
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 
@@ -30,8 +31,20 @@ from transit_ops.snapshots.storage import (
     state_fingerprint,
 )
 
+logger = logging.getLogger(__name__)
+
 # A work item handed to the parallel uploader: (rel_key, payload, tier).
 _PutItem = "tuple[str, object, str]"
+
+# Dataset-level skip probe (static tier only): is the LAST completed static publish for
+# this provider already stamped at the current dataset version? generated_utc is stored as
+# the static stamp (the dataset loaded_at_utc), so an exact timestamptz match means the
+# bucket already holds the full, byte-identical static surface for this GTFS edition.
+_STATIC_SKIP_MATCH_SQL = (
+    "SELECT files_total FROM core.snapshot_publish_state "
+    "WHERE provider_id = :provider_id AND tier = 'static' "
+    "AND generated_utc = CAST(:stamp AS timestamptz) AND files_total > 0"
+)
 
 
 def _concurrency(settings: object) -> int:
@@ -487,6 +500,8 @@ def publish_snapshot(
         raise ValueError(f"unknown tier {tier!r} (expected live, static, historic)")
 
     # static / historic — hash-gated against a bucket-stored per-tier state object.
+    from sqlalchemy import text as _text
+
     with engine.begin() as conn:  # type: ignore[attr-defined]
         stamp = stamp_fn(conn, provider_id) if stamp_fn is not None else _historic_stamp()
         gated = HashGatedStorage(
@@ -495,6 +510,32 @@ def publish_snapshot(
             fingerprint=state_fingerprint(tier),
         )
         gated.load()
+        # DATASET-LEVEL SKIP (static only): the static surface (routes / stops / shapes
+        # indexes + per-route + per-stop files) is a PURE FUNCTION of the GTFS dataset
+        # version. When the last COMPLETE static publish already used this exact stamp AND
+        # the hash-state fingerprint still matches (cache-policy / format version unchanged),
+        # every one of the ~9k payloads would rebuild byte-identical and the per-file gate
+        # would skip all of them — so skip the whole rebuild, which otherwise re-queries the
+        # entire surface over WAN every run (the daily 90-min static-publish timeout). A NEW
+        # GTFS edition bumps the stamp -> no match -> full rebuild (a real schedule change
+        # NEVER stalls); a cache/format change leaves fingerprint_matched False -> full
+        # rebuild + re-stamp. Static-builder OUTPUT changes must bump the state_fingerprint
+        # version so they invalidate this gate. Historic/live are excluded: their data
+        # changes continuously for a fixed stamp, so they always rebuild.
+        if tier == "static" and gated.fingerprint_matched:
+            match = conn.execute(  # type: ignore[attr-defined]
+                _text(_STATIC_SKIP_MATCH_SQL),
+                {"provider_id": provider_id, "stamp": stamp},
+            ).fetchone()
+            if match is not None:
+                logger.info(
+                    "static publish: dataset unchanged (stamp=%s) — skipped rebuild of %d files",
+                    stamp,
+                    match[0],
+                )
+                return PublishResult(
+                    provider_id=provider_id, tier=tier, keys_written=[], keys_skipped=[]
+                )
         publisher(conn, gated, provider_id=provider_id, settings=settings, stamp=stamp)
         gated.flush_state()
         _record_publish_state(

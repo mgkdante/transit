@@ -199,6 +199,11 @@ class HashGatedStorage:
         self._new: dict[str, str] = {}
         self.written: list[str] = []
         self.skipped: list[str] = []
+        # True after load() iff a prior state object existed AND carried the current
+        # fingerprint (cache-policy / format version unchanged). Lets a caller make a
+        # dataset-level skip decision (skip the whole rebuild) without trusting stale
+        # hashes across a format change. False on absence or fingerprint mismatch.
+        self.fingerprint_matched: bool = False
         # Guards the shared _new / written / skipped state so put_json can be
         # called concurrently from a ThreadPoolExecutor (slice-9.1.1r stage 2).
         # The actual PUT (slow, network) runs OUTSIDE the lock so threads still
@@ -210,8 +215,10 @@ class HashGatedStorage:
         doc = self._inner.get_json(self._state_rel_key)  # type: ignore[attr-defined]
         if doc and doc.get("fingerprint") == self._fingerprint:
             self._prior = dict(doc.get("hashes", {}))
+            self.fingerprint_matched = True
         else:
             self._prior = {}
+            self.fingerprint_matched = False
 
     def full_key(self, rel_key: str) -> str:
         return self._inner.full_key(rel_key)  # type: ignore[attr-defined]
