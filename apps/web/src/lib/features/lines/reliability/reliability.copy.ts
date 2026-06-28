@@ -225,6 +225,27 @@ export interface ReliabilityCopy {
 		readonly pct: string;
 		readonly min: string;
 	};
+	/** Comparison-vs-prior (PR-WEB-3): the period-over-period Δ badges + their headings. */
+	readonly priorDelta: {
+		/** Heading for the on-time-by-time-of-day comparison (§1). */
+		readonly onTimeHeading: string;
+		/** Heading for the wait-by-shift comparison (§2). */
+		readonly waitHeading: string;
+		/** Trailing context for a SIGNIFICANT change, by resolved window grain. */
+		readonly vsPrior: { readonly day: string; readonly week: string; readonly month: string };
+		/** Neutral marker when a change exists but doesn't clear the 95% test. */
+		readonly withinNoise: string;
+		/** Honest-absence marker when there is no prior window to compare, by grain. */
+		readonly noPrior: { readonly day: string; readonly week: string; readonly month: string };
+		/** a11y nouns woven into the change label so it reads in full. */
+		readonly onTimeNoun: string;
+		readonly waitNoun: string;
+		/** Unit suffix for the on-time points delta (plural) + the ±1 singular form. */
+		readonly pts: string;
+		readonly ptOne: string;
+		/** One-line caption: what the comparison is + the significance gate. */
+		readonly caption: string;
+	};
 	/** Grain control-spine labels + the active-window caption. */
 	readonly controls: {
 		/** ControlsRail group overline ("View" / "Vue") — same voice as /stop + /network. */
@@ -428,6 +449,27 @@ export const reliabilityCopy: Record<Locale, ReliabilityCopy> = {
 				"De l'heure du premier départ à celle du dernier sur une journée de 24 h. Le repère à chaque extrémité indique l'avance (▼) ou le retard (▲) du départ; ▲ signale un retard, jamais une absence de donnée.",
 		},
 		units: { pct: '%', min: ' min' },
+		priorDelta: {
+			onTimeHeading: 'Ponctualité par période',
+			waitHeading: 'Attente par période',
+			vsPrior: {
+				day: 'p/r à la veille',
+				week: 'p/r à la sem. préc.',
+				month: 'p/r au mois préc.',
+			},
+			withinNoise: 'écart non significatif',
+			noPrior: {
+				day: 'pas de veille',
+				week: 'pas de semaine précédente',
+				month: 'pas de mois précédent',
+			},
+			onTimeNoun: 'ponctualité',
+			waitNoun: 'attente',
+			pts: 'pts',
+			ptOne: 'pt',
+			caption:
+				'Écart par rapport à la fenêtre précédente, affiché seulement s’il passe un test de signification à 95 %; une variation dans le bruit reste neutre.',
+		},
 		controls: {
 			viewLabel: 'Vue',
 			grainLabel: 'Granularité',
@@ -613,6 +655,27 @@ export const reliabilityCopy: Record<Locale, ReliabilityCopy> = {
 				'From the first departure clock time to the last across a 24-hour day. The marker at each end shows that departure running early (▼) or late (▲); ▲ is a real delay, never missing data.',
 		},
 		units: { pct: '%', min: ' min' },
+		priorDelta: {
+			onTimeHeading: 'On-time by time of day',
+			waitHeading: 'Wait by shift',
+			vsPrior: {
+				day: 'vs prior day',
+				week: 'vs prior week',
+				month: 'vs prior month',
+			},
+			withinNoise: 'within noise',
+			noPrior: {
+				day: 'no prior day',
+				week: 'no prior week',
+				month: 'no prior month',
+			},
+			onTimeNoun: 'on-time',
+			waitNoun: 'wait',
+			pts: 'pts',
+			ptOne: 'pt',
+			caption:
+				'Change vs the immediately prior window, shown only when it clears a 95% significance test, so a swing within noise never shouts.',
+		},
 		controls: {
 			viewLabel: 'View',
 			grainLabel: 'Granularity',

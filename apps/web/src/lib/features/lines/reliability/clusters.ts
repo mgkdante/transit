@@ -92,6 +92,17 @@ export interface PeriodComparisonRow {
 	readonly otpPct: number | null;
 	readonly avgDelayMin: number | null;
 	readonly severePct: number | null;
+	/**
+	 * S7-B comparison-vs-prior (PR-WEB-3): the OTP denominator (this window's known-delay
+	 * observations) + the exact on-time numerator, plus the SAME pair over the immediately-
+	 * prior equal-length window. Populated ONLY on the windowed `periods_by_grain` rows; the
+	 * scalar whole-history shift/day-type rows leave them null (no prior to compare). The §1
+	 * on-time-by-time-of-day comparison runs a two-proportion z-test off these.
+	 */
+	readonly observationCount: number | null;
+	readonly onTime: number | null;
+	readonly priorOtpPct: number | null;
+	readonly priorObservationCount: number | null;
 }
 
 /**
@@ -417,12 +428,17 @@ function partitionPeriods(periods: readonly ReliabilityPeriod[]): PartitionedPer
 	return { calendar: { day, week, month }, byShift, byDayType };
 }
 
-/** Project a period to a peak/off-peak comparison row (raw grain + the punctuality triple). */
+/** Project a period to a peak/off-peak comparison row (raw grain + the punctuality triple
+ *  + the comparison-vs-prior pair, kept verbatim for the §1 two-proportion delta). */
 const toComparisonRow = (p: ReliabilityPeriod): PeriodComparisonRow => ({
 	grain: p.grain,
 	otpPct: num(p.otp_pct),
 	avgDelayMin: num(p.avg_delay_min),
 	severePct: num(p.severe_pct),
+	observationCount: num(p.observation_count),
+	onTime: num(p.on_time),
+	priorOtpPct: num(p.prior_otp_pct),
+	priorObservationCount: num(p.prior_observation_count),
 });
 
 /**

@@ -400,6 +400,7 @@
 				habits={clusters.habits}
 				{locale}
 				{copy}
+				{mode}
 			/>
 		</div>
 
@@ -411,6 +412,7 @@
 				{locale}
 				{copy}
 				{directionHeadsigns}
+				{mode}
 			/>
 		</div>
 

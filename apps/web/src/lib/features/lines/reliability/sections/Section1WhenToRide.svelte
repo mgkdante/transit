@@ -32,7 +32,7 @@
 	import { fmtPct } from '$lib/utils';
 	import type { SeverityCode } from '$lib/v1/schemas';
 	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
-	import { ChartLegend } from '$lib/components/dataviz';
+	import { ChartLegend, DeltaStat } from '$lib/components/dataviz';
 	import { Chart } from '$lib/components/dataviz/chart';
 	import { AbsentValue } from '$lib/components/edge';
 	import Detail from '$lib/components/shared/Detail.svelte';
@@ -43,9 +43,11 @@
 		shiftLabel as shiftGrainLabel,
 		severeShareToSeverity,
 		DAY_TYPE_GRAIN_ORDER,
+		SHIFT_GRAIN_ORDER,
 		SEVERE_DOMAIN,
 	} from '$lib/features/reliability/shiftGrains';
 	import { selectPunctualityTimeOfDay } from '../selectors/punctualityTimeOfDay';
+	import { proportionPriorDelta, type PriorDelta } from '../selectors/priorDelta';
 	import { selectPunctualityCrosstab } from '../selectors/punctualityCrosstab';
 	import { selectWeekdayCycle } from '../selectors/weekdayCycle';
 	import { selectHabitsHeatmap } from '../selectors/habitsHeatmap';
@@ -63,10 +65,20 @@
 		locale: Locale;
 		/** The co-located reliability copy bundle for this locale. */
 		copy: ReliabilityCopy;
+		/**
+		 * Active window (day|week|month|range) — names the "vs prior {window}" comparison phrase.
+		 * The §1 breakdowns themselves re-shape on this window via the mapper (periods_by_grain);
+		 * `range` reads the day-anchored windowed breakdown, so it borrows the 'day' phrasing.
+		 */
+		mode?: 'day' | 'week' | 'month' | 'range';
 	}
-	let { punctuality, habits, locale, copy }: Section1WhenToRideProps = $props();
+	let { punctuality, habits, locale, copy, mode = 'day' }: Section1WhenToRideProps = $props();
 
 	const band = $derived(habitsBandCopy[locale]);
+	// Resolved window grain for the comparison phrasing (a custom range reads the day window).
+	const win = $derived<'day' | 'week' | 'month'>(
+		mode === 'week' || mode === 'month' ? mode : 'day',
+	);
 
 	// Honest absence → null; never a fabricated 0. Shared formatter for severe %.
 	const pct = (v: number | null | undefined): string | null => fmtPct(v);
@@ -236,6 +248,51 @@
 		!punctuality.peakOffPeak.isEmpty && (hasShiftStrip || dayTypePeakRows.length > 0),
 	);
 
+	/* ── DETAIL — on-time by time of day · vs prior {window} (PR-WEB-3) ──────────
+	   The per-shift + weekday/weekend ON-TIME rate the windowed breakdowns carry, each with
+	   a Δ-vs-prior badge gated on a two-proportion z-test (proportionPriorDelta). Shown ONLY
+	   when the §1 breakdowns are windowed (periods_by_grain present) — the scalar whole-history
+	   rows carry no prior, so there is nothing to compare. Honest absence: a row with no prior
+	   window shows the neutral "no prior {window}" marker (never a fake 0); a real-but-
+	   insignificant swing reads "within noise" (neutral), never a coloured arrow. */
+	interface OnTimeRow {
+		readonly key: string;
+		readonly label: string;
+		readonly otpPct: number | null;
+		readonly delta: PriorDelta;
+	}
+	const toOnTimeRow = (r: PeriodComparisonRow, label: (g: string) => string): OnTimeRow => ({
+		key: r.grain,
+		label: label(r.grain),
+		otpPct: r.otpPct,
+		delta: proportionPriorDelta(
+			r.otpPct,
+			r.observationCount,
+			r.priorOtpPct,
+			r.priorObservationCount,
+			{ onTime: r.onTime },
+		),
+	});
+	const onTimeShiftRows = $derived(
+		orderByGrain(
+			punctuality.peakOffPeak.byShift.filter((r) => r.otpPct != null),
+			SHIFT_GRAIN_ORDER as readonly string[],
+		).map((r) => toOnTimeRow(r, shiftLabel)),
+	);
+	const onTimeDayTypeRows = $derived(
+		orderByGrain(punctuality.peakOffPeak.byDayType, DAY_TYPE_GRAIN_ORDER)
+			.filter((r) => r.otpPct != null)
+			.map((r) => toOnTimeRow(r, dayTypeLabel)),
+	);
+	// Gate on `windowed`: only the windowed breakdowns carry a prior to compare against.
+	const hasOnTimeCompare = $derived(
+		punctuality.windowed && (onTimeShiftRows.length > 0 || onTimeDayTypeRows.length > 0),
+	);
+	// "+5 pts" / "-3 pts" / "+1 pt" — ASCII sign (the no-em-dash gate forbids U+2014, not the
+	// hyphen-minus); singular unit on a ±1 move.
+	const fmtPts = (d: number): string =>
+		`${d > 0 ? '+' : ''}${d} ${Math.abs(d) === 1 ? copy.priorDelta.ptOne : copy.priorDelta.pts}`;
+
 	/* ── DETAIL — by shift and day type (G1) — TWO LINES (S7 convergence) ─────
 	   The Tier-3 OTP crosstab is the cohesive line language: weekday vs weekend
 	   on-time % across the day's shifts on the fixed OTP_DOMAIN. A cell below
@@ -284,6 +341,31 @@
 	/>
 {/snippet}
 
+{#snippet onTimeCompareRow(row: OnTimeRow)}
+	<li
+		class="compare-row"
+		data-slot="on-time-compare-row"
+		data-prior={row.delta.hasPrior ? (row.delta.significant ? 'change' : 'noise') : 'absent'}
+	>
+		<span class="compare-label">{row.label}</span>
+		<span class="compare-value">{pct(row.otpPct) ?? copy.strip.noData}</span>
+		<DeltaStat
+			class="compare-delta"
+			delta={row.delta.significant ? row.delta.delta : null}
+			display={row.delta.significant && row.delta.delta != null
+				? fmtPts(row.delta.delta)
+				: undefined}
+			higherIsBetter
+			context={row.delta.significant
+				? copy.priorDelta.vsPrior[win]
+				: row.delta.hasPrior
+					? copy.priorDelta.withinNoise
+					: copy.priorDelta.noPrior[win]}
+			ariaNoun={copy.priorDelta.onTimeNoun}
+		/>
+	</li>
+{/snippet}
+
 <section class="section" data-section="when-to-ride" aria-label={copy.sections.whenToRide.label}>
 	<header class="section-head">
 		<SectionLabel text={copy.sections.whenToRide.label} variant="station" />
@@ -314,6 +396,23 @@
 
 		<!-- DETAIL — the time-of-day + weekday analyst reads, one disclosure level deep. -->
 		<Detail label={copy.sections.detailShow} labelOpen={copy.sections.detailHide}>
+			<!-- On-time by time of day · vs the prior window (PR-WEB-3): each shift + day-type's
+			     on-time rate with a significance-gated Δ-vs-prior badge. Shown only when the
+			     breakdowns are windowed (else there is no prior to compare against). -->
+			{#if hasOnTimeCompare}
+				<div class="block" data-slot="on-time-vs-prior">
+					<span class="label-with-info">
+						<SectionLabel text={copy.priorDelta.onTimeHeading} variant="metric" />
+						{@render metricInfo('otp', copy.priorDelta.onTimeHeading)}
+					</span>
+					<ul class="compare-list" data-slot="on-time-compare">
+						{#each onTimeShiftRows as row (row.key)}{@render onTimeCompareRow(row)}{/each}
+						{#each onTimeDayTypeRows as row (row.key)}{@render onTimeCompareRow(row)}{/each}
+					</ul>
+					<p class="caption" data-slot="on-time-vs-prior-caption">{copy.priorDelta.caption}</p>
+				</div>
+			{/if}
+
 			<!-- By time of day (A1): the per-shift severe-share dot-strip + weekday/weekend split. -->
 			{#if hasPeak}
 				<div class="block" data-slot="peak-off-peak">
@@ -444,5 +543,42 @@
 		display: flex;
 		flex-direction: column;
 		gap: 0.5rem;
+	}
+	/* On-time-by-time-of-day · vs-prior comparison (PR-WEB-3): a label | value | Δ-badge row
+	   list. The label keeps a fixed measure so the on-time values align in a column; the Δ
+	   badge (DeltaStat) trails and wraps to its own line on a narrow phone. */
+	.compare-list {
+		display: flex;
+		flex-direction: column;
+		gap: 0.3rem;
+		margin: 0;
+		padding: 0;
+		list-style: none;
+	}
+	.compare-row {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: baseline;
+		gap: 0.25rem 0.6rem;
+		padding: 0.3rem 0;
+	}
+	.compare-row + .compare-row {
+		border-top: 1px solid color-mix(in oklab, var(--border) 60%, transparent);
+	}
+	.compare-label {
+		flex: 0 0 7rem;
+		min-width: 0;
+		font-family: var(--font-mono);
+		font-size: var(--text-small);
+		font-weight: 500;
+		color: var(--foreground);
+	}
+	.compare-value {
+		flex: 0 0 auto;
+		min-width: 2.75rem;
+		font-family: var(--font-mono);
+		font-size: var(--text-small);
+		font-variant-numeric: tabular-nums;
+		color: var(--foreground);
 	}
 </style>

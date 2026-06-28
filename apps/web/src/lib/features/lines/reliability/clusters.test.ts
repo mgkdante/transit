@@ -699,8 +699,26 @@ describe('toReliabilityClusters — *_by_grain windowable §1/§2/§4 (S7-B)', (
 		periods_by_grain: [
 			{
 				grain: 'week',
-				by_shift: [{ grain: 'am_peak', otp_pct: 80, observation_count: 200 }],
-				by_daytype: [{ grain: 'weekday', otp_pct: 81, observation_count: 200 }],
+				by_shift: [
+					{
+						grain: 'am_peak',
+						otp_pct: 80,
+						observation_count: 200,
+						on_time: 160,
+						prior_otp_pct: 74,
+						prior_observation_count: 210,
+					},
+				],
+				by_daytype: [
+					{
+						grain: 'weekday',
+						otp_pct: 81,
+						observation_count: 200,
+						on_time: 162,
+						prior_otp_pct: 80,
+						prior_observation_count: 210,
+					},
+				],
 				day_of_week: [
 					{ day_of_week_iso: 1, avg_delay_min: 2, severe_pct: 2, observation_count: 200 },
 				],
@@ -760,6 +778,21 @@ describe('toReliabilityClusters — *_by_grain windowable §1/§2/§4 (S7-B)', (
 		// §2 reads the windowed headway; §1 heatmap the windowed habits
 		expect(c.waitRegularity.headway[0]?.observed_min).toBe(7);
 		expect(c.habits.matrix).toEqual([[0.3]]);
+	});
+
+	it('threads the prior-window comparison fields through to peakOffPeak (PR-WEB-3)', () => {
+		const c = toReliabilityClusters(windowed, { grain: 'week' });
+		const am = c.punctuality.peakOffPeak.byShift[0];
+		expect(am?.observationCount).toBe(200);
+		expect(am?.onTime).toBe(160);
+		expect(am?.priorOtpPct).toBe(74);
+		expect(am?.priorObservationCount).toBe(210);
+		const wd = c.punctuality.peakOffPeak.byDayType[0];
+		expect(wd?.priorOtpPct).toBe(80);
+		expect(wd?.priorObservationCount).toBe(210);
+		// the scalar (non-windowed) fallback carries no prior — honest absence, nothing to compare.
+		const day = toReliabilityClusters(windowed, { grain: 'day' });
+		expect(day.punctuality.peakOffPeak.byShift[0]?.priorOtpPct ?? null).toBeNull();
 	});
 
 	it('keeps a null-avg AND a <=0-avg worst stop, gated on observation_count not avg (§4)', () => {

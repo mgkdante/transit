@@ -30,6 +30,8 @@
 	import { fmtCount, fmtDelayMin, fmtPct } from '$lib/utils';
 	import type { HeadwayPeriod, SeverityCode, ServiceSpanPeriod } from '$lib/v1';
 	import { Chart } from '$lib/components/dataviz/chart';
+	import { DeltaStat } from '$lib/components/dataviz';
+	import { meanPriorDelta, type PriorDelta } from '../selectors/priorDelta';
 	import { selectHeadwayDumbbell } from '../selectors/headwayDumbbell';
 	import { selectShiftBars } from '../selectors/shiftBars';
 	import { selectBullet } from '../selectors/bullet';
@@ -76,6 +78,12 @@
 		 * instead of "Direction 1/2"; a dir with no headsign falls back to "Direction N".
 		 */
 		directionHeadsigns?: Record<number, string>;
+		/**
+		 * Active window (day|week|month|range) — names the "vs prior {window}" wait comparison.
+		 * The headway breakdown re-shapes on this window via the mapper (headway_by_grain);
+		 * `range` reads the day-anchored windowed breakdown, so it borrows the 'day' phrasing.
+		 */
+		mode?: 'day' | 'week' | 'month' | 'range';
 	}
 
 	let {
@@ -84,7 +92,13 @@
 		locale,
 		copy,
 		directionHeadsigns = {},
+		mode = 'day',
 	}: Section2TheWaitProps = $props();
+
+	// Resolved window grain for the comparison phrasing (a custom range reads the day window).
+	const win = $derived<'day' | 'week' | 'month'>(
+		mode === 'week' || mode === 'month' ? mode : 'day',
+	);
 
 	/* ── band-local copy ──────────────────────────────────────────────────────
 	   Labels this section needs that are NOT in the shared copy live here, co-located
@@ -243,6 +257,11 @@
 		readonly severity: SeverityCode;
 		/** Severity from the headway CoV — drives the dedicated regularity bar. */
 		readonly covSeverity: SeverityCode;
+		/** PR-WEB-3 comparison-vs-prior: this window's gap-sample n + the prior window's observed
+		 *  median + n (only on the windowed headway_by_grain rows; null on the scalar history). */
+		readonly observationCount: number | null;
+		readonly priorObserved: number | null;
+		readonly priorObservationCount: number | null;
 	}
 
 	/* S7-B Pattern A: read the TYPED direction_id / day_type fields. Fall back to the
@@ -281,6 +300,9 @@
 			magnitude: h.excess_wait_min ?? null,
 			severity: bunchingToSeverity(h.bunched_pct),
 			covSeverity: covToSeverity(h.cov),
+			observationCount: h.observation_count ?? null,
+			priorObserved: h.prior_observed_min ?? null,
+			priorObservationCount: h.prior_observation_count ?? null,
 		})),
 	);
 
@@ -308,6 +330,39 @@
 	// in the open list rather than hiding everything behind the reveal.
 	const mainRows = $derived(primaryRows.length > 0 ? primaryRows : advancedRows);
 	const hasAdvancedReveal = $derived(primaryRows.length > 0 && advancedRows.length > 0);
+
+	/* ── DETAIL — wait by shift · vs prior {window} (PR-WEB-3) ───────────────────
+	   The busiest-direction observed wait per shift, each with a Δ-vs-prior badge gated by a
+	   shared-CoV two-sample z-test (meanPriorDelta — observed headway is a MEAN, not a rate, so
+	   a proportion test would be invalid). Shown ONLY when the headway breakdown is windowed
+	   (headway_by_grain present) — the scalar whole-history rows carry no prior. Honest absence:
+	   no prior window → the neutral "no prior {window}" marker (never a fake 0); an insignificant
+	   jitter → "within noise" (neutral), never a coloured arrow (a RISING wait is the bad way). */
+	interface WaitCompareRow {
+		readonly key: string;
+		readonly label: string;
+		readonly observed: number | null;
+		readonly delta: PriorDelta;
+	}
+	const waitCompareRows = $derived<WaitCompareRow[]>(
+		mainRows
+			.filter((r) => r.observed != null)
+			.map((r) => ({
+				key: r.shift,
+				label: shiftLabel(r),
+				observed: r.observed,
+				delta: meanPriorDelta(
+					r.observed,
+					r.observationCount,
+					r.priorObserved,
+					r.priorObservationCount,
+					{ cov: r.cov },
+				),
+			})),
+	);
+	const hasWaitCompare = $derived(wait.windowed && waitCompareRows.length > 0);
+	// "+0.8 min" / "-1.2 min" — ASCII sign (the no-em-dash gate forbids U+2014, not hyphen-minus).
+	const fmtMinDelta = (d: number): string => `${d > 0 ? '+' : ''}${d.toFixed(1)}${copy.units.min}`;
 
 	// §02 headway DUMBBELL (A8): ALL primary shifts in ONE comparable chart on the fixed
 	// HEADWAY_DOMAIN — scheduled ● —— ● observed, the connector span = the excess wait, so
@@ -554,6 +609,30 @@
 <!-- The (i) trigger MetricBullet renders beside the excess-wait headline label. -->
 {#snippet excessInfo()}{@render metricInfo('excessWait', terms.excessWait)}{/snippet}
 
+{#snippet waitCompareRow(row: WaitCompareRow)}
+	<li
+		class="compare-row"
+		data-slot="wait-compare-row"
+		data-prior={row.delta.hasPrior ? (row.delta.significant ? 'change' : 'noise') : 'absent'}
+	>
+		<span class="compare-label">{row.label}</span>
+		<span class="compare-value">{min(row.observed) ?? valueNoData}</span>
+		<DeltaStat
+			class="compare-delta"
+			delta={row.delta.significant ? row.delta.delta : null}
+			display={row.delta.significant && row.delta.delta != null
+				? fmtMinDelta(row.delta.delta)
+				: undefined}
+			context={row.delta.significant
+				? copy.priorDelta.vsPrior[win]
+				: row.delta.hasPrior
+					? copy.priorDelta.withinNoise
+					: copy.priorDelta.noPrior[win]}
+			ariaNoun={copy.priorDelta.waitNoun}
+		/>
+	</li>
+{/snippet}
+
 <section class="section" data-section="the-wait" aria-label={copy.sections.theWait.label}>
 	<header class="section-head">
 		<SectionLabel text={copy.sections.theWait.label} variant="station" />
@@ -603,6 +682,24 @@
 						class="excess-wait-headline"
 						data-slot="excess-wait-headline"
 					/>
+				{/if}
+
+				<!-- Wait by shift · vs the prior window (PR-WEB-3): the busiest-direction observed
+				     wait per shift with a significance-gated Δ-vs-prior badge. Windowed-only (the
+				     scalar whole-history headway carries no prior to compare). -->
+				{#if hasWaitCompare}
+					<div class="block" data-slot="wait-vs-prior">
+						<span class="label-with-info">
+							<SectionLabel text={copy.priorDelta.waitHeading} variant="metric" />
+							{@render metricInfo('headway', copy.priorDelta.waitHeading)}
+						</span>
+						<ul class="compare-list" data-slot="wait-compare">
+							{#each waitCompareRows as row (row.key)}{@render waitCompareRow(row)}{/each}
+						</ul>
+						<p class="compare-caption" data-slot="wait-vs-prior-caption">
+							{copy.priorDelta.caption}
+						</p>
+					</div>
 				{/if}
 
 				{#if shiftRows.length > 0}
@@ -835,6 +932,56 @@
 	}
 	/* What the excess-wait magnitude encodes (0 = on schedule, not missing). */
 	.shift-caption {
+		margin: 0;
+		max-width: 52ch;
+		font-family: var(--font-mono);
+		font-size: var(--text-small);
+		line-height: 1.4;
+		color: var(--muted-foreground);
+	}
+	/* Wait-by-shift · vs-prior comparison (PR-WEB-3): a label | value | Δ-badge row list,
+	   mirroring the §1 on-time comparison. The label keeps a measure so the wait values align;
+	   the DeltaStat badge trails and wraps to its own line on a narrow phone. */
+	.block {
+		display: flex;
+		flex-direction: column;
+		gap: 0.5rem;
+	}
+	.compare-list {
+		display: flex;
+		flex-direction: column;
+		gap: 0.3rem;
+		margin: 0;
+		padding: 0;
+		list-style: none;
+	}
+	.compare-row {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: baseline;
+		gap: 0.25rem 0.6rem;
+		padding: 0.3rem 0;
+	}
+	.compare-row + .compare-row {
+		border-top: 1px solid color-mix(in oklab, var(--border) 60%, transparent);
+	}
+	.compare-label {
+		flex: 0 0 7rem;
+		min-width: 0;
+		font-family: var(--font-mono);
+		font-size: var(--text-small);
+		font-weight: 500;
+		color: var(--foreground);
+	}
+	.compare-value {
+		flex: 0 0 auto;
+		min-width: 3.25rem;
+		font-family: var(--font-mono);
+		font-size: var(--text-small);
+		font-variant-numeric: tabular-nums;
+		color: var(--foreground);
+	}
+	.compare-caption {
 		margin: 0;
 		max-width: 52ch;
 		font-family: var(--font-mono);
