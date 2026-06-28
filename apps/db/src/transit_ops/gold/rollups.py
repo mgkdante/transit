@@ -674,12 +674,10 @@ UPSERT_STOP_DELAY_SPINE = text(
 REPORTING_AGGREGATE_TABLES = (
     "route_delay_hourly",
     "stop_delay_hourly",
-    "stop_delay_weekly",
-    "stop_delay_monthly",
     "route_habit_score",
     # repeated_problem_route_stop derives route-grain AND stop-grain recurrence
     # from the route + stop delay spines (built earlier, in the append-only
-    # section). DB-0067 Phase 1 re-pointed the stop grain off stop_delay_weekly.
+    # section); DB-0067 dropped the stop_delay_weekly/monthly folds it used to read.
     "repeated_problem_route_stop",
     "citizen_accountability_daily",
     "route_headway_by_shift",
@@ -694,8 +692,6 @@ WINDOWED_HISTORY_TABLES = (
 )
 
 DERIVED_REBUILD_TABLES = (
-    "stop_delay_weekly",
-    "stop_delay_monthly",
     "route_habit_score",
     "repeated_problem_route_stop",
 )
@@ -832,84 +828,6 @@ UPSERT_STOP_DELAY_HOURLY = text(
       AND ABS(f.delay_seconds) <= {GHOST_DELAY_ABS_SECONDS}
       AND f.captured_at_utc >= {OPEN_WINDOW_HOURLY_CUTOFF_SQL}
     GROUP BY 1, 2, 3, 4
-    """
-)
-
-UPSERT_STOP_DELAY_WEEKLY = text(
-    """
-    INSERT INTO gold.stop_delay_weekly (
-        provider_id,
-        week_start_local,
-        stop_id,
-        route_id,
-        observation_count,
-        avg_delay_seconds,
-        severe_delay_count,
-        built_at_utc
-    )
-    SELECT
-        sd.provider_id,
-        date_trunc('week', timezone(dp.timezone, sd.period_start_utc))::date,
-        sd.stop_id,
-        sd.route_id,
-        SUM(sd.observation_count)::integer,
-        ROUND(
-            SUM(COALESCE(sd.avg_arrival_delay_seconds, sd.avg_departure_delay_seconds)
-                * NULLIF(sd.observation_count, 0))
-            / NULLIF(SUM(sd.observation_count), 0),
-            2
-        ),
-        SUM(sd.severe_delay_count)::integer,
-        :built_at_utc
-    FROM gold.stop_delay_hourly AS sd
-    INNER JOIN gold.dim_provider AS dp
-        ON dp.provider_id = sd.provider_id
-    WHERE sd.provider_id = :provider_id
-    GROUP BY 1, 2, 3, 4
-    ON CONFLICT (provider_id, week_start_local, stop_id, route_id) DO UPDATE SET
-        observation_count = EXCLUDED.observation_count,
-        avg_delay_seconds = EXCLUDED.avg_delay_seconds,
-        severe_delay_count = EXCLUDED.severe_delay_count,
-        built_at_utc = EXCLUDED.built_at_utc
-    """
-)
-
-UPSERT_STOP_DELAY_MONTHLY = text(
-    """
-    INSERT INTO gold.stop_delay_monthly (
-        provider_id,
-        month_start_local,
-        stop_id,
-        route_id,
-        observation_count,
-        avg_delay_seconds,
-        severe_delay_count,
-        built_at_utc
-    )
-    SELECT
-        sd.provider_id,
-        date_trunc('month', timezone(dp.timezone, sd.period_start_utc))::date,
-        sd.stop_id,
-        sd.route_id,
-        SUM(sd.observation_count)::integer,
-        ROUND(
-            SUM(COALESCE(sd.avg_arrival_delay_seconds, sd.avg_departure_delay_seconds)
-                * NULLIF(sd.observation_count, 0))
-            / NULLIF(SUM(sd.observation_count), 0),
-            2
-        ),
-        SUM(sd.severe_delay_count)::integer,
-        :built_at_utc
-    FROM gold.stop_delay_hourly AS sd
-    INNER JOIN gold.dim_provider AS dp
-        ON dp.provider_id = sd.provider_id
-    WHERE sd.provider_id = :provider_id
-    GROUP BY 1, 2, 3, 4
-    ON CONFLICT (provider_id, month_start_local, stop_id, route_id) DO UPDATE SET
-        observation_count = EXCLUDED.observation_count,
-        avg_delay_seconds = EXCLUDED.avg_delay_seconds,
-        severe_delay_count = EXCLUDED.severe_delay_count,
-        built_at_utc = EXCLUDED.built_at_utc
     """
 )
 
@@ -1680,8 +1598,6 @@ UPSERT_REPEAT_OFFENDER_DAILY = text(
 REPORTING_AGGREGATE_UPSERTS = {
     "route_delay_hourly": UPSERT_ROUTE_DELAY_HOURLY,
     "stop_delay_hourly": UPSERT_STOP_DELAY_HOURLY,
-    "stop_delay_weekly": UPSERT_STOP_DELAY_WEEKLY,
-    "stop_delay_monthly": UPSERT_STOP_DELAY_MONTHLY,
     "route_habit_score": UPSERT_ROUTE_HABIT_SCORE,
     "repeated_problem_route_stop": UPSERT_REPEATED_PROBLEM_ROUTE_STOP,
     "citizen_accountability_daily": UPSERT_CITIZEN_ACCOUNTABILITY_DAILY,

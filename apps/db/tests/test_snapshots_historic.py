@@ -476,8 +476,13 @@ def _route_reliability_dispatch(*, daily=None, weekly=None, monthly=None, headwa
         ("route_headway_by_shift", headway or []),
         # habits
         ("route_habit_score", habit or []),
-        # weak stops
-        ("stop_delay_weekly", weak or []),
+        # weak stops — the scalar per-route worst-N now reads gold.stop_delay_spine over the
+        # trailing-month window (DB-0067 Phase 2). The newest-day anchor (MAX(service_local_date))
+        # is answered first; the scalar read is keyed on its distinctive 'AS weighted_delay_sec'
+        # alias (the windowed weak_stops_by_grain twin aliases 'sum_delay_sec' instead, and its
+        # obs<30 rows stay below MIN_N -> []).
+        ("AS anchor FROM gold.stop_delay_spine", [{"anchor": datetime.date(2026, 6, 30)}]),
+        ("weighted_delay_sec", weak or []),
         # stop names (current-dim UNION history)
         ("stop_name", names or []),
         # route names (current-dim UNION history)

@@ -66,8 +66,6 @@ EXPECTED_GOLD_AGGREGATE_TABLE_COUNTS = {
     "gold.warm_rollup_periods": 8,
     "gold.route_delay_hourly": 11,
     "gold.stop_delay_hourly": 13,
-    "gold.stop_delay_weekly": 16,
-    "gold.stop_delay_monthly": 17,
     "gold.route_habit_score": 18,
     "gold.repeated_problem_route_stop": 19,
     "gold.citizen_accountability_daily": 20,
