@@ -118,6 +118,24 @@ describe('Section1WhenToRide — on-time vs prior (PR-WEB-3)', () => {
 		);
 	});
 
+	it('gives within-noise and no-prior rows distinct, localized, self-identifying aria', () => {
+		const { container } = mount(vm(byShift, [], true));
+		const ariaOf = (prior: string): string =>
+			rowsByState(container, prior)[0]
+				?.querySelector('[data-slot="delta-stat"]')
+				?.getAttribute('aria-label') ?? '';
+		const noise = ariaOf('noise'); // Midday
+		const absent = ariaOf('absent'); // Night
+		expect(noise).not.toBe(absent);
+		expect(noise).toContain('within noise');
+		expect(absent).toContain('no prior week');
+		// never the misleading "no change data" for a measured-but-insignificant change
+		expect(noise).not.toContain('no change data');
+		expect(absent).not.toContain('no change data');
+		// self-identifying: the chip's accessible name carries its shift label
+		expect(noise.toLowerCase()).toContain('midday');
+	});
+
 	it('uses the singular unit on a ±1-point move ("+1 pt", never "+1 pts")', () => {
 		// +1 pt at n≈80k is a real (significant) difference — the unit must read singular.
 		const { container } = mount(vm([row('am_peak', 86, 79256, 68160, 85, 80832)], [], true));

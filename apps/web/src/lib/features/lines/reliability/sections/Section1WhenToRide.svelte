@@ -361,7 +361,7 @@
 				: row.delta.hasPrior
 					? copy.priorDelta.withinNoise
 					: copy.priorDelta.noPrior[win]}
-			ariaNoun={copy.priorDelta.onTimeNoun}
+			ariaNoun={`${row.label} ${copy.priorDelta.onTimeNoun}`}
 		/>
 	</li>
 {/snippet}

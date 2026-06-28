@@ -347,8 +347,11 @@
 	const waitCompareRows = $derived<WaitCompareRow[]>(
 		mainRows
 			.filter((r) => r.observed != null)
-			.map((r) => ({
-				key: r.shift,
+			// Index-suffix the key: when a route has only per-direction/weekend rows (no busiest-
+			// direction primary), mainRows falls back to those and `r.shift` is the bare base token
+			// (am_peak, …) shared across siblings — `${shift}-${i}` keeps the {#each} keys unique.
+			.map((r, i) => ({
+				key: `${r.shift}-${i}`,
 				label: shiftLabel(r),
 				observed: r.observed,
 				delta: meanPriorDelta(
@@ -628,7 +631,7 @@
 				: row.delta.hasPrior
 					? copy.priorDelta.withinNoise
 					: copy.priorDelta.noPrior[win]}
-			ariaNoun={copy.priorDelta.waitNoun}
+			ariaNoun={`${row.label} ${copy.priorDelta.waitNoun}`}
 		/>
 	</li>
 {/snippet}

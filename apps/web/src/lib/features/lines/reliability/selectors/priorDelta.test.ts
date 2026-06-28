@@ -91,4 +91,15 @@ describe('meanPriorDelta — significance gate (shared-CoV two-sample z)', () =>
 	it('a zero delta is never significant', () => {
 		expect(meanPriorDelta(12, 60, 12, 60, { cov: 0.2 }).significant).toBe(false);
 	});
+	it('is direction-symmetric: a rise and its mirror-image fall get the same verdict', () => {
+		// 10→8 (fall) vs 8→10 (rise), same |Δ|, n, CoV. The shared dispersion is anchored to the
+		// AVERAGE of the two means, so both clear the gate identically — an SE tied to the current
+		// value alone (the bug) called the fall significant but not the equal-magnitude rise.
+		const fall = meanPriorDelta(8, 20, 10, 20, { cov: 0.34 });
+		const rise = meanPriorDelta(10, 20, 8, 20, { cov: 0.34 });
+		expect(rise.significant).toBe(fall.significant);
+		expect(rise.significant).toBe(true);
+		expect(fall.delta).toBe(-2);
+		expect(rise.delta).toBe(2);
+	});
 });

@@ -14,9 +14,12 @@
 //   • meanPriorDelta — for a continuous MEAN (observed headway, minutes). A mean has no
 //     binomial variance, so the proportion test is invalid; instead a two-sample z on the
 //     means using the window's carried CoV (stddev/mean) as a SHARED dispersion estimate
-//     (s = |value| × cov, assumed stable across two adjacent equal-length windows of the
-//     same shift). SE = s·√(1/n + 1/priorN) folds the (small) headway gap-sample sizes in,
-//     so a sparse window only clears the gate on a large, real move. Real at 95% AND both
+//     s = (|value| + |priorValue|)/2 × cov (the average of the two means, so a rise and its
+//     mirror-image fall get the SAME standard error — anchoring s to the current value alone
+//     would skew the gate toward whichever direction lowered the mean). It is assumed stable
+//     across two adjacent equal-length windows of the same shift (the contract carries no
+//     prior CoV). SE = s·√(1/n + 1/priorN) folds the (small) headway gap-sample sizes in, so
+//     a sparse window only clears the gate on a large, real move. Real at 95% AND both
 //     windows clear MIN_POINTS_FOR_LINE gap observations AND a CoV is present.
 //
 // Both return delta=null + hasPrior=false when there is no prior window (the first window /
@@ -121,7 +124,10 @@ export function meanPriorDelta(
 	const cov = opts.cov;
 	let significant = false;
 	if (isNum(cov) && cov > 0 && n >= minN && priorN >= minN) {
-		const s = Math.abs(value) * cov; // dispersion estimate, same unit as value
+		// Symmetric shared dispersion: anchor s to the AVERAGE of the two means (not the current
+		// one) so a rise and its mirror-image fall yield the same SE — an honest, direction-neutral
+		// gate (the contract carries no prior CoV to do a full two-sample SE).
+		const s = ((Math.abs(value) + Math.abs(priorValue)) / 2) * cov;
 		const se = s * Math.sqrt(1 / n + 1 / priorN);
 		significant = se > 0 && Math.abs((value - priorValue) / se) >= WILSON_Z && delta !== 0;
 	}
