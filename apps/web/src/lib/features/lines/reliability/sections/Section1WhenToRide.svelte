@@ -32,6 +32,7 @@
 	import { fmtPct } from '$lib/utils';
 	import type { SeverityCode } from '$lib/v1/schemas';
 	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
+	import CollapsibleSection from './CollapsibleSection.svelte';
 	import { ChartLegend, DeltaStat } from '$lib/components/dataviz';
 	import { Chart } from '$lib/components/dataviz/chart';
 	import { AbsentValue } from '$lib/components/edge';
@@ -366,14 +367,11 @@
 	</li>
 {/snippet}
 
-<section class="section" data-section="when-to-ride" aria-label={copy.sections.whenToRide.label}>
-	<header class="section-head">
-		<SectionLabel text={copy.sections.whenToRide.label} variant="station" />
-		<p class="section-question" data-slot="section-question">
-			{copy.sections.whenToRide.question}
-		</p>
-	</header>
-
+<CollapsibleSection
+	dataSection="when-to-ride"
+	eyebrow={copy.sections.whenToRide.label}
+	question={copy.sections.whenToRide.question}
+>
 	{#if sectionEmpty}
 		<div data-slot="when-to-ride-empty">
 			<AbsentValue variant="block" reason="no-observations" {locale} />
@@ -472,24 +470,9 @@
 			{/if}
 		</Detail>
 	{/if}
-</section>
+</CollapsibleSection>
 
 <style>
-	/* Section rhythm: generous BETWEEN-block air (research: within ≤ between), all
-	   on the 8px grid. The section owns its inner stack; the orchestrator owns the
-	   between-section gap. */
-	.section {
-		display: flex;
-		flex-direction: column;
-		gap: clamp(1.25rem, 3vw, 2rem);
-		width: 100%;
-	}
-	.section-head {
-		display: flex;
-		flex-direction: column;
-		gap: 0.5rem;
-	}
-
 	.section-primary,
 	.block {
 		display: flex;

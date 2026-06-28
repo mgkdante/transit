@@ -42,6 +42,7 @@
 	import type { Locale } from '$lib/i18n';
 	import { fmtPct, fmtCount, fmtDelayMin as sharedFmtDelayMin } from '$lib/utils';
 	import { SectionLabel } from '$lib/components/brand';
+	import CollapsibleSection from './CollapsibleSection.svelte';
 	import { AbsentValue } from '$lib/components/edge';
 	import { ChartLegend } from '$lib/components/dataviz';
 	import { occupancyVar } from '$lib/components/dataviz/tokens';
@@ -361,12 +362,11 @@
 	/>
 {/snippet}
 
-<section class="section" data-section="run-and-fit" aria-label={copy.sections.runAndFit.label}>
-	<header class="section-head">
-		<SectionLabel text={copy.sections.runAndFit.label} variant="station" />
-		<p class="section-question" data-slot="section-question">{copy.sections.runAndFit.question}</p>
-	</header>
-
+<CollapsibleSection
+	dataSection="run-and-fit"
+	eyebrow={copy.sections.runAndFit.label}
+	question={copy.sections.runAndFit.question}
+>
 	{#if sectionEmpty}
 		<div data-slot="run-and-fit-empty">
 			<AbsentValue variant="block" reason="no-observations" {locale} />
@@ -534,24 +534,9 @@
 			{/if}
 		</Detail>
 	{/if}
-</section>
+</CollapsibleSection>
 
 <style>
-	/* Section rhythm: generous BETWEEN-block air (research: within ≤ between), all on
-	   the 8px grid. The section owns its inner stack; the orchestrator owns the
-	   between-section gap. */
-	.section {
-		display: flex;
-		flex-direction: column;
-		gap: clamp(1.25rem, 3vw, 2rem);
-		width: 100%;
-	}
-	.section-head {
-		display: flex;
-		flex-direction: column;
-		gap: 0.5rem;
-	}
-
 	/* Each rider-answer sub-block (run / fit) owns its own inner stack. */
 	.sub-block {
 		display: flex;

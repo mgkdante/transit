@@ -23,6 +23,7 @@
 	import type { Locale } from '$lib/i18n';
 	import { fmtDelayMin, fmtPct } from '$lib/utils';
 	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
+	import CollapsibleSection from './CollapsibleSection.svelte';
 	import { Chart } from '$lib/components/dataviz/chart';
 	import { MaybeValue } from '$lib/components/edge';
 	import Detail from '$lib/components/shared/Detail.svelte';
@@ -186,12 +187,11 @@
 {#snippet p50Info()}{@render metricInfo('p50p90', copy.strip.p50Min)}{/snippet}
 {#snippet p90Info()}{@render metricInfo('p50p90', copy.strip.p90Min)}{/snippet}
 
-<section class="section" data-section="verdict" aria-label={copy.sections.verdict.label}>
-	<header class="section-head">
-		<SectionLabel text={copy.sections.verdict.label} variant="station" />
-		<p class="section-question" data-slot="section-question">{copy.sections.verdict.question}</p>
-	</header>
-
+<CollapsibleSection
+	dataSection="verdict"
+	eyebrow={copy.sections.verdict.label}
+	question={copy.sections.verdict.question}
+>
 	<!-- The at-a-glance verdict: the BAN + the plain-language two-sided sentence. It owns
 	     §0's honest absence ("still measuring") when there's no percentage to read. -->
 	<VerdictBanner result={verdict} />
@@ -297,24 +297,9 @@
 			</div>
 		</Detail>
 	{/if}
-</section>
+</CollapsibleSection>
 
 <style>
-	/* Section rhythm: generous BETWEEN-block air (research: within ≤ between), all on
-	   the 8px grid. The section owns its inner stack; the orchestrator owns the
-	   between-section gap. */
-	.section {
-		display: flex;
-		flex-direction: column;
-		gap: clamp(1.25rem, 3vw, 2rem);
-		width: 100%;
-	}
-	.section-head {
-		display: flex;
-		flex-direction: column;
-		gap: 0.5rem;
-	}
-
 	/* KPI tiles: a responsive RAM grid, never below one column on a phone. */
 	.verdict-kpis {
 		display: grid;

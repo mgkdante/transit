@@ -39,6 +39,7 @@
 	import MetricDisplay from '$lib/components/brand/MetricDisplay.svelte';
 	import MetricBullet from './MetricBullet.svelte';
 	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
+	import CollapsibleSection from './CollapsibleSection.svelte';
 	import { AbsentValue } from '$lib/components/edge';
 	import Detail from '$lib/components/shared/Detail.svelte';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
@@ -636,12 +637,11 @@
 	</li>
 {/snippet}
 
-<section class="section" data-section="the-wait" aria-label={copy.sections.theWait.label}>
-	<header class="section-head">
-		<SectionLabel text={copy.sections.theWait.label} variant="station" />
-		<p class="section-question" data-slot="section-question">{copy.sections.theWait.question}</p>
-	</header>
-
+<CollapsibleSection
+	dataSection="the-wait"
+	eyebrow={copy.sections.theWait.label}
+	question={copy.sections.theWait.question}
+>
 	{#if wait.isEmpty && !hasSpan}
 		<!-- Honest empty: the styled honest-absence chip (says WHY), nothing to draw in either sub-block. -->
 		<div data-slot="the-wait-empty">
@@ -858,24 +858,9 @@
 			{/if}
 		</Detail>
 	{/if}
-</section>
+</CollapsibleSection>
 
 <style>
-	/* Section rhythm: generous BETWEEN-block air (research: within ≤ between), all on
-	   the 8px grid. The section owns its inner stack; the orchestrator owns the
-	   between-section gap. */
-	.section {
-		display: flex;
-		flex-direction: column;
-		gap: clamp(1.25rem, 3vw, 2rem);
-		width: 100%;
-	}
-	.section-head {
-		display: flex;
-		flex-direction: column;
-		gap: 0.5rem;
-	}
-
 	/* The always-visible PRIMARY dumbbell block + its label/info head. */
 	.section-primary {
 		display: flex;
