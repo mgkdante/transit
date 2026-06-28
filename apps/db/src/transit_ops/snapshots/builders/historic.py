@@ -595,15 +595,23 @@ _ROUTE_HABIT_SQL = text(
     """
 )
 
-# Per-stop weekly delay for this route — top weak stops by average delay.
+# Per-stop delay for this route — top weak stops by average delay, recomposed from the
+# daily gold.stop_delay_spine over the trailing-month window (DB-0067 Phase 2: the
+# stop_delay_weekly mart it used to read was dropped). weighted_delay_sec is the spine's
+# pooled SUM(sum_delay_seconds) (the rebaselined avg numerator). The mart was the ~10-day
+# open window; bounding to the trailing 30d (the month grain, via _grain_windows) keeps the
+# scalar from ballooning toward the spine's 730d retention while staying recent — its
+# windowed companion weak_stops_by_grain carries the per-grain breakdowns. A real route_id
+# never matches the spine's '__unrouted__' sentinel, so NULL-route obs are excluded.
 _ROUTE_WEAK_STOPS_SQL = text(
     """
     SELECT stop_id,
-           SUM(observation_count)                          AS obs,
-           SUM(avg_delay_seconds * observation_count)      AS weighted_delay_sec,
-           SUM(severe_delay_count)                         AS severe
-    FROM gold.stop_delay_weekly
+           SUM(observation_count)  AS obs,
+           SUM(sum_delay_seconds)  AS weighted_delay_sec,
+           SUM(severe_delay_count) AS severe
+    FROM gold.stop_delay_spine
     WHERE provider_id = :provider_id AND route_id = :route_id
+      AND service_local_date >= :win_start AND service_local_date <= :win_end
     GROUP BY stop_id
     """
 )
@@ -1610,14 +1618,20 @@ def build_route_reliability(
         str(r["stop_id"]): r["stop_name"]
         for r in conn.execute(_STOP_NAMES_SQL, params).mappings()
     }
+    # Shared spine anchor (newest closed day for this route) — drives BOTH the scalar
+    # weak_stops trailing-month window AND the windowed companion below (one MAX scan).
+    weak_anchor = _stop_delay_anchor(conn, params)
     weak_rows = []
-    for r in conn.execute(_ROUTE_WEAK_STOPS_SQL, params).mappings():
-        obs = r["obs"]
-        weighted = r["weighted_delay_sec"]
-        avg_sec = (float(weighted) / float(obs)) if obs and weighted is not None else None
-        if avg_sec is None:
-            continue
-        weak_rows.append((str(r["stop_id"]), avg_sec))
+    if weak_anchor is not None:
+        ws_start, ws_end = _grain_windows(weak_anchor)["month"]
+        ws_params = {**params, "win_start": ws_start, "win_end": ws_end}
+        for r in conn.execute(_ROUTE_WEAK_STOPS_SQL, ws_params).mappings():
+            obs = r["obs"]
+            weighted = r["weighted_delay_sec"]
+            avg_sec = (float(weighted) / float(obs)) if obs and weighted is not None else None
+            if avg_sec is None:
+                continue
+            weak_rows.append((str(r["stop_id"]), avg_sec))
     weak_rows.sort(key=lambda t: t[1], reverse=True)
     weak_stops = [
         WeakStop(id=sid, name=names.get(sid), avg_delay_min=round(avg_sec / 60.0, 1))
@@ -1626,9 +1640,10 @@ def build_route_reliability(
 
     # --- S7-B windowable §4: worst-N stops recomposed per time window off gold.stop_delay_spine,
     #     ranked by the not-severe Wilson lower bound (the build_stop_reliability house pattern).
-    #     The scalar weak_stops[] above STAYS whole-history (reads stop_delay_weekly until 0067)
-    #     and MIN_N-free; the windowed companion applies the MIN_N=30 hard floor. names reused. ---
-    weak_stops_by_grain = _weak_stops_by_grain(conn, params, names)
+    #     The scalar weak_stops[] above is the trailing-month (30d) recompose off the same spine
+    #     and MIN_N-free; the windowed companion applies the MIN_N=30 hard floor. names + anchor
+    #     reused (DB-0067 Phase 2 re-pointed the scalar off the dropped stop_delay_weekly). ---
+    weak_stops_by_grain = _weak_stops_by_grain(conn, params, names, anchor=weak_anchor)
 
     # --- route display name: current dim first, dim_route_history fallback ---
     route_names = {

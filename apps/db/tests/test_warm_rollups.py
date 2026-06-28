@@ -14,8 +14,6 @@ from transit_ops.settings import Settings
 REPORTING_AGGREGATE_TABLES = (
     "route_delay_hourly",
     "stop_delay_hourly",
-    "stop_delay_weekly",
-    "stop_delay_monthly",
     "route_habit_score",
     "repeated_problem_route_stop",
     "citizen_accountability_daily",
@@ -990,10 +988,10 @@ def test_prune_warm_rollup_storage_dry_run_counts_without_deletes() -> None:
     assert result.deleted_row_counts["gold.stop_delay_spine"] == 4
 
     count_queries = [s for s in conn.executed if "SELECT COUNT(*)" in s or "SELECT count(*)" in s]
-    # 23 prior MINUS the 6 route delay-cube fold tables (dropped in 0064) PLUS the S7-B
-    # route_headway_shift_daily (DB-PR-2) + stop_delay_spine (DB-PR-3); each retention-registered
-    # table emits one dry-run COUNT.
-    assert len(count_queries) == 19
+    # 23 prior MINUS the 6 route delay-cube fold tables (dropped in 0064) MINUS the 2 stop_delay
+    # weekly/monthly folds (dropped in 0067) PLUS the S7-B route_headway_shift_daily (DB-PR-2) +
+    # stop_delay_spine (DB-PR-3); each retention-registered table emits one dry-run COUNT.
+    assert len(count_queries) == 17
 
 
 def test_prune_warm_rollup_storage_display_dict_includes_dry_run() -> None:

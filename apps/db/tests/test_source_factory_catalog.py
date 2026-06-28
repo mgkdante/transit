@@ -27,8 +27,6 @@ LEGACY_SILVER_REALTIME_TABLES = {
 REPORTING_AGGREGATE_TABLES = (
     "gold.route_delay_hourly",
     "gold.stop_delay_hourly",
-    "gold.stop_delay_weekly",
-    "gold.stop_delay_monthly",
     "gold.route_habit_score",
     "gold.repeated_problem_route_stop",
     "gold.citizen_accountability_daily",
@@ -176,8 +174,9 @@ def test_catalog_declares_source_table_contract_by_family() -> None:
     assert "gold.trip_delay_summary_5m" in by_family["trip_updates"].gold_outputs
     assert "gold.route_delay_hourly" in by_family["trip_updates"].gold_outputs
     assert "gold.stop_delay_hourly" in by_family["trip_updates"].gold_outputs
-    assert "gold.stop_delay_weekly" in by_family["trip_updates"].gold_outputs
-    assert "gold.stop_delay_monthly" in by_family["trip_updates"].gold_outputs
+    # DB-0067 dropped the stop_delay weekly/monthly folds — no longer outputs.
+    assert "gold.stop_delay_weekly" not in by_family["trip_updates"].gold_outputs
+    assert "gold.stop_delay_monthly" not in by_family["trip_updates"].gold_outputs
 
     assert by_family["vehicle_positions"].endpoint_key == "vehicle_positions"
     assert by_family["vehicle_positions"].raw_tables == ("raw.realtime_snapshot_index",)

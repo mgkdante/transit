@@ -237,30 +237,6 @@ def test_stop_delay_hourly_severe_is_per_stop_not_route_max(conn) -> None:  # no
     assert "SC" not in rows
 
 
-def test_stop_delay_weekly_propagates_per_stop_values(conn) -> None:  # noqa: ANN001
-    _seed_stop_rollup_facts(conn)
-    _run_stop_hourly_rollup(conn)
-
-    params = {"provider_id": PROVIDER, "built_at_utc": BUILT_AT}
-    conn.execute(rollups.DELETE_REPORTING_AGGREGATES["stop_delay_weekly"], params)
-    conn.execute(rollups.REPORTING_AGGREGATE_UPSERTS["stop_delay_weekly"], params)
-
-    row = conn.execute(
-        text(
-            """
-            SELECT observation_count, severe_delay_count, avg_delay_seconds
-            FROM gold.stop_delay_weekly
-            WHERE provider_id = :p AND stop_id = 'SB'
-            """
-        ),
-        {"p": PROVIDER},
-    ).mappings().one()
-
-    assert row["observation_count"] == 2
-    assert row["severe_delay_count"] == 0
-    assert float(row["avg_delay_seconds"]) == 30.0
-
-
 def _seed_static_schedule(connection) -> None:  # noqa: ANN001
     connection.execute(
         text(

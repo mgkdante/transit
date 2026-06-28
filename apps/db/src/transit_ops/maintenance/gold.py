@@ -27,8 +27,6 @@ GOLD_WARM_ROLLUP_TABLES = (
 GOLD_REPORTING_AGGREGATE_TABLES = (
     "gold.route_delay_hourly",
     "gold.stop_delay_hourly",
-    "gold.stop_delay_weekly",
-    "gold.stop_delay_monthly",
     "gold.route_habit_score",
     "gold.repeated_problem_route_stop",
     "gold.citizen_accountability_daily",
@@ -60,8 +58,6 @@ GOLD_AGGREGATE_RETENTION_COLUMNS = (
     ("gold.warm_rollup_periods", "period_start_utc", False),
     ("gold.route_delay_hourly", "period_start_utc", False),
     ("gold.stop_delay_hourly", "period_start_utc", False),
-    ("gold.stop_delay_weekly", "week_start_local", True),
-    ("gold.stop_delay_monthly", "month_start_local", True),
     ("gold.route_habit_score", "built_at_utc", False),
     ("gold.repeated_problem_route_stop", "period_start_local", True),
     ("gold.citizen_accountability_daily", "provider_local_date", True),

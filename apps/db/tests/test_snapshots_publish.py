@@ -682,7 +682,14 @@ def test_publish_historic_writes_expected_keys(tmp_path) -> None:
                 and "repeated_problem_route_stop" not in s  # not the hotspots query
             ):
                 if "route_id = :route_id" in s:
-                    # weak_stops_by_grain: obs<30 -> below MIN_N -> stays [] (not asserted).
+                    if "weighted_delay_sec" in s:
+                        # DB-0067 Phase 2: the scalar per-route weak_stops read carries the
+                        # distinctive 'weighted_delay_sec' alias; the surviving stop ranks.
+                        return _FakeResult(
+                            [{"stop_id": "51234", "obs": 100,
+                              "weighted_delay_sec": 9000, "severe": 10}]
+                        )
+                    # weak_stops_by_grain (sum_delay_sec): obs<30 -> below MIN_N -> [] (not asserted).
                     return _FakeResult(
                         [{"stop_id": "51234", "obs": 10, "severe": 1, "sum_delay_sec": 900}]
                     )
