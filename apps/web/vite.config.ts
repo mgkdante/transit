@@ -108,7 +108,11 @@ export default defineConfig(({ command, isSsrBuild }) => ({
 					exclude: ['src/lib/components/**', 'src/lib/stores/**', 'src/lib/**/*.svelte.test.ts'],
 					environment: 'node',
 					globals: true,
-					pool: 'threads',
+					// forks (process-per-file), NOT threads: under threads this project intermittently
+					// reported a spurious "1 failed file" while every test passed — cross-file state
+					// leaking inside a shared worker. Process isolation removes the contamination at the
+					// source, so the suite runs file-parallel again (no more --no-file-parallelism crutch).
+					pool: 'forks',
 					setupFiles: ['./src/tests/setup.data.ts'],
 				},
 			},
