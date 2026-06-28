@@ -106,3 +106,67 @@ describe('RouteReliabilityClusters — ?grain seed + availability clamp (S7-B PR
 		expect(mockUrl.searchParams.get('grain')).toBeNull();
 	});
 });
+
+// PR-WEB-4: ?from/?to custom-range deep-linking. 3 dated days so a real range exists; the active-
+// window caption is the structure-independent probe (it names the resolved range vs the prompt).
+const rangeData: RouteReliability = {
+	generated_utc: utc('2026-06-19T02:00:00Z'),
+	id: '51',
+	periods: [
+		{ grain: 'day', date: '2026-06-16', otp_pct: 80, observation_count: 900, on_time: 720 },
+		{ grain: 'day', date: '2026-06-17', otp_pct: 82, observation_count: 900, on_time: 738 },
+		{ grain: 'day', date: '2026-06-18', otp_pct: 84, observation_count: 900, on_time: 756 },
+	],
+};
+
+describe('RouteReliabilityClusters — ?from/?to range deep-link (S7-B PR-WEB-4)', () => {
+	beforeEach(() => {
+		mockUrl = new URL('http://localhost/lines/51');
+		replaceState.mockClear();
+	});
+
+	it('seeds the custom range from ?grain=range&from=…&to=… (caption names the window)', () => {
+		mockUrl = new URL('http://localhost/lines/51?grain=range&from=2026-06-16&to=2026-06-18');
+		const { container } = render(RouteReliabilityClusters, {
+			props: { data: rangeData, locale: 'en' },
+		});
+		const c = caption(container);
+		expect(c).toContain('2026-06-16');
+		expect(c).toContain('2026-06-18');
+		expect(c.toLowerCase()).toContain('average across 3 days');
+	});
+
+	it('a COMPLETE from+to activates range even WITHOUT ?grain=range', () => {
+		mockUrl = new URL('http://localhost/lines/51?from=2026-06-16&to=2026-06-18');
+		const { container } = render(RouteReliabilityClusters, {
+			props: { data: rangeData, locale: 'en' },
+		});
+		expect(caption(container)).toContain('2026-06-16');
+		const checked = container.querySelector('[role="radio"][aria-checked="true"]');
+		expect(checked?.textContent?.toLowerCase()).toContain('range');
+	});
+
+	it('drops an out-of-window bound (the URL is a hint) → falls back to the range prompt', () => {
+		mockUrl = new URL('http://localhost/lines/51?grain=range&from=2020-01-01&to=2026-06-18');
+		const { container } = render(RouteReliabilityClusters, {
+			props: { data: rangeData, locale: 'en' },
+		});
+		// from dropped → no complete range → the honest "pick a start and end date" prompt, never a
+		// fabricated window around the bogus 2020 date.
+		expect(caption(container).toLowerCase()).toContain('pick a start and end date');
+		expect(caption(container)).not.toContain('2020');
+	});
+
+	it('mirrors from/to and CLEARS them when the rail leaves range mode', async () => {
+		mockUrl = new URL('http://localhost/lines/51?grain=range&from=2026-06-16&to=2026-06-18');
+		const { container } = render(RouteReliabilityClusters, {
+			props: { data: rangeData, locale: 'en' },
+		});
+		const day = radioByText(container, 'today') ?? radioByText(container, 'day');
+		await fireEvent.click(day!);
+		// leaving range → ?from/?to deleted for a clean canonical URL.
+		expect(mockUrl.searchParams.get('from')).toBeNull();
+		expect(mockUrl.searchParams.get('to')).toBeNull();
+		expect(mockUrl.searchParams.get('grain')).toBeNull(); // day default omitted too
+	});
+});

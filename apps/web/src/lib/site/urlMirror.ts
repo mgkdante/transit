@@ -25,3 +25,36 @@ export function mirrorSearchParam(key: string, value: string | null): void {
 		// best-effort and non-load-bearing, so skip silently.
 	}
 }
+
+/**
+ * Mirror SEVERAL params in ONE replaceState. Use this — never N separate mirrorSearchParam calls
+ * in the same tick — when a single view change touches multiple params (e.g. grain + from + to):
+ * replaceState updates `page.url` ASYNCHRONOUSLY, so back-to-back single writes each clone the
+ * STALE url and clobber one another (last write wins, dropping the others). Reading page.url ONCE
+ * and writing the full set once is the only race-free option. `null` deletes a key; same
+ * resilience contract as the singular form (idempotent no-op when nothing changes; swallows the
+ * pre-router throw).
+ */
+export function mirrorSearchParams(params: Record<string, string | null>): void {
+	if (typeof window === 'undefined') return;
+	const url = new URL(page.url);
+	let changed = false;
+	for (const [key, value] of Object.entries(params)) {
+		const current = url.searchParams.get(key);
+		if (value === null) {
+			if (current !== null) {
+				url.searchParams.delete(key);
+				changed = true;
+			}
+		} else if (current !== value) {
+			url.searchParams.set(key, value);
+			changed = true;
+		}
+	}
+	if (!changed) return; // already in sync — no write, no loop
+	try {
+		replaceState(url, page.state);
+	} catch {
+		// router not ready (SSR / pre-hydration / isolated component test) — best-effort hint.
+	}
+}
