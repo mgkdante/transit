@@ -52,6 +52,7 @@
 	import { selectPunctualityCrosstab } from '../selectors/punctualityCrosstab';
 	import { selectWeekdayCycle } from '../selectors/weekdayCycle';
 	import { selectHabitsHeatmap } from '../selectors/habitsHeatmap';
+	import { selectBestTimeInsight } from '../selectors/bestTimeInsight';
 	import { selectShiftBars } from '../selectors/shiftBars';
 	import type { PunctualityVM, HabitsVM, PeriodComparisonRow } from '../clusters';
 	import type { ReliabilityCopy } from '../reliability.copy';
@@ -108,6 +109,22 @@
 
 	// Full day names in heatmap ROW order (Mon..Sun) for the tooltip heading + table.
 	const fullDayLabels = $derived(band.weekdays.slice(1));
+
+	// §1 takeaway SENTENCE (the verdict the section earmarks): the line's worst repeat-problem
+	// window + its calmest weekday, read straight off the matrix so a rider gets "when to avoid /
+	// when it's fine" without decoding the grid. Worded RELATIVE to the line (its own peak hour).
+	const bestTime = $derived(
+		selectBestTimeInsight(habits, {
+			fullRowLabels: fullDayLabels,
+			hourLabel: (h) => `${String(h).padStart(2, '0')}:00`,
+		}),
+	);
+	const bestTimeText = $derived(
+		bestTime
+			? band.bestTime.lead(bestTime.worstDayLabel, bestTime.worstHourLabel) +
+					(bestTime.calmDayIdx >= 0 ? band.bestTime.calm(bestTime.calmDayLabel) : '')
+			: null,
+	);
 
 	const heatmapSpec = $derived(
 		selectHabitsHeatmap(habits, locale, {
@@ -384,6 +401,12 @@
 					<SectionLabel text={band.heatmapHeading} variant="metric" />
 					{@render metricInfo('habits', band.heatmapHeading)}
 				</span>
+				<!-- Tier-1 takeaway (the verdict SENTENCE the section earmarks): names the line's worst
+				     repeat-problem window + calmest weekday, so the rider gets the answer before reading
+				     the grid. Worded relative to the line itself. -->
+				{#if bestTimeText}
+					<p class="heatmap-insight" data-slot="best-time-insight">{bestTimeText}</p>
+				{/if}
 				<!-- Operator: "today and this week look the same — explain why." The heatmap reads the
 					     FULL history (grain-invariant), so it is identical whichever window the rail is on.
 					     State it plainly right under the title (∞ ties back to the section's scope glyph). -->
@@ -535,6 +558,20 @@
 		font-size: var(--text-body);
 		line-height: 1;
 		color: var(--accent-text);
+	}
+	/* §1 takeaway sentence — the lead "when to avoid / when it's fine" verdict. Reads stronger
+	   than the quiet captions (foreground, medium weight, body size) so the eye catches the
+	   answer first; a thin accent rule marks it as the section's insight. */
+	.heatmap-insight {
+		margin: 0;
+		max-width: 60ch;
+		padding-inline-start: 0.7rem;
+		border-inline-start: 3px solid var(--accent-text);
+		font-size: var(--text-body);
+		line-height: 1.45;
+		font-weight: 500;
+		color: var(--foreground);
+		text-wrap: pretty;
 	}
 	.peak-daytype {
 		display: flex;

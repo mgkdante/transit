@@ -34,6 +34,7 @@
 	import { meanPriorDelta, type PriorDelta } from '../selectors/priorDelta';
 	import { selectHeadwayDumbbell } from '../selectors/headwayDumbbell';
 	import { selectShiftBars } from '../selectors/shiftBars';
+	import { selectDirectionAsymmetry } from '../selectors/directionAsymmetry';
 	import { selectBullet } from '../selectors/bullet';
 	import { selectServiceSpan } from '../selectors/serviceSpan';
 	import MetricDisplay from '$lib/components/brand/MetricDisplay.svelte';
@@ -141,6 +142,16 @@
 		readonly bunchedMagnitude: (shift: string) => string;
 		/** Value-axis title for the scheduled-vs-observed headway dumbbell. */
 		readonly headwayAxis: string;
+		/** Overline for the always-visible direction-asymmetry callout. */
+		readonly directionAsymmetryLabel: string;
+		/** The callout sentence: the shift + the slower/faster direction waits. */
+		readonly directionAsymmetry: (
+			shift: string,
+			slowerDir: string,
+			slowerVal: string,
+			fasterDir: string,
+			fasterVal: string,
+		) => string;
 	}
 
 	const BAND_COPY: Record<Locale, BandCopy> = {
@@ -166,6 +177,9 @@
 			covMagnitude: (shift) => `Régularité (CV), ${shift}`,
 			bunchedMagnitude: (shift) => `Part de bus collés, ${shift}`,
 			headwayAxis: 'Intervalle (min)',
+			directionAsymmetryLabel: 'La direction compte',
+			directionAsymmetry: (shift, slowerDir, slowerVal, fasterDir, fasterVal) =>
+				`Vers ${shift}, l’attente est d’environ ${slowerVal} vers ${slowerDir}, contre ${fasterVal} vers ${fasterDir}.`,
 		},
 		en: {
 			headwaySection: 'Wait by shift',
@@ -189,6 +203,9 @@
 			covMagnitude: (shift) => `Regularity (CoV), ${shift}`,
 			bunchedMagnitude: (shift) => `Bunched share, ${shift}`,
 			headwayAxis: 'Headway (min)',
+			directionAsymmetryLabel: 'Direction matters',
+			directionAsymmetry: (shift, slowerDir, slowerVal, fasterDir, fasterVal) =>
+				`Around ${shift}, the wait runs about ${slowerVal} toward ${slowerDir} but ${fasterVal} toward ${fasterDir}.`,
 		},
 	};
 
@@ -455,6 +472,13 @@
 			.sort((a, b) => a.order - b.order);
 	});
 
+	// Tier-1 (telling-metrics): the single LARGEST inbound-vs-outbound wait gap, surfaced as an
+	// always-visible callout (promoted out of the buried per-direction reveal table). null on a
+	// symmetric line (nothing to flag) → no callout. Threshold lives in the selector.
+	const directionAsymmetry = $derived(
+		selectDirectionAsymmetry(directionRows, { dir0Label, dir1Label }),
+	);
+
 	// The headline excess-wait read, lifted to a prominent ExplainedMetricCard so the
 	// "extra wait over WHAT" baseline is ALWAYS visible beside the number (the operator's
 	// "1.8 min over what" fix). It represents the WHOLE DAY — the mean excess wait across the
@@ -663,6 +687,24 @@
 			<p class="bunching-help" data-slot="bunching-help">{terms.bunchingHelp}</p>
 		</div>
 
+		<!-- Tier-1 (telling-metrics): direction asymmetry — "the ride home can wait longer." Surfaced
+		     as an always-visible callout when a shift's two directions differ enough; the full per-
+		     direction table still lives in the Detail below for the breakdown. -->
+		{#if directionAsymmetry}
+			<div class="direction-callout" data-slot="direction-asymmetry">
+				<SectionLabel text={t.directionAsymmetryLabel} variant="metric" />
+				<p class="direction-callout__text">
+					{t.directionAsymmetry(
+						directionAsymmetry.shiftLabel,
+						directionAsymmetry.slowerLabel,
+						`${Math.round(directionAsymmetry.slowerMin)}${copy.units.min}`,
+						directionAsymmetry.fasterLabel,
+						`${Math.round(directionAsymmetry.fasterMin)}${copy.units.min}`,
+					)}
+				</p>
+			</div>
+		{/if}
+
 		<!-- DETAIL — excess-wait headline + per-shift breakdown + direction table + service span. -->
 		<Detail label={copy.sections.detailShow} labelOpen={copy.sections.detailHide}>
 			<!-- Headway-by-shift sub-block. -->
@@ -866,6 +908,29 @@
 		display: flex;
 		flex-direction: column;
 		gap: 0.625rem;
+	}
+
+	/* Tier-1 direction-asymmetry callout — the "which way you go changes the wait" takeaway,
+	   in the same insight register as §1's takeaway (yellow overline + accent left-rule + a
+	   foreground sentence), distinct from the bordered data cards. */
+	.direction-callout {
+		display: flex;
+		flex-direction: column;
+		gap: 0.3rem;
+		max-width: 64ch;
+		padding-inline-start: 0.7rem;
+		border-inline-start: 3px solid var(--accent-text);
+	}
+	.direction-callout :global([data-slot='section-label']) {
+		color: var(--accent-text);
+	}
+	.direction-callout__text {
+		margin: 0;
+		font-size: var(--text-body);
+		line-height: 1.45;
+		font-weight: 500;
+		color: var(--foreground);
+		text-wrap: pretty;
 	}
 
 	.cluster-sub {
