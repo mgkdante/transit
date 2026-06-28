@@ -1776,6 +1776,22 @@ def _build_percentile_days(
         # 5-minute UTC bins).
         period_start_utc = datetime(local_date.year, local_date.month, local_date.day, tzinfo=UTC)
         with engine.begin() as conn:
+            # Prod-scale planner tuning for the finest-grain spine builders, scoped to this
+            # one-day transaction (SET LOCAL reverts on COMMIT). Each builder reads a full
+            # closed day of the trip-delay fact (~3M rows at prod scale) and dedups/aggregates
+            # it to the grain. Two cluster defaults make that pathological:
+            #   * work_mem=4MB -> the per-trip dedup sort (~90MB/worker at prod scale) spills
+            #     to disk (external merge), and
+            #   * the un-sargable EXTRACT(isodow ...) / ABS(delay) filters carry no column
+            #     stats, so the planner underestimates the post-filter rows ~600x and picks
+            #     O(n^2) nested-loop joins over the materialized CTEs.
+            # Together these hung route_headway_shift_daily ~45 min/day (the S7-B deploy
+            # blocker). A larger work_mem keeps every sort/hash in RAM (the VM has >20GB free)
+            # and disabling nestloop forces hash/merge joins; the headway day-build drops from
+            # 45 min to ~9 s (verified by EXPLAIN ANALYZE on prod). Mirrors migration 0034's
+            # heavy-build session tuning.
+            conn.execute(text("SET LOCAL work_mem = '512MB'"))
+            conn.execute(text("SET LOCAL enable_nestloop = off"))
             conn.execute(
                 upsert,
                 {
