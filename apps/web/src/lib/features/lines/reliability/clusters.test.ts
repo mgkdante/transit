@@ -138,9 +138,13 @@ describe('toReliabilityClusters — populated fixture', () => {
 		expect(c.strip.headwayRegularityCov).toBe(0.42);
 	});
 
-	it('takes the most-recent ramp-in rates (skipping a null-rate tail row)', () => {
+	it('POOLS the latest day ramp-in rate from its counts, falling back to the last published rate', () => {
 		const c = toReliabilityClusters(populated);
-		expect(c.strip.cancellationRatePct).toBe(2.4); // 06-18 had no rate → 06-17
+		// Cancellations: the latest day (06-18) carries counts (0 of 240 canceled) → the POOLED
+		// rate is its true 0%, not the older 06-17 rate (the pooled tile now matches its "X of Y").
+		expect(c.strip.cancellationRatePct).toBe(0);
+		// Skipped: the rows carry no stop_time_update_count denominator → no pooled rate, so it
+		// falls back to the most-recent published skipped_stop_rate_pct (06-18 = 1.1%).
 		expect(c.strip.skippedStopRatePct).toBe(1.1);
 	});
 

@@ -581,6 +581,34 @@ function weightedMean<T>(
 }
 
 /**
+ * POOLED rate across rows: (Σ numerator / Σ denominator) × 100, rounded to `dp`. The honest
+ * windowed rate (cancellation / skipped-stop) — the SAME pooled value the §3 "X of Y" caption
+ * sums, so the rate tile and its caption can never disagree (a mean-of-daily-rates did). null
+ * when no row carries a positive denominator.
+ */
+function pooledRate<T>(
+	rows: readonly T[],
+	numer: (row: T) => number | null | undefined,
+	denom: (row: T) => number | null | undefined,
+	dp: number,
+): number | null {
+	let nSum = 0;
+	let dSum = 0;
+	for (const row of rows) {
+		const d = denom(row);
+		const nu = numer(row);
+		// Need BOTH counts: a present denom with a NULL numerator means the numerator is unknown for
+		// that row (not a real 0), so it is skipped — never assumed 0. A genuine 0 numerator counts.
+		if (d == null || d <= 0 || nu == null || Number.isNaN(nu)) continue;
+		dSum += d;
+		nSum += nu;
+	}
+	if (dSum === 0) return null;
+	const factor = 10 ** dp;
+	return Math.round((nSum / dSum) * 100 * factor) / factor;
+}
+
+/**
  * Unweighted mean of the present band-share mixes (each share vector sums to ~1, so
  * the mean also sums to ~1 — no re-normalization). null when no present mix. Used to
  * fold the per-ISO-weekday occupancy_by_dow shares into a typical weekday/weekend mix.
@@ -701,16 +729,21 @@ export function toReliabilityClusters(
 	// day often lags (not yet computed); when the picked window carries no rate, fall back
 	// to the most-recent KNOWN rate so the tile shows the last real reading, never a false
 	// blank. (Was: unconditionally most-recent over the full archive — ignored the grain.)
+	// POOLED windowed rate (Σ canceled / Σ total, Σ skipped / Σ updates) — the SAME pooled value the
+	// §3 "X of Y" caption sums, so the rate tile and its caption agree (a mean-of-daily-rates made
+	// them disagree). Falls back to the most-recent published rate when the window carries no counts.
 	const cancellationRatePct =
-		meanOf(
+		pooledRate(
 			windowByGrain(allCancellations, grain, selectedDate, dateRange),
-			(c) => c.cancellation_rate_pct,
+			(c) => c.canceled_trip_days,
+			(c) => c.total_trip_days,
 			1,
 		) ?? mostRecentRate(allCancellations, (c) => c.cancellation_rate_pct);
 	const skippedStopRatePct =
-		meanOf(
+		pooledRate(
 			windowByGrain(allSkipped, grain, selectedDate, dateRange),
-			(s) => s.skipped_stop_rate_pct,
+			(s) => s.skipped_stop_count,
+			(s) => s.stop_time_update_count,
 			1,
 		) ?? mostRecentRate(allSkipped, (s) => s.skipped_stop_rate_pct);
 	const headwayRegularityCov = selectHeadwayCov(allHeadway);
