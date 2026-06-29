@@ -63,7 +63,7 @@
 			data={reals}
 			x={schedOf}
 			y={yOf}
-			xScale={scaleLinear()}
+			xScale={scaleLinear().clamp(true)}
 			{xDomain}
 			yScale={scaleBand().padding(0.5)}
 			yDomain={labels}

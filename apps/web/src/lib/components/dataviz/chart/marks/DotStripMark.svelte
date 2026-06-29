@@ -51,7 +51,7 @@
 		<LcChart
 			data={reals}
 			x={xOf}
-			xScale={scaleLinear()}
+			xScale={scaleLinear().clamp(true)}
 			{xDomain}
 			y={yOf}
 			yScale={scaleBand().padding(0.4)}

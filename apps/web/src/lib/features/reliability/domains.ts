@@ -32,14 +32,17 @@ export const DELAY_POS_DOMAIN = [0, 8] as const;
  * clamping it to 8 would hide the tail.
  */
 export const DELAY_DIST_DOMAIN = [0, 15] as const;
-/** Day-of-week + delay-by-crowding avg delay (min). */
-export const DELAY_DOW_DOMAIN = [0, 6] as const;
+/** Day-of-week + delay-by-crowding avg delay (min). Shares DELAY_POS's [0,8] so a chronically
+ *  late route's weekday average (real STM tail runs past 6) stays visible instead of pinning. */
+export const DELAY_DOW_DOMAIN = [0, 8] as const;
 /** Scheduled / observed / excess headway gap (min). */
 export const HEADWAY_DOMAIN = [0, 35] as const;
 
 // ── Ratio ───────────────────────────────────────────────────────────────────────────────────
-/** Headway coefficient-of-variation (gap stddev / mean); 1.0 = random-arrivals reference. */
-export const COV_DOMAIN = [0, 1.2] as const;
+/** Headway coefficient-of-variation (gap stddev / mean); 1.0 = random-arrivals reference. Real
+ *  STM night/weekend bunching reaches ~1.27, so the frame runs to 1.5 (every bar mark also clamps
+ *  to its domain, so a rarer overshoot pins at the frame edge rather than escaping it). */
+export const COV_DOMAIN = [0, 1.5] as const;
 
 // ── Normalised score (0..1) ───────────────────────────────────────────────────────────────────
 /**

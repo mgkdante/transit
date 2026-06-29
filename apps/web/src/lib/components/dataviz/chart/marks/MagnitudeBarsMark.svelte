@@ -69,7 +69,7 @@
 			data={reals}
 			x={xOf}
 			y={yOf}
-			xScale={scaleLinear()}
+			xScale={scaleLinear().clamp(true)}
 			{xDomain}
 			yScale={scaleBand().padding(0.42)}
 			yDomain={labels}

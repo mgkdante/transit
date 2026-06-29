@@ -45,13 +45,18 @@
 	<Collapsible bind:open>
 		<CollapsibleTrigger>
 			{#snippet child({ props })}
-				<button {...props} type="button" class="section-toggle" data-slot="section-toggle">
-					<span class="section-head-text">
-						<SectionLabel text={eyebrow} variant="station" />
-						<p class="section-question" data-slot="section-question">{question}</p>
-					</span>
-					<ChevronToggle {open} direction="down" size="md" />
-				</button>
+				<!-- A real <h2> wraps the disclosure button (the WAI accordion pattern) so screen-reader
+				     heading navigation reaches every section (WCAG 1.3.1 / 2.4.10); the display-scale
+				     look stays on .section-question. -->
+				<h2 class="section-heading">
+					<button {...props} type="button" class="section-toggle" data-slot="section-toggle">
+						<span class="section-head-text">
+							<SectionLabel text={eyebrow} variant="station" />
+							<span class="section-question" data-slot="section-question">{question}</span>
+						</span>
+						<ChevronToggle {open} direction="down" size="md" />
+					</button>
+				</h2>
 			{/snippet}
 		</CollapsibleTrigger>
 		<CollapsibleContent>
@@ -65,6 +70,13 @@
 		display: flex;
 		flex-direction: column;
 		width: 100%;
+	}
+	/* The heading wraps the toggle (WAI accordion) — reset the UA heading box so the visual
+	   look is unchanged; the title styling lives on .section-question. */
+	.section-heading {
+		margin: 0;
+		font: inherit;
+		color: inherit;
 	}
 	/* The whole header (eyebrow + big title) IS the toggle — a full-width, transparent button so
 	   the click target is generous + the title keeps its display-scale look. The chevron is the

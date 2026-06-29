@@ -51,6 +51,22 @@ describe('proportionPriorDelta — significance gate (two-proportion z-test)', (
 		const derived = proportionPriorDelta(89, 2137, 84, 2183);
 		expect(derived.significant).toBe(withOnTime.significant);
 	});
+	it('does NOT call a 1-pt move significant when the prior rounding band could erase it', () => {
+		// 85% vs a prior shown as 84% at n≈16.4k: treating 84% as exact, the old z≈2.5 read
+		// "significant". But the prior ships ROUNDED — it could truly be 84.5%, halving the move to
+		// 0.5pt (z≈1.3). The gate now tests that least-favourable prior, so this reads within-noise.
+		const r = proportionPriorDelta(85, 16400, 84, 16400, { onTime: 13940 });
+		expect(r.delta).toBe(1);
+		expect(r.hasPrior).toBe(true);
+		expect(r.significant).toBe(false);
+	});
+	it('still calls a robust multi-point move significant despite the prior rounding band', () => {
+		// 85% vs 80% at the same n: even the nearest admissible prior (80.5%) leaves a 4.5pt move
+		// well past 95%, so the rounding-robust gate keeps the arrow.
+		const r = proportionPriorDelta(85, 16400, 80, 16400, { onTime: 13940 });
+		expect(r.delta).toBe(5);
+		expect(r.significant).toBe(true);
+	});
 });
 
 describe('meanPriorDelta — honest absence', () => {

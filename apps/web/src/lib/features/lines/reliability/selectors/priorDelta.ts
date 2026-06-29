@@ -62,7 +62,10 @@ export interface ProportionDeltaOpts {
 /**
  * Two-proportion z-test Δ for a percentage metric. `pct` / `priorPct` are 0..100; `delta`
  * = pct − priorPct in whole points (the contract rounds OTP to an int). Significance pools
- * the two proportions for the standard error and requires both denominators ≥ minN.
+ * the two proportions for the standard error and requires both denominators ≥ minN. Because the
+ * prior rate arrives ROUNDED to a whole percent, the gate tests the LEAST-favourable prior in the
+ * ±0.5pt rounding band, so a "significant" arrow can never be an artifact of the rounding (shipping
+ * the exact prior_on_time numerator on the contract would remove the band and tighten this).
  */
 export function proportionPriorDelta(
 	pct: number | null | undefined,
@@ -81,10 +84,15 @@ export function proportionPriorDelta(
 	const k1 = isNum(opts.onTime)
 		? Math.min(Math.max(opts.onTime, 0), n)
 		: Math.round((pct / 100) * n);
-	const k2 = Math.round((priorPct / 100) * priorN);
 	const p1 = k1 / n;
-	const p2 = k2 / priorN;
-	const pPool = (k1 + k2) / (n + priorN);
+	// The prior rate ships ROUNDED to a whole percent → its true proportion lies in a ±0.5pt band.
+	// Gate on the band edge NEAREST p1 (smallest |p1 − p2| → smallest |z|): if even the least
+	// favourable admissible prior clears 95%, the move is robustly real, not a rounding flip. When
+	// p1 falls inside the band the change is unresolvable → p2 = p1 → |z| = 0 (never significant).
+	const priorLo = Math.max(0, (priorPct - 0.5) / 100);
+	const priorHi = Math.min(1, (priorPct + 0.5) / 100);
+	const p2 = p1 >= priorHi ? priorHi : p1 <= priorLo ? priorLo : p1;
+	const pPool = (k1 + p2 * priorN) / (n + priorN);
 	const se = Math.sqrt(pPool * (1 - pPool) * (1 / n + 1 / priorN));
 	const significant =
 		n >= minN && priorN >= minN && se > 0 && Math.abs((p1 - p2) / se) >= WILSON_Z && delta !== 0;

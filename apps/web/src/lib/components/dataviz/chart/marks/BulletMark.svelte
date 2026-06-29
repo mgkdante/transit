@@ -43,7 +43,7 @@
 			data={trackRow}
 			x={(d: Row) => d.value}
 			y={(d: Row) => d.label}
-			xScale={scaleLinear()}
+			xScale={scaleLinear().clamp(true)}
 			{xDomain}
 			yScale={scaleBand().padding(0.32)}
 			yDomain={['']}
