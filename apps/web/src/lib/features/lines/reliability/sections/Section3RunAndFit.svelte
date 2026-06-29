@@ -122,11 +122,14 @@
 			any = false;
 		for (const r of rows) {
 			const w = whole(r);
-			if (w != null) {
-				total += w;
-				partSum += part(r) ?? 0;
-				any = true;
-			}
+			const p = part(r);
+			// Skip a row whose numerator is UNKNOWN (null/NaN) — matching clusters.ts pooledRate — so
+			// the "X of Y" caption sums the exact same rows as the pooled rate tile and the two can
+			// NEVER disagree (a null numerator is not a real 0; coercing it to 0 would diverge them).
+			if (w == null || w <= 0 || p == null || Number.isNaN(p)) continue;
+			total += w;
+			partSum += p;
+			any = true;
 		}
 		return any && total > 0 ? { part: partSum, total, sharePct: (partSum / total) * 100 } : null;
 	}
