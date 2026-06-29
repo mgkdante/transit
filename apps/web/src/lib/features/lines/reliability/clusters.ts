@@ -612,6 +612,8 @@ function pooledRate<T>(
  * Unweighted mean of the present band-share mixes (each share vector sums to ~1, so
  * the mean also sums to ~1 — no re-normalization). null when no present mix. Used to
  * fold the per-ISO-weekday occupancy_by_dow shares into a typical weekday/weekend mix.
+ * UNWEIGHTED by necessity: occupancy_by_dow rows carry only {day_of_week_iso, mix} with NO
+ * per-weekday sample count, so a trip-weighted fold would need a contract change (pipeline-side).
  */
 function meanMix(mixes: readonly (OccupancyMix | null)[]): OccupancyMix | null {
 	const present = mixes.filter((m): m is OccupancyMix => m != null);
