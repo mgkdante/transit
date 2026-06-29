@@ -603,6 +603,7 @@ def _trip_delay_snapshot_statement(
             direction_id = EXCLUDED.direction_id,
             start_date = EXCLUDED.start_date,
             vehicle_id = EXCLUDED.vehicle_id,
+            occupancy_status = EXCLUDED.occupancy_status,
             trip_schedule_relationship = EXCLUDED.trip_schedule_relationship,
             delay_seconds = EXCLUDED.delay_seconds,
             stop_time_update_count = EXCLUDED.stop_time_update_count,
@@ -734,6 +735,7 @@ def _trip_delay_snapshot_statement(
             direction_id,
             start_date,
             vehicle_id,
+            occupancy_status,
             trip_schedule_relationship,
             delay_seconds,
             stop_time_update_count,
@@ -755,6 +757,7 @@ def _trip_delay_snapshot_statement(
             rtu.direction_id,
             rtu.start_date,
             vpm.vehicle_id,
+            vpm.occupancy_status,
             rtu.schedule_relationship AS trip_schedule_relationship,
             tdf.derived_delay_seconds,
             COALESCE(stc.stop_time_update_count, 0),
@@ -777,7 +780,8 @@ def _trip_delay_snapshot_statement(
          AND tdf.entity_index = rtu.entity_index
         LEFT JOIN LATERAL (
             SELECT
-                vp.vehicle_id
+                vp.vehicle_id,
+                vp.occupancy_status
             FROM silver.rt_vehicle_positions AS vp
             INNER JOIN silver.rt_feed_snapshots AS vp_rfs
                 ON vp_rfs.rt_feed_snapshot_id = vp.rt_feed_snapshot_id

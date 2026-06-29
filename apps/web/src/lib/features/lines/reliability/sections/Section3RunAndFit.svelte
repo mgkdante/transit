@@ -482,13 +482,10 @@
 			<div class="crowding-delay" data-slot="delay-by-crowding" data-card>
 				<SectionLabel text={copy.delayByCrowding.heading} variant="metric" />
 				<!-- A12 magnitude bars on the fixed occupancy axis; the <Chart> renders the
-				     honest-absence chip itself when no band carries a measured delay. -->
+				     honest-absence chip itself when no band carries a measured delay. FIX-3: the
+				     per-band delay is now TRULY co-observed (each delay row carries its own vehicle's
+				     occupancy), so the old "day-level, not per-trip" caveat no longer applies. -->
 				<Chart spec={crowdingDelay.spec} />
-				{#if crowdingDelay.spec.kind !== 'absence'}
-					<!-- Honest caveat: this is a day-level association (the day's dominant crowding),
-					     not a per-trip crowding-causes-delay measure. -->
-					<p class="caption" data-slot="crowding-delay-caption">{copy.delayByCrowding.caption}</p>
-				{/if}
 			</div>
 
 			{#if weekdayWeekendCols}

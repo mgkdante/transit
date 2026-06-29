@@ -737,75 +737,72 @@ def test_build_route_reliability_weak_stops_respects_explicit_limit() -> None:
     assert len(out_all.weak_stops) == 6  # limit beyond available returns only what exists
 
 
-def test_build_route_reliability_delay_by_crowding_dominant_band() -> None:
-    # Two days: day1 dominant band = many_seats (50 > others), day2 dominant
-    # band = standing (40 > others). Each day's delay is bucketed under its
-    # dominant band; avg is observation-weighted by that day's delay_obs.
+def test_build_route_reliability_delay_by_crowding_co_observes_all_bands() -> None:
+    # FIX-3: each band carries its OWN co-observed delay (the rollup pre-aggregates per band over
+    # the window), so the full/standing tail is NO LONGER censored by a day's dominant band. The
+    # read SQL returns one row per band: {band, delay_obs, sum_delay_sec, w_p50_sec, p50_obs,
+    # day_count}; the shaper emits avg = sum/obs and obs-weighted p50, in canonical band order.
     crowding = [
-        {"d": datetime.date(2026, 6, 1), "empty": 0, "many_seats": 50,
-         "few_seats": 30, "standing": 15, "full": 5,
-         "avg_delay_sec": 120.0, "delay_obs": 10},
-        {"d": datetime.date(2026, 6, 2), "empty": 0, "many_seats": 10,
-         "few_seats": 20, "standing": 40, "full": 5,
-         "avg_delay_sec": 300.0, "delay_obs": 30},
+        {"band": "many_seats", "delay_obs": 100, "sum_delay_sec": 6000.0,
+         "w_p50_sec": None, "p50_obs": 0, "day_count": 5},   # 60s -> 1.0 min
+        {"band": "standing", "delay_obs": 40, "sum_delay_sec": 9600.0,
+         "w_p50_sec": None, "p50_obs": 0, "day_count": 5},   # 240s -> 4.0 min
+        {"band": "full", "delay_obs": 10, "sum_delay_sec": 3000.0,
+         "w_p50_sec": None, "p50_obs": 0, "day_count": 3},   # 300s -> 5.0 min
     ]
     conn = FakeConn(_route_reliability_dispatch(crowding=crowding))
 
     out = build_route_reliability(conn, route_id="51", generated_utc="t")
 
     by_band = {c.band: c for c in out.delay_by_crowding}
-    assert set(by_band) == {"many_seats", "standing"}
-    # many_seats: single day, 120s -> 2.0 min, 10 obs, 1 day
-    assert by_band["many_seats"].avg_delay_min == 2.0
-    assert by_band["many_seats"].observation_count == 10
-    assert by_band["many_seats"].day_count == 1
-    # standing: single day, 300s -> 5.0 min, 30 obs, 1 day
-    assert by_band["standing"].avg_delay_min == 5.0
-    assert by_band["standing"].observation_count == 30
-    assert by_band["standing"].day_count == 1
-    # no daily percentile rows in this dispatch -> p50_min honest-None
-    assert by_band["many_seats"].p50_min is None
+    # ALL three bands emitted, in canonical order — the high-crowding tail is observable.
+    assert [c.band for c in out.delay_by_crowding] == ["many_seats", "standing", "full"]
+    assert by_band["many_seats"].avg_delay_min == 1.0
+    assert by_band["standing"].avg_delay_min == 4.0
+    assert by_band["full"].avg_delay_min == 5.0  # the previously-CENSORED tail, now real
+    assert by_band["full"].observation_count == 10
+    assert by_band["full"].day_count == 3
+    assert by_band["many_seats"].p50_min is None  # no p50 obs -> honest None
 
 
-def test_build_route_reliability_delay_by_crowding_obs_weighted() -> None:
-    # Two days share the SAME dominant band (many_seats); avg_delay_min is
-    # observation-weighted by delay_obs, not a plain mean.
+def test_build_route_reliability_delay_by_crowding_avg_and_p50() -> None:
+    # avg_delay_min = sum_delay_sec / delay_obs / 60; p50_min = (w_p50_sec / p50_obs) / 60 (an
+    # obs-weighted mean of the daily band p50s the rollup carries).
     crowding = [
-        {"d": datetime.date(2026, 6, 1), "empty": 0, "many_seats": 50,
-         "few_seats": 1, "standing": 0, "full": 0,
-         "avg_delay_sec": 60.0, "delay_obs": 10},  # 1.0 min, weight 10
-        {"d": datetime.date(2026, 6, 2), "empty": 0, "many_seats": 50,
-         "few_seats": 1, "standing": 0, "full": 0,
-         "avg_delay_sec": 240.0, "delay_obs": 30},  # 4.0 min, weight 30
+        {"band": "many_seats", "delay_obs": 40, "sum_delay_sec": 7200.0,  # 180s -> 3.0 min
+         "w_p50_sec": 3600.0, "p50_obs": 40, "day_count": 2},             # 90s -> 1.5 min
     ]
     conn = FakeConn(_route_reliability_dispatch(crowding=crowding))
 
     out = build_route_reliability(conn, route_id="51", generated_utc="t")
 
     cell = {c.band: c for c in out.delay_by_crowding}["many_seats"]
-    # weighted: (60*10 + 240*30) / 40 = 195s -> 3.2 min (NOT plain mean 2.5)
-    assert cell.avg_delay_min == 3.2
+    assert cell.avg_delay_min == 3.0
+    assert cell.p50_min == 1.5
     assert cell.observation_count == 40
     assert cell.day_count == 2
 
 
 def test_build_route_reliability_delay_by_crowding_empty_when_no_telemetry() -> None:
-    # No occupancy rows -> empty list (honest absence, never a fabricated band).
+    # No co-observed rows -> empty list (honest absence, never a fabricated band).
     conn = FakeConn(_route_reliability_dispatch(crowding=[]))
     out = build_route_reliability(conn, route_id="51", generated_utc="t")
     assert out.delay_by_crowding == []
 
 
-def test_build_route_reliability_delay_by_crowding_skips_zero_obs_days() -> None:
-    # A day with zero band observations has no dominant band -> skipped entirely.
+def test_build_route_reliability_delay_by_crowding_skips_null_band() -> None:
+    # A row whose band is NULL (occupancy_status outside the 0-5 band map) is skipped, never
+    # emitted; only mapped bands surface.
     crowding = [
-        {"d": datetime.date(2026, 6, 1), "empty": 0, "many_seats": 0,
-         "few_seats": 0, "standing": 0, "full": 0,
-         "avg_delay_sec": 120.0, "delay_obs": 10},
+        {"band": None, "delay_obs": 5, "sum_delay_sec": 600.0,
+         "w_p50_sec": None, "p50_obs": 0, "day_count": 1},
+        {"band": "standing", "delay_obs": 20, "sum_delay_sec": 4800.0,
+         "w_p50_sec": None, "p50_obs": 0, "day_count": 2},
     ]
     conn = FakeConn(_route_reliability_dispatch(crowding=crowding))
     out = build_route_reliability(conn, route_id="51", generated_utc="t")
-    assert out.delay_by_crowding == []
+    assert [c.band for c in out.delay_by_crowding] == ["standing"]
+    assert out.delay_by_crowding[0].avg_delay_min == 4.0  # 4800/20/60
 
 
 def test_build_route_reliability_by_shift_daytype_empty_when_absent() -> None:
@@ -853,6 +850,10 @@ def test_build_route_reliability_occupancy_by_dow_cells() -> None:
     assert by[1].mix.many_seats == 0.5  # 5/10
     assert by[1].mix.standing == 0.2  # 2/10
     assert by[6].mix.empty == 0.8  # 8/10
+    # FIX-5: n = the per-weekday band-observation total (the share denominator), so the
+    # web can trip-weight the weekday/weekend fold.
+    assert by[1].n == 10  # 0+5+3+2+0
+    assert by[6].n == 10  # 8+2+0+0+0
 
 
 def test_build_route_reliability_occupancy_by_dow_honest_none_when_no_bands() -> None:
@@ -867,6 +868,9 @@ def test_build_route_reliability_occupancy_by_dow_honest_none_when_no_bands() ->
     assert len(out.occupancy_by_dow) == 1
     assert out.occupancy_by_dow[0].day_of_week_iso == 3
     assert out.occupancy_by_dow[0].mix is None
+    # FIX-5: a real 0 count (data-day present, zero band telemetry) — NOT None, so a
+    # consumer can tell "no data-days" (row omitted) from "0 band obs" (row present, n=0).
+    assert out.occupancy_by_dow[0].n == 0
 
 
 def test_build_route_reliability_occupancy_by_dow_empty_when_absent() -> None:

@@ -49,6 +49,11 @@ export const ReliabilityPeriodSchema = z.object({
 	// null on the first window or on the scalar whole-history periods.
 	prior_observation_count: z.number().int().nullable().optional(),
 	prior_otp_pct: z.number().int().nullable().optional(),
+	// FIX-4 (additive-optional): the prior window's EXACT on-time numerator, so the
+	// two-proportion delta pools real counts instead of reconstructing the prior
+	// numerator from the integer-rounded prior_otp_pct (a ±0.5pt band). Null on
+	// pre-republish snapshots; the consumer keeps the band hack as a fallback.
+	prior_on_time: z.number().int().nullable().optional(),
 });
 export type ReliabilityPeriod = z.infer<typeof ReliabilityPeriodSchema>;
 
@@ -180,6 +185,10 @@ export const OccupancyByDowSchema = z.object({
 	day_of_week_iso: z.number().int(),
 	// band-shares for the weekday; null when the weekday has no occupancy telemetry.
 	mix: OccupancyMixSchema.nullable().optional(),
+	// FIX-5 (additive-optional): total band observations for this weekday (the share
+	// denominator) → trip-weighted weekday/weekend fold. Null on pre-republish
+	// snapshots; the consumer degrades to the unweighted mean when absent.
+	n: z.number().int().nullable().optional(),
 });
 export type OccupancyByDow = z.infer<typeof OccupancyByDowSchema>;
 

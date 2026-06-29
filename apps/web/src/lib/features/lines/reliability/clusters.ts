@@ -103,6 +103,9 @@ export interface PeriodComparisonRow {
 	readonly onTime: number | null;
 	readonly priorOtpPct: number | null;
 	readonly priorObservationCount: number | null;
+	/** Exact prior on-time numerator (FIX-4) — lets the two-proportion z-test pool real
+	 *  counts instead of the rounded prior_otp_pct. Null on pre-republish snapshots. */
+	readonly priorOnTime: number | null;
 }
 
 /**
@@ -439,6 +442,7 @@ const toComparisonRow = (p: ReliabilityPeriod): PeriodComparisonRow => ({
 	onTime: num(p.on_time),
 	priorOtpPct: num(p.prior_otp_pct),
 	priorObservationCount: num(p.prior_observation_count),
+	priorOnTime: num(p.prior_on_time),
 });
 
 /**
@@ -609,17 +613,26 @@ function pooledRate<T>(
 }
 
 /**
- * Unweighted mean of the present band-share mixes (each share vector sums to ~1, so
- * the mean also sums to ~1 — no re-normalization). null when no present mix. Used to
- * fold the per-ISO-weekday occupancy_by_dow shares into a typical weekday/weekend mix.
- * UNWEIGHTED by necessity: occupancy_by_dow rows carry only {day_of_week_iso, mix} with NO
- * per-weekday sample count, so a trip-weighted fold would need a contract change (pipeline-side).
+ * Mean of the present band-share mixes (each share vector sums to ~1, so the mean also
+ * sums to ~1 — no re-normalization). null when no present mix. Used to fold the per-ISO-
+ * weekday occupancy_by_dow shares into a typical weekday/weekend mix.
+ *
+ * TRIP-WEIGHTED by the per-DOW count `n` (FIX-5) — a low-volume Sunday no longer counts as
+ * much as a high-volume Saturday. ALL-OR-NOTHING guard: weight only when EVERY present row
+ * carries a positive `n`; otherwise (any null/absent n — e.g. a pre-republish snapshot, or
+ * mixed) degrade to the plain UNWEIGHTED mean, which is byte-identical to the prior behavior
+ * so back-compat is exact and a partial-n window never silently drops a real weekday.
  */
-function meanMix(mixes: readonly (OccupancyMix | null)[]): OccupancyMix | null {
-	const present = mixes.filter((m): m is OccupancyMix => m != null);
+function meanMix(
+	rows: readonly { mix: OccupancyMix | null; n?: number | null }[],
+): OccupancyMix | null {
+	const present = rows.filter((r): r is { mix: OccupancyMix; n?: number | null } => r.mix != null);
 	if (present.length === 0) return null;
+	const weighted = present.every((r) => r.n != null && Number.isFinite(r.n) && r.n > 0);
+	const denom = weighted ? present.reduce((acc, r) => acc + (r.n as number), 0) : present.length;
+	const wOf = (r: { n?: number | null }): number => (weighted ? (r.n as number) : 1);
 	const avg = (pick: (m: OccupancyMix) => number): number =>
-		present.reduce((acc, m) => acc + pick(m), 0) / present.length;
+		present.reduce((acc, r) => acc + pick(r.mix) * wOf(r), 0) / denom;
 	return {
 		empty: avg((m) => m.empty),
 		many_seats: avg((m) => m.many_seats),
@@ -977,12 +990,12 @@ export function toReliabilityClusters(
 					weekday: meanMix(
 						occByDow
 							.filter((d) => d.day_of_week_iso >= 1 && d.day_of_week_iso <= 5)
-							.map((d) => d.mix ?? null),
+							.map((d) => ({ mix: d.mix ?? null, n: d.n })),
 					),
 					weekend: meanMix(
 						occByDow
 							.filter((d) => d.day_of_week_iso >= 6 && d.day_of_week_iso <= 7)
-							.map((d) => d.mix ?? null),
+							.map((d) => ({ mix: d.mix ?? null, n: d.n })),
 					),
 				}
 			: null;

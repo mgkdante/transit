@@ -396,14 +396,81 @@ UPSERT_STOP_OCCUPANCY_BAND_DAILY = text(
     """
 )
 
-# Per-route service span over one CLOSED provider-local day (append-only). Grain
-# is route x provider_local_date; weekday/weekend is derived at READ time from the
-# date, so the closed-day calendar (captured-date) is the single source of truth
-# for the grain (no captured-date-vs-start_date ambiguity). "Trip start" = the
-# first realtime observation of a trip (MIN captured_at_utc) — labeled honestly as
-# first-observed activity, not the scheduled departure. first/last delay = that
-# trip's earliest-observation schedule deviation. Binds {provider_id, local_date,
-# built_at_utc} so it drops into _build_percentile_days unchanged.
+# Per-route x closed-day x crowding-BAND delay distribution, TRULY co-observed at the
+# vehicle x timestamp x trip grain (FIX-3). occupancy_status is carried on each delay
+# observation by the vpm LATERAL match the delay-fact build already runs, so each delay row
+# falls under ITS OWN band instead of the day's dominant band — uncensoring the full/standing
+# tail. band uses the same vocabulary + code map as route_occupancy_band_daily (0=empty,
+# 1=many_seats, 2=few_seats, 3/4=standing, 5=full). delay_observation_count + sum_delay_seconds
+# are additive (obs-weighted mean over a trailing window = SUM(sum)/SUM(count)); p50 is a
+# best-effort daily median (obs-weighted across days at read, an approximation). Rows with NULL
+# occupancy_status (no vehicle-position match) are excluded (honest absence). Reads
+# fact_trip_delay_snapshot -> default trip-delay missing-day calendar; APPEND-ONLY. Binds
+# {provider_id, local_date, built_at_utc} so it drops into _build_percentile_days unchanged.
+UPSERT_ROUTE_DELAY_BY_CROWDING_DAILY = text(
+    f"""
+    WITH co_observed AS (
+        SELECT
+            f.provider_id,
+            f.route_id,
+            CASE f.occupancy_status
+                WHEN 0 THEN 'empty'
+                WHEN 1 THEN 'many_seats'
+                WHEN 2 THEN 'few_seats'
+                WHEN 3 THEN 'standing'
+                WHEN 4 THEN 'standing'
+                WHEN 5 THEN 'full'
+            END AS band,
+            f.delay_seconds
+        FROM gold.fact_trip_delay_snapshot AS f
+        WHERE f.provider_id = :provider_id
+          AND f.route_id IS NOT NULL
+          AND f.occupancy_status IN (0, 1, 2, 3, 4, 5)
+          AND f.delay_seconds IS NOT NULL
+          AND ABS(f.delay_seconds) <= {GHOST_DELAY_ABS_SECONDS}
+          AND f.snapshot_date_key = :date_key
+    )
+    INSERT INTO gold.route_delay_by_crowding_daily (
+        provider_id, provider_local_date, route_id, band,
+        delay_observation_count, sum_delay_seconds, p50_delay_seconds, built_at_utc
+    )
+    SELECT
+        provider_id,
+        :local_date,
+        route_id,
+        band,
+        COUNT(*)::integer,
+        SUM(delay_seconds)::numeric,
+        ROUND(percentile_cont(0.5) WITHIN GROUP (ORDER BY delay_seconds)::numeric, 2),
+        :built_at_utc
+    FROM co_observed
+    GROUP BY provider_id, route_id, band
+    ON CONFLICT (provider_id, provider_local_date, route_id, band) DO UPDATE SET
+        delay_observation_count = EXCLUDED.delay_observation_count,
+        sum_delay_seconds = EXCLUDED.sum_delay_seconds,
+        p50_delay_seconds = EXCLUDED.p50_delay_seconds,
+        built_at_utc = EXCLUDED.built_at_utc
+    """
+)
+
+# Per-route service span over one GTFS SERVICE DAY (append-only). Grain is route x
+# provider_local_date, where provider_local_date is the GTFS service day (start_date) — NOT
+# the calendar capture day (FIX-2). The OLD captured-date grain split a service day's overnight
+# tail off and prepended the next day's pre-midnight trips, faking a ~00:00 first departure and a
+# ~24h span. To re-grain by service day WITHOUT a migration or a clobber hazard, each :local_date
+# run builds exactly the ONE service day that has just fully completed — service_date = local_date
+# - 1 — reading a TWO-day INDEXED window {date_key(local_date-1), date_key(local_date)} so both the
+# daytime trips (captured on day D) AND the post-midnight tail (captured early on day D+1) are in
+# one pass, filtered to start_date = service_date. Because each service day is built once, from a
+# complete window, by a single run, the row is written exactly once → REPLACE-on-conflict is
+# idempotent and never clobbers (no start_date spread across runs, so no PK change is needed). The
+# 2-day filter stays on the (provider_id, snapshot_date_key) index (an IN of two keys, sargable),
+# so it does NOT reintroduce the un-sargable-scan deploy hazard. Cost: the freshest service day
+# lags one captured day (built when the NEXT day closes), the price of a guaranteed-complete tail.
+# "Trip start" = the first realtime observation of a trip (MIN captured_at_utc). first delay = the
+# first trip's earliest-observation deviation; last delay = the last trip's LATEST (terminal)
+# observation deviation (FIX-2: the old code read the last trip's FIRST obs ≈ 0). Binds
+# {provider_id, local_date, date_key, built_at_utc} so it drops into _build_percentile_days.
 UPSERT_ROUTE_SERVICE_SPAN_DAILY = text(
     """
     WITH trip_starts AS (
@@ -412,13 +479,22 @@ UPSERT_ROUTE_SERVICE_SPAN_DAILY = text(
             f.route_id,
             f.trip_id,
             MIN(f.captured_at_utc) AS trip_start_utc,
-            (ARRAY_AGG(f.delay_seconds ORDER BY f.captured_at_utc, f.entity_index))[1]
-                AS first_obs_delay
+            (ARRAY_AGG(f.delay_seconds ORDER BY f.captured_at_utc ASC, f.entity_index ASC))[1]
+                AS first_obs_delay,
+            (ARRAY_AGG(f.delay_seconds ORDER BY f.captured_at_utc DESC, f.entity_index DESC))[1]
+                AS last_obs_delay
         FROM gold.fact_trip_delay_snapshot AS f
         WHERE f.provider_id = :provider_id
           AND f.route_id IS NOT NULL
           AND f.trip_id IS NOT NULL
-          AND f.snapshot_date_key = :date_key
+          -- TWO-day indexed window: daytime (date_key D) + overnight tail (date_key D+1).
+          AND f.snapshot_date_key IN (
+              to_char((CAST(:local_date AS date) - 1), 'YYYYMMDD')::integer,
+              :date_key
+          )
+          -- Attribute by GTFS service day, not capture day (= local_date - 1, the just-completed
+          -- service day whose tail finished within :local_date). NULL start_date drops out.
+          AND f.start_date = (CAST(:local_date AS date) - 1)
         GROUP BY f.provider_id, f.route_id, f.trip_id
     ),
     ranked AS (
@@ -427,11 +503,12 @@ UPSERT_ROUTE_SERVICE_SPAN_DAILY = text(
             route_id,
             trip_start_utc,
             first_obs_delay,
+            last_obs_delay,
             ROW_NUMBER() OVER (
-                PARTITION BY provider_id, route_id ORDER BY trip_start_utc, first_obs_delay
+                PARTITION BY provider_id, route_id ORDER BY trip_start_utc ASC, first_obs_delay ASC
             ) AS rn_first,
             ROW_NUMBER() OVER (
-                PARTITION BY provider_id, route_id ORDER BY trip_start_utc DESC, first_obs_delay
+                PARTITION BY provider_id, route_id ORDER BY trip_start_utc DESC, first_obs_delay ASC
             ) AS rn_last
         FROM trip_starts
     )
@@ -442,13 +519,13 @@ UPSERT_ROUTE_SERVICE_SPAN_DAILY = text(
     )
     SELECT
         provider_id,
-        :local_date,
+        (CAST(:local_date AS date) - 1),
         route_id,
         MIN(trip_start_utc),
         MAX(trip_start_utc),
         ROUND(EXTRACT(EPOCH FROM (MAX(trip_start_utc) - MIN(trip_start_utc))) / 60.0)::integer,
         MAX(first_obs_delay) FILTER (WHERE rn_first = 1),
-        MAX(first_obs_delay) FILTER (WHERE rn_last = 1),
+        MAX(last_obs_delay) FILTER (WHERE rn_last = 1),
         COUNT(*)::integer,
         :built_at_utc
     FROM ranked
@@ -1625,6 +1702,7 @@ class WarmRollupBuildResult:
     built_stop_occupancy_days: int = 0
     built_route_service_span_days: int = 0
     built_route_skipped_stop_days: int = 0
+    built_route_delay_by_crowding_days: int = 0
     built_route_delay_spine_days: int = 0
     built_route_headway_shift_daily_days: int = 0
     built_stop_delay_spine_days: int = 0
@@ -1645,6 +1723,7 @@ class WarmRollupBuildResult:
             "built_stop_occupancy_days": self.built_stop_occupancy_days,
             "built_route_service_span_days": self.built_route_service_span_days,
             "built_route_skipped_stop_days": self.built_route_skipped_stop_days,
+            "built_route_delay_by_crowding_days": self.built_route_delay_by_crowding_days,
             "built_route_delay_spine_days": self.built_route_delay_spine_days,
             "built_route_headway_shift_daily_days": self.built_route_headway_shift_daily_days,
             "built_stop_delay_spine_days": self.built_stop_delay_spine_days,
@@ -1912,6 +1991,18 @@ def build_warm_rollups(
         floor_key=floor_key,
         now=now,
     )
+    # Delay x crowding co-observation (FIX-3) reads fact_trip_delay_snapshot's carried
+    # occupancy_status → default trip-delay calendar. APPEND-ONLY; ramps in from the deploy
+    # (occupancy_status is forward-filled, NULL on historical fact rows).
+    built_route_delay_by_crowding = _build_percentile_days(
+        engine,
+        provider_id=provider_id,
+        rollup_kind="route_delay_by_crowding_daily",
+        upsert=UPSERT_ROUTE_DELAY_BY_CROWDING_DAILY,
+        today_key=today_key,
+        floor_key=floor_key,
+        now=now,
+    )
     # Route delay spine — finest-grain additive delay metric family (hour x direction).
     # Reads fact_trip_delay_snapshot -> default trip-delay missing-day calendar.
     # APPEND-ONLY (NOT in REPORTING_AGGREGATE_TABLES); accrued history is never wiped.
@@ -1998,6 +2089,7 @@ def build_warm_rollups(
         built_stop_occupancy_days=built_stop_occupancy,
         built_route_service_span_days=built_route_service_span,
         built_route_skipped_stop_days=built_route_skipped_stop,
+        built_route_delay_by_crowding_days=built_route_delay_by_crowding,
         built_route_delay_spine_days=built_route_delay_spine,
         built_route_headway_shift_daily_days=built_route_headway_shift_daily,
         built_stop_delay_spine_days=built_stop_delay_spine,

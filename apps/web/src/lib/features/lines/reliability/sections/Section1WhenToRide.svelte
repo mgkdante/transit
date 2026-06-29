@@ -289,7 +289,7 @@
 			r.observationCount,
 			r.priorOtpPct,
 			r.priorObservationCount,
-			{ onTime: r.onTime },
+			{ onTime: r.onTime, priorOnTime: r.priorOnTime },
 		),
 	});
 	const onTimeShiftRows = $derived(

@@ -24,6 +24,7 @@ const row = (
 	onTime,
 	priorOtpPct,
 	priorObservationCount,
+	priorOnTime: null, // section-wiring tests use the band-hack fallback; exact-count path lives in priorDelta.test.ts
 });
 
 const vm = (

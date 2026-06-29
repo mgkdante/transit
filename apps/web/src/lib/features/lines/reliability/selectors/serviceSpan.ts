@@ -68,7 +68,20 @@ export function selectServiceSpan(
 
 	const firstClock = clockText(input.firstTripUtc, locale);
 	const lastClock = clockText(input.lastTripUtc, locale);
-	const hourTicks: ServiceSpanTick[] = TICK_MINS.map((min) => ({
+
+	// FIX-2: a GTFS service day can run past local midnight (e.g. first 05:00 → last 01:30),
+	// so the last trip's clock minute can fall BELOW the first's. Render it on a transit
+	// SERVICE-DAY CLOCK (24h, 25h, …, 30h) by unwrapping the wrapped last endpoint forward one
+	// day, instead of letting the bar invert on a fixed [0,1440] axis. The wall-clock TEXT
+	// (firstClock/lastClock) still shows the real "05:00"/"01:30".
+	const crossesMidnight = lastMin < firstMin;
+	const lastMinResolved = crossesMidnight ? lastMin + DAY_MIN : lastMin;
+	const domainEnd = crossesMidnight ? Math.ceil(lastMinResolved / 360) * 360 : DAY_MIN;
+	const tickMins =
+		domainEnd === DAY_MIN
+			? TICK_MINS
+			: Array.from({ length: domainEnd / 360 + 1 }, (_, i) => i * 360);
+	const hourTicks: ServiceSpanTick[] = tickMins.map((min) => ({
 		min,
 		label: opts.hourLabel(min / 60),
 	}));
@@ -77,9 +90,9 @@ export function selectServiceSpan(
 		kind: 'service-span',
 		title: opts.ariaLabel(firstClock, lastClock),
 		locale,
-		domain: [0, DAY_MIN],
+		domain: [0, domainEnd],
 		firstMin,
-		lastMin,
+		lastMin: lastMinResolved,
 		firstClock,
 		lastClock,
 		firstDelayMin: input.firstDelayMin,

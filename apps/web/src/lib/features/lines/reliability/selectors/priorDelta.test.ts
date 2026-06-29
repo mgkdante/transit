@@ -69,6 +69,34 @@ describe('proportionPriorDelta — significance gate (two-proportion z-test)', (
 	});
 });
 
+describe('proportionPriorDelta — exact prior numerator (FIX-4, no rounding band)', () => {
+	it('uses the exact prior count when priorOnTime is present → resolves what the band suppressed', () => {
+		// SAME inputs as the band-suppressed case above, but the contract now ships the EXACT prior
+		// numerator: 13776/16400 = a true 84.0%, so the move is a real 1.0pt → pooled z ≈ 2.50 ≥ 1.96.
+		const r = proportionPriorDelta(85, 16400, 84, 16400, { onTime: 13940, priorOnTime: 13776 });
+		expect(r.delta).toBe(1);
+		expect(r.hasPrior).toBe(true);
+		expect(r.significant).toBe(true);
+	});
+	it('falls back to the ±0.5pt band when priorOnTime is absent (back-compat with old snapshots)', () => {
+		// No exact prior → the conservative band hack treats the prior as possibly 84.5% (z ≈ 1.26),
+		// so the SAME headline move reads within-noise. This is the pre-republish behaviour.
+		const r = proportionPriorDelta(85, 16400, 84, 16400, { onTime: 13940 });
+		expect(r.significant).toBe(false);
+	});
+	it('agrees with the verdict on robust moves whether exact or banded', () => {
+		const exact = proportionPriorDelta(85, 16400, 80, 16400, { onTime: 13940, priorOnTime: 13120 });
+		const banded = proportionPriorDelta(85, 16400, 80, 16400, { onTime: 13940 });
+		expect(exact.significant).toBe(true);
+		expect(banded.significant).toBe(true);
+	});
+	it('clamps the exact prior numerator to [0, priorN] (no NaN, proportion ≤ 1)', () => {
+		const r = proportionPriorDelta(85, 16400, 84, 16400, { onTime: 13940, priorOnTime: 99999 });
+		expect(r.delta).toBe(1);
+		expect(typeof r.significant).toBe('boolean'); // defined, not NaN-derived
+	});
+});
+
 describe('meanPriorDelta — honest absence', () => {
 	it('no prior value → absent', () => {
 		expect(meanPriorDelta(29.3, 44, null, null, { cov: 0.1 })).toEqual({

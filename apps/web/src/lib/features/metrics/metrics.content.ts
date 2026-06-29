@@ -506,7 +506,8 @@ ROUND(a.med_gap::numeric, 1) AS observed_headway_min   -- percentile_cont(0.5) o
 
 -- scheduled_min + excess_wait are PUBLISH-TIME, NOT stored in gold (migration 0035 dropped them):
 --   scheduled = median gap of distinct first-stop departure minutes (busiest weekday direction), per shift
---   excess_wait = round(max(0.0, observed - scheduled), 1) if BOTH exist, else None
+--   excess_wait (windowed) = round(max(0.0, sum_gap_sq_min/(2*sum_gap_min) - scheduled/2.0), 1)  -- passenger-weighted EWT
+--   excess_wait (scalar whole-history) = round(max(0.0, observed - scheduled), 1)  -- typical-gap proxy (no moments)
 -- the direction/day-type sibling rows (route_headway_direction_daily) carry observed_min only.`,
 		notReally: {
 			fr: "« Intervalle observé 12 min » n'est pas « mon bus passe aux 12 minutes à mon arrêt ». C'est l'écart médian entre les moments où les trajets successifs apparaissent d'abord dans le flux, sur la direction la plus achalandée en semaine des 14 derniers jours, pas une inter-arrivée mesurée à l'arrêt, et les trajets annulés ou jamais apparus rétrécissent simplement l'échantillon, ils ne comptent pas comme de longues attentes.",
@@ -544,41 +545,44 @@ ROUND(a.med_gap::numeric, 1) AS observed_headway_min   -- percentile_cont(0.5) o
 		name: { fr: 'Attente excédentaire', en: 'Excess wait' },
 		sciName: 'excess_wait_min',
 		oneLiner: {
-			fr: "Combien de temps de plus l'écart réel dépasse l'écart promis, jamais montré négatif (le service en avance/supplémentaire est ramené à 0).",
-			en: 'How much longer the real gap is than the promised one, never shown negative (early/extra service is clamped to 0).',
+			fr: "Le temps d'attente supplémentaire que subissent les usagers, au-delà d'un bus parfaitement régulier, jamais montré négatif (le service en avance/supplémentaire est ramené à 0).",
+			en: 'The extra wait riders take on, beyond a perfectly even bus, never shown negative (early/extra service is clamped to 0).',
 		},
 		definition: {
-			fr: "L'attente excédentaire est combien de temps de plus l'écart réel entre véhicules dépasse l'écart promis par l'horaire. Elle n'est jamais montrée négative : le service en avance ou supplémentaire est ramené à 0. C'est calculé au moment de la publication comme max(0, intervalle observé − intervalle programmé), uniquement quand l'observé ET le programmé existent pour ce quart. C'est l'espacement supplémentaire typique, pas une attente réelle de passager mesurée.",
-			en: 'Excess wait is how much longer the real gap between vehicles is than the gap the timetable promises. It is never shown negative: early or extra service is clamped to 0. It is computed at publish time as max(0, observed headway − scheduled headway), only when BOTH observed and scheduled exist for that shift. It is the typical extra spacing, not a measured passenger wait time.',
+			fr: "L'attente excédentaire est le temps d'attente supplémentaire d'un usager typique au-delà d'un bus parfaitement régulier. Sur les grains fenêtrés (aujourd'hui / cette semaine / ce mois) c'est l'Attente Excédentaire pondérée par les passagers : AWT − programmé/2, où AWT = somme(écart²) / (2·somme(écart)) est l'attente qu'un usager au hasard subit selon les écarts observés (le talonnage compte : les longs écarts touchent plus de monde), et programmé/2 est l'attente sur un service parfaitement régulier. Ramenée à 0 (un service aussi fréquent que prévu est un 0 honnête, jamais une attente négative). La ligne scalaire toute-histoire garde l'ancien proxy d'écart typique, max(0, observé − programmé), car sa table source ne porte pas les moments de variance.",
+			en: 'Excess wait is the extra time a typical rider waits beyond a perfectly even bus. On the windowed grains (today / this week / this month) it is the passenger-weighted Excess Wait Time: AWT − scheduled/2, where AWT = sum(gap²) / (2·sum(gap)) is the wait a random rider expects from the observed gaps (bunching counts: long gaps catch more riders) and scheduled/2 is the wait on perfectly even service. It is clamped to 0 (service as frequent as scheduled is an honest 0, never a negative wait). The scalar whole-history row keeps an older typical-gap proxy, max(0, observed − scheduled), because its source table carries no gap-variance moments.',
 		},
 		math: {
-			fr: 'excess_wait_min = round( max(0, observed − scheduled), 1 ) uniquement quand observed ET scheduled existent, sinon None. Le service en avance/supplémentaire est plafonné à 0, jamais publié comme attente négative. Ni observed ni scheduled ne sont une attente de passager, ce sont des écarts entre véhicules.',
-			en: 'excess_wait_min = round( max(0, observed − scheduled), 1 ) only when BOTH observed and scheduled exist, else None. Early/extra service is clamped to 0, never published as negative wait. Neither observed nor scheduled is a passenger wait, they are gaps between vehicles.',
+			fr: "Grains fenêtrés : excess_wait_min = round( max(0, AWT − programmé/2), 1 ), AWT = somme(écart²) / (2·somme(écart)) sur les écarts d'apparition de trajets de la direction la plus achalandée dans la fenêtre. Pondéré par les passagers, le talonnage le fait monter ; ramené à 0 ; None sauf si des écarts ET un intervalle programmé existent. Scalaire toute-histoire : excess_wait_min = round( max(0, observed − scheduled), 1 ), l'ancien proxy d'écart typique (sans terme de variance).",
+			en: 'Windowed grains: excess_wait_min = round( max(0, AWT − scheduled/2), 1 ), AWT = sum(gap²) / (2·sum(gap)) over the busiest-direction trip-appearance gaps in the window. Passenger-weighted, so bunching raises it; clamped to 0; None unless gaps and a scheduled headway both exist. Scalar whole-history: excess_wait_min = round( max(0, observed − scheduled), 1 ), the older typical-gap proxy (no variance term).',
 		},
 		sql: `-- excess_wait is PUBLISH-TIME, NOT stored in gold (migration 0035 dropped the column):
+-- WINDOWED grains (FIX-1) from gold.route_headway_shift_daily moment sums:
+--   awt = sum_gap_sq_min / (2 * sum_gap_min)              -- passenger-weighted actual wait
+--   excess = round(max(0.0, awt - scheduled / 2.0), 1)    -- vs the even-scheduled baseline, clamped
+-- SCALAR whole-history (no moments → typical-gap proxy):
 --   excess = round(max(0.0, observed - scheduled), 1) if both else None
--- observed = gold.route_headway_daily.observed_headway_min (median of the shared filtered gaps)
 -- scheduled = median gap of distinct first-stop departure minutes (busiest weekday direction), per shift`,
 		notReally: {
-			fr: "« Attente excédentaire 4 min » n'est pas « mon bus a 4 minutes de retard » ni « j'attends 4 minutes de plus à mon arrêt ». C'est l'espacement supplémentaire typique (médiane observée − médiane programmée) sur la direction la plus achalandée en semaine des 14 derniers jours, tiré des apparitions de trajets dans le flux, pas une attente de passager mesurée.",
-			en: 'A citizen will read “excess wait 4 min” as “my bus is 4 minutes late” or “I wait 4 extra minutes at my stop.” It is the typical extra spacing (median observed − median scheduled) over the busiest weekday direction in the last 14 days, derived from trip appearances in the feed, not a measured passenger wait.',
+			fr: "« Attente excédentaire 4 min » n'est pas « mon bus a 4 minutes de retard » ni « j'attends 4 minutes de plus à mon arrêt ». C'est un MODÈLE d'attente pondéré par les passagers (il suppose des arrivées au hasard et utilise les écarts observés), tiré des apparitions de trajets sur la direction la plus achalandée, pas une attente mesurée à l'arrêt.",
+			en: 'A citizen will read “excess wait 4 min” as “my bus is 4 minutes late” or “I wait 4 extra minutes at my stop.” It is a passenger-weighted MODEL of the extra wait (it assumes riders arrive at random and uses the observed gaps), derived from trip appearances in the feed over the busiest direction, not a measured at-stop wait.',
 		},
 		caveats: {
 			fr: [
-				"AU MOMENT DE LA PUBLICATION, NON STOCKÉ : la migration 0035 a retiré excess_wait_min de gold. Recalculé au build du snapshot à partir de l'horaire GTFS et de l'intervalle observé.",
-				'RAMENÉ À 0 : excess_wait = max(0, observed − scheduled), le service en avance/supplémentaire est plafonné à 0, jamais une attente négative.',
-				'None à moins que observed ET scheduled existent tous deux pour ce quart, jamais fabriqué.',
-				"PROXY d'apparition dans le flux, pas une attente de passager mesurée ni une inter-arrivée à l'arrêt.",
-				'COLLAPSE direction/semaine : décrit la direction la plus achalandée en semaine seulement, sur 14 jours glissants.',
-				'SIGNAUX MORTS DU FLUX jamais utilisés ici.',
+				"AU MOMENT DE LA PUBLICATION, NON STOCKÉ : recalculé au build. Les grains fenêtrés utilisent les moments de variance d'écart sur gold.route_headway_shift_daily ; la ligne scalaire toute-histoire n'a pas de moments, elle garde le proxy d'écart typique.",
+				"PONDÉRÉ PAR LES PASSAGERS (fenêtré) : AWT = somme(écart²)/(2·somme(écart)) intègre le talonnage, donc une ligne irrégulière monte même si son écart moyen respecte l'horaire. C'est une quantité de demi-intervalle, donc plus petite que (et non comparable à) l'ancien proxy d'écart.",
+				'RAMENÉ À 0 : le service en avance/supplémentaire est plafonné à 0, jamais une attente négative.',
+				'None à moins que des écarts ET un intervalle programmé existent pour ce quart, jamais fabriqué.',
+				"MODÈLE D'APPARITION DANS LE FLUX, pas une attente mesurée ni une inter-arrivée à l'arrêt ; il suppose des arrivées uniformes des passagers.",
+				'COLLAPSE direction/fenêtre : décrit la direction la plus achalandée seulement, sur la fenêtre choisie.',
 			],
 			en: [
-				'PUBLISH-TIME, NOT STORED: migration 0035 dropped excess_wait_min from gold. Recomputed at snapshot build from the GTFS timetable and the observed headway.',
-				'CLAMPED TO 0: excess_wait = max(0, observed − scheduled), early/extra service is clamped to 0, never a negative wait.',
-				'None unless BOTH observed and scheduled exist for that shift, never fabricated.',
-				'FEED-APPEARANCE PROXY, not a measured passenger wait and not an at-stop inter-arrival.',
-				'DIRECTION/WEEKDAY COLLAPSE: describes the busiest weekday direction only, over a trailing 14 days.',
-				'DEAD FEED SIGNALS never used here.',
+				'PUBLISH-TIME, NOT STORED: recomputed at snapshot build. Windowed grains use the gap-variance moments on gold.route_headway_shift_daily; the scalar whole-history row has no moments, so it keeps the typical-gap proxy.',
+				'PASSENGER-WEIGHTED (windowed): AWT = sum(gap²)/(2·sum(gap)) folds in bunching, so a clumpy line reads higher even when its average gap matches the schedule. It is a HALF-headway quantity, so it is smaller than (and not comparable to) the old gap proxy.',
+				'CLAMPED TO 0: early/extra service is clamped to 0, never a negative wait.',
+				'None unless gaps and a scheduled headway both exist for that shift, never fabricated.',
+				'FEED-APPEARANCE MODEL, not a measured passenger wait and not an at-stop inter-arrival; it assumes uniform passenger arrivals.',
+				'DIRECTION/WINDOW COLLAPSE: describes the busiest direction only, over the selected window.',
 			],
 		},
 	},
@@ -746,30 +750,34 @@ count(*) FILTER (WHERE stc.schedule_relationship = 1)::integer
 			en: 'For each route on each finished day, this shows when the route’s first observed trip started, when its last one started, and how many minutes apart those two are (the “service span”, roughly how long the route runs that day). It also shows how late or early the very first and very last trips of the day were, in minutes, versus their schedule. “Trip start” is the first moment we actually saw a trip reporting in the live feed that day, not its printed timetable departure. A positive delay means late; a negative one means early. Each day stands on its own; there is no average across days.',
 		},
 		math: {
-			fr: 'Par (provider_id, route_id, jour local) : trip_start(trip) = MIN(captured_at_utc) sur les observations du trajet. first = trip au trip_start le plus tôt; last = au plus tard. service_span_min = ROUND( EXTRACT(EPOCH FROM (MAX(trip_start) − MIN(trip_start))) / 60,0 ) en minutes entières. first/last_trip_delay_min = le delay_seconds de la PREMIÈRE observation de ce trajet, en round(sec/60, 1). Aucun dénominateur/ratio, des horodatages extrémaux et des comptes.',
-			en: 'Per (provider_id, route_id, local day): trip_start(trip) = MIN(captured_at_utc) over that trip’s observations. first = trip with earliest trip_start; last = latest. service_span_min = ROUND( EXTRACT(EPOCH FROM (MAX(trip_start) − MIN(trip_start))) / 60.0 ) as integer minutes. first/last_trip_delay_min = the FIRST observation’s delay_seconds of that trip, as round(sec/60, 1). No denominator/ratio, extremal timestamps and counts.',
+			fr: 'Par (provider_id, route_id, JOUR DE SERVICE GTFS = start_date) : trip_start(trip) = MIN(captured_at_utc) sur les observations du trajet. first = trip au trip_start le plus tôt; last = au plus tard. service_span_min = ROUND( EXTRACT(EPOCH FROM (MAX(trip_start) − MIN(trip_start))) / 60,0 ) en minutes entières (peut dépasser 1440 sur du service de nuit). first_trip_delay_min = l’écart à la PREMIÈRE observation du premier trajet; last_trip_delay_min = l’écart à la DERNIÈRE observation (terminale) du dernier trajet, en round(sec/60, 1). Chaque jour de service est lu sur une fenêtre de capture de 2 jours pour inclure la queue d’après-minuit. Aucun dénominateur/ratio, des horodatages extrémaux et des comptes.',
+			en: 'Per (provider_id, route_id, GTFS SERVICE DAY = start_date): trip_start(trip) = MIN(captured_at_utc) over that trip’s observations. first = trip with earliest trip_start; last = latest. service_span_min = ROUND( EXTRACT(EPOCH FROM (MAX(trip_start) − MIN(trip_start))) / 60.0 ) as integer minutes (may exceed 1440 on overnight service). first_trip_delay_min = the FIRST trip’s first-observation delay; last_trip_delay_min = the LAST trip’s LATEST (terminal) observation delay, as round(sec/60, 1). Each service day is read from a 2-day capture window so the post-midnight tail is included. No denominator/ratio, extremal timestamps and counts.',
 		},
-		sql: `WITH trip_starts AS (
+		sql: `-- service_date = the just-completed GTFS service day = :local_date - 1; read a 2-day
+-- INDEXED window {date_key(service_date), date_key(:local_date)} so the overnight tail is in.
+WITH trip_starts AS (
     SELECT f.provider_id, f.route_id, f.trip_id,
            MIN(f.captured_at_utc) AS trip_start_utc,
-           (ARRAY_AGG(f.delay_seconds ORDER BY f.captured_at_utc, f.entity_index))[1] AS first_obs_delay
+           (ARRAY_AGG(f.delay_seconds ORDER BY f.captured_at_utc ASC, f.entity_index ASC))[1]  AS first_obs_delay,
+           (ARRAY_AGG(f.delay_seconds ORDER BY f.captured_at_utc DESC, f.entity_index DESC))[1] AS last_obs_delay
     FROM gold.fact_trip_delay_snapshot AS f
-    INNER JOIN gold.dim_provider AS dp ON dp.provider_id = f.provider_id
     WHERE f.provider_id = :provider_id AND f.route_id IS NOT NULL AND f.trip_id IS NOT NULL
-      AND timezone(dp.timezone, f.captured_at_utc)::date = :local_date
+      AND f.snapshot_date_key IN (
+          to_char((CAST(:local_date AS date) - 1), 'YYYYMMDD')::integer, :date_key)
+      AND f.start_date = (CAST(:local_date AS date) - 1)   -- bucket by GTFS service day, not capture day
     GROUP BY f.provider_id, f.route_id, f.trip_id
 ),
 ranked AS (
-    SELECT provider_id, route_id, trip_start_utc, first_obs_delay,
-           ROW_NUMBER() OVER (PARTITION BY provider_id, route_id ORDER BY trip_start_utc, first_obs_delay) AS rn_first,
-           ROW_NUMBER() OVER (PARTITION BY provider_id, route_id ORDER BY trip_start_utc DESC, first_obs_delay) AS rn_last
+    SELECT provider_id, route_id, trip_start_utc, first_obs_delay, last_obs_delay,
+           ROW_NUMBER() OVER (PARTITION BY provider_id, route_id ORDER BY trip_start_utc ASC, first_obs_delay ASC) AS rn_first,
+           ROW_NUMBER() OVER (PARTITION BY provider_id, route_id ORDER BY trip_start_utc DESC, first_obs_delay ASC) AS rn_last
     FROM trip_starts
 )
-SELECT provider_id, :local_date, route_id,
+SELECT provider_id, (CAST(:local_date AS date) - 1), route_id,
        MIN(trip_start_utc), MAX(trip_start_utc),
        ROUND(EXTRACT(EPOCH FROM (MAX(trip_start_utc) - MIN(trip_start_utc))) / 60.0)::integer,
-       MAX(first_obs_delay) FILTER (WHERE rn_first = 1),
-       MAX(first_obs_delay) FILTER (WHERE rn_last = 1),
+       MAX(first_obs_delay) FILTER (WHERE rn_first = 1),   -- first trip: its first-obs delay
+       MAX(last_obs_delay)  FILTER (WHERE rn_last  = 1),   -- last trip: its LATEST (terminal) delay
        COUNT(*)::integer, :built_at_utc
 FROM ranked
 GROUP BY provider_id, route_id`,
@@ -780,23 +788,23 @@ GROUP BY provider_id, route_id`,
 		caveats: {
 			fr: [
 				"PROXY, PAS L'HORAIRE : « premier/dernier trajet » = premier/dernier trajet OBSERVÉ dans le flux GTFS-RT ce jour-là (MIN(captured_at_utc) par trajet), pas le départ programmé du GTFS statique. Une capture tardive ou une panne aux bords du jour tronque l'amplitude.",
-				"LE RETARD EST L'ÉCART PRÉDIT, pas une ponctualité certifiée, sans AVL : first/last_trip_delay_min est l'écart prédit GTFS-RT à la première observation du trajet, en minutes. C'est le retard PREMIER-OBSERVÉ, pas au terminus réel.",
+				"LE RETARD EST L'ÉCART PRÉDIT, pas une ponctualité certifiée, sans AVL : first_trip_delay_min = l'écart à la première observation du premier trajet; last_trip_delay_min = l'écart à la DERNIÈRE observation (terminale) du dernier trajet, en minutes.",
 				"AUCUN DÉNOMINATEUR / AUCUN TAUX : des horodatages extrémaux, une différence de deux horodatages et un compte. Avec un seul trajet observé, l'amplitude est 0; NULL uniquement quand aucun trajet n'est observé.",
-				'BORNE DE JOUR SÛRE EN DST : jour local découpé par timezone(dp.timezone, captured_at_utc)::date; la différence EPOCH est calculée sur des instants UTC, donc non distordue par le décalage DST.',
-				"APPEND-ONLY, RAMP-IN, AUCUN RÉTROACTIF : une rangée par jour local clos, bâtie le lendemain de sa clôture. L'historique s'accumule en avant seulement depuis le lancement (2026-06-18); élagué à ~365 jours.",
+				'GRAIN JOUR DE SERVICE GTFS : les rangées sont regroupées par start_date (le jour de service GTFS), PAS le jour calendaire de capture, donc un trajet de nuit reste sur son propre jour de service au lieu de feindre un premier départ à 00 h 00. Chaque jour de service est lu sur une fenêtre de capture de 2 jours; la différence EPOCH est calculée sur des instants UTC, donc sûre en DST et peut dépasser 24 h.',
+				"APPEND-ONLY, RAMP-IN, AUCUN RÉTROACTIF : une rangée par jour de SERVICE clos, bâtie après la clôture du jour suivant (la queue d'après-minuit doit être complète). L'historique s'accumule en avant seulement depuis le lancement (2026-06-18); élagué à ~365 jours.",
 				"HYGIÈNE SENTINELLE : les rangées exigent route_id IS NOT NULL et trip_id IS NOT NULL, donc __unrouted__ / __unknown_stop__ n'entrent jamais.",
 				"DÉTERMINISME DE BRIS D'ÉGALITÉ : à trip_start égal, le trajet au plus petit retard premier-observé est choisi.",
-				"SIGNAUX MORTS DU FLUX INTOUCHÉS : cette famille n'utilise que captured_at_utc et delay_seconds.",
+				"SIGNAUX MORTS DU FLUX INTOUCHÉS : cette famille n'utilise que captured_at_utc, start_date et delay_seconds.",
 			],
 			en: [
 				'PROXY, NOT TIMETABLE: “first/last trip” = first/last trip we OBSERVED in the GTFS-RT feed that day (MIN(captured_at_utc) per trip), not the scheduled departure from GTFS static. A late-starting capture or an outage at the edges silently truncates the span.',
-				'DELAY IS PREDICTED SCHEDULE DEVIATION, NOT CERTIFIED OTP and has NO AVL: first/last_trip_delay_min is the GTFS-RT predicted deviation on that trip’s first observation, in minutes. It is the first-OBSERVED delay, not the delay at the actual terminus.',
+				'DELAY IS PREDICTED SCHEDULE DEVIATION, NOT CERTIFIED OTP and has NO AVL: first_trip_delay_min is the first trip’s first-observation deviation; last_trip_delay_min is the last trip’s LATEST (terminal) observation deviation, in minutes.',
 				'NO DENOMINATOR / NO RATE: extremal timestamps, a difference of two timestamps, and a count. With a single observed trip the span is 0; it is NULL only when no trips were observed.',
-				'DST-SAFE DAY BOUNDARY: the local day is cut with timezone(dp.timezone, captured_at_utc)::date; the EPOCH difference is computed on UTC instants so it is not distorted by the DST shift.',
-				'APPEND-ONLY, RAMP-IN, NO BACKFILL: one row per closed local day, built the day after it closes. History accrues forward only from launch (2026-06-18); pruned to ~365 days.',
+				'GTFS SERVICE-DAY GRAIN: rows are bucketed by start_date (the GTFS service day), NOT the calendar capture day, so an overnight trip stays on its own service day instead of faking a 00:00 first departure. Each service day is read from a 2-day capture window (daytime + post-midnight tail); the EPOCH span is on UTC instants so it is DST-safe and can exceed 24h.',
+				'APPEND-ONLY, RAMP-IN, NO BACKFILL: one row per closed SERVICE day, built after the NEXT day closes (so the post-midnight tail is complete). History accrues forward only from launch (2026-06-18); pruned to ~365 days.',
 				'SENTINEL HYGIENE: rows require route_id IS NOT NULL and trip_id IS NOT NULL, so the __unrouted__ / __unknown_stop__ sentinels never enter.',
 				'TIE-BREAK DETERMINISM: when two trips share the same start instant, the one with the smaller first-observed delay is chosen.',
-				'DEAD FEED SIGNALS UNTOUCHED: this family uses only captured_at_utc and delay_seconds.',
+				'DEAD FEED SIGNALS UNTOUCHED: this family uses only captured_at_utc, start_date, and delay_seconds.',
 			],
 		},
 	},

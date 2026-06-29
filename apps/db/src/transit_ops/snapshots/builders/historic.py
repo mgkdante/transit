@@ -135,6 +135,15 @@ def _pctile_from_hist(hist: list[int] | None, q: float) -> float | None:
     return round(_SPINE_EDGES[-1] / 60.0, 1)
 
 
+def _band_total(row: object) -> int | None:
+    """Sum of the 5 occupancy band counts (the mix share denominator), or None when
+    the row itself is absent. A real 0 (data-day present, no band telemetry) is kept
+    as 0 so consumers can distinguish "no data-days" (row omitted) from "0 band obs"."""
+    if row is None:
+        return None
+    return sum(int(row[band] or 0) for band in _OCCUPANCY_BANDS)
+
+
 def _occupancy_mix_from_bands(row: object) -> OccupancyMix | None:
     """Build OccupancyMix from summed band counts; honest-None when total is 0.
 
@@ -151,63 +160,36 @@ def _occupancy_mix_from_bands(row: object) -> OccupancyMix | None:
     return OccupancyMix(**{band: counts[band] / total for band in _OCCUPANCY_BANDS})
 
 
-def _delay_by_crowding_cells(
-    rows, route_pctile: dict[str, tuple[float | None, float | None]]
-) -> list[CrowdingDelayCell]:
-    """Build per-band delay×crowding cells from per-day band-count + delay rows.
+def _delay_by_crowding_cells(rows) -> list[CrowdingDelayCell]:  # noqa: ANN001
+    """Build per-band delay×crowding cells from the CO-OBSERVED per-band daily rollup (FIX-3).
 
-    For each route×day: pick the DOMINANT band (argmax of that day's 5 band
-    counts; days with zero band observations are skipped) and bucket that day's
-    delay under it. Ties resolve to canonical band order (``_OCCUPANCY_BANDS``,
-    i.e. the lower-crowding band wins) — deterministic, rare in practice.
-    Aggregate per band over the window: avg_delay_min is
-    observation-weighted by the day's delay_observation_count; p50_min is a
-    best-effort observation-weighted mean of the contributing daily p50s (an
-    approximation — daily percentiles are not exactly additively composable);
-    observation_count sums the daily delay observations; day_count counts the
-    contributing days. Bands with zero contributing days are omitted; the result
-    is empty when the route has no band-bearing telemetry in the window.
+    Each delay observation already carries its OWN occupancy band (matched to the vehicle's
+    occupancy_status by the delay-fact build's vpm LATERAL), so a band gets its TRUE delay
+    distribution — the full/standing tail is no longer censored by a day's dominant band.
+    avg_delay_min = Σdelay_seconds / Σobs over the window (the rollup's additive sum/count);
+    p50_min is a best-effort observation-weighted mean of the daily band p50s (an approximation —
+    daily percentiles are not exactly additively composable); observation_count sums the
+    co-observed delay observations; day_count counts the contributing days. Each field is
+    honest-None when its input is absent; emitted in canonical band order; bands with no
+    co-observed delay in the window are omitted (the result is empty until the rollup ramps in).
     """
-    # Per band: weighted delay-seconds sum, p50-seconds weighted sum, obs sum,
-    # day count. p50 sums track their own obs total because p50 may be absent on
-    # a day the avg-delay is present.
-    acc: dict[str, dict[str, float]] = {}
-    for r in rows:
-        counts = {band: int(r[band] or 0) for band in _OCCUPANCY_BANDS}
-        total = sum(counts.values())
-        if not total:
-            continue  # no occupancy observations this day -> no dominant band
-        dominant = max(_OCCUPANCY_BANDS, key=lambda b: counts[b])
-        delay_obs = int(r["delay_obs"] or 0)
-        avg_sec = r["avg_delay_sec"]
-        p50_min, _p90 = route_pctile.get(_iso_date(r["d"]), (None, None))
-        cell = acc.setdefault(
-            dominant,
-            {"w_delay_sec": 0.0, "obs": 0, "w_p50_min": 0.0, "p50_obs": 0, "days": 0},
-        )
-        cell["days"] += 1
-        if avg_sec is not None and delay_obs:
-            cell["w_delay_sec"] += float(avg_sec) * delay_obs
-            cell["obs"] += delay_obs
-        if p50_min is not None and delay_obs:
-            cell["w_p50_min"] += float(p50_min) * delay_obs
-            cell["p50_obs"] += delay_obs
+    by_band = {str(r["band"]): r for r in rows if r["band"] is not None}
     cells: list[CrowdingDelayCell] = []
     for band in _OCCUPANCY_BANDS:  # canonical band order
-        cell = acc.get(band)
-        if not cell:
+        r = by_band.get(band)
+        if r is None:
             continue
-        obs = int(cell["obs"])
-        p50_obs = int(cell["p50_obs"])
+        obs = int(r["delay_obs"] or 0)
+        p50_obs = int(r["p50_obs"] or 0)
+        sum_delay_sec = float(r["sum_delay_sec"] or 0.0)
+        w_p50_sec = float(r["w_p50_sec"] or 0.0)
         cells.append(
             CrowdingDelayCell(
                 band=band,
-                avg_delay_min=(
-                    round(cell["w_delay_sec"] / obs / 60.0, 1) if obs else None
-                ),
-                p50_min=(round(cell["w_p50_min"] / p50_obs, 1) if p50_obs else None),
+                avg_delay_min=(round(sum_delay_sec / obs / 60.0, 1) if obs else None),
+                p50_min=(round(w_p50_sec / p50_obs / 60.0, 1) if p50_obs else None),
                 observation_count=(obs or None),
-                day_count=int(cell["days"]),
+                day_count=int(r["day_count"] or 0),
             )
         )
     return cells
@@ -744,32 +726,28 @@ _ROUTE_SKIPPED_STOP_SQL = text(
     """
 )
 
-# Track-B delay×crowding: per route×day join of the append-only band-count
-# reduction (dominant band chosen at read time, in Python) with the per-day
-# delay rollup, over a trailing 30d window. A literal 30d window is fine here
-# because both inputs are gold rollups, not capped raw facts. Unique discriminator
-# for the FakeConn substring dispatch: the "-- delay_by_crowding" needle, which
-# MUST precede the broader "public_route_reliability_daily" / "route_occupancy_
-# band_daily" needles in the test dispatch table.
+# Track-B delay×crowding: TRUE co-observed per-band delay (FIX-3). Reads the append-only
+# route_delay_by_crowding_daily rollup — where each delay observation already carries its OWN
+# occupancy band (the vpm match) — and SUMs the additive moments per band over a trailing 30d
+# window. No more day-dominant-band attribution: the full/standing tail is uncensored. Unique
+# discriminator for the FakeConn substring dispatch: the "-- delay_by_crowding" needle, which
+# MUST precede the broader "route_delay_by_crowding_daily" needle in the test dispatch table.
 _ROUTE_CROWDING_DELAY_SQL = text(
     """
-    -- delay_by_crowding: dominant-band attribution chosen in Python
-    SELECT rocd.provider_local_date              AS d,
-           rocd.empty_count                      AS empty,
-           rocd.many_seats_count                 AS many_seats,
-           rocd.few_seats_count                  AS few_seats,
-           rocd.standing_count                   AS standing,
-           rocd.full_count                       AS full,
-           prr.avg_delay_seconds                 AS avg_delay_sec,
-           prr.delay_observation_count           AS delay_obs
-    FROM gold.route_occupancy_band_daily AS rocd
-    JOIN gold.dim_provider AS dp ON dp.provider_id = rocd.provider_id
-    LEFT JOIN gold.public_route_reliability_daily AS prr
-      ON prr.provider_id = rocd.provider_id
-     AND prr.route_id = rocd.route_id
-     AND prr.provider_local_date = rocd.provider_local_date
-    WHERE rocd.provider_id = :provider_id AND rocd.route_id = :route_id
-      AND rocd.provider_local_date >= (now() AT TIME ZONE dp.timezone)::date - 30
+    -- delay_by_crowding: per-band co-observed delay, additive over the window
+    SELECT rdc.band                                          AS band,
+           SUM(rdc.delay_observation_count)                  AS delay_obs,
+           SUM(rdc.sum_delay_seconds)                        AS sum_delay_sec,
+           SUM(rdc.p50_delay_seconds * rdc.delay_observation_count)
+               FILTER (WHERE rdc.p50_delay_seconds IS NOT NULL) AS w_p50_sec,
+           SUM(rdc.delay_observation_count)
+               FILTER (WHERE rdc.p50_delay_seconds IS NOT NULL) AS p50_obs,
+           COUNT(*)                                          AS day_count
+    FROM gold.route_delay_by_crowding_daily AS rdc
+    JOIN gold.dim_provider AS dp ON dp.provider_id = rdc.provider_id
+    WHERE rdc.provider_id = :provider_id AND rdc.route_id = :route_id
+      AND rdc.provider_local_date >= (now() AT TIME ZONE dp.timezone)::date - 30
+    GROUP BY rdc.band
     """
 )
 
@@ -1122,6 +1100,7 @@ def _attach_prior(periods, prior_index):  # noqa: ANN001, ANN202
             continue
         on_time, known = pri
         p.prior_observation_count = _opt_int(known)
+        p.prior_on_time = _opt_int(on_time)
         p.prior_otp_pct = _otp_pct(on_time, known)
 
 
@@ -1284,8 +1263,10 @@ _HEADWAY_WINDOW_SQL = text(
     SELECT
         direction_id,
         shift,
-        SUM(gap_count)::bigint     AS n,
-        SUM(trip_count)::bigint    AS trips,
+        SUM(gap_count)::bigint        AS n,
+        SUM(trip_count)::bigint       AS trips,
+        SUM(sum_gap_min)::numeric     AS sum_gap_min,
+        SUM(sum_gap_sq_min)::numeric  AS sum_gap_sq_min,
         CASE
             WHEN SUM(gap_count) >= 2 AND SUM(sum_gap_min) > 0
             THEN ROUND(
@@ -1335,9 +1316,19 @@ def _headway_period_from_summed(rows, scheduled):  # noqa: ANN001, ANN202
         raw_b = _bunched_pct_from_hist(hist, _GAP_EDGES, median)
         bunched_pct = float(_round_half_away(raw_b, 1)) if raw_b is not None else None
         sched = scheduled.get(shift)
+        # FIX-1: true passenger-weighted Excess Wait Time (Welding/Osuna-Newell), windowed
+        # grain only — the additive moment sums (Σgap, Σgap²) are on route_headway_shift_daily.
+        # AWT = E[H²]/(2·E[H]) = Σgap²/(2·Σgap) is the wait a random passenger actually expects
+        # (it folds in bunching: long gaps catch more riders), and SWT = scheduled/2 is the
+        # wait on perfectly even service, so EWT = max(0, AWT − scheduled/2). CLAMPED at 0
+        # (actual-more-frequent-than-scheduled is an honest 0, never a negative wait); None when
+        # there are no gaps (Σgap=0) or no scheduled headway.
+        sum_gap = float(r["sum_gap_min"] or 0.0)
+        sum_gap_sq = float(r["sum_gap_sq_min"] or 0.0)
+        awt = (sum_gap_sq / (2.0 * sum_gap)) if sum_gap > 0.0 else None
         excess = (
-            float(_round_half_away(max(0.0, median - sched), 1))
-            if (median is not None and sched is not None)
+            float(_round_half_away(max(0.0, awt - sched / 2.0), 1))
+            if (awt is not None and sched is not None)
             else None
         )
         out[shift] = HeadwayPeriod(
@@ -1684,6 +1675,7 @@ def build_route_reliability(
         OccupancyByDow(
             day_of_week_iso=int(r["day_of_week_iso"]),
             mix=_occupancy_mix_from_bands(r),
+            n=_band_total(r),
         )
         for r in conn.execute(_ROUTE_OCCUPANCY_BY_DOW_SQL, params).mappings()
     ]
@@ -1746,10 +1738,10 @@ def build_route_reliability(
         )
     ]
 
-    # --- delay_by_crowding: per-band delay×crowding over trailing 30d (honest
-    #     empty when no occupancy telemetry; reuses route_pctile for daily p50) ---
+    # --- delay_by_crowding: TRUE per-band co-observed delay over trailing 30d (FIX-3;
+    #     honest empty until the co-observed rollup ramps in) ---
     delay_by_crowding = _delay_by_crowding_cells(
-        conn.execute(_ROUTE_CROWDING_DELAY_SQL, params).mappings(), route_pctile
+        conn.execute(_ROUTE_CROWDING_DELAY_SQL, params).mappings()
     )
 
     # --- by_shift_daytype: tier-3 2D shift x day_type delay crosstab (SPARSE —
@@ -2903,7 +2895,11 @@ def build_provenance(
                 "(first realtime observation with a computed delay) in the "
                 "busiest direction, per weekday service day, trailing 14d; "
                 "scheduled = representative-weekday first-stop departures, "
-                "busiest direction; excess_wait = max(0, observed - scheduled)"
+                "busiest direction; excess_wait (windowed grains) = passenger-"
+                "weighted Excess Wait Time max(0, AWT - scheduled/2), AWT = "
+                "sum(gap^2)/(2*sum(gap)) over the window's gaps (bunching-aware); "
+                "the scalar whole-history rows keep the typical-gap proxy "
+                "max(0, observed - scheduled)"
             ),
             "history_freeze": (
                 "closed reporting periods are immutable after they leave the "
@@ -2953,9 +2949,12 @@ def build_provenance(
             ),
             "service_span": (
                 "first/last trip = earliest/latest first-realtime-observation "
-                "trip-start per route per closed local day (observed activity, not "
-                "the scheduled departure); span in minutes; first/last delay = that "
-                "trip's first-observation schedule deviation; retained 730 days"
+                "trip-start per route per GTFS SERVICE DAY (start_date, NOT the "
+                "calendar capture day — overnight trips keep their own service day, "
+                "no fake 00:00 first departure); observed activity, not the scheduled "
+                "departure; span in minutes (may exceed 24h on overnight service); "
+                "first delay = the first trip's first-observation deviation, last delay "
+                "= the last trip's LATEST (terminal) observation deviation; retained 730 days"
             ),
             "alert_breakdown": (
                 "distinct content-hashed alerts in the 30-day window grouped by "

@@ -223,6 +223,68 @@ def test_old_fixture_without_windowable_keys_validates() -> None:
     assert rr.headway_by_grain == []
     assert rr.weak_stops_by_grain == []
     assert rr.periods[0].prior_observation_count is None
+    assert rr.periods[0].prior_on_time is None
+
+
+def test_attach_prior_emits_exact_prior_on_time() -> None:
+    # FIX-4: _attach_prior carries the EXACT prior on-time numerator (not just the rounded
+    # prior_otp_pct), so the web two-proportion z-test pools real counts. The rounded pct
+    # is lossy here on purpose — 7953/8837 = 89.997% rounds to 90, but prior_on_time stays 7953.
+    periods = [ReliabilityPeriod(grain="am_peak"), ReliabilityPeriod(grain="midday")]
+    H._attach_prior(periods, {"am_peak": (7953, 8837)})  # midday has no prior
+    am, midday = periods
+    assert am.prior_on_time == 7953  # exact numerator preserved
+    assert am.prior_observation_count == 8837
+    assert am.prior_otp_pct == 90  # rounded, lossy — the reason FIX-4 exists
+    # No prior in the index → all prior_* left None (honest absence, never fabricated).
+    assert midday.prior_on_time is None
+    assert midday.prior_observation_count is None
+    assert midday.prior_otp_pct is None
+
+
+def _hw_summed_row(shift: str, gaps: list[float], *, direction_id: int = 0, trips: int = 10) -> dict:
+    """A gold.route_headway_shift_daily-shaped row for _headway_period_from_summed. Carries the
+    additive moment sums the EWT reads; the gap histogram is empty (EWT uses the moments, not the
+    median), so observed_min comes back None — fine, this test pins excess_wait only."""
+    row: dict = {
+        "direction_id": direction_id,
+        "shift": shift,
+        "n": len(gaps),
+        "trips": trips,
+        "sum_gap_min": float(sum(gaps)),
+        "sum_gap_sq_min": float(sum(g * g for g in gaps)),
+        "cov": None,
+    }
+    for k in range(1, H._GAP_NBINS + 1):
+        row[f"g{k}"] = 0
+    return row
+
+
+def test_headway_excess_wait_is_passenger_weighted_ewt() -> None:
+    # FIX-1: windowed excess_wait is the bunching-aware EWT, NOT a gap difference. Two shifts with
+    # the SAME mean gap (5 min = the scheduled headway) but different variance:
+    #   regular [5,5,5,5,5] → AWT = 125/(2·25) = 2.5 = scheduled/2 → EWT = max(0, 0) = 0.0
+    #   bunched [1,1,5,9,9] → AWT = 189/(2·25) = 3.78 → EWT = max(0, 3.78 − 2.5) = 1.28 → 1.3
+    # Same average frequency, yet bunching makes riders wait longer — the old proxy
+    # max(0, median − scheduled) reported 0 for BOTH because the medians match.
+    rows = [
+        _hw_summed_row("am_peak", [5, 5, 5, 5, 5], trips=20),
+        _hw_summed_row("pm_peak", [1, 1, 5, 9, 9], trips=20),
+    ]
+    out = H._headway_period_from_summed(rows, {"am_peak": 5.0, "pm_peak": 5.0})
+    assert out["am_peak"].excess_wait_min == 0.0  # perfectly regular at scheduled
+    assert out["pm_peak"].excess_wait_min == 1.3  # the bunching penalty surfaces
+    assert out["pm_peak"].excess_wait_min > out["am_peak"].excess_wait_min
+
+
+def test_headway_excess_wait_clamped_and_honest_none() -> None:
+    # Clamp: actual far more frequent than scheduled → AWT < scheduled/2 → EWT floors at 0 (never <0).
+    rows = [_hw_summed_row("am_peak", [3, 3, 3, 3, 3])]  # AWT = 45/(2·15) = 1.5
+    clamped = H._headway_period_from_summed(rows, {"am_peak": 12.0})  # 1.5 − 6.0 < 0
+    assert clamped["am_peak"].excess_wait_min == 0.0
+    # Honest absence: no scheduled headway for the shift → excess None (never a fabricated 0).
+    none_sched = H._headway_period_from_summed(rows, {})
+    assert none_sched["am_peak"].excess_wait_min is None
 
 
 def test_weak_stops_by_grain_roundtrips() -> None:

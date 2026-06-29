@@ -474,6 +474,12 @@ class ReliabilityPeriod(BaseModel):
     # the period is not windowed (the scalar whole-history periods never carry them).
     prior_observation_count: int | None = None
     prior_otp_pct: int | None = None
+    # prior_on_time is the prior window's EXACT on-time numerator (matching on_time for
+    # the CURRENT window), so the web two-proportion delta pools real counts instead of
+    # reconstructing the prior numerator from the integer-rounded prior_otp_pct (which
+    # leaves a ±0.5pt rounding band the consumer had to suppress conservatively). None
+    # whenever prior_otp_pct is None (no prior window / not a windowed period).
+    prior_on_time: int | None = None
 
 class CancellationPeriod(BaseModel):
     # Per-route cancellation over one closed local day (or a derived grain).
@@ -499,6 +505,15 @@ class HeadwayPeriod(BaseModel):
     day_type: str | None = None
     scheduled_min: float | None = None
     observed_min: float | None = None
+    # excess_wait_min is GRAIN-DEPENDENT by source (FIX-1):
+    #  • WINDOWED rows (headway_by_grain, built from gold.route_headway_shift_daily, which
+    #    carries the additive moment sums) = true passenger-weighted Excess Wait Time,
+    #    EWT = max(0, AWT − scheduled/2) where AWT = Σgap²/(2·Σgap) is the wait a random
+    #    rider actually expects (bunching-aware: long gaps catch more riders). Clamped at 0.
+    #  • SCALAR whole-history rows (build_route_reliability, off gold.route_headway_by_shift,
+    #    which has NO moment sums) = the older typical-gap PROXY max(0, observed − scheduled),
+    #    a full-headway gap difference with no variance term. Migrate that table to retire the
+    #    proxy. Both honest-None when scheduled or the gap sample is absent.
     excess_wait_min: float | None = None
     # Tier-2 regularity (busiest-direction rows only): cov = stddev/mean of the
     # observed trip-start gaps (None when fewer than 2 gaps); bunched_pct = % of
@@ -515,10 +530,15 @@ class HeadwayPeriod(BaseModel):
     prior_observed_min: float | None = None
 
 class ServiceSpanPeriod(BaseModel):
-    # Per-route service span over one closed local day. "trip start" = first
-    # realtime observation of a trip (not the scheduled departure); first/last
-    # delay = that trip's first-observation schedule deviation (minutes).
-    # service_day_kind is derived from the date by consumers (weekday/weekend).
+    # Per-route service span over one GTFS SERVICE DAY (start_date), NOT the calendar capture
+    # day (FIX-2) — so an overnight trip stays on its own service day instead of faking a ~00:00
+    # first departure on the next calendar day. "trip start" = first realtime observation of a
+    # trip (not the scheduled departure). first_trip_delay = the FIRST trip's first-observation
+    # deviation; last_trip_delay = the LAST trip's LATEST (terminal) observation deviation
+    # (minutes) — the old build read the last trip's first obs (~0). date is the service day;
+    # service_day_kind is derived from it by consumers (weekday/weekend). NOTE: because a service
+    # day can run past local midnight, last_trip_utc may fall on the next calendar day (the web
+    # renders it on a >24h service-day clock).
     date: str | None = None
     first_trip_utc: str | None = None
     last_trip_utc: str | None = None
@@ -537,14 +557,16 @@ class SkippedStopPeriod(BaseModel):
     stop_time_update_count: int | None = None
 
 class CrowdingDelayCell(BaseModel):
-    # Per-route delay×crowding correlation: each route×day is attributed to its
-    # DOMINANT occupancy band (argmax of that day's band counts), and that day's
-    # delay is bucketed under the dominant band over a trailing 30d window. band
-    # uses the same vocabulary as OccupancyMix / route_occupancy_band_daily
-    # (empty/many_seats/few_seats/standing/full). Cells are observation-weighted;
-    # each field is None when its input is absent. p50_min is a best-effort
-    # observation-weighted mean of the contributing daily p50s (an approximation —
-    # daily percentiles are not exactly additively composable).
+    # Per-route delay×crowding, TRULY co-observed (FIX-3): each delay observation carries its OWN
+    # occupancy band (the vehicle's occupancy_status, matched onto the delay fact by the vpm
+    # LATERAL), so a band's avg/p50 is its REAL delay distribution over a trailing 30d window —
+    # the full/standing tail is no longer censored by a day's dominant band (the old design). band
+    # uses the same vocabulary as OccupancyMix / route_occupancy_band_daily (empty/many_seats/
+    # few_seats/standing/full; codes 3 and 4 fold to standing). Cells are observation-weighted;
+    # each field is None when its input is absent. p50_min is a best-effort observation-weighted
+    # mean of the contributing daily band p50s (an approximation — daily percentiles are not
+    # exactly additively composable). RAMP-IN: co-observation accrues forward only from the deploy
+    # (occupancy_status is forward-filled), so bands are sparse / empty until the rollup fills.
     band: str
     avg_delay_min: float | None = None
     p50_min: float | None = None
@@ -618,6 +640,13 @@ class OccupancyByDow(BaseModel):
     # data-days are emitted (sparse).
     day_of_week_iso: int
     mix: OccupancyMix | None = None
+    # n is the total band-bearing observation count summed over this ISO weekday's
+    # trailing-30d days (the share denominator already computed-and-discarded in
+    # _occupancy_mix_from_bands). Lets the web fold a TRIP-WEIGHTED weekday/weekend mix
+    # instead of a count-blind unweighted mean. Mirrors RouteDayOfWeek.observation_count;
+    # it is the sum of the 5 band counts, NOT a distinct-trip count. n=0 (not None) on a
+    # weekday with data-days but zero band telemetry (where mix is None).
+    n: int | None = None
 
 class ReliabilityByGrain(BaseModel):
     # S7-B windowable §1: the per-route delay breakdowns (by_shift / by_daytype /
@@ -672,7 +701,10 @@ class HeadwayByGrain(BaseModel):
     # over the summed gap histogram (a documented rebaseline vs the legacy percentile_cont median);
     # cov is recomposed SAMPLE sd (Bessel n-1, byte-identical to the legacy stddev_samp) from pooled
     # moments; bunched_pct is the summed-histogram mass below 0.5*windowed_median. The clamp
-    # 0<gap<240 + the n>=2 guard are byte-identical to route_headway_by_shift.
+    # 0<gap<240 + the n>=2 guard are byte-identical to route_headway_by_shift. excess_wait_min here
+    # is the TRUE passenger-weighted Excess Wait Time (FIX-1): max(0, AWT - scheduled/2), AWT =
+    # sum(gap^2)/(2*sum(gap)) from the pooled moments — a half-headway, bunching-aware quantity, so
+    # it reads SMALLER than (and is not comparable to) the scalar whole-history gap proxy.
     grain: str
     date: str | None = None
     headway: list[HeadwayPeriod] = Field(default_factory=list)
