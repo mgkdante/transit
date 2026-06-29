@@ -547,6 +547,40 @@ function meanOf<T>(
 }
 
 /**
+ * Observation-count-WEIGHTED mean: Σ(value·weight) / Σ(weight), rounded to `dp`. The honest
+ * aggregate for a per-day rate/mean pooled across days whose sample sizes span 100×–1000×
+ * (an unweighted mean badly over-represents a tiny day). Falls back to the unweighted mean of
+ * the values when NO row carries a positive weight (pre-#158 snapshots without observation_count),
+ * so a value is never lost — only its weighting degrades. null when there is no value at all.
+ */
+function weightedMean<T>(
+	rows: readonly T[],
+	value: (row: T) => number | null | undefined,
+	weight: (row: T) => number | null | undefined,
+	dp: number,
+): number | null {
+	let wSum = 0;
+	let wNum = 0;
+	let hasWeighted = false;
+	for (const row of rows) {
+		const v = value(row);
+		const w = weight(row);
+		if (v == null || Number.isNaN(v)) continue;
+		if (w != null && w > 0) {
+			wNum += v * w;
+			wSum += w;
+			hasWeighted = true;
+		}
+	}
+	if (hasWeighted) {
+		const factor = 10 ** dp;
+		return Math.round((wNum / wSum) * factor) / factor;
+	}
+	// No weights anywhere → honest fallback to the plain mean (never drop the reading).
+	return meanOf(rows, value, dp);
+}
+
+/**
  * Unweighted mean of the present band-share mixes (each share vector sums to ~1, so
  * the mean also sums to ~1 — no re-normalization). null when no present mix. Used to
  * fold the per-ISO-weekday occupancy_by_dow shares into a typical weekday/weekend mix.
@@ -699,18 +733,47 @@ export function toReliabilityClusters(
 
 	if (hasRange) {
 		const singleDay = rangeDays.length === 1;
-		otpPct = singleDay ? num(rangeDays[0].otp_pct) : meanOf(rangeDays, (p) => p.otp_pct, 0);
+		// OTP numerator/denominator are ADDITIVE across the in-range days (sum, not mean) — computed
+		// FIRST so the headline rate is the SAME pooled estimate the §0 verdict's Wilson CI uses.
+		observationCount = rangeDays.reduce<number | null>(
+			(s, p) => (p.observation_count != null ? (s ?? 0) + p.observation_count : s),
+			null,
+		);
+		onTime = rangeDays.reduce<number | null>(
+			(s, p) => (p.on_time != null ? (s ?? 0) + p.on_time : s),
+			null,
+		);
+		// OTP = the POOLED rate (Σ on_time / Σ n), NOT a mean of daily rates. A mean-of-rates
+		// equal-weights a 64-obs day against a 64020-obs day AND fell outside its own Wilson CI on
+		// ~48% of multi-day windows (the verdict CI is built from these pooled counts). When the
+		// counts are absent (pre-#158), fall back to the unweighted daily-rate mean (honest degrade).
+		otpPct = singleDay
+			? num(rangeDays[0].otp_pct)
+			: observationCount != null && observationCount > 0 && onTime != null
+				? Math.round((onTime / observationCount) * 100)
+				: meanOf(rangeDays, (p) => p.otp_pct, 0);
+		// Avg delay + severe share: observation-count-WEIGHTED across the in-range days (the same
+		// denominator-weighting as OTP), so a tiny day cannot swing the headline.
 		avgDelayMin = singleDay
 			? num(rangeDays[0].avg_delay_min)
-			: meanOf(rangeDays, (p) => p.avg_delay_min, 1);
+			: weightedMean(
+					rangeDays,
+					(p) => p.avg_delay_min,
+					(p) => p.observation_count,
+					1,
+				);
+		severePct = singleDay
+			? num(rangeDays[0].severe_pct)
+			: weightedMean(
+					rangeDays,
+					(p) => p.severe_pct,
+					(p) => p.observation_count,
+					1,
+				);
 		// Percentiles are not averageable across days: only a single in-range day
 		// carries them; a multi-day range shows the honest no-data mark.
 		p50Min = singleDay ? num(rangeDays[0].p50_min) : null;
 		p90Min = singleDay ? num(rangeDays[0].p90_min) : null;
-		// Severe share is averageable across the in-range days (a share, not a percentile).
-		severePct = singleDay
-			? num(rangeDays[0].severe_pct)
-			: meanOf(rangeDays, (p) => p.severe_pct, 1);
 		// A single in-range day reads as an exact day (no "average" caption); a
 		// multi-day range carries the aggregate metadata for an honest caption.
 		rangeAggregate = singleDay
@@ -720,15 +783,6 @@ export function toReliabilityClusters(
 					start: rangeDays[0].date!,
 					end: rangeDays[rangeDays.length - 1].date!,
 				};
-		// OTP numerator/denominator are additive across the in-range days (sum, not mean).
-		observationCount = rangeDays.reduce<number | null>(
-			(s, p) => (p.observation_count != null ? (s ?? 0) + p.observation_count : s),
-			null,
-		);
-		onTime = rangeDays.reduce<number | null>(
-			(s, p) => (p.on_time != null ? (s ?? 0) + p.on_time : s),
-			null,
-		);
 	} else {
 		const stripPeriod = selectStripPeriod(calendarPeriods, grain, selectedDate);
 		otpPct = stripPeriod ? num(stripPeriod.otp_pct) : null;

@@ -316,6 +316,44 @@ describe('toReliabilityClusters — date range', () => {
 		expect(c.strip.p90Min).toBeNull();
 	});
 
+	it('POOLS a multi-day range by denominator, not a mean of daily rates (H1/H2)', () => {
+		// A tiny 50%-day (n=100) beside a huge 90%-day (n=10000): the mean-of-rates = 70%, but the
+		// POOLED rate = (50+9000)/(100+10000) = 89.6% → 90. The §0 verdict's Wilson CI is built from
+		// these same pooled counts, so the headline BAN must equal the pooled rate (it must never
+		// fall outside its own CI). Avg delay is observation-count-WEIGHTED the same way.
+		const data: RouteReliability = {
+			generated_utc: utc('2026-06-22T02:00:00Z'),
+			id: '51',
+			periods: [
+				{
+					grain: 'day',
+					date: '2026-06-20',
+					otp_pct: 50,
+					observation_count: 100,
+					on_time: 50,
+					avg_delay_min: 4,
+				},
+				{
+					grain: 'day',
+					date: '2026-06-21',
+					otp_pct: 90,
+					observation_count: 10000,
+					on_time: 9000,
+					avg_delay_min: 1,
+				},
+			],
+		};
+		const c = toReliabilityClusters(data, {
+			grain: 'day',
+			dateRange: { start: '2026-06-20', end: '2026-06-21' },
+		});
+		expect(c.strip.otpPct).toBe(90); // POOLED, not the 70 mean-of-rates
+		expect(c.strip.avgDelayMin).toBeCloseTo(1.0, 1); // observation-weighted, not the 2.5 mean
+		// The headline carries the additive numerator/denominator the verdict CI pools from.
+		expect(c.punctuality.headline.observationCount).toBe(10100);
+		expect(c.punctuality.headline.onTime).toBe(9050);
+	});
+
 	it('carries the aggregate metadata (day count + bounds) for a multi-day range', () => {
 		const c = toReliabilityClusters(granular, {
 			grain: 'day',

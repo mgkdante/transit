@@ -37,7 +37,7 @@
 		shiftLabelShort as shiftGrainLabelShort,
 		SEVERE_DOMAIN,
 		OTP_DOMAIN,
-		DELAY_POS_DOMAIN,
+		DELAY_STOP_DOMAIN,
 		DELAY_DIST_DOMAIN,
 	} from '$lib/features/reliability/shiftGrains';
 	import { selectPunctualityTrend } from '../selectors/punctualityTrend';
@@ -96,7 +96,7 @@
 			title: copy.strip.avgDelayMin,
 			xLabel: copy.strip.avgDelayMin,
 			unit: copy.units.min,
-			domain: DELAY_POS_DOMAIN,
+			domain: DELAY_STOP_DOMAIN,
 		}),
 	);
 	const p50Bullet = $derived(
@@ -104,7 +104,7 @@
 			title: copy.strip.p50Min,
 			xLabel: copy.strip.p50Min,
 			unit: copy.units.min,
-			domain: DELAY_POS_DOMAIN,
+			domain: DELAY_STOP_DOMAIN,
 		}),
 	);
 	const p90Bullet = $derived(
