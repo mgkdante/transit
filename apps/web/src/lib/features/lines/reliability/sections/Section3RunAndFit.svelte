@@ -484,6 +484,11 @@
 				<!-- A12 magnitude bars on the fixed occupancy axis; the <Chart> renders the
 				     honest-absence chip itself when no band carries a measured delay. -->
 				<Chart spec={crowdingDelay.spec} />
+				{#if crowdingDelay.spec.kind !== 'absence'}
+					<!-- Honest caveat: this is a day-level association (the day's dominant crowding),
+					     not a per-trip crowding-causes-delay measure. -->
+					<p class="caption" data-slot="crowding-delay-caption">{copy.delayByCrowding.caption}</p>
+				{/if}
 			</div>
 
 			{#if weekdayWeekendCols}

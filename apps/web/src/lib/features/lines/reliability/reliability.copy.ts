@@ -162,6 +162,9 @@ export interface ReliabilityCopy {
 		readonly typical: (p50: string) => string;
 		/** Honest empty note when no per-band delay data exists at all. */
 		readonly empty: string;
+		/** Honest caveat: a day-level association (the day's dominant crowding), NOT a per-trip
+		 *  crowding-causes-delay measure (the high-crowding tail is censored upstream). */
+		readonly caption: string;
 	};
 	/** By-shift-and-day-type OTP crosstab — now a stepped heatmap (01 Punctuality). */
 	readonly crosstab: {
@@ -413,6 +416,8 @@ export const reliabilityCopy: Record<Locale, ReliabilityCopy> = {
 			heading: "Retard selon l'occupation",
 			typical: (p50) => `médian ${p50}`,
 			empty: 'Aucune donnée de retard par occupation',
+			caption:
+				"Chaque barre est le retard moyen les jours où cette ligne a surtout roulé à ce niveau d'occupation. C'est une tendance par jour, pas une mesure par trajet; elle ne peut pas dire si les bus bondés roulent eux-mêmes plus tard.",
 		},
 		crosstab: {
 			heading: 'Par période et type de jour',
@@ -622,6 +627,8 @@ export const reliabilityCopy: Record<Locale, ReliabilityCopy> = {
 			heading: 'Delay by crowding',
 			typical: (p50) => `median ${p50}`,
 			empty: 'No delay-by-crowding data yet',
+			caption:
+				'Each bar is the average delay on days this line ran mostly at that crowding level. It is a day-level pattern, not a per-trip measure, so it cannot show whether crowded buses themselves run later.',
 		},
 		crosstab: {
 			heading: 'By shift and day type',
