@@ -170,7 +170,7 @@
 			weekendSuffix: 'fin de sem.',
 			allDay: 'sur la journée',
 			excessWaitExplain:
-				"Le temps d'attente en plus de l'intervalle prévu entre les bus. 0 signifie que la ligne respecte (ou dépasse) sa fréquence prévue.",
+				"De combien l'intervalle TYPIQUE entre les bus dépasse l'intervalle prévu. 0 signifie que la ligne respecte (ou dépasse) sa fréquence prévue. C'est l'excédent d'intervalle typique, pas une attente pondérée par la variance; quand les bus se collent, certains usagers attendent plus longtemps.",
 			dumbbellAria: (scheduled, observed) =>
 				`Intervalle prévu ${scheduled} min, intervalle observé ${observed} min`,
 			dumbbellExcess: (value) => `Attente excédentaire ${value} min`,
@@ -196,7 +196,7 @@
 			weekendSuffix: 'weekend',
 			allDay: 'across the day',
 			excessWaitExplain:
-				'The extra time riders wait beyond the scheduled gap between buses. 0 means the line met (or beat) its planned frequency.',
+				'How much longer the TYPICAL gap between buses runs than scheduled. 0 means the line met (or beat) its planned frequency. This is the typical-gap excess, not a variance-aware wait. When buses bunch, some riders wait longer than this.',
 			dumbbellAria: (scheduled, observed) =>
 				`Scheduled gap ${scheduled} min, observed gap ${observed} min`,
 			dumbbellExcess: (value) => `Excess wait ${value} min`,
