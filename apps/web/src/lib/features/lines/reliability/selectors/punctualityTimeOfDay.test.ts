@@ -9,7 +9,9 @@ const labels: TimeOfDayLabels = {
 	shiftLabel: (g) => g.toUpperCase(),
 };
 
-function vmWith(byShift: { grain: string; severePct: number | null }[]): PunctualityVM {
+function vmWith(
+	byShift: { grain: string; severePct: number | null; observationCount?: number | null }[],
+): PunctualityVM {
 	return {
 		headline: {
 			otpPct: null,
@@ -45,7 +47,28 @@ describe('selectPunctualityTimeOfDay — the §01 time-of-day dot-strip', () => 
 		expect(spec.points.map((p) => p.key)).toEqual(['am_peak', 'midday', 'pm_peak']);
 		// severeShareToSeverity: >=10 critical, >=5 high, else watch.
 		expect(spec.points.map((p) => p.severity)).toEqual(['watch', 'high', 'critical']);
+		// No observation counts on these rows → the reference falls back to the plain mean.
 		expect(spec.medianRef).toBeCloseTo((4 + 8 + 12) / 3, 5);
+	});
+
+	it('weights the all-day reference by each shift observation count (H6)', () => {
+		// A tiny-n night shift with a high 30% severe rate must NOT drag the reference up the way a
+		// plain mean-of-rates would: the line is the true all-day severe-share (Σ severe×obs / Σ obs).
+		const spec = selectPunctualityTimeOfDay(
+			vmWith([
+				{ grain: 'am_peak', severePct: 4, observationCount: 1000 },
+				{ grain: 'midday', severePct: 8, observationCount: 200 },
+				{ grain: 'pm_peak', severePct: 12, observationCount: 1000 },
+				{ grain: 'night', severePct: 30, observationCount: 50 },
+			]),
+			'en',
+			labels,
+		);
+		if (spec.kind !== 'dot-strip') return;
+		// Weighted: (4·1000 + 8·200 + 12·1000 + 30·50) / 2250 = 19100/2250 ≈ 8.49.
+		expect(spec.medianRef).toBeCloseTo(19100 / 2250, 5);
+		// The naive mean-of-rates would be (4+8+12+30)/4 = 13.5 — the weighted line sits well below it.
+		expect(spec.medianRef as number).toBeLessThan(13.5);
 	});
 
 	it('keeps null-severe shifts as honest gaps but stays a dot-strip while one is real', () => {
