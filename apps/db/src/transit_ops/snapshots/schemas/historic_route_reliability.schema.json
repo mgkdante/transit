@@ -367,6 +367,18 @@
             }
           ],
           "default": null
+        },
+        "n": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "N"
         }
       },
       "required": [
@@ -599,6 +611,18 @@
           ],
           "default": null,
           "title": "Prior Observation Count"
+        },
+        "prior_on_time": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Prior On Time"
         },
         "prior_otp_pct": {
           "anyOf": [

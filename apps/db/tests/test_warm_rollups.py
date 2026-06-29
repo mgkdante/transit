@@ -184,6 +184,9 @@ class FakeConnection:
         if "INSERT INTO gold.route_skipped_stop_daily" in sql:
             return RowcountResult(1)
 
+        if "INSERT INTO gold.route_delay_by_crowding_daily" in sql:
+            return RowcountResult(1)
+
         if "INSERT INTO gold.route_delay_spine" in sql:
             return RowcountResult(1)
 
@@ -246,6 +249,12 @@ class FakeConnection:
 
         if "SELECT COUNT(*)" in sql and "FROM gold.route_skipped_stop_daily" in sql:
             return ScalarResult(14)
+
+        if "SELECT COUNT(*)" in sql and "FROM gold.route_delay_by_crowding_daily" in sql:
+            return ScalarResult(13)
+
+        if "DELETE FROM gold.route_delay_by_crowding_daily" in sql:
+            return RowcountResult(13)
 
         if "SELECT COUNT(*)" in sql and "FROM gold.route_delay_spine" in sql:
             return ScalarResult(16)
@@ -851,19 +860,25 @@ def test_route_headway_by_shift_upsert_shape() -> None:
 
 
 def test_route_service_span_daily_upsert_shape() -> None:
-    """Tier-2 service-span: per-route closed-day first/last + span, append-only.
+    """Tier-2 service-span: per-route GTFS-SERVICE-DAY first/last + span, append-only.
 
-    Grain is route x provider_local_date (no service_day_kind column — derived at
-    read), trip-start = MIN(captured_at_utc), bound to one local day by the
-    indexed provider-local snapshot_date_key so it slots into
-    _build_percentile_days."""
+    FIX-2: grain is route x provider_local_date where provider_local_date is the GTFS service
+    day (start_date), built from a 2-day INDEXED capture window so the overnight tail is in;
+    last delay reads the LAST trip's TERMINAL (latest-obs) deviation, not its first obs."""
     sql = str(rollups.UPSERT_ROUTE_SERVICE_SPAN_DAILY)
     compact = " ".join(sql.split())
 
     assert "INSERT INTO gold.route_service_span_daily" in sql
     assert "FROM gold.fact_trip_delay_snapshot" in sql
     assert "MIN(f.captured_at_utc) AS trip_start_utc" in compact
-    assert "f.snapshot_date_key = :date_key" in compact
+    # FIX-2: re-grain on the GTFS service day (start_date), NOT the capture date.
+    assert "f.start_date = (CAST(:local_date AS date) - 1)" in compact
+    # FIX-2: 2-day INDEXED window (prev date_key + :date_key) keeps the scan sargable.
+    assert "f.snapshot_date_key IN (" in compact
+    assert "'YYYYMMDD')::integer, :date_key" in compact
+    # FIX-2: the LAST trip's terminal (latest captured) delay, not its first observation.
+    assert "ARRAY_AGG(f.delay_seconds ORDER BY f.captured_at_utc DESC, f.entity_index DESC))[1] AS last_obs_delay" in compact
+    assert "MAX(last_obs_delay) FILTER (WHERE rn_last = 1)" in compact
     # span derived from first/last observed trip start.
     assert "MAX(trip_start_utc) - MIN(trip_start_utc)" in compact
     assert "ON CONFLICT (provider_id, provider_local_date, route_id)" in sql
@@ -990,8 +1005,9 @@ def test_prune_warm_rollup_storage_dry_run_counts_without_deletes() -> None:
     count_queries = [s for s in conn.executed if "SELECT COUNT(*)" in s or "SELECT count(*)" in s]
     # 23 prior MINUS the 6 route delay-cube fold tables (dropped in 0064) MINUS the 2 stop_delay
     # weekly/monthly folds (dropped in 0067) PLUS the S7-B route_headway_shift_daily (DB-PR-2) +
-    # stop_delay_spine (DB-PR-3); each retention-registered table emits one dry-run COUNT.
-    assert len(count_queries) == 17
+    # stop_delay_spine (DB-PR-3) PLUS the FIX-3 route_delay_by_crowding_daily; each
+    # retention-registered table emits one dry-run COUNT.
+    assert len(count_queries) == 18
 
 
 def test_prune_warm_rollup_storage_display_dict_includes_dry_run() -> None:

@@ -110,15 +110,20 @@ def test_busiest_direction_argmax_on_trip_count_not_gap_count() -> None:
     assert am.observation_count == 2, "argmax must rank trip_count, NOT gap_count"
 
 
-def test_median_is_cdf_interp_rebaseline_and_excess() -> None:
-    """D3: observed_min is the histogram CDF-interp median (a documented rebaseline, in range),
-    and excess_wait = max(0, median - scheduled)."""
+def test_median_is_cdf_interp_rebaseline_and_ewt() -> None:
+    """D3: observed_min is the histogram CDF-interp median (a documented rebaseline, in range);
+    FIX-1: excess_wait is the TRUE passenger-weighted Excess Wait Time computed from the pooled
+    moments, EWT = max(0, sum(g^2)/(2*sum(g)) - scheduled/2) — NOT the old max(0, median-scheduled)
+    gap proxy (for these gaps the median≈6 → proxy≈1.0, while EWT≈0.7; they differ)."""
     gaps = [4.0, 5.0, 6.0, 7.0, 8.0]
     with _seeded([("am_peak", 0, 10, gaps)]) as conn:
         out = {g.grain: g for g in _headway_by_grain(conn, _params(), {"am_peak": 5.0})}
     am = next(p for p in out["month"].headway if p.shift == "am_peak")
     assert am.observed_min is not None and 4.0 <= am.observed_min <= 8.0
-    assert am.excess_wait_min == round(max(0.0, am.observed_min - 5.0), 1)
+    _n, sg, sq = _moments(gaps)  # 5, 30.0, 190.0 → AWT = 190/60 = 3.1667
+    expected_ewt = round(max(0.0, sq / (2.0 * sg) - 5.0 / 2.0), 1)  # max(0, 0.6667) = 0.7
+    assert expected_ewt == 0.7
+    assert am.excess_wait_min == expected_ewt
 
 
 def test_cross_day_week_grain_pools_moments() -> None:

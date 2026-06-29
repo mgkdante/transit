@@ -539,14 +539,12 @@ def test_publish_historic_writes_expected_keys(tmp_path) -> None:
             {"shift": "am_peak", "day_type": "weekday", "known_obs": 40,
              "on_time": 36, "avg_delay_sec": 90, "severe": 4, "obs": 50},
         ]),
-        # build_route_reliability: per-band delay×crowding — unique discriminator
-        # "-- delay_by_crowding". MUST precede the broader "public_route_reliability
-        # _daily" / "route_occupancy_band_daily" needles (both substrings appear in
-        # its JOIN). One day: dominant band = many_seats (count 50), delay 90s.
+        # build_route_reliability: per-band CO-OBSERVED delay×crowding (FIX-3) — unique
+        # discriminator "-- delay_by_crowding". One pre-aggregated per-band row:
+        # {band, delay_obs, sum_delay_sec, w_p50_sec, p50_obs, day_count}.
         ("-- delay_by_crowding", [
-            {"d": datetime.date(2026, 6, 1), "empty": 0, "many_seats": 50,
-             "few_seats": 30, "standing": 15, "full": 5,
-             "avg_delay_sec": 90, "delay_obs": 40},
+            {"band": "many_seats", "delay_obs": 40, "sum_delay_sec": 3600.0,
+             "w_p50_sec": None, "p50_obs": 0, "day_count": 1},
         ]),
         # build_route_reliability: S7 grain-aware + per-DOW crowding rollups —
         # unique discriminators "-- occupancy_by_dow" / "-- occupancy_by_grain".

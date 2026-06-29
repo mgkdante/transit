@@ -130,8 +130,11 @@
 		readonly weekendSuffix: string;
 		/** Suffix for the whole-day excess-wait headline (mean across the shifts). */
 		readonly allDay: string;
-		/** Always-visible explanation of excess wait — the "over WHAT" baseline. */
+		/** Excess-wait explainer for the WINDOWED grains (true passenger-weighted EWT). */
 		readonly excessWaitExplain: string;
+		/** Excess-wait explainer for the SCALAR whole-history rows (the typical-gap proxy, which
+		 *  carries no variance term — those rows read off route_headway_by_shift, no moment sums). */
+		readonly excessWaitProxyExplain: string;
 		/** Whole-dumbbell accessible summary, given the scheduled + observed readings. */
 		readonly dumbbellAria: (scheduled: string, observed: string) => string;
 		/** Excess-wait annotation prefix beside the dumbbell, given the formatted value. */
@@ -170,6 +173,8 @@
 			weekendSuffix: 'fin de sem.',
 			allDay: 'sur la journée',
 			excessWaitExplain:
+				"Le temps d'attente supplémentaire réel des usagers, au-delà d'un bus parfaitement régulier. C'est pondéré par les passagers : quand les bus se collent, les longs intervalles touchent plus de monde et font monter ce chiffre. 0 signifie que le service vaut (ou dépasse) ce que l'horaire promet.",
+			excessWaitProxyExplain:
 				"De combien l'intervalle TYPIQUE entre les bus dépasse l'intervalle prévu. 0 signifie que la ligne respecte (ou dépasse) sa fréquence prévue. C'est l'excédent d'intervalle typique, pas une attente pondérée par la variance; quand les bus se collent, certains usagers attendent plus longtemps.",
 			dumbbellAria: (scheduled, observed) =>
 				`Intervalle prévu ${scheduled} min, intervalle observé ${observed} min`,
@@ -196,6 +201,8 @@
 			weekendSuffix: 'weekend',
 			allDay: 'across the day',
 			excessWaitExplain:
+				'The extra time riders actually wait, beyond an evenly-scheduled bus. It is passenger-weighted, so bunching counts: when buses clump, the long gaps catch more riders and push this up. 0 means service is as good as (or better than) the schedule promises.',
+			excessWaitProxyExplain:
 				'How much longer the TYPICAL gap between buses runs than scheduled. 0 means the line met (or beat) its planned frequency. This is the typical-gap excess, not a variance-aware wait. When buses bunch, some riders wait longer than this.',
 			dumbbellAria: (scheduled, observed) =>
 				`Scheduled gap ${scheduled} min, observed gap ${observed} min`,
@@ -386,10 +393,13 @@
 	const fmtMinDelta = (d: number): string => `${d > 0 ? '+' : ''}${d.toFixed(1)}${copy.units.min}`;
 
 	// §02 headway DUMBBELL (A8): ALL primary shifts in ONE comparable chart on the fixed
-	// HEADWAY_DOMAIN — scheduled ● —— ● observed, the connector span = the excess wait, so
-	// the gap reads at a glance AND across shifts. Severity (bunching) colours the observed
-	// dot; CoV + bunched ride the hover tooltip. Replaces the N isolated per-row dumbbells
+	// HEADWAY_DOMAIN — scheduled ● —— ● observed, the connector span = the observed-vs-scheduled
+	// median gap, so the gap reads at a glance AND across shifts. Severity (bunching) colours the
+	// observed dot; CoV + bunched ride the hover tooltip. Replaces the N isolated per-row dumbbells
 	// with one cross-shift comparison (the per-shift detail rows stay below for the drill).
+	// NOTE (FIX-1): excess wait is now the passenger-weighted EWT, which is NOT the scheduled→observed
+	// dot span, so it is NOT fed into the dumbbell (that would label a contradictory "gap"). EWT lives
+	// in its own all-day bullet + the per-shift excess-wait magnitude bars below, correctly labelled.
 	const headwayDumbbell = $derived(
 		selectHeadwayDumbbell(
 			mainRows.map((r, i) => ({
@@ -397,7 +407,7 @@
 				label: shiftLabel(r),
 				scheduled: r.scheduled,
 				observed: r.observed,
-				excess: r.excessWait,
+				excess: null,
 				severity: r.severity,
 				note:
 					[
@@ -723,7 +733,7 @@
 						{locale}
 						size="lg"
 						info={excessInfo}
-						caption={t.excessWaitExplain}
+						caption={wait.windowed ? t.excessWaitExplain : t.excessWaitProxyExplain}
 						class="excess-wait-headline"
 						data-slot="excess-wait-headline"
 					/>

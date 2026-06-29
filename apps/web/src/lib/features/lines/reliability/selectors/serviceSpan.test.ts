@@ -38,6 +38,28 @@ describe('selectServiceSpan', () => {
 		expect(s.title).toContain('Service from');
 	});
 
+	it('renders an overnight service day on an extended service-day clock (FIX-2, no inverted bar)', () => {
+		const s = selectServiceSpan(
+			{
+				firstTripUtc: '2026-06-25T09:00:00Z', // 05:00 Toronto (EDT)
+				lastTripUtc: '2026-06-26T05:30:00Z', // 01:30 Toronto, NEXT calendar day
+				firstDelayMin: 0.5,
+				lastDelayMin: 4,
+			},
+			'en',
+			opts,
+		);
+		expect(s.kind).toBe('service-span');
+		if (s.kind !== 'service-span') return;
+		expect(s.firstMin).toBe(5 * 60); // 300
+		// The last trip's clock (01:30 = 90) falls BELOW the first → it is unwrapped forward one
+		// day to 25:30 so the bar runs forward instead of inverting on a [0,1440] axis.
+		expect(s.lastMin).toBe(25 * 60 + 30); // 1530
+		expect(s.lastMin ?? 0).toBeGreaterThan(s.firstMin ?? 0);
+		expect(s.domain).toEqual([0, 1800]); // extended 30h service-day clock
+		expect(s.hourTicks.map((t) => t.label)).toEqual(['00h', '06h', '12h', '18h', '24h', '30h']);
+	});
+
 	it('returns an absence spec unless BOTH endpoints resolve (never a fabricated span)', () => {
 		const onlyFirst = selectServiceSpan(
 			{

@@ -694,6 +694,72 @@ describe('toReliabilityClusters — occupancy_by_grain / occupancy_by_dow (S7)',
 	});
 });
 
+describe('toReliabilityClusters — trip-weighted weekday/weekend meanMix (FIX-5)', () => {
+	// Skewed mixes so weighting visibly diverges from the plain mean: a high-volume day
+	// (n:90/80) and a low-volume day (n:10/20) with opposite band shares.
+	const skewed = (withN: boolean): RouteReliability => ({
+		generated_utc: utc('2026-06-19T02:00:00Z'),
+		id: '12',
+		occupancy_by_dow: [
+			{
+				day_of_week_iso: 1,
+				mix: { empty: 0, many_seats: 1, few_seats: 0, standing: 0, full: 0 },
+				...(withN ? { n: 90 } : {}),
+			},
+			{
+				day_of_week_iso: 5,
+				mix: { empty: 1, many_seats: 0, few_seats: 0, standing: 0, full: 0 },
+				...(withN ? { n: 10 } : {}),
+			},
+			{
+				day_of_week_iso: 6,
+				mix: { empty: 1, many_seats: 0, few_seats: 0, standing: 0, full: 0 },
+				...(withN ? { n: 80 } : {}),
+			},
+			{
+				day_of_week_iso: 7,
+				mix: { empty: 0, many_seats: 1, few_seats: 0, standing: 0, full: 0 },
+				...(withN ? { n: 20 } : {}),
+			},
+		],
+	});
+
+	it('trip-weights the weekday/weekend fold by per-DOW n when present', () => {
+		const ww = toReliabilityClusters(skewed(true)).crowding.weekdayWeekend;
+		// weekday many_seats = (90·1 + 10·0)/100 = 0.9 (unweighted would be 0.5).
+		expect(ww?.weekday?.many_seats).toBeCloseTo(0.9, 5);
+		// weekend empty = (80·1 + 20·0)/100 = 0.8 (unweighted would be 0.5).
+		expect(ww?.weekend?.empty).toBeCloseTo(0.8, 5);
+	});
+
+	it('falls back to the UNWEIGHTED mean when no n is present (back-compat, old snapshots)', () => {
+		const ww = toReliabilityClusters(skewed(false)).crowding.weekdayWeekend;
+		expect(ww?.weekday?.many_seats).toBeCloseTo(0.5, 5);
+		expect(ww?.weekend?.empty).toBeCloseTo(0.5, 5);
+	});
+
+	it('treats a partial-n group as unweighted (all-or-nothing guard, no dropped weekday)', () => {
+		const data: RouteReliability = {
+			generated_utc: utc('2026-06-19T02:00:00Z'),
+			id: '12',
+			occupancy_by_dow: [
+				{
+					day_of_week_iso: 1,
+					mix: { empty: 0, many_seats: 1, few_seats: 0, standing: 0, full: 0 },
+					n: 90,
+				},
+				// no n on this weekday → the whole weekday fold must stay unweighted, never iso1-only.
+				{
+					day_of_week_iso: 5,
+					mix: { empty: 1, many_seats: 0, few_seats: 0, standing: 0, full: 0 },
+				},
+			],
+		};
+		const ww = toReliabilityClusters(data).crowding.weekdayWeekend;
+		expect(ww?.weekday?.many_seats).toBeCloseTo(0.5, 5);
+	});
+});
+
 describe('toReliabilityClusters — by_shift_daytype crosstab (G1)', () => {
 	it('keeps the sparse crosstab cells verbatim on the punctuality VM', () => {
 		const data: RouteReliability = {

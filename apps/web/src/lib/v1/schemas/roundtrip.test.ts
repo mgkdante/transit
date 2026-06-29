@@ -238,12 +238,15 @@ describe('tier-1 — cancellations + occupancy_mix round-trip (additive optional
 				{
 					day_of_week_iso: 1,
 					mix: { empty: 0, many_seats: 0.5, few_seats: 0.3, standing: 0.2, full: 0 },
+					n: 4000, // FIX-5: per-DOW band-observation total (trip-weight denominator)
 				},
 				// weekday with data-days but no band telemetry -> mix null; still parses.
-				{ day_of_week_iso: 7, mix: null },
+				{ day_of_week_iso: 7, mix: null, n: 0 },
 			],
 		};
-		expect(() => parsePort('route_reliability', RouteReliabilitySchema, fixture)).not.toThrow();
+		const parsed = parsePort('route_reliability', RouteReliabilitySchema, fixture);
+		expect(parsed.occupancy_by_dow?.[0]?.n).toBe(4000);
+		expect(parsed.occupancy_by_dow?.[1]?.n).toBe(0);
 	});
 
 	it('parses route_reliability with occupancy_by_grain/dow absent (additive optional)', () => {
@@ -420,6 +423,7 @@ describe('S7-B — windowable §1 (periods_by_grain + habits_by_grain + prior_*)
 							observation_count: 2000,
 							prior_observation_count: 1900,
 							prior_otp_pct: 78,
+							prior_on_time: 1482, // FIX-4: exact prior numerator (1482/1900 = 78.0%)
 						},
 					],
 					by_daytype: [{ grain: 'weekday', otp_pct: 81, observation_count: 9000 }],
@@ -443,7 +447,8 @@ describe('S7-B — windowable §1 (periods_by_grain + habits_by_grain + prior_*)
 				{ grain: 'day', date: '2026-06-20', habits: null, cells_observed: 0, cells_suppressed: 12 },
 			],
 		};
-		expect(() => parsePort('route_reliability', RouteReliabilitySchema, fixture)).not.toThrow();
+		const parsed = parsePort('route_reliability', RouteReliabilitySchema, fixture);
+		expect(parsed.periods_by_grain?.[0]?.by_shift?.[0]?.prior_on_time).toBe(1482);
 	});
 
 	it('parses route_reliability with the S7-B keys absent (additive optional back-compat)', () => {
@@ -451,6 +456,7 @@ describe('S7-B — windowable §1 (periods_by_grain + habits_by_grain + prior_*)
 		const parsed = parsePort('route_reliability', RouteReliabilitySchema, fixture);
 		expect(parsed.periods_by_grain ?? []).toEqual([]);
 		expect(parsed.habits_by_grain ?? []).toEqual([]);
+		expect(parsed.periods?.[0]?.prior_on_time).toBeUndefined(); // additive: absent → undefined
 	});
 
 	it('rejects a wrong-typed grain inside periods_by_grain (names the port)', () => {
