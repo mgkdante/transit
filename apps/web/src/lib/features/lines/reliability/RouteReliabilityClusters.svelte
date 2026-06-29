@@ -753,7 +753,9 @@
 		padding: clamp(0.9rem, 2.2vw, 1.35rem);
 	}
 	:global(.reliability-band [data-card='primary']) {
-		border-inline-start: 3px solid var(--primary);
+		/* The semantic decorative-rule token (= --primary, theme-safe) — --primary itself is
+		   reserved for interactive affordances; a static card rule reads --border-rule. */
+		border-inline-start: 3px solid var(--border-rule);
 	}
 	/* Operator: "yellow titles for each card so they tell what the graph is." Every graph
 	   card's title (its SectionLabel) wears the yellow wayfinding voice (--accent-text, AA

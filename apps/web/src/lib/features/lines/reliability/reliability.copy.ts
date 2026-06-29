@@ -334,11 +334,11 @@ export interface ReliabilityCopy {
 export const reliabilityCopy: Record<Locale, ReliabilityCopy> = {
 	fr: {
 		clusters: {
-			punctuality: '01 Ponctualité',
-			serviceDelivered: '02 Service assuré',
-			crowding: '03 Encombrement',
-			waitRegularity: '04 Régularité des attentes',
-			habits: '05 Habitudes horaires',
+			punctuality: 'Ponctualité',
+			serviceDelivered: 'Service assuré',
+			crowding: 'Encombrement',
+			waitRegularity: 'Régularité des attentes',
+			habits: 'Habitudes horaires',
 		},
 		strip: {
 			snapshotLabel: 'Aperçu de la fiabilité',
@@ -400,7 +400,7 @@ export const reliabilityCopy: Record<Locale, ReliabilityCopy> = {
 			weekday: 'Semaine',
 			weekend: 'Fin de semaine',
 			strip: {
-				ariaLabel: 'Part des retards graves par période de la journée',
+				ariaLabel: 'Retards graves par période',
 				mean: (value) => `Moyenne journée : ${value}`,
 			},
 		},
@@ -544,11 +544,11 @@ export const reliabilityCopy: Record<Locale, ReliabilityCopy> = {
 	},
 	en: {
 		clusters: {
-			punctuality: '01 Punctuality',
-			serviceDelivered: '02 Service delivered',
-			crowding: '03 Crowding',
-			waitRegularity: '04 Wait regularity',
-			habits: '05 Time-of-day habits',
+			punctuality: 'Punctuality',
+			serviceDelivered: 'Service delivered',
+			crowding: 'Crowding',
+			waitRegularity: 'Wait regularity',
+			habits: 'Time-of-day habits',
 		},
 		strip: {
 			snapshotLabel: 'Reliability snapshot',
@@ -609,7 +609,7 @@ export const reliabilityCopy: Record<Locale, ReliabilityCopy> = {
 			weekday: 'Weekday',
 			weekend: 'Weekend',
 			strip: {
-				ariaLabel: 'Severe-delay share by time of day',
+				ariaLabel: 'Severe delay by time of day',
 				mean: (value) => `All-day mean: ${value}`,
 			},
 		},

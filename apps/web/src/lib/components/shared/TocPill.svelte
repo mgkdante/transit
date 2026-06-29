@@ -65,7 +65,11 @@
 	function scrollTo(id: string): void {
 		const el = tocElement(id);
 		if (el) {
-			el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+			// Honour prefers-reduced-motion: a reader who opts out of motion gets an instant jump,
+			// not a smooth scroll (WCAG 2.3.3 animation-from-interactions).
+			const reduce =
+				typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+			el.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'center' });
 			closeDrawer(true);
 		}
 	}

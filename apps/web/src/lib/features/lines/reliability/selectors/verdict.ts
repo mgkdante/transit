@@ -139,8 +139,10 @@ export function selectVerdict(
 	const loPct = Math.round(lo * 100);
 	const hiPct = Math.round(hi * 100);
 
-	// The interval is too wide to commit to a band — hedge as tentative.
-	if (hi - lo >= VERDICT_WIDE_CI) {
+	// Hedge as tentative when the interval is too wide to commit to a band, OR when the Wilson CI
+	// STRADDLES a band boundary (the true rate could honestly fall either side of the 80/60 line) —
+	// asserting a confident band there would overstate what the sample supports.
+	if (hi - lo >= VERDICT_WIDE_CI || bandOf(loPct) !== bandOf(hiPct)) {
 		return {
 			status: 'tentative',
 			ban: `${otpInt}%`,
