@@ -40,9 +40,6 @@
   --tracking-tight: -0.025em;
   --tracking-wide: 0.05em;
   --tracking-eyebrow: 0.1em;
-  /* Mobile floor lowered 1.5rem -> 1rem so narrow phones (iPhone SE / Galaxy S23, < ~600px)
-     use more of the screen — only the floor changes; 4vw still dominates from ~400px up and the
-     5rem cap holds on desktop, so wider layouts are unchanged. */
   --space-page-x: clamp(1rem, 4vw, 5rem);
   --space-section-y: clamp(3rem, 8vw, 6rem);
   --space-card-gap: clamp(1rem, 2vw, 1.5rem);
