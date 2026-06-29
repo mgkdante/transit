@@ -59,6 +59,7 @@
 	import { detailCopy } from './lines.copy';
 	import LineDirections from './LineDirections.svelte';
 	import { delayColorVar, delaySeverity, delayLabel } from '$lib/site/delayPresentation';
+	import { DELAY_POS_DOMAIN } from '$lib/features/reliability/shiftGrains';
 
 	interface RouteDetailProps {
 		/** The route id this surface details. */
@@ -206,16 +207,6 @@
 		return delay == null ? Number.NEGATIVE_INFINITY : delay;
 	}
 
-	// The worst LATENESS on the roster, used to normalize the bar LENGTH. Only
-	// positive (late) delays count — early/on-time buses contribute 0 so they never
-	// inflate the denominator or earn a long bar.
-	const rosterWorstDelay = $derived(
-		roster.reduce(
-			(m, v) => Math.max(m, v.delay_min != null && v.delay_min > 0 ? v.delay_min : 0),
-			0,
-		),
-	);
-
 	// The Detail pane lays the live roster + affected alerts into a ListDetailGrid
 	// LIST column beside the directions-with-stops DETAIL pane. The list column is
 	// rendered ONLY when it has content (a live bus on the route OR an active alert)
@@ -229,17 +220,6 @@
 	// claim). `absenceReason` may still be null (no derivable signal) → we render a
 	// plain honest no-data note instead of inventing a reason.
 	const showAbsenceNote = $derived(live.generatedUtc != null && roster.length === 0);
-
-	/**
-	 * Normalized [0,1] bar LENGTH = how LATE (only positive delay). Early / on-time
-	 * read near-zero length (calm); a null delay → null (no-data track, never 0).
-	 */
-	function delayMagnitude(delay: number | null | undefined): number | null {
-		if (delay == null) return null;
-		if (delay <= 0) return 0;
-		if (rosterWorstDelay <= 0) return 0;
-		return Math.min(1, delay / rosterWorstDelay);
-	}
 
 	// The roster's delay reading: a known delay reads early / on time / N min late;
 	// a NULL delay reads an honest "no data" (not "no delay", which would imply
@@ -339,7 +319,9 @@
 																		: undefined}
 																	severity={delaySeverity(bus.delay_min)}
 																	colorVar={delayColorVar(bus.delay_min)}
-																	value={delayMagnitude(bus.delay_min)}
+																	value={bus.delay_min ?? null}
+																	domain={DELAY_POS_DOMAIN}
+																	unit=" min"
 																	display={rosterDelayLabel(bus.delay_min)}
 																/>
 																<ChevronRightIcon size={14} strokeWidth={2.4} aria-hidden="true" />
@@ -356,7 +338,9 @@
 																		: undefined}
 																	severity={delaySeverity(bus.delay_min)}
 																	colorVar={delayColorVar(bus.delay_min)}
-																	value={delayMagnitude(bus.delay_min)}
+																	value={bus.delay_min ?? null}
+																	domain={DELAY_POS_DOMAIN}
+																	unit=" min"
 																	display={rosterDelayLabel(bus.delay_min)}
 																/>
 															</div>

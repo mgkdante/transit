@@ -81,8 +81,10 @@
 		font-family: var(--font-mono);
 		font-size: var(--text-small);
 		font-weight: 500;
-		letter-spacing: var(--tracking-wide);
-		color: var(--primary);
+		/* Quiet at REST (muted caption voice, normal tracking) so the disclosure reads as calm
+		   chrome, not a CTA; the brand orange lifts in only on hover/focus. The rotating chevron
+		   is the persistent non-colour affordance that keeps it legible as interactive. */
+		color: var(--muted-foreground);
 		background: none;
 		border: none;
 		cursor: pointer;
@@ -97,6 +99,10 @@
 		outline: 2px solid var(--ring);
 		outline-offset: 3px;
 		border-radius: var(--radius-sm, 0.375rem);
+		/* Keyboard users get the same orange + underline affordance hover gives. */
+		color: var(--primary-hover);
+		text-decoration: underline;
+		text-underline-offset: 3px;
 	}
 	@media (prefers-reduced-motion: reduce) {
 		.detail__toggle {

@@ -188,7 +188,7 @@ export const detailCopy: Record<Locale, RouteDetailCopy> = {
 		servicePeriods: 'Périodes de service',
 		headways: 'Intervalles',
 		scheduleIntro:
-			'Les horaires prévus de cette ligne : le premier et le dernier départ, puis l’intervalle prévu entre les bus pour chaque période de la journée. C’est l’offre PLANIFIÉE — pour la ponctualité réelle, voyez l’onglet « Fiabilité ».',
+			'Les horaires prévus de cette ligne : le premier et le dernier départ, puis l’intervalle prévu entre les bus pour chaque période de la journée. C’est l’offre PLANIFIÉE. Pour la ponctualité réelle, voyez l’onglet « Fiabilité ».',
 		weakStops: 'Arrêts les plus faibles',
 		direction: (dir) => `Direction ${dir}`,
 		stopsCount: (n) => (n === 1 ? '1 arrêt' : `${n} arrêts`),
@@ -260,7 +260,7 @@ export const detailCopy: Record<Locale, RouteDetailCopy> = {
 		servicePeriods: 'Service periods',
 		headways: 'Headways',
 		scheduleIntro:
-			'This line’s planned schedule: the first and last departure, then the planned time between buses for each period of the day. This is the PLANNED service — for real-world punctuality, see the “Reliability” tab.',
+			'This line’s planned schedule: the first and last departure, then the planned time between buses for each period of the day. This is the PLANNED service. For real-world punctuality, see the “Reliability” tab.',
 		weakStops: 'Weakest stops',
 		direction: (dir) => `Direction ${dir}`,
 		stopsCount: (n) => (n === 1 ? '1 stop' : `${n} stops`),
