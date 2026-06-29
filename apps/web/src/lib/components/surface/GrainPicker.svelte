@@ -134,6 +134,12 @@
 		font-family: var(--font-mono);
 		font-size: var(--text-small);
 		line-height: 1.2;
+		/* WCAG 2.5.8 tap target: the segmented control sat at ~31px tall while every sibling
+		   control (pills, tabs, Detail) holds 44px. Center the label in a 44px-min box. */
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		min-height: 44px;
 		padding: 0.4rem 0.8rem;
 		border-radius: var(--radius-md, 0.5rem);
 		cursor: pointer;

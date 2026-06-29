@@ -42,6 +42,7 @@
 	import type { Locale } from '$lib/i18n';
 	import { fmtPct, fmtCount, fmtDelayMin as sharedFmtDelayMin } from '$lib/utils';
 	import { SectionLabel } from '$lib/components/brand';
+	import CollapsibleSection from './CollapsibleSection.svelte';
 	import { AbsentValue } from '$lib/components/edge';
 	import { ChartLegend } from '$lib/components/dataviz';
 	import { occupancyVar } from '$lib/components/dataviz/tokens';
@@ -121,11 +122,14 @@
 			any = false;
 		for (const r of rows) {
 			const w = whole(r);
-			if (w != null) {
-				total += w;
-				partSum += part(r) ?? 0;
-				any = true;
-			}
+			const p = part(r);
+			// Skip a row whose numerator is UNKNOWN (null/NaN) — matching clusters.ts pooledRate — so
+			// the "X of Y" caption sums the exact same rows as the pooled rate tile and the two can
+			// NEVER disagree (a null numerator is not a real 0; coercing it to 0 would diverge them).
+			if (w == null || w <= 0 || p == null || Number.isNaN(p)) continue;
+			total += w;
+			partSum += p;
+			any = true;
 		}
 		return any && total > 0 ? { part: partSum, total, sharePct: (partSum / total) * 100 } : null;
 	}
@@ -361,19 +365,18 @@
 	/>
 {/snippet}
 
-<section class="section" data-section="run-and-fit" aria-label={copy.sections.runAndFit.label}>
-	<header class="section-head">
-		<SectionLabel text={copy.sections.runAndFit.label} variant="station" />
-		<p class="section-question" data-slot="section-question">{copy.sections.runAndFit.question}</p>
-	</header>
-
+<CollapsibleSection
+	dataSection="run-and-fit"
+	eyebrow={copy.sections.runAndFit.label}
+	question={copy.sections.runAndFit.question}
+>
 	{#if sectionEmpty}
 		<div data-slot="run-and-fit-empty">
 			<AbsentValue variant="block" reason="no-observations" {locale} />
 		</div>
 	{:else}
 		<!-- ── "Will it run?" sub-block (service delivered) ───────────────────── -->
-		<div class="sub-block" data-slot="run-sub-block">
+		<div class="sub-block" data-slot="run-sub-block" data-card>
 			<div class="sub-head">
 				<SectionLabel text={copy.clusters.serviceDelivered} variant="metric" />
 				<!-- Window caption: the rate histories cover the most-recent closed days. -->
@@ -418,7 +421,7 @@
 		</div>
 
 		<!-- ── "Will you fit?" sub-block (crowding) ───────────────────────────── -->
-		<div class="sub-block" data-slot="fit-sub-block">
+		<div class="sub-block" data-slot="fit-sub-block" data-card>
 			<div class="sub-head">
 				<span class="label-with-info">
 					<SectionLabel
@@ -476,18 +479,23 @@
 			     Rendered independently of the mix empty-state so a route with delay data
 			     but no mix still surfaces it. SPARSE: an absent band or a null delay shows
 			     the honest no-data message in that cell, never a "·" / fake 0. -->
-			<div class="crowding-delay" data-slot="delay-by-crowding">
+			<div class="crowding-delay" data-slot="delay-by-crowding" data-card>
 				<SectionLabel text={copy.delayByCrowding.heading} variant="metric" />
 				<!-- A12 magnitude bars on the fixed occupancy axis; the <Chart> renders the
 				     honest-absence chip itself when no band carries a measured delay. -->
 				<Chart spec={crowdingDelay.spec} />
+				{#if crowdingDelay.spec.kind !== 'absence'}
+					<!-- Honest caveat: this is a day-level association (the day's dominant crowding),
+					     not a per-trip crowding-causes-delay measure. -->
+					<p class="caption" data-slot="crowding-delay-caption">{copy.delayByCrowding.caption}</p>
+				{/if}
 			</div>
 
 			{#if weekdayWeekendCols}
 				<!-- S7 §04: weekday vs weekend occupancy split — a 2-col small multiple that
 				     reflows to a single column on mobile. Each side is its own occupancy
 				     StackedBar, or an honest no-data chip when that side has no telemetry. -->
-				<div class="crowding-2col" data-slot="crowding-weekday-weekend">
+				<div class="crowding-2col" data-slot="crowding-weekday-weekend" data-card>
 					<SectionLabel text={copy.peak.dayType} variant="metric" />
 					<div class="crowding-2col-grid">
 						<div class="crowding-2col-cell" data-slot="crowding-weekday">
@@ -515,7 +523,7 @@
 				     Mon→Sun, on the SAME occupancy scale as the headline mix. A weekday with no
 				     telemetry renders the honest no-data chip in the same box height, never a
 				     fabricated bar. Reflows to fewer columns on narrow viewports. -->
-				<div class="crowding-dow" data-slot="crowding-by-dow">
+				<div class="crowding-dow" data-slot="crowding-by-dow" data-card>
 					<SectionLabel text={copy.byDow.heading} variant="metric" />
 					<p class="crowding-dow-caption">{copy.byDow.caption}</p>
 					<ul class="crowding-dow-grid" aria-label={copy.byDow.heading}>
@@ -534,24 +542,9 @@
 			{/if}
 		</Detail>
 	{/if}
-</section>
+</CollapsibleSection>
 
 <style>
-	/* Section rhythm: generous BETWEEN-block air (research: within ≤ between), all on
-	   the 8px grid. The section owns its inner stack; the orchestrator owns the
-	   between-section gap. */
-	.section {
-		display: flex;
-		flex-direction: column;
-		gap: clamp(1.25rem, 3vw, 2rem);
-		width: 100%;
-	}
-	.section-head {
-		display: flex;
-		flex-direction: column;
-		gap: 0.5rem;
-	}
-
 	/* Each rider-answer sub-block (run / fit) owns its own inner stack. */
 	.sub-block {
 		display: flex;

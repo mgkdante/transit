@@ -251,10 +251,15 @@
 		readonly href: string;
 		readonly ariaLabel: string;
 	};
+	// Chart-doctrine: a FIXED absolute [0, N] domain for the silent-trip count bars (per-route
+	// entity comparison) — never the in-view worst line. 10 simultaneous silent trips on ONE
+	// line ≈ a line-level AVL outage → saturates the bar; a typical 1-4 reads honestly small and
+	// the same across every snapshot (the worst-line normalization made one bar mean 4 today, 12
+	// tomorrow). The rank + the "N trips" display carry the precise cross-line comparison.
+	const NON_RESPONDING_DOMAIN: readonly [number, number] = [0, 10];
 	const silentRows = $derived.by<SilentRow[]>(() => {
 		const rows = live.network?.non_responding_by_route ?? null;
 		if (rows == null || rows.length === 0) return [];
-		const worst = rows.reduce((m, r) => Math.max(m, r.count), 0);
 		return rows.map((r, i) => ({
 			key: r.route_id,
 			rank: i + 1,
@@ -265,10 +270,9 @@
 			// A silent scheduled trip is a service gap → the bar reads on the
 			// critical severity band (never --primary); length encodes the count.
 			severity: 'critical' as SeverityCode,
-			// Magnitude bar normalized against the worst line (always severity-
-			// scaled; a silent trip is a service gap). null only if worst is 0,
-			// which the empty-guard above already excludes.
-			value: worst > 0 ? Math.min(1, Math.max(0, r.count / worst)) : null,
+			// RAW count on the fixed NON_RESPONDING_DOMAIN (forwarded to RankedRow/SeverityBar) —
+			// the doctrine's absolute-magnitude law, never normalized to the in-view max.
+			value: r.count,
 			display: `${fmtCount(r.count)} ${t.nonResponding.tripsUnit(r.count)}`,
 			href: localizeHref(routeFor({ kind: 'line', id: r.route_id }), locale),
 			ariaLabel: t.nonResponding.viewDetail(r.route_id),
@@ -847,6 +851,7 @@
 											subtitle={row.subtitle}
 											severity={row.severity}
 											value={row.value}
+											domain={NON_RESPONDING_DOMAIN}
 											display={row.display}
 										/>
 									</a>

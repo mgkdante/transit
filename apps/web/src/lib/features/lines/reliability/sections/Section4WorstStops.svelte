@@ -23,6 +23,7 @@
 <script lang="ts">
 	import type { Locale } from '$lib/i18n';
 	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
+	import CollapsibleSection from './CollapsibleSection.svelte';
 	import { AbsentValue } from '$lib/components/edge';
 	import { Chart } from '$lib/components/dataviz/chart';
 	import { GrainPicker, type GrainSegment } from '$lib/components/surface';
@@ -124,17 +125,14 @@
 	/>
 {/snippet}
 
-<section class="section" data-section="worst-stops" aria-label={copy.sections.worstStops.label}>
-	<header class="section-head">
-		<SectionLabel text={copy.sections.worstStops.label} variant="station" />
-		<p class="section-question" data-slot="section-question">
-			{copy.sections.worstStops.question}
-		</p>
-	</header>
-
+<CollapsibleSection
+	dataSection="worst-stops"
+	eyebrow={copy.sections.worstStops.label}
+	question={copy.sections.worstStops.question}
+>
 	{#if weakStops.shown > 0}
 		<!-- PRIMARY — the worst-N stops lollipop + the worst-N selector (the disclosure). -->
-		<div class="section-primary" data-slot="weak-stops">
+		<div class="section-primary" data-slot="weak-stops" data-card="primary">
 			<div class="weak-stops-head">
 				<span class="label-with-info">
 					<SectionLabel text={weakStopsHeading} variant="metric" />
@@ -159,24 +157,11 @@
 			<AbsentValue variant="block" reason="no-observations" {locale} />
 		</div>
 	{/if}
-</section>
+</CollapsibleSection>
 
 <style>
-	/* Section rhythm: generous BETWEEN-block air (research: within ≤ between), all on
-	   the 8px grid. The section owns its inner stack; the orchestrator owns the
-	   between-section gap. */
-	.section {
-		display: flex;
-		flex-direction: column;
-		gap: clamp(1.25rem, 3vw, 2rem);
-		width: 100%;
-	}
-	.section-head {
-		display: flex;
-		flex-direction: column;
-		gap: 0.5rem;
-	}
-
+	/* Section rhythm: generous BETWEEN-block air (research: within ≤ between), all on the 8px grid.
+	   The section shell + header now live in CollapsibleSection; this file styles only its body. */
 	.section-primary {
 		display: flex;
 		flex-direction: column;

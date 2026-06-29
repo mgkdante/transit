@@ -48,6 +48,24 @@ export interface HabitsBandCopy {
 	 */
 	readonly scaleCaption: string;
 	/**
+	 * Operator ("today and this week look the same — explain why, stupid-easy"): the heatmap
+	 * is GRAIN-INVARIANT — it reads the line's FULL service history, so it is identical
+	 * whichever window the rail above is set to. This one-liner states that plainly so the
+	 * same-looking heatmap is never mistaken for a bug.
+	 */
+	readonly heatmapWindowNote: string;
+	/**
+	 * §1 takeaway SENTENCE (the verdict the section earmarks): names the line's worst
+	 * repeat-problem window + its calmest weekday, worded RELATIVE to the line itself
+	 * (its own peak hour), never an absolute "unreliable" claim.
+	 */
+	readonly bestTime: {
+		/** Lead clause: the worst day + hour. */
+		readonly lead: (worstDay: string, worstHour: string) => string;
+		/** Calm clause, appended only when a distinct calmest weekday exists. */
+		readonly calm: (calmDay: string) => string;
+	};
+	/**
 	 * RAW scale string (RouteHabits.scale) → a plain-language phrase for the
 	 * caption. The snake_case scale value is NEVER shown to a layperson; an
 	 * unmapped/null scale falls back to `heatmapHeading`.
@@ -90,6 +108,12 @@ export const habitsBandCopy: Record<Locale, HabitsBandCopy> = {
 		cellValueLabel: 'Problèmes récurrents',
 		scaleCaption:
 			'Chaque case indique à quelle fréquence les retards graves reviennent à cette heure-là, sur toute la semaine et sur une seule échelle. Les cases encadrées et marquées d’un ◆ sont les pires heures de cette ligne; les cases pâles voient rarement un retard grave. Les fins de semaine plus calmes paraissent donc plus pâles, ce qui est honnête.',
+		heatmapWindowNote:
+			'Ce portrait utilise tout l’historique de la ligne : il ne change pas selon la fenêtre choisie en haut. « Aujourd’hui », « Cette semaine » et « Ce mois-ci » affichent la même carte. (La fenêtre change plutôt la tendance, les taux et les comparaisons.)',
+		bestTime: {
+			lead: (d, h) => `Sur cette ligne, les retards récurrents culminent le ${d} vers ${h}.`,
+			calm: (d) => ` Le ${d} est habituellement sa journée la plus calme.`,
+		},
 		scaleLegend: {
 			repeat_problem_relative: 'Problèmes récurrents (par rapport à la pire heure de la ligne)',
 			severe_relative: 'Retards graves (par rapport à la pire heure de la ligne)',
@@ -125,6 +149,12 @@ export const habitsBandCopy: Record<Locale, HabitsBandCopy> = {
 		cellValueLabel: 'Repeat problems',
 		scaleCaption:
 			'Each cell shows how often severe delays come back at that hour, across the whole week on one fixed scale. The outlined cells marked ◆ are this line’s worst hours; pale cells rarely see a severe delay. Calmer weekends therefore read paler, which is honest.',
+		heatmapWindowNote:
+			'This pattern uses the line’s full history, so it does not change with the time window above. Today, This week and This month all show the same heatmap. (The window changes the trend, the rates and the comparisons instead.)',
+		bestTime: {
+			lead: (d, h) => `On this line, repeat delays peak on ${d} around ${h}.`,
+			calm: (d) => ` ${d} is usually its calmest day.`,
+		},
 		scaleLegend: {
 			repeat_problem_relative: 'Repeat problems (vs this line’s worst hour)',
 			severe_relative: 'Severe delays (vs this line’s worst hour)',

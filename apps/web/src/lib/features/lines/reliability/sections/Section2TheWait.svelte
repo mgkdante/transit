@@ -30,13 +30,17 @@
 	import { fmtCount, fmtDelayMin, fmtPct } from '$lib/utils';
 	import type { HeadwayPeriod, SeverityCode, ServiceSpanPeriod } from '$lib/v1';
 	import { Chart } from '$lib/components/dataviz/chart';
+	import { DeltaStat } from '$lib/components/dataviz';
+	import { meanPriorDelta, type PriorDelta } from '../selectors/priorDelta';
 	import { selectHeadwayDumbbell } from '../selectors/headwayDumbbell';
 	import { selectShiftBars } from '../selectors/shiftBars';
+	import { selectDirectionAsymmetry } from '../selectors/directionAsymmetry';
 	import { selectBullet } from '../selectors/bullet';
 	import { selectServiceSpan } from '../selectors/serviceSpan';
 	import MetricDisplay from '$lib/components/brand/MetricDisplay.svelte';
 	import MetricBullet from './MetricBullet.svelte';
 	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
+	import CollapsibleSection from './CollapsibleSection.svelte';
 	import { AbsentValue } from '$lib/components/edge';
 	import Detail from '$lib/components/shared/Detail.svelte';
 	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
@@ -76,6 +80,12 @@
 		 * instead of "Direction 1/2"; a dir with no headsign falls back to "Direction N".
 		 */
 		directionHeadsigns?: Record<number, string>;
+		/**
+		 * Active window (day|week|month|range) — names the "vs prior {window}" wait comparison.
+		 * The headway breakdown re-shapes on this window via the mapper (headway_by_grain);
+		 * `range` reads the day-anchored windowed breakdown, so it borrows the 'day' phrasing.
+		 */
+		mode?: 'day' | 'week' | 'month' | 'range';
 	}
 
 	let {
@@ -84,7 +94,13 @@
 		locale,
 		copy,
 		directionHeadsigns = {},
+		mode = 'day',
 	}: Section2TheWaitProps = $props();
+
+	// Resolved window grain for the comparison phrasing (a custom range reads the day window).
+	const win = $derived<'day' | 'week' | 'month'>(
+		mode === 'week' || mode === 'month' ? mode : 'day',
+	);
 
 	/* ── band-local copy ──────────────────────────────────────────────────────
 	   Labels this section needs that are NOT in the shared copy live here, co-located
@@ -126,6 +142,16 @@
 		readonly bunchedMagnitude: (shift: string) => string;
 		/** Value-axis title for the scheduled-vs-observed headway dumbbell. */
 		readonly headwayAxis: string;
+		/** Overline for the always-visible direction-asymmetry callout. */
+		readonly directionAsymmetryLabel: string;
+		/** The callout sentence: the shift + the slower/faster direction waits. */
+		readonly directionAsymmetry: (
+			shift: string,
+			slowerDir: string,
+			slowerVal: string,
+			fasterDir: string,
+			fasterVal: string,
+		) => string;
 	}
 
 	const BAND_COPY: Record<Locale, BandCopy> = {
@@ -144,13 +170,16 @@
 			weekendSuffix: 'fin de sem.',
 			allDay: 'sur la journée',
 			excessWaitExplain:
-				"Le temps d'attente en plus de l'intervalle prévu entre les bus. 0 signifie que la ligne respecte (ou dépasse) sa fréquence prévue.",
+				"De combien l'intervalle TYPIQUE entre les bus dépasse l'intervalle prévu. 0 signifie que la ligne respecte (ou dépasse) sa fréquence prévue. C'est l'excédent d'intervalle typique, pas une attente pondérée par la variance; quand les bus se collent, certains usagers attendent plus longtemps.",
 			dumbbellAria: (scheduled, observed) =>
 				`Intervalle prévu ${scheduled} min, intervalle observé ${observed} min`,
 			dumbbellExcess: (value) => `Attente excédentaire ${value} min`,
 			covMagnitude: (shift) => `Régularité (CV), ${shift}`,
 			bunchedMagnitude: (shift) => `Part de bus collés, ${shift}`,
 			headwayAxis: 'Intervalle (min)',
+			directionAsymmetryLabel: 'La direction compte',
+			directionAsymmetry: (shift, slowerDir, slowerVal, fasterDir, fasterVal) =>
+				`Vers ${shift}, l’attente est d’environ ${slowerVal} vers ${slowerDir}, contre ${fasterVal} vers ${fasterDir}.`,
 		},
 		en: {
 			headwaySection: 'Wait by shift',
@@ -167,13 +196,16 @@
 			weekendSuffix: 'weekend',
 			allDay: 'across the day',
 			excessWaitExplain:
-				'The extra time riders wait beyond the scheduled gap between buses. 0 means the line met (or beat) its planned frequency.',
+				'How much longer the TYPICAL gap between buses runs than scheduled. 0 means the line met (or beat) its planned frequency. This is the typical-gap excess, not a variance-aware wait. When buses bunch, some riders wait longer than this.',
 			dumbbellAria: (scheduled, observed) =>
 				`Scheduled gap ${scheduled} min, observed gap ${observed} min`,
 			dumbbellExcess: (value) => `Excess wait ${value} min`,
 			covMagnitude: (shift) => `Regularity (CoV), ${shift}`,
 			bunchedMagnitude: (shift) => `Bunched share, ${shift}`,
 			headwayAxis: 'Headway (min)',
+			directionAsymmetryLabel: 'Direction matters',
+			directionAsymmetry: (shift, slowerDir, slowerVal, fasterDir, fasterVal) =>
+				`Around ${shift}, the wait runs about ${slowerVal} toward ${slowerDir} but ${fasterVal} toward ${fasterDir}.`,
 		},
 	};
 
@@ -243,6 +275,11 @@
 		readonly severity: SeverityCode;
 		/** Severity from the headway CoV — drives the dedicated regularity bar. */
 		readonly covSeverity: SeverityCode;
+		/** PR-WEB-3 comparison-vs-prior: this window's gap-sample n + the prior window's observed
+		 *  median + n (only on the windowed headway_by_grain rows; null on the scalar history). */
+		readonly observationCount: number | null;
+		readonly priorObserved: number | null;
+		readonly priorObservationCount: number | null;
 	}
 
 	/* S7-B Pattern A: read the TYPED direction_id / day_type fields. Fall back to the
@@ -281,6 +318,9 @@
 			magnitude: h.excess_wait_min ?? null,
 			severity: bunchingToSeverity(h.bunched_pct),
 			covSeverity: covToSeverity(h.cov),
+			observationCount: h.observation_count ?? null,
+			priorObserved: h.prior_observed_min ?? null,
+			priorObservationCount: h.prior_observation_count ?? null,
 		})),
 	);
 
@@ -308,6 +348,42 @@
 	// in the open list rather than hiding everything behind the reveal.
 	const mainRows = $derived(primaryRows.length > 0 ? primaryRows : advancedRows);
 	const hasAdvancedReveal = $derived(primaryRows.length > 0 && advancedRows.length > 0);
+
+	/* ── DETAIL — wait by shift · vs prior {window} (PR-WEB-3) ───────────────────
+	   The busiest-direction observed wait per shift, each with a Δ-vs-prior badge gated by a
+	   shared-CoV two-sample z-test (meanPriorDelta — observed headway is a MEAN, not a rate, so
+	   a proportion test would be invalid). Shown ONLY when the headway breakdown is windowed
+	   (headway_by_grain present) — the scalar whole-history rows carry no prior. Honest absence:
+	   no prior window → the neutral "no prior {window}" marker (never a fake 0); an insignificant
+	   jitter → "within noise" (neutral), never a coloured arrow (a RISING wait is the bad way). */
+	interface WaitCompareRow {
+		readonly key: string;
+		readonly label: string;
+		readonly observed: number | null;
+		readonly delta: PriorDelta;
+	}
+	const waitCompareRows = $derived<WaitCompareRow[]>(
+		mainRows
+			.filter((r) => r.observed != null)
+			// Index-suffix the key: when a route has only per-direction/weekend rows (no busiest-
+			// direction primary), mainRows falls back to those and `r.shift` is the bare base token
+			// (am_peak, …) shared across siblings — `${shift}-${i}` keeps the {#each} keys unique.
+			.map((r, i) => ({
+				key: `${r.shift}-${i}`,
+				label: shiftLabel(r),
+				observed: r.observed,
+				delta: meanPriorDelta(
+					r.observed,
+					r.observationCount,
+					r.priorObserved,
+					r.priorObservationCount,
+					{ cov: r.cov },
+				),
+			})),
+	);
+	const hasWaitCompare = $derived(wait.windowed && waitCompareRows.length > 0);
+	// "+0.8 min" / "-1.2 min" — ASCII sign (the no-em-dash gate forbids U+2014, not hyphen-minus).
+	const fmtMinDelta = (d: number): string => `${d > 0 ? '+' : ''}${d.toFixed(1)}${copy.units.min}`;
 
 	// §02 headway DUMBBELL (A8): ALL primary shifts in ONE comparable chart on the fixed
 	// HEADWAY_DOMAIN — scheduled ● —— ● observed, the connector span = the excess wait, so
@@ -395,6 +471,13 @@
 			})
 			.sort((a, b) => a.order - b.order);
 	});
+
+	// Tier-1 (telling-metrics): the single LARGEST inbound-vs-outbound wait gap, surfaced as an
+	// always-visible callout (promoted out of the buried per-direction reveal table). null on a
+	// symmetric line (nothing to flag) → no callout. Threshold lives in the selector.
+	const directionAsymmetry = $derived(
+		selectDirectionAsymmetry(directionRows, { dir0Label, dir1Label }),
+	);
 
 	// The headline excess-wait read, lifted to a prominent ExplainedMetricCard so the
 	// "extra wait over WHAT" baseline is ALWAYS visible beside the number (the operator's
@@ -554,12 +637,35 @@
 <!-- The (i) trigger MetricBullet renders beside the excess-wait headline label. -->
 {#snippet excessInfo()}{@render metricInfo('excessWait', terms.excessWait)}{/snippet}
 
-<section class="section" data-section="the-wait" aria-label={copy.sections.theWait.label}>
-	<header class="section-head">
-		<SectionLabel text={copy.sections.theWait.label} variant="station" />
-		<p class="section-question" data-slot="section-question">{copy.sections.theWait.question}</p>
-	</header>
+{#snippet waitCompareRow(row: WaitCompareRow)}
+	<li
+		class="compare-row"
+		data-slot="wait-compare-row"
+		data-prior={row.delta.hasPrior ? (row.delta.significant ? 'change' : 'noise') : 'absent'}
+	>
+		<span class="compare-label">{row.label}</span>
+		<span class="compare-value">{min(row.observed) ?? valueNoData}</span>
+		<DeltaStat
+			class="compare-delta"
+			delta={row.delta.significant ? row.delta.delta : null}
+			display={row.delta.significant && row.delta.delta != null
+				? fmtMinDelta(row.delta.delta)
+				: undefined}
+			context={row.delta.significant
+				? copy.priorDelta.vsPrior[win]
+				: row.delta.hasPrior
+					? copy.priorDelta.withinNoise
+					: copy.priorDelta.noPrior[win]}
+			ariaNoun={`${row.label} ${copy.priorDelta.waitNoun}`}
+		/>
+	</li>
+{/snippet}
 
+<CollapsibleSection
+	dataSection="the-wait"
+	eyebrow={copy.sections.theWait.label}
+	question={copy.sections.theWait.question}
+>
 	{#if wait.isEmpty && !hasSpan}
 		<!-- Honest empty: the styled honest-absence chip (says WHY), nothing to draw in either sub-block. -->
 		<div data-slot="the-wait-empty">
@@ -569,7 +675,7 @@
 		<!-- PRIMARY — the consolidated scheduled-vs-observed DUMBBELL (A8): ALL shifts in ONE chart
 		     on the fixed HEADWAY_DOMAIN, so the gap reads at a glance AND across the day. The
 		     <Chart> renders the honest-absence chip itself when no shift has both endpoints. -->
-		<div class="section-primary" data-slot="headway-dumbbell">
+		<div class="section-primary" data-slot="headway-dumbbell" data-card="primary">
 			<span class="label-with-info">
 				<SectionLabel text={t.headwaySection} variant="metric" />
 				{@render metricInfo('headway', t.headwaySection)}
@@ -580,6 +686,24 @@
 			     intuitive concept on the page, taught in rider language right under the chart. -->
 			<p class="bunching-help" data-slot="bunching-help">{terms.bunchingHelp}</p>
 		</div>
+
+		<!-- Tier-1 (telling-metrics): direction asymmetry — "the ride home can wait longer." Surfaced
+		     as an always-visible callout when a shift's two directions differ enough; the full per-
+		     direction table still lives in the Detail below for the breakdown. -->
+		{#if directionAsymmetry}
+			<div class="direction-callout" data-slot="direction-asymmetry">
+				<SectionLabel text={t.directionAsymmetryLabel} variant="metric" />
+				<p class="direction-callout__text">
+					{t.directionAsymmetry(
+						directionAsymmetry.shiftLabel,
+						directionAsymmetry.slowerLabel,
+						`${Math.round(directionAsymmetry.slowerMin)}${copy.units.min}`,
+						directionAsymmetry.fasterLabel,
+						`${Math.round(directionAsymmetry.fasterMin)}${copy.units.min}`,
+					)}
+				</p>
+			</div>
+		{/if}
 
 		<!-- DETAIL — excess-wait headline + per-shift breakdown + direction table + service span. -->
 		<Detail label={copy.sections.detailShow} labelOpen={copy.sections.detailHide}>
@@ -605,27 +729,45 @@
 					/>
 				{/if}
 
+				<!-- Wait by shift · vs the prior window (PR-WEB-3): the busiest-direction observed
+				     wait per shift with a significance-gated Δ-vs-prior badge. Windowed-only (the
+				     scalar whole-history headway carries no prior to compare). -->
+				{#if hasWaitCompare}
+					<div class="block" data-slot="wait-vs-prior" data-card>
+						<span class="label-with-info">
+							<SectionLabel text={copy.priorDelta.waitHeading} variant="metric" />
+							{@render metricInfo('headway', copy.priorDelta.waitHeading)}
+						</span>
+						<ul class="compare-list" data-slot="wait-compare">
+							{#each waitCompareRows as row (row.key)}{@render waitCompareRow(row)}{/each}
+						</ul>
+						<p class="compare-caption" data-slot="wait-vs-prior-caption">
+							{copy.priorDelta.caption}
+						</p>
+					</div>
+				{/if}
+
 				{#if shiftRows.length > 0}
 					<!-- S7 P5: the per-shift regularity breakdown as THREE cross-shift magnitude-bars
 					     charts (excess wait / spread (CoV) / bunching by shift) in am→night order — one
 					     clean comparison per metric, replacing the cramped per-shift row stack. Each
 					     <Chart> renders its own honest-absence chip when no shift carries that reading. -->
 					<div class="shift-charts" data-slot="shift-regularity-charts">
-						<div class="shift-chart" data-metric="excess">
+						<div class="shift-chart" data-metric="excess" data-card>
 							<span class="label-with-info">
 								<SectionLabel text={terms.excessWait} variant="metric" />
 								{@render metricInfo('excessWait', terms.excessWait)}
 							</span>
 							<Chart spec={excessBars} />
 						</div>
-						<div class="shift-chart" data-metric="cov">
+						<div class="shift-chart" data-metric="cov" data-card>
 							<span class="label-with-info">
 								<SectionLabel text={terms.spread} variant="metric" />
 								{@render metricInfo('regularityCov', terms.spread)}
 							</span>
 							<Chart spec={covBars} />
 						</div>
-						<div class="shift-chart" data-metric="bunched">
+						<div class="shift-chart" data-metric="bunched" data-card>
 							<span class="label-with-info">
 								<SectionLabel text={terms.clumped} variant="metric" />
 								{@render metricInfo('regularityCov', terms.clumped)}
@@ -688,7 +830,7 @@
 
 			<!-- Service-span sub-block, only when a signal-carrying day exists. -->
 			{#if hasSpan && latestSpan}
-				<div class="cluster-sub" data-sub="service-span">
+				<div class="cluster-sub" data-sub="service-span" data-card>
 					<div class="span-head">
 						<span class="label-with-info">
 							<SectionLabel text={t.spanSection} variant="metric" />
@@ -758,29 +900,37 @@
 			{/if}
 		</Detail>
 	{/if}
-</section>
+</CollapsibleSection>
 
 <style>
-	/* Section rhythm: generous BETWEEN-block air (research: within ≤ between), all on
-	   the 8px grid. The section owns its inner stack; the orchestrator owns the
-	   between-section gap. */
-	.section {
-		display: flex;
-		flex-direction: column;
-		gap: clamp(1.25rem, 3vw, 2rem);
-		width: 100%;
-	}
-	.section-head {
-		display: flex;
-		flex-direction: column;
-		gap: 0.5rem;
-	}
-
 	/* The always-visible PRIMARY dumbbell block + its label/info head. */
 	.section-primary {
 		display: flex;
 		flex-direction: column;
 		gap: 0.625rem;
+	}
+
+	/* Tier-1 direction-asymmetry callout — the "which way you go changes the wait" takeaway,
+	   in the same insight register as §1's takeaway (yellow overline + accent left-rule + a
+	   foreground sentence), distinct from the bordered data cards. */
+	.direction-callout {
+		display: flex;
+		flex-direction: column;
+		gap: 0.3rem;
+		max-width: 64ch;
+		padding-inline-start: 0.7rem;
+		border-inline-start: 3px solid var(--accent-text);
+	}
+	.direction-callout :global([data-slot='section-label']) {
+		color: var(--accent-text);
+	}
+	.direction-callout__text {
+		margin: 0;
+		font-size: var(--text-body);
+		line-height: 1.45;
+		font-weight: 500;
+		color: var(--foreground);
+		text-wrap: pretty;
 	}
 
 	.cluster-sub {
@@ -835,6 +985,56 @@
 	}
 	/* What the excess-wait magnitude encodes (0 = on schedule, not missing). */
 	.shift-caption {
+		margin: 0;
+		max-width: 52ch;
+		font-family: var(--font-mono);
+		font-size: var(--text-small);
+		line-height: 1.4;
+		color: var(--muted-foreground);
+	}
+	/* Wait-by-shift · vs-prior comparison (PR-WEB-3): a label | value | Δ-badge row list,
+	   mirroring the §1 on-time comparison. The label keeps a measure so the wait values align;
+	   the DeltaStat badge trails and wraps to its own line on a narrow phone. */
+	.block {
+		display: flex;
+		flex-direction: column;
+		gap: 0.5rem;
+	}
+	.compare-list {
+		display: flex;
+		flex-direction: column;
+		gap: 0.3rem;
+		margin: 0;
+		padding: 0;
+		list-style: none;
+	}
+	.compare-row {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: baseline;
+		gap: 0.25rem 0.6rem;
+		padding: 0.3rem 0;
+	}
+	.compare-row + .compare-row {
+		border-top: 1px solid color-mix(in oklab, var(--border) 60%, transparent);
+	}
+	.compare-label {
+		flex: 0 0 7rem;
+		min-width: 0;
+		font-family: var(--font-mono);
+		font-size: var(--text-small);
+		font-weight: 500;
+		color: var(--foreground);
+	}
+	.compare-value {
+		flex: 0 0 auto;
+		min-width: 3.25rem;
+		font-family: var(--font-mono);
+		font-size: var(--text-small);
+		font-variant-numeric: tabular-nums;
+		color: var(--foreground);
+	}
+	.compare-caption {
 		margin: 0;
 		max-width: 52ch;
 		font-family: var(--font-mono);

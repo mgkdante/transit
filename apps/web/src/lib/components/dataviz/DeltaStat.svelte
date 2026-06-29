@@ -56,9 +56,15 @@
 		return improvement ? 'var(--dataviz-status-on-time)' : 'var(--dataviz-severity-critical)';
 	});
 	const text = $derived(!hasDelta ? '' : (display ?? (delta! > 0 ? `+${delta}` : `${delta}`)));
+	// When there is no delta, a `context` carries the REASON (e.g. "within noise" / "no prior
+	// week") — fold it (+ noun) into the accessible name so assistive tech hears the localized
+	// distinction, never the bare, misleading "no change data" (which falsely reads as absent a
+	// real-but-insignificant change). No context → the plain no-data fallback (back-compat).
 	const ariaLabel = $derived(
 		!hasDelta
-			? 'no change data'
+			? context
+				? `${ariaNoun ? `${ariaNoun} ` : ''}${context}`
+				: 'no change data'
 			: `change ${text}${ariaNoun ? ` ${ariaNoun}` : ''}${context ? ` ${context}` : ''}`,
 	);
 </script>

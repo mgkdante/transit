@@ -16,6 +16,7 @@ const labels: PunctualityTrendLabels = {
 	pctUnit: '%',
 	minUnit: ' min',
 	shiftLabel: (g) => g.toUpperCase(),
+	shiftShort: (g) => g.slice(0, 2).toUpperCase(),
 };
 
 function vmWith(over: Partial<PunctualityVM>): PunctualityVM {
@@ -79,8 +80,9 @@ describe('selectPunctualityTrend — the granularity matrix', () => {
 		if (spec.kind !== 'trend') return;
 		expect(spec.xScale).toBe('band');
 		expect(spec.hasBand).toBe(false);
-		// Sorted into SHIFT_GRAIN_ORDER (am_peak < midday < pm_peak), x = the band label.
-		expect(spec.points.map((p) => p.x)).toEqual(['am_peak', 'midday', 'pm_peak']);
+		// Sorted into SHIFT_GRAIN_ORDER (am_peak < midday < pm_peak). x = the SHORT band tick label
+		// (shiftShort), xLabel = the FULL label (tooltip). Short keeps the 5 shifts from overlapping.
+		expect(spec.points.map((p) => p.x)).toEqual(['AM', 'MI', 'PM']);
 		expect(spec.points.map((p) => p.xLabel)).toEqual(['AM_PEAK', 'MIDDAY', 'PM_PEAK']);
 		expect(spec.points.map((p) => p.y)).toEqual([90, 88, 84]);
 		expect(spec.points.map((p) => p.y2)).toEqual([0.6, 1.0, 1.6]);

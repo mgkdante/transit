@@ -46,6 +46,18 @@ export interface WeakStopsResult {
 	shown: number;
 }
 
+const round1 = (x: number): number => Math.round(x * 10) / 10;
+
+// The bar encodes the SEVERE rate, but the contract's wilson_lo/hi bracket the COMPLEMENTARY
+// not-severe rate (not_severe = 100 − severe). Flip the interval onto the severe scale,
+// [100 − wilson_hi, 100 − wilson_lo], so the displayed CI (whisker + tooltip + sr-table) brackets
+// the bar's value honestly instead of sitting on the opposite end of the axis. Null on either
+// missing bound (honest absence). Width is preserved (the flip is just 100 − x).
+const severeCiLo = (w: WeakStop): number | null =>
+	w.wilson_lo != null && w.wilson_hi != null ? round1(100 - w.wilson_hi) : null;
+const severeCiHi = (w: WeakStop): number | null =>
+	w.wilson_lo != null && w.wilson_hi != null ? round1(100 - w.wilson_lo) : null;
+
 export interface WeakStopsOpts {
 	/**
 	 * True when `stops` is the windowed weak_stops_by_grain slice — already DB-ranked worst-first
@@ -99,8 +111,9 @@ export function selectWeakStops(
 					value: w.severe_pct ?? null,
 					severity: severeShareToSeverity(w.severe_pct ?? null),
 					n: w.observation_count ?? null,
-					wilsonLo: w.wilson_lo ?? null,
-					wilsonHi: w.wilson_hi ?? null,
+					// CI flipped onto the bar's (severe-rate) scale so it brackets the value (see helpers).
+					wilsonLo: severeCiLo(w),
+					wilsonHi: severeCiHi(w),
 					note: labels.note?.(w),
 					href: labels.stopHref(w.id),
 				}

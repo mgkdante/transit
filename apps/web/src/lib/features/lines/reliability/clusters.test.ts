@@ -138,9 +138,13 @@ describe('toReliabilityClusters — populated fixture', () => {
 		expect(c.strip.headwayRegularityCov).toBe(0.42);
 	});
 
-	it('takes the most-recent ramp-in rates (skipping a null-rate tail row)', () => {
+	it('POOLS the latest day ramp-in rate from its counts, falling back to the last published rate', () => {
 		const c = toReliabilityClusters(populated);
-		expect(c.strip.cancellationRatePct).toBe(2.4); // 06-18 had no rate → 06-17
+		// Cancellations: the latest day (06-18) carries counts (0 of 240 canceled) → the POOLED
+		// rate is its true 0%, not the older 06-17 rate (the pooled tile now matches its "X of Y").
+		expect(c.strip.cancellationRatePct).toBe(0);
+		// Skipped: the rows carry no stop_time_update_count denominator → no pooled rate, so it
+		// falls back to the most-recent published skipped_stop_rate_pct (06-18 = 1.1%).
 		expect(c.strip.skippedStopRatePct).toBe(1.1);
 	});
 
@@ -314,6 +318,44 @@ describe('toReliabilityClusters — date range', () => {
 		// Percentiles are not averageable across days → null on a multi-day range.
 		expect(c.strip.p50Min).toBeNull();
 		expect(c.strip.p90Min).toBeNull();
+	});
+
+	it('POOLS a multi-day range by denominator, not a mean of daily rates (H1/H2)', () => {
+		// A tiny 50%-day (n=100) beside a huge 90%-day (n=10000): the mean-of-rates = 70%, but the
+		// POOLED rate = (50+9000)/(100+10000) = 89.6% → 90. The §0 verdict's Wilson CI is built from
+		// these same pooled counts, so the headline BAN must equal the pooled rate (it must never
+		// fall outside its own CI). Avg delay is observation-count-WEIGHTED the same way.
+		const data: RouteReliability = {
+			generated_utc: utc('2026-06-22T02:00:00Z'),
+			id: '51',
+			periods: [
+				{
+					grain: 'day',
+					date: '2026-06-20',
+					otp_pct: 50,
+					observation_count: 100,
+					on_time: 50,
+					avg_delay_min: 4,
+				},
+				{
+					grain: 'day',
+					date: '2026-06-21',
+					otp_pct: 90,
+					observation_count: 10000,
+					on_time: 9000,
+					avg_delay_min: 1,
+				},
+			],
+		};
+		const c = toReliabilityClusters(data, {
+			grain: 'day',
+			dateRange: { start: '2026-06-20', end: '2026-06-21' },
+		});
+		expect(c.strip.otpPct).toBe(90); // POOLED, not the 70 mean-of-rates
+		expect(c.strip.avgDelayMin).toBeCloseTo(1.0, 1); // observation-weighted, not the 2.5 mean
+		// The headline carries the additive numerator/denominator the verdict CI pools from.
+		expect(c.punctuality.headline.observationCount).toBe(10100);
+		expect(c.punctuality.headline.onTime).toBe(9050);
 	});
 
 	it('carries the aggregate metadata (day count + bounds) for a multi-day range', () => {
@@ -699,8 +741,26 @@ describe('toReliabilityClusters — *_by_grain windowable §1/§2/§4 (S7-B)', (
 		periods_by_grain: [
 			{
 				grain: 'week',
-				by_shift: [{ grain: 'am_peak', otp_pct: 80, observation_count: 200 }],
-				by_daytype: [{ grain: 'weekday', otp_pct: 81, observation_count: 200 }],
+				by_shift: [
+					{
+						grain: 'am_peak',
+						otp_pct: 80,
+						observation_count: 200,
+						on_time: 160,
+						prior_otp_pct: 74,
+						prior_observation_count: 210,
+					},
+				],
+				by_daytype: [
+					{
+						grain: 'weekday',
+						otp_pct: 81,
+						observation_count: 200,
+						on_time: 162,
+						prior_otp_pct: 80,
+						prior_observation_count: 210,
+					},
+				],
 				day_of_week: [
 					{ day_of_week_iso: 1, avg_delay_min: 2, severe_pct: 2, observation_count: 200 },
 				],
@@ -757,9 +817,26 @@ describe('toReliabilityClusters — *_by_grain windowable §1/§2/§4 (S7-B)', (
 		expect(c.punctuality.peakOffPeak.byShift[0]?.otpPct).toBe(80);
 		expect(c.punctuality.peakOffPeak.byDayType[0]?.otpPct).toBe(81);
 		expect(c.punctuality.byShiftDaytype[0]?.otp_pct).toBe(82);
-		// §2 reads the windowed headway; §1 heatmap the windowed habits
+		// §2 reads the windowed headway; the §1 heatmap is GRAIN-INVARIANT (operator decision) — it
+		// ALWAYS reads the whole-history habits, NEVER the windowed slice, so the windowed [[0.3]] is
+		// ignored and the scalar [[0.9]] is used even at grain='week'.
 		expect(c.waitRegularity.headway[0]?.observed_min).toBe(7);
-		expect(c.habits.matrix).toEqual([[0.3]]);
+		expect(c.habits.matrix).toEqual([[0.9]]);
+	});
+
+	it('threads the prior-window comparison fields through to peakOffPeak (PR-WEB-3)', () => {
+		const c = toReliabilityClusters(windowed, { grain: 'week' });
+		const am = c.punctuality.peakOffPeak.byShift[0];
+		expect(am?.observationCount).toBe(200);
+		expect(am?.onTime).toBe(160);
+		expect(am?.priorOtpPct).toBe(74);
+		expect(am?.priorObservationCount).toBe(210);
+		const wd = c.punctuality.peakOffPeak.byDayType[0];
+		expect(wd?.priorOtpPct).toBe(80);
+		expect(wd?.priorObservationCount).toBe(210);
+		// the scalar (non-windowed) fallback carries no prior — honest absence, nothing to compare.
+		const day = toReliabilityClusters(windowed, { grain: 'day' });
+		expect(day.punctuality.peakOffPeak.byShift[0]?.priorOtpPct ?? null).toBeNull();
 	});
 
 	it('keeps a null-avg AND a <=0-avg worst stop, gated on observation_count not avg (§4)', () => {
@@ -780,20 +857,29 @@ describe('toReliabilityClusters — *_by_grain windowable §1/§2/§4 (S7-B)', (
 		expect(c.waitRegularity.windowed).toBe(false);
 		expect(c.punctuality.dayOfWeek[0]?.avg_delay_min).toBe(9); // scalar
 		expect(c.waitRegularity.headway[0]?.observed_min).toBe(9); // scalar
-		expect(c.habits.matrix).toEqual([[0.9]]); // scalar
+		// The heatmap is GRAIN-INVARIANT (operator decision): it always reads the whole-history scalar
+		// matrix ([[0.9]]) at every grain, never a windowed slice — so day grain reads scalar too.
+		expect(c.habits.matrix).toEqual([[0.9]]);
 		expect(c.punctuality.weakStops.map((w) => w.id)).toEqual(['scalar-stop']); // scalar (avg-gated)
 	});
 
-	it('a present-but-null windowed habits entry reads honest-empty, NOT the scalar matrix', () => {
-		const nullHabits: RouteReliability = {
+	it('ignores habits_by_grain entirely — the heatmap is grain-invariant (always the scalar matrix)', () => {
+		const gi: RouteReliability = {
 			generated_utc: utc('2026-06-19T02:00:00Z'),
 			id: '51',
-			habits: { scale: 'repeat_problem_relative', matrix: [[0.9]] }, // scalar non-null
-			habits_by_grain: [{ grain: 'week', habits: null }], // windowed: no cell cleared MIN_N
+			habits: { scale: 'repeat_problem_relative', matrix: [[0.9]] }, // whole-history scalar
+			// A DISTINCT windowed 'week' matrix that must be IGNORED (grain-invariance), plus a null
+			// 'month' entry that must NOT zero the heatmap (it reads the scalar regardless).
+			habits_by_grain: [
+				{ grain: 'week', habits: { scale: 'repeat_problem_relative', matrix: [[0.3]] } },
+				{ grain: 'month', habits: null },
+			],
 		};
-		const c = toReliabilityClusters(nullHabits, { grain: 'week' });
-		expect(c.habits.isEmpty).toBe(true);
-		expect(c.habits.matrix).toEqual([]); // NOT the scalar [[0.9]]
+		for (const grain of ['day', 'week', 'month'] as const) {
+			const c = toReliabilityClusters(gi, { grain });
+			expect(c.habits.matrix).toEqual([[0.9]]); // the scalar, never the windowed [[0.3]] / null
+			expect(c.habits.isEmpty).toBe(false);
+		}
 	});
 
 	it('absent *_by_grain (pre-deploy) → all windowed flags false (regression guard)', () => {

@@ -272,24 +272,43 @@ const multiDay: RouteReliability = {
 	],
 };
 
-describe('RouteReliabilityClusters — mobile control collapse (S7)', () => {
-	it('renders a summary toggle that flips aria-expanded + the open class', async () => {
+describe('RouteReliabilityClusters — mobile floating pills (S7)', () => {
+	it('renders the grain filter pill (labelled by the active window) + the section jump-to pill', () => {
 		const { container } = render(RouteReliabilityClusters, {
 			props: { data: populated, locale: 'en' },
 		});
-		const toggle = container.querySelector('[data-slot="controls-toggle"]') as HTMLButtonElement;
-		const body = container.querySelector('[data-slot="controls-body"]') as HTMLElement;
-		expect(toggle).not.toBeNull();
-		expect(body).not.toBeNull();
-		// Collapsed by default (the mobile media query hides the body until opened).
-		expect(toggle.getAttribute('aria-expanded')).toBe('false');
-		expect(body.classList.contains('reliability-control-body--open')).toBe(false);
-		// The summary names the active window so a collapsed mobile rail still shows it.
-		expect(toggle.textContent).toContain(copy.controls.today);
+		// The grain FILTER pill replaces the old collapse toggle on mobile.
+		const filterPill = container.querySelector(
+			'[data-testid="reliability-filter-pill"]',
+		) as HTMLElement;
+		expect(filterPill).not.toBeNull();
+		// It is labelled with the active window (default 'day' → Today).
+		expect(filterPill.textContent).toContain(copy.controls.today);
+		// The grain controls live in the pill DRAWER (closed by default → not rendered yet).
+		expect(container.querySelector('[data-testid="reliability-filter-drawer"]')).toBeNull();
 
-		await fireEvent.click(toggle);
-		expect(toggle.getAttribute('aria-expanded')).toBe('true');
-		expect(body.classList.contains('reliability-control-body--open')).toBe(true);
+		// The section JUMP-TO rides the shared TocPill.
+		expect(container.querySelector('[data-testid="toc-pill"]')).not.toBeNull();
+
+		// The old collapse toggle is gone.
+		expect(container.querySelector('[data-slot="controls-toggle"]')).toBeNull();
+	});
+
+	it('opens the filter drawer with the grain controls on tap', async () => {
+		const { container } = render(RouteReliabilityClusters, {
+			props: { data: populated, locale: 'en' },
+		});
+		const pillBtn = container.querySelector(
+			'[data-testid="reliability-filter-pill"] button',
+		) as HTMLButtonElement;
+		await fireEvent.click(pillBtn);
+		expect(pillBtn.getAttribute('aria-expanded')).toBe('true');
+		// The drawer now renders the grain controls (a second active-window readout appears).
+		const drawer = container.querySelector(
+			'[data-testid="reliability-filter-drawer"]',
+		) as HTMLElement;
+		expect(drawer).not.toBeNull();
+		expect(drawer.querySelector('[data-slot="active-window"]')).not.toBeNull();
 	});
 });
 

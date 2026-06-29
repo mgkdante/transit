@@ -48,34 +48,10 @@ export type { BulletKpiProps } from './BulletKpi.svelte';
 export { default as ExplainedMetricCard } from './ExplainedMetricCard.svelte';
 export type { ExplainedMetricCardProps } from './ExplainedMetricCard.svelte';
 
-// Distribution / deviation / discrete-outcome marks (slice-S3).
-export { default as StripPlot } from './StripPlot.svelte';
-export type { StripPlotProps, StripPlotRow } from './StripPlot.svelte';
-
-export { default as DivergingBar } from './DivergingBar.svelte';
-export type { DivergingBarProps } from './DivergingBar.svelte';
-
 // Service-span first→last departure timeline (slice-S7 P3): a horizontal bar on a
 // FIXED 24h domain + signed first/last-trip punctuality markers on DELAY_STOP_DOMAIN.
 export { default as ServiceSpanTimeline } from './ServiceSpanTimeline.svelte';
 export type { ServiceSpanTimelineProps } from './ServiceSpanTimeline.svelte';
-
-// Scheduled-vs-observed headway dumbbell (slice-S7 P8): two value ticks joined by an
-// excess-wait span on a FIXED headway-minute domain (e.g. HEADWAY_DOMAIN). Calm dataviz
-// tokens (scheduled blue / observed amber) + glyph + aria; honest absence when empty.
-export { default as Dumbbell } from './Dumbbell.svelte';
-export type { DumbbellProps } from './Dumbbell.svelte';
-
-// Weekday-seasonality cycle plot (slice-S7 P7): seven Mon→Sun panels on ONE fixed
-// y-axis, each a mini across-weeks time-series with a per-panel horizontal MEAN line.
-// Degrades to a single fixed-domain magnitude bar per weekday when the contract carries
-// one value per weekday (no across-weeks series). Severe-share second mark (gated n≥5) +
-// a visible n=; calm dataviz tokens + glyph + aria; honest absence when empty.
-export { default as CyclePlot } from './CyclePlot.svelte';
-export type { CyclePlotProps, CyclePlotPanel } from './CyclePlot.svelte';
-
-export { default as IconArray } from './IconArray.svelte';
-export type { IconArrayProps, IconArraySegment } from './IconArray.svelte';
 
 export { default as ChartTooltip } from './ChartTooltip.svelte';
 export type { ChartTooltipProps } from './ChartTooltip.svelte';

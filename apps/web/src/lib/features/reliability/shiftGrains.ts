@@ -147,9 +147,24 @@ export const DAY_TYPE_LABELS: Record<DayTypeGrain, Record<Locale, string>> = {
 	weekend: { fr: 'Fin de semaine', en: 'Weekend' },
 };
 
+/** SHORT shift labels for crowded CARTESIAN x-axes (the trend + crosstab plot 5 shifts across a
+ *  narrow plot, where "AM peak"/"Midday"/… overlap on a phone). The full label rides the tooltip. */
+export const SHIFT_LABELS_SHORT: Record<ShiftGrain, Record<Locale, string>> = {
+	am_peak: { fr: 'AM', en: 'AM' },
+	midday: { fr: 'Jour', en: 'Mid' },
+	pm_peak: { fr: 'PM', en: 'PM' },
+	evening: { fr: 'Soir', en: 'Eve' },
+	night: { fr: 'Nuit', en: 'Night' },
+};
+
 /** Localized label for a shift grain; an unknown grain falls back to its raw token. */
 export function shiftLabel(grain: string, locale: Locale): string {
 	return isShiftGrain(grain) ? SHIFT_LABELS[grain][locale] : grain;
+}
+
+/** SHORT localized shift label (for x-axis ticks); unknown grain falls back to its raw token. */
+export function shiftLabelShort(grain: string, locale: Locale): string {
+	return isShiftGrain(grain) ? SHIFT_LABELS_SHORT[grain][locale] : grain;
 }
 
 /** Localized label for a day-type grain; an unknown grain falls back to its raw token. */

@@ -32,7 +32,8 @@
 	import { fmtPct } from '$lib/utils';
 	import type { SeverityCode } from '$lib/v1/schemas';
 	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
-	import { ChartLegend } from '$lib/components/dataviz';
+	import CollapsibleSection from './CollapsibleSection.svelte';
+	import { ChartLegend, DeltaStat } from '$lib/components/dataviz';
 	import { Chart } from '$lib/components/dataviz/chart';
 	import { AbsentValue } from '$lib/components/edge';
 	import Detail from '$lib/components/shared/Detail.svelte';
@@ -41,14 +42,18 @@
 	import { metricsCopy } from '$lib/features/metrics/metrics.copy';
 	import {
 		shiftLabel as shiftGrainLabel,
+		shiftLabelShort as shiftGrainLabelShort,
 		severeShareToSeverity,
 		DAY_TYPE_GRAIN_ORDER,
+		SHIFT_GRAIN_ORDER,
 		SEVERE_DOMAIN,
 	} from '$lib/features/reliability/shiftGrains';
 	import { selectPunctualityTimeOfDay } from '../selectors/punctualityTimeOfDay';
+	import { proportionPriorDelta, type PriorDelta } from '../selectors/priorDelta';
 	import { selectPunctualityCrosstab } from '../selectors/punctualityCrosstab';
 	import { selectWeekdayCycle } from '../selectors/weekdayCycle';
 	import { selectHabitsHeatmap } from '../selectors/habitsHeatmap';
+	import { selectBestTimeInsight } from '../selectors/bestTimeInsight';
 	import { selectShiftBars } from '../selectors/shiftBars';
 	import type { PunctualityVM, HabitsVM, PeriodComparisonRow } from '../clusters';
 	import type { ReliabilityCopy } from '../reliability.copy';
@@ -63,10 +68,20 @@
 		locale: Locale;
 		/** The co-located reliability copy bundle for this locale. */
 		copy: ReliabilityCopy;
+		/**
+		 * Active window (day|week|month|range) — names the "vs prior {window}" comparison phrase.
+		 * The §1 breakdowns themselves re-shape on this window via the mapper (periods_by_grain);
+		 * `range` reads the day-anchored windowed breakdown, so it borrows the 'day' phrasing.
+		 */
+		mode?: 'day' | 'week' | 'month' | 'range';
 	}
-	let { punctuality, habits, locale, copy }: Section1WhenToRideProps = $props();
+	let { punctuality, habits, locale, copy, mode = 'day' }: Section1WhenToRideProps = $props();
 
 	const band = $derived(habitsBandCopy[locale]);
+	// Resolved window grain for the comparison phrasing (a custom range reads the day window).
+	const win = $derived<'day' | 'week' | 'month'>(
+		mode === 'week' || mode === 'month' ? mode : 'day',
+	);
 
 	// Honest absence → null; never a fabricated 0. Shared formatter for severe %.
 	const pct = (v: number | null | undefined): string | null => fmtPct(v);
@@ -95,6 +110,22 @@
 
 	// Full day names in heatmap ROW order (Mon..Sun) for the tooltip heading + table.
 	const fullDayLabels = $derived(band.weekdays.slice(1));
+
+	// §1 takeaway SENTENCE (the verdict the section earmarks): the line's worst repeat-problem
+	// window + its calmest weekday, read straight off the matrix so a rider gets "when to avoid /
+	// when it's fine" without decoding the grid. Worded RELATIVE to the line (its own peak hour).
+	const bestTime = $derived(
+		selectBestTimeInsight(habits, {
+			fullRowLabels: fullDayLabels,
+			hourLabel: (h) => `${String(h).padStart(2, '0')}:00`,
+		}),
+	);
+	const bestTimeText = $derived(
+		bestTime
+			? band.bestTime.lead(bestTime.worstDayLabel, bestTime.worstHourLabel) +
+					(bestTime.calmDayIdx >= 0 ? band.bestTime.calm(bestTime.calmDayLabel) : '')
+			: null,
+	);
 
 	const heatmapSpec = $derived(
 		selectHabitsHeatmap(habits, locale, {
@@ -236,6 +267,51 @@
 		!punctuality.peakOffPeak.isEmpty && (hasShiftStrip || dayTypePeakRows.length > 0),
 	);
 
+	/* ── DETAIL — on-time by time of day · vs prior {window} (PR-WEB-3) ──────────
+	   The per-shift + weekday/weekend ON-TIME rate the windowed breakdowns carry, each with
+	   a Δ-vs-prior badge gated on a two-proportion z-test (proportionPriorDelta). Shown ONLY
+	   when the §1 breakdowns are windowed (periods_by_grain present) — the scalar whole-history
+	   rows carry no prior, so there is nothing to compare. Honest absence: a row with no prior
+	   window shows the neutral "no prior {window}" marker (never a fake 0); a real-but-
+	   insignificant swing reads "within noise" (neutral), never a coloured arrow. */
+	interface OnTimeRow {
+		readonly key: string;
+		readonly label: string;
+		readonly otpPct: number | null;
+		readonly delta: PriorDelta;
+	}
+	const toOnTimeRow = (r: PeriodComparisonRow, label: (g: string) => string): OnTimeRow => ({
+		key: r.grain,
+		label: label(r.grain),
+		otpPct: r.otpPct,
+		delta: proportionPriorDelta(
+			r.otpPct,
+			r.observationCount,
+			r.priorOtpPct,
+			r.priorObservationCount,
+			{ onTime: r.onTime },
+		),
+	});
+	const onTimeShiftRows = $derived(
+		orderByGrain(
+			punctuality.peakOffPeak.byShift.filter((r) => r.otpPct != null),
+			SHIFT_GRAIN_ORDER as readonly string[],
+		).map((r) => toOnTimeRow(r, shiftLabel)),
+	);
+	const onTimeDayTypeRows = $derived(
+		orderByGrain(punctuality.peakOffPeak.byDayType, DAY_TYPE_GRAIN_ORDER)
+			.filter((r) => r.otpPct != null)
+			.map((r) => toOnTimeRow(r, dayTypeLabel)),
+	);
+	// Gate on `windowed`: only the windowed breakdowns carry a prior to compare against.
+	const hasOnTimeCompare = $derived(
+		punctuality.windowed && (onTimeShiftRows.length > 0 || onTimeDayTypeRows.length > 0),
+	);
+	// "+5 pts" / "-3 pts" / "+1 pt" — ASCII sign (the no-em-dash gate forbids U+2014, not the
+	// hyphen-minus); singular unit on a ±1 move.
+	const fmtPts = (d: number): string =>
+		`${d > 0 ? '+' : ''}${d} ${Math.abs(d) === 1 ? copy.priorDelta.ptOne : copy.priorDelta.pts}`;
+
 	/* ── DETAIL — by shift and day type (G1) — TWO LINES (S7 convergence) ─────
 	   The Tier-3 OTP crosstab is the cohesive line language: weekday vs weekend
 	   on-time % across the day's shifts on the fixed OTP_DOMAIN. A cell below
@@ -246,7 +322,9 @@
 			title: copy.crosstab.heading,
 			xLabel: copy.crosstab.shiftHeader,
 			yLabel: copy.strip.otpPct,
-			shiftLabel: (s) => shiftGrainLabel(s, locale),
+			// SHORT shift labels on the crosstab x-axis (5 shifts across a narrow plot overlap on a
+			// phone with the full "AM peak"/… labels); the lines' series carry the day-type identity.
+			shiftLabel: (s) => shiftGrainLabelShort(s, locale),
 			weekdayLabel: copy.peak.weekday,
 			weekendLabel: copy.peak.weekend,
 		}),
@@ -284,14 +362,36 @@
 	/>
 {/snippet}
 
-<section class="section" data-section="when-to-ride" aria-label={copy.sections.whenToRide.label}>
-	<header class="section-head">
-		<SectionLabel text={copy.sections.whenToRide.label} variant="station" />
-		<p class="section-question" data-slot="section-question">
-			{copy.sections.whenToRide.question}
-		</p>
-	</header>
+{#snippet onTimeCompareRow(row: OnTimeRow)}
+	<li
+		class="compare-row"
+		data-slot="on-time-compare-row"
+		data-prior={row.delta.hasPrior ? (row.delta.significant ? 'change' : 'noise') : 'absent'}
+	>
+		<span class="compare-label">{row.label}</span>
+		<span class="compare-value">{pct(row.otpPct) ?? copy.strip.noData}</span>
+		<DeltaStat
+			class="compare-delta"
+			delta={row.delta.significant ? row.delta.delta : null}
+			display={row.delta.significant && row.delta.delta != null
+				? fmtPts(row.delta.delta)
+				: undefined}
+			higherIsBetter
+			context={row.delta.significant
+				? copy.priorDelta.vsPrior[win]
+				: row.delta.hasPrior
+					? copy.priorDelta.withinNoise
+					: copy.priorDelta.noPrior[win]}
+			ariaNoun={`${row.label} ${copy.priorDelta.onTimeNoun}`}
+		/>
+	</li>
+{/snippet}
 
+<CollapsibleSection
+	dataSection="when-to-ride"
+	eyebrow={copy.sections.whenToRide.label}
+	question={copy.sections.whenToRide.question}
+>
 	{#if sectionEmpty}
 		<div data-slot="when-to-ride-empty">
 			<AbsentValue variant="block" reason="no-observations" {locale} />
@@ -299,11 +399,24 @@
 	{:else}
 		<!-- PRIMARY — the 7×24 repeat-problems heatmap (always visible). -->
 		{#if hasHeatmap}
-			<div class="section-primary" data-slot="habits-heatmap">
+			<div class="section-primary" data-slot="habits-heatmap" data-card="primary">
 				<span class="label-with-info">
 					<SectionLabel text={band.heatmapHeading} variant="metric" />
 					{@render metricInfo('habits', band.heatmapHeading)}
 				</span>
+				<!-- Tier-1 takeaway (the verdict SENTENCE the section earmarks): names the line's worst
+				     repeat-problem window + calmest weekday, so the rider gets the answer before reading
+				     the grid. Worded relative to the line itself. -->
+				{#if bestTimeText}
+					<p class="heatmap-insight" data-slot="best-time-insight">{bestTimeText}</p>
+				{/if}
+				<!-- Operator: "today and this week look the same — explain why." The heatmap reads the
+					     FULL history (grain-invariant), so it is identical whichever window the rail is on.
+					     State it plainly right under the title (∞ ties back to the section's scope glyph). -->
+				<p class="heatmap-window-note" data-slot="heatmap-window-note">
+					<span class="heatmap-window-note__glyph" aria-hidden="true">∞</span>
+					{band.heatmapWindowNote}
+				</p>
 				<div class="habits-heatmap">
 					<Chart spec={heatmapSpec} />
 				</div>
@@ -314,9 +427,26 @@
 
 		<!-- DETAIL — the time-of-day + weekday analyst reads, one disclosure level deep. -->
 		<Detail label={copy.sections.detailShow} labelOpen={copy.sections.detailHide}>
+			<!-- On-time by time of day · vs the prior window (PR-WEB-3): each shift + day-type's
+			     on-time rate with a significance-gated Δ-vs-prior badge. Shown only when the
+			     breakdowns are windowed (else there is no prior to compare against). -->
+			{#if hasOnTimeCompare}
+				<div class="block" data-slot="on-time-vs-prior" data-card>
+					<span class="label-with-info">
+						<SectionLabel text={copy.priorDelta.onTimeHeading} variant="metric" />
+						{@render metricInfo('otp', copy.priorDelta.onTimeHeading)}
+					</span>
+					<ul class="compare-list" data-slot="on-time-compare">
+						{#each onTimeShiftRows as row (row.key)}{@render onTimeCompareRow(row)}{/each}
+						{#each onTimeDayTypeRows as row (row.key)}{@render onTimeCompareRow(row)}{/each}
+					</ul>
+					<p class="caption" data-slot="on-time-vs-prior-caption">{copy.priorDelta.caption}</p>
+				</div>
+			{/if}
+
 			<!-- By time of day (A1): the per-shift severe-share dot-strip + weekday/weekend split. -->
 			{#if hasPeak}
-				<div class="block" data-slot="peak-off-peak">
+				<div class="block" data-slot="peak-off-peak" data-card>
 					<span class="label-with-info">
 						<SectionLabel text={copy.peak.heading} variant="metric" />
 						{@render metricInfo('severe', copy.peak.heading)}
@@ -350,7 +480,7 @@
 
 			<!-- By shift and day type (G1): weekday vs weekend OTP across shifts as TWO lines. -->
 			{#if crosstabLines.hasData}
-				<div class="block" data-slot="shift-daytype-crosstab">
+				<div class="block" data-slot="shift-daytype-crosstab" data-card>
 					<span class="label-with-info">
 						<SectionLabel text={copy.crosstab.heading} variant="metric" />
 						{@render metricInfo('otp', copy.crosstab.heading)}
@@ -362,7 +492,7 @@
 
 			<!-- Weekday seasonality: mean delay per weekday (Mon→Sun) as ONE line. -->
 			{#if hasWeekday}
-				<div class="block" data-slot="habits-weekday">
+				<div class="block" data-slot="habits-weekday" data-card>
 					<span class="label-with-info">
 						<SectionLabel text={band.weekdayHeading} variant="metric" />
 						{@render metricInfo('seasonality', band.weekdayHeading)}
@@ -373,42 +503,21 @@
 			{/if}
 		</Detail>
 	{/if}
-</section>
+</CollapsibleSection>
 
 <style>
-	/* Section rhythm: generous BETWEEN-block air (research: within ≤ between), all
-	   on the 8px grid. The section owns its inner stack; the orchestrator owns the
-	   between-section gap. */
-	.section {
-		display: flex;
-		flex-direction: column;
-		gap: clamp(1.25rem, 3vw, 2rem);
-		width: 100%;
-	}
-	.section-head {
-		display: flex;
-		flex-direction: column;
-		gap: 0.5rem;
-	}
-
 	.section-primary,
 	.block {
 		display: flex;
 		flex-direction: column;
 		gap: 0.75rem;
 	}
-	/* Mobile/360px hardening: keep the 7×24 heatmap inside its subsection at narrow
-	   widths; a dense matrix may scroll horizontally rather than overflow the card.
-	   `:global` reaches the Heatmap wrapper rendered via the `habits-heatmap` class. */
+	/* Mobile/360px hardening: keep the 7×24 heatmap inside its subsection at narrow widths.
+	   The HORIZONTAL scroll + the FROZEN day-label gutter now live INSIDE the mark (ScrollFrame),
+	   so the wrapper only bounds the width — it must NOT add its own overflow-x (that would double-
+	   scroll) nor force `svg { min-width }` (that would stretch the frozen gutter SVG too). */
 	.section-primary :global(.habits-heatmap) {
 		max-width: 100%;
-		overflow-x: auto;
-	}
-	/* The inner SVG is width:100%, so without a floor it squishes 24 hour-columns into a
-	   ~380px phone (≈13px cells, colliding ticks, sub-target taps). Give it an intrinsic
-	   min width so it OVERFLOWS the scroller above instead — legible cells, swipe to read. */
-	.section-primary :global(.habits-heatmap svg) {
-		min-width: 30rem;
 	}
 	/* A heading + its explainer (i), kept centred on the label. The label keeps a
 	   measure (min-width:0) so a long heading wraps cleanly; the (i) wrapper never
@@ -433,6 +542,40 @@
 		line-height: 1.4;
 		color: var(--muted-foreground);
 	}
+	/* "Why does Today look like This week?" note (operator). Reads at FOREGROUND weight (not
+	   a quiet caption) so it is actually noticed — it answers a real confusion. The ∞ glyph
+	   ties it to the section TOC's full-history scope mark. */
+	.heatmap-window-note {
+		display: flex;
+		align-items: baseline;
+		gap: 0.4rem;
+		margin: 0;
+		max-width: 60ch;
+		font-family: var(--font-mono);
+		font-size: var(--text-small);
+		line-height: 1.4;
+		color: var(--foreground);
+	}
+	.heatmap-window-note__glyph {
+		flex: none;
+		font-size: var(--text-body);
+		line-height: 1;
+		color: var(--accent-text);
+	}
+	/* §1 takeaway sentence — the lead "when to avoid / when it's fine" verdict. Reads stronger
+	   than the quiet captions (foreground, medium weight, body size) so the eye catches the
+	   answer first; a thin accent rule marks it as the section's insight. */
+	.heatmap-insight {
+		margin: 0;
+		max-width: 60ch;
+		padding-inline-start: 0.7rem;
+		border-inline-start: 3px solid var(--accent-text);
+		font-size: var(--text-body);
+		line-height: 1.45;
+		font-weight: 500;
+		color: var(--foreground);
+		text-wrap: pretty;
+	}
 	.peak-daytype {
 		display: flex;
 		flex-direction: column;
@@ -444,5 +587,42 @@
 		display: flex;
 		flex-direction: column;
 		gap: 0.5rem;
+	}
+	/* On-time-by-time-of-day · vs-prior comparison (PR-WEB-3): a label | value | Δ-badge row
+	   list. The label keeps a fixed measure so the on-time values align in a column; the Δ
+	   badge (DeltaStat) trails and wraps to its own line on a narrow phone. */
+	.compare-list {
+		display: flex;
+		flex-direction: column;
+		gap: 0.3rem;
+		margin: 0;
+		padding: 0;
+		list-style: none;
+	}
+	.compare-row {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: baseline;
+		gap: 0.25rem 0.6rem;
+		padding: 0.3rem 0;
+	}
+	.compare-row + .compare-row {
+		border-top: 1px solid color-mix(in oklab, var(--border) 60%, transparent);
+	}
+	.compare-label {
+		flex: 0 0 7rem;
+		min-width: 0;
+		font-family: var(--font-mono);
+		font-size: var(--text-small);
+		font-weight: 500;
+		color: var(--foreground);
+	}
+	.compare-value {
+		flex: 0 0 auto;
+		min-width: 2.75rem;
+		font-family: var(--font-mono);
+		font-size: var(--text-small);
+		font-variant-numeric: tabular-nums;
+		color: var(--foreground);
 	}
 </style>

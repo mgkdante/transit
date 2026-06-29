@@ -94,10 +94,32 @@ export function selectVerdict(
 	if (otp == null) return { status: 'absent', ban: null, sentence: v.absent };
 
 	const otpInt = Math.round(otp);
-	const onTen = Math.round(otp / 10);
-	const lateTen = Math.max(0, 10 - onTen);
-	const band = bandOf(otp);
 	const n = headline.observationCount;
+	// Two-sided natural frequency. Derived from the REAL counts when available, and NEVER letting a
+	// side read 0-in-10 unless its true count is genuinely 0 — rounding 96% to "10 in 10 on time, 0
+	// in 10 late" fabricated a zero for ~1000 actually-late trips. When the counts are absent
+	// (pre-republish), fall back to the rounded otp (the old behaviour, only ever hit with no n).
+	let onTen: number;
+	let lateTen: number;
+	if (n != null && n > 0 && headline.onTime != null) {
+		const on = headline.onTime;
+		const late = Math.max(0, n - on);
+		if (on === 0) {
+			onTen = 0;
+			lateTen = 10;
+		} else if (late === 0) {
+			onTen = 10;
+			lateTen = 0;
+		} else {
+			// Both sides have real trips → each floors at 1 (so neither narrates a fabricated 0).
+			lateTen = Math.min(9, Math.max(1, Math.round((late / n) * 10)));
+			onTen = 10 - lateTen;
+		}
+	} else {
+		onTen = Math.round(otp / 10);
+		lateTen = Math.max(0, 10 - onTen);
+	}
+	const band = bandOf(otp);
 
 	// No denominator yet (pre-republish) → the band sentence WITHOUT a Wilson hedge or n.
 	if (n == null || n <= 0) {
@@ -117,8 +139,10 @@ export function selectVerdict(
 	const loPct = Math.round(lo * 100);
 	const hiPct = Math.round(hi * 100);
 
-	// The interval is too wide to commit to a band — hedge as tentative.
-	if (hi - lo >= VERDICT_WIDE_CI) {
+	// Hedge as tentative when the interval is too wide to commit to a band, OR when the Wilson CI
+	// STRADDLES a band boundary (the true rate could honestly fall either side of the 80/60 line) —
+	// asserting a confident band there would overstate what the sample supports.
+	if (hi - lo >= VERDICT_WIDE_CI || bandOf(loPct) !== bandOf(hiPct)) {
 		return {
 			status: 'tentative',
 			ban: `${otpInt}%`,

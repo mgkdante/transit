@@ -23,6 +23,7 @@
 	import type { Locale } from '$lib/i18n';
 	import { fmtDelayMin, fmtPct } from '$lib/utils';
 	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
+	import CollapsibleSection from './CollapsibleSection.svelte';
 	import { Chart } from '$lib/components/dataviz/chart';
 	import { MaybeValue } from '$lib/components/edge';
 	import Detail from '$lib/components/shared/Detail.svelte';
@@ -33,9 +34,10 @@
 	import { metricsCopy } from '$lib/features/metrics/metrics.copy';
 	import {
 		shiftLabel as shiftGrainLabel,
+		shiftLabelShort as shiftGrainLabelShort,
 		SEVERE_DOMAIN,
 		OTP_DOMAIN,
-		DELAY_POS_DOMAIN,
+		DELAY_STOP_DOMAIN,
 		DELAY_DIST_DOMAIN,
 	} from '$lib/features/reliability/shiftGrains';
 	import { selectPunctualityTrend } from '../selectors/punctualityTrend';
@@ -72,6 +74,7 @@
 		return { ...i, label: explainerCopy.info.trigger(name), linkLabel: explainerCopy.info.link };
 	});
 	const shiftLabel = (g: string): string => shiftGrainLabel(g, locale);
+	const shiftShort = (g: string): string => shiftGrainLabelShort(g, locale);
 
 	// KPI bullets — each headline number gets a scale-context bullet beneath it (the
 	// "every KPI is a LayerChart mark" mandate). On-time carries the 80% SLA target tick +
@@ -93,7 +96,7 @@
 			title: copy.strip.avgDelayMin,
 			xLabel: copy.strip.avgDelayMin,
 			unit: copy.units.min,
-			domain: DELAY_POS_DOMAIN,
+			domain: DELAY_STOP_DOMAIN,
 		}),
 	);
 	const p50Bullet = $derived(
@@ -101,7 +104,7 @@
 			title: copy.strip.p50Min,
 			xLabel: copy.strip.p50Min,
 			unit: copy.units.min,
-			domain: DELAY_POS_DOMAIN,
+			domain: DELAY_STOP_DOMAIN,
 		}),
 	);
 	const p90Bullet = $derived(
@@ -125,6 +128,7 @@
 			pctUnit: copy.units.pct,
 			minUnit: copy.units.min,
 			shiftLabel,
+			shiftShort,
 		}),
 	);
 	const hasTrend = $derived(trendSpec.kind === 'trend');
@@ -186,12 +190,11 @@
 {#snippet p50Info()}{@render metricInfo('p50p90', copy.strip.p50Min)}{/snippet}
 {#snippet p90Info()}{@render metricInfo('p50p90', copy.strip.p90Min)}{/snippet}
 
-<section class="section" data-section="verdict" aria-label={copy.sections.verdict.label}>
-	<header class="section-head">
-		<SectionLabel text={copy.sections.verdict.label} variant="station" />
-		<p class="section-question" data-slot="section-question">{copy.sections.verdict.question}</p>
-	</header>
-
+<CollapsibleSection
+	dataSection="verdict"
+	eyebrow={copy.sections.verdict.label}
+	question={copy.sections.verdict.question}
+>
 	<!-- The at-a-glance verdict: the BAN + the plain-language two-sided sentence. It owns
 	     §0's honest absence ("still measuring") when there's no percentage to read. -->
 	<VerdictBanner result={verdict} />
@@ -235,7 +238,7 @@
 
 		<!-- PRIMARY — the on-time / avg-delay trend. -->
 		{#if hasTrend}
-			<div class="section-primary" data-slot="otp-trend">
+			<div class="section-primary" data-slot="otp-trend" data-card="primary">
 				<div class="block-head">
 					<SectionLabel text={copy.strip.otpPct} variant="metric" />
 					<span class="block-window" data-slot="trend-window"
@@ -251,7 +254,7 @@
 
 		<!-- DETAIL — distribution + severe-delay share, one disclosure level deep. -->
 		<Detail label={copy.sections.detailShow} labelOpen={copy.sections.detailHide}>
-			<div class="block" data-slot="delay-distribution">
+			<div class="block" data-slot="delay-distribution" data-card>
 				<div class="block-head">
 					<span class="label-with-info">
 						<SectionLabel text={copy.strip.delayDistHeading} variant="metric" />
@@ -282,7 +285,7 @@
 				{/if}
 			</div>
 
-			<div class="block" data-slot="severe-share">
+			<div class="block" data-slot="severe-share" data-card>
 				<div class="block-head">
 					<span class="label-with-info">
 						<SectionLabel text={copy.strip.severePct} variant="metric" />
@@ -297,24 +300,9 @@
 			</div>
 		</Detail>
 	{/if}
-</section>
+</CollapsibleSection>
 
 <style>
-	/* Section rhythm: generous BETWEEN-block air (research: within ≤ between), all on
-	   the 8px grid. The section owns its inner stack; the orchestrator owns the
-	   between-section gap. */
-	.section {
-		display: flex;
-		flex-direction: column;
-		gap: clamp(1.25rem, 3vw, 2rem);
-		width: 100%;
-	}
-	.section-head {
-		display: flex;
-		flex-direction: column;
-		gap: 0.5rem;
-	}
-
 	/* KPI tiles: a responsive RAM grid, never below one column on a phone. */
 	.verdict-kpis {
 		display: grid;

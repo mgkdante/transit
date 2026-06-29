@@ -43,7 +43,8 @@ describe('S7 reliability chart domains — fixed, absolute, stable', () => {
 	it('lock the exact real-units domains the audit specified', () => {
 		expect(DELAY_STOP_DOMAIN).toEqual([-2, 8]); // signed: early stops left of zero
 		expect(DELAY_POS_DOMAIN).toEqual([0, 8]);
-		expect(DELAY_DOW_DOMAIN).toEqual([0, 6]);
+		// Widened [0,6]→[0,8] (deep-audit): a chronically late route's weekday avg ran past 6 min.
+		expect(DELAY_DOW_DOMAIN).toEqual([0, 8]);
 		// Severe share is a % of ALL arrivals → the FULL [0,100] scale (like OTP), so a 7%
 		// share reads as 7%, not the ~20% a zoomed [0,35] domain exaggerated it to.
 		expect(SEVERE_DOMAIN).toEqual([0, 100]);
@@ -54,7 +55,8 @@ describe('S7 reliability chart domains — fixed, absolute, stable', () => {
 		expect(BUNCHED_DOMAIN).toEqual([0, 100]);
 		expect(CANCEL_RATE_DOMAIN).toEqual([0, 100]);
 		expect(SKIPPED_RATE_DOMAIN).toEqual([0, 100]);
-		expect(COV_DOMAIN).toEqual([0, 1.2]);
+		// Widened [0,1.2]→[0,1.5] (deep-audit): real STM night/weekend bunching reaches CoV ~1.27.
+		expect(COV_DOMAIN).toEqual([0, 1.5]);
 	});
 });
 

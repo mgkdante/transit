@@ -7,7 +7,7 @@
   glyph rides wide segments as a second channel; the caller pairs it with a labelled legend.
 -->
 <script lang="ts">
-	import { Chart as LcChart, Svg } from 'layerchart';
+	import { Chart as LcChart, Svg, Tooltip } from 'layerchart';
 	import { scaleLinear, scaleBand } from 'd3-scale';
 	import { cn } from '$lib/utils';
 	import ChartFrame from '../ChartFrame.svelte';
@@ -65,10 +65,22 @@
 			yScale={scaleBand()}
 			yDomain={['']}
 			padding={{ top: 0, right: 0, bottom: 0, left: 0 }}
+			tooltipContext={{ mode: 'band' }}
 		>
 			<Svg>
 				<StackedShareBar segments={segs} />
 			</Svg>
+			<!-- Hover (or focus) the strip → every band's share, in the SHARED LayerChart tooltip
+			     (the same hover face as every other mark; the occupancy swatch colour rides each
+			     row). The labelled legend + the sr-only table carry the per-band read for AT. -->
+			<Tooltip.Root>
+				<Tooltip.Header>{spec.title}</Tooltip.Header>
+				<Tooltip.List>
+					{#each segs as s (s.key)}
+						<Tooltip.Item label={s.label} value={`${round(s.share)}%`} color={s.fill} />
+					{/each}
+				</Tooltip.List>
+			</Tooltip.Root>
 		</LcChart>
 	</ChartFrame>
 
@@ -84,8 +96,8 @@
 </figure>
 
 <style>
-	/* Crisp 1px segment dividers so adjacent bands read apart by colour alone (no glyph) —
-	   the labelled legend + the hover readout carry the meaning. */
+	/* Crisp 1px segment dividers so adjacent bands read apart by colour alone — the labelled
+	   legend + the shared LayerChart tooltip carry the meaning. */
 	:global(rect.dv-share-seg) {
 		stroke: var(--card);
 		stroke-width: 1;

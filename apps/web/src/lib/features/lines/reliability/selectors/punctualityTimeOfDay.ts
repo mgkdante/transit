@@ -29,15 +29,15 @@ export function selectPunctualityTimeOfDay(
 	labels: TimeOfDayLabels,
 ): DotStripSpec | AbsenceSpec {
 	const order = SHIFT_GRAIN_ORDER as readonly string[];
-	const points: DotStripDatum[] = vm.peakOffPeak.byShift
+	const rows = vm.peakOffPeak.byShift
 		.slice()
-		.sort((a, b) => order.indexOf(a.grain) - order.indexOf(b.grain))
-		.map((r) => ({
-			key: r.grain,
-			group: labels.shiftLabel(r.grain),
-			value: r.severePct,
-			severity: severeShareToSeverity(r.severePct),
-		}));
+		.sort((a, b) => order.indexOf(a.grain) - order.indexOf(b.grain));
+	const points: DotStripDatum[] = rows.map((r) => ({
+		key: r.grain,
+		group: labels.shiftLabel(r.grain),
+		value: r.severePct,
+		severity: severeShareToSeverity(r.severePct),
+	}));
 
 	const reals = points.map((p) => p.value).filter((v): v is number => v != null);
 	if (reals.length === 0) {
@@ -50,8 +50,21 @@ export function selectPunctualityTimeOfDay(
 		};
 	}
 
-	// The all-day mean reference — a plain sum/length (NEVER Math.max over a spread).
-	const mean = reals.reduce((s, v) => s + v, 0) / reals.length;
+	// The all-day reference line — observation-WEIGHTED (Σ severe×obs / Σ obs) so it reads the
+	// TRUE all-day severe-share, not an average of shift rates: peak shifts carry far more trips
+	// than night, so a plain mean-of-rates over-weights the quiet shifts. Falls back to the plain
+	// mean when no shift carries an observation count (the whole-history rows leave it null).
+	// NEVER Math.max over a spread.
+	let wNum = 0;
+	let wDen = 0;
+	for (const r of rows) {
+		const obs = r.observationCount;
+		if (r.severePct != null && obs != null && obs > 0) {
+			wNum += r.severePct * obs;
+			wDen += obs;
+		}
+	}
+	const mean = wDen > 0 ? wNum / wDen : reals.reduce((s, v) => s + v, 0) / reals.length;
 
 	return {
 		kind: 'dot-strip',

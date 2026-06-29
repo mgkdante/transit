@@ -92,6 +92,17 @@ export interface PeriodComparisonRow {
 	readonly otpPct: number | null;
 	readonly avgDelayMin: number | null;
 	readonly severePct: number | null;
+	/**
+	 * S7-B comparison-vs-prior (PR-WEB-3): the OTP denominator (this window's known-delay
+	 * observations) + the exact on-time numerator, plus the SAME pair over the immediately-
+	 * prior equal-length window. Populated ONLY on the windowed `periods_by_grain` rows; the
+	 * scalar whole-history shift/day-type rows leave them null (no prior to compare). The §1
+	 * on-time-by-time-of-day comparison runs a two-proportion z-test off these.
+	 */
+	readonly observationCount: number | null;
+	readonly onTime: number | null;
+	readonly priorOtpPct: number | null;
+	readonly priorObservationCount: number | null;
 }
 
 /**
@@ -417,12 +428,17 @@ function partitionPeriods(periods: readonly ReliabilityPeriod[]): PartitionedPer
 	return { calendar: { day, week, month }, byShift, byDayType };
 }
 
-/** Project a period to a peak/off-peak comparison row (raw grain + the punctuality triple). */
+/** Project a period to a peak/off-peak comparison row (raw grain + the punctuality triple
+ *  + the comparison-vs-prior pair, kept verbatim for the §1 two-proportion delta). */
 const toComparisonRow = (p: ReliabilityPeriod): PeriodComparisonRow => ({
 	grain: p.grain,
 	otpPct: num(p.otp_pct),
 	avgDelayMin: num(p.avg_delay_min),
 	severePct: num(p.severe_pct),
+	observationCount: num(p.observation_count),
+	onTime: num(p.on_time),
+	priorOtpPct: num(p.prior_otp_pct),
+	priorObservationCount: num(p.prior_observation_count),
 });
 
 /**
@@ -531,9 +547,73 @@ function meanOf<T>(
 }
 
 /**
+ * Observation-count-WEIGHTED mean: Σ(value·weight) / Σ(weight), rounded to `dp`. The honest
+ * aggregate for a per-day rate/mean pooled across days whose sample sizes span 100×–1000×
+ * (an unweighted mean badly over-represents a tiny day). Falls back to the unweighted mean of
+ * the values when NO row carries a positive weight (pre-#158 snapshots without observation_count),
+ * so a value is never lost — only its weighting degrades. null when there is no value at all.
+ */
+function weightedMean<T>(
+	rows: readonly T[],
+	value: (row: T) => number | null | undefined,
+	weight: (row: T) => number | null | undefined,
+	dp: number,
+): number | null {
+	let wSum = 0;
+	let wNum = 0;
+	let hasWeighted = false;
+	for (const row of rows) {
+		const v = value(row);
+		const w = weight(row);
+		if (v == null || Number.isNaN(v)) continue;
+		if (w != null && w > 0) {
+			wNum += v * w;
+			wSum += w;
+			hasWeighted = true;
+		}
+	}
+	if (hasWeighted) {
+		const factor = 10 ** dp;
+		return Math.round((wNum / wSum) * factor) / factor;
+	}
+	// No weights anywhere → honest fallback to the plain mean (never drop the reading).
+	return meanOf(rows, value, dp);
+}
+
+/**
+ * POOLED rate across rows: (Σ numerator / Σ denominator) × 100, rounded to `dp`. The honest
+ * windowed rate (cancellation / skipped-stop) — the SAME pooled value the §3 "X of Y" caption
+ * sums, so the rate tile and its caption can never disagree (a mean-of-daily-rates did). null
+ * when no row carries a positive denominator.
+ */
+function pooledRate<T>(
+	rows: readonly T[],
+	numer: (row: T) => number | null | undefined,
+	denom: (row: T) => number | null | undefined,
+	dp: number,
+): number | null {
+	let nSum = 0;
+	let dSum = 0;
+	for (const row of rows) {
+		const d = denom(row);
+		const nu = numer(row);
+		// Need BOTH counts: a present denom with a NULL numerator means the numerator is unknown for
+		// that row (not a real 0), so it is skipped — never assumed 0. A genuine 0 numerator counts.
+		if (d == null || d <= 0 || nu == null || Number.isNaN(nu)) continue;
+		dSum += d;
+		nSum += nu;
+	}
+	if (dSum === 0) return null;
+	const factor = 10 ** dp;
+	return Math.round((nSum / dSum) * 100 * factor) / factor;
+}
+
+/**
  * Unweighted mean of the present band-share mixes (each share vector sums to ~1, so
  * the mean also sums to ~1 — no re-normalization). null when no present mix. Used to
  * fold the per-ISO-weekday occupancy_by_dow shares into a typical weekday/weekend mix.
+ * UNWEIGHTED by necessity: occupancy_by_dow rows carry only {day_of_week_iso, mix} with NO
+ * per-weekday sample count, so a trip-weighted fold would need a contract change (pipeline-side).
  */
 function meanMix(mixes: readonly (OccupancyMix | null)[]): OccupancyMix | null {
 	const present = mixes.filter((m): m is OccupancyMix => m != null);
@@ -595,7 +675,12 @@ export function toReliabilityClusters(
 	// and absent until the DB deploys + republishes) OR for a grain the DB didn't compute -> each
 	// VM feed falls back to its scalar source + the section badge stays ∞ (honest degradation).
 	const periodsGrain = (data.periods_by_grain ?? []).find((g) => g.grain === grain) ?? null;
-	const habitsGrain = (data.habits_by_grain ?? []).find((g) => g.grain === grain) ?? null;
+	// Heatmap is GRAIN-INVARIANT (operator decision): the 7x24 day-of-week x hour repeat-problems
+	// PATTERN needs the whole record to read reliably, and windowing it produced confusing,
+	// near-imperceptible changes (a single day cannot fill 7 rows, and week vs month differ by only
+	// a few cells). So habits_by_grain is intentionally NOT consulted; the heatmap always reads the
+	// whole-history data.habits (see the 05 block). The grain rail still reshapes the trend, the
+	// rates, and the on-time comparisons.
 	const headwayGrain = (data.headway_by_grain ?? []).find((g) => g.grain === grain) ?? null;
 	const weakStopsGrain = (data.weak_stops_by_grain ?? []).find((g) => g.grain === grain) ?? null;
 
@@ -646,16 +731,21 @@ export function toReliabilityClusters(
 	// day often lags (not yet computed); when the picked window carries no rate, fall back
 	// to the most-recent KNOWN rate so the tile shows the last real reading, never a false
 	// blank. (Was: unconditionally most-recent over the full archive — ignored the grain.)
+	// POOLED windowed rate (Σ canceled / Σ total, Σ skipped / Σ updates) — the SAME pooled value the
+	// §3 "X of Y" caption sums, so the rate tile and its caption agree (a mean-of-daily-rates made
+	// them disagree). Falls back to the most-recent published rate when the window carries no counts.
 	const cancellationRatePct =
-		meanOf(
+		pooledRate(
 			windowByGrain(allCancellations, grain, selectedDate, dateRange),
-			(c) => c.cancellation_rate_pct,
+			(c) => c.canceled_trip_days,
+			(c) => c.total_trip_days,
 			1,
 		) ?? mostRecentRate(allCancellations, (c) => c.cancellation_rate_pct);
 	const skippedStopRatePct =
-		meanOf(
+		pooledRate(
 			windowByGrain(allSkipped, grain, selectedDate, dateRange),
-			(s) => s.skipped_stop_rate_pct,
+			(s) => s.skipped_stop_count,
+			(s) => s.stop_time_update_count,
 			1,
 		) ?? mostRecentRate(allSkipped, (s) => s.skipped_stop_rate_pct);
 	const headwayRegularityCov = selectHeadwayCov(allHeadway);
@@ -678,18 +768,47 @@ export function toReliabilityClusters(
 
 	if (hasRange) {
 		const singleDay = rangeDays.length === 1;
-		otpPct = singleDay ? num(rangeDays[0].otp_pct) : meanOf(rangeDays, (p) => p.otp_pct, 0);
+		// OTP numerator/denominator are ADDITIVE across the in-range days (sum, not mean) — computed
+		// FIRST so the headline rate is the SAME pooled estimate the §0 verdict's Wilson CI uses.
+		observationCount = rangeDays.reduce<number | null>(
+			(s, p) => (p.observation_count != null ? (s ?? 0) + p.observation_count : s),
+			null,
+		);
+		onTime = rangeDays.reduce<number | null>(
+			(s, p) => (p.on_time != null ? (s ?? 0) + p.on_time : s),
+			null,
+		);
+		// OTP = the POOLED rate (Σ on_time / Σ n), NOT a mean of daily rates. A mean-of-rates
+		// equal-weights a 64-obs day against a 64020-obs day AND fell outside its own Wilson CI on
+		// ~48% of multi-day windows (the verdict CI is built from these pooled counts). When the
+		// counts are absent (pre-#158), fall back to the unweighted daily-rate mean (honest degrade).
+		otpPct = singleDay
+			? num(rangeDays[0].otp_pct)
+			: observationCount != null && observationCount > 0 && onTime != null
+				? Math.round((onTime / observationCount) * 100)
+				: meanOf(rangeDays, (p) => p.otp_pct, 0);
+		// Avg delay + severe share: observation-count-WEIGHTED across the in-range days (the same
+		// denominator-weighting as OTP), so a tiny day cannot swing the headline.
 		avgDelayMin = singleDay
 			? num(rangeDays[0].avg_delay_min)
-			: meanOf(rangeDays, (p) => p.avg_delay_min, 1);
+			: weightedMean(
+					rangeDays,
+					(p) => p.avg_delay_min,
+					(p) => p.observation_count,
+					1,
+				);
+		severePct = singleDay
+			? num(rangeDays[0].severe_pct)
+			: weightedMean(
+					rangeDays,
+					(p) => p.severe_pct,
+					(p) => p.observation_count,
+					1,
+				);
 		// Percentiles are not averageable across days: only a single in-range day
 		// carries them; a multi-day range shows the honest no-data mark.
 		p50Min = singleDay ? num(rangeDays[0].p50_min) : null;
 		p90Min = singleDay ? num(rangeDays[0].p90_min) : null;
-		// Severe share is averageable across the in-range days (a share, not a percentile).
-		severePct = singleDay
-			? num(rangeDays[0].severe_pct)
-			: meanOf(rangeDays, (p) => p.severe_pct, 1);
 		// A single in-range day reads as an exact day (no "average" caption); a
 		// multi-day range carries the aggregate metadata for an honest caption.
 		rangeAggregate = singleDay
@@ -699,15 +818,6 @@ export function toReliabilityClusters(
 					start: rangeDays[0].date!,
 					end: rangeDays[rangeDays.length - 1].date!,
 				};
-		// OTP numerator/denominator are additive across the in-range days (sum, not mean).
-		observationCount = rangeDays.reduce<number | null>(
-			(s, p) => (p.observation_count != null ? (s ?? 0) + p.observation_count : s),
-			null,
-		);
-		onTime = rangeDays.reduce<number | null>(
-			(s, p) => (p.on_time != null ? (s ?? 0) + p.on_time : s),
-			null,
-		);
 	} else {
 		const stripPeriod = selectStripPeriod(calendarPeriods, grain, selectedDate);
 		otpPct = stripPeriod ? num(stripPeriod.otp_pct) : null;
@@ -901,11 +1011,13 @@ export function toReliabilityClusters(
 		isEmpty: !mixHasShare,
 	};
 
-	/* 05 Time-of-day habits. */
-	// S7-B §1 windowable heatmap: branch on the windowed ENTRY first so a present-but-null windowed
-	// entry reads honest-empty (no cell cleared MIN_N in the window) and does NOT silently fall back
-	// to the scalar whole-history matrix; only an ABSENT entry (pre-deploy) uses the scalar habits.
-	const rawHabits = habitsGrain ? (habitsGrain.habits ?? null) : (data.habits ?? null);
+	/* 05 Time-of-day habits — GRAIN-INVARIANT (operator decision). */
+	// The repeat-problems heatmap is a 7x24 day-of-week x hour PATTERN; it reads the WHOLE-history
+	// `data.habits` regardless of the picked grain. Windowing it (habits_by_grain) produced confusing,
+	// near-imperceptible changes (Today floored to the week matrix; week vs month differ by only a few
+	// cells), so the rail no longer reshapes it — the §1 note states this plainly. The grain still
+	// drives the trend, the rates, and the on-time comparisons; this pattern just is not windowed.
+	const rawHabits = data.habits ?? null;
 	const matrix = rawHabits?.matrix ?? [];
 	const matrixHasCell = matrix.some((row) => row.some((cell) => cell != null));
 	const habits: HabitsVM = {

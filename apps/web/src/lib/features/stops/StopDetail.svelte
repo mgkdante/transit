@@ -73,6 +73,9 @@
 		dayTypeLabel,
 		weekdayLabel,
 		severeShareToSeverity,
+		DELAY_POS_DOMAIN,
+		DELAY_DOW_DOMAIN,
+		SEVERE_DOMAIN,
 	} from '$lib/features/reliability/shiftGrains';
 	import { EdgeState, AbsentValue } from '$lib/components/edge';
 	import { ControlsRail, DashboardGrid } from '$lib/components/layout';
@@ -294,7 +297,6 @@
 			.filter((br): br is typeof br & { avg_delay_min: number } => br.avg_delay_min != null)
 			.slice()
 			.sort((a, b) => b.avg_delay_min - a.avg_delay_min);
-		const worst = rows.length ? rows[0].avg_delay_min : 0;
 		return rows.map((br, i) => {
 			const delay = br.avg_delay_min;
 			const severity: SeverityCode = delay >= 10 ? 'critical' : delay >= 5 ? 'high' : 'watch';
@@ -303,7 +305,11 @@
 				rank: i + 1,
 				title: br.route,
 				severity,
-				value: worst > 0 ? Math.min(1, Math.max(0, delay / worst)) : null,
+				// ABSOLUTE: raw avg delay scaled by a fixed domain at the row (never the in-view
+				// worst), so the same delay reads the same bar length across stops.
+				value: delay,
+				domain: DELAY_POS_DOMAIN,
+				unit: ' min',
 				display: fmtMin(delay),
 			};
 		});
@@ -336,14 +342,13 @@
 				severePct: d.severe_pct ?? null,
 				observationCount: d.observation_count ?? null,
 			}));
-		const worst = rows.reduce((m, r) => Math.max(m, r.delay), 0);
 		return rows
 			.slice()
 			.sort((a, b) => b.delay - a.delay)
 			.map((r, i) => {
-				// Normalize against the busiest weekday so the bar reads relative.
-				const norm = worst > 0 ? r.delay / worst : 0;
-				const severity: SeverityCode = norm >= 0.66 ? 'critical' : norm >= 0.33 ? 'high' : 'watch';
+				// ABSOLUTE severity off the real mean delay (never the in-view max) so a calm 2-min
+				// weekday never reads 'critical' just for being this stop's worst.
+				const severity: SeverityCode = r.delay >= 10 ? 'critical' : r.delay >= 5 ? 'high' : 'watch';
 				const severeTrusted =
 					r.severePct != null &&
 					r.observationCount != null &&
@@ -356,7 +361,9 @@
 						? `${t.reliability.weekday.severeShare} ${r.severePct!.toFixed(1)}%`
 						: t.reliability.weekday.avgDelay,
 					severity,
-					value: norm,
+					value: r.delay,
+					domain: DELAY_DOW_DOMAIN,
+					unit: ' min',
 					display: `${r.delay.toFixed(1)} min`,
 				};
 			});
@@ -413,7 +420,6 @@
 		label: (g: string) => string,
 	) {
 		const real = rows.filter((r) => r.severePct != null);
-		const worst = real.reduce((m, r) => Math.max(m, r.severePct ?? 0), 0);
 		const rank = (g: string) => {
 			const i = order.indexOf(g);
 			return i === -1 ? order.length : i;
@@ -428,7 +434,9 @@
 					rank: i + 1,
 					title: label(r.grain),
 					severity: severeShareToSeverity(r.severePct),
-					value: worst > 0 ? Math.min(1, Math.max(0, sev / worst)) : null,
+					value: sev,
+					domain: SEVERE_DOMAIN,
+					unit: '%',
 					display: `${sev.toFixed(1)}%`,
 				};
 			});
@@ -1031,6 +1039,8 @@
 													subtitle={row.subtitle}
 													severity={row.severity}
 													value={row.value}
+													domain={row.domain}
+													unit={row.unit}
 													display={row.display}
 												/>
 											{/each}
@@ -1063,6 +1073,8 @@
 														subtitle={t.reliability.timeOfDay.severeShare}
 														severity={row.severity}
 														value={row.value}
+														domain={row.domain}
+														unit={row.unit}
 														display={row.display}
 													/>
 												{/each}
@@ -1084,6 +1096,8 @@
 															subtitle={t.reliability.timeOfDay.severeShare}
 															severity={row.severity}
 															value={row.value}
+															domain={row.domain}
+															unit={row.unit}
 															display={row.display}
 														/>
 													{/each}
@@ -1110,6 +1124,8 @@
 													title={row.title}
 													severity={row.severity}
 													value={row.value}
+													domain={row.domain}
+													unit={row.unit}
 													display={row.display}
 												/>
 											{/each}

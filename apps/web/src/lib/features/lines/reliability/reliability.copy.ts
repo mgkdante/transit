@@ -162,6 +162,9 @@ export interface ReliabilityCopy {
 		readonly typical: (p50: string) => string;
 		/** Honest empty note when no per-band delay data exists at all. */
 		readonly empty: string;
+		/** Honest caveat: a day-level association (the day's dominant crowding), NOT a per-trip
+		 *  crowding-causes-delay measure (the high-crowding tail is censored upstream). */
+		readonly caption: string;
 	};
 	/** By-shift-and-day-type OTP crosstab — now a stepped heatmap (01 Punctuality). */
 	readonly crosstab: {
@@ -225,6 +228,27 @@ export interface ReliabilityCopy {
 		readonly pct: string;
 		readonly min: string;
 	};
+	/** Comparison-vs-prior (PR-WEB-3): the period-over-period Δ badges + their headings. */
+	readonly priorDelta: {
+		/** Heading for the on-time-by-time-of-day comparison (§1). */
+		readonly onTimeHeading: string;
+		/** Heading for the wait-by-shift comparison (§2). */
+		readonly waitHeading: string;
+		/** Trailing context for a SIGNIFICANT change, by resolved window grain. */
+		readonly vsPrior: { readonly day: string; readonly week: string; readonly month: string };
+		/** Neutral marker when a change exists but doesn't clear the 95% test. */
+		readonly withinNoise: string;
+		/** Honest-absence marker when there is no prior window to compare, by grain. */
+		readonly noPrior: { readonly day: string; readonly week: string; readonly month: string };
+		/** a11y nouns woven into the change label so it reads in full. */
+		readonly onTimeNoun: string;
+		readonly waitNoun: string;
+		/** Unit suffix for the on-time points delta (plural) + the ±1 singular form. */
+		readonly pts: string;
+		readonly ptOne: string;
+		/** One-line caption: what the comparison is + the significance gate. */
+		readonly caption: string;
+	};
 	/** Grain control-spine labels + the active-window caption. */
 	readonly controls: {
 		/** ControlsRail group overline ("View" / "Vue") — same voice as /stop + /network. */
@@ -256,8 +280,13 @@ export interface ReliabilityCopy {
 			/** Prompt before a complete range is picked. */
 			readonly rangePrompt: string;
 		};
-		/** Section-TOC heading (wayfinding) in the sticky rail. */
+		/** Section-TOC heading (wayfinding) in the sticky rail + the mobile TOC pill. */
 		readonly toc: string;
+		/** a11y: open/close the mobile grain filter pill drawer. */
+		readonly filterPillOpen: string;
+		readonly filterPillClose: string;
+		/** a11y: close the mobile section-jump (TOC) pill drawer. */
+		readonly tocPillClose: string;
 		/** Scope tooltip: this section re-shapes on the time window. */
 		readonly scopeWindowed: string;
 		/** Scope tooltip: this section ignores the time window (full history). */
@@ -308,11 +337,11 @@ export interface ReliabilityCopy {
 export const reliabilityCopy: Record<Locale, ReliabilityCopy> = {
 	fr: {
 		clusters: {
-			punctuality: '01 Ponctualité',
-			serviceDelivered: '02 Service assuré',
-			crowding: '03 Encombrement',
-			waitRegularity: '04 Régularité des attentes',
-			habits: '05 Habitudes horaires',
+			punctuality: 'Ponctualité',
+			serviceDelivered: 'Service assuré',
+			crowding: 'Encombrement',
+			waitRegularity: 'Régularité des attentes',
+			habits: 'Habitudes horaires',
 		},
 		strip: {
 			snapshotLabel: 'Aperçu de la fiabilité',
@@ -329,9 +358,9 @@ export const reliabilityCopy: Record<Locale, ReliabilityCopy> = {
 			p50Caption: 'La moitié des trajets font mieux, la moitié font pire',
 			p90Caption: '9 trajets sur 10 sont plus rapides que ça',
 			delayDistHeading: 'Du retard médian au pire des cas',
-			delayDistLabel: 'Retard, du médian (p50) au pire des cas (p90)',
+			delayDistLabel: 'Retard, de tôt à tard (min)',
 			delayDistCaption:
-				'Le repère marque le retard médian; la barre s’étire jusqu’au pire des cas (9 trajets sur 10 font mieux). Échelle fixe de 0 à 15 min.',
+				'Chaque barre est la part des trajets à ce retard (en avance à gauche de 0, à l’heure à 0, en retard à droite); plus c’est haut, plus il y a de trajets. Les lignes marquent le médian et le pire des cas (9 trajets sur 10 font mieux). Échelle fixe de -5 à +30 min.',
 			percentileNudge:
 				'Pas assez de trajets aujourd’hui pour l’écart typique → pire cas. Choisissez « Cette semaine » ou « Ce mois-ci » ci-dessus pour le voir.',
 			severePct: 'Part des retards graves',
@@ -374,7 +403,7 @@ export const reliabilityCopy: Record<Locale, ReliabilityCopy> = {
 			weekday: 'Semaine',
 			weekend: 'Fin de semaine',
 			strip: {
-				ariaLabel: 'Part des retards graves par période de la journée',
+				ariaLabel: 'Retards graves par période',
 				mean: (value) => `Moyenne journée : ${value}`,
 			},
 		},
@@ -387,6 +416,8 @@ export const reliabilityCopy: Record<Locale, ReliabilityCopy> = {
 			heading: "Retard selon l'occupation",
 			typical: (p50) => `médian ${p50}`,
 			empty: 'Aucune donnée de retard par occupation',
+			caption:
+				"Chaque barre est le retard moyen les jours où cette ligne a surtout roulé à ce niveau d'occupation. C'est une tendance par jour, pas une mesure par trajet; elle ne peut pas dire si les bus bondés roulent eux-mêmes plus tard.",
 		},
 		crosstab: {
 			heading: 'Par période et type de jour',
@@ -428,6 +459,27 @@ export const reliabilityCopy: Record<Locale, ReliabilityCopy> = {
 				"De l'heure du premier départ à celle du dernier sur une journée de 24 h. Le repère à chaque extrémité indique l'avance (▼) ou le retard (▲) du départ; ▲ signale un retard, jamais une absence de donnée.",
 		},
 		units: { pct: '%', min: ' min' },
+		priorDelta: {
+			onTimeHeading: 'Ponctualité par période',
+			waitHeading: 'Attente par période',
+			vsPrior: {
+				day: 'p/r à la veille',
+				week: 'p/r à la sem. préc.',
+				month: 'p/r au mois préc.',
+			},
+			withinNoise: 'écart non significatif',
+			noPrior: {
+				day: 'pas de veille',
+				week: 'pas de semaine précédente',
+				month: 'pas de mois précédent',
+			},
+			onTimeNoun: 'ponctualité',
+			waitNoun: 'attente',
+			pts: 'pts',
+			ptOne: 'pt',
+			caption:
+				'Écart par rapport à la fenêtre précédente, affiché seulement s’il passe un test de signification à 95 %; une variation dans le bruit reste neutre.',
+		},
 		controls: {
 			viewLabel: 'Vue',
 			grainLabel: 'Granularité',
@@ -446,6 +498,9 @@ export const reliabilityCopy: Record<Locale, ReliabilityCopy> = {
 				rangePrompt: 'Fenêtre : choisissez une date de début et de fin',
 			},
 			toc: 'Aller à',
+			filterPillOpen: 'Ouvrir les commandes de vue',
+			filterPillClose: 'Fermer les commandes de vue',
+			tocPillClose: 'Fermer la liste des sections',
 			scopeWindowed: 'Suit la fenêtre choisie ci-dessus',
 			scopeWhole: 'Historique complet : la fenêtre ci-dessus ne change pas cette section',
 			scopeNote:
@@ -494,11 +549,11 @@ export const reliabilityCopy: Record<Locale, ReliabilityCopy> = {
 	},
 	en: {
 		clusters: {
-			punctuality: '01 Punctuality',
-			serviceDelivered: '02 Service delivered',
-			crowding: '03 Crowding',
-			waitRegularity: '04 Wait regularity',
-			habits: '05 Time-of-day habits',
+			punctuality: 'Punctuality',
+			serviceDelivered: 'Service delivered',
+			crowding: 'Crowding',
+			waitRegularity: 'Wait regularity',
+			habits: 'Time-of-day habits',
 		},
 		strip: {
 			snapshotLabel: 'Reliability snapshot',
@@ -515,9 +570,9 @@ export const reliabilityCopy: Record<Locale, ReliabilityCopy> = {
 			p50Caption: 'Half of trips do better, half do worse',
 			p90Caption: '9 in 10 trips are better than this',
 			delayDistHeading: 'From typical to worst-case delay',
-			delayDistLabel: 'Delay, from typical (p50) to worst-case (p90)',
+			delayDistLabel: 'Delay, early to late (min)',
 			delayDistCaption:
-				'The marker is the typical (median) delay; the bar stretches to the worst case (9 in 10 trips do better). Fixed 0–15 min scale.',
+				'Each bar is the share of trips at that delay (early left of 0, on time at 0, late right); taller means more trips there. The reference lines mark the typical (median) and the worst case (9 in 10 trips do better). Fixed -5 to +30 min scale.',
 			percentileNudge:
 				'Not enough trips today for the typical→worst-case spread. Pick “This week” or “This month” above to see it.',
 			severePct: 'Severe-delay share',
@@ -559,7 +614,7 @@ export const reliabilityCopy: Record<Locale, ReliabilityCopy> = {
 			weekday: 'Weekday',
 			weekend: 'Weekend',
 			strip: {
-				ariaLabel: 'Severe-delay share by time of day',
+				ariaLabel: 'Severe delay by time of day',
 				mean: (value) => `All-day mean: ${value}`,
 			},
 		},
@@ -572,6 +627,8 @@ export const reliabilityCopy: Record<Locale, ReliabilityCopy> = {
 			heading: 'Delay by crowding',
 			typical: (p50) => `median ${p50}`,
 			empty: 'No delay-by-crowding data yet',
+			caption:
+				'Each bar is the average delay on days this line ran mostly at that crowding level. It is a day-level pattern, not a per-trip measure, so it cannot show whether crowded buses themselves run later.',
 		},
 		crosstab: {
 			heading: 'By shift and day type',
@@ -613,6 +670,27 @@ export const reliabilityCopy: Record<Locale, ReliabilityCopy> = {
 				'From the first departure clock time to the last across a 24-hour day. The marker at each end shows that departure running early (▼) or late (▲); ▲ is a real delay, never missing data.',
 		},
 		units: { pct: '%', min: ' min' },
+		priorDelta: {
+			onTimeHeading: 'On-time by time of day',
+			waitHeading: 'Wait by shift',
+			vsPrior: {
+				day: 'vs prior day',
+				week: 'vs prior week',
+				month: 'vs prior month',
+			},
+			withinNoise: 'within noise',
+			noPrior: {
+				day: 'no prior day',
+				week: 'no prior week',
+				month: 'no prior month',
+			},
+			onTimeNoun: 'on-time',
+			waitNoun: 'wait',
+			pts: 'pts',
+			ptOne: 'pt',
+			caption:
+				'Change vs the immediately prior window, shown only when it clears a 95% significance test, so a swing within noise never shouts.',
+		},
 		controls: {
 			viewLabel: 'View',
 			grainLabel: 'Granularity',
@@ -631,6 +709,9 @@ export const reliabilityCopy: Record<Locale, ReliabilityCopy> = {
 				rangePrompt: 'Window: pick a start and end date',
 			},
 			toc: 'Jump to',
+			filterPillOpen: 'Open view controls',
+			filterPillClose: 'Close view controls',
+			tocPillClose: 'Close section list',
 			scopeWindowed: 'Follows the time window above',
 			scopeWhole: 'Full history: the window above doesn’t change this section',
 			scopeNote: 'The window above re-shapes the ↻ sections; the ∞ sections show the full history.',

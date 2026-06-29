@@ -53,6 +53,19 @@ describe('selectVerdict — value bands (with a confident large n)', () => {
 		expect(v.sentence).toContain('8 in 10');
 		expect(v.sentence).toContain('2 in 10');
 	});
+	it('a high-OTP window NEVER narrates "0 in 10 late" when trips were actually late (L1)', () => {
+		// 96% on-time over n=10000 → 400 real late trips. Rounding 96/10 = 10 used to fabricate
+		// "10 in 10 on time, 0 in 10 late". Each side now floors at 1 when its count is > 0.
+		const v = selectVerdict(h(96, 10000, 9600), 'week', 'en', en);
+		expect(v.sentence).toContain('9 in 10');
+		expect(v.sentence).toContain('1 in 10');
+		expect(v.sentence).not.toContain('0 in 10');
+	});
+	it('a genuinely perfect window still reads "0 in 10 late" (a TRUE zero stays honest)', () => {
+		const v = selectVerdict(h(100, 5000, 5000), 'week', 'en', en);
+		expect(v.sentence).toContain('10 in 10');
+		expect(v.sentence).toContain('0 in 10');
+	});
 });
 
 describe('selectVerdict — n-aware confidence pipeline', () => {
@@ -85,9 +98,17 @@ describe('selectVerdict — graceful pre-republish degradation (no denominator)'
 		expect(v.sentence).not.toContain('95% sure');
 	});
 	it('derives the numerator from otp×n when on_time is null but n is present', () => {
-		const v = selectVerdict(h(80, 1000, null), 'week', 'en', en);
+		// 85% (not 80) so the CI stays inside the reliable band — this test is about the derived
+		// numerator + the Wilson hedge, not the band edge.
+		const v = selectVerdict(h(85, 1000, null), 'week', 'en', en);
 		expect(v.status).toBe('reliable');
 		expect(v.sentence).toContain('95% sure between');
+	});
+	it('reads tentative when the Wilson CI straddles a band boundary (80% at n=1000)', () => {
+		// 80% with n=1000 → Wilson CI ≈ [77, 82], crossing the 80 reliable/patchy line: the verdict
+		// can't honestly commit to a band, so it hedges as tentative rather than asserting "reliable".
+		const v = selectVerdict(h(80, 1000, 800), 'week', 'en', en);
+		expect(v.status).toBe('tentative');
 	});
 });
 

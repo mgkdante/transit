@@ -66,39 +66,43 @@
 </div>
 
 <style>
-	/* A PROMINENT, colourful affordance (operator: "very big and colourful" — the detail
-	   toggle is doing a lot, it lets a rider acknowledge the intent before opening). It IS
-	   an interactive control, so the brand ORANGE is doctrine-correct here (affordance, not
-	   a data mark): a tinted orange pill with a bold label + the rotating chevron. */
+	/* A QUIET text+chevron control (operator: "make it simpler, not as sharp" — the heavy
+	   tinted-orange pill was over-weighted for a one-tap disclosure). It is still an
+	   interactive control, so the brand ORANGE stays on the LABEL (an affordance cue, not a
+	   data mark) — but the pill background + border are gone: just the rotating chevron + the
+	   label, underlined on hover. The tap target is held by padding (min-height 44px). */
 	.detail__toggle {
 		display: inline-flex;
 		align-items: center;
-		gap: 0.55rem;
-		/* Generous, comfortably above the WCAG 2.2 2.5.8 24px floor. */
-		min-height: 48px;
-		padding: 0.6rem 1.15rem;
+		gap: 0.45rem;
+		/* WCAG 2.2 (2.5.8) tap target, via padding rather than a heavy box. */
+		min-height: 44px;
+		padding: 0.4rem 0.15rem;
 		font-family: var(--font-mono);
-		font-size: var(--text-body);
-		font-weight: 600;
-		letter-spacing: var(--tracking-wide);
-		color: var(--primary);
-		background: color-mix(in srgb, var(--primary) 9%, transparent);
-		border: 1.5px solid var(--border-brand);
-		border-radius: var(--radius-pill);
+		font-size: var(--text-small);
+		font-weight: 500;
+		/* Quiet at REST (muted caption voice, normal tracking) so the disclosure reads as calm
+		   chrome, not a CTA; the brand orange lifts in only on hover/focus. The rotating chevron
+		   is the persistent non-colour affordance that keeps it legible as interactive. */
+		color: var(--muted-foreground);
+		background: none;
+		border: none;
 		cursor: pointer;
-		transition:
-			background var(--duration-fast) var(--ease-default),
-			border-color var(--duration-fast) var(--ease-default),
-			color var(--duration-fast) var(--ease-default);
+		transition: color var(--duration-fast) var(--ease-default);
 	}
 	.detail__toggle:hover {
-		background: color-mix(in srgb, var(--primary) 18%, transparent);
-		border-color: var(--primary);
 		color: var(--primary-hover);
+		text-decoration: underline;
+		text-underline-offset: 3px;
 	}
 	.detail__toggle:focus-visible {
 		outline: 2px solid var(--ring);
-		outline-offset: 2px;
+		outline-offset: 3px;
+		border-radius: var(--radius-sm, 0.375rem);
+		/* Keyboard users get the same orange + underline affordance hover gives. */
+		color: var(--primary-hover);
+		text-decoration: underline;
+		text-underline-offset: 3px;
 	}
 	@media (prefers-reduced-motion: reduce) {
 		.detail__toggle {

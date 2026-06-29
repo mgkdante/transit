@@ -1,6 +1,6 @@
-// RankedRow.svelte.test.ts — locks the canonical dataviz-row contract BEFORE the
-// S3 chart kit (KpiCard/BulletKpi/DeltaStat/StripPlot/DivergingBar/IconArray)
-// clones its shape. The load-bearing invariants: data-slot, the role ladder
+// RankedRow.svelte.test.ts — locks the canonical dataviz-row contract that the
+// S3 KPI-card kit (KpiCard/BulletKpi/DeltaStat) clones its shape from. The
+// load-bearing invariants: data-slot, the role ladder
 // (listitem / button / bare), and the delta chip's glyph + dataviz-scale colour +
 // aria — direction is NEVER colour-only, and a missing delta is honest no-data
 // (neutral glyph, "no change data"), never a fabricated 0 or a coloured arrow.

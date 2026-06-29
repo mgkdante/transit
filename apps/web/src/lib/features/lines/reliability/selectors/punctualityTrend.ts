@@ -33,8 +33,10 @@ export interface PunctualityTrendLabels {
 	pctUnit: string;
 	/** Minutes unit suffix (e.g. " min"). */
 	minUnit: string;
-	/** Localized shift label for a shift-grain key (day-grain x-labels). */
+	/** Full localized shift label (day-grain TOOLTIP header). */
 	shiftLabel: (grain: string) => string;
+	/** SHORT localized shift label (day-grain x-axis TICK — keeps 5 shifts from overlapping on a phone). */
+	shiftShort: (grain: string) => string;
 }
 
 export function selectPunctualityTrend(
@@ -51,7 +53,9 @@ export function selectPunctualityTrend(
 				.slice()
 				.sort((a, b) => order.indexOf(a.grain) - order.indexOf(b.grain))
 				.map((r) => ({
-					x: r.grain,
+					// x is the band-scale key AND the tick label — use the SHORT shift label so the 5
+					// shifts don't overlap on a narrow plot; the FULL label rides the tooltip (xLabel).
+					x: labels.shiftShort(r.grain),
 					xLabel: labels.shiftLabel(r.grain),
 					y: r.otpPct,
 					y2: r.avgDelayMin,
@@ -59,7 +63,13 @@ export function selectPunctualityTrend(
 		: vm.trend.map((p) => ({
 				x: p.date ? new Date(p.date).getTime() : Number.NaN,
 				xLabel: p.date ?? '',
-				y: p.otp_pct ?? null,
+				// Plot the EXACT rate (Σ on_time / Σ n × 100), not the integer otp_pct — the Wilson
+				// band below is built from exact counts, so an integer-rounded centre fell OUTSIDE
+				// its own band on ~22% of daily points. Fall back to otp_pct when counts are absent.
+				y:
+					p.observation_count != null && p.observation_count > 0 && p.on_time != null
+						? (p.on_time / p.observation_count) * 100
+						: (p.otp_pct ?? null),
 				y2: p.avg_delay_min ?? null,
 				bandLo: p.wilson_lo ?? null,
 				bandHi: p.wilson_hi ?? null,

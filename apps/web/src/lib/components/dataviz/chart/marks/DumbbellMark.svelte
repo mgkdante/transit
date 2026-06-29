@@ -15,6 +15,7 @@
 	import { scaleBand, scaleLinear } from 'd3-scale';
 	import { cn } from '$lib/utils';
 	import ChartFrame from '../ChartFrame.svelte';
+	import { categoryGutter } from '../axisGutter';
 	import type { DumbbellSpec, DumbbellDatum } from '../ChartSpec';
 	import type { SeverityCode } from '$lib/v1/schemas';
 
@@ -38,7 +39,10 @@
 	const yOf = (d: DumbbellDatum) => d.label;
 
 	const frameHeight = $derived(`${Math.max(3, spec.rows.length) * 1.5 + 4}rem`);
-	const padding = { top: 12, right: 18, bottom: 42, left: 124 };
+	// Operator: size the category gutter FROM the labels so short shift labels don't waste room and
+	// a longer "AM peak · dir 0" variant still fits (truncated to the gutter when it can't).
+	const gutter = $derived(categoryGutter(labels, { min: 88, max: 168 }));
+	const padding = $derived({ top: 12, right: 18, bottom: 42, left: gutter.left });
 
 	const fmt = (v: number | null | undefined): string => (v == null ? '' : String(v));
 </script>
@@ -59,7 +63,7 @@
 			data={reals}
 			x={schedOf}
 			y={yOf}
-			xScale={scaleLinear()}
+			xScale={scaleLinear().clamp(true)}
 			{xDomain}
 			yScale={scaleBand().padding(0.5)}
 			yDomain={labels}
@@ -76,7 +80,12 @@
 					format={(v) => `${v}`}
 					class="dv-dumbbell-axis"
 				/>
-				<Axis placement="left" rule={false} class="dv-dumbbell-axis" />
+				<Axis
+					placement="left"
+					rule={false}
+					format={(l: string) => gutter.truncate(l)}
+					class="dv-dumbbell-axis"
+				/>
 				<!-- Connectors: a thin floating bar from scheduled (chart x) to observed (x1). -->
 				{#each reals as row (row.key)}
 					<Bar data={row} x1={obsOf} radius={2} class="dv-dumbbell-conn" />
