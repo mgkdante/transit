@@ -355,9 +355,9 @@ export const reliabilityCopy: Record<Locale, ReliabilityCopy> = {
 			p50Caption: 'La moitié des trajets font mieux, la moitié font pire',
 			p90Caption: '9 trajets sur 10 sont plus rapides que ça',
 			delayDistHeading: 'Du retard médian au pire des cas',
-			delayDistLabel: 'Retard, du médian (p50) au pire des cas (p90)',
+			delayDistLabel: 'Retard, de tôt à tard (min)',
 			delayDistCaption:
-				'Le repère marque le retard médian; la barre s’étire jusqu’au pire des cas (9 trajets sur 10 font mieux). Échelle fixe de 0 à 15 min.',
+				'Chaque barre est la part des trajets à ce retard (en avance à gauche de 0, à l’heure à 0, en retard à droite); plus c’est haut, plus il y a de trajets. Les lignes marquent le médian et le pire des cas (9 trajets sur 10 font mieux). Échelle fixe de -5 à +30 min.',
 			percentileNudge:
 				'Pas assez de trajets aujourd’hui pour l’écart typique → pire cas. Choisissez « Cette semaine » ou « Ce mois-ci » ci-dessus pour le voir.',
 			severePct: 'Part des retards graves',
@@ -565,9 +565,9 @@ export const reliabilityCopy: Record<Locale, ReliabilityCopy> = {
 			p50Caption: 'Half of trips do better, half do worse',
 			p90Caption: '9 in 10 trips are better than this',
 			delayDistHeading: 'From typical to worst-case delay',
-			delayDistLabel: 'Delay, from typical (p50) to worst-case (p90)',
+			delayDistLabel: 'Delay, early to late (min)',
 			delayDistCaption:
-				'The marker is the typical (median) delay; the bar stretches to the worst case (9 in 10 trips do better). Fixed 0–15 min scale.',
+				'Each bar is the share of trips at that delay (early left of 0, on time at 0, late right); taller means more trips there. The reference lines mark the typical (median) and the worst case (9 in 10 trips do better). Fixed -5 to +30 min scale.',
 			percentileNudge:
 				'Not enough trips today for the typical→worst-case spread. Pick “This week” or “This month” above to see it.',
 			severePct: 'Severe-delay share',
