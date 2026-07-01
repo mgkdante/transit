@@ -32,6 +32,15 @@ export const DELAY_POS_DOMAIN = [0, 8] as const;
  * clamping it to 8 would hide the tail.
  */
 export const DELAY_DIST_DOMAIN = [0, 15] as const;
+// ── Delay-trend axis: two like-metric trend lines pin DIFFERENT delay domains ─────────────────
+// The lines OTP-trend retard axis reads DELAY_POS_DOMAIN [0,8] (an AVG-only series — no p90
+// channel), so [0,8] keeps a chronically-late average visible without clipping. The network
+// delay-trend retard axis reads DELAY_DIST_DOMAIN [0,15] because it can plot the p90 tail (the
+// "slowest 10%" toggle), which routinely runs past 8 min — [0,8] would clip that tail. Both are
+// zero-anchored absolute literals (never in-view max); the [0,8] vs [0,15] split is a RECORDED
+// exception to "like metrics share like scales", justified by avg-only vs p90-capable ranges.
+// Unifying the two trend axes is S9 scope (the network re-seat owns it); until then this
+// divergence is a decision, not drift, and lines' [0,8] domain stays put.
 /** Day-of-week + delay-by-crowding avg delay (min). Shares DELAY_POS's [0,8] so a chronically
  *  late route's weekday average (real STM tail runs past 6) stays visible instead of pinning. */
 export const DELAY_DOW_DOMAIN = [0, 8] as const;
