@@ -89,6 +89,15 @@ _COLLAPSE_NULL_FIELDS = (
 _DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 _DATETIME_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T")
 
+# The DAY-grain windowed breakdowns carry calendar labels of the anchor-adjacent day
+# (its weekday/weekend kind and ISO dow) — deterministic functions of the RUN date,
+# not of the pipeline. Like dates, they must be relativized to the anchor or the
+# golden flips at every weekday/weekend boundary (frozen Mon 'weekend' vs run
+# Wed 'weekday'). Longer grains are calendar-stable: the seeded window is a
+# multiple of 7 days, so their daykind composition never varies.
+_DAYKIND_LABELS = {"weekday", "weekend"}
+_ANCHOR_DAYKIND = "anchor-daykind"
+
 
 class _NoCommitEngine:
     def __init__(self, connection) -> None:  # noqa: ANN001
@@ -292,9 +301,27 @@ def _sort_key(elem) -> str:  # noqa: ANN001
     return json.dumps(elem, sort_keys=True)
 
 
+def _relativize_day_grain_calendar(norm: dict, anchor: date) -> None:
+    """Anchor-relativize the day-grain calendar labels (see _ANCHOR_DAYKIND note)."""
+    for entry in norm.get("periods_by_grain", []):
+        if entry.get("grain") != "day":
+            continue
+        for row in entry.get("by_daytype") or []:
+            if row.get("grain") in _DAYKIND_LABELS:
+                row["grain"] = _ANCHOR_DAYKIND
+        for row in entry.get("by_shift_daytype") or []:
+            if row.get("day_type") in _DAYKIND_LABELS:
+                row["day_type"] = _ANCHOR_DAYKIND
+        for row in entry.get("day_of_week") or []:
+            iso = row.get("day_of_week_iso")
+            if isinstance(iso, int):
+                row["day_of_week_iso"] = f"DOW-A{(anchor.isoweekday() - iso) % 7}"
+
+
 def _canonicalize(rel: dict, anchor: date) -> dict:
     """Date-relativized, list-sorted, week/month-deduped canonical form."""
     norm = _norm(rel, anchor)
+    _relativize_day_grain_calendar(norm, anchor)
     # Dedup the calendar-unstable week/month period grains to one representative each
     # (identical-per-day -> all entries share frozen fields); drop their date.
     periods = []
