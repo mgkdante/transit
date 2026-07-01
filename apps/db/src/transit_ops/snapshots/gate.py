@@ -1,0 +1,910 @@
+"""Value-level publish gate — inspects built /v1 payloads BEFORE any upload.
+
+The contract models (:mod:`transit_ops.snapshots.contract`) only enforce Pydantic
+TYPE coercion at construction; nothing inspects the VALUES a builder produced. This
+module is a pure-Python, no-DB inspector that walks the in-memory payloads (Pydantic
+models or plain dicts) for out-of-range rates, negative counts, sentinel/NaN/Inf
+leaks, broken invariants (on_time<=observations, sum(non_responding_by_route)==
+non_responding, rank 1..N, ...), and coverage regressions. ERROR-severity findings
+abort a static/historic publish (unless --force); WARN findings are logged only.
+
+Honest-NULL law: None is a legitimate value on an empty denominator (contract.py
+NetworkFile + every *_pct/observation_count on the historic models), so EVERY check
+skips None leaves — a None is never flagged as a violation and never coerced to 0.
+
+No maintenance/gold.py registry entry is needed: this module creates NO tables and
+reads NO new tables. Prior-generation coverage baseline reuses the already-persisted
+core.snapshot_publish_state.files_total (migration 0042), passed in by the caller.
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+import math
+from dataclasses import dataclass, field
+from enum import Enum
+
+from pydantic import BaseModel
+
+logger = logging.getLogger(__name__)
+
+# --- tunable constants (config-free — trust-gate thresholds) ------------------
+# Catches ONLY the historical Numeric(8,4) overflow sentinel 9999.9999 (a float leaf
+# within GATE_SENTINEL_EPS of it). It is NOT a magnitude band: legitimate large leaves
+# exist (observation_count ~1.7M, alert duration_min ~108k, a ~9999-minute ≈7-day alert
+# duration), so any |v|>=9999 band would false-flag real data. NaN/Inf stay universal.
+GATE_SENTINEL_VALUE = 9999.9999   # the Numeric(8,4) overflow sentinel (exact float family)
+GATE_SENTINEL_EPS = 1e-6          # float tolerance around GATE_SENTINEL_VALUE
+GATE_DELAY_MIN_ABS = 90.0         # signed-delay minutes cap (fact cap 3600s=60min + margin)
+GATE_MIX_SUM_TOL = 0.01           # occupancy-mix share sum tolerance around 1.0
+GATE_ROUTE_DROP_FRACTION = 0.30   # total-file-count drop that fires the coverage-delta ERROR
+GATE_EMPTY_ROUTE_WARN_FRACTION = 0.50  # >half empty route files -> coverage-regression WARN
+
+# Occupancy bands shared with OccupancyMix / route_occupancy_band_daily.
+_MIX_BANDS = ("empty", "many_seats", "few_seats", "standing", "full")
+_CROWDING_BANDS = frozenset(_MIX_BANDS)
+_SENTINEL_ENTITY_IDS = frozenset({"__unrouted__", "__unknown_stop__"})
+_DELAY_LO, _DELAY_HI = -GATE_DELAY_MIN_ABS, GATE_DELAY_MIN_ABS
+
+
+class Severity(str, Enum):
+    ERROR = "error"      # aborts publish (unless --force)
+    WARN = "warn"        # logged + in report, never aborts
+
+
+@dataclass(frozen=True)
+class CheckResult:
+    check: str            # stable id, e.g. "rate_range"
+    kind: str             # payload kind, e.g. "historic_route_reliability"
+    rel_key: str          # "historic/route_reliability/51.json" (or "<batch>" pre-key)
+    severity: Severity
+    message: str          # human-readable, includes offending field + value
+    field_path: str | None = None   # e.g. "periods[2].otp_pct"
+    value: object | None = None
+
+    def to_dict(self) -> dict:  # type: ignore[type-arg]
+        return {
+            "check": self.check,
+            "kind": self.kind,
+            "rel_key": self.rel_key,
+            "severity": self.severity.value,
+            "message": self.message,
+            "field_path": self.field_path,
+            "value": self.value,
+        }
+
+
+@dataclass
+class GateReport:
+    provider_id: str
+    tier: str
+    generated_utc: str
+    checks_run: int = 0
+    payloads_checked: int = 0
+    results: list[CheckResult] = field(default_factory=list)
+
+    @property
+    def errors(self) -> list[CheckResult]:
+        return [r for r in self.results if r.severity is Severity.ERROR]
+
+    @property
+    def warnings(self) -> list[CheckResult]:
+        return [r for r in self.results if r.severity is Severity.WARN]
+
+    @property
+    def passed(self) -> bool:
+        return not self.errors
+
+    def to_dict(self) -> dict:  # type: ignore[type-arg]
+        return {
+            "provider_id": self.provider_id,
+            "tier": self.tier,
+            "generated_utc": self.generated_utc,
+            "checks_run": self.checks_run,
+            "payloads_checked": self.payloads_checked,
+            "errors": len(self.errors),
+            "warnings": len(self.warnings),
+            "results": [r.to_dict() for r in self.results],
+        }
+
+
+class GateError(RuntimeError):
+    """Raised by enforce() when errors exist and force is False."""
+
+    def __init__(self, report: GateReport) -> None:
+        self.report = report
+        super().__init__(
+            f"publish gate FAILED: {len(report.errors)} error(s) "
+            f"across {report.payloads_checked} payload(s) "
+            f"[{report.provider_id}/{report.tier}]"
+        )
+
+
+# --- coercion + shared range helpers -----------------------------------------
+
+
+def _as_dict(payload: object) -> object:
+    """Normalize a Pydantic model to a native dict (enums/None preserved); pass dicts through."""
+    if isinstance(payload, BaseModel):
+        return payload.model_dump(mode="python")
+    return payload
+
+
+def _is_number(v: object) -> bool:
+    return isinstance(v, int | float) and not isinstance(v, bool)
+
+
+def _in_range(v: object, lo: float, hi: float) -> bool:
+    """True when v is a number inside [lo, hi]. None-safe (None -> True: skip)."""
+    if v is None or not _is_number(v):
+        return True
+    return lo <= v <= hi
+
+
+def _nonneg(v: object) -> bool:
+    """True when v is a non-negative number. None-safe (None -> True: skip)."""
+    if v is None or not _is_number(v):
+        return True
+    return v >= 0
+
+
+def _le(a: object, b: object) -> bool:
+    """True when a <= b (both numbers). None-safe: if either is None -> True (skip)."""
+    if a is None or b is None or not _is_number(a) or not _is_number(b):
+        return True
+    return a <= b
+
+
+def _is_neg(v: object) -> bool:
+    """True only when v is a NUMBER strictly below zero (None-safe: None -> False)."""
+    return _is_number(v) and v < 0
+
+
+def _mix_ok(mix: object) -> tuple[bool, bool]:
+    """Return (all buckets in [0,1], sum within tolerance of 1.0). None mix -> (True, True)."""
+    if mix is None or not isinstance(mix, dict):
+        return (True, True)
+    total = 0.0
+    buckets_ok = True
+    any_value = False
+    for band in _MIX_BANDS:
+        v = mix.get(band)
+        if v is None or not _is_number(v):
+            continue
+        any_value = True
+        total += v
+        if not (0.0 <= v <= 1.0):
+            buckets_ok = False
+    sum_ok = (not any_value) or abs(total - 1.0) <= GATE_MIX_SUM_TOL
+    return (buckets_ok, sum_ok)
+
+
+# --- emitter: binds (kind, rel_key) so per-check call sites stay compact ------
+
+
+class _Emitter:
+    """Collects CheckResults for one payload, closing over its kind + rel_key.
+
+    Every checker takes an emitter and calls the small typed helpers below; the
+    range/count helpers None-skip so honest-NULL never produces a finding.
+    """
+
+    def __init__(self, kind: str, rel_key: str) -> None:
+        self.kind = kind
+        self.rel_key = rel_key
+        self.out: list[CheckResult] = []
+
+    def err(self, check: str, fp: str, value: object, msg: str) -> None:
+        self.out.append(CheckResult(
+            check=check, kind=self.kind, rel_key=self.rel_key, severity=Severity.ERROR,
+            message=msg, field_path=fp, value=value,
+        ))
+
+    def warn(self, check: str, fp: str, value: object, msg: str) -> None:
+        self.out.append(CheckResult(
+            check=check, kind=self.kind, rel_key=self.rel_key, severity=Severity.WARN,
+            message=msg, field_path=fp, value=value,
+        ))
+
+    # typed guards -----------------------------------------------------------
+    def rate(self, d: dict, fp: str, lo: float = 0, hi: float = 100) -> None:
+        v = d.get(fp)
+        if not _in_range(v, lo, hi):
+            self.err("rate_range", fp, v, f"{fp}={v} out of [{lo},{hi}]")
+
+    def delay(self, d: dict, fp: str) -> None:
+        v = d.get(fp)
+        if not _in_range(v, _DELAY_LO, _DELAY_HI):
+            self.err("delay_range", fp, v, f"{fp}={v} beyond +-{GATE_DELAY_MIN_ABS} min")
+
+    def count(self, d: dict, fp: str) -> None:
+        v = d.get(fp)
+        if not _nonneg(v):
+            self.err("count_negative", fp, v, f"{fp}={v} < 0")
+
+    def wilson(self, d: dict) -> None:
+        lo, hi = d.get("wilson_lo"), d.get("wilson_hi")
+        if not _in_range(lo, 0, 100):
+            self.err("rate_range", "wilson_lo", lo, f"wilson_lo={lo} out of [0,100]")
+        if not _in_range(hi, 0, 100):
+            self.err("rate_range", "wilson_hi", hi, f"wilson_hi={hi} out of [0,100]")
+        if not _le(lo, hi):
+            self.warn("wilson_order", "wilson_lo", lo, f"wilson_lo>wilson_hi ({lo}>{hi})")
+
+    def mix(self, mix: object, fp: str) -> None:
+        buckets_ok, sum_ok = _mix_ok(mix)
+        if not buckets_ok:
+            self.err("mix_bucket", fp, mix, f"{fp} has an occupancy bucket outside [0,1]")
+        if not sum_ok:
+            self.warn("mix_sum", fp, mix, f"{fp} occupancy-mix shares do not sum to ~1.0")
+
+    def nonempty(self, d: dict, fp: str) -> None:
+        v = d.get(fp)
+        if not (isinstance(v, str) and v.strip()):
+            self.err("empty_grain", fp, v, f"{fp} is empty")
+
+
+def _prefixed(emit: _Emitter, prefix: str) -> _Emitter:
+    """A view of *emit* whose helpers prepend *prefix* to every field path."""
+    return _PrefixEmitter(emit, prefix)
+
+
+class _PrefixEmitter(_Emitter):
+    """Delegates to a parent emitter, prefixing field paths (e.g. 'periods[2].')."""
+
+    def __init__(self, parent: _Emitter, prefix: str) -> None:
+        self._parent = parent
+        self._prefix = prefix
+        self.kind = parent.kind
+        self.rel_key = parent.rel_key
+
+    @property  # keep .out pointing at the parent's list
+    def out(self) -> list[CheckResult]:  # type: ignore[override]
+        return self._parent.out
+
+    def err(self, check: str, fp: str, value: object, msg: str) -> None:
+        self._parent.err(check, f"{self._prefix}{fp}", value, f"{self._prefix}{msg}")
+
+    def warn(self, check: str, fp: str, value: object, msg: str) -> None:
+        self._parent.warn(check, f"{self._prefix}{fp}", value, f"{self._prefix}{msg}")
+
+
+# --- universal sentinel / NaN scan (runs on EVERY payload) -------------------
+
+
+def _walk_numbers(node: object, path: str):  # noqa: ANN201
+    """Yield (field_path, value) for every numeric leaf in a nested dict/list/model dump."""
+    if isinstance(node, dict):
+        for key, val in node.items():
+            child = f"{path}.{key}" if path else str(key)
+            yield from _walk_numbers(val, child)
+    elif isinstance(node, list | tuple):
+        for i, val in enumerate(node):
+            yield from _walk_numbers(val, f"{path}[{i}]")
+    elif _is_number(node):
+        yield (path, node)
+
+
+def _universal_scan(rel_key: str, kind: str, as_dict: object) -> list[CheckResult]:
+    """Flag the exact 9999.9999 Numeric(8,4) overflow sentinel + NaN/Inf. None skipped.
+
+    Only float leaves within GATE_SENTINEL_EPS of GATE_SENTINEL_VALUE are flagged — a
+    magnitude band would false-flag legitimate large integers (observation counts,
+    alert durations). NaN/Inf is a universal ERROR on any float leaf.
+    """
+    emit = _Emitter(kind, rel_key)
+    for fpath, v in _walk_numbers(as_dict, ""):
+        if isinstance(v, float) and (math.isnan(v) or math.isinf(v)):
+            emit.err("nan_inf", fpath, None, f"{fpath} is NaN/Inf ({v!r})")
+        elif isinstance(v, float) and abs(v - GATE_SENTINEL_VALUE) < GATE_SENTINEL_EPS:
+            emit.err("sentinel", fpath, v, f"{fpath}={v} is the 9999.9999 Numeric(8,4) sentinel")
+    return emit.out
+
+
+# --- per-kind checkers -------------------------------------------------------
+# Rates are PERCENT 0..100 unless noted; counts are integers >= 0; None always skipped.
+
+
+def _check_habits(emit: _Emitter, habits: object, prefix: str) -> None:
+    if not isinstance(habits, dict):
+        return
+    for r, row in enumerate(habits.get("matrix") or []):
+        if not isinstance(row, list):
+            continue
+        for c, cell in enumerate(row):
+            if cell is None:
+                continue
+            if _is_number(cell) and not (0.0 <= cell <= 1.0):
+                fp = f"{prefix}.matrix[{r}][{c}]"
+                emit.err("habits_range", fp, cell, f"{fp}={cell} out of [0,1]")
+
+
+def check_network(payload: object, *, rel_key: str) -> list[CheckResult]:
+    emit = _Emitter("live_network", rel_key)
+    d = _as_dict(payload)
+    if not isinstance(d, dict):
+        return emit.out
+    emit.rate(d, "on_time_pct")
+    emit.rate(d, "coverage_pct")
+    emit.count(d, "vehicles_in_service")
+    emit.count(d, "non_responding")
+    sd = d.get("status_dist")
+    if isinstance(sd, dict):
+        sd_emit = _prefixed(emit, "status_dist.")
+        for k in ("on_time", "late", "severe", "early", "unknown"):
+            sd_emit.count(sd, k)
+    emit.mix(d.get("occupancy_mix"), "occupancy_mix")
+    hist = d.get("delay_histogram")
+    if isinstance(hist, list):
+        total = 0
+        for i, b in enumerate(hist):
+            if not isinstance(b, dict):
+                continue
+            _prefixed(emit, f"delay_histogram[{i}].").count(b, "count")
+            if _is_number(b.get("count")):
+                total += b["count"]
+            lo, hi = b.get("lo_min"), b.get("hi_min")
+            if not _le(lo, hi):
+                emit.err("edge_order", f"delay_histogram[{i}].lo_min", lo,
+                         f"delay_histogram[{i}] lo_min>hi_min ({lo}>{hi})")
+        if total < 1:
+            emit.warn("empty_histogram", "delay_histogram", total,
+                      "delay_histogram present but all-zero counts")
+    nrr = d.get("non_responding_by_route")
+    if isinstance(nrr, list):
+        total = 0
+        for i, r in enumerate(nrr):
+            if not isinstance(r, dict):
+                continue
+            _prefixed(emit, f"non_responding_by_route[{i}].").count(r, "count")
+            if _is_number(r.get("count")):
+                total += r["count"]
+        nr = d.get("non_responding")
+        if _is_number(nr) and total != nr:
+            emit.err("sum_mismatch", "non_responding_by_route", total,
+                     f"sum(non_responding_by_route.count)={total} != non_responding={nr}")
+    emit.delay(d, "delay_p50_min")
+    emit.delay(d, "delay_p90_min")
+    if not _le(d.get("delay_p50_min"), d.get("delay_p90_min")):
+        emit.warn("percentile_order", "delay_p50_min", d.get("delay_p50_min"),
+                  "delay_p50_min > delay_p90_min")
+    return emit.out
+
+
+def _check_trend_point(emit: _Emitter, p: dict) -> None:
+    emit.rate(p, "otp_pct")
+    emit.delay(p, "avg_delay_min")
+    emit.delay(p, "p90_min")
+    emit.count(p, "vehicles")
+    emit.rate(p, "cancellation_rate")
+    emit.count(p, "observation_count")
+    emit.wilson(p)
+    emit.mix(p.get("occupancy_mix"), "occupancy_mix")
+
+
+def check_network_trend(payload: object, *, rel_key: str) -> list[CheckResult]:
+    # The empty-series decision is prior-aware (WARN on a first publish, ERROR once a
+    # prior publish existed for this provider/tier) so it is routed through
+    # finalize_batch, NOT emitted here where prior state is unknown.
+    emit = _Emitter("historic_network_trend", rel_key)
+    d = _as_dict(payload)
+    if not isinstance(d, dict):
+        return emit.out
+    for grain in ("series", "weekly", "monthly"):
+        for i, p in enumerate(d.get(grain) or []):
+            if isinstance(p, dict):
+                _check_trend_point(_prefixed(emit, f"{grain}[{i}]."), p)
+    for grain in ("by_shift", "by_daytype"):
+        for i, s in enumerate(d.get(grain) or []):
+            if not isinstance(s, dict):
+                continue
+            sub = _prefixed(emit, f"{grain}[{i}].")
+            sub.nonempty(s, "grain")
+            sub.rate(s, "otp_pct")
+            sub.delay(s, "avg_delay_min")
+            sub.rate(s, "severe_pct")
+            sub.count(s, "observation_count")
+            sub.wilson(s)
+    return emit.out
+
+
+def _check_reliability_period(emit: _Emitter, p: dict) -> None:
+    emit.rate(p, "otp_pct")
+    emit.delay(p, "avg_delay_min")
+    emit.delay(p, "p50_min")
+    emit.delay(p, "p90_min")
+    emit.rate(p, "severe_pct")
+    emit.count(p, "observation_count")
+    emit.count(p, "on_time")
+    if not _le(p.get("on_time"), p.get("observation_count")):
+        emit.err("invariant", "on_time", p.get("on_time"), "on_time > observation_count")
+    emit.wilson(p)
+    hist = p.get("delay_histogram")
+    if isinstance(hist, list):
+        for j, b in enumerate(hist):
+            if not isinstance(b, dict):
+                continue
+            _prefixed(emit, f"delay_histogram[{j}].").count(b, "count")
+            if not _le(b.get("lo_sec"), b.get("hi_sec")):
+                emit.err("edge_order", f"delay_histogram[{j}].lo_sec", b.get("lo_sec"),
+                         f"delay_histogram[{j}] lo_sec>hi_sec")
+    emit.rate(p, "prior_otp_pct")
+    emit.count(p, "prior_on_time")
+    if not _le(p.get("prior_on_time"), p.get("prior_observation_count")):
+        emit.err("invariant", "prior_on_time", p.get("prior_on_time"),
+                 "prior_on_time > prior_observation_count")
+
+
+def _check_headway(emit: _Emitter, h: dict) -> None:
+    emit.count(h, "scheduled_min")
+    emit.count(h, "observed_min")
+    emit.count(h, "cov")
+    emit.count(h, "observation_count")
+    if _is_neg(h.get("excess_wait_min")):
+        emit.err("clamp_invariant", "excess_wait_min", h.get("excess_wait_min"),
+                 "excess_wait_min < 0 (clamp violated)")
+    emit.rate(h, "bunched_pct")
+
+
+def _check_weak_stop(emit: _Emitter, w: dict) -> None:
+    emit.delay(w, "avg_delay_min")
+    emit.count(w, "observation_count")
+    emit.rate(w, "severe_pct")
+    emit.wilson(w)
+
+
+def _check_crowding_cell(emit: _Emitter, c: dict) -> None:
+    band = c.get("band")
+    if band is not None and band not in _CROWDING_BANDS:
+        emit.err("unknown_band", "band", band, f"band={band!r} not a known occupancy band")
+    emit.delay(c, "avg_delay_min")
+    emit.delay(c, "p50_min")
+    emit.count(c, "observation_count")
+    emit.count(c, "day_count")
+
+
+def _check_crosstab_cell(emit: _Emitter, c: dict) -> None:
+    emit.nonempty(c, "shift")
+    emit.nonempty(c, "day_type")
+    emit.rate(c, "otp_pct")
+    emit.rate(c, "severe_pct")
+    emit.delay(c, "avg_delay_min")
+    emit.count(c, "observation_count")
+
+
+def check_route_reliability(payload: object, *, rel_key: str) -> list[CheckResult]:
+    emit = _Emitter("historic_route_reliability", rel_key)
+    d = _as_dict(payload)
+    if not isinstance(d, dict):
+        return emit.out
+    if not (d.get("id") or "").strip():
+        emit.err("empty_id", "id", d.get("id"), "route reliability id is empty")
+    for i, p in enumerate(d.get("periods") or []):
+        if isinstance(p, dict):
+            _check_reliability_period(_prefixed(emit, f"periods[{i}]."), p)
+    for i, h in enumerate(d.get("headway") or []):
+        if isinstance(h, dict):
+            _check_headway(_prefixed(emit, f"headway[{i}]."), h)
+    for i, hg in enumerate(d.get("headway_by_grain") or []):
+        if not isinstance(hg, dict):
+            continue
+        for j, h in enumerate(hg.get("headway") or []):
+            if isinstance(h, dict):
+                _check_headway(_prefixed(emit, f"headway_by_grain[{i}].headway[{j}]."), h)
+    _check_habits(emit, d.get("habits"), "habits")
+    for i, hg in enumerate(d.get("habits_by_grain") or []):
+        if isinstance(hg, dict):
+            _check_habits(emit, hg.get("habits"), f"habits_by_grain[{i}].habits")
+    for i, c in enumerate(d.get("cancellations") or []):
+        if not isinstance(c, dict):
+            continue
+        sub = _prefixed(emit, f"cancellations[{i}].")
+        sub.rate(c, "cancellation_rate_pct")
+        sub.count(c, "canceled_trip_days")
+        sub.count(c, "total_trip_days")
+        if not _le(c.get("canceled_trip_days"), c.get("total_trip_days")):
+            sub.err("invariant", "canceled_trip_days", c.get("canceled_trip_days"),
+                    "canceled_trip_days > total_trip_days")
+    for i, s in enumerate(d.get("skipped_stops") or []):
+        if not isinstance(s, dict):
+            continue
+        sub = _prefixed(emit, f"skipped_stops[{i}].")
+        sub.rate(s, "skipped_stop_rate_pct")
+        sub.count(s, "skipped_stop_count")
+        sub.count(s, "stop_time_update_count")
+        if not _le(s.get("skipped_stop_count"), s.get("stop_time_update_count")):
+            sub.err("invariant", "skipped_stop_count", s.get("skipped_stop_count"),
+                    "skipped_stop_count > stop_time_update_count")
+    for i, w in enumerate(d.get("weak_stops") or []):
+        if isinstance(w, dict):
+            _check_weak_stop(_prefixed(emit, f"weak_stops[{i}]."), w)
+    for i, wg in enumerate(d.get("weak_stops_by_grain") or []):
+        if not isinstance(wg, dict):
+            continue
+        for j, w in enumerate(wg.get("stops") or []):
+            if isinstance(w, dict):
+                _check_weak_stop(_prefixed(emit, f"weak_stops_by_grain[{i}].stops[{j}]."), w)
+    for i, c in enumerate(d.get("delay_by_crowding") or []):
+        if isinstance(c, dict):
+            _check_crowding_cell(_prefixed(emit, f"delay_by_crowding[{i}]."), c)
+    for i, c in enumerate(d.get("by_shift_daytype") or []):
+        if isinstance(c, dict):
+            _check_crosstab_cell(_prefixed(emit, f"by_shift_daytype[{i}]."), c)
+    for i, pg in enumerate(d.get("periods_by_grain") or []):
+        if not isinstance(pg, dict):
+            continue
+        for j, c in enumerate(pg.get("by_shift_daytype") or []):
+            if isinstance(c, dict):
+                _check_crosstab_cell(
+                    _prefixed(emit, f"periods_by_grain[{i}].by_shift_daytype[{j}]."), c
+                )
+    for i, o in enumerate(d.get("occupancy_by_grain") or []):
+        if isinstance(o, dict):
+            emit.mix(o.get("mix"), f"occupancy_by_grain[{i}].mix")
+    for i, o in enumerate(d.get("occupancy_by_dow") or []):
+        if not isinstance(o, dict):
+            continue
+        emit.mix(o.get("mix"), f"occupancy_by_dow[{i}].mix")
+        _prefixed(emit, f"occupancy_by_dow[{i}].").count(o, "n")
+    emit.mix(d.get("occupancy_mix"), "occupancy_mix")
+    return emit.out
+
+
+def check_stop_reliability(payload: object, *, rel_key: str) -> list[CheckResult]:
+    emit = _Emitter("historic_stop_reliability", rel_key)
+    d = _as_dict(payload)
+    if not isinstance(d, dict):
+        return emit.out
+    if not (d.get("id") or "").strip():
+        emit.err("empty_id", "id", d.get("id"), "stop reliability id is empty")
+    for i, p in enumerate(d.get("periods") or []):
+        if not isinstance(p, dict):
+            continue
+        sub = _prefixed(emit, f"periods[{i}].")
+        sub.rate(p, "otp_pct")
+        sub.delay(p, "avg_delay_min")
+        sub.delay(p, "p50_min")
+        sub.delay(p, "p90_min")
+        sub.rate(p, "severe_pct")
+        sub.count(p, "observation_count")
+        sub.wilson(p)
+    _check_habits(emit, d.get("habits"), "habits")
+    for i, dw in enumerate(d.get("day_of_week") or []):
+        if not isinstance(dw, dict):
+            continue
+        sub = _prefixed(emit, f"day_of_week[{i}].")
+        sub.delay(dw, "avg_delay_min")
+        sub.rate(dw, "severe_pct")
+        sub.count(dw, "observation_count")
+    for i, br in enumerate(d.get("by_route") or []):
+        if isinstance(br, dict):
+            _prefixed(emit, f"by_route[{i}].").delay(br, "avg_delay_min")
+    emit.mix(d.get("occupancy_mix"), "occupancy_mix")
+    return emit.out
+
+
+def check_hotspots(payload: object, *, rel_key: str) -> list[CheckResult]:
+    emit = _Emitter("historic_hotspots", rel_key)
+    d = _as_dict(payload)
+    if not isinstance(d, dict):
+        return emit.out
+    for i, h in enumerate(d.get("hotspots") or []):
+        if not isinstance(h, dict):
+            continue
+        sub = _prefixed(emit, f"hotspots[{i}].")
+        expected = i + 1
+        if h.get("rank") != expected:
+            sub.err("rank_sequence", "rank", h.get("rank"),
+                    f"rank={h.get('rank')} not sequential (expected {expected})")
+        if h.get("type") not in ("route", "stop"):
+            sub.err("unknown_type", "type", h.get("type"),
+                    f"type={h.get('type')!r} not in {{route,stop}}")
+        if h.get("id") in _SENTINEL_ENTITY_IDS:
+            sub.err("sentinel_entity", "id", h.get("id"),
+                    f"id={h.get('id')!r} is a sentinel entity")
+        sub.rate(h, "otp_delta_pts", -100, 100)
+    return emit.out
+
+
+def check_repeat_offenders(payload: object, *, rel_key: str) -> list[CheckResult]:
+    emit = _Emitter("historic_repeat_offenders", rel_key)
+    d = _as_dict(payload)
+    if not isinstance(d, dict):
+        return emit.out
+    for i, o in enumerate(d.get("offenders") or []):
+        if not isinstance(o, dict):
+            continue
+        sub = _prefixed(emit, f"offenders[{i}].")
+        if o.get("type") not in ("trip", "vehicle", "route", "stop"):
+            sub.err("unknown_type", "type", o.get("type"),
+                    f"type={o.get('type')!r} not a known offender type")
+        sub.delay(o, "avg_delay_min")
+        if o.get("id") in _SENTINEL_ENTITY_IDS:
+            sub.err("sentinel_entity", "id", o.get("id"), "id is a sentinel entity")
+        if o.get("route") in _SENTINEL_ENTITY_IDS:
+            sub.err("sentinel_entity", "route", o.get("route"), "route is a sentinel entity")
+    return emit.out
+
+
+def check_alert_history(payload: object, *, rel_key: str) -> list[CheckResult]:
+    emit = _Emitter("historic_alert_history", rel_key)
+    d = _as_dict(payload)
+    if not isinstance(d, dict):
+        return emit.out
+    for i, a in enumerate(d.get("alerts") or []):
+        if not isinstance(a, dict):
+            continue
+        sub = _prefixed(emit, f"alerts[{i}].")
+        if _is_neg(a.get("duration_min")):
+            sub.err("count_negative", "duration_min", a.get("duration_min"), "duration_min < 0")
+        sub.count(a, "impact_passages")
+    breakdown = d.get("breakdown")
+    if isinstance(breakdown, dict):
+        for group in ("by_cause", "by_effect", "by_severity"):
+            for i, b in enumerate(breakdown.get(group) or []):
+                if not isinstance(b, dict):
+                    continue
+                sub = _prefixed(emit, f"breakdown.{group}[{i}].")
+                sub.count(b, "count")
+                if _is_neg(b.get("median_duration_min")):
+                    sub.err("count_negative", "median_duration_min",
+                            b.get("median_duration_min"), "median_duration_min < 0")
+    return emit.out
+
+
+def check_receipt(payload: object, *, rel_key: str) -> list[CheckResult]:
+    emit = _Emitter("historic_receipt", rel_key)
+    d = _as_dict(payload)
+    if not isinstance(d, dict):
+        return emit.out
+    emit.rate(d, "otp_pct")
+    emit.delay(d, "avg_delay_min")
+    emit.rate(d, "severe_pct")
+    for f in ("vehicles", "affected_routes", "affected_stops", "alerts"):
+        emit.count(d, f)
+    wr = d.get("worst_route")
+    if isinstance(wr, dict):
+        _prefixed(emit, "worst_route.").rate(wr, "otp_delta_pts", -100, 100)
+    ws = d.get("worst_stop")
+    if isinstance(ws, dict):
+        _prefixed(emit, "worst_stop.").delay(ws, "avg_delay_min")
+    return emit.out
+
+
+def check_vehicles(payload: object, *, rel_key: str) -> list[CheckResult]:
+    emit = _Emitter("live_vehicles", rel_key)
+    d = _as_dict(payload)
+    if not isinstance(d, dict):
+        return emit.out
+    for i, v in enumerate(d.get("vehicles") or []):
+        if not isinstance(v, dict):
+            continue
+        sub = _prefixed(emit, f"vehicles[{i}].")
+        if not _in_range(v.get("lat"), -90, 90):
+            sub.err("geo_range", "lat", v.get("lat"), f"lat={v.get('lat')} out of [-90,90]")
+        if not _in_range(v.get("lon"), -180, 180):
+            sub.err("geo_range", "lon", v.get("lon"), f"lon={v.get('lon')} out of [-180,180]")
+        if not _in_range(v.get("bearing"), 0, 360):
+            sub.err("geo_range", "bearing", v.get("bearing"), "bearing out of [0,360]")
+        sub.count(v, "speed_kmh")
+    return emit.out
+
+
+def check_alerts(payload: object, *, rel_key: str) -> list[CheckResult]:
+    emit = _Emitter("live_alerts", rel_key)
+    d = _as_dict(payload)
+    if not isinstance(d, dict):
+        return emit.out
+    for i, a in enumerate(d.get("alerts") or []):
+        if not isinstance(a, dict):
+            continue
+        sev = a.get("severity")
+        if sev is not None and sev not in ("critical", "high", "watch"):
+            _prefixed(emit, f"alerts[{i}].").err(
+                "unknown_severity", "severity", sev, f"severity={sev!r} not a known severity"
+            )
+    return emit.out
+
+
+# --- rel_key -> checker routing ----------------------------------------------
+# Exact keys route directly; per-entity prefixes route by startswith.
+
+_EXACT_CHECKERS = {
+    "live/network.json": (check_network, "live_network"),
+    "live/vehicles.json": (check_vehicles, "live_vehicles"),
+    "live/alerts.json": (check_alerts, "live_alerts"),
+    "historic/network_trend.json": (check_network_trend, "historic_network_trend"),
+    "historic/hotspots.json": (check_hotspots, "historic_hotspots"),
+    "historic/repeat_offenders.json": (check_repeat_offenders, "historic_repeat_offenders"),
+    "historic/alert_history.json": (check_alert_history, "historic_alert_history"),
+}
+
+# Exact discovery-index keys (universal-scan only) must be matched BEFORE the broader
+# per-entity directory prefixes they nest under.
+_INDEX_KINDS = {
+    "historic/route_reliability/index.json": "historic_route_reliability_index",
+    "historic/receipts/index.json": "historic_receipts_index",
+}
+
+_PREFIX_CHECKERS = (
+    ("historic/route_reliability/", check_route_reliability, "historic_route_reliability"),
+    ("historic/stop_reliability/", check_stop_reliability, "historic_stop_reliability"),
+    ("historic/receipts/", check_receipt, "historic_receipt"),
+)
+
+
+def _route_checker(rel_key: str):  # noqa: ANN202
+    """Return (checker_or_None, kind): exact match, then index key, then prefix, then unknown."""
+    if rel_key in _EXACT_CHECKERS:
+        return _EXACT_CHECKERS[rel_key]
+    if rel_key in _INDEX_KINDS:
+        return (None, _INDEX_KINDS[rel_key])
+    for prefix, checker, kind in _PREFIX_CHECKERS:
+        if rel_key.startswith(prefix):
+            return (checker, kind)
+    return (None, "unknown")
+
+
+def check_payload(rel_key: str, payload: object) -> list[CheckResult]:
+    """Route rel_key to its checker (exact key or known prefix) + ALWAYS the universal scan."""
+    checker, kind = _route_checker(rel_key)
+    results: list[CheckResult] = []
+    if checker is not None:
+        results.extend(checker(payload, rel_key=rel_key))
+    results.extend(_universal_scan(rel_key, kind, _as_dict(payload)))
+    return results
+
+
+def new_report(provider_id: str, tier: str, generated_utc: str) -> GateReport:
+    return GateReport(provider_id=provider_id, tier=tier, generated_utc=generated_utc)
+
+
+def record(report: GateReport, rel_key: str, payload: object) -> None:
+    """Run check_payload for one payload; append results; bump payloads_checked/checks_run."""
+    report.results.extend(check_payload(rel_key, payload))
+    report.payloads_checked += 1
+    report.checks_run += 1
+
+
+def check_route_coverage_delta(
+    current_total: int | None,
+    prior_files_total: int | None,
+    *,
+    drop_frac: float = GATE_ROUTE_DROP_FRACTION,
+) -> CheckResult | None:
+    """ERROR when the WHOLE-tier file count shrank > drop_frac vs the prior publish.
+
+    prior_files_total is core.snapshot_publish_state.files_total (the WHOLE-tier count,
+    all historic files — not the route subset). None prior (first publish) -> None: a
+    first publish is never blocked (DECISIONS #2).
+    """
+    if prior_files_total is None or prior_files_total <= 0 or current_total is None:
+        return None
+    if current_total < prior_files_total * (1 - drop_frac):
+        return CheckResult(
+            check="coverage_delta", kind="batch", rel_key="<batch>", severity=Severity.ERROR,
+            message=(
+                f"published file set shrank from ~{prior_files_total} to {current_total} "
+                f"(> {drop_frac:.0%} drop)"
+            ),
+            field_path=None, value=current_total,
+        )
+    return None
+
+
+def _is_empty_route_file(payload: object) -> bool:
+    """A route reliability payload with NO data: empty periods, None habits, empty weak_stops."""
+    d = _as_dict(payload)
+    if not isinstance(d, dict):
+        return False
+    return (
+        not (d.get("periods") or [])
+        and d.get("habits") is None
+        and not (d.get("weak_stops") or [])
+    )
+
+
+def _network_trend_series_empty(payload: object) -> bool:
+    """True when a network_trend payload carries an empty daily `series`."""
+    d = _as_dict(payload)
+    if not isinstance(d, dict):
+        return False
+    return len(d.get("series") or []) < 1
+
+
+def check_network_trend_coverage(
+    payload: object, *, rel_key: str, has_prior: bool
+) -> CheckResult | None:
+    """Empty network_trend series: WARN when no prior publish state exists for this
+    provider/tier (a legitimate cold start), ERROR once a prior publish existed
+    (a regression — daily trend silently dropped). Non-empty series -> None."""
+    if not _network_trend_series_empty(payload):
+        return None
+    severity = Severity.ERROR if has_prior else Severity.WARN
+    return CheckResult(
+        check="empty_coverage", kind="historic_network_trend", rel_key=rel_key,
+        severity=severity,
+        message=(
+            "network_trend series is empty (no daily trend published)"
+            + ("" if has_prior else " — first publish, no prior state")
+        ),
+        field_path="series", value=0,
+    )
+
+
+def finalize_batch(
+    report: GateReport,
+    *,
+    route_payloads: list[tuple[str, object]] | None = None,
+    current_total: int | None = None,
+    prior_files_total: int | None = None,
+    network_trend: tuple[str, object] | None = None,
+) -> None:
+    """Report-level aggregates that need the WHOLE published set (not per-file).
+
+    * coverage-delta ERROR when the total file count shrank vs the prior publish;
+    * over-half-empty route set WARN (a coverage regression signal);
+    * empty network_trend series WARN on a first publish / ERROR once prior state
+      exists (routed here because per-file checks cannot see prior publish state).
+
+    prior_files_total None means no prior publish row exists (first publish), which
+    both suppresses the coverage-delta ERROR and downgrades the empty-series finding
+    to WARN.
+    """
+    has_prior = prior_files_total is not None
+    if network_trend is not None:
+        rel_key, payload = network_trend
+        trend_finding = check_network_trend_coverage(
+            payload, rel_key=rel_key, has_prior=has_prior
+        )
+        if trend_finding is not None:
+            report.results.append(trend_finding)
+    delta = check_route_coverage_delta(current_total, prior_files_total)
+    if delta is not None:
+        report.results.append(delta)
+    if route_payloads:
+        empty = sum(1 for (_k, p) in route_payloads if _is_empty_route_file(p))
+        ratio = empty / len(route_payloads)
+        if ratio > GATE_EMPTY_ROUTE_WARN_FRACTION:
+            report.results.append(CheckResult(
+                check="empty_route_ratio", kind="batch", rel_key="<batch>",
+                severity=Severity.WARN,
+                message=(
+                    f"{empty} of {len(route_payloads)} route reliability files carry no data "
+                    f"({ratio:.0%} > {GATE_EMPTY_ROUTE_WARN_FRACTION:.0%})"
+                ),
+                field_path=None, value=ratio,
+            ))
+
+
+def enforce(report: GateReport, *, force: bool) -> None:
+    """Log a structured summary; raise GateError when errors exist and not force.
+
+    force=True downgrades a failing gate to a logged "GATE OVERRIDDEN" warning (the
+    live tier and --force paths), so findings are recorded but the publish proceeds.
+    """
+    top = [r.to_dict() for r in (report.errors + report.warnings)][:10]
+    summary = {
+        "provider_id": report.provider_id,
+        "tier": report.tier,
+        "generated_utc": report.generated_utc,
+        "checks_run": report.checks_run,
+        "payloads_checked": report.payloads_checked,
+        "errors": len(report.errors),
+        "warnings": len(report.warnings),
+        "top_findings": top,
+    }
+    if report.errors or report.warnings:
+        logger.warning("publish gate: %s", json.dumps(summary, sort_keys=True))
+    else:
+        logger.info("publish gate: %s", json.dumps(summary, sort_keys=True))
+
+    if report.errors and not force:
+        raise GateError(report)
+    if report.errors and force:
+        logger.warning(
+            "publish gate OVERRIDDEN (force): proceeding despite %d error(s): %s",
+            len(report.errors),
+            json.dumps([r.to_dict() for r in report.errors], sort_keys=True),
+        )

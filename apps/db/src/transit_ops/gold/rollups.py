@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 
 from sqlalchemy import text
 from sqlalchemy.engine import Engine
@@ -2094,3 +2095,471 @@ def build_warm_rollups(
         built_route_headway_shift_daily_days=built_route_headway_shift_daily,
         built_stop_delay_spine_days=built_stop_delay_spine,
     )
+
+
+# ---------------------------------------------------------------------------
+# Windowed rebuild of the append-only daily rollups (present-but-wrong days)
+# ---------------------------------------------------------------------------
+
+# The 11 append-only daily kinds are fill-forward only: _build_percentile_days
+# SKIPS any local day already watermarked in gold.warm_rollup_periods, so a
+# present-but-WRONG closed day (e.g. a late silver correction) is never
+# recomputed — the watermark shields it. The ONLY way to force a re-build of a
+# present day is to first delete BOTH the rollup ROW(s) AND the watermark row(s)
+# for that window, then re-run the builder over exactly that window. This
+# registry is the single source of truth mapping each kind to its ROW table, the
+# ROW date column, the builder upsert, and the missing-day source calendar.
+#
+# rollup_kind == the string written to warm_rollup_periods.rollup_kind, and is
+# also the --kinds key. The WATERMARK is keyed on midnight-UTC of the builder's
+# RUN date (period_start_utc), which is NOT always the ROW date:
+#   * service_day_offset = 0: the ROW date column stores the run date directly
+#     (row date == watermark run date).
+#   * service_day_offset = 1 (route_service_span_daily only): the builder writes
+#     provider_local_date = run_date - 1 (the just-completed GTFS service day),
+#     so for a ROW date R the corresponding watermark/run date is R + 1.
+# rebuild_warm_rollups takes ROW dates on the CLI (the dates visible as wrong in
+# serving) and maps ROW -> RUN internally via service_day_offset.
+@dataclass(frozen=True)
+class RebuildableKind:
+    rollup_kind: str  # == warm_rollup_periods.rollup_kind and the --kinds key
+    table: str  # gold.<table> ROW table (bare name, from this trusted registry)
+    date_column: str  # ROW date column: provider_local_date | service_local_date
+    upsert: object  # the UPSERT_* text() the builder runs per day
+    select_missing: object  # SELECT_MISSING_PERCENTILE_DAYS | _OCCUPANCY_DAYS
+    service_day_offset: int  # watermark/run date = ROW date + this (0 or 1)
+
+
+REBUILDABLE_KINDS: dict[str, RebuildableKind] = {
+    "route_percentile_daily": RebuildableKind(
+        "route_percentile_daily",
+        "route_delay_percentile_daily",
+        "provider_local_date",
+        UPSERT_ROUTE_DELAY_PERCENTILE_DAILY,
+        SELECT_MISSING_PERCENTILE_DAYS,
+        0,
+    ),
+    "stop_percentile_daily": RebuildableKind(
+        "stop_percentile_daily",
+        "stop_delay_percentile_daily",
+        "provider_local_date",
+        UPSERT_STOP_DELAY_PERCENTILE_DAILY,
+        SELECT_MISSING_PERCENTILE_DAYS,
+        0,
+    ),
+    "route_cancellation_daily": RebuildableKind(
+        "route_cancellation_daily",
+        "route_cancellation_daily",
+        "provider_local_date",
+        UPSERT_ROUTE_CANCELLATION_DAILY,
+        SELECT_MISSING_PERCENTILE_DAYS,
+        0,
+    ),
+    "route_occupancy_band_daily": RebuildableKind(
+        "route_occupancy_band_daily",
+        "route_occupancy_band_daily",
+        "provider_local_date",
+        UPSERT_ROUTE_OCCUPANCY_BAND_DAILY,
+        SELECT_MISSING_OCCUPANCY_DAYS,
+        0,
+    ),
+    "stop_occupancy_band_daily": RebuildableKind(
+        "stop_occupancy_band_daily",
+        "stop_occupancy_band_daily",
+        "provider_local_date",
+        UPSERT_STOP_OCCUPANCY_BAND_DAILY,
+        SELECT_MISSING_OCCUPANCY_DAYS,
+        0,
+    ),
+    # route_service_span_daily attributes to the just-completed GTFS service day:
+    # ROW provider_local_date = run_date - 1, watermark = run_date. offset = 1.
+    "route_service_span_daily": RebuildableKind(
+        "route_service_span_daily",
+        "route_service_span_daily",
+        "provider_local_date",
+        UPSERT_ROUTE_SERVICE_SPAN_DAILY,
+        SELECT_MISSING_PERCENTILE_DAYS,
+        1,
+    ),
+    "route_skipped_stop_daily": RebuildableKind(
+        "route_skipped_stop_daily",
+        "route_skipped_stop_daily",
+        "provider_local_date",
+        UPSERT_ROUTE_SKIPPED_STOP_DAILY,
+        SELECT_MISSING_PERCENTILE_DAYS,
+        0,
+    ),
+    "route_delay_by_crowding_daily": RebuildableKind(
+        "route_delay_by_crowding_daily",
+        "route_delay_by_crowding_daily",
+        "provider_local_date",
+        UPSERT_ROUTE_DELAY_BY_CROWDING_DAILY,
+        SELECT_MISSING_PERCENTILE_DAYS,
+        0,
+    ),
+    "route_delay_spine": RebuildableKind(
+        "route_delay_spine",
+        "route_delay_spine",
+        "service_local_date",
+        UPSERT_ROUTE_DELAY_SPINE,
+        SELECT_MISSING_PERCENTILE_DAYS,
+        0,
+    ),
+    "route_headway_shift_daily": RebuildableKind(
+        "route_headway_shift_daily",
+        "route_headway_shift_daily",
+        "service_local_date",
+        UPSERT_ROUTE_HEADWAY_SHIFT_DAILY,
+        SELECT_MISSING_PERCENTILE_DAYS,
+        0,
+    ),
+    "stop_delay_spine": RebuildableKind(
+        "stop_delay_spine",
+        "stop_delay_spine",
+        "service_local_date",
+        UPSERT_STOP_DELAY_SPINE,
+        SELECT_MISSING_PERCENTILE_DAYS,
+        0,
+    ),
+}
+
+# Kinds an operator might name in --kinds that are DELIBERATELY not window-
+# rebuildable, each mapped to the correct alternative for the refusal message.
+# The 5m kind is not a closed-day grain; the reporting marts are fully
+# DELETE+UPSERT-rebuilt every build-warm-rollups run and carry no per-day
+# watermark, so a per-day window delete is meaningless/harmful for them.
+_NON_REBUILDABLE_KINDS: dict[str, str] = {
+    "trip_delay_summary_5m": (
+        "trip_delay_summary_5m is a 5-minute grain, not a closed-day rollup; "
+        "rebuild it with build-warm-rollups."
+    ),
+    **{
+        table_name: (
+            f"{table_name} is a full DELETE+UPSERT reporting mart refreshed every "
+            "build-warm-rollups run; re-run build-warm-rollups to refresh it."
+        )
+        for table_name in REPORTING_AGGREGATE_TABLES
+    },
+}
+
+
+def _rebuild_row_delete_sql(kind: RebuildableKind, *, dry_run: bool) -> object:
+    # Table + date column come ONLY from the trusted REBUILDABLE_KINDS registry;
+    # the window bounds are bound parameters. Mirrors the count/delete toggle of
+    # _gold_aggregate_retention_statement.
+    operation = "SELECT COUNT(*) FROM" if dry_run else "DELETE FROM"
+    return text(
+        f"""
+        {operation} gold.{kind.table}
+        WHERE provider_id = :provider_id
+          AND {kind.date_column} >= :from_date
+          AND {kind.date_column} <= :to_date
+        """
+    )
+
+
+# Windowed watermark delete/count. The MORE-SPECIFIC rollup_kind clause keeps it
+# distinct from the retention-prune's generic `DELETE FROM gold.warm_rollup_periods`.
+_REBUILD_WATERMARK_DELETE = text(
+    """
+    DELETE FROM gold.warm_rollup_periods
+    WHERE provider_id = :provider_id
+      AND rollup_kind = :rollup_kind
+      AND period_start_utc >= :from_utc
+      AND period_start_utc <= :to_utc
+    """
+)
+
+_REBUILD_WATERMARK_COUNT = text(
+    """
+    SELECT COUNT(*) FROM gold.warm_rollup_periods
+    WHERE provider_id = :provider_id
+      AND rollup_kind = :rollup_kind
+      AND period_start_utc >= :from_utc
+      AND period_start_utc <= :to_utc
+    """
+)
+
+
+@dataclass(frozen=True)
+class WarmRollupRebuildResult:
+    provider_id: str
+    from_date: date
+    to_date: date
+    dry_run: bool
+    aborted: bool
+    completed_at_utc: datetime
+    # Per-kind {rollup_kind: count}. On a dry run, deleted_* hold the counts that
+    # WOULD be deleted; rebuilt_* is empty (nothing is rebuilt).
+    deleted_row_counts: dict[str, int] = field(default_factory=dict)
+    deleted_watermark_counts: dict[str, int] = field(default_factory=dict)
+    rebuilt_day_counts: dict[str, int] = field(default_factory=dict)
+
+    def display_dict(self) -> dict[str, object]:
+        return {
+            "provider_id": self.provider_id,
+            "from_date": self.from_date.isoformat(),
+            "to_date": self.to_date.isoformat(),
+            "dry_run": self.dry_run,
+            "aborted": self.aborted,
+            "deleted_row_counts": self.deleted_row_counts,
+            "deleted_watermark_counts": self.deleted_watermark_counts,
+            "rebuilt_day_counts": self.rebuilt_day_counts,
+            "completed_at_utc": self.completed_at_utc.isoformat(),
+        }
+
+
+def _resolve_rebuild_kinds(kinds: list[str] | None) -> list[RebuildableKind]:
+    if kinds is None:
+        return list(REBUILDABLE_KINDS.values())
+    resolved: list[RebuildableKind] = []
+    for raw in kinds:
+        name = raw.strip()
+        if name in REBUILDABLE_KINDS:
+            resolved.append(REBUILDABLE_KINDS[name])
+        elif name in _NON_REBUILDABLE_KINDS:
+            raise ValueError(_NON_REBUILDABLE_KINDS[name])
+        else:
+            raise ValueError(
+                f"Unknown rebuildable kind {name!r}. Valid kinds: "
+                f"{', '.join(sorted(REBUILDABLE_KINDS))}"
+            )
+    return resolved
+
+
+def rebuild_warm_rollups(
+    provider_id: str,
+    *,
+    settings: Settings | None = None,
+    engine: Engine | None = None,
+    from_date: date,
+    to_date: date,
+    kinds: list[str] | None = None,
+    dry_run: bool = False,
+    confirm: Callable[[WarmRollupRebuildResult], bool] | None = None,
+) -> WarmRollupRebuildResult:
+    """Rebuild present-but-wrong closed days for the append-only daily rollups.
+
+    from_date/to_date are ROW dates (the dates visible as wrong in the gold
+    tables / serving), inclusive. For each requested kind this deletes the rollup
+    ROWs for the window AND the corresponding watermark rows, then re-runs the
+    existing builder over exactly that window so the shielded days are recomputed.
+
+    Only the append-only daily kinds in REBUILDABLE_KINDS are touched; the
+    DELETE+UPSERT reporting marts are NOT — re-run build-warm-rollups afterward to
+    refresh them (the caller prints that advisory).
+
+    Guardrails (raise ValueError before any mutation): from_date <= to_date, and
+    the whole window must sit within GOLD_FACT_RETENTION_DAYS — a window older
+    than the fact window would rebuild EMPTY days (facts are already pruned).
+    """
+    if settings is None:
+        settings = get_settings()
+    if from_date > to_date:
+        raise ValueError("--from must be on or before --to")
+    fact_retention_days = getattr(settings, "GOLD_FACT_RETENTION_DAYS", 14)
+    if engine is None:
+        engine = make_engine(settings)
+
+    target_kinds = _resolve_rebuild_kinds(kinds)
+    now = utc_now()
+
+    # Provider-local "today" anchors the closed-day fact-retention floor, exactly
+    # as build_warm_rollups does. floor = today - (fact_retention_days - 1) is the
+    # oldest day whose facts are still intact; today excludes the still-open day.
+    with engine.begin() as conn:
+        today_local = conn.execute(
+            text(
+                "SELECT (now() AT TIME ZONE dp.timezone)::date "
+                "FROM gold.dim_provider AS dp WHERE dp.provider_id = :provider_id"
+            ),
+            {"provider_id": provider_id},
+        ).scalar_one()
+    floor_local = today_local - timedelta(days=fact_retention_days - 1)
+    if from_date < floor_local:
+        raise ValueError(
+            f"--from {from_date.isoformat()} is older than the fact-retention floor "
+            f"{floor_local.isoformat()} (GOLD_FACT_RETENTION_DAYS={fact_retention_days}); "
+            "the underlying facts are already pruned, so those days would rebuild EMPTY."
+        )
+    # Per-kind open-day guard. The RUN date = ROW date + service_day_offset, and a
+    # rebuild whose run date lands on (or after) today_local would recompute the
+    # still-open capture day. offset-1 kinds (route_service_span_daily) map
+    # to_date=today-1 onto TODAY, so a flat to_date < today_local is not enough.
+    for kind in target_kinds:
+        max_to = today_local - timedelta(days=kind.service_day_offset + 1)
+        if to_date > max_to:
+            raise ValueError(
+                f"--to {to_date.isoformat()} is too recent for kind "
+                f"{kind.rollup_kind!r} (service_day_offset={kind.service_day_offset}): "
+                f"its run date would land on or after today ({today_local.isoformat()}) "
+                f"and rebuild the still-open capture day. Max legal --to for this kind "
+                f"is {max_to.isoformat()}."
+            )
+
+    if dry_run:
+        deleted_rows, deleted_watermarks = _count_rebuild_window(
+            engine,
+            provider_id=provider_id,
+            from_date=from_date,
+            to_date=to_date,
+            target_kinds=target_kinds,
+        )
+        return WarmRollupRebuildResult(
+            provider_id=provider_id,
+            from_date=from_date,
+            to_date=to_date,
+            dry_run=True,
+            aborted=False,
+            completed_at_utc=now,
+            deleted_row_counts=deleted_rows,
+            deleted_watermark_counts=deleted_watermarks,
+        )
+
+    # When a confirmation is needed, run the dry-run COUNT pass first so the plan
+    # shows the operator total rows + watermarks per kind. The --yes fast path
+    # passes confirm=None and skips both this count pass and the prompt.
+    plan_rows: dict[str, int] = {}
+    plan_watermarks: dict[str, int] = {}
+    if confirm is not None:
+        plan_rows, plan_watermarks = _count_rebuild_window(
+            engine,
+            provider_id=provider_id,
+            from_date=from_date,
+            to_date=to_date,
+            target_kinds=target_kinds,
+        )
+    plan = WarmRollupRebuildResult(
+        provider_id=provider_id,
+        from_date=from_date,
+        to_date=to_date,
+        dry_run=False,
+        aborted=False,
+        completed_at_utc=now,
+        deleted_row_counts=plan_rows,
+        deleted_watermark_counts=plan_watermarks,
+    )
+    if confirm is not None and not confirm(plan):
+        return WarmRollupRebuildResult(
+            provider_id=provider_id,
+            from_date=from_date,
+            to_date=to_date,
+            dry_run=False,
+            aborted=True,
+            completed_at_utc=utc_now(),
+        )
+
+    deleted_rows = {}
+    deleted_watermarks = {}
+    rebuilt_days: dict[str, int] = {}
+    for kind in target_kinds:
+        from_utc, to_utc = _rebuild_watermark_window(from_date, to_date, kind)
+        # Delete phase — one transaction per kind (matches the per-kind isolation
+        # of the reporting rebuild). Rows first, then their watermarks.
+        with engine.begin() as conn:
+            deleted_rows[kind.rollup_kind] = _safe_rowcount(
+                conn.execute(
+                    _rebuild_row_delete_sql(kind, dry_run=False),
+                    {
+                        "provider_id": provider_id,
+                        "from_date": from_date,
+                        "to_date": to_date,
+                    },
+                )
+            )
+            deleted_watermarks[kind.rollup_kind] = _safe_rowcount(
+                conn.execute(
+                    _REBUILD_WATERMARK_DELETE,
+                    {
+                        "provider_id": provider_id,
+                        "rollup_kind": kind.rollup_kind,
+                        "from_utc": from_utc,
+                        "to_utc": to_utc,
+                    },
+                )
+            )
+        # Rebuild phase — reuse _build_percentile_days UNCHANGED. The watermarks it
+        # keys on were just deleted, so its missing-day SELECT now re-enumerates
+        # exactly this window. floor_key/today_key bound it to the RUN-date window
+        # (ROW window shifted by service_day_offset), so nothing outside is touched.
+        run_from = from_date + timedelta(days=kind.service_day_offset)
+        run_to = to_date + timedelta(days=kind.service_day_offset)
+        rebuilt_days[kind.rollup_kind] = _build_percentile_days(
+            engine,
+            provider_id=provider_id,
+            rollup_kind=kind.rollup_kind,
+            upsert=kind.upsert,
+            today_key=int((run_to + timedelta(days=1)).strftime("%Y%m%d")),
+            floor_key=int(run_from.strftime("%Y%m%d")),
+            now=now,
+            select_missing=kind.select_missing,
+        )
+
+    return WarmRollupRebuildResult(
+        provider_id=provider_id,
+        from_date=from_date,
+        to_date=to_date,
+        dry_run=False,
+        aborted=False,
+        completed_at_utc=now,
+        deleted_row_counts=deleted_rows,
+        deleted_watermark_counts=deleted_watermarks,
+        rebuilt_day_counts=rebuilt_days,
+    )
+
+
+def _rebuild_watermark_window(
+    from_date: date, to_date: date, kind: RebuildableKind
+) -> tuple[datetime, datetime]:
+    # Watermark = midnight-UTC of the builder's RUN date. For offset kinds the run
+    # date = ROW date + service_day_offset (see RebuildableKind).
+    run_from = from_date + timedelta(days=kind.service_day_offset)
+    run_to = to_date + timedelta(days=kind.service_day_offset)
+    from_utc = datetime(run_from.year, run_from.month, run_from.day, tzinfo=UTC)
+    to_utc = datetime(run_to.year, run_to.month, run_to.day, tzinfo=UTC)
+    return from_utc, to_utc
+
+
+def _count_rebuild_window(
+    engine: Engine,
+    *,
+    provider_id: str,
+    from_date: date,
+    to_date: date,
+    target_kinds: list[RebuildableKind],
+) -> tuple[dict[str, int], dict[str, int]]:
+    # Read-only COUNT pass over the rebuild window. Returns per-kind
+    # {rollup_kind: count} for the rollup ROWs and their watermark rows that a
+    # non-dry-run would delete. Shared by --dry-run and the confirm preview.
+    deleted_rows: dict[str, int] = {}
+    deleted_watermarks: dict[str, int] = {}
+    with engine.begin() as conn:
+        for kind in target_kinds:
+            from_utc, to_utc = _rebuild_watermark_window(from_date, to_date, kind)
+            deleted_rows[kind.rollup_kind] = _safe_scalar(
+                conn.execute(
+                    _rebuild_row_delete_sql(kind, dry_run=True),
+                    {
+                        "provider_id": provider_id,
+                        "from_date": from_date,
+                        "to_date": to_date,
+                    },
+                )
+            )
+            deleted_watermarks[kind.rollup_kind] = _safe_scalar(
+                conn.execute(
+                    _REBUILD_WATERMARK_COUNT,
+                    {
+                        "provider_id": provider_id,
+                        "rollup_kind": kind.rollup_kind,
+                        "from_utc": from_utc,
+                        "to_utc": to_utc,
+                    },
+                )
+            )
+    return deleted_rows, deleted_watermarks
+
+
+def _safe_scalar(result) -> int:  # noqa: ANN001
+    value = result.scalar_one()
+    return max(int(value or 0), 0)

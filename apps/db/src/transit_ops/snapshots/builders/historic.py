@@ -2431,9 +2431,10 @@ _RECEIPTS_ACCOUNTABILITY_SQL = text(
            severe_delay_count,
            alert_count,
            rider_impact_score
-    FROM gold.citizen_accountability_daily
-    WHERE provider_id = :provider_id
-      AND provider_local_date >= current_date - 30
+    FROM gold.citizen_accountability_daily AS cad
+    JOIN gold.dim_provider AS dp ON dp.provider_id = cad.provider_id
+    WHERE cad.provider_id = :provider_id
+      AND provider_local_date >= (now() AT TIME ZONE dp.timezone)::date - 30
     ORDER BY provider_local_date
     """
 )
@@ -2466,9 +2467,10 @@ _RECEIPTS_WORST_ROUTE_SQL = text(
            avg_delay_seconds,
            on_time_observation_count AS on_time,
            delay_observation_count   AS known_obs
-    FROM gold.public_route_reliability_daily
-    WHERE provider_id = :provider_id
-      AND provider_local_date >= current_date - 30
+    FROM gold.public_route_reliability_daily AS prr
+    JOIN gold.dim_provider AS dp ON dp.provider_id = prr.provider_id
+    WHERE prr.provider_id = :provider_id
+      AND provider_local_date >= (now() AT TIME ZONE dp.timezone)::date - 30
       AND avg_delay_seconds IS NOT NULL
       AND route_id <> '__unrouted__'
     ORDER BY provider_local_date, avg_delay_seconds DESC, route_id
@@ -2482,9 +2484,10 @@ _RECEIPTS_WORST_STOP_SQL = text(
            stop_id,
            avg_delay_seconds,
            max_delay_seconds
-    FROM gold.public_stop_delay_daily
-    WHERE provider_id = :provider_id
-      AND provider_local_date >= current_date - 30
+    FROM gold.public_stop_delay_daily AS psd
+    JOIN gold.dim_provider AS dp ON dp.provider_id = psd.provider_id
+    WHERE psd.provider_id = :provider_id
+      AND provider_local_date >= (now() AT TIME ZONE dp.timezone)::date - 30
       AND avg_delay_seconds IS NOT NULL
       AND stop_id <> '__unknown_stop__'
     ORDER BY provider_local_date, avg_delay_seconds DESC, stop_id
@@ -2608,9 +2611,10 @@ _ALERT_HISTORY_SQL = text(
                FILTER (WHERE stop_id IS NOT NULL)                   AS stops,
            active_period_start_utc                                  AS start_utc,
            active_period_end_utc                                    AS end_utc
-    FROM gold.i3_alert_history_reporting
-    WHERE provider_id = :provider_id
-      AND provider_local_date >= current_date - 30
+    FROM gold.i3_alert_history_reporting AS iah
+    JOIN gold.dim_provider AS dp ON dp.provider_id = iah.provider_id
+    WHERE iah.provider_id = :provider_id
+      AND provider_local_date >= (now() AT TIME ZONE dp.timezone)::date - 30
     GROUP BY alert_header_text, active_period_start_utc, active_period_end_utc
     ORDER BY active_period_start_utc DESC NULLS LAST
     LIMIT 200

@@ -1288,6 +1288,141 @@
           "avg_delay_min": 3.1,
           "date": null,
           "delay_histogram": null,
+          "grain": "anchor-daykind",
+          "observation_count": 8,
+          "on_time": 4,
+          "otp_pct": 50,
+          "p50_min": 2.5,
+          "p90_min": 6.4,
+          "prior_observation_count": 8,
+          "prior_on_time": 4,
+          "prior_otp_pct": 50,
+          "severe_pct": 25.0,
+          "wilson_hi": 78.5,
+          "wilson_lo": 21.5
+        }
+      ],
+      "by_shift": [
+        {
+          "avg_delay_min": 3.2,
+          "date": null,
+          "delay_histogram": null,
+          "grain": "am_peak",
+          "observation_count": 3,
+          "on_time": 2,
+          "otp_pct": 67,
+          "p50_min": 3.5,
+          "p90_min": 6.4,
+          "prior_observation_count": 3,
+          "prior_on_time": 2,
+          "prior_otp_pct": 67,
+          "severe_pct": 33.3,
+          "wilson_hi": 93.9,
+          "wilson_lo": 20.8
+        },
+        {
+          "avg_delay_min": 3.4,
+          "date": null,
+          "delay_histogram": null,
+          "grain": "midday",
+          "observation_count": 2,
+          "on_time": 1,
+          "otp_pct": 50,
+          "p50_min": 1.5,
+          "p90_min": 6.6,
+          "prior_observation_count": 2,
+          "prior_on_time": 1,
+          "prior_otp_pct": 50,
+          "severe_pct": 50.0,
+          "wilson_hi": 90.5,
+          "wilson_lo": 9.5
+        },
+        {
+          "avg_delay_min": null,
+          "date": null,
+          "delay_histogram": null,
+          "grain": "night",
+          "observation_count": 2,
+          "on_time": 0,
+          "otp_pct": 0,
+          "p50_min": null,
+          "p90_min": null,
+          "prior_observation_count": 2,
+          "prior_on_time": 0,
+          "prior_otp_pct": 0,
+          "severe_pct": 0.0,
+          "wilson_hi": 65.8,
+          "wilson_lo": 0.0
+        },
+        {
+          "avg_delay_min": 2.0,
+          "date": null,
+          "delay_histogram": null,
+          "grain": "pm_peak",
+          "observation_count": 1,
+          "on_time": 1,
+          "otp_pct": 100,
+          "p50_min": 2.2,
+          "p90_min": 2.5,
+          "prior_observation_count": 1,
+          "prior_on_time": 1,
+          "prior_otp_pct": 100,
+          "severe_pct": 0.0,
+          "wilson_hi": 100.0,
+          "wilson_lo": 20.7
+        }
+      ],
+      "by_shift_daytype": [
+        {
+          "avg_delay_min": 3.2,
+          "day_type": "anchor-daykind",
+          "observation_count": 5,
+          "otp_pct": 67.0,
+          "severe_pct": 33.3,
+          "shift": "am_peak"
+        },
+        {
+          "avg_delay_min": 3.4,
+          "day_type": "anchor-daykind",
+          "observation_count": 4,
+          "otp_pct": 50.0,
+          "severe_pct": 50.0,
+          "shift": "midday"
+        },
+        {
+          "avg_delay_min": null,
+          "day_type": "anchor-daykind",
+          "observation_count": 2,
+          "otp_pct": 0.0,
+          "severe_pct": 0.0,
+          "shift": "night"
+        },
+        {
+          "avg_delay_min": 2.0,
+          "day_type": "anchor-daykind",
+          "observation_count": 1,
+          "otp_pct": 100.0,
+          "severe_pct": 0.0,
+          "shift": "pm_peak"
+        }
+      ],
+      "date": "D1",
+      "day_of_week": [
+        {
+          "avg_delay_min": 3.1,
+          "day_of_week_iso": "DOW-A1",
+          "observation_count": 12,
+          "severe_pct": 25.0
+        }
+      ],
+      "grain": "day"
+    },
+    {
+      "by_daytype": [
+        {
+          "avg_delay_min": 3.1,
+          "date": null,
+          "delay_histogram": null,
           "grain": "weekday",
           "observation_count": 40,
           "on_time": 20,
@@ -1721,141 +1856,6 @@
         }
       ],
       "grain": "week"
-    },
-    {
-      "by_daytype": [
-        {
-          "avg_delay_min": 3.1,
-          "date": null,
-          "delay_histogram": null,
-          "grain": "weekend",
-          "observation_count": 8,
-          "on_time": 4,
-          "otp_pct": 50,
-          "p50_min": 2.5,
-          "p90_min": 6.4,
-          "prior_observation_count": 8,
-          "prior_on_time": 4,
-          "prior_otp_pct": 50,
-          "severe_pct": 25.0,
-          "wilson_hi": 78.5,
-          "wilson_lo": 21.5
-        }
-      ],
-      "by_shift": [
-        {
-          "avg_delay_min": 3.2,
-          "date": null,
-          "delay_histogram": null,
-          "grain": "am_peak",
-          "observation_count": 3,
-          "on_time": 2,
-          "otp_pct": 67,
-          "p50_min": 3.5,
-          "p90_min": 6.4,
-          "prior_observation_count": 3,
-          "prior_on_time": 2,
-          "prior_otp_pct": 67,
-          "severe_pct": 33.3,
-          "wilson_hi": 93.9,
-          "wilson_lo": 20.8
-        },
-        {
-          "avg_delay_min": 3.4,
-          "date": null,
-          "delay_histogram": null,
-          "grain": "midday",
-          "observation_count": 2,
-          "on_time": 1,
-          "otp_pct": 50,
-          "p50_min": 1.5,
-          "p90_min": 6.6,
-          "prior_observation_count": 2,
-          "prior_on_time": 1,
-          "prior_otp_pct": 50,
-          "severe_pct": 50.0,
-          "wilson_hi": 90.5,
-          "wilson_lo": 9.5
-        },
-        {
-          "avg_delay_min": null,
-          "date": null,
-          "delay_histogram": null,
-          "grain": "night",
-          "observation_count": 2,
-          "on_time": 0,
-          "otp_pct": 0,
-          "p50_min": null,
-          "p90_min": null,
-          "prior_observation_count": 2,
-          "prior_on_time": 0,
-          "prior_otp_pct": 0,
-          "severe_pct": 0.0,
-          "wilson_hi": 65.8,
-          "wilson_lo": 0.0
-        },
-        {
-          "avg_delay_min": 2.0,
-          "date": null,
-          "delay_histogram": null,
-          "grain": "pm_peak",
-          "observation_count": 1,
-          "on_time": 1,
-          "otp_pct": 100,
-          "p50_min": 2.2,
-          "p90_min": 2.5,
-          "prior_observation_count": 1,
-          "prior_on_time": 1,
-          "prior_otp_pct": 100,
-          "severe_pct": 0.0,
-          "wilson_hi": 100.0,
-          "wilson_lo": 20.7
-        }
-      ],
-      "by_shift_daytype": [
-        {
-          "avg_delay_min": 3.2,
-          "day_type": "weekend",
-          "observation_count": 5,
-          "otp_pct": 67.0,
-          "severe_pct": 33.3,
-          "shift": "am_peak"
-        },
-        {
-          "avg_delay_min": 3.4,
-          "day_type": "weekend",
-          "observation_count": 4,
-          "otp_pct": 50.0,
-          "severe_pct": 50.0,
-          "shift": "midday"
-        },
-        {
-          "avg_delay_min": null,
-          "day_type": "weekend",
-          "observation_count": 2,
-          "otp_pct": 0.0,
-          "severe_pct": 0.0,
-          "shift": "night"
-        },
-        {
-          "avg_delay_min": 2.0,
-          "day_type": "weekend",
-          "observation_count": 1,
-          "otp_pct": 100.0,
-          "severe_pct": 0.0,
-          "shift": "pm_peak"
-        }
-      ],
-      "date": "D1",
-      "day_of_week": [
-        {
-          "avg_delay_min": 3.1,
-          "day_of_week_iso": 7,
-          "observation_count": 12,
-          "severe_pct": 25.0
-        }
-      ],
-      "grain": "day"
     }
   ],
   "service_spans": [
