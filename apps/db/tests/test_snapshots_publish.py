@@ -935,6 +935,72 @@ def test_publish_live_is_not_hash_gated() -> None:
     assert res.keys_skipped == []
 
 
+def test_live_gate_checker_crash_never_aborts_cycle(monkeypatch) -> None:
+    """A checker that raises during live gate.record must be logged and swallowed —
+    the ~57s live cycle still uploads all 6 files."""
+    from transit_ops.snapshots import gate as _gate
+
+    def _boom(rel_key, payload):  # noqa: ANN001, ARG001
+        raise RuntimeError("checker exploded")
+
+    monkeypatch.setattr(_gate, "check_payload", _boom)
+
+    store = FakeStore()
+    res = publish_snapshot(
+        "stm", tier="live", settings=FakeSettings(), engine=FakeEngine(), storage=store
+    )
+    # gate crashed on every file, yet the cycle completed and uploaded everything
+    assert res.tier == "live"
+    assert len(store.keys) == 6
+    assert store.keys[-1] == "manifest.json"
+
+
+def test_static_gate_blocks_sentinel_payload(monkeypatch) -> None:
+    """The static tier runs the universal sentinel/NaN scan before upload: a 9999.9999
+    sentinel in a built static payload raises GateError (nothing uploaded) unless force."""
+    from transit_ops.snapshots import gate as _gate
+    from transit_ops.snapshots import publish as _pub
+
+    def _poison(conn, storage, *, provider_id, settings, stamp):  # noqa: ANN001, ARG001
+        storage.put_json("static/routes_index.json",
+                         {"generated_utc": stamp, "bad": 9999.9999}, tier="static")
+
+    monkeypatch.setattr(_pub, "_publish_static", _poison)
+
+    store = StatefulFakeStore()
+    with pytest.raises(_gate.GateError):
+        _publish_static_once(store, _RecordingConn())
+    # gate ran BEFORE upload -> the poisoned payload never reached the hash-gate store
+    assert "static/routes_index.json" not in store.store
+
+
+def test_static_gate_force_overrides_sentinel(monkeypatch) -> None:
+    """--force downgrades the static gate ERROR to a logged override and uploads."""
+    from transit_ops.snapshots import publish as _pub
+
+    def _poison(conn, storage, *, provider_id, settings, stamp):  # noqa: ANN001, ARG001
+        storage.put_json("static/routes_index.json",
+                         {"generated_utc": stamp, "bad": 9999.9999}, tier="static")
+
+    monkeypatch.setattr(_pub, "_publish_static", _poison)
+
+    store = StatefulFakeStore()
+    res = publish_snapshot(
+        "stm", tier="static", settings=FakeSettings(),
+        engine=_RecordingEngine(_RecordingConn()), storage=store, force=True,
+    )
+    assert "static/routes_index.json" in res.keys_written
+
+
+def test_static_gate_reports_on_success(monkeypatch) -> None:
+    """A clean static publish attaches a gate_report to the result (FIX-6 consumer)."""
+    store = StatefulFakeStore()
+    res = _publish_static_once(store, _RecordingConn())
+    assert res.gate_report is not None
+    assert res.gate_report["tier"] == "static"
+    assert res.gate_report["errors"] == 0
+
+
 def test_publish_static_writes_basemap_when_configured() -> None:
     class BasemapSettings(FakeSettings):
         SNAPSHOT_BASEMAP_PMTILES_URL = "https://data.example.com/basemap/quebec.pmtiles"

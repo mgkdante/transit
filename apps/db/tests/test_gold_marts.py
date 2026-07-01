@@ -14,6 +14,7 @@ from transit_ops.gold.marts import (
     INSERT_DIM_ROUTE_PATTERN,
     INSERT_FACT_TRIP_DELAY_SNAPSHOT,
     INSERT_FACT_VEHICLE_SNAPSHOT,
+    INSERT_SCHEDULE_VERSION_SERVICE_SUMMARY,
     LOCK_GOLD_TABLES,
     OPEN_DIM_ROUTE_HISTORY,
     OPEN_DIM_STOP_HISTORY,
@@ -658,6 +659,10 @@ def test_refresh_gold_static_refreshes_only_dimensions() -> None:
     assert any("INSERT INTO gold.dim_route_pattern" in sql for sql in sql_calls)
     assert any("DELETE FROM gold.dim_stop" in sql for sql in sql_calls)
     assert any("DELETE FROM gold.dim_date" in sql for sql in sql_calls)
+    # Per-edition scheduled-service summary is captured (migration 0069).
+    assert any(
+        "INSERT INTO gold.schedule_version_service_summary" in sql for sql in sql_calls
+    )
     # ACCESS EXCLUSIVE table lock is NOT acquired
     assert not any("LOCK TABLE" in sql for sql in sql_calls)
     # Fact and latest tables are NOT touched
@@ -741,6 +746,46 @@ def test_dim_history_statements_sql_contract() -> None:
     # Diffed against NEW-version silver, never the (already pruned) old version.
     assert "silver.routes" in close_route and "silver.routes" in open_route
     assert "silver.stops" in close_stop and "silver.stops" in open_stop
+
+
+def test_schedule_version_service_summary_insert_sql_contract() -> None:
+    sql = str(INSERT_SCHEDULE_VERSION_SERVICE_SUMMARY)
+
+    assert "INSERT INTO gold.schedule_version_service_summary" in sql
+    # Reads the NEW edition's scheduled silver — never realtime facts.
+    for silver_table in (
+        "silver.calendar",
+        "silver.trips",
+        "silver.stop_times",
+        "silver.calendar_dates",
+    ):
+        assert silver_table in sql
+    assert ":dataset_version_id" in sql
+    # day_type membership (not partition): weekday OR-of-weekday-booleans + the
+    # explode VALUES over the three day_types.
+    assert "(monday OR tuesday OR wednesday OR thursday OR friday)" in sql
+    assert "'weekday'" in sql and "'saturday'" in sql and "'sunday'" in sql
+    # service-seconds via split_part; overnight >24:00 preserved (no modulo 86400).
+    assert "split_part" in sql
+    assert "86400" not in sql
+    # honest calendar_dates exception counts.
+    assert "exception_type = 1" in sql and "exception_type = 2" in sql
+    # fan-out-free: exceptions are pre-aggregated at (route_id, day_type) grain in
+    # a dedicated CTE, then joined once — never summed on the per-trip trip_dep,
+    # which would multiply each service's exc counts by its trip count into this
+    # never-pruned permanent-history table.
+    assert "route_day_exceptions AS (" in sql
+    # exc is joined inside the dedicated CTE, before the final INSERT ... SELECT
+    # FROM trip_dep (the LAST trip_dep reference), and never on trip_dep itself.
+    exc_join_idx = sql.index("LEFT JOIN exc")
+    final_trip_dep_idx = sql.rindex("FROM trip_dep AS td")
+    assert exc_join_idx < final_trip_dep_idx
+    assert "LEFT JOIN exc" not in sql[final_trip_dep_idx:]
+    assert "LEFT JOIN route_day_exceptions AS rde" in sql
+    # reserved headway columns are written NULL in v1.
+    assert "scheduled_median_headway_min" in sql
+    assert "scheduled_p10_headway_min" in sql
+    assert "scheduled_p90_headway_min" in sql
 
 
 def test_refresh_gold_static_raises_when_current_version_has_no_silver_rows() -> None:

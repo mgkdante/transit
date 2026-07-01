@@ -1375,6 +1375,24 @@ def test_stop_delay_spine_is_append_only_with_retention() -> None:
     assert "stop_delay_spine" not in REPORTING_AGGREGATE_TABLES
 
 
+def test_schedule_version_service_summary_is_append_only_and_never_pruned() -> None:
+    """migration 0069: gold.schedule_version_service_summary is permanent edition history —
+    append-only, but deliberately NEVER pruned (absent from the retention registry) and never
+    DELETE+UPSERT wiped (absent from the reporting registry)."""
+    from transit_ops.gold.rollups import REPORTING_AGGREGATE_TABLES
+    from transit_ops.maintenance.gold import (
+        GOLD_AGGREGATE_RETENTION_COLUMNS,
+        GOLD_APPEND_ONLY_DAILY_TABLES,
+    )
+
+    table = "gold.schedule_version_service_summary"
+    assert table in GOLD_APPEND_ONLY_DAILY_TABLES
+    # NEVER pruned: no retention triple in any column.
+    assert all(target[0] != table for target in GOLD_AGGREGATE_RETENTION_COLUMNS)
+    # never DELETE+UPSERT wiped.
+    assert "schedule_version_service_summary" not in REPORTING_AGGREGATE_TABLES
+
+
 def test_gold_aggregate_retention_statement_rejects_unlisted_table_or_column() -> None:
     with pytest.raises(ValueError, match="Unknown Gold aggregate retention target"):
         maintenance_module._gold_aggregate_retention_statement(

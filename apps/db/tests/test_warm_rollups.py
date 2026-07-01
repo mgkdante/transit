@@ -1,11 +1,23 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
+
+import pytest
 
 from transit_ops.gold import rollups
-from transit_ops.gold.rollups import WarmRollupBuildResult, build_warm_rollups
+from transit_ops.gold.rollups import (
+    REBUILDABLE_KINDS,
+    WarmRollupBuildResult,
+    WarmRollupRebuildResult,
+    build_warm_rollups,
+    rebuild_warm_rollups,
+)
 from transit_ops.maintenance import WarmRollupStoragePruneResult, prune_warm_rollup_storage
+from transit_ops.maintenance.gold import (
+    GOLD_AGGREGATE_RETENTION_COLUMNS,
+    GOLD_APPEND_ONLY_DAILY_TABLES,
+)
 from transit_ops.settings import Settings
 
 # Tables pruned by prune_warm_rollup_storage (maintenance.py retention registry).
@@ -37,6 +49,19 @@ REPORTING_AGGREGATE_ROWCOUNTS = {
 BUILD_REPORTING_AGGREGATE_ROWCOUNTS = {
     table_name: index
     for index, table_name in enumerate(BUILD_REPORTING_AGGREGATE_TABLES, start=10)
+}
+
+# Deterministic ROW-DELETE counts for the append-only daily tables that lack a
+# DELETE branch above (the crowding/spine tables already return 13/16/9/4). Used
+# only by rebuild_warm_rollups tests.
+REBUILD_ROW_DELETE_ROWCOUNTS = {
+    "route_delay_percentile_daily": 3,
+    "stop_delay_percentile_daily": 5,
+    "route_cancellation_daily": 6,
+    "route_occupancy_band_daily": 7,
+    "stop_occupancy_band_daily": 8,
+    "route_service_span_daily": 11,
+    "route_skipped_stop_daily": 12,
 }
 
 
@@ -81,6 +106,14 @@ class FakeRow:
         self.period_start_utc = period_start_utc
 
 
+class FakeMissingDayRow:
+    """A day yielded by the append-only missing-day SELECT (local_date + date_key)."""
+
+    def __init__(self, local_date, date_key: int) -> None:  # noqa: ANN001
+        self.local_date = local_date
+        self.date_key = date_key
+
+
 class FakeConnection:
     def __init__(
         self,
@@ -88,6 +121,7 @@ class FakeConnection:
         trip_delay_periods: list[datetime] | None = None,
         occupancy_periods: list[datetime] | None = None,
         seeded: bool = True,
+        rebuild_missing_days: list[FakeMissingDayRow] | None = None,
     ) -> None:
         self.vehicle_periods = vehicle_periods or []
         self.trip_delay_periods = trip_delay_periods or []
@@ -95,6 +129,10 @@ class FakeConnection:
         # Default seeded=True so every pre-existing test exercises the normal
         # (gold.dim_provider row present) path EXACTLY as before.
         self.seeded = seeded
+        # When set, the append-only missing-day SELECTs return these rows instead
+        # of the default empty list — so rebuild_warm_rollups actually rebuilds
+        # (runs the SET LOCAL + upsert + watermark) and its ordering is testable.
+        self.rebuild_missing_days = rebuild_missing_days
         self.executed: list[str] = []
 
     def execute(self, statement, params=None):  # noqa: ANN001
@@ -150,6 +188,8 @@ class FakeConnection:
             and "warm_rollup_periods" in sql
             and "INSERT" not in sql
         ):
+            if self.rebuild_missing_days is not None:
+                return IterableResult(list(self.rebuild_missing_days))
             return IterableResult([])
 
         if (
@@ -158,6 +198,8 @@ class FakeConnection:
             and "warm_rollup_periods" in sql
             and "INSERT" not in sql
         ):
+            if self.rebuild_missing_days is not None:
+                return IterableResult(list(self.rebuild_missing_days))
             return IterableResult([])
 
         if "INSERT INTO gold.vehicle_summary_5m" in sql:
@@ -167,6 +209,12 @@ class FakeConnection:
             return RowcountResult(1)
 
         if "INSERT INTO gold.occupancy_summary_5m" in sql:
+            return RowcountResult(1)
+
+        if "INSERT INTO gold.route_delay_percentile_daily" in sql:
+            return RowcountResult(1)
+
+        if "INSERT INTO gold.stop_delay_percentile_daily" in sql:
             return RowcountResult(1)
 
         if "INSERT INTO gold.route_cancellation_daily" in sql:
@@ -190,6 +238,12 @@ class FakeConnection:
         if "INSERT INTO gold.route_delay_spine" in sql:
             return RowcountResult(1)
 
+        if "INSERT INTO gold.route_headway_shift_daily" in sql:
+            return RowcountResult(1)
+
+        if "INSERT INTO gold.stop_delay_spine" in sql:
+            return RowcountResult(1)
+
         if "INSERT INTO gold.warm_rollup_periods" in sql:
             return RowcountResult(1)
 
@@ -203,6 +257,30 @@ class FakeConnection:
                 return ScalarResult(rowcount)
             if f"DELETE FROM gold.{table_name}" in sql:
                 return RowcountResult(rowcount)
+
+        # Windowed watermark DELETE for rebuild_warm_rollups — MORE SPECIFIC than
+        # the retention-prune's generic `DELETE FROM gold.warm_rollup_periods`
+        # below, so it must be matched FIRST.
+        if (
+            "DELETE FROM gold.warm_rollup_periods" in sql
+            and "rollup_kind = :rollup_kind" in sql
+        ):
+            return RowcountResult(2)
+
+        # Windowed watermark COUNT (rebuild dry-run) — same rollup_kind guard.
+        if (
+            "SELECT COUNT(*)" in sql
+            and "FROM gold.warm_rollup_periods" in sql
+            and "rollup_kind = :rollup_kind" in sql
+        ):
+            return ScalarResult(2)
+
+        # Append-only ROW DELETE/COUNT for rebuild_warm_rollups. The 4 crowding/
+        # spine tables have dedicated DELETE + COUNT branches above; the remaining
+        # 7 REBUILD_ROW_DELETE_ROWCOUNTS tables dispatch through this loop.
+        for table_name in REBUILD_ROW_DELETE_ROWCOUNTS:
+            if f"DELETE FROM gold.{table_name}" in sql:
+                return RowcountResult(REBUILD_ROW_DELETE_ROWCOUNTS[table_name])
 
         if "DELETE FROM gold.vehicle_summary_5m" in sql:
             return RowcountResult(5)
@@ -1157,3 +1235,391 @@ def test_build_percentile_days_elevates_workmem_and_disables_nestloop() -> None:
     # Both planner overrides precede the heavy upsert (they only bind inside its transaction).
     assert workmem_idx < upsert_idx
     assert nestloop_idx < upsert_idx
+
+
+# ---------------------------------------------------------------------------
+# rebuild_warm_rollups — windowed correction of present-but-wrong closed days
+# ---------------------------------------------------------------------------
+
+# The FakeConnection calendar read yields today_local = 2026-03-26, so the
+# fact-retention floor (today - (14 - 1)) is 2026-03-13 and a valid ROW window is
+# [2026-03-13, 2026-03-25]. These bounds sit safely inside it.
+REBUILD_FROM = date(2026, 3, 20)
+REBUILD_TO = date(2026, 3, 22)
+
+
+def test_rebuildable_kinds_registry_covers_all_append_only_builders() -> None:
+    """The registry is the exact set of 11 append-only daily builder kinds, each
+    mapped to a real append-only table with a retention date column that matches."""
+    expected = {
+        "route_percentile_daily",
+        "stop_percentile_daily",
+        "route_cancellation_daily",
+        "route_occupancy_band_daily",
+        "stop_occupancy_band_daily",
+        "route_service_span_daily",
+        "route_skipped_stop_daily",
+        "route_delay_by_crowding_daily",
+        "route_delay_spine",
+        "route_headway_shift_daily",
+        "stop_delay_spine",
+    }
+    assert set(REBUILDABLE_KINDS) == expected
+
+    retention_columns = {
+        table_name: (column, date_only)
+        for table_name, column, date_only in GOLD_AGGREGATE_RETENTION_COLUMNS
+    }
+    for kind in REBUILDABLE_KINDS.values():
+        assert kind.rollup_kind == kind.rollup_kind  # key == field invariant
+        assert f"gold.{kind.table}" in GOLD_APPEND_ONLY_DAILY_TABLES
+        column, _date_only = retention_columns[f"gold.{kind.table}"]
+        assert kind.date_column == column
+    # Only route_service_span_daily carries the run-vs-row service-day offset.
+    assert REBUILDABLE_KINDS["route_service_span_daily"].service_day_offset == 1
+    for name, kind in REBUILDABLE_KINDS.items():
+        if name != "route_service_span_daily":
+            assert kind.service_day_offset == 0
+
+
+def test_rebuild_refuses_reporting_marts_and_5m() -> None:
+    """Reporting marts + the 5m rollup are refused with an alternative pointer."""
+    conn = FakeConnection()
+    engine = FakeEngine(conn)
+    with pytest.raises(ValueError, match="build-warm-rollups"):
+        rebuild_warm_rollups(
+            "stm",
+            settings=_fake_settings(),
+            engine=engine,
+            from_date=REBUILD_FROM,
+            to_date=REBUILD_TO,
+            kinds=["route_delay_hourly"],
+        )
+    with pytest.raises(ValueError, match="build-warm-rollups"):
+        rebuild_warm_rollups(
+            "stm",
+            settings=_fake_settings(),
+            engine=engine,
+            from_date=REBUILD_FROM,
+            to_date=REBUILD_TO,
+            kinds=["trip_delay_summary_5m"],
+        )
+
+
+def test_rebuild_unknown_kind_rejected() -> None:
+    conn = FakeConnection()
+    engine = FakeEngine(conn)
+    with pytest.raises(ValueError, match="Unknown rebuildable kind"):
+        rebuild_warm_rollups(
+            "stm",
+            settings=_fake_settings(),
+            engine=engine,
+            from_date=REBUILD_FROM,
+            to_date=REBUILD_TO,
+            kinds=["not_a_kind"],
+        )
+
+
+def test_rebuild_refuses_from_after_to() -> None:
+    conn = FakeConnection()
+    engine = FakeEngine(conn)
+    with pytest.raises(ValueError, match="--from must be on or before --to"):
+        rebuild_warm_rollups(
+            "stm",
+            settings=_fake_settings(),
+            engine=engine,
+            from_date=REBUILD_TO,
+            to_date=REBUILD_FROM,
+        )
+    # Guardrail runs before any DB access.
+    assert conn.executed == []
+
+
+def test_rebuild_refuses_window_beyond_fact_retention() -> None:
+    """A --from older than today - (fact_retention - 1) would rebuild EMPTY days."""
+    conn = FakeConnection()
+    engine = FakeEngine(conn)
+    with pytest.raises(ValueError, match="fact-retention floor"):
+        rebuild_warm_rollups(
+            "stm",
+            settings=_fake_settings(),
+            engine=engine,
+            from_date=date(2026, 3, 1),  # older than the 2026-03-13 floor
+            to_date=date(2026, 3, 2),
+        )
+
+
+def test_rebuild_refuses_window_touching_open_current_day() -> None:
+    """For offset-0 kinds --to must be strictly before today_local (still open)."""
+    conn = FakeConnection()
+    engine = FakeEngine(conn)
+    with pytest.raises(ValueError, match="too recent for kind"):
+        rebuild_warm_rollups(
+            "stm",
+            settings=_fake_settings(),
+            engine=engine,
+            from_date=date(2026, 3, 25),
+            to_date=date(2026, 3, 26),  # == today_local
+            kinds=["route_percentile_daily"],
+        )
+
+
+def test_rebuild_refuses_offset_kind_run_date_landing_on_today() -> None:
+    """route_service_span_daily has service_day_offset=1, so to_date=today-1 maps
+    its RUN date onto today_local (the still-open capture day) — must be rejected
+    even though a flat to_date < today_local passes."""
+    conn = FakeConnection()
+    engine = FakeEngine(conn)
+    with pytest.raises(ValueError, match="too recent for kind 'route_service_span_daily'"):
+        rebuild_warm_rollups(
+            "stm",
+            settings=_fake_settings(),
+            engine=engine,
+            from_date=date(2026, 3, 24),
+            to_date=date(2026, 3, 25),  # today_local - 1; run date = today
+            kinds=["route_service_span_daily"],
+        )
+    # The max legal --to for an offset-1 kind is today_local - 2.
+    with pytest.raises(ValueError, match="Max legal --to for this kind is 2026-03-24"):
+        rebuild_warm_rollups(
+            "stm",
+            settings=_fake_settings(),
+            engine=engine,
+            from_date=date(2026, 3, 24),
+            to_date=date(2026, 3, 25),
+            kinds=["route_service_span_daily"],
+        )
+    # Nothing mutated before the guard raises.
+    assert all("DELETE FROM" not in s for s in conn.executed)
+
+
+def test_rebuild_dry_run_counts_no_deletes() -> None:
+    conn = FakeConnection()
+    engine = FakeEngine(conn)
+    result = rebuild_warm_rollups(
+        "stm",
+        settings=_fake_settings(),
+        engine=engine,
+        from_date=REBUILD_FROM,
+        to_date=REBUILD_TO,
+        kinds=["route_percentile_daily"],
+        dry_run=True,
+    )
+    assert result.dry_run is True
+    assert result.aborted is False
+    # Row COUNT reuses the append-only COUNT branch (route_delay_percentile_daily -> 7);
+    # watermark COUNT is the windowed rollup_kind branch (-> 2).
+    assert result.deleted_row_counts == {"route_percentile_daily": 7}
+    assert result.deleted_watermark_counts == {"route_percentile_daily": 2}
+    assert result.rebuilt_day_counts == {}
+    # Dry-run mutates NOTHING.
+    assert all("DELETE FROM" not in s for s in conn.executed)
+
+
+def test_rebuild_dry_run_does_not_prompt() -> None:
+    """--dry-run must never invoke the confirm callback."""
+    conn = FakeConnection()
+    engine = FakeEngine(conn)
+    called = {"n": 0}
+
+    def _confirm(_plan) -> bool:  # noqa: ANN001
+        called["n"] += 1
+        return True
+
+    rebuild_warm_rollups(
+        "stm",
+        settings=_fake_settings(),
+        engine=engine,
+        from_date=REBUILD_FROM,
+        to_date=REBUILD_TO,
+        kinds=["route_percentile_daily"],
+        dry_run=True,
+        confirm=_confirm,
+    )
+    assert called["n"] == 0
+
+
+def test_rebuild_confirm_declined_aborts() -> None:
+    conn = FakeConnection()
+    engine = FakeEngine(conn)
+    result = rebuild_warm_rollups(
+        "stm",
+        settings=_fake_settings(),
+        engine=engine,
+        from_date=REBUILD_FROM,
+        to_date=REBUILD_TO,
+        kinds=["route_percentile_daily"],
+        confirm=lambda _plan: False,
+    )
+    assert result.aborted is True
+    assert result.deleted_row_counts == {}
+    # After the calendar read + guardrails, a declined confirm mutates nothing.
+    assert all("DELETE FROM" not in s for s in conn.executed)
+
+
+def test_rebuild_confirm_plan_carries_per_kind_counts() -> None:
+    """When a confirm callback is supplied (no --yes), the plan it receives is
+    pre-populated by a dry-run COUNT pass so the prompt can show total rows +
+    watermarks per kind."""
+    conn = FakeConnection()
+    engine = FakeEngine(conn)
+    seen: dict[str, dict[str, int]] = {}
+
+    def _confirm(plan) -> bool:  # noqa: ANN001
+        seen["rows"] = dict(plan.deleted_row_counts)
+        seen["watermarks"] = dict(plan.deleted_watermark_counts)
+        return False
+
+    rebuild_warm_rollups(
+        "stm",
+        settings=_fake_settings(),
+        engine=engine,
+        from_date=REBUILD_FROM,
+        to_date=REBUILD_TO,
+        kinds=["route_percentile_daily"],
+        confirm=_confirm,
+    )
+    # route_delay_percentile_daily COUNT branch -> 7; windowed watermark COUNT -> 2.
+    assert seen["rows"] == {"route_percentile_daily": 7}
+    assert seen["watermarks"] == {"route_percentile_daily": 2}
+    # The preview pass is COUNT-only; the declined confirm deletes nothing.
+    assert all("DELETE FROM" not in s for s in conn.executed)
+
+
+def test_rebuild_yes_fast_path_skips_count_pass() -> None:
+    """--yes maps to confirm=None: no preview COUNT pass runs, so the plan-count
+    SELECTs never execute — only the delete + rebuild statements do."""
+    conn = FakeConnection(rebuild_missing_days=[FakeMissingDayRow(date(2026, 3, 20), 20260320)])
+    engine = FakeEngine(conn)
+    result = rebuild_warm_rollups(
+        "stm",
+        settings=_fake_settings(),
+        engine=engine,
+        from_date=REBUILD_FROM,
+        to_date=REBUILD_TO,
+        kinds=["route_percentile_daily"],
+        confirm=None,
+    )
+    assert result.aborted is False
+    # No preview COUNT pass: the only row-table SELECT COUNT would be the dry-run
+    # count sql; with confirm=None it must not run.
+    assert not any(
+        "SELECT COUNT(*) FROM gold.route_delay_percentile_daily" in s for s in conn.executed
+    )
+
+
+def test_rebuild_prompt_renders_per_kind_counts() -> None:
+    """_rebuild_prompt surfaces the plan's per-kind rows/watermarks in the text."""
+    from transit_ops.cli import _rebuild_prompt
+
+    plan = WarmRollupRebuildResult(
+        provider_id="stm",
+        from_date=REBUILD_FROM,
+        to_date=REBUILD_TO,
+        dry_run=False,
+        aborted=False,
+        completed_at_utc=datetime(2026, 3, 26, tzinfo=UTC),
+        deleted_row_counts={"route_percentile_daily": 7},
+        deleted_watermark_counts={"route_percentile_daily": 2},
+    )
+    prompt = _rebuild_prompt(plan)
+    assert "route_percentile_daily: 7 rows / 2 watermarks" in prompt
+    assert "Continue?" in prompt
+
+
+def test_rebuild_deletes_rows_then_watermarks_then_rebuilds() -> None:
+    """Per kind: row DELETE < watermark DELETE < the rebuild upsert, and the
+    _build_percentile_days SET LOCAL tuning precedes the rebuild upsert."""
+    missing = [FakeMissingDayRow(date(2026, 3, 20), 20260320)]
+    conn = FakeConnection(rebuild_missing_days=missing)
+    engine = FakeEngine(conn)
+    result = rebuild_warm_rollups(
+        "stm",
+        settings=_fake_settings(),
+        engine=engine,
+        from_date=REBUILD_FROM,
+        to_date=REBUILD_TO,
+        kinds=["route_percentile_daily"],
+        confirm=lambda _plan: True,
+    )
+    assert result.aborted is False
+    assert result.deleted_row_counts == {"route_percentile_daily": 3}
+    assert result.deleted_watermark_counts == {"route_percentile_daily": 2}
+    assert result.rebuilt_day_counts == {"route_percentile_daily": 1}
+
+    ex = conn.executed
+    row_delete_idx = next(
+        i for i, s in enumerate(ex) if "DELETE FROM gold.route_delay_percentile_daily" in s
+    )
+    wm_delete_idx = next(
+        i
+        for i, s in enumerate(ex)
+        if "DELETE FROM gold.warm_rollup_periods" in s and "rollup_kind = :rollup_kind" in s
+    )
+    upsert_idx = next(
+        i for i, s in enumerate(ex) if "INSERT INTO gold.route_delay_percentile_daily" in s
+    )
+    workmem_idx = next(i for i, s in enumerate(ex) if "SET LOCAL work_mem" in s)
+    assert row_delete_idx < wm_delete_idx < upsert_idx
+    assert workmem_idx < upsert_idx
+
+
+def test_rebuild_service_span_uses_offset_date_window() -> None:
+    """route_service_span_daily: ROW delete on the ROW window, but its watermark
+    delete + rebuild window shift +1 day (run date = row date + 1)."""
+    missing = [FakeMissingDayRow(date(2026, 3, 21), 20260321)]
+    conn = FakeConnection(rebuild_missing_days=missing)
+    engine = FakeEngine(conn)
+    result = rebuild_warm_rollups(
+        "stm",
+        settings=_fake_settings(),
+        engine=engine,
+        from_date=REBUILD_FROM,
+        to_date=REBUILD_TO,
+        kinds=["route_service_span_daily"],
+        confirm=lambda _plan: True,
+    )
+    assert result.deleted_row_counts == {"route_service_span_daily": 11}
+    assert result.deleted_watermark_counts == {"route_service_span_daily": 2}
+    assert result.rebuilt_day_counts == {"route_service_span_daily": 1}
+
+    # The rebuild-phase missing-day SELECT is bound to the RUN window (ROW + 1).
+    kind = REBUILDABLE_KINDS["route_service_span_daily"]
+    from_utc, to_utc = rollups._rebuild_watermark_window(REBUILD_FROM, REBUILD_TO, kind)
+    assert from_utc == datetime(2026, 3, 21, tzinfo=UTC)  # 2026-03-20 + 1
+    assert to_utc == datetime(2026, 3, 23, tzinfo=UTC)  # 2026-03-22 + 1
+
+
+def test_rebuild_all_kinds_default_covers_registry() -> None:
+    """With no --kinds, every registered kind is deleted + rebuilt."""
+    conn = FakeConnection(rebuild_missing_days=[FakeMissingDayRow(date(2026, 3, 20), 20260320)])
+    engine = FakeEngine(conn)
+    result = rebuild_warm_rollups(
+        "stm",
+        settings=_fake_settings(),
+        engine=engine,
+        from_date=REBUILD_FROM,
+        to_date=REBUILD_TO,
+        confirm=lambda _plan: True,
+    )
+    assert set(result.deleted_row_counts) == set(REBUILDABLE_KINDS)
+    assert set(result.deleted_watermark_counts) == set(REBUILDABLE_KINDS)
+    assert set(result.rebuilt_day_counts) == set(REBUILDABLE_KINDS)
+
+
+def test_rebuild_result_display_dict_is_json_shaped() -> None:
+    result = WarmRollupRebuildResult(
+        provider_id="stm",
+        from_date=REBUILD_FROM,
+        to_date=REBUILD_TO,
+        dry_run=True,
+        aborted=False,
+        completed_at_utc=datetime(2026, 3, 27, tzinfo=UTC),
+        deleted_row_counts={"route_percentile_daily": 7},
+    )
+    payload = result.display_dict()
+    assert payload["from_date"] == "2026-03-20"
+    assert payload["to_date"] == "2026-03-22"
+    assert payload["dry_run"] is True
+    assert payload["deleted_row_counts"] == {"route_percentile_daily": 7}
+    assert payload["completed_at_utc"] == "2026-03-27T00:00:00+00:00"

@@ -73,7 +73,25 @@ jobs:
           done
 
       - name: Publish historic /v1 snapshot to R2 (all providers)
-        run: uv run python -m transit_ops.cli publish-all --tier historic
+        # The value gate (--gate is the default) inspects the built payloads BEFORE
+        # upload; a gate ERROR aborts THAT provider's publish (state un-advanced) and
+        # makes publish-all exit non-zero so the job goes red. Per-provider gate
+        # reports are written under artifacts/ on BOTH success and failure (so the
+        # upload step below always captures the gate outcome).
+        run: |
+          mkdir -p artifacts
+          uv run python -m transit_ops.cli publish-all --tier historic --report-dir artifacts
+
+      - name: Upload publish gate reports
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: publish-gate-${{ github.run_id }}
+          # working-directory does not apply to `uses:` steps — workspace-relative.
+          path: apps/db/artifacts/publish-gate-*.json
+          retention-days: 30
+          if-no-files-found: ignore
 
       # Runs AFTER the historic publish so alert_history.json builds from the
       # unpruned silver history first. Steady-state daily volume is tiny

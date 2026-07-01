@@ -467,6 +467,170 @@ OPEN_DIM_STOP_HISTORY = text(
 )
 
 
+# --- schedule-version service summary (migration 0069) -------------------
+# Append-only, permanent per-GTFS-edition scheduled-service preservation keyed
+# by (provider_id, dataset_version_id, route_id, day_type). Written INSIDE
+# refresh_gold_static from the NEW version's silver.calendar/trips/stop_times
+# while the OLD version's silver still exists (deferred-prune window). Idempotent:
+# DELETE-by-full-dataset_version then INSERT, so re-running the same edition
+# re-writes identical rows. Never pruned — permanent edition history.
+DELETE_SCHEDULE_VERSION_SERVICE_SUMMARY = text(
+    """
+    DELETE FROM gold.schedule_version_service_summary
+    WHERE provider_id = :provider_id
+      AND dataset_version_id = :dataset_version_id
+    """
+)
+
+INSERT_SCHEDULE_VERSION_SERVICE_SUMMARY = text(
+    """
+    WITH svc AS (
+        -- each service_id -> its day_type memberships (weekday OR any weekday
+        -- boolean; saturday; sunday). MEMBERSHIP, not partition: a 7-day service
+        -- maps to all three, so its trips count under each.
+        SELECT
+            service_id,
+            (monday OR tuesday OR wednesday OR thursday OR friday) AS is_weekday,
+            saturday AS is_saturday,
+            sunday AS is_sunday,
+            start_date,
+            end_date
+        FROM silver.calendar
+        WHERE provider_id = :provider_id
+          AND dataset_version_id = :dataset_version_id
+    ),
+    svc_day AS (
+        -- explode service_id x day_type membership.
+        SELECT service_id, dt.day_type, start_date, end_date
+        FROM svc
+        CROSS JOIN LATERAL (VALUES
+            ('weekday', is_weekday),
+            ('saturday', is_saturday),
+            ('sunday', is_sunday)
+        ) AS dt(day_type, member)
+        WHERE dt.member
+    ),
+    trip_dep AS (
+        -- per trip: route, service, min/max departure in GTFS service-seconds.
+        -- split_part preserves >24:00:00 overnight times as raw service-seconds
+        -- (never wrapped past service-midnight); relies on the silver loader
+        -- validating HH:MM:SS (_validate_gtfs_service_time). departure_time IS
+        -- NOT NULL is enforced.
+        SELECT
+            t.route_id,
+            t.service_id,
+            t.trip_id,
+            MIN(
+                split_part(st.departure_time, ':', 1)::int * 3600
+                + split_part(st.departure_time, ':', 2)::int * 60
+                + split_part(st.departure_time, ':', 3)::int
+            ) AS first_dep,
+            MAX(
+                split_part(st.departure_time, ':', 1)::int * 3600
+                + split_part(st.departure_time, ':', 2)::int * 60
+                + split_part(st.departure_time, ':', 3)::int
+            ) AS last_dep
+        FROM silver.trips AS t
+        JOIN silver.stop_times AS st
+            ON st.dataset_version_id = t.dataset_version_id
+           AND st.trip_id = t.trip_id
+        WHERE t.provider_id = :provider_id
+          AND t.dataset_version_id = :dataset_version_id
+          AND st.departure_time IS NOT NULL
+        GROUP BY t.route_id, t.service_id, t.trip_id
+    ),
+    route_day_stops AS (
+        -- distinct stop_id per route x day_type (NOT a SUM of per-trip counts,
+        -- which would over-count shared stops).
+        SELECT td.route_id, sd.day_type, COUNT(DISTINCT st.stop_id) AS stop_ct
+        FROM silver.trips AS t
+        JOIN silver.stop_times AS st
+            ON st.dataset_version_id = t.dataset_version_id
+           AND st.trip_id = t.trip_id
+        JOIN trip_dep AS td ON td.trip_id = t.trip_id
+        JOIN svc_day AS sd ON sd.service_id = t.service_id
+        WHERE t.provider_id = :provider_id
+          AND t.dataset_version_id = :dataset_version_id
+        GROUP BY td.route_id, sd.day_type
+    ),
+    exc AS (
+        -- honest calendar_dates exception counts per service_id (holiday/added
+        -- service signal; NOT resolved into day_type in v1).
+        SELECT
+            service_id,
+            COUNT(*) FILTER (WHERE exception_type = 1) AS added_ct,
+            COUNT(*) FILTER (WHERE exception_type = 2) AS removed_ct
+        FROM silver.calendar_dates
+        WHERE provider_id = :provider_id
+          AND dataset_version_id = :dataset_version_id
+        GROUP BY service_id
+    ),
+    route_day_exceptions AS (
+        -- exception counts per route x day_type: exc joined at DISTINCT
+        -- (route_id, day_type, service_id) membership grain, NOT per-trip.
+        -- summing on trip_dep would multiply each service's exc counts by its
+        -- trip count and inflate this never-pruned permanent-history table.
+        SELECT
+            rds.route_id,
+            rds.day_type,
+            COALESCE(SUM(exc.added_ct), 0) AS added_ct,
+            COALESCE(SUM(exc.removed_ct), 0) AS removed_ct
+        FROM (
+            SELECT DISTINCT td.route_id, sd.day_type, td.service_id
+            FROM trip_dep AS td
+            JOIN svc_day AS sd ON sd.service_id = td.service_id
+        ) AS rds
+        LEFT JOIN exc ON exc.service_id = rds.service_id
+        GROUP BY rds.route_id, rds.day_type
+    )
+    INSERT INTO gold.schedule_version_service_summary (
+        provider_id,
+        dataset_version_id,
+        route_id,
+        day_type,
+        scheduled_trip_count,
+        stop_count,
+        first_departure_seconds,
+        last_departure_seconds,
+        span_minutes,
+        calendar_start_date,
+        calendar_end_date,
+        service_added_exception_count,
+        service_removed_exception_count,
+        scheduled_median_headway_min,
+        scheduled_p10_headway_min,
+        scheduled_p90_headway_min,
+        built_at_utc
+    )
+    SELECT
+        :provider_id,
+        :dataset_version_id,
+        td.route_id,
+        sd.day_type,
+        COUNT(DISTINCT td.trip_id),
+        COALESCE(MAX(rds.stop_ct), 0),
+        MIN(td.first_dep),
+        MAX(td.last_dep),
+        (MAX(td.last_dep) - MIN(td.first_dep)) / 60,
+        MIN(sd.start_date),
+        MAX(sd.end_date),
+        COALESCE(MAX(rde.added_ct), 0),
+        COALESCE(MAX(rde.removed_ct), 0),
+        NULL,
+        NULL,
+        NULL,
+        now()
+    FROM trip_dep AS td
+    JOIN svc_day AS sd ON sd.service_id = td.service_id
+    LEFT JOIN route_day_stops AS rds
+        ON rds.route_id = td.route_id AND rds.day_type = sd.day_type
+    LEFT JOIN route_day_exceptions AS rde
+        ON rde.route_id = td.route_id AND rde.day_type = sd.day_type
+    GROUP BY td.route_id, sd.day_type
+    """
+)
+
+
 def _vehicle_snapshot_statement(
     *,
     target_table: str,
@@ -1041,6 +1205,7 @@ def _refresh_gold_dimensions(connection: Connection, *, context: GoldBuildContex
     connection.execute(INSERT_DIM_STOP, params)
     connection.execute(INSERT_DIM_DATE, params)
     _record_dim_name_history(connection, context=context)
+    _record_schedule_version_service_summary(connection, context=context)
 
 
 def _record_dim_name_history(connection: Connection, *, context: GoldBuildContext) -> None:
@@ -1059,6 +1224,26 @@ def _record_dim_name_history(connection: Connection, *, context: GoldBuildContex
     connection.execute(OPEN_DIM_ROUTE_HISTORY, params)
     connection.execute(CLOSE_DIM_STOP_HISTORY, params)
     connection.execute(OPEN_DIM_STOP_HISTORY, params)
+
+
+def _record_schedule_version_service_summary(
+    connection: Connection, *, context: GoldBuildContext
+) -> None:
+    """Preserve the NEW GTFS edition's scheduled service (migration 0069).
+
+    Reads the current version's silver.calendar/trips/stop_times/calendar_dates
+    while they still exist (the per-cycle silver prune defers the old version
+    until dims re-point). Idempotent per edition: DELETE-by-full-dataset_version
+    then INSERT, so a re-run of the same version re-writes identical rows.
+    day_type is a MEMBERSHIP model — a 7-day service's trips count under weekday,
+    saturday AND sunday. Never pruned (permanent edition history).
+    """
+    params = {
+        "provider_id": context.provider_id,
+        "dataset_version_id": context.dataset_version_id,
+    }
+    connection.execute(DELETE_SCHEDULE_VERSION_SERVICE_SUMMARY, params)
+    connection.execute(INSERT_SCHEDULE_VERSION_SERVICE_SUMMARY, params)
 
 
 def _refresh_latest_gold_tables(
@@ -1119,6 +1304,7 @@ def _refresh_gold_tables(
     connection.execute(INSERT_DIM_STOP, params)
     connection.execute(INSERT_DIM_DATE, params)
     _record_dim_name_history(connection, context=context)
+    _record_schedule_version_service_summary(connection, context=context)
     connection.execute(INSERT_FACT_VEHICLE_SNAPSHOT, params)
     connection.execute(INSERT_FACT_TRIP_DELAY_SNAPSHOT, params)
     latest_row_counts = _refresh_latest_gold_tables(connection, context=context)
