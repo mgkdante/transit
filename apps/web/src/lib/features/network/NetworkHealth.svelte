@@ -62,6 +62,9 @@
 		shiftLabel,
 		dayTypeLabel,
 		severeShareToSeverity,
+		DELAY_DIST_DOMAIN,
+		CANCEL_RATE_DOMAIN,
+		SEVERE_DOMAIN,
 	} from '$lib/features/reliability/shiftGrains';
 	import {
 		SurfaceHeader,
@@ -217,7 +220,12 @@
 		const buckets = live.network?.delay_histogram ?? [];
 		if (buckets.length === 0) return [];
 		const labels = t.delayHistogram.buckets;
-		const max = buckets.reduce((m, b) => Math.max(m, b.count), 0);
+		// The distribution's OWN peak — a WITHIN-distribution shape, not a cross-view
+		// magnitude (the same countDomain treatment the lines A1 histogram uses): the
+		// bars encode this cycle's shape, so they scale to this cycle's tallest bucket.
+		// Derived via the sanctioned reduce shape (a running max, never Math.max over a
+		// spread feeding a chart scale).
+		const max = buckets.reduce((m, b) => (b.count > m ? b.count : m), 0);
 		return buckets.map((b, i) => {
 			const label = labels[i] ?? '';
 			return {
@@ -440,23 +448,23 @@
 
 	// Trend series: on-time % (green, 0–100 axis) vs the chosen delay series
 	// (amber, MINUTES). The two carry different units, so the delay series gets its
-	// own y-domain [0, niceCeil(max)] — plotting minutes on the percentage axis
-	// would squash the delay line flat against the floor. null points are gaps.
-	// Consumes the ALREADY-windowed series (one slice, shared with every other
-	// mark); the retard channel follows the delay-series toggle (p90 vs avg).
+	// own FIXED y-domain — plotting minutes on the percentage axis would squash the
+	// delay line flat against the floor. Chart-doctrine: an ABSOLUTE zero-based
+	// domain (DELAY_DIST_DOMAIN = [0,15] min, the same p90-tail scale the lines
+	// distribution mark reads), never the in-view max — so a given delay renders the
+	// same length on every window / grain / 30s refresh. Both p90 and avg-delay ride
+	// the SAME domain (like metrics share like scales); TrendLine clamps a rare tail
+	// past 15 min to the frame edge. null points are gaps. Consumes the ALREADY-
+	// windowed series (one slice, shared with every other mark).
 	function buildTrendChart(points: readonly TrendPoint[]) {
 		const onTime = points.map((p) => p.otp_pct ?? null);
 		const retard = points.map((p) =>
 			effectiveRetard === 'avg' ? (p.avg_delay_min ?? null) : (p.p90_min ?? null),
 		);
-		const maxRetard = retard.reduce<number>((m, v) => (v != null && v > m ? v : m), 0);
-		// Round the ceiling up to the nearest 5 min (floor of 10) so the delay
-		// trend uses the plot height without hugging the very top edge.
-		const retardCeil = Math.max(10, Math.ceil(maxRetard / 5) * 5);
 		return {
 			onTime,
 			retard,
-			retardDomain: [0, retardCeil] as [number, number],
+			retardDomain: [DELAY_DIST_DOMAIN[0], DELAY_DIST_DOMAIN[1]] as [number, number],
 			xLabels: points.map((p) => p.date),
 		};
 	}
@@ -480,12 +488,14 @@
 		}
 		return null;
 	});
-	// 0..ceil(max%) domain for the single-series cancellation TrendLine. The
+	// FIXED absolute [0,100] domain for the single-series cancellation TrendLine.
+	// Chart-doctrine: cancellation rate is a PERCENTAGE (a share of a whole), so its
+	// honest domain IS the whole — CANCEL_RATE_DOMAIN = [0,100], the SAME scale the
+	// lines cancellation mark reads (like metrics share like scales). A near-zero
+	// network rate truthfully reads "cancellations are rare" instead of an in-view
+	// max that made 2% today fill the whole frame and 4% tomorrow only half. The
 	// onTime channel carries the data; retard is empty (all-null gaps).
-	const cancelDomain = $derived.by<[number, number]>(() => {
-		const max = cancelSeries.reduce<number>((m, v) => (v != null && v > m ? v : m), 0);
-		return [0, Math.max(1, Math.ceil(max))];
-	});
+	const cancelDomain = $derived<[number, number]>([CANCEL_RATE_DOMAIN[0], CANCEL_RATE_DOMAIN[1]]);
 	const cancelXLabels = $derived(windowedSeries.map((p) => p.date));
 	const cancelEmpty = $derived(cancelSeries.map(() => null) as Array<number | null>);
 	/**
@@ -532,8 +542,9 @@
 	// trailing window), ranked worst-PUNCTUALITY first (lowest OTP first); a grain
 	// with no OTP reading falls back to its severe-delay share for ordering and
 	// sorts AFTER every OTP-known grain (worst severe-share first among those). The
-	// magnitude bar still encodes the SEVERE-delay share as a [0,1] mark on the
-	// dataviz severity scale (NEVER --primary), and avg delay + severe share read
+	// magnitude bar still encodes the SEVERE-delay share as the ABSOLUTE percent on
+	// the fixed SEVERE_DOMAIN [0,100] (the dataviz severity scale, NEVER --primary and
+	// never the in-view worst), and avg delay + severe share read
 	// as the row subtitle. Honesty: a grain with NO otp AND no severe reading is
 	// DROPPED (never a fabricated 0); a null-OTP grain shows the localized no-data
 	// string in its headline, never a fake 0%. Each group's section stands down
@@ -544,6 +555,9 @@
 		readonly rank: number;
 		readonly title: string;
 		readonly severity: SeverityCode;
+		// The ABSOLUTE severe-delay share (%), scaled by the fixed SEVERE_DOMAIN at the
+		// bar (never the in-view worst) — so a given severe share reads the same length
+		// across grains / refreshes. null = no severe reading → a quiet no-data bar.
 		readonly value: number | null;
 		// null when no OTP reading → the RankedRow renders the styled honest-absence
 		// chip ('no-observations': a historic shift aggregate with too few readings),
@@ -570,7 +584,6 @@
 		label: (g: string) => string,
 	): ShiftRow[] {
 		const real = rows.filter((r) => r.otp_pct != null || r.severe_pct != null);
-		const worstSevere = real.reduce((m, r) => Math.max(m, r.severe_pct ?? 0), 0);
 		return real
 			.slice()
 			.sort((a, b) => {
@@ -591,8 +604,9 @@
 					title: label(r.grain),
 					// The bar encodes the severe share; null severe → quiet no-data bar.
 					severity: severeShareToSeverity(sev),
-					value:
-						sev != null && worstSevere > 0 ? Math.min(1, Math.max(0, sev / worstSevere)) : null,
+					// ABSOLUTE severe % on the fixed SEVERE_DOMAIN (forwarded to RankedRow) —
+					// the doctrine's absolute-magnitude law, never normalized to the in-view max.
+					value: sev,
 					// HEADLINE: the real OTP %, or NULL → the RankedRow renders the styled
 					// honest-absence chip (the 'no-observations' reason), never a fake 0%.
 					display: pctOrNull(r.otp_pct ?? null),
@@ -1079,6 +1093,8 @@
 									subtitle={row.subtitle}
 									severity={row.severity}
 									value={row.value}
+									domain={SEVERE_DOMAIN}
+									unit={t.units.pct}
 									display={row.display}
 									absentReason="no-observations"
 									{locale}
@@ -1112,6 +1128,8 @@
 									subtitle={row.subtitle}
 									severity={row.severity}
 									value={row.value}
+									domain={SEVERE_DOMAIN}
+									unit={t.units.pct}
 									display={row.display}
 									absentReason="no-observations"
 									{locale}
