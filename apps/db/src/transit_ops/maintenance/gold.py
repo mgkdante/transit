@@ -46,6 +46,11 @@ GOLD_APPEND_ONLY_DAILY_TABLES = (
     "gold.route_delay_spine",
     "gold.route_headway_shift_daily",
     "gold.stop_delay_spine",
+    # migration 0069 — permanent per-GTFS-edition scheduled-service history.
+    # Append-only (idempotent DELETE-by-dataset_version + INSERT), but deliberately
+    # ABSENT from GOLD_AGGREGATE_RETENTION_COLUMNS: it is NEVER pruned so edition
+    # history is preserved indefinitely.
+    "gold.schedule_version_service_summary",
 )
 
 GOLD_AGGREGATE_TABLES = (

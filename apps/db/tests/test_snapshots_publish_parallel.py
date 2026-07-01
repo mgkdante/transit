@@ -375,7 +375,9 @@ def _historic_dispatch_conn():
             {"stop_id": "S1", "day_of_week_iso": 7, "dow_obs": 0, "severe": 0,
              "weighted_delay_sec": None},
         ]),
-        ("UNION", [("R1",), ("R2",), ("R3",)]),  # 3 routes with history
+        # route IDs with history — the per-route reliability enumeration.
+        ("DISTINCT route_id FROM gold.route_delay_spine", [("R1",), ("R2",), ("R3",)]),
+        ("UNION", [("R1",), ("R2",), ("R3",)]),  # name-lookup UNION fallback
         # Tier-1 cancellation/occupancy reads (more-specific needles precede the
         # generic daily-view "ORDER BY provider_local_date DESC" below).
         ("cancellation_rate_pct, canceled_trip_days", []),
@@ -442,6 +444,11 @@ def _historic_dispatch_conn():
                 and "repeated_problem_route_stop" not in s  # not the hotspots query
             ):
                 if "route_id = :route_id" in s:
+                    if "weighted_delay_sec" in s:
+                        # scalar per-route weak_stops read (weighted_delay_sec alias)
+                        return _R([{"stop_id": "S1", "obs": 100,
+                                    "weighted_delay_sec": 9000, "severe": 10}])
+                    # weak_stops_by_grain windowed read (sum_delay_sec); obs<30 -> below MIN_N
                     return _R([{"stop_id": "S1", "obs": 10, "severe": 1, "sum_delay_sec": 900}])
                 return _R([{"stop_id": "S1", "obs": 100, "weighted_delay_sec": 9000, "severe": 10}])
             for needle, rows in dispatch:
@@ -474,6 +481,30 @@ def test_historic_publish_uploads_index_after_receipts() -> None:
     index_position = store.keys.index(index_key)
     assert receipt_positions, "expected receipt files to be uploaded"
     assert max(receipt_positions) < index_position
+
+
+def test_historic_publish_uploads_route_index_after_route_files() -> None:
+    """route_reliability/index.json is PUT strictly after every per-route file (staged
+    upload: the per-route batch completes before the index stage begins)."""
+    from transit_ops.snapshots.publish import _publish_historic
+
+    class _Settings:
+        SNAPSHOT_PUBLIC_BASE_URL = "https://data.example.com"
+        SNAPSHOT_PUBLISH_CONCURRENCY = 8
+
+    store = _OrderTrackingStore()
+    conn = _historic_dispatch_conn()
+    _publish_historic(conn, store, provider_id="stm", settings=_Settings())
+
+    index_key = "historic/route_reliability/index.json"
+    assert index_key in store.keys
+    route_positions = [
+        i for i, k in enumerate(store.keys)
+        if k.startswith("historic/route_reliability/") and k != index_key
+    ]
+    index_position = store.keys.index(index_key)
+    assert route_positions, "expected per-route files to be uploaded"
+    assert max(route_positions) < index_position
 
 
 def test_static_publish_manifest_index_keys_present_and_complete() -> None:

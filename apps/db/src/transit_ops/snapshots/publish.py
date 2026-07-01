@@ -23,7 +23,7 @@ from dataclasses import dataclass, field
 from transit_ops.db.connection import make_engine
 from transit_ops.ingestion.common import utc_now
 from transit_ops.settings import get_settings
-from transit_ops.snapshots import builders
+from transit_ops.snapshots import builders, gate
 from transit_ops.snapshots.contract import ReceiptsIndex, RouteReliabilityIndex
 from transit_ops.snapshots.storage import (
     HashGatedStorage,
@@ -44,6 +44,16 @@ _STATIC_SKIP_MATCH_SQL = (
     "SELECT files_total FROM core.snapshot_publish_state "
     "WHERE provider_id = :provider_id AND tier = 'static' "
     "AND generated_utc = CAST(:stamp AS timestamptz) AND files_total > 0"
+)
+
+# Prior-generation coverage baseline for the publish gate (P0): the WHOLE-tier file
+# count of the last successful publish for (provider_id, tier). One cheap indexed row
+# lookup — never a bucket manifest read (a WAN round-trip defeats the daily-timeout
+# fix). None (no prior row) => the gate's coverage-delta check is SKIPPED, so a
+# first publish is never blocked.
+_PRIOR_FILES_TOTAL_SQL = (
+    "SELECT files_total FROM core.snapshot_publish_state "
+    "WHERE provider_id = :provider_id AND tier = :tier"
 )
 
 
@@ -93,12 +103,18 @@ def _parallel_put(storage: object, items: list, *, concurrency: int) -> list[str
 
 @dataclass(frozen=True)
 class PublishResult:
-    """Outcome of a :func:`publish_snapshot` call."""
+    """Outcome of a :func:`publish_snapshot` call.
+
+    ``gate_report`` carries the value-gate report dict for a SUCCESSFUL gated publish
+    (None when the gate did not run — --no-gate, or a skipped/un-gated path), so CI /
+    status can consume a report on success as well as on GateError.
+    """
 
     provider_id: str
     tier: str
     keys_written: list[str] = field(default_factory=list)
     keys_skipped: list[str] = field(default_factory=list)
+    gate_report: dict | None = None  # type: ignore[type-arg]
 
     def display_dict(self) -> dict:  # type: ignore[type-arg]
         return {
@@ -195,53 +211,40 @@ def _historic_stamp() -> str:
     return utc_now().strftime("%Y-%m-%dT00:00:00Z")
 
 
-def _publish_live(conn: object, storage: object, *, provider_id: str, settings: object) -> list[str]:
-    """Build and upload all live-tier snapshot files; return the list of keys written.
+def _build_live_items(conn: object, *, provider_id: str, settings: object, gen: str) -> list:
+    """Build every live-tier payload into an ordered (rel_key, payload, tier) list.
 
-    The manifest is uploaded *last* so its ``generated_utc`` reflects a
+    The manifest is LAST so its ``generated_utc`` (and the upload it drives) marks a
     complete, consistent snapshot rather than the start of the upload window.
     """
-    gen = utc_now().strftime("%Y-%m-%dT%H:%M:%SZ")
-    written: list[str] = []
-
-    written.append(
-        storage.put_json(  # type: ignore[attr-defined]
+    return [
+        (
             "live/vehicles.json",
             builders.build_vehicles(conn, provider_id=provider_id, generated_utc=gen),  # type: ignore[arg-type]
-            tier="live",
-        )
-    )
-    written.append(
-        storage.put_json(  # type: ignore[attr-defined]
+            "live",
+        ),
+        (
             "live/trips.json",
             builders.build_trips(conn, provider_id=provider_id, generated_utc=gen),  # type: ignore[arg-type]
-            tier="live",
-        )
-    )
-    written.append(
-        storage.put_json(  # type: ignore[attr-defined]
+            "live",
+        ),
+        (
             "live/alerts.json",
             builders.build_alerts(conn, provider_id=provider_id, generated_utc=gen),  # type: ignore[arg-type]
-            tier="live",
-        )
-    )
-    written.append(
-        storage.put_json(  # type: ignore[attr-defined]
+            "live",
+        ),
+        (
             "live/network.json",
             builders.build_network(conn, provider_id=provider_id, generated_utc=gen),  # type: ignore[arg-type]
-            tier="live",
-        )
-    )
-    written.append(
-        storage.put_json(  # type: ignore[attr-defined]
+            "live",
+        ),
+        (
             "live/stop_departures.json",
             builders.build_stop_departures(conn, provider_id=provider_id, generated_utc=gen),  # type: ignore[arg-type]
-            tier="live",
-        )
-    )
-    # manifest LAST — its generated_utc marks a fully-uploaded snapshot
-    written.append(
-        storage.put_json(  # type: ignore[attr-defined]
+            "live",
+        ),
+        # manifest LAST — its generated_utc marks a fully-uploaded snapshot
+        (
             "manifest.json",
             builders.build_manifest(
                 conn,  # type: ignore[arg-type]
@@ -249,36 +252,69 @@ def _publish_live(conn: object, storage: object, *, provider_id: str, settings: 
                 generated_utc=gen,
                 settings=settings,
             ),
-            tier="live",
-        )
-    )
+            "live",
+        ),
+    ]
+
+
+def _publish_live(
+    conn: object,
+    storage: object,
+    *,
+    provider_id: str,
+    settings: object,
+    gate_report: object | None = None,
+) -> list[str]:
+    """Build and upload all live-tier snapshot files; return the list of keys written.
+
+    When *gate_report* is supplied the payloads are inspected before upload, but the
+    live tier is WARN-ONLY (enforced with force=True by the caller) so a transient blip
+    never aborts the ~57s cycle and blinds the map. Files upload sequentially in list
+    order, manifest last.
+    """
+    gen = utc_now().strftime("%Y-%m-%dT%H:%M:%SZ")
+    items = _build_live_items(conn, provider_id=provider_id, settings=settings, gen=gen)
+    if gate_report is not None:
+        # The live gate is best-effort observability only; a checker crash must NEVER
+        # abort the ~57s cycle and blind the map, so record failures are logged and
+        # swallowed (the cycle proceeds to upload regardless).
+        for rel_key, payload, _tier in items:
+            try:
+                gate.record(gate_report, rel_key, payload)  # type: ignore[arg-type]
+            except Exception:  # noqa: BLE001 — never let a gate crash abort the live cycle
+                logger.exception("live gate check crashed for %s (skipped, cycle continues)", rel_key)
+    written: list[str] = []
+    for rel_key, payload, tier in items:
+        written.append(storage.put_json(rel_key, payload, tier=tier))  # type: ignore[attr-defined]
     return written
 
 
-def _publish_historic(
-    conn: object, storage: object, *, provider_id: str, settings: object, stamp: str | None = None
-) -> list[str]:
-    """Build and upload all historic-tier snapshot files; return the list of keys written.
+def _build_historic_items(
+    conn: object, *, provider_id: str, settings: object, stamp: str
+) -> tuple[list, list, list]:
+    """Build every historic-tier payload; return ``(items, route_items, stages)``.
 
-    *stamp* is the day-truncated DATA-time stamp every artifact carries; when
-    omitted (direct callers / older tests) it defaults to today's truncated UTC.
+    * *items* — the full ordered (rel_key, payload, tier) list, over which the gate
+      runs a single build-then-gate pass (payload build precedes any upload).
+    * *route_items* — the per-route subset (for the batch-level empty-route/coverage
+      checks).
+    * *stages* — the SAME items partitioned into ordered upload stages that MUST be
+      uploaded one stage at a time, each stage COMPLETING before the next begins. A
+      discovery index is its own singleton stage placed AFTER its per-entity stage, so
+      it never advertises an entity whose file is still in flight (the pointer-last
+      invariant). Concurrent upload within a stage is safe; across a stage boundary is
+      not. The stage order is: flat files -> route files -> route index -> stop files
+      -> receipt files -> receipts index.
 
     Per-entity files (route_reliability, stop_reliability, receipts) are BUILT
-    sequentially on this thread — every builder touches the non-thread-safe DB
-    *conn* — then UPLOADED concurrently through a bounded thread pool. The
-    receipts discovery index is uploaded only after the receipt files complete,
-    so it never advertises a date whose file is still in flight.
+    sequentially on this thread — every builder touches the non-thread-safe DB *conn*.
     """
     from sqlalchemy import text as _text
 
-    if stamp is None:
-        stamp = _historic_stamp()
-
-    concurrency = _concurrency(settings)
-    written: list[str] = []
+    items: list = []
 
     # --- flat historic files + provenance (small, fixed set) ---
-    flat_items = [
+    flat_items: list = [
         (
             "historic/network_trend.json",
             builders.build_network_trend(conn, provider_id=provider_id, generated_utc=stamp),  # type: ignore[arg-type]
@@ -306,7 +342,6 @@ def _publish_historic(
             "historic",
         ),
     ]
-    written.extend(_parallel_put(storage, flat_items, concurrency=concurrency))
 
     # --- per-route reliability files (routes that have history) ---
     route_rows = conn.execute(  # type: ignore[attr-defined]
@@ -322,47 +357,119 @@ def _publish_historic(
         for (route_id,) in route_rows
         if route_id is not None
     ]
-    written.extend(_parallel_put(storage, route_items, concurrency=concurrency))
 
     # --- route-reliability discovery index (exact set published this run) ---
-    # The always-current daily set of routes WITH a published reliability file —
-    # uploaded AFTER the per-route files land (pointer-last) so it never advertises a
-    # route whose file is still in flight. The web reads THIS (not the lag-prone static
-    # routes_index `reliability` flag) to gate the list's reliability badges.
-    written.append(storage.put_json(  # type: ignore[attr-defined]
+    # The always-current daily set of routes WITH a published reliability file — its
+    # own upload stage AFTER the per-route stage (pointer-last) so it never advertises
+    # a route whose file is still in flight. The web reads THIS (not the lag-prone
+    # static routes_index `reliability` flag) to gate the list's reliability badges.
+    route_index_item = (
         "historic/route_reliability/index.json",
         RouteReliabilityIndex(
             route_ids=sorted(str(route_id) for (route_id,) in route_rows if route_id is not None),
             generated_utc=stamp,
         ),
-        tier="historic",
-    ))
+        "historic",
+    )
 
-    # --- per-stop reliability files (batched build, parallel upload) ---
+    # --- per-stop reliability files (batched build) ---
     all_stops_rel = builders.build_stop_reliability(conn, provider_id=provider_id, generated_utc=stamp)  # type: ignore[arg-type]
     stop_items = [
         (f"historic/stop_reliability/{stop_id}.json", stop_rel, "historic")
         for stop_id, stop_rel in sorted(all_stops_rel.items())
     ]
-    written.extend(_parallel_put(storage, stop_items, concurrency=concurrency))
 
-    # --- per-date receipts (batched build, parallel upload) ---
+    # --- per-date receipts (batched build) ---
     all_receipts = builders.build_receipts(conn, provider_id, generated_utc=stamp)  # type: ignore[arg-type]
     receipt_items = [
         (f"historic/receipts/{date_str}.json", receipt, "historic")
         for date_str, receipt in sorted(all_receipts.items())
     ]
-    written.extend(_parallel_put(storage, receipt_items, concurrency=concurrency))
 
     # --- receipts discovery index (exact set published this run) ---
-    # Uploaded AFTER every receipt file lands so it never references an in-flight
-    # date — same "pointer last" invariant the manifest follows for the run.
-    written.append(storage.put_json(  # type: ignore[attr-defined]
+    # Its own upload stage AFTER the receipt stage so it never references an in-flight
+    # date — the same pointer-last invariant the manifest follows for the run.
+    receipts_index_item = (
         "historic/receipts/index.json",
         ReceiptsIndex(dates=sorted(all_receipts), generated_utc=stamp),
-        tier="historic",
-    ))
+        "historic",
+    )
 
+    # Ordered upload stages: each stage completes before the next; a discovery index
+    # is a singleton stage after its per-entity stage (pointer-last invariant).
+    stages: list = [
+        flat_items,
+        route_items,
+        [route_index_item],
+        stop_items,
+        receipt_items,
+        [receipts_index_item],
+    ]
+    for stage in stages:
+        items.extend(stage)
+
+    return items, route_items, stages
+
+
+def _find_network_trend(items: list) -> tuple[str, object] | None:
+    """Return the (rel_key, payload) of the historic network_trend file, or None."""
+    for rel_key, payload, *_ in items:
+        if rel_key == "historic/network_trend.json":
+            return (rel_key, payload)
+    return None
+
+
+def _publish_historic(
+    conn: object,
+    storage: object,
+    *,
+    provider_id: str,
+    settings: object,
+    stamp: str | None = None,
+    gate_report: object | None = None,
+    prior_files_total: int | None = None,
+    force: bool = False,
+) -> list[str]:
+    """Build and upload all historic-tier snapshot files; return the list of keys written.
+
+    *stamp* is the day-truncated DATA-time stamp every artifact carries; when
+    omitted (direct callers / older tests) it defaults to today's truncated UTC.
+
+    When *gate_report* is supplied the FULL payload set is built into memory FIRST,
+    the value gate runs over it (with the batch-level coverage/empty-route aggregates),
+    then ``gate.enforce`` is called BEFORE any upload — so a failed gate uploads NOTHING
+    (all-or-nothing) and the caller's transaction rolls back with state un-advanced.
+
+    Uploads run STAGED: within each stage puts fan out through a bounded thread pool,
+    but a stage COMPLETES before the next begins, so a discovery index (its own stage)
+    is only PUT after every per-entity file in the preceding stage finished — the
+    pointer-last invariant. Only the upload is staged; the build+gate is one pass.
+    """
+    if stamp is None:
+        stamp = _historic_stamp()
+
+    concurrency = _concurrency(settings)
+
+    items, route_items, stages = _build_historic_items(
+        conn, provider_id=provider_id, settings=settings, stamp=stamp
+    )
+
+    if gate_report is not None:
+        for rel_key, payload, _tier in items:
+            gate.record(gate_report, rel_key, payload)  # type: ignore[arg-type]
+        gate.finalize_batch(
+            gate_report,  # type: ignore[arg-type]
+            route_payloads=[(k, p) for (k, p, _t) in route_items],
+            current_total=len(items),
+            prior_files_total=prior_files_total,
+            network_trend=_find_network_trend(items),
+        )
+        # Enforce BEFORE the first put — a failed gate uploads nothing.
+        gate.enforce(gate_report, force=force)  # type: ignore[arg-type]
+
+    written: list[str] = []
+    for stage in stages:
+        written.extend(_parallel_put(storage, stage, concurrency=concurrency))
     return written
 
 
@@ -444,6 +551,22 @@ def _publish_static(
     return written
 
 
+def _prior_files_total(conn: object, *, provider_id: str, tier: str) -> int | None:
+    """Return the last publish's WHOLE-tier files_total for the gate's coverage-delta.
+
+    One cheap indexed row lookup; None when no prior row (first publish -> the gate
+    skips the coverage-delta check, never blocks a first publish).
+    """
+    from sqlalchemy import text as _text
+
+    row = conn.execute(  # type: ignore[attr-defined]
+        _text(_PRIOR_FILES_TOTAL_SQL), {"provider_id": provider_id, "tier": tier}
+    ).fetchone()
+    if row is None:
+        return None
+    return row[0]
+
+
 def publish_snapshot(
     provider_id: str,
     *,
@@ -452,6 +575,8 @@ def publish_snapshot(
     registry: object = None,  # accepted for signature parity; reserved for route registry
     engine: object = None,
     storage: object = None,
+    gate_enabled: bool = True,
+    force: bool = False,
 ) -> PublishResult:
     """Publish all snapshot files for *provider_id* to the configured backend.
 
@@ -472,6 +597,16 @@ def publish_snapshot(
         *settings*.
     storage:
         Storage backend instance.  When ``None`` one is built from *settings*.
+    gate_enabled:
+        Run the value gate over the built payloads before upload (default True).
+        On the HISTORIC tier a gate ERROR aborts the publish (rolls the txn back,
+        state un-advanced) unless *force* is set. On the LIVE tier the gate is
+        WARN-ONLY — it never aborts the ~57s cycle (findings are logged only). The
+        STATIC tier registers only the universal sentinel/NaN scan.
+    force:
+        Publish even when the gate finds ERROR-severity issues (a logged
+        "GATE OVERRIDDEN" warning lists them). Ignored on the live tier, which is
+        already WARN-only.
 
     Returns
     -------
@@ -486,9 +621,19 @@ def publish_snapshot(
     if tier == "live":
         # Live tier is NOT hash-gated: its 5 files' bytes change every cycle, so
         # a state GET/PUT per ~57s cycle would only add latency for zero savings.
+        # The gate is WARN-ONLY here (records findings, never aborts the cycle).
         with engine.begin() as conn:  # type: ignore[attr-defined]
-            keys = _publish_live(conn, storage, provider_id=provider_id, settings=settings)
-        return PublishResult(provider_id=provider_id, tier=tier, keys_written=keys)
+            gen = utc_now().strftime("%Y-%m-%dT%H:%M:%SZ")
+            live_report = gate.new_report(provider_id, tier, gen) if gate_enabled else None
+            keys = _publish_live(
+                conn, storage, provider_id=provider_id, settings=settings, gate_report=live_report
+            )
+        if live_report is not None:
+            gate.enforce(live_report, force=True)  # WARN-only: never aborts live
+        return PublishResult(
+            provider_id=provider_id, tier=tier, keys_written=keys,
+            gate_report=live_report.to_dict() if live_report is not None else None,
+        )
 
     if tier == "static":
         publisher = _publish_static
@@ -536,7 +681,46 @@ def publish_snapshot(
                 return PublishResult(
                     provider_id=provider_id, tier=tier, keys_written=[], keys_skipped=[]
                 )
-        publisher(conn, gated, provider_id=provider_id, settings=settings, stamp=stamp)
+        report = None  # the value-gate report for a successful gated publish (FIX-6)
+        if tier == "historic":
+            # Historic gate: build the whole set, inspect it, enforce BEFORE the first
+            # put so a failed gate uploads NOTHING and this txn rolls back with state
+            # un-advanced. force bypasses ERROR abort (a logged override). The coverage
+            # baseline is the prior publish's WHOLE-tier files_total (None on first run).
+            report = gate.new_report(provider_id, tier, stamp) if gate_enabled else None
+            prior_total = (
+                _prior_files_total(conn, provider_id=provider_id, tier=tier)
+                if gate_enabled
+                else None
+            )
+            _publish_historic(
+                conn,
+                gated,
+                provider_id=provider_id,
+                settings=settings,
+                stamp=stamp,
+                gate_report=report,
+                prior_files_total=prior_total,
+                force=force,
+            )
+        elif tier == "static" and gate_enabled:
+            # Static gate: build the surface once into a collector (no network), run the
+            # universal sentinel/NaN scan over every payload, enforce BEFORE any upload
+            # (all-or-nothing; force downgrades ERROR to a logged override), then upload
+            # the ALREADY-BUILT payloads through the hash-gate — no second DB build.
+            store = _CollectingStorage()
+            _publish_static(conn, store, provider_id=provider_id, settings=settings, stamp=stamp)
+            report = gate.new_report(provider_id, tier, stamp)
+            for rel_key, payload in store.collected:
+                gate.record(report, rel_key, payload)
+            gate.enforce(report, force=force)
+            _parallel_put(
+                gated,
+                [(k, p, "static") for (k, p) in store.collected],
+                concurrency=_concurrency(settings),
+            )
+        else:
+            publisher(conn, gated, provider_id=provider_id, settings=settings, stamp=stamp)
         gated.flush_state()
         _record_publish_state(
             conn,
@@ -553,4 +737,103 @@ def publish_snapshot(
         tier=tier,
         keys_written=list(gated.written),
         keys_skipped=list(gated.skipped),
+        gate_report=report.to_dict() if report is not None else None,
     )
+
+
+# --- read-only pre-publish audit (validate-snapshots) ------------------------
+
+
+class _CollectingStorage:
+    """No-op storage that records ``(rel_key, payload)`` and uploads nothing.
+
+    Drives the SAME per-tier build path as a real publish so validate-snapshots (and
+    the pre-upload static gate) exercise every builder over the real DB but never touch
+    the network. Only ``put_json`` is implemented — it records the payload and returns
+    the key — because the publishers call nothing else on this storage; it is used
+    directly (never wrapped in a HashGatedStorage), so no hash-gate methods are needed.
+    """
+
+    def __init__(self) -> None:
+        self.collected: list[tuple[str, object]] = []
+
+    def put_json(self, rel_key: str, payload: object, *, tier: str) -> str:  # noqa: ARG002
+        self.collected.append((rel_key, payload))
+        return rel_key
+
+
+def collect_payloads(
+    provider_id: str,
+    *,
+    tier: str,
+    settings: object = None,
+    engine: object = None,
+) -> tuple[list[tuple[str, object]], list[tuple[str, object]], str, int | None]:
+    """Build every payload for *tier* WITHOUT uploading; return the collected set.
+
+    Returns ``(all_items, route_items, stamp, prior_files_total)`` — reusing the exact
+    same build code the publisher runs, so a validate-snapshots audit sees what a real
+    publish would. Reads run on a plain ``engine.connect()`` (no transaction opened),
+    so nothing is ever committed and nothing is written to the bucket.
+    """
+    settings = settings or get_settings()
+    engine = engine or make_engine(settings)  # type: ignore[arg-type]
+
+    with engine.connect() as conn:  # type: ignore[attr-defined]
+        if tier == "live":
+            gen = utc_now().strftime("%Y-%m-%dT%H:%M:%SZ")
+            items = _build_live_items(conn, provider_id=provider_id, settings=settings, gen=gen)
+            return ([(k, p) for (k, p, _t) in items], [], gen, None)
+
+        if tier == "historic":
+            stamp = _historic_stamp()
+            items, route_items, _stages = _build_historic_items(
+                conn, provider_id=provider_id, settings=settings, stamp=stamp
+            )
+            prior_total = _prior_files_total(conn, provider_id=provider_id, tier=tier)
+            return (
+                [(k, p) for (k, p, _t) in items],
+                [(k, p) for (k, p, _t) in route_items],
+                stamp,
+                prior_total,
+            )
+
+        if tier == "static":
+            stamp = _static_stamp(conn, provider_id)
+            store = _CollectingStorage()
+            _publish_static(conn, store, provider_id=provider_id, settings=settings, stamp=stamp)
+            return (list(store.collected), [], stamp, None)
+
+        raise ValueError(f"unknown tier {tier!r} (expected live, static, historic)")
+
+
+def validate_snapshots(
+    provider_id: str,
+    *,
+    tier: str = "historic",
+    settings: object = None,
+    engine: object = None,
+) -> gate.GateReport:
+    """Read-only pre-publish audit: build every payload, run the gate, return the report.
+
+    Never uploads and never raises on findings (the caller decides its exit code from
+    the returned report). The historic tier additionally runs the batch-level
+    coverage-delta + empty-route aggregates via ``gate.finalize_batch``.
+    """
+    all_items, route_items, stamp, prior_total = collect_payloads(
+        provider_id, tier=tier, settings=settings, engine=engine
+    )
+    report = gate.new_report(provider_id, tier, stamp)
+    for rel_key, payload in all_items:
+        gate.record(report, rel_key, payload)
+    if tier == "historic":
+        gate.finalize_batch(
+            report,
+            route_payloads=route_items,
+            current_total=len(all_items),
+            prior_files_total=prior_total,
+            network_trend=next(
+                ((k, p) for (k, p) in all_items if k == "historic/network_trend.json"), None
+            ),
+        )
+    return report

@@ -1009,6 +1009,121 @@ def test_build_warm_rollups_calls_build_warm_rollups(monkeypatch) -> None:
     assert '"built_trip_delay_periods": 3' in result.stdout
 
 
+def test_rebuild_warm_rollups_help_documents_row_semantics() -> None:
+    result = runner.invoke(app, ["rebuild-warm-rollups", "--help"])
+
+    assert result.exit_code == 0
+    assert "ROW date" in result.stdout
+    assert "--dry-run" in result.stdout
+    assert "--yes" in result.stdout
+
+
+def test_rebuild_warm_rollups_dry_run_emits_per_kind_counts(monkeypatch) -> None:
+    from datetime import date
+
+    from transit_ops.gold import WarmRollupRebuildResult
+
+    recorded: dict[str, object] = {}
+
+    def fake_rebuild_warm_rollups(  # noqa: ANN001
+        provider_id, *, settings, from_date, to_date, kinds, dry_run, confirm
+    ):
+        recorded["provider_id"] = provider_id
+        recorded["from_date"] = from_date
+        recorded["to_date"] = to_date
+        recorded["kinds"] = kinds
+        recorded["dry_run"] = dry_run
+        return WarmRollupRebuildResult(
+            provider_id=provider_id,
+            from_date=from_date,
+            to_date=to_date,
+            dry_run=True,
+            aborted=False,
+            completed_at_utc=datetime(2026, 6, 25, tzinfo=UTC),
+            deleted_row_counts={"route_percentile_daily": 7},
+            deleted_watermark_counts={"route_percentile_daily": 2},
+        )
+
+    monkeypatch.setattr(cli_module, "rebuild_warm_rollups", fake_rebuild_warm_rollups)
+    monkeypatch.setattr(cli_module, "_skip_if_unseeded", lambda *a, **k: False)
+
+    result = runner.invoke(
+        app,
+        ["rebuild-warm-rollups", "stm", "--from", "2026-06-20", "--to", "2026-06-22", "--dry-run"],
+    )
+
+    assert result.exit_code == 0
+    assert recorded["provider_id"] == "stm"
+    assert recorded["from_date"] == date(2026, 6, 20)
+    assert recorded["to_date"] == date(2026, 6, 22)
+    assert recorded["kinds"] is None
+    assert recorded["dry_run"] is True
+    payload = json.loads(result.stdout)
+    assert payload["deleted_row_counts"] == {"route_percentile_daily": 7}
+    assert payload["deleted_watermark_counts"] == {"route_percentile_daily": 2}
+
+
+def test_rebuild_warm_rollups_rejects_unknown_provider(monkeypatch) -> None:
+    called = {"n": 0}
+
+    def fake_rebuild(*a, **k):  # noqa: ANN002, ANN003
+        called["n"] += 1
+        raise AssertionError("rebuild should not run for an unknown provider")
+
+    monkeypatch.setattr(cli_module, "rebuild_warm_rollups", fake_rebuild)
+
+    result = runner.invoke(
+        app,
+        ["rebuild-warm-rollups", "not-a-provider", "--from", "2026-06-20", "--to", "2026-06-22"],
+    )
+
+    assert result.exit_code != 0
+    assert called["n"] == 0
+    assert "No provider manifest found" in result.stderr
+
+
+def test_rebuild_warm_rollups_rejects_bad_date(monkeypatch) -> None:
+    monkeypatch.setattr(cli_module, "_skip_if_unseeded", lambda *a, **k: False)
+
+    result = runner.invoke(
+        app,
+        ["rebuild-warm-rollups", "stm", "--from", "2026-13-40", "--to", "2026-06-22"],
+    )
+
+    assert result.exit_code != 0
+    assert "--from/--to must be YYYY-MM-DD" in result.stderr
+
+
+def test_rebuild_warm_rollups_rejects_forbidden_kind(monkeypatch) -> None:
+    def fake_rebuild(  # noqa: ANN001
+        provider_id, *, settings, from_date, to_date, kinds, dry_run, confirm
+    ):
+        raise ValueError(
+            "route_delay_hourly is a full DELETE+UPSERT reporting mart refreshed every "
+            "build-warm-rollups run; re-run build-warm-rollups to refresh it."
+        )
+
+    monkeypatch.setattr(cli_module, "rebuild_warm_rollups", fake_rebuild)
+    monkeypatch.setattr(cli_module, "_skip_if_unseeded", lambda *a, **k: False)
+
+    result = runner.invoke(
+        app,
+        [
+            "rebuild-warm-rollups",
+            "stm",
+            "--from",
+            "2026-06-20",
+            "--to",
+            "2026-06-22",
+            "--kinds",
+            "route_delay_hourly",
+        ],
+    )
+
+    assert result.exit_code != 0
+    assert "build-warm-rollups" in result.stderr
+
+
 def test_run_realtime_cycle_returns_non_zero_on_partial_failure(monkeypatch) -> None:
     monkeypatch.setattr(
         cli_module,
@@ -1444,7 +1559,7 @@ def test_publish_all_skips_unseeded_and_publishes_seeded(monkeypatch) -> None:
         lambda settings: SimpleNamespace(list_provider_ids=lambda: ["octranspo", "stm"]),
     )
 
-    def fake_publish_snapshot(provider_id, *, tier, settings, registry):  # noqa: ANN001
+    def fake_publish_snapshot(provider_id, *, tier, settings, registry, **kwargs):  # noqa: ANN001
         published.append(provider_id)
         return SimpleNamespace(display_dict=lambda: {"provider_id": provider_id, "tier": tier})
 
@@ -1458,3 +1573,33 @@ def test_publish_all_skips_unseeded_and_publishes_seeded(monkeypatch) -> None:
     assert "publish-all skipped unseeded providers: octranspo" in result.stderr
     payload = json.loads(result.stdout)
     assert [r["provider_id"] for r in payload] == ["stm"]
+
+
+def test_publish_all_writes_gate_report_on_success(monkeypatch, tmp_path) -> None:
+    """With --report-dir, publish-all writes publish-gate-{provider}.json on SUCCESS
+    too (not only on GateError), so CI / status can always consume the gate outcome."""
+    monkeypatch.setattr(cli_module, "make_engine", lambda settings: _FakeEngine())
+    monkeypatch.setattr(cli_module, "provider_is_seeded", lambda conn, provider_id: True)
+    monkeypatch.setattr(
+        cli_module,
+        "_provider_registry",
+        lambda settings: SimpleNamespace(list_provider_ids=lambda: ["stm"]),
+    )
+
+    def fake_publish_snapshot(provider_id, *, tier, settings, registry, **kwargs):  # noqa: ANN001
+        return SimpleNamespace(
+            display_dict=lambda: {"provider_id": provider_id, "tier": tier},
+            gate_report={"provider_id": provider_id, "tier": tier, "errors": 0, "warnings": 0},
+        )
+
+    monkeypatch.setattr(cli_module, "publish_snapshot", fake_publish_snapshot)
+
+    result = runner.invoke(
+        app, ["publish-all", "--tier", "historic", "--report-dir", str(tmp_path)]
+    )
+    assert result.exit_code == 0
+    report_file = tmp_path / "publish-gate-stm.json"
+    assert report_file.exists()
+    written = json.loads(report_file.read_text())
+    assert written["provider_id"] == "stm"
+    assert written["errors"] == 0

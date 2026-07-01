@@ -24,6 +24,7 @@ from transit_ops.gold import (
     build_gold_marts,
     build_warm_rollups,
     provider_is_seeded,
+    rebuild_warm_rollups,
     refresh_gold_realtime,
     refresh_gold_static,
 )
@@ -58,7 +59,8 @@ from transit_ops.silver import (
     load_latest_static_to_silver,
     replay_realtime_silver_window,
 )
-from transit_ops.snapshots.publish import publish_snapshot
+from transit_ops.snapshots.gate import GateError
+from transit_ops.snapshots.publish import publish_snapshot, validate_snapshots
 from transit_ops.source_factory.runner import run_source_factory_rebuild
 from transit_ops.validation.proof import build_retention_proof_report
 from transit_ops.validation.static_feeds import validate_static_feeds
@@ -1001,6 +1003,16 @@ def publish_snapshot_command(
             "(requires SNAPSHOT_STORAGE_BACKEND=local + SNAPSHOT_LOCAL_ROOT)"
         ),
     ),
+    gate: bool = typer.Option(  # noqa: B008
+        True,
+        "--gate/--no-gate",
+        help="run the value gate over the built payloads before upload (historic aborts on ERROR)",
+    ),
+    force: bool = typer.Option(  # noqa: B008
+        False,
+        "--force",
+        help="publish even when the gate finds ERROR-severity issues (logged override)",
+    ),
 ) -> None:
     """Build and publish the /v1 snapshot for a provider to R2 (or local)."""
     settings = get_settings()
@@ -1010,8 +1022,16 @@ def publish_snapshot_command(
         )
     try:
         result = publish_snapshot(
-            provider_id, tier=tier, settings=settings, registry=_provider_registry(settings)
+            provider_id,
+            tier=tier,
+            settings=settings,
+            registry=_provider_registry(settings),
+            gate_enabled=gate,
+            force=force,
         )
+    except GateError as exc:
+        typer.echo(json.dumps(exc.report.to_dict(), indent=2), err=True)
+        raise typer.Exit(code=1) from exc
     except (KeyError, ValueError, FileNotFoundError) as exc:
         raise typer.BadParameter(str(exc)) from exc
     typer.echo(json.dumps(result.display_dict(), indent=2))
@@ -1020,15 +1040,33 @@ def publish_snapshot_command(
 @app.command("publish-all")
 def publish_all_command(
     tier: str = typer.Option("live", "--tier", help="live | static | historic"),  # noqa: B008
+    gate: bool = typer.Option(  # noqa: B008
+        True,
+        "--gate/--no-gate",
+        help="run the value gate over the built payloads before upload (historic aborts on ERROR)",
+    ),
+    force: bool = typer.Option(  # noqa: B008
+        False,
+        "--force",
+        help="publish even when the gate finds ERROR-severity issues (logged override)",
+    ),
+    report_dir: Path | None = typer.Option(  # noqa: B008
+        None,
+        "--report-dir",
+        help="write each provider's gate report JSON to {report_dir}/publish-gate-{provider}.json",
+    ),
 ) -> None:
     """Build and publish the /v1 snapshot for EVERY configured provider.
 
     Attempts every provider so one provider's failure does not skip the others;
-    exits non-zero if any failed.
+    exits non-zero if any failed. A gate ERROR raises PER-PROVIDER (the others still
+    publish) and makes the process exit non-zero so the workflow goes red.
     """
     settings = get_settings()
     registry = _provider_registry(settings)
     engine = make_engine(settings)
+    if report_dir is not None:
+        _preflight_report_dir(report_dir)
     results: list[dict[str, object]] = []
     failures: list[str] = []
     skipped: list[str] = []
@@ -1045,9 +1083,28 @@ def publish_all_command(
             continue
         try:
             result = publish_snapshot(
-                provider_id, tier=tier, settings=settings, registry=registry
+                provider_id,
+                tier=tier,
+                settings=settings,
+                registry=registry,
+                gate_enabled=gate,
+                force=force,
             )
             results.append(result.display_dict())
+            # Write the gate report on SUCCESS too (not only on GateError) so CI /
+            # status can always consume {report_dir}/publish-gate-{provider}.json.
+            if report_dir is not None and result.gate_report is not None:
+                (report_dir / f"publish-gate-{provider_id}.json").write_text(
+                    json.dumps(result.gate_report, indent=2, sort_keys=True) + "\n",
+                    encoding="utf-8",
+                )
+        except GateError as exc:
+            if report_dir is not None:
+                (report_dir / f"publish-gate-{provider_id}.json").write_text(
+                    json.dumps(exc.report.to_dict(), indent=2, sort_keys=True) + "\n",
+                    encoding="utf-8",
+                )
+            failures.append(f"{provider_id}: {exc}")
         except (KeyError, ValueError, FileNotFoundError) as exc:
             failures.append(f"{provider_id}: {exc}")
     if skipped:
@@ -1056,6 +1113,47 @@ def publish_all_command(
     if failures:
         for failure in failures:
             typer.echo(f"publish-all failure — {failure}", err=True)
+        raise typer.Exit(code=1)
+
+
+@app.command("validate-snapshots")
+def validate_snapshots_command(
+    provider_id: str,
+    tier: str = typer.Option("historic", "--tier", help="live | static | historic"),  # noqa: B008
+    report_path: Path | None = typer.Option(  # noqa: B008
+        None,
+        "--report-path",
+        help="write the JSON gate report to this path as well as stdout.",
+    ),
+    strict: bool = typer.Option(  # noqa: B008
+        False,
+        "--strict",
+        help="exit 1 on WARN findings too (default: exit 1 only on ERROR findings).",
+    ),
+) -> None:
+    """Read-only pre-publish audit: build every payload, run the value gate, report.
+
+    Exercises the real build over the real DB but uploads NOTHING. Exits 1 when the
+    gate has ERROR findings (or any WARN under --strict); otherwise exits 0.
+    """
+    settings = get_settings()
+    registry = _provider_registry(settings)
+    try:
+        registry.get_provider(provider_id)
+    except KeyError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+
+    _preflight_report_path(report_path)
+    try:
+        report = validate_snapshots(provider_id, tier=tier, settings=settings)
+    except (KeyError, ValueError, FileNotFoundError) as exc:
+        raise typer.BadParameter(str(exc)) from exc
+
+    body = json.dumps(report.to_dict(), indent=2, sort_keys=True)
+    if report_path is not None:
+        report_path.write_text(body + "\n", encoding="utf-8")
+    typer.echo(body)
+    if report.errors or (strict and report.warnings):
         raise typer.Exit(code=1)
 
 
@@ -1138,6 +1236,110 @@ def build_warm_rollups_command(
 
     result = build_warm_rollups(provider_id, settings=settings, since_utc=since_utc)
     typer.echo(json.dumps(result.display_dict(), indent=2))
+
+
+def _rebuild_prompt(plan) -> str:  # noqa: ANN001
+    """Destructive-rebuild confirmation showing total rows + watermarks per kind."""
+    kinds = sorted(
+        set(plan.deleted_row_counts) | set(plan.deleted_watermark_counts)
+    )
+    lines = [
+        f"Rebuild {plan.provider_id} append-only daily rollups for rows "
+        f"{plan.from_date.isoformat()}..{plan.to_date.isoformat()} — this DELETEs the "
+        "affected rollup rows + watermarks and recomputes them.",
+    ]
+    if kinds:
+        lines.append("Affected per kind (rows / watermarks):")
+        for kind in kinds:
+            rows = plan.deleted_row_counts.get(kind, 0)
+            watermarks = plan.deleted_watermark_counts.get(kind, 0)
+            lines.append(f"  {kind}: {rows} rows / {watermarks} watermarks")
+    lines.append("Continue?")
+    return "\n".join(lines)
+
+
+@app.command("rebuild-warm-rollups")
+def rebuild_warm_rollups_command(
+    provider_id: str,
+    from_date: str = typer.Option(  # noqa: B008
+        ...,
+        "--from",
+        help="First ROW date to rebuild (YYYY-MM-DD, inclusive) — the local date "
+        "visible as wrong in the gold tables. For route_service_span_daily the "
+        "internal run/watermark date is this row date + 1.",
+    ),
+    to_date: str = typer.Option(  # noqa: B008
+        ...,
+        "--to",
+        help="Last ROW date to rebuild (YYYY-MM-DD, inclusive).",
+    ),
+    kinds: str | None = typer.Option(  # noqa: B008
+        None,
+        "--kinds",
+        help="Comma-separated append-only daily kinds to rebuild; default = all. "
+        "Reporting marts and the 5m rollup are rejected — refresh those with "
+        "build-warm-rollups.",
+    ),
+    dry_run: bool = typer.Option(  # noqa: B008
+        False,
+        "--dry-run",
+        help="Print the affected row/watermark counts per kind without deleting "
+        "or rebuilding.",
+    ),
+    yes: bool = typer.Option(  # noqa: B008
+        False,
+        "--yes",
+        help="Skip the destructive-delete confirmation prompt AND its preview COUNT "
+        "pass (fast path). Without --yes the prompt shows total rows + watermarks "
+        "per kind before deleting.",
+    ),
+) -> None:
+    """Rebuild present-but-wrong closed days in the append-only daily rollups.
+
+    --from/--to are ROW dates (the dates visible as wrong in serving), inclusive.
+    Deletes the affected rollup rows + their watermarks for the requested kinds,
+    then re-runs the builder over exactly that window. The DELETE+UPSERT reporting
+    marts are NOT rebuilt here — run build-warm-rollups afterward to refresh them.
+    """
+
+    settings = get_settings()
+    try:
+        _provider_registry(settings).get_provider(provider_id)
+    except KeyError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    if _skip_if_unseeded(settings, provider_id, step="rebuild-warm-rollups"):
+        return
+    try:
+        d_from = datetime.strptime(from_date, "%Y-%m-%d").date()
+        d_to = datetime.strptime(to_date, "%Y-%m-%d").date()
+    except ValueError as exc:
+        raise typer.BadParameter("--from/--to must be YYYY-MM-DD") from exc
+
+    kind_list = [k.strip() for k in kinds.split(",")] if kinds else None
+    try:
+        result = rebuild_warm_rollups(
+            provider_id,
+            settings=settings,
+            from_date=d_from,
+            to_date=d_to,
+            kinds=kind_list,
+            dry_run=dry_run,
+            # --yes = fast path: confirm=None skips both the preview COUNT pass and
+            # the prompt. Otherwise the prompt renders the plan's per-kind counts.
+            confirm=None if yes else (lambda plan: typer.confirm(_rebuild_prompt(plan))),
+        )
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    typer.echo(json.dumps(result.display_dict(), indent=2))
+    if not dry_run and not result.aborted:
+        # Advisory: the DELETE+UPSERT reporting marts (route_delay_hourly,
+        # habit/repeat/headway, ...) derive from these spines but are refreshed
+        # only by a full build-warm-rollups run.
+        typer.echo(
+            f"Advisory: run `run-static-pipeline`/`build-warm-rollups {provider_id}` "
+            "to refresh the derived DELETE+UPSERT reporting marts.",
+            err=True,
+        )
 
 
 @app.command("rebuild-source-factory")
