@@ -918,6 +918,14 @@ def test_load_latest_static_to_silver_reads_s3_backed_archive(
         "translations": 1,
     }
     assert fake_storage.read_calls == [lookup_row["storage_path"]]
+    # The post-load ANALYZE batch runs in the same begin() connection after the
+    # seed: one statement per bulk-seeded silver table, seed statements first.
+    analyze_calls = [sql for sql, _ in engine.begin_connection.calls if sql.startswith("ANALYZE ")]
+    assert analyze_calls == [
+        f"ANALYZE {table}" for table in static_silver_module._POST_LOAD_ANALYZE_TABLES
+    ]
+    tail = [sql for sql, _ in engine.begin_connection.calls][-len(analyze_calls):]
+    assert tail == analyze_calls, "the ANALYZE batch must be the final statements after the seed"
 
 
 def test_load_latest_static_to_silver_accepts_live_current_static_without_beta_members(
