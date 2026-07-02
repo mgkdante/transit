@@ -152,7 +152,7 @@ def _delay_by_crowding_cells(rows) -> list[CrowdingDelayCell]:  # noqa: ANN001
 # / observation_count are BYTE-IDENTICAL to the fact path; avg_delay_min (pooled
 # sum / in-clamp count) and p50/p90 (CDF interpolation over the summed histogram)
 # are the allowed rebaseline. The shift / day_type / dow / week / month grain
-# expressions read hour_of_day_local and service_local_date DIRECTLY — both are
+# expressions read hour_of_day_local and provider_local_date DIRECTLY — both are
 # already provider-local in the spine, so timezone() is NEVER re-applied — and
 # mirror the fold builders' CASE / EXTRACT / date_trunc logic exactly.
 
@@ -160,7 +160,7 @@ def _delay_by_crowding_cells(rows) -> list[CrowdingDelayCell]:  # noqa: ANN001
 # the ONE gold.reader.buckets source (the same bounds every rollup CASE uses).
 _SPINE_SHIFT_CASE = shift_case_sql("hour_of_day_local")
 
-_SPINE_DAYTYPE_CASE = daytype_case_sql("service_local_date")
+_SPINE_DAYTYPE_CASE = daytype_case_sql("provider_local_date")
 
 # Projector mechanics (template, hist cols, entity clause) live in
 # gold.reader.projector; this module owns only the fold catalog below.
@@ -178,14 +178,14 @@ _ROUTE_SPINE_BY_DAYTYPE_SQL = _route_spine_sql(
     "route.spine.by_daytype", f"{_SPINE_DAYTYPE_CASE} AS grain,", "1"
 )
 _ROUTE_SPINE_WEEKLY_SQL = _route_spine_sql(
-    "route.spine.weekly", "date_trunc('week', service_local_date)::date AS d,", "1"
+    "route.spine.weekly", "date_trunc('week', provider_local_date)::date AS d,", "1"
 )
 _ROUTE_SPINE_MONTHLY_SQL = _route_spine_sql(
-    "route.spine.monthly", "date_trunc('month', service_local_date)::date AS d,", "1"
+    "route.spine.monthly", "date_trunc('month', provider_local_date)::date AS d,", "1"
 )
 _ROUTE_SPINE_DOW_SQL = _route_spine_sql(
     "route.spine.dow",
-    "EXTRACT(ISODOW FROM service_local_date)::integer AS day_of_week_iso,",
+    "EXTRACT(ISODOW FROM provider_local_date)::integer AS day_of_week_iso,",
     "1",
 )
 _ROUTE_SPINE_CROSSTAB_SQL = _route_spine_sql(
@@ -216,7 +216,7 @@ _MIN_N_HABIT_CELL = 30  # per-(dow,hour)-cell known-delay floor for the windowed
 
 _SPINE_ANCHOR_SQL = named_query(
     "route.spine.anchor",
-    "SELECT MAX(service_local_date) AS anchor FROM gold.route_delay_spine "
+    "SELECT MAX(provider_local_date) AS anchor FROM gold.route_delay_spine "
     "WHERE provider_id = :provider_id AND route_id = :route_id"
 )
 
@@ -232,7 +232,7 @@ _W_BY_DAYTYPE = _route_spine_sql(
 )
 _W_DOW = _route_spine_sql(
     "route.spine.dow_windowed",
-    "EXTRACT(ISODOW FROM service_local_date)::integer AS day_of_week_iso,",
+    "EXTRACT(ISODOW FROM provider_local_date)::integer AS day_of_week_iso,",
     "1",
     _SPINE_WINDOW_CLAUSE,
 )
@@ -405,7 +405,7 @@ def _attach_prior(periods, prior_index):  # noqa: ANN001, ANN202
 
 
 def _spine_anchor(conn, params):  # noqa: ANN001, ANN202
-    """The route's newest CLOSED day in the spine (MAX(service_local_date)), or None when the
+    """The route's newest CLOSED day in the spine (MAX(provider_local_date)), or None when the
     route has no spine rows. Read ONCE per route and threaded into both windowed builders."""
     row = conn.execute(_SPINE_ANCHOR_SQL, params).mappings().fetchone()
     return row["anchor"] if row else None
@@ -513,7 +513,7 @@ _bunched_pct_from_hist = bunched_pct
 # Own anchor (NEVER reuse the delay-spine anchor — the headway table's newest closed day differs).
 _HEADWAY_SHIFT_ANCHOR_SQL = named_query(
     "route.headway.anchor",
-    "SELECT MAX(service_local_date) AS anchor FROM gold.route_headway_shift_daily "
+    "SELECT MAX(provider_local_date) AS anchor FROM gold.route_headway_shift_daily "
     "WHERE provider_id = :provider_id AND route_id = :route_id"
 )
 
@@ -537,7 +537,7 @@ _HEADWAY_WINDOW_SQL = named_query(
         {_GAP_HIST_COLS}
     FROM gold.route_headway_shift_daily
     WHERE provider_id = :provider_id AND route_id = :route_id
-      AND service_local_date >= :win_start AND service_local_date <= :win_end
+      AND provider_local_date >= :win_start AND provider_local_date <= :win_end
     GROUP BY direction_id, shift
     """
 )
@@ -629,7 +629,7 @@ _WEAK_STOPS_BY_GRAIN_CAP = 15      # stored per-grain cap (byte budget; web "All
 # newest-closed-day front means the stop spine's anchor differs).
 _STOP_DELAY_ANCHOR_SQL = named_query(
     "stop.delay.anchor",
-    "SELECT MAX(service_local_date) AS anchor FROM gold.stop_delay_spine "
+    "SELECT MAX(provider_local_date) AS anchor FROM gold.stop_delay_spine "
     "WHERE provider_id = :provider_id AND route_id = :route_id"
 )
 
@@ -647,7 +647,7 @@ _STOP_WEAK_WINDOW_SQL = named_query(
         SUM(sum_delay_seconds)::bigint  AS sum_delay_sec
     FROM gold.stop_delay_spine
     WHERE provider_id = :provider_id AND route_id = :route_id
-      AND service_local_date >= :win_start AND service_local_date <= :win_end
+      AND provider_local_date >= :win_start AND provider_local_date <= :win_end
     GROUP BY stop_id
     """
 )

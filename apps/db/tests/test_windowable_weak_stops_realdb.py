@@ -30,7 +30,7 @@ _D = date(2026, 6, 1)  # one date inside every grain window (anchor = max(date) 
 
 @contextmanager
 def _seeded_dated(rows):  # noqa: ANN001
-    """rows = list of (stop_id, service_local_date, observation_count, severe_delay_count,
+    """rows = list of (stop_id, provider_local_date, observation_count, severe_delay_count,
     sum_delay_seconds). Rollback-isolated; ALSO clears any leftover committed rows for this
     provider/route at entry so a stale row can never silently inflate a window past MIN_N (the
     review's pollution-defeat finding) — the DELETE is in-tx, so it only scopes THIS test's read."""
@@ -50,7 +50,7 @@ def _seeded_dated(rows):  # noqa: ANN001
             )
             ins = text(
                 "INSERT INTO gold.stop_delay_spine (provider_id, stop_id, route_id, "
-                "service_local_date, observation_count, severe_delay_count, sum_delay_seconds) "
+                "provider_local_date, observation_count, severe_delay_count, sum_delay_seconds) "
                 "VALUES (:p, :s, :r, :d, :n, :sev, :sum)"
             )
             for stop_id, day, obs, severe, sum_sec in rows:
@@ -170,9 +170,9 @@ def test_stored_cap_truncates_full_ranked_set_to_15() -> None:
 
 def test_window_boundaries_day_week_month_inclusive_edges() -> None:
     """SF5 (diff-review): the trailing windows are date-INCLUSIVE on the right edges. anchor =
-    MAX(service_local_date); day=[anchor,anchor], week=[anchor-6,anchor], month=[anchor-29,anchor].
+    MAX(provider_local_date); day=[anchor,anchor], week=[anchor-6,anchor], month=[anchor-29,anchor].
     Each boundary stop (>=MIN_N obs on ONE date) must land in exactly the grains whose window covers
-    its date — pinning the `service_local_date BETWEEN win_start AND win_end` edges (off-by-one bait)."""
+    its date — pinning the `provider_local_date BETWEEN win_start AND win_end` edges (off-by-one bait)."""
     anchor = date(2026, 6, 30)
     rows = [
         ("at_anchor", anchor, 40, 8, 40 * 120),                       # day, week, month
@@ -213,7 +213,7 @@ def test_provider_scoping_isolates_routes() -> None:
         conn.execute(
             text(
                 "INSERT INTO gold.stop_delay_spine (provider_id, stop_id, route_id, "
-                "service_local_date, observation_count, severe_delay_count, sum_delay_seconds) "
+                "provider_local_date, observation_count, severe_delay_count, sum_delay_seconds) "
                 "VALUES (:p, 'other', 'OTHER_ROUTE', :d, 500, 250, 100000)"
             ),
             {"p": _PROVIDER, "d": _D},

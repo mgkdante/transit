@@ -72,9 +72,9 @@ def test_shift_case_spine_shape() -> None:
 
 
 def test_daytype_case_spine_shape() -> None:
-    assert daytype_case_sql("service_local_date") == (
+    assert daytype_case_sql("provider_local_date") == (
         "CASE\n"
-        "            WHEN EXTRACT(ISODOW FROM service_local_date)"
+        "            WHEN EXTRACT(ISODOW FROM provider_local_date)"
         " BETWEEN 1 AND 5 THEN 'weekday'\n"
         "            ELSE 'weekend'\n"
         "        END"
@@ -320,7 +320,7 @@ def test_current_date_trailing_clause_bytes() -> None:
         "rob.provider_local_date >= (now() AT TIME ZONE dp.timezone)::date - 30"
     )
     assert SPINE_WINDOW_CLAUSE == (
-        " AND service_local_date >= :win_start AND service_local_date <= :win_end"
+        " AND provider_local_date >= :win_start AND provider_local_date <= :win_end"
     )
 
 
@@ -334,6 +334,13 @@ def test_current_date_trailing_clause_bytes() -> None:
 # route.delay.by_crowding) were captured AFTER stripping the retired
 # substring-dispatch comment tags — re-deriving them from pre-C1 main will
 # differ by exactly those inert comment lines, not by SQL.
+#
+# 14 entries re-frozen 2026-07 for the GC1 / Step G5 spine column rename
+# service_local_date → provider_local_date (migration 0072) — PURE identifier
+# renames: each re-captured body's ONLY delta from its prior hash is the column
+# name (verified by reverse-substitution — reverting the identifier
+# reproduces the pre-rename hash exactly), so no SQL value/shape moved. The
+# rename aligns the four S7-era spine tables with every other daily gold table.
 _C2_TOUCHED_SQL_SHA256 = {
     "rollup.route_headway.upsert": (
         "624b551f37e63268c7a443c4da56081de3d144a0655d2a8146d982e56dfefd5c"
@@ -342,29 +349,33 @@ _C2_TOUCHED_SQL_SHA256 = {
         "6b0047ab0486b0a477e81f9524f16c8dfe119da06c5c22927bc5012f9df9550a"
     ),
     "rollup.route_headway_shift.upsert": (
-        "84f6b7c84ead3be303e25bb145bf59977651238a47850f826667bb34d66913b0"
+        "f78800c5faff45368ed01e827ab80dd12fa150ed17c93319bfe52fa3eaf8d5a3"
     ),
-    "stop.reliability.by_grain": "bf32fdc8581002e30eb80de94a8a3496ab8d7bbb96b21a5332915574ddf86c79",
-    "route.habit.spine": "abb6ca005fa1ac746f747c53885a76fce91b6733a1f18c1eaa9771890df14295",
-    "route.headway.window": "f2a44c870f30cea0edc64d1ab9cdb7c4093da7a87de4525624275197a57bec47",
+    # RE-FROZEN (GC1 / Step G4, migration 0071): stop.reliability.by_grain was re-pointed off
+    # gold.stop_delay_hourly (timezone()-re-bucketed) onto the pre-localized
+    # gold.stop_delay_shift_daily, aligning /stop shift+day_type attribution with /lines. The SQL
+    # body changed by design (documented day-attribution rebaseline), so this lock is re-captured.
+    "stop.reliability.by_grain": "e5fcdf48ac5795e3b1ab83cbfcb4bed52e0dc2e5d01026b2fb043b0f3e75741f",
+    "route.habit.spine": "ed5437bc9b3d4fc1cb0fb7f48e5ae5eae28333c27b8ef990d7c7d290081a0c60",
+    "route.headway.window": "35e5bb26c2a6887c1bce33f4a8889e2c434423ece484a89af716408548a852c8",
     "route.spine.by_shift": "34421b08ed4d18558cfb9eb3c34dc421ba8209bb98d32e0a7a02aaa5531148f9",
-    "route.spine.by_daytype": "6d3a86f5e5134ba4c96d157b7d3a5caadc850d43a04e464ccd43f6b1ad87a525",
-    "route.spine.weekly": "9ba699632f5f0e87ca430cbc9f1fc08a00d4412b659b65c4fc8af26c37067d1b",
-    "route.spine.monthly": "65fa0808cea30304c6c3738236e9347b1fcf0025195a5ed130075fd0b25d6202",
-    "route.spine.dow": "e019f683b17b02d2e1425eb42648e3b0d6d83a2c637081bce17c9e5985c5782a",
-    "route.spine.crosstab": "82818ab0fc9a6737a598f224f34d704916c7a2ca3f9605406165d8ba686b9c49",
+    "route.spine.by_daytype": "5787482cc8b6979939d911678e3732a5cd9e8865044ded095e31a4cb19246271",
+    "route.spine.weekly": "141630d130921fd6f4ddcd7e3a05a78b431eb78bcce42a74da76421013f1b097",
+    "route.spine.monthly": "8a337972029f44142a8411481165dd2e8c56f4975439b11b59a592de710a4051",
+    "route.spine.dow": "b6af6ef131d9ca5755b5294d9b4005d49dd48a0c8048d4985e78f1527fe0d296",
+    "route.spine.crosstab": "79f7a0c4e45c0fea03a4ccb54cadcc1767cc9f0529fa2ae1ba75879e9394e5da",
     "route.spine.by_shift_windowed": (
-        "d266633c11e762c886c352bc9c68977034084f496ce39dc1ea22ca8fa835bc3f"
+        "17eea3577fa16e9ce62228f80420284133c54cbb895e2dd6c14d2e9420b107df"
     ),
     "route.spine.by_daytype_windowed": (
-        "b7cd2bfa73dc37fe2f1c65f0d6e87438e9eb7d1325070f134493c6173357cdba"
+        "5bd1cebd09e3531fb2a5866802cbacd0491101ee2a7896677b2d91c789ef1950"
     ),
-    "route.spine.dow_windowed": "7f12b91e21557db686ae48ca225ab28503bfc1ed18f5ae4a3f8dc24b5979010e",
+    "route.spine.dow_windowed": "6d60230f46cba8dc4f2eafe36d36d67cc0714ebf807f6478448775cab089cdb3",
     "route.spine.crosstab_windowed": (
-        "914d6730c79aa89cfc4e59f4eb96daed022727a666a7a3e57001cc001aa71a99"
+        "b081f3a22b4aee1ae88efae46b01c8c74e194a830e754c66050a46ff1fe94d65"
     ),
     "network.spine.by_shift": "1d9b382ba661658fadf93d43984bdd34858e7842712b7e02c692228df6bcf48d",
-    "network.spine.by_daytype": "91dab384081542549985df524c99276673bd7ef25e4eb198aa882c376431c5c2",
+    "network.spine.by_daytype": "0f763af3358da12ec32ac11dab8d8ceeaea2b53d130c24fa79cc4206a12cd8d4",
     "route.occupancy.band_window": (
         "71aeadea14a4d11c0c61e8ac9c1a42d15abe46f0bface200b4a286af41e3312d"
     ),
@@ -378,7 +389,7 @@ _C2_TOUCHED_SQL_SHA256 = {
     "receipts.worst_route": "446fd95112efb2e19080d74d0999e2c15ead10478bf0301d3b6a9e9c1c963d11",
     "receipts.worst_stop": "aeccf30a7d837bb0d1fa71ce07e70e9191ff28db9adf55b5dd0ab1594c0d8230",
     "alerts.history": "59919b6dcea56275a922450bf58b3cb5c4622cd634c20992f7cefc260788ddcb",
-    "route.weak_stops.by_grain": "ad0c85f01c2b017469610ceb13f72adf1276e589a766cdbac48d3189bc79a138",
+    "route.weak_stops.by_grain": "95b4e55b3a19a89b6bd48ca465cf3d7f107e0d1ba4572345bd84e496efc6e270",
 }
 
 

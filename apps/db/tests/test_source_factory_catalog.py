@@ -173,6 +173,8 @@ def test_catalog_declares_source_table_contract_by_family() -> None:
     assert "gold.fact_trip_delay_snapshot" in by_family["trip_updates"].gold_outputs
     assert "gold.trip_delay_summary_5m" in by_family["trip_updates"].gold_outputs
     assert "gold.route_delay_hourly" in by_family["trip_updates"].gold_outputs
+    # GC1 / Step G1 added the spine as a delay-metric read surface (route_delay_hourly kept).
+    assert "gold.route_delay_spine" in by_family["trip_updates"].gold_outputs
     assert "gold.stop_delay_hourly" in by_family["trip_updates"].gold_outputs
     # DB-0067 dropped the stop_delay weekly/monthly folds — no longer outputs.
     assert "gold.stop_delay_weekly" not in by_family["trip_updates"].gold_outputs

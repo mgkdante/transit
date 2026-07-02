@@ -97,13 +97,13 @@ def spine_project_sql(
 # rounding — never Python round(), which is banker's). LEAST(..., 9999.9999) clamps exactly
 # as the mart; the builder's habits-matrix normalization then maps to [0,1] per the window's
 # own worst cell so the cap never leaks (slice-9.1.1x sentinel guard). dow = EXTRACT(ISODOW
-# FROM service_local_date) + the stored hour_of_day_local — both already provider-local
+# FROM provider_local_date) + the stored hour_of_day_local — both already provider-local
 # (DST-safe; no timestamp reconstruction).
 ROUTE_HABIT_SPINE_SQL = named_query(
     "route.habit.spine",
     """
     SELECT
-        EXTRACT(ISODOW FROM service_local_date)::integer AS day_of_week_iso,
+        EXTRACT(ISODOW FROM provider_local_date)::integer AS day_of_week_iso,
         hour_of_day_local,
         SUM(delay_observation_count)::bigint AS known_obs,
         LEAST(
@@ -117,7 +117,7 @@ ROUTE_HABIT_SPINE_SQL = named_query(
             9999.9999) AS repeat_problem_score
     FROM gold.route_delay_spine
     WHERE provider_id = :provider_id AND route_id = :route_id
-      AND service_local_date >= :win_start AND service_local_date <= :win_end
+      AND provider_local_date >= :win_start AND provider_local_date <= :win_end
     GROUP BY 1, 2
 """
 )

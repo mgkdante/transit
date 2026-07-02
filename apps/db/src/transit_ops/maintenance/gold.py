@@ -25,6 +25,8 @@ GOLD_WARM_ROLLUP_TABLES = (
 )
 
 GOLD_REPORTING_AGGREGATE_TABLES = (
+    # GC1 / Step G1 re-pointed every metric reader off gold.route_delay_hourly, but the
+    # table stays built (gold.public_route_reliability_daily VIEW still depends on it).
     "gold.route_delay_hourly",
     "gold.stop_delay_hourly",
     "gold.route_habit_score",
@@ -46,6 +48,7 @@ GOLD_APPEND_ONLY_DAILY_TABLES = (
     "gold.route_delay_spine",
     "gold.route_headway_shift_daily",
     "gold.stop_delay_spine",
+    "gold.stop_delay_shift_daily",
     # migration 0069 — permanent per-GTFS-edition scheduled-service history.
     # Append-only (idempotent DELETE-by-dataset_version + INSERT), but deliberately
     # ABSENT from GOLD_AGGREGATE_RETENTION_COLUMNS: it is NEVER pruned so edition
@@ -75,9 +78,10 @@ GOLD_AGGREGATE_RETENTION_COLUMNS = (
     ("gold.route_service_span_daily", "provider_local_date", True),
     ("gold.route_skipped_stop_daily", "provider_local_date", True),
     ("gold.route_delay_by_crowding_daily", "provider_local_date", True),
-    ("gold.route_delay_spine", "service_local_date", True),
-    ("gold.route_headway_shift_daily", "service_local_date", True),
-    ("gold.stop_delay_spine", "service_local_date", True),
+    ("gold.route_delay_spine", "provider_local_date", True),
+    ("gold.route_headway_shift_daily", "provider_local_date", True),
+    ("gold.stop_delay_spine", "provider_local_date", True),
+    ("gold.stop_delay_shift_daily", "provider_local_date", True),
 )
 
 VALID_GOLD_AGGREGATE_RETENTION_TARGETS = frozenset(GOLD_AGGREGATE_RETENTION_COLUMNS)

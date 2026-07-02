@@ -244,6 +244,9 @@ class FakeConnection:
         if "INSERT INTO gold.stop_delay_spine" in sql:
             return RowcountResult(1)
 
+        if "INSERT INTO gold.stop_delay_shift_daily" in sql:
+            return RowcountResult(1)
+
         if "INSERT INTO gold.warm_rollup_periods" in sql:
             return RowcountResult(1)
 
@@ -351,6 +354,12 @@ class FakeConnection:
 
         if "DELETE FROM gold.stop_delay_spine" in sql:
             return RowcountResult(4)
+
+        if "SELECT COUNT(*)" in sql and "FROM gold.stop_delay_shift_daily" in sql:
+            return ScalarResult(5)
+
+        if "DELETE FROM gold.stop_delay_shift_daily" in sql:
+            return RowcountResult(5)
 
         return RowcountResult(0)
 
@@ -534,13 +543,19 @@ def test_reporting_aggregate_builders_read_gold_reporting_surfaces_only() -> Non
     ]
     assert len(aggregate_inserts) == len(BUILD_REPORTING_AGGREGATE_TABLES)
     assert all(" silver." not in statement.lower() for statement in aggregate_inserts)
+    # route_delay_hourly still builds from the 5m rollup (the mart is kept for the
+    # public_route_reliability_daily view — see the GC1 / Step G1 blocker note).
     assert any("FROM gold.trip_delay_summary_5m" in statement for statement in aggregate_inserts)
     assert any("FROM gold.fact_trip_delay_snapshot" in statement for statement in aggregate_inserts)
     assert all(
         "FROM gold.fact_vehicle_snapshot" not in statement
         for statement in aggregate_inserts
     )
-    assert any("FROM gold.route_delay_hourly" in statement for statement in aggregate_inserts)
+    # GC1 / Step G1: the habit + accountability marts re-pointed onto gold.route_delay_spine
+    # (network trend/receipts read the spine in the historic builders), so no reporting
+    # aggregate reads route_delay_hourly anymore even though the mart itself is still built.
+    assert all("FROM gold.route_delay_hourly" not in statement for statement in aggregate_inserts)
+    assert any("gold.route_delay_spine" in statement for statement in aggregate_inserts)
     assert any("FROM gold.stop_delay_hourly" in statement for statement in aggregate_inserts)
     assert any("LEAST(" in statement for statement in aggregate_inserts)
     assert any(
@@ -568,8 +583,13 @@ def test_reporting_aggregate_builders_read_gold_reporting_surfaces_only() -> Non
         "gold.current_trip_delay_computed" not in statement
         for statement in aggregate_inserts
     )
-    route_hourly_sql = str(rollups.UPSERT_ROUTE_DELAY_HOURLY)
-    assert "FROM gold.fact_trip_delay_snapshot" not in route_hourly_sql
+    # GC1 / Step G1: readers re-pointed off route_delay_hourly onto the spine; the mart +
+    # its UPSERT stay built for the public_route_reliability_daily view (drop = GC1.5).
+    # marts re-point onto gold.route_delay_spine (an append-only reporting surface).
+    acct_sql = str(rollups.REPORTING_AGGREGATE_UPSERTS["citizen_accountability_daily"])
+    habit_sql = str(rollups.REPORTING_AGGREGATE_UPSERTS["route_habit_score"])
+    assert "FROM gold.route_delay_spine" in acct_sql
+    assert "FROM gold.route_delay_spine" in habit_sql
 
 
 def test_citizen_accountability_alert_count_uses_content_hash() -> None:
@@ -1079,13 +1099,15 @@ def test_prune_warm_rollup_storage_dry_run_counts_without_deletes() -> None:
     assert result.deleted_row_counts["gold.route_headway_shift_daily"] == 9
     # stop_delay_spine — the S7-B append-only STOP-DELAY rollup (DB-PR-3), 730d pruning.
     assert result.deleted_row_counts["gold.stop_delay_spine"] == 4
+    # stop_delay_shift_daily — the GC1/G4 append-only STOP-DELAY shift grain (0071), 730d pruning.
+    assert result.deleted_row_counts["gold.stop_delay_shift_daily"] == 5
 
     count_queries = [s for s in conn.executed if "SELECT COUNT(*)" in s or "SELECT count(*)" in s]
     # 23 prior MINUS the 6 route delay-cube fold tables (dropped in 0064) MINUS the 2 stop_delay
     # weekly/monthly folds (dropped in 0067) PLUS the S7-B route_headway_shift_daily (DB-PR-2) +
-    # stop_delay_spine (DB-PR-3) PLUS the FIX-3 route_delay_by_crowding_daily; each
-    # retention-registered table emits one dry-run COUNT.
-    assert len(count_queries) == 18
+    # stop_delay_spine (DB-PR-3) PLUS the FIX-3 route_delay_by_crowding_daily PLUS the GC1/G4
+    # stop_delay_shift_daily (0071); each retention-registered table emits one dry-run COUNT.
+    assert len(count_queries) == 19
 
 
 def test_prune_warm_rollup_storage_display_dict_includes_dry_run() -> None:
@@ -1128,27 +1150,37 @@ def test_route_delay_spine_upsert_shape() -> None:
     assert "FROM gold.fact_trip_delay_snapshot" in sql
     assert "f.route_id IS NOT NULL" in sql
     assert "f.snapshot_date_key = :date_key" in compact
-    # Finest-grain GROUP BY (hour x direction); service_local_date = :local_date.
+    # Finest-grain GROUP BY (hour x direction); provider_local_date = :local_date.
+    # GC1 / Step G1: the main aggregation now selects from `binned AS b` LEFT JOIN the
+    # per-5m distinct-delayed CTE `delayed AS d`, so the GROUP BY carries the `b.` alias
+    # (+ d.delayed_trip_count, functionally dependent on the grain).
     assert ":local_date" in compact
     assert (
-        "GROUP BY provider_id, route_id, hour_of_day_local, direction_id" in compact
+        "GROUP BY b.provider_id, b.route_id, b.hour_of_day_local, b.direction_id, "
+        "d.delayed_trip_count" in compact
     )
     assert (
-        "ON CONFLICT (provider_id, route_id, service_local_date, "
+        "ON CONFLICT (provider_id, route_id, provider_local_date, "
         "hour_of_day_local, direction_id)" in compact
     )
     # Finding D: unknown direction COALESCEs to 0 (matching the existing directional builder).
     assert "COALESCE(f.direction_id, 0)" in compact
     # Correction #1 / Finding A: the headline-share counts come from the EXACT live
-    # delay_seconds predicates, NOT from histogram bins.
-    assert "delay_seconds >= -60 AND delay_seconds < 300" in compact
-    assert "delay_seconds > 300" in compact
-    assert "ABS(delay_seconds) <= 3600" in compact
+    # delay_seconds predicates, NOT from histogram bins. (GC1 aliased the aggregation
+    # source to `b`, so the outer count FILTERs carry the b. prefix.)
+    assert "b.delay_seconds >= -60 AND b.delay_seconds < 300" in compact
+    assert "b.delay_seconds > 300" in compact
+    assert "ABS(b.delay_seconds) <= 3600" in compact
     # The histogram is a SEPARATE 21-bin array via width_bucket (p50/p90 + the chart only).
     assert "width_bucket" in compact
     assert "::smallint[]" in compact
-    # Correction #2: delayed_trip_count is non-additive -> never a spine column.
-    assert "delayed_trip_count" not in sql
+    # GC1 / Step G1: delayed_trip_count is now an additive spine column, computed as the
+    # SUM over 5m sub-buckets of COUNT(DISTINCT trip_id) FILTER (delay>0) to reproduce the
+    # legacy route_delay_hourly SUM chain byte-for-byte (predicate mirrors the 5m builder:
+    # delay_seconds > 0, no ghost clamp).
+    assert "delayed_trip_count" in sql
+    assert "COUNT(DISTINCT f.trip_id) FILTER (WHERE f.delay_seconds > 0)" in compact
+    assert "DATE_BIN('5 minutes', f.captured_at_utc, TIMESTAMPTZ '2000-01-01')" in compact
 
 
 def test_build_warm_rollups_wires_route_delay_spine_and_counts_it() -> None:
@@ -1249,7 +1281,7 @@ REBUILD_TO = date(2026, 3, 22)
 
 
 def test_rebuildable_kinds_registry_covers_all_append_only_builders() -> None:
-    """The registry is the exact set of 11 append-only daily builder kinds, each
+    """The registry is the exact set of 12 append-only daily builder kinds, each
     mapped to a real append-only table with a retention date column that matches."""
     expected = {
         "route_percentile_daily",
@@ -1263,6 +1295,7 @@ def test_rebuildable_kinds_registry_covers_all_append_only_builders() -> None:
         "route_delay_spine",
         "route_headway_shift_daily",
         "stop_delay_spine",
+        "stop_delay_shift_daily",
     }
     assert set(REBUILDABLE_KINDS) == expected
 

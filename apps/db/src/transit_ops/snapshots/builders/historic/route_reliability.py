@@ -112,7 +112,7 @@ _ROUTE_WEAK_STOPS_SQL = named_query(
            SUM(severe_delay_count) AS severe
     FROM gold.stop_delay_spine
     WHERE provider_id = :provider_id AND route_id = :route_id
-      AND service_local_date >= :win_start AND service_local_date <= :win_end
+      AND provider_local_date >= :win_start AND provider_local_date <= :win_end
     GROUP BY stop_id
     """
 )

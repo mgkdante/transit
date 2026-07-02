@@ -125,7 +125,7 @@ def _seed(connection) -> None:
         text(
             """
             INSERT INTO gold.route_delay_spine
-                (provider_id, route_id, service_local_date, hour_of_day_local,
+                (provider_id, route_id, provider_local_date, hour_of_day_local,
                  direction_id, observation_count, delay_observation_count,
                  severe_delay_count, sum_delay_seconds)
             VALUES (:p, :route, :d, 8, 0, 10, 10, 0, 1200)

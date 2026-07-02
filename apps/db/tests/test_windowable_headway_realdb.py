@@ -62,7 +62,7 @@ def _seeded(rows):  # noqa: ANN001
             )
             ins = text(
                 "INSERT INTO gold.route_headway_shift_daily (provider_id, route_id, "
-                "service_local_date, shift, direction_id, gap_count, sum_gap_min, sum_gap_sq_min, "
+                "provider_local_date, shift, direction_id, gap_count, sum_gap_min, sum_gap_sq_min, "
                 "bunched_gap_count, trip_count, gap_histogram) "
                 "VALUES (:p, :r, :d, :sh, :dir, :n, :sg, :sq, 0, :tc, CAST(:h AS smallint[]))"
             )
@@ -144,7 +144,7 @@ def test_cross_day_week_grain_pools_moments() -> None:
             )
             ins = text(
                 "INSERT INTO gold.route_headway_shift_daily (provider_id, route_id, "
-                "service_local_date, shift, direction_id, gap_count, sum_gap_min, sum_gap_sq_min, "
+                "provider_local_date, shift, direction_id, gap_count, sum_gap_min, sum_gap_sq_min, "
                 "bunched_gap_count, trip_count, gap_histogram) "
                 "VALUES (:p, :r, :d, 'am_peak', 0, :n, :sg, :sq, 0, 10, CAST(:h AS smallint[]))"
             )
@@ -192,7 +192,7 @@ def test_prior_window_attached_when_prior_has_data() -> None:
             )
             ins = text(
                 "INSERT INTO gold.route_headway_shift_daily (provider_id, route_id, "
-                "service_local_date, shift, direction_id, gap_count, sum_gap_min, sum_gap_sq_min, "
+                "provider_local_date, shift, direction_id, gap_count, sum_gap_min, sum_gap_sq_min, "
                 "bunched_gap_count, trip_count, gap_histogram) "
                 "VALUES (:p, :r, :d, 'am_peak', 0, :n, :sg, :sq, 0, 10, CAST(:h AS smallint[]))"
             )

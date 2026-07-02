@@ -412,7 +412,7 @@ class NetworkTrend(BaseModel):
     generated_utc: str
     series: list[TrendPoint] = Field(default_factory=list)
     # Additive-optional WEEK + MONTH grain trend series: the SAME daily sources
-    # (gold.route_delay_hourly OTP/avg, route_cancellation_daily,
+    # (gold.route_delay_spine OTP + pooled avg, route_cancellation_daily,
     # route_occupancy_band_daily) re-aggregated into ISO-week / calendar-month
     # buckets, observation-weighted exactly like `series`. Each TrendPoint.date
     # is the bucket-start local date (Monday for weekly, the 1st for monthly).

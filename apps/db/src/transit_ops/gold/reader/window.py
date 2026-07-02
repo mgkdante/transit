@@ -22,8 +22,8 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
     from datetime import date
 
 # Bounded windowed-read fragment for the spine projectors (both spines store
-# service_local_date).
-SPINE_WINDOW_CLAUSE = " AND service_local_date >= :win_start AND service_local_date <= :win_end"
+# provider_local_date).
+SPINE_WINDOW_CLAUSE = " AND provider_local_date >= :win_start AND provider_local_date <= :win_end"
 
 _GRAIN_TRAILING_DAYS = {"day": 0, "week": 6, "month": 29}
 
