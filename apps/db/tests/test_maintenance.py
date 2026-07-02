@@ -66,7 +66,7 @@ EXPECTED_GOLD_AGGREGATE_TABLE_COUNTS = {
     "gold.warm_rollup_periods": 8,
     "gold.route_delay_hourly": 11,
     "gold.stop_delay_hourly": 13,
-    "gold.route_habit_score": 18,
+    # gold.route_habit_score DROPPED (migration 0076, S14) — not in the retention registry.
     "gold.repeated_problem_route_stop": 19,
     "gold.citizen_accountability_daily": 20,
     "gold.route_delay_percentile_daily": 21,
@@ -83,6 +83,7 @@ EXPECTED_GOLD_AGGREGATE_TABLE_COUNTS = {
     "gold.stop_delay_spine": 34,
     "gold.stop_delay_shift_daily": 35,
     "gold.route_scheduled_trips_daily": 36,
+    "gold.repeat_offender_daily_spine": 38,
 }
 
 

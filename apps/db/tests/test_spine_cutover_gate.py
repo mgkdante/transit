@@ -581,6 +581,25 @@ def test_hotspots_by_grain_payload_size_under_ceiling() -> None:
           f"(ceiling {HOTSPOTS_BYTE_CEILING})")
 
 
+def test_repeat_offenders_payload_size_under_ceiling() -> None:
+    """S14 real-DB size probe: the full published repeat_offenders.json (scalar + by_grain) off
+    the seeded gold stays under REPEAT_OFFENDERS_BYTE_CEILING. The seeded fixture may leave the
+    0075 offender spine empty (by_grain honest-empty); this still guards the scalar path + the
+    envelope size. The dense by_grain worst case is probed in test_windowable_repeat_offenders_realdb."""
+    from transit_ops.snapshots.builders.historic import build_repeat_offenders
+    from transit_ops.snapshots.contract import REPEAT_OFFENDERS_BYTE_CEILING
+    from transit_ops.snapshots.storage import _body
+
+    with _seeded_conn() as connection:
+        ro = build_repeat_offenders(connection, provider_id=PROVIDER, generated_utc=GENERATED_UTC)
+    size = len(_body(ro))
+    assert size <= REPEAT_OFFENDERS_BYTE_CEILING, (
+        f"seeded repeat_offenders.json {size}B exceeds ceiling {REPEAT_OFFENDERS_BYTE_CEILING}B"
+    )
+    print(f"\n[S14 size probe] seeded repeat_offenders.json = {size} bytes "
+          f"(ceiling {REPEAT_OFFENDERS_BYTE_CEILING})")
+
+
 def _entity_name_maps_or_empty(connection):  # noqa: ANN001, ANN202
     from transit_ops.snapshots.builders._helpers import _entity_name_maps
 

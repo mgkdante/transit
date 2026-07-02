@@ -473,6 +473,65 @@ def test_weak_stops_by_grain_fields_are_additive():
     assert WeakStopGrain.model_json_schema()["required"] == ["grain"]
 
 
+def test_repeat_offenders_by_grain_fields_are_additive():
+    """S14 windowable repeat-offenders: Offender gains recurrence_days/window_days/severity and
+    RepeatOffenders.by_grain (RepeatOffenderGrain/Entry) — all optional-with-default, so an
+    already-published repeat_offenders.json still validates and the frozen required sets hold."""
+    from transit_ops.snapshots.contract import (
+        Offender,
+        RepeatOffenderEntry,
+        RepeatOffenderGrain,
+        RepeatOffenders,
+    )
+
+    # Old-shape scalar payload still validates; new fields default None / [].
+    old = RepeatOffenders.model_validate(
+        {"generated_utc": "t", "offenders": [{"type": "trip", "id": "X1",
+                                              "recurrence": "3/14d", "avg_delay_min": 2.0}]}
+    )
+    assert old.by_grain == []
+    o0 = old.offenders[0]
+    assert o0.recurrence == "3/14d"          # legacy field untouched
+    assert o0.recurrence_days is None and o0.window_days is None and o0.severity is None
+
+    # A fully-populated by_grain payload roundtrips (the exact bytes publisher writes/web reads).
+    full = RepeatOffenders(
+        generated_utc="t",
+        offenders=[Offender(type="vehicle", id="V2", route="51", recurrence="5/14d",
+                            recurrence_days=5, window_days=14, avg_delay_min=10.0,
+                            severity="high")],
+        by_grain=[
+            RepeatOffenderGrain(
+                grain="week",
+                window_days=7,
+                entries=[RepeatOffenderEntry(
+                    rank=1, type="trip", id="T9", route="9", route_name="Route Nine",
+                    severity="critical", observation_count=120, severe_count=80,
+                    severe_pct=66.7, wilson_lo=25.1, wilson_hi=41.2,
+                    recurrence_days=6, observed_days=7, window_days=7, avg_delay_min=11.5)],
+                total_ranked_trips=1, total_ranked_vehicles=0, tray_total=0,
+            )
+        ],
+    )
+    again = RepeatOffenders.model_validate(full.model_dump(mode="json"))
+    assert again.by_grain[0].grain == "week"
+    assert again.by_grain[0].entries[0].recurrence_days == 6
+    assert again.offenders[0].severity == "high"
+
+    # Freeze-compat: required sets unchanged by the additive fields.
+    assert RepeatOffenders.model_json_schema()["required"] == ["generated_utc"]
+    assert Offender.model_json_schema()["required"] == ["type", "id"]
+    assert RepeatOffenderGrain.model_json_schema()["required"] == ["grain"]
+    assert RepeatOffenderEntry.model_json_schema()["required"] == ["type", "id"]
+
+
+def test_repeat_offenders_byte_ceiling_exported():
+    """S14 exports REPEAT_OFFENDERS_BYTE_CEILING (256 KiB) so the web can share the constant."""
+    from transit_ops.snapshots.contract import REPEAT_OFFENDERS_BYTE_CEILING
+
+    assert REPEAT_OFFENDERS_BYTE_CEILING == 262144
+
+
 def test_stop_index_mode_routes_are_additive():
     """slice stops-index-mode-routes: mode/routes are optional-with-default, so an
     already-published stops_index.json (without them) still validates and the

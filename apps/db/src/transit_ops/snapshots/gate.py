@@ -688,6 +688,30 @@ def check_hotspots(payload: object, *, rel_key: str) -> list[CheckResult]:
     return emit.out
 
 
+def _check_offender_entry(emit: _Emitter, o: dict) -> None:
+    """The shared per-entry checks for a by_grain RepeatOffenderEntry (S14), mirroring
+    _check_hotspot_entry. Deliberately does NOT assert rank sequence: a by_grain ladder is
+    ranked PER KIND independently THEN truncated, so ranks restart per kind (no globally-
+    sequential run). type is the offender discriminator trip|vehicle (NOT route|stop). No
+    rank field is asserted here (the ladders carry per-kind rank, not a global sequence)."""
+    if o.get("type") not in ("trip", "vehicle"):
+        emit.err("unknown_type", "type", o.get("type"),
+                 f"type={o.get('type')!r} not in {{trip,vehicle}}")
+    if o.get("id") in _SENTINEL_ENTITY_IDS:
+        emit.err("sentinel_entity", "id", o.get("id"),
+                 f"id={o.get('id')!r} is a sentinel entity")
+    if o.get("route") in _SENTINEL_ENTITY_IDS:
+        emit.err("sentinel_entity", "route", o.get("route"),
+                 f"route={o.get('route')!r} is a sentinel entity")
+    emit.rate(o, "severe_pct")
+    emit.delay(o, "avg_delay_min")
+    emit.count(o, "observation_count")
+    emit.count(o, "severe_count")
+    emit.count(o, "recurrence_days")
+    emit.count(o, "observed_days")
+    emit.wilson(o)
+
+
 def check_repeat_offenders(payload: object, *, rel_key: str) -> list[CheckResult]:
     emit = _Emitter("historic_repeat_offenders", rel_key)
     d = _as_dict(payload)
@@ -701,10 +725,24 @@ def check_repeat_offenders(payload: object, *, rel_key: str) -> list[CheckResult
             sub.err("unknown_type", "type", o.get("type"),
                     f"type={o.get('type')!r} not a known offender type")
         sub.delay(o, "avg_delay_min")
+        # S14 additive scalar twins: recurrence_days is a non-negative distinct-day count.
+        sub.count(o, "recurrence_days")
         if o.get("id") in _SENTINEL_ENTITY_IDS:
             sub.err("sentinel_entity", "id", o.get("id"), "id is a sentinel entity")
         if o.get("route") in _SENTINEL_ENTITY_IDS:
             sub.err("sentinel_entity", "route", o.get("route"), "route is a sentinel entity")
+    # S14 by_grain recurrence ladders: walk entries + tray, reusing the sub.rate/delay/count/
+    # wilson checks; NO rank_sequence inside a ladder (ranked-then-truncated PER KIND), so the
+    # scalar offenders[] list above keeps its own invariants and the ladders do not inherit one.
+    for i, og in enumerate(d.get("by_grain") or []):
+        if not isinstance(og, dict):
+            continue
+        for j, o in enumerate(og.get("entries") or []):
+            if isinstance(o, dict):
+                _check_offender_entry(_prefixed(emit, f"by_grain[{i}].entries[{j}]."), o)
+        for j, o in enumerate(og.get("tray") or []):
+            if isinstance(o, dict):
+                _check_offender_entry(_prefixed(emit, f"by_grain[{i}].tray[{j}]."), o)
     return emit.out
 
 

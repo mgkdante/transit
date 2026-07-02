@@ -44,6 +44,11 @@ from transit_ops.gold.reader.rates import (
     wilson_hi,
     wilson_lo,
 )
+from transit_ops.gold.reader.score import (
+    POOLED_AVG_DELAY_SECONDS_EXPR,
+    REPEAT_PROBLEM_SCORE_EXPR,
+    all_time_window,
+)
 from transit_ops.gold.reader.window import (
     SPINE_WINDOW_CLAUSE,
     GrainWindows,
@@ -52,7 +57,9 @@ from transit_ops.gold.reader.window import (
 
 __all__ = [
     "MIN_N_RATE",
+    "POOLED_AVG_DELAY_SECONDS_EXPR",
     "PROJECT_TEMPLATE",
+    "REPEAT_PROBLEM_SCORE_EXPR",
     "ROUTE_ENTITY_CLAUSE",
     "ROUTE_HABIT_SPINE_SQL",
     "SHIFT_BOUNDS",
@@ -61,6 +68,7 @@ __all__ = [
     "SPINE_WINDOW_CLAUSE",
     "WILSON_Z",
     "GrainWindows",
+    "all_time_window",
     "avg_delay_min",
     "bunched_pct",
     "cdf_percentile",

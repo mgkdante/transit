@@ -1065,6 +1065,75 @@ UPSERT_STOP_DELAY_SHIFT_DAILY = named_query(
 )
 
 
+# --- S14 repeat_offender_daily_spine: daily per-entity offender spine (rollup_kind=
+#     "repeat_offender_daily_spine"). Closed-day, sargable on (provider_id, snapshot_date_key).
+#     FACT PREDICATES BYTE-IDENTICAL to UPSERT_REPEAT_OFFENDER_DAILY (the scalar mart): delay
+#     non-null + |delay| <= 3600 (GHOST clamp) + route_id IS NOT NULL, so the mart's per-entity
+#     aggregates are exactly a SUM of this spine's daily rows over the same window/predicate set.
+#     Grain (provider, entity_kind trip|vehicle, entity_id, route_id, date): a trip-id row and a
+#     vehicle-id row are emitted per fact row via UNION ALL (the same fact row contributes to
+#     both kinds, exactly as the mart's two GROUP BY arms do). observation_count / severe /
+#     sum_delay mirror the stop spine's measures over ONE in-clamp row set. PARITY: a spine day
+#     has severe_delay_count > 0 iff the day had >=1 severe (>300s) observation, so
+#     COUNT(DISTINCT date WHERE severe_delay_count>0) over a window == the mart's recurrence_days
+#     (COUNT(DISTINCT local_day) FILTER (delay>300)) by construction. Drops straight into
+#     _build_percentile_days. ---
+UPSERT_REPEAT_OFFENDER_DAILY_SPINE = named_query(
+    "rollup.repeat_offender_daily_spine.upsert",
+    f"""
+    INSERT INTO gold.repeat_offender_daily_spine (
+        provider_id, entity_kind, entity_id, route_id, provider_local_date,
+        observation_count, severe_delay_count, sum_delay_seconds, built_at_utc
+    )
+    SELECT
+        provider_id, entity_kind, entity_id, route_id, :local_date,
+        -- in-clamp delay count: the WHERE already filters delay non-null + |delay|<=3600.
+        COUNT(*)::integer,
+        -- severe = delay > 300 (and <= 3600, already guaranteed by the WHERE clamp).
+        COUNT(*) FILTER (WHERE delay_seconds > {SEVERE_DELAY_SECONDS})::integer,
+        -- pooled in-clamp numerator for the rebaselined avg.
+        COALESCE(SUM(delay_seconds), 0)::bigint,
+        :built_at_utc
+    FROM (
+        SELECT
+            f.provider_id,
+            'trip'::text AS entity_kind,
+            f.trip_id    AS entity_id,
+            f.route_id,
+            f.delay_seconds
+        FROM gold.fact_trip_delay_snapshot AS f
+        WHERE f.provider_id = :provider_id
+          AND f.snapshot_date_key = :date_key                     -- SARGABLE (ix_..._provider_date_key)
+          AND f.trip_id IS NOT NULL
+          AND f.route_id IS NOT NULL
+          AND f.delay_seconds IS NOT NULL
+          AND ABS(f.delay_seconds) <= {GHOST_DELAY_ABS_SECONDS}    -- GHOST clamp (ghosts + nulls out)
+        UNION ALL
+        SELECT
+            f.provider_id,
+            'vehicle'::text,
+            f.vehicle_id,
+            f.route_id,
+            f.delay_seconds
+        FROM gold.fact_trip_delay_snapshot AS f
+        WHERE f.provider_id = :provider_id
+          AND f.snapshot_date_key = :date_key                     -- SARGABLE (ix_..._provider_date_key)
+          AND f.vehicle_id IS NOT NULL
+          AND f.route_id IS NOT NULL
+          AND f.delay_seconds IS NOT NULL
+          AND ABS(f.delay_seconds) <= {GHOST_DELAY_ABS_SECONDS}    -- GHOST clamp (ghosts + nulls out)
+    ) AS e
+    GROUP BY provider_id, entity_kind, entity_id, route_id
+    ON CONFLICT (provider_id, entity_kind, entity_id, route_id, provider_local_date)
+    DO UPDATE SET
+        observation_count  = EXCLUDED.observation_count,
+        severe_delay_count = EXCLUDED.severe_delay_count,
+        sum_delay_seconds  = EXCLUDED.sum_delay_seconds,
+        built_at_utc       = EXCLUDED.built_at_utc
+    """
+)
+
+
 REPORTING_AGGREGATE_TABLES = (
     # GC1 / Step G1 re-pointed every metric READER off route_delay_hourly onto
     # gold.route_delay_spine (spine column delayed_trip_count added in 0070), but the table
@@ -1074,7 +1143,9 @@ REPORTING_AGGREGATE_TABLES = (
     # avg_delay_seconds (and thus the worst-route ranking) — out of Step G1 scope; deferred.
     "route_delay_hourly",
     "stop_delay_hourly",
-    "route_habit_score",
+    # route_habit_score DROPPED (migration 0076, S14): the scalar habits matrix now
+    # recomposes the reconciled repeat_problem_score from gold.route_delay_spine at read
+    # time (gold/reader ROUTE_HABIT_SPINE_SQL, all-time window) — the mart is redundant.
     # repeated_problem_route_stop derives route-grain AND stop-grain recurrence
     # from the route + stop delay spines (built earlier, in the append-only
     # section); DB-0067 dropped the stop_delay_weekly/monthly folds it used to read.
@@ -1092,7 +1163,8 @@ WINDOWED_HISTORY_TABLES = (
 )
 
 DERIVED_REBUILD_TABLES = (
-    "route_habit_score",
+    # route_habit_score DROPPED (migration 0076, S14) — recomposed at read time from
+    # the spine (gold/reader/score.py); no longer a stored derived-rebuild table.
     "repeated_problem_route_stop",
 )
 
@@ -1245,80 +1317,6 @@ UPSERT_STOP_DELAY_HOURLY = named_query(
       AND ABS(f.delay_seconds) <= {GHOST_DELAY_ABS_SECONDS}
       AND f.captured_at_utc >= {OPEN_WINDOW_HOURLY_CUTOFF_SQL}
     GROUP BY 1, 2, 3, 4
-    """
-)
-
-UPSERT_ROUTE_HABIT_SCORE = named_query(
-    "rollup.route_habit.upsert",
-    """
-    -- GC1 / Step G1: re-pointed off gold.route_delay_hourly onto the append-only
-    -- gold.route_delay_spine (route_delay_hourly is KEPT — public_route_reliability_daily
-    -- still reads it; GC1.5 owns the drop). hour_of_day_local + provider_local_date are
-    -- stored provider-local on the spine, so the timezone(EXTRACT(...)) re-projection
-    -- is dropped (dow = EXTRACT(ISODOW FROM provider_local_date), both DST-safe). Parity:
-    --  * observation_count = SUM(observation_count) and severe_delay_count =
-    --    SUM(severe_delay_count) are EXACT (identical additive counts; the spine merges
-    --    the per-direction rows the hourly rollup never split).
-    --  * avg_delay_seconds REBASELINES to the ghost-excluded pooled mean
-    --    (Σ sum_delay_seconds / Σ histogram bins) vs the legacy obs-weighted avg-of-
-    --    hourly-averages — the same allow-move class as every other spine avg. It feeds
-    --    ONLY repeat_problem_score (a severe*10 + avg/60 severity band, threshold-
-    --    tolerant); the RouteHabits payload surfaces the score, not the raw avg.
-    WITH habit AS (
-        SELECT
-            sp.provider_id,
-            sp.route_id,
-            EXTRACT(ISODOW FROM sp.provider_local_date)::integer AS day_of_week_iso,
-            sp.hour_of_day_local::integer AS hour_of_day_local,
-            SUM(sp.observation_count)::integer AS observation_count,
-            ROUND(
-                SUM(sp.sum_delay_seconds)::numeric
-                / NULLIF(SUM((SELECT COALESCE(SUM(x), 0)
-                             FROM unnest(sp.delay_histogram) AS x)), 0),
-                2
-            ) AS avg_delay_seconds,
-            SUM(sp.severe_delay_count)::integer AS severe_delay_count
-        FROM gold.route_delay_spine AS sp
-        WHERE sp.provider_id = :provider_id
-        GROUP BY 1, 2, 3, 4
-    )
-    INSERT INTO gold.route_habit_score (
-        provider_id,
-        route_id,
-        day_of_week_iso,
-        hour_of_day_local,
-        observation_count,
-        avg_delay_seconds,
-        severe_delay_count,
-        repeat_problem_score,
-        built_at_utc
-    )
-    SELECT
-        provider_id,
-        route_id,
-        day_of_week_iso,
-        hour_of_day_local,
-        observation_count,
-        avg_delay_seconds,
-        severe_delay_count,
-        LEAST(
-            ROUND(
-                (
-                    severe_delay_count::numeric * 10
-                    + GREATEST(COALESCE(avg_delay_seconds, 0), 0) / 60
-                ),
-                4
-            ),
-            9999.9999
-        ),
-        :built_at_utc
-    FROM habit
-    ON CONFLICT (provider_id, route_id, day_of_week_iso, hour_of_day_local) DO UPDATE SET
-        observation_count = EXCLUDED.observation_count,
-        avg_delay_seconds = EXCLUDED.avg_delay_seconds,
-        severe_delay_count = EXCLUDED.severe_delay_count,
-        repeat_problem_score = EXCLUDED.repeat_problem_score,
-        built_at_utc = EXCLUDED.built_at_utc
     """
 )
 
@@ -2049,7 +2047,7 @@ UPSERT_REPEAT_OFFENDER_DAILY = named_query(
 REPORTING_AGGREGATE_UPSERTS = {
     "route_delay_hourly": UPSERT_ROUTE_DELAY_HOURLY,
     "stop_delay_hourly": UPSERT_STOP_DELAY_HOURLY,
-    "route_habit_score": UPSERT_ROUTE_HABIT_SCORE,
+    # route_habit_score DROPPED (migration 0076, S14) — no upsert; recomposed at read time.
     "repeated_problem_route_stop": UPSERT_REPEATED_PROBLEM_ROUTE_STOP,
     "citizen_accountability_daily": UPSERT_CITIZEN_ACCOUNTABILITY_DAILY,
     "route_headway_by_shift": UPSERT_ROUTE_HEADWAY_DAILY,
@@ -2083,6 +2081,7 @@ class WarmRollupBuildResult:
     built_route_headway_shift_daily_days: int = 0
     built_stop_delay_spine_days: int = 0
     built_stop_delay_shift_daily_days: int = 0
+    built_repeat_offender_daily_spine_days: int = 0
     # True when the provider is enrolled but not yet seeded (no gold.dim_provider
     # row): the build is a logged no-op rather than a crash.
     skipped_not_seeded: bool = False
@@ -2107,6 +2106,7 @@ class WarmRollupBuildResult:
             "built_route_headway_shift_daily_days": self.built_route_headway_shift_daily_days,
             "built_stop_delay_spine_days": self.built_stop_delay_spine_days,
             "built_stop_delay_shift_daily_days": self.built_stop_delay_shift_daily_days,
+            "built_repeat_offender_daily_spine_days": self.built_repeat_offender_daily_spine_days,
             "reporting_aggregate_row_counts": self.reporting_aggregate_row_counts,
             "completed_at_utc": self.completed_at_utc.isoformat(),
         }
@@ -2460,6 +2460,20 @@ def build_warm_rollups(
         now=now,
     )
 
+    # Repeat-offender daily spine (S14) — daily per-entity (trip|vehicle) offender grain feeding
+    # the windowed by_grain recurrence ladders. Reads fact_trip_delay_snapshot -> default
+    # trip-delay missing-day calendar. ALL-DAYS. APPEND-ONLY (NOT in REPORTING_AGGREGATE_TABLES);
+    # accrued history is never wiped. Fact predicates byte-identical to the scalar mart upsert.
+    built_repeat_offender_daily_spine = _build_percentile_days(
+        engine,
+        provider_id=provider_id,
+        rollup_kind="repeat_offender_daily_spine",
+        upsert=UPSERT_REPEAT_OFFENDER_DAILY_SPINE,
+        today_key=today_key,
+        floor_key=floor_key,
+        now=now,
+    )
+
     # Reporting aggregates (full DELETE+UPSERT refresh) in their own transaction,
     # so a failure here never rolls back the committed 5m + daily-builder work.
     with engine.begin() as conn:
@@ -2514,6 +2528,7 @@ def build_warm_rollups(
         built_route_headway_shift_daily_days=built_route_headway_shift_daily,
         built_stop_delay_spine_days=built_stop_delay_spine,
         built_stop_delay_shift_daily_days=built_stop_delay_shift,
+        built_repeat_offender_daily_spine_days=built_repeat_offender_daily_spine,
     )
 
 
@@ -2662,6 +2677,14 @@ REBUILDABLE_KINDS: dict[str, RebuildableKind] = {
         "route_scheduled_trips_daily",
         "provider_local_date",
         UPSERT_ROUTE_SCHEDULED_TRIPS_DAILY,
+        SELECT_MISSING_PERCENTILE_DAYS,
+        0,
+    ),
+    "repeat_offender_daily_spine": RebuildableKind(
+        "repeat_offender_daily_spine",
+        "repeat_offender_daily_spine",
+        "provider_local_date",
+        UPSERT_REPEAT_OFFENDER_DAILY_SPINE,
         SELECT_MISSING_PERCENTILE_DAYS,
         0,
     ),

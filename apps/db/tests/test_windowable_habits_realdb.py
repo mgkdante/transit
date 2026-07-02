@@ -43,38 +43,12 @@ def _params() -> dict:
     return {"provider_id": PROVIDER, "route_id": ROUTE}
 
 
-def test_habits_severe_term_byte_identical_to_mart() -> None:
-    """The severe*10 BASE of the spine recomposition is byte-identical to route_habit_score
-    (both SUM the exact severe predicate over the same day-set). Only the avg/60 term is the
-    documented rebaseline — NOT asserted here."""
-    with _seeded_conn() as conn:
-        anchor = _anchor_today(conn)
-        ws, we = _grain_windows(anchor)["month"]  # covers all 7 seeded days = full accrual
-        spine = {
-            (int(r["dow"]), int(r["hour"])): int(r["severe"])
-            for r in conn.execute(
-                text(
-                    "SELECT EXTRACT(ISODOW FROM provider_local_date)::int AS dow, "
-                    "hour_of_day_local AS hour, SUM(severe_delay_count)::int AS severe "
-                    "FROM gold.route_delay_spine "
-                    "WHERE provider_id=:p AND route_id=:r "
-                    "AND provider_local_date BETWEEN :ws AND :we GROUP BY 1, 2"
-                ),
-                {"p": PROVIDER, "r": ROUTE, "ws": ws, "we": we},
-            ).mappings()
-        }
-        mart = {
-            (int(r["day_of_week_iso"]), int(r["hour_of_day_local"])): int(r["severe_delay_count"])
-            for r in conn.execute(
-                text(
-                    "SELECT day_of_week_iso, hour_of_day_local, severe_delay_count "
-                    "FROM gold.route_habit_score WHERE provider_id=:p AND route_id=:r"
-                ),
-                {"p": PROVIDER, "r": ROUTE},
-            ).mappings()
-        }
-    assert mart, "seed produced no route_habit_score rows"
-    assert spine == mart, "spine severe term diverges from the route_habit_score mart"
+# NOTE (S14 2026-07-02): the former test_habits_severe_term_byte_identical_to_mart, which read
+# the whole-history gold.route_habit_score mart, is REMOVED — that mart is dropped (migration
+# 0076) and its formula reconciled to ONE reader-owned score (gold/reader/score.py). Its parity
+# guarantee is now covered more strongly by tests/test_habit_score_reconciliation_realdb.py,
+# which embeds a FROZEN copy of the OLD mart SQL and asserts the new all-time reader scores match
+# it cell-for-cell (with a /60-divisor mutation-killer).
 
 
 def test_windowed_habits_matrix_bounded_and_no_sentinel_leak() -> None:

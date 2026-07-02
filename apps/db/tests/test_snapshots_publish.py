@@ -538,9 +538,9 @@ def test_publish_historic_writes_expected_keys(tmp_path) -> None:
              "scheduled_trip_days": 130, "delivered_trip_days": 117,
              "silent_trip_days": 10, "service_completeness_pct": 90.0},
         ],
-        # tier-3 2D shift×day_type crosstab: the windowed spine projector only runs
-        # when the route spine anchor is present (unmapped here → []), matching the
-        # old dead-needle fall-through, so no crosstab rows are supplied.
+        # tier-3 2D shift×day_type crosstab: the windowed spine projector runs per grain
+        # (S14 maps route.spine.anchor for the scalar habits read); its windowed reads are
+        # unmapped here → [] → no crosstab rows, so the by-grain output stays empty.
         "route.delay.by_crowding": [
             {"band": "many_seats", "delay_obs": 40, "sum_delay_sec": 3600.0,
              "w_p50_sec": None, "p50_obs": 0, "day_count": 1},
@@ -595,8 +595,13 @@ def test_publish_historic_writes_expected_keys(tmp_path) -> None:
         ],
         "static.active_services": [("svc_wd",)],
         "static.route_schedule": [],
-        "route.habit.score": [
-            {"day_of_week_iso": 1, "hour_of_day_local": 8, "repeat_problem_score": 0.7},
+        # S14: scalar habits reads route.habit.spine over an all-time window (the dropped
+        # route_habit_score mart is gone); route.spine.anchor drives it. known_obs below
+        # MIN_N so the same dispatch fed to habits_by_grain is suppressed there.
+        "route.spine.anchor": [{"anchor": datetime.date(2026, 6, 30)}],
+        "route.habit.spine": [
+            {"day_of_week_iso": 1, "hour_of_day_local": 8, "repeat_problem_score": 0.7,
+             "known_obs": 0},
         ],
         # DB-0067: stop spine anchor drives the windowed weak-stop + stop-grain reads.
         "stop.delay.anchor": [{"anchor": datetime.date(2026, 6, 30)}],

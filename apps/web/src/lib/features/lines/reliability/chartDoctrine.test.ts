@@ -32,9 +32,15 @@ const FEATURES_DIR = join(dir, '../..');
 // may be removed once fixed, never added. A file absent from this list must not carry a
 // banned idiom (NetworkHealth.svelte is deliberately not listed).
 const ALLOWLIST: ReadonlySet<string> = new Set([
-	// hotspots/HotspotsBoard.svelte — REMOVED S12: re-seated onto MagnitudeBarsSpec on the
-	// absolute SEVERE_DOMAIN [0,100] (the DB Wilson-LB worst-N ladder); the /worst idiom is gone.
-	'repeat-offenders/RepeatOffenders.svelte', // delay / worst (in-view worst-delay normalization)
+	// PUNCH LIST COMPLETE (S14, 2026-07-02): the allowlist is now EMPTY — every feature
+	// surface passes the ban scan, so the chart-doctrine gate is fully site-wide. The set
+	// + its machinery are KEPT (the "still violates / remove when fixed" loop, the
+	// "no stale entry" existence check) so any FUTURE relative-to-max regression can be
+	// quarantined here again while it burns down — SHRINKS ONLY, never a silent re-add.
+	//   Prior burn-down: hotspots/HotspotsBoard.svelte (REMOVED S12) → re-seated onto the
+	//   absolute SEVERE_DOMAIN [0,100] Wilson-LB ladder; repeat-offenders/RepeatOffenders.svelte
+	//   (REMOVED S14) → re-seated onto the same absolute severe-rate ladder + a fallback
+	//   ledger on the absolute DELAY_DIST_DOMAIN [0,15]; the /worst idiom is gone from both.
 ]);
 
 /** Strip comments so the gate scans CODE, not prose (e.g. "no more delay/worst"). */

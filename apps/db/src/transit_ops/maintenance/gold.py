@@ -29,7 +29,8 @@ GOLD_REPORTING_AGGREGATE_TABLES = (
     # table stays built (gold.public_route_reliability_daily VIEW still depends on it).
     "gold.route_delay_hourly",
     "gold.stop_delay_hourly",
-    "gold.route_habit_score",
+    # gold.route_habit_score DROPPED (migration 0076, S14) — the scalar habits matrix now
+    # recomposes at read time from gold.route_delay_spine; no stored mart to retain/prune.
     "gold.repeated_problem_route_stop",
     "gold.citizen_accountability_daily",
 )
@@ -52,6 +53,10 @@ GOLD_APPEND_ONLY_DAILY_TABLES = (
     "gold.route_headway_shift_daily",
     "gold.stop_delay_spine",
     "gold.stop_delay_shift_daily",
+    # migration 0075 (S14) — daily per-entity (trip|vehicle) offender spine feeding the
+    # windowed repeat-offender by_grain recurrence ladders. Append-only; pruned at
+    # GOLD_WARM_ROLLUP_RETENTION_DAYS like the sibling spines.
+    "gold.repeat_offender_daily_spine",
     # migration 0073 — per-date scheduled universe (cancellation's honest denominator).
     # Append-only daily rollup; pruned at GOLD_WARM_ROLLUP_RETENTION_DAYS like its join
     # partner route_cancellation_daily (see GOLD_AGGREGATE_RETENTION_COLUMNS below).
@@ -74,7 +79,7 @@ GOLD_AGGREGATE_RETENTION_COLUMNS = (
     ("gold.warm_rollup_periods", "period_start_utc", False),
     ("gold.route_delay_hourly", "period_start_utc", False),
     ("gold.stop_delay_hourly", "period_start_utc", False),
-    ("gold.route_habit_score", "built_at_utc", False),
+    # gold.route_habit_score DROPPED (migration 0076, S14) — no retention row.
     ("gold.repeated_problem_route_stop", "period_start_local", True),
     ("gold.citizen_accountability_daily", "provider_local_date", True),
     ("gold.route_delay_percentile_daily", "provider_local_date", True),
@@ -90,6 +95,7 @@ GOLD_AGGREGATE_RETENTION_COLUMNS = (
     ("gold.route_headway_shift_daily", "provider_local_date", True),
     ("gold.stop_delay_spine", "provider_local_date", True),
     ("gold.stop_delay_shift_daily", "provider_local_date", True),
+    ("gold.repeat_offender_daily_spine", "provider_local_date", True),
     ("gold.route_scheduled_trips_daily", "provider_local_date", True),
 )
 

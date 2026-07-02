@@ -12,7 +12,11 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from transit_ops.gold.reader import current_date_trailing_clause
+from transit_ops.gold.reader import (
+    ROUTE_HABIT_SPINE_SQL,
+    all_time_window,
+    current_date_trailing_clause,
+)
 from transit_ops.snapshots.builders._helpers import (
     _ROUTE_NAMES_SQL,
     _STOP_NAMES_SQL,
@@ -88,14 +92,14 @@ _ROUTE_HEADWAY_OBSERVED_SQL = named_query(
     """
 )
 
-_ROUTE_HABIT_SQL = named_query(
-    "route.habit.score",
-    """
-    SELECT day_of_week_iso, hour_of_day_local, repeat_problem_score
-    FROM gold.route_habit_score
-    WHERE provider_id = :provider_id AND route_id = :route_id
-    """
-)
+# The scalar whole-history habits matrix reads through the SAME reader SQL as the
+# windowed habits_by_grain (gold/reader ROUTE_HABIT_SPINE_SQL — the ONE reconciled
+# repeat_problem_score, S14 2026-07-02), bound to an ALL-TIME window (score.all_time_window:
+# epoch floor → the route's spine anchor). This replaces the dropped gold.route_habit_score
+# mart (migration 0076) + its 'route.habit.score' read: the published `habits` field stays
+# VALUE-identical for identical spine content (parity proven by
+# tests/test_habit_score_reconciliation_realdb.py). ROUTE_HABIT_SPINE_SQL additionally
+# selects known_obs, which _build_habits_matrix ignores.
 
 # Per-stop delay for this route — top weak stops by average delay, recomposed from the
 # daily gold.stop_delay_spine over the trailing-month window (DB-0067 Phase 2: the
@@ -627,13 +631,26 @@ def build_route_reliability(
         conn, params, provider_id=provider_id, route_id=route_id
     )
 
-    # --- habits: 7x24 per-route relative-problem matrix (isodow 1..7 x hour 0..23) ---
-    habits = _build_habits_matrix(conn.execute(_ROUTE_HABIT_SQL, params).mappings())
+    # --- spine anchor: the route's newest closed day, read ONCE (S6) and threaded into the
+    #     scalar all-time habits read below + both windowed builders. ---
+    spine_anchor = _spine_anchor(conn, params)
+
+    # --- habits: 7x24 per-route relative-problem matrix (isodow 1..7 x hour 0..23),
+    #     whole-history via the reconciled reader score over an ALL-TIME window (S14;
+    #     replaces the dropped gold.route_habit_score mart). No anchor -> no spine rows ->
+    #     honest all-None matrix (never a fabricated calm 0). ---
+    if spine_anchor is None:
+        habits = _build_habits_matrix(())
+    else:
+        win_start, win_end = all_time_window(spine_anchor)
+        habit_rows = conn.execute(
+            ROUTE_HABIT_SPINE_SQL, {**params, "win_start": win_start, "win_end": win_end}
+        ).mappings()
+        habits = _build_habits_matrix(habit_rows)
 
     # --- S7-B windowable §1: the When-to-ride breakdowns + heatmap per time window
     #     (day/week/month) off gold.route_delay_spine. The scalar habits / periods /
     #     day_of_week / by_shift_daytype above stay the whole-history representation. ---
-    spine_anchor = _spine_anchor(conn, params)  # read once (S6); thread into both windowed builders
     periods_by_grain = _spine_periods_by_grain(conn, params, spine_anchor)
     habits_by_grain = _spine_habits_by_grain(conn, params, spine_anchor)
 

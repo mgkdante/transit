@@ -26,7 +26,7 @@ from transit_ops.settings import Settings
 REPORTING_AGGREGATE_TABLES = (
     "route_delay_hourly",
     "stop_delay_hourly",
-    "route_habit_score",
+    # route_habit_score DROPPED (migration 0076, S14) — recomposed at read time.
     "repeated_problem_route_stop",
     "citizen_accountability_daily",
 )
@@ -255,6 +255,16 @@ class FakeConnection:
 
         if "INSERT INTO gold.warm_rollup_periods" in sql:
             return RowcountResult(1)
+
+        # repeat_offender_daily_spine — S14 append-only per-entity offender spine (0075), 730d
+        # pruning. MATCHED FIRST: its name shares the `repeat_offender` prefix with the scalar
+        # mart, so the generic BUILD_REPORTING_AGGREGATE_ROWCOUNTS substring loop below would
+        # otherwise mis-attribute this spine's COUNT/DELETE to the mart.
+        if "SELECT COUNT(*)" in sql and "FROM gold.repeat_offender_daily_spine" in sql:
+            return ScalarResult(6)
+
+        if "DELETE FROM gold.repeat_offender_daily_spine" in sql:
+            return RowcountResult(6)
 
         for table_name, rowcount in BUILD_REPORTING_AGGREGATE_ROWCOUNTS.items():
             if f"INSERT INTO gold.{table_name}" in sql:
@@ -602,10 +612,11 @@ def test_reporting_aggregate_builders_read_gold_reporting_surfaces_only() -> Non
     # GC1 / Step G1: readers re-pointed off route_delay_hourly onto the spine; the mart +
     # its UPSERT stay built for the public_route_reliability_daily view (drop = GC1.5).
     # marts re-point onto gold.route_delay_spine (an append-only reporting surface).
+    # route_habit_score DROPPED (migration 0076, S14): no upsert to assert — the scalar
+    # habits matrix recomposes the reconciled score from the spine at read time.
     acct_sql = str(rollups.REPORTING_AGGREGATE_UPSERTS["citizen_accountability_daily"])
-    habit_sql = str(rollups.REPORTING_AGGREGATE_UPSERTS["route_habit_score"])
     assert "FROM gold.route_delay_spine" in acct_sql
-    assert "FROM gold.route_delay_spine" in habit_sql
+    assert "route_habit_score" not in rollups.REPORTING_AGGREGATE_UPSERTS
 
 
 def test_citizen_accountability_alert_count_uses_content_hash() -> None:
@@ -1121,14 +1132,17 @@ def test_prune_warm_rollup_storage_dry_run_counts_without_deletes() -> None:
     assert result.deleted_row_counts["gold.stop_delay_shift_daily"] == 5
     # route_scheduled_trips_daily — the GC2/H1 append-only scheduled universe (0073), 730d pruning.
     assert result.deleted_row_counts["gold.route_scheduled_trips_daily"] == 17
+    # repeat_offender_daily_spine — the S14 append-only per-entity offender spine (0075), 730d pruning.
+    assert result.deleted_row_counts["gold.repeat_offender_daily_spine"] == 6
 
     count_queries = [s for s in conn.executed if "SELECT COUNT(*)" in s or "SELECT count(*)" in s]
     # 23 prior MINUS the 6 route delay-cube fold tables (dropped in 0064) MINUS the 2 stop_delay
     # weekly/monthly folds (dropped in 0067) PLUS the S7-B route_headway_shift_daily (DB-PR-2) +
     # stop_delay_spine (DB-PR-3) PLUS the FIX-3 route_delay_by_crowding_daily PLUS the GC1/G4
     # stop_delay_shift_daily (0071) PLUS the GC2/H1 route_scheduled_trips_daily (0073) PLUS the
-    # GC2/H3 route_occupancy_band_hourly (0074); each retention-registered table emits one
-    # dry-run COUNT.
+    # GC2/H3 route_occupancy_band_hourly (0074) PLUS the S14 repeat_offender_daily_spine (0075)
+    # MINUS the S14 route_habit_score drop (0076 — no longer retention-registered); each
+    # retention-registered table emits one dry-run COUNT.
     assert len(count_queries) == 21
 
 
@@ -1319,6 +1333,7 @@ def test_rebuildable_kinds_registry_covers_all_append_only_builders() -> None:
         "route_headway_shift_daily",
         "stop_delay_spine",
         "stop_delay_shift_daily",
+        "repeat_offender_daily_spine",
         "route_scheduled_trips_daily",
     }
     assert set(REBUILDABLE_KINDS) == expected

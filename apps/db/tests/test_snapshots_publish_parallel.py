@@ -389,7 +389,10 @@ def _historic_dispatch_conn():
         ],
         "static.active_services": [("svc_wd",)],
         "static.route_schedule": [],
-        "route.habit.score": [],
+        # S14: scalar habits reads route.habit.spine over an all-time window (route_habit_score
+        # mart dropped). Empty here → all-null matrix; route.spine.anchor left unmapped so the
+        # windowed §1 by-grain reads stay empty (matching the old fall-through).
+        "route.habit.spine": [],
         # DB-0067: stop spine anchor + the distinct-named spine reads.
         "stop.delay.anchor": [{"anchor": datetime.date(2026, 6, 30)}],
         "stop.reliability.by_route": [],
