@@ -8,7 +8,7 @@ dist/
 build/
 *.egg-info/
 .env
-data/
+/apps/db/data/
 .DS_Store
 Thumbs.db
 AGENTS.local.md
