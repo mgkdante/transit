@@ -814,21 +814,32 @@ def _network_trend_series_empty(payload: object) -> bool:
 
 
 def check_network_trend_coverage(
-    payload: object, *, rel_key: str, has_prior: bool
+    payload: object, *, rel_key: str, has_prior: bool, has_realtime_payloads: bool
 ) -> CheckResult | None:
-    """Empty network_trend series: WARN when no prior publish state exists for this
-    provider/tier (a legitimate cold start), ERROR once a prior publish existed
-    (a regression — daily trend silently dropped). Non-empty series -> None."""
+    """Empty network_trend series, severity keyed on what the batch proves:
+
+    * batch carries NO route reliability files -> the provider has no
+      realtime-derived data at all (a static-only provider, e.g. enrolled before
+      its realtime worker runs): expected emptiness, WARN — a daily red here
+      would drown real failures;
+    * no prior publish state -> legitimate cold start, WARN;
+    * otherwise (realtime data exists AND a prior publish existed) -> the daily
+      trend silently dropped: ERROR. Non-empty series -> None."""
     if not _network_trend_series_empty(payload):
         return None
-    severity = Severity.ERROR if has_prior else Severity.WARN
+    if not has_realtime_payloads:
+        reason = " — batch has no realtime-derived payloads (static-only provider)"
+        severity = Severity.WARN
+    elif not has_prior:
+        reason = " — first publish, no prior state"
+        severity = Severity.WARN
+    else:
+        reason = ""
+        severity = Severity.ERROR
     return CheckResult(
         check="empty_coverage", kind="historic_network_trend", rel_key=rel_key,
         severity=severity,
-        message=(
-            "network_trend series is empty (no daily trend published)"
-            + ("" if has_prior else " — first publish, no prior state")
-        ),
+        message="network_trend series is empty (no daily trend published)" + reason,
         field_path="series", value=0,
     )
 
@@ -845,8 +856,10 @@ def finalize_batch(
 
     * coverage-delta ERROR when the total file count shrank vs the prior publish;
     * over-half-empty route set WARN (a coverage regression signal);
-    * empty network_trend series WARN on a first publish / ERROR once prior state
-      exists (routed here because per-file checks cannot see prior publish state).
+    * empty network_trend series: WARN when the batch carries no route files
+      (static-only provider) or on a first publish; ERROR only when realtime
+      data exists AND a prior publish existed (routed here because per-file
+      checks cannot see prior state or the batch shape).
 
     prior_files_total None means no prior publish row exists (first publish), which
     both suppresses the coverage-delta ERROR and downgrades the empty-series finding
@@ -856,7 +869,10 @@ def finalize_batch(
     if network_trend is not None:
         rel_key, payload = network_trend
         trend_finding = check_network_trend_coverage(
-            payload, rel_key=rel_key, has_prior=has_prior
+            payload,
+            rel_key=rel_key,
+            has_prior=has_prior,
+            has_realtime_payloads=bool(route_payloads),
         )
         if trend_finding is not None:
             report.results.append(trend_finding)
