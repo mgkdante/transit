@@ -292,35 +292,61 @@ def test_empty_network_trend_series_no_longer_errors_per_file():
 def test_empty_network_trend_is_warn_on_first_publish():
     trend = NetworkTrend(generated_utc="t", series=[])
     finding = gate.check_network_trend_coverage(
-        trend, rel_key="historic/network_trend.json", has_prior=False
+        trend, rel_key="historic/network_trend.json", has_prior=False,
+        has_realtime_payloads=True,
     )
     assert finding is not None
     assert finding.check == "empty_coverage" and finding.severity is Severity.WARN
 
 
-def test_empty_network_trend_is_error_when_prior_exists():
+def test_empty_network_trend_is_error_when_prior_and_realtime_exist():
     trend = NetworkTrend(generated_utc="t", series=[])
     finding = gate.check_network_trend_coverage(
-        trend, rel_key="historic/network_trend.json", has_prior=True
+        trend, rel_key="historic/network_trend.json", has_prior=True,
+        has_realtime_payloads=True,
     )
     assert finding is not None
     assert finding.check == "empty_coverage" and finding.severity is Severity.ERROR
 
 
+def test_empty_network_trend_is_warn_for_static_only_provider():
+    # The 2026-07-02 sto/octranspo incident shape: prior publish state exists but
+    # the batch carries ZERO route reliability files (no realtime worker yet) —
+    # expected emptiness must not redden the daily workflow.
+    trend = NetworkTrend(generated_utc="t", series=[])
+    finding = gate.check_network_trend_coverage(
+        trend, rel_key="historic/network_trend.json", has_prior=True,
+        has_realtime_payloads=False,
+    )
+    assert finding is not None
+    assert finding.check == "empty_coverage" and finding.severity is Severity.WARN
+    assert "static-only" in finding.message
+
+
 def test_nonempty_network_trend_yields_no_coverage_finding():
     trend = NetworkTrend(generated_utc="t", series=[TrendPoint(date="2026-06-01", otp_pct=90)])
     assert gate.check_network_trend_coverage(
-        trend, rel_key="historic/network_trend.json", has_prior=True
+        trend, rel_key="historic/network_trend.json", has_prior=True,
+        has_realtime_payloads=True,
     ) is None
 
 
-def test_finalize_batch_routes_empty_trend_by_prior():
-    # WARN when prior_files_total is None (first publish); ERROR once a prior exists.
+def test_finalize_batch_routes_empty_trend_by_prior_and_batch_shape():
+    # WARN when prior_files_total is None (first publish); ERROR only when a prior
+    # exists AND the batch carries realtime-derived route files; WARN again for the
+    # static-only shape (prior exists, zero route files — the sto/octranspo case).
+    route_files = [(
+        "historic/route_reliability/1.json",
+        RouteReliability(generated_utc="t", id="1",
+                         periods=[ReliabilityPeriod(grain="all", otp_pct=90)]),
+    )]
+
     warn_report = gate.new_report("stm", "historic", "t")
     gate.finalize_batch(
         warn_report,
         network_trend=("historic/network_trend.json", NetworkTrend(generated_utc="t", series=[])),
         prior_files_total=None,
+        route_payloads=route_files,
     )
     assert any(r.check == "empty_coverage" for r in warn_report.warnings)
     assert warn_report.errors == []
@@ -330,8 +356,19 @@ def test_finalize_batch_routes_empty_trend_by_prior():
         err_report,
         network_trend=("historic/network_trend.json", NetworkTrend(generated_utc="t", series=[])),
         prior_files_total=9000,
+        route_payloads=route_files,
     )
     assert any(r.check == "empty_coverage" for r in err_report.errors)
+
+    static_only = gate.new_report("sto", "historic", "t")
+    gate.finalize_batch(
+        static_only,
+        network_trend=("historic/network_trend.json", NetworkTrend(generated_utc="t", series=[])),
+        prior_files_total=7,
+        route_payloads=[],
+    )
+    assert any(r.check == "empty_coverage" for r in static_only.warnings)
+    assert static_only.errors == []
 
 
 # --- coverage-delta ----------------------------------------------------------
