@@ -199,8 +199,8 @@ describe('cross-feature imports — features/ leaves stay isolated (shared kerne
 		expect(crossFeatureTarget('$lib/features/map/map.copy', searchFile, 'search')).toBe('map');
 		expect(isExempt('$lib/features/map/map.copy', 'search')).toBeNull();
 		// A synthetic climb-out relative sibling import.
-		const netFile = join(FEATURES_DIR, 'network/NetworkHealth.svelte');
-		expect(crossFeatureTarget('../map/map.copy', netFile, 'network')).toBe('map');
+		const netFile = join(FEATURES_DIR, 'network/reliability/sections/NetworkSurface.svelte');
+		expect(crossFeatureTarget('../../../map/map.copy', netFile, 'network')).toBe('map');
 	});
 
 	it('spares same-feature, shared-kernel and package imports', () => {

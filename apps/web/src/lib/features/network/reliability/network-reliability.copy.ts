@@ -1,17 +1,17 @@
-// network.copy.ts — co-located bilingual copy for the Network-health surface.
+// network-reliability.copy.ts — co-located bilingual copy for the Network-health surface.
 //
-// Co-located with NetworkHealth.svelte so the screen owns no inline strings.
-// Domain-intrinsic component vocabulary (status/occupancy band labels, the LIVE
-// chip, edge-state copy) already lives inside the spine + dataviz primitives;
-// this file only carries the surface-level prose + metric/section captions.
+// Moved here from ../network.copy.ts during the S9A re-seat (the surface tree now lives under
+// network/reliability/). Domain-intrinsic component vocabulary (status/occupancy band labels,
+// the LIVE chip, edge-state copy) already lives inside the spine + dataviz primitives; this
+// file only carries the surface-level prose + metric/section captions.
 //
-// Shape: `Record<Locale, {...}>` with EN + FR. The FR voice is the canonical
-// product voice (mirrors the raw-FR /v1 headers); EN is the parallel translation.
+// Shape: `Record<Locale, {...}>` with EN + FR. The FR voice is the canonical product voice
+// (mirrors the raw-FR /v1 headers); EN is the parallel translation.
 
 import type { Locale } from '$lib/i18n';
 import type { SurfaceHeadCopy } from '$lib/components/surface';
 
-export interface NetworkCopy extends SurfaceHeadCopy {
+export interface NetworkReliabilityCopy extends SurfaceHeadCopy {
 	/** Region heading above the LIVE half of the surface. */
 	readonly liveRegion: string;
 	/** Region heading above the HISTORIC half of the surface. */
@@ -38,6 +38,21 @@ export interface NetworkCopy extends SurfaceHeadCopy {
 	readonly delayHistogramSection: string;
 	/** Section caption above the non-responding-by-route ranked list. */
 	readonly nonRespondingSection: string;
+	/**
+	 * Service-completeness tile (S9B · GC2 service_completeness_rate). A schedule-aware
+	 * delivered/scheduled share, distinct from the RT-observed cancellation rate. Honest-absent
+	 * (ramp-in) until the GC2 scheduled-universe data accrues across the retained window.
+	 */
+	readonly completeness: {
+		/** Section caption above the tile. */
+		readonly section: string;
+		/** Metric label (the latest-bucket completeness reading). */
+		readonly metric: string;
+		/** The always-visible plain-language explainer (silent = scheduled but never appeared). */
+		readonly explainer: string;
+		/** Ramp-in stand-down note shown under a null latest ("no data yet, accruing"). */
+		readonly standDown: string;
+	};
 	/** Metric labels for the headline grid. */
 	readonly metrics: {
 		readonly onTime: string;
@@ -53,6 +68,19 @@ export interface NetworkCopy extends SurfaceHeadCopy {
 		readonly label: string;
 		/** Accessible prefix read before the formatted age. */
 		readonly a11yPrefix: string;
+	};
+	/** The dedicated vehicles-reporting / coverage row (S9C: its own labelled row). */
+	readonly reporting: {
+		/** Section heading (e.g. "Reporting & coverage"). */
+		readonly heading: string;
+		/**
+		 * The GLOBAL-SIGNAL caveat (the S5 "vehicle updated_utc is uniform" finding):
+		 * per-vehicle silence is a network-wide feed signal, so `non_responding` counts
+		 * scheduled trips with no live vehicle (a per-line silent-trip tally, NOT
+		 * identifiable buses), and coverage is the fleet-known-status share — it cannot
+		 * flag one specific vehicle as silent.
+		 */
+		readonly caveat: string;
 	};
 	/** A11y / legend labels for the two distribution bars. */
 	readonly statusBarLabel: string;
@@ -99,26 +127,21 @@ export interface NetworkCopy extends SurfaceHeadCopy {
 		/** Subtitle prefix for the severe-delay-share reading. */
 		readonly severeLabel: string;
 		/**
-		 * Honest caveat: these grains are a real on-time/known OTP over the
-		 * trailing window — a punctuality proxy, not certified OTP — so small
-		 * samples vary.
+		 * Honest caveat: these grains are a real on-time/known OTP over the trailing
+		 * window — a punctuality proxy, not certified OTP — so small samples vary.
 		 */
 		readonly caveat: string;
 	};
 	/** Delay-distribution histogram (8 fixed signed-minute buckets). */
 	readonly delayHistogram: {
-		/** Accessible summary of the whole histogram (role=list). */
+		/** Accessible chart title. */
 		readonly summary: string;
 		/** Honest caption: same basis as the p50/p90 headline numbers. */
 		readonly caption: string;
-		/**
-		 * Per-bar edge labels, in the fixed 8-bucket order:
-		 * (-inf,-5) [-5,-2) [-2,0) [0,2) [2,5) [5,10) [10,15) [15,+inf).
-		 * Early (ahead of schedule) reads left; late reads right.
-		 */
-		readonly buckets: readonly string[];
-		/** Accessible per-bar value (e.g. "<bucket> min: 1 trip" / "<bucket> min: 4 trips"). */
-		readonly barValue: (bucket: string, count: number) => string;
+		/** Localized x-axis title (the delay axis). */
+		readonly xLabel: string;
+		/** Localized y-axis title (the count axis). */
+		readonly yLabel: string;
 	};
 	/** Non-responding (silent) scheduled trips, ranked per route. */
 	readonly nonResponding: {
@@ -160,7 +183,7 @@ export interface NetworkCopy extends SurfaceHeadCopy {
 	};
 }
 
-export const copy: Record<Locale, NetworkCopy> = {
+export const networkReliabilityCopy: Record<Locale, NetworkReliabilityCopy> = {
 	en: {
 		kicker: 'NETWORK · LIVE',
 		heading: 'Network health',
@@ -178,6 +201,13 @@ export const copy: Record<Locale, NetworkCopy> = {
 		occupancySection: 'Crowding',
 		delayHistogramSection: 'Delay distribution',
 		nonRespondingSection: 'Silent trips by line',
+		completeness: {
+			section: 'Service delivered',
+			metric: 'Scheduled service delivered',
+			explainer:
+				'Completeness is the share of scheduled trips the network actually ran. A silent trip is scheduled but never appears in the live feed, it is counted as not delivered.',
+			standDown: 'No data yet, this reading accrues once scheduled-service coverage is published.',
+		},
 		metrics: {
 			onTime: 'On-time',
 			vehicles: 'Vehicles in service',
@@ -187,6 +217,11 @@ export const copy: Record<Locale, NetworkCopy> = {
 			delayP90: 'Slowest 10%',
 		},
 		feedAge: { label: 'FEED', a11yPrefix: 'Worker feed updated' },
+		reporting: {
+			heading: 'Reporting & coverage',
+			caveat:
+				'Coverage is the share of the fleet whose live status is known. “Not reporting” counts scheduled trips currently running with no live vehicle: a per-line silent-trip tally, not identifiable buses. Every vehicle shares one feed timestamp, so we can never single out one silent bus. Metro is excluded.',
+		},
 		statusBarLabel: 'Network status mix',
 		occupancyBarLabel: 'Network crowding mix',
 		trend: {
@@ -221,8 +256,8 @@ export const copy: Record<Locale, NetworkCopy> = {
 			summary: 'Distribution of trip-average delays across the network, earliest to latest.',
 			caption:
 				'How trip-average delays are spread right now, in signed minutes. Same basis as the median and slowest-10% numbers above: negative is ahead of schedule, positive is behind.',
-			buckets: ['< -5', '-5 to -2', '-2 to 0', '0 to 2', '2 to 5', '5 to 10', '10 to 15', '15+'],
-			barValue: (bucket, count) => `${bucket} min: ${count} ${count === 1 ? 'trip' : 'trips'}`,
+			xLabel: 'Delay (min)',
+			yLabel: 'Trips',
 		},
 		nonResponding: {
 			summary: 'Lines with scheduled trips currently running with no live vehicle, most first.',
@@ -254,6 +289,14 @@ export const copy: Record<Locale, NetworkCopy> = {
 		occupancySection: 'Achalandage',
 		delayHistogramSection: 'Répartition des retards',
 		nonRespondingSection: 'Voyages silencieux par ligne',
+		completeness: {
+			section: 'Service livré',
+			metric: 'Service planifié livré',
+			explainer:
+				'La complétude est la part des voyages planifiés que le réseau a réellement effectués. Un voyage silencieux est planifié mais n’apparaît jamais dans le flux en direct : il compte comme non livré.',
+			standDown:
+				'Aucune donnée pour l’instant. Cette mesure s’accumule une fois la couverture du service planifié publiée.',
+		},
 		metrics: {
 			onTime: 'À l’heure',
 			vehicles: 'Véhicules en service',
@@ -263,6 +306,11 @@ export const copy: Record<Locale, NetworkCopy> = {
 			delayP90: '10 % les plus lents',
 		},
 		feedAge: { label: 'FLUX', a11yPrefix: 'Flux du travailleur mis à jour' },
+		reporting: {
+			heading: 'Signalement et couverture',
+			caveat:
+				'La couverture est la part de la flotte dont le statut en direct est connu. « Sans signal » compte les voyages planifiés qui circulent actuellement sans véhicule en direct : un décompte de voyages silencieux par ligne, pas des véhicules identifiables. Chaque véhicule partage un seul horodatage de flux, on ne peut donc jamais isoler un véhicule silencieux précis. Le métro est exclu.',
+		},
 		statusBarLabel: 'Répartition des statuts du réseau',
 		occupancyBarLabel: 'Répartition de l’achalandage du réseau',
 		trend: {
@@ -300,8 +348,8 @@ export const copy: Record<Locale, NetworkCopy> = {
 				'Répartition des retards moyens par voyage à l’échelle du réseau, du plus tôt au plus tard.',
 			caption:
 				'La répartition actuelle des retards moyens par voyage, en minutes signées. Même base que le retard médian et les 10 % les plus lents ci-dessus : négatif signifie en avance, positif signifie en retard.',
-			buckets: ['< -5', '-5 à -2', '-2 à 0', '0 à 2', '2 à 5', '5 à 10', '10 à 15', '15+'],
-			barValue: (bucket, count) => `${bucket} min : ${count} ${count <= 1 ? 'voyage' : 'voyages'}`,
+			xLabel: 'Retard (min)',
+			yLabel: 'Voyages',
 		},
 		nonResponding: {
 			summary:

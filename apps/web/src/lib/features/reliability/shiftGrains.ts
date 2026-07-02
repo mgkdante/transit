@@ -96,6 +96,9 @@ export {
 	SKIPPED_RATE_DOMAIN,
 	SHARE_DOMAIN,
 	COV_DOMAIN,
+	OTP_TREND_MIN_SPAN,
+	OTP_TREND_REFERENCE,
+	otpTrendDomain,
 } from './domains';
 
 /** CoV (gap stddev / mean) at or above which regularity bands to critical. */
