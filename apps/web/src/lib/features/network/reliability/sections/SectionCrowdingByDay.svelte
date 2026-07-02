@@ -1,0 +1,98 @@
+<!--
+  SectionCrowdingByDay — the per-day crowding small-multiple (one 100% bar per day).
+
+  Pure presenter of `selectOccupancyTrend`. One StackedBar(scale='occupancy') per day WITH
+  occupancy telemetry — a day with no telemetry is SKIPPED upstream (never an even split). The
+  100% stacked bars are self-normalising (EXEMPT from the absolute-magnitude domain law). The
+  whole tile stands down (renders nothing) when no day carries crowding data — the orchestrator
+  gates on the day-grain + a non-empty list.
+-->
+<script lang="ts">
+	import { StackedBar } from '$lib/components/dataviz';
+	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
+	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
+	import type { MetricKey, SupplementalMetricKey } from '$lib/features/metrics/metrics.content';
+	import type { OccupancyDay } from '../selectors/occupancyTrend';
+	import type { NetworkReliabilityCopy } from '../network-reliability.copy';
+
+	interface SectionCrowdingByDayProps {
+		days: readonly OccupancyDay[];
+		info: (
+			key: MetricKey | SupplementalMetricKey,
+			name: string,
+		) => {
+			tip: string;
+			href: string;
+			label: string;
+			linkLabel: string;
+		};
+		copy: NetworkReliabilityCopy;
+	}
+	let { days, info, copy }: SectionCrowdingByDayProps = $props();
+
+	const i = $derived(info('occupancy', copy.occupancyTrendSection));
+</script>
+
+<div class="network-tile">
+	<span class="network-section">
+		<SectionLabel text={copy.occupancyTrendSection} variant="station" />
+		<MetricInfo tip={i.tip} href={i.href} label={i.label} linkLabel={i.linkLabel} side="bottom" />
+	</span>
+	<ul
+		class="network-occupancy-days"
+		aria-label={copy.occupancyTrend.summary}
+		data-slot="occupancy-trend"
+	>
+		{#each days as day (day.date)}
+			<li class="network-occupancy-day">
+				<span class="network-occupancy-date">{day.dateLabel}</span>
+				<StackedBar
+					scale="occupancy"
+					segments={day.segments}
+					size="sm"
+					interactive
+					label={`${copy.occupancySection} · ${day.dateLabel}`}
+				/>
+			</li>
+		{/each}
+	</ul>
+</div>
+
+<style>
+	.network-tile {
+		display: flex;
+		flex-direction: column;
+		gap: 0.75rem;
+		min-width: 0;
+		padding: 1rem;
+		border: 1px solid var(--border);
+		border-radius: var(--radius-lg);
+		background: var(--card);
+	}
+	.network-section {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.4rem;
+	}
+	.network-occupancy-days {
+		margin: 0;
+		padding: 0;
+		list-style: none;
+		display: flex;
+		flex-direction: column;
+		gap: 0.4rem;
+		max-width: 100%;
+	}
+	.network-occupancy-day {
+		display: grid;
+		grid-template-columns: 5.5rem minmax(0, 1fr);
+		align-items: center;
+		gap: 0.75rem;
+	}
+	.network-occupancy-date {
+		font-family: var(--font-mono);
+		font-size: var(--text-micro);
+		font-variant-numeric: tabular-nums;
+		color: var(--muted-foreground);
+	}
+</style>

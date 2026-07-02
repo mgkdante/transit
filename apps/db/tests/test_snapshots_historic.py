@@ -371,6 +371,56 @@ def test_build_network_trend_service_completeness_clamped_at_100() -> None:
     assert out.series[0].service_completeness_rate == 100.0
 
 
+def test_build_network_trend_weekly_monthly_vary_not_flat() -> None:
+    """FLAT-vs-VARYING guard (S9B): the coarse weekly/monthly buckets carry DISTINCT
+    per-bucket OTP + avg-delay values when fed DISTINCT SUM inputs. This pins the
+    premise of the S9B UI fix — the "goes flat on Week/Month" the operator sees is a
+    UI axis-domain problem, NOT a builder aggregation bug: the builder DOES vary (a
+    future GROUP BY regression that collapsed the buckets to one value would fail here).
+    """
+    wk1 = datetime.date(2026, 6, 1)  # ISO-week-start bucket keys
+    wk2 = datetime.date(2026, 6, 8)
+    mo1 = datetime.date(2026, 5, 1)  # calendar-month-start bucket keys
+    mo2 = datetime.date(2026, 6, 1)
+    conn = FakeConn(
+        {
+            # WEEKLY re-group: two buckets, DISTINCT on_time/known -> otp 87 vs 88,
+            # DISTINCT pooled/inclamp -> avg 1.0 vs 1.1 min (60s vs 66s).
+            "network.trend.week_hourly": [
+                {"local_date": wk1, "known_obs": 1000, "on_time": 870,
+                 "pooled_delay_sec": 60000.0, "inclamp_obs": 1000},
+                {"local_date": wk2, "known_obs": 1000, "on_time": 880,
+                 "pooled_delay_sec": 66000.0, "inclamp_obs": 1000},
+            ],
+            # MONTHLY re-group: two buckets, DISTINCT otp 87 vs 89, avg 0.9 vs 1.2 min.
+            "network.trend.month_hourly": [
+                {"local_date": mo1, "known_obs": 2000, "on_time": 1740,
+                 "pooled_delay_sec": 108000.0, "inclamp_obs": 2000},
+                {"local_date": mo2, "known_obs": 2000, "on_time": 1780,
+                 "pooled_delay_sec": 144000.0, "inclamp_obs": 2000},
+            ],
+        }
+    )
+
+    out = build_network_trend(conn, generated_utc="t")
+
+    # Weekly buckets carry the two DISTINCT otp + DISTINCT avg values (never flat-repeated).
+    weekly_otp = [p.otp_pct for p in out.weekly]
+    weekly_avg = [p.avg_delay_min for p in out.weekly]
+    assert weekly_otp == [87, 88]
+    assert weekly_avg == [1.0, 1.1]
+    assert len(set(weekly_otp)) == 2 and len(set(weekly_avg)) == 2
+    # p90/vehicles stay None on the coarse grain (the ~14d fact window is not composable).
+    assert all(p.p90_min is None and p.vehicles is None for p in out.weekly)
+
+    # Monthly buckets likewise vary.
+    monthly_otp = [p.otp_pct for p in out.monthly]
+    monthly_avg = [p.avg_delay_min for p in out.monthly]
+    assert monthly_otp == [87, 89]
+    assert monthly_avg == [0.9, 1.2]
+    assert len(set(monthly_otp)) == 2 and len(set(monthly_avg)) == 2
+
+
 def test_build_network_trend_fact_only_date() -> None:
     """A date present only in the fact table still yields a point (rollup fields None)."""
     d = datetime.date(2026, 6, 5)
