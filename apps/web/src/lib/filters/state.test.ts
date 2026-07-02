@@ -3,7 +3,16 @@
 // from<=to span; anything less is honest-absence (undefined).
 
 import { describe, it, expect } from 'vitest';
-import { isIsoDate, normalizeWindow, isWorstN, normalizeWorstN, WORST_N_LADDER } from './state';
+import {
+	isIsoDate,
+	normalizeWindow,
+	isWorstN,
+	normalizeWorstN,
+	WORST_N_LADDER,
+	cloneFilterState,
+	isEmptyFilterState,
+	emptyFilterState,
+} from './state';
 
 describe('isIsoDate — the YYYY-MM-DD shape gate', () => {
 	it('accepts a well-formed YYYY-MM-DD string only', () => {
@@ -73,5 +82,19 @@ describe('worst-N (S12 ladder cap) — a fixed truthful rung or "all"', () => {
 		expect(normalizeWorstN('7')).toBeUndefined();
 		expect(normalizeWorstN(null)).toBeUndefined();
 		expect(normalizeWorstN(undefined)).toBeUndefined();
+	});
+});
+describe('FilterState.date (S13)', () => {
+	it('clone copies date', () => {
+		const st = emptyFilterState();
+		st.date = '2026-07-01';
+		const copy = cloneFilterState(st);
+		expect(copy.date).toBe('2026-07-01');
+	});
+
+	it('isEmpty is false when only date is set', () => {
+		const st = emptyFilterState();
+		st.date = '2026-07-01';
+		expect(isEmptyFilterState(st)).toBe(false);
 	});
 });

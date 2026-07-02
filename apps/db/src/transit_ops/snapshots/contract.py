@@ -1128,6 +1128,54 @@ class ReceiptWorstStop(BaseModel):
     name: str | None = None
     avg_delay_min: float | None = None
 
+class ReceiptShiftCut(BaseModel):
+    # S13 time-of-day cut of the receipt's day: the network-wide delay/severe reading
+    # for ONE canonical shift (am_peak|midday|pm_peak|evening|night), summed across all
+    # route-attributed observations off gold.route_delay_spine at its hour grain. shift
+    # is the bare shift token (the canonical SHIFT_BOUNDS order). observation_count is
+    # the in-window known-delay denominator; severe_count the >300s count; severe_pct =
+    # severe/obs. avg_delay_min is the POOLED ghost-excluded mean (Σ sum_delay_seconds /
+    # Σ in-clamp histogram bins) — IDENTICAL methodology to the day-level avg_delay_min
+    # scalar, so a shift cut and the day scalar reconcile. Honest-NULL (None, never 0)
+    # when a shift has no in-clamp observations. A shift with zero observations is
+    # OMITTED from by_shift entirely (honest absence).
+    shift: str
+    observation_count: int | None = None
+    severe_count: int | None = None
+    severe_pct: float | None = None
+    avg_delay_min: float | None = None
+
+class ReceiptNotReportedRoute(BaseModel):
+    # S13 one route that was SCHEDULED that day but produced ZERO realtime observations
+    # (total_trip_days=0 AND scheduled_trip_days>0) — distinct from a route with
+    # canceled_trip_days>0 (explicitly cancelled in the RT feed). scheduled_trip_days is
+    # the honest scheduled denominator RT never saw. id is never a sentinel; name is the
+    # resolved display name (honest-None when unresolved).
+    id: str
+    name: str | None = None
+    scheduled_trip_days: int | None = None
+
+class ReceiptServiceStates(BaseModel):
+    # S13 the receipt day's scheduled→delivered→cancelled→silent service-state split,
+    # summed network-wide off gold.route_cancellation_daily (GC2 scheduled universe).
+    # scheduled_trip_days = Σ scheduled trip-days (the honest denominator); delivered =
+    # Σ delivered FILTER(scheduled known); cancelled = Σ canceled_trip_days; silent = Σ
+    # silent FILTER(scheduled known). service_completeness_pct = LEAST(100, 100 *
+    # Σdelivered / Σscheduled) — the ONE completeness number for the receipt (DECISIONS
+    # DB1); None (never a fabricated 0/100) when Σscheduled is NULL or 0 (pre-0073
+    # history / no schedule edition). not_reported_route_count is the PRE-cap total count
+    # of not-reported routes that day (the honest shown/total denominator — a mass-outage
+    # day reads count=200, list=top 50); not_reported_routes is that list capped at
+    # NOT_REPORTED_ROUTES_CAP (top by scheduled_trip_days DESC). All counts honest-NULL
+    # (None) when the scheduled universe is unknown, never a fabricated 0.
+    scheduled_trip_days: int | None = None
+    delivered_trip_days: int | None = None
+    cancelled_trip_days: int | None = None
+    silent_trip_days: int | None = None
+    not_reported_route_count: int | None = None
+    service_completeness_pct: float | None = None
+    not_reported_routes: list[ReceiptNotReportedRoute] = Field(default_factory=list)
+
 class Receipt(PayloadEnvelope):
     generated_utc: str
     date: str
@@ -1141,6 +1189,33 @@ class Receipt(PayloadEnvelope):
     affected_stops: int | None = None
     alerts: int | None = None
     rider_impact_score: float | None = None
+    # S13 additive-optional re-granulation. All default empty/None so an already-published
+    # receipt (scalar-only) stays FIELD-IDENTICAL (a republished pre-S13 receipt gains only the additive keys) under the additive-optional growth
+    # rule — the scalar fields above are UNTOUCHED. by_shift = the day's time-of-day cuts
+    # (ordered by the canonical shift order; a shift with no observations is omitted).
+    # service_states = the day's scheduled→delivered→cancelled→silent split + the
+    # not-reported-routes list + the ONE service_completeness_pct (DECISIONS DB1: the web
+    # heroes completeness from service_states, no duplicate top-level scalar).
+    by_shift: list[ReceiptShiftCut] = Field(default_factory=list)
+    service_states: ReceiptServiceStates | None = None
+
+# S13 NOT-reported route list cap: the top-N routes (by scheduled_trip_days DESC) that
+# were scheduled yet produced ZERO realtime observations on the receipt day. The list is
+# capped so a mass-outage day (STM ~200 routes) cannot bloat a single receipt file;
+# ReceiptServiceStates.not_reported_route_count carries the honest PRE-cap total so the
+# web renders "showing 50 of 200". Mirrors the HotspotGrain per-kind cap feel.
+NOT_REPORTED_ROUTES_CAP = 50
+
+# S13 payload guard: a published historic/receipts/{date}.json must stay under this many
+# bytes (model_dump_json, UTF-8 — the exact bytes the publisher writes). LADDER: the
+# scalar receipt (~1 KB) PLUS by_shift (≤5 shift cuts) PLUS service_states with a full
+# NOT_REPORTED_ROUTES_CAP list, each a {id, wide-accented name, scheduled count}. A
+# synthetic worst case (5 shift cuts + 50 not-reported routes with wide names) measures
+# well under 64 KiB (see test_receipt_full_payload_under_byte_ceiling for the exact
+# number). 65536 (64 KiB) clears it with generous headroom while STILL catching a runaway
+# (an un-capped all-route not-reported list on a whole-network-dark day). Exported so the
+# web can share the constant. History: introduced at S13.
+RECEIPT_BYTE_CEILING = 65536
 
 class AlertHistoryEntry(BaseModel):
     id: str
@@ -1225,6 +1300,26 @@ class BasemapFile(PayloadEnvelope):
     max_zoom: int = 15
     generated_utc: str
 
+class ReceiptAvailability(BaseModel):
+    # S13 per-date availability metadata for the S8 DateRangePicker (DECISIONS DB3). A
+    # date appears in ReceiptsIndex.available IFF it has a published receipt this run
+    # (the SAME set as `dates`). The picker greys out any calendar date NOT in the index
+    # (a fully-dark scheduled day has no CAD row → no receipt → correctly absent). Within
+    # published dates:
+    #   has_data     = the receipt carries real reliability telemetry (affected routes/
+    #                  stops OR any network delay obs) vs an alerts-only shell (honest-
+    #                  NULL reliability inputs) the picker styles distinctly.
+    #   has_schedule = the day's scheduled universe is known (service_states present with
+    #                  a non-NULL scheduled_trip_days) — distinguishes "schedule known,
+    #                  no telemetry" from "empty" so the picker gives an honest reason.
+    # publish_generation_id is set from the SAME run stamp as the index envelope; in a
+    # single-run publish it is REDUNDANT with the index's own envelope id — carried for
+    # forward-compat if receipts ever become multi-generation-merged.
+    date: str
+    has_data: bool
+    has_schedule: bool = False
+    publish_generation_id: str | None = None
+
 class ReceiptsIndex(PayloadEnvelope):
     dates: list[str] = Field(
         default_factory=list,
@@ -1236,6 +1331,12 @@ class ReceiptsIndex(PayloadEnvelope):
         ),
     )
     generated_utc: str
+    # S13 additive-optional per-date availability metadata (DECISIONS DB3). Default empty
+    # so an already-published index (dates-only) stays FIELD-IDENTICAL (a republished pre-S13 receipt gains only the additive keys); `dates`
+    # above stays UNTOUCHED. One ReceiptAvailability per published date (available[].date
+    # is a subset of dates), letting the S8 picker distinguish a rich receipt from an
+    # alerts-only shell and a schedule-known day from an empty one with honest reasons.
+    available: list[ReceiptAvailability] = Field(default_factory=list)
 
 class RouteReliabilityIndex(PayloadEnvelope):
     route_ids: list[str] = Field(

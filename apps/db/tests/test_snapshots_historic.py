@@ -1750,13 +1750,17 @@ def test_build_repeat_offenders_resolves_route_name() -> None:
 
 
 def _receipts_dispatch(*, acct=None, net=None, worst_route=None, worst_stop=None,
-                       route_names=None, stop_names=None):
+                       route_names=None, stop_names=None, shift=None,
+                       service_states=None, not_reported=None):
     """Build the name-keyed dispatch map for build_receipts."""
     return {
         "receipts.accountability": acct or [],
         "receipts.network_daily": net or [],
         "receipts.worst_route": worst_route or [],
         "receipts.worst_stop": worst_stop or [],
+        "receipts.shift_daily": shift or [],
+        "receipts.service_states": service_states or [],
+        "receipts.not_reported_routes": not_reported or [],
         "static.route_names": route_names or [],
         "static.stop_names": stop_names or [],
     }
@@ -2130,6 +2134,231 @@ def test_build_receipts_missing_network_yields_none_otp() -> None:
     assert r.worst_route is None
     assert r.worst_stop is None
     assert r.affected_routes == 1
+
+
+# --------------------------------------------------------------------------
+# S13 build_receipts re-granulation: by_shift, service_states, availability
+# --------------------------------------------------------------------------
+
+def _acct_row(d, **over):
+    base = {
+        "provider_local_date": d,
+        "affected_route_count": 1,
+        "affected_stop_count": 1,
+        "delayed_trip_count": 0,
+        "severe_delay_count": 0,
+        "alert_count": 0,
+        "rider_impact_score": None,
+    }
+    base.update(over)
+    return base
+
+
+def test_receipts_by_shift_ordered_by_canonical_shift_order() -> None:
+    """by_shift cuts render in the kernel SHIFT_BOUNDS order regardless of row order."""
+    d = datetime.date(2026, 6, 1)
+    conn = FakeConn(
+        _receipts_dispatch(
+            acct=[_acct_row(d)],
+            # rows deliberately out of order
+            shift=[
+                {"local_date": d, "shift": "evening", "known_obs": 100, "severe": 5,
+                 "pooled_delay_sec": 6000.0, "inclamp_obs": 100},
+                {"local_date": d, "shift": "am_peak", "known_obs": 200, "severe": 10,
+                 "pooled_delay_sec": 12000.0, "inclamp_obs": 200},
+                {"local_date": d, "shift": "night", "known_obs": 50, "severe": 1,
+                 "pooled_delay_sec": 1500.0, "inclamp_obs": 50},
+            ],
+        )
+    )
+    r = build_receipts(conn, generated_utc="t")["2026-06-01"]
+    assert [c.shift for c in r.by_shift] == ["am_peak", "evening", "night"]
+
+
+def test_receipts_by_shift_pooled_avg_matches_day_scalar_methodology() -> None:
+    """A single-shift cut's pooled avg == the day-level scalar's pooled avg when the
+    day's ONLY observations fall in that shift (identical Σsec/Σinclamp methodology)."""
+    d = datetime.date(2026, 6, 2)
+    net = [{"local_date": d, "known_obs": 300, "on_time": 250, "severe": 12,
+            "pooled_delay_sec": 27000.0, "inclamp_obs": 300}]
+    shift = [{"local_date": d, "shift": "midday", "known_obs": 300, "severe": 12,
+              "pooled_delay_sec": 27000.0, "inclamp_obs": 300}]
+    conn = FakeConn(_receipts_dispatch(acct=[_acct_row(d)], net=net, shift=shift))
+    r = build_receipts(conn, generated_utc="t")["2026-06-02"]
+    assert len(r.by_shift) == 1
+    assert r.by_shift[0].avg_delay_min == r.avg_delay_min
+    assert r.by_shift[0].observation_count == 300
+
+
+def test_receipts_by_shift_zero_inclamp_yields_none_avg() -> None:
+    """A shift with observations but zero in-clamp bins honest-Nones its avg (not 0)."""
+    d = datetime.date(2026, 6, 3)
+    conn = FakeConn(
+        _receipts_dispatch(
+            acct=[_acct_row(d)],
+            shift=[{"local_date": d, "shift": "night", "known_obs": 10, "severe": 0,
+                    "pooled_delay_sec": None, "inclamp_obs": 0}],
+        )
+    )
+    r = build_receipts(conn, generated_utc="t")["2026-06-03"]
+    assert r.by_shift[0].avg_delay_min is None
+    assert r.by_shift[0].observation_count == 10
+
+
+def test_receipts_service_states_silent_vs_cancelled_distinct() -> None:
+    """not_reported (total=0, scheduled>0) is DISTINCT from cancelled (canceled>0)."""
+    d = datetime.date(2026, 6, 4)
+    conn = FakeConn(
+        _receipts_dispatch(
+            acct=[_acct_row(d)],
+            service_states=[{
+                "local_date": d, "scheduled_trip_days": 100,
+                "delivered_trip_days": 80, "cancelled_trip_days": 5,
+                "silent_trip_days": 15, "service_completeness_pct": 80.0,
+            }],
+            not_reported=[
+                {"local_date": d, "route_id": "51", "scheduled_trip_days": 12},
+                {"local_date": d, "route_id": "24", "scheduled_trip_days": 8},
+            ],
+            route_names=[{"route_id": "51", "route_name": "Édouard-Montpetit"}],
+        )
+    )
+    r = build_receipts(conn, generated_utc="t")["2026-06-04"]
+    ss = r.service_states
+    assert ss is not None
+    assert ss.cancelled_trip_days == 5
+    assert ss.silent_trip_days == 15
+    assert ss.service_completeness_pct == 80.0
+    assert ss.not_reported_route_count == 2
+    assert [nr.id for nr in ss.not_reported_routes] == ["51", "24"]
+    assert ss.not_reported_routes[0].name == "Édouard-Montpetit"
+    assert ss.not_reported_routes[0].scheduled_trip_days == 12
+
+
+def test_receipts_not_reported_cap_and_precap_count() -> None:
+    """The not_reported list caps at NOT_REPORTED_ROUTES_CAP; the count is PRE-cap."""
+    from transit_ops.snapshots.contract import NOT_REPORTED_ROUTES_CAP
+    d = datetime.date(2026, 6, 5)
+    n = NOT_REPORTED_ROUTES_CAP + 20
+    conn = FakeConn(
+        _receipts_dispatch(
+            acct=[_acct_row(d)],
+            service_states=[{
+                "local_date": d, "scheduled_trip_days": 500,
+                "delivered_trip_days": 0, "cancelled_trip_days": 0,
+                "silent_trip_days": 500, "service_completeness_pct": 0.0,
+            }],
+            not_reported=[
+                {"local_date": d, "route_id": f"R{i:03d}", "scheduled_trip_days": n - i}
+                for i in range(n)
+            ],
+        )
+    )
+    r = build_receipts(conn, generated_utc="t")["2026-06-05"]
+    ss = r.service_states
+    assert len(ss.not_reported_routes) == NOT_REPORTED_ROUTES_CAP
+    assert ss.not_reported_route_count == n  # honest pre-cap total
+
+
+def test_receipts_not_reported_excludes_sentinel() -> None:
+    """A sentinel route id never leaks into not_reported (defense-in-depth), and is
+    excluded from the pre-cap count too."""
+    d = datetime.date(2026, 6, 6)
+    conn = FakeConn(
+        _receipts_dispatch(
+            acct=[_acct_row(d)],
+            service_states=[{
+                "local_date": d, "scheduled_trip_days": 10,
+                "delivered_trip_days": 0, "cancelled_trip_days": 0,
+                "silent_trip_days": 10, "service_completeness_pct": 0.0,
+            }],
+            not_reported=[
+                {"local_date": d, "route_id": "__unrouted__", "scheduled_trip_days": 99},
+                {"local_date": d, "route_id": "747", "scheduled_trip_days": 3},
+            ],
+        )
+    )
+    r = build_receipts(conn, generated_utc="t")["2026-06-06"]
+    ids = [nr.id for nr in r.service_states.not_reported_routes]
+    assert "__unrouted__" not in ids
+    assert ids == ["747"]
+    assert r.service_states.not_reported_route_count == 1
+
+
+def test_receipts_service_states_honest_null_when_scheduled_unknown() -> None:
+    """Pre-0073 history (scheduled NULL) → completeness None, never a fabricated 0/100."""
+    d = datetime.date(2026, 6, 7)
+    conn = FakeConn(
+        _receipts_dispatch(
+            acct=[_acct_row(d)],
+            service_states=[{
+                "local_date": d, "scheduled_trip_days": None,
+                "delivered_trip_days": None, "cancelled_trip_days": 2,
+                "silent_trip_days": None, "service_completeness_pct": None,
+            }],
+        )
+    )
+    r = build_receipts(conn, generated_utc="t")["2026-06-07"]
+    ss = r.service_states
+    assert ss.scheduled_trip_days is None
+    assert ss.service_completeness_pct is None
+    assert ss.cancelled_trip_days == 2
+    assert ss.not_reported_route_count is None  # no not-reported rows this date
+
+
+def test_receipts_additive_only_parity_no_new_rows() -> None:
+    """PARITY: a receipt built with NO shift/service_states rows serializes with the S13
+    fields at their empty/None defaults, so a pre-S13 golden re-serializes byte-identical.
+    """
+    d = datetime.date(2026, 6, 8)
+    conn = FakeConn(_receipts_dispatch(acct=[_acct_row(d, alert_count=3)]))
+    r = build_receipts(conn, generated_utc="t")["2026-06-08"]
+    assert r.by_shift == []
+    assert r.service_states is None
+    dumped = r.model_dump()
+    assert dumped["by_shift"] == []
+    assert dumped["service_states"] is None
+
+
+def test_receipt_full_payload_under_byte_ceiling() -> None:
+    """S13 worst-case receipt (5 shift cuts + a full NOT_REPORTED_ROUTES_CAP list with
+    wide accented names) stays under RECEIPT_BYTE_CEILING."""
+    from transit_ops.snapshots.contract import (
+        NOT_REPORTED_ROUTES_CAP,
+        RECEIPT_BYTE_CEILING,
+        Receipt,
+        ReceiptNotReportedRoute,
+        ReceiptServiceStates,
+        ReceiptShiftCut,
+        ReceiptWorstRoute,
+        ReceiptWorstStop,
+    )
+    wide = "Ligne à correspondance interrompue — desservie partiellement" * 2
+    r = Receipt(
+        generated_utc="2026-06-08T00:00:00Z",
+        date="2026-06-08",
+        otp_pct=50, avg_delay_min=9.9, severe_pct=12.3,
+        worst_route=ReceiptWorstRoute(id="999", name=wide, otp_delta_pts=-40.0),
+        worst_stop=ReceiptWorstStop(id="99999", name=wide, avg_delay_min=30.0),
+        affected_routes=200, affected_stops=2000, alerts=50, rider_impact_score=1234.5,
+        by_shift=[
+            ReceiptShiftCut(shift=s, observation_count=99999, severe_count=9999,
+                            severe_pct=12.34, avg_delay_min=9.87)
+            for s in ("am_peak", "midday", "pm_peak", "evening", "night")
+        ],
+        service_states=ReceiptServiceStates(
+            scheduled_trip_days=99999, delivered_trip_days=88888,
+            cancelled_trip_days=1111, silent_trip_days=9999,
+            not_reported_route_count=200, service_completeness_pct=88.88,
+            not_reported_routes=[
+                ReceiptNotReportedRoute(id=f"R{i:04d}", name=wide,
+                                        scheduled_trip_days=999 - i)
+                for i in range(NOT_REPORTED_ROUTES_CAP)
+            ],
+        ),
+    )
+    size = len(r.model_dump_json().encode("utf-8"))
+    assert size <= RECEIPT_BYTE_CEILING, f"{size}B exceeds {RECEIPT_BYTE_CEILING}B"
 
 
 # --------------------------------------------------------------------------

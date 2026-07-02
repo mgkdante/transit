@@ -750,6 +750,54 @@ def check_receipt(payload: object, *, rel_key: str) -> list[CheckResult]:
     ws = d.get("worst_stop")
     if isinstance(ws, dict):
         _prefixed(emit, "worst_stop.").delay(ws, "avg_delay_min")
+    # S13 time-of-day cuts: rate/delay/count guards per shift (honest-NULL None-skips).
+    for i, sc in enumerate(d.get("by_shift") or []):
+        if not isinstance(sc, dict):
+            continue
+        sub = _prefixed(emit, f"by_shift[{i}].")
+        sub.count(sc, "observation_count")
+        sub.count(sc, "severe_count")
+        sub.rate(sc, "severe_pct")
+        sub.delay(sc, "avg_delay_min")
+    # S13 service-state cut: count/rate guards + per not-reported-route count + the
+    # sentinel invariant (a not-reported route id must NEVER be a phantom sentinel).
+    ss = d.get("service_states")
+    if isinstance(ss, dict):
+        sub = _prefixed(emit, "service_states.")
+        for f in ("scheduled_trip_days", "delivered_trip_days", "cancelled_trip_days",
+                  "silent_trip_days", "not_reported_route_count"):
+            sub.count(ss, f)
+        sub.rate(ss, "service_completeness_pct")
+        for i, nr in enumerate(ss.get("not_reported_routes") or []):
+            if not isinstance(nr, dict):
+                continue
+            nsub = _prefixed(emit, f"service_states.not_reported_routes[{i}].")
+            if nr.get("id") in _SENTINEL_ENTITY_IDS:
+                nsub.err("sentinel_entity", "id", nr.get("id"),
+                         f"id={nr.get('id')!r} is a sentinel entity")
+            nsub.count(nr, "scheduled_trip_days")
+    return emit.out
+
+
+def check_receipts_index(payload: object, *, rel_key: str) -> list[CheckResult]:
+    # S13: sanity-check the additive availability metadata. available[].date must be a
+    # SUBSET of dates (never advertise availability for an unpublished date) and has_data
+    # / has_schedule must be real bools (honest, not a coerced truthy string).
+    emit = _Emitter("historic_receipts_index", rel_key)
+    d = _as_dict(payload)
+    if not isinstance(d, dict):
+        return emit.out
+    dates = set(d.get("dates") or [])
+    for i, a in enumerate(d.get("available") or []):
+        if not isinstance(a, dict):
+            continue
+        sub = _prefixed(emit, f"available[{i}].")
+        if a.get("date") not in dates:
+            sub.err("availability_orphan", "date", a.get("date"),
+                    f"available date={a.get('date')!r} not in dates[]")
+        for f in ("has_data", "has_schedule"):
+            if not isinstance(a.get(f), bool):
+                sub.err("not_bool", f, a.get(f), f"{f}={a.get(f)!r} is not a bool")
     return emit.out
 
 
@@ -801,11 +849,17 @@ _EXACT_CHECKERS = {
     "historic/alert_history.json": (check_alert_history, "historic_alert_history"),
 }
 
-# Exact discovery-index keys (universal-scan only) must be matched BEFORE the broader
-# per-entity directory prefixes they nest under.
+# Exact discovery-index keys must be matched BEFORE the broader per-entity directory
+# prefixes they nest under. Most route via the generic model-validate + universal scan
+# only (checker None); _INDEX_CHECKERS below gives an index a dedicated checker.
 _INDEX_KINDS = {
     "historic/route_reliability/index.json": "historic_route_reliability_index",
     "historic/receipts/index.json": "historic_receipts_index",
+}
+
+# S13: index keys that carry a dedicated structural checker (beyond model-validate).
+_INDEX_CHECKERS = {
+    "historic/receipts/index.json": check_receipts_index,
 }
 
 _PREFIX_CHECKERS = (
@@ -820,7 +874,7 @@ def _route_checker(rel_key: str):  # noqa: ANN202
     if rel_key in _EXACT_CHECKERS:
         return _EXACT_CHECKERS[rel_key]
     if rel_key in _INDEX_KINDS:
-        return (None, _INDEX_KINDS[rel_key])
+        return (_INDEX_CHECKERS.get(rel_key), _INDEX_KINDS[rel_key])
     for prefix, checker, kind in _PREFIX_CHECKERS:
         if rel_key.startswith(prefix):
             return (checker, kind)

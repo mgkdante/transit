@@ -95,6 +95,18 @@ export interface FilterState {
 	 */
 	window?: DateWindow;
 	/**
+	 * A SINGLE local calendar date (America/Montréal service day), ISO
+	 * `YYYY-MM-DD` — the receipt surface's chosen day (S13). Orthogonal to the
+	 * `{from,to}` {@link DateWindow}: `?date` is ONE day (a receipt is inherently
+	 * single-date), never a span, so reusing `?from` would fabricate a degenerate
+	 * window that leaks into every OTHER surface's window semantics. A dedicated key
+	 * keeps the window invariant ("present iff both bounds") clean. Absent = the
+	 * surface default (the receipt picks the latest published day). A malformed
+	 * value self-heals to absent (dropped on parse via {@link isIsoDate}); no
+	 * non-receipt surface reads it.
+	 */
+	date?: string;
+	/**
 	 * Worst-N ladder cap (S12) — how many worst-first ranked entries a ladder
 	 * surface (hotspots) shows before the honest `shown/total` truncation. One of
 	 * the fixed truthful rungs {@link WORST_N_LADDER} (5/10/20/30/50), or the
@@ -270,6 +282,7 @@ export function cloneFilterState(s: FilterState): FilterState {
 		...(s.alerts ? { alerts: s.alerts.slice() } : {}),
 		...(s.grain !== undefined ? { grain: s.grain } : {}),
 		...(s.window !== undefined ? { window: { from: s.window.from, to: s.window.to } } : {}),
+		...(s.date !== undefined ? { date: s.date } : {}),
 		...(s.worstN !== undefined ? { worstN: s.worstN } : {}),
 	};
 }
@@ -321,6 +334,7 @@ export function isEmptyFilterState(s: FilterState): boolean {
 		(s.alerts === undefined || s.alerts.length === 0) &&
 		s.grain === undefined &&
 		s.window === undefined &&
+		s.date === undefined &&
 		s.worstN === undefined
 	);
 }

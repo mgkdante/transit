@@ -10,7 +10,13 @@ from __future__ import annotations
 import hashlib
 from typing import TYPE_CHECKING
 
-from transit_ops.gold.reader import GrainWindows, current_date_trailing_clause, shift_case_sql
+from transit_ops.gold.reader import (
+    SHIFT_BOUNDS,
+    SHIFT_DEFAULT,
+    GrainWindows,
+    current_date_trailing_clause,
+    shift_case_sql,
+)
 from transit_ops.snapshots.builders._helpers import (
     _ROUTE_NAMES_SQL,
     MIN_N_RATE,
@@ -18,6 +24,7 @@ from transit_ops.snapshots.builders._helpers import (
     _entity_name_maps,
     _iso,
     _iso_date,
+    _opt_float,
     _opt_int,
     _opt_iso,
     _otp_pct,
@@ -31,6 +38,7 @@ from transit_ops.snapshots.builders._helpers import (
     _wilson_lo,
 )
 from transit_ops.snapshots.contract import (
+    NOT_REPORTED_ROUTES_CAP,
     AlertBreakdown,
     AlertBreakdownBucket,
     AlertHistory,
@@ -41,6 +49,9 @@ from transit_ops.snapshots.contract import (
     Hotspots,
     Offender,
     Receipt,
+    ReceiptNotReportedRoute,
+    ReceiptServiceStates,
+    ReceiptShiftCut,
     ReceiptWorstRoute,
     ReceiptWorstStop,
     RepeatOffenders,
@@ -776,6 +787,103 @@ _RECEIPTS_WORST_STOP_SQL = named_query(
 )
 
 
+# S13 time-of-day cut: per-date, per-shift network-wide delay reading off the delay
+# spine at its hour grain. WINDOW (DECISIONS DB2 / spec risk-1): matches
+# receipts.network_daily's now()-31 UTC predicate EXACTLY (same spine source) so a shift
+# cut and the day-level scalar reconcile — the shift split literally re-sums the same
+# spine cells the network_daily query aggregates. The pooled avg is the SAME ghost-
+# excluded Σ sum_delay_seconds / Σ in-clamp histogram methodology (folded per-shift in
+# build_receipts). Sentinel-guarded in SQL (route_id <> '__unrouted__') + defense-in-depth
+# Python set. The hour->shift bucket is the ONE kernel CASE (shift_case_sql).
+_RECEIPTS_SHIFT_DAILY_SQL = named_query(
+    "receipts.shift_daily",
+    f"""
+    SELECT sp.provider_local_date                        AS local_date,
+           ({shift_case_sql("sp.hour_of_day_local", indent=11)}) AS shift,
+           SUM(sp.delay_observation_count)              AS known_obs,
+           SUM(sp.severe_delay_count)                   AS severe,
+           SUM(sp.sum_delay_seconds)                    AS pooled_delay_sec,
+           SUM((SELECT COALESCE(SUM(x), 0)
+                FROM unnest(sp.delay_histogram) AS x))  AS inclamp_obs
+    FROM gold.route_delay_spine AS sp
+    WHERE sp.provider_id = :provider_id
+      AND sp.route_id <> '__unrouted__'
+      AND sp.provider_local_date >= (now() AT TIME ZONE 'UTC')::date - 31
+    GROUP BY sp.provider_local_date,
+             ({shift_case_sql("sp.hour_of_day_local", indent=13)})
+    """
+)
+
+# S13 service-state cut: per-date network-wide scheduled→delivered→cancelled→silent split
+# off gold.route_cancellation_daily (GC2 scheduled universe). WINDOW: the accountability
+# driver's provider-local trailing clause (this is a per-date driver-annotating cut, not a
+# spine-sourced one — spec risk-1). delivered/silent FILTER(scheduled known) so a route
+# with an unknown scheduled universe (pre-0073) never fabricates a 0 into the sum;
+# service_completeness_pct uses the SAME LEAST(100, ...)/NULL-guard CASE as
+# route.cancellation.daily (route_reliability.py) — None when Σscheduled is NULL or 0.
+_RECEIPTS_SERVICE_STATES_SQL = named_query(
+    "receipts.service_states",
+    f"""
+    SELECT rcd.provider_local_date AS local_date,
+           SUM(rcd.scheduled_trip_days) AS scheduled_trip_days,
+           SUM(rcd.delivered_trip_days)
+               FILTER (WHERE rcd.scheduled_trip_days IS NOT NULL) AS delivered_trip_days,
+           -- ONE universe for all four states: schedule-known rows only (an
+           -- edition-flip cancellation on a schedule-unknown route belongs to the
+           -- network cancellation series, not this scheduled-universe accounting).
+           SUM(rcd.canceled_trip_days)
+               FILTER (WHERE rcd.scheduled_trip_days IS NOT NULL) AS cancelled_trip_days,
+           SUM(rcd.silent_trip_days)
+               FILTER (WHERE rcd.scheduled_trip_days IS NOT NULL) AS silent_trip_days,
+           CASE
+               WHEN SUM(rcd.scheduled_trip_days) IS NULL
+                    OR SUM(rcd.scheduled_trip_days) = 0
+                    OR SUM(rcd.delivered_trip_days)
+                        FILTER (WHERE rcd.scheduled_trip_days IS NOT NULL) IS NULL THEN NULL
+               ELSE LEAST(100.0, ROUND(
+                   100.0 * SUM(rcd.delivered_trip_days)
+                       FILTER (WHERE rcd.scheduled_trip_days IS NOT NULL)
+                   / SUM(rcd.scheduled_trip_days), 2))
+           END AS service_completeness_pct
+    FROM gold.route_cancellation_daily AS rcd
+    JOIN gold.dim_provider AS dp ON dp.provider_id = rcd.provider_id
+    WHERE rcd.provider_id = :provider_id
+      AND {current_date_trailing_clause("rcd.provider_local_date")}
+    GROUP BY rcd.provider_local_date
+    ORDER BY rcd.provider_local_date
+    """
+)
+
+# S13 not-reported route list: per-date routes SCHEDULED that day (scheduled_trip_days>0)
+# with ZERO realtime observations (total_trip_days=0) — DISTINCT from cancelled
+# (canceled_trip_days>0, which the RT feed explicitly reported as cancelled). Sentinel-
+# guarded in SQL + Python. NO cap in SQL: the builder caps per-date at
+# NOT_REPORTED_ROUTES_CAP after computing the honest pre-cap count. Same window as the
+# service_states cut (provider-local trailing).
+_RECEIPTS_NOT_REPORTED_ROUTES_SQL = named_query(
+    "receipts.not_reported_routes",
+    f"""
+    SELECT rcd.provider_local_date AS local_date,
+           rcd.route_id,
+           rcd.scheduled_trip_days
+    FROM gold.route_cancellation_daily AS rcd
+    JOIN gold.dim_provider AS dp ON dp.provider_id = rcd.provider_id
+    WHERE rcd.provider_id = :provider_id
+      AND {current_date_trailing_clause("rcd.provider_local_date")}
+      AND rcd.total_trip_days = 0
+      AND rcd.scheduled_trip_days > 0
+      AND rcd.route_id <> '__unrouted__'
+    ORDER BY rcd.provider_local_date, rcd.scheduled_trip_days DESC, rcd.route_id
+    """
+)
+
+# Canonical shift order for by_shift emission (the kernel SHIFT_BOUNDS order + default).
+_SHIFT_ORDER: tuple[str, ...] = tuple(label for _lo, _hi, label in SHIFT_BOUNDS) + (
+    SHIFT_DEFAULT,
+)
+_SHIFT_RANK: dict[str, int] = {s: i for i, s in enumerate(_SHIFT_ORDER)}
+
+
 def build_receipts(
     conn: Connection, provider_id: str = "stm", *, generated_utc: str
 ) -> dict[str, Receipt]:
@@ -855,6 +963,73 @@ def build_receipts(
                 avg_delay_min=_avg_delay_min(r["avg_delay_seconds"]),
             )
 
+    # 5. time-of-day cut per date: group spine shift rows into ordered ReceiptShiftCut
+    #    lists. The pooled avg reproduces the day scalar's ghost-excluded mean EXACTLY
+    #    (Σ sum_delay_seconds / Σ in-clamp histogram) so a shift cut reconciles with the
+    #    day-level avg_delay_min (spec risk-2).
+    by_shift: dict[str, list[ReceiptShiftCut]] = {}
+    shift_rows: dict[str, dict[str, dict]] = {}
+    for r in conn.execute(_RECEIPTS_SHIFT_DAILY_SQL, params).mappings():
+        ds = _iso_date(r["local_date"])
+        shift_rows.setdefault(ds, {})[str(r["shift"])] = r
+    for ds, buckets in shift_rows.items():
+        cuts: list[ReceiptShiftCut] = []
+        for shift in sorted(buckets, key=lambda s: _SHIFT_RANK.get(s, len(_SHIFT_ORDER))):
+            r = buckets[shift]
+            known_obs = r["known_obs"]
+            pooled, inclamp = r["pooled_delay_sec"], r["inclamp_obs"]
+            avg_sec = (
+                (float(pooled) / float(inclamp))
+                if inclamp and pooled is not None
+                else None
+            )
+            cuts.append(ReceiptShiftCut(
+                shift=shift,
+                observation_count=_opt_int(known_obs),
+                severe_count=_opt_int(r["severe"]),
+                severe_pct=_severe_pct(known_obs, r["severe"]),
+                avg_delay_min=_avg_delay_min(avg_sec),
+            ))
+        if cuts:
+            by_shift[ds] = cuts
+
+    # 6. service-state cut per date: the scheduled→delivered→cancelled→silent split +
+    #    completeness + the not-reported route list (capped, with honest pre-cap count).
+    not_reported: dict[str, list] = {}
+    not_reported_total: dict[str, int] = {}
+    for r in conn.execute(_RECEIPTS_NOT_REPORTED_ROUTES_SQL, params).mappings():
+        rid = str(r["route_id"])
+        if rid in _SENTINEL_ENTITY_IDS:
+            continue  # defense-in-depth: the sentinel is never a named not-reported route
+        ds = _iso_date(r["local_date"])
+        not_reported_total[ds] = not_reported_total.get(ds, 0) + 1  # honest PRE-cap count
+        bucket = not_reported.setdefault(ds, [])
+        if len(bucket) < NOT_REPORTED_ROUTES_CAP:  # rows arrive scheduled DESC — top-N
+            bucket.append(ReceiptNotReportedRoute(
+                id=rid,
+                name=route_names.get(rid),
+                scheduled_trip_days=_opt_int(r["scheduled_trip_days"]),
+            ))
+
+    service_states: dict[str, ReceiptServiceStates] = {}
+    for r in conn.execute(_RECEIPTS_SERVICE_STATES_SQL, params).mappings():
+        ds = _iso_date(r["local_date"])
+        scheduled = _opt_int(r["scheduled_trip_days"])
+        # Known universe + zero dark routes = an honest 0 ("all lines reported");
+        # None only when the scheduled universe itself is unknown for the day.
+        dark_count = not_reported_total.get(ds)
+        if dark_count is None and scheduled is not None:
+            dark_count = 0
+        service_states[ds] = ReceiptServiceStates(
+            scheduled_trip_days=scheduled,
+            delivered_trip_days=_opt_int(r["delivered_trip_days"]),
+            cancelled_trip_days=_opt_int(r["cancelled_trip_days"]),
+            silent_trip_days=_opt_int(r["silent_trip_days"]),
+            not_reported_route_count=dark_count,
+            service_completeness_pct=_opt_float(r["service_completeness_pct"]),
+            not_reported_routes=not_reported.get(ds, []),
+        )
+
     # merge: only emit dates present in accountability (the driver)
     out: dict[str, Receipt] = {}
     for ds, a in acct.items():
@@ -872,6 +1047,8 @@ def build_receipts(
             affected_stops=a["affected_stops"],
             alerts=a["alerts"],
             rider_impact_score=a["rider_impact_score"],
+            by_shift=by_shift.get(ds, []),
+            service_states=service_states.get(ds),
         )
     return out
 

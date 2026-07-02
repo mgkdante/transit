@@ -5,7 +5,7 @@
 // it before the store ever exists. This module is the ONLY place that knows the
 // wire format:
 //
-//   keys  : route, stop, trip, vehicle, status, occupancy, entity, alert, grain, from, to, n (stable order)
+//   keys  : route, stop, trip, vehicle, status, occupancy, entity, alert, grain, from, to, date, n (stable order)
 //   sets  : comma-joined, sorted, deduped (route=10,165,80)
 //   empty : an empty set / absent enum / absent lever is OMITTED entirely
 //   round : fromSearchParams(toSearchParams(s)) is value-equal to a normalized s
@@ -34,6 +34,7 @@ import {
 	normalizeWindow,
 	normalizeWorstN,
 	isGrain,
+	isIsoDate,
 } from './state';
 
 /**
@@ -55,6 +56,7 @@ const KEY_ORDER = [
 	'grain',
 	'from',
 	'to',
+	'date',
 	'n',
 ] as const;
 
@@ -145,6 +147,12 @@ export function fromSearchParams(sp: URLSearchParams): FilterState {
 	const window = normalizeWindow(sp.get('from'), sp.get('to'));
 	if (window) state.window = window;
 
+	// The receipt's single chosen day (?date) — a lone ISO date, ORTHOGONAL to the
+	// ?from/?to window pair. A malformed value drops to absent (the surface falls to
+	// its latest-published default), so a hand-edited ?date self-heals.
+	const date = sp.get('date');
+	if (isIsoDate(date)) state.date = date;
+
 	// The worst-N ladder cap (?n) — a fixed rung or 'all'; a junk value drops to
 	// absent (the surface default), so the URL never carries a cap the ladder can't render.
 	const worstN = normalizeWorstN(sp.get('n'));
@@ -198,6 +206,10 @@ export function toSearchParams(s: FilterState): URLSearchParams {
 			}
 			case 'to': {
 				if (s.window) sp.set('to', s.window.to);
+				break;
+			}
+			case 'date': {
+				if (s.date !== undefined) sp.set('date', s.date);
 				break;
 			}
 			case 'n': {

@@ -15,6 +15,12 @@
   labels} — zero stop/receipt/lines-specific fields. It seats into
   SurfaceControls' `window` Snippet slot with no primitive changes.
 
+  S13 SINGLE MODE: `mode='single'` composes the SAME chrome into ONE availability-
+  bound <select> over `dateOptions` (the full earliest→latest calendar; published
+  days enabled, gap-days DISABLED + reasoned) binding a single `date` instead of a
+  window. The range path is byte-identical (default mode='range'), so the receipt
+  reuses this primitive rather than forking a second component.
+
   HONEST ABSENCE: when `availableDates` is empty there is nothing to range over —
   the primitive renders an AbsentValue (via describeAbsence) with the caller's
   `emptyReason`, never a dead empty control.
@@ -35,7 +41,7 @@
 
 	/** Bilingual labels the caller supplies — the primitive owns NO copy. */
 	export interface DateRangePickerLabels {
-		/** Accessible group label over the whole start/end pair. */
+		/** Accessible group label over the whole start/end pair (or the single-date select). */
 		readonly group: string;
 		/** Start-bound select label. */
 		readonly start: string;
@@ -46,6 +52,26 @@
 		/** The neutral placeholder option ("Earliest" / "Latest" — full-window sentinel). */
 		readonly anyStart: string;
 		readonly anyEnd: string;
+		/**
+		 * Single-date select label (S13, mode='single'). Optional — only the receipt's
+		 * single-day picker supplies it; the range consumers never read it.
+		 */
+		readonly single?: string;
+	}
+
+	/**
+	 * One option in the SINGLE-date calendar (S13, mode='single'). A day carries an
+	 * honest DISABLED state + reason when the calendar span (earliest→latest) has a
+	 * gap the receipt index never published — so the picker HONESTLY shows which days
+	 * carry data rather than hiding the gap. `label` is the caller's localized short
+	 * date; `disabledLabel` is the appended honest reason (e.g. "no receipt").
+	 */
+	export interface SingleDateOption {
+		readonly date: string;
+		readonly label: string;
+		readonly disabled: boolean;
+		/** Localized reason appended to a disabled option (caller-supplied). */
+		readonly disabledLabel?: string;
 	}
 
 	/**
@@ -57,15 +83,36 @@
 		/**
 		 * The active window (BINDABLE — in AND out). `undefined` = no span (the
 		 * surface's full-window default). The primitive only ever emits a normalized
-		 * window or `undefined`; it never stores a half/inverted span.
+		 * window or `undefined`; it never stores a half/inverted span. Unused in
+		 * mode='single' (the single-date pick binds {@link DateRangePickerProps.date}).
 		 */
-		value: DateWindow | undefined;
+		value?: DateWindow | undefined;
 		/**
-		 * The surface's REAL dated days, ascending ISO `YYYY-MM-DD`. This IS the
-		 * coverage source — options are these dates only, so an out-of-window pick is
+		 * SINGLE-date mode (S13): a receipt is inherently ONE day, so the picker offers
+		 * ONE availability-bound select instead of the {from,to} pair. Default 'range'
+		 * → ZERO behaviour change for the stops/lines/network consumers. In 'single'
+		 * mode {@link DateRangePickerProps.date} is the bindable value and
+		 * {@link DateRangePickerProps.dateOptions} drives the calendar.
+		 */
+		mode?: 'range' | 'single';
+		/**
+		 * The chosen single day (BINDABLE — in AND out), ISO `YYYY-MM-DD`, in mode='single'.
+		 * `undefined` = nothing chosen yet (the caller seeds its own default). Only a day
+		 * the caller marks ENABLED can be picked; a disabled gap-day option is never emitted.
+		 */
+		date?: string | undefined;
+		/**
+		 * The SINGLE-date calendar (mode='single'): the full span earliest→latest with
+		 * published days enabled and gap-days DISABLED + reasoned. Empty ⇒ honest absence.
+		 * Ignored in range mode (which reads {@link DateRangePickerProps.availableDates}).
+		 */
+		dateOptions?: readonly SingleDateOption[];
+		/**
+		 * The surface's REAL dated days, ascending ISO `YYYY-MM-DD` (range mode). This IS
+		 * the coverage source — options are these dates only, so an out-of-window pick is
 		 * impossible. Empty ⇒ honest absence (nothing to range over).
 		 */
-		availableDates: readonly string[];
+		availableDates?: readonly string[];
 		/** Locale for the honest-absence copy (describeAbsence). */
 		locale: Locale;
 		/** Bilingual labels (caller-supplied — the primitive owns no copy). */
@@ -89,7 +136,10 @@
 
 	let {
 		value = $bindable(),
-		availableDates,
+		mode = 'range',
+		date = $bindable(),
+		dateOptions = [],
+		availableDates = [],
 		locale,
 		labels,
 		emptyReason = 'no-observations',
@@ -127,7 +177,10 @@
 		}
 	});
 
-	const hasDates = $derived(availableDates.length > 0);
+	const hasDates = $derived(mode === 'single' ? dateOptions.length > 0 : availableDates.length > 0);
+
+	/** Single-mode label (falls back to the group label so the a11y name is never empty). */
+	const singleLabel = $derived(labels.single ?? labels.group);
 
 	/**
 	 * Compose the two bounds into a normalized window (or clear it) and assign
@@ -149,6 +202,34 @@
 {#if !hasDates}
 	<!-- Nothing to range over — honest absence, never a dead empty control. -->
 	<AbsentValue variant="block" reason={emptyReason} {locale} />
+{:else if mode === 'single'}
+	<!-- SINGLE-date calendar (S13): ONE availability-bound select over the full
+	     earliest→latest span. Published days are enabled; a gap-day the receipt index
+	     never published is a DISABLED option carrying its honest reason, so the picker
+	     truthfully shows which days have data (never a silently-missing day). -->
+	<div
+		class={['date-range', className]}
+		data-slot="date-range"
+		role="group"
+		aria-label={labels.group}
+	>
+		<label class="date-range__field">
+			<span class="date-range__label">{singleLabel}</span>
+			<select
+				class="date-range__select"
+				value={date ?? ''}
+				onchange={(e) => (date = e.currentTarget.value || undefined)}
+				aria-label={singleLabel}
+				data-slot="single-date"
+			>
+				{#each dateOptions as opt (opt.date)}
+					<option value={opt.date} disabled={opt.disabled}>
+						{opt.disabled && opt.disabledLabel ? `${opt.label} · ${opt.disabledLabel}` : opt.label}
+					</option>
+				{/each}
+			</select>
+		</label>
+	</div>
 {:else}
 	<div
 		class={['date-range', className]}

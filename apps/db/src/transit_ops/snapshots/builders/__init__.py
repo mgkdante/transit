@@ -68,6 +68,9 @@ from transit_ops.snapshots.builders._helpers import (
 # ---------------------------------------------------------------------------
 from transit_ops.snapshots.builders.historic import (
     _RECEIPTS_NETWORK_DAILY_SQL,
+    _RECEIPTS_NOT_REPORTED_ROUTES_SQL,
+    _RECEIPTS_SERVICE_STATES_SQL,
+    _RECEIPTS_SHIFT_DAILY_SQL,
     _RECEIPTS_WORST_ROUTE_SQL,
     _RECEIPTS_WORST_STOP_SQL,
     _ROUTE_REL_DAILY_SQL,
@@ -168,6 +171,9 @@ __all__ = [
     "_STATIC_LABELS_FR",
     "_STATIC_LABELS_EN",
     "_RECEIPTS_NETWORK_DAILY_SQL",
+    "_RECEIPTS_NOT_REPORTED_ROUTES_SQL",
+    "_RECEIPTS_SERVICE_STATES_SQL",
+    "_RECEIPTS_SHIFT_DAILY_SQL",
     "_RECEIPTS_WORST_ROUTE_SQL",
     "_RECEIPTS_WORST_STOP_SQL",
     "_ROUTE_NAMES_SQL",

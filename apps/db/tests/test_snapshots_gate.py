@@ -29,6 +29,10 @@ from transit_ops.snapshots.contract import (
     NonRespondingRoute,
     OccupancyMix,
     Receipt,
+    ReceiptNotReportedRoute,
+    ReceiptServiceStates,
+    ReceiptShiftCut,
+    ReceiptsIndex,
     ReliabilityPeriod,
     RouteHabits,
     RouteReliability,
@@ -153,6 +157,86 @@ def test_exact_9999_9999_float_is_sentinel():
     payload = {"generated_utc": "t", "rider_impact_score": 9999.9999}
     res = gate.check_payload("historic/receipts/2026-06-01.json", payload)
     assert _has_err(res, "sentinel", "rider_impact_score")
+
+
+# --- S13 receipt re-granulation invariants -----------------------------------
+
+
+def test_receipt_by_shift_out_of_range_rate_is_error():
+    rcpt = Receipt(
+        generated_utc="t", date="2026-06-01",
+        by_shift=[ReceiptShiftCut(shift="am_peak", observation_count=10,
+                                  severe_count=2, severe_pct=150.0, avg_delay_min=3.0)],
+    )
+    res = gate.check_payload("historic/receipts/2026-06-01.json", rcpt)
+    assert _has_err(res, "rate_range", "by_shift[0].severe_pct")
+
+
+def test_receipt_by_shift_negative_count_is_error():
+    payload = {
+        "generated_utc": "t", "date": "2026-06-01",
+        "by_shift": [{"shift": "midday", "observation_count": -1}],
+    }
+    res = gate.check_payload("historic/receipts/2026-06-01.json", payload)
+    assert _has_err(res, "count_negative", "by_shift[0].observation_count")
+
+
+def test_receipt_service_states_out_of_range_completeness_is_error():
+    rcpt = Receipt(
+        generated_utc="t", date="2026-06-01",
+        service_states=ReceiptServiceStates(scheduled_trip_days=10,
+                                            service_completeness_pct=120.0),
+    )
+    res = gate.check_payload("historic/receipts/2026-06-01.json", rcpt)
+    assert _has_err(res, "rate_range", "service_states.service_completeness_pct")
+
+
+def test_receipt_not_reported_sentinel_is_error():
+    payload = {
+        "generated_utc": "t", "date": "2026-06-01",
+        "service_states": {
+            "scheduled_trip_days": 5,
+            "not_reported_routes": [{"id": "__unrouted__", "scheduled_trip_days": 3}],
+        },
+    }
+    res = gate.check_payload("historic/receipts/2026-06-01.json", payload)
+    assert _has_err(res, "sentinel_entity", "service_states.not_reported_routes[0].id")
+
+
+def test_receipt_service_states_honest_null_passes_clean():
+    rcpt = Receipt(
+        generated_utc="t", date="2026-06-01",
+        service_states=ReceiptServiceStates(
+            not_reported_routes=[ReceiptNotReportedRoute(id="747")]
+        ),
+    )
+    res = gate.check_payload("historic/receipts/2026-06-01.json", rcpt)
+    assert _errors(res) == []
+
+
+def test_receipts_index_available_orphan_is_error():
+    from transit_ops.snapshots.contract import ReceiptAvailability
+    idx = ReceiptsIndex(
+        generated_utc="t",
+        dates=["2026-06-01"],
+        available=[ReceiptAvailability(date="2026-06-02", has_data=True)],
+    )
+    res = gate.check_payload("historic/receipts/index.json", idx)
+    assert _has_err(res, "availability_orphan", "available[0].date")
+
+
+def test_receipts_index_available_subset_passes_clean():
+    from transit_ops.snapshots.contract import ReceiptAvailability
+    idx = ReceiptsIndex(
+        generated_utc="t",
+        dates=["2026-06-01", "2026-06-02"],
+        available=[
+            ReceiptAvailability(date="2026-06-01", has_data=True, has_schedule=True),
+            ReceiptAvailability(date="2026-06-02", has_data=False, has_schedule=False),
+        ],
+    )
+    res = gate.check_payload("historic/receipts/index.json", idx)
+    assert _errors(res) == []
 
 
 # --- honest-NULL passes clean ------------------------------------------------
