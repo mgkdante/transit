@@ -11,8 +11,6 @@ and monthly grains stay None because percentiles are not additively composable.
 
 from __future__ import annotations
 
-from datetime import timedelta
-from decimal import ROUND_HALF_UP, Decimal
 import hashlib
 from typing import TYPE_CHECKING
 
@@ -41,6 +39,28 @@ from transit_ops.snapshots.builders._helpers import (
     _severity_code,
     _wilson_hi,
     _wilson_lo,
+)
+from transit_ops.gold.reader import (
+    ROUTE_HABIT_SPINE_SQL as _ROUTE_HABIT_SPINE_SQL,
+)
+from transit_ops.gold.reader import (
+    SPINE_WINDOW_CLAUSE as _SPINE_WINDOW_CLAUSE,
+)
+from transit_ops.gold.reader import (
+    GrainWindows,
+    bunched_pct,
+    cdf_percentile,
+    cov_case_sql,
+    current_date_trailing_clause,
+    daytype_case_sql,
+    delay_histogram_bins,
+    ewt_min,
+    hist_and_avg,
+    hist_cols,
+    pctile_min_from_hist,
+    round_half_away,
+    shift_case_sql,
+    spine_project_sql,
 )
 from transit_ops.gold.rollups import DELAY_HISTOGRAM_EDGES as _SPINE_EDGES
 from transit_ops.gold.rollups import HEADWAY_GAP_HISTOGRAM_EDGES as _GAP_EDGES
@@ -95,43 +115,17 @@ _OCCUPANCY_BANDS = ("empty", "many_seats", "few_seats", "standing", "full")
 
 
 def _pctile_from_hist(hist: list[int] | None, q: float) -> float | None:
-    """q-th percentile (minutes) via CDF interpolation over the 21-bin spine histogram.
+    """q-th percentile (minutes) over the 21-bin spine histogram (gold.reader kernel).
 
     ``hist[i]`` is the observation count in bin ``i`` = ``[_SPINE_EDGES[i],
     _SPINE_EDGES[i+1])`` seconds for i in 0..19; bin 20 is the ``[3600, +inf)``
-    overflow (no upper edge). Returns None on an empty / all-zero histogram —
-    honest absence, never a fabricated 0. The result is rounded to 0.1 min to
-    match ``_avg_delay_min``.
-
-    Finding B (terminal floor): when the percentile lands in bin 20 the value is
-    pinned at ``_SPINE_EDGES[20] / 60`` = 60.0 min. This *understates* the real
-    tail (the spine clamps |delay| <= 3600s anyway, so true outliers are not in
-    the histogram), but it is the only finite floor available and is locked by a
-    test. Mass in bin 0 is safe — its lower edge ``_SPINE_EDGES[0]`` exists, so a
-    very-early percentile interpolates to a negative-minute value without ever
-    indexing past the edge array.
+    overflow (no upper edge). Honest-None on empty/all-zero; rounded to 0.1 min
+    to match ``_avg_delay_min``. Finding B (terminal floor): mass landing in bin
+    20 pins at ``_SPINE_EDGES[20] / 60`` = 60.0 min — the kernel's shared
+    overflow-floor branch, locked by a test; bin-0 mass interpolates to a
+    negative-minute value without indexing past the edge array.
     """
-    if not hist:
-        return None
-    total = sum(hist)
-    if total <= 0:
-        return None
-    target = q * total
-    cumulative = 0
-    for bin_idx, count in enumerate(hist):
-        if count <= 0:
-            continue
-        if cumulative + count >= target:
-            lo = _SPINE_EDGES[bin_idx]
-            if bin_idx + 1 >= len(_SPINE_EDGES):
-                # Terminal overflow bin: no upper edge -> floor at the last edge.
-                return round(lo / 60.0, 1)
-            hi = _SPINE_EDGES[bin_idx + 1]
-            frac = (target - cumulative) / count
-            return round((lo + (hi - lo) * frac) / 60.0, 1)
-        cumulative += count
-    # Unreachable when target <= total, but clamp to the last edge defensively.
-    return round(_SPINE_EDGES[-1] / 60.0, 1)
+    return pctile_min_from_hist(hist, q, _SPINE_EDGES)
 
 
 def _band_total(row: object) -> int | None:
@@ -185,8 +179,8 @@ def _delay_by_crowding_cells(rows) -> list[CrowdingDelayCell]:  # noqa: ANN001
         cells.append(
             CrowdingDelayCell(
                 band=band,
-                avg_delay_min=(round(sum_delay_sec / obs / 60.0, 1) if obs else None),
-                p50_min=(round(w_p50_sec / p50_obs / 60.0, 1) if p50_obs else None),
+                avg_delay_min=(_avg_delay_min(sum_delay_sec / obs) if obs else None),
+                p50_min=(_avg_delay_min(w_p50_sec / p50_obs) if p50_obs else None),
                 observation_count=(obs or None),
                 day_count=int(r["day_count"] or 0),
             )
@@ -655,7 +649,7 @@ _ROUTE_CANCELLATION_DAILY_SQL = named_query(
 # honest-None when no band-bearing telemetry exists in the window.
 _ROUTE_OCCUPANCY_BAND_WINDOW_SQL = named_query(
     "route.occupancy.band_window",
-    """
+    f"""
     SELECT SUM(rob.empty_count)       AS empty,
            SUM(rob.many_seats_count)  AS many_seats,
            SUM(rob.few_seats_count)   AS few_seats,
@@ -664,7 +658,7 @@ _ROUTE_OCCUPANCY_BAND_WINDOW_SQL = named_query(
     FROM gold.route_occupancy_band_daily AS rob
     JOIN gold.dim_provider AS dp ON dp.provider_id = rob.provider_id
     WHERE rob.provider_id = :provider_id AND rob.route_id = :route_id
-      AND rob.provider_local_date >= (now() AT TIME ZONE dp.timezone)::date - 30
+      AND {current_date_trailing_clause("rob.provider_local_date")}
     """
 )
 
@@ -676,7 +670,7 @@ _ROUTE_OCCUPANCY_BAND_WINDOW_SQL = named_query(
 # extracts from a UTC timestamp).
 _ROUTE_OCCUPANCY_BY_DOW_SQL = named_query(
     "route.occupancy.by_dow",
-    """
+    f"""
     SELECT EXTRACT(ISODOW FROM rob.provider_local_date)::int AS day_of_week_iso,
            SUM(rob.empty_count)       AS empty,
            SUM(rob.many_seats_count)  AS many_seats,
@@ -686,7 +680,7 @@ _ROUTE_OCCUPANCY_BY_DOW_SQL = named_query(
     FROM gold.route_occupancy_band_daily AS rob
     JOIN gold.dim_provider AS dp ON dp.provider_id = rob.provider_id
     WHERE rob.provider_id = :provider_id AND rob.route_id = :route_id
-      AND rob.provider_local_date >= (now() AT TIME ZONE dp.timezone)::date - 30
+      AND {current_date_trailing_clause("rob.provider_local_date")}
     GROUP BY EXTRACT(ISODOW FROM rob.provider_local_date)
     ORDER BY day_of_week_iso
     """
@@ -697,7 +691,7 @@ _ROUTE_OCCUPANCY_BY_DOW_SQL = named_query(
 # 7d, month = full 30d — month reconciles with the scalar occupancy_mix).
 _ROUTE_OCCUPANCY_BY_GRAIN_SQL = named_query(
     "route.occupancy.by_grain",
-    """
+    f"""
     SELECT rob.provider_local_date AS d,
            rob.empty_count       AS empty,
            rob.many_seats_count  AS many_seats,
@@ -707,7 +701,7 @@ _ROUTE_OCCUPANCY_BY_GRAIN_SQL = named_query(
     FROM gold.route_occupancy_band_daily AS rob
     JOIN gold.dim_provider AS dp ON dp.provider_id = rob.provider_id
     WHERE rob.provider_id = :provider_id AND rob.route_id = :route_id
-      AND rob.provider_local_date >= (now() AT TIME ZONE dp.timezone)::date - 30
+      AND {current_date_trailing_clause("rob.provider_local_date")}
     ORDER BY rob.provider_local_date DESC
     """
 )
@@ -748,7 +742,7 @@ _ROUTE_SKIPPED_STOP_SQL = named_query(
 # window. No more day-dominant-band attribution: the full/standing tail is uncensored.
 _ROUTE_CROWDING_DELAY_SQL = named_query(
     "route.delay.by_crowding",
-    """
+    f"""
     SELECT rdc.band                                          AS band,
            SUM(rdc.delay_observation_count)                  AS delay_obs,
            SUM(rdc.sum_delay_seconds)                        AS sum_delay_sec,
@@ -760,7 +754,7 @@ _ROUTE_CROWDING_DELAY_SQL = named_query(
     FROM gold.route_delay_by_crowding_daily AS rdc
     JOIN gold.dim_provider AS dp ON dp.provider_id = rdc.provider_id
     WHERE rdc.provider_id = :provider_id AND rdc.route_id = :route_id
-      AND rdc.provider_local_date >= (now() AT TIME ZONE dp.timezone)::date - 30
+      AND {current_date_trailing_clause("rdc.provider_local_date")}
     GROUP BY rdc.band
     """
 )
@@ -781,87 +775,19 @@ _ROUTE_CROWDING_DELAY_SQL = named_query(
 # already provider-local in the spine, so timezone() is NEVER re-applied — and
 # mirror the fold builders' CASE / EXTRACT / date_trunc logic exactly.
 
-# Shift + day_type buckets: byte-identical to UPSERT_ROUTE_DELAY_BY_SHIFT /
-# _BY_DAYTYPE, but over the spine's pre-localized columns.
-_SPINE_SHIFT_CASE = """CASE
-            WHEN hour_of_day_local BETWEEN 6 AND 8 THEN 'am_peak'
-            WHEN hour_of_day_local BETWEEN 9 AND 14 THEN 'midday'
-            WHEN hour_of_day_local BETWEEN 15 AND 18 THEN 'pm_peak'
-            WHEN hour_of_day_local BETWEEN 19 AND 22 THEN 'evening'
-            ELSE 'night'
-        END"""
+# Shift + day_type buckets over the spine's pre-localized columns, emitted from
+# the ONE gold.reader.buckets source (the same bounds every rollup CASE uses).
+_SPINE_SHIFT_CASE = shift_case_sql("hour_of_day_local")
 
-_SPINE_DAYTYPE_CASE = """CASE
-            WHEN EXTRACT(ISODOW FROM service_local_date) BETWEEN 1 AND 5 THEN 'weekday'
-            ELSE 'weekend'
-        END"""
+_SPINE_DAYTYPE_CASE = daytype_case_sql("service_local_date")
 
-# The 21 element-wise histogram bin sums (Postgres arrays are 1-based). Their sum
-# is the in-clamp (ghost-excluded) delay count = the pooled-avg denominator; the
-# full vector feeds _pctile_from_hist for p50/p90.
-_SPINE_HIST_COLS = ",\n        ".join(
-    f"SUM(delay_histogram[{k}])::bigint AS h{k}" for k in range(1, 22)
-)
-
-# ONE projector template. {dims} selects the grain column(s) (aliased to what each
-# consumer reads); {group_by} is the matching positional GROUP BY + ORDER BY (the
-# ORDER BY makes the spine's row order deterministic for byte-stable output).
-# on_time is a PLAIN SUM, NOT the fold's CASE WHEN COUNT(*)=COUNT(on_time) guard:
-# a spine cell's on_time is NULL iff it has zero delays (delay_obs=0), which adds
-# nothing to SUM(on_time) AND nothing to SUM(known_obs), so SUM(on_time)/
-# SUM(known_obs) reproduces the fold otp_pct exactly — even for an hour where one
-# direction has delays and another is silent (route_delay_hourly merges
-# directions, so the fold guard never sees that per-direction NULL). NO window
-# clause: the spine accrues forward and every breakdown reads the full accrual —
-# the deliberate fix for the "monthly can't hold a month" bug; the cutover gate
-# seeds closed days inside the shared window so both paths cover identical days.
-# {entity_clause} = " AND route_id = :route_id" for the per-route reads; "" for the
-# network reads (aggregate the spine across ALL routes by shift / day_type).
-_ROUTE_SPINE_PROJECT_TEMPLATE = """
-    SELECT
-        {dims}
-        SUM(observation_count)::bigint          AS obs,
-        SUM(delay_observation_count)::bigint    AS known_obs,
-        SUM(on_time_observation_count)::bigint  AS on_time,
-        SUM(severe_delay_count)::bigint         AS severe,
-        SUM(sum_delay_seconds)::bigint          AS sum_delay_sec,
-        {hist_cols}
-    FROM gold.route_delay_spine
-    WHERE provider_id = :provider_id{entity_clause}{window_clause}
-    GROUP BY {group_by}
-    ORDER BY {group_by}
-"""
-
-_ROUTE_ENTITY_CLAUSE = " AND route_id = :route_id"
-
-
-def _spine_project_sql(  # noqa: ANN202
-    name: str,
-    dims: str,
-    group_by: str,
-    entity_clause: str = _ROUTE_ENTITY_CLAUSE,
-    window_clause: str = "",
-):
-    """Format the ONE projector template for a fold (dims carry their trailing comma).
-
-    window_clause defaults to "" so every pre-baked constant formats to text BYTE-IDENTICAL
-    to before this change; a windowed read passes _SPINE_WINDOW_CLAUSE (bounded :win_start/
-    :win_end). NOTE: the template MUST carry the {window_clause} slot or .format() KeyErrors.
-    """
-    return named_query(
-        name,
-        _ROUTE_SPINE_PROJECT_TEMPLATE.format(
-            dims=dims,
-            hist_cols=_SPINE_HIST_COLS,
-            group_by=group_by,
-            entity_clause=entity_clause,
-            window_clause=window_clause,
-        ),
-    )
+# Projector mechanics (template, hist cols, entity clause) live in
+# gold.reader.projector; this module owns only the fold catalog below.
+_spine_project_sql = spine_project_sql
 
 
 def _route_spine_sql(name: str, dims: str, group_by: str, window_clause: str = ""):  # noqa: ANN202
-    return _spine_project_sql(name, dims, group_by, _ROUTE_ENTITY_CLAUSE, window_clause)
+    return _spine_project_sql(name, dims, group_by, window_clause=window_clause)
 
 
 _ROUTE_SPINE_BY_SHIFT_SQL = _route_spine_sql(
@@ -904,7 +830,8 @@ _NETWORK_SPINE_BY_DAYTYPE_SQL = _spine_project_sql(
 # are trailing-N-days anchored on the route's newest CLOSED day, matching the web's
 # windowByGrain so the windowed arrays need no client re-trim.
 _MIN_N_HABIT_CELL = 30  # per-(dow,hour)-cell known-delay floor for the windowed heatmap
-_SPINE_WINDOW_CLAUSE = " AND service_local_date >= :win_start AND service_local_date <= :win_end"
+# _SPINE_WINDOW_CLAUSE + _ROUTE_HABIT_SPINE_SQL are imported from gold.reader
+# (window policy + the spine habit read with its divergence note).
 
 _SPINE_ANCHOR_SQL = named_query(
     "route.spine.anchor",
@@ -935,59 +862,14 @@ _W_CROSSTAB = _route_spine_sql(
     _SPINE_WINDOW_CLAUSE,
 )
 
-# Windowed habits recomposition (B1). The composite repeat_problem_score is rebuilt from the
-# spine windowed by date — a DOCUMENTED REBASELINE vs the whole-history route_habit_score mart:
-# the severe*10 base is byte-identical; the avg/60 term diverges (the spine's in-clamp pooled
-# mean vs the mart's obs-weighted avg-of-averages). Computed in SQL numeric (Postgres half-away-
-# from-zero rounding — never Python round(), which is banker's). LEAST(..., 9999.9999) clamps
-# exactly as the mart; _build_habits_matrix then normalizes to [0,1] per the window's own worst
-# cell so the cap never leaks (slice-9.1.1x sentinel guard). dow = EXTRACT(ISODOW FROM
-# service_local_date) + the stored hour_of_day_local — both already provider-local (DST-safe; no
-# timestamp reconstruction). Mirrors UPSERT_REPEATED_PROBLEM_ROUTE_STOP (gold/rollups.py).
-_ROUTE_HABIT_SPINE_SQL = named_query(
-    "route.habit.spine",
-    """
-    SELECT
-        EXTRACT(ISODOW FROM service_local_date)::integer AS day_of_week_iso,
-        hour_of_day_local,
-        SUM(delay_observation_count)::bigint AS known_obs,
-        LEAST(
-            ROUND(
-                SUM(severe_delay_count)::numeric * 10
-                + GREATEST(COALESCE(ROUND(
-                    SUM(sum_delay_seconds)::numeric
-                    / NULLIF(SUM((SELECT COALESCE(SUM(x), 0) FROM unnest(delay_histogram) AS x)), 0),
-                    2), 0), 0) / 60,
-                4),
-            9999.9999) AS repeat_problem_score
-    FROM gold.route_delay_spine
-    WHERE provider_id = :provider_id AND route_id = :route_id
-      AND service_local_date >= :win_start AND service_local_date <= :win_end
-    GROUP BY 1, 2
-"""
-)
-
-
 def _grain_windows(anchor):  # noqa: ANN001, ANN202
     """Trailing-N-day [start, end] windows anchored on the route's latest closed day."""
-    return {
-        "day": (anchor, anchor),
-        "week": (anchor - timedelta(days=6), anchor),
-        "month": (anchor - timedelta(days=29), anchor),
-    }
+    return GrainWindows(anchor)
 
 
-def _spine_hist_and_avg(r):  # noqa: ANN001, ANN202
-    """(21-bin summed histogram, ghost-excluded pooled avg seconds-or-None) from a row.
-
-    avg = SUM(sum_delay_seconds) / in-clamp count, where the in-clamp count is the
-    sum of the histogram bins (Finding C: ghost-excluded numerator AND denominator).
-    None when there are no in-clamp delays -> _avg_delay_min -> honest None.
-    """
-    hist = [int(r[f"h{k}"] or 0) for k in range(1, 22)]
-    in_clamp = sum(hist)
-    avg_sec = (float(r["sum_delay_sec"]) / in_clamp) if in_clamp else None
-    return hist, avg_sec
+# (21-bin summed histogram, ghost-excluded pooled avg seconds-or-None) from a row —
+# the gold.reader kernel helper (Finding C: ghost-excluded numerator AND denominator).
+_spine_hist_and_avg = hist_and_avg
 
 
 def _spine_delay_histogram(hist: list[int]) -> "list[RouteDelayHistogramBin] | None":
@@ -998,13 +880,10 @@ def _spine_delay_histogram(hist: list[int]) -> "list[RouteDelayHistogramBin] | N
     observations; otherwise ALL 21 bins are emitted (zeros included) so the UI draws
     the full shape. Edges are the same DELAY_HISTOGRAM_EDGES that power p50/p90.
     """
-    if not hist or sum(hist) <= 0:
+    bins = delay_histogram_bins(hist, _SPINE_EDGES)
+    if bins is None:
         return None
-    bins: list[RouteDelayHistogramBin] = []
-    for i, count in enumerate(hist):
-        hi = _SPINE_EDGES[i + 1] if i + 1 < len(_SPINE_EDGES) else None
-        bins.append(RouteDelayHistogramBin(lo_sec=_SPINE_EDGES[i], hi_sec=hi, count=int(count)))
-    return bins
+    return [RouteDelayHistogramBin(lo_sec=lo, hi_sec=hi, count=count) for lo, hi, count in bins]
 
 
 def _spine_reliability_period(  # noqa: ANN001
@@ -1158,14 +1037,11 @@ def _spine_periods_by_grain(conn, params, anchor=None) -> "list[ReliabilityByGra
     if anchor is None:
         return []
     out: list[ReliabilityByGrain] = []
-    for grain, (win_start, win_end) in _grain_windows(anchor).items():
-        win_len = (win_end - win_start).days + 1
+    windows = _grain_windows(anchor)
+    for grain, (win_start, win_end) in windows.items():
+        pri_start, pri_end = windows.prior(grain)
         cur = {**params, "win_start": win_start, "win_end": win_end}
-        pri = {
-            **params,
-            "win_start": win_start - timedelta(days=win_len),
-            "win_end": win_start - timedelta(days=1),
-        }
+        pri = {**params, "win_start": pri_start, "win_end": pri_end}
         by_shift = _windowed_periods(conn, _W_BY_SHIFT, cur)
         by_daytype = _windowed_periods(conn, _W_BY_DAYTYPE, cur)
         _attach_prior(by_shift, _windowed_otp_index(conn, _W_BY_SHIFT, pri))
@@ -1229,10 +1105,9 @@ def _spine_habits_by_grain(conn, params, anchor=None) -> "list[RouteHabitsByGrai
 _GAP_NBINS = len(_GAP_EDGES) - 1  # 20 finite bins (no overflow — the clamp is finite 0<gap<240)
 
 
-def _round_half_away(x, ndigits):  # noqa: ANN001, ANN202
-    """Half-away-from-zero round (Python's builtin round() is banker's). Gaps/bunched/excess are
-    non-negative, so ROUND_HALF_UP == half-away — matching Postgres ROUND(::numeric, n)."""
-    return Decimal(str(x)).quantize(Decimal(10) ** -ndigits, rounding=ROUND_HALF_UP)
+# Half-away-from-zero round (Python's builtin round() is banker's) — the
+# gold.reader kernel convention, matching Postgres ROUND(::numeric, n).
+_round_half_away = round_half_away
 
 
 def _shift_key(s: str) -> tuple[int, str]:
@@ -1241,47 +1116,16 @@ def _shift_key(s: str) -> tuple[int, str]:
 
 
 def _headway_pctile_from_hist(hist, q, edges):  # noqa: ANN001, ANN202
-    """q-th percentile (MINUTES) via CDF interpolation over the gap histogram. Mirrors
-    _pctile_from_hist but in the minutes domain over `edges`. Honest-None on empty/all-zero.
-    The final round is done by the caller in half-away (D3); this returns the raw float."""
-    if not hist:
-        return None
-    total = sum(hist)
-    if total <= 0:
-        return None
-    target = q * total
-    cumulative = 0
-    for bin_idx, count in enumerate(hist):
-        if count <= 0:
-            continue
-        if cumulative + count >= target:
-            lo = edges[bin_idx]
-            hi = edges[bin_idx + 1] if bin_idx + 1 < len(edges) else edges[-1]
-            frac = (target - cumulative) / count
-            return lo + (hi - lo) * frac
-        cumulative += count
-    return float(edges[-1])
+    """q-th percentile (MINUTES) over the gap histogram — the ONE gold.reader CDF walk.
+
+    Honest-None on empty/all-zero. The final round is done by the caller in half-away
+    (D3); this returns the raw float. The kernel's overflow-floor terminal branch is
+    dead code here (the finite 0<gap<240 clamp means bin_idx caps at 19 over 21 edges)."""
+    return cdf_percentile(hist, q, edges)
 
 
-def _bunched_pct_from_hist(hist, edges, median_min):  # noqa: ANN001, ANN202
-    """Windowed %bunched: pooled-histogram mass below 0.5*median (straddling-bin linear interp)
-    / total. NEVER a sum of daily bunched counts (D4). None on empty / None median."""
-    if not hist or median_min is None:
-        return None
-    total = sum(hist)
-    if total <= 0:
-        return None
-    thresh = 0.5 * median_min
-    below = 0.0
-    for i, c in enumerate(hist):
-        lo, hi = edges[i], edges[i + 1]
-        if hi <= thresh:
-            below += c
-        elif lo >= thresh:
-            break
-        else:
-            below += c * (thresh - lo) / (hi - lo)
-    return 100.0 * below / total
+# Windowed %bunched: pooled-histogram mass below 0.5*median / total (D4) — kernel-owned.
+_bunched_pct_from_hist = bunched_pct
 
 
 # Own anchor (NEVER reuse the delay-spine anchor — the headway table's newest closed day differs).
@@ -1291,13 +1135,12 @@ _HEADWAY_SHIFT_ANCHOR_SQL = named_query(
     "WHERE provider_id = :provider_id AND route_id = :route_id"
 )
 
-_GAP_HIST_COLS = ",\n        ".join(
-    f"SUM(gap_histogram[{k}])::bigint AS g{k}" for k in range(1, _GAP_NBINS + 1)
-)
+_GAP_HIST_COLS = hist_cols("gap_histogram", "g", _GAP_NBINS)
 
-# Windowed projector. CoV recomposed in SQL (D2): Bessel n-1 sample SD / mean, guarded
-# n>=2 AND mean>0, ROUND(::numeric,4) (half-away) — byte-identical to the legacy stddev_samp.
-# Median / %bunched are recomposed in Python from the element-wise-summed gap histogram.
+# Windowed projector. CoV recomposed in SQL (D2): the gold.reader Bessel n-1 fragment
+# (sample SD / mean, guarded n>=2 AND mean>0, ROUND(::numeric,4) half-away) —
+# byte-identical to the legacy stddev_samp. Median / %bunched are recomposed in
+# Python from the element-wise-summed gap histogram.
 _HEADWAY_WINDOW_SQL = named_query(
     "route.headway.window",
     f"""
@@ -1308,20 +1151,7 @@ _HEADWAY_WINDOW_SQL = named_query(
         SUM(trip_count)::bigint       AS trips,
         SUM(sum_gap_min)::numeric     AS sum_gap_min,
         SUM(sum_gap_sq_min)::numeric  AS sum_gap_sq_min,
-        CASE
-            WHEN SUM(gap_count) >= 2 AND SUM(sum_gap_min) > 0
-            THEN ROUND(
-                (
-                    sqrt(
-                        GREATEST(
-                            (SUM(sum_gap_sq_min) - power(SUM(sum_gap_min), 2) / SUM(gap_count))
-                            / (SUM(gap_count) - 1),
-                            0
-                        )
-                    )
-                    / (SUM(sum_gap_min) / SUM(gap_count))
-                )::numeric, 4)
-        END AS cov,
+{cov_case_sql(n="SUM(gap_count)", total="SUM(sum_gap_min)", total_sq="SUM(sum_gap_sq_min)")} AS cov,
         {_GAP_HIST_COLS}
     FROM gold.route_headway_shift_daily
     WHERE provider_id = :provider_id AND route_id = :route_id
@@ -1357,21 +1187,10 @@ def _headway_period_from_summed(rows, scheduled):  # noqa: ANN001, ANN202
         raw_b = _bunched_pct_from_hist(hist, _GAP_EDGES, median)
         bunched_pct = float(_round_half_away(raw_b, 1)) if raw_b is not None else None
         sched = scheduled.get(shift)
-        # FIX-1: true passenger-weighted Excess Wait Time (Welding/Osuna-Newell), windowed
-        # grain only — the additive moment sums (Σgap, Σgap²) are on route_headway_shift_daily.
-        # AWT = E[H²]/(2·E[H]) = Σgap²/(2·Σgap) is the wait a random passenger actually expects
-        # (it folds in bunching: long gaps catch more riders), and SWT = scheduled/2 is the
-        # wait on perfectly even service, so EWT = max(0, AWT − scheduled/2). CLAMPED at 0
-        # (actual-more-frequent-than-scheduled is an honest 0, never a negative wait); None when
-        # there are no gaps (Σgap=0) or no scheduled headway.
-        sum_gap = float(r["sum_gap_min"] or 0.0)
-        sum_gap_sq = float(r["sum_gap_sq_min"] or 0.0)
-        awt = (sum_gap_sq / (2.0 * sum_gap)) if sum_gap > 0.0 else None
-        excess = (
-            float(_round_half_away(max(0.0, awt - sched / 2.0), 1))
-            if (awt is not None and sched is not None)
-            else None
-        )
+        # FIX-1: true passenger-weighted Excess Wait Time (Welding/Osuna-Newell; see
+        # gold.reader.ewt_min), windowed grain only — the additive moment sums
+        # (Σgap, Σgap²) are on route_headway_shift_daily.
+        excess = ewt_min(float(r["sum_gap_min"] or 0.0), float(r["sum_gap_sq_min"] or 0.0), sched)
         out[shift] = HeadwayPeriod(
             shift=shift,
             scheduled_min=sched,
@@ -1392,14 +1211,11 @@ def _headway_by_grain(conn, params, scheduled, anchor=None) -> "list[HeadwayByGr
     if anchor is None:
         return []
     out: list[HeadwayByGrain] = []
-    for grain, (win_start, win_end) in _grain_windows(anchor).items():
-        win_len = (win_end - win_start).days + 1
+    windows = _grain_windows(anchor)
+    for grain, (win_start, win_end) in windows.items():
+        pri_start, pri_end = windows.prior(grain)
         cur = {**params, "win_start": win_start, "win_end": win_end}
-        pri = {
-            **params,
-            "win_start": win_start - timedelta(days=win_len),
-            "win_end": win_start - timedelta(days=1),
-        }
+        pri = {**params, "win_start": pri_start, "win_end": pri_end}
         cur_by_shift = _headway_period_from_summed(
             list(conn.execute(_HEADWAY_WINDOW_SQL, cur).mappings()), scheduled
         )
@@ -1668,7 +1484,7 @@ def build_route_reliability(
             weak_rows.append((str(r["stop_id"]), avg_sec))
     weak_rows.sort(key=lambda t: t[1], reverse=True)
     weak_stops = [
-        WeakStop(id=sid, name=names.get(sid), avg_delay_min=round(avg_sec / 60.0, 1))
+        WeakStop(id=sid, name=names.get(sid), avg_delay_min=_avg_delay_min(avg_sec))
         for sid, avg_sec in weak_rows[:weak_stops_limit]
     ]
 
@@ -1927,7 +1743,7 @@ _STOP_PERCENTILE_DAILY_SQL = named_query(
 # "stop_occupancy_band_daily AS sob".
 _STOP_OCCUPANCY_BAND_WINDOW_SQL = named_query(
     "stop.occupancy.band_window",
-    """
+    f"""
     SELECT sob.stop_id                    AS stop_id,
            SUM(sob.empty_count)           AS empty,
            SUM(sob.many_seats_count)      AS many_seats,
@@ -1937,7 +1753,7 @@ _STOP_OCCUPANCY_BAND_WINDOW_SQL = named_query(
     FROM gold.stop_occupancy_band_daily AS sob
     JOIN gold.dim_provider AS dp ON dp.provider_id = sob.provider_id
     WHERE sob.provider_id = :provider_id
-      AND sob.provider_local_date >= (now() AT TIME ZONE dp.timezone)::date - 30
+      AND {current_date_trailing_clause("sob.provider_local_date")}
     GROUP BY sob.stop_id
     """
 )
@@ -1945,32 +1761,25 @@ _STOP_OCCUPANCY_BAND_WINDOW_SQL = named_query(
 
 # Granularity grains for stops, computed ON THE FLY from the hourly mart (stops
 # have no rollup table). The hour->shift band CASE and the ISODOW weekday/weekend
-# split MUST stay byte-identical to the canonical route populate logic in
-# gold/rollups.py (UPSERT_ROUTE_DELAY_BY_SHIFT / UPSERT_ROUTE_DELAY_BY_DAYTYPE) so
-# stop grains line up with route grains. Avg delay mirrors the stop weekly rollup:
-# COALESCE(arrival, departure), observation-weighted (_weighted_avg_sec). Stop OTP
-# stays a severe(>300s)-only proxy (no on_time column in the stop hourly mart), so
-# only obs + severe are aggregated. One UNION'd pass over both grain families.
+# split are emitted from the ONE gold.reader.buckets source (the same bounds the
+# route populate logic in gold/rollups.py uses) so stop grains line up with route
+# grains — the mart stores UTC, so the hour/dow exprs re-apply timezone(). Avg
+# delay mirrors the stop weekly rollup: COALESCE(arrival, departure),
+# observation-weighted (_weighted_avg_sec). Stop OTP stays a severe(>300s)-only
+# proxy (no on_time column in the stop hourly mart), so only obs + severe are
+# aggregated. One UNION'd pass over both grain families.
+_STOP_TS_EXPR = "timezone(dp.timezone, sd.period_start_utc)"
+_STOP_HOUR_EXPR = f"EXTRACT(HOUR FROM {_STOP_TS_EXPR})"
 _STOP_BY_GRAIN_SQL = named_query(
     "stop.reliability.by_grain",
-    """
+    f"""
     SELECT stop_id, grain,
            SUM(observation_count)::numeric                AS obs,
            SUM(severe_delay_count)::numeric               AS severe,
            SUM(avg_delay_sec * NULLIF(observation_count, 0)) AS weighted_delay_sec
     FROM (
         SELECT sd.stop_id,
-               CASE
-                   WHEN EXTRACT(HOUR FROM timezone(dp.timezone, sd.period_start_utc))
-                       BETWEEN 6 AND 8 THEN 'am_peak'
-                   WHEN EXTRACT(HOUR FROM timezone(dp.timezone, sd.period_start_utc))
-                       BETWEEN 9 AND 14 THEN 'midday'
-                   WHEN EXTRACT(HOUR FROM timezone(dp.timezone, sd.period_start_utc))
-                       BETWEEN 15 AND 18 THEN 'pm_peak'
-                   WHEN EXTRACT(HOUR FROM timezone(dp.timezone, sd.period_start_utc))
-                       BETWEEN 19 AND 22 THEN 'evening'
-                   ELSE 'night'
-               END AS grain,
+{shift_case_sql(_STOP_HOUR_EXPR, indent=15, lead=True, wrap=True)} AS grain,
                sd.observation_count,
                sd.severe_delay_count,
                COALESCE(sd.avg_arrival_delay_seconds, sd.avg_departure_delay_seconds)
@@ -1980,11 +1789,7 @@ _STOP_BY_GRAIN_SQL = named_query(
         WHERE sd.provider_id = :provider_id
         UNION ALL
         SELECT sd.stop_id,
-               CASE
-                   WHEN EXTRACT(ISODOW FROM timezone(dp.timezone, sd.period_start_utc))
-                       BETWEEN 1 AND 5 THEN 'weekday'
-                   ELSE 'weekend'
-               END AS grain,
+{daytype_case_sql(_STOP_TS_EXPR, indent=15, lead=True, wrap=True)} AS grain,
                sd.observation_count,
                sd.severe_delay_count,
                COALESCE(sd.avg_arrival_delay_seconds, sd.avg_departure_delay_seconds)
@@ -2065,7 +1870,7 @@ def build_stop_reliability(
             periods.setdefault(sid, {})[grain] = StopReliabilityPeriod(
                 grain=grain,
                 otp_pct=_otp_pct_severe_proxy(r["obs"], r["severe"]),
-                avg_delay_min=(round(avg_sec / 60.0, 1) if avg_sec is not None else None),
+                avg_delay_min=_avg_delay_min(avg_sec),
                 severe_pct=_severe_pct(r["obs"], r["severe"]),
                 observation_count=_opt_int(r["obs"]),
                 wilson_lo=_wilson_lo(severe_k, r["obs"]),
@@ -2084,7 +1889,7 @@ def build_stop_reliability(
         periods.setdefault(sid, {})[grain] = StopReliabilityPeriod(
             grain=grain,
             otp_pct=_otp_pct_severe_proxy(r["obs"], r["severe"]),
-            avg_delay_min=(round(avg_sec / 60.0, 1) if avg_sec is not None else None),
+            avg_delay_min=_avg_delay_min(avg_sec),
             severe_pct=_severe_pct(r["obs"], r["severe"]),
             observation_count=_opt_int(r["obs"]),
             wilson_lo=_wilson_lo(severe_k, r["obs"]),
@@ -2105,7 +1910,7 @@ def build_stop_reliability(
         by_route.setdefault(sid, []).append(
             StopByRoute(
                 route=str(r["route_id"]),
-                avg_delay_min=(round(avg_sec / 60.0, 1) if avg_sec is not None else None),
+                avg_delay_min=_avg_delay_min(avg_sec),
             )
         )
 
@@ -2136,7 +1941,7 @@ def build_stop_reliability(
         day_of_week.setdefault(sid, []).append(
             RouteDayOfWeek(
                 day_of_week_iso=int(r["day_of_week_iso"]),
-                avg_delay_min=(round(avg_sec / 60.0, 1) if avg_sec is not None else None),
+                avg_delay_min=_avg_delay_min(avg_sec),
                 severe_pct=_severe_pct(obs, r["severe"]),
                 # Honest None (never 0): a zero-observation weekday has no count.
                 observation_count=(_opt_int(obs) if obs else None),
@@ -2478,7 +2283,7 @@ def build_repeat_offenders(
 # Accountability daily summary — one row per date, drives the receipt set.
 _RECEIPTS_ACCOUNTABILITY_SQL = named_query(
     "receipts.accountability",
-    """
+    f"""
     SELECT provider_local_date,
            affected_route_count,
            affected_stop_count,
@@ -2489,7 +2294,7 @@ _RECEIPTS_ACCOUNTABILITY_SQL = named_query(
     FROM gold.citizen_accountability_daily AS cad
     JOIN gold.dim_provider AS dp ON dp.provider_id = cad.provider_id
     WHERE cad.provider_id = :provider_id
-      AND provider_local_date >= (now() AT TIME ZONE dp.timezone)::date - 30
+      AND {current_date_trailing_clause("provider_local_date")}
     ORDER BY provider_local_date
     """
 )
@@ -2518,7 +2323,7 @@ _RECEIPTS_NETWORK_DAILY_SQL = named_query(
 # its on-time-vs-network gap (otp_delta_pts) against the day's network baseline.
 _RECEIPTS_WORST_ROUTE_SQL = named_query(
     "receipts.worst_route",
-    """
+    f"""
     SELECT provider_local_date AS d,
            route_id,
            avg_delay_seconds,
@@ -2527,7 +2332,7 @@ _RECEIPTS_WORST_ROUTE_SQL = named_query(
     FROM gold.public_route_reliability_daily AS prr
     JOIN gold.dim_provider AS dp ON dp.provider_id = prr.provider_id
     WHERE prr.provider_id = :provider_id
-      AND provider_local_date >= (now() AT TIME ZONE dp.timezone)::date - 30
+      AND {current_date_trailing_clause("provider_local_date")}
       AND avg_delay_seconds IS NOT NULL
       AND route_id <> '__unrouted__'
     ORDER BY provider_local_date, avg_delay_seconds DESC, route_id
@@ -2537,7 +2342,7 @@ _RECEIPTS_WORST_ROUTE_SQL = named_query(
 # Worst stop per date: max avg_delay_seconds from the public stop delay view.
 _RECEIPTS_WORST_STOP_SQL = named_query(
     "receipts.worst_stop",
-    """
+    f"""
     SELECT provider_local_date AS d,
            stop_id,
            avg_delay_seconds,
@@ -2545,7 +2350,7 @@ _RECEIPTS_WORST_STOP_SQL = named_query(
     FROM gold.public_stop_delay_daily AS psd
     JOIN gold.dim_provider AS dp ON dp.provider_id = psd.provider_id
     WHERE psd.provider_id = :provider_id
-      AND provider_local_date >= (now() AT TIME ZONE dp.timezone)::date - 30
+      AND {current_date_trailing_clause("provider_local_date")}
       AND avg_delay_seconds IS NOT NULL
       AND stop_id <> '__unknown_stop__'
     ORDER BY provider_local_date, avg_delay_seconds DESC, stop_id
@@ -2658,7 +2463,7 @@ def build_receipts(
 # array_agg(...) FILTER (WHERE ...) requires PostgreSQL 9.4+.
 _ALERT_HISTORY_SQL = named_query(
     "alerts.history",
-    """
+    f"""
     SELECT alert_header_text,
            MAX(alert_header_text_en)                                AS header_text_en,
            MAX(severity)                                            AS severity,
@@ -2673,7 +2478,7 @@ _ALERT_HISTORY_SQL = named_query(
     FROM gold.i3_alert_history_reporting AS iah
     JOIN gold.dim_provider AS dp ON dp.provider_id = iah.provider_id
     WHERE iah.provider_id = :provider_id
-      AND provider_local_date >= (now() AT TIME ZONE dp.timezone)::date - 30
+      AND {current_date_trailing_clause("provider_local_date")}
     GROUP BY alert_header_text, active_period_start_utc, active_period_end_utc
     ORDER BY active_period_start_utc DESC NULLS LAST
     LIMIT 200
@@ -2947,6 +2752,12 @@ def build_provenance(
             # is additionalProperties:true / z.unknown() — no schema or Zod change).
             "min_n_rate": MIN_N_RATE,
             "wilson_z": WILSON_Z,
+            "rounding": (
+                "as of 2026-07-01 every Python-side published rounding uses "
+                "half-away-from-zero ties (matching Postgres ROUND), replacing "
+                "Python's banker's rounding; values move only at exact-.5 "
+                "boundaries (S7-B rebaseline)"
+            ),
             "delay_unit": (
                 "seconds from schedule; delay statistics exclude observations "
                 "with |delay| > 1 hour (ghost-trip guard); severe = >300s and <=3600s"

@@ -9,6 +9,7 @@ from sqlalchemy import text
 from sqlalchemy.engine import Engine
 
 from transit_ops.db.connection import make_engine
+from transit_ops.gold.reader.buckets import daytype_case_sql, shift_case_sql
 from transit_ops.ingestion.common import utc_now
 from transit_ops.settings import Settings, get_settings
 from transit_ops.sql_registry import named_query
@@ -1237,9 +1238,17 @@ UPSERT_CITIZEN_ACCOUNTABILITY_DAILY = named_query(
     """
 )
 
+# Trip-start hour->shift + service-day weekday/weekend CASE fragments for the
+# three headway builders below, emitted from the ONE gold.reader.buckets source
+# (wrapped vs single-line shapes match the surrounding literals byte-exactly).
+_TRIP_START_HOUR_EXPR = "EXTRACT(HOUR FROM timezone(dp.timezone, ts.trip_start_utc))"
+_TRIP_SHIFT_CASE_WRAPPED = shift_case_sql(_TRIP_START_HOUR_EXPR, indent=12, lead=True, wrap=True)
+_TRIP_SHIFT_CASE = shift_case_sql(_TRIP_START_HOUR_EXPR, indent=12, lead=True)
+_SERVICE_DAYTYPE_CASE = daytype_case_sql("ts.service_date", indent=12, lead=True)
+
 UPSERT_ROUTE_HEADWAY_DAILY = named_query(
     "rollup.route_headway.upsert",
-    """
+    f"""
     WITH trip_starts AS (
         -- Observed headway uses trip instances, not pooled vehicle pings:
         -- first in-service realtime observation per trip/service day, weekday
@@ -1292,17 +1301,7 @@ UPSERT_ROUTE_HEADWAY_DAILY = named_query(
             ts.direction_id,
             ts.service_date,
             ts.trip_start_utc,
-            CASE
-                WHEN EXTRACT(HOUR FROM timezone(dp.timezone, ts.trip_start_utc))
-                    BETWEEN 6 AND 8 THEN 'am_peak'
-                WHEN EXTRACT(HOUR FROM timezone(dp.timezone, ts.trip_start_utc))
-                    BETWEEN 9 AND 14 THEN 'midday'
-                WHEN EXTRACT(HOUR FROM timezone(dp.timezone, ts.trip_start_utc))
-                    BETWEEN 15 AND 18 THEN 'pm_peak'
-                WHEN EXTRACT(HOUR FROM timezone(dp.timezone, ts.trip_start_utc))
-                    BETWEEN 19 AND 22 THEN 'evening'
-                ELSE 'night'
-            END AS shift
+{_TRIP_SHIFT_CASE_WRAPPED} AS shift
         FROM trip_starts AS ts
         INNER JOIN busiest_direction AS bd
             ON bd.provider_id = ts.provider_id
@@ -1401,7 +1400,7 @@ UPSERT_ROUTE_HEADWAY_DAILY = named_query(
 # filtered out. Same 14d rolling reconstruction + median-gap method.
 UPSERT_ROUTE_HEADWAY_DIRECTION_DAILY = named_query(
     "rollup.route_headway_direction.upsert",
-    """
+    f"""
     WITH trip_starts AS (
         SELECT
             f.provider_id,
@@ -1431,21 +1430,8 @@ UPSERT_ROUTE_HEADWAY_DIRECTION_DAILY = named_query(
             ts.direction_id,
             ts.service_date,
             ts.trip_start_utc,
-            CASE
-                WHEN EXTRACT(ISODOW FROM ts.service_date) BETWEEN 1 AND 5 THEN 'weekday'
-                ELSE 'weekend'
-            END AS service_day_kind,
-            CASE
-                WHEN EXTRACT(HOUR FROM timezone(dp.timezone, ts.trip_start_utc))
-                    BETWEEN 6 AND 8 THEN 'am_peak'
-                WHEN EXTRACT(HOUR FROM timezone(dp.timezone, ts.trip_start_utc))
-                    BETWEEN 9 AND 14 THEN 'midday'
-                WHEN EXTRACT(HOUR FROM timezone(dp.timezone, ts.trip_start_utc))
-                    BETWEEN 15 AND 18 THEN 'pm_peak'
-                WHEN EXTRACT(HOUR FROM timezone(dp.timezone, ts.trip_start_utc))
-                    BETWEEN 19 AND 22 THEN 'evening'
-                ELSE 'night'
-            END AS shift
+{_SERVICE_DAYTYPE_CASE} AS service_day_kind,
+{_TRIP_SHIFT_CASE_WRAPPED} AS shift
         FROM trip_starts AS ts
         INNER JOIN gold.dim_provider AS dp
             ON dp.provider_id = ts.provider_id
@@ -1534,13 +1520,7 @@ UPSERT_ROUTE_HEADWAY_SHIFT_DAILY = named_query(
     shifted AS (
         SELECT
             ts.provider_id, ts.route_id, ts.direction_id, ts.service_date, ts.trip_start_utc,
-            CASE
-                WHEN EXTRACT(HOUR FROM timezone(dp.timezone, ts.trip_start_utc)) BETWEEN 6 AND 8 THEN 'am_peak'
-                WHEN EXTRACT(HOUR FROM timezone(dp.timezone, ts.trip_start_utc)) BETWEEN 9 AND 14 THEN 'midday'
-                WHEN EXTRACT(HOUR FROM timezone(dp.timezone, ts.trip_start_utc)) BETWEEN 15 AND 18 THEN 'pm_peak'
-                WHEN EXTRACT(HOUR FROM timezone(dp.timezone, ts.trip_start_utc)) BETWEEN 19 AND 22 THEN 'evening'
-                ELSE 'night'
-            END AS shift
+{_TRIP_SHIFT_CASE} AS shift
         FROM trip_starts AS ts
         INNER JOIN gold.dim_provider AS dp ON dp.provider_id = ts.provider_id
     ),

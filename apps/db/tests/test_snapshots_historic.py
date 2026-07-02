@@ -1164,15 +1164,16 @@ def test_build_hotspots_otp_delta_route_real_otp_signed_1dp() -> None:
             # stop columns are NULL for a route cell (per-kind JOIN)
             "stop_obs": None,
             "stop_severe": None,
-            # network baseline: 825 / 1000 -> 82.5 -> round 82 (int via _otp_pct)
+            # network baseline: 825 / 1000 -> 82.5 -> 83 (half-away tie; the
+            # 2026-07-01 S7-B rounding rebaseline — banker's round() gave 82)
             "net_on_time": 825,
             "net_known": 1000,
         },
     ]
     conn = FakeConn({"hotspots.list": rows})
     out = build_hotspots(conn, generated_utc="t")
-    # _otp_pct(825,1000)=round(82.5)=82 ; 75 - 82 = -7.0 pts (worse than network)
-    assert out.hotspots[0].otp_delta_pts == -7.0
+    # _otp_pct(825,1000)=half_away(82.5)=83 ; 75 - 83 = -8.0 pts (worse than network)
+    assert out.hotspots[0].otp_delta_pts == -8.0
 
 
 def test_build_hotspots_otp_delta_stop_uses_severe_proxy() -> None:

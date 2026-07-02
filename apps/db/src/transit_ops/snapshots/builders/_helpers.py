@@ -1,8 +1,9 @@
 """Shared value-domain constants + private helpers for the builders package.
 
 This module is the leaf of the builders dependency graph:
-``{live,static,historic} -> _helpers -> contract``.  It holds the value-domain
-mappings, the small pure helpers, and the deterministic *representative service
+``{live,static,historic} -> _helpers -> {contract, gold.reader}``.  It holds
+the value-domain mappings, the small pure helpers (rate/Wilson math re-exported
+from the gold.reader kernel), and the deterministic *representative service
 date* resolution shared by the static route/stop builders and the historic
 ``_scheduled_headway_by_shift`` headway computation.
 
@@ -16,6 +17,24 @@ import statistics
 from datetime import UTC
 from typing import TYPE_CHECKING
 
+# The rate + confidence kernel is owned by gold.reader (S7-close C2); the
+# historical _-prefixed names are re-exported here so builder call sites and
+# tests keep their `_helpers` import paths (one owner, no drift).
+from transit_ops.gold.reader import (
+    MIN_N_RATE,  # noqa: F401 - re-exported
+    WILSON_Z,  # noqa: F401 - re-exported
+    infer_shift,
+    round_half_away,
+)
+from transit_ops.gold.reader import avg_delay_min as _avg_delay_min  # noqa: F401 - re-exported
+from transit_ops.gold.reader import otp_pct as _otp_pct  # noqa: F401 - re-exported
+from transit_ops.gold.reader import (
+    otp_pct_severe_proxy as _otp_pct_severe_proxy,  # noqa: F401 - re-exported
+)
+from transit_ops.gold.reader import severe_pct as _severe_pct  # noqa: F401 - re-exported
+from transit_ops.gold.reader import wilson_bounds as _wilson_bounds  # noqa: F401 - re-exported
+from transit_ops.gold.reader import wilson_hi as _wilson_hi  # noqa: F401 - re-exported
+from transit_ops.gold.reader import wilson_lo as _wilson_lo  # noqa: F401 - re-exported
 from transit_ops.sql_registry import named_query
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
@@ -120,7 +139,7 @@ _STOP_TIMES_CAP = 12  # representative all-day sample per (route, headsign)
 
 
 def _round5(x: object) -> float | None:
-    return round(float(x), 5) if x is not None else None  # type: ignore[arg-type]
+    return float(round_half_away(float(x), 5)) if x is not None else None  # type: ignore[arg-type]
 
 
 def _opt_int(x: object) -> int | None:
@@ -145,7 +164,7 @@ def _kmh(speed_ms: object) -> int | None:
     """GTFS-RT Position.speed is meters/second; the contract field is km/h."""
     if speed_ms is None:
         return None
-    return round(float(speed_ms) * 3.6)  # type: ignore[arg-type]
+    return int(round_half_away(float(speed_ms) * 3.6, 0))  # type: ignore[arg-type]
 
 
 def _iso(v: object) -> str:
@@ -202,7 +221,7 @@ def _status_from_band(band: object) -> str:
 def _delay_min(avg_delay_seconds: object) -> int | None:
     if avg_delay_seconds is None:
         return None
-    return round(float(avg_delay_seconds) / 60.0)  # type: ignore[arg-type]
+    return int(round_half_away(float(avg_delay_seconds) / 60.0, 0))  # type: ignore[arg-type]
 
 
 def _split_csv(value: object) -> list[str]:
@@ -229,19 +248,12 @@ def _median_headway(minutes: list[float]) -> float | None:
     if len(uniq) < 2:
         return None
     gaps = [uniq[i] - uniq[i - 1] for i in range(1, len(uniq))]
-    return round(statistics.median(gaps), 1) if gaps else None
+    return float(round_half_away(statistics.median(gaps), 1)) if gaps else None
 
 
-def _infer_shift(hour: int) -> str:
-    if 6 <= hour < 9:
-        return "am_peak"
-    if 9 <= hour < 15:
-        return "midday"
-    if 15 <= hour < 19:
-        return "pm_peak"
-    if 19 <= hour < 23:
-        return "evening"
-    return "night"  # {23, 0..5}
+# Python twin of the SQL shift CASE — gold.reader.buckets owns the bounds
+# (closed ints 6-8/9-14/15-18/19-22, else night == the old half-open ranges).
+_infer_shift = infer_shift
 
 
 def _shift_sort_min(t: object, shift: str) -> float:
@@ -273,89 +285,10 @@ def _sample_times(raw_sorted: list[str], cap: int = _STOP_TIMES_CAP) -> list[str
     return [_wallclock(t) or "" for t in picked]
 
 
-def _otp_pct(on_time: object, known: object) -> int | None:
-    """round(100 * on_time / known) as int; None when numerator or denominator is unknown."""
-    if on_time is None or not known:
-        return None
-    known_obs = float(known)  # type: ignore[arg-type]
-    if known_obs <= 0:
-        return None
-    return round(100.0 * float(on_time) / known_obs)
-
-
-def _otp_pct_severe_proxy(observation_count: object, severe: object) -> int | None:
-    """Stop OTP proxy: per-stop delay observations not severe over observations."""
-    if not observation_count:
-        return None
-    obs = float(observation_count)  # type: ignore[arg-type]
-    if obs <= 0:
-        return None
-    return round(100.0 * (obs - float(severe or 0)) / obs)
-
-
-# --- Chart Doctrine honesty spine (slice-S3) ---------------------------------
-# The single server-authoritative definitions of "reliable enough" and the
-# confidence channel. MIN_N_RATE is DISPLAY-ONLY: the builders always emit the
-# raw observation_count + honest rate + Wilson bounds and NEVER null a rate below
-# it (so the web keeps the n it needs for data-depth gating, and the threshold
-# stays tunable without a republish). Surfaced in Provenance.methodology so the
-# web reads ONE value. See the Transit Chart Doctrine, section 4.0 (Constants
-# Registry). The pre-existing metric-specific floors (headway COV n>=2, repeat-
-# offender recurrence_days>=3) are unrelated and stay as-is.
-MIN_N_RATE = 30  # proportion reliability floor (OTP / cancellation / silent / on-time-band)
-WILSON_Z = 1.96  # 95% two-sided Wilson score interval
-
-
-def _wilson_bounds(
-    successes: object, n: object, *, z: float = WILSON_Z
-) -> tuple[float, float] | None:
-    """95% Wilson score interval (lo, hi) in PERCENT (0..100) for successes/n.
-
-    The Chart Doctrine honesty channel for proportions: ranking on the LOWER
-    bound stops a tiny-n fluke (1-of-1 = 100%) from out-ranking a high-volume
-    bad actor. Pure Python, no scipy. Returns None when the numerator is unknown
-    or the denominator is falsy/<=0 — mirrors the _otp_pct honest-NULL guard so a
-    missing rate never gets a fabricated band. successes is clamped into [0, n].
-    """
-    if successes is None or not n:
-        return None
-    total = float(n)  # type: ignore[arg-type]
-    if total <= 0:
-        return None
-    k = min(max(float(successes), 0.0), total)  # type: ignore[arg-type]
-    p = k / total
-    z2 = z * z
-    denom = 1.0 + z2 / total
-    center = (p + z2 / (2.0 * total)) / denom
-    margin = z * ((p * (1.0 - p) / total + z2 / (4.0 * total * total)) ** 0.5) / denom
-    lo = max(0.0, (center - margin) * 100.0)
-    hi = min(100.0, (center + margin) * 100.0)
-    return (round(lo, 1), round(hi, 1))
-
-
-def _wilson_lo(successes: object, n: object, *, z: float = WILSON_Z) -> float | None:
-    b = _wilson_bounds(successes, n, z=z)
-    return None if b is None else b[0]
-
-
-def _wilson_hi(successes: object, n: object, *, z: float = WILSON_Z) -> float | None:
-    b = _wilson_bounds(successes, n, z=z)
-    return None if b is None else b[1]
-
-
-def _avg_delay_min(avg_delay_seconds: object) -> float | None:
-    if avg_delay_seconds is None:
-        return None
-    return round(float(avg_delay_seconds) / 60.0, 1)  # type: ignore[arg-type]
-
-
-def _severe_pct(observation_count: object, severe: object) -> float | None:
-    if not observation_count:
-        return None
-    obs = float(observation_count)  # type: ignore[arg-type]
-    if obs <= 0:
-        return None
-    return round(100.0 * float(severe or 0) / obs, 1)
+# Rate + confidence kernel (_otp_pct / _otp_pct_severe_proxy / _wilson_* /
+# _avg_delay_min / _severe_pct + MIN_N_RATE / WILSON_Z): owned by
+# gold.reader.rates, re-exported above under the historical names so builder
+# call sites and tests keep their import paths (one owner, no drift).
 
 
 def _public_impact_score(value: object, *, cap: float = 9999.9999) -> float | None:
@@ -593,7 +526,7 @@ def _build_habits_matrix(
         [
             None
             if v is None
-            else (round(v / route_max, 4) if route_max > 0 else 0.0)
+            else (float(round_half_away(v / route_max, 4)) if route_max > 0 else 0.0)
             for v in row
         ]
         for row in raw
