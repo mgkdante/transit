@@ -146,15 +146,50 @@ describe('RouteReliabilityClusters — ?from/?to range deep-link (S7-B PR-WEB-4)
 		expect(checked?.textContent?.toLowerCase()).toContain('range');
 	});
 
-	it('drops an out-of-window bound (the URL is a hint) → falls back to the range prompt', () => {
+	it('EXPLICIT ?grain=range with an out-of-window bound → keeps the range prompt', () => {
 		mockUrl = new URL('http://localhost/lines/51?grain=range&from=2020-01-01&to=2026-06-18');
 		const { container } = render(RouteReliabilityClusters, {
 			props: { data: rangeData, locale: 'en' },
 		});
-		// from dropped → no complete range → the honest "pick a start and end date" prompt, never a
-		// fabricated window around the bogus 2020 date.
+		// EXPLICIT range intent (the ?grain=range token) → the window drops but range MODE stays,
+		// showing the honest "pick a start and end date" prompt, never a fabricated 2020 window.
 		expect(caption(container).toLowerCase()).toContain('pick a start and end date');
 		expect(caption(container)).not.toContain('2020');
+		const checked = container.querySelector('[role="radio"][aria-checked="true"]');
+		expect(checked?.textContent?.toLowerCase()).toContain('range');
+	});
+
+	// HIGH-2: a BARE ?from/?to (no explicit ?grain=range token) whose bounds fall OUTSIDE the
+	// published window carries NO deliberate range intent. resolveWindow drops the window, and
+	// because range was implied ONLY by window-presence, the rail reverts to the DAY view
+	// (the old behaviour) — never a silent empty range prompt for a link that never said range.
+	it('bare ?from/?to fully OUTSIDE the window → reverts to the day view (no range prompt)', () => {
+		mockUrl = new URL('http://localhost/lines/51?from=2020-01-01&to=2020-01-05');
+		const { container } = render(RouteReliabilityClusters, {
+			props: { data: rangeData, locale: 'en' },
+		});
+		mockUrl = new URL('http://localhost/lines/51'); // the genuine day default
+		const { container: dflt } = render(RouteReliabilityClusters, {
+			props: { data: rangeData, locale: 'en' },
+		});
+		// Reverted to day: same caption as the clean day default, and the checked chip is 'Today'.
+		expect(caption(container)).toBe(caption(dflt));
+		expect(caption(container).toLowerCase()).not.toContain('pick a start and end date');
+		const checked = container.querySelector('[role="radio"][aria-checked="true"]');
+		expect(checked?.textContent?.toLowerCase()).toContain('today');
+	});
+
+	// HIGH-2 companion: a bare ?from/?to with a PARTIALLY out-of-window bound (one real, one
+	// bogus) also drops the whole window (resolveWindow is whole-window-or-nothing) and, with
+	// no explicit token, reverts to day rather than a fabricated one-sided span.
+	it('bare ?from/?to with one out-of-window bound → reverts to the day view', () => {
+		mockUrl = new URL('http://localhost/lines/51?from=2026-06-16&to=2030-12-31');
+		const { container } = render(RouteReliabilityClusters, {
+			props: { data: rangeData, locale: 'en' },
+		});
+		const checked = container.querySelector('[role="radio"][aria-checked="true"]');
+		expect(checked?.textContent?.toLowerCase()).toContain('today');
+		expect(caption(container).toLowerCase()).not.toContain('pick a start and end date');
 	});
 
 	it('mirrors from/to and CLEARS them when the rail leaves range mode', async () => {

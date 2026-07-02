@@ -16,6 +16,7 @@
 // SSR-safe: pure data + pure functions; no DOM, no `window`.
 
 import type { Grain } from '$lib/v1/schemas';
+import type { DateWindow } from './state';
 import { GRAINS, isGrain } from './state';
 
 /** The data tier an active surface reads from. Mirrors the v1 repo families. */
@@ -61,6 +62,38 @@ export function resolveGrain(tier: DataTier, requested: string | undefined): Gra
 }
 
 /**
+ * Clamp a URL-seeded {@link DateWindow} against the dates a surface actually
+ * carries. The URL is a HINT, never a data source: a bound the contract has no
+ * day for is DROPPED (never fabricated into a fake span), and a window survives
+ * only when BOTH clamped bounds remain — otherwise the whole window is dropped
+ * (`undefined`), so the surface falls to its grain-only default rather than a
+ * half or invented span (honest-absence).
+ *
+ * This is the shared availability entry point that replaces the per-surface
+ * bespoke clamps: the codec ({@link import('./url').fromSearchParams}) produces a
+ * SHAPE-valid `{from,to}`; this validates it against real data once the surface
+ * knows its `availableDates`.
+ *
+ * @param window         the shape-valid window from the codec, or `undefined`.
+ * @param availableDates the real dated days the surface carries (e.g. every
+ *                       day-grain period's `date`).
+ */
+export function resolveWindow(
+	window: DateWindow | undefined,
+	availableDates: ReadonlySet<string>,
+): DateWindow | undefined {
+	if (!window) return undefined;
+	// CONSTRAINT (intentional honest-absence change): if EITHER bound is not a real available
+	// date, the WHOLE window is dropped — we do NOT clamp/keep the surviving bound (the old
+	// per-bound behaviour). A partial or one-sided span is a fabricated window the URL never
+	// actually described; dropping it entirely falls the surface back to its grain default,
+	// which is the honest outcome. Callers relying on the old keep-the-good-bound behaviour
+	// must re-derive it explicitly.
+	if (!availableDates.has(window.from) || !availableDates.has(window.to)) return undefined;
+	return window;
+}
+
+/**
  * Minimum trustworthy buckets a grain needs before its control is enabled. The
  * Chart Doctrine data-depth floor (§4.0 MIN_POINTS_FOR_LINE): a coarse grain that
  * collapses to 1-2 points can't show a trend, so its pill is DISABLED (never
@@ -86,6 +119,23 @@ export function usableGrains(
 	minPoints: number = MIN_POINTS_PER_GRAIN,
 ): Grain[] {
 	return availableGrains(tier).filter((g) => (bucketCounts[g] ?? 0) >= minPoints);
+}
+
+/**
+ * The usable subset of an EXPLICIT offered list (no {@link DataTier} lookup),
+ * finest→coarsest, preserving the caller's order. A grain is usable when it has
+ * `>= minPoints` trustworthy buckets; a grain missing from `bucketCounts` counts
+ * as 0 (disabled). This is the {@link usableGrains} logic against a surface's own
+ * offered set — the entry point the shared SurfaceControls rail consumes, so a
+ * surface passes ONE offered list + per-grain data-depth and never re-implements a
+ * bespoke clamp.
+ */
+export function usableFromOffered(
+	offered: readonly Grain[],
+	bucketCounts: Partial<Record<Grain, number>>,
+	minPoints: number = MIN_POINTS_PER_GRAIN,
+): Grain[] {
+	return offered.filter((g) => (bucketCounts[g] ?? 0) >= minPoints);
 }
 
 /** True when `grain` is offered by the tier AND has enough data-depth to enable. */

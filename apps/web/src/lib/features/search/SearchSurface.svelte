@@ -71,7 +71,7 @@
 		modeKeyForTag,
 	} from '$lib/search/stopMode';
 	import { routeColor } from '$lib/search/routeColor';
-	import { STATUS_LABELS, OCCUPANCY_LABELS } from '$lib/features/map/map.copy';
+	import { STATUS_LABELS, OCCUPANCY_LABELS } from '$lib/v1/enumLabels';
 	import VehicleResultRow from './VehicleResultRow.svelte';
 	import { copy } from './search.copy';
 

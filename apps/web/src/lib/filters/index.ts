@@ -8,7 +8,7 @@
 // DOM, `window`, or navigation directly (the store reaches the URL only through
 // a caller-supplied `pushUrl`).
 
-export type { FilterState, IdSetKey, EntityKind, AlertEntityKind } from './state';
+export type { FilterState, IdSetKey, EntityKind, AlertEntityKind, DateWindow } from './state';
 export {
 	STATUS_CODES,
 	OCCUPANCY_CODES,
@@ -20,10 +20,12 @@ export {
 	isEntityKind,
 	isAlertEntityKind,
 	isGrain,
+	isIsoDate,
 	normalizeStatus,
 	normalizeOccupancy,
 	normalizeEntities,
 	normalizeAlerts,
+	normalizeWindow,
 	emptyFilterState,
 	cloneFilterState,
 	isEmptyFilterState,
@@ -41,4 +43,14 @@ export type { FilterStore, PushUrl, Chip } from './store.svelte';
 export { createFilterStore } from './store.svelte';
 
 export type { DataTier } from './grain';
-export { availableGrains, defaultGrain, isGrainAvailable, resolveGrain } from './grain';
+export {
+	availableGrains,
+	defaultGrain,
+	isGrainAvailable,
+	resolveGrain,
+	resolveWindow,
+	usableGrains,
+	usableFromOffered,
+	isGrainUsable,
+	MIN_POINTS_PER_GRAIN,
+} from './grain';

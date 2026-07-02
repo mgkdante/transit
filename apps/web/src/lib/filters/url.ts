@@ -5,13 +5,22 @@
 // it before the store ever exists. This module is the ONLY place that knows the
 // wire format:
 //
-//   keys  : route, stop, trip, vehicle, status, occupancy, entity, grain, window  (stable order)
+//   keys  : route, stop, trip, vehicle, status, occupancy, entity, alert, grain, from, to (stable order)
 //   sets  : comma-joined, sorted, deduped (route=10,165,80)
 //   empty : an empty set / absent enum / absent lever is OMITTED entirely
 //   round : fromSearchParams(toSearchParams(s)) is value-equal to a normalized s
 //
 // Invalid values are dropped on the way IN (enum guards in ./state), so the URL
 // is self-healing: a hand-edited `?status=bogus,late` parses to `late` only.
+//
+// The date window is a `?from=…&to=…` PAIR (each an ISO `YYYY-MM-DD`). A window
+// is present ONLY when both bounds decode and normalize to a complete span —
+// "range mode" is exactly "a window is present". A half/inverted/malformed pair
+// yields NO window (honest-absence; the surface falls to its grain default). The
+// LEGACY `?window=` scalar had zero producers and is no longer read — it drops as
+// an unknown key. `?grain=range` (an old lines-only token) is not a valid Grain,
+// so it drops on the way in; combined with `?from`/`?to` the window carries the
+// range intent, reproducing the old rendered view.
 //
 // SSR-safe: operates purely on URLSearchParams; never touches `window`.
 
@@ -22,6 +31,7 @@ import {
 	normalizeOccupancy,
 	normalizeEntities,
 	normalizeAlerts,
+	normalizeWindow,
 	isGrain,
 } from './state';
 
@@ -42,7 +52,8 @@ const KEY_ORDER = [
 	'entity',
 	'alert',
 	'grain',
-	'window',
+	'from',
+	'to',
 ] as const;
 
 /** Wire key → the FilterState id-set field it maps to. */
@@ -92,8 +103,10 @@ function dedupe(values: readonly string[]): string[] {
  * - id sets (route/stop/trip): comma + repeated keys both accepted, blanks and
  *   duplicates dropped;
  * - status/occupancy: invalid enum values DROPPED, deduped, absent when empty;
- * - grain: kept only if a valid {@link import('./state').FilterState['grain']};
- * - window: trimmed; absent when blank.
+ * - grain: kept only if a valid {@link import('./state').FilterState['grain']}
+ *   (a legacy `?grain=range` is NOT a valid Grain → dropped);
+ * - window: the `?from`/`?to` PAIR, normalized to a complete `{from,to}` span
+ *   (inverted bounds swapped); absent unless BOTH bounds are valid ISO dates.
  *
  * Unknown query keys are ignored. The result is canonical, so feeding it back
  * through {@link toSearchParams} and re-parsing is a fixed point.
@@ -124,8 +137,11 @@ export function fromSearchParams(sp: URLSearchParams): FilterState {
 	const grain = grainTokens.find((g) => isGrain(g));
 	if (grain && isGrain(grain)) state.grain = grain;
 
-	const windowRaw = (sp.get('window') ?? '').trim();
-	if (windowRaw) state.window = windowRaw;
+	// The date window is the ?from/?to pair. Both bounds must be valid ISO dates
+	// for a window to form (a half/malformed pair is no window — the surface falls
+	// to its grain default). An inverted from>to is swapped by normalizeWindow.
+	const window = normalizeWindow(sp.get('from'), sp.get('to'));
+	if (window) state.window = window;
 
 	return state;
 }
@@ -169,8 +185,12 @@ export function toSearchParams(s: FilterState): URLSearchParams {
 				if (s.grain !== undefined) sp.set('grain', s.grain);
 				break;
 			}
-			case 'window': {
-				if (s.window) sp.set('window', s.window);
+			case 'from': {
+				if (s.window) sp.set('from', s.window.from);
+				break;
+			}
+			case 'to': {
+				if (s.window) sp.set('to', s.window.to);
 				break;
 			}
 		}

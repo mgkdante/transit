@@ -9,7 +9,6 @@
 // product voice (mirrors the raw-FR /v1 headers); EN is the parallel translation.
 
 import type { Locale } from '$lib/i18n';
-import type { OccupancyCode, StatusCode } from '$lib/v1/schemas';
 import type { SurfaceHeadCopy } from '$lib/components/surface';
 
 export interface NetworkCopy extends SurfaceHeadCopy {
@@ -317,41 +316,5 @@ export const copy: Record<Locale, NetworkCopy> = {
 		window: { label: 'Fenêtre de tendance', d7: '7 j', d30: '30 j', d90: '90 j' },
 		noData: 'aucune donnée',
 		units: { pct: '%', min: ' min' },
-	},
-};
-
-/** Localized band labels for each StatusCode (status-mix bar segments + legend). */
-export const STATUS_LABELS: Record<Locale, Record<StatusCode, string>> = {
-	en: {
-		early: 'Early',
-		on_time: 'On-time',
-		late: 'Late',
-		severe: 'Severe',
-		unknown: 'Unknown',
-	},
-	fr: {
-		early: 'En avance',
-		on_time: 'À l’heure',
-		late: 'En retard',
-		severe: 'Sévère',
-		unknown: 'Inconnu',
-	},
-};
-
-/** Localized band labels for each OccupancyCode (crowding bar segments + legend). */
-export const OCCUPANCY_LABELS: Record<Locale, Record<OccupancyCode, string>> = {
-	en: {
-		empty: 'Empty',
-		many_seats: 'Many seats',
-		few_seats: 'Few seats',
-		standing: 'Standing',
-		full: 'Full',
-	},
-	fr: {
-		empty: 'Vide',
-		many_seats: 'Plusieurs places',
-		few_seats: 'Peu de places',
-		standing: 'Debout',
-		full: 'Plein',
 	},
 };

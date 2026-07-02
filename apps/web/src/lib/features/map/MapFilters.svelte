@@ -27,7 +27,8 @@
 	import type { RouteIndexEntry, StopIndexEntry } from '$lib/v1';
 	import { statusVar, occupancyVar } from '$lib/components/dataviz';
 	import type { Locale } from '$lib/i18n';
-	import { copy as MAP_COPY, STATUS_LABELS, OCCUPANCY_LABELS } from './map.copy';
+	import { copy as MAP_COPY } from './map.copy';
+	import { STATUS_LABELS, OCCUPANCY_LABELS } from '$lib/v1/enumLabels';
 	import MarkerGlyph from './MarkerGlyph.svelte';
 
 	interface Props {

@@ -27,6 +27,13 @@
 		readonly key: K;
 		readonly label: string;
 		readonly available?: boolean;
+		/**
+		 * Id of a description element for a DISABLED segment (wired to aria-describedby),
+		 * so assistive tech announces WHY it is off. Ignored on enabled segments.
+		 */
+		readonly describedById?: string;
+		/** Tooltip carrying the same disabled reason for pointer users. */
+		readonly title?: string;
 	}
 
 	export interface GrainPickerProps<K extends string = string> {
@@ -106,6 +113,8 @@
 			class="grain-seg"
 			class:grain-seg--active={value === seg.key}
 			aria-checked={value === seg.key}
+			aria-describedby={seg.available === false ? seg.describedById : undefined}
+			title={seg.available === false ? seg.title : undefined}
 			disabled={seg.available === false}
 			tabindex={i === checkedIndex ? 0 : -1}
 			onclick={() => pick(seg)}

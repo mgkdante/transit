@@ -33,10 +33,12 @@
 -->
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { page } from '$app/state';
 	import { getLocale, localizeHref, type Locale } from '$lib/i18n';
 	import { routeNameFallback, type AbsenceReasonKey } from '$lib/site/absence';
 	import { layout, openSurface, routeFor } from '$lib/nav';
-	import { mapSearchFor } from '$lib/filters';
+	import { mapSearchFor, fromSearchParams, toSearchParams, emptyFilterState } from '$lib/filters';
+	import { mirrorSearchParams } from '$lib/site/urlMirror';
 	import { formatDateKey, formatRelativeSeconds } from '$lib/utils/time';
 	import {
 		fmtCount as sharedFmtCount,
@@ -72,6 +74,7 @@
 		ConformanceBadge,
 		ResourceBoundary,
 		GrainPicker,
+		SurfaceControls,
 		type GrainSegment,
 	} from '$lib/components/surface';
 	import { Surface, ControlsRail, DashboardGrid } from '$lib/components/layout';
@@ -93,7 +96,8 @@
 		type SupplementalMetricKey,
 	} from '$lib/features/metrics/metrics.content';
 	import { metricsCopy } from '$lib/features/metrics/metrics.copy';
-	import { copy as COPY, OCCUPANCY_LABELS, STATUS_LABELS } from './network.copy';
+	import { copy as COPY } from './network.copy';
+	import { STATUS_LABELS, OCCUPANCY_LABELS } from '$lib/v1/enumLabels';
 
 	const locale: Locale = getLocale();
 	const t = $derived(COPY[locale]);
@@ -307,29 +311,46 @@
 	const hasWeekly = $derived(weeklySeries.length > 0);
 	const hasMonthly = $derived(monthlySeries.length > 0);
 
-	let grainKey = $state('day');
-	const grain = $derived<Grain>(
-		grainKey === 'week' || grainKey === 'month' ? (grainKey as Grain) : 'day',
+	// CONTRACT: the codec ($lib/filters) owns the URL seams — fromSearchParams enum-parses
+	// the ?grain seed (invalid values dropped); toSearchParams below serializes it back
+	// (day = the surface default → omitted). The SELECTION STATE (this grainKey $state) and
+	// the populated-grain clamp ($effect below) stay SURFACE-LOCAL: only NetworkHealth knows
+	// which grains its series actually populate, so it — not the codec — resolves a seeded or
+	// chosen grain onto one that carries data. The grain binds into the SurfaceControls rail.
+	let grainKey = $state<Grain>(
+		(() => {
+			const seeded = fromSearchParams(page.url.searchParams).grain;
+			return seeded === 'week' || seeded === 'month' ? seeded : 'day';
+		})(),
 	);
+	const grain = $derived<Grain>(grainKey);
 	// Coarse grains carry no p90 / no per-day crowding / no daily vehicles spark.
 	const isDailyGrain = $derived(grain === 'day');
 
-	const grainSegments = $derived.by<GrainSegment<string>[]>(() => [
-		// `day` is the always-present base WHEN the daily series carries data; a
-		// snapshot with an empty `series` but populated coarse grains must not offer
-		// (or default to) an empty day grain.
-		{ key: 'day', label: t.grain.day, available: hasDaily },
-		{ key: 'week', label: t.grain.week, available: hasWeekly },
-		{ key: 'month', label: t.grain.month, available: hasMonthly },
-	]);
-	// Offer the picker whenever MORE THAN ONE grain carries data — a lone enabled
-	// grain is a dead control, so the picker stands down to nothing then.
+	// The offered grains + their data-depth signals for the SurfaceControls clamp. Per
+	// DECISIONS P2-2 this reproduces TODAY's exact enable/disable semantics (a grain is
+	// enabled iff its series carries ANY data), so minPoints=1 is passed at the rail (NOT
+	// the MIN_POINTS_PER_GRAIN=7 floor — tightening is a per-surface S9 decision).
+	const grainOffered: readonly Grain[] = ['day', 'week', 'month'];
+	const grainAvailability = $derived({
+		day: { buckets: dailySeries.length },
+		week: { buckets: weeklySeries.length },
+		month: { buckets: monthlySeries.length },
+	});
+	const grainLabels: Partial<Record<Grain, string>> = $derived({
+		day: t.grain.day,
+		week: t.grain.week,
+		month: t.grain.month,
+	});
+	// A surface-local presentation rule (not a codec concern): the grain picker is a dead
+	// control when only one grain carries data, so it renders ONLY when MORE THAN ONE grain
+	// is populated — a single-grain surface shows no picker rather than mostly-disabled chips.
 	const showGrainPicker = $derived([hasDaily, hasWeekly, hasMonthly].filter(Boolean).length > 1);
 
-	// Keep `grainKey` on an AVAILABLE grain. Clamp a chosen coarse grain back when
-	// its series is absent (e.g. an older snapshot with no weekly/monthly); and when
-	// the daily series itself is empty, fall the day grain forward to the first
-	// populated coarse grain — never a dead/empty grain.
+	// Keep the selected grain on a POPULATED grain — the codec-owned equivalent of the old
+	// clamp $effect: a chosen coarse grain whose series is absent (older snapshot) falls back,
+	// and an empty daily series falls the day grain FORWARD to the first populated coarse grain.
+	// Never a dead/empty grain.
 	$effect(() => {
 		if (grainKey === 'week' && !hasWeekly)
 			grainKey = hasDaily ? 'day' : hasMonthly ? 'month' : 'day';
@@ -338,6 +359,16 @@
 		else if (grainKey === 'day' && !hasDaily)
 			grainKey = hasWeekly ? 'week' : hasMonthly ? 'month' : 'day';
 	});
+
+	// Mirror the resolved grain to the URL (shareable/deep-linkable for the first time).
+	// grain=day is the surface default → omitted (a clean canonical URL); week/month write
+	// ?grain=. Uses the shared codec's wire format + the batched mirror (P1-4 keeps this path).
+	const grainWire = $derived.by<{ grain: string | null }>(() => {
+		const state = emptyFilterState();
+		if (grainKey !== 'day') state.grain = grainKey;
+		return { grain: toSearchParams(state).get('grain') };
+	});
+	$effect(() => mirrorSearchParams(grainWire));
 
 	// --- Trend window (7/30/90-day) ------------------------------------------
 	// build_network_trend publishes the full series (~90d OTP/avg-delay, ~14d
@@ -902,23 +933,14 @@
 	<section class="network-region" aria-label={t.historicRegion}>
 		<SectionLabel text={t.historicRegion} variant="station" />
 
-		<!-- ONE control panel collects every historic control. The radiogroup roles
-		     stay inside the rail (one tab stop per picker). The grain picker stands
-		     down to nothing when only the daily series exists; the window picker is
-		     day-grain-only; the delay-series toggle's p90 chip disables on a coarse
-		     grain — all the existing guard logic intact, just relocated here. -->
-		<ControlsRail label={t.viewControlsLabel}>
-			<!-- Trend grain (day / week / month). Offered ONLY when a coarser series
-			     carries data — a lone "day" chip is a dead control, so the picker
-			     stands down then. p90 / vehicles / per-day crowding are daily-only. -->
-			{#if showGrainPicker}
-				<GrainPicker
-					segments={grainSegments}
-					bind:value={grainKey}
-					label={t.grain.label}
-					class="network-grain"
-				/>
-			{/if}
+		<!-- ONE control panel collects every historic control. S7.5 P2: the grain picker
+		     is now the SHARED SurfaceControls rail (codec-bound, URL-shareable, data-depth
+		     availability clamp) with the window + delay-series toggles seated in its window
+		     slot; when the grain picker stands down (only one series carries data) the SAME
+		     window/series controls render in a plain ControlsRail. The window picker is
+		     day-grain-only; the delay-series p90 chip disables on a coarse grain — all the
+		     existing guard logic intact. -->
+		{#snippet windowControls()}
 			<!-- Trend window (7/30/90-day) — DAY grain only; slices the tail of the
 			     daily series. A window longer than the data is disabled (never a dead
 			     control). Week/month render their full short series → no window. -->
@@ -939,7 +961,28 @@
 				label={t.trend.retardToggleLabel}
 				class="network-retard-toggle"
 			/>
-		</ControlsRail>
+		{/snippet}
+
+		{#if showGrainPicker}
+			<!-- Grain offered ONLY when a coarser series carries data (a lone "day" chip is a
+			     dead control, so the picker stands down to the else branch). minPoints=1 keeps
+			     TODAY's enable-iff-any-data semantics (DECISIONS P2-2 — no MIN_POINTS floor). -->
+			<SurfaceControls
+				offered={grainOffered}
+				availability={grainAvailability}
+				bind:value={grainKey}
+				minPoints={1}
+				labels={grainLabels}
+				grainLabel={t.grain.label}
+				railLabel={t.viewControlsLabel}
+				{locale}
+				window={windowControls}
+			/>
+		{:else}
+			<ControlsRail label={t.viewControlsLabel}>
+				{@render windowControls()}
+			</ControlsRail>
+		{/if}
 
 		<!-- Hazard tape discerns the controls zone from the data canvas. -->
 		<Separator variant="hazard" hazardSize="sm" />

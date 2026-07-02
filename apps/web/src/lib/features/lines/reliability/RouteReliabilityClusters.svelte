@@ -29,13 +29,19 @@
 	import { cn } from '$lib/utils';
 	import { page } from '$app/state';
 	import { mirrorSearchParams } from '$lib/site/urlMirror';
-	import { resolveRangeSeed, isIsoDate } from './rangeSeed';
+	import {
+		fromSearchParams,
+		toSearchParams,
+		emptyFilterState,
+		resolveWindow,
+		type DateWindow,
+	} from '$lib/filters';
 	import type { Locale } from '$lib/i18n';
+	import { describeAbsence } from '$lib/site/absence';
 	import type { RouteReliability } from '$lib/v1';
 	import { SvelteSet } from 'svelte/reactivity';
 	import { onMount } from 'svelte';
-	import { ControlsRail } from '$lib/components/layout';
-	import { GrainPicker, type GrainSegment } from '$lib/components/surface';
+	import { GrainPicker, SurfaceControls, type GrainSegment } from '$lib/components/surface';
 	import { Separator } from '$lib/components/ui/separator';
 	import { TocPill, observeActiveToc, type TocEntry } from '$lib/components/shared';
 	import ReliabilityFilterPill from './ReliabilityFilterPill.svelte';
@@ -99,25 +105,44 @@
 	   dropped, and a complete valid from+to implies range intent (the availability clamp below).
 	   replaceState (not pushState) keeps view switches out of the history stack. */
 	type GrainMode = 'day' | 'week' | 'month' | 'range';
-	const GRAIN_MODES: readonly GrainMode[] = ['day', 'week', 'month', 'range'];
-	const readGrain = (): GrainMode => {
-		const p = page.url.searchParams.get('grain');
-		return GRAIN_MODES.includes(p as GrainMode) ? (p as GrainMode) : 'day';
-	};
-	// The single radiogroup selection — exactly one of day|week|month|range is active.
-	let viewKey = $state<GrainMode>(readGrain());
+	// S7.5 P1: the URL layer is now the SHARED $lib/filters codec — parse ?grain/?from/?to ONCE
+	// through fromSearchParams (drops a legacy ?grain=range, which is not a Grain; folds ?from/?to
+	// into a normalized {from,to} window). The rail keeps its own GrainMode UI (day|week|month|range
+	// radiogroup + range dropdowns); 'range' is a UI mode, NOT a Grain — it is DERIVED from
+	// window-presence, exactly as the codec models it. The seed reads the codec, then the availability
+	// clamp below validates the window against the real dated window (resolveWindow).
+	const seed = fromSearchParams(page.url.searchParams);
+	// The legacy lines-only ?grain=range token is NOT a Grain (the codec drops it), but the rail
+	// still honours it as its UI range-mode hint so a deep-linked ?grain=range shows the range
+	// affordance (and its "pick a start and end date" prompt) even before both bounds are picked —
+	// preserving today's behaviour. A complete window (?from&?to) implies range mode regardless.
+	// The EXPLICIT legacy ?grain=range token — the deliberate "range intent" half-pick hint,
+	// distinct from range implied ONLY by a decoded ?from/?to window. We keep it separate so the
+	// availability clamp can tell an explicit range request (keep the "pick a start and end date"
+	// prompt when the window drops) from a bare ?from/?to whose bounds fall outside the published
+	// window (revert to the day view — there is no deliberate range intent to honour).
+	const explicitRangeToken = page.url.searchParams.get('grain') === 'range';
+	const seededRange = seed.window != null || explicitRangeToken;
+	// The single radiogroup selection — exactly one of day|week|month|range is active. A seeded
+	// window (?from&?to) or the ?grain=range hint implies range mode; otherwise the seeded grain
+	// (day|week|month), default day.
+	// ENUM-GUARD (not a cast): seed.grain is a codec Grain, which can be 'live' — a valid
+	// Grain but NOT a lines GrainMode. Casting it would let 'live' corrupt viewKey (a
+	// radiogroup with zero checked chips). Only the two coarse calendar grains this surface
+	// serves pass through; anything else (incl. 'day', 'live', undefined) falls to the 'day'
+	// default. A seeded window / ?grain=range hint still wins (range mode), as before.
+	let viewKey = $state<GrainMode>(
+		seededRange ? 'range' : seed.grain === 'week' || seed.grain === 'month' ? seed.grain : 'day',
+	);
 	// The effective window mode IS the single selection (range when 'range' is picked,
 	// otherwise the calendar grain). Kept as a named derived so the mapper/caption
 	// logic below reads unchanged from the prior single-select model.
 	const mode = $derived<GrainMode>(viewKey);
-	// PR-WEB-4: seed the custom range from ?from/?to (shape-checked here; availability-validated in
-	// the clamp below, where the dated window is known). A malformed value seeds as '' (no range).
-	const readDateParam = (key: string): string => {
-		const v = page.url.searchParams.get(key);
-		return isIsoDate(v) ? v : '';
-	};
-	let rangeStart = $state<string>(readDateParam('from'));
-	let rangeEnd = $state<string>(readDateParam('to'));
+	// The custom range bounds, seeded from the codec's normalized {from,to} window (already
+	// shape-validated + inverted-swapped by the codec). Availability is validated in the clamp below,
+	// where the dated window is known. Absent window → empty bounds (no range).
+	let rangeStart = $state<string>(seed.window?.from ?? '');
+	let rangeEnd = $state<string>(seed.window?.to ?? '');
 
 	// Dated DAY-grain periods the contract carries (for the range picker), sorted
 	// ascending so the start/end dropdowns read oldest→newest. A day-grain period
@@ -160,18 +185,25 @@
 	$effect(() => {
 		if (settled) return;
 		settled = true;
-		// PR-WEB-4: validate the URL-seeded ?from/?to bounds against the real dated window (drop an
-		// out-of-window / non-existent bound — the URL is a hint, never fabricates a window) and let a
-		// COMPLETE from+to imply range intent even without ?grain=range. resolveRangeSeed is pure.
-		const seed = resolveRangeSeed(
-			rangeStart,
-			rangeEnd,
-			viewKey,
-			new Set(datedPeriods.map((p) => p.date)),
-		);
-		rangeStart = seed.from;
-		rangeEnd = seed.to;
-		if (seed.activateRange) viewKey = 'range';
+		// S7.5 P1: validate the URL-seeded window against the real dated window via the SHARED
+		// resolveWindow clamp (drop an out-of-window / non-existent bound — the URL is a hint, never
+		// fabricates a window). A complete, in-window {from,to} keeps range mode; anything else drops
+		// the window (and, if we were in range mode purely because of it, falls back to 'day').
+		const availableDates = new Set(datedPeriods.map((p) => p.date));
+		const seededWindow: DateWindow | undefined =
+			rangeStart && rangeEnd ? { from: rangeStart, to: rangeEnd } : undefined;
+		const window = resolveWindow(seededWindow, availableDates);
+		rangeStart = window?.from ?? '';
+		rangeEnd = window?.to ?? '';
+		// A complete, valid window implies range intent (matches the old activateRange: a full range
+		// deep-links range mode even without an explicit token).
+		if (window) viewKey = 'range';
+		// The window was DROPPED (out-of-window / non-existent bounds). Preserve range MODE with its
+		// honest "pick a start and end date" prompt ONLY when range was requested EXPLICITLY (the
+		// ?grain=range half-pick token). A bare ?from/?to whose bounds fall outside the published
+		// window carries no deliberate range intent — revert to the day view (the old behaviour),
+		// never a silent empty range prompt for a link that never mentioned range.
+		else if (viewKey === 'range' && !explicitRangeToken) viewKey = 'day';
 		// Grain availability clamp: a grain the contract can't serve falls back to 'day' so the
 		// control never resolves to an empty grain.
 		if ((viewKey === 'week' || viewKey === 'month') && !availableGrains.has(viewKey))
@@ -190,20 +222,42 @@
 			: undefined,
 	);
 
-	// Mirror this rail's view state — ?grain + the custom range ?from/?to — in ONE batched write so a
-	// windowed OR date-range view is shareable/deep-linkable. Must be a SINGLE mirrorSearchParams call,
-	// NOT three: replaceState updates page.url async, so back-to-back single writes clobber each other
-	// (the bug that left ?grain=range&from=… stuck on a switch to 'day'). ?from/?to mirror the
-	// NORMALIZED range and ONLY when it is COMPLETE (normalizedRange != null) — so a half-picked or
-	// inverted range never leaks an incomplete/backwards bound into a shared URL; 'day' + non-range
-	// null their params for a clean canonical URL. Disjoint from RouteDetail's ?tab writer.
-	$effect(() =>
-		mirrorSearchParams({
-			grain: mode === 'day' ? null : mode,
-			from: normalizedRange?.start ?? null,
-			to: normalizedRange?.end ?? null,
-		}),
+	// S7.5 P1: the SERIALIZED wire format for ?grain/?from/?to is now owned by the shared codec
+	// (toSearchParams) — the rail maps its view state to a minimal FilterState and lets the codec
+	// canonicalize it. In range mode with a COMPLETE window the window IS the state (grain omitted:
+	// range = window-presence, so a shared link decodes back to range mode from the window alone).
+	// Outside range mode the grain is the state (day is the surface default, so it is omitted for a
+	// clean canonical URL — never written as grain=day). The custom range mirrors ONLY when COMPLETE
+	// + normalized (a half-picked or inverted bound never leaks into a shared URL).
+	//
+	// MED-1: a range mode with NO complete window (the half-picked state) still emits the legacy
+	// `grain=range` token so that in-progress state stays SHAREABLE — matching the pre-codec
+	// behaviour. This token is a lines-UI range-mode HINT that the RRC seed honours (via
+	// explicitRangeToken), NOT a codec Grain (fromSearchParams drops it); the codec never produces
+	// it, so we set it directly here on top of the codec's canonical from/to.
+	const wireParams = $derived.by<{ grain: string | null; from: string | null; to: string | null }>(
+		() => {
+			const state = emptyFilterState();
+			if (mode === 'range') {
+				if (normalizedRange)
+					state.window = { from: normalizedRange.start, to: normalizedRange.end };
+			} else if (mode !== 'day') {
+				state.grain = mode;
+			}
+			const sp = toSearchParams(state);
+			return {
+				// In range mode without a complete window, keep the shareable legacy hint; otherwise
+				// defer to the codec (which never emits grain=range and omits the day default).
+				grain: mode === 'range' && !normalizedRange ? 'range' : sp.get('grain'),
+				from: sp.get('from'),
+				to: sp.get('to'),
+			};
+		},
 	);
+	// ONE batched mirrorSearchParams call (never N single writes: replaceState updates page.url async,
+	// so back-to-back single writes clobber each other). mirrorSearchParams MERGES into the live URL —
+	// it preserves RouteDetail's ?tab and any other owner's params, nulling only the keys we own.
+	$effect(() => mirrorSearchParams(wireParams));
 
 	// What the mapper resolves for. In range mode we thread the picked window to
 	// the mapper via `dateRange` (grain stays 'day') so the strip aggregates the
@@ -215,18 +269,66 @@
 	// One mapping pass — every band reads its slice of this.
 	const clusters = $derived(toReliabilityClusters(data, mapperOpts));
 
+	// Instance-unique id prefix so the mobile drawer's disabled-reason description ids never
+	// collide with another surface's controls on the same page.
+	const uid = $props.id();
 	// Segments carry an `available` flag; an unavailable grain renders disabled
 	// (never selectable) so the control can't resolve to an empty grain. ONE control:
 	// the three calendar grains PLUS the lines-only "range" option (offered only when
 	// the contract carries dated day-periods to range over). Folding range in as a 4th
 	// mutually-exclusive segment makes the active highlight single-select by
 	// construction — picking range deselects the grain and vice-versa.
-	const segments = $derived<GrainSegment<GrainMode>[]>([
-		{ key: 'day', label: copy.controls.today, available: availableGrains.has('day') },
-		{ key: 'week', label: copy.controls.thisWeek, available: availableGrains.has('week') },
-		{ key: 'month', label: copy.controls.thisMonth, available: availableGrains.has('month') },
-		{ key: 'range', label: copy.controls.dateRange, available: hasDatedPeriods },
-	]);
+	//
+	// LOW-2: a disabled segment carries the SAME honest-absence reason wiring the desktop
+	// SurfaceControls builds (describedById + title via describeAbsence 'no-observations'),
+	// so the mobile drawer announces WHY a grain is off at parity with desktop. The matching
+	// visually-hidden description spans are rendered in the grainControls snippet below.
+	const segmentAvailable = $derived<Record<GrainMode, boolean>>({
+		day: availableGrains.has('day'),
+		week: availableGrains.has('week'),
+		month: availableGrains.has('month'),
+		range: hasDatedPeriods,
+	});
+	const disabledReason = $derived(describeAbsence('no-observations', locale).why);
+	const segments = $derived<GrainSegment<GrainMode>[]>(
+		(['day', 'week', 'month', 'range'] as const).map((key) => {
+			const label =
+				key === 'day'
+					? copy.controls.today
+					: key === 'week'
+						? copy.controls.thisWeek
+						: key === 'month'
+							? copy.controls.thisMonth
+							: copy.controls.dateRange;
+			const available = segmentAvailable[key];
+			return {
+				key,
+				label,
+				available,
+				...(available ? {} : { describedById: `${uid}-reason-${key}`, title: disabledReason }),
+			};
+		}),
+	);
+
+	// S7.5 P2: the DESKTOP rail is now the SHARED SurfaceControls primitive (generic over the
+	// GrainMode key). Availability is passed as EXPLICIT `available` flags (NOT the MIN_POINTS
+	// data-depth clamp) so the enable/disable semantics stay EXACTLY today's per DECISIONS P2-2 —
+	// a grain enabled iff the contract carries that grain, `range` iff there are dated day-periods.
+	// The mobile filter pill keeps rendering the same 4-mode GrainPicker (via `grainControls`), so
+	// both affordances share ONE viewKey binding + one availability source (no divergence).
+	const grainOffered: readonly GrainMode[] = ['day', 'week', 'month', 'range'];
+	const grainAvailability = $derived<Partial<Record<GrainMode, { available: boolean }>>>({
+		day: { available: availableGrains.has('day') },
+		week: { available: availableGrains.has('week') },
+		month: { available: availableGrains.has('month') },
+		range: { available: hasDatedPeriods },
+	});
+	const grainLabels = $derived<Partial<Record<GrainMode, string>>>({
+		day: copy.controls.today,
+		week: copy.controls.thisWeek,
+		month: copy.controls.thisMonth,
+		range: copy.controls.dateRange,
+	});
 
 	// Active-window caption under the control spine — names the resolved window so
 	// "Today / This week / This month / {range}" is never ambiguous about coverage.
@@ -317,46 +419,63 @@
 	     cards + bands scroll under it. -->
 		<!-- The grain controls (GrainPicker + range pair + active-window caption). ONE definition,
 		     rendered in BOTH the desktop rail AND the mobile filter pill's drawer (single source). -->
+		<!-- The range start/end date pair — its own snippet so it seats in BOTH the desktop
+		     SurfaceControls `window` slot AND the mobile pill's grainControls (one source). -->
+		{#snippet rangeControls()}
+			{#if mode === 'range'}
+				<!-- Start + end pair over the dated day-periods. start == end = one day (exact);
+				     a wider span aggregates the in-range days (mean) + zooms the trend. Bounds are
+				     real dates only, so no out-of-window pick is possible. -->
+				<div class="reliability-range" data-slot="date-range">
+					<label class="reliability-date">
+						<span class="reliability-date__label">{copy.controls.rangeStart}</span>
+						<select
+							class="reliability-date__select"
+							value={rangeStart}
+							onchange={(e) => (rangeStart = e.currentTarget.value)}
+							aria-label={`${copy.controls.dateRange} · ${copy.controls.rangeStart}`}
+						>
+							<option value="">{earliestDate || ''}</option>
+							{#each datedPeriods as p (p.date)}
+								<option value={p.date}>{p.date}</option>
+							{/each}
+						</select>
+					</label>
+					<label class="reliability-date">
+						<span class="reliability-date__label">{copy.controls.rangeEnd}</span>
+						<select
+							class="reliability-date__select"
+							value={rangeEnd}
+							onchange={(e) => (rangeEnd = e.currentTarget.value)}
+							aria-label={`${copy.controls.dateRange} · ${copy.controls.rangeEnd}`}
+						>
+							<option value="">{latestDate || ''}</option>
+							{#each datedPeriods as p (p.date)}
+								<option value={p.date}>{p.date}</option>
+							{/each}
+						</select>
+					</label>
+				</div>
+			{/if}
+		{/snippet}
+
+		<!-- The MOBILE pill's grain controls (GrainPicker + range + caption). Desktop uses
+		     SurfaceControls below; this snippet feeds ONLY the mobile filter-pill drawer, driven
+		     by the SAME viewKey + segments + range bounds (no behavioural divergence). -->
 		{#snippet grainControls()}
 			<div class="reliability-control-body" data-slot="controls-body">
 				<GrainPicker {segments} bind:value={viewKey} label={copy.controls.grainLabel} />
-
-				{#if mode === 'range'}
-					<!-- Start + end pair over the dated day-periods. start == end = one day (exact);
-					     a wider span aggregates the in-range days (mean) + zooms the trend. Bounds are
-					     real dates only, so no out-of-window pick is possible. -->
-					<div class="reliability-range" data-slot="date-range">
-						<label class="reliability-date">
-							<span class="reliability-date__label">{copy.controls.rangeStart}</span>
-							<select
-								class="reliability-date__select"
-								value={rangeStart}
-								onchange={(e) => (rangeStart = e.currentTarget.value)}
-								aria-label={`${copy.controls.dateRange} · ${copy.controls.rangeStart}`}
-							>
-								<option value="">{earliestDate || ''}</option>
-								{#each datedPeriods as p (p.date)}
-									<option value={p.date}>{p.date}</option>
-								{/each}
-							</select>
-						</label>
-						<label class="reliability-date">
-							<span class="reliability-date__label">{copy.controls.rangeEnd}</span>
-							<select
-								class="reliability-date__select"
-								value={rangeEnd}
-								onchange={(e) => (rangeEnd = e.currentTarget.value)}
-								aria-label={`${copy.controls.dateRange} · ${copy.controls.rangeEnd}`}
-							>
-								<option value="">{latestDate || ''}</option>
-								{#each datedPeriods as p (p.date)}
-									<option value={p.date}>{p.date}</option>
-								{/each}
-							</select>
-						</label>
-					</div>
-				{/if}
-
+				<!-- Disabled-reason descriptions (honest-absence parity with the desktop rail): one
+				     visually-hidden span per disabled segment, referenced by its radio via
+				     aria-describedby (set in the `segments` derived). Never a layout box. -->
+				{#each segments as seg (seg.key)}
+					{#if seg.describedById}
+						<span id={seg.describedById} class="reliability-reason" data-slot="controls-reason"
+							>{disabledReason}</span
+						>
+					{/if}
+				{/each}
+				{@render rangeControls()}
 				<!-- Active-window caption: names the window the selection resolves to. -->
 				<p class="reliability-window" data-slot="active-window" aria-live="polite">
 					{activeWindowCaption}
@@ -364,46 +483,58 @@
 			</div>
 		{/snippet}
 
-		<!-- DESKTOP (>=lg): the full sticky rail — "View" overline + "Jump to" nav (row 1) + the
-		     grain controls (row 2). Hidden below lg, where the floating pills below take over. -->
-		<ControlsRail
+		<!-- The desktop rail's row-1 nav: the "View" overline + the "Jump to" TOC on ONE row
+		     (operator layout law). Seated in SurfaceControls' `nav` slot so the primitive owns the
+		     rail chrome + sticky while lines keeps its bespoke wayfinding row. -->
+		{#snippet desktopNav()}
+			<span class="reliability-rail-view" data-slot="controls-rail-label"
+				>{copy.controls.viewLabel}</span
+			>
+			<!-- Section TOC (wayfinding): each entry jumps to its section AND shows its filter
+			     scope (↻ follows the window above, ∞ full history). -->
+			<nav class="reliability-toc" data-slot="section-toc" aria-label={copy.controls.toc}>
+				<span class="reliability-toc__label">{copy.controls.toc}</span>
+				<ul class="reliability-toc__list">
+					{#each sectionNav as s (s.id)}
+						<li>
+							<a
+								class="reliability-toc__link"
+								href={`#${s.id}`}
+								data-scope={s.windowed ? 'windowed' : 'whole'}
+							>
+								<span class="reliability-toc__text">{s.label}</span>
+								<span
+									class="reliability-toc__scope"
+									title={s.windowed ? copy.controls.scopeWindowed : copy.controls.scopeWhole}
+									aria-label={s.windowed ? copy.controls.scopeWindowed : copy.controls.scopeWhole}
+									>{s.windowed ? '↻' : '∞'}</span
+								>
+							</a>
+						</li>
+					{/each}
+				</ul>
+			</nav>
+		{/snippet}
+
+		<!-- DESKTOP (>=lg): the full sticky SurfaceControls rail — row-1 nav ("View" + "Jump to")
+		     in the nav slot, the 4-mode grain radiogroup, the range date pair in the window slot,
+		     and the active-window caption. Availability = explicit flags (today's exact semantics).
+		     Hidden below lg, where the floating pills below take over. -->
+		<SurfaceControls
 			sticky
 			class="reliability-rail-desktop"
+			offered={grainOffered}
+			availability={grainAvailability}
+			bind:value={viewKey}
+			labels={grainLabels}
+			grainLabel={copy.controls.grainLabel}
+			{locale}
+			windowCaption={activeWindowCaption}
+			nav={desktopNav}
+			window={rangeControls}
 			role="group"
 			aria-label={copy.controls.viewLabel}
-		>
-			<div class="reliability-rail-top">
-				<span class="reliability-rail-view" data-slot="controls-rail-label"
-					>{copy.controls.viewLabel}</span
-				>
-				<!-- Section TOC (wayfinding): each entry jumps to its section AND shows its filter
-				     scope (↻ follows the window above, ∞ full history). -->
-				<nav class="reliability-toc" data-slot="section-toc" aria-label={copy.controls.toc}>
-					<span class="reliability-toc__label">{copy.controls.toc}</span>
-					<ul class="reliability-toc__list">
-						{#each sectionNav as s (s.id)}
-							<li>
-								<a
-									class="reliability-toc__link"
-									href={`#${s.id}`}
-									data-scope={s.windowed ? 'windowed' : 'whole'}
-								>
-									<span class="reliability-toc__text">{s.label}</span>
-									<span
-										class="reliability-toc__scope"
-										title={s.windowed ? copy.controls.scopeWindowed : copy.controls.scopeWhole}
-										aria-label={s.windowed ? copy.controls.scopeWindowed : copy.controls.scopeWhole}
-										>{s.windowed ? '↻' : '∞'}</span
-									>
-								</a>
-							</li>
-						{/each}
-					</ul>
-				</nav>
-			</div>
-
-			{@render grainControls()}
-		</ControlsRail>
+		/>
 
 		<!-- MOBILE (<lg): two floating pills replace the rail — the grain FILTER pill opens a drawer
 		     with the SAME grain controls; the section JUMP-TO rides the shared TocPill below it,
@@ -574,6 +705,21 @@
 		outline-offset: 2px;
 	}
 
+	/* Visually-hidden disabled-reason description (mobile drawer) — carried for screen
+	   readers via aria-describedby on the disabled radio; never shown, never a layout box.
+	   Mirrors SurfaceControls' .surface-controls__reason. */
+	.reliability-reason {
+		position: absolute;
+		width: 1px;
+		height: 1px;
+		padding: 0;
+		margin: -1px;
+		overflow: hidden;
+		clip: rect(0, 0, 0, 0);
+		white-space: nowrap;
+		border: 0;
+	}
+
 	/* Active-window caption — quiet mono, AA against the page surface; chrome, so it
 	   stays inside the ControlsRail body alongside the grain control. Full-width so it
 	   drops onto its own row beneath the chips. */
@@ -651,16 +797,12 @@
 	}
 
 	/* ROW 1 (operator): the "View" overline + the "Jump to" nav on ONE row, so the
-	   destinations cost no extra height and the sticky rail stays thin. justify-between
-	   pushes the nav to the right of the overline; both wrap as a unit on a narrow rail. */
-	.reliability-rail-top {
-		display: flex;
-		flex-wrap: wrap;
-		align-items: baseline;
+	   destinations cost no extra height and the sticky rail stays thin. The row now
+	   rides SurfaceControls' `nav` slot (.surface-controls__nav, which already lays out
+	   flex-wrap/baseline/gap); we only add justify-between so the nav is pushed to the
+	   right of the overline, matching the pre-S7.5 .reliability-rail-top layout exactly. */
+	.reliability-clusters :global([data-surface-controls] [data-slot='controls-nav']) {
 		justify-content: space-between;
-		gap: 0.3rem 1.25rem;
-		width: 100%;
-		min-width: 0;
 	}
 	/* The "View" overline — same quiet mono voice as the shared ControlsRail label (we
 	   render it ourselves here so it can share the row with the nav). */
