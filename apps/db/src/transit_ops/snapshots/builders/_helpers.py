@@ -16,7 +16,7 @@ import statistics
 from datetime import UTC
 from typing import TYPE_CHECKING
 
-from sqlalchemy import text
+from transit_ops.sql_registry import named_query
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from collections.abc import Iterable, Mapping
@@ -385,7 +385,8 @@ def _iso_date(d: object) -> str:
 # Representative service date resolution (deterministic per dataset_version)
 # ---------------------------------------------------------------------------
 
-_CURRENT_DATASET_VERSION_SQL = text(
+_CURRENT_DATASET_VERSION_SQL = named_query(
+    "static.dataset_version",
     """
     SELECT dataset_version_id
     FROM core.dataset_versions
@@ -399,7 +400,8 @@ _CURRENT_DATASET_VERSION_SQL = text(
 
 # Pick the busiest weekday and weekend DATE within the dataset's most recent
 # 6 weeks (deterministic; avoids CURRENT_DATE so the static file is reproducible).
-_REP_DATES_SQL = text(
+_REP_DATES_SQL = named_query(
+    "static.rep_dates",
     """
     WITH bounds AS (
         SELECT max(end_date) AS hi, (max(end_date) - 42) AS lo
@@ -435,7 +437,8 @@ _REP_DATES_SQL = text(
     """
 )
 
-_ACTIVE_SERVICES_SQL = text(
+_ACTIVE_SERVICES_SQL = named_query(
+    "static.active_services",
     """
     SELECT c.service_id
     FROM silver.calendar c
@@ -451,7 +454,8 @@ _ACTIVE_SERVICES_SQL = text(
 # First-stop departures for a route on the representative service days, tagged
 # weekday/weekend and de-duplicated to distinct (direction, daytype, time).
 # Shared by build_route (static) and _scheduled_headway_by_shift (historic).
-_ROUTE_SCHEDULE_SQL = text(
+_ROUTE_SCHEDULE_SQL = named_query(
+    "static.route_schedule",
     """
     SELECT DISTINCT
         t.direction_id,
@@ -496,7 +500,8 @@ def _representative_services(
 # (not in :mod:`historic`) because the shared :func:`_entity_name_maps` resolver
 # needs them, and ``_helpers`` is the leaf of the dependency graph; the historic
 # tier re-imports them from here.
-_STOP_NAMES_SQL = text(
+_STOP_NAMES_SQL = named_query(
+    "static.stop_names",
     """
     SELECT DISTINCT ON (u.stop_id) u.stop_id, u.stop_name
     FROM (
@@ -512,7 +517,8 @@ _STOP_NAMES_SQL = text(
     """
 )
 
-_ROUTE_NAMES_SQL = text(
+_ROUTE_NAMES_SQL = named_query(
+    "static.route_names",
     """
     SELECT DISTINCT ON (u.route_id) u.route_id, u.route_name
     FROM (

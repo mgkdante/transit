@@ -11,8 +11,6 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from sqlalchemy import text
-
 from transit_ops.snapshots.builders._helpers import (
     _BOARDABLE_STOP,
     _CURRENT_DATASET_VERSION_SQL,
@@ -43,6 +41,7 @@ from transit_ops.snapshots.contract import (
     StopIndexEntry,
     StopsIndex,
 )
+from transit_ops.sql_registry import named_query
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from sqlalchemy.engine import Connection
@@ -180,7 +179,8 @@ _PROVIDER_LABEL_COPY: dict[str, dict[str, dict[str, str]]] = {
     },
 }
 
-_PROVIDER_ATTRIBUTION_SQL = text(
+_PROVIDER_ATTRIBUTION_SQL = named_query(
+    "static.provider_attribution",
     "SELECT display_name, attribution_text FROM core.providers "
     "WHERE provider_id = :provider_id"
 )
@@ -214,7 +214,8 @@ def _provider_label_copy(conn: Connection, provider_id: str, lang: str) -> dict[
         copy["attribution.data_source"] = attribution_text
     return copy
 
-_LABELS_SQL = text(
+_LABELS_SQL = named_query(
+    "static.labels",
     """
     SELECT label_key, label_fr, label_en
     FROM gold.report_labels
@@ -260,7 +261,8 @@ def build_labels(
 # STATIC indexes
 # ---------------------------------------------------------------------------
 
-_ROUTES_INDEX_SQL = text(
+_ROUTES_INDEX_SQL = named_query(
+    "static.routes_index",
     """
     SELECT route_id, route_short_name, route_long_name, route_color, route_type
     FROM gold.dim_route
@@ -274,14 +276,22 @@ _ROUTES_INDEX_SQL = text(
 # `reliability` flag matches the set of files actually written. Sourced from the
 # route delay spine (S7-B), which filters route_id IS NOT NULL at build, so the
 # '__unrouted__' sentinel never appears.
-_RELIABILITY_ROUTE_IDS_SQL = text(
+_RELIABILITY_ROUTE_IDS_SQL = named_query(
+    "static.reliability_route_ids",
     """
     SELECT DISTINCT route_id FROM gold.route_delay_spine
      WHERE provider_id = :provider_id
     """
 )
 
-_STOPS_INDEX_SQL = text(
+_ROUTE_NAME_TYPE_SQL = named_query(
+    "static.route_name_type",
+    "SELECT route_long_name, route_type FROM gold.dim_route "
+    "WHERE provider_id=:provider_id AND route_id=:route_id LIMIT 1",
+)
+
+_STOPS_INDEX_SQL = named_query(
+    "static.stops_index",
     f"""
     SELECT s.stop_id, s.stop_code, s.stop_name, s.stop_lat, s.stop_lon
     FROM gold.dim_stop AS s
@@ -394,7 +404,8 @@ def build_stops_index(
 # STATIC route file
 # ---------------------------------------------------------------------------
 
-_ROUTE_SHAPES_SQL = text(
+_ROUTE_SHAPES_SQL = named_query(
+    "static.route_shapes",
     """
     SELECT mrl.shape_id, mrl.geojson, t.direction_id, t.trip_headsign,
            count(*) AS trip_count
@@ -412,7 +423,8 @@ _ROUTE_SHAPES_SQL = text(
     """
 )
 
-_ROUTE_STOPS_SQL = text(
+_ROUTE_STOPS_SQL = named_query(
+    "static.route_stops",
     """
     SELECT DISTINCT ON (st.stop_sequence)
         st.stop_sequence, st.stop_id, ds.stop_name
@@ -457,10 +469,7 @@ def build_route(conn: Connection, *, provider_id: str = "stm", route_id: str, ge
     )
 
     name_row = conn.execute(
-        text(
-            "SELECT route_long_name, route_type FROM gold.dim_route "
-            "WHERE provider_id=:provider_id AND route_id=:route_id LIMIT 1"
-        ),
+        _ROUTE_NAME_TYPE_SQL,
         {"provider_id": provider_id, "route_id": route_id},
     ).mappings().fetchone()
     long_name = name_row["route_long_name"] if name_row else None
@@ -549,7 +558,8 @@ def build_route(conn: Connection, *, provider_id: str = "stm", route_id: str, ge
 # STATIC stop files (batch — one pass for all stops)
 # ---------------------------------------------------------------------------
 
-_ALL_STOPS_SQL = text(
+_ALL_STOPS_SQL = named_query(
+    "static.all_stops",
     f"""
     SELECT stop_id, stop_code, stop_name, stop_lat, stop_lon, wheelchair_boarding
     FROM gold.dim_stop
@@ -562,7 +572,8 @@ _ALL_STOPS_SQL = text(
 # Distinct departures per (stop, route, headsign) for the representative WEEKDAY
 # service only, so each stop shows one coherent day's schedule (not the union of
 # all 144 calendars).  DISTINCT collapses simultaneous branch departures.
-_ALL_STOP_SCHEDULES_SQL = text(
+_ALL_STOP_SCHEDULES_SQL = named_query(
+    "static.all_stop_schedules",
     """
     SELECT DISTINCT st.stop_id, t.route_id, t.trip_headsign, st.departure_time
     FROM silver.stop_times AS st

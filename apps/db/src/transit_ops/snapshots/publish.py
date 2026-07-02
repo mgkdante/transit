@@ -30,6 +30,7 @@ from transit_ops.snapshots.storage import (
     build_snapshot_storage,
     state_fingerprint,
 )
+from transit_ops.sql_registry import named_query
 
 logger = logging.getLogger(__name__)
 
@@ -40,10 +41,11 @@ _PutItem = "tuple[str, object, str]"
 # this provider already stamped at the current dataset version? generated_utc is stored as
 # the static stamp (the dataset loaded_at_utc), so an exact timestamptz match means the
 # bucket already holds the full, byte-identical static surface for this GTFS edition.
-_STATIC_SKIP_MATCH_SQL = (
+_STATIC_SKIP_MATCH_SQL = named_query(
+    "publish.static_skip.match",
     "SELECT files_total FROM core.snapshot_publish_state "
     "WHERE provider_id = :provider_id AND tier = 'static' "
-    "AND generated_utc = CAST(:stamp AS timestamptz) AND files_total > 0"
+    "AND generated_utc = CAST(:stamp AS timestamptz) AND files_total > 0",
 )
 
 # Prior-generation coverage baseline for the publish gate (P0): the WHOLE-tier file
@@ -51,9 +53,10 @@ _STATIC_SKIP_MATCH_SQL = (
 # lookup — never a bucket manifest read (a WAN round-trip defeats the daily-timeout
 # fix). None (no prior row) => the gate's coverage-delta check is SKIPPED, so a
 # first publish is never blocked.
-_PRIOR_FILES_TOTAL_SQL = (
+_PRIOR_FILES_TOTAL_SQL = named_query(
+    "publish.prior_files_total",
     "SELECT files_total FROM core.snapshot_publish_state "
-    "WHERE provider_id = :provider_id AND tier = :tier"
+    "WHERE provider_id = :provider_id AND tier = :tier",
 )
 
 
@@ -131,7 +134,8 @@ class PublishResult:
 # column-form ON CONFLICT (9.1.1h lesson — avoid constraint-name form). The row
 # commits in the SAME engine.begin() block as the tier's uploads, so state only
 # advances when the publish itself succeeded.
-_RECORD_STATE_SQL = (
+_RECORD_STATE_SQL = named_query(
+    "publish.state.upsert",
     "INSERT INTO core.snapshot_publish_state "
     "(provider_id, tier, generated_utc, files_written, files_skipped, files_total, updated_at_utc) "
     "VALUES (:provider_id, :tier, :generated_utc, :written, :skipped, :total, now()) "
@@ -140,7 +144,7 @@ _RECORD_STATE_SQL = (
     "files_written = EXCLUDED.files_written, "
     "files_skipped = EXCLUDED.files_skipped, "
     "files_total = EXCLUDED.files_total, "
-    "updated_at_utc = now()"
+    "updated_at_utc = now()",
 )
 
 
@@ -155,10 +159,9 @@ def _record_publish_state(
     total: int,
 ) -> None:
     """Upsert the per-tier publish-state row inside the caller's transaction."""
-    from sqlalchemy import text as _text
 
     conn.execute(  # type: ignore[attr-defined]
-        _text(_RECORD_STATE_SQL),
+        _RECORD_STATE_SQL,
         {
             "provider_id": provider_id,
             "tier": tier,
@@ -172,10 +175,11 @@ def _record_publish_state(
 
 # --- per-tier DATA-time stamps (NOT upload time, so they never defeat gating) -
 
-_STATIC_STAMP_SQL = (
+_STATIC_STAMP_SQL = named_query(
+    "publish.static_stamp",
     "SELECT loaded_at_utc FROM core.dataset_versions "
     "WHERE provider_id = :provider_id AND dataset_kind = 'static_schedule' "
-    "AND is_current = true ORDER BY loaded_at_utc DESC LIMIT 1"
+    "AND is_current = true ORDER BY loaded_at_utc DESC LIMIT 1",
 )
 
 # Routes that get a per-route reliability file. Sourced from the route delay spine
@@ -183,9 +187,16 @@ _STATIC_STAMP_SQL = (
 # sentinel never appears and no historic/route_reliability/__unrouted__.json is
 # published. Same route set as the (now-dropped) route_reliability_weekly/monthly
 # marts, which derived from the same facts.
-_DISTINCT_HISTORIC_ROUTE_IDS_SQL = (
+_DISTINCT_HISTORIC_ROUTE_IDS_SQL = named_query(
+    "route.spine.route_ids",
     "SELECT DISTINCT route_id FROM gold.route_delay_spine"
-    " WHERE provider_id = :provider_id"
+    " WHERE provider_id = :provider_id",
+)
+
+# Per-route static-file enumerator: every route in the current dim.
+_DIM_ROUTE_IDS_SQL = named_query(
+    "static.dim_route_ids",
+    "SELECT route_id FROM gold.dim_route WHERE provider_id = :provider_id ORDER BY route_id",
 )
 
 
@@ -196,10 +207,9 @@ def _static_stamp(conn: object, provider_id: str) -> str:
     loaded_at_utc), so static bytes only change when the dataset actually
     changes. Falls back to day-truncated now() when no version row exists.
     """
-    from sqlalchemy import text as _text
 
     row = conn.execute(  # type: ignore[attr-defined]
-        _text(_STATIC_STAMP_SQL), {"provider_id": provider_id}
+        _STATIC_STAMP_SQL, {"provider_id": provider_id}
     ).mappings().fetchone()
     if row is not None and row["loaded_at_utc"] is not None:
         return builders._iso(row["loaded_at_utc"])
@@ -309,7 +319,6 @@ def _build_historic_items(
     Per-entity files (route_reliability, stop_reliability, receipts) are BUILT
     sequentially on this thread — every builder touches the non-thread-safe DB *conn*.
     """
-    from sqlalchemy import text as _text
 
     items: list = []
 
@@ -345,7 +354,7 @@ def _build_historic_items(
 
     # --- per-route reliability files (routes that have history) ---
     route_rows = conn.execute(  # type: ignore[attr-defined]
-        _text(_DISTINCT_HISTORIC_ROUTE_IDS_SQL),
+        _DISTINCT_HISTORIC_ROUTE_IDS_SQL,
         {"provider_id": provider_id},
     ).fetchall()
     route_items = [
@@ -481,7 +490,6 @@ def _publish_static(
     *stamp* is the dataset-loaded DATA-time every artifact carries; when omitted
     it is derived from the current static dataset version.
     """
-    from sqlalchemy import text as _text
 
     if stamp is None:
         stamp = _static_stamp(conn, provider_id)
@@ -528,7 +536,7 @@ def _publish_static(
 
     # --- per-route files (built sequentially on this conn, uploaded in pool) ---
     route_rows = conn.execute(  # type: ignore[attr-defined]
-        _text("SELECT route_id FROM gold.dim_route WHERE provider_id = :provider_id ORDER BY route_id"),
+        _DIM_ROUTE_IDS_SQL,
         {"provider_id": provider_id},
     ).fetchall()
     route_items = [
@@ -557,10 +565,9 @@ def _prior_files_total(conn: object, *, provider_id: str, tier: str) -> int | No
     One cheap indexed row lookup; None when no prior row (first publish -> the gate
     skips the coverage-delta check, never blocks a first publish).
     """
-    from sqlalchemy import text as _text
 
     row = conn.execute(  # type: ignore[attr-defined]
-        _text(_PRIOR_FILES_TOTAL_SQL), {"provider_id": provider_id, "tier": tier}
+        _PRIOR_FILES_TOTAL_SQL, {"provider_id": provider_id, "tier": tier}
     ).fetchone()
     if row is None:
         return None
@@ -645,7 +652,6 @@ def publish_snapshot(
         raise ValueError(f"unknown tier {tier!r} (expected live, static, historic)")
 
     # static / historic — hash-gated against a bucket-stored per-tier state object.
-    from sqlalchemy import text as _text
 
     with engine.begin() as conn:  # type: ignore[attr-defined]
         stamp = stamp_fn(conn, provider_id) if stamp_fn is not None else _historic_stamp()
@@ -669,7 +675,7 @@ def publish_snapshot(
         # changes continuously for a fixed stamp, so they always rebuild.
         if tier == "static" and gated.fingerprint_matched:
             match = conn.execute(  # type: ignore[attr-defined]
-                _text(_STATIC_SKIP_MATCH_SQL),
+                _STATIC_SKIP_MATCH_SQL,
                 {"provider_id": provider_id, "stamp": stamp},
             ).fetchone()
             if match is not None:

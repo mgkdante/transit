@@ -26,6 +26,7 @@ from transit_ops.snapshots.contract import (
     TripsFile,
     VehiclesFile,
 )
+from transit_ops.sql_registry import query_name
 
 
 class FakeResult:
@@ -58,11 +59,12 @@ class FakeResult:
 
 
 class FakeConn:
-    """Dispatches canned result sets by matching substrings in the SQL.
+    """Dispatches canned result sets to queries.
 
-    ``responses`` maps a substring that uniquely identifies a query to the
-    list of rows that query should return.  Order-independent, which keeps
-    multi-query builders (network, manifest) readable.
+    ``responses`` maps a key to the rows that query returns. A key that is a
+    registry query name (``a.b`` dotted, present in the statement's ``-- q:``
+    marker) dispatches by EXACT name; any other key falls back to a longest-
+    substring match (table-name-keyed tests). Order-independent.
     """
 
     def __init__(self, responses):  # noqa: ANN001
@@ -72,11 +74,10 @@ class FakeConn:
     def execute(self, statement, params=None):  # noqa: ANN001, ARG002
         sql = str(statement)
         self.executed.append(sql)
-        # Most-specific-wins: pick the LONGEST matching needle so a query that
-        # contains a broad table-name substring (e.g. the per-route
-        # non_responding query also contains "non_responding_current") is
-        # dispatched by its distinctive marker (e.g. "nr_by_route") rather than
-        # colliding with the broad scalar needle.
+        name = query_name(statement)
+        if name is not None and name in self._responses:
+            return FakeResult(self._responses[name])
+        # Longest-substring fallback for table-name-keyed tests.
         best_rows = None
         best_len = -1
         for needle, rows in self._responses.items():
@@ -573,8 +574,8 @@ def test_build_network_aggregates_kpis() -> None:
             "current_vehicle_map_with_status": vehicle_rows,
             "current_trip_delay_computed": trip_rows,
             "0) AS non_responding": [{"non_responding": 7}],
-            # per-route breakdown (distinctive "nr_by_route" needle) — sums to 7
-            "nr_by_route": [
+            # per-route breakdown (dispatched by registry name) — sums to 7
+            "network.live.non_responding_by_route": [
                 {"route_id": "51", "nr_count": 4},
                 {"route_id": "165", "nr_count": 3},
             ],
@@ -1728,7 +1729,7 @@ def test_build_network_trend_emits_week_and_month_grain_series() -> None:
     weighted-avg + cancellation_rate + occupancy_mix are observation-weighted
     exactly like the daily series; p90_min/vehicles stay None on every week/month
     point (no fact_sql is dispatched for those grains). Lists sort ascending by
-    bucket date. Dispatch keys use the unique `-- trend:<grain>:<source>` markers.
+    bucket date. Dispatch keys are the `-- q:network.trend.*` registry names.
     """
     import datetime
 
@@ -1762,23 +1763,19 @@ def test_build_network_trend_emits_week_and_month_grain_series() -> None:
          "few_seats": 30, "standing": 15, "full": 5},  # total 100
     ]
 
-    dispatch = [
-        ("trend:week:hourly", week_hourly),
-        ("trend:week:cancel", week_cancel),
-        ("trend:week:occupancy", week_occupancy),
-        ("trend:month:hourly", month_hourly),
-        ("trend:month:cancel", month_cancel),
-        ("trend:month:occupancy", month_occupancy),
+    dispatch = {
+        "network.trend.week_hourly": week_hourly,
+        "network.trend.week_cancel": week_cancel,
+        "network.trend.week_occupancy": week_occupancy,
+        "network.trend.month_hourly": month_hourly,
+        "network.trend.month_cancel": month_cancel,
+        "network.trend.month_occupancy": month_occupancy,
         # daily series + network grains left empty for this test.
-    ]
+    }
 
     class FC:
         def execute(self, statement, params=None):  # noqa: ANN001, ANN201, ARG002
-            s = str(statement)
-            for needle, rows in dispatch:
-                if needle in s:
-                    return FakeResult(rows)
-            return FakeResult([])
+            return FakeResult(dispatch.get(query_name(statement), []))
 
     out = build_network_trend(FC(), provider_id="stm", generated_utc="t")
 

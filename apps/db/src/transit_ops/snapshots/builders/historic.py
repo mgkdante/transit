@@ -16,8 +16,6 @@ from decimal import ROUND_HALF_UP, Decimal
 import hashlib
 from typing import TYPE_CHECKING
 
-from sqlalchemy import text
-
 from transit_ops.settings import get_settings
 from transit_ops.snapshots.builders._helpers import (
     _ROUTE_NAMES_SQL,
@@ -87,6 +85,7 @@ from transit_ops.snapshots.contract import (
     WeakStop,
     WeakStopGrain,
 )
+from transit_ops.sql_registry import named_query
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from sqlalchemy.engine import Connection
@@ -201,7 +200,8 @@ def _delay_by_crowding_cells(rows) -> list[CrowdingDelayCell]:  # noqa: ANN001
 
 # Daily OTP + weighted-avg delay from the hourly rollup (last ~90 local days).
 # Local date = the provider's wall-clock date of the hour bucket.
-_TREND_DAILY_SQL = text(
+_TREND_DAILY_SQL = named_query(
+    "network.trend.daily_hourly",
     """
     SELECT timezone(dp.timezone, rdh.period_start_utc)::date AS local_date,
            SUM(rdh.delay_observation_count)                  AS known_obs,
@@ -218,7 +218,8 @@ _TREND_DAILY_SQL = text(
 )
 
 # p90 delay (minutes) + distinct vehicles from capped raw facts (~14d retained).
-_TREND_FACT_SQL = text(
+_TREND_FACT_SQL = named_query(
+    "network.trend.daily_p90",
     """
     SELECT timezone(dp.timezone, fts.captured_at_utc)::date AS local_date,
            percentile_cont(0.9) WITHIN GROUP (ORDER BY fts.delay_seconds) / 60.0 AS p90_min,
@@ -235,7 +236,8 @@ _TREND_FACT_SQL = text(
 
 # Network-wide daily cancellation rate from the append-only per-route rollup:
 # sum numerators/denominators across routes, then derive the day's rate.
-_TREND_CANCELLATION_SQL = text(
+_TREND_CANCELLATION_SQL = named_query(
+    "network.trend.daily_cancel",
     """
     SELECT provider_local_date AS local_date,
            SUM(canceled_trip_days) AS canceled,
@@ -248,7 +250,8 @@ _TREND_CANCELLATION_SQL = text(
 
 # Network-wide daily crowding band-shares from the append-only per-route band
 # reduction: sum band counts across routes per local date.
-_TREND_OCCUPANCY_SQL = text(
+_TREND_OCCUPANCY_SQL = named_query(
+    "network.trend.daily_occupancy",
     """
     SELECT provider_local_date AS local_date,
            SUM(empty_count)      AS empty,
@@ -274,9 +277,8 @@ _TREND_OCCUPANCY_SQL = text(
 # date_trunc('month', d) returns the 1st of d's month. We cast back to ::date so
 # the bucket key is a plain local date (the TrendPoint.date contract).
 #
-# Each query carries a UNIQUE `-- trend:<grain>:<source>` marker comment so the
-# publish-test FakeConn can dispatch a single canned row-set per query without
-# the substrings colliding with one another or with the daily variants.
+# Each query carries its `-- q:<name>` registry marker (named_query) so the
+# publish-test fakes dispatch a single canned row-set per query by exact name.
 
 # Hourly-rollup OTP + weighted-avg delay, grouped by the bucket-start local date.
 # Mirrors _TREND_DAILY_SQL: same SUM(delay)/CASE-guard on_time/weighted-delay and
@@ -286,7 +288,8 @@ _TREND_OCCUPANCY_SQL = text(
 # useful while the scan over gold.route_delay_hourly stays bounded (the daily
 # variant caps at 90 days; an unbounded full-retention scan is a cost/timeout
 # risk — see the prior prod rollup-timeout incident).
-_TREND_WEEKLY_SQL = text(
+_TREND_WEEKLY_SQL = named_query(
+    "network.trend.week_hourly",
     """
     SELECT date_trunc('week', timezone(dp.timezone, rdh.period_start_utc))::date AS local_date,
            SUM(rdh.delay_observation_count)                  AS known_obs,
@@ -294,7 +297,7 @@ _TREND_WEEKLY_SQL = text(
                 THEN SUM(rdh.on_time_observation_count)
            END AS on_time,
            SUM(rdh.avg_delay_seconds * rdh.delay_observation_count) AS weighted_delay_sec
-    FROM gold.route_delay_hourly AS rdh  -- trend:week:hourly
+    FROM gold.route_delay_hourly AS rdh
     JOIN gold.dim_provider AS dp ON dp.provider_id = rdh.provider_id
     WHERE rdh.provider_id = :provider_id
       AND rdh.period_start_utc >= now() - interval '371 days'
@@ -302,7 +305,8 @@ _TREND_WEEKLY_SQL = text(
     """
 )
 
-_TREND_MONTHLY_SQL = text(
+_TREND_MONTHLY_SQL = named_query(
+    "network.trend.month_hourly",
     """
     SELECT date_trunc('month', timezone(dp.timezone, rdh.period_start_utc))::date AS local_date,
            SUM(rdh.delay_observation_count)                  AS known_obs,
@@ -310,7 +314,7 @@ _TREND_MONTHLY_SQL = text(
                 THEN SUM(rdh.on_time_observation_count)
            END AS on_time,
            SUM(rdh.avg_delay_seconds * rdh.delay_observation_count) AS weighted_delay_sec
-    FROM gold.route_delay_hourly AS rdh  -- trend:month:hourly
+    FROM gold.route_delay_hourly AS rdh
     JOIN gold.dim_provider AS dp ON dp.provider_id = rdh.provider_id
     WHERE rdh.provider_id = :provider_id
       AND rdh.period_start_utc >= now() - interval '371 days'
@@ -324,23 +328,25 @@ _TREND_MONTHLY_SQL = text(
 # is a small append-only per-route-day rollup (not a fact table), so a full scan is
 # cheap. Do NOT add a horizon bound here without also bounding the daily variant —
 # diverging them would make the week/month rate cover a different window than daily.
-_TREND_CANCELLATION_WEEKLY_SQL = text(
+_TREND_CANCELLATION_WEEKLY_SQL = named_query(
+    "network.trend.week_cancel",
     """
     SELECT date_trunc('week', provider_local_date)::date AS local_date,
            SUM(canceled_trip_days) AS canceled,
            SUM(total_trip_days)    AS total
-    FROM gold.route_cancellation_daily  -- trend:week:cancel
+    FROM gold.route_cancellation_daily
     WHERE provider_id = :provider_id
     GROUP BY date_trunc('week', provider_local_date)::date
     """
 )
 
-_TREND_CANCELLATION_MONTHLY_SQL = text(
+_TREND_CANCELLATION_MONTHLY_SQL = named_query(
+    "network.trend.month_cancel",
     """
     SELECT date_trunc('month', provider_local_date)::date AS local_date,
            SUM(canceled_trip_days) AS canceled,
            SUM(total_trip_days)    AS total
-    FROM gold.route_cancellation_daily  -- trend:month:cancel
+    FROM gold.route_cancellation_daily
     WHERE provider_id = :provider_id
     GROUP BY date_trunc('month', provider_local_date)::date
     """
@@ -351,7 +357,8 @@ _TREND_CANCELLATION_MONTHLY_SQL = text(
 # cancellation variants above: gold.route_occupancy_band_daily is a small
 # append-only per-route-day rollup; the daily variant is unbounded, so stay
 # consistent with it rather than diverging the window.
-_TREND_OCCUPANCY_WEEKLY_SQL = text(
+_TREND_OCCUPANCY_WEEKLY_SQL = named_query(
+    "network.trend.week_occupancy",
     """
     SELECT date_trunc('week', provider_local_date)::date AS local_date,
            SUM(empty_count)      AS empty,
@@ -359,13 +366,14 @@ _TREND_OCCUPANCY_WEEKLY_SQL = text(
            SUM(few_seats_count)  AS few_seats,
            SUM(standing_count)   AS standing,
            SUM(full_count)       AS full
-    FROM gold.route_occupancy_band_daily  -- trend:week:occupancy
+    FROM gold.route_occupancy_band_daily
     WHERE provider_id = :provider_id
     GROUP BY date_trunc('week', provider_local_date)::date
     """
 )
 
-_TREND_OCCUPANCY_MONTHLY_SQL = text(
+_TREND_OCCUPANCY_MONTHLY_SQL = named_query(
+    "network.trend.month_occupancy",
     """
     SELECT date_trunc('month', provider_local_date)::date AS local_date,
            SUM(empty_count)      AS empty,
@@ -373,7 +381,7 @@ _TREND_OCCUPANCY_MONTHLY_SQL = text(
            SUM(few_seats_count)  AS few_seats,
            SUM(standing_count)   AS standing,
            SUM(full_count)       AS full
-    FROM gold.route_occupancy_band_daily  -- trend:month:occupancy
+    FROM gold.route_occupancy_band_daily
     WHERE provider_id = :provider_id
     GROUP BY date_trunc('month', provider_local_date)::date
     """
@@ -546,7 +554,8 @@ def build_network_trend(conn: Connection, *, provider_id: str = "stm", generated
 # build_route_reliability
 # --------------------------------------------------------------------------
 
-_ROUTE_REL_DAILY_SQL = text(
+_ROUTE_REL_DAILY_SQL = named_query(
+    "route.reliability.daily",
     """
     SELECT provider_local_date              AS d,
            delay_observation_count AS known_obs,
@@ -561,7 +570,8 @@ _ROUTE_REL_DAILY_SQL = text(
 )
 
 # Observed headway per shift (pre-computed in gold) + Tier-2 regularity columns.
-_ROUTE_HEADWAY_OBSERVED_SQL = text(
+_ROUTE_HEADWAY_OBSERVED_SQL = named_query(
+    "route.headway.observed_by_shift",
     """
     SELECT shift, observed_headway_min, sample_count, headway_cov, bunched_count
     FROM gold.route_headway_by_shift
@@ -569,7 +579,8 @@ _ROUTE_HEADWAY_OBSERVED_SQL = text(
     """
 )
 
-_ROUTE_HABIT_SQL = text(
+_ROUTE_HABIT_SQL = named_query(
+    "route.habit.score",
     """
     SELECT day_of_week_iso, hour_of_day_local, repeat_problem_score
     FROM gold.route_habit_score
@@ -585,7 +596,8 @@ _ROUTE_HABIT_SQL = text(
 # scalar from ballooning toward the spine's 730d retention while staying recent — its
 # windowed companion weak_stops_by_grain carries the per-grain breakdowns. A real route_id
 # never matches the spine's '__unrouted__' sentinel, so NULL-route obs are excluded.
-_ROUTE_WEAK_STOPS_SQL = text(
+_ROUTE_WEAK_STOPS_SQL = named_query(
+    "route.weak_stops.legacy",
     """
     SELECT stop_id,
            SUM(observation_count)  AS obs,
@@ -600,7 +612,8 @@ _ROUTE_WEAK_STOPS_SQL = text(
 
 
 # Daily p50/p90 delay from the append-only percentile rollup (route grain).
-_ROUTE_PERCENTILE_DAILY_SQL = text(
+_ROUTE_PERCENTILE_DAILY_SQL = named_query(
+    "route.percentile.daily",
     """
     SELECT provider_local_date, p50_delay_seconds, p90_delay_seconds
     FROM gold.route_delay_percentile_daily
@@ -614,7 +627,8 @@ _ROUTE_PERCENTILE_DAILY_SQL = text(
 
 # Per-direction + weekday/weekend observed headway (sibling table; the busiest-direction
 # route_headway_by_shift is left untouched). Direction is encoded into the free shift string.
-_ROUTE_HEADWAY_DIRECTION_SQL = text(
+_ROUTE_HEADWAY_DIRECTION_SQL = named_query(
+    "route.headway.by_direction_shift",
     """
     SELECT shift, direction_id, service_day_kind, observed_headway_min
     FROM gold.route_headway_by_direction_shift
@@ -625,7 +639,8 @@ _ROUTE_HEADWAY_DIRECTION_SQL = text(
 
 # Per-route daily cancellation rate from the append-only rollup (last 30 closed
 # local days). cancellation_rate_pct is None when total_trip_days=0.
-_ROUTE_CANCELLATION_DAILY_SQL = text(
+_ROUTE_CANCELLATION_DAILY_SQL = named_query(
+    "route.cancellation.daily",
     """
     SELECT provider_local_date, cancellation_rate_pct, canceled_trip_days, total_trip_days
     FROM gold.route_cancellation_daily
@@ -638,7 +653,8 @@ _ROUTE_CANCELLATION_DAILY_SQL = text(
 # Trailing-30d crowding band-shares for the route from the append-only daily
 # band-count reduction. Summed counts are divided into shares at read time;
 # honest-None when no band-bearing telemetry exists in the window.
-_ROUTE_OCCUPANCY_BAND_WINDOW_SQL = text(
+_ROUTE_OCCUPANCY_BAND_WINDOW_SQL = named_query(
+    "route.occupancy.band_window",
     """
     SELECT SUM(rob.empty_count)       AS empty,
            SUM(rob.many_seats_count)  AS many_seats,
@@ -657,11 +673,10 @@ _ROUTE_OCCUPANCY_BAND_WINDOW_SQL = text(
 # route_occupancy_band_daily source; honest-None per weekday with no band telemetry
 # (handled by _occupancy_mix_from_bands). provider_local_date is ALREADY provider-
 # local, so ISODOW needs NO timezone cast (unlike route_delay_day_of_week, which
-# extracts from a UTC timestamp). Unique discriminator for test dispatch:
-# "-- occupancy_by_dow".
-_ROUTE_OCCUPANCY_BY_DOW_SQL = text(
+# extracts from a UTC timestamp).
+_ROUTE_OCCUPANCY_BY_DOW_SQL = named_query(
+    "route.occupancy.by_dow",
     """
-    -- occupancy_by_dow
     SELECT EXTRACT(ISODOW FROM rob.provider_local_date)::int AS day_of_week_iso,
            SUM(rob.empty_count)       AS empty,
            SUM(rob.many_seats_count)  AS many_seats,
@@ -679,11 +694,10 @@ _ROUTE_OCCUPANCY_BY_DOW_SQL = text(
 
 # S7 §04: per-day band counts over the trailing-30d window, bucketed in Python into
 # grain-aware crowding mixes (day = most recent closed local day, week = trailing
-# 7d, month = full 30d — month reconciles with the scalar occupancy_mix). Unique
-# discriminator for test dispatch: "-- occupancy_by_grain".
-_ROUTE_OCCUPANCY_BY_GRAIN_SQL = text(
+# 7d, month = full 30d — month reconciles with the scalar occupancy_mix).
+_ROUTE_OCCUPANCY_BY_GRAIN_SQL = named_query(
+    "route.occupancy.by_grain",
     """
-    -- occupancy_by_grain
     SELECT rob.provider_local_date AS d,
            rob.empty_count       AS empty,
            rob.many_seats_count  AS many_seats,
@@ -701,7 +715,8 @@ _ROUTE_OCCUPANCY_BY_GRAIN_SQL = text(
 # Per-route service-span / first-last punctuality from the append-only daily
 # rollup (last 30 closed local days). Unique discriminator for test dispatch:
 # "first_trip_start_utc". (Ends with the shared ORDER BY provider_local_date DESC.)
-_ROUTE_SERVICE_SPAN_SQL = text(
+_ROUTE_SERVICE_SPAN_SQL = named_query(
+    "route.service_span.daily",
     """
     SELECT provider_local_date, first_trip_start_utc, last_trip_start_utc,
            service_span_min, first_trip_delay_seconds, last_trip_delay_seconds,
@@ -715,7 +730,8 @@ _ROUTE_SERVICE_SPAN_SQL = text(
 
 # Per-route skipped-stop rate from the append-only daily rollup (last 30 closed
 # local days). Unique discriminator for test dispatch: "skipped_stop_rate_pct".
-_ROUTE_SKIPPED_STOP_SQL = text(
+_ROUTE_SKIPPED_STOP_SQL = named_query(
+    "route.skipped_stop.daily",
     """
     SELECT provider_local_date, skipped_stop_rate_pct, skipped_stop_count,
            stop_time_update_count
@@ -729,12 +745,10 @@ _ROUTE_SKIPPED_STOP_SQL = text(
 # Track-B delay×crowding: TRUE co-observed per-band delay (FIX-3). Reads the append-only
 # route_delay_by_crowding_daily rollup — where each delay observation already carries its OWN
 # occupancy band (the vpm match) — and SUMs the additive moments per band over a trailing 30d
-# window. No more day-dominant-band attribution: the full/standing tail is uncensored. Unique
-# discriminator for the FakeConn substring dispatch: the "-- delay_by_crowding" needle, which
-# MUST precede the broader "route_delay_by_crowding_daily" needle in the test dispatch table.
-_ROUTE_CROWDING_DELAY_SQL = text(
+# window. No more day-dominant-band attribution: the full/standing tail is uncensored.
+_ROUTE_CROWDING_DELAY_SQL = named_query(
+    "route.delay.by_crowding",
     """
-    -- delay_by_crowding: per-band co-observed delay, additive over the window
     SELECT rdc.band                                          AS band,
            SUM(rdc.delay_observation_count)                  AS delay_obs,
            SUM(rdc.sum_delay_seconds)                        AS sum_delay_sec,
@@ -822,6 +836,7 @@ _ROUTE_ENTITY_CLAUSE = " AND route_id = :route_id"
 
 
 def _spine_project_sql(  # noqa: ANN202
+    name: str,
     dims: str,
     group_by: str,
     entity_clause: str = _ROUTE_ENTITY_CLAUSE,
@@ -833,42 +848,55 @@ def _spine_project_sql(  # noqa: ANN202
     to before this change; a windowed read passes _SPINE_WINDOW_CLAUSE (bounded :win_start/
     :win_end). NOTE: the template MUST carry the {window_clause} slot or .format() KeyErrors.
     """
-    return text(
+    return named_query(
+        name,
         _ROUTE_SPINE_PROJECT_TEMPLATE.format(
             dims=dims,
             hist_cols=_SPINE_HIST_COLS,
             group_by=group_by,
             entity_clause=entity_clause,
             window_clause=window_clause,
-        )
+        ),
     )
 
 
-def _route_spine_sql(dims: str, group_by: str, window_clause: str = ""):  # noqa: ANN202
-    return _spine_project_sql(dims, group_by, _ROUTE_ENTITY_CLAUSE, window_clause)
+def _route_spine_sql(name: str, dims: str, group_by: str, window_clause: str = ""):  # noqa: ANN202
+    return _spine_project_sql(name, dims, group_by, _ROUTE_ENTITY_CLAUSE, window_clause)
 
 
-_ROUTE_SPINE_BY_SHIFT_SQL = _route_spine_sql(f"{_SPINE_SHIFT_CASE} AS grain,", "1")
-_ROUTE_SPINE_BY_DAYTYPE_SQL = _route_spine_sql(f"{_SPINE_DAYTYPE_CASE} AS grain,", "1")
+_ROUTE_SPINE_BY_SHIFT_SQL = _route_spine_sql(
+    "route.spine.by_shift", f"{_SPINE_SHIFT_CASE} AS grain,", "1"
+)
+_ROUTE_SPINE_BY_DAYTYPE_SQL = _route_spine_sql(
+    "route.spine.by_daytype", f"{_SPINE_DAYTYPE_CASE} AS grain,", "1"
+)
 _ROUTE_SPINE_WEEKLY_SQL = _route_spine_sql(
-    "date_trunc('week', service_local_date)::date AS d,", "1"
+    "route.spine.weekly", "date_trunc('week', service_local_date)::date AS d,", "1"
 )
 _ROUTE_SPINE_MONTHLY_SQL = _route_spine_sql(
-    "date_trunc('month', service_local_date)::date AS d,", "1"
+    "route.spine.monthly", "date_trunc('month', service_local_date)::date AS d,", "1"
 )
 _ROUTE_SPINE_DOW_SQL = _route_spine_sql(
-    "EXTRACT(ISODOW FROM service_local_date)::integer AS day_of_week_iso,", "1"
+    "route.spine.dow",
+    "EXTRACT(ISODOW FROM service_local_date)::integer AS day_of_week_iso,",
+    "1",
 )
 _ROUTE_SPINE_CROSSTAB_SQL = _route_spine_sql(
-    f"{_SPINE_SHIFT_CASE} AS shift,\n        {_SPINE_DAYTYPE_CASE} AS day_type,", "1, 2"
+    "route.spine.crosstab",
+    f"{_SPINE_SHIFT_CASE} AS shift,\n        {_SPINE_DAYTYPE_CASE} AS day_type,",
+    "1, 2",
 )
 
 # Network-wide reads: the SAME projector with NO route filter -> aggregate the spine
 # across ALL routes by shift / day_type. otp_known == known_obs here because a spine
 # cell's on_time is NULL iff delay_obs=0 (so SUM(delay_obs) FILTER(on_time NOT NULL)
 # equals SUM(delay_obs)), reproducing the fact network's scoped-OTP denominator.
-_NETWORK_SPINE_BY_SHIFT_SQL = _spine_project_sql(f"{_SPINE_SHIFT_CASE} AS grain,", "1", "")
-_NETWORK_SPINE_BY_DAYTYPE_SQL = _spine_project_sql(f"{_SPINE_DAYTYPE_CASE} AS grain,", "1", "")
+_NETWORK_SPINE_BY_SHIFT_SQL = _spine_project_sql(
+    "network.spine.by_shift", f"{_SPINE_SHIFT_CASE} AS grain,", "1", ""
+)
+_NETWORK_SPINE_BY_DAYTYPE_SQL = _spine_project_sql(
+    "network.spine.by_daytype", f"{_SPINE_DAYTYPE_CASE} AS grain,", "1", ""
+)
 
 # --- S7-B windowable §1 ("When to ride" follows the grain rail) ---------------
 # The breakdowns + heatmap recomputed per TIME WINDOW off the spine, so §1 answers
@@ -878,20 +906,30 @@ _NETWORK_SPINE_BY_DAYTYPE_SQL = _spine_project_sql(f"{_SPINE_DAYTYPE_CASE} AS gr
 _MIN_N_HABIT_CELL = 30  # per-(dow,hour)-cell known-delay floor for the windowed heatmap
 _SPINE_WINDOW_CLAUSE = " AND service_local_date >= :win_start AND service_local_date <= :win_end"
 
-_SPINE_ANCHOR_SQL = text(
+_SPINE_ANCHOR_SQL = named_query(
+    "route.spine.anchor",
     "SELECT MAX(service_local_date) AS anchor FROM gold.route_delay_spine "
     "WHERE provider_id = :provider_id AND route_id = :route_id"
 )
 
 # Windowed twins of the whole-history breakdown projectors (only :win_start/:win_end vary).
-_W_BY_SHIFT = _route_spine_sql(f"{_SPINE_SHIFT_CASE} AS grain,", "1", _SPINE_WINDOW_CLAUSE)
-_W_BY_DAYTYPE = _route_spine_sql(f"{_SPINE_DAYTYPE_CASE} AS grain,", "1", _SPINE_WINDOW_CLAUSE)
+_W_BY_SHIFT = _route_spine_sql(
+    "route.spine.by_shift_windowed", f"{_SPINE_SHIFT_CASE} AS grain,", "1", _SPINE_WINDOW_CLAUSE
+)
+_W_BY_DAYTYPE = _route_spine_sql(
+    "route.spine.by_daytype_windowed",
+    f"{_SPINE_DAYTYPE_CASE} AS grain,",
+    "1",
+    _SPINE_WINDOW_CLAUSE,
+)
 _W_DOW = _route_spine_sql(
+    "route.spine.dow_windowed",
     "EXTRACT(ISODOW FROM service_local_date)::integer AS day_of_week_iso,",
     "1",
     _SPINE_WINDOW_CLAUSE,
 )
 _W_CROSSTAB = _route_spine_sql(
+    "route.spine.crosstab_windowed",
     f"{_SPINE_SHIFT_CASE} AS shift,\n        {_SPINE_DAYTYPE_CASE} AS day_type,",
     "1, 2",
     _SPINE_WINDOW_CLAUSE,
@@ -906,7 +944,8 @@ _W_CROSSTAB = _route_spine_sql(
 # cell so the cap never leaks (slice-9.1.1x sentinel guard). dow = EXTRACT(ISODOW FROM
 # service_local_date) + the stored hour_of_day_local — both already provider-local (DST-safe; no
 # timestamp reconstruction). Mirrors UPSERT_REPEATED_PROBLEM_ROUTE_STOP (gold/rollups.py).
-_ROUTE_HABIT_SPINE_SQL = text(
+_ROUTE_HABIT_SPINE_SQL = named_query(
+    "route.habit.spine",
     """
     SELECT
         EXTRACT(ISODOW FROM service_local_date)::integer AS day_of_week_iso,
@@ -1246,7 +1285,8 @@ def _bunched_pct_from_hist(hist, edges, median_min):  # noqa: ANN001, ANN202
 
 
 # Own anchor (NEVER reuse the delay-spine anchor — the headway table's newest closed day differs).
-_HEADWAY_SHIFT_ANCHOR_SQL = text(
+_HEADWAY_SHIFT_ANCHOR_SQL = named_query(
+    "route.headway.anchor",
     "SELECT MAX(service_local_date) AS anchor FROM gold.route_headway_shift_daily "
     "WHERE provider_id = :provider_id AND route_id = :route_id"
 )
@@ -1258,7 +1298,8 @@ _GAP_HIST_COLS = ",\n        ".join(
 # Windowed projector. CoV recomposed in SQL (D2): Bessel n-1 sample SD / mean, guarded
 # n>=2 AND mean>0, ROUND(::numeric,4) (half-away) — byte-identical to the legacy stddev_samp.
 # Median / %bunched are recomposed in Python from the element-wise-summed gap histogram.
-_HEADWAY_WINDOW_SQL = text(
+_HEADWAY_WINDOW_SQL = named_query(
+    "route.headway.window",
     f"""
     SELECT
         direction_id,
@@ -1388,7 +1429,8 @@ _WEAK_STOPS_BY_GRAIN_CAP = 15      # stored per-grain cap (byte budget; web "All
 
 # Own anchor (NEVER reuse the delay-spine / headway anchors — a different builder + a different
 # newest-closed-day front means the stop spine's anchor differs).
-_STOP_DELAY_ANCHOR_SQL = text(
+_STOP_DELAY_ANCHOR_SQL = named_query(
+    "stop.delay.anchor",
     "SELECT MAX(service_local_date) AS anchor FROM gold.stop_delay_spine "
     "WHERE provider_id = :provider_id AND route_id = :route_id"
 )
@@ -1397,7 +1439,8 @@ _STOP_DELAY_ANCHOR_SQL = text(
 # route_id never matches '__unrouted__', so NULL-route obs are correctly excluded (mirrors the
 # legacy per-route _ROUTE_WEAK_STOPS_SQL). avg = pooled raw sum/n (a documented rebaseline vs the
 # legacy triple-ROUND weekly avg); severe_k = obs - severe; ranked on _wilson_lo(severe_k, obs) ASC.
-_STOP_WEAK_WINDOW_SQL = text(
+_STOP_WEAK_WINDOW_SQL = named_query(
+    "route.weak_stops.by_grain",
     """
     SELECT
         stop_id,
@@ -1788,7 +1831,8 @@ def build_route_reliability(
 # spine's pooled in-clamp SUM(sum_delay_seconds) directly (the rebaselined avg
 # numerator), NOT the marts' SUM(avg*obs) approximation. avg = weighted/obs is the
 # deliberate, accepted pooled rebaseline. :win_start/:win_end bound the window.
-_STOP_REL_WEEKLY_SQL = text(
+_STOP_REL_WEEKLY_SQL = named_query(
+    "stop.reliability.weekly",
     """
     SELECT stop_id,
            SUM(observation_count)  AS obs,
@@ -1801,7 +1845,8 @@ _STOP_REL_WEEKLY_SQL = text(
     """
 )
 
-_STOP_REL_MONTHLY_SQL = text(
+_STOP_REL_MONTHLY_SQL = named_query(
+    "stop.reliability.monthly",
     """
     SELECT stop_id,
            SUM(observation_count)  AS obs,
@@ -1818,7 +1863,8 @@ _STOP_REL_MONTHLY_SQL = text(
 # from the spine. route_id is COALESCE'd to '__unrouted__' in the spine; drop it
 # so a stop's per-route breakdown never lists the internal sentinel (parity with
 # the dropped mart read). weighted_delay_sec = pooled SUM(sum_delay_seconds).
-_STOP_REL_BY_ROUTE_SQL = text(
+_STOP_REL_BY_ROUTE_SQL = named_query(
+    "stop.reliability.by_route",
     """
     SELECT stop_id, route_id,
            SUM(observation_count) AS obs,
@@ -1833,7 +1879,8 @@ _STOP_REL_BY_ROUTE_SQL = text(
 
 # Provider-wide newest-closed-day anchor for the stop reliability windows (no
 # route filter — build_stop_reliability is a cross-route batch over ALL stops).
-_STOP_REL_ANCHOR_SQL = text(
+_STOP_REL_ANCHOR_SQL = named_query(
+    "stop.reliability.anchor",
     "SELECT MAX(service_local_date) AS anchor FROM gold.stop_delay_spine "
     "WHERE provider_id = :provider_id"
 )
@@ -1842,7 +1889,8 @@ _STOP_REL_ANCHOR_SQL = text(
 # Per-stop 7x24 severe-delay heatmap source (dow x hour from the open-window
 # hourly mart). Cell magnitude = summed severe-delay count; fed to
 # _build_habits_matrix on the DISTINCT 'severe_relative' scale.
-_STOP_HABIT_SQL = text(
+_STOP_HABIT_SQL = named_query(
+    "stop.habit.score",
     """
     SELECT sd.stop_id,
            EXTRACT(ISODOW FROM timezone(dp.timezone, sd.period_start_utc))::integer
@@ -1859,7 +1907,8 @@ _STOP_HABIT_SQL = text(
 )
 
 # Most-recent closed local day's p50/p90 per stop (append-only percentile rollup).
-_STOP_PERCENTILE_DAILY_SQL = text(
+_STOP_PERCENTILE_DAILY_SQL = named_query(
+    "stop.percentile.daily",
     """
     SELECT DISTINCT ON (stop_id)
         stop_id, p50_delay_seconds, p90_delay_seconds
@@ -1876,7 +1925,8 @@ _STOP_PERCENTILE_DAILY_SQL = text(
 # are divided into shares at read time; honest-None when no band-bearing telemetry
 # exists in the window. Unique discriminator for test dispatch:
 # "stop_occupancy_band_daily AS sob".
-_STOP_OCCUPANCY_BAND_WINDOW_SQL = text(
+_STOP_OCCUPANCY_BAND_WINDOW_SQL = named_query(
+    "stop.occupancy.band_window",
     """
     SELECT sob.stop_id                    AS stop_id,
            SUM(sob.empty_count)           AS empty,
@@ -1901,7 +1951,8 @@ _STOP_OCCUPANCY_BAND_WINDOW_SQL = text(
 # COALESCE(arrival, departure), observation-weighted (_weighted_avg_sec). Stop OTP
 # stays a severe(>300s)-only proxy (no on_time column in the stop hourly mart), so
 # only obs + severe are aggregated. One UNION'd pass over both grain families.
-_STOP_BY_GRAIN_SQL = text(
+_STOP_BY_GRAIN_SQL = named_query(
+    "stop.reliability.by_grain",
     """
     SELECT stop_id, grain,
            SUM(observation_count)::numeric                AS obs,
@@ -1953,7 +2004,8 @@ _STOP_BY_GRAIN_SQL = text(
 # Avg delay mirrors the stop weekly rollup: COALESCE(arrival, departure),
 # observation-weighted. Stop OTP stays a severe(>300s)-only proxy, so only obs +
 # severe are aggregated. Unique discriminator for test dispatch: "AS dow_obs".
-_STOP_DOW_SQL = text(
+_STOP_DOW_SQL = named_query(
+    "stop.reliability.dow",
     """
     SELECT sd.stop_id,
            EXTRACT(ISODOW FROM timezone(dp.timezone, sd.period_start_utc))::integer
@@ -2198,7 +2250,8 @@ def _otp_delta_pts(cell_otp: int | None, network_otp: int | None) -> float | Non
 # _otp_delta_pts) so the convention matches the rest of the historic surface
 # byte-for-byte. Network baselines are week-grain only; on a non-week fallback
 # target the route/stop weekly joins miss and the delta is None.
-_HOTSPOTS_SQL = text(
+_HOTSPOTS_SQL = named_query(
+    "hotspots.list",
     """
     WITH week_max AS (
         SELECT MAX(period_start_local) AS max_week_start
@@ -2372,7 +2425,8 @@ def build_hotspots(conn: Connection, provider_id: str = "stm", *, generated_utc:
 # --------------------------------------------------------------------------
 
 # P3 mart: gold.repeat_offender — persistent problem entities.
-_REPEAT_OFFENDERS_SQL = text(
+_REPEAT_OFFENDERS_SQL = named_query(
+    "repeat.offenders",
     """
     SELECT entity_kind, entity_id, route_id,
            recurrence_days, window_days, avg_delay_seconds, severity_label
@@ -2422,7 +2476,8 @@ def build_repeat_offenders(
 # --------------------------------------------------------------------------
 
 # Accountability daily summary — one row per date, drives the receipt set.
-_RECEIPTS_ACCOUNTABILITY_SQL = text(
+_RECEIPTS_ACCOUNTABILITY_SQL = named_query(
+    "receipts.accountability",
     """
     SELECT provider_local_date,
            affected_route_count,
@@ -2440,7 +2495,8 @@ _RECEIPTS_ACCOUNTABILITY_SQL = text(
 )
 
 # Network-level daily aggregation from the hourly rollup.
-_RECEIPTS_NETWORK_DAILY_SQL = text(
+_RECEIPTS_NETWORK_DAILY_SQL = named_query(
+    "receipts.network_daily",
     """
     SELECT timezone(dp.timezone, rdh.period_start_utc)::date AS local_date,
            SUM(rdh.delay_observation_count)                   AS known_obs,
@@ -2460,7 +2516,8 @@ _RECEIPTS_NETWORK_DAILY_SQL = text(
 # Worst route per date: max avg_delay_seconds from the public reliability view.
 # on_time / known carry the worst route's own daily OTP so the receipt can show
 # its on-time-vs-network gap (otp_delta_pts) against the day's network baseline.
-_RECEIPTS_WORST_ROUTE_SQL = text(
+_RECEIPTS_WORST_ROUTE_SQL = named_query(
+    "receipts.worst_route",
     """
     SELECT provider_local_date AS d,
            route_id,
@@ -2478,7 +2535,8 @@ _RECEIPTS_WORST_ROUTE_SQL = text(
 )
 
 # Worst stop per date: max avg_delay_seconds from the public stop delay view.
-_RECEIPTS_WORST_STOP_SQL = text(
+_RECEIPTS_WORST_STOP_SQL = named_query(
+    "receipts.worst_stop",
     """
     SELECT provider_local_date AS d,
            stop_id,
@@ -2598,7 +2656,8 @@ def build_receipts(
 # 8M-row table — always filter by date BEFORE aggregating.
 # v1 bounds: 90-day window, LIMIT 200.  impact_passages is None (not in source).
 # array_agg(...) FILTER (WHERE ...) requires PostgreSQL 9.4+.
-_ALERT_HISTORY_SQL = text(
+_ALERT_HISTORY_SQL = named_query(
+    "alerts.history",
     """
     SELECT alert_header_text,
            MAX(alert_header_text_en)                                AS header_text_en,
@@ -2759,7 +2818,8 @@ def build_alert_history(
 # build_provenance
 # --------------------------------------------------------------------------
 
-_PROVENANCE_SOURCES_SQL = text(
+_PROVENANCE_SOURCES_SQL = named_query(
+    "provenance.sources",
     """
     SELECT dataset_kind, storage_backend, storage_path, source_url, loaded_at_utc
     FROM gold.source_lineage_reporting
@@ -2769,7 +2829,8 @@ _PROVENANCE_SOURCES_SQL = text(
     """
 )
 
-_PROVENANCE_FRESHNESS_SQL = text(
+_PROVENANCE_FRESHNESS_SQL = named_query(
+    "provenance.freshness",
     """
     SELECT endpoint_key, status, completed_age_seconds
     FROM gold.feed_freshness_current
@@ -2782,7 +2843,8 @@ _PROVENANCE_FRESHNESS_SQL = text(
 # is the unknown/extra GTFS members captured verbatim in silver.gtfs_extra_rows
 # (mirrors /health check_feed_conformance, scoped to this provider). Empty result
 # => no current static dataset => no conformance block.
-_PROVENANCE_CONFORMANCE_SQL = text(
+_PROVENANCE_CONFORMANCE_SQL = named_query(
+    "provenance.conformance",
     """
     SELECT
         (
