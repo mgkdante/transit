@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import os
 from logging.config import fileConfig
 
 from alembic import context
 from sqlalchemy import create_engine, pool
 
+from transit_ops.db.migration_guard import assert_explicit_remote_url
 from transit_ops.settings import get_settings
 
 config = context.config
@@ -21,6 +23,9 @@ def _get_url() -> str:
         return url
     settings = get_settings()
     if settings.sqlalchemy_database_url:
+        # An .env-sourced URL may only target a local database; remote migrations must
+        # pass DATABASE_URL explicitly (see transit_ops.db.migration_guard).
+        assert_explicit_remote_url(settings.sqlalchemy_database_url, os.environ)
         return settings.sqlalchemy_database_url
     raise RuntimeError(
         "No database URL configured. "
