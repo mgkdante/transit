@@ -54,11 +54,11 @@ def test_habits_severe_term_byte_identical_to_mart() -> None:
             (int(r["dow"]), int(r["hour"])): int(r["severe"])
             for r in conn.execute(
                 text(
-                    "SELECT EXTRACT(ISODOW FROM service_local_date)::int AS dow, "
+                    "SELECT EXTRACT(ISODOW FROM provider_local_date)::int AS dow, "
                     "hour_of_day_local AS hour, SUM(severe_delay_count)::int AS severe "
                     "FROM gold.route_delay_spine "
                     "WHERE provider_id=:p AND route_id=:r "
-                    "AND service_local_date BETWEEN :ws AND :we GROUP BY 1, 2"
+                    "AND provider_local_date BETWEEN :ws AND :we GROUP BY 1, 2"
                 ),
                 {"p": PROVIDER, "r": ROUTE, "ws": ws, "we": we},
             ).mappings()
@@ -172,7 +172,7 @@ def _dense_conn():  # noqa: ANN202
                 {"p": _DENSE_PROVIDER},
             )
             ins = text(
-                "INSERT INTO gold.route_delay_spine (provider_id, route_id, service_local_date, "
+                "INSERT INTO gold.route_delay_spine (provider_id, route_id, provider_local_date, "
                 "hour_of_day_local, direction_id, observation_count, delay_observation_count, "
                 "on_time_observation_count, severe_delay_count, sum_delay_seconds, delay_histogram) "
                 "VALUES (:p, :r, :d, :h, 0, :obs, :dobs, :ot, :sev, :sum, CAST(:hist AS smallint[]))"

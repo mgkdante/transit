@@ -162,6 +162,12 @@ def build_provenance(
                 "Python's banker's rounding; values move only at exact-.5 "
                 "boundaries (S7-B rebaseline)"
             ),
+            "network_totals_basis": (
+                "network trend/receipt totals derive from route-attributed "
+                "observations (2026-07-02 spine re-point); observations without "
+                "a route_id are excluded where the legacy path counted them "
+                "under an unrouted partition"
+            ),
             "delay_unit": (
                 "seconds from schedule; delay statistics exclude observations "
                 "with |delay| > 1 hour (ghost-trip guard); severe = >300s and <=3600s"

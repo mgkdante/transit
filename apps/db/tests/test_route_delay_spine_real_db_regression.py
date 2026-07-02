@@ -198,7 +198,7 @@ def test_spine_open_day_excluded(conn) -> None:  # noqa: ANN001
     n = conn.execute(
         text(
             "SELECT count(*) FROM gold.route_delay_spine "
-            "WHERE provider_id = :p AND service_local_date = :d"
+            "WHERE provider_id = :p AND provider_local_date = :d"
         ),
         {"p": PROVIDER, "d": today},
     ).scalar_one()

@@ -22,8 +22,9 @@ The fact's route_id + direction_id are nullable; every spine PK column is NOT NU
 filters to rows with a non-null route_id (the route grain) and COALESCEs an unknown direction to
 0 — matching the existing directional builder (route_headway_by_direction_shift) so the
 sum-across-direction folds stay byte-identical. NOT in REPORTING_AGGREGATE_TABLES — accrued history is
-never DELETE+UPSERT wiped; pruned at 365d via the append-only retention lists in
-maintenance/gold.py. Clones the append-only lifecycle of 0046 (percentile) + 0048 (band rollup).
+never DELETE+UPSERT wiped; pruned at GOLD_WARM_ROLLUP_RETENTION_DAYS (730d) via the append-only
+retention lists in maintenance/gold.py (730d fully covers the 371d week/month trend window).
+Clones the append-only lifecycle of 0046 (percentile) + 0048 (band rollup).
 
 Revision ID: 0063_route_delay_spine
 Revises: 0062_rename_misnamed_rolling_tables

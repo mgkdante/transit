@@ -188,6 +188,9 @@ def build_source_factory_catalog(
                     "gold.current_trip_delay_computed",
                     "gold.fact_stop_time_delay_observation",
                     "gold.route_delay_hourly",
+                    # GC1 / Step G1 added delayed_trip_count to the spine so the delay-metric
+                    # readers re-point onto it (route_delay_hourly stays for the public view).
+                    "gold.route_delay_spine",
                     "gold.stop_delay_hourly",
                     "gold.repeated_problem_route_stop",
                     "gold.citizen_accountability_daily",

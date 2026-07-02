@@ -407,11 +407,11 @@ def test_publish_historic_writes_expected_keys(tmp_path) -> None:
     dispatch = {
         "receipts.network_daily": [
             {"local_date": datetime.date(2026, 6, 1), "known_obs": 100, "on_time": 90,
-             "severe": 5, "weighted_delay_sec": 5000},
+             "severe": 5, "pooled_delay_sec": 5000, "inclamp_obs": 100},
         ],
         "network.trend.daily_hourly": [
             {"local_date": datetime.date(2026, 6, 1), "known_obs": 100, "on_time": 90,
-             "weighted_delay_sec": 5000},
+             "pooled_delay_sec": 5000, "inclamp_obs": 100},
         ],
         "network.trend.daily_p90": [
             {"local_date": datetime.date(2026, 6, 1), "p90_min": 3.5, "vehicles": 42},
@@ -419,7 +419,7 @@ def test_publish_historic_writes_expected_keys(tmp_path) -> None:
         # build_network_trend: WEEK + MONTH grain re-aggregation of the daily sources.
         "network.trend.week_hourly": [
             {"local_date": datetime.date(2026, 6, 1), "known_obs": 200, "on_time": 180,
-             "weighted_delay_sec": 12000},
+             "pooled_delay_sec": 12000, "inclamp_obs": 200},
         ],
         "network.trend.week_cancel": [
             {"local_date": datetime.date(2026, 6, 1), "canceled": 4, "total": 200},
@@ -430,7 +430,7 @@ def test_publish_historic_writes_expected_keys(tmp_path) -> None:
         ],
         "network.trend.month_hourly": [
             {"local_date": datetime.date(2026, 6, 1), "known_obs": 1000, "on_time": 820,
-             "weighted_delay_sec": 90000},
+             "pooled_delay_sec": 90000, "inclamp_obs": 1000},
         ],
         "network.trend.month_cancel": [
             {"local_date": datetime.date(2026, 6, 1), "canceled": 12, "total": 600},
