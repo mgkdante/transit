@@ -25,7 +25,7 @@ jobs:
     # reliability files + the alert_history view) all run in this job. The
     # "8M-row alert_history" qualifier is obsolete after slice-9.1.1l's 0038
     # legacy NULL-hash collapse shrank the i3 history fan-out.
-    timeout-minutes: 50  # tactical bump (was 25): i3-bloated rollups build exceeded it daily since Jun 7; structural fix = slice-9.1.1l (0038/0039 + daily prune-i3-storage)
+    timeout-minutes: 90  # tactical bump (was 50): STO enrollment doubled the provider loop and its first gated runs backfill the whole STO spine history; runs since 2026-06-30 cancelled at the 50-min cap. Structural relief lands when the STO backfill drains (steady-state ~2x STM's ~10 min).
     defaults:
       run:
         working-directory: apps/db
