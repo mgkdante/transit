@@ -116,6 +116,24 @@ describe('fromSearchParams — parsing + self-healing', () => {
 		expect(fromSearchParams(sp('n=')).worstN).toBeUndefined();
 	});
 
+	it('parses a valid ISO ?date (the receipt single-day key, S13)', () => {
+		expect(fromSearchParams(sp('date=2026-06-16')).date).toBe('2026-06-16');
+	});
+
+	it('drops a malformed ?date (not YYYY-MM-DD) → self-heals to absent', () => {
+		expect(fromSearchParams(sp('date=yesterday')).date).toBeUndefined();
+		expect(fromSearchParams(sp('date=2026-6-1')).date).toBeUndefined();
+		expect(fromSearchParams(sp('date=')).date).toBeUndefined();
+	});
+
+	it('keeps ?date ORTHOGONAL to the ?from/?to window pair', () => {
+		const s = fromSearchParams(sp('date=2026-06-16&from=2026-06-01&to=2026-06-14'));
+		expect(s.date).toBe('2026-06-16');
+		expect(s.window).toEqual({ from: '2026-06-01', to: '2026-06-14' });
+		// A lone ?date forms NO window (it is not a bound).
+		expect(fromSearchParams(sp('date=2026-06-16')).window).toBeUndefined();
+	});
+
 	it('ignores unknown query keys', () => {
 		const s = fromSearchParams(sp('utm_source=newsletter&route=10'));
 		expect([...s.routes]).toEqual(['10']);
@@ -134,7 +152,7 @@ describe('toSearchParams — canonical wire format', () => {
 		expect(toSearchParams(s).toString()).toBe('route=10%2C165%2C80&status=late%2Csevere');
 	});
 
-	it('emits keys in the stable contract order (route,stop,trip,vehicle,status,occupancy,entity,alert,grain,from,to,n)', () => {
+	it('emits keys in the stable contract order (route,stop,trip,vehicle,status,occupancy,entity,alert,grain,from,to,date,n)', () => {
 		const s: FilterState = {
 			routes: new Set(['10']),
 			stops: new Set(['S']),
@@ -146,6 +164,7 @@ describe('toSearchParams — canonical wire format', () => {
 			alerts: ['has_alert'],
 			grain: 'day',
 			window: { from: '2026-06-01', to: '2026-06-14' },
+			date: '2026-06-16',
 			worstN: '20',
 		} as unknown as FilterState;
 		const keys = [...toSearchParams(s).keys()];
@@ -161,8 +180,20 @@ describe('toSearchParams — canonical wire format', () => {
 			'grain',
 			'from',
 			'to',
+			'date',
 			'n',
 		]);
+	});
+
+	it('serializes the single-day ?date (omitted entirely when absent)', () => {
+		const withDate: FilterState = {
+			routes: new Set(),
+			stops: new Set(),
+			trips: new Set(),
+			vehicles: new Set(),
+			date: '2026-06-16',
+		};
+		expect(toSearchParams(withDate).toString()).toBe('date=2026-06-16');
 	});
 
 	it('serializes the worst-N cap as ?n (omitted entirely when absent)', () => {
@@ -228,6 +259,9 @@ describe('round-trip — toSearchParams(fromSearchParams(u)) is an idempotent fi
 		'n=20', // worst-N rung kept
 		'n=all', // worst-N uncapped kept
 		'n=7', // junk worst-N drops → empty
+		'date=2026-06-16', // receipt single-day key kept
+		'date=2026-06-16&from=2026-06-01&to=2026-06-14', // ?date orthogonal to the window pair
+		'date=yesterday', // malformed ?date drops → empty
 	];
 
 	for (const input of INPUTS) {
@@ -255,6 +289,7 @@ describe('round-trip — toSearchParams(fromSearchParams(u)) is an idempotent fi
 			);
 			expect(second.grain).toEqual(first.grain);
 			expect(second.window).toEqual(first.window);
+			expect(second.date).toEqual(first.date);
 			expect(second.worstN).toEqual(first.worstN);
 		});
 	}

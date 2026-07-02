@@ -28,6 +28,7 @@ from transit_ops.snapshots.contract import (
     PAYLOAD_METHODOLOGY,
     TOP_LEVEL_MODELS,
     PayloadEnvelope,
+    ReceiptAvailability,
     ReceiptsIndex,
     RouteReliabilityIndex,
 )
@@ -442,9 +443,36 @@ def _build_historic_items(
     # --- receipts discovery index (exact set published this run) ---
     # Its own upload stage AFTER the receipt stage so it never references an in-flight
     # date — the same pointer-last invariant the manifest follows for the run.
+    # S13 (DECISIONS DB3): grow the index with per-date availability so the S8 picker
+    # distinguishes a rich receipt from an alerts-only shell and a schedule-known day
+    # from an empty one. `dates` stays BYTE-IDENTICAL; `available` is additive. has_data
+    # = the receipt carries real reliability telemetry (affected routes/stops OR a
+    # network OTP obs) vs an alerts-only shell (honest-NULL reliability inputs);
+    # has_schedule = the day's scheduled universe is known. publish_generation_id is the
+    # SAME run stamp the envelope carries (forward-compat; redundant in single-run).
+    receipts_generation_id = _publish_generation_id(provider_id, stamp)
+    receipts_available = [
+        ReceiptAvailability(
+            date=date_str,
+            has_data=bool(
+                receipt.affected_routes or receipt.affected_stops
+                or receipt.otp_pct is not None
+            ),
+            has_schedule=bool(
+                receipt.service_states is not None
+                and receipt.service_states.scheduled_trip_days is not None
+            ),
+            publish_generation_id=receipts_generation_id,
+        )
+        for date_str, receipt in sorted(all_receipts.items())
+    ]
     receipts_index_item = (
         "historic/receipts/index.json",
-        ReceiptsIndex(dates=sorted(all_receipts), generated_utc=stamp),
+        ReceiptsIndex(
+            dates=sorted(all_receipts),
+            generated_utc=stamp,
+            available=receipts_available,
+        ),
         "historic",
     )
 

@@ -43,7 +43,11 @@ export type { GrainPickerProps } from './GrainPicker.svelte';
 // (a `generics=` instance script disallows exports) — Props-export convention.
 export type { GrainAvailability, SurfaceControlsProps } from './SurfaceControls.svelte';
 // DateRangePicker's Props + labels interfaces live in its MODULE script (one export site).
-export type { DateRangePickerProps, DateRangePickerLabels } from './DateRangePicker.svelte';
+export type {
+	DateRangePickerProps,
+	DateRangePickerLabels,
+	SingleDateOption,
+} from './DateRangePicker.svelte';
 export type { FreshnessStampProps } from './FreshnessStamp.svelte';
 export type { ConformanceBadgeProps } from './ConformanceBadge.svelte';
 export type { ReliabilityBadgeProps } from './ReliabilityBadge.svelte';

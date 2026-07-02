@@ -1,55 +1,57 @@
 <!--
-  AccountabilityReceipt — the /receipt surface screen (slice-9.6, Family D).
+  AccountabilityReceipt — the /receipt surface ORCHESTRATOR (S13 re-seat).
 
-  A daily accountability "receipt" rendered in a distinctive terminal-window
-  frame (the brand TerminalChrome): a date selector over the published receipt
-  index (defaulting to the MOST RECENT day) drives a per-date fetch of one day's
-  receipt, which we render as:
-    · headline figures   — on-time %, average delay, severe-delay share, the
-      rider-impact score (each honest no-data when null);
-    · affected counts    — routes / stops / alerts / vehicles touched on the day
-      (a count is shown only when present; a null count reads as no-data);
-    · worst of the day    — the single worst route (linked to /lines/[id]) and
-      worst stop (linked to /stop/[id]), each with its delta/avg-delay, stood
-      down when the receipt carries none.
+  A daily accountability "receipt" rendered in the brand TerminalChrome window frame
+  (WEB4 — the receipt metaphor STAYS): a SMART availability-aware single-date calendar
+  picks the day, driving a per-date fetch of one day's receipt, composed as receipt
+  line-groups —
+    · headline figures  — on-time %, average delay, severe share, rider impact;
+    · affected counts   — lines / stops / alerts touched on the day;
+    · worst of the day   — worst line (→ /lines/[id]) + worst stop (→ /stop/[id]);
+  and the S13 re-granulated cuts, which sit BELOW the frame (a documented WEB4 hoist —
+  a ranked ladder / share-bar list / silent-lines list genuinely breaks the compact
+  terminal-tile metaphor, so they render as their own line-groups under the receipt):
+    · by time of day    — severe-delay share ranked by shift (absolute SEVERE_DOMAIN);
+    · service delivered  — the ONE completeness number + delivered/cancelled/silent split;
+    · scheduled but never appeared — the not-reported lines list (silent, not cancelled).
 
-  Two resources on the createResource spine: the index (the list of dates) and
-  the per-date receipt. The receipt fetcher reads `selectedDate` when invoked, so
-  picking another day re-runs the fetch (the spine drops out-of-order responses).
+  This file is a THIN orchestrator: the two createResource resources, the codec-seeded
+  ?date + the availability index, a bare ControlsRail hosting the single-date picker,
+  and the section mount order. All formatting + section markup live in ./selectors,
+  ./data, and ./sections — no inline transforms here.
 
-  DOCTRINE: no data mark uses --primary (the date GrainPicker is the only
-  --primary affordance — an interactive control). Tokens only, no hex. Honesty
-  rule — null/absent → the localized no-data string, NEVER a fabricated 0; a 404
-  from getReceipt (the adapter returns null) or an empty index → the localized
-  empty state, never an invented receipt. All prose comes from ./receipt.copy.
+  HONESTY: null/absent → the localized styled honest-absence chip, NEVER a fabricated 0;
+  a 404 (getReceipt → null) or an empty index → the localized empty state. The new cuts
+  stand DOWN (their `hasData`) during the GC2 ramp — an absent list is honest-absence,
+  never a fabricated "everything delivered". DOCTRINE: --primary only on the interactive
+  picker; every magnitude mark reads an ABSOLUTE domain literal (chart-doctrine).
 -->
 <script lang="ts">
+	import { page } from '$app/state';
 	import { getLocale, type Locale } from '$lib/i18n';
 	import { routeNameFallback, stopNameFallback } from '$lib/site/absence';
+	import { fromSearchParams } from '$lib/filters';
 	import { layout } from '$lib/nav';
+	import { mirrorSearchParam } from '$lib/site/urlMirror';
 	import { formatDateKey } from '$lib/utils/time';
 	import {
 		fmtCount as sharedFmtCount,
 		fmtDelayMin as sharedFmtDelayMin,
 		fmtPct as sharedFmtPct,
 	} from '$lib/utils';
+	import { shiftLabel } from '$lib/features/reliability/shiftGrains';
 	import { getReceiptsIndex, getReceipt, type Receipt } from '$lib/v1';
 	import { createResource } from '$lib/v1/resource.svelte';
 	import {
 		SurfaceHeader,
 		ResourceBoundary,
-		GrainPicker,
+		DateRangePicker,
 		FreshnessStamp,
 	} from '$lib/components/surface';
-	import type { GrainSegment } from '$lib/components/surface';
 	import { Surface, ControlsRail } from '$lib/components/layout';
 	import { Separator } from '$lib/components/ui/separator';
-	import { EdgeState, MaybeValue } from '$lib/components/edge';
-	import EntityRow from '$lib/components/surface/EntityRow.svelte';
-	import MetricDisplay from '$lib/components/brand/MetricDisplay.svelte';
-	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
+	import { EdgeState } from '$lib/components/edge';
 	import TerminalChrome from '$lib/components/brand/TerminalChrome.svelte';
-	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
 	import {
 		metricInfoFor,
 		type MetricKey,
@@ -57,13 +59,28 @@
 	} from '$lib/features/metrics/metrics.content';
 	import { metricsCopy } from '$lib/features/metrics/metrics.copy';
 	import { copy as COPY } from './receipt.copy';
+	// Selectors + data presenters (pure VMs — no transforms in this orchestrator).
+	import { selectAvailability } from './data/presentAvailability';
+	import { resolveReceiptDate } from './data/presentDates';
+	import { selectHeadlineKpis } from './selectors/headlineKpis';
+	import { selectAffectedCounts } from './selectors/affectedCounts';
+	import { selectWorstOfDay } from './selectors/day-worst';
+	import { selectReceiptTimeOfDay } from './selectors/timeOfDay';
+	import { selectStateCuts } from './selectors/stateCuts';
+	import { selectNotReportedLines } from './selectors/notReportedLines';
+	// Sections.
+	import SectionHeadline from './sections/SectionHeadline.svelte';
+	import SectionAffected from './sections/SectionAffected.svelte';
+	import SectionWorst from './sections/SectionWorst.svelte';
+	import SectionTimeOfDay from './sections/SectionTimeOfDay.svelte';
+	import SectionStateCuts from './sections/SectionStateCuts.svelte';
+	import SectionNotReported from './sections/SectionNotReported.svelte';
 
 	const locale: Locale = getLocale();
 	const t = $derived(COPY[locale]);
 
 	// The metric-explainer (i) affordance: a one-line tip + a localized deep link to
-	// /metrics#<anchor>, wired onto every headline KPI + the section headings so each
-	// number carries its honest definition (same wiring as RouteDetail).
+	// /metrics#<anchor>, wired onto every KPI + section heading (same wiring as RouteDetail).
 	const explainerCopy = $derived(metricsCopy[locale]);
 	const info = $derived((key: MetricKey | SupplementalMetricKey, name: string) => {
 		const i = metricInfoFor(key, locale);
@@ -72,144 +89,131 @@
 
 	const edgeLayout = $derived(layout.isDesktop ? 'desktop' : 'mobile');
 
-	// Discovery index — the published receipt dates (ascending). createResource is
-	// browser-only ($effect), so the v1 base resolves same-origin here.
+	// Discovery index — the published receipt dates + S13 availability metadata.
+	// createResource is browser-only ($effect), so v1 base resolves same-origin.
 	const index = createResource(() => getReceiptsIndex());
 
-	// The index dates, most-recent FIRST (the index publishes ascending). We default
-	// the selector to the newest day and offer the rest below it.
-	const dates = $derived.by<string[]>(() => {
-		const ds = index.data?.dates ?? [];
-		return [...ds].reverse();
-	});
-	const hasDates = $derived(dates.length > 0);
+	// The smart calendar: the FULL span earliest→latest with published days enabled and
+	// gap/empty days disabled + reasoned. `enabledDates` is what the default/seed reads.
+	const availability = $derived(
+		selectAvailability(index.data, {
+			formatDate: (iso) => formatDateKey(iso, locale),
+			gap: t.datePicker.gapReason,
+			empty: t.datePicker.emptyReason,
+			scheduleOnly: t.datePicker.scheduleOnlyFlag,
+		}),
+	);
+	const hasDates = $derived(availability.hasAny);
 
-	// The chosen receipt date. Empty until the index settles; the effect below seeds
-	// it to the most recent published day exactly once (a rider's pick then sticks).
+	// The chosen day — seeded ONCE from the codec (?date deep-link → the picked day,
+	// else the LATEST published day). resolveReceiptDate self-heals a gap/unknown ?date
+	// back to the latest default. A rider's later pick then sticks.
+	const seededDate = fromSearchParams(page.url.searchParams).date ?? null;
 	let selectedDate = $state('');
 	let dateSeeded = $state(false);
 	$effect(() => {
 		if (!dateSeeded && hasDates) {
-			selectedDate = dates[0];
+			selectedDate = resolveReceiptDate(seededDate, availability.enabledDates) ?? '';
 			dateSeeded = true;
 		}
 	});
 
-	// The receipt for the chosen day. The fetcher reads `selectedDate` when invoked,
-	// so changing the day re-runs the fetch. Guard the empty seed: an empty date
-	// would 404, so we hold off until a real date is chosen (getReceipt('') is never
-	// issued). Returns null on a 404 → the localized empty state, not an error.
-	// `freshness: true` feeds the chosen receipt's generated_utc into the shared
-	// site-wide newest-data timestamp (latest-wins/monotonic). The null seed (before
-	// a date is chosen / on a 404) carries no stamp, so it never poisons the value.
+	// Deep-linkable: mirror the picked day to ?date (default = latest omitted for a clean
+	// canonical URL). Only the latest published day is the default, so drop ?date when it
+	// equals the latest enabled day.
+	$effect(() => {
+		if (!selectedDate) return;
+		const latest = availability.enabledDates[availability.enabledDates.length - 1];
+		mirrorSearchParam('date', selectedDate === latest ? null : selectedDate);
+	});
+
+	// The receipt for the chosen day. The fetcher reads `selectedDate` when invoked, so
+	// changing the day re-runs the fetch (the spine drops out-of-order responses). The
+	// empty seed would 404, so hold off until a real date is chosen. `freshness: true`
+	// feeds the chosen receipt's generated_utc into the shared newest-data timestamp.
 	const receipt = createResource<Receipt | null>(
 		() => (selectedDate ? getReceipt(selectedDate) : Promise.resolve(null)),
 		{ freshness: true },
 	);
-
-	// Freshness off the CHOSEN receipt's generated_utc — a per-day rebuilt document,
-	// not a live feed (variant="updated"). The stamp computes its server-anchored,
-	// shared-tick age centrally; null before a date is chosen / on a 404 reads the
-	// honest "unknown", never a fabricated time. The visible stamp matches the
-	// generated_utc this surface already feeds into the shared freshness authority.
 	const generatedUtc = $derived(receipt.data?.generated_utc ?? null);
 
-	// Date selector segments — one chip per published day, labelled as a localized
-	// short date. The GrainPicker is string-keyed; the ISO date IS the key.
-	const dateSegments = $derived.by<GrainSegment<string>[]>(() =>
-		dates.map((d) => ({ key: d, label: formatDateKey(d, locale) })),
-	);
-
-	// Headline-tile formatters return NULL on no-data (no `noData:` string): the tile
-	// is a MetricDisplay, whose empty branch renders the styled honest-absence chip
-	// (AbsentValue, reason 'no-observations' — a historic daily rollup with too few
-	// readings) rather than a plain "no data". A real measured 0 stays a real 0.
-	/** Format a nullable integer percent as "82%", or null on no-data. */
-	function fmtPct(v: number | null | undefined): string | null {
-		return sharedFmtPct(v, { suffix: t.units.pct });
-	}
-	/** Format a nullable minute value as "3 min" / "3.4 min", or null on no-data. */
-	function fmtMinTile(v: number | null | undefined): string | null {
-		return sharedFmtDelayMin(v, { rounding: 'auto', suffix: t.units.min });
-	}
-	/** Format a nullable fractional severe-share percent as "4.2%", or null on no-data. */
-	function fmtSeverePct(v: number | null | undefined): string | null {
-		return sharedFmtPct(v, { rounding: 'fixed1', suffix: t.units.pct });
-	}
-	/** Format a nullable rider-impact score (1 decimal), or null on no-data. */
-	function fmtScore(v: number | null | undefined): string | null {
-		return sharedFmtCount(v, { rounding: 'fixed1' });
-	}
-	/**
-	 * Inline minute value (worst-stop meta string) — keeps the localized no-data
-	 * STRING since it is concatenated into a row's meta text, not a MetricDisplay.
-	 */
-	function fmtMin(v: number | null | undefined): string {
-		return sharedFmtDelayMin(v, { rounding: 'auto', suffix: t.units.min, noData: t.noData });
-	}
-	/** Format a nullable integer count (localized thousands), or null on no-data. */
-	function fmtCount(v: number | null | undefined): string | null {
-		return sharedFmtCount(v, { locale });
-	}
-	/** Signed OTP delta in points, e.g. "-8 pts" / "+2 pts", or no-data. */
-	function fmtDelta(v: number | null | undefined): string {
+	// ── Formatters (null on no-data → the styled honest-absence chip; a real 0 stays 0) ──
+	const fmtPct = (v: number | null | undefined) => sharedFmtPct(v, { suffix: t.units.pct });
+	const fmtMinTile = (v: number | null | undefined) =>
+		sharedFmtDelayMin(v, { rounding: 'auto', suffix: t.units.min });
+	const fmtSeverePct = (v: number | null | undefined) =>
+		sharedFmtPct(v, { rounding: 'fixed1', suffix: t.units.pct });
+	const fmtScore = (v: number | null | undefined) => sharedFmtCount(v, { rounding: 'fixed1' });
+	const fmtCount = (v: number | null | undefined) => sharedFmtCount(v, { locale });
+	const fmtSharePct = (v: number | null) =>
+		sharedFmtPct(v, { rounding: 'fixed1', suffix: t.units.pct });
+	// Inline (concatenated into meta text) → keeps the localized no-data STRING.
+	const fmtMinInline = (v: number | null | undefined) =>
+		sharedFmtDelayMin(v, { rounding: 'auto', suffix: t.units.min, noData: t.noData });
+	const fmtDelta = (v: number | null | undefined) => {
 		if (v == null) return t.noData;
-		const sign = v > 0 ? '+' : '';
-		return `${sign}${v}${t.units.pts}`;
-	}
+		return `${v > 0 ? '+' : ''}${v}${t.units.pts}`;
+	};
 
-	// Worst route/stop are stood down unless the receipt carries one WITH an id.
-	const worstRoute = $derived(receipt.data?.worst_route ?? null);
-	const worstStop = $derived(receipt.data?.worst_stop ?? null);
-	const hasWorstRoute = $derived(!!worstRoute?.id);
-	const hasWorstStop = $derived(!!worstStop?.id);
-	const hasWorst = $derived(hasWorstRoute || hasWorstStop);
+	// ── Section view-models (pure selectors) ─────────────────────────────────────────
+	const headlineKpis = $derived(
+		receipt.data
+			? selectHeadlineKpis(receipt.data, {
+					onTime: t.metrics.onTime,
+					avgDelay: t.metrics.avgDelay,
+					severe: t.metrics.severe,
+					riderImpact: t.metrics.riderImpact,
+					fmtPct,
+					fmtMin: fmtMinTile,
+					fmtSeverePct,
+					fmtScore,
+				})
+			: [],
+	);
+	const affectedCounts = $derived(
+		receipt.data
+			? selectAffectedCounts(receipt.data, {
+					routes: t.counts.routes,
+					stops: t.counts.stops,
+					alerts: t.counts.alerts,
+					vehicles: t.counts.vehicles,
+					fmtCount,
+				})
+			: [],
+	);
+	const worst = $derived(
+		selectWorstOfDay(receipt.data ?? { worst_route: null, worst_stop: null }, {
+			routeName: (id, name) => name ?? routeNameFallback(id, locale),
+			stopName: (id, name) => name ?? stopNameFallback(id, locale),
+			routeLabel: t.worst.routeLabel,
+			stopLabel: t.worst.stopLabel,
+			routeDeltaLabel: t.worst.routeDeltaLabel,
+			stopDelayLabel: t.worst.stopDelayLabel,
+			fmtDelta,
+			fmtMin: fmtMinInline,
+		}),
+	);
+	const timeOfDay = $derived(
+		selectReceiptTimeOfDay(receipt.data?.by_shift, { shiftLabel: (s) => shiftLabel(s, locale) }),
+	);
+	const stateCuts = $derived(
+		selectStateCuts(receipt.data?.service_states, {
+			delivered: t.stateCuts.delivered,
+			cancelled: t.stateCuts.cancelled,
+			silent: t.stateCuts.silent,
+			fmtSharePct,
+		}),
+	);
+	const notReported = $derived(
+		selectNotReportedLines(receipt.data?.service_states, {
+			routeName: (id, name) => name ?? routeNameFallback(id, locale),
+			rowLabel: t.notReported.rowLabel,
+			href: (id) => `/lines/${id}`,
+			viewDetail: (id) => t.notReported.viewDetail(id),
+			fmtScheduled: (v) => (v == null ? null : t.notReported.scheduled(v)),
+		}),
+	);
 </script>
-
-<!-- A headline KPI = MetricDisplay + its (i) explainer, baseline-aligned. Declared
-     once so each receipt figure carries an honest, deep-linked definition. -->
-{#snippet kpi(
-	value: string | null,
-	label: string,
-	key: MetricKey | SupplementalMetricKey,
-	size: 'sm' | 'md' | 'lg',
-)}
-	{@const i = info(key, label)}
-	<div class="receipt-kpi">
-		<!-- A null value is the day's metric having too few readings: a historic daily
-		     rollup → the styled honest-absence chip ('no-observations'), not a 0. -->
-		<MetricDisplay
-			{value}
-			{label}
-			{size}
-			absentReason="no-observations"
-			{locale}
-			emptyLabel={t.noData}
-		/>
-		<MetricInfo tip={i.tip} href={i.href} label={i.label} linkLabel={i.linkLabel} side="bottom" />
-	</div>
-{/snippet}
-
-<!-- A section heading + its (i) explainer, baseline-aligned. -->
-{#snippet sectionInfo(text: string, key: MetricKey | SupplementalMetricKey)}
-	{@const i = info(key, text)}
-	<span class="receipt-section">
-		<SectionLabel {text} variant="station" />
-		<MetricInfo tip={i.tip} href={i.href} label={i.label} linkLabel={i.linkLabel} side="bottom" />
-	</span>
-{/snippet}
-
-<!-- An affected-count cell: the mono label + the count, or the styled honest-absence
-     chip when the day carries no count. A daily rollup with too few readings →
-     'no-observations'. A genuine measured 0 stays a real 0, never the chip. -->
-{#snippet countCell(label: string, value: string | null)}
-	<div class="receipt-count">
-		<dt>{label}</dt>
-		<dd>
-			<MaybeValue {value} reason="no-observations" {locale} />
-		</dd>
-	</div>
-{/snippet}
 
 <Surface width="bleed" class="receipt">
 	<SurfaceHeader kicker={t.kicker} heading={t.heading} subheading={t.subheading} lede={t.lede}>
@@ -218,36 +222,41 @@
 
 	<Separator variant="hazard" />
 
-	<!-- Discovery index → date selector. We DON'T hand the boundary an `isEmpty`:
-	     an empty index is a legitimate published state with a SPECIFIC honest
-	     message (`emptyIndex`, "no receipts yet"), more informative than the generic
-	     edge-empty. So the boundary only gates skeleton/error/no-file, and we render
-	     the empty-index note ourselves when the published index carries no dates. -->
+	<!-- Discovery index → smart date picker. We DON'T hand the boundary an `isEmpty`:
+	     an empty index has a SPECIFIC honest message (`emptyIndex`), so the boundary
+	     only gates skeleton/error/no-file. -->
 	<ResourceBoundary resource={index} lang={locale}>
 		{#if !hasDates}
 			<p class="receipt-note" data-slot="receipt-empty-index">{t.emptyIndex}</p>
 		{:else}
-			<!-- The date selector lives in a ControlsRail (quiet infra control panel)
-			     ABOVE the TerminalChrome receipt frame: the picker is an INTERACTION
-			     control, so --primary lives only on the active date chip, never on the
-			     rail chrome. The GrainPicker's radiogroup stays inside the rail. -->
+			<!-- The smart single-date calendar lives in a bare ControlsRail (quiet infra
+			     panel) ABOVE the frame — the receipt is NOT a multi-grain surface, so a
+			     bare rail hosts ONLY the availability-bound picker; --primary stays on the
+			     interactive control. The full span shows disabled gap-days with honest
+			     reasons (WEB3). -->
 			<ControlsRail label={t.controlsLabel} class="receipt-controls">
-				<GrainPicker
-					segments={dateSegments}
-					bind:value={selectedDate}
-					label={t.dateSelectLabel}
-					class="receipt-dates"
+				<DateRangePicker
+					mode="single"
+					bind:date={selectedDate}
+					dateOptions={availability.options}
+					{locale}
+					labels={{
+						group: t.dateSelectLabel,
+						start: '',
+						end: '',
+						clear: '',
+						anyStart: '',
+						anyEnd: '',
+						single: t.datePicker.label,
+					}}
 				/>
 			</ControlsRail>
 
-			<!-- Hazard tape discerns the controls zone from the data canvas. -->
 			<Separator variant="hazard" hazardSize="sm" />
 
 			<!-- The per-date receipt. We branch explicitly rather than via ResourceBoundary
-		     because a 404 surfaces as a loaded `null` (the adapter's empty signal) that
-		     the boundary cannot tell apart from "not yet loaded" — so a null receipt
-		     gets the SPECIFIC localized empty-receipt copy, not the generic empty edge.
-		     Error/skeleton still use the shared EdgeState for spine consistency. -->
+			     because a 404 surfaces as a loaded `null` the boundary can't tell from
+			     "not yet loaded" — so a null receipt gets the SPECIFIC empty-receipt copy. -->
 			{#if receipt.error}
 				<EdgeState
 					variant="error-v1"
@@ -267,81 +276,63 @@
 					status={formatDateKey(r.date, locale)}
 					footer={[{ label: t.issuedLabel, value: formatDateKey(r.date, locale) }]}
 				>
-					<!-- The receipt's three readout blocks tile into a fluid board: a
-					     multi-column board on desktop (the headline figures, the
-					     affected-counts and the worst-of-day each fill their own cell), one
-					     column on mobile (auto-fit reflow handles <lg). The worst-of-day tile
-					     stands DOWN entirely when the receipt carries no worst route/stop —
-					     the grid reflows past it, never a fabricated empty card. -->
-					<!-- The container that the @container queries resolve against lives on
-						     this WRAPPER, not the grid itself: a query can only restyle the grid
-						     as a DESCENDANT of the element that establishes the container. -->
+					<!-- The receipt's readout blocks tile into a fluid board (multi-column
+					     desktop, one column mobile). The worst tile stands DOWN entirely when
+					     the receipt carries no worst line/stop — the grid reflows past it. -->
 					<div class="receipt-frame" data-slot="receipt-frame">
-						<div class="receipt-layout" class:no-worst={!hasWorst} data-slot="receipt-layout">
-							<!-- PRIMARY band: the day's headline reliability figures. -->
-							<section class="receipt-panel receipt-primary" data-slot="receipt-headline">
-								{@render sectionInfo(t.receiptSection, 'otp')}
-								<div class="receipt-metrics">
-									{@render kpi(fmtPct(r.otp_pct), t.metrics.onTime, 'otp', 'lg')}
-									{@render kpi(fmtMinTile(r.avg_delay_min), t.metrics.avgDelay, 'avgDelay', 'lg')}
-									{@render kpi(fmtSeverePct(r.severe_pct), t.metrics.severe, 'severe', 'md')}
-									{@render kpi(
-										fmtScore(r.rider_impact_score),
-										t.metrics.riderImpact,
-										'riderImpact',
-										'md',
-									)}
-								</div>
-							</section>
-
-							<!-- SECONDARY row, left: affected counts on the day. -->
-							<section class="receipt-panel receipt-affected" data-slot="receipt-affected">
-								{@render sectionInfo(t.countsSection, 'affectedCounts')}
-								<dl class="receipt-counts">
-									{@render countCell(t.counts.routes, fmtCount(r.affected_routes))}
-									{@render countCell(t.counts.stops, fmtCount(r.affected_stops))}
-									{@render countCell(t.counts.alerts, fmtCount(r.alerts))}
-									<!-- `vehicles` is structurally always-null on /v1 (the daily receipt
-								     carries no per-vehicle count), so we OMIT the cell entirely rather
-								     than render a permanent honest-absence row. A real count would surface
-								     it again. The other counts stay honest (a null reads the styled chip). -->
-									{#if r.vehicles != null}
-										{@render countCell(t.counts.vehicles, fmtCount(r.vehicles))}
-									{/if}
-								</dl>
-							</section>
-
-							<!-- SECONDARY row, right: worst of the day — linked entity rows; the
-						     whole panel stands down when the receipt carries no worst
-						     route/stop (the row collapses to the affected column). -->
-							{#if hasWorst}
-								<section class="receipt-panel receipt-worst-panel" data-slot="receipt-worst">
-									{@render sectionInfo(t.worstSection, 'otp')}
-									<div class="receipt-worst">
-										{#if hasWorstRoute && worstRoute}
-											<EntityRow
-												target={{ kind: 'line', id: worstRoute.id }}
-												{locale}
-												title={worstRoute.name ?? routeNameFallback(worstRoute.id, locale)}
-												subtitle={`${t.worst.routeLabel} · ${worstRoute.id}`}
-												meta={`${t.worst.routeDeltaLabel} ${fmtDelta(worstRoute.otp_delta_pts)}`}
-											/>
-										{/if}
-										{#if hasWorstStop && worstStop}
-											<EntityRow
-												target={{ kind: 'stop', id: worstStop.id }}
-												{locale}
-												title={worstStop.name ?? stopNameFallback(worstStop.id, locale)}
-												subtitle={`${t.worst.stopLabel} · ${worstStop.id}`}
-												meta={`${t.worst.stopDelayLabel} ${fmtMin(worstStop.avg_delay_min)}`}
-											/>
-										{/if}
-									</div>
-								</section>
+						<div class="receipt-layout" class:no-worst={!worst.hasWorst} data-slot="receipt-layout">
+							<SectionHeadline
+								kpis={headlineKpis}
+								heading={t.receiptSection}
+								noData={t.noData}
+								{info}
+								{locale}
+							/>
+							<SectionAffected counts={affectedCounts} heading={t.countsSection} {info} {locale} />
+							{#if worst.hasWorst}
+								<SectionWorst {worst} heading={t.worstSection} {info} {locale} />
 							{/if}
 						</div>
 					</div>
 				</TerminalChrome>
+
+				<!-- S13 re-granulated cuts — WEB4 documented hoist: these render as receipt
+				     line-groups BELOW the frame because a ranked ladder / share-bar list /
+				     silent-lines list genuinely breaks the compact terminal-tile metaphor. Each
+				     stands DOWN on ramp-in absence (honest-absence, never a fabricated card). -->
+				<div class="receipt-cuts" data-slot="receipt-cuts">
+					{#if timeOfDay.hasTimeOfDay}
+						<SectionTimeOfDay
+							rows={timeOfDay.rows}
+							heading={t.timeOfDay.heading}
+							subtitle={t.timeOfDay.severeShare}
+							caveat={t.timeOfDay.caveat}
+							{info}
+							{locale}
+						/>
+					{/if}
+					{#if stateCuts.hasData}
+						<SectionStateCuts
+							state={stateCuts}
+							heading={t.stateCuts.heading}
+							completenessLabel={t.stateCuts.completenessLabel}
+							explainer={t.stateCuts.explainer}
+							standDown={t.stateCuts.standDown}
+							splitLabel={t.stateCuts.splitLabel}
+							noData={t.noData}
+							{info}
+							{locale}
+						/>
+					{/if}
+					{#if notReported.hasData}
+						<SectionNotReported
+							list={notReported}
+							heading={t.notReported.heading}
+							caveat={t.notReported.caveat}
+							shownOfTotal={t.notReported.shownOfTotal}
+						/>
+					{/if}
+				</div>
 
 				<!-- Honest caveat: a daily observed summary, not a certified report. -->
 				<p class="receipt-caveat" data-slot="receipt-caveat">{t.caveat}</p>
@@ -351,25 +342,15 @@
 </Surface>
 
 <style>
-	/* The ControlsRail owns its own bordered chrome; the hazard Separator below it
-	   discerns the controls zone from the receipt frame. The class lands on the
-	   rail's child-component root, so scope the spacing via its data-slot (the
-	   scoped analyzer can't otherwise see a child root). */
 	:global(.receipt .receipt-controls[data-slot='controls-rail']) {
 		margin-bottom: 1rem;
 	}
-	/* TerminalChrome owns its own root element, so scope its width via the slot
-	   it stamps (a child-component root the scoped analyzer can't otherwise see).
-	   Widened to a board measure so the inner composed layout reads as a designed
-	   receipt rather than the old single-stack 34rem column. */
 	:global(.receipt [data-slot='terminal-chrome']) {
 		max-width: var(--container-content);
 	}
 
-	/* The receipt is a COMPOSED document, not scattered cards. A @container drives
-	   the composition off the receipt frame's own width (not the viewport), so the
-	   layout is right whatever the page chrome around it. Default (narrow): a clean
-	   single stack — headline, then affected, then worst. */
+	/* The receipt is a COMPOSED document. A @container drives the composition off the
+	   frame's own width (not the viewport). Default (narrow): a clean single stack. */
 	.receipt-frame {
 		container-type: inline-size;
 		container-name: receipt;
@@ -383,21 +364,19 @@
 			'worst';
 		gap: 1rem;
 	}
-	.receipt-primary {
+	.receipt-layout :global([data-slot='receipt-headline']) {
 		grid-area: headline;
 	}
-	.receipt-affected {
+	.receipt-layout :global([data-slot='receipt-affected']) {
 		grid-area: affected;
 	}
-	.receipt-worst-panel {
+	.receipt-layout :global([data-slot='receipt-worst']) {
 		grid-area: worst;
 	}
 
-	/* Wide receipt frame: a deliberate two-row composition. The headline figures
-	   span the FULL width as a banner; the affected counts + worst-of-day sit as a
-	   balanced two-column secondary row beneath, sharing the top baseline. When the
-	   worst panel stands down (.no-worst), the secondary row is a single column and
-	   the affected panel keeps the full width — never a lopsided gap. */
+	/* Wide frame: the headline banner spans full width; affected + worst share a balanced
+	   two-column secondary row. When the worst panel stands down, affected keeps the full
+	   width — never a lopsided gap. */
 	@container receipt (min-width: 34rem) {
 		.receipt-layout {
 			grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
@@ -413,94 +392,13 @@
 		}
 	}
 
-	/* Each section is a quiet bordered panel (chrome only: --card bg, --border —
-	   never a data mark; the metrics bring their own dataviz colour). They share a
-	   common inner rhythm so the three panels read as one designed unit. */
-	.receipt-panel {
-		min-width: 0;
+	/* The S13 cuts sit below the frame as their own stacked line-groups (WEB4 hoist). */
+	.receipt-cuts {
 		display: flex;
 		flex-direction: column;
-		gap: 0.85rem;
-		padding: 1.1rem 1.2rem;
-		border: 1px solid var(--border);
-		border-radius: var(--radius-lg);
-		background: var(--card);
-	}
-	/* The headline band gets a touch more breathing room as the receipt's lead. */
-	.receipt-primary {
-		gap: 1rem;
-	}
-	.receipt-metrics {
-		margin: 0;
-		display: grid;
-		gap: 1.1rem 1.75rem;
-		grid-template-columns: repeat(2, minmax(0, 1fr));
-	}
-	/* On a wide frame the four headline figures read as a single banner row. */
-	@container receipt (min-width: 46rem) {
-		.receipt-metrics {
-			grid-template-columns: repeat(4, minmax(0, 1fr));
-		}
-	}
-	/* A headline KPI cell: the MetricDisplay (label + big value) with its (i)
-	   explainer pinned top-right beside the quiet label, never over the value. */
-	.receipt-kpi {
-		display: flex;
-		align-items: flex-start;
-		gap: 0.4rem;
-		min-width: 0;
-	}
-	.receipt-kpi :global([data-slot='metric-display']) {
-		min-width: 0;
-	}
-	/* Section heading + its (i) explainer share a baseline-aligned inline row. */
-	.receipt-section {
-		display: inline-flex;
-		align-items: center;
-		gap: 0.4rem;
-	}
-	/* Affected-count grid — a quiet mono description list. The panel itself is a
-	   container so the counts adapt to the COLUMN they land in: 2-up in the narrow
-	   secondary column, 4-up when the affected panel spans the full width (the
-	   .no-worst case), never a cramped 4-up squeezed into half a frame. */
-	.receipt-affected {
-		container-type: inline-size;
-		container-name: receipt-affected;
-	}
-	.receipt-counts {
-		margin: 0;
-		display: grid;
-		gap: 0.8rem 1.5rem;
-		grid-template-columns: repeat(2, minmax(0, 1fr));
-	}
-	@container receipt-affected (min-width: 30rem) {
-		.receipt-counts {
-			grid-template-columns: repeat(4, minmax(0, 1fr));
-		}
-	}
-	.receipt-count {
-		display: flex;
-		flex-direction: column;
-		gap: 0.2rem;
-	}
-	.receipt-count dt {
-		font-family: var(--font-mono);
-		font-size: var(--text-micro);
-		letter-spacing: 0.5px;
-		text-transform: uppercase;
-		color: var(--muted-foreground);
-	}
-	.receipt-count dd {
-		margin: 0;
-		font-family: var(--font-mono);
-		font-size: var(--text-subheading);
-		font-variant-numeric: tabular-nums;
-		color: var(--foreground);
-	}
-	.receipt-worst {
-		display: flex;
-		flex-direction: column;
-		gap: 0.5rem;
+		gap: 1.5rem;
+		margin-top: 1.25rem;
+		max-width: var(--container-content);
 	}
 	.receipt-note {
 		color: var(--muted-foreground);

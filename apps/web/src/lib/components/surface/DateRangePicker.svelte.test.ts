@@ -118,6 +118,72 @@ describe('DateRangePicker — honest absence', () => {
 	});
 });
 
+describe('DateRangePicker — single mode (S13 receipt)', () => {
+	const OPTIONS = [
+		{ date: '2026-06-01', label: 'Jun 1', disabled: false },
+		{ date: '2026-06-02', label: 'Jun 2', disabled: true, disabledLabel: 'no receipt' },
+		{ date: '2026-06-03', label: 'Jun 3', disabled: false },
+	] as const;
+
+	function renderSingle(initial: string | undefined = undefined) {
+		const box = { date: initial as string | undefined };
+		const result = render(DateRangePicker, {
+			props: {
+				mode: 'single' as const,
+				dateOptions: OPTIONS,
+				locale: 'en' as const,
+				labels: { ...LABELS, single: 'Receipt day' },
+				get date() {
+					return box.date;
+				},
+				set date(v: string | undefined) {
+					box.date = v;
+				},
+			},
+		});
+		return { ...result, box };
+	}
+
+	it('offers the FULL calendar span with published days enabled and gap-days disabled', () => {
+		const { getByLabelText } = renderSingle('2026-06-03');
+		const select = getByLabelText('Receipt day') as HTMLSelectElement;
+		const opts = Array.from(select.options);
+		expect(opts.map((o) => o.value)).toEqual(['2026-06-01', '2026-06-02', '2026-06-03']);
+		// The gap-day carries an honest disabled reason (never silently missing).
+		const gap = opts.find((o) => o.value === '2026-06-02')!;
+		expect(gap.disabled).toBe(true);
+		expect(gap.textContent).toContain('no receipt');
+		expect(opts.find((o) => o.value === '2026-06-03')!.disabled).toBe(false);
+	});
+
+	it('binds the single date OUT on change (a published day)', async () => {
+		const { getByLabelText, box } = renderSingle('2026-06-03');
+		await fireEvent.change(getByLabelText('Receipt day'), { target: { value: '2026-06-01' } });
+		expect(box.date).toBe('2026-06-01');
+	});
+
+	it('renders honest absence (no select) when the calendar is empty', () => {
+		const { container, queryByLabelText } = render(DateRangePicker, {
+			props: {
+				mode: 'single' as const,
+				dateOptions: [],
+				locale: 'en' as const,
+				labels: { ...LABELS, single: 'Receipt day' },
+			},
+		});
+		expect(queryByLabelText('Receipt day')).toBeNull();
+		expect(container.querySelector('[data-slot="single-date"]')).toBeNull();
+		expect(container.textContent).not.toBe('');
+	});
+
+	it('leaves the RANGE mode untouched (default mode renders the from/to pair)', () => {
+		const { getByLabelText, queryByLabelText } = renderPicker();
+		expect(getByLabelText('Pick a date range · From')).toBeInTheDocument();
+		expect(getByLabelText('Pick a date range · To')).toBeInTheDocument();
+		expect(queryByLabelText('Receipt day')).toBeNull();
+	});
+});
+
 describe('DateRangePicker — a11y AA', () => {
 	it('wraps the pair in a labelled group and labels each select', () => {
 		const { getByRole } = renderPicker();

@@ -255,18 +255,98 @@ describe('AccountabilityReceipt date switching', () => {
 
 		render(AccountabilityReceipt);
 
-		// First paint carries the seeded default (Jun 17, 82%).
+		// First paint carries the seeded default (the LATEST published day, Jun 17, 82%).
 		expect(await screen.findByText('82%')).toBeInTheDocument();
 
-		// Pick the NON-default Jun 16 chip (the GrainPicker renders role=radio chips
-		// labelled by the localized short date).
-		const jun16 = screen.getByRole('radio', { name: 'Jun 16' });
-		await fireEvent.click(jun16);
+		// Pick the NON-default Jun 16 day via the smart single-date <select> (S13 —
+		// the GrainPicker-as-date-picker misuse is gone; the picker is now an
+		// availability-bound native select whose options ARE the real dates).
+		const select = screen.getByLabelText('Receipt day') as HTMLSelectElement;
+		await fireEvent.change(select, { target: { value: '2026-06-16' } });
 
 		// getReceipt was invoked with the freshly-picked date …
 		expect(vi.mocked(v1.getReceipt)).toHaveBeenCalledWith('2026-06-16');
 		// … and the newly-fetched day's figures render (74%, not the old 82%).
 		expect(await screen.findByText('74%')).toBeInTheDocument();
 		expect(screen.queryByText('82%')).not.toBeInTheDocument();
+	});
+});
+
+describe('AccountabilityReceipt smart date picker (S13)', () => {
+	it('defaults to the LATEST published day and offers the full span as select options', async () => {
+		render(AccountabilityReceipt);
+		await screen.findByText('82%');
+		const select = screen.getByLabelText('Receipt day') as HTMLSelectElement;
+		// The three published days are all enabled options (no gaps in this index).
+		const opts = Array.from(select.options);
+		expect(opts.map((o) => o.value)).toEqual(['2026-06-15', '2026-06-16', '2026-06-17']);
+		expect(opts.every((o) => !o.disabled)).toBe(true);
+		// The default selection is the latest (Jun 17).
+		expect(select.value).toBe('2026-06-17');
+	});
+
+	it('disables a GAP day between earliest and latest with an honest reason', async () => {
+		const v1 = await import('$lib/v1');
+		// Jun 15 + Jun 17 published; Jun 16 is a gap the index never published.
+		indexData = {
+			generated_utc: '2026-06-17T07:00:00Z' as IsoUtc,
+			dates: ['2026-06-15', '2026-06-17'],
+		};
+		vi.mocked(v1.getReceiptsIndex).mockImplementation(() => indexData as never);
+		render(AccountabilityReceipt);
+		await screen.findByText('82%');
+		const select = screen.getByLabelText('Receipt day') as HTMLSelectElement;
+		const opts = Array.from(select.options);
+		expect(opts.map((o) => o.value)).toEqual(['2026-06-15', '2026-06-16', '2026-06-17']);
+		const gap = opts.find((o) => o.value === '2026-06-16')!;
+		expect(gap.disabled).toBe(true);
+		expect(gap.textContent).toContain('no receipt');
+	});
+});
+
+describe('AccountabilityReceipt S13 re-granulated cuts', () => {
+	it('renders the by-time-of-day, service-delivered, and not-reported cuts when present', async () => {
+		const v1 = await import('$lib/v1');
+		receiptData = {
+			...(receiptData as Receipt),
+			by_shift: [
+				{
+					shift: 'pm_peak',
+					severe_pct: 11.1,
+					observation_count: 180,
+					severe_count: 20,
+					avg_delay_min: 8,
+				},
+			],
+			service_states: {
+				scheduled_trip_days: 100,
+				delivered_trip_days: 80,
+				cancelled_trip_days: 5,
+				silent_trip_days: 15,
+				not_reported_route_count: 2,
+				service_completeness_pct: 80,
+				not_reported_routes: [{ id: '51', name: 'Édouard-Montpetit', scheduled_trip_days: 12 }],
+			},
+		};
+		vi.mocked(v1.getReceipt).mockImplementation(() => receiptData as never);
+		render(AccountabilityReceipt);
+		await screen.findByText('82%');
+		expect(document.querySelector('[data-slot="receipt-time-of-day"]')).not.toBeNull();
+		expect(document.querySelector('[data-slot="receipt-state-cuts"]')).not.toBeNull();
+		expect(document.querySelector('[data-slot="receipt-not-reported"]')).not.toBeNull();
+		// The not-reported line links to /lines/[id].
+		expect(screen.getByRole('link', { name: /View line 51/i })).toHaveAttribute(
+			'href',
+			'/lines/51',
+		);
+	});
+
+	it('stands the S13 cuts DOWN on ramp-in absence (pre-S13 receipt, no fabricated cards)', async () => {
+		// The default receiptData carries NO by_shift / service_states → the cuts stand down.
+		render(AccountabilityReceipt);
+		await screen.findByText('82%');
+		expect(document.querySelector('[data-slot="receipt-time-of-day"]')).toBeNull();
+		expect(document.querySelector('[data-slot="receipt-state-cuts"]')).toBeNull();
+		expect(document.querySelector('[data-slot="receipt-not-reported"]')).toBeNull();
 	});
 });
