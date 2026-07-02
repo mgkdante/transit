@@ -5,7 +5,6 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, timedelta
 
-from sqlalchemy import text
 from sqlalchemy.engine import Engine
 
 from transit_ops.db.connection import make_engine
@@ -1815,8 +1814,8 @@ def _build_percentile_days(
             # and disabling nestloop forces hash/merge joins; the headway day-build drops from
             # 45 min to ~9 s (verified by EXPLAIN ANALYZE on prod). Mirrors migration 0034's
             # heavy-build session tuning.
-            conn.execute(text("SET LOCAL work_mem = '512MB'"))
-            conn.execute(text("SET LOCAL enable_nestloop = off"))
+            conn.execute(named_query("rollup.session.work_mem", "SET LOCAL work_mem = '512MB'"))
+            conn.execute(named_query("rollup.session.nestloop_off", "SET LOCAL enable_nestloop = off"))
             conn.execute(
                 upsert,
                 {

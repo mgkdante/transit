@@ -8,6 +8,7 @@ unique (the import-time guard already enforces this), and the round-trip helper 
 
 from __future__ import annotations
 
+import pytest
 from sqlalchemy.sql.elements import TextClause
 
 from transit_ops.gold import marts, rollups
@@ -75,11 +76,17 @@ def test_spine_factory_outputs_have_distinct_markers():
 
 
 def test_no_duplicate_names():
-    # Importing the packages already raises on a duplicate; this pins the invariant.
     names = registered_names()
-    assert len(names) == len(set(names))
     assert "route.spine.crosstab" in names
     assert "route.spine.crosstab_windowed" in names
+    # A name bound to a DIFFERENT body raises; identical re-registration is idempotent.
+    with pytest.raises(ValueError, match="duplicate named_query"):
+        named_query("route.spine.crosstab", "SELECT 2")
+    # Malformed names are rejected: no namespace dot / uppercase.
+    with pytest.raises(ValueError):
+        named_query("nodots", "SELECT 1")
+    with pytest.raises(ValueError):
+        named_query("Bad.Name", "SELECT 1")
 
 
 def test_builders_package_reexports_are_marked():
@@ -109,8 +116,15 @@ def test_runtime_factory_statements_carry_markers():
 
 
 def test_query_name_roundtrip():
-    clause = named_query("route.x.roundtrip", "SELECT 1")
-    assert query_name(clause) == "route.x.roundtrip"
+    # Test-scoped name, removed afterwards so the process-global registry keeps
+    # exactly the import-time set for every later consumer.
+    from transit_ops import sql_registry
+
+    clause = named_query("test.registry.roundtrip", "SELECT 1")
+    try:
+        assert query_name(clause) == "test.registry.roundtrip"
+    finally:
+        sql_registry._REGISTRY.pop("test.registry.roundtrip", None)
     # A raw statement with no marker returns None.
     from sqlalchemy import text
 

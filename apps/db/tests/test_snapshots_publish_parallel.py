@@ -499,43 +499,48 @@ def test_static_publish_manifest_index_keys_present_and_complete() -> None:
 
 
 class _RecordingStaticConn:
-    """Static fake conn yielding a few routes (no stops) for parallel coverage."""
+    """Static fake conn yielding a few routes (no stops) for parallel coverage.
+
+    Dispatches on the `-- q:<name>` registry marker; unmapped names fall through
+    to []. Only R1 has spine history, so its routes_index entry gets
+    reliability=True.
+    """
 
     def execute(self, statement, params=None):  # noqa: ANN001, ARG002
         import datetime as _dt
 
-        s = str(statement)
-        if "loaded_at_utc FROM core.dataset_versions" in s:
-            loaded = _dt.datetime(2026, 6, 1, tzinfo=_dt.UTC)
-            return _StaticResult([{"loaded_at_utc": loaded}])
-        # reliability-availability set for build_routes_index — MUST precede the
-        # broader route_id needles below (shares the generic "route_id" column).
-        # Only R1 has history, so its routes_index entry gets reliability=True.
-        if "DISTINCT route_id FROM gold.route_delay_spine" in s:
-            return _StaticResult([{"route_id": "R1"}])
-        if "SELECT route_id FROM gold.dim_route WHERE provider_id" in s:
-            return _StaticResult([{"route_id": "R1"}, {"route_id": "R2"}, {"route_id": "R3"}])
-        if "route_sort_order" in s:
-            return _StaticResult([
-                {"route_id": "R1", "route_short_name": "1", "route_long_name": "One",
-                 "route_color": "009EE0", "route_type": 3}
-            ])
-        if "s.location_type" in s:
-            return _StaticResult([
-                {"stop_id": "S1", "stop_code": "S1", "stop_name": "Stop",
-                 "stop_lat": 45.0, "stop_lon": -73.0}
-            ])
-        if "report_labels" in s:
-            return _StaticResult([{"label_key": "k", "label_fr": "f", "label_en": "e"}])
-        if "dataset_kind = 'static_schedule'" in s:
-            return _StaticResult([{"dataset_version_id": 1}])
-        if "generate_series" in s:
-            return _StaticResult([
+        from transit_ops.sql_registry import query_name
+
+        route_row = [
+            {"route_id": "R1", "route_short_name": "1", "route_long_name": "One",
+             "route_color": "009EE0", "route_type": 3}
+        ]
+        stop_row = [
+            {"stop_id": "S1", "stop_code": "S1", "stop_name": "Stop",
+             "stop_lat": 45.0, "stop_lon": -73.0}
+        ]
+        rows = {
+            "publish.static_stamp": [
+                {"loaded_at_utc": _dt.datetime(2026, 6, 1, tzinfo=_dt.UTC)}
+            ],
+            "static.reliability_route_ids": [{"route_id": "R1"}],
+            "route.spine.route_ids": [{"route_id": "R1"}],
+            "static.dim_route_ids": [
+                {"route_id": "R1"}, {"route_id": "R2"}, {"route_id": "R3"}
+            ],
+            "static.routes_index": route_row,
+            "static.stops_index": stop_row,
+            # static.all_stops stays unmapped -> [] (the pre-migration needle
+            # never matched it; its consumer requires wheelchair_boarding).
+            "static.labels": [{"label_key": "k", "label_fr": "f", "label_en": "e"}],
+            "static.dataset_version": [{"dataset_version_id": 1}],
+            "manifest.version": [{"dataset_version_id": 1}],
+            "static.rep_dates": [
                 {"weekday_date": _dt.date(2026, 6, 3), "weekend_date": _dt.date(2026, 6, 6)}
-            ])
-        if "route_long_name, route_type FROM gold.dim_route" in s:
-            return _StaticResult([{"route_long_name": "One", "route_type": 3}])
-        return _StaticResult([])
+            ],
+            "static.route_name_type": [{"route_long_name": "One", "route_type": 3}],
+        }
+        return _StaticResult(rows.get(query_name(statement), []))
 
 
 class _StaticResult:

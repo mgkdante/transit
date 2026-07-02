@@ -44,14 +44,19 @@ class NamedQueryConn:
 
     ``mapping`` is a dict {query_name: rows}. Unmapped (or unnamed) statements
     return an empty result — the same fall-through the substring fakes gave.
+    ``strict=True`` raises on an unmapped name instead, for tests that must
+    fail loudly on a renamed or mistyped dispatch key.
     """
 
-    def __init__(self, mapping=None):  # noqa: ANN001
+    def __init__(self, mapping=None, *, strict: bool = False):  # noqa: ANN001
         self._mapping = dict(mapping or {})
+        self._strict = strict
         self.executed: list[str] = []
 
     def execute(self, statement, params=None):  # noqa: ANN001, ARG002
         sql = str(statement)
         self.executed.append(sql)
         name = query_name(statement)
+        if self._strict and name not in self._mapping:
+            raise AssertionError(f"unmapped query: {name!r}")
         return _FakeResult(self._mapping.get(name, []))

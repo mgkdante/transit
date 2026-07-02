@@ -5,8 +5,10 @@ and records the name. The marker is an inert leading SQL comment, so query plans
 published bytes are unchanged; it exists so tests dispatch on an exact query identity
 instead of fragile SELECT-column substrings, and so EXPLAIN output is self-labelling.
 
-Duplicate names raise at import time — the registry is the single source of query
-identity that C2/C3 rename/move constants against.
+A name bound to a DIFFERENT SQL body raises (at import time for module constants;
+at call time for factory-built statements); re-registering an identical body is
+idempotent, because runtime factories rebuild the same parameterized statement per
+call. The registry is the single source of query identity.
 """
 
 from __future__ import annotations

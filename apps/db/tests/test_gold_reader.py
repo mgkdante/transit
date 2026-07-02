@@ -330,6 +330,10 @@ def test_current_date_trailing_clause_bytes() -> None:
 
 # sha256 of each registered SQL body, captured from the PRE-C2 code. The kernel
 # extraction is a pure refactor: if any of these move, published bytes moved.
+# Three entries (route.occupancy.by_dow, route.occupancy.by_grain,
+# route.delay.by_crowding) were captured AFTER stripping the retired
+# substring-dispatch comment tags — re-deriving them from pre-C1 main will
+# differ by exactly those inert comment lines, not by SQL.
 _C2_TOUCHED_SQL_SHA256 = {
     "rollup.route_headway.upsert": (
         "624b551f37e63268c7a443c4da56081de3d144a0655d2a8146d982e56dfefd5c"
