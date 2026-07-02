@@ -146,6 +146,10 @@ def _opt_int(x: object) -> int | None:
     return int(x) if x is not None else None  # type: ignore[arg-type]
 
 
+def _opt_float(x: object) -> float | None:
+    return float(x) if x is not None else None  # type: ignore[arg-type]
+
+
 def _sane_en(value: str | None) -> str | None:
     """Drop legacy Python-repr EN alert garbage from the published contract."""
     if value is None:
@@ -333,19 +337,38 @@ _CURRENT_DATASET_VERSION_SQL = named_query(
 
 # Pick the busiest weekday and weekend DATE within the dataset's most recent
 # 6 weeks (deterministic; avoids CURRENT_DATE so the static file is reproducible).
+# GC2 H2 (2026-07-02): resolve the canonical GTFS service-on-date rule (calendar ∩
+# calendar_dates), NOT the weekly boolean alone — otherwise added-service exceptions
+# (type=1) are missed, removed exceptions (type=2) inflate a date, and a
+# calendar_dates-only feed (empty silver.calendar) collapses the whole static
+# schedule surface to empty. The service-on-date WHERE below is IDENTICAL to the
+# UNION in rollups.UPSERT_ROUTE_SCHEDULED_TRIPS_DAILY (the H1 scheduled rollup) —
+# kept in lockstep by cross-reference so the two resolutions can never drift. The
+# bounds CTE COALESCEs calendar date-bounds with calendar_dates service_date bounds
+# so generate_series is non-empty on calendar_dates-only feeds.
 _REP_DATES_SQL = named_query(
     "static.rep_dates",
     """
     WITH bounds AS (
-        SELECT max(end_date) AS hi, (max(end_date) - 42) AS lo
-        FROM silver.calendar
-        WHERE provider_id = :provider_id AND dataset_version_id = :dataset_version_id
+        SELECT hi, (hi - 42) AS lo
+        FROM (
+            SELECT COALESCE(
+                (SELECT max(end_date) FROM silver.calendar
+                 WHERE provider_id = :provider_id
+                   AND dataset_version_id = :dataset_version_id),
+                (SELECT max(service_date) FROM silver.calendar_dates
+                 WHERE provider_id = :provider_id
+                   AND dataset_version_id = :dataset_version_id)
+            ) AS hi
+        ) b
     ),
     days AS (
         SELECT gs::date AS d, extract(isodow FROM gs)::int AS dow
         FROM bounds, generate_series(bounds.lo, bounds.hi, interval '1 day') AS gs
+        WHERE bounds.hi IS NOT NULL
     ),
     active AS (
+        -- service active on d via weekly pattern minus type-2 removals ...
         SELECT d.d, d.dow, c.service_id
         FROM days d
         JOIN silver.calendar c
@@ -355,6 +378,22 @@ _REP_DATES_SQL = named_query(
                  WHEN 1 THEN c.monday WHEN 2 THEN c.tuesday WHEN 3 THEN c.wednesday
                  WHEN 4 THEN c.thursday WHEN 5 THEN c.friday WHEN 6 THEN c.saturday
                  ELSE c.sunday END
+        WHERE NOT EXISTS (
+            SELECT 1 FROM silver.calendar_dates cd
+            WHERE cd.provider_id = :provider_id
+              AND cd.dataset_version_id = :dataset_version_id
+              AND cd.service_id = c.service_id
+              AND cd.service_date = d.d
+              AND cd.exception_type = 2
+        )
+        UNION
+        -- ... OR added via a type-1 exception (fires with zero calendar rows).
+        SELECT d.d, d.dow, cd.service_id
+        FROM days d
+        JOIN silver.calendar_dates cd
+            ON cd.provider_id = :provider_id AND cd.dataset_version_id = :dataset_version_id
+           AND cd.service_date = d.d
+           AND cd.exception_type = 1
     ),
     tally AS (
         SELECT a.d, a.dow, count(t.trip_id) AS n
@@ -370,6 +409,8 @@ _REP_DATES_SQL = named_query(
     """
 )
 
+# Active services on a specific representative date — same service-on-date rule as
+# _REP_DATES_SQL above so the returned service set matches the busiest-date pick.
 _ACTIVE_SERVICES_SQL = named_query(
     "static.active_services",
     """
@@ -377,10 +418,24 @@ _ACTIVE_SERVICES_SQL = named_query(
     FROM silver.calendar c
     WHERE c.provider_id = :provider_id AND c.dataset_version_id = :dataset_version_id
       AND :repdate BETWEEN c.start_date AND c.end_date
-      AND CASE extract(isodow FROM :repdate)
+      AND CASE extract(isodow FROM CAST(:repdate AS date))
             WHEN 1 THEN c.monday WHEN 2 THEN c.tuesday WHEN 3 THEN c.wednesday
             WHEN 4 THEN c.thursday WHEN 5 THEN c.friday WHEN 6 THEN c.saturday
             ELSE c.sunday END
+      AND NOT EXISTS (
+          SELECT 1 FROM silver.calendar_dates cd
+          WHERE cd.provider_id = :provider_id
+            AND cd.dataset_version_id = :dataset_version_id
+            AND cd.service_id = c.service_id
+            AND cd.service_date = CAST(:repdate AS date)
+            AND cd.exception_type = 2
+      )
+    UNION
+    SELECT cd.service_id
+    FROM silver.calendar_dates cd
+    WHERE cd.provider_id = :provider_id AND cd.dataset_version_id = :dataset_version_id
+      AND cd.service_date = CAST(:repdate AS date)
+      AND cd.exception_type = 1
     """
 )
 

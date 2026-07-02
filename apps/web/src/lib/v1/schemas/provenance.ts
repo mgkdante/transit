@@ -5,7 +5,7 @@
 // "how we measure this" / honesty footer.
 
 import { z } from 'zod';
-import { isoUtc } from './types';
+import { isoUtc, payloadEnvelopeFields } from './types';
 
 export const ProvenanceSourceSchema = z.object({
 	feed: z.string(),
@@ -45,5 +45,6 @@ export const ProvenanceSchema = z.object({
 	methodology: z.record(z.string(), z.unknown()).optional(),
 	// Feed-conformance verdict — nullable (default null) when not checked.
 	conformance: ProvenanceConformanceSchema.nullable().optional(),
+	...payloadEnvelopeFields(),
 });
 export type Provenance = z.infer<typeof ProvenanceSchema>;

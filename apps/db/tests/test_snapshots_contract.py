@@ -493,3 +493,52 @@ def test_stop_index_mode_routes_are_additive():
 
     # Freeze-compat: required keys are exactly the committed ones.
     assert StopIndexEntry.model_json_schema()["required"] == ["id", "name", "lat", "lon"]
+
+
+# --- GC2 H4: in-band accountability envelope + provider capabilities -----------
+
+def test_every_top_level_model_carries_the_envelope():
+    # Every TOP_LEVEL_MODELS root MUST subclass PayloadEnvelope so a future top-level
+    # model can't forget the in-band schema_version/methodology_version/generation_id.
+    from transit_ops.snapshots.contract import (
+        PAYLOAD_METHODOLOGY,
+        TOP_LEVEL_MODELS,
+        PayloadEnvelope,
+    )
+
+    for name, model in TOP_LEVEL_MODELS.items():
+        assert issubclass(model, PayloadEnvelope), f"{name} missing PayloadEnvelope"
+        fields = model.model_fields
+        for f in ("schema_version", "methodology_version", "publish_generation_id"):
+            assert f in fields, f"{name} missing envelope field {f}"
+        # Every top-level model must have a methodology family entry.
+        assert name in PAYLOAD_METHODOLOGY, f"{name} missing PAYLOAD_METHODOLOGY entry"
+
+
+def test_envelope_fields_are_additive_optional_with_defaults():
+    # Growth rule: the envelope must be optional-with-default so already-published
+    # snapshots (which lack these keys) still validate.
+    from transit_ops.snapshots.contract import PAYLOAD_SCHEMA_VERSION, VehiclesFile
+
+    v = VehiclesFile(generated_utc="t", vehicles=[])
+    assert v.schema_version == PAYLOAD_SCHEMA_VERSION
+    assert v.methodology_version is None
+    assert v.publish_generation_id is None
+    # None of the three appear in `required`.
+    req = VehiclesFile.model_json_schema()["required"]
+    for f in ("schema_version", "methodology_version", "publish_generation_id"):
+        assert f not in req
+
+
+def test_provider_capabilities_fields_match_surfaces_one_to_one():
+    # DECISIONS #15: capability families align 1:1 with Manifest.surfaces (_SURFACES).
+    from transit_ops.snapshots.builders._helpers import _SURFACES
+    from transit_ops.snapshots.contract import ProviderCapabilities
+
+    assert list(ProviderCapabilities.model_fields) == list(_SURFACES)
+
+
+def test_manifest_capabilities_is_additive_optional():
+    from transit_ops.snapshots.contract import Manifest
+
+    assert "capabilities" not in Manifest.model_json_schema()["required"]

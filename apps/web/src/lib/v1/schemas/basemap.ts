@@ -4,7 +4,7 @@
 // null and no basemap.json object exists.
 
 import { z } from 'zod';
-import { isoUtc } from './types';
+import { isoUtc, payloadEnvelopeFields } from './types';
 
 export const BasemapFileSchema = z.object({
 	url: z.string(),
@@ -15,5 +15,6 @@ export const BasemapFileSchema = z.object({
 	max_zoom: z.number().int().optional(),
 	// Optional MapLibre style URL; null when the archive ships without a style.
 	style_url: z.string().nullable().optional(),
+	...payloadEnvelopeFields(),
 });
 export type BasemapFile = z.infer<typeof BasemapFileSchema>;

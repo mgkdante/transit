@@ -4,7 +4,7 @@
 // free-string severity label.
 
 import { z } from 'zod';
-import { isoUtc } from './types';
+import { isoUtc, payloadEnvelopeFields } from './types';
 
 export const HotspotSchema = z.object({
 	rank: z.number().int(),
@@ -21,5 +21,6 @@ export type Hotspot = z.infer<typeof HotspotSchema>;
 export const HotspotsSchema = z.object({
 	generated_utc: isoUtc(),
 	hotspots: z.array(HotspotSchema).optional(),
+	...payloadEnvelopeFields(),
 });
 export type Hotspots = z.infer<typeof HotspotsSchema>;

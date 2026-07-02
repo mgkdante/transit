@@ -19,6 +19,7 @@ from transit_ops.snapshots.builders._helpers import (
     _avg_delay_min,
     _build_habits_matrix,
     _iso_date,
+    _opt_float,
     _opt_int,
     _opt_iso,
     _otp_pct,
@@ -49,6 +50,7 @@ from transit_ops.snapshots.contract import (
     HeadwayPeriod,
     OccupancyByDow,
     OccupancyByGrain,
+    OccupancyByHour,
     ReliabilityPeriod,
     RouteReliability,
     ServiceSpanPeriod,
@@ -145,11 +147,28 @@ _ROUTE_HEADWAY_DIRECTION_SQL = named_query(
 )
 
 # Per-route daily cancellation rate from the append-only rollup (last 30 closed
-# local days). cancellation_rate_pct is None when total_trip_days=0.
+# local days). cancellation_rate_pct is None when total_trip_days=0. The scheduled-
+# universe columns (GC2 H1) are NULL on pre-0073 history + no-schedule editions;
+# service_completeness_pct is derived read-time = 100 * delivered / scheduled, NULL
+# when scheduled is NULL or 0 (honest-unknown, never a fabricated 100%).
+# 2026-07-02 (GC2): delivered > scheduled is LEGITIMATE (added/unscheduled trips +
+# capture-day vs service-day overnight spillover), so the ratio is CLAMPED at 100 —
+# over-delivery reads as fully complete rather than >100% (which the publish gate's
+# 0-100 rate check would otherwise ABORT on). The batch-level id-drift detector
+# (gate.py GATE_ID_DRIFT_WARN_FRACTION) is the signal for systemic overshoot.
 _ROUTE_CANCELLATION_DAILY_SQL = named_query(
     "route.cancellation.daily",
     """
-    SELECT provider_local_date, cancellation_rate_pct, canceled_trip_days, total_trip_days
+    SELECT
+        provider_local_date, cancellation_rate_pct, canceled_trip_days, total_trip_days,
+        scheduled_trip_days, delivered_trip_days, silent_trip_days,
+        -- LEAST() SWALLOWS NULLs (LEAST(100.0, NULL) = 100.0), so guard the honest-NULL
+        -- (unknown scheduled universe) with a CASE — only clamp a REAL over-100 ratio.
+        CASE
+            WHEN delivered_trip_days IS NULL OR scheduled_trip_days IS NULL
+                 OR scheduled_trip_days = 0 THEN NULL
+            ELSE LEAST(100.0, ROUND(100.0 * delivered_trip_days / scheduled_trip_days, 2))
+        END AS service_completeness_pct
     FROM gold.route_cancellation_daily
     WHERE provider_id = :provider_id AND route_id = :route_id
     ORDER BY provider_local_date DESC
@@ -216,6 +235,29 @@ _ROUTE_OCCUPANCY_BY_GRAIN_SQL = named_query(
     WHERE rob.provider_id = :provider_id AND rob.route_id = :route_id
       AND {current_date_trailing_clause("rob.provider_local_date")}
     ORDER BY rob.provider_local_date DESC
+    """
+)
+
+# GC2 H3 §04: crowding band-shares grouped by LOCAL hour-of-day (0..23) over the same
+# trailing-30d window as occupancy_mix, for the time-of-day (rush-hour vs midday) split.
+# Reads gold.route_occupancy_band_hourly (migration 0074, daily == Σ hourly); honest-None
+# per hour with no band telemetry (handled by _occupancy_mix_from_bands). Clone of
+# _ROUTE_OCCUPANCY_BY_DOW_SQL keyed on hour_of_day_local instead of ISODOW.
+_ROUTE_OCCUPANCY_BY_HOUR_SQL = named_query(
+    "route.occupancy.by_hour",
+    f"""
+    SELECT rob.hour_of_day_local   AS hour_of_day_local,
+           SUM(rob.empty_count)       AS empty,
+           SUM(rob.many_seats_count)  AS many_seats,
+           SUM(rob.few_seats_count)   AS few_seats,
+           SUM(rob.standing_count)    AS standing,
+           SUM(rob.full_count)        AS full
+    FROM gold.route_occupancy_band_hourly AS rob
+    JOIN gold.dim_provider AS dp ON dp.provider_id = rob.provider_id
+    WHERE rob.provider_id = :provider_id AND rob.route_id = :route_id
+      AND {current_date_trailing_clause("rob.provider_local_date")}
+    GROUP BY rob.hour_of_day_local
+    ORDER BY rob.hour_of_day_local
     """
 )
 
@@ -432,6 +474,10 @@ def _route_cancellations(conn: Connection, params: dict) -> list[CancellationPer
             ),
             canceled_trip_days=_opt_int(r["canceled_trip_days"]),
             total_trip_days=_opt_int(r["total_trip_days"]),
+            scheduled_trip_days=_opt_int(r["scheduled_trip_days"]),
+            delivered_trip_days=_opt_int(r["delivered_trip_days"]),
+            silent_trip_days=_opt_int(r["silent_trip_days"]),
+            service_completeness_pct=_opt_float(r["service_completeness_pct"]),
         )
         for r in sorted(
             conn.execute(_ROUTE_CANCELLATION_DAILY_SQL, params).mappings(),
@@ -442,10 +488,11 @@ def _route_cancellations(conn: Connection, params: dict) -> list[CancellationPer
 
 def _route_occupancy(
     conn: Connection, params: dict
-) -> tuple[object, list[OccupancyByDow], list[OccupancyByGrain]]:
-    """Scalar trailing-30d occupancy_mix + weekday split + grain-aware crowding mix.
+) -> tuple[object, list[OccupancyByDow], list[OccupancyByGrain], list[OccupancyByHour]]:
+    """Scalar trailing-30d occupancy_mix + weekday split + grain-aware + hour-of-day mix.
 
-    Query order: band_window, by_dow, by_grain — UNCHANGED.
+    Query order: band_window, by_dow, by_grain, by_hour — the by_hour read is a pure
+    APPEND at the tail (GC2 H3), preserving the documented executed-query order.
     """
     # occupancy_mix: trailing-30d crowding band-shares (honest-None)
     occupancy_mix = _occupancy_mix_from_bands(
@@ -485,7 +532,19 @@ def _route_occupancy(
             )
             for grain, rows in grain_windows.items()
         ]
-    return occupancy_mix, occupancy_by_dow, occupancy_by_grain
+    # occupancy_by_hour: crowding mix per LOCAL hour-of-day (GC2 H3 §04 time-of-day
+    # split; honest-None per hour with no band telemetry; sparse). Reads the hour-grain
+    # spine (daily == Σ hourly). APPENDED at the tail so the executed-query order stays
+    # a pure extension of band_window/by_dow/by_grain.
+    occupancy_by_hour = [
+        OccupancyByHour(
+            hour_of_day_local=int(r["hour_of_day_local"]),
+            mix=_occupancy_mix_from_bands(r),
+            n=_band_total(r),
+        )
+        for r in conn.execute(_ROUTE_OCCUPANCY_BY_HOUR_SQL, params).mappings()
+    ]
+    return occupancy_mix, occupancy_by_dow, occupancy_by_grain, occupancy_by_hour
 
 
 def _route_service_spans(conn: Connection, params: dict) -> list[ServiceSpanPeriod]:
@@ -614,8 +673,10 @@ def build_route_reliability(
     # --- cancellations: per-day rate history (most recent 30 closed days, ASC) ---
     cancellations = _route_cancellations(conn, params)
 
-    # --- occupancy: scalar mix + weekday split + grain-aware mix ---
-    occupancy_mix, occupancy_by_dow, occupancy_by_grain = _route_occupancy(conn, params)
+    # --- occupancy: scalar mix + weekday split + grain-aware + hour-of-day mix ---
+    occupancy_mix, occupancy_by_dow, occupancy_by_grain, occupancy_by_hour = _route_occupancy(
+        conn, params
+    )
 
     # --- service spans: per-day first/last + span history (30 closed days, ASC) ---
     service_spans = _route_service_spans(conn, params)
@@ -651,6 +712,7 @@ def build_route_reliability(
         by_shift_daytype=by_shift_daytype,
         occupancy_by_grain=occupancy_by_grain,
         occupancy_by_dow=occupancy_by_dow,
+        occupancy_by_hour=occupancy_by_hour,
         periods_by_grain=periods_by_grain,
         habits_by_grain=habits_by_grain,
         headway_by_grain=headway_by_grain,

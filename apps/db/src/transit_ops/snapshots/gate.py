@@ -40,6 +40,13 @@ GATE_DELAY_MIN_ABS = 90.0         # signed-delay minutes cap (fact cap 3600s=60m
 GATE_MIX_SUM_TOL = 0.01           # occupancy-mix share sum tolerance around 1.0
 GATE_ROUTE_DROP_FRACTION = 0.30   # total-file-count drop that fires the coverage-delta ERROR
 GATE_EMPTY_ROUTE_WARN_FRACTION = 0.50  # >half empty route files -> coverage-regression WARN
+# GC2 DECISIONS #12 — trip-id drift detector. When RT-observed trip-days exceed the
+# scheduled universe on > this fraction of scheduled route-days, silent_trip_days was
+# systematically clamped to 0 (see the read-time completeness clamp in
+# route_reliability / network_trend): the scheduled and RT trip_id namespaces are
+# drifting apart, so silent counts UNDER-report. WARN (not ERROR) — over-delivery is
+# legitimate per-day; only the systemic share is a data-quality signal.
+GATE_ID_DRIFT_WARN_FRACTION = 0.05
 
 # Occupancy bands shared with OccupancyMix / route_occupancy_band_daily.
 _MIX_BANDS = ("empty", "many_seats", "few_seats", "standing", "full")
@@ -378,6 +385,7 @@ def _check_trend_point(emit: _Emitter, p: dict) -> None:
     emit.delay(p, "p90_min")
     emit.count(p, "vehicles")
     emit.rate(p, "cancellation_rate")
+    emit.rate(p, "service_completeness_rate")  # GC2 H1 (None-skip on pre-0073 history)
     emit.count(p, "observation_count")
     emit.wilson(p)
     emit.mix(p.get("occupancy_mix"), "occupancy_mix")
@@ -506,6 +514,28 @@ def check_route_reliability(payload: object, *, rel_key: str) -> list[CheckResul
         if not _le(c.get("canceled_trip_days"), c.get("total_trip_days")):
             sub.err("invariant", "canceled_trip_days", c.get("canceled_trip_days"),
                     "canceled_trip_days > total_trip_days")
+        # Scheduled-universe split (GC2 H1). All None-skip (honest-unknown on pre-0073
+        # history). Invariants: delivered<=total (RT-observed subset), silent<=scheduled
+        # (silent is a subset of the scheduled universe), delivered+canceled==total.
+        sub.count(c, "scheduled_trip_days")
+        sub.count(c, "delivered_trip_days")
+        sub.count(c, "silent_trip_days")
+        sub.rate(c, "service_completeness_pct")
+        if not _le(c.get("delivered_trip_days"), c.get("total_trip_days")):
+            sub.err("invariant", "delivered_trip_days", c.get("delivered_trip_days"),
+                    "delivered_trip_days > total_trip_days")
+        if not _le(c.get("silent_trip_days"), c.get("scheduled_trip_days")):
+            sub.err("invariant", "silent_trip_days", c.get("silent_trip_days"),
+                    "silent_trip_days > scheduled_trip_days")
+        _delivered = c.get("delivered_trip_days")
+        _canceled = c.get("canceled_trip_days")
+        _total = c.get("total_trip_days")
+        if (
+            _is_number(_delivered) and _is_number(_canceled) and _is_number(_total)
+            and _delivered + _canceled != _total
+        ):
+            sub.err("invariant", "delivered_trip_days", _delivered,
+                    "delivered_trip_days + canceled_trip_days != total_trip_days")
     for i, s in enumerate(d.get("skipped_stops") or []):
         if not isinstance(s, dict):
             continue
@@ -547,6 +577,11 @@ def check_route_reliability(payload: object, *, rel_key: str) -> list[CheckResul
             continue
         emit.mix(o.get("mix"), f"occupancy_by_dow[{i}].mix")
         _prefixed(emit, f"occupancy_by_dow[{i}].").count(o, "n")
+    for i, o in enumerate(d.get("occupancy_by_hour") or []):  # GC2 H3
+        if not isinstance(o, dict):
+            continue
+        emit.mix(o.get("mix"), f"occupancy_by_hour[{i}].mix")
+        _prefixed(emit, f"occupancy_by_hour[{i}].").count(o, "n")
     emit.mix(d.get("occupancy_mix"), "occupancy_mix")
     return emit.out
 
@@ -805,6 +840,65 @@ def _is_empty_route_file(payload: object) -> bool:
     )
 
 
+def _id_drift_counts(route_payloads: list[tuple[str, object]]) -> tuple[int, int]:
+    """Count (scheduled route-days, overshoot route-days) across route payloads.
+
+    A route-day is 'scheduled' when its cancellation row carries a known
+    scheduled_trip_days (the scheduled universe was resolved for that date); it is an
+    'overshoot' when the RT-observed total_trip_days EXCEEDS that scheduled count — the
+    over-delivery case where silent_trip_days was clamped to 0 (DECISIONS #12). Only
+    numeric leaves are counted; honest-NULL scheduled rows are skipped entirely.
+    """
+    scheduled_days = 0
+    overshoot_days = 0
+    for _rel_key, payload in route_payloads:
+        d = _as_dict(payload)
+        if not isinstance(d, dict):
+            continue
+        for c in d.get("cancellations") or []:
+            if not isinstance(c, dict):
+                continue
+            scheduled = c.get("scheduled_trip_days")
+            total = c.get("total_trip_days")
+            if not _is_number(scheduled):
+                continue
+            scheduled_days += 1
+            if _is_number(total) and total > scheduled:
+                overshoot_days += 1
+    return scheduled_days, overshoot_days
+
+
+def check_id_drift(
+    route_payloads: list[tuple[str, object]] | None,
+    *,
+    warn_frac: float = GATE_ID_DRIFT_WARN_FRACTION,
+) -> CheckResult | None:
+    """WARN when RT-observed > scheduled on > warn_frac of scheduled route-days.
+
+    Batch-level trip-id drift signal (DECISIONS #12): a high overshoot share means the
+    scheduled and RT trip_id namespaces are drifting, so the clamped silent counts
+    under-report. Returns None when there are no scheduled route-days (nothing to
+    measure) or the share is within tolerance.
+    """
+    if not route_payloads:
+        return None
+    scheduled_days, overshoot_days = _id_drift_counts(route_payloads)
+    if scheduled_days <= 0:
+        return None
+    ratio = overshoot_days / scheduled_days
+    if ratio <= warn_frac:
+        return None
+    return CheckResult(
+        check="id_drift", kind="batch", rel_key="<batch>", severity=Severity.WARN,
+        message=(
+            f"{overshoot_days} of {scheduled_days} scheduled route-days have observed "
+            f"trips > scheduled ({ratio:.0%} > {warn_frac:.0%}) — trip-id drift; silent "
+            "counts under-report"
+        ),
+        field_path=None, value=ratio,
+    )
+
+
 def _network_trend_series_empty(payload: object) -> bool:
     """True when a network_trend payload carries an empty daily `series`."""
     d = _as_dict(payload)
@@ -856,6 +950,8 @@ def finalize_batch(
 
     * coverage-delta ERROR when the total file count shrank vs the prior publish;
     * over-half-empty route set WARN (a coverage regression signal);
+    * trip-id drift WARN when RT-observed > scheduled on > GATE_ID_DRIFT_WARN_FRACTION
+      of scheduled route-days (clamped silent counts under-report);
     * empty network_trend series: WARN when the batch carries no route files
       (static-only provider) or on a first publish; ERROR only when realtime
       data exists AND a prior publish existed (routed here because per-file
@@ -879,6 +975,9 @@ def finalize_batch(
     delta = check_route_coverage_delta(current_total, prior_files_total)
     if delta is not None:
         report.results.append(delta)
+    drift = check_id_drift(route_payloads)  # GC2 DECISIONS #12 (WARN on systemic overshoot)
+    if drift is not None:
+        report.results.append(drift)
     if route_payloads:
         empty = sum(1 for (_k, p) in route_payloads if _is_empty_route_file(p))
         ratio = empty / len(route_payloads)

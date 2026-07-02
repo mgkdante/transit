@@ -5,7 +5,7 @@
 // Fetched per route id under route_reliability_prefix (404 = empty state).
 
 import { z } from 'zod';
-import { isoUtc } from './types';
+import { isoUtc, payloadEnvelopeFields } from './types';
 import { OccupancyMixSchema } from './network';
 
 // One bin of the per-route signed-delay distribution (the §01 distribution chart).
@@ -140,9 +140,18 @@ export const CancellationPeriodSchema = z.object({
 	grain: z.string().optional(),
 	date: z.string().nullable().optional(),
 	// canceled / RT-reported trip-days, %; null when no trips were observed.
+	// KEEPS its RT-observed semantics — NOT redefined by the scheduled fields below.
 	cancellation_rate_pct: z.number().nullable().optional(),
 	canceled_trip_days: z.number().int().nullable().optional(),
 	total_trip_days: z.number().int().nullable().optional(),
+	// Scheduled-universe split (GC2 H1, additive-optional; null = unknown, never 0).
+	// scheduled = calendar ∩ calendar_dates active trips; delivered = total − canceled;
+	// silent = scheduled trips never seen in any RT poll; service_completeness_pct =
+	// 100 × delivered / scheduled (the honest scheduled-complete readout).
+	scheduled_trip_days: z.number().int().nullable().optional(),
+	delivered_trip_days: z.number().int().nullable().optional(),
+	silent_trip_days: z.number().int().nullable().optional(),
+	service_completeness_pct: z.number().nullable().optional(),
 });
 export type CancellationPeriod = z.infer<typeof CancellationPeriodSchema>;
 
@@ -191,6 +200,18 @@ export const OccupancyByDowSchema = z.object({
 	n: z.number().int().nullable().optional(),
 });
 export type OccupancyByDow = z.infer<typeof OccupancyByDowSchema>;
+
+// GC2 H3: crowding band-shares per LOCAL hour-of-day (0..23) — the §04 time-of-day
+// (rush-hour vs midday) split. Mirrors OccupancyByDow keyed on hour_of_day_local.
+export const OccupancyByHourSchema = z.object({
+	hour_of_day_local: z.number().int(),
+	// band-shares for the hour; null when the hour has no occupancy telemetry.
+	mix: OccupancyMixSchema.nullable().optional(),
+	// total band observations for this hour (the share denominator); null on
+	// pre-republish snapshots, 0 when the hour has data-days but no band telemetry.
+	n: z.number().int().nullable().optional(),
+});
+export type OccupancyByHour = z.infer<typeof OccupancyByHourSchema>;
 
 export const ReliabilityByGrainSchema = z.object({
 	// S7-B windowable §1: the When-to-ride breakdowns recomputed over ONE trailing
@@ -270,6 +291,8 @@ export const RouteReliabilitySchema = z.object({
 	// split). Additive-optional (older artifacts omit these keys).
 	occupancy_by_grain: z.array(OccupancyByGrainSchema).optional(),
 	occupancy_by_dow: z.array(OccupancyByDowSchema).optional(),
+	// GC2 H3: crowding band-shares per LOCAL hour-of-day (time-of-day §04 split).
+	occupancy_by_hour: z.array(OccupancyByHourSchema).optional(),
 	// S7-B windowable §1: the When-to-ride breakdowns + heatmap recomputed per time
 	// window (day/week/month). The scalar periods/habits/day_of_week/by_shift_daytype
 	// above stay the whole-history representation; these are the windowed companions.
@@ -279,5 +302,6 @@ export const RouteReliabilitySchema = z.object({
 	// S7-B windowable §2: per-shift headway recomputed per time window (busiest direction).
 	headway_by_grain: z.array(HeadwayByGrainSchema).optional(),
 	weak_stops_by_grain: z.array(WeakStopGrainSchema).optional(),
+	...payloadEnvelopeFields(),
 });
 export type RouteReliability = z.infer<typeof RouteReliabilitySchema>;

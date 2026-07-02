@@ -217,10 +217,16 @@ class FakeConnection:
         if "INSERT INTO gold.stop_delay_percentile_daily" in sql:
             return RowcountResult(1)
 
+        if "INSERT INTO gold.route_scheduled_trips_daily" in sql:
+            return RowcountResult(1)
+
         if "INSERT INTO gold.route_cancellation_daily" in sql:
             return RowcountResult(1)
 
         if "INSERT INTO gold.route_occupancy_band_daily" in sql:
+            return RowcountResult(1)
+
+        if "INSERT INTO gold.route_occupancy_band_hourly" in sql:
             return RowcountResult(1)
 
         if "INSERT INTO gold.stop_occupancy_band_daily" in sql:
@@ -322,6 +328,9 @@ class FakeConnection:
         if "SELECT COUNT(*)" in sql and "FROM gold.route_occupancy_band_daily" in sql:
             return ScalarResult(10)
 
+        if "SELECT COUNT(*)" in sql and "FROM gold.route_occupancy_band_hourly" in sql:
+            return ScalarResult(17)
+
         if "SELECT COUNT(*)" in sql and "FROM gold.stop_occupancy_band_daily" in sql:
             return ScalarResult(15)
 
@@ -360,6 +369,13 @@ class FakeConnection:
 
         if "DELETE FROM gold.stop_delay_shift_daily" in sql:
             return RowcountResult(5)
+
+        # route_scheduled_trips_daily — GC2/H1 append-only scheduled universe (0073), 730d pruning.
+        if "SELECT COUNT(*)" in sql and "FROM gold.route_scheduled_trips_daily" in sql:
+            return ScalarResult(17)
+
+        if "DELETE FROM gold.route_scheduled_trips_daily" in sql:
+            return RowcountResult(17)
 
         return RowcountResult(0)
 
@@ -1087,6 +1103,8 @@ def test_prune_warm_rollup_storage_dry_run_counts_without_deletes() -> None:
     # Tier-1 append-only tables prune at the same 730d boundary.
     assert result.deleted_row_counts["gold.route_cancellation_daily"] == 9
     assert result.deleted_row_counts["gold.route_occupancy_band_daily"] == 10
+    # GC2/H3 hour-grain crowding spine (0074) — same append-only retention as the daily.
+    assert result.deleted_row_counts["gold.route_occupancy_band_hourly"] == 17
     # The per-STOP occupancy-band twin is now registered for retention pruning too
     # (provider_local_date boundary, mirroring route_occupancy_band_daily).
     assert result.deleted_row_counts["gold.stop_occupancy_band_daily"] == 15
@@ -1101,13 +1119,17 @@ def test_prune_warm_rollup_storage_dry_run_counts_without_deletes() -> None:
     assert result.deleted_row_counts["gold.stop_delay_spine"] == 4
     # stop_delay_shift_daily — the GC1/G4 append-only STOP-DELAY shift grain (0071), 730d pruning.
     assert result.deleted_row_counts["gold.stop_delay_shift_daily"] == 5
+    # route_scheduled_trips_daily — the GC2/H1 append-only scheduled universe (0073), 730d pruning.
+    assert result.deleted_row_counts["gold.route_scheduled_trips_daily"] == 17
 
     count_queries = [s for s in conn.executed if "SELECT COUNT(*)" in s or "SELECT count(*)" in s]
     # 23 prior MINUS the 6 route delay-cube fold tables (dropped in 0064) MINUS the 2 stop_delay
     # weekly/monthly folds (dropped in 0067) PLUS the S7-B route_headway_shift_daily (DB-PR-2) +
     # stop_delay_spine (DB-PR-3) PLUS the FIX-3 route_delay_by_crowding_daily PLUS the GC1/G4
-    # stop_delay_shift_daily (0071); each retention-registered table emits one dry-run COUNT.
-    assert len(count_queries) == 19
+    # stop_delay_shift_daily (0071) PLUS the GC2/H1 route_scheduled_trips_daily (0073) PLUS the
+    # GC2/H3 route_occupancy_band_hourly (0074); each retention-registered table emits one
+    # dry-run COUNT.
+    assert len(count_queries) == 21
 
 
 def test_prune_warm_rollup_storage_display_dict_includes_dry_run() -> None:
@@ -1281,13 +1303,14 @@ REBUILD_TO = date(2026, 3, 22)
 
 
 def test_rebuildable_kinds_registry_covers_all_append_only_builders() -> None:
-    """The registry is the exact set of 12 append-only daily builder kinds, each
+    """The registry is the exact set of append-only daily builder kinds, each
     mapped to a real append-only table with a retention date column that matches."""
     expected = {
         "route_percentile_daily",
         "stop_percentile_daily",
         "route_cancellation_daily",
         "route_occupancy_band_daily",
+        "route_occupancy_band_hourly",
         "stop_occupancy_band_daily",
         "route_service_span_daily",
         "route_skipped_stop_daily",
@@ -1296,6 +1319,7 @@ def test_rebuildable_kinds_registry_covers_all_append_only_builders() -> None:
         "route_headway_shift_daily",
         "stop_delay_spine",
         "stop_delay_shift_daily",
+        "route_scheduled_trips_daily",
     }
     assert set(REBUILDABLE_KINDS) == expected
 

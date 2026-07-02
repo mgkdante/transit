@@ -408,6 +408,62 @@ def test_over_half_empty_route_set_is_warn():
     assert report.errors == []
 
 
+# --- trip-id drift detector (GC2 DECISIONS #12) ------------------------------
+
+
+def _route_with_cancellations(rid, rows):
+    """A RouteReliability carrying (scheduled, total) cancellation rows."""
+    return RouteReliability(
+        generated_utc="t",
+        id=rid,
+        cancellations=[
+            CancellationPeriod(
+                grain="day",
+                date=f"2026-06-{i + 1:02d}",
+                scheduled_trip_days=sched,
+                total_trip_days=total,
+            )
+            for i, (sched, total) in enumerate(rows)
+        ],
+    )
+
+
+def test_id_drift_none_when_no_scheduled_days():
+    # All-NULL scheduled -> nothing to measure -> None (honest-unknown, never a WARN).
+    payloads = [("historic/route_reliability/a.json",
+                 _route_with_cancellations("a", [(None, 5), (None, 3)]))]
+    assert gate.check_id_drift(payloads) is None
+
+
+def test_id_drift_below_threshold_is_clean():
+    # 20 scheduled route-days, 1 overshoot -> 5% == threshold (not > it) -> no WARN.
+    rows = [(10, 12)] + [(10, 5)] * 19
+    payloads = [("historic/route_reliability/a.json", _route_with_cancellations("a", rows))]
+    assert gate.check_id_drift(payloads) is None
+
+
+def test_id_drift_above_threshold_is_warn():
+    # 10 scheduled route-days, 2 overshoots -> 20% > 5% -> WARN.
+    rows = [(10, 12), (10, 15)] + [(10, 5)] * 8
+    payloads = [("historic/route_reliability/a.json", _route_with_cancellations("a", rows))]
+    finding = gate.check_id_drift(payloads)
+    assert finding is not None
+    assert finding.severity is Severity.WARN
+    assert finding.check == "id_drift"
+
+
+def test_finalize_batch_emits_id_drift_warn():
+    report = gate.new_report("stm", "historic", "t")
+    rows = [(10, 12), (10, 15)] + [(10, 5)] * 8  # 20% overshoot
+    route_payloads = [("historic/route_reliability/a.json",
+                       _route_with_cancellations("a", rows))]
+    gate.finalize_batch(
+        report, route_payloads=route_payloads, current_total=1, prior_files_total=None
+    )
+    assert any(r.check == "id_drift" for r in report.warnings)
+    assert report.errors == []
+
+
 # --- enforce / GateError -----------------------------------------------------
 
 

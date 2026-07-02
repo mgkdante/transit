@@ -132,6 +132,18 @@
       "title": "Generated Utc",
       "type": "string"
     },
+    "methodology_version": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Methodology Version"
+    },
     "otp_pct": {
       "anyOf": [
         {
@@ -144,6 +156,18 @@
       "default": null,
       "title": "Otp Pct"
     },
+    "publish_generation_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Publish Generation Id"
+    },
     "rider_impact_score": {
       "anyOf": [
         {
@@ -155,6 +179,11 @@
       ],
       "default": null,
       "title": "Rider Impact Score"
+    },
+    "schema_version": {
+      "default": 1,
+      "title": "Schema Version",
+      "type": "integer"
     },
     "severe_pct": {
       "anyOf": [

@@ -4,7 +4,7 @@
 // keyed by trip id (additionalProperties), not an array.
 
 import { z } from 'zod';
-import { isoUtc, StatusCodeSchema } from './types';
+import { isoUtc, StatusCodeSchema, payloadEnvelopeFields } from './types';
 
 export const StopEtaSchema = z.object({
 	stop: z.string(),
@@ -25,5 +25,6 @@ export type Trip = z.infer<typeof TripSchema>;
 export const TripsFileSchema = z.object({
 	generated_utc: isoUtc(),
 	trips: z.record(z.string(), TripSchema),
+	...payloadEnvelopeFields(),
 });
 export type TripsFile = z.infer<typeof TripsFileSchema>;

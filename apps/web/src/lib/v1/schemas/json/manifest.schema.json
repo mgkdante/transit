@@ -1,5 +1,15 @@
 {
   "$defs": {
+    "Capability": {
+      "enum": [
+        "enabled",
+        "partial",
+        "unavailable",
+        "not_applicable"
+      ],
+      "title": "Capability",
+      "type": "string"
+    },
     "ManifestFiles": {
       "properties": {
         "historic": {
@@ -198,6 +208,78 @@
       },
       "title": "ManifestStaticFiles",
       "type": "object"
+    },
+    "ProviderCapabilities": {
+      "properties": {
+        "accountability": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Capability"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "data_trust": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Capability"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "live_map": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Capability"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "lookups": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Capability"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "network_health": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Capability"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "reliability": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Capability"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "title": "ProviderCapabilities",
+      "type": "object"
     }
   },
   "properties": {
@@ -224,6 +306,17 @@
       },
       "title": "Bbox",
       "type": "array"
+    },
+    "capabilities": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ProviderCapabilities"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
     },
     "city": {
       "anyOf": [
@@ -260,9 +353,38 @@
       "title": "Labels",
       "type": "object"
     },
+    "methodology_version": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Methodology Version"
+    },
     "provider": {
       "title": "Provider",
       "type": "string"
+    },
+    "publish_generation_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Publish Generation Id"
+    },
+    "schema_version": {
+      "default": 1,
+      "title": "Schema Version",
+      "type": "integer"
     },
     "short_name": {
       "anyOf": [

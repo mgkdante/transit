@@ -8,7 +8,19 @@
 // .optional() (the file may omit them and the pipeline backfills the default).
 
 import { z } from 'zod';
-import { isoUtc } from './types';
+import { CapabilitySchema, isoUtc, payloadEnvelopeFields } from './types';
+
+// GC2 H4 — per-surface capability honesty, one field per Manifest.surfaces entry
+// (aligned 1:1). Each is Capability-or-null, optional (absent on pre-H4 manifests).
+export const ProviderCapabilitiesSchema = z.object({
+	live_map: CapabilitySchema.nullable().optional(),
+	network_health: CapabilitySchema.nullable().optional(),
+	lookups: CapabilitySchema.nullable().optional(),
+	reliability: CapabilitySchema.nullable().optional(),
+	accountability: CapabilitySchema.nullable().optional(),
+	data_trust: CapabilitySchema.nullable().optional(),
+});
+export type ProviderCapabilities = z.infer<typeof ProviderCapabilitiesSchema>;
 
 export const ManifestLiveFilesSchema = z.object({
 	generated_utc: isoUtc(),
@@ -76,9 +88,13 @@ export const ManifestSchema = z.object({
 	labels: z.record(z.string(), z.string()),
 	files: ManifestFilesSchema,
 	surfaces: z.array(z.string()),
+	// GC2 H4: per-surface capability honesty, aligned 1:1 with `surfaces`. null/absent
+	// on pre-H4 manifests.
+	capabilities: ProviderCapabilitiesSchema.nullable().optional(),
 	// absolute URL of the basemap pointer; null until a PMTiles archive is hosted.
 	basemap: z.string().nullable().optional(),
 	default_lang: z.string().optional(),
 	tz: z.string().optional(),
+	...payloadEnvelopeFields(),
 });
 export type Manifest = z.infer<typeof ManifestSchema>;

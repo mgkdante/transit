@@ -5,7 +5,7 @@
 // (dates come from receipts_index; 404 = empty state).
 
 import { z } from 'zod';
-import { isoUtc } from './types';
+import { isoUtc, payloadEnvelopeFields } from './types';
 
 export const ReceiptWorstRouteSchema = z.object({
 	id: z.string(),
@@ -36,5 +36,6 @@ export const ReceiptSchema = z.object({
 	rider_impact_score: z.number().nullable().optional(),
 	worst_route: ReceiptWorstRouteSchema.nullable().optional(),
 	worst_stop: ReceiptWorstStopSchema.nullable().optional(),
+	...payloadEnvelopeFields(),
 });
 export type Receipt = z.infer<typeof ReceiptSchema>;

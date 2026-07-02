@@ -84,10 +84,12 @@ class FakeStore:
     def __init__(self) -> None:
         self.keys: list[str] = []
         self.tiers: list[str] = []
+        self.payloads: list[object] = []
 
     def put_json(self, rel_key: str, payload: object, *, tier: str) -> str:
         self.keys.append(rel_key)
         self.tiers.append(tier)
+        self.payloads.append(payload)
         return rel_key
 
 
@@ -168,6 +170,47 @@ def test_publish_live_uploads_all_files_manifest_last() -> None:
     assert res.provider_id == "stm"
     assert res.tier == "live"
     assert res.keys_written == expected_keys
+
+
+def test_publish_live_stamps_h4_envelope_on_every_payload() -> None:
+    """GC2 H4: every live payload carries ONE shared publish_generation_id + a
+    methodology_version, stamped once per run."""
+    store = FakeStore()
+    publish_snapshot(
+        "stm", tier="live", settings=FakeSettings(), engine=FakeEngine(), storage=store
+    )
+    gen_ids = {p.publish_generation_id for p in store.payloads}
+    assert len(gen_ids) == 1  # exactly one generation id across the whole snapshot
+    gen_id = next(iter(gen_ids))
+    assert gen_id is not None and gen_id.startswith("stm@")
+    for p in store.payloads:
+        assert p.methodology_version is not None
+        assert p.schema_version == 1
+
+
+def test_collect_payloads_stamps_h4_envelope() -> None:
+    """FIX-5: the validate-snapshots collect path stamps the H4 envelope too, so the
+    pre-publish audit inspects the SAME bytes a real publish uploads (not un-stamped)."""
+    from transit_ops.snapshots.contract import PayloadEnvelope
+    from transit_ops.snapshots.publish import collect_payloads
+
+    class _ConnectEngine:
+        def connect(self):  # noqa: ANN202
+            @contextmanager
+            def _cm():
+                yield FakeConn()
+
+            return _cm()
+
+    items, _routes, _stamp, _prior = collect_payloads(
+        "stm", tier="live", settings=FakeSettings(), engine=_ConnectEngine()
+    )
+    envelopes = [p for (_k, p) in items if isinstance(p, PayloadEnvelope)]
+    assert envelopes, "expected at least one PayloadEnvelope in collected live items"
+    gen_ids = {p.publish_generation_id for p in envelopes}
+    assert len(gen_ids) == 1 and next(iter(gen_ids)) is not None
+    for p in envelopes:
+        assert p.methodology_version is not None
 
 
 def test_publish_result_display_dict() -> None:
@@ -490,7 +533,10 @@ def test_publish_historic_writes_expected_keys(tmp_path) -> None:
         "route.cancellation.daily": [
             {"provider_local_date": datetime.date(2026, 6, 1),
              "cancellation_rate_pct": 2.5, "canceled_trip_days": 3,
-             "total_trip_days": 120},
+             "total_trip_days": 120,
+             # GC2 H1 scheduled-universe split (delivered = total - canceled = 117).
+             "scheduled_trip_days": 130, "delivered_trip_days": 117,
+             "silent_trip_days": 10, "service_completeness_pct": 90.0},
         ],
         # tier-3 2D shift×day_type crosstab: the windowed spine projector only runs
         # when the route spine anchor is present (unmapped here → []), matching the

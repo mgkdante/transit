@@ -350,6 +350,27 @@ def test_trend_fact_sql_caps_p90_delay_input() -> None:
     assert "ABS(fts.delay_seconds) <= 3600" in sql
 
 
+def test_build_network_trend_service_completeness_clamped_at_100() -> None:
+    """Over-delivery (Σdelivered > Σscheduled) clamps service_completeness_rate at 100
+    (FIX-1) rather than emitting >100% (which the gate's 0-100 rate check would abort)."""
+    d = datetime.date(2026, 6, 7)
+    conn = FakeConn(
+        {
+            "network.trend.daily_hourly": [],
+            "network.trend.daily_p90": [],
+            # delivered 250 vs scheduled 100 -> raw 250% -> clamped to 100.0
+            "network.trend.daily_cancel": [
+                {"local_date": d, "canceled": 0, "total": 250,
+                 "delivered": 250, "scheduled": 100},
+            ],
+            "network.trend.daily_occupancy": [],
+        }
+    )
+    out = build_network_trend(conn, generated_utc="t")
+    assert len(out.series) == 1
+    assert out.series[0].service_completeness_rate == 100.0
+
+
 def test_build_network_trend_fact_only_date() -> None:
     """A date present only in the fact table still yields a point (rollup fields None)."""
     d = datetime.date(2026, 6, 5)
@@ -378,7 +399,7 @@ def _route_reliability_dispatch(*, daily=None, weekly=None, monthly=None, headwa
                                 headway_direction=None,
                                 habit=None, weak=None, names=None, schedule=None,
                                 route_names=None, dow=None, crowding=None, crosstab=None,
-                                occ_dow=None, occ_grain=None):
+                                occ_dow=None, occ_grain=None, occ_hour=None):
     """Assemble the name-keyed dispatch map for build_route_reliability.
 
     Each query dispatches on its `-- q:<name>` registry marker (no ordering). The
@@ -401,6 +422,7 @@ def _route_reliability_dispatch(*, daily=None, weekly=None, monthly=None, headwa
         "route.delay.by_crowding": crowding or [],
         "route.occupancy.by_dow": occ_dow or [],
         "route.occupancy.by_grain": occ_grain or [],
+        "route.occupancy.by_hour": occ_hour or [],
         "route.reliability.daily": daily or [],
         "route.spine.weekly": weekly or [],
         "route.spine.monthly": monthly or [],
@@ -805,6 +827,49 @@ def test_build_route_reliability_occupancy_by_dow_empty_when_absent() -> None:
     conn = FakeConn(_route_reliability_dispatch(occ_dow=[]))
     out = build_route_reliability(conn, route_id="51", generated_utc="t")
     assert out.occupancy_by_dow == []
+
+
+def test_build_route_reliability_occupancy_by_hour_cells() -> None:
+    # GC2 H3 §04: per-LOCAL-hour crowding mix; one OccupancyByHour per hour with band
+    # telemetry, shares computed from the summed band counts (clone of the by_dow pair).
+    occ_hour = [
+        {"hour_of_day_local": 8, "empty": 0, "many_seats": 5,
+         "few_seats": 3, "standing": 2, "full": 0},
+        {"hour_of_day_local": 12, "empty": 8, "many_seats": 2,
+         "few_seats": 0, "standing": 0, "full": 0},
+    ]
+    conn = FakeConn(_route_reliability_dispatch(occ_hour=occ_hour))
+    out = build_route_reliability(conn, route_id="51", generated_utc="t")
+    by = {c.hour_of_day_local: c for c in out.occupancy_by_hour}
+    assert set(by) == {8, 12}
+    assert by[8].mix is not None
+    assert by[8].mix.many_seats == 0.5  # 5/10
+    assert by[8].mix.standing == 0.2  # 2/10
+    assert by[12].mix.empty == 0.8  # 8/10
+    # n = the per-hour band-observation total (the share denominator).
+    assert by[8].n == 10  # 0+5+3+2+0
+    assert by[12].n == 10  # 8+2+0+0+0
+
+
+def test_build_route_reliability_occupancy_by_hour_honest_none_when_no_bands() -> None:
+    # An hour with data-days but all-zero band counts -> mix is None (honest absence,
+    # never a fabricated all-empty mix); the cell is still emitted with a real n=0.
+    occ_hour = [
+        {"hour_of_day_local": 3, "empty": 0, "many_seats": 0,
+         "few_seats": 0, "standing": 0, "full": 0},
+    ]
+    conn = FakeConn(_route_reliability_dispatch(occ_hour=occ_hour))
+    out = build_route_reliability(conn, route_id="51", generated_utc="t")
+    assert len(out.occupancy_by_hour) == 1
+    assert out.occupancy_by_hour[0].hour_of_day_local == 3
+    assert out.occupancy_by_hour[0].mix is None
+    assert out.occupancy_by_hour[0].n == 0
+
+
+def test_build_route_reliability_occupancy_by_hour_empty_when_absent() -> None:
+    conn = FakeConn(_route_reliability_dispatch(occ_hour=[]))
+    out = build_route_reliability(conn, route_id="51", generated_utc="t")
+    assert out.occupancy_by_hour == []
 
 
 def test_build_route_reliability_occupancy_by_grain_windows() -> None:

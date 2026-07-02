@@ -817,6 +817,13 @@ def test_build_manifest_assembles_from_provider_and_version() -> None:
                 }
             ],
             "core.dataset_versions": [{"dataset_version": "2026-05-29-stm"}],
+            # GC2 H4: STM's enabled feed set → all delivered surfaces 'enabled'.
+            "manifest.capability_endpoints": [
+                {"endpoint_key": "static_schedule"},
+                {"endpoint_key": "trip_updates"},
+                {"endpoint_key": "vehicle_positions"},
+                {"endpoint_key": "i3_alerts"},
+            ],
         }
     )
 
@@ -849,6 +856,28 @@ def test_build_manifest_assembles_from_provider_and_version() -> None:
     assert out.labels == {"fr": "labels/fr.json", "en": "labels/en.json"}
     assert "live_map" in out.surfaces
     assert "data_trust" in out.surfaces
+    # GC2 H4: honest per-surface capabilities from the enabled feed set.
+    assert out.capabilities is not None
+    assert out.capabilities.live_map.value == "enabled"
+    assert out.capabilities.network_health.value == "enabled"
+    assert out.capabilities.lookups.value == "enabled"
+    assert out.capabilities.reliability.value == "enabled"
+    assert out.capabilities.accountability.value == "enabled"
+    assert out.capabilities.data_trust.value == "enabled"
+
+
+def test_build_manifest_capabilities_honest_absence_without_feeds() -> None:
+    # A provider with ONLY a static schedule (STS-like): live_map / reliability /
+    # accountability are honestly 'unavailable', lookups + data_trust stay 'enabled'.
+    from transit_ops.snapshots.builders.live import _derive_capabilities
+
+    caps = _derive_capabilities({"static_schedule"})
+    assert caps.lookups.value == "enabled"
+    assert caps.data_trust.value == "enabled"
+    assert caps.live_map.value == "unavailable"
+    assert caps.network_health.value == "unavailable"
+    assert caps.reliability.value == "unavailable"
+    assert caps.accountability.value == "unavailable"
 
 
 def test_build_manifest_defaults_when_version_missing() -> None:
@@ -1745,7 +1774,9 @@ def test_build_network_trend_emits_week_and_month_grain_series() -> None:
          "pooled_delay_sec": 6000.0, "inclamp_obs": 100},   # otp 90, avg 1.0
     ]
     week_cancel = [
-        {"local_date": datetime.date(2026, 6, 1), "canceled": 3, "total": 120},  # 2.5%
+        # 2.5% RT-cancel rate; delivered 117 / scheduled 130 -> 90.0% completeness (GC2 H1).
+        {"local_date": datetime.date(2026, 6, 1), "canceled": 3, "total": 120,
+         "delivered": 117, "scheduled": 130},
     ]
     week_occupancy = [
         {"local_date": datetime.date(2026, 6, 1), "empty": 0, "many_seats": 50,
@@ -1757,7 +1788,9 @@ def test_build_network_trend_emits_week_and_month_grain_series() -> None:
          "pooled_delay_sec": 90000.0, "inclamp_obs": 1000},  # otp 82, avg 1.5
     ]
     month_cancel = [
-        {"local_date": datetime.date(2026, 6, 1), "canceled": 12, "total": 600},  # 2.0%
+        # 2.0% RT-cancel rate; delivered 588 / scheduled 600 -> 98.0% completeness (GC2 H1).
+        {"local_date": datetime.date(2026, 6, 1), "canceled": 12, "total": 600,
+         "delivered": 588, "scheduled": 600},
     ]
     month_occupancy = [
         {"local_date": datetime.date(2026, 6, 1), "empty": 10, "many_seats": 40,
@@ -1785,7 +1818,8 @@ def test_build_network_trend_emits_week_and_month_grain_series() -> None:
     w0, w1 = out.weekly
     assert w0.otp_pct == 90                  # 90 / 100
     assert w0.avg_delay_min == 1.0           # 6000 / 100 / 60
-    assert w0.cancellation_rate == 2.5       # 100 * 3 / 120
+    assert w0.cancellation_rate == 2.5       # 100 * 3 / 120 (RT-observed, unchanged)
+    assert w0.service_completeness_rate == 90.0  # 100 * 117 / 130 (GC2 H1)
     assert w0.occupancy_mix is not None
     assert w0.occupancy_mix.many_seats == 0.5  # 50 / 100
     # p90/vehicles NEVER aggregated to week (no fact_sql dispatched).
@@ -1795,6 +1829,7 @@ def test_build_network_trend_emits_week_and_month_grain_series() -> None:
     assert w1.otp_pct == 75                  # 150 / 200
     assert w1.avg_delay_min == 2.0           # 24000 / 200 / 60
     assert w1.cancellation_rate is None
+    assert w1.service_completeness_rate is None
     assert w1.occupancy_mix is None
     assert w1.p90_min is None
     assert w1.vehicles is None
@@ -1804,7 +1839,8 @@ def test_build_network_trend_emits_week_and_month_grain_series() -> None:
     m0 = out.monthly[0]
     assert m0.otp_pct == 82                  # 820 / 1000
     assert m0.avg_delay_min == 1.5           # 90000 / 1000 / 60
-    assert m0.cancellation_rate == 2.0       # 100 * 12 / 600
+    assert m0.cancellation_rate == 2.0       # 100 * 12 / 600 (RT-observed, unchanged)
+    assert m0.service_completeness_rate == 98.0  # 100 * 588 / 600 (GC2 H1)
     assert m0.occupancy_mix is not None
     assert m0.occupancy_mix.empty == 0.1     # 10 / 100
     assert m0.p90_min is None

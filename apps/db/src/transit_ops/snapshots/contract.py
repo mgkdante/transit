@@ -20,6 +20,57 @@ from enum import Enum
 
 from pydantic import BaseModel, Field
 
+# GC2 H4 — in-band accountability stamps on every top-level payload root.
+# schema_version = the CONTRACT shape generation (bumped on breaking-ish shape moves;
+# additive-optional field growth does NOT bump it — the growth rule keeps old clients
+# valid). methodology_version is a per-payload-FAMILY string (see PAYLOAD_METHODOLOGY
+# below) so a rebaseline in one family (e.g. the pooled-avg move) is visible in-band
+# without touching unrelated families. publish_generation_id = the deterministic
+# dataset_version+generated_utc composite the publisher stamps once per run (DECISIONS
+# #17), so a citizen can tie any file back to the exact publish that emitted it.
+PAYLOAD_SCHEMA_VERSION = 1
+
+# Per-payload-family methodology version map (DECISIONS #14). Families group the
+# top-level models by the metric doctrine that governs them; bump a family's string
+# when a rebaseline lands in that family (the S7-B methodology-note discipline, now
+# in-band). Keys are TOP_LEVEL_MODELS keys; every top-level model MUST have a family
+# entry (test_snapshots_contract asserts coverage) so a new payload can't ship
+# unversioned. Values are opaque tokens, compared for equality only.
+PAYLOAD_METHODOLOGY: dict[str, str] = {
+    "manifest": "manifest-1",
+    "live_vehicles": "live-1",
+    "live_trips": "live-1",
+    "live_alerts": "alerts-1",
+    "live_network": "live-1",
+    "live_stop_departures": "live-1",
+    "static_routes_index": "static-1",
+    "static_stops_index": "static-1",
+    "static_route": "static-1",
+    "static_stop": "static-1",
+    "static_labels": "static-1",
+    "static_basemap": "static-1",
+    "historic_network_trend": "reliability-1",
+    "historic_route_reliability": "reliability-1",
+    "historic_stop_reliability": "reliability-1",
+    "historic_hotspots": "reliability-1",
+    "historic_repeat_offenders": "reliability-1",
+    "historic_receipt": "receipt-1",
+    "historic_receipts_index": "receipt-1",
+    "historic_route_reliability_index": "reliability-1",
+    "historic_alert_history": "alerts-1",
+    "provenance": "provenance-1",
+}
+
+
+class PayloadEnvelope(BaseModel):
+    # Additive-optional-with-default so already-published snapshots (which lack these
+    # keys) still validate under the growth rule — never make these required. Mixed
+    # into every TOP_LEVEL_MODELS root (and ONLY those roots; nested/embedded models
+    # do NOT carry the envelope). Stamped by the publisher (publish.py _stamp_envelope).
+    schema_version: int = PAYLOAD_SCHEMA_VERSION
+    methodology_version: str | None = None
+    publish_generation_id: str | None = None
+
 
 class Status(str, Enum):
     early = "early"; on_time = "on_time"; late = "late"; severe = "severe"; unknown = "unknown"
@@ -50,7 +101,7 @@ class Vehicle(BaseModel):
     # web keys honest per-bus fix age / freeze + forward-projection off this.
     reported_utc: str | None = None
 
-class VehiclesFile(BaseModel):
+class VehiclesFile(PayloadEnvelope):
     generated_utc: str
     vehicles: list[Vehicle]
 
@@ -65,7 +116,7 @@ class Trip(BaseModel):
     delay_min: int | None = None
     stops: list[StopEta] = Field(default_factory=list)
 
-class TripsFile(BaseModel):
+class TripsFile(PayloadEnvelope):
     generated_utc: str
     trips: dict[str, Trip]
 
@@ -75,7 +126,7 @@ class StopDeparture(BaseModel):
     eta_utc: str
     delay_min: int | None = None
 
-class StopDeparturesFile(BaseModel):
+class StopDeparturesFile(PayloadEnvelope):
     # stop_id -> chronological next departures, <=2 per route. An absent stop_id
     # means "no live predictions" (client falls back to the static schedule;
     # metro is structurally absent — STM publishes no metro realtime).
@@ -106,7 +157,7 @@ class Alert(BaseModel):
     effect: str | None = None
     severity_level: str | None = None
 
-class AlertsFile(BaseModel):
+class AlertsFile(PayloadEnvelope):
     generated_utc: str
     alerts: list[Alert]
 
@@ -133,7 +184,7 @@ class NonRespondingRoute(BaseModel):
     route_id: str
     count: int
 
-class NetworkFile(BaseModel):
+class NetworkFile(PayloadEnvelope):
     generated_utc: str
     vehicles_in_service: int
     # Honesty: these KPIs are None (not a fabricated 0) when their denominator
@@ -235,7 +286,30 @@ class ManifestFiles(BaseModel):
     static: ManifestStaticFiles = Field(default_factory=ManifestStaticFiles)
     historic: ManifestHistoricFiles = Field(default_factory=ManifestHistoricFiles)
 
-class Manifest(BaseModel):
+class Capability(str, Enum):
+    # GC2 H4 — per-surface capability honesty. 'enabled' = the surface is fully served;
+    # 'partial' = served but incomplete (e.g. a feed subset); 'unavailable' = the
+    # provider's feed simply does not carry it (honest absence, NOT an error);
+    # 'not_applicable' = the surface does not apply to this provider at all.
+    enabled = "enabled"; partial = "partial"; unavailable = "unavailable"; not_applicable = "not_applicable"
+
+class ProviderCapabilities(BaseModel):
+    # GC2 H4 (DECISIONS #15) — MINIMAL v1 per-provider capability block, ONE field per
+    # entry in Manifest.surfaces, aligned 1:1 (same names, same order — a contract test
+    # asserts the field set == the _SURFACES list). The web already reads the manifest
+    # first to gate surface fetches, so capability lives beside `surfaces`. Sourced from
+    # real provider config, never hardcoded 'enabled' — publishing a surface 'enabled'
+    # for a provider whose feed does not carry it would violate the honest-absence
+    # doctrine (OC Transpo has no alerts, STS is static+alerts only). Additive-optional
+    # so pre-H4 manifests still validate; each field None means "capability unknown".
+    live_map: Capability | None = None
+    network_health: Capability | None = None
+    lookups: Capability | None = None
+    reliability: Capability | None = None
+    accountability: Capability | None = None
+    data_trust: Capability | None = None
+
+class Manifest(PayloadEnvelope):
     provider: str
     display_name: str
     # Copy identity (additive, optional): snappy brand for chips/SEO ("STM") +
@@ -255,6 +329,9 @@ class Manifest(BaseModel):
     labels: dict[str, str]
     files: ManifestFiles
     surfaces: list[str]
+    # GC2 H4 (DECISIONS #15): per-surface capability honesty, aligned 1:1 with
+    # `surfaces` above. Additive-optional — None on pre-H4 manifests.
+    capabilities: ProviderCapabilities | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -276,7 +353,7 @@ class RouteIndexEntry(BaseModel):
         ),
     )
 
-class RoutesIndex(BaseModel):
+class RoutesIndex(PayloadEnvelope):
     generated_utc: str
     routes: list[RouteIndexEntry]
 
@@ -299,7 +376,7 @@ class StopIndexEntry(BaseModel):
         description="up to 5 route ids serving this stop, in route natural-sort order",
     )
 
-class StopsIndex(BaseModel):
+class StopsIndex(PayloadEnvelope):
     generated_utc: str
     stops: list[StopIndexEntry]
 
@@ -319,7 +396,7 @@ class ServicePeriod(BaseModel):
     window: str | None = None          # e.g. "06:00–09:00"
     headway_min: float | None = None
 
-class RouteFile(BaseModel):
+class RouteFile(PayloadEnvelope):
     generated_utc: str
     id: str
     long: str | None = None
@@ -339,7 +416,7 @@ class ScheduledRoute(BaseModel):
     headsign: str | None = None
     times: list[str] = Field(default_factory=list)
 
-class StopFile(BaseModel):
+class StopFile(PayloadEnvelope):
     generated_utc: str
     id: str
     code: str | None = None
@@ -350,7 +427,7 @@ class StopFile(BaseModel):
     routes_served: list[str] = Field(default_factory=list)
     scheduled: list[ScheduledRoute] = Field(default_factory=list)
 
-class LabelsFile(BaseModel):
+class LabelsFile(PayloadEnvelope):
     generated_utc: str
     labels: dict[str, str]
 
@@ -378,6 +455,13 @@ class TrendPoint(BaseModel):
     # source rollups have no data for the bucket.
     cancellation_rate: float | None = None
     occupancy_mix: OccupancyMix | None = None
+    # Network service-completeness (GC2 H1, additive-optional; plumbing now, display
+    # is S9's call). service_completeness_rate = 100 * Σdelivered / Σscheduled across
+    # the bucket's routes — the honest "share of scheduled service actually delivered".
+    # cancellation_rate above KEEPS its old RT-reported denominator (NOT redefined);
+    # this is a DIFFERENT, scheduled-aware denominator. None when the scheduled
+    # universe is unknown for every route in the bucket (pre-0073 history).
+    service_completeness_rate: float | None = None
     # Chart Doctrine honesty fields (slice-S3, additive-optional). observation_count
     # is the OTP/avg denominator for THIS bucket ONLY — cancellation_rate and
     # occupancy_mix have their own different denominators, do not reuse this n for
@@ -408,7 +492,7 @@ class NetworkShift(BaseModel):
     wilson_lo: float | None = None
     wilson_hi: float | None = None
 
-class NetworkTrend(BaseModel):
+class NetworkTrend(PayloadEnvelope):
     generated_utc: str
     series: list[TrendPoint] = Field(default_factory=list)
     # Additive-optional WEEK + MONTH grain trend series: the SAME daily sources
@@ -487,11 +571,29 @@ class CancellationPeriod(BaseModel):
     # trip-day is a distinct (trip_id, start_date) seen in the RT feed; the rate
     # is "canceled among RT-reported trips", NOT schedule-complete. None (not 0)
     # when total_trip_days=0. Counts are carried so weekly/monthly can SUM-derive.
+    # NOTE (GC2 H1): cancellation_rate_pct / total_trip_days / canceled_trip_days
+    # KEEP these exact RT-observed semantics — they are NOT redefined by the
+    # scheduled-universe fields below. total_trip_days remains the RT-observed
+    # denominator; the honest scheduled-complete readout is service_completeness_pct.
     grain: str = "day"
     date: str | None = None
     cancellation_rate_pct: float | None = None
     canceled_trip_days: int | None = None
     total_trip_days: int | None = None
+    # Scheduled-universe split (GC2 H1, additive-optional — None on pre-0073 history
+    # and on editions with no silver schedule; None means UNKNOWN, never 0).
+    # scheduled_trip_days = distinct scheduled trip-days active that date after
+    #   resolving calendar ∩ calendar_dates (exception_type 1/2) against the current
+    #   GTFS edition — the honest denominator RT never saw.
+    # delivered_trip_days = total_trip_days - canceled_trip_days (RT-observed, run).
+    # silent_trip_days    = max(scheduled - total_observed, 0): scheduled trips that
+    #   never appeared in ANY realtime poll (clamped at 0 — over-delivery is hidden).
+    # service_completeness_pct = 100 * delivered / scheduled (read-time; the NEW honest
+    #   completeness metric, None when scheduled unknown). Display is S9/S13's call.
+    scheduled_trip_days: int | None = None
+    delivered_trip_days: int | None = None
+    silent_trip_days: int | None = None
+    service_completeness_pct: float | None = None
 
 class HeadwayPeriod(BaseModel):
     # shift is the BARE time-of-day token (am_peak|midday|pm_peak|evening|night) —
@@ -650,6 +752,21 @@ class OccupancyByDow(BaseModel):
     # weekday with data-days but zero band telemetry (where mix is None).
     n: int | None = None
 
+class OccupancyByHour(BaseModel):
+    # GC2 H3: crowding band-shares grouped by LOCAL hour-of-day (0..23) over the same
+    # trailing-30d window as occupancy_mix, for the §04 time-of-day (rush-hour vs
+    # midday) split. Sourced from gold.route_occupancy_band_hourly (migration 0074) —
+    # a pure additive companion to occupancy_by_dow/occupancy_by_grain, all three
+    # reduce the SAME fact rows (daily == Σ hourly). mix is None when an hour has
+    # data-days but no band telemetry; only hours with data-days are emitted (sparse).
+    hour_of_day_local: int
+    mix: OccupancyMix | None = None
+    # n = the total band-bearing observation count summed over this local hour's
+    # trailing-30d days (the share denominator). n=0 (not None) on an hour with
+    # data-days but zero band telemetry (where mix is None). Mirrors OccupancyByDow.n;
+    # it is the sum of the 5 band counts, NOT a distinct-trip count.
+    n: int | None = None
+
 class ReliabilityByGrain(BaseModel):
     # S7-B windowable §1: the per-route delay breakdowns (by_shift / by_daytype /
     # day_of_week / 2D crosstab) recomputed over ONE time window, so the "When to ride"
@@ -728,16 +845,18 @@ class WeakStopGrain(BaseModel):
     stops: list[WeakStop] = Field(default_factory=list)
 
 # S7-B payload guard: the published route_reliability/{id}.json must stay under this
-# many bytes (model_dump_json, UTF-8 — the exact bytes the publisher writes). 80 KiB
-# clears the measured worst case (clean ~79.2 KB with weak_stops_by_grain at the N=15
-# cap, ~2.7 KB margin) while still CATCHING a windowed-histogram regression (the F1
-# variant lands ~96.9 KB). A CI test asserts BOTH (clean fits, F1 breaches). Bumped
-# 65536 -> 81920 in DB-PR-3 (pre-PR-3 clean ~63.4 KB, F1 ~81.0 KB — within 1 KB of the
-# old ceiling). The ~2.7 KB clean margin is thin: re-anchor on a real busiest-route
-# measurement before adding to the §4 payload. Exported so the web can share it.
-ROUTE_RELIABILITY_BYTE_CEILING = 81920
+# many bytes (model_dump_json, UTF-8 — the exact bytes the publisher writes). 90 KiB
+# clears the measured worst case (clean ~83.7 KB with weak_stops_by_grain at the N=15
+# cap AND the GC2 H1 scheduled/delivered/silent/completeness cancellation fields on 30
+# periods, ~8.4 KB margin) while still CATCHING a windowed-histogram regression (the F1
+# variant lands ~101.4 KB). A CI test asserts BOTH (clean fits, F1 breaches). History:
+# 65536 -> 81920 in DB-PR-3; 81920 -> 92160 in GC2 H1 (the 4 additive-optional
+# cancellation fields legitimately push the clean worst case from ~79.2 KB to ~83.7 KB,
+# consuming the old ~2.7 KB margin — re-anchored on the measured value). Exported so the
+# web can share it.
+ROUTE_RELIABILITY_BYTE_CEILING = 92160
 
-class RouteReliability(BaseModel):
+class RouteReliability(PayloadEnvelope):
     generated_utc: str
     id: str
     name: str | None = None
@@ -772,6 +891,12 @@ class RouteReliability(BaseModel):
     # published snapshots lacking these keys still validate.
     occupancy_by_grain: list[OccupancyByGrain] = Field(default_factory=list)
     occupancy_by_dow: list[OccupancyByDow] = Field(default_factory=list)
+    # GC2 H3 additive-optional: crowding band-shares re-grouped by LOCAL hour-of-day
+    # for the §04 time-of-day (rush-hour vs midday) surface. Reads
+    # gold.route_occupancy_band_hourly (daily == Σ hourly); honest-None per hour with
+    # no band telemetry. Default empty so already-published snapshots lacking this key
+    # still validate.
+    occupancy_by_hour: list[OccupancyByHour] = Field(default_factory=list)
     # S7-B windowable §1 (additive-optional): the When-to-ride breakdowns + heatmap
     # recomputed per time window (day/week/month) off gold.route_delay_spine, so §1
     # follows the grain rail like §0/§3. The scalar `periods`/`habits`/`day_of_week`/
@@ -812,7 +937,7 @@ class StopByRoute(BaseModel):
     route: str
     avg_delay_min: float | None = None
 
-class StopReliability(BaseModel):
+class StopReliability(PayloadEnvelope):
     generated_utc: str
     id: str
     name: str | None = None
@@ -843,7 +968,7 @@ class Hotspot(BaseModel):
     severity: str | None = None
     otp_delta_pts: float | None = None
 
-class Hotspots(BaseModel):
+class Hotspots(PayloadEnvelope):
     generated_utc: str
     hotspots: list[Hotspot] = Field(default_factory=list)
 
@@ -857,7 +982,7 @@ class Offender(BaseModel):
     recurrence: str | None = None
     avg_delay_min: float | None = None
 
-class RepeatOffenders(BaseModel):
+class RepeatOffenders(PayloadEnvelope):
     generated_utc: str
     offenders: list[Offender] = Field(default_factory=list)
 
@@ -871,7 +996,7 @@ class ReceiptWorstStop(BaseModel):
     name: str | None = None
     avg_delay_min: float | None = None
 
-class Receipt(BaseModel):
+class Receipt(PayloadEnvelope):
     generated_utc: str
     date: str
     vehicles: int | None = None
@@ -914,7 +1039,7 @@ class AlertBreakdown(BaseModel):
     by_effect: list[AlertBreakdownBucket] = Field(default_factory=list)
     by_severity: list[AlertBreakdownBucket] = Field(default_factory=list)
 
-class AlertHistory(BaseModel):
+class AlertHistory(PayloadEnvelope):
     generated_utc: str
     alerts: list[AlertHistoryEntry] = Field(default_factory=list)
     # Tier-2 additive: None when no alerts in the window.
@@ -940,7 +1065,7 @@ class ProvenanceConformance(BaseModel):
     extra_row_count: int = 0
 
 
-class Provenance(BaseModel):
+class Provenance(PayloadEnvelope):
     generated_utc: str
     sources: list[ProvenanceSource] = Field(default_factory=list)
     freshness: list[ProvenanceFreshness] = Field(default_factory=list)
@@ -954,7 +1079,7 @@ class Provenance(BaseModel):
 # Basemap pointer + receipts discovery index (slice-9.1.1r)
 # ---------------------------------------------------------------------------
 
-class BasemapFile(BaseModel):
+class BasemapFile(PayloadEnvelope):
     """static/basemap.json — a settings-driven pointer to the hosted PMTiles archive.
 
     Published only when SNAPSHOT_BASEMAP_PMTILES_URL is configured; until then
@@ -968,7 +1093,7 @@ class BasemapFile(BaseModel):
     max_zoom: int = 15
     generated_utc: str
 
-class ReceiptsIndex(BaseModel):
+class ReceiptsIndex(PayloadEnvelope):
     dates: list[str] = Field(
         default_factory=list,
         description=(
@@ -980,7 +1105,7 @@ class ReceiptsIndex(BaseModel):
     )
     generated_utc: str
 
-class RouteReliabilityIndex(BaseModel):
+class RouteReliabilityIndex(PayloadEnvelope):
     route_ids: list[str] = Field(
         default_factory=list,
         description=(

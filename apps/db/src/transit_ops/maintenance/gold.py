@@ -41,6 +41,9 @@ GOLD_APPEND_ONLY_DAILY_TABLES = (
     "gold.stop_delay_percentile_daily",
     "gold.route_cancellation_daily",
     "gold.route_occupancy_band_daily",
+    # migration 0074 — hour-grain crowding spine (daily == Σ hourly). Same append-only
+    # lifecycle + retention as its daily sibling; pruned at GOLD_WARM_ROLLUP_RETENTION_DAYS.
+    "gold.route_occupancy_band_hourly",
     "gold.stop_occupancy_band_daily",
     "gold.route_service_span_daily",
     "gold.route_skipped_stop_daily",
@@ -49,6 +52,10 @@ GOLD_APPEND_ONLY_DAILY_TABLES = (
     "gold.route_headway_shift_daily",
     "gold.stop_delay_spine",
     "gold.stop_delay_shift_daily",
+    # migration 0073 — per-date scheduled universe (cancellation's honest denominator).
+    # Append-only daily rollup; pruned at GOLD_WARM_ROLLUP_RETENTION_DAYS like its join
+    # partner route_cancellation_daily (see GOLD_AGGREGATE_RETENTION_COLUMNS below).
+    "gold.route_scheduled_trips_daily",
     # migration 0069 — permanent per-GTFS-edition scheduled-service history.
     # Append-only (idempotent DELETE-by-dataset_version + INSERT), but deliberately
     # ABSENT from GOLD_AGGREGATE_RETENTION_COLUMNS: it is NEVER pruned so edition
@@ -74,6 +81,7 @@ GOLD_AGGREGATE_RETENTION_COLUMNS = (
     ("gold.stop_delay_percentile_daily", "provider_local_date", True),
     ("gold.route_cancellation_daily", "provider_local_date", True),
     ("gold.route_occupancy_band_daily", "provider_local_date", True),
+    ("gold.route_occupancy_band_hourly", "provider_local_date", True),
     ("gold.stop_occupancy_band_daily", "provider_local_date", True),
     ("gold.route_service_span_daily", "provider_local_date", True),
     ("gold.route_skipped_stop_daily", "provider_local_date", True),
@@ -82,6 +90,7 @@ GOLD_AGGREGATE_RETENTION_COLUMNS = (
     ("gold.route_headway_shift_daily", "provider_local_date", True),
     ("gold.stop_delay_spine", "provider_local_date", True),
     ("gold.stop_delay_shift_daily", "provider_local_date", True),
+    ("gold.route_scheduled_trips_daily", "provider_local_date", True),
 )
 
 VALID_GOLD_AGGREGATE_RETENTION_TARGETS = frozenset(GOLD_AGGREGATE_RETENTION_COLUMNS)

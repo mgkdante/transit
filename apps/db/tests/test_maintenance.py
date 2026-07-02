@@ -73,6 +73,7 @@ EXPECTED_GOLD_AGGREGATE_TABLE_COUNTS = {
     "gold.stop_delay_percentile_daily": 22,
     "gold.route_cancellation_daily": 26,
     "gold.route_occupancy_band_daily": 27,
+    "gold.route_occupancy_band_hourly": 37,
     "gold.stop_occupancy_band_daily": 30,
     "gold.route_service_span_daily": 28,
     "gold.route_skipped_stop_daily": 29,
@@ -81,6 +82,7 @@ EXPECTED_GOLD_AGGREGATE_TABLE_COUNTS = {
     "gold.route_headway_shift_daily": 33,
     "gold.stop_delay_spine": 34,
     "gold.stop_delay_shift_daily": 35,
+    "gold.route_scheduled_trips_daily": 36,
 }
 
 

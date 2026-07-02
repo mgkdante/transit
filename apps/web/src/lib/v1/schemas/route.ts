@@ -4,7 +4,7 @@
 // first/last departure. Fetched per route id under routes_prefix.
 
 import { z } from 'zod';
-import { isoUtc } from './types';
+import { isoUtc, payloadEnvelopeFields } from './types';
 
 export const RouteStopSchema = z.object({
 	id: z.string(),
@@ -43,5 +43,6 @@ export const RouteFileSchema = z.object({
 	service_periods: z.array(ServicePeriodSchema).optional(),
 	first_departure: z.string().nullable().optional(),
 	last_departure: z.string().nullable().optional(),
+	...payloadEnvelopeFields(),
 });
 export type RouteFile = z.infer<typeof RouteFileSchema>;

@@ -5,7 +5,7 @@
 // a human recurrence string ("most weekday afternoons").
 
 import { z } from 'zod';
-import { isoUtc } from './types';
+import { isoUtc, payloadEnvelopeFields } from './types';
 
 export const OffenderSchema = z.object({
 	// 'route' | 'stop' discriminator — free string the pipeline owns, not a
@@ -23,5 +23,6 @@ export type Offender = z.infer<typeof OffenderSchema>;
 export const RepeatOffendersSchema = z.object({
 	generated_utc: isoUtc(),
 	offenders: z.array(OffenderSchema).optional(),
+	...payloadEnvelopeFields(),
 });
 export type RepeatOffenders = z.infer<typeof RepeatOffendersSchema>;
