@@ -17,12 +17,16 @@ from transit_ops.snapshots import builders
 from transit_ops.snapshots.builders import historic as H
 from transit_ops.snapshots.builders.historic import _grain_windows
 from transit_ops.snapshots.contract import (
+    HOTSPOTS_BYTE_CEILING,
     ROUTE_RELIABILITY_BYTE_CEILING,
     CancellationPeriod,
     CrosstabCell,
     CrowdingDelayCell,
     HeadwayByGrain,
     HeadwayPeriod,
+    HotspotEntry,
+    HotspotGrain,
+    Hotspots,
     OccupancyByDow,
     OccupancyByGrain,
     OccupancyMix,
@@ -374,3 +378,101 @@ def test_bunched_pct_from_pooled_hist() -> None:
     straddle[4] = 2  # [3,4) straddles 3.5
     straddle[7] = 2  # [6,8) above
     assert H._bunched_pct_from_hist(straddle, H._GAP_EDGES, 7.0) == 25.0  # 2*0.5 of 4
+
+
+# --------------------------------------------------------------------------
+# S12 — hotspots by_grain byte-guard (offline, synthetic worst case)
+# --------------------------------------------------------------------------
+_HOTSPOTS_CAP = 50   # _HOTSPOTS_BY_GRAIN_CAP — ranked entries per (grain, KIND) (WEB2)
+_HOTSPOTS_TRAY = 60  # _HOTSPOTS_TRAY_CAP — un-ranked tray entries per grain TOTAL (union)
+
+
+def _hotspot_entry(i: int, kind: str, *, ranked: bool) -> HotspotEntry:
+    # A fully-populated evidence entry (prod worst case: every optional field set + a
+    # long-ish accented name, the widest STM stop labels).
+    return HotspotEntry(
+        rank=(i + 1) if ranked else None,
+        type=kind,
+        id=f"{kind[0].upper()}{100000 + i}",
+        name="Station Édouard-Montpetit / Terminus Nord-Ouest",
+        severity="high",
+        otp_delta_pts=-12.3,
+        observation_count=54321,
+        severe_count=1234,
+        severe_pct=44.4,
+        wilson_lo=41.1,
+        wilson_hi=47.7,
+        issue_count=987,
+        avg_delay_min=6.7,
+    )
+
+
+def _hotspot_grain(grain: str, *, with_date: bool) -> HotspotGrain:
+    # WEB2 worst case for a single grain: route AND stop each ranked to the per-kind cap
+    # (50 + 50 = 100 entries in the mixed array), plus the union tray at its total cap (60).
+    entries = [_hotspot_entry(i, "route", ranked=True) for i in range(_HOTSPOTS_CAP)]
+    entries += [_hotspot_entry(i, "stop", ranked=True) for i in range(_HOTSPOTS_CAP)]
+    tray = [
+        _hotspot_entry(i, "route" if i % 2 else "stop", ranked=False)
+        for i in range(_HOTSPOTS_TRAY)
+    ]
+    return HotspotGrain(
+        grain=grain,
+        date="2026-06-20" if with_date else None,
+        window_end="2026-06-20" if with_date else None,
+        entries=entries,
+        tray=tray,
+        total_ranked_routes=_HOTSPOTS_CAP,
+        total_ranked_stops=_HOTSPOTS_CAP,
+        tray_total=_HOTSPOTS_TRAY,
+    )
+
+
+def _full_hotspots(*, tray_multiplier: int = 1) -> Hotspots:
+    # The scalar top-20 (byte-identical shape) PLUS 4 grains (day/week/month at date +
+    # shift at date=None) each at the caps. tray_multiplier>1 simulates an un-capped
+    # all-per-city dump to prove the ceiling would catch a runaway.
+    scalar = [
+        __import__(
+            "transit_ops.snapshots.contract", fromlist=["Hotspot"]
+        ).Hotspot(
+            rank=i + 1, type="route", id=f"R{i}", name="Ligne Saint-Laurent",
+            severity="high", otp_delta_pts=-9.0,
+        )
+        for i in range(20)
+    ]
+    grains: list[HotspotGrain] = []
+    for grain in ("day", "week", "month", "shift"):
+        g = _hotspot_grain(grain, with_date=grain != "shift")
+        if tray_multiplier > 1:
+            g.tray = g.tray * tray_multiplier
+        grains.append(g)
+    return Hotspots(generated_utc="2026-06-25T00:00:00Z", hotspots=scalar, by_grain=grains)
+
+
+def test_hotspots_full_payload_under_byte_ceiling() -> None:
+    size = len(_body(_full_hotspots()))
+    assert size <= HOTSPOTS_BYTE_CEILING, (
+        f"realistic hotspots payload {size}B exceeds ceiling {HOTSPOTS_BYTE_CEILING}B"
+    )
+
+
+def test_hotspots_uncapped_tray_breaches_ceiling() -> None:
+    # The guard's reason for existing: an un-capped all-per-city tray (thousands of STM
+    # stops x 4 grains) must trip the ceiling so the regression is caught offline.
+    size = len(_body(_full_hotspots(tray_multiplier=40)))
+    assert size > HOTSPOTS_BYTE_CEILING, (
+        "an un-capped hotspots tray did NOT breach the ceiling — the ceiling is too loose "
+        f"({size}B vs {HOTSPOTS_BYTE_CEILING}B)"
+    )
+
+
+def test_hotspots_old_fixture_without_by_grain_validates() -> None:
+    # Additive-optional back-compat: a pre-S12 hotspots.json omits by_grain entirely.
+    legacy = {
+        "generated_utc": "2026-06-19T02:00:00Z",
+        "hotspots": [{"rank": 1, "type": "route", "id": "51", "severity": "high"}],
+    }
+    hs = Hotspots.model_validate(legacy)
+    assert hs.by_grain == []
+    assert hs.hotspots[0].id == "51"

@@ -58,9 +58,253 @@
       ],
       "title": "Hotspot",
       "type": "object"
+    },
+    "HotspotEntry": {
+      "properties": {
+        "avg_delay_min": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Avg Delay Min"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "issue_count": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Issue Count"
+        },
+        "name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Name"
+        },
+        "observation_count": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Observation Count"
+        },
+        "otp_delta_pts": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Otp Delta Pts"
+        },
+        "rank": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Rank"
+        },
+        "severe_count": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Severe Count"
+        },
+        "severe_pct": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Severe Pct"
+        },
+        "severity": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Severity"
+        },
+        "type": {
+          "title": "Type",
+          "type": "string"
+        },
+        "wilson_hi": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Wilson Hi"
+        },
+        "wilson_lo": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Wilson Lo"
+        }
+      },
+      "required": [
+        "type",
+        "id"
+      ],
+      "title": "HotspotEntry",
+      "type": "object"
+    },
+    "HotspotGrain": {
+      "properties": {
+        "date": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Date"
+        },
+        "entries": {
+          "items": {
+            "$ref": "#/$defs/HotspotEntry"
+          },
+          "title": "Entries",
+          "type": "array"
+        },
+        "grain": {
+          "title": "Grain",
+          "type": "string"
+        },
+        "total_ranked_routes": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Total Ranked Routes"
+        },
+        "total_ranked_stops": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Total Ranked Stops"
+        },
+        "tray": {
+          "items": {
+            "$ref": "#/$defs/HotspotEntry"
+          },
+          "title": "Tray",
+          "type": "array"
+        },
+        "tray_total": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Tray Total"
+        },
+        "window_end": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Window End"
+        }
+      },
+      "required": [
+        "grain"
+      ],
+      "title": "HotspotGrain",
+      "type": "object"
     }
   },
   "properties": {
+    "by_grain": {
+      "items": {
+        "$ref": "#/$defs/HotspotGrain"
+      },
+      "title": "By Grain",
+      "type": "array"
+    },
     "generated_utc": {
       "title": "Generated Utc",
       "type": "string"

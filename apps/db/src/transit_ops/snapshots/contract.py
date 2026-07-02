@@ -997,9 +997,112 @@ class Hotspot(BaseModel):
     severity: str | None = None
     otp_delta_pts: float | None = None
 
+class HotspotEntry(BaseModel):
+    # S12 evidence-rich per-entry shape for the re-granulated by_grain ladders.
+    # Distinct from the minimal scalar Hotspot (kept byte-identical for parity): an
+    # entry carries the FULL confidence channel so the citizen sees WHY it ranks and
+    # the web can pool/whisker it honestly. rank = 1-based position WITHIN this grain
+    # ladder AND WITHIN this entry's OWN kind (WEB2): route and stop are ranked on
+    # SEPARATE ladders, so rank RESTARTS per kind (a route rank=1 and a stop rank=1
+    # co-exist in the same grain's entries[]) — NOT sequential across kinds, and a
+    # display-N truncation never rescales it (the selectWeakStops invariant); a
+    # sub-MIN_N tray entry carries rank=None. type = 'route'|'stop' discriminator (the
+    # web filters entries[] by type into per-kind tabs losslessly).
+    # RANKING (WEB1/WEB2): entries are ordered by the NOT-SEVERE Wilson LOWER bound ASC
+    # on the SEVERE-delay proxy, ranked PER KIND (route on_time is available but NOT
+    # used for ranking, to keep the severe-rate metric identical across kinds; it drives
+    # the display otp_delta_pts instead). wilson_lo/wilson_hi = the 95% interval of that
+    # not-severe rate, PERCENT [0,100]. observation_count = in-clamp delay n in the
+    # window; severe_count = the >300s count; severe_pct = severe/obs. issue_count is
+    # reserved; currently always None (the mart join lands with the S14 score
+    # reconciliation). It will carry the MART's raw severe count
+    # (gold.repeated_problem_route_stop) as a SECONDARY field ONLY — the mart's
+    # repeat-problem composite ordering diverges from this plain severe-rate Wilson
+    # ranking; S14 owns score reconciliation, so the two orderings are NOT reconciled
+    # here. otp_delta_pts = the entity OTP minus
+    # a SAME-METRIC network baseline for the SAME window (honest-None when either side
+    # is unknown, or when no per-window baseline exists). avg_delay_min = the pooled
+    # in-clamp mean (a documented rebaseline vs the mart's triple-rounded avg).
+    rank: int | None = None
+    type: str
+    id: str
+    name: str | None = None
+    severity: str | None = None
+    otp_delta_pts: float | None = None
+    observation_count: int | None = None
+    severe_count: int | None = None
+    severe_pct: float | None = None
+    wilson_lo: float | None = None
+    wilson_hi: float | None = None
+    issue_count: int | None = None
+    avg_delay_min: float | None = None
+
+class HotspotGrain(BaseModel):
+    # S12 one re-granulated worst-N ladder for ONE grain, mirroring WeakStopGrain.
+    # grain='day'|'week'|'month' anchored on the network's newest CLOSED day per spine
+    # (day=anchor; week=anchor-6..anchor; month=anchor-29..anchor); the 4th 'shift'
+    # grain is PEAK-ONLY — it buckets over the am+pm peak (rush-hour) periods of the
+    # trailing week only (route via the kernel hour->shift CASE over route_delay_spine
+    # scoped to the peak shifts; stop via gold.stop_delay_shift_daily filtered to the
+    # peak shifts) and carries date=None (shift is a within-window cut, not a trailing
+    # date window). date = window START (ISO) for the date grains, None for 'shift';
+    # window_end = the window END (ISO), None for 'shift'. entries = the FULL Wilson-
+    # ranked set of entities clearing MIN_N in this window — a MIXED route+stop array
+    # (type discriminates), ranked PER KIND (route and stop each on their own ladder,
+    # rank restarting per kind) THEN truncated to the per-kind stored cap so a smaller
+    # display-N never rescales; per-kind order is preserved in the array.
+    # total_ranked_routes / total_ranked_stops = the PRE-truncation ranked counts per
+    # kind (the honest shown/total denominators — a display-N cap slices these). tray =
+    # the UN-ranked entities with obs<MIN_N (rank=None) — the "ALL per city" honest tail
+    # (DECISIONS DB2), a union across kinds sorted by severe_pct DESC then capped for the
+    # byte budget; tray_total = the PRE-cap tray count. A grain with no qualifying entity
+    # is OMITTED entirely (honest absence).
+    grain: str
+    date: str | None = None
+    window_end: str | None = None
+    entries: list[HotspotEntry] = Field(default_factory=list)
+    tray: list[HotspotEntry] = Field(default_factory=list)
+    # WEB2 per-kind pre-truncation ranked counts (additive-optional; None on a pre-fix
+    # payload). total_ranked_routes / total_ranked_stops are the honest shown/total
+    # denominators the web reads per kind — the count of entities clearing MIN_N for
+    # that kind in this window BEFORE the per-kind display cap sliced entries[].
+    total_ranked_routes: int | None = None
+    total_ranked_stops: int | None = None
+    # FIX-6 tray honesty (additive-optional; None on a pre-fix payload): the PRE-cap
+    # union tray count, so the web can show tray shown/total honestly.
+    tray_total: int | None = None
+
+# S12 payload guard: the published historic/hotspots.json must stay under this many
+# bytes (model_dump_json, UTF-8 — the exact bytes the publisher writes). LADDER: the
+# scalar hotspots[] top-20 (byte-identical, ~2-3 KB) PLUS the by_grain ladders =
+# {day, week, month, shift}, each carrying a MIXED route+stop entries[] ranked PER KIND
+# at the stored caps below:
+#   * entries -> _HOTSPOTS_BY_GRAIN_CAP = 50 ranked entries per (grain, KIND) — so up to
+#                100 entries per grain (50 route + 50 stop) in the mixed array,
+#   * tray    -> _HOTSPOTS_TRAY_CAP     = 60 un-ranked tray entries per grain TOTAL
+#                (the cross-kind union, sorted severe_pct DESC then capped).
+# Worst case = the scalar top-20 PLUS 4 grains (day/week/month + shift) x (100 ranked +
+# 60 tray) entries per grain, every ~13 evidence field set + a wide accented name. That
+# synthetic worst case measures ~179.5 KB (see test_hotspots_full_payload_under_byte_ceiling
+# for the exact number). 262144 (256 KiB) clears it with ~1.46x headroom while STILL
+# catching a runaway (an un-capped all-per-city tray on the STM stop universe of thousands
+# of stops x 4 grains measures ~2.78 MB — see test_hotspots_uncapped_tray_breaches_ceiling).
+# If a real-DB probe ever exceeds this ceiling the tray degrades to a documented count-only
+# (DECISIONS DB2): drop tray entries, keep tray_total, and record the honest degradation
+# here. Exported so the web can share the constant. History: introduced at S12 (256 KiB;
+# worst-case ~102 KB at the old merged 30-cap); re-measured at the WEB2 per-kind 50-cap
+# (worst-case ~179.5 KB — still 1.46x under the ceiling, no tray-tightening needed).
+HOTSPOTS_BYTE_CEILING = 262144
+
 class Hotspots(PayloadEnvelope):
     generated_utc: str
     hotspots: list[Hotspot] = Field(default_factory=list)
+    # S12 additive-optional: the re-granulated evidence-rich worst-N ladders. Default
+    # empty so already-published hotspots.json (scalar-only) still validates under the
+    # additive-optional growth rule; the scalar hotspots[] above stays BYTE-IDENTICAL.
+    # Ordered day, week, month, shift per the grain rail; each HotspotGrain interleaves
+    # route+stop entries ranked on the one cross-kind severe-rate Wilson LB (WEB1).
+    by_grain: list[HotspotGrain] = Field(default_factory=list)
 
 class Offender(BaseModel):
     type: str

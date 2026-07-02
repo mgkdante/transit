@@ -8,24 +8,35 @@
 // DOM, `window`, or navigation directly (the store reaches the URL only through
 // a caller-supplied `pushUrl`).
 
-export type { FilterState, IdSetKey, EntityKind, AlertEntityKind, DateWindow } from './state';
+export type {
+	FilterState,
+	IdSetKey,
+	EntityKind,
+	AlertEntityKind,
+	DateWindow,
+	WorstN,
+	WorstNRung,
+} from './state';
 export {
 	STATUS_CODES,
 	OCCUPANCY_CODES,
 	GRAINS,
 	ENTITY_KINDS,
 	ALERT_ENTITY_KINDS,
+	WORST_N_LADDER,
 	isStatusCode,
 	isOccupancyCode,
 	isEntityKind,
 	isAlertEntityKind,
 	isGrain,
+	isWorstN,
 	isIsoDate,
 	normalizeStatus,
 	normalizeOccupancy,
 	normalizeEntities,
 	normalizeAlerts,
 	normalizeWindow,
+	normalizeWorstN,
 	emptyFilterState,
 	cloneFilterState,
 	isEmptyFilterState,

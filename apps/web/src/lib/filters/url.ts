@@ -5,7 +5,7 @@
 // it before the store ever exists. This module is the ONLY place that knows the
 // wire format:
 //
-//   keys  : route, stop, trip, vehicle, status, occupancy, entity, alert, grain, from, to (stable order)
+//   keys  : route, stop, trip, vehicle, status, occupancy, entity, alert, grain, from, to, n (stable order)
 //   sets  : comma-joined, sorted, deduped (route=10,165,80)
 //   empty : an empty set / absent enum / absent lever is OMITTED entirely
 //   round : fromSearchParams(toSearchParams(s)) is value-equal to a normalized s
@@ -32,6 +32,7 @@ import {
 	normalizeEntities,
 	normalizeAlerts,
 	normalizeWindow,
+	normalizeWorstN,
 	isGrain,
 } from './state';
 
@@ -54,6 +55,7 @@ const KEY_ORDER = [
 	'grain',
 	'from',
 	'to',
+	'n',
 ] as const;
 
 /** Wire key → the FilterState id-set field it maps to. */
@@ -143,6 +145,11 @@ export function fromSearchParams(sp: URLSearchParams): FilterState {
 	const window = normalizeWindow(sp.get('from'), sp.get('to'));
 	if (window) state.window = window;
 
+	// The worst-N ladder cap (?n) — a fixed rung or 'all'; a junk value drops to
+	// absent (the surface default), so the URL never carries a cap the ladder can't render.
+	const worstN = normalizeWorstN(sp.get('n'));
+	if (worstN) state.worstN = worstN;
+
 	return state;
 }
 
@@ -191,6 +198,10 @@ export function toSearchParams(s: FilterState): URLSearchParams {
 			}
 			case 'to': {
 				if (s.window) sp.set('to', s.window.to);
+				break;
+			}
+			case 'n': {
+				if (s.worstN !== undefined) sp.set('n', s.worstN);
 				break;
 			}
 		}

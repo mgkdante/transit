@@ -3,7 +3,7 @@
 // from<=to span; anything less is honest-absence (undefined).
 
 import { describe, it, expect } from 'vitest';
-import { isIsoDate, normalizeWindow } from './state';
+import { isIsoDate, normalizeWindow, isWorstN, normalizeWorstN, WORST_N_LADDER } from './state';
 
 describe('isIsoDate — the YYYY-MM-DD shape gate', () => {
 	it('accepts a well-formed YYYY-MM-DD string only', () => {
@@ -48,5 +48,30 @@ describe('normalizeWindow — a complete, valid, from<=to span or nothing', () =
 	it('drops a MALFORMED bound — never fabricates a span from junk', () => {
 		expect(normalizeWindow('yesterday', '2026-06-14')).toBeUndefined();
 		expect(normalizeWindow('2026-6-1', '2026-06-14')).toBeUndefined();
+	});
+});
+
+describe('worst-N (S12 ladder cap) — a fixed truthful rung or "all"', () => {
+	it('accepts every ladder rung + the uncapped "all"', () => {
+		for (const rung of WORST_N_LADDER) expect(isWorstN(rung)).toBe(true);
+		expect(isWorstN('all')).toBe(true);
+	});
+
+	it('rejects an off-ladder integer and any junk (never an arbitrary cap)', () => {
+		expect(isWorstN('7')).toBe(false);
+		expect(isWorstN('0')).toBe(false);
+		expect(isWorstN('1000')).toBe(false);
+		// FIX-3: '100' was trimmed (a dead rung above the per-kind DB cap of 50) — it now
+		// self-heals like any off-ladder value, so a stale ?n=100 deep link drops to default.
+		expect(isWorstN('100')).toBe(false);
+		expect(isWorstN('none')).toBe(false);
+	});
+
+	it('normalizeWorstN trims a valid rung and drops junk / nullish to undefined', () => {
+		expect(normalizeWorstN(' 20 ')).toBe('20');
+		expect(normalizeWorstN('all')).toBe('all');
+		expect(normalizeWorstN('7')).toBeUndefined();
+		expect(normalizeWorstN(null)).toBeUndefined();
+		expect(normalizeWorstN(undefined)).toBeUndefined();
 	});
 });

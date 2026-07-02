@@ -105,6 +105,17 @@ describe('fromSearchParams — parsing + self-healing', () => {
 		expect(fromSearchParams(sp('from=2026-6-1&to=2026-06-14')).window).toBeUndefined();
 	});
 
+	it('keeps ?n only when it is a valid worst-N rung (or "all")', () => {
+		expect(fromSearchParams(sp('n=20')).worstN).toBe('20');
+		expect(fromSearchParams(sp('n=all')).worstN).toBe('all');
+	});
+
+	it('drops a junk ?n (not one of the fixed rungs) → no fabricated cap', () => {
+		expect(fromSearchParams(sp('n=7')).worstN).toBeUndefined();
+		expect(fromSearchParams(sp('n=999')).worstN).toBeUndefined();
+		expect(fromSearchParams(sp('n=')).worstN).toBeUndefined();
+	});
+
 	it('ignores unknown query keys', () => {
 		const s = fromSearchParams(sp('utm_source=newsletter&route=10'));
 		expect([...s.routes]).toEqual(['10']);
@@ -123,7 +134,7 @@ describe('toSearchParams — canonical wire format', () => {
 		expect(toSearchParams(s).toString()).toBe('route=10%2C165%2C80&status=late%2Csevere');
 	});
 
-	it('emits keys in the stable contract order (route,stop,trip,vehicle,status,occupancy,entity,alert,grain,from,to)', () => {
+	it('emits keys in the stable contract order (route,stop,trip,vehicle,status,occupancy,entity,alert,grain,from,to,n)', () => {
 		const s: FilterState = {
 			routes: new Set(['10']),
 			stops: new Set(['S']),
@@ -135,6 +146,7 @@ describe('toSearchParams — canonical wire format', () => {
 			alerts: ['has_alert'],
 			grain: 'day',
 			window: { from: '2026-06-01', to: '2026-06-14' },
+			worstN: '20',
 		} as unknown as FilterState;
 		const keys = [...toSearchParams(s).keys()];
 		expect(keys).toEqual([
@@ -149,7 +161,19 @@ describe('toSearchParams — canonical wire format', () => {
 			'grain',
 			'from',
 			'to',
+			'n',
 		]);
+	});
+
+	it('serializes the worst-N cap as ?n (omitted entirely when absent)', () => {
+		const withN: FilterState = {
+			routes: new Set(),
+			stops: new Set(),
+			trips: new Set(),
+			vehicles: new Set(),
+			worstN: 'all',
+		};
+		expect(toSearchParams(withN).toString()).toBe('n=all');
 	});
 
 	it('serializes a window as the ?from&?to pair (omitted entirely when absent)', () => {
@@ -201,6 +225,9 @@ describe('round-trip — toSearchParams(fromSearchParams(u)) is an idempotent fi
 		'grain=decade', // invalid grain drops -> empty
 		'grain=range&from=2026-06-01&to=2026-06-14', // legacy: grain=range drops, window carries intent
 		'window=30', // legacy scalar: unknown key, drops entirely
+		'n=20', // worst-N rung kept
+		'n=all', // worst-N uncapped kept
+		'n=7', // junk worst-N drops → empty
 	];
 
 	for (const input of INPUTS) {
@@ -228,6 +255,7 @@ describe('round-trip — toSearchParams(fromSearchParams(u)) is an idempotent fi
 			);
 			expect(second.grain).toEqual(first.grain);
 			expect(second.window).toEqual(first.window);
+			expect(second.worstN).toEqual(first.worstN);
 		});
 	}
 
