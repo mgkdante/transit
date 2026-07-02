@@ -22,11 +22,18 @@
 		activeId,
 		openAria,
 		closeAria,
+		onNavigate,
 	}: {
 		entries: TocEntry[];
 		activeId: string;
 		openAria: string;
 		closeAria: string;
+		/**
+		 * Page-owned navigation override (S10): on a default-closed page a jump must
+		 * REVEAL its target, not land on a shut card — the page passes its open+scroll
+		 * path here (same contract as TocNav's onNavigate). Absent → internal scroll.
+		 */
+		onNavigate?: (id: string) => void;
 	} = $props();
 
 	const flat = $derived(flattenToc(entries));
@@ -63,6 +70,14 @@
 	});
 
 	function scrollTo(id: string): void {
+		// A page-owned navigate path (open-then-scroll on default-closed pages) takes
+		// precedence over the internal scroll — S10 review F1: the mobile drawer must
+		// never land a reader on a shut card.
+		if (onNavigate) {
+			onNavigate(id);
+			closeDrawer(true);
+			return;
+		}
 		const el = tocElement(id);
 		if (el) {
 			// Honour prefers-reduced-motion: a reader who opts out of motion gets an instant jump,

@@ -4,11 +4,14 @@
   Collapsible for a11y (aria-controls, aria-expanded, focus management).
 
   Ported from yesid.dev shared/CollapsibleSection. Deviations from the source:
-    - yesid's quiet-mode (a page-wide collapse-all signal) is DROPPED: transit
-      has no quiet-mode store. The collapse-all was explicitly optional. Every
-      other behaviour is preserved: persisted open-state, bits-ui a11y, the
-      grid-rows open/close animation, the whole-card toggle, and the data-toc
-      anchor the shared TOC scrolls to + active-tracks.
+    - yesid's quiet-mode (a page-wide collapse-all signal) lived in a GLOBAL
+      quiet-mode store. Transit has no such store; instead this card accepts
+      OPTIONAL `closeSignal` / `openSignal` monotonic counters as props (S10 —
+      /metrics FOCUS parity). When a caller bumps `closeSignal`, the card
+      collapses; when it bumps `openSignal`, the card opens. Absent (the default,
+      `null`) → the card is signal-inert, exactly as before. This mirrors yesid's
+      closeSignal/openSignal contract but keeps the page (not a global) as the
+      owner, so per-page storage keys stay authoritative.
     - `persisted` is transit's sessionStorage-backed rune ($lib/stores), not
       yesid's locale-handoff one. Same `.value` surface.
 -->
@@ -32,6 +35,8 @@
 		accentColor = 'var(--primary)',
 		collapsible = true,
 		anchor = undefined,
+		closeSignal = null,
+		openSignal = null,
 		icon,
 		children,
 	}: {
@@ -51,6 +56,20 @@
 		/** When set, renders `data-toc={anchor}` on the card root so the shared TOC
 		 *  (TocNav / TocPill via toc.ts) can scroll to + active-track this section. */
 		anchor?: string;
+		/**
+		 * Monotonic "collapse this card" signal (S10 FOCUS parity). Each time a
+		 * caller bumps it to a new number, the card collapses. `null` (default) keeps
+		 * the card signal-inert. Mirrors yesid's quiet-mode closeSignal, but the page
+		 * owns the counter (no global store) so per-page storage keys stay canonical.
+		 */
+		closeSignal?: number | null;
+		/**
+		 * Monotonic "open this card" signal (S10 FOCUS parity). Each new number opens
+		 * the card. `null` (default) keeps it signal-inert. Callers that want a card
+		 * to STAY closed on unfocus (e.g. /metrics' default-closed cards) simply never
+		 * wire this, while still wiring `closeSignal`.
+		 */
+		openSignal?: number | null;
 		icon?: Snippet;
 		children?: Snippet;
 	} = $props();
@@ -70,6 +89,29 @@
 		if (persistedOpen) persistedOpen.value = next;
 		else open = next;
 	}
+
+	// S10 FOCUS parity — edge-triggered collapse/open signals (yesid closeSignal/
+	// openSignal idiom). Each effect fires only when its counter CHANGES from the
+	// value captured at init, so the initial render never force-toggles (SSR-safe,
+	// respects a restored persisted state). A `null` signal is inert: the last-seen
+	// value stays null and the guard never advances. Only collapsible cards react.
+	// The init reads are `untrack`ed on purpose: they seed the edge-detector once
+	// (capturing the initial prop), and it is the $effect that reactively tracks it.
+	let lastCloseSignal = untrack(() => closeSignal);
+	$effect(() => {
+		const signal = closeSignal;
+		if (signal === lastCloseSignal) return;
+		lastCloseSignal = signal;
+		if (collapsible && signal !== null) setOpen(false);
+	});
+
+	let lastOpenSignal = untrack(() => openSignal);
+	$effect(() => {
+		const signal = openSignal;
+		if (signal === lastOpenSignal) return;
+		lastOpenSignal = signal;
+		if (collapsible && signal !== null) setOpen(true);
+	});
 
 	// The WHOLE card is the toggle surface. Interactive children take priority: a
 	// click that originates inside a link/button/input never toggles. The header

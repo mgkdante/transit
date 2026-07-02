@@ -42,6 +42,32 @@ export interface MetricsCopy extends SurfaceHeadCopy {
 		 * just names that the live feed-conformance verdict is momentarily absent.
 		 */
 		readonly unavailable: string;
+		/**
+		 * "How we measure" — the cross-cutting measurement conventions every metric
+		 * inherits (S10, 2026-07-02). Sits inside the provenance preamble. Three
+		 * named notes: the capture-day vs GTFS-service-day time model, the 2026-07-01
+		 * half-away rounding rebaseline, and the doctrine constants (min_n_rate /
+		 * wilson_z), the last rendered DYNAMICALLY from the published
+		 * provenance.methodology (never hardcoded), with an honest-absence fallback.
+		 */
+		readonly howWeMeasure: {
+			/** Overline above the how-we-measure block. */
+			readonly label: string;
+			/** Capture-day vs GTFS-service-day time semantics (heading + body). */
+			readonly serviceDay: { readonly heading: string; readonly body: string };
+			/** The 2026-07-01 half-away-from-zero rounding rebaseline (heading + body). */
+			readonly rounding: { readonly heading: string; readonly body: string };
+			/**
+			 * Doctrine constants (heading + a templated body). `body(minN, wilsonZ)`
+			 * receives the served string values; `absent` is the honest-absence line
+			 * shown when provenance methodology has not loaded (never hardcode 30/1.96).
+			 */
+			readonly constants: {
+				readonly heading: string;
+				readonly body: (minN: string, wilsonZ: string) => string;
+				readonly absent: string;
+			};
+		};
 	};
 	/**
 	 * The structural-gaps ("Lacunes structurelles") card — an honest, named list of
@@ -106,13 +132,6 @@ export interface MetricsCopy extends SurfaceHeadCopy {
 		/** aria-label / title when the pin is ON (the action the press performs: unpin it). */
 		readonly forget: string;
 	};
-	/**
-	 * The giant vertical edge word for the measured-article shell (the rotated
-	 * writing-mode title in the left rail, mirroring yesid.dev's blog/projects
-	 * listing layout). A single uppercase word derived from the page subject;
-	 * the layout appends a --primary period after it.
-	 */
-	readonly edgeTitle: string;
 	/** Jump-nav (table of contents) heading. */
 	readonly tocLabel: string;
 	/** Mono prefix for the TOC "{prefix} N / total" counter (yesid uses "SEC"). */
@@ -160,6 +179,24 @@ export const metricsCopy: Record<Locale, MetricsCopy> = {
 			body: 'Source = écart à l’horaire PRÉDIT du GTFS-RT + alertes. Chaque chiffre de retard / ponctualité / gravité dérive du delay_seconds prédit du flux temps réel, comment les prédictions ont suivi l’horaire. Il n’y a AUCUNE vérité GPS/AVL et rien n’est une ponctualité certifiée par l’agence. Tout est pondéré par observations (un relevé = une mise à jour de trajet), pas par trajets ni par usagers : les lignes et les heures à haute fréquence pèsent plus de relevés. Bande à l’heure = delay ∈ [-60 s, +300 s); grave = delay > 300 s (avec |delay| ≤ 3600 s, garde anti-fantôme). NULL est honnête : un dénominateur vide s’affiche « aucune donnée », jamais un 0 fabriqué. Les sentinelles internes __unrouted__ / __unknown_stop__ ne sont jamais de vraies lignes/arrêts.',
 			unavailable:
 				'Le verdict de conformité du flux n’a pas pu être chargé pour l’instant. La méthodologie ci-dessous reste exacte et complète; seule cette vérification en direct est momentanément indisponible.',
+			howWeMeasure: {
+				label: 'Comment on mesure (vaut pour chaque métrique)',
+				serviceDay: {
+					heading: 'Jour de capture ou jour de service',
+					body: 'Les relevés de retard et de ponctualité sont attribués au JOUR LOCAL DE CAPTURE (la date locale du fournisseur à laquelle le relevé temps réel a été pris). Les spans de service, eux, gardent le JOUR DE SERVICE GTFS du trajet (start_date), donc un trajet de nuit reste sur son propre jour de service au lieu d’un faux premier départ à 00:00, et les heures d’horaire peuvent dépasser 24:00 (elles sont lues comme des décalages écoulés depuis l’ancre midi-moins-12 h du jour de service). Les deux modèles cohabitent : bande à l’heure par jour de capture, span par jour de service.',
+				},
+				rounding: {
+					heading: 'Arrondi (rebaseline 2026-07-01)',
+					body: 'Depuis le 2026-07-01, tout arrondi publié côté Python casse les égalités DEMI-LOIN-DE-ZÉRO (round_half_away, comme le ROUND de Postgres), remplaçant l’arrondi bancaire (« au pair ») de Python. Les valeurs ne bougent qu’aux frontières exactes en .5 (rebaseline S7-B), donc les chiffres du site et ceux de la base s’accordent au même chiffre arrondi.',
+				},
+				constants: {
+					heading: 'Constantes de la doctrine',
+					body: (minN, wilsonZ) =>
+						`Seuil « assez fiable » = ${minN} relevés à retard connu (min_n_rate) : sous ce seuil, un taux garde son observation_count brut mais est signalé peu fiable, jamais supprimé. Intervalle de confiance = score de Wilson à 95 %, z = ${wilsonZ} (wilson_z). Ces deux valeurs sont lues telles quelles depuis provenance.methodology de l’exécution en cours, pas codées en dur.`,
+					absent:
+						'Les constantes de la doctrine (min_n_rate, z de Wilson) sont lues depuis provenance.methodology de l’exécution en cours; ce document n’a pas pu être chargé pour l’instant, donc leurs valeurs exactes ne sont pas affichées ici. La méthodologie ci-dessous reste exacte.',
+				},
+			},
 		},
 		lacunes: {
 			title: 'Lacunes structurelles',
@@ -228,7 +265,6 @@ export const metricsCopy: Record<Locale, MetricsCopy> = {
 			remember: 'Mémoriser le mode lecture pour les prochaines visites',
 			forget: 'Oublier le mode lecture (cette session seulement)',
 		},
-		edgeTitle: 'MESURE',
 		tocLabel: 'Aller à une métrique',
 		tocCounterPrefix: 'SEC',
 		backToTop: 'Retour en haut',
@@ -268,6 +304,24 @@ export const metricsCopy: Record<Locale, MetricsCopy> = {
 			body: 'Source = GTFS-RT PREDICTED schedule-deviation + alerts. Every delay / on-time / severe number derives from the realtime feed’s predicted delay_seconds, how predictions tracked the timetable. There is NO GPS/AVL ground truth and none of it is agency-certified OTP. Everything is observation-weighted (one reading = one trip-update), not trip- or rider-weighted: high-frequency routes and hours contribute more readings. On-time band = delay ∈ [-60s, +300s); severe = delay > 300s (with |delay| ≤ 3600s, the ghost guard). NULL is honest: an empty denominator shows “no data”, never a fabricated 0. The internal sentinels __unrouted__ / __unknown_stop__ are never real routes/stops.',
 			unavailable:
 				'The live feed-conformance verdict could not be loaded right now. The methodology below is still exact and complete; only this live check is momentarily unavailable.',
+			howWeMeasure: {
+				label: 'How we measure (applies to every metric)',
+				serviceDay: {
+					heading: 'Capture day vs service day',
+					body: 'Delay and on-time readings are attributed to the LOCAL CAPTURE DAY (the provider-local date the realtime reading was taken on). Service spans instead keep the trip’s GTFS SERVICE DAY (start_date), so an overnight trip stays on its own service day rather than a fake 00:00 first departure, and schedule times can exceed 24:00 (they are read as elapsed offsets from the service day’s noon-minus-12h anchor). Both models coexist: on-time band by capture day, span by service day.',
+				},
+				rounding: {
+					heading: 'Rounding (2026-07-01 rebaseline)',
+					body: 'As of 2026-07-01, every published Python-side rounding breaks ties HALF-AWAY-FROM-ZERO (round_half_away, matching Postgres ROUND), replacing Python’s banker’s (round-half-to-even) rounding. Values move only at exact-.5 boundaries (the S7-B rebaseline), so the site’s figures and the database agree on the same rounded digit.',
+				},
+				constants: {
+					heading: 'Doctrine constants',
+					body: (minN, wilsonZ) =>
+						`“Reliable enough” = ${minN} known-delay observations (min_n_rate): below it, a rate keeps its raw observation_count but is flagged low-confidence, never suppressed. Confidence interval = the 95% Wilson score interval, z = ${wilsonZ} (wilson_z). Both values are read as-is from the current run’s provenance.methodology, not hardcoded.`,
+					absent:
+						'The doctrine constants (min_n_rate, Wilson z) are read from the current run’s provenance.methodology; that document could not be loaded right now, so their exact values are not shown here. The methodology below is still exact.',
+				},
+			},
 		},
 		lacunes: {
 			title: 'Structural gaps',
@@ -336,7 +390,6 @@ export const metricsCopy: Record<Locale, MetricsCopy> = {
 			remember: 'Remember focus reading on future visits',
 			forget: 'Forget focus reading (this session only)',
 		},
-		edgeTitle: 'METRICS',
 		tocLabel: 'Jump to a metric',
 		tocCounterPrefix: 'SEC',
 		backToTop: 'Back to top',
