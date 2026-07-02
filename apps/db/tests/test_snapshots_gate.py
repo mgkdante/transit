@@ -28,12 +28,16 @@ from transit_ops.snapshots.contract import (
     NetworkTrend,
     NonRespondingRoute,
     OccupancyMix,
+    Offender,
     Receipt,
     ReceiptNotReportedRoute,
     ReceiptServiceStates,
     ReceiptShiftCut,
     ReceiptsIndex,
     ReliabilityPeriod,
+    RepeatOffenderEntry,
+    RepeatOffenderGrain,
+    RepeatOffenders,
     RouteHabits,
     RouteReliability,
     StatusDist,
@@ -334,6 +338,61 @@ def test_hotspots_by_grain_flags_bad_range_and_sentinel():
     checks = _checks(_errors(res))
     assert "sentinel_entity" in checks
     assert "rate_range" in checks
+
+
+# --- repeat offenders --------------------------------------------------------
+
+
+def test_repeat_offenders_by_grain_walks_entries_no_rank_sequence():
+    """S14: the by_grain recurrence ladder is checked for range/sentinel/wilson/count, but NOT
+    for sequential rank (ranked-then-truncated PER KIND) — a non-1-based / gapped rank is fine."""
+    ro = RepeatOffenders(generated_utc="t", offenders=[], by_grain=[
+        RepeatOffenderGrain(grain="week", window_days=7, entries=[
+            RepeatOffenderEntry(rank=5, type="trip", id="T1", route="51", severe_pct=40.0,
+                                wilson_lo=50.0, wilson_hi=60.0, observation_count=100,
+                                severe_count=40, recurrence_days=6, observed_days=7),
+            RepeatOffenderEntry(rank=9, type="vehicle", id="V1", route="51", severe_pct=70.0,
+                                wilson_lo=16.8, wilson_hi=30.0, observation_count=80,
+                                severe_count=56, recurrence_days=5, observed_days=6),
+        ], tray=[
+            RepeatOffenderEntry(rank=None, type="trip", id="T2", severe_pct=5.0,
+                                observation_count=10, recurrence_days=2),
+        ]),
+    ])
+    res = gate.check_repeat_offenders(ro, rel_key="historic/repeat_offenders.json")
+    assert not _errors(res), [r.check for r in _errors(res)]
+
+
+def test_repeat_offenders_by_grain_flags_bad_range_type_and_sentinel():
+    """S14: an out-of-range severe_pct / a non-{trip,vehicle} type / a sentinel id/route / a
+    negative count in a by_grain entry (or tray) still trips the shared checks."""
+    ro = RepeatOffenders(generated_utc="t", offenders=[], by_grain=[
+        RepeatOffenderGrain(grain="month", window_days=30, entries=[
+            RepeatOffenderEntry(rank=1, type="route", id="__unrouted__", route="__unrouted__",
+                                severe_pct=140.0, recurrence_days=-1),
+        ], tray=[
+            RepeatOffenderEntry(rank=None, type="vehicle", id="V1", severe_pct=-3.0),
+        ]),
+    ])
+    res = gate.check_repeat_offenders(ro, rel_key="historic/repeat_offenders.json")
+    checks = _checks(_errors(res))
+    assert "unknown_type" in checks       # 'route' is not a by_grain offender kind
+    assert "sentinel_entity" in checks    # id + route are sentinels
+    assert "rate_range" in checks         # 140.0 and -3.0 severe_pct
+    assert "count_negative" in checks     # recurrence_days = -1
+
+
+def test_repeat_offenders_scalar_still_accepts_route_stop_and_flags_sentinels():
+    """S14: the SCALAR offenders[] retains its broader trip|vehicle|route|stop type set and its
+    sentinel + additive recurrence_days count check (additive twin, not a regression)."""
+    ro = RepeatOffenders(generated_utc="t", offenders=[
+        Offender(type="trip", id="T1", route="51", recurrence="3/14d",
+                 recurrence_days=3, window_days=14, avg_delay_min=2.0, severity="watch"),
+        Offender(type="vehicle", id="__unknown_stop__", route="__unrouted__"),  # sentinel id+route
+    ])
+    res = gate.check_repeat_offenders(ro, rel_key="historic/repeat_offenders.json")
+    checks = _checks(_errors(res))
+    assert "sentinel_entity" in checks
 
 
 # --- crowding + headway + alert history --------------------------------------

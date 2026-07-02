@@ -27,7 +27,7 @@ LEGACY_SILVER_REALTIME_TABLES = {
 REPORTING_AGGREGATE_TABLES = (
     "gold.route_delay_hourly",
     "gold.stop_delay_hourly",
-    "gold.route_habit_score",
+    # gold.route_habit_score DROPPED (migration 0076, S14) — recomposed at read time.
     "gold.repeated_problem_route_stop",
     "gold.citizen_accountability_daily",
     "gold.report_labels",

@@ -54,6 +54,8 @@ from transit_ops.snapshots.contract import (
     ReceiptShiftCut,
     ReceiptWorstRoute,
     ReceiptWorstStop,
+    RepeatOffenderEntry,
+    RepeatOffenderGrain,
     RepeatOffenders,
 )
 from transit_ops.sql_registry import named_query
@@ -683,11 +685,265 @@ def build_repeat_offenders(
                 route_names.get(str(r["route_id"])) if r["route_id"] is not None else None
             ),
             recurrence=f"{r['recurrence_days']}/{r['window_days']}d",
+            # S14 additive structured twins (columns the query already selects): the web
+            # reads these instead of parsing "N/14d" + re-deriving severity client-side.
+            recurrence_days=_opt_int(r["recurrence_days"]),
+            window_days=_opt_int(r["window_days"]),
             avg_delay_min=round(float(r["avg_delay_seconds"]) / 60.0, 1),
+            severity=r["severity_label"],
         )
         for r in rows
     ]
-    return RepeatOffenders(generated_utc=generated_utc, offenders=offenders)
+    # S14 additive: the evidence-rich by_grain recurrence ladders. The scalar offenders[]
+    # above is UNTOUCHED (order + legacy fields byte-identical); by_grain is recomposed off
+    # the 0075 daily offender spine at read time.
+    by_grain = _repeat_offenders_by_grain(conn, provider_id, route_names)
+    return RepeatOffenders(
+        generated_utc=generated_utc, offenders=offenders, by_grain=by_grain
+    )
+
+
+# --------------------------------------------------------------------------
+# S14 — re-granulated repeat-offender ladders (week/month) off the 0075 spine
+# --------------------------------------------------------------------------
+# The scalar mart gold.repeat_offender is a single 14d-recurrence snapshot, so
+# week/month recurrence CANNOT come from it. The honest path (matching the S12
+# _hotspots_by_grain house pattern) recomposes the ladders at READ TIME off the
+# 0075 daily offender spine gold.repeat_offender_daily_spine — NO new mart read.
+# Ranking is the NOT-severe Wilson LOWER bound ASC on the SEVERE-delay proxy, the
+# SAME per-kind metric as hotspots (MIN_N_RATE=30 observation floor), per-kind
+# ladders (trip + vehicle) with rank restarting per kind. recurrence_days ("N of M
+# observed days") is EVIDENCE, not the rank key. Grains are week|month ONLY — a
+# repeat offender is undefined on a single day (see RepeatOffenderGrain).
+_MIN_N_OFFENDER = MIN_N_RATE          # 30 — the proportion reliability floor
+_OFFENDERS_BY_GRAIN_CAP = 50          # ranked entries stored per (grain, KIND); trip and
+                                      # vehicle are ranked SEPARATELY, each cap 50
+_OFFENDERS_TRAY_CAP = 60              # un-ranked tray entries stored per grain TOTAL
+_OFFENDERS_GRAINS = ("week", "month")  # week|month only — day is undefined for "repeat"
+# A sub-MIN_N entity reaches the tray ONLY when it STILL recurred: recurrence_days >= this.
+# Below the floor a single-day fluke carries no "repeat" signal, so it is dropped entirely.
+_OFFENDER_TRAY_MIN_RECURRENCE = 2
+# S14 D4 severity ladder — the SAME declared thresholds as the scalar mart CASE
+# (UPSERT_REPEAT_OFFENDER_DAILY, gold/rollups.py). Kept in ONE Python constant so the by_grain
+# entry severity reuses the mart's vocabulary WITHOUT touching any mart SQL threshold (D4:
+# document, don't rebaseline). Applied to the entry's OWN window (recurrence_days + avg_delay).
+# NOTE (2026-07-02): if the mart's CASE thresholds ever change, change them HERE too — the two
+# are the one repeat-offender severity vocabulary, deliberately duplicated across SQL + Python.
+_OFFENDER_SEVERITY_CRITICAL_RECURRENCE = 10
+_OFFENDER_SEVERITY_CRITICAL_AVG_SECONDS = 600
+_OFFENDER_SEVERITY_HIGH_RECURRENCE = 5
+
+# Newest CLOSED offender-spine day (NO entity filter — offenders are all-per-city). Read once
+# and threaded into the trailing week/month windows.
+_OFFENDERS_ANCHOR_SQL = named_query(
+    "repeat.offenders.spine.anchor",
+    "SELECT MAX(provider_local_date) AS anchor FROM gold.repeat_offender_daily_spine "
+    "WHERE provider_id = :provider_id",
+)
+
+# Per-ENTITY windowed aggregate for a trailing window: the additive spine daily rows SUMmed per
+# (entity_kind, entity_id, route_id), plus the two DISTINCT-day evidence counts. recurrence_days
+# = COUNT(DISTINCT date WHERE that day was severe) — reproduces the mart's recurrence_days by
+# construction (a spine day has severe_delay_count>0 iff it had a severe observation). No entity
+# filter — the all-per-city universe; the fact predicate already excluded null-route rows at
+# build, so no sentinel can appear here.
+_OFFENDERS_WINDOW_SQL = named_query(
+    "repeat.offenders.by_grain",
+    """
+    SELECT
+        entity_kind,
+        entity_id,
+        route_id,
+        SUM(observation_count)::bigint   AS obs,
+        SUM(severe_delay_count)::bigint  AS severe,
+        SUM(sum_delay_seconds)::bigint   AS sum_delay_sec,
+        COUNT(DISTINCT provider_local_date)
+            FILTER (WHERE severe_delay_count > 0)  AS recurrence_days,
+        COUNT(DISTINCT provider_local_date)        AS observed_days
+    FROM gold.repeat_offender_daily_spine
+    WHERE provider_id = :provider_id
+      AND provider_local_date >= :win_start AND provider_local_date <= :win_end
+    GROUP BY entity_kind, entity_id, route_id
+    """,
+)
+
+
+def _offender_severity(recurrence_days: int | None, avg_sec: float | None) -> str | None:
+    """The by_grain entry severity from the mart's declared vocabulary (S14 D4), applied to
+    the entry's OWN window. Honest-None when both inputs are unknown (never a fabricated
+    'watch'). avg_sec is the UN-ROUNDED pooled mean in SECONDS (Σsum_delay / Σobs), so the
+    600s boundary is compared at full precision like the mart CASE, not on the display-rounded
+    minute value (a 600.4s window must label critical on both ladders)."""
+    if recurrence_days is None and avg_sec is None:
+        return None
+    rec = recurrence_days or 0
+    if (rec >= _OFFENDER_SEVERITY_CRITICAL_RECURRENCE
+            or (avg_sec or 0.0) > _OFFENDER_SEVERITY_CRITICAL_AVG_SECONDS):
+        return "critical"
+    if rec >= _OFFENDER_SEVERITY_HIGH_RECURRENCE:
+        return "high"
+    return "watch"
+
+
+def _offender_pooled_avg_sec(sum_sec: object, obs: int) -> float | None:
+    """Un-rounded pooled mean delay in SECONDS for a window (the severity comparator);
+    honest-None on a zero denominator."""
+    return float(sum_sec) / obs if (sum_sec is not None and obs) else None
+
+
+def _offender_window_val(sum_sec: object, obs: int) -> float | None:
+    """Pooled in-clamp avg delay (min) for a window: Σsum_delay / Σobs / 60, honest-None on a
+    zero denominator. Rounding is half-away (via _avg_delay_min), never Python round()."""
+    return _avg_delay_min(float(sum_sec) / obs) if (sum_sec is not None and obs) else None
+
+
+def _offender_ranked_entry(
+    r, kind: str, route_names: dict
+) -> tuple[float, float, str, RepeatOffenderEntry] | None:
+    """Build one ranked RepeatOffenderEntry from a summed spine row, ranked on the NOT-severe
+    Wilson LB of the severe proxy. Returns None below MIN_N (caller routes it to the tray).
+    Ranking key tuple = (wilson_lo ASC, -avg worst, id ASC)."""
+    obs = int(r["obs"] or 0)
+    severe = int(r["severe"] or 0)
+    eid = str(r["entity_id"])
+    if obs < _MIN_N_OFFENDER:
+        return None
+    not_severe_k = obs - severe  # not-severe successes
+    w_lo = _wilson_lo(not_severe_k, obs)
+    w_hi = _wilson_hi(not_severe_k, obs)
+    if w_lo is None:  # defensive: obs>=30 guarantees non-None
+        return None
+    rec_days = _opt_int(r["recurrence_days"])
+    avg_min = _offender_window_val(r["sum_delay_sec"], obs)
+    route_id = r["route_id"]
+    entry = RepeatOffenderEntry(
+        rank=None,  # assigned after the full-set sort
+        type=kind,
+        id=eid,
+        route=route_id,
+        route_name=(route_names.get(str(route_id)) if route_id is not None else None),
+        severity=_offender_severity(rec_days, _offender_pooled_avg_sec(r["sum_delay_sec"], obs)),
+        observation_count=_opt_int(obs),
+        severe_count=_opt_int(severe),
+        severe_pct=_severe_pct(obs, severe),
+        wilson_lo=w_lo,
+        wilson_hi=w_hi,
+        recurrence_days=rec_days,
+        observed_days=_opt_int(r["observed_days"]),
+        window_days=int(r["window_days"]),
+        avg_delay_min=avg_min,
+    )
+    return (w_lo, -(avg_min or 0.0), eid, entry)
+
+
+def _offender_tray_entry(r, kind: str, route_names: dict) -> RepeatOffenderEntry:
+    """An UN-ranked sub-MIN_N tray entry (rank=None) that STILL recurred. Carries the honest
+    counts + severe % + recurrence evidence (Wilson is None below the floor — a tiny-n interval
+    is uninformative)."""
+    obs = int(r["obs"] or 0)
+    severe = int(r["severe"] or 0)
+    route_id = r["route_id"]
+    avg_min = _offender_window_val(r["sum_delay_sec"], obs)
+    rec_days = _opt_int(r["recurrence_days"])
+    return RepeatOffenderEntry(
+        rank=None,
+        type=kind,
+        id=str(r["entity_id"]),
+        route=route_id,
+        route_name=(route_names.get(str(route_id)) if route_id is not None else None),
+        severity=_offender_severity(rec_days, _offender_pooled_avg_sec(r["sum_delay_sec"], obs)),
+        observation_count=_opt_int(obs),
+        severe_count=_opt_int(severe),
+        severe_pct=_severe_pct(obs, severe),
+        recurrence_days=rec_days,
+        observed_days=_opt_int(r["observed_days"]),
+        window_days=int(r["window_days"]),
+        avg_delay_min=avg_min,
+    )
+
+
+def _offender_kind_ladder(
+    rows, kind: str, route_names: dict
+) -> tuple[list[RepeatOffenderEntry], int, list[RepeatOffenderEntry]]:
+    """Rank ONE kind's window rows on its own ladder (per-kind ranking): the full MIN_N set
+    ranked worst-first by the not-severe Wilson LB, ranks assigned 1..N WITHIN this kind,
+    truncated to the per-kind cap; sub-MIN_N rows that STILL recurred (recurrence_days>=2)
+    become un-ranked tray entries. Returns (entries, total_ranked, tray_entries)."""
+    ranked: list[tuple] = []
+    tray: list[RepeatOffenderEntry] = []
+    for r in rows:
+        entry = _offender_ranked_entry(r, kind, route_names)
+        if entry is None:
+            # sub-floor: keep ONLY if it still recurred (a single-day fluke has no signal).
+            if (r["recurrence_days"] or 0) >= _OFFENDER_TRAY_MIN_RECURRENCE:
+                tray.append(_offender_tray_entry(r, kind, route_names))
+        else:
+            ranked.append(entry)
+    ranked.sort(key=lambda t: (t[0], t[1], t[2]))
+    total_ranked = len(ranked)  # pre-truncation per-kind count (the shown/total denominator)
+    entries: list[RepeatOffenderEntry] = []
+    for i, t in enumerate(ranked[:_OFFENDERS_BY_GRAIN_CAP]):
+        e = t[3]
+        e.rank = i + 1  # 1-based WITHIN this kind's ladder (rank RESTARTS per kind)
+        entries.append(e)
+    return entries, total_ranked, tray
+
+
+def _repeat_offenders_by_grain(
+    conn: Connection, provider_id: str, route_names: dict
+) -> list[RepeatOffenderGrain]:
+    """The S14 re-granulated recurrence ladders: week + month trailing windows off the 0075
+    daily offender spine, each a per-kind (trip|vehicle) Wilson-ranked ladder + un-ranked tray.
+    Honest absence: a grain with no qualifying entity (neither ranked nor tray) is OMITTED, and
+    when the spine has no rows at all NO grain is emitted."""
+    anchor = _hotspots_anchor(conn, _OFFENDERS_ANCHOR_SQL, provider_id)
+    if anchor is None:
+        return []
+    windows = GrainWindows(anchor)
+    out: list[RepeatOffenderGrain] = []
+    for grain in _OFFENDERS_GRAINS:
+        win_start, win_end = windows[grain]
+        window_days = (win_end - win_start).days + 1
+        rows = list(
+            conn.execute(
+                _OFFENDERS_WINDOW_SQL,
+                {"provider_id": provider_id, "win_start": win_start, "win_end": win_end},
+            ).mappings()
+        )
+        # stamp the trailing window length onto each row (a plain dict copy — mappings are
+        # read-only) so the entry builders read window_days from one source.
+        trip_rows = [dict(r, window_days=window_days) for r in rows if r["entity_kind"] == "trip"]
+        veh_rows = [
+            dict(r, window_days=window_days) for r in rows if r["entity_kind"] == "vehicle"
+        ]
+        trip_entries, trip_total, trip_tray = _offender_kind_ladder(
+            trip_rows, "trip", route_names
+        )
+        veh_entries, veh_total, veh_tray = _offender_kind_ladder(
+            veh_rows, "vehicle", route_names
+        )
+        # entries[] = the two per-kind ladders concatenated (trip first, then vehicle); each
+        # keeps its own 1..N rank. The web filters by type into per-kind tabs losslessly.
+        entries = trip_entries + veh_entries
+        # tray union: worst-severe first across BOTH kinds, then id ASC for stability.
+        union = trip_tray + veh_tray
+        tray_total = len(union)
+        if not entries and tray_total == 0:
+            continue  # honest absence — omit the grain entirely
+        union.sort(key=lambda e: (-(e.severe_pct or 0.0), e.id))
+        tray = union[:_OFFENDERS_TRAY_CAP]
+        out.append(
+            RepeatOffenderGrain(
+                grain=grain,
+                window_days=window_days,
+                entries=entries,
+                tray=tray,
+                total_ranked_trips=trip_total,
+                total_ranked_vehicles=veh_total,
+                tray_total=tray_total,
+            )
+        )
+    return out
 
 
 # --------------------------------------------------------------------------

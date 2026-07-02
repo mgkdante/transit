@@ -125,7 +125,6 @@ from transit_ops.snapshots.builders.historic.provenance import (
 from transit_ops.snapshots.builders.historic.route_reliability import (
     _ROUTE_CANCELLATION_DAILY_SQL,
     _ROUTE_CROWDING_DELAY_SQL,
-    _ROUTE_HABIT_SQL,
     _ROUTE_HEADWAY_DIRECTION_SQL,
     _ROUTE_HEADWAY_OBSERVED_SQL,
     _ROUTE_OCCUPANCY_BAND_WINDOW_SQL,
@@ -271,7 +270,6 @@ __all__ = [
     "_build_provenance_conformance",
     "_ROUTE_CANCELLATION_DAILY_SQL",
     "_ROUTE_CROWDING_DELAY_SQL",
-    "_ROUTE_HABIT_SQL",
     "_ROUTE_HEADWAY_DIRECTION_SQL",
     "_ROUTE_HEADWAY_OBSERVED_SQL",
     "_ROUTE_OCCUPANCY_BAND_WINDOW_SQL",

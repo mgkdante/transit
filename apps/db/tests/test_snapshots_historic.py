@@ -46,6 +46,11 @@ from transit_ops.snapshots.builders.historic import (
     _STOP_REL_BY_ROUTE_SQL,
     _hotspots_by_grain,
 )
+from transit_ops.snapshots.builders.historic.small_surfaces import (
+    _MIN_N_OFFENDER,
+    _offender_severity,
+    _repeat_offenders_by_grain,
+)
 from transit_ops.snapshots.contract import (
     AlertHistory,
     Hotspots,
@@ -460,8 +465,19 @@ def _route_reliability_dispatch(*, daily=None, weekly=None, monthly=None, headwa
     schedule rows feed the representative-weekday scheduled-headway computation. The
     crosstab / dow / weekly / monthly reads run the (windowed) spine projectors and
     default to [] — preserving the empty fall-through the old dead needles gave.
+
+    S14: the SCALAR habits matrix reads gold/reader `route.habit.spine` over an
+    ALL-TIME window (the dropped gold.route_habit_score mart's 'route.habit.score'
+    read is gone). ``route.spine.anchor`` is mapped so the scalar read runs; the
+    habit rows get a below-MIN_N ``known_obs`` default so the SAME `route.habit.spine`
+    dispatch fed to the windowed habits_by_grain path is suppressed there (these tests
+    assert on the scalar matrix, whose _build_habits_matrix applies no obs floor).
     """
+    habit_rows = [{"known_obs": 0, **r} for r in (habit or [])]
     return {
+        # S14: scalar habits reads route.habit.spine over an all-time window; anchor drives it.
+        "route.spine.anchor": [{"anchor": datetime.date(2026, 6, 30)}],
+        "route.habit.spine": habit_rows,
         "static.dataset_version": [{"dataset_version_id": 1}],
         "static.rep_dates": [
             {
@@ -482,11 +498,10 @@ def _route_reliability_dispatch(*, daily=None, weekly=None, monthly=None, headwa
         "route.spine.monthly": monthly or [],
         "route.headway.by_direction_shift": headway_direction or [],
         "route.headway.observed_by_shift": headway or [],
-        "route.habit.score": habit or [],
         # weak stops — the per-route worst-N reads gold.stop_delay_spine over the
-        # trailing window (DB-0067 Phase 2). The stop-delay anchor is answered first;
-        # route.spine.anchor is left unmapped ([]) so the §1 by-grain reads stay empty,
-        # matching the old dead-needle fall-through.
+        # trailing window (DB-0067 Phase 2). The stop-delay anchor is answered here; the
+        # windowed §1 reads (by_shift/by_daytype windowed) default to [] and produce empty
+        # grain output.
         "stop.delay.anchor": [{"anchor": datetime.date(2026, 6, 30)}],
         "route.weak_stops.legacy": weak or [],
         "static.stop_names": names or [],
@@ -1742,6 +1757,178 @@ def test_build_repeat_offenders_resolves_route_name() -> None:
     assert out.offenders[0].id == "281234567"  # raw trip id, no entity name
     assert out.offenders[1].route_name == "Ancienne ligne"
     assert out.offenders[2].route_name is None  # no route context at all
+
+
+def test_build_repeat_offenders_scalar_additive_fields_and_order_stable() -> None:
+    """S14 additive: the scalar offenders[] gains recurrence_days/window_days/severity from the
+    columns the mart query already selects — WITHOUT changing the legacy fields or the order."""
+    rows = [
+        {"entity_kind": "trip", "entity_id": "T9", "route_id": "9", "recurrence_days": 10,
+         "window_days": 14, "avg_delay_seconds": 300.0, "severity_label": "critical"},
+        {"entity_kind": "vehicle", "entity_id": "V2", "route_id": "51", "recurrence_days": 5,
+         "window_days": 14, "avg_delay_seconds": 600.0, "severity_label": "high"},
+    ]
+    conn = FakeConn({"repeat.offenders": rows})
+    out = build_repeat_offenders(conn, generated_utc="t")
+    # order byte-stable (SQL-ordered, insertion-preserved)
+    assert [o.id for o in out.offenders] == ["T9", "V2"]
+    o0 = out.offenders[0]
+    # legacy fields UNCHANGED
+    assert o0.recurrence == "10/14d"
+    assert o0.avg_delay_min == 5.0  # 300/60
+    # additive structured twins present
+    assert o0.recurrence_days == 10
+    assert o0.window_days == 14
+    assert o0.severity == "critical"
+    assert out.offenders[1].severity == "high"
+
+
+# --------------------------------------------------------------------------
+# S14 — _offender_severity vocabulary (D4: same declared thresholds as the mart)
+# --------------------------------------------------------------------------
+
+
+def test_offender_severity_matches_mart_vocabulary() -> None:
+    # avg_sec is the UN-ROUNDED pooled mean in SECONDS (S14 review F2).
+    assert _offender_severity(10, 0.0) == "critical"           # recurrence >= 10
+    assert _offender_severity(0, 601.2) == "critical"          # avg 601.2s > 600s
+    assert _offender_severity(1, 600.0) in ("high", "watch")
+    assert _offender_severity(5, 0.0) == "high"                # recurrence >= 5
+    assert _offender_severity(4, 300.0) == "watch"             # below both ladders
+    assert _offender_severity(None, None) is None              # honest-None, never 'watch'
+
+
+def test_offender_severity_avg_boundary_is_strict_gt_600s() -> None:
+    """The mart CASE is avg_delay_seconds > 600 (strict) — 600s exactly is NOT critical on avg,
+    and the comparison happens on UN-ROUNDED pooled seconds: 600.4s must be critical even though
+    it display-rounds to 10.0 min (S14 review F2 boundary case)."""
+    assert _offender_severity(0, 600.0) == "watch"  # exactly 600s -> not critical
+    assert _offender_severity(0, 600.4) == "critical"  # inside the minute-rounding tolerance
+    assert _offender_severity(0, 601.2) == "critical"
+
+
+# --------------------------------------------------------------------------
+# S14 — _repeat_offenders_by_grain (0075 offender spine recomposition)
+# --------------------------------------------------------------------------
+
+_OFFENDER_ANCHOR = datetime.date(2026, 6, 30)
+
+
+def _offender_grain_conn(spine_rows, route_names=None):  # noqa: ANN001, ANN202
+    """Name-dispatch mock for _repeat_offenders_by_grain. The window SQL result is the same
+    for both week+month calls (the mock ignores binds); window_days is derived in Python."""
+    return FakeConn(
+        {
+            "repeat.offenders.spine.anchor": [{"anchor": _OFFENDER_ANCHOR}],
+            "repeat.offenders.by_grain": spine_rows,
+            "static.route_names": route_names or [],
+        }
+    )
+
+
+def _offender_spine_row(kind, eid, route, *, obs, severe, sum_sec, recurrence_days, observed_days):  # noqa: ANN001, ANN202
+    return {
+        "entity_kind": kind, "entity_id": eid, "route_id": route,
+        "obs": obs, "severe": severe, "sum_delay_sec": sum_sec,
+        "recurrence_days": recurrence_days, "observed_days": observed_days,
+    }
+
+
+def test_by_grain_ranks_per_kind_and_sets_window_days() -> None:
+    """Two grains (week=7d, month=30d) each carry a per-kind (trip|vehicle) ranked ladder off
+    the 0075 spine. rank restarts per kind; window_days = the trailing window length."""
+    rows = [
+        # a clearly-severe trip (100 obs, 60 severe) and a clean trip (100 obs, 2 severe)
+        _offender_spine_row("trip", "T_BAD", "9", obs=100, severe=60, sum_sec=48000,
+                   recurrence_days=6, observed_days=6),
+        _offender_spine_row("trip", "T_OK", "9", obs=100, severe=2, sum_sec=6000,
+                   recurrence_days=1, observed_days=6),
+        _offender_spine_row("vehicle", "V_BAD", "51", obs=80, severe=40, sum_sec=40000,
+                   recurrence_days=5, observed_days=5),
+    ]
+    conn = _offender_grain_conn(
+        rows, route_names=[{"route_id": "9", "route_name": "Route Nine"}]
+    )
+    grains = _repeat_offenders_by_grain(conn, "stm", {"9": "Route Nine"})
+    assert [g.grain for g in grains] == ["week", "month"]
+    week = next(g for g in grains if g.grain == "week")
+    month = next(g for g in grains if g.grain == "month")
+    assert week.window_days == 7
+    assert month.window_days == 30
+    # per-kind ladders: 2 trips + 1 vehicle -> ranks restart per kind
+    trips = [e for e in week.entries if e.type == "trip"]
+    vehs = [e for e in week.entries if e.type == "vehicle"]
+    assert [e.rank for e in trips] == [1, 2]  # worst-first, rank restarts per kind
+    assert [e.rank for e in vehs] == [1]
+    assert week.total_ranked_trips == 2
+    assert week.total_ranked_vehicles == 1
+    # the worst trip ranks first (lowest not-severe Wilson LB)
+    assert trips[0].id == "T_BAD"
+    # route name resolved from context; entity id stays raw
+    assert trips[0].route_name == "Route Nine"
+    # evidence channel present
+    assert trips[0].recurrence_days == 6
+    assert trips[0].observed_days == 6
+    assert trips[0].severe_pct == 60.0
+    assert trips[0].wilson_lo is not None and trips[0].wilson_hi is not None
+    assert trips[0].avg_delay_min == 8.0  # 48000/100/60
+
+
+def test_by_grain_min_n_floor_routes_to_tray_only_when_recurred() -> None:
+    """MIN_N mutation-killer: an entity with obs < MIN_N_RATE is EXCLUDED from the ranked
+    ladder. It reaches the tray ONLY if it still recurred (recurrence_days >= 2); a single-day
+    sub-floor fluke is dropped entirely."""
+    assert _MIN_N_OFFENDER == 30  # pins the floor the test depends on
+    rows = [
+        # sub-floor but recurrent -> tray
+        _offender_spine_row("trip", "T_TRAY", "9", obs=_MIN_N_OFFENDER - 1, severe=10, sum_sec=9000,
+                   recurrence_days=3, observed_days=3),
+        # sub-floor single-day fluke -> dropped (not ranked, not tray)
+        _offender_spine_row("trip", "T_DROP", "9", obs=5, severe=5, sum_sec=6000,
+                   recurrence_days=1, observed_days=1),
+        # clears the floor -> ranked
+        _offender_spine_row("vehicle", "V_RANKED", "51", obs=_MIN_N_OFFENDER, severe=15, sum_sec=12000,
+                   recurrence_days=4, observed_days=4),
+    ]
+    conn = _offender_grain_conn(rows)
+    week = next(g for g in _repeat_offenders_by_grain(conn, "stm", {}) if g.grain == "week")
+    ranked_ids = {e.id for e in week.entries}
+    tray_ids = {e.id for e in week.tray}
+    assert ranked_ids == {"V_RANKED"}       # only the >=MIN_N entity is ranked
+    assert tray_ids == {"T_TRAY"}           # sub-floor + recurrent -> tray
+    assert "T_DROP" not in ranked_ids and "T_DROP" not in tray_ids  # fluke dropped
+    assert week.tray_total == 1
+    # tray entries carry evidence but NO Wilson band (uninformative below the floor)
+    tray_e = week.tray[0]
+    assert tray_e.rank is None
+    assert tray_e.wilson_lo is None and tray_e.wilson_hi is None
+    assert tray_e.recurrence_days == 3
+
+
+def test_by_grain_omits_grain_on_honest_absence() -> None:
+    """A grain with no qualifying entity (no ranked entry AND no tray entry) is OMITTED, and an
+    empty spine yields NO grains at all (never a fabricated zero)."""
+    # empty spine -> no anchor rows either
+    empty = FakeConn(
+        {"repeat.offenders.spine.anchor": [{"anchor": None}], "repeat.offenders.by_grain": []}
+    )
+    assert _repeat_offenders_by_grain(empty, "stm", {}) == []
+    # anchor present but only a sub-floor single-day fluke -> both grains omitted
+    rows = [_offender_spine_row("trip", "T", "9", obs=3, severe=3, sum_sec=1000,
+                       recurrence_days=1, observed_days=1)]
+    conn = _offender_grain_conn(rows)
+    assert _repeat_offenders_by_grain(conn, "stm", {}) == []
+
+
+def test_by_grain_pooled_avg_honest_none_on_zero_denominator() -> None:
+    """A tray row with zero observations yields honest-None avg (never a divide-by-zero)."""
+    # zero-obs but recurrence marked (defensive/degenerate) -> tray with None avg
+    rows = [_offender_spine_row("trip", "T0", "9", obs=0, severe=0, sum_sec=0,
+                       recurrence_days=2, observed_days=2)]
+    conn = _offender_grain_conn(rows)
+    grains = _repeat_offenders_by_grain(conn, "stm", {})
+    week = next(g for g in grains if g.grain == "week")
+    assert week.tray[0].avg_delay_min is None
 
 
 # --------------------------------------------------------------------------

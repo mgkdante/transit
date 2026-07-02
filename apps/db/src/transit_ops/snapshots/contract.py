@@ -788,11 +788,11 @@ class ReliabilityByGrain(BaseModel):
 class RouteHabitsByGrain(BaseModel):
     # S7-B windowable §1 heatmap: the 7x24 repeat-problem matrix recomposed from
     # gold.route_delay_spine over ONE trailing window (same grains/windows as
-    # ReliabilityByGrain). DISTINCT lineage from the scalar `habits` (which reads the
-    # whole-history route_habit_score mart): this recomposes the composite score from the
-    # spine windowed by date, with a documented rebaseline on the avg term (the spine's
-    # in-clamp pooled mean vs the mart's obs-weighted avg-of-averages) — the severe base
-    # is byte-identical. Each window NORMALIZES to its OWN worst cell, so a 1.0 in 'day'
+    # ReliabilityByGrain). SAME lineage as the scalar `habits` post-S14: BOTH read the ONE
+    # reconciled repeat_problem_score (gold/reader ROUTE_HABIT_SPINE_SQL / gold/reader/
+    # score.py) off the spine — this one windowed by the trailing grain, the scalar over an
+    # all-time window (the dropped route_habit_score mart's whole-history aggregate). Each
+    # window NORMALIZES to its OWN worst cell, so a 1.0 in 'day'
     # and a 1.0 in 'month' are different absolute magnitudes (relative-to-route scale, per
     # the Chart Doctrine). Per-cell MIN_N: a (dow,hour) cell with < 30 known-delay
     # observations in the window is dropped (counted in cells_suppressed); when NO cell
@@ -1014,12 +1014,14 @@ class HotspotEntry(BaseModel):
     # the display otp_delta_pts instead). wilson_lo/wilson_hi = the 95% interval of that
     # not-severe rate, PERCENT [0,100]. observation_count = in-clamp delay n in the
     # window; severe_count = the >300s count; severe_pct = severe/obs. issue_count is
-    # reserved; currently always None (the mart join lands with the S14 score
-    # reconciliation). It will carry the MART's raw severe count
-    # (gold.repeated_problem_route_stop) as a SECONDARY field ONLY — the mart's
-    # repeat-problem composite ordering diverges from this plain severe-rate Wilson
-    # ranking; S14 owns score reconciliation, so the two orderings are NOT reconciled
-    # here. otp_delta_pts = the entity OTP minus
+    # RESERVED — stays None (S14 resolution, 2026-07-02): NOT wired. by_grain entries are
+    # TRAILING-window (GrainWindows day/week/month anchored on the newest closed day), but
+    # the recurrence mart gold.repeated_problem_route_stop is ISO-WEEK grain — joining an
+    # ISO-week issue_count onto a trailing-window entry is a dishonest window mismatch. The
+    # canonical severe-count channel for a windowed entry is severe_count itself (same
+    # trailing window, same spine); the ISO-week mart remains ONLY the scalar hotspots-board
+    # feed. Kept reserved (never a fabricated 0) rather than populated with a mismatched join.
+    # otp_delta_pts = the entity OTP minus
     # a SAME-METRIC network baseline for the SAME window (honest-None when either side
     # is unknown, or when no per-window baseline exists). avg_delay_min = the pooled
     # in-clamp mean (a documented rebaseline vs the mart's triple-rounded avg).
@@ -1111,12 +1113,109 @@ class Offender(BaseModel):
     # Offenders are 'trip'/'vehicle' entities with no display name of their
     # own — the route context carries the resolved name instead.
     route_name: str | None = None
+    # recurrence = the legacy pre-formatted "N/14d" string (KEPT byte-identical for
+    # parity). S14 ADDITIVE structured twins so the web stops parsing that string and
+    # stops re-deriving severity client-side: recurrence_days = the N (distinct severe
+    # days), window_days = the mart's fixed 14-day window (the M), severity = the mart's
+    # published severity_label. All optional/None on a legacy payload (additive-optional
+    # growth rule); populated straight from the columns the scalar mart query already
+    # selects, so the scalar list's order + legacy fields stay byte-stable.
     recurrence: str | None = None
+    recurrence_days: int | None = None
+    window_days: int | None = None
     avg_delay_min: float | None = None
+    severity: str | None = None
+
+class RepeatOffenderEntry(BaseModel):
+    # S14 evidence-rich per-entry shape for the re-granulated by_grain recurrence ladders,
+    # mirroring HotspotEntry. Distinct from the minimal scalar Offender (kept byte-identical
+    # for parity): an entry carries the FULL confidence channel so the citizen sees WHY it
+    # ranks and the web can pool/whisker it honestly. rank = 1-based position WITHIN this
+    # grain ladder AND WITHIN this entry's OWN kind: trip and vehicle are ranked on SEPARATE
+    # ladders, so rank RESTARTS per kind (a trip rank=1 and a vehicle rank=1 co-exist in one
+    # grain's entries[]) — NOT sequential across kinds, and a display-N truncation never
+    # rescales it; a sub-MIN_N tray entry carries rank=None. type = 'trip'|'vehicle'
+    # discriminator (the web filters entries[] by type into per-kind tabs losslessly).
+    # RANKING: entries are ordered by the NOT-severe Wilson LOWER bound ASC on the SEVERE-
+    # delay proxy (the S12 canonical ranking, MIN_N_RATE=30 observation floor) — the SAME
+    # metric across kinds so a trip and a vehicle share one comparable scale. wilson_lo/
+    # wilson_hi = the 95% interval of that not-severe rate, PERCENT [0,100]. observation_count
+    # = the in-clamp delay n in the window; severe_count = the >300s count; severe_pct =
+    # severe/obs. recurrence_days = COUNT(DISTINCT date WHERE the entity was severe that day)
+    # in the window — EVIDENCE ("late-prone on N of observed_days days"), NOT the rank key;
+    # observed_days = COUNT(DISTINCT date the entity was observed at all). window_days = the
+    # trailing window length. avg_delay_min = the pooled in-clamp mean (Σsum_delay/Σobs/60,
+    # honest-None on a zero denominator). severity = the SAME declared vocabulary the scalar
+    # mart uses (recurrence>=10 OR avg>600 critical; >=5 high; else watch — S14 D4), computed
+    # on the entry's OWN window; absent -> honest-absence neutral, never recomputed by the web.
+    rank: int | None = None
+    type: str
+    id: str
+    route: str | None = None
+    route_name: str | None = None
+    severity: str | None = None
+    observation_count: int | None = None
+    severe_count: int | None = None
+    severe_pct: float | None = None
+    wilson_lo: float | None = None
+    wilson_hi: float | None = None
+    recurrence_days: int | None = None
+    observed_days: int | None = None
+    window_days: int | None = None
+    avg_delay_min: float | None = None
+
+class RepeatOffenderGrain(BaseModel):
+    # S14 one re-granulated repeat-offender ladder for ONE grain, mirroring HotspotGrain.
+    # grain = 'week'|'month' ONLY — a repeat offender is UNDEFINED on a single day (you
+    # cannot "repeat" within one day), so a 'day' grain would be alarmist noise, not signal;
+    # the trailing week/month windows are the smallest honest recurrence horizons. Windows
+    # are anchored on the spine's newest CLOSED provider_local_date (week = anchor-6..anchor,
+    # month = anchor-29..anchor). window_days = the trailing window length. entries = the FULL
+    # Wilson-ranked set of entities clearing MIN_N in this window — a MIXED trip+vehicle array
+    # (type discriminates), ranked PER KIND (trip and vehicle each on their own ladder, rank
+    # restarting per kind) THEN truncated to the per-kind stored cap so a smaller display-N
+    # never rescales; per-kind order is preserved in the array. total_ranked_trips /
+    # total_ranked_vehicles = the PRE-truncation ranked counts per kind (the honest shown/total
+    # denominators). tray = the sub-MIN_N entities that STILL recurred (recurrence_days>=2),
+    # rank=None — the honest "not enough observations to rank, but repeatedly late" tail, a
+    # union across kinds sorted by severe_pct DESC then capped for the byte budget; tray_total
+    # = the PRE-cap tray count. A grain with no qualifying entity (no spine rows in its window)
+    # is OMITTED entirely (honest absence).
+    grain: str
+    window_days: int | None = None
+    entries: list[RepeatOffenderEntry] = Field(default_factory=list)
+    tray: list[RepeatOffenderEntry] = Field(default_factory=list)
+    total_ranked_trips: int | None = None
+    total_ranked_vehicles: int | None = None
+    tray_total: int | None = None
+
+# S14 payload guard: the published historic/repeat_offenders.json must stay under this many
+# bytes (model_dump_json, UTF-8 — the exact bytes the publisher writes). LADDER: the scalar
+# offenders[] top-50 (byte-identical, ~5-8 KB with the additive structured fields) PLUS the
+# by_grain ladders = {week, month}, each carrying a MIXED trip+vehicle entries[] ranked PER
+# KIND at the caps below (mirroring the S12 hotspots cap sizing):
+#   * entries -> _OFFENDERS_BY_GRAIN_CAP = 50 ranked entries per (grain, KIND) — so up to
+#                100 entries per grain (50 trip + 50 vehicle) in the mixed array,
+#   * tray    -> _OFFENDERS_TRAY_CAP     = 60 un-ranked tray entries per grain TOTAL.
+# Worst case = the scalar top-50 PLUS 2 grains (week/month) x (100 ranked + 60 tray) entries,
+# each ~12 evidence field set + an accented route name. That is roughly HALF the S12 hotspots
+# worst case (2 grains vs 4), which measured ~179.5 KB under the same 256 KiB ceiling — so the
+# same 262144 (256 KiB) ceiling clears this with ample headroom while still catching a runaway
+# (an un-capped all-entity tray on the STM trip/vehicle universe x 2 grains). If a real-DB
+# probe ever exceeds this ceiling the tray degrades to a documented count-only (drop tray
+# entries, keep tray_total). Exported so the web can share the constant. Introduced at S14.
+REPEAT_OFFENDERS_BYTE_CEILING = 262144
 
 class RepeatOffenders(PayloadEnvelope):
     generated_utc: str
     offenders: list[Offender] = Field(default_factory=list)
+    # S14 additive-optional: the re-granulated evidence-rich recurrence ladders. Default
+    # empty so already-published repeat_offenders.json (scalar-only) still validates under
+    # the additive-optional growth rule; the scalar offenders[] above stays BYTE-IDENTICAL
+    # (save the additive structured twins on each Offender, which default None). Ordered
+    # week, month per the grain rail; each grain interleaves trip+vehicle entries ranked on
+    # the one per-kind severe-rate Wilson LB.
+    by_grain: list[RepeatOffenderGrain] = Field(default_factory=list)
 
 class ReceiptWorstRoute(BaseModel):
     id: str

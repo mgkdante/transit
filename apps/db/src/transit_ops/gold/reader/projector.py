@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from transit_ops.gold.reader.score import REPEAT_PROBLEM_SCORE_EXPR
 from transit_ops.sql_registry import named_query
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
@@ -88,33 +89,25 @@ def spine_project_sql(
     )
 
 
-# Windowed habits recomposition (B1). The composite repeat_problem_score is rebuilt from the
-# spine windowed by date — a DOCUMENTED REBASELINE vs the whole-history route_habit_score mart:
-# the severe*10 base is byte-identical to rollups.UPSERT_REPEATED_PROBLEM_ROUTE_STOP's gold
-# twin family; the avg/60 term diverges (the spine's in-clamp pooled mean vs the mart's
-# obs-weighted avg-of-averages). DO NOT unify the two scores (S14 owns that); this SQL moves
-# verbatim from the historic builder. Computed in SQL numeric (Postgres half-away-from-zero
-# rounding — never Python round(), which is banker's). LEAST(..., 9999.9999) clamps exactly
-# as the mart; the builder's habits-matrix normalization then maps to [0,1] per the window's
-# own worst cell so the cap never leaks (slice-9.1.1x sentinel guard). dow = EXTRACT(ISODOW
-# FROM provider_local_date) + the stored hour_of_day_local — both already provider-local
-# (DST-safe; no timestamp reconstruction).
+# Windowed habits recomposition. reconciled S14 2026-07-02: ONE repeat_problem_score
+# formula, owner = gold/reader (see gold/reader/score.py for the dated methodology note,
+# ingredients + denominators, composition sites, window semantics, D4 severity vocabulary,
+# and the parity-proof pointer). The composite expr + its pooled-avg ingredient are imported
+# fragments; this body is recomposed byte-identically from them (the '-- q:route.habit.spine'
+# registry body is pinned by tests/test_gold_reader.py::test_c2_touched_statements_byte_identical
+# via its frozen SHA256). dow = EXTRACT(ISODOW FROM provider_local_date) + hour_of_day_local
+# — both already provider-local (DST-safe; no timestamp reconstruction). Serves BOTH the
+# windowed habits_by_grain (trailing GrainWindows) AND — post-S14 — the SCALAR whole-history
+# habits matrix, read with an ALL-TIME window (score.all_time_window(anchor)); the
+# gold.route_habit_score mart it used to read is dropped (migration 0076).
 ROUTE_HABIT_SPINE_SQL = named_query(
     "route.habit.spine",
-    """
+    f"""
     SELECT
         EXTRACT(ISODOW FROM provider_local_date)::integer AS day_of_week_iso,
         hour_of_day_local,
         SUM(delay_observation_count)::bigint AS known_obs,
-        LEAST(
-            ROUND(
-                SUM(severe_delay_count)::numeric * 10
-                + GREATEST(COALESCE(ROUND(
-                    SUM(sum_delay_seconds)::numeric
-                    / NULLIF(SUM((SELECT COALESCE(SUM(x), 0) FROM unnest(delay_histogram) AS x)), 0),
-                    2), 0), 0) / 60,
-                4),
-            9999.9999) AS repeat_problem_score
+        {REPEAT_PROBLEM_SCORE_EXPR} AS repeat_problem_score
     FROM gold.route_delay_spine
     WHERE provider_id = :provider_id AND route_id = :route_id
       AND provider_local_date >= :win_start AND provider_local_date <= :win_end

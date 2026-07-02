@@ -57,7 +57,7 @@ IMMUTABLE_RECEIPT_HISTORY_TABLES: tuple[str, ...] = (
 SOURCE_FACTORY_RESET_TABLES: tuple[str, ...] = (
     "gold.report_labels",
     "gold.repeated_problem_route_stop",
-    "gold.route_habit_score",
+    # gold.route_habit_score DROPPED (migration 0076, S14) — recomposed at read time.
     "gold.trip_delay_summary_5m",
     "gold.warm_rollup_periods",
     "gold.latest_trip_delay_snapshot",
@@ -161,7 +161,7 @@ def build_source_factory_catalog(
                     "gold.current_trip_delay_computed",
                     "gold.public_route_reliability_daily",
                     "gold.public_stop_delay_daily",
-                    "gold.route_habit_score",
+                    # gold.route_habit_score DROPPED (0076, S14) — recomposed at read time.
                     "gold.repeated_problem_route_stop",
                     "gold.citizen_accountability_daily",
                     "gold.report_labels",
