@@ -565,8 +565,10 @@ class CrowdingDelayCell(BaseModel):
     # few_seats/standing/full; codes 3 and 4 fold to standing). Cells are observation-weighted;
     # each field is None when its input is absent. p50_min is a best-effort observation-weighted
     # mean of the contributing daily band p50s (an approximation — daily percentiles are not
-    # exactly additively composable). RAMP-IN: co-observation accrues forward only from the deploy
-    # (occupancy_status is forward-filled), so bands are sparse / empty until the rollup fills.
+    # exactly additively composable). The web labels this "typical" (not "median") because it is a
+    # mean of daily medians, not a pooled percentile. RAMP-IN: co-observation accrues forward only
+    # from the deploy (occupancy_status is forward-filled), so bands are sparse / empty until the
+    # rollup fills.
     band: str
     avg_delay_min: float | None = None
     p50_min: float | None = None

@@ -22,6 +22,7 @@ import pytest
 
 from transit_ops.snapshots.publish import _parallel_put, publish_snapshot
 from transit_ops.snapshots.storage import HashGatedStorage, SnapshotStorage
+from transit_ops.sql_registry import query_name
 
 # ---------------------------------------------------------------------------
 # _parallel_put — the bounded uploader primitive
@@ -310,112 +311,101 @@ def _historic_dispatch_conn():
         def scalar_one(self):
             return self._rows[0] if self._rows else 0
 
-    dispatch = [
-        ("interval '31 days'", [
+    # Name-keyed dispatch on each query's `-- q:<name>` registry marker. Distinct
+    # names replace the old substring hazards; spine-projector reads (weekly/monthly/
+    # crosstab/by_shift/by_daytype) are left unmapped ([]) to preserve the exact
+    # published output the old dead needles gave, so the hand-coded spine branch is gone.
+    dispatch = {
+        "receipts.network_daily": [
             {"local_date": datetime.date(2026, 6, 1), "known_obs": 100, "on_time": 90,
              "severe": 5, "weighted_delay_sec": 5000},
             {"local_date": datetime.date(2026, 6, 2), "known_obs": 100, "on_time": 90,
              "severe": 5, "weighted_delay_sec": 5000},
-        ]),
-        ("interval '90 days'", [
+        ],
+        "network.trend.daily_hourly": [
             {"local_date": datetime.date(2026, 6, 1), "known_obs": 100, "on_time": 90,
              "weighted_delay_sec": 5000},
-        ]),
-        ("fact_trip_delay_snapshot", [
+        ],
+        "network.trend.daily_p90": [
             {"local_date": datetime.date(2026, 6, 1), "p90_min": 3.5, "vehicles": 42},
-        ]),
-        # build_network_trend: WEEK + MONTH grain re-aggregation. Unique
-        # `-- trend:<grain>:<source>` markers dispatch each bucketed query to its
-        # own canned row-set (no collision with the daily hourly/cancel/occupancy).
-        ("trend:week:hourly", [
+        ],
+        "network.trend.week_hourly": [
             {"local_date": datetime.date(2026, 6, 1), "known_obs": 200, "on_time": 180,
              "weighted_delay_sec": 12000},
-        ]),
-        ("trend:week:cancel", [
+        ],
+        "network.trend.week_cancel": [
             {"local_date": datetime.date(2026, 6, 1), "canceled": 4, "total": 200},
-        ]),
-        ("trend:week:occupancy", [
+        ],
+        "network.trend.week_occupancy": [
             {"local_date": datetime.date(2026, 6, 1), "empty": 0, "many_seats": 60,
              "few_seats": 25, "standing": 10, "full": 5},
-        ]),
-        ("trend:month:hourly", [
+        ],
+        "network.trend.month_hourly": [
             {"local_date": datetime.date(2026, 6, 1), "known_obs": 1000, "on_time": 820,
              "weighted_delay_sec": 90000},
-        ]),
-        ("trend:month:cancel", [
+        ],
+        "network.trend.month_cancel": [
             {"local_date": datetime.date(2026, 6, 1), "canceled": 12, "total": 600},
-        ]),
-        ("trend:month:occupancy", [
+        ],
+        "network.trend.month_occupancy": [
             {"local_date": datetime.date(2026, 6, 1), "empty": 10, "many_seats": 40,
              "few_seats": 30, "standing": 15, "full": 5},
-        ]),
-        ("repeated_problem_route_stop", []),
-        ("repeat_offender", []),
-        ("i3_alert_history_reporting", []),
-        ("source_lineage_reporting", []),
-        ("feed_freshness_current", []),
-        ("DISTINCT ON (u.stop_id)", [{"stop_id": "S1", "stop_name": "Stop 1"}]),
-        ("DISTINCT ON (u.route_id)", [{"route_id": "R1", "route_name": "Route 1"}]),
-        # build_stop_reliability: shift + day-type grains — unique discriminator
-        # "AS banded". MUST precede the generic "UNION" needle below: _STOP_BY_GRAIN_SQL
-        # contains "UNION ALL" and would otherwise fall through to the route-id
-        # enumeration (tuple rows) and crash on r["stop_id"].
-        ("AS banded", [
+        ],
+        "hotspots.list": [],
+        "repeat.offenders": [],
+        "alerts.history": [],
+        "provenance.sources": [],
+        "provenance.freshness": [],
+        "static.stop_names": [{"stop_id": "S1", "stop_name": "Stop 1"}],
+        "static.route_names": [{"route_id": "R1", "route_name": "Route 1"}],
+        "stop.reliability.by_grain": [
             {"stop_id": "S1", "grain": "am_peak", "obs": 10, "severe": 1,
              "weighted_delay_sec": 600.0},
             {"stop_id": "S1", "grain": "weekday", "obs": 14, "severe": 1,
              "weighted_delay_sec": 1080.0},
-        ]),
-        # build_stop_reliability: weekday seasonality — unique discriminator
-        # "AS dow_obs". Listed before the generic "UNION" needle so the day-of-week
-        # rows aren't shadowed.
-        ("AS dow_obs", [
+        ],
+        "stop.reliability.dow": [
             {"stop_id": "S1", "day_of_week_iso": 1, "dow_obs": 20, "severe": 2,
              "weighted_delay_sec": 1200.0},
             {"stop_id": "S1", "day_of_week_iso": 7, "dow_obs": 0, "severe": 0,
              "weighted_delay_sec": None},
-        ]),
-        # route IDs with history — the per-route reliability enumeration.
-        ("DISTINCT route_id FROM gold.route_delay_spine", [("R1",), ("R2",), ("R3",)]),
-        ("UNION", [("R1",), ("R2",), ("R3",)]),  # name-lookup UNION fallback
-        # Tier-1 cancellation/occupancy reads (more-specific needles precede the
-        # generic daily-view "ORDER BY provider_local_date DESC" below).
-        ("cancellation_rate_pct, canceled_trip_days", []),
-        # build_route_reliability: tier-3 2D shift×day_type crosstab (precedes the
-        # broader route_delay_by_shift / route_delay_hourly substrings).
-        ("-- by_shift_daytype", []),
-        # build_route_reliability: delay×crowding (precedes the broader
-        # public_route_reliability_daily / route_occupancy_band_daily needles).
-        ("-- delay_by_crowding", []),
-        ("route_occupancy_band_daily AS rob", []),
-        # build_stop_reliability: per-stop occupancy band shares (batched).
-        ("stop_occupancy_band_daily AS sob", []),
-        ("first_trip_start_utc", []),
-        ("skipped_stop_rate_pct", []),
-        ("ORDER BY provider_local_date DESC", [
+        ],
+        # per-route reliability enumeration.
+        "route.spine.route_ids": [("R1",), ("R2",), ("R3",)],
+        "route.cancellation.daily": [],
+        "route.delay.by_crowding": [],
+        "route.occupancy.band_window": [],
+        "stop.occupancy.band_window": [],
+        "route.service_span.daily": [],
+        "route.skipped_stop.daily": [],
+        "route.reliability.daily": [
             {"d": datetime.date(2026, 6, 1), "known_obs": 50, "on_time": 45,
              "avg_delay_sec": 90, "severe": 5},
-        ]),
-        ("week_start_local", []),
-        ("month_start_local", []),
-        ("route_headway_by_shift", []),
-        ("dataset_kind = 'static_schedule'", [{"dataset_version_id": 1}]),
-        ("generate_series", [
+        ],
+        "route.headway.observed_by_shift": [],
+        "static.dataset_version": [{"dataset_version_id": 1}],
+        "static.rep_dates": [
             {"weekday_date": datetime.date(2026, 6, 3), "weekend_date": datetime.date(2026, 6, 6)},
-        ]),
-        ("extract(isodow FROM :repdate)", [("svc_wd",)]),
-        ("st.stop_sequence     = 1", []),
-        ("route_habit_score", []),
-        # DB-0067 Phase 1: stop reliability + weak_stops_by_grain read the stop spine.
-        # Scoped anchor (does not shadow route_delay_spine / headway anchors).
-        ("AS anchor FROM gold.stop_delay_spine", [{"anchor": datetime.date(2026, 6, 30)}]),
-        ("stop_id, route_id", []),  # by_route: empty
-        # NOTE: the remaining gold.stop_delay_spine reads (build_stop_reliability
-        # weekly/monthly + the route weak_stops_by_grain windowed read) are handled
-        # explicitly in _Conn.execute below (the route-filtered weak-stops read
-        # shares the ubiquitous 'AND route_id = :route_id' clause, so a needle entry
-        # here would shadow many route SQLs and crash).
-        ("citizen_accountability_daily", [
+        ],
+        "static.active_services": [("svc_wd",)],
+        "static.route_schedule": [],
+        "route.habit.score": [],
+        # DB-0067: stop spine anchor + the distinct-named spine reads.
+        "stop.delay.anchor": [{"anchor": datetime.date(2026, 6, 30)}],
+        "stop.reliability.by_route": [],
+        "stop.reliability.weekly": [
+            {"stop_id": "S1", "obs": 100, "weighted_delay_sec": 9000, "severe": 10},
+        ],
+        "stop.reliability.monthly": [
+            {"stop_id": "S1", "obs": 100, "weighted_delay_sec": 9000, "severe": 10},
+        ],
+        "route.weak_stops.legacy": [
+            {"stop_id": "S1", "obs": 100, "weighted_delay_sec": 9000, "severe": 10},
+        ],
+        "route.weak_stops.by_grain": [
+            {"stop_id": "S1", "obs": 10, "severe": 1, "sum_delay_sec": 900},
+        ],
+        "receipts.accountability": [
             {"provider_local_date": datetime.date(2026, 6, 1),
              "affected_route_count": 3, "affected_stop_count": 12,
              "delayed_trip_count": 45, "severe_delay_count": 5,
@@ -424,37 +414,14 @@ def _historic_dispatch_conn():
              "affected_route_count": 2, "affected_stop_count": 8,
              "delayed_trip_count": 30, "severe_delay_count": 3,
              "alert_count": 1, "rider_impact_score": 0.25},
-        ]),
-        ("public_route_reliability_daily", []),
-        ("public_stop_delay_daily", []),
-    ]
+        ],
+        "receipts.worst_route": [],
+        "receipts.worst_stop": [],
+    }
 
     class _Conn:
         def execute(self, statement, params=None):
-            s = str(statement)
-            # DB-0067 Phase 1 spine reads (see the dispatch NOTE above): the
-            # route-filtered weak_stops_by_grain read (sum_delay_sec) vs the
-            # build_stop_reliability weekly/monthly reads (weighted_delay_sec).
-            # by_route ('stop_id, route_id') + the anchor ('AS anchor') stay in
-            # the needle list, so they are excluded here.
-            if (
-                "gold.stop_delay_spine" in s
-                and "stop_id, route_id" not in s
-                and "AS anchor" not in s
-                and "repeated_problem_route_stop" not in s  # not the hotspots query
-            ):
-                if "route_id = :route_id" in s:
-                    if "weighted_delay_sec" in s:
-                        # scalar per-route weak_stops read (weighted_delay_sec alias)
-                        return _R([{"stop_id": "S1", "obs": 100,
-                                    "weighted_delay_sec": 9000, "severe": 10}])
-                    # weak_stops_by_grain windowed read (sum_delay_sec); obs<30 -> below MIN_N
-                    return _R([{"stop_id": "S1", "obs": 10, "severe": 1, "sum_delay_sec": 900}])
-                return _R([{"stop_id": "S1", "obs": 100, "weighted_delay_sec": 9000, "severe": 10}])
-            for needle, rows in dispatch:
-                if needle in s:
-                    return _R(rows)
-            return _R([])
+            return _R(dispatch.get(query_name(statement), []))
 
     return _Conn()
 
@@ -532,43 +499,48 @@ def test_static_publish_manifest_index_keys_present_and_complete() -> None:
 
 
 class _RecordingStaticConn:
-    """Static fake conn yielding a few routes (no stops) for parallel coverage."""
+    """Static fake conn yielding a few routes (no stops) for parallel coverage.
+
+    Dispatches on the `-- q:<name>` registry marker; unmapped names fall through
+    to []. Only R1 has spine history, so its routes_index entry gets
+    reliability=True.
+    """
 
     def execute(self, statement, params=None):  # noqa: ANN001, ARG002
         import datetime as _dt
 
-        s = str(statement)
-        if "loaded_at_utc FROM core.dataset_versions" in s:
-            loaded = _dt.datetime(2026, 6, 1, tzinfo=_dt.UTC)
-            return _StaticResult([{"loaded_at_utc": loaded}])
-        # reliability-availability set for build_routes_index — MUST precede the
-        # broader route_id needles below (shares the generic "route_id" column).
-        # Only R1 has history, so its routes_index entry gets reliability=True.
-        if "DISTINCT route_id FROM gold.route_delay_spine" in s:
-            return _StaticResult([{"route_id": "R1"}])
-        if "SELECT route_id FROM gold.dim_route WHERE provider_id" in s:
-            return _StaticResult([{"route_id": "R1"}, {"route_id": "R2"}, {"route_id": "R3"}])
-        if "route_sort_order" in s:
-            return _StaticResult([
-                {"route_id": "R1", "route_short_name": "1", "route_long_name": "One",
-                 "route_color": "009EE0", "route_type": 3}
-            ])
-        if "s.location_type" in s:
-            return _StaticResult([
-                {"stop_id": "S1", "stop_code": "S1", "stop_name": "Stop",
-                 "stop_lat": 45.0, "stop_lon": -73.0}
-            ])
-        if "report_labels" in s:
-            return _StaticResult([{"label_key": "k", "label_fr": "f", "label_en": "e"}])
-        if "dataset_kind = 'static_schedule'" in s:
-            return _StaticResult([{"dataset_version_id": 1}])
-        if "generate_series" in s:
-            return _StaticResult([
+        from transit_ops.sql_registry import query_name
+
+        route_row = [
+            {"route_id": "R1", "route_short_name": "1", "route_long_name": "One",
+             "route_color": "009EE0", "route_type": 3}
+        ]
+        stop_row = [
+            {"stop_id": "S1", "stop_code": "S1", "stop_name": "Stop",
+             "stop_lat": 45.0, "stop_lon": -73.0}
+        ]
+        rows = {
+            "publish.static_stamp": [
+                {"loaded_at_utc": _dt.datetime(2026, 6, 1, tzinfo=_dt.UTC)}
+            ],
+            "static.reliability_route_ids": [{"route_id": "R1"}],
+            "route.spine.route_ids": [{"route_id": "R1"}],
+            "static.dim_route_ids": [
+                {"route_id": "R1"}, {"route_id": "R2"}, {"route_id": "R3"}
+            ],
+            "static.routes_index": route_row,
+            "static.stops_index": stop_row,
+            # static.all_stops stays unmapped -> [] (the pre-migration needle
+            # never matched it; its consumer requires wheelchair_boarding).
+            "static.labels": [{"label_key": "k", "label_fr": "f", "label_en": "e"}],
+            "static.dataset_version": [{"dataset_version_id": 1}],
+            "manifest.version": [{"dataset_version_id": 1}],
+            "static.rep_dates": [
                 {"weekday_date": _dt.date(2026, 6, 3), "weekend_date": _dt.date(2026, 6, 6)}
-            ])
-        if "route_long_name, route_type FROM gold.dim_route" in s:
-            return _StaticResult([{"route_long_name": "One", "route_type": 3}])
-        return _StaticResult([])
+            ],
+            "static.route_name_type": [{"route_long_name": "One", "route_type": 3}],
+        }
+        return _StaticResult(rows.get(query_name(statement), []))
 
 
 class _StaticResult:

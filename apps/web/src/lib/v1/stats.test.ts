@@ -6,6 +6,7 @@ import {
 	isReliableRate,
 	isSuppressedCount,
 	wilsonBounds,
+	wilsonBoundsProportion,
 	wilsonLo,
 	wilsonHi,
 	rankByLowerBound,
@@ -74,6 +75,26 @@ describe('wilsonBounds — byte-for-byte with the server _wilson_bounds', () => 
 		expect(wilsonHi(50, 100)).toBe(59.6);
 		expect(wilsonLo(null, 0)).toBeNull();
 		expect(wilsonHi(5, 0)).toBeNull();
+	});
+});
+
+describe('wilsonBoundsProportion — the unrounded [0,1] kernel wilsonBounds wraps', () => {
+	it('returns the same interval as wilsonBounds, in [0,1] and unrounded', () => {
+		const p = wilsonBoundsProportion(50, 100);
+		expect(p).not.toBeNull();
+		expect(p![0]).toBeCloseTo(0.404, 3);
+		expect(p![1]).toBeCloseTo(0.596, 3);
+	});
+	it('is null on a missing numerator or zero/missing denominator', () => {
+		expect(wilsonBoundsProportion(null, 100)).toBeNull();
+		expect(wilsonBoundsProportion(5, 0)).toBeNull();
+		expect(wilsonBoundsProportion(5, null)).toBeNull();
+	});
+	it('clamps successes above n and stays within [0,1]', () => {
+		const [lo, hi] = wilsonBoundsProportion(150, 100)!;
+		expect(lo).toBeGreaterThanOrEqual(0);
+		expect(hi).toBeLessThanOrEqual(1);
+		expect(lo).toBeLessThanOrEqual(hi);
 	});
 });
 

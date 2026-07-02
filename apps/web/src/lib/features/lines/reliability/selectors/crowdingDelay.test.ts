@@ -11,7 +11,7 @@ const labels: CrowdingDelayLabels = {
 	bandLabel: (code) => code,
 	noDataMarker: 'no data',
 	noteFor: (cell) =>
-		cell.p50_min != null ? `median ${cell.p50_min} · n=${cell.observation_count ?? 0}` : undefined,
+		cell.p50_min != null ? `typical ${cell.p50_min} · n=${cell.observation_count ?? 0}` : undefined,
 };
 
 describe('selectCrowdingDelay', () => {
@@ -36,7 +36,7 @@ describe('selectCrowdingDelay', () => {
 		if (spec.kind !== 'magnitude-bars') throw new Error('expected magnitude-bars');
 		const full = spec.rows.find((r) => r.key === 'full');
 		expect(full?.value).toBe(5);
-		expect(full?.note).toContain('median 4');
+		expect(full?.note).toContain('typical 4');
 		const empty = spec.rows.find((r) => r.key === 'empty');
 		expect(empty?.value).toBeNull();
 		expect(empty?.label).toContain('no data');

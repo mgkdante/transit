@@ -24,8 +24,6 @@ from __future__ import annotations
 import hashlib
 from typing import TYPE_CHECKING
 
-from sqlalchemy import text
-
 from transit_ops.snapshots.builders._helpers import (
     _OCCUPANCY_MAP,
     _SURFACES,
@@ -63,6 +61,7 @@ from transit_ops.snapshots.contract import (
     Vehicle,
     VehiclesFile,
 )
+from transit_ops.sql_registry import named_query
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from sqlalchemy.engine import Connection
@@ -72,7 +71,8 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
 # build_vehicles
 # --------------------------------------------------------------------------
 
-_VEHICLES_SQL = text(
+_VEHICLES_SQL = named_query(
+    "live.vehicles",
     """
     SELECT cvm.vehicle_id                AS id,
            cvm.route_id                  AS route,
@@ -135,7 +135,8 @@ def build_vehicles(
 # (STATUS_BAND_CASE_SQL) so build_trips no longer re-buckets avg_delay_seconds in
 # Python (slice-9.1.1-theta). The FROM/WHERE are unchanged — the trip set is
 # identical; only an extra derived label column is added.
-_TRIP_DELAY_SQL = text(
+_TRIP_DELAY_SQL = named_query(
+    "live.trip_delay",
     """
     SELECT trip_id, route_id, avg_delay_seconds, """
     + STATUS_BAND_CASE_SQL.format(col="avg_delay_seconds")
@@ -152,7 +153,8 @@ _TRIP_DELAY_SQL = text(
 # slice-9.1.1q: cap the per-trip stops list at the next 60 minutes — every poll
 # shrinks (far-future stop-time updates are pure poll bloat for a live map).
 # Trip-detail lookahead beyond 60 min is deferred to the 9.4 per-trip surfaces.
-_TRIP_DEPARTURES_SQL = text(
+_TRIP_DEPARTURES_SQL = named_query(
+    "live.trip_departures",
     """
     SELECT trip_id, route_id, stop_id, predicted_departure_utc, stop_sequence
     FROM gold.current_stop_next_departures
@@ -222,7 +224,8 @@ _STOP_DEPARTURES_PER_ROUTE_CAP = 2
 # provider_id, trip_id de-dups defensively to one avg_delay_seconds per trip
 # before the LEFT JOIN (else duplicate join rows would inflate the rank).
 # stop_id IS NULL rows (informational stop_time_updates) are excluded.
-_STOP_DEPARTURES_SQL = text(
+_STOP_DEPARTURES_SQL = named_query(
+    "live.stop_departures",
     """
     SELECT stop_id, route_id, trip_id, predicted_departure_utc, avg_delay_seconds
     FROM (
@@ -286,7 +289,8 @@ def build_stop_departures(
 # --------------------------------------------------------------------------
 
 # Deterministic ORDER BY so synthesized ids and array order are stable per cycle.
-_ALERTS_SQL = text(
+_ALERTS_SQL = named_query(
+    "live.alerts",
     """
     SELECT alert_id,
            alert_header_text,
@@ -347,7 +351,8 @@ def build_alerts(conn: Connection, *, provider_id: str = "stm", generated_utc: s
 # build_network
 # --------------------------------------------------------------------------
 
-_NETWORK_VEHICLES_SQL = text(
+_NETWORK_VEHICLES_SQL = named_query(
+    "network.live.vehicles",
     """
     SELECT status_band, lvs.occupancy_status AS occupancy_status
     FROM gold.current_vehicle_map_with_status AS cvm
@@ -359,7 +364,8 @@ _NETWORK_VEHICLES_SQL = text(
     """
 )
 
-_NETWORK_DELAYS_SQL = text(
+_NETWORK_DELAYS_SQL = named_query(
+    "network.live.delays",
     """
     SELECT avg_delay_seconds
     FROM gold.current_trip_delay_computed
@@ -368,7 +374,8 @@ _NETWORK_DELAYS_SQL = text(
     """
 )
 
-_NETWORK_NON_RESPONDING_SQL = text(
+_NETWORK_NON_RESPONDING_SQL = named_query(
+    "network.live.non_responding",
     """
     SELECT COALESCE(SUM(non_responding_count), 0) AS non_responding
     FROM gold.non_responding_current
@@ -376,14 +383,11 @@ _NETWORK_NON_RESPONDING_SQL = text(
     """
 )
 
-# Per-route breakdown of the scalar non_responding total. The `-- nr_by_route`
-# marker is a UNIQUE dispatch needle: tests fixture-match queries by SQL
-# substring, and this query also contains "non_responding_current" (shared with
-# the scalar above), so the marker lets fixtures route the more-specific query
-# first. SUM(nr_count) over these rows equals the scalar non_responding.
-_NETWORK_NON_RESPONDING_BY_ROUTE_SQL = text(
+# Per-route breakdown of the scalar non_responding total. SUM(nr_count) over these
+# rows equals the scalar non_responding.
+_NETWORK_NON_RESPONDING_BY_ROUTE_SQL = named_query(
+    "network.live.non_responding_by_route",
     """
-    -- nr_by_route
     SELECT route_id, SUM(non_responding_count) AS nr_count
     FROM gold.non_responding_current
     WHERE provider_id = :provider_id
@@ -430,7 +434,8 @@ def _delay_histogram(delays_min: list[float]) -> list[DelayBucket] | None:
         for i, (lo, hi) in enumerate(_DELAY_HISTOGRAM_EDGES)
     ]
 
-_NETWORK_FRESHNESS_SQL = text(
+_NETWORK_FRESHNESS_SQL = named_query(
+    "network.live.freshness",
     """
     SELECT MAX(completed_age_seconds) AS feed_freshness_s
     FROM gold.feed_freshness_current
@@ -540,7 +545,8 @@ def build_network(conn: Connection, *, provider_id: str = "stm", generated_utc: 
 # source of truth), same as the static builder's attribution read. short_name /
 # city are UI copy, not analytics dimensions, so they live here rather than in
 # the gold.dim_provider passthrough view.
-_MANIFEST_PROVIDER_SQL = text(
+_MANIFEST_PROVIDER_SQL = named_query(
+    "manifest.provider",
     """
     SELECT provider_id, display_name, short_name, city, timezone, default_language,
            attribution_text,
@@ -550,7 +556,8 @@ _MANIFEST_PROVIDER_SQL = text(
     """
 )
 
-_MANIFEST_VERSION_SQL = text(
+_MANIFEST_VERSION_SQL = named_query(
+    "manifest.version",
     """
     SELECT COALESCE(source_version, dataset_version_id::text) AS dataset_version
     FROM core.dataset_versions
@@ -565,7 +572,8 @@ _MANIFEST_VERSION_SQL = text(
 # Per-tier DATA-time stamps for the manifest inventories, upserted by each
 # tier's publisher in core.snapshot_publish_state (slice-9.1.1r). Rows absent ->
 # None -> "tier never published" in the manifest contract.
-_MANIFEST_TIER_STATE_SQL = text(
+_MANIFEST_TIER_STATE_SQL = named_query(
+    "manifest.tier_state",
     """
     SELECT tier, generated_utc
     FROM core.snapshot_publish_state

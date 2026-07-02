@@ -12,6 +12,8 @@ from __future__ import annotations
 
 import datetime
 
+from _sqlfakes import NamedQueryConn
+
 from transit_ops.snapshots.builders import (
     _RECEIPTS_NETWORK_DAILY_SQL,
     _RECEIPTS_WORST_ROUTE_SQL,
@@ -56,91 +58,31 @@ from transit_ops.snapshots.contract import (
 # --------------------------------------------------------------------------
 
 
-class _FakeResult:
-    def __init__(self, rows):  # noqa: ANN001
-        self._rows = rows
+class FakeConn(NamedQueryConn):
+    """Dispatch canned result sets by exact `-- q:<name>` registry marker.
 
-    def mappings(self):  # noqa: ANN201
-        outer = self
-
-        class M:
-            def fetchone(self):  # noqa: ANN202
-                return outer._rows[0] if outer._rows else None
-
-            def __iter__(self):
-                return iter(outer._rows)
-
-        return M()
-
-    def __iter__(self):
-        # bare row[0]-style iteration (active-services query)
-        return iter(self._rows)
-
-    def fetchone(self):  # noqa: ANN201
-        return self._rows[0] if self._rows else None
-
-    def scalar_one(self):  # noqa: ANN201
-        return self._rows[0] if self._rows else 0
-
-
-class FakeConn:
-    """Dispatch canned result sets by matching a substring of the SQL.
-
-    ``dispatch`` is an ordered list of (needle, rows); first match wins, so put
-    more specific needles first.
+    Accepts a {query_name: rows} dict (or an iterable of (name, rows) pairs).
+    Unmapped names fall through to an empty result.
     """
 
-    def __init__(self, dispatch):  # noqa: ANN001
-        self._dispatch = dispatch
-        self.executed: list[str] = []
-
-    def execute(self, statement, params=None):  # noqa: ANN001, ARG002
-        sql = str(statement)
-        self.executed.append(sql)
-        for needle, rows in self._dispatch:
-            if needle in sql:
-                return _FakeResult(rows)
-        return _FakeResult([])
+    def __init__(self, mapping=None):  # noqa: ANN001
+        super().__init__(dict(mapping) if mapping is not None else {})
 
 
-class _StopSpineFakeConn:
-    """Params-aware mock for build_stop_reliability (DB-0067 Phase 1).
+def _stop_spine_conn(*, anchor, by_route=None, weekly=None, monthly=None, extra=None):  # noqa: ANN001, ANN202
+    """Name-dispatch mock for build_stop_reliability.
 
-    The re-pointed weekly + monthly reads share IDENTICAL SQL (group by stop_id
-    over gold.stop_delay_spine with a :win_start/:win_end window), so they can only
-    be told apart by the window param: week win_start = anchor-6, month = anchor-29.
-    The anchor query (MAX(service_local_date)) is answered first; by_route is keyed
-    on its 'GROUP BY stop_id, route_id'. Everything else returns empty.
+    weekly + monthly now carry DISTINCT registry names (stop.reliability.weekly /
+    .monthly), so no param sniffing is needed. ``extra`` overlays extra {name: rows}.
     """
-
-    def __init__(self, *, anchor, by_route=None, weekly=None, monthly=None, extra=None):  # noqa: ANN001
-        self._anchor = anchor
-        self._by_route = by_route or []
-        self._weekly = weekly or []
-        self._monthly = monthly or []
-        self._extra = extra or []  # ordered (needle, rows) for names/etc.
-        self.executed: list[str] = []
-
-    def execute(self, statement, params=None):  # noqa: ANN001
-        sql = str(statement)
-        self.executed.append(sql)
-        params = params or {}
-        if "MAX(service_local_date)" in sql and "stop_delay_spine" in sql:
-            return _FakeResult([{"anchor": self._anchor}])
-        for needle, rows in self._extra:
-            if needle in sql:
-                return _FakeResult(rows)
-        if "GROUP BY stop_id, route_id" in sql:
-            return _FakeResult(self._by_route)
-        if "stop_delay_spine" in sql:
-            # week vs month by the trailing-window start (anchor-6 vs anchor-29).
-            win_start = params.get("win_start")
-            if win_start == self._anchor - datetime.timedelta(days=6):
-                return _FakeResult(self._weekly)
-            if win_start == self._anchor - datetime.timedelta(days=29):
-                return _FakeResult(self._monthly)
-            return _FakeResult([])
-        return _FakeResult([])
+    mapping = {
+        "stop.reliability.anchor": [{"anchor": anchor}],
+        "stop.reliability.by_route": by_route or [],
+        "stop.reliability.weekly": weekly or [],
+        "stop.reliability.monthly": monthly or [],
+    }
+    mapping.update(extra or {})
+    return FakeConn(mapping)
 
 
 # --------------------------------------------------------------------------
@@ -329,7 +271,7 @@ def test_build_network_trend_merges_and_orders() -> None:
         [
             # daily hourly rollup: 3 days of OTP + weighted avg delay
             (
-                "route_delay_hourly",
+                "network.trend.daily_hourly",
                 [
                     # 47/100 -> otp 47; weighted 100*120s/100 = 120s -> 2.0min
                     {
@@ -356,7 +298,7 @@ def test_build_network_trend_merges_and_orders() -> None:
             ),
             # fact table only retains the two most recent days (d2, d3)
             (
-                "fact_trip_delay_snapshot",
+                "network.trend.daily_p90",
                 [
                     {"local_date": d2, "p90_min": 7.25, "vehicles": 310},
                     {"local_date": d3, "p90_min": 9.0, "vehicles": 280},
@@ -408,8 +350,8 @@ def test_build_network_trend_fact_only_date() -> None:
     d = datetime.date(2026, 6, 5)
     conn = FakeConn(
         [
-            ("route_delay_hourly", []),
-            ("fact_trip_delay_snapshot", [{"local_date": d, "p90_min": 4.0, "vehicles": 12}]),
+            ("network.trend.daily_hourly", []),
+            ("network.trend.daily_p90", [{"local_date": d, "p90_min": 4.0, "vehicles": 12}]),
         ]
     )
     out = build_network_trend(conn, generated_utc="t")
@@ -432,64 +374,45 @@ def _route_reliability_dispatch(*, daily=None, weekly=None, monthly=None, headwa
                                 habit=None, weak=None, names=None, schedule=None,
                                 route_names=None, dow=None, crowding=None, crosstab=None,
                                 occ_dow=None, occ_grain=None):
-    """Assemble an ordered dispatch list for build_route_reliability.
+    """Assemble the name-keyed dispatch map for build_route_reliability.
 
-    Needles are ordered most-specific-first so they never collide. The schedule
-    rows feed the representative-weekday scheduled-headway computation.
+    Each query dispatches on its `-- q:<name>` registry marker (no ordering). The
+    schedule rows feed the representative-weekday scheduled-headway computation. The
+    crosstab / dow / weekly / monthly reads run the (windowed) spine projectors and
+    default to [] — preserving the empty fall-through the old dead needles gave.
     """
-    return [
-        # dataset version (must precede the rep-dates 'generate_series' needle)
-        ("dataset_kind = 'static_schedule'", [{"dataset_version_id": 1}]),
-        # rep-dates
-        (
-            "generate_series",
-            [
-                {
-                    "weekday_date": datetime.date(2026, 6, 3),
-                    "weekend_date": datetime.date(2026, 6, 6),
-                }
-            ],
-        ),
-        # active-services (bare row[0] iteration)
-        ("extract(isodow FROM :repdate)", [("svc_wd",)]),
-        # route schedule (first-stop departures) — drives scheduled headway
-        ("st.stop_sequence     = 1", schedule or []),
-        # tier-3 2D crosstab — discriminator '-- by_shift_daytype'; MUST precede
-        # the broader 'route_delay_by_shift' substring.
-        ("-- by_shift_daytype", crosstab or []),
-        # delay×crowding — MUST precede the daily-view needle (its JOIN contains
-        # 'public_route_reliability_daily'); discriminator '-- delay_by_crowding'.
-        ("-- delay_by_crowding", crowding or []),
-        # S7 crowding rollups — unique comment discriminators ('-- occupancy_by_dow'
-        # / '-- occupancy_by_grain'); both read gold.route_occupancy_band_daily.
-        ("-- occupancy_by_dow", occ_dow or []),
-        ("-- occupancy_by_grain", occ_grain or []),
-        # daily public reliability
-        ("public_route_reliability_daily", daily or []),
-        # weekly / monthly
-        ("route_reliability_weekly", weekly or []),
-        ("route_reliability_monthly", monthly or []),
-        # per-direction + weekday/weekend headway — MUST precede the broader
-        # "route_headway_by_shift" needle (it contains "route_headway_by_direction_shift").
-        ("route_headway_by_direction_shift", headway_direction or []),
-        # observed headway (busiest direction)
-        ("route_headway_by_shift", headway or []),
-        # habits
-        ("route_habit_score", habit or []),
-        # weak stops — the scalar per-route worst-N now reads gold.stop_delay_spine over the
-        # trailing-month window (DB-0067 Phase 2). The newest-day anchor (MAX(service_local_date))
-        # is answered first; the scalar read is keyed on its distinctive 'AS weighted_delay_sec'
-        # alias (the windowed weak_stops_by_grain twin aliases 'sum_delay_sec' instead, and its
-        # obs<30 rows stay below MIN_N -> []).
-        ("AS anchor FROM gold.stop_delay_spine", [{"anchor": datetime.date(2026, 6, 30)}]),
-        ("weighted_delay_sec", weak or []),
-        # stop names (current-dim UNION history)
-        ("stop_name", names or []),
-        # route names (current-dim UNION history)
-        ("DISTINCT ON (u.route_id)", route_names or []),
-        # per-weekday seasonality (route_delay_day_of_week)
-        ("route_delay_day_of_week", dow or []),
-    ]
+    return {
+        "static.dataset_version": [{"dataset_version_id": 1}],
+        "static.rep_dates": [
+            {
+                "weekday_date": datetime.date(2026, 6, 3),
+                "weekend_date": datetime.date(2026, 6, 6),
+            }
+        ],
+        "static.active_services": [("svc_wd",)],
+        "static.route_schedule": schedule or [],
+        # tier-3 2D crosstab — the windowed spine projector.
+        "route.spine.crosstab_windowed": crosstab or [],
+        "route.delay.by_crowding": crowding or [],
+        "route.occupancy.by_dow": occ_dow or [],
+        "route.occupancy.by_grain": occ_grain or [],
+        "route.reliability.daily": daily or [],
+        "route.spine.weekly": weekly or [],
+        "route.spine.monthly": monthly or [],
+        "route.headway.by_direction_shift": headway_direction or [],
+        "route.headway.observed_by_shift": headway or [],
+        "route.habit.score": habit or [],
+        # weak stops — the per-route worst-N reads gold.stop_delay_spine over the
+        # trailing window (DB-0067 Phase 2). The stop-delay anchor is answered first;
+        # route.spine.anchor is left unmapped ([]) so the §1 by-grain reads stay empty,
+        # matching the old dead-needle fall-through.
+        "stop.delay.anchor": [{"anchor": datetime.date(2026, 6, 30)}],
+        "route.weak_stops.legacy": weak or [],
+        "static.stop_names": names or [],
+        "static.route_names": route_names or [],
+        # per-weekday seasonality — windowed spine dow projector.
+        "route.spine.dow_windowed": dow or [],
+    }
 
 
 def test_route_reliability_sql_uses_real_otp_columns() -> None:
@@ -816,14 +739,14 @@ def test_build_route_reliability_by_shift_daytype_honest_null_metrics() -> None:
     # A spine crosstab cell with no known-delay observations -> honest-None per metric,
     # but the cell is still emitted (it keeps its shift/day_type identity + obs count).
     # Post-cutover by_shift_daytype derives from _spine_route_crosstab, so feed a
-    # SPINE-shaped zero row (needle "AS day_type" is unique to the crosstab SQL).
+    # SPINE-shaped zero row (dispatched on the whole-history crosstab projector name).
     from transit_ops.snapshots.builders.historic import _spine_route_crosstab
 
     row = {"shift": "night", "day_type": "weekend", "known_obs": 0, "obs": 0,
            "on_time": None, "severe": 0, "sum_delay_sec": 0}
     for k in range(1, 22):
         row[f"h{k}"] = 0
-    conn = FakeConn([("AS day_type", [row])])
+    conn = FakeConn({"route.spine.crosstab": [row]})
     cells = _spine_route_crosstab(conn, {"provider_id": "stm", "route_id": "51"})
     cell = cells[0]
     assert cell.shift == "night" and cell.day_type == "weekend"
@@ -987,11 +910,10 @@ def test_build_route_reliability_no_dataset_version_still_builds() -> None:
     from gold rollups still populate (graceful degradation)."""
     conn = FakeConn(
         [
-            ("dataset_kind = 'static_schedule'", []),  # no version
-            # delay×crowding precedes the daily-view needle (shared substring).
-            ("-- delay_by_crowding", []),
+            ("static.dataset_version", []),  # no version
+            ("route.delay.by_crowding", []),
             (
-                "public_route_reliability_daily",
+                "route.reliability.daily",
                 [
                     {
                         "d": datetime.date(2026, 6, 1),
@@ -1003,7 +925,7 @@ def test_build_route_reliability_no_dataset_version_still_builds() -> None:
                 ],
             ),
             (
-                "route_headway_by_shift",
+                "route.headway.observed_by_shift",
                 [{"shift": "am_peak", "observed_headway_min": 7.0, "sample_count": 9}],
             ),
         ]
@@ -1025,11 +947,9 @@ def test_build_route_reliability_no_dataset_version_still_builds() -> None:
 
 def test_build_stop_reliability_batch() -> None:
     # DB-0067 Phase 1: weekly + monthly + by_route all read gold.stop_delay_spine
-    # over a trailing window. The weekly/monthly SQL is now identical text (group by
-    # stop_id over the spine), so they are distinguished by the window param
-    # win_start: week = anchor-6, month = anchor-29 (see _grain_windows). The
-    # provider-wide MAX(service_local_date) anchor query is dispatched first.
-    conn = _StopSpineFakeConn(
+    # over a trailing window; each carries a DISTINCT registry name so the fake
+    # dispatches by name (no window-param sniffing).
+    conn = _stop_spine_conn(
         anchor=datetime.date(2026, 6, 30),
         by_route=[
             {"stop_id": "S1", "route_id": "51", "obs": 100, "weighted_delay_sec": 6000.0},
@@ -1079,7 +999,7 @@ def test_stop_by_route_sql_excludes_unrouted_sentinel() -> None:
 
 def test_build_stop_reliability_weekly_only_stop() -> None:
     """A stop present only in the weekly view still produces a model (month absent)."""
-    conn = _StopSpineFakeConn(
+    conn = _stop_spine_conn(
         anchor=datetime.date(2026, 6, 30),
         weekly=[{"stop_id": "S2", "obs": 80, "weighted_delay_sec": 4800.0, "severe": 8}],
         monthly=[],
@@ -1095,14 +1015,14 @@ def test_build_stop_reliability_weekly_only_stop() -> None:
 def test_build_stop_reliability_carries_name() -> None:
     """Per-stop files self-describe: name resolved current-dim-first with the
     history fallback; ids with no name anywhere stay None."""
-    conn = _StopSpineFakeConn(
+    conn = _stop_spine_conn(
         anchor=datetime.date(2026, 6, 30),
         weekly=[
             {"stop_id": "S1", "obs": 150, "weighted_delay_sec": 12000.0, "severe": 15},
             {"stop_id": "S_UNNAMED", "obs": 10, "weighted_delay_sec": 600.0, "severe": 0},
         ],
         monthly=[],
-        extra=[("DISTINCT ON (u.stop_id)", [{"stop_id": "S1", "stop_name": "Station Berri"}])],
+        extra={"static.stop_names": [{"stop_id": "S1", "stop_name": "Station Berri"}]},
     )
 
     out = build_stop_reliability(conn, provider_id="stm", generated_utc="t")
@@ -1135,7 +1055,7 @@ def test_build_hotspots_ranks_and_top_20() -> None:
         }
         for i in range(25)
     ]
-    conn = FakeConn([("repeated_problem_route_stop", rows[:20])])  # fake returns 20
+    conn = FakeConn({"hotspots.list": rows[:20]})  # fake returns 20
 
     out = build_hotspots(conn, provider_id="stm", generated_utc="t")
 
@@ -1155,7 +1075,7 @@ def test_build_hotspots_ranks_and_top_20() -> None:
 
 
 def test_build_hotspots_empty_returns_empty() -> None:
-    conn = FakeConn([("repeated_problem_route_stop", [])])
+    conn = FakeConn({"hotspots.list": []})
     out = build_hotspots(conn, generated_utc="t")
     assert out.hotspots == []
 
@@ -1166,7 +1086,7 @@ def test_build_hotspots_week_period_filter() -> None:
         {"entity_kind": "route", "entity_id": "51", "issue_count": 5, "severity_label": "watch"},
         {"entity_kind": "stop", "entity_id": "3456", "issue_count": 3, "severity_label": "high"},
     ]
-    conn = FakeConn([("repeated_problem_route_stop", rows)])
+    conn = FakeConn({"hotspots.list": rows})
     out = build_hotspots(conn, generated_utc="t")
     assert out.hotspots[0].type == "route"
     assert out.hotspots[1].type == "stop"
@@ -1186,7 +1106,7 @@ def test_build_hotspots_excludes_sentinel_entities() -> None:
          "severity_label": "high"},
         {"entity_kind": "stop", "entity_id": "3456", "issue_count": 10, "severity_label": "watch"},
     ]
-    conn = FakeConn([("repeated_problem_route_stop", rows)])
+    conn = FakeConn({"hotspots.list": rows})
     out = build_hotspots(conn, generated_utc="t")
     ids = [h.id for h in out.hotspots]
     assert "__unrouted__" not in ids
@@ -1215,10 +1135,10 @@ def test_build_hotspots_resolves_names() -> None:
     ]
     conn = FakeConn(
         [
-            ("repeated_problem_route_stop", rows),
-            ("DISTINCT ON (u.route_id)", [{"route_id": "51", "route_name": "Saint-Laurent"}]),
+            ("hotspots.list", rows),
+            ("static.route_names", [{"route_id": "51", "route_name": "Saint-Laurent"}]),
             # retired stop id present only via the history half of the UNION
-            ("DISTINCT ON (u.stop_id)", [{"stop_id": "S_RETIRED", "stop_name": "Ancien arret"}]),
+            ("static.stop_names", [{"stop_id": "S_RETIRED", "stop_name": "Ancien arret"}]),
         ]
     )
 
@@ -1244,15 +1164,16 @@ def test_build_hotspots_otp_delta_route_real_otp_signed_1dp() -> None:
             # stop columns are NULL for a route cell (per-kind JOIN)
             "stop_obs": None,
             "stop_severe": None,
-            # network baseline: 825 / 1000 -> 82.5 -> round 82 (int via _otp_pct)
+            # network baseline: 825 / 1000 -> 82.5 -> 83 (half-away tie; the
+            # 2026-07-01 S7-B rounding rebaseline — banker's round() gave 82)
             "net_on_time": 825,
             "net_known": 1000,
         },
     ]
-    conn = FakeConn([("repeated_problem_route_stop", rows)])
+    conn = FakeConn({"hotspots.list": rows})
     out = build_hotspots(conn, generated_utc="t")
-    # _otp_pct(825,1000)=round(82.5)=82 ; 75 - 82 = -7.0 pts (worse than network)
-    assert out.hotspots[0].otp_delta_pts == -7.0
+    # _otp_pct(825,1000)=half_away(82.5)=83 ; 75 - 83 = -8.0 pts (worse than network)
+    assert out.hotspots[0].otp_delta_pts == -8.0
 
 
 def test_build_hotspots_otp_delta_stop_uses_severe_proxy() -> None:
@@ -1279,7 +1200,7 @@ def test_build_hotspots_otp_delta_stop_uses_severe_proxy() -> None:
             "net_stop_severe": 100,
         },
     ]
-    conn = FakeConn([("repeated_problem_route_stop", rows)])
+    conn = FakeConn({"hotspots.list": rows})
     out = build_hotspots(conn, generated_utc="t")
     # 80 - 90 = -10.0 pts (severe-proxy cell vs severe-proxy network)
     assert out.hotspots[0].otp_delta_pts == -10.0
@@ -1310,7 +1231,7 @@ def test_build_hotspots_otp_delta_stop_problem_is_negative_vs_severe_baseline() 
             "net_stop_severe": 2000,
         },
     ]
-    conn = FakeConn([("repeated_problem_route_stop", rows)])
+    conn = FakeConn({"hotspots.list": rows})
     out = build_hotspots(conn, generated_utc="t")
     # 95 - 98 = -3.0 pts: the problem stop reads WORSE than the network (truthful).
     # Under the old route-on-time baseline this was 95 - 82 = +13.0 (the bug).
@@ -1336,7 +1257,7 @@ def test_build_hotspots_otp_delta_stop_none_when_severe_baseline_missing() -> No
             "net_stop_severe": None,
         },
     ]
-    conn = FakeConn([("repeated_problem_route_stop", rows)])
+    conn = FakeConn({"hotspots.list": rows})
     out = build_hotspots(conn, generated_utc="t")
     assert out.hotspots[0].otp_delta_pts is None  # honest-None, not 80-90=-10
 
@@ -1358,7 +1279,7 @@ def test_build_hotspots_otp_delta_cell_otp_unknown_is_none() -> None:
             "net_known": 100,
         },
     ]
-    conn = FakeConn([("repeated_problem_route_stop", rows)])
+    conn = FakeConn({"hotspots.list": rows})
     out = build_hotspots(conn, generated_utc="t")
     assert out.hotspots[0].otp_delta_pts is None
 
@@ -1380,7 +1301,7 @@ def test_build_hotspots_otp_delta_network_baseline_null_is_none() -> None:
             "net_known": None,
         },
     ]
-    conn = FakeConn([("repeated_problem_route_stop", rows)])
+    conn = FakeConn({"hotspots.list": rows})
     out = build_hotspots(conn, generated_utc="t")
     assert out.hotspots[0].otp_delta_pts is None
 
@@ -1431,7 +1352,7 @@ def test_build_repeat_offenders_recurrence_string() -> None:
             "severity_label": "high",
         },
     ]
-    conn = FakeConn([("repeat_offender", rows)])
+    conn = FakeConn({"repeat.offenders": rows})
     out = build_repeat_offenders(conn, generated_utc="t")
     assert isinstance(out, RepeatOffenders)
     assert len(out.offenders) == 1
@@ -1466,7 +1387,7 @@ def test_build_repeat_offenders_ordering() -> None:
             "severity_label": "critical",
         },
     ]
-    conn = FakeConn([("repeat_offender", rows)])
+    conn = FakeConn({"repeat.offenders": rows})
     out = build_repeat_offenders(conn, generated_utc="t")
     assert out.offenders[0].id == "T9"  # higher recurrence_days comes first
     assert out.offenders[1].id == "V2"
@@ -1486,7 +1407,7 @@ def test_build_repeat_offenders_top_50_cap() -> None:
         }
         for i in range(50)
     ]
-    conn = FakeConn([("repeat_offender", rows)])
+    conn = FakeConn({"repeat.offenders": rows})
     out = build_repeat_offenders(conn, generated_utc="t")
     assert len(out.offenders) == 50
 
@@ -1526,9 +1447,9 @@ def test_build_repeat_offenders_resolves_route_name() -> None:
     ]
     conn = FakeConn(
         [
-            ("repeat_offender", rows),
+            ("repeat.offenders", rows),
             (
-                "DISTINCT ON (u.route_id)",
+                "static.route_names",
                 [
                     {"route_id": "51", "route_name": "Boulevard Saint-Laurent"},
                     # present only in dim_route_history — retired at the drop
@@ -1553,15 +1474,15 @@ def test_build_repeat_offenders_resolves_route_name() -> None:
 
 def _receipts_dispatch(*, acct=None, net=None, worst_route=None, worst_stop=None,
                        route_names=None, stop_names=None):
-    """Build dispatch list for build_receipts; needles matched most-specific first."""
-    return [
-        ("citizen_accountability_daily", acct or []),
-        ("route_delay_hourly", net or []),
-        ("public_route_reliability_daily", worst_route or []),
-        ("public_stop_delay_daily", worst_stop or []),
-        ("DISTINCT ON (u.route_id)", route_names or []),
-        ("DISTINCT ON (u.stop_id)", stop_names or []),
-    ]
+    """Build the name-keyed dispatch map for build_receipts."""
+    return {
+        "receipts.accountability": acct or [],
+        "receipts.network_daily": net or [],
+        "receipts.worst_route": worst_route or [],
+        "receipts.worst_stop": worst_stop or [],
+        "static.route_names": route_names or [],
+        "static.stop_names": stop_names or [],
+    }
 
 
 def test_build_receipts_date_driven_by_accountability() -> None:
@@ -1949,7 +1870,7 @@ def test_build_alert_history_aggregation() -> None:
     conn = FakeConn(
         [
             (
-                "i3_alert_history_reporting",
+                "alerts.history",
                 [
                     {
                         "alert_header_text": "Votre ligne",
@@ -2003,7 +1924,7 @@ def test_build_alert_history_breakdown_buckets_by_cause_effect_severity() -> Non
     conn = FakeConn(
         [
             (
-                "i3_alert_history_reporting",
+                "alerts.history",
                 [
                     _row("A", "WARNING", "MAINTENANCE", "DETOUR", s, s + _dt.timedelta(minutes=60)),
                     _row("B", "WARNING", "MAINTENANCE", "DETOUR", s, s + _dt.timedelta(minutes=20)),
@@ -2032,7 +1953,7 @@ def test_build_alert_history_none_timestamps_yield_none_duration() -> None:
     conn = FakeConn(
         [
             (
-                "i3_alert_history_reporting",
+                "alerts.history",
                 [
                     {
                         "alert_header_text": None,
@@ -2068,7 +1989,7 @@ def test_build_alert_history_negative_window_yields_none_duration() -> None:
     conn = FakeConn(
         [
             (
-                "i3_alert_history_reporting",
+                "alerts.history",
                 [
                     {
                         "alert_header_text": "Ligne",
@@ -2109,13 +2030,13 @@ def test_build_alert_history_200_cap() -> None:
         }
         for i in range(200)
     ]
-    conn = FakeConn([("i3_alert_history_reporting", rows)])
+    conn = FakeConn({"alerts.history": rows})
     out = build_alert_history(conn, generated_utc="t")
     assert len(out.alerts) == 200
 
 
 def test_build_alert_history_empty() -> None:
-    conn = FakeConn([("i3_alert_history_reporting", [])])
+    conn = FakeConn({"alerts.history": []})
     out = build_alert_history(conn, generated_utc="t")
     assert out.alerts == []
 
@@ -2132,7 +2053,7 @@ def test_build_provenance_sources_and_freshness() -> None:
     conn = FakeConn(
         [
             (
-                "source_lineage_reporting",
+                "provenance.sources",
                 [
                     {
                         "dataset_kind": "static_schedule",
@@ -2151,7 +2072,7 @@ def test_build_provenance_sources_and_freshness() -> None:
                 ],
             ),
             (
-                "feed_freshness_current",
+                "provenance.freshness",
                 [
                     {
                         "endpoint_key": "vehicle_positions",
@@ -2209,7 +2130,7 @@ def test_build_provenance_includes_gis_static_source_and_freshness() -> None:
     conn = FakeConn(
         [
             (
-                "source_lineage_reporting",
+                "provenance.sources",
                 [
                     {
                         "dataset_kind": "static_schedule",
@@ -2228,7 +2149,7 @@ def test_build_provenance_includes_gis_static_source_and_freshness() -> None:
                 ],
             ),
             (
-                "feed_freshness_current",
+                "provenance.freshness",
                 [
                     {
                         "endpoint_key": "gis_static",
@@ -2254,8 +2175,8 @@ def test_build_provenance_includes_gis_static_source_and_freshness() -> None:
 def test_provenance_methodology_documents_band() -> None:
     conn = FakeConn(
         [
-            ("source_lineage_reporting", []),
-            ("feed_freshness_current", []),
+            ("provenance.sources", []),
+            ("provenance.freshness", []),
         ]
     )
     out = build_provenance(conn, generated_utc="t")
@@ -2273,8 +2194,8 @@ def test_provenance_methodology_documents_band() -> None:
 def test_provenance_methodology_documents_closed_period_freeze() -> None:
     conn = FakeConn(
         [
-            ("source_lineage_reporting", []),
-            ("feed_freshness_current", []),
+            ("provenance.sources", []),
+            ("provenance.freshness", []),
         ]
     )
     out = build_provenance(conn, generated_utc="t")
@@ -2288,8 +2209,8 @@ def test_provenance_methodology_documents_closed_period_freeze() -> None:
 def test_provenance_methodology_documents_gtfs_service_time_conversion() -> None:
     conn = FakeConn(
         [
-            ("source_lineage_reporting", []),
-            ("feed_freshness_current", []),
+            ("provenance.sources", []),
+            ("provenance.freshness", []),
         ]
     )
     out = build_provenance(conn, generated_utc="t")
@@ -2304,8 +2225,8 @@ def test_provenance_methodology_documents_gtfs_service_time_conversion() -> None
 def test_provenance_methodology_discloses_alert_text_en_honest_null() -> None:
     conn = FakeConn(
         [
-            ("source_lineage_reporting", []),
-            ("feed_freshness_current", []),
+            ("provenance.sources", []),
+            ("provenance.freshness", []),
         ]
     )
     out = build_provenance(conn, generated_utc="t")
@@ -2322,8 +2243,8 @@ def test_provenance_methodology_discloses_alert_text_en_honest_null() -> None:
 def test_build_provenance_empty_sources_still_valid() -> None:
     conn = FakeConn(
         [
-            ("source_lineage_reporting", []),
-            ("feed_freshness_current", []),
+            ("provenance.sources", []),
+            ("provenance.freshness", []),
         ]
     )
     out = build_provenance(conn, generated_utc="t")
@@ -2346,8 +2267,8 @@ def test_provenance_methodology_keys_have_localized_labels() -> None:
 
     conn = FakeConn(
         [
-            ("source_lineage_reporting", []),
-            ("feed_freshness_current", []),
+            ("provenance.sources", []),
+            ("provenance.freshness", []),
         ]
     )
     out = build_provenance(conn, generated_utc="t")

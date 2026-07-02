@@ -48,13 +48,13 @@ export function isSuppressedCount(n: number | null | undefined): boolean {
 }
 
 /**
- * 95% Wilson score interval [lo, hi] in PERCENT (0..100) for `successes`/`n`, or
- * null when the numerator is unknown or the denominator is falsy/≤0. Byte-for-byte
- * the server's `_wilson_bounds` (same z, same clamp, same rounding) so a
- * client-computed bound (live tier) matches a server-emitted one. `successes` is
- * clamped into [0, n].
+ * 95% Wilson score interval [lo, hi] as a PROPORTION (0..1) for `successes`/`n`, or
+ * null when the numerator is unknown or the denominator is falsy/≤0. UNROUNDED —
+ * the single Wilson kernel both {@link wilsonBounds} (percent, rounded) and the §0
+ * verdict consume, so proportion- and percent-domain callers agree on z and clamp.
+ * `successes` is clamped into [0, n]; the bounds are clamped into [0, 1].
  */
-export function wilsonBounds(
+export function wilsonBoundsProportion(
 	successes: number | null | undefined,
 	n: number | null | undefined,
 	z: number = WILSON_Z,
@@ -67,9 +67,26 @@ export function wilsonBounds(
 	const denom = 1 + z2 / total;
 	const center = (p + z2 / (2 * total)) / denom;
 	const margin = (z * Math.sqrt((p * (1 - p)) / total + z2 / (4 * total * total))) / denom;
-	const lo = Math.max(0, (center - margin) * 100);
-	const hi = Math.min(100, (center + margin) * 100);
-	return [round1(lo), round1(hi)];
+	const lo = Math.max(0, center - margin);
+	const hi = Math.min(1, center + margin);
+	return [lo, hi];
+}
+
+/**
+ * 95% Wilson score interval [lo, hi] in PERCENT (0..100) for `successes`/`n`, or
+ * null when the numerator is unknown or the denominator is falsy/≤0. Byte-for-byte
+ * the server's `_wilson_bounds` (same z, same clamp, same rounding) so a
+ * client-computed bound (live tier) matches a server-emitted one. `successes` is
+ * clamped into [0, n].
+ */
+export function wilsonBounds(
+	successes: number | null | undefined,
+	n: number | null | undefined,
+	z: number = WILSON_Z,
+): [number, number] | null {
+	const p = wilsonBoundsProportion(successes, n, z);
+	if (p == null) return null;
+	return [round1(p[0] * 100), round1(p[1] * 100)];
 }
 
 /** Wilson lower bound in percent, or null. Rank on THIS, never the raw rate. */

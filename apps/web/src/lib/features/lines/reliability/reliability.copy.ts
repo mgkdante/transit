@@ -158,7 +158,7 @@ export interface ReliabilityCopy {
 	readonly delayByCrowding: {
 		/** Sub-block overline. */
 		readonly heading: string;
-		/** Secondary p50 caption appended to a band's avg delay (e.g. "median 0.4 min"). */
+		/** Secondary typical-delay caption appended to a band's avg delay (obs-weighted mean of daily band medians, not a pooled percentile; e.g. "typical 0.4 min"). */
 		readonly typical: (p50: string) => string;
 		/** Honest empty note when no per-band delay data exists at all. */
 		readonly empty: string;
@@ -411,7 +411,7 @@ export const reliabilityCopy: Record<Locale, ReliabilityCopy> = {
 		},
 		delayByCrowding: {
 			heading: "Retard selon l'occupation",
-			typical: (p50) => `médian ${p50}`,
+			typical: (p50) => `typique ${p50}`,
 			empty: 'Aucune donnée de retard par occupation',
 		},
 		crosstab: {
@@ -620,7 +620,7 @@ export const reliabilityCopy: Record<Locale, ReliabilityCopy> = {
 		},
 		delayByCrowding: {
 			heading: 'Delay by crowding',
-			typical: (p50) => `median ${p50}`,
+			typical: (p50) => `typical ${p50}`,
 			empty: 'No delay-by-crowding data yet',
 		},
 		crosstab: {

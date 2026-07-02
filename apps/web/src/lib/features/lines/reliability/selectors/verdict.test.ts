@@ -15,6 +15,9 @@ const h = (
 	onTime,
 });
 
+// wilsonInterval now delegates to the shared $lib/v1/stats kernel at z=WILSON_Z=1.96 (was a local
+// 1.959963984540054). The ~2e-5 z drift is sub-integer on the CI and never flips a threshold below,
+// so these property tests hold unchanged; nothing published changes (the verdict is client display).
 describe('wilsonInterval', () => {
 	it('is wider at small n and narrows as n grows', () => {
 		const small = wilsonInterval(8, 10);

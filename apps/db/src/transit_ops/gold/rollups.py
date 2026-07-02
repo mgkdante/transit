@@ -5,12 +5,13 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, timedelta
 
-from sqlalchemy import text
 from sqlalchemy.engine import Engine
 
 from transit_ops.db.connection import make_engine
+from transit_ops.gold.reader.buckets import daytype_case_sql, shift_case_sql
 from transit_ops.ingestion.common import utc_now
 from transit_ops.settings import Settings, get_settings
+from transit_ops.sql_registry import named_query
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +31,10 @@ def provider_is_seeded(conn, provider_id: str) -> bool:  # noqa: ANN001
     Accepts either a live Connection or an Engine; a bare Engine is opened in a
     short-lived ``connect()`` block.
     """
-    sql = text("SELECT 1 FROM gold.dim_provider WHERE provider_id = :provider_id LIMIT 1")
+    sql = named_query(
+        "rollup.provider.exists",
+        "SELECT 1 FROM gold.dim_provider WHERE provider_id = :provider_id LIMIT 1",
+    )
     params = {"provider_id": provider_id}
     if isinstance(conn, Engine):
         with conn.connect() as connection:
@@ -49,7 +53,8 @@ OPEN_WINDOW_HOURLY_CUTOFF_SQL = (
 # SQL — missing period detection
 # ---------------------------------------------------------------------------
 
-SELECT_MISSING_TRIP_DELAY_PERIODS = text(
+SELECT_MISSING_TRIP_DELAY_PERIODS = named_query(
+    "rollup.trip_delay.missing_periods",
     """
     SELECT DISTINCT
         DATE_BIN('5 minutes', captured_at_utc, TIMESTAMPTZ '2000-01-01') AS period_start_utc
@@ -73,7 +78,8 @@ SELECT_MISSING_TRIP_DELAY_PERIODS = text(
 # SQL — upserts
 # ---------------------------------------------------------------------------
 
-UPSERT_TRIP_DELAY_SUMMARY_5M = text(
+UPSERT_TRIP_DELAY_SUMMARY_5M = named_query(
+    "rollup.trip_delay.upsert_5m",
     f"""
     INSERT INTO gold.trip_delay_summary_5m (
         provider_id,
@@ -139,7 +145,8 @@ UPSERT_TRIP_DELAY_SUMMARY_5M = text(
     """
 )
 
-UPSERT_WARM_ROLLUP_PERIOD = text(
+UPSERT_WARM_ROLLUP_PERIOD = named_query(
+    "rollup.warm_period.upsert",
     """
     INSERT INTO gold.warm_rollup_periods (
         provider_id, rollup_kind, period_start_utc, built_at_utc
@@ -163,7 +170,8 @@ UPSERT_WARM_ROLLUP_PERIOD = text(
 # the oldest candidate day from being computed over partially-pruned facts on a
 # cold start; :today_key (= today_local) excludes the still-open current day. In
 # steady state each day is built the day after it closes, intact.
-SELECT_MISSING_PERCENTILE_DAYS = text(
+SELECT_MISSING_PERCENTILE_DAYS = named_query(
+    "rollup.percentile.missing_days",
     """
     SELECT DISTINCT
         f.snapshot_local_date AS local_date,
@@ -188,7 +196,8 @@ SELECT_MISSING_PERCENTILE_DAYS = text(
 # calendar against the vehicle fact keeps the watermark + cold-start lookback
 # bound aligned with the actual occupancy data source, so a day with trip-delay
 # facts but no vehicle facts is never watermarked-built with an empty reduction.
-SELECT_MISSING_OCCUPANCY_DAYS = text(
+SELECT_MISSING_OCCUPANCY_DAYS = named_query(
+    "rollup.occupancy.missing_days",
     """
     SELECT DISTINCT
         f.snapshot_local_date AS local_date,
@@ -207,7 +216,8 @@ SELECT_MISSING_OCCUPANCY_DAYS = text(
     """
 )
 
-UPSERT_ROUTE_DELAY_PERCENTILE_DAILY = text(
+UPSERT_ROUTE_DELAY_PERCENTILE_DAILY = named_query(
+    "rollup.route_percentile.upsert",
     f"""
     INSERT INTO gold.route_delay_percentile_daily (
         provider_id, provider_local_date, route_id,
@@ -236,7 +246,8 @@ UPSERT_ROUTE_DELAY_PERCENTILE_DAILY = text(
     """
 )
 
-UPSERT_STOP_DELAY_PERCENTILE_DAILY = text(
+UPSERT_STOP_DELAY_PERCENTILE_DAILY = named_query(
+    "rollup.stop_percentile.upsert",
     f"""
     INSERT INTO gold.stop_delay_percentile_daily (
         provider_id, provider_local_date, stop_id,
@@ -274,7 +285,8 @@ UPSERT_STOP_DELAY_PERCENTILE_DAILY = text(
 # explicitly-tagged trips — otherwise the rate would be systematically inflated.
 # Binds exactly {provider_id, local_date, built_at_utc} so it drops into
 # _build_percentile_days unchanged.
-UPSERT_ROUTE_CANCELLATION_DAILY = text(
+UPSERT_ROUTE_CANCELLATION_DAILY = named_query(
+    "rollup.route_cancellation.upsert",
     """
     WITH trip_day AS (
         SELECT
@@ -319,7 +331,8 @@ UPSERT_ROUTE_CANCELLATION_DAILY = text(
 # weekly band-SHARES are derived at read time without re-reading pruned facts.
 # observation_count = band-bearing pings (codes 0-5); the five band counts sum to
 # it. Binds {provider_id, local_date, built_at_utc} for _build_percentile_days.
-UPSERT_ROUTE_OCCUPANCY_BAND_DAILY = text(
+UPSERT_ROUTE_OCCUPANCY_BAND_DAILY = named_query(
+    "rollup.route_occupancy.upsert",
     """
     INSERT INTO gold.route_occupancy_band_daily (
         provider_id, provider_local_date, route_id,
@@ -363,7 +376,8 @@ UPSERT_ROUTE_OCCUPANCY_BAND_DAILY = text(
 # the five band counts sum to it. Binds {provider_id, local_date, built_at_utc} for
 # _build_percentile_days, sourced from fact_vehicle_snapshot (same closed-day
 # missing-day calendar as the route occupancy rollup).
-UPSERT_STOP_OCCUPANCY_BAND_DAILY = text(
+UPSERT_STOP_OCCUPANCY_BAND_DAILY = named_query(
+    "rollup.stop_occupancy.upsert",
     """
     INSERT INTO gold.stop_occupancy_band_daily (
         provider_id, provider_local_date, stop_id,
@@ -408,7 +422,8 @@ UPSERT_STOP_OCCUPANCY_BAND_DAILY = text(
 # occupancy_status (no vehicle-position match) are excluded (honest absence). Reads
 # fact_trip_delay_snapshot -> default trip-delay missing-day calendar; APPEND-ONLY. Binds
 # {provider_id, local_date, built_at_utc} so it drops into _build_percentile_days unchanged.
-UPSERT_ROUTE_DELAY_BY_CROWDING_DAILY = text(
+UPSERT_ROUTE_DELAY_BY_CROWDING_DAILY = named_query(
+    "rollup.route_crowding.upsert",
     f"""
     WITH co_observed AS (
         SELECT
@@ -472,7 +487,8 @@ UPSERT_ROUTE_DELAY_BY_CROWDING_DAILY = text(
 # first trip's earliest-observation deviation; last delay = the last trip's LATEST (terminal)
 # observation deviation (FIX-2: the old code read the last trip's FIRST obs ≈ 0). Binds
 # {provider_id, local_date, date_key, built_at_utc} so it drops into _build_percentile_days.
-UPSERT_ROUTE_SERVICE_SPAN_DAILY = text(
+UPSERT_ROUTE_SERVICE_SPAN_DAILY = named_query(
+    "rollup.route_service_span.upsert",
     """
     WITH trip_starts AS (
         SELECT
@@ -550,7 +566,8 @@ UPSERT_ROUTE_SERVICE_SPAN_DAILY = text(
 # schedule_relationship — a NULL stop-level relationship is SCHEDULED and stays in
 # the denominator. Binds {provider_id, local_date, built_at_utc} for
 # _build_percentile_days. RAMP-IN: no history before this metric shipped.
-UPSERT_ROUTE_SKIPPED_STOP_DAILY = text(
+UPSERT_ROUTE_SKIPPED_STOP_DAILY = named_query(
+    "rollup.route_skipped_stop.upsert",
     """
     INSERT INTO gold.route_skipped_stop_daily (
         provider_id, provider_local_date, route_id,
@@ -621,7 +638,8 @@ _HEADWAY_GAP_HIST_EDGES_SQL = (
 # so it drops straight into _build_percentile_days. Unknown direction COALESCEs to 0
 # (matching the directional headway builder); delayed_trip_count is intentionally
 # absent (non-additive distinct-trip count -> read from route_delay_hourly).
-UPSERT_ROUTE_DELAY_SPINE = text(
+UPSERT_ROUTE_DELAY_SPINE = named_query(
+    "rollup.route_delay_spine.upsert",
     f"""
     WITH binned AS (
         SELECT
@@ -714,7 +732,8 @@ UPSERT_ROUTE_DELAY_SPINE = text(
 #     Byte-identical denominator to the legacy stop_delay_hourly (which also clamps in its
 #     WHERE then COUNT(*)s). route_id COALESCEs to '__unrouted__'; a real per-route read
 #     never matches the sentinel. Drops straight into _build_percentile_days. ---
-UPSERT_STOP_DELAY_SPINE = text(
+UPSERT_STOP_DELAY_SPINE = named_query(
+    "rollup.stop_delay_spine.upsert",
     f"""
     INSERT INTO gold.stop_delay_spine (
         provider_id, stop_id, route_id, service_local_date,
@@ -781,21 +800,24 @@ ROLLING_WINDOW_TABLES = (
 )
 
 DELETE_REPORTING_AGGREGATES = {
-    "route_delay_hourly": text(
+    "route_delay_hourly": named_query(
+        "rollup.route_delay_hourly.delete",
         f"""
         DELETE FROM gold.route_delay_hourly
         WHERE provider_id = :provider_id
           AND period_start_utc >= {OPEN_WINDOW_HOURLY_CUTOFF_SQL}
-        """
+        """,
     ),
-    "stop_delay_hourly": text(
+    "stop_delay_hourly": named_query(
+        "rollup.stop_delay_hourly.delete",
         f"""
         DELETE FROM gold.stop_delay_hourly
         WHERE provider_id = :provider_id
           AND period_start_utc >= {OPEN_WINDOW_HOURLY_CUTOFF_SQL}
-        """
+        """,
     ),
-    "citizen_accountability_daily": text(
+    "citizen_accountability_daily": named_query(
+        "rollup.accountability.delete",
         """
         DELETE FROM gold.citizen_accountability_daily
         WHERE provider_id = :provider_id
@@ -805,15 +827,19 @@ DELETE_REPORTING_AGGREGATES = {
               FROM gold.dim_provider AS dp
               WHERE dp.provider_id = :provider_id
           )
-        """
+        """,
     ),
     **{
-        table_name: text(f"DELETE FROM gold.{table_name} WHERE provider_id = :provider_id")
+        table_name: named_query(
+            f"rollup.{table_name}.delete_all",
+            f"DELETE FROM gold.{table_name} WHERE provider_id = :provider_id",
+        )
         for table_name in (*DERIVED_REBUILD_TABLES, *ROLLING_WINDOW_TABLES)
     },
 }
 
-UPSERT_ROUTE_DELAY_HOURLY = text(
+UPSERT_ROUTE_DELAY_HOURLY = named_query(
+    "rollup.route_delay_hourly.upsert",
     f"""
     WITH summary AS (
         SELECT
@@ -871,7 +897,8 @@ UPSERT_ROUTE_DELAY_HOURLY = text(
     """
 )
 
-UPSERT_STOP_DELAY_HOURLY = text(
+UPSERT_STOP_DELAY_HOURLY = named_query(
+    "rollup.stop_delay_hourly.upsert",
     f"""
     INSERT INTO gold.stop_delay_hourly (
         provider_id,
@@ -909,7 +936,8 @@ UPSERT_STOP_DELAY_HOURLY = text(
     """
 )
 
-UPSERT_ROUTE_HABIT_SCORE = text(
+UPSERT_ROUTE_HABIT_SCORE = named_query(
+    "rollup.route_habit.upsert",
     """
     WITH habit AS (
         SELECT
@@ -972,7 +1000,8 @@ UPSERT_ROUTE_HABIT_SCORE = text(
     """
 )
 
-UPSERT_REPEATED_PROBLEM_ROUTE_STOP = text(
+UPSERT_REPEATED_PROBLEM_ROUTE_STOP = named_query(
+    "rollup.repeated_problem.upsert",
     """
     -- Route-grain weekly recurrence derived from the route delay spine (S7-B): the
     -- ISO-week SUM of severe_delay_count is byte-identical to the (dropped)
@@ -1076,7 +1105,8 @@ UPSERT_REPEATED_PROBLEM_ROUTE_STOP = text(
     """
 )
 
-UPSERT_CITIZEN_ACCOUNTABILITY_DAILY = text(
+UPSERT_CITIZEN_ACCOUNTABILITY_DAILY = named_query(
+    "rollup.accountability.upsert",
     """
     WITH cutoff AS (
         SELECT
@@ -1207,8 +1237,17 @@ UPSERT_CITIZEN_ACCOUNTABILITY_DAILY = text(
     """
 )
 
-UPSERT_ROUTE_HEADWAY_DAILY = text(
-    """
+# Trip-start hour->shift + service-day weekday/weekend CASE fragments for the
+# three headway builders below, emitted from the ONE gold.reader.buckets source
+# (wrapped vs single-line shapes match the surrounding literals byte-exactly).
+_TRIP_START_HOUR_EXPR = "EXTRACT(HOUR FROM timezone(dp.timezone, ts.trip_start_utc))"
+_TRIP_SHIFT_CASE_WRAPPED = shift_case_sql(_TRIP_START_HOUR_EXPR, indent=12, lead=True, wrap=True)
+_TRIP_SHIFT_CASE = shift_case_sql(_TRIP_START_HOUR_EXPR, indent=12, lead=True)
+_SERVICE_DAYTYPE_CASE = daytype_case_sql("ts.service_date", indent=12, lead=True)
+
+UPSERT_ROUTE_HEADWAY_DAILY = named_query(
+    "rollup.route_headway.upsert",
+    f"""
     WITH trip_starts AS (
         -- Observed headway uses trip instances, not pooled vehicle pings:
         -- first in-service realtime observation per trip/service day, weekday
@@ -1261,17 +1300,7 @@ UPSERT_ROUTE_HEADWAY_DAILY = text(
             ts.direction_id,
             ts.service_date,
             ts.trip_start_utc,
-            CASE
-                WHEN EXTRACT(HOUR FROM timezone(dp.timezone, ts.trip_start_utc))
-                    BETWEEN 6 AND 8 THEN 'am_peak'
-                WHEN EXTRACT(HOUR FROM timezone(dp.timezone, ts.trip_start_utc))
-                    BETWEEN 9 AND 14 THEN 'midday'
-                WHEN EXTRACT(HOUR FROM timezone(dp.timezone, ts.trip_start_utc))
-                    BETWEEN 15 AND 18 THEN 'pm_peak'
-                WHEN EXTRACT(HOUR FROM timezone(dp.timezone, ts.trip_start_utc))
-                    BETWEEN 19 AND 22 THEN 'evening'
-                ELSE 'night'
-            END AS shift
+{_TRIP_SHIFT_CASE_WRAPPED} AS shift
         FROM trip_starts AS ts
         INNER JOIN busiest_direction AS bd
             ON bd.provider_id = ts.provider_id
@@ -1368,8 +1397,9 @@ UPSERT_ROUTE_HEADWAY_DAILY = text(
 # is left untouched): the busiest_direction collapse is dropped so EVERY
 # direction survives, and weekend service days are kept (tagged) instead of
 # filtered out. Same 14d rolling reconstruction + median-gap method.
-UPSERT_ROUTE_HEADWAY_DIRECTION_DAILY = text(
-    """
+UPSERT_ROUTE_HEADWAY_DIRECTION_DAILY = named_query(
+    "rollup.route_headway_direction.upsert",
+    f"""
     WITH trip_starts AS (
         SELECT
             f.provider_id,
@@ -1399,21 +1429,8 @@ UPSERT_ROUTE_HEADWAY_DIRECTION_DAILY = text(
             ts.direction_id,
             ts.service_date,
             ts.trip_start_utc,
-            CASE
-                WHEN EXTRACT(ISODOW FROM ts.service_date) BETWEEN 1 AND 5 THEN 'weekday'
-                ELSE 'weekend'
-            END AS service_day_kind,
-            CASE
-                WHEN EXTRACT(HOUR FROM timezone(dp.timezone, ts.trip_start_utc))
-                    BETWEEN 6 AND 8 THEN 'am_peak'
-                WHEN EXTRACT(HOUR FROM timezone(dp.timezone, ts.trip_start_utc))
-                    BETWEEN 9 AND 14 THEN 'midday'
-                WHEN EXTRACT(HOUR FROM timezone(dp.timezone, ts.trip_start_utc))
-                    BETWEEN 15 AND 18 THEN 'pm_peak'
-                WHEN EXTRACT(HOUR FROM timezone(dp.timezone, ts.trip_start_utc))
-                    BETWEEN 19 AND 22 THEN 'evening'
-                ELSE 'night'
-            END AS shift
+{_SERVICE_DAYTYPE_CASE} AS service_day_kind,
+{_TRIP_SHIFT_CASE_WRAPPED} AS shift
         FROM trip_starts AS ts
         INNER JOIN gold.dim_provider AS dp
             ON dp.provider_id = ts.provider_id
@@ -1470,7 +1487,8 @@ UPSERT_ROUTE_HEADWAY_DIRECTION_DAILY = text(
 # + %bunched. EVERY direction stored (busiest-direction argmax is read-time, per window). The
 # clamp (0 < gap_min < 240) + n>=2 guard are byte-identical to route_headway_by_shift. Binds
 # {provider_id, local_date, date_key, built_at_utc} -> drops into _build_percentile_days.
-UPSERT_ROUTE_HEADWAY_SHIFT_DAILY = text(
+UPSERT_ROUTE_HEADWAY_SHIFT_DAILY = named_query(
+    "rollup.route_headway_shift.upsert",
     f"""
     WITH trip_starts AS (
         -- trip start = first in-service realtime observation per trip/service day.
@@ -1501,13 +1519,7 @@ UPSERT_ROUTE_HEADWAY_SHIFT_DAILY = text(
     shifted AS (
         SELECT
             ts.provider_id, ts.route_id, ts.direction_id, ts.service_date, ts.trip_start_utc,
-            CASE
-                WHEN EXTRACT(HOUR FROM timezone(dp.timezone, ts.trip_start_utc)) BETWEEN 6 AND 8 THEN 'am_peak'
-                WHEN EXTRACT(HOUR FROM timezone(dp.timezone, ts.trip_start_utc)) BETWEEN 9 AND 14 THEN 'midday'
-                WHEN EXTRACT(HOUR FROM timezone(dp.timezone, ts.trip_start_utc)) BETWEEN 15 AND 18 THEN 'pm_peak'
-                WHEN EXTRACT(HOUR FROM timezone(dp.timezone, ts.trip_start_utc)) BETWEEN 19 AND 22 THEN 'evening'
-                ELSE 'night'
-            END AS shift
+{_TRIP_SHIFT_CASE} AS shift
         FROM trip_starts AS ts
         INNER JOIN gold.dim_provider AS dp ON dp.provider_id = ts.provider_id
     ),
@@ -1594,7 +1606,8 @@ UPSERT_ROUTE_HEADWAY_SHIFT_DAILY = text(
     """
 )
 
-UPSERT_REPEAT_OFFENDER_DAILY = text(
+UPSERT_REPEAT_OFFENDER_DAILY = named_query(
+    "rollup.repeat_offender.upsert",
     """
     WITH obs AS (
         SELECT
@@ -1801,8 +1814,8 @@ def _build_percentile_days(
             # and disabling nestloop forces hash/merge joins; the headway day-build drops from
             # 45 min to ~9 s (verified by EXPLAIN ANALYZE on prod). Mirrors migration 0034's
             # heavy-build session tuning.
-            conn.execute(text("SET LOCAL work_mem = '512MB'"))
-            conn.execute(text("SET LOCAL enable_nestloop = off"))
+            conn.execute(named_query("rollup.session.work_mem", "SET LOCAL work_mem = '512MB'"))
+            conn.execute(named_query("rollup.session.nestloop_off", "SET LOCAL enable_nestloop = off"))
             conn.execute(
                 upsert,
                 {
@@ -1878,10 +1891,7 @@ def build_warm_rollups(
     percentile_lookback_days = fact_retention_days - 1
     with engine.begin() as conn:
         today_local = conn.execute(
-            text(
-                "SELECT (now() AT TIME ZONE dp.timezone)::date "
-                "FROM gold.dim_provider AS dp WHERE dp.provider_id = :provider_id"
-            ),
+            _PROVIDER_TODAY_LOCAL_SQL,
             {"provider_id": provider_id},
         ).scalar_one()
     today_key = int(today_local.strftime("%Y%m%d"))
@@ -2248,19 +2258,29 @@ def _rebuild_row_delete_sql(kind: RebuildableKind, *, dry_run: bool) -> object:
     # the window bounds are bound parameters. Mirrors the count/delete toggle of
     # _gold_aggregate_retention_statement.
     operation = "SELECT COUNT(*) FROM" if dry_run else "DELETE FROM"
-    return text(
+    verb = "count" if dry_run else "delete"
+    return named_query(
+        f"rollup.rebuild_row.{kind.table}.{verb}",
         f"""
         {operation} gold.{kind.table}
         WHERE provider_id = :provider_id
           AND {kind.date_column} >= :from_date
           AND {kind.date_column} <= :to_date
-        """
+        """,
     )
 
 
+# Provider-local "today" — the closed-day fact-retention floor anchor.
+_PROVIDER_TODAY_LOCAL_SQL = named_query(
+    "rollup.provider.today_local",
+    "SELECT (now() AT TIME ZONE dp.timezone)::date "
+    "FROM gold.dim_provider AS dp WHERE dp.provider_id = :provider_id",
+)
+
 # Windowed watermark delete/count. The MORE-SPECIFIC rollup_kind clause keeps it
 # distinct from the retention-prune's generic `DELETE FROM gold.warm_rollup_periods`.
-_REBUILD_WATERMARK_DELETE = text(
+_REBUILD_WATERMARK_DELETE = named_query(
+    "rollup.rebuild_watermark.delete",
     """
     DELETE FROM gold.warm_rollup_periods
     WHERE provider_id = :provider_id
@@ -2270,7 +2290,8 @@ _REBUILD_WATERMARK_DELETE = text(
     """
 )
 
-_REBUILD_WATERMARK_COUNT = text(
+_REBUILD_WATERMARK_COUNT = named_query(
+    "rollup.rebuild_watermark.count",
     """
     SELECT COUNT(*) FROM gold.warm_rollup_periods
     WHERE provider_id = :provider_id
@@ -2369,10 +2390,7 @@ def rebuild_warm_rollups(
     # oldest day whose facts are still intact; today excludes the still-open day.
     with engine.begin() as conn:
         today_local = conn.execute(
-            text(
-                "SELECT (now() AT TIME ZONE dp.timezone)::date "
-                "FROM gold.dim_provider AS dp WHERE dp.provider_id = :provider_id"
-            ),
+            _PROVIDER_TODAY_LOCAL_SQL,
             {"provider_id": provider_id},
         ).scalar_one()
     floor_local = today_local - timedelta(days=fact_retention_days - 1)

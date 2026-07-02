@@ -19,6 +19,7 @@
 // Wilson hedge or n (never fabricated). Pure (no runes/DOM) → lives in the fast data project.
 
 import type { Locale } from '$lib/i18n';
+import { wilsonBoundsProportion } from '$lib/v1/stats';
 import type { ReliabilityCopy } from '../reliability.copy';
 
 export type VerdictStatus = 'reliable' | 'patchy' | 'unreliable' | 'tentative' | 'absent';
@@ -46,24 +47,17 @@ export const VERDICT_RELIABLE_FLOOR = 80;
 export const VERDICT_PATCHY_FLOOR = 60;
 /** Wilson interval width (proportion) at/above which a verdict degrades to "tentative". */
 const VERDICT_WIDE_CI = 0.3;
-/** z for a 95% interval. */
-const Z = 1.959963984540054;
-
-const clamp01 = (x: number): number => (x < 0 ? 0 : x > 1 ? 1 : x);
 
 /**
  * 95% Wilson score interval for a proportion onTime/n — valid near 0/1 and at small n
  * where the Wald interval collapses to false certainty (Brown, Cai & DasGupta 2001).
- * Returns [0,1] bounds.
+ * Returns [0,1] bounds. Thin wrapper over the shared {@link wilsonBoundsProportion}
+ * kernel ($lib/v1/stats, z=WILSON_Z=1.96) so the verdict and the rest of the site
+ * agree on one Wilson implementation; a degenerate n≤0 falls back to the widest [0,1].
  */
 export function wilsonInterval(onTime: number, n: number): { lo: number; hi: number } {
-	if (n <= 0) return { lo: 0, hi: 1 };
-	const p = clamp01(onTime / n);
-	const z2 = Z * Z;
-	const denom = 1 + z2 / n;
-	const center = (p + z2 / (2 * n)) / denom;
-	const margin = (Z * Math.sqrt((p * (1 - p)) / n + z2 / (4 * n * n))) / denom;
-	return { lo: clamp01(center - margin), hi: clamp01(center + margin) };
+	const b = wilsonBoundsProportion(onTime, n);
+	return { lo: b?.[0] ?? 0, hi: b?.[1] ?? 1 };
 }
 
 type Mode = 'day' | 'week' | 'month' | 'range';
@@ -133,9 +127,10 @@ export function selectVerdict(
 	if (n < VERDICT_MIN_N) {
 		return { status: 'absent', ban: null, sentence: v.tooFew(window, n) };
 	}
-	// Enough trips → Wilson interval. Derive the numerator from otp×n when on_time is null.
+	// Enough trips → Wilson interval (shared kernel, z=1.96). Derive the numerator from otp×n when
+	// on_time is null.
 	const numer = headline.onTime ?? Math.round((otp / 100) * n);
-	const { lo, hi } = wilsonInterval(numer, n);
+	const [lo, hi] = wilsonBoundsProportion(numer, n) ?? [0, 1];
 	const loPct = Math.round(lo * 100);
 	const hiPct = Math.round(hi * 100);
 

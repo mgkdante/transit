@@ -3,43 +3,48 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 from datetime import datetime
 
-from sqlalchemy import text
 from sqlalchemy.engine import Connection, Engine
 
 from transit_ops.db.connection import make_engine
 from transit_ops.ingestion.common import utc_now
 from transit_ops.providers import ProviderRegistry
 from transit_ops.settings import Settings, get_settings
+from transit_ops.sql_registry import named_query
 
-DELETE_FACT_TRIP_DELAY_SNAPSHOT = text(
+DELETE_FACT_TRIP_DELAY_SNAPSHOT = named_query(
+    "mart.fact_trip_delay.delete",
     """
     DELETE FROM gold.fact_trip_delay_snapshot
     WHERE provider_id = :provider_id
     """
 )
 
-DELETE_FACT_VEHICLE_SNAPSHOT = text(
+DELETE_FACT_VEHICLE_SNAPSHOT = named_query(
+    "mart.fact_vehicle.delete",
     """
     DELETE FROM gold.fact_vehicle_snapshot
     WHERE provider_id = :provider_id
     """
 )
 
-DELETE_LATEST_TRIP_DELAY_SNAPSHOT = text(
+DELETE_LATEST_TRIP_DELAY_SNAPSHOT = named_query(
+    "mart.latest_trip_delay.delete",
     """
     DELETE FROM gold.latest_trip_delay_snapshot
     WHERE provider_id = :provider_id
     """
 )
 
-DELETE_LATEST_VEHICLE_SNAPSHOT = text(
+DELETE_LATEST_VEHICLE_SNAPSHOT = named_query(
+    "mart.latest_vehicle.delete",
     """
     DELETE FROM gold.latest_vehicle_snapshot
     WHERE provider_id = :provider_id
     """
 )
 
-ANALYZE_REALTIME_SILVER_TABLES = text(
+ANALYZE_REALTIME_SILVER_TABLES = named_query(
+    "mart.realtime.analyze",
     """
     ANALYZE silver.rt_feed_snapshots,
             silver.rt_entities,
@@ -56,7 +61,8 @@ ANALYZE_REALTIME_SILVER_TABLES = text(
 # inside the advisory-locked gold-refresh TX and ran unconditionally ~1500x/day.
 # We take the MIN age (the table analyzed longest ago) so a table that has gone
 # stale forces a refresh even if a sibling was just analyzed.
-SELECT_REALTIME_ANALYZE_AGE_SECONDS = text(
+SELECT_REALTIME_ANALYZE_AGE_SECONDS = named_query(
+    "mart.realtime.analyze_age",
     """
     SELECT EXTRACT(
         EPOCH FROM (now() - max(greatest(last_analyze, last_autoanalyze)))
@@ -98,35 +104,40 @@ def _realtime_analyze_is_due(
         return True
     return float(age_seconds) >= float(min_interval_seconds)
 
-DELETE_DIM_DATE = text(
+DELETE_DIM_DATE = named_query(
+    "mart.dim_date.delete",
     """
     DELETE FROM gold.dim_date
     WHERE provider_id = :provider_id
     """
 )
 
-DELETE_DIM_STOP = text(
+DELETE_DIM_STOP = named_query(
+    "mart.dim_stop.delete",
     """
     DELETE FROM gold.dim_stop
     WHERE provider_id = :provider_id
     """
 )
 
-DELETE_DIM_ROUTE_PATTERN = text(
+DELETE_DIM_ROUTE_PATTERN = named_query(
+    "mart.dim_route_pattern.delete",
     """
     DELETE FROM gold.dim_route_pattern
     WHERE provider_id = :provider_id
     """
 )
 
-DELETE_DIM_ROUTE = text(
+DELETE_DIM_ROUTE = named_query(
+    "mart.dim_route.delete",
     """
     DELETE FROM gold.dim_route
     WHERE provider_id = :provider_id
     """
 )
 
-ACQUIRE_GOLD_BUILD_LOCK = text(
+ACQUIRE_GOLD_BUILD_LOCK = named_query(
+    "mart.build_lock.acquire",
     """
     SELECT pg_advisory_xact_lock(
         hashtext('gold_marts'),
@@ -143,7 +154,8 @@ ACQUIRE_GOLD_BUILD_LOCK = text(
 # silver too — emptying the static tier. routes.txt is a REQUIRED static member
 # and gold.dim_route is the FK-holder at issue, so silver.routes is the right
 # sentinel.
-SELECT_CURRENT_VERSION_HAS_SILVER_ROUTES = text(
+SELECT_CURRENT_VERSION_HAS_SILVER_ROUTES = named_query(
+    "mart.silver_routes.exists",
     """
     SELECT EXISTS (
         SELECT 1 FROM silver.routes
@@ -153,7 +165,8 @@ SELECT_CURRENT_VERSION_HAS_SILVER_ROUTES = text(
     """
 )
 
-LOCK_GOLD_TABLES = text(
+LOCK_GOLD_TABLES = named_query(
+    "mart.gold_tables.lock",
     """
     LOCK TABLE
         gold.dim_route_pattern,
@@ -168,7 +181,8 @@ LOCK_GOLD_TABLES = text(
     """
 )
 
-INSERT_DIM_ROUTE = text(
+INSERT_DIM_ROUTE = named_query(
+    "mart.dim_route.insert",
     """
     INSERT INTO gold.dim_route (
         provider_id,
@@ -201,7 +215,8 @@ INSERT_DIM_ROUTE = text(
     """
 )
 
-INSERT_DIM_ROUTE_PATTERN = text(
+INSERT_DIM_ROUTE_PATTERN = named_query(
+    "mart.dim_route_pattern.insert",
     """
     INSERT INTO gold.dim_route_pattern (
         provider_id,
@@ -224,7 +239,8 @@ INSERT_DIM_ROUTE_PATTERN = text(
     """
 )
 
-INSERT_DIM_STOP = text(
+INSERT_DIM_STOP = named_query(
+    "mart.dim_stop.insert",
     """
     INSERT INTO gold.dim_stop (
         provider_id,
@@ -259,7 +275,8 @@ INSERT_DIM_STOP = text(
     """
 )
 
-INSERT_DIM_DATE = text(
+INSERT_DIM_DATE = named_query(
+    "mart.dim_date.insert",
     """
     WITH service_bounds AS (
         SELECT
@@ -357,7 +374,8 @@ INSERT_DIM_DATE = text(
 # cycle of a GTFS edition flip). CLOSE must run before OPEN on the same
 # connection; rerunning with the same dataset version is a no-op.
 
-CLOSE_DIM_ROUTE_HISTORY = text(
+CLOSE_DIM_ROUTE_HISTORY = named_query(
+    "mart.dim_route_history.close",
     """
     UPDATE gold.dim_route_history AS h
     SET valid_to_utc = now()
@@ -377,7 +395,8 @@ CLOSE_DIM_ROUTE_HISTORY = text(
     """
 )
 
-OPEN_DIM_ROUTE_HISTORY = text(
+OPEN_DIM_ROUTE_HISTORY = named_query(
+    "mart.dim_route_history.open",
     """
     INSERT INTO gold.dim_route_history (
         provider_id,
@@ -413,7 +432,8 @@ OPEN_DIM_ROUTE_HISTORY = text(
     """
 )
 
-CLOSE_DIM_STOP_HISTORY = text(
+CLOSE_DIM_STOP_HISTORY = named_query(
+    "mart.dim_stop_history.close",
     """
     UPDATE gold.dim_stop_history AS h
     SET valid_to_utc = now()
@@ -432,7 +452,8 @@ CLOSE_DIM_STOP_HISTORY = text(
     """
 )
 
-OPEN_DIM_STOP_HISTORY = text(
+OPEN_DIM_STOP_HISTORY = named_query(
+    "mart.dim_stop_history.open",
     """
     INSERT INTO gold.dim_stop_history (
         provider_id,
@@ -474,7 +495,8 @@ OPEN_DIM_STOP_HISTORY = text(
 # while the OLD version's silver still exists (deferred-prune window). Idempotent:
 # DELETE-by-full-dataset_version then INSERT, so re-running the same edition
 # re-writes identical rows. Never pruned — permanent edition history.
-DELETE_SCHEDULE_VERSION_SERVICE_SUMMARY = text(
+DELETE_SCHEDULE_VERSION_SERVICE_SUMMARY = named_query(
+    "mart.schedule_summary.delete",
     """
     DELETE FROM gold.schedule_version_service_summary
     WHERE provider_id = :provider_id
@@ -482,7 +504,8 @@ DELETE_SCHEDULE_VERSION_SERVICE_SUMMARY = text(
     """
 )
 
-INSERT_SCHEDULE_VERSION_SERVICE_SUMMARY = text(
+INSERT_SCHEDULE_VERSION_SERVICE_SUMMARY = named_query(
+    "mart.schedule_summary.insert",
     """
     WITH svc AS (
         -- each service_id -> its day_type memberships (weekday OR any weekday
@@ -666,7 +689,8 @@ def _vehicle_snapshot_statement(
         if upsert
         else ""
     )
-    return text(
+    return named_query(
+        f"mart.{target_table}.insert{'_upsert' if upsert else ''}",
         f"""
         INSERT INTO gold.{target_table} (
             provider_id,
@@ -778,7 +802,8 @@ def _trip_delay_snapshot_statement(
         if upsert
         else ""
     )
-    return text(
+    return named_query(
+        f"mart.{target_table}.insert{'_upsert' if upsert else ''}",
         f"""
         WITH stop_time_counts AS (
             SELECT
@@ -997,7 +1022,8 @@ UPSERT_FACT_TRIP_DELAY_SNAPSHOT_LATEST = _trip_delay_snapshot_statement(
     upsert=True,
 )
 
-INSERT_LATEST_VEHICLE_SNAPSHOT_FROM_FACT = text(
+INSERT_LATEST_VEHICLE_SNAPSHOT_FROM_FACT = named_query(
+    "mart.latest_vehicle.insert_from_fact",
     """
     INSERT INTO gold.latest_vehicle_snapshot
     SELECT *
@@ -1007,7 +1033,8 @@ INSERT_LATEST_VEHICLE_SNAPSHOT_FROM_FACT = text(
     """
 )
 
-INSERT_LATEST_TRIP_DELAY_SNAPSHOT_FROM_FACT = text(
+INSERT_LATEST_TRIP_DELAY_SNAPSHOT_FROM_FACT = named_query(
+    "mart.latest_trip_delay.insert_from_fact",
     """
     INSERT INTO gold.latest_trip_delay_snapshot
     SELECT *
@@ -1098,7 +1125,8 @@ def _resolve_gold_build_context(
     provider_timezone: str,
 ) -> GoldBuildContext:
     dataset_row = connection.execute(
-        text(
+        named_query(
+            "mart.dataset.current",
             """
             SELECT dataset_version_id
             FROM core.dataset_versions
@@ -1107,7 +1135,7 @@ def _resolve_gold_build_context(
               AND is_current = true
             ORDER BY loaded_at_utc DESC, dataset_version_id DESC
             LIMIT 1
-            """
+            """,
         ),
         {"provider_id": provider_id},
     ).mappings().one_or_none()
@@ -1119,26 +1147,28 @@ def _resolve_gold_build_context(
         )
 
     latest_trip_updates_snapshot_id = connection.execute(
-        text(
+        named_query(
+            "mart.latest_trip_updates.max_id",
             """
             SELECT max(source_realtime_snapshot_id)
             FROM silver.rt_feed_snapshots
             WHERE provider_id = :provider_id
               AND endpoint_key = 'trip_updates'
               AND source_realtime_snapshot_id IS NOT NULL
-            """
+            """,
         ),
         {"provider_id": provider_id},
     ).scalar_one()
     latest_vehicle_snapshot_id = connection.execute(
-        text(
+        named_query(
+            "mart.latest_vehicle.max_id",
             """
             SELECT max(source_realtime_snapshot_id)
             FROM silver.rt_feed_snapshots
             WHERE provider_id = :provider_id
               AND endpoint_key = 'vehicle_positions'
               AND source_realtime_snapshot_id IS NOT NULL
-            """
+            """,
         ),
         {"provider_id": provider_id},
     ).scalar_one()
@@ -1173,12 +1203,13 @@ def _delete_existing_provider_rows(connection: Connection, *, provider_id: str) 
 def _count_gold_rows(connection: Connection, *, provider_id: str, table_name: str) -> int:
     resolved_table_name = _table_name(table_name)
     result = connection.execute(
-        text(
+        named_query(
+            f"mart.{resolved_table_name}.count",
             f"""
             SELECT count(*)
             FROM gold.{resolved_table_name}
             WHERE provider_id = :provider_id
-            """
+            """,
         ),
         {"provider_id": provider_id},
     )
