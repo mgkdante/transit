@@ -937,6 +937,25 @@ class StopByRoute(BaseModel):
     route: str
     avg_delay_min: float | None = None
 
+class StopDailyPoint(BaseModel):
+    # One closed provider-local day for a stop, SUMMED across all of the stop's
+    # routes (the whole-stop view — same all-routes rollup as periods/by_route).
+    # SERVE-THE-COUNTS contract: observation_count + severe_count are the exact
+    # additive ingredients, so the web can pool an ARBITRARY date range by summing
+    # counts and recompute severe_pct + a Wilson interval client-side ($lib/v1/stats)
+    # with zero fabricated re-aggregation. severe_pct / avg_delay_min are the
+    # per-day convenience readouts derived from those same ingredients.
+    # CAVEAT (stop OTP severe-proxy): a stop has no scheduled on-time definition,
+    # so severe_pct is the SEVERE(>300s)-delay share among delay observations —
+    # NOT a real on-time percentage. Do not compare it to route on_time_pct.
+    # Honest-NULL: severe_pct / avg_delay_min are None when observation_count is 0
+    # (a zero-observation day is absent from the series, never emitted as a 0-row).
+    date: str
+    observation_count: int
+    severe_count: int
+    severe_pct: float | None = None
+    avg_delay_min: float | None = None
+
 class StopReliability(PayloadEnvelope):
     generated_utc: str
     id: str
@@ -959,6 +978,16 @@ class StopReliability(PayloadEnvelope):
     # attributed to the stop — an all-zero mix is indistinguishable from a real
     # all-empty fleet, so absence surfaces as None, never a fabricated split.
     occupancy_mix: OccupancyMix | None = None
+    # S8 additive-optional: per-day delay history over the trailing ~90 CLOSED
+    # provider-local days, SUMMED across the stop's routes, off gold.stop_delay_spine
+    # via the reader window kernel. SERVE-THE-COUNTS — each point carries the exact
+    # observation_count + severe_count so the web pools an arbitrary sub-range by
+    # summing counts and recomputes severe_pct + a Wilson interval client-side, with
+    # NO fabricated re-aggregation. Zero-observation days are ABSENT (never zero-
+    # filled). severe_pct is the stop SEVERE-delay proxy (no scheduled-OTP concept
+    # exists at a stop), not a real on-time rate. Default empty so already-published
+    # snapshots lacking this key still validate.
+    daily: list[StopDailyPoint] = Field(default_factory=list)
 
 class Hotspot(BaseModel):
     rank: int

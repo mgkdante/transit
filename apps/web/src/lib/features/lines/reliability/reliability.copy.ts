@@ -257,6 +257,7 @@ export interface ReliabilityCopy {
 		readonly thisMonth: string;
 		/** Segment label that opens the start+end date-range affordance. */
 		readonly dateRange: string;
+		readonly clearDates: string;
 		/** Field label for the range START date input. */
 		readonly rangeStart: string;
 		/** Field label for the range END date input. */
@@ -482,6 +483,7 @@ export const reliabilityCopy: Record<Locale, ReliabilityCopy> = {
 			thisWeek: 'Cette semaine',
 			thisMonth: 'Ce mois-ci',
 			dateRange: 'Plage de dates',
+			clearDates: 'Effacer les dates',
 			rangeStart: 'Du',
 			rangeEnd: 'Au',
 			activeWindow: {
@@ -691,6 +693,7 @@ export const reliabilityCopy: Record<Locale, ReliabilityCopy> = {
 			thisWeek: 'This week',
 			thisMonth: 'This month',
 			dateRange: 'Date range',
+			clearDates: 'Clear dates',
 			rangeStart: 'From',
 			rangeEnd: 'To',
 			activeWindow: {

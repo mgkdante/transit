@@ -41,7 +41,12 @@
 	import type { RouteReliability } from '$lib/v1';
 	import { SvelteSet } from 'svelte/reactivity';
 	import { onMount } from 'svelte';
-	import { GrainPicker, SurfaceControls, type GrainSegment } from '$lib/components/surface';
+	import {
+		GrainPicker,
+		SurfaceControls,
+		DateRangePicker,
+		type GrainSegment,
+	} from '$lib/components/surface';
 	import { Separator } from '$lib/components/ui/separator';
 	import { TocPill, observeActiveToc, type TocEntry } from '$lib/components/shared';
 	import ReliabilityFilterPill from './ReliabilityFilterPill.svelte';
@@ -210,6 +215,25 @@
 			viewKey = 'day';
 		else if (viewKey === 'range' && !hasDatedPeriods) viewKey = 'day';
 	});
+
+	// S8B: the range start/end pair now rides the SHARED DateRangePicker primitive.
+	// The picker speaks a normalized {from,to} DateWindow (undefined until both bounds
+	// are set); RRC keeps its rangeStart/rangeEnd strings (all the window-presence→
+	// range-mode + mirror logic below is UNCHANGED), so a function binding bridges the
+	// two: read = compose the current bounds into a window (undefined if half-picked);
+	// write = split the picker's window back onto the raw bounds. The picker's options
+	// are `datedPeriods` dates ONLY, so an out-of-window pick is impossible (as before).
+	const availableDates = $derived(datedPeriods.map((p) => p.date));
+	const getRangeWindow = (): DateWindow | undefined =>
+		rangeStart && rangeEnd
+			? rangeStart <= rangeEnd
+				? { from: rangeStart, to: rangeEnd }
+				: { from: rangeEnd, to: rangeStart }
+			: undefined;
+	const setRangeWindow = (w: DateWindow | undefined): void => {
+		rangeStart = w?.from ?? '';
+		rangeEnd = w?.to ?? '';
+	};
 
 	// A complete range needs both bounds; we normalise start ≤ end so the user can
 	// pick the two dates in any order without inverting the window.
@@ -423,39 +447,27 @@
 		     SurfaceControls `window` slot AND the mobile pill's grainControls (one source). -->
 		{#snippet rangeControls()}
 			{#if mode === 'range'}
-				<!-- Start + end pair over the dated day-periods. start == end = one day (exact);
-				     a wider span aggregates the in-range days (mean) + zooms the trend. Bounds are
-				     real dates only, so no out-of-window pick is possible. -->
-				<div class="reliability-range" data-slot="date-range">
-					<label class="reliability-date">
-						<span class="reliability-date__label">{copy.controls.rangeStart}</span>
-						<select
-							class="reliability-date__select"
-							value={rangeStart}
-							onchange={(e) => (rangeStart = e.currentTarget.value)}
-							aria-label={`${copy.controls.dateRange} · ${copy.controls.rangeStart}`}
-						>
-							<option value="">{earliestDate || ''}</option>
-							{#each datedPeriods as p (p.date)}
-								<option value={p.date}>{p.date}</option>
-							{/each}
-						</select>
-					</label>
-					<label class="reliability-date">
-						<span class="reliability-date__label">{copy.controls.rangeEnd}</span>
-						<select
-							class="reliability-date__select"
-							value={rangeEnd}
-							onchange={(e) => (rangeEnd = e.currentTarget.value)}
-							aria-label={`${copy.controls.dateRange} · ${copy.controls.rangeEnd}`}
-						>
-							<option value="">{latestDate || ''}</option>
-							{#each datedPeriods as p (p.date)}
-								<option value={p.date}>{p.date}</option>
-							{/each}
-						</select>
-					</label>
-				</div>
+				<!-- S8B: the start + end pair over the dated day-periods is now the SHARED
+				     DateRangePicker (DRY — one primitive across lines / stops / receipts).
+				     start == end = one day (exact); a wider span aggregates the in-range days
+				     (mean) + zooms the trend. Options are real dated days only, so no
+				     out-of-window pick is possible. `clearable=false` keeps the lines UX
+				     (the grain radiogroup owns range mode; the empty option is the sentinel).
+				     The neutral placeholders name the earliest/latest available day. -->
+				<DateRangePicker
+					bind:value={getRangeWindow, setRangeWindow}
+					{availableDates}
+					{locale}
+					clearable={false}
+					labels={{
+						group: copy.controls.dateRange,
+						start: copy.controls.rangeStart,
+						end: copy.controls.rangeEnd,
+						clear: copy.controls.clearDates,
+						anyStart: earliestDate || '',
+						anyEnd: latestDate || '',
+					}}
+				/>
 			{/if}
 		{/snippet}
 
@@ -673,37 +685,9 @@
 		gap: 0.35rem;
 	}
 
-	/* The start + end date pair sits inline, wrapping on narrow viewports. */
-	.reliability-range {
-		display: inline-flex;
-		flex-wrap: wrap;
-		align-items: center;
-		gap: 0.75rem 1rem;
-	}
-	.reliability-date {
-		display: inline-flex;
-		align-items: center;
-		gap: 0.5rem;
-	}
-	.reliability-date__label {
-		font-family: var(--font-mono);
-		font-size: var(--text-small);
-		color: var(--muted-foreground);
-	}
-	.reliability-date__select {
-		appearance: auto;
-		font-family: var(--font-mono);
-		font-size: var(--text-small);
-		color: var(--foreground);
-		background-color: var(--card);
-		border: 1px solid var(--border);
-		border-radius: var(--radius-md, 0.5rem);
-		padding: 0.35rem 0.6rem;
-	}
-	.reliability-date__select:focus-visible {
-		outline: 2px solid var(--ring);
-		outline-offset: 2px;
-	}
+	/* The start + end date pair is now the SHARED DateRangePicker primitive (S8B), which
+	   owns its own tokens-only chrome — the bespoke .reliability-range/.reliability-date
+	   styles were removed with the inlined <select> markup (DRY). */
 
 	/* Visually-hidden disabled-reason description (mobile drawer) — carried for screen
 	   readers via aria-describedby on the disabled radio; never shown, never a layout box.

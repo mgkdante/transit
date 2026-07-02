@@ -135,6 +135,53 @@
       "title": "StopByRoute",
       "type": "object"
     },
+    "StopDailyPoint": {
+      "properties": {
+        "avg_delay_min": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Avg Delay Min"
+        },
+        "date": {
+          "title": "Date",
+          "type": "string"
+        },
+        "observation_count": {
+          "title": "Observation Count",
+          "type": "integer"
+        },
+        "severe_count": {
+          "title": "Severe Count",
+          "type": "integer"
+        },
+        "severe_pct": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Severe Pct"
+        }
+      },
+      "required": [
+        "date",
+        "observation_count",
+        "severe_count"
+      ],
+      "title": "StopDailyPoint",
+      "type": "object"
+    },
     "StopReliabilityPeriod": {
       "properties": {
         "avg_delay_min": {
@@ -251,6 +298,13 @@
         "$ref": "#/$defs/StopByRoute"
       },
       "title": "By Route",
+      "type": "array"
+    },
+    "daily": {
+      "items": {
+        "$ref": "#/$defs/StopDailyPoint"
+      },
+      "title": "Daily",
       "type": "array"
     },
     "day_of_week": {

@@ -35,6 +35,22 @@ export const StopByRouteSchema = z.object({
 });
 export type StopByRoute = z.infer<typeof StopByRouteSchema>;
 
+// One closed provider-local day, SUMMED across the stop's routes (S8 daily series).
+// SERVE-THE-COUNTS: observation_count + severe_count are the EXACT additive
+// ingredients — pool an arbitrary date range by summing counts, then recompute
+// severe_pct + Wilson client-side ($lib/v1/stats) with no fabricated re-aggregation.
+// severe_pct is the stop SEVERE-delay proxy (no scheduled-OTP concept at a stop),
+// NOT a real on-time rate. Zero-observation days are ABSENT from the series.
+export const StopDailyPointSchema = z.object({
+	date: z.string(),
+	observation_count: z.number().int(),
+	severe_count: z.number().int(),
+	// honest-NULL when there were no observations (that day is simply absent).
+	severe_pct: z.number().nullable().optional(),
+	avg_delay_min: z.number().nullable().optional(),
+});
+export type StopDailyPoint = z.infer<typeof StopDailyPointSchema>;
+
 // per-stop weekday seasonality (ISO 1=Mon..7=Sun). The DB contract reuses the
 // canonical RouteDayOfWeek $def for the stop surface, so the stop day_of_week
 // item type is exactly RouteDayOfWeek — reuse the schema rather than duplicate it.
@@ -53,6 +69,10 @@ export const StopReliabilitySchema = z.object({
 	// this stop (GTFS-RT VehiclePosition stop_id), NOT a stop attribute. null when
 	// no occupancy telemetry was attributed to this stop. Reuses OccupancyMixSchema.
 	occupancy_mix: OccupancyMixSchema.nullable().optional(),
+	// S8 per-day delay history (trailing ~90 closed days, summed across routes).
+	// SERVE-THE-COUNTS so the client pools arbitrary ranges exactly; empty when the
+	// stop has no daily spine coverage.
+	daily: z.array(StopDailyPointSchema).optional(),
 	...payloadEnvelopeFields(),
 });
 export type StopReliability = z.infer<typeof StopReliabilitySchema>;

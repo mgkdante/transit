@@ -22,6 +22,23 @@ export interface StopsIndexCopy extends SurfaceHeadCopy {
 	/** Compact action linking one stop into the live map. */
 	readonly mapAction: string;
 	readonly viewStopOnMap: (stop: string) => string;
+	/** Mono group overline for the ControlsRail collecting search + line filter + sort. */
+	readonly controlsLabel: string;
+	/** By-line filter: label / placeholder / clear + empty-listbox copy for the combobox. */
+	readonly lineLabel: string;
+	readonly linePlaceholder: string;
+	readonly lineClear: string;
+	readonly lineEmpty: string;
+	/** Heading over the stops-on-a-line result list ("Stops on line {short}"). */
+	readonly onLineHeading: (short: string) => string;
+	/** Honest note when a picked line has no published stop list. */
+	readonly noLineStops: string;
+	/** Direction group heading inside a line's stop list. */
+	readonly direction: (dir: number) => string;
+	/** Reliability sort control (published order | worst reliability first). */
+	readonly sortLabel: string;
+	readonly sortDefault: string;
+	readonly sortWorst: string;
 }
 
 export interface StopDetailCopy {
@@ -93,125 +110,9 @@ export interface StopDetailCopy {
 		/** "+N more times" note when a route's time list is capped. */
 		readonly moreTimes: (n: number) => string;
 	};
-	/** "Reliability" pane. */
-	readonly reliability: {
-		readonly byRoute: string;
-		readonly noRouteBreakdown: string;
-		/** Section heading over the shared ReliabilityPane (OTP / delay / severe). */
-		readonly paneHeading: string;
-		/**
-		 * Short metric NAMES the (i) explainer trigger announces beside the pane
-		 * heading (e.g. "About On-time %"). The pane primitive owns the visible data
-		 * labels; these only feed the affordance's aria-label.
-		 */
-		readonly metrics: {
-			readonly otp: string;
-			readonly avgDelay: string;
-			readonly severe: string;
-		};
-		/** Controls-rail label collecting the grain picker + window caption. */
-		readonly controlsLabel: string;
-		/** Grain (roll-up) picker affordances. */
-		readonly grain: {
-			/** Accessible group label over the grain segments. */
-			readonly label: string;
-			/** Day / week / month segment labels. */
-			readonly day: string;
-			readonly week: string;
-			readonly month: string;
-			/** Caption naming the resolved roll-up window. */
-			readonly window: (grain: string) => string;
-		};
-		/** Day-grain percentile clarity (typical vs worst-case delay). */
-		readonly percentiles: {
-			/** Section heading over the typical/worst-case pair. */
-			readonly heading: string;
-			/** "Typical" (median, p50) tile label. */
-			readonly typical: string;
-			/** Plain caption under the typical tile. */
-			readonly typicalCaption: string;
-			/** "Worst-case" (p90) tile label. */
-			readonly worstCase: string;
-			/** Plain caption under the worst-case tile. */
-			readonly worstCaseCaption: string;
-		};
-		/** Time-of-day habits heatmap (per-stop 7×24 severe-delay grid). */
-		readonly habits: {
-			/** Section heading over the heatmap. */
-			readonly heading: string;
-			/** Accessible summary for the heatmap (day × hour). */
-			readonly label: string;
-			/** Tooltip/SR row label — what a single cell encodes. */
-			readonly cellValueLabel: string;
-			/** X / Y axis captions. */
-			readonly hourAxisLabel: string;
-			readonly dayAxisLabel: string;
-			/** Plain-language caption explaining the relative scale. */
-			readonly caption: string;
-			/** Legend ramp buckets (low→high) + the dedicated no-data swatch. */
-			readonly legend: {
-				readonly low: string;
-				readonly medium: string;
-				readonly high: string;
-				readonly noData: string;
-			};
-			/** Full weekday names, ISO-indexed (index 0 unused; 1=Mon..7=Sun). */
-			readonly weekdays: readonly [string, string, string, string, string, string, string, string];
-			/** Heatmap row labels, Mon..Sun (length 7, in row order). */
-			readonly weekdaysShort: readonly [string, string, string, string, string, string, string];
-		};
-		/**
-		 * Weekday seasonality (day_of_week, ISO 1=Mon..7=Sun): which weekday drags
-		 * this stop down most, ranked worst-first by mean delay. The weekday NAMES
-		 * come from the shared shiftGrains vocabulary, not from here. A trailing-
-		 * window observation-weighted proxy, NOT certified.
-		 */
-		readonly weekday: {
-			/** Section heading over the weekday ranked list. */
-			readonly heading: string;
-			/** Per-row subtitle when the mean delay is the reading (no trusted severe share). */
-			readonly avgDelay: string;
-			/** Per-row subtitle prefix when a well-sampled severe share is the reading. */
-			readonly severeShare: string;
-			/** Honest caveat: trailing-window proxy, small samples vary. */
-			readonly caveat: string;
-		};
-		/**
-		 * Time-of-day shift + day-type breakdown (am_peak…night, weekday/weekend).
-		 * Surfaced alongside the calendar grains; the SHIFT grains never enter the
-		 * GrainPicker. A trailing-window observation-weighted proxy, NOT certified.
-		 */
-		readonly timeOfDay: {
-			/** Section heading over the by-shift ranked list. */
-			readonly heading: string;
-			/** Per-row subtitle naming what the bar magnitude encodes (severe share). */
-			readonly severeShare: string;
-			/** Sub-heading over the weekday-vs-weekend comparison pair. */
-			readonly dayType: string;
-			/** Honest caveat: trailing-window proxy, small samples vary. */
-			readonly caveat: string;
-		};
-		/**
-		 * Crowding (occupancy_mix): the band-shares of buses OBSERVED AT this stop
-		 * (GTFS-RT VehiclePosition stop_id) over a trailing window — NOT a stop
-		 * attribute per se. The band NAMES come from the shared lines occupancy
-		 * vocabulary, not from here. Stands down entirely when no telemetry.
-		 */
-		readonly crowding: {
-			/** Section heading over the occupancy bar. */
-			readonly heading: string;
-			/** Window + provenance caption: WHAT this measures + over WHAT window. */
-			readonly window: string;
-			/** Accessible label for the proportion bar. */
-			readonly barLabel: string;
-			/** Headline label under the dominant band's share. */
-			readonly dominantLabel: string;
-			/** Honest empty state when no occupancy telemetry was attributed here. */
-			readonly noTelemetry: string;
-		};
-		/** No-data string for a route row whose delay is absent. */
-		readonly noDelay: string;
-	};
+	// The "Reliability" pane copy now lives in stops-reliability.copy.ts (S8A re-seat):
+	// <StopReliabilitySurface> + its section components read that bundle, so StopDetail
+	// keeps only the tabs/next/schedule/info/alerts copy here.
 }
 
 export const indexCopy: Record<Locale, StopsIndexCopy> = {
@@ -227,6 +128,17 @@ export const indexCopy: Record<Locale, StopsIndexCopy> = {
 		more: (n) => `+${n} autres arrêts, affinez la recherche`,
 		mapAction: 'Carte',
 		viewStopOnMap: (stop) => `Voir l’arrêt ${stop} sur la carte`,
+		controlsLabel: 'Contrôles',
+		lineLabel: 'Filtrer par ligne',
+		linePlaceholder: 'Numéro ou nom de ligne…',
+		lineClear: 'Effacer le filtre de ligne',
+		lineEmpty: 'Aucune ligne ne correspond.',
+		onLineHeading: (short) => `Arrêts de la ligne ${short}`,
+		noLineStops: 'Aucune liste d’arrêts publiée pour cette ligne.',
+		direction: (dir) => `Direction ${dir}`,
+		sortLabel: 'Trier',
+		sortDefault: 'Ordre du parcours',
+		sortWorst: 'Moins fiables',
 	},
 	en: {
 		kicker: 'STOPS · CATALOGUE',
@@ -240,6 +152,17 @@ export const indexCopy: Record<Locale, StopsIndexCopy> = {
 		more: (n) => `+${n} more stops, refine the search`,
 		mapAction: 'Map',
 		viewStopOnMap: (stop) => `View stop ${stop} on map`,
+		controlsLabel: 'Controls',
+		lineLabel: 'Filter by line',
+		linePlaceholder: 'Line number or name…',
+		lineClear: 'Clear line filter',
+		lineEmpty: 'No lines match.',
+		onLineHeading: (short) => `Stops on line ${short}`,
+		noLineStops: 'No published stop list for this line.',
+		direction: (dir) => `Direction ${dir}`,
+		sortLabel: 'Sort',
+		sortDefault: 'Route order',
+		sortWorst: 'Least reliable',
 	},
 };
 
@@ -293,71 +216,6 @@ export const detailCopy: Record<Locale, StopDetailCopy> = {
 			none: 'Aucun horaire prévu pour cet arrêt.',
 			moreTimes: (n) => `+${n} autres passages`,
 		},
-		reliability: {
-			byRoute: 'Retard moyen par ligne',
-			noRouteBreakdown: 'Aucun détail par ligne pour cet arrêt.',
-			paneHeading: 'Ponctualité et retard',
-			metrics: {
-				otp: 'Ponctualité',
-				avgDelay: 'Retard moyen',
-				severe: 'Part des retards graves',
-			},
-			controlsLabel: 'Vue',
-			grain: {
-				label: 'Période de regroupement',
-				day: 'Jour',
-				week: 'Semaine',
-				month: 'Mois',
-				window: (grain) =>
-					grain === 'week'
-						? 'Regroupé par semaine.'
-						: grain === 'month'
-							? 'Regroupé par mois.'
-							: 'Regroupé par jour.',
-			},
-			percentiles: {
-				heading: 'Retard journalier',
-				typical: 'Retard typique',
-				typicalCaption: 'La moitié des passages (médiane)',
-				worstCase: 'Pire des cas',
-				worstCaseCaption: '10 % les plus lents (p90)',
-			},
-			habits: {
-				heading: 'Retards graves par heure',
-				label: 'Carte thermique des retards graves par jour et par heure',
-				cellValueLabel: 'Intensité',
-				hourAxisLabel: 'Heure de la journée',
-				dayAxisLabel: 'Jour de la semaine',
-				caption:
-					'La couleur indique la fréquence des retards graves, comparée heure par heure au sein de chaque journée. Plus c’est chaud, plus le problème revient souvent.',
-				legend: { low: 'Faible', medium: 'Moyen', high: 'Élevé', noData: 'Aucune donnée' },
-				weekdays: ['', 'Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dimanche'],
-				weekdaysShort: ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'],
-			},
-			weekday: {
-				heading: 'Par jour de la semaine',
-				avgDelay: 'Retard moyen',
-				severeShare: 'Part des retards graves',
-				caveat:
-					'Estimation sur fenêtre glissante, pondérée par les observations, pas une ponctualité certifiée; les petits échantillons varient.',
-			},
-			timeOfDay: {
-				heading: 'Par période de la journée',
-				severeShare: 'Part des retards graves',
-				dayType: 'Semaine vs fin de semaine',
-				caveat:
-					'Estimation sur fenêtre glissante, pondérée par les observations, pas une ponctualité certifiée; les petits échantillons varient.',
-			},
-			crowding: {
-				heading: 'Encombrement des bus vus ici',
-				window:
-					'Répartition de l’occupation des bus observés à cet arrêt sur les 30 derniers jours, tous transporteurs confondus. Ce n’est pas une caractéristique de l’arrêt.',
-				barLabel: 'Répartition de l’occupation des bus observés à cet arrêt',
-				dominantLabel: 'Occupation la plus fréquente',
-				noTelemetry: 'Aucune donnée d’occupation rattachée à cet arrêt.',
-			},
-			noDelay: 'Aucune donnée',
-		},
 	},
 	en: {
 		kicker: 'STOP',
@@ -407,80 +265,6 @@ export const detailCopy: Record<Locale, StopDetailCopy> = {
 			heading: 'Scheduled service',
 			none: 'No scheduled service for this stop.',
 			moreTimes: (n) => `+${n} more times`,
-		},
-		reliability: {
-			byRoute: 'Avg delay by route',
-			noRouteBreakdown: 'No per-route breakdown for this stop.',
-			paneHeading: 'On-time and delay',
-			metrics: {
-				otp: 'On-time %',
-				avgDelay: 'Average delay',
-				severe: 'Severe-delay share',
-			},
-			controlsLabel: 'View',
-			grain: {
-				label: 'Roll-up period',
-				day: 'Day',
-				week: 'Week',
-				month: 'Month',
-				window: (grain) =>
-					grain === 'week'
-						? 'Rolled up by week.'
-						: grain === 'month'
-							? 'Rolled up by month.'
-							: 'Rolled up by day.',
-			},
-			percentiles: {
-				heading: 'Daily delay',
-				typical: 'Typical delay',
-				typicalCaption: 'Half of departures (median)',
-				worstCase: 'Worst case',
-				worstCaseCaption: 'Slowest 10% (p90)',
-			},
-			habits: {
-				heading: 'Severe delays by hour',
-				label: 'Severe-delay heatmap by day and hour',
-				cellValueLabel: 'Intensity',
-				hourAxisLabel: 'Hour of day',
-				dayAxisLabel: 'Day of week',
-				caption:
-					'Colour shows how often severe delays repeat, compared hour-by-hour within each day. Hotter = the problem comes back more often.',
-				legend: { low: 'Low', medium: 'Medium', high: 'High', noData: 'No data' },
-				weekdays: [
-					'',
-					'Monday',
-					'Tuesday',
-					'Wednesday',
-					'Thursday',
-					'Friday',
-					'Saturday',
-					'Sunday',
-				],
-				weekdaysShort: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
-			},
-			weekday: {
-				heading: 'By day of week',
-				avgDelay: 'Avg delay',
-				severeShare: 'Severe-delay share',
-				caveat:
-					'Trailing-window, observation-weighted estimate, not certified on-time; small samples vary.',
-			},
-			timeOfDay: {
-				heading: 'By time of day',
-				severeShare: 'Severe-delay share',
-				dayType: 'Weekday vs weekend',
-				caveat:
-					'Trailing-window, observation-weighted estimate, not certified on-time; small samples vary.',
-			},
-			crowding: {
-				heading: 'Crowding on buses seen here',
-				window:
-					'How full the buses observed at this stop ran over the last 30 days, across all carriers. This is not a property of the stop itself.',
-				barLabel: 'Occupancy mix of buses observed at this stop',
-				dominantLabel: 'Most common loading',
-				noTelemetry: 'No occupancy telemetry attributed to this stop.',
-			},
-			noDelay: 'No data',
 		},
 	},
 };

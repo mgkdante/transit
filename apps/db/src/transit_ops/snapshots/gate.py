@@ -616,6 +616,21 @@ def check_stop_reliability(payload: object, *, rel_key: str) -> list[CheckResult
         if isinstance(br, dict):
             _prefixed(emit, f"by_route[{i}].").delay(br, "avg_delay_min")
     emit.mix(d.get("occupancy_mix"), "occupancy_mix")
+    # S8 per-day series (SERVE-THE-COUNTS): counts non-negative, severe<=obs (the
+    # served ingredients must be poolable into an honest rate), severe_pct in
+    # [0,100], avg_delay_min bounded. None-safe so honest-NULL never trips a finding.
+    for i, dp in enumerate(d.get("daily") or []):
+        if not isinstance(dp, dict):
+            continue
+        sub = _prefixed(emit, f"daily[{i}].")
+        sub.count(dp, "observation_count")
+        sub.count(dp, "severe_count")
+        obs, severe = dp.get("observation_count"), dp.get("severe_count")
+        if not _le(severe, obs):
+            sub.err("severe_gt_obs", "severe_count", severe,
+                    f"severe_count={severe} > observation_count={obs}")
+        sub.rate(dp, "severe_pct")
+        sub.delay(dp, "avg_delay_min")
     return emit.out
 
 
