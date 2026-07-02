@@ -3,8 +3,8 @@
 // StatusCode/OccupancyCode option added to the schema without a label) at test time.
 
 import { describe, expect, it } from 'vitest';
-import { StatusCodeSchema, OccupancyCodeSchema } from './schemas';
-import { STATUS_LABELS, OCCUPANCY_LABELS } from './enumLabels';
+import { StatusCodeSchema, OccupancyCodeSchema, SeverityCodeSchema } from './schemas';
+import { STATUS_LABELS, OCCUPANCY_LABELS, SEVERITY_LABELS } from './enumLabels';
 
 const LOCALES = ['en', 'fr'] as const;
 
@@ -23,11 +23,19 @@ describe('enumLabels — one bilingual vocabulary, exact enum coverage', () => {
 		}
 	});
 
+	it('SEVERITY_LABELS keys === SeverityCodeSchema.options for every locale', () => {
+		const codes = [...SeverityCodeSchema.options].sort();
+		for (const loc of LOCALES) {
+			expect(Object.keys(SEVERITY_LABELS[loc]).sort()).toEqual(codes);
+		}
+	});
+
 	it('every label is a non-empty string', () => {
 		for (const loc of LOCALES) {
 			for (const v of [
 				...Object.values(STATUS_LABELS[loc]),
 				...Object.values(OCCUPANCY_LABELS[loc]),
+				...Object.values(SEVERITY_LABELS[loc]),
 			]) {
 				expect(v.trim().length).toBeGreaterThan(0);
 			}

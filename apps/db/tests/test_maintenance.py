@@ -23,6 +23,7 @@ from transit_ops.maintenance import (
     DELETE_OLD_RT_TRIP_UPDATE_STOP_TIMES,
     DELETE_OLD_RT_TRIP_UPDATES,
     DELETE_OLD_RT_VEHICLE_POSITIONS,
+    DELETE_ORPHANED_I3_INGESTION_RUNS,
     DELETE_ORPHANED_INGESTION_RUNS,
     MIN_SILVER_I3_CLOSED_RETENTION_DAYS,
     REALTIME_SILVER_TABLES,
@@ -2050,3 +2051,15 @@ def test_i3_prune_result_display_dict_formats_timestamps() -> None:
     assert d["silver_cutoff_utc"] == "2026-03-15T07:00:00+00:00"
     assert d["completed_at_utc"] == "2026-06-13T07:10:00+00:00"
     assert d["deleted_object_counts"] == {"i3_raw": 5}
+
+
+def test_orphaned_i3_run_prune_covers_both_i3_kinds() -> None:
+    """S15: DELETE_ORPHANED_I3_INGESTION_RUNS must prune BOTH run_kinds that write
+    raw.i3_alert_snapshots — STM's 'i3_alerts' and the GTFS-RT providers'
+    'service_alerts'. The old hardcoded 'i3_alerts' let 'service_alerts' orphan
+    runs leak unboundedly."""
+    sql = str(DELETE_ORPHANED_I3_INGESTION_RUNS)
+    assert "run_kind IN ('i3_alerts', 'service_alerts')" in sql
+    # still FK-guarded: only prune runs owning no objects AND no i3 snapshot.
+    assert "raw.ingestion_objects" in sql
+    assert "raw.i3_alert_snapshots" in sql

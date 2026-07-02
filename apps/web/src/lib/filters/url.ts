@@ -5,7 +5,7 @@
 // it before the store ever exists. This module is the ONLY place that knows the
 // wire format:
 //
-//   keys  : route, stop, trip, vehicle, status, occupancy, entity, alert, grain, from, to, date, n (stable order)
+//   keys  : route, stop, trip, vehicle, status, occupancy, entity, alert, grain, from, to, date, n, affects, severity (stable order)
 //   sets  : comma-joined, sorted, deduped (route=10,165,80)
 //   empty : an empty set / absent enum / absent lever is OMITTED entirely
 //   round : fromSearchParams(toSearchParams(s)) is value-equal to a normalized s
@@ -33,6 +33,8 @@ import {
 	normalizeAlerts,
 	normalizeWindow,
 	normalizeWorstN,
+	normalizeAlertAffects,
+	normalizeSeverity,
 	isGrain,
 	isIsoDate,
 } from './state';
@@ -58,6 +60,8 @@ const KEY_ORDER = [
 	'to',
 	'date',
 	'n',
+	'affects',
+	'severity',
 ] as const;
 
 /** Wire key → the FilterState id-set field it maps to. */
@@ -158,6 +162,16 @@ export function fromSearchParams(sp: URLSearchParams): FilterState {
 	const worstN = normalizeWorstN(sp.get('n'));
 	if (worstN) state.worstN = worstN;
 
+	// The alerts "affects" axis (?affects) — a single lines|stops scalar; a junk value
+	// drops to absent (= the unfiltered "all" view). Single-select, not a chip family.
+	const alertAffects = normalizeAlertAffects(sp.get('affects'));
+	if (alertAffects) state.alertAffects = alertAffects;
+
+	// The alerts severity axis (?severity) — one SeverityCode scalar; a value outside
+	// the closed enum drops to absent (= "all"). Distinct from the status/occupancy families.
+	const alertSeverity = normalizeSeverity(sp.get('severity'));
+	if (alertSeverity) state.alertSeverity = alertSeverity;
+
 	return state;
 }
 
@@ -214,6 +228,14 @@ export function toSearchParams(s: FilterState): URLSearchParams {
 			}
 			case 'n': {
 				if (s.worstN !== undefined) sp.set('n', s.worstN);
+				break;
+			}
+			case 'affects': {
+				if (s.alertAffects !== undefined) sp.set('affects', s.alertAffects);
+				break;
+			}
+			case 'severity': {
+				if (s.alertSeverity !== undefined) sp.set('severity', s.alertSeverity);
 				break;
 			}
 		}

@@ -206,6 +206,18 @@ def build_provenance(
                 "history entries built from NULL-hash rows, which carry no EN "
                 "text until they age out of the history window"
             ),
+            "alert_history_window": (
+                "historic/alert_history.json serves the full honest retention "
+                f"span — the trailing {_settings.SILVER_I3_CLOSED_RETENTION_DAYS} "
+                "days (SILVER_I3_CLOSED_RETENTION_DAYS), provider-local, disclosed "
+                "as window_start/window_end; alerts are the newest-first distinct "
+                "alerts in that window, capped at 500 with total_in_window + "
+                "truncated flagging when more existed. Each entry lists ALL its "
+                "active windows (active_periods); alerts captured before the S15 "
+                "multi-period capture (2026-07-02) carry only their primary window "
+                "as a 1-element list and a null url — the extra windows were "
+                "dropped at ingest and are not recoverable"
+            ),
             "network_no_data": (
                 "network.json on_time_pct, coverage_pct, delay_p50_min, "
                 "delay_p90_min and feed_freshness_s are null (not 0) when their "

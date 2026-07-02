@@ -4,6 +4,7 @@ from datetime import UTC, datetime
 
 from transit_ops.silver.i3 import (
     RawI3AlertSnapshot,
+    compute_alert_content_hash,
     load_i3_snapshot_to_silver,
     normalize_i3_alert_payload,
 )
@@ -90,7 +91,7 @@ def test_normalize_i3_alert_payload_accepts_common_alert_shapes() -> None:
         }
     )
 
-    alerts, entities = normalize_i3_alert_payload(snapshot)
+    alerts, entities, _periods = normalize_i3_alert_payload(snapshot)
 
     assert alerts[0]["alert_id"] == "alert-1"
     assert alerts[0]["alert_header_text"] == "Service interruption"
@@ -114,7 +115,7 @@ def test_normalize_i3_alert_payload_dedups_identical_content_hash() -> None:
     }
     snapshot = _snapshot({"alerts": [dict(one), dict(one)]})
 
-    alerts, entities = normalize_i3_alert_payload(snapshot)
+    alerts, entities, _periods = normalize_i3_alert_payload(snapshot)
 
     assert len(alerts) == 1  # two identical-content alerts deduped to one
     kept = alerts[0]["alert_index"]
@@ -132,6 +133,11 @@ def test_load_i3_snapshot_to_silver_inserts_alerts_and_entities() -> None:
                     "title": "Route 10 delayed",
                     "routes": ["10"],
                     "stops": ["10001", "10002"],
+                    # An active window so the S15 period child INSERT is exercised.
+                    "activePeriod": {
+                        "start": "2026-05-25T04:00:00Z",
+                        "end": "2026-05-25T05:00:00Z",
+                    },
                 }
             ]
         }
@@ -142,12 +148,16 @@ def test_load_i3_snapshot_to_silver_inserts_alerts_and_entities() -> None:
     assert result.i3_alert_snapshot_id == 505
     assert result.alert_rows_inserted == 1
     assert result.informed_entity_rows_inserted == 2
-    assert "DELETE FROM silver.i3_alert_informed_entities" in connection.calls[0][0]
-    assert "DELETE FROM silver.i3_alerts" in connection.calls[1][0]
-    assert "INSERT INTO silver.i3_alerts" in connection.calls[2][0]
-    assert "SELECT content_hash, i3_alert_snapshot_id, alert_index" in connection.calls[3][0]
-    assert "INSERT INTO silver.i3_alert_informed_entities" in connection.calls[4][0]
-    assert "SET valid_to" in connection.calls[5][0]
+    # S15: the active-periods child DELETE runs first (FK order), and its INSERT
+    # runs after the entity insert. The rest of the sequence is unchanged.
+    assert "DELETE FROM silver.i3_alert_active_periods" in connection.calls[0][0]
+    assert "DELETE FROM silver.i3_alert_informed_entities" in connection.calls[1][0]
+    assert "DELETE FROM silver.i3_alerts" in connection.calls[2][0]
+    assert "INSERT INTO silver.i3_alerts" in connection.calls[3][0]
+    assert "SELECT content_hash, i3_alert_snapshot_id, alert_index" in connection.calls[4][0]
+    assert "INSERT INTO silver.i3_alert_informed_entities" in connection.calls[5][0]
+    assert "INSERT INTO silver.i3_alert_active_periods" in connection.calls[6][0]
+    assert "SET valid_to" in connection.calls[7][0]
     assert result.alerts_redirected_to_existing == 0
     assert result.entities_dropped_missing_parent == 0
 
@@ -176,7 +186,7 @@ def test_normalize_i3_alert_payload_accepts_stm_etatservice_shape() -> None:
         }
     )
 
-    alerts, entities = normalize_i3_alert_payload(snapshot)
+    alerts, entities, _periods = normalize_i3_alert_payload(snapshot)
 
     assert alerts[0]["alert_id"] == "etat-1"
     assert alerts[0]["alert_header_text"] == "Votre ligne"
@@ -210,7 +220,7 @@ def test_normalize_i3_alert_payload_matches_bcp47_region_language_tags() -> None
         }
     )
 
-    alerts, _ = normalize_i3_alert_payload(snapshot)
+    alerts, _, _ = normalize_i3_alert_payload(snapshot)
 
     # French is canonical despite the fr-CA tag and despite English appearing
     # first in the list...
@@ -247,7 +257,7 @@ def test_normalize_en_is_none_when_feed_has_no_english() -> None:
         }
     )
 
-    alerts, _ = normalize_i3_alert_payload(snapshot)
+    alerts, _, _ = normalize_i3_alert_payload(snapshot)
 
     assert len(alerts) == 3
     for alert in alerts:
@@ -277,12 +287,93 @@ def test_normalize_en_text_none_never_stringifies_language_dict() -> None:
         }
     )
 
-    alerts, _ = normalize_i3_alert_payload(snapshot)
+    alerts, _, _ = normalize_i3_alert_payload(snapshot)
 
     assert alerts[0]["alert_header_text"] == "Votre ligne"
     assert alerts[0]["description_text"] == "Service interrompu"
     assert alerts[0]["alert_header_text_en"] is None
     assert alerts[0]["description_text_en"] is None
+
+
+def test_normalize_i3_multi_period_shape_emits_all_periods_and_url() -> None:
+    # S15: an i3 payload carrying a LIST of active windows (activePeriods) must
+    # persist ALL of them as child period rows (scalar = period[0]), and extract
+    # fr/en url from the url list.
+    snapshot = _snapshot(
+        {
+            "messages": [
+                {
+                    "id": "multi-i3",
+                    "header_texts": [{"language": "fr", "text": "Fermeture"}],
+                    "activePeriods": [
+                        {"start": "2026-05-25T04:00:00Z", "end": "2026-05-25T05:00:00Z"},
+                        {"start": "2026-06-01T04:00:00Z", "end": "2026-06-01T05:00:00Z"},
+                    ],
+                    "url": [
+                        {"language": "fr", "text": "https://stm.info/avis/x"},
+                        {"language": "en", "text": "https://stm.info/en/alert/x"},
+                    ],
+                }
+            ]
+        }
+    )
+
+    alerts, _entities, periods = normalize_i3_alert_payload(snapshot)
+
+    assert len(alerts) == 1
+    row = alerts[0]
+    assert row["active_period_start_utc"] == datetime(2026, 5, 25, 4, tzinfo=UTC)
+    assert row["url"] == "https://stm.info/avis/x"
+    assert row["url_en"] == "https://stm.info/en/alert/x"
+    assert [p["period_index"] for p in periods] == [0, 1]
+    assert periods[1]["start_utc"] == datetime(2026, 6, 1, 4, tzinfo=UTC)
+
+
+def test_single_period_hash_is_byte_identical_to_pre_s15_formula() -> None:
+    # The S15 hash cutover must NOT re-row any existing single-period alert. This
+    # embeds the FROZEN pre-S15 md5 (10 fields, no extra-periods digest) for a
+    # known alert and asserts the new function reproduces it exactly.
+    s = datetime(2026, 5, 1, 8, tzinfo=UTC)
+    e = datetime(2026, 5, 1, 10, tzinfo=UTC)
+    # Frozen: md5 over "a1\x1fH\x1fD\x1fWARN\x1fC\x1fEFF\x1f<start>\x1f<end>\x1f\x1f".
+    frozen = "fe7cfb8f8f2e46274639499aded61a7e"
+    new_single = compute_alert_content_hash(
+        alert_id="a1", alert_header_text="H", description_text="D",
+        severity="WARN", cause="C", effect="EFF",
+        active_period_start_utc=s, active_period_end_utc=e,
+        published_at_utc=None, updated_at_utc=None,
+    )
+    assert new_single == frozen
+    # Passing an EMPTY extra-periods list is also byte-identical (single-period).
+    with_empty = compute_alert_content_hash(
+        alert_id="a1", alert_header_text="H", description_text="D",
+        severity="WARN", cause="C", effect="EFF",
+        active_period_start_utc=s, active_period_end_utc=e,
+        published_at_utc=None, updated_at_utc=None, extra_active_periods=[],
+    )
+    assert with_empty == frozen
+
+
+def test_multi_period_alert_hashes_differently_from_single_period() -> None:
+    # A genuinely multi-period alert mints a DIFFERENT hash (its identity honestly
+    # changed) — it re-rows ONCE when its extra windows start being captured.
+    s = datetime(2026, 5, 1, 8, tzinfo=UTC)
+    e = datetime(2026, 5, 1, 10, tzinfo=UTC)
+    single = compute_alert_content_hash(
+        alert_id="a1", alert_header_text="H", description_text="D",
+        severity="WARN", cause="C", effect="EFF",
+        active_period_start_utc=s, active_period_end_utc=e,
+        published_at_utc=None, updated_at_utc=None,
+    )
+    multi = compute_alert_content_hash(
+        alert_id="a1", alert_header_text="H", description_text="D",
+        severity="WARN", cause="C", effect="EFF",
+        active_period_start_utc=s, active_period_end_utc=e,
+        published_at_utc=None, updated_at_utc=None,
+        extra_active_periods=[(datetime(2026, 5, 8, 8, tzinfo=UTC),
+                               datetime(2026, 5, 8, 10, tzinfo=UTC))],
+    )
+    assert single != multi
 
 
 def test_content_hash_unchanged_by_en_variants() -> None:
@@ -304,8 +395,8 @@ def test_content_hash_unchanged_by_en_variants() -> None:
             {"language": "en", "text": "Cancelled stops"},
         ],
     }
-    no_en_alerts, _ = normalize_i3_alert_payload(_snapshot({"messages": [base]}))
-    with_en_alerts, _ = normalize_i3_alert_payload(_snapshot({"messages": [with_en]}))
+    no_en_alerts, _, _ = normalize_i3_alert_payload(_snapshot({"messages": [base]}))
+    with_en_alerts, _, _ = normalize_i3_alert_payload(_snapshot({"messages": [with_en]}))
 
     assert no_en_alerts[0]["content_hash"] == with_en_alerts[0]["content_hash"]
     # but the EN payload differs (one has English, the other doesn't)

@@ -133,6 +133,14 @@ class StopDeparturesFile(PayloadEnvelope):
     generated_utc: str
     stops: dict[str, list[StopDeparture]] = Field(default_factory=dict)
 
+class AlertActivePeriod(BaseModel):
+    # S15 additive: one active window of an alert. GTFS-RT alerts carry a LIST of
+    # windows; the old path truncated to the first. Either bound may be null (an
+    # open-ended window omits one). ISO-8601 UTC strings. Shared by the live Alert
+    # and the historic AlertHistoryEntry.
+    start_utc: str | None = None
+    end_utc: str | None = None
+
 class Alert(BaseModel):
     id: str
     severity: Severity
@@ -152,10 +160,18 @@ class Alert(BaseModel):
     # (the GTFS-RT Alert.Cause / Alert.Effect enum NAME for GTFS-RT feeds, e.g.
     # "CONSTRUCTION"/"DETOUR"; a provider string for STM's i3). severity_level is
     # the raw upstream severity, distinct from the bucketed `severity` enum above.
-    # Honest-NULL when the feed omits them. (url is not yet carried upstream.)
+    # Honest-NULL when the feed omits them.
     cause: str | None = None
     effect: str | None = None
     severity_level: str | None = None
+    # S15 additive. url / url_en close the former "(url is not yet carried
+    # upstream)" note — the citizen-facing link (fr / explicit-en), honest-NULL
+    # where the feed omits it (STM's i3 carries no url key). active_periods lists
+    # ALL windows the alert declares (multi-period visible on live too);
+    # start_utc / end_utc above stay the primary window[0].
+    url: str | None = None
+    url_en: str | None = None
+    active_periods: list[AlertActivePeriod] = Field(default_factory=list)
 
 class AlertsFile(PayloadEnvelope):
     generated_utc: str
@@ -1329,6 +1345,16 @@ class AlertHistoryEntry(BaseModel):
     end_utc: str | None = None
     duration_min: float | None = None
     impact_passages: int | None = None
+    # S15 additive. cause/effect/severity_level are the raw upstream values the
+    # source view already carries (closing the entry-vs-breakdown gap); url is the
+    # citizen-facing link (post-0077 alerts only, honest-NULL before). start_utc /
+    # end_utc above stay the primary window[0]; active_periods lists ALL windows
+    # (a 1-element list = the scalar pair for pre-0077 history).
+    cause: str | None = None
+    effect: str | None = None
+    severity_level: str | None = None
+    url: str | None = None
+    active_periods: list[AlertActivePeriod] = Field(default_factory=list)
 
 class AlertBreakdownBucket(BaseModel):
     # One cause/effect/severity value with its distinct-alert count + median
@@ -1345,11 +1371,30 @@ class AlertBreakdown(BaseModel):
     by_effect: list[AlertBreakdownBucket] = Field(default_factory=list)
     by_severity: list[AlertBreakdownBucket] = Field(default_factory=list)
 
+# S15 payload guard: a published historic/alert_history.json must stay under this
+# many bytes (model_dump_json, UTF-8). The window serves the full retention span
+# (SILVER_I3_CLOSED_RETENTION_DAYS) newest-first, LIMIT 500 entries; each entry is
+# a header + bilingual text + route/stop id lists + cause/effect/url + an
+# active_periods list. 262144 (256 KiB) clears a realistic full window with
+# generous headroom while catching a runaway (e.g. a window that stopped
+# clamping). Exported so the web can share the constant. History: introduced at
+# S15 (there was NO ceiling before). The gate + a real-DB probe assert it.
+ALERT_HISTORY_BYTE_CEILING = 262144
+
 class AlertHistory(PayloadEnvelope):
     generated_utc: str
     alerts: list[AlertHistoryEntry] = Field(default_factory=list)
     # Tier-2 additive: None when no alerts in the window.
     breakdown: AlertBreakdown | None = None
+    # S15 additive window disclosure. window_start / window_end are the served
+    # span (ISO dates, the full honest retention window). total_in_window is the
+    # PRE-cap distinct-alert count; truncated is True when total_in_window exceeds
+    # the emitted alerts[] (the LIMIT fired). All honest-NULL on old payloads
+    # built before S15 (the web derives the span from entries then).
+    window_start: str | None = None
+    window_end: str | None = None
+    total_in_window: int | None = None
+    truncated: bool | None = None
 
 class ProvenanceSource(BaseModel):
     feed: str

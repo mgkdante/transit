@@ -12,6 +12,10 @@ import {
 	cloneFilterState,
 	isEmptyFilterState,
 	emptyFilterState,
+	isAlertAffects,
+	isSeverityCode,
+	normalizeAlertAffects,
+	normalizeSeverity,
 } from './state';
 
 describe('isIsoDate — the YYYY-MM-DD shape gate', () => {
@@ -96,5 +100,42 @@ describe('FilterState.date (S13)', () => {
 		const st = emptyFilterState();
 		st.date = '2026-07-01';
 		expect(isEmptyFilterState(st)).toBe(false);
+	});
+});
+
+describe('alerts axes (S15) — affects + severity single-select scalars', () => {
+	it('isAlertAffects accepts lines|stops and rejects junk', () => {
+		expect(isAlertAffects('lines')).toBe(true);
+		expect(isAlertAffects('stops')).toBe(true);
+		expect(isAlertAffects('all')).toBe(false);
+		expect(isAlertAffects('bogus')).toBe(false);
+	});
+
+	it('isSeverityCode accepts the closed enum and rejects junk', () => {
+		expect(isSeverityCode('critical')).toBe(true);
+		expect(isSeverityCode('high')).toBe(true);
+		expect(isSeverityCode('watch')).toBe(true);
+		expect(isSeverityCode('apocalyptic')).toBe(false);
+	});
+
+	it('normalizers trim a valid value and self-heal junk / nullish to undefined', () => {
+		expect(normalizeAlertAffects(' lines ')).toBe('lines');
+		expect(normalizeAlertAffects('bogus')).toBeUndefined();
+		expect(normalizeAlertAffects(null)).toBeUndefined();
+		expect(normalizeSeverity(' watch ')).toBe('watch');
+		expect(normalizeSeverity('kinda')).toBeUndefined();
+		expect(normalizeSeverity(undefined)).toBeUndefined();
+	});
+
+	it('clone copies both axes; isEmpty is false when only one is set', () => {
+		const st = emptyFilterState();
+		st.alertAffects = 'stops';
+		st.alertSeverity = 'high';
+		const copy = cloneFilterState(st);
+		expect(copy.alertAffects).toBe('stops');
+		expect(copy.alertSeverity).toBe('high');
+		const only = emptyFilterState();
+		only.alertAffects = 'lines';
+		expect(isEmptyFilterState(only)).toBe(false);
 	});
 });

@@ -388,7 +388,12 @@ _C2_TOUCHED_SQL_SHA256 = {
     "receipts.accountability": "8a95c3e78aebcfd252373dd7fc8cad9ba496ae9bc3d943e640447721f72332c7",
     "receipts.worst_route": "446fd95112efb2e19080d74d0999e2c15ead10478bf0301d3b6a9e9c1c963d11",
     "receipts.worst_stop": "aeccf30a7d837bb0d1fa71ce07e70e9191ff28db9adf55b5dd0ab1594c0d8230",
-    "alerts.history": "59919b6dcea56275a922450bf58b3cb5c4622cd634c20992f7cefc260788ddcb",
+    # RE-FROZEN (S15, 2026-07-02): alerts.history was windowed — the now()-anchored
+    # trailing-30 clause became explicit :win_start/:win_end binds serving the full
+    # retention span, LIMIT 200 -> 500, + correlated url / active_periods subqueries
+    # off the 0077 child table. This is a documented value/shape change (multi-period
+    # capture + window disclosure), so the lock is deliberately re-captured.
+    "alerts.history": "69ff6bc07e878471bf76bc0e266770b71a1c7018717056256f03cb33fa465676",
     "route.weak_stops.by_grain": "95b4e55b3a19a89b6bd48ca465cf3d7f107e0d1ba4572345bd84e496efc6e270",
 }
 

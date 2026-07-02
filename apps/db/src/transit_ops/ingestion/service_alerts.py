@@ -70,15 +70,23 @@ def _informed_entity(selector: object) -> dict[str, object]:
 
 
 def _active_period(alert: object) -> list[dict[str, int]] | None:
-    if len(alert.active_period) == 0:
-        return None
-    time_range = alert.active_period[0]
-    period: dict[str, int] = {}
-    if _has_field(time_range, "start"):
-        period["start"] = int(time_range.start)
-    if _has_field(time_range, "end"):
-        period["end"] = int(time_range.end)
-    return [period] if period else None
+    """Every active window, not just the first (S15 truncation fix).
+
+    GTFS-RT carries a LIST of TimeRanges; the old path emitted only
+    active_period[0], collapsing genuinely multi-window alerts. The silver
+    normalizer keeps period[0] as the scalar pair and persists the rest as child
+    rows. A range with neither bound is skipped (an empty window carries nothing);
+    the list order is preserved so period_index is stable."""
+    periods: list[dict[str, int]] = []
+    for time_range in alert.active_period:
+        period: dict[str, int] = {}
+        if _has_field(time_range, "start"):
+            period["start"] = int(time_range.start)
+        if _has_field(time_range, "end"):
+            period["end"] = int(time_range.end)
+        if period:
+            periods.append(period)
+    return periods or None
 
 
 def convert_gtfs_rt_alerts_to_i3_payload(protobuf_bytes: bytes) -> dict[str, object]:
@@ -109,6 +117,13 @@ def convert_gtfs_rt_alerts_to_i3_payload(protobuf_bytes: bytes) -> dict[str, obj
             record["severity"] = _enum_name(
                 gtfs_realtime_pb2.Alert.SeverityLevel, alert.severity_level
             )
+        if _has_field(alert, "url"):
+            # alert.url is a TranslatedString, same shape as header/description.
+            # Emit it as [{language, text}] so the silver normalizer's _text /
+            # _text_en pickers surface fr as url and en as url_en (S15).
+            url = _translations(alert.url)
+            if url:
+                record["url"] = url
         active_period = _active_period(alert)
         if active_period is not None:
             record["activePeriod"] = active_period

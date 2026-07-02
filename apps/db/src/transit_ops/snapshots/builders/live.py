@@ -28,6 +28,7 @@ from transit_ops.snapshots.builders._helpers import (
     _OCCUPANCY_MAP,
     _SURFACES,
     STATUS_BAND_CASE_SQL,
+    _alert_active_periods,
     _delay_min,
     _iso,
     _kmh,
@@ -302,10 +303,13 @@ _ALERTS_SQL = named_query(
            severity,
            cause,
            effect,
+           url,
+           url_en,
            route_ids,
            stop_ids,
            active_period_start_utc,
-           active_period_end_utc
+           active_period_end_utc,
+           active_periods
     FROM gold.current_i3_alerts
     WHERE provider_id = :provider_id
     ORDER BY active_period_start_utc NULLS LAST, alert_header_text, description_text
@@ -344,6 +348,17 @@ def build_alerts(conn: Connection, *, provider_id: str = "stm", generated_utc: s
                 cause=r["cause"],
                 effect=r["effect"],
                 severity_level=r["severity"],
+                # S15 additive: citizen link + every active window (multi-period
+                # visible on live too). active_periods falls back to the scalar
+                # pair for rows predating the 0077 child table. .get() keeps the
+                # builder honest if a caller/view path omits the column.
+                url=r.get("url"),
+                url_en=_sane_en(r.get("url_en")),
+                active_periods=_alert_active_periods(
+                    r.get("active_periods"),
+                    r["active_period_start_utc"],
+                    r["active_period_end_utc"],
+                ),
             )
         )
     return AlertsFile(generated_utc=generated_utc, alerts=alerts)

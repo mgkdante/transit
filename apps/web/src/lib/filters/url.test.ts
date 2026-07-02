@@ -134,6 +134,28 @@ describe('fromSearchParams — parsing + self-healing', () => {
 		expect(fromSearchParams(sp('date=2026-06-16')).window).toBeUndefined();
 	});
 
+	it('parses the alerts affects + severity axes (S15) and self-heals junk', () => {
+		expect(fromSearchParams(sp('affects=lines')).alertAffects).toBe('lines');
+		expect(fromSearchParams(sp('affects=stops')).alertAffects).toBe('stops');
+		expect(fromSearchParams(sp('affects=all')).alertAffects).toBeUndefined();
+		expect(fromSearchParams(sp('affects=bogus')).alertAffects).toBeUndefined();
+		expect(fromSearchParams(sp('severity=critical')).alertSeverity).toBe('critical');
+		expect(fromSearchParams(sp('severity=watch')).alertSeverity).toBe('watch');
+		expect(fromSearchParams(sp('severity=apocalyptic')).alertSeverity).toBeUndefined();
+	});
+
+	it('round-trips the alerts axes alongside ?route/?stop/?from/?to (fixed point)', () => {
+		const q = 'route=24&stop=52458&from=2026-06-01&to=2026-06-14&affects=lines&severity=high';
+		// KEY_ORDER puts route/stop/from/to before affects/severity; assert the fixed point.
+		expect(round(q)).toBe(round(round(q)));
+		const s = fromSearchParams(sp(q));
+		expect([...s.routes]).toEqual(['24']);
+		expect([...s.stops]).toEqual(['52458']);
+		expect(s.window).toEqual({ from: '2026-06-01', to: '2026-06-14' });
+		expect(s.alertAffects).toBe('lines');
+		expect(s.alertSeverity).toBe('high');
+	});
+
 	it('ignores unknown query keys', () => {
 		const s = fromSearchParams(sp('utm_source=newsletter&route=10'));
 		expect([...s.routes]).toEqual(['10']);

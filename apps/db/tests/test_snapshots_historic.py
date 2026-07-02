@@ -2738,6 +2738,160 @@ def test_build_alert_history_empty() -> None:
 
 
 # --------------------------------------------------------------------------
+# S15: windowed builder — window disclosure, active_periods, url, cap
+# --------------------------------------------------------------------------
+
+
+def test_alert_history_sql_uses_windowed_binds_not_now_clause() -> None:
+    """S15: the builder SQL is bound by explicit :win_start/:win_end (not a now()-
+    anchored trailing clause), LIMIT 500, and aggregates active_periods."""
+    from transit_ops.snapshots.builders.historic.small_surfaces import _ALERT_HISTORY_SQL
+
+    sql = str(_ALERT_HISTORY_SQL)
+    assert ":win_start" in sql and ":win_end" in sql
+    assert "now() AT TIME ZONE" not in sql  # the trailing clause is gone
+    assert "LIMIT 500" in sql
+    assert "active_periods" in sql and "json_agg" in sql
+
+
+def test_build_alert_history_window_fields_from_anchor() -> None:
+    """window_start/window_end are the trailing SILVER_I3_CLOSED_RETENTION_DAYS
+    span off the DB anchor; total_in_window is the count; not truncated under cap."""
+    import datetime as _dt
+
+    from transit_ops.settings import get_settings
+
+    anchor = _dt.date(2026, 7, 1)
+    conn = FakeConn(
+        {
+            "alerts.history.anchor": [{"anchor": anchor}],
+            "alerts.history": [
+                {
+                    "alert_header_text": "H",
+                    "header_text_en": None,
+                    "alert_id": None,
+                    "severity": "INFO",
+                    "routes": None,
+                    "stops": None,
+                    "start_utc": _dt.datetime(2026, 6, 20, tzinfo=_dt.UTC),
+                    "end_utc": _dt.datetime(2026, 6, 20, tzinfo=_dt.UTC),
+                }
+            ],
+        }
+    )
+    out = build_alert_history(conn, generated_utc="t")
+    days = get_settings().SILVER_I3_CLOSED_RETENTION_DAYS
+    assert out.window_end == "2026-07-01"
+    assert out.window_start == (anchor - _dt.timedelta(days=days)).isoformat()
+    assert out.total_in_window == 1
+    assert out.truncated is False
+
+
+def test_build_alert_history_active_periods_from_child_json() -> None:
+    """A post-0077 entry surfaces its full active_periods list (json_agg), with
+    the timestamps normalized to the canonical 'Z' rendering + additive
+    cause/effect/severity_level/url passthroughs."""
+    import datetime as _dt
+
+    start = _dt.datetime(2026, 6, 1, 8, tzinfo=_dt.UTC)
+    conn = FakeConn(
+        {
+            "alerts.history.anchor": [{"anchor": _dt.date(2026, 7, 1)}],
+            "alerts.history": [
+                {
+                    "alert_header_text": "Fermeture",
+                    "header_text_en": None,
+                    "alert_id": None,
+                    "severity": "WARNING",
+                    "cause": "CONSTRUCTION",
+                    "effect": "DETOUR",
+                    "url": "https://stm.info/avis/x",
+                    "routes": [],
+                    "stops": [],
+                    "start_utc": start,
+                    "end_utc": start + _dt.timedelta(hours=2),
+                    "active_periods": [
+                        {"start_utc": "2026-06-01T08:00:00+00:00",
+                         "end_utc": "2026-06-01T10:00:00+00:00"},
+                        {"start_utc": "2026-06-08T08:00:00+00:00",
+                         "end_utc": "2026-06-08T10:00:00+00:00"},
+                    ],
+                }
+            ],
+        }
+    )
+    out = build_alert_history(conn, generated_utc="t")
+    e = out.alerts[0]
+    assert e.cause == "CONSTRUCTION"
+    assert e.effect == "DETOUR"
+    assert e.severity_level == "WARNING"
+    assert e.url == "https://stm.info/avis/x"
+    assert len(e.active_periods) == 2
+    assert e.active_periods[0].start_utc == "2026-06-01T08:00:00Z"
+    assert e.active_periods[1].end_utc == "2026-06-08T10:00:00Z"
+
+
+def test_build_alert_history_pre_0077_falls_back_to_scalar_period() -> None:
+    """A pre-0077 row (active_periods json is NULL) falls back to the scalar pair
+    as a 1-element active_periods list; url is honest-NULL."""
+    import datetime as _dt
+
+    start = _dt.datetime(2026, 5, 1, 8, tzinfo=_dt.UTC)
+    conn = FakeConn(
+        {
+            "alerts.history.anchor": [{"anchor": _dt.date(2026, 7, 1)}],
+            "alerts.history": [
+                {
+                    "alert_header_text": "Legacy",
+                    "header_text_en": None,
+                    "alert_id": None,
+                    "severity": "INFO",
+                    "routes": None,
+                    "stops": None,
+                    "start_utc": start,
+                    "end_utc": start + _dt.timedelta(hours=1),
+                    "active_periods": None,  # pre-0077: no child rows
+                }
+            ],
+        }
+    )
+    out = build_alert_history(conn, generated_utc="t")
+    e = out.alerts[0]
+    assert e.url is None
+    assert len(e.active_periods) == 1
+    assert e.active_periods[0].start_utc == "2026-05-01T08:00:00Z"
+    assert e.active_periods[0].end_utc == "2026-05-01T09:00:00Z"
+
+
+def test_build_alert_history_500_cap_and_truncation_disclosed() -> None:
+    """SQL LIMIT 500 enforced; when the window fills the cap, truncated is True and
+    total_in_window == the emitted count (an honest 'there may be more')."""
+    import datetime as _dt
+
+    start = _dt.datetime(2026, 6, 1, tzinfo=_dt.UTC)
+    rows = [
+        {
+            "alert_header_text": f"H{i}",
+            "header_text_en": None,
+            "alert_id": None,
+            "severity": "INFO",
+            "routes": None,
+            "stops": None,
+            "start_utc": start,
+            "end_utc": start,
+        }
+        for i in range(500)
+    ]
+    conn = FakeConn(
+        {"alerts.history.anchor": [{"anchor": _dt.date(2026, 7, 1)}], "alerts.history": rows}
+    )
+    out = build_alert_history(conn, generated_utc="t")
+    assert len(out.alerts) == 500
+    assert out.total_in_window == 500
+    assert out.truncated is True
+
+
+# --------------------------------------------------------------------------
 # build_provenance
 # --------------------------------------------------------------------------
 

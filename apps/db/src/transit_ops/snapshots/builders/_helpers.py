@@ -14,7 +14,7 @@ docstring and the per-tier modules for the publishing rationale.
 from __future__ import annotations
 
 import statistics
-from datetime import UTC
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 # The rate + confidence kernel is owned by gold.reader (S7-close C2); the
@@ -184,6 +184,51 @@ def _iso(v: object) -> str:
 
 def _opt_iso(v: object) -> str | None:
     return None if v is None else _iso(v)
+
+
+def _coerce_ts(value: object) -> object:
+    """Normalize a json_agg timestamptz value to a datetime so _iso renders the
+    canonical 'Z' form. json_agg serializes timestamptz as an ISO string with a
+    '+00:00' offset; parse it back so the published bytes match the scalar
+    start_utc/end_utc rendering. Non-string / unparseable values pass through."""
+    if isinstance(value, str):
+        try:
+            return datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError:
+            return value
+    return value
+
+
+def _alert_active_periods(raw: object, scalar_start: object, scalar_end: object):  # noqa: ANN201
+    """Build an alert's active_periods list (S15), shared by the live + historic
+    builders.
+
+    raw is the SQL json_agg of the child-table windows (a list of
+    {start_utc, end_utc} dicts) — present for post-0077 alerts. When it is
+    None/empty (captured before the child table existed), fall back to the scalar
+    period[0] pair as a 1-element list, but only when that pair has a bound (an
+    all-null scalar means no window at all -> empty list, honest absence).
+
+    Returns list[AlertActivePeriod] (imported lazily to keep the
+    builders -> _helpers -> contract layering explicit)."""
+    from transit_ops.snapshots.contract import AlertActivePeriod
+
+    periods: list = []
+    if isinstance(raw, list) and raw:
+        for item in raw:
+            if not isinstance(item, dict):
+                continue
+            periods.append(
+                AlertActivePeriod(
+                    start_utc=_opt_iso(_coerce_ts(item.get("start_utc"))),
+                    end_utc=_opt_iso(_coerce_ts(item.get("end_utc"))),
+                )
+            )
+        if periods:
+            return periods
+    if scalar_start is not None or scalar_end is not None:
+        return [AlertActivePeriod(start_utc=_opt_iso(scalar_start), end_utc=_opt_iso(scalar_end))]
+    return []
 
 
 def _wallclock(t: object) -> str | None:

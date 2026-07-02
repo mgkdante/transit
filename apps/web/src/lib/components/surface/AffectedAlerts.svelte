@@ -37,11 +37,11 @@
 	import type { Alert, SeverityCode } from '$lib/v1/schemas';
 	import { formatUtc } from '$lib/utils/time';
 	import SectionLabel from '$lib/components/brand/SectionLabel.svelte';
-	// Reuse the contract-level alert helpers the map already uses: the bilingual
-	// GTFS-RT cause/effect labels + the locale-aware display-text resolver (HTML
-	// scrub + generic-header guard). Both are pure + provider-agnostic.
-	import { causeLabel, effectLabel } from '$lib/features/map/gtfsAlertLabels';
-	import { alertDisplayText } from '$lib/features/map/mapAlerts';
+	// The contract-level alert helpers, now in the shared $lib/v1 kernel: the
+	// bilingual GTFS-RT cause/effect labels + the locale-aware display-text resolver
+	// (HTML scrub + generic-header guard). Both are pure + provider-agnostic.
+	import { causeLabel, effectLabel } from '$lib/v1/gtfsAlertLabels';
+	import { alertDisplayText } from '$lib/v1/alertDisplay';
 
 	/** Localized strings for this section — bilingual heading + the meta captions. */
 	export interface AffectedAlertsCopy {
