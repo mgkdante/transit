@@ -2765,6 +2765,7 @@ def test_build_alert_history_window_fields_from_anchor() -> None:
     conn = FakeConn(
         {
             "alerts.history.anchor": [{"anchor": anchor}],
+            "alerts.history.count": [{"total": 1}],
             "alerts.history": [
                 {
                     "alert_header_text": "H",
@@ -2864,8 +2865,9 @@ def test_build_alert_history_pre_0077_falls_back_to_scalar_period() -> None:
 
 
 def test_build_alert_history_500_cap_and_truncation_disclosed() -> None:
-    """SQL LIMIT 500 enforced; when the window fills the cap, truncated is True and
-    total_in_window == the emitted count (an honest 'there may be more')."""
+    """SQL LIMIT 500 enforced; total_in_window is the TRUE pre-cap count from the
+    dedicated count query (S15 review F1), so it can EXCEED the emitted length and
+    truncated fires only when the window genuinely held more than was served."""
     import datetime as _dt
 
     start = _dt.datetime(2026, 6, 1, tzinfo=_dt.UTC)
@@ -2883,12 +2885,47 @@ def test_build_alert_history_500_cap_and_truncation_disclosed() -> None:
         for i in range(500)
     ]
     conn = FakeConn(
-        {"alerts.history.anchor": [{"anchor": _dt.date(2026, 7, 1)}], "alerts.history": rows}
+        {
+            "alerts.history.anchor": [{"anchor": _dt.date(2026, 7, 1)}],
+            "alerts.history.count": [{"total": 512}],
+            "alerts.history": rows,
+        }
     )
     out = build_alert_history(conn, generated_utc="t")
     assert len(out.alerts) == 500
-    assert out.total_in_window == 500
+    assert out.total_in_window == 512  # the TRUE window size, not the cap
     assert out.truncated is True
+
+
+def test_build_alert_history_exact_cap_fill_is_not_truncated() -> None:
+    """A window holding EXACTLY the cap serves everything — truncated must be
+    False (total == emitted), never a false 'there may be more'."""
+    import datetime as _dt
+
+    start = _dt.datetime(2026, 6, 1, tzinfo=_dt.UTC)
+    rows = [
+        {
+            "alert_header_text": f"H{i}",
+            "header_text_en": None,
+            "alert_id": None,
+            "severity": "INFO",
+            "routes": None,
+            "stops": None,
+            "start_utc": start,
+            "end_utc": start,
+        }
+        for i in range(500)
+    ]
+    conn = FakeConn(
+        {
+            "alerts.history.anchor": [{"anchor": _dt.date(2026, 7, 1)}],
+            "alerts.history.count": [{"total": 500}],
+            "alerts.history": rows,
+        }
+    )
+    out = build_alert_history(conn, generated_utc="t")
+    assert out.total_in_window == 500
+    assert out.truncated is False
 
 
 # --------------------------------------------------------------------------

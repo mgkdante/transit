@@ -65,10 +65,10 @@ depends_on = None
 
 
 # gold.current_i3_alerts: the 0037 body + url / url_en / active_periods APPENDED at
-# the END of the select list (append-at-end keeps CREATE OR REPLACE legal with the
-# dependent gold.current_map_objects live — no CASCADE drop needed). The
+# the END of the select list (append-at-end keeps CREATE OR REPLACE legal; the view
+# has NO dependent views at head — 0059 dropped gold.current_map_objects). The
 # DISTINCT ON dedup key and every other column are UNCHANGED. active_periods is a
-# json_agg of the winning silver row's child periods (ordered by period_index),
+# jsonb_agg of the winning silver row's child periods (ordered by period_index),
 # NULL when the row predates the 0077 child table (the live builder falls back to
 # the scalar pair then).
 _REPLACE_CURRENT_VIEW = """
@@ -144,8 +144,10 @@ LEFT JOIN silver.i3_alert_informed_entities AS e
     ON e.i3_alert_snapshot_id = d.i3_alert_snapshot_id
    AND e.alert_index = d.alert_index
 LEFT JOIN LATERAL (
-    SELECT json_agg(
-               json_build_object('start_utc', p.start_utc, 'end_utc', p.end_utc)
+    -- jsonb (not json): the outer GROUP BY includes this column, and json has no
+    -- equality operator (found by the first real-DB run of this migration).
+    SELECT jsonb_agg(
+               jsonb_build_object('start_utc', p.start_utc, 'end_utc', p.end_utc)
                ORDER BY p.period_index
            ) AS active_periods
     FROM silver.i3_alert_active_periods AS p
@@ -264,82 +266,6 @@ GROUP BY
 """
 
 
-# gold.current_map_objects (0025 body) depends on current_i3_alerts; a plain
-# CREATE OR REPLACE on downgrade would try to DROP the trailing new columns while
-# the dependent view is live and fail, so downgrade DROPs current_i3_alerts CASCADE
-# and rebuilds both. This 0025 body reads only route_ids/stop_ids/description_text
-# from current_i3_alerts (none of the new columns), so it is byte-identical.
-_CURRENT_MAP_OBJECTS_FROM_0025 = """
-CREATE OR REPLACE VIEW gold.current_map_objects AS
--- vehicles leg
-SELECT
-    'vehicle'::text AS object_type,
-    cvm.vehicle_id AS object_id,
-    cvm.latitude,
-    cvm.longitude,
-    cvm.status_band,
-    cvm.route_id,
-    cvm.trip_id,
-    cvm.stop_id,
-    cvm.trip_avg_delay_seconds,
-    cvm.trip_max_delay_seconds,
-    cvm.captured_at_utc,
-    NULL::text AS alert_description,
-    0::integer AS alert_count,
-    NULL::text AS stop_name,
-    NULL::text AS routes_serving,
-    CASE cvm.status_band
-        WHEN 'À l''heure / On time'  THEN 'vehicle_on_time'
-        WHEN 'En retard / Late'      THEN 'vehicle_late'
-        WHEN 'Inconnu / Unknown'     THEN 'vehicle_unknown'
-        WHEN 'Critique / Severe'     THEN 'vehicle_severe'
-        WHEN 'En avance / Early'     THEN 'vehicle_early'
-        ELSE                              'vehicle_other'
-    END AS display_category
-FROM gold.current_vehicle_map_with_status AS cvm
-UNION ALL
--- all-stops leg (every stop with valid lat/lon, alert or not)
-SELECT
-    'stop'::text AS object_type,
-    s.stop_id AS object_id,
-    s.stop_lat AS latitude,
-    s.stop_lon AS longitude,
-    NULL::text AS status_band,
-    NULL::text AS route_id,
-    NULL::text AS trip_id,
-    s.stop_id,
-    NULL::numeric(12, 2) AS trip_avg_delay_seconds,
-    NULL::integer AS trip_max_delay_seconds,
-    cnt.last_captured_at AS captured_at_utc,
-    cnt.alert_descriptions AS alert_description,
-    COALESCE(cnt.alert_count, 0)::integer AS alert_count,
-    s.stop_name AS stop_name,
-    cnt.routes_serving AS routes_serving,
-    CASE
-        WHEN COALESCE(cnt.alert_count, 0) > 0 THEN 'stop_alert'
-        ELSE 'stop_normal'
-    END AS display_category
-FROM gold.dim_stop AS s
-LEFT JOIN (
-    SELECT
-        a.provider_id,
-        unnest(string_to_array(a.stop_ids, ', ')) AS stop_id,
-        count(*) AS alert_count,
-        string_agg(DISTINCT a.description_text, ' | ' ORDER BY a.description_text)
-            AS alert_descriptions,
-        string_agg(DISTINCT a.route_ids, ', ' ORDER BY a.route_ids)
-            FILTER (WHERE a.route_ids IS NOT NULL)
-            AS routes_serving,
-        max(a.captured_at_utc) AS last_captured_at
-    FROM gold.current_i3_alerts AS a
-    WHERE a.stop_ids IS NOT NULL
-    GROUP BY a.provider_id, unnest(string_to_array(a.stop_ids, ', '))
-) AS cnt
-    ON cnt.provider_id = s.provider_id
-   AND cnt.stop_id = s.stop_id
-WHERE s.stop_lat IS NOT NULL
-  AND s.stop_lon IS NOT NULL
-"""
 
 
 def upgrade() -> None:
@@ -395,12 +321,13 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    # Restore the 0037 view shape. The trailing new columns cannot be dropped by a
-    # plain CREATE OR REPLACE while current_map_objects reads the view, so drop
-    # CASCADE and rebuild both (the 0025 current_map_objects body is unchanged).
-    op.execute("DROP VIEW IF EXISTS gold.current_i3_alerts CASCADE")
+    # Restore the 0037 view shape. CREATE OR REPLACE cannot REMOVE the trailing
+    # S15 columns, so plain-drop then recreate. No CASCADE: the view has no
+    # dependent views at this point in the chain (0059 dropped current_map_objects),
+    # and a plain DROP fails loudly if that ever changes instead of silently
+    # cascading a dependent away.
+    op.execute("DROP VIEW IF EXISTS gold.current_i3_alerts")
     op.execute(_CURRENT_VIEW_FROM_0037)
-    op.execute(_CURRENT_MAP_OBJECTS_FROM_0025)
     op.drop_index(
         "ix_silver_i3_alert_active_periods_alert",
         table_name="i3_alert_active_periods",

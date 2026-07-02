@@ -1352,7 +1352,10 @@ _ALERT_HISTORY_SQL = named_query(
                  AND a2.active_period_start_utc IS NOT DISTINCT FROM grp.start_utc
                  AND a2.active_period_end_utc IS NOT DISTINCT FROM grp.end_utc
            )                                                        AS url,
-           -- One DISTINCT (period_index, start, end) list per group, ordered by
+           -- One window per period_index, ordered. Re-rowed multi-period alerts
+           -- (the S15 hash cutover mints a new SCD-2 row when periods beyond [0]
+           -- change) can share header+period[0] across versions with DIFFERENT
+           -- later bounds — DISTINCT ON keeps the NEWEST version's bound per
            -- period_index. NULL when no child rows exist (pre-0077 history).
            (
                SELECT json_agg(
@@ -1361,7 +1364,8 @@ _ALERT_HISTORY_SQL = named_query(
                           ORDER BY ap.period_index
                       )
                FROM (
-                   SELECT DISTINCT p.period_index, p.start_utc, p.end_utc
+                   SELECT DISTINCT ON (p.period_index)
+                          p.period_index, p.start_utc, p.end_utc
                    FROM silver.i3_alerts a2
                    JOIN silver.i3_alert_active_periods p
                      ON p.i3_alert_snapshot_id = a2.i3_alert_snapshot_id
@@ -1370,6 +1374,8 @@ _ALERT_HISTORY_SQL = named_query(
                      AND a2.alert_header_text IS NOT DISTINCT FROM grp.alert_header_text
                      AND a2.active_period_start_utc IS NOT DISTINCT FROM grp.start_utc
                      AND a2.active_period_end_utc IS NOT DISTINCT FROM grp.end_utc
+                   ORDER BY p.period_index,
+                            a2.i3_alert_snapshot_id DESC, a2.alert_index DESC
                ) AS ap
            )                                                        AS active_periods
     FROM (
@@ -1391,6 +1397,28 @@ _ALERT_HISTORY_SQL = named_query(
     GROUP BY grp.alert_header_text, grp.start_utc, grp.end_utc
     ORDER BY grp.start_utc DESC NULLS LAST
     LIMIT 500
+    """
+)
+
+
+# The TRUE pre-cap distinct-alert count for the window: the SAME grouped identity
+# as _ALERT_HISTORY_SQL with NO LIMIT. total_in_window must be able to EXCEED the
+# cap or the truncation disclosure degenerates to a self-contradictory "500 of
+# 500" that cannot distinguish a 501-alert window from a 5000-alert one.
+_ALERT_HISTORY_COUNT_SQL = named_query(
+    "alerts.history.count",
+    """
+    SELECT COUNT(*) AS total
+    FROM (
+        SELECT 1
+        FROM gold.i3_alert_history_reporting AS iah
+        WHERE iah.provider_id = :provider_id
+          AND iah.provider_local_date >= :win_start
+          AND iah.provider_local_date <= :win_end
+        GROUP BY iah.alert_header_text,
+                 iah.active_period_start_utc,
+                 iah.active_period_end_utc
+    ) AS grouped
     """
 )
 
@@ -1486,12 +1514,13 @@ def build_alert_history(
     win_start: date | None = (
         win_end - timedelta(days=retention_days) if win_end is not None else None
     )
-    rows = list(
-        conn.execute(
-            _ALERT_HISTORY_SQL,
-            {"provider_id": provider_id, "win_start": win_start, "win_end": win_end},
-        ).mappings()
-    )
+    window_binds = {"provider_id": provider_id, "win_start": win_start, "win_end": win_end}
+    rows = list(conn.execute(_ALERT_HISTORY_SQL, window_binds).mappings())
+    # The TRUE pre-cap window total (S15 review F1): a separate un-LIMITed count
+    # over the same grouped identity, so truncated can honestly say how much the
+    # newest-first cap dropped. Honest-None when the count query yields nothing.
+    count_row = conn.execute(_ALERT_HISTORY_COUNT_SQL, window_binds).mappings().fetchone()
+    total_in_window: int | None = int(count_row["total"]) if count_row else None
     entries: list[AlertHistoryEntry] = []
     # (cause, effect, severity_code, duration_min) per distinct alert for the breakdown.
     breakdown_records: list[tuple[str | None, str | None, str | None, float | None]] = []
@@ -1574,9 +1603,9 @@ def build_alert_history(
         breakdown=_alert_breakdown(breakdown_records),
         window_start=_iso_date(win_start) if win_start is not None else None,
         window_end=_iso_date(win_end) if win_end is not None else None,
-        # total_in_window: the SQL already caps at LIMIT 500, so len(rows) is the
-        # PRE-Python-cap distinct-alert count for this window. truncated fires when
-        # the SQL LIMIT filled exactly — an honest "there may be more" disclosure.
-        total_in_window=len(rows),
-        truncated=len(rows) >= _ALERT_HISTORY_LIMIT,
+        # total_in_window is the TRUE pre-cap count (dedicated un-LIMITed count
+        # query), so it can EXCEED the cap and truncated is a real disclosure —
+        # never the self-contradictory "500 of 500" (S15 review F1).
+        total_in_window=total_in_window,
+        truncated=(total_in_window is not None and total_in_window > len(rows)),
     )

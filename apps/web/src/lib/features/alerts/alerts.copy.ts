@@ -145,7 +145,7 @@ export const alertHistoryCopy: Record<Locale, AlertHistoryCopy> = {
 		showLess: 'Réduire',
 		empty: 'Aucun avis de service archivé pour le moment.',
 		truncatedNote: (shown, total) =>
-			`Fenêtre plafonnée : ${shown} avis les plus récents sur ${total} au total.`,
+			`Fenêtre plafonnée : ${shown} avis les plus récents sur ${total} au total ; les décomptes et la répartition reflètent seulement ces avis.`,
 		meta: {
 			from: 'À partir de',
 			until: 'Jusqu’à',
@@ -230,7 +230,7 @@ export const alertHistoryCopy: Record<Locale, AlertHistoryCopy> = {
 		showLess: 'Show less',
 		empty: 'No archived service alerts yet.',
 		truncatedNote: (shown, total) =>
-			`Window capped: showing the ${shown} most recent of ${total} alerts.`,
+			`Window capped: showing the ${shown} most recent of ${total} alerts; counts and the breakdown reflect only these.`,
 		meta: {
 			from: 'From',
 			until: 'Until',

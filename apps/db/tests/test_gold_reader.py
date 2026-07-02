@@ -391,9 +391,10 @@ _C2_TOUCHED_SQL_SHA256 = {
     # RE-FROZEN (S15, 2026-07-02): alerts.history was windowed — the now()-anchored
     # trailing-30 clause became explicit :win_start/:win_end binds serving the full
     # retention span, LIMIT 200 -> 500, + correlated url / active_periods subqueries
-    # off the 0077 child table. This is a documented value/shape change (multi-period
-    # capture + window disclosure), so the lock is deliberately re-captured.
-    "alerts.history": "69ff6bc07e878471bf76bc0e266770b71a1c7018717056256f03cb33fa465676",
+    # off the 0077 child table. Re-frozen AGAIN in the S15 review fix wave (F3):
+    # the periods subquery became DISTINCT ON (period_index) newest-version-wins so
+    # re-rowed multi-period alerts cannot emit duplicate period_index bounds.
+    "alerts.history": "ff8c0307610b66ff95286be16558397a2d56b8bee8a49e915ef874e1f52d85a1",
     "route.weak_stops.by_grain": "95b4e55b3a19a89b6bd48ca465cf3d7f107e0d1ba4572345bd84e496efc6e270",
 }
 

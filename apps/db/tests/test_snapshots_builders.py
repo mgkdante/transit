@@ -1521,6 +1521,9 @@ def test_build_alert_history_sanitizes_legacy_python_repr_en_text() -> None:
 
     conn = FakeConn(
         {
+            # Exact-name dispatch for the pre-cap count query (the substring
+            # fallback would otherwise hand the alert row to it — no 'total' key).
+            "alerts.history.count": [{"total": 1}],
             "i3_alert_history_reporting": [
                 {
                     "alert_header_text": "Votre ligne",
@@ -1531,7 +1534,7 @@ def test_build_alert_history_sanitizes_legacy_python_repr_en_text() -> None:
                     "start_utc": datetime.datetime(2026, 6, 1, 8, 0, tzinfo=datetime.UTC),
                     "end_utc": datetime.datetime(2026, 6, 1, 9, 0, tzinfo=datetime.UTC),
                 }
-            ]
+            ],
         }
     )
 

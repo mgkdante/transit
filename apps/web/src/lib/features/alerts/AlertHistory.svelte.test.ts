@@ -199,6 +199,19 @@ describe('AlertHistory log', () => {
 		expect(note).not.toBeNull();
 		expect(note).toHaveTextContent(copyEn.truncatedNote(2, 512));
 	});
+
+	it('cap note keeps the SERVED count under an active client filter (never the filtered subset)', () => {
+		// The server cap clipped the SERVED payload newest-first; a client-side
+		// severity filter narrows the visible list but must not shrink the "shown"
+		// number, or the note misreads as "the N most recent" (S15 review F1).
+		(fixture as AlertHistory).truncated = true;
+		(fixture as AlertHistory).total_in_window = 512;
+		setUrl('http://localhost/alerts?severity=critical');
+		render(AlertHistoryScreen);
+		const note = document.querySelector('[data-slot="alert-truncated"]');
+		expect(note).not.toBeNull();
+		expect(note).toHaveTextContent(copyEn.truncatedNote(2, 512));
+	});
 });
 
 describe('AlertHistory headline', () => {

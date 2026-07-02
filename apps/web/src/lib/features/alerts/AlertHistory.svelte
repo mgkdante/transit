@@ -209,6 +209,9 @@
 	const generatedUtc = $derived(history.data?.generated_utc ?? null);
 
 	// Honest cap disclosure: the payload's truncated flag + the true total-in-window.
+	// The 'shown' count is the SERVED entry count (the population the newest-first
+	// server cap actually clipped) — never the client-filtered subset, which would
+	// misread as 'the N most recent' under an active filter (S15 review F1).
 	const truncated = $derived(history.data?.truncated === true);
 	const totalInWindow = $derived(history.data?.total_in_window ?? null);
 
@@ -295,7 +298,7 @@
 			{#if truncated && totalInWindow != null}
 				<!-- Honest cap disclosure: the served window was capped newest-first. -->
 				<p class="alert-history-truncated" data-slot="alert-truncated">
-					{t.truncatedNote(filtered.length, totalInWindow)}
+					{t.truncatedNote(entries.length, totalInWindow)}
 				</p>
 			{/if}
 

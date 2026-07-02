@@ -62,14 +62,19 @@ def test_0077_adds_additive_nullable_url_columns() -> None:
 
 def test_0077_view_exposes_url_and_active_periods() -> None:
     src = _source()
-    # The live view rebuild exposes url / url_en / active_periods (json_agg of the
+    # The live view rebuild exposes url / url_en / active_periods (jsonb_agg of the
     # child table), appended at END of the select list (CREATE OR REPLACE legal).
     assert "CREATE OR REPLACE VIEW gold.current_i3_alerts" in src
     assert "d.url" in src and "d.url_en" in src
-    assert "json_agg" in src and "active_periods" in src
-    # downgrade drops the view CASCADE and rebuilds both it + current_map_objects.
-    assert "DROP VIEW IF EXISTS gold.current_i3_alerts CASCADE" in src
-    assert "CREATE OR REPLACE VIEW gold.current_map_objects" in src
+    # jsonb, not json: the outer GROUP BY needs an equality operator on the column.
+    assert "jsonb_agg" in src and "active_periods" in src
+    assert "json_agg(" not in src.replace("jsonb_agg(", "")
+    # downgrade plain-drops the view (no dependents at head: 0059 dropped
+    # current_map_objects) and recreates the 0037 shape; it must NOT resurrect
+    # the dead map view.
+    assert "DROP VIEW IF EXISTS gold.current_i3_alerts" in src
+    assert "gold.current_i3_alerts CASCADE" not in src
+    assert "CREATE OR REPLACE VIEW gold.current_map_objects" not in src
 
 
 def test_0077_downgrade_drops_child_and_url() -> None:
