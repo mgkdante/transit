@@ -231,6 +231,10 @@ vi.mock('$lib/i18n', async (importOriginal) => {
 vi.mock('$lib/v1', async () => {
 	const affected =
 		await vi.importActual<typeof import('$lib/v1/affectedAlerts')>('$lib/v1/affectedAlerts');
+	// STATUS_LABELS is the shared bilingual status vocabulary the departure-status chips +
+	// row captions read (S8B) — pass the REAL table through so the tone labels resolve.
+	const enumLabels =
+		await vi.importActual<typeof import('$lib/v1/enumLabels')>('$lib/v1/enumLabels');
 	return {
 		getStop: () => stopFileData,
 		getStopReliability: () => reliabilityData,
@@ -239,6 +243,7 @@ vi.mock('$lib/v1', async () => {
 		createLiveStore: () =>
 			useSilentBoard ? silentBoardLiveStore : useEmptyLive ? emptyLiveStore : liveStore,
 		alertsForStop: affected.alertsForStop,
+		STATUS_LABELS: enumLabels.STATUS_LABELS,
 	};
 });
 
@@ -277,41 +282,11 @@ describe('StopDetail map drilldown', () => {
 });
 
 describe('StopDetail reliability — grain picker', () => {
-	it('offers only grains the stop has data for and defaults to the richest (day)', () => {
-		reset();
-		render(StopDetail, { props: { id: '57191' } });
-		fireEvent.click(screen.getByRole('tab', { name: 'Reliability' }));
-
-		const group = screen.getByRole('radiogroup', { name: 'Roll-up period' });
-		const day = within(group).getByRole('radio', { name: 'Day' });
-		const week = within(group).getByRole('radio', { name: 'Week' });
-		const month = within(group).getByRole('radio', { name: 'Month' });
-
-		// day + week have data → enabled; month has none → disabled, never offered live.
-		expect(day).toBeEnabled();
-		expect(week).toBeEnabled();
-		expect(month).toBeDisabled();
-		// Default = the richest available grain (day).
-		expect(day).toHaveAttribute('aria-checked', 'true');
-	});
-
-	it('switches grain and surfaces day percentiles only on the day grain', () => {
-		reset();
-		render(StopDetail, { props: { id: '57191' } });
-		fireEvent.click(screen.getByRole('tab', { name: 'Reliability' }));
-
-		// Day grain → typical/worst-case percentile pair is present. (p50 also
-		// surfaces inside the ReliabilityPane median tile, hence getAllByText.)
-		expect(screen.getByText('Typical delay')).toBeInTheDocument();
-		expect(screen.getAllByText('2.4 min').length).toBeGreaterThan(0); // p50
-		expect(screen.getAllByText('11.6 min').length).toBeGreaterThan(0); // p90
-
-		// Switch to week → percentiles (null on week) drop out, no fabricated 0.
-		fireEvent.click(screen.getByRole('radio', { name: 'Week' }));
-		expect(screen.queryByText('Typical delay')).not.toBeInTheDocument();
-		expect(screen.getByRole('radio', { name: 'Week' })).toHaveAttribute('aria-checked', 'true');
-	});
-
+	// NOTE (S8A re-seat): the grain-availability + grain-switch + calendar-only assertions
+	// moved to StopReliabilitySurface.svelte.test.ts (the grain rail now lives in the
+	// decomposed surface, and StopDetail renders BOTH the desktop + mobile rails so a
+	// bare getByRole('radiogroup') is ambiguous here). StopDetail keeps only the
+	// tab-scaffold + localized card-heading coverage below.
 	it('localizes the reliability card grain heading (EN) instead of the raw contract string', () => {
 		reset();
 		render(StopDetail, { props: { id: '57191' } });
@@ -675,7 +650,9 @@ describe('StopDetail reliability — by time of day (shift + day-type grains)', 
 		render(StopDetail, { props: { id: '57191' } });
 		fireEvent.click(screen.getByRole('tab', { name: 'Reliability' }));
 
-		const group = screen.getByRole('radiogroup', { name: 'Roll-up period' });
+		// S8A re-seat renders the desktop SurfaceControls rail AND the mobile ControlsRail
+		// (jsdom applies no CSS media query), so scope to the first (desktop) radiogroup.
+		const group = screen.getAllByRole('radiogroup', { name: 'Roll-up period' })[0];
 		// EXACTLY the three calendar grains are offered — never a shift token.
 		const radios = within(group).getAllByRole('radio');
 		expect(radios.map((r) => r.textContent?.trim())).toEqual(['Day', 'Week', 'Month']);
@@ -836,5 +813,134 @@ describe('StopDetail — per-stop state resets on navigation', () => {
 
 		expect(screen.getByText('Showing 2 of 2 departures')).toBeInTheDocument();
 		expect(screen.getByRole('button', { name: 'Late' })).toHaveAttribute('aria-pressed', 'false');
+	});
+});
+
+// ── S8B widget tests ─────────────────────────────────────────────────────────
+// Colored next-departure statuses (5-tone + severe representable + colour+glyph),
+// the column-major 5-col schedule grid + honest per-route gaps, the 2-col Info
+// pane with tri-state accessibility. All read the shared kernels (delayTone /
+// STATUS_LABELS / AbsentValue) — no invented per-surface vocabulary.
+
+// A board carrying a SEVERE departure (delay >= 5) under a fresh id so the shared
+// DEPARTURES fixture (which tops out at +4 = 'late') is untouched.
+const SEVERE_DEPARTURES = [
+	{ eta_utc: '2026-06-15T12:05:00Z', route: '51', delay_min: 9 }, // severe (>=5)
+	{ eta_utc: '2026-06-15T12:08:00Z', route: '80', delay_min: 0 }, // on time
+] as StopDeparture[];
+
+describe('StopDetail live departures — colored statuses (S8B)', () => {
+	it('offers all four tone chips incl. a representable SEVERE (not absorbed into late)', () => {
+		reset();
+		render(StopDetail, { props: { id: '57191' } });
+		// STATUS_LABELS (en) drive the chip text — severe is its own chip now.
+		expect(screen.getByRole('button', { name: /On-time/ })).toBeInTheDocument();
+		expect(screen.getByRole('button', { name: /Late/ })).toBeInTheDocument();
+		expect(screen.getByRole('button', { name: /Severe/ })).toBeInTheDocument();
+		expect(screen.getByRole('button', { name: /Early/ })).toBeInTheDocument();
+	});
+
+	it('tints each departure caption with the shared status fill AND a redundant glyph', () => {
+		reset();
+		const { container } = render(StopDetail, { props: { id: '57191' } });
+		// The +4 late departure's caption carries the late status fill + the ▲ glyph.
+		const late = Array.from(container.querySelectorAll('.stop-departure-delay')).find((el) =>
+			el.textContent?.includes('+4 min late'),
+		) as HTMLElement;
+		expect(late).toBeDefined();
+		expect(late.getAttribute('data-tone')).toBe('late');
+		expect(late.getAttribute('style') ?? '').toContain('--dataviz-status-late');
+		expect(late.querySelector('.stop-departure-glyph')?.textContent).toBe('▲');
+	});
+
+	it('bands a >=5 min departure to the SEVERE tone (its own severe fill)', () => {
+		reset();
+		liveStore.index.byStopId.set('SEVERE-1', SEVERE_DEPARTURES);
+		const { container } = render(StopDetail, { props: { id: 'SEVERE-1' } });
+		const severe = Array.from(container.querySelectorAll('.stop-departure-delay')).find(
+			(el) => el.getAttribute('data-tone') === 'severe',
+		) as HTMLElement;
+		expect(severe).toBeDefined();
+		expect(severe.getAttribute('style') ?? '').toContain('--dataviz-status-severe');
+		liveStore.index.byStopId.delete('SEVERE-1');
+	});
+});
+
+describe('StopDetail schedule — 5-col column-major grid + honest gaps (S8B/B4)', () => {
+	it('renders a 5-column grid with an explicit row count (ceil(n/5))', () => {
+		reset();
+		stopFileData = {
+			...STOP_FILE,
+			scheduled: [
+				{
+					route: '51',
+					headsign: 'Nord',
+					times: ['08:00', '08:10', '08:20', '08:30', '08:40', '08:50'],
+				},
+			],
+		} as unknown as StopFile;
+		const { container } = render(StopDetail, { props: { id: '57191' } });
+		fireEvent.click(screen.getByRole('tab', { name: 'Schedule' }));
+		const grid = container.querySelector('.stop-schedule-times') as HTMLElement;
+		expect(grid).not.toBeNull();
+		// 6 times over 5 columns → ceil(6/5) = 2 rows (column-major vertical fill).
+		expect((grid.getAttribute('style') ?? '').replace(/\s/g, '')).toContain('--sched-rows:2');
+	});
+
+	it('states an honest per-route absence when a listed route has NO times', () => {
+		reset();
+		stopFileData = {
+			...STOP_FILE,
+			scheduled: [{ route: '99', headsign: 'Vide', times: [] }],
+		} as unknown as StopFile;
+		const { container } = render(StopDetail, { props: { id: '57191' } });
+		fireEvent.click(screen.getByRole('tab', { name: 'Schedule' }));
+		// The route header still renders; its times block is an honest AbsentValue, not
+		// a silently empty grid.
+		expect(container.querySelector('.stop-schedule-times')).toBeNull();
+		const route = container.querySelector('.stop-schedule-route') as HTMLElement;
+		expect(route.querySelector('[data-slot]')?.textContent ?? route.textContent).not.toBe('99');
+	});
+});
+
+describe('StopDetail info — 2-col layout + tri-state accessibility (S8B/A3)', () => {
+	it('lays the Info pane out as facts (left) + alerts (right)', () => {
+		reset();
+		const { container } = render(StopDetail, { props: { id: '57191' } });
+		fireEvent.click(screen.getByRole('tab', { name: 'Info' }));
+		const info = container.querySelector('.stop-info') as HTMLElement;
+		expect(info).not.toBeNull();
+		// The facts column + the alerts block are the two grid children.
+		expect(info.querySelector('.stop-info-facts')).not.toBeNull();
+		expect(info.querySelector('[data-testid="stop-alerts"]')).not.toBeNull();
+	});
+
+	it('renders accessibility as YES when wheelchair === true', () => {
+		reset();
+		stopFileData = { ...STOP_FILE, wheelchair: true } as unknown as StopFile;
+		render(StopDetail, { props: { id: '57191' } });
+		fireEvent.click(screen.getByRole('tab', { name: 'Info' }));
+		expect(screen.getByText('Wheelchair accessible')).toBeInTheDocument();
+	});
+
+	it('renders accessibility as NO when wheelchair === false', () => {
+		reset();
+		stopFileData = { ...STOP_FILE, wheelchair: false } as unknown as StopFile;
+		render(StopDetail, { props: { id: '57191' } });
+		fireEvent.click(screen.getByRole('tab', { name: 'Info' }));
+		expect(screen.getByText('Not wheelchair accessible')).toBeInTheDocument();
+	});
+
+	it('renders an honest UNKNOWN (not a silent omit) when wheelchair is absent', () => {
+		reset();
+		// STOP_FILE has no `wheelchair` field → the tri-state renders the label with a
+		// styled absence chip, never dropping the accessibility field silently.
+		render(StopDetail, { props: { id: '57191' } });
+		fireEvent.click(screen.getByRole('tab', { name: 'Info' }));
+		// The label still shows (the field is not omitted)...
+		expect(screen.getByText('Accessibility')).toBeInTheDocument();
+		// ...and neither the YES nor NO copy is present (it is the unknown chip).
+		expect(screen.queryByText('Wheelchair accessible')).not.toBeInTheDocument();
+		expect(screen.queryByText('Not wheelchair accessible')).not.toBeInTheDocument();
 	});
 });

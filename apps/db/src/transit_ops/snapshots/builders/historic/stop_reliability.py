@@ -25,6 +25,7 @@ from transit_ops.snapshots.builders._helpers import (
     _STOP_NAMES_SQL,
     _avg_delay_min,
     _build_habits_matrix,
+    _iso_date,
     _opt_int,
     _otp_pct_severe_proxy,
     _route_sort_key,
@@ -40,6 +41,7 @@ from transit_ops.snapshots.contract import (
     OccupancyMix,
     RouteDayOfWeek,
     StopByRoute,
+    StopDailyPoint,
     StopReliability,
     StopReliabilityPeriod,
 )
@@ -143,6 +145,37 @@ _STOP_HABIT_SQL = named_query(
     ORDER BY sd.stop_id
     """
 )
+
+# Per-stop DAILY delay series over the trailing ~90 CLOSED provider-local days,
+# SUMMED across the stop's routes (whole-stop view, same all-routes rollup the
+# weekly/monthly reads use — the spine's '__unrouted__' partition is INCLUDED so
+# the per-day counts reconcile with the period counts). SERVE-THE-COUNTS (S8
+# DB-LANE): obs + severe are the exact additive ingredients the web pools over an
+# arbitrary sub-range (sum counts -> severe_pct + Wilson client-side), so this read
+# emits raw summed counts, NOT a re-aggregated rate. weighted_delay_sec is the
+# pooled SUM(sum_delay_seconds) numerator (the same rebaselined avg numerator the
+# weekly/monthly reads carry). Zero-observation days simply have no spine row, so
+# absent days never surface as fabricated zero-count rows. The trailing window uses
+# the reader window kernel (current_date_trailing_clause, now()-anchored provider-
+# local) — the spine's 730d retention comfortably covers 90d, so NO migration is
+# needed. Unique discriminator for test dispatch: "AS daily_obs".
+_STOP_DAILY_SQL = named_query(
+    "stop.reliability.daily",
+    f"""
+    SELECT sds.stop_id                        AS stop_id,
+           sds.provider_local_date            AS d,
+           SUM(sds.observation_count)::numeric AS daily_obs,
+           SUM(sds.severe_delay_count)::numeric AS severe,
+           SUM(sds.sum_delay_seconds)         AS weighted_delay_sec
+    FROM gold.stop_delay_spine AS sds
+    JOIN gold.dim_provider AS dp ON dp.provider_id = sds.provider_id
+    WHERE sds.provider_id = :provider_id
+      AND {current_date_trailing_clause("sds.provider_local_date", days=90)}
+    GROUP BY sds.stop_id, sds.provider_local_date
+    ORDER BY sds.stop_id, sds.provider_local_date
+    """
+)
+
 
 # Most-recent closed local day's p50/p90 per stop (append-only percentile rollup).
 _STOP_PERCENTILE_DAILY_SQL = named_query(
@@ -387,6 +420,32 @@ def build_stop_reliability(
         if mix is not None:
             occupancy_mix[str(r["stop_id"])] = mix
 
+    # Per-stop DAILY series (trailing ~90 closed days, SERVE-THE-COUNTS). Rows
+    # arrive ordered by (stop_id, date), so each stop's list is already date-
+    # ascending. Only days WITH observations exist (zero-obs days have no spine
+    # row -> honest absence, never a fabricated 0-count point). severe_pct /
+    # avg_delay_min are the per-day convenience readouts derived from the SAME
+    # obs + severe + weighted-sum ingredients the counts expose, so a client that
+    # pools a sub-range by summing counts reproduces the served rates exactly.
+    daily: dict[str, list[StopDailyPoint]] = {}
+    for r in conn.execute(_STOP_DAILY_SQL, params).mappings():
+        obs = _opt_int(r["daily_obs"])
+        if not obs:  # defensive: the spine only stores observed days, but never emit a 0-obs point
+            continue
+        severe = int(r["severe"] or 0)
+        avg_sec = _weighted_avg_sec(r["daily_obs"], r["weighted_delay_sec"])
+        daily.setdefault(str(r["stop_id"]), []).append(
+            StopDailyPoint(
+                date=_iso_date(r["d"]),
+                observation_count=obs,
+                severe_count=severe,
+                # severe_pct / avg_delay_min derive from the served counts; honest-
+                # None only if obs were 0 (already skipped above).
+                severe_pct=_severe_pct(r["daily_obs"], r["severe"]),
+                avg_delay_min=_avg_delay_min(avg_sec),
+            )
+        )
+
     out: dict[str, StopReliability] = {}
     for sid in (
         set(periods)
@@ -395,6 +454,7 @@ def build_stop_reliability(
         | set(day_period)
         | set(day_of_week)
         | set(occupancy_mix)
+        | set(daily)
     ):
         grain_map = periods.get(sid, {})
         ordered: list[StopReliabilityPeriod] = []
@@ -418,5 +478,6 @@ def build_stop_reliability(
             day_of_week=day_of_week.get(sid, []),
             by_route=routes,
             occupancy_mix=occupancy_mix.get(sid),
+            daily=daily.get(sid, []),
         )
     return out
