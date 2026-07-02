@@ -1737,11 +1737,12 @@ def test_build_network_trend_emits_week_and_month_grain_series() -> None:
 
     # Two ISO-week buckets (Mon 2026-06-01, Mon 2026-06-08), out of order to
     # assert ascending sort. otp = on_time/known, avg = weighted/known/60.
+    # GC1 spine re-point: avg = pooled_delay_sec / inclamp_obs (ghost-excluded mean).
     week_hourly = [
         {"local_date": datetime.date(2026, 6, 8), "known_obs": 200, "on_time": 150,
-         "weighted_delay_sec": 24000.0},  # otp 75, avg 2.0
+         "pooled_delay_sec": 24000.0, "inclamp_obs": 200},  # otp 75, avg 2.0
         {"local_date": datetime.date(2026, 6, 1), "known_obs": 100, "on_time": 90,
-         "weighted_delay_sec": 6000.0},   # otp 90, avg 1.0
+         "pooled_delay_sec": 6000.0, "inclamp_obs": 100},   # otp 90, avg 1.0
     ]
     week_cancel = [
         {"local_date": datetime.date(2026, 6, 1), "canceled": 3, "total": 120},  # 2.5%
@@ -1753,7 +1754,7 @@ def test_build_network_trend_emits_week_and_month_grain_series() -> None:
     # One calendar-month bucket (2026-06-01).
     month_hourly = [
         {"local_date": datetime.date(2026, 6, 1), "known_obs": 1000, "on_time": 820,
-         "weighted_delay_sec": 90000.0},  # otp 82, avg 1.5
+         "pooled_delay_sec": 90000.0, "inclamp_obs": 1000},  # otp 82, avg 1.5
     ]
     month_cancel = [
         {"local_date": datetime.date(2026, 6, 1), "canceled": 12, "total": 600},  # 2.0%

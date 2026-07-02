@@ -25,6 +25,8 @@ GOLD_WARM_ROLLUP_TABLES = (
 )
 
 GOLD_REPORTING_AGGREGATE_TABLES = (
+    # GC1 / Step G1 re-pointed every metric reader off gold.route_delay_hourly, but the
+    # table stays built (gold.public_route_reliability_daily VIEW still depends on it).
     "gold.route_delay_hourly",
     "gold.stop_delay_hourly",
     "gold.route_habit_score",

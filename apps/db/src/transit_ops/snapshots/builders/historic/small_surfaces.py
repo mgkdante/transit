@@ -343,22 +343,34 @@ _RECEIPTS_ACCOUNTABILITY_SQL = named_query(
     """
 )
 
-# Network-level daily aggregation from the hourly rollup.
+# Network-level daily aggregation from the route delay spine (last ~31 local days).
+# GC1 / Step G1: re-pointed off gold.route_delay_hourly onto gold.route_delay_spine
+# (route_delay_hourly is KEPT — public_route_reliability_daily, read by worst_route
+# below, still depends on it; its drop is deferred beyond G1). service_local_date is
+# provider-local, dropping the timezone()::date cast + the dim_provider join. Parity:
+#  * known_obs = SUM(delay_observation_count) and severe = SUM(severe_delay_count)
+#    are EXACT — so otp_pct / severe_pct are byte-identical.
+#  * on_time is a PLAIN SUM (NOT the fold CASE guard): a spine cell's on_time is NULL
+#    iff delay_obs=0, adding nothing to either SUM, so SUM(on_time)/SUM(known)
+#    reproduces the fold otp EXACTLY, whereas the CASE guard would spuriously NULL the
+#    day off the spine's per-direction silent cells (verified byte-for-byte on the seed).
+#  * pooled_delay_sec / inclamp_obs give the ghost-excluded pooled mean (hist_and_avg
+#    convention) — avg_delay_min REBASELINES (allow-move) vs the legacy obs-weighted
+#    avg-of-hourly-averages (dated methodology note on the GC1 commit).
 _RECEIPTS_NETWORK_DAILY_SQL = named_query(
     "receipts.network_daily",
     """
-    SELECT timezone(dp.timezone, rdh.period_start_utc)::date AS local_date,
-           SUM(rdh.delay_observation_count)                   AS known_obs,
-           CASE WHEN COUNT(*) = COUNT(rdh.on_time_observation_count)
-                THEN SUM(rdh.on_time_observation_count)
-           END AS on_time,
-           SUM(rdh.severe_delay_count)                        AS severe,
-           SUM(rdh.avg_delay_seconds * rdh.delay_observation_count) AS weighted_delay_sec
-    FROM gold.route_delay_hourly AS rdh
-    JOIN gold.dim_provider AS dp ON dp.provider_id = rdh.provider_id
-    WHERE rdh.provider_id = :provider_id
-      AND rdh.period_start_utc >= now() - interval '31 days'
-    GROUP BY timezone(dp.timezone, rdh.period_start_utc)::date
+    SELECT sp.service_local_date                        AS local_date,
+           SUM(sp.delay_observation_count)              AS known_obs,
+           SUM(sp.on_time_observation_count)            AS on_time,
+           SUM(sp.severe_delay_count)                   AS severe,
+           SUM(sp.sum_delay_seconds)                    AS pooled_delay_sec,
+           SUM((SELECT COALESCE(SUM(x), 0)
+                FROM unnest(sp.delay_histogram) AS x))  AS inclamp_obs
+    FROM gold.route_delay_spine AS sp
+    WHERE sp.provider_id = :provider_id
+      AND sp.service_local_date >= (now() AT TIME ZONE 'UTC')::date - 31
+    GROUP BY sp.service_local_date
     """
 )
 
@@ -408,9 +420,10 @@ def build_receipts(
     """Build historic/receipts/{date}.json for each date in the last 30 days.
 
     The citizen_accountability_daily table is the driver — one Receipt per date
-    present there.  Network OTP/delay come from route_delay_hourly (hourly rollup
-    aggregated to daily); worst_route and worst_stop come from the public daily
-    views (max avg_delay_seconds per date).
+    present there.  Network OTP/delay come from gold.route_delay_spine aggregated to
+    the local day (GC1 / Step G1 re-point off route_delay_hourly, which is KEPT for the
+    public views); worst_route and worst_stop come from the public daily views (max
+    avg_delay_seconds per date).
 
     vehicles is None in v1 (not stored in the receipt source mart).
     worst_route.otp_delta_pts = the worst route's daily OTP minus the day's network
@@ -434,10 +447,13 @@ def build_receipts(
     net: dict[str, dict] = {}
     for r in conn.execute(_RECEIPTS_NETWORK_DAILY_SQL, params).mappings():
         ds = _iso_date(r["local_date"])
-        known_obs, weighted = r["known_obs"], r["weighted_delay_sec"]
+        known_obs = r["known_obs"]
+        # GC1 spine re-point: pooled mean = ghost-excluded Σ sum_delay_seconds over the
+        # ghost-excluded in-clamp count (Σ histogram bins), matching hist_and_avg.
+        pooled, inclamp = r["pooled_delay_sec"], r["inclamp_obs"]
         avg_sec = (
-            (float(weighted) / float(known_obs))
-            if known_obs and weighted is not None
+            (float(pooled) / float(inclamp))
+            if inclamp and pooled is not None
             else None
         )
         net[ds] = {

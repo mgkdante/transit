@@ -31,22 +31,37 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
     from sqlalchemy.engine import Connection
 
 
-# Daily OTP + weighted-avg delay from the hourly rollup (last ~90 local days).
-# Local date = the provider's wall-clock date of the hour bucket.
+# Daily OTP + pooled-avg delay from the route delay spine (last ~90 local days).
+# GC1 / Step G1: re-pointed off gold.route_delay_hourly onto gold.route_delay_spine.
+# (route_delay_hourly is KEPT — the public_route_reliability_daily VIEW still reads it;
+# dropping it + re-pointing that view is deferred beyond G1 as it rebaselines worst_route.)
+# service_local_date is stored provider-local, so the day key
+# drops the timezone()::date cast + the dim_provider join. Parity:
+#  * known_obs = SUM(delay_observation_count) is EXACT.
+#  * on_time is a PLAIN SUM (NOT the fold's CASE WHEN COUNT(*)=COUNT(on_time) guard):
+#    a spine cell's on_time is NULL iff delay_obs=0, adding nothing to either SUM, so
+#    SUM(on_time)/SUM(known) reproduces the fold otp EXACTLY — whereas the CASE guard
+#    would spuriously NULL the day off the spine's per-direction silent cells (the
+#    hourly rollup merged directions, so its guard never saw them). Verified: plain-SUM
+#    matches the legacy on_time byte-for-byte; the CASE guard does NOT. This makes
+#    otp_pct / observation_count / wilson EXACT.
+#  * pooled_delay_sec / inclamp_obs give the ghost-excluded pooled mean (the same
+#    hist_and_avg convention every other spine reader uses) — avg_delay_min REBASELINES
+#    (allow-move) vs the legacy obs-weighted avg-of-hourly-averages (dated methodology
+#    note on the GC1 commit).
 _TREND_DAILY_SQL = named_query(
     "network.trend.daily_hourly",
     """
-    SELECT timezone(dp.timezone, rdh.period_start_utc)::date AS local_date,
-           SUM(rdh.delay_observation_count)                  AS known_obs,
-           CASE WHEN COUNT(*) = COUNT(rdh.on_time_observation_count)
-                THEN SUM(rdh.on_time_observation_count)
-           END AS on_time,
-           SUM(rdh.avg_delay_seconds * rdh.delay_observation_count) AS weighted_delay_sec
-    FROM gold.route_delay_hourly AS rdh
-    JOIN gold.dim_provider AS dp ON dp.provider_id = rdh.provider_id
-    WHERE rdh.provider_id = :provider_id
-      AND rdh.period_start_utc >= now() - interval '90 days'
-    GROUP BY timezone(dp.timezone, rdh.period_start_utc)::date
+    SELECT sp.service_local_date                        AS local_date,
+           SUM(sp.delay_observation_count)              AS known_obs,
+           SUM(sp.on_time_observation_count)            AS on_time,
+           SUM(sp.sum_delay_seconds)                    AS pooled_delay_sec,
+           SUM((SELECT COALESCE(SUM(x), 0)
+                FROM unnest(sp.delay_histogram) AS x))  AS inclamp_obs
+    FROM gold.route_delay_spine AS sp
+    WHERE sp.provider_id = :provider_id
+      AND sp.service_local_date >= (now() AT TIME ZONE 'UTC')::date - 90
+    GROUP BY sp.service_local_date
     """
 )
 
@@ -113,45 +128,43 @@ _TREND_OCCUPANCY_SQL = named_query(
 # Each query carries its `-- q:<name>` registry marker (named_query) so the
 # publish-test fakes dispatch a single canned row-set per query by exact name.
 
-# Hourly-rollup OTP + weighted-avg delay, grouped by the bucket-start local date.
-# Mirrors _TREND_DAILY_SQL: same SUM(delay)/CASE-guard on_time/weighted-delay and
-# the same sargable upper-history bound on the indexed period_start_utc column,
-# only the date expression is wrapped in date_trunc(<unit>, ...). The bound is
-# widened to ~371 days (>= 53 ISO weeks / 12 months) so the coarse buckets stay
-# useful while the scan over gold.route_delay_hourly stays bounded (the daily
-# variant caps at 90 days; an unbounded full-retention scan is a cost/timeout
-# risk — see the prior prod rollup-timeout incident).
+# Spine OTP + pooled-avg delay, grouped by the bucket-start local date. Mirrors
+# _TREND_DAILY_SQL (GC1 spine re-point): same SUM(delay_obs)/plain-SUM(on_time)/
+# pooled sum + in-clamp count off gold.route_delay_spine, only the date expression is
+# wrapped in date_trunc(<unit>, service_local_date). The bound is widened to ~371 days
+# (>= 53 ISO weeks / 12 months) so the coarse buckets stay useful; the append-only spine
+# is pruned at 730d (maintenance/gold.py), so 371d is always fully retained. The scan
+# stays bounded by service_local_date (the daily variant caps at 90 days; an unbounded
+# full-retention scan is a cost/timeout risk — see the prior prod rollup-timeout incident).
 _TREND_WEEKLY_SQL = named_query(
     "network.trend.week_hourly",
     """
-    SELECT date_trunc('week', timezone(dp.timezone, rdh.period_start_utc))::date AS local_date,
-           SUM(rdh.delay_observation_count)                  AS known_obs,
-           CASE WHEN COUNT(*) = COUNT(rdh.on_time_observation_count)
-                THEN SUM(rdh.on_time_observation_count)
-           END AS on_time,
-           SUM(rdh.avg_delay_seconds * rdh.delay_observation_count) AS weighted_delay_sec
-    FROM gold.route_delay_hourly AS rdh
-    JOIN gold.dim_provider AS dp ON dp.provider_id = rdh.provider_id
-    WHERE rdh.provider_id = :provider_id
-      AND rdh.period_start_utc >= now() - interval '371 days'
-    GROUP BY date_trunc('week', timezone(dp.timezone, rdh.period_start_utc))::date
+    SELECT date_trunc('week', sp.service_local_date)::date AS local_date,
+           SUM(sp.delay_observation_count)                 AS known_obs,
+           SUM(sp.on_time_observation_count)               AS on_time,
+           SUM(sp.sum_delay_seconds)                       AS pooled_delay_sec,
+           SUM((SELECT COALESCE(SUM(x), 0)
+                FROM unnest(sp.delay_histogram) AS x))     AS inclamp_obs
+    FROM gold.route_delay_spine AS sp
+    WHERE sp.provider_id = :provider_id
+      AND sp.service_local_date >= (now() AT TIME ZONE 'UTC')::date - 371
+    GROUP BY date_trunc('week', sp.service_local_date)::date
     """
 )
 
 _TREND_MONTHLY_SQL = named_query(
     "network.trend.month_hourly",
     """
-    SELECT date_trunc('month', timezone(dp.timezone, rdh.period_start_utc))::date AS local_date,
-           SUM(rdh.delay_observation_count)                  AS known_obs,
-           CASE WHEN COUNT(*) = COUNT(rdh.on_time_observation_count)
-                THEN SUM(rdh.on_time_observation_count)
-           END AS on_time,
-           SUM(rdh.avg_delay_seconds * rdh.delay_observation_count) AS weighted_delay_sec
-    FROM gold.route_delay_hourly AS rdh
-    JOIN gold.dim_provider AS dp ON dp.provider_id = rdh.provider_id
-    WHERE rdh.provider_id = :provider_id
-      AND rdh.period_start_utc >= now() - interval '371 days'
-    GROUP BY date_trunc('month', timezone(dp.timezone, rdh.period_start_utc))::date
+    SELECT date_trunc('month', sp.service_local_date)::date AS local_date,
+           SUM(sp.delay_observation_count)                  AS known_obs,
+           SUM(sp.on_time_observation_count)                AS on_time,
+           SUM(sp.sum_delay_seconds)                        AS pooled_delay_sec,
+           SUM((SELECT COALESCE(SUM(x), 0)
+                FROM unnest(sp.delay_histogram) AS x))      AS inclamp_obs
+    FROM gold.route_delay_spine AS sp
+    WHERE sp.provider_id = :provider_id
+      AND sp.service_local_date >= (now() AT TIME ZONE 'UTC')::date - 371
+    GROUP BY date_trunc('month', sp.service_local_date)::date
     """
 )
 
@@ -265,10 +278,15 @@ def _trend_points(
 
     for r in conn.execute(otp_sql, params).mappings():
         known_obs = r["known_obs"]
-        weighted = r["weighted_delay_sec"]
+        # GC1 spine re-point: the rebaselined pooled mean uses the ghost-EXCLUDED
+        # numerator (Σ sum_delay_seconds) over the ghost-EXCLUDED in-clamp count
+        # (Σ histogram bins) — the same hist_and_avg convention every other spine
+        # reader uses. known_obs (delay_obs, ghost-inclusive) still drives otp/wilson.
+        pooled = r["pooled_delay_sec"]
+        inclamp = r["inclamp_obs"]
         avg_delay_sec = (
-            (float(weighted) / float(known_obs))
-            if known_obs and weighted is not None
+            (float(pooled) / float(inclamp))
+            if inclamp and pooled is not None
             else None
         )
         entry = _blank_trend_point()

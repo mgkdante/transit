@@ -269,30 +269,35 @@ def test_build_network_trend_merges_and_orders() -> None:
     d3 = datetime.date(2026, 6, 3)
     conn = FakeConn(
         [
-            # daily hourly rollup: 3 days of OTP + weighted avg delay
+            # daily spine rollup (GC1 re-point): 3 days of OTP + pooled avg delay.
+            # avg = pooled_delay_sec / inclamp_obs (ghost-excluded pooled mean).
             (
                 "network.trend.daily_hourly",
                 [
-                    # 47/100 -> otp 47; weighted 100*120s/100 = 120s -> 2.0min
+                    # 47/100 -> otp 47; pooled 12000s/100 = 120s -> 2.0min
                     {
                         "local_date": d1,
                         "known_obs": 100,
                         "on_time": 47,
-                        "weighted_delay_sec": 12000.0,
+                        "pooled_delay_sec": 12000.0,
+                        "inclamp_obs": 100,
                     },
-                    # 180/200 -> otp 90; weighted 200*90s/200 = 90s -> 1.5min
+                    # 180/200 -> otp 90; pooled 18000s/200 = 90s -> 1.5min
                     {
                         "local_date": d2,
                         "known_obs": 200,
                         "on_time": 180,
-                        "weighted_delay_sec": 18000.0,
+                        "pooled_delay_sec": 18000.0,
+                        "inclamp_obs": 200,
                     },
-                    # legacy NULL on-time count -> honest None OTP, but avg delay still known
+                    # NULL on-time (plain SUM of all-NULL cells) -> honest None OTP,
+                    # but avg delay still known: pooled 600s/10 = 60s -> 1.0min
                     {
                         "local_date": d3,
                         "known_obs": 10,
                         "on_time": None,
-                        "weighted_delay_sec": 600.0,
+                        "pooled_delay_sec": 600.0,
+                        "inclamp_obs": 10,
                     },
                 ],
             ),
@@ -1509,7 +1514,8 @@ def test_build_receipts_date_driven_by_accountability() -> None:
                     "known_obs": 200,
                     "on_time": 180,
                     "severe": 10,
-                    "weighted_delay_sec": 18000.0,
+                    "pooled_delay_sec": 18000.0,
+                    "inclamp_obs": 200,
                 },
             ],
         )
@@ -1644,7 +1650,8 @@ def test_build_receipts_otp_from_network_hourly() -> None:
                     "known_obs": 100,
                     "on_time": 60,
                     "severe": 10,
-                    "weighted_delay_sec": 12000.0,  # 120s avg -> 2.0 min
+                    "pooled_delay_sec": 12000.0,  # 120s avg -> 2.0 min
+                    "inclamp_obs": 100,
                 }
             ],
         )
@@ -1680,7 +1687,8 @@ def test_build_receipts_worst_route_and_stop_by_max_delay() -> None:
                     "known_obs": 100,
                     "on_time": 80,
                     "severe": 5,
-                    "weighted_delay_sec": 6000.0,
+                    "pooled_delay_sec": 6000.0,
+                    "inclamp_obs": 100,
                 }
             ],
             # rows ordered DESC by avg_delay_seconds in SQL; first = worst.
