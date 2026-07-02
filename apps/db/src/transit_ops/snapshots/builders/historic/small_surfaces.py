@@ -768,20 +768,27 @@ _OFFENDERS_WINDOW_SQL = named_query(
 )
 
 
-def _offender_severity(recurrence_days: int | None, avg_min: float | None) -> str | None:
+def _offender_severity(recurrence_days: int | None, avg_sec: float | None) -> str | None:
     """The by_grain entry severity from the mart's declared vocabulary (S14 D4), applied to
     the entry's OWN window. Honest-None when both inputs are unknown (never a fabricated
-    'watch'). avg is compared in SECONDS to match the mart CASE (avg_delay_seconds > 600)."""
-    if recurrence_days is None and avg_min is None:
+    'watch'). avg_sec is the UN-ROUNDED pooled mean in SECONDS (Σsum_delay / Σobs), so the
+    600s boundary is compared at full precision like the mart CASE, not on the display-rounded
+    minute value (a 600.4s window must label critical on both ladders)."""
+    if recurrence_days is None and avg_sec is None:
         return None
     rec = recurrence_days or 0
-    avg_sec = (avg_min or 0.0) * 60.0
     if (rec >= _OFFENDER_SEVERITY_CRITICAL_RECURRENCE
-            or avg_sec > _OFFENDER_SEVERITY_CRITICAL_AVG_SECONDS):
+            or (avg_sec or 0.0) > _OFFENDER_SEVERITY_CRITICAL_AVG_SECONDS):
         return "critical"
     if rec >= _OFFENDER_SEVERITY_HIGH_RECURRENCE:
         return "high"
     return "watch"
+
+
+def _offender_pooled_avg_sec(sum_sec: object, obs: int) -> float | None:
+    """Un-rounded pooled mean delay in SECONDS for a window (the severity comparator);
+    honest-None on a zero denominator."""
+    return float(sum_sec) / obs if (sum_sec is not None and obs) else None
 
 
 def _offender_window_val(sum_sec: object, obs: int) -> float | None:
@@ -815,7 +822,7 @@ def _offender_ranked_entry(
         id=eid,
         route=route_id,
         route_name=(route_names.get(str(route_id)) if route_id is not None else None),
-        severity=_offender_severity(rec_days, avg_min),
+        severity=_offender_severity(rec_days, _offender_pooled_avg_sec(r["sum_delay_sec"], obs)),
         observation_count=_opt_int(obs),
         severe_count=_opt_int(severe),
         severe_pct=_severe_pct(obs, severe),
@@ -844,7 +851,7 @@ def _offender_tray_entry(r, kind: str, route_names: dict) -> RepeatOffenderEntry
         id=str(r["entity_id"]),
         route=route_id,
         route_name=(route_names.get(str(route_id)) if route_id is not None else None),
-        severity=_offender_severity(rec_days, avg_min),
+        severity=_offender_severity(rec_days, _offender_pooled_avg_sec(r["sum_delay_sec"], obs)),
         observation_count=_opt_int(obs),
         severe_count=_opt_int(severe),
         severe_pct=_severe_pct(obs, severe),

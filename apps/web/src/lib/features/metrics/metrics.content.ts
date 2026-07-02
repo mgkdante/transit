@@ -902,33 +902,31 @@ if not total: return None        # honest-None, never an all-zero mix`,
 			en: 'A 7-rows-by-24-columns grid for one route: each row is a day of the week (Monday=1 … Sunday=7, local time), each column is an hour (0–23, local time). Every cell shades how reliably bad that route tends to be in that day-and-hour slot, compared to that same route’s own worst slot. A value of 1.0 means “this is this route’s most chronically problematic hour”; 0.0 means “observed but consistently calm”; an empty/null cell means the route was never observed running in that slot. It is RELATIVE to each route, a 1.0 on a generally good route is NOT as bad as a 1.0 on a chronically late route.',
 		},
 		math: {
-			fr: 'Par cellule : raw_score = severe_delay_count × 10 + max(avg_delay_seconds, 0) / 60, arrondi à 4 décimales et PLAFONNÉ à 9999.9999 (garde de débordement de stockage, pas une vraie magnitude). Cellules regroupées par jour-de-semaine et heure LOCAUX. Cellule publiée = raw_score / route_max, où route_max = max raw_score sur les cellules observées de la ligne. Si route_max = 0 → 0,0; sinon le pire → 1,0. Cellules non observées → null; cellule observée à score NULL → null (jamais 0,0).',
-			en: 'Per cell: raw_score = severe_delay_count × 10 + max(avg_delay_seconds, 0) / 60, rounded to 4 decimals and CAPPED at 9999.9999 (a storage-overflow guard, not a real magnitude). Cells bucketed by LOCAL day-of-week and hour. Published cell = raw_score / route_max, where route_max = max raw_score over the route’s observed cells. If route_max = 0 → 0.0; else the worst → 1.0. Unobserved cells → null; an observed cell with a NULL raw score → null (never 0.0).',
+			fr: 'Par cellule : raw_score = severe_delay_count × 10 + max(avg_delay_seconds, 0) / 60, arrondi à 4 décimales et PLAFONNÉ à 9999.9999 (garde de débordement de stockage, pas une vraie magnitude). avg_delay_seconds est la MOYENNE POOLÉE en-clamp : Σ sum_delay_seconds / Σ observations des histogrammes de retard (fantômes hors ±3600 s exclus), arrondie à 2 décimales. Cellules regroupées par jour-de-semaine et heure LOCAUX. Cellule publiée = raw_score / route_max, où route_max = max raw_score sur les cellules observées de la ligne. Si route_max = 0 → 0,0; sinon le pire → 1,0. Cellules non observées → null; cellule observée à score NULL → null (jamais 0,0).',
+			en: 'Per cell: raw_score = severe_delay_count × 10 + max(avg_delay_seconds, 0) / 60, rounded to 4 decimals and CAPPED at 9999.9999 (a storage-overflow guard, not a real magnitude). avg_delay_seconds is the POOLED in-clamp mean: Σ sum_delay_seconds / Σ delay-histogram observations (ghosts beyond ±3600s excluded), rounded to 2 decimals. Cells bucketed by LOCAL day-of-week and hour. Published cell = raw_score / route_max, where route_max = max raw_score over the route’s observed cells. If route_max = 0 → 0.0; else the worst → 1.0. Unobserved cells → null; an observed cell with a NULL raw score → null (never 0.0).',
 		},
-		sql: `-- UPSERT_ROUTE_HABIT_SCORE (gold/rollups.py): re-bucket hourly mart into LOCAL (dow,hour) and compute the raw repeat-problem score
-WITH habit AS (
-    SELECT
-        rd.provider_id, rd.route_id,
-        EXTRACT(ISODOW FROM timezone(dp.timezone, rd.period_start_utc))::integer AS day_of_week_iso,
-        EXTRACT(HOUR  FROM timezone(dp.timezone, rd.period_start_utc))::integer AS hour_of_day_local,
-        SUM(rd.observation_count)::integer AS observation_count,
-        ROUND(SUM(rd.avg_delay_seconds * NULLIF(rd.observation_count, 0))
-              / NULLIF(SUM(rd.observation_count), 0), 2) AS avg_delay_seconds,
-        SUM(rd.severe_delay_count)::integer AS severe_delay_count
-    FROM gold.route_delay_hourly AS rd
-    INNER JOIN gold.dim_provider AS dp ON dp.provider_id = rd.provider_id
-    WHERE rd.provider_id = :provider_id
-    GROUP BY 1, 2, 3, 4
-)
-INSERT INTO gold.route_habit_score (..., repeat_problem_score, built_at_utc)
-SELECT ...,
+		sql: `-- ROUTE_HABIT_SPINE_SQL (gold/reader/projector.py), reconciled S14 2026-07-02: ONE reader-owned
+-- formula (gold/reader/score.py REPEAT_PROBLEM_SCORE_EXPR) over gold.route_delay_spine. The old
+-- gold.route_habit_score mart was DROPPED (migration 0076); the scalar 7x24 matrix runs this SQL
+-- with an all-time window [1970-01-01 .. spine anchor], the by-grain matrices run the SAME SQL
+-- with trailing day/week/month windows.
+SELECT
+    EXTRACT(ISODOW FROM provider_local_date)::integer AS day_of_week_iso,
+    hour_of_day_local,
+    SUM(delay_observation_count)::bigint AS known_obs,
     LEAST(
-        ROUND( (severe_delay_count::numeric * 10
-                + GREATEST(COALESCE(avg_delay_seconds, 0), 0) / 60), 4),
-        9999.9999),               -- overflow guard, not a real magnitude
-    :built_at_utc
-FROM habit
-ON CONFLICT (provider_id, route_id, day_of_week_iso, hour_of_day_local) DO UPDATE SET ...;
+        ROUND(
+            SUM(severe_delay_count)::numeric * 10
+            + GREATEST(COALESCE(ROUND(
+                SUM(sum_delay_seconds)::numeric
+                / NULLIF(SUM((SELECT COALESCE(SUM(x), 0) FROM unnest(delay_histogram) AS x)), 0),
+                2), 0), 0) / 60,
+            4),
+        9999.9999) AS repeat_problem_score   -- overflow guard, not a real magnitude
+FROM gold.route_delay_spine
+WHERE provider_id = :provider_id AND route_id = :route_id
+  AND provider_local_date >= :win_start AND provider_local_date <= :win_end
+GROUP BY 1, 2
 
 -- Per-route [0,1] normalization at publish time (_helpers.py _build_habits_matrix):
 -- observed = [v for v in cells if v is not None]; route_max = max(observed) or 0.0
@@ -941,21 +939,21 @@ ON CONFLICT (provider_id, route_id, day_of_week_iso, hour_of_day_local) DO UPDAT
 			fr: [
 				"PROXY, pas une ponctualité certifiée : bâti entièrement sur l'écart à l'horaire prédit du GTFS-RT, pas l'AVL/les arrivées réelles. « Grave » = retard prédit > 300 s.",
 				"NORMALISATION RELATIVE par ligne : chaque cellule est divisée par le PIRE créneau de CETTE ligne, donc un 1,0 ici n'est PAS comparable à un 1,0 d'une autre ligne. La magnitude absolue (minutes) est délibérément écartée.",
-				"Composition du score brute opaque : repeat_problem_score = severe_count×10 + mean_delay_min. La pondération ×10 fait dominer les événements graves récurrents; le terme de retard moyen est une MOYENNE pondérée par observations (corrigée de l'ancien mauvais étiquetage « médiane »).",
+				"Composition du score brute opaque : repeat_problem_score = severe_count×10 + mean_delay_min. La pondération ×10 fait dominer les événements graves récurrents; le terme de retard moyen est la MOYENNE POOLÉE en-clamp des histogrammes du spine (fantômes exclus; corrigée de l'ancien mauvais étiquetage « médiane »).",
 				'La valeur 9999.9999 est une GARDE de débordement Numeric(8,4), pas une vraie magnitude. Une cellule au plafond est simplement le max de la ligne et se normalise à exactement 1,0.',
 				'Discipline du null : un créneau non observé est null = « pas de service / pas de donnée »; un créneau observé à score NULL est AUSSI gardé null, JAMAIS forcé à un faux 0,0 calme. Un vrai créneau calme observé est un vrai 0,0.',
 				"DST / heure locale : dow et heure viennent de l'heure locale du fournisseur. L'heure de saut printanier accumule zéro observation; l'heure répétée d'automne double-compte. Artefacts attendus deux fois l'an.",
-				"Récurrence bornée par fenêtre : le feeder est un rebuild de fenêtre ouverte (~14 jours glissants), donc la carte reflète les habitudes RÉCENTES, pas tout l'historique. Les cellules clairsemées peuvent virer vers 1,0 sur un seul mauvais événement.",
+				"Fenêtre TOUT-HISTORIQUE (réconcilié S14, 2026-07-02) : la matrice scalaire est calculée sur TOUT l'historique accumulé du spine de retards (rétention 730 jours), donc elle reflète les habitudes de long terme; les variantes fenêtrées par grain (jour/semaine/mois) du MÊME score montrent les habitudes récentes. Les cellules clairsemées peuvent virer vers 1,0 sur un seul mauvais événement.",
 				"La surface d'arrêt réutilise la MÊME forme mais avec un libellé d'échelle DISTINCT 'severe_relative'. Ne pas confondre : la famille de ligne est scale='repeat_problem_relative'. Une légende partagée doit clé sur le champ scale.",
 			],
 			en: [
 				'PROXY, not certified OTP: built entirely on GTFS-RT predicted schedule-deviation, not AVL/actual arrivals. “Severe” = predicted delay > 300s.',
 				'RELATIVE per-route normalization: every cell is divided by THAT route’s own worst cell, so a 1.0 here is NOT comparable to a 1.0 on another route. Absolute magnitude (minutes) is deliberately discarded.',
-				'Raw score composition is opaque: repeat_problem_score = severe_count×10 + mean_delay_min. The ×10 weighting means recurring severe events dominate; the mean-delay term is an observation-weighted MEAN (corrected from the old mislabel “median”).',
+				'Raw score composition is opaque: repeat_problem_score = severe_count×10 + mean_delay_min. The ×10 weighting means recurring severe events dominate; the mean-delay term is the POOLED in-clamp mean over the spine’s delay histograms (ghosts excluded; corrected from the old mislabel “median”).',
 				'The 9999.9999 value is a Numeric(8,4) overflow GUARD, not a real magnitude. An at-cap cell is simply the route’s max and normalizes to exactly 1.0.',
 				'Null discipline: an unobserved slot is null = “no service / no data”; an observed slot with a NULL raw score is ALSO kept null, NEVER coerced to a false observed-calm 0.0. A genuinely calm observed slot is a real 0.0.',
 				'DST / local-time bucketing: dow and hour come from the provider’s local time. The spring-forward gap hour accrues zero observations; the fall-back repeated hour double-counts. Expected artifacts twice a year.',
-				'Window-bounded recurrence: the feeder is an open-window rebuild (~trailing 14 days), so the heatmap reflects RECENT habits, not all-time. Sparse cells can swing toward 1.0 on a single bad event.',
+				'ALL-HISTORY window (reconciled S14, 2026-07-02): the scalar matrix is computed over the route’s full accrued delay-spine history (730-day retention), so it reflects long-run habits; the per-grain windowed variants (day/week/month) of the SAME score show recent habits. Sparse cells can swing toward 1.0 on a single bad event.',
 				'The stop surface reuses the SAME shape but with a DISTINCT scale label “severe_relative”. Do not conflate: the route family is scale=“repeat_problem_relative”. A shared legend must key off the scale field.',
 			],
 		},

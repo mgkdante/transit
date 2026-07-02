@@ -1789,18 +1789,22 @@ def test_build_repeat_offenders_scalar_additive_fields_and_order_stable() -> Non
 
 
 def test_offender_severity_matches_mart_vocabulary() -> None:
+    # avg_sec is the UN-ROUNDED pooled mean in SECONDS (S14 review F2).
     assert _offender_severity(10, 0.0) == "critical"           # recurrence >= 10
-    assert _offender_severity(0, 10.02) == "critical"          # avg 601.2s > 600s
-    assert _offender_severity(1, 10.0) == "high" or _offender_severity(1, 10.0) == "watch"
+    assert _offender_severity(0, 601.2) == "critical"          # avg 601.2s > 600s
+    assert _offender_severity(1, 600.0) in ("high", "watch")
     assert _offender_severity(5, 0.0) == "high"                # recurrence >= 5
-    assert _offender_severity(4, 5.0) == "watch"               # below both ladders
+    assert _offender_severity(4, 300.0) == "watch"             # below both ladders
     assert _offender_severity(None, None) is None              # honest-None, never 'watch'
 
 
 def test_offender_severity_avg_boundary_is_strict_gt_600s() -> None:
-    """The mart CASE is avg_delay_seconds > 600 (strict) — 600s exactly is NOT critical on avg."""
-    assert _offender_severity(0, 10.0) == "watch"  # exactly 600s -> not critical
-    assert _offender_severity(0, 10.02) == "critical"  # 601.2s -> critical
+    """The mart CASE is avg_delay_seconds > 600 (strict) — 600s exactly is NOT critical on avg,
+    and the comparison happens on UN-ROUNDED pooled seconds: 600.4s must be critical even though
+    it display-rounds to 10.0 min (S14 review F2 boundary case)."""
+    assert _offender_severity(0, 600.0) == "watch"  # exactly 600s -> not critical
+    assert _offender_severity(0, 600.4) == "critical"  # inside the minute-rounding tolerance
+    assert _offender_severity(0, 601.2) == "critical"
 
 
 # --------------------------------------------------------------------------
