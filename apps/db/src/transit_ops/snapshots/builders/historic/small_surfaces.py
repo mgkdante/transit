@@ -10,9 +10,10 @@ from __future__ import annotations
 import hashlib
 from typing import TYPE_CHECKING
 
-from transit_ops.gold.reader import current_date_trailing_clause
+from transit_ops.gold.reader import GrainWindows, current_date_trailing_clause, shift_case_sql
 from transit_ops.snapshots.builders._helpers import (
     _ROUTE_NAMES_SQL,
+    MIN_N_RATE,
     _avg_delay_min,
     _entity_name_maps,
     _iso,
@@ -26,6 +27,8 @@ from transit_ops.snapshots.builders._helpers import (
     _sane_en,
     _severe_pct,
     _severity_code,
+    _wilson_hi,
+    _wilson_lo,
 )
 from transit_ops.snapshots.contract import (
     AlertBreakdown,
@@ -33,6 +36,8 @@ from transit_ops.snapshots.contract import (
     AlertHistory,
     AlertHistoryEntry,
     Hotspot,
+    HotspotEntry,
+    HotspotGrain,
     Hotspots,
     Offender,
     Receipt,
@@ -266,7 +271,361 @@ def build_hotspots(conn: Connection, provider_id: str = "stm", *, generated_utc:
                 otp_delta_pts=_otp_delta_pts(cell_otp, network_otp),
             )
         )
-    return Hotspots(generated_utc=generated_utc, hotspots=hotspots)
+    # S12 additive: the evidence-rich by_grain ladders. The scalar hotspots[] above is
+    # UNTOUCHED (byte-identical); by_grain is appended off the same spines at read time.
+    by_grain = _hotspots_by_grain(conn, provider_id, route_names, stop_names)
+    return Hotspots(generated_utc=generated_utc, hotspots=hotspots, by_grain=by_grain)
+
+
+# --------------------------------------------------------------------------
+# S12 — re-granulated hotspot ladders (day/week/month + shift) off the spines
+# --------------------------------------------------------------------------
+# The mart gold.repeated_problem_route_stop is WEEK-GRAIN ONLY, so day/month/time-of-
+# day CANNOT come from it. The honest path (matching the S7 _weak_stops_by_grain house
+# pattern) is to recompose the ladders at READ TIME off the SAME spines the mart derives
+# from — gold.route_delay_spine (routes) + gold.stop_delay_spine (stops) — with NO new
+# mart and NO migration. Ranking is the NOT-severe Wilson LOWER bound ASC on the SEVERE-
+# delay proxy, the SAME cross-kind metric for both route and stop (WEB1) so a route and a
+# stop share one comparable scale in the ladder. MIN_N=30 is the load-bearing floor: the
+# Wilson LB does not demote an extreme tiny-n fluke (a 4-of-4-severe entity pins the
+# not-severe LB at 0.0%, n-independent), so a hard exclude to the un-ranked tray is the
+# only rail.
+_MIN_N_HOTSPOT = MIN_N_RATE          # 30 — the proportion reliability floor
+_HOTSPOTS_BY_GRAIN_CAP = 50          # ranked entries stored per (grain, KIND) — route
+                                     # and stop are ranked SEPARATELY (WEB2), each cap 50
+_HOTSPOTS_TRAY_CAP = 60              # un-ranked tray entries stored per grain TOTAL
+                                     # (the cross-kind union, capped after the sort)
+# The peak (rush-hour) shifts the 'shift' grain scopes to — the time-of-day cut where a
+# hotspot bites hardest. Both source paths share these kernel labels (route via the
+# hour->shift CASE, stop via gold.stop_delay_shift_daily.shift), so the two kinds bucket
+# the SAME observation to the SAME shift. These are FIXED kernel constants (never user
+# input), so they embed as SQL literals — no expanding bind needed.
+_HOTSPOT_PEAK_SHIFTS = ("am_peak", "pm_peak")
+_PEAK_SHIFT_IN_LITERAL = ", ".join(f"'{s}'" for s in _HOTSPOT_PEAK_SHIFTS)
+
+# Network-wide newest CLOSED day per spine (NO route filter — hotspots are all-per-city,
+# unlike the per-route weak_stops anchor). Read once per kind and threaded into windows.
+_HOTSPOTS_ROUTE_ANCHOR_SQL = named_query(
+    "hotspots.route.anchor",
+    "SELECT MAX(provider_local_date) AS anchor FROM gold.route_delay_spine "
+    "WHERE provider_id = :provider_id",
+)
+_HOTSPOTS_STOP_ANCHOR_SQL = named_query(
+    "hotspots.stop.anchor",
+    "SELECT MAX(provider_local_date) AS anchor FROM gold.stop_delay_spine "
+    "WHERE provider_id = :provider_id",
+)
+
+# Per-ROUTE windowed aggregate across ALL routes for a trailing window: the additive spine
+# counts SUMmed per route. Ranking + the display otp_delta_pts BOTH use the severe(>300s)
+# proxy (obs = the in-clamp delay count) so a route and a stop share ONE comparable scale in
+# the merged ladder (WEB1) — route on_time is deliberately NOT read here. The '__unrouted__'
+# sentinel is excluded (never a named hotspot). No route filter — the all-per-city universe.
+_HOTSPOTS_ROUTE_WINDOW_SQL = named_query(
+    "hotspots.route.by_grain",
+    """
+    SELECT
+        route_id,
+        SUM(delay_observation_count)::bigint  AS obs,
+        SUM(severe_delay_count)::bigint       AS severe,
+        SUM(sum_delay_seconds)::bigint        AS sum_delay_sec
+    FROM gold.route_delay_spine
+    WHERE provider_id = :provider_id
+      AND provider_local_date >= :win_start AND provider_local_date <= :win_end
+      AND route_id <> '__unrouted__'
+    GROUP BY route_id
+    """,
+)
+
+# Per-STOP windowed aggregate across ALL stops (summed over the stop's routes) for a
+# trailing window. Stops have no on_time column, so their OTP stays the severe(>300s)
+# proxy — the SAME metric routes rank on. '__unknown_stop__' excluded.
+_HOTSPOTS_STOP_WINDOW_SQL = named_query(
+    "hotspots.stop.by_grain",
+    """
+    SELECT
+        stop_id,
+        SUM(observation_count)::bigint  AS obs,
+        SUM(severe_delay_count)::bigint AS severe,
+        SUM(sum_delay_seconds)::bigint  AS sum_delay_sec
+    FROM gold.stop_delay_spine
+    WHERE provider_id = :provider_id
+      AND provider_local_date >= :win_start AND provider_local_date <= :win_end
+      AND stop_id <> '__unknown_stop__'
+    GROUP BY stop_id
+    """,
+)
+
+# ── 'shift' grain source reads: the anchor WEEK window scoped to the peak (rush-hour)
+#    shifts. Route reads route_delay_spine through the ONE gold.reader hour->shift CASE
+#    (byte-identical to the route projector + stop_delay_shift_daily's build-time bucket);
+#    stop reads gold.stop_delay_shift_daily (5 pre-bucketed shift rows — the stop spine has
+#    no hour column, so this is the ONLY honest stop time-of-day source). ──
+_HOTSPOTS_ROUTE_SHIFT_SQL = named_query(
+    "hotspots.route.by_shift",
+    f"""
+    SELECT
+        route_id,
+        SUM(delay_observation_count)::bigint  AS obs,
+        SUM(severe_delay_count)::bigint       AS severe,
+        SUM(sum_delay_seconds)::bigint        AS sum_delay_sec
+    FROM gold.route_delay_spine
+    WHERE provider_id = :provider_id
+      AND provider_local_date >= :win_start AND provider_local_date <= :win_end
+      AND route_id <> '__unrouted__'
+      AND ({shift_case_sql("hour_of_day_local", indent=6)}) IN ({_PEAK_SHIFT_IN_LITERAL})
+    GROUP BY route_id
+    """,
+)
+_HOTSPOTS_STOP_SHIFT_SQL = named_query(
+    "hotspots.stop.by_shift",
+    f"""
+    SELECT
+        stop_id,
+        SUM(observation_count)::bigint  AS obs,
+        SUM(severe_delay_count)::bigint AS severe,
+        SUM(sum_delay_seconds)::bigint  AS sum_delay_sec
+    FROM gold.stop_delay_shift_daily
+    WHERE provider_id = :provider_id
+      AND provider_local_date >= :win_start AND provider_local_date <= :win_end
+      AND stop_id <> '__unknown_stop__'
+      AND shift IN ({_PEAK_SHIFT_IN_LITERAL})
+    GROUP BY stop_id
+    """,
+)
+
+
+def _hotspots_anchor(conn: Connection, sql, provider_id: str):  # noqa: ANN001, ANN202
+    row = conn.execute(sql, {"provider_id": provider_id}).mappings().fetchone()
+    return row["anchor"] if row else None
+
+
+def _severe_proxy_entry(
+    r, kind: str, names: dict, *, net_severe_pct: float | None
+) -> tuple[float, float, str, HotspotEntry] | None:
+    """Build one ranked HotspotEntry from a summed spine row, ranked on the NOT-severe
+    Wilson LB of the severe proxy. Returns None below MIN_N (caller routes it to the tray).
+
+    net_severe_pct = the window's network SEVERE %, so otp_delta_pts = the entity's own
+    severe-proxy OTP minus the network severe-proxy OTP (same metric, honest-None when
+    either side is unknown). Ranking key tuple = (wilson_lo ASC, -avg worst, id ASC).
+    """
+    obs = int(r["obs"] or 0)
+    severe = int(r["severe"] or 0)
+    id_col = "route_id" if kind == "route" else "stop_id"
+    eid = str(r[id_col])
+    if obs < _MIN_N_HOTSPOT:
+        return None
+    severe_k = obs - severe  # not-severe successes
+    w_lo = _wilson_lo(severe_k, obs)
+    w_hi = _wilson_hi(severe_k, obs)
+    if w_lo is None:  # defensive: obs>=30 guarantees non-None
+        return None
+    sum_sec = r["sum_delay_sec"]
+    avg_min = _avg_delay_min(float(sum_sec) / obs) if sum_sec is not None else None
+    cell_otp = _otp_pct_severe_proxy(obs, severe)  # severe proxy on-time %, both kinds
+    net_otp = None if net_severe_pct is None else 100.0 - net_severe_pct
+    entry = HotspotEntry(
+        rank=None,  # assigned after the full-set sort
+        type=kind,
+        id=eid,
+        name=names.get(eid),
+        otp_delta_pts=_otp_delta_pts(cell_otp, net_otp),
+        observation_count=_opt_int(obs),
+        severe_count=_opt_int(severe),
+        severe_pct=_severe_pct(obs, severe),
+        wilson_lo=w_lo,
+        wilson_hi=w_hi,
+        avg_delay_min=avg_min,
+    )
+    return (w_lo, -(avg_min or 0.0), eid, entry)
+
+
+def _tray_entry(r, kind: str, names: dict) -> HotspotEntry:
+    """An UN-ranked sub-MIN_N tray entry (rank=None). Carries the honest counts + severe %
+    (Wilson is None below the floor — a tiny-n interval is uninformative)."""
+    obs = int(r["obs"] or 0)
+    severe = int(r["severe"] or 0)
+    id_col = "route_id" if kind == "route" else "stop_id"
+    eid = str(r[id_col])
+    sum_sec = r["sum_delay_sec"]
+    avg_min = _avg_delay_min(float(sum_sec) / obs) if (sum_sec is not None and obs) else None
+    return HotspotEntry(
+        rank=None,
+        type=kind,
+        id=eid,
+        name=names.get(eid),
+        observation_count=_opt_int(obs),
+        severe_count=_opt_int(severe),
+        severe_pct=_severe_pct(obs, severe),
+        avg_delay_min=avg_min,
+    )
+
+
+def _network_severe_pct(rows, kind: str) -> float | None:
+    """The window's NETWORK severe % = Σsevere / Σobs across ALL entities in the window
+    (the same severe-proxy metric each entity ranks on). Honest-None on no observations."""
+    id_col = "route_id" if kind == "route" else "stop_id"
+    tot_obs = sum(int(r["obs"] or 0) for r in rows if str(r[id_col]))
+    tot_severe = sum(int(r["severe"] or 0) for r in rows if str(r[id_col]))
+    return _severe_pct(tot_obs, tot_severe) if tot_obs else None
+
+
+class _KindLadder:
+    """One kind's (route OR stop) ranked ladder for a grain window: the per-kind ranked
+    entries (already 1-based, capped, PER-KIND rank restart per WEB2), the pre-truncation
+    ranked count (the honest per-kind shown/total denominator), the un-ranked tray ROWS
+    (still raw spine rows so the cross-kind union can re-sort them before capping), and the
+    kind's name map (so the union can resolve tray entry names without threading it back)."""
+
+    __slots__ = ("kind", "entries", "total_ranked", "tray_rows", "names")
+
+    def __init__(self, kind: str, entries: list[HotspotEntry], total_ranked: int,
+                 tray_rows: list, names: dict):  # noqa: ANN001
+        self.kind = kind
+        self.entries = entries
+        self.total_ranked = total_ranked
+        self.tray_rows = tray_rows
+        self.names = names
+
+
+def _hotspot_kind_ladder(rows, kind: str, names: dict) -> _KindLadder | None:
+    """Rank ONE kind's window rows on its own ladder (WEB2 per-kind ranking): the full MIN_N
+    set ranked worst-first by the not-severe Wilson LB, ranks assigned 1..N WITHIN this kind,
+    truncated to the per-kind cap; sub-MIN_N rows are held as raw tray rows for the union.
+    Returns None only when the kind has no row at all (honest absence at merge time)."""
+    rows = list(rows)
+    if not rows:
+        return None
+    net_severe = _network_severe_pct(rows, kind)
+    ranked: list[tuple] = []
+    tray_rows: list = []
+    for r in rows:
+        entry = _severe_proxy_entry(r, kind, names, net_severe_pct=net_severe)
+        if entry is None:
+            tray_rows.append(r)
+        else:
+            ranked.append(entry)
+    ranked.sort(key=lambda t: (t[0], t[1], t[2]))
+    total_ranked = len(ranked)  # pre-truncation per-kind count (the shown/total denominator)
+    entries: list[HotspotEntry] = []
+    for i, t in enumerate(ranked[:_HOTSPOTS_BY_GRAIN_CAP]):
+        e = t[3]
+        e.rank = i + 1  # 1-based WITHIN this kind's ladder (rank RESTARTS per kind, WEB2)
+        entries.append(e)
+    return _KindLadder(kind, entries, total_ranked, tray_rows, names)
+
+
+def _tray_severe(r, kind: str) -> float:  # noqa: ANN001
+    """A tray row's severe % for the union sort key (0.0 when no observations)."""
+    return _severe_pct(int(r["obs"] or 0), int(r["severe"] or 0)) or 0.0
+
+
+def _merge_grain(route_l: _KindLadder | None, stop_l: _KindLadder | None,
+                 *, grain: str, win_start, win_end) -> HotspotGrain | None:
+    """Assemble ONE grain from the two PER-KIND ladders (WEB2): route + stop entries are each
+    already ranked on their OWN ladder (rank restarts per kind), so they simply CONCATENATE
+    into the mixed entries[] with per-kind order preserved (no cross-kind re-rank). The tray
+    is the cross-kind UNION of the sub-MIN_N rows, sorted by severe_pct DESC (then id ASC for
+    a stable order) and capped at the TOTAL tray budget; tray_total is the pre-cap union
+    size. Honest absence: return None when neither kind has any ranked entry or tray row."""
+    route_entries = route_l.entries if route_l else []
+    stop_entries = stop_l.entries if stop_l else []
+    route_tray_rows = route_l.tray_rows if route_l else []
+    stop_tray_rows = stop_l.tray_rows if stop_l else []
+    # entries[] = the two per-kind ladders concatenated (route first, then stop); each keeps
+    # its own 1..N rank. The web filters by type into per-kind tabs losslessly.
+    entries = list(route_entries) + list(stop_entries)
+    # tray union: worst-severe first across BOTH kinds, then id ASC for stability. Each
+    # tuple carries its own kind + name map so the union resolves names without a re-thread.
+    route_names = route_l.names if route_l else {}
+    stop_names = stop_l.names if stop_l else {}
+    union: list[tuple] = [(_tray_severe(r, "route"), str(r["route_id"]), r, "route", route_names)
+                          for r in route_tray_rows]
+    union += [(_tray_severe(r, "stop"), str(r["stop_id"]), r, "stop", stop_names)
+              for r in stop_tray_rows]
+    tray_total = len(union)
+    if not entries and tray_total == 0:
+        return None
+    union.sort(key=lambda t: (-t[0], t[1]))
+    tray = [_tray_entry(r, k, nm) for _, _, r, k, nm in union[:_HOTSPOTS_TRAY_CAP]]
+    return HotspotGrain(
+        grain=grain,
+        date=_iso_date(win_start) if win_start is not None else None,
+        window_end=_iso_date(win_end) if win_end is not None else None,
+        entries=entries,
+        tray=tray,
+        total_ranked_routes=(route_l.total_ranked if route_l else None),
+        total_ranked_stops=(stop_l.total_ranked if stop_l else None),
+        tray_total=tray_total,
+    )
+
+
+def _hotspots_by_grain(
+    conn: Connection, provider_id: str, route_names: dict, stop_names: dict
+) -> list[HotspotGrain]:
+    """The S12 re-granulated ladders: day/week/month (trailing windows) + shift (peak-hour
+    cut over the anchor week), each a SINGLE cross-kind Wilson-ranked ladder + un-ranked
+    tray. Route + stop anchor INDEPENDENTLY off their own spine's newest closed day. Honest
+    absence: a grain with no qualifying entity (neither ranked nor tray) is OMITTED."""
+    route_anchor = _hotspots_anchor(conn, _HOTSPOTS_ROUTE_ANCHOR_SQL, provider_id)
+    stop_anchor = _hotspots_anchor(conn, _HOTSPOTS_STOP_ANCHOR_SQL, provider_id)
+    if route_anchor is None and stop_anchor is None:
+        return []
+    out: list[HotspotGrain] = []
+    route_windows = GrainWindows(route_anchor) if route_anchor is not None else None
+    stop_windows = GrainWindows(stop_anchor) if stop_anchor is not None else None
+    # day/week/month — each kind ranks on its OWN per-kind ladder off its OWN anchor
+    # window; the two ladders are then assembled (concatenated, per-kind rank preserved).
+    for grain in ("day", "week", "month"):
+        r_start = r_end = s_start = s_end = None
+        route_l = stop_l = None
+        if route_windows is not None:
+            r_start, r_end = route_windows[grain]
+            r_rows = conn.execute(
+                _HOTSPOTS_ROUTE_WINDOW_SQL,
+                {"provider_id": provider_id, "win_start": r_start, "win_end": r_end},
+            ).mappings()
+            route_l = _hotspot_kind_ladder(r_rows, "route", route_names)
+        if stop_windows is not None:
+            s_start, s_end = stop_windows[grain]
+            s_rows = conn.execute(
+                _HOTSPOTS_STOP_WINDOW_SQL,
+                {"provider_id": provider_id, "win_start": s_start, "win_end": s_end},
+            ).mappings()
+            stop_l = _hotspot_kind_ladder(s_rows, "stop", stop_names)
+        # window START/END for the merged label = the route window when present else stop's
+        # (both anchor off the same feed, so they coincide save the rare split-anchor edge).
+        merged = _merge_grain(
+            route_l, stop_l, grain=grain,
+            win_start=r_start if r_start is not None else s_start,
+            win_end=r_end if r_end is not None else s_end,
+        )
+        if merged is not None:
+            out.append(merged)
+    # shift — PEAK-ONLY: the anchor WEEK window scoped to the am+pm peak shifts; date=None
+    # (a within-week time-of-day cut, not a trailing window). Ranked PER KIND like the rest.
+    route_shift = stop_shift = None
+    if route_windows is not None:
+        r_start, r_end = route_windows["week"]
+        r_rows = conn.execute(
+            _HOTSPOTS_ROUTE_SHIFT_SQL,
+            {"provider_id": provider_id, "win_start": r_start, "win_end": r_end},
+        ).mappings()
+        route_shift = _hotspot_kind_ladder(r_rows, "route", route_names)
+    if stop_windows is not None:
+        s_start, s_end = stop_windows["week"]
+        s_rows = conn.execute(
+            _HOTSPOTS_STOP_SHIFT_SQL,
+            {"provider_id": provider_id, "win_start": s_start, "win_end": s_end},
+        ).mappings()
+        stop_shift = _hotspot_kind_ladder(s_rows, "stop", stop_names)
+    shift_merged = _merge_grain(
+        route_shift, stop_shift, grain="shift", win_start=None, win_end=None
+    )
+    if shift_merged is not None:
+        out.append(shift_merged)
+    return out
 
 
 # --------------------------------------------------------------------------

@@ -634,6 +634,25 @@ def check_stop_reliability(payload: object, *, rel_key: str) -> list[CheckResult
     return emit.out
 
 
+def _check_hotspot_entry(emit: _Emitter, h: dict) -> None:
+    """The shared per-entry checks for a by_grain HotspotEntry (S12). Deliberately does
+    NOT assert rank sequence: a by_grain ladder is ranked independently THEN truncated,
+    so its ranks need not be a globally-sequential run (only the scalar hotspots[] does)."""
+    if h.get("type") not in ("route", "stop"):
+        emit.err("unknown_type", "type", h.get("type"),
+                 f"type={h.get('type')!r} not in {{route,stop}}")
+    if h.get("id") in _SENTINEL_ENTITY_IDS:
+        emit.err("sentinel_entity", "id", h.get("id"),
+                 f"id={h.get('id')!r} is a sentinel entity")
+    emit.rate(h, "otp_delta_pts", -100, 100)
+    emit.rate(h, "severe_pct")
+    emit.delay(h, "avg_delay_min")
+    emit.count(h, "observation_count")
+    emit.count(h, "severe_count")
+    emit.count(h, "issue_count")
+    emit.wilson(h)
+
+
 def check_hotspots(payload: object, *, rel_key: str) -> list[CheckResult]:
     emit = _Emitter("historic_hotspots", rel_key)
     d = _as_dict(payload)
@@ -654,6 +673,18 @@ def check_hotspots(payload: object, *, rel_key: str) -> list[CheckResult]:
             sub.err("sentinel_entity", "id", h.get("id"),
                     f"id={h.get('id')!r} is a sentinel entity")
         sub.rate(h, "otp_delta_pts", -100, 100)
+    # S12 by_grain ladders: walk entries + tray, reusing the sub.rate/delay/wilson checks;
+    # NO rank_sequence inside a ladder (ranked-then-truncated), so the scalar list above
+    # keeps its sequential-rank invariant and the ladders do not inherit it.
+    for i, hg in enumerate(d.get("by_grain") or []):
+        if not isinstance(hg, dict):
+            continue
+        for j, h in enumerate(hg.get("entries") or []):
+            if isinstance(h, dict):
+                _check_hotspot_entry(_prefixed(emit, f"by_grain[{i}].entries[{j}]."), h)
+        for j, h in enumerate(hg.get("tray") or []):
+            if isinstance(h, dict):
+                _check_hotspot_entry(_prefixed(emit, f"by_grain[{i}].tray[{j}]."), h)
     return emit.out
 
 

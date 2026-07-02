@@ -1,40 +1,70 @@
-// hotspots.copy.ts: co-located bilingual copy for the Hotspots surface
-// (slice-9.6, Family D · accountability).
+// hotspots.copy.ts: co-located bilingual copy for the Hotspots surface (S12 re-seat).
 //
-// All user-facing strings the Hotspots screen renders live here, keyed by
-// Locale, so the .svelte file carries zero inline copy. Provider-agnostic: no
-// carrier name, no city. Domain-intrinsic labels already owned by the spine
-// primitives (the SeverityBar's own a11y text inside RankedRow) are NOT
+// All user-facing strings the Hotspots screen renders live here, keyed by Locale, so
+// the .svelte files carry zero inline copy. Provider-agnostic: no carrier name, no
+// city hardcoded — a city/provider name comes from the SERVED label (or the provider
+// id) at the call site, never fabricated here. Domain-intrinsic labels already owned
+// by the spine primitives (the Chart's own a11y text, GrainPicker roles) are NOT
 // duplicated here.
 
 import type { Locale } from '$lib/i18n';
 import type { SurfaceHeadCopy } from '$lib/components/surface';
 
 export interface HotspotsCopy extends SurfaceHeadCopy {
-	/** Accessible label over the ranked list. */
-	readonly listLabel: string;
-	/** Plain caption naming what the magnitude bar encodes. */
-	readonly rowCaption: string;
-	/** Honest note shown when the whole magnitude column is null: the rows are
-	 * still real (ranked by severity), but no magnitude was published, so no bar
-	 * is drawn rather than a broken row of empty tracks. */
-	readonly magnitudeUnavailable: string;
-	/** Accessible label for the severity-band hint shown in place of the bar when
-	 * the magnitude is unavailable (severity is real). */
-	readonly severityHint: (band: string) => string;
-	/** Severity-band words (the real, ranked signal) for the no-magnitude hint. */
-	readonly bands: {
-		readonly critical: string;
-		readonly high: string;
-		readonly watch: string;
+	/** Rail overline (e.g. "View" / "Vue") + the grain radiogroup label. */
+	readonly viewControlsLabel: string;
+	readonly grain: {
+		readonly label: string;
+		readonly day: string;
+		readonly week: string;
+		readonly month: string;
+		/** The PEAK-ONLY cut (DECISIONS DB1/WEB4) — a 4th rail segment: the am+pm rush of
+		 * the trailing week, not a per-row sub-breakdown. */
+		readonly shift: string;
 	};
-	/** Honest empty state: the roll-up published no hotspots. */
-	readonly empty: string;
-	/** Per-row delta: on-time points lost vs the network baseline. A null delta
-	 * OMITS the display value entirely (no "no data" string), so the all-null
-	 * column disappears rather than reading a permanent placeholder. */
+	/** The trailing-window caption per grain (what aggregate the ranking reads). */
+	readonly window: {
+		readonly day: string;
+		readonly week: string;
+		readonly month: string;
+		/** The shift cut is PEAK-ONLY — the am+pm peak (rush-hour) periods of the trailing week. */
+		readonly shift: string;
+	};
+	/** The worst-N ladder control. */
+	readonly worstN: {
+		/** Radiogroup label (e.g. "Show" / "Afficher"). */
+		readonly label: string;
+		/** The uncapped rung label (e.g. "All" / "Tout"). */
+		readonly all: string;
+	};
+	/** Ladder section heading (the worst spots) + its value-axis label. */
+	readonly ladder: {
+		readonly heading: string;
+		/** Value-axis title — the severe-delay rate the bar encodes. */
+		readonly severeRateLabel: string;
+		/** Wilson-interval label surfaced in the tooltip + sr-only table. */
+		readonly ci: string;
+	};
+	/** The un-ranked tray (sub-MIN_N cells) heading + reason. */
+	readonly tray: {
+		/** Section heading (e.g. "Below the reliable-reading floor"). */
+		readonly heading: string;
+		/** Why these cells are not ranked (the MIN_N floor). */
+		readonly reason: string;
+		/** Accessible label over the tray list. */
+		readonly listLabel: string;
+		/** One tray row's subtitle (kind · id). */
+		readonly rowSubtitle: (kind: string, id: string) => string;
+	};
+	/** Per-row evidence note fragments (severe% · avg min · n). */
+	readonly note: {
+		readonly severe: string;
+		readonly avg: string;
+		readonly samples: string;
+	};
+	/** OTP-points delta display (points of on-time lost vs baseline) — evidence field. */
 	readonly deltaLost: (pts: string) => string;
-	/** Mode tag chips by hotspot type (route / stop), shown beside the title. */
+	/** Mode tag chips by hotspot type (route / stop). */
 	readonly type: {
 		readonly route: string;
 		readonly stop: string;
@@ -43,11 +73,15 @@ export interface HotspotsCopy extends SurfaceHeadCopy {
 	readonly unnamed: (id: string) => string;
 	/** Accessible label for a row that links into its detail page. */
 	readonly viewDetail: (title: string) => string;
+	/** Honest shown/total heading suffix builder ("· 10/42"). */
+	readonly shownOfTotal: (shown: number, total: number) => string;
 	/** Honest caveat: a trailing-window ranking, not a certified league table. */
 	readonly caveat: string;
 	/** Units. */
 	readonly units: {
 		readonly pts: string;
+		readonly pct: string;
+		readonly min: string;
 	};
 }
 
@@ -56,13 +90,42 @@ export const copy: Record<Locale, HotspotsCopy> = {
 		kicker: 'RESPONSABILITÉ · POINTS CHAUDS',
 		heading: 'Points chauds',
 		subheading: '// PIRES EN PREMIER',
-		lede: 'Les arrêts et les lignes qui tirent le réseau vers le bas, classés du pire au moins pire. On n’invente jamais de données.',
-		listLabel: 'Points chauds classés du pire au moins pire',
-		rowCaption: 'La barre indique l’ampleur du problème par rapport au pire cas.',
-		magnitudeUnavailable: 'Ampleur non disponible, classement par gravité.',
-		severityHint: (band) => `Gravité : ${band}`,
-		bands: { critical: 'Critique', high: 'Élevée', watch: 'À surveiller' },
-		empty: 'Aucun point chaud publié pour le moment.',
+		lede: 'Les arrêts et les lignes qui tirent le réseau vers le bas, classés du pire au moins pire par le taux de retards graves. On n’invente jamais de données.',
+		viewControlsLabel: 'Vue',
+		grain: {
+			label: 'Granularité',
+			day: 'Jour',
+			week: 'Semaine',
+			month: 'Mois',
+			shift: 'Heures de pointe',
+		},
+		window: {
+			day: 'Classement sur la dernière journée de service.',
+			week: 'Classement sur la dernière semaine glissante.',
+			month: 'Classement sur le dernier mois glissant.',
+			shift:
+				'Classement sur les heures de pointe (matin et soir) de la dernière semaine glissante.',
+		},
+		worstN: {
+			label: 'Afficher',
+			all: 'Tout',
+		},
+		ladder: {
+			heading: 'Pires points',
+			severeRateLabel: 'Taux de retards graves',
+			ci: 'IC à 95 %',
+		},
+		tray: {
+			heading: 'Sous le seuil de lecture fiable',
+			reason: 'Trop peu d’observations pour un classement (moins de 30 relevés) · non classés.',
+			listLabel: 'Points non classés, sous le seuil d’observations',
+			rowSubtitle: (kind, id) => `${kind} · ${id}`,
+		},
+		note: {
+			severe: 'graves',
+			avg: 'moy',
+			samples: 'n',
+		},
 		deltaLost: (pts) => `${pts} pts de ponctualité perdus`,
 		type: {
 			route: 'Ligne',
@@ -70,21 +133,50 @@ export const copy: Record<Locale, HotspotsCopy> = {
 		},
 		unnamed: (id) => `Élément ${id}`,
 		viewDetail: (title) => `Voir le détail de ${title}`,
+		shownOfTotal: (shown, total) => `· ${shown}/${total}`,
 		caveat:
 			'Classement sur fenêtre glissante, pondéré par les observations, pas un palmarès certifié; les petits échantillons varient.',
-		units: { pts: 'pts' },
+		units: { pts: 'pts', pct: '%', min: ' min' },
 	},
 	en: {
 		kicker: 'ACCOUNTABILITY · HOTSPOTS',
 		heading: 'Hotspots',
 		subheading: '// WORST FIRST',
-		lede: 'The stops and lines dragging the network down, ranked worst first. We never invent data.',
-		listLabel: 'Hotspots ranked worst first',
-		rowCaption: 'The bar shows the problem size relative to the worst case.',
-		magnitudeUnavailable: 'Magnitude unavailable, ranked by severity.',
-		severityHint: (band) => `Severity: ${band}`,
-		bands: { critical: 'Critical', high: 'High', watch: 'Watch' },
-		empty: 'No hotspots published right now.',
+		lede: 'The stops and lines dragging the network down, ranked worst first by their severe-delay rate. We never invent data.',
+		viewControlsLabel: 'View',
+		grain: {
+			label: 'Granularity',
+			day: 'Day',
+			week: 'Week',
+			month: 'Month',
+			shift: 'Peak hours',
+		},
+		window: {
+			day: 'Ranked over the latest service day.',
+			week: 'Ranked over the latest trailing week.',
+			month: 'Ranked over the latest trailing month.',
+			shift: 'Ranked over the peak (rush-hour) periods of the trailing week.',
+		},
+		worstN: {
+			label: 'Show',
+			all: 'All',
+		},
+		ladder: {
+			heading: 'Worst spots',
+			severeRateLabel: 'Severe-delay rate',
+			ci: '95% CI',
+		},
+		tray: {
+			heading: 'Below the reliable-reading floor',
+			reason: 'Too few observations to rank (fewer than 30 readings) · not ranked.',
+			listLabel: 'Un-ranked spots, below the observations floor',
+			rowSubtitle: (kind, id) => `${kind} · ${id}`,
+		},
+		note: {
+			severe: 'severe',
+			avg: 'avg',
+			samples: 'n',
+		},
 		deltaLost: (pts) => `${pts} on-time points lost`,
 		type: {
 			route: 'Line',
@@ -92,8 +184,9 @@ export const copy: Record<Locale, HotspotsCopy> = {
 		},
 		unnamed: (id) => `Item ${id}`,
 		viewDetail: (title) => `View detail for ${title}`,
+		shownOfTotal: (shown, total) => `· ${shown}/${total}`,
 		caveat:
 			'Trailing-window, observation-weighted ranking, not a certified league table; small samples vary.',
-		units: { pts: 'pts' },
+		units: { pts: 'pts', pct: '%', min: ' min' },
 	},
 };

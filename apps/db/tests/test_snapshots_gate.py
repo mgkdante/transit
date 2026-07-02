@@ -21,6 +21,8 @@ from transit_ops.snapshots.contract import (
     DelayBucket,
     HeadwayPeriod,
     Hotspot,
+    HotspotEntry,
+    HotspotGrain,
     Hotspots,
     NetworkFile,
     NetworkTrend,
@@ -213,6 +215,41 @@ def test_hotspots_rank_gap_and_sentinel_id_are_errors():
     checks = _checks(_errors(res))
     assert "rank_sequence" in checks
     assert "sentinel_entity" in checks
+
+
+def test_hotspots_by_grain_walks_entries_no_rank_sequence():
+    """S12: the by_grain ladder is checked for range/sentinel/wilson, but NOT for
+    sequential rank (ranked-then-truncated) — a non-1-based / gapped rank is fine."""
+    hs = Hotspots(generated_utc="t", hotspots=[], by_grain=[
+        HotspotGrain(grain="week", date="2026-06-14", window_end="2026-06-20", entries=[
+            # rank starts at 5 with a gap — must NOT trip rank_sequence inside a ladder.
+            HotspotEntry(rank=5, type="route", id="51", severe_pct=40.0,
+                         wilson_lo=50.0, wilson_hi=60.0, observation_count=100),
+            HotspotEntry(rank=9, type="stop", id="S1", severe_pct=70.0,
+                         wilson_lo=16.8, wilson_hi=30.0, observation_count=80),
+        ], tray=[
+            HotspotEntry(rank=None, type="stop", id="S2", severe_pct=5.0, observation_count=10),
+        ]),
+    ])
+    res = gate.check_hotspots(hs, rel_key="historic/hotspots.json")
+    assert not _errors(res), [r.check for r in _errors(res)]
+
+
+def test_hotspots_by_grain_flags_bad_range_and_sentinel():
+    """S12: an out-of-range severe_pct / a sentinel id / a bad otp_delta in a by_grain
+    entry (or tray) still trips the shared checks."""
+    hs = Hotspots(generated_utc="t", hotspots=[], by_grain=[
+        HotspotGrain(grain="day", date="2026-06-20", window_end="2026-06-20", entries=[
+            HotspotEntry(rank=1, type="route", id="__unrouted__", severe_pct=140.0,
+                         otp_delta_pts=-999.0),
+        ], tray=[
+            HotspotEntry(rank=None, type="stop", id="S1", severe_pct=-3.0),
+        ]),
+    ])
+    res = gate.check_hotspots(hs, rel_key="historic/hotspots.json")
+    checks = _checks(_errors(res))
+    assert "sentinel_entity" in checks
+    assert "rate_range" in checks
 
 
 # --- crowding + headway + alert history --------------------------------------

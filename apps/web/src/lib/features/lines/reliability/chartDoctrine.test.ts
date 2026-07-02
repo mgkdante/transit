@@ -32,7 +32,8 @@ const FEATURES_DIR = join(dir, '../..');
 // may be removed once fixed, never added. A file absent from this list must not carry a
 // banned idiom (NetworkHealth.svelte is deliberately not listed).
 const ALLOWLIST: ReadonlySet<string> = new Set([
-	'hotspots/HotspotsBoard.svelte', // delta / worst (in-view worst-delta normalization)
+	// hotspots/HotspotsBoard.svelte — REMOVED S12: re-seated onto MagnitudeBarsSpec on the
+	// absolute SEVERE_DOMAIN [0,100] (the DB Wilson-LB worst-N ladder); the /worst idiom is gone.
 	'repeat-offenders/RepeatOffenders.svelte', // delay / worst (in-view worst-delay normalization)
 ]);
 

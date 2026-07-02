@@ -504,6 +504,89 @@ def test_repeated_problem_route_issue_count_matches_spine_weekly_severe() -> Non
     assert hot is not None  # renders off the spine-weekly OTP join
 
 
+def test_hotspots_by_grain_matches_hand_rolled_spine_wilson() -> None:
+    """S12 real-DB parity: the by_grain WEEK ladder ranks route entities by the
+    not-severe Wilson LOWER bound over the per-route spine SUM(obs)/SUM(severe) for the
+    same trailing-week window, EXACTLY reproducing a hand-rolled spine SUM + _wilson_lo.
+    Also proves the ladder renders + carries evidence fields + the tray, off real gold."""
+    from transit_ops.gold.reader import wilson_lo as _wlo
+    from transit_ops.snapshots.builders.historic import _hotspots_by_grain
+
+    with _seeded_conn() as connection:
+        anchor = connection.execute(
+            text(
+                "SELECT MAX(provider_local_date) AS a FROM gold.route_delay_spine "
+                "WHERE provider_id = :p"
+            ),
+            {"p": PROVIDER},
+        ).scalar_one()
+        win_start = anchor - timedelta(days=6)
+        # hand-rolled per-route SUM over the WEEK window off the spine (route universe)
+        hand = {
+            r["route_id"]: (int(r["obs"]), int(r["severe"]))
+            for r in connection.execute(
+                text(
+                    "SELECT route_id, SUM(delay_observation_count) AS obs, "
+                    "       SUM(severe_delay_count) AS severe "
+                    "FROM gold.route_delay_spine "
+                    "WHERE provider_id = :p AND route_id <> '__unrouted__' "
+                    "  AND provider_local_date >= :s AND provider_local_date <= :e "
+                    "GROUP BY route_id"
+                ),
+                {"p": PROVIDER, "s": win_start, "e": anchor},
+            ).mappings()
+        }
+        names = _entity_name_maps_or_empty(connection)
+        grains = _hotspots_by_grain(connection, PROVIDER, names[0], names[1])
+
+    by_grain = {g.grain: g for g in grains}
+    assert "week" in by_grain, "expected a week ladder from the seeded spine"
+    week = by_grain["week"]
+    assert week.date == win_start.isoformat()
+    assert week.window_end == anchor.isoformat()
+    # expected ranked routes: those clearing MIN_N=30, ordered by not-severe Wilson LB ASC
+    expected = sorted(
+        (
+            (_wlo(obs - severe, obs), rid)
+            for rid, (obs, severe) in hand.items()
+            if obs >= 30
+        ),
+        key=lambda t: (t[0], t[1]),
+    )
+    got_routes = [(e.wilson_lo, e.id) for e in week.entries if e.type == "route"]
+    assert got_routes == expected, (got_routes, expected)
+    # evidence fields populated on a ranked entry
+    if week.entries:
+        e0 = week.entries[0]
+        assert e0.observation_count is not None
+        assert e0.severe_pct is not None
+        assert e0.wilson_lo is not None and e0.wilson_hi is not None
+
+
+def test_hotspots_by_grain_payload_size_under_ceiling() -> None:
+    """S12 real-DB size probe: the full published hotspots.json (scalar + by_grain) off
+    the seeded gold stays comfortably under HOTSPOTS_BYTE_CEILING. Reports the measured
+    size in the assert message so the operator can read the real-DB gauge."""
+    from transit_ops.snapshots.contract import HOTSPOTS_BYTE_CEILING
+    from transit_ops.snapshots.storage import _body
+
+    with _seeded_conn() as connection:
+        hot = build_hotspots(connection, provider_id=PROVIDER, generated_utc=GENERATED_UTC)
+    size = len(_body(hot))
+    assert size <= HOTSPOTS_BYTE_CEILING, (
+        f"seeded hotspots.json {size}B exceeds ceiling {HOTSPOTS_BYTE_CEILING}B"
+    )
+    # gauge (never fails, just prints the measured real-DB size)
+    print(f"\n[S12 size probe] seeded hotspots.json = {size} bytes "
+          f"(ceiling {HOTSPOTS_BYTE_CEILING})")
+
+
+def _entity_name_maps_or_empty(connection):  # noqa: ANN001, ANN202
+    from transit_ops.snapshots.builders._helpers import _entity_name_maps
+
+    return _entity_name_maps(connection, provider_id=PROVIDER)
+
+
 def test_ghost_only_hour_otp_is_zero() -> None:
     """Finding F: the night ghost-only hour (|delay|>3600) -> delay_obs counts the
     ghosts but on_time/severe exclude them, so otp_pct is 0 (a real 0%, not None)."""

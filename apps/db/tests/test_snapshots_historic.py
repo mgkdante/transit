@@ -41,7 +41,11 @@ from transit_ops.snapshots.builders._helpers import (
     _wilson_hi,
     _wilson_lo,
 )
-from transit_ops.snapshots.builders.historic import _HOTSPOTS_SQL, _STOP_REL_BY_ROUTE_SQL
+from transit_ops.snapshots.builders.historic import (
+    _HOTSPOTS_SQL,
+    _STOP_REL_BY_ROUTE_SQL,
+    _hotspots_by_grain,
+)
 from transit_ops.snapshots.contract import (
     AlertHistory,
     Hotspots,
@@ -1448,6 +1452,159 @@ def test_hotspots_sql_per_kind_otp_join_keys() -> None:
     # metric a stop cell uses), so stop deltas are not lenient-vs-strict
     assert "net_stop_obs" in sql and "net_stop_severe" in sql
     assert "net_stop AS" in sql
+
+
+# --------------------------------------------------------------------------
+# S12 _hotspots_by_grain — re-granulated evidence ladders
+# --------------------------------------------------------------------------
+import datetime as _dt  # noqa: E402
+
+
+def _by_grain_conn(*, route_anchor=_dt.date(2026, 6, 20), stop_anchor=_dt.date(2026, 6, 20),
+                   route_rows=None, stop_rows=None, route_shift=None, stop_shift=None,
+                   route_names=None, stop_names=None):  # noqa: ANN001, ANN202
+    """Name-dispatch FakeConn for _hotspots_by_grain. Every window-grain read returns the
+    SAME rows (the fixture is grain-agnostic), so the ladders are identical across grains —
+    fine for unit-testing the ranking/tray/absence logic."""
+    mapping = {
+        "hotspots.route.anchor": [{"anchor": route_anchor}] if route_anchor else [],
+        "hotspots.stop.anchor": [{"anchor": stop_anchor}] if stop_anchor else [],
+        "hotspots.route.by_grain": route_rows or [],
+        "hotspots.stop.by_grain": stop_rows or [],
+        "hotspots.route.by_shift": route_shift if route_shift is not None else (route_rows or []),
+        "hotspots.stop.by_shift": stop_shift if stop_shift is not None else (stop_rows or []),
+    }
+    return FakeConn(mapping), (route_names or {}), (stop_names or {})
+
+
+def test_hotspots_by_grain_per_kind_ranking() -> None:
+    """WEB2: route and stop are ranked on SEPARATE ladders — rank RESTARTS per kind. Both a
+    route and a stop carry rank=1 in the same grain's entries[] (a mixed array, route first),
+    and total_ranked_routes/total_ranked_stops carry the pre-truncation per-kind counts."""
+    # route 99 = 2% severe (high-n, mild); stop S1 = 90% severe (chronic, low Wilson LB)
+    route_rows = [{"route_id": "99", "obs": 1000, "severe": 20, "sum_delay_sec": 60000}]
+    stop_rows = [{"stop_id": "S1", "obs": 40, "severe": 36, "sum_delay_sec": 90000}]
+    conn, rn, sn = _by_grain_conn(route_rows=route_rows, stop_rows=stop_rows)
+    grains = _hotspots_by_grain(conn, "stm", rn, sn)
+    assert [g.grain for g in grains] == ["day", "week", "month", "shift"]
+    day = grains[0]
+    # rank restarts per kind: route 99 is its kind's #1, stop S1 is its kind's #1 (mixed array).
+    assert [(e.rank, e.type, e.id) for e in day.entries] == [(1, "route", "99"), (1, "stop", "S1")]
+    assert day.total_ranked_routes == 1
+    assert day.total_ranked_stops == 1
+
+
+def test_hotspots_by_grain_min_n_goes_to_tray_not_ranked() -> None:
+    """A sub-MIN_N entity is EXCLUDED from the ranked ladder and lands in the un-ranked
+    tray (rank=None, wilson None below the floor) — never a fabricated ranked entry."""
+    route_rows = [
+        {"route_id": "99", "obs": 50, "severe": 10, "sum_delay_sec": 30000},  # >=30 -> ranked
+        {"route_id": "7", "obs": 12, "severe": 6, "sum_delay_sec": 3000},     # <30 -> tray
+    ]
+    conn, rn, sn = _by_grain_conn(route_rows=route_rows, stop_rows=[])
+    day = _hotspots_by_grain(conn, "stm", rn, sn)[0]
+    assert [e.id for e in day.entries] == ["99"]
+    assert day.entries[0].rank == 1
+    assert [e.id for e in day.tray] == ["7"]
+    assert day.tray[0].rank is None
+    assert day.tray[0].wilson_lo is None       # Wilson uninformative below MIN_N
+    assert day.tray[0].observation_count == 12  # counts still honest
+
+
+def test_hotspots_by_grain_honest_absence_omits_empty() -> None:
+    """No route/stop rows at all -> no grain is emitted (honest absence, never an empty
+    fabricated ladder). No spine anchor at all -> empty list."""
+    conn, rn, sn = _by_grain_conn(route_rows=[], stop_rows=[])
+    assert _hotspots_by_grain(conn, "stm", rn, sn) == []
+    conn2, rn2, sn2 = _by_grain_conn(route_anchor=None, stop_anchor=None)
+    assert _hotspots_by_grain(conn2, "stm", rn2, sn2) == []
+
+
+def test_hotspots_by_grain_evidence_fields_and_windows() -> None:
+    """Every evidence field is populated + the window START/END dates are the trailing
+    grain windows (day=anchor; week=anchor-6..anchor; month=anchor-29..anchor); the
+    'shift' grain carries date=None (a time-of-day cut, not a trailing window)."""
+    stop_rows = [{"stop_id": "S1", "obs": 100, "severe": 30, "sum_delay_sec": 120000}]
+    conn, rn, sn = _by_grain_conn(
+        route_rows=[], stop_rows=stop_rows, stop_names={"S1": "Berri-UQAM"}
+    )
+    grains = {g.grain: g for g in _hotspots_by_grain(conn, "stm", rn, sn)}
+    assert grains["day"].date == "2026-06-20" and grains["day"].window_end == "2026-06-20"
+    assert grains["week"].date == "2026-06-14" and grains["week"].window_end == "2026-06-20"
+    assert grains["month"].date == "2026-05-22" and grains["month"].window_end == "2026-06-20"
+    assert grains["shift"].date is None and grains["shift"].window_end is None
+    e = grains["week"].entries[0]
+    assert e.type == "stop" and e.id == "S1" and e.name == "Berri-UQAM"
+    assert e.observation_count == 100
+    assert e.severe_count == 30
+    assert e.severe_pct == 30.0
+    assert e.avg_delay_min == 20.0  # 120000/100 = 1200s = 20.0 min
+    assert e.wilson_lo is not None and e.wilson_hi is not None
+    # otp_delta_pts vs the single-entity network baseline (net severe 30% -> both 70%) -> 0
+    assert e.otp_delta_pts == 0.0
+
+
+def test_hotspots_by_grain_otp_delta_vs_network_severe_baseline() -> None:
+    """otp_delta_pts = the entity's severe-proxy OTP minus the WINDOW's network
+    severe-proxy OTP (same metric). A worse-than-network entity is negative."""
+    stop_rows = [
+        {"stop_id": "S1", "obs": 100, "severe": 50, "sum_delay_sec": 60000},  # 50% severe -> OTP 50
+        {"stop_id": "S2", "obs": 100, "severe": 10, "sum_delay_sec": 6000},   # 10% severe -> OTP 90
+    ]
+    # network severe = 60/200 = 30% -> network OTP 70; S1 delta = 50-70 = -20
+    conn, rn, sn = _by_grain_conn(route_rows=[], stop_rows=stop_rows)
+    day = _hotspots_by_grain(conn, "stm", rn, sn)[0]
+    by_id = {e.id: e for e in day.entries}
+    assert by_id["S1"].otp_delta_pts == -20.0
+    assert by_id["S2"].otp_delta_pts == 20.0
+
+
+def test_hotspots_by_grain_tray_is_severe_desc_union_with_total() -> None:
+    """FIX-6: the tray is the cross-kind UNION of the sub-MIN_N rows, sorted by severe_pct
+    DESC then capped; tray_total is the PRE-cap union size. A worse (higher-severe) tray
+    row sorts ahead of a milder one regardless of kind."""
+    # all sub-MIN_N (<30 obs) -> all land in the tray. R7 = 80% severe, S9 = 20%, R3 = 50%.
+    route_rows = [
+        {"route_id": "R7", "obs": 10, "severe": 8, "sum_delay_sec": 6000},  # 80% severe
+        {"route_id": "R3", "obs": 10, "severe": 5, "sum_delay_sec": 4000},  # 50% severe
+    ]
+    stop_rows = [{"stop_id": "S9", "obs": 10, "severe": 2, "sum_delay_sec": 1000}]  # 20% severe
+    conn, rn, sn = _by_grain_conn(route_rows=route_rows, stop_rows=stop_rows)
+    day = _hotspots_by_grain(conn, "stm", rn, sn)[0]
+    assert day.entries == []                       # nothing clears MIN_N
+    assert [e.id for e in day.tray] == ["R7", "R3", "S9"]  # severe DESC across kinds
+    assert all(e.rank is None for e in day.tray)
+    assert day.tray_total == 3
+    assert day.total_ranked_routes == 0 and day.total_ranked_stops == 0
+
+
+def test_hotspots_by_grain_scalar_list_byte_identical() -> None:
+    """PARITY: adding by_grain must NOT perturb the scalar hotspots[] bytes. The scalar
+    array serializes IDENTICALLY whether or not by_grain is populated."""
+    import json
+    scalar_rows = [
+        {"entity_kind": "route", "entity_id": "51", "issue_count": 9, "severity_label": "high"},
+        {"entity_kind": "stop", "entity_id": "3456", "issue_count": 3, "severity_label": "watch"},
+    ]
+    # (a) scalar only, no spine
+    a = build_hotspots(FakeConn({"hotspots.list": scalar_rows}), generated_utc="t")
+    # (b) same scalar + a populated by_grain spine
+    mapping = {
+        "hotspots.list": scalar_rows,
+        "hotspots.route.anchor": [{"anchor": _dt.date(2026, 6, 20)}],
+        "hotspots.stop.anchor": [{"anchor": _dt.date(2026, 6, 20)}],
+        "hotspots.route.by_grain": [{"route_id": "99", "obs": 50, "severe": 10,
+                                     "sum_delay_sec": 30000}],
+        "hotspots.stop.by_grain": [],
+        "hotspots.route.by_shift": [{"route_id": "99", "obs": 50, "severe": 10,
+                                     "sum_delay_sec": 30000}],
+        "hotspots.stop.by_shift": [],
+    }
+    b = build_hotspots(FakeConn(mapping), generated_utc="t")
+    assert b.by_grain, "expected a populated by_grain in fixture (b)"
+    dump_a = json.dumps([h.model_dump(mode="json") for h in a.hotspots], sort_keys=True)
+    dump_b = json.dumps([h.model_dump(mode="json") for h in b.hotspots], sort_keys=True)
+    assert dump_a == dump_b  # scalar list byte-identical regardless of by_grain
 
 
 # --------------------------------------------------------------------------

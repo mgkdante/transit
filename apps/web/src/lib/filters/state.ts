@@ -94,6 +94,47 @@ export interface FilterState {
 	 * and window are orthogonal and both optional.
 	 */
 	window?: DateWindow;
+	/**
+	 * Worst-N ladder cap (S12) — how many worst-first ranked entries a ladder
+	 * surface (hotspots) shows before the honest `shown/total` truncation. One of
+	 * the fixed truthful rungs {@link WORST_N_LADDER} (5/10/20/30/50), or the
+	 * literal `'all'` for the uncapped view. Absent = the surface default (10). A
+	 * DISPLAY axis only — truncating the list never rescales the ranks (the absolute
+	 * domain stays stable), so it is orthogonal to grain/window and self-heals off
+	 * the URL like the enum families.
+	 */
+	worstN?: WorstN;
+}
+
+/**
+ * The fixed, truthful worst-N rungs a ladder surface (S12 hotspots) offers, plus
+ * the uncapped `'all'`. A LADDER-of-truth (never an arbitrary free integer) so a
+ * hand-edited `?n=7` self-heals to absent (→ the surface default), and the URL only
+ * ever carries a rung the UI actually renders. Ascending; `'all'` last. The top rung
+ * is 50 — the per-kind ranked cap the DB serves (WEB2), so no rung can request rows
+ * the payload never carries; '100' was trimmed as a dead rung (FIX-3).
+ */
+export const WORST_N_LADDER = ['5', '10', '20', '30', '50'] as const;
+export type WorstNRung = (typeof WORST_N_LADDER)[number];
+/** A worst-N cap: a numeric rung or the uncapped 'all'. */
+export type WorstN = WorstNRung | 'all';
+
+const WORST_N_SET: ReadonlySet<string> = new Set([...WORST_N_LADDER, 'all']);
+
+/** True when `v` is a valid {@link WorstN} rung (one of the ladder, or 'all'). */
+export function isWorstN(v: string): v is WorstN {
+	return WORST_N_SET.has(v);
+}
+
+/**
+ * Coerce an arbitrary string to a {@link WorstN}, or `undefined` when it is not one
+ * of the fixed rungs. A junk `?n=7`/`?n=999` drops to absent (the surface default),
+ * so the URL never carries a cap the ladder cannot render (honest self-heal).
+ */
+export function normalizeWorstN(v: string | null | undefined): WorstN | undefined {
+	if (typeof v !== 'string') return undefined;
+	const t = v.trim();
+	return isWorstN(t) ? t : undefined;
 }
 
 // ---------------------------------------------------------------------------
@@ -229,6 +270,7 @@ export function cloneFilterState(s: FilterState): FilterState {
 		...(s.alerts ? { alerts: s.alerts.slice() } : {}),
 		...(s.grain !== undefined ? { grain: s.grain } : {}),
 		...(s.window !== undefined ? { window: { from: s.window.from, to: s.window.to } } : {}),
+		...(s.worstN !== undefined ? { worstN: s.worstN } : {}),
 	};
 }
 
@@ -278,6 +320,7 @@ export function isEmptyFilterState(s: FilterState): boolean {
 		(s.entities === undefined || s.entities.length === 0) &&
 		(s.alerts === undefined || s.alerts.length === 0) &&
 		s.grain === undefined &&
-		s.window === undefined
+		s.window === undefined &&
+		s.worstN === undefined
 	);
 }
