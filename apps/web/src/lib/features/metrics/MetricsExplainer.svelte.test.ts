@@ -17,6 +17,7 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
+import { tick } from 'svelte';
 import MetricsExplainer from './MetricsExplainer.svelte';
 import { METRICS, METRIC_KEYS } from './metrics.content';
 import { metricsCopy } from './metrics.copy';
@@ -177,6 +178,30 @@ describe('MetricsExplainer', () => {
 		expect(pill).toHaveAttribute('aria-expanded', 'false');
 	});
 
+	it('mobile pill navigation OPENS the target card (default-closed page, review F1)', async () => {
+		const { container } = render(MetricsExplainer);
+		const target = METRICS[0];
+		const card = container
+			.querySelector(`#${CSS.escape(target.anchor)}`)
+			?.querySelector('[data-state]');
+		expect(card).toHaveAttribute('data-state', 'closed');
+
+		const pillContainer = container.querySelector('[data-testid="toc-pill"]') as HTMLElement;
+		await fireEvent.click(within(pillContainer).getByRole('button', { expanded: false }));
+		await fireEvent.click(within(pillContainer).getByRole('button', { name: target.name.en }));
+		// The drawer routes through the page's open-then-scroll path, so the jump
+		// must reveal the card, never land on a shut one.
+		expect(card).toHaveAttribute('data-state', 'open');
+	});
+
+	it('a malformed hash fragment never throws during mount (review F2)', async () => {
+		window.location.hash = '#%';
+		expect(() => render(MetricsExplainer)).not.toThrow();
+		// And nothing opened: the undecodable fragment simply cannot match a card.
+		await tick();
+		expect(document.querySelectorAll('.section-block [data-state="open"]')).toHaveLength(0);
+	});
+
 	it('keeps the TOC entries and the section cards in lock-step (same anchors)', () => {
 		const { container } = render(MetricsExplainer);
 
@@ -315,9 +340,14 @@ describe('MetricsExplainer', () => {
 	});
 
 	// ── D3: hash opener (mount) ────────────────────────────────────────────────
-	it('opens ONLY the hash-named metric card on mount and leaves the rest closed', () => {
+	it('opens ONLY the hash-named metric card on mount and leaves the rest closed', async () => {
 		window.location.hash = '#otp';
 		const { container } = render(MetricsExplainer);
+		// The mount opener defers one tick so a restored pinned FOCUS flushes first
+		// (deterministic deep-link precedence, review F3): one await for the opener's
+		// own deferral, one for the open-signal effect flush.
+		await tick();
+		await tick();
 
 		// #otp is a metric card anchor → that one card opens.
 		expect(cardTrigger(container, 'otp')).toHaveAttribute('aria-expanded', 'true');
@@ -331,6 +361,8 @@ describe('MetricsExplainer', () => {
 	it('opens another card on a later hashchange without closing the first', async () => {
 		window.location.hash = '#otp';
 		const { container } = render(MetricsExplainer);
+		await tick(); // the opener's own deferral (review F3)
+		await tick(); // the open-signal effect flush
 		expect(cardTrigger(container, 'otp')).toHaveAttribute('aria-expanded', 'true');
 
 		// A same-page (i) deep-link swaps the hash and fires hashchange (no remount).

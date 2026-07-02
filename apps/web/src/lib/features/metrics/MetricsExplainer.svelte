@@ -362,14 +362,34 @@
 	function openFromHash(): void {
 		const raw = window.location.hash.replace(/^#/, '');
 		if (!raw) return;
-		const anchor = decodeURIComponent(raw);
+		// A malformed fragment ('#%' etc.) must not throw during mount — the anchors
+		// are plain ASCII, so an undecodable hash simply cannot match (S10 review F2).
+		let anchor: string;
+		try {
+			anchor = decodeURIComponent(raw);
+		} catch {
+			return;
+		}
 		if (openableAnchors.has(anchor)) openCard(anchor);
 	}
 
 	onMount(() => {
-		openFromHash();
+		// Deep-link precedence over a restored pinned FOCUS is made DETERMINISTIC by
+		// flushing the restore's closeSignal first (tick), then bumping the target
+		// card's open signal as a separate edge (S10 review F3) — never relying on
+		// the definition order of the two CollapsibleSection effects. The resulting
+		// state (FOCUS reads ON, one deep-linked card open) matches the yesid quiet
+		// contract: quiet folds cards but never locks them against explicit intent.
+		let cancelled = false;
+		void (async () => {
+			await tick();
+			if (!cancelled) openFromHash();
+		})();
 		window.addEventListener('hashchange', openFromHash);
-		return () => window.removeEventListener('hashchange', openFromHash);
+		return () => {
+			cancelled = true;
+			window.removeEventListener('hashchange', openFromHash);
+		};
 	});
 
 	// ── Page-title flourish (D4) ───────────────────────────────────────────────
@@ -734,8 +754,15 @@
 	</div>
 </article>
 
-<!-- Mobile floating TOC pill (hidden ≥lg) -->
-<TocPill entries={tocEntries} {activeId} openAria={t.tocPill.open} closeAria={t.tocPill.close} />
+<!-- Mobile floating TOC pill (hidden ≥lg). onNavigate routes through the page's
+     open-then-scroll path so a drawer jump reveals its card (S10 review F1). -->
+<TocPill
+	entries={tocEntries}
+	{activeId}
+	openAria={t.tocPill.open}
+	closeAria={t.tocPill.close}
+	onNavigate={navigate}
+/>
 
 <style>
 	/* ── Article shell ─────────────────────────────────────────────────────────
