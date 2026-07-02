@@ -6,7 +6,7 @@
 // (am_peak…night) and day-type (weekday/weekend) — a trailing-window proxy.
 
 import { z } from 'zod';
-import { isoUtc } from './types';
+import { isoUtc, payloadEnvelopeFields } from './types';
 import { OccupancyMixSchema } from './network';
 
 // One network-wide reliability reading for a non-calendar grain (a time-of-day
@@ -38,7 +38,11 @@ export const TrendPointSchema = z.object({
 	p90_min: z.number().nullable().optional(),
 	vehicles: z.number().int().nullable().optional(),
 	// network-wide canceled / RT-reported trip-days, %; null when none observed.
+	// KEEPS its RT-observed denominator — NOT redefined by service_completeness_rate.
 	cancellation_rate: z.number().nullable().optional(),
+	// network-wide service completeness (GC2 H1, additive-optional): 100 × Σdelivered /
+	// Σscheduled — a DIFFERENT, scheduled-aware denominator. null on pre-0073 history.
+	service_completeness_rate: z.number().nullable().optional(),
 	// network-wide crowding band-shares; null when no occupancy telemetry.
 	occupancy_mix: OccupancyMixSchema.nullable().optional(),
 	// Chart Doctrine honesty fields (slice-S3). observation_count = the OTP/avg
@@ -62,5 +66,6 @@ export const NetworkTrendSchema = z.object({
 	// day-type (weekday/weekend). Additive optional — absent on older snapshots.
 	by_shift: z.array(NetworkShiftSchema).optional(),
 	by_daytype: z.array(NetworkShiftSchema).optional(),
+	...payloadEnvelopeFields(),
 });
 export type NetworkTrend = z.infer<typeof NetworkTrendSchema>;

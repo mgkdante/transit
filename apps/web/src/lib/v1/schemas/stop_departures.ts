@@ -4,7 +4,7 @@
 // keyed by stop id whose values are arrays (additionalProperties: array).
 
 import { z } from 'zod';
-import { isoUtc } from './types';
+import { isoUtc, payloadEnvelopeFields } from './types';
 
 export const StopDepartureSchema = z.object({
 	eta_utc: isoUtc(),
@@ -19,5 +19,6 @@ export const StopDeparturesFileSchema = z.object({
 	// Only generated_utc is required; the map may be absent when no stop has
 	// upcoming departures this cycle.
 	stops: z.record(z.string(), z.array(StopDepartureSchema)).optional(),
+	...payloadEnvelopeFields(),
 });
 export type StopDeparturesFile = z.infer<typeof StopDeparturesFileSchema>;

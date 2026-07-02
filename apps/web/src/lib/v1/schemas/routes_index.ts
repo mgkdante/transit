@@ -4,7 +4,7 @@
 // search. `type` is the GTFS route_type integer (0=tram,1=metro,3=bus,...).
 
 import { z } from 'zod';
-import { isoUtc } from './types';
+import { isoUtc, payloadEnvelopeFields } from './types';
 
 export const RouteIndexEntrySchema = z.object({
 	id: z.string(),
@@ -23,5 +23,6 @@ export type RouteIndexEntry = z.infer<typeof RouteIndexEntrySchema>;
 export const RoutesIndexSchema = z.object({
 	generated_utc: isoUtc(),
 	routes: z.array(RouteIndexEntrySchema),
+	...payloadEnvelopeFields(),
 });
 export type RoutesIndex = z.infer<typeof RoutesIndexSchema>;

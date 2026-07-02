@@ -43,6 +43,7 @@ from transit_ops.snapshots.builders._helpers import (
 from transit_ops.snapshots.contract import (
     Alert,
     AlertsFile,
+    Capability,
     DelayBucket,
     Manifest,
     ManifestFiles,
@@ -50,6 +51,7 @@ from transit_ops.snapshots.contract import (
     ManifestLiveFiles,
     ManifestStaticFiles,
     NetworkFile,
+    ProviderCapabilities,
     NonRespondingRoute,
     OccupancyMix,
     StatusDist,
@@ -583,6 +585,51 @@ _MANIFEST_TIER_STATE_SQL = named_query(
 )
 
 
+# GC2 H4 — honest per-provider capability derivation. A surface is only 'enabled'
+# when the provider ACTUALLY has the feed(s) that power it (core.feed_endpoints,
+# is_enabled=true). Never hardcodes 'enabled' — a provider with no vehicle_positions
+# feed publishes live_map='unavailable', an honest absence the web can gate on. The
+# query returns ALL enabled endpoint_keys, but _derive_capabilities only consults the
+# three that power the 6 surfaces — vehicle_positions (live_map, network_health),
+# trip_updates (network_health, reliability, accountability), static_schedule
+# (lookups); data_trust is always enabled (provenance emits every run). Alerts are NOT
+# a capability surface, so no alerts endpoint_key gates any of the 6.
+_MANIFEST_CAPABILITY_ENDPOINTS_SQL = named_query(
+    "manifest.capability_endpoints",
+    """
+    SELECT DISTINCT endpoint_key
+    FROM core.feed_endpoints
+    WHERE provider_id = :provider_id
+      AND is_enabled = true
+    """
+)
+
+
+def _derive_capabilities(endpoint_keys: set[str]) -> ProviderCapabilities:
+    """Map the provider's enabled feed endpoints to the 6 Manifest.surfaces capabilities.
+
+    Honest-absence: each surface is 'enabled' only if its powering feed is present,
+    else 'unavailable'. data_trust is always 'enabled' (provenance is emitted every
+    run regardless of feed set). Field names + order match ProviderCapabilities, which
+    a contract test pins 1:1 to _SURFACES.
+    """
+    has_vehicles = "vehicle_positions" in endpoint_keys
+    has_trips = "trip_updates" in endpoint_keys
+    has_static = "static_schedule" in endpoint_keys
+    # Delay-history surfaces are powered by trip_updates (the delay fact source).
+    has_delay_history = has_trips
+    _on = Capability.enabled
+    _off = Capability.unavailable
+    return ProviderCapabilities(
+        live_map=_on if has_vehicles else _off,
+        network_health=_on if (has_trips or has_vehicles) else _off,
+        lookups=_on if has_static else _off,
+        reliability=_on if has_delay_history else _off,
+        accountability=_on if has_delay_history else _off,
+        data_trust=_on,
+    )
+
+
 def build_manifest(
     conn: Connection,
     *,
@@ -613,6 +660,15 @@ def build_manifest(
     version_rows = conn.execute(_MANIFEST_VERSION_SQL, {"provider_id": provider_id}).mappings()
     vrow = next(iter(version_rows), None)
     dataset_version = (vrow["dataset_version"] if vrow else None) or "unknown"
+
+    # GC2 H4: honest per-surface capabilities from the provider's enabled feed set.
+    endpoint_keys = {
+        str(r["endpoint_key"])
+        for r in conn.execute(
+            _MANIFEST_CAPABILITY_ENDPOINTS_SQL, {"provider_id": provider_id}
+        ).mappings()
+    }
+    capabilities = _derive_capabilities(endpoint_keys)
 
     # Per-tier DATA-time stamps from core.snapshot_publish_state (None if the
     # tier has never been published, or the table is absent pre-migration).
@@ -654,4 +710,5 @@ def build_manifest(
             ),
         ),
         surfaces=list(_SURFACES),
+        capabilities=capabilities,
     )

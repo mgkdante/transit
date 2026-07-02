@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { isoUtc } from './types';
+import { isoUtc, payloadEnvelopeFields } from './types';
 
 /**
  * The route-reliability discovery index (historic/route_reliability/index.json): the
@@ -11,5 +11,6 @@ import { isoUtc } from './types';
 export const RouteReliabilityIndexSchema = z.object({
 	generated_utc: isoUtc(),
 	route_ids: z.array(z.string()).optional(),
+	...payloadEnvelopeFields(),
 });
 export type RouteReliabilityIndex = z.infer<typeof RouteReliabilityIndexSchema>;

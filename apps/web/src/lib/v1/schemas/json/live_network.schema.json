@@ -180,6 +180,18 @@
       "title": "Generated Utc",
       "type": "string"
     },
+    "methodology_version": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Methodology Version"
+    },
     "non_responding": {
       "title": "Non Responding",
       "type": "integer"
@@ -220,6 +232,23 @@
         }
       ],
       "title": "On Time Pct"
+    },
+    "publish_generation_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Publish Generation Id"
+    },
+    "schema_version": {
+      "default": 1,
+      "title": "Schema Version",
+      "type": "integer"
     },
     "status_dist": {
       "$ref": "#/$defs/StatusDist"

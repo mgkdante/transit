@@ -24,7 +24,13 @@ from transit_ops.db.connection import make_engine
 from transit_ops.ingestion.common import utc_now
 from transit_ops.settings import get_settings
 from transit_ops.snapshots import builders, gate
-from transit_ops.snapshots.contract import ReceiptsIndex, RouteReliabilityIndex
+from transit_ops.snapshots.contract import (
+    PAYLOAD_METHODOLOGY,
+    TOP_LEVEL_MODELS,
+    PayloadEnvelope,
+    ReceiptsIndex,
+    RouteReliabilityIndex,
+)
 from transit_ops.snapshots.storage import (
     HashGatedStorage,
     build_snapshot_storage,
@@ -58,6 +64,43 @@ _PRIOR_FILES_TOTAL_SQL = named_query(
     "SELECT files_total FROM core.snapshot_publish_state "
     "WHERE provider_id = :provider_id AND tier = :tier",
 )
+
+
+# GC2 H4 — model-class -> methodology-family string, so the publisher can stamp
+# methodology_version by payload TYPE regardless of the rel_key path. The FIRST
+# TOP_LEVEL_MODELS key that maps to a class wins (index.json wrappers share a class
+# with their family, which is fine — same methodology token).
+_METHODOLOGY_BY_MODEL: dict[type, str] = {
+    model: PAYLOAD_METHODOLOGY[name]
+    for name, model in TOP_LEVEL_MODELS.items()
+    if name in PAYLOAD_METHODOLOGY
+}
+
+
+def _publish_generation_id(provider_id: str, stamp: str) -> str:
+    """Deterministic dataset_version+generated_utc composite (DECISIONS #17).
+
+    No new randomness: derived purely from the provider id + the per-run publish
+    stamp (which is the generated_utc for live/historic and the dataset loaded_at_utc
+    for static). Ties every file to the exact publish run that emitted it.
+    """
+    return f"{provider_id}@{stamp}"
+
+
+def _stamp_envelope(items: list, *, provider_id: str, stamp: str) -> None:
+    """Stamp the H4 in-band accountability fields on every PayloadEnvelope in *items*.
+
+    Threaded ONCE per publish run: schema_version keeps its model default, methodology
+    _version is looked up by payload type, and publish_generation_id is the one
+    deterministic composite for the run — so every file in a snapshot carries the SAME
+    generation id. Mutates payloads in place before the gate + upload. Non-envelope
+    payloads (there should be none at the top level) are skipped defensively.
+    """
+    generation_id = _publish_generation_id(provider_id, stamp)
+    for _rel_key, payload, _tier in items:
+        if isinstance(payload, PayloadEnvelope):
+            payload.publish_generation_id = generation_id
+            payload.methodology_version = _METHODOLOGY_BY_MODEL.get(type(payload))
 
 
 def _concurrency(settings: object) -> int:
@@ -284,6 +327,7 @@ def _publish_live(
     """
     gen = utc_now().strftime("%Y-%m-%dT%H:%M:%SZ")
     items = _build_live_items(conn, provider_id=provider_id, settings=settings, gen=gen)
+    _stamp_envelope(items, provider_id=provider_id, stamp=gen)  # GC2 H4
     if gate_report is not None:
         # The live gate is best-effort observability only; a checker crash must NEVER
         # abort the ~57s cycle and blind the map, so record failures are logged and
@@ -462,6 +506,7 @@ def _publish_historic(
     items, route_items, stages = _build_historic_items(
         conn, provider_id=provider_id, settings=settings, stamp=stamp
     )
+    _stamp_envelope(items, provider_id=provider_id, stamp=stamp)  # GC2 H4
 
     if gate_report is not None:
         for rel_key, payload, _tier in items:
@@ -532,6 +577,7 @@ def _publish_static(
             builders.build_labels(conn, provider_id=provider_id, lang=lang, generated_utc=stamp),  # type: ignore[arg-type]
             "static",
         ))
+    _stamp_envelope(head_items, provider_id=provider_id, stamp=stamp)  # GC2 H4
     written.extend(_parallel_put(storage, head_items, concurrency=concurrency))
 
     # --- per-route files (built sequentially on this conn, uploaded in pool) ---
@@ -547,6 +593,7 @@ def _publish_static(
         )
         for (route_id,) in route_rows
     ]
+    _stamp_envelope(route_items, provider_id=provider_id, stamp=stamp)  # GC2 H4
     written.extend(_parallel_put(storage, route_items, concurrency=concurrency))
 
     # --- per-stop files (reuse all_stops built above, parallel upload) ---
@@ -554,6 +601,7 @@ def _publish_static(
         (f"static/stops/{stop_id}.json", stop_file, "static")
         for stop_id, stop_file in sorted(all_stops.items())
     ]
+    _stamp_envelope(stop_items, provider_id=provider_id, stamp=stamp)  # GC2 H4
     written.extend(_parallel_put(storage, stop_items, concurrency=concurrency))
 
     return written
@@ -789,6 +837,9 @@ def collect_payloads(
         if tier == "live":
             gen = utc_now().strftime("%Y-%m-%dT%H:%M:%SZ")
             items = _build_live_items(conn, provider_id=provider_id, settings=settings, gen=gen)
+            # Stamp the H4 envelope here too (mirrors _publish_live) so the pre-publish
+            # audit inspects the SAME bytes a real publish uploads, not un-stamped ones.
+            _stamp_envelope(items, provider_id=provider_id, stamp=gen)
             return ([(k, p) for (k, p, _t) in items], [], gen, None)
 
         if tier == "historic":
@@ -796,6 +847,9 @@ def collect_payloads(
             items, route_items, _stages = _build_historic_items(
                 conn, provider_id=provider_id, settings=settings, stamp=stamp
             )
+            # Stamp the H4 envelope here too (mirrors _publish_historic) so the audit
+            # sees published bytes. (Static is already stamped inside _publish_static.)
+            _stamp_envelope(items, provider_id=provider_id, stamp=stamp)
             prior_total = _prior_files_total(conn, provider_id=provider_id, tier=tier)
             return (
                 [(k, p) for (k, p, _t) in items],

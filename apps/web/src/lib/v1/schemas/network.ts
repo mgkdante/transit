@@ -5,7 +5,7 @@
 // makes "no data yet" explicit, and we honour that rather than coercing to 0.
 
 import { z } from 'zod';
-import { isoUtc } from './types';
+import { isoUtc, payloadEnvelopeFields } from './types';
 
 /** Count of vehicles in each delay band. Defaults to 0 per key in the schema. */
 export const StatusDistSchema = z.object({
@@ -76,5 +76,6 @@ export const NetworkFileSchema = z.object({
 	// vehicle); SUM(count) equals the scalar `non_responding`. null/absent when
 	// no route is non-responding — the surface stands the section down then.
 	non_responding_by_route: z.array(NonRespondingRouteSchema).nullable().optional(),
+	...payloadEnvelopeFields(),
 });
 export type NetworkFile = z.infer<typeof NetworkFileSchema>;

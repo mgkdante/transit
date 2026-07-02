@@ -8,7 +8,7 @@
 // never resolveLabel.
 
 import { z } from 'zod';
-import { isoUtc } from './types';
+import { isoUtc, payloadEnvelopeFields } from './types';
 
 export const AlertHistoryEntrySchema = z.object({
 	id: z.string(),
@@ -48,5 +48,6 @@ export const AlertHistorySchema = z.object({
 	alerts: z.array(AlertHistoryEntrySchema).optional(),
 	// Tier-2 distinct-alert distribution; null when no alerts in the window.
 	breakdown: AlertBreakdownSchema.nullable().optional(),
+	...payloadEnvelopeFields(),
 });
 export type AlertHistory = z.infer<typeof AlertHistorySchema>;

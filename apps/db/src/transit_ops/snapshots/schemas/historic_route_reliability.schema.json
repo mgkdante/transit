@@ -38,10 +38,58 @@
           "default": null,
           "title": "Date"
         },
+        "delivered_trip_days": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Delivered Trip Days"
+        },
         "grain": {
           "default": "day",
           "title": "Grain",
           "type": "string"
+        },
+        "scheduled_trip_days": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Scheduled Trip Days"
+        },
+        "service_completeness_pct": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Service Completeness Pct"
+        },
+        "silent_trip_days": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Silent Trip Days"
         },
         "total_trip_days": {
           "anyOf": [
@@ -409,6 +457,42 @@
         "grain"
       ],
       "title": "OccupancyByGrain",
+      "type": "object"
+    },
+    "OccupancyByHour": {
+      "properties": {
+        "hour_of_day_local": {
+          "title": "Hour Of Day Local",
+          "type": "integer"
+        },
+        "mix": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/OccupancyMix"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "n": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "N"
+        }
+      },
+      "required": [
+        "hour_of_day_local"
+      ],
+      "title": "OccupancyByHour",
       "type": "object"
     },
     "OccupancyMix": {
@@ -1170,6 +1254,18 @@
       "title": "Id",
       "type": "string"
     },
+    "methodology_version": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Methodology Version"
+    },
     "name": {
       "anyOf": [
         {
@@ -1196,6 +1292,13 @@
       "title": "Occupancy By Grain",
       "type": "array"
     },
+    "occupancy_by_hour": {
+      "items": {
+        "$ref": "#/$defs/OccupancyByHour"
+      },
+      "title": "Occupancy By Hour",
+      "type": "array"
+    },
     "occupancy_mix": {
       "anyOf": [
         {
@@ -1220,6 +1323,23 @@
       },
       "title": "Periods By Grain",
       "type": "array"
+    },
+    "publish_generation_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Publish Generation Id"
+    },
+    "schema_version": {
+      "default": 1,
+      "title": "Schema Version",
+      "type": "integer"
     },
     "service_spans": {
       "items": {

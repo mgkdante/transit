@@ -4,7 +4,7 @@
 // Fetched per stop id under stops_prefix.
 
 import { z } from 'zod';
-import { isoUtc } from './types';
+import { isoUtc, payloadEnvelopeFields } from './types';
 
 export const ScheduledRouteSchema = z.object({
 	route: z.string(),
@@ -24,5 +24,6 @@ export const StopFileSchema = z.object({
 	routes_served: z.array(z.string()).optional(),
 	scheduled: z.array(ScheduledRouteSchema).optional(),
 	wheelchair: z.boolean().optional(),
+	...payloadEnvelopeFields(),
 });
 export type StopFile = z.infer<typeof StopFileSchema>;

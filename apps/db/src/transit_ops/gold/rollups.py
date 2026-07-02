@@ -302,25 +302,157 @@ UPSERT_ROUTE_CANCELLATION_DAILY = named_query(
           AND f.start_date IS NOT NULL
           AND f.snapshot_date_key = :date_key
         GROUP BY f.provider_id, f.route_id, f.trip_id, f.start_date
+    ),
+    obs AS (
+        -- RT-observed counts per route — BYTE-IDENTICAL to the pre-H1 SELECT.
+        -- total/canceled/rate keep their RT-observed semantics unchanged; the
+        -- scheduled FULL JOIN below only ADDS columns + sch-only dark rows, it never
+        -- filters or mutates this CTE (rows with obs stay byte-identical, FIX-4).
+        SELECT
+            provider_id,
+            route_id,
+            COUNT(*)::integer AS total_trip_days,
+            COUNT(*) FILTER (WHERE was_canceled = 1)::integer AS canceled_trip_days,
+            ROUND(100.0 * COUNT(*) FILTER (WHERE was_canceled = 1) / NULLIF(COUNT(*), 0), 2)
+                AS cancellation_rate_pct
+        FROM trip_day
+        GROUP BY provider_id, route_id
     )
     INSERT INTO gold.route_cancellation_daily (
         provider_id, provider_local_date, route_id,
-        total_trip_days, canceled_trip_days, cancellation_rate_pct, built_at_utc
+        total_trip_days, canceled_trip_days, cancellation_rate_pct, built_at_utc,
+        scheduled_trip_days, delivered_trip_days, silent_trip_days
     )
     SELECT
-        provider_id,
+        -- FULL JOIN key coalesce: a scheduled-but-fully-dark route-day has NO obs row,
+        -- so identity + provider_local_date fall back to the sch side (FIX-4). route_id
+        -- is schedule-derived, so it always exists in dim_route.
+        COALESCE(obs.provider_id, sch.provider_id),
         :local_date,
-        route_id,
-        COUNT(*)::integer,
-        COUNT(*) FILTER (WHERE was_canceled = 1)::integer,
-        ROUND(100.0 * COUNT(*) FILTER (WHERE was_canceled = 1) / NULLIF(COUNT(*), 0), 2),
-        :built_at_utc
-    FROM trip_day
-    GROUP BY provider_id, route_id
+        COALESCE(obs.route_id, sch.route_id),
+        -- RT-observed totals: 0 on a fully-dark day (scheduled trips, none observed).
+        COALESCE(obs.total_trip_days, 0),
+        COALESCE(obs.canceled_trip_days, 0),
+        -- cancellation_rate_pct stays honest-NULL on a dark day — no RT denominator to
+        -- divide (obs.cancellation_rate_pct is NULL when the obs row is absent).
+        obs.cancellation_rate_pct,
+        :built_at_utc,
+        -- scheduled universe (NULL = unknown: no scheduled rollup for this date).
+        sch.scheduled_trip_count,
+        -- delivered = RT-observed non-cancelled (0 on a fully-dark day).
+        (COALESCE(obs.total_trip_days, 0) - COALESCE(obs.canceled_trip_days, 0))::integer,
+        -- silent = scheduled minus ALL RT-observed, clamped at 0 (over-delivery hidden).
+        -- NULL when scheduled unknown, never a fabricated 0. On a dark day silent==scheduled.
+        CASE WHEN sch.scheduled_trip_count IS NULL THEN NULL
+             ELSE GREATEST(sch.scheduled_trip_count - COALESCE(obs.total_trip_days, 0), 0)::integer
+        END
+    FROM obs
+    FULL JOIN gold.route_scheduled_trips_daily AS sch
+        ON sch.provider_id = obs.provider_id
+       AND sch.provider_local_date = :local_date
+       AND sch.route_id = obs.route_id
+    -- The FULL JOIN's sch side is unfiltered in the ON clause, so bound the sch-only
+    -- (dark) rows to THIS provider + date here — obs-side rows already satisfy it via
+    -- the join key, so this never drops a row that had RT observations.
+    WHERE COALESCE(obs.provider_id, sch.provider_id) = :provider_id
+      AND (sch.provider_local_date IS NULL OR sch.provider_local_date = :local_date)
     ON CONFLICT (provider_id, provider_local_date, route_id) DO UPDATE SET
         total_trip_days = EXCLUDED.total_trip_days,
         canceled_trip_days = EXCLUDED.canceled_trip_days,
         cancellation_rate_pct = EXCLUDED.cancellation_rate_pct,
+        built_at_utc = EXCLUDED.built_at_utc,
+        -- Recompute the scheduled-aware split from the freshly-joined scheduled
+        -- rollup on every rebuild (GC2 H1). Old RT-observed fields above are
+        -- untouched — the split reads scheduled/total/canceled, never mutates them.
+        scheduled_trip_days = EXCLUDED.scheduled_trip_days,
+        delivered_trip_days = EXCLUDED.delivered_trip_days,
+        silent_trip_days = EXCLUDED.silent_trip_days
+    """
+)
+
+# The scheduled UNIVERSE for one CLOSED provider-local day (GC2 / Step H1): distinct
+# scheduled trip_id per route active on that date, resolved against the CURRENT
+# (is_current) static edition via the canonical GTFS service-on-date rule. This is the
+# first honest denominator for cancellation — RT-only rollups never saw scheduled
+# trips that never appeared in any poll (silent trips). service_on_date rule:
+#     active(service_id, D) =
+#         ( calendar covers D AND weekday-bool(isodow(D)) true
+#           AND NOT EXISTS calendar_dates(type=2) for (service_id, D) )
+#         OR EXISTS calendar_dates(type=1) for (service_id, D)
+# The OR branch makes calendar_dates-only feeds work (fires with zero calendar rows).
+# The is_current edition is resolved inline (a date can be re-resolved by a later
+# edition; ON CONFLICT is last-writer-wins on count + dataset_version_id). This is the
+# SHARED service-on-date predicate with _helpers.py _REP_DATES_SQL (H2) — the WHERE is
+# duplicated with this cross-reference so the two can never drift. Binds
+# {provider_id, local_date, built_at_utc}; :date_key is passed by _build_percentile_days
+# but unused here (scheduled reads silver, not the fact snapshot) — harmless.
+UPSERT_ROUTE_SCHEDULED_TRIPS_DAILY = named_query(
+    "rollup.route_scheduled_trips.upsert",
+    """
+    WITH edition AS (
+        -- CURRENT static edition only — never a rolled-back / non-current version
+        -- (same guard 0069/marts.py:150 warns about).
+        SELECT dataset_version_id
+        FROM core.dataset_versions
+        WHERE provider_id = :provider_id
+          AND dataset_kind = 'static_schedule'
+          AND is_current = true
+        ORDER BY loaded_at_utc DESC
+        LIMIT 1
+    ),
+    active_service AS (
+        -- canonical GTFS service-on-date resolution for D = :local_date, shared with
+        -- _helpers.py _REP_DATES_SQL. Weekly pattern (minus type-2 removals) UNION
+        -- type-1 additions handles calendar_dates-only feeds.
+        SELECT c.service_id
+        FROM edition e
+        JOIN silver.calendar c
+          ON c.dataset_version_id = e.dataset_version_id
+         AND c.provider_id = :provider_id
+         AND CAST(:local_date AS date) BETWEEN c.start_date AND c.end_date
+         AND CASE EXTRACT(ISODOW FROM CAST(:local_date AS date))
+               WHEN 1 THEN c.monday WHEN 2 THEN c.tuesday WHEN 3 THEN c.wednesday
+               WHEN 4 THEN c.thursday WHEN 5 THEN c.friday WHEN 6 THEN c.saturday
+               ELSE c.sunday END
+        WHERE NOT EXISTS (
+            SELECT 1 FROM silver.calendar_dates cd
+            WHERE cd.dataset_version_id = e.dataset_version_id
+              AND cd.provider_id = :provider_id
+              AND cd.service_id = c.service_id
+              AND cd.service_date = CAST(:local_date AS date)
+              AND cd.exception_type = 2
+        )
+        UNION
+        SELECT cd.service_id
+        FROM edition e
+        JOIN silver.calendar_dates cd
+          ON cd.dataset_version_id = e.dataset_version_id
+         AND cd.provider_id = :provider_id
+         AND cd.service_date = CAST(:local_date AS date)
+         AND cd.exception_type = 1
+    )
+    INSERT INTO gold.route_scheduled_trips_daily (
+        provider_id, provider_local_date, route_id,
+        scheduled_trip_count, dataset_version_id, built_at_utc
+    )
+    SELECT
+        :provider_id,
+        :local_date,
+        t.route_id,
+        COUNT(DISTINCT t.trip_id)::integer,
+        e.dataset_version_id,
+        :built_at_utc
+    FROM edition e
+    JOIN silver.trips t
+      ON t.dataset_version_id = e.dataset_version_id
+     AND t.provider_id = :provider_id
+    JOIN active_service a
+      ON a.service_id = t.service_id
+    WHERE t.route_id IS NOT NULL
+    GROUP BY t.route_id, e.dataset_version_id
+    ON CONFLICT (provider_id, provider_local_date, route_id) DO UPDATE SET
+        scheduled_trip_count = EXCLUDED.scheduled_trip_count,
+        dataset_version_id = EXCLUDED.dataset_version_id,
         built_at_utc = EXCLUDED.built_at_utc
     """
 )
@@ -355,6 +487,54 @@ UPSERT_ROUTE_OCCUPANCY_BAND_DAILY = named_query(
       AND f.snapshot_date_key = :date_key
     GROUP BY f.provider_id, COALESCE(f.route_id, '__unrouted__')
     ON CONFLICT (provider_id, provider_local_date, route_id) DO UPDATE SET
+        observation_count = EXCLUDED.observation_count,
+        empty_count = EXCLUDED.empty_count,
+        many_seats_count = EXCLUDED.many_seats_count,
+        few_seats_count = EXCLUDED.few_seats_count,
+        standing_count = EXCLUDED.standing_count,
+        full_count = EXCLUDED.full_count,
+        built_at_utc = EXCLUDED.built_at_utc
+    """
+)
+
+# Hour-grain twin of UPSERT_ROUTE_OCCUPANCY_BAND_DAILY (migration 0074). Identical
+# body PLUS: (a) an INNER JOIN gold.dim_provider for the timezone, (b) the
+# hour_of_day_local = EXTRACT(HOUR FROM timezone(dp.timezone, captured_at_utc)) key
+# copied byte-for-byte from route_delay_spine (the ONLY grouping difference vs the
+# daily table). Band FILTER expressions + the '__unrouted__' COALESCE are byte-
+# identical to the daily upsert, so summing the 6 band counts over the hourly rows of
+# one (provider, route, date) reproduces the daily row's counts EXACTLY (daily == Σ
+# hourly). Binds {provider_id, local_date, built_at_utc, date_key} → drops into
+# _build_percentile_days unchanged.
+UPSERT_ROUTE_OCCUPANCY_BAND_HOURLY = named_query(
+    "rollup.route_occupancy_hourly.upsert",
+    """
+    INSERT INTO gold.route_occupancy_band_hourly (
+        provider_id, route_id, provider_local_date, hour_of_day_local,
+        observation_count, empty_count, many_seats_count,
+        few_seats_count, standing_count, full_count, built_at_utc
+    )
+    SELECT
+        f.provider_id,
+        COALESCE(f.route_id, '__unrouted__'),
+        :local_date,
+        EXTRACT(HOUR FROM timezone(dp.timezone, f.captured_at_utc))::smallint,
+        COUNT(*) FILTER (WHERE f.occupancy_status IN (0, 1, 2, 3, 4, 5))::integer,
+        COUNT(*) FILTER (WHERE f.occupancy_status = 0)::integer,
+        COUNT(*) FILTER (WHERE f.occupancy_status = 1)::integer,
+        COUNT(*) FILTER (WHERE f.occupancy_status = 2)::integer,
+        COUNT(*) FILTER (WHERE f.occupancy_status IN (3, 4))::integer,
+        COUNT(*) FILTER (WHERE f.occupancy_status = 5)::integer,
+        :built_at_utc
+    FROM gold.fact_vehicle_snapshot AS f
+    INNER JOIN gold.dim_provider AS dp ON dp.provider_id = f.provider_id
+    WHERE f.provider_id = :provider_id
+      AND f.snapshot_date_key = :date_key
+    GROUP BY
+        f.provider_id,
+        COALESCE(f.route_id, '__unrouted__'),
+        EXTRACT(HOUR FROM timezone(dp.timezone, f.captured_at_utc))
+    ON CONFLICT (provider_id, route_id, provider_local_date, hour_of_day_local) DO UPDATE SET
         observation_count = EXCLUDED.observation_count,
         empty_count = EXCLUDED.empty_count,
         many_seats_count = EXCLUDED.many_seats_count,
@@ -1891,8 +2071,10 @@ class WarmRollupBuildResult:
     reporting_aggregate_row_counts: dict[str, int] = field(default_factory=dict)
     built_route_percentile_days: int = 0
     built_stop_percentile_days: int = 0
+    built_route_scheduled_trips_days: int = 0
     built_route_cancellation_days: int = 0
     built_route_occupancy_days: int = 0
+    built_route_occupancy_hourly_days: int = 0
     built_stop_occupancy_days: int = 0
     built_route_service_span_days: int = 0
     built_route_skipped_stop_days: int = 0
@@ -1913,8 +2095,10 @@ class WarmRollupBuildResult:
             "built_trip_delay_periods": self.built_trip_delay_periods,
             "built_route_percentile_days": self.built_route_percentile_days,
             "built_stop_percentile_days": self.built_stop_percentile_days,
+            "built_route_scheduled_trips_days": self.built_route_scheduled_trips_days,
             "built_route_cancellation_days": self.built_route_cancellation_days,
             "built_route_occupancy_days": self.built_route_occupancy_days,
+            "built_route_occupancy_hourly_days": self.built_route_occupancy_hourly_days,
             "built_stop_occupancy_days": self.built_stop_occupancy_days,
             "built_route_service_span_days": self.built_route_service_span_days,
             "built_route_skipped_stop_days": self.built_route_skipped_stop_days,
@@ -2130,6 +2314,20 @@ def build_warm_rollups(
         floor_key=floor_key,
         now=now,
     )
+    # Scheduled universe (GC2 H1) — MUST build BEFORE cancellation so the same run's
+    # cancellation LEFT JOIN finds the scheduled row for the day. Reads silver (the
+    # CURRENT edition), not the fact, but uses the trip-delay missing-day calendar so
+    # it materializes exactly the closed days cancellation also builds. Append-only,
+    # own watermark kind; :date_key is bound-but-unused by the scheduled upsert.
+    built_route_scheduled_trips = _build_percentile_days(
+        engine,
+        provider_id=provider_id,
+        rollup_kind="route_scheduled_trips_daily",
+        upsert=UPSERT_ROUTE_SCHEDULED_TRIPS_DAILY,
+        today_key=today_key,
+        floor_key=floor_key,
+        now=now,
+    )
     # Cancellation reads fact_trip_delay_snapshot, so it reuses the default
     # trip-delay missing-day calendar. Occupancy reads fact_vehicle_snapshot,
     # so it MUST use SELECT_MISSING_OCCUPANCY_DAYS over its own source table.
@@ -2147,6 +2345,20 @@ def build_warm_rollups(
         provider_id=provider_id,
         rollup_kind="route_occupancy_band_daily",
         upsert=UPSERT_ROUTE_OCCUPANCY_BAND_DAILY,
+        today_key=today_key,
+        floor_key=floor_key,
+        now=now,
+        select_missing=SELECT_MISSING_OCCUPANCY_DAYS,
+    )
+    # Hour-grain route occupancy band reduction (migration 0074) — same
+    # fact_vehicle_snapshot source as the daily rollup, so it MUST use
+    # SELECT_MISSING_OCCUPANCY_DAYS (reusing the trip-delay calendar would
+    # watermark-build empty reductions on delay-only days). daily == Σ hourly.
+    built_route_occupancy_hourly = _build_percentile_days(
+        engine,
+        provider_id=provider_id,
+        rollup_kind="route_occupancy_band_hourly",
+        upsert=UPSERT_ROUTE_OCCUPANCY_BAND_HOURLY,
         today_key=today_key,
         floor_key=floor_key,
         now=now,
@@ -2290,8 +2502,10 @@ def build_warm_rollups(
         completed_at_utc=now,
         built_route_percentile_days=built_route_percentile,
         built_stop_percentile_days=built_stop_percentile,
+        built_route_scheduled_trips_days=built_route_scheduled_trips,
         built_route_cancellation_days=built_route_cancellation,
         built_route_occupancy_days=built_route_occupancy,
+        built_route_occupancy_hourly_days=built_route_occupancy_hourly,
         built_stop_occupancy_days=built_stop_occupancy,
         built_route_service_span_days=built_route_service_span,
         built_route_skipped_stop_days=built_route_skipped_stop,
@@ -2307,7 +2521,7 @@ def build_warm_rollups(
 # Windowed rebuild of the append-only daily rollups (present-but-wrong days)
 # ---------------------------------------------------------------------------
 
-# The 11 append-only daily kinds are fill-forward only: _build_percentile_days
+# The append-only daily kinds in REBUILDABLE_KINDS are fill-forward only: _build_percentile_days
 # SKIPS any local day already watermarked in gold.warm_rollup_periods, so a
 # present-but-WRONG closed day (e.g. a late silver correction) is never
 # recomputed — the watermark shields it. The ONLY way to force a re-build of a
@@ -2366,6 +2580,14 @@ REBUILDABLE_KINDS: dict[str, RebuildableKind] = {
         "route_occupancy_band_daily",
         "provider_local_date",
         UPSERT_ROUTE_OCCUPANCY_BAND_DAILY,
+        SELECT_MISSING_OCCUPANCY_DAYS,
+        0,
+    ),
+    "route_occupancy_band_hourly": RebuildableKind(
+        "route_occupancy_band_hourly",
+        "route_occupancy_band_hourly",
+        "provider_local_date",
+        UPSERT_ROUTE_OCCUPANCY_BAND_HOURLY,
         SELECT_MISSING_OCCUPANCY_DAYS,
         0,
     ),
@@ -2432,6 +2654,14 @@ REBUILDABLE_KINDS: dict[str, RebuildableKind] = {
         "stop_delay_shift_daily",
         "provider_local_date",
         UPSERT_STOP_DELAY_SHIFT_DAILY,
+        SELECT_MISSING_PERCENTILE_DAYS,
+        0,
+    ),
+    "route_scheduled_trips_daily": RebuildableKind(
+        "route_scheduled_trips_daily",
+        "route_scheduled_trips_daily",
+        "provider_local_date",
+        UPSERT_ROUTE_SCHEDULED_TRIPS_DAILY,
         SELECT_MISSING_PERCENTILE_DAYS,
         0,
     ),

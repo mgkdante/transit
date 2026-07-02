@@ -5,7 +5,7 @@
 // enum. Everything else the GTFS-rt feed may omit is .nullable().
 
 import { z } from 'zod';
-import { isoUtc, StatusCodeSchema, OccupancyCodeSchema } from './types';
+import { isoUtc, StatusCodeSchema, OccupancyCodeSchema, payloadEnvelopeFields } from './types';
 
 export const VehicleSchema = z.object({
 	id: z.string(),
@@ -29,5 +29,6 @@ export type Vehicle = z.infer<typeof VehicleSchema>;
 export const VehiclesFileSchema = z.object({
 	generated_utc: isoUtc(),
 	vehicles: z.array(VehicleSchema),
+	...payloadEnvelopeFields(),
 });
 export type VehiclesFile = z.infer<typeof VehiclesFileSchema>;

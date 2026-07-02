@@ -10,7 +10,7 @@ import { RouteHabitsSchema, RouteDayOfWeekSchema } from './route_reliability';
 // source route_reliability.ts imports it from. The crowding band-shares are one
 // shape across the network / lines / stops surfaces; never re-declare it.
 import { OccupancyMixSchema } from './network';
-import { isoUtc } from './types';
+import { isoUtc, payloadEnvelopeFields } from './types';
 
 export const StopReliabilityPeriodSchema = z.object({
 	// Free-string grain the pipeline owns; NOT the web filter Grain enum.
@@ -53,5 +53,6 @@ export const StopReliabilitySchema = z.object({
 	// this stop (GTFS-RT VehiclePosition stop_id), NOT a stop attribute. null when
 	// no occupancy telemetry was attributed to this stop. Reuses OccupancyMixSchema.
 	occupancy_mix: OccupancyMixSchema.nullable().optional(),
+	...payloadEnvelopeFields(),
 });
 export type StopReliability = z.infer<typeof StopReliabilitySchema>;

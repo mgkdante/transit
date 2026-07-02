@@ -7,7 +7,7 @@
 // description / *_en carry the body and English variants. See per-field notes.
 
 import { z } from 'zod';
-import { isoUtc, SeverityCodeSchema } from './types';
+import { isoUtc, SeverityCodeSchema, payloadEnvelopeFields } from './types';
 
 export const AlertSchema = z.object({
 	id: z.string(),
@@ -44,5 +44,6 @@ export type Alert = z.infer<typeof AlertSchema>;
 export const AlertsFileSchema = z.object({
 	generated_utc: isoUtc(),
 	alerts: z.array(AlertSchema),
+	...payloadEnvelopeFields(),
 });
 export type AlertsFile = z.infer<typeof AlertsFileSchema>;

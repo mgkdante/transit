@@ -97,8 +97,14 @@ _TREND_CANCELLATION_SQL = named_query(
     "network.trend.daily_cancel",
     """
     SELECT provider_local_date AS local_date,
-           SUM(canceled_trip_days) AS canceled,
-           SUM(total_trip_days)    AS total
+           SUM(canceled_trip_days)   AS canceled,
+           SUM(total_trip_days)      AS total,
+           -- delivered is summed ONLY over rows with a known scheduled universe so the
+           -- completeness numerator matches its Σscheduled denominator (rows with NULL
+           -- scheduled contribute nothing to either side; else the rate inflates).
+           SUM(delivered_trip_days) FILTER (WHERE scheduled_trip_days IS NOT NULL)
+               AS delivered,
+           SUM(scheduled_trip_days)  AS scheduled
     FROM gold.route_cancellation_daily
     WHERE provider_id = :provider_id
     GROUP BY provider_local_date
@@ -187,8 +193,13 @@ _TREND_CANCELLATION_WEEKLY_SQL = named_query(
     "network.trend.week_cancel",
     """
     SELECT date_trunc('week', provider_local_date)::date AS local_date,
-           SUM(canceled_trip_days) AS canceled,
-           SUM(total_trip_days)    AS total
+           SUM(canceled_trip_days)   AS canceled,
+           SUM(total_trip_days)      AS total,
+           -- delivered summed ONLY over known-scheduled rows (see daily variant): keeps
+           -- the completeness numerator aligned with its Σscheduled denominator.
+           SUM(delivered_trip_days) FILTER (WHERE scheduled_trip_days IS NOT NULL)
+               AS delivered,
+           SUM(scheduled_trip_days)  AS scheduled
     FROM gold.route_cancellation_daily
     WHERE provider_id = :provider_id
     GROUP BY date_trunc('week', provider_local_date)::date
@@ -199,8 +210,13 @@ _TREND_CANCELLATION_MONTHLY_SQL = named_query(
     "network.trend.month_cancel",
     """
     SELECT date_trunc('month', provider_local_date)::date AS local_date,
-           SUM(canceled_trip_days) AS canceled,
-           SUM(total_trip_days)    AS total
+           SUM(canceled_trip_days)   AS canceled,
+           SUM(total_trip_days)      AS total,
+           -- delivered summed ONLY over known-scheduled rows (see daily variant): keeps
+           -- the completeness numerator aligned with its Σscheduled denominator.
+           SUM(delivered_trip_days) FILTER (WHERE scheduled_trip_days IS NOT NULL)
+               AS delivered,
+           SUM(scheduled_trip_days)  AS scheduled
     FROM gold.route_cancellation_daily
     WHERE provider_id = :provider_id
     GROUP BY date_trunc('month', provider_local_date)::date
@@ -257,6 +273,7 @@ def _blank_trend_point() -> dict:
         "p90_min": None,
         "vehicles": None,
         "cancellation_rate": None,
+        "service_completeness_rate": None,
         "occupancy_mix": None,
         "observation_count": None,
         "wilson_lo": None,
@@ -325,6 +342,21 @@ def _trend_points(
             if total and canceled is not None
             else None
         )
+        # Scheduled-aware completeness (GC2 H1): Σdelivered / Σscheduled. A DIFFERENT
+        # denominator than cancellation_rate above (which keeps its RT-observed total).
+        # None when the scheduled universe is unknown for the whole bucket (pre-0073);
+        # .get() tolerates a mapping without the columns (all-NULL bucket / legacy).
+        # 2026-07-02 (GC2): CLAMPED at 100 — Σdelivered > Σscheduled is legitimate
+        # (added/unscheduled trips + capture-day vs service-day overnight spillover), so
+        # over-delivery reads as fully complete rather than tripping the gate's 0-100
+        # rate check; the batch id-drift detector is the signal for systemic overshoot.
+        scheduled = r.get("scheduled")
+        delivered = r.get("delivered")
+        entry["service_completeness_rate"] = (
+            min(100.0, round(100.0 * float(delivered) / float(scheduled), 2))
+            if scheduled and delivered is not None
+            else None
+        )
 
     for r in conn.execute(occupancy_sql, params).mappings():
         entry = points.setdefault(_iso_date(r["local_date"]), _blank_trend_point())
@@ -338,6 +370,7 @@ def _trend_points(
             p90_min=v["p90_min"],
             vehicles=v["vehicles"],
             cancellation_rate=v["cancellation_rate"],
+            service_completeness_rate=v["service_completeness_rate"],
             occupancy_mix=v["occupancy_mix"],
             observation_count=v["observation_count"],
             wilson_lo=v["wilson_lo"],

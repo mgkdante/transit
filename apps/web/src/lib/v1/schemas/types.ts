@@ -74,6 +74,26 @@ export const isoUtc = (): z.ZodType<IsoUtc> =>
 		.transform((s) => s as IsoUtc);
 
 // ---------------------------------------------------------------------------
+// GC2 H4 — in-band accountability envelope (PayloadEnvelope in contract.py).
+//
+// Every TOP-LEVEL payload root carries these three additive-optional-with-default
+// fields. They are NOT in any canonical `required[]` (optional-with-default), so
+// each is `.optional()` here — the Gate B conformance walk asserts this parity.
+// Spread `payloadEnvelopeFields()` into every root z.object so a Python contract
+// change to the envelope only needs one edit here.
+// ---------------------------------------------------------------------------
+
+export const payloadEnvelopeFields = () => ({
+	schema_version: z.number().int().optional(),
+	methodology_version: z.string().nullable().optional(),
+	publish_generation_id: z.string().nullable().optional(),
+});
+
+/** GC2 H4 per-surface capability honesty (ProviderCapabilities in contract.py). */
+export const CapabilitySchema = z.enum(['enabled', 'partial', 'unavailable', 'not_applicable']);
+export type Capability = z.infer<typeof CapabilitySchema>;
+
+// ---------------------------------------------------------------------------
 // Shared structural types.
 //
 // Hand-written aliases for the two cross-cutting shapes the SHARED CONTRACT
