@@ -1683,6 +1683,24 @@ def _archive_requires_beta_static_contract(archive: BronzeStaticArchive) -> bool
     return any("beta" in token.lower() for token in source_tokens)
 
 
+# Every table the static load bulk-seeds; each gets a post-commit ANALYZE so the
+# first post-flip reader plans against real row counts, not pre-seed statistics.
+_POST_LOAD_ANALYZE_TABLES = (
+    "silver.agency",
+    "silver.feed_info",
+    "silver.routes",
+    "silver.trips",
+    "silver.stops",
+    "silver.stop_times",
+    "silver.calendar",
+    "silver.calendar_dates",
+    "silver.shapes",
+    "silver.directions",
+    "silver.route_patterns",
+    "silver.translations",
+)
+
+
 def load_latest_static_to_silver(
     provider_id: str,
     *,
@@ -1729,4 +1747,15 @@ def load_latest_static_to_silver(
         # gold dims) FK-violates with STATIC_DATASET_RETENTION_COUNT=1 and rolls
         # back the entire silver load on every content change. Worker-cycle
         # prune_silver_storage owns all static cleanup now (slice-9.1.1j).
-        return result
+
+    # A bulk-seeded dataset version leaves the planner with stale per-column
+    # stats until autovacuum catches up; the first post-flip publish query then
+    # mis-plans (rows≈1 estimate vs ~650k actual → join-filter nested loops, the
+    # 0166-class planner disease — STO 2026-07-01: an 89-minute static-publish
+    # hang killed two daily runs). ANALYZE costs seconds relative to a seed and
+    # must run after the load transaction commits so it sees the new rows.
+    with engine.begin() as analyze_connection:
+        for table in _POST_LOAD_ANALYZE_TABLES:
+            analyze_connection.execute(text(f"ANALYZE {table}"))
+
+    return result
