@@ -94,3 +94,6 @@ export {
 
 // --- schemas (enums + contract types) — re-export the typed contract surface --
 export * from './schemas';
+
+// --- enum display vocabulary — the one bilingual rendering of the closed enums ---
+export * from './enumLabels';

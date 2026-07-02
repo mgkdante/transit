@@ -19,6 +19,7 @@ export { default as EntityDetail } from './EntityDetail.svelte';
 export { default as Breadcrumb } from './Breadcrumb.svelte';
 export { default as ReliabilityPane } from './ReliabilityPane.svelte';
 export { default as GrainPicker } from './GrainPicker.svelte';
+export { default as SurfaceControls } from './SurfaceControls.svelte';
 export { default as FreshnessStamp } from './FreshnessStamp.svelte';
 export { default as ConformanceBadge } from './ConformanceBadge.svelte';
 export { default as ReliabilityBadge } from './ReliabilityBadge.svelte';
@@ -36,6 +37,10 @@ export type { EntityRowProps } from './EntityRow.svelte';
 export type { BreadcrumbProps } from './Breadcrumb.svelte';
 export type { ReliabilityPaneProps } from './ReliabilityPane.svelte';
 export type { GrainPickerProps } from './GrainPicker.svelte';
+// SurfaceControls is generic (<K extends string = Grain>). Its Props interface lives
+// in the MODULE script (generic over K, default string) precisely so it CAN be exported
+// (a `generics=` instance script disallows exports) — Props-export convention.
+export type { GrainAvailability, SurfaceControlsProps } from './SurfaceControls.svelte';
 export type { FreshnessStampProps } from './FreshnessStamp.svelte';
 export type { ConformanceBadgeProps } from './ConformanceBadge.svelte';
 export type { ReliabilityBadgeProps } from './ReliabilityBadge.svelte';

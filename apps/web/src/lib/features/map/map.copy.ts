@@ -1,11 +1,10 @@
 // Co-located copy for the live map hero (Family A, slice-9.3).
 //
-// Intrinsic bilingual vocabulary. STATUS_LABELS / OCCUPANCY_LABELS mirror the
-// network surface's band labels; kept local to keep the feature self-contained
-// (a shared transit-vocab module is a beautification-pass follow-up).
+// Surface-level prose only. The StatusCode / OccupancyCode display labels now live
+// beside the enums they render, in the shared $lib/v1/enumLabels vocabulary (S7.5
+// P3), so the map legend and the network band never drift again.
 
 import type { Locale } from '$lib/i18n';
-import type { StatusCode, OccupancyCode } from '$lib/v1';
 
 export interface MapCopy {
 	/** Mono overline above the map title. */
@@ -230,35 +229,5 @@ export const copy: Record<Locale, MapCopy> = {
 			hintRaw: 'Positions mesurées seulement',
 			explain: 'Comment ça marche',
 		},
-	},
-};
-
-/** Localized StatusCode labels (status mode legend). */
-export const STATUS_LABELS: Record<Locale, Record<StatusCode, string>> = {
-	en: { early: 'Early', on_time: 'On-time', late: 'Late', severe: 'Severe', unknown: 'Unknown' },
-	fr: {
-		early: 'En avance',
-		on_time: 'À l’heure',
-		late: 'En retard',
-		severe: 'Grave',
-		unknown: 'Inconnu',
-	},
-};
-
-/** Localized OccupancyCode labels (crowding mode legend). */
-export const OCCUPANCY_LABELS: Record<Locale, Record<OccupancyCode, string>> = {
-	en: {
-		empty: 'Empty',
-		many_seats: 'Many seats',
-		few_seats: 'Few seats',
-		standing: 'Standing',
-		full: 'Full',
-	},
-	fr: {
-		empty: 'Vide',
-		many_seats: 'Places assises',
-		few_seats: 'Peu de sièges',
-		standing: 'Debout',
-		full: 'Plein',
 	},
 };

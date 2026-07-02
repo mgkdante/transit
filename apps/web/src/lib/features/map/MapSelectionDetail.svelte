@@ -7,7 +7,7 @@
 	import { AbsentValue, MaybeValue } from '$lib/components/edge';
 	import { routeNameFallback, stopNameFallback } from '$lib/site/absence';
 	import { ROUTE_TYPE_METRO } from '$lib/site/serviceWindow';
-	import { OCCUPANCY_LABELS, STATUS_LABELS } from './map.copy';
+	import { OCCUPANCY_LABELS, STATUS_LABELS } from '$lib/v1/enumLabels';
 	import type { MapSelection, MapSelectionDetail, MapStopRef } from './mapSelection';
 	import { MAP_SELECTION_DETAIL_COPY } from './mapSelectionDetail.copy';
 	import {

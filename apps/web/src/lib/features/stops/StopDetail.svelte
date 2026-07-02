@@ -229,6 +229,12 @@
 		HISTORIC_GRAINS.find((g) => presentGrains.has(g)) ?? 'day',
 	);
 
+	// S7.5 P2 FLAG (owner: S8 /stop re-seat): this surface's grain still lives in a LOCAL
+	// $state with a bespoke availability clamp $effect + a local `defaultGrain` $derived
+	// (shadowing the grain.ts export). It is INTENTIONALLY left un-migrated here — S8 owns
+	// the /stop re-seat that moves it onto the shared SurfaceControls rail + P1 codec (and
+	// note /stop mounts TWO rails, so the migration must use SurfaceControls' instance-unique
+	// aria-describedby ids). See spec-P2 §(d) "StopDetail EXPLICITLY OUT OF SCOPE".
 	let grain = $state<HistoricGrain>('day');
 	// Keep the selection on a grain that actually has data — if the current grain
 	// carries no period for this stop, fall back to the richest available grain.

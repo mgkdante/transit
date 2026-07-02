@@ -19,6 +19,48 @@ export const ALERT_ENTITY_KINDS = ['has_alert'] as const;
 export type AlertEntityKind = (typeof ALERT_ENTITY_KINDS)[number];
 
 /**
+ * A closed, inclusive span of LOCAL calendar dates (America/Montréal service
+ * days), each an ISO `YYYY-MM-DD` string with `from <= to`. This is the ONE
+ * window shape the whole filter layer speaks — a "range" is simply "a window is
+ * present" (both bounds set), never a separate {@link Grain} token. A single-day
+ * pick is `{ from: d, to: d }`. Half-picked or inverted spans are never stored:
+ * they normalize (see {@link normalizeWindow}) or drop to `undefined` so a
+ * fabricated span never reaches a shared URL (honest-absence).
+ */
+export interface DateWindow {
+	/** Inclusive span start — ISO `YYYY-MM-DD`, `<= to`. */
+	readonly from: string;
+	/** Inclusive span end — ISO `YYYY-MM-DD`, `>= from`. */
+	readonly to: string;
+}
+
+/**
+ * SHAPE gate for an ISO calendar date (`YYYY-MM-DD`). Pure regex — DOM-free,
+ * SSR-safe. This is the gate used BEFORE availability is known (the codec has no
+ * data); availability (is this a real published day?) is validated surface-side
+ * via {@link import('./grain').resolveWindow}. Lives here beside {@link DateWindow}
+ * so the codec and every surface share one definition.
+ */
+export function isIsoDate(v: string | null | undefined): v is string {
+	return typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v);
+}
+
+/**
+ * Build a normalized {@link DateWindow} from two candidate bounds, or
+ * `undefined` when a complete, valid span cannot be formed. A half window (one
+ * bound missing/malformed) is NO window — the surface then falls to its
+ * grain-only default rather than a fabricated span. An inverted pair
+ * (`from > to`) is swapped so the stored span always reads `from <= to`.
+ */
+export function normalizeWindow(
+	from: string | null | undefined,
+	to: string | null | undefined,
+): DateWindow | undefined {
+	if (!isIsoDate(from) || !isIsoDate(to)) return undefined;
+	return from <= to ? { from, to } : { from: to, to: from };
+}
+
+/**
  * The complete, serializable filter state shared across every surface.
  *
  * The three id collections are `Set`s so membership toggles are O(1) and order
@@ -45,8 +87,13 @@ export interface FilterState {
 	alerts?: AlertEntityKind[];
 	/** Active time grain; absent = surface default. */
 	grain?: Grain;
-	/** Time window token (opaque to this layer); absent = surface default. */
-	window?: string;
+	/**
+	 * Active date window — a closed `{from,to}` span of local calendar dates;
+	 * absent = surface default (no span narrowing). Presence of a window is the
+	 * signal for "range mode" (a surface renders its in-span aggregate); grain
+	 * and window are orthogonal and both optional.
+	 */
+	window?: DateWindow;
 }
 
 // ---------------------------------------------------------------------------
@@ -181,7 +228,7 @@ export function cloneFilterState(s: FilterState): FilterState {
 		...(s.entities ? { entities: s.entities.slice() } : {}),
 		...(s.alerts ? { alerts: s.alerts.slice() } : {}),
 		...(s.grain !== undefined ? { grain: s.grain } : {}),
-		...(s.window !== undefined ? { window: s.window } : {}),
+		...(s.window !== undefined ? { window: { from: s.window.from, to: s.window.to } } : {}),
 	};
 }
 
@@ -231,6 +278,6 @@ export function isEmptyFilterState(s: FilterState): boolean {
 		(s.entities === undefined || s.entities.length === 0) &&
 		(s.alerts === undefined || s.alerts.length === 0) &&
 		s.grain === undefined &&
-		(s.window === undefined || s.window === '')
+		s.window === undefined
 	);
 }

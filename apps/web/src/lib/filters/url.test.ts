@@ -12,6 +12,7 @@
 
 import { describe, it, expect } from 'vitest';
 import { fromSearchParams, toSearchParams } from './url';
+import { isEmptyFilterState } from './state';
 import type { FilterState } from './state';
 
 const sp = (q: string) => new URLSearchParams(q);
@@ -73,9 +74,35 @@ describe('fromSearchParams — parsing + self-healing', () => {
 		expect(fromSearchParams(sp('grain=decade')).grain).toBeUndefined();
 	});
 
-	it('trims window and omits it when blank', () => {
-		expect(fromSearchParams(sp('window=7d')).window).toBe('7d');
-		expect(fromSearchParams(sp('window=')).window).toBeUndefined();
+	it('parses a complete ?from&?to pair into a {from,to} window', () => {
+		expect(fromSearchParams(sp('from=2026-06-01&to=2026-06-14')).window).toEqual({
+			from: '2026-06-01',
+			to: '2026-06-14',
+		});
+	});
+
+	it('parses a single-day pick (from==to) as a one-day window', () => {
+		expect(fromSearchParams(sp('from=2026-06-14&to=2026-06-14')).window).toEqual({
+			from: '2026-06-14',
+			to: '2026-06-14',
+		});
+	});
+
+	it('normalizes an inverted from>to pair so the stored window reads from<=to', () => {
+		expect(fromSearchParams(sp('from=2026-06-14&to=2026-06-01')).window).toEqual({
+			from: '2026-06-01',
+			to: '2026-06-14',
+		});
+	});
+
+	it('drops a HALF window (only ?from or only ?to) — a half window is no window', () => {
+		expect(fromSearchParams(sp('from=2026-06-01')).window).toBeUndefined();
+		expect(fromSearchParams(sp('to=2026-06-14')).window).toBeUndefined();
+	});
+
+	it('drops a MALFORMED bound (not YYYY-MM-DD) → no fabricated window', () => {
+		expect(fromSearchParams(sp('from=yesterday&to=2026-06-14')).window).toBeUndefined();
+		expect(fromSearchParams(sp('from=2026-6-1&to=2026-06-14')).window).toBeUndefined();
 	});
 
 	it('ignores unknown query keys', () => {
@@ -96,7 +123,7 @@ describe('toSearchParams — canonical wire format', () => {
 		expect(toSearchParams(s).toString()).toBe('route=10%2C165%2C80&status=late%2Csevere');
 	});
 
-	it('emits keys in the stable contract order (route,stop,trip,vehicle,status,occupancy,entity,alert,grain,window)', () => {
+	it('emits keys in the stable contract order (route,stop,trip,vehicle,status,occupancy,entity,alert,grain,from,to)', () => {
 		const s: FilterState = {
 			routes: new Set(['10']),
 			stops: new Set(['S']),
@@ -107,7 +134,7 @@ describe('toSearchParams — canonical wire format', () => {
 			entities: ['stop'],
 			alerts: ['has_alert'],
 			grain: 'day',
-			window: '7d',
+			window: { from: '2026-06-01', to: '2026-06-14' },
 		} as unknown as FilterState;
 		const keys = [...toSearchParams(s).keys()];
 		expect(keys).toEqual([
@@ -120,8 +147,28 @@ describe('toSearchParams — canonical wire format', () => {
 			'entity',
 			'alert',
 			'grain',
-			'window',
+			'from',
+			'to',
 		]);
+	});
+
+	it('serializes a window as the ?from&?to pair (omitted entirely when absent)', () => {
+		const withWindow: FilterState = {
+			routes: new Set(),
+			stops: new Set(),
+			trips: new Set(),
+			vehicles: new Set(),
+			window: { from: '2026-06-01', to: '2026-06-14' },
+		};
+		expect(toSearchParams(withWindow).toString()).toBe('from=2026-06-01&to=2026-06-14');
+
+		const noWindow: FilterState = {
+			routes: new Set(),
+			stops: new Set(),
+			trips: new Set(),
+			vehicles: new Set(),
+		};
+		expect(toSearchParams(noWindow).toString()).toBe('');
 	});
 
 	it('omits an empty enum array entirely', () => {
@@ -146,9 +193,14 @@ describe('round-trip — toSearchParams(fromSearchParams(u)) is an idempotent fi
 		'status=bogus,late', // invalid enum drops
 		'entity=bus,stop,bogus',
 		'alert=has_alert,bogus',
-		'route=165&stop=ABC&trip=T1&vehicle=40061&status=on_time,late&occupancy=full&entity=stop&alert=has_alert&grain=week&window=7d',
+		'route=165&stop=ABC&trip=T1&vehicle=40061&status=on_time,late&occupancy=full&entity=stop&alert=has_alert&grain=week&from=2026-06-01&to=2026-06-14',
+		'from=2026-06-01&to=2026-06-14', // window-only (range mode implied by window presence)
+		'from=2026-06-14&to=2026-06-01', // inverted → normalized to from<=to
+		'from=2026-06-01', // half window drops → empty
 		'utm_source=x&route=10', // unknown key drops
 		'grain=decade', // invalid grain drops -> empty
+		'grain=range&from=2026-06-01&to=2026-06-14', // legacy: grain=range drops, window carries intent
+		'window=30', // legacy scalar: unknown key, drops entirely
 	];
 
 	for (const input of INPUTS) {
@@ -179,7 +231,82 @@ describe('round-trip — toSearchParams(fromSearchParams(u)) is an idempotent fi
 		});
 	}
 
+	it('canonicalizes ?grain=range&from&to to the from/to pair (grain dropped)', () => {
+		expect(round('grain=range&from=2026-06-01&to=2026-06-14')).toBe(
+			'from=2026-06-01&to=2026-06-14',
+		);
+	});
+
 	it('canonicalizes the repeated-key + unsorted form to the comma + sorted form', () => {
 		expect(round('route=80&route=10&route=165')).toBe('route=10%2C165%2C80');
+	});
+});
+
+// Per-dialect back-compat: every published URL dialect (the S7.5 decode table) must keep decoding.
+// The single biggest correctness fact — a legacy ?grain=range needs from+to to carry range intent;
+// a BARE ?grain=range must NOT fabricate a window.
+describe('back-compat — every published dialect keeps decoding (S7.5 decode table)', () => {
+	it('/map?status=late — codec A unchanged, grain/window absent', () => {
+		const s = fromSearchParams(sp('status=late'));
+		expect(s.status).toEqual(['late']);
+		expect(s.grain).toBeUndefined();
+		expect(s.window).toBeUndefined();
+	});
+
+	it('/lines/24?grain=week — grain kept, no window', () => {
+		const s = fromSearchParams(sp('grain=week'));
+		expect(s.grain).toBe('week');
+		expect(s.window).toBeUndefined();
+	});
+
+	it('/lines/24?grain=range&from&to — grain=range DROPPED (not a Grain), window carries the range', () => {
+		const s = fromSearchParams(sp('grain=range&from=2026-06-01&to=2026-06-14'));
+		expect(s.grain).toBeUndefined();
+		expect(s.window).toEqual({ from: '2026-06-01', to: '2026-06-14' });
+	});
+
+	// NOTE: `grain=range` is a lines-UI COMPATIBILITY emission, NOT a codec Grain. The codec
+	// never PRODUCES it (toSearchParams only serializes real Grains + the from/to window) and
+	// DROPS it on decode (below). RouteReliabilityClusters re-emits `grain=range` only for its
+	// own half-picked range state (a shareable in-progress hint it honours on its own seed);
+	// the codec stays range = window-presence and must keep dropping the bare token.
+	it('BARE ?grain=range (no from/to) — grain dropped, NO fabricated window', () => {
+		const s = fromSearchParams(sp('grain=range'));
+		expect(s.grain).toBeUndefined();
+		expect(s.window).toBeUndefined();
+	});
+
+	it('/lines/24?from&to (no grain) — window present, grain absent (range implied by window)', () => {
+		const s = fromSearchParams(sp('from=2026-06-01&to=2026-06-14'));
+		expect(s.grain).toBeUndefined();
+		expect(s.window).toEqual({ from: '2026-06-01', to: '2026-06-14' });
+	});
+
+	it('inverted ?from>to — normalized to from<=to', () => {
+		expect(fromSearchParams(sp('from=2026-06-14&to=2026-06-01')).window).toEqual({
+			from: '2026-06-01',
+			to: '2026-06-14',
+		});
+	});
+
+	it('half window (?from only) — window undefined', () => {
+		expect(fromSearchParams(sp('from=2026-06-01')).window).toBeUndefined();
+	});
+
+	it('legacy ?window=30 / ?window=7 scalar — ignored (unknown key), no state', () => {
+		expect(fromSearchParams(sp('window=30')).window).toBeUndefined();
+		expect(fromSearchParams(sp('window=7')).window).toBeUndefined();
+		expect(isEmptyFilterState(fromSearchParams(sp('window=30')))).toBe(true);
+	});
+
+	it('/lines/24?grain=day — grain kept unchanged', () => {
+		expect(fromSearchParams(sp('grain=day')).grain).toBe('day');
+	});
+
+	it('/lines/24?tab=receipt — ?tab is a separate owner (RouteDetail), never in the codec', () => {
+		// The codec ignores ?tab entirely — it must not leak into any FilterState field.
+		const s = fromSearchParams(sp('tab=receipt&route=24'));
+		expect([...s.routes]).toEqual(['24']);
+		expect(toSearchParams(s).has('tab')).toBe(false);
 	});
 });

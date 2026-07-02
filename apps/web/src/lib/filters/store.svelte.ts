@@ -22,6 +22,7 @@ import {
 	type IdSetKey,
 	type EntityKind,
 	type AlertEntityKind,
+	type DateWindow,
 	cloneFilterState,
 	emptyFilterState,
 	isEmptyFilterState,
@@ -70,7 +71,7 @@ export interface FilterStore {
 	readonly entities: readonly EntityKind[];
 	readonly alerts: readonly AlertEntityKind[];
 	readonly grain: Grain | undefined;
-	readonly window: string | undefined;
+	readonly window: DateWindow | undefined;
 	/** True when no filter of any kind is applied. */
 	readonly isEmpty: boolean;
 	/** Flat, ordered list of removable chips for rendering the active-filter bar. */
@@ -95,7 +96,7 @@ export interface FilterStore {
 	setAlerts(kinds: readonly AlertEntityKind[]): void;
 
 	setGrain(grain: Grain | undefined): void;
-	setWindow(window: string | undefined): void;
+	setWindow(window: DateWindow | undefined): void;
 
 	/** Remove a single chip (any family). */
 	removeChip(chip: Chip): void;
@@ -206,7 +207,7 @@ export function createFilterStore(init: FilterState, pushUrl: PushUrl = () => {}
 			for (const value of current.entities ?? []) out.push({ kind: 'entity', value });
 			for (const value of current.alerts ?? []) out.push({ kind: 'alert', value });
 			if (current.grain !== undefined) out.push({ kind: 'grain' });
-			if (current.window !== undefined && current.window !== '') out.push({ kind: 'window' });
+			if (current.window !== undefined) out.push({ kind: 'window' });
 			return out;
 		},
 
@@ -308,8 +309,7 @@ export function createFilterStore(init: FilterState, pushUrl: PushUrl = () => {}
 		},
 		setWindow(window) {
 			mutate((d) => {
-				const w = window?.trim();
-				if (w) d.window = w;
+				if (window) d.window = { from: window.from, to: window.to };
 				else delete d.window;
 			});
 		},
