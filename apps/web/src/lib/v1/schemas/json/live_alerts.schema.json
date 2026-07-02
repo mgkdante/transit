@@ -2,6 +2,13 @@
   "$defs": {
     "Alert": {
       "properties": {
+        "active_periods": {
+          "items": {
+            "$ref": "#/$defs/AlertActivePeriod"
+          },
+          "title": "Active Periods",
+          "type": "array"
+        },
         "cause": {
           "anyOf": [
             {
@@ -127,6 +134,30 @@
           },
           "title": "Stops",
           "type": "array"
+        },
+        "url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Url"
+        },
+        "url_en": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Url En"
         }
       },
       "required": [
@@ -135,6 +166,36 @@
         "header_key"
       ],
       "title": "Alert",
+      "type": "object"
+    },
+    "AlertActivePeriod": {
+      "properties": {
+        "end_utc": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "End Utc"
+        },
+        "start_utc": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Start Utc"
+        }
+      },
+      "title": "AlertActivePeriod",
       "type": "object"
     },
     "Severity": {

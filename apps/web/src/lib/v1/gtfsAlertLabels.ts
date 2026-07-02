@@ -8,7 +8,9 @@
 // a raw SCREAMING_SNAKE string to a rider.
 //
 // Provider-agnostic: GTFS-RT cause/effect are part of the standard spec, shared
-// across every provider. Nothing here is STM-specific.
+// across every provider. Nothing here is STM-specific. Lives in $lib/v1 (beside
+// enumLabels) — hoisted out of features/map so the alerts surface reads it without
+// a cross-feature import (S15 exemption removal).
 
 import type { Locale } from '$lib/i18n';
 

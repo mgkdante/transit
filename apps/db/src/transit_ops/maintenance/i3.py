@@ -86,7 +86,12 @@ DELETE_ORPHANED_I3_INGESTION_RUNS = text(
     """
     DELETE FROM raw.ingestion_runs ir
     WHERE ir.provider_id = :provider_id
-      AND ir.run_kind = 'i3_alerts'
+      -- STM captures i3 under run_kind='i3_alerts'; the GTFS-RT providers
+      -- (STO / OC / STS, translated via ingestion/service_alerts.py) capture
+      -- under 'service_alerts'. Both write raw.i3_alert_snapshots, so BOTH kinds
+      -- leak orphaned runs once their snapshot ages out — widen the prune to
+      -- both (S15 fix: 'service_alerts' runs previously leaked unboundedly).
+      AND ir.run_kind IN ('i3_alerts', 'service_alerts')
       AND ir.started_at_utc < :cutoff_utc
       AND NOT EXISTS (
           SELECT 1 FROM raw.ingestion_objects io

@@ -1,78 +1,17 @@
-import type { Locale } from '$lib/i18n';
+// mapAlerts.ts — the MAP-RUNTIME alert helpers.
+//
+// The alert→entity index (which routes/stops any alert touches) + the per-vehicle
+// "has an alert" test the live map paints with. These are map-runtime (they read a
+// Vehicle's route/next_stop), so they STAY in features/map (S15). The pure i18n
+// alert helpers moved to $lib/v1: `alertDisplayText` → $lib/v1/alertDisplay,
+// `causeLabel`/`effectLabel` → $lib/v1/gtfsAlertLabels — so the alerts surface (and
+// every consumer) reads them from the shared kernel without a cross-feature import.
+
 import type { Alert, Vehicle } from '$lib/v1/schemas';
 
 export interface AlertEntitySets {
 	readonly routes: ReadonlySet<string>;
 	readonly stops: ReadonlySet<string>;
-}
-
-const GENERIC_ALERT_HEADERS = new Set([
-	'your stop',
-	'your line',
-	'votre arrêt',
-	'votre arret',
-	'votre ligne',
-]);
-
-function stripHtml(value: string): string {
-	return value
-		.replace(/<[^>]*>/g, ' ')
-		.replace(/&nbsp;/gi, ' ')
-		.replace(/&amp;/gi, '&')
-		.replace(/&quot;/gi, '"')
-		.replace(/&#39;/gi, "'")
-		.replace(/&lt;/gi, '<')
-		.replace(/&gt;/gi, '>')
-		.replace(/\s+/g, ' ')
-		.trim();
-}
-
-function cleanText(value: string | null | undefined): string | null {
-	if (value == null) return null;
-	const text = stripHtml(String(value));
-	if (!text) return null;
-
-	const normalized = text.toLowerCase();
-	if (
-		normalized === 'none' ||
-		normalized === 'null' ||
-		normalized.includes("'text': none") ||
-		normalized.includes('"text": null') ||
-		normalized.includes('"text":null')
-	) {
-		return null;
-	}
-
-	return text;
-}
-
-function meaningfulHeader(value: string | null | undefined): string | null {
-	const text = cleanText(value);
-	if (!text) return null;
-	return GENERIC_ALERT_HEADERS.has(text.toLowerCase()) ? null : text;
-}
-
-export function alertDisplayText(alert: Alert, locale: Locale): string {
-	const descriptions =
-		locale === 'fr'
-			? [alert.description, alert.description_en]
-			: [alert.description_en, alert.description];
-	const headers =
-		locale === 'fr'
-			? [alert.header_text, alert.header_key, alert.header_text_en]
-			: [alert.header_text_en, alert.header_text, alert.header_key];
-
-	for (const value of descriptions) {
-		const text = cleanText(value);
-		if (text) return text;
-	}
-
-	for (const value of headers) {
-		const text = meaningfulHeader(value);
-		if (text) return text;
-	}
-
-	return locale === 'fr' ? 'Alerte de service' : 'Service alert';
 }
 
 export function buildAlertEntitySets(alerts: readonly Alert[]): AlertEntitySets {

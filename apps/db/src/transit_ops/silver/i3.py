@@ -29,10 +29,12 @@ def compute_alert_content_hash(
     active_period_end_utc: datetime | None,
     published_at_utc: datetime | None,
     updated_at_utc: datetime | None,
+    extra_active_periods: list[tuple[datetime | None, datetime | None]] | None = None,
 ) -> str:
     """SCD2 content hash for silver.i3_alerts.
 
-    Must match the md5() expression in migration 0021 exactly:
+    Base identity (first 10 fields) matches the md5() expression in migration
+    0021 exactly:
       - Same 10 fields in the same order
       - NULL → empty string
       - Timestamps → integer epoch seconds (sub-second precision dropped on
@@ -40,9 +42,19 @@ def compute_alert_content_hash(
       - Joined by ASCII Unit Separator (U+001F)
       - md5 over UTF-8 bytes
 
-    EN fields (alert_header_text_en, description_text_en) are deliberately
-    EXCLUDED: content identity is fr-based (0021/slice-9.1.1h invariant). EN is
-    non-identity payload refreshed in place on the surviving SCD-2 row.
+    S15 EXTRA-PERIODS DIGEST (hash cutover, surgical): a genuinely multi-window
+    alert now carries its extra windows (active_period[1:]) in the identity, so a
+    change to those windows honestly re-rows the SCD-2 record. The digest of the
+    extra periods contributes the EMPTY STRING when the alert is single-period
+    (extra_active_periods is None/empty) — so EVERY existing single-period row
+    hashes byte-identically to the pre-S15 formula and does NOT re-row on deploy.
+    period[0] stays represented by the scalar pair above (unchanged); only
+    indices >= 1 feed this trailing field.
+
+    EN fields (alert_header_text_en, description_text_en) and url/url_en are
+    deliberately EXCLUDED: content identity is fr-based (0021/slice-9.1.1h
+    invariant); EN and url are non-identity payload refreshed in place on the
+    surviving SCD-2 row.
     """
 
     def _ts(value: datetime | None) -> str:
@@ -62,12 +74,27 @@ def compute_alert_content_hash(
         _ts(published_at_utc),
         _ts(updated_at_utc),
     ]
+    # Append the extra-windows digest ONLY when the alert is genuinely multi-
+    # period. A single-period alert appends NOTHING, so its canonical string —
+    # and md5 — is byte-identical to the pre-S15 10-field form (no re-row churn
+    # on deploy). Multi-period alerts append one trailing separated field.
+    if extra_active_periods:
+        parts.append(
+            ",".join(f"{_ts(start)}:{_ts(end)}" for start, end in extra_active_periods)
+        )
     canonical = _HASH_FIELD_SEP.join(parts)
     return hashlib.md5(canonical.encode("utf-8")).hexdigest()
 
 DELETE_I3_ENTITIES = text(
     """
     DELETE FROM silver.i3_alert_informed_entities
+    WHERE i3_alert_snapshot_id = :i3_alert_snapshot_id
+    """
+)
+
+DELETE_I3_ACTIVE_PERIODS = text(
+    """
+    DELETE FROM silver.i3_alert_active_periods
     WHERE i3_alert_snapshot_id = :i3_alert_snapshot_id
     """
 )
@@ -93,6 +120,8 @@ INSERT_I3_ALERTS = text(
         severity,
         cause,
         effect,
+        url,
+        url_en,
         active_period_start_utc,
         active_period_end_utc,
         published_at_utc,
@@ -115,6 +144,8 @@ INSERT_I3_ALERTS = text(
         :severity,
         :cause,
         :effect,
+        :url,
+        :url_en,
         :active_period_start_utc,
         :active_period_end_utc,
         :published_at_utc,
@@ -130,7 +161,9 @@ INSERT_I3_ALERTS = text(
         alert_header_text_en = COALESCE(
             excluded.alert_header_text_en, silver.i3_alerts.alert_header_text_en),
         description_text_en = COALESCE(
-            excluded.description_text_en, silver.i3_alerts.description_text_en)
+            excluded.description_text_en, silver.i3_alerts.description_text_en),
+        url = COALESCE(excluded.url, silver.i3_alerts.url),
+        url_en = COALESCE(excluded.url_en, silver.i3_alerts.url_en)
     """
 ).bindparams(bindparam("raw_alert_json", type_=postgresql.JSONB))
 
@@ -161,6 +194,26 @@ INSERT_I3_ENTITIES = text(
     ON CONFLICT (i3_alert_snapshot_id, alert_index, entity_index) DO NOTHING
     """
 ).bindparams(bindparam("raw_entity_json", type_=postgresql.JSONB))
+
+INSERT_I3_ACTIVE_PERIODS = text(
+    """
+    INSERT INTO silver.i3_alert_active_periods (
+        i3_alert_snapshot_id,
+        alert_index,
+        period_index,
+        start_utc,
+        end_utc
+    )
+    VALUES (
+        :i3_alert_snapshot_id,
+        :alert_index,
+        :period_index,
+        :start_utc,
+        :end_utc
+    )
+    ON CONFLICT (i3_alert_snapshot_id, alert_index, period_index) DO NOTHING
+    """
+)
 
 # After the alert upsert, every batch content_hash has exactly one active row —
 # either freshly inserted under this snapshot, or the pre-existing row the
@@ -328,16 +381,28 @@ def _timestamp(value: object) -> datetime | None:
     return None
 
 
-def _active_period(alert: dict[str, Any]) -> tuple[datetime | None, datetime | None]:
-    period = _value(alert, "activePeriod", "active_period", "activePeriods", "active_periods")
-    if isinstance(period, list):
-        period = period[0] if period else {}
+def _period_bounds(period: object) -> tuple[datetime | None, datetime | None]:
     if not isinstance(period, dict):
         return None, None
     return (
         _timestamp(_value(period, "start", "startTime", "start_time")),
         _timestamp(_value(period, "end", "endTime", "end_time")),
     )
+
+
+def _active_periods(alert: dict[str, Any]) -> list[tuple[datetime | None, datetime | None]]:
+    """Every active window as (start, end) tuples, order preserved (S15).
+
+    The i3 shape may carry a single dict or a list. period_index is the list
+    position; the scalar columns keep period[0] (backward-compat) and the child
+    table persists the full list. An empty/blank period yields (None, None) but
+    is still positional so period_index stays stable across ingest cycles."""
+    period = _value(alert, "activePeriod", "active_period", "activePeriods", "active_periods")
+    if isinstance(period, list):
+        return [_period_bounds(item) for item in period]
+    if isinstance(period, dict):
+        return [_period_bounds(period)]
+    return []
 
 
 def _entity_value(entity: dict[str, Any], *keys: str) -> str | None:
@@ -365,14 +430,24 @@ def _informed_entities(alert: dict[str, Any]) -> list[dict[str, object]]:
 
 def normalize_i3_alert_payload(
     snapshot: RawI3AlertSnapshot,
-) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
+) -> tuple[list[dict[str, object]], list[dict[str, object]], list[dict[str, object]]]:
+    """Normalize a raw i3 alert payload into (alert_rows, entity_rows, period_rows).
+
+    period_rows carry the FULL active-period list (S15): one row per (alert,
+    period_index). The scalar active_period_start/_end on the alert row stay =
+    period[0] (backward-compat); index >= 1 rows are the newly-captured extra
+    windows and also feed the content hash's extra-periods digest. url / url_en
+    are additive display passthroughs (honest-NULL where the feed omits them,
+    e.g. STM's i3 which carries no url key)."""
     alert_rows: list[dict[str, object]] = []
     entity_rows: list[dict[str, object]] = []
+    period_rows: list[dict[str, object]] = []
 
     for alert_index, raw_alert in enumerate(_payload_alerts(snapshot.raw_payload_json)):
         if not isinstance(raw_alert, dict):
             continue
-        active_start, active_end = _active_period(raw_alert)
+        periods = _active_periods(raw_alert)
+        active_start, active_end = periods[0] if periods else (None, None)
         alert_id = _text(_value(raw_alert, "id", "alertId", "messageId"))
         alert_header_text = _text(
             _value(raw_alert, "header", "title", "summary", "header_texts")
@@ -389,6 +464,10 @@ def normalize_i3_alert_payload(
         severity = _text(_value(raw_alert, "severity", "priority"))
         cause = _text(_value(raw_alert, "cause"))
         effect = _text(_value(raw_alert, "effect"))
+        # url is a display passthrough (NOT hashed): fr-preferred for `url`, an
+        # explicit English variant for `url_en`, mirroring the header handling.
+        url = _text(_value(raw_alert, "url", "link"))
+        url_en = _text_en(_value(raw_alert, "url", "link"))
         published_at_utc = _timestamp(_value(raw_alert, "publishedAt", "published_at"))
         updated_at_utc = _timestamp(_value(raw_alert, "updatedAt", "updated_at"))
         content_hash = compute_alert_content_hash(
@@ -402,6 +481,9 @@ def normalize_i3_alert_payload(
             active_period_end_utc=active_end,
             published_at_utc=published_at_utc,
             updated_at_utc=updated_at_utc,
+            # period[0] is already the scalar pair above; indices >= 1 are the
+            # extra windows that change identity when they change.
+            extra_active_periods=periods[1:] if len(periods) > 1 else None,
         )
         alert_rows.append(
             {
@@ -416,6 +498,8 @@ def normalize_i3_alert_payload(
                 "severity": severity,
                 "cause": cause,
                 "effect": effect,
+                "url": url,
+                "url_en": url_en,
                 "active_period_start_utc": active_start,
                 "active_period_end_utc": active_end,
                 "published_at_utc": published_at_utc,
@@ -425,6 +509,16 @@ def normalize_i3_alert_payload(
                 "content_hash": content_hash,
             }
         )
+        for period_index, (start_utc, end_utc) in enumerate(periods):
+            period_rows.append(
+                {
+                    "i3_alert_snapshot_id": snapshot.i3_alert_snapshot_id,
+                    "alert_index": alert_index,
+                    "period_index": period_index,
+                    "start_utc": start_utc,
+                    "end_utc": end_utc,
+                }
+            )
         for entity_index, raw_entity in enumerate(_informed_entities(raw_alert)):
             entity_rows.append(
                 {
@@ -473,8 +567,9 @@ def normalize_i3_alert_payload(
         if len(deduped) != len(alert_rows):
             alert_rows = deduped
             entity_rows = [e for e in entity_rows if e["alert_index"] in kept_indexes]
+            period_rows = [p for p in period_rows if p["alert_index"] in kept_indexes]
 
-    return alert_rows, entity_rows
+    return alert_rows, entity_rows, period_rows
 
 
 def _execute_insert(connection: Connection, statement, rows: list[dict[str, object]]) -> int:
@@ -490,7 +585,11 @@ def load_i3_snapshot_to_silver(
     snapshot: RawI3AlertSnapshot,
     loaded_at_utc: datetime | None = None,
 ) -> I3SilverLoadResult:
-    alert_rows, entity_rows = normalize_i3_alert_payload(snapshot)
+    alert_rows, entity_rows, period_rows = normalize_i3_alert_payload(snapshot)
+    connection.execute(
+        DELETE_I3_ACTIVE_PERIODS,
+        {"i3_alert_snapshot_id": snapshot.i3_alert_snapshot_id},
+    )
     connection.execute(
         DELETE_I3_ENTITIES,
         {"i3_alert_snapshot_id": snapshot.i3_alert_snapshot_id},
@@ -539,6 +638,23 @@ def load_i3_snapshot_to_silver(
             entity = {**entity, "i3_alert_snapshot_id": snap_id, "alert_index": alert_index}
         rekeyed_entities.append(entity)
     entity_count = _execute_insert(connection, INSERT_I3_ENTITIES, rekeyed_entities)
+
+    # Re-key active periods to the surviving alert row, mirroring the entity
+    # re-key. A redirected alert's surviving row already carries its periods, so
+    # the (snapshot, alert, period_index) PK ON CONFLICT DO NOTHING makes the
+    # unchanged set a no-op; genuinely new windows on a redirected row insert.
+    # Periods whose parent alert did not survive (never happens for a hashed
+    # row, but defensive) are dropped so the FK stays consistent.
+    rekeyed_periods: list[dict[str, object]] = []
+    for period in period_rows:
+        surviving = surviving_by_hash.get(hash_by_index.get(period["alert_index"]))
+        if surviving is None:
+            continue
+        snap_id, alert_index = surviving
+        if (snap_id, alert_index) != (period["i3_alert_snapshot_id"], period["alert_index"]):
+            period = {**period, "i3_alert_snapshot_id": snap_id, "alert_index": alert_index}
+        rekeyed_periods.append(period)
+    _execute_insert(connection, INSERT_I3_ACTIVE_PERIODS, rekeyed_periods)
 
     superseded = 0
     if alert_rows:

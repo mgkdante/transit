@@ -53,12 +53,6 @@ const EXEMPTIONS: readonly Exemption[] = [
 		why: 'site-wide metric primitives (info popover + methodology content/copy) — belong in $lib',
 	},
 	{
-		source: 'alerts',
-		feature: 'map',
-		modules: ['mapAlerts', 'gtfsAlertLabels'],
-		why: 'pure GTFS alert-label libs (i18n-only) misfiled under map — belong in $lib',
-	},
-	{
 		source: 'stops',
 		feature: 'lines',
 		modules: ['lines.copy'],

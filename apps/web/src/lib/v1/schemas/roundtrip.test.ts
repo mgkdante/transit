@@ -689,6 +689,59 @@ describe('alerts — additive cause/effect/severity_level round-trip (raw GTFS-R
 		};
 		expect(() => parsePort('alerts', AlertsFileSchema, fixture)).not.toThrow();
 	});
+
+	it('parses an alert carrying the S15 url/url_en + active_periods, and one without', () => {
+		const fixture = {
+			generated_utc: ISO,
+			alerts: [
+				{
+					id: 'a1',
+					severity: 'high',
+					header_key: 'Détour',
+					url: 'https://stm.info/a',
+					url_en: 'https://stm.info/en/a',
+					active_periods: [
+						{ start_utc: '2026-06-01T00:00:00Z', end_utc: '2026-06-02T00:00:00Z' },
+						{ start_utc: '2026-06-10T00:00:00Z', end_utc: null },
+					],
+				},
+				// legacy: no url / no active_periods — still parses (all optional).
+				{ id: 'a2', severity: 'watch', header_key: 'Travaux' },
+			],
+		};
+		expect(() => parsePort('alerts', AlertsFileSchema, fixture)).not.toThrow();
+	});
+});
+
+describe('alert_history — S15 additive (window envelope + entry cause/effect/url/active_periods)', () => {
+	it('parses a history carrying the served-window envelope + rich entries', () => {
+		const fixture = {
+			generated_utc: ISO,
+			window_start: '2026-04-01',
+			window_end: '2026-06-30',
+			total_in_window: 512,
+			truncated: true,
+			alerts: [
+				{
+					id: 'h1',
+					severity: 'high',
+					cause: 'CONSTRUCTION',
+					effect: 'DETOUR',
+					severity_level: 'WARNING',
+					url: 'https://stm.info/h1',
+					active_periods: [{ start_utc: '2026-06-01T00:00:00Z', end_utc: '2026-06-02T00:00:00Z' }],
+				},
+				// legacy entry: none of the S15 fields — still parses.
+				{ id: 'h2' },
+			],
+		};
+		expect(() => parsePort('alert_history', AlertHistorySchema, fixture)).not.toThrow();
+	});
+
+	it('still parses a LEGACY history with none of the S15 fields (additive-only)', () => {
+		const fixture = { generated_utc: ISO, alerts: [{ id: 'old' }] };
+		expect(() => parsePort('alert_history', AlertHistorySchema, fixture)).not.toThrow();
+	});
 });
 
 describe('schema round-trip — a bad value throws via parsePort, naming the port', () => {

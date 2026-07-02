@@ -7,8 +7,8 @@
 	import ChevronRightIcon from '@lucide/svelte/icons/chevron-right';
 	import type { Locale } from '$lib/i18n';
 	import type { Alert } from '$lib/v1/schemas';
-	import { alertDisplayText } from './mapAlerts';
-	import { causeLabel, effectLabel } from './gtfsAlertLabels';
+	import { alertDisplayText } from '$lib/v1/alertDisplay';
+	import { causeLabel, effectLabel } from '$lib/v1/gtfsAlertLabels';
 	import type { MapSelectionDetailCopy } from './mapSelectionDetail.copy';
 
 	interface Props {

@@ -10,13 +10,22 @@
 // SSR-safe: this module is pure data + pure functions; it never touches the DOM,
 // `window`, or `localStorage`.
 
-import type { StatusCode, OccupancyCode, Grain } from '$lib/v1/schemas';
-import { STATUS_CODES, OCCUPANCY_CODES, GRAINS } from '$lib/v1/schemas';
+import type { StatusCode, OccupancyCode, SeverityCode, Grain } from '$lib/v1/schemas';
+import { STATUS_CODES, OCCUPANCY_CODES, SEVERITY_CODES, GRAINS } from '$lib/v1/schemas';
 
 export const ENTITY_KINDS = ['bus', 'stop'] as const;
 export type EntityKind = (typeof ENTITY_KINDS)[number];
 export const ALERT_ENTITY_KINDS = ['has_alert'] as const;
 export type AlertEntityKind = (typeof ALERT_ENTITY_KINDS)[number];
+
+/**
+ * The alerts-surface "affects" axis (S15) — narrow the alert log to the entities an
+ * alert touches: lines (routes non-empty) or stops (stops non-empty). A SINGLE-select
+ * axis (the surface renders it as a radiogroup with an implicit "all" = absent), so it
+ * is a scalar in the codec (like `?date`), not one of the comma-joined enum families.
+ */
+export const ALERT_AFFECTS = ['lines', 'stops'] as const;
+export type AlertAffects = (typeof ALERT_AFFECTS)[number];
 
 /**
  * A closed, inclusive span of LOCAL calendar dates (America/Montréal service
@@ -116,6 +125,19 @@ export interface FilterState {
 	 * the URL like the enum families.
 	 */
 	worstN?: WorstN;
+	/**
+	 * The alerts-surface "affects" axis (S15) — `lines`|`stops`|absent (= all). A
+	 * single-select scalar (a radiogroup, not a multi-chip family); a junk value drops
+	 * to absent so a hand-edited `?affects=bogus` self-heals to the unfiltered view.
+	 */
+	alertAffects?: AlertAffects;
+	/**
+	 * The alerts-surface severity axis (S15) — one {@link SeverityCode} or absent (=
+	 * all). A single-select scalar mirrored to `?severity`; a value outside the closed
+	 * enum drops to absent (self-heal). Distinct from the `status`/`occupancy` chip
+	 * families — alert severity is its own closed vocabulary.
+	 */
+	alertSeverity?: SeverityCode;
 }
 
 /**
@@ -156,13 +178,15 @@ export function normalizeWorstN(v: string | null | undefined): WorstN | undefine
 // `$lib/filters` surface stable while avoiding a second copy of the tuples (DRY).
 // ---------------------------------------------------------------------------
 
-export { STATUS_CODES, OCCUPANCY_CODES, GRAINS };
+export { STATUS_CODES, OCCUPANCY_CODES, SEVERITY_CODES, GRAINS };
 
 const STATUS_SET: ReadonlySet<string> = new Set(STATUS_CODES);
 const OCCUPANCY_SET: ReadonlySet<string> = new Set(OCCUPANCY_CODES);
+const SEVERITY_SET: ReadonlySet<string> = new Set(SEVERITY_CODES);
 const GRAIN_SET: ReadonlySet<string> = new Set(GRAINS);
 const ENTITY_SET: ReadonlySet<string> = new Set(ENTITY_KINDS);
 const ALERT_ENTITY_SET: ReadonlySet<string> = new Set(ALERT_ENTITY_KINDS);
+const ALERT_AFFECTS_SET: ReadonlySet<string> = new Set(ALERT_AFFECTS);
 
 /** True when `v` is a valid {@link StatusCode}. */
 export function isStatusCode(v: string): v is StatusCode {
@@ -182,6 +206,36 @@ export function isEntityKind(v: string): v is EntityKind {
 /** True when `v` is a valid alert entity filter. */
 export function isAlertEntityKind(v: string): v is AlertEntityKind {
 	return ALERT_ENTITY_SET.has(v);
+}
+
+/** True when `v` is a valid {@link AlertAffects} (`lines`|`stops`). */
+export function isAlertAffects(v: string): v is AlertAffects {
+	return ALERT_AFFECTS_SET.has(v);
+}
+
+/** True when `v` is a valid {@link SeverityCode} (`critical`|`high`|`watch`). */
+export function isSeverityCode(v: string): v is SeverityCode {
+	return SEVERITY_SET.has(v);
+}
+
+/**
+ * Coerce a single string to a valid {@link AlertAffects}, or `undefined`. A junk value
+ * drops to absent so the URL never carries a filter the surface can't render (self-heal).
+ */
+export function normalizeAlertAffects(v: string | null | undefined): AlertAffects | undefined {
+	if (typeof v !== 'string') return undefined;
+	const t = v.trim();
+	return isAlertAffects(t) ? t : undefined;
+}
+
+/**
+ * Coerce a single string to a valid {@link SeverityCode}, or `undefined`. A value
+ * outside the closed enum drops to absent (self-heal), same contract as the affects axis.
+ */
+export function normalizeSeverity(v: string | null | undefined): SeverityCode | undefined {
+	if (typeof v !== 'string') return undefined;
+	const t = v.trim();
+	return isSeverityCode(t) ? t : undefined;
 }
 
 /** True when `v` is a valid {@link Grain}. */
@@ -284,6 +338,8 @@ export function cloneFilterState(s: FilterState): FilterState {
 		...(s.window !== undefined ? { window: { from: s.window.from, to: s.window.to } } : {}),
 		...(s.date !== undefined ? { date: s.date } : {}),
 		...(s.worstN !== undefined ? { worstN: s.worstN } : {}),
+		...(s.alertAffects !== undefined ? { alertAffects: s.alertAffects } : {}),
+		...(s.alertSeverity !== undefined ? { alertSeverity: s.alertSeverity } : {}),
 	};
 }
 
@@ -335,6 +391,8 @@ export function isEmptyFilterState(s: FilterState): boolean {
 		s.grain === undefined &&
 		s.window === undefined &&
 		s.date === undefined &&
-		s.worstN === undefined
+		s.worstN === undefined &&
+		s.alertAffects === undefined &&
+		s.alertSeverity === undefined
 	);
 }

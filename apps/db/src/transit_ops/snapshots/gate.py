@@ -138,6 +138,21 @@ def _as_dict(payload: object) -> object:
     return payload
 
 
+def _payload_bytes(payload: object) -> int | None:
+    """The UTF-8 byte size the publisher would write (model_dump_json for a
+    model; sorted compact json.dumps for a dict — matching snapshots/storage.py).
+    None when the payload cannot be serialized (a caller test may pass a bare
+    stub)."""
+    try:
+        if isinstance(payload, BaseModel):
+            return len(payload.model_dump_json().encode("utf-8"))
+        if isinstance(payload, dict):
+            return len(json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8"))
+    except (TypeError, ValueError):
+        return None
+    return None
+
+
 def _is_number(v: object) -> bool:
     return isinstance(v, int | float) and not isinstance(v, bool)
 
@@ -746,18 +761,66 @@ def check_repeat_offenders(payload: object, *, rel_key: str) -> list[CheckResult
     return emit.out
 
 
+def _iso_le(a: object, b: object) -> bool:
+    """True when ISO-8601 strings a <= b (lexicographic on normalized UTC). None
+    on either side skips (honest-NULL: an open-ended window is not an ordering
+    violation). Unparseable strings skip rather than false-flag."""
+    if not isinstance(a, str) or not isinstance(b, str):
+        return True
+    try:
+        from datetime import datetime
+
+        da = datetime.fromisoformat(a.replace("Z", "+00:00"))
+        db = datetime.fromisoformat(b.replace("Z", "+00:00"))
+    except ValueError:
+        return True
+    return da <= db
+
+
 def check_alert_history(payload: object, *, rel_key: str) -> list[CheckResult]:
     emit = _Emitter("historic_alert_history", rel_key)
     d = _as_dict(payload)
     if not isinstance(d, dict):
         return emit.out
-    for i, a in enumerate(d.get("alerts") or []):
+    # S15 window disclosure: window_start <= window_end (both ISO dates when
+    # present); total_in_window >= the emitted count when truncated (the cap
+    # cannot hide fewer alerts than it shows).
+    win_start, win_end = d.get("window_start"), d.get("window_end")
+    if not _iso_le(win_start, win_end):
+        emit.err("window_order", "window_start", win_start,
+                 f"window_start={win_start!r} > window_end={win_end!r}")
+    alerts = d.get("alerts") or []
+    total = d.get("total_in_window")
+    if d.get("truncated") is True and isinstance(total, int) and total < len(alerts):
+        emit.err("window_total", "total_in_window", total,
+                 f"total_in_window={total} < emitted alerts ({len(alerts)}) while truncated")
+    # S15 byte ceiling: a runaway window must not bloat the file.
+    from transit_ops.snapshots.contract import ALERT_HISTORY_BYTE_CEILING
+
+    size = _payload_bytes(payload)
+    if size is not None and size > ALERT_HISTORY_BYTE_CEILING:
+        emit.err("byte_ceiling", "", size,
+                 f"alert_history payload {size}B exceeds ceiling {ALERT_HISTORY_BYTE_CEILING}B")
+    for i, a in enumerate(alerts):
         if not isinstance(a, dict):
             continue
         sub = _prefixed(emit, f"alerts[{i}].")
         if _is_neg(a.get("duration_min")):
             sub.err("count_negative", "duration_min", a.get("duration_min"), "duration_min < 0")
         sub.count(a, "impact_passages")
+        # url must be a string when present (never a coerced non-string leaf).
+        url = a.get("url")
+        if url is not None and not isinstance(url, str):
+            sub.err("not_string", "url", url, f"url={url!r} is not a string")
+        # Each active window is well-ordered when BOTH bounds are present.
+        for j, p in enumerate(a.get("active_periods") or []):
+            if not isinstance(p, dict):
+                continue
+            ps, pe = p.get("start_utc"), p.get("end_utc")
+            if not _iso_le(ps, pe):
+                _prefixed(emit, f"alerts[{i}].active_periods[{j}].").err(
+                    "window_order", "start_utc", ps,
+                    f"start_utc={ps!r} > end_utc={pe!r}")
     breakdown = d.get("breakdown")
     if isinstance(breakdown, dict):
         for group in ("by_cause", "by_effect", "by_severity"):
@@ -866,11 +929,24 @@ def check_alerts(payload: object, *, rel_key: str) -> list[CheckResult]:
     for i, a in enumerate(d.get("alerts") or []):
         if not isinstance(a, dict):
             continue
+        sub = _prefixed(emit, f"alerts[{i}].")
         sev = a.get("severity")
         if sev is not None and sev not in ("critical", "high", "watch"):
-            _prefixed(emit, f"alerts[{i}].").err(
+            sub.err(
                 "unknown_severity", "severity", sev, f"severity={sev!r} not a known severity"
             )
+        # S15: url must be a string when present; each active window well-ordered.
+        url = a.get("url")
+        if url is not None and not isinstance(url, str):
+            sub.err("not_string", "url", url, f"url={url!r} is not a string")
+        for j, p in enumerate(a.get("active_periods") or []):
+            if not isinstance(p, dict):
+                continue
+            ps, pe = p.get("start_utc"), p.get("end_utc")
+            if not _iso_le(ps, pe):
+                _prefixed(emit, f"alerts[{i}].active_periods[{j}].").err(
+                    "window_order", "start_utc", ps,
+                    f"start_utc={ps!r} > end_utc={pe!r}")
     return emit.out
 
 

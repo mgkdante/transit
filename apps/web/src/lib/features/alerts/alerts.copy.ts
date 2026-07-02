@@ -1,17 +1,20 @@
 // alerts.copy.ts: co-located bilingual copy for the Alert History surface
-// (slice-9.6 Family D, "Avis").
+// (slice-9.6 Family D, "Avis"; re-seated in S15).
 //
 // All user-facing strings the AlertHistory screen renders live here, keyed by
 // Locale, so the .svelte file carries zero inline literals. Provider-agnostic:
 // no STM / Montréal names. The cross-surface alert presentation (headline,
-// cause/effect, severity glyph + word) is inherited from the shared
-// $lib/components/surface/AffectedAlerts vocabulary + the map's
-// gtfsAlertLabels/alertDisplayText helpers, so this file only carries the
-// history-specific captions (window, duration, impact, breakdown sections).
+// cause/effect, severity word) is inherited from the shared $lib/v1 kernel
+// (alertDisplay/gtfsAlertLabels/enumLabels SEVERITY_LABELS), so this file only
+// carries the history-specific captions (window, duration, impact, pickers,
+// breakdown, headline). S15: SEVERITY_WORDS was hoisted into $lib/v1/enumLabels
+// (SEVERITY_LABELS) — the copy reads THAT one vocabulary, never a local copy.
 
 import type { Locale } from '$lib/i18n';
 import type { SeverityCode } from '$lib/v1/schemas';
+import { SEVERITY_LABELS } from '$lib/v1/enumLabels';
 import type { SurfaceHeadCopy } from '$lib/components/surface';
+import type { DateRangePickerLabels } from '$lib/components/surface';
 
 export interface AlertHistoryCopy extends SurfaceHeadCopy {
 	/** Section label over the chronological alert log. */
@@ -26,6 +29,8 @@ export interface AlertHistoryCopy extends SurfaceHeadCopy {
 	readonly showLess: string;
 	/** Shown when the archive carries no past alerts (honest empty state). */
 	readonly empty: string;
+	/** Honest note when the served window was capped newest-first (truncated=true). */
+	readonly truncatedNote: (shown: number, total: number) => string;
 	/** Per-row meta captions. */
 	readonly meta: {
 		/** "From" caption for an alert with a start time. */
@@ -41,10 +46,16 @@ export interface AlertHistoryCopy extends SurfaceHeadCopy {
 		/** Estimated rider-impact passages caption + value builder. */
 		readonly impact: string;
 		readonly impactValue: (passages: number) => string;
+		/** Header + count caption for the multi-window list (>1 active period). */
+		readonly windows: string;
+		readonly windowsCount: (n: number) => string;
+		/** "Details" external-link caption + a hostname-aware accessible label. */
+		readonly link: string;
+		readonly linkAria: (host: string) => string;
 	};
 	/** Visually-hidden severity words, keyed by SeverityCode (a11y). */
 	readonly severity: Record<SeverityCode, string>;
-	/** The client-side filter rail over the alert log (entity type + severity). */
+	/** The client-side filter rail over the alert log. */
 	readonly filters: {
 		/** Group label for the whole filter control panel. */
 		readonly railLabel: string;
@@ -66,29 +77,40 @@ export interface AlertHistoryCopy extends SurfaceHeadCopy {
 			/** "All" — clears the severity filter. */
 			readonly all: string;
 		};
-		/** Specific-entity axis: narrow to alerts touching ONE chosen route/stop. */
-		readonly entityPick: {
-			/** Searchable-picker field label. */
+		/** The two specific-entity typeahead pickers (Line / Stop). The GROUP label carries
+		    the type ONCE, so an option is the bare id (no per-row prefix). */
+		readonly line: {
 			readonly label: string;
-			/** Placeholder in the search field. */
 			readonly placeholder: string;
-			/** Accessible group label over the chip set of affected entities. */
-			readonly groupLabel: string;
-			/** Chip prefix for a route entity (e.g. "Line 24"). */
-			readonly route: (id: string) => string;
-			/** Chip prefix for a stop entity (e.g. "Stop 52458"). */
-			readonly stop: (id: string) => string;
-			/** Active-selection caption ("Showing alerts for …"). */
-			readonly active: (label: string) => string;
-			/** "Clear" the chosen entity (returns to all entities of the type). */
 			readonly clear: string;
-			/** Shown when the search query matches no affected entity. */
-			readonly noEntity: string;
+			readonly empty: string;
 		};
+		readonly stop: {
+			readonly label: string;
+			readonly placeholder: string;
+			readonly clear: string;
+			readonly empty: string;
+		};
+		/** The date-range picker (?from/?to) labels. */
+		readonly window: DateRangePickerLabels;
 		/** Honest no-match note shown when the active filters narrow the log to zero. */
 		readonly noMatch: string;
 		/** "Clear filters" action that restores the full log. */
 		readonly clear: string;
+	};
+	/** The alerts-in-window headline card (ExplainedMetricCard). */
+	readonly headline: {
+		/** The metric label ("Alerts in window"). */
+		readonly label: string;
+		/** The big value builder (the in-window alert count). */
+		readonly value: (count: number) => string;
+		/** The always-visible plain-language explanation. */
+		readonly explanation: string;
+		/** Sublabel = the median resolved duration across the window's alerts. */
+		readonly median: (min: number) => string;
+		/** (i) affordance tip + link. */
+		readonly tip: string;
+		readonly linkLabel: string;
 	};
 	/** The cause / effect / severity distribution sections (Tier-2 breakdown). */
 	readonly breakdown: {
@@ -110,11 +132,6 @@ export interface AlertHistoryCopy extends SurfaceHeadCopy {
 	};
 }
 
-const SEVERITY_WORDS: Record<Locale, Record<SeverityCode, string>> = {
-	fr: { critical: 'Critique', high: 'Élevé', watch: 'À surveiller' },
-	en: { critical: 'Critical', high: 'High', watch: 'Watch' },
-};
-
 export const alertHistoryCopy: Record<Locale, AlertHistoryCopy> = {
 	fr: {
 		kicker: 'AVIS · ARCHIVE',
@@ -127,6 +144,8 @@ export const alertHistoryCopy: Record<Locale, AlertHistoryCopy> = {
 		more: (n) => `+${n} de plus`,
 		showLess: 'Réduire',
 		empty: 'Aucun avis de service archivé pour le moment.',
+		truncatedNote: (shown, total) =>
+			`Fenêtre plafonnée : ${shown} avis les plus récents sur ${total} au total ; les décomptes et la répartition reflètent seulement ces avis.`,
 		meta: {
 			from: 'À partir de',
 			until: 'Jusqu’à',
@@ -136,8 +155,12 @@ export const alertHistoryCopy: Record<Locale, AlertHistoryCopy> = {
 			stops: 'Arrêts touchés',
 			impact: 'Passages touchés (est.)',
 			impactValue: (passages) => `${passages.toLocaleString('fr-CA')} passages`,
+			windows: 'Fenêtres de service',
+			windowsCount: (n) => `${n} fenêtres de service`,
+			link: 'Détails',
+			linkAria: (host) => `Ouvrir les détails de l’avis sur ${host} (nouvel onglet)`,
 		},
-		severity: SEVERITY_WORDS.fr,
+		severity: SEVERITY_LABELS.fr,
 		filters: {
 			railLabel: 'Filtres',
 			entity: {
@@ -150,18 +173,37 @@ export const alertHistoryCopy: Record<Locale, AlertHistoryCopy> = {
 				label: 'Gravité',
 				all: 'Toutes',
 			},
-			entityPick: {
-				label: 'Élément précis',
-				placeholder: 'Filtrer les lignes et arrêts touchés…',
-				groupLabel: 'Éléments touchés',
-				route: (id) => `Ligne ${id}`,
-				stop: (id) => `Arrêt ${id}`,
-				active: (label) => `Avis pour ${label}`,
+			line: {
+				label: 'Ligne',
+				placeholder: 'Filtrer par ligne…',
+				clear: 'Effacer la ligne',
+				empty: 'Aucune ligne touchée.',
+			},
+			stop: {
+				label: 'Arrêt',
+				placeholder: 'Filtrer par arrêt…',
+				clear: 'Effacer l’arrêt',
+				empty: 'Aucun arrêt touché.',
+			},
+			window: {
+				group: 'Plage de dates',
+				start: 'Du',
+				end: 'Au',
 				clear: 'Effacer',
-				noEntity: 'Aucun élément touché ne correspond.',
+				anyStart: 'Au plus tôt',
+				anyEnd: 'Au plus tard',
 			},
 			noMatch: 'Aucun avis ne correspond aux filtres sélectionnés.',
 			clear: 'Effacer les filtres',
+		},
+		headline: {
+			label: 'Avis dans la fenêtre',
+			value: (count) => count.toLocaleString('fr-CA'),
+			explanation:
+				'Le nombre d’avis de service actifs dans la plage de dates choisie, avec leur durée médiane. On compte les avis distincts, jamais une estimation.',
+			median: (min) => `durée médiane ${min} min`,
+			tip: 'Le nombre d’avis distincts dont la fenêtre active recoupe la plage choisie.',
+			linkLabel: 'Comment c’est mesuré',
 		},
 		breakdown: {
 			section: 'Répartition',
@@ -187,6 +229,8 @@ export const alertHistoryCopy: Record<Locale, AlertHistoryCopy> = {
 		more: (n) => `+${n} more`,
 		showLess: 'Show less',
 		empty: 'No archived service alerts yet.',
+		truncatedNote: (shown, total) =>
+			`Window capped: showing the ${shown} most recent of ${total} alerts; counts and the breakdown reflect only these.`,
 		meta: {
 			from: 'From',
 			until: 'Until',
@@ -196,8 +240,12 @@ export const alertHistoryCopy: Record<Locale, AlertHistoryCopy> = {
 			stops: 'Stops affected',
 			impact: 'Passages affected (est.)',
 			impactValue: (passages) => `${passages.toLocaleString('en-CA')} passages`,
+			windows: 'Service windows',
+			windowsCount: (n) => `${n} service windows`,
+			link: 'Details',
+			linkAria: (host) => `Open the alert details on ${host} (new tab)`,
 		},
-		severity: SEVERITY_WORDS.en,
+		severity: SEVERITY_LABELS.en,
 		filters: {
 			railLabel: 'Filters',
 			entity: {
@@ -210,18 +258,37 @@ export const alertHistoryCopy: Record<Locale, AlertHistoryCopy> = {
 				label: 'Severity',
 				all: 'All',
 			},
-			entityPick: {
-				label: 'Specific entity',
-				placeholder: 'Filter affected lines and stops…',
-				groupLabel: 'Affected entities',
-				route: (id) => `Line ${id}`,
-				stop: (id) => `Stop ${id}`,
-				active: (label) => `Alerts for ${label}`,
+			line: {
+				label: 'Line',
+				placeholder: 'Filter by line…',
+				clear: 'Clear line',
+				empty: 'No affected line.',
+			},
+			stop: {
+				label: 'Stop',
+				placeholder: 'Filter by stop…',
+				clear: 'Clear stop',
+				empty: 'No affected stop.',
+			},
+			window: {
+				group: 'Date range',
+				start: 'From',
+				end: 'To',
 				clear: 'Clear',
-				noEntity: 'No affected entity matches.',
+				anyStart: 'Earliest',
+				anyEnd: 'Latest',
 			},
 			noMatch: 'No alerts match the selected filters.',
 			clear: 'Clear filters',
+		},
+		headline: {
+			label: 'Alerts in window',
+			value: (count) => count.toLocaleString('en-CA'),
+			explanation:
+				'How many service alerts were active in the chosen date range, with their median duration. We count distinct alerts, never an estimate.',
+			median: (min) => `median duration ${min} min`,
+			tip: 'The count of distinct alerts whose active window overlaps the chosen range.',
+			linkLabel: 'How this is measured',
 		},
 		breakdown: {
 			section: 'Breakdown',

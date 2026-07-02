@@ -427,6 +427,15 @@ def test_build_alerts_maps_severity_and_splits_routes_stops() -> None:
                     "stop_ids": "S-1, S-2",
                     "active_period_start_utc": "2026-05-31T08:00:00Z",
                     "active_period_end_utc": "2026-05-31T20:00:00Z",
+                    # S15: url + multi-window active_periods thread through.
+                    "url": "https://stm.info/alerts/A-1",
+                    "url_en": "https://stm.info/en/alerts/A-1",
+                    "active_periods": [
+                        {"start_utc": "2026-05-31T08:00:00+00:00",
+                         "end_utc": "2026-05-31T20:00:00+00:00"},
+                        {"start_utc": "2026-06-07T08:00:00+00:00",
+                         "end_utc": "2026-06-07T20:00:00+00:00"},
+                    ],
                 },
                 {
                     "alert_id": None,  # no id -> synthesize a CONTENT hash
@@ -441,6 +450,10 @@ def test_build_alerts_maps_severity_and_splits_routes_stops() -> None:
                     "stop_ids": None,
                     "active_period_start_utc": None,
                     "active_period_end_utc": None,
+                    # S15: no url; no child periods -> honest-null / empty list.
+                    "url": None,
+                    "url_en": None,
+                    "active_periods": None,
                 },
             ]
         }
@@ -470,6 +483,12 @@ def test_build_alerts_maps_severity_and_splits_routes_stops() -> None:
     assert a1.cause == "ACCIDENT"
     assert a1.effect == "DETOUR"
     assert a1.severity_level == "warning"
+    # S15: url + multi-window active_periods (normalized to 'Z' rendering).
+    assert a1.url == "https://stm.info/alerts/A-1"
+    assert a1.url_en == "https://stm.info/en/alerts/A-1"
+    assert len(a1.active_periods) == 2
+    assert a1.active_periods[0].start_utc == "2026-05-31T08:00:00Z"
+    assert a1.active_periods[1].end_utc == "2026-06-07T20:00:00Z"
     a2 = out.alerts[1]
     assert a2.severity == "critical"  # severe -> critical
     assert a2.routes == []
@@ -491,6 +510,10 @@ def test_build_alerts_maps_severity_and_splits_routes_stops() -> None:
     assert a2.cause == "CONSTRUCTION"
     assert a2.effect == "NO_SERVICE"
     assert a2.severity_level == "severe"
+    # S15: no url, no child periods, no scalar window -> honest empty.
+    assert a2.url is None
+    assert a2.url_en is None
+    assert a2.active_periods == []
 
 
 def test_build_alerts_unknown_severity_falls_back_to_watch() -> None:
@@ -1498,6 +1521,9 @@ def test_build_alert_history_sanitizes_legacy_python_repr_en_text() -> None:
 
     conn = FakeConn(
         {
+            # Exact-name dispatch for the pre-cap count query (the substring
+            # fallback would otherwise hand the alert row to it — no 'total' key).
+            "alerts.history.count": [{"total": 1}],
             "i3_alert_history_reporting": [
                 {
                     "alert_header_text": "Votre ligne",
@@ -1508,7 +1534,7 @@ def test_build_alert_history_sanitizes_legacy_python_repr_en_text() -> None:
                     "start_utc": datetime.datetime(2026, 6, 1, 8, 0, tzinfo=datetime.UTC),
                     "end_utc": datetime.datetime(2026, 6, 1, 9, 0, tzinfo=datetime.UTC),
                 }
-            ]
+            ],
         }
     )
 

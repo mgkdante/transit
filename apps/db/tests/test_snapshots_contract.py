@@ -213,6 +213,57 @@ def test_alert_text_fields_are_additive():
     assert AlertHistoryEntry.model_json_schema()["required"] == ["id"]
 
 
+def test_s15_alert_url_and_active_periods_are_additive():
+    """S15: url / url_en / active_periods (live Alert), cause / effect /
+    severity_level / url / active_periods (AlertHistoryEntry), and window fields
+    (AlertHistory) are all optional-with-default. Old payloads still validate and
+    the frozen required sets are UNCHANGED."""
+    from transit_ops.snapshots.contract import (
+        Alert,
+        AlertActivePeriod,
+        AlertHistory,
+        AlertHistoryEntry,
+        AlertsFile,
+    )
+
+    # Old-shape live Alert (pre-S15) still validates; new fields default.
+    a = Alert(id="x", severity="watch", header_key="h")
+    assert a.url is None and a.url_en is None
+    assert a.active_periods == []
+
+    # Old-shape historic entry (pre-S15) still validates; new fields default.
+    e = AlertHistoryEntry(id="x")
+    assert e.cause is None and e.effect is None and e.severity_level is None
+    assert e.url is None
+    assert e.active_periods == []
+
+    # Old-shape AlertHistory envelope (no window fields) still validates.
+    ah = AlertHistory(generated_utc="t")
+    assert ah.window_start is None and ah.window_end is None
+    assert ah.total_in_window is None and ah.truncated is None
+
+    # Fully-populated S15 shapes roundtrip.
+    full = Alert(
+        id="x", severity="watch", header_key="h",
+        url="https://x", url_en="https://x/en",
+        active_periods=[AlertActivePeriod(start_utc="2026-06-01T08:00:00Z", end_utc=None)],
+    )
+    assert full.url == "https://x"
+    assert full.active_periods[0].start_utc == "2026-06-01T08:00:00Z"
+
+    # An old serialized payload (no S15 keys) validates round-trip through JSON.
+    old_json = '{"generated_utc":"t","alerts":[{"id":"a1","severity":"INFO"}]}'
+    reparsed = AlertHistory.model_validate_json(old_json)
+    assert reparsed.alerts[0].active_periods == []
+    assert reparsed.truncated is None
+
+    # Freeze-compat: required arrays are exactly the committed ones (unchanged).
+    assert Alert.model_json_schema()["required"] == ["id", "severity", "header_key"]
+    assert AlertHistoryEntry.model_json_schema()["required"] == ["id"]
+    assert AlertsFile.model_json_schema()["required"] == ["generated_utc", "alerts"]
+    assert AlertActivePeriod.model_json_schema().get("required", []) == []
+
+
 def test_network_delay_histogram_and_non_responding_by_route_are_additive():
     """slice-9.5: NetworkFile.delay_histogram and .non_responding_by_route are
     optional-with-default (None), so already-published network.json stays valid

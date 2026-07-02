@@ -57,6 +57,78 @@ def test_convert_gtfs_rt_alerts_to_i3_payload() -> None:
     assert alert["informedEntities"][0] == {"routeId": "33", "stopId": "S1"}
 
 
+def _build_multi_period_protobuf_with_url() -> bytes:
+    """A GTFS-RT alert with THREE active windows + a bilingual url (S15)."""
+    message = gtfs_realtime_pb2.FeedMessage()
+    message.header.gtfs_realtime_version = "2.0"
+    entity = message.entity.add()
+    entity.id = "multi-1"
+    alert = entity.alert
+    for start, end in (
+        (1_774_000_000, 1_774_100_000),
+        (1_774_600_000, 1_774_700_000),
+        (1_775_200_000, 1_775_300_000),
+    ):
+        period = alert.active_period.add()
+        period.start = start
+        period.end = end
+    header = alert.header_text.translation.add()
+    header.language = "fr"
+    header.text = "Fermeture de fin de semaine"
+    url_fr = alert.url.translation.add()
+    url_fr.language = "fr"
+    url_fr.text = "https://stm.info/avis/multi-1"
+    url_en = alert.url.translation.add()
+    url_en.language = "en"
+    url_en.text = "https://stm.info/en/alert/multi-1"
+    return message.SerializeToString()
+
+
+def test_convert_emits_every_active_period_not_just_the_first() -> None:
+    # S15 truncation fix #1: the converter must emit ALL active_period windows,
+    # not just active_period[0]. Order is preserved so period_index is stable.
+    payload = convert_gtfs_rt_alerts_to_i3_payload(_build_multi_period_protobuf_with_url())
+    alert = payload["alerts"][0]
+    assert alert["activePeriod"] == [
+        {"start": 1_774_000_000, "end": 1_774_100_000},
+        {"start": 1_774_600_000, "end": 1_774_700_000},
+        {"start": 1_775_200_000, "end": 1_775_300_000},
+    ]
+
+
+def test_convert_extracts_alert_url_translatedstring() -> None:
+    # S15: alert.url (a TranslatedString) surfaces as [{language, text}], mirroring
+    # header/description, so the silver normalizer can pick fr as url + en as url_en.
+    payload = convert_gtfs_rt_alerts_to_i3_payload(_build_multi_period_protobuf_with_url())
+    url = payload["alerts"][0]["url"]
+    assert {"language": "fr", "text": "https://stm.info/avis/multi-1"} in url
+    assert {"language": "en", "text": "https://stm.info/en/alert/multi-1"} in url
+
+
+def test_multi_period_url_flows_into_silver_rows_and_periods() -> None:
+    # S15 truncation fix #2 + url: the converted payload normalizes into ONE alert
+    # row (scalar = period[0]), a full period_rows list, and fr/en url columns.
+    payload = convert_gtfs_rt_alerts_to_i3_payload(_build_multi_period_protobuf_with_url())
+    snapshot = RawI3AlertSnapshot(
+        i3_alert_snapshot_id=7,
+        provider_id="sto",
+        captured_at_utc=datetime(2026, 6, 19, tzinfo=UTC),
+        raw_payload_json=payload,
+    )
+    alert_rows, _entities, period_rows = normalize_i3_alert_payload(snapshot)
+
+    assert len(alert_rows) == 1
+    row = alert_rows[0]
+    # scalar pair = period[0] (backward-compat)
+    assert row["active_period_start_utc"] == datetime.fromtimestamp(1_774_000_000, tz=UTC)
+    assert row["url"] == "https://stm.info/avis/multi-1"
+    assert row["url_en"] == "https://stm.info/en/alert/multi-1"
+    # all THREE windows persisted as child period rows, period_index stable.
+    assert [p["period_index"] for p in period_rows] == [0, 1, 2]
+    assert all(p["alert_index"] == 0 for p in period_rows)
+    assert period_rows[2]["start_utc"] == datetime.fromtimestamp(1_775_200_000, tz=UTC)
+
+
 def test_enum_name_decodes_known_value_and_degrades_unknown_to_string() -> None:
     # Known enum values decode to their published name...
     assert (
@@ -106,7 +178,7 @@ def test_converted_payload_normalizes_into_silver_alert_rows() -> None:
         raw_payload_json=payload,
     )
 
-    alert_rows, entity_rows = normalize_i3_alert_payload(snapshot)
+    alert_rows, entity_rows, period_rows = normalize_i3_alert_payload(snapshot)
 
     assert len(alert_rows) == 1
     row = alert_rows[0]

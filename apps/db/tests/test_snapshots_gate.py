@@ -14,8 +14,11 @@ import pytest
 
 from transit_ops.snapshots import gate
 from transit_ops.snapshots.contract import (
+    Alert,
+    AlertActivePeriod,
     AlertHistory,
     AlertHistoryEntry,
+    AlertsFile,
     CancellationPeriod,
     CrowdingDelayCell,
     DelayBucket,
@@ -422,6 +425,74 @@ def test_negative_alert_duration_is_error():
     ])
     res = gate.check_alert_history(ah, rel_key="historic/alert_history.json")
     assert _has_err(res, "count_negative", "duration_min")
+
+
+# --- S15: alert-history window + active_periods + byte ceiling gates ----------
+
+
+def test_alert_history_window_out_of_order_is_error():
+    ah = AlertHistory(generated_utc="t", window_start="2026-07-01", window_end="2026-06-01")
+    res = gate.check_alert_history(ah, rel_key="historic/alert_history.json")
+    assert _has_err(res, "window_order", "window_start")
+
+
+def test_alert_history_truncated_total_below_emitted_is_error():
+    ah = AlertHistory(
+        generated_utc="t",
+        alerts=[AlertHistoryEntry(id="a1"), AlertHistoryEntry(id="a2")],
+        total_in_window=1,  # < 2 emitted while truncated -> impossible
+        truncated=True,
+    )
+    res = gate.check_alert_history(ah, rel_key="historic/alert_history.json")
+    assert _has_err(res, "window_total", "total_in_window")
+
+
+def test_alert_history_active_period_out_of_order_is_error():
+    ah = AlertHistory(generated_utc="t", alerts=[
+        AlertHistoryEntry(id="a1", active_periods=[
+            AlertActivePeriod(start_utc="2026-06-01T10:00:00Z", end_utc="2026-06-01T08:00:00Z"),
+        ]),
+    ])
+    res = gate.check_alert_history(ah, rel_key="historic/alert_history.json")
+    assert _has_err(res, "window_order", "active_periods[0].start_utc")
+
+
+def test_alert_history_well_ordered_window_and_periods_pass():
+    ah = AlertHistory(
+        generated_utc="t",
+        window_start="2026-04-02", window_end="2026-07-01",
+        alerts=[AlertHistoryEntry(id="a1", url="https://x", active_periods=[
+            AlertActivePeriod(start_utc="2026-06-01T08:00:00Z", end_utc="2026-06-01T10:00:00Z"),
+            AlertActivePeriod(start_utc="2026-06-08T08:00:00Z", end_utc=None),  # open-ended OK
+        ])],
+        total_in_window=1, truncated=False,
+    )
+    res = gate.check_alert_history(ah, rel_key="historic/alert_history.json")
+    assert not _errors(res)
+
+
+def test_alert_history_over_byte_ceiling_is_error():
+    # A synthetic runaway: enough wide entries to blow past 256 KiB.
+    from transit_ops.snapshots.contract import ALERT_HISTORY_BYTE_CEILING
+
+    wide = "x" * 400
+    ah = AlertHistory(generated_utc="t", alerts=[
+        AlertHistoryEntry(id=f"a{i}", header_text=wide, header_text_en=wide, url=wide)
+        for i in range(1000)
+    ])
+    assert len(ah.model_dump_json().encode("utf-8")) > ALERT_HISTORY_BYTE_CEILING
+    res = gate.check_alert_history(ah, rel_key="historic/alert_history.json")
+    assert _has_err(res, "byte_ceiling")
+
+
+def test_live_alerts_active_period_out_of_order_is_error():
+    af = AlertsFile(generated_utc="t", alerts=[
+        Alert(id="a1", severity="watch", header_key="H", active_periods=[
+            AlertActivePeriod(start_utc="2026-06-01T10:00:00Z", end_utc="2026-06-01T08:00:00Z"),
+        ]),
+    ])
+    res = gate.check_alerts(af, rel_key="live/alerts.json")
+    assert _has_err(res, "window_order", "active_periods[0].start_utc")
 
 
 def test_habits_cell_above_one_is_error():

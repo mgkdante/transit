@@ -8,6 +8,7 @@ machinery, so they co-locate here.
 from __future__ import annotations
 
 import hashlib
+from datetime import date, timedelta
 from typing import TYPE_CHECKING
 
 from transit_ops.gold.reader import (
@@ -20,6 +21,7 @@ from transit_ops.gold.reader import (
 from transit_ops.snapshots.builders._helpers import (
     _ROUTE_NAMES_SQL,
     MIN_N_RATE,
+    _alert_active_periods,
     _avg_delay_min,
     _entity_name_maps,
     _iso,
@@ -1314,29 +1316,122 @@ def build_receipts(
 # --------------------------------------------------------------------------
 
 # 8M-row table — always filter by date BEFORE aggregating.
-# v1 bounds: 90-day window, LIMIT 200.  impact_passages is None (not in source).
-# array_agg(...) FILTER (WHERE ...) requires PostgreSQL 9.4+.
+# S15 bounds: the served window is the full honest retention span
+# (SILVER_I3_CLOSED_RETENTION_DAYS, bound as :win_start/:win_end — the
+# hotspots/offenders precedent), newest-first, LIMIT 500. impact_passages is None
+# (not in source). array_agg(...) FILTER (WHERE ...) requires PostgreSQL 9.4+.
+#
+# active_periods: aggregated from silver.i3_alert_active_periods (0077 child
+# table) via a correlated LATERAL matched on the SAME group identity (provider +
+# header + the scalar period[0] pair, IS NOT DISTINCT FROM for the nullable
+# bounds). Rows predating 0077 have no child periods → the LATERAL returns empty
+# and the builder falls back to the scalar pair as a 1-element list.
 _ALERT_HISTORY_SQL = named_query(
     "alerts.history",
-    f"""
-    SELECT alert_header_text,
-           MAX(alert_header_text_en)                                AS header_text_en,
-           MAX(severity)                                            AS severity,
-           MAX(cause)                                               AS cause,
-           MAX(effect)                                              AS effect,
-           ARRAY_AGG(DISTINCT route_id)
-               FILTER (WHERE route_id IS NOT NULL)                  AS routes,
-           ARRAY_AGG(DISTINCT stop_id)
-               FILTER (WHERE stop_id IS NOT NULL)                   AS stops,
-           active_period_start_utc                                  AS start_utc,
-           active_period_end_utc                                    AS end_utc
-    FROM gold.i3_alert_history_reporting AS iah
-    JOIN gold.dim_provider AS dp ON dp.provider_id = iah.provider_id
-    WHERE iah.provider_id = :provider_id
-      AND {current_date_trailing_clause("provider_local_date")}
-    GROUP BY alert_header_text, active_period_start_utc, active_period_end_utc
-    ORDER BY active_period_start_utc DESC NULLS LAST
-    LIMIT 200
+    """
+    SELECT grp.alert_header_text,
+           MAX(grp.header_text_en)                                  AS header_text_en,
+           MAX(grp.severity)                                        AS severity,
+           MAX(grp.cause)                                           AS cause,
+           MAX(grp.effect)                                          AS effect,
+           ARRAY_AGG(DISTINCT grp.route_id)
+               FILTER (WHERE grp.route_id IS NOT NULL)              AS routes,
+           ARRAY_AGG(DISTINCT grp.stop_id)
+               FILTER (WHERE grp.stop_id IS NOT NULL)               AS stops,
+           grp.start_utc,
+           grp.end_utc,
+           -- url + active_periods are correlated subqueries keyed on the SAME
+           -- group identity (provider + header + scalar period[0]), so they never
+           -- fan out the 8M-row aggregation. url = one non-NULL display link if
+           -- any matching silver row carries one (honest-NULL otherwise).
+           (
+               SELECT MAX(a2.url)
+               FROM silver.i3_alerts a2
+               WHERE a2.provider_id = :provider_id
+                 AND a2.alert_header_text IS NOT DISTINCT FROM grp.alert_header_text
+                 AND a2.active_period_start_utc IS NOT DISTINCT FROM grp.start_utc
+                 AND a2.active_period_end_utc IS NOT DISTINCT FROM grp.end_utc
+           )                                                        AS url,
+           -- One window per period_index, ordered. Re-rowed multi-period alerts
+           -- (the S15 hash cutover mints a new SCD-2 row when periods beyond [0]
+           -- change) can share header+period[0] across versions with DIFFERENT
+           -- later bounds — DISTINCT ON keeps the NEWEST version's bound per
+           -- period_index. NULL when no child rows exist (pre-0077 history).
+           (
+               SELECT json_agg(
+                          json_build_object('start_utc', ap.start_utc,
+                                            'end_utc', ap.end_utc)
+                          ORDER BY ap.period_index
+                      )
+               FROM (
+                   SELECT DISTINCT ON (p.period_index)
+                          p.period_index, p.start_utc, p.end_utc
+                   FROM silver.i3_alerts a2
+                   JOIN silver.i3_alert_active_periods p
+                     ON p.i3_alert_snapshot_id = a2.i3_alert_snapshot_id
+                    AND p.alert_index = a2.alert_index
+                   WHERE a2.provider_id = :provider_id
+                     AND a2.alert_header_text IS NOT DISTINCT FROM grp.alert_header_text
+                     AND a2.active_period_start_utc IS NOT DISTINCT FROM grp.start_utc
+                     AND a2.active_period_end_utc IS NOT DISTINCT FROM grp.end_utc
+                   ORDER BY p.period_index,
+                            a2.i3_alert_snapshot_id DESC, a2.alert_index DESC
+               ) AS ap
+           )                                                        AS active_periods
+    FROM (
+        SELECT iah.alert_header_text,
+               iah.alert_header_text_en                             AS header_text_en,
+               iah.severity,
+               iah.cause,
+               iah.effect,
+               iah.route_id,
+               iah.stop_id,
+               iah.active_period_start_utc                          AS start_utc,
+               iah.active_period_end_utc                            AS end_utc
+        FROM gold.i3_alert_history_reporting AS iah
+        JOIN gold.dim_provider AS dp ON dp.provider_id = iah.provider_id
+        WHERE iah.provider_id = :provider_id
+          AND iah.provider_local_date >= :win_start
+          AND iah.provider_local_date <= :win_end
+    ) AS grp
+    GROUP BY grp.alert_header_text, grp.start_utc, grp.end_utc
+    ORDER BY grp.start_utc DESC NULLS LAST
+    LIMIT 500
+    """
+)
+
+
+# The TRUE pre-cap distinct-alert count for the window: the SAME grouped identity
+# as _ALERT_HISTORY_SQL with NO LIMIT. total_in_window must be able to EXCEED the
+# cap or the truncation disclosure degenerates to a self-contradictory "500 of
+# 500" that cannot distinguish a 501-alert window from a 5000-alert one.
+_ALERT_HISTORY_COUNT_SQL = named_query(
+    "alerts.history.count",
+    """
+    SELECT COUNT(*) AS total
+    FROM (
+        SELECT 1
+        FROM gold.i3_alert_history_reporting AS iah
+        WHERE iah.provider_id = :provider_id
+          AND iah.provider_local_date >= :win_start
+          AND iah.provider_local_date <= :win_end
+        GROUP BY iah.alert_header_text,
+                 iah.active_period_start_utc,
+                 iah.active_period_end_utc
+    ) AS grouped
+    """
+)
+
+
+# The provider-local "today" — the newest date the trailing alert-history window
+# ends on. Resolved in the DB so the timezone authority stays dim_provider (the
+# same (now() AT TIME ZONE dp.timezone)::date the old trailing clause used).
+_ALERT_HISTORY_ANCHOR_SQL = named_query(
+    "alerts.history.anchor",
+    """
+    SELECT (now() AT TIME ZONE dp.timezone)::date AS anchor
+    FROM gold.dim_provider AS dp
+    WHERE dp.provider_id = :provider_id
     """
 )
 
@@ -1384,10 +1479,15 @@ def _alert_breakdown(
     )
 
 
+# S15: the emitted-alerts cap. Newest-first LIMIT 500 in _ALERT_HISTORY_SQL; the
+# builder discloses total_in_window + truncated when the window held more.
+_ALERT_HISTORY_LIMIT = 500
+
+
 def build_alert_history(
     conn: Connection, provider_id: str = "stm", *, generated_utc: str
 ) -> AlertHistory:
-    """Build historic/alert_history.json — last 30 days, capped at 200 alerts.
+    """Build historic/alert_history.json — the full retention window, capped at 500 alerts.
 
     Source: gold.i3_alert_history_reporting (8M rows — always filter first).
     STM's i3 feed leaves alert_id NULL, so grouping by it would collapse every
@@ -1396,11 +1496,31 @@ def build_alert_history(
     live build_alerts approach.  Routes/stops are deduped and natural-sorted.
     duration_min is computed from start/end; impact_passages is None in v1.
 
-    v1 intentional bounds: 30-day look-back, LIMIT 200, impact_passages=None.
+    S15 windowing: the served window is the trailing SILVER_I3_CLOSED_RETENTION_DAYS
+    (serve everything we honestly retain — ONE constant, no magic number),
+    provider-local, resolved via the DB anchor so dim_provider stays the timezone
+    authority. window_start / window_end + total_in_window + truncated disclose the
+    window and the cap. active_periods lists ALL windows (a 1-element list = the
+    scalar pair for pre-0077 history); cause / effect / severity_level / url are
+    additive per-entry passthroughs (url honest-NULL before 0077).
     """
-    rows = list(
-        conn.execute(_ALERT_HISTORY_SQL, {"provider_id": provider_id}).mappings()
+    from transit_ops.settings import get_settings
+
+    retention_days = get_settings().SILVER_I3_CLOSED_RETENTION_DAYS
+    anchor_row = conn.execute(
+        _ALERT_HISTORY_ANCHOR_SQL, {"provider_id": provider_id}
+    ).mappings().fetchone()
+    win_end: date | None = anchor_row["anchor"] if anchor_row else None
+    win_start: date | None = (
+        win_end - timedelta(days=retention_days) if win_end is not None else None
     )
+    window_binds = {"provider_id": provider_id, "win_start": win_start, "win_end": win_end}
+    rows = list(conn.execute(_ALERT_HISTORY_SQL, window_binds).mappings())
+    # The TRUE pre-cap window total (S15 review F1): a separate un-LIMITed count
+    # over the same grouped identity, so truncated can honestly say how much the
+    # newest-first cap dropped. Honest-None when the count query yields nothing.
+    count_row = conn.execute(_ALERT_HISTORY_COUNT_SQL, window_binds).mappings().fetchone()
+    total_in_window: int | None = int(count_row["total"]) if count_row else None
     entries: list[AlertHistoryEntry] = []
     # (cause, effect, severity_code, duration_min) per distinct alert for the breakdown.
     breakdown_records: list[tuple[str | None, str | None, str | None, float | None]] = []
@@ -1451,7 +1571,11 @@ def build_alert_history(
         )
         alert_id = f"{provider_id}-alert-{hashlib.sha1(basis.encode()).hexdigest()[:12]}"
         severity_code = _severity_code(r["severity"])
-        breakdown_records.append((r.get("cause"), r.get("effect"), severity_code, duration_min))
+        cause = r.get("cause")
+        effect = r.get("effect")
+        severity_level = r.get("severity")
+        breakdown_records.append((cause, effect, severity_code, duration_min))
+        active_periods = _alert_active_periods(r.get("active_periods"), start, end)
         entries.append(
             AlertHistoryEntry(
                 id=alert_id,
@@ -1465,10 +1589,23 @@ def build_alert_history(
                 end_utc=_opt_iso(end),
                 duration_min=duration_min,
                 impact_passages=None,  # v1 deferral: not stored in gold
+                # S15 additive passthroughs (raw upstream + child-table windows).
+                cause=cause,
+                effect=effect,
+                severity_level=severity_level,
+                url=r.get("url"),
+                active_periods=active_periods,
             )
         )
     return AlertHistory(
         generated_utc=generated_utc,
         alerts=entries,
         breakdown=_alert_breakdown(breakdown_records),
+        window_start=_iso_date(win_start) if win_start is not None else None,
+        window_end=_iso_date(win_end) if win_end is not None else None,
+        # total_in_window is the TRUE pre-cap count (dedicated un-LIMITed count
+        # query), so it can EXCEED the cap and truncated is a real disclosure —
+        # never the self-contradictory "500 of 500" (S15 review F1).
+        total_in_window=total_in_window,
+        truncated=(total_in_window is not None and total_in_window > len(rows)),
     )

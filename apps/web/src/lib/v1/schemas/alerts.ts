@@ -8,6 +8,9 @@
 
 import { z } from 'zod';
 import { isoUtc, SeverityCodeSchema, payloadEnvelopeFields } from './types';
+// The active-period shape is identical across live + historic (same contract
+// $def); import it rather than redeclare it, so the two mirrors never drift.
+import { AlertActivePeriodSchema } from './alert_history';
 
 export const AlertSchema = z.object({
 	id: z.string(),
@@ -38,6 +41,18 @@ export const AlertSchema = z.object({
 	effect: z.string().nullable().optional(),
 	/** Raw upstream severity_level, distinct from the bucketed `severity` enum. */
 	severity_level: z.string().nullable().optional(),
+	/**
+	 * S15 additive — the alert's public URL (FR + optional EN), closing the old
+	 * "(url is not yet carried upstream)" note. Null when the feed omits it.
+	 */
+	url: z.string().nullable().optional(),
+	url_en: z.string().nullable().optional(),
+	/**
+	 * S15 additive — every active window (migration 0077), mirroring the historic
+	 * shape so a multi-period alert is visible on the live surface too. The scalar
+	 * start_utc/end_utc stay the primary (period[0]) window; absent on legacy feeds.
+	 */
+	active_periods: z.array(AlertActivePeriodSchema).optional(),
 });
 export type Alert = z.infer<typeof AlertSchema>;
 
