@@ -1605,7 +1605,7 @@ def test_build_stop_reliability_emits_shift_and_daytype_grains() -> None:
         def execute(self, statement, params=None):  # noqa: ANN001, ANN201
             s = str(statement)
             params = params or {}
-            if "MAX(service_local_date)" in s and "stop_delay_spine" in s:
+            if "MAX(provider_local_date)" in s and "stop_delay_spine" in s:
                 return FakeResult([{"anchor": _anchor}])
             for needle, rows in dispatch:
                 if needle in s:
@@ -1700,7 +1700,7 @@ def test_build_stop_reliability_occupancy_mix_none_when_no_telemetry() -> None:
         def execute(self, statement, params=None):  # noqa: ANN001, ANN201
             s = str(statement)
             params = params or {}
-            if "MAX(service_local_date)" in s and "stop_delay_spine" in s:
+            if "MAX(provider_local_date)" in s and "stop_delay_spine" in s:
                 return FakeResult([{"anchor": _anchor}])
             for needle, rows in dispatch:
                 if needle in s:

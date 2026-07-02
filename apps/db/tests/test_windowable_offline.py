@@ -332,7 +332,7 @@ def test_whole_history_projectors_byte_identical_windowed_twins_bound() -> None:
     for sql in (H._W_BY_SHIFT, H._W_BY_DAYTYPE, H._W_DOW, H._W_CROSSTAB, H._ROUTE_HABIT_SPINE_SQL):
         assert ":win_start" in str(sql) and ":win_end" in str(sql)
     # No accidental double-space where {entity_clause}{window_clause} concatenate.
-    assert "  AND service_local_date" not in str(H._W_BY_SHIFT)
+    assert "  AND provider_local_date" not in str(H._W_BY_SHIFT)
 
 
 def test_builders_reexport_is_importable() -> None:

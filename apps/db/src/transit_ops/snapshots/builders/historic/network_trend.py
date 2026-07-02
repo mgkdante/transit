@@ -34,10 +34,19 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
 # Daily OTP + pooled-avg delay from the route delay spine (last ~90 local days).
 # GC1 / Step G1: re-pointed off gold.route_delay_hourly onto gold.route_delay_spine.
 # (route_delay_hourly is KEPT — the public_route_reliability_daily VIEW still reads it;
-# dropping it + re-pointing that view is deferred beyond G1 as it rebaselines worst_route.)
-# service_local_date is stored provider-local, so the day key
+# GC1.5 owns the drop + view re-point, which rebaselines worst_route.)
+# SCOPE REBASELINE (2026-07-02, documented): the spine holds route-attributed
+# observations only (its builder filters route_id IS NOT NULL), while the legacy
+# hourly path COALESCEd NULL routes into an '__unrouted__' partition that these
+# network-wide SUMs included. Network trend/receipts totals therefore now cover
+# route-attributed observations; where unrouted delay facts exist the counts move.
+# GC1.5 quantifies the unrouted share on prod before finalizing the hourly drop.
+# provider_local_date is stored provider-local, so the day key
 # drops the timezone()::date cast + the dim_provider join. Parity:
 #  * known_obs = SUM(delay_observation_count) is EXACT.
+#  * on_time: plain SUM — for history where a legacy hourly bucket carried NULL
+#    on_time (pre-0030 5m rows), legacy emitted otp=None while the fact-derived
+#    spine emits a value: a bounded honesty fix (null -> real rate), not EXACT.
 #  * on_time is a PLAIN SUM (NOT the fold's CASE WHEN COUNT(*)=COUNT(on_time) guard):
 #    a spine cell's on_time is NULL iff delay_obs=0, adding nothing to either SUM, so
 #    SUM(on_time)/SUM(known) reproduces the fold otp EXACTLY — whereas the CASE guard
@@ -52,7 +61,7 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
 _TREND_DAILY_SQL = named_query(
     "network.trend.daily_hourly",
     """
-    SELECT sp.service_local_date                        AS local_date,
+    SELECT sp.provider_local_date                        AS local_date,
            SUM(sp.delay_observation_count)              AS known_obs,
            SUM(sp.on_time_observation_count)            AS on_time,
            SUM(sp.sum_delay_seconds)                    AS pooled_delay_sec,
@@ -60,8 +69,8 @@ _TREND_DAILY_SQL = named_query(
                 FROM unnest(sp.delay_histogram) AS x))  AS inclamp_obs
     FROM gold.route_delay_spine AS sp
     WHERE sp.provider_id = :provider_id
-      AND sp.service_local_date >= (now() AT TIME ZONE 'UTC')::date - 90
-    GROUP BY sp.service_local_date
+      AND sp.provider_local_date >= (now() AT TIME ZONE 'UTC')::date - 90
+    GROUP BY sp.provider_local_date
     """
 )
 
@@ -131,15 +140,15 @@ _TREND_OCCUPANCY_SQL = named_query(
 # Spine OTP + pooled-avg delay, grouped by the bucket-start local date. Mirrors
 # _TREND_DAILY_SQL (GC1 spine re-point): same SUM(delay_obs)/plain-SUM(on_time)/
 # pooled sum + in-clamp count off gold.route_delay_spine, only the date expression is
-# wrapped in date_trunc(<unit>, service_local_date). The bound is widened to ~371 days
+# wrapped in date_trunc(<unit>, provider_local_date). The bound is widened to ~371 days
 # (>= 53 ISO weeks / 12 months) so the coarse buckets stay useful; the append-only spine
 # is pruned at 730d (maintenance/gold.py), so 371d is always fully retained. The scan
-# stays bounded by service_local_date (the daily variant caps at 90 days; an unbounded
+# stays bounded by provider_local_date (the daily variant caps at 90 days; an unbounded
 # full-retention scan is a cost/timeout risk — see the prior prod rollup-timeout incident).
 _TREND_WEEKLY_SQL = named_query(
     "network.trend.week_hourly",
     """
-    SELECT date_trunc('week', sp.service_local_date)::date AS local_date,
+    SELECT date_trunc('week', sp.provider_local_date)::date AS local_date,
            SUM(sp.delay_observation_count)                 AS known_obs,
            SUM(sp.on_time_observation_count)               AS on_time,
            SUM(sp.sum_delay_seconds)                       AS pooled_delay_sec,
@@ -147,15 +156,15 @@ _TREND_WEEKLY_SQL = named_query(
                 FROM unnest(sp.delay_histogram) AS x))     AS inclamp_obs
     FROM gold.route_delay_spine AS sp
     WHERE sp.provider_id = :provider_id
-      AND sp.service_local_date >= (now() AT TIME ZONE 'UTC')::date - 371
-    GROUP BY date_trunc('week', sp.service_local_date)::date
+      AND sp.provider_local_date >= (now() AT TIME ZONE 'UTC')::date - 371
+    GROUP BY date_trunc('week', sp.provider_local_date)::date
     """
 )
 
 _TREND_MONTHLY_SQL = named_query(
     "network.trend.month_hourly",
     """
-    SELECT date_trunc('month', sp.service_local_date)::date AS local_date,
+    SELECT date_trunc('month', sp.provider_local_date)::date AS local_date,
            SUM(sp.delay_observation_count)                  AS known_obs,
            SUM(sp.on_time_observation_count)                AS on_time,
            SUM(sp.sum_delay_seconds)                        AS pooled_delay_sec,
@@ -163,8 +172,8 @@ _TREND_MONTHLY_SQL = named_query(
                 FROM unnest(sp.delay_histogram) AS x))      AS inclamp_obs
     FROM gold.route_delay_spine AS sp
     WHERE sp.provider_id = :provider_id
-      AND sp.service_local_date >= (now() AT TIME ZONE 'UTC')::date - 371
-    GROUP BY date_trunc('month', sp.service_local_date)::date
+      AND sp.provider_local_date >= (now() AT TIME ZONE 'UTC')::date - 371
+    GROUP BY date_trunc('month', sp.provider_local_date)::date
     """
 )
 

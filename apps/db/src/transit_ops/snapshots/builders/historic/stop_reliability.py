@@ -1,8 +1,16 @@
 """build_stop_reliability — batched per-stop reliability payloads.
 
 Split out of the former monolithic ``historic.py`` (S7-close C3) verbatim. Mirrors
-build_all_stops_data: one batched pass over gold.stop_delay_spine + the stop hourly
-mart, keyed stop_id -> StopReliability.
+build_all_stops_data: one batched pass over gold.stop_delay_spine + the stop shift-daily
+rollup, keyed stop_id -> StopReliability.
+
+GC1 / Step G4: the shift / day_type / dow grain reads were re-pointed off the legacy
+timezone()-re-bucketed gold.stop_delay_hourly onto the pre-localized
+gold.stop_delay_shift_daily (migration 0071), aligning /stop day/shift attribution with
+/lines (the route spine). This is a DOCUMENTED day-attribution rebaseline at day boundaries
+(count/share values move; same class as the 0065/0063 rebaselines). The 7x24 habits heatmap
+(_STOP_HABIT_SQL) remains on gold.stop_delay_hourly as a deliberate carve-out — it needs the
+hour dimension the shift rollup does not carry (see the comment there).
 """
 
 from __future__ import annotations
@@ -12,7 +20,6 @@ from typing import TYPE_CHECKING
 from transit_ops.gold.reader import (
     current_date_trailing_clause,
     daytype_case_sql,
-    shift_case_sql,
 )
 from transit_ops.snapshots.builders._helpers import (
     _STOP_NAMES_SQL,
@@ -62,7 +69,7 @@ _STOP_REL_WEEKLY_SQL = named_query(
            SUM(severe_delay_count) AS severe
     FROM gold.stop_delay_spine
     WHERE provider_id = :provider_id
-      AND service_local_date >= :win_start AND service_local_date <= :win_end
+      AND provider_local_date >= :win_start AND provider_local_date <= :win_end
     GROUP BY stop_id
     """
 )
@@ -76,7 +83,7 @@ _STOP_REL_MONTHLY_SQL = named_query(
            SUM(severe_delay_count) AS severe
     FROM gold.stop_delay_spine
     WHERE provider_id = :provider_id
-      AND service_local_date >= :win_start AND service_local_date <= :win_end
+      AND provider_local_date >= :win_start AND provider_local_date <= :win_end
     GROUP BY stop_id
     """
 )
@@ -94,7 +101,7 @@ _STOP_REL_BY_ROUTE_SQL = named_query(
     FROM gold.stop_delay_spine
     WHERE provider_id = :provider_id
       AND route_id <> '__unrouted__'
-      AND service_local_date >= :win_start AND service_local_date <= :win_end
+      AND provider_local_date >= :win_start AND provider_local_date <= :win_end
     GROUP BY stop_id, route_id
     """
 )
@@ -103,7 +110,7 @@ _STOP_REL_BY_ROUTE_SQL = named_query(
 # route filter — build_stop_reliability is a cross-route batch over ALL stops).
 _STOP_REL_ANCHOR_SQL = named_query(
     "stop.reliability.anchor",
-    "SELECT MAX(service_local_date) AS anchor FROM gold.stop_delay_spine "
+    "SELECT MAX(provider_local_date) AS anchor FROM gold.stop_delay_spine "
     "WHERE provider_id = :provider_id"
 )
 
@@ -111,6 +118,15 @@ _STOP_REL_ANCHOR_SQL = named_query(
 # Per-stop 7x24 severe-delay heatmap source (dow x hour from the open-window
 # hourly mart). Cell magnitude = summed severe-delay count; fed to
 # _build_habits_matrix on the DISTINCT 'severe_relative' scale.
+#
+# DELIBERATE CARVE-OUT (GC1 / Step G4): this is the ONE stop grain still on the legacy
+# timezone()-re-bucketed calendar attribution. It genuinely needs the HOUR dimension, which
+# gold.stop_delay_shift_daily (shift buckets only) does not carry, and no hour-grain stop
+# rollup is being built (0066/0071 reject the 24x hour fan-out; the S7 pivot deprioritized
+# heatmap marks). Acceptable because the heatmap is a per-cell per-stop 'severe_relative'
+# problem-frequency proxy, NOT an OTP the user compares cross-surface. If full day-attribution
+# parity is later wanted for the heatmap, that is the trigger to reconsider an hour grain
+# (GC1.5 owns that follow-up) — this read is a conscious residual, not an oversight.
 _STOP_HABIT_SQL = named_query(
     "stop.habit.score",
     """
@@ -165,43 +181,42 @@ _STOP_OCCUPANCY_BAND_WINDOW_SQL = named_query(
 )
 
 
-# Granularity grains for stops, computed ON THE FLY from the hourly mart (stops
-# have no rollup table). The hour->shift band CASE and the ISODOW weekday/weekend
-# split are emitted from the ONE gold.reader.buckets source (the same bounds the
-# route populate logic in gold/rollups.py uses) so stop grains line up with route
-# grains — the mart stores UTC, so the hour/dow exprs re-apply timezone(). Avg
-# delay mirrors the stop weekly rollup: COALESCE(arrival, departure),
-# observation-weighted (_weighted_avg_sec). Stop OTP stays a severe(>300s)-only
-# proxy (no on_time column in the stop hourly mart), so only obs + severe are
-# aggregated. One UNION'd pass over both grain families.
-_STOP_TS_EXPR = "timezone(dp.timezone, sd.period_start_utc)"
-_STOP_HOUR_EXPR = f"EXTRACT(HOUR FROM {_STOP_TS_EXPR})"
+# Granularity grains for stops, read from the append-only gold.stop_delay_shift_daily
+# rollup (GC1 / Step G4). The shift is PRE-LOCALIZED at build time (shift derived from
+# EXTRACT(HOUR FROM timezone(tz, captured_at_utc)) via the ONE gold.reader.buckets CASE),
+# and the day_type reads daytype_case_sql over the rollup's provider_local_date DIRECTLY —
+# both matching the route projector's _SPINE_SHIFT_CASE / _SPINE_DAYTYPE_CASE exactly, so
+# /stop and /lines attribute the same observation to the same shift/day-type. This REPLACES
+# the legacy read off gold.stop_delay_hourly, which re-bucketed UTC period_start_utc at read
+# time (timezone()) -> wrong day/shift near local midnight + every DST transition. That is a
+# DOCUMENTED day-attribution rebaseline (migration 0071; same class as the 0065/0063
+# rebaselines). weighted_delay_sec is now the pooled SUM(sum_delay_seconds) (the spine-style
+# numerator the weekly/monthly reads already use), replacing the old SUM(avg*obs)
+# approximation — _weighted_avg_sec divides by SUM(observation_count). Stop OTP stays a
+# severe(>300s)-only proxy, so only obs + severe are aggregated. One UNION'd pass over the
+# two grain families. Unique discriminator for test dispatch: "stop_delay_shift_daily AS sd".
 _STOP_BY_GRAIN_SQL = named_query(
     "stop.reliability.by_grain",
     f"""
     SELECT stop_id, grain,
-           SUM(observation_count)::numeric                AS obs,
-           SUM(severe_delay_count)::numeric               AS severe,
-           SUM(avg_delay_sec * NULLIF(observation_count, 0)) AS weighted_delay_sec
+           SUM(observation_count)::numeric AS obs,
+           SUM(severe_delay_count)::numeric AS severe,
+           SUM(sum_delay_seconds)          AS weighted_delay_sec
     FROM (
         SELECT sd.stop_id,
-{shift_case_sql(_STOP_HOUR_EXPR, indent=15, lead=True, wrap=True)} AS grain,
+               sd.shift AS grain,
                sd.observation_count,
                sd.severe_delay_count,
-               COALESCE(sd.avg_arrival_delay_seconds, sd.avg_departure_delay_seconds)
-                   AS avg_delay_sec
-        FROM gold.stop_delay_hourly AS sd
-        INNER JOIN gold.dim_provider AS dp ON dp.provider_id = sd.provider_id
+               sd.sum_delay_seconds
+        FROM gold.stop_delay_shift_daily AS sd
         WHERE sd.provider_id = :provider_id
         UNION ALL
         SELECT sd.stop_id,
-{daytype_case_sql(_STOP_TS_EXPR, indent=15, lead=True, wrap=True)} AS grain,
+{daytype_case_sql("sd.provider_local_date", indent=15, lead=True, wrap=True)} AS grain,
                sd.observation_count,
                sd.severe_delay_count,
-               COALESCE(sd.avg_arrival_delay_seconds, sd.avg_departure_delay_seconds)
-                   AS avg_delay_sec
-        FROM gold.stop_delay_hourly AS sd
-        INNER JOIN gold.dim_provider AS dp ON dp.provider_id = sd.provider_id
+               sd.sum_delay_seconds
+        FROM gold.stop_delay_shift_daily AS sd
         WHERE sd.provider_id = :provider_id
     ) AS banded
     GROUP BY stop_id, grain
@@ -209,26 +224,25 @@ _STOP_BY_GRAIN_SQL = named_query(
 )
 
 
-# Per-stop weekday seasonality (ISO 1=Mon..7=Sun), computed on the fly from the
-# hourly mart for route parity (gold.route_delay_day_of_week has no stop sibling).
-# The ISODOW resolution + timezone() mirror _STOP_HABIT_SQL / _STOP_BY_GRAIN_SQL.
-# Avg delay mirrors the stop weekly rollup: COALESCE(arrival, departure),
-# observation-weighted. Stop OTP stays a severe(>300s)-only proxy, so only obs +
-# severe are aggregated. Unique discriminator for test dispatch: "AS dow_obs".
+# Per-stop weekday seasonality (ISO 1=Mon..7=Sun), read from the append-only
+# gold.stop_delay_shift_daily rollup (GC1 / Step G4) for route parity
+# (gold.route_delay_day_of_week has no stop sibling). ISODOW is taken from the
+# PRE-LOCALIZED provider_local_date DIRECTLY — mirroring _ROUTE_SPINE_DOW_SQL
+# (EXTRACT(ISODOW FROM provider_local_date)) — replacing the legacy timezone()-re-bucketed
+# read off gold.stop_delay_hourly (a documented day-attribution rebaseline; migration 0071).
+# weighted_delay_sec is now the pooled SUM(sum_delay_seconds); _weighted_avg_sec divides by
+# SUM(observation_count). Stop OTP stays a severe(>300s)-only proxy, so only obs + severe are
+# aggregated. Unique discriminator for test dispatch: "AS dow_obs".
 _STOP_DOW_SQL = named_query(
     "stop.reliability.dow",
     """
     SELECT sd.stop_id,
-           EXTRACT(ISODOW FROM timezone(dp.timezone, sd.period_start_utc))::integer
+           EXTRACT(ISODOW FROM sd.provider_local_date)::integer
                AS day_of_week_iso,
-           SUM(sd.observation_count)::numeric                AS dow_obs,
-           SUM(sd.severe_delay_count)::numeric               AS severe,
-           SUM(
-               COALESCE(sd.avg_arrival_delay_seconds, sd.avg_departure_delay_seconds)
-               * NULLIF(sd.observation_count, 0)
-           )                                                 AS weighted_delay_sec
-    FROM gold.stop_delay_hourly AS sd
-    INNER JOIN gold.dim_provider AS dp ON dp.provider_id = sd.provider_id
+           SUM(sd.observation_count)::numeric AS dow_obs,
+           SUM(sd.severe_delay_count)::numeric AS severe,
+           SUM(sd.sum_delay_seconds)          AS weighted_delay_sec
+    FROM gold.stop_delay_shift_daily AS sd
     WHERE sd.provider_id = :provider_id
     GROUP BY sd.stop_id, 2
     ORDER BY sd.stop_id, 2

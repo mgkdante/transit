@@ -637,6 +637,10 @@ _HEADWAY_GAP_HIST_EDGES_SQL = (
 # pooled sum_delay_seconds. Binds {provider_id, local_date, date_key, built_at_utc}
 # so it drops straight into _build_percentile_days. Unknown direction COALESCEs to 0
 # (matching the directional headway builder). delayed_trip_count (GC1 / Step G1) is the
+# EDGE: a trip emitting BOTH a NULL-direction (COALESCE -> 0) and a direction-1 row in
+# the same 5m bucket would count once per direction here vs once in the direction-less
+# legacy distinct count; unobserved in the adversarial seed and in STM feeds (a trip
+# update carries one direction per bucket) — revisit if a provider violates that.
 # SUM over 5-minute sub-buckets of COUNT(DISTINCT trip_id) FILTER (delay>0) within the
 # (route, hour, direction) grain — reproducing the legacy route_delay_hourly
 # SUM-of-per-5m-distinct chain BYTE-FOR-BYTE (a single hour-grain distinct count would
@@ -707,7 +711,7 @@ UPSERT_ROUTE_DELAY_SPINE = named_query(
                  per5m.hour_of_day_local, per5m.direction_id
     )
     INSERT INTO gold.route_delay_spine (
-        provider_id, route_id, service_local_date, hour_of_day_local, direction_id,
+        provider_id, route_id, provider_local_date, hour_of_day_local, direction_id,
         observation_count, delay_observation_count, on_time_observation_count,
         severe_delay_count, sum_delay_seconds, delay_histogram, delayed_trip_count,
         built_at_utc
@@ -762,7 +766,7 @@ UPSERT_ROUTE_DELAY_SPINE = named_query(
         AND d.direction_id = b.direction_id
     GROUP BY b.provider_id, b.route_id, b.hour_of_day_local, b.direction_id,
              d.delayed_trip_count
-    ON CONFLICT (provider_id, route_id, service_local_date, hour_of_day_local, direction_id)
+    ON CONFLICT (provider_id, route_id, provider_local_date, hour_of_day_local, direction_id)
     DO UPDATE SET
         observation_count        = EXCLUDED.observation_count,
         delay_observation_count  = EXCLUDED.delay_observation_count,
@@ -789,7 +793,7 @@ UPSERT_STOP_DELAY_SPINE = named_query(
     "rollup.stop_delay_spine.upsert",
     f"""
     INSERT INTO gold.stop_delay_spine (
-        provider_id, stop_id, route_id, service_local_date,
+        provider_id, stop_id, route_id, provider_local_date,
         observation_count, severe_delay_count, sum_delay_seconds, built_at_utc
     )
     SELECT
@@ -811,7 +815,67 @@ UPSERT_STOP_DELAY_SPINE = named_query(
       AND f.delay_seconds IS NOT NULL
       AND ABS(f.delay_seconds) <= {GHOST_DELAY_ABS_SECONDS}    -- GHOST clamp (ghosts + nulls out)
     GROUP BY f.provider_id, f.delay_stop_id, COALESCE(f.route_id, '__unrouted__')
-    ON CONFLICT (provider_id, stop_id, route_id, service_local_date)
+    ON CONFLICT (provider_id, stop_id, route_id, provider_local_date)
+    DO UPDATE SET
+        observation_count  = EXCLUDED.observation_count,
+        severe_delay_count = EXCLUDED.severe_delay_count,
+        sum_delay_seconds  = EXCLUDED.sum_delay_seconds,
+        built_at_utc       = EXCLUDED.built_at_utc
+    """
+)
+
+
+# --- GC1 / Step G4 stop_delay_shift_daily: shift grain of the STOP-DELAY family
+#     (rollup_kind="stop_delay_shift_daily"). Closed-day, sargable on
+#     (provider_id, snapshot_date_key). Mirrors UPSERT_STOP_DELAY_SPINE EXACTLY (same GHOST
+#     clamp + stop/delay non-null WHERE, same COUNT(*)/severe FILTER/SUM measures, same
+#     '__unrouted__' COALESCE) but adds the shift dimension computed ONCE at build time from
+#     EXTRACT(HOUR FROM timezone(dp.timezone, f.captured_at_utc)) via the ONE gold.reader.buckets
+#     shift CASE (shift_case_sql) — byte-identical to the read-time _SPINE_SHIFT_CASE the route
+#     projector uses, so /stop and /lines bucket the same observation to the same shift. Because
+#     the WHERE is identical to the spine, SUM-over-shifts == the stop_delay_spine
+#     per-(stop,route,date) counts (a finer partition of the same in-clamp row set). Drops
+#     straight into _build_percentile_days. ---
+UPSERT_STOP_DELAY_SHIFT_DAILY = named_query(
+    "rollup.stop_delay_shift_daily.upsert",
+    f"""
+    INSERT INTO gold.stop_delay_shift_daily (
+        provider_id, stop_id, route_id, provider_local_date, shift,
+        observation_count, severe_delay_count, sum_delay_seconds, built_at_utc
+    )
+    SELECT
+        b.provider_id,
+        b.stop_id,
+        b.route_id,
+        :local_date,
+        b.shift,
+        -- in-clamp delay count: the WHERE already filters delay non-null + |delay|<=3600.
+        COUNT(*)::integer,
+        -- severe = delay > 300 (and <= 3600, already guaranteed by the WHERE clamp).
+        COUNT(*) FILTER (WHERE b.delay_seconds > {SEVERE_DELAY_SECONDS})::integer,
+        -- pooled in-clamp numerator for the rebaselined avg.
+        COALESCE(SUM(b.delay_seconds), 0)::bigint,
+        :built_at_utc
+    FROM (
+        SELECT
+            f.provider_id,
+            f.delay_stop_id AS stop_id,
+            COALESCE(f.route_id, '__unrouted__') AS route_id,
+            f.delay_seconds AS delay_seconds,
+            -- shift derived ONCE at build time from the provider-localized capture hour, via
+            -- the ONE gold.reader.buckets CASE (byte-identical to the route projector's
+            -- _SPINE_SHIFT_CASE). Distinct hours in the same shift collapse to one grain row.
+{shift_case_sql("EXTRACT(HOUR FROM timezone(dp.timezone, f.captured_at_utc))::int", indent=12)} AS shift
+        FROM gold.fact_trip_delay_snapshot AS f
+        INNER JOIN gold.dim_provider AS dp ON dp.provider_id = f.provider_id
+        WHERE f.provider_id = :provider_id
+          AND f.snapshot_date_key = :date_key                 -- SARGABLE (ix_..._provider_date_key)
+          AND f.delay_stop_id IS NOT NULL
+          AND f.delay_seconds IS NOT NULL
+          AND ABS(f.delay_seconds) <= {GHOST_DELAY_ABS_SECONDS}  -- GHOST clamp (ghosts + nulls out)
+    ) AS b
+    GROUP BY b.provider_id, b.stop_id, b.route_id, b.shift
+    ON CONFLICT (provider_id, stop_id, route_id, provider_local_date, shift)
     DO UPDATE SET
         observation_count  = EXCLUDED.observation_count,
         severe_delay_count = EXCLUDED.severe_delay_count,
@@ -897,11 +961,15 @@ DELETE_REPORTING_AGGREGATES = {
     },
 }
 
+# SCOPE REBASELINE (2026-07-02): the spine's route-attributed-only population
+# (route_id IS NOT NULL) replaces the legacy hourly sums that included the
+# '__unrouted__' partition — affected_route_count/delayed_trip_count cover
+# attributed observations; GC1.5 quantifies the unrouted share on prod.
 # GC1 / Step G1 re-pointed every metric READER off gold.route_delay_hourly onto
 # gold.route_delay_spine, but this builder is KEPT: gold.public_route_reliability_daily
 # (a VIEW read by receipts.worst_route + route_reliability's daily period) still reads
 # route_delay_hourly, so the table must stay built until that view is re-pointed too
-# (a rebaseline of the view's avg_delay_seconds + worst-route ranking — deferred beyond G1).
+# (a rebaseline of the view's avg_delay_seconds + worst-route ranking — GC1.5 owns the drop).
 UPSERT_ROUTE_DELAY_HOURLY = named_query(
     "rollup.route_delay_hourly.upsert",
     f"""
@@ -1005,9 +1073,9 @@ UPSERT_ROUTE_HABIT_SCORE = named_query(
     """
     -- GC1 / Step G1: re-pointed off gold.route_delay_hourly onto the append-only
     -- gold.route_delay_spine (route_delay_hourly is KEPT — public_route_reliability_daily
-    -- still reads it; its drop is deferred beyond G1). hour_of_day_local + service_local_date are
+    -- still reads it; GC1.5 owns the drop). hour_of_day_local + provider_local_date are
     -- stored provider-local on the spine, so the timezone(EXTRACT(...)) re-projection
-    -- is dropped (dow = EXTRACT(ISODOW FROM service_local_date), both DST-safe). Parity:
+    -- is dropped (dow = EXTRACT(ISODOW FROM provider_local_date), both DST-safe). Parity:
     --  * observation_count = SUM(observation_count) and severe_delay_count =
     --    SUM(severe_delay_count) are EXACT (identical additive counts; the spine merges
     --    the per-direction rows the hourly rollup never split).
@@ -1020,7 +1088,7 @@ UPSERT_ROUTE_HABIT_SCORE = named_query(
         SELECT
             sp.provider_id,
             sp.route_id,
-            EXTRACT(ISODOW FROM sp.service_local_date)::integer AS day_of_week_iso,
+            EXTRACT(ISODOW FROM sp.provider_local_date)::integer AS day_of_week_iso,
             sp.hour_of_day_local::integer AS hour_of_day_local,
             SUM(sp.observation_count)::integer AS observation_count,
             ROUND(
@@ -1091,7 +1159,7 @@ UPSERT_REPEATED_PROBLEM_ROUTE_STOP = named_query(
             sp.route_id AS entity_id,
             sp.route_id AS route_id,
             'week'::text AS period_grain,
-            date_trunc('week', sp.service_local_date)::date AS period_start_local,
+            date_trunc('week', sp.provider_local_date)::date AS period_start_local,
             SUM(sp.severe_delay_count)::integer AS issue_count,
             ROUND(
                 SUM(sp.sum_delay_seconds)::numeric
@@ -1119,7 +1187,7 @@ UPSERT_REPEATED_PROBLEM_ROUTE_STOP = named_query(
             COALESCE(s.stop_id, '__unknown_stop__') AS entity_id,
             COALESCE(s.route_id, '__unrouted__') AS route_id,
             'week'::text AS period_grain,
-            date_trunc('week', s.service_local_date)::date AS period_start_local,
+            date_trunc('week', s.provider_local_date)::date AS period_start_local,
             SUM(s.severe_delay_count)::integer AS issue_count,
             ROUND(
                 SUM(s.sum_delay_seconds)::numeric
@@ -1191,7 +1259,7 @@ UPSERT_CITIZEN_ACCOUNTABILITY_DAILY = named_query(
     ),
     -- GC1 / Step G1: re-pointed off gold.route_delay_hourly onto the append-only
     -- gold.route_delay_spine (route_delay_hourly is KEPT for public_route_reliability_daily;
-    -- its drop is deferred beyond G1). The spine stores service_local_date directly,
+    -- GC1.5 owns the drop). The spine stores provider_local_date directly,
     -- so the day grain drops the timezone()::date cast and the window is a local-date
     -- lower bound (built_at's provider-local date - (open_window_days + 2)), matching the
     -- legacy period_start_utc >= built_at - (open_window_days+2 days) intent one day-grain
@@ -1214,7 +1282,7 @@ UPSERT_CITIZEN_ACCOUNTABILITY_DAILY = named_query(
         SELECT
             sp.provider_id,
             sp.route_id,
-            sp.service_local_date AS provider_local_date,
+            sp.provider_local_date,
             SUM(sp.severe_delay_count)::integer AS severe_delay_count,
             SUM(sp.delayed_trip_count)::integer AS delayed_trip_count,
             ROUND(
@@ -1225,14 +1293,14 @@ UPSERT_CITIZEN_ACCOUNTABILITY_DAILY = named_query(
             ) AS avg_delay_seconds
         FROM gold.route_delay_spine AS sp
         WHERE sp.provider_id = :provider_id
-          AND sp.service_local_date >= (
+          AND sp.provider_local_date >= (
               (timezone(
                   (SELECT dp.timezone FROM gold.dim_provider AS dp
                    WHERE dp.provider_id = :provider_id),
                   CAST(:built_at_utc AS timestamptz)
               ))::date - (:open_window_days + 2)
           )
-        GROUP BY sp.provider_id, sp.route_id, sp.service_local_date, sp.hour_of_day_local
+        GROUP BY sp.provider_id, sp.route_id, sp.provider_local_date, sp.hour_of_day_local
     ),
     route_daily AS (
         SELECT
@@ -1594,7 +1662,7 @@ UPSERT_ROUTE_HEADWAY_DIRECTION_DAILY = named_query(
 
 # S7-B finest-grain additive HEADWAY family. Distinct from UPSERT_ROUTE_HEADWAY_DAILY (above,
 # writes the 14-day-rolling route_headway_by_shift) — this is an APPEND-ONLY closed-day rollup
-# keyed by (provider, route, service_local_date, shift, direction) storing a gap histogram +
+# keyed by (provider, route, provider_local_date, shift, direction) storing a gap histogram +
 # moment sums so a windowed read recomposes the median (CDF-interp), CoV (Bessel n-1 pooled SD)
 # + %bunched. EVERY direction stored (busiest-direction argmax is read-time, per window). The
 # clamp (0 < gap_min < 240) + n>=2 guard are byte-identical to route_headway_by_shift. Binds
@@ -1677,7 +1745,7 @@ UPSERT_ROUTE_HEADWAY_SHIFT_DAILY = named_query(
         GROUP BY provider_id, route_id, direction_id, shift
     )
     INSERT INTO gold.route_headway_shift_daily (
-        provider_id, route_id, service_local_date, shift, direction_id,
+        provider_id, route_id, provider_local_date, shift, direction_id,
         gap_count, sum_gap_min, sum_gap_sq_min, bunched_gap_count, trip_count,
         gap_histogram, built_at_utc
     )
@@ -1707,7 +1775,7 @@ UPSERT_ROUTE_HEADWAY_SHIFT_DAILY = named_query(
     -- D7 weekend-leak guard: only attribute to a WEEKDAY :local_date.
     WHERE EXTRACT(ISODOW FROM CAST(:local_date AS date)) BETWEEN 1 AND 5
     GROUP BY f.provider_id, f.route_id, f.shift, f.direction_id
-    ON CONFLICT (provider_id, route_id, service_local_date, shift, direction_id) DO UPDATE SET
+    ON CONFLICT (provider_id, route_id, provider_local_date, shift, direction_id) DO UPDATE SET
         gap_count         = EXCLUDED.gap_count,
         sum_gap_min       = EXCLUDED.sum_gap_min,
         sum_gap_sq_min    = EXCLUDED.sum_gap_sq_min,
@@ -1832,6 +1900,7 @@ class WarmRollupBuildResult:
     built_route_delay_spine_days: int = 0
     built_route_headway_shift_daily_days: int = 0
     built_stop_delay_spine_days: int = 0
+    built_stop_delay_shift_daily_days: int = 0
     # True when the provider is enrolled but not yet seeded (no gold.dim_provider
     # row): the build is a logged no-op rather than a crash.
     skipped_not_seeded: bool = False
@@ -1853,6 +1922,7 @@ class WarmRollupBuildResult:
             "built_route_delay_spine_days": self.built_route_delay_spine_days,
             "built_route_headway_shift_daily_days": self.built_route_headway_shift_daily_days,
             "built_stop_delay_spine_days": self.built_stop_delay_spine_days,
+            "built_stop_delay_shift_daily_days": self.built_stop_delay_shift_daily_days,
             "reporting_aggregate_row_counts": self.reporting_aggregate_row_counts,
             "completed_at_utc": self.completed_at_utc.isoformat(),
         }
@@ -2165,6 +2235,19 @@ def build_warm_rollups(
         now=now,
     )
 
+    # Stop delay shift-daily — shift grain of the stop-delay family (GC1 / Step G4). Reads
+    # fact_trip_delay_snapshot -> default trip-delay missing-day calendar. ALL-DAYS.
+    # APPEND-ONLY (NOT in REPORTING_AGGREGATE_TABLES); accrued history is never wiped.
+    built_stop_delay_shift = _build_percentile_days(
+        engine,
+        provider_id=provider_id,
+        rollup_kind="stop_delay_shift_daily",
+        upsert=UPSERT_STOP_DELAY_SHIFT_DAILY,
+        today_key=today_key,
+        floor_key=floor_key,
+        now=now,
+    )
+
     # Reporting aggregates (full DELETE+UPSERT refresh) in their own transaction,
     # so a failure here never rolls back the committed 5m + daily-builder work.
     with engine.begin() as conn:
@@ -2216,6 +2299,7 @@ def build_warm_rollups(
         built_route_delay_spine_days=built_route_delay_spine,
         built_route_headway_shift_daily_days=built_route_headway_shift_daily,
         built_stop_delay_spine_days=built_stop_delay_spine,
+        built_stop_delay_shift_daily_days=built_stop_delay_shift,
     )
 
 
@@ -2246,7 +2330,7 @@ def build_warm_rollups(
 class RebuildableKind:
     rollup_kind: str  # == warm_rollup_periods.rollup_kind and the --kinds key
     table: str  # gold.<table> ROW table (bare name, from this trusted registry)
-    date_column: str  # ROW date column: provider_local_date | service_local_date
+    date_column: str  # ROW date column (provider-local calendar day)
     upsert: object  # the UPSERT_* text() the builder runs per day
     select_missing: object  # SELECT_MISSING_PERCENTILE_DAYS | _OCCUPANCY_DAYS
     service_day_offset: int  # watermark/run date = ROW date + this (0 or 1)
@@ -2322,7 +2406,7 @@ REBUILDABLE_KINDS: dict[str, RebuildableKind] = {
     "route_delay_spine": RebuildableKind(
         "route_delay_spine",
         "route_delay_spine",
-        "service_local_date",
+        "provider_local_date",
         UPSERT_ROUTE_DELAY_SPINE,
         SELECT_MISSING_PERCENTILE_DAYS,
         0,
@@ -2330,7 +2414,7 @@ REBUILDABLE_KINDS: dict[str, RebuildableKind] = {
     "route_headway_shift_daily": RebuildableKind(
         "route_headway_shift_daily",
         "route_headway_shift_daily",
-        "service_local_date",
+        "provider_local_date",
         UPSERT_ROUTE_HEADWAY_SHIFT_DAILY,
         SELECT_MISSING_PERCENTILE_DAYS,
         0,
@@ -2338,8 +2422,16 @@ REBUILDABLE_KINDS: dict[str, RebuildableKind] = {
     "stop_delay_spine": RebuildableKind(
         "stop_delay_spine",
         "stop_delay_spine",
-        "service_local_date",
+        "provider_local_date",
         UPSERT_STOP_DELAY_SPINE,
+        SELECT_MISSING_PERCENTILE_DAYS,
+        0,
+    ),
+    "stop_delay_shift_daily": RebuildableKind(
+        "stop_delay_shift_daily",
+        "stop_delay_shift_daily",
+        "provider_local_date",
+        UPSERT_STOP_DELAY_SHIFT_DAILY,
         SELECT_MISSING_PERCENTILE_DAYS,
         0,
     ),

@@ -134,12 +134,12 @@ _HOTSPOTS_SQL = named_query(
     -- NULL at build); week_start_local is the feed-local ISO-week Monday.
     route_spine_weekly AS (
         SELECT route_id,
-               date_trunc('week', service_local_date)::date AS week_start_local,
+               date_trunc('week', provider_local_date)::date AS week_start_local,
                SUM(on_time_observation_count) AS on_time_observation_count,
                SUM(delay_observation_count)   AS delay_observation_count
         FROM gold.route_delay_spine
         WHERE provider_id = :provider_id
-        GROUP BY route_id, date_trunc('week', service_local_date)::date
+        GROUP BY route_id, date_trunc('week', provider_local_date)::date
     ),
     -- Network baseline OTP for the target week: real on_time/known aggregated
     -- over ALL routes, numerator and denominator scoped together to on-time-known
@@ -160,12 +160,12 @@ _HOTSPOTS_SQL = named_query(
     -- per-stop total (which also carried the unrouted partition).
     stop_spine_weekly AS (
         SELECT stop_id,
-               date_trunc('week', service_local_date)::date AS week_start_local,
+               date_trunc('week', provider_local_date)::date AS week_start_local,
                SUM(observation_count)  AS observation_count,
                SUM(severe_delay_count) AS severe_delay_count
         FROM gold.stop_delay_spine
         WHERE provider_id = :provider_id
-        GROUP BY stop_id, date_trunc('week', service_local_date)::date
+        GROUP BY stop_id, date_trunc('week', provider_local_date)::date
     ),
     -- Stop-grain network baseline for the target week: the SAME severe(>300s)
     -- proxy a stop cell uses ((obs - severe)/obs), aggregated across ALL stops.
@@ -344,9 +344,12 @@ _RECEIPTS_ACCOUNTABILITY_SQL = named_query(
 )
 
 # Network-level daily aggregation from the route delay spine (last ~31 local days).
-# GC1 / Step G1: re-pointed off gold.route_delay_hourly onto gold.route_delay_spine
+# GC1 / Step G1: re-pointed off gold.route_delay_hourly onto gold.route_delay_spine.
+# SCOPE REBASELINE (2026-07-02): spine sums cover route-attributed observations only
+# (route_id IS NOT NULL at build); the legacy path included the '__unrouted__'
+# partition. GC1.5 quantifies the unrouted share on prod before the hourly drop.
 # (route_delay_hourly is KEPT — public_route_reliability_daily, read by worst_route
-# below, still depends on it; its drop is deferred beyond G1). service_local_date is
+# below, still depends on it; its drop is deferred beyond G1). provider_local_date is
 # provider-local, dropping the timezone()::date cast + the dim_provider join. Parity:
 #  * known_obs = SUM(delay_observation_count) and severe = SUM(severe_delay_count)
 #    are EXACT — so otp_pct / severe_pct are byte-identical.
@@ -360,7 +363,7 @@ _RECEIPTS_ACCOUNTABILITY_SQL = named_query(
 _RECEIPTS_NETWORK_DAILY_SQL = named_query(
     "receipts.network_daily",
     """
-    SELECT sp.service_local_date                        AS local_date,
+    SELECT sp.provider_local_date                        AS local_date,
            SUM(sp.delay_observation_count)              AS known_obs,
            SUM(sp.on_time_observation_count)            AS on_time,
            SUM(sp.severe_delay_count)                   AS severe,
@@ -369,8 +372,8 @@ _RECEIPTS_NETWORK_DAILY_SQL = named_query(
                 FROM unnest(sp.delay_histogram) AS x))  AS inclamp_obs
     FROM gold.route_delay_spine AS sp
     WHERE sp.provider_id = :provider_id
-      AND sp.service_local_date >= (now() AT TIME ZONE 'UTC')::date - 31
-    GROUP BY sp.service_local_date
+      AND sp.provider_local_date >= (now() AT TIME ZONE 'UTC')::date - 31
+    GROUP BY sp.provider_local_date
     """
 )
 

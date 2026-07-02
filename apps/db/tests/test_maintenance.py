@@ -80,6 +80,7 @@ EXPECTED_GOLD_AGGREGATE_TABLE_COUNTS = {
     "gold.route_delay_spine": 32,
     "gold.route_headway_shift_daily": 33,
     "gold.stop_delay_spine": 34,
+    "gold.stop_delay_shift_daily": 35,
 }
 
 
@@ -1370,9 +1371,31 @@ def test_stop_delay_spine_is_append_only_with_retention() -> None:
     )
 
     assert "gold.stop_delay_spine" in GOLD_APPEND_ONLY_DAILY_TABLES
-    assert ("gold.stop_delay_spine", "service_local_date", True) in GOLD_AGGREGATE_RETENTION_COLUMNS
+    assert (
+        "gold.stop_delay_spine",
+        "provider_local_date",
+        True,
+    ) in GOLD_AGGREGATE_RETENTION_COLUMNS
     # the reporting registry is unqualified table names (DELETE+UPSERT rebuild); the spine is neither.
     assert "stop_delay_spine" not in REPORTING_AGGREGATE_TABLES
+
+
+def test_stop_delay_shift_daily_is_append_only_with_retention() -> None:
+    """GC1 / Step G4 (migration 0071): gold.stop_delay_shift_daily is append-only (pruned by date,
+    never DELETE+UPSERT wiped) — in the append-only + retention registries, NOT in reporting."""
+    from transit_ops.gold.rollups import REPORTING_AGGREGATE_TABLES
+    from transit_ops.maintenance.gold import (
+        GOLD_AGGREGATE_RETENTION_COLUMNS,
+        GOLD_APPEND_ONLY_DAILY_TABLES,
+    )
+
+    assert "gold.stop_delay_shift_daily" in GOLD_APPEND_ONLY_DAILY_TABLES
+    assert (
+        "gold.stop_delay_shift_daily",
+        "provider_local_date",
+        True,
+    ) in GOLD_AGGREGATE_RETENTION_COLUMNS
+    assert "stop_delay_shift_daily" not in REPORTING_AGGREGATE_TABLES
 
 
 def test_schedule_version_service_summary_is_append_only_and_never_pruned() -> None:

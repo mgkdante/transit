@@ -486,10 +486,10 @@ def test_repeated_problem_route_issue_count_matches_spine_weekly_severe() -> Non
             (r["route_id"], r["wk"]): r["severe"]
             for r in connection.execute(
                 text(
-                    "SELECT route_id, date_trunc('week', service_local_date)::date AS wk, "
+                    "SELECT route_id, date_trunc('week', provider_local_date)::date AS wk, "
                     "       SUM(severe_delay_count)::int AS severe "
                     "FROM gold.route_delay_spine WHERE provider_id = :p "
-                    "GROUP BY route_id, date_trunc('week', service_local_date)::date "
+                    "GROUP BY route_id, date_trunc('week', provider_local_date)::date "
                     "HAVING SUM(severe_delay_count) > 0"
                 ),
                 {"p": PROVIDER},
