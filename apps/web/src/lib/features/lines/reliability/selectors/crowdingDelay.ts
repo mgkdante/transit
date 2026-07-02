@@ -25,7 +25,7 @@ export interface CrowdingDelayLabels {
 	bandLabel: (code: OccupancyCode) => string;
 	/** Short marker appended to an absent band's label (e.g. "no data"). */
 	noDataMarker: string;
-	/** Optional secondary tooltip line for a present cell (e.g. "median 0.4 min · n=120"). */
+	/** Optional secondary tooltip line for a present cell (e.g. "typical 0.4 min · n=120"). */
 	noteFor?: (cell: CrowdingDelayCell) => string | undefined;
 }
 
