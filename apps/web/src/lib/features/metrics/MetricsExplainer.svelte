@@ -24,12 +24,16 @@
     · DESKTOP (>=lg): a sticky table-of-contents rail (shared TocNav) on the left +
       the measured content column on the right. The rail tracks the current section
       (activeId) and scrolls to its target on click. The ToC carries its OWN
-      user-driven collapse (its chevron, persisted via sectionKey="metrics-toc"),
-      DISTINCT from FOCUS/quiet — FOCUS collapses only the section cards, NEVER the
-      ToC, and nothing wires the rail's collapse to the quiet state.
+      user-driven collapse (its chevron, persisted via sectionKey="metrics-toc").
+      S10 (2026-07-02): the rail ALSO follows FOCUS now (yesid Quiet-Mode parity) —
+      FOCUS ON folds it (closeSignal), FOCUS OFF reopens it (openSignal); the
+      reader's manual chevron still works between signals.
     · The provenance preamble + one CollapsibleSection card PER METRIC (number
       badge, `data-toc` anchor, deep-link `id` on the section block) carry the
-      definition / math / SQL / "what it's NOT" / caveats.
+      definition / math / SQL / "what it's NOT" / caveats. S10: every card is
+      DEFAULT-CLOSED with its own persisted open-state (sectionKey
+      `metrics-card-<anchor>`); a mount/hashchange opener + ToC navigation open a
+      target card so deep-links + jumps reveal content on the default-closed page.
     · MOBILE (<lg): the shared TocPill floating pill + drawer drives the same
       activeId/onNavigate.
     · ONE IntersectionObserver (observeActiveToc over `[data-toc]`) owns activeId
@@ -38,9 +42,10 @@
   Composes the brand/layout spine: the article header band (SurfaceHeader +
   .detail-header-grid) + the hazard Separator + SectionLabel + the shared CodeBlock
   (SQL syntax chrome) + the shared shared/ TOC + collapsible-card kit
-  (CollapsibleSection / TocNav / TocPill / toc.ts). The measured-article OUTER
-  chrome (the edge-title grid + accent-rail + metro dots) lives in the co-located
-  metrics/+layout.svelte, ported from the yesid blog/projects listing layout.
+  (CollapsibleSection / TocNav / TocPill / toc.ts). The co-located
+  metrics/+layout.svelte is a bare pass-through (S10 retired the rotated edge-word
+  grid + accent-rail + metro dots — see that file's header); all of this surface's
+  chrome (header band, hazard stripe, body grid) lives right here.
 
   DOCTRINE: no data marks here (prose + SQL), so the dataviz scale is not in play;
   --primary appears only on interactive chrome (the TOC, the pill, the back-to-top
@@ -76,6 +81,7 @@
 		type MetricEntry,
 	} from './metrics.content';
 	import { metricsCopy } from './metrics.copy';
+	import EasterProse from './EasterProse.svelte';
 
 	const locale: Locale = getLocale();
 	const t = $derived(metricsCopy[locale]);
@@ -106,6 +112,28 @@
 	const provenanceUnavailable = $derived(
 		provenance.settled && !provenance.data?.conformance && provenance.error != null,
 	);
+
+	// "How we measure" doctrine constants, read DYNAMICALLY from the published
+	// provenance.methodology (min_n_rate / wilson_z are machine-readable numbers the
+	// pipeline serves — provenance.py). We render the SERVED values verbatim, never a
+	// hardcoded 30 / 1.96, so the page can never drift from the run. methodology is
+	// typed Record<string, unknown> (schema keeps it open), so we coerce each value to
+	// a finite number and fall back to honest-absence copy when either is missing (the
+	// resource is supplementary — a failed/empty fetch simply yields no constants line).
+	const methodologyNumber = (key: string): number | null => {
+		const raw = provenance.data?.methodology?.[key];
+		return typeof raw === 'number' && Number.isFinite(raw) ? raw : null;
+	};
+	const doctrineConstants = $derived.by(() => {
+		const minN = methodologyNumber('min_n_rate');
+		const wilsonZ = methodologyNumber('wilson_z');
+		if (minN == null || wilsonZ == null) return null;
+		// Number → string via the active locale so decimals read naturally (1,96 fr / 1.96 en).
+		return {
+			minN: minN.toLocaleString(locale),
+			wilsonZ: wilsonZ.toLocaleString(locale),
+		};
+	});
 
 	// Group entries by cluster, preserving the canonical surface cluster order and
 	// the in-array metric order within each cluster. Empty clusters are dropped.
@@ -189,11 +217,20 @@
 	// ── Quiet / FOCUS mode (focus reading) ─────────────────────────────────────
 	// A restrained header control that enters a distraction-free reading state for
 	// the methodology article (mirrors the yesid.dev detail-page "Quiet mode" switch).
-	// Per the yesid.dev contract, FOCUS does exactly ONE thing: it COLLAPSES every
-	// metric section card so the page becomes a scannable stack of headings. It NEVER
-	// hides the table of contents, NEVER changes the grid columns, and NEVER drops
-	// the page gutter — the ToC rail stays present so the reader can still navigate
-	// while the cards are shut. Default OFF leaves the cards open.
+	//
+	// S10 (2026-07-02) — DEFAULT-CLOSED + FOCUS parity. The page is now a scannable
+	// stack of CLOSED cards on first visit (D3): each metric/lacunes/live-positions
+	// card owns its own persisted open-state (sectionKey `metrics-card-<anchor>`),
+	// default closed, and a reader opens the ones they want (or jumps from the ToC /
+	// an (i) deep-link, which opens the target). FOCUS is reconciled to yesid's
+	// Quiet-Mode signal contract:
+	//   · FOCUS ON  → collapse EVERY card AND fold the ToC rail (closeSignal bump).
+	//   · FOCUS OFF → reopen the ToC rail (tocOpenSignal bump); the cards STAY closed
+	//     (deviation from yesid's openSignal-opens-ALL: the page is default-closed, so
+	//     unfocus must not explode all 14 cards open — the operator's focused-
+	//     experience mandate). Only the ToC receives the open signal; cards do not.
+	// This replaces the pre-S10 model where FOCUS drove a single global `cardsOpen`
+	// and the ToC was documented Focus-INDEPENDENT.
 	//
 	// slice-9.8-B — SESSION-BY-DEFAULT, OPTIONALLY PINNED. Two controls now sit in
 	// the header (the yesid QuietModeButton pair):
@@ -215,10 +252,35 @@
 	let quiet = $state(false);
 	let remembered = $state(false);
 
-	// FOCUS drives the metric/lacunes cards' open state directly: open when calm,
-	// collapsed when in focus. `cardsOpen` is the single source the cards bind to.
-	// (The ToC rail is NEVER bound to this — FOCUS collapses cards, never the ToC.)
-	const cardsOpen = $derived(!quiet);
+	// S10 FOCUS signals (yesid closeSignal/openSignal idiom, page-owned). Bumping
+	// `closeSignal` collapses every card + folds the ToC; bumping `tocOpenSignal`
+	// reopens the ToC ONLY (cards stay closed — the default-closed deviation).
+	// Cards receive `closeSignal` alone; the ToC receives both. Monotonic counters
+	// so CollapsibleSection's edge-triggered effects never fire on a fresh mount.
+	let closeSignal = $state(0);
+	let tocOpenSignal = $state(0);
+
+	// Per-card persisted-open key. Each metric/lacunes/live-positions card owns its
+	// own sessionStorage-backed open state under this stable, locale-free key, so
+	// the default is CLOSED (persisted() seeds from the `open` prop = false) and a
+	// reader's choice survives a same-tab locale switch. Distinct from the ToC's own
+	// `metrics-toc` key.
+	const cardKey = (anchor: string): string => `metrics-card-${anchor}`;
+
+	// Per-card "open THIS card" signal counters (yesid openSignal idiom, one per
+	// anchor). The mount/hashchange opener + ToC navigation bump the target's counter;
+	// CollapsibleSection's edge-triggered openSignal effect opens exactly that card
+	// (and, via setOpen, writes its persisted key). A plain object is fine — the keys
+	// are a fixed set and each value is read reactively through cardOpenSignal().
+	let cardOpenSignals = $state<Record<string, number>>({});
+	const cardOpenSignal = (anchor: string): number => cardOpenSignals[anchor] ?? 0;
+
+	// Open a specific card by anchor by bumping its open-signal (the same mechanism
+	// FOCUS uses to CLOSE cards, in reverse). Used by the mount + hashchange opener
+	// and by ToC navigation, so a closed target is opened before we scroll to it.
+	function openCard(anchor: string): void {
+		cardOpenSignals = { ...cardOpenSignals, [anchor]: cardOpenSignal(anchor) + 1 };
+	}
 
 	onMount(() => {
 		try {
@@ -228,6 +290,10 @@
 			quiet = remembered
 				? localStorage.getItem(QUIET_STORAGE_KEY) === '1'
 				: sessionStorage.getItem(QUIET_STORAGE_KEY) === '1';
+			// A restored FOCUS-ON must collapse the cards it applies to (they default
+			// closed anyway, but be explicit) AND fold the ToC — bump the close signal
+			// so the page paints in the focused state.
+			if (quiet) closeSignal += 1;
 		} catch {
 			/* private mode / disabled storage — session-only FOCUS is fine */
 		}
@@ -253,6 +319,10 @@
 	function toggleQuiet(): void {
 		quiet = !quiet;
 		persistQuiet();
+		// FOCUS ON → collapse every card + fold the ToC (closeSignal). FOCUS OFF →
+		// reopen the ToC only (tocOpenSignal); the cards stay closed by design.
+		if (quiet) closeSignal += 1;
+		else tocOpenSignal += 1;
 	}
 
 	// Pin / unpin the FOCUS preference. Pinning promotes the current FOCUS value to
@@ -269,6 +339,67 @@
 		persistQuiet();
 	}
 
+	// The set of anchors that correspond to a COLLAPSIBLE CARD (every metric card
+	// + the live-positions + structural-gaps cards). The provenance preamble is a
+	// plain <section>, NOT a card, so its anchor is deliberately absent: a deep-link
+	// to it scrolls without any open logic (the "opener must distinguish" contract —
+	// opening a non-collapsible section is the lane-1 risk we guard against here).
+	const openableAnchors = $derived(
+		new Set<string>([
+			...orderedMetrics.map((m) => m.anchor),
+			LIVE_POSITIONS_ANCHOR,
+			LACUNES_ANCHOR,
+		]),
+	);
+
+	// ── Hash opener (mount + hashchange) ───────────────────────────────────────
+	// A deep-link to /metrics#<anchor> (an (i) MetricInfo tip, an on-map "How this
+	// works" link, a shared URL) must REVEAL its target on a default-closed page. If
+	// the hash names a collapsible card, open ONLY that card, then let the native
+	// anchor scroll land on it; a non-card anchor (the provenance preamble) is left
+	// to scroll on its own. Runs once on mount (for the initial hash) and on every
+	// hashchange (same-page (i) navigation swaps the hash without a remount).
+	function openFromHash(): void {
+		const raw = window.location.hash.replace(/^#/, '');
+		if (!raw) return;
+		const anchor = decodeURIComponent(raw);
+		if (openableAnchors.has(anchor)) openCard(anchor);
+	}
+
+	onMount(() => {
+		openFromHash();
+		window.addEventListener('hashchange', openFromHash);
+		return () => window.removeEventListener('hashchange', openFromHash);
+	});
+
+	// ── Page-title flourish (D4) ───────────────────────────────────────────────
+	// The house wordmark hover treatment on the /metrics title: reuse the SAME
+	// effect family (bounce / wiggle / wave / spin) on the SurfaceHeader display
+	// heading. The heading is rendered by the shared SectionHeading primitive
+	// (`.section-heading-text`), so we grab it from the bound header on mount rather
+	// than modify that shared component. easterWordHover self-disables on touch +
+	// reduced-motion (those readers get a static title) and lazy-loads GSAP, so the
+	// flourish never touches the critical path or the a11y/reduced-motion contract.
+	let headerEl = $state<HTMLElement>();
+	onMount(() => {
+		const titleEl = headerEl?.querySelector<HTMLElement>('.section-heading-text');
+		if (!titleEl) return;
+		let action: { destroy(): void } | undefined;
+		let cancelled = false;
+		void import('./easterWordHover')
+			.then(({ easterWordHover }) => {
+				if (cancelled) return;
+				action = easterWordHover(titleEl, { autoPlay: true, autoPlayDelay: 550 });
+			})
+			.catch(() => {
+				/* pure flourish — a failed chunk leaves a static title */
+			});
+		return () => {
+			cancelled = true;
+			action?.destroy();
+		};
+	});
+
 	// ── Active-section tracking ────────────────────────────────────────────────
 	// One IntersectionObserver over the section cards' [data-toc] anchors owns the
 	// active id; the desktop rail and the mobile pill both receive it as a prop (no
@@ -277,12 +408,15 @@
 	onMount(() => observeActiveToc((id) => (activeId = id)));
 
 	// ── TOC navigation ──────────────────────────────────────────────────────────
-	// A TOC click scrolls to its section card (1:1 with the yesid detail pages,
-	// whose CollapsibleSection scrollToHeading just scrolls). Cards open by default
-	// and persist their open-state per sectionKey across a locale switch, so a jump
-	// lands on already-open content. await tick() keeps the scroll a frame after any
-	// reactive open settles. Reduced-motion drops the smooth scroll.
+	// A TOC click OPENS its target card (default-closed page: a jump must reveal, not
+	// land on a shut card), then scrolls to it. Opening a card while its siblings
+	// stay closed does not disturb the scroll — every card is force-mounted, so the
+	// closed siblings above keep their (collapsed) height and the target lands true.
+	// The provenance preamble is not a card, so it just scrolls. await tick() keeps
+	// the scroll a frame after the reactive open settles. Reduced-motion drops the
+	// smooth scroll.
 	async function navigate(id: string): Promise<void> {
+		if (openableAnchors.has(id)) openCard(id);
 		await tick();
 		tocElement(id)?.scrollIntoView({
 			behavior: prefersReducedMotion.current ? 'auto' : 'smooth',
@@ -297,7 +431,7 @@
 	     behind the SurfaceHeader + the quiet-mode switch. Measured: the header
 	     content re-caps to container-content so the title block reads like an
 	     article masthead, while the dot-grid band itself spans the full width. -->
-	<header class="metrics-header detail-header-grid">
+	<header class="metrics-header detail-header-grid" bind:this={headerEl}>
 		<div class="metrics-header__inner">
 			<SurfaceHeader kicker={t.kicker} heading={t.heading} subheading={t.subheading} lede={t.lede}>
 				<!-- Quiet-mode (focus reading) affordance — a single restrained switch in the
@@ -362,10 +496,11 @@
 		<aside class="context-column">
 			<div class="context-panel toc-scroll">
 				<div class="toc-nav-shell">
-					<!-- The ToC owns its OWN user-driven collapse (its chevron) + persists the
-					     choice across same-tab visits via `sectionKey`. This is INDEPENDENT of
-					     FOCUS/quiet: nothing here passes `quiet`/`cardsOpen` to the rail, so
-					     FOCUS can only collapse the metric cards (below), never the ToC. -->
+					<!-- The ToC keeps its OWN user-driven collapse (its chevron) + persists
+					     the choice across same-tab visits via `sectionKey`. S10 (2026-07-02):
+					     it ALSO follows FOCUS now (yesid Quiet-Mode parity) — `closeSignal`
+					     folds the rail on FOCUS ON, `openSignal` reopens it on FOCUS OFF. The
+					     reader's manual chevron still works and still wins between signals. -->
 					<TocNav
 						entries={tocEntries}
 						{activeId}
@@ -373,6 +508,8 @@
 						heading={t.tocLabel}
 						counterPrefix={t.tocCounterPrefix}
 						sectionKey="metrics-toc"
+						{closeSignal}
+						openSignal={tocOpenSignal}
 					/>
 				</div>
 			</div>
@@ -399,6 +536,46 @@
 					     methodology + structural-gaps card below are unaffected. -->
 					<p class="metrics-provenance-down" role="status">{t.provenance.unavailable}</p>
 				{/if}
+
+				<!-- How we measure: the cross-cutting conventions every metric inherits
+				     (S10). Two static notes (capture-day vs service-day time model; the
+				     2026-07-01 half-away rounding rebaseline) + a doctrine-constants line
+				     rendered from the live provenance.methodology (min_n_rate / wilson_z),
+				     with an honest-absence stand-down when that document has not loaded. -->
+				<div class="metrics-measure">
+					<SectionLabel text={t.provenance.howWeMeasure.label} variant="metric" />
+					<div class="metrics-measure__item">
+						<h3 class="metrics-measure__heading">{t.provenance.howWeMeasure.serviceDay.heading}</h3>
+						<p class="metric__prose">{t.provenance.howWeMeasure.serviceDay.body}</p>
+					</div>
+					<div class="metrics-measure__item">
+						<h3 class="metrics-measure__heading">{t.provenance.howWeMeasure.rounding.heading}</h3>
+						<p class="metric__prose">{t.provenance.howWeMeasure.rounding.body}</p>
+					</div>
+					<div class="metrics-measure__item">
+						<h3 class="metrics-measure__heading">{t.provenance.howWeMeasure.constants.heading}</h3>
+						{#if doctrineConstants}
+							<p class="metric__prose" data-testid="metrics-doctrine-constants">
+								{t.provenance.howWeMeasure.constants.body(
+									doctrineConstants.minN,
+									doctrineConstants.wilsonZ,
+								)}
+							</p>
+						{:else}
+							<!-- Honest-absence: provenance.methodology carries the authoritative
+							     min_n_rate / wilson_z; when it has not loaded we say so rather
+							     than printing a hardcoded 30 / 1.96. -->
+							<p
+								class="metric__prose metric__not"
+								role="status"
+								data-testid="metrics-doctrine-absent"
+							>
+								{t.provenance.howWeMeasure.constants.absent}
+							</p>
+						{/if}
+					</div>
+				</div>
+
 				<div class="metrics-legend">
 					<SectionLabel text={t.confidence.label} variant="metric" />
 					<ul class="metrics-legend__list">
@@ -425,7 +602,10 @@
 								title={entry.name[locale]}
 								anchor={entry.anchor}
 								index={metricIndex}
-								open={cardsOpen}
+								sectionKey={cardKey(entry.anchor)}
+								open={false}
+								{closeSignal}
+								openSignal={cardOpenSignal(entry.anchor)}
 							>
 								<div class="metric__body">
 									<p class="metric__meta">
@@ -435,7 +615,9 @@
 
 									<div class="metric__block">
 										<SectionLabel text={t.sections.definition} variant="metric" />
-										<p class="metric__prose">{entry.definition[locale]}</p>
+										<!-- EasterProse: definition prose carries the tasteful D4 easter-word
+										     flourish (buses / trains / science / agencies), decoration-only. -->
+										<EasterProse text={entry.definition[locale]} class="metric__prose" />
 									</div>
 
 									<div class="metric__block">
@@ -454,7 +636,7 @@
 
 									<div class="metric__block">
 										<SectionLabel text={t.sections.notReally} variant="metric" />
-										<p class="metric__prose metric__not">{entry.notReally[locale]}</p>
+										<EasterProse text={entry.notReally[locale]} class="metric__prose metric__not" />
 									</div>
 
 									<div class="metric__block">
@@ -495,7 +677,10 @@
 				<CollapsibleSection
 					title={t.livePositions.title}
 					anchor={LIVE_POSITIONS_ANCHOR}
-					open={cardsOpen}
+					sectionKey={cardKey(LIVE_POSITIONS_ANCHOR)}
+					open={false}
+					{closeSignal}
+					openSignal={cardOpenSignal(LIVE_POSITIONS_ANCHOR)}
 				>
 					{#snippet icon()}
 						<SectionIcon name="chart" class="h-4 w-4 shrink-0 text-primary" />
@@ -520,7 +705,14 @@
 			     sections, but an icon badge (not a metric number) marks it as a
 			     non-metric section; carries the deep-link target id + data-toc anchor. -->
 			<div class="section-block metrics-lacunes" id={LACUNES_ANCHOR}>
-				<CollapsibleSection title={t.lacunes.title} anchor={LACUNES_ANCHOR} open={cardsOpen}>
+				<CollapsibleSection
+					title={t.lacunes.title}
+					anchor={LACUNES_ANCHOR}
+					sectionKey={cardKey(LACUNES_ANCHOR)}
+					open={false}
+					{closeSignal}
+					openSignal={cardOpenSignal(LACUNES_ANCHOR)}
+				>
 					{#snippet icon()}
 						<SectionIcon name="eye" class="h-4 w-4 shrink-0 text-primary" />
 					{/snippet}
@@ -616,9 +808,12 @@
 		.body-grid {
 			width: 100%;
 			max-width: none;
-			/* Two columns: a fixed-ish ToC rail + a fluid reading column that takes
-			   all the reclaimed width (no third measure rail). */
-			grid-template-columns: minmax(13rem, 17rem) minmax(0, 1fr);
+			/* Two columns: a ToC rail + a fluid reading column. S10 (2026-07-02): the
+			   +layout retired the rotated edge word + accent rail that used to eat the
+			   left of the viewport, so the whole surface reclaims that width. The rail
+			   widens toward the yesid blog/[slug] context-column measure
+			   (min(18rem, 100%)) and the reading column takes the rest. */
+			grid-template-columns: minmax(14rem, 18rem) minmax(0, 1fr);
 			gap: 2.5rem;
 			align-items: start;
 			padding-block: 2.5rem;
@@ -684,6 +879,27 @@
 		font-size: var(--text-small);
 		line-height: 1.6;
 		max-width: 68ch;
+	}
+	/* How-we-measure: named convention notes inside the provenance preamble. Reads
+	   as discrete heading + body blocks, on the same muted prose voice as the rest of
+	   the preamble (no data marks, no --primary). */
+	.metrics-measure {
+		display: flex;
+		flex-direction: column;
+		gap: 1rem;
+	}
+	.metrics-measure__item {
+		display: flex;
+		flex-direction: column;
+		gap: 0.4rem;
+	}
+	.metrics-measure__heading {
+		margin: 0;
+		font-family: var(--font-heading);
+		font-size: var(--text-small);
+		font-weight: 600;
+		line-height: 1.4;
+		color: var(--foreground);
 	}
 	.metrics-legend {
 		display: flex;

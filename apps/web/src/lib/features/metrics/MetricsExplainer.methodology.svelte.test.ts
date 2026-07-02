@@ -78,6 +78,55 @@ describe('MetricsExplainer — live pipeline note', () => {
 	});
 });
 
+describe('MetricsExplainer — "how we measure" doctrine constants (D6, dynamic)', () => {
+	const en = metricsCopy.en;
+
+	it('renders the static service-day + rounding notes regardless of provenance', () => {
+		provState.data = null;
+		render(MetricsExplainer);
+
+		expect(screen.getByText(en.provenance.howWeMeasure.serviceDay.heading)).toBeInTheDocument();
+		expect(screen.getByText(en.provenance.howWeMeasure.serviceDay.body)).toBeInTheDocument();
+		expect(screen.getByText(en.provenance.howWeMeasure.rounding.heading)).toBeInTheDocument();
+		expect(screen.getByText(en.provenance.howWeMeasure.rounding.body)).toBeInTheDocument();
+	});
+
+	it('renders the SERVED min_n_rate / wilson_z verbatim when provenance carries them', () => {
+		provState.data = {
+			conformance: null,
+			methodology: { min_n_rate: 30, wilson_z: 1.96 },
+		} as never;
+		render(MetricsExplainer);
+
+		const line = screen.getByTestId('metrics-doctrine-constants');
+		// The served numbers appear (locale-formatted: 30 and 1.96 in en).
+		expect(line.textContent).toContain('30');
+		expect(line.textContent).toContain('1.96');
+		// The honest-absence stand-down is NOT shown when the values are present.
+		expect(screen.queryByTestId('metrics-doctrine-absent')).toBeNull();
+	});
+
+	it('renders honest-absence (never a hardcoded 30 / 1.96) when methodology is absent', () => {
+		provState.data = null;
+		render(MetricsExplainer);
+
+		expect(screen.getByTestId('metrics-doctrine-absent')).toBeInTheDocument();
+		expect(screen.getByText(en.provenance.howWeMeasure.constants.absent)).toBeInTheDocument();
+		expect(screen.queryByTestId('metrics-doctrine-constants')).toBeNull();
+	});
+
+	it('falls back to honest-absence when only ONE constant is present (never a mixed prose)', () => {
+		provState.data = {
+			conformance: null,
+			methodology: { min_n_rate: 30 }, // wilson_z missing
+		} as never;
+		render(MetricsExplainer);
+
+		expect(screen.getByTestId('metrics-doctrine-absent')).toBeInTheDocument();
+		expect(screen.queryByTestId('metrics-doctrine-constants')).toBeNull();
+	});
+});
+
 describe('MetricsExplainer — provenance edge states (supplementary, never blocking)', () => {
 	const en = metricsCopy.en;
 

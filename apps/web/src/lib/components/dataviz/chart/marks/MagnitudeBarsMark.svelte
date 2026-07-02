@@ -99,7 +99,7 @@
 				     carries a meaningful, bar-scale CI). Drawn ON TOP so the line + caps read over the
 				     bar; the CI was flipped onto the severe scale in the selector so it brackets the bar. -->
 				{#if spec.ciLabel}
-					<MagnitudeCiWhiskers rows={reals} />
+					<MagnitudeCiWhiskers rows={reals} domain={xDomain} />
 				{/if}
 			</Svg>
 			<Tooltip.Root>

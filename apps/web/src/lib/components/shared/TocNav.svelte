@@ -4,14 +4,20 @@
   Badges come from TocBadge (same marks as the section cards). The page owns the
   active id + scroll handler and passes them in.
 
-  COLLAPSE CONTRACT (slice-9.8-B): the ToC has its OWN, USER-DRIVEN collapse
-  affordance (its own chevron) — a reader can manually fold the rail and, when a
-  `sectionKey` is supplied, that collapsed choice persists across same-tab visits.
-  This is DISTINCT from FOCUS/quiet mode: FOCUS collapses the section CARDS only
-  and NEVER touches the ToC. The page MUST NOT drive this collapse from its quiet
-  state — the only thing that closes the ToC is the reader clicking the ToC's own
-  header. Pass `collapsible={false}` (the default-on `collapsible` is true) to opt
-  back into a permanently-open, non-hideable rail.
+  COLLAPSE CONTRACT (slice-9.8-B → REVISED S10 2026-07-02): the ToC keeps its
+  OWN, USER-DRIVEN collapse affordance (its own chevron) — a reader can manually
+  fold the rail and, when a `sectionKey` is supplied, that collapsed choice
+  persists across same-tab visits.
+
+  S10 UPDATE (was: "FOCUS NEVER touches the ToC"): the /metrics FOCUS parity pass
+  reconciled transit to yesid's Quiet-Mode contract, where the ToC's own
+  CollapsibleSection DOES respond to the page's quiet signals (yesid TocNav →
+  CollapsibleSection subscribes to closeSignal/openSignal). Transit now matches:
+  a page may pass `closeSignal` (fold the rail on FOCUS) + `openSignal` (reopen it
+  on unfocus). When neither is wired the rail stays Focus-independent exactly as
+  before (both default `null`). The reader's manual chevron still works and still
+  persists; the signals are edge-triggered so they never fight a fresh mount.
+  Pass `collapsible={false}` for a permanently-open, non-hideable rail.
 
   Ported from yesid.dev shared/TocNav. Deviation: yesid's `.toc-counter-dot`
   glow uses `--glow` (a token transit lacks). Substituted `--primary` (transit's
@@ -31,6 +37,8 @@
 		counterPrefix = 'SEC',
 		collapsible = true,
 		sectionKey = undefined,
+		closeSignal = null,
+		openSignal = null,
 	}: {
 		entries: TocEntry[];
 		activeId: string;
@@ -50,6 +58,19 @@
 		 * stable, locale-free string. Only meaningful when `collapsible` is true.
 		 */
 		sectionKey?: string;
+		/**
+		 * S10 FOCUS parity — optional "fold the rail" signal (yesid closeSignal idiom).
+		 * When a page bumps it, the rail's CollapsibleSection collapses. `null`
+		 * (default) keeps the rail Focus-independent. Forwarded verbatim to the wrapping
+		 * CollapsibleSection.
+		 */
+		closeSignal?: number | null;
+		/**
+		 * S10 FOCUS parity — optional "reopen the rail" signal (yesid openSignal idiom).
+		 * When a page bumps it, the rail reopens. `null` (default) keeps the rail
+		 * Focus-independent. Forwarded verbatim to the wrapping CollapsibleSection.
+		 */
+		openSignal?: number | null;
 	} = $props();
 
 	// Desktop TOC lists only the center-column sections; right-rail cards
@@ -72,7 +93,14 @@
 	it is never wired to FOCUS/quiet (which collapses the section cards, not this).
 	Default-open so the nav is reachable until the reader chooses to fold it.
 -->
-<CollapsibleSection title={heading} {collapsible} {sectionKey} open={true}>
+<CollapsibleSection
+	title={heading}
+	{collapsible}
+	{sectionKey}
+	{closeSignal}
+	{openSignal}
+	open={true}
+>
 	{#snippet icon()}
 		<SectionIcon name="toc" class="h-4 w-4 shrink-0 text-primary" />
 	{/snippet}

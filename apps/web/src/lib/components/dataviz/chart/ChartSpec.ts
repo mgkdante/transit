@@ -121,6 +121,12 @@ export interface MagnitudeBarsSpec extends ChartSpecBase {
 	 * carries wilsonLo/wilsonHi, the interval is surfaced in the hover/focus tooltip + the sr-only
 	 * table (the AT mirror) so the uncertainty is honest, not just the point estimate. i18n stays
 	 * out of the mark. Omit on the scalar/fallback path (no Wilson bounds there).
+	 *
+	 * 2026-07-02 (D5, S7-Handoff/S10 mandate): the CI is now ALSO a VISUAL whisker on the
+	 * magnitude-bars mark — MagnitudeBarsMark renders MagnitudeCiWhiskers (a thin line + end caps
+	 * on the value axis, muted foreground token, no new colour semantics) for every row carrying
+	 * both bounds, clamped to `domain` like the bar. The prior comment declaring this tooltip-only
+	 * was the S12 interim choice, superseded here; the tooltip + sr-only mirror are unchanged.
 	 */
 	readonly ciLabel?: string;
 }

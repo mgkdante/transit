@@ -6,43 +6,34 @@
   bar's (severe-rate) scale by the selector, so the whisker BRACKETS its bar honestly.
 
   Renders INSIDE LayerChart's <Svg> (the bars' plot group), reading the live x/y scales via
-  getChartContext() — the per-row scale access the band-height bars don't expose otherwise. A row
-  missing either bound draws NO whisker (honest absence, never a 0-length mark); degenerate scales
-  (SSR / jsdom, zero-width plot) yield non-finite coords and are filtered out, so this never throws.
+  getChartContext() — the per-row scale access the band-height bars don't expose otherwise. The
+  geometry (both-bounds gate, clamp-to-domain, non-finite filter) is the pure ciWhiskerGeometry()
+  helper so those invariants stay unit-testable off jsdom's zero-width plot. A row missing either
+  bound draws NO whisker (honest absence, never a 0-length mark); a bound outside the spec domain
+  clamps to the axis edge (like the bar); degenerate scales (SSR / jsdom) yield non-finite coords
+  and are filtered out, so this never throws.
 -->
 <script lang="ts">
 	import { getChartContext } from 'layerchart';
 	import type { MagnitudeDatum } from '../ChartSpec';
+	import { ciWhiskerGeometry, type LinearScale, type BandScale } from './ciWhiskerGeometry';
 
 	export interface MagnitudeCiWhiskersProps {
 		/** The rows to draw whiskers for (only those carrying BOTH Wilson bounds draw). */
 		rows: readonly MagnitudeDatum[];
+		/** The mark's absolute [lo,hi] domain — each bound is clamped to it (like the bar). */
+		domain: readonly [number, number];
 	}
-	let { rows }: MagnitudeCiWhiskersProps = $props();
+	let { rows, domain }: MagnitudeCiWhiskersProps = $props();
 
 	const ctx = getChartContext();
 	/** px half-height of the end caps (the vertical ticks at each bound). */
 	const CAP = 4;
 
-	// Per-row whisker geometry, recomputed reactively when the scales change (resize). x via the
-	// SAME linear x-scale the bars use; y via the band scale's row centre. Filtered to finite coords
-	// so a degenerate (pre-layout) scale never emits a NaN line.
+	// Per-row whisker geometry, recomputed reactively when the scales change (resize). The pure
+	// helper does the both-bounds gate, the clamp to the spec domain, and the non-finite filter.
 	const whiskers = $derived(
-		rows
-			.filter((r) => r.wilsonLo != null && r.wilsonHi != null)
-			.map((r) => {
-				const xScale = ctx.xScale as (v: number) => number;
-				const yScale = ctx.yScale as ((v: string) => number) & { bandwidth?: () => number };
-				const top = yScale(r.label);
-				const bw = typeof yScale.bandwidth === 'function' ? yScale.bandwidth() : 0;
-				return {
-					key: r.key,
-					x0: xScale(r.wilsonLo as number),
-					x1: xScale(r.wilsonHi as number),
-					yc: (top ?? 0) + bw / 2,
-				};
-			})
-			.filter((w) => Number.isFinite(w.x0) && Number.isFinite(w.x1) && Number.isFinite(w.yc)),
+		ciWhiskerGeometry(rows, ctx.xScale as LinearScale, ctx.yScale as BandScale, domain),
 	);
 </script>
 
