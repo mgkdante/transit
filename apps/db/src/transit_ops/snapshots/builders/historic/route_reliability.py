@@ -155,11 +155,16 @@ _ROUTE_HEADWAY_DIRECTION_SQL = named_query(
 # universe columns (GC2 H1) are NULL on pre-0073 history + no-schedule editions;
 # service_completeness_pct is derived read-time = 100 * delivered / scheduled, NULL
 # when scheduled is NULL or 0 (honest-unknown, never a fabricated 100%).
-# 2026-07-02 (GC2): delivered > scheduled is LEGITIMATE (added/unscheduled trips +
-# capture-day vs service-day overnight spillover), so the ratio is CLAMPED at 100 —
-# over-delivery reads as fully complete rather than >100% (which the publish gate's
-# 0-100 rate check would otherwise ABORT on). The batch-level id-drift detector
-# (gate.py GATE_ID_DRIFT_WARN_FRACTION) is the signal for systemic overshoot.
+# 2026-07-02 (GC2): delivered > scheduled is LEGITIMATE (added/unscheduled trips),
+# so the ratio is CLAMPED at 100 — over-delivery reads as fully complete rather than
+# >100% (which the publish gate's 0-100 rate check would otherwise ABORT on). The
+# batch-level id-drift detector (gate.py GATE_ID_DRIFT_WARN_FRACTION) is the signal
+# for systemic overshoot.
+# 2026-07-03 (P5.3e / GC2): the capture-day-vs-service-day overnight-spillover cause
+# of over-delivery is ELIMINATED at the source — the rollup now filters the observed
+# universe to the service day (rollups.py UPSERT_ROUTE_CANCELLATION_DAILY, 2-day
+# capture window + start_date = local_date), so numerator and denominator share ONE
+# universe. Remaining delivered > scheduled is real added/unscheduled service only.
 _ROUTE_CANCELLATION_DAILY_SQL = named_query(
     "route.cancellation.daily",
     """

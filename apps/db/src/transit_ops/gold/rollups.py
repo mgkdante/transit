@@ -283,8 +283,26 @@ UPSERT_STOP_DELAY_PERCENTILE_DAILY = named_query(
 # scheduled trips (silver stores NULL); COALESCE(...,0) treats NULL as a normal
 # (non-canceled) trip-day so the denominator is NOT filtered down to only
 # explicitly-tagged trips — otherwise the rate would be systematically inflated.
-# Binds exactly {provider_id, local_date, built_at_utc} so it drops into
-# _build_percentile_days unchanged.
+#
+# GC2 (P5.3e): the observed universe is filtered to the SERVICE day (start_date =
+# :local_date) over a 2-day CAPTURE window {date_key D, date_key D+1}, NOT to the
+# capture day alone. The scheduled denominator (route_scheduled_trips_daily) is a
+# single service-day-D universe, so the numerator must share that universe. Before
+# this fix, `snapshot_date_key = :date_key` counted every start_date captured on day
+# D — including the post-midnight tail of service-day D-1 trips captured before dawn
+# on D. On overnight / cross-midnight (24h night-network) routes that INFLATED
+# obs.total, which UNDER-counted silent_trip_days (= GREATEST(scheduled - obs.total,
+# 0), the inflated obs eating the silent gap) and OVER-counted delivered_trip_days /
+# read-time service_completeness_pct. The daytime portion of service-day D is on
+# date_key D; the overnight tail of service-day D trips is captured before dawn on
+# D+1 (date_key D+1). Both keys are on the sargable (provider_id, snapshot_date_key)
+# index (a 2-key IN), so this does NOT reintroduce the un-sargable-scan deploy
+# hazard. The `start_date = :local_date` filter drops the tail-day's OWN daytime
+# service (its start_date = D+1) and the just-completed day's tail (start_date = D-1)
+# alike. This is byte-identical to the service-span/headway builders' precedent
+# (rollups.py:687-694), only re-grained to build day D rather than D-1. NULL
+# start_date drops out. Binds exactly {provider_id, local_date, date_key,
+# built_at_utc} so it drops into _build_percentile_days unchanged.
 UPSERT_ROUTE_CANCELLATION_DAILY = named_query(
     "rollup.route_cancellation.upsert",
     """
@@ -300,7 +318,15 @@ UPSERT_ROUTE_CANCELLATION_DAILY = named_query(
           AND f.route_id IS NOT NULL
           AND f.trip_id IS NOT NULL
           AND f.start_date IS NOT NULL
-          AND f.snapshot_date_key = :date_key
+          -- TWO-day indexed CAPTURE window: daytime (date_key D) + overnight tail
+          -- (date_key D+1), both sargable on ix_..._provider_date_key (a 2-key IN).
+          AND f.snapshot_date_key IN (
+              :date_key,
+              to_char((CAST(:local_date AS date) + 1), 'YYYYMMDD')::integer
+          )
+          -- Attribute by GTFS SERVICE day, not capture day, so the observed universe
+          -- matches the scheduled denominator (both = service-day :local_date). GC2.
+          AND f.start_date = CAST(:local_date AS date)
         GROUP BY f.provider_id, f.route_id, f.trip_id, f.start_date
     ),
     obs AS (

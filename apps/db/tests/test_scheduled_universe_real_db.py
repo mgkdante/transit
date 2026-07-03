@@ -14,6 +14,11 @@ exceptions define service.
 
 H2 (_representative_services): honors calendar_dates on a calendar_dates-only fixture
 and respects a type=2 removal on the would-be busiest date.
+
+GC2 (P5.3e): the observed cancellation universe is filtered to the SERVICE day so it
+shares ONE universe with the scheduled denominator — a cross-midnight route whose
+overnight tail is captured on D+1 (start_date=D) is counted, while a D+1-service trip
+captured on D+1 is excluded, so silent/delivered/completeness stay correct.
 """
 
 from __future__ import annotations
@@ -472,6 +477,164 @@ def test_fully_dark_scheduled_day_emits_row_and_byte_parity() -> None:
             rows["R2"]["delivered_trip_days"] + rows["R2"]["canceled_trip_days"]
             == rows["R2"]["total_trip_days"]
         )
+    finally:
+        tx.rollback()
+        conn.close()
+        engine.dispose()
+
+
+def _seed_capture_day_snapshot(
+    connection,  # noqa: ANN001
+    *,
+    capture_day: date,
+    hour: int,
+    run_id: int,
+    snapshot_id: int,
+) -> datetime:
+    """Seed one RT ingestion run + snapshot for a capture day (unique per run_id, as
+    the raw.realtime_snapshot_index UNIQUE(ingestion_run_id) constraint requires).
+
+    The shared RT feed_endpoint is inserted idempotently. Returns the captured_at_utc.
+    """
+    connection.execute(
+        text(
+            "INSERT INTO core.feed_endpoints "
+            "(feed_endpoint_id, provider_id, endpoint_key, feed_kind, source_format) "
+            "VALUES (:e, :p, 'trip_updates', 'trip_updates', 'gtfs_rt_trip_updates') "
+            "ON CONFLICT DO NOTHING"
+        ),
+        {"e": RT_ENDPOINT_ID, "p": PROVIDER},
+    )
+    connection.execute(
+        text(
+            "INSERT INTO raw.ingestion_runs "
+            "(ingestion_run_id, provider_id, feed_endpoint_id, run_kind, status) "
+            "VALUES (:r, :p, :e, 'trip_updates', 'succeeded')"
+        ),
+        {"r": run_id, "p": PROVIDER, "e": RT_ENDPOINT_ID},
+    )
+    ts = datetime(capture_day.year, capture_day.month, capture_day.day, hour, 0, tzinfo=UTC)
+    connection.execute(
+        text(
+            "INSERT INTO raw.realtime_snapshot_index "
+            "(realtime_snapshot_id, ingestion_run_id, provider_id, feed_endpoint_id, "
+            " feed_timestamp_utc, entity_count, captured_at_utc) "
+            "VALUES (:s, :r, :p, :e, :ts, 50, :ts)"
+        ),
+        {"s": snapshot_id, "r": run_id, "p": PROVIDER, "e": RT_ENDPOINT_ID, "ts": ts},
+    )
+    return ts
+
+
+def _seed_fact_on_snapshot(
+    connection,  # noqa: ANN001
+    *,
+    trip_id: str,
+    service_day: date,
+    capture_day: date,
+    snapshot_id: int,
+    ts: datetime,
+    entity_index: int,
+    canceled: bool = False,
+) -> None:
+    """Seed ONE RT-observed trip-day whose CAPTURE day (snapshot_date_key /
+    snapshot_local_date) can differ from its GTFS SERVICE day (start_date) — how a
+    cross-midnight trip looks: its post-midnight tail is captured on
+    capture_day = service_day + 1 with start_date = service_day."""
+    connection.execute(
+        text(
+            """
+            INSERT INTO gold.fact_trip_delay_snapshot
+                (provider_id, realtime_snapshot_id, entity_index, snapshot_date_key,
+                 snapshot_local_date, feed_timestamp_utc, captured_at_utc, entity_id,
+                 trip_id, route_id, direction_id, start_date, vehicle_id,
+                 trip_schedule_relationship, delay_seconds, stop_time_update_count,
+                 delay_stop_id, delay_stop_sequence)
+            VALUES (:p, :s, :ei, :dk, :cld, :ts, :ts, :entity, :trip, 'R1', 0,
+                    :svc, NULL, :rel, 0, 0, NULL, NULL)
+            """
+        ),
+        {
+            "p": PROVIDER,
+            "s": snapshot_id,
+            "ei": entity_index,
+            "dk": int(capture_day.strftime("%Y%m%d")),
+            "cld": capture_day,
+            "ts": ts,
+            "entity": f"e{entity_index}",
+            "trip": trip_id,
+            "svc": service_day,
+            "rel": 3 if canceled else None,
+        },
+    )
+
+
+def test_cancellation_observed_universe_filtered_to_service_day() -> None:
+    """GC2 (P5.3e): a cross-midnight route where NAIVE capture-day counting inflates
+    obs.total. Service-day MONDAY has 5 scheduled trips. RT observes:
+      - 3 MONDAY-service trips captured MONDAY daytime (start_date=MONDAY, capture=MONDAY),
+      - 1 MONDAY-service overnight trip captured TUESDAY pre-dawn (start_date=MONDAY,
+        capture=TUESDAY) — the cross-midnight tail,
+      - 1 TUESDAY-service trip captured TUESDAY daytime (start_date=TUESDAY) — a DIFFERENT
+        service day that naive `snapshot_date_key = D` counting would have MISSED (correct)
+        but that a naive `capture in {D, D+1}` window WITHOUT the start_date filter would
+        WRONGLY fold into MONDAY's obs.total.
+
+    True MONDAY-service observed universe = 4 (3 daytime + 1 overnight tail). With 5
+    scheduled: silent = 5 - 4 = 1, delivered = 4. The fix asserts the observed universe
+    now equals the scheduled universe's service day (NOT the capture day) so silent /
+    delivered / completeness are correct on cross-midnight routes.
+    """
+    engine, conn, tx = _tx()
+    try:
+        _seed_provider_edition(conn, with_calendar=True)
+        _add_calendar(conn, "weekday", weekdays=True, saturday=False)
+        _add_trips(conn, "weekday", ["t1", "t2", "t3", "t4", "t5"])  # 5 scheduled on MONDAY
+        # Capture-day MONDAY snapshot (daytime) + capture-day TUESDAY snapshot (holds BOTH
+        # the MONDAY overnight tail and TUESDAY's own daytime service).
+        ts_mon = _seed_capture_day_snapshot(
+            conn, capture_day=MONDAY, hour=12, run_id=994001, snapshot_id=994001,
+        )
+        ts_tue = _seed_capture_day_snapshot(
+            conn, capture_day=TUESDAY, hour=2, run_id=994002, snapshot_id=994002,
+        )
+        # 3 MONDAY-service trips captured MONDAY daytime (start_date=MONDAY, capture=MONDAY).
+        for i in range(3):
+            _seed_fact_on_snapshot(
+                conn, trip_id=f"mon_day{i}", service_day=MONDAY, capture_day=MONDAY,
+                snapshot_id=994001, ts=ts_mon, entity_index=i,
+            )
+        # 1 MONDAY-service OVERNIGHT trip captured TUESDAY pre-dawn (the cross-midnight tail):
+        # start_date=MONDAY, capture=TUESDAY.
+        _seed_fact_on_snapshot(
+            conn, trip_id="mon_overnight", service_day=MONDAY, capture_day=TUESDAY,
+            snapshot_id=994002, ts=ts_tue, entity_index=100,
+        )
+        # 1 TUESDAY-service trip captured TUESDAY daytime — a DIFFERENT service day
+        # (start_date=TUESDAY) that must NOT be folded into MONDAY's observed universe.
+        _seed_fact_on_snapshot(
+            conn, trip_id="tue_day", service_day=TUESDAY, capture_day=TUESDAY,
+            snapshot_id=994002, ts=ts_tue, entity_index=200,
+        )
+        assert _run_scheduled(conn, MONDAY) == 5
+        row = _run_cancellation(conn, MONDAY)
+        # Observed universe for MONDAY = 4 (3 daytime + 1 overnight tail), NOT 3 (which
+        # capture-day-only counting would give) and NOT 5 (which an unfiltered 2-day
+        # window would give by folding the TUESDAY-service trip in).
+        assert row["total_trip_days"] == 4, "observed universe must == service-day-MONDAY trips"
+        assert row["canceled_trip_days"] == 0
+        # The observed universe now shares the scheduled universe's service day:
+        assert row["scheduled_trip_days"] == 5
+        # silent = GREATEST(5 - 4, 0) = 1 — NOT under-counted (would be wrongly 0 if the
+        # TUESDAY-service trip inflated obs.total to 5).
+        assert row["silent_trip_days"] == 1
+        # delivered = total - canceled = 4 — NOT over-counted.
+        assert row["delivered_trip_days"] == 4
+        # Read-time completeness = 100 * 4 / 5 = 80.0 (would be a wrong 100 if inflated).
+        read = conn.execute(
+            _ROUTE_CANCELLATION_DAILY_SQL, {"provider_id": PROVIDER, "route_id": "R1"}
+        ).mappings().one()
+        assert float(read["service_completeness_pct"]) == 80.0
     finally:
         tx.rollback()
         conn.close()
